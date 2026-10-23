@@ -257,7 +257,8 @@ await runShard('子对话与计划', async (api) => {
     assert.equal(rebornList[0].state, 'active')
     step('子对话工作区被回收后继续：自动重建同名分支并在新目录里执行')
     step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
-    // 子对话做完（测试跑通）调用 submit_merge：面板直接合回父对话的分支，子对话标记完成，独立分支回收
+    // 子对话做完（测试跑通、只剩合回）调用 submit_merge 请父对话收尾：父对话 finish_child 合回自己的分支，
+    // 子对话计划收尾、标记完成，独立分支回收（ADR 0005）
     await waitDone(wtKid.id, 20000)
     for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
     const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
@@ -271,7 +272,17 @@ await runShard('子对话与计划', async (api) => {
     // 开分支的那一轮结束后面板才在分支目录里接着做：等到合并完成，不等第一轮结束
     const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 30000)
     const mergeLog = readLog(log + '.merge')
-    assert.ok(mergeLog.length && !mergeLog.at(-1).got.isError, '子对话调用 submit_merge 提交了合并')
+    assert.ok(mergeLog.length && !mergeLog.at(-1).got.isError, '子对话调用 submit_merge 请父对话收尾')
+    const finishLog = readLog(log + '.finish')
+    assert.ok(
+      finishLog.some((x) => x.id === doneKid.id && !x.got.isError),
+      '父对话收到收尾请求后调用 finish_child 收尾',
+    )
+    const wrapParent = await call('GET', `/tasks/${wtParent.id}`)
+    assert.ok(
+      wrapParent.messages.some((m) => m.panel === 'wrapup' && m.child?.id === doneKid.id),
+      '收尾请求在父对话里是一行「子对话请求」',
+    )
     assert.ok(closed.resolved, '合进父对话的分支后子对话标记完成')
     assert.ok(!existsSync(closed.worktree.path), '完成后独立分支的目录回收了')
     assert.match(
@@ -292,7 +303,7 @@ await runShard('子对话与计划', async (api) => {
       ),
       '答完一轮后被合并回收，不写「这一轮被中断」',
     )
-    step('子对话测试跑通后 submit_merge：面板合回父对话分支，子对话完成并回收独立分支')
+    step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
       (

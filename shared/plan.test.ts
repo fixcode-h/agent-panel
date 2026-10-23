@@ -1,3 +1,4 @@
+import { childReport } from './task.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Task } from './schema.ts'
@@ -6,7 +7,6 @@ import {
   applyPlan,
   bindRun,
   bindWait,
-  childTurnSettle,
   endRun,
   finishPlan,
   holdWait,
@@ -190,8 +190,9 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
       working: false,
       requests: [],
       plans: [],
+      steps: [],
       ...extra,
-    }) as unknown as Pick<Task, 'status' | 'working' | 'requests' | 'plans'>
+    }) as unknown as Task
   /** 子对话自己的计划：做完了的收起（doneAt），没做完的还挡着收口 */
   const childPlan = (done: boolean) => {
     const tk = fresh() as unknown as Task
@@ -200,19 +201,20 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   }
 
   // 跑完一轮、计划做完了、没有后台命令和提问：算交付完成
-  const ok = childTurnSettle(child({ plans: childPlan(true) }))
-  assert.equal(ok.over, true)
-  assert.equal(ok.ok, true)
+  const ok = childReport(child({ plans: childPlan(true) }))
+  assert.equal(ok.state, 'done')
+  assert.equal(ok.settle, 'ok')
   const okTask = waiting()
-  assert.deepEqual(settleWait(okTask, 'child', 'kid', ok.ok), [{ title: '改文件', done: true }])
+  assert.deepEqual(settleWait(okTask, 'child', 'kid', true), [{ title: '改文件', done: true }])
   assert.equal(okTask.plans![0].steps[0].status, 'done')
   assert.ok(okTask.plans![0].doneAt)
 
-  // 这一轮结束了，但子对话的计划还没做完：继续等，父计划那一步不能标完成
-  const planLeft = childTurnSettle(child({ plans: childPlan(false) }))
-  assert.equal(planLeft.over, false)
-  assert.equal(planLeft.ok, false)
-  assert.match(planLeft.why, /计划还没做完.*改文件/)
+  // 这一轮结束了，但子对话的计划还没做完：未完成，继续等，父计划那一步不能标完成
+  const planLeft = childReport(child({ plans: childPlan(false) }))
+  assert.equal(planLeft.state, 'unfinished')
+  assert.equal(planLeft.settle, 'hold')
+  assert.ok(planLeft.notify, '未完成要告诉父对话')
+  assert.match(planLeft.why, /未完成.*计划还没做完.*改文件/)
   const planTask = waiting()
   assert.deepEqual(holdWait(planTask, 'child', 'kid', planLeft.why), ['改文件'])
   const held = activePlan(planTask)!.steps[0].children[0]
@@ -224,41 +226,64 @@ test('子对话这一轮结束：交付完了标完成、没交付完继续等�
   // 没在等它时不改任何东西
   assert.deepEqual(holdWait(planTask, 'child', 'other', '别的对话'), [])
 
-  // 还有后台命令在跑：继续等，note 里点名是哪条命令
-  const bgLeft = childTurnSettle(child(), { background: ['后端单测'] })
-  assert.equal(bgLeft.over, false)
-  assert.match(bgLeft.why, /后台命令在跑.*后端单测/)
+  // 还有后台命令在跑：等结果，只改说明不发消息，note 里点名是哪条命令
+  const bgLeft = childReport(child(), { background: ['后端单测'] })
+  assert.equal(bgLeft.state, 'waiting')
+  assert.equal(bgLeft.settle, 'hold')
+  assert.equal(bgLeft.notify, false)
+  assert.match(bgLeft.why, /后台命令还在跑.*后端单测/)
   const bgTask = waiting()
   holdWait(bgTask, 'child', 'kid', bgLeft.why)
   assert.match(activePlan(bgTask)!.steps[0].children[0].note, /后端单测/)
 
-  // 这一轮结束后还要接着处理排队的消息：还没交付完
-  assert.equal(childTurnSettle(child(), { more: true }).over, false)
+  // 这一轮结束后还要接着处理排队的消息：还在执行
+  assert.equal(childReport(child(), { more: true }).state, 'running')
 
   // 还在跑：不能当成完成
-  assert.equal(childTurnSettle(child({ working: true })).over, false)
+  assert.equal(childReport(child({ working: true })).settle, 'hold')
 
-  // 有没答的提问：子对话是停下来等用户，不收口，步骤继续挂着等
+  // 有没答的提问：子对话是停下来等用户，不收口，步骤继续挂着等（提问卡片另有一条路，不重复发状态）
   const request = [{}] as unknown as Task['requests']
-  const ask = childTurnSettle(child({ requests: request }), { background: ['不该看到这个'] })
-  assert.equal(ask.over, false)
+  const ask = childReport(child({ requests: request }), { background: ['不该看到这个'] })
+  assert.equal(ask.state, 'needs')
+  assert.equal(ask.settle, 'hold')
   assert.match(ask.why, /没答的提问/)
   const askTask = waiting()
   holdWait(askTask, 'child', 'kid', ask.why)
   assert.equal(activePlan(askTask)!.steps[0].status, 'waiting')
+  // 等父对话回答的提问也算（以前只看 requests，漏了 parentAsks）
+  const parentAsk = [{ id: 'q', question: '?', options: [], kind: 'question' }] as Task['parentAsks']
+  assert.equal(childReport(child({ parentAsks: parentAsk })).state, 'needs')
 
   // 执行失败、被停止：退回进行中，note 里看得出是等谁失败了；有未完成计划也算结束
   for (const status of ['failed', 'stopped'] as const) {
-    const r = childTurnSettle(child({ status, plans: childPlan(false) }))
-    assert.equal(r.over, true)
-    assert.equal(r.ok, false)
-    assert.match(r.why, status === 'failed' ? /执行失败/ : /被停止/)
+    const r = childReport(child({ status, stopReason: 'user', plans: childPlan(false) }))
+    assert.equal(r.settle, 'fail')
+    assert.match(r.why, status === 'failed' ? /执行失败/ : /已中断/)
     const badTask = waiting()
-    assert.deepEqual(settleWait(badTask, 'child', 'kid', r.ok), [{ title: '改文件', done: false }])
+    assert.deepEqual(settleWait(badTask, 'child', 'kid', false), [{ title: '改文件', done: false }])
     const item = activePlan(badTask)!.steps[0].children[0]
     assert.equal(item.status, 'running')
     assert.match(item.note, /改文件/)
   }
+
+  // 彻底完成后面板结束等下一句的进程（stopReason 为 finish）：是完成，不是中断
+  const finished = childReport(child({ status: 'stopped', stopReason: 'finish', resolved: true }))
+  assert.equal(finished.state, 'done')
+  assert.equal(finished.settle, 'ok')
+
+  // 只剩合回、已经请父对话收尾：待收尾，继续等父对话
+  const wrap = childReport(
+    child({ plans: childPlan(true), wrapRequest: { state: 'requested', at: 'x', note: '', tests: 't', info: '' } }),
+    { unmerged: true },
+  )
+  assert.equal(wrap.state, 'wrapup')
+  assert.equal(wrap.settle, 'hold')
+  assert.match(wrap.why, /finish_child/)
+  // 只剩合回但还没请：未完成，说清还没请收尾
+  const notAsked = childReport(child({ plans: childPlan(true) }), { unmerged: true })
+  assert.equal(notAsked.state, 'unfinished')
+  assert.match(notAsked.why, /还没请你收尾/)
 })
 
 test('三个子对话都在跑：计划里三步都在等，计数不把它们算完成（重开后也不回退）', () => {
@@ -272,11 +297,11 @@ test('三个子对话都在跑：计划里三步都在等，计数不把它们�
   kids.forEach((ref, i) => {
     const child = fresh() as unknown as Task
     applyPlan(child, { steps: [{ title: ref, status: 'running' }] })
-    const r = childTurnSettle(
-      { status: 'running', working: false, requests: [], plans: child.plans },
+    const r = childReport(
+      { status: 'running', working: false, requests: [], plans: child.plans, steps: [] } as unknown as Task,
       { background: ['端到端测试'] },
     )
-    assert.equal(r.over, false)
+    assert.equal(r.settle, 'hold')
     assert.deepEqual(holdWait(task, 'child', ref, r.why), [task.plans![0].steps[i].title])
   })
   const plan = activePlan(task)!

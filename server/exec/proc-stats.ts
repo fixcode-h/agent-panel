@@ -164,6 +164,32 @@ export function subtree(root: number, map: Map<number, ProcNode>): number[] {
   return out
 }
 
+/**
+ * root 名下的全部后代（不含 root）。和 subtree 不同，root 自己已经退出、不在进程表里也照样按 ppid 往下找：
+ * Windows 上父进程先被结束后，孙进程的 ppid 还指着它，taskkill /T 就找不到它们了，停止时要按快照补杀
+ */
+export function descendants(root: number, map: Map<number, ProcNode>): number[] {
+  const kids = new Map<number, number[]>()
+  for (const p of map.values()) {
+    if (p.pid === p.ppid) continue
+    const list = kids.get(p.ppid)
+    if (list) list.push(p.pid)
+    else kids.set(p.ppid, [p.pid])
+  }
+  const out: number[] = []
+  const seen = new Set<number>([root])
+  const queue = [root]
+  while (queue.length) {
+    for (const k of kids.get(queue.shift()!) ?? []) {
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(k)
+      queue.push(k)
+    }
+  }
+  return out
+}
+
 /** 这些 pid 的 RSS 合计；系统没给 RSS 的不计入，一个都没有时返回 null（界面显示「未知」） */
 export function sumRss(pids: Iterable<number>, map: Map<number, ProcNode>): number | null {
   let total = 0

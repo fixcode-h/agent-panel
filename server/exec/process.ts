@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
+import { descendants, processSnapshot } from './proc-stats.ts'
 import {
   looksLikePanelCli,
   trackCliProcess,
@@ -78,6 +79,38 @@ export function killTree(pid: number, force = false) {
     try {
       process.kill(-pid, 'SIGKILL')
     } catch {}
+  }, 3000).unref()
+}
+
+/**
+ * 停止时用：结束进程树，连「脱离了树」的孙进程一起。
+ * CLI 自己跑的命令（Claude Code 的 Bash 之类）可能另起进程组（POSIX 上组信号打不到），
+ * Windows 上父进程先被 taskkill 结束后，孙进程就不在 /T 能找到的树里了——用户看到的就是
+ * 「强制停止了对话，命令还在跑」。所以先拍一张进程表，按 ppid 找出全部后代，主进程结束后再逐个补杀
+ */
+export async function killTreeDeep(pid: number) {
+  if (isWin) {
+    // Windows 拍快照要一两秒：先动手结束主进程树，快照回来再补（ppid 不会被改写，照样找得到）
+    const snap = processSnapshot(0).catch(() => null)
+    killTree(pid)
+    const map = await snap
+    for (const k of map ? descendants(pid, map) : []) killTree(k, true)
+    return
+  }
+  // POSIX 上父进程一死，孙进程会被挂到 1 号进程下：先拍快照（ps 很快）再动手
+  const map = await processSnapshot(0).catch(() => null)
+  killTree(pid)
+  const rest = map ? descendants(pid, map) : []
+  for (const k of rest)
+    try {
+      process.kill(k, 'SIGTERM')
+    } catch {}
+  if (!rest.length) return
+  setTimeout(() => {
+    for (const k of rest)
+      try {
+        process.kill(k, 'SIGKILL')
+      } catch {}
   }, 3000).unref()
 }
 
@@ -183,7 +216,7 @@ export function runProcess(o: {
     const stop = (why: 'stopped' | 'timeout' | 'idle') => {
       if (killed || settled) return
       killed = why
-      if (child.pid) killTree(child.pid)
+      if (child.pid) void killTreeDeep(child.pid)
       // 进程树没杀干净时 close 永远不会来：给个上限，别把等结果的调用方（关对话、停后台命令）挂死
       killerTimer = setTimeout(() => {
         if (settled) return

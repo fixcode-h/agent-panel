@@ -41,6 +41,8 @@ import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkf
 import {
   childCounts,
   childIcon,
+  childState,
+  convStateText,
   childStale,
   childStage,
   childWaitText,
@@ -267,6 +269,8 @@ interface ChildSummary {
   helpers?: boolean
   /** 独立分支还没合回父对话的分支：不算彻底完成，归「未完成」 */
   unmerged?: boolean
+  /** 已经请父对话收尾、还没出结果：「待收尾」 */
+  wrapup?: boolean
   /** 请用户选择、还没人回答的提问数 */
   asking?: number
   /** 在独立 worktree 里改时的分支 */
@@ -1957,6 +1961,8 @@ function ChildrenBar({
                     // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
                     // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
                     const icon = childIcon(c)
+                    // 行上的状态字和分组、图标是同一个判定（见 shared/task.ts 的 ConvState）
+                    const state = childState(c)
                     // 那一行下面的说明：执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
                     const line = childNote(c, icon === 'running')
                     const stale = staleLine(c)
@@ -2008,7 +2014,14 @@ function ChildrenBar({
                               </span>
                             )}
                             {icon === 'running' && (
-                              <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
+                              <span
+                                className={cn(
+                                  'shrink-0 text-[0.6875rem]',
+                                  state === 'wrapup' ? 'text-success' : 'text-accent',
+                                )}
+                              >
+                                {convStateText(state)}
+                              </span>
                             )}
                             {/* 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText） */}
                             {(icon === 'stopped' || icon === 'idle') && (

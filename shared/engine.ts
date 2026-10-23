@@ -319,7 +319,11 @@ export interface Orchestra {
   submitMerge(note: string, tests: string, build?: boolean): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
-  requestBuild(note: string, step?: string): Promise<{ ok: boolean; info: string }>
+  /** children：父对话替哪些子对话申请（结果也推给它们） */
+  requestBuild(note: string, step?: string, children?: string[]): Promise<{ ok: boolean; info: string }>
+  /** 顶层对话：名下有子对话时收尾它们（finish_child，见 ADR 0005） */
+  parentOf: boolean
+  finishChild(id: string): Promise<{ ok: boolean; info: string }>
   /** 父对话之间：列出同一项目里的其他父对话、给它们传话 */
   peers: boolean
   listPeers(): Promise<string>
@@ -460,8 +464,13 @@ export interface EngineHost {
    */
   ueBuild?: {
     role: 'child' | 'parent'
-    request: (note: string) => Promise<{ ok: boolean; info: string; id?: string }>
+    request: (note: string, children?: string[]) => Promise<{ ok: boolean; info: string; id?: string }>
   }
+  /**
+   * 顶层项目对话：收尾名下的子对话（子对话 submit_merge 请求后，父对话调用 finish_child）。
+   * 面板合回它的分支、标完它计划的收尾步骤、结束它并删除独立分支（见 ADR 0005）
+   */
+  finishChild?: (id: string) => Promise<{ ok: boolean; info: string }>
   /** 父对话：同一项目里的其他父对话（顶层对话），building 是它占着的编译（没有为空） */
   peers?: () => Promise<{ id: string; title: string; status: string; busy: boolean; building: string }[]>
   /** 父对话给另一个父对话传话：它正在执行就实时送达，空闲就放进它的收件箱 */
@@ -954,11 +963,11 @@ function buildPart(host: EngineHost) {
   // UE 项目的子对话不编译：「在分支里编译测试」那一段换成申请编译
   if (host.ueBuild) return uePart(host)
   if (!host.submitMerge) return ''
-  return `## 在独立分支里验证，再合回原分支
-编译、测试都在你这个独立分支的目录里跑，不用交给别人。
+  return `## 在独立分支里验证，再请父对话收尾
+编译、测试都在你这个独立分支的目录里跑，不用交给别人：合并就是验收，合进去的代码就算验收通过，所以能在你这里做的测试都在合并之前、在这里做完。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
-- 测试跑通就是完成的标记：按下面的「验证」跑通后调用 submit_merge，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成，独立分支随后回收。有冲突会撤回并把冲突推回给你。
-- 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
+- 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
+- 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。父对话合不进去（冲突）或者觉得验证不够时会退回给你，按它说的处理好再调用。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
 }
 
 /**
@@ -972,18 +981,18 @@ function uePart(host: EngineHost) {
   if (ue.role === 'parent')
     return `## UE 编译按申请占位执行
 这是 UE 项目：编译只在父对话这一层发起，子对话不编译（上面说子对话自己编译测试的地方，在这个项目里都以这里为准）。你也不随手编译：
-- 只在收到子对话的编译申请（消息里写着「编译申请」）或用户要求时，调用 request_build 向面板申请编译。几个申请先后到了就合成一次，note 写清为了哪些子对话、哪些改动。
+- 只在收到子对话的编译申请（消息里写着「编译申请」）或用户要求时，调用 request_build 向面板申请编译。几个申请先后到了就合成一次，note 写清为了哪些子对话、哪些改动，children 写上这些子对话的 id（结果面板会直接推给它们）。
 - 编译是占位的资源：面板按编译目录排队，同一目录同一时间只编译一次。同一目录里别的父对话占着时，你的申请排在后面，面板会告诉你占着的是谁，也会告诉对方你在等；各自在独立 worktree 里的不互相占位。不要用 run_background 或直接执行 Build.bat、UBT、UHT、Editor 来绕过排队。
-- 编译结果会推回给你：失败时按报错位置判断是哪个子对话的改动，用 send_to_conversation 交回给它修，修好它会再申请；通过就告诉申请的子对话和用户。
+- 编译结果会推回给你，也直接推给 children 里的子对话：失败时它们自己修好再申请；报错落在没申请的子对话的改动上时，用 send_to_conversation 交给它。
 - 同一项目里还有别的父对话时：用 list_peers 看它们在做什么、谁占着编译；要协调（例如你要等它的编译、它要改你这边也在改的公共文件）用 message_peer 传话，不要替它做决定。`
   return `## UE 编译交给父对话申请
 这是 UE 项目：编译（Build.bat、UBT、UHT）、Cook、启动 Editor 都不在子对话里做，面板也会拦下这类后台命令。你只改代码，做不需要编译的检查（Lua 语法、静态检查、对照调用方自查），编译向父对话申请：
 ${
   host.submitMerge
-    ? `- 检查完调用 submit_merge，tests 写上做了哪些检查，并写明「UE 编译已申请父对话」；build 保持 true，合回原分支后面板替你向父对话申请编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
-- 合回去不等于编译通过：编译报错时父对话会把报错交回给你，修好后再 submit_merge 一次。`
-    : `- 改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果由父对话转给你。
-- 编译报错交回来时修好再申请一次。`
+    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」；build 保持 true，父对话合回后在它的目录里编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
+- 合回去不等于编译通过：编译报错时会交回给你，修好后再 submit_merge 一次。`
+    : `- 改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果面板会直接推给你。
+- 编译报错就修好再申请一次；编译通过才算这次改动验证过。`
 }
 - 不要因为没编译就说做不完：你的完成标准是改动和检查都交代清楚、编译申请已经发出。`
 }
@@ -2505,20 +2514,25 @@ function makeOrchestra(
     async submitMerge(note, tests, build) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
       const r = await host.submitMerge(note.trim(), tests.trim(), build)
-      if (r.ok) {
-        system(host, t('已提交合并，等面板合回原分支'), where)
-        host.changed(true)
-      }
+      if (r.ok) host.changed(true)
       return r
     },
     ueBuild: !helper && ctx.chat && host.ueBuild ? host.ueBuild.role : '',
-    async requestBuild(note, step) {
+    async requestBuild(note, step, children) {
       if (helper || !ctx.chat || !host.ueBuild) return { ok: false, info: '这里不用申请编译' }
       if (!note.trim()) return { ok: false, info: '写清为什么要编译：哪些改动、哪些子对话申请的' }
-      const r = await host.ueBuild.request(note.trim())
+      const r = await host.ueBuild.request(note.trim(), children)
       const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'background', ref: r.id, label: '编译' }) : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
+    },
+    parentOf: !helper && !!ctx.chat && !!host.finishChild,
+    async finishChild(id) {
+      if (helper || !ctx.chat || !host.finishChild) return { ok: false, info: '这个对话没有子对话可以收尾' }
+      if (!id) return { ok: false, info: 'id 是空的：写子对话的 id（收尾请求里有）' }
+      const r = await host.finishChild(id)
+      host.changed(true)
+      return r
     },
     peers: !helper && !!ctx.chat && !!host.peers,
     async listPeers() {
@@ -3000,6 +3014,7 @@ ${
     : `- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
 - 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。`
 }
+- 子对话只剩合回时会发「收尾请求」给你：看它交的验证结果，够了就调用 finish_child（合回、标完成、删它的分支，都是工具调用，不要自己跑 git）；不够就用 send_to_conversation 把要补的交回给它。合并就是验收，测试要在它合并之前做完。
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
@@ -3102,7 +3117,7 @@ async function runConversationTurn(host: EngineHost, who: string) {
       if (!r.ok) {
         // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、保活上限，
         // 这时用户没点暂停、活也已经干完，不能记成被打断。和 endTurn 用同一个判据，两处结论必须一致
-        const answered = !!turn && !!r.stopped && answeredAll(task, turn)
+        const answered = !!turn && !!r.stopped && (answeredAll(task, turn) || finishedStop(host))
         if (turn) endTurn(task, turn, answered ? 'done' : r.stopped ? 'stopped' : 'failed')
         if (host.prewarm) {
           task.status = r.stopped && !answered ? 'stopped' : (host.prewarmFrom ?? 'done')
@@ -3161,6 +3176,12 @@ function answeredAll(task: Task, turn: { startedAt: string }) {
   return !lastAsk?.at || done >= Date.parse(lastAsk.at)
 }
 
+/**
+ * 这一轮是面板在对话彻底完成后收掉的（stopReason 为 finish）：子对话收尾做完、结束等下一句的进程。
+ * 这时活已经干完，CLI 有没有来得及报完成（turnDoneAt）都不影响，不能记成「这一轮被中断」
+ */
+const finishedStop = (host: EngineHost) => host.stopReason?.() === 'finish'
+
 /** 子对话的摘要：最近一条 Agent 回复的开头，父对话的协调 Agent 用它判断关联 */
 function summaryOf(task: Task) {
   const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
@@ -3190,7 +3211,7 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
 function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
   // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
   // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
-  const answered = !!r.stopped && !!opts?.answered
+  const answered = !!r.stopped && (!!opts?.answered || finishedStop(host))
   for (const s of host.task.steps)
     if (s.status === 'running') {
       s.status = answered ? 'done' : r.stopped ? 'pending' : 'failed'

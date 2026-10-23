@@ -274,11 +274,16 @@ export function orchTools(o: Orchestra) {
             name: 'request_build',
             title: '申请编译',
             description:
-              'UE 项目：收到子对话的编译申请或用户要求时，向面板申请编译（跑项目测试步骤里的编译）。编译是占位的资源：同一编译目录同一时间只编译一次，别的父对话占着时排在后面，面板会告诉你是谁、也告诉对方你在等。马上返回，结果推回给你。',
+              'UE 项目：收到子对话的编译申请或用户要求时，向面板申请编译（跑项目测试步骤里的编译）。编译是占位的资源：同一编译目录同一时间只编译一次，别的父对话占着时排在后面，面板会告诉你是谁、也告诉对方你在等。马上返回，结果推回给你，也推给 children 里的子对话。',
             inputSchema: {
               type: 'object',
               properties: {
                 note: { type: 'string', description: '为什么编译：哪些子对话申请的、包含哪些改动' },
+                children: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: '申请这次编译的子对话 id：编译结果面板会直接推给它们（不用你转述）',
+                },
                 ...(o.plans ? { step: stepField('这次编译') } : {}),
               },
               required: ['note'],
@@ -306,6 +311,23 @@ export function orchTools(o: Orchestra) {
                 text: { type: 'string', description: '要告诉它的事，写清背景和你希望它怎么配合' },
               },
               required: ['id', 'text'],
+            },
+          },
+        ]
+      : []),
+    ...(o.parentOf
+      ? [
+          {
+            name: 'finish_child',
+            title: '收尾子对话',
+            description:
+              '子对话请你收尾（消息里写着「收尾请求」）时调用：面板把它的独立分支合回你所在的分支、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支，你计划里等它的那一步也标完成。合并就是验收：先看它交的验证结果，不够就别收，用 send_to_conversation 交回要补的。合不进去（冲突）会自动退回给它处理。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '子对话 id（收尾请求里有，或者从 list_conversations 取）' },
+              },
+              required: ['id'],
             },
           },
         ]
@@ -363,9 +385,9 @@ export function orchTools(o: Orchestra) {
             ? [
                 {
                   name: 'submit_merge',
-                  title: '完成并合回原分支',
+                  title: '请父对话收尾',
                   description:
-                    '子对话完成的标记：在独立分支里改完、编译测试都跑通后调用。面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成（完成只是「已合回父对话所在的分支」，不涉及推送；它是面板自动加在计划最后的收尾步骤，合进去后面板标完成），独立分支随后回收。有冲突会撤回并把冲突推回给你。验证没跑通不要调用。马上返回，不用干等结果。',
+                    '只剩合回时调用：计划其余步骤都做完、后台命令都结束、没有待回答的提问、编译测试在你的独立分支里跑通。面板把你现在的改动提交到你的分支，请父对话收尾：父对话把它合回原分支（合并就是验收）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。完成只是「已合回父对话所在的分支」，不涉及推送。还有没做完的会直接拒绝并说明还差什么；合不进去（冲突）会退回给你。马上返回，调用后结束这一轮。',
                   inputSchema: {
                     type: 'object',
                     properties: {
@@ -693,7 +715,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'request_build': {
-      const r = await o.requestBuild(str(a?.note), str(a?.step) || undefined)
+      const kids = Array.isArray(a?.children) ? a.children.map(String) : []
+      const r = await o.requestBuild(str(a?.note), str(a?.step) || undefined, kids)
+      return text(r.info, !r.ok)
+    }
+    case 'finish_child': {
+      const r = await o.finishChild(str(a?.id).trim())
       return text(r.info, !r.ok)
     }
     case 'list_peers':
@@ -828,14 +855,14 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' ? 'submit_merge 检查完合回原分支并申请编译（UE 不在子对话里编译）、' : 'submit_merge 测试跑通后合回原分支、完成子对话（结果会推回来）、') : o.ueBuild === 'child' ? 'request_build 向父对话申请编译（UE 不在子对话里编译）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' ? 'submit_merge 检查完请父对话收尾（合回原分支后由父对话申请编译，UE 不在子对话里编译）、' : 'submit_merge 测试跑通、只剩合回时请父对话收尾（结果会推回来）、') : o.ueBuild === 'child' ? 'request_build 向父对话申请编译（UE 不在子对话里编译，结果会推回来）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
   if (o.planning)
-    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   if (o.coordinator)
-    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${o.ueBuild === 'parent' ? '收到编译申请时用 request_build 向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${o.parentOf ? 'finish_child 收到子对话的收尾请求时合回并结束它；' : ''}${o.ueBuild === 'parent' ? '收到编译申请时用 request_build 向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   return o.self.endsWith('@main')
     ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务，${collect}${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
     : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，${collect}；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`

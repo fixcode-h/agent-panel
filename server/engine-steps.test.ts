@@ -406,20 +406,29 @@ test('真停止（用户暂停、面板重启之类）照旧写中断说明', as
     paused.messages.some((m) => m.text === t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')),
   )
 
-  // 面板自己的收尾（合并回收、父对话结束）而这一轮没答完：要说清是谁结束的
-  const finished = await stoppedChatTurn({ answered: false, reason: 'finish' })
-  assert.equal(finished.turns.at(-1)?.status, 'stopped')
-  assert.equal(finished.status, 'stopped')
-  assert.equal(finished.stopReason, 'finish')
+  // 父对话结束时一起结束、而这一轮没答完：是真的中断，要说清是谁结束的
+  const byParent = await stoppedChatTurn({ answered: false, reason: 'parent' })
+  assert.equal(byParent.turns.at(-1)?.status, 'stopped')
+  assert.equal(byParent.status, 'stopped')
+  assert.equal(byParent.stopReason, 'parent')
   assert.ok(
-    finished.messages.some(
+    byParent.messages.some(
       (m) =>
         m.text ===
         t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
-          reason: stopReasonText('finish'),
+          reason: stopReasonText('parent'),
           next: t('点「继续执行」'),
         }),
     ),
-    '原因写成「做完后收尾」，用户看得出是谁结束的',
+    '原因写成「父对话结束时一起结束」，用户看得出是谁结束的',
   )
+})
+
+test('彻底完成后面板收掉进程（finish）：CLI 没来得及报完成也是正常结束，不写「这一轮被中断」', async () => {
+  // 用户截图：子对话收尾时显示「这一轮被中断：做完后收尾」。finish 只在子对话彻底完成后才会发，活已经干完了
+  const finished = await stoppedChatTurn({ answered: false, reason: 'finish' })
+  assert.equal(finished.turns.at(-1)?.status, 'done')
+  assert.equal(finished.status, 'done')
+  assert.equal(finished.stopReason, undefined)
+  assert.ok(!finished.messages.some((m) => m.role === 'system'), '没有任何中断说明')
 })

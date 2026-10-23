@@ -997,7 +997,12 @@ export const TaskMessage = z.object({
    * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
    * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段
    */
-  panel: z.enum(['background', 'build', 'helpers', 'child', 'ask', 'note']).optional(),
+  panel: z.enum(['background', 'build', 'helpers', 'child', 'ask', 'note', 'wrapup']).optional(),
+  /**
+   * panel 为 child / wrapup 时：是哪个子对话、上报时它处在哪个状态（见 shared/task.ts 的 ConvState）。
+   * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
+   */
+  child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
   /** panel 为 ask 时：哪个子对话问的、问了什么、可选的做法，以及谁怎么回答的 */
   ask: z
     .object({
@@ -1320,6 +1325,22 @@ export const TaskData = z.object({
   parentTaskId: z.string().default(''),
   /** 顶层对话的 id：子对话从哪个项目对话分出来的；顶层对话自己为空 */
   rootTaskId: z.string().default(''),
+  /**
+   * 子对话请父对话收尾的记录（见 ADR 0005）：子对话只剩合回时调用 submit_merge 写 requested，
+   * 父对话 finish_child 合并时是 merging，合并没成功退回子对话时是 failed（info 写原因）。
+   * 收尾做完（resolved）或者子对话又开始干活时清掉
+   */
+  wrapRequest: z
+    .object({
+      state: z.enum(['requested', 'merging', 'failed']),
+      at: z.string(),
+      note: z.string().default(''),
+      tests: z.string().default(''),
+      /** UE 项目：合回去后父对话要接着编译（独立分支里编不了 UE，见 ADR 0004） */
+      build: z.boolean().optional(),
+      info: z.string().default(''),
+    })
+    .optional(),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
   /**

@@ -507,12 +507,19 @@ if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes(
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
 if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
-// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后交给面板合回去
+// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后请父对话收尾
 if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
   writeFileSync('child-done.txt', 'done\n')
   const got = await panelCall('submit_merge', { note: '改完了', tests: 'npm test 通过' })
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
+// 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾
+const wrapReq = /【收尾请求】[^\n]*（id ([^）\s]+)）/.exec(input)
+if (wrapReq && input.includes('finish_child')) {
+  const got = await panelCall('finish_child', { id: wrapReq[1] })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id: wrapReq[1], got }) + '\n')
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {

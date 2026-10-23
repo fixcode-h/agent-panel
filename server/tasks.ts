@@ -38,6 +38,11 @@ import {
   childFlowOf,
   childHoldsOf,
   childHoldText,
+  childFacts,
+  childReport,
+  convState,
+  convStateText,
+  type ConvState,
   helpersWorking,
   closeFlow,
   delegatePrompt,
@@ -113,15 +118,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import {
-  childTurnSettle,
-  holdWait,
-  markWrapUp,
-  openPlan,
-  settleWait,
-  waitNote,
-  type WrapUpKind,
-} from '../shared/plan.ts'
+import { holdWait, markWrapUp, openPlan, openWork, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
 import type { PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
 import { runTree } from '../shared/run-usage.ts'
@@ -671,6 +668,8 @@ export function tasksApi(deps: {
     body: string,
     inboxText = body,
     settle?: { kind: PlanWait['kind']; ref: string; ok: boolean; onlyIfWaiting?: boolean },
+    /** 子对话的状态上报：父对话里画成一行「子对话状态」（见 Messages 的 PanelRow），带上是谁、什么状态 */
+    child?: { id: string; title: string; state: ConvState },
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
@@ -694,12 +693,13 @@ export function tasksApi(deps: {
               text,
               tools: [],
               panel: 'child',
+              ...(child && { child }),
               at: new Date().toISOString(),
             },
             text,
             [],
           )
-        } else await followUp(parent.id, { text, attachments: [], panel: 'child' })
+        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child })
         return
       } catch (e) {
         // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
@@ -713,8 +713,9 @@ export function tasksApi(deps: {
       step: '',
       text,
       tools: [],
-      // 只交给父对话的 AI：界面上子对话的状态图标已经显示做完了，不再多一条通知
+      // 父对话里画成一行「子对话状态」（像一次工具调用），点开看全文
       panel: 'child',
+      ...(child && { child }),
       at: new Date().toISOString(),
     }
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理
@@ -832,11 +833,20 @@ export function tasksApi(deps: {
           if (entry) entry.rev++
           else await store.update(tk.id, tk)
         }
+        // 父对话替子对话申请的编译：结果直接推给申请的子对话（它们靠这个结果判断能不能请求收尾）
+        const forward = buildFor.get(job.id)
+        if (forward) {
+          buildFor.delete(job.id)
+          for (const kid of forward.children)
+            await sendToChild(forward.parent, kid, `【父对话编译结果】${result}`, 'build').catch((e) =>
+              log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message }),
+            )
+        }
         // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
         if (tk.parentTaskId) {
           await sendToChild(tk.parentTaskId, tk.id, text, 'background')
           // 结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支
-          void settleChildWorktree(tk.id, tk.status === 'done')
+          void settleChildWorktree(tk.id)
           return
         }
         const running = live.get(tk.id)
@@ -889,44 +899,62 @@ export function tasksApi(deps: {
     await Promise.all([background.stop(id), ...kids.map((k) => endBackground(k.id))])
   }
 
-  /** 子对话的合并已经排上队、还没出结果：这一轮结束时不催它合并，父对话等它的计划步骤也留给合并结果收口 */
+  /** 父对话替子对话申请的编译（后台命令编号 → 申请的子对话）：结果出来时也推给它们 */
+  const buildFor = new Map<string, { parent: string; children: string[] }>()
+
+  /** 父对话正在合并的子对话：这一轮结束时不催它合并，父对话等它的计划步骤也留给合并结果收口 */
   const merging = new Set<string>()
-  /** 这一轮结束时已经催过合并的子对话：再结束还没合就交给父对话，不反复催 */
+  /** 这一轮结束时已经催过「请父对话收尾」的子对话：再结束还没请就照常上报父对话，不反复催 */
   const mergeNudged = new Set<string>()
 
   /**
-   * 子对话做完了：测试在它自己的独立分支里跑通，调用 submit_merge 就是「完成」的标记。
-   * 合并由面板做，不交给父对话或子对话的 CLI：面板按父对话排队、一次只合一个，git 操作是确定的，
-   * 父对话只统筹不碰文件，子对话也看不到父对话的目录。编译、测试不在合并时重跑：子对话已经在自己的分支里跑过，
-   * 和原分支冲突时撤回，让子对话把原分支合进去、重新验证后再交。
-   * 先提交到它自己的分支，再排队试合回开分支的那个目录（父对话所在的分支）。
-   * 合进去之后子对话标记完成、独立分支回收；没合进去的推回给子对话。马上返回排队情况
+   * 子对话只剩合回时请父对话收尾（ADR 0005）：子对话这边能做的都做完了——计划除了合回都做完、
+   * 后台命令都结束、没有等用户 / 父对话回答的提问、编译测试在自己的分支里跑通（tests 写明）。
+   * 面板先把现在的改动提交到它的分支，记下收尾请求，计划最后一步标「等待中」，再把请求交给父对话马上处理；
+   * 合并、改计划、删分支都由父对话调用 finish_child 发起（面板做 git 操作，父对话决定什么时候收）。
+   * 合并就是验收：所以测试必须在这之前、在子对话自己的分支里做完
    */
   async function submitMerge(
     childId: string,
     note: string,
     tests: string,
-    /** UE 项目：合进去后替它向父对话申请编译 */
+    /** UE 项目：合回去后父对话要接着编译（独立分支里编不了 UE，见 ADR 0004） */
     build = false,
   ): Promise<{ ok: boolean; info: string }> {
-    const tk = live.get(childId)?.task ?? (await store.get(childId))
-    if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能合回原分支' }
+    const entry = live.get(childId)
+    const tk = entry?.task ?? (await store.get(childId))
+    if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能请父对话收尾' }
     if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-    // 完成的标记是测试跑通：没写跑了什么就不合，免得没验证的改动进了父对话的分支
+    // 合并就是验收：没写跑了什么就不收，免得没验证的改动进了父对话的分支
     if (!tests)
       return {
         ok: false,
-        info: '没有合并：tests 里写上你在独立分支里跑了哪些编译、测试和结果。没跑通就先修好再调用；这次确实不需要测试（只改了文档、注释）时写明原因。',
+        info: '没有请求收尾：tests 里写上你在独立分支里跑了哪些编译、测试和结果。没跑通就先修好再调用；这次确实不需要测试（只改了文档、注释）时写明原因。',
       }
     // 后台还在跑的命令多半就是测试：没跑完就不算跑通，合进去后回收分支还会把它掐掉
     const pending = background.list(childId).filter((j) => j.state === 'queued' || j.state === 'running')
     if (pending.length)
       return {
         ok: false,
-        info: `没有合并：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
+        info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
       }
+    if (tk.requests.length || tk.parentAsks?.length)
+      return {
+        ok: false,
+        info: '没有请求收尾：还有等用户或父对话回答的提问。等回答回来、按回答处理完再调用 submit_merge。',
+      }
+    const left = openWork(tk)
+    if (left.length)
+      return {
+        ok: false,
+        info: `没有请求收尾：计划还有步骤没做完（${left
+          .slice(0, 5)
+          .map((x) => `${x.id}「${x.title}」`)
+          .join('、')}）。做完并用 set_plan 标完成；确实不做的从计划里删掉并说明原因，再调用 submit_merge。`,
+      }
+    if (merging.has(childId) || tk.wrapRequest?.state === 'merging')
+      return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     const parentId = tk.parentTaskId
-    const ahead = mergeWaiting.get(parentId) ?? 0
     const wt = tk.worktree!
     // 先把现在的改动提交到它自己的分支：之后再改的不在这次合并里
     try {
@@ -934,71 +962,42 @@ export function tasksApi(deps: {
     } catch (e) {
       return { ok: false, info: `提交到独立分支失败：${(e as Error).message}` }
     }
-    merging.add(childId)
     mergeNudged.delete(childId)
-    await wrapUpState(childId, 'running', '已提交合并，等面板合回父对话所在的分支')
-    void mergeLock(parentId, async () => {
-      const parent = live.get(parentId)?.task ?? (await store.get(parentId))
-      if (!parent) return
-      const r = await integrate(tk, parent)
-      merging.delete(childId)
-      const head = r.ok ? `已合回原分支：${r.info}` : `没能合回原分支：${r.info}`
-      if (r.ok) {
-        await childMerged(
-          childId,
-          `【面板】${head}
-分支已经合回原分支了。计划、后台命令、待回答的提问都处理完、这一轮收尾后，面板会结束这个子对话并回收独立分支；还没做完就接着做，不要再改已经合进去的文件。`,
-        )
-        await noteParent(
-          parentId,
-          tk,
-          `子对话「${tk.title}」已合回原分支（${tests.slice(0, 200)}），${head}`,
-          head.slice(0, 2000),
-          {
-            kind: 'child',
-            ref: childId,
-            ok: true,
-          },
-        )
-        // UE 项目：子对话不编译，改动进了父对话的目录再由父对话按申请占位编译
-        if (build) await askParentBuild(tk, note || '（没写说明）', tests)
-        return
-      }
-      await wrapUpState(childId, 'running', head.split('\n')[0])
-      await sendToChild(
-        parentId,
-        childId,
-        `【面板】${head}
-在你的分支里处理好、重新跑通验证后再调用 submit_merge。`,
-        'build',
-      )
-      await noteParent(parentId, tk, `子对话「${tk.title}」${head.split('\n')[0]}`, head.slice(0, 2000))
-    }).catch((e) => {
-      merging.delete(childId)
-      log.error('task', '合回原分支出错', { task: childId, error: (e as Error).message })
-    })
-    return {
-      ok: true,
-      info: `已提交合并${ahead ? `，前面还有 ${ahead} 个在排队` : ''}。合进去后它还差的结果会推回给你；计划、后台命令、提问都完了面板才把它标为完成（这次提交之后再改的文件不在这次合并里）。`,
-    }
-  }
-
-  /** 子对话计划里「合回父对话所在的分支」这一步跟着合并走：排队、失败标进行中，合进去标完成 */
-  async function wrapUpState(childId: string, status: 'running' | 'done', note: string) {
-    const entry = live.get(childId)
-    const tk = entry?.task ?? (await store.get(childId))
-    if (!tk || !markWrapUp(tk, 'merge', status, note)) return
-    tk.updatedAt = new Date().toISOString()
+    const at = new Date().toISOString()
+    tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
+    markWrapUp(tk, 'merge', 'waiting', '已请父对话收尾，等父对话合并')
+    tk.updatedAt = at
     if (entry) entry.rev++
     await store.update(tk.id, tk)
+    // 这次请求本身就是一次状态上报：一轮结束时不再报一遍「待收尾」
+    reportedState.set(childId, reportKey(tk, 'wrapup'))
+    const child = { id: tk.id, title: tk.title, state: 'wrapup' as const }
+    await wakeTask(
+      parentId,
+      tk,
+      `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩合回了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
+它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}
+请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
+      { panel: 'wrapup', child },
+    )
+    return {
+      ok: true,
+      info: '已请父对话收尾：它会把你的分支合回原分支、标完成并删除独立分支，结果推回给你。现在结束这一轮，不要再改文件（这次提交之后再改的不在这次合并里）；父对话退回要你补的，按它说的做完再调用 submit_merge。',
+    }
   }
 
   /**
    * 把面板的消息交给一个对话并让它马上处理：正在执行就实时送达，空闲就开新的一轮；
    * 开不起来（正在收尾、被别的操作占着）就退回收件箱，它下一轮开始时一起处理
    */
-  async function wakeTask(id: string, from: Task, text: string) {
+  async function wakeTask(
+    id: string,
+    from: Task,
+    text: string,
+    meta: { panel?: TaskMessage['panel']; child?: { id: string; title: string; state: ConvState } } = {},
+  ) {
     const running = live.get(id)
+    const panel = meta.panel ?? 'child'
     try {
       if (running?.task.status === 'running') {
         const msg: TaskMessage = {
@@ -1008,14 +1007,15 @@ export function tasksApi(deps: {
           step: '',
           text,
           tools: [],
-          panel: 'child',
+          panel,
+          ...(meta.child && { child: meta.child }),
           at: new Date().toISOString(),
         }
         await deliver(running, msg, text, [])
-      } else await followUp(id, { text, attachments: [], panel: 'child' })
+      } else await followUp(id, { text, attachments: [], panel, child: meta.child })
     } catch (e) {
       log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
-      await noteParent(id, from, text)
+      await noteParent(id, from, text, text, undefined, meta.child)
     }
   }
 
@@ -1029,7 +1029,8 @@ export function tasksApi(deps: {
       child.parentTaskId,
       child,
       `【编译申请】子对话「${child.title}」（id ${child.id}）申请 UE 编译：${note}${checks ? `\n它做过的检查：${checks.slice(0, 400)}` : ''}
-按申请处理：还有别的子对话的申请没编时合成一次，用 request_build 向面板申请编译；编译结果出来后告诉它（失败时把报错交回给它修）。`,
+按申请处理：还有别的子对话的申请没编时合成一次，用 request_build 向面板申请编译，children 写上这些子对话的 id；编译结果面板会同时推给你和它们，失败时它们自己修好再申请。`,
+      { panel: 'wrapup', child: { id: child.id, title: child.title, state: 'waiting' } },
     )
   }
 
@@ -1043,7 +1044,7 @@ export function tasksApi(deps: {
     await askParentBuild(child, note)
     return {
       ok: true,
-      info: '已向父对话申请编译。现在可以结束这一轮，编译结果由父对话转给你；报错交回来时修好再申请。',
+      info: '已向父对话申请编译。现在可以结束这一轮，编译结果出来面板会直接推给你；报错就修好再申请，通过了再接着做（合并前的验证以这次编译结果为准）。',
     }
   }
 
@@ -1056,6 +1057,8 @@ export function tasksApi(deps: {
     parent: Task,
     project: Project,
     note: string,
+    /** 申请这次编译的子对话：结果同时推给它们，不用父对话转述 */
+    children: string[] = [],
   ): Promise<{ ok: boolean; info: string; id?: string }> {
     const steps = buildSteps(project.testSteps)
     if (!steps.length)
@@ -1079,7 +1082,11 @@ export function tasksApi(deps: {
       if (!r.ok) return { ok: false, info: r.info }
       ids.push(r.id!)
     }
-    const mine = before.filter((j) => j.taskId === parent.id).length
+    // 结果也推给申请的子对话：只认父对话名下的
+    const mine = new Set((await store.list()).filter((x) => x.parentTaskId === parent.id).map((x) => x.id))
+    const to = children.map((x) => x.trim()).filter((x) => mine.has(x))
+    if (to.length) for (const id of ids) buildFor.set(id, { parent: parent.id, children: to })
+    const queuedMine = before.filter((j) => j.taskId === parent.id).length
     const holders: Task[] = []
     for (const id of new Set(before.map((j) => j.taskId).filter((x) => x !== parent.id))) {
       const tk = live.get(id)?.task ?? (await store.get(id))
@@ -1100,10 +1107,12 @@ export function tasksApi(deps: {
         `已申请编译（${steps.map((x) => x.name).join('、')}），编号 ${ids.join('、')}。`,
         who
           ? `这个编译目录现在被${who}占着，你排在后面${holders.some((x) => !x.parentTaskId) ? '，已告诉对方' : ''}。`
-          : mine
-            ? `你前面还有 ${mine} 条自己的编译在排队。`
+          : queuedMine
+            ? `你前面还有 ${queuedMine} 条自己的编译在排队。`
             : '编译目录空闲，马上开始。',
-        '结果会推回给你；等的时候接着处理别的消息，不要另外跑编译。',
+        to.length
+          ? `结果会推回给你，也会直接推给申请的子对话（${to.join('、')}）；等的时候接着处理别的消息，不要另外跑编译。`
+          : '结果会推回给你；等的时候接着处理别的消息，不要另外跑编译。',
       ].join(''),
     }
   }
@@ -1118,14 +1127,18 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 合并成功：只更新分支状态（「已在「dev」里」），不等于这个子对话做完了。
+   * 合并成功：只更新分支状态（「已在「dev」里」）和计划最后一步，不等于这个子对话做完了。
    * 还在一轮里的把结果交给它，等这一轮结束再按 childFlowOf 收口；已经停下的马上试一次，
-   * 计划、后台命令、提问还没完就保留独立分支（见 advanceChildTo）
+   * 计划、后台命令、提问还没完就保留独立分支（见 advanceChildTo）。返回收口的结果（还在一轮里时为空）
    */
-  async function childMerged(childId: string, text: string) {
+  async function childMerged(
+    childId: string,
+    text: string,
+    opts: { quiet?: boolean } = {},
+  ): Promise<{ holds: ChildHold[]; info: string } | undefined> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
-    if (!tk) return
+    if (!tk) return undefined
     const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
@@ -1140,11 +1153,105 @@ export function tasksApi(deps: {
     if (!steered) tk.messages.push(msg)
     // 计划最后一步「合回父对话所在的分支」由面板标完成：计划做完才走得到完成那一步
     markWrapUp(tk, 'merge', 'done', '已合回父对话所在的分支')
+    // 收尾请求办完了：合进去之后它就不再是「待收尾」
+    delete tk.wrapRequest
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
-    if (entry?.task.working) return
-    await advanceChildTo(childId)
+    if (entry?.task.working) return undefined
+    return advanceChildTo(childId, opts)
+  }
+
+  /**
+   * 父对话收尾一个子对话（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
+   * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
+   * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
+   * 父对话计划里等它的那一步也标完成。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
+   * 合并就是验收：没请求收尾（没交验证结果）的不收
+   */
+  async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
+    const tk = live.get(childId)?.task ?? (await store.get(childId))
+    if (!tk || tk.parentTaskId !== parent.id)
+      return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
+    if (tk.resolved) return { ok: true, info: `子对话「${tk.title}」已经完成了，不用再收尾` }
+    if (!isolated(tk)) {
+      // 共用目录的子对话没有分支要合：条件都满足就直接收口
+      const r = await advanceChildTo(childId, { quiet: true })
+      return r.holds.length
+        ? { ok: false, info: `子对话「${tk.title}」还没做完：${r.info}` }
+        : { ok: true, info: `子对话「${tk.title}」已标完成（它和你共用目录，改动已经在原目录里，不用合并）` }
+    }
+    if (merging.has(childId) || tk.wrapRequest?.state === 'merging')
+      return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
+    if (tk.wrapRequest?.state !== 'requested')
+      return {
+        ok: false,
+        info: `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
+      }
+    const req = tk.wrapRequest
+    merging.add(childId)
+    const setReq = async (next: Task['wrapRequest']) => {
+      const entry = live.get(childId)
+      const cur = entry?.task ?? tk
+      cur.wrapRequest = next
+      cur.updatedAt = new Date().toISOString()
+      if (entry) entry.rev++
+      await store.update(cur.id, cur)
+      return cur
+    }
+    await setReq({ ...req, state: 'merging' })
+    let r: { ok: boolean; info: string }
+    try {
+      r = await mergeLock(parent.id, async () => integrate(tk, live.get(parent.id)?.task ?? parent))
+    } catch (e) {
+      r = { ok: false, info: `合并出错：${(e as Error).message}` }
+    } finally {
+      merging.delete(childId)
+    }
+    if (!r.ok) {
+      const cur = await setReq({ ...req, state: 'failed', info: r.info })
+      markWrapUp(cur, 'merge', 'running', `没能合回：${r.info.split('\n')[0]}`)
+      await store.update(cur.id, cur)
+      // 退回去了：它处理好再请求时要重新上报一次
+      reportedState.delete(childId)
+      await sendToChild(
+        parent.id,
+        childId,
+        `【父对话收尾】没能合回原分支：${r.info}
+在你的分支里处理好、重新跑通验证后再调用 submit_merge 请父对话收尾。`,
+        'build',
+      )
+      return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
+    }
+    const done = await childMerged(
+      childId,
+      `【父对话收尾】已合回原分支：${r.info}
+父对话已经验收合并。计划、后台命令、提问都收口后面板结束这个子对话并删除独立分支；不要再改已经合进去的文件。`,
+      { quiet: true },
+    )
+    // 父对话计划里等它的那一步：合进去就是交付了
+    const pEntry = live.get(parent.id)
+    const pTask = pEntry?.task ?? parent
+    if (settleWait(pTask, 'child', childId, true).length) {
+      pTask.updatedAt = new Date().toISOString()
+      if (pEntry) pEntry.rev++
+      await store.update(pTask.id, pTask).catch(() => {})
+    }
+    const finished = !!done && !done.holds.length
+    return {
+      ok: true,
+      info: [
+        `已把子对话「${tk.title}」合回：${r.info}`,
+        finished
+          ? '它的计划收尾步骤已标完成，子对话已结束，独立分支和分支已删除。'
+          : `它的计划收尾步骤已标完成；${done ? `还差：${done.info}` : '它这一轮还没结束'}，收口后面板自动结束它并删除独立分支。`,
+        req.build
+          ? `这是 UE 项目：改动已经进了你的目录，现在调用 request_build 编译（child 写 ${tk.id}），编译结果面板会转给它。`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
   }
 
   /** 后台命令还在跑 / 排队：结果推回来还要接着做，不算彻底结束 */
@@ -1157,6 +1264,12 @@ export function tasksApi(deps: {
    */
   const reportedDone = new Set<string>()
 
+  /** 上次交给父对话的状态（见 reportChild）：同一个状态不重复报 */
+  const reportedState = new Map<string, string>()
+  /** 上报去重的键：收尾请求按请求的时间，别的状态按这一轮结束的时间（每轮结束各报一次） */
+  const reportKey = (tk: Task, state: ConvState) =>
+    state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}|${tk.status}`
+
   /**
    * 第 4 步：子对话这一侧把自己置为完成。
    * 独立分支的目录和分支只在这一步回收（合并成功不等于做完了，别在别处删目录：
@@ -1167,7 +1280,8 @@ export function tasksApi(deps: {
     const entry = live.get(childId)
     // 彻底完成就不再留着会话进程：共用父目录的子对话也一样。
     // 以前这一步只在独立分支里做，共用目录的子对话 resolved 之后 CLI 还在等下一句，
-    // 只能等 presence 宽限期（未读的连计时都不排）兜底，实测会留下十几个没人用的进程
+    // 只能等 presence 宽限期（未读的连计时都不排）兜底，实测会留下十几个没人用的进程。
+    // 原因写 finish：界面和引擎都按「做完后收尾」处理，不显示成「这一轮被中断」
     if (entry) {
       if (!cancelWait(childId)) stopTask(childId, 'finish')
       await entry.done?.catch(() => {})
@@ -1187,6 +1301,7 @@ export function tasksApi(deps: {
       tk.worktree = { ...tk.worktree!, state: 'merged', note: tk.worktree!.baseBranch }
     }
     tk.resolved = true
+    delete tk.wrapRequest
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
@@ -1194,11 +1309,15 @@ export function tasksApi(deps: {
 
   /**
    * 子对话完成状态的唯一入口：按 wrapup → plan → pending → complete → report → list 走一遍（见 advanceChild）。
-   * 用户点「标记完成」、合并成功、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
+   * 用户点「标记完成」、父对话收尾、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
    * 判定和置完成仍然在子对话这一侧，父对话不直接改子对话的最终状态。
    * 还差什么就原样交回去（原因给用户看），不跳步、不重复置完成、不重复上报。
+   * quiet：父对话自己发起的收尾（finish_child），结果已经在工具结果里，不再往父对话里推一条「已完成」
    */
-  async function advanceChildTo(childId: string): Promise<{ holds: ChildHold[]; info: string }> {
+  async function advanceChildTo(
+    childId: string,
+    opts: { quiet?: boolean } = {},
+  ): Promise<{ holds: ChildHold[]; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
     if (!tk?.parentTaskId) return { holds: [], info: '' }
@@ -1235,14 +1354,11 @@ export function tasksApi(deps: {
       childFlowOf(tk, { background: pendingJobs(childId), reported: done || reportedDone.has(childId) }),
       {
         complete: () => completeChild(childId, tk),
-        // 第 5 步：上报父对话。以前只改子对话自己的状态，父对话那边看不出这一步是「已完成」
+        // 第 5 步：上报父对话，走统一的状态上报（见 reportChild）：说法、计划收口和别的状态变化是同一套
         report: async () => {
           reportedDone.add(childId)
-          await noteParent(
-            tk.parentTaskId!,
-            tk,
-            `子对话「${tk.title}」已完成：计划、后台命令、提问和待确认的请求都收口了`,
-          )
+          if (opts.quiet) reportedState.set(childId, reportKey(tk, 'done'))
+          else await reportChild(childId)
         },
       },
     )
@@ -1309,52 +1425,91 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 子对话这一轮结束了：收口父对话计划里等它的那一步。
-   * 对话类子对话回复完会把进程留着等下一句，run 一直不返回，收尾处的 reportToParent 等不到，
-   * 所以要在这一轮真结束的地方直接按 child + 子对话 id 收一次（settleWait 幂等，收尾时再调一次没有副作用）。
-   * 「这一轮回复完了」不等于「子对话交付完了」：还有没答的提问、还在跑的后台命令、没做完的计划、
-   * 这一轮之后还要接着做的，都算没交付完——父计划那一步继续等，note 写清在等什么，不标完成。
+   * 子对话的状态交给父对话：每轮结束、请求收尾、合并、置完成都走这一个出口（ADR 0005）。
+   * 状态只从 childReport（convState）来：父对话收到的说法、父计划里等它那一步的收口、子对话栏是同一个结论。
+   * - 还在动（执行中、等结果、等用户回答）：只把父计划那一步的说明改成现在的状态，不刷消息
+   * - 未完成、待收尾：那一步继续等，发一条状态（同一状态同一轮只发一次）
+   * - 已完成：那一步标完成；失败、中断：那一步退回进行中，都发一条状态
+   */
+  async function reportChild(childId: string) {
+    const tk = live.get(childId)?.task ?? (await store.get(childId))
+    if (!tk?.parentTaskId) return
+    // 父对话正在合并：合并结果出来时再报，这时报「待收尾」「未完成」会让父对话误判
+    if (merging.has(childId)) return
+    const jobs = background
+      .list(childId)
+      .filter((j) => j.state === 'queued' || j.state === 'running')
+      .map((j) => j.name)
+    // 这一轮结束后还要接着做：排队的要求、面板交过来的消息、刚开好独立分支马上在分支目录里接着做的
+    const more = startQueue.has(childId) || hasHeld(childId)
+    const project = isolated(tk) ? await deps.projects.get(tk.projectId) : null
+    const r = childReport(tk, { background: jobs, more, unmerged: await childUnmerged(tk, project ?? null) })
+    if (r.settle === 'hold') {
+      await holdChildWait(tk, r.why).catch((e) =>
+        log.warn('task', '更新父对话计划的等待说明失败', { task: tk.id, error: (e as Error).message }),
+      )
+      if (!r.notify) return
+    }
+    const key = reportKey(tk, r.state)
+    if (reportedState.get(childId) === key) return
+    reportedState.set(childId, key)
+    const summary = tk.summary || lastReply(tk)
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
+    await noteParent(
+      tk.parentTaskId,
+      tk,
+      text,
+      text,
+      r.settle === 'hold' ? undefined : { kind: 'child', ref: tk.id, ok: r.settle === 'ok' },
+      { id: tk.id, title: tk.title, state: r.state },
+    )
+  }
+
+  /**
+   * 子对话这一轮结束了（CLI 报完成、停在等下一句，或者整次执行结束）：
+   * 独立分支里的先试着收口（条件都满足就完成、回收；只差请求收尾时提醒它一次），再统一上报父对话。
+   * 放到下一拍：别在 CLI 收尾的回调里结束它
    */
   function settleChildTurn(child: Task) {
     if (!child.parentTaskId) return
-    const r = childTurnSettle(child, childLeft(child))
-    if (!r.over) {
-      void holdChildWait(child, r.why).catch((e) =>
-        log.warn('task', '更新父对话计划的等待说明失败', { task: child.id, error: (e as Error).message }),
+    if (isolated(child) && !hasHeld(child.id) && !merging.has(child.id) && !child.resolved) {
+      setImmediate(
+        () =>
+          void settleChildWorktree(child.id).catch((e) =>
+            log.warn('task', '子对话一轮结束收口失败', { task: child.id, error: (e as Error).message }),
+          ),
       )
       return
     }
-    // 独立分支里的子对话：这一轮结束后收口独立分支（放到下一拍，别在 CLI 收尾的回调里结束它）。
-    // 合并成功、这一轮结束、合并后又接着做完的后续轮次都走这里，删不删由 childFlowOf 一套判定决定
-    if (isolated(child) && !hasHeld(child.id) && !merging.has(child.id) && !child.resolved) {
-      setImmediate(() => void settleChildWorktree(child.id, r.ok))
-      return
-    }
-    settleParentTurn(child, r.ok)
+    void reportChild(child.id).catch((e) =>
+      log.warn('task', '子对话状态上报失败', { task: child.id, error: (e as Error).message }),
+    )
   }
 
   /**
-   * 一轮结束后收口子对话的独立分支：条件都满足就回收（见 advanceChildTo），
-   * 还没合回去的催它跑通验证后 submit_merge，已合了但计划、后台命令、提问还没完的保留目录等下次
+   * 一轮结束后收口子对话的独立分支：条件都满足就回收（见 advanceChildTo，会上报「已完成」），
+   * 只差「请父对话收尾」却没请的提醒它一次；其余照常上报现在的状态
    */
-  async function settleChildWorktree(childId: string, ok: boolean) {
+  async function settleChildWorktree(childId: string) {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
-    if (!tk?.parentTaskId || !isolated(tk)) return
-    const { holds } = await advanceChildTo(childId)
-    // 这一轮失败 / 被停：照旧告诉父对话，分支没合回去的等它（或用户）处理，不催它再合
-    if (!ok) return settleParentTurn(tk, false)
-    // 只差「没合回去」：催一次合并；合了却还差别的条件时什么都不做，等这些结束
-    if (holds.length === 1 && holds[0] === 'unmerged' && !(await nudgeMerge(tk))) settleParentTurn(tk, true)
+    if (!tk?.parentTaskId) return
+    if (isolated(tk)) {
+      const { holds } = await advanceChildTo(childId)
+      if (!holds.length) return
+      if (await nudgeMerge(tk)) return
+    }
+    await reportChild(childId)
   }
 
   /**
-   * 子对话这一轮做完了，独立分支里却还有没合回去的改动：推一条面板消息给它，跑通验证就调用 submit_merge。
-   * 只催一次，再结束还没合就照常回报父对话，由父对话决定（返回 false）。后台命令还在跑时不催，也不算做完（返回 true）
+   * 子对话这一轮做完了，除了合回之外都做完了，却没请父对话收尾：推一条面板消息提醒它跑通验证后调用 submit_merge。
+   * 只提醒一次，再结束还没请就照常上报父对话（未完成），由父对话决定。提醒发出去了返回 true
    */
   async function nudgeMerge(child: Task): Promise<boolean> {
-    if (!child.parentTaskId || mergeNudged.has(child.id)) return false
-    // 后台命令（多半是测试）还在跑：结果推回来时它会接着做，这时不催，父对话也接着等
-    if (background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return true
+    if (!child.parentTaskId || mergeNudged.has(child.id) || child.wrapRequest) return false
+    if (child.status !== 'done' || child.working) return false
+    if (child.requests.length || child.parentAsks?.length || openWork(child).length) return false
+    if (background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return false
     const project = await deps.projects.get(child.projectId)
     const st = project ? await worktreeStatus(project.path, child.worktree!).catch(() => null) : null
     if (!st || st.merged) return false
@@ -1363,31 +1518,13 @@ export function tasksApi(deps: {
     const r = await sendToChild(
       child.parentTaskId,
       child.id,
-      `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}）。按「验证」跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），没合回去之前不算做完；验证没过就修好再交，确实不该合并就说明原因。`,
+      `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}），也还没请父对话收尾。按「验证」在你的分支里跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；没合回去之前不算做完。验证没过就修好再交，确实不该合并就说明原因。`,
       'build',
     )
     return r.ok
   }
 
-  /** 收口父对话计划里等这个子对话的步骤 */
-  function settleParentTurn(child: Task, ok: boolean) {
-    if (!child.parentTaskId) return
-    const how = ok ? '这一轮做完了' : child.status === 'stopped' ? '被停止了' : '执行失败了'
-    void noteParent(child.parentTaskId, child, `子对话「${child.title}」${how}`, how, {
-      kind: 'child',
-      ref: child.id,
-      ok,
-      onlyIfWaiting: true,
-    }).catch((e) => log.warn('task', '子对话结束收口计划失败', { task: child.id, error: (e as Error).message }))
-  }
-
-  /** 子对话这一轮结束时的「还差什么没交付」：后台命令在跑、这一轮之后还要接着做 */
-  function childLeft(child: Task) {
-    const jobs = background.list(child.id).filter((j) => j.state === 'queued' || j.state === 'running')
-    return { background: jobs.map((j) => j.name), more: startQueue.has(child.id) || hasHeld(child.id) }
-  }
-
-  /** 子对话这一轮结束了但还没交付完：父对话计划里等它的那一步继续等，note 写清还在等什么 */
+  /** 子对话还没交付完：父对话计划里等它的那一步继续等，note 写清它现在的状态 */
   async function holdChildWait(child: Task, why: string) {
     if (!child.parentTaskId) return
     const entry = live.get(child.parentTaskId)
@@ -1401,35 +1538,10 @@ export function tasksApi(deps: {
       .catch((e) => log.warn('task', '更新父对话计划的等待说明失败', { task: parent.id, error: (e as Error).message }))
   }
 
-  /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
+  /** 子对话整次执行结束（成功、失败、被停）：和一轮结束走同一个收口（重复的上报会被去掉） */
   async function reportToParent(task: Task) {
     if (!task.parentTaskId) return
-    // 合并还在排队：合并的结果会连同测试情况一起告诉父对话，这里再报一次「还没合回」只会让父对话误判。
-    // 刚开好独立分支、面板马上在分支目录里接着做的（begin_edit 登记了下一轮）也还没做完
-    if (merging.has(task.id) || hasHeld(task.id)) return
-    // 和回合结束收口用同一个判据：这一轮结束但还没交付完（后台命令在跑、计划没做完、还要接着做）时不回报完成，
-    // 父计划那一步继续等，等真正交付完的那一轮再标完成
-    const r = childTurnSettle(task, childLeft(task))
-    if (!r.over) {
-      await holdChildWait(task, r.why).catch((e) =>
-        log.warn('task', '更新父对话计划的等待说明失败', { task: task.id, error: (e as Error).message }),
-      )
-      return
-    }
-    const status = r.ok ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
-    const summary = task.summary || lastReply(task)
-    // 在独立分支里做完的：提醒父对话看过结果后合回来
-    const merge =
-      isolated(task) && r.ok && !task.resolved
-        ? `
-（它在独立分支 ${task.worktree!.branch} 里改，还没合回原分支：测试跑通后它调用 submit_merge，面板合进去、它的计划和后台命令也都收尾后才算完成）`
-        : ''
-    const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
-    await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`, {
-      kind: 'child',
-      ref: task.id,
-      ok: r.ok,
-    })
+    settleChildTurn(task)
   }
 
   /**
@@ -2024,8 +2136,10 @@ export function tasksApi(deps: {
           ueRole === 'child'
             ? { role: 'child', request: (note) => childRequestBuild(entry.task, note) }
             : ueRole === 'parent' && found
-              ? { role: 'parent', request: (note) => parentRequestBuild(entry.task, found, note) }
+              ? { role: 'parent', request: (note, kids) => parentRequestBuild(entry.task, found, note, kids) }
               : undefined,
+        // 顶层项目对话收尾名下的子对话：子对话 submit_merge 请求后由它合回、标完成、删分支（ADR 0005）
+        finishChild: !task.parentTaskId && task.projectId ? (id) => finishChild(entry.task, id) : undefined,
         // 父对话之间：看同一项目里的其他父对话、给它们传话（编译占位时的协调就靠它）
         peers: coordinatorRole
           ? async () =>
@@ -2117,7 +2231,8 @@ export function tasksApi(deps: {
             return {
               id: cur.id,
               title: cur.title,
-              status: cur.status,
+              // 状态用对话的 8 个状态说（见 ConvState），和子对话栏、状态上报是同一个结论
+              status: convStateText(convState(childFacts(cur, { background: pendingJobs(cur.id) }))),
               busy: cur.working || startQueue.has(cur.id),
               summary: cur.summary || lastReply(cur),
               at: cur.updatedAt,
@@ -2306,6 +2421,8 @@ export function tasksApi(deps: {
       placed?: Attachment[]
       recorded?: boolean
       panel?: TaskMessage['panel']
+      /** 子对话状态上报、收尾请求：是哪个子对话、什么状态（见 TaskMessage.child） */
+      child?: TaskMessage['child']
     },
   ) {
     const task = await store.get(id)
@@ -2333,6 +2450,13 @@ export function tasksApi(deps: {
       reportedDone.delete(id)
       mergeNudged.delete(id)
     }
+    // 请过收尾又开始干活（父对话退回、用户追加要求）：收尾请求作废，做完要重新请求；正在合并的不动
+    if (next.wrapRequest && next.wrapRequest.state !== 'merging') {
+      if (next.wrapRequest.state === 'requested')
+        markWrapUp(next, 'merge', 'running', '又有新的要求：做完、验证后再请父对话收尾')
+      delete next.wrapRequest
+      reportedState.delete(id)
+    }
     // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录
     const project = next.projectId ? await deps.projects.get(next.projectId) : null
     const restoreErr = project ? await restoreWorktree(next, project) : ''
@@ -2345,6 +2469,7 @@ export function tasksApi(deps: {
           step: '',
           text: m.text,
           ...(m.panel ? { panel: m.panel } : {}),
+          ...(m.child ? { child: m.child } : {}),
           ...(expanded ? { prompt: expanded } : {}),
           tools: [],
           ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -2366,6 +2491,7 @@ export function tasksApi(deps: {
         step: '',
         text: m.text,
         ...(m.panel ? { panel: m.panel } : {}),
+        ...(m.child ? { child: m.child } : {}),
         ...(expanded ? { prompt: expanded } : {}),
         tools: [],
         ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -2621,6 +2747,8 @@ export function tasksApi(deps: {
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
           // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childUnmerged）
           unmerged: await childUnmerged(liveTask, project),
+          // 已经请父对话收尾、还没出结果：行上是「待收尾」
+          wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
@@ -3317,6 +3445,14 @@ export function tasksApi(deps: {
     if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
     const project = await deps.projects.get(tk.projectId)
     if (!project) return bad(c, t('任务所属的项目已经不存在'))
+    // 子对话已经请父对话收尾：用户在界面上点合并就是替父对话收尾，走同一条路（合回、标完成、删分支）
+    if (tk.parentTaskId && tk.wrapRequest?.state === 'requested') {
+      const parent = await current(tk.parentTaskId)
+      if (!parent) return bad(c, t('父对话已经不存在'))
+      const r = await finishChild(parent, id)
+      if (!r.ok) return c.json({ error: r.info, conflict: true }, 409)
+      return c.json({ task: await current(id), into: tk.worktree!.baseBranch, overlap: [] })
+    }
     const wt = tk.worktree!
     try {
       const { into, overlap } = await mergeWorktree(

@@ -16,7 +16,7 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
-import { activePlan, openPlan, planProgress } from './plan.ts'
+import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
 import { attachChip, chipMarker, quoteBlock } from './composer.ts'
 
 export function taskTitle(prompt: string) {
@@ -345,10 +345,197 @@ export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'>) {
 export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
 
 /**
- * 任务（含子对话）当下的阶段：列表分组、状态图标、行内状态文字都用这一套，
+ * 对话（顶层对话和子对话一样）这会儿处在哪个状态。只有这 8 个，判定只在 convState 一处（见 ADR 0005）：
+ * - running 执行中：CLI 正在处理这一轮
+ * - waiting 等结果：这一轮说完了，在等会自己推回来的结果（后台命令、工作流运行、派出的子任务）
+ * - needs 等你处理：有待回答的提问、待确认的请求
+ * - failed 失败：这一轮执行出错
+ * - stopped 已中断：用户暂停，或者被别的动作打断（面板重启、换 CLI、父对话结束……）；
+ *   彻底完成后面板顺手结束等下一句的进程（stopReason 为 finish）不算中断
+ * - unfinished 未完成：这一轮正常说完了，但计划没做完，或者独立分支里还有没合回的改动、也还没请父对话收尾
+ * - wrapup 待收尾：子对话只剩合回，已经请父对话收尾（合并、改计划、删分支），在等父对话
+ * - done 已完成：顶层对话是这一轮答完、没有挂着的事；子对话是彻底完成（合回、回收）
+ *
+ * 列表分组（TaskStage）、行首图标（TaskIcon）、给父对话的状态上报、父计划里等它的那一步都从这里派生，
+ * 不要在别处再拼一套「是不是做完了」。
+ */
+export type ConvState = 'running' | 'waiting' | 'needs' | 'failed' | 'stopped' | 'unfinished' | 'wrapup' | 'done'
+
+/** 判定状态要看的事实：任务上有的直接取，后台命令数、合没合回这些服务端才知道的由调用方补 */
+export interface ConvFacts {
+  status: Task['status']
+  /** CLI 正在处理这一轮：进程活着但在等下一句 / 预热时算 false */
+  working?: boolean
+  /** 子对话被置为完成（彻底完成才会置） */
+  resolved?: boolean
+  /** 正在等用户确认的请求数 */
+  requests?: number
+  /** 还没回答的提问数 */
+  asking?: number
+  /** 还在跑、排队的后台命令数 */
+  background?: number
+  /** 工作流运行还没跑完（见 runRunning） */
+  workflow?: boolean
+  /** 派出去的子任务还在跑（见 helpersWorking） */
+  helpers?: boolean
+  /** 计划还没做完 */
+  unfinished?: boolean
+  /** 独立分支还没合回父对话的分支 */
+  unmerged?: boolean
+  /** 子对话已经请父对话收尾、还没出结果（见 Task.wrapRequest） */
+  wrapup?: boolean
+  /** 停下的原因：finish 是彻底完成后的收尾，不算中断 */
+  stopReason?: StopReason
+}
+
+/**
+ * 对话的状态，优先级从上到下：
+ * 要你处理的最先（不然会被「执行中」盖住，用户不知道在等他）→ 失败 → 执行中 → 等结果 → 中断 →
+ * 待收尾 → 未完成 → 已完成。
+ * 「已置完成」不盖住还在跑、还在等的事实：万一标早了，界面仍然如实显示在跑。
+ */
+export function convState(x: ConvFacts): ConvState {
+  if (x.requests || x.asking) return 'needs'
+  if (x.status === 'failed') return 'failed'
+  if (x.working) return 'running'
+  if (x.background || x.workflow || x.helpers) return 'waiting'
+  if (x.status === 'stopped' && !x.resolved && x.stopReason !== 'finish') return 'stopped'
+  if (x.wrapup && !x.resolved) return 'wrapup'
+  if (x.unfinished || x.unmerged) return 'unfinished'
+  return 'done'
+}
+
+/** 状态的说法：子对话栏、给父对话的上报、list_conversations 都用这一份 */
+export function convStateText(s: ConvState | string): string {
+  switch (s) {
+    case 'running':
+      return t('执行中')
+    case 'waiting':
+      return t('等结果')
+    case 'needs':
+      return t('等你处理')
+    case 'failed':
+      return t('失败')
+    case 'stopped':
+      return t('已中断')
+    case 'unfinished':
+      return t('未完成')
+    case 'wrapup':
+      return t('待收尾')
+    case 'done':
+      return t('已完成')
+    default:
+      return ''
+  }
+}
+
+/** 子对话的事实：任务上有的直接取，后台命令、排队的下一轮、合没合回由服务端补 */
+export function childFacts(
+  task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps' | 'resolved' | 'stopReason'> & {
+    runs?: Task['runs']
+    wrapRequest?: Task['wrapRequest']
+  },
+  x: { background?: number; unmerged?: boolean } = {},
+): ConvFacts {
+  return {
+    status: task.status,
+    working: task.working,
+    resolved: task.resolved === true,
+    requests: task.requests.length,
+    asking: task.parentAsks?.length ?? 0,
+    background: x.background,
+    workflow: runRunning(task),
+    helpers: helpersWorking(task),
+    unfinished: !!openPlan(task),
+    unmerged: x.unmerged,
+    wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
+    stopReason: task.stopReason,
+  }
+}
+
+/** 子对话交给父对话的状态上报：父计划里等它的那一步怎么收口、要不要发一条消息 */
+export interface ChildReport {
+  state: ConvState
+  /** hold：那一步继续等（只改说明）；ok：标完成；fail：退回进行中 */
+  settle: 'hold' | 'ok' | 'fail'
+  /** 一句话：现在的状态和原因，写进父计划那一步的说明，也是上报消息的第一行 */
+  why: string
+  /** 要不要给父对话发一条状态消息：还在动的（执行中、等结果）只更新计划那一步的说明，不刷消息 */
+  notify: boolean
+}
+
+/**
+ * 子对话一轮结束（或者合并、置完成、收尾请求这些状态变化）时，交给父对话的是什么：
+ * 状态只从 convState 来，父对话的计划、上报的说法、子对话栏用的是同一个结论。
+ * 以前这里有一套单独的判据（childTurnSettle，只看 requests / working / status / 后台命令 / 计划），
+ * 和列表的 childHolds 对不上：提问、工作流、派出的子任务都漏了，于是父对话收到「做完了」时子对话还在跑。
+ * more：这一轮结束后还要接着处理排队的消息（面板交过来的、执行中收到的），也算还在执行
+ */
+export function childReport(
+  task: Parameters<typeof childFacts>[0],
+  x: { background?: string[]; more?: boolean; unmerged?: boolean } = {},
+): ChildReport {
+  const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged })
+  let state = convState(facts)
+  if (x.more && state !== 'needs' && state !== 'failed') state = 'running'
+  const plan = activePlan(task)
+  const progress = plan ? planProgress(task, plan) : undefined
+  const at = progress
+    ? t('计划 {done}/{total}', { done: progress.done, total: progress.total }) +
+      (progress.current ? ` · ${progress.current.child?.title || progress.current.step.title}` : '')
+    : ''
+  const work = openWork(task)
+  const names = (list: string[]) =>
+    list
+      .slice(0, 3)
+      .map((n) => t('「{name}」', { name: n }))
+      .join(t('、')) + (list.length > 3 ? t(' 等 {n} 项', { n: list.length }) : '')
+  const reason = (() => {
+    switch (state) {
+      case 'running':
+        return x.more ? t('这一轮结束后还要接着处理排队的消息') : at
+      case 'waiting':
+        if (x.background?.length) return t('后台命令还在跑：{list}', { list: names(x.background) })
+        return facts.workflow ? t('工作流还没跑完') : t('派出的子任务还没跑完')
+      case 'needs':
+        return t('有没答的提问，在等用户回答')
+      case 'failed':
+        return t('执行失败了')
+      case 'stopped':
+        return stopReasonText(task.stopReason)
+      case 'unfinished':
+        if (work.length)
+          return t('计划还没做完：{list}', {
+            list: names(work.map((s) => s.title)),
+          })
+        return t('只剩合回父对话的分支，还没请你收尾')
+      case 'wrapup':
+        return t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
+      case 'done':
+        return t('交付完了：计划、后台命令、提问都收口了')
+    }
+  })()
+  return {
+    state,
+    settle: state === 'done' ? 'ok' : state === 'failed' || state === 'stopped' ? 'fail' : 'hold',
+    why: [convStateText(state), reason].filter(Boolean).join(t('：')),
+    notify: state !== 'running' && state !== 'waiting' && state !== 'needs',
+  }
+}
+
+/**
+ * 任务（含子对话）当下的阶段：列表分组用，是 ConvState 归并成的 5 组，
  * 避免列表说一个说法、点进去又是另一个。
  */
 export type TaskStage = 'you' | 'running' | 'unfinished' | 'done' | 'stopped'
+
+/** 状态归到列表的哪一组：等你处理和失败都要你看，执行中和等结果都还在动，待收尾和未完成都还差一步 */
+export function stageOf(s: ConvState): TaskStage {
+  if (s === 'needs' || s === 'failed') return 'you'
+  if (s === 'running' || s === 'waiting') return 'running'
+  if (s === 'wrapup' || s === 'unfinished') return 'unfinished'
+  return s
+}
 
 /**
  * 子对话离「彻底完成」还差哪几样（见 childHolds），空数组才算做完了
@@ -609,48 +796,12 @@ export function childHoldText(holds: ChildHold[]) {
 }
 
 /**
- * 一个任务属于哪个阶段：
- * - 有等用户确认的请求或没回答的提问 → 需要你处理
- * - 执行失败 → 需要你处理
- * - 正在跑这一轮，或者后台命令还在跑 → 执行中
- * - 用户 / 父对话主动停下 → 已停止
- * - 计划还没做完（见 shared/plan.ts 的 openPlan）→ 未完成：交付了一半，不算已完成
- * - 其余 → 已完成
- *
- * 「已停止」只认 status === 'stopped'：对话交付完一轮后 status 仍是 running，
- * 只是 working 变回 false、CLI 在等下一句，它已经做完了，不能算停止。
- * 子对话要停下来等用户时应当先提问（见内置「通用约束」），所以没在跑也没提问就等于交付完了；
- * 但计划没做完、后台命令还在跑的不算：那是真的还剩任务，别让它看起来已完成。
- * 「已标记解决」排在这几条之后：正常只在彻底完成时标记（见 childHolds），
- * 万一标早了也不能盖住还在跑、计划没做完这些事实。
+ * 一个任务属于哪个阶段：就是 convState 归成的组（见 stageOf）。
+ * 「已停止」只认真的中断：对话交付完一轮后 status 仍是 running，只是 working 变回 false、CLI 在等下一句，
+ * 它已经做完了，不能算停止；彻底完成后面板结束进程（stopReason 为 finish）也不算。
  */
-export function taskStage(x: {
-  status: Task['status']
-  /** CLI 正在处理这一轮：进程活着但在等下一句 / 预热时算 false */
-  working?: boolean
-  /** 子对话被标记为已解决 */
-  resolved?: boolean
-  /** 正在等用户确认的请求数 */
-  requests?: number
-  /** 还没回答的提问数 */
-  asking?: number
-  /** 还在跑、排队的后台命令数：有它就还在执行 */
-  background?: number
-  /** 工作流运行还没跑完（见 runRunning） */
-  workflow?: boolean
-  /** 派出去的子任务还在跑（见 helpersWorking） */
-  helpers?: boolean
-  /** 计划还没做完：列表里归「未完成」，不算交付完 */
-  unfinished?: boolean
-  /** 独立分支还没合回父对话的分支：同样是「未完成」，不能显示成已完成 */
-  unmerged?: boolean
-}): TaskStage {
-  if (x.requests || x.asking) return 'you'
-  if (x.status === 'failed') return 'you'
-  if (x.working || x.background || x.workflow || x.helpers) return 'running'
-  if (x.status === 'stopped' && !x.resolved) return 'stopped'
-  if (x.unfinished || x.unmerged) return 'unfinished'
-  return 'done'
+export function taskStage(x: ConvFacts): TaskStage {
+  return stageOf(convState(x))
 }
 
 /**
@@ -706,6 +857,8 @@ export interface ChildEntry {
   helpers?: boolean
   /** 独立分支还没合回父对话的分支：不算彻底完成，列表里归「未完成」（见 childHolds 的 unmerged） */
   unmerged?: boolean
+  /** 已经请父对话收尾、还没出结果：列表里是「待收尾」（见 ConvState） */
+  wrapup?: boolean
   /** 停在 stopped 的原因：只有 'user' 是用户自己按的暂停，别的都是顺带结束（见 StopReason） */
   stopReason?: StopReason
   /** 最后有动静的时间（见 childLastActivity）：超时没新输出时标黄 / 标红 */
@@ -888,8 +1041,11 @@ export function childStale(
 /** 子对话列表里状态分类的先后：要你处理的在最上面，然后执行中、未完成、做完的、停下的 */
 const stageRank: TaskStage[] = ['you', 'running', 'unfinished', 'done', 'stopped']
 
+/** 子对话列表里一行的状态：计划没做完、独立分支没合回、已请收尾都按 convState 一处判（见 ConvState） */
+export const childState = (x: ChildEntry) => convState({ ...x, unfinished: !!x.plan && x.plan.done < x.plan.total })
+
 /** 这一条在列表里算哪个阶段：计划没做完、独立分支没合回的不算已完成（见 taskStage） */
-export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.plan && x.plan.done < x.plan.total })
+export const childStage = (x: ChildEntry) => stageOf(childState(x))
 
 /**
  * 行首要不要转圈：还没彻底完成（还在干活、计划没做完、独立分支没合回）时转，
@@ -931,11 +1087,11 @@ export function stopReasonText(reason: StopReason | undefined): string {
  * - 其余 → done（完成态，含 resolved 和「彻底做完、CLI 关了」）
  */
 export function childIcon(x: ChildEntry): TaskIcon {
-  const st = childStage(x)
-  if (st === 'you') return x.status === 'failed' ? 'failed' : 'waiting'
-  if (st === 'running') return 'running'
-  // 未完成（计划没做完、独立分支没合回）也转圈：还没做完，不能画成静止的
-  if (st === 'unfinished') return 'running'
+  const st = childState(x)
+  if (st === 'failed') return 'failed'
+  if (st === 'needs') return 'waiting'
+  // 等结果、未完成、待收尾也转圈：还没做完，不能画成静止的
+  if (st === 'running' || st === 'waiting' || st === 'unfinished' || st === 'wrapup') return 'running'
   if (st === 'done') return 'done'
   // 停下：只有用户按的暂停才是暂停图标，别的来源要说清是谁结束的
   return x.stopReason && x.stopReason !== 'user' ? 'idle' : 'stopped'
@@ -1144,7 +1300,9 @@ export function messageStamp(m: TaskMessage, withOutput = true) {
       (t) =>
         // 工具输出要带内容指纹：命令输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
         // 只看长度的话这一步的增量不会推送，界面要等到下一次长度变化才跳一下
-        `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
+        // 运行中标记、耗时也要算：停止时这一行只是收掉运行中、记上耗时，输出不变，
+        // 不算进来的话这次变化推不到页面，「运行命令」那一行会一直转圈（看着像命令没停）
+        `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.running ? 'r' : ''}${t.ms !== undefined ? 'm' : ''}${t.input?.length ?? 0}`,
     )
     .join(',')}`
 }

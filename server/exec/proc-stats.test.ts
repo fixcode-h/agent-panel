@@ -9,8 +9,17 @@ import type { ProcNode, StoredSample } from './proc-stats.ts'
 // 内存历史也在 DATA_DIR 下，必须在 import 之前指到临时目录
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'proc-stats-'))
 
-const { aggregateByRoot, cleanableClis, commandSummary, pushSample, subtree, sumRss, summarize, trackedStatus } =
-  await import('./proc-stats.ts')
+const {
+  aggregateByRoot,
+  cleanableClis,
+  commandSummary,
+  descendants,
+  pushSample,
+  subtree,
+  sumRss,
+  summarize,
+  trackedStatus,
+} = await import('./proc-stats.ts')
 
 /** [pid, ppid, rss, argv] */
 function mapOf(...rows: [number, number, number | null, string?][]) {
@@ -208,4 +217,11 @@ test('内存历史：按时间范围裁', () => {
     summarize(list, 'r1', { to: 2 }).map((x) => x.t),
     [1, 2],
   )
+})
+
+test('descendants：主进程已经结束、不在进程表里，也按 ppid 找出留下的孙进程（强制停止时补杀它们）', () => {
+  // 10 是 CLI（已被结束），20 是它起的 shell，30 是 shell 里还在跑的命令；99 是别人的进程
+  const map = mapOf([20, 10, 1], [30, 20, 1], [99, 1, 1])
+  assert.deepEqual(descendants(10, map).sort(), [20, 30])
+  assert.deepEqual(descendants(99, map), [])
 })
