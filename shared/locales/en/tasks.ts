@@ -347,6 +347,14 @@ export const EN_TASKS: Record<string, string> = {
   已完成: 'Done',
   未完成: 'Unfinished',
   已暂停: 'Paused',
+  父对话结束时一起结束: 'Ended together with the parent chat',
+  '换 CLI / 模型时中断': 'Interrupted when switching CLI / model',
+  归档时结束: 'Ended on archive',
+  面板重启时中断: 'Interrupted by panel restart',
+  页面切走后结束: 'Ended after the page was left',
+  闲置太久已回收: 'Recycled after being idle too long',
+  被新消息打断: 'Interrupted by a new message',
+  做完后收尾: 'Cleanup after finishing',
 
   // 任务页
   已删除任务: 'Task deleted',

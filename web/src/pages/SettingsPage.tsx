@@ -114,6 +114,7 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
+  const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
   const [children, setChildren] = useState(String(initial.childConcurrency))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
@@ -247,6 +248,8 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
+  const keepN = Number(keepAlive)
+  const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
   const largeN = Number(largeMB)
@@ -269,6 +272,7 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
+    keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
     childConcurrency: childValid ? childN : initial.childConcurrency,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
@@ -539,6 +543,24 @@ function SettingsBody({
                   {!presenceValid && (
                     <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
                   )}
+                </div>
+              </Row>
+              <Row
+                title={t('同时保活的会话上限')}
+                desc={t(
+                  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={keepAlive}
+                    onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!keepValid}
+                    className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时保活的会话上限')}
+                  />
+                  {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
                 </div>
               </Row>
               <Row

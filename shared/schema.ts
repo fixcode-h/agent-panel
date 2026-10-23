@@ -1065,6 +1065,24 @@ export type TaskStep = z.infer<typeof TaskStep>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
+/**
+ * 任务停在 stopped 的原因。只有 'user' 是用户自己按的暂停，其余都是别的动作顺带把这一轮结束了：
+ * 以前 stopTask 只有一个 boolean，全走同一条，界面一律显示「已暂停」，用户没按暂停却看到几只子对话被停了。
+ * 界面按它决定说「已暂停」还是说清是谁结束的（见 shared/task.ts 的 childIcon / stopReasonText）。
+ */
+export const StopReason = z.enum([
+  'user', // 用户点「暂停」
+  'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
+  'switch', // 换 CLI / 模型 / 角色，这一轮重启
+  'archive', // 归档
+  'restart', // 面板重启、服务退出
+  'presence', // 页面切走、宽限期到了，CLI 不再等下一句
+  'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
+  'supersede', // 用户发了新消息，打断当前这一轮
+  'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
+])
+export type StopReason = z.infer<typeof StopReason>
+
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
 export const TaskTurn = z.object({
   id: z.string(),
@@ -1293,6 +1311,8 @@ export const TaskData = z.object({
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
+  /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
+  stopReason: StopReason.optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
@@ -1581,6 +1601,11 @@ export const Settings = z.object({
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
+  /**
+   * 同时保活的会话上限：回复完停在等下一句、又没人在看的 CLI 最多留几个，超过就结束最久没用的那个，
+   * 下次打开靠 --resume 续接（冷启动一次）。0 表示不限制
+   */
+  keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
    * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI

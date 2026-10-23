@@ -234,7 +234,7 @@ export const EN_AGENTS: Record<string, string> = {
   // 通知、自动保存
   任务已完成: 'Task completed',
   任务失败了: 'Task failed',
-  任务已暂停: 'Task paused',
+  '任务中断：{reason}': 'Task interrupted: {reason}',
   'Agent 面板': 'Agent Panel',
   'Agent 需要你确认': 'An Agent needs your confirmation',
   '{task}：{request}': '{task}: {request}',

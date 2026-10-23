@@ -32,6 +32,7 @@ import {
   type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
+  type StopReason,
   type Task,
   type TaskRun,
   type TaskStep,
@@ -80,7 +81,7 @@ import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
-import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
   activePlan,
@@ -374,6 +375,11 @@ export interface EngineHost {
   waitChat?: (signal: AbortSignal) => Promise<string | null>
   /** 这一轮的停止信号：等子任务时停止任务不再等 */
   signal?: AbortSignal
+  /**
+   * 停下这一轮的原因（见 StopReason）：'user' 是用户自己按的暂停，
+   * 其余是父对话收尾、换 CLI、面板重启这些顺带结束的动作。收尾时读现值的，所以要传函数
+   */
+  stopReason?: () => StopReason | undefined
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
   /**
@@ -3039,17 +3045,27 @@ function finish(host: EngineHost, r: Fail) {
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error, '', false, true)
-  else if (r.stopped)
+  else if (r.stopped) {
+    // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
+    // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
+    const reason = host.stopReason?.() ?? 'user'
+    host.task.stopReason = reason
+    const next = host.task.mode === 'workflow' ? t('点「继续流程」') : t('点「继续执行」')
     system(
       host,
-      host.task.mode === 'workflow'
-        ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
-        : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'),
+      reason === 'user'
+        ? host.task.mode === 'workflow'
+          ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
+          : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
+        : t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
+            reason: stopReasonText(reason),
+            next,
+          }),
       '',
       false,
       true,
     )
-  else {
+  } else {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
       .map((s) => t('「{title}」', { title: s.title }))
@@ -3078,6 +3094,8 @@ function finish(host: EngineHost, r: Fail) {
 export async function runEngineTurn(host: EngineHost) {
   const { task } = host
   task.status = 'running'
+  // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
+  task.stopReason = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算
   task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
