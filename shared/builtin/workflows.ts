@@ -86,7 +86,7 @@ const chain = (...ids: string[]) => ids.slice(1).map((id, i) => [ids[i], id] as 
  * 通用的验收流程：测试与验收 Agent 查回归、按项目测试步骤跑验证、给结论。
  * 原来是「回归审查 → 跑验证」两个节点，合成一个少一轮交接；返工时续接这个节点的会话
  */
-const CHECK: FlowSpec = {
+export const CHECK: FlowSpec = {
   id: 'check',
   name: '验收',
   description: '按项目的测试步骤跑验证、查回归，不通过时把意见交回节点继续完善',
@@ -137,7 +137,7 @@ const COMMIT: WorkflowExpose = {
   default: '本地提交',
   target: 'node',
   targetId: 'deliver',
-  description: '本地提交只做本地 commit / pending；推送和 submit 要单独授权',
+  description: '本地提交只做本地 commit / pending；推送、PR、submit 由父对话决定',
 }
 
 /**
@@ -221,7 +221,7 @@ export const GENERAL: BuiltinWorkflow = {
 - 版本控制和文档根由「常驻编排器」统一确定，后面的节点按它的结论操作。
 - 方案确认之前不写代码；确认之后中途不再逐步确认，遇到不可逆操作、需求矛盾、和方案冲突时才停下。
 - 测试按项目设置里的「测试步骤」跑（新建对话时快照进任务），没有本轮的新鲜证据不算完成。
-- 版本管理交给「版本控制」角色：本地提交 / pending 分桶、分支与合并方向按它的参数执行，规则见 project-vcs 技能；推送、PR、submit 这类对外操作要得到授权。
+- 版本管理交给「版本控制」角色：本地提交 / pending 分桶、分支与合并方向按它的参数执行，规则见 project-vcs 技能；推送、PR、submit、合并到主干由父对话决定，子对话不执行、不询问、也不建议。
 - 只改任务范围内的文件，不覆盖、不认领用户已有的改动。`,
   expose: [STRUCTURE, DOC_ROOT, COMMIT],
   flows: [
@@ -284,9 +284,9 @@ export const GENERAL: BuiltinWorkflow = {
               title: '交付',
               agent: 'vcs',
               tier: 'low',
-              params: { docs: false, commit: '本地提交' },
+              params: { commit: '本地提交' },
               instructions:
-                '上一步已经同步过文档，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
+                '上一步已经同步过文档，这里只做版本控制收尾。推送 / submit 由父对话决定：不执行、不询问、也不写进建议。',
             },
           ],
         },
@@ -359,7 +359,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
 - 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由「测试与验收」节点执行，同一时间只编译一次；不要把编译拆成独立节点，也不要让实现节点自己编译。需要 Editor、PIE 或设备的验证登记为延期验证。
 - 测试步骤在项目设置里维护（编译、Lua 语法检查、可选的 AutomationTest），新建对话时快照进任务。
 - 文档、测试、版本管理沿用在「通用项目」里的规则。
-- 版本管理交给「版本控制」角色，规则见 project-vcs 技能（Git 只处理本次任务的文件、P4 只分 pending）；推送 / submit 要授权。`,
+- 版本管理交给「版本控制」角色，规则见 project-vcs 技能（Git 只处理本次任务的文件、P4 只分 pending）；推送 / submit 由父对话决定，子对话不执行、不询问、也不建议。`,
   expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT, COMMIT],
   flows: [
     {
@@ -409,8 +409,8 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
           title: '交付',
           agent: 'vcs',
           tier: 'low',
-          params: { docs: false, commit: '本地提交' },
-          instructions: '按识别出的版本控制做收尾；推送 / submit 没有授权时不做。',
+          params: { commit: '本地提交' },
+          instructions: '按识别出的版本控制做收尾；推送 / submit 由父对话决定，不执行、不询问、也不写进建议。',
         },
       ],
       edges: chain(START, 'scout', 'design', 'impl', 'docs', 'deliver', END),
@@ -566,9 +566,9 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
             title: '文档与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true },
+            params: { commit: '本地提交' },
             instructions:
-              '更新依赖策略或升级记录相关的文档（有长期决策时写 ADR），再把依赖文件、锁文件和文档一起做版本控制收尾。',
+              '需要更新依赖策略或升级记录相关的文档时，用 spawn_agents 派「文档」角色写（有长期决策时让它写 ADR）；再做版本控制收尾，把文档改动、依赖文件和锁文件一起提交。',
           },
         ],
         edges: chain(START, 'audit', 'upgrade', 'commit', END),
@@ -647,8 +647,9 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
             title: '文档与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true },
-            instructions: '把迁移方案、兼容策略和回滚步骤写进文档（长期决策写 ADR），再做版本控制收尾。',
+            params: { commit: '本地提交' },
+            instructions:
+              '把迁移方案、兼容策略和回滚步骤交给「文档」角色写进文档（长期决策让它写 ADR），再做版本控制收尾。',
           },
         ],
         edges: chain(START, 'plan', 'impact', 'impl', 'verify', 'commit', END),
@@ -671,7 +672,7 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
 要把一次改动真正发出去：出包、发版本、上线，以及需要回滚预案的场景。
 
 ## 约定
-- 先确认授权：推送、打 tag、发布、部署都算对外操作，用户明确授权后才做；没授权就出到「可以发布」为止并写清下一步。
+- 先看父对话的决定：推送、打 tag、发布、部署都算对外操作，由父对话决定要不要做；子对话不执行、不询问、也不建议，出到「可以发布」为止并写清下一步。
 - 发布前验证必须用本轮的新鲜产物：构建一次、在产物上跑验证，不能拿开发环境的结果代替。
 - 回滚方案先写再发：怎么回、回哪个版本、回滚后怎么验证，写在发布说明里。
 - 版本号和变更说明按项目自己的规则（AGENTS.md / CONTRIBUTING / 已有的 tag 风格）。`,
@@ -685,7 +686,7 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
             title: '发布准备',
             agent: 'vcs',
             tier: 'medium',
-            params: { vcs: '自动', docs: false, commit: '只检查' },
+            params: { vcs: '自动', commit: '只检查' },
             instructions:
               '确认发布范围（哪些提交 / pending 会进这次发布）、目标版本号、项目自己的发布规则。列出还没进这次发布但相关的改动，指出阻塞项。',
           },
@@ -713,9 +714,9 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
             title: '发布',
             agent: 'vcs',
             tier: 'medium',
-            params: { docs: false, commit: '本地提交' },
+            params: { commit: '本地提交' },
             instructions:
-              '按用户已授权的范围执行发布：打 tag、推送、触发发布流程或部署。没有授权时停在这里，写清需要哪一步授权。发布后回读确认产物和版本号，并记录发布结果。',
+              '按父对话已授权的范围执行发布：打 tag、推送、触发发布流程或部署。子对话不执行这些对外操作，碰到时停下来写清需要父对话做哪一步。发布后回读确认产物和版本号，并记录发布结果。',
           },
         ],
         edges: chain(START, 'prepare', 'build', 'notes', 'publish', END),
@@ -744,7 +745,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 - 设计确认之前不写代码；设计确认后中途不再逐步确认，遇到不可逆操作、需求矛盾、和设计冲突时才停下。
 - 只改任务范围内的文件，不认领、不覆盖已有的改动。
 - 验收按项目设置里的测试步骤跑（新建对话时快照进任务）。
-- 版本控制交给「版本控制」角色（本地提交 / P4 分桶），push、submit 由你自己做。`,
+- 版本控制交给「版本控制」角色（本地提交 / P4 分桶）；推送、PR、submit 由父对话决定，子对话不执行、不询问、也不建议。`,
     flows: [
       {
         id: 'main',
@@ -776,8 +777,9 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
             title: '文档与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true },
-            instructions: '把这次改动同步到相关模块的文档（没有要更新的写明原因），再把代码和文档一起做版本控制收尾。',
+            params: { commit: '本地提交' },
+            instructions:
+              '把这次改动同步文档交给「文档」角色写（没有要更新的让它写明原因），再把代码和文档一起做版本控制收尾。',
           },
         ],
         edges: chain(START, 'design', 'impl', 'commit', END),
@@ -809,7 +811,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 - 规范要过门禁：openspec validate 通过、每条需求都有 task 覆盖验证、design 没有「待定」。
 - tasks 每条验证通过才勾选，证据写进 acceptance；设计假设被证伪时停下回到设计。
 - 归档前：没有未勾选项，每个勾选都有证据；先归档，再做版本控制收尾。
-- push、PR、P4 submit 都由你自己做。`,
+- 推送、PR、P4 submit 都由父对话决定，子对话不执行、不询问、也不建议。`,
     flows: [
       {
         id: 'main',
@@ -887,9 +889,9 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
             title: '文档与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true },
+            params: { commit: '本地提交' },
             instructions:
-              '把这次变更同步到模块文档（命中的 Bug 更新 bugs.md），再把归档产生的目录移动、主 specs、文档和代码改动一起做版本控制收尾。',
+              '把这次变更的模块文档（命中的 Bug 更新 bugs.md）交给「文档」角色写，再把归档产生的目录移动、主 specs、文档和代码改动一起做版本控制收尾。',
           },
         ],
         edges: [
@@ -959,8 +961,9 @@ Bug、测试失败、线上问题。
             title: 'Bug 记录与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true, bug: true },
-            instructions: '为这次修复写 Bug 记录并同步相关模块文档，再把修复、测试和 Bug 记录一起做版本控制收尾。',
+            params: { commit: '本地提交' },
+            instructions:
+              '把这次修复的 Bug 记录和模块文档交给「文档」角色写，再把修复、测试和 Bug 记录一起做版本控制收尾。',
           },
         ],
         edges: chain(START, 'fix', 'commit', END),
@@ -990,7 +993,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
 - P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert；最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
 - 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
 - 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由验收流程里的「测试与验收」节点执行，同一时间只编译一次；不把编译拆成独立节点，实现节点自己也不编译。
-- 推送 / submit 由你自己做。`,
+- 推送 / submit 由父对话决定，子对话不执行、不询问、也不建议。`,
     flows: [
       {
         id: 'main',
@@ -1032,9 +1035,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
             title: '文档与提交',
             agent: 'vcs',
             tier: 'low',
-            params: { docs: true },
+            params: { commit: '本地提交' },
             instructions:
-              '把这次改动同步到识别出的文档根里的模块文档；再按识别出的版本控制收尾：Git 只提交本次任务的文件、按功能拆本地提交；P4 核对 default changelist，按类型分 pending。',
+              '把这次改动同步到识别出的文档根里的模块文档交给「文档」角色写；再按识别出的版本控制收尾：Git 只提交本次任务的文件、按功能拆本地提交；P4 核对 default changelist，按类型分 pending。',
           },
         ],
         edges: chain(START, 'scout', 'design', 'impl', 'commit', END),

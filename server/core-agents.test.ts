@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
 import { BUG_METHOD, BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
@@ -176,4 +177,34 @@ test('项目里给必备角色填的参数当作这个项目里的默认值，�
     out.find((a) => a.id === other.id),
     other,
   )
+})
+
+test('「写 Bug 记录」只在文档角色里定义一次，版本控制角色不再顺手写文档', () => {
+  const agents = BUILTIN_AGENTS.map((b) => b.agent)
+  const vcs = BUILTIN_AGENTS.find((b) => b.key === 'vcs')!.agent
+  // 文档落盘只有一个出口：版本控制角色只做提交 / pending 收尾，不再有「同步文档」「写 Bug 记录」两个开关
+  assert.deepEqual(
+    vcs.params.map((p) => p.key),
+    ['vcs', 'branch', 'merge', 'commit'],
+  )
+  assert.match(vcs.instructions, /不改文档/, '版本控制角色要写清自己不写文档')
+  assert.match(vcs.instructions, /派「文档」角色/, '需要写 ADR / 模块文档 / bugs.md 时交给文档角色')
+  assert.equal(vcs.instructions.includes('{{#if docs}}') || vcs.instructions.includes('{{#if bug}}'), false)
+  const bugParams = BUILTIN_AGENTS.filter((b) => b.agent.params.some((p) => p.key === 'bug')).map((b) => b.key)
+  assert.deepEqual(bugParams, ['docsync'], '「写 Bug 记录」只在文档角色上')
+  assert.ok(agents.length > 0)
+})
+
+test('P4 的 changelist 描述只写一行短句，细节留在文档里', () => {
+  // 实际出现过长描述（把根因、函数名、步骤全写进 pending），P4V 列表里根本看不完
+  const p4 = readFileSync(new URL('../skills/vcs/project-vcs/p4.md', import.meta.url), 'utf8')
+  assert.match(p4, /一行、不超过约 40 个字符/)
+  assert.match(p4, /不写实现细节、函数名、文件列表/)
+  assert.match(p4, /正例/)
+  assert.match(p4, /反例/)
+  const vcs = BUILTIN_AGENTS.find((b) => b.key === 'vcs')!.agent.instructions
+  assert.match(vcs, /约 40 字以内/, '角色提示词和技能口径一致')
+  assert.match(vcs, /不写实现细节、函数名和文件列表/)
+  const git = readFileSync(new URL('../skills/vcs/project-vcs/git.md', import.meta.url), 'utf8')
+  assert.match(git, /标题一行短句/, 'Git 提交说明也别把细节塞进标题')
 })

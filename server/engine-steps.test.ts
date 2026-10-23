@@ -243,3 +243,79 @@ test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下', async (
   // wait 已经取回的结果不再重复并进节点输出
   assert.equal(task.steps.find((s) => s.id === 'a/step/s1')!.output, '一步结果')
 })
+
+test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
+  /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
+  const promptsOf = async (chat: Record<string, unknown>) => {
+    const prompts: string[] = []
+    const task = {
+      ...newTask({ projectId: 'p', mode: 'chat', prompt: '把剩下的测试补完', ...chat } as never, undefined, '', 'kid'),
+      id: 'kid',
+    } as Task
+    await runEngineTurn({
+      task,
+      agents,
+      workflows: [],
+      prompt: '把剩下的测试补完',
+      // 项目设置是「第一次问」：这正是子对话以前会弹「要不要推送」的地方
+      policy: { push: 'ask', tools: [] },
+      // 有 messageParent 才有「收尾建议要交给用户选」那一段
+      messageParent: async () => ({ ok: true, info: '' }),
+      changed: () => {},
+      newId: () => 'x',
+      runAgent: async (call) => {
+        prompts.push(call.prompt)
+        return { ok: true, text: '好了' }
+      },
+    })
+    return prompts
+  }
+
+  const child = await promptsOf({ parentTaskId: 'parent' })
+  assert.equal(child.length, 1)
+  assert.match(child[0], /由父对话决定，不在你的处理范围内/)
+  assert.match(child[0], /不执行、不询问用户、也不写进提问、计划步骤或建议/)
+  assert.match(child[0], /完成」就是改动已合回父对话所在的分支/, '完成只到「已合回父对话所在的分支」')
+  assert.match(child[0], /不要写进计划步骤/, '合回父分支是收尾动作，不是计划里的一步')
+  assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
+  assert.doesNotMatch(child[0], /第一次需要推送时先用提问工具问用户一次/, '子对话不再问用户要不要推送')
+  // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
+  assert.match(child[0], /remote 必须写/)
+
+  const main = await promptsOf({})
+  assert.equal(main.length, 1)
+  assert.match(main[0], /第一次需要推送时先用提问工具问用户一次/, '父对话的授权规则保持不变')
+  // 通用约束里的「安全边界」是所有角色都有的；这里只看授权情况那一段不会被子对话的写法盖掉
+  assert.doesNotMatch(
+    main[0],
+    /## 授权情况[\s\S]{0,10}推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内/,
+  )
+})
+
+test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
+  const prompts: string[] = []
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '找一下这个报错' } as never, undefined, '', 's1'),
+    id: 's1',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '找一下这个报错',
+    // 项目设置里填的（UE 预设）：提示词里要能直接照着拼 -g '!Saved'
+    searchExclude: ['Saved', 'Intermediate'],
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async (call) => {
+      prompts.push(call.prompt)
+      return { ok: true, text: '好了' }
+    },
+  })
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0], /## 搜索排除（这个项目）/, '通用约束后面带上这个项目的排除清单')
+  assert.match(prompts[0], /搜索时排除：[^\n]*Saved/)
+  assert.match(prompts[0], /-g '!Saved'/, 'rg 的排除写法直接给出来')
+  assert.match(prompts[0], /找 Bug 在这一层定位时也用同样的排除/, '找 Bug 那段用同一份清单')
+  assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
+})

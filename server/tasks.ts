@@ -1224,6 +1224,9 @@ export function tasksApi(deps: {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
     if (!parent) return { ok: false, info: '找不到父对话' }
     const suggestion = question && kind === 'suggestion'
+    // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接按「交给父对话决定」处理，
+    // 和用户点卡片上那个按钮走同一个 ask.delegated 字段和同一条提权路径，不另造一套
+    const auto = question && !parent.askUser
     const head = question
       ? suggestion
         ? `子对话「${child.title}」的收尾建议`
@@ -1253,7 +1256,8 @@ export function tasksApi(deps: {
       at: new Date().toISOString(),
     }
     // 提问、收尾建议同时挂在子对话上：子对话的输入框换成选择弹窗，用户进子对话就能直接选
-    if (question) {
+    // 自动交给父对话的不挂：不产生要用户回答的弹窗，也不计入「需要你处理」
+    if (question && !auto) {
       child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts, kind }]
       const ce = live.get(child.id)
       if (ce) ce.rev++
@@ -1264,11 +1268,26 @@ export function tasksApi(deps: {
     if (!how) {
       parent.messages.push(msg)
       parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${body}` : text, at: msg.at })
+    } else if (auto && !parent.messages.some((x) => x.id === msg.id)) {
+      // 正在跑的父对话已经从插话里收到问题；卡片本身也记一条，delegated 才能落到状态里（刷新后仍然是已交出）
+      parent.messages.push(msg)
     }
     parent.updatedAt = msg.at
     if (entry) entry.rev++
     else await store.update(parent.id, parent).catch(() => {})
+    // 自动交出：和用户点「交给父对话决定」走同一个 delegateAsk（记 delegated、收起子对话弹窗、开一轮作答）
+    if (auto) {
+      await store.update(parent.id, parent).catch(() => {})
+      await delegateAsk(parent.id, msg.id)
+    }
     if (how) return { ok: true, info: '已实时交给父对话' }
+    if (auto)
+      return {
+        ok: true,
+        info: suggestion
+          ? '「提问」关着，这条建议自动交给父对话决定（不问用户）。这一轮可以结束了，不要再把建议重复写进结论里等它。'
+          : '「提问」关着，问题已经自动交给父对话作答（不问用户）。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。',
+      }
     return {
       ok: true,
       info: question
@@ -1332,31 +1351,51 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 把一张提问卡片交给父对话的 AI 决定：记 delegated（刷新后还是「交给父对话决定」）、收起子对话的选择弹窗，
+   * 父对话空闲时开一轮作答。用户点卡片上的按钮、以及「提问」关着时子对话提问自动交出，都走这一个函数。
+   */
+  async function delegateAsk(parentId: string, msgId: string) {
+    const found = live.get(parentId)
+    const parent = found?.task ?? (await store.get(parentId))
+    const m = parent?.messages.find((x) => x.id === msgId && x.panel === 'ask')
+    if (!parent || !m?.ask) return null
+    m.ask = { ...m.ask, delegated: true }
+    if (found) found.rev++
+    await store.update(parent.id, parent).catch(() => {})
+    await dropChildAsks(m.ask.from, [m.id])
+    // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
+    if (!found?.task.working)
+      await followUp(parent.id, {
+        text: `子对话「${m.ask.title}」${m.ask.kind === 'suggestion' ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${m.ask.from}）。`,
+        attachments: [],
+        panel: 'child',
+      }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
+    // 开那一轮时可能用读到的旧快照写回（写盘是排队的），这里再确认一次，保证刷新后仍然是已交出
+    const after = live.get(parent.id)?.task ?? (await store.get(parent.id))
+    const card = after?.messages.find((x) => x.id === msgId)
+    if (after && card?.ask && !card.ask.delegated) {
+      card.ask = { ...card.ask, delegated: true }
+      await store.update(after.id, after).catch(() => {})
+    }
+    return live.get(parent.id)?.task ?? parent
+  }
+
+  /**
    * 用户在父对话的提问卡片上回答：答案直接交给子对话，并告诉父对话的 AI 不用再回答；
-   * 不回答而是交给父对话决定时（delegate），父对话空闲就开一轮让它处理收件箱里的提问
+   * 不回答而是交给父对话决定时（delegate），走 delegateAsk
    */
   async function answerChildAsk(parentId: string, msgId: string, answer: string, delegate: boolean) {
-    const entry = live.get(parentId)
-    const parent = entry?.task ?? (await store.get(parentId))
+    const found = live.get(parentId)
+    const parent = found?.task ?? (await store.get(parentId))
     const m = parent?.messages.find((x) => x.id === msgId && x.panel === 'ask')
     if (!parent || !m?.ask) return { error: t('找不到这个提问') }
     if (m.ask.answer !== undefined) return { error: t('这个提问已经回答过了') }
     const { from, title, question } = m.ask
     const suggestion = m.ask.kind === 'suggestion'
     if (delegate) {
-      // 记在卡片上（刷新后还是「交给父对话决定」），子对话那边不再弹选择
-      m.ask = { ...m.ask, delegated: true }
-      if (entry) entry.rev++
-      else await store.update(parent.id, parent)
-      await dropChildAsks(from, [m.id])
-      // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
-      if (!entry?.task.working)
-        await followUp(parent.id, {
-          text: `子对话「${title}」在等你决定（问题在收件箱里）。决定后用 send_to_conversation 交给它（id: ${from}）。`,
-          attachments: [],
-          panel: 'child',
-        }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
-      return { task: live.get(parent.id)?.task ?? parent }
+      const next = await delegateAsk(parent.id, m.id)
+      if (!next) return { error: t('找不到这个提问') }
+      return { task: next }
     }
     const r = await sendToChild(
       parent.id,
@@ -1365,8 +1404,7 @@ export function tasksApi(deps: {
     )
     if (!r.ok) return { error: r.info }
     const cur = live.get(parent.id)?.task ?? parent
-    settleAsks(cur, from, answer, 'user', m.id)
-    // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
+    settleAsks(cur, from, answer, 'user', m.id) // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
     const note = suggestion
       ? `用户已经决定了子对话「${title}」建议的下一步，不用再回答。\n建议：${question}\n用户的选择：${answer}`
       : `用户已经直接回答了子对话「${title}」的提问，不用再回答。\n问题：${question}\n用户的决定：${answer}`
@@ -3037,6 +3075,15 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /**
+     * 子对话给父对话发提问 / 收尾建议：引擎里的 message_parent、suggest_next_step 都走它；
+     * 「提问」关着时在这里自动交给父对话决定
+     */
+    async askParent(childId: string, text: string, options: string[] = [], kind: AskKind = 'question') {
+      const child = live.get(childId)?.task ?? (await store.get(childId))
+      if (!child) throw new Error(t('任务不存在'))
+      return messageParent(child, text, true, options, kind)
+    },
     /** 所有任务（列表用，只带用户消息）；用量统计按任务里的 turns 聚合 */
     list: () => store.list(),
     /**
