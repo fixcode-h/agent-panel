@@ -12,8 +12,10 @@ import {
   includeTree,
   includedAgents,
   nodeAgentRun,
+  renameParamRefs,
   renderTemplate,
   resolveParams,
+  templateKeys,
   wouldCycle,
 } from '../shared/agent-role.ts'
 
@@ -56,6 +58,63 @@ test('参数：给的值覆盖默认值，没默认值的要问', () => {
     ['who'],
   )
   assert.equal(resolveParams(params, { who: '用户' }).missing.length, 0)
+})
+
+test('参数联动：前面的选择决定后面显示哪些、能选哪些', () => {
+  const params = AgentInput.parse({
+    name: 'x',
+    params: [
+      { key: 'lang', type: 'select', options: ['ts', 'cpp', 'lua'], default: 'ts' },
+      { key: 'strict', type: 'bool', default: true, when: { key: 'lang', values: ['ts'] } },
+      {
+        key: 'fw',
+        type: 'select',
+        options: ['React', 'Vue', 'UE', 'Qt'],
+        default: 'React',
+        optionsBy: { key: 'lang', map: { ts: ['React', 'Vue'], cpp: ['UE', 'Qt'], lua: [] } },
+      },
+      { key: 'ui', type: 'select', options: ['UMG', 'Slate'], ask: true, when: { key: 'fw', values: ['UE'] } },
+      // 依赖后面的参数：条件不算数，照常显示
+      { key: 'early', type: 'text', default: 'e', when: { key: 'late', values: ['x'] } },
+      { key: 'late', type: 'select', options: ['x', 'y'], default: 'y' },
+    ],
+  }).params
+  const ts = resolveParams(params)
+  assert.deepEqual(ts.hidden, ['ui'])
+  assert.deepEqual(ts.options.fw, ['React', 'Vue'])
+  assert.equal(ts.values.fw, 'React')
+  assert.equal(ts.values.early, 'e')
+  assert.deepEqual(ts.missing, [])
+
+  // 换成 cpp：开关隐藏按空值；默认值不在新选项里时退到第一个可选项；隐藏的必填参数现在要问
+  const cpp = resolveParams(params, { lang: 'cpp', strict: true })
+  assert.deepEqual(cpp.hidden, ['strict'])
+  assert.equal(cpp.values.strict, false)
+  assert.equal(cpp.values.fw, 'UE')
+  assert.deepEqual(
+    cpp.missing.map((p) => p.key),
+    ['ui'],
+  )
+  // 选了 Qt：依赖 UE 的不再问
+  assert.deepEqual(resolveParams(params, { lang: 'cpp', fw: 'Qt' }).missing, [])
+  // lua 对应空选项：这个参数不适用，依赖它的也跟着隐藏
+  const lua = resolveParams(params, { lang: 'lua' })
+  assert.deepEqual(lua.hidden, ['strict', 'fw', 'ui'])
+
+  // 角色设定里不出现隐藏参数的取值
+  const a = agent('a', { params, instructions: '{{#if strict}}严格{{else}}宽松{{/if}}' })
+  const text = composeRole(a, [a], { lang: 'cpp' })
+  assert.match(text, /宽松/)
+  assert.doesNotMatch(text, /strict/)
+})
+
+test('参数改名：角色设定里的引用一起改，别的写法不动', () => {
+  const text = '{{mode}} {{#if mode=a|b}}x{{else}}y{{/if}} {{#if !mode}}z{{/if}} {{model}} {{#if model}}m{{/if}}'
+  assert.equal(
+    renameParamRefs(text, 'mode', 'level'),
+    '{{level}} {{#if level=a|b}}x{{else}}y{{/if}} {{#if !level}}z{{/if}} {{model}} {{#if model}}m{{/if}}',
+  )
+  assert.deepEqual([...templateKeys(text)].sort(), ['mode', 'model'])
 })
 
 test('引入：展开间接引入，跳过循环', () => {

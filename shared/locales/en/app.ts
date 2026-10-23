@@ -78,6 +78,10 @@ export const EN_APP: Record<string, string> = {
   新建对话: 'New conversation',
   项目设置: 'Project settings',
   在文件夹中打开: 'Show in folder',
+  '已在文件夹中打开：{dir}': 'Opened in the file manager: {dir}',
+  '没能打开文件夹 {dir}：{error}': 'Couldn’t open the folder {dir}: {error}',
+  '没能用系统默认程序打开 {file}：{error}': 'Couldn’t open {file} with the default app: {error}',
+  '没能在文件夹中显示 {dir}：{error}': 'Couldn’t show {dir} in the file manager: {error}',
   '显示全部 {n} 个': 'Show all {n}',
   设置: 'Settings',
   有新版本: 'Update available',
@@ -132,6 +136,20 @@ export const EN_APP: Record<string, string> = {
   不指定: 'None',
   '删除分类「{name}」？': 'Delete category “{name}”?',
   '分类里的项目不会被删除，会变成未分类。': 'Projects in this category won’t be deleted; they become uncategorized.',
+  '带「内置」标记的分类可以改名，不能删除。': 'Categories marked “Built-in” can be renamed but not deleted.',
+
+  // 自带的项目分类（shared/builtin/project-categories.ts）
+  内置: 'Built-in',
+  'Web 应用': 'Web app',
+  '网站、管理后台等前后端分离的 Web 项目': 'Websites and admin consoles with a separate front end and back end',
+  游戏客户端: 'Game client',
+  'Unreal 客户端工程：玩法、关卡和界面': 'Unreal client projects: gameplay, levels and UI',
+  后端服务: 'Backend service',
+  '服务端接口、数据库和内部服务': 'Server APIs, databases and internal services',
+  工具与脚本: 'Tools & scripts',
+  '命令行工具、自动化脚本、构建与部署': 'CLI tools, automation scripts, builds and deploys',
+  文档与设计: 'Docs & design',
+  '需求文档、设计稿、界面与素材': 'Requirement docs, mockups, UI and assets',
 
   // 项目设置
   新项目: 'New project',
@@ -144,24 +162,9 @@ export const EN_APP: Record<string, string> = {
   '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
   请选择工作流: 'Choose a workflow',
   可选工作流: 'Optional workflows',
-  'AI 分析这个目录': 'Analyze this folder',
-  '让 AI 只读地看一遍这个目录，判断技术栈、构建和测试命令，填进下面的表单和测试步骤；保存前你可以再改':
-    'Lets the AI look through this folder read-only, work out the stack and the build and test commands, and fill in the form and test steps below. You can still edit them before saving',
-  '已按 AI 的分析填好，检查一下再保存': "Filled in from the AI's analysis. Review it, then save",
-  'AI 分析项目': 'AI project analysis',
-  '看看这个项目是做什么的，把名称、简介和测试步骤填好':
-    'Find out what this project does, and fill in its name, description and test steps',
   'UE 项目': 'UE project',
   一般项目: 'General project',
-  没有找到可以直接执行的测试步骤: 'No runnable test steps found',
-  '在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单':
-    "Reads the project folder (read-only) and suggests a name, description, project type and test steps. They're filled into the form only after you confirm",
-  '直接让它分析，或者说说你的要求。': 'Let it analyze right away, or tell it what you need.',
-  '补充要求，例如「端到端测试要在 WSL 里跑」': 'Add a requirement, e.g. "end-to-end tests run in WSL"',
-  分析结果会显示在这里: 'The analysis will appear here',
   先选好项目目录: 'Choose the project folder first',
-  '已填好，但没找到内置工作流「{name}」，请手动选择':
-    'Filled in, but the built-in workflow "{name}" was not found. Choose one manually',
   版本与推送: 'Version control and push',
   推送到远端: 'Push to remote',
   '第一次需要推送时问一次（推荐）': 'Ask once when a push is first needed (recommended)',

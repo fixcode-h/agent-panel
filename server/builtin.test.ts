@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { AgentInput, Project, ProjectCategory, Workflow, WorkflowInput, type Agent } from '../shared/schema.ts'
@@ -29,7 +30,7 @@ import {
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE, LEGACY_WORKFLOWS } from '../shared/builtin/legacy.ts'
 import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
-import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
+import { ensureBundled, installBundled, listBundled, retireBundled } from './bundled-skills.ts'
 
 const root = path.resolve(import.meta.dirname, '..', 'skills')
 const skillDirs = readdirSync(root, { withFileTypes: true })
@@ -257,6 +258,39 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {
     process.env = old
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('已下线的自带 Skill：和装进去的旧版一致才删，用户改过或加过文件的保留', async () => {
+  const home = mkdtempSync(path.join(tmpdir(), 'retired-'))
+  const root = path.join(home, '.agents/skills')
+  const write = (name: string, rel: string, text: string) => {
+    mkdirSync(path.join(root, name, path.dirname(rel)), { recursive: true })
+    writeFileSync(path.join(root, name, rel), text)
+  }
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex')
+  const retired = {
+    'old-a': { 'SKILL.md': sha('老内容'), 'sub/x.md': sha('子文件') },
+    'old-b': { 'SKILL.md': sha('老内容 B') },
+    'old-c': { 'SKILL.md': sha('老内容 C') },
+  }
+  try {
+    // 没改过：Skill 和子文件都对得上，删掉
+    write('old-a', 'SKILL.md', '老内容')
+    write('old-a', 'sub/x.md', '子文件')
+    // 用户改过：保留
+    write('old-b', 'SKILL.md', '用户改过的')
+    // 用户自己加过文件：整份保留，不只删认得的那个文件
+    write('old-c', 'SKILL.md', '老内容 C')
+    write('old-c', 'notes.md', '我加的文件')
+    assert.deepEqual(await retireBundled(root, retired), ['old-a'])
+    assert.ok(!existsSync(path.join(root, 'old-a')))
+    assert.ok(existsSync(path.join(root, 'old-b/SKILL.md')), '改过的保留')
+    assert.ok(existsSync(path.join(root, 'old-c/notes.md')), '加过文件的保留')
+    // 幂等：再跑一次什么都不删
+    assert.deepEqual(await retireBundled(root, retired), [])
+  } finally {
     rmSync(home, { recursive: true, force: true })
   }
 })
@@ -560,4 +594,78 @@ test('没改过的「开发」和「Bug 修复」升级成按模块逐层定位�
   wf = null
   await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [next] }, ops)
   assert.equal(wf, null, '再启动不再改')
+})
+
+test('上一版的「通用约束」「执行」「版本控制」副本升级：推送归父对话、搜索范围、文档职责收敛', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  // 上一版=现在线上用户手里那份：旧指纹最后一项就是改前的文本
+  const prev = (key: 'rules' | 'worker' | 'vcs') => ({
+    ...agents.find((a) => a.id === key)!,
+    ...LEGACY_AGENT_FIELDS_MORE[key].at(-1)!,
+    id: `local-${key}`,
+    origin: `builtin:${key}`,
+  })
+  const state = { agents: [prev('rules'), prev('worker'), prev('vcs')], categories: [], tags: [], workflows: [] }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 3, '三个上一版副本都升级')
+  const rules = updated.find((a) => a.name === '通用约束')!
+  assert.match(rules.instructions, /## 搜索范围/, '补上大工程的搜索纪律')
+  assert.match(rules.instructions, /只由父对话（项目对话）决定/, '对外操作归父对话')
+  const worker = updated.find((a) => a.name === '执行')!
+  assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干由父对话决定/)
+  const vcs = updated.find((a) => a.name === '版本控制')!
+  assert.match(vcs.instructions, /不改文档/)
+  assert.equal(
+    vcs.params.some((p) => p.key === 'docs' || p.key === 'bug'),
+    false,
+    '版本控制角色不再有「同步文档」「写 Bug 记录」两个开关',
+  )
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
+})
+
+test('上一版的「通用项目」「UE 项目」副本升级：工作流说明和交付节点的推送措辞跟着改', async () => {
+  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
+  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
+  const make = async (key: string) => {
+    const def = BUILTIN_WORKFLOWS.find((w) => w.key === key)!
+    const old = LEGACY_WORKFLOWS[key].at(-1)!
+    assert.ok(old.document, `${key} 有旧指纹`)
+    return WorkflowInput.parse({
+      ...buildWorkflow(
+        { ...def, document: old.document, flows: [...old.flows, ...def.flows.filter((f) => f.id !== 'main')] },
+        (k) => k,
+      ),
+      categoryId: 'cat',
+      tags: [],
+      origin: `builtin:${key}`,
+    })
+  }
+  for (const key of ['project-general', 'project-ue']) {
+    let wf: Workflow | null = null
+    const ops: BuiltinOps = {
+      createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
+      createCategory: async (name) => ({ ...CategoryInput.parse({ name }), ...meta() }),
+      createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
+      createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
+      updateWorkflow: async (id, input) => {
+        wf = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
+        return wf
+      },
+    }
+    const legacy: Workflow = { ...(await make(key)), id: `old-${key}`, createdAt: '', updatedAt: '' }
+    await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [legacy] }, ops)
+    assert.ok(wf, `${key} 的旧副本被升级`)
+    const next = wf! as Workflow
+    assert.match(next.document, /由父对话决定/, `${key} 的工作流说明改成「推送归父对话」`)
+    assert.equal((next.document as string).includes('要得到授权'), false)
+    wf = null
+    await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [next] }, ops)
+    assert.equal(wf, null, `${key} 再启动不再改`)
+  }
 })

@@ -9,6 +9,8 @@ import type {
   McpServer,
 } from '@shared/library'
 import { frontField } from '@shared/library'
+import { ALL_AGENTS } from '@shared/commands'
+import type { SlashCommand } from '@shared/schema'
 
 /**
  * 在线演示里的 Skills / 命令库和 MCP 工具：没有本机的 CLI 和配置文件，数据放在内存里
@@ -28,12 +30,16 @@ const skill = (cli: string, name: string, description: string, body: string, fil
   content: `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`,
   files,
 })
+/** 命令文件的位置：「所有 Agent」的在面板数据目录里 */
+const commandPath = (cli: string, name: string) =>
+  cli === ALL_AGENTS ? `~/.agent-panel/commands/${name}.md` : `~/.${cli}/commands/${name}.md`
+
 const command = (cli: string, name: string, description: string, body: string): Item => ({
   cli,
   kind: 'command',
   name,
   description,
-  path: `~/.${cli}/commands/${name}.md`,
+  path: commandPath(cli, name),
   content: `---\ndescription: ${description}\n---\n${body}\n`,
   files: [],
 })
@@ -52,7 +58,19 @@ const items: Item[] = [
   ),
   command('claude', 'fix-issue', '按 issue 编号修复问题', '读 issue $1，找到原因并修复，补上测试。'),
   command('codex', 'explain', '解释一段代码的作用', '解释下面这段代码做了什么、为什么这样写：$ARGUMENTS'),
+  command(
+    ALL_AGENTS,
+    'changelog',
+    '按最近的提交整理一段给用户看的更新说明',
+    '看最近的提交（$ARGUMENTS 为空时从上一个标签开始），整理成「新功能 / 改进 / 修复」三组更新说明。',
+  ),
 ]
+
+/** 演示的「/」菜单里「所有 Agent」的命令：选哪个 CLI 都有 */
+export const demoPanelCommands = (): SlashCommand[] =>
+  items
+    .filter((x) => x.kind === 'command' && x.cli === ALL_AGENTS)
+    .map((x) => ({ name: x.name, description: x.description, kind: 'command', source: '所有 Agent' }))
 
 const servers: McpEntry[] = [
   {
@@ -77,14 +95,16 @@ const servers: McpEntry[] = [
   },
 ]
 
-const libClis = (active: string[]): LibraryCli[] =>
-  CLIS.filter((c) => active.includes(c.id)).map((c) => ({
+const libClis = (active: string[]): LibraryCli[] => [
+  { id: ALL_AGENTS, name: '所有 Agent', skillDir: '', commandDir: '~/.agent-panel/commands', commandFormat: 'md' },
+  ...CLIS.filter((c) => active.includes(c.id)).map((c) => ({
     id: c.id,
     name: c.name,
     skillDir: `~/.${c.id}/skills`,
     commandDir: `~/.${c.id}/commands`,
     commandFormat: c.commands.format,
-  }))
+  })),
+]
 
 const mcpClis = (active: string[]) =>
   CLIS.filter((c) => c.mcpStore && active.includes(c.id)).map((c) => ({
@@ -175,7 +195,7 @@ export function demoLibrary(
     return {
       clis: libClis(active),
       items: items
-        .filter((x) => x.kind === kind && active.includes(x.cli))
+        .filter((x) => x.kind === kind && (active.includes(x.cli) || x.cli === ALL_AGENTS))
         .map(({ content: _c, files: _f, ...i }) => i),
     }
   if (id === 'copy') {
@@ -188,7 +208,11 @@ export function demoLibrary(
       if (at >= 0 && !body.overwrite) skipped.push(to)
       else {
         if (at >= 0) items.splice(at, 1)
-        items.push({ ...src, cli: to, path: src.path.replace(`.${cli}/`, `.${to}/`) })
+        items.push({
+          ...src,
+          cli: to,
+          path: kind === 'command' ? commandPath(to, name) : src.path.replace(`.${cli}/`, `.${to}/`),
+        })
         done.push(to)
       }
     }
@@ -211,7 +235,7 @@ export function demoLibrary(
     kind,
     name,
     description: desc.replace(/^["']|["']$/g, ''),
-    path: `~/.${cli}/${kind === 'skill' ? `skills/${name}/SKILL.md` : `commands/${name}.md`}`,
+    path: kind === 'skill' ? `~/.${cli}/skills/${name}/SKILL.md` : commandPath(cli, name),
     content: body.content,
     files: at >= 0 ? items[at].files : [],
   }

@@ -114,7 +114,11 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
+  const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
+  const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
+  const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
   const [children, setChildren] = useState(String(initial.childConcurrency))
+  const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
   const [notify, setNotifyOn] = useState(notifyEnabled)
@@ -179,6 +183,8 @@ function SettingsBody({
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
+  // 用量统计的计价模型（存在设置里，跟着自动保存）
+  const [pricingModel, setPricingModel] = useState(initial.usagePricingModel)
   const catalogInfo = useModelCatalog()
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const [apis, setApis] = useState(initial.apis)
@@ -247,8 +253,14 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
+  const unreadMin = Number(unread)
+  const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
+  const keepN = Number(keepAlive)
+  const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
+  const bgN = Number(bgLimit)
+  const bgValid = bgLimit !== '' && Number.isInteger(bgN) && bgN >= 1 && bgN <= 64
   const largeN = Number(largeMB)
   const largeValid = largeMB !== '' && Number.isInteger(largeN) && largeN >= 1 && largeN <= 50
   const pasteN = Number(longPaste)
@@ -269,7 +281,11 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
+    unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
+    keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
+    reclaimIdleCli: reclaim,
     childConcurrency: childValid ? childN : initial.childConcurrency,
+    backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
     memorySampleSeconds: initial.memorySampleSeconds,
@@ -300,6 +316,7 @@ function SettingsBody({
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
     modelCatalog,
+    usagePricingModel: pricingModel,
   }
   const save = useAutosave(
     value,
@@ -524,6 +541,14 @@ function SettingsBody({
                 </div>
               </Row>
               <Row
+                title={t('自动回收闲置 Agent')}
+                desc={t(
+                  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
+                )}
+              >
+                <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
+              </Row>
+              <Row
                 title={t('离开对话后保留多久')}
                 desc={t(
                   '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。',
@@ -544,6 +569,44 @@ function SettingsBody({
                 </div>
               </Row>
               <Row
+                title={t('没看过的回复保留多久')}
+                desc={t(
+                  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={unread}
+                    onChange={(e) => setUnread(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!unreadValid}
+                    className={cn('h-9', !unreadValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('没看过的回复保留多久（分钟）')}
+                  />
+                  {!unreadValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
+                  )}
+                </div>
+              </Row>
+              <Row
+                title={t('同时保活的会话上限')}
+                desc={t(
+                  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={keepAlive}
+                    onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!keepValid}
+                    className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时保活的会话上限')}
+                  />
+                  {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
+                </div>
+              </Row>
+              <Row
                 title={t('同时执行的子对话')}
                 desc={t(
                   '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。',
@@ -559,6 +622,24 @@ function SettingsBody({
                     aria-label={t('同时执行的子对话')}
                   />
                   {!childValid && <span className="text-xs text-danger">{t('填 1 到 20 之间的整数')}</span>}
+                </div>
+              </Row>
+              <Row
+                title={t('同时运行的后台命令')}
+                desc={t(
+                  '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={bgLimit}
+                    onChange={(e) => setBgLimit(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!bgValid}
+                    className={cn('h-9', !bgValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时运行的后台命令')}
+                  />
+                  {!bgValid && <span className="text-xs text-danger">{t('填 1 到 64 之间的整数')}</span>}
                 </div>
               </Row>
               <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>
@@ -938,7 +1019,7 @@ function SettingsBody({
             <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
           )}
           {cur.id === 'data' && <DataSection />}
-          {cur.id === 'usage' && <UsageSection />}
+          {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
           {cur.id === 'deploy' && <DeploySection />}
           {cur.id === 'tags' && <TagsSection />}
           {cur.id === 'global-lessons' && <GlobalLessonsSection />}

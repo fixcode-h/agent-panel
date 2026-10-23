@@ -452,6 +452,22 @@ export const EN_DESIGN: Record<string, string> = {
   '审查还没提交的改动；后面跟分支名就审查相对这个分支的改动':
     'Review uncommitted changes; add a branch name to review changes against that branch',
   '[分支]': '[branch]',
+  '看一遍改动，按项目的提交约定写提交说明并提交（不推送）':
+    "Review the changes, write a commit message following the project's conventions and commit (no push)",
+  '[补充说明]': '[notes]',
+  '给改动补测试并跑通；后面可以写要测的范围':
+    'Add tests for the changes and get them passing; optionally name what to test',
+  '[范围]': '[scope]',
+  定位并修复一个报错或问题: 'Find and fix an error or problem',
+  '<报错或现象>': '<error or symptom>',
+  '只出方案不改代码：读相关代码，给出实现步骤、要改的文件和风险':
+    'Plan only, no edits: read the relevant code and outline the steps, files to change and risks',
+  '<需求>': '<requirement>',
+  '讲解一段代码、一个模块或一个流程是怎么工作的': 'Explain how a piece of code, a module or a flow works',
+  '<文件、函数或问题>': '<file, function or question>',
+  '清理最近改动里重复、多余的代码，不改变行为':
+    'Clean up duplicate or redundant code in recent changes without changing behavior',
+  '按最近的改动更新 README、AGENTS.md 等文档': 'Update README, AGENTS.md and other docs to match recent changes',
   '分析项目，写一份给 Agent 看的项目说明（CLAUDE.md / AGENTS.md）':
     'Analyze the project and write a guide for agents (CLAUDE.md / AGENTS.md)',
   检查当前分支改动里的安全问题: "Check the current branch's changes for security issues",

@@ -102,14 +102,22 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
 
   routes.post('/reveal', async (c) => {
     await mkdir(DATA_DIR, { recursive: true })
-    revealDir(DATA_DIR)
-    return c.json({ ok: true })
+    try {
+      await revealDir(DATA_DIR)
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+    return c.json({ ok: true, dir: DATA_DIR })
   })
 
   routes.post('/reveal-logs', async (c) => {
     await mkdir(logDir(), { recursive: true })
-    revealDir(logDir())
-    return c.json({ ok: true })
+    try {
+      await revealDir(logDir())
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+    return c.json({ ok: true, dir: logDir() })
   })
 
   routes.post('/clear', async (c) => {

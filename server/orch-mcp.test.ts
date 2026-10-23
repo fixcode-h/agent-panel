@@ -222,3 +222,82 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   assert.match(back!.text, /### 页面/)
   assert.equal(task.status, 'done')
 })
+
+test('收尾建议：走提问链路交给用户选，没给选项时用默认的两个', async () => {
+  const calls: { text: string; question: boolean; options?: string[]; kind?: string }[] = []
+  const o = {
+    self: 'a',
+    hasMain: false,
+    child: true,
+    common: [],
+    toParent: async (text: string, question: boolean, options?: string[], kind?: string) => {
+      calls.push({ text, question, options, kind })
+      return { ok: true, info: '已交给父对话' }
+    },
+  } as unknown as Orchestra
+  // 子对话的工具里有它，用法说明里也写了；不是子对话时没有
+  const names = (orchTools(o) as { name: string }[]).map((x) => x.name)
+  assert.ok(names.includes('suggest_next_step'), '子对话能用 suggest_next_step')
+  assert.match(orchHint(o), /suggest_next_step/)
+  assert.ok(
+    !(orchTools({ self: 'a', hasMain: false, common: [] } as unknown as Orchestra) as { name: string }[]).some(
+      (x) => x.name === 'suggest_next_step',
+    ),
+  )
+  // 没给可选做法：补上「按建议继续 / 先不做」，用户不会只剩一个空输入框
+  await callOrchTool(o, 'suggest_next_step', { text: '  接着把剩下的两个流程跑完  ', remote: 'none' })
+  assert.deepEqual(calls[0], {
+    text: '接着把剩下的两个流程跑完',
+    question: true,
+    options: ['按建议继续（推荐）', '先不做，先停在这'],
+    kind: 'suggestion',
+  })
+  // 给了就按给的：去掉空白和重复，最多 6 个
+  await callOrchTool(o, 'suggest_next_step', {
+    text: 'x',
+    options: ['a', ' a ', 'b', '', 'c', 'd', 'e', 'f', 'g'],
+    remote: 'none',
+  })
+  assert.deepEqual(calls[1].options, ['a', 'b', 'c', 'd', 'e', 'f'])
+  assert.equal(calls[1].kind, 'suggestion')
+  // 建议是空的：报错，不交给父对话
+  const bad = await callOrchTool(o, 'suggest_next_step', { text: '   ', remote: 'none' })
+  assert.match(text(bad), /text 是空的/)
+  assert.equal(calls.length, 2)
+})
+
+test('收尾建议：推送 / PR / submit / 合并主干这类建议被挡下来，不生成卡片', async () => {
+  const calls: { text: string }[] = []
+  const o = {
+    self: 'a',
+    hasMain: false,
+    child: true,
+    common: [],
+    toParent: async (text: string) => {
+      calls.push({ text })
+      return { ok: true, info: '已交给父对话' }
+    },
+  } as unknown as Orchestra
+  // 声明了改远端：直接退回，让子对话重新给只有本地动作的建议（不交给父对话 = 不弹卡片）
+  for (const remote of ['push', 'pr', 'submit', 'merge-main']) {
+    const r = await callOrchTool(o, 'suggest_next_step', {
+      text: '推送到远端让改动上线',
+      options: ['现在推送（推荐）', '先不推送'],
+      remote,
+    })
+    assert.match(text(r), /建议里不能有对外操作/)
+    assert.match(text(r), /由父对话决定/)
+  }
+  assert.equal(calls.length, 0, '被拒绝时不能生成要用户回答的卡片')
+  // 没声明也不放行：不靠文案猜，要求显式写 none
+  const missing = await callOrchTool(o, 'suggest_next_step', { text: '接着跑剩下的测试' })
+  assert.match(text(missing), /remote 没写/)
+  assert.equal(calls.length, 0)
+  // 正常建议照旧走通
+  await callOrchTool(o, 'suggest_next_step', {
+    text: '接着把剩下两个模块的回归测试补上',
+    options: ['继续补测试（推荐）', '先停在这'],
+    remote: 'none',
+  })
+  assert.equal(calls.length, 1)
+})

@@ -77,14 +77,9 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
       assert.equal(r.ok, true)
       return { ok: true, text: '开始处理' }
     }
-    if (turn === 2) {
-      assert.match(call.prompt, /## 计划执行结果/)
-      return { ok: true, text: '做完了' }
-    }
-    // 工作流是计划里的一步，跑完计划就做完了：没写总结时面板追一轮要总结
-    assert.match(call.prompt, /finish_plan/)
-    assert.equal(call.orch!.finishPlan('做完了功能').ok, true)
-    return { ok: true, text: '总结好了' }
+    // 工作流跑完：结果交回同一个会话；计划全部完成就结束了，不再追一轮要总结
+    assert.match(call.prompt, /## 计划执行结果/)
+    return { ok: true, text: '做完了' }
   })
   h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
 
@@ -92,7 +87,7 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
   assert.equal(task.status, 'done')
   assert.equal(task.plans.length, 1)
   assert.equal(task.plans[0].steps[0].run, 1)
-  assert.equal(task.plans[0].summary, '做完了功能')
+  assert.equal(task.plans[0].summary, '', '不再写计划总结')
   assert.equal(task.runSeq, 1)
   assert.equal(task.runs.length, 1)
   assert.equal(task.runs[0].status, 'done')
@@ -108,7 +103,7 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
     '不再有常驻编排器',
   )
   const talks = log.filter((c) => !c.step)
-  assert.equal(talks.length, 3, '对话一轮 + 计划结果一轮 + 追要总结一轮')
+  assert.equal(talks.length, 2, '对话一轮 + 计划结果一轮，不再追要总结')
   assert.equal(talks[1].sessionKey, 'm')
   assert.equal(log.filter((c) => !!c.step).length, 2, '两个节点各执行一次')
 })
@@ -305,4 +300,37 @@ test('回复完停在等下一句时被停下：这一轮算正常结束，不�
   const half = mk('k2')
   await runEngineTurn(host(half, [], async () => ({ ok: false, stopped: true, error: '已停止' })))
   assert.equal(half.turns.at(-1)?.status, 'stopped')
+})
+
+test('list_conversations：父对话能看到子对话在做什么、在等什么、多久没新输出', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '看下子对话' } as never, undefined, '', 'p4'),
+    id: 'p4',
+  } as Task
+  const log: AgentCall[] = []
+  const h = host(task, log, async (call) => {
+    const text = await call.orch!.conversations()
+    assert.match(text, /改后端/)
+    assert.match(text, /等 1 个后台命令/)
+    assert.match(text, /在做：跑测试/)
+    assert.match(text, /最后活动/)
+    return { ok: true, text: '好' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => [
+    {
+      id: 'c1',
+      title: '改后端',
+      status: 'running',
+      busy: true,
+      summary: '在改接口',
+      at: '2026-01-01T10:00:00Z',
+      doing: '跑测试',
+      waiting: '等 1 个后台命令',
+      lastActivityAt: new Date().toISOString(),
+    },
+  ]
+
+  await runEngineTurn(h)
+  assert.equal(log.length, 1)
 })

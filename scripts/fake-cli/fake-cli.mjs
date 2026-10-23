@@ -444,6 +444,15 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 模拟一次调用要花的时间：默认和真实 CLI 一样有一点延迟，e2e 通过环境变量压到最小。
+// 只有专门验证时序的用例（插话、停止、执行中发消息）才需要慢回合持续得久一点
+const envMs = (name, def) => {
+  const v = Number(process.env[name])
+  return Number.isFinite(v) && v >= 0 ? v : def
+}
+const TURN_MS = envMs('FAKE_TURN_MS', 150)
+const SLOW_ROUND_MS = envMs('FAKE_SLOW_ROUND_MS', 250)
+const SLOW_ROUNDS = envMs('FAKE_SLOW_ROUNDS', 40)
 // 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
 // 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
 /** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取 */
@@ -484,8 +493,7 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
 }
-// 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果；
-// 面板追要总结时（计划都完成了还没写总结）调用 finish_plan
+// 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果
 if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   await panelCall('set_plan', {
     title: '后台等待',
@@ -493,8 +501,19 @@ if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   })
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '端到端测试', step: '2' })
 }
-if (input.includes('还没写总结') && input.includes('finish_plan'))
-  await panelCall('finish_plan', { summary: '改好了代码，测试通过' })
+// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
+if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
+  await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
+if (input.includes('BG_LONG') && input.includes('run_background'))
+  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
+// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后交给面板合回去
+if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
+  writeFileSync('child-done.txt', 'done\n')
+  const got = await panelCall('submit_merge', { note: '改完了', tests: 'npm test 通过' })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)
@@ -660,7 +679,7 @@ const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上�
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
-for (let i = 0; i < (slow ? 40 : 1) && !interrupted; i++) await sleep(slow ? 250 : 150)
+for (let i = 0; i < (slow ? SLOW_ROUNDS : 1) && !interrupted; i++) await sleep(slow ? SLOW_ROUND_MS : TURN_MS)
 // 被中断：像真的 CLI 一样结束这一轮，进程自己退出
 if (interrupted) {
   if (kind === 'codex') {

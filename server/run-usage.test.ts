@@ -14,6 +14,7 @@ const task = (id: string, parentTaskId: string, inputTokens: number, outputToken
     id,
     parentTaskId,
     steps: [],
+    messages: [],
     usage: { agents: {}, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
   }) as unknown as Task
 
@@ -22,7 +23,8 @@ const app = (all: Task[]) =>
     '/tasks',
     runUsageApi({
       tasks: {
-        getMeta: async (id: string) => all.find((x) => x.id === id) ?? null,
+        peek: async (id) => all.find((x) => x.id === id) ?? null,
+        get: async (id) => all.find((x) => x.id === id) ?? null,
         list: async () => all,
       },
     }).routes,
@@ -52,7 +54,7 @@ test('整个运行的用量接口：只取任务本身，不读完整对话', as
   const asked: string[] = []
   // 完整读取（带全部对话）一旦发生就是这个接口的退化：它每秒跑一次，会把整棵树的消息读进内存
   const deps = {
-    getMeta: async (id: string) => {
+    peek: async (id: string) => {
       asked.push(id)
       return all.find((x) => x.id === id) ?? null
     },
@@ -70,7 +72,8 @@ test('整个运行的用量接口：只取任务本身，不读完整对话', as
 test('整个运行的用量接口：子树里混入别的父任务或已被删掉的任务时跳过，不报错', async () => {
   const all = [task('p1', '', 100, 10), task('c1', 'p1', 40, 4), task('other', '', 900, 90)]
   const deps = {
-    getMeta: async (id: string) => (id === 'c1' ? null : (all.find((x) => x.id === id) ?? null)),
+    peek: async (id: string) => (id === 'c1' ? null : (all.find((x) => x.id === id) ?? null)),
+    get: async (id: string) => all.find((x) => x.id === id) ?? null,
     list: async () => all,
   }
   const res = await new Hono().route('/tasks', runUsageApi({ tasks: deps }).routes).request('/tasks/p1/run-usage')
@@ -79,4 +82,36 @@ test('整个运行的用量接口：子树里混入别的父任务或已被删�
   // c1 在树里但取不到：它和它的子树都不算进结果，也不影响接口
   assert.equal(body.total.inputTokens, 100)
   assert.equal(body.children, 0)
+})
+
+test('子对话统计接口：耗时、token、报错都按整棵子树汇总', async () => {
+  const err = { id: 'm1', role: 'system', step: '', text: '执行出错', error: true, at: '', tools: [] }
+  const all = [
+    task('p1', '', 100, 10),
+    { ...task('c1', 'p1', 40, 4), runMs: 60_000, messages: [err] } as unknown as Task,
+    task('c2', 'c1', 5, 1),
+    task('other', '', 900, 90),
+  ]
+  const res = await app(all).request('/tasks/p1/children-stats')
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as {
+    tasks: number
+    durationMs: number
+    inputTokens: number
+    outputTokens: number
+    errors: number
+    cacheHitRate: number
+  }
+  assert.equal(body.tasks, 2, '含多层子对话，不含父对话自己')
+  assert.equal(body.durationMs, 60_000)
+  assert.equal(body.inputTokens, 45)
+  assert.equal(body.outputTokens, 5)
+  assert.equal(body.errors, 1)
+  assert.equal(body.cacheHitRate, 0)
+  // 没有子对话时是 0，不是一个空对象或 null
+  const none = (await (await app(all).request('/tasks/other/children-stats')).json()) as { tasks: number }
+  assert.equal(none.tasks, 0)
+  const missing = await app(all).request('/tasks/none/children-stats')
+  assert.equal(missing.status, 400)
+  assert.deepEqual(await missing.json(), { error: '任务不存在' })
 })

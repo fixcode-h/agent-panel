@@ -3,6 +3,14 @@ import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
+import {
+  looksLikePanelCli,
+  trackCliProcess,
+  untrackCliProcess,
+  clearTrackedClis,
+  touchCliProcess,
+  type TrackedOwner,
+} from './orphans.ts'
 
 const isWin = process.platform === 'win32'
 
@@ -37,10 +45,28 @@ const live = new Map<number, ReturnType<typeof spawn>>()
 /** 还在跑的子进程 pid：内存采样用它统计 CLI 子进程占了多少，不要另外维护一份 */
 export const activePids = () => [...live.keys()]
 
+/** pid 还在不在（不关心它是什么进程） */
+export function isProcessAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+const isAlive = isProcessAlive
+
 /** 结束整个进程树：CLI 往往会再起子进程（shell、MCP 服务等） */
 export function killTree(pid: number, force = false) {
   if (isWin) {
     nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
+    if (force) return
+    // Windows 没有进程组：taskkill 偶尔只结掉一部分（孙进程被重新挂到别处），和 POSIX 一样 3 秒后再兜一次
+    setTimeout(() => {
+      if (!isAlive(pid)) return
+      log.info('exec', '第一次 taskkill 没结束进程树，再杀一次', { pid })
+      nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
+    }, 3000).unref()
     return
   }
   try {
@@ -48,6 +74,7 @@ export function killTree(pid: number, force = false) {
   } catch {}
   if (force) return
   setTimeout(() => {
+    if (isAlive(pid)) log.info('exec', 'SIGTERM 没结束进程组，补 SIGKILL', { pid })
     try {
       process.kill(-pid, 'SIGKILL')
     } catch {}
@@ -80,6 +107,8 @@ export function killAllProcesses() {
     } catch {}
   }
   live.clear()
+  // 进程都停了再清登记：万一上面没杀干净，登记留着下次启动还能照着认出来
+  clearTrackedClis()
 }
 
 // 正常退出、Ctrl+C、托盘关闭都会走到这里；进程被 SIGKILL 时操作系统直接结束，来不及执行
@@ -116,16 +145,22 @@ export function runProcess(o: {
   onSpawn?: (io: { write: (s: string) => void; end: () => void }) => void
   /** Windows 上参数原样拼进命令行、不加引号转义：交给 cmd.exe /c 的整行命令要用它（见 shellCommand） */
   windowsVerbatimArguments?: boolean
+  /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
+  owner?: TrackedOwner
 }): Promise<ProcessResult> {
   const args = isWin ? oneLineArgs(o.args) : o.args
   return new Promise((resolve) => {
     let killed: ProcessResult['killed'] = null
     let stderr = ''
     let settled = false
+    let killerTimer: ReturnType<typeof setTimeout> | undefined
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
     const done = (r: Omit<ProcessResult, 'stderr' | 'killed'>) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearTimeout(killerTimer)
+      clearTimeout(exitTimer)
       clearInterval(idleTimer)
       o.signal?.removeEventListener('abort', onAbort)
       resolve({ ...r, killed, stderr: stderr.slice(-4000) })
@@ -149,6 +184,14 @@ export function runProcess(o: {
       if (killed || settled) return
       killed = why
       if (child.pid) killTree(child.pid)
+      // 进程树没杀干净时 close 永远不会来：给个上限，别把等结果的调用方（关对话、停后台命令）挂死
+      killerTimer = setTimeout(() => {
+        if (settled) return
+        log.warn('exec', '进程树 5 秒内没退出，先结束等待', { pid: child.pid, why })
+        stderr += `\n[${t('进程树未在 5 秒内退出，先结束等待')}]`
+        done({ code: null })
+      }, 5000)
+      killerTimer.unref?.()
     }
     const onAbort = () => stop('stopped')
     o.signal?.addEventListener('abort', onAbort)
@@ -176,8 +219,26 @@ export function runProcess(o: {
 
     const pid = child.pid
     if (pid) live.set(pid, child)
+    // 面板起的 CLI（带面板的桥接参数或面板临时目录）登记下来：面板被强杀后，下次启动照着它认遗留进程；
+    // 短命令（git、版本检测）不带这些痕迹，不登记也不频繁写盘
+    if (pid) {
+      const argv = [o.command, ...args].join(' ')
+      if (looksLikePanelCli(argv)) trackCliProcess(pid, argv, o.cwd, o.owner)
+    }
+    // 有输出就记一下「最后一次出声」：进程面板据此区分运行中和长时间没输出。
+    // 一行一个事件，1 秒节流一次就够
+    let touchedAt = 0
+    const touch = () => {
+      if (!pid) return
+      const now = Date.now()
+      if (now - touchedAt < 1000) return
+      touchedAt = now
+      touchCliProcess(pid)
+    }
     const forget = () => {
-      if (pid) live.delete(pid)
+      if (!pid) return
+      live.delete(pid)
+      untrackCliProcess(pid)
     }
     child.on('error', (e: NodeJS.ErrnoException) => {
       forget()
@@ -187,11 +248,13 @@ export function runProcess(o: {
     child.stderr!.on('data', (d: string) => {
       stderr = (stderr + d).slice(-16000)
       active()
+      touch()
       o.onStderr?.(d)
     })
     const rl = createInterface({ input: child.stdout! })
     rl.on('line', (line) => {
       active()
+      touch()
       try {
         o.onLine?.(line)
       } catch (e) {
@@ -200,8 +263,20 @@ export function runProcess(o: {
     })
     child.on('close', (code) => {
       forget()
+      clearTimeout(exitTimer)
       rl.close()
       done({ code })
+    })
+    // 进程已经退出，但输出流还被别人（孙进程继承了 stdout）握着时，close 可能永远不来：
+    // 已经读不到更多输出了，等 3 秒给它收尾，别让等结果的调用方（后台命令、任务）挂死
+    child.on('exit', (code) => {
+      if (settled || exitTimer) return
+      exitTimer = setTimeout(() => {
+        if (settled) return
+        log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code })
+        done({ code })
+      }, 3000)
+      exitTimer.unref?.()
     })
 
     child.stdin!.on('error', () => {})

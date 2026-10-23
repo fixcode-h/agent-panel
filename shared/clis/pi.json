@@ -699,7 +699,8 @@
             "type": "tool_result",
             "id": "$.toolCallId",
             "output": "$.result",
-            "failed": "$.isError == true"
+            "failed": "$.isError == true",
+            "exitCode": "$.result.structuredContent.exit_code"
           }
         ]
       }

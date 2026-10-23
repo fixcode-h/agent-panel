@@ -1,25 +1,30 @@
 import { Hono, type Context } from 'hono'
 import type { Task } from '../shared/schema.ts'
 import { runTree, runUsage } from '../shared/run-usage.ts'
+import { descendantTotals } from '../shared/task-export.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
- * 「整个运行」的用量接口：一个父对话 + 它分出的所有子对话（含多层）+ 它派出的子任务。
+ * 「整个运行」的用量和统计接口：一个父对话 + 它分出的所有子对话（含多层）+ 它派出的子任务。
  *
  * 为什么要在服务端算：任务列表接口不返回子对话（`parentTaskId` 的都被过滤掉），
  * 摘要里也只有一层子对话，前端拿不到多层的用量。执行中的任务（含子对话）用内存里那一份，
  * 速度才是实时的。
  *
  * 取数只取任务本身（用量、节点、状态），不读完整对话：前端每秒调一次这个接口，
- * 只为算 token 就把整棵树的消息读上来、把打开过的任务挤出缓存，不值得（见 `getMeta`）。
+ * 只为算 token 就把整棵树的消息读上来、把打开过的任务挤出缓存，不值得（见 `getMeta` / `peek`）。
+ * 子对话统计（children-stats）要从 messages 里数报错条数，那一条才读完整任务。
  *
- * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts`，
- * 这里只负责取数。
+ * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts` 和
+ * `shared/task-export.ts`，这里只负责取数。
  */
 export function runUsageApi(deps: {
   /** 按 id 取任务本身（用量、节点、状态，不含完整对话）；执行中的取内存里那一份 */
   tasks: {
-    getMeta(id: string): Promise<Task | null>
+    /** 只要任务本身（用量、步骤、状态），不带对话：这个接口执行中每秒问一次，不能每次都读每个子对话的对话文件 */
+    peek(id: string): Promise<Task | null>
+    /** 完整任务（带对话）：子对话的报错条数要从 messages 里数，摘要算不出来 */
+    get(id: string): Promise<Task | null>
     list(): Promise<Task[]>
   }
 }) {
@@ -28,14 +33,31 @@ export function runUsageApi(deps: {
 
   routes.get('/:id/run-usage', async (c) => {
     const id = c.req.param('id')
-    const root = await deps.tasks.getMeta(id)
+    const root = await deps.tasks.peek(id)
     if (!root) return bad(c, t('任务不存在'))
     try {
       // 先按全部任务找出整棵树，再逐个取（执行中的那份带实时速度）
       const tree = runTree(root, await deps.tasks.list())
-      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.getMeta(x.id))))
+      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.peek(x.id))))
       const tasks = loaded.filter((x): x is Task => !!x)
       return c.json(runUsage(root, tasks))
+    } catch (e) {
+      return bad(c, (e as Error).message)
+    }
+  })
+
+  /**
+   * 子对话的统计合计（耗时、token、缓存命中、报错）：导出和执行记录的 AI 分析用。
+   * 只回几个数字，不把几十个子对话的完整对话传给浏览器；子对话的报错要从 messages 里数，所以这里读完整任务（一次导出/分析只问一次并不频繁）。
+   */
+  routes.get('/:id/children-stats', async (c) => {
+    const id = c.req.param('id')
+    const root = await deps.tasks.peek(id)
+    if (!root) return bad(c, t('任务不存在'))
+    try {
+      const tree = runTree(root, await deps.tasks.list())
+      const loaded = await Promise.all(tree.filter((x) => x.id !== id).map((x) => deps.tasks.get(x.id)))
+      return c.json(descendantTotals(loaded.filter((x): x is Task => !!x)))
     } catch (e) {
       return bad(c, (e as Error).message)
     }

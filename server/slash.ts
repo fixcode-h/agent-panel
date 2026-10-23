@@ -4,16 +4,25 @@ import path from 'node:path'
 import type { CliSkill, SlashCommand } from '../shared/schema.ts'
 import { expandHome, listSkills } from './cli-extras.ts'
 import { getCli } from '../shared/clis.ts'
+import { builtinPrompt, fillCommand } from '../shared/commands.ts'
+import { t } from '../shared/i18n.ts'
+import { DATA_DIR } from './store.ts'
 
 /**
- * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill，发出去之前按 CLI 展开。
- * 会话里认识「/命令」的 CLI（定义里 slash 为 true，例如 Claude Code）原样发过去；其他的由面板
+ * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill、「所有 Agent」共用的命令，发出去之前按 CLI 展开。
+ * 会话里认识「/命令」的 CLI（定义里 slash 为 true，例如 Claude Code）自己的命令原样发过去；其他的由面板
  * 把命令文件的内容、Skill 的说明展开成普通的要求再发。命令和 Skill 的目录写在 CLI 的定义里。
+ * 「所有 Agent」的命令和内置命令（shared/commands.ts）对哪个 CLI 都由面板展开，所以每个 Agent 都能用。
  */
 
 interface Found extends SlashCommand {
   path: string
+  /** 「所有 Agent」共用的命令（数据目录的 commands/，md 格式） */
+  panel?: boolean
 }
+
+/** 「所有 Agent」共用的命令放在数据目录里，不属于哪个 CLI */
+export const panelCommandDir = () => path.join(DATA_DIR, 'commands')
 
 /** front matter 里的一个字段 */
 const field = (fm: string, k: string) =>
@@ -107,8 +116,13 @@ async function all(cli: string, cwd: string): Promise<Found[]> {
     const skills: CliSkill[] = await listSkills(cli, cwd).catch(() => [])
     const cmds = await rawCommands(cli, cwd)
     const seen = new Set(cmds.map((c) => c.name))
+    // 共用的命令排在 CLI 自己的后面：同名时以 CLI 自己的为准
+    const panel = (await scanCommands(panelCommandDir(), t('所有 Agent'), 'md')).filter(
+      (c) => !seen.has(c.name) && seen.add(c.name),
+    )
     return [
       ...cmds,
+      ...panel.map((c) => ({ ...c, panel: true })),
       ...skills
         .filter((s) => s.enabled && !seen.has(s.name) && seen.add(s.name))
         .map(
@@ -127,29 +141,27 @@ async function all(cli: string, cwd: string): Promise<Found[]> {
   return list
 }
 
+/** 共用命令改过之后，「/」菜单和展开马上用新的 */
+export const clearSlashCache = () => cache.clear()
+
 /** 页面列「/」菜单用：不带本机路径 */
 export async function listCommands(cli: string, cwd: string): Promise<SlashCommand[]> {
-  return (await all(cli, cwd)).map(({ path: _p, ...c }) => c)
+  return (await all(cli, cwd)).map(({ path: _p, panel: _x, ...c }) => c)
 }
-
-/** /init：Claude Code 自己有；其他 CLI 按同样的意思写一份 AGENTS.md */
-const INIT_PROMPT =
-  '请分析这个项目，在项目根目录写一份 AGENTS.md（已经有了就改进它），写给以后在这个项目里工作的编码 Agent 看：' +
-  '项目是做什么的、目录结构、常用的构建 / 测试 / 检查命令、代码风格和约定、容易出错需要注意的地方。内容简洁准确，不要编造项目里没有的东西。'
 
 /**
  * 发给 CLI 之前展开「/命令 参数」。native：CLI 自己认识这些命令（Claude Code、而且是会话开头的原样文字）。
- * 不认识的「/xxx」原样发出，当普通文字。
+ * 顺序：CLI 自己的命令和 Skill →「所有 Agent」的命令 → 面板的内置命令；都不是的「/xxx」原样发出，当普通文字。
  */
 export async function expandSlash(text: string, cli: string, cwd: string, native: boolean): Promise<string> {
   const m = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(text.trim())
   if (!m) return text
   const [, name, rest = ''] = m
   const args = rest.trim()
-  if (name === 'init') return native ? text : INIT_PROMPT + (args ? `\n\n补充要求：${args}` : '')
-  if (native) return text
+  if (native && getCli(cli)?.nativeCommands?.includes(name)) return text
   const c = (await all(cli, cwd).catch(() => [])).find((x) => x.name === name)
-  if (!c) return text
+  if (!c) return builtinPrompt(name, args) || text
+  if (native && !c.panel) return text
   if (c.kind === 'skill') {
     // 说明直接放进要求里：Skill 多在工作目录外，CLI 不一定有权限去读；目录也告诉它，里面的脚本、参考文件需要时再读
     const { body } = splitFrontMatter(await readFile(c.path, 'utf8').catch(() => ''))
@@ -159,15 +171,8 @@ export async function expandSlash(text: string, cli: string, cwd: string, native
       ...(args ? [`## 要求\n${args}`] : []),
     ].join('\n\n')
   }
-  const format = getCli(cli)?.commands.format ?? 'md'
+  const format = c.panel ? 'md' : (getCli(cli)?.commands.format ?? 'md')
   const { body } = await readCommand(c.path, format)
   if (!body.trim()) return text
-  // Gemini CLI 的命令用 {{args}}；Claude Code 的用 $ARGUMENTS 和 $1、$2…（按空格分开的参数）
-  const parts = args.split(/\s+/).filter(Boolean)
-  const used = /\$ARGUMENTS|\$\d|\{\{args\}\}/.test(body)
-  const out = body
-    .replaceAll('{{args}}', args)
-    .replaceAll('$ARGUMENTS', args)
-    .replace(/\$(\d)/g, (_, i: string) => parts[Number(i) - 1] ?? '')
-  return used || !args ? out.trim() : `${out.trim()}\n\n${args}`
+  return fillCommand(body, args)
 }

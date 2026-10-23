@@ -11,7 +11,7 @@ import { Row } from './parts'
 
 /**
  * 设置「常规」里的命令行环境：只在 Windows 上显示。
- * 不单独列「自动」：预选推荐的那个并标「（默认）」，选回它时不单独记，以后装了 WSL 会跟着换
+ * 不单独列「自动」：预选推荐的那个并标「（默认）」，选回它时不单独记，以后装了 Git Bash / WSL 会跟着换
  */
 export function ShellSetting({
   value,
@@ -43,7 +43,7 @@ export function ShellSetting({
     <Row
       title={t('命令行环境')}
       desc={t(
-        '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。有 WSL 默认用 WSL，没有就用 Git Bash。',
+        '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。',
       )}
     >
       {/* 发行版放在第二行：两个下拉框并排时右栏放不下，会把发行版名字截断 */}

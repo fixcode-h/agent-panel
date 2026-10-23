@@ -43,7 +43,13 @@ const errors = []
 let n = 0
 
 async function page(viewport) {
-  const p = await browser.newPage({ viewport, locale: 'zh-CN' })
+  // 复制图片、复制对话要往系统剪贴板里写，验证时还要读回来对一下
+  const ctx = await browser.newContext({
+    viewport,
+    locale: 'zh-CN',
+    permissions: ['clipboard-read', 'clipboard-write'],
+  })
+  const p = await ctx.newPage()
   p.on('pageerror', (e) => errors.push(`页面出错：${e.message}`))
   p.on('console', (m) => {
     if (m.type() !== 'error') return
@@ -91,6 +97,54 @@ try {
   await p.locator('#task-prompt').fill('/')
   await p.locator('#task-prompt').press('End')
   await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])
+  // 菜单限高后超出的部分靠滚动看：按 ↓ 时选中项要跟着滚进菜单可视区，不能被裁在菜单外面
+  const picked = () =>
+    p.evaluate(() => {
+      const box = document.querySelector('[role="listbox"]')
+      const cur = box?.querySelector('[aria-selected="true"]')
+      if (!box || !cur) return null
+      const b = box.getBoundingClientRect()
+      const r = cur.getBoundingClientRect()
+      return {
+        scrollTop: box.scrollTop,
+        scrollable: box.scrollHeight > box.clientHeight + 1,
+        boxTop: b.top,
+        boxBottom: b.bottom,
+        top: r.top,
+        bottom: r.bottom,
+      }
+    })
+  // 先往下挪几格停在菜单中部，顺便留一张选中项在菜单中部的截图
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  await check(p, '斜杠命令-选中项跟随滚动')
+  const mid = await picked()
+  if (!mid) errors.push('斜杠命令：按 ↓ 后找不到选中的命令')
+  else {
+    if (!mid.scrollable) errors.push('斜杠命令：演示的命令太少，菜单没滚起来，检查不了滚动')
+    if (mid.boxTop < -0.5) errors.push('斜杠命令：菜单顶部超出窗口')
+    if (mid.top < mid.boxTop - 0.5 || mid.bottom > mid.boxBottom + 0.5)
+      errors.push('斜杠命令：按 ↓ 后选中项不在菜单可视区里')
+  }
+  // 一路按到最后一项：菜单要跟着滚，选中项仍然完整可见
+  for (let i = 0; i < 40; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const last = await picked()
+  if (!last || last.scrollTop <= 0) errors.push('斜杠命令：↓ 到最后一项时菜单没滚动（scrollTop 还是 0）')
+  else if (last.top < last.boxTop - 0.5 || last.bottom > last.boxBottom + 0.5)
+    errors.push('斜杠命令：↓ 到最后一项时选中项被裁在菜单外面')
+  // 窗口矮的时候菜单也不能顶出窗口外
+  await p.setViewportSize({ width: 1440, height: 520 })
+  await p.locator('#task-prompt').fill('/')
+  await p.locator('#task-prompt').press('End')
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const short = await picked()
+  if (!short) errors.push('斜杠命令-矮窗口：没有弹出菜单')
+  else {
+    if (short.boxTop < -0.5) errors.push(`斜杠命令-矮窗口：菜单顶部超出窗口 ${Math.round(-short.boxTop)}px`)
+    if (short.boxBottom > 520.5) errors.push('斜杠命令-矮窗口：菜单超出窗口底部')
+    if (short.top < short.boxTop - 0.5 || short.bottom > short.boxBottom + 0.5)
+      errors.push('斜杠命令-矮窗口：选中项不在菜单可视区里')
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 选中后是文字原位的一张卡片；光标停在它后面，按一次退格整张删掉
   await p.locator('#task-prompt').fill('前 ')
   await p.locator('#task-prompt').pressSequentially('/frontend-design')
@@ -113,6 +167,22 @@ try {
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
   // 输入框上方不再有附件条
   if (await p.getByRole('button', { name: '移除 截图.png' }).count()) errors.push('输入框上方还有附件条')
+  // 右键卡片弹出面板自己的菜单（不是浏览器原生菜单），点「复制图片」真的写进系统剪贴板
+  await imageChip.click({ button: 'right' })
+  const copyImageItem = p.getByRole('menuitem', { name: '复制图片' })
+  await copyImageItem.waitFor({ timeout: 3000 }).catch(() => errors.push('行内图片卡片：右键没有弹出卡片菜单'))
+  await check(p, '输入框卡片-右键菜单', ['复制图片'])
+  await copyImageItem.click()
+  await p
+    .getByText('图片已复制到剪贴板')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('行内图片卡片：复制图片后没有成功提示'))
+  const clipTypes = await p
+    .evaluate(async () => (await navigator.clipboard.read()).flatMap((i) => i.types))
+    .catch(() => null)
+  if (!clipTypes) errors.push('行内图片卡片：读不到剪贴板（权限或浏览器不支持）')
+  else if (!clipTypes.includes('image/png'))
+    errors.push(`行内图片卡片：剪贴板里没有 PNG（${clipTypes.join(',') || '空'}）`)
   // 点图片能看大图
   await imageChip.locator('img').click()
   await p
@@ -167,6 +237,53 @@ try {
       await p.reload()
       await openTask()
     }
+  }
+
+  // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
+  // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    const openTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(400)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await openTask()
+    const before = await p.evaluate(() => {
+      window.__composer = document.querySelector('#follow-up')
+      return { id: window.__composer?.id ?? '' }
+    })
+    await p.locator('#follow-up').click()
+    await p.keyboard.type('实时推送时输入的内容')
+    await p.waitForTimeout(1600)
+    const after = await p.evaluate(() => {
+      const el = document.querySelector('#follow-up')
+      return {
+        same: el === window.__composer,
+        focused: el === document.activeElement,
+        active: document.activeElement?.id ?? document.activeElement?.tagName ?? '',
+        text: el?.textContent ?? '',
+      }
+    })
+    if (before.id !== 'follow-up') errors.push('任务页没有找到输入框')
+    else {
+      if (!after.same) errors.push('实时推送时输入框被重新挂载')
+      if (!after.focused) errors.push(`实时推送时输入框丢了焦点（焦点在 ${after.active}）`)
+      if (!after.text.includes('实时推送时输入的内容')) errors.push('实时推送时输入的文字丢了')
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await openTask()
   }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
@@ -262,6 +379,116 @@ try {
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
   await p.keyboard.press('Escape')
+  // 子对话里点「启动工作流」：在子对话这块面板内换成那次运行的视图，标题栏左边能返回子对话，
+  // 右边是 ⋯ 和 ✕（✕ 关掉子对话面板本身，和返回不一样），返回后子对话原样回来
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    // 演示数据里没有子对话：照父对话里的工作流任务造一个，并补一条「启动工作流」的调用
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const parent = db.tasks.find((x) => x.title.includes('购物车'))
+      const wf = db.tasks.find((x) => x.mode === 'workflow' && x.runs?.length && x.projectId === parent.projectId)
+      if (!wf) return
+      db.tasks = db.tasks.filter((x) => x.id !== 'demo-child-run')
+      const child = structuredClone(wf)
+      Object.assign(child, {
+        id: 'demo-child-run',
+        parentTaskId: parent.id,
+        rootTaskId: parent.id,
+        title: '子对话：到货提醒',
+      })
+      child.messages.splice(1, 0, {
+        id: 'demo-child-tool',
+        role: 'agent',
+        agentId: '',
+        step: '',
+        text: '',
+        at: new Date().toISOString(),
+        tools: [
+          {
+            kind: 'other',
+            name: 'MCP__panel__start_plan',
+            label: '',
+            detail: '',
+            input: JSON.stringify({ input: '给商品详情页加「到货提醒」' }),
+            output: '',
+            ms: 1200,
+          },
+        ],
+      })
+      db.tasks.push(child)
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    const gotoTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    /** 输入框上方的「子对话」→ 全部 → 打开那个子对话 */
+    const openChild = async () => {
+      await gotoTask()
+      await p.getByRole('button', { name: /^子对话/ }).click()
+      await p.getByRole('button', { name: '全部' }).click()
+      await p.getByText('子对话：到货提醒').first().click()
+      await p.waitForTimeout(400)
+    }
+    await openChild()
+    await check(p, '子对话-面板', ['子对话：到货提醒'])
+    const runTitle = p.locator('button[title="打开这次运行的对话"]')
+    if (!(await runTitle.count())) errors.push('子对话：工作流那几行没有「打开这次运行的对话」的入口')
+    // 点「启动工作流」这一行：面板内换成这次运行的视图，不是把内容铺在子对话里
+    await runTitle.first().click()
+    await check(p, '子对话-运行视图', ['子对话：到货提醒', '第 1 次运行'])
+    if (!(await p.getByRole('button', { name: '返回子对话' }).count()))
+      errors.push('子对话运行视图：标题栏左边没有返回子对话的按钮')
+    if (!(await p.getByRole('button', { name: '关闭子对话面板' }).count()))
+      errors.push('子对话运行视图：标题栏右边没有关闭子对话面板的按钮')
+    // 子对话启动的工作流也能补充要求：输入框跟着放进运行视图底下，盖住的子对话里不再留一个
+    {
+      const box = await p.evaluate(() => {
+        const view = document.querySelector('button[aria-label="返回子对话"]')?.closest('.absolute')
+        return {
+          inView: view?.querySelectorAll('#follow-up').length ?? 0,
+          under: view?.parentElement ? [...view.parentElement.querySelectorAll('#follow-up')].length : 0,
+        }
+      })
+      if (box.inView !== 1) errors.push(`子对话运行视图：底下应该有一个输入框（现在 ${box.inView} 个）`)
+      else if (box.under !== 1) errors.push(`子对话运行视图：被盖住的子对话里还留着输入框（共 ${box.under} 个）`)
+    }
+    // 窄窗口：标题截断，但返回和 ✕ 不能被挤掉（手机上子对话面板占满整个宽度）
+    {
+      await p.setViewportSize({ width: 420, height: 860 })
+      await p.waitForTimeout(300)
+      const back = await p.getByRole('button', { name: '返回子对话' }).boundingBox()
+      const close = await p.getByRole('button', { name: '关闭子对话面板' }).boundingBox()
+      if (!back || !close) errors.push('子对话运行视图（窄窗口）：返回或关闭按钮不见了')
+      else if (back.x < 0 || close.x + close.width > 420)
+        errors.push(`子对话运行视图（窄窗口）：标题把按钮挤出视口（返回 ${back.x}，关闭 ${close.x + close.width}）`)
+      await check(p, '子对话-运行视图-窄窗口')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.waitForTimeout(300)
+    }
+    // 返回：回到子对话，不是关掉面板
+    await p.getByRole('button', { name: '返回子对话' }).click()
+    await p.waitForTimeout(400)
+    await check(p, '子对话-返回', ['子对话：到货提醒'])
+    if (await p.getByRole('button', { name: '返回子对话' }).count())
+      errors.push('子对话运行视图：点了返回，运行的视图还在')
+    // 这一次运行的卡片也进同一个视图
+    await runTitle.last().click()
+    await check(p, '子对话-运行视图-卡片')
+    // ✕：关掉子对话面板本身，回到父对话的文件面板
+    await p.getByRole('button', { name: '关闭子对话面板' }).click()
+    await p.waitForTimeout(400)
+    await check(p, '子对话-关闭面板', ['购物车右上角'])
+    if (await p.getByText('子对话：到货提醒').count()) errors.push('子对话运行视图：点 ✕ 后子对话面板还在')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await gotoTask()
+  }
   // 回复完成后思考和工具调用收进一个折叠，折叠行写这段做了什么；点开能看到过程，再点收起
   {
     const fold = p.getByRole('button', { name: /查看 \d+ 个文件/ }).first()
@@ -438,6 +665,17 @@ try {
   }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
+  // 对话进程下拉：收起时不挂载面板内容（DOM 里没有节点、也不轮询），展开后才渲染进程列表和内存合计
+  const procBtn = p.getByRole('button', { name: '对话进程' }).first()
+  await procBtn.waitFor({ timeout: 5000 }).catch(() => errors.push('任务：没有「对话进程」按钮'))
+  if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起状态下面板内容已经挂在 DOM 里')
+  await procBtn.click()
+  await check(p, '任务-对话进程', ['内存合计', '清理无效进程', '已结束的子任务'])
+  await p.getByRole('button', { name: '对话进程' }).first().click()
+  await p.waitForTimeout(400)
+  if ((await p.locator('[aria-label="对话进程"]').first().getAttribute('aria-expanded')) !== 'false')
+    errors.push('对话进程：收起后按钮的 aria-expanded 不是 false')
+  if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
   const workflowTaskUrl = p.url()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
@@ -591,6 +829,11 @@ try {
   await p.getByRole('textbox', { name: '新选项' }).press('Enter')
   await p.getByRole('button', { name: '删除选项「svn」' }).scrollIntoViewIfNeeded()
   await check(p, 'Agent-参数选项', ['svn'])
+  // 参数联动：后面的参数按前面的选择决定显示，规则在参数卡片里配
+  await p.getByRole('combobox', { name: '显示条件' }).click()
+  await p.getByRole('option', { name: /（target）/ }).click()
+  await p.getByRole('group', { name: '条件取值' }).scrollIntoViewIfNeeded()
+  await check(p, 'Agent-参数联动', ['选了其中一个时', '选项跟随', '联动'])
   await p.getByRole('tab', { name: /^角色设定/ }).click()
   await check(p, '角色-角色设定', ['通用约束', '实际交给它的设定'])
   await p.getByRole('tab', { name: /^概览/ }).click()
@@ -618,6 +861,16 @@ try {
   await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
   await p.getByRole('button', { name: '应用修改' }).click()
   await p.keyboard.press('Escape')
+  // 命令：「所有 Agent」的命令和 AI 创建（上面的 Skill 编辑框还开着，先关掉）
+  await p.getByRole('dialog').getByText('关闭', { exact: true }).click()
+  await p.getByRole('radio', { name: '命令' }).click()
+  await check(p, '命令-所有Agent', ['/changelog', '所有 Agent'])
+  await p.getByRole('button', { name: 'AI 创建' }).click()
+  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('/i18n：找出没翻译的文案，补上英文')
+  await p.keyboard.press('Enter')
+  await check(p, '命令-AI创建', ['格式校验通过', '命令文件（所有 Agent 共用）'])
+  await p.getByRole('button', { name: '创建命令' }).click()
+  await check(p, '命令-AI创建后', ['/i18n'])
   await p.goto(base + '#/mcp')
   await check(p, 'MCP工具', ['github', 'filesystem'])
   await p.getByLabel('编辑').first().click()
@@ -764,7 +1017,9 @@ try {
   await p.mouse.click(row.x - 14, row.y + row.height / 2)
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
-  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'WSL（默认）'])
+  // 默认项断言当前真正默认的那一个（不写成「或」，默认再变时要红）：演示后端固定返回 win32 和
+  // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
+  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）'])
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '字体', exact: true }).click()
@@ -787,6 +1042,84 @@ try {
   await p.getByRole('button', { name: '回到最新' }).click()
   await p.waitForTimeout(200)
   if (await p.getByRole('button', { name: '回到最新' }).count()) errors.push('设置-数据：点了「回到最新」按钮还留着')
+
+  // 用量统计：按天 / 按周 / 按月只显示当前一个区间，日历能选日期、有数据的日子带标记，
+  // 费用列按计价模型折算，分时段定价的模型还能看到峰谷明细
+  await p.getByRole('button', { name: '用量统计', exact: true }).click()
+  await check(p, '设置-用量统计-按天', ['用量统计', '费用', '合计'])
+  // 打开时焦点落在粒度选择器上，方向键直接能切
+  if ((await p.evaluate(() => document.activeElement?.getAttribute('role'))) !== 'tab')
+    errors.push('用量统计：打开时焦点没落在区段选择器上')
+  // 计价模型是下拉框的 aria-label，页面上显示的是选中的模型名，所以按 role 查而不是按文本
+  if (!(await p.getByRole('combobox', { name: '计价模型' }).count())) errors.push('用量统计：没有计价模型选择器')
+  const usageRows = () => p.locator('section[aria-label="用量统计"] table tbody tr')
+  const dayRows = await usageRows().count()
+  if (dayRows > 1) errors.push(`用量统计：按天视图应该只显示一个区间，现在有 ${dayRows} 行`)
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：分时段定价的模型没有显示峰谷明细')
+  // 日历：能打开、有数据的日子有标记、能翻月
+  await p.locator('[data-usage-period-trigger]').click()
+  await p
+    .locator('[data-usage-calendar]')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('用量统计：点区间标签没有打开日历'))
+  const markedDays = await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').count()
+  if (!markedDays) errors.push('用量统计：日历上没有标出有数据的日子')
+  if (!(await p.getByLabel('上个月').count())) errors.push('用量统计：日历没有翻月按钮')
+  await check(p, '设置-用量统计-日历')
+  await p.keyboard.press('Escape')
+  // 点一个有数据的历史日子：表格切到那一天
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').first().click()
+  await p.waitForTimeout(400)
+  await check(p, '设置-用量统计-选中某天', ['合计', '费用'])
+  const usageRange = () => p.locator('[data-usage-period-trigger]').innerText()
+  const usageBody = await p.locator('section[aria-label="用量统计"]').innerText()
+  if (!/\d+\.\d+M|\d+\.\d+K/.test(usageBody)) errors.push('用量统计：token 没有用 K/M 显示')
+  // 快捷键：T 回到今天，[ ] 前后翻区间
+  await p.keyboard.press('t')
+  await p.waitForTimeout(250)
+  const todayRange = await usageRange()
+  await p.keyboard.press('[')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) === todayRange) errors.push('用量统计：按 [ 没有切到上一个区间')
+  await p.keyboard.press(']')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) !== todayRange) errors.push('用量统计：按 ] 没有回到下一个区间')
+  // Esc 只关日历，不关设置
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(250)
+  if (await p.locator('[data-usage-calendar]').count()) errors.push('用量统计：Esc 没有关掉日历')
+  if (!(await p.getByRole('dialog').isVisible())) errors.push('用量统计：Esc 把设置也关掉了')
+  // 周 / 月：同样只显示一个区间，标签跟着粒度变
+  await p.getByRole('tab', { name: '按周', exact: true }).click()
+  await p.waitForTimeout(300)
+  const weekLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/第 \d+ 周/.test(weekLabel)) errors.push(`用量统计：按周的标签不是一周（${weekLabel}）`)
+  if ((await usageRows().count()) > 7) errors.push('用量统计：按周视图超过了一周的天数')
+  await check(p, '设置-用量统计-按周')
+  await p.getByRole('tab', { name: '按月', exact: true }).click()
+  await p.waitForTimeout(300)
+  const monthLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/\d{4}年\d+月/.test(monthLabel)) errors.push(`用量统计：按月的标签不是一个月（${monthLabel}）`)
+  await check(p, '设置-用量统计-按月')
+  // 换计价模型：合计和峰谷明细跟着换，单价表按新模型走
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek V4 Pro' }).click()
+  await p.waitForTimeout(300)
+  await check(p, '设置-用量统计-计价模型', ['DeepSeek V4 Pro'])
+  // 下拉框要能完整显示模型名：截断成「DeepSeek V4 P…」也算没排整齐
+  const clipped = await p
+    .getByRole('combobox', { name: '计价模型' })
+    .evaluate((el) => el.scrollWidth > el.clientWidth + 1)
+  if (clipped) errors.push('用量统计：计价模型下拉的文字被截断了')
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：换计价模型后峰谷明细没了')
+  // 换回默认模型，后面的检查不受影响
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
+  await p.waitForTimeout(300)
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
@@ -898,10 +1231,52 @@ try {
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
+  // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
+  const graphFit = () =>
+    p.evaluate(() => {
+      const pane = document.querySelector('.react-flow')
+      const viewport = document.querySelector('.react-flow__viewport')
+      const nodes = [...document.querySelectorAll('.react-flow__node')]
+      if (!pane || !viewport || !nodes.length) return null
+      const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a
+      const rects = nodes.map((el) => el.getBoundingClientRect())
+      const box = pane.getBoundingClientRect()
+      const left = Math.min(...rects.map((r) => r.left))
+      const top = Math.min(...rects.map((r) => r.top))
+      const right = Math.max(...rects.map((r) => r.right))
+      const bottom = Math.max(...rects.map((r) => r.bottom))
+      return { zoom, coverW: (right - left) / box.width, coverH: (bottom - top) / box.height }
+    })
+  const checkGraph = async (where) => {
+    const g = await graphFit()
+    if (!g) return errors.push(`ComfyUI-节点图 ${where}：没有画出来`)
+    if (g.zoom < 0.5) errors.push(`ComfyUI-节点图 ${where}：缩放只有 ${g.zoom.toFixed(2)}，节点文字看不清`)
+    if (g.coverW < 0.8 || g.coverH < 0.8)
+      errors.push(
+        `ComfyUI-节点图 ${where}：节点只占画布宽 ${Math.round(g.coverW * 100)}%、高 ${Math.round(g.coverH * 100)}%，留白太多`,
+      )
+  }
+  await checkGraph('1440')
+  await check(p, 'ComfyUI-节点图-1440')
+  // 窗口变大节点图跟着变大；窗口窄时也能用，不留大片空白、不横向滚动
+  for (const size of [
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 800 },
+  ]) {
+    await p.setViewportSize(size)
+    await p.waitForTimeout(500)
+    await checkGraph(String(size.width))
+    await check(p, `ComfyUI-节点图-${size.width}`)
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 节点图可以在图形和配置（JSON）之间切换
   await p.getByRole('radio', { name: '配置', exact: true }).click()
   await check(p, 'ComfyUI-节点图配置', ['"class_type"'])
   await p.getByRole('radio', { name: '图形', exact: true }).click()
+  // 切回图形要重新适应，不是带着上一次的缩放
+  await p.waitForTimeout(500)
+  await checkGraph('切回图形')
   // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
   await p.getByRole('radio', { name: /^Agent 模式/ }).click()
   await p
@@ -910,6 +1285,9 @@ try {
   await p.goto(base + '#/comfy/game')
   await p.getByRole('radio', { name: '网页 UI' }).click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
+  // 换了工作流也要重新适应，不能带着上一个工作流的位置和缩放
+  await p.waitForTimeout(500)
+  await checkGraph('网页工作流')
   await p.getByRole('button', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '出图更清晰、边缘更干净' }).click()
   await p.getByRole('button', { name: '优化', exact: true }).click()
@@ -1212,6 +1590,34 @@ try {
       .first()
       .click()
     await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
+    await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
+    await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
+    await dlg.getByRole('button', { name: '重新初始化' }).click()
+    const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
+    await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('button')].some(
+            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
+          ),
+        null,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push('AI 初始化：等不到「查看推荐并应用」'))
+    await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
+    await reviewInit.click().catch(() => {})
+    await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
+    await p
+      .getByRole('button', { name: '全部应用' })
+      .click()
+      .catch(() => errors.push('AI 初始化：没有「全部应用」'))
+    await check(p, 'AI初始化-全部应用', ['已应用'])
+    await p
+      .getByText('评估后不适用的工作流')
+      .scrollIntoViewIfNeeded()
+      .catch(() => {})
+    await check(p, 'AI初始化-工作流评估', ['评估后不适用的工作流', '可选工作流'])
     await p.keyboard.press('Escape')
     // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()
@@ -1347,6 +1753,26 @@ try {
       if (!chip.src || chip.broken) errors.push(`图片气泡：缩略图没有显示出来（src=${chip.src || '空'}）`)
     }
     await check(p, '对话-图片气泡')
+    // 右上角「⋯」里的「复制对话」：剪贴板里是转录文件的路径，粘贴回输入框变成一张会话卡片，不是一段文字
+    await p.getByRole('button', { name: '更多操作' }).first().click()
+    await p.getByRole('menuitem', { name: '复制对话' }).click()
+    await p
+      .getByText('对话已复制，粘贴到输入框会变成一张会话卡片')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('复制对话：没有成功提示'))
+    const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!/\.md\s*$/.test(copied)) errors.push(`复制对话：剪贴板里不是转录文件的路径（${copied || '空'}）`)
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+V')
+    const convChip = p.locator('#follow-up [data-chip="file"]')
+    await convChip.waitFor({ timeout: 5000 }).catch(() => errors.push('复制对话：粘贴后输入框里没有出现会话卡片'))
+    // 卡片背后要有附件（才能发给 Agent），输入框里不能留着那段路径文字
+    const draftText = await p
+      .locator('#follow-up')
+      .innerText()
+      .catch(() => '')
+    if (copied.trim() && draftText.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
+    await check(p, '复制对话-粘贴成卡片')
     // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
     await bubble.evaluate((el) => el.click())
     await p
@@ -1492,6 +1918,13 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+  // 用量统计在手机宽度下：工具条换行、表格隐藏缓存和任务列，不能出现横向滚动
+  // 手机布局的侧栏收在抽屉里，先点顶部的菜单再进设置
+  await m.getByRole('button', { name: '打开菜单' }).click()
+  await m.getByRole('button', { name: '设置' }).first().click()
+  await m.getByRole('button', { name: '用量统计', exact: true }).click()
+  await m.waitForTimeout(400)
+  await check(m, '手机-用量统计', ['按天', '按周', '按月', '合计'])
 } catch (e) {
   // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
   if (process.env.GITHUB_ACTIONS)

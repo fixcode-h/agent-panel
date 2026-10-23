@@ -39,3 +39,21 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 - 规则：任务页之外自己拼消息的地方（`server/assist.ts` 的 AI 创建 / 分析、`server/designs.ts` 的 UI 设计）和 runner 一样处理工具事件：`tool_result` 删掉 `running`、`tool_delta` 的 `snapshot` 直接替换输出，结束（停止、超时、退出）时把还在跑的行全部收掉。给 CLI 新加工具字段时把这几处一起过一遍。
 - 起因：Pi 的 `tool_execution_start` 带 `running: true`，AI 分析项目配置里只补了输出、没收掉标记，codemode 和里面的读取、查找一直转圈（c5e408d 加标记时只改了 runner）；任务页被打断时 `endTool` 也没清 `running`。
 - 防线：`scripts/e2e.mjs` 的「工具结束后不再显示运行中」（用 Pi 跑 AI 创建）。
+
+## 停下这一轮必须带原因，不能把非用户动作写成「已暂停」
+
+- 规则：`stopTask(id, reason)` 的 `reason` 是必填的 `StopReason`，只有用户点暂停的 `/stop` 传 `'user'`；父对话收尾、换 CLI、归档、删除、面板重启、页面切走、新消息打断、自身完成收尾各自传对应的值。`Live.stopReason` 经 `EngineHost.stopReason()` 交给收尾，写进 `Task.stopReason`；界面按 `childIcon` 和 `stopReasonText` 显示，只有 `'user'` 才画暂停、说「已暂停」。进程异常退出（`spawnError`、非 0 退出码）走失败并显示原因，不要归成停止。
+- 起因：主工作区 `node_modules` 被清空那段时间，父对话收尾把名下子对话一起 abort，`ctx.signal.aborted && !r.killed` 全判成 `stopped`，用户没点暂停却看到几只子对话「已暂停」，而且无从知道是谁结束的。
+- 防线：`shared/task-stage.test.ts` 的 `stopReasonText` /父对话收尾用例；`stopTask` 的第二参数必填由 `npm run typecheck` 拦住。
+
+## 保活进程要有全局上限，彻底完成就要结束进程
+
+- 规则：会话「彻底完成」（`resolved` 且 `childHolds` 为空）时不管有没有独立分支都要 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收才只在 `isolated` 里做。保活中的会话（`awaitingUser`）超过 `Settings.keepAliveLimit` 时用 `keepAliveVictims()` 挑最久没用的结束（`stopTask(id, 'idle')`），排除正在看的页面、刚进入保活的自己、以及名下还有子对话在跑/排队的父对话。
+- 起因：调研发现 12 个 `pi` 进程只有 7 个对得上在跑的任务：共用目录的子对话 `resolved` 后 CLI 一直留着，保活又没有全局上限和 LRU，叠加 presence 宽限期就是十几个常驻进程。
+- 防线：`shared/task-stage.test.ts` 的 `keepAliveVictims` 用例。
+
+## 交给对话的消息碰上上一轮收尾时不能丢
+
+- 规则：面板替别人往对话里投消息（子对话回答、催合并、后台结果）时，对话「不在 running 但执行位还占着」是正常的收尾窗口。`followUp` 报 `TaskBusyError` 时把消息记进对话并 `holdForNextTurn`，等收尾结束还没人取就自己补开一轮，不能只记一条日志就算了。
+- 起因：子对话完成即合并那次（ADR 0002）端到端测试偶发超时：用户回答了子对话的提问，`sendToChild` 撞上子对话刚结束一轮、还在回报父对话，消息被吞掉，对话里什么都没有。
+- 防线：`scripts/e2e.mjs` 的「子对话请父对话决定」用例（偶发，修之前约一半失败）。

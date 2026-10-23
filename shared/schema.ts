@@ -1,11 +1,24 @@
 import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
+import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
 export type ParamValue = z.infer<typeof ParamValue>
 export type ParamValues = Record<string, ParamValue>
+
+/**
+ * 参数的显示条件：前面某个参数取这些值时才成立。
+ * values 为空表示「有值」（开关打开、多选选了、文本不空）；not 取反（不是这些值 / 没有值）。
+ * 开关的取值写 'true' / 'false'。
+ */
+export const ParamCond = z.object({
+  key: z.string().trim().min(1).max(40),
+  values: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  not: z.boolean().default(false),
+})
+export type ParamCond = z.infer<typeof ParamCond>
 
 /**
  * Agent 向外暴露的参数：角色设定里用 {{key}} 引用、用 {{#if key=值}}…{{/if}} 分支，
@@ -29,6 +42,18 @@ export const AgentParam = z.object({
   /** 没有默认值：对话开始前问用户选，工作流节点上必须填 */
   ask: z.boolean().default(false),
   description: z.string().trim().max(200).default(''),
+  /** 只在前面的参数满足条件时显示和生效；不满足时这个参数不用问、按空值处理 */
+  when: ParamCond.optional(),
+  /**
+   * 选项跟着前面的参数变：前面那个参数取 map 里的某个值时，只能选对应的这些选项。
+   * map 里没列的取值不限制；某个取值对应空数组表示这时这个参数不适用（同 when 不满足）。
+   */
+  optionsBy: z
+    .object({
+      key: z.string().trim().min(1).max(40),
+      map: z.record(z.string().max(60), z.array(z.string().trim().min(1).max(60)).max(30)),
+    })
+    .optional(),
 })
 export type AgentParam = z.infer<typeof AgentParam>
 
@@ -553,7 +578,10 @@ export const ProjectCategoryInput = z.object({
 })
 export type ProjectCategoryInput = z.infer<typeof ProjectCategoryInput>
 
-export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape)
+export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape).extend({
+  /** 自带的分类：不能删除（判定按固定 id，见 shared/builtin/project-categories.ts）；旧数据缺这个字段时按 false 读 */
+  builtin: z.boolean().default(false),
+})
 export type ProjectCategory = z.infer<typeof ProjectCategory>
 
 /** 每个工作流一份暴露项取值（key 是工作流 id，值是 Workflow.expose 里的 key → 值） */
@@ -728,6 +756,12 @@ const ProjectFields = z.object({
    */
   fileFormat: FileFormat.optional(),
   /**
+   * 找文件、搜代码时要跳过的目录（相对名字，例如 Saved、Intermediate）：
+   * 实际生效的是它加上内置默认清单（见 shared/search-exclude.ts），提示词里会带上一行。
+   * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
+   */
+  searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
+  /**
    * 子对话怎么避免互相干扰：
    * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
    *   改完提交编译，面板把它合回开分支的那个目录试编译，通过才提交、失败撤回并把报错交回子对话。
@@ -739,6 +773,11 @@ const ProjectFields = z.object({
   isolateDefault: z.boolean().default(false),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
+  /**
+   * 「AI 初始化项目」完成并应用的时间（ISO）。空表示还没初始化：项目设置里要先初始化才能确认保存，
+   * 旧项目也是空的，第一次打开设置时补做一次
+   */
+  initializedAt: z.string().max(40).default(''),
   /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
@@ -907,6 +946,8 @@ export const ToolUse = z.object({
   output: z.string().optional(),
   /** 工具执行失败 */
   failed: z.boolean().optional(),
+  /** 工具进程的退出码（CLI 报得出时才有）：有输出但退出码非零，和什么都没跑出来，排查时是两回事 */
+  exitCode: z.number().optional(),
   /** 还在执行（命令的输出会边跑边更新） */
   running: z.boolean().optional(),
   /** 这次调用跑了多久（毫秒）：跑完才有 */
@@ -915,6 +956,10 @@ export const ToolUse = z.object({
   startedAt: z.number().optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
+
+/** 子对话交出去的两种需要用户拍板的事：执行中的提问、这一轮做完的收尾建议 */
+export const AskKind = z.enum(['question', 'suggestion'])
+export type AskKind = z.infer<typeof AskKind>
 
 export const TaskMessage = z.object({
   id: z.string(),
@@ -938,6 +983,11 @@ export const TaskMessage = z.object({
   error: z.boolean().optional(),
   /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
   transient: z.boolean().optional(),
+  /**
+   * 计划启动时写进对话的那条提示（把计划输入又抄了一遍）：对话流里不画出来，
+   * 但数据照旧保留，历史任务、导出和继续执行都读得到
+   */
+  planStart: z.boolean().optional(),
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /**
@@ -955,6 +1005,8 @@ export const TaskMessage = z.object({
       title: z.string().default(''),
       question: z.string().default(''),
       options: z.array(z.string()).default([]),
+      /** question：执行中需要拍板的问题；suggestion：这一轮做完的收尾建议，等用户选下一步怎么做 */
+      kind: AskKind.default('question'),
       answer: z.string().optional(),
       /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
       by: z.enum(['user', 'parent']).optional(),
@@ -1058,6 +1110,24 @@ export type TaskStep = z.infer<typeof TaskStep>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
+/**
+ * 任务停在 stopped 的原因。只有 'user' 是用户自己按的暂停，其余都是别的动作顺带把这一轮结束了：
+ * 以前 stopTask 只有一个 boolean，全走同一条，界面一律显示「已暂停」，用户没按暂停却看到几只子对话被停了。
+ * 界面按它决定说「已暂停」还是说清是谁结束的（见 shared/task.ts 的 childIcon / stopReasonText）。
+ */
+export const StopReason = z.enum([
+  'user', // 用户点「暂停」
+  'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
+  'switch', // 换 CLI / 模型 / 角色，这一轮重启
+  'archive', // 归档
+  'restart', // 面板重启、服务退出
+  'presence', // 页面切走、宽限期到了，CLI 不再等下一句
+  'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
+  'supersede', // 用户发了新消息，打断当前这一轮
+  'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
+])
+export type StopReason = z.infer<typeof StopReason>
+
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
 export const TaskTurn = z.object({
   id: z.string(),
@@ -1137,6 +1207,11 @@ export const PlanStep = PlanItem.extend({
   children: z.array(PlanItem).default([]),
   /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
   run: z.number().int().optional(),
+  /**
+   * 面板加的收尾步骤（子对话计划的最后一步）：merge 是独立分支合回父对话所在的分支，由合并结果标完成；
+   * p4 是把改动按文件类型分进各自的 pending changelist，Agent 做完自己标。旧数据没有这个字段，当普通步骤
+   */
+  wrapUp: z.enum(['merge', 'p4']).optional(),
 })
 export type PlanStep = z.infer<typeof PlanStep>
 
@@ -1224,6 +1299,17 @@ export const TaskRun = z.object({
 })
 export type TaskRun = z.infer<typeof TaskRun>
 
+/** 界面上显示的一条后台命令（server/background.ts 的 BgJob 去掉输出） */
+export const TaskJob = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running']),
+  /** 开始跑的时间；排队中为空 */
+  startedAt: z.string().default(''),
+})
+export type TaskJob = z.infer<typeof TaskJob>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -1254,7 +1340,15 @@ export const TaskData = z.object({
    * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
    */
   parentAsks: z
-    .array(z.object({ id: z.string(), question: z.string(), options: z.array(z.string()).default([]) }))
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.string()).default([]),
+        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
+        kind: AskKind.default('question'),
+      }),
+    )
     .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
@@ -1267,6 +1361,8 @@ export const TaskData = z.object({
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
+  /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
+  stopReason: StopReason.optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
@@ -1362,6 +1458,11 @@ export const TaskData = z.object({
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
+  /**
+   * 还在跑或排队的后台命令：服务端发给界面时按当时的情况带上，不存盘。
+   * 对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈
+   */
+  jobs: z.array(TaskJob).optional(),
   /** CLI 最近一次完成一轮回复的时间：判断「完成但没看」用，和进程是否结束无关 */
   turnDoneAt: z.string().default(''),
   /**
@@ -1551,10 +1652,27 @@ export const Settings = z.object({
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
   /**
+   * 这一轮回复完成、但用户还没打开看过的对话，多久回收（分钟）；0 表示回复完就回收。
+   * 这类对话没有页面开着，不收的话进程会一直挂着，而橙点只有用户点开才会消
+   */
+  unreadGraceMinutes: z.number().int().min(0).max(1440).catch(30).default(30),
+  /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
+  reclaimIdleCli: z.boolean().catch(true).default(true),
+  /**
+   * 同时保活的会话上限：回复完停在等下一句、又没人在看的 CLI 最多留几个，超过就结束最久没用的那个，
+   * 下次打开靠 --resume 续接（冷启动一次）。0 表示不限制
+   */
+  keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
+  /**
    * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
    */
   childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
+  /**
+   * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
+   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑
+   */
+  backgroundLimit: z.number().int().min(1).max(64).catch(16).default(16),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
   /**
@@ -1596,7 +1714,7 @@ export const Settings = z.object({
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /**
    * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。
-   * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 WSL 用 WSL，否则 Git Bash，再没有用 cmd）
+   * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 Git Bash 用 Git Bash，没有用 WSL，再没有用 cmd）
    */
   shell: z
     .object({
@@ -1641,6 +1759,11 @@ export const Settings = z.object({
       aiLookup: z.boolean().default(true),
     })
     .default({ aiLookup: true }),
+  /**
+   * 用量统计的「计价模型」：按哪个模型的官方 API 单价折算费用（单价表在 shared/pricing.ts）。
+   * 存模型 id；找不到时界面显示「未配置单价」，不拿 0 冒充
+   */
+  usagePricingModel: z.string().default(DEFAULT_PRICING_MODEL),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({
@@ -1709,3 +1832,95 @@ export interface LoginJob {
   error?: string
   startedAt: number
 }
+
+/**
+ * 对话进程面板里的一条进程：面板登记的 CLI 或它起的子进程（MCP 服务、shell）。
+ * 内存取不到时 rss 为 null（界面显示「未知」），不要用 0 冒充
+ */
+export const TaskProcess = z.object({
+  pid: z.number(),
+  /** 父进程；面板起的是 CLI 自己时为空 */
+  parentPid: z.number().nullable().default(null),
+  /** 命令行摘要：长参数（MCP 配置、临时目录）已经替换掉 */
+  command: z.string().default(''),
+  /** 归属：哪个对话/子对话/子任务/工作流起的；面板自己的动作（AI 创建、文档）为空 */
+  ownerTaskId: z.string().default(''),
+  ownerTitle: z.string().default(''),
+  /** 进程启动时刻（epoch ms）；取不到时 null */
+  startedAt: z.number().nullable().default(null),
+  durationMs: z.number().nullable().default(null),
+  /** 常驻内存（字节）；取不到时 null */
+  rss: z.number().nullable().default(null),
+  /** running 运行中；idle 很久没有输出；orphan 任务已经不在跑了（可清理） */
+  status: z.enum(['running', 'idle', 'orphan']).default('running'),
+  /** cli 面板起的那个进程；child 它起的子进程 */
+  kind: z.enum(['cli', 'child']).default('cli'),
+})
+export type TaskProcess = z.infer<typeof TaskProcess>
+
+/** 一个对话的进程与内存汇总：前端「内存合计」直接读 totalMemory */
+export const TaskProcesses = z.object({
+  sampledAt: z.number(),
+  processes: z.array(TaskProcess).default([]),
+  /** 这个对话树上 CLI 进程的 RSS 合计；取不到系统信息时 null */
+  cliMemory: z.number().nullable().default(null),
+  /** 面板 server 自己的 RSS */
+  serverMemory: z.number(),
+  /** totalMemory = cliMemory + serverMemory；cliMemory 未知时 null */
+  totalMemory: z.number().nullable().default(null),
+  /** 系统进程信息取不到的原因；取得到时为空字符串 */
+  unavailable: z.string().default(''),
+})
+export type TaskProcesses = z.infer<typeof TaskProcesses>
+
+/** 内存曲线上的一个点：t 采样时刻；cli 未知时 total 也是 null（断开而不是掉到 0） */
+export const MemoryPoint = z.object({
+  t: z.number(),
+  server: z.number(),
+  cli: z.number().nullable(),
+  total: z.number().nullable(),
+})
+export type MemoryPoint = z.infer<typeof MemoryPoint>
+
+/** 对话内存历史：按时间从旧到新，points 已经按时间范围裁过 */
+export const TaskMemoryHistory = z.object({
+  sampledAt: z.number(),
+  intervalMs: z.number(),
+  capacity: z.number(),
+  points: z.array(MemoryPoint).default([]),
+})
+export type TaskMemoryHistory = z.infer<typeof TaskMemoryHistory>
+
+/** 关闭一个进程的结果：失败时把系统给的真实错误带回来 */
+export const KillProcessResult = z.object({
+  ok: z.boolean(),
+  pid: z.number(),
+  error: z.string().default(''),
+})
+export type KillProcessResult = z.infer<typeof KillProcessResult>
+
+/** 清理无效进程：只处理面板登记过、任务已经不在跑的 */
+export const CleanProcessesInput = z.object({
+  /** 用户在确认列表里勾选的 pid；为空时清全部符合的 */
+  pids: z.array(z.number()).max(500).default([]),
+})
+export type CleanProcessesInput = z.infer<typeof CleanProcessesInput>
+
+export const CleanProcessesResult = z.object({
+  /** 真的发过结束的 */
+  killed: z.array(z.number()).default([]),
+  /** 觉得可以杀但被服务端拦下的（任务还在跑、命令行不像面板起的） */
+  skipped: z.array(z.object({ pid: z.number(), reason: z.string() })).default([]),
+  /** 登记还在但进程已经结束的（顺手把登记清掉） */
+  gone: z.array(z.number()).default([]),
+})
+export type CleanProcessesResult = z.infer<typeof CleanProcessesResult>
+
+/** AI 清理的建议：只是建议，用户确认后前端再调清理接口 */
+export const ProcessSuggestResult = z.object({
+  suggestions: z.array(z.object({ pid: z.number(), reason: z.string() })).default([]),
+  /** CLI 的原文说明（没有解析出 JSON 时给用户看） */
+  text: z.string().default(''),
+  error: z.string().default(''),
+})
+export type ProcessSuggestResult = z.infer<typeof ProcessSuggestResult>

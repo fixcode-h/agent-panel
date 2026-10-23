@@ -30,8 +30,8 @@ export const EN_SETTINGS: Record<string, string> = {
   没有给出可用的值: 'No usable values were given',
   '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。':
     'The test role runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the role finds commands itself and suggests adding them.',
-  '还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。':
-    'No test steps yet. For a new Node project, "AI analyze this folder" fills in a set based on the scripts.',
+  '还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。':
+    'No test steps yet. "AI initialize project" recommends a set based on the project scripts.',
   '步骤名，例如「单元测试」': 'Step name, e.g. "Unit tests"',
   步骤名: 'Step name',
   要执行的命令: 'Command to run',
@@ -133,6 +133,14 @@ export const EN_SETTINGS: Record<string, string> = {
     'Used for text files created or rewritten in this project, and the convention roles follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
   '和全局设置不同时，在这里单独指定': 'Override the global setting here',
   跟随全局设置: 'Follow the global setting',
+  搜索时跳过的目录: 'Folders skipped when searching',
+  相对项目根: 'Relative to the project root',
+  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。':
+    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder. In Git projects, folders already in .gitignore are skipped automatically; only add the ones it does not cover.',
+  '目录名，回车添加': 'Folder name, press Enter to add',
+  '填入 UE 排除清单': 'Fill in the UE exclusion list',
+  清空: 'Clear',
+  '此外始终跳过：{list}': 'Also always skipped: {list}',
 
   // 默认 CLI
   '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
@@ -383,6 +391,17 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
+  '自动回收闲置 Agent': 'Reclaim idle agents automatically',
+  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。':
+    'Agents that finished and have nobody watching are reclaimed after the two windows below; coming back restarts one in a few seconds and resumes the conversation. Turned off, they are no longer reclaimed by time and only limited by "Max kept-alive conversations", so these processes keep piling up.',
+  没看过的回复保留多久: 'Keep unread replies for',
+  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。':
+    'Minutes; 0 reclaims as soon as the reply finishes. When a turn finished but you have not opened the conversation yet (the orange dot in the sidebar is still on), the agent is kept at most this long; after that opening it restarts the agent and resumes the conversation.',
+  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
+  同时保活的会话上限: 'Max kept-alive conversations',
+  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。':
+    'How many finished conversations with no page open may stay alive waiting for your next message. Beyond this, the least recently used one is closed (opening it again restarts it once). 0 means no limit.',
+  '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
@@ -577,8 +596,28 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。':
-    "Skills and custom commands in each agent's user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Project-level Skills are managed in project settings.",
+  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。':
+    'Skills and custom commands in each agent\'s user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Commands in "All agents" are expanded by the panel and work with every agent. Project-level Skills are managed in project settings.',
+  '所有 Agent': 'All agents',
+  '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
+    'Describe what you need and a local agent writes a command that works with every agent',
+  '已创建「/{name}」，所有 Agent 都能用': 'Created "/{name}", available to every agent',
+  '用 AI 创建命令': 'Create command with AI',
+  '本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用':
+    'A local agent writes the command file and previews it on the right; once confirmed, every agent can use it',
+  '描述你想要的命令：打「/名字」时要让 Agent 做什么、要不要参数。可以从下面的例子开始：':
+    'Describe the command you want: what the agent should do when you type "/name", and whether it takes arguments. Start from an example below:',
+  描述你想要的命令: 'Describe the command you want',
+  生成的命令会显示在这里: 'The generated command will appear here',
+  创建命令: 'Create command',
+  '说说想怎么改，例如「参数为空时审查全部改动」「做完列出改了哪些文件」。':
+    'Say what to change, e.g. "review all changes when no argument is given" or "list the changed files at the end".',
+  '命令文件（所有 Agent 共用）': 'Command file (shared by all agents)',
+  '/fix-issue <编号>：读 issue，定位原因并修复，补上回归测试':
+    '/fix-issue <number>: read the issue, find the cause, fix it and add a regression test',
+  '/changelog：按最近的提交整理一段给用户看的更新说明':
+    '/changelog: turn recent commits into user-facing release notes',
+  '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
@@ -843,12 +882,16 @@ export const EN_SETTINGS: Record<string, string> = {
     'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
   '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。':
     'Once authorized, agents can expose local services to the internet through Cloudflare Tunnel with cloudflared, e.g. to show a panel under development on a remote machine.',
+  '授权后 Agent 可以直接用 vercel 部署项目和预览、查看部署状态、管理域名与环境变量。':
+    'Once authorized, agents can use vercel to deploy projects and previews, check deployment status, and manage domains and environment variables.',
   已授权: 'Authorized',
   未授权: 'Not authorized',
   '还没有登录 GitHub。点「浏览器授权」，或者用 Personal Access Token 授权。':
     'Not signed in to GitHub yet. Choose "Authorize in browser", or authorize with a personal access token.',
   '还没有登录 Cloudflare。点「浏览器授权」，在打开的页面里选一个域名即可。':
     'Not signed in to Cloudflare yet. Choose "Authorize in browser" and pick a domain on the page that opens.',
+  '还没有登录 Vercel。点「浏览器授权」，在打开的页面里完成授权；也可以给 vercel 命令设置 VERCEL_TOKEN 环境变量来用 Token。':
+    'Not signed in to Vercel yet. Choose "Authorize in browser" and finish on the page that opens; you can also set the VERCEL_TOKEN environment variable for vercel commands.',
   '没有检测到 {command}，先安装再授权。': 'Could not find {command}. Install it before authorizing.',
   浏览器授权: 'Authorize in browser',
   '用 Token 授权': 'Authorize with a token',
@@ -1011,17 +1054,15 @@ export const EN_SETTINGS: Record<string, string> = {
   修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
   // 命令行环境
   命令行环境: 'Command shell',
-  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。有 WSL 默认用 WSL，没有就用 Git Bash。':
-    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to WSL when installed, otherwise Git Bash.',
+  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。':
+    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to Git Bash (Windows paths work directly), then WSL when Git Bash is missing, then cmd.',
   '重新检测（刚装了 WSL 或 Git 时用）': 'Detect again (after installing WSL or Git)',
   // 设置里的用量统计：shared/usage.ts 的粒度标签和 components/usage/UsageSection.tsx 的表格
   按天: 'Daily',
   按周: 'Weekly',
   按月: 'Monthly',
   用量统计: 'Usage',
-  暂无用量: 'No usage yet',
   统计粒度: 'Granularity',
-  刷新用量: 'Refresh usage',
   '共 {n} 轮': '{n} turns in total',
   时间: 'Time',
   输入: 'Input',
@@ -1037,4 +1078,133 @@ export const EN_SETTINGS: Record<string, string> = {
   '{m}月{d}日这一周': 'Week of {m}/{d}',
   '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。':
     'Counts tokens from every turn in local time, placed on the day the turn started (weeks start on Monday). Input includes cache hits and cache writes.',
+  // 用量统计：单区间工具条、时间选择器、计价
+  计价模型: 'Pricing model',
+  '刷新用量（R）': 'Refresh usage (R)',
+  切换区间: 'Switch range',
+  回到今天: 'Back to today',
+  元: 'CNY',
+  美元: 'USD',
+  未配置单价: 'No price configured',
+  这段时间暂无用量: 'No usage in this range',
+  '今天还没有用量，显示最近有数据的一天：{shown}': 'Nothing today, showing the latest day with usage: {shown}',
+  '本周还没有用量，显示最近有数据的一周：{shown}': 'Nothing this week, showing the latest week with usage: {shown}',
+  '本月还没有用量，显示最近有数据的一个月：{shown}': 'Nothing this month, showing the latest month with usage: {shown}',
+  '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰、空闲两档，空闲价是高峰价的一半；北京时间周一至周五 9:00-12:00、14:00-18:00 为高峰，其余时段（含周末、法定节假日）为空闲。每一轮按它开始的时间归档。缓存写入官方没有单列，按未命中输入价计。':
+    'Estimated from the official {model} API prices (per million tokens, {date}): input {input}, output {output}, cache hit {hit}, cache write {write}. The vendor has peak and off-peak tiers, with off-peak at half the peak price: peak is 9:00-12:00 and 14:00-18:00 Beijing time on weekdays, everything else (weekends and public holidays included) is off-peak. Each turn is attributed by the time it started. Cache writes are not priced separately by the vendor, so they are billed at the cache-miss input price.',
+  '这个计价模型没有配置单价，费用按 0 处理。': 'This pricing model has no price configured, so cost is treated as 0.',
+  'CLI 上报的费用（{cost}）只作对照，不参与合计。':
+    'The cost reported by the CLI ({cost}) is for comparison only and is not included in the total.',
+  '按 {model} 单价估算': 'Estimated with {model} prices',
+  '高峰 {tokens} · {cost}': 'Peak {tokens} · {cost}',
+  '空闲 {tokens} · {cost}': 'Off-peak {tokens} · {cost}',
+  '高峰时段：北京时间周一至周五 9:00-12:00、14:00-18:00':
+    'Peak hours: 9:00-12:00 and 14:00-18:00 Beijing time, Monday to Friday',
+  '空闲时段：其余时间，含周末和法定节假日': 'Off-peak hours: everything else, weekends and public holidays included',
+  '{total}（高峰 {peak} · 空闲 {offPeak}）': '{total} (peak {peak} · off-peak {offPeak})',
+  '{unit} / 百万 token · {model} 按峰谷分档计价':
+    '{unit} per million tokens · {model} billed by peak and off-peak tiers',
+  '用量明细（{range}）': 'Usage details ({range})',
+  '{unit} / 百万 token · {model} 高峰时段单价': '{unit} per million tokens · {model} peak price',
+  '第 {n} 周 · {from} - {to}': 'Week {n} · {from} - {to}',
+  '{y}年{m}月{d}日': '{y}-{m}-{d}',
+  '{y}年{m}月{d}日，有数据': '{y}-{m}-{d}, has usage',
+  一: 'Mo',
+  二: 'Tu',
+  三: 'We',
+  四: 'Th',
+  五: 'Fr',
+  六: 'Sa',
+  日: 'Su',
+  周日: 'Sun',
+  周一: 'Mon',
+  周二: 'Tue',
+  周三: 'Wed',
+  周四: 'Thu',
+  周五: 'Fri',
+  周六: 'Sat',
+  '上一区间（[）': 'Previous range ([)',
+  '下一区间（]）': 'Next range (])',
+  '选择时间范围（{range}）': 'Choose a time range ({range})',
+  上个月: 'Previous month',
+  下个月: 'Next month',
+  选择日期: 'Choose a date',
+  点一天看那天的用量: 'Pick a day to see its usage',
+  点一天看那一周: 'Pick a day to see that week',
+  点一天看那个月: 'Pick a day to see that month',
+  // AI 初始化项目
+  '初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置':
+    'Initialize this project: write AGENTS.md and the documentation skeleton, evaluate the available workflows and recommend project settings',
+  写入的文件: 'Files written',
+  未改: 'Unchanged',
+  没有报告写入的文件: 'No files were reported',
+  '推荐了 {n} 项设置（工作流、测试步骤、子对话、文件格式等）。点「查看推荐并应用」回到项目设置，逐项或整体应用。':
+    '{n} recommendations (workflows, test steps, sub-chats, file format and more). Click "Review and apply" to go back to the project settings and apply them one by one or all at once.',
+  'AI 初始化项目': 'AI initialize project',
+  '在项目目录里写好 AGENTS.md 和文档框架，评估工作流、推荐项目设置；推荐项回到项目设置里逐项或整体应用':
+    'Writes AGENTS.md and the documentation skeleton in the project folder, evaluates workflows and recommends project settings; apply the recommendations one by one or all at once in the project settings',
+  '直接让它初始化，或者说说你的要求。': 'Let it initialize right away, or describe what you need.',
+  '补充要求，例如「文档放在 Docs/ 下」': 'Extra requirements, e.g. "put the docs under Docs/"',
+  初始化的结果会显示在这里: 'The initialization result will appear here',
+  查看推荐并应用: 'Review and apply',
+  '文件已经写好，推荐的设置回到项目设置里应用':
+    'Files are written; apply the recommended settings in the project settings',
+  '独立 worktree': 'Separate worktree',
+  第一次需要推送时问一次: 'Ask the first time a push is needed',
+  只用内置清单: 'Built-in list only',
+  'Ubuntu-24.04（默认）': 'Ubuntu-24.04 (default)',
+  '（未选择）': '(not selected)',
+  'Unreal Engine 项目': 'Unreal Engine project',
+  '可选工作流「{name}」': 'Optional workflow "{name}"',
+  未加入: 'Not added',
+  加入: 'Add',
+  '「{wf}」的{name}': '{name} of "{wf}"',
+  '（没有）': '(none)',
+  '{n} 步：{names}': '{n} steps: {names}',
+  子对话与推送: 'Sub-chats and pushing',
+  文件与搜索: 'Files and search',
+  重新初始化: 'Initialize again',
+  '本机 Agent 读一遍项目，写好 AGENTS.md 和项目文档框架，再评估哪些工作流可用、项目设置该怎么配。推荐项可以逐项应用，也可以整组或全部应用；每个项目初始化一次，完成后才能保存项目设置。':
+    'A local agent reads the project, writes AGENTS.md and the documentation skeleton, then evaluates which workflows fit and how the project should be configured. Apply recommendations one by one, by group or all at once. Each project is initialized once, and the settings can only be saved after that.',
+  '已于 {date} 初始化': 'Initialized on {date}',
+  这个项目还没有初始化: 'This project has not been initialized',
+  '项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。':
+    'Initialize again after big structural changes: existing documents are only extended, never overwritten.',
+  '初始化完成并应用后，才能点「确认」保存项目设置。':
+    'Initialize and apply the result before you can click Confirm to save the project settings.',
+  '先在「常规」里选好本地目录。': 'Choose the local folder under General first.',
+  '没有就新建，已有就保留原内容补全：项目说明、硬规则、常用命令、文档地图':
+    'Created if missing, otherwise extended while keeping what is there: overview, hard rules, common commands, documentation map',
+  文档框架: 'Documentation skeleton',
+  '按 project-documentation 建文档入口、模块地图和各模块的说明；P4 项目放在项目外':
+    'Doc entry, module map and per-module notes following project-documentation; P4 projects keep them outside the project',
+  评估工作流: 'Evaluate workflows',
+  '逐个判断已添加的工作流：哪个当默认、哪些放进可选、哪些用不上':
+    'Checks each added workflow: which one is the default, which are optional and which do not fit',
+  推荐设置: 'Recommended settings',
+  '测试步骤、子对话隔离、推送、编码换行、搜索排除等，每项附依据':
+    'Test steps, sub-chat isolation, pushing, encoding and line endings, search exclusions and more, each with a reason',
+  初始化完成: 'Initialization finished',
+  '文档根：{dir}': 'Docs root: {dir}',
+  'Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。':
+    'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
+  '{n} 项和当前设置不同，应用后点「确认」保存':
+    '{n} differ from the current settings; apply them, then click Confirm to save',
+  '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
+  没有需要调整的设置: 'No settings need changing',
+  全部应用: 'Apply all',
+  '{n} 项待应用': '{n} to apply',
+  已一致: 'Matches',
+  应用本组: 'Apply group',
+  查看推荐的步骤: 'Show recommended steps',
+  评估后不适用的工作流: 'Workflows that do not fit',
+  '初始化完成，按需应用推荐的设置后点「确认」保存':
+    'Initialized. Apply the recommended settings you want, then click Confirm to save',
+  'AI 初始化': 'AI initialize',
+  '选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。':
+    'Initialize the project with AI first: it writes AGENTS.md and the documentation skeleton and recommends workflows and settings.',
+  '选好本地目录后，先 AI 初始化项目才能保存。':
+    'Choose a local folder, then initialize the project with AI before saving.',
+  '先完成「AI 初始化项目」才能保存': 'Run "AI initialize project" before saving',
+  '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
 }

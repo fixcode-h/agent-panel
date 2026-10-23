@@ -1,9 +1,12 @@
 /**
  * 对话的执行计划（task.plans）：Agent 用 set_plan 交整份列表，面板在这里合并，守住几条规则：
  * - 最多两层：主步骤和子步骤
+ * - 交整份列表时，没写进新列表的未完成步骤算删掉；只交变更步骤（partial）时，没写到的步骤原样留着
  * - 完成的步骤锁死：之后交的列表里改它、删它都无效，同样的内容要做就新加一步
- * - 整份都完成后计划收起（doneAt），必须用 finish_plan 写总结；之后的新内容开一份新计划
+ * - 整份都完成后计划收起（doneAt），这份计划就算结束；之后的新内容直接开一份新计划（finish_plan 只是提前结束）
  * - 等待中的步骤挂着后台命令、子对话：结果回来时 settleWait 按编号找到它，成功就标完成，失败退回进行中
+ * - 子对话的计划最后一步是面板加的收尾（wrapUp）：合回父对话所在的分支，或者 P4 按文件类型分 changelist。
+ *   Agent 漏写、删掉、挪到中间都会被放回最后，免得做完改动就停下、收尾没人做
  * 前后端都用（界面画弹窗、服务端改状态），不能引 node 模块
  */
 import { topSteps } from './flow.ts'
@@ -27,16 +30,33 @@ export interface PlanItemInput {
 const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done']
 const STATUS_TEXT: Record<PlanStatus, string> = { pending: '待做', running: '进行中', waiting: '等待中', done: '完成' }
 
+/** 收尾步骤的种类：merge 独立分支合回父对话所在的分支，p4 按文件类型分进各自的 pending changelist */
+export type WrapUpKind = NonNullable<PlanStep['wrapUp']>
+
+/** 面板加的收尾步骤长什么样：标题、备注都直接写清楚要做什么，Agent 照着做 */
+export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
+  merge: {
+    title: '收尾：合回父对话所在的分支',
+    note: '编译测试跑通、前面的步骤都做完后调用 submit_merge；面板合进去后自动标完成，不用自己标',
+  },
+  p4: {
+    title: '收尾：按文件类型把改动分进各自的 changelist',
+    note: '[C++]、[XLSX]、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；描述写一行「[类型] 中文短句」，p4 describe 回读确认没乱码。不 submit',
+  },
+}
+
 /** 当前计划：最后一份还没做完的 */
 export function activePlan(task: Pick<Task, 'plans'>): TaskPlan | undefined {
   const last = task.plans?.at(-1)
   return last && !last.doneAt ? last : undefined
 }
 
-/** 做完了还没写总结的计划（最多一份：没写总结前不能开新计划） */
-export function unsummarized(task: Pick<Task, 'plans'>): TaskPlan | undefined {
-  const last = task.plans?.at(-1)
-  return last?.doneAt && !last.summary.trim() ? last : undefined
+/**
+ * 过渡桩：以前是「做完了还没写总结的计划」。现在计划做完就算结束，不再欠总结，这里固定返回 undefined。
+ * engine.ts 里那条追要总结的提示线还在引用它，先留着让那段自然失效；engine.ts 清掉引用后连同导出一起删。
+ */
+export function unsummarized(_task: Pick<Task, 'plans'>): TaskPlan | undefined {
+  return undefined
 }
 
 /** 弹窗和按钮显示的那份：没做完的，或者最近做完的一份 */
@@ -79,7 +99,7 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
 
 /**
  * 还没做完的计划进度：列表里显示「计划 7/8」，有它就不算交付完（不算已完成）。
- * 计划的步骤全做完了、只是还在写总结的不算（那份已经不会再执行），交给 finish_plan 那一条线。
+ * 计划的步骤全做完时计划已经收起（doneAt），不算「没做完」。
  */
 export function openPlan(task: Pick<Task, 'plans' | 'steps'>) {
   const plan = activePlan(task)
@@ -113,7 +133,8 @@ function setStatus(item: PlanItem, status: PlanStatus, now: string) {
 
 /**
  * 合并一层列表：已有的按 id（其次按标题）对上；完成的原样留着、不吃新的改动；
- * 没写进新列表的未完成项删掉，完成的放回原来的位置
+ * 没写进新列表的未完成项删掉，完成的放回原来的位置。
+ * keep：只交变更步骤（partial）时为真，没写到的项一律放回原位、当成没动过
  */
 function mergeLevel<T extends PlanItem>(
   old: T[],
@@ -122,6 +143,7 @@ function mergeLevel<T extends PlanItem>(
   update: (cur: T, x: PlanItemInput) => void,
   nextId: () => string,
   locked: string[],
+  keep = false,
 ): T[] {
   const used = new Set<T>()
   const ids = new Set(old.map((x) => x.id))
@@ -146,9 +168,9 @@ function mergeLevel<T extends PlanItem>(
     ids.add(fresh)
     out.push(make(x, fresh))
   }
-  // 漏写的完成项放回原位
+  // 漏写的完成项放回原位（只交变更步骤时，漏写的未完成项也放回原位）
   old.forEach((o, i) => {
-    if (used.has(o) || o.status !== 'done') return
+    if (used.has(o) || (o.status !== 'done' && !keep)) return
     out.splice(Math.min(i, out.length), 0, o)
   })
   return out
@@ -164,7 +186,7 @@ function rollUp(step: PlanStep, now: string) {
     setStatus(step, 'waiting', now)
 }
 
-/** 全部完成时收起计划：记完成时间，等 finish_plan 写总结 */
+/** 全部完成时收起计划：记完成时间，这份计划就此结束 */
 function closeIfDone(plan: TaskPlan, now: string) {
   if (plan.doneAt || !plan.steps.length) return false
   if (!plan.steps.every((s) => s.status === 'done')) return false
@@ -173,22 +195,50 @@ function closeIfDone(plan: TaskPlan, now: string) {
 }
 
 /**
- * set_plan：交整份计划。没有进行中的计划就开一份新的（上一份做完了还没写总结时不让开）。
+ * 计划的最后一步必须是一个没做完的收尾步骤（只要还有没做完的步骤，或者从来没收过尾）：
+ * 没有就加（Agent 刚删掉的那个原样放回，id 不变），多写了只留一个，挪到中间的放回最后。
+ * 已经做完的收尾留在原位：之后又加了要做的步骤，就在最后再收一次尾
+ */
+function ensureWrapUp(plan: TaskPlan, kind: WrapUpKind, prev: PlanStep | undefined, nextId: () => string) {
+  const open = plan.steps.filter((s) => s.wrapUp && s.status !== 'done')
+  const rest = plan.steps.filter((s) => !(s.wrapUp && s.status !== 'done'))
+  if (!rest.length) {
+    // 只剩收尾这一步：没有别的事要做，计划照常留着它
+    plan.steps = open.slice(0, 1)
+    return
+  }
+  const needed = !plan.steps.some((s) => s.wrapUp) || rest.some((s) => !s.wrapUp && s.status !== 'done') || open.length
+  if (!needed) return
+  const keep: PlanStep = open[0] ??
+    (prev && prev.status !== 'done' ? prev : undefined) ?? {
+      id: nextId(),
+      title: WRAP_UP[kind].title,
+      status: 'pending',
+      note: WRAP_UP[kind].note,
+      waits: [],
+      startedAt: '',
+      endedAt: '',
+      children: [],
+      wrapUp: kind,
+    }
+  plan.steps = [...rest, keep]
+}
+
+/**
+ * set_plan：交整份计划。没有进行中的计划就开一份新的（上一份做完了就可以直接开新的）。
+ * wrapUp 是子对话要做的收尾（见 ensureWrapUp），面板保证它是计划的最后一步。
  * 返回给 Agent 的说明里带上合并后的完整计划和每一项的 id
  */
 export function applyPlan(
   task: PlanTask,
-  input: { title?: string; steps?: PlanItemInput[] },
+  input: { title?: string; steps?: PlanItemInput[]; partial?: boolean },
   now = new Date().toISOString(),
+  wrapUp?: WrapUpKind,
 ): { ok: boolean; info: string } {
+  // 只交变更步骤：步骤一多时分两批交，没写到的未完成步骤不删（模型拼大段 JSON 容易出错）
+  const partial = input.partial === true
   const steps = Array.isArray(input.steps) ? input.steps.filter((x) => x && typeof x === 'object') : []
   if (!steps.length) return { ok: false, info: 'steps 是空的：至少写一个主步骤' }
-  const owed = unsummarized(task)
-  if (owed)
-    return {
-      ok: false,
-      info: `上一份计划「${owed.title || '未命名'}」已经全部完成，还没写总结：先调用 finish_plan 写总结，再开新的计划。`,
-    }
   task.plans ??= []
   let plan = activePlan(task)
   if (!plan) {
@@ -241,9 +291,13 @@ export function applyPlan(
       },
       () => `${step.id}.${++n}`,
       locked,
+      partial,
     )
   }
   const before = plan.steps.filter((s) => s.status !== 'done').map((s) => s.title)
+  // 合并前记下没做完的收尾：Agent 漏写时原样放回，合回分支这种由面板标完成的也要知道它原来的状态
+  const prevWrap = plan.steps.find((s) => s.wrapUp && s.status !== 'done')
+  const prevWrapStatus = prevWrap?.status
   plan.steps = mergeLevel<PlanStep>(
     plan.steps,
     steps.slice(0, MAX_PLAN_STEPS),
@@ -273,7 +327,18 @@ export function applyPlan(
     },
     () => String(++seq),
     locked,
+    partial,
   )
+  const notes0: string[] = []
+  if (wrapUp) {
+    ensureWrapUp(plan, wrapUp, prevWrap, () => String(++seq))
+    // 合回分支只有面板说了算：Agent 自己标完成不算，等合并结果
+    const merge = plan.steps.find((s) => s.wrapUp === 'merge' && s.status === 'done' && s === prevWrap)
+    if (merge && prevWrapStatus !== 'done') {
+      setStatus(merge, prevWrapStatus === 'pending' ? 'pending' : 'running', now)
+      notes0.push(`「${merge.title}」由面板在合并成功后标完成：调用 submit_merge，不要自己标。`)
+    }
+  }
   for (const t of before) if (!plan.steps.some((s) => s.title === t)) dropped.push(t)
   for (const s of plan.steps) rollUp(s, now)
   const closed = closeIfDone(target, now)
@@ -282,7 +347,8 @@ export function applyPlan(
       ? `这些步骤已经完成，不再改动：${[...new Set(locked)].map((x) => `「${x}」`).join('、')}。同样的内容还要再做就新加一步。`
       : '',
     dropped.length ? `已从计划里去掉：${dropped.map((x) => `「${x}」`).join('、')}` : '',
-    closed ? '计划的步骤全部完成了：现在调用 finish_plan 写总结（必须）。' : '',
+    ...notes0,
+    closed ? '计划的步骤全部完成了：这份计划结束，之后有新内容用 set_plan 开新的计划。' : '',
   ].filter(Boolean)
   return { ok: true, info: [`计划已更新：\n${planText(task, target)}`, ...notes].join('\n\n') }
 }
@@ -462,7 +528,6 @@ export function waitNote(hit: { title: string; done: boolean }[]) {
 /** 工作流做主步骤：start_plan 启动时挂上运行编号；没指定步骤就在计划末尾加一步 */
 export function bindRun(task: PlanTask, stepId: string, run: number, title: string, now = new Date().toISOString()) {
   task.plans ??= []
-  if (unsummarized(task)) return ''
   let plan = activePlan(task)
   if (!plan) {
     plan = {
@@ -480,12 +545,35 @@ export function bindRun(task: PlanTask, stepId: string, run: number, title: stri
   if (!step) {
     const seq = Math.max(0, ...plan.steps.map((s) => Number(s.id) || 0)) + 1
     step = { id: String(seq), title, status: 'pending', note: '', waits: [], startedAt: '', endedAt: '', children: [] }
-    plan.steps.push(step)
+    // 收尾永远在最后：新加的工作流步骤插在它前面
+    const wrap = plan.steps.findIndex((s) => s.wrapUp && s.status !== 'done')
+    if (wrap >= 0) plan.steps.splice(wrap, 0, step)
+    else plan.steps.push(step)
   }
   step.run = run
   step.children = []
   setStatus(step, 'running', now)
   return step.id
+}
+
+/**
+ * 面板替 Agent 推进收尾步骤：合回分支排上队标进行中，合进去标完成，没合进去退回进行中写上原因。
+ * 没有进行中的计划、计划里没有这种收尾时什么也不做（没列计划的子对话照旧按 submit_merge 收尾）
+ */
+export function markWrapUp(
+  task: PlanTask,
+  kind: WrapUpKind,
+  status: 'running' | 'done',
+  note = '',
+  now = new Date().toISOString(),
+) {
+  const plan = activePlan(task)
+  const step = plan?.steps.find((s) => s.wrapUp === kind && s.status !== 'done')
+  if (!plan || !step) return false
+  setStatus(step, status, now)
+  if (note) step.note = clean(note, 300)
+  closeIfDone(plan, now)
+  return true
 }
 
 /** 工作流跑完：成功标完成，失败退回进行中并记下原因，交给 Agent 处理 */
@@ -498,22 +586,24 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
   closeIfDone(plan, now)
 }
 
-/** finish_plan：给做完的计划写总结。还有没完成的步骤时不收 */
-export function finishPlan(task: PlanTask, summary: string): { ok: boolean; info: string } {
-  const text = summary.trim()
-  if (!text) return { ok: false, info: 'summary 是空的：写这份计划做了什么、结果怎样、有什么遗留' }
-  const owed = unsummarized(task)
-  if (owed) {
-    owed.summary = text.slice(0, 6000)
-    owed.autoSummary = false
-    return { ok: true, info: '总结已记下，这份计划结束。之后有新内容时用 set_plan 开新的计划。' }
-  }
-  const cur = activePlan(task)
-  if (!cur) return { ok: false, info: '现在没有要写总结的计划' }
-  const left = cur.steps.filter((s) => s.status !== 'done')
+/**
+ * finish_plan：结束这份计划。步骤全完成时计划本来就已经收起，这里是主动结束一份还没做完的计划。
+ * 不再要求写总结，传了也不保存：计划不再有「欠一份总结」这个状态。
+ */
+export function finishPlan(
+  task: PlanTask,
+  _summary?: string,
+  now = new Date().toISOString(),
+): { ok: boolean; info: string } {
+  const plan = activePlan(task)
+  if (!plan) return { ok: false, info: '现在没有进行中的计划' }
+  const left = plan.steps.filter((s) => s.status !== 'done')
+  plan.doneAt ||= now
   return {
-    ok: false,
-    info: `计划还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}。做完再写总结；不做了就用 set_plan 把它们从计划里去掉。`,
+    ok: true,
+    info: left.length
+      ? `这份计划结束了。还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}，它们留在计划里。之后有新内容用 set_plan 开新的计划。`
+      : '这份计划结束了。之后有新内容用 set_plan 开新的计划。',
   }
 }
 

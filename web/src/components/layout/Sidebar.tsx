@@ -60,7 +60,7 @@ import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { byAskedAt, taskBusy } from '@shared/task'
+import { byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -413,7 +413,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   }
   const reveal = (p: Project) => {
     if (!p.path) return toast.error(t('这个项目还没有选择本地目录'))
-    api.revealProject(p.id).catch((e) => toast.error((e as Error).message))
+    // 成功也给一句：资源管理器可能开在浏览器后面，没有反馈时用户只能看到「点了没反应」
+    api
+      .revealProject(p.id)
+      .then((r) => toast.success(t('已在文件夹中打开：{dir}', { dir: r.dir })))
+      .catch((e) => toast.error((e as Error).message))
   }
 
   const body = (narrow: boolean) => (
@@ -599,7 +603,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           {allOpen &&
             groups.map(([pid, ts], gi) => {
               const open = !folded.has(pid)
-              const running = ts.filter((t) => taskBusy(t)).length
+              const running = taskBusyCount(ts)
               // 收起「更多」时也要露出正在看的那个任务
               const shown = more.has(pid)
                 ? ts

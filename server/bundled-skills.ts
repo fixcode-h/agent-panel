@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { frontField, type BundledSkill } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
@@ -59,6 +60,55 @@ export async function entries(): Promise<Entry[]> {
 
 /** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
 const sharedRoot = () => expandHome('~/.agents/skills')
+
+/**
+ * 已经下线的自带 Skill：目录名 → 旧版每个文件的 sha256。
+ * 内容并入 project-vcs 之后，旧副本留着会让 CLI 同时看到两个入口，所以要清掉；
+ * 但只删「和当初装进去的完全一致」的，用户改过或自己加过文件的保留（那是用户的内容，不是我们的）。
+ */
+export const RETIRED_BUNDLED: Record<string, Record<string, string>> = {
+  // 并入了 project-vcs 的 SKILL.md
+  'project-workflow': { 'SKILL.md': '655553a35f95821c6d41f40f16b109498815e8970da7f1650264bed3346263c8' },
+  // 并入了 project-vcs 的 git.md
+  'git-workflow': { 'SKILL.md': 'fa0f1af17e25d6d73019ebb78502769c51d9c10a1972ac461c73ef4ff76049bf' },
+  // 并入了 project-vcs 的 p4.md 和 templates/task.p4change.md
+  'p4-workflow': {
+    'SKILL.md': '219b4d0fd8865eb8090937c8da7d7a9fbd04495047ad23c8d07f8b9168f71bab',
+    'templates/task.p4change.md': 'a41e477fb24cda426533c1cd14d267f99a7a7f42fb926286a67c0b328146ed26',
+  },
+  // 下面两个是部署到「分类/名字」目录的（设置 → 部署）。UE 编译改由父对话申请执行，资源锁和编译排队交给面板
+  'ue/ue-multi-agent-coordination': {
+    'SKILL.md': '12cfcf5a1f554b11e11ebd37de04befee5c3dd7895f8f74ada486c694c70585e',
+  },
+  // .luac 只由项目测试步骤里的编译生成，不再单独带一份编译技能
+  'ue/lua-luac-compiler': {
+    'SKILL.md': '5ff4623b346db832f5142bb4534321c8ce6548f4686db0569e62f6e965732c49',
+    'scripts/check_lua_syntax.py': '23376e1d476162a1ad8bed2c4c2814dda03e98fc317c927489d85e9a91a22acc',
+  },
+}
+
+const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex')
+
+/**
+ * 清掉下线的自带 Skill 的旧副本，返回删掉的目录名。
+ * 判定不看目录名就删：目录里每个文件都要和记录的旧版一致、且没有多出来的文件，才认定是当初装进去的那份。
+ */
+export async function retireBundled(root = sharedRoot(), retired = RETIRED_BUNDLED) {
+  const removed: string[] = []
+  for (const [name, files] of Object.entries(retired)) {
+    const dir = path.join(root, name)
+    if (!existsSync(path.join(dir, 'SKILL.md'))) continue
+    const found = await readTree(dir)
+    const same = found.length === Object.keys(files).length && found.every(([rel, buf]) => files[rel] === sha256(buf))
+    if (!same) {
+      log.info('skills', `保留改过的已下线 Skill：${name}`)
+      continue
+    }
+    await rm(dir, { recursive: true, force: true })
+    removed.push(name)
+  }
+  return removed
+}
 
 export async function statusIn(e: Entry, root: string): Promise<BundledSkill['status'][string]> {
   const dir = path.join(root, e.name)
@@ -122,10 +172,12 @@ export async function installBundled(names: string[], _clis: string[], overwrite
  * 失败只记日志，不影响执行（CLI 找不到 Skill 时会按自己的方式做）。
  */
 export async function ensureBundled(names: string[]) {
-  if (!names.length) return []
   try {
-    const all = await entries()
     const root = sharedRoot()
+    // 先清下线的旧技能：它们的内容已经并进 project-vcs，留着会让 CLI 看到两个入口
+    await retireBundled(root)
+    if (!names.length) return []
+    const all = await entries()
     const added: string[] = []
     for (const name of names) {
       const e = all.find((x) => x.name === name)

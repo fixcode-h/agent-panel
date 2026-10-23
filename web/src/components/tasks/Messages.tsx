@@ -1,22 +1,26 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
 import { fmtSecs } from '@/lib/tasks'
-import { addFoldCut, foldCuts, foldStats, keptOut, replyText, splitFolds } from '@/lib/fold'
+import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
+import { currentRun, topSteps } from '@shared/flow'
+import { runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
+import { RunningNow, runningTools } from './RunningNow'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
+import { useNow } from '@/lib/useNow'
 import { t } from '@shared/i18n'
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
@@ -98,6 +102,9 @@ export function NoteMessage({
   className?: string
 }) {
   const { projects } = useData()
+  // 计划启动时写进对话的那条提示：只是把计划输入又抄了一遍，用户知道自己让 Agent 干了什么，不画出来。
+  // 按消息上的标记判断，不看文案——用户自己打的字里也可能出现「开始执行计划」
+  if (m.planStart) return null
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
   const around = msgs && m.error ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =
@@ -168,6 +175,7 @@ export function AgentMessage({
   hideProcess,
   hideAuthor,
   slot,
+  slotKey,
   author,
   command,
 }: {
@@ -184,6 +192,8 @@ export function AgentMessage({
   hideAuthor?: boolean
   /** 放在名字下面、回复上面的内容（折叠起来的过程） */
   slot?: React.ReactNode
+  /** slot 的内容签名：slot 每次都是新画的元素，按引用比较会让这条消息每次都重渲染 */
+  slotKey?: string
   /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
   author?: Author
   /** 启动这条回复的命令：没有 author 时（按 Agent 显示的对话）用这个 */
@@ -196,13 +206,14 @@ export function AgentMessage({
   return (
     <MessageBody
       m={text === m.text ? m : { ...m, text }}
-      task={task ? { id: task.id, status: task.status, changes: task.changes } : undefined}
+      task={task ? { id: task.id, status: task.status, changes: task.changes, jobs: task.jobs } : undefined}
       teamNames={teamNames}
       compact={compact}
       live={live}
       hideProcess={hideProcess}
       hideAuthor={hideAuthor}
       slot={slot}
+      slotKey={slotKey}
       name={author?.name ?? a?.name ?? t('已删除的角色')}
       model={author ? author.model : a ? modelOf(a) : undefined}
       icon={a || author ? (a?.icon ?? author!.icon ?? 'sparkles') : undefined}
@@ -212,8 +223,28 @@ export function AgentMessage({
   )
 }
 
+/** 启动命令是数组：任务推送时每次都是新对象，比较按内容 */
+const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
+
+/**
+ * slot 里「还在运行」那块的签名：它的内容变了 slot 要跟着重画，没变就整段回复一起跳过。
+ * 收尾后还在跑的工具、后台命令、工作流节点都要算进来，否则这一行会停在旧状态
+ */
+function runningKey(msgs: TaskMessage[], task?: Task) {
+  const tools = runningTools(msgs)
+    .map((x) => `${x.name}:${x.output?.length ?? 0}:${x.detail ?? ''}`)
+    .join(',')
+  const jobs = task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
+  const runs = task?.runs?.map((r) => `${r.id}:${r.status}`).join(',') ?? ''
+  const steps = task?.steps?.map((s) => s.status[0]).join('') ?? ''
+  return `${tools}|${jobs}|${runs}|${steps}|${task?.status ?? ''}`
+}
+
 /** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes'>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
+
+/** 后台命令的状态：跑完时放到后台的那一行要停止转圈 */
+const jobsSig = (task?: ToolTask) => task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
 
 type BodyProps = {
   m: TaskMessage
@@ -224,6 +255,8 @@ type BodyProps = {
   hideProcess?: boolean
   hideAuthor?: boolean
   slot?: React.ReactNode
+  /** slot 的内容签名：比较函数按它判断要不要重画 */
+  slotKey?: string
   name: string
   model?: string
   /** 没有时显示空白头像（Agent 已删除） */
@@ -241,14 +274,27 @@ const toolSig = (x: TaskMessage['tools'][number]) =>
 const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.thinkingMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
+/**
+ * 角色名后面的 Agent（CLI）名：同一个角色换了 CLI 时跟着变，一眼看出这条回复是哪个 CLI 跑的。
+ * 按 Agent 显示的对话里名字本来就是 CLI 名，再显示一次只是重复
+ */
+function CliLabel({ cli, name }: { cli: string; name: string }) {
+  const { cliName } = useAgentView()
+  const label = cliName({ cli })
+  if (name.startsWith(label)) return null
+  return <span className="shrink-0 text-xs text-subtle">{`· ${label}`}</span>
+}
+
 /** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {
   return (
     <div className="sticky top-0 z-10 -mx-2 flex items-center gap-3 bg-bg px-2 py-2">
       <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem]">
-        <span className="truncate font-medium">{author.name}</span>
-        {author.model && <span className="truncate font-mono text-xs text-subtle">{author.model}</span>}
+        <span className="shrink-0 font-medium">{author.name}</span>
+        <CliLabel cli={author.cli} name={author.name} />
+        {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
+        {author.model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{author.model}</span>}
       </div>
       {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
       {author.command?.length ? <StepCommand argv={author.command} className="ml-auto -my-1" /> : null}
@@ -302,8 +348,10 @@ const MessageBody = memo(
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {!noHeader && (
             <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
-              <span className="font-medium">{name}</span>
-              {model && <span className="font-mono text-xs text-subtle">{model}</span>}
+              <span className="shrink-0 font-medium">{name}</span>
+              <CliLabel cli={cli} name={name} />
+              {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
+              {model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{model}</span>}
               {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
               {command?.length ? <StepCommand argv={command} className="ml-auto -my-1" /> : null}
             </div>
@@ -333,8 +381,8 @@ const MessageBody = memo(
     )
   },
   (a, b) =>
-    !a.slot &&
-    !b.slot &&
+    // slot 是每次新画的元素：按内容签名比，内容没变就不重画整段回复
+    (a.slot === b.slot || (!!a.slotKey && a.slotKey === b.slotKey)) &&
     sig(a.m) === sig(b.m) &&
     a.teamNames === b.teamNames &&
     a.compact === b.compact &&
@@ -345,13 +393,16 @@ const MessageBody = memo(
     a.model === b.model &&
     a.icon === b.icon &&
     a.cli === b.cli &&
-    a.command === b.command &&
+    // 启动命令是数组，任务推送时每次都是新对象，按内容比
+    commandSig(a.command) === commandSig(b.command) &&
     // 工具行的窗口只用到任务的 id、状态和有哪些改动的文件：任务对象和改动列表每个增量都会换，
     // 不能按引用比较，否则整段回复每 200ms 都要重画 Markdown。差异窗口打开时会自己按当前内容取，
     // 工具输出的变化也已经在 sig 里比较过了
     a.task?.id === b.task?.id &&
     a.task?.status === b.task?.status &&
-    (a.task?.changes?.length ?? 0) === (b.task?.changes?.length ?? 0),
+    (a.task?.changes?.length ?? 0) === (b.task?.changes?.length ?? 0) &&
+    // 后台命令跑完时这一行要停止转圈
+    jobsSig(a.task) === jobsSig(b.task),
 )
 
 /** 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）：AI 回复里的一行，点开看全文 */
@@ -368,7 +419,11 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
   const [open, setOpen] = useState(false)
   const kind = PANEL_KIND[m.panel === 'ask' || !m.panel ? 'background' : m.panel]
   const Icon = kind.icon
-  const body = m.text.replace(/^【面板】/, '').trim()
+  // 结尾那句「处理完这个结果后重新总结」是说给 AI 的，界面上不显示
+  const body = m.text
+    .replace(/^【面板】/, '')
+    .replace(/\n处理完这个结果后[^\n]*$/, '')
+    .trim()
   // 一行里放第一句：后台命令「名字」跑完了：失败……；子任务结果放交回了几个
   const head =
     m.panel === 'helpers'
@@ -431,6 +486,7 @@ export function Msgs({
   teamNames,
   live,
   slot,
+  slotKey,
   author,
   command,
   compactFirst,
@@ -444,6 +500,8 @@ export function Msgs({
   live?: boolean
   /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
   slot?: React.ReactNode
+  /** slot 的内容签名（同 AgentMessage） */
+  slotKey?: string
   author?: Author
   /** 启动这些回复的命令 */
   command?: string[]
@@ -492,6 +550,7 @@ export function Msgs({
             teamNames={teamNames}
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
+            slotKey={k === firstAgent ? slotKey : undefined}
             author={author}
             command={command}
             hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
@@ -500,6 +559,119 @@ export function Msgs({
         )
       })}
     </>
+  )
+}
+
+/**
+ * 计划跑的那次运行现在的状态：还在跑、失败、被停止。
+ * 完成或没有运行时返回 undefined（那一行就不出现）；节点列表按这次运行的顶层节点算
+ */
+function planRunState(task: Task) {
+  // 对话里的运行只有 start_plan 起的计划；工作流任务在自己的流程图和运行卡片里看
+  if (task.mode !== 'chat') return undefined
+  const rec = task.runs?.at(-1)
+  const steps = topSteps(task, rec?.id ?? currentRun(task))
+  const failed = steps.filter((s) => s.status === 'failed')
+  // 还在跑按 shared/task.ts 的 runRunning 判：启动工作流这个工具调用一下子就会返回，
+  // 运行本身在它后面接着跑，拿工具调用来判会把还在跑的工作流当成结束了
+  const status = runRunning(task)
+    ? 'running'
+    : failed.length || rec?.status === 'failed'
+      ? 'failed'
+      : rec?.status === 'stopped'
+        ? 'stopped'
+        : undefined
+  if (!status) return undefined
+  return {
+    status,
+    name: rec?.workflowName || task.workflowName || t('工作流'),
+    done: steps.filter((s) => s.status === 'done' || s.status === 'skipped').length,
+    total: steps.length,
+    startedAt: rec?.startedAt ?? '',
+    failed,
+  }
+}
+
+/** 任务里最后一条属于对话的消息的 id（节点的输出不算）：拿来认哪一轮是最新的一轮 */
+function lastChatId(msgs: TaskMessage[]) {
+  for (let i = msgs.length - 1; i >= 0; i--) if (!msgs[i].step) return msgs[i].id
+  return ''
+}
+
+/** 还在跑的行前面的转圈图标：和后台命令、子对话用同一套外观 */
+const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+
+/**
+ * 计划跑的那次工作流运行：和后台命令一样挂在总结上面，没跑完就一直转圈，右边写做到第几个节点；
+ * 完成后从这行消失，失败或被停止时留一行说明和失败的节点，不悄无声息地不见了。
+ * 只在最新的一轮上列，旧的一轮不重复
+ */
+function PlanRunRow({
+  task,
+  msgs,
+  last,
+  indent,
+}: {
+  task?: Task
+  /** 这一轮的消息：工作流在跑时这一轮已经收尾（拿不到 live），按「最后一条对话消息在这一轮里」认 */
+  msgs: TaskMessage[]
+  /** 最新的一轮、对话停着 */
+  last?: boolean
+  /** 不在折叠开关下面、单独成行时，和工具调用一样缩进在头像后面 */
+  indent?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const info = task ? planRunState(task) : undefined
+  const running = info?.status === 'running'
+  // 跑的时候每秒刷新已经用了多久，和后台命令一样
+  const now = useNow(!!running)
+  if (!task || !info) return null
+  if (!last && !msgs.some((m) => m.id === lastChatId(task.messages))) return null
+  const line = running ? (
+    <RowShell
+      glyph={spinning}
+      verb={t('工作流')}
+      title={info.name}
+      detail={
+        <span className="shrink-0 font-sans text-subtle">
+          {info.total ? t('{done}/{total} 个节点', { done: info.done, total: info.total }) : t('正在准备节点…')}
+        </span>
+      }
+      ms={info.startedAt ? now - Date.parse(info.startedAt) : undefined}
+      open={false}
+    />
+  ) : (
+    <RowShell
+      glyph={
+        <CircleAlert className={cn('h-3.5 w-3.5 shrink-0', info.status === 'failed' ? 'text-danger' : 'text-subtle')} />
+      }
+      verb={t('工作流')}
+      title={info.name}
+      detail={
+        <span className="shrink-0 font-sans text-subtle">
+          {info.status === 'stopped' ? t('已停止') : t('{n} 个节点失败', { n: info.failed.length })}
+        </span>
+      }
+      // 还没节点失败（被停止）时没有可看的，点不动
+      onToggle={info.failed.length ? () => setOpen(!open) : undefined}
+      open={open}
+      failed={info.status === 'failed'}
+    >
+      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-[0.8125rem]">
+        {info.failed.map((s) => (
+          <span key={s.id} className="truncate text-danger">
+            {s.title}
+          </span>
+        ))}
+      </div>
+    </RowShell>
+  )
+  if (!indent) return line
+  return (
+    <div className="flex gap-3">
+      <span className="w-[26px] shrink-0" />
+      <div className="min-w-0 flex-1">{line}</div>
+    </div>
   )
 }
 
@@ -517,6 +689,8 @@ export function FoldedRun({
   command,
   hideAuthor,
   stickyAuthor,
+  running,
+  foldId,
 }: {
   msgs: TaskMessage[]
   task?: Task
@@ -529,8 +703,12 @@ export function FoldedRun({
   hideAuthor?: boolean
   /** 展开时名字行吸顶（按 Agent 显示的对话） */
   stickyAuthor?: boolean
+  /** 还在运行的工具、后台命令和子对话：放在最后的回复（总结）上面，不收进折叠 */
+  running?: React.ReactNode
+  /** 这一段在一轮里的标识（`轮 key#第几段`）：展开 / 收起的状态按它记，重新挂载、来新内容都不会被打回收起 */
+  foldId?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => (foldId ? segOpenOf(foldId) : false))
   const { agents } = useData()
   const { modelOf } = useAgentView()
   const all = (
@@ -547,12 +725,19 @@ export function FoldedRun({
   )
   // 折叠行只统计这一段里的操作：一段收尾后又来了新内容时，前面几段各自折一行，不会重复计数
   const { last, parts, failed } = foldStats(msgs)
-  if (live || last < 0 || !parts.length) return all
+  // 没有可折的过程：还在运行的东西接在回复后面（和工具调用一样缩进在头像后面）
+  if (live || last < 0 || !parts.length)
+    return (
+      <>
+        {all}
+        {running}
+      </>
+    )
   const before = msgs.slice(0, last)
 
   const toggle = (
     <button
-      onClick={() => setOpen(!open)}
+      onClick={() => setOpen(foldId ? toggleSegOpen(foldId) : !open)}
       aria-expanded={open}
       title={open ? t('收起过程') : t('展开过程')}
       className="flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-subtle hover:text-muted"
@@ -562,6 +747,17 @@ export function FoldedRun({
       {failed > 0 && <span className="shrink-0 text-danger">{t('{n} 次失败', { n: failed })}</span>}
     </button>
   )
+  // 折叠开关下面紧跟着还在运行的东西：收起时它们正好在总结上面
+  const head = running ? (
+    <div className="flex flex-col gap-1.5">
+      {toggle}
+      {running}
+    </div>
+  ) : (
+    toggle
+  )
+  // slot 每次都是新画的元素：给内容算个签名，内容没变时整段回复不重画
+  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? runningKey(msgs, task) : ''}`
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；
@@ -570,8 +766,9 @@ export function FoldedRun({
         msgs={msgs}
         task={task}
         teamNames={teamNames}
-        slot={msgs[0].role === 'agent' ? toggle : undefined}
-        lead={msgs[0].role === 'agent' ? undefined : toggle}
+        slot={msgs[0].role === 'agent' ? head : undefined}
+        slotKey={slotKey}
+        lead={msgs[0].role === 'agent' ? undefined : head}
         author={author}
         command={command}
         hideAuthor={hideAuthor}
@@ -602,7 +799,8 @@ export function FoldedRun({
         teamNames={teamNames}
         hideProcess
         hideAuthor={hideAuthor || !!sticky}
-        slot={toggle}
+        slot={head}
+        slotKey={slotKey}
         author={author}
         command={command}
       />
@@ -654,19 +852,19 @@ export function ChatReply({
   // 前面那段保持折叠，新过程接在它的最后一条回复后面继续显示，不把整轮重新铺开
   const key = msgs[0]?.id ?? ''
   const [cuts, setCuts] = useState<number[]>(() => foldCuts(key))
-  const wasLive = useRef(!!live)
   useEffect(() => {
-    if (live) {
-      wasLive.current = true
-      return
-    }
-    if (!wasLive.current) return
-    wasLive.current = false
+    // 不是执行中就记下收尾位置：第一次画出来就已经收尾（刷新、切回页签、被下面的计划卡片挤成非最后一段）
+    // 也要记，否则之后子对话回报把它重新拉起来接着输出时，前面这段会被当成执行中整段铺开。
+    // 记录不会重复：位置没往前走时 addFoldCut 返回原来的数组
+    if (live) return
     setCuts(addFoldCut(key, msgs.length))
   }, [key, live, msgs.length])
 
   // 一段已经收尾、又有新内容进来时分成几段：前面的段始终折叠，只有最后一段跟着 live 走
   const parts = fold ? splitFolds(msgs, cuts) : [msgs]
+  // 还在运行的工具、后台命令和子对话放在最新一段的总结上面；结果推回来开了新的一段，就跟着挪到新的总结上面
+  const lastPart = lastIndex(parts, (p) => p.length > 0)
+  const tailLive = !!live && lastPart === parts.length - 1
   const body = (
     <>
       {author && <StickyAuthor author={author} />}
@@ -678,8 +876,37 @@ export function ChatReply({
         // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
         const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || i > 0 }
         if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author} />
-        return <FoldedRun key={i} {...same} live={live && tail} stickyAuthor={!author && i === 0} />
+        const isLive = !!live && tail
+        const isTail = i === lastPart
+        // 流式输出时工具就在过程里转圈；收尾的段只列还没收尾的工具，后台的东西和工作流运行只在最新一段列
+        const indent = isLive || !foldStats(part).parts.length
+        const running =
+          isTail || (!isLive && runningTools(part).length) ? (
+            <>
+              {!isLive && (
+                <RunningNow
+                  task={task}
+                  tools={runningTools(part)}
+                  background={!!last && isTail && !tailLive}
+                  indent={indent}
+                />
+              )}
+              {isTail && <PlanRunRow task={task} msgs={msgs} last={last} indent={indent} />}
+            </>
+          ) : undefined
+        return (
+          <FoldedRun
+            key={i}
+            {...same}
+            live={isLive}
+            foldId={`${key}#${i}`}
+            stickyAuthor={!author && i === 0}
+            running={running}
+          />
+        )
       })}
+      {/* 回复还在流式输出：后台命令、子对话列在正在写的内容下面，写完总结后挪到总结上面 */}
+      {fold && tailLive && last && <RunningNow task={task} tools={[]} background indent />}
       {children}
     </>
   )

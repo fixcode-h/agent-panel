@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, ListChecks, Loader2 } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, ListChecks } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { PlanItem, PlanStatus, PlanStep, Task, TaskPlan } from '@shared/schema'
+import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import { planChildren, planProgress, shownPlan } from '@shared/plan'
+import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
-import { Markdown } from './Markdown'
 
 const STATUS_LABEL: Record<PlanStatus, string> = {
   pending: t('待做'),
@@ -73,9 +73,33 @@ function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
   return <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')} />
 }
 
+/**
+ * 计划面板要显示的子对话现状：等的是哪个子对话、它这会儿在做什么、多久没新输出。
+ * 字段和父对话页的 ChildSummary 一致，传进来直接用（等后台命令时没有对应的对象）
+ */
+export interface WaitChild {
+  id: string
+  title: string
+  working: boolean
+  activity?: ChildActivity
+  waiting?: ChildWait
+  lastActivityAt?: string
+}
+
+/** 等待项的一句话：子对话带上它这会儿在做什么、多久没动静，不用再点进子对话去看 */
+function waitText(w: PlanWait, kids?: WaitChild[]) {
+  const label = w.label || w.ref
+  if (w.kind !== 'child') return label
+  const c = kids?.find((k) => k.id === w.ref)
+  if (!c) return label
+  const doing = c.waiting ? childWaitText(c.waiting) : childActivityText(c.activity) || (c.working ? t('执行中') : '')
+  const ago = c.lastActivityAt ? t('最后活动 {ago}', { ago: timeAgo(c.lastActivityAt) }) : ''
+  return [label, doing, ago].filter(Boolean).join(' · ')
+}
+
 /** 步骤后面的一小段：等待中写在等什么，完成写用了多久，进行中写做了多久 */
-function itemMeta(x: PlanItem, now: number) {
-  const waits = x.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
+function itemMeta(x: PlanItem, now: number, kids?: WaitChild[]) {
+  const waits = x.waits.filter((w) => w.state === 'waiting').map((w) => waitText(w, kids))
   if (x.status === 'waiting' && waits.length)
     // 面板写的 note 在这里一起显示：子对话没交付完时它会写清还在等什么（等的是谁由 waits 带出）
     return [t('等：{what}', { what: waits.join(t('、')) }), x.note].filter(Boolean).join(' · ')
@@ -89,8 +113,8 @@ function itemMeta(x: PlanItem, now: number) {
 }
 
 /** 步骤下面那行小字：等待中 note 已经并进 meta（等谁 + 还在等什么），其余情况再把备注接在后面 */
-function itemLine(x: PlanItem, now: number) {
-  const meta = itemMeta(x, now)
+function itemLine(x: PlanItem, now: number, kids?: WaitChild[]) {
+  const meta = itemMeta(x, now, kids)
   const inMeta = x.status === 'waiting' && x.waits.some((w) => w.state === 'waiting')
   return [meta, inMeta ? '' : x.note].filter(Boolean).join(' · ')
 }
@@ -99,7 +123,7 @@ function itemLine(x: PlanItem, now: number) {
  * 输入框上方的计划按钮：「计划 2/5 · 正在做的那一步」，点开是实时更新的计划窗口。
  * 只有对话列过计划才显示
  */
-export function PlanButton({ task }: { task: Task }) {
+export function PlanButton({ task, children }: { task: Task; children?: WaitChild[] }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEscape(open, () => setOpen(false))
@@ -149,26 +173,19 @@ export function PlanButton({ task }: { task: Task }) {
             {t('{n} 个在等待', { n: p.waiting })}
           </span>
         )}
-        {finished && !plan.summary && (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-subtle">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {t('正在写总结')}
-          </span>
-        )}
       </button>
-      {open && <PlanWindow task={task} plan={plan} />}
+      {open && <PlanWindow task={task} plan={plan} children={children} />}
     </div>
   )
 }
 
-/** 计划窗口：当前计划的步骤（进行中的展开子步骤），做完的计划带总结；下面能翻以前的计划 */
-function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
+/** 计划窗口：当前计划的步骤（进行中的展开子步骤）；下面能翻以前的计划 */
+function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; children?: WaitChild[] }) {
   const p = planProgress(task, plan)
   const live = !plan.doneAt
   const now = useNow(live)
   const older = task.plans.slice(0, -1).reverse()
   const [history, setHistory] = useState(false)
-  const teamNames = new Set<string>()
   return (
     <div
       role="dialog"
@@ -186,10 +203,9 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ol className="flex flex-col">
           {plan.steps.map((s) => (
-            <PlanStepRow key={s.id} task={task} step={s} now={now} />
+            <PlanStepRow key={s.id} task={task} step={s} now={now} waitingKids={children} />
           ))}
         </ol>
-        {plan.doneAt && <PlanSummary plan={plan} teamNames={teamNames} />}
         {older.length > 0 && (
           <div className="mt-1.5 border-t px-1 pt-1.5">
             <button
@@ -204,7 +220,7 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
             {history && (
               <ul className="mt-0.5 flex flex-col">
                 {older.map((x) => (
-                  <OldPlan key={x.id} plan={x} teamNames={teamNames} />
+                  <OldPlan key={x.id} plan={x} />
                 ))}
               </ul>
             )}
@@ -216,14 +232,25 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
 }
 
 /** 一个主步骤：进行中、等待中的默认展开子步骤，做完立即收起；点一下可以手动展开收起 */
-function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: number }) {
+function PlanStepRow({
+  task,
+  step,
+  now,
+  waitingKids,
+}: {
+  task: Task
+  step: PlanStep
+  now: number
+  /** 父对话页的子对话列表：等待中的子对话在这里显示它在做什么、多久没动静 */
+  waitingKids?: WaitChild[]
+}) {
   const kids = planChildren(task, step)
   const active = step.status === 'running' || step.status === 'waiting'
   const [manual, setManual] = useState<boolean | null>(null)
   // 状态一变就回到默认：做完的立即收起，开始做的展开
   useEffect(() => setManual(null), [step.status])
   const open = kids.length > 0 && (manual ?? active)
-  const meta = itemLine(step, now)
+  const meta = itemLine(step, now, waitingKids)
   const doneKids = kids.filter((c) => c.status === 'done').length
   return (
     <li>
@@ -277,7 +304,7 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
       {open && (
         <ol className="mb-1 ml-[2.4375rem] flex flex-col">
           {kids.map((c) => {
-            const m = itemLine(c, now)
+            const m = itemLine(c, now, waitingKids)
             return (
               <li key={c.id} className="flex min-w-0 items-start gap-2.5 rounded-md py-1 pr-2">
                 <span className="mt-0.5">
@@ -312,31 +339,8 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
   )
 }
 
-/** 做完的计划下面的总结：Agent 写的；它没写、面板取了最后的回复时标出来 */
-function PlanSummary({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }) {
-  return (
-    <div className="mx-1 mt-2 rounded-lg border border-line bg-field/50 px-3 py-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted">
-        <CircleCheck className="h-3.5 w-3.5 text-success" />
-        {t('总结')}
-        {plan.autoSummary && (
-          <span className="font-normal text-subtle">{t('（AI 没写总结，取的是最后一条回复）')}</span>
-        )}
-      </div>
-      {plan.summary ? (
-        <Markdown text={plan.summary} teamNames={teamNames} className="text-[0.8125rem]" />
-      ) : (
-        <p className="flex items-center gap-1.5 text-xs text-subtle">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          {t('步骤都完成了，AI 正在写总结')}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** 以前的一份计划：一行标题和步骤数，点开看步骤和总结 */
-function OldPlan({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }) {
+/** 以前的一份计划：一行标题和步骤数，点开看步骤 */
+function OldPlan({ plan }: { plan: TaskPlan }) {
   const [open, setOpen] = useState(false)
   const done = plan.steps.filter((s) => s.status === 'done').length
   const at = plan.doneAt ? new Date(plan.doneAt) : null
@@ -366,7 +370,6 @@ function OldPlan({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }
               </li>
             ))}
           </ol>
-          {plan.summary && <PlanSummary plan={plan} teamNames={teamNames} />}
         </div>
       )}
     </li>

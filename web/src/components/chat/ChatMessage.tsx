@@ -10,20 +10,45 @@ import { getLang, t } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
 
+/** 时间格式化器按语言、选项复用：每次渲染都新建 Intl 实例很贵（消息多时一次推送要格式化几十条） */
+const formats = new Map<string, Intl.DateTimeFormat>()
+function fmt(loc: string, opts: Intl.DateTimeFormatOptions) {
+  const key = `${loc}|${Object.entries(opts)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(',')}`
+  let f = formats.get(key)
+  if (!f) {
+    f = new Intl.DateTimeFormat(loc, opts)
+    formats.set(key, f)
+  }
+  return f
+}
+
 /** 消息时间：今天只写时分，今年写月日，更早的带上年份；悬停看完整时间 */
 export function formatAt(at: string) {
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return { short: '', full: '' }
   const loc = getLang() === 'en' ? 'en-US' : 'zh-CN'
   const now = new Date()
-  const time = d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: false })
+  const time = fmt(loc, { hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
   const short =
     d.toDateString() === now.toDateString()
       ? time
       : d.getFullYear() === now.getFullYear()
-        ? `${d.toLocaleDateString(loc, { month: 'short', day: 'numeric' })} ${time}`
-        : `${d.toLocaleDateString(loc)} ${time}`
-  return { short, full: d.toLocaleString(loc, { hour12: false }) }
+        ? `${fmt(loc, { month: 'short', day: 'numeric' }).format(d)} ${time}`
+        : `${fmt(loc, {}).format(d)} ${time}`
+  return {
+    short,
+    full: fmt(loc, {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d),
+  }
 }
 
 export const msgAction =

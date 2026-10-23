@@ -62,7 +62,16 @@ export function CustomClis({ demo }: { demo?: boolean }) {
             {info?.dir ?? '…'}
           </code>
           {!demo && (
-            <Button variant="secondary" size="sm" onClick={() => void api.revealCliSpecs().catch(() => {})}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                api
+                  .revealCliSpecs()
+                  .then((r) => toast.success(t('已在文件夹中打开：{dir}', { dir: r.dir })))
+                  .catch((e) => toast.error((e as Error).message))
+              }
+            >
               <FolderOpen className="h-3.5 w-3.5" />
               {t('打开目录')}
             </Button>

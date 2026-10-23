@@ -124,7 +124,8 @@ async function statusIn(
   rel: string,
   prefix: string,
 ): Promise<Map<string, { status: FileStatus; from?: string }> | null> {
-  const args = ['status', '--porcelain=v1', '-z', '--untracked-files=all']
+  // 只读查询不加索引锁：文件面板开着时会反复查，不能和 Agent 正在做的 git add/commit 抢 index.lock
+  const args = ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
   if (rel) args.push('--', rel)
   const r = await git(dir, ...args)
   if (r.code !== 0 || r.killed) return null
@@ -598,11 +599,11 @@ export async function revealInDir(dir: string, want: string): Promise<void> {
   const full = await into(dir, norm(want))
   const info = await stat(full).catch(() => null)
   if (info?.isDirectory()) {
-    revealItem(full)
+    await revealItem(full)
     return
   }
   // 文件：选中它；文件已经被删掉时打开所在的文件夹
-  revealItem(info?.isFile() ? full : path.dirname(full))
+  await revealItem(info?.isFile() ? full : path.dirname(full))
 }
 
 /** 写接口的入参：字段都在这里校验，名字的单段规则在 oneName 里 */

@@ -12,9 +12,15 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 改内置定义要带升级
 
-- 规则：改 `shared/builtin/` 的定义时同步 `shared/builtin/legacy.ts`，已装副本的升级要幂等（跑两次结果一样），并补升级测试。必备的四个角色（`core.ts`）例外，启动时直接同步，只要别改参数 key。
+- 规则：改 `shared/builtin/` 的定义时同步 `shared/builtin/legacy.ts`，已装副本的升级要幂等（跑两次结果一样），并补升级测试。必备角色（`core.ts` 的 `CORE_AGENTS`）例外，启动时直接同步，只要别改参数 key。
 - 起因：5edc8a2 补漏掉的升级测试。
 - 防线：`server/builtin.test.ts`。
+
+## 自制 Skill 改名或合并后要清用户目录的旧副本
+
+- 规则：内置 Skill 改名、合并或删除时，把旧目录名和旧版每个文件的 sha256 记进 `server/bundled-skills.ts` 的 `RETIRED_BUNDLED`；`ensureBundled` 只补缺的不删多的，不登记就会在 `~/.agents/skills` 里同时留着新旧两个入口。只删内容和旧版完全一致的，用户改过或自己加过文件的保留。
+- 起因：project-workflow / git-workflow / p4-workflow 合并成 project-vcs。
+- 防线：`server/builtin.test.ts` 里 retireBundled 的单测。
 
 ## 改提示词或文案前先搜断言
 
@@ -34,12 +40,6 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 起因：一条只写「`Start-Sleep` 单次不超 60 秒、累计不超 2 分钟」的规则被完整违反：实际连发 `sleep 90/100/120/150/180` 共 640 秒，最后一条被 abort，任务停在半路；期间 307 秒完全空等。
 - 防线：`server/core-agents.test.ts`（「通用约束」里必须有这一段）；旧措辞在 `shared/builtin/legacy.ts` 登记为指纹，已装的旧副本启动时自动升级。
 
-## 提示词要求 Agent 在一个回合里做完
-
-- 规则：派工、执行类的提示词写明「本回合内完成，不以计划或『我先读取一下』结束」，派工失败要有兜底说明。
-- 起因：d94526a，Agent 说一句「我先读取」就结束了回合。
-- 防线：人工。
-
 ## 工具操作期间要保留可见进度
 
 - 规则：连续工具调用前先说明当前目标，完成一组工具后报告阶段结果；模型没有返回思考内容时不编造内部思考，至少输出简短的可见进度。
@@ -54,7 +54,7 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 父对话只统筹，改文件、编译、计划步骤都在子对话里
 
-- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试后 `submit_merge` 合回。父对话不改文件靠角色说明约束，不要给父对话关掉 CLI 的写文件工具（用户纠正，093a41e 之后撤回）。
+- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试，跑通后 `submit_merge`（带 `tests`）就是完成标记，面板合回父对话分支并标记完成（见 [ADR 0002](../adr/0002-child-merge-on-done.md)）。父对话不改文件靠角色说明约束，不要给父对话关掉 CLI 的写文件工具（用户纠正，093a41e 之后撤回）。UE 项目（有 `.uproject`）例外：子对话不编译，向父对话申请，父对话按申请 `request_build` 占位编译（[ADR 0004](../adr/0004-ue-build-by-parent.md)）。
 - 起因：父对话先把问题查到底、自己动手改，还开 worktree；编译又要合并到父对话那边才跑。
 - 防线：`server/orchestrator.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。
 

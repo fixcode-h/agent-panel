@@ -113,7 +113,7 @@ type TestStep = {
 - UE：编译（`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex`）、Lua 语法检查、可选的 AutomationTest（默认停用）。
 - Rust / Go / Python / .NET / CMake 各给常用的检查、测试、构建。
 
-「AI 分析这个目录」（`POST /projects/analyze`）会把这份默认步骤一起填进表单，用户确认保存后才生效。
+「AI 初始化项目」先用 `POST /projects/analyze` 快速扫一遍（这份默认步骤当线索），再让本机 Agent 在项目目录里写 AGENTS.md 和文档框架（`skills/docs/project-documentation`），评估工作流、推荐测试步骤和项目设置（`shared/project-init.ts`）。推荐项在项目设置的「AI 初始化」页逐项或整体应用，用户确认保存后才生效；`Project.initializedAt` 为空的项目（含旧项目）不能保存设置。
 
 ## 3. 项目设置里的 Agent 参数
 
@@ -138,6 +138,18 @@ type TestStep = {
   **节点上原来的值 < 项目里填的 Agent 参数 < `Workflow.expose`（target=agent，最具体）**。
 - 只写这个 Agent 真的声明了的参数，不会把无关参数塞进节点。
 - 快照定下来后改项目设置不影响已经开始的对话。
+
+### 参数联动
+
+`AgentParam` 可以按**排在前面**的参数决定自己（`shared/agent-role.ts` 的 `resolveParams` 从上往下算）：
+
+- `when`：显示条件，`{ key, values, not }`。前面参数取 `values` 里任一值时成立，`values` 为空表示「有值」，开关写 `'true'` / `'false'`。
+  不成立时这个参数**隐藏**：不问、不算缺、值按空处理（开关是关、单选是空），角色设定里 `{{#if key}}` 不成立，「本次的参数」里也不列。
+- `optionsBy`：选项跟随，`{ key, map }`。前面参数取 `map` 里的某个值时只能选对应的选项；没列的取值不限制；对应空数组表示这时不适用（同样隐藏）。
+  给的值或默认值不在缩小后的选项里时，单选退到第一个可选项（要问用户的仍然问），多选去掉不能选的。
+- 依赖的参数自己被隐藏了，依赖它的也跟着隐藏；依赖排在后面或不存在的参数时规则不算数，编辑页标红提醒。
+- 对话输入框、工作流节点、项目设置（按 Agent 自己的参数顺序算）、AI 配参数的提示词都按同一套规则；角色页的参数改名会同步改规则和角色设定里的 `{{旧名}}`。
+- 内置角色里用到的例子：版本控制的「Git 工作区模式 / 合并方向」只在工作区不是 P4 / SVN / 无时显示；调研的「UE 侦察方向」只在技术栈是 ue 时显示。
 
 ### AI 配置按钮
 
@@ -209,6 +221,16 @@ type TestStep = {
 - 子对话改完调用 `submit_build`：面板提交它的分支，排队试合回**建 worktree 的那个目录、那个分支**（不限定 dev），
   在原目录跑勾了「合并时编译」的步骤；通过才提交合并，失败撤回、原目录不变。结果推回子对话，同时告诉父对话。
 - 选「共用目录 + 认领文件」时，子对话都在项目目录里改，先 `claim_files` 认领，编译一次只跑一个。
+
+### UE 项目：编译归父对话
+
+项目目录（或仓库根）里有 `.uproject` 时，编译不在子对话里做（[ADR 0004](./adr/0004-ue-build-by-parent.md)）：
+
+- 子对话只改代码、做不用编译的检查。有独立分支的 `submit_merge` 带 `build`（默认 true），合回后面板替它向父对话申请；共用目录的用 `request_build`。
+- 父对话收到申请（或用户要求）才调用 `request_build`：面板跑勾了「合并时编译」的步骤（没有就认名字带「编译」的），排进后台独占队列。
+- 占位按编译目录：同一目录同一时间只编译一次，别的父对话占着时排在后面，双方都会收到说明；各自 worktree 的目录互不占位。
+- 子对话和父对话用 `run_background` 跑 Build.bat、UBT、UHT、RunUAT、Editor 都会被拒绝，不能绕过排队。
+- 父对话之间用 `list_peers` / `message_peer` 协调。
 
 长命令（完整测试、编译）可以用 `run_background` 交给面板在后台跑，CLI 先去做别的，跑完结果自动推回对话；
 标成独占的命令按目录排队，跑的期间文件变了会提醒结果可能不准。

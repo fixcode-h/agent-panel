@@ -11,6 +11,7 @@ import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts
 import { includedAgents } from './agent-role.ts'
 import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
+import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
 export const TASK_EXPORT_VERSION = 1
@@ -42,7 +43,23 @@ export interface NodeStat {
   errors: number
 }
 
-export interface TaskStats {
+/** 节点状态的计数 */
+export interface StepCounts {
+  total: number
+  done: number
+  failed: number
+  skipped: number
+  pending: number
+}
+
+/**
+ * 统计里可以相加的那几项：任务自身、它的子对话合计、含子对话的合计都用这一套。
+ * 子对话是独立的 Task，只靠 parentTaskId 关联，不在父任务的 usage 里，所以必须单独累加，
+ * 否则用户看到的只是父对话自己那一份（几十个子对话的成本整个看不见）。
+ */
+export interface StatsTotal {
+  /** 合计里包含几个任务：自身是 1，含子对话合计是整棵树的个数 */
+  tasks: number
   durationMs: number
   waitMs: number
   inputTokens: number
@@ -50,18 +67,102 @@ export interface TaskStats {
   cacheReadTokens: number
   cacheHitRate: number
   costUsd: number
-  steps: { total: number; done: number; failed: number; skipped: number; pending: number }
-  /** 验收没通过、退回重做的次数 */
+  steps: StepCounts
   reworks: number
-  /** 报错条数：带错误的系统消息 + 失败的工具调用（命令、读取、编辑等失败了也是要看的） */
   errors: number
-  /** 其中失败的工具调用次数 */
   failedTools: number
-  /** 追加要求、对话的轮数 */
+  /** 追加要求、对话的轮数（一次 CLI 调用一轮） */
   turns: number
-  /** 其中没有正常结束的（停在执行中就被打断、服务重启） */
   turnsUnfinished: number
+}
+
+export const NO_TOTALS: StatsTotal = {
+  tasks: 0,
+  durationMs: 0,
+  waitMs: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheHitRate: 0,
+  costUsd: 0,
+  steps: { total: 0, done: 0, failed: 0, skipped: 0, pending: 0 },
+  reworks: 0,
+  errors: 0,
+  failedTools: 0,
+  turns: 0,
+  turnsUnfinished: 0,
+}
+
+export interface TaskStats extends Omit<StatsTotal, 'tasks'> {
+  /** 记录从头到尾的跨度：第一条到最后一个时间戳 */
+  spanMs: number
+  /** 跨度里既不算执行也不算等用户的部分：进程退出了、用户在忙别的 */
+  idleMs: number
+  /** 用户消息条数：和轮数不是一个口径，报告里两个都写出来 */
+  asks: number
   nodes: NodeStat[]
+  /** 它的子对话（含多层）合计：没传子对话时全是 0 */
+  children: StatsTotal
+  /** 自身 + 子对话合计：这才是这次工作的真实成本 */
+  combined: StatsTotal
+}
+
+/** 一个任务自身的统计（导出里 stats 的顶层那几项），可以直接与子对话合计相加 */
+export function ownTotals(s: Omit<StatsTotal, 'tasks'>): StatsTotal {
+  // 逐项取：传进来的可能是整个 TaskStats（带 nodes/children/combined），别把多余字段带进合计
+  return {
+    tasks: 1,
+    durationMs: s.durationMs,
+    waitMs: s.waitMs,
+    inputTokens: s.inputTokens,
+    outputTokens: s.outputTokens,
+    cacheReadTokens: s.cacheReadTokens,
+    cacheHitRate: s.cacheHitRate,
+    costUsd: s.costUsd,
+    steps: s.steps,
+    reworks: s.reworks,
+    errors: s.errors,
+    failedTools: s.failedTools,
+    turns: s.turns,
+    turnsUnfinished: s.turnsUnfinished,
+  }
+}
+
+/** 两组统计相加；命中率按合计后的输入和缓存命中重算，不能把两个百分比直接相加 */
+export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
+  const inputTokens = a.inputTokens + b.inputTokens
+  const cacheReadTokens = a.cacheReadTokens + b.cacheReadTokens
+  return {
+    tasks: a.tasks + b.tasks,
+    durationMs: a.durationMs + b.durationMs,
+    waitMs: a.waitMs + b.waitMs,
+    inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens,
+    cacheHitRate: cacheHitRate({ inputTokens, cacheReadTokens }),
+    costUsd: a.costUsd + b.costUsd,
+    steps: {
+      total: a.steps.total + b.steps.total,
+      done: a.steps.done + b.steps.done,
+      failed: a.steps.failed + b.steps.failed,
+      skipped: a.steps.skipped + b.steps.skipped,
+      pending: a.steps.pending + b.steps.pending,
+    },
+    reworks: a.reworks + b.reworks,
+    errors: a.errors + b.errors,
+    failedTools: a.failedTools + b.failedTools,
+    turns: a.turns + b.turns,
+    turnsUnfinished: a.turnsUnfinished + b.turnsUnfinished,
+  }
+}
+
+/**
+ * 一组任务（父对话分出的子对话，含多层）的统计合计。
+ * 传进来的每份只算它自身的 usage（它自己派出的子任务已经记在它的 usage 里），不会重复累加；
+ * 子对话的报错要靠 messages 算，所以调用方要取完整任务，不能只用摘要。
+ */
+export function descendantTotals(tasks: Task[], now = Date.now()): StatsTotal {
+  return tasks.reduce((acc, tk) => addTotals(acc, ownTotals(taskStats(tk, now))), NO_TOTALS)
 }
 
 /**
@@ -90,7 +191,26 @@ const failedToolsOf = (task: Task, step?: string) =>
     .filter((m) => (step === undefined ? true : m.step === step))
     .reduce((n, m) => n + m.tools.filter((x) => x.failed).length, 0)
 
-export function taskStats(task: Task, now = Date.now()): TaskStats {
+/**
+ * 记录从头到尾的跨度（毫秒）：创建、消息、轮次、节点里最晚的时间减去最早的。
+ * 不用 updatedAt：导入的任务会把它改成导入时间，跨度会凭空变长。
+ */
+export function recordSpan(rec: {
+  createdAt: string
+  messages: { at?: string }[]
+  turns?: { startedAt: string; endedAt?: string }[]
+  steps?: { startedAt: string; endedAt?: string }[]
+}) {
+  const ats: number[] = [Date.parse(rec.createdAt)]
+  for (const m of rec.messages) ats.push(Date.parse(m.at ?? ''))
+  for (const t of rec.turns ?? []) ats.push(Date.parse(t.startedAt), Date.parse(t.endedAt ?? ''))
+  for (const s of rec.steps ?? []) ats.push(Date.parse(s.startedAt), Date.parse(s.endedAt ?? ''))
+  const ok = ats.filter(Number.isFinite)
+  if (!ok.length) return 0
+  return Math.max(0, Math.max(...ok) - Math.min(...ok))
+}
+
+export function taskStats(task: Task, now = Date.now(), children: StatsTotal = NO_TOTALS): TaskStats {
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
   const nodes = task.steps.map((s): NodeStat => {
     const u = stepUsage(s)
@@ -119,9 +239,12 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
   })
   const count = (st: TaskStep['status']) => task.steps.filter((s) => s.status === st).length
   const u = task.usage
-  return {
-    durationMs: task.runMs ?? 0,
-    waitMs: task.waitMs ?? 0,
+  const durationMs = task.runMs ?? 0
+  const waitMs = task.waitMs ?? 0
+  const spanMs = recordSpan(task)
+  const own = ownTotals({
+    durationMs,
+    waitMs,
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
@@ -139,7 +262,16 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
     failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
     turnsUnfinished: (task.turns ?? []).filter((x) => x.status !== 'done').length,
+  })
+  const { tasks: _tasks, ...self } = own
+  return {
+    ...self,
+    spanMs,
+    idleMs: Math.max(0, spanMs - durationMs - waitMs),
+    asks: task.messages.filter((m) => m.role === 'user').length,
     nodes,
+    children,
+    combined: addTotals(own, children),
   }
 }
 
@@ -226,7 +358,13 @@ export const TaskExport = z.object({
 export type TaskExport = z.infer<typeof TaskExport>
 
 /** 把任务整理成导出文件的内容 */
-export function exportTask(task: Task, agents: Agent[], app = '', now = new Date()): TaskExport {
+export function exportTask(
+  task: Task,
+  agents: Agent[],
+  app = '',
+  now = new Date(),
+  children: StatsTotal = NO_TOTALS,
+): TaskExport {
   const {
     id: _id,
     projectId: _p,
@@ -267,7 +405,7 @@ export function exportTask(task: Task, agents: Agent[], app = '', now = new Date
     app,
     task: body,
     agents: used,
-    stats: taskStats(task, now.getTime()),
+    stats: taskStats(task, now.getTime(), children),
   })
 }
 
@@ -347,31 +485,39 @@ const localTime = (iso: string) => {
 }
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
 
-/**
- * 记录从头到尾的跨度：执行时间只算有 CLI 在跑的时间，等用户只算进程停在等待上的时间；
- * 回复完进程就退出（页面没开着）后到用户再发消息的空档两边都不算。不写出来，分析时会把
- * 「执行 11 分钟、等用户 0 秒」和记录里一个多小时的间隔对不上当成统计错误
- */
-function idleNote(messages: { at?: string }[], runMs: number) {
-  const ats = messages.map((m) => Date.parse(m.at ?? '')).filter(Number.isFinite)
-  if (ats.length < 2) return ''
-  const span = Math.max(...ats) - Math.min(...ats)
-  if (span - runMs < 60_000) return ''
-  return `（记录从头到尾跨度 ${fmtMs(span)}：两轮之间没有进程在跑的空档既不算执行也不算等用户）`
-}
-
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
 export function taskReport(b: TaskExport, maxOutput = 4000) {
   const tk = b.task
-  const st = (b.stats as TaskStats | undefined) ?? taskStats({ ...tk, id: '', projectId: '' } as Task)
+  // 旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告
+  const computed = taskStats({ ...tk, id: '', projectId: '' } as Task)
+  const raw = (b.stats ?? {}) as Partial<TaskStats>
+  const st: TaskStats = {
+    ...computed,
+    ...raw,
+    spanMs: raw.spanMs ?? computed.spanMs,
+    idleMs: raw.idleMs ?? computed.idleMs,
+    asks: raw.asks ?? computed.asks,
+    children: raw.children ?? computed.children,
+    combined: raw.combined ?? computed.combined,
+  }
+  const own = ownTotals(st)
+  const kids = st.children?.tasks ? st.children : NO_TOTALS
+  const all = st.combined?.tasks ? st.combined : addTotals(own, kids)
   const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
   const lines: string[] = [
     `# 执行记录：${tk.title}`,
     `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}${idleNote(tk.messages, st.durationMs)}；追加要求/对话 ${st.turns} 轮${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
-    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
+    `- 跨度 ${fmtMs(st.spanMs)}：执行 ${fmtMs(st.durationMs)}，等用户 ${fmtMs(st.waitMs)}，空闲 ${fmtMs(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
+    `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
+    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
+    ...(kids.tasks
+      ? [
+          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtMs(kids.durationMs)}，其中等用户 ${fmtMs(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
+          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtMs(all.durationMs)}，其中等用户 ${fmtMs(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
+        ]
+      : []),
     ...(cacheMismatch(st)
       ? [
           `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 CLI 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
@@ -383,7 +529,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const asks = tk.messages.filter((m) => m.role === 'user')
   if (asks.length > 1)
     lines.push(
-      `- 用户消息 ${asks.length} 条：${asks
+      `- 用户发言时间：${asks
         .map((m) => {
           const d = new Date(m.at ?? '')
           return Number.isFinite(d.getTime())
@@ -394,6 +540,8 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     )
   if (st.nodes.length) {
     lines.push(
+      '',
+      '改文件列只统计 CLI 亲自报告的文件改动（Write、Edit 类工具）；只读节点和用命令写文件的不计入。任务整体的改动见下面的「改动的文件」。',
       '',
       '| 节点 id | 标题 | 类型 | Agent | 状态 | 耗时 | 等待 | 验收轮数/结论 | 输入/缓存命中 | 输出 | 改文件 | 报错 |',
       '|---|---|---|---|---|---|---|---|---|---|---|---|',
@@ -488,13 +636,18 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
           .map((x) => `${x.name || x.kind} ${x.label}${x.failed ? '（失败）' : ''}`)
           .join('；')}${m.tools.length > 30 ? `…共 ${m.tools.length} 个` : ''}`
       : ''
-    // 失败的工具调用给出输出尾部：分析返工和报错时只看到「（失败）」没法判断原因
+    // 失败的工具调用给出完整命令、退出码和输出尾部：只看到「（失败）」判断不了原因，
+    // 而 label 是截断过的一行，命令后半段（往往正是出错的那段）看不到
     const detail = failed.length
       ? `\n失败详情：${failed
           .slice(0, 5)
-          .map(
-            (x) => `\n- ${x.name || x.kind} ${x.label}\n${clip((x.output || x.detail || '（没有输出）').trim(), 1200)}`,
-          )
+          .map((x) => {
+            const what = (x.kind === 'run' && x.input ? x.input : x.label).trim()
+            const code = x.exitCode === undefined ? '' : `（退出码 ${x.exitCode}）`
+            const out = (x.output || x.detail || '').trim()
+            // 有输出但退出码非零，和什么都没输出，是两种不同的排查方向，分开写
+            return `\n- ${x.name || x.kind} ${what}${code}\n${out ? clip(out, 1200) : '（没有输出）'}`
+          })
           .join('')}`
       : ''
     // 用户的要求不截断：约束、边界条件常常写在后面，截掉就判断不了是否满足要求
@@ -504,13 +657,15 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const outs = tk.steps.filter((s) => s.output.trim())
   if (outs.length) {
     lines.push('', '## 节点的最终输出（交给下游的内容）')
-    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, clip(s.output.trim(), maxOutput))
+    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）。
+    // 这里按 maxOutput 再截一次正好切掉那句去向说明，分析时既看不到全文也不知道去哪读，所以原样输出
+    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, s.output.trim())
   }
   // 改动的文件按节点自己的记录列：任务级 changes 是「项目目录相对任务开始时」的差额，
   // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出
   const mine = tk.steps.filter((s) => s.changes.length)
   if (mine.length) {
-    lines.push('', '## 改动的文件（按节点记录）')
+    lines.push('', '## 改动的文件（按节点记录）', '（只列 CLI 报告的文件改动，不是这个节点期间工作区的全部变化）')
     for (const s of mine)
       lines.push('', `### ${s.title}（${s.id}）`, ...s.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
   } else if (tk.changes.length) {
@@ -570,6 +725,8 @@ export function analysisPrompt(bundles: TaskExport[], focus = '') {
     ? `分析附件里这次${one.mode === 'workflow' ? '工作流执行' : '对话'}「${one.title}」的完整记录`
     : `分析附件里工作流最近 ${bundles.length} 次执行的完整记录`
   return `${head}，判断哪里需要优化，并给出可以直接应用的修改建议。只分析，不要修改任何文件。
+
+${promptLangRules()}
 ${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
 ## 要回答的问题
 1. 结果质量：最终产出是否达到了用户的要求？哪里不够好、为什么（引用记录里的原文或节点）。
@@ -584,7 +741,7 @@ ${FRAMEWORK_MAP}
    拿不准的不写。
 
 ## 回复格式
-用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」「### 5. 交付的代码」五个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
+用${promptLangWord()}写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」「### 5. 交付的代码」五个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
 
 最后单独写一个代码块，语言名写 ${EVOLUTION_LANG}，内容是 JSON，把建议的修改写成可以直接应用的形式：
 

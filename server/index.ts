@@ -59,12 +59,15 @@ import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
-import { setPresenceGraceMs } from './presence.ts'
+import { setPresenceReclaimPolicy } from './presence.ts'
 import { GlobalLessons, Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { gitBranches, gitCheckout } from './exec/git.ts'
-import { killAllProcesses } from './exec/process.ts'
+import { sweepWorktrees } from './exec/worktree.ts'
+import { killAllProcesses, killTree } from './exec/process.ts'
+import { cleanStaleCliProcesses } from './exec/orphans.ts'
+import { startMemorySampler } from './exec/proc-stats.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { filesApi } from './files.ts'
@@ -72,6 +75,11 @@ import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
+import {
+  builtinProjectCategories,
+  isBuiltinProjectCategory,
+  projectCategoryDeleteError,
+} from '../shared/builtin/project-categories.ts'
 import {
   ensureProjectAgents,
   migrateProjectsToGeneral,
@@ -97,6 +105,9 @@ installLogging()
 migrateDataDir()
 // 删掉的角色该转到哪个：要在读工作流、对话之前装上，读出来的旧引用才会被改写
 loadAgentAliases()
+// 上次面板被强杀（taskkill /F、崩溃）时来不及停的 CLI：按登记文件 + 命令行特征清理，
+// 用户自己跑的 pi、codex 命令行里没有面板的痕迹，不会动
+void cleanStaleCliProcesses(killTree)
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
@@ -110,6 +121,7 @@ const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Wo
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
   'project-categories.json',
   ProjectCategory,
+  builtinProjectCategories,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 
@@ -308,6 +320,13 @@ async function parseWorkflow(body: unknown, selfId = '') {
 
 app.get('/health', (c) => c.json({ ok: true }))
 // ---- 设置 ----
+/** 回收策略跟着设置走：宽限、上限、总开关；保存后立即生效，不用重启服务 */
+const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
+  setPresenceReclaimPolicy({
+    enabled: s.reclaimIdleCli,
+    graceMs: s.presenceGraceMinutes * 60_000,
+    unreadGraceMs: s.unreadGraceMinutes * 60_000,
+  })
 app.get('/settings', async (c) => c.json(await getSettings()))
 // 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
 void currentShell().catch(() => {})
@@ -321,8 +340,8 @@ app.put('/settings', async (c) => {
   const prev = await getSettings()
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
-  // 对话页切走后 CLI 还等多久：保存后立即生效，不用重启服务
-  setPresenceGraceMs(saved.presenceGraceMinutes * 60_000)
+  // 对话页切走后 CLI 还等多久、没人看的会话留几个：保存后立即生效，不用重启服务
+  applyPresenceReclaim(saved)
   // 命令行环境：工具说明里写的「命令在哪执行」跟着换
   void currentShell().catch(() => {})
   // API / 账号方式或 API 配置变了：立即写进 CLI 自己的配置，不用等到下一次执行
@@ -336,8 +355,12 @@ app.put('/settings', async (c) => {
 app.get('/clis/specs', (c) => c.json(userClis()))
 app.post('/clis/specs/reveal', async (c) => {
   await mkdir(CLI_CONFIG_DIR, { recursive: true })
-  revealDir(CLI_CONFIG_DIR)
-  return c.json({ ok: true })
+  try {
+    await revealDir(CLI_CONFIG_DIR)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir: CLI_CONFIG_DIR })
 })
 app.post('/clis/specs/reload', async (c) => {
   loadUserClis()
@@ -522,6 +545,8 @@ app.delete('/workflows/:id', async (c) => {
 })
 
 // ---- 项目分类 ----
+/** 带 builtin 标记返回：新建的自建分类也明确给 false，和 GET 里的字段一致 */
+const withBuiltinFlag = (x: ProjectCategory) => ({ ...x, builtin: isBuiltinProjectCategory(x.id) })
 async function parseProjectCategory(body: unknown, selfId?: string) {
   const p = ProjectCategoryInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
@@ -531,11 +556,14 @@ async function parseProjectCategory(body: unknown, selfId?: string) {
   return { data: p.data }
 }
 
-app.get('/project-categories', async (c) => c.json(await projectCategories.list()))
+app.get('/project-categories', async (c) =>
+  // builtin 标记以固定 id 为准：旧数据或手改的文件里缺这个字段时也返回正确的值，和删除判定一致
+  c.json((await projectCategories.list()).map(withBuiltinFlag)),
+)
 
 app.post('/project-categories', async (c) => {
   const r = await parseProjectCategory(await c.req.json())
-  return r.error ? bad(c, r.error) : c.json(await projectCategories.create(r.data!), 201)
+  return r.error ? bad(c, r.error) : c.json(withBuiltinFlag(await projectCategories.create(r.data!)), 201)
 })
 
 app.put('/project-categories/:id', async (c) => {
@@ -543,12 +571,14 @@ app.put('/project-categories/:id', async (c) => {
   const r = await parseProjectCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
   const x = await projectCategories.update(id, r.data!)
-  return x ? c.json(x) : bad(c, t('分类不存在'), 404)
+  return x ? c.json(withBuiltinFlag(x)) : bad(c, t('分类不存在'), 404)
 })
 
 // 删除分类时，其中的项目变为未分类
 app.delete('/project-categories/:id', async (c) => {
   const id = c.req.param('id')
+  const err = projectCategoryDeleteError(id)
+  if (err) return bad(c, err, 409)
   if (!(await projectCategories.remove(id))) return bad(c, t('分类不存在'), 404)
   for (const p of await projects.list()) {
     if (p.categoryId === id) await projects.update(p.id, { ...p, categoryId: '' })
@@ -622,6 +652,9 @@ app.put('/projects/:id', async (c) => {
   // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的
   if (body && typeof body === 'object' && !('lessons' in body))
     r.data!.lessons = (await projects.get(c.req.param('id')))?.lessons ?? []
+  // 初始化标记同理：只有项目设置页会带上它，脚本改设置不会把它清掉
+  if (body && typeof body === 'object' && !('initializedAt' in body))
+    r.data!.initializedAt = (await projects.get(c.req.param('id')))?.initializedAt ?? ''
   const x = await projects.update(c.req.param('id'), r.data!)
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
@@ -665,6 +698,45 @@ app.delete('/projects/:id', async (c) => {
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
+
+/**
+ * 回收没人管的独立工作目录：面板重启、父对话结束、任务记录丢了之后，不再有人触发收口，
+ * 已合并的目录会一直留在磁盘上（见 server/exec/worktree.ts 的 sweepWorktrees）。
+ * 只清「改动都已合回原分支 + 任务已收口 / 记录已不存在」的，以及 git 注册表外的残留；
+ * 在改、没合、还在跑的一律不碰。出问题时可以用 AGENT_PANEL_KEEP_WORKTREES=1 启动，只扫不删。
+ */
+async function sweepStaleWorktrees() {
+  if (process.env.AGENT_PANEL_KEEP_WORKTREES === '1') return
+  // 正在执行的任务从内存里拿：任务记录里的 working 可能是上一轮留下的
+  const working = new Set(tasks.workingTasks().map((w) => w.id))
+  const res = await sweepWorktrees({
+    taskInfo: async (id) => {
+      const tk = await tasks.get(id)
+      if (!tk) return null
+      const p = tk.projectId ? await projects.get(tk.projectId) : null
+      return {
+        // 显式收口，或者这一轮已经跑完 / 被停掉：剩下没人会再触发收口（面板重启、父对话结束）
+        done: tk.resolved === true || tk.archived === true || tk.status === 'done' || tk.status === 'stopped',
+        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动
+        working: working.has(id) || tk.working === true || tk.awaitingUser === true || tk.prewarming === true,
+        projectPath: p?.path ?? '',
+        branch: tk.worktree?.branch ?? '',
+        baseBranch: tk.worktree?.baseBranch ?? '',
+      }
+    },
+  }).catch((e: Error) => {
+    log.error('worktree', '清扫独立目录出错', { error: e.message })
+    return null
+  })
+  if (res)
+    log.info('worktree', '清扫独立目录完成', {
+      dryRun: res.dryRun,
+      removed: res.removed.length,
+      kept: res.kept.length,
+      failed: res.failed.length,
+    })
+}
+
 app.route('/tasks', tasks.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
@@ -673,11 +745,15 @@ app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----
 const designs = designsApi({ projects })
-app.post('/designs/browser/reveal', (c) => {
+app.post('/designs/browser/reveal', async (c) => {
   const dir = extensionDir()
   if (!dir) return bad(c, t('没有找到扩展目录'))
-  revealDir(dir)
-  return c.json({ ok: true })
+  try {
+    await revealDir(dir)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir })
 })
 // 刷新扩展：1.3 起的扩展自己重新加载；更早的版本做不到，只能打开扩展页面让用户点刷新
 app.post('/designs/browser/reload', async (c) => {
@@ -700,10 +776,10 @@ app.post('/designs/browser/install', async (c) => {
   if (!dir) return bad(c, t('没有找到扩展目录'))
   try {
     openExtensionsPage(String(browser ?? ''))
+    await revealItem(dir)
   } catch (e) {
     return bad(c, (e as Error).message)
   }
-  revealItem(dir)
   return c.json({ dir })
 })
 app.route('/designs', designs.routes)
@@ -767,8 +843,12 @@ app.post('/fs/reveal', async (c) => {
     .then((s) => s.isDirectory())
     .catch(() => false)
   if (!ok) return bad(c, t('目录不存在：{dir}', { dir }))
-  revealDir(dir)
-  return c.json({ ok: true })
+  try {
+    await revealDir(dir)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir })
 })
 
 app.get('/fs/list', async (c) => {
@@ -866,8 +946,13 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
+  // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
+  stopMemorySampler = startMemorySampler()
+  // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
+  setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
+  setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
   void applyRemote()
-  void getSettings().then((s) => setPresenceGraceMs(s.presenceGraceMinutes * 60_000))
+  void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
     // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）
@@ -875,6 +960,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
     if (open) console.log(`AGENT_PANEL_OPEN ${url}`)
   } else if (open) openBrowser(url)
 })
+/** 停掉内存采样的定时器，并把这批点写进历史 */
+let stopMemorySampler: (() => void) | undefined
+
 /**
  * 退出前停掉正在执行的 CLI，并把任务状态落盘。macOS / Linux 上 CLI 跑在独立的进程组里，
  * 服务退出时不会跟着结束，不停掉的话会在后台继续改项目。最多等 5 秒。
@@ -884,6 +972,7 @@ async function shutdown(code = 0) {
   if (exiting) return process.exit(1)
   exiting = true
   log.info('server', '正在退出，停止正在执行的任务')
+  stopMemorySampler?.()
   server.close()
   await Promise.race([stopRemote(), new Promise((r) => setTimeout(r, 5000))])
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])

@@ -26,6 +26,12 @@ export function usageCount(grain: UsageGrain) {
   return USAGE_GRAINS.find((g) => g.id === grain)?.count ?? 14
 }
 
+/**
+ * 用量页一次取近一年的按天数据（366 天，含闰年），周和月在它的范围里翻。
+ * 三个视图都用这一份按天数据：切粒度不用重新请求，合计按天相加（口径和接口给的合计一致）。
+ */
+export const USAGE_LOOKBACK_DAYS = 366
+
 /** 一次查询：哪个粒度、看多少个桶（含当前这个桶，往前数）；参数来自 URL，认不出来时用默认值 */
 export const UsageQuery = {
   grain: (g: unknown): UsageGrain => (USAGE_GRAINS.some((x) => x.id === g) ? (g as UsageGrain) : 'day'),
@@ -47,24 +53,65 @@ export type UsageSample = {
   costUsd: number
 }
 
+/**
+ * 四项 token：输入含缓存命中和缓存写入（和 Task.usage 的口径一致）。
+ * 单独成一个类型，是因为分时段计价要把同一批数字按峰 / 谷拆成两份。
+ */
+export type TokenTotals = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+/**
+ * 分时段定价的时段定义：`ranges` 里算高峰，其余时段（含周末、法定节假日）算空闲 / 优惠。
+ * 判定用 `timeZone` 的当地钟点，不用本机时区：本机可能不是用户付费所在时区，按本机算会把峰谷算反。
+ * 详情和价格来源见 `shared/pricing.ts` 的注释。
+ */
+export type PeakWindow = {
+  /** IANA 时区，按它的当地钟点判定 */
+  timeZone: string
+  /** 高峰时段的钟点范围（当地时间的 HH:MM，左闭右开），上午、下午各一段时可以给多段 */
+  ranges: ReadonlyArray<{ start: string; end: string }>
+  /** 只有这几天算高峰（0 = 周日 … 6 = 周六）；不填表示每天都一样 */
+  weekdays?: ReadonlyArray<number>
+  /** 全天算空闲的当地日期（YYYY-MM-DD）：法定节假日 */
+  holidays?: ReadonlyArray<string>
+}
+
+/**
+ * DeepSeek 官方的时段规则：北京时间周一至周五 9:00-12:00、14:00-18:00 是高峰，其余是空闲。
+ * 官方定价页（2026-10-23 抓取）原文：「空闲时段价格为高峰时段价格的一半。北京时间周一至周五
+ * （不含中国法定节假日）9:00 - 12:00、14:00 - 18:00 为高峰时段；其余时段，包括周末及中国
+ * 法定节假日全天均为空闲时段。」来源 URL 见 `shared/pricing.ts`。
+ *
+ * 法定节假日没有内置表（每年国务院公布一次，写死会过期）：节假日按高峰算，价格更高，不会低估费用。
+ */
+export const DEEPSEEK_PEAK_WINDOW: PeakWindow = {
+  timeZone: 'Asia/Shanghai',
+  ranges: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  weekdays: [1, 2, 3, 4, 5],
+}
+
 /** 一个桶（一天 / 一周 / 一个月） */
-export type UsageBucket = {
+export type UsageBucket = TokenTotals & {
   /** 桶的标识：天和周是桶第一天的日期 2026-10-20，月是 2026-10 */
   key: string
   /** 桶的第一天（本地时间的零点，ISO）；前端用它格式化标签 */
   start: string
-  /** 输入（含缓存命中和写入的部分，和 Task.usage 的定义一致） */
-  inputTokens: number
-  outputTokens: number
-  /** 输入里命中缓存的部分，是 inputTokens 的一部分，不另外相加 */
-  cacheReadTokens: number
-  /** 输入里写入缓存的部分，是 inputTokens 的一部分，不另外相加 */
-  cacheWriteTokens: number
   costUsd: number
   /** 这一桶里有几轮执行 */
   turns: number
   /** 这一桶里有几轮不同的任务 */
   tasks: number
+  /** 落在高峰时段的那部分，已经包含在上面四项里，不另外相加 */
+  peak: TokenTotals
+  /** 落在空闲（优惠）时段的那部分，已经包含在上面四项里，不另外相加 */
+  offPeak: TokenTotals
 }
 
 export type UsageTotal = Omit<UsageBucket, 'key' | 'start'>
@@ -82,6 +129,10 @@ export type UsageReport = {
 
 const num = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0)
 
+const noTokens = (): TokenTotals => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
 /** 本地时间的零点 */
 const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 
@@ -93,20 +144,80 @@ const weekStart = (d: Date) => {
 }
 
 /** 桶的第一天：天是今天，周是本周周一，月是本月一号 */
-function bucketStart(grain: UsageGrain, d: Date) {
+export function periodStart(grain: UsageGrain, d: Date) {
   return grain === 'day' ? midnight(d) : grain === 'week' ? weekStart(d) : new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
 /** 从某个桶往前数 n 个桶 */
-function shift(grain: UsageGrain, start: Date, n: number) {
+export function shiftPeriod(grain: UsageGrain, start: Date, n: number) {
   if (grain === 'day') return new Date(start.getFullYear(), start.getMonth(), start.getDate() + n)
   if (grain === 'week') return new Date(start.getFullYear(), start.getMonth(), start.getDate() + n * 7)
   return new Date(start.getFullYear(), start.getMonth() + n, 1)
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
+/** 本地日期标识：2026-10-23（和桶的 key 同格式，按天视图直接比） */
+export function dayKey(d: Date) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
-/** 桶的标识：天和周到日，月到月 */
+/**
+ * ISO 周号：周一开头，含 1 月 4 日的那一周是第 1 周。
+ * 先挪到本周的周四，再用它所在的年和那一年的第一个周四算，跨年时也按 ISO 的归属走。
+ */
+export function isoWeek(d: Date) {
+  const target = midnight(d)
+  target.setDate(target.getDate() - ((target.getDay() + 6) % 7) + 3)
+  const year = target.getFullYear()
+  const first = new Date(year, 0, 4)
+  first.setDate(first.getDate() - ((first.getDay() + 6) % 7) + 3)
+  return { year, week: 1 + Math.round((target.getTime() - first.getTime()) / (7 * 86_400_000)) }
+}
+
+/** 一个视图的时间范围：天是 1 天，周是周一到周日，月是整个自然月 */
+export type UsagePeriod = {
+  grain: UsageGrain
+  /** 区间第一天（本地零点） */
+  start: Date
+  /** 区间最后一天（本地零点，含这一天） */
+  end: Date
+  /** 区间里的每一天，从 start 排到 end */
+  days: Date[]
+}
+
+/** 某一天落在哪个区间里；周从周一起算 */
+export function usagePeriod(grain: UsageGrain, day: Date): UsagePeriod {
+  const start = periodStart(grain, day)
+  const end = grain === 'day' ? start : shiftPeriod(grain, start, 1)
+  if (grain !== 'day') end.setDate(end.getDate() - 1)
+  const days: Date[] = []
+  for (let d = midnight(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) days.push(d)
+  return { grain, start, end, days }
+}
+
+/**
+ * 区间的标签：10月23日 / 第 43 周 · 10月19日 - 10月25日 / 2026年10月。
+ * 周带上第几周，按月切换、跟人说话时都对得上号。
+ */
+export function periodLabel(period: UsagePeriod) {
+  const { grain, start, end } = period
+  if (grain === 'month') return usageLabel({ start: start.toISOString() }, 'month')
+  const head = usageLabel({ start: start.toISOString() }, 'day')
+  if (grain === 'day') return head
+  const tail = usageLabel({ start: end.toISOString() }, 'day')
+  return t('第 {n} 周 · {from} - {to}', { n: isoWeek(start).week, from: head, to: tail })
+}
+
+/**
+ * token 的短格式：727366264 → 727.37M、3328101 → 3.33M、0 → 0。
+ * 表格和合计都用它，精确原值放在 title 里；两位小数去掉多余的 0（1.00M 显示 1M）。
+ */
+export function formatTokens(n: number) {
+  const v = Number.isFinite(n) && n > 0 ? n : 0
+  if (v < 1000) return String(Math.round(v))
+  const [num, unit] = v < 1_000_000 ? [v / 1000, 'K'] : [v / 1_000_000, 'M']
+  return `${+num.toFixed(2)}${unit}`
+}
+
 function keyOf(grain: UsageGrain, start: Date) {
   const y = start.getFullYear()
   const m = pad(start.getMonth() + 1)
@@ -171,7 +282,52 @@ const emptyBucket = (grain: UsageGrain, start: Date): UsageBucket => ({
   costUsd: 0,
   turns: 0,
   tasks: 0,
+  peak: noTokens(),
+  offPeak: noTokens(),
 })
+
+/** HH:MM → 当天的分钟数 */
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+/** 按指定时区取当地钟点的格式化器（每个时区建一次，表格每行都要判定） */
+const clockFormats = new Map<string, Intl.DateTimeFormat>()
+function clockFormat(timeZone: string) {
+  let f = clockFormats.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'short',
+    })
+    clockFormats.set(timeZone, f)
+  }
+  return f
+}
+
+const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+/**
+ * 这一轮开始时间落在不在高峰时段：按 `window.timeZone` 的当地钟点算，和本机时区无关。
+ * 时间认不出来时算高峰（价格更高，不会低估费用）；落在时段边界上按左闭右开处理（09:00 算高峰、12:00 算空闲）。
+ */
+export function inPeak(at: string | Date, window: PeakWindow = DEEPSEEK_PEAK_WINDOW): boolean {
+  const d = at instanceof Date ? at : new Date(at)
+  if (Number.isNaN(d.getTime())) return true
+  const parts: Record<string, string> = {}
+  for (const p of clockFormat(window.timeZone).formatToParts(d)) parts[p.type] = p.value
+  if (window.holidays?.includes(`${parts.year}-${parts.month}-${parts.day}`)) return false
+  if (window.weekdays && !window.weekdays.includes(WEEKDAY_INDEX[parts.weekday])) return false
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute)
+  return window.ranges.some((r) => minutes >= toMinutes(r.start) && minutes < toMinutes(r.end))
+}
 
 /**
  * 把样本聚合成 `count` 个桶（含当前这个桶，往前数），从新到旧排。
@@ -181,14 +337,16 @@ export function aggregateUsage(
   samples: UsageSample[],
   query: { grain: UsageGrain; count: number },
   now: Date = new Date(),
+  /** 判定峰谷用的时段定义；接口固定用官方那一套 */
+  peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
 ): UsageReport {
   const grain = UsageQuery.grain(query.grain)
   const count = UsageQuery.count(query.count, grain)
-  const latest = bucketStart(grain, now)
+  const latest = periodStart(grain, now)
   const buckets: UsageBucket[] = []
   const index = new Map<string, UsageBucket>()
   for (let i = 0; i < count; i++) {
-    const b = emptyBucket(grain, shift(grain, latest, -i))
+    const b = emptyBucket(grain, shiftPeriod(grain, latest, -i))
     buckets.push(b)
     index.set(b.key, b)
   }
@@ -196,7 +354,7 @@ export function aggregateUsage(
   for (const s of samples) {
     const at = new Date(s.at)
     if (Number.isNaN(at.getTime())) continue
-    const b = index.get(keyOf(grain, bucketStart(grain, at)))
+    const b = index.get(keyOf(grain, periodStart(grain, at)))
     if (!b) continue
     b.inputTokens += num(s.inputTokens)
     b.outputTokens += num(s.outputTokens)
@@ -204,11 +362,31 @@ export function aggregateUsage(
     b.cacheWriteTokens += num(s.cacheWriteTokens)
     b.costUsd += num(s.costUsd)
     b.turns += 1
+    // 峰谷按「这一轮开始的时间」判定，再各记一份，两份加起来等于上面的总量
+    const tier = inPeak(at, peakWindow) ? b.peak : b.offPeak
+    tier.inputTokens += num(s.inputTokens)
+    tier.outputTokens += num(s.outputTokens)
+    tier.cacheReadTokens += num(s.cacheReadTokens)
+    tier.cacheWriteTokens += num(s.cacheWriteTokens)
     let ids = seen.get(b)
     if (!ids) seen.set(b, (ids = new Set()))
     ids.add(s.taskId)
   }
   for (const [b, ids] of seen) b.tasks = ids.size
+  return {
+    grain,
+    from: shiftPeriod(grain, latest, -(count - 1)).toISOString(),
+    to: shiftPeriod(grain, latest, 1).toISOString(),
+    buckets,
+    total: sumBuckets(buckets),
+  }
+}
+
+/**
+ * 几个桶相加：只选了一个区间时（按天一天、按周一周、按月一月）用它算合计。
+ * 任务数按各桶去重后再加（和接口给的合计同一个算法），跨桶的同一个任务会分别算进各自的桶。
+ */
+export function sumBuckets(buckets: UsageBucket[]): UsageTotal {
   const total: UsageTotal = {
     inputTokens: 0,
     outputTokens: 0,
@@ -217,6 +395,8 @@ export function aggregateUsage(
     costUsd: 0,
     turns: 0,
     tasks: 0,
+    peak: noTokens(),
+    offPeak: noTokens(),
   }
   for (const b of buckets) {
     total.inputTokens += b.inputTokens
@@ -225,19 +405,23 @@ export function aggregateUsage(
     total.cacheWriteTokens += b.cacheWriteTokens
     total.costUsd += b.costUsd
     total.turns += b.turns
-    // 合计里的任务数是各桶去重后再加：同一个任务跨桶会分别算进各自的桶
     total.tasks += b.tasks
+    for (const tier of ['peak', 'offPeak'] as const) {
+      total[tier].inputTokens += b[tier].inputTokens
+      total[tier].outputTokens += b[tier].outputTokens
+      total[tier].cacheReadTokens += b[tier].cacheReadTokens
+      total[tier].cacheWriteTokens += b[tier].cacheWriteTokens
+    }
   }
-  return {
-    grain,
-    from: shift(grain, latest, -(count - 1)).toISOString(),
-    to: shift(grain, latest, 1).toISOString(),
-    buckets,
-    total,
-  }
+  return total
 }
 
 /** 任务列表 → 样本 → 报表，服务端一次调用就够 */
-export function usageReport(tasks: Task[], query: { grain: UsageGrain; count: number }, now: Date = new Date()) {
-  return aggregateUsage(tasks.flatMap(usageSamples), query, now)
+export function usageReport(
+  tasks: Task[],
+  query: { grain: UsageGrain; count: number },
+  now: Date = new Date(),
+  peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
+) {
+  return aggregateUsage(tasks.flatMap(usageSamples), query, now, peakWindow)
 }

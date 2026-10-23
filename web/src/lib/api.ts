@@ -35,9 +35,15 @@ import type {
   TaskPatch,
   Workflow,
   WorkflowInput,
+  CleanProcessesResult,
+  KillProcessResult,
+  ProcessSuggestResult,
+  TaskMemoryHistory,
+  TaskProcesses,
 } from '@shared/schema'
-import type { ChildActivity } from '@shared/task'
+import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
+import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -143,6 +149,8 @@ export interface WorktreeItem {
   dirty: number
   /** 改动都已经在原分支里了 */
   merged: boolean
+  /** 子对话还没彻底完成、所以独立分支还留着的原因（合回去了才有） */
+  holds?: ChildHold[]
 }
 
 /** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */
@@ -233,7 +241,7 @@ export const api = {
   /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
   cliSpecs: () => request<UserClis>('/clis/specs'),
   reloadCliSpecs: () => request<UserClis>('/clis/specs/reload', json('POST', {})),
-  revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
+  revealCliSpecs: () => request<{ ok: boolean; dir: string }>('/clis/specs/reveal', json('POST', {})),
   cliCommands: (id: string, projectId = '') =>
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   /** own：只要 CLI 自己的 Skill，不含 ~/.agents/skills 里共用的 */
@@ -337,6 +345,26 @@ export const api = {
   task: (id: string) => request<Task>(`/tasks/${id}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
+  /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
+  taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
+  /** 这个对话的进程树（含子对话、子任务、工作流起的）和内存合计；下拉展开时才调 */
+  taskProcesses: (id: string) => request<TaskProcesses>(`/tasks/${id}/processes`),
+  killTaskProcess: (id: string, pid: number) =>
+    request<KillProcessResult>(`/tasks/${id}/processes/${pid}/kill`, json('POST', {})),
+  /** 清理无效进程：pids 是用户在确认列表里勾选的，空表示清这个对话的全部残留 */
+  cleanTaskProcesses: (id: string, pids: number[]) =>
+    request<CleanProcessesResult>(`/tasks/${id}/processes/clean`, json('POST', { pids })),
+  /** AI 清理建议：只给建议，确认后前端再调 cleanTaskProcesses */
+  suggestTaskProcesses: (id: string) =>
+    request<ProcessSuggestResult>(`/tasks/${id}/processes/suggest`, json('POST', {})),
+  /** 内存曲线的历史采样点 */
+  taskMemory: (id: string, from?: number, to?: number) => {
+    const q = new URLSearchParams()
+    if (from) q.set('from', String(from))
+    if (to) q.set('to', String(to))
+    const qs = q.toString()
+    return request<TaskMemoryHistory>(`/tasks/${id}/memory${qs ? `?${qs}` : ''}`)
+  },
   taskChildren: (id: string) =>
     request<
       {
@@ -352,14 +380,24 @@ export const api = {
         startedAt: string
         /** 正在等用户确认的请求数 */
         requests?: number
-        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」 */
-        plan?: { done: number; total: number }
+        /** 请用户选择、还没人回答的提问数（也是「停在等你」的一种） */
+        asking?: number
+        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」；正在做的那一步也带上 */
+        plan?: { done: number; total: number; step?: string; child?: string }
+        /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */
+        unmerged?: boolean
         /** 在独立 worktree 里改时的分支 */
         branch?: string
         /** 正在执行时这会儿在做什么 */
         activity?: ChildActivity
+        /** 最后有动静的时间：几分钟没新输出、又不能用等待解释时，行上标黄 / 标红 */
+        lastActivityAt?: string
+        /** 这会儿在等什么：等用户回答、等后台命令、等子任务、等工作流、等下一句 */
+        waiting?: ChildWait
         /** 用户标记了「解决」：列表归到「已完成」并带标记 */
         resolved?: boolean
+        /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */
+        stopReason?: Task['stopReason'] | ''
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
@@ -543,8 +581,8 @@ export const api = {
   dataUsage: () => request<DataUsage>('/data'),
   /** 只取内存采样（最新一个 + 序列 + 面板规模）：内存曲线按采样间隔刷新用它，不遍历数据目录 */
   memoryUsage: () => request<MemoryUsage>('/data/memory'),
-  revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
-  revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
+  revealData: () => request<{ ok: boolean; dir: string }>('/data/reveal', json('POST', {})),
+  revealLogs: () => request<{ ok: boolean; dir: string }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
@@ -621,5 +659,6 @@ export const api = {
   reloadExtension: (browser: string) =>
     request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
-  revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
+  revealProject: (projectId: string) =>
+    request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
 }

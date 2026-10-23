@@ -1,5 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import {
@@ -18,7 +18,16 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import type { Agent, ParamValue, Project, ProjectInput, TestStep, Workflow, WorkflowExpose } from '@shared/schema'
+import type {
+  Agent,
+  ParamValue,
+  ParamValues,
+  Project,
+  ProjectInput,
+  TestStep,
+  Workflow,
+  WorkflowExpose,
+} from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
 import {
   derivedParams,
@@ -37,27 +46,49 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
-import type { ProjectProposal } from '@shared/assist'
+import type { ProjectProposal, Proposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
+import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
 import { cliSettings, orderClis } from '@shared/settings'
+import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { ParamsForm } from '@/components/agents/ParamFields'
+import { ParamControl, ParamRow, ParamsForm } from '@/components/agents/ParamFields'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 
 /** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
 const PROJECT_WF_CATEGORY = '项目'
+
+/**
+ * 一次 AI 优化会话。参数在打开时快照下来：关掉项目设置后 Body 卸载了，
+ * 对话还要接着跑，不能依赖表单里的草稿。
+ */
+type AiSession = {
+  kind: 'params' | 'teststeps' | 'project'
+  workflowId?: string
+  agentId?: string
+  title: string
+  /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
+  start?: string
+  /** AI 初始化要的目录和扫描线索（Body 关掉后草稿就没了，先存下来） */
+  subject?: Record<string, string>
+}
+
+/** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
+type ApplyAi = (p: Proposal) => void
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
 const folderName = (p: string) =>
@@ -83,7 +114,9 @@ const blank: ProjectInput = {
   lessons: [],
   wslDistro: '',
   fileFormat: undefined,
+  searchExclude: [],
   gitPolicy: 'ask',
+  initializedAt: '',
 }
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
@@ -118,28 +151,72 @@ export function ProjectSettingsDialog({
   item?: string
   onOpenChange: (open: boolean) => void
 }) {
+  const { workflows, agents } = useData()
+  // AI 会话放在外壳：关掉项目设置时 AssistDialog 不卸载，生成继续跑，最小化的浮条留在屏幕上
+  const [ai, setAi] = useState<AiSession | null>(null)
+  // Body 挂载时注册「把结果填进表单」；它没挂载（设置关着）时先排队，重新打开后补上
+  const applyRef = useRef<ApplyAi | null>(null)
+  const queued = useRef<Proposal[]>([])
+  const apply = (p: Proposal) => {
+    if (applyRef.current) {
+      applyRef.current(p)
+      return
+    }
+    queued.current.push(p)
+    if (!open) onOpenChange(true)
+  }
+  // 换了项目就不再沿用上一份会话（AssistDialog 卸载时会停掉还在跑的生成）
+  const pid = useRef(project?.id)
+  useEffect(() => {
+    if (pid.current === project?.id) return
+    pid.current = project?.id
+    setAi(null)
+  }, [project?.id])
+  const aiWorkflow = ai?.workflowId ? workflows.find((w) => w.id === ai.workflowId) : undefined
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          // 改到一半点到外面不关闭，免得白填
-          onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          {open && (
-            <Body
-              key={project?.id ?? 'new'}
-              project={project}
-              initialSection={section}
-              item={item}
-              onClose={() => onOpenChange(false)}
-            />
-          )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    <>
+      <D.Root open={open} onOpenChange={onOpenChange}>
+        <D.Portal>
+          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
+          <D.Content
+            aria-describedby={undefined}
+            // 改到一半点到外面不关闭，免得白填
+            onInteractOutside={(e) => e.preventDefault()}
+            className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+          >
+            {open && (
+              <Body
+                key={project?.id ?? 'new'}
+                project={project}
+                initialSection={section}
+                item={item}
+                ai={ai}
+                onAssist={setAi}
+                applyRef={applyRef}
+                queued={queued}
+                onClose={() => onOpenChange(false)}
+              />
+            )}
+          </D.Content>
+        </D.Portal>
+      </D.Root>
+      {/* 放在设置弹窗外面：关掉设置不会连带卸载它，生成和浮条都留着 */}
+      {ai && (
+        <AssistDialog
+          open={!!ai}
+          onOpenChange={(o) => !o && setAi(null)}
+          kind={ai.kind}
+          projectId={project?.id ?? ''}
+          subject={ai.subject}
+          title={ai.title}
+          autoStart={ai.start}
+          paramAgentId={ai.agentId}
+          paramSpec={aiWorkflow ? derivedParams(aiWorkflow, agents) : undefined}
+          target={aiWorkflow}
+          onApply={apply}
+        />
+      )}
+    </>
   )
 }
 
@@ -147,11 +224,21 @@ function Body({
   project,
   initialSection,
   item,
+  ai,
+  onAssist,
+  applyRef,
+  queued,
   onClose,
 }: {
   project?: Project
   initialSection?: string
   item?: string
+  /** 这次打开设置时的 AI 会话（外壳持有，关掉设置也不丢） */
+  ai: AiSession | null
+  onAssist: (s: AiSession) => void
+  /** 应用函数和排队的结果由外壳持有，设置重新打开后要接得上 */
+  applyRef: { current: ApplyAi | null }
+  queued: { current: Proposal[] }
   onClose: () => void
 }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
@@ -190,6 +277,8 @@ function Body({
   const [deleting, setDeleting] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [signals, setSignals] = useState<string[]>([])
+  // 这次打开弹窗里 AI 初始化的结果：推荐项在「AI 初始化」页逐项或整体应用
+  const [init, setInit] = useState<ProjectProposal | null>(null)
   // 没单独选工作流时跟随分类的默认工作流，同样算选好了（服务端也是这么解析的）
   const valid =
     !!draft.name.trim() && !!(draft.workflowId || projectCategories.find((c) => c.id === draft.categoryId)?.workflowId)
@@ -211,7 +300,7 @@ function Body({
   const active = own ?? inherited ?? general
   // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
   const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
-  const setParam = (id: string, key: string, value: string | boolean) =>
+  const setParam = (id: string, key: string, value: ParamValue) =>
     setDraft((d) => ({
       ...d,
       workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), [key]: value } },
@@ -239,7 +328,7 @@ function Body({
     return groups.some((g) => derived.some((d) => d.agents.some((a) => a.id === g.agentId)))
   }
   const aiParams = (w: (typeof workflows)[number], agentId?: string, name?: string) =>
-    setAi({
+    onAssist({
       kind: 'params',
       workflowId: w.id,
       agentId,
@@ -258,7 +347,7 @@ function Body({
           <ExposeField
             key={e.key}
             e={e}
-            value={paramsOf(w.id)[e.key] as string | boolean | undefined}
+            value={paramsOf(w.id)[e.key] as ParamValue | undefined}
             onChange={(v) => setParam(w.id, e.key, v)}
           />
         ))}
@@ -281,30 +370,25 @@ function Body({
   const globalFormat = settings?.fileFormat ?? DEFAULT_FILE_FORMAT
   const format = draft.fileFormat ?? globalFormat
   // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
-  const [ai, setAi] = useState<{
-    kind: 'params' | 'teststeps' | 'project'
-    workflowId?: string
-    agentId?: string
-    title: string
-    /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
-    start?: string
-  } | null>(null)
+  // （会话本身由外壳拿着，见 AiSession：关掉设置时这里会卸载，对话不跟着停）
 
-  // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
-  // 「AI 分析这个目录」：先快速扫一遍（几毫秒，拿工作流参数、WSL 这类能直接读出的事实），
-  // 再打开 AI 对话，让本机 Agent 只读地看目录给出名称、简介、类型和测试步骤，确认后填进表单
+  // 「AI 初始化项目」：先快速扫一遍目录（几毫秒，拿技术栈、版本控制这类能直接读出的线索），
+  // 再打开 AI 对话，让本机 Agent 在项目目录里写 AGENTS.md 和文档框架、评估工作流和设置。
+  // 推荐项回到「AI 初始化」页应用；收下结果才算初始化过，之后才能确认保存
   const [scan, setScan] = useState<Awaited<ReturnType<typeof api.analyzeProject>> | null>(null)
-  const analyze = async () => {
+  const startInit = async () => {
     if (!draft.path.trim() || analyzing) return
     setAnalyzing(true)
     try {
       const r = await api.analyzeProject(draft.path)
       setScan(r)
       setSignals(r.signals)
-      setAi({
+      // 目录和扫描线索随会话一起存：关掉设置后草稿没了，这两项要交给 AI 继续用
+      onAssist({
         kind: 'project',
-        title: t('AI 分析项目'),
-        start: t('看看这个项目是做什么的，把名称、简介和测试步骤填好'),
+        title: t('AI 初始化项目'),
+        start: t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置'),
+        subject: { path: draft.path.trim(), scan: scanText(r) },
       })
     } catch (e) {
       toast.error((e as Error).message)
@@ -312,33 +396,34 @@ function Body({
       setAnalyzing(false)
     }
   }
-  const applyAnalysis = (p: ProjectProposal) => {
-    const want = p.type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
-    const wf = workflows.find((w) => w.origin === `builtin:project-${p.type}`) ?? workflows.find((w) => w.name === want)
-    // 扫描给的工作流参数只在类型对得上时用
-    const params = scan && scan.workflow === p.type ? scan.workflowParams : {}
-    setDraft((d) => ({
-      ...d,
-      name: d.name.trim() || p.name,
-      description: p.description || d.description,
-      ...(p.steps.length ? { testSteps: p.steps } : {}),
-      ...(scan?.wslDistro && !d.wslDistro ? { wslDistro: scan.wslDistro } : {}),
-      ...(wf
-        ? {
-            workflowId: wf.id,
-            workflowParams: { ...d.workflowParams, [wf.id]: { ...(d.workflowParams[wf.id] ?? {}), ...params } },
-          }
-        : {}),
-    }))
-    toast.success(
-      wf
-        ? t('已按 AI 的分析填好，检查一下再保存')
-        : t('已填好，但没找到内置工作流「{name}」，请手动选择', { name: want }),
-    )
+  // AI 没评估出默认工作流时按项目类型落到内置的「通用项目」/「UE 项目」
+  const fallbackWorkflow = (type: 'general' | 'ue') => {
+    const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
+    return workflows.find((w) => w.origin === `builtin:project-${type}`) ?? workflows.find((w) => w.name === want)
+  }
+  const acceptInit = (p: ProjectProposal) => {
+    // 扫描给的工作流参数（结构技能、文档目录）没被 AI 覆盖时一起推荐
+    const params = scan && scan.workflow === p.type ? { ...scan.workflowParams, ...p.params } : p.params
+    const def = p.workflows.find((w) => w.verdict === 'default')?.id ?? fallbackWorkflow(p.type)?.id
+    const expose = workflows.find((w) => w.id === def)?.expose ?? []
+    setInit({
+      ...p,
+      params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
+    })
+    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+    setSection('init')
+    // AGENTS.md 刚被改过，「项目说明」页要读新的
+    if (project?.path)
+      void api
+        .projectDocs(project.id)
+        .then(setDocs)
+        .catch(() => {})
+    toast.success(t('初始化完成，按需应用推荐的设置后点「确认」保存'))
   }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
-  const [section, setSection] = useState(initialSection || 'general')
+  // 还没初始化的旧项目打开时先到「AI 初始化」：不初始化就不能保存
+  const [section, setSection] = useState(initialSection || (project && !project.initializedAt ? 'init' : 'general'))
   const [lessonIds0] = useState(() => new Set(project?.lessons.map((l) => l.id)))
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [docError, setDocError] = useState('')
@@ -364,7 +449,7 @@ function Body({
   )
 
   const confirm = async () => {
-    if (!valid || saving) return
+    if (!valid || saving || !draft.initializedAt) return
     setSaving(true)
     try {
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
@@ -407,6 +492,49 @@ function Body({
     }
   }
 
+  /**
+   * 把 AI 的结果填进表单。会话在外壳手里：设置关着时点「填进表单」会先把设置重新打开，
+   * Body 挂载后把排队的那份结果应用掉。
+   */
+  const applyAi = (p: Proposal) => {
+    if (p.kind === 'params') {
+      const id = ai?.workflowId || p.workflowId || active?.id
+      const wf = workflows.find((w) => w.id === id)
+      const spec = wf ? derivedParams(wf, agents) : []
+      if (id)
+        setDraft((d) => {
+          const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
+          // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
+          for (const [k, v] of Object.entries(p.values)) {
+            const def = spec.find((x) => x.key === k)
+            if (def && isDefaultValue(def, v)) delete next[k]
+          }
+          return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
+        })
+      toast.success(t('已填进表单，确认保存后生效'))
+    } else if (p.kind === 'project') {
+      acceptInit(p)
+    } else if (p.kind === 'teststeps') {
+      set('testSteps', p.steps)
+      toast.success(t('已填进表单，确认保存后生效'))
+    }
+  }
+  // 交给外壳的永远是最新这一份（里面读的是当前草稿）；挂载时把关掉设置期间排队的应用掉
+  const applyLatest = useRef(applyAi)
+  applyLatest.current = applyAi
+  useEffect(() => {
+    const handler: ApplyAi = (p) => applyLatest.current(p)
+    applyRef.current = handler
+    const queuedNow = queued.current
+    queued.current = []
+    for (const one of queuedNow) handler(one)
+    return () => {
+      if (applyRef.current === handler) applyRef.current = null
+    }
+    // 注册一次转发就够：applyLatest 每次渲染都指向当前草稿，不用重挂
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
@@ -424,6 +552,10 @@ function Body({
           <NavItem on={section === 'general'} onClick={() => setSection('general')}>
             <Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             {t('常规')}
+          </NavItem>
+          <NavItem on={section === 'init'} onClick={() => setSection('init')} dot={!draft.initializedAt}>
+            <Sparkles className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('AI 初始化')}
           </NavItem>
           <NavItem
             on={section === 'roles'}
@@ -556,12 +688,26 @@ function Body({
             }}
             className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
           >
-            {section === 'roles' ? (
+            {section === 'init' ? (
+              <ProjectInitPanel
+                draft={draft}
+                setDraft={setDraft}
+                result={init}
+                workflows={workflows}
+                activeId={active?.id ?? ''}
+                fallbackId={init ? (fallbackWorkflow(init.type)?.id ?? '') : ''}
+                globalFormat={globalFormat}
+                canStart={!!draft.path.trim()}
+                starting={analyzing || ai?.kind === 'project'}
+                signals={signals}
+                onStart={() => void startInit()}
+              />
+            ) : section === 'roles' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <PageIntro
                   title={t('必备角色')}
                   desc={t(
-                    '项目对话靠这四个角色运转：统筹分派、执行做事、文档落盘、测试验收。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。',
+                    '项目对话靠这几个角色运转：统筹分派、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。',
                   )}
                 />
                 {coreAgents.map((a) => (
@@ -750,7 +896,7 @@ function Body({
                   onDistro={(v) => set('wslDistro', v)}
                   aiRunning={false}
                   onAi={() =>
-                    setAi({
+                    onAssist({
                       kind: 'teststeps',
                       title: t('AI 生成测试步骤'),
                       start: t('按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤'),
@@ -799,32 +945,23 @@ function Body({
 
                 <FormSection title={t('本地目录')}>
                   <DirPicker value={draft.path} onChange={pickDir} info={dir} />
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void analyze()}
-                      disabled={!draft.path.trim() || analyzing}
-                    >
-                      {analyzing ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {t('AI 分析这个目录')}
-                    </Button>
-                    <HelpTip>
-                      {t(
-                        '让 AI 只读地看一遍这个目录，判断技术栈、构建和测试命令，填进下面的表单和测试步骤；保存前你可以再改',
-                      )}
-                    </HelpTip>
-                  </div>
-                  {signals.length > 0 && (
-                    <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
-                      {signals.map((s) => (
-                        <li key={s}>· {s}</li>
-                      ))}
-                    </ul>
+                  {!draft.initializedAt && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-3.5 py-2.5">
+                      <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+                      <span className="min-w-0 flex-1 text-[0.8125rem]">
+                        {draft.path.trim()
+                          ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
+                          : t('选好本地目录后，先 AI 初始化项目才能保存。')}
+                      </span>
+                      <Button size="sm" onClick={() => void startInit()} disabled={!draft.path.trim() || analyzing}>
+                        {analyzing ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        {t('AI 初始化项目')}
+                      </Button>
+                    </div>
                   )}
                 </FormSection>
 
@@ -885,13 +1022,17 @@ function Body({
                   </span>
                 </FormSection>
 
+                <FormSection title={t('搜索')}>
+                  <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
+                </FormSection>
+
                 <FormSection title={t('子对话')}>
                   <Field
                     label={t('子对话隔离')}
                     tip={
                       draft.childIsolation === 'worktree'
                         ? t(
-                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。',
+                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话标记完成后删除分支。不是 Git 仓库（P4 等）时自动用共用目录。',
                           )
                         : t(
                             '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
@@ -957,7 +1098,16 @@ function Body({
         {changedDocs.length > 0 && (
           <span className="text-xs text-subtle">{t('{n} 个说明文件有改动', { n: changedDocs.length })}</span>
         )}
-        <Button onClick={() => void confirm()} disabled={!valid || saving}>
+        {!draft.initializedAt && (
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-warning hover:underline"
+            onClick={() => setSection('init')}
+          >
+            {t('先完成「AI 初始化项目」才能保存')}
+          </button>
+        )}
+        <Button onClick={() => void confirm()} disabled={!valid || saving || !draft.initializedAt}>
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {project ? t('确认') : t('创建')}
         </Button>
@@ -970,52 +1120,6 @@ function Body({
           title={t('删除「{name}」？', { name: project.name })}
           description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
           onConfirm={remove}
-        />
-      )}
-
-      {ai && (
-        <AssistDialog
-          open={!!ai}
-          onOpenChange={(o) => !o && setAi(null)}
-          kind={ai.kind}
-          projectId={project?.id ?? ''}
-          subject={ai.kind === 'project' ? { path: draft.path.trim(), scan: scan ? scanText(scan) : '' } : undefined}
-          title={ai.title}
-          autoStart={ai.start}
-          paramAgentId={ai.agentId}
-          paramSpec={
-            ai.kind === 'params'
-              ? (() => {
-                  const wf = workflows.find((w) => w.id === (ai.workflowId || active?.id))
-                  return wf ? derivedParams(wf, agents) : []
-                })()
-              : undefined
-          }
-          // params 时 target 是工作流：结果按它的 id 写进 workflowParams
-          target={ai.kind === 'params' ? workflows.find((w) => w.id === (ai.workflowId || active?.id)) : undefined}
-          onApply={(p) => {
-            if (p.kind === 'params') {
-              const id = ai.workflowId || p.workflowId || active?.id
-              const wf = workflows.find((w) => w.id === id)
-              const spec = wf ? derivedParams(wf, agents) : []
-              if (id)
-                setDraft((d) => {
-                  const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
-                  // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
-                  for (const [k, v] of Object.entries(p.values)) {
-                    const def = spec.find((x) => x.key === k)
-                    if (def && isDefaultValue(def, v)) delete next[k]
-                  }
-                  return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
-                })
-              toast.success(t('已填进表单，确认保存后生效'))
-            } else if (p.kind === 'project') {
-              applyAnalysis(p)
-            } else if (p.kind === 'teststeps') {
-              set('testSteps', p.steps)
-              toast.success(t('已填进表单，确认保存后生效'))
-            }
-          }}
         />
       )}
     </>
@@ -1182,7 +1286,7 @@ function TestStepsEditor({
       </div>
       {steps.length === 0 && (
         <p className="rounded-lg border border-dashed p-3 text-xs text-subtle">
-          {t('还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。')}
+          {t('还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。')}
         </p>
       )}
       <ul className="flex flex-col gap-2">
@@ -1353,10 +1457,14 @@ function AgentParamsEditor({
   /** 工作流 expose 已经管着的参数 key：同 key 只渲染一次，由 expose 那边负责 */
   hidden: Set<string>
 }) {
-  const mine = agents.filter((d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key))
+  // 联动按这个 Agent 自己的参数顺序算：前面参数没选到的不显示，选项跟着前面的取值缩小
+  const view = resolveParams(group.params, values as ParamValues)
+  const mine = agents.filter(
+    (d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key) && !view.hidden.includes(d.key),
+  )
   if (!mine.length) return null
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
       <div className="flex items-center gap-2">
         <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
         <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
@@ -1366,10 +1474,23 @@ function AgentParamsEditor({
         </Button>
       </div>
       {mine.map((d) => (
-        <DerivedParamField key={d.key} d={d} value={values[d.key]} onChange={(v) => onChange(d.key, v)} />
+        <DerivedParamField
+          key={d.key}
+          d={view.options[d.key] ? { ...d, options: view.options[d.key] } : d}
+          value={values[d.key]}
+          onChange={(v) => onChange(d.key, v)}
+        />
       ))}
     </div>
   )
+}
+
+/** 参数的默认值写成人能看的字：开关是「是 / 否」，多选用顿号连起来 */
+function defaultText(v: ParamValue | undefined) {
+  if (v === undefined || v === '') return ''
+  if (typeof v === 'boolean') return v ? t('是') : t('否')
+  if (Array.isArray(v)) return v.join(t('、'))
+  return String(v)
 }
 
 /** 一项派生参数：按类型渲染，显示默认值；多个 Agent 共用同一个 key 时注明影响面 */
@@ -1383,51 +1504,50 @@ function DerivedParamField({
   onChange: (v: string | boolean) => void
 }) {
   const label = d.label || d.key
-  const fallback = Array.isArray(d.defaultValue) ? d.defaultValue.join(', ') : (d.defaultValue ?? '')
+  const fallback = defaultText(d.defaultValue)
   const shared = d.agents.length > 1
+  // 说明、默认值和影响面都收进 ⓘ，行里只留参数名——参数多时一屏能看到全条
+  const hint = [
+    d.description,
+    fallback && t('默认：{v}', { v: fallback }),
+    shared && t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) }),
+  ]
+    .filter(Boolean)
+    .join('；')
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-        {label}
-        <span className="font-mono text-[0.6875rem] text-subtle">{d.key}</span>
-        {d.required && <span className="text-[0.6875rem] text-warning">{t('必须填')}</span>}
-        {shared && (
-          <span className="text-[0.6875rem] text-subtle">
-            {t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) })}
-          </span>
-        )}
-      </span>
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{label}</span>
+          <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{d.key}</span>
+          {d.required && <span className="shrink-0 text-[0.6875rem] text-warning">{t('必须填')}</span>}
+        </>
+      }
+      hint={hint}
+      controlClass={d.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
+    >
       {d.type === 'select' ? (
         <Select
+          aria-label={label}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
           options={[
-            { value: '', label: fallback ? t('默认：{v}', { v: String(fallback) }) : t('未选择') },
+            { value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') },
             ...d.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : d.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true}
-            onChange={(e) => onChange(e.target.checked)}
-          />
-          {value === true ? t('是') : t('否')}
-          {d.defaultValue !== undefined && (
-            <span className="text-xs text-subtle">{t('默认：{v}', { v: d.defaultValue ? t('是') : t('否') })}</span>
-          )}
-        </label>
+        <Switch checked={value === true} onCheckedChange={(x) => onChange(x)} aria-label={label} />
       ) : (
         <Input
+          aria-label={label}
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {d.description && <span className="text-xs text-subtle">{d.description}</span>}
-    </div>
+    </ParamRow>
   )
 }
 
@@ -1438,43 +1558,154 @@ function ExposeField({
   onChange,
 }: {
   e: WorkflowExpose
-  value: string | boolean | undefined
-  onChange: (v: string | boolean) => void
+  value: ParamValue | undefined
+  onChange: (v: ParamValue) => void
 }) {
   const label = e.label || e.key
-  const text = typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : (value ?? '')
-  const fallback = Array.isArray(e.default) ? e.default.join(', ') : (e.default ?? '')
+  // 多选存的是字符串数组，早先的版本存成 "a, b" 字符串，这里两种都认
+  const text =
+    typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : String(value ?? '')
+  const list = Array.isArray(value) ? value : text ? text.split(/\s*,\s*/).filter(Boolean) : []
+  // 没改过时显示默认值（这些选项本来就生效），改动后再存实际的数组
+  const shown = list.length || !Array.isArray(e.default) ? list : e.default
+  const fallback = defaultText(e.default)
+  // 和角色参数一样：说明与默认值收进 ⓘ，行里只留名字，控件靠右
+  const hint = [e.description, fallback && t('默认：{v}', { v: fallback })].filter(Boolean).join('；')
+  const on = value === true || text === 'true'
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted">{label}</span>
+    <ParamRow
+      label={<span className="truncate font-medium text-muted">{label}</span>}
+      hint={hint}
+      controlClass={e.type === 'bool' ? undefined : e.type === 'multi' ? 'w-[min(20rem,60%)]' : 'w-[min(14rem,50%)]'}
+    >
       {e.type === 'select' ? (
         <Select
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
           options={[
-            ...(text || fallback ? [] : [{ value: '', label: t('未选择') }]),
+            // 没选时显示默认值（或「未选择」），选了就只显示选中的
+            ...(text ? [] : [{ value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') }]),
             ...e.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : e.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true || value === 'true'}
-            onChange={(ev) => onChange(ev.target.checked ? 'true' : 'false')}
-          />
-          {text === 'true' || value === true ? t('是') : t('否')}
-        </label>
+        // 开关的取值照旧存成 'true' / 'false' 字符串，和工作流配置里的格式一致
+        <Switch checked={on} onCheckedChange={(x) => onChange(x ? 'true' : 'false')} aria-label={label} />
+      ) : e.type === 'multi' ? (
+        // 多选和角色参数用同一个控件：值是字符串数组，exposeValue 会拼成「a, b」填进 {{槽名}}
+        <ParamControl
+          param={{
+            key: e.key,
+            label,
+            type: 'multi',
+            options: e.options,
+            ask: false,
+            description: e.description,
+            default: e.default,
+          }}
+          value={shown}
+          onChange={(v) => onChange(Array.isArray(v) ? v : [])}
+        />
       ) : (
         <Input
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {e.description && <span className="text-xs text-subtle">{e.description}</span>}
-    </div>
+    </ParamRow>
+  )
+}
+
+/**
+ * 搜索排除目录：一项一个 chip，回车或点「添加」加一项，点 × 删一项。
+ * 只存用户填的；内置默认清单（依赖、产物、缓存）始终生效，不占这里的输入。
+ */
+function SearchExcludeField({ value, onChange }: { value: string[] | undefined; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState('')
+  const list = value ?? []
+  // 输入时就把首尾空白和尾部斜杠去掉：`Saved/` 和 `Saved` 是同一个目录，存两种写法只会重复
+  const clean = (s: string) => s.trim().replace(/[\\/]+$/, '')
+  const add = () => {
+    const item = clean(text)
+    setText('')
+    if (!item || list.includes(item)) return
+    onChange([...list, item])
+  }
+  // UE 预设只补缺的：已经填过的项不重复加，用户自己加的也留着
+  const preset = () => onChange([...list, ...UE_SEARCH_EXCLUDE.filter((d) => !list.includes(d))])
+  return (
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{t('搜索时跳过的目录')}</span>
+          <span className="shrink-0 text-[0.6875rem] text-subtle">{t('相对项目根')}</span>
+        </>
+      }
+      hint={t(
+        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。',
+      )}
+      stacked
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {list.map((d) => (
+            <span
+              key={d}
+              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.78125rem] text-muted"
+            >
+              <span className="font-mono">{d}</span>
+              <button
+                type="button"
+                aria-label={t('删除 {name}', { name: d })}
+                title={t('删除 {name}', { name: d })}
+                onClick={() => onChange(list.filter((x) => x !== d))}
+                className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+          <Input
+            aria-label={t('搜索时跳过的目录')}
+            value={text}
+            placeholder={t('目录名，回车添加')}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              // 回车是加一项，不是提交整个设置表单
+              e.preventDefault()
+              add()
+            }}
+            className="h-7 w-[11rem] text-xs"
+          />
+          <Button variant="secondary" size="sm" onClick={add} disabled={!clean(text)} className="h-7">
+            <Plus className="h-3.5 w-3.5" />
+            {t('添加')}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <button type="button" className="cursor-pointer text-accent hover:underline" onClick={preset}>
+            {t('填入 UE 排除清单')}
+          </button>
+          {list.length > 0 && (
+            <button
+              type="button"
+              className="cursor-pointer text-subtle hover:text-fg hover:underline"
+              onClick={() => onChange([])}
+            >
+              {t('清空')}
+            </button>
+          )}
+        </div>
+        <span className="text-xs text-subtle">
+          {t('此外始终跳过：{list}', { list: DEFAULT_SEARCH_EXCLUDE.join(t('、')) })}
+        </span>
+      </div>
+    </ParamRow>
   )
 }
 

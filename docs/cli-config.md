@@ -133,7 +133,7 @@
 | `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                                                                                                                                                                                              |
 | `turnLimit`                                    | CLI 没有回合上限参数时由面板数：`{ "when": { "type": "turn_start" } }`，一次模型请求一条，超过设置里的回合上限就按 `interrupt` 停下，这一轮算失败并显示原因                                                                                                                         |
 | `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                                                                                                                                                                                             |
-| `redirect`                                     | 插话被正在执行的命令挡着（Pi 要等这批工具跑完才取）时怎么让它马上处理：`take` 收回排着的插话（`texts` 是回复里原文列表的路径，空的说明已被取走，不打断），`stop` 停下这一轮（期间的结束记录不算结束），`then` 把插话作为新的一句交给它（`{text}`）。面板在命令跑了 8 秒还没完时触发 |
+| `redirect`                                     | 插话被正在执行的命令挡着（Pi 要等这批工具跑完才取）时怎么让它马上处理：`take` 收回排着的插话（`texts` 是回复里原文列表的路径，空的说明已被取走，不打断），`stop` 停下这一轮（期间的结束记录不算结束），`then` 把插话作为新的一句交给它（`{text}`）。面板在会写东西的命令跑了 8 秒还没完时触发；只读命令（`ls`、`rg`、`git log`）等它自己跑完，卡住了才在 40 秒时停（`server/exec/redirect.ts`） |
 | `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                                                                                                                                                                                     |
 | `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                                                                                                                                                                                        |
 | `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`                                                                                                                                                                                   |
@@ -210,7 +210,7 @@
 | `gen`                 | `text`：模型在生成、但不显示的输出（流式的工具参数），只算进实时速度                                                                                                                                                                                   |
 | `thinking`            | `text`、`delta`；`final: true` 表示这段思考结束时的整段：推过增量就不再发，没推过（有的 Responses 中转只在结束时给）才用它                                                                                                                             |
 | `tool`                | `name`、`id`、`input`：按工具名认出读文件、改文件、跑命令、搜索、网页等，`input` 里的 `command`、`file_path`、`content`、`old_string`/`new_string` 会显示出来                                                                                          |
-| `tool_result`         | `id`、`output`、`error`、`failed`                                                                                                                                                                                                                      |
+| `tool_result`         | `id`、`output`、`error`、`failed`、`exitCode`：命令的退出码（CLI 报得出时给，例如 Pi 的 `$.result.structuredContent.exit_code`），排查失败时要看它，不要凭空补 0                                                                                                             |
 | `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`；`addInput` 不含缓存（只算未命中的）时写 `inputExcludesCache: true`，面板加上缓存再记                                                                |
 | `error`               | `message`：只记下来，这一轮失败时一起显示                                                                                                                                                                                                              |
 | `notice`              | 不影响结果、但用户应该看到的情况，显示成回复里的一行：`text`、`failed`；或者给 `kind` 由面板按界面语言拼文字：`retry`（`attempt`、`maxAttempts`、`delayMs`、`error`）、`retry_failed`（`attempt`、`error`）、`compact_failed`（`error`，为空时不显示） |
@@ -225,8 +225,16 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）。
 对话的保活由面板自己做，不靠模型调用工具：一轮回复结束、对话页还开着时面板先不关进程，用户再发消息时
 在同一个进程里开下一轮（常驻协议用 `turn/start`，面板不用结束再 `--resume`）。
-切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS` 优先，测试用），
-过了宽限进程正常退出。`wait_user_message` 工具仍然提供，模型主动调用时这一轮不结束、等用户下一句；
+切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；这一轮完成但还没打开看过的用「没看过的回复保留多久」，
+默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
+过了宽限进程正常退出。这两种宽限都会排计时：橙点只有用户点开才会消，不收的话进程永远挂着。
+保活会话的总数上限由「同时保活的会话上限」（`keepAliveLimit`，默认 4，填 0 不限制）管，实现在 `server/tasks.ts` 的 `enforceKeepAlive`：
+超了先结束最久没用、又没人在看的那个（名下有子对话在跑的不动，那是真误杀）。
+设置里的「自动回收闲置 Agent」（`reclaimIdleCli`）关掉后只是不再按上面两段时间计时回收，数量上限照旧。
+回收后用户再打开会冷启动一次，会话靠 `--resume` 续接，代价是几秒钟。
+面板被强杀（`taskkill /F`、崩溃）时来不及停的 CLI 记在数据目录 `run/cli-pids.json`，下次启动只清理命令行里认得出是面板起的
+（面板自己的 `cache/cli-run/` 临时目录、MCP 桥接参数），用户自己跑的 `pi`、`codex` 命令行没有这些痕迹，不会被碰。
+`wait_user_message` 工具仍然提供，模型主动调用时这一轮不结束、等用户下一句；
 但正常轮次不需要它，模型没调用也能保活。`tools/list` 里多了这个工具，不算插话协议。
 打开一个已有会话的对话页不会启动 CLI：只有真正发消息时才按当前选择启动这一轮。
 代价是第一条消息要等 CLI 启动和会话加载，换来的是「只是看一眼」不会在后台起一堆进程。
@@ -259,17 +267,18 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 
 ## 能力 `features`
 
-| 字段          | 说明                                                                                                                                                                                                                                                                          |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`     | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                    |
-| `modelSwitch` | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                             |
-| `fork`        | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
-| `autoCompact` | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                              |
-| `slash`       | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                           |
-| `steer`       | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                             |
-| `notes`       | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句    |
-| `limitEnv`    | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
-| `limitFile`   | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
+| 字段             | 说明                                                                                                                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compact`        | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                    |
+| `modelSwitch`    | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                             |
+| `fork`           | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
+| `autoCompact`    | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                              |
+| `slash`          | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                           |
+| `nativeCommands` | 会话里自己就有的内置命令（例如 `init`）：面板的同名内置命令原样发过去，不再展开；其他内置命令和「所有 Agent」的命令都由面板展开                                                                                                                                               |
+| `steer`          | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                             |
+| `notes`          | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句    |
+| `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
+| `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
 
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
 Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上补搜索）加 `--exclude-tools` 去掉命令或写文件的工具；

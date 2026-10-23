@@ -79,8 +79,7 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   本机生图设置: 'Local image settings',
   '本机生图设置：安装、下载模型': 'Local image settings: install and download models',
   我的: 'Mine',
-  '还没有。可以复制内置的来改，或者用 AI 生成、从 ComfyUI 导入。':
-    'None yet. Copy a built-in one to edit, generate one with AI, or import from ComfyUI.',
+  '还没有，可以导入或让 AI 生成': 'None yet. Import one or let AI generate it.',
   '模型已下载，可以用': 'Model downloaded, ready',
   模型还没下载: 'Model not downloaded',
   未保存: 'Unsaved',

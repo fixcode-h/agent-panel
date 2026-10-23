@@ -10,6 +10,7 @@ import {
   type CliStatus,
   type Project,
   type Settings,
+  type StopReason,
   type Task,
   type TaskMessage,
   type ToolUse,
@@ -21,6 +22,7 @@ import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared
 import {
   changesSince,
   mergeChanges,
+  ownedChanges,
   pauseRun,
   questionAnswers,
   resumeRun,
@@ -45,6 +47,7 @@ import {
   type EngineHost,
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
+import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -55,6 +58,7 @@ import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
+import { redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -81,6 +85,13 @@ export interface RealContext {
   /** 本轮用户输入 */
   prompt: string
   signal: AbortSignal
+  /** 为什么停下这一轮：'user' 是用户按的暂停，其余是顺带结束的动作（见 EngineHost.stopReason） */
+  stopReason?: () => StopReason | undefined
+  /**
+   * 开始保活（CLI 回复完停在等下一句）时通知宿主：宿主按全局上限收掉最久没用的保活会话，
+   * 不然页面开着过、又切走的对话会各留一个进程，叠起来就是十几个
+   */
+  onKeepAlive?: (taskId: string) => void
   /**
    * 对话这一轮真的结束了（CLI 报了这一轮的结果，或者回复完停在等下一句）。
    * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到
@@ -114,7 +125,11 @@ export interface RealContext {
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']
+  wrapUp?: EngineHost['wrapUp']
   submitMerge?: EngineHost['submitMerge']
+  ueBuild?: EngineHost['ueBuild']
+  peers?: EngineHost['peers']
+  messagePeer?: EngineHost['messagePeer']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
@@ -283,13 +298,17 @@ export async function steerTask(
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 /**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
- * 读文件、改文件和多数检查几秒就完，留一点余量，免得用户一发消息就把快跑完的命令打断
+ * 会改文件、装依赖、跑测试的命令按这个阈值打断；只读命令（ls、rg、git log、git worktree list）
+ * 跑完这批工具就会被取走，等它自然结束，真卡住了才按 REDIRECT_READONLY_AFTER_MS 兜底（见 redirect.ts）
  */
 // 测试用环境变量缩短，免得端到端测试真的等
 const REDIRECT_AFTER_MS = Number(process.env.AGENT_PANEL_REDIRECT_MS) || 8000
+/** 只读命令卡住时的兜底：比普通命令宽得多，让读代码、看历史的命令先跑完 */
+const REDIRECT_READONLY_AFTER_MS =
+  Number(process.env.AGENT_PANEL_REDIRECT_READONLY_MS) || Math.max(REDIRECT_AFTER_MS * 5, 40_000)
 /** 停下命令后跟补充一起交给模型的说明 */
 const REDIRECT_NOTE =
-  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
+  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断：这条命令已经取消，它的输出不完整，不要当成结果使用。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
@@ -1060,6 +1079,7 @@ async function runAgent(
         if (t) {
           if (ev.output) t.output = ev.output
           if (ev.failed) t.failed = true
+          if (ev.exitCode !== undefined) t.exitCode = ev.exitCode
           if (ev.patch) t.input = ev.patch
           if (ev.detail !== undefined) t.detail = ev.detail
           delete t.running
@@ -1181,7 +1201,8 @@ async function runAgent(
   let redirectTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
-   * 用户就一直等不到回应。超过 REDIRECT_AFTER_MS 就停下这条命令，让 CLI 马上处理补充
+   * 用户就一直等不到回应。超过阈值就停下这条命令，让 CLI 马上处理补充；
+   * 只读命令等它自己跑完（这批工具结束时 CLI 就会取补充），卡住了才按更长的阈值停
    */
   const checkRedirect = () => {
     clearTimeout(redirectTimer)
@@ -1189,9 +1210,12 @@ async function runAgent(
     const c = control
     if (!steerPending || finished || !c?.redirect) return
     // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
-    const started = [...toolStart].filter(([x]) => x.kind === 'run').map(([, at]) => at)
-    if (!started.length) return
-    const wait = Math.min(...started) + REDIRECT_AFTER_MS - Date.now()
+    const wait = redirectWait(
+      [...toolStart].map(([x, at]) => ({ kind: x.kind, label: x.label, startedAt: at })),
+      Date.now(),
+      { command: REDIRECT_AFTER_MS, readOnly: REDIRECT_READONLY_AFTER_MS },
+    )
+    if (wait === undefined) return
     if (wait > 0) {
       redirectTimer = setTimeout(checkRedirect, wait)
       redirectTimer.unref?.()
@@ -1309,7 +1333,11 @@ async function runAgent(
     task.prewarming = false
     // 等子任务时页面显示「等待 n 个子任务完成」，不是「等待你的下一条消息」
     if (helpers) waitingHelpers = true
-    else task.awaitingUser = true
+    else {
+      task.awaitingUser = true
+      // 进保活前先让宿主按全局上限收一批最久没用的
+      ctx.onKeepAlive?.(task.id)
+    }
     // 停在等待上：空闲时间记进等待，不算执行。keepAlive 会让这次调用一直不返回
     if (!prewarmMode && !helpers) pauseRun(task)
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
@@ -1395,6 +1423,8 @@ async function runAgent(
     cwd,
     env,
     input,
+    // 进程面板按这个归属：子对话、子任务、工作流都是同一个任务树上的进程
+    owner: { taskId: task.id, rootTaskId: task.rootTaskId || task.id, title: task.title },
     signal: ctx.signal,
     // 0 表示不限制
     timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
@@ -1484,8 +1514,9 @@ async function runAgent(
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
     if (changes) {
-      // 同时在跑的节点的改动也会出现在差值里：CLI 报告了改哪些文件时只算这些，没报告（例如用命令写的）才全算
-      const mine = changesSince(before, changes).filter((c) => !touched.size || touched.has(c.path))
+      // 只在跑的节点的改动也会出现在差值里：只算 CLI 亲自报告的文件改动（Write、Edit 报的 file 事件）。
+      // 没报告过文件的节点（只读调研、用命令写的）不加归因：差值里可能是并行子对话的改动，算给它就变成了它的改动
+      const mine = ownedChanges(changesSince(before, changes), touched)
       if (owner) mergeChanges((owner.changes ??= []), mine)
       task.changes = changes
     }
@@ -1504,6 +1535,18 @@ async function runAgent(
       errors: errors.join('\n'),
       stderr: r.stderr.trim().split('\n').slice(-20).join('\n'),
     })
+  // CLI 根本没起来（可执行文件找不到、node_modules 被清空、路径不对）：这是失败，不是停止。
+  // 必须排在 abort 判定前面：进程起不来时面板也可能同时收到过停止信号，
+  // 那时写成 stopped 就会显示成「已暂停」，用户还以为自己按了暂停
+  if (r.spawnError)
+    return {
+      ok: false,
+      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
+        error: r.spawnError,
+        cli: def.name,
+        hint: def.installHint,
+      }),
+    }
   // 停止时 CLI 自己中断了这一轮（进程正常退出），也算停止
   if (r.killed === 'stopped' || (ctx.signal.aborted && !r.killed))
     return { ok: false, stopped: true, error: t('已停止') }
@@ -1522,15 +1565,6 @@ async function runAgent(
         .join('\n'),
     }
   }
-  if (r.spawnError)
-    return {
-      ok: false,
-      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
-        error: r.spawnError,
-        cli: def.name,
-        hint: def.installHint,
-      }),
-    }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
     const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')]
@@ -1800,6 +1834,9 @@ export async function runRealTurn(ctx: RealContext) {
     newId: ctx.newId,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
+    // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
+    searchExclude: searchExcludeOf(ctx.project),
+    searchInGit: ctx.isGit,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     listConversations: ctx.listConversations,
@@ -1814,7 +1851,11 @@ export async function runRealTurn(ctx: RealContext) {
     childIsolation: ctx.childIsolation,
     worktreeHome: ctx.worktreeHome,
     branch: ctx.branch,
+    wrapUp: ctx.wrapUp,
     submitMerge: ctx.submitMerge,
+    ueBuild: ctx.ueBuild,
+    peers: ctx.peers,
+    messagePeer: ctx.messagePeer,
     verify: ctx.verify,
     beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,
@@ -1822,6 +1863,7 @@ export async function runRealTurn(ctx: RealContext) {
     lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     signal: ctx.signal,
+    stopReason: ctx.stopReason,
     // 对话等子任务时用户发来的消息：马上开一轮回复
     waitChat: ctx.task.mode === 'chat' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱

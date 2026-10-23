@@ -154,17 +154,20 @@ test('子对话排序：计划没做完的归「未完成」，排在执行中�
   )
 })
 
-test('「运行中」只列真正在执行（working）的：只在等下一句的不混进来', () => {
+test('「运行中」列真正在干活的：后台命令还在跑的也算，只在等下一句的不混进来', () => {
   const list = [
     kid('running', { working: true }),
     kid('waiting', { startedAt: '2026-10-21T09:00:00.000Z' }),
     kid('waitingPlan', { plan: { done: 7, total: 8 } }),
+    // 后台命令跑在服务端，CLI 只是在等结果：子对话还没做完，不能从「运行中」里消失
+    kid('background', { background: 1 }),
+    // 标记解决标早了（还在跑）：也要列出来，「已完成」不能盖住还在跑
     kid('resolvedRunning', { working: true, resolved: true }),
   ]
   assert.deepEqual(
     runningChildren(list).map((x) => x.id),
-    ['running'],
-    '等下一句的、计划没做完等着继续的、已解决的都不算运行中',
+    ['running', 'background', 'resolvedRunning'],
+    '等下一句的、计划没做完等着继续的不算运行中',
   )
 })
 
