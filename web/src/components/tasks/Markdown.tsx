@@ -130,7 +130,7 @@ export function Markdown({
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
     if (el && openFile) {
       // 路径和行号是 linkPaths 解析好放在 data-* 上的，这里直接用
-      openFile(el.dataset.path ?? '', el.dataset.line ? Number(el.dataset.line) : undefined)
+      openFile(el.dataset.path ?? '', el.dataset.mdLine ? Number(el.dataset.mdLine) : undefined)
       return
     }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')

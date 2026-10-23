@@ -1252,9 +1252,10 @@ try {
       .first()
       .waitFor({ timeout: 8000 })
       .catch(() => errors.push('路径可点：文件弹窗里没有显示文件内容'))
-    const shown = await p
-      .evaluate(() => {
-        const rows = [...document.querySelectorAll('[data-line]')]
+    // 只看文件弹窗里的行号行：消息里那条带行号的代码元素不算（它的行号另有 data-md-line）
+    const shown = await dialog
+      .evaluate((el) => {
+        const rows = [...el.querySelectorAll('[data-line]')]
         const hit = rows.find((r) => r.getAttribute('data-line') === '7')
         return {
           lines: rows.length,
