@@ -133,6 +133,14 @@ export const EN_SETTINGS: Record<string, string> = {
     'Used for text files created or rewritten in this project, and the convention roles follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
   '和全局设置不同时，在这里单独指定': 'Override the global setting here',
   跟随全局设置: 'Follow the global setting',
+  搜索时跳过的目录: 'Folders skipped when searching',
+  相对项目根: 'Relative to the project root',
+  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。':
+    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder.',
+  '目录名，回车添加': 'Folder name, press Enter to add',
+  '填入 UE 排除清单': 'Fill in the UE exclusion list',
+  清空: 'Clear',
+  '此外始终跳过：{list}': 'Also always skipped: {list}',
 
   // 默认 CLI
   '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
