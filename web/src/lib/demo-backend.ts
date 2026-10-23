@@ -1204,7 +1204,14 @@ const local: LocalStatus = {
   running: false,
   external: false,
   url: 'http://127.0.0.1:8188',
-  python: '3.12',
+  pythons: [
+    {
+      command: 'py -3.12',
+      path: 'C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+      version: '3.12.10',
+      usable: true,
+    },
+  ],
   gpu: 'cuda',
   gpuName: 'NVIDIA GeForce RTX 4090',
   vram: 24,
@@ -1271,6 +1278,12 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
       ['检查 Python', '下载 ComfyUI', '创建 Python 虚拟环境', '安装 PyTorch', '安装 ComfyUI 的依赖', '安装完成'],
       () => {
         local.installed = true
+        local.venv = {
+          command: '~/agent-panel/comfyui/venv/Scripts/python.exe',
+          path: '~/agent-panel/comfyui/venv/Scripts/python.exe',
+          version: '3.12.10',
+          usable: true,
+        }
       },
     )
   if (action === 'start') local.running = local.installed
