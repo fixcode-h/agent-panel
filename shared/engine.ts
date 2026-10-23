@@ -84,7 +84,18 @@ import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
-import { activePlan, applyPlan, bindRun, bindWait, endRun, finishPlan, planText, type PlanItemInput } from './plan.ts'
+import {
+  activePlan,
+  applyPlan,
+  bindRun,
+  bindWait,
+  endRun,
+  finishPlan,
+  planText,
+  WRAP_UP,
+  type PlanItemInput,
+  type WrapUpKind,
+} from './plan.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 const SLOT_PROMPT: Record<string, string> = {
@@ -420,6 +431,11 @@ export interface EngineHost {
   branch?: string
   /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。父对话要推送时先合到这里再推；子对话的完成只管合回这里，与推送无关 */
   worktreeHome?: string
+  /**
+   * 子对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
+   * merge 独立分支合回父对话所在的分支，p4 按文件类型分进各自的 pending changelist；不用收尾的不传
+   */
+  wrapUp?: WrapUpKind
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
   submitMerge?: (note: string, tests: string) => Promise<{ ok: boolean; info: string }>
   /**
@@ -811,7 +827,7 @@ function policyPart(host: EngineHost) {
     : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
   // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
   if (host.task.parentTaskId)
-    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是改动已合回父对话所在的分支：这是收尾动作（submit_merge 由面板合并），不要写进计划步骤，也不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
+    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp)}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
   const push =
     p.push === 'deny'
       ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
@@ -821,6 +837,35 @@ function policyPart(host: EngineHost) {
           ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
           : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
   return `## 授权情况\n${push}\n${tools}`
+}
+
+/** 子对话的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
+function wrapDone(kind: WrapUpKind | undefined) {
+  if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
+  if (kind === 'merge') return '改动已合回父对话所在的分支（submit_merge 由面板合并）'
+  return '改动已经在父对话所在的分支上'
+}
+
+/**
+ * 子对话的收尾怎么做：面板把它加成计划的最后一步，这里讲清楚做什么、谁来标完成。
+ * P4 的分桶规则写在这里，不靠 project-vcs 技能：对话里的子对话不一定派「版本控制」角色，
+ * 没有这段时改动全留在 default 或塞进同一个 changelist
+ */
+function wrapUpPart(host: EngineHost) {
+  const kind = host.wrapUp
+  if (!kind) return ''
+  const head = `## 收尾：计划的最后一步
+面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面；前面的步骤做完、验证通过后再做它。`
+  if (kind === 'merge')
+    return `${head}
+做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。`
+  return `${head}
+这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）。收尾时按文件类型把本次任务的文件分到不同的 pending changelist，不能全留在 default，也不能都放进同一个：
+- [C++]：.c / .cc / .cpp / .cxx / .h / .hh / .hpp / .inl / .ixx / .mm
+- [XLSX]：.xlsx / .xlsm / .xlsb / .xls
+- [Lua]：.lua 和对应生成的 .luac
+- [Other]：其余要提交的代码、资源和配置
+只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（约 40 字内）。做完用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，再把这一步标完成。不 submit、不 revert、不 sync。`
 }
 
 /** 对话的目标：用户在父对话设置里写的，父对话按它取舍，子对话知道自己这部分是为了什么 */
@@ -2327,7 +2372,7 @@ function makeOrchestra(
     plans: !!ctx.chat && !helper && !!task.projectId,
     setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = applyPlan(task, input)
+      const r = applyPlan(task, input, undefined, host.wrapUp)
       if (r.ok) host.changed(true)
       return r
     },
@@ -2809,6 +2854,7 @@ async function conversationPrompt(
     editPart(host),
     backgroundPart(host),
     planPart(host, coordinator),
+    wrapUpPart(host),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
@@ -2905,7 +2951,7 @@ ${
     if (host.messageParent)
       parts.push(`## 收尾建议要交给用户选
 这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。
-建议只写你自己能做完的本地动作；完成标准是改动已合回父对话所在的分支——这是收尾动作（submit_merge 由面板合并），不要列成计划步骤；计划步骤和收尾里不写「等推送 / 等合入其他分支 / 同步远端」。推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
+建议只写你自己能做完的本地动作；完成标准是${wrapDone(host.wrapUp)}${host.wrapUp ? '——这是收尾，面板已经把它列成计划的最后一步，不要写成建议' : ''}；计划步骤和收尾里不写「等推送 / 等合入其他分支 / 同步远端」。推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles

@@ -1168,6 +1168,11 @@ export const PlanStep = PlanItem.extend({
   children: z.array(PlanItem).default([]),
   /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
   run: z.number().int().optional(),
+  /**
+   * 面板加的收尾步骤（子对话计划的最后一步）：merge 是独立分支合回父对话所在的分支，由合并结果标完成；
+   * p4 是把改动按文件类型分进各自的 pending changelist，Agent 做完自己标。旧数据没有这个字段，当普通步骤
+   */
+  wrapUp: z.enum(['merge', 'p4']).optional(),
 })
 export type PlanStep = z.infer<typeof PlanStep>
 

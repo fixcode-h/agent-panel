@@ -139,7 +139,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
 }
 
 /** 版本控制：目录里有 .git / .p4config / .svn，或者上层目录里有（P4 的工作区根常常在上面） */
-async function detectVcs(dir: string) {
+export async function detectVcs(dir: string) {
   let cur = dir
   for (let i = 0; i < 6; i++) {
     if (await exists(path.join(cur, '.git'))) return { vcs: 'git' as const, root: cur }
