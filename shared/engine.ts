@@ -3100,12 +3100,15 @@ async function runConversationTurn(host: EngineHost, who: string) {
         orch,
       })
       if (!r.ok) {
-        if (turn) endTurn(task, turn, r.stopped ? (answeredAll(task, turn) ? 'done' : 'stopped') : 'failed')
+        // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、保活上限，
+        // 这时用户没点暂停、活也已经干完，不能记成被打断。和 endTurn 用同一个判据，两处结论必须一致
+        const answered = !!turn && !!r.stopped && answeredAll(task, turn)
+        if (turn) endTurn(task, turn, answered ? 'done' : r.stopped ? 'stopped' : 'failed')
         if (host.prewarm) {
-          task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
+          task.status = r.stopped && !answered ? 'stopped' : (host.prewarmFrom ?? 'done')
           return
         }
-        return finish(host, r)
+        return finish(host, r, { answered })
       }
       // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做；
       // 等的时候用户发来的消息马上开一轮回复
@@ -3184,16 +3187,19 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
     .join('\n\n')
 }
 
-function finish(host: EngineHost, r: Fail) {
+function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
+  // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
+  // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
+  const answered = !!r.stopped && !!opts?.answered
   for (const s of host.task.steps)
     if (s.status === 'running') {
-      s.status = r.stopped ? 'pending' : 'failed'
-      s.interrupted = !!r.stopped
-      if (r.stopped) pauseStep(s)
+      s.status = answered ? 'done' : r.stopped ? 'pending' : 'failed'
+      s.interrupted = !!r.stopped && !answered
+      if (r.stopped && !answered) pauseStep(s)
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error, '', false, true)
-  else if (r.stopped) {
+  else if (r.stopped && !answered) {
     // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
     // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
     const reason = host.stopReason?.() ?? 'user'
@@ -3213,7 +3219,7 @@ function finish(host: EngineHost, r: Fail) {
       false,
       true,
     )
-  } else {
+  } else if (!r.stopped) {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
       .map((s) => t('「{title}」', { title: s.title }))
@@ -3229,7 +3235,7 @@ function finish(host: EngineHost, r: Fail) {
       true,
     )
   }
-  host.task.status = r.stopped ? 'stopped' : 'failed'
+  host.task.status = answered ? 'done' : r.stopped ? 'stopped' : 'failed'
   host.changed(true)
 }
 

@@ -284,6 +284,14 @@ await runShard('子对话与计划', async (api) => {
       closed.messages.some((m) => m.panel === 'build' && m.text.includes('已合回原分支')),
       '合并结果记在子对话里',
     )
+    // 这一轮已经答完（CLI 报过完成）后合并回收才把它收掉：不能留下「被中断」，用户会以为它没做完
+    assert.equal(closed.status, 'done', '正常收尾的子对话被回收后仍是完成状态，不是 stopped')
+    assert.ok(
+      !closed.messages.some(
+        (m) => m.role === 'system' && (m.text.includes('这一轮被中断') || m.text.includes('已暂停')),
+      ),
+      '答完一轮后被合并回收，不写「这一轮被中断」',
+    )
     step('子对话测试跑通后 submit_merge：面板合回父对话分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
