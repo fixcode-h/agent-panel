@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/tasks.ts, shared/plan.ts, shared/plan.test.ts, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -21,6 +21,12 @@ paths: server/exec/runner.ts, server/assist.ts, server/designs.ts, server/exec/d
 - 规则：保活时一个 CLI 进程会连着处理好几条用户消息，`runAgent` 里攒的输出（`mine`、`touched`）是整个进程的。凡是判「这一轮做没做事」（空回合、补充要不要重放、重试发什么）都只看这一轮开始之后的输出，重试重发的是这一轮的用户消息，不是进程启动时的提示词。
 - 起因：9e7674d 只修了进程的第一轮；第二句起一个字没回时，前一轮的正文把它盖住，消息照样落进死回合（AI 分析里 17:54、17:55 两条消息没有回应）。
 - 防线：`scripts/e2e.mjs` 的「保活中的第二句一个字都没回」用例。
+
+## 「这一轮回复完了」不等于「子对话交付完了」：收口父计划要按面板的完成条件判断
+
+- 规则：子对话回合结束时收口父对话计划（`shared/plan.ts` 的 `childTurnSettle`）不能只看 `working`/`requests`/`status`：还要看它自己有没有没做完的计划步骤、有没有正在跑或排队的后台命令（`background.list` 里 `state` 是 `queued`/`running`）、这一轮之后还要不要接着做（`hasHeld`、`startQueue`）。没收口时用 `holdWait` 让父计划那一步继续等、note 写清在等什么，不要标完成；`server/tasks.ts` 的 `reportToParent` 用同一个判据。计划做完了会收起（`activePlan` 是 undefined），不会永远挡住收口，所以判据里不要写计时。
+- 起因：子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图里「计划 6/8」与实际不符），实际还有子对话在改代码、跑界面检查。
+- 防线：`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例。
 
 ## 每个收 CliEvent 的地方都要把工具行收尾
 

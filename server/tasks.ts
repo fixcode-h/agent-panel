@@ -91,7 +91,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { childTurnSettle, openPlan, settleWait, waitNote } from '../shared/plan.ts'
+import { childTurnSettle, holdWait, openPlan, settleWait, waitNote } from '../shared/plan.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -820,12 +820,18 @@ export function tasksApi(deps: {
    * 子对话这一轮结束了：收口父对话计划里等它的那一步。
    * 对话类子对话回复完会把进程留着等下一句，run 一直不返回，收尾处的 reportToParent 等不到，
    * 所以要在这一轮真结束的地方直接按 child + 子对话 id 收一次（settleWait 幂等，收尾时再调一次没有副作用）。
-   * 有没答的提问时不算结束：那是子对话停下来等用户，步骤继续挂着
+   * 「这一轮回复完了」不等于「子对话交付完了」：还有没答的提问、还在跑的后台命令、没做完的计划、
+   * 这一轮之后还要接着做的，都算没交付完——父计划那一步继续等，note 写清在等什么，不标完成。
    */
   function settleChildTurn(child: Task) {
     if (!child.parentTaskId) return
-    const r = childTurnSettle(child)
-    if (!r.over) return
+    const r = childTurnSettle(child, childLeft(child))
+    if (!r.over) {
+      void holdChildWait(child, r.why).catch((e) =>
+        log.warn('task', '更新父对话计划的等待说明失败', { task: child.id, error: (e as Error).message }),
+      )
+      return
+    }
     const how = r.ok ? '这一轮做完了' : child.status === 'stopped' ? '被停止了' : '执行失败了'
     void noteParent(child.parentTaskId, child, `子对话「${child.title}」${how}`, how, {
       kind: 'child',
@@ -835,21 +841,50 @@ export function tasksApi(deps: {
     }).catch((e) => log.warn('task', '子对话结束收口计划失败', { task: child.id, error: (e as Error).message }))
   }
 
+  /** 子对话这一轮结束时的「还差什么没交付」：后台命令在跑、这一轮之后还要接着做 */
+  function childLeft(child: Task) {
+    const jobs = background.list(child.id).filter((j) => j.state === 'queued' || j.state === 'running')
+    return { background: jobs.map((j) => j.name), more: startQueue.has(child.id) || hasHeld(child.id) }
+  }
+
+  /** 子对话这一轮结束了但还没交付完：父对话计划里等它的那一步继续等，note 写清还在等什么 */
+  async function holdChildWait(child: Task, why: string) {
+    if (!child.parentTaskId) return
+    const entry = live.get(child.parentTaskId)
+    const parent = entry?.task ?? (await store.get(child.parentTaskId))
+    if (!parent) return
+    if (!holdWait(parent, 'child', child.id, why).length) return
+    parent.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store
+      .update(parent.id, parent)
+      .catch((e) => log.warn('task', '更新父对话计划的等待说明失败', { task: parent.id, error: (e as Error).message }))
+  }
+
   /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
   async function reportToParent(task: Task) {
     if (!task.parentTaskId) return
-    const status = task.status === 'done' ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
+    // 和回合结束收口用同一个判据：这一轮结束但还没交付完（后台命令在跑、计划没做完、还要接着做）时不回报完成，
+    // 父计划那一步继续等，等真正交付完的那一轮再标完成
+    const r = childTurnSettle(task, childLeft(task))
+    if (!r.over) {
+      await holdChildWait(task, r.why).catch((e) =>
+        log.warn('task', '更新父对话计划的等待说明失败', { task: task.id, error: (e as Error).message }),
+      )
+      return
+    }
+    const status = r.ok ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
     const summary = task.summary || lastReply(task)
     // 在独立分支里做完的：提醒父对话看过结果后合回来
     const merge =
-      isolated(task) && task.status === 'done'
+      isolated(task) && r.ok
         ? `\n（它在独立分支 ${task.worktree!.branch} 里改；改动要它调用 submit_merge 合回原分支后才算进去）`
         : ''
     const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
     await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`, {
       kind: 'child',
       ref: task.id,
-      ok: task.status === 'done',
+      ok: r.ok,
     })
   }
 
