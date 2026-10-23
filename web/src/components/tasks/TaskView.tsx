@@ -1389,8 +1389,9 @@ export function TaskView({
                 <>
                   {task.plans?.length > 0 && (
                     <div className="shrink-0 px-3 md:px-6">
-                      <div className="mx-auto mb-2 max-w-(--content-w)">
-                        <div className={barRow}>
+                      {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
+                      <div className="mx-auto max-w-(--content-w)">
+                        <div className={cn(plainRow, 'mb-1 w-fit max-w-full')}>
                           <PlanButton task={task} />
                         </div>
                       </div>
@@ -1728,7 +1729,8 @@ function ChildrenBar({
     <div ref={ref} className="shrink-0 px-3 md:px-6">
       {/* 弹窗以这一行内容为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
-        <div className={cn(barRow, 'mb-2 flex-wrap')}>
+        {/* 这一行铺满内容宽：小卡列表和右侧关闭按钮要有稳定的左右边界，换行时关闭按钮才不跑位 */}
+        <div className={cn(plainRow, 'mb-1.5 flex-wrap')}>
           {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
           <button
             type="button"
@@ -1937,9 +1939,14 @@ function childGroups(list: ChildSummary[], grouped: boolean) {
   return groups.filter((g) => g.items.length)
 }
 
-/** 输入框上面一行的提示条（没走完的流程）共用的样式 */
+/** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */
 const barRow =
   'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
+/**
+ * 计划和子对话那两行：不套框，当作输入框上方的一行轻量信息。
+ * 左内边距 2.5 加上行内按钮自己的 px-1.5，正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
+ */
+const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
 const barIcon =
   'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg disabled:opacity-40'
 
