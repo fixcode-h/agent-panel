@@ -1,6 +1,8 @@
 /**
- * 同一个项目对话下的子对话共用一个目录（不建独立分支），改文件前先「认领」：
- * 和 Claude Code 的 Agent Teams 一样由负责分派的一方划好范围，同一个文件同一时间只归一个子对话。
+ * 子对话之间、子对话和父对话之间的文件协作约定，按项目的子对话隔离模式分两种：
+ * - 共用目录（childIsolation = 'claim'）：改文件前先「认领」，同一个文件同一时间只归一个子对话。
+ * - 独立分支（childIsolation = 'worktree'）：不认领，两个子对话可以同时改同一个文件，各在自己的
+ *   worktree 里改、互不影响；合并回父对话分支时按 git merge 处理（见 exec/worktree.ts）。
  * 认领只在面板内存里，子对话这一轮结束（或停止）就释放；它是协作约定，不拦 CLI 自己的写文件。
  */
 
@@ -23,6 +25,23 @@ export function normClaimPath(p: string) {
 export function overlaps(a: string, b: string) {
   if (!a || !b) return false
   return a === b || a.startsWith(b + '/') || b.startsWith(a + '/')
+}
+
+/**
+ * 一组范围和兄弟子对话重叠的条目（同一个文件，或目录包含关系）。
+ * 独立分支模式下只用来提示「两边都改了这些文件」：不据此拦任何一边，也不劝谁拆范围。
+ */
+export function scopeOverlaps(mine: string[], others: { title: string; files: string[] }[]) {
+  const out: { path: string; with: string }[] = []
+  const seen = new Set<string>()
+  for (const a of mine)
+    for (const o of others)
+      for (const b of o.files)
+        if (overlaps(a, b) && !seen.has(`${a}|${o.title}`)) {
+          seen.add(`${a}|${o.title}`)
+          out.push({ path: a, with: o.title })
+        }
+  return out
 }
 
 export function createClaims() {
@@ -87,4 +106,35 @@ export function collisions(mine: string[], others: { title: string; files: strin
         out.push({ path: f, with: o.title })
       }
   return out
+}
+
+/** 「web/a.ts（「甲」）、…」这种展示，同一个文件被多个子对话改过只留一次 */
+const withTitles = (list: { path: string; with: string }[]) =>
+  [...new Set(list.map((x) => `${x.path}（「${x.with}」）`))].join('、')
+
+/**
+ * 新建子对话时告诉父对话这些文件怎么了。两种隔离模式的措辞差别就是需求本身：
+ * 独立分支里重叠只是信息（各改各的、合并时按 git merge 处理），只有共用目录才有
+ * 「没认领、等对方做完」这种限制。发给 Agent 的提示，不翻英文。
+ */
+export function childFilesInfo(input: {
+  isolation: 'claim' | 'worktree'
+  granted: string[]
+  held: { path: string; by: string }[]
+  both: { path: string; with: string }[]
+}) {
+  const { isolation, granted, held, both } = input
+  // 独立分支：两个子对话的文件重叠不影响谁能不能改，不提认领，也不劝拆范围
+  if (isolation === 'worktree')
+    return both.length
+      ? [
+          `这些文件和别的子对话重叠了：${withTitles(both)}。两边各在自己的独立分支里改，互不影响；合并回这个分支时按 git merge 处理：能自动合上的直接合，真冲突会撤回并把冲突交回那个子对话。合并结果里会列出两边都改过的文件，合并后核对内容。`,
+        ]
+      : []
+  return [
+    granted.length ? `已替它认领：${granted.join('、')}` : '',
+    held.length
+      ? `这些已经归别的子对话，没有认领：${held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。让它等那边做完再改，或者把这部分交给那个子对话`
+      : '',
+  ].filter(Boolean)
 }
