@@ -24,8 +24,29 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:unit
-      - run: npm run test:e2e
       - run: npm run build
+
+  # 端到端单独一个 job：scripts/e2e.mjs 内部并行跑各个分片（各自临时目录、端口和服务），
+  # 和上面的类型检查 / 单测 / 构建同时进行，总时长取两者里最慢的那个。
+  # 每个分片自己的看门狗和收尾在 scripts/e2e/harness.mjs 里：卡住时按分片失败退出，不会拖到 workflow 超时。
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e
+      # 各分片耗时写进 e2e-timings.json，改了测试可以下载对比
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-timings
+          path: e2e-timings.json
+          retention-days: 7
 
   # 界面检查：打开在线演示版走一遍常用页面，没有报错、没有横向滚动；截图作为附件上传，改界面时可以下载对比
   ui:
