@@ -728,6 +728,12 @@ const ProjectFields = z.object({
    */
   fileFormat: FileFormat.optional(),
   /**
+   * 找文件、搜代码时要跳过的目录（相对名字，例如 Saved、Intermediate）：
+   * 实际生效的是它加上内置默认清单（见 shared/search-exclude.ts），提示词里会带上一行。
+   * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
+   */
+  searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
+  /**
    * 子对话怎么避免互相干扰：
    * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
    *   改完提交编译，面板把它合回开分支的那个目录试编译，通过才提交、失败撤回并把报错交回子对话。

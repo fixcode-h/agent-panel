@@ -47,6 +47,7 @@ import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
 import { cliSettings, orderClis } from '@shared/settings'
+import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
@@ -84,6 +85,7 @@ const blank: ProjectInput = {
   lessons: [],
   wslDistro: '',
   fileFormat: undefined,
+  searchExclude: [],
   gitPolicy: 'ask',
 }
 
@@ -886,6 +888,10 @@ function Body({
                   </span>
                 </FormSection>
 
+                <FormSection title={t('搜索')}>
+                  <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
+                </FormSection>
+
                 <FormSection title={t('子对话')}>
                   <Field
                     label={t('子对话隔离')}
@@ -1504,6 +1510,95 @@ function ExposeField({
           className="h-9"
         />
       )}
+    </ParamRow>
+  )
+}
+
+/**
+ * 搜索排除目录：一项一个 chip，回车或点「添加」加一项，点 × 删一项。
+ * 只存用户填的；内置默认清单（依赖、产物、缓存）始终生效，不占这里的输入。
+ */
+function SearchExcludeField({ value, onChange }: { value: string[] | undefined; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState('')
+  const list = value ?? []
+  // 输入时就把首尾空白和尾部斜杠去掉：`Saved/` 和 `Saved` 是同一个目录，存两种写法只会重复
+  const clean = (s: string) => s.trim().replace(/[\\/]+$/, '')
+  const add = () => {
+    const item = clean(text)
+    setText('')
+    if (!item || list.includes(item)) return
+    onChange([...list, item])
+  }
+  // UE 预设只补缺的：已经填过的项不重复加，用户自己加的也留着
+  const preset = () => onChange([...list, ...UE_SEARCH_EXCLUDE.filter((d) => !list.includes(d))])
+  return (
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{t('搜索时跳过的目录')}</span>
+          <span className="shrink-0 text-[0.6875rem] text-subtle">{t('相对项目根')}</span>
+        </>
+      }
+      hint={t(
+        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。',
+      )}
+      stacked
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {list.map((d) => (
+            <span
+              key={d}
+              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.78125rem] text-muted"
+            >
+              <span className="font-mono">{d}</span>
+              <button
+                type="button"
+                aria-label={t('删除 {name}', { name: d })}
+                title={t('删除 {name}', { name: d })}
+                onClick={() => onChange(list.filter((x) => x !== d))}
+                className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+          <Input
+            aria-label={t('搜索时跳过的目录')}
+            value={text}
+            placeholder={t('目录名，回车添加')}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              // 回车是加一项，不是提交整个设置表单
+              e.preventDefault()
+              add()
+            }}
+            className="h-7 w-[11rem] text-xs"
+          />
+          <Button variant="secondary" size="sm" onClick={add} disabled={!clean(text)} className="h-7">
+            <Plus className="h-3.5 w-3.5" />
+            {t('添加')}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <button type="button" className="cursor-pointer text-accent hover:underline" onClick={preset}>
+            {t('填入 UE 排除清单')}
+          </button>
+          {list.length > 0 && (
+            <button
+              type="button"
+              className="cursor-pointer text-subtle hover:text-fg hover:underline"
+              onClick={() => onChange([])}
+            >
+              {t('清空')}
+            </button>
+          )}
+        </div>
+        <span className="text-xs text-subtle">
+          {t('此外始终跳过：{list}', { list: DEFAULT_SEARCH_EXCLUDE.join(t('、')) })}
+        </span>
+      </div>
     </ParamRow>
   )
 }
