@@ -1441,7 +1441,7 @@ try {
     const one = kids.find((x) => x.id === kid.id)
     assert.ok(one, '子对话出现在父对话的列表里')
     assert.equal(one.cliAlive, false, '跑完、进程已经结束：cliAlive 为 false')
-    assert.ok(one.lastMessageAt, '列表带上最近一条消息的时间，用来排序')
+    assert.ok(one.startedAt, '列表带上本次开启的时间，用来排序')
     assert.ok(!('queue' in kid), '不再有排队字段')
 
     // 只打开父对话页、只读查子对话：不会把子对话的 CLI 启动起来
@@ -1468,6 +1468,13 @@ try {
     )
     kid = await waitDone(kid.id, 20000)
     assert.equal(kid.status, 'done')
+    // 第二轮跑完再看：本次开启时间已经换成新这一轮的，列表按它把这条重新排到前面
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    const again = kids.find((x) => x.id === kid.id)
+    assert.ok(
+      again.startedAt > one.startedAt,
+      `完成后再接新任务：本次开启时间往前走（${one.startedAt} → ${again.startedAt}）`,
+    )
     step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
 
     // 父对话的 CLI 结束时一起结束子对话的进程
@@ -4797,7 +4804,14 @@ try {
 
     // 回来发消息：同一个进程接着跑，不再启动新的 CLI（跑完这一轮又会保活，所以任务还是 running）
     const beforeMsgs = w.messages.length
-    await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
+    // 带一张图：交给 Agent 的是拷进任务目录的相对路径，记进对话的必须是上传目录里的原路径，
+    // 否则气泡和看大图的浮层都取不到图，只剩破图（以前这里把相对路径当原附件记了进去）
+    const nextAtt = await call('POST', '/uploads', {
+      name: '接着说.png',
+      mime: 'image/png',
+      data: Buffer.from('png2').toString('base64'),
+    })
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着说', attachments: [nextAtt] })
     for (let i = 0; i < 120; i++) {
       w = await call('GET', `/tasks/${w.id}`)
       // 新的一句已经回复完、又回到等下一句：这一轮处理过了
@@ -4812,6 +4826,20 @@ try {
     assert.equal('queue' in w, false, '不再有排队字段')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着说')
     assert.ok(at > 0, '用户消息记进对话')
+    const saidAtt = w.messages[at].attachments?.[0]
+    assert.ok(saidAtt, '附件跟着这条消息记进对话')
+    assert.ok(saidAtt.path.startsWith(path.join(dataDir, 'uploads')), '记进对话的是上传目录里的绝对路径')
+    // 交给 Agent 的那份照旧拷进任务的执行目录（这个对话在项目目录里跑），提示里的相对路径指向它
+    assert.ok(existsSync(path.join(projectDir, 'attachments', saidAtt.name)), '拷进对话目录的那份还在，Agent 读得到')
+    // 旧消息里存的是相对路径：接口按文件名回上传目录取到图，页面上的旧消息因此能恢复显示
+    const relRaw = await fetch(`${base}/uploads/raw?path=${encodeURIComponent(`attachments/${saidAtt.name}`)}`)
+    assert.equal(relRaw.status, 200, '相对路径也能取到图')
+    assert.equal(await relRaw.text(), 'png2')
+    assert.equal(
+      (await fetch(`${base}/uploads/raw?path=${encodeURIComponent('attachments/../../etc/passwd')}`)).status,
+      400,
+      '不能借相对路径读附件目录以外的文件',
+    )
     assert.ok(
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && m.text.trim()),
       'AI 在用户消息下面继续输出',

@@ -45,6 +45,7 @@ import {
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
+import { runUsage } from '@shared/run-usage'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
@@ -64,6 +65,7 @@ import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
+  childStartedAt,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -73,6 +75,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
+import { openPlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -1201,7 +1204,14 @@ const local: LocalStatus = {
   running: false,
   external: false,
   url: 'http://127.0.0.1:8188',
-  python: '3.12',
+  pythons: [
+    {
+      command: 'py -3.12',
+      path: 'C:\\Users\\you\\AppData\\Local\\Programs\\Python\\Python312\\python.exe',
+      version: '3.12.10',
+      usable: true,
+    },
+  ],
   gpu: 'cuda',
   gpuName: 'NVIDIA GeForce RTX 4090',
   vram: 24,
@@ -1268,6 +1278,12 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
       ['检查 Python', '下载 ComfyUI', '创建 Python 虚拟环境', '安装 PyTorch', '安装 ComfyUI 的依赖', '安装完成'],
       () => {
         local.installed = true
+        local.venv = {
+          command: '~/agent-panel/comfyui/venv/Scripts/python.exe',
+          path: '~/agent-panel/comfyui/venv/Scripts/python.exe',
+          version: '3.12.10',
+          usable: true,
+        }
       },
     )
   if (action === 'start') local.running = local.installed
@@ -1975,6 +1991,7 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
@@ -1986,7 +2003,9 @@ function tasksRoute(
         working: x.working,
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
-        lastMessageAt: x.messages.at(-1)?.at ?? x.updatedAt,
+        startedAt: childStartedAt(x),
+        // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
+        plan: openPlan(x),
         resolved: x.resolved === true,
       }))
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做

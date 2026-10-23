@@ -257,6 +257,9 @@ export const EN_TASKS: Record<string, string> = {
   在对话中查看完整过程: 'View full process in chat',
   左右对照: 'Side by side',
   上下对照: 'Stacked',
+  折行: 'Wrap',
+  长行折行显示: 'Long lines wrap onto the next line',
+  '长行不折行，可以左右滚动': 'Long lines stay on one line — scroll sideways',
   打开所在文件夹: 'Open containing folder',
   '这次修改没有给出改动内容。': 'This edit did not include the change content.',
   '还在执行…': 'Still running…',
@@ -309,6 +312,9 @@ export const EN_TASKS: Record<string, string> = {
   缓存命中: 'Cache hits',
   'Token 用量': 'Token usage',
   '累计 token': 'Total tokens',
+  整个运行: 'Whole run',
+  本对话: 'This chat',
+  子任务与子对话: 'Subagents and subchats',
   费用: 'Cost',
   '{name} 的待办': "{name}'s to-dos",
   上下文占用: 'Context usage',
@@ -321,6 +327,7 @@ export const EN_TASKS: Record<string, string> = {
   失败: 'Failed',
   跳过: 'Skipped',
   已完成: 'Done',
+  未完成: 'Unfinished',
   已暂停: 'Paused',
 
   // 任务页

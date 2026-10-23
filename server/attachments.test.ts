@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 
-const { ATTACH_DIR, placeAttachments } = await import('./attachments.ts')
+const { ATTACH_DIR, placeAttachments, relativeAttachName } = await import('./attachments.ts')
 
 const dir = (name: string) => mkdtempSync(path.join(tmpdir(), `agent-panel-attach-${name}-`))
 
@@ -85,4 +85,27 @@ test('粘贴路径引用的已有文件和引用卡片不拷，用原来的路�
     [ref.path, quote.path],
   )
   assert.ok(!existsSync(path.join(task, ATTACH_DIR, '引用.txt')))
+})
+
+test('拷进任务目录不影响传进来的附件：记进对话的仍是上传目录里的原始绝对路径', async () => {
+  const a = make(dir('from-keep'), '截图.png')
+  const [placed] = await placeAttachments(dir('task-keep'), [a])
+
+  assert.equal(a.path, path.join(path.dirname(a.path), '截图.png'), '传进来的对象不被改写')
+  assert.notEqual(placed.path, a.path, '交给 Agent 的是任务目录里的那一份')
+  assert.ok(path.isAbsolute(a.path), '原路径还是绝对的，页面据此从附件目录取缩略图')
+})
+
+test('旧消息里的 attachments/名字：按名字找回上传目录那一份，别的一概不认', () => {
+  assert.equal(relativeAttachName('attachments/截图-071747.png'), '截图-071747.png')
+  assert.equal(relativeAttachName('attachments\\截图-071747.png'), '截图-071747.png')
+  for (const bad of [
+    'C:/x/截图.png',
+    '/tmp/a/截图.png',
+    'attachments/',
+    'attachments/..',
+    'attachments/a/b.png',
+    '截图.png',
+  ])
+    assert.equal(relativeAttachName(bad), '', bad)
 })

@@ -13,16 +13,23 @@ import {
   ComfyWorkflow,
   LOCAL_FILES,
   LOCAL_MODELS,
+  PYTHON_RANGE,
+  PYTHON_SUPPORT,
+  PYTHON_VERSIONS,
   checkWorkflow,
   fillWorkflow,
   localFile,
   localModel,
   localSize,
   mirrorUrl,
+  parsePythonProbe,
   pickWorkflow,
+  pythonIssueText,
+  pythonSupport,
   type WorkflowUse,
   type LocalGpu,
   type LocalJob,
+  type LocalPython,
   type LocalStatus,
 } from '../shared/local-image.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
@@ -68,7 +75,11 @@ let job: Job | undefined
 let server: { child: ChildProcess; port: number; log: string } | undefined
 let starting: Promise<string> | undefined
 let gpuInfo: { gpu: LocalGpu; name?: string; vram?: number } | undefined
-let python: { cmd: string; args: string[]; version: string } | null | undefined
+/** 探到的 Python：本机有哪些、虚拟环境里的是哪个；点「重新检测」或开始安装时清掉 */
+let pythonCache: { pythons?: FoundPython[]; venv?: LocalPython | null } = {}
+/** 探 Python 用的小脚本：第一行版本，第二行解释器路径 */
+const PROBE = 'import sys;print("%d.%d.%d" % sys.version_info[:3]);print(sys.executable)'
+type FoundPython = LocalPython & { cmd: string; args: string[] }
 
 const tail = (s: string, n = 20000) => (s.length > n ? s.slice(-n) : s)
 const say = (line: string) => job && (job.log = tail(job.log + line + '\n'))
@@ -87,32 +98,74 @@ async function detectGpu() {
   return (gpuInfo = { gpu: 'cpu' })
 }
 
-/** 找 Python 3.10 ~ 3.13（ComfyUI 和 PyTorch 支持的范围） */
-async function findPython() {
-  if (python !== undefined) return python
-  const list: [string, string[]][] = isWin
-    ? [
-        ['py', ['-3.12']],
-        ['py', ['-3.11']],
-        ['py', ['-3.13']],
-        ['py', ['-3.10']],
-        ['python', []],
-      ]
+/** 比较版本号（3.14.1 这类），给能用的 Python 排序用 */
+const cmpVersion = (a: string, b: string) => {
+  const x = a.split('.').map(Number)
+  const y = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0)
+  return 0
+}
+
+/**
+ * 找本机所有 Python：按 PYTHON_VERSIONS（从高到低）逐个试 py -3.x / python3.x，再试默认的 python。
+ * 同一个解释器会被好几个命令找到（Windows 的 py -3.12 和 python 常常是同一个），按路径去重只留一条
+ */
+async function probePythons(): Promise<FoundPython[]> {
+  if (pythonCache.pythons) return pythonCache.pythons
+  const list: { cmd: string; args: string[] }[] = isWin
+    ? [...PYTHON_VERSIONS.map((v) => ({ cmd: 'py', args: [`-${v}`] })), { cmd: 'python', args: [] }]
     : [
-        ['python3.12', []],
-        ['python3.11', []],
-        ['python3.13', []],
-        ['python3.10', []],
-        ['python3', []],
-        ['python', []],
+        ...PYTHON_VERSIONS.map((v) => ({ cmd: `python${v}`, args: [] })),
+        { cmd: 'python3', args: [] },
+        { cmd: 'python', args: [] },
       ]
-  for (const [cmd, args] of list) {
-    const r = await capture(cmd, [...args, '-c', 'import sys;print("%d.%d"%sys.version_info[:2])'], tmpdir())
-    const v = r.code === 0 ? r.stdout.trim() : ''
-    const minor = Number(v.split('.')[1])
-    if (v.startsWith('3.') && minor >= 10 && minor <= 13) return (python = { cmd, args, version: v })
+  const found: FoundPython[] = []
+  const seen = new Set<string>()
+  for (const { cmd, args } of list) {
+    const r = await capture(cmd, [...args, '-c', PROBE], tmpdir())
+    const { version, path: exe } = parsePythonProbe(r.code === 0 ? r.stdout : '')
+    if (!version) continue
+    const key = (exe ?? `${cmd} ${args.join(' ')}`).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    const s = pythonSupport(version)
+    found.push({
+      cmd,
+      args,
+      command: [cmd, ...args].join(' '),
+      path: exe,
+      version,
+      usable: s.ok,
+      problem: s.ok ? undefined : pythonIssueText(version, s.issue),
+    })
   }
-  return (python = null)
+  // 能用的在前，同组里版本高的在前
+  found.sort((a, b) => Number(b.usable) - Number(a.usable) || cmpVersion(b.version, a.version))
+  pythonCache.pythons = found
+  return found
+}
+
+/** 安装用的 Python：能用的最高版本（和 PYTHON_SUPPORT 的范围一致，建虚拟环境用的就是它） */
+async function findPython() {
+  return (await probePythons()).find((p) => p.usable)
+}
+
+/** 虚拟环境里的解释器：启动 ComfyUI、装依赖用的就是它（装了才有） */
+async function probeVenv(): Promise<LocalPython | null> {
+  if (pythonCache.venv !== undefined) return pythonCache.venv
+  if (!existsSync(venvPython())) return (pythonCache.venv = null)
+  const r = await capture(venvPython(), ['-c', PROBE], tmpdir())
+  const { version } = parsePythonProbe(r.code === 0 ? r.stdout : '')
+  return (pythonCache.venv = version ? { command: venvPython(), path: venvPython(), version, usable: true } : null)
+}
+
+/** 一个能用的 Python 都没有：说清检测到什么、为什么不能用、该装哪个 */
+function pythonMissingText(found: LocalPython[]) {
+  const bad = found.filter((p) => !p.usable)
+  const head = bad.length
+    ? t('检测到的 Python 都用不了（{list}）。', { list: bad.map((p) => `${p.version}：${p.problem}`).join('；') })
+    : t('没有找到 Python。')
+  return `${head}${t('请安装 Python {v}（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。', { v: PYTHON_SUPPORT.recommend })}`
 }
 
 async function downloadedFiles() {
@@ -139,14 +192,15 @@ export async function localStatus(): Promise<LocalStatus> {
   const s = (await getSettings()).imageGen.local
   const g = await detectGpu()
   const url = await baseUrl()
-  const py = existsSync(marker()) ? null : await findPython()
   return {
     dir: comfyDir(),
     installed: existsSync(marker()),
     running: !!s.url || !!server ? await alive(url) : false,
     external: !!s.url,
     url,
-    python: py?.version,
+    // 装没装都列一遍本机的 Python：装过之后用户还能看到环境变了没有，启动用的是虚拟环境那个
+    pythons: (await probePythons()).map(({ cmd: _cmd, args: _args, ...rest }) => rest),
+    venv: (await probeVenv()) ?? undefined,
     gpu: g.gpu,
     gpuName: g.name,
     vram: g.vram,
@@ -214,15 +268,10 @@ export function installComfy() {
     const dir = comfyDir()
     await mkdir(dir, { recursive: true })
     j.step = t('检查 Python')
-    python = undefined
+    pythonCache = {}
     const py = await findPython()
-    if (!py)
-      throw new Error(
-        t(
-          '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。',
-        ),
-      )
-    say(t('使用 Python {v}（{cmd}）', { v: py.version, cmd: [py.cmd, ...py.args].join(' ') }))
+    if (!py) throw new Error(pythonMissingText(await probePythons()))
+    say(t('使用 Python {v}（{cmd}）', { v: py.version, cmd: py.command }))
     const g = await detectGpu()
     say(t('显卡：{gpu}', { gpu: g.name ? `${g.name}${g.vram ? ` ${g.vram}GB` : ''}` : g.gpu }))
 
@@ -245,6 +294,7 @@ export function installComfy() {
     if (!existsSync(venvPython())) {
       j.step = t('创建 Python 虚拟环境')
       await exec(py.cmd, [...py.args, '-m', 'venv', path.join(dir, 'venv')], dir)
+      pythonCache.venv = undefined
     }
     const pip = (...args: string[]) => exec(venvPython(), ['-m', 'pip', 'install', ...args], dir)
     const mirror = settings.mirror ? ['-i', PYPI_MIRROR] : []
@@ -372,17 +422,24 @@ registerFixTopic('local-image', {
   cwd: () => comfyDir(),
   context: async () => {
     const g = await detectGpu()
-    const py = await findPython()
+    const pythons = await probePythons()
+    const venv = await probeVenv()
     await mkdir(comfyDir(), { recursive: true })
     const serverLog = comfyLog()
+    const list = pythons.map((p) =>
+      p.usable
+        ? `  - ${p.version}（${p.command}，${p.path ?? '路径未知'}）可用`
+        : `  - ${p.version}（${p.command}）不可用：${p.problem}`,
+    )
     return `这是本机图片生成工具 ComfyUI 的安装或启动问题。
 - 显卡：${g.name ?? g.gpu}${g.vram ? `（${g.vram}GB 显存）` : ''}，PyTorch 应该用 ${g.gpu.toUpperCase()} 版本${TORCH_INDEX[g.gpu] ? `（${TORCH_INDEX[g.gpu]}）` : ''}
-- 找到的 Python：${py ? `${[py.cmd, ...py.args].join(' ')}（${py.version}）` : '没有找到 3.10~3.13 的版本'}
+- 需要的 Python：${PYTHON_RANGE}（ComfyUI 要求 >=${PYTHON_SUPPORT.min}，PyTorch 的 wheel 支持到 ${PYTHON_SUPPORT.max}；推荐 ${PYTHON_SUPPORT.recommend}）
+- 探到的 Python：\n${list.length ? list.join('\n') : '  没有找到任何 Python'}
 - 安装目录：${comfyDir()}（ComfyUI 源码在 ${codeDir()}，Python 虚拟环境在 ${path.join(comfyDir(), 'venv')}）
-- 虚拟环境的 Python：${venvPython()}
+- 虚拟环境的 Python：${venv ? `${venvPython()}（${venv.version}）` : `${venvPython()}（还没建）`}
 ${serverLog ? `\nComfyUI 启动时的输出：\n${serverLog.slice(-4000)}\n` : ''}
 处理这类问题的约定：
-- 只在安装目录里改动；可以用虚拟环境的 pip 装或重装依赖，缺 Python 时可以用系统的包管理器装 Python 3.12。
+- 只在安装目录里改动；可以用虚拟环境的 pip 装或重装依赖，缺 Python 时可以用系统的包管理器装 Python ${PYTHON_SUPPORT.recommend}。
 - 不要删除 ${path.join(codeDir(), 'models')} 里的模型文件。
 - 修好后运行 ${venvPython()} -c "import torch, safetensors, aiohttp, yaml" 确认能导入；全部正常时在 ${marker()} 写入当前时间（这个文件表示安装完成）。`
   },
@@ -729,7 +786,7 @@ export function comfyApi() {
   // 重新检测 Python 和显卡（装好 Python、换了驱动之后）
   routes.post(
     '/detect',
-    wrap(() => void ((python = undefined), (gpuInfo = undefined))),
+    wrap(() => void ((pythonCache = {}), (gpuInfo = undefined))),
   )
   return routes
 }

@@ -1,5 +1,5 @@
 ---
-paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server/*store*.ts, server/tasks.ts, server/update*.ts, server/exec/worktree.ts, web/src/components/tasks/Worktrees.tsx, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts
+paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server/*store*.ts, server/tasks.ts, server/update*.ts, server/exec/worktree.ts, web/src/components/tasks/Worktrees.tsx, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts, server/attachments.ts, server/uploads.ts, web/src/components/chat/AttachmentView.tsx, web/src/components/chat/Attachments.tsx
 ---
 
 # 数据结构、存储、升级兼容和出包
@@ -26,3 +26,9 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 
 - 规则：模拟执行只在 `--mode demo` 里存在；正式代码不 import `demo-*`。
 - 防线：`scripts/package.mjs` 会检查。
+
+## 附件有两个路径：对话里存上传目录的绝对路径，拷进任务目录的那份只给 Agent
+
+- 规则：`placeAttachments()` 拷进任务执行目录后给的是相对路径 `attachments/名字`，这份只用在交给 CLI 的提示词和 `deliver()` 的 `placed` 参数里。写进 `task.messages[].attachments` 的必须是用户上传时那份绝对路径（数据目录的 `uploads/…`）：气泡缩略图、看大图、导出、复制路径都按它读。`followUp()`、`deliver()`、`deliverWait()` 和 runner 里的 waiter 传参时两者不能混用——`deliverWait(task, msg, placed)` 里的 `msg` 只用来记对话。读取侧 `/uploads/raw` 认 `attachments/名字` 是按文件名回上传目录找（只认一级文件名），那是兜旧数据，不是新数据可以存相对路径的理由。
+- 起因：6f60814 把附件改成拷进对话目录后，`deliver()` 的 `stale` 分支把 `placed` 当成用户原来的附件传给 `followUp()` 记进对话，消息里存成 `attachments/截图-071747.png`，而 raw 接口只认绝对路径 → 气泡和看大图的浮层都是破图。
+- 防线：`scripts/e2e.mjs` 的保活用例断言记进对话的是 `dataDir/uploads` 下的绝对路径；`server/uploads-raw.test.ts` 覆盖相对路径兜底和越界拒绝；`scripts/rules-check.mjs` 拦 `attachments: placed`。

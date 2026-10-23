@@ -25,6 +25,7 @@ import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
 import {
   beginRun,
+  childStartedAt,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -64,7 +65,7 @@ import {
   setPresenceUnreadKeeper,
   setViewer,
 } from './presence.ts'
-import { placeAttachments } from './attachments.ts'
+import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import {
@@ -89,7 +90,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { childTurnSettle, settleWait, waitNote } from '../shared/plan.ts'
+import { childTurnSettle, openPlan, settleWait, waitNote } from '../shared/plan.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -256,6 +257,9 @@ export function tasksApi(deps: {
   /** 任务引用的附件目录 */
   const uploadDirs = (t: Task) =>
     new Set(t.messages.flatMap((m) => (m.attachments ?? []).map((a) => uploadDirOf(a.path)).filter(Boolean)))
+  /** 旧消息里只存了 `attachments/名字`：清理时按文件名保住上传目录里的那份，不然这些旧消息的图会被删掉 */
+  const uploadNames = (t: Task) =>
+    new Set(t.messages.flatMap((m) => (m.attachments ?? []).map((a) => relativeAttachName(a.path)).filter(Boolean)))
   /** 删除任务后，删掉只有这些任务在用的附件 */
   async function dropUploads(removed: Task[]) {
     const keep = new Set((await store.list()).flatMap((t) => [...uploadDirs(t)]))
@@ -395,11 +399,6 @@ export function tasksApi(deps: {
       await store.update(task.id, cur)
       log.info('task', '自动起了标题', { task: task.id, title: cur.title })
     })().catch((e) => log.warn('task', '自动起标题失败', (e as Error).message))
-  }
-
-  /** 最近一条消息的时间：子对话列表按它排序（updatedAt 会被改名、看过之类的操作改动） */
-  function lastMessageAt(task: Task) {
-    return task.messages.at(-1)?.at ?? task.updatedAt
   }
 
   /**
@@ -1386,10 +1385,17 @@ export function tasksApi(deps: {
   /**
    * 发一条追加要求。msg 为空时取这一轮结束后要接着处理的那条（CLI 执行中收不下的消息）。
    * recorded：这条消息已经在对话里了（执行中收到时就记下了），不要再加一条。
+   * placed：附件已经拷进任务目录的那一份（只给 CLI）；记进对话的永远是 msg.attachments 里的原路径。
    */
   async function followUp(
     id: string,
-    msg?: { text: string; attachments: Attachment[]; recorded?: boolean; panel?: TaskMessage['panel'] },
+    msg?: {
+      text: string
+      attachments: Attachment[]
+      placed?: Attachment[]
+      recorded?: boolean
+      panel?: TaskMessage['panel']
+    },
   ) {
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
@@ -1410,7 +1416,7 @@ export function tasksApi(deps: {
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
-    const placed = await placeInTask(next, m.attachments)
+    const placed = m.placed ?? (await placeInTask(next, m.attachments))
     if (!m.recorded) {
       next.messages.push({
         id: randomUUID(),
@@ -1447,8 +1453,7 @@ export function tasksApi(deps: {
   ) {
     const task = entry.task
     // 交给 CLI 的是拷进任务目录的那一份（placed）；记进对话的 msg 仍是用户原来的附件，缩略图从附件目录读
-    const forCli = { ...msg, attachments: placed }
-    const wait = deliverWait(task, forCli)
+    const wait = deliverWait(task, msg, placed)
     if (wait === 'ok') {
       task.updatedAt = new Date().toISOString()
       await store.update(task.id, task)
@@ -1460,14 +1465,18 @@ export function tasksApi(deps: {
       if (entry.done) await entry.done
       const next = live.get(task.id)
       if (next) {
-        if (deliverWait(next.task, forCli) === 'ok') {
+        if (deliverWait(next.task, msg, placed) === 'ok') {
           next.task.updatedAt = new Date().toISOString()
           await store.update(task.id, next.task)
           return { task: next.task, how: 'wait' as const }
         }
         return intoTurn(next, msg, text, placed)
       }
-      return { task: await followUp(task.id, { text, attachments: placed }), how: 'next' as const }
+      // 这次要记进对话的是用户原来的附件（上传目录的绝对路径），拷进任务目录的那份只给 CLI
+      return {
+        task: await followUp(task.id, { text, attachments: msg.attachments ?? [], placed }),
+        how: 'next' as const,
+      }
     }
     return intoTurn(entry, msg, text, placed)
   }
@@ -1537,10 +1546,12 @@ export function tasksApi(deps: {
           updatedAt: liveTask.updatedAt,
           // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜
           cliAlive: live.has(liveTask.id),
-          // 排序按真正的最近消息时间：updatedAt 也会被改名、看过的标记改动
-          lastMessageAt: lastMessageAt(liveTask),
+          // 排序按本次开启的时间：做完或停下后又接到新任务会开新的一轮，重新排到最前面
+          startedAt: childStartedAt(liveTask),
           // 总览分组用：等用户确认的请求数、独立 worktree 的分支
           requests: liveTask.requests.length,
+          // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」
+          plan: openPlan(liveTask),
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
@@ -2616,7 +2627,10 @@ export function tasksApi(deps: {
     },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {
-      await cleanupUploads(new Set((await store.list()).flatMap((t) => [...uploadDirs(t)])))
+      const all = await store.list()
+      await cleanupUploads(new Set(all.flatMap((t) => [...uploadDirs(t)])), {
+        keepNames: new Set(all.flatMap((t) => [...uploadNames(t)])),
+      })
     },
   }
 }

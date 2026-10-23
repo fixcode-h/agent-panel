@@ -7,6 +7,7 @@ import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '../share
 import { capture } from './exec/process.ts'
 import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
+import { relativeAttachName } from './attachments.ts'
 import { resolvePath } from './fs.ts'
 import { openWithSystem, revealItem } from './open.ts'
 import { locateFiles } from './locate-file.ts'
@@ -178,14 +179,22 @@ export const clipTranscript = (s: string) =>
 
 /**
  * 给页面看附件：raw 读原图（缩略图、看大图），file 读文字内容（点文件卡片时看）。
- * 附件目录里的文件都能读；粘贴路径引用的本机文件在附件目录外面，只有绝对路径才读，raw 只给图片
+ * 附件目录里的文件都能读；粘贴路径引用的本机文件在附件目录外面，只有绝对路径才读，raw 只给图片。
+ * 消息里存成 `attachments/名字`（当时拷进任务目录的那份）的旧附件按文件名回附件目录找：
+ * 任务目录会跟着独立分支删掉，上传目录里的那份是同一份内容。
  */
 export function uploadsRawApi() {
+  /** 解析不出来时给的原因：名字对得上但文件已经没了按「附件已经不在了」，其他都算「不是附件」 */
+  const whyNotFound = (want: string) =>
+    !path.isAbsolute(want) && !!relativeAttachName(want)
+      ? ({ error: t('附件已经不在了') } as const)
+      : ({ error: t('不是附件') } as const)
+  const statusOf = (want: string) => (path.isAbsolute(want) || !relativeAttachName(want) ? 400 : 404)
   const routes = new Hono()
   routes.get('/', async (c) => {
-    const want = c.req.query('path') ?? ''
-    if (!path.isAbsolute(want)) return c.json({ error: t('不是附件') }, 400)
-    const file = path.resolve(want)
+    const want = (c.req.query('path') ?? '').trim()
+    const file = await resolveAttachment(want)
+    if (!file) return c.json(whyNotFound(want), statusOf(want))
     const ext = path.extname(file).slice(1).toLowerCase()
     const inUploads = file.startsWith(UPLOADS_DIR + path.sep)
     if (!inUploads && !IMAGE_TYPES[ext]) return c.json({ error: t('不是图片') }, 400)
@@ -195,9 +204,9 @@ export function uploadsRawApi() {
     return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' })
   })
   routes.get('/file', async (c) => {
-    const want = c.req.query('path') ?? ''
-    if (!path.isAbsolute(want)) return c.json({ error: t('不是附件') }, 400)
-    const file = path.resolve(want)
+    const want = (c.req.query('path') ?? '').trim()
+    const file = await resolveAttachment(want)
+    if (!file) return c.json(whyNotFound(want), statusOf(want))
     const dir = path.dirname(file)
     const s = await stat(file).catch(() => null)
     if (!s?.isFile()) return c.json({ path: file, dir, exists: false, content: '', truncated: false })
@@ -218,6 +227,28 @@ export const IMAGE_TYPES: Record<string, string> = {
   bmp: 'image/bmp',
 }
 
+/**
+ * 把页面给的附件地址解析成能读的绝对路径；不是附件时返回空。
+ * 绝对路径照旧（附件目录里的、粘贴路径引用的本机文件）；
+ * `attachments/名字` 这种相对路径只在附件目录里按文件名找，不接受 `..`、多级目录和别的写法，防止拿它读任意文件。
+ */
+async function resolveAttachment(want: string): Promise<string> {
+  const p = want.trim()
+  if (!p) return ''
+  if (path.isAbsolute(p)) return path.resolve(p)
+  const name = relativeAttachName(p)
+  if (!name) return ''
+  const dirs = await readdir(UPLOADS_DIR).catch(() => [])
+  // 每个附件单独一个目录：名字一样时取第一个能找到的（截图的名字里带时间，基本不会重）
+  const found = await Promise.all(
+    dirs.map(async (d) => {
+      const full = path.join(UPLOADS_DIR, d, name)
+      return (await stat(full).catch(() => null))?.isFile() ? full : ''
+    }),
+  )
+  return found.find(Boolean) ?? ''
+}
+
 /** 附件所在的目录（每个附件单独一个目录）；不是附件时返回空 */
 export function uploadDirOf(file: string) {
   const full = path.resolve(file)
@@ -228,13 +259,22 @@ export function uploadDirOf(file: string) {
 /**
  * 清理没有任务在用的附件。不按时间删：老任务还在时它的截图、文件也要留着，继续执行时 Agent 还要读。
  * 刚上传、还没发出去的附件也没有任务引用，所以只删一天以前的。
+ * keepNames：消息里只存了 `attachments/名字` 的旧附件，按文件名保住上传目录里的那一份，否则这些旧消息的图会被清掉。
  */
-export async function cleanupUploads(referenced: Set<string>, graceMs = 86_400_000) {
+export async function cleanupUploads(
+  referenced: Set<string>,
+  opts: { graceMs?: number; keepNames?: Set<string> } = {},
+) {
   const dirs = await readdir(UPLOADS_DIR).catch(() => [])
-  const cutoff = Date.now() - graceMs
+  const cutoff = Date.now() - (opts.graceMs ?? 86_400_000)
+  const keep = opts.keepNames
   for (const d of dirs) {
     const full = path.join(UPLOADS_DIR, d)
     if (referenced.has(full)) continue
+    if (keep?.size) {
+      const names = await readdir(full).catch(() => [])
+      if (names.some((n) => keep.has(n))) continue
+    }
     const s = await stat(full).catch(() => null)
     if (s && s.mtimeMs < cutoff) await rm(full, { recursive: true, force: true }).catch(() => {})
   }

@@ -68,6 +68,12 @@ async function check(p, name, expect = []) {
   console.log(`✓ ${name}`)
 }
 
+// 一张 1×1 的 PNG：贴图、图片气泡的检查都用它
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
 try {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
@@ -93,14 +99,7 @@ try {
   await p
     .locator('input[type=file]')
     .first()
-    .setInputFiles({
-      name: '截图.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-        'base64',
-      ),
-    })
+    .setInputFiles({ name: '截图.png', mimeType: 'image/png', buffer: TINY_PNG })
   const imageChip = p.locator('#task-prompt [data-chip="image"]')
   await imageChip.waitFor({ timeout: 10000 }).catch(() => errors.push('行内图片卡片：附上图片后没有出现在文字里'))
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
@@ -127,6 +126,12 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // Token 胶囊：点开浮层看整个运行的合计（演示里的任务没有子对话，退化成只显示总数和输入输出）
+  {
+    await p.getByTitle('Token 用量').first().click()
+    await check(p, '任务-Token浮层', ['整个运行', '缓存命中'])
+    await p.keyboard.press('Escape')
+  }
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
@@ -787,6 +792,14 @@ try {
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务', '设置'])
+  // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByTitle('Token 用量').first().click()
+    await check(p, '任务-浅色-Token浮层', ['整个运行', '缓存命中'])
+    await p.keyboard.press('Escape')
+  }
   // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
   {
     await p.goto(base + '#/files')
@@ -1063,6 +1076,78 @@ try {
       .catch(() => {})
     await check(p, '文件-英文', ['files read'])
   } else errors.push('英文界面：设置里没有语言选择')
+
+  // 发出去的图片消息：气泡里直接显示图片，点开浮层能看大图；取不到图时回落成图标，不显示破图
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/chat')
+    await p.waitForTimeout(900)
+    // 先写文字再附图片：已经有卡片时往输入框里填，会卡在富文本受控内容上
+    await p.locator('#task-prompt').fill('看看这张图')
+    await p
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: '截图-气泡.png', mimeType: 'image/png', buffer: TINY_PNG })
+    await p
+      .locator('#task-prompt [data-chip="image"]')
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('图片气泡：附上图片后输入框里没有卡片'))
+    // 上传是异步的：草稿里出现带 done 的这张才算传完，不然发出去的是空附件
+    await p
+      .waitForFunction(
+        () =>
+          Object.keys(localStorage).some((k) => {
+            if (!k.startsWith('chat-attach:')) return false
+            try {
+              return JSON.parse(localStorage.getItem(k) ?? '[]').some((x) => x.done?.name === '截图-气泡.png')
+            } catch {
+              return false
+            }
+          }),
+        undefined,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push('图片气泡：图片没有上传完'))
+    await p.locator('#task-prompt').press('Enter')
+    // 打开对话页以后输入框换成 #follow-up：等它换掉，再找消息里的卡片（不然会匹配到输入框里那张）
+    await p
+      .locator('#task-prompt')
+      .waitFor({ state: 'detached', timeout: 20000 })
+      .catch(() => errors.push('图片气泡：发出后没有打开对话页'))
+    const bubble = p.locator('[data-chip="image"][data-name="截图-气泡.png"]')
+    await bubble.waitFor({ timeout: 20000 }).catch(() => errors.push('图片气泡：发出去以后消息里没有图片卡片'))
+    const chip = await bubble
+      .evaluate((el) => {
+        const img = el.querySelector('img')
+        return {
+          src: img?.getAttribute('src') ?? '',
+          missing: el.getAttribute('data-missing') === 'true',
+          broken: img ? img.naturalWidth === 0 : true,
+        }
+      })
+      .catch(() => null)
+    if (!chip) errors.push('图片气泡：消息里的图片卡片读不出来')
+    else {
+      if (chip.missing) errors.push('图片气泡：附件明明在，卡片却显示成「附件已经不在了」')
+      if (!chip.src || chip.broken) errors.push(`图片气泡：缩略图没有显示出来（src=${chip.src || '空'}）`)
+    }
+    await check(p, '对话-图片气泡')
+    // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
+    await bubble.evaluate((el) => el.click())
+    await p
+      .getByRole('dialog')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('图片气泡：点开没有看大图的浮层'))
+    const big = await p
+      .locator('[role="dialog"] img')
+      .first()
+      .evaluate((el) => ({ src: el.getAttribute('src') ?? '', broken: el.naturalWidth === 0 }))
+      .catch(() => null)
+    if (!big || !big.src || big.broken) errors.push('图片气泡：浮层里的大图没有显示出来')
+    await check(p, '对话-图片大图')
+    await p.keyboard.press('Escape')
+    await p.close()
+  }
 
   const m = await page({ width: 390, height: 844 })
   await m.goto(base)

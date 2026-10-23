@@ -37,9 +37,10 @@ import { type Project, type Task, type TaskMessage, type TaskStep } from '@share
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
+  childStage,
+  runningChildren,
   sortChildren,
   taskBusy,
-  taskStage,
   taskSummary,
   withTaskModel,
   type ChildActivity,
@@ -240,10 +241,12 @@ interface ChildSummary {
   updatedAt: string
   /** 进程还活着（预热、等下一句、正在执行） */
   cliAlive: boolean
-  /** 最近一条消息的时间，列表按它排序 */
-  lastMessageAt: string
+  /** 本次开启的时间（最近一轮开始执行），列表按它排序 */
+  startedAt: string
   /** 正在等用户确认的请求数 */
   requests?: number
+  /** 还没做完的计划进度：有它就不算已完成，行上显示「计划 7/8」 */
+  plan?: { done: number; total: number }
   /** 请用户选择、还没人回答的提问数 */
   asking?: number
   /** 在独立 worktree 里改时的分支 */
@@ -1086,7 +1089,9 @@ export function TaskView({
                       title={t('解决')}
                       disabled={resolving}
                       onClick={() => void resolveChild()}
-                      className="opacity-0 group-hover/hdr:opacity-100 focus-visible:opacity-100"
+                      // 默认隐起来（opacity-0），鼠标进标题栏或 Tab 聚焦才显示；
+                      // 没有 hover 的设备（触屏、平板）常显，否则根本点不到
+                      className="opacity-0 group-hover/hdr:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <CheckCircle2 className="h-4 w-4" />
                     </Button>
@@ -1686,10 +1691,13 @@ function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
   const asking = children.filter((c) => c.asking && !c.resolved)
-  const busy = sortChildren(children.filter((c) => c.working && !c.resolved))
+  const busy = sortChildren(runningChildren(children))
   const working = busy.length
   const alive = children.filter((c) => c.cliAlive)
-  const shown = sortChildren(all ? children : alive)
+  // 分母是子对话总数，但不比执行中的少：进程刚好在启动、进程信息还没回来时不能显示成 3/0
+  const total = Math.max(alive.length, working)
+  // 「运行中」只列真正在执行（working）的：进程活着但在等下一句的，在它自己页面上是「等待你的下一条消息」
+  const shown = sortChildren(all ? children : runningChildren(children))
   const current = children.find((c) => c.id === openChild)
 
   return (
@@ -1711,16 +1719,17 @@ function ChildrenBar({
             className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
           >
             <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="shrink-0 font-medium">{t('子对话 {n}', { n: alive.length })}</span>
+            <span className="shrink-0 font-medium">{t('子对话 {n}', { n: total })}</span>
+            {/* 执行中的数量写成 3/4（分母是子对话总数）：没在执行时只显示总数，不出现 0/4 */}
             {working > 0 && (
-              <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent">
+              <span
+                aria-label={t('{n} 个在执行', { n: working })}
+                className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent"
+              >
                 <span className="text-subtle">·</span>
                 <Loader2 className="h-3 w-3 animate-spin" />
-                {t('{n} 个在执行', { n: working })}
+                {working}/{total}
               </span>
-            )}
-            {current && !busy.some((c) => c.id === current.id) && (
-              <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>
             )}
           </button>
           {asking.length > 0 && (
@@ -1814,8 +1823,8 @@ function ChildrenBar({
                       key={c.id}
                       type="button"
                       onClick={() => {
+                        // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
                         onOpen(c.id)
-                        setOpen(false)
                       }}
                       className={cn(
                         'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
@@ -1844,6 +1853,11 @@ function ChildrenBar({
                           {!!c.asking && !c.resolved && (
                             <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
                               {t('等你选择')}
+                            </span>
+                          )}
+                          {!!c.plan && !c.resolved && (
+                            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
+                              {t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total })}
                             </span>
                           )}
                           {c.working && !c.resolved && (
@@ -1878,19 +1892,21 @@ function ChildrenBar({
 }
 
 /**
- * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、做完的、停下的；
- * 「运行中」只有活着的几个，不分组。分组用 taskStage：和状态图标、行内标签是同一套映射
+ * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、未完成、做完的、停下的；
+ * 「运行中」只列真正在执行（working）的几个，不分组。分组用 childStage（taskStage 再加上「计划没做完」）：
+ * 和状态图标、行内标签是同一套映射，排序也用这一套，组内顺序和 sortChildren 一致
  */
 function childGroups(list: ChildSummary[], grouped: boolean) {
   if (!grouped) return [{ key: 'all', label: '', items: list }]
   const groups: { key: TaskStage; label: string; items: ChildSummary[] }[] = [
     { key: 'you', label: t('需要你处理'), items: [] },
     { key: 'running', label: t('执行中'), items: [] },
+    { key: 'unfinished', label: t('未完成'), items: [] },
     { key: 'done', label: t('已完成'), items: [] },
     { key: 'stopped', label: t('已停止'), items: [] },
   ]
   for (const c of list) {
-    const g = groups.find((x) => x.key === taskStage(c))
+    const g = groups.find((x) => x.key === childStage(c))
     if (g) g.items.push(c)
   }
   return groups.filter((g) => g.items.length)

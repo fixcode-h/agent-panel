@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { Task } from '@shared/schema'
@@ -6,6 +6,7 @@ import { useData } from '@/lib/data'
 import { currentActivity, fmtSecs, stepActivity } from '@/lib/tasks'
 import { stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
@@ -133,14 +134,8 @@ function HelperWindow({
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
   const msgs = task.messages.filter((m) => m.step === id || m.step.startsWith(`${id}/`))
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
-  // 还在输出时跟着滚到最新；用户往上翻了就不再拽回来
-  const box = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
-  const size = msgs.reduce((n, m) => n + m.text.length + m.tools.length + (m.thinking?.length ?? 0), 0)
-  useEffect(() => {
-    const el = box.current
-    if (el && pinned.current) el.scrollTop = el.scrollHeight
-  }, [size])
+  // 打开就停在最新输出（首帧算不完的高度下一帧和布局稳定后再补），之后跟着新内容走；用户往上翻了就不再拽回来
+  const scroller = useStickToBottom(id)
   if (!step) return null
   const time = step.endedAt && !live ? fmtSecs(stepMs(step, now)) : ''
   return (
@@ -170,14 +165,7 @@ function HelperWindow({
               </Button>
             </D.Close>
           </header>
-          <div
-            ref={box}
-            onScroll={(e) => {
-              const el = e.currentTarget
-              pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-            }}
-            className="min-h-0 flex-1 overflow-y-auto"
-          >
+          <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
               {msgs.length ? (
                 <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />

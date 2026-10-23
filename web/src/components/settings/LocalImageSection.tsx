@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
-import { LOCAL_MODELS, modelGb, modelReady, type LocalModel, type LocalStatus } from '@shared/local-image'
+import {
+  LOCAL_MODELS,
+  PYTHON_RANGE,
+  PYTHON_SUPPORT,
+  modelGb,
+  modelReady,
+  type LocalModel,
+  type LocalStatus,
+} from '@shared/local-image'
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -11,7 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { AiFixButton } from '@/components/ui/ai-fix'
-import { Group, ReadValue, Row } from './parts'
+import { Group, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
 
@@ -44,6 +52,23 @@ const GPU_LABEL: Record<LocalStatus['gpu'], string> = {
   cpu: 'CPU',
 }
 
+/** 环境清单的一行：左边小标题，右边值和说明；路径这类长文本用 mono 并允许折行 */
+function EnvLine({ label, value, hint, mono }: { label: string; value: string; hint?: string; mono?: boolean }) {
+  return (
+    <div className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-3">
+      <span className="shrink-0 text-[0.75rem] text-subtle sm:w-20">{label}</span>
+      <div className="min-w-0 flex-1">
+        <span
+          className={cn('block break-all', mono ? 'font-mono text-[0.75rem] text-muted' : 'text-[0.8125rem] text-fg')}
+        >
+          {value}
+        </span>
+        {hint && <span className="mt-0.5 block break-all text-[0.75rem] leading-relaxed text-subtle">{hint}</span>}
+      </div>
+    </div>
+  )
+}
+
 /**
  * 设置里的「本机生图」：一键安装 ComfyUI、下载模型（每个模型写明用在哪里）、启动停止；
  * 出错时可以让 AI 排查修复。也可以填已有的 ComfyUI 地址直接用
@@ -67,13 +92,16 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
       </div>
     )
   const ready = st.installed || st.external
+  const usable = st.pythons.find((p) => p.usable)
+  const others = st.pythons.filter((p) => !p.usable)
   const pct = job?.progress?.total ? Math.min(100, (job.progress.done / job.progress.total) * 100) : undefined
 
   return (
     <>
       <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python 3.10 ~ 3.13；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。',
+          '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python {range}；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。',
+          { range: PYTHON_RANGE },
         )}
       </p>
 
@@ -117,26 +145,67 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             )}
           </div>
         </Row>
-        <Row title={t('电脑环境')} desc={t('显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢')}>
-          <div className="flex items-center gap-2">
-            <ReadValue>
-              {[
-                st.gpuName ?? GPU_LABEL[st.gpu],
-                st.vram ? t('{n}GB 显存', { n: st.vram }) : '',
-                st.installed ? '' : st.python ? `Python ${st.python}` : t('没有找到 Python'),
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </ReadValue>
-            <Button
-              size="icon"
-              variant="ghost"
-              title={t('重新检测')}
-              aria-label={t('重新检测')}
-              onClick={() => void act(() => api.localImageAction('detect'))}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
+        <Row title={t('电脑环境')} desc={t('显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢')} stack>
+          <div className="rounded-xl border bg-field/40 px-3 py-1">
+            <div className="flex items-start gap-1">
+              <div className="min-w-0 flex-1 divide-y divide-line/60">
+                <EnvLine
+                  label={t('显卡')}
+                  value={
+                    st.gpuName
+                      ? `${st.gpuName}${st.vram ? ` · ${t('{n}GB 显存', { n: st.vram })}` : ''}`
+                      : GPU_LABEL[st.gpu]
+                  }
+                  hint={st.gpuName ? GPU_LABEL[st.gpu] : undefined}
+                />
+                <EnvLine
+                  label="Python"
+                  value={
+                    st.venv ? `Python ${st.venv.version}` : usable ? `Python ${usable.version}` : t('没有可用的 Python')
+                  }
+                  hint={
+                    st.venv
+                      ? t('已经装好：启动 ComfyUI 用这个虚拟环境的解释器')
+                      : usable
+                        ? t('安装时会用 {cmd}', { cmd: usable.command })
+                        : st.pythons.length
+                          ? t('下面的版本用不了，装 Python {v} 后再点「一键安装」', { v: PYTHON_SUPPORT.recommend })
+                          : t('没有检测到 Python，装 Python {v} 后再点「一键安装」', { v: PYTHON_SUPPORT.recommend })
+                  }
+                />
+                {(st.venv?.path ?? usable?.path) && (
+                  <EnvLine label={t('解释器')} value={st.venv?.path ?? usable!.path!} mono />
+                )}
+                {others.length > 0 && (
+                  <EnvLine
+                    label={t('其它 Python')}
+                    value={others.map((p) => `${p.version}（${p.command}）`).join(' · ')}
+                    hint={others
+                      .map((p) => p.problem)
+                      .filter(Boolean)
+                      .join(' ')}
+                  />
+                )}
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="mt-1 shrink-0"
+                title={t('重新检测')}
+                aria-label={t('重新检测')}
+                onClick={() => void act(() => api.localImageAction('detect'))}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {!st.venv && !usable && (
+              <p className="border-t border-line/60 py-2 text-[0.75rem] leading-relaxed text-subtle">
+                {t(
+                  '装 Python {v}（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH）后回来点「一键安装」；也可以点出错后的「AI 处理」让 AI 帮你装。',
+                  { v: PYTHON_SUPPORT.recommend },
+                )}
+              </p>
+            )}
           </div>
         </Row>
         {job && (

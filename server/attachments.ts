@@ -16,6 +16,18 @@ import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 /** 任务目录里放附件的地方，提示里的路径也以它开头 */
 export const ATTACH_DIR = 'attachments'
 
+/**
+ * 消息里存成任务目录相对路径的旧附件（`attachments/名字`）：返回文件名，不是这种路径时返回空。
+ * 以前的消息里记录的是拷进任务目录的那一份，读取时要按名字回上传目录找，清理附件时也要靠它保住那一份。
+ * 只认一级文件名：带 `..`、多级目录、绝对路径的都不算。
+ */
+export function relativeAttachName(p: string): string {
+  const rel = (p ?? '').replace(/\\/g, '/')
+  if (!rel.startsWith(`${ATTACH_DIR}/`)) return ''
+  const name = rel.slice(ATTACH_DIR.length + 1)
+  return name && !name.includes('/') && !/^\.\.?$/.test(name) ? name : ''
+}
+
 /** 文件名里去掉路径和系统不允许的字符（和上传时一致，名字对得上） */
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 

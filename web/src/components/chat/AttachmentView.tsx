@@ -2,13 +2,14 @@
 // 输入框里的卡片和发出去的消息里的卡片共用这一套
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Copy, File as FileIcon, Image as ImageIcon, TextQuote, X } from 'lucide-react'
+import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { quoteLabel, quoteText } from '@/lib/quote'
+import { shownImages } from '@/lib/attachment-image'
 import { Button } from '@/components/ui/button'
 import { Lightbox, type LightboxImage } from '@/components/ui/lightbox'
 import { FileDialog } from '@/components/tasks/FileDialog'
@@ -85,22 +86,43 @@ export function AttachmentViewer({ target, onClose }: { target: ViewTarget | nul
   )
 }
 
-/** 一组附件的图片地址：缩略图、看大图都用它 */
+/** 图片能不能真的显示出来：地址对了但文件已经不在了（404）时返回 false */
+function canShow(url: string) {
+  return new Promise<boolean>((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(true)
+    img.onerror = () => resolve(false)
+    img.src = url
+  })
+}
+
+/**
+ * 一组附件的图片地址：缩略图、看大图都用它。
+ * 加载不出来的不留下地址（气泡显示图标和「附件已经不在了」），浮层也不会打开一张破图
+ */
 export function useAttachmentUrls(items: readonly Attachment[]) {
-  const [urls, setUrls] = useState<Record<string, string>>({})
+  const [state, setState] = useState<{ urls: Record<string, string>; missing: Record<string, true> }>({
+    urls: {},
+    missing: {},
+  })
   const key = items.map((a) => a.path).join('\n')
   useEffect(() => {
     let alive = true
     void Promise.all(
-      items.filter((a) => isImage(a.mime, a.name)).map(async (a) => [a.path, (await attachmentUrl(a)) ?? ''] as const),
-    ).then((list) => alive && setUrls(Object.fromEntries(list.filter(([, u]) => u))))
+      items
+        .filter((a) => isImage(a.mime, a.name))
+        .map(async (a) => {
+          const url = (await attachmentUrl(a)) ?? ''
+          return [a.path, url, !!url && (await canShow(url))] as const
+        }),
+    ).then((list) => alive && setState(shownImages(list)))
     return () => {
       alive = false
     }
     // 按路径比较：父组件每次渲染给的数组都是新的，内容没变就不重新取
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
-  return urls
+  return state
 }
 
 /** 卡片对应的附件点开要看什么；附件找不到（旧的只存在本地的引用）时尽量用卡片自己的信息 */
@@ -125,6 +147,7 @@ export function MessageChip({
   name,
   attachment,
   src,
+  missing,
   onOpen,
 }: {
   kind: ChipKind
@@ -132,20 +155,27 @@ export function MessageChip({
   attachment?: Attachment
   /** 图片的缩略图 */
   src?: string
+  /** 图片已经不在了（取不到、加载不出来）：显图标，点不开 */
+  missing?: boolean
   onOpen?: () => void
 }) {
   const label = kind === 'quote' ? quoteLabel(name) : name
-  const title =
-    kind === 'quote'
+  const title = missing
+    ? t('附件已经不在了')
+    : kind === 'quote'
       ? (attachment?.quote ?? (quoteText(name) || label)).slice(0, 600)
       : attachment
         ? attachment.path
         : name
-  const Icon = kind === 'quote' ? TextQuote : kind === 'image' ? ImageIcon : FileIcon
+  const Icon = missing ? ImageOff : kind === 'quote' ? TextQuote : kind === 'image' ? ImageIcon : FileIcon
   return (
     <button
       type="button"
       title={title}
+      // 和输入框里的卡片同一套标记（RichInput 的 chipNode），界面检查按它找消息里的卡片
+      data-chip={kind}
+      data-name={name}
+      data-missing={missing ? 'true' : undefined}
       onClick={onOpen}
       disabled={!onOpen}
       className={cn(
@@ -168,7 +198,7 @@ export function MessageChip({
  * 文字里没有卡片的附件（旧消息只把附件放在上面）排在最前面，同在一个气泡里
  */
 export function MessageBody({ text, attachments = [] }: { text: string; attachments?: Attachment[] }) {
-  const urls = useAttachmentUrls(attachments)
+  const { urls, missing } = useAttachmentUrls(attachments)
   const images = useMemo(
     () => attachments.filter((a) => urls[a.path]).map((a) => ({ src: urls[a.path], name: a.name })),
     [attachments, urls],
@@ -197,7 +227,8 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
         name={name}
         attachment={a}
         src={a ? urls[a.path] : undefined}
-        onOpen={() => open(kind, name, a)}
+        missing={!!a && !!missing[a.path]}
+        onOpen={a && missing[a.path] ? undefined : () => open(kind, name, a)}
       />
     )
   })
@@ -213,7 +244,8 @@ export function MessageBody({ text, attachments = [] }: { text: string; attachme
             name={a.name}
             attachment={a}
             src={urls[a.path]}
-            onOpen={() => open(kind, a.name, a)}
+            missing={!!missing[a.path]}
+            onOpen={missing[a.path] ? undefined : () => open(kind, a.name, a)}
           />
         )
       })}
