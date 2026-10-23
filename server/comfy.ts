@@ -1,12 +1,10 @@
 import { Hono } from 'hono'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { createWriteStream, existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { arch, platform, tmpdir } from 'node:os'
 import path from 'node:path'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 import { t } from '../shared/i18n.ts'
 import {
   BUILTIN_WORKFLOWS,
@@ -42,7 +40,7 @@ import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
-import { netFetch } from './net.ts'
+import { downloadFile, removeDownload } from './download.ts'
 import { getSettings } from './settings.ts'
 import { registerFixTopic } from './fix.ts'
 import { appDir } from './update.ts'
@@ -245,21 +243,6 @@ async function exec(cmd: string, args: string[], cwd: string) {
     throw new Error(t('命令失败（退出码 {code}）：{cmd}', { code: String(r.code), cmd: [cmd, ...args].join(' ') }))
 }
 
-/** 下载一个文件：先写 .part，断了再点下载接着下（Range），完成后改名 */
-async function download(url: string, to: string, onBytes: (n: number) => void, signal: AbortSignal) {
-  await mkdir(path.dirname(to), { recursive: true })
-  const part = `${to}.part`
-  const have = existsSync(part) ? (await stat(part)).size : 0
-  const res = await netFetch(url, { signal, headers: have ? { Range: `bytes=${have}-` } : {} })
-  if (!res.ok || !res.body) throw new Error(t('下载失败（{status}）：{url}', { status: String(res.status), url }))
-  const resumed = res.status === 206
-  if (resumed) onBytes(have)
-  const body = Readable.fromWeb(res.body as never)
-  body.on('data', (c: Buffer) => onBytes(c.length))
-  await pipeline(body, createWriteStream(part, { flags: resumed ? 'a' : 'w' }), { signal })
-  await rename(part, to)
-}
-
 export function installComfy() {
   return begin('install', t('准备安装'), async (j) => {
     const settings = (await getSettings()).imageGen.local
@@ -281,7 +264,7 @@ export function installComfy() {
         // 没有 git：下载源码压缩包，用 Python 自带的 zipfile 解开
         const zip = path.join(dir, 'ComfyUI.zip')
         say(`${REPO}/archive/refs/heads/master.zip`)
-        await download(`${REPO}/archive/refs/heads/master.zip`, zip, () => {}, j.abort.signal)
+        await downloadFile(`${REPO}/archive/refs/heads/master.zip`, zip, { signal: j.abort.signal })
         await exec(py.cmd, [...py.args, '-m', 'zipfile', '-e', zip, dir], dir)
         const unpacked = (await readdir(dir)).find((n) => /^ComfyUI-/i.test(n))
         if (!unpacked) throw new Error(t('解压 ComfyUI 失败'))
@@ -345,7 +328,10 @@ export function downloadModel(id: string) {
       j.step = t('下载 {file}', { file: f.file })
       const url = mirrorUrl(f.url, mirror)
       say(url)
-      await download(url, filePath(id), (n) => (j.progress!.done += n), j.abort.signal)
+      await downloadFile(url, filePath(id), {
+        signal: j.abort.signal,
+        onBytes: (n) => (j.progress!.done += n),
+      })
     }
     j.step = t('{name} 下载完成', { name: m.name })
   })
@@ -362,7 +348,7 @@ export async function removeModel(id: string) {
   for (const f of m.files)
     if (!keep.has(f)) {
       await rm(filePath(f), { force: true })
-      await rm(`${filePath(f)}.part`, { force: true })
+      await removeDownload(filePath(f))
     }
 }
 

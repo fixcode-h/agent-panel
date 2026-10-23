@@ -61,7 +61,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # 浏览器按 Playwright 的版本缓存：命中时不用再下载。系统依赖 ubuntu-latest 自带的 Chrome 已经装齐
+      # 浏览器按 Playwright 的版本缓存：命中时不用再下载。
+      # 不加 --with-deps：系统依赖 ubuntu-latest 自带的 Chrome 已经装齐，而 apt 有时一卡十几分钟
       - id: pw
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
       - id: pw-cache
@@ -70,7 +71,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - run: npx vite build --mode demo
       - run: node scripts/ui-check.mjs
       - uses: actions/upload-artifact@v4
