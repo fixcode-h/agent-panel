@@ -25,18 +25,6 @@ const api = () => tasksApi({ agents: empty, workflows: empty, projects: empty, p
 const store = createTaskStore()
 /** 读落盘后的最新状态：tasksApi 那边写盘，测试这边的 store 有自己的缓存 */
 const read = async (id: string) => (await createTaskStore().get(id))!
-/**
- * 等到状态落盘：自动交出会顺手给父对话开一轮，写盘是排队的，立刻读可能还是旧快照
- * （合并 dev 后这条时序更明显，所以按条件轮询而不是固定等待）
- */
-const readUntil = async (id: string, ok: (t: Awaited<ReturnType<typeof read>>) => boolean, ms = 4000) => {
-  for (let i = 0; i < ms / 50; i++) {
-    const t = await read(id)
-    if (ok(t)) return t
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  return read(id)
-}
 /** 通过 tasksApi 自己的读接口看状态：写盘是排队的，另开一个 store 可能读到旧快照 */
 const askState = async (t: ReturnType<typeof api>, id: string) =>
   (await (await t.routes.request(`/${id}`)).json()) as Awaited<ReturnType<typeof read>>
