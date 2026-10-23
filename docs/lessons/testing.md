@@ -1,5 +1,5 @@
 ---
-paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.test.ts, server/exec/fixtures/**
+paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.test.ts, server/exec/fixtures/**
 ---
 
 # 测试
@@ -36,9 +36,8 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 ## 在 WSL 里跑 e2e 要用 Linux 装的依赖
 
-- 规则：Windows 上 `node_modules` 是 Windows 装的，esbuild / rollup 的原生二进制在 WSL 里跑不起来（报 installed for another platform，接着是「服务没有启动」）。要在 WSL 里验证时，先把仓库复制一份到 Linux 文件系统里 `npm ci` 再跑，不要直接对 `/mnt/e` 这份 `npm ci`——它会把 Windows 的依赖换成 Linux 的，本机开发就跑不了了。
-- 起因：这次改完想按项目步骤跑 e2e，直接在 `/mnt/e` 里跑，卡在 esbuild 二进制不匹配。
-- 补充：在 worktree 里跑时不用复制整个仓库（worktree 的 `node_modules` 是指向主仓库的软链接，装什么都会落到 Windows 那份上）：在 WSL 里 `npm i --prefix /tmp/esb @esbuild/linux-x64@<和仓库相同的版本>`，再 `ESBUILD_BINARY_PATH=/tmp/esb/node_modules/@esbuild/linux-x64/bin/esbuild npm run test:e2e`，就只换 esbuild 的二进制。
+- 规则：Windows 的 `node_modules` 里是 win32 原生包，WSL 里跑 e2e 会报「installed for another platform」/「服务没有启动」。worktree 的 `node_modules` 若是指向主仓库的软链接，先删掉软链接，在这个目录里 `NODE_ENV=development npm ci` 装一份自己的，不要在主仓库里装。`.git` 文件里是 Windows 路径，WSL 里跑 `rules-check.mjs`（用到 `git ls-files`）要带上 `GIT_DIR=/mnt/<盘>/…/.git/worktrees/<名称> GIT_WORK_TREE=$PWD`。
+- 起因：直接在 `/mnt/e` 里跑 e2e 卡在 esbuild 二进制不匹配；worktree 软链到主仓库时装什么都会落到 Windows 那份上。
 - 防线：人工（CI 的 Ubuntu 步骤始终是干净的 Linux 依赖）。
 
 ## 自己起服务做验证时清掉面板的环境变量
@@ -49,12 +48,24 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 ## e2e 里起的资源要登记，退出别指望它们自己关
 
-- 规则：`scripts/e2e.mjs` 里起的 `http.createServer`、子进程都用 `onExit()` 登记（返回的函数既能立刻关掉、又从登记表摘掉）；关 server 先 `closeAllConnections()` 再 `close()`，只 `close()` 会留下 keep-alive 连接。`finally` 里 `cleanupAll()` 之后按退出码强制退出，不等事件循环自然清空。
-- 起因：`/accounts/api-models` 的 `name` 改成必填后 e2e 报 400，临时 `apiSrv` 没关，进程挂 95 分钟才被手动取消。
-- 防线：`npm run test:e2e`（10 分钟看门狗 + 收尾后 2 秒强制退出兜底）。
+- 规则：`scripts/e2e/harness.mjs`（各分片共用）里起的 `http.createServer`、子进程都用 `onExit()` 登记；关 server 先 `closeAllConnections()` 再 `close()`，只 `close()` 会留下 keep-alive 连接。收尾时 `cleanupAll()` 之后按退出码强制退出，不等事件循环自然清空。
+- 起因：`/accounts/api-models` 的 `name` 改成必填后 e2e 报 400，临时 `apiSrv` 没关，进程挂 95 分钟。
+- 防线：`npm run test:e2e`（每个分片 10 分钟看门狗 + 收尾后 2 秒强制退出）。
 
 ## 假 CLI 的触发词别包含已有的触发词
 
-- 规则：`scripts/fake-cli` 按 `input.includes('关键词')` 决定行为，新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（例如 `SLOW` 会让这一轮先等 10 秒）；用意思明确、不会撞上的词。
+- 规则：`scripts/fake-cli` 按 `input.includes('关键词')` 决定行为，新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（例如 `SLOW` 会让这一轮先等几秒）；用意思明确、不会撞上的词。
 - 起因：加「后台命令还在跑」的 e2e 时用了 `BG_SLOW`，命中了旧的 `SLOW` 慢回合，回合拖到后台命令跑完才结束，断言一直失败。
+- 防线：人工。
+
+## e2e 按分片并行，共享环境只在 harness 里改
+
+- 规则：`scripts/e2e.mjs` 只是并行 runner，场景在 `scripts/e2e/NN-*.mjs`，每个分片调一次 `runShard()`；临时目录、假 CLI 日志、端口、服务、看门狗、收尾和基础数据（`setupBase()`）都在 `scripts/e2e/harness.mjs`。新用例放进主题相符的分片；分片间不能有依赖，缺前置就在本分片自己建（漏了直接 ReferenceError）。
+- 起因：原 82 个 step 串行、单进程，加用例就线性变长。
+- 防线：`npm run test:e2e`。
+
+## 等状态用 waitFor，别写固定 sleep
+
+- 规则：`runShard` 提供 `waitFor(条件, { timeout, interval, label })`：等「CLI 被调用」「任务进入 running」这类状态，条件一到就继续，超时才失败。只有「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制，e2e 默认压到最小。
+- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等。
 - 防线：人工。

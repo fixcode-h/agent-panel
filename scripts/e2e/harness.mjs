@@ -1,0 +1,514 @@
+/**
+ * 端到端测试的共享环境：每个分片（scripts/e2e/*.mjs）自己调一次 runShard()，
+ * 各自建临时数据目录、假 CLI 日志、独立端口和服务，互不干扰，可以并行跑。
+ *
+ * 这里负责：临时目录和假项目仓库、假的 GitHub Releases、启动服务、HTTP 辅助、
+ * 看门狗和收尾（失败时也要把服务关掉），以及各分片都要用的基础数据（设置、Agent、工作流、项目）。
+ */
+import http from 'node:http'
+import net from 'node:net'
+import { spawn, execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// 1×1 的透明 PNG，用来测图片文件按原图读取
+export const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/**
+ * 跑一个分片：fn(api) 里写这个分片的断言。
+ * 看门狗、失败退出、收尾都在这里统一处理，各分片不用自己管。
+ */
+export async function runShard(shardName, fn) {
+  // 假 CLI 靠 shebang 直接执行，脚本里也用 mkdir -p、tar 这类 Unix 命令：
+  // Windows 上先给出能照着做的提示，不要跑到一半才报一堆看不懂的错
+  if (process.platform === 'win32') {
+    console.error(
+      '端到端测试请在 WSL / macOS / Linux 上运行（Windows 上可以在 WSL 里装好依赖后跑 `npm run test:e2e:wsl`）。',
+    )
+    process.exit(1)
+  }
+
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  const fake = path.join(root, 'scripts/fake-cli/fake-cli.mjs')
+  const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-'))
+  const dataDir = path.join(tmp, 'data')
+  const homeDir = path.join(tmp, 'home')
+  mkdirSync(homeDir, { recursive: true })
+  const projectDir = path.join(tmp, 'project')
+  const log = path.join(tmp, 'calls.jsonl')
+  // 让系统分配一个真正空闲的端口：分片并行时各自抢同一个随机段容易撞上，
+  // 撞了会表现成「服务没有启动」，不靠重试掩盖
+  const freePort = () =>
+    new Promise((resolve, reject) => {
+      const probe = net.createServer()
+      probe.on('error', reject)
+      probe.listen(0, '127.0.0.1', () => {
+        const p = probe.address().port
+        probe.close(() => resolve(p))
+      })
+    })
+  const port = await freePort()
+  const baseUrl = `http://127.0.0.1:${port}/api`
+
+  // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
+  mkdirSync(projectDir, { recursive: true })
+  const git = (...a) => execFileSync('git', a, { cwd: projectDir, stdio: 'pipe' })
+  /** 在别的目录（任务的独立分支目录）里跑 git */
+  const gitIn = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'pipe' })
+  git('init', '-q')
+  writeFileSync(path.join(projectDir, 'README.md'), '# demo\n')
+  writeFileSync(path.join(projectDir, 'pre.txt'), 'old\n')
+  git('add', '.')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init')
+  writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
+
+  // 假的 GitHub Releases：三个版本，包是现做的 tar.gz，用来测试设置里的版本更新
+  const appDir = path.join(tmp, 'app')
+  const relDir = path.join(tmp, 'releases')
+  mkdirSync(path.join(appDir, 'dist'), { recursive: true })
+  mkdirSync(path.join(appDir, 'data'), { recursive: true })
+  mkdirSync(relDir, { recursive: true })
+  writeFileSync(path.join(appDir, 'server.mjs'), '// old\n')
+  writeFileSync(path.join(appDir, 'dist/old.html'), 'old')
+  writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
+  // Windows 托盘程序：上次更新挪开的 AgentPanel.exe.old 还在运行，删不掉也不能被覆盖（这里用非空目录模拟）
+  writeFileSync(path.join(appDir, 'AgentPanel.exe'), 'tray-old')
+  mkdirSync(path.join(appDir, 'AgentPanel.exe.old'), { recursive: true })
+  writeFileSync(path.join(appDir, 'AgentPanel.exe.old', 'busy'), '')
+  for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
+    const d = path.join(relDir, `agent-panel-${v}`)
+    mkdirSync(path.join(d, 'dist'), { recursive: true })
+    // 0.11.8 的服务端加载就出错：更新时试跑不通过，要退回原来的版本
+    writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
+    writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
+    writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
+    writeFileSync(path.join(d, 'AgentPanel.exe'), `tray-${v}`)
+    execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
+    // 校验文件：0.11.4 的哈希故意写错
+    const hash = createHash('sha256')
+      .update(readFileSync(`${d}.tar.gz`))
+      .digest('hex')
+    writeFileSync(`${d}.sums`, `${v === '0.11.4' ? '0'.repeat(64) : hash}  agent-panel-${v}.tar.gz\n`)
+  }
+  // 旧版本平铺的数据文件，启动时应搬进 config/
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
+  // 旧版本把所有任务放在一个 tasks.json 里，启动后拆成每个任务一个文件
+  const legacyAt = '2026-10-01T00:00:00.000Z'
+  writeFileSync(
+    path.join(dataDir, 'tasks.json'),
+    JSON.stringify([
+      {
+        id: 'legacy-1',
+        projectId: 'legacy-project',
+        title: '旧任务',
+        mode: 'chat',
+        status: 'done',
+        messages: [{ id: 'm1', role: 'user', text: '旧的要求', at: legacyAt }],
+        createdAt: legacyAt,
+        updatedAt: legacyAt,
+      },
+    ]),
+  )
+  // 上一版每个任务一个完整文件（tasks/items/），启动后按项目分目录、对话单独存
+  mkdirSync(path.join(dataDir, 'tasks/items'), { recursive: true })
+  writeFileSync(
+    path.join(dataDir, 'tasks/items/legacy-2.json'),
+    JSON.stringify({
+      id: 'legacy-2',
+      projectId: '',
+      title: '旧聊天',
+      mode: 'chat',
+      status: 'done',
+      messages: [
+        { id: 'm1', role: 'user', text: '旧的聊天', at: legacyAt },
+        { id: 'm2', role: 'agent', text: '旧的回答', at: legacyAt },
+      ],
+      createdAt: legacyAt,
+      updatedAt: legacyAt,
+    }),
+  )
+  const relServer = http.createServer((req, res) => {
+    const host = `http://127.0.0.1:${relServer.address().port}`
+    if (req.url.startsWith('/releases')) {
+      res.setHeader('content-type', 'application/json')
+      const rel = (v, pre, day) => ({
+        tag_name: `v${v}`,
+        prerelease: pre,
+        draft: false,
+        published_at: `2026-10-${day}T00:00:00Z`,
+        body: `## 新功能\n- **${v}** — 说明`,
+        html_url: `${host}/r/${v}`,
+        assets: [
+          { name: `agent-panel-${v}.tar.gz`, browser_download_url: `${host}/dl/agent-panel-${v}.tar.gz`, size: 100 },
+          { name: `agent-panel-${v}.zip`, browser_download_url: `${host}/dl/agent-panel-${v}.zip`, size: 100 },
+          { name: 'SHA256SUMS', browser_download_url: `${host}/dl/agent-panel-${v}.sums`, size: 100 },
+        ],
+      })
+      res.end(JSON.stringify([rel('0.11.9-dev', true, 16), rel('0.11.8', false, 15), rel('0.11.4', false, 10)]))
+    } else if (req.url.startsWith('/dl/') && existsSync(path.join(relDir, req.url.slice(4)))) {
+      res.end(readFileSync(path.join(relDir, req.url.slice(4))))
+    } else {
+      res.statusCode = 404
+      res.end()
+    }
+  })
+  await new Promise((r) => relServer.listen(0, '127.0.0.1', r))
+
+  const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      AGENT_PANEL_DATA: dataDir,
+      // 断言按空数据写的，不装内置工作流和 Agent（单元测试里单独测）
+      // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
+      HOME: homeDir,
+      USERPROFILE: homeDir,
+      CLAUDE_CONFIG_DIR: '',
+      CODEX_HOME: '',
+      GEMINI_CLI_HOME: '',
+      // 断言里用的是中文提示，固定用中文界面跑
+      LANG: 'zh_CN.UTF-8',
+      PORT: String(port),
+      FAKE_CLI_LOG: log,
+      AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
+      AGENT_PANEL_RELEASES_URL: `http://127.0.0.1:${relServer.address().port}/releases`,
+      AGENT_PANEL_APP_DIR: appDir,
+      AGENT_PANEL_VERSION: '0.11.5',
+      AGENT_PANEL_NO_RESTART: '1',
+      // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
+      AGENT_PANEL_MINUTE_MS: '1500',
+      // 假 CLI 的模拟耗时：普通回合 80ms（默认 150ms），慢回合 2.4s（默认 10s）。
+      // 需要「任务还在跑」的用例都是等 CLI 启动后再操作（waitFor），不靠等满整段时间
+      FAKE_TURN_MS: '80',
+      FAKE_SLOW_ROUND_MS: '120',
+      FAKE_SLOW_ROUNDS: '20',
+      AGENT_PANEL_REDIRECT_MS: '600',
+      // 对话页切走后的宽限也缩短，测试不用等一分钟
+      AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
+    },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  /**
+   * 退出前要收尾的资源：临时起的 server、子进程。都登记进来，断言失败时统一关掉。
+   * 不登记的话，没关的 server 会一直占着事件循环，进程明明已经失败却不退出，CI 会挂到超时才结束
+   */
+  const cleanups = new Set()
+  const onExit = (fn) => {
+    cleanups.add(fn)
+    // 返回值可以立刻关掉这个资源，同时从登记表里去掉，退出时不会再关第二次
+    return () => {
+      if (!cleanups.delete(fn)) return
+      fn()
+    }
+  }
+  const cleanupAll = () => {
+    // 后起的先关（临时 server 可能依赖先起的那几个）
+    for (const fn of [...cleanups].reverse()) {
+      cleanups.delete(fn)
+      try {
+        fn()
+      } catch {}
+    }
+  }
+  onExit(() => server.kill())
+  // close() 只是停止接受新连接，已经建好的 keep-alive 连接会一直挂着（进程因此退不出去），
+  // 所以先把它们断掉再关
+  onExit(() => {
+    relServer.closeAllConnections()
+    relServer.close()
+  })
+  process.on('exit', cleanupAll)
+  // 主流程之外抛出的错误（后台 promise、写文件失败）也走同一套收尾，不要留下半开的服务
+  const fail = (e) => {
+    console.error(e)
+    process.exitCode = 1
+    cleanupAll()
+    process.exit(1)
+  }
+  process.on('uncaughtException', fail)
+  process.on('unhandledRejection', fail)
+
+  const call = async (method, url, body) => {
+    // 下面大部分用例测的是按连线自动执行（每次调用的顺序、提示词都按这个断言）；没有编排器的那条单独写明 dispatch: true
+    if (
+      (method === 'POST' || method === 'PUT') &&
+      /^\/workflows(\/[^/]+)?$/.test(url) &&
+      body &&
+      body.dispatch === undefined
+    )
+      body = { ...body, dispatch: false }
+    const r = await fetch(baseUrl + url, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body && JSON.stringify(body),
+    })
+    const j = r.status === 204 ? null : await r.json()
+    if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${JSON.stringify(j)}`)
+    return j
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  /**
+   * 等一个条件成立：条件一到就继续，不用整段时间都等满；超时才失败并打印当时的实际状态。
+   * 固定 sleep 既慢又容易偶发失败（机器慢一点就不够），等状态出现更准
+   */
+  async function waitFor(fn, { timeout = 10000, interval = 50, label = '条件', describe } = {}) {
+    const t0 = Date.now()
+    for (;;) {
+      const result = await fn()
+      if (result) return result
+      if (Date.now() - t0 > timeout) {
+        const state = describe ? await describe().catch((e) => `（读状态失败：${e}）`) : ''
+        throw new Error(`等待超时：${label}${state ? `，当前状态：${JSON.stringify(state)}` : ''}`)
+      }
+      await sleep(interval)
+    }
+  }
+  async function waitDone(id, timeout = 20000) {
+    const t0 = Date.now()
+    for (;;) {
+      const t = await call('GET', `/tasks/${id}`)
+      if (t.status !== 'running') return t
+      if (Date.now() - t0 > timeout) throw new Error(`任务 ${id} 超时仍在执行`)
+      // 轮询间隔短一点：任务本身很快，150ms 会让每一步都多等一截
+      await sleep(60)
+    }
+  }
+  /** 等到条件成立（任务停下且 ok(t) 为真）：开独立分支后面板会马上接着开下一轮，中间可能短暂停下 */
+  async function waitTask(id, ok, timeout = 30000) {
+    const t0 = Date.now()
+    for (;;) {
+      const t = await call('GET', `/tasks/${id}`)
+      if (t.status !== 'running' && ok(t)) return t
+      if (Date.now() - t0 > timeout) throw new Error(`任务 ${id} 超时：${t.status}`)
+      await sleep(60)
+    }
+  }
+  const readLog = (f) =>
+    existsSync(f)
+      ? readFileSync(f, 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => JSON.parse(l))
+      : []
+  const calls = () => {
+    const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
+    return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
+  }
+
+  // 看门狗：某一步卡住（等一个永远不返回的请求）时打印最后完成的步骤并失败退出，
+  // 别让一整轮 e2e 把 CI 拖到 workflow 的超时。分片并行后每个分片各有一个，互不影响
+  const WATCHDOG_MS = Number(process.env.AGENT_PANEL_E2E_WATCHDOG_MS ?? 10 * 60_000)
+  // 计时：step 在该步断言全部跑完后调用，所以两次 step 的时间差就是上一步的耗时。
+  // 没有这个数字就不知道优化该往哪放，也不知道改完到底快了多少
+  const startedAt = Date.now()
+  const fmtMs = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)
+  const timings = []
+  let lastStepAt = startedAt
+  let lastStep = '启动服务'
+  const step = (name) => {
+    const now = Date.now()
+    const ms = now - lastStepAt
+    lastStepAt = now
+    timings.push({ name, ms })
+    lastStep = name
+    console.log(`✓ ${name}（${fmtMs(ms)}）`)
+  }
+  const watchdog = setTimeout(() => {
+    console.error(`[${shardName}] 超过 ${Math.round(WATCHDOG_MS / 60000)} 分钟没有跑完，最后完成：${lastStep}`)
+    cleanupAll()
+    process.exit(1)
+  }, WATCHDOG_MS)
+
+  // 分片并行时几个 tsx 服务同时启动，机器忙时首次编译要十几秒：最多等 60 秒，
+  // 不要把「还在编译」误当成「服务没起来」
+  for (let i = 0; ; i++) {
+    try {
+      await call('GET', '/health')
+      break
+    } catch {
+      if (i > 600) throw new Error('服务没有启动（等了 60 秒）')
+      await sleep(100)
+    }
+  }
+
+  // ---- 各分片共用的基础数据 ----
+  // 基础 CLI 配置：都指向假 CLI，带一个环境变量（断言会检查它传给了子进程）
+  const cli = (extra = {}) => ({
+    enabled: true,
+    command: fake,
+    defaultModel: '',
+    permission: '',
+    extraArgs: [],
+    env: [{ key: 'FOO', value: 'bar' }],
+    ...extra,
+  })
+  const putSettings = async () => {
+    const settings = {
+      stepTimeoutMinutes: 5,
+      clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli(), pi: cli() },
+    }
+    await call('PUT', '/settings', settings)
+    return { cli, settings }
+  }
+  const createAgents = async () => {
+    const agent = (o) =>
+      call('POST', '/agents', {
+        description: '',
+        model: '',
+        icon: 'bot',
+        categoryId: '',
+        instructions: '',
+        extraArgs: [],
+        enabled: true,
+        ...o,
+      })
+    const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
+    const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
+    const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
+    return { agent, A, B, C }
+  }
+  const createWorkflow = async (A, B, C) => {
+    const node = (id, title, agentId, instructions, more = {}) => ({
+      id,
+      title,
+      agentId,
+      instructions,
+      x: 0,
+      y: 0,
+      ...more,
+    })
+    let eid = 0
+    const edges = (...pairs) => pairs.map(([from, to]) => ({ id: `e${++eid}`, from, to }))
+    const flow = (id, name, nodes, es) => ({ id, name, nodes, edges: edges(...es) })
+    const wf = await call('POST', '/workflows', {
+      name: '三阶段',
+      description: '',
+      mainAgentId: A.id,
+      members: [
+        { agentId: B.id, responsibility: '' },
+        { agentId: C.id, responsibility: '' },
+      ],
+      flows: [
+        flow(
+          'main',
+          '主流程',
+          [
+            node('n1', '分析', '', '先分析。'),
+            node('n2', '实现', B.id, '写代码。'),
+            node('n3', '文档', C.id, '写文档。'),
+            node('n4', '验收', '', '检查结果。'),
+            node('n5', '没连上', '', ''),
+          ],
+          [
+            ['start', 'n1'],
+            ['n1', 'n2'],
+            ['n1', 'n3'],
+            ['n2', 'n4'],
+            ['n3', 'n4'],
+            ['n4', 'end'],
+          ],
+        ),
+      ],
+      entryFlowId: 'main',
+      document: '# 目标\n测试\n',
+    })
+    return { node, edges, flow, wf }
+  }
+  const createProject = async (wf) =>
+    call('POST', '/projects', {
+      name: '测试项目',
+      description: '',
+      path: projectDir,
+      categoryId: '',
+      workflowId: wf.id,
+      // 下面大部分子对话的测试按共用目录写；独立 worktree 有单独的测试
+      childIsolation: 'claim',
+    })
+  /** 大部分分片要的完整基础数据：设置、Agent、工作流、项目 */
+  const setupBase = async () => {
+    const { cli: cliOf, settings } = await putSettings()
+    const agents = await createAgents()
+    const wfParts = await createWorkflow(agents.A, agents.B, agents.C)
+    const project = await createProject(wfParts.wf)
+    return { cli: cliOf, settings, ...agents, ...wfParts, project }
+  }
+
+  const api = {
+    root,
+    fake,
+    tmp,
+    dataDir,
+    homeDir,
+    projectDir,
+    appDir,
+    relDir,
+    relPort: relServer.address().port,
+    log,
+    port,
+    baseUrl,
+    freePort,
+    PNG_1PX,
+    git,
+    gitIn,
+    call,
+    sleep,
+    waitFor,
+    waitDone,
+    waitTask,
+    calls,
+    readLog,
+    step,
+    onExit,
+    cli,
+    putSettings,
+    createAgents,
+    createWorkflow,
+    createProject,
+    setupBase,
+  }
+
+  const reportTimings = () => {
+    const total = Date.now() - startedAt
+    const top = [...timings].sort((a, b) => b.ms - a.ms).slice(0, 10)
+    console.log(`\n[${shardName}] 总耗时 ${fmtMs(total)}，共 ${timings.length} 步`)
+    if (top.length) {
+      console.log('最慢的 10 步：')
+      top.forEach((t, i) => console.log(`  ${String(i + 1).padStart(2)}. ${fmtMs(t.ms).padStart(7)}  ${t.name}`))
+    }
+    // 分片并行时由 runner 通过这个环境变量把每个分片的计时收集到一个文件里
+    const out = process.env.AGENT_PANEL_E2E_TIMINGS
+    if (out) {
+      try {
+        mkdirSync(path.dirname(out), { recursive: true })
+        writeFileSync(out, JSON.stringify({ shard: shardName, total, steps: timings, top }, null, 2))
+      } catch (e) {
+        console.error(`[${shardName}] 写计时文件失败：`, e)
+      }
+    }
+  }
+
+  try {
+    await fn(api)
+    console.log(`[${shardName}] 全部通过`)
+  } catch (e) {
+    console.error(e)
+    process.exitCode = 1
+  } finally {
+    clearTimeout(watchdog)
+    cleanupAll()
+    reportTimings()
+    // 收尾后可能还有句柄拖着事件循环（测试自己起的 fetch 连接池、子进程管道）。
+    // unref 的定时器只有在这种情况下才会触发：到点就直接按退出码退出，不再等它们自然关闭
+    setTimeout(() => {
+      if (process.exitCode) console.error('收尾后还有管道 / 连接没关，按退出码强制退出')
+      process.exit(process.exitCode ?? 0)
+    }, 2000).unref()
+  }
+}

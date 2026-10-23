@@ -444,6 +444,15 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 模拟一次调用要花的时间：默认和真实 CLI 一样有一点延迟，e2e 通过环境变量压到最小。
+// 只有专门验证时序的用例（插话、停止、执行中发消息）才需要慢回合持续得久一点
+const envMs = (name, def) => {
+  const v = Number(process.env[name])
+  return Number.isFinite(v) && v >= 0 ? v : def
+}
+const TURN_MS = envMs('FAKE_TURN_MS', 150)
+const SLOW_ROUND_MS = envMs('FAKE_SLOW_ROUND_MS', 250)
+const SLOW_ROUNDS = envMs('FAKE_SLOW_ROUNDS', 40)
 // 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
 // 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
 /** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取 */
@@ -670,7 +679,7 @@ const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上�
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
-for (let i = 0; i < (slow ? 40 : 1) && !interrupted; i++) await sleep(slow ? 250 : 150)
+for (let i = 0; i < (slow ? SLOW_ROUNDS : 1) && !interrupted; i++) await sleep(slow ? SLOW_ROUND_MS : TURN_MS)
 // 被中断：像真的 CLI 一样结束这一轮，进程自己退出
 if (interrupted) {
   if (kind === 'codex') {
