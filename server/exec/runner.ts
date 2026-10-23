@@ -58,6 +58,7 @@ import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
+import { redirectWait } from './redirect.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -297,13 +298,17 @@ export async function steerTask(
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
 /**
  * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
- * 读文件、改文件和多数检查几秒就完，留一点余量，免得用户一发消息就把快跑完的命令打断
+ * 会改文件、装依赖、跑测试的命令按这个阈值打断；只读命令（ls、rg、git log、git worktree list）
+ * 跑完这批工具就会被取走，等它自然结束，真卡住了才按 REDIRECT_READONLY_AFTER_MS 兜底（见 redirect.ts）
  */
 // 测试用环境变量缩短，免得端到端测试真的等
 const REDIRECT_AFTER_MS = Number(process.env.AGENT_PANEL_REDIRECT_MS) || 8000
+/** 只读命令卡住时的兜底：比普通命令宽得多，让读代码、看历史的命令先跑完 */
+const REDIRECT_READONLY_AFTER_MS =
+  Number(process.env.AGENT_PANEL_REDIRECT_READONLY_MS) || Math.max(REDIRECT_AFTER_MS * 5, 40_000)
 /** 停下命令后跟补充一起交给模型的说明 */
 const REDIRECT_NOTE =
-  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
+  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断：这条命令已经取消，它的输出不完整，不要当成结果使用。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
@@ -1195,7 +1200,8 @@ async function runAgent(
   let redirectTimer: ReturnType<typeof setTimeout> | undefined
   /**
    * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
-   * 用户就一直等不到回应。超过 REDIRECT_AFTER_MS 就停下这条命令，让 CLI 马上处理补充
+   * 用户就一直等不到回应。超过阈值就停下这条命令，让 CLI 马上处理补充；
+   * 只读命令等它自己跑完（这批工具结束时 CLI 就会取补充），卡住了才按更长的阈值停
    */
   const checkRedirect = () => {
     clearTimeout(redirectTimer)
@@ -1203,9 +1209,12 @@ async function runAgent(
     const c = control
     if (!steerPending || finished || !c?.redirect) return
     // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
-    const started = [...toolStart].filter(([x]) => x.kind === 'run').map(([, at]) => at)
-    if (!started.length) return
-    const wait = Math.min(...started) + REDIRECT_AFTER_MS - Date.now()
+    const wait = redirectWait(
+      [...toolStart].map(([x, at]) => ({ kind: x.kind, label: x.label, startedAt: at })),
+      Date.now(),
+      { command: REDIRECT_AFTER_MS, readOnly: REDIRECT_READONLY_AFTER_MS },
+    )
+    if (wait === undefined) return
     if (wait > 0) {
       redirectTimer = setTimeout(checkRedirect, wait)
       redirectTimer.unref?.()
