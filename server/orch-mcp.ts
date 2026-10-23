@@ -123,7 +123,7 @@ export function orchTools(o: Orchestra) {
             name: 'set_plan',
             title: '更新计划',
             description:
-              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；整份完成后必须调用 finish_plan 写总结。返回合并后的计划和每一步的 id。',
+              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。返回合并后的计划和每一步的 id。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -145,17 +145,17 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'finish_plan',
-            title: '计划总结',
-            description: '计划的步骤全部完成后调用（必须）：写这份计划的总结，计划就此结束，之后的新内容开新计划。',
+            title: '结束计划',
+            description:
+              '主动结束这份计划（步骤全部完成时计划本来就会自动结束）。不用写总结，传了也不保存；之后有新内容用 set_plan 开新计划。',
             inputSchema: {
               type: 'object',
               properties: {
                 summary: {
                   type: 'string',
-                  description: '总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题。用户会在计划窗口里看到',
+                  description: '不用写：给这一步留的兼容字段，传了也不会保存',
                 },
               },
-              required: ['summary'],
             },
           },
         ]
@@ -713,7 +713,7 @@ export function orchHint(o: Orchestra) {
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const bg =
-    (o.plans ? 'set_plan 列执行计划、随时更新进度，计划做完用 finish_plan 写总结；' : '') +
+    (o.plans ? 'set_plan 列执行计划、随时更新进度；' : '') +
     (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
     (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =

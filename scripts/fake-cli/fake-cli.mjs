@@ -493,8 +493,7 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
 }
-// 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果；
-// 面板追要总结时（计划都完成了还没写总结）调用 finish_plan
+// 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果
 if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   await panelCall('set_plan', {
     title: '后台等待',
@@ -502,11 +501,12 @@ if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   })
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '端到端测试', step: '2' })
 }
+// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
+if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
+  await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
 if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
-if (input.includes('还没写总结') && input.includes('finish_plan'))
-  await panelCall('finish_plan', { summary: '改好了代码，测试通过' })
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后交给面板合回去
 if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
   writeFileSync('child-done.txt', 'done\n')

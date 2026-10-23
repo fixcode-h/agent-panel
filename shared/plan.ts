@@ -2,7 +2,7 @@
  * 对话的执行计划（task.plans）：Agent 用 set_plan 交整份列表，面板在这里合并，守住几条规则：
  * - 最多两层：主步骤和子步骤
  * - 完成的步骤锁死：之后交的列表里改它、删它都无效，同样的内容要做就新加一步
- * - 整份都完成后计划收起（doneAt），必须用 finish_plan 写总结；之后的新内容开一份新计划
+ * - 整份都完成后计划收起（doneAt），这份计划就算结束；之后的新内容直接开一份新计划（finish_plan 只是提前结束）
  * - 等待中的步骤挂着后台命令、子对话：结果回来时 settleWait 按编号找到它，成功就标完成，失败退回进行中
  * 前后端都用（界面画弹窗、服务端改状态），不能引 node 模块
  */
@@ -33,10 +33,12 @@ export function activePlan(task: Pick<Task, 'plans'>): TaskPlan | undefined {
   return last && !last.doneAt ? last : undefined
 }
 
-/** 做完了还没写总结的计划（最多一份：没写总结前不能开新计划） */
-export function unsummarized(task: Pick<Task, 'plans'>): TaskPlan | undefined {
-  const last = task.plans?.at(-1)
-  return last?.doneAt && !last.summary.trim() ? last : undefined
+/**
+ * 过渡桩：以前是「做完了还没写总结的计划」。现在计划做完就算结束，不再欠总结，这里固定返回 undefined。
+ * engine.ts 里那条追要总结的提示线还在引用它，先留着让那段自然失效；engine.ts 清掉引用后连同导出一起删。
+ */
+export function unsummarized(_task: Pick<Task, 'plans'>): TaskPlan | undefined {
+  return undefined
 }
 
 /** 弹窗和按钮显示的那份：没做完的，或者最近做完的一份 */
@@ -79,7 +81,7 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
 
 /**
  * 还没做完的计划进度：列表里显示「计划 7/8」，有它就不算交付完（不算已完成）。
- * 计划的步骤全做完了、只是还在写总结的不算（那份已经不会再执行），交给 finish_plan 那一条线。
+ * 计划的步骤全做完时计划已经收起（doneAt），不算「没做完」。
  */
 export function openPlan(task: Pick<Task, 'plans' | 'steps'>) {
   const plan = activePlan(task)
@@ -164,7 +166,7 @@ function rollUp(step: PlanStep, now: string) {
     setStatus(step, 'waiting', now)
 }
 
-/** 全部完成时收起计划：记完成时间，等 finish_plan 写总结 */
+/** 全部完成时收起计划：记完成时间，这份计划就此结束 */
 function closeIfDone(plan: TaskPlan, now: string) {
   if (plan.doneAt || !plan.steps.length) return false
   if (!plan.steps.every((s) => s.status === 'done')) return false
@@ -173,7 +175,7 @@ function closeIfDone(plan: TaskPlan, now: string) {
 }
 
 /**
- * set_plan：交整份计划。没有进行中的计划就开一份新的（上一份做完了还没写总结时不让开）。
+ * set_plan：交整份计划。没有进行中的计划就开一份新的（上一份做完了就可以直接开新的）。
  * 返回给 Agent 的说明里带上合并后的完整计划和每一项的 id
  */
 export function applyPlan(
@@ -183,12 +185,6 @@ export function applyPlan(
 ): { ok: boolean; info: string } {
   const steps = Array.isArray(input.steps) ? input.steps.filter((x) => x && typeof x === 'object') : []
   if (!steps.length) return { ok: false, info: 'steps 是空的：至少写一个主步骤' }
-  const owed = unsummarized(task)
-  if (owed)
-    return {
-      ok: false,
-      info: `上一份计划「${owed.title || '未命名'}」已经全部完成，还没写总结：先调用 finish_plan 写总结，再开新的计划。`,
-    }
   task.plans ??= []
   let plan = activePlan(task)
   if (!plan) {
@@ -282,7 +278,7 @@ export function applyPlan(
       ? `这些步骤已经完成，不再改动：${[...new Set(locked)].map((x) => `「${x}」`).join('、')}。同样的内容还要再做就新加一步。`
       : '',
     dropped.length ? `已从计划里去掉：${dropped.map((x) => `「${x}」`).join('、')}` : '',
-    closed ? '计划的步骤全部完成了：现在调用 finish_plan 写总结（必须）。' : '',
+    closed ? '计划的步骤全部完成了：这份计划结束，之后有新内容用 set_plan 开新的计划。' : '',
   ].filter(Boolean)
   return { ok: true, info: [`计划已更新：\n${planText(task, target)}`, ...notes].join('\n\n') }
 }
@@ -389,7 +385,6 @@ export function waitNote(hit: { title: string; done: boolean }[]) {
 /** 工作流做主步骤：start_plan 启动时挂上运行编号；没指定步骤就在计划末尾加一步 */
 export function bindRun(task: PlanTask, stepId: string, run: number, title: string, now = new Date().toISOString()) {
   task.plans ??= []
-  if (unsummarized(task)) return ''
   let plan = activePlan(task)
   if (!plan) {
     plan = {
@@ -425,22 +420,24 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
   closeIfDone(plan, now)
 }
 
-/** finish_plan：给做完的计划写总结。还有没完成的步骤时不收 */
-export function finishPlan(task: PlanTask, summary: string): { ok: boolean; info: string } {
-  const text = summary.trim()
-  if (!text) return { ok: false, info: 'summary 是空的：写这份计划做了什么、结果怎样、有什么遗留' }
-  const owed = unsummarized(task)
-  if (owed) {
-    owed.summary = text.slice(0, 6000)
-    owed.autoSummary = false
-    return { ok: true, info: '总结已记下，这份计划结束。之后有新内容时用 set_plan 开新的计划。' }
-  }
-  const cur = activePlan(task)
-  if (!cur) return { ok: false, info: '现在没有要写总结的计划' }
-  const left = cur.steps.filter((s) => s.status !== 'done')
+/**
+ * finish_plan：结束这份计划。步骤全完成时计划本来就已经收起，这里是主动结束一份还没做完的计划。
+ * 不再要求写总结，传了也不保存：计划不再有「欠一份总结」这个状态。
+ */
+export function finishPlan(
+  task: PlanTask,
+  _summary?: string,
+  now = new Date().toISOString(),
+): { ok: boolean; info: string } {
+  const plan = activePlan(task)
+  if (!plan) return { ok: false, info: '现在没有进行中的计划' }
+  const left = plan.steps.filter((s) => s.status !== 'done')
+  plan.doneAt ||= now
   return {
-    ok: false,
-    info: `计划还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}。做完再写总结；不做了就用 set_plan 把它们从计划里去掉。`,
+    ok: true,
+    info: left.length
+      ? `这份计划结束了。还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}，它们留在计划里。之后有新内容用 set_plan 开新的计划。`
+      : '这份计划结束了。之后有新内容用 set_plan 开新的计划。',
   }
 }
 
