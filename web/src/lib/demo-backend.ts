@@ -2115,9 +2115,12 @@ function tasksRoute(
     persist()
     return task
   }
-  // 演示里没有真的项目目录，看不到文件内容
-  if (sub === 'file')
-    return { path: query.get('path') ?? '', dir: '', exists: false, content: '', truncated: false, demo: true }
+  // 演示里没有真的项目目录：示例工程里的文件按演示内容返回，别的文件说明看不到
+  if (sub === 'file') {
+    const want = (query.get('path') ?? '').replace(/^\.\//, '')
+    const content = DEMO_CONTENTS[want]
+    return { path: want, dir: '', exists: content !== undefined, content: content ?? '', truncated: false }
+  }
   // 任务右栏的文件：根信息、按层读取、搜索，和正式版一致；改过的文件带上状态
   if (sub === 'files') {
     const p = d.projects.find((x) => x.id === task.projectId)

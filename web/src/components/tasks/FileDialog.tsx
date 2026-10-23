@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { editorUrl } from '@/lib/editor-url'
+import { isImagePath } from '@/lib/file-path'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Lightbox } from '@/components/ui/lightbox'
@@ -13,34 +14,14 @@ import { Lightbox } from '@/components/ui/lightbox'
 export const FileOpenCtx = createContext<((path: string, line?: number) => void) | null>(null)
 export const useFileOpen = () => useContext(FileOpenCtx)
 
-const EXT =
-  'ts|tsx|js|jsx|mjs|cjs|json|jsonc|md|mdx|css|scss|less|html|vue|svelte|py|go|rs|java|kt|swift|c|h|cc|cpp|hpp|cs|rb|php|yml|yaml|toml|ini|sql|sh|ps1|bat|txt|xml|gradle|dart|lua|proto|graphql|env|lock'
-/**
- * 看起来像文件路径的行内代码：带目录的（src/a.ts、./x/y.json），或者常见代码文件的扩展名；后面可以跟 :行号 或 :行号:列号。
- * 「console.log」「a.b」这类不算
- */
-const PATH = new RegExp(
-  `^((?:\\.{0,2}/|[A-Za-z]:[\\\\/])?(?:[\\w@.\\-]+[\\\\/])+[\\w@.\\-]+\\.\\w+|[\\w@\\-][\\w@.\\-]*\\.(?:${EXT}))(?::(\\d+)(?::\\d+)?)?$`,
-)
-export function parsePath(s: string): { path: string; line?: number } | null {
-  const m = PATH.exec(s.trim())
-  return m ? { path: m[1], line: m[2] ? Number(m[2]) : undefined } : null
-}
-
-/** 渲染好的 Markdown 里，把像路径的行内代码（不在代码块里的）标成可以点的 */
-export function linkPaths(html: string) {
-  return html.replace(/(<pre[^>]*>\s*)?<code>([^<\n]+)<\/code>/g, (all, pre: string | undefined, text: string) => {
-    if (pre) return all
-    const raw = text.replace(/&amp;/g, '&')
-    if (!parsePath(raw)) return all
-    return `<code class="md-path" role="button" tabindex="0" data-path="${text.replace(/"/g, '&quot;')}" title="${t('查看文件')}">${text}</code>`
-  })
-}
-
 type File = Awaited<ReturnType<typeof api.taskFile>>
 
-/** 按扩展名先认出图片，直接看原图，不用等文本接口回来再切换 */
-const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i
+/** 在线演示没有项目目录：图片给一张内联的占位图，点开看大图这件事照样能演示 */
+const DEMO_IMG =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#26221f"/><text x="320" y="210" fill="#d97757" font-size="24" text-anchor="middle" font-family="sans-serif">在线演示没有真实的项目目录</text></svg>',
+  )
 
 /**
  * Agent 输出里点了一个文件路径：显示文件内容，跳到提到的那一行，可以在编辑器里打开。
@@ -59,15 +40,16 @@ export function FileDialog({
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const box = useRef<HTMLDivElement>(null)
-  const isImage = !!target && IMAGE.test(target.path)
+  const isImage = !!target && isImagePath(target.path)
   const local = !!target?.local
-  // 图片不显示文本：用看图的浮层看原图（和附件一样）；演示版没有项目目录，还是用下面的文本弹窗说明
-  const raw =
-    isImage && !import.meta.env.VITE_DEMO
-      ? local
+  // 图片不显示文本：用看图的浮层看原图（和附件一样）；演示版没有项目目录，用内联占位图
+  const raw = !isImage
+    ? ''
+    : import.meta.env.VITE_DEMO
+      ? DEMO_IMG
+      : local
         ? `/api/uploads/raw?path=${encodeURIComponent(target!.path)}`
         : api.taskFileRaw(taskId, target!.path)
-      : ''
   useEffect(() => {
     if (!target) return
     setFile(null)
