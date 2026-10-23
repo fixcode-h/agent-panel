@@ -82,7 +82,7 @@ test('linkPaths：行内代码标成可点，代码块里和不像路径的不�
       `<code class="md-path" role="button" tabindex="0" data-path="ui-shots/107-对话-图片气泡.png" title="${t('查看图片')}">`,
     ),
   )
-  assert.match(out, /data-path="web\/src\/lib\/file-path.ts" data-line="42"/)
+  assert.match(out, /data-path="web\/src\/lib\/file-path.ts" data-md-line="42"/)
   assert.match(out, new RegExp(`title="${t('查看文件')}">web/src/lib/file-path.ts:42</code>`))
   assert.ok(out.includes('<code>console.log</code>'), 'console.log 不该变成链接')
   assert.ok(out.includes('<code>1.2.3</code>'), '版本号不该变成链接')

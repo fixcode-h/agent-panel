@@ -89,7 +89,7 @@ export function linkPaths(html: string) {
       const p = parsePath(unescapeHtml(text))
       if (!p) return all
       const attr = (v: string) => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-      const line = p.line ? ` data-line="${p.line}"` : ''
+      const line = p.line ? ` data-md-line="${p.line}"` : ''
       const tip = t(isImagePath(p.path) ? '查看图片' : '查看文件')
       return `<code class="md-path" role="button" tabindex="0" data-path="${attr(p.path)}"${line} title="${tip}">${text}</code>`
     },
