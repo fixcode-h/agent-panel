@@ -770,6 +770,11 @@ const ProjectFields = z.object({
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
+   * 「AI 初始化项目」完成并应用的时间（ISO）。空表示还没初始化：项目设置里要先初始化才能确认保存，
+   * 旧项目也是空的，第一次打开设置时补做一次
+   */
+  initializedAt: z.string().max(40).default(''),
+  /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
    */

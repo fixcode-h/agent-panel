@@ -428,13 +428,7 @@ ${BUG_METHOD}
     icon: 'search',
     model: '@medium',
     common: true,
-    skills: [
-      'project-documentation',
-      'test-driven-development',
-      'software-architecture-design',
-      'ue-multi-agent-coordination',
-      'cpp-code-style',
-    ],
+    skills: ['project-documentation', 'test-driven-development', 'software-architecture-design', 'cpp-code-style'],
     params: [
       SCENE,
       p({
@@ -554,7 +548,7 @@ ${VCS_TEXT}
     icon: 'test',
     model: '@medium',
     common: true,
-    skills: ['project-testing', 'verification-before-completion', 'ue-multi-agent-coordination'],
+    skills: ['project-testing', 'verification-before-completion'],
     params: [
       p({
         key: 'scope',

@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { chipMarker, commandChip, type ChipKind } from '@shared/composer'
+import { builtinCommands } from '@shared/commands'
 import type { RichInputHandle } from './RichInput'
 
 /** 面板自己执行的命令：不发给 CLI，直接调对应的操作 */
@@ -37,36 +38,15 @@ function slashQuery(text: string, caret: number) {
   return { start, q }
 }
 
-/** 内置命令：压缩、审查由面板执行；init 每个 CLI 都能用（Claude Code 自己有，其他的由面板展开）；security-review 只有 Claude Code 有 */
-function builtins(cli: string, scope: SlashScope): Item[] {
+/**
+ * 内置命令（shared/commands.ts）：压缩、审查由面板执行；其余的每个 CLI 都能用——CLI 自己有同名命令的（例如
+ * Claude Code 的 init）原样发过去，没有的由面板展开成要求
+ */
+function builtins(scope: SlashScope): Item[] {
   if (scope === 'skills') return []
-  const list: (Item & { clis?: string[] })[] = [
-    {
-      name: 'compact',
-      description: t('压缩上下文：把之前的对话压成摘要，腾出上下文'),
-      group: 'builtin',
-      action: 'compact',
-    },
-    {
-      name: 'review',
-      description: t('审查还没提交的改动；后面跟分支名就审查相对这个分支的改动'),
-      group: 'builtin',
-      hint: t('[分支]'),
-      action: 'review',
-    },
-    {
-      name: 'init',
-      description: t('分析项目，写一份给 Agent 看的项目说明（CLAUDE.md / AGENTS.md）'),
-      group: 'builtin',
-    },
-    {
-      name: 'security-review',
-      description: t('检查当前分支改动里的安全问题'),
-      group: 'builtin',
-      clis: ['claude'],
-    },
-  ]
-  return list.filter((x) => (!x.clis || x.clis.includes(cli)) && (scope === 'task' || !x.action))
+  return builtinCommands()
+    .filter((x) => scope === 'task' || !x.action)
+    .map((x) => ({ name: x.name, description: x.description, hint: x.hint, group: 'builtin', action: x.action }))
 }
 
 // CLI 的命令和 Skill 读一次要起进程（Codex），同一个 CLI 和项目一分钟内用缓存
@@ -132,8 +112,10 @@ export function useSlashMenu({
   }, [cli, projectId, query === null])
 
   const kw = (query ?? '').toLowerCase()
+  // 自定义命令和内置命令同名时发出去用的是自定义的（服务端先找 CLI 和「所有 Agent」的命令），菜单里只留它
+  const own = new Set((cmds ?? []).map((c) => c.name))
   const all: Item[] = [
-    ...builtins(cli, scope),
+    ...builtins(scope).filter((x) => x.action || !own.has(x.name)),
     ...(cmds ?? []).map(
       (c): Item => ({ name: c.name, description: c.description, group: c.kind, hint: c.hint, source: c.source }),
     ),

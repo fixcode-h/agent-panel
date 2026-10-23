@@ -6,7 +6,8 @@ import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
 import { libraryName, type LibraryCli, type LibraryFile, type LibraryItem } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
-import { readCommand, scanCommands } from './slash.ts'
+import { clearSlashCache, panelCommandDir, readCommand, scanCommands } from './slash.ts'
+import { ALL_AGENTS } from '../shared/commands.ts'
 import { installBundled, listBundled } from './bundled-skills.ts'
 import { getSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
@@ -14,16 +15,39 @@ import { cliSettings } from '../shared/settings.ts'
 /**
  * Skills / 命令库：管各 CLI 用户目录下的 Skill 和自定义命令（项目里的归项目管）。
  * 目录来自 CLI 定义；Codex 的 Skill 由 app-server 列出，没写目录，这里用它读取的 $CODEX_HOME/skills。
+ * 命令另有一个「所有 Agent」（ALL_AGENTS）：放在面板的数据目录里，由面板展开，每个 CLI 都能用。
  */
 
 type Kind = 'skill' | 'command'
 
+/** 库里的一个位置：一个 CLI 的用户目录，或「所有 Agent」共用的命令目录 */
+interface Home {
+  id: string
+  name: string
+  skill: string
+  command: string
+  format: 'md' | 'toml'
+}
+
 const skillRoot = (d: CliDefinition) => d.skills.user[0] ?? d.rpc?.skillsDir ?? ''
 
-const roots = (d: CliDefinition) => ({
+const cliHome = (d: CliDefinition): Home => ({
+  id: d.id,
+  name: d.name,
   skill: skillRoot(d) && expandHome(skillRoot(d)),
   command: d.commands.user[0] ? expandHome(d.commands.user[0]) : '',
+  format: d.commands.format,
 })
+
+const allAgentsHome = (): Home => ({
+  id: ALL_AGENTS,
+  name: t('所有 Agent'),
+  skill: '',
+  command: panelCommandDir(),
+  format: 'md',
+})
+
+const homeOf = (cli: string) => (cli === ALL_AGENTS ? allAgentsHome() : getCli(cli) && cliHome(getCli(cli)!))
 
 /** 只处理启用的 CLI：停用的不在技能库、复制目标这些地方出现 */
 async function activeClis() {
@@ -31,23 +55,27 @@ async function activeClis() {
   return CLIS.filter((d) => cliSettings(settings, d.id).enabled)
 }
 
+/** 库里的位置：「所有 Agent」排第一 */
+async function homes() {
+  return [allAgentsHome(), ...(await activeClis()).map(cliHome)]
+}
+
 export async function libraryClis(): Promise<LibraryCli[]> {
-  return (await activeClis()).flatMap((d) => {
-    const r = roots(d)
-    return r.skill || r.command
-      ? [{ id: d.id, name: d.name, skillDir: r.skill, commandDir: r.command, commandFormat: d.commands.format }]
-      : []
-  })
+  return (await homes()).flatMap((h) =>
+    h.skill || h.command
+      ? [{ id: h.id, name: h.name, skillDir: h.skill, commandDir: h.command, commandFormat: h.format }]
+      : [],
+  )
 }
 
 /** 要操作的目录：名字合法，并且落在 CLI 的用户目录里 */
 function target(cli: string, kind: Kind, name: string) {
-  const d = getCli(cli)
-  const root = d && roots(d)[kind]
+  const d = homeOf(cli)
+  const root = d && d[kind]
   if (!d || !root)
     throw new Error(t('这个 Agent 没有用户级的{kind}目录', { kind: kind === 'skill' ? 'Skill' : t('命令') }))
   if (!libraryName(kind, name)) throw new Error(t('名字只能用字母、数字、. _ -'))
-  const sub = kind === 'skill' ? name : name.split(':').join(path.sep) + `.${d.commands.format}`
+  const sub = kind === 'skill' ? name : name.split(':').join(path.sep) + `.${d.format}`
   const p = path.join(root, sub)
   if (path.relative(root, p).startsWith('..')) throw new Error(t('名字不对'))
   return { d, root, path: p, file: kind === 'skill' ? path.join(p, 'SKILL.md') : p }
@@ -55,8 +83,8 @@ function target(cli: string, kind: Kind, name: string) {
 
 export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
   const out: LibraryItem[] = []
-  for (const d of await activeClis()) {
-    const root = roots(d)[kind]
+  for (const d of await homes()) {
+    const root = d[kind]
     if (!root || !existsSync(root)) continue
     if (kind === 'skill') {
       for (const e of await readdir(root, { withFileTypes: true }).catch(() => [])) {
@@ -73,7 +101,7 @@ export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
         out.push({ cli: d.id, kind, name: e.name, description: desc, path: file })
       }
     } else {
-      for (const c of await scanCommands(root, root, d.commands.format))
+      for (const c of await scanCommands(root, root, d.format))
         out.push({ cli: d.id, kind, name: c.name, description: c.description, path: c.path })
     }
   }
@@ -105,11 +133,13 @@ export async function writeLibrary(cli: string, kind: Kind, name: string, conten
   if (create && existsSync(p.file)) throw new Error(t('「{name}」已经有了', { name }))
   await mkdir(path.dirname(p.file), { recursive: true })
   await writeFile(p.file, content, 'utf8')
+  clearSlashCache()
 }
 
 export async function deleteLibrary(cli: string, kind: Kind, name: string) {
   const p = target(cli, kind, name)
   if (!existsSync(p.file)) return
+  clearSlashCache()
   if (kind === 'command') return unlink(p.file)
   // 软链接的 Skill 只删链接，不动链接指向的原文件夹
   return (await lstat(p.path)).isSymbolicLink() ? unlink(p.path) : rm(p.path, { recursive: true })
@@ -143,9 +173,10 @@ export async function copyLibrary(cli: string, kind: Kind, name: string, to: str
     }
     await mkdir(path.dirname(dst.file), { recursive: true })
     if (kind === 'skill') await cp(src.path, dst.path, { recursive: true, dereference: true })
-    else await writeFile(dst.file, await convertCommand(src.file, src.d.commands.format, dst.d.commands.format), 'utf8')
+    else await writeFile(dst.file, await convertCommand(src.file, src.d.format, dst.d.format), 'utf8')
     done.push(id)
   }
+  clearSlashCache()
   return { done, skipped }
 }
 

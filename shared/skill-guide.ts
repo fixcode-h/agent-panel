@@ -20,11 +20,20 @@ const GUIDE: Record<string, string> = {
   'software-architecture-design': '设计或评审项目、子系统、框架架构时',
   'cpp-code-style': '写或改 C++ / UE C++ 代码时',
   'lua-code-style': '写或改 Lua 代码时',
-  'lua-luac-compiler': '把 Lua 编译成 luac 或排查 Lua 字节码构建时',
-  'ue-multi-agent-coordination': 'UE 项目里多个 Agent 并行、要避开编辑器、编译和缓存冲突时',
   blender: '用无头 Blender 建模、检查、多视角截图或导出 FBX 时',
   'blender-model-animation-workflow': '制作可拆分的 Blender 模型和循环动画时',
 }
+
+/**
+ * 下线的自带技能：本机已装的角色副本里可能还点着它们的名字（用户改过的副本不会被升级），
+ * 拼提示词、补装技能时跳过，免得 CLI 去找一个已经不存在的 SKILL.md
+ */
+export const RETIRED_SKILLS = new Set([
+  // UE 编译统一由父对话申请执行，资源锁和编译排队由面板管，不再需要这份协调规则
+  'ue-multi-agent-coordination',
+  // .luac 只由项目测试步骤里的编译生成
+  'lua-luac-compiler',
+])
 
 /** 提示词里的一行：`- \`名字\`：什么时候用` */
 export function skillLine(name: string) {

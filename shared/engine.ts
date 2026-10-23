@@ -315,7 +315,14 @@ export interface Orchestra {
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitMerge(note: string, tests: string): Promise<{ ok: boolean; info: string }>
+  submitMerge(note: string, tests: string, build?: boolean): Promise<{ ok: boolean; info: string }>
+  /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
+  ueBuild: '' | 'child' | 'parent'
+  requestBuild(note: string, step?: string): Promise<{ ok: boolean; info: string }>
+  /** 父对话之间：列出同一项目里的其他父对话、给它们传话 */
+  peers: boolean
+  listPeers(): Promise<string>
+  messagePeer(id: string, text: string): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean, options?: string[], kind?: AskKind): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
@@ -437,7 +444,21 @@ export interface EngineHost {
    */
   wrapUp?: WrapUpKind
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
-  submitMerge?: (note: string, tests: string) => Promise<{ ok: boolean; info: string }>
+  submitMerge?: (note: string, tests: string, build?: boolean) => Promise<{ ok: boolean; info: string }>
+  /**
+   * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
+   * child：子对话不编译，改完向父对话申请；build 为 true 的 submit_merge 合回去后也自动申请。
+   * parent：父对话收到申请（或用户要求）后向面板占位编译，面板按编译目录排队：同一目录同一时间只编译一次，
+   * 各自 worktree 的目录互不占位；结果推回父对话
+   */
+  ueBuild?: {
+    role: 'child' | 'parent'
+    request: (note: string) => Promise<{ ok: boolean; info: string; id?: string }>
+  }
+  /** 父对话：同一项目里的其他父对话（顶层对话），building 是它占着的编译（没有为空） */
+  peers?: () => Promise<{ id: string; title: string; status: string; busy: boolean; building: string }[]>
+  /** 父对话给另一个父对话传话：它正在执行就实时送达，空闲就放进它的收件箱 */
+  messagePeer?: (id: string, text: string) => Promise<{ ok: boolean; info: string }>
   /**
    * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
    * 不传时提示里不带这一段（没有项目的聊天、在线演示）
@@ -923,12 +944,41 @@ function fileFormatPart(host: EngineHost) {
  * 分支目录是新检出的，没有依赖和编译产物，不说的话 Agent 会以为环境坏了
  */
 function buildPart(host: EngineHost) {
+  // UE 项目的子对话不编译：「在分支里编译测试」那一段换成申请编译
+  if (host.ueBuild) return uePart(host)
   if (!host.submitMerge) return ''
   return `## 在独立分支里验证，再合回原分支
 编译、测试都在你这个独立分支的目录里跑，不用交给别人。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
 - 测试跑通就是完成的标记：按下面的「验证」跑通后调用 submit_merge，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成，独立分支随后回收。有冲突会撤回并把冲突推回给你。
 - 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
+}
+
+/**
+ * UE 项目的编译归父对话：UBT / UHT、Editor、DDC 是整台机器共用的，几个子对话各编各的只会互相抢锁、
+ * 撑满机器。子对话只改代码、做不用编译的检查，编译向父对话申请；父对话也不随手编译，
+ * 收到申请才向面板占位，面板按编译目录排队（同一目录同一时间只编译一次，各自 worktree 的目录互不占位）
+ */
+function uePart(host: EngineHost) {
+  const ue = host.ueBuild
+  if (!ue) return ''
+  if (ue.role === 'parent')
+    return `## UE 编译按申请占位执行
+这是 UE 项目：编译只在父对话这一层发起，子对话不编译（上面说子对话自己编译测试的地方，在这个项目里都以这里为准）。你也不随手编译：
+- 只在收到子对话的编译申请（消息里写着「编译申请」）或用户要求时，调用 request_build 向面板申请编译。几个申请先后到了就合成一次，note 写清为了哪些子对话、哪些改动。
+- 编译是占位的资源：面板按编译目录排队，同一目录同一时间只编译一次。同一目录里别的父对话占着时，你的申请排在后面，面板会告诉你占着的是谁，也会告诉对方你在等；各自在独立 worktree 里的不互相占位。不要用 run_background 或直接执行 Build.bat、UBT、UHT、Editor 来绕过排队。
+- 编译结果会推回给你：失败时按报错位置判断是哪个子对话的改动，用 send_to_conversation 交回给它修，修好它会再申请；通过就告诉申请的子对话和用户。
+- 同一项目里还有别的父对话时：用 list_peers 看它们在做什么、谁占着编译；要协调（例如你要等它的编译、它要改你这边也在改的公共文件）用 message_peer 传话，不要替它做决定。`
+  return `## UE 编译交给父对话申请
+这是 UE 项目：编译（Build.bat、UBT、UHT）、Cook、启动 Editor 都不在子对话里做，面板也会拦下这类后台命令。你只改代码，做不需要编译的检查（Lua 语法、静态检查、对照调用方自查），编译向父对话申请：
+${
+  host.submitMerge
+    ? `- 检查完调用 submit_merge，tests 写上做了哪些检查，并写明「UE 编译已申请父对话」；build 保持 true，合回原分支后面板替你向父对话申请编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
+- 合回去不等于编译通过：编译报错时父对话会把报错交回给你，修好后再 submit_merge 一次。`
+    : `- 改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果由父对话转给你。
+- 编译报错交回来时修好再申请一次。`
+}
+- 不要因为没编译就说做不完：你的完成标准是改动和检查都交代清楚、编译申请已经发出。`
 }
 
 /** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
@@ -2436,14 +2486,40 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests) {
+    async submitMerge(note, tests, build) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim())
+      const r = await host.submitMerge(note.trim(), tests.trim(), build)
       if (r.ok) {
         system(host, t('已提交合并，等面板合回原分支'), where)
         host.changed(true)
       }
       return r
+    },
+    ueBuild: !helper && ctx.chat && host.ueBuild ? host.ueBuild.role : '',
+    async requestBuild(note, step) {
+      if (helper || !ctx.chat || !host.ueBuild) return { ok: false, info: '这里不用申请编译' }
+      if (!note.trim()) return { ok: false, info: '写清为什么要编译：哪些改动、哪些子对话申请的' }
+      const r = await host.ueBuild.request(note.trim())
+      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'background', ref: r.id, label: '编译' }) : ''
+      if (r.ok) host.changed(true)
+      return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
+    },
+    peers: !helper && !!ctx.chat && !!host.peers,
+    async listPeers() {
+      if (!host.peers) return '（这个对话不能联系其他父对话）'
+      const list = await host.peers()
+      if (!list.length) return '（这个项目里没有别的父对话）'
+      return list
+        .map(
+          (p) =>
+            `- ${p.id}｜${p.title}｜${p.busy ? '执行中' : p.status}${p.building ? `｜占着编译：${p.building}` : ''}`,
+        )
+        .join('\n')
+    },
+    async messagePeer(id, text) {
+      if (!host.messagePeer) return { ok: false, info: '这个对话不能联系其他父对话' }
+      if (!text.trim()) return { ok: false, info: 'text 不能为空' }
+      return host.messagePeer(id.trim(), text.trim())
     },
     async toParent(text, question, options, kind) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
@@ -2862,7 +2938,9 @@ async function conversationPrompt(
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
 ${
   host.task.parentTaskId
-    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
+    ? host.ueBuild
+      ? '别的子对话改不到这里，你也不用认领文件，放心改。这是 UE 项目，不在这里编译，见上面的「UE 编译交给父对话申请」。'
+      : '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
 不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${

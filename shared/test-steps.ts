@@ -237,3 +237,20 @@ export function isTestAgent(agent: { params: { key: string }[] } | undefined) {
   const keys = new Set(agent.params.map((p) => p.key))
   return keys.has('scope') && keys.has('env')
 }
+
+/**
+ * UE 项目里父对话申请编译时跑哪些步骤：标了「合并时编译」的；一条都没标时退回名字或 id 像编译的。
+ * 只取启用的，按项目里的顺序
+ */
+export function buildSteps(steps: TestStep[]) {
+  const on = steps.filter((s) => s.enabled && s.command.trim())
+  const merge = on.filter((s) => s.merge)
+  return merge.length ? merge : on.filter((s) => s.id === 'ue-build' || /编译|build|compile/i.test(s.name))
+}
+
+/** 会占用 UE 编译资源的命令（UBT、UHT、Build.bat、RunUAT、Editor）：子对话里不跑，交给父对话申请 */
+export function isUeBuildCommand(command: string) {
+  return /(^|[\s"'\\/&|;(])(Build\.(bat|sh|command)|RunUAT\.(bat|sh)|UnrealBuildTool(\.exe|\.dll)?|UnrealHeaderTool(\.exe)?|UnrealEditor(-Cmd)?(\.exe)?|UE4Editor(-Cmd)?(\.exe)?)(?=$|[\s"'])/i.test(
+    command,
+  )
+}

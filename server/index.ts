@@ -633,6 +633,9 @@ app.put('/projects/:id', async (c) => {
   // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的
   if (body && typeof body === 'object' && !('lessons' in body))
     r.data!.lessons = (await projects.get(c.req.param('id')))?.lessons ?? []
+  // 初始化标记同理：只有项目设置页会带上它，脚本改设置不会把它清掉
+  if (body && typeof body === 'object' && !('initializedAt' in body))
+    r.data!.initializedAt = (await projects.get(c.req.param('id')))?.initializedAt ?? ''
   const x = await projects.update(c.req.param('id'), r.data!)
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })

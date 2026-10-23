@@ -22,7 +22,7 @@ import {
   type DeployStatus,
 } from '../shared/deploy.ts'
 import { frontField } from '../shared/library.ts'
-import { entries, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
+import { entries, retireBundled, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
@@ -111,6 +111,8 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
       out.removed.push(e.name)
     } else if (s === 'changed') out.kept.push(e.name)
   }
+  // 已经下线的自带技能：和当初部署的一模一样才删，改过的留给用户
+  out.removed.push(...(await retireBundled(root)).map((x) => x.slice(x.lastIndexOf('/') + 1)))
   const content = composeAgentsMd(run.agentsMd, all.filter((e) => run.skills.includes(e.name)).map(describe))
   if (content.trim())
     for (const d of docClis().filter((x) => run.clis.includes(x.id))) {

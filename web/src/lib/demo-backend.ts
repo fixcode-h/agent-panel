@@ -4,7 +4,7 @@
  */
 import { demoAccounts } from './demo-accounts'
 import { demoIntegrations } from './demo-integrations'
-import { demoLibrary } from './demo-library'
+import { demoLibrary, demoPanelCommands } from './demo-library'
 import { z } from 'zod'
 import {
   Agent,
@@ -488,6 +488,8 @@ function seed(): Db {
     lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
+    // 演示项目都当作已经初始化过，打开设置能直接保存；「重新初始化」可以看推荐的样子
+    initializedAt: createdAt,
     ...o,
   })
   return {
@@ -1373,6 +1375,7 @@ function route(method: string, url: string, body: unknown): unknown {
     if (id && sub === 'commands')
       return [
         ...(DEMO_COMMANDS[id] ?? []),
+        ...demoPanelCommands(),
         ...DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo').map((x) => ({
           name: x.name,
           description: x.description,
@@ -1443,6 +1446,15 @@ function route(method: string, url: string, body: unknown): unknown {
         subject: input.subject,
         defaultCli: defaultCli(settings),
         target,
+        ...(input.kind === 'project'
+          ? {
+              projectPath: input.subject.path ?? '',
+              defaultWorkflowIds: (() => {
+                const cat = d.categories.find((c) => c.scope === 'workflow' && c.name === '项目')
+                return cat ? d.workflows.filter((w) => w.categoryId === cat.id).map((w) => w.id) : []
+              })(),
+            }
+          : {}),
         ...(input.kind === 'lessons'
           ? (() => {
               const p = d.projects.find((x) => x.id === input.projectId)
@@ -1487,6 +1499,24 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   // 演示里的项目都不是面板自己的源代码
+  // 初始化前的快速扫描：演示没有本机目录，只给几条线索
+  if (res === 'projects' && id === 'analyze' && method === 'POST') {
+    const path = String((body as { path?: string }).path ?? '')
+    return {
+      name:
+        path
+          .replace(/[\\/]+$/, '')
+          .split(/[\\/]/)
+          .pop() ?? '',
+      description: '',
+      workflow: 'general',
+      workflowParams: { projectStructure: 'project-structure' },
+      testSteps: [],
+      wslDistro: '',
+      category: '',
+      signals: ['版本控制：git', '技术栈：前端 + TypeScript'],
+    }
+  }
   if (res === 'projects' && id && sub === 'panel-source') return { panelSource: false }
   if (res === 'projects' && id && sub === 'files') {
     const q = (query.get('q') ?? '').toLowerCase()

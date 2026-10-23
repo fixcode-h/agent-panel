@@ -315,6 +315,8 @@ export const CliSpec = z.object({
       autoCompactEnv: z.string().default(''),
       /** 会话里认识「/命令」和「/Skill」，原样发过去；否则面板展开 */
       slash: z.boolean().default(false),
+      /** 会话里自己就有的内置命令（例如 init）：面板的同名内置命令原样发过去，不再展开 */
+      nativeCommands: z.array(z.string()).default([]),
       /** 设置里手动改的上下文窗口、最大输出用哪个环境变量传给 CLI；不写表示 CLI 不接受 */
       limitEnv: z.object({ context: z.string().optional(), maxOutput: z.string().optional() }).default({}),
       /**
@@ -340,6 +342,7 @@ export const CliSpec = z.object({
       autoCompact: 'panel',
       autoCompactEnv: '',
       slash: false,
+      nativeCommands: [],
       limitEnv: {},
       modelSwitch: false,
     }),
@@ -508,6 +511,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     autoCompact: f.autoCompact,
     autoCompactEnv: f.autoCompactEnv,
     slash: f.slash,
+    nativeCommands: f.nativeCommands,
     limitEnv: f.limitEnv,
     limitFile: f.limitFile,
     modelSwitch: f.modelSwitch,

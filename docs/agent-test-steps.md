@@ -113,7 +113,7 @@ type TestStep = {
 - UE：编译（`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex`）、Lua 语法检查、可选的 AutomationTest（默认停用）。
 - Rust / Go / Python / .NET / CMake 各给常用的检查、测试、构建。
 
-「AI 分析这个目录」（`POST /projects/analyze`）会把这份默认步骤一起填进表单，用户确认保存后才生效。
+「AI 初始化项目」先用 `POST /projects/analyze` 快速扫一遍（这份默认步骤当线索），再让本机 Agent 在项目目录里写 AGENTS.md 和文档框架（`skills/docs/project-documentation`），评估工作流、推荐测试步骤和项目设置（`shared/project-init.ts`）。推荐项在项目设置的「AI 初始化」页逐项或整体应用，用户确认保存后才生效；`Project.initializedAt` 为空的项目（含旧项目）不能保存设置。
 
 ## 3. 项目设置里的 Agent 参数
 
@@ -221,6 +221,16 @@ type TestStep = {
 - 子对话改完调用 `submit_build`：面板提交它的分支，排队试合回**建 worktree 的那个目录、那个分支**（不限定 dev），
   在原目录跑勾了「合并时编译」的步骤；通过才提交合并，失败撤回、原目录不变。结果推回子对话，同时告诉父对话。
 - 选「共用目录 + 认领文件」时，子对话都在项目目录里改，先 `claim_files` 认领，编译一次只跑一个。
+
+### UE 项目：编译归父对话
+
+项目目录（或仓库根）里有 `.uproject` 时，编译不在子对话里做（[ADR 0004](./adr/0004-ue-build-by-parent.md)）：
+
+- 子对话只改代码、做不用编译的检查。有独立分支的 `submit_merge` 带 `build`（默认 true），合回后面板替它向父对话申请；共用目录的用 `request_build`。
+- 父对话收到申请（或用户要求）才调用 `request_build`：面板跑勾了「合并时编译」的步骤（没有就认名字带「编译」的），排进后台独占队列。
+- 占位按编译目录：同一目录同一时间只编译一次，别的父对话占着时排在后面，双方都会收到说明；各自 worktree 的目录互不占位。
+- 子对话和父对话用 `run_background` 跑 Build.bat、UBT、UHT、RunUAT、Editor 都会被拒绝，不能绕过排队。
+- 父对话之间用 `list_peers` / `message_peer` 协调。
 
 长命令（完整测试、编译）可以用 `run_background` 交给面板在后台跑，CLI 先去做别的，跑完结果自动推回对话；
 标成独占的命令按目录排队，跑的期间文件变了会提醒结果可能不准。

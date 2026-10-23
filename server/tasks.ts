@@ -95,7 +95,9 @@ import {
   worktreeStatus,
   trialMerge,
   checkRepo,
+  isBigProject,
 } from './exec/worktree.ts'
+import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
 import { createBackground } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -315,6 +317,7 @@ export function tasksApi(deps: {
     lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
+    initializedAt: '',
     createdAt: '',
     updatedAt: '',
   })
@@ -872,7 +875,13 @@ export function tasksApi(deps: {
    * 先提交到它自己的分支，再排队试合回开分支的那个目录（父对话所在的分支）。
    * 合进去之后子对话标记完成、独立分支回收；没合进去的推回给子对话。马上返回排队情况
    */
-  async function submitMerge(childId: string, note: string, tests: string): Promise<{ ok: boolean; info: string }> {
+  async function submitMerge(
+    childId: string,
+    note: string,
+    tests: string,
+    /** UE 项目：合进去后替它向父对话申请编译 */
+    build = false,
+  ): Promise<{ ok: boolean; info: string }> {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
     if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能合回原分支' }
     if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
@@ -924,6 +933,8 @@ export function tasksApi(deps: {
             ok: true,
           },
         )
+        // UE 项目：子对话不编译，改动进了父对话的目录再由父对话按申请占位编译
+        if (build) await askParentBuild(tk, note || '（没写说明）', tests)
         return
       }
       await wrapUpState(childId, 'running', head.split('\n')[0])
@@ -953,6 +964,130 @@ export function tasksApi(deps: {
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
+  }
+
+  /**
+   * 把面板的消息交给一个对话并让它马上处理：正在执行就实时送达，空闲就开新的一轮；
+   * 开不起来（正在收尾、被别的操作占着）就退回收件箱，它下一轮开始时一起处理
+   */
+  async function wakeTask(id: string, from: Task, text: string) {
+    const running = live.get(id)
+    try {
+      if (running?.task.status === 'running') {
+        const msg: TaskMessage = {
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text,
+          tools: [],
+          panel: 'child',
+          at: new Date().toISOString(),
+        }
+        await deliver(running, msg, text, [])
+      } else await followUp(id, { text, attachments: [], panel: 'child' })
+    } catch (e) {
+      log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
+      await noteParent(id, from, text)
+    }
+  }
+
+  /**
+   * UE 项目的编译归父对话（见 EngineHost.ueBuild）：子对话的申请交给父对话马上处理，
+   * 什么时候编、几个申请合成一次由父对话决定，它再向面板占位
+   */
+  async function askParentBuild(child: Task, note: string, checks = '') {
+    if (!child.parentTaskId) return
+    await wakeTask(
+      child.parentTaskId,
+      child,
+      `【编译申请】子对话「${child.title}」（id ${child.id}）申请 UE 编译：${note}${checks ? `\n它做过的检查：${checks.slice(0, 400)}` : ''}
+按申请处理：还有别的子对话的申请没编时合成一次，用 request_build 向面板申请编译；编译结果出来后告诉它（失败时把报错交回给它修）。`,
+    )
+  }
+
+  async function childRequestBuild(child: Task, note: string): Promise<{ ok: boolean; info: string }> {
+    if (!child.parentTaskId) return { ok: false, info: '只有子对话向父对话申请编译' }
+    if (isolated(child))
+      return {
+        ok: false,
+        info: '你在独立分支里，改动要先合回父对话的目录才编得到：调用 submit_merge（build 保持 true），合进去后面板替你向父对话申请编译。',
+      }
+    await askParentBuild(child, note)
+    return {
+      ok: true,
+      info: '已向父对话申请编译。现在可以结束这一轮，编译结果由父对话转给你；报错交回来时修好再申请。',
+    }
+  }
+
+  /**
+   * 父对话向面板申请编译：编译是占位的资源，交给后台命令的独占队列，按编译目录排队，
+   * 同一目录同一时间只编译一次；各自 worktree 的目录是不同的队，不互相占位。
+   * 目录被别的父对话占着时告诉申请方占着的是谁，也告诉占着的一方后面有人在等
+   */
+  async function parentRequestBuild(
+    parent: Task,
+    project: Project,
+    note: string,
+  ): Promise<{ ok: boolean; info: string; id?: string }> {
+    const steps = buildSteps(project.testSteps)
+    if (!steps.length)
+      return {
+        ok: false,
+        info: '项目测试步骤里没有编译步骤（勾「合并时编译」或名字带「编译」的）：请用户在项目设置 → 测试步骤里补上，补好之前不要自己拼命令编译。',
+      }
+    const dir = await taskDir(parent)
+    // 先看占着的再排：排进去以后自己的也算在里面
+    const before = background.occupants(dir)
+    const ids: string[] = []
+    for (const st of steps) {
+      const r = background.start({
+        taskId: parent.id,
+        name: `UE 编译：${st.name}`,
+        command: stepCommand(st, process.platform, project.wslDistro),
+        cwd: st.cwd,
+        root: dir,
+        exclusive: true,
+      })
+      if (!r.ok) return { ok: false, info: r.info }
+      ids.push(r.id!)
+    }
+    const mine = before.filter((j) => j.taskId === parent.id).length
+    const holders: Task[] = []
+    for (const id of new Set(before.map((j) => j.taskId).filter((x) => x !== parent.id))) {
+      const tk = live.get(id)?.task ?? (await store.get(id))
+      if (tk) holders.push(tk)
+    }
+    // 占着的是别的父对话：告诉它后面有人在等（不叫醒它，执行中就实时送达，空闲就放进收件箱）
+    for (const h of holders.filter((x) => !x.parentTaskId))
+      await noteParent(
+        h.id,
+        parent,
+        `【编译占位】父对话「${parent.title}」（id ${parent.id}）申请了编译（${note.slice(0, 200)}），排在你占着的编译后面，你的编译跑完它会自动开始。你还要连着编、或者需要它等你的改动时，用 message_peer 告诉它。`,
+      )
+    const who = holders.map((x) => `「${x.title}」`).join('、')
+    return {
+      ok: true,
+      id: ids.at(-1),
+      info: [
+        `已申请编译（${steps.map((x) => x.name).join('、')}），编号 ${ids.join('、')}。`,
+        who
+          ? `这个编译目录现在被${who}占着，你排在后面${holders.some((x) => !x.parentTaskId) ? '，已告诉对方' : ''}。`
+          : mine
+            ? `你前面还有 ${mine} 条自己的编译在排队。`
+            : '编译目录空闲，马上开始。',
+        '结果会推回给你；等的时候接着处理别的消息，不要另外跑编译。',
+      ].join(''),
+    }
+  }
+
+  /** 同一项目里的其他父对话（顶层对话），最近活动的在前 */
+  async function peerList(self: Task) {
+    return (await store.list())
+      .filter((x) => x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived)
+      .map((x) => live.get(x.id)?.task ?? x)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, 20)
   }
 
   /**
@@ -1615,6 +1750,9 @@ export function tasksApi(deps: {
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     // 项目里用分派角色（统筹）的顶层对话就是父对话：只统筹，不改文件
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
+    // UE 项目（目录里有 .uproject）的编译归父对话：子对话申请，父对话按申请占位编译
+    const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
+    const ueRole = !ueProject ? undefined : task.parentTaskId ? 'child' : coordinatorRole ? 'parent' : undefined
     let last = 0
     // 预热退出要恢复列表时间：最后一次写不能把它改成现在
     const flush = (keepUpdatedAt = false) =>
@@ -1697,7 +1835,42 @@ export function tasksApi(deps: {
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         wrapUp: await childWrapUp(entry.task, project?.path),
         submitMerge:
-          task.parentTaskId && isolated(entry.task) ? (note, tests) => submitMerge(task.id, note, tests) : undefined,
+          task.parentTaskId && isolated(entry.task)
+            ? (note, tests, build) => submitMerge(task.id, note, tests, ueRole === 'child' && build !== false)
+            : undefined,
+        ueBuild:
+          ueRole === 'child'
+            ? { role: 'child', request: (note) => childRequestBuild(entry.task, note) }
+            : ueRole === 'parent' && found
+              ? { role: 'parent', request: (note) => parentRequestBuild(entry.task, found, note) }
+              : undefined,
+        // 父对话之间：看同一项目里的其他父对话、给它们传话（编译占位时的协调就靠它）
+        peers: coordinatorRole
+          ? async () =>
+              (await peerList(entry.task)).map((p) => ({
+                id: p.id,
+                title: p.title,
+                status: p.status,
+                busy: !!p.working,
+                building: background
+                  .list(p.id)
+                  .filter((j) => j.exclusive && !j.endedAt)
+                  .map((j) => `${j.name}（${j.state === 'running' ? '正在跑' : '排队中'}）`)
+                  .join('、'),
+              }))
+          : undefined,
+        messagePeer: coordinatorRole
+          ? async (id, text) => {
+              const peer = (await peerList(entry.task)).find((p) => p.id === id)
+              if (!peer) return { ok: false, info: '找不到这个父对话：id 从 list_peers 取，只能联系同一项目里的父对话' }
+              await wakeTask(
+                peer.id,
+                entry.task,
+                `【父对话传话】来自「${entry.task.title}」（id ${entry.task.id}）：${text}\n要回话就用 message_peer 回给它；只协调，不用替它做决定。`,
+              )
+              return { ok: true, info: `已交给父对话「${peer.title}」` }
+            }
+          : undefined,
         // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
         verify:
           task.mode === 'chat' && found?.id
@@ -1717,7 +1890,18 @@ export function tasksApi(deps: {
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
-            ? async (input) => background.start({ ...input, taskId: task.id, root: dir, env: noPushEnv(entry.task) })
+            ? async (input) => {
+                // UE 的编译归父对话：子对话交来的编译命令不跑，父对话也走 request_build 占位，不从这里绕过排队
+                if (ueRole && isUeBuildCommand(input.command))
+                  return {
+                    ok: false,
+                    info:
+                      ueRole === 'child'
+                        ? 'UE 项目里子对话不编译：改完向父对话申请（独立分支里用 submit_merge 并保持 build 为 true，否则用 request_build）。'
+                        : 'UE 编译要用 request_build 申请：面板按编译目录占位排队，不从后台命令直接跑。',
+                  }
+                return background.start({ ...input, taskId: task.id, root: dir, env: noPushEnv(entry.task) })
+              }
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
         // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样

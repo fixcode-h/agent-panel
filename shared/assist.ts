@@ -20,7 +20,9 @@ import {
   wouldCycle,
 } from './flow.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
-import { McpServer } from './library.ts'
+import { libraryName, McpServer } from './library.ts'
+import { builtinCommands } from './commands.ts'
+import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './project-init.ts'
 import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
@@ -42,7 +44,17 @@ import {
 import type { DerivedParam } from './agent-params.ts'
 import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps', 'lessons', 'project'])
+export const AssistKind = z.enum([
+  'agent',
+  'workflow',
+  'skill',
+  'command',
+  'mcp',
+  'params',
+  'teststeps',
+  'lessons',
+  'project',
+])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -66,7 +78,7 @@ export const AssistInput = z.object({
   askUser: z.boolean().default(false),
   /**
    * Skill 和 MCP 工具的当前内容（它们不在面板的数据里，由页面带来）：
-   * skill 是 cli、name、content；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
+   * skill 是 cli、name、content；command 是 name、content、taken（已有的命令名，逗号分隔）；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
    */
   subject: z.record(z.string(), z.string().max(60000)).default({}),
   /**
@@ -76,14 +88,6 @@ export const AssistInput = z.object({
   projectId: z.string().trim().max(100).default(''),
 })
 export type AssistInput = z.infer<typeof AssistInput>
-
-/** CLI 输出的项目分析：步骤按测试步骤的规则另外校验 */
-const ProjectDraft = z.object({
-  name: z.string().trim().min(1, 'name 不能为空').max(40, 'name 最多 40 个字'),
-  description: z.string().trim().max(200).default(''),
-  type: z.enum(['general', 'ue']).default('general'),
-  steps: z.array(z.unknown()).max(40).default([]),
-})
 
 /** CLI 输出的 Agent 草稿：分类、CLI 用名字或 id 表示 */
 export const AgentDraft = z.object({
@@ -181,6 +185,12 @@ export type SkillProposal = {
   /** 完整的 SKILL.md */
   content: string
 }
+/** 「/」命令：完整的命令文件（md，front matter 里写 description、argument-hint） */
+export type CommandProposal = {
+  kind: 'command'
+  name: string
+  content: string
+}
 export type McpProposal = {
   kind: 'mcp'
   server: McpServer
@@ -200,26 +210,19 @@ export type TestStepsProposal = {
   kind: 'teststeps'
   steps: TestStep[]
 }
-/** 分析项目目录：名称、简介、项目类型和测试步骤，用户确认后填进项目设置的表单 */
-export type ProjectProposal = {
-  kind: 'project'
-  name: string
-  description: string
-  /** 选哪个内置项目工作流：一般项目还是 UE 项目 */
-  type: 'general' | 'ue'
-  steps: TestStep[]
-}
 /** 从项目教训里提取的全局教训改动：用户在界面上逐条勾选确认后才写进去 */
 export type LessonsProposal = {
   kind: 'lessons'
   changes: GlobalLessonChange[]
 }
+export type { ProjectProposal } from './project-init.ts'
 export type Proposal =
   | ProjectProposal
   | LessonsProposal
   | AgentProposal
   | WorkflowProposal
   | SkillProposal
+  | CommandProposal
   | McpProposal
   | ParamsProposal
   | TestStepsProposal
@@ -267,6 +270,8 @@ export interface AssistContext {
   paramAgentId?: string
   /** teststeps 校验和展示用的系统 */
   platform?: string
+  /** project：可以当默认工作流的那些（「项目」分类里的）；空表示不限 */
+  defaultWorkflowIds?: string[]
   /** lessons：这个项目的教训和现有的全局教训 */
   projectLessons?: ProjectLesson[]
   globalLessons?: GlobalLesson[]
@@ -276,11 +281,12 @@ const KIND_NAME = {
   agent: 'Agent',
   workflow: '工作流',
   skill: 'Skill',
+  command: '命令',
   mcp: 'MCP 工具',
   params: '参数配置',
   teststeps: '测试步骤',
   lessons: '全局教训',
-  project: '项目分析',
+  project: '项目初始化',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -426,7 +432,7 @@ export function buildAssistPrompt(
 }
 
 function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistMessage[], installed: string[]) {
-  if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
+  if (kind === 'skill' || kind === 'mcp' || kind === 'command') return buildLibraryPrompt(kind, ctx, messages)
   if (kind === 'params') return buildParamsPrompt(ctx, messages)
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
   if (kind === 'project') return buildProjectPrompt(ctx, messages)
@@ -487,6 +493,19 @@ const SKILL_SHAPE = `{
   "content": "---\\nname: commit-message\\ndescription: 按团队约定写提交说明。在用户要求提交代码或写 commit message 时使用。\\n---\\n\\n# 写提交说明\\n\\n1. 先看 git diff…\\n2. …\\n"
 }`
 
+const COMMAND_RULES = `- 命令是一个 Markdown 文件：开头是 front matter（description 必填，argument-hint 可选），后面的正文就是用户打「/命令名 参数」时发给 Agent 的要求
+- name 是命令名：小写字母、数字和连字符，简短好打，例如 fix-issue（优化时保持原名）；不要和「已有的命令」重名
+- description 一句话说清它做什么，显示在「/」菜单里，不超过 40 字
+- 正文里用 $ARGUMENTS 表示命令后面的全部参数，$1、$2 表示按空格分开的第 1、2 个参数；命令需要参数时写 argument-hint，例如 "<issue 编号>"、"[范围]"（尖括号必填、方括号可选）
+- 正文写给编码 Agent 看：用祈使句说清楚目标、步骤、什么情况下停下来问用户、做完怎么汇报；参数可能为空时说明为空时做什么
+- 面板会把这个命令发给任何一个 CLI（Claude Code、Codex、Gemini CLI 等），不要写某个 CLI 才有的语法（例如 !\`命令\`、@文件 引用、allowed-tools）
+- 篇幅精炼，一般不超过 40 行；不要引用不存在的脚本和文件`
+
+const COMMAND_SHAPE = `{
+  "name": "fix-issue",
+  "content": "---\\ndescription: 按 issue 编号定位并修复问题\\nargument-hint: <issue 编号>\\n---\\n\\n请修复 issue $1：\\n\\n1. 先读 issue 的描述…\\n2. …\\n"
+}`
+
 const MCP_RULES = `- 你要排查的是一个 MCP 工具的配置：本地命令（transport 为 stdio，面板按 command 加 args 启动它，通过标准输入输出对话）或远程地址（transport 为 http，面板向 url 发 MCP 请求）
 - 可以只读地排查：检查命令是否存在（which / where、--version）、Node 或 Python 的版本、自己运行一下启动命令看输出、读相关配置文件。不要修改任何文件，不要安装软件，不要执行有副作用的命令；运行命令需要用户确认时会弹出确认卡片
 - 常见原因：命令不在 PATH 里或没装；npx 少了 -y 导致卡在确认安装；包名或参数拼错；需要的环境变量（API Key 等）没填；Node 版本太低；远程地址缺了路径（如 /mcp）、需要 Authorization 请求头、或者服务实际是 SSE 而不是 HTTP；工具启动时往标准输出打印了非 MCP 的内容
@@ -503,13 +522,42 @@ const MCP_SHAPE = `{
   "headers": {}
 }`
 
-/** Skill 的创建 / 优化、MCP 工具的报错排查：和 Agent、工作流用同一套对话，提示词和输出格式不同 */
-function buildLibraryPrompt(kind: 'skill' | 'mcp', ctx: AssistContext, messages: AssistMessage[]) {
+/** Skill、命令的创建 / 优化、MCP 工具的报错排查：和 Agent、工作流用同一套对话，提示词和输出格式不同 */
+function buildLibraryPrompt(kind: 'skill' | 'mcp' | 'command', ctx: AssistContext, messages: AssistMessage[]) {
   const sub = ctx.subject ?? {}
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
   const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``
+  if (kind === 'command') {
+    const improving = !!sub.content
+    const taken = [
+      ...builtinCommands().map((c) => `${c.name}（内置）`),
+      ...(sub.taken ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => x && x !== sub.name),
+    ]
+    return [
+      `你是「Agent 面板」里的配置助手，正在和用户对话，帮他${improving ? '优化一个已有的' : '设计一个新的'}「/」命令。`,
+      '只根据下面的信息回答。不要读写任何文件，也不要运行命令。',
+      '## 背景\n命令是用户在输入框里打「/名字 参数」调用的固定要求：面板把命令文件的正文填上参数，作为这条消息发给 Agent。写进「所有 Agent」的命令对每个 CLI 都生效。',
+      `## 已有的命令（不要重名）\n${taken.join('、')}`,
+      improving
+        ? `## 当前的命令文件（命令名 ${sub.name}，在它的基础上按用户要求修改）\n${fence('markdown', sub.content)}`
+        : '',
+      `## 创建规则\n${COMMAND_RULES}`,
+      ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
+      `## 输出格式
+先用两三句${promptLangWord()}说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
+然后输出且只输出一个 \`\`\`json 代码块，content 是完整的命令文件（含 front matter），严格符合下面的结构（字段名不能改，不要加注释）：
+${fence('json', COMMAND_SHAPE)}`,
+      `## 对话\n${convo}`,
+      '请回复用户最后一条消息。',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
   if (kind === 'skill') {
     const improving = !!sub.content
     const cli = CLIS.find((c) => c.id === sub.cli)?.name
@@ -724,39 +772,20 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
     .join('\n\n')
 }
 
-/**
- * project 的提示词：在项目目录里只读地看一遍，给出名称、简介、项目类型和测试步骤。
- * 面板自己的规则扫描（scan）一起交过去当线索，AI 以实际看到的为准
- */
+/** project 的提示词：AI 初始化项目，见 project-init.ts */
 function buildProjectPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
-  return [
-    '你是「Agent 面板」里的配置助手，正在帮用户**分析一个项目目录**，填好项目设置：名称、简介、项目类型和测试步骤。',
-    `项目目录是 ${ctx.projectPath}。只读地看这个目录：README、依赖清单（package.json / Cargo.toml / go.mod / *.uproject / *.sln 等）、scripts、Makefile、CI 配置、目录结构，弄清楚它是做什么的、用什么技术栈、怎么构建和测试。
-**不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 读文件、列目录、git log 这类只读操作可以直接做。`,
-    `当前系统：${ctx.platform || '未知'}。`,
-    ctx.subject?.scan ? `## 面板按文件规则扫出来的线索（可能不全或不准，以你实际看到的为准）\n${ctx.subject.scan}` : '',
-    `## 要填的字段
-- name：项目名，简短，优先用 README 标题或包名，不超过 40 个字
-- description：一两句${promptLangWord()}说明这个项目是做什么的、主要技术栈，不超过 120 个字
-- type：general（一般项目）或 ue（Unreal Engine 项目，目录里有 .uproject）
-- steps：测试步骤，Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto；Windows 上默认走 Git Bash，只有确实必须在 WSL 里跑的才标 wsl）、cwd（相对项目根，没有留空）、when（执行条件，没有留空）、timeoutSec（0 表示不限）、note、enabled、quick（类型检查、lint 这类几十秒内跑完的标 true）
-- 按执行顺序排：先静态检查和单元测试，再端到端和构建。只写项目里真的有的命令，没有脚本就不要编 \`npm run xxx\`。`,
-    ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
-    `## 输出格式
-先用三五句${promptLangWord()}说明你看到了什么：项目是做什么的、技术栈、构建和测试怎么跑、有什么要用户注意的。
-然后输出且只输出一个 \`\`\`json 代码块：
-\`\`\`json
-{ "name": "官网前端", "description": "公司官网的前端，React + Vite。", "type": "general", "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "quick": true } ] }
-\`\`\`
-字段名不能改；步骤里没有的字段可以不写（会按默认值补）。`,
-    `## 对话\n${convo}`,
-    '请回复用户最后一条消息。',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  return buildProjectInitPrompt({
+    path: ctx.projectPath ?? '',
+    platform: ctx.platform ?? '',
+    scan: ctx.subject?.scan ?? '',
+    rules: ctx.rules,
+    convo,
+    workflows: ctx.workflows,
+    defaultChoices: ctx.defaultWorkflowIds ?? [],
+  })
 }
 
 /** lessons 的提示词：从一个项目的教训里挑出换个项目也适用的，合并进现有的全局教训 */
@@ -1004,11 +1033,16 @@ export function resolveProposal(
     return r.error ? { error: r.error } : { proposal: { kind: 'lessons', changes: r.changes! } }
   }
   if (kind === 'project') {
-    const p = ProjectDraft.safeParse(json)
+    const p = ProjectInitDraft.safeParse(json)
     if (!p.success) return { error: issues(p.error) }
+    // 文件已经写好了，步骤格式不对时只丢掉步骤，不为它让 CLI 把初始化重跑一遍
     const r = p.data.steps.length ? resolveTestSteps({ steps: p.data.steps }) : { steps: [] as TestStep[] }
-    if (r.error) return { error: `steps：${r.error}` }
-    return { proposal: { kind: 'project', ...p.data, steps: r.steps! } }
+    return {
+      proposal: {
+        ...resolveProjectInit(p.data, ctx.workflows, ctx.defaultWorkflowIds ?? []),
+        steps: r.steps ?? [],
+      },
+    }
   }
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
@@ -1025,6 +1059,23 @@ export function resolveProposal(
     const fmName = /^name:\s*["']?([^"'\n]+?)["']?\s*$/m.exec(fm)?.[1]
     if (fmName !== name) return { error: `front matter 里的 name 要写成 ${name}（和文件夹名一致）` }
     return { proposal: { kind: 'skill', name, content: p.data.content } }
+  }
+  if (kind === 'command') {
+    const p = SkillDraft.safeParse(json)
+    if (!p.success) return { error: issues(p.error) }
+    // 优化时命令名不变
+    const name = ctx.subject?.name || p.data.name
+    if (!libraryName('command', name)) return { error: 'name 只能用字母、数字、. _ -，以字母或数字开头' }
+    const taken = new Set([
+      ...builtinCommands().map((c) => c.name),
+      ...(ctx.subject?.taken ?? '').split(',').map((x) => x.trim()),
+    ])
+    if (!ctx.subject?.name && taken.has(name)) return { error: `已经有叫 ${name} 的命令了，换一个名字` }
+    const fm = p.data.content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
+    if (!fm) return { error: 'content 要以 --- 包起来的 front matter 开头，里面写 description' }
+    if (!/^description:\s*\S/m.test(fm)) return { error: 'front matter 里缺少 description' }
+    if (!p.data.content.slice(p.data.content.indexOf('---', 3) + 3).trim()) return { error: '命令正文不能为空' }
+    return { proposal: { kind: 'command', name, content: p.data.content } }
   }
   if (kind === 'mcp') {
     const p = McpServer.safeParse({ ...(json as object), name: ctx.subject?.name || (json as any)?.name })
@@ -1222,6 +1273,7 @@ export async function applyProposal(
   // Skill、MCP 工具由各自的页面应用；参数和测试步骤只填进项目设置的表单草稿
   if (
     p.kind === 'skill' ||
+    p.kind === 'command' ||
     p.kind === 'mcp' ||
     p.kind === 'params' ||
     p.kind === 'teststeps' ||
