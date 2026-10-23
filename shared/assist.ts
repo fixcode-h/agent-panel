@@ -20,7 +20,8 @@ import {
   wouldCycle,
 } from './flow.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
-import { McpServer } from './library.ts'
+import { libraryName, McpServer } from './library.ts'
+import { builtinCommands } from './commands.ts'
 import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
@@ -42,7 +43,17 @@ import {
 import type { DerivedParam } from './agent-params.ts'
 import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps', 'lessons', 'project'])
+export const AssistKind = z.enum([
+  'agent',
+  'workflow',
+  'skill',
+  'command',
+  'mcp',
+  'params',
+  'teststeps',
+  'lessons',
+  'project',
+])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -66,7 +77,7 @@ export const AssistInput = z.object({
   askUser: z.boolean().default(false),
   /**
    * Skill 和 MCP 工具的当前内容（它们不在面板的数据里，由页面带来）：
-   * skill 是 cli、name、content；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
+   * skill 是 cli、name、content；command 是 name、content、taken（已有的命令名，逗号分隔）；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
    */
   subject: z.record(z.string(), z.string().max(60000)).default({}),
   /**
@@ -181,6 +192,12 @@ export type SkillProposal = {
   /** 完整的 SKILL.md */
   content: string
 }
+/** 「/」命令：完整的命令文件（md，front matter 里写 description、argument-hint） */
+export type CommandProposal = {
+  kind: 'command'
+  name: string
+  content: string
+}
 export type McpProposal = {
   kind: 'mcp'
   server: McpServer
@@ -220,6 +237,7 @@ export type Proposal =
   | AgentProposal
   | WorkflowProposal
   | SkillProposal
+  | CommandProposal
   | McpProposal
   | ParamsProposal
   | TestStepsProposal
@@ -276,6 +294,7 @@ const KIND_NAME = {
   agent: 'Agent',
   workflow: '工作流',
   skill: 'Skill',
+  command: '命令',
   mcp: 'MCP 工具',
   params: '参数配置',
   teststeps: '测试步骤',
@@ -426,7 +445,7 @@ export function buildAssistPrompt(
 }
 
 function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistMessage[], installed: string[]) {
-  if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
+  if (kind === 'skill' || kind === 'mcp' || kind === 'command') return buildLibraryPrompt(kind, ctx, messages)
   if (kind === 'params') return buildParamsPrompt(ctx, messages)
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
   if (kind === 'project') return buildProjectPrompt(ctx, messages)
@@ -487,6 +506,19 @@ const SKILL_SHAPE = `{
   "content": "---\\nname: commit-message\\ndescription: 按团队约定写提交说明。在用户要求提交代码或写 commit message 时使用。\\n---\\n\\n# 写提交说明\\n\\n1. 先看 git diff…\\n2. …\\n"
 }`
 
+const COMMAND_RULES = `- 命令是一个 Markdown 文件：开头是 front matter（description 必填，argument-hint 可选），后面的正文就是用户打「/命令名 参数」时发给 Agent 的要求
+- name 是命令名：小写字母、数字和连字符，简短好打，例如 fix-issue（优化时保持原名）；不要和「已有的命令」重名
+- description 一句话说清它做什么，显示在「/」菜单里，不超过 40 字
+- 正文里用 $ARGUMENTS 表示命令后面的全部参数，$1、$2 表示按空格分开的第 1、2 个参数；命令需要参数时写 argument-hint，例如 "<issue 编号>"、"[范围]"（尖括号必填、方括号可选）
+- 正文写给编码 Agent 看：用祈使句说清楚目标、步骤、什么情况下停下来问用户、做完怎么汇报；参数可能为空时说明为空时做什么
+- 面板会把这个命令发给任何一个 CLI（Claude Code、Codex、Gemini CLI 等），不要写某个 CLI 才有的语法（例如 !\`命令\`、@文件 引用、allowed-tools）
+- 篇幅精炼，一般不超过 40 行；不要引用不存在的脚本和文件`
+
+const COMMAND_SHAPE = `{
+  "name": "fix-issue",
+  "content": "---\\ndescription: 按 issue 编号定位并修复问题\\nargument-hint: <issue 编号>\\n---\\n\\n请修复 issue $1：\\n\\n1. 先读 issue 的描述…\\n2. …\\n"
+}`
+
 const MCP_RULES = `- 你要排查的是一个 MCP 工具的配置：本地命令（transport 为 stdio，面板按 command 加 args 启动它，通过标准输入输出对话）或远程地址（transport 为 http，面板向 url 发 MCP 请求）
 - 可以只读地排查：检查命令是否存在（which / where、--version）、Node 或 Python 的版本、自己运行一下启动命令看输出、读相关配置文件。不要修改任何文件，不要安装软件，不要执行有副作用的命令；运行命令需要用户确认时会弹出确认卡片
 - 常见原因：命令不在 PATH 里或没装；npx 少了 -y 导致卡在确认安装；包名或参数拼错；需要的环境变量（API Key 等）没填；Node 版本太低；远程地址缺了路径（如 /mcp）、需要 Authorization 请求头、或者服务实际是 SSE 而不是 HTTP；工具启动时往标准输出打印了非 MCP 的内容
@@ -503,13 +535,42 @@ const MCP_SHAPE = `{
   "headers": {}
 }`
 
-/** Skill 的创建 / 优化、MCP 工具的报错排查：和 Agent、工作流用同一套对话，提示词和输出格式不同 */
-function buildLibraryPrompt(kind: 'skill' | 'mcp', ctx: AssistContext, messages: AssistMessage[]) {
+/** Skill、命令的创建 / 优化、MCP 工具的报错排查：和 Agent、工作流用同一套对话，提示词和输出格式不同 */
+function buildLibraryPrompt(kind: 'skill' | 'mcp' | 'command', ctx: AssistContext, messages: AssistMessage[]) {
   const sub = ctx.subject ?? {}
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
   const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``
+  if (kind === 'command') {
+    const improving = !!sub.content
+    const taken = [
+      ...builtinCommands().map((c) => `${c.name}（内置）`),
+      ...(sub.taken ?? '')
+        .split(',')
+        .map((x) => x.trim())
+        .filter((x) => x && x !== sub.name),
+    ]
+    return [
+      `你是「Agent 面板」里的配置助手，正在和用户对话，帮他${improving ? '优化一个已有的' : '设计一个新的'}「/」命令。`,
+      '只根据下面的信息回答。不要读写任何文件，也不要运行命令。',
+      '## 背景\n命令是用户在输入框里打「/名字 参数」调用的固定要求：面板把命令文件的正文填上参数，作为这条消息发给 Agent。写进「所有 Agent」的命令对每个 CLI 都生效。',
+      `## 已有的命令（不要重名）\n${taken.join('、')}`,
+      improving
+        ? `## 当前的命令文件（命令名 ${sub.name}，在它的基础上按用户要求修改）\n${fence('markdown', sub.content)}`
+        : '',
+      `## 创建规则\n${COMMAND_RULES}`,
+      ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
+      `## 输出格式
+先用两三句${promptLangWord()}说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
+然后输出且只输出一个 \`\`\`json 代码块，content 是完整的命令文件（含 front matter），严格符合下面的结构（字段名不能改，不要加注释）：
+${fence('json', COMMAND_SHAPE)}`,
+      `## 对话\n${convo}`,
+      '请回复用户最后一条消息。',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
   if (kind === 'skill') {
     const improving = !!sub.content
     const cli = CLIS.find((c) => c.id === sub.cli)?.name
@@ -1026,6 +1087,23 @@ export function resolveProposal(
     if (fmName !== name) return { error: `front matter 里的 name 要写成 ${name}（和文件夹名一致）` }
     return { proposal: { kind: 'skill', name, content: p.data.content } }
   }
+  if (kind === 'command') {
+    const p = SkillDraft.safeParse(json)
+    if (!p.success) return { error: issues(p.error) }
+    // 优化时命令名不变
+    const name = ctx.subject?.name || p.data.name
+    if (!libraryName('command', name)) return { error: 'name 只能用字母、数字、. _ -，以字母或数字开头' }
+    const taken = new Set([
+      ...builtinCommands().map((c) => c.name),
+      ...(ctx.subject?.taken ?? '').split(',').map((x) => x.trim()),
+    ])
+    if (!ctx.subject?.name && taken.has(name)) return { error: `已经有叫 ${name} 的命令了，换一个名字` }
+    const fm = p.data.content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
+    if (!fm) return { error: 'content 要以 --- 包起来的 front matter 开头，里面写 description' }
+    if (!/^description:\s*\S/m.test(fm)) return { error: 'front matter 里缺少 description' }
+    if (!p.data.content.slice(p.data.content.indexOf('---', 3) + 3).trim()) return { error: '命令正文不能为空' }
+    return { proposal: { kind: 'command', name, content: p.data.content } }
+  }
   if (kind === 'mcp') {
     const p = McpServer.safeParse({ ...(json as object), name: ctx.subject?.name || (json as any)?.name })
     if (!p.success) return { error: issues(p.error) }
@@ -1222,6 +1300,7 @@ export async function applyProposal(
   // Skill、MCP 工具由各自的页面应用；参数和测试步骤只填进项目设置的表单草稿
   if (
     p.kind === 'skill' ||
+    p.kind === 'command' ||
     p.kind === 'mcp' ||
     p.kind === 'params' ||
     p.kind === 'teststeps' ||

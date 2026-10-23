@@ -286,6 +286,24 @@ function skillDraft(text: string, ctx: AssistContext) {
   }
 }
 
+/** 命令：按描述写一份示例；优化时在原文后面补一句 */
+function commandDraft(text: string, ctx: AssistContext) {
+  const sub = ctx.subject ?? {}
+  if (sub.content)
+    return {
+      draft: { name: sub.name, content: `${sub.content.trimEnd()}\n\n另外：${text.trim()}\n` },
+      note: '把你的要求补进了命令的末尾。',
+    }
+  const name = text.match(/\/([a-z0-9][\w-]*)/i)?.[1]?.toLowerCase() ?? 'my-command'
+  return {
+    draft: {
+      name,
+      content: `---\ndescription: ${text.trim().slice(0, 40)}\nargument-hint: [补充说明]\n---\n\n${text.trim()}\n\n1. 先读相关的代码和文档。\n2. 按要求完成，跑一遍相关的检查。\n3. 最后列出改了哪些地方。\n\n补充说明：$ARGUMENTS\n`,
+    },
+    note: `按你的描述写了命令「/${name}」，放进「所有 Agent」后选哪个 Agent 都能用。`,
+  }
+}
+
 /** MCP 工具排查：npx 缺 -y 的补上；其余不改，只说明要自己检查什么 */
 function mcpDraft(_text: string, ctx: AssistContext) {
   const sv = JSON.parse(ctx.subject?.server ?? '{}')
@@ -329,11 +347,13 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
       ? agentDraft(text, ctx)
       : input.kind === 'skill'
         ? skillDraft(text, ctx)
-        : input.kind === 'mcp'
-          ? mcpDraft(text, ctx)
-          : input.kind === 'lessons'
-            ? lessonsDraft(text, ctx)
-            : workflowDraft(text, ctx)
+        : input.kind === 'command'
+          ? commandDraft(text, ctx)
+          : input.kind === 'mcp'
+            ? mcpDraft(text, ctx)
+            : input.kind === 'lessons'
+              ? lessonsDraft(text, ctx)
+              : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`

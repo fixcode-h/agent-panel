@@ -4,7 +4,7 @@
  */
 import { demoAccounts } from './demo-accounts'
 import { demoIntegrations } from './demo-integrations'
-import { demoLibrary } from './demo-library'
+import { demoLibrary, demoPanelCommands } from './demo-library'
 import { z } from 'zod'
 import {
   Agent,
@@ -1373,6 +1373,7 @@ function route(method: string, url: string, body: unknown): unknown {
     if (id && sub === 'commands')
       return [
         ...(DEMO_COMMANDS[id] ?? []),
+        ...demoPanelCommands(),
         ...DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo').map((x) => ({
           name: x.name,
           description: x.description,

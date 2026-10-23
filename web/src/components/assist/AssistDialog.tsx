@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Wand2, X } from 'lucide-react'
+import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
 import {
   applyProposal,
   type AssistJob,
@@ -67,6 +67,11 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('代码审查 Skill：逐个文件看改动，先给结论，再列问题和缺失的测试'),
     t('帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期'),
   ],
+  command: [
+    t('/fix-issue <编号>：读 issue，定位原因并修复，补上回归测试'),
+    t('/changelog：按最近的提交整理一段给用户看的更新说明'),
+    t('/i18n：找出界面里没翻译的文案，补上英文'),
+  ],
   mcp: [],
   params: [
     t('按这个项目的情况，把测试与验收的参数配一下'),
@@ -80,20 +85,33 @@ const EXAMPLES: Record<AssistKind, string[]> = {
   ],
 }
 
-/** Skill 的预览：优化时和当前内容对比，标出改没改 */
-function SkillPreview({ name, content, before }: { name: string; content: string; before?: string }) {
+/** Skill、命令的预览：优化时和当前内容对比，标出改没改 */
+function SkillPreview({
+  name,
+  content,
+  before,
+  command,
+}: {
+  name: string
+  content: string
+  before?: string
+  command?: boolean
+}) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-accent" />
-        <span className="font-mono text-[0.9375rem] font-semibold">{name}</span>
+        {command ? <Terminal className="h-4 w-4 text-accent" /> : <Sparkles className="h-4 w-4 text-accent" />}
+        <span className="font-mono text-[0.9375rem] font-semibold">
+          {command ? '/' : ''}
+          {name}
+        </span>
         {before !== undefined && (
           <Badge tone={before === content ? 'neutral' : 'accent'}>
             {before === content ? t('没有变化') : t('已修改')}
           </Badge>
         )}
       </div>
-      <span className="text-xs text-muted">SKILL.md</span>
+      <span className="text-xs text-muted">{command ? t('命令文件（所有 Agent 共用）') : 'SKILL.md'}</span>
       <pre className="max-h-[560px] overflow-auto rounded-lg border bg-field p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg">
         {content}
       </pre>
@@ -594,77 +612,86 @@ export function AssistDialog({
   const scroller = useRef<HTMLDivElement>(null)
   // Agent 和工作流各用整句文案，英文语序和中文不同，不拼接
   const L =
-    kind === 'skill'
+    kind === 'command'
       ? {
-          create: t('用 AI 创建 Skill'),
-          desc: t('本机 Agent 写出 SKILL.md，在右侧预览，确认再应用'),
-          intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
-          placeholder: t('描述你想要的 Skill'),
-          empty: t('生成的 Skill 会显示在这里'),
-          button: t('创建 Skill'),
+          create: t('用 AI 创建命令'),
+          desc: t('本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用'),
+          intro: t('描述你想要的命令：打「/名字」时要让 Agent 做什么、要不要参数。可以从下面的例子开始：'),
+          placeholder: t('描述你想要的命令'),
+          empty: t('生成的命令会显示在这里'),
+          button: t('创建命令'),
         }
-      : kind === 'mcp'
+      : kind === 'skill'
         ? {
-            create: t('用 AI 排查 MCP 工具'),
-            desc: t('本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
-            intro: t('说说遇到的问题，或者直接让它排查。'),
-            placeholder: t('补充你知道的情况'),
-            empty: t('修复后的配置会显示在这里'),
-            button: t('应用修复'),
+            create: t('用 AI 创建 Skill'),
+            desc: t('本机 Agent 写出 SKILL.md，在右侧预览，确认再应用'),
+            intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
+            placeholder: t('描述你想要的 Skill'),
+            empty: t('生成的 Skill 会显示在这里'),
+            button: t('创建 Skill'),
           }
-        : kind === 'agent'
+        : kind === 'mcp'
           ? {
-              create: t('用 AI 创建角色'),
-              desc: t('本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
-              intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
-              placeholder: t('描述你想要的角色'),
-              empty: t('生成的角色会显示在这里'),
-              button: t('创建角色'),
+              create: t('用 AI 排查 MCP 工具'),
+              desc: t('本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
+              intro: t('说说遇到的问题，或者直接让它排查。'),
+              placeholder: t('补充你知道的情况'),
+              empty: t('修复后的配置会显示在这里'),
+              button: t('应用修复'),
             }
-          : kind === 'params'
+          : kind === 'agent'
             ? {
-                create: t('AI 配置参数'),
-                desc: t('在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单'),
-                intro: t('说说你的要求，或者直接让它按项目情况填。'),
-                placeholder: t('补充要求，例如「端到端测试在 WSL 里跑」'),
-                empty: t('参数值会显示在这里'),
-                button: t('填进表单'),
+                create: t('用 AI 创建角色'),
+                desc: t('本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
+                intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
+                placeholder: t('描述你想要的角色'),
+                empty: t('生成的角色会显示在这里'),
+                button: t('创建角色'),
               }
-            : kind === 'lessons'
+            : kind === 'params'
               ? {
-                  create: t('提取全局教训'),
-                  desc: t('从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入'),
-                  intro: t('直接让它提取，或者说说你的要求。'),
-                  placeholder: t('补充要求，例如「只看角色自己记的」'),
-                  empty: t('提取出的全局教训会显示在这里'),
-                  button: t('确认写入全局教训'),
+                  create: t('AI 配置参数'),
+                  desc: t('在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单'),
+                  intro: t('说说你的要求，或者直接让它按项目情况填。'),
+                  placeholder: t('补充要求，例如「端到端测试在 WSL 里跑」'),
+                  empty: t('参数值会显示在这里'),
+                  button: t('填进表单'),
                 }
-              : kind === 'project'
+              : kind === 'lessons'
                 ? {
-                    create: t('AI 分析项目'),
-                    desc: t('在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单'),
-                    intro: t('直接让它分析，或者说说你的要求。'),
-                    placeholder: t('补充要求，例如「端到端测试要在 WSL 里跑」'),
-                    empty: t('分析结果会显示在这里'),
-                    button: t('填进表单'),
+                    create: t('提取全局教训'),
+                    desc: t('从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入'),
+                    intro: t('直接让它提取，或者说说你的要求。'),
+                    placeholder: t('补充要求，例如「只看角色自己记的」'),
+                    empty: t('提取出的全局教训会显示在这里'),
+                    button: t('确认写入全局教训'),
                   }
-                : kind === 'teststeps'
+                : kind === 'project'
                   ? {
-                      create: t('AI 生成测试步骤'),
-                      desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
-                      intro: t('说说你的要求，或者直接让它按项目情况生成。'),
-                      placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
-                      empty: t('测试步骤会显示在这里'),
+                      create: t('AI 分析项目'),
+                      desc: t('在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单'),
+                      intro: t('直接让它分析，或者说说你的要求。'),
+                      placeholder: t('补充要求，例如「端到端测试要在 WSL 里跑」'),
+                      empty: t('分析结果会显示在这里'),
                       button: t('填进表单'),
                     }
-                  : {
-                      create: t('用 AI 创建工作流'),
-                      desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-                      intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-                      placeholder: t('描述你想要的工作流'),
-                      empty: t('生成的工作流会显示在这里'),
-                      button: t('创建工作流'),
-                    }
+                  : kind === 'teststeps'
+                    ? {
+                        create: t('AI 生成测试步骤'),
+                        desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
+                        intro: t('说说你的要求，或者直接让它按项目情况生成。'),
+                        placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
+                        empty: t('测试步骤会显示在这里'),
+                        button: t('填进表单'),
+                      }
+                    : {
+                        create: t('用 AI 创建工作流'),
+                        desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                        intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+                        placeholder: t('描述你想要的工作流'),
+                        empty: t('生成的工作流会显示在这里'),
+                        button: t('创建工作流'),
+                      }
 
   useEffect(() => {
     if (!open) return
@@ -838,6 +865,7 @@ export function AssistDialog({
       }
       if (
         latest.kind === 'skill' ||
+        latest.kind === 'command' ||
         latest.kind === 'mcp' ||
         latest.kind === 'params' ||
         latest.kind === 'teststeps' ||
@@ -977,9 +1005,11 @@ export function AssistDialog({
                         {shown
                           ? kind === 'skill'
                             ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
-                            : kind === 'mcp'
-                              ? L.intro
-                              : t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。')
+                            : kind === 'command'
+                              ? t('说说想怎么改，例如「参数为空时审查全部改动」「做完列出改了哪些文件」。')
+                              : kind === 'mcp'
+                                ? L.intro
+                                : t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。')
                           : L.intro}
                       </p>
                       {!shown &&
@@ -1080,6 +1110,8 @@ export function AssistDialog({
                   {latest ? (
                     latest.kind === 'skill' ? (
                       <SkillPreview name={latest.name} content={latest.content} before={subject?.content} />
+                    ) : latest.kind === 'command' ? (
+                      <SkillPreview name={latest.name} content={latest.content} before={subject?.content} command />
                     ) : latest.kind === 'mcp' ? (
                       <McpPreview
                         server={latest.server}

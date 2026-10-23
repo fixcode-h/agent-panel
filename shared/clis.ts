@@ -161,6 +161,8 @@ export interface CliDefinition {
   autoCompactEnv?: string
   /** 会话里认识「/命令」「/Skill」，原样发过去；否则面板展开成普通要求 */
   slash: boolean
+  /** 会话里自己就有的内置命令（slash 为 true 时才用到）：面板的同名内置命令原样发过去，不再展开 */
+  nativeCommands?: string[]
   /** 手动设的上下文窗口、最大输出用哪个环境变量告诉 CLI；没有的项 CLI 不接受，只用于面板估算 */
   limitEnv?: { context?: string; maxOutput?: string }
   /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
@@ -300,6 +302,7 @@ export const CLIS: CliDefinition[] = [
     autoCompactEnv: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
     limitEnv: { context: 'CLAUDE_CODE_MAX_CONTEXT_TOKENS', maxOutput: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS' },
     slash: true,
+    nativeCommands: ['init', 'security-review'],
     limits: 'push',
     docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
     globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',

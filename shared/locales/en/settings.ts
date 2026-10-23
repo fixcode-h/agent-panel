@@ -570,8 +570,28 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。':
-    "Skills and custom commands in each agent's user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Project-level Skills are managed in project settings.",
+  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。':
+    'Skills and custom commands in each agent\'s user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Commands in "All agents" are expanded by the panel and work with every agent. Project-level Skills are managed in project settings.',
+  '所有 Agent': 'All agents',
+  '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
+    'Describe what you need and a local agent writes a command that works with every agent',
+  '已创建「/{name}」，所有 Agent 都能用': 'Created "/{name}", available to every agent',
+  '用 AI 创建命令': 'Create command with AI',
+  '本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用':
+    'A local agent writes the command file and previews it on the right; once confirmed, every agent can use it',
+  '描述你想要的命令：打「/名字」时要让 Agent 做什么、要不要参数。可以从下面的例子开始：':
+    'Describe the command you want: what the agent should do when you type "/name", and whether it takes arguments. Start from an example below:',
+  描述你想要的命令: 'Describe the command you want',
+  生成的命令会显示在这里: 'The generated command will appear here',
+  创建命令: 'Create command',
+  '说说想怎么改，例如「参数为空时审查全部改动」「做完列出改了哪些文件」。':
+    'Say what to change, e.g. "review all changes when no argument is given" or "list the changed files at the end".',
+  '命令文件（所有 Agent 共用）': 'Command file (shared by all agents)',
+  '/fix-issue <编号>：读 issue，定位原因并修复，补上回归测试':
+    '/fix-issue <number>: read the issue, find the cause, fix it and add a regression test',
+  '/changelog：按最近的提交整理一段给用户看的更新说明':
+    '/changelog: turn recent commits into user-facing release notes',
+  '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',

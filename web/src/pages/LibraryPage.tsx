@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Copy, Loader2, Plus, Search, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import type { LibraryCli, LibraryItem } from '@shared/library'
 import { libraryName } from '@shared/library'
+import { ALL_AGENTS } from '@shared/commands'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -67,16 +68,20 @@ export function LibraryPage() {
     <PageFrame
       title={t('Skills 与命令')}
       intro={t(
-        '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。',
+        '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。',
       )}
       actions={
         <>
-          {tab === 'skill' && (
+          {tab !== 'bundled' && (
             <Button
               variant="secondary"
               onClick={() => setAi(true)}
               disabled={!data}
-              title={t('描述需求，让本机 Agent 写 Skill')}
+              title={
+                kind === 'command'
+                  ? t('描述需求，让本机 Agent 写命令，所有 Agent 都能用')
+                  : t('描述需求，让本机 Agent 写 Skill')
+              }
             >
               <Sparkles className="h-4 w-4 text-accent" />
               {t('AI 创建')}
@@ -171,7 +176,28 @@ export function LibraryPage() {
           }}
         />
       )}
-      {data && (
+      {data && kind === 'command' && (
+        <AssistDialog
+          open={ai}
+          onOpenChange={setAi}
+          kind="command"
+          subject={{ taken: [...new Set(data.items.map((i) => i.name))].join(',') }}
+          onApply={async (p) => {
+            if (p.kind !== 'command') return
+            // AI 写的命令放进「所有 Agent」：由面板展开，哪个 CLI 都能用
+            await api.saveLibraryFile({
+              cli: ALL_AGENTS,
+              kind: 'command',
+              name: p.name,
+              content: p.content,
+              create: true,
+            })
+            toast.success(t('已创建「/{name}」，所有 Agent 都能用', { name: p.name }))
+            void load()
+          }}
+        />
+      )}
+      {data && kind === 'skill' && (
         <AssistDialog
           open={ai}
           onOpenChange={setAi}
@@ -360,6 +386,8 @@ function EditDialog({
   }
   const label = (id: string) => clis.find((c) => c.id === id)?.name ?? id
   const targets = clis.filter((c) => c.id !== cli && (kind === 'skill' ? c.skillDir : c.commandDir))
+  // AI 写的命令是 md 格式：toml 格式的（Gemini CLI）不用 AI 改，免得格式被换掉
+  const canAi = kind === 'skill' || clis.find((c) => c.id === cli)?.commandFormat === 'md'
   const dirty = text !== null && text !== saved
 
   return (
@@ -381,7 +409,7 @@ function EditDialog({
               {t('删除')}
             </Button>
             <span className="flex-1" />
-            {kind === 'skill' && (
+            {canAi && (
               <Button variant="secondary" onClick={() => setAi(true)} disabled={busy || text === null}>
                 <Sparkles className="h-4 w-4 text-accent" />
                 {t('AI 优化')}
@@ -456,15 +484,15 @@ function EditDialog({
           </div>
         )}
       </Modal>
-      {kind === 'skill' && (
+      {canAi && (
         <AssistDialog
           open={ai}
           onOpenChange={setAi}
-          kind="skill"
-          title={name}
+          kind={kind}
+          title={kind === 'command' ? `/${name}` : name}
           subject={{ cli, name, content: text ?? '' }}
           onApply={async (p) => {
-            if (p.kind !== 'skill') return
+            if (p.kind !== 'skill' && p.kind !== 'command') return
             await api.saveLibraryFile({ cli, kind, name, content: p.content })
             toast.success(t('已更新「{name}」', { name }))
             setRev((n) => n + 1)
