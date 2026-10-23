@@ -458,8 +458,8 @@ export function TaskView({
     setTask(next)
     pushSummary(next)
   }
-  // 子对话标记为已解决：只改标记（PATCH resolved），不停 CLI、不改 status；
-  // 已经解决的重复点击不再发请求
+  // 子对话标记为已解决：请求走子对话一侧的完成流转（服务端判定 → 置完成 → 上报父对话），
+  // 还有没收口的东西时返回 409，把卡在哪一项弹给用户；已经解决的重复点击不再发请求
   const resolveChild = async () => {
     if (resolving || !task || task.resolved) return
     setResolving(true)
@@ -536,13 +536,17 @@ export function TaskView({
     // 任务 id 变了才重新订阅；子对话的变化靠定时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.parentTaskId])
-  // 父对话里提问卡片的状态变了（在子对话里选完、交给父对话决定）：马上刷新，子对话栏的「请你选择」不用等下一次定时刷新
-  const askState = task?.parentTaskId
+  // 子对话那边变了就重取子对话列表：待选择的提问变了（在子对话里选完、交给父对话决定），
+  // 或者收到子对话的上报（panel === 'child'，含「子对话已完成」）。
+  // 列表只读子对话自己的状态、本地不改写：子对话先置完成并上报，这里才跟着变，不抢在它前面
+  const childSignal = task?.parentTaskId
     ? ''
-    : (task?.messages ?? [])
-        .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
-        .map((m) => m.id)
-        .join(',')
+    : [
+        (task?.messages ?? []).filter((m) => m.panel === 'child').at(-1)?.id ?? '',
+        ...(task?.messages ?? [])
+          .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
+          .map((m) => m.id),
+      ].join(',')
   useEffect(() => {
     if (!task?.id || task.parentTaskId) return
     let alive = true
@@ -553,9 +557,9 @@ export function TaskView({
     return () => {
       alive = false
     }
-    // 只在待选择的提问变了时刷新
+    // 只在子对话那边的状态有变化（上报、提问状态）时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [askState])
+  }, [childSignal])
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
   useEffect(() => {
