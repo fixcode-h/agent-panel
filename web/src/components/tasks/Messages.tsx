@@ -1,10 +1,11 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
-import type { Task, TaskMessage, ToolUse } from '@shared/schema'
+import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
-import { fmtSecs, toolView, type ToolView } from '@/lib/tasks'
+import { fmtSecs } from '@/lib/tasks'
+import { addFoldCut, foldCuts, foldStats, keptOut, replyText, splitFolds } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -18,10 +19,6 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
 import { t } from '@shared/i18n'
-import { stripToolMarkup } from '@shared/task'
-
-/** 正文里显示的文字：模型当成文字说出来的工具调用写法去掉，那些在工具的折叠块里已经有了 */
-const replyText = (m: TaskMessage) => (m.role === 'agent' ? stripToolMarkup(m.text) : m.text)
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
 function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
@@ -506,50 +503,6 @@ export function Msgs({
   )
 }
 
-/** 文件路径只留文件名：折叠行里放得下两三个 */
-const baseName = (p: string) => p.trim().split(/[\\/]/).filter(Boolean).pop() ?? p.trim()
-
-/**
- * 折叠起来的过程做了什么，和 Claude Code 一样按动作归总成一句：读了几个文件、改了哪些文件、跑了几条命令。
- * 改的文件不多时直接写文件名，一眼看出这段回复动了哪里；失败的调用单独标出来
- */
-function processBrief(process: TaskMessage[], helpers: number, notes: number) {
-  const tools = process.flatMap((m) =>
-    m.tools
-      .map(toolView)
-      .filter((v): v is ToolView => !!v)
-      .map((v) => v.tool),
-  )
-  const files = (kind: ToolUse['kind']) =>
-    new Set(
-      tools
-        .filter((x) => x.kind === kind)
-        .map((x) => x.label.trim())
-        .filter(Boolean),
-    )
-  const count = (kind: ToolUse['kind']) => tools.filter((x) => x.kind === kind).length
-  const read = files('read').size || count('read')
-  const edited = [...files('edit')]
-  const edits = edited.length || count('edit')
-  const other = tools.filter((x) => !['read', 'edit', 'run', 'search', 'web'].includes(x.kind)).length
-  const thoughts = process.filter((m) => m.thinking?.trim()).length
-  const parts = [
-    read && t('查看 {n} 个文件', { n: read }),
-    edits &&
-      (edited.length && edited.length <= 2
-        ? t('修改 {files}', { files: edited.map(baseName).join(t('、')) })
-        : t('修改 {n} 个文件', { n: edits })),
-    count('run') && t('运行 {n} 条命令', { n: count('run') }),
-    count('search') && t('搜索 {n} 次', { n: count('search') }),
-    count('web') && t('查阅网页 {n} 次', { n: count('web') }),
-    helpers && t('派出 {n} 个子任务', { n: helpers }),
-    other && t('其他操作 {n} 次', { n: other }),
-    thoughts && t('思考 {n} 次', { n: thoughts }),
-    notes && t('{n} 段说明', { n: notes }),
-  ].filter((x): x is string => !!x)
-  return { parts, failed: tools.filter((x) => x.failed).length }
-}
-
 /**
  * 一段完成的输出（一个节点、一轮对话）：思考、工具调用、中间的说明、派出的子任务和面板推回的结果都收进一个折叠，
  * 折叠行上写这段过程做了什么，下面只留最后的回复，和 Claude Code 一样；执行中的那段照常流式显示，
@@ -592,20 +545,10 @@ export function FoldedRun({
       stickyAuthor={stickyAuthor}
     />
   )
-  const last = lastIndex(msgs, (m) => m.role === 'agent' && !!replyText(m).trim())
-  if (live || last < 0) return all
+  // 折叠行只统计这一段里的操作：一段收尾后又来了新内容时，前面几段各自折一行，不会重复计数
+  const { last, parts, failed } = foldStats(msgs)
+  if (live || last < 0 || !parts.length) return all
   const before = msgs.slice(0, last)
-  const process = msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
-  // 留在外面的：报错、子对话的提问；子对话的回报界面上本来就不画
-  const kept = (m: TaskMessage) => m.panel === 'ask' || (m.role === 'system' && !m.panel && !m.spawned?.length)
-  const folded = before.filter((m) => !kept(m) && m.role !== 'agent' && m.panel !== 'child')
-  const helpers = folded.reduce((n, m) => n + (m.spawned?.length ?? 0), 0)
-  const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
-  const { parts, failed } = processBrief(process, helpers, notes)
-  // 面板推回的结果（后台命令、合并编译、子任务交回）也收在里面，按条数写
-  const results = folded.filter((m) => m.panel).length
-  if (results) parts.push(t('{n} 条面板结果', { n: results }))
-  if (!parts.length) return all
 
   const toggle = (
     <button
@@ -647,7 +590,7 @@ export function FoldedRun({
         />
       )}
       {before
-        .filter(kept)
+        .filter(keptOut)
         .map(
           (m) =>
             inlineEntry(m, task, teamNames) ??
@@ -707,22 +650,36 @@ export function ChatReply({
   /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
   children?: React.ReactNode
 }) {
-  const Run = fold ? FoldedRun : Msgs
+  // 这一轮收尾时折到第几条消息：之后子对话的回报、后台命令结果又进来、CLI 被重新拉起来时，
+  // 前面那段保持折叠，新过程接在它的最后一条回复后面继续显示，不把整轮重新铺开
+  const key = msgs[0]?.id ?? ''
+  const [cuts, setCuts] = useState<number[]>(() => foldCuts(key))
+  const wasLive = useRef(!!live)
+  useEffect(() => {
+    if (live) {
+      wasLive.current = true
+      return
+    }
+    if (!wasLive.current) return
+    wasLive.current = false
+    setCuts(addFoldCut(key, msgs.length))
+  }, [key, live, msgs.length])
+
+  // 一段已经收尾、又有新内容进来时分成几段：前面的段始终折叠，只有最后一段跟着 live 走
+  const parts = fold ? splitFolds(msgs, cuts) : [msgs]
   const body = (
     <>
       {author && <StickyAuthor author={author} />}
       {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
-      <Run
-        msgs={msgs}
-        live={live}
-        task={task}
-        teamNames={teamNames}
-        author={author}
-        command={command}
-        hideAuthor={!!author}
+      {parts.map((part, i) => {
+        if (!part.length) return null
+        const tail = i === parts.length - 1
+        // 名字只在第一段显示一次，后面几段接着上面那段接着写；
         // 按 Agent 显示的对话没有外面的署名栏，名字行自己吸顶，和按 CLI 显示的一样
-        stickyAuthor={!author}
-      />
+        const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || i > 0 }
+        if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author} />
+        return <FoldedRun key={i} {...same} live={live && tail} stickyAuthor={!author && i === 0} />
+      })}
       {children}
     </>
   )

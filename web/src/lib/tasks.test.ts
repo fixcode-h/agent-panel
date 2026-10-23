@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { toolView } from './tasks.ts'
+import { tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -56,4 +56,32 @@ test('别的 MCP 服务里的同名工具不会被当成面板工具', () => {
   // 只是名字里带着这几个词的不算面板工具：仍按原始工具显示（run、read 这种）
   assert.equal(toolView(tool('run', 'git status'))?.tool.name, 'run')
   assert.equal(toolView(tool('read', 'README.md'))?.tool.name, 'read')
+})
+
+/** Token 合计：只造浮层用到的字段 */
+const tokens = (inputTokens: number, outputTokens: number) => ({
+  inputTokens,
+  outputTokens,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  costUsd: 0,
+})
+
+test('Token 分组：没有子对话和子任务时不出现「子任务 0」', () => {
+  // 只有本对话：分组为空，浮层和以前一样只显示总数和输入输出
+  assert.deepEqual(
+    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 12, runTps: 12, children: 0, helpers: 0 }),
+    [],
+  )
+  // 有子任务与子对话：两行，两行的速度加起来正好是整体速度
+  const groups = tokenGroups({ own: tokens(100, 10), sub: tokens(50, 5), tps: 12, runTps: 20, children: 1, helpers: 2 })
+  assert.deepEqual(groups, [
+    { key: 'own', tokens: 110, tps: 12 },
+    { key: 'sub', tokens: 55, tps: 8 },
+  ])
+  // 子任务刚派出去、还没花 token：有数量也要列出来（否则用户看不出有子任务在跑）
+  assert.equal(
+    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 3, runTps: 3, children: 0, helpers: 1 }).length,
+    2,
+  )
 })

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { type GlobalLesson, GlobalLessons, type Project, type ProjectInput, ProjectLesson } from '../shared/schema.ts'
-import { MAX_LESSONS, newLessonId, upsertLesson } from '../shared/lessons.ts'
+import { MAX_LESSONS, newLessonId, normTags, upsertLesson } from '../shared/lessons.ts'
 import { t } from '../shared/i18n.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 
@@ -37,6 +37,11 @@ export function projectLessons(projects: ProjectStore) {
         }
       const parsed = ProjectLesson.safeParse({
         ...rest,
+        // 和已有标签只差大小写、带 # 的统一成已有的写法
+        tags: normTags(
+          rest.tags ?? [],
+          p.lessons.flatMap((l) => l.tags),
+        ),
         // 改写时的 id 用原来那条的，新记的才生成
         id: replaces || rest.id || newLessonId(),
         createdAt: rest.createdAt || new Date().toISOString(),

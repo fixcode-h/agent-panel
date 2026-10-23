@@ -1441,7 +1441,7 @@ try {
     const one = kids.find((x) => x.id === kid.id)
     assert.ok(one, '子对话出现在父对话的列表里')
     assert.equal(one.cliAlive, false, '跑完、进程已经结束：cliAlive 为 false')
-    assert.ok(one.lastMessageAt, '列表带上最近一条消息的时间，用来排序')
+    assert.ok(one.startedAt, '列表带上本次开启的时间，用来排序')
     assert.ok(!('queue' in kid), '不再有排队字段')
 
     // 只打开父对话页、只读查子对话：不会把子对话的 CLI 启动起来
@@ -1468,6 +1468,13 @@ try {
     )
     kid = await waitDone(kid.id, 20000)
     assert.equal(kid.status, 'done')
+    // 第二轮跑完再看：本次开启时间已经换成新这一轮的，列表按它把这条重新排到前面
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    const again = kids.find((x) => x.id === kid.id)
+    assert.ok(
+      again.startedAt > one.startedAt,
+      `完成后再接新任务：本次开启时间往前走（${one.startedAt} → ${again.startedAt}）`,
+    )
     step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
 
     // 父对话的 CLI 结束时一起结束子对话的进程
@@ -1498,9 +1505,8 @@ try {
       prompt: 'COMMIT BEGIN_EDIT 父对话在独立分支',
       isolate: true,
     })
-    assert.equal(isoNew.worktree, null, '对话要改文件时才开独立分支，创建时还没开')
-    assert.equal(isoNew.wantsWorktree, true)
-    const isoParent = await waitTask(isoNew.id, (t) => t.worktree?.state === 'active' && !t.wantsWorktree)
+    assert.equal(isoNew.worktree?.state, 'active', '勾了独立分支就在创建对话时开好')
+    const isoParent = await waitDone(isoNew.id, 20000)
     assert.equal(isoParent.worktree?.state, 'active', '顶层对话传了 isolate 才隔离')
     let isoKid = await call('POST', '/tasks', {
       projectId: project.id,
@@ -2671,7 +2677,7 @@ try {
     prompt: 'COMMIT BEGIN_EDIT 在独立分支上改',
     isolate: true,
   })
-  assert.equal(tIso.worktree, null, '要改文件时才开独立分支')
+  assert.equal(tIso.worktree?.state, 'active', '创建对话时就开好独立分支')
   tIso = await waitTask(tIso.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
   assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')
@@ -2916,6 +2922,16 @@ try {
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.attempt, 2)
   assert.match(calls().at(-1).input, /不符合要求[\s\S]*nope/)
+  // Pi 的工具调用开始时就标成运行中：结果回来后要收掉，不然 AI 创建 / 分析里的工具行一直转圈
+  job = await assist('agent', `FAKE_JSON:${JSON.stringify(draftAgent)}`, { cli: 'pi' })
+  assert.equal(job.status, 'done', job.error)
+  const piTools = job.messages.flatMap((m) => m.tools)
+  assert.ok(piTools.length >= 2, '工具调用显示出来')
+  assert.deepEqual(
+    piTools.filter((x) => x.running).map((x) => x.label),
+    [],
+    '工具结束后不再显示运行中',
+  )
   // 两次都不对时失败并说明原因
   job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, name: '甲' })}`)
   assert.equal(job.status, 'failed')

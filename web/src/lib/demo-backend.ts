@@ -45,6 +45,7 @@ import {
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
+import { runUsage } from '@shared/run-usage'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
@@ -64,6 +65,7 @@ import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
+  childStartedAt,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -73,6 +75,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
+import { openPlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -539,6 +542,7 @@ function seed(): Db {
               rule: '接口、数据库、购物车计算都用整数分；格式化统一走 src/utils/money.ts 的 formatPrice，不要在组件里自己除以 100。',
               cause: '结算页用浮点数相加，0.1 + 0.2 显示成 0.30000000000000004 元。',
               paths: [],
+              tags: ['金额'],
               enabled: true,
               source: 'user',
               taskId: '',
@@ -552,6 +556,7 @@ function seed(): Db {
               rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期、是否显示优惠角标）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。活动期间的临时规则也写进配置的 promo 字段，带上结束时间。',
               cause: '加微信支付时分期开关写死在下单流程里，后来接 PayPal 又改了一遍。',
               paths: ['src/payment/**', 'src/pages/checkout/**'],
+              tags: ['支付', '配置'],
               enabled: true,
               source: 'agent',
               taskId: '',
@@ -572,6 +577,7 @@ function seed(): Db {
               rule: 'src/api/types.ts 改了，mock/ 下对应的 JSON 一起改，否则本地开发和 e2e 用的还是旧结构。',
               cause: '订单接口加了 couponId，mock 没跟上，e2e 一直测的旧结构。',
               paths: ['src/api/**', 'mock/**'],
+              tags: ['接口', '测试'],
               enabled: true,
               source: 'agent',
               taskId: '',
@@ -585,6 +591,7 @@ function seed(): Db {
               rule: '定时、轮询、等构建这类要等的事交给 run_background；结果回来先核对用时和输出，比如一小时的倒计时 0 秒就「成功」，说明命令没按预期运行，先查清楚再换做法，不要直接当作完成。',
               cause: '设一小时倒计时，脚本 0 秒就被判定完成，换成面板的长驻任务才对。',
               paths: [],
+              tags: ['命令行'],
               enabled: true,
               source: 'agent',
               taskId: '',
@@ -1984,6 +1991,7 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
@@ -1995,7 +2003,9 @@ function tasksRoute(
         working: x.working,
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
-        lastMessageAt: x.messages.at(-1)?.at ?? x.updatedAt,
+        startedAt: childStartedAt(x),
+        // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
+        plan: openPlan(x),
         resolved: x.resolved === true,
       }))
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做

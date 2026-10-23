@@ -553,9 +553,16 @@ const codexDone = (status, error) => {
   process.exit(0)
 }
 const file = `${kind}-output.txt`
+// 「AI 创建」的回复：一段说明 + JSON
+const assistText = () => {
+  const pick = (tag) => input.match(new RegExp(`${tag}:(.*)`))?.[1]?.trim()
+  const json = (input.includes('不符合要求') && pick('FAKE_JSON2')) || pick('FAKE_JSON') || '{}'
+  return `这是按你的要求生成的配置。\n\n\`\`\`json\n${json}\n\`\`\``
+}
 // 回复按当前 input 算：RPC 保活时同一进程会跑下一轮，input 已经换成新的那句
 const turnReply = () => {
   if (titleFor !== null) return `「${titleFor}·AI」`
+  if (input.startsWith('你是「Agent 面板」里的配置助手')) return assistText()
   // FAKE_EMPTY：第一轮只回一句「我先…」就收尾（复现模型只报准备语、不调工具），
   // 面板催了之后（提示里带「只说了要做什么就结束了这一轮」）才正常回复。用来测空回合自动接一轮。
   // 第一轮连工具都不发（noTools），否则 zero 工具永远不成立，这条分支就测不到。
@@ -722,10 +729,9 @@ if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && k
 }
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
-if (input.startsWith('你是「Agent 面板」里的配置助手')) {
-  const pick = (tag) => input.match(new RegExp(`${tag}:(.*)`))?.[1]?.trim()
-  const json = (input.includes('不符合要求') && pick('FAKE_JSON2')) || pick('FAKE_JSON') || '{}'
-  const text = `这是按你的要求生成的配置。\n\n\`\`\`json\n${json}\n\`\`\``
+// Pi 走下面的正常流程（先调工具再回复），用来测工具行在 AI 创建里也会结束
+if (input.startsWith('你是「Agent 面板」里的配置助手') && kind !== 'pi') {
+  const text = assistText()
   if (kind === 'claude') {
     out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
     out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text }] } })

@@ -40,6 +40,7 @@
 | UI 设计导出格式                              | [docs/umg-export.md](docs/umg-export.md)                                               |
 | CLI 输出样本                                 | [server/exec/fixtures/README.md](server/exec/fixtures/README.md)                       |
 | 踩过的坑、怎么记新的                         | [docs/lessons/README.md](docs/lessons/README.md)，平时用 `node scripts/lessons.mjs` 取 |
+| 写架构决策、查为什么这么定（ADR）            | [docs/adr/README.md](docs/adr/README.md)（什么时候写、命名和正文各节）                 |
 
 ## 常用命令
 

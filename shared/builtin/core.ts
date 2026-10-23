@@ -1,4 +1,4 @@
-import { AgentInput, type Agent, type AgentParam, type ParamValues, type Project } from '../schema.ts'
+import { AgentInput, type Agent, type AgentParam, type ParamValue, type ParamValues, type Project } from '../schema.ts'
 import { coerceValue, isEmptyValue } from '../agent-role.ts'
 import { t } from '../i18n.ts'
 import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
@@ -62,6 +62,27 @@ export function keepParamValues(defs: AgentParam[], mine: AgentParam[]): AgentPa
 }
 
 /**
+ * 必备角色改过默认值的参数。参数的取值就存在角色副本的 default 里，分不清「用户关掉的」和「装的时候旧默认就是关」，
+ * 所以每条只在启动时做一次：副本还是旧默认值的改成新默认，再把 id 记进 upgrades；之后用户再关掉就不会被改回来。
+ */
+const DEFAULT_CHANGES: { id: string; core: CoreKey; key: string; from: ParamValue }[] = [
+  // 文档角色的「写 Bug 记录」从默认关改成默认开（89dbf5a 只改了定义，已装的副本还是关的）
+  { id: 'docsync.bug-on', core: 'docsync', key: 'bug', from: false },
+]
+
+/** 对已装的必备角色补做还没做过的默认值升级（幂等） */
+export function upgradeParamDefaults(a: AgentInput, key: CoreKey): AgentInput {
+  const todo = DEFAULT_CHANGES.filter((c) => c.core === key && !a.upgrades?.includes(c.id))
+  if (!todo.length) return a
+  const params = a.params.map((p) => {
+    const c = todo.find((x) => x.key === p.key)
+    const def = c && coreDefinition(key).agent.params.find((d) => d.key === p.key)
+    return c && def && p.default === c.from ? { ...p, default: def.default } : p
+  })
+  return { ...a, params, upgrades: [...(a.upgrades ?? []), ...todo.map((c) => c.id)] }
+}
+
+/**
  * 按内置定义改写一个必备角色：定义部分换成内置的，可以改的部分留用户的。
  * 启动同步和保存都走它，所以用户（或 AI 优化）改了不该改的字段也会被纠正回来。
  */
@@ -104,6 +125,7 @@ export function sameCore(a: AgentInput, b: AgentInput) {
       x.canDelegate,
       x.canPlan,
       x.capsSet,
+      x.upgrades,
       x.enabled,
       x.categoryId,
       x.includes,

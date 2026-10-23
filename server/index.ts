@@ -32,6 +32,7 @@ import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { usageApi } from './usage.ts'
+import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
@@ -478,6 +479,8 @@ app.put('/agents/:id', async (c) => {
       ...syncCore(r.data!, coreDefinition(core), { categoryId: before.categoryId, includes: before.includes }),
       name: before.name,
       origin: before.origin,
+      // 一次性升级记录只由启动同步维护，编辑页保存不带它也不能清掉，否则下次启动会把用户关掉的开关又改回去
+      upgrades: before.upgrades,
     }
   const a = await agents.update(id, r.data!)
   return a ? c.json(a) : bad(c, t('角色不存在'), 404)
@@ -662,6 +665,8 @@ app.delete('/projects/:id', async (c) => {
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 app.route('/tasks', tasks.routes)
+// 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
+app.route('/tasks', runUsageApi({ tasks }).routes)
 // 设置页的用量统计：按天 / 周 / 月聚合各任务每轮执行的 token
 app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))

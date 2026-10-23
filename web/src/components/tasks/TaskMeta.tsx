@@ -17,7 +17,8 @@ import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import type { StepUsage, Task, TaskStep } from '@shared/schema'
 import { topSteps } from '@shared/flow'
-import { fmtTokens, liveTps, stepLabel } from '@/lib/tasks'
+import { fmtTokens, liveTps, stepLabel, tokenGroups } from '@/lib/tasks'
+import { useRunUsage } from '@/lib/useRunUsage'
 import { cacheHitRate } from '@shared/task-export'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
@@ -204,8 +205,12 @@ function ContextRow({ line }: { line: ContextLine }) {
 
 /** Token 用量：总数、速度、命中率；点开看输入、输出、缓存命中和费用 */
 function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
-  const u = scope ? sumUsage(scope) : task.usage
-  const tps = liveTps(task, scope ? [...new Set(scope.map((s) => s.agentId))] : undefined)
+  // 没选节点时是整个运行（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能问服务端
+  const run = useRunUsage(task, !scope)
+  const u = scope ? sumUsage(scope) : run.total
+  const tps = scope ? liveTps(task, [...new Set(scope.map((s) => s.agentId))]) : run.runTps
+  // 有子对话或子任务时才分组：没有时浮层和以前一样，不出现「子任务 0」这种噪音行
+  const groups = scope ? [] : tokenGroups(run)
   const total = u.inputTokens + u.outputTokens
   if (!total) return null
   const rate = cacheHitRate(u)
@@ -214,6 +219,8 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
     [t('输出'), fmtTokens(u.outputTokens)],
     [t('缓存命中'), fmtTokens(u.cacheReadTokens ?? 0)],
   ]
+  const label = scope ? t('累计 token') : t('整个运行')
+  const groupLabel = { own: t('本对话'), sub: t('子任务与子对话') }
   return (
     <Popover>
       <PopoverTrigger className={chip} title={t('Token 用量')}>
@@ -226,11 +233,11 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent className="w-[min(320px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(360px,calc(100vw-24px))]">
         <div className="flex flex-col gap-2 p-2.5">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
-            <span className="text-xs text-subtle">{t('累计 token')}</span>
+            <span className="text-xs text-subtle">{label}</span>
           </div>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
             {rows.map(([k, v]) => (
@@ -246,6 +253,21 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
               </div>
             )}
           </dl>
+          {groups.length > 0 && (
+            <dl className="flex flex-col gap-1.5 border-t pt-2 text-xs">
+              {groups.map((g) => (
+                <div key={g.key} className="flex items-baseline gap-2">
+                  <dt className="text-subtle">{groupLabel[g.key]}</dt>
+                  <dd className="ml-auto font-mono text-muted tabular-nums">{fmtTokens(g.tokens)}</dd>
+                  {g.tps > 0 && (
+                    <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent tabular-nums">
+                      {g.tps.toFixed(1)} token/s
+                    </dd>
+                  )}
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
       </PopoverContent>
     </Popover>

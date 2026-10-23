@@ -37,6 +37,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { ChildActivity } from '@shared/task'
+import type { RunUsage } from '@shared/run-usage'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -331,6 +332,8 @@ export const api = {
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
+  /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
+  taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   taskChildren: (id: string) =>
     request<
       {
@@ -342,10 +345,12 @@ export const api = {
         updatedAt: string
         /** 进程还活着（预热、等下一句、正在执行） */
         cliAlive: boolean
-        /** 最近一条消息的时间，列表按它排序 */
-        lastMessageAt: string
+        /** 本次开启的时间（最近一轮开始执行），列表按它排序 */
+        startedAt: string
         /** 正在等用户确认的请求数 */
         requests?: number
+        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」 */
+        plan?: { done: number; total: number }
         /** 在独立 worktree 里改时的分支 */
         branch?: string
         /** 正在执行时这会儿在做什么 */
