@@ -23,23 +23,30 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
   const [busy, setBusy] = useState(false)
   // 点了「交给父对话决定」：接口返回前就换成已交出，刷新后由 ask.delegated 记着
   const [handed, setHanded] = useState(false)
+  // 没能叫起父对话的原因：服务端写在卡片上（刷新后还在），本次点击失败时也用它
+  const [failed, setFailed] = useState('')
   const delegated = !answered && (ask.delegated || handed)
   const pending = !answered && !delegated
-  const [open, setOpen] = useState(pending)
+  const nudgeError = delegated ? (ask.delegatedError ?? failed) : ''
+  // 没叫起父对话时保持展开：原因和重试要一眼能看到，不能收在折叠区里
+  const expanded = pending || !!nudgeError
+  const [open, setOpen] = useState(expanded)
   const openChild = useChildOpen()
-  // 状态变了（回答了、交出去了）自动收起；之后用户自己点开、收起都随意
-  const [wasPending, setWasPending] = useState(pending)
-  if (pending !== wasPending) {
-    setWasPending(pending)
-    setOpen(pending)
+  // 状态变了（回答了、交出去了、叫不起来了）跟着展开或收起；之后用户自己点开、收起都随意
+  const [wasExpanded, setWasExpanded] = useState(expanded)
+  if (expanded !== wasExpanded) {
+    setWasExpanded(expanded)
+    setOpen(expanded)
   }
 
   const delegate = async () => {
     if (!task || busy) return
     setBusy(true)
     try {
-      await api.answerChildAsk(task.id, m.id, { answer: '', delegate: true })
+      const r = await api.answerChildAsk(task.id, m.id, { answer: '', delegate: true })
       setHanded(true)
+      // 接口成功不代表叫起了父对话：没叫起来时把原因留在卡片上，并给重试
+      setFailed(r.nudge && !r.nudge.ok ? r.nudge.error : '')
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -50,7 +57,9 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
   const status = answered ? (
     <span className="shrink-0 font-sans text-subtle">{ask.by === 'user' ? t('你已决定') : t('父对话已决定')}</span>
   ) : delegated ? (
-    <span className="shrink-0 font-sans text-subtle">{t('交给父对话决定')}</span>
+    <span className={cn('shrink-0 font-sans', nudgeError ? 'text-destructive' : 'text-subtle')}>
+      {nudgeError ? t('没能叫起父对话') : t('已交给父对话决定')}
+    </span>
   ) : (
     <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-warning/15 px-1.5 font-sans text-[0.6875rem] leading-[1.125rem] text-warning">
       <span className="relative flex h-1.5 w-1.5">
@@ -91,7 +100,19 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
             <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{ask.answer}</span>
           </div>
         ) : delegated ? (
-          <p className="text-xs text-subtle">{t('父对话会处理这个问题，决定后交给子对话')}</p>
+          nudgeError ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-[0.8125rem] text-destructive">
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                {t('没能叫起父对话：{error}', { error: nudgeError })}
+              </span>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void delegate()} className="h-7 text-xs">
+                {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+                {t('重试')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-subtle">{t('已交给父对话决定，它会在下一轮处理')}</p>
+          )
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 text-xs text-subtle">
@@ -128,8 +149,11 @@ export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => voi
   const answerAll = async (answers: string[], delegate: boolean) => {
     try {
       // 一个个交：前面的已经交给子对话了，后面的出错时只报错，不回滚
-      for (const [i, a] of asks.entries())
-        await api.answerChildAsk(parentId, a.id, { answer: delegate ? '' : (answers[i] ?? ''), delegate })
+      for (const [i, a] of asks.entries()) {
+        const r = await api.answerChildAsk(parentId, a.id, { answer: delegate ? '' : (answers[i] ?? ''), delegate })
+        // 交给父对话决定时没叫起来：明确告诉用户，不要当成成功
+        if (r.nudge && !r.nudge.ok) toast.error(t('没能叫起父对话：{error}', { error: r.nudge.error }))
+      }
     } catch (e) {
       toast.error((e as Error).message)
     }

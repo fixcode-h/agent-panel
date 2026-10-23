@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -21,6 +21,12 @@ paths: server/exec/runner.ts, server/assist.ts, server/designs.ts, server/exec/d
 - 规则：保活时一个 CLI 进程会连着处理好几条用户消息，`runAgent` 里攒的输出（`mine`、`touched`）是整个进程的。凡是判「这一轮做没做事」（空回合、补充要不要重放、重试发什么）都只看这一轮开始之后的输出，重试重发的是这一轮的用户消息，不是进程启动时的提示词。
 - 起因：9e7674d 只修了进程的第一轮；第二句起一个字没回时，前一轮的正文把它盖住，消息照样落进死回合（AI 分析里 17:54、17:55 两条消息没有回应）。
 - 防线：`scripts/e2e.mjs` 的「保活中的第二句一个字都没回」用例。
+
+## 交给另一个对话的任务要走实时交付，失败必须显示给用户
+
+- 规则：让父对话去处理一件事（子对话的提问交给它决定之类）时，不能按 `working` 判断它空闲：停在等下一句、收尾中、预热时 `working` 都是 false，但执行位还占着，直接 `followUp` 会抛 `TaskBusyError`。用 `deliver`（等下一句就直接续上、能插话就插话、收不下记到这一轮结束后处理），只有 `live` 里没有进程时才 `followUp`；问题全文和选项一起交过去，续上同一个进程时收件箱不会重读。叫不起来时把原因返回给接口，界面显示原因并给重试，不能只写日志；卡片状态字段（如 `delegated`）必须进 `messageStamp`，否则服务端改了也不推送。
+- 起因：点「交给父对话决定」好几次父对话都没动：它停在等下一句时 `working=false`，`followUp` 撞上执行位后只留了一条 `log.warn`，接口照样返回成功。
+- 防线：`shared/task-stamp.test.ts`、`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」用例。
 
 ## 每个收 CliEvent 的地方都要把工具行收尾
 

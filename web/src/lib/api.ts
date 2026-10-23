@@ -84,6 +84,9 @@ import { t } from '@shared/i18n'
 /** 设计连同正在进行的 AI 对话 / 生成图片 */
 export type DesignFull = Design & { job: DesignJob | null }
 
+/** 交给父对话决定时，父对话到底叫起来没有 */
+export type ChildAskNudge = { ok: true; how: string } | { ok: false; error: string }
+
 /** 设计里图片文件的地址（在线演示里是内存里的 data URL） */
 export const designFileUrl = (id: string, file: string) =>
   file.startsWith('data:') ? file : `/api/designs/${id}/files/${file}`
@@ -493,9 +496,12 @@ export const api = {
   discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
-  /** 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定 */
+  /**
+   * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
+   * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
+   */
   answerChildAsk: (id: string, mid: string, body: { answer: string; delegate: boolean }) =>
-    request<Task>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
+    request<{ task: Task; nudge?: ChildAskNudge }>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
