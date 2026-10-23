@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { promptLangRules } from './prompt-lang.ts'
 
 /**
  * 「AI 处理」：哪里报错，就把报错、执行的命令和输出、相关的情况交给本机 CLI（设置里「AI 创建」用的那个），
@@ -73,11 +74,14 @@ export function conversationAround(msgs: ConversationLine[], index: number, max 
   return text.length > max ? `${text.slice(0, max - tail.length)}${tail}` : text
 }
 
-/** 给 CLI 的提示词：先找原因再动手，改动要小，最后说清楚结果。提示词固定用中文 */
+/** 给 CLI 的提示词：先找原因再动手，改动要小，最后说清楚结果。提示词正文是中文，回复语言跟随面板设置 */
 export function fixPrompt(input: FixInput, env: { os: string; cwd: string; extra?: string }) {
   const block = (title: string, body: string) => (body.trim() ? [`${title}：`, body.trim(), ''] : [])
   return [
     '本机的 Agent 面板（调度 Claude Code、Codex 等编码 CLI 的网页控制台）在操作时出错了，请帮忙分析原因并解决。',
+    '',
+    promptLangRules(),
+    '',
     '',
     `出了什么问题：${input.title}`,
     '',

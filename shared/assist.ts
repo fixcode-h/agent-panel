@@ -5,6 +5,7 @@
  */
 import { z } from 'zod'
 import { CLIS, getCli } from './clis.ts'
+import { promptLangWord, withPromptLangRules } from './prompt-lang.ts'
 import {
   autoLayout,
   edge,
@@ -420,6 +421,11 @@ export function buildAssistPrompt(
   messages: AssistMessage[],
   installed: string[],
 ) {
+  // 配置助手的回复也跟随面板设置的语言：正文和思考过程用同一种，代码和命令不翻译
+  return withPromptLangRules(buildAssistBody(kind, ctx, messages, installed))
+}
+
+function buildAssistBody(kind: AssistKind, ctx: AssistContext, messages: AssistMessage[], installed: string[]) {
   if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
   if (kind === 'params') return buildParamsPrompt(ctx, messages)
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
@@ -457,7 +463,7 @@ export function buildAssistPrompt(
     `## 创建规则\n${kind === 'agent' ? AGENT_RULES : WORKFLOW_RULES}`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先用两三句中文说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
+先用两三句${promptLangWord()}说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
 然后输出且只输出一个 \`\`\`json 代码块，内容是完整的${what}，严格符合下面的结构（字段名不能改，不要加注释）：
 \`\`\`json
 ${kind === 'agent' ? AGENT_SHAPE : WORKFLOW_SHAPE}
@@ -517,7 +523,7 @@ function buildLibraryPrompt(kind: 'skill' | 'mcp', ctx: AssistContext, messages:
       `## 创建规则\n${SKILL_RULES}`,
       ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
       `## 输出格式
-先用两三句中文说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
+先用两三句${promptLangWord()}说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
 然后输出且只输出一个 \`\`\`json 代码块，content 是完整的 SKILL.md 文本（含 front matter），严格符合下面的结构（字段名不能改，不要加注释）：
 ${fence('json', SKILL_SHAPE)}`,
       `## 对话\n${convo}`,
@@ -533,7 +539,7 @@ ${fence('json', SKILL_SHAPE)}`,
     sub.clis ? `## 已装在这些 CLI 里\n${sub.clis}` : '',
     `## 排查规则\n${MCP_RULES}`,
     `## 输出格式
-先用几句中文说明你查到的原因、做了哪些检查、改了哪里；没能确定原因时说清楚还缺什么信息，但仍然给出你认为最可能可用的配置。
+先用几句${promptLangWord()}说明你查到的原因、做了哪些检查、改了哪里；没能确定原因时说清楚还缺什么信息，但仍然给出你认为最可能可用的配置。
 然后输出且只输出一个 \`\`\`json 代码块，内容是修复后的完整配置，严格符合下面的结构（字段名不能改，不要加注释；stdio 的只填 command、args、env，http 的只填 url、headers）：
 ${fence('json', MCP_SHAPE)}`,
     `## 对话\n${convo}`,
@@ -595,7 +601,7 @@ function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - 事实自己查，查不到就按上面的顺序落到默认值，不要因为「没有明确依据」而停下来提问。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先逐个参数用一行中文写结论和依据，例如「TDD：打开（package.json 有 test:unit，server/ 下有 *.test.ts）」「任务记录：保持默认（项目没有 worklog 目录，也没有跨会话的大任务约定）」。
+先逐个参数用一行${promptLangWord()}写结论和依据，例如「TDD：打开（package.json 有 test:unit，server/ 下有 *.test.ts）」「任务记录：保持默认（项目没有 worklog 目录，也没有跨会话的大任务约定）」。
 然后输出且只输出一个 \`\`\`json 代码块，形如：
 \`\`\`json
 { "values": { "scope": "本次改动", "env": "wsl", "regress": true } }
@@ -696,7 +702,7 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先用两三句中文说明你看到了什么、为什么这样排${ctx.projectPath ? '' : '，以及哪些命令要用户按项目实际情况改'}。
+先用两三句${promptLangWord()}说明你看到了什么、为什么这样排${ctx.projectPath ? '' : '，以及哪些命令要用户按项目实际情况改'}。
 然后输出且只输出一个 \`\`\`json 代码块：
 \`\`\`json
 { "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
@@ -725,13 +731,13 @@ function buildProjectPrompt(ctx: AssistContext, messages: AssistMessage[]) {
     ctx.subject?.scan ? `## 面板按文件规则扫出来的线索（可能不全或不准，以你实际看到的为准）\n${ctx.subject.scan}` : '',
     `## 要填的字段
 - name：项目名，简短，优先用 README 标题或包名，不超过 40 个字
-- description：一两句中文说明这个项目是做什么的、主要技术栈，不超过 120 个字
+- description：一两句${promptLangWord()}说明这个项目是做什么的、主要技术栈，不超过 120 个字
 - type：general（一般项目）或 ue（Unreal Engine 项目，目录里有 .uproject）
 - steps：测试步骤，Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto）、cwd（相对项目根，没有留空）、when（执行条件，没有留空）、timeoutSec（0 表示不限）、note、enabled、quick（类型检查、lint 这类几十秒内跑完的标 true）
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建。只写项目里真的有的命令，没有脚本就不要编 \`npm run xxx\`。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先用三五句中文说明你看到了什么：项目是做什么的、技术栈、构建和测试怎么跑、有什么要用户注意的。
+先用三五句${promptLangWord()}说明你看到了什么：项目是做什么的、技术栈、构建和测试怎么跑、有什么要用户注意的。
 然后输出且只输出一个 \`\`\`json 代码块：
 \`\`\`json
 { "name": "官网前端", "description": "公司官网的前端，React + Vite。", "type": "general", "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "quick": true } ] }
@@ -773,7 +779,7 @@ function buildLessonsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - paths 一般留空：不同项目的目录不一样。
 - 宁缺毋滥：没有适合的就输出空的 changes，在说明里讲为什么。`,
     `## 输出格式
-先用两三句中文说明挑了哪些、为什么，以及哪些看起来通用但没提（原因）。
+先用两三句${promptLangWord()}说明挑了哪些、为什么，以及哪些看起来通用但没提（原因）。
 然后输出且只输出一个 \`\`\`json 代码块：
 \`\`\`json
 { "changes": [ { "op": "add", "id": "", "title": "一句话的规则", "rule": "展开说明", "cause": "从什么情况总结的", "paths": [], "sources": ["项目教训的 id"] } ] }

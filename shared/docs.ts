@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { CLIS, getCli } from './clis.ts'
+import { promptLangRules } from './prompt-lang.ts'
 
 /** 项目说明文件相对项目目录的路径 */
 export type DocFile = string
@@ -74,11 +75,13 @@ export interface DocJob {
 
 /**
  * 给 CLI 的提示：只读项目代码核对，不改文件，把完整的新内容放在一个 markdown 代码块里。
- * 提示词固定用中文，和其他发给 Agent 的提示一样
+ * 提示词正文是中文，回复语言跟随面板设置（见 prompt-lang.ts）
  */
 export function docOptimizePrompt(input: DocOptimizeInput, clis: string[]) {
   return [
     `你在帮忙优化项目根目录下的说明文件「${input.path}」。${clis.length ? `这个文件会被 ${clis.join('、')} 在每次启动时读入，作为在这个项目里工作的约定。` : ''}`,
+    // 语言规则接在第一段之后：识别这类提示的地方（scripts/fake-cli）按第一句开头匹配
+    promptLangRules(),
     '',
     '要求：',
     '- 先看一下项目的目录结构、package.json / 构建脚本、README 等，核对文件里写的命令、目录、约定是不是和项目实际一致，不一致的改正，缺的重要信息补上。',

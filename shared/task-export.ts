@@ -11,6 +11,7 @@ import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts
 import { includedAgents } from './agent-role.ts'
 import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
+import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
 export const TASK_EXPORT_VERSION = 1
@@ -570,6 +571,8 @@ export function analysisPrompt(bundles: TaskExport[], focus = '') {
     ? `分析附件里这次${one.mode === 'workflow' ? '工作流执行' : '对话'}「${one.title}」的完整记录`
     : `分析附件里工作流最近 ${bundles.length} 次执行的完整记录`
   return `${head}，判断哪里需要优化，并给出可以直接应用的修改建议。只分析，不要修改任何文件。
+
+${promptLangRules()}
 ${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
 ## 要回答的问题
 1. 结果质量：最终产出是否达到了用户的要求？哪里不够好、为什么（引用记录里的原文或节点）。
@@ -584,7 +587,7 @@ ${FRAMEWORK_MAP}
    拿不准的不写。
 
 ## 回复格式
-用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」「### 5. 交付的代码」五个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
+用${promptLangWord()}写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」「### 5. 交付的代码」五个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
 
 最后单独写一个代码块，语言名写 ${EVOLUTION_LANG}，内容是 JSON，把建议的修改写成可以直接应用的形式：
 

@@ -16,6 +16,7 @@ import {
 } from './umg.ts'
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
 import { t } from './i18n.ts'
+import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 
@@ -342,7 +343,7 @@ ${projectPromptBrief(project.prompts) || '（没有）'}
 ${imgs || '（没有）'}
 ${chat ? `\n## 对话\n${chat}\n` : ''}
 ## 输出格式
-先用一句中文说明，然后输出一个 \`\`\`json 代码块：
+先用一句${promptLangWord()}说明，然后输出一个 \`\`\`json 代码块：
 {
   "name": "风格的名字（中文，12 个字以内，例如「暗黑奇幻·石刻金边」）",
   "summary": "一两句中文说明这个风格的特点",
@@ -752,7 +753,7 @@ ${
     ? ''
     : `## 整体风格还没定
 这个设计还没有确定整体美术风格。如果用户这次的要求和之前的对话里都没有说清楚整体风格（例如「暗黑奇幻」「像素风」「扁平简约」这样的描述，或者附上了参考图），先不要搭界面、不要列图片：
-调用 ask_user 问用户想要什么整体风格（需要的话同时问配色、气质等其他问题），然后回复一句为什么先问，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
+调用 ask_user 问用户想要什么整体风格（需要的话同时问配色、气质等其他问题），然后回复一句为什么先问，给 3~4 个适合这个界面和题材的选项，每个选项写 label（${promptLangWord()}，10 个字以内）、desc（一句${promptLangWord()}说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
 ${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并用 set_design 的 style 写下整体风格。用户回答了风格问题后，按之前的要求接着做。
 
 `
@@ -784,7 +785,7 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
-- 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句中文回复你做了什么
+- 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句${promptLangWord()}回复你做了什么
 
 ### 控件的写法（宽松，少写错）
 - {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
@@ -804,7 +805,7 @@ ${web ? WEB_MOTION : GAME_MOTION}
 ${presetCatalogText()}
 
 ## 回复
-所有修改都通过 design 工具完成，不要把整棵树写成 JSON 输出、不要写文件、不要运行命令。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块。`
+所有修改都通过 design 工具完成，不要把整棵树写成 JSON 输出、不要写文件、不要运行命令。回复就是给用户看的几句${promptLangWord()}说明，不要输出 JSON 或代码块。`
 }
 
 /** 每次调用设计工具最多提交的条数、控件数和图片数：一次输出太长，模型服务的连接容易中途断开 */

@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { BUILTIN_AGENTS } from './builtin/agents.ts'
 import { DOC_MAX } from './docs.ts'
+import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 
 /** Skill 部署到的目录（相对用户目录） */
 export const SKILL_TARGET = '~/.agents/skills'
@@ -97,16 +98,20 @@ export const GlobalDocOptimize = z.object({
 })
 export type GlobalDocOptimize = z.infer<typeof GlobalDocOptimize>
 
-/** AI 生成或优化全局说明的提示词（固定用中文） */
+/** AI 生成或优化全局说明的提示词（回复语言跟随面板设置） */
 export function globalDocPrompt(input: GlobalDocOptimize, clis: string[]) {
   const has = input.content.trim()
   return [
     `你在帮忙${has ? '优化' : '写'}一份全局说明文件 AGENTS.md。${clis.length ? `它会被部署到 ${clis.join('、')} 的用户目录，` : ''}在所有项目里每次启动时读入，作为通用的工作约定。`,
+    // 语言规则接在第一段之后：识别这类提示的地方按第一句开头匹配
+    promptLangRules(),
     '',
     '要求：',
     '- 只写跨项目都成立的常驻约束：语言、文件编码、提问方式、命令执行、执行纪律、安全边界等；不写某个项目的命令、目录和技术栈。',
     '- 写给编码助手看：简洁、具体、能照着做，不写空话；用二级标题分节。',
-    has ? '- 保留原文里仍然正确、有用的内容和原来的语言。' : '- 用中文写。',
+    // 文件里“语言”那一节的约定本身也要跟着设置走，否则英文界面下要求写中文会很奇怪
+    has ? '- 保留原文里仍然正确、有用的内容和原来的语言。' : `- 用${promptLangWord()}写。`,
+    '- 其中的「语言」一节写：回复正文和思考过程都用同一种语言，代码、标识符、命令、日志和报错原文保持原样不翻译。',
     '- 技能清单由部署时自动附在文件末尾，不要自己写技能列表，也不要写「先加载某个总路由技能」这类编排规则。',
     '- 不要修改任何文件，只在回答里给出结果。',
     input.request ? `- 用户的要求：${input.request}` : '',
