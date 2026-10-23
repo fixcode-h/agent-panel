@@ -255,7 +255,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('更新计划'), firstLine(a.title) || (n ? t('{n} 个步骤', { n }) : ''), 'other', '')
     }
     case 'finish_plan':
-      return as(t('计划总结'), firstLine(a.summary), 'other', text(a.summary))
+      return as(t('结束计划'), '')
     case 'close_run':
       return as(t('结束这次运行'), '')
     case 'get_status':

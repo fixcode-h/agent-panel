@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, ListChecks, Loader2 } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, ListChecks } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, Task, TaskPlan } from '@shared/schema'
 import { planChildren, planProgress, shownPlan } from '@shared/plan'
@@ -7,7 +7,6 @@ import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
-import { Markdown } from './Markdown'
 
 const STATUS_LABEL: Record<PlanStatus, string> = {
   pending: t('待做'),
@@ -140,26 +139,19 @@ export function PlanButton({ task }: { task: Task }) {
             {t('{n} 个在等待', { n: p.waiting })}
           </span>
         )}
-        {finished && !plan.summary && (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-subtle">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {t('正在写总结')}
-          </span>
-        )}
       </button>
       {open && <PlanWindow task={task} plan={plan} />}
     </div>
   )
 }
 
-/** 计划窗口：当前计划的步骤（进行中的展开子步骤），做完的计划带总结；下面能翻以前的计划 */
+/** 计划窗口：当前计划的步骤（进行中的展开子步骤）；下面能翻以前的计划 */
 function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
   const p = planProgress(task, plan)
   const live = !plan.doneAt
   const now = useNow(live)
   const older = task.plans.slice(0, -1).reverse()
   const [history, setHistory] = useState(false)
-  const teamNames = new Set<string>()
   return (
     <div
       role="dialog"
@@ -180,7 +172,6 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
             <PlanStepRow key={s.id} task={task} step={s} now={now} />
           ))}
         </ol>
-        {plan.doneAt && <PlanSummary plan={plan} teamNames={teamNames} />}
         {older.length > 0 && (
           <div className="mt-1.5 border-t px-1 pt-1.5">
             <button
@@ -195,7 +186,7 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
             {history && (
               <ul className="mt-0.5 flex flex-col">
                 {older.map((x) => (
-                  <OldPlan key={x.id} plan={x} teamNames={teamNames} />
+                  <OldPlan key={x.id} plan={x} />
                 ))}
               </ul>
             )}
@@ -303,31 +294,8 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
   )
 }
 
-/** 做完的计划下面的总结：Agent 写的；它没写、面板取了最后的回复时标出来 */
-function PlanSummary({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }) {
-  return (
-    <div className="mx-1 mt-2 rounded-lg border border-line bg-field/50 px-3 py-2.5">
-      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted">
-        <CircleCheck className="h-3.5 w-3.5 text-success" />
-        {t('总结')}
-        {plan.autoSummary && (
-          <span className="font-normal text-subtle">{t('（AI 没写总结，取的是最后一条回复）')}</span>
-        )}
-      </div>
-      {plan.summary ? (
-        <Markdown text={plan.summary} teamNames={teamNames} className="text-[0.8125rem]" />
-      ) : (
-        <p className="flex items-center gap-1.5 text-xs text-subtle">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          {t('步骤都完成了，AI 正在写总结')}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/** 以前的一份计划：一行标题和步骤数，点开看步骤和总结 */
-function OldPlan({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }) {
+/** 以前的一份计划：一行标题和步骤数，点开看步骤 */
+function OldPlan({ plan }: { plan: TaskPlan }) {
   const [open, setOpen] = useState(false)
   const done = plan.steps.filter((s) => s.status === 'done').length
   const at = plan.doneAt ? new Date(plan.doneAt) : null
@@ -357,7 +325,6 @@ function OldPlan({ plan, teamNames }: { plan: TaskPlan; teamNames: Set<string> }
               </li>
             ))}
           </ol>
-          {plan.summary && <PlanSummary plan={plan} teamNames={teamNames} />}
         </div>
       )}
     </li>
