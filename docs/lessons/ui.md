@@ -55,3 +55,9 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 规则：会被角色或后台改动的数据（如项目教训）不要只用启动时载入的页面缓存，弹窗打开时重新请求再合进草稿。
 - 起因：角色用 `record_lesson` 记的教训，项目设置里看不到。
 - 防线：人工。
+
+## 行内代码里的文件路径按段校验，字符集用 Unicode 属性
+
+- 规则：认「这段行内代码是不是文件路径」用 `web/src/lib/file-path.ts` 的 `parsePath` / `linkPaths`，别再在原地写正则。字符集用 `\p{L}\p{N}`（带 `u`），不能用 `\w`（只认 ASCII，中文目录和文件名整条漏掉）；扩展名白名单要带图片格式（png/jpg/jpeg/gif/webp/bmp），不误判靠「按段校验 + 扩展名白名单 + 显式拒绝 URL 和命令加参数」，不要靠收紧字符集。
+- 起因：消息里 `ui-shots/107-对话-图片气泡.png` 这类中文路径点不开，`\w` 不匹配中文、`EXT` 里也没有图片扩展名。
+- 防线：`web/src/lib/file-path.test.ts`（`console.log`、`a.b`、`1.2.3`、URL、`node scripts/e2e.mjs` 必须仍不匹配），`scripts/ui-check.mjs` 的「对话-路径可点」。

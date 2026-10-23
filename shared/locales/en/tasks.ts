@@ -443,6 +443,7 @@ export const EN_TASKS: Record<string, string> = {
     'The current turn stops and the CLI process ends right away instead of staying alive for the next message. What it already wrote is kept; the next message starts a new session.',
   '已强制停止，CLI 进程已结束': 'Force stopped; the CLI process has ended',
   查看文件: 'View file',
+  查看图片: 'View image',
   执行后会显示: 'Shown after it runs',
   '让 Agent 把之前的对话压缩成摘要，腾出上下文':
     'Have the agent compress the conversation so far into a summary to free up context',
