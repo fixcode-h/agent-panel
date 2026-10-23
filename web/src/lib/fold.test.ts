@@ -5,13 +5,14 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { TaskMessage, ToolUse } from '@shared/schema'
+import type { StepStatus, TaskMessage, ToolUse } from '@shared/schema'
 import { setLang, t } from '@shared/i18n'
 import {
   addFoldCut,
   foldCuts,
   foldStats,
   keptOut,
+  liveHelpers,
   markFold,
   replyText,
   segOpenOf,
@@ -44,6 +45,9 @@ const panel = (id: string, kind: NonNullable<TaskMessage['panel']>, text: string
   role: 'system',
   panel: kind,
 })
+/** 派了子任务的那条消息：界面上在派出的位置画子任务卡片 */
+const spawned = (id: string, ids: string[]): TaskMessage => ({ ...agent(id, ''), role: 'system', spawned: ids })
+const step = (id: string, status: StepStatus) => ({ id, status })
 
 test('foldStats：折叠行只统计这一段里的操作，改的文件不多时直接写文件名', () => {
   const msgs = [
@@ -180,4 +184,33 @@ test('replyText：模型当成文字说出来的工具调用写法从正文里�
   assert.equal(replyText(agent('m1', markup)), '看看这个')
   // 用户消息原样显示
   assert.equal(replyText({ ...agent('u1', markup), role: 'user' }), markup)
+})
+
+test('liveHelpers：还在跑的子任务不收进折叠，交回结果后才跟着这一段收起', () => {
+  const msgs = [agent('m1', '', { thinking: '先派活' }), spawned('m2', ['s1']), agent('m3', '等它们回来')]
+  // 执行中、排队中都算还没收尾：卡片留在折叠外面
+  assert.deepEqual(
+    liveHelpers(msgs, [step('s1', 'running')]).map((x) => x.msg.id),
+    ['m2'],
+  )
+  assert.deepEqual(
+    liveHelpers(msgs, [step('s1', 'pending')]).map((x) => x.msg.id),
+    ['m2'],
+  )
+  // 跑完、失败都算收尾了：跟着这一段收进折叠
+  assert.deepEqual(liveHelpers(msgs, [step('s1', 'done')]), [])
+  assert.deepEqual(liveHelpers(msgs, [step('s1', 'failed')]), [])
+  // 没有任务对象（旧数据）时也安全
+  assert.deepEqual(liveHelpers(msgs, undefined), [])
+})
+
+test('liveHelpers：一次派了几个子任务，只有还在跑的那几个留在外面', () => {
+  const msgs = [spawned('m1', ['s1', 's2']), agent('m2', '两个都派完了')]
+  const live = liveHelpers(msgs, [step('s1', 'done'), step('s2', 'running')])
+  assert.deepEqual(
+    live.map((x) => x.ids),
+    [['s2']],
+  )
+  // 折叠行照旧统计这段派出了几个（运行中的工具也是这样：既在折叠行计数，又留在外面转圈）
+  assert.deepEqual(foldStats(msgs).parts, [t('派出 {n} 个子任务', { n: 2 })])
 })
