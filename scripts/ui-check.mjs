@@ -1167,15 +1167,9 @@ try {
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('AI 处理：没有新建排查对话'))
   await check(p, 'AI处理-对话', ['出了什么问题：Pi：卸载没有成功'])
+  // 最小化成浮条（和「角色」页的 AI 优化共用同一个组件）：后面的设置流程里它一直在，最后统一验拖动和关闭
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   await check(p, 'AI处理-最小化', ['AI 排查：Pi：卸载没有成功'])
-  await p.getByRole('button', { name: /^AI 排查：Pi/ }).click()
-  // 关闭：还在排查时先提醒会停止
-  await p.getByRole('button', { name: '关闭', exact: true }).last().click()
-  if (await p.getByText('停止 AI 排查？').isVisible()) {
-    await check(p, 'AI处理-关闭提醒', ['以后不再提醒，关闭时直接停止'])
-    await p.getByRole('button', { name: '停止并关闭' }).click()
-  }
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 Agent 的配置里识别到 2 个 API', 'Codex · openrouter'])
@@ -1228,6 +1222,96 @@ try {
   await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
   await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
+  // 最小化后的浮条：「AI 处理」和「AI 优化」用同一个组件——尺寸、圆角、层级、状态文字一致，
+  // 两个同时最小化时默认位置错开、不互相盖；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
+  const dock = (name) => p.getByRole('group', { name, exact: true })
+  const aiDock = dock('AI 排查：Pi：卸载没有成功')
+  await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉设置后 AI 处理的浮条没了'))
+  // 量计算后的样式：刚出现的浮条还在跑 pop-in（会缩放），getBoundingClientRect 会偏小 1px
+  const dockLook = (loc) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { h: s.height, radius: s.borderRadius, z: s.zIndex, font: s.fontSize }
+    })
+  await p
+    .getByRole('radio', { name: /^Agent 模式/ })
+    .first()
+    .click()
+  await p.getByRole('button', { name: '角色', exact: true }).first().click()
+  await p.getByText('评审', { exact: true }).first().click()
+  await p.getByRole('button', { name: 'AI 优化' }).first().click()
+  await p.getByRole('button', { name: '最小化', exact: true }).last().click()
+  const assistDock = dock('用 AI 优化「评审」')
+  await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))
+  // 等 pop-in 动画跑完再量位置：动画中 rect 会缩着、往上偏 8px
+  await p.waitForTimeout(300)
+  const lookA = await dockLook(aiDock)
+  const lookB = await dockLook(assistDock)
+  if (lookA.h !== lookB.h || lookA.radius !== lookB.radius || lookA.z !== lookB.z || lookA.font !== lookB.font)
+    errors.push(`浮条：两个窗口的最小化形态不一致（${JSON.stringify(lookA)} / ${JSON.stringify(lookB)}）`)
+  const boxA = await aiDock.boundingBox()
+  const boxB = await assistDock.boundingBox()
+  if (
+    boxA &&
+    boxB &&
+    boxA.x < boxB.x + boxB.width &&
+    boxB.x < boxA.x + boxA.width &&
+    boxA.y < boxB.y + boxB.height &&
+    boxB.y < boxA.y + boxA.height
+  )
+    errors.push('浮条：两个同时最小化的窗口叠在一起了')
+  await check(p, 'AI处理-两个浮条')
+  // 按住拖动：位置跟着指针走，拖动不会被当成点击把窗口展开
+  const from = await assistDock.boundingBox()
+  await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(from.x + from.width / 2 - 240, from.y + from.height / 2 - 180, { steps: 10 })
+  await p.mouse.up()
+  const to = await assistDock.boundingBox()
+  if (Math.abs(to.x - (from.x - 240)) > 2 || Math.abs(to.y - (from.y - 180)) > 2)
+    errors.push(
+      `浮条：拖动后没有跟着走（${Math.round(from.x)},${Math.round(from.y)} → ${Math.round(to.x)},${Math.round(to.y)}）`,
+    )
+  if (!(await assistDock.isVisible())) errors.push('浮条：拖动被当成了点击，浮条展开后不见了')
+  const savedPos = await p.evaluate(() => JSON.parse(localStorage.getItem('minimized-chat-pos') ?? '{}'))
+  if (!savedPos.assist) errors.push('浮条：拖动后的位置没有记进 localStorage')
+  // 展开再最小化：回到拖到的位置，不是默认的右下角
+  await assistDock.getByRole('button', { name: '展开', exact: true }).click()
+  await p.getByRole('button', { name: '最小化', exact: true }).last().click()
+  await p.waitForTimeout(300)
+  const back = await assistDock.boundingBox()
+  if (Math.abs(back.x - to.x) > 1 || Math.abs(back.y - to.y) > 1) errors.push('浮条：重新最小化后没回到记住的位置')
+  await check(p, 'AI处理-浮条拖动')
+  // 另一个窗口的关闭按钮同样是直接关（不再弹确认）；先关它再切页面，切走时它会隨页面卸载
+  await assistDock.getByRole('button', { name: '关闭', exact: true }).click()
+  await assistDock
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：AI 优化点关闭后浮条还在'))
+  // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
+  await p
+    .getByRole('radio', { name: /^Chat 模式/ })
+    .first()
+    .click()
+  const fixRow = p.locator('[data-sidebar] button[title="AI 排查：Pi：卸载没有成功"]').first()
+  await fixRow.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：侧栏里找不到排查对话'))
+  await fixRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '删除', exact: true }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click()
+  await aiDock
+    .getByText('对话已关闭')
+    .waitFor({ timeout: 15000 })
+    .catch(() => errors.push('浮条：对话删掉后浮条没显示「对话已关闭」'))
+  await check(p, 'AI处理-对话关了浮条还在', ['对话已关闭'])
+  await aiDock.getByRole('button', { name: '展开', exact: true }).click()
+  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从聊天列表里删掉'])
+  // 关闭按钮直接关：不再弹「关闭窗口会停止这次排查」的确认
+  await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
+  await p
+    .getByRole('dialog')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：点关闭后对话窗口没有关掉'))
+  if (await p.getByText('停止 AI 排查？').count()) errors.push('浮条：点关闭还在弹确认框')
+  await aiDock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('浮条：关掉窗口后浮条还在'))
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
