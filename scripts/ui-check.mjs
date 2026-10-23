@@ -204,6 +204,21 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 子对话栏的计数：三个在转圈（其中两个带没做完的计划，仍算执行中），分子就是 3；分母是进程还活着的 5 个。
+  // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
+  {
+    // 按 aria-label 里的计数文案定位：页面上还有别的（禁用的）按钮也写着「子对话」
+    const bar = p.getByRole('button', { name: /个进行中，共 \d+ 个/ })
+    if (!(await bar.count())) errors.push('子对话栏：输入框上方没有子对话入口')
+    else {
+      await check(p, '子对话-三个在跑', ['子对话', '3/3'])
+      await bar.first().click()
+      await p.getByRole('button', { name: '全部' }).first().click()
+      await check(p, '子对话-三个在跑-列表', ['执行中 · 3', '已完成 · 3'])
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(300)
+    }
+  }
   // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
   {
     const openTask = async () => {
@@ -431,7 +446,8 @@ try {
     /** 输入框上方的「子对话」→ 全部 → 打开那个子对话 */
     const openChild = async () => {
       await gotoTask()
-      await p.getByRole('button', { name: /^子对话/ }).click()
+      // 入口按钮带 aria-expanded + aria-label；页面上还有几个禁用的「子对话」占位按钮，按名字会撞上
+      await p.locator('button[aria-expanded][aria-label^="子对话"]').first().click()
       await p.getByRole('button', { name: '全部' }).click()
       await p.getByText('子对话：到货提醒').first().click()
       await p.waitForTimeout(400)
