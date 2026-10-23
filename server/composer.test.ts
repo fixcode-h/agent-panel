@@ -10,6 +10,7 @@ import {
   forSend,
   removeChip,
   segments,
+  solePath,
 } from '../shared/composer.ts'
 
 test('带卡片的文字拆成文本段和卡片段', () => {
@@ -109,4 +110,24 @@ test('粘贴的文字里找绝对路径：引号里的可以带空格，网址�
     findPaths(copied).map((h) => h.path),
     ['/tmp/x/a b.png'],
   )
+})
+
+test('整段就是一个路径才当会话/文件引用：前后有别的文字不算，普通文本也不算', () => {
+  // 「复制对话」放进剪贴板的就是这种：唯一一个绝对路径，前后只有空白
+  assert.equal(
+    solePath('/home/me/.agent-panel/uploads/会话-改个按钮.md'),
+    '/home/me/.agent-panel/uploads/会话-改个按钮.md',
+  )
+  assert.equal(
+    solePath('  /home/me/.agent-panel/uploads/会话-改个按钮.md\n'),
+    '/home/me/.agent-panel/uploads/会话-改个按钮.md',
+  )
+  // 带空格的路径复制时加了双引号，粘贴回来还算整段一个路径
+  assert.equal(solePath('"C:\\Users\\Me Too\\会话-改个按钮.md"'), 'C:\\Users\\Me Too\\会话-改个按钮.md')
+  // 普通文字、相对路径、多个路径、路径后面跟着要求都不算
+  assert.equal(solePath('改一下这个按钮的颜色'), undefined)
+  assert.equal(solePath('src/components/A.tsx'), undefined)
+  assert.equal(solePath('/home/me/a.md /home/me/b.md'), undefined)
+  assert.equal(solePath('看 /home/me/a.md 这个文件'), undefined)
+  assert.equal(solePath(''), undefined)
 })

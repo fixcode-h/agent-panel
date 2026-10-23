@@ -37,10 +37,12 @@ export interface RichInputHandle {
 /** 图片卡片要显示缩略图：按附件名字取本地预览地址 */
 type Preview = (name: string) => string | undefined
 
-/** 卡片上的两个操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除 */
+/** 卡片上的操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除、右键弹菜单 */
 export interface ChipActions {
   open?: (chip: Chip) => void
   remove?: (name: string) => void
+  /** 右键卡片：位置是鼠标坐标，菜单自己在那个位置弹出来 */
+  context?: (chip: Chip, at: { x: number; y: number }) => void
 }
 
 const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
@@ -140,6 +142,13 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
       if ((e.target as HTMLElement).closest('[data-chip-action]')) return
       e.preventDefault()
       actions?.()?.open?.(chip)
+    })
+    // 右键弹卡片菜单（复制）：不用浏览器原生菜单；右键不会触发 click，单击查看不受影响
+    el.addEventListener('contextmenu', (e) => {
+      const act = actions?.()
+      if (!act?.context) return
+      e.preventDefault()
+      act.context(chip, { x: e.clientX, y: e.clientY })
     })
   }
   if (!src) {

@@ -1,9 +1,23 @@
 // 输入框里附件卡片的通用逻辑：加文件、引入会话、点卡片查看、删卡片、粘贴路径认回卡片。
 // 对话输入框（ChatComposer）和新建任务的输入框（TaskComposer）共用
 import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type RefObject } from 'react'
-import { chipMarker, chips, dropChip, findPaths, isAttachChip, type ChipKind } from '@shared/composer'
+import { Copy, FileText, Image as ImageIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  chipMarker,
+  chips,
+  dropChip,
+  findPaths,
+  isAttachChip,
+  solePath,
+  type Chip,
+  type ChipKind,
+} from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { api } from '@/lib/api'
+import { attachmentUrl } from './Attachments'
+import { copyImage, imageCopyBlocked } from '@/lib/clipboard-image'
+import { MenuItem, PointMenu, MenuSeparator } from '@/components/ui/menu'
 import { useData } from '@/lib/data'
 import { insertFileRef, useFileRefDrop } from '@/lib/fileDrag'
 import { t } from '@shared/i18n'
@@ -74,6 +88,51 @@ export function useComposerChips({
   /** 图片卡片显示图片本身 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
   const [view, setView] = useState<ViewTarget | null>(null)
+  // 右键卡片弹出的菜单：位置是鼠标坐标；关闭时把焦点交回输入框
+  const [menu, setMenu] = useState<{ chip: Chip; at: { x: number; y: number } } | null>(null)
+  const closeMenu = useCallback(() => {
+    setMenu(null)
+    editor.current?.focus()
+  }, [editor])
+  const itemOf = useCallback((name: string) => files.items.find((x) => x.name === name), [files.items])
+
+  /**
+   * 卡片背后的原始图片：还在上传的卡片用本地预览（就是用户选的那个文件），
+   * 传完的按附件地址再取一次（在线演示里是内存里的 blob）
+   */
+  const imageBlob = useCallback(
+    async (name: string) => {
+      const item = itemOf(name)
+      if (!item) throw new Error(t('这张卡片已经不在输入框里了'))
+      if (!item.done && !item.preview) throw new Error(t('图片还在上传，稍等一下再复制'))
+      const url = item.done ? await attachmentUrl(item.done) : item.preview
+      if (!url) throw new Error(t('读不到这张图片的内容'))
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(t('读不到这张图片的内容'))
+      return await res.blob()
+    },
+    [itemOf],
+  )
+  /** 复制图片到系统剪贴板：成功、失败都提示，不静默 */
+  const copyImageOf = useCallback(
+    (name: string) => {
+      void imageBlob(name)
+        .then(copyImage)
+        .then(
+          () => toast.success(t('图片已复制到剪贴板')),
+          (e: Error) => toast.error(t('复制图片失败：{msg}', { msg: e.message })),
+        )
+    },
+    [imageBlob],
+  )
+  /** 复制文字（文件路径、引用原文） */
+  const copyTextOf = useCallback((text: string, done: string) => {
+    if (!text) return toast.error(t('这张卡片没有可复制的内容'))
+    void navigator.clipboard.writeText(text).then(
+      () => toast.success(done),
+      (e: Error) => toast.error(t('复制失败：{msg}', { msg: e.message })),
+    )
+  }, [])
   const chipActions = useMemo<ChipActions>(
     () => ({
       open: (chip) => {
@@ -92,9 +151,59 @@ export function useComposerChips({
         files.remove(item.key)
         change(dropChip(editor.current?.text() ?? '', item.name))
       },
+      context: (chip, at) => setMenu({ chip, at }),
     }),
     [files, change, editor],
   )
+
+  /** 右键卡片的菜单：图片能复制图片，文件复制路径，引用复制原文；菜单项用面板统一样式 */
+  const chipMenu = menu ? (
+    <PointMenu at={menu.at} open onOpenChange={(v) => !v && closeMenu()}>
+      {menu.chip.kind === 'image' && (
+        <>
+          <MenuItem
+            disabled={!!imageCopyBlocked()}
+            onSelect={() => {
+              copyImageOf(menu.chip.name)
+              closeMenu()
+            }}
+          >
+            <ImageIcon className="h-4 w-4" />
+            {t('复制图片')}
+          </MenuItem>
+          {/* 禁用时把原因写出来，用户才知道为什么点不动 */}
+          {imageCopyBlocked() && (
+            <div className="px-2.5 pb-1.5 text-[0.6875rem] leading-snug text-subtle">{imageCopyBlocked()}</div>
+          )}
+          <MenuSeparator />
+        </>
+      )}
+      {menu.chip.kind === 'file' && (
+        <MenuItem
+          disabled={!itemOf(menu.chip.name)?.done?.path}
+          onSelect={() => {
+            copyTextOf(itemOf(menu.chip.name)?.done?.path ?? '', t('路径已复制'))
+            closeMenu()
+          }}
+        >
+          <FileText className="h-4 w-4" />
+          {t('复制路径')}
+        </MenuItem>
+      )}
+      {menu.chip.kind === 'quote' && (
+        <MenuItem
+          onSelect={() => {
+            const item = itemOf(menu.chip.name)
+            copyTextOf(item?.quote ?? item?.done?.quote ?? '', t('引用内容已复制'))
+            closeMenu()
+          }}
+        >
+          <Copy className="h-4 w-4" />
+          {t('复制内容')}
+        </MenuItem>
+      )}
+    </PointMenu>
+  ) : null
 
   const drop = useDropPaste(addFiles, dropScope)
   // 文件树里右键拖过来的文件 / 文件夹：松手时在光标处插入 @路径，不当附件上传
@@ -125,7 +234,10 @@ export function useComposerChips({
       }
       const hits = findPaths(pasted)
       const ed = editor.current
-      if (!hits.length || !ed) return
+      // 整段就一个路径（复制对话、复制文件路径）：只认这一个，粘贴后就是一张卡片
+      const sole = solePath(pasted)
+      const refs = sole ? [{ start: 0, end: pasted.length, path: sole }] : hits
+      if (!refs.length || !ed) return
       e.preventDefault()
       // 等服务端确认的这一小会儿光标可能被挪走：记下粘贴时的位置
       const at = ed.caret()
@@ -135,13 +247,13 @@ export function useComposerChips({
         ed.insert(value)
       }
       void api
-        .resolvePaths([...new Set(hits.map((h) => h.path))])
-        .then(({ files: found }) => {
-          const byFrom = new Map(found.map(({ from, ...a }) => [from, a]))
+        .resolvePaths([...new Set(refs.map((h) => h.path))])
+        .then(({ files: resolved }) => {
+          const byFrom = new Map(resolved.map(({ from, ...a }) => [from, a]))
           const names = files.addRefs([...byFrom.values()])
           let out = ''
           let last = 0
-          for (const h of hits) {
+          for (const h of refs) {
             const a = byFrom.get(h.path)
             const chip = a && names.get(a.path)
             if (!chip) continue
@@ -172,6 +284,8 @@ export function useComposerChips({
     dropRef,
     /** 现在有没有拖到输入框上（高亮用） */
     refOver,
+    /** 右键卡片弹出的菜单，和 viewer 一样挂在输入框外层 */
+    chipMenu,
     viewer: <AttachmentViewer target={view} onClose={() => setView(null)} />,
   }
 }

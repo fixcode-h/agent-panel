@@ -182,6 +182,19 @@ export function findPaths(text: string, max = 20): PathHit[] {
   return out
 }
 
+/**
+ * 整段就是一个路径（前后只有空白，或者双引号包着）：复制对话、复制文件得到的都是这种，粘贴后应当变成一张卡片。
+ * 判据是结构化的：有且只有一个绝对路径，且它前后没有别的文字——不认里面的词写的是什么。
+ * 只有解析出来还不够，服务端确认这个路径真的存在（粘贴流程里 stat 一次）才算。
+ */
+export function solePath(text: string): string | undefined {
+  const hits = findPaths(text)
+  if (hits.length !== 1) return undefined
+  const [hit] = hits
+  if (text.slice(0, hit.start).trim() || text.slice(hit.end).trim()) return undefined
+  return hit.path
+}
+
 /** 发给服务端的内容。fallback：只放了附件、一个字没写时补上的一句话（例如「请查看附件」） */
 export function forSend(value: string, fallback = ''): string {
   const list = segments(value)
