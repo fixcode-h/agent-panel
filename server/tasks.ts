@@ -1951,6 +1951,8 @@ export function tasksApi(deps: {
           return kids.map((k) => {
             const cur = live.get(k.id)?.task ?? k
             // 在做什么、在等什么、多久没新输出：父对话问「是不是卡住了」时不用再去猜
+            // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
+            const doing = live.has(k.id) ? childActivity(cur) : undefined
             return {
               id: cur.id,
               title: cur.title,
@@ -1958,7 +1960,7 @@ export function tasksApi(deps: {
               busy: cur.working || startQueue.has(cur.id),
               summary: cur.summary || lastReply(cur),
               at: cur.updatedAt,
-              doing: childActivityText(childActivity(cur)),
+              doing: childActivityText(doing),
               waiting: childWaitText(childWait(cur, { background: pendingJobs(cur.id), cliAlive: live.has(cur.id) })),
               lastActivityAt: childLastActivity(cur),
             }
@@ -2364,7 +2366,8 @@ export function tasksApi(deps: {
       kids.map(async (t) => {
         const liveTask = live.get(t.id)?.task ?? t
         // 子对话栏、超时判定、计划面板都读这两份：同一处算出「在做什么」和「在等什么」
-        const doing = childActivity(liveTask)
+        // 不在内存里的子对话只有摘要（store.list 只留用户消息），算不出准确的「在做什么」
+        const doing = live.has(liveTask.id) ? childActivity(liveTask) : undefined
         const pending = pendingJobs(liveTask.id)
         const open = openPlan(liveTask)
         return {
