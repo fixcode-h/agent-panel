@@ -540,15 +540,18 @@ function textKey(s: string) {
 /**
  * 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发。
  * 提问卡片是否已回答也要算进去，否则在别处答完（父对话里点选、父对话转达）后卡片仍是「待决定」
+ *
+ * withOutput=false 时不算工具输出的内容指纹（只留长度）：那是「骨架」，用来判断这条消息有没有被改过，
+ * 代价只看长度、不逐字符扫输出，落盘指纹的增量计算用它（见 server/task-store.ts 的 createStampTracker）
  */
-export function messageStamp(m: TaskMessage) {
+export function messageStamp(m: TaskMessage, withOutput = true) {
   const ask = m.ask ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}` : ''
   return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${ask}|${m.tools
     .map(
       (t) =>
         // 工具输出要带内容指纹：命令输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
         // 只看长度的话这一步的增量不会推送，界面要等到下一次长度变化才跳一下
-        `${t.output?.length ?? 0}.${t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
+        `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
     )
     .join(',')}`
 }

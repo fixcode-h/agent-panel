@@ -10,13 +10,16 @@ import { t } from '../shared/i18n.ts'
  * 摘要里也只有一层子对话，前端拿不到多层的用量。执行中的任务（含子对话）用内存里那一份，
  * 速度才是实时的。
  *
+ * 取数只取任务本身（用量、节点、状态），不读完整对话：前端每秒调一次这个接口，
+ * 只为算 token 就把整棵树的消息读上来、把打开过的任务挤出缓存，不值得（见 `getMeta`）。
+ *
  * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts`，
  * 这里只负责取数。
  */
 export function runUsageApi(deps: {
-  /** 按 id 取任务（执行中的取内存里那一份） */
+  /** 按 id 取任务本身（用量、节点、状态，不含完整对话）；执行中的取内存里那一份 */
   tasks: {
-    get(id: string): Promise<Task | null>
+    getMeta(id: string): Promise<Task | null>
     list(): Promise<Task[]>
   }
 }) {
@@ -25,12 +28,12 @@ export function runUsageApi(deps: {
 
   routes.get('/:id/run-usage', async (c) => {
     const id = c.req.param('id')
-    const root = await deps.tasks.get(id)
+    const root = await deps.tasks.getMeta(id)
     if (!root) return bad(c, t('任务不存在'))
     try {
       // 先按全部任务找出整棵树，再逐个取（执行中的那份带实时速度）
       const tree = runTree(root, await deps.tasks.list())
-      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.get(x.id))))
+      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.getMeta(x.id))))
       const tasks = loaded.filter((x): x is Task => !!x)
       return c.json(runUsage(root, tasks))
     } catch (e) {

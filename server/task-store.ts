@@ -28,10 +28,77 @@ const MSG = '.messages.json'
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
 const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
-const stampOf = (msgs: TaskMessage[]) => `${msgs.length}:${msgs.map((m) => m.id + messageStamp(m)).join(';')}`
 
 /** 读过对话的任务最多留这么多个在内存里（正在执行的另外由执行器拿着） */
 const KEEP_FULL = 12
+
+/** 每个任务的指纹缓存：跟上一次算的时候比，只重算变了的那几条消息 */
+type StampCache = {
+  ids: string[]
+  /** 与 ids 对应的骨架（不含工具输出内容），用来认出中间哪条被原地改过 */
+  shapes: string[]
+  /** 与 ids 对应的完整指纹 */
+  stamps: string[]
+  /** 上次整体核对的时间 */
+  verifiedAt: number
+}
+
+/**
+ * 消息指纹的增量计算。
+ *
+ * 为什么不再每次全量算：任务越长，算一次越贵——`messageStamp` 要把每条消息的每个工具输出逐字符扫一遍，
+ * 而执行中的任务每秒钟都会被问一次「消息变了没有、要不要落盘」（`server/tasks.ts` 的 `changed`）。
+ * 一秒一次 O(全部工具输出) 的字符串扫描就是持续的抖动和高位堆，任务越长越明显。
+ *
+ * 现在只在这些位置重算，其余沿用上次存的指纹：
+ * - 最后一条消息：流式输出一直在改它，代价有上界（只有一条）；
+ * - 骨架变了的那条：并发节点会去改不是末尾的消息，骨架（文字、工具名和输出长度类字段）变了就能认出来；
+ * - 到隔一段时间整体重算一次：工具输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
+ *   骨架看不出来，靠这个兜底。漏写盘最多晚一个间隔，下次核对时会认出来并补写。
+ */
+export function createStampTracker(verifyMs = 10_000) {
+  const cache = new Map<string, StampCache>()
+  /** 测试和测量用：完整指纹、骨架各算了多少次 */
+  let full = 0
+  let shape = 0
+  return {
+    /** 消息数组的指纹（存进 written 的那份）：条数 + 每条 id 和指纹 */
+    stamp(id: string, msgs: TaskMessage[]): string {
+      const prev = cache.get(id)
+      const now = Date.now()
+      const verify = !prev || now - prev.verifiedAt >= verifyMs
+      const last = msgs.length - 1
+      const next: StampCache = { ids: [], shapes: [], stamps: [], verifiedAt: verify ? now : prev!.verifiedAt }
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i]
+        const skeleton = messageStamp(m, false)
+        shape++
+        // 末尾那条每次重算；中间的骨架没变就沿用上次的完整指纹
+        const same = !verify && i !== last && prev!.ids[i] === m.id && prev!.shapes[i] === skeleton
+        let stamp: string
+        if (same) stamp = prev!.stamps[i]
+        else {
+          stamp = messageStamp(m)
+          full++
+        }
+        next.ids.push(m.id)
+        next.shapes.push(skeleton)
+        next.stamps.push(stamp)
+      }
+      cache.set(id, next)
+      return `${msgs.length}:${next.ids.map((x, i) => x + next.stamps[i]).join(';')}`
+    },
+    forget(id: string) {
+      cache.delete(id)
+    },
+    clear() {
+      cache.clear()
+    },
+    stats() {
+      return { full, shape }
+    },
+  }
+}
 
 /**
  * 任务记录：任务本身全部读进内存，对话消息按需读。写入按任务串行化、原子写；
@@ -44,19 +111,22 @@ export function createTaskStore() {
   const full = new Map<string, Task>()
   /** 每个任务上次写入的消息指纹，没变就不重写消息文件 */
   const written = new Map<string, string>()
+  /** 消息指纹的增量缓存，按任务一份 */
+  const stamps = createStampTracker()
   const writing = new Map<string, Promise<void>>()
   onReset(() => {
     metas = null
     loading = null
     full.clear()
     written.clear()
+    stamps.clear()
   })
 
   const fileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.json`)
   const msgFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}${MSG}`)
 
   async function writeFull(t: Task) {
-    const stamp = stampOf(t.messages)
+    const stamp = stamps.stamp(t.id, t.messages)
     if (written.get(t.id) !== stamp) {
       await writeJsonAtomic(msgFileOf(t), t.messages, true)
       written.set(t.id, stamp)
@@ -149,7 +219,7 @@ export function createTaskStore() {
     const p = TaskMessage.array().safeParse(raw)
     // 消息文件丢了或坏了：至少还有用户发的那些
     const task = { ...meta, messages: p.success ? p.data : meta.messages }
-    if (p.success) written.set(id, stampOf(task.messages))
+    if (p.success) written.set(id, stamps.stamp(id, task.messages))
     remember(task)
     return task
   }
@@ -157,7 +227,12 @@ export function createTaskStore() {
   function remember(task: Task) {
     full.delete(task.id)
     full.set(task.id, task)
-    while (full.size > KEEP_FULL) full.delete(full.keys().next().value!)
+    while (full.size > KEEP_FULL) {
+      const old = full.keys().next().value!
+      full.delete(old)
+      // 对话已经不在内存里了，它的指纹缓存也一起丢：下次真的写它的时候重算一次（指纹值不变，不会多写一次盘）
+      stamps.forget(old)
+    }
   }
 
   function persist(task: Task) {
@@ -180,6 +255,16 @@ export function createTaskStore() {
       return [...(await all()).values()]
     },
     get: getFull,
+    /**
+     * 任务本身（用量、节点、状态、标题…），不读 `.messages.json`：
+     * 返回的 messages 只有任务文件里的那几条用户消息。
+     * 每秒都在刷的用量统计用它——用 getFull 会把整棵树每个任务的对话都读进内存，还会把打开过的任务挤出 full 缓存
+     */
+    async getMeta(id: string): Promise<Task | null> {
+      const hit = full.get(id)
+      if (hit) return hit
+      return (await all()).get(id) ?? null
+    },
     async create(input: TaskData & { id?: string }) {
       const now = new Date().toISOString()
       const item = { ...input, id: input.id ?? randomUUID(), createdAt: now, updatedAt: now } as Task
@@ -206,6 +291,7 @@ export function createTaskStore() {
       map.delete(id)
       full.delete(id)
       written.delete(id)
+      stamps.forget(id)
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})

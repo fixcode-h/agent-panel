@@ -22,7 +22,7 @@ const app = (all: Task[]) =>
     '/tasks',
     runUsageApi({
       tasks: {
-        get: async (id) => all.find((x) => x.id === id) ?? null,
+        getMeta: async (id: string) => all.find((x) => x.id === id) ?? null,
         list: async () => all,
       },
     }).routes,
@@ -45,4 +45,38 @@ test('整个运行的用量接口：任务不存在时报错，不是空数字',
   const res = await app([]).request('/tasks/none/run-usage')
   assert.equal(res.status, 400)
   assert.deepEqual(await res.json(), { error: '任务不存在' })
+})
+
+test('整个运行的用量接口：只取任务本身，不读完整对话', async () => {
+  const all = [task('p1', '', 100, 10), task('c1', 'p1', 40, 4), task('c2', 'c1', 5, 1)]
+  const asked: string[] = []
+  // 完整读取（带全部对话）一旦发生就是这个接口的退化：它每秒跑一次，会把整棵树的消息读进内存
+  const deps = {
+    getMeta: async (id: string) => {
+      asked.push(id)
+      return all.find((x) => x.id === id) ?? null
+    },
+    list: async () => all,
+    get: async (id: string): Promise<Task | null> => {
+      throw new Error(`不该读完整对话：${id}`)
+    },
+  }
+  const res = await new Hono().route('/tasks', runUsageApi({ tasks: deps }).routes).request('/tasks/p1/run-usage')
+  assert.equal(res.status, 200)
+  // 根任务和每层子对话都只要元数据，一次完整读取都没有
+  assert.deepEqual(asked, ['p1', 'c1', 'c2'])
+})
+
+test('整个运行的用量接口：子树里混入别的父任务或已被删掉的任务时跳过，不报错', async () => {
+  const all = [task('p1', '', 100, 10), task('c1', 'p1', 40, 4), task('other', '', 900, 90)]
+  const deps = {
+    getMeta: async (id: string) => (id === 'c1' ? null : (all.find((x) => x.id === id) ?? null)),
+    list: async () => all,
+  }
+  const res = await new Hono().route('/tasks', runUsageApi({ tasks: deps }).routes).request('/tasks/p1/run-usage')
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as { total: { inputTokens: number }; children: number }
+  // c1 在树里但取不到：它和它的子树都不算进结果，也不影响接口
+  assert.equal(body.total.inputTokens, 100)
+  assert.equal(body.children, 0)
 })
