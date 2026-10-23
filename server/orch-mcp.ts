@@ -288,7 +288,7 @@ export function orchTools(o: Orchestra) {
             name: 'suggest_next_step',
             title: '收尾建议交给用户选',
             description:
-              '这一轮做完、总结里要给用户「下一步怎么做」的建议时调用：把建议和 2–4 个可选做法交给用户选，选完会自动交回给你接着做。不要只把建议写在结论里——那样用户不知道你是在等他，还是已经结束了。',
+              '这一轮做完、总结里要给用户「下一步怎么做」的建议时调用：把建议和 2–4 个可选做法交给用户选，选完会自动交回给你接着做。不要只把建议写在结论里——那样用户不知道你是在等他，还是已经结束了。子对话的完成标准是改动已合回父对话所在的分支（收尾动作，不是计划步骤）：计划和建议里都不要写推送 / 等推送 / 同步远端 / 其他分支，这类操作（推送、创建 PR、P4 submit、合并到主干）由父对话决定：remote 必须写 none，写其它值会被拒绝、卡片不会交给用户。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -302,8 +302,14 @@ export function orchTools(o: Orchestra) {
                   description:
                     '2–4 个可选做法（每个一句话），第一个是推荐做法并在末尾标「（推荐）」；不给时用「按建议继续」「先不做，先停在这」',
                 },
+                remote: {
+                  type: 'string',
+                  enum: ['none', 'push', 'pr', 'submit', 'merge-main'],
+                  description:
+                    '这些建议会不会改远端：只做本地动作写 none；推送 → push、创建 PR → pr、P4 submit → submit、合并到主干 → merge-main。后四种不在子对话的处理范围，写了会被拒绝。不改远端也必须写 none（不能省）。',
+                },
               },
-              required: ['text'],
+              required: ['text', 'remote'],
             },
           },
           ...(o.canSubmit
@@ -312,7 +318,7 @@ export function orchTools(o: Orchestra) {
                   name: 'submit_merge',
                   title: '完成并合回原分支',
                   description:
-                    '子对话完成的标记：在独立分支里改完、编译测试都跑通后调用。面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支），合进去这个子对话就算完成，独立分支随后回收。有冲突会撤回并把冲突推回给你。验证没跑通不要调用。马上返回，不用干等结果。',
+                    '子对话完成的标记：在独立分支里改完、编译测试都跑通后调用。面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成（完成只是「已合回父对话所在的分支」，不涉及推送，这是收尾动作，不写进计划步骤），独立分支随后回收。有冲突会撤回并把冲突推回给你。验证没跑通不要调用。马上返回，不用干等结果。',
                   inputSchema: {
                     type: 'object',
                     properties: {
@@ -616,6 +622,19 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'suggest_next_step': {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的：写清建议用户接下来做什么', true)
+      // 推送这类对外操作只在父对话决定：子对话用结构化字段声明一次，命中就不生成卡片、直接退回让它重新给建议
+      // （不靠文案里出现「推送」两个字：那既拦不住换个说法，也会误伤「别推送」这类正常建议）
+      const remote = str(a?.remote).trim().toLowerCase()
+      if (!remote)
+        return text(
+          'remote 没写：先声明这些建议会不会改远端。只做本地动作写 none；推送 / 创建 PR / P4 submit / 合并到主干不在子对话的处理范围，由父对话决定。改成只有本地动作的建议再来。',
+          true,
+        )
+      if (remote !== 'none')
+        return text(
+          `建议里不能有对外操作（remote=${remote}）：推送、创建 PR、P4 submit、合并到主干由父对话决定，子对话的完成只是「已合回父对话所在的分支」，不涉及推送。把这类建议去掉，只留你自己能做完的本地动作，再把 remote 写成 none 重新调用。`,
+          true,
+        )
       const options = (Array.isArray(a?.options) ? a.options : []).map(String)
       const r = await o.toParent(body, true, askOptions(options, 'suggestion'), 'suggestion')
       return text(r.info, !r.ok)

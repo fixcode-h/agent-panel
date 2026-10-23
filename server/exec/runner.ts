@@ -46,6 +46,7 @@ import {
   type EngineHost,
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
+import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -1815,6 +1816,8 @@ export async function runRealTurn(ctx: RealContext) {
     newId: ctx.newId,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
+    // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
+    searchExclude: searchExcludeOf(ctx.project),
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     listConversations: ctx.listConversations,

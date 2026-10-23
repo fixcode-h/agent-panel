@@ -126,7 +126,16 @@ await runShard('子对话与计划', async (api) => {
     const { id: _pid, createdAt: _c, updatedAt: _u, ...projectInput } = project
     await call('PUT', `/projects/${project.id}`, { ...projectInput, childIsolation: 'worktree' })
     const wtParent = await waitDone(
-      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '父对话' })).id,
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          prompt: '父对话',
+          // 这一段的测试要用户亲手回答卡片：「提问」关着时子对话的提问会自动交给父对话，不挂卡片
+          askUser: true,
+        })
+      ).id,
       20000,
     )
     assert.equal(wtParent.worktree, null, '父对话没开独立分支')

@@ -15,8 +15,6 @@ export const EN_TASKS: Record<string, string> = {
   更新计划: 'Update plan',
   '{n} 个步骤': '{n} steps',
   结束计划: 'End plan',
-  // engine.ts 的追要总结线还在引用，那份逻辑失效后一起删
-  '（AI 没有写总结）': '(The AI wrote no summary)',
   // 文件浏览
   文件: 'Files',
   关闭文件: 'Close files',

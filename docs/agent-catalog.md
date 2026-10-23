@@ -13,12 +13,12 @@
 
 ## 判定标准
 
-| 判定     | 什么时候用                                                                         |
-| -------- | ---------------------------------------------------------------------------------- |
-| **删除** | 职责被别的 Agent 完整覆盖；没有任何内置工作流用到；只是换个名字的重复项            |
-| **合并** | 同一能力块被切成多个（例如测试 / 验收 / 编译那四个，`docs` 和 `docsync`）          |
+| 判定     | 什么时候用                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **删除** | 职责被别的 Agent 完整覆盖；没有任何内置工作流用到；只是换个名字的重复项                                                            |
+| **合并** | 同一能力块被切成多个（例如测试 / 验收 / 编译那四个，`docs` 和 `docsync`）                                                          |
 | **扩充** | 能力块太大但缺参数或交付标准，换个项目就不能用（例如测试 Agent 缺环境 / 范围参数；版本控制缺 SVN、分支 / worktree 模式和合并方向） |
-| **新增** | 现有能力链里确实缺这个角色，且不会被同批 Agent 顺手做掉                            |
+| **新增** | 现有能力链里确实缺这个角色，且不会被同批 Agent 顺手做掉                                                                            |
 
 新增时的硬条件：写清职责、参数、要用的 Skill（必须是 `skills/` 里存在的，或 `{{槽名}}`），
 并且回答「为什么现有 Agent 做不了」。
@@ -47,7 +47,7 @@
 | `spec`         | 规范撰写         | OpenSpec 产物与门禁  |      | openspec                                                                              | `scene` `stage`                                                                 |
 | `developer`    | 开发             | 写代码               |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
 | `deps`         | 依赖与安全       | 依赖体检与升级       |      | deps                                                                                  | `vcs` `mode` `audit` `license`                                                  |
-| `vcs`          | 版本控制（必备） | 版本控制与交付收尾   | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `docs` `bug` `commit`                                   |
+| `vcs`          | 版本控制（必备） | 版本控制与交付收尾   | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `commit`                                                 |
 | `blender`      | Blender 建模     | 建模、动画与质检     |      | blender                                                                               | `stage`（含「质检」）                                                           |
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
