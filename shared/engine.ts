@@ -619,6 +619,20 @@ export function system(host: EngineHost, text: string, step = '', error = false,
   })
 }
 
+/** 计划 / 工作流启动的那条提示：只是把计划输入又抄了一遍，界面上不显示（用户知道自己让 Agent 干了什么），数据里留着 */
+function planStarted(host: EngineHost, text: string, step = '') {
+  host.task.messages.push({
+    id: host.newId(),
+    role: 'system',
+    agentId: '',
+    step,
+    text,
+    tools: [],
+    planStart: true,
+    at: now(),
+  })
+}
+
 /** 这一轮用掉的花费和 token 超过工作流的上限时，返回暂停的说明 */
 function overBudget(host: EngineHost): string {
   const w = host.workflow
@@ -2262,7 +2276,7 @@ function makeOrchestra(
       askPlan(host, { workflowId: workflowId.trim(), input: input.trim(), step: step?.trim() })
       const wf = workflowId ? task.runs.flatMap((r) => r.workflows).find((w) => w.id === workflowId) : undefined
       const label = wf?.name || workflowId || '默认工作流'
-      system(
+      planStarted(
         host,
         t('开始执行计划（{name}）：{input}', { name: label, input: clip(input || t('按工作流走一遍'), 300) }),
         where,

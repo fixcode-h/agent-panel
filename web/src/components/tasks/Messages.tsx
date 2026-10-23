@@ -1,15 +1,17 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
 import { fmtSecs } from '@/lib/tasks'
-import { addFoldCut, foldCuts, foldStats, keptOut, replyText, splitFolds } from '@/lib/fold'
+import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
+import { currentRun, topSteps } from '@shared/flow'
+import { runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -19,6 +21,7 @@ import { RunningNow, runningTools } from './RunningNow'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
+import { useNow } from '@/lib/useNow'
 import { t } from '@shared/i18n'
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
@@ -100,6 +103,9 @@ export function NoteMessage({
   className?: string
 }) {
   const { projects } = useData()
+  // 计划启动时写进对话的那条提示：只是把计划输入又抄了一遍，用户知道自己让 Agent 干了什么，不画出来。
+  // 按消息上的标记判断，不看文案——用户自己打的字里也可能出现「开始执行计划」
+  if (m.planStart) return null
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
   const around = msgs && m.error ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =
@@ -529,6 +535,119 @@ export function Msgs({
 }
 
 /**
+ * 计划跑的那次运行现在的状态：还在跑、失败、被停止。
+ * 完成或没有运行时返回 undefined（那一行就不出现）；节点列表按这次运行的顶层节点算
+ */
+function planRunState(task: Task) {
+  // 对话里的运行只有 start_plan 起的计划；工作流任务在自己的流程图和运行卡片里看
+  if (task.mode !== 'chat') return undefined
+  const rec = task.runs?.at(-1)
+  const steps = topSteps(task, rec?.id ?? currentRun(task))
+  const failed = steps.filter((s) => s.status === 'failed')
+  // 还在跑按 shared/task.ts 的 runRunning 判：启动工作流这个工具调用一下子就会返回，
+  // 运行本身在它后面接着跑，拿工具调用来判会把还在跑的工作流当成结束了
+  const status = runRunning(task)
+    ? 'running'
+    : failed.length || rec?.status === 'failed'
+      ? 'failed'
+      : rec?.status === 'stopped'
+        ? 'stopped'
+        : undefined
+  if (!status) return undefined
+  return {
+    status,
+    name: rec?.workflowName || task.workflowName || t('工作流'),
+    done: steps.filter((s) => s.status === 'done' || s.status === 'skipped').length,
+    total: steps.length,
+    startedAt: rec?.startedAt ?? '',
+    failed,
+  }
+}
+
+/** 任务里最后一条属于对话的消息的 id（节点的输出不算）：拿来认哪一轮是最新的一轮 */
+function lastChatId(msgs: TaskMessage[]) {
+  for (let i = msgs.length - 1; i >= 0; i--) if (!msgs[i].step) return msgs[i].id
+  return ''
+}
+
+/** 还在跑的行前面的转圈图标：和后台命令、子对话用同一套外观 */
+const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+
+/**
+ * 计划跑的那次工作流运行：和后台命令一样挂在总结上面，没跑完就一直转圈，右边写做到第几个节点；
+ * 完成后从这行消失，失败或被停止时留一行说明和失败的节点，不悄无声息地不见了。
+ * 只在最新的一轮上列，旧的一轮不重复
+ */
+function PlanRunRow({
+  task,
+  msgs,
+  last,
+  indent,
+}: {
+  task?: Task
+  /** 这一轮的消息：工作流在跑时这一轮已经收尾（拿不到 live），按「最后一条对话消息在这一轮里」认 */
+  msgs: TaskMessage[]
+  /** 最新的一轮、对话停着 */
+  last?: boolean
+  /** 不在折叠开关下面、单独成行时，和工具调用一样缩进在头像后面 */
+  indent?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const info = task ? planRunState(task) : undefined
+  const running = info?.status === 'running'
+  // 跑的时候每秒刷新已经用了多久，和后台命令一样
+  const now = useNow(!!running)
+  if (!task || !info) return null
+  if (!last && !msgs.some((m) => m.id === lastChatId(task.messages))) return null
+  const line = running ? (
+    <RowShell
+      glyph={spinning}
+      verb={t('工作流')}
+      title={info.name}
+      detail={
+        <span className="shrink-0 font-sans text-subtle">
+          {info.total ? t('{done}/{total} 个节点', { done: info.done, total: info.total }) : t('正在准备节点…')}
+        </span>
+      }
+      ms={info.startedAt ? now - Date.parse(info.startedAt) : undefined}
+      open={false}
+    />
+  ) : (
+    <RowShell
+      glyph={
+        <CircleAlert className={cn('h-3.5 w-3.5 shrink-0', info.status === 'failed' ? 'text-danger' : 'text-subtle')} />
+      }
+      verb={t('工作流')}
+      title={info.name}
+      detail={
+        <span className="shrink-0 font-sans text-subtle">
+          {info.status === 'stopped' ? t('已停止') : t('{n} 个节点失败', { n: info.failed.length })}
+        </span>
+      }
+      // 还没节点失败（被停止）时没有可看的，点不动
+      onToggle={info.failed.length ? () => setOpen(!open) : undefined}
+      open={open}
+      failed={info.status === 'failed'}
+    >
+      <div className="flex flex-col gap-0.5 border-t px-3 py-2 text-[0.8125rem]">
+        {info.failed.map((s) => (
+          <span key={s.id} className="truncate text-danger">
+            {s.title}
+          </span>
+        ))}
+      </div>
+    </RowShell>
+  )
+  if (!indent) return line
+  return (
+    <div className="flex gap-3">
+      <span className="w-[26px] shrink-0" />
+      <div className="min-w-0 flex-1">{line}</div>
+    </div>
+  )
+}
+
+/**
  * 一段完成的输出（一个节点、一轮对话）：思考、工具调用、中间的说明、派出的子任务和面板推回的结果都收进一个折叠，
  * 折叠行上写这段过程做了什么，下面只留最后的回复，和 Claude Code 一样；执行中的那段照常流式显示，
  * 回复一完成就自动收起。报错和子对话的提问不收：报错要让人看到，提问要人回答
@@ -543,6 +662,7 @@ export function FoldedRun({
   hideAuthor,
   stickyAuthor,
   running,
+  foldId,
 }: {
   msgs: TaskMessage[]
   task?: Task
@@ -557,8 +677,10 @@ export function FoldedRun({
   stickyAuthor?: boolean
   /** 还在运行的工具、后台命令和子对话：放在最后的回复（总结）上面，不收进折叠 */
   running?: React.ReactNode
+  /** 这一段在一轮里的标识（`轮 key#第几段`）：展开 / 收起的状态按它记，重新挂载、来新内容都不会被打回收起 */
+  foldId?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => (foldId ? segOpenOf(foldId) : false))
   const { agents } = useData()
   const { modelOf } = useAgentView()
   const all = (
@@ -587,7 +709,7 @@ export function FoldedRun({
 
   const toggle = (
     <button
-      onClick={() => setOpen(!open)}
+      onClick={() => setOpen(foldId ? toggleSegOpen(foldId) : !open)}
       aria-expanded={open}
       title={open ? t('收起过程') : t('展开过程')}
       className="flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-subtle hover:text-muted"
@@ -698,14 +820,11 @@ export function ChatReply({
   // 前面那段保持折叠，新过程接在它的最后一条回复后面继续显示，不把整轮重新铺开
   const key = msgs[0]?.id ?? ''
   const [cuts, setCuts] = useState<number[]>(() => foldCuts(key))
-  const wasLive = useRef(!!live)
   useEffect(() => {
-    if (live) {
-      wasLive.current = true
-      return
-    }
-    if (!wasLive.current) return
-    wasLive.current = false
+    // 不是执行中就记下收尾位置：第一次画出来就已经收尾（刷新、切回页签、被下面的计划卡片挤成非最后一段）
+    // 也要记，否则之后子对话回报把它重新拉起来接着输出时，前面这段会被当成执行中整段铺开。
+    // 记录不会重复：位置没往前走时 addFoldCut 返回原来的数组
+    if (live) return
     setCuts(addFoldCut(key, msgs.length))
   }, [key, live, msgs.length])
 
@@ -726,17 +845,33 @@ export function ChatReply({
         const same = { msgs: part, task, teamNames, author, command, hideAuthor: !!author || i > 0 }
         if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author} />
         const isLive = !!live && tail
-        // 流式输出时工具就在过程里转圈；收尾的段只列还没收尾的工具，后台的东西只在最新一段列
+        const isTail = i === lastPart
+        // 流式输出时工具就在过程里转圈；收尾的段只列还没收尾的工具，后台的东西和工作流运行只在最新一段列
+        const indent = isLive || !foldStats(part).parts.length
         const running =
-          !isLive && (i === lastPart || runningTools(part).length) ? (
-            <RunningNow
-              task={task}
-              tools={runningTools(part)}
-              background={!!last && i === lastPart && !tailLive}
-              indent={!foldStats(part).parts.length}
-            />
+          isTail || (!isLive && runningTools(part).length) ? (
+            <>
+              {!isLive && (
+                <RunningNow
+                  task={task}
+                  tools={runningTools(part)}
+                  background={!!last && isTail && !tailLive}
+                  indent={indent}
+                />
+              )}
+              {isTail && <PlanRunRow task={task} msgs={msgs} last={last} indent={indent} />}
+            </>
           ) : undefined
-        return <FoldedRun key={i} {...same} live={isLive} stickyAuthor={!author && i === 0} running={running} />
+        return (
+          <FoldedRun
+            key={i}
+            {...same}
+            live={isLive}
+            foldId={`${key}#${i}`}
+            stickyAuthor={!author && i === 0}
+            running={running}
+          />
+        )
       })}
       {/* 回复还在流式输出：后台命令、子对话列在正在写的内容下面，写完总结后挪到总结上面 */}
       {fold && tailLive && last && <RunningNow task={task} tools={[]} background indent />}

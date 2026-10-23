@@ -415,6 +415,7 @@ export const EN_TASKS: Record<string, string> = {
   等待执行: 'Waiting to run',
   '运行 {n}': 'Run {n}',
   '{done}/{total} 个节点': '{done}/{total} nodes',
+  '{n} 个节点失败': '{n} nodes failed',
   查看这次运行的实时输出: 'Open this run to see its live output',
   '这次运行还没有节点。': 'This run has no nodes yet.',
   撤回: 'Withdraw',
