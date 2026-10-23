@@ -788,6 +788,13 @@ export function tasksApi(deps: {
         ok: false,
         info: '没有合并：tests 里写上你在独立分支里跑了哪些编译、测试和结果。没跑通就先修好再调用；这次确实不需要测试（只改了文档、注释）时写明原因。',
       }
+    // 后台还在跑的命令多半就是测试：没跑完就不算跑通，合进去后回收分支还会把它掐掉
+    const pending = background.list(childId).filter((j) => j.state === 'queued' || j.state === 'running')
+    if (pending.length)
+      return {
+        ok: false,
+        info: `没有合并：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
+      }
     const parentId = tk.parentTaskId
     const ahead = mergeWaiting.get(parentId) ?? 0
     const wt = tk.worktree!
@@ -991,10 +998,12 @@ export function tasksApi(deps: {
 
   /**
    * 子对话这一轮做完了，独立分支里却还有没合回去的改动：推一条面板消息给它，跑通验证就调用 submit_merge。
-   * 只催一次，再结束还没合就照常回报父对话，由父对话决定（返回 false）
+   * 只催一次，再结束还没合就照常回报父对话，由父对话决定（返回 false）。后台命令还在跑时不催，也不算做完（返回 true）
    */
   async function nudgeMerge(child: Task): Promise<boolean> {
     if (!child.parentTaskId || mergeNudged.has(child.id)) return false
+    // 后台命令（多半是测试）还在跑：结果推回来时它会接着做，这时不催，父对话也接着等
+    if (background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return true
     const project = await deps.projects.get(child.projectId)
     const st = project ? await worktreeStatus(project.path, child.worktree!).catch(() => null) : null
     if (!st || st.merged) return false

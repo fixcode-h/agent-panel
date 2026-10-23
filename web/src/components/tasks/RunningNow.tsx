@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
-import { useData } from '@/lib/data'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRow } from './ToolRow'
-import { useChildOpen } from './child-open'
+import { useChildList, useChildOpen } from './child-open'
 import { t } from '@shared/i18n'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结上面，不能跟着过程一起折叠 */
@@ -52,11 +51,11 @@ export function RunningNow({
   /** 不在折叠开关下面、单独成行时，和工具调用一样缩进在头像后面 */
   indent?: boolean
 }) {
-  const { tasks } = useData()
+  const children = useChildList()
   const openChild = useChildOpen()
   const jobs = background ? (task?.jobs ?? []) : []
   // 子对话在后台干活：看 working（CLI 正在处理一轮），进程只是活着、等下一句时不算
-  const kids = background && task ? tasks.filter((x) => x.parentTaskId === task.id && x.working && !x.archived) : []
+  const kids = background && task ? children.filter((x) => x.working && !x.resolved) : []
   const now = useNow(jobs.length > 0)
   if (!tools.length && !jobs.length && !kids.length) return null
   const list = (
