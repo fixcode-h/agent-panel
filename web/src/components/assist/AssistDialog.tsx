@@ -36,6 +36,7 @@ import type { McpServer } from '@shared/library'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { AssistDock } from '@/components/assist/AssistDock'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
 import { ChatReply, FoldedRun, type Author } from '@/components/tasks/Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
@@ -819,7 +820,11 @@ export function AssistDialog({
   const jobRef = useRef(job)
   jobRef.current = job
   const doClose = () => {
-    if (jobRef.current) void api.stopAssist(jobRef.current.id).catch(() => {})
+    if (jobRef.current) {
+      void api.stopAssist(jobRef.current.id).catch(() => {})
+      // 关掉窗口就停掉这次生成：明确告诉用户已经停了，不留一个看不见的任务在后台跑
+      toast.info(t('已停止生成'))
+    }
     setJob(null)
     onOpenChange(false)
   }
@@ -934,23 +939,16 @@ export function AssistDialog({
   return (
     <>
       {open && minimized && (
-        <button
-          onClick={() => {
+        <AssistDock
+          label={shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
+          running={running}
+          unseen={unseen}
+          onExpand={() => {
             setMinimized(false)
             setUnseen(false)
           }}
-          title={t('展开')}
-          className="fixed right-5 bottom-5 z-40 flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[0.8125rem] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
-        >
-          <span className="relative grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
-            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {unseen && !running && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent" />}
-          </span>
-          <span className="max-w-[220px] truncate">
-            {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
-          </span>
-          <span className="text-xs text-subtle">{running ? t('生成中…') : unseen ? t('已生成') : ''}</span>
-        </button>
+          onClose={() => close()}
+        />
       )}
       <D.Root
         open={open && !minimized}
