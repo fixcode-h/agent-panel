@@ -76,6 +76,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
   }
 
+  // 差异窗口：文件头带统计和上一个/下一个文件，左右对照有行内高亮，可切上下对照
+  {
+    await backToTask()
+    await p.getByRole('tab', { name: /改动/ }).click()
+    await check(p, '改动-文件列表', ['改动 2 个文件', 'CartBadge.tsx', 'RestockButton.tsx'])
+    await p.getByTitle('查看「src/components/CartBadge.tsx」的改动', { exact: true }).click()
+    await check(p, '差异-左右对照', ['CartBadge.tsx', '处改动', '+5', '-3', '1 / 2', 'items.reduce'])
+    // 修改行要标出行内改动（整行底色之外还有更深的一小段）
+    if (!(await p.locator('[role="dialog"] [class*="rounded-[2px]"]').count()))
+      errors.push('差异窗口：修改行没有行内高亮')
+    await p.getByRole('radio', { name: '上下对照' }).click()
+    await check(p, '差异-上下对照', ['CartBadge.tsx', 'useEffect', 'document.title'])
+    await p.getByRole('button', { name: '下一个文件', exact: true }).click()
+    await check(p, '差异-下一个文件', ['RestockButton.tsx', '到货通知我', '2 / 2'])
+    // 窄窗口：弹窗保持打开，直接把视口缩小；双栏只在自己的滚动区里横向滚动，页面本身不出横向滚动条
+    await p.setViewportSize({ width: 820, height: 800 })
+    await check(p, '差异-窄窗口', ['2 / 2', '到货通知我'])
+    await p.getByRole('radio', { name: '左右对照' }).click()
+    await check(p, '差异-窄窗口-左右', ['2 / 2'])
+    await p.keyboard.press('Escape')
+    await closed()
+    // 浅色主题下再看一眼：整行底色、行内高亮、中缝和行号都要跟着主题走
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.evaluate(() => document.documentElement.classList.remove('dark'))
+    await p.getByTitle('查看「src/components/CartBadge.tsx」的改动', { exact: true }).click()
+    await check(p, '差异-浅色', ['CartBadge.tsx', 'items.reduce'])
+    await p.keyboard.press('Escape')
+    await closed()
+    await p.evaluate(() => document.documentElement.classList.add('dark'))
+    await p.reload()
+    await backToTask()
+  }
+
   // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
   // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
   {

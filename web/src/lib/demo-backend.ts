@@ -1051,6 +1051,53 @@ const DEMO_STATUS: Record<string, string> = {
   'tests/cart.test.ts': 'D',
 }
 
+/**
+ * 示例对话改过的两个文件：差异窗口要有真实的 hunk、删除、新增和行内改动可看。
+ * 演示里没有仓库，这些文本直接当任务的差异返回（见 demoTask 的 diff 分支）。
+ */
+const DEMO_DIFFS: Record<string, string> = {
+  'src/components/CartBadge.tsx': [
+    'diff --git a/src/components/CartBadge.tsx b/src/components/CartBadge.tsx',
+    'index 3c1a2f0..8d4b7c1 100644',
+    '--- a/src/components/CartBadge.tsx',
+    '+++ b/src/components/CartBadge.tsx',
+    '@@ -1,11 +1,13 @@',
+    " import { useEffect, useState } from 'react'",
+    "+import { useCart } from '../store/cart'",
+    ' ',
+    ' export function CartBadge() {',
+    '-  const [count, setCount] = useState(0)',
+    '+  const items = useCart()',
+    '+  const count = items.reduce((n, item) => n + item.count, 0)',
+    ' ',
+    '   useEffect(() => {',
+    "-    fetch('/api/cart').then((r) => r.json()).then((d) => setCount(d.length))",
+    '-  }, [])',
+    "+    document.title = count > 0 ? `购物车 (${count})` : '商城'",
+    '+  }, [count])',
+    ' ',
+    '   return <span className="badge">{count}</span>',
+    ' }',
+  ].join('\n'),
+  'src/components/RestockButton.tsx': [
+    'diff --git a/src/components/RestockButton.tsx b/src/components/RestockButton.tsx',
+    'new file mode 100644',
+    'index 0000000..4b825dc',
+    '--- /dev/null',
+    '+++ b/src/components/RestockButton.tsx',
+    '@@ -0,0 +1,9 @@',
+    "+import { useState } from 'react'",
+    '+',
+    '+export function RestockButton({ productId }: { productId: string }) {',
+    '+  const [sent, setSent] = useState(false)',
+    '+  if (sent) return <button disabled>已登记</button>',
+    '+  return (',
+    '+    <button onClick={() => setSent(true)}>到货通知我</button>',
+    '+  )',
+    '+}',
+  ].join('\n'),
+}
+
 /** 在线演示里文件页的写操作：新建的目录记在这里，改过的内容直接在 DEMO_CONTENTS 上改，刷新就回到初始状态 */
 const DEMO_DIRS = new Set<string>()
 
@@ -2513,11 +2560,14 @@ function tasksRoute(
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''
-    const diff = task.messages
-      .flatMap((m) => m.tools)
-      .filter((x) => x.kind === 'edit' && x.label === file && x.input)
-      .map((x) => x.input)
-      .join('\n')
+    const diff =
+      task.messages
+        .flatMap((m) => m.tools)
+        .filter((x) => x.kind === 'edit' && x.label === file && x.input)
+        .map((x) => x.input)
+        .join('\n') ||
+      DEMO_DIFFS[file] ||
+      ''
     return { path: file, dir: '', diff, git: false, before: false }
   }
   if (sub === 'resume') {
@@ -2898,6 +2948,12 @@ async function seedTasks(d: Db) {
     back(task, 60 * 3)
     demoHelper(task, fe)
     await demoChildren(d, task, fe)
+    // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看
+    task.changes = [
+      { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
+      { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
+    ]
+    persist()
   }
   if (shop) {
     const { task, done } = createTask(

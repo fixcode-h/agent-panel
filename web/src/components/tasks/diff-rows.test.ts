@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { lineClass, numbered, sideBySide } from './diff-rows'
+import { diffStats, inlineDiff, lineClass, numbered, sideBySide } from './diff-rows'
 
 const NEW_FILE = [
   'diff --git a/docs/demo.md b/docs/demo.md',
@@ -117,6 +117,60 @@ test('左右对照：上下文行两侧内容相同，块头和「没有换行�
       ['note', '\\ No newline at end of file'],
     ],
   )
+})
+
+test('统计只数增删行和差异块，文件头不算', () => {
+  const lines = [
+    'diff --git a/a b/a',
+    'index 111..222',
+    '--- a/a',
+    '+++ b/a',
+    '@@ -1,2 +1,3 @@',
+    ' keep',
+    '-gone',
+    '+new',
+    '+extra',
+    '@@ -9,1 +10,1 @@',
+    '-old',
+    '+new2',
+    '\\ No newline at end of file',
+  ]
+  assert.deepEqual(diffStats(lines), { add: 3, del: 2, hunks: 2 })
+  assert.deepEqual(diffStats([]), { add: 0, del: 0, hunks: 0 })
+})
+
+test('行内差异：只标出中间变化的一段', () => {
+  assert.deepEqual(inlineDiff('const a = 1', 'const a = 2'), {
+    left: [{ text: 'const a = ' }, { text: '1', changed: true }],
+    right: [{ text: 'const a = ' }, { text: '2', changed: true }],
+  })
+})
+
+test('行内差异：插入只在新增侧标出，两侧的公共部分不重复高亮', () => {
+  assert.deepEqual(inlineDiff('ab', 'axb'), {
+    left: [{ text: 'a' }, { text: 'b' }],
+    right: [{ text: 'a' }, { text: 'x', changed: true }, { text: 'b' }],
+  })
+})
+
+test('行内差异：完全不同的两行整行都算改动', () => {
+  assert.deepEqual(inlineDiff('old', 'new'), {
+    left: [{ text: 'old', changed: true }],
+    right: [{ text: 'new', changed: true }],
+  })
+})
+
+test('行内差异：超长行不逐字符比对，原样返回不下发高亮', () => {
+  const a = 'a'.repeat(5000)
+  const b = `${'a'.repeat(4999)}b`
+  assert.deepEqual(inlineDiff(a, b), { left: [{ text: a }], right: [{ text: b }] })
+})
+
+test('行内差异：切分点不落在代理对中间', () => {
+  assert.deepEqual(inlineDiff('😀x', '😁x'), {
+    left: [{ text: '😀', changed: true }, { text: 'x' }],
+    right: [{ text: '😁', changed: true }, { text: 'x' }],
+  })
 })
 
 test('空 diff 和只有文件头的 diff 都排不出行', () => {

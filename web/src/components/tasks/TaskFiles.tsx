@@ -162,6 +162,8 @@ export function TaskFiles({
       <DiffDialog
         task={task}
         path={diffPath}
+        files={changes.map((c) => c.path)}
+        onPathChange={setDiffPath}
         onOpenChange={(o) => !o && setDiffPath(null)}
         onReverted={(x) => {
           upsertTask(taskSummary(x))
