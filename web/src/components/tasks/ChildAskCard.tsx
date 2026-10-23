@@ -50,6 +50,10 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
     }
   }
 
+  // 父对话的「提问」关着（用户去掉了提问入口）：没人会回答，未回答的提问不该再显示成卡片
+  // 或「交给父对话决定」的折叠行。服务端已经不再产生这种卡片，这里收掉历史遗留的；回答过的仍显示，是对话记录
+  if (task && !task.askUser && !answered) return null
+
   const status = answered ? (
     <span className="shrink-0 font-sans text-subtle">{ask.by === 'user' ? t('你已决定') : t('父对话已决定')}</span>
   ) : delegated ? (
