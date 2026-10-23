@@ -274,7 +274,10 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const child = await promptsOf({ parentTaskId: 'parent' })
   assert.equal(child.length, 1)
   assert.match(child[0], /由父对话决定，不在你的处理范围内/)
-  assert.match(child[0], /不执行、不询问用户、也不写进提问或建议/)
+  assert.match(child[0], /不执行、不询问用户、也不写进提问、计划步骤或建议/)
+  assert.match(child[0], /完成」就是改动已合回父对话所在的分支/, '完成只到「已合回父对话所在的分支」')
+  assert.match(child[0], /不要写进计划步骤/, '合回父分支是收尾动作，不是计划里的一步')
+  assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
   assert.doesNotMatch(child[0], /第一次需要推送时先用提问工具问用户一次/, '子对话不再问用户要不要推送')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
   assert.match(child[0], /remote 必须写/)
