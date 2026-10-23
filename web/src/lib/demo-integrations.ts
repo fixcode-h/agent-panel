@@ -72,6 +72,7 @@ function start(id: string): IntegrationLoginJob {
     startedAt: Date.now(),
   }
   jobs.set(id, job)
+  // 不跟着 demoMs 缩短：界面检查要截「授权中」这一刻（显示授权码）
   timers.set(
     id,
     setTimeout(() => {

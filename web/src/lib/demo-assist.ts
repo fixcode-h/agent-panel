@@ -13,6 +13,7 @@ import {
   type WorkflowDraft,
 } from '@shared/assist'
 import type { Agent, TaskMessage } from '@shared/schema'
+import { demoMs } from './demo-speed'
 
 const ROLES: { re: RegExp; name: string; icon: string; desc: string; duty: string }[] = [
   {
@@ -439,13 +440,13 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
       k += 3
       job.thinking = think.slice(0, k)
       job.messages = [msg('m1', { thinking: job.thinking })]
-      return void setTimeout(tick, 30)
+      return void setTimeout(tick, demoMs(30))
     }
     i += 4
     job.text = full.slice(0, i)
     job.outChars = i
     job.messages = [msg('m1', { thinking: think, tools: [tool] }), msg('m2', { text: job.text })]
-    if (i < full.length) return void setTimeout(tick, 30)
+    if (i < full.length) return void setTimeout(tick, demoMs(30))
     const r = resolveProposal(input.kind, gen.draft, ctx)
     if (r.proposal) {
       job.proposal = r.proposal
@@ -456,7 +457,7 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
       job.error = r.error
     }
   }
-  setTimeout(tick, 400)
+  setTimeout(tick, demoMs(400))
   return job
 }
 

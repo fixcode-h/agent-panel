@@ -1,5 +1,5 @@
 ---
-paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.test.ts, server/exec/fixtures/**
+paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, scripts/ui/**, server/**/*.test.ts, server/exec/fixtures/**
 ---
 
 # 测试

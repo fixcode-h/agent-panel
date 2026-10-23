@@ -21,12 +21,13 @@ import {
 import { normalizeTree, walk, type Widget } from '@shared/umg'
 import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
 import type { ToolUse } from '@shared/schema'
+import { demoMs } from './demo-speed'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
 
 const designs = new Map<string, Full>()
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, demoMs(ms)))
 const now = () => new Date().toISOString()
 const fail = (msg: string): never => {
   throw new Error(msg)
@@ -1002,7 +1003,8 @@ async function genImages(d: Full, ids: string[], count: number, job: Job) {
       const before = im.variants.length
       // 每生成一版就放进设计里
       for (let k = 0; k < count; k++) {
-        await sleep(1200 + Math.random() * 800)
+        // 不跟着 demoMs 缩短：界面检查要截「正在生成图片」这一刻，页面是轮询进度的，太快就看不到了
+        await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800))
         im.variants.push({
           file: draw(id, im.width, im.height),
           source: 'cli',

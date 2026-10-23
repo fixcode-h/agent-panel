@@ -114,6 +114,7 @@ import {
   demoVersions,
 } from './demo-design'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
+import { demoMs } from './demo-speed'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -962,7 +963,7 @@ function cliAction(id: string, action: CliInstallJob['action']) {
         job.cliStatus = clis().find((c) => c.id === id)
         job.status = 'done'
       },
-      500 * (i + 1),
+      demoMs(500 * (i + 1)),
     ),
   )
   return job
@@ -1343,7 +1344,7 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
       clearInterval(timer)
       j.status = 'done'
       done()
-    }, 400)
+    }, demoMs(400))
   }
   if (action === 'install' && method === 'POST')
     tick(
@@ -1824,7 +1825,7 @@ function demoUsage(d: Db, query: URLSearchParams) {
 
 export async function handle(method: string, url: string, body: unknown) {
   // 稍微延迟一下，模拟真实请求，让「保存中」等状态能被看到
-  await new Promise((r) => setTimeout(r, 120))
+  await new Promise((r) => setTimeout(r, demoMs(120)))
   const d = load()
   if (!d.tasks) {
     d.tasks = []
@@ -1846,7 +1847,7 @@ const live = new Map<
   string,
   { stop: boolean; done?: Promise<unknown>; held?: { text: string; attachments: Attachment[] }[] }
 >()
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, demoMs(ms)))
 
 function projectWorkflow(d: Db, p: Project) {
   const id = p.workflowId || d.projectCategories.find((c) => c.id === p.categoryId)?.workflowId
