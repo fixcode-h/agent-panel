@@ -716,6 +716,21 @@ export function tasksApi(deps: {
     })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
   })
 
+  /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
+  const withJobs = (task: Task): Task => {
+    const jobs = background
+      .list(task.id)
+      .filter((j) => j.state === 'queued' || j.state === 'running')
+      .map((j) => ({
+        id: j.id,
+        name: j.name,
+        command: j.command,
+        state: j.state as 'queued' | 'running',
+        startedAt: j.startedAt,
+      }))
+    return jobs.length ? { ...task, jobs } : task
+  }
+
   /**
    * 结束对话的后台命令，连同它名下子对话的：对话停止、归档、删除时调用。
    * CLI 因为页面切走被回收、换 CLI 重启时不调用，那时对话还在，结果推回会接着开一轮
@@ -1673,14 +1688,17 @@ export function tasksApi(deps: {
       let seen = ''
       const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
       while (!closed) {
-        const t = await current(id)
-        if (!t) {
+        const cur = await current(id)
+        if (!cur) {
           await send('gone', {})
           break
         }
-        // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务
+        const t = withJobs(cur)
+        // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务。
+        // 后台命令开始、结束不一定改任务本身（对话空闲时），状态单独算进去
         const e = live.get(id)
-        const key = e ? `${e.rev}|${t.updatedAt}` : `${t.updatedAt}|${t.messages.length}`
+        const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
+        const key = `${e ? `${e.rev}|${t.updatedAt}` : `${t.updatedAt}|${t.messages.length}`}|${jobs}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })
@@ -1720,7 +1738,7 @@ export function tasksApi(deps: {
 
   routes.get('/:id', async (c) => {
     const task = await current(c.req.param('id'))
-    return task ? c.json(task) : bad(c, t('任务不存在'), 404)
+    return task ? c.json(withJobs(task)) : bad(c, t('任务不存在'), 404)
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上

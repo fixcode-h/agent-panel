@@ -52,3 +52,9 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 - 规则：`scripts/e2e.mjs` 里起的 `http.createServer`、子进程都用 `onExit()` 登记（返回的函数既能立刻关掉、又从登记表摘掉）；关 server 先 `closeAllConnections()` 再 `close()`，只 `close()` 会留下 keep-alive 连接。`finally` 里 `cleanupAll()` 之后按退出码强制退出，不等事件循环自然清空。
 - 起因：`/accounts/api-models` 的 `name` 改成必填后 e2e 报 400，临时 `apiSrv` 没关，进程挂 95 分钟才被手动取消。
 - 防线：`npm run test:e2e`（10 分钟看门狗 + 收尾后 2 秒强制退出兜底）。
+
+## 假 CLI 的触发词别包含已有的触发词
+
+- 规则：`scripts/fake-cli` 按 `input.includes('关键词')` 决定行为，新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（例如 `SLOW` 会让这一轮先等 10 秒）；用意思明确、不会撞上的词。
+- 起因：加「后台命令还在跑」的 e2e 时用了 `BG_SLOW`，命中了旧的 `SLOW` 慢回合，回合拖到后台命令跑完才结束，断言一直失败。
+- 防线：人工。

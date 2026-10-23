@@ -493,6 +493,9 @@ if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   })
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '端到端测试', step: '2' })
 }
+// 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
+if (input.includes('BG_LONG') && input.includes('run_background'))
+  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
 if (input.includes('还没写总结') && input.includes('finish_plan'))
   await panelCall('finish_plan', { summary: '改好了代码，测试通过' })
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI

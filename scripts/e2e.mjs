@@ -1702,6 +1702,31 @@ try {
       step('执行计划：等待中的步骤结果回来自动完成，计划做完必须写总结')
     }
 
+    // ---- 还在跑的后台命令：这一轮说完了它还在跑，任务上带着 jobs；跑完推回结果，要 AI 重新总结 ----
+    {
+      const slow = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'BG_LONG 跑测试' }))
+          .id,
+        20000,
+      )
+      const now = await call('GET', `/tasks/${slow.id}`)
+      assert.deepEqual(
+        now.jobs?.map((j) => j.name),
+        ['慢测试'],
+        '回复说完时后台命令还在跑：任务上带着它，界面在总结上面转圈',
+      )
+      const back = await waitTask(slow.id, (k) => k.messages.some((m) => m.panel === 'background'), 30000)
+      const settled = await waitDone(back.id, 20000)
+      assert.equal(settled.jobs, undefined, '跑完以后不再列在运行中')
+      assert.match(
+        settled.messages.find((m) => m.panel === 'background').text,
+        /重新总结整段工作/,
+        '推回的结果要 AI 处理完重新总结',
+      )
+      await call('DELETE', `/tasks/${slow.id}`)
+      step('后台命令：说完时还在跑的列在任务上，跑完推回并要求重新总结')
+    }
+
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
     const ruleParent = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,

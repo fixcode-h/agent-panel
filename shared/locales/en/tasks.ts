@@ -809,4 +809,6 @@ export const EN_TASKS: Record<string, string> = {
   '、': ', ',
   '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
+  排队中: 'Queued',
+  未命名: 'Untitled',
 }

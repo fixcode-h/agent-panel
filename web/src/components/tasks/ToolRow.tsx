@@ -305,7 +305,7 @@ export function ToolRow({
 }: {
   tool: ToolUse
   /** 差异窗口只用到这几样，不用把整个任务传进来 */
-  task?: Pick<Task, 'id' | 'status' | 'changes'>
+  task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
 }) {
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示；别的 MCP 工具名当动作
   const view = toolView(raw)
@@ -313,7 +313,7 @@ export function ToolRow({
   return <ToolLine view={view} task={task} />
 }
 
-function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes'> }) {
+function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out'>('')
@@ -331,11 +331,14 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
 
-  const glyph = tool.running ? (
-    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-  ) : (
-    <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
-  )
+  // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈，跑完结果会推回对话
+  const bg = !!view.job && !!task?.jobs?.some((j) => j.id === view.job)
+  const glyph =
+    tool.running || bg ? (
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+    ) : (
+      <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
+    )
   const detail = diff ? (
     <span className="shrink-0">
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}

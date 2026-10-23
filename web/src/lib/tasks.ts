@@ -142,6 +142,8 @@ export interface ToolView {
   server?: string
   /** 新建、交给子对话的调用：点标题打开的子对话 id */
   child?: string
+  /** 放到后台的命令：面板给的编号，命令还在跑时这一行一直转圈 */
+  job?: string
 }
 
 /**
@@ -153,7 +155,8 @@ export function toolView(tool: ToolUse): ToolView | null {
   if (panel === null) return null
   if (panel) {
     const child = panelChildId(tool)
-    return { tool: panel, ...(child && { child }) }
+    const job = panelName(tool) === 'run_background' ? /编号 ([0-9a-f]{8})/.exec(tool.output ?? '')?.[1] : undefined
+    return { tool: panel, ...(child && { child }), ...(job && { job }) }
   }
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
   if (!mcp) return { tool }

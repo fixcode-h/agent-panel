@@ -61,7 +61,10 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
         : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${secs} 秒）`
     const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
     const tail = j.lines.join('\n').slice(-(j.state === 'done' ? 1500 : 6000))
-    return `【面板】${head}${warn}\n命令：${j.command}${tail ? `\n输出结尾：\n\`\`\`\n${tail}\n\`\`\`` : ''}`
+    // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以要整体重写
+    const ask =
+      '\n处理完这个结果后，重新总结整段工作：现在的结论、验证结果、还在后台跑或还在等的事，不要只说这一条命令。'
+    return `【面板】${head}${warn}\n命令：${j.command}${tail ? `\n输出结尾：\n\`\`\`\n${tail}\n\`\`\`` : ''}${ask}`
   }
 
   async function exec(j: BgJob, root: string) {
