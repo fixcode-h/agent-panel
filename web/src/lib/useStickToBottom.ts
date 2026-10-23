@@ -24,8 +24,10 @@ export function nearBottom(
  * React 更新文本子节点时只改 nodeValue，不增删节点，光听 childList 一次都收不到。
  *
  * @param key 换看另一个对象（另一条子任务、另一次运行、另一个任务状态）时传不同的值：会重新贴底，不沿用上一个的「翻上去了」
+ * @param active 容器当前没在显示内容（同一个容器切到流程图视图）时传 false：停止跟着内容滚，也不记位置。
+ *   变回 true 时重新贴底——切回对话视图就该停在最新一行
  */
-export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHOLD) {
+export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHOLD, active = true) {
   const box = useRef<HTMLElement | null>(null)
   // 节点挂上、换掉时都要重跑贴底，所以同时留一份在 state 里
   const [node, setNode] = useState<HTMLElement | null>(null)
@@ -52,16 +54,21 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
     markAway(!near)
   }, [threshold, markAway])
 
-  const toBottom = useCallback(() => {
-    const el = box.current
-    if (!el) return
+  // 主动回到最新内容：点了「回到底部」，或者刚发出一条消息、点了某一步时接着看最新的
+  const pin = useCallback(() => {
     pinned.current = true
-    el.scrollTop = el.scrollHeight
+    const el = box.current
+    if (el) el.scrollTop = el.scrollHeight
     markAway(false)
   }, [markAway])
 
+  // 主动停在某段内容上（点了任务里的某一步），别让下一段输出把它顶走
+  const unpin = useCallback(() => {
+    pinned.current = false
+  }, [])
+
   useLayoutEffect(() => {
-    if (!node) return
+    if (!node || !active) return
     pinned.current = true
     markAway(false)
     const stick = () => {
@@ -111,7 +118,8 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
       ro.disconnect()
       mo.disconnect()
     }
-  }, [node, key, threshold, markAway])
+  }, [node, key, threshold, active, markAway])
 
-  return { ref, onScroll, away, toBottom }
+  // el 给需要在容器里定位子元素（点任务进度里的某一步）的调用方用
+  return { ref, el: box, onScroll, away, toBottom: pin, pin, unpin }
 }

@@ -1,4 +1,4 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
@@ -67,6 +67,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { STICK_THRESHOLD, useStickToBottom } from '@/lib/useStickToBottom'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -439,8 +440,6 @@ export function TaskView({
   // 子对话的「解决」标记正在提交：防重复点击
   const [resolving, setResolving] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-  // 往上翻得比较远时显示「回到底部」
-  const [away, setAway] = useState(false)
   const [limit, setLimit] = useState(BLOCK_LIMIT)
   useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
@@ -463,8 +462,17 @@ export function TaskView({
   const [flowSel, setFlowSel] = useState('')
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
-  const scroller = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
+  // 消息区的贴底：打开就在最新内容，流式输出、工具卡片展开、Markdown 变高都跟着走；
+  // 用户往上翻时不打扰，回到底部附近再接着跟。切到流程图视图时这个容器不放对话，停止跟随
+  const {
+    ref: scrollerRef,
+    el: scrollerEl,
+    onScroll: onScrollerScroll,
+    away,
+    toBottom,
+    pin: stickToBottom,
+    unpin: stayPut,
+  } = useStickToBottom(taskId, STICK_THRESHOLD, view === 'chat')
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
@@ -705,25 +713,6 @@ export function TaskView({
   const working = task?.working ?? false
   useTaskStream(taskId, running, apply)
 
-  // 停留在底部时自动跟随新输出
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (el && stick.current && view === 'chat') el.scrollTop = el.scrollHeight
-  }, [task, view])
-  // 消息区自己变矮（输入框上方多了子对话栏、确认卡片，切回窗口后重新排版）时也贴住底部：
-  // 内容没变不会触发上面那个，最后一行会被下面的栏挡住一截
-  useEffect(() => {
-    const el = scroller.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => {
-      if (stick.current && view === 'chat') el.scrollTop = el.scrollHeight
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-    // 滚动容器在任务加载出来后才挂上：按任务和视图重新绑定
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, !!task])
-
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
@@ -750,7 +739,7 @@ export function TaskView({
     onAction: (a, arg) => {
       if (!task) return
       if (running) return void toast.error(t('任务正在执行，请等它完成或先停止'))
-      stick.current = true
+      stickToBottom()
       ;(a === 'compact' ? api.compactTask(task.id) : api.reviewTask(task.id, arg))
         .then(apply)
         .catch((e) => toast.error((e as Error).message))
@@ -780,7 +769,7 @@ export function TaskView({
     const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
-    stick.current = true
+    stickToBottom()
     try {
       const r = await api.sendMessage(task.id, content, files.attachments, false)
       apply(r)
@@ -828,7 +817,7 @@ export function TaskView({
   }
   const resume = async (latest = false) => {
     setResuming(true)
-    stick.current = true
+    stickToBottom()
     try {
       apply(await api.resumeTask(task.id, latest))
     } catch (e) {
@@ -897,7 +886,7 @@ export function TaskView({
           setPanel(false)
           // 流程视图里和点流程图的节点一样，选中它；对话视图里滚到这一步的输出，不切换视图
           if (view === 'flow') return setFocus({ id, at: Date.now() })
-          const el = scroller.current
+          const el = scrollerEl.current
           const sec = el?.querySelector<HTMLElement>(`[data-step="${CSS.escape(id)}"]`)
           // 这一步在还没显示的较早内容里：先全部显示，画出来后再滚过去
           if (!sec && hidden) {
@@ -905,20 +894,14 @@ export function TaskView({
             return requestAnimationFrame(() => requestAnimationFrame(() => openStep?.(id)))
           }
           if (!el || !sec) return toast(t('这一步还没有输出'))
-          stick.current = false
+          // 定格在这一步：后面的输出不要再把它顶走
+          stayPut()
           el.scrollTo({
             top: sec.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 8,
             behavior: 'smooth',
           })
         }
       : undefined
-  const toBottom = () => {
-    const el = scroller.current
-    if (!el) return
-    stick.current = true
-    setAway(false)
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  }
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
@@ -1132,8 +1115,8 @@ export function TaskView({
                           aria-selected={view === v}
                           onClick={() => {
                             setView(v)
-                            stick.current = v === 'chat'
-                            if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
+                            // 切回对话视图由贴底自己停在最新一行；切到流程图时它把视图自己的滚动放在顶部
+                            if (v === 'flow' && scrollerEl.current) scrollerEl.current.scrollTop = 0
                           }}
                           className={cn(
                             'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
@@ -1275,12 +1258,10 @@ export function TaskView({
                     </div>
                   )}
                   <div
-                    ref={scroller}
+                    ref={scrollerRef}
                     onScroll={(e) => {
-                      const el = e.currentTarget
-                      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-                      setScrolled(el.scrollTop > 4)
-                      setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
+                      onScrollerScroll()
+                      setScrolled(e.currentTarget.scrollTop > 4)
                     }}
                     // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
                     className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
@@ -1292,7 +1273,6 @@ export function TaskView({
                           focus={focus}
                           onSelect={setFlowSel}
                           onOpenChat={() => {
-                            stick.current = true
                             setView('chat')
                           }}
                         />
@@ -1654,7 +1634,7 @@ export function TaskView({
                 onAskAgent={
                   task.mode === 'chat'
                     ? async (message) => {
-                        stick.current = true
+                        stickToBottom()
                         apply(await api.sendMessage(task.id, message, [], false))
                       }
                     : undefined
