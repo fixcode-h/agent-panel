@@ -83,12 +83,14 @@ import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import {
   abortMerge,
+  branchesOverlap,
   commitMerge,
   commitWorktree,
   createWorktree,
   ensureWorktree,
   mergeBlocker,
   currentBranch,
+  mergeOverlap,
   mergeWorktree,
   removeWorktree,
   releaseWorktree,
@@ -111,7 +113,7 @@ import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapU
 import { detectVcs } from './projects-analyze.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
-import { collisions, createClaims } from './claims.ts'
+import { collisions, createClaims, normClaimPath, overlaps } from './claims.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
@@ -179,6 +181,13 @@ export function tasksApi(deps: {
   const live = new Map<string, Live>()
   /** 子对话共用父对话的目录：改文件前的认领，按父对话分组 */
   const claims = createClaims()
+  /**
+   * 独立分支模式下父对话划给子对话的改文件范围（create_conversation 的 files）。
+   * 共用目录下的 files 由 claims 认领；独立分支里各改各的文件，认领没有消费者，
+   * 但要靠这份范围在创建时就看出「两个子对话要改同一批文件」：两个分支先后改同一个文件时
+   * git 常常能自动合上、不报冲突，谁也发现不了，等发现时已经盖掉了。
+   */
+  const scopes = new Map<string, Map<string, { title: string; files: string[] }>>()
   /**
    * 每个项目对话同时执行的子对话数：父对话分派的子对话超过上限（设置里的 childConcurrency）就排队，
    * 前面的做完一轮再开始。用户自己在子对话里发消息不排队。
@@ -1237,6 +1246,9 @@ export function tasksApi(deps: {
       }
     const blocked = await mergeBlocker(target)
     if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
+    // 两边都改过的文件：git 只在同一处改动上报冲突，同一个文件改不同位置会静默合上。
+    // 合并前记下来，合进去时一并告诉子对话和父对话「这个文件两边都动过，核对有没有盖掉对方的改动」
+    const overlap = await mergeOverlap(target, wt.branch).catch(() => [] as string[])
     const m = await trialMerge(target, wt.branch)
     if (!m.ok)
       return {
@@ -1248,7 +1260,13 @@ export function tasksApi(deps: {
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
     try {
       const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
-      return { ok: true, info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。` }
+      const both = overlap.length
+        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过，请核对有没有把对方的改动盖掉。`
+        : ''
+      return {
+        ok: true,
+        info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${both}`,
+      }
     } catch (e) {
       await abortMerge(target)
       return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
@@ -1653,18 +1671,39 @@ export function tasksApi(deps: {
 
   /**
    * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒，并告诉父对话由它协调（两边共用一个目录，后写的会覆盖先写的）
+   * 在子对话里留一条提醒，并告诉父对话由它协调
    */
   async function checkCollisions(child: Task) {
-    // 独立分支里的子对话各改各的，撞了也是合并时的事
-    if (isolated(child)) return
     const mine = child.changes.map((c) => c.path)
-    if (!mine.length) return
-    const others = [...live.values()]
+    // 共用目录：这一轮什么都没改就不用查；独立分支还要看分支上的提交，不能只看 changes
+    if (!isolated(child) && !mine.length) return
+    const sibs = [...live.values()]
       .map((e) => e.task)
-      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && !isolated(x))
-      .map((x) => ({ title: x.title, files: x.changes.map((c) => c.path) }))
-    const hit = collisions(mine, others)
+      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working)
+    if (!sibs.length) return
+    const repo = isolated(child) ? ((await deps.projects.get(child.projectId))?.path ?? '') : ''
+    const shared: { path: string; with: string }[] = []
+    const others: { title: string; files: string[] }[] = []
+    for (const x of sibs) {
+      // 独立分支：比两个分支从共同基点起各自改过的文件。改同一文件的不同位置时 git 能自动合上、不报冲突，
+      // 但同一个文件两边都动过，合进去就是悄悄把对方的改动盖掉
+      if (isolated(child) && isolated(x) && repo && child.worktree?.branch && x.worktree?.branch) {
+        const files = await branchesOverlap(repo, child.worktree.branch, x.worktree.branch).catch(() => [] as string[])
+        for (const f of files) shared.push({ path: f, with: x.title })
+        // 这一轮还没提交的改动在分支上看不到（submit_merge 时才提交）：用任务记录的改动文件补上
+        if (mine.length) shared.push(...collisions(mine, [{ title: x.title, files: x.changes.map((c) => c.path) }]))
+        continue
+      }
+      // 共用目录：两个子对话在同一个目录里改，后写的可能覆盖先写的
+      if (!isolated(child) && !isolated(x)) others.push({ title: x.title, files: x.changes.map((c) => c.path) })
+    }
+    const seen = new Set<string>()
+    const hit = [...shared, ...collisions(mine, others)].filter((h) => {
+      const key = `${h.path}\n${h.with}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     if (!hit.length) return
     const list = hit.map((h) => `${h.path}（「${h.with}」也在改）`).join('、')
     child.messages.push({
@@ -1678,7 +1717,9 @@ export function tasksApi(deps: {
     })
     await messageParent(
       child,
-      `我这一轮改的文件和正在执行的其他子对话撞了：${list}。共用一个目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
+      isolated(child)
+        ? `我这一轮改的文件和正在执行的其他子对话分支重叠：${list}。git 合并时不一定报冲突，合进去之前请核对有没有互相盖掉。`
+        : `我这一轮改的文件和正在执行的其他子对话撞了：${list}。共用一个目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
       true,
     )
   }
@@ -1960,6 +2001,25 @@ export function tasksApi(deps: {
           const got = files?.length
             ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
             : { granted: [], held: [] }
+          // 独立分支里认领没有消费者，但父对话划的范围有用：和兄弟子对话的范围、已改文件重叠时，
+          // 两个分支先后改同一个文件，git 合并往往能自动合上、不报冲突，等于悄悄把对方的改动盖掉
+          const both: { path: string; with: string }[] = []
+          const round = (files ?? []).map(normClaimPath).filter(Boolean)
+          if (round.length && project.childIsolation === 'worktree') {
+            const mine = scopes.get(entry.task.id) ?? scopes.set(entry.task.id, new Map()).get(entry.task.id)!
+            for (const [otherId, s] of mine) {
+              const other = live.get(otherId)?.task
+              if (!other || !isolated(other)) {
+                mine.delete(otherId)
+                continue
+              }
+              for (const a of round) for (const b of s.files) if (overlaps(a, b)) both.push({ path: a, with: s.title })
+              // 兄弟没声明范围、但已经改了这些文件：同样算重叠
+              for (const c of other.changes)
+                for (const a of round) if (overlaps(a, c.path)) both.push({ path: a, with: other.title })
+            }
+            mine.set(subId, { title: draft.title, files: round })
+          }
           const sub = await store.create({ ...draft, id: subId })
           const limit = await childLimit(entry.task.id)
           const wait = queued(entry.task.id) > 0 || slots.running(entry.task.id) >= limit
@@ -1975,6 +2035,9 @@ export function tasksApi(deps: {
               got.granted.length ? `已替它认领：${got.granted.join('、')}` : '',
               got.held.length
                 ? `这些已经归别的子对话，没有认领：${got.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。让它等那边做完再改，或者把这部分交给那个子对话`
+                : '',
+              both.length
+                ? `这些文件和别的子对话重叠了：${[...new Set(both.map((x) => `${x.path}（「${x.with}」）`))].join('、')}。独立分支里两边先后改同一个文件时 git 常常能自动合上、不报冲突，等于悄悄盖掉对方的改动；请拆开范围，或者在 message 里说清各自改哪一部分，合并后核对内容`
                 : '',
             ]
               .filter(Boolean)
@@ -2889,15 +2952,37 @@ export function tasksApi(deps: {
     if (!project) return bad(c, t('任务所属的项目已经不存在'))
     const wt = tk.worktree!
     try {
-      const into = await mergeWorktree(
+      const { into, overlap } = await mergeWorktree(
         project.path,
         wt,
         `Agent 面板：合并「${tk.title}」`,
         await worktreeHome(tk, project),
         true,
       )
-      log.info('task', '合并了独立分支', { task: id, branch: wt.branch, into })
-      return c.json({ task: await current(id), into })
+      log.info('task', '合并了独立分支', { task: id, branch: wt.branch, into, overlap })
+      // 同一个文件两边都改过时，git 可能自动合上、不报冲突：在对话里留一条，用户才知道要核对内容
+      if (overlap.length) {
+        const cur = (await store.get(id)) ?? tk
+        const note = t('这次合并里两边都改了这些文件：{list}。git 已经自动合并，请核对有没有把对方的改动盖掉。', {
+          list: overlap.join('、'),
+        })
+        await store.update(id, {
+          ...cur,
+          messages: [
+            ...cur.messages,
+            {
+              id: randomUUID(),
+              role: 'system',
+              agentId: '',
+              step: '',
+              text: note,
+              tools: [],
+              at: new Date().toISOString(),
+            },
+          ],
+        })
+      }
+      return c.json({ task: await current(id), into, overlap })
     } catch (e) {
       return c.json({ error: (e as Error).message, conflict: !!(e as { conflict?: boolean }).conflict }, 409)
     }

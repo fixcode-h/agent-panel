@@ -18,11 +18,13 @@ import { setLang } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
 import { childHoldText, childHolds, childHoldsOf } from '../../shared/task.ts'
 import {
+  branchesOverlap,
   createWorktree,
   ensureWorktree,
   isolateDeps,
-  missingDeps,
+  mergeOverlap,
   mergeWorktree,
+  missingDeps,
   releaseWorktree,
   removeWorktree,
   sweepWorktrees,
@@ -105,7 +107,7 @@ test('独立分支的状态：没合并时标出提交和没提交的文件，�
     assert.equal(st.ahead, 1)
     assert.equal(st.merged, false)
     // 合并时保留：分支和目录都在，状态变成已合并
-    const into = await mergeWorktree(repo, wt, '合并', repo, true)
+    const { into } = await mergeWorktree(repo, wt, '合并', repo, true)
     assert.equal(into, wt.baseBranch)
     assert.ok(existsSync(wt.path))
     st = await worktreeStatus(repo, wt)
@@ -222,6 +224,49 @@ test('重建不了时给出处理办法，不留半创建的工作区', async ()
   assert.ok(!existsSync(elsewhere), '失败时不留半创建的工作区')
   assert.ok(existsSync(wt.path), '原来那个工作区不受影响')
   await removeWorktree(repo, wt, true)
+})
+
+test('两边都改了同一个文件的不同位置：合并不报冲突，但要把重叠文件交出来', async () => {
+  const repo = project()
+  // 起点两行，两个分支各改一行：git 能自动合上，trialMerge 不会报冲突
+  writeFileSync(path.join(repo, 'README.md'), '# 标题\n\n正文\n')
+  git(repo, 'commit', '-qam', '两行')
+  const wt = await createWorktree(repo, tid(), '重叠')
+  try {
+    writeFileSync(path.join(wt.path, 'README.md'), '# 分支改的标题\n\n正文\n')
+    git(wt.path, 'commit', '-qam', '分支改标题')
+    writeFileSync(path.join(repo, 'README.md'), '# 标题\n\n原目录改的正文\n')
+    git(repo, 'commit', '-qam', '原目录改正文')
+    // 合并前就能比出两边都动过 README.md
+    assert.deepEqual(await mergeOverlap(repo, wt.branch), ['README.md'])
+    assert.deepEqual(await branchesOverlap(repo, 'HEAD', wt.branch), ['README.md'])
+    const r = await mergeWorktree(repo, wt, '合并', repo, true)
+    assert.equal(r.into, wt.baseBranch)
+    assert.deepEqual(r.overlap, ['README.md'], '合并成功也把重叠文件带出来')
+    // 确实没有冲突、两边改动都在，但同一个文件被两边改过
+    assert.match(readFileSync(path.join(repo, 'README.md'), 'utf8'), /分支改的标题[\s\S]*原目录改的正文/)
+    // 都合完了，共同基点变成分支自己的提交，再比就没有重叠
+    assert.deepEqual(await mergeOverlap(repo, wt.branch), [])
+  } finally {
+    await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('两边改的是不同文件时不算重叠', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '不同文件')
+  try {
+    writeFileSync(path.join(wt.path, 'a.txt'), 'a\n')
+    git(wt.path, 'add', '-A')
+    git(wt.path, 'commit', '-qm', 'a')
+    writeFileSync(path.join(repo, 'b.txt'), 'b\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'b')
+    assert.deepEqual(await mergeOverlap(repo, wt.branch), [])
+    assert.deepEqual((await mergeWorktree(repo, wt, '合并', repo, true)).overlap, [])
+  } finally {
+    await removeWorktree(repo, wt, true).catch(() => {})
+  }
 })
 
 test('原目录换了分支就不合并，冲突时带上 conflict 标记并撤回', async () => {

@@ -244,7 +244,7 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description:
-                    '这个子对话负责的文件或目录（相对项目根），面板替它认领；子对话共用一个目录，别的子对话不会再改这些',
+                    '这个子对话负责的文件或目录（相对项目根）：共用目录时面板替它认领，别的子对话要等它做完；独立分支时用来核对有没有和别的子对话改到同一个文件（两边改同一文件时 git 常常自动合并、不报冲突）',
                 },
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },

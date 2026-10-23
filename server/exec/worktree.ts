@@ -280,6 +280,32 @@ export async function ensureWorktree(
   return { worktree: next, rebuilt: true }
 }
 
+/**
+ * 两个提交（分支）从共同基点起都改过的文件。
+ * git 只在同一处改动上报冲突：一方在文件上面加了一段、另一方改了文件的另一个函数，合并会静默成功，
+ * 看起来没冲突，实际上两边改的是同一个文件。合并前后都拿这份交集提示「两边都动过，核对有没有盖掉对方的改动」。
+ * 读不出来（分支已删、共同基点找不到）时返回空数组：算不出重叠不能挡住合并。
+ */
+export async function branchesOverlap(repo: string, a: string, b: string): Promise<string[]> {
+  const mb = await git(repo, 'merge-base', a, b)
+  const base = mb.code === 0 ? mb.stdout.trim() : ''
+  if (!base) return []
+  const list = async (to: string) => {
+    // -z 按 NUL 分隔、不做路径转义：文件名带中文和空格也不会被拆错
+    const r = await git(repo, 'diff', '-z', '--name-only', base, to)
+    return r.code === 0 ? r.stdout.split('\0').filter(Boolean) : null
+  }
+  const [mine, theirs] = await Promise.all([list(a), list(b)])
+  if (!mine || !theirs) return []
+  const also = new Set(theirs)
+  return mine.filter((f) => also.has(f)).sort()
+}
+
+/** 本分支和目标目录现在所在分支都改过的文件（见 branchesOverlap） */
+export async function mergeOverlap(target: string, branch: string): Promise<string[]> {
+  return branchesOverlap(target, 'HEAD', branch)
+}
+
 /** 没配置 git 用户时用面板的身份提交，免得提交失败 */
 async function identity(cwd: string) {
   const email = (await git(cwd, 'config', 'user.email')).stdout.trim()
@@ -302,6 +328,8 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
         base: wt.baseBranch,
       }),
     )
+  // 合并前记下两边都改过的文件：合完目标目录已经是合并后的提交，比不出来
+  const overlap = await mergeOverlap(target, wt.branch).catch(() => [] as string[])
   const m = await git(target, ...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch)
   if (m.code !== 0) {
     await git(target, 'merge', '--abort')
@@ -319,7 +347,7 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
     const problem = await removeWorktree(repo, wt, false)
     if (problem) log.warn('worktree', '合并成功但独立目录没删掉，下次回收时再试', { dir: wt.path, error: problem })
   }
-  return into
+  return { into, overlap }
 }
 
 /** 独立分支现在的情况：目录还在不在、比原分支多几个提交、有几个没提交的文件、是不是已经都合回原分支 */
