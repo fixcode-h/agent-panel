@@ -436,6 +436,10 @@ export const EN_TASKS: Record<string, string> = {
   '运行 {n}': 'Run {n}',
   '{done}/{total} 个节点': '{done}/{total} nodes',
   打开这次运行的对话: 'Open this run as a conversation',
+  // 子对话面板里打开的运行视图：左边是返回，标题下面是它在哪个子对话里
+  返回子对话: 'Back to sub-conversation',
+  关闭子对话面板: 'Close the sub-conversation panel',
+  复制这次运行的结论: 'Copy the summary of this run',
   '这次调用没有启动运行。': 'This call did not start a run.',
   '正在读取这次运行…': 'Loading this run…',
   '{n} 个节点失败': '{n} nodes failed',

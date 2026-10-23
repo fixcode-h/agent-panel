@@ -17,8 +17,8 @@ import { StepIcon } from './TaskStatusIcon'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
 
-/** 一次运行的状态：有失败的算失败，还在跑的算执行中，全做完算完成 */
-function runState(task: Task, run: number) {
+/** 一次运行的状态：有失败的算失败，还在跑的算执行中，全做完算完成。运行面板和子对话里的运行视图共用 */
+export function runState(task: Task, run: number) {
   const steps = topSteps(task, run)
   if (steps.some((s) => s.status === 'failed')) return 'failed' as const
   if (steps.some((s) => s.status === 'running')) return 'running' as const
