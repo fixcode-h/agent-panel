@@ -37,6 +37,7 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
 import type { ProjectProposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
@@ -53,7 +54,7 @@ import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { ParamsForm } from '@/components/agents/ParamFields'
+import { ParamRow, ParamsForm } from '@/components/agents/ParamFields'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 
 /** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
@@ -1356,7 +1357,7 @@ function AgentParamsEditor({
   const mine = agents.filter((d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key))
   if (!mine.length) return null
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
       <div className="flex items-center gap-2">
         <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
         <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
@@ -1372,6 +1373,14 @@ function AgentParamsEditor({
   )
 }
 
+/** 参数的默认值写成人能看的字：开关是「是 / 否」，多选用顿号连起来 */
+function defaultText(v: ParamValue | undefined) {
+  if (v === undefined || v === '') return ''
+  if (typeof v === 'boolean') return v ? t('是') : t('否')
+  if (Array.isArray(v)) return v.join(t('、'))
+  return String(v)
+}
+
 /** 一项派生参数：按类型渲染，显示默认值；多个 Agent 共用同一个 key 时注明影响面 */
 function DerivedParamField({
   d,
@@ -1383,51 +1392,50 @@ function DerivedParamField({
   onChange: (v: string | boolean) => void
 }) {
   const label = d.label || d.key
-  const fallback = Array.isArray(d.defaultValue) ? d.defaultValue.join(', ') : (d.defaultValue ?? '')
+  const fallback = defaultText(d.defaultValue)
   const shared = d.agents.length > 1
+  // 说明、默认值和影响面都收进 ⓘ，行里只留参数名——参数多时一屏能看到全条
+  const hint = [
+    d.description,
+    fallback && t('默认：{v}', { v: fallback }),
+    shared && t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) }),
+  ]
+    .filter(Boolean)
+    .join('；')
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-        {label}
-        <span className="font-mono text-[0.6875rem] text-subtle">{d.key}</span>
-        {d.required && <span className="text-[0.6875rem] text-warning">{t('必须填')}</span>}
-        {shared && (
-          <span className="text-[0.6875rem] text-subtle">
-            {t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) })}
-          </span>
-        )}
-      </span>
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{label}</span>
+          <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{d.key}</span>
+          {d.required && <span className="shrink-0 text-[0.6875rem] text-warning">{t('必须填')}</span>}
+        </>
+      }
+      hint={hint}
+      controlClass={d.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
+    >
       {d.type === 'select' ? (
         <Select
+          aria-label={label}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
           options={[
-            { value: '', label: fallback ? t('默认：{v}', { v: String(fallback) }) : t('未选择') },
+            { value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') },
             ...d.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : d.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true}
-            onChange={(e) => onChange(e.target.checked)}
-          />
-          {value === true ? t('是') : t('否')}
-          {d.defaultValue !== undefined && (
-            <span className="text-xs text-subtle">{t('默认：{v}', { v: d.defaultValue ? t('是') : t('否') })}</span>
-          )}
-        </label>
+        <Switch checked={value === true} onCheckedChange={(x) => onChange(x)} aria-label={label} />
       ) : (
         <Input
+          aria-label={label}
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {d.description && <span className="text-xs text-subtle">{d.description}</span>}
-    </div>
+    </ParamRow>
   )
 }
 
@@ -1443,38 +1451,40 @@ function ExposeField({
 }) {
   const label = e.label || e.key
   const text = typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : (value ?? '')
-  const fallback = Array.isArray(e.default) ? e.default.join(', ') : (e.default ?? '')
+  const fallback = defaultText(e.default)
+  // 和角色参数一样：说明与默认值收进 ⓘ，行里只留名字，控件靠右
+  const hint = [e.description, fallback && t('默认：{v}', { v: fallback })].filter(Boolean).join('；')
+  const on = value === true || text === 'true'
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted">{label}</span>
+    <ParamRow
+      label={<span className="truncate font-medium text-muted">{label}</span>}
+      hint={hint}
+      controlClass={e.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
+    >
       {e.type === 'select' ? (
         <Select
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
           options={[
-            ...(text || fallback ? [] : [{ value: '', label: t('未选择') }]),
+            // 没选时显示默认值（或「未选择」），选了就只显示选中的
+            ...(text ? [] : [{ value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') }]),
             ...e.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : e.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true || value === 'true'}
-            onChange={(ev) => onChange(ev.target.checked ? 'true' : 'false')}
-          />
-          {text === 'true' || value === true ? t('是') : t('否')}
-        </label>
+        // 开关的取值照旧存成 'true' / 'false' 字符串，和工作流配置里的格式一致
+        <Switch checked={on} onCheckedChange={(x) => onChange(x ? 'true' : 'false')} aria-label={label} />
       ) : (
         <Input
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {e.description && <span className="text-xs text-subtle">{e.description}</span>}
-    </div>
+    </ParamRow>
   )
 }
 
