@@ -365,6 +365,13 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
+  '自动回收闲置 Agent': 'Reclaim idle agents automatically',
+  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。':
+    'Agents that finished and have nobody watching are reclaimed after the two windows below; coming back restarts one in a few seconds and resumes the conversation. Turned off, they are no longer reclaimed by time and only limited by "Max kept-alive conversations", so these processes keep piling up.',
+  没看过的回复保留多久: 'Keep unread replies for',
+  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。':
+    'Minutes; 0 reclaims as soon as the reply finishes. When a turn finished but you have not opened the conversation yet (the orange dot in the sidebar is still on), the agent is kept at most this long; after that opening it restarts the agent and resumes the conversation.',
+  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
   同时保活的会话上限: 'Max kept-alive conversations',
   '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。':
     'How many finished conversations with no page open may stay alive waiting for your next message. Beyond this, the least recently used one is closed (opening it again restarts it once). 0 means no limit.',

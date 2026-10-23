@@ -766,6 +766,10 @@ export function tasksApi(deps: {
     })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
   })
 
+  // 上次退出时还没结束的后台命令记录（只在同一个进程里中断时才会留到这时）：不再算「还在跑」，
+  // 否则「彻底完成」和合并门禁会一直等一个永远不会来的结束
+  void ready.then(() => background.recover()).catch(() => {})
+
   /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
   const withJobs = (task: Task): Task => {
     const jobs = background
