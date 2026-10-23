@@ -89,7 +89,7 @@ import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/buil
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
-import { importTask, parseTaskExport } from '@shared/task-export'
+import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
@@ -2128,14 +2128,18 @@ function tasksRoute(
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
-  // 导入别人导出的任务：和正式版一样建成只读的
+  // 导入别人导出的任务：和正式版一样连同包里的子对话一起建成只读的，返回父任务在前的整棵树
   if (id === 'import' && method === 'POST') {
     const b = (body ?? {}) as { projectId?: string; bundle?: unknown }
     if (b.projectId && !d.projects.some((p) => p.id === b.projectId)) fail('项目不存在')
-    const task = importTask(parseTaskExport(b.bundle), b.projectId ?? '', `demo-${crypto.randomUUID()}`)
-    tasks.unshift(task)
+    const bundle = parseTaskExport(b.bundle)
+    const made = importTaskTree(bundle, b.projectId ?? '', [
+      `demo-${crypto.randomUUID()}`,
+      ...bundle.children.map(() => `demo-${crypto.randomUUID()}`),
+    ])
+    tasks.unshift(...made)
     persist()
-    return task
+    return made
   }
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
   if (
@@ -2255,6 +2259,11 @@ function tasksRoute(
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')
     return descendantTotals(runTree(task, tasks).filter((x) => x.id !== task.id))
+  // 导出任务连同子对话：和正式后端一样把整棵树整理成一个包，超体积时不生成
+  if (sub === 'export' && method === 'GET') {
+    const bundle = exportTaskTree(task, tasks, d.agents ?? [], query.get('app') ?? '')
+    return { bundle, bytes: checkExportSize(bundle) }
+  }
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)

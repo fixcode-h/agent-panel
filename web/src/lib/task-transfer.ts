@@ -3,6 +3,7 @@ import { t } from '@shared/i18n'
 import {
   analysisPrompt,
   analysisReport,
+  checkExportSize,
   exportFileName,
   exportTask,
   parseTaskExport,
@@ -36,14 +37,19 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** 导出整个任务（对话或工作流执行）：取完整内容，去掉本机信息和密钥，存成 JSON 文件 */
-export async function downloadTask(id: string, agents: Agent[]) {
-  const [task, children, app] = await Promise.all([api.task(id), childrenStats(id), appVersion()])
-  const bundle = exportTask(task, agents, app, new Date(), children)
-  download(exportFileName(task.title), JSON.stringify(bundle, null, 2))
+/**
+ * 导出整个任务（对话或工作流执行）：连同它分出的所有子对话整理成一个包，去掉本机信息和密钥，存成 JSON 文件。
+ * 整棵树由服务端收集（要按 parentTaskId 递归、按体积上限拦），这里只管打包下载
+ */
+export async function downloadTask(id: string) {
+  const { bundle } = await api.taskExport(id, await appVersion())
+  // 老服务端不带体积检查时也不能把打不开的文件写出去
+  checkExportSize(bundle)
+  download(exportFileName(bundle.task.title), JSON.stringify(bundle, null, 2))
+  return { children: bundle.children.length }
 }
 
-/** 读导出的文件并导入成只读任务 */
+/** 读导出的文件并导入成只读任务（连同包里的子对话），返回父任务在前的整棵树 */
 export async function importTaskFile(file: File, projectId: string) {
   let raw: unknown
   try {

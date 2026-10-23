@@ -609,6 +609,15 @@ export const EN_TASKS: Record<string, string> = {
   '想重点看什么（可选）': 'What to focus on (optional)',
   '例如：为什么验收总是不通过、哪些节点最费 token': 'e.g. why reviews keep failing, which nodes use the most tokens',
   '已导入「{title}」': 'Imported "{title}"',
+  '已导入「{title}」和 {n} 个子对话': 'Imported "{title}" and {n} sub-conversations',
+  已导出任务: 'Task exported',
+  '已导出任务和 {n} 个子对话，导入后父子结构能还原':
+    'Exported the task and its {n} sub-conversations; importing restores the same structure',
+  '连同它分出的子对话一起导出，导入后父子结构能还原':
+    'Exports together with its sub-conversations; importing restores the same structure',
+  '这次导出连同子对话有 {size}，超过了 {max} 的上限。可以先删掉不需要的子对话，或者单独导出其中的子对话。':
+    'This export with its sub-conversations is {size}, over the {max} limit. Delete sub-conversations you no longer need first, or export them one at a time.',
+  '缺少导入任务的 id': 'The imported task is missing an id',
   '导入别人导出的任务（对话或工作流执行），只能查看，也可以交给 AI 分析':
     'Import a task someone exported (chat or workflow run). It is read-only and can be analyzed by AI',
   导入任务: 'Import task',

@@ -8,16 +8,20 @@ import {
   cacheHitRate,
   cacheMismatch,
   applyChanges,
+  checkExportSize,
   demoEvolution,
   descendantTotals,
   exportTask,
+  exportTaskTree,
   importTask,
+  importTaskTree,
   lineDiff,
   parseEvolution,
   parseTaskExport,
   redactSecrets,
   resolveChange,
   stripEvolution,
+  TASK_EXPORT_MAX_BYTES,
   taskReport,
   taskStats,
 } from '../shared/task-export.ts'
@@ -408,4 +412,129 @@ test('缓存命中数超过输入合计时单独标记出来，不让封顶把�
   assert.equal(cacheMismatch({ inputTokens: 842_300, cacheReadTokens: 74_685_200 }), true)
   // 没有输入时无法判断口径，不提示
   assert.equal(cacheMismatch({ inputTokens: 0, cacheReadTokens: 500 }), false)
+})
+
+/** 父对话、子对话、孙对话三层：父对话里还有一个自己派出的子任务（slot: sub） */
+function tree() {
+  const reviewer = Agent.parse({ id: 'a2', name: '评审', instructions: '评审改动', createdAt: at, updatedAt: at })
+  const root = Task.parse({
+    ...task,
+    id: 'r1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    steps: [
+      { id: 'sub1', title: '并行子任务', slot: 'sub', agentId: coder.id, status: 'done', startedAt: at, endedAt: at },
+    ],
+    messages: [
+      { id: 'u1', role: 'user', text: '派两个子任务', at },
+      { id: 'a1', role: 'agent', agentId: coder.id, step: 'sub1', text: '派出了', spawned: ['sub1'], at },
+    ],
+  })
+  const child = Task.parse({
+    ...root,
+    id: 'c1',
+    parentTaskId: 'r1',
+    rootTaskId: 'r1',
+    title: '子对话',
+    steps: [],
+    messages: [{ id: 'cu1', role: 'user', text: '看一下这个模块', at }],
+  })
+  const grand = Task.parse({
+    ...child,
+    id: 'g1',
+    parentTaskId: 'c1',
+    title: '孙对话',
+    messages: [
+      { id: 'gu1', role: 'user', text: '孙对话的要求', at },
+      { id: 'ga1', role: 'agent', agentId: reviewer.id, step: '', text: '评审完了', at },
+    ],
+  })
+  return { root, child, grand, reviewer }
+}
+
+test('导出父对话：子对话（含多层）平铺进包里，子任务和用到的 Agent 一起带走', () => {
+  const { root, child, grand, reviewer } = tree()
+  const b = exportTaskTree(root, [root, child, grand], [coder, reviewer], '0.30.0', new Date(at))
+
+  assert.equal(b.format, 'agent-panel/task')
+  assert.equal(b.children.length, 2, '两个子对话都收进来了')
+  // 直接挂在父任务下的写成空：父任务的 id 不进包（导入时重新分配），指向它没法还原
+  assert.deepEqual(
+    b.children.map((c) => [c.id, c.parentTaskId, c.title]),
+    [
+      ['c1', '', '子对话'],
+      ['g1', 'c1', '孙对话'],
+    ],
+    '孙对话靠 parentTaskId 指回子对话',
+  )
+  assert.equal(b.children[1].messages.length, 2, '子对话自己的消息也在包里')
+  // 子任务本来就在父任务的步骤里，引用的是 step id，不受子对话 id 重分配影响
+  assert.deepEqual(
+    b.task.steps.map((s) => [s.id, s.slot]),
+    [['sub1', 'sub']],
+  )
+  assert.deepEqual(b.task.messages.find((m) => m.id === 'a1')?.spawned, ['sub1'])
+  assert.deepEqual(b.agents.map((a) => a.id).sort(), [coder.id, reviewer.id].sort(), '子对话用到的角色也带上')
+  // 子对话的统计合进 children，报告里能看到整棵树的成本
+  const s = b.stats as ReturnType<typeof taskStats>
+  assert.equal(s.children.tasks, 2)
+  assert.equal(s.combined.tasks, 3)
+  // 导出不改原任务
+  assert.equal(child.parentTaskId, 'r1')
+})
+
+test('导入父对话：还原成同样的父子结构，子对话和子任务的引用都对得上', () => {
+  const { root, child, grand, reviewer } = tree()
+  const b = parseTaskExport(JSON.parse(JSON.stringify(exportTaskTree(root, [root, child, grand], [coder, reviewer]))))
+  const made = importTaskTree(b, 'p2', ['n1', 'n2', 'n3'], at)
+  assert.equal(made.length, 3, '父任务和两个子对话都建了')
+  const [father, ...kids] = made
+  const son = kids.find((x) => x.title === '子对话')!
+  const grandson = kids.find((x) => x.title === '孙对话')!
+
+  assert.equal(father.id, 'n1')
+  assert.equal(father.parentTaskId, '', '导入的父任务是顶层任务，不会因为 parentTaskId 被列表过滤掉')
+  assert.equal(son.parentTaskId, 'n1', '子对话挂在本机新分配的父亲 id 下')
+  assert.equal(son.rootTaskId, 'n1')
+  assert.equal(grandson.parentTaskId, son.id, '孙对话挂在子对话的新 id 下')
+  assert.equal(grandson.rootTaskId, 'n1')
+  assert.ok(
+    made.every((x) => !!x.imported),
+    '导入的任务都是只读的',
+  )
+  assert.equal(grandson.imported?.agents.length, 2, '两个角色都随任务带进来')
+  // 子任务、消息里的引用原样保留
+  assert.deepEqual(
+    father.steps.map((s) => s.id),
+    ['sub1'],
+  )
+  assert.deepEqual(father.messages.find((m) => m.id === 'a1')?.spawned, ['sub1'])
+  // 血缘关系改完仍是合法任务
+  assert.equal(Task.parse(grandson).parentTaskId, son.id)
+  assert.equal(son.messages[0].text, '看一下这个模块')
+})
+
+test('导入边界：同一个子对话在包里出现两次只收一次，父对话不在包里的挂到父任务下', () => {
+  const { root, child, grand } = tree()
+  const b = exportTaskTree(root, [root, child, grand], [coder])
+  const orphan = { ...b.children[0], id: 'gone-child', title: '父对话被删的子对话', parentTaskId: 'deleted-parent' }
+  const made = importTaskTree({ ...b, children: [b.children[0], b.children[0], orphan] }, 'p2', ['n1', 'n2', 'n3'], at)
+  assert.equal(made.length, 3, '重复的那条只导入一次')
+  assert.equal(made[1].title, '子对话')
+  assert.equal(made[2].title, '父对话被删的子对话')
+  assert.equal(made[2].parentTaskId, 'n1', '父不在包里时挂到导出的父任务下，不会变成看不见的孤儿')
+  assert.ok(new Set(made.map((x) => x.id)).size === 3, 'id 没有重复')
+})
+
+test('导出同一棵树两次结果一致，体积超过上限时拒绝生成文件', () => {
+  const { root, child, grand } = tree()
+  const a = exportTaskTree(root, [root, child, grand], [coder], '0.30.0', new Date(at))
+  const b = exportTaskTree(root, [root, child, grand], [coder], '0.30.0', new Date(at))
+  assert.deepEqual(a, b, '重复导出不影响内容')
+  assert.ok(checkExportSize(a) > 0, '正常包给出体积')
+
+  const big = exportTaskTree(root, [root, child, grand], [coder], '0.30.0', new Date(at))
+  big.task.messages[0].text = 'x'.repeat(TASK_EXPORT_MAX_BYTES + 1024)
+  assert.throws(() => checkExportSize(big), /上限/, '超过上限时不生成一个打不开的文件')
 })
