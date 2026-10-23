@@ -11,6 +11,13 @@ const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const VERSION: Record<string, string> = {
   github: 'gh version 2.97.0（演示）',
   cloudflared: 'cloudflared version 2026.1.0（演示）',
+  vercel: 'Vercel CLI 65.2.0（演示）',
+}
+
+/** 演示里授权后显示的账号：和真实后端的 account 一样，认不出时留空 */
+const ACCOUNT: Record<string, string> = {
+  github: 'demo-user',
+  vercel: 'demo-vercel',
 }
 
 const view = (id: string): IntegrationView => {
@@ -27,7 +34,7 @@ const view = (id: string): IntegrationView => {
     installed: true,
     version: VERSION[def.id] ?? '演示',
     authed: on,
-    account: on && def.id === 'github' ? 'demo-user' : '',
+    account: on ? (ACCOUNT[def.id] ?? '') : '',
     browserAuth: def.auth.login.length > 0,
     tokenAuth: !!def.auth.token,
     canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
@@ -45,15 +52,23 @@ function start(id: string): IntegrationLoginJob {
   const def = getIntegration(id) ?? INTEGRATIONS[0]
   // cloudflared 没有一次性授权码：浏览器里选完域名就写完证书
   const cloudflare = def.id === 'cloudflared'
+  // vercel 的 device code flow：打印一条带 user_code 的授权链接，在链接里输码
+  const vercel = def.id === 'vercel'
   const job: IntegrationLoginJob = {
     id: `demo-${crypto.randomUUID()}`,
     integration: def.id,
     status: 'running',
-    url: cloudflare ? 'https://dash.cloudflare.com/argotunnel' : 'https://github.com/login/device',
+    url: cloudflare
+      ? 'https://dash.cloudflare.com/argotunnel'
+      : vercel
+        ? 'https://vercel.com/oauth/device?user_code=ABCD-1234'
+        : 'https://github.com/login/device',
     code: cloudflare ? '' : 'ABCD-1234',
     output: cloudflare
       ? 'A browser window should have opened at the following URL. If it failed to open, visit it manually.'
-      : '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
+      : vercel
+        ? 'Visit https://vercel.com/oauth/device?user_code=ABCD-1234'
+        : '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
     startedAt: Date.now(),
   }
   jobs.set(id, job)

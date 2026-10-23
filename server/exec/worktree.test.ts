@@ -630,3 +630,89 @@ test('守护清理：core.worktree 被写成别的平台路径时也不误清（
     '按注册文件读到分支状态，没把目录当成残留',
   )
 })
+
+test('两个子对话先后改同一个文件：两次合并都成功，两边的内容都在', async () => {
+  const repo = project()
+  writeFileSync(
+    path.join(repo, 'README.md'),
+    `# 标题
+
+正文
+`,
+  )
+  git(repo, 'commit', '-qam', '两行')
+  const a = await createWorktree(repo, tid(), '甲')
+  const b = await createWorktree(repo, tid(), '乙')
+  try {
+    writeFileSync(
+      path.join(a.path, 'README.md'),
+      `# 甲改的标题
+
+正文
+`,
+    )
+    git(a.path, 'commit', '-qam', '甲改标题')
+    writeFileSync(
+      path.join(b.path, 'README.md'),
+      `# 标题
+
+乙改的正文
+`,
+    )
+    git(b.path, 'commit', '-qam', '乙改正文')
+    // 两次合并都对同一个文件动手：git 能自动合上，合并结果照样把重叠文件交出来
+    // 甲合进去时原分支还没动过这个文件，那一侧不算重叠；乙合的时候两边都改过 README.md 了
+    assert.deepEqual((await mergeWorktree(repo, a, '合甲', repo, true)).overlap, [])
+    assert.deepEqual((await mergeWorktree(repo, b, '合乙', repo, true)).overlap, ['README.md'])
+    const merged = readFileSync(path.join(repo, 'README.md'), 'utf8')
+    assert.match(merged, /甲改的标题/, '先合进来的一方的改动还在')
+    assert.match(merged, /乙改的正文/, '后合进来的一方没有整文件盖掉对方的改动')
+  } finally {
+    await removeWorktree(repo, a, true).catch(() => {})
+    await removeWorktree(repo, b, true).catch(() => {})
+  }
+})
+
+test('两个子对话改同一段同一行：第二个合并被撤回，冲突交回它处理，原目录不动', async () => {
+  const repo = project()
+  writeFileSync(
+    path.join(repo, 'README.md'),
+    `# 标题
+
+正文
+`,
+  )
+  git(repo, 'commit', '-qam', '两行')
+  const a = await createWorktree(repo, tid(), '甲')
+  const b = await createWorktree(repo, tid(), '乙')
+  try {
+    writeFileSync(
+      path.join(a.path, 'README.md'),
+      `# 甲改的标题
+
+正文
+`,
+    )
+    git(a.path, 'commit', '-qam', '甲改标题')
+    writeFileSync(
+      path.join(b.path, 'README.md'),
+      `# 乙改的标题
+
+正文
+`,
+    )
+    git(b.path, 'commit', '-qam', '乙改标题')
+    await mergeWorktree(repo, a, '合甲', repo, true)
+    const err = await mergeWorktree(repo, b, '合乙', repo, true).catch((e) => e as Error & { conflict?: boolean })
+    assert.ok(err instanceof Error && err.conflict, '真冲突时带上 conflict 标记，由面板交回子对话')
+    assert.ok(err.message.includes('README.md'), '冲突信息里带上冲突的文件')
+    assert.equal(git(repo, 'status', '--porcelain').toString().trim(), '', '没有把半成品留在原目录')
+    const kept = readFileSync(path.join(repo, 'README.md'), 'utf8')
+    assert.match(kept, /甲改的标题/, '原目录保持合并前的内容')
+    assert.ok(!kept.includes('乙改的标题'), '没有把乙的改动强行合进原目录')
+    assert.ok(existsSync(b.path), '撤回后它的独立目录还在，可以接着处理冲突')
+  } finally {
+    await removeWorktree(repo, a, true).catch(() => {})
+    await removeWorktree(repo, b, true).catch(() => {})
+  }
+})

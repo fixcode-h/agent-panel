@@ -97,6 +97,54 @@ try {
   await p.locator('#task-prompt').fill('/')
   await p.locator('#task-prompt').press('End')
   await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])
+  // 菜单限高后超出的部分靠滚动看：按 ↓ 时选中项要跟着滚进菜单可视区，不能被裁在菜单外面
+  const picked = () =>
+    p.evaluate(() => {
+      const box = document.querySelector('[role="listbox"]')
+      const cur = box?.querySelector('[aria-selected="true"]')
+      if (!box || !cur) return null
+      const b = box.getBoundingClientRect()
+      const r = cur.getBoundingClientRect()
+      return {
+        scrollTop: box.scrollTop,
+        scrollable: box.scrollHeight > box.clientHeight + 1,
+        boxTop: b.top,
+        boxBottom: b.bottom,
+        top: r.top,
+        bottom: r.bottom,
+      }
+    })
+  // 先往下挪几格停在菜单中部，顺便留一张选中项在菜单中部的截图
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  await check(p, '斜杠命令-选中项跟随滚动')
+  const mid = await picked()
+  if (!mid) errors.push('斜杠命令：按 ↓ 后找不到选中的命令')
+  else {
+    if (!mid.scrollable) errors.push('斜杠命令：演示的命令太少，菜单没滚起来，检查不了滚动')
+    if (mid.boxTop < -0.5) errors.push('斜杠命令：菜单顶部超出窗口')
+    if (mid.top < mid.boxTop - 0.5 || mid.bottom > mid.boxBottom + 0.5)
+      errors.push('斜杠命令：按 ↓ 后选中项不在菜单可视区里')
+  }
+  // 一路按到最后一项：菜单要跟着滚，选中项仍然完整可见
+  for (let i = 0; i < 40; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const last = await picked()
+  if (!last || last.scrollTop <= 0) errors.push('斜杠命令：↓ 到最后一项时菜单没滚动（scrollTop 还是 0）')
+  else if (last.top < last.boxTop - 0.5 || last.bottom > last.boxBottom + 0.5)
+    errors.push('斜杠命令：↓ 到最后一项时选中项被裁在菜单外面')
+  // 窗口矮的时候菜单也不能顶出窗口外
+  await p.setViewportSize({ width: 1440, height: 520 })
+  await p.locator('#task-prompt').fill('/')
+  await p.locator('#task-prompt').press('End')
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const short = await picked()
+  if (!short) errors.push('斜杠命令-矮窗口：没有弹出菜单')
+  else {
+    if (short.boxTop < -0.5) errors.push(`斜杠命令-矮窗口：菜单顶部超出窗口 ${Math.round(-short.boxTop)}px`)
+    if (short.boxBottom > 520.5) errors.push('斜杠命令-矮窗口：菜单超出窗口底部')
+    if (short.top < short.boxTop - 0.5 || short.bottom > short.boxBottom + 0.5)
+      errors.push('斜杠命令-矮窗口：选中项不在菜单可视区里')
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 选中后是文字原位的一张卡片；光标停在它后面，按一次退格整张删掉
   await p.locator('#task-prompt').fill('前 ')
   await p.locator('#task-prompt').pressSequentially('/frontend-design')
@@ -533,6 +581,17 @@ try {
   }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
+  // 对话进程下拉：收起时不挂载面板内容（DOM 里没有节点、也不轮询），展开后才渲染进程列表和内存合计
+  const procBtn = p.getByRole('button', { name: '对话进程' }).first()
+  await procBtn.waitFor({ timeout: 5000 }).catch(() => errors.push('任务：没有「对话进程」按钮'))
+  if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起状态下面板内容已经挂在 DOM 里')
+  await procBtn.click()
+  await check(p, '任务-对话进程', ['内存合计', '清理无效进程', '已结束的子任务'])
+  await p.getByRole('button', { name: '对话进程' }).first().click()
+  await p.waitForTimeout(400)
+  if ((await p.locator('[aria-label="对话进程"]').first().getAttribute('aria-expanded')) !== 'false')
+    errors.push('对话进程：收起后按钮的 aria-expanded 不是 false')
+  if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
   const workflowTaskUrl = p.url()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
@@ -873,6 +932,83 @@ try {
   await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
+  // 用量统计：按天 / 按周 / 按月只显示当前一个区间，日历能选日期、有数据的日子带标记，
+  // 费用列按计价模型折算，分时段定价的模型还能看到峰谷明细
+  await p.getByRole('button', { name: '用量统计', exact: true }).click()
+  await check(p, '设置-用量统计-按天', ['用量统计', '费用', '合计'])
+  // 打开时焦点落在粒度选择器上，方向键直接能切
+  if ((await p.evaluate(() => document.activeElement?.getAttribute('role'))) !== 'tab')
+    errors.push('用量统计：打开时焦点没落在区段选择器上')
+  // 计价模型是下拉框的 aria-label，页面上显示的是选中的模型名，所以按 role 查而不是按文本
+  if (!(await p.getByRole('combobox', { name: '计价模型' }).count())) errors.push('用量统计：没有计价模型选择器')
+  const usageRows = () => p.locator('section[aria-label="用量统计"] table tbody tr')
+  const dayRows = await usageRows().count()
+  if (dayRows > 1) errors.push(`用量统计：按天视图应该只显示一个区间，现在有 ${dayRows} 行`)
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：分时段定价的模型没有显示峰谷明细')
+  // 日历：能打开、有数据的日子有标记、能翻月
+  await p.locator('[data-usage-period-trigger]').click()
+  await p
+    .locator('[data-usage-calendar]')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('用量统计：点区间标签没有打开日历'))
+  const markedDays = await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').count()
+  if (!markedDays) errors.push('用量统计：日历上没有标出有数据的日子')
+  if (!(await p.getByLabel('上个月').count())) errors.push('用量统计：日历没有翻月按钮')
+  await check(p, '设置-用量统计-日历')
+  await p.keyboard.press('Escape')
+  // 点一个有数据的历史日子：表格切到那一天
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').first().click()
+  await p.waitForTimeout(400)
+  await check(p, '设置-用量统计-选中某天', ['合计', '费用'])
+  const usageRange = () => p.locator('[data-usage-period-trigger]').innerText()
+  const usageBody = await p.locator('section[aria-label="用量统计"]').innerText()
+  if (!/\d+\.\d+M|\d+\.\d+K/.test(usageBody)) errors.push('用量统计：token 没有用 K/M 显示')
+  // 快捷键：T 回到今天，[ ] 前后翻区间
+  await p.keyboard.press('t')
+  await p.waitForTimeout(250)
+  const todayRange = await usageRange()
+  await p.keyboard.press('[')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) === todayRange) errors.push('用量统计：按 [ 没有切到上一个区间')
+  await p.keyboard.press(']')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) !== todayRange) errors.push('用量统计：按 ] 没有回到下一个区间')
+  // Esc 只关日历，不关设置
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(250)
+  if (await p.locator('[data-usage-calendar]').count()) errors.push('用量统计：Esc 没有关掉日历')
+  if (!(await p.getByRole('dialog').isVisible())) errors.push('用量统计：Esc 把设置也关掉了')
+  // 周 / 月：同样只显示一个区间，标签跟着粒度变
+  await p.getByRole('tab', { name: '按周', exact: true }).click()
+  await p.waitForTimeout(300)
+  const weekLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/第 \d+ 周/.test(weekLabel)) errors.push(`用量统计：按周的标签不是一周（${weekLabel}）`)
+  if ((await usageRows().count()) > 7) errors.push('用量统计：按周视图超过了一周的天数')
+  await check(p, '设置-用量统计-按周')
+  await p.getByRole('tab', { name: '按月', exact: true }).click()
+  await p.waitForTimeout(300)
+  const monthLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/\d{4}年\d+月/.test(monthLabel)) errors.push(`用量统计：按月的标签不是一个月（${monthLabel}）`)
+  await check(p, '设置-用量统计-按月')
+  // 换计价模型：合计和峰谷明细跟着换，单价表按新模型走
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek V4 Pro' }).click()
+  await p.waitForTimeout(300)
+  await check(p, '设置-用量统计-计价模型', ['DeepSeek V4 Pro'])
+  // 下拉框要能完整显示模型名：截断成「DeepSeek V4 P…」也算没排整齐
+  const clipped = await p
+    .getByRole('combobox', { name: '计价模型' })
+    .evaluate((el) => el.scrollWidth > el.clientWidth + 1)
+  if (clipped) errors.push('用量统计：计价模型下拉的文字被截断了')
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：换计价模型后峰谷明细没了')
+  // 换回默认模型，后面的检查不受影响
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
+  await p.waitForTimeout(300)
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
@@ -984,10 +1120,52 @@ try {
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
+  // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
+  const graphFit = () =>
+    p.evaluate(() => {
+      const pane = document.querySelector('.react-flow')
+      const viewport = document.querySelector('.react-flow__viewport')
+      const nodes = [...document.querySelectorAll('.react-flow__node')]
+      if (!pane || !viewport || !nodes.length) return null
+      const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a
+      const rects = nodes.map((el) => el.getBoundingClientRect())
+      const box = pane.getBoundingClientRect()
+      const left = Math.min(...rects.map((r) => r.left))
+      const top = Math.min(...rects.map((r) => r.top))
+      const right = Math.max(...rects.map((r) => r.right))
+      const bottom = Math.max(...rects.map((r) => r.bottom))
+      return { zoom, coverW: (right - left) / box.width, coverH: (bottom - top) / box.height }
+    })
+  const checkGraph = async (where) => {
+    const g = await graphFit()
+    if (!g) return errors.push(`ComfyUI-节点图 ${where}：没有画出来`)
+    if (g.zoom < 0.5) errors.push(`ComfyUI-节点图 ${where}：缩放只有 ${g.zoom.toFixed(2)}，节点文字看不清`)
+    if (g.coverW < 0.8 || g.coverH < 0.8)
+      errors.push(
+        `ComfyUI-节点图 ${where}：节点只占画布宽 ${Math.round(g.coverW * 100)}%、高 ${Math.round(g.coverH * 100)}%，留白太多`,
+      )
+  }
+  await checkGraph('1440')
+  await check(p, 'ComfyUI-节点图-1440')
+  // 窗口变大节点图跟着变大；窗口窄时也能用，不留大片空白、不横向滚动
+  for (const size of [
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 800 },
+  ]) {
+    await p.setViewportSize(size)
+    await p.waitForTimeout(500)
+    await checkGraph(String(size.width))
+    await check(p, `ComfyUI-节点图-${size.width}`)
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 节点图可以在图形和配置（JSON）之间切换
   await p.getByRole('radio', { name: '配置', exact: true }).click()
   await check(p, 'ComfyUI-节点图配置', ['"class_type"'])
   await p.getByRole('radio', { name: '图形', exact: true }).click()
+  // 切回图形要重新适应，不是带着上一次的缩放
+  await p.waitForTimeout(500)
+  await checkGraph('切回图形')
   // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
   await p.getByRole('radio', { name: /^Agent 模式/ }).click()
   await p
@@ -996,6 +1174,9 @@ try {
   await p.goto(base + '#/comfy/game')
   await p.getByRole('radio', { name: '网页 UI' }).click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
+  // 换了工作流也要重新适应，不能带着上一个工作流的位置和缩放
+  await p.waitForTimeout(500)
+  await checkGraph('网页工作流')
   await p.getByRole('button', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '出图更清晰、边缘更干净' }).click()
   await p.getByRole('button', { name: '优化', exact: true }).click()
@@ -1626,6 +1807,13 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+  // 用量统计在手机宽度下：工具条换行、表格隐藏缓存和任务列，不能出现横向滚动
+  // 手机布局的侧栏收在抽屉里，先点顶部的菜单再进设置
+  await m.getByRole('button', { name: '打开菜单' }).click()
+  await m.getByRole('button', { name: '设置' }).first().click()
+  await m.getByRole('button', { name: '用量统计', exact: true }).click()
+  await m.waitForTimeout(400)
+  await check(m, '手机-用量统计', ['按天', '按周', '按月', '合计'])
 } catch (e) {
   // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
   if (process.env.GITHUB_ACTIONS)

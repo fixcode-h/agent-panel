@@ -28,6 +28,7 @@ import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import type { RichInputHandle } from './RichInput'
+import { useMenuBox } from './useMenuBox'
 import { attachChip, type ChipKind } from '@shared/composer'
 import { quoteName } from '@/lib/quote'
 import { t } from '@shared/i18n'
@@ -898,6 +899,8 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
           if (off) return
           setFiles(fs)
           setActive(0)
+          // 换了关键词是一份新列表：菜单回到顶部，选中第一项
+          if (box.current) box.current.scrollTop = 0
         })
         .catch(() => !off && setFiles([]))
     }, 120)
@@ -908,6 +911,9 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
   }, [query?.q, projectId, closed]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = !!query && !!projectId && !closed && files.length > 0
+
+  // 菜单的滚动和高度：选中项跟着 ↑↓ 滚进可视区，矮窗口时压短（见 useMenuBox）
+  const box = useMenuBox(active, open, 18)
 
   const pick = (f: string) => {
     const el = editor.current
@@ -952,9 +958,10 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
 
   const menu = open ? (
     <div
+      ref={box}
       role="listbox"
       aria-label={t('项目文件')}
-      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-72 overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop"
+      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-[min(18rem,60vh)] overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-card p-1 shadow-pop"
     >
       <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
       {files.map((f, i) => {
@@ -965,8 +972,10 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
             type="button"
             role="option"
             aria-selected={i === active}
+            data-i={i}
             onMouseDown={(e) => e.preventDefault()}
-            onMouseEnter={() => setActive(i)}
+            // 用 mousemove 不用 mouseenter：滚动时列表会在鼠标底下换行，mouseenter 会跟着再改一次选中项，来回抖
+            onMouseMove={() => setActive(i)}
             onClick={() => pick(f)}
             className={cn(
               'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem]',

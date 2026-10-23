@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task, TaskTurn } from './schema.ts'
-import { aggregateUsage, usageLabel, usageSamples, type UsageGrain, type UsageReport } from './usage.ts'
+import {
+  aggregateUsage,
+  dayKey,
+  formatTokens,
+  isoWeek,
+  periodLabel,
+  sumBuckets,
+  usageLabel,
+  usagePeriod,
+  usageSamples,
+  type UsageGrain,
+  type UsageReport,
+} from './usage.ts'
 
 /** 固定的「现在」：本地时间 2026-10-20（周二）10:00，所在周从 10 月 19 日（周一）起 */
 const now = new Date(2026, 9, 20, 10, 0, 0)
@@ -69,6 +81,8 @@ test('没有数据：桶照样按范围列出来，都是 0，合计也是 0', (
     costUsd: 0,
     turns: 0,
     tasks: 0,
+    peak: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    offPeak: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
   })
   // 统计范围：从第一天的零点到当前桶的下一天零点
   assert.equal(new Date(r.from).getDate(), 18)
@@ -227,4 +241,153 @@ test('桶的标签按粒度写', () => {
   const report = at('month', 1)
   assert.match(usageLabel(report.buckets[0], 'month'), /2026.*10/)
   assert.match(usageLabel(at('day', 1).buckets[0], 'day'), /10.*20/)
+})
+
+const dates = (p: ReturnType<typeof usagePeriod>) => p.days.map(dayKey)
+
+/** 一段日期：本地时间，测试不依赖时区 */
+const local = (y: number, m: number, d: number) => new Date(y, m - 1, d)
+
+test('区间：天是一天，周是周一到周日，月是整个自然月', () => {
+  // 2026-10-20 是周二
+  assert.deepEqual(dates(usagePeriod('day', local(2026, 10, 20))), ['2026-10-20'])
+  const week = usagePeriod('week', local(2026, 10, 20))
+  assert.deepEqual(dates(week), [
+    '2026-10-19',
+    '2026-10-20',
+    '2026-10-21',
+    '2026-10-22',
+    '2026-10-23',
+    '2026-10-24',
+    '2026-10-25',
+  ])
+  // 周日算在上一周里
+  assert.equal(dayKey(usagePeriod('week', local(2026, 10, 25)).start), '2026-10-19')
+  assert.equal(usagePeriod('month', local(2026, 2, 15)).days.length, 28)
+  assert.equal(usagePeriod('month', local(2028, 2, 1)).days.length, 29)
+  assert.equal(dayKey(usagePeriod('month', local(2026, 12, 31)).end), '2026-12-31')
+})
+
+test('区间标签：周写第几周和起止日期', () => {
+  assert.equal(periodLabel(usagePeriod('day', local(2026, 10, 23))), '10月23日')
+  assert.equal(periodLabel(usagePeriod('month', local(2026, 10, 23))), '2026年10月')
+  assert.equal(periodLabel(usagePeriod('week', local(2026, 10, 20))), '第 43 周 · 10月19日 - 10月25日')
+  // 跨年的那一周按 ISO 的归属算周号：2024-12-30 属于 2025 年第 1 周
+  assert.deepEqual(isoWeek(local(2024, 12, 30)), { year: 2025, week: 1 })
+  // 2021-01-01 是周五，属于 2020 年第 53 周
+  assert.deepEqual(isoWeek(local(2021, 1, 1)), { year: 2020, week: 53 })
+})
+
+test('token 短格式：K / M 两位小数，0 就是 0', () => {
+  assert.equal(formatTokens(0), '0')
+  assert.equal(formatTokens(999), '999')
+  assert.equal(formatTokens(1500), '1.5K')
+  assert.equal(formatTokens(3_328_101), '3.33M')
+  assert.equal(formatTokens(727_366_264), '727.37M')
+  assert.equal(formatTokens(1_000_000), '1M')
+  assert.equal(formatTokens(-5), '0')
+  assert.equal(formatTokens(Number.NaN), '0')
+})
+
+test('几个桶相加和接口给的合计是同一个算法', () => {
+  const r = at('day', 3, [task('a', [turn(new Date(2026, 9, 19, 9, 0), 10, 2, 3)])])
+  assert.deepEqual(sumBuckets(r.buckets), r.total)
+})
+
+/** 北京时间 → 带 Z 的 UTC 字符串：峰谷测试不能随本机时区变 */
+const bj = (day: string, hhmm: string) => {
+  const [y, mo, d] = day.split('-').map(Number)
+  const [h, m] = hhmm.split(':').map(Number)
+  return new Date(Date.UTC(y, mo - 1, d, h - 8, m)).toISOString()
+}
+
+/** 366 天窗口里的合计：不依赖样本落到哪个本地日期 */
+const sumOf = (r: UsageReport, pick: (b: UsageReport['buckets'][number]) => number) =>
+  r.buckets.reduce((n, b) => n + pick(b), 0)
+
+/** 2026-10-26（周一）北京时间中午：366 天窗口盖住下面用的几天 */
+const peakNow = new Date(bj('2026-10-26', '12:00:00'))
+
+const daily = (tasks: Pick<Task, 'id' | 'turns' | 'usage'>[]) =>
+  aggregateUsage(tasks.flatMap(usageSamples), { grain: 'day', count: 366 }, peakNow)
+
+test('峰谷：按每轮开始的时间拆成两组，两组加起来正好是总量', () => {
+  // 2026-10-23 是周五：北京 10:00 是高峰，13:00 午休和周六 10:00 都是空闲
+  const peak = task('a', [turn(new Date(bj('2026-10-23', '10:00:00')), 100, 10, 40)])
+  const noon = task('b', [turn(new Date(bj('2026-10-23', '13:00:00')), 200, 20, 80)])
+  const weekend = task('c', [turn(new Date(bj('2026-10-24', '10:00:00')), 300, 30, 120)])
+  const r = daily([peak, noon, weekend])
+  assert.equal(
+    sumOf(r, (b) => b.peak.inputTokens),
+    100,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.offPeak.inputTokens),
+    500,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.peak.outputTokens),
+    10,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.offPeak.outputTokens),
+    50,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.peak.cacheReadTokens),
+    40,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.offPeak.cacheReadTokens),
+    200,
+  )
+  // 每一桶都守恒：两组之和等于总量，不会因为拆分多出或漏掉 token
+  for (const b of r.buckets) {
+    assert.equal(b.peak.inputTokens + b.offPeak.inputTokens, b.inputTokens, `${b.key} 输入不守恒`)
+    assert.equal(b.peak.outputTokens + b.offPeak.outputTokens, b.outputTokens, `${b.key} 输出不守恒`)
+    assert.equal(b.peak.cacheReadTokens + b.offPeak.cacheReadTokens, b.cacheReadTokens, `${b.key} 缓存命中不守恒`)
+    assert.equal(b.peak.cacheWriteTokens + b.offPeak.cacheWriteTokens, b.cacheWriteTokens, `${b.key} 缓存写入不守恒`)
+  }
+  // 几个桶相加时两组都累加，合计也能按峰谷分别计价
+  const all = sumBuckets(r.buckets)
+  assert.equal(all.peak.inputTokens, 100)
+  assert.equal(all.offPeak.inputTokens, 500)
+  assert.deepEqual(all, r.total)
+})
+
+test('峰谷：缓存写入按轮分摊后跟着那一轮归到各自的档', () => {
+  // 两轮权重 100 : 300，缓存写入 100 → 25 / 75
+  const one = task(
+    'a',
+    [turn(new Date(bj('2026-10-23', '10:00:00')), 100, 0), turn(new Date(bj('2026-10-23', '13:00:00')), 200, 100)],
+    { cacheWriteTokens: 100 },
+  )
+  const r = daily([one])
+  assert.equal(
+    sumOf(r, (b) => b.peak.cacheWriteTokens),
+    25,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.offPeak.cacheWriteTokens),
+    75,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.cacheWriteTokens),
+    100,
+  )
+})
+
+test('峰谷：轮次里 token 全为 0 也按开始时间归到高峰或空闲', () => {
+  const empty = task('a', [turn(new Date(bj('2026-10-23', '10:00:00')), 0, 0)])
+  const r = daily([empty])
+  // 高峰、空闲两组的 token 都是 0，但轮数算在这一桶里，峰谷明细不会互相抵消
+  assert.equal(r.total.turns, 1)
+  assert.equal(
+    sumOf(r, (b) => b.peak.inputTokens),
+    0,
+  )
+  assert.equal(
+    sumOf(r, (b) => b.offPeak.inputTokens),
+    0,
+  )
 })

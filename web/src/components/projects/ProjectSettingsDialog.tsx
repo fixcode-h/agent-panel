@@ -1,5 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import {
@@ -48,7 +48,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
-import type { ProjectProposal } from '@shared/assist'
+import type { ProjectProposal, Proposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
@@ -71,6 +71,24 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 
 /** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
 const PROJECT_WF_CATEGORY = '项目'
+
+/**
+ * 一次 AI 优化会话。参数在打开时快照下来：关掉项目设置后 Body 卸载了，
+ * 对话还要接着跑，不能依赖表单里的草稿。
+ */
+type AiSession = {
+  kind: 'params' | 'teststeps' | 'project'
+  workflowId?: string
+  agentId?: string
+  title: string
+  /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
+  start?: string
+  /** AI 初始化要的目录和扫描线索（Body 关掉后草稿就没了，先存下来） */
+  subject?: Record<string, string>
+}
+
+/** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
+type ApplyAi = (p: Proposal) => void
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
 const folderName = (p: string) =>
@@ -133,28 +151,72 @@ export function ProjectSettingsDialog({
   item?: string
   onOpenChange: (open: boolean) => void
 }) {
+  const { workflows, agents } = useData()
+  // AI 会话放在外壳：关掉项目设置时 AssistDialog 不卸载，生成继续跑，最小化的浮条留在屏幕上
+  const [ai, setAi] = useState<AiSession | null>(null)
+  // Body 挂载时注册「把结果填进表单」；它没挂载（设置关着）时先排队，重新打开后补上
+  const applyRef = useRef<ApplyAi | null>(null)
+  const queued = useRef<Proposal[]>([])
+  const apply = (p: Proposal) => {
+    if (applyRef.current) {
+      applyRef.current(p)
+      return
+    }
+    queued.current.push(p)
+    if (!open) onOpenChange(true)
+  }
+  // 换了项目就不再沿用上一份会话（AssistDialog 卸载时会停掉还在跑的生成）
+  const pid = useRef(project?.id)
+  useEffect(() => {
+    if (pid.current === project?.id) return
+    pid.current = project?.id
+    setAi(null)
+  }, [project?.id])
+  const aiWorkflow = ai?.workflowId ? workflows.find((w) => w.id === ai.workflowId) : undefined
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          // 改到一半点到外面不关闭，免得白填
-          onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          {open && (
-            <Body
-              key={project?.id ?? 'new'}
-              project={project}
-              initialSection={section}
-              item={item}
-              onClose={() => onOpenChange(false)}
-            />
-          )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    <>
+      <D.Root open={open} onOpenChange={onOpenChange}>
+        <D.Portal>
+          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
+          <D.Content
+            aria-describedby={undefined}
+            // 改到一半点到外面不关闭，免得白填
+            onInteractOutside={(e) => e.preventDefault()}
+            className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+          >
+            {open && (
+              <Body
+                key={project?.id ?? 'new'}
+                project={project}
+                initialSection={section}
+                item={item}
+                ai={ai}
+                onAssist={setAi}
+                applyRef={applyRef}
+                queued={queued}
+                onClose={() => onOpenChange(false)}
+              />
+            )}
+          </D.Content>
+        </D.Portal>
+      </D.Root>
+      {/* 放在设置弹窗外面：关掉设置不会连带卸载它，生成和浮条都留着 */}
+      {ai && (
+        <AssistDialog
+          open={!!ai}
+          onOpenChange={(o) => !o && setAi(null)}
+          kind={ai.kind}
+          projectId={project?.id ?? ''}
+          subject={ai.subject}
+          title={ai.title}
+          autoStart={ai.start}
+          paramAgentId={ai.agentId}
+          paramSpec={aiWorkflow ? derivedParams(aiWorkflow, agents) : undefined}
+          target={aiWorkflow}
+          onApply={apply}
+        />
+      )}
+    </>
   )
 }
 
@@ -162,11 +224,21 @@ function Body({
   project,
   initialSection,
   item,
+  ai,
+  onAssist,
+  applyRef,
+  queued,
   onClose,
 }: {
   project?: Project
   initialSection?: string
   item?: string
+  /** 这次打开设置时的 AI 会话（外壳持有，关掉设置也不丢） */
+  ai: AiSession | null
+  onAssist: (s: AiSession) => void
+  /** 应用函数和排队的结果由外壳持有，设置重新打开后要接得上 */
+  applyRef: { current: ApplyAi | null }
+  queued: { current: Proposal[] }
   onClose: () => void
 }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
@@ -256,7 +328,7 @@ function Body({
     return groups.some((g) => derived.some((d) => d.agents.some((a) => a.id === g.agentId)))
   }
   const aiParams = (w: (typeof workflows)[number], agentId?: string, name?: string) =>
-    setAi({
+    onAssist({
       kind: 'params',
       workflowId: w.id,
       agentId,
@@ -298,14 +370,7 @@ function Body({
   const globalFormat = settings?.fileFormat ?? DEFAULT_FILE_FORMAT
   const format = draft.fileFormat ?? globalFormat
   // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
-  const [ai, setAi] = useState<{
-    kind: 'params' | 'teststeps' | 'project'
-    workflowId?: string
-    agentId?: string
-    title: string
-    /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
-    start?: string
-  } | null>(null)
+  // （会话本身由外壳拿着，见 AiSession：关掉设置时这里会卸载，对话不跟着停）
 
   // 「AI 初始化项目」：先快速扫一遍目录（几毫秒，拿技术栈、版本控制这类能直接读出的线索），
   // 再打开 AI 对话，让本机 Agent 在项目目录里写 AGENTS.md 和文档框架、评估工作流和设置。
@@ -318,10 +383,12 @@ function Body({
       const r = await api.analyzeProject(draft.path)
       setScan(r)
       setSignals(r.signals)
-      setAi({
+      // 目录和扫描线索随会话一起存：关掉设置后草稿没了，这两项要交给 AI 继续用
+      onAssist({
         kind: 'project',
         title: t('AI 初始化项目'),
         start: t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置'),
+        subject: { path: draft.path.trim(), scan: scanText(r) },
       })
     } catch (e) {
       toast.error((e as Error).message)
@@ -424,6 +491,49 @@ function Body({
       setDeleting(false)
     }
   }
+
+  /**
+   * 把 AI 的结果填进表单。会话在外壳手里：设置关着时点「填进表单」会先把设置重新打开，
+   * Body 挂载后把排队的那份结果应用掉。
+   */
+  const applyAi = (p: Proposal) => {
+    if (p.kind === 'params') {
+      const id = ai?.workflowId || p.workflowId || active?.id
+      const wf = workflows.find((w) => w.id === id)
+      const spec = wf ? derivedParams(wf, agents) : []
+      if (id)
+        setDraft((d) => {
+          const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
+          // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
+          for (const [k, v] of Object.entries(p.values)) {
+            const def = spec.find((x) => x.key === k)
+            if (def && isDefaultValue(def, v)) delete next[k]
+          }
+          return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
+        })
+      toast.success(t('已填进表单，确认保存后生效'))
+    } else if (p.kind === 'project') {
+      acceptInit(p)
+    } else if (p.kind === 'teststeps') {
+      set('testSteps', p.steps)
+      toast.success(t('已填进表单，确认保存后生效'))
+    }
+  }
+  // 交给外壳的永远是最新这一份（里面读的是当前草稿）；挂载时把关掉设置期间排队的应用掉
+  const applyLatest = useRef(applyAi)
+  applyLatest.current = applyAi
+  useEffect(() => {
+    const handler: ApplyAi = (p) => applyLatest.current(p)
+    applyRef.current = handler
+    const queuedNow = queued.current
+    queued.current = []
+    for (const one of queuedNow) handler(one)
+    return () => {
+      if (applyRef.current === handler) applyRef.current = null
+    }
+    // 注册一次转发就够：applyLatest 每次渲染都指向当前草稿，不用重挂
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <>
@@ -786,7 +896,7 @@ function Body({
                   onDistro={(v) => set('wslDistro', v)}
                   aiRunning={false}
                   onAi={() =>
-                    setAi({
+                    onAssist({
                       kind: 'teststeps',
                       title: t('AI 生成测试步骤'),
                       start: t('按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤'),
@@ -1010,52 +1120,6 @@ function Body({
           title={t('删除「{name}」？', { name: project.name })}
           description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
           onConfirm={remove}
-        />
-      )}
-
-      {ai && (
-        <AssistDialog
-          open={!!ai}
-          onOpenChange={(o) => !o && setAi(null)}
-          kind={ai.kind}
-          projectId={project?.id ?? ''}
-          subject={ai.kind === 'project' ? { path: draft.path.trim(), scan: scan ? scanText(scan) : '' } : undefined}
-          title={ai.title}
-          autoStart={ai.start}
-          paramAgentId={ai.agentId}
-          paramSpec={
-            ai.kind === 'params'
-              ? (() => {
-                  const wf = workflows.find((w) => w.id === (ai.workflowId || active?.id))
-                  return wf ? derivedParams(wf, agents) : []
-                })()
-              : undefined
-          }
-          // params 时 target 是工作流：结果按它的 id 写进 workflowParams
-          target={ai.kind === 'params' ? workflows.find((w) => w.id === (ai.workflowId || active?.id)) : undefined}
-          onApply={(p) => {
-            if (p.kind === 'params') {
-              const id = ai.workflowId || p.workflowId || active?.id
-              const wf = workflows.find((w) => w.id === id)
-              const spec = wf ? derivedParams(wf, agents) : []
-              if (id)
-                setDraft((d) => {
-                  const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
-                  // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
-                  for (const [k, v] of Object.entries(p.values)) {
-                    const def = spec.find((x) => x.key === k)
-                    if (def && isDefaultValue(def, v)) delete next[k]
-                  }
-                  return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
-                })
-              toast.success(t('已填进表单，确认保存后生效'))
-            } else if (p.kind === 'project') {
-              acceptInit(p)
-            } else if (p.kind === 'teststeps') {
-              set('testSteps', p.steps)
-              toast.success(t('已填进表单，确认保存后生效'))
-            }
-          }}
         />
       )}
     </>

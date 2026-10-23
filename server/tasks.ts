@@ -55,7 +55,7 @@ import {
   type ChildFlowStop,
   type ChildHold,
 } from '../shared/task.ts'
-import { agentRun, defaultCli } from '../shared/settings.ts'
+import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
@@ -115,10 +115,28 @@ import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
 import { detectVcs } from './projects-analyze.ts'
-import type { PlanWait } from '../shared/schema.ts'
+import type { PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
-import { collisions, createClaims, normClaimPath, overlaps } from './claims.ts'
+import { childFilesInfo, collisions, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
+import { childEnv, isProcessAlive, killTree } from './exec/process.ts'
+import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
+import {
+  HISTORY_CAPACITY,
+  SAMPLE_INTERVAL_MS,
+  buildSuggestPrompt,
+  cleanableClis,
+  commandSummary,
+  loadHistory,
+  processSnapshot,
+  subtree,
+  sumRss,
+  summarize,
+  trackedStatus,
+} from './exec/proc-stats.ts'
+import { extractJson } from '../shared/assist.ts'
+import { invokeCli } from './exec/invoke.ts'
+import { tmpdir } from 'node:os'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 const RULE_CMD = /^\/rules?(?=\s|$)/i
@@ -187,9 +205,9 @@ export function tasksApi(deps: {
   const claims = createClaims()
   /**
    * 独立分支模式下父对话划给子对话的改文件范围（create_conversation 的 files）。
-   * 共用目录下的 files 由 claims 认领；独立分支里各改各的文件，认领没有消费者，
-   * 但要靠这份范围在创建时就看出「两个子对话要改同一批文件」：两个分支先后改同一个文件时
-   * git 常常能自动合上、不报冲突，谁也发现不了，等发现时已经盖掉了。
+   * 共用目录下的 files 由 claims 认领；独立分支里不认领，两个子对话可以同时改同一个文件，
+   * 各在自己的 worktree 里改、互不影响。这份范围只用来在创建时提示「两边都改了这些文件」，
+   * 合并回父对话分支时按 git merge 处理，真冲突会撤回并交回子对话，所以它只是信息、不是限制。
    */
   const scopes = new Map<string, Map<string, { title: string; files: string[] }>>()
   /**
@@ -1441,8 +1459,9 @@ export function tasksApi(deps: {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
     if (!parent) return { ok: false, info: '找不到父对话' }
     const suggestion = question && kind === 'suggestion'
-    // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接按「交给父对话决定」处理，
-    // 和用户点卡片上那个按钮走同一个 ask.delegated 字段和同一条提权路径，不另造一套
+    // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。
+    // 这时不产生 ask 卡片：卡片和「交给父对话决定」的折叠行都是给用户准备的，用户已经不回答问题了，
+    // 留着它只会让父对话里多出一条等人点「去选择」的东西；只有 panel 为 child 的汇报记一条给 AI 看
     const auto = question && !parent.askUser
     const head = question
       ? suggestion
@@ -1451,15 +1470,17 @@ export function tasksApi(deps: {
       : `子对话「${child.title}」汇报`
     const opts = question ? askOptions(options, kind) : []
     const body = opts.length ? `${text}\n\n可选的做法：\n${opts.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : text
+    // 自动交给父对话时把「谁来答」写进正文：父对话的 AI 之后从对话历史和收件箱读到的就是这句
+    const why = auto ? '\n\n（「提问」关着，用户不会回答：请你按最合理的做法直接决定，别再问用户）' : ''
     const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
-      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}`,
+      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}${why}`,
       tools: [],
-      panel: question ? 'ask' : 'child',
-      ...(question
+      panel: question && !auto ? 'ask' : 'child',
+      ...(question && !auto
         ? {
             ask: {
               from: child.id,
@@ -1485,26 +1506,31 @@ export function tasksApi(deps: {
     if (!how) {
       parent.messages.push(msg)
       parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${body}` : text, at: msg.at })
-    } else if (auto && !parent.messages.some((x) => x.id === msg.id)) {
-      // 正在跑的父对话已经从插话里收到问题；卡片本身也记一条，delegated 才能落到状态里（刷新后仍然是已交出）
+    } else if (!parent.messages.some((x) => x.id === msg.id)) {
+      // 正在跑的父对话已经从插话里收到问题：也记一条（自动交出时 panel 是 child，界面不画），它下一轮还能看到
       parent.messages.push(msg)
     }
     parent.updatedAt = msg.at
     if (entry) entry.rev++
     else await store.update(parent.id, parent).catch(() => {})
-    // 自动交出：和用户点「交给父对话决定」走同一个 delegateAsk（记 delegated、收起子对话弹窗、开一轮作答）
+    // 自动交给父对话的 AI 作答：正在执行的已经在插话里收到了，空闲的给它开一轮（答案从收件箱里看全文）
     if (auto) {
       await store.update(parent.id, parent).catch(() => {})
-      await delegateAsk(parent.id, msg.id)
+      if (!entry?.task.working)
+        await followUp(parent.id, {
+          text: `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
+          attachments: [],
+          panel: 'child',
+        }).catch((e) => log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
     }
-    if (how) return { ok: true, info: '已实时交给父对话' }
     if (auto)
       return {
         ok: true,
         info: suggestion
           ? '「提问」关着，这条建议自动交给父对话决定（不问用户）。这一轮可以结束了，不要再把建议重复写进结论里等它。'
-          : '「提问」关着，问题已经自动交给父对话作答（不问用户）。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。',
+          : `「提问」关着、用户不会回答：这条提问已经交给父对话的 AI 决定${how ? '（它正在执行，已经实时收到）' : '（它空闲时会接着作答）'}。你按${opts.length ? `第 1 个做法「${opts[0]}」` : '最稳妥的做法'}继续往下做，不要停下来等；结论里写一句「提问已按默认处理：${opts.length ? opts[0] : '按最稳妥的做法继续'}」。`,
       }
+    if (how) return { ok: true, info: '已实时交给父对话' }
     return {
       ok: true,
       info: question
@@ -1568,8 +1594,52 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 「提问」关掉时，父对话里还没人回答的子对话提问（历史卡片）一起交给父对话的 AI 决定：
+   * 卡片记成已交出、子对话那边的选择弹窗收掉，父对话空闲时开一轮作答。
+   * 不做这一步，关掉开关后这些卡片仍停在「等你选择」/「交给父对话决定」，子对话也会一直等着
+   */
+  async function handChildAsksToParent(parent: Task, working: boolean) {
+    const waiting = parent.messages.filter(
+      (m) => m.panel === 'ask' && m.ask && m.ask.answer === undefined && !m.ask.delegated,
+    )
+    if (!waiting.length) return false
+    const lines: string[] = []
+    for (const m of waiting) {
+      const ask = m.ask!
+      m.ask = { ...ask, delegated: true }
+      await dropChildAsks(ask.from, [m.id])
+      lines.push(
+        `- 子对话「${ask.title}」${ask.kind === 'suggestion' ? '的收尾建议' : '的提问'}：${ask.question}${
+          ask.options.length ? `（可选做法：${ask.options.join(' / ')}）` : ''
+        }（交给它用 send_to_conversation，id: ${ask.from}）`,
+      )
+    }
+    const text = `用户关掉了「提问」，下面这些子对话的问题不会再有人回答，请你按已有信息选最合理的做法，把「你替它们决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它们：\n${lines.join('\n')}`
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      panel: 'child',
+      at: new Date().toISOString(),
+    }
+    if (working) {
+      const how = await steerTask(parent, text, msg).catch(() => false)
+      if (!how) parent.messages.push(msg)
+    } else {
+      parent.messages.push(msg)
+      await followUp(parent.id, { text, attachments: [], panel: 'child' }).catch((e) =>
+        log.warn('task', '关闭提问时没能开始一轮作答', { error: (e as Error).message }),
+      )
+    }
+    return true
+  }
+
+  /**
    * 把一张提问卡片交给父对话的 AI 决定：记 delegated（刷新后还是「交给父对话决定」）、收起子对话的选择弹窗，
-   * 父对话空闲时开一轮作答。用户点卡片上的按钮、以及「提问」关着时子对话提问自动交出，都走这一个函数。
+   * 父对话空闲时开一轮作答。用户点卡片上的按钮走这个函数。
    */
   async function delegateAsk(parentId: string, msgId: string) {
     const found = live.get(parentId)
@@ -1983,27 +2053,29 @@ export function tasksApi(deps: {
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
           // 只有直接调接口没给时才退回用户消息开头
           if (title.trim()) draft.title = title.trim().slice(0, 80)
-          // 父对话划好的范围先替它认领：别的子对话改这些文件要等它做完
-          const got = files?.length
-            ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
-            : { granted: [], held: [] }
-          // 独立分支里认领没有消费者，但父对话划的范围有用：和兄弟子对话的范围、已改文件重叠时，
-          // 两个分支先后改同一个文件，git 合并往往能自动合上、不报冲突，等于悄悄把对方的改动盖掉
-          const both: { path: string; with: string }[] = []
+          // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
+          // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
+          const sharedDir = project.childIsolation !== 'worktree'
+          const got =
+            sharedDir && files?.length
+              ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
+              : { granted: [], held: [] }
+          let both: { path: string; with: string }[] = []
           const round = (files ?? []).map(normClaimPath).filter(Boolean)
-          if (round.length && project.childIsolation === 'worktree') {
+          if (round.length && !sharedDir) {
             const mine = scopes.get(entry.task.id) ?? scopes.set(entry.task.id, new Map()).get(entry.task.id)!
+            const others: { title: string; files: string[] }[] = []
             for (const [otherId, s] of mine) {
               const other = live.get(otherId)?.task
               if (!other || !isolated(other)) {
                 mine.delete(otherId)
                 continue
               }
-              for (const a of round) for (const b of s.files) if (overlaps(a, b)) both.push({ path: a, with: s.title })
+              others.push({ title: s.title, files: s.files })
               // 兄弟没声明范围、但已经改了这些文件：同样算重叠
-              for (const c of other.changes)
-                for (const a of round) if (overlaps(a, c.path)) both.push({ path: a, with: other.title })
+              others.push({ title: other.title, files: other.changes.map((c) => c.path) })
             }
+            both = scopeOverlaps(round, others)
             mine.set(subId, { title: draft.title, files: round })
           }
           const sub = await store.create({ ...draft, id: subId })
@@ -2018,13 +2090,12 @@ export function tasksApi(deps: {
               wait
                 ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${limit} 个），它在排队，前面的做完一个就开始`
                 : `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
-              got.granted.length ? `已替它认领：${got.granted.join('、')}` : '',
-              got.held.length
-                ? `这些已经归别的子对话，没有认领：${got.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。让它等那边做完再改，或者把这部分交给那个子对话`
-                : '',
-              both.length
-                ? `这些文件和别的子对话重叠了：${[...new Set(both.map((x) => `${x.path}（「${x.with}」）`))].join('、')}。独立分支里两边先后改同一个文件时 git 常常能自动合上、不报冲突，等于悄悄盖掉对方的改动；请拆开范围，或者在 message 里说清各自改哪一部分，合并后核对内容`
-                : '',
+              ...childFilesInfo({
+                isolation: sharedDir ? 'claim' : 'worktree',
+                granted: got.granted,
+                held: got.held,
+                both,
+              }),
             ]
               .filter(Boolean)
               .join('\n'),
@@ -2303,6 +2374,70 @@ export function tasksApi(deps: {
     }
   }
 
+  // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
+
+  /** 对话树最上层：子对话、子任务的进程都算进父对话的统计 */
+  const rootIdOf = (tk: Task) => tk.rootTaskId || tk.id
+
+  /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者排队等名额 */
+  const taskAlive = (id: string) => live.has(id) || startQueue.has(id)
+
+  /** 这个对话的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计 */
+  async function processPanel(tk: Task) {
+    const rootId = rootIdOf(tk)
+    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const map = await processSnapshot()
+    const now = Date.now()
+    const processes: TaskProcess[] = []
+    const pids = new Set<number>()
+    for (const e of entries) {
+      // 进程已经结束、登记还留着：顺手清掉，别让列表一直挂着一个不存在的 pid
+      if (map && !map.has(e.pid)) {
+        untrackCliProcess(e.pid)
+        continue
+      }
+      const status = trackedStatus(e, taskAlive, now)
+      for (const pid of map ? subtree(e.pid, map) : [e.pid]) {
+        if (pids.has(pid)) continue
+        pids.add(pid)
+        const node = map?.get(pid)
+        const startedAt = node?.startedAt ?? (pid === e.pid ? e.startedAt : null)
+        processes.push({
+          pid,
+          parentPid: node && pid !== e.pid ? node.ppid : null,
+          command: commandSummary(node?.argv ?? (pid === e.pid ? e.argv : '')),
+          ownerTaskId: e.owner?.taskId ?? '',
+          ownerTitle: e.owner?.title ?? '',
+          startedAt,
+          durationMs: startedAt ? Math.max(0, now - startedAt) : null,
+          rss: node?.rss ?? null,
+          status,
+          kind: pid === e.pid ? 'cli' : 'child',
+        })
+      }
+    }
+    // 没有进程时是 0（这个对话确实没在跑），系统信息取不到时是 null（界面显示「未知」）
+    const cliMemory = !map ? null : pids.size ? sumRss(pids, map) : 0
+    const serverMemory = process.memoryUsage().rss
+    return {
+      sampledAt: now,
+      processes: processes.sort((a, b) => (a.kind === b.kind ? a.pid - b.pid : a.kind === 'cli' ? -1 : 1)),
+      cliMemory,
+      serverMemory,
+      totalMemory: cliMemory === null ? null : cliMemory + serverMemory,
+      unavailable: map ? '' : t('取不到系统进程信息（权限不足或命令不可用）'),
+    }
+  }
+
+  /** 这个对话能动的 pid：登记的进程和它们的整棵子树 */
+  async function allowedPids(rootId: string) {
+    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const map = await processSnapshot()
+    const out = new Set<number>()
+    for (const e of entries) for (const pid of map ? subtree(e.pid, map) : [e.pid]) out.add(pid)
+    return out
+  }
+
   const routes = new Hono()
 
   routes.get('/', async (c) => {
@@ -2420,6 +2555,126 @@ export function tasksApi(deps: {
     await closeChildren(parent.id)
     await Promise.all(kids.map((k) => endBackground(k.id)))
     return c.json({ stopped: before })
+  })
+
+  /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
+  routes.get('/:id/processes', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    return c.json(await processPanel(tk))
+  })
+
+  /** 关闭一个进程：只认这个对话进程树上的 pid，面板自己和用户自己开的进程都进不来 */
+  routes.post('/:id/processes/:pid/kill', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const pid = Number(c.req.param('pid'))
+    if (!Number.isInteger(pid) || pid <= 0) return bad(c, t('进程号不对'))
+    const allowed = await allowedPids(rootIdOf(tk))
+    if (!allowed.has(pid)) return bad(c, t('这个进程不属于当前对话，不能从这里关闭'))
+    killTree(pid)
+    // 等一下再看：结束失败（权限不足、被系统占用）要把真实状态告诉用户，不能悄悄把登记删掉
+    await new Promise((r) => setTimeout(r, 1200))
+    if (isProcessAlive(pid)) return c.json({ ok: false, pid, error: t('进程还在，可能权限不足或被系统占用，稍后再试') })
+    // 登记还在的话，下次刷新会显示成「已结束」：先去掉，界面只反映还活着的
+    untrackCliProcess(pid)
+    log.info('exec', '从进程面板关闭进程', { task: tk.id, pid })
+    return c.json({ ok: true, pid, error: '' })
+  })
+
+  /**
+   * 清理无效进程：只清面板登记过、任务已经不在跑的（登记残留）。
+   * 用户确认列表里的 pid 传进来就只清这些；传空时清这个对话的全部残留
+   */
+  routes.post('/:id/processes/clean', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
+    const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
+    const roots = rootIdOf(tk)
+    const map = await processSnapshot()
+    const { targets, skipped, gone } = cleanableClis({
+      entries: trackedClis(),
+      map,
+      aliveTask: taskAlive,
+      rootTaskId: roots,
+      only,
+    })
+    // 进程已经不在的登记顺手清掉（不算「结束」，界面照样显示成已结束）
+    for (const pid of gone) untrackCliProcess(pid)
+    for (const e of targets) killTree(e.pid)
+    // 只把真的结束了的从登记里去掉；没结束的留在列表里并说明原因，用户可以再试
+    if (targets.length) await new Promise((r) => setTimeout(r, 1200))
+    const killed: number[] = []
+    for (const e of targets) {
+      if (isProcessAlive(e.pid)) {
+        skipped.push({ pid: e.pid, reason: t('进程没有结束（可能权限不足）') })
+        continue
+      }
+      killed.push(e.pid)
+      untrackCliProcess(e.pid)
+    }
+    if (killed.length || gone.length) log.info('exec', '清理无效进程', { task: tk.id, 清理: killed, 登记残留: gone })
+    return c.json({ killed, skipped, gone })
+  })
+
+  /**
+   * AI 清理建议：把进程列表交给本机的 CLI，让它指出可以关掉的项和理由。
+   * 只给建议，不杀任何进程；用户确认后前端再调清理接口
+   */
+  routes.post('/:id/processes/suggest', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const panel = await processPanel(tk)
+    const settings = await getSettings()
+    const cliId = defaultCli(settings)
+    const def = getCli(cliId)
+    if (!def) return bad(c, t('没有可用的 CLI'))
+    const cs = cliSettings(settings, cliId)
+    const run = agentRun({ cli: cliId, model: '', effort: '' }, settings)
+    const cwd = path.join(tmpdir(), 'agent-panel-process-review')
+    await mkdir(cwd, { recursive: true })
+    let text = ''
+    const r = await invokeCli({
+      cliId,
+      command: cs.command,
+      build: {
+        model: run.model,
+        effort: run.effort,
+        // 只是看进程列表做判断，用 CLI 自己的只读权限
+        permission: def.readOnly || cs.permission,
+        extraArgs: cs.extraArgs,
+      },
+      cwd,
+      env: childEnv(cs.env),
+      input: buildSuggestPrompt(panel),
+      timeoutMs: 120_000,
+      onEvent: (ev) => {
+        if (ev.type === 'text' || ev.type === 'text_delta') text += ev.text
+      },
+    })
+    if (r.spawnError) return c.json({ suggestions: [], text: '', error: r.spawnError })
+    const parsed = extractJson(text) as { kill?: unknown } | undefined
+    const allowed = await allowedPids(rootIdOf(tk))
+    const suggestions = (Array.isArray(parsed?.kill) ? parsed.kill : [])
+      .map((x) => x as { pid?: unknown; reason?: unknown })
+      .filter((x) => Number.isInteger(x.pid) && allowed.has(Number(x.pid)))
+      .map((x) => ({ pid: Number(x.pid), reason: String(x.reason ?? '').slice(0, 200) }))
+    // 没有解析出 JSON：把 CLI 的原文交给界面，用户自己看
+    return c.json({ suggestions, text: text.slice(0, 4000), error: '' })
+  })
+
+  /** 内存曲线：按时间从旧到新，from/to 是 epoch ms（不传就是全部历史） */
+  routes.get('/:id/memory', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const from = Number(c.req.query('from') ?? '')
+    const to = Number(c.req.query('to') ?? '')
+    const points = summarize(loadHistory(), rootIdOf(tk), {
+      from: Number.isFinite(from) && from > 0 ? from : undefined,
+      to: Number.isFinite(to) && to > 0 ? to : undefined,
+    })
+    return c.json({ sampledAt: Date.now(), intervalMs: SAMPLE_INTERVAL_MS, capacity: HISTORY_CAPACITY, points })
   })
 
   /**
@@ -3225,7 +3480,11 @@ export function tasksApi(deps: {
         ? { session: '', through: null, latest: false, summary: history }
         : { session: '', through: null, latest: false }
     }
-    if (p.data.askUser === false) autoAnswerQuestions(task)
+    if (p.data.askUser === false) {
+      autoAnswerQuestions(task)
+      // 子对话已经问出去、还挂在父对话里的那些，也一起交给 AI：否则卡片仍停在「等你选择」
+      await handChildAsksToParent(task, !!e?.task.working)
+    }
     // 执行中改「提问」：直接把新设置插话给正在跑的 CLI，后续的问题按新设置处理；
     // 关掉时还没回答的问题已经由 autoAnswerQuestions 交给 AI 自己选
     if (p.data.askUser !== undefined && e?.task.working) {

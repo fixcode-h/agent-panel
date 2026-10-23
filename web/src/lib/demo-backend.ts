@@ -32,7 +32,11 @@ import {
   Settings,
   type PlanStatus,
   type Task,
+  type TaskProcess,
+  type TaskProcesses,
+  type TaskMemoryHistory,
   type TaskStep,
+  type TaskTurn,
   type CliInstallJob,
   type CliModels,
   type CliUpdate,
@@ -84,6 +88,7 @@ import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, 
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
+import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
 import { importTask, parseTaskExport } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -466,13 +471,11 @@ function seed(): Db {
     document: '',
     expose: [],
   }
-  const web: ProjectCategory = {
-    ...meta(),
-    name: 'Web 应用',
-    description: '前后端分离的网站和后台',
-    workflowId: webFlow.id,
-  }
-  const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
+  // 演示数据和正式后端用同一组内置分类（shared/builtin/project-categories.ts）；
+  // 第一个分类在演示里绑上示例工作流，让示例项目有默认工作流（正式安装里由用户自己指定）
+  const builtinCats = builtinProjectCategories()
+  const web: ProjectCategory = { ...builtinCats[0], workflowId: webFlow.id }
+  const game: ProjectCategory = builtinCats[1]
   // 演示项目的添加时间各不相同：侧栏默认就按它排，和真实的项目列表一致
   const project = (
     o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'> & Partial<ProjectInput>,
@@ -501,7 +504,7 @@ function seed(): Db {
     tags: [tWeb, tQuality, tCommon],
     agents: [arch, fe, be, qaAgent, review, docs],
     workflows: [webFlow, bugFlow],
-    projectCategories: [web, game],
+    projectCategories: [web, ...builtinCats.slice(1)],
     projects: [
       project(
         {
@@ -658,6 +661,10 @@ function load(): Db {
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
   db.globalLessons ??= DEMO_GLOBAL_LESSONS
+  db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
+  // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
+  const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
+  if (missingCats.length) db.projectCategories = [...missingCats, ...db.projectCategories]
   // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
   db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
@@ -1642,6 +1649,8 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'project-categories') {
     if (method === 'GET') return d.projectCategories
     if (method === 'DELETE') {
+      const err = projectCategoryDeleteError(id)
+      if (err) fail(err)
       remove('projectCategories', id, '分类不存在')
       d.projects = d.projects.map((p) => (p.categoryId === id ? { ...p, categoryId: '' } : p))
       persist()
@@ -1650,7 +1659,10 @@ function route(method: string, url: string, body: unknown): unknown {
     const input = parse(ProjectCategoryInput, body)
     if (d.projectCategories.some((c) => c.name === input.name && c.id !== id)) fail(`分类「${input.name}」已存在`)
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')
-    return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
+    // 新建的自建分类明确带 builtin: false，和正式后端的响应字段一致（update 会保留原有的标记）
+    return method === 'POST'
+      ? { ...create('projectCategories', input), builtin: false }
+      : update('projectCategories', id, input, '分类不存在')
   }
 
   // 演示按 Windows 上装了 Git Bash 和 WSL 的情况显示命令行环境（默认 Git Bash 在前）
@@ -1898,6 +1910,156 @@ function followUp(d: Db, task: Task, text: string, fast = false, attachments: At
 /** 演示里点过「合并」的独立分支（没有真的仓库，只记在内存里） */
 const demoMerged = new Set<string>()
 
+// ---- 进程与内存（演示） ----
+/** 字符串散成稳定的数字：同一个对话每次打开看到同样的 pid，截图和验证都对得上 */
+function hashNum(text: string) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.abs(h)
+}
+
+/** 演示里「关掉了」的进程：只留在内存里，刷新页面重新出现 */
+const demoGone = new Map<string, Set<number>>()
+
+const MB = 1024 * 1024
+
+function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
+  const now = Date.now()
+  const rootId = task.rootTaskId || task.id
+  const gone = demoGone.get(rootId) ?? new Set<number>()
+  const base = (hashNum(rootId) % 20000) + 30000
+  const started = (x: Task) => {
+    const at = Date.parse(x.runStartedAt || x.updatedAt || '')
+    return Number.isFinite(at) ? at : now - 12 * 60_000
+  }
+  const rows: TaskProcess[] = []
+  const push = (pid: number, o: Omit<TaskProcess, 'pid'>) => {
+    if (!gone.has(pid)) rows.push({ pid, ...o })
+  }
+  const active = demoLive(task) ? 'running' : 'idle'
+  const cliTitle = task.title
+  push(base, {
+    parentPid: null,
+    command: `pi --print --mcp-config {"mcpServers":{"panel":{}}} 对话：${task.title}`,
+    ownerTaskId: task.id,
+    ownerTitle: cliTitle,
+    startedAt: started(task),
+    durationMs: now - started(task),
+    rss: 168 * MB,
+    status: active,
+    kind: 'cli',
+  })
+  // CLI 自己起的子进程（MCP 桥接、shell）：正式后端也把它们算进这个对话
+  push(base + 1, {
+    parentPid: base,
+    command: 'node /home/u/.agent-panel/cache/cli-run/demo/ask-mcp.mjs',
+    ownerTaskId: task.id,
+    ownerTitle: cliTitle,
+    startedAt: started(task) + 1200,
+    durationMs: now - started(task) - 1200,
+    rss: 46 * MB,
+    status: active,
+    kind: 'child',
+  })
+  // 在干的子对话
+  for (const kid of tasks.filter((x) => x.parentTaskId === task.id && demoLive(x)).slice(0, 3)) {
+    const at = started(kid)
+    push(base + 10 + tasks.indexOf(kid), {
+      parentPid: null,
+      command: `codex app-server 子对话：${kid.title}`,
+      ownerTaskId: kid.id,
+      ownerTitle: kid.title,
+      startedAt: at,
+      durationMs: now - at,
+      rss: 92 * MB,
+      status: 'running',
+      kind: 'cli',
+    })
+  }
+  // 任务已经结束、进程还留着的残留：演示「清理无效进程」用
+  const orphanAt = now - 46 * 60_000
+  push(base + 99, {
+    parentPid: null,
+    command: 'claude --mcp-config {"mcpServers":{"panel":{}}} 已结束的子任务',
+    ownerTaskId: `${task.id}-demo-old`,
+    ownerTitle: '已结束的子任务',
+    startedAt: orphanAt,
+    durationMs: now - orphanAt,
+    rss: 24 * MB,
+    status: 'orphan',
+    kind: 'cli',
+  })
+  const cliMemory = rows.reduce((sum, p) => sum + (p.rss ?? 0), 0)
+  const serverMemory = (268 + Math.round(Math.sin(now / 240_000) * 6)) * MB
+  return {
+    sampledAt: now,
+    processes: rows,
+    cliMemory,
+    serverMemory,
+    totalMemory: cliMemory + serverMemory,
+    unavailable: '',
+  }
+}
+
+/** 演示任务算不算「还在跑」 */
+function demoLive(task: Task) {
+  return task.working === true || live.has(task.id)
+}
+
+function demoKill(task: Task, pid: number) {
+  const rootId = task.rootTaskId || task.id
+  const set = demoGone.get(rootId) ?? new Set<number>()
+  set.add(pid)
+  demoGone.set(rootId, set)
+  return { ok: true, pid, error: '' }
+}
+
+function demoClean(task: Task, body: unknown) {
+  const panel = demoProcesses(task, load().tasks ?? [])
+  const want = (body as { pids?: unknown } | undefined)?.pids
+  const asked = Array.isArray(want) ? want.filter((x): x is number => Number.isInteger(x)) : []
+  const orphans = panel.processes.filter((p) => p.status === 'orphan' && p.kind === 'cli')
+  const targets = asked.length ? orphans.filter((p) => asked.includes(p.pid)) : orphans
+  const rootId = task.rootTaskId || task.id
+  const set = demoGone.get(rootId) ?? new Set<number>()
+  for (const p of targets) set.add(p.pid)
+  demoGone.set(rootId, set)
+  return { killed: targets.map((p) => p.pid), skipped: [], gone: [] }
+}
+
+function demoSuggest(task: Task, tasks: Task[]) {
+  const orphans = demoProcesses(task, tasks).processes.filter((p) => p.status === 'orphan')
+  return {
+    suggestions: orphans.map((p) => ({ pid: p.pid, reason: `所属任务已经结束，进程还留着（${p.ownerTitle}）` })),
+    text: '',
+    error: '',
+  }
+}
+
+function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
+  const intervalMs = 30_000
+  const capacity = 2000
+  const now = Date.now()
+  const base = hashNum(task.rootTaskId || task.id)
+  const from = Number(query.get('from') ?? '')
+  const to = Number(query.get('to') ?? '')
+  const points: TaskMemoryHistory['points'] = []
+  // 两小时、30 秒一点，够看清趋势也能验证左右拖动
+  for (let i = 239; i >= 0; i--) {
+    const t = Math.floor(now / intervalMs) * intervalMs - i * intervalMs
+    if (Number.isFinite(from) && from > 0 && t < from) continue
+    if (Number.isFinite(to) && to > 0 && t > to) continue
+    const wave = Math.sin(t / 900_000 + (base % 7)) * 28 + Math.sin(t / 240_000) * 8
+    const cli = Math.round((132 + wave) * MB)
+    const server = Math.round((268 + Math.sin(t / 300_000 + 1) * 6) * MB)
+    points.push({ t, server, cli, total: cli + server })
+  }
+  return { sampledAt: now, intervalMs, capacity, points }
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2031,6 +2193,14 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  // 进程面板：演示版给一份稳定的假进程和内存历史，字段和正式后端一致
+  if (sub === 'processes') {
+    if (method === 'GET' && !rid) return demoProcesses(task, tasks)
+    if (method === 'POST' && rid === 'clean') return demoClean(task, body)
+    if (method === 'POST' && rid === 'suggest') return demoSuggest(task, tasks)
+    if (method === 'POST' && rid) return demoKill(task, Number(rid))
+  }
+  if (sub === 'memory' && method === 'GET') return demoMemory(task, query)
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')
@@ -2349,6 +2519,49 @@ function demoPlans(task: Task) {
   ]
 }
 
+/**
+ * 演示任务的用量：几轮分散在最近十几天（故意空出两天），日历上能看到有数据的日子，
+ * 按周、按月也有数。演示里本来没有 turns，不补的话用量统计永远是空的。
+ * 金额按美元记在 usage 上，只当 CLI 上报的费用作对照；表格里的费用按计价模型实时折算。
+ */
+function seedDemoUsage(task: Task, minutes: number) {
+  if (task.turns?.length) return
+  // 任务的「最近一天」：createdAt 已经按 back() 的偏移移过，不会再被重复改
+  const last = new Date(new Date(task.createdAt).getTime() + minutes * 60_000)
+  const turns: TaskTurn[] = []
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }
+  for (let i = 0; i < 12; i++) {
+    // 隔几天空一天：日历上的点不必连成一片
+    if (i === 5 || i === 9) continue
+    const day = new Date(last.getFullYear(), last.getMonth(), last.getDate() - i)
+    const startedAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10 + (i % 7), 12 + i)
+    const input = 320_000 + i * 41_000
+    const output = 26_000 + i * 3_100
+    const cacheRead = Math.round(input * 0.62)
+    const cacheWrite = Math.round(input * 0.08)
+    usage.inputTokens += input
+    usage.outputTokens += output
+    usage.cacheReadTokens += cacheRead
+    usage.cacheWriteTokens += cacheWrite
+    usage.costUsd += 0.42 + i * 0.03
+    turns.push({
+      id: `demo-turn-${task.id.slice(-8)}-${i}`,
+      title: '',
+      agentId: '',
+      status: 'done',
+      startedAt: startedAt.toISOString(),
+      endedAt: new Date(startedAt.getTime() + 90_000).toISOString(),
+      from: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 },
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      waitMs: 0,
+    })
+  }
+  task.turns = turns
+  task.usage = { ...(task.usage ?? {}), ...usage, agents: task.usage?.agents ?? {} }
+}
+
 async function seedTasks(d: Db) {
   const [shop, admin] = d.projects
   const fe = d.agents.find((a) => a.name === '前端开发')
@@ -2376,6 +2589,7 @@ async function seedTasks(d: Db) {
       t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
       spreadSteps(t)
     }
+    seedDemoUsage(t, minutes)
   }
   if (admin) {
     const { task, done } = createTask(
