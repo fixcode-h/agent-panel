@@ -23,7 +23,7 @@ export const MERGED_AGENTS: Record<string, MergedAgent> = {
   projecttest: { into: 'tester', note: '已合并到「测试与验收」' },
   ueintegrator: { into: 'tester', note: '编译已并入「测试与验收」的项目测试步骤' },
   docs: { into: 'docsync', note: '已合并到「文档同步」，ADR 和 Bug 记录改由参数控制' },
-  deliver: { into: 'vcs', note: '已合并到「交付员」，推送授权说明也并了进去' },
+  deliver: { into: 'vcs', note: '已合并到「版本控制」（原「交付员」），推送授权说明也并了进去' },
   // 只读的定位、影响面、UE 侦察、查资料是同一个能力块「调研」，按方向和技术栈区分
   researcher: { into: 'explorer', note: '已合并到「调研」（方向选外部资料）', params: { target: '外部资料' } },
   impact: { into: 'explorer', note: '已合并到「调研」（方向选影响面）', params: { target: '影响面' } },

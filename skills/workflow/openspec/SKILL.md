@@ -50,7 +50,7 @@ user-invocable: true
 
 ## 阶段 3 · 实现
 
-先做阶段切换检查。修改文件前按 `project-workflow` 识别 VCS；P4 项目按 `p4-workflow` 将明确任务文件纳入 default changelist。只有跨会话、跨多个独立验收边界或明确要求时，才在外部 `DOC_ROOT` 创建简化的 `p4change/<任务标识>.p4change.md`，普通任务不创建；台账不替代 `tasks.md`，也不加入 pending。
+先做阶段切换检查。修改文件前按 `project-vcs` 识别 VCS（P4 细则在它的 `p4.md` 里），P4 项目按该细则将明确任务文件纳入 default changelist。只有跨会话、跨多个独立验收边界或明确要求时，才在外部 `DOC_ROOT` 创建简化的 `p4change/<任务标识>.p4change.md`，普通任务不创建；台账不替代 `tasks.md`，也不加入 pending。
 
 按 `tasks.md` 连续执行，每条 task 的顺序：
 
@@ -88,7 +88,7 @@ change 预计跨会话或有多个独立验收边界时，在 change 目录维�
 3. 汇总所有延期验证项，一次选择交互展示：原因、影响、建议执行者、验证步骤、当前证据。用户要求立即验证则执行并更新 acceptance；选择暂缓则在 acceptance 和交付记录标记「待用户完成」，不伪造通过。
 4. **归档前门禁**：逐条核对 `tasks.md` —— 未勾选条目为 0、且每条勾选项都有对应验证证据（`acceptance.md` 有命令与结果）。`/opsx-archive` 只统计未勾选项，不会校验勾选项是否真有证据；不满足门禁时先补验证并回填 `acceptance.md`，不得直接归档。门禁通过后执行 `/opsx-archive`（目录移动和主 specs 同步由该指令完成；主 specs 是否同步遵循 `project-documentation` 的交付状态规则，P4 pending 阶段同步时标注「已验收，待提交」）。
    归档操作包含归档副本内的收尾：在归档目录里更新 `tasks.md` 勾选状态、`acceptance.md` 结论等，这部分改动与目录移动、主 specs 同步一起进入同一次提交。
-5. **归档先于版本控制收尾**：归档完成后再按 `project-workflow` 做项目收尾，变更范围包含归档产生的目录移动和主 specs 变更。Git 项目按工作流要求的提交方式收尾，P4 项目完成 default changelist 核对与最终 pending 分桶。
+5. **归档先于版本控制收尾**：归档完成后再按 `project-vcs` 做项目收尾，变更范围包含归档产生的目录移动和主 specs 变更。Git 项目按工作流要求的提交方式收尾，P4 项目完成 default changelist 核对与最终 pending 分桶。
 6. VCS 证据以提交本身（或最终 pending 状态）和最终回复为准；不得为了回填 commit hash 再产生一次提交。
 
 `openspec validate` 通过、测试通过或代码写完都不是完成；缺少验证证据、延期验证决策、归档或版本控制收尾时，change 保持未完成。收尾失败时保留归档目录，需要回退时用 VCS 恢复，不手工移动目录。
@@ -97,7 +97,7 @@ change 预计跨会话或有多个独立验收边界时，在 change 目录维�
 
 续接是受控恢复，先不要写代码，先确认状态：
 
-1. 做阶段 0 的前置检查，再用 `openspec list` / `openspec status` 查看现有 change 与进度；P4 项目先按 `p4-workflow` 核对 default changelist 和任务文件范围。
+1. 做阶段 0 的前置检查，再用 `openspec list` / `openspec status` 查看现有 change 与进度；P4 项目先按 `project-vcs` 的 `p4.md` 核对 default changelist 和任务文件范围。
 2. 必需产物存在且属于同一个 change：`.openspec.yaml`、`proposal.md`、`grilling.md`、`design.md`、`specs/`、`tasks.md`。`acceptance.md` 缺失但其余完整时补建骨架，不视为无效。同时确认设计共识、验收标准、实施路径和 tasks 状态已记录；不能只凭目录存在或关键词匹配恢复。
 3. 产物完整有效时，先读 `handoff.md`（若有）和 `tasks.md`：
    - **有未勾选条目** → 做阶段切换检查，从阶段 3 的剩余条目继续；

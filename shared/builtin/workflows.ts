@@ -221,7 +221,7 @@ export const GENERAL: BuiltinWorkflow = {
 - 版本控制和文档根由「常驻编排器」统一确定，后面的节点按它的结论操作。
 - 方案确认之前不写代码；确认之后中途不再逐步确认，遇到不可逆操作、需求矛盾、和方案冲突时才停下。
 - 测试按项目设置里的「测试步骤」跑（新建对话时快照进任务），没有本轮的新鲜证据不算完成。
-- 版本管理：本地提交 / pending 保持一致；推送、PR、submit 这类对外操作要得到授权。
+- 版本管理交给「版本控制」角色：本地提交 / pending 分桶、分支与合并方向按它的参数执行，规则见 project-vcs 技能；推送、PR、submit 这类对外操作要得到授权。
 - 只改任务范围内的文件，不覆盖、不认领用户已有的改动。`,
   expose: [STRUCTURE, DOC_ROOT, COMMIT],
   flows: [
@@ -359,7 +359,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
 - 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由「测试与验收」节点执行，同一时间只编译一次；不要把编译拆成独立节点，也不要让实现节点自己编译。需要 Editor、PIE 或设备的验证登记为延期验证。
 - 测试步骤在项目设置里维护（编译、Lua 语法检查、可选的 AutomationTest），新建对话时快照进任务。
 - 文档、测试、版本管理沿用在「通用项目」里的规则。
-- Git 只提交本次任务的文件、按功能拆本地提交；P4 只分 pending，不 sync、不 submit。推送 / submit 要授权。`,
+- 版本管理交给「版本控制」角色，规则见 project-vcs 技能（Git 只处理本次任务的文件、P4 只分 pending）；推送 / submit 要授权。`,
   expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT, COMMIT],
   flows: [
     {
@@ -744,7 +744,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 - 设计确认之前不写代码；设计确认后中途不再逐步确认，遇到不可逆操作、需求矛盾、和设计冲突时才停下。
 - 只改任务范围内的文件，不认领、不覆盖已有的改动。
 - 验收按项目设置里的测试步骤跑（新建对话时快照进任务）。
-- 版本控制只做本地提交（P4 只分 pending），push、submit 由你自己做。`,
+- 版本控制交给「版本控制」角色（本地提交 / P4 分桶），push、submit 由你自己做。`,
     flows: [
       {
         id: 'main',

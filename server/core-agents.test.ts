@@ -151,14 +151,14 @@ test('必备角色：不合法的参数值退回内置默认，定义里没有�
     ...def.agent,
     params: [
       { key: 'mode', label: 'x', type: 'select', options: ['乱写'], default: '乱写' },
-      { key: 'commit', label: 'x', type: 'select', options: [], default: '做完提交' },
+      { key: 'batch', label: 'x', type: 'select', options: [], default: '中' },
       { key: 'extra', label: 'x', type: 'text', default: '多出来的' },
     ],
     origin: 'builtin:worker',
   })
   const next = syncCore(cur, def, { categoryId: 'c', includes: [] })
   assert.equal(next.params.find((p) => p.key === 'mode')?.default, '自动')
-  assert.equal(next.params.find((p) => p.key === 'commit')?.default, '做完提交')
+  assert.equal(next.params.find((p) => p.key === 'batch')?.default, '中')
   assert.ok(!next.params.some((p) => p.key === 'extra'))
   assert.ok(isCoreAgent(next))
 })
