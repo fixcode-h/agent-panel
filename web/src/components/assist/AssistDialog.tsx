@@ -36,7 +36,7 @@ import type { McpServer } from '@shared/library'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { AssistDock } from '@/components/assist/AssistDock'
+import { MinimizedChat } from '@/components/ui/minimized-chat'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
 import { ChatReply, FoldedRun, type Author } from '@/components/tasks/Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
@@ -47,7 +47,6 @@ import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 import { AskToggle, ScopeRequests, useNewAskUser } from '@/components/chat/AskToggle'
 import { askUserDefault } from '@/lib/askUserDefault'
-import { useStopConfirm } from '@/components/ui/stop-confirm'
 import { t } from '@shared/i18n'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
@@ -828,9 +827,8 @@ export function AssistDialog({
     setJob(null)
     onOpenChange(false)
   }
-  // MCP 工具的 AI 排查：排查中关窗口先提醒会停止（和「AI 处理」同一个提醒、同一个「以后不再提醒」）
-  const stopConfirm = useStopConfirm(doClose)
-  const close = () => (kind !== 'mcp' || stopConfirm.ask(!!jobRef.current)) && doClose()
+  // 关闭就是直接关并停止（不再先弹确认）：要留着看进度就点最小化
+  const close = () => doClose()
   // 所在页面被关掉（例如换了一个 Agent）时，也不留下没人看的生成
   useEffect(
     () => () => {
@@ -939,9 +937,11 @@ export function AssistDialog({
   return (
     <>
       {open && minimized && (
-        <AssistDock
+        <MinimizedChat
+          id="assist"
+          slot={1}
           label={shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
-          running={running}
+          state={running ? 'running' : unseen ? 'done' : 'idle'}
           unseen={unseen}
           onExpand={() => {
             setMinimized(false)
@@ -1204,7 +1204,6 @@ export function AssistDialog({
           </D.Content>
         </D.Portal>
       </D.Root>
-      {stopConfirm.dialog}
     </>
   )
 }

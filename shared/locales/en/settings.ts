@@ -788,14 +788,13 @@ export const EN_SETTINGS: Record<string, string> = {
   '最小化（排查照常进行）': 'Minimize (troubleshooting keeps running)',
   关闭并停止排查: 'Close and stop troubleshooting',
   'AI 排查：{title}': 'AI troubleshooting: {title}',
-  '排查中…': 'Troubleshooting…',
   已结束: 'Ended',
+  '进行中…': 'In progress…',
+  对话已关闭: 'Chat closed',
+  这个对话已经关闭了: 'This chat has been closed',
+  '它已经从聊天列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
+    'It was deleted from the chat list. This window stays open; click Close at the top right to dismiss it.',
   '正在新建排查对话…': 'Creating the troubleshooting chat…',
-  '停止 AI 排查？': 'Stop AI troubleshooting?',
-  '关闭窗口会停止这次排查。只想先放到一边的话，点「最小化」，排查会接着进行。':
-    'Closing the window stops this troubleshooting run. To set it aside, click "Minimize" and it keeps running.',
-  停止并关闭: 'Stop and close',
-  '以后不再提醒，关闭时直接停止': "Don't ask again; stop right away when closing",
   'AI 排查结束：{title}': 'AI troubleshooting finished: {title}',
   '上一个报错还在排查，排查完再试': 'The previous error is still being troubleshot; try again when it finishes',
   // 字体
