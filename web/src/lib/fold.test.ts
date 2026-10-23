@@ -7,7 +7,17 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TaskMessage, ToolUse } from '@shared/schema'
 import { setLang, t } from '@shared/i18n'
-import { addFoldCut, foldCuts, foldStats, keptOut, markFold, replyText, splitFolds } from './fold.ts'
+import {
+  addFoldCut,
+  foldCuts,
+  foldStats,
+  keptOut,
+  markFold,
+  replyText,
+  segOpenOf,
+  splitFolds,
+  toggleSegOpen,
+} from './fold.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -134,6 +144,35 @@ test('addFoldCut：同一轮收尾几次记几段，切走再回来还认得出'
   assert.deepEqual(foldCuts('turn-a'), [2, 5])
   // 别的轮互不影响
   assert.deepEqual(foldCuts('turn-b'), [])
+})
+
+test('addFoldCut：第一次画出来时这一轮已经收尾也记一段，之后接着输出时前面那段保持折叠', () => {
+  // 刷新、切回页签、被下面的计划卡片挤成非最后一段：拿到的这一轮已经不是执行中，同样要记收尾位置
+  const msgs = [agent('m1', '', { thinking: '想' }), agent('m2', '总结')]
+  let cuts = addFoldCut('turn-c', msgs.length)
+  assert.deepEqual(cuts, [2])
+  // 子对话回报、后台命令结果把它重新拉起来，接着写了几条，再次收尾
+  const all = [...msgs, panel('m3', 'background', '【面板】后台命令跑完了：成功'), agent('m4', '接着总结')]
+  cuts = addFoldCut('turn-c', all.length)
+  // 前面那段没被合并成一段：老内容折在上面，新内容另起一段
+  assert.deepEqual(
+    splitFolds(all, cuts).map((p) => p.map((m) => m.id)),
+    [['m1', 'm2'], ['m3', 'm4'], []],
+  )
+  const old = splitFolds(all, cuts)[0]
+  assert.deepEqual(foldStats(old).parts, [t('思考 {n} 次', { n: 1 })])
+})
+
+test('segOpenOf / toggleSegOpen：点开、收起的选择按「这一轮 + 第几段」记下，重新挂载时拿得到', () => {
+  assert.equal(segOpenOf('turn-x#0'), false)
+  assert.equal(toggleSegOpen('turn-x#0'), true)
+  assert.equal(segOpenOf('turn-x#0'), true)
+  // 别的段、别的轮不受影响
+  assert.equal(segOpenOf('turn-x#1'), false)
+  assert.equal(segOpenOf('turn-y#0'), false)
+  // 再点一下收起
+  assert.equal(toggleSegOpen('turn-x#0'), false)
+  assert.equal(segOpenOf('turn-x#0'), false)
 })
 
 test('replyText：模型当成文字说出来的工具调用写法从正文里去掉了', () => {
