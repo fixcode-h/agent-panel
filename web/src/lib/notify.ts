@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { Task } from '@shared/schema'
+import { stopReasonText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { setBaseTitle } from './page-signal'
-import { countWorking, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
+import { countBusy, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
 
 const KEY = 'notify-task-done'
 
@@ -24,7 +25,7 @@ export async function setNotify(on: boolean) {
   return p === 'granted'
 }
 
-const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('任务失败了'), stopped: t('任务已暂停') }
+const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('任务失败了') }
 
 /**
  * 标题里显示正在执行的任务数。数量什么时候改由 title-count.ts 的状态机决定，
@@ -32,7 +33,7 @@ const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('�
  */
 function useRunningTitle(tasks: Task[]) {
   const count = useRef(0)
-  count.current = countWorking(tasks)
+  count.current = countBusy(tasks)
   const state = useRef<TitleState | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const shown = useRef('')
@@ -109,7 +110,12 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
       const doneTurn = !!task.turnDoneAt && task.turnDoneAt !== was.done
       const ended = was.status === 'running' && (task.status === 'failed' || task.status === 'stopped')
       if (!ended && !doneTurn) continue
-      const text = ended ? TEXT[task.status] : TEXT.done
+      const text = ended
+        ? task.status === 'stopped'
+          ? // 中断不等于用户按了暂停：说清是谁结束的（父对话收尾、面板重启、换 CLI 等）
+            t('任务中断：{reason}', { reason: stopReasonText(task.stopReason) })
+          : TEXT.failed
+        : TEXT.done
       try {
         const n = new Notification(text, { body: task.title, tag: task.id })
         n.onclick = () => {

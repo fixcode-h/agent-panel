@@ -1,5 +1,5 @@
 ---
-paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
+paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui-check.mjs
 ---
 
 # 界面、文案和样式
@@ -38,11 +38,11 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 起因：15c1a1d 把后台命令结果当用户消息推回，新建子对话又多记一条居中提示，用户要求改成工具条目；之后「要改文件了，已开独立分支…」截断了 AI 的回复，子对话的汇报、提问在父对话里居中铺满一屏，用户再次指出。
 - 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`、`scripts/e2e.mjs`（开分支不记提示、提问卡片）。
 
-## 「对话在不在动手」看 working，不看 status
+## 一个状态只允许一处判定：图标、分组、计数、徽标都读它
 
-- 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`（CLI 进程还在），能不能合并、删除、切分支、AI 分析这类操作，以及「回复完才显示」的卡片，都要看 `task.working`；服务端对应用 `live.get(id)?.task.working`，不要用 `live.has(id)`。
-- 起因：独立分支条按 `status === 'running'` 隐藏合并按钮，对话做完了也合并不了，用户问「对话完成了为什么没有合并按钮」；后来「AI 分析执行结果」菜单和分析结果卡片又按 `status` 判断，用户问「对话结束了为啥还不可以 AI 分析」。
-- 防线：`scripts/e2e.mjs` 的独立分支用例。
+- 规则：子对话 / 任务的展示只读 `shared/task.ts` 的 `childIcon(entry)`；`childStage`、`childRunning`、`childSpinning`、`childWaiting`、`taskBusy` 都由它派生，`TaskStatusIcon` 传 `icon={childIcon(c)}`，不要再按 `status + working` 各算一遍。操作权限（合并、删除、切分支、AI 分析）仍按 `task.working` / `live.get(id)?.task.working`，不用 `live.has(id)`。
+- 起因：子对话列表分组读 `childStage`、图标读 `status + working`，出现「已完成组里的项不显示对勾」「已解决的项画成暂停」；侧栏计数、标题 `(n)` 又各一套，两行在转圈却写「1 个执行中」。用户连问三次。
+- 防线：`shared/task-stage.test.ts` 的 childIcon 一致性用例、`web/src/lib/title-count.test.ts`。
 
 ## 工具条目统一点法
 

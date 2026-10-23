@@ -357,6 +357,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
+  同时保活的会话上限: 'Max kept-alive conversations',
+  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。':
+    'How many finished conversations with no page open may stay alive waiting for your next message. Beyond this, the least recently used one is closed (opening it again restarts it once). 0 means no limit.',
+  '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
