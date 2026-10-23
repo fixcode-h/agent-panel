@@ -45,7 +45,8 @@ import {
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
-import { runUsage } from '@shared/run-usage'
+import { runTree, runUsage } from '@shared/run-usage'
+import { descendantTotals } from '@shared/task-export'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
@@ -2028,6 +2029,9 @@ function tasksRoute(
     return task
   }
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
+  // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
+  if (sub === 'children-stats' && method === 'GET')
+    return descendantTotals(runTree(task, tasks).filter((x) => x.id !== task.id))
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)

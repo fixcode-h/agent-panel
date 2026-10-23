@@ -43,32 +43,126 @@ export interface NodeStat {
   errors: number
 }
 
-export interface TaskStats {
-  /** 记录从头到尾的跨度：第一条到最后一个时间戳 */
-  spanMs: number
+/** 节点状态的计数 */
+export interface StepCounts {
+  total: number
+  done: number
+  failed: number
+  skipped: number
+  pending: number
+}
+
+/**
+ * 统计里可以相加的那几项：任务自身、它的子对话合计、含子对话的合计都用这一套。
+ * 子对话是独立的 Task，只靠 parentTaskId 关联，不在父任务的 usage 里，所以必须单独累加，
+ * 否则用户看到的只是父对话自己那一份（几十个子对话的成本整个看不见）。
+ */
+export interface StatsTotal {
+  /** 合计里包含几个任务：自身是 1，含子对话合计是整棵树的个数 */
+  tasks: number
   durationMs: number
   waitMs: number
-  /** 跨度里既不算执行也不算等用户的部分：进程退出了、用户在忙别的 */
-  idleMs: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheHitRate: number
   costUsd: number
-  steps: { total: number; done: number; failed: number; skipped: number; pending: number }
-  /** 验收没通过、退回重做的次数 */
+  steps: StepCounts
   reworks: number
-  /** 报错条数：带错误的系统消息 + 失败的工具调用（命令、读取、编辑等失败了也是要看的） */
   errors: number
-  /** 其中失败的工具调用次数 */
   failedTools: number
   /** 追加要求、对话的轮数（一次 CLI 调用一轮） */
   turns: number
-  /** 其中没有正常结束的（停在执行中就被打断、服务重启） */
   turnsUnfinished: number
+}
+
+export const NO_TOTALS: StatsTotal = {
+  tasks: 0,
+  durationMs: 0,
+  waitMs: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheHitRate: 0,
+  costUsd: 0,
+  steps: { total: 0, done: 0, failed: 0, skipped: 0, pending: 0 },
+  reworks: 0,
+  errors: 0,
+  failedTools: 0,
+  turns: 0,
+  turnsUnfinished: 0,
+}
+
+export interface TaskStats extends Omit<StatsTotal, 'tasks'> {
+  /** 记录从头到尾的跨度：第一条到最后一个时间戳 */
+  spanMs: number
+  /** 跨度里既不算执行也不算等用户的部分：进程退出了、用户在忙别的 */
+  idleMs: number
   /** 用户消息条数：和轮数不是一个口径，报告里两个都写出来 */
   asks: number
   nodes: NodeStat[]
+  /** 它的子对话（含多层）合计：没传子对话时全是 0 */
+  children: StatsTotal
+  /** 自身 + 子对话合计：这才是这次工作的真实成本 */
+  combined: StatsTotal
+}
+
+/** 一个任务自身的统计（导出里 stats 的顶层那几项），可以直接与子对话合计相加 */
+export function ownTotals(s: Omit<StatsTotal, 'tasks'>): StatsTotal {
+  // 逐项取：传进来的可能是整个 TaskStats（带 nodes/children/combined），别把多余字段带进合计
+  return {
+    tasks: 1,
+    durationMs: s.durationMs,
+    waitMs: s.waitMs,
+    inputTokens: s.inputTokens,
+    outputTokens: s.outputTokens,
+    cacheReadTokens: s.cacheReadTokens,
+    cacheHitRate: s.cacheHitRate,
+    costUsd: s.costUsd,
+    steps: s.steps,
+    reworks: s.reworks,
+    errors: s.errors,
+    failedTools: s.failedTools,
+    turns: s.turns,
+    turnsUnfinished: s.turnsUnfinished,
+  }
+}
+
+/** 两组统计相加；命中率按合计后的输入和缓存命中重算，不能把两个百分比直接相加 */
+export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
+  const inputTokens = a.inputTokens + b.inputTokens
+  const cacheReadTokens = a.cacheReadTokens + b.cacheReadTokens
+  return {
+    tasks: a.tasks + b.tasks,
+    durationMs: a.durationMs + b.durationMs,
+    waitMs: a.waitMs + b.waitMs,
+    inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens,
+    cacheHitRate: cacheHitRate({ inputTokens, cacheReadTokens }),
+    costUsd: a.costUsd + b.costUsd,
+    steps: {
+      total: a.steps.total + b.steps.total,
+      done: a.steps.done + b.steps.done,
+      failed: a.steps.failed + b.steps.failed,
+      skipped: a.steps.skipped + b.steps.skipped,
+      pending: a.steps.pending + b.steps.pending,
+    },
+    reworks: a.reworks + b.reworks,
+    errors: a.errors + b.errors,
+    failedTools: a.failedTools + b.failedTools,
+    turns: a.turns + b.turns,
+    turnsUnfinished: a.turnsUnfinished + b.turnsUnfinished,
+  }
+}
+
+/**
+ * 一组任务（父对话分出的子对话，含多层）的统计合计。
+ * 传进来的每份只算它自身的 usage（它自己派出的子任务已经记在它的 usage 里），不会重复累加；
+ * 子对话的报错要靠 messages 算，所以调用方要取完整任务，不能只用摘要。
+ */
+export function descendantTotals(tasks: Task[], now = Date.now()): StatsTotal {
+  return tasks.reduce((acc, tk) => addTotals(acc, ownTotals(taskStats(tk, now))), NO_TOTALS)
 }
 
 /**
@@ -116,7 +210,7 @@ export function recordSpan(rec: {
   return Math.max(0, Math.max(...ok) - Math.min(...ok))
 }
 
-export function taskStats(task: Task, now = Date.now()): TaskStats {
+export function taskStats(task: Task, now = Date.now(), children: StatsTotal = NO_TOTALS): TaskStats {
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
   const nodes = task.steps.map((s): NodeStat => {
     const u = stepUsage(s)
@@ -148,12 +242,9 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
   const durationMs = task.runMs ?? 0
   const waitMs = task.waitMs ?? 0
   const spanMs = recordSpan(task)
-  return {
-    spanMs,
+  const own = ownTotals({
     durationMs,
     waitMs,
-    // 跨度里扣掉执行和等用户，剩下的就是谁也没在跑的空档（至少 0，旧记录时间戳对不上时不出负数）
-    idleMs: Math.max(0, spanMs - durationMs - waitMs),
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
@@ -171,8 +262,16 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
     failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
     turnsUnfinished: (task.turns ?? []).filter((x) => x.status !== 'done').length,
+  })
+  const { tasks: _tasks, ...self } = own
+  return {
+    ...self,
+    spanMs,
+    idleMs: Math.max(0, spanMs - durationMs - waitMs),
     asks: task.messages.filter((m) => m.role === 'user').length,
     nodes,
+    children,
+    combined: addTotals(own, children),
   }
 }
 
@@ -259,7 +358,13 @@ export const TaskExport = z.object({
 export type TaskExport = z.infer<typeof TaskExport>
 
 /** 把任务整理成导出文件的内容 */
-export function exportTask(task: Task, agents: Agent[], app = '', now = new Date()): TaskExport {
+export function exportTask(
+  task: Task,
+  agents: Agent[],
+  app = '',
+  now = new Date(),
+  children: StatsTotal = NO_TOTALS,
+): TaskExport {
   const {
     id: _id,
     projectId: _p,
@@ -300,7 +405,7 @@ export function exportTask(task: Task, agents: Agent[], app = '', now = new Date
     app,
     task: body,
     agents: used,
-    stats: taskStats(task, now.getTime()),
+    stats: taskStats(task, now.getTime(), children),
   })
 }
 
@@ -392,7 +497,12 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     spanMs: raw.spanMs ?? computed.spanMs,
     idleMs: raw.idleMs ?? computed.idleMs,
     asks: raw.asks ?? computed.asks,
+    children: raw.children ?? computed.children,
+    combined: raw.combined ?? computed.combined,
   }
+  const own = ownTotals(st)
+  const kids = st.children?.tasks ? st.children : NO_TOTALS
+  const all = st.combined?.tasks ? st.combined : addTotals(own, kids)
   const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
   const lines: string[] = [
     `# 执行记录：${tk.title}`,
@@ -401,7 +511,13 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     '## 统计',
     `- 跨度 ${fmtMs(st.spanMs)}：执行 ${fmtMs(st.durationMs)}，等用户 ${fmtMs(st.waitMs)}，空闲 ${fmtMs(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
     `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
-    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
+    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
+    ...(kids.tasks
+      ? [
+          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtMs(kids.durationMs)}，其中等用户 ${fmtMs(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
+          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtMs(all.durationMs)}，其中等用户 ${fmtMs(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
+        ]
+      : []),
     ...(cacheMismatch(st)
       ? [
           `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 CLI 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,

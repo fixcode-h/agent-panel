@@ -9,6 +9,7 @@ import {
   cacheMismatch,
   applyChanges,
   demoEvolution,
+  descendantTotals,
   exportTask,
   importTask,
   lineDiff,
@@ -91,6 +92,66 @@ test('导出：带版本号和统计，去掉会话、命令、项目、附件�
   assert.equal(s.nodes[0].cacheHitRate, 0.6)
   assert.equal(s.nodes[0].errors, 1)
   assert.equal(s.reworks, 1, '验收两轮算返工一次')
+})
+
+test('统计：子对话（含多层）的成本汇总进 children 和 combined，报告写出两组数', () => {
+  const child = Task.parse({
+    ...task,
+    id: 't2',
+    parentTaskId: 't1',
+    title: '子对话',
+    runMs: 30_000,
+    steps: [],
+    messages: [
+      { id: 'c1', role: 'system', step: '', text: '执行出错：超时', error: true, at },
+      {
+        id: 'c2',
+        role: 'agent',
+        agentId: coder.id,
+        step: '',
+        text: '跑了',
+        at,
+        tools: [{ kind: 'run', label: 'npm test', failed: true }],
+      },
+    ],
+    usage: { inputTokens: 2000, outputTokens: 400, cacheReadTokens: 1200, costUsd: 0.02 },
+  })
+  const grand = Task.parse({
+    ...child,
+    id: 't3',
+    parentTaskId: 't2',
+    runMs: 5000,
+    messages: [],
+    usage: { inputTokens: 500, outputTokens: 100, cacheReadTokens: 0, costUsd: 0.005 },
+  })
+  const kids = descendantTotals([child, grand])
+  assert.equal(kids.tasks, 2, '两个子对话，不含父对话')
+  assert.equal(kids.inputTokens, 2500)
+  assert.equal(kids.outputTokens, 500)
+  assert.equal(kids.durationMs, 35_000)
+  assert.equal(kids.cacheHitRate, 0.48, '命中率按合计重算')
+  assert.equal(kids.errors, 2, '报错消息 + 失败的工具调用')
+  assert.equal(kids.failedTools, 1)
+
+  const b = exportTask(task, [coder], '', new Date(at), kids)
+  const s = b.stats as ReturnType<typeof taskStats>
+  assert.equal(s.inputTokens, 1000, '顶层仍是自身')
+  assert.equal(s.children.tasks, 2)
+  assert.equal(s.combined.tasks, 3)
+  assert.equal(s.combined.inputTokens, 3500)
+  assert.equal(s.combined.outputTokens, 700)
+  assert.equal(s.combined.cacheHitRate, 0.514)
+
+  const report = analysisReport([b])
+  assert.match(report, /（自身，不含子对话）/)
+  assert.match(report, /子对话 2 个/)
+  assert.match(report, /含子对话合计（3 个任务）/)
+  assert.match(report, /输入 3\.5k/, '合计不是父对话自己的 1.0k')
+  // 旧版本的导出文件里没有 children/combined：只写自身，不报错
+  const legacy = { ...b, stats: { ...s, children: undefined, combined: undefined } }
+  const old = analysisReport([legacy])
+  assert.ok(!old.includes('含子对话合计'), '没有子对话数据时不写合计行')
+  assert.ok(!old.includes('（自身，不含子对话）'))
 })
 
 test('导入：只读任务，Agent 存在任务里；格式不对、版本太新时给出原因', () => {

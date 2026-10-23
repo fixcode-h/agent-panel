@@ -38,6 +38,7 @@ import type {
 } from '@shared/schema'
 import type { ChildActivity, ChildHold } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
+import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -336,6 +337,8 @@ export const api = {
   task: (id: string) => request<Task>(`/tasks/${id}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
+  /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
+  taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
   taskChildren: (id: string) =>
     request<
       {
