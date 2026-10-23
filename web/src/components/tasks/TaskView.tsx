@@ -33,6 +33,7 @@ import {
   Copy,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
+import { ProcessMenu } from './ProcessPanel'
 import { HelperCards } from './HelperCards'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -1081,6 +1082,7 @@ export function TaskView({
                         {task.title}
                       </h2>
                     )}
+                    <ProcessMenu taskId={task.id} />
                     {task.simulated && (
                       <span
                         title={t('没有真正调用 Agent，输出是示例')}

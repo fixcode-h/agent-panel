@@ -55,7 +55,7 @@ import {
   type ChildFlowStop,
   type ChildHold,
 } from '../shared/task.ts'
-import { agentRun, defaultCli } from '../shared/settings.ts'
+import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
@@ -115,10 +115,28 @@ import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
 import { detectVcs } from './projects-analyze.ts'
-import type { PlanWait } from '../shared/schema.ts'
+import type { PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { childFilesInfo, collisions, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
+import { childEnv, isProcessAlive, killTree } from './exec/process.ts'
+import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
+import {
+  HISTORY_CAPACITY,
+  SAMPLE_INTERVAL_MS,
+  buildSuggestPrompt,
+  cleanableClis,
+  commandSummary,
+  loadHistory,
+  processSnapshot,
+  subtree,
+  sumRss,
+  summarize,
+  trackedStatus,
+} from './exec/proc-stats.ts'
+import { extractJson } from '../shared/assist.ts'
+import { invokeCli } from './exec/invoke.ts'
+import { tmpdir } from 'node:os'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 const RULE_CMD = /^\/rules?(?=\s|$)/i
@@ -2356,6 +2374,70 @@ export function tasksApi(deps: {
     }
   }
 
+  // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
+
+  /** 对话树最上层：子对话、子任务的进程都算进父对话的统计 */
+  const rootIdOf = (tk: Task) => tk.rootTaskId || tk.id
+
+  /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者排队等名额 */
+  const taskAlive = (id: string) => live.has(id) || startQueue.has(id)
+
+  /** 这个对话的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计 */
+  async function processPanel(tk: Task) {
+    const rootId = rootIdOf(tk)
+    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const map = await processSnapshot()
+    const now = Date.now()
+    const processes: TaskProcess[] = []
+    const pids = new Set<number>()
+    for (const e of entries) {
+      // 进程已经结束、登记还留着：顺手清掉，别让列表一直挂着一个不存在的 pid
+      if (map && !map.has(e.pid)) {
+        untrackCliProcess(e.pid)
+        continue
+      }
+      const status = trackedStatus(e, taskAlive, now)
+      for (const pid of map ? subtree(e.pid, map) : [e.pid]) {
+        if (pids.has(pid)) continue
+        pids.add(pid)
+        const node = map?.get(pid)
+        const startedAt = node?.startedAt ?? (pid === e.pid ? e.startedAt : null)
+        processes.push({
+          pid,
+          parentPid: node && pid !== e.pid ? node.ppid : null,
+          command: commandSummary(node?.argv ?? (pid === e.pid ? e.argv : '')),
+          ownerTaskId: e.owner?.taskId ?? '',
+          ownerTitle: e.owner?.title ?? '',
+          startedAt,
+          durationMs: startedAt ? Math.max(0, now - startedAt) : null,
+          rss: node?.rss ?? null,
+          status,
+          kind: pid === e.pid ? 'cli' : 'child',
+        })
+      }
+    }
+    // 没有进程时是 0（这个对话确实没在跑），系统信息取不到时是 null（界面显示「未知」）
+    const cliMemory = !map ? null : pids.size ? sumRss(pids, map) : 0
+    const serverMemory = process.memoryUsage().rss
+    return {
+      sampledAt: now,
+      processes: processes.sort((a, b) => (a.kind === b.kind ? a.pid - b.pid : a.kind === 'cli' ? -1 : 1)),
+      cliMemory,
+      serverMemory,
+      totalMemory: cliMemory === null ? null : cliMemory + serverMemory,
+      unavailable: map ? '' : t('取不到系统进程信息（权限不足或命令不可用）'),
+    }
+  }
+
+  /** 这个对话能动的 pid：登记的进程和它们的整棵子树 */
+  async function allowedPids(rootId: string) {
+    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const map = await processSnapshot()
+    const out = new Set<number>()
+    for (const e of entries) for (const pid of map ? subtree(e.pid, map) : [e.pid]) out.add(pid)
+    return out
+  }
+
   const routes = new Hono()
 
   routes.get('/', async (c) => {
@@ -2473,6 +2555,126 @@ export function tasksApi(deps: {
     await closeChildren(parent.id)
     await Promise.all(kids.map((k) => endBackground(k.id)))
     return c.json({ stopped: before })
+  })
+
+  /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
+  routes.get('/:id/processes', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    return c.json(await processPanel(tk))
+  })
+
+  /** 关闭一个进程：只认这个对话进程树上的 pid，面板自己和用户自己开的进程都进不来 */
+  routes.post('/:id/processes/:pid/kill', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const pid = Number(c.req.param('pid'))
+    if (!Number.isInteger(pid) || pid <= 0) return bad(c, t('进程号不对'))
+    const allowed = await allowedPids(rootIdOf(tk))
+    if (!allowed.has(pid)) return bad(c, t('这个进程不属于当前对话，不能从这里关闭'))
+    killTree(pid)
+    // 等一下再看：结束失败（权限不足、被系统占用）要把真实状态告诉用户，不能悄悄把登记删掉
+    await new Promise((r) => setTimeout(r, 1200))
+    if (isProcessAlive(pid)) return c.json({ ok: false, pid, error: t('进程还在，可能权限不足或被系统占用，稍后再试') })
+    // 登记还在的话，下次刷新会显示成「已结束」：先去掉，界面只反映还活着的
+    untrackCliProcess(pid)
+    log.info('exec', '从进程面板关闭进程', { task: tk.id, pid })
+    return c.json({ ok: true, pid, error: '' })
+  })
+
+  /**
+   * 清理无效进程：只清面板登记过、任务已经不在跑的（登记残留）。
+   * 用户确认列表里的 pid 传进来就只清这些；传空时清这个对话的全部残留
+   */
+  routes.post('/:id/processes/clean', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
+    const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
+    const roots = rootIdOf(tk)
+    const map = await processSnapshot()
+    const { targets, skipped, gone } = cleanableClis({
+      entries: trackedClis(),
+      map,
+      aliveTask: taskAlive,
+      rootTaskId: roots,
+      only,
+    })
+    // 进程已经不在的登记顺手清掉（不算「结束」，界面照样显示成已结束）
+    for (const pid of gone) untrackCliProcess(pid)
+    for (const e of targets) killTree(e.pid)
+    // 只把真的结束了的从登记里去掉；没结束的留在列表里并说明原因，用户可以再试
+    if (targets.length) await new Promise((r) => setTimeout(r, 1200))
+    const killed: number[] = []
+    for (const e of targets) {
+      if (isProcessAlive(e.pid)) {
+        skipped.push({ pid: e.pid, reason: t('进程没有结束（可能权限不足）') })
+        continue
+      }
+      killed.push(e.pid)
+      untrackCliProcess(e.pid)
+    }
+    if (killed.length || gone.length) log.info('exec', '清理无效进程', { task: tk.id, 清理: killed, 登记残留: gone })
+    return c.json({ killed, skipped, gone })
+  })
+
+  /**
+   * AI 清理建议：把进程列表交给本机的 CLI，让它指出可以关掉的项和理由。
+   * 只给建议，不杀任何进程；用户确认后前端再调清理接口
+   */
+  routes.post('/:id/processes/suggest', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const panel = await processPanel(tk)
+    const settings = await getSettings()
+    const cliId = defaultCli(settings)
+    const def = getCli(cliId)
+    if (!def) return bad(c, t('没有可用的 CLI'))
+    const cs = cliSettings(settings, cliId)
+    const run = agentRun({ cli: cliId, model: '', effort: '' }, settings)
+    const cwd = path.join(tmpdir(), 'agent-panel-process-review')
+    await mkdir(cwd, { recursive: true })
+    let text = ''
+    const r = await invokeCli({
+      cliId,
+      command: cs.command,
+      build: {
+        model: run.model,
+        effort: run.effort,
+        // 只是看进程列表做判断，用 CLI 自己的只读权限
+        permission: def.readOnly || cs.permission,
+        extraArgs: cs.extraArgs,
+      },
+      cwd,
+      env: childEnv(cs.env),
+      input: buildSuggestPrompt(panel),
+      timeoutMs: 120_000,
+      onEvent: (ev) => {
+        if (ev.type === 'text' || ev.type === 'text_delta') text += ev.text
+      },
+    })
+    if (r.spawnError) return c.json({ suggestions: [], text: '', error: r.spawnError })
+    const parsed = extractJson(text) as { kill?: unknown } | undefined
+    const allowed = await allowedPids(rootIdOf(tk))
+    const suggestions = (Array.isArray(parsed?.kill) ? parsed.kill : [])
+      .map((x) => x as { pid?: unknown; reason?: unknown })
+      .filter((x) => Number.isInteger(x.pid) && allowed.has(Number(x.pid)))
+      .map((x) => ({ pid: Number(x.pid), reason: String(x.reason ?? '').slice(0, 200) }))
+    // 没有解析出 JSON：把 CLI 的原文交给界面，用户自己看
+    return c.json({ suggestions, text: text.slice(0, 4000), error: '' })
+  })
+
+  /** 内存曲线：按时间从旧到新，from/to 是 epoch ms（不传就是全部历史） */
+  routes.get('/:id/memory', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const from = Number(c.req.query('from') ?? '')
+    const to = Number(c.req.query('to') ?? '')
+    const points = summarize(loadHistory(), rootIdOf(tk), {
+      from: Number.isFinite(from) && from > 0 ? from : undefined,
+      to: Number.isFinite(to) && to > 0 ? to : undefined,
+    })
+    return c.json({ sampledAt: Date.now(), intervalMs: SAMPLE_INTERVAL_MS, capacity: HISTORY_CAPACITY, points })
   })
 
   /**

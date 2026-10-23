@@ -1823,3 +1823,95 @@ export interface LoginJob {
   error?: string
   startedAt: number
 }
+
+/**
+ * 对话进程面板里的一条进程：面板登记的 CLI 或它起的子进程（MCP 服务、shell）。
+ * 内存取不到时 rss 为 null（界面显示「未知」），不要用 0 冒充
+ */
+export const TaskProcess = z.object({
+  pid: z.number(),
+  /** 父进程；面板起的是 CLI 自己时为空 */
+  parentPid: z.number().nullable().default(null),
+  /** 命令行摘要：长参数（MCP 配置、临时目录）已经替换掉 */
+  command: z.string().default(''),
+  /** 归属：哪个对话/子对话/子任务/工作流起的；面板自己的动作（AI 创建、文档）为空 */
+  ownerTaskId: z.string().default(''),
+  ownerTitle: z.string().default(''),
+  /** 进程启动时刻（epoch ms）；取不到时 null */
+  startedAt: z.number().nullable().default(null),
+  durationMs: z.number().nullable().default(null),
+  /** 常驻内存（字节）；取不到时 null */
+  rss: z.number().nullable().default(null),
+  /** running 运行中；idle 很久没有输出；orphan 任务已经不在跑了（可清理） */
+  status: z.enum(['running', 'idle', 'orphan']).default('running'),
+  /** cli 面板起的那个进程；child 它起的子进程 */
+  kind: z.enum(['cli', 'child']).default('cli'),
+})
+export type TaskProcess = z.infer<typeof TaskProcess>
+
+/** 一个对话的进程与内存汇总：前端「内存合计」直接读 totalMemory */
+export const TaskProcesses = z.object({
+  sampledAt: z.number(),
+  processes: z.array(TaskProcess).default([]),
+  /** 这个对话树上 CLI 进程的 RSS 合计；取不到系统信息时 null */
+  cliMemory: z.number().nullable().default(null),
+  /** 面板 server 自己的 RSS */
+  serverMemory: z.number(),
+  /** totalMemory = cliMemory + serverMemory；cliMemory 未知时 null */
+  totalMemory: z.number().nullable().default(null),
+  /** 系统进程信息取不到的原因；取得到时为空字符串 */
+  unavailable: z.string().default(''),
+})
+export type TaskProcesses = z.infer<typeof TaskProcesses>
+
+/** 内存曲线上的一个点：t 采样时刻；cli 未知时 total 也是 null（断开而不是掉到 0） */
+export const MemoryPoint = z.object({
+  t: z.number(),
+  server: z.number(),
+  cli: z.number().nullable(),
+  total: z.number().nullable(),
+})
+export type MemoryPoint = z.infer<typeof MemoryPoint>
+
+/** 对话内存历史：按时间从旧到新，points 已经按时间范围裁过 */
+export const TaskMemoryHistory = z.object({
+  sampledAt: z.number(),
+  intervalMs: z.number(),
+  capacity: z.number(),
+  points: z.array(MemoryPoint).default([]),
+})
+export type TaskMemoryHistory = z.infer<typeof TaskMemoryHistory>
+
+/** 关闭一个进程的结果：失败时把系统给的真实错误带回来 */
+export const KillProcessResult = z.object({
+  ok: z.boolean(),
+  pid: z.number(),
+  error: z.string().default(''),
+})
+export type KillProcessResult = z.infer<typeof KillProcessResult>
+
+/** 清理无效进程：只处理面板登记过、任务已经不在跑的 */
+export const CleanProcessesInput = z.object({
+  /** 用户在确认列表里勾选的 pid；为空时清全部符合的 */
+  pids: z.array(z.number()).max(500).default([]),
+})
+export type CleanProcessesInput = z.infer<typeof CleanProcessesInput>
+
+export const CleanProcessesResult = z.object({
+  /** 真的发过结束的 */
+  killed: z.array(z.number()).default([]),
+  /** 觉得可以杀但被服务端拦下的（任务还在跑、命令行不像面板起的） */
+  skipped: z.array(z.object({ pid: z.number(), reason: z.string() })).default([]),
+  /** 登记还在但进程已经结束的（顺手把登记清掉） */
+  gone: z.array(z.number()).default([]),
+})
+export type CleanProcessesResult = z.infer<typeof CleanProcessesResult>
+
+/** AI 清理的建议：只是建议，用户确认后前端再调清理接口 */
+export const ProcessSuggestResult = z.object({
+  suggestions: z.array(z.object({ pid: z.number(), reason: z.string() })).default([]),
+  /** CLI 的原文说明（没有解析出 JSON 时给用户看） */
+  text: z.string().default(''),
+  error: z.string().default(''),
+})
+export type ProcessSuggestResult = z.infer<typeof ProcessSuggestResult>

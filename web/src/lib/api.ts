@@ -35,6 +35,11 @@ import type {
   TaskPatch,
   Workflow,
   WorkflowInput,
+  CleanProcessesResult,
+  KillProcessResult,
+  ProcessSuggestResult,
+  TaskMemoryHistory,
+  TaskProcesses,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
@@ -339,6 +344,24 @@ export const api = {
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
   taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
+  /** 这个对话的进程树（含子对话、子任务、工作流起的）和内存合计；下拉展开时才调 */
+  taskProcesses: (id: string) => request<TaskProcesses>(`/tasks/${id}/processes`),
+  killTaskProcess: (id: string, pid: number) =>
+    request<KillProcessResult>(`/tasks/${id}/processes/${pid}/kill`, json('POST', {})),
+  /** 清理无效进程：pids 是用户在确认列表里勾选的，空表示清这个对话的全部残留 */
+  cleanTaskProcesses: (id: string, pids: number[]) =>
+    request<CleanProcessesResult>(`/tasks/${id}/processes/clean`, json('POST', { pids })),
+  /** AI 清理建议：只给建议，确认后前端再调 cleanTaskProcesses */
+  suggestTaskProcesses: (id: string) =>
+    request<ProcessSuggestResult>(`/tasks/${id}/processes/suggest`, json('POST', {})),
+  /** 内存曲线的历史采样点 */
+  taskMemory: (id: string, from?: number, to?: number) => {
+    const q = new URLSearchParams()
+    if (from) q.set('from', String(from))
+    if (to) q.set('to', String(to))
+    const qs = q.toString()
+    return request<TaskMemoryHistory>(`/tasks/${id}/memory${qs ? `?${qs}` : ''}`)
+  },
   taskChildren: (id: string) =>
     request<
       {
