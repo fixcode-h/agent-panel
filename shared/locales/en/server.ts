@@ -252,7 +252,11 @@ export const EN_SERVER: Record<string, string> = {
   '还在下载，下载完才能强制更新': 'Still downloading; force update is available once the download finishes',
   '新版本 {version} 已下载，等所有任务结束后再替换并重启':
     'Version {version} downloaded; files will be replaced after all tasks finish',
-  '下载失败：{status}': 'Download failed: {status}',
+  '下载速度太慢，连接超时了，请重试': 'The download is too slow and timed out. Please try again.',
+  '下载没有返回分段数据：{url}': 'The server did not return a partial response: {url}',
+  '下载的数据比要求的多：{url}': 'The server sent more data than requested: {url}',
+  '下载不完整（{got}/{want} 字节）：{url}': 'Incomplete download ({got}/{want} bytes): {url}',
+  '写入文件失败（{url}）': 'Failed to write the file ({url})',
   解压中: 'Extracting',
   '解压失败：{error}': 'Extraction failed: {error}',
   '包里缺少 server.mjs 或 dist，可能下载不完整':

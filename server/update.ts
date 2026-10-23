@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { chmod, cp, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,7 @@ import {
 import { capture } from './exec/process.ts'
 import { recordInterrupted } from './interrupted.ts'
 import { netFetch } from './net.ts'
+import { downloadFile } from './download.ts'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -293,20 +294,21 @@ export function updateApi(deps: {
     try {
       // 1. 下载
       job.phase = t('下载中')
+      job.total = rel.size
       touch(job)
-      const res = await netFetch(rel.tarUrl, { headers: { 'User-Agent': 'agent-panel' } })
-      if (!res.ok || !res.body) throw new Error(t('下载失败：{status}', { status: res.status }))
-      job.total = Number(res.headers.get('content-length')) || rel.size
       // 扩展名按实际下载的包来：Windows 是 zip，macOS / Linux 是 tar.gz
       const isZip = /\.zip$/i.test(new URL(rel.tarUrl).pathname)
       const file = path.join(work, isZip ? 'package.zip' : 'package.tar.gz')
-      const out = createWriteStream(file)
-      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        job.received += chunk.length
-        touch(job)
-        if (!out.write(chunk)) await new Promise((r) => out.once('drain', r))
-      }
-      await new Promise<void>((resolve, reject) => out.end((e?: Error | null) => (e ? reject(e) : resolve())))
+      await downloadFile(rel.tarUrl, file, {
+        headers: { 'User-Agent': 'agent-panel' },
+        onTotal: (n) => {
+          if (n) job.total = n
+        },
+        onBytes: (n) => {
+          job.received += n
+          touch(job)
+        },
+      })
 
       // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装。早期的包没有这个文件，跳过
       if (rel.sumsUrl) {
