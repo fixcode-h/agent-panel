@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
-import { type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
+import { type Project, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
@@ -56,7 +56,7 @@ import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { plainLine, toolVerb, toolView } from '@/lib/tasks'
+import { plainLine, startedRun, toolVerb, toolView } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -72,6 +72,7 @@ import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
+import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
 import { PlanButton } from './PlanPanel'
 import { TaskMeta } from './TaskMeta'
@@ -86,7 +87,7 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { ChildListCtx, ChildOpenCtx } from './child-open'
+import { ChildListCtx, PaneNavCtx } from './child-open'
 import { FoldedAskBar, ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -386,6 +387,9 @@ export function TaskView({
   useEscape(progressOpen, () => setProgressOpen(false))
   // 对话里点开的运行卡片：右边看这一次运行的实时输出
   const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
+  // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
+  // run 为 0 是认不回来是哪次运行（调用失败、还没开始），按「没有启动运行」显示原因
+  const [paneRun, setPaneRun] = useState<{ run: number; tool?: ToolUse } | null>(null)
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候
@@ -393,7 +397,7 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
-  useEscape(!!task?.working && !panel && !stopAsk && !openRun, () => setStopAsk(true))
+  useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
@@ -510,10 +514,17 @@ export function TaskView({
   // oxlint-disable-next-line react-hooks/exhaustive-deps
   const openChildRow = useCallback((id: string) => openChildIn(id), [taskId, pane])
   const openRunIn = (run: number) => {
+    // 子对话自己的面板没有再分一栏：就地换成那次运行的视图，返回后还是这个子对话
+    if (pane) {
+      setPaneRun(run ? { run } : null)
+      return
+    }
     setOpenRun(run)
     if (run) setOpenChild('')
-    if (!pane) writePaneRun(taskId, run)
+    writePaneRun(taskId, run)
   }
+  // 子对话面板里点「启动工作流」这一行：认回它启动的是第几次运行，就地打开那次运行的视图
+  const openPaneRun = (tool: ToolUse) => setPaneRun({ run: task ? (startedRun(task, tool) ?? 0) : 0, tool })
 
   // 子对话列表：父对话页开着时定时刷新状态和摘要；子对话自己不显示子对话。
   // 这里只是只读查询，不给子对话发 presence、也不预热它们的 CLI
@@ -968,7 +979,7 @@ export function TaskView({
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
-        <ChildOpenCtx.Provider value={pane || task.parentTaskId ? null : openChildRow}>
+        <PaneNavCtx.Provider value={pane ? { run: openPaneRun } : task.parentTaskId ? null : { child: openChildRow }}>
           <ChildListCtx.Provider value={children}>
             <div
               className={cn(
@@ -1461,6 +1472,17 @@ export function TaskView({
                     onTask={apply}
                   />
                 </div>
+                {/* 子对话面板里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。
+                    返回（←）回子对话这一层，✕ 走 onClose 关掉子对话面板本身 */}
+                {pane && paneRun && (
+                  <RunView
+                    task={task}
+                    run={paneRun.run}
+                    tool={paneRun.tool}
+                    onBack={() => setPaneRun(null)}
+                    onClose={onClose}
+                  />
+                )}
               </main>
 
               {/* 右栏：子对话、某一次运行的输出，或者文件系统。外面不滚动，拖动条才不会被 overflow 裁掉。
@@ -1625,7 +1647,7 @@ export function TaskView({
               projectId={task.projectId}
             />
           </ChildListCtx.Provider>
-        </ChildOpenCtx.Provider>
+        </PaneNavCtx.Provider>
       </FileOpenCtx.Provider>
     </WithAgents>
   )
