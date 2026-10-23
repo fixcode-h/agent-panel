@@ -25,6 +25,7 @@ import {
   mergeWorktree,
   releaseWorktree,
   removeWorktree,
+  sweepWorktrees,
   worktreeStatus,
 } from './worktree.ts'
 
@@ -377,4 +378,132 @@ test('依赖隔离：声明了但没装上的包列得出来，好在日志里�
   assert.deepEqual(await missingDeps(repo), ['gone'])
   // 没有 package.json 的目录不算异常：别的目录、非 node 项目都这样
   assert.deepEqual(await missingDeps(path.join(tmp, '拿不到')), [])
+})
+
+/** 在指定目录下开一个独立工作目录（createWorktree 的位置固定在数据目录，清理用例要自己指定） */
+function worktreeAt(root: string, repo: string, name: string) {
+  const dir = path.join(root, name)
+  const branch = `agent-panel/${name}`
+  git(repo, 'worktree', 'add', '-q', '-b', branch, dir, 'HEAD')
+  return { dir, branch }
+}
+
+const branchAlive = (repo: string, branch: string) => git(repo, 'branch', '--list', branch).toString().trim() !== ''
+
+/** 任务记录：默认已收口、没在跑，改动都已合回原分支 */
+const doneInfo = (over: Partial<{ done: boolean; working: boolean; projectPath: string; branch: string }> = {}) => ({
+  done: true,
+  working: false,
+  projectPath: '',
+  branch: '',
+  baseBranch: '',
+  ...over,
+})
+
+test('守护清理：git 注册表外的残留目录被清（面板重启、prune 之后留下的）', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir } = worktreeAt(root, repo, 'orphan1')
+  // 真实残留长这样：注册记录已经被 prune 掉，目录还在，里面的 .git 指向已经不存在的路径
+  git(repo, 'worktree', 'remove', '--force', dir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(dir, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'orphan1')}\n`)
+  writeFileSync(path.join(dir, 'README.md'), '# 残留\n')
+  // minAgeMs: 0：测试里刚建出来的目录也要参与判定（真实运行默认 10 分钟内不动）
+  const res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo() })
+  assert.deepEqual(
+    res.removed.map((i) => i.taskId),
+    ['orphan1'],
+    '注册表外的残留清掉了',
+  )
+  assert.ok(!existsSync(dir), '目录被删掉')
+  assert.deepEqual(res.failed, [])
+})
+
+test('守护清理：已合并且任务已收口的被清掉目录和分支', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'merged1')
+  const { dir: goneDir, branch: goneBranch } = worktreeAt(root, repo, 'norecord1')
+  const res = await sweepWorktrees({
+    root,
+    minAgeMs: 0,
+    // 一个任务已收口，另一个任务记录已经不在了（面板重启、记录被删后没人收）
+    taskInfo: async (id) => (id === 'norecord1' ? null : doneInfo({ branch })),
+  })
+  assert.deepEqual(res.removed.map((i) => i.taskId).sort(), ['merged1', 'norecord1'])
+  assert.ok(!existsSync(dir), '已收口的目录被清掉')
+  assert.ok(!branchAlive(repo, branch), '对应的 agent-panel 分支也删了')
+  assert.ok(!existsSync(goneDir), '记录不在了的目录也清掉')
+  assert.ok(!branchAlive(repo, goneBranch))
+})
+
+test('守护清理：有未合提交、任务在跑、任务没收口的一律不碰', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const unmerged = worktreeAt(root, repo, 'unmerged1')
+  const busy = worktreeAt(root, repo, 'busy1')
+  const pending = worktreeAt(root, repo, 'pending1')
+  writeFileSync(path.join(unmerged.dir, 'x.txt'), 'x\n')
+  git(unmerged.dir, 'add', '-A')
+  git(unmerged.dir, 'commit', '-qm', '还没合回原分支的改动')
+  const res = await sweepWorktrees({
+    root,
+    minAgeMs: 0,
+    taskInfo: async (id) => {
+      if (id === 'unmerged1') return doneInfo({ branch: unmerged.branch })
+      if (id === 'busy1') return doneInfo({ working: true, branch: busy.branch })
+      return doneInfo({ done: false, branch: pending.branch })
+    },
+  })
+  assert.deepEqual(res.removed, [], '一个都没清')
+  assert.ok(existsSync(unmerged.dir), '还有没合回原分支的提交，目录保留')
+  assert.ok(branchAlive(repo, unmerged.branch), '分支也保留')
+  assert.ok(existsSync(busy.dir), '任务还在跑，目录保留')
+  assert.ok(existsSync(pending.dir), '任务还没收口，目录保留')
+  for (const [dir] of [unmerged, busy, pending].map((w) => [w.dir])) git(repo, 'worktree', 'remove', '--force', dir)
+})
+
+test('守护清理：dry-run 只出清单，目录和分支都不动', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'dry1')
+  const res = await sweepWorktrees({ root, dryRun: true, minAgeMs: 0, taskInfo: async () => doneInfo({ branch }) })
+  assert.equal(res.dryRun, true)
+  assert.deepEqual(
+    res.removed.map((i) => i.taskId),
+    ['dry1'],
+    '清单里有它',
+  )
+  assert.ok(existsSync(dir), '目录没删')
+  assert.ok(branchAlive(repo, branch), '分支没删')
+  git(repo, 'worktree', 'remove', '--force', dir)
+})
+
+test('删除结果以实际状态为准：目录已经手动删掉时仍算回收成功', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '已手动删')
+  // 用户自己删了目录：git worktree remove 会报「不是工作树」，但那不算失败
+  rmSync(wt.path, { recursive: true, force: true })
+  assert.equal(await removeWorktree(repo, wt, true), '', '目录和分支都清干净了')
+  assert.ok(!branchAlive(repo, wt.branch), '分支回收了')
+})
+
+test('守护清理：core.worktree 被写成别的平台路径时也不误清（走注册文件兜底）', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'broken1')
+  writeFileSync(path.join(dir, 'x.txt'), 'x\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-qm', '还没合回原分支的改动')
+  // 本机真实遇到过：WSL 里留下的 core.worktree=/mnt/... 让 git worktree list 和 rev-list 整个失败
+  const cfg = readFileSync(path.join(repo, '.git', 'config'), 'utf8')
+  writeFileSync(path.join(repo, '.git', 'config'), `${cfg}\n[core]\n\tworktree = /mnt/nope\n`)
+  const res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo({ branch }) })
+  assert.deepEqual(res.removed, [], '一个都没清')
+  assert.ok(existsSync(dir), '还有没合回的提交，目录保留')
+  assert.ok(
+    res.kept.some((k) => k.taskId === 'broken1' && k.why.includes('没合回原分支')),
+    '按注册文件读到分支状态，没把目录当成残留',
+  )
 })

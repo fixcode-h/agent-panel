@@ -693,6 +693,8 @@ export const EN_TASKS: Record<string, string> = {
     "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. Sub-conversation branches are never pushed to the remote, and are deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
   '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成':
     "This sub-conversation's branch still has changes that aren't merged into the original branch ({n} commits, {d} uncommitted files). Merge or delete the branch first, then mark it done",
+  '独立目录没删掉：{error}。等文件不再被占用后再标记一次完成，或者手动删掉 {dir} 和分支 {branch}':
+    'The separate folder could not be deleted: {error}. Mark it done again once the files are no longer in use, or delete {dir} and branch {branch} manually',
   '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
     "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
   小改动也跑: 'Run for small changes',
