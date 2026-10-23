@@ -49,15 +49,22 @@ export function BundledSkills({ query }: { query: string }) {
     setBusy(key)
     try {
       const r = await api.installBundled({ names, clis: [], overwrite })
-      toast.success(r.done.length ? t('装好了 {n} 项', { n: r.done.length }) : t('都已经是最新的了'))
-      await load()
+      if (!r.done.length) toast.success(t('都已经是最新的了'))
+      // 批量更新时说的是「更新」：装了没有的和换回自带版本是两件事
+      else if (key === 'update-all') toast.success(t('更新了 {n} 项', { n: r.done.length }))
+      else toast.success(t('装好了 {n} 项', { n: r.done.length }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
+      // 失败也重读：出错前可能已经装进去了几项，列表得跟磁盘对得上
+      await load()
       setBusy('')
     }
   }
   const need = (i: BundledSkill) => i.status.shared !== 'same'
+  const outdated = (items ?? []).filter((i) => i.status.shared === 'changed')
+  // 一次只跑一个批量操作（都在写 ~/.agents/skills），另一个按钮变灰时说清楚为什么
+  const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
 
   if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
   if (!items) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
@@ -67,22 +74,44 @@ export function BundledSkills({ query }: { query: string }) {
         <span className="text-[0.8125rem] text-muted">{t('装到')}</span>
         <span className="font-mono text-[0.8125rem] text-muted">~/.agents/skills</span>
         <span className="text-[0.75rem] text-subtle">{t('所有 Agent 共用')}</span>
-        <Button
-          size="sm"
-          className="ml-auto"
-          disabled={!!busy || !items.some((i) => i.status.shared === 'missing')}
-          onClick={() =>
-            void install(
-              items.map((i) => i.name),
-              'all',
-              false,
-            )
-          }
-          title={t('只装没有的，已经装了的不动')}
-        >
-          {busy === 'all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-          {t('安装全部未装的')}
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={!!busy || !items.some((i) => i.status.shared === 'missing')}
+            onClick={() =>
+              void install(
+                items.map((i) => i.name),
+                'all',
+                false,
+              )
+            }
+            title={waitTitle('all') ?? t('只装没有的，已经装了的不动')}
+          >
+            {busy === 'all' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {t('安装全部未装的')}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!!busy || !outdated.length}
+            // 只传改过的那些，按 overwrite 换回自带版本；已经一样的不动
+            onClick={() =>
+              void install(
+                outdated.map((i) => i.name),
+                'update-all',
+                true,
+              )
+            }
+            title={waitTitle('update-all') ?? t('把和自带不一样的全部换回自带版本（你改过的内容会丢掉）')}
+          >
+            {busy === 'update-all' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            {t('更新全部')}
+          </Button>
+        </div>
       </div>
       {!groups.length && (
         <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
