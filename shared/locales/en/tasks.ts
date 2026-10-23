@@ -236,7 +236,7 @@ export const EN_TASKS: Record<string, string> = {
   '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
     'The project is set to “No role”, so this chat goes straight to the agent; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
-  '子对话，{n} 个在执行，共 {total} 个': 'Sub-conversations, {n} running of {total}',
+  '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
   运行中: 'Running',

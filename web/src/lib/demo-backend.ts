@@ -2268,7 +2268,8 @@ function tasksRoute(
           summary: x.summary,
           working: x.working,
           updatedAt: x.updatedAt,
-          cliAlive: live.has(x.id),
+          // 进程还活着：正在跑的一定活着（演示里没有真的进程，就按 working 认）
+          cliAlive: live.has(x.id) || x.working,
           startedAt: childStartedAt(x),
           // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
           requests: (x.requests ?? []).length,
@@ -2585,6 +2586,71 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
 /** 演示里的执行计划：一份做完带总结的，一份正在做（一步在等端到端测试，一步展开着子步骤） */
+/**
+ * 示例父对话的子对话：状态栏的计数和浮层的分组都要有东西看。
+ * 三个在跑——其中两个的计划还没做完（在跑就算执行中，不归未完成），
+ * 一个没在跑但计划没做完（归未完成），四个已做完。进程活着的 5 个，所以栏上应该是 3/5。
+ */
+async function demoChildren(d: Db, parent: Task, agent: { id: string }) {
+  const plan = (done: number, total: number) => ({
+    id: 'p1',
+    title: '修复角标不刷新',
+    createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    doneAt: '',
+    summary: '',
+    autoSummary: false,
+    steps: Array.from({ length: total }, (_, i) => ({
+      id: String(i + 1),
+      title: `第 ${i + 1} 步`,
+      status: (i < done ? 'done' : 'pending') as PlanStatus,
+      note: '',
+      waits: [],
+      startedAt: '',
+      endedAt: '',
+      children: [],
+    })),
+  })
+  const make = async (
+    title: string,
+    how: { working?: boolean; alive?: boolean; plan?: ReturnType<typeof plan>; resolved?: boolean } = {},
+  ) => {
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: parent.projectId,
+        mode: 'chat',
+        parentTaskId: parent.id,
+        workflowId: '',
+        agentId: agent.id,
+        prompt: title,
+        attachments: [],
+        cli: '',
+        model: '',
+        effort: '',
+        params: {},
+        askUser: false,
+      },
+      true,
+    )
+    await done
+    // 执行过程中任务可能被换成新对象，按 id 取回来再改
+    const it = d.tasks?.find((x) => x.id === task.id) ?? task
+    it.title = title
+    it.working = !!how.working
+    it.resolved = !!how.resolved
+    if (how.plan) it.plans = [how.plan]
+    // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
+    if (how.alive) live.set(it.id, { stop: false })
+    return it
+  }
+  await make('Git+worktree 不再提示文件撞车', { working: true, alive: true })
+  await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
+  await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
+  await make('修侧栏时间显示', { resolved: true })
+  await make('核对通知时序', { resolved: true })
+  await make('拆分规则检查脚本', { resolved: true })
+}
+
 function demoPlans(task: Task) {
   const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
   const item = (id: string, title: string, status: PlanStatus, start = 0, end = 0) => ({
@@ -2755,6 +2821,7 @@ async function seedTasks(d: Db) {
     demoPlans(task)
     back(task, 60 * 3)
     demoHelper(task, fe)
+    await demoChildren(d, task, fe)
   }
   if (shop) {
     const { task, done } = createTask(

@@ -39,12 +39,13 @@ import { type Project, type StopReason, type Task, type TaskMessage, type TaskSt
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
+  childCounts,
   childIcon,
   childStale,
   childStage,
   childWaitText,
-  runningChildren,
   sortChildren,
+  spinningChildren,
   stopReasonText,
   taskBusy,
   taskSummary,
@@ -1810,13 +1811,12 @@ function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
   const asking = children.filter((c) => c.asking && !c.resolved)
-  const busy = sortChildren(runningChildren(children))
-  const working = busy.length
-  const alive = children.filter((c) => c.cliAlive)
-  // 分母是子对话总数，但不比执行中的少：进程刚好在启动、进程信息还没回来时不能显示成 3/0
-  const total = Math.max(alive.length, working)
-  // 「运行中」只列真正在执行（working）的：进程活着但在等下一句的，在它自己页面上是「等待你的下一条消息」
-  const shown = sortChildren(all ? children : runningChildren(children))
+  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、状态栏的分子是同一套判定（见 childSpinning）
+  const busy = sortChildren(spinningChildren(children))
+  // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
+  const { running: working, total } = childCounts(children)
+  // 「运行中」列转圈的那些：计划没做完、后台命令还没回的子对话也算，不是只看 working
+  const shown = sortChildren(all ? children : spinningChildren(children))
   const current = children.find((c) => c.id === openChild)
 
   return (
@@ -1832,7 +1832,7 @@ function ChildrenBar({
               aria-expanded={open}
               aria-label={
                 working > 0
-                  ? t('子对话，{n} 个在执行，共 {total} 个', { n: working, total })
+                  ? t('子对话，{n} 个进行中，共 {total} 个', { n: working, total })
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
@@ -1840,7 +1840,7 @@ function ChildrenBar({
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
               <span className="shrink-0 font-medium">{t('子对话')}</span>
-              {/* 运行中的在前、总数在后：转圈 1/2 读作「1 个在跑，一共 2 个」，总数不重复说两遍 */}
+              {/* 进行中的在前、总数在后：转圈 3/5 读作「3 个还在进行，一共 5 个」，总数不重复说两遍 */}
               {working > 0 ? (
                 <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
                   <Loader2 className="h-3 w-3 animate-spin" />

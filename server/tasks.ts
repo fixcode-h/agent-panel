@@ -2536,7 +2536,8 @@ export function tasksApi(deps: {
     for (const k of all) {
       if (!k.parentTaskId) continue
       const cur = live.get(k.id)?.task ?? k
-      if (!cur.working) continue
+      // 和子对话栏里「执行中」的口径一致：标记了「解决」的已经算做完，不再计成在跑
+      if (!cur.working || cur.resolved) continue
       kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
     }
     let list = all.map((t) => {

@@ -965,6 +965,25 @@ export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
 }
 
 /**
+ * 子对话栏上的计数：分子是「还在进行」的数量，分母是进程还活着的子对话数。
+ * 分子取转圈的那一批（childSpinning：这一轮在跑、后台命令、工作流、派出的子任务、计划没做完、
+ * 独立分支没合回），和行首图标、行内徽标、悬浮层默认列表是同一套判定。
+ * 以前分子只用 working 算（三个在转圈、上面却写 1/5），分组又是第三套，于是对不上。
+ * 分母取进程还活着的不包含已关闭的：它们是还能切过去继续说的；
+ * 分母比分子少时兜底不小于分子（进程刚在启动、进程信息还没回来时就是这种情况）。
+ */
+export function childCounts<T extends ChildEntry>(list: T[]) {
+  const running = list.filter(childSpinning).length
+  const alive = list.filter((x) => x.cliAlive).length
+  return { running, total: Math.max(alive, running) }
+}
+
+/** 转圈的那一批：状态栏计数、悬浮层默认列表、输入框上方的卡片都用它，不要各处再 filter 一遍 */
+export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
+  return list.filter(childSpinning)
+}
+
+/**
  * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
  * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
  * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
