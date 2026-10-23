@@ -32,6 +32,9 @@ import {
   Settings,
   type PlanStatus,
   type Task,
+  type TaskProcess,
+  type TaskProcesses,
+  type TaskMemoryHistory,
   type TaskStep,
   type CliInstallJob,
   type CliModels,
@@ -1898,6 +1901,156 @@ function followUp(d: Db, task: Task, text: string, fast = false, attachments: At
 /** 演示里点过「合并」的独立分支（没有真的仓库，只记在内存里） */
 const demoMerged = new Set<string>()
 
+// ---- 进程与内存（演示） ----
+/** 字符串散成稳定的数字：同一个对话每次打开看到同样的 pid，截图和验证都对得上 */
+function hashNum(text: string) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.abs(h)
+}
+
+/** 演示里「关掉了」的进程：只留在内存里，刷新页面重新出现 */
+const demoGone = new Map<string, Set<number>>()
+
+const MB = 1024 * 1024
+
+function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
+  const now = Date.now()
+  const rootId = task.rootTaskId || task.id
+  const gone = demoGone.get(rootId) ?? new Set<number>()
+  const base = (hashNum(rootId) % 20000) + 30000
+  const started = (x: Task) => {
+    const at = Date.parse(x.runStartedAt || x.updatedAt || '')
+    return Number.isFinite(at) ? at : now - 12 * 60_000
+  }
+  const rows: TaskProcess[] = []
+  const push = (pid: number, o: Omit<TaskProcess, 'pid'>) => {
+    if (!gone.has(pid)) rows.push({ pid, ...o })
+  }
+  const active = demoLive(task) ? 'running' : 'idle'
+  const cliTitle = task.title
+  push(base, {
+    parentPid: null,
+    command: `pi --print --mcp-config {"mcpServers":{"panel":{}}} 对话：${task.title}`,
+    ownerTaskId: task.id,
+    ownerTitle: cliTitle,
+    startedAt: started(task),
+    durationMs: now - started(task),
+    rss: 168 * MB,
+    status: active,
+    kind: 'cli',
+  })
+  // CLI 自己起的子进程（MCP 桥接、shell）：正式后端也把它们算进这个对话
+  push(base + 1, {
+    parentPid: base,
+    command: 'node /home/u/.agent-panel/cache/cli-run/demo/ask-mcp.mjs',
+    ownerTaskId: task.id,
+    ownerTitle: cliTitle,
+    startedAt: started(task) + 1200,
+    durationMs: now - started(task) - 1200,
+    rss: 46 * MB,
+    status: active,
+    kind: 'child',
+  })
+  // 在干的子对话
+  for (const kid of tasks.filter((x) => x.parentTaskId === task.id && demoLive(x)).slice(0, 3)) {
+    const at = started(kid)
+    push(base + 10 + tasks.indexOf(kid), {
+      parentPid: null,
+      command: `codex app-server 子对话：${kid.title}`,
+      ownerTaskId: kid.id,
+      ownerTitle: kid.title,
+      startedAt: at,
+      durationMs: now - at,
+      rss: 92 * MB,
+      status: 'running',
+      kind: 'cli',
+    })
+  }
+  // 任务已经结束、进程还留着的残留：演示「清理无效进程」用
+  const orphanAt = now - 46 * 60_000
+  push(base + 99, {
+    parentPid: null,
+    command: 'claude --mcp-config {"mcpServers":{"panel":{}}} 已结束的子任务',
+    ownerTaskId: `${task.id}-demo-old`,
+    ownerTitle: '已结束的子任务',
+    startedAt: orphanAt,
+    durationMs: now - orphanAt,
+    rss: 24 * MB,
+    status: 'orphan',
+    kind: 'cli',
+  })
+  const cliMemory = rows.reduce((sum, p) => sum + (p.rss ?? 0), 0)
+  const serverMemory = (268 + Math.round(Math.sin(now / 240_000) * 6)) * MB
+  return {
+    sampledAt: now,
+    processes: rows,
+    cliMemory,
+    serverMemory,
+    totalMemory: cliMemory + serverMemory,
+    unavailable: '',
+  }
+}
+
+/** 演示任务算不算「还在跑」 */
+function demoLive(task: Task) {
+  return task.working === true || live.has(task.id)
+}
+
+function demoKill(task: Task, pid: number) {
+  const rootId = task.rootTaskId || task.id
+  const set = demoGone.get(rootId) ?? new Set<number>()
+  set.add(pid)
+  demoGone.set(rootId, set)
+  return { ok: true, pid, error: '' }
+}
+
+function demoClean(task: Task, body: unknown) {
+  const panel = demoProcesses(task, load().tasks ?? [])
+  const want = (body as { pids?: unknown } | undefined)?.pids
+  const asked = Array.isArray(want) ? want.filter((x): x is number => Number.isInteger(x)) : []
+  const orphans = panel.processes.filter((p) => p.status === 'orphan' && p.kind === 'cli')
+  const targets = asked.length ? orphans.filter((p) => asked.includes(p.pid)) : orphans
+  const rootId = task.rootTaskId || task.id
+  const set = demoGone.get(rootId) ?? new Set<number>()
+  for (const p of targets) set.add(p.pid)
+  demoGone.set(rootId, set)
+  return { killed: targets.map((p) => p.pid), skipped: [], gone: [] }
+}
+
+function demoSuggest(task: Task, tasks: Task[]) {
+  const orphans = demoProcesses(task, tasks).processes.filter((p) => p.status === 'orphan')
+  return {
+    suggestions: orphans.map((p) => ({ pid: p.pid, reason: `所属任务已经结束，进程还留着（${p.ownerTitle}）` })),
+    text: '',
+    error: '',
+  }
+}
+
+function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
+  const intervalMs = 30_000
+  const capacity = 2000
+  const now = Date.now()
+  const base = hashNum(task.rootTaskId || task.id)
+  const from = Number(query.get('from') ?? '')
+  const to = Number(query.get('to') ?? '')
+  const points: TaskMemoryHistory['points'] = []
+  // 两小时、30 秒一点，够看清趋势也能验证左右拖动
+  for (let i = 239; i >= 0; i--) {
+    const t = Math.floor(now / intervalMs) * intervalMs - i * intervalMs
+    if (Number.isFinite(from) && from > 0 && t < from) continue
+    if (Number.isFinite(to) && to > 0 && t > to) continue
+    const wave = Math.sin(t / 900_000 + (base % 7)) * 28 + Math.sin(t / 240_000) * 8
+    const cli = Math.round((132 + wave) * MB)
+    const server = Math.round((268 + Math.sin(t / 300_000 + 1) * 6) * MB)
+    points.push({ t, server, cli, total: cli + server })
+  }
+  return { sampledAt: now, intervalMs, capacity, points }
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2031,6 +2184,14 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  // 进程面板：演示版给一份稳定的假进程和内存历史，字段和正式后端一致
+  if (sub === 'processes') {
+    if (method === 'GET' && !rid) return demoProcesses(task, tasks)
+    if (method === 'POST' && rid === 'clean') return demoClean(task, body)
+    if (method === 'POST' && rid === 'suggest') return demoSuggest(task, tasks)
+    if (method === 'POST' && rid) return demoKill(task, Number(rid))
+  }
+  if (sub === 'memory' && method === 'GET') return demoMemory(task, query)
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')
