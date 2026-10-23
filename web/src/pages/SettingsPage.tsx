@@ -118,6 +118,7 @@ function SettingsBody({
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
   const [children, setChildren] = useState(String(initial.childConcurrency))
+  const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
   const [notify, setNotifyOn] = useState(notifyEnabled)
@@ -256,6 +257,8 @@ function SettingsBody({
   const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
+  const bgN = Number(bgLimit)
+  const bgValid = bgLimit !== '' && Number.isInteger(bgN) && bgN >= 1 && bgN <= 64
   const largeN = Number(largeMB)
   const largeValid = largeMB !== '' && Number.isInteger(largeN) && largeN >= 1 && largeN <= 50
   const pasteN = Number(longPaste)
@@ -280,6 +283,7 @@ function SettingsBody({
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
     reclaimIdleCli: reclaim,
     childConcurrency: childValid ? childN : initial.childConcurrency,
+    backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
@@ -613,6 +617,24 @@ function SettingsBody({
                     aria-label={t('同时执行的子对话')}
                   />
                   {!childValid && <span className="text-xs text-danger">{t('填 1 到 20 之间的整数')}</span>}
+                </div>
+              </Row>
+              <Row
+                title={t('同时运行的后台命令')}
+                desc={t(
+                  '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={bgLimit}
+                    onChange={(e) => setBgLimit(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!bgValid}
+                    className={cn('h-9', !bgValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时运行的后台命令')}
+                  />
+                  {!bgValid && <span className="text-xs text-danger">{t('填 1 到 64 之间的整数')}</span>}
                 </div>
               </Row>
               <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>

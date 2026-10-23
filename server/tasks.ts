@@ -789,41 +789,47 @@ export function tasksApi(deps: {
    * 后台命令跑完把结果推回发起的对话：子对话按父对话投递的路子走（正在跑就实时送达，空闲就占名额开新一轮），
    * 顶层对话正在跑就实时送达，空闲就直接开新的一轮接着干
    */
-  const background = createBackground((job, result) => {
-    void (async () => {
-      const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
-      if (!tk || tk.archived) return
-      // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
-      const hit = settleWait(tk, 'background', job.id, job.state === 'done')
-      const text = waitNote(hit) + result
-      if (hit.length) {
-        const entry = live.get(tk.id)
-        if (entry) entry.rev++
-        else await store.update(tk.id, tk)
-      }
-      // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
-      if (tk.parentTaskId) {
-        await sendToChild(tk.parentTaskId, tk.id, text, 'background')
-        // 结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支
-        void settleChildWorktree(tk.id, tk.status === 'done')
-        return
-      }
-      const running = live.get(tk.id)
-      if (running?.task.status === 'running') {
-        const msg: TaskMessage = {
-          id: randomUUID(),
-          role: 'system',
-          agentId: '',
-          step: '',
-          text,
-          tools: [],
-          panel: 'background',
-          at: new Date().toISOString(),
+  const background = createBackground(
+    (job, result) => {
+      void (async () => {
+        const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
+        if (!tk || tk.archived) return
+        // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
+        const hit = settleWait(tk, 'background', job.id, job.state === 'done')
+        const text = waitNote(hit) + result
+        if (hit.length) {
+          const entry = live.get(tk.id)
+          if (entry) entry.rev++
+          else await store.update(tk.id, tk)
         }
-        await deliver(running, msg, text, [])
-      } else await followUp(tk.id, { text, attachments: [], panel: 'background' })
-    })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
-  })
+        // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
+        if (tk.parentTaskId) {
+          await sendToChild(tk.parentTaskId, tk.id, text, 'background')
+          // 结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支
+          void settleChildWorktree(tk.id, tk.status === 'done')
+          return
+        }
+        const running = live.get(tk.id)
+        if (running?.task.status === 'running') {
+          const msg: TaskMessage = {
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text,
+            tools: [],
+            panel: 'background',
+            at: new Date().toISOString(),
+          }
+          await deliver(running, msg, text, [])
+        } else await followUp(tk.id, { text, attachments: [], panel: 'background' })
+      })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
+    },
+    {
+      // 同时跑几条在设置里改，改完下一条排名额时就按新的算
+      maxRunning: async () => (await getSettings()).backgroundLimit,
+    },
+  )
 
   // 上次退出时还没结束的后台命令记录（只在同一个进程里中断时才会留到这时）：不再算「还在跑」，
   // 否则「彻底完成」和合并门禁会一直等一个永远不会来的结束
