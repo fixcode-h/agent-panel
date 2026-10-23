@@ -34,15 +34,23 @@ const KEEP_LINES = 300
 /** 每个对话最多留多少条记录（做完的旧记录丢掉） */
 const KEEP_JOBS = 20
 
-/** 工作目录的指纹：跟踪的文件内容（git stash create）+ 未跟踪的文件列表；不是 git 仓库时返回空，不做比较 */
+/**
+ * 工作目录的指纹：git 状态（改了、删了、多了文件都算，忽略掉的文件不算）加当前提交号；不是 git 仓库时返回空，不做比较。
+ * 只用只读命令：git stash create 会写 index.lock，同一个目录并发跑后台命令时两边抢锁，失败一侧被 catch 成空指纹，
+ * 于是「跑的期间文件被改过」这个提醒会偶发漏报。
+ */
 async function fingerprint(dir: string) {
-  const stash = await capture('git', ['stash', 'create'], dir, process.env, 30_000)
-  if (stash.code !== 0) return ''
+  // --no-optional-locks：status 默认会顺手刷新索引并加锁，这里禁止它写
+  const status = await capture(
+    'git',
+    ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'],
+    dir,
+    process.env,
+    30_000,
+  )
+  if (status.code !== 0) return ''
   const head = await capture('git', ['rev-parse', 'HEAD'], dir, process.env, 10_000)
-  const untracked = await capture('git', ['ls-files', '--others', '--exclude-standard'], dir, process.env, 30_000)
-  return createHash('sha1')
-    .update(`${stash.stdout.trim() || head.stdout.trim()}\n${untracked.stdout}`)
-    .digest('hex')
+  return createHash('sha1').update(`${head.stdout.trim()}\n${status.stdout}`).digest('hex')
 }
 
 export function createBackground(onDone: (job: BgJob, text: string) => void) {
