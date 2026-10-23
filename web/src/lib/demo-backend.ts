@@ -85,6 +85,7 @@ import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, 
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
+import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
 import { importTask, parseTaskExport } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -467,13 +468,11 @@ function seed(): Db {
     document: '',
     expose: [],
   }
-  const web: ProjectCategory = {
-    ...meta(),
-    name: 'Web 应用',
-    description: '前后端分离的网站和后台',
-    workflowId: webFlow.id,
-  }
-  const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
+  // 演示数据和正式后端用同一组内置分类（shared/builtin/project-categories.ts）；
+  // 第一个分类在演示里绑上示例工作流，让示例项目有默认工作流（正式安装里由用户自己指定）
+  const builtinCats = builtinProjectCategories()
+  const web: ProjectCategory = { ...builtinCats[0], workflowId: webFlow.id }
+  const game: ProjectCategory = builtinCats[1]
   // 演示项目的添加时间各不相同：侧栏默认就按它排，和真实的项目列表一致
   const project = (
     o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'> & Partial<ProjectInput>,
@@ -502,7 +501,7 @@ function seed(): Db {
     tags: [tWeb, tQuality, tCommon],
     agents: [arch, fe, be, qaAgent, review, docs],
     workflows: [webFlow, bugFlow],
-    projectCategories: [web, game],
+    projectCategories: [web, ...builtinCats.slice(1)],
     projects: [
       project(
         {
@@ -659,6 +658,10 @@ function load(): Db {
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
   db.globalLessons ??= DEMO_GLOBAL_LESSONS
+  db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
+  // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
+  const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
+  if (missingCats.length) db.projectCategories = [...missingCats, ...db.projectCategories]
   // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
   db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
@@ -1643,6 +1646,8 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'project-categories') {
     if (method === 'GET') return d.projectCategories
     if (method === 'DELETE') {
+      const err = projectCategoryDeleteError(id)
+      if (err) fail(err)
       remove('projectCategories', id, '分类不存在')
       d.projects = d.projects.map((p) => (p.categoryId === id ? { ...p, categoryId: '' } : p))
       persist()
@@ -1651,7 +1656,10 @@ function route(method: string, url: string, body: unknown): unknown {
     const input = parse(ProjectCategoryInput, body)
     if (d.projectCategories.some((c) => c.name === input.name && c.id !== id)) fail(`分类「${input.name}」已存在`)
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')
-    return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
+    // 新建的自建分类明确带 builtin: false，和正式后端的响应字段一致（update 会保留原有的标记）
+    return method === 'POST'
+      ? { ...create('projectCategories', input), builtin: false }
+      : update('projectCategories', id, input, '分类不存在')
   }
 
   // 演示按 Windows 上装了 Git Bash 和 WSL 的情况显示命令行环境（默认 Git Bash 在前）

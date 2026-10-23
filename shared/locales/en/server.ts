@@ -135,6 +135,7 @@ export const EN_SERVER: Record<string, string> = {
     'Nodes in flow “{flow}” form a cycle: {cycle}. They would wait on their upstream forever.',
   '流程之间循环调用：{cycle}': 'Flows call each other in a loop: {cycle}',
   '分类「{name}」已存在': 'Category “{name}” already exists',
+  内置分类不能删除: 'Built-in categories can’t be deleted',
   角色不存在: 'Role not found',
   '正在被工作流使用：{names}，请先从工作流中移除': 'Used by workflows: {names}. Remove it from them first.',
   '「{name}」': '“{name}”',
