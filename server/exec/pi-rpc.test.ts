@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
+import { pathToFileURL } from 'node:url'
 import { RpcSpec } from '../../shared/cli-spec.ts'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
+import { t } from '../../shared/i18n.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
-import { createRpcSession } from './rpc/session.ts'
+import { createRpcSession, type RpcDiagnose } from './rpc/session.ts'
 import { createSpecAdapter } from './rpc/spec.ts'
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -13,6 +20,7 @@ async function session(
   input: string,
   op?: BuildOptions['op'],
   more: { resume?: string; forkBefore?: string; maxTurns?: number } = {},
+  rpcOptions: { requestTimeoutMs?: number; diagnose?: RpcDiagnose } = {},
 ) {
   const def = getCli('pi')!
   const spec = RpcSpec.parse(def.rpc)
@@ -31,6 +39,7 @@ async function session(
     cwd: process.cwd(),
     input,
     onEvent: (e) => events.push(e),
+    ...rpcOptions,
   })
   rpc.start({ write: (line) => sent.push(JSON.parse(line)), end: () => (ended = true) })
   await tick()
@@ -381,4 +390,86 @@ test('Pi RPC：插话已经被取走（命令刚好跑完）就不打断', async
   rpc.handle(reply(sent, 'clear_queue', { steering: [], followUp: [] }))
   assert.equal(await p, false)
   assert.ok(!sent.some((x) => x.type === 'abort'))
+})
+
+const waitMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/** 超时后交回来的结果文案 */
+function failedError(events: CliEvent[]): string {
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }> | undefined
+  assert.ok(result, '超时要交一个结果')
+  assert.equal(result.ok, false)
+  return result.error ?? ''
+}
+
+test('Pi RPC：请求超时时，错误里带等待秒数、进程状态和 stderr', async () => {
+  const { events, sent } = await session(
+    '慢',
+    undefined,
+    {},
+    {
+      requestTimeoutMs: 1000,
+      diagnose: { alive: () => true, stderr: () => 'warning: 模型列表没取到\nError: 接口 502' },
+    },
+  )
+  assert.equal(sent[0].type, 'get_state')
+  await waitMs(1200)
+  const message = failedError(events)
+  assert.ok(
+    message.startsWith(t('{method} 没有响应（已等 {seconds} 秒）', { method: 'get_state', seconds: 1 })),
+    `带上等了多少秒：${message}`,
+  )
+  assert.ok(message.includes(t('进程还在运行')), `带上进程状态：${message}`)
+  assert.ok(message.includes(t('stderr 最后几行：')), `带上 stderr 尾巴：${message}`)
+  assert.ok(message.includes('Error: 接口 502'), message)
+})
+
+test('Pi RPC：进程已经退出时，错误里带上 stderr 最后几行', async () => {
+  const { events } = await session(
+    '崩了',
+    undefined,
+    {},
+    {
+      requestTimeoutMs: 1000,
+      diagnose: { alive: () => false, stderr: () => 'line1\nline2\nline3\nline4' },
+    },
+  )
+  await waitMs(1200)
+  const message = failedError(events)
+  assert.ok(message.includes(t('进程已经退出')), `用户能看出进程不在了：${message}`)
+  assert.ok(message.includes('line4'), `带上 stderr：${message}`)
+  assert.ok(!message.includes('line1'), `只带最后三行：${message}`)
+})
+
+test('Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加载，不再把 Pi 卡在启动阶段', async () => {
+  const def = getCli('pi')!
+  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
+  // 只收请求、不回应：复现面板 MCP 端点卡住
+  const server = createServer(() => {})
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+  const port = (server.address() as AddressInfo).port
+  const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
+  const file = join(dir, 'agent-panel-test.ts')
+  writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+  const statuses: string[] = []
+  let onSessionStart: ((event: unknown, ctx: any) => void) | undefined
+  const pi = {
+    on: (_name: string, cb: (event: unknown, ctx: any) => void) => (onSessionStart = cb),
+    registerTool: () => {},
+  }
+  const startedAt = Date.now()
+  try {
+    const mod = await import(pathToFileURL(file).href)
+    await mod.default(pi)
+  } finally {
+    server.closeAllConnections?.()
+    server.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+  const waited = Date.now() - startedAt
+  assert.ok(waited >= 2900, `等满超时才放行：${waited}ms`)
+  assert.ok(waited < 10_000, `不会一直等下去：${waited}ms`)
+  // 超时要让面板知道原因（界面显示成一行错误），而不是只剩模型说「没有面板的工具」
+  onSessionStart?.({}, { ui: { setStatus: (key: string, text: string) => statuses.push(`${key}=${text}`) } })
+  assert.ok(statuses[0]?.includes('3 秒还没回应'), `报出超时的原因：${statuses[0]}`)
 })

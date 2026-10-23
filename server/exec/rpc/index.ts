@@ -4,7 +4,7 @@ import { t } from '../../../shared/i18n.ts'
 import { parserFor, type CliEvent } from '../parsers.ts'
 import { claudeAdapter } from './claude.ts'
 import { codexAdapter } from './codex.ts'
-import { createRpcSession, type RpcSession } from './session.ts'
+import { createRpcSession, type RpcDiagnose, type RpcSession } from './session.ts'
 import { createSpecAdapter } from './spec.ts'
 
 export interface RpcRunOptions {
@@ -18,6 +18,8 @@ export interface RpcRunOptions {
   next?: () => Promise<string | null>
   /** 模型这一轮已经自己等过下一句了：结束时不再保活 */
   waited?: () => boolean
+  /** 超时或进程提前退出时用来补充原因 */
+  diagnose?: RpcDiagnose
 }
 
 /** 按 CLI 定义里的 rpc 配置选适配器；传输、请求配对和收尾由同一个会话引擎负责 */
@@ -52,5 +54,6 @@ export function rpcSessionFor(def: CliDefinition, o: RpcRunOptions): RpcSession 
     hold: o.hold,
     next: o.next,
     waited: o.waited,
+    diagnose: o.diagnose,
   })
 }

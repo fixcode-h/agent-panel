@@ -6,6 +6,27 @@ import type { RpcAdapter, RpcContext, RpcIo, RpcRequestOptions } from './types.t
 /** 初始化、开始一轮、插话这些请求等多久；CLI 正常都是立刻回 */
 const REQUEST_TIMEOUT_MS = 15_000
 
+/** 请求等不到回复时，从外面拿进程的状态（会话引擎自己看不到进程） */
+export interface RpcDiagnose {
+  /** 进程还活着吗；不知道时不实现 */
+  alive?: () => boolean
+  /** 到目前为止的 stderr */
+  stderr?: () => string
+}
+
+/**
+ * 超时的错误：等了多少秒、进程还在不在、stderr 最后几行。
+ * 只报「没有响应」时用户没法判断是自己机器慢、CLI 卡在启动，还是进程已经崩了。
+ */
+function timeoutError(method: string, ms: number, diagnose?: RpcDiagnose): string {
+  const lines = [t('{method} 没有响应（已等 {seconds} 秒）', { method, seconds: Math.round(ms / 1000) })]
+  const alive = diagnose?.alive?.()
+  if (alive !== undefined) lines.push(alive ? t('进程还在运行') : t('进程已经退出'))
+  const tail = (diagnose?.stderr?.() ?? '').trim().split('\n').slice(-3).join('\n')
+  lines.push(tail ? `${t('stderr 最后几行：')}\n${tail}` : t('stderr 没有输出'))
+  return lines.join('\n')
+}
+
 export interface RpcSession {
   /** 进程起来后调用：开始握手、开一轮 */
   start: (io: RpcIo) => void
@@ -38,6 +59,8 @@ export function createRpcSession(o: {
   images?: string[]
   onEvent: (e: CliEvent) => void
   requestTimeoutMs?: number
+  /** 超时、进程提前退出时用来补充原因（等了多少秒、进程状态、stderr） */
+  diagnose?: RpcDiagnose
   /** 这一轮结束后要不要留着进程等下一句 */
   hold?: () => boolean
   /** 等用户的下一条消息；返回 null 表示用户已经不在这个对话了。不给时不留进程 */
@@ -111,16 +134,14 @@ export function createRpcSession(o: {
       const id = options?.id ?? nextId++
       const field = options?.idField ?? 'id'
       const msg = { ...record, [field]: id }
+      const timeoutMs = options?.timeoutMs ?? o.requestTimeoutMs ?? REQUEST_TIMEOUT_MS
       return new Promise<any>((resolve) => {
-        const timer = setTimeout(
-          () => {
-            pending.delete(id)
-            resolve({
-              error: { message: t('{method} 没有响应', { method: String(record.method ?? record.type ?? '') }) },
-            })
-          },
-          options?.timeoutMs ?? o.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
-        )
+        const timer = setTimeout(() => {
+          pending.delete(id)
+          resolve({
+            error: { message: timeoutError(String(record.method ?? record.type ?? ''), timeoutMs, o.diagnose) },
+          })
+        }, timeoutMs)
         timer.unref?.()
         pending.set(id, (reply) => {
           clearTimeout(timer)

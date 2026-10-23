@@ -295,6 +295,9 @@ async function invoke(
   if (def.protocol === 'rpc') {
     // 所有常驻协议走同一个会话引擎：握手、请求/回复配对、超时、插话、中断、收尾都一样，
     // 各家发什么、怎么判断结束由定义里的 rpc 配置或 codex / claude 适配器决定
+    // 请求超时时把进程状态和 stderr 带进错误里：用户能自己看出是启动卡住、还是进程已经崩了
+    let exited = false
+    let stderrTail = ''
     const session = rpcSessionFor(def, {
       cwd: o.cwd,
       input: o.input,
@@ -306,6 +309,7 @@ async function invoke(
       next: () =>
         signal.aborted || o.signal?.aborted ? Promise.resolve(null) : (o.keepAlive?.() ?? Promise.resolve(null)),
       waited: o.waited,
+      diagnose: { alive: () => !exited, stderr: () => stderrTail },
     })
     setControl({
       steer: (text) => session.steer(text),
@@ -330,11 +334,22 @@ async function invoke(
             write: (s) => io.write(s),
             end: () => io.end(),
           }),
+        onStderr: (text) => {
+          stderrTail = (stderrTail + text).slice(-4000)
+        },
         onLine: (line) => session.line(line),
       })
-      // 没等到这一轮结束就退出了（崩溃、配置错误），算失败
-      if (!session.finished && !r.killed && !r.spawnError)
-        o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
+      exited = true
+      // 没等到这一轮结束就退出了（崩溃、配置错误、登录过期），算失败；stderr 的尾巴一起给用户
+      if (!session.finished && !r.killed && !r.spawnError) {
+        const tail = stderrTail.trim().split('\n').slice(-3).join('\n')
+        o.onEvent({
+          type: 'result',
+          ok: false,
+          error:
+            t('{cli} 没有完成这一轮就退出了', { cli: def.name }) + (tail ? `\n${t('stderr 最后几行：')}\n${tail}` : ''),
+        })
+      }
       return r
     } finally {
       session.close()
