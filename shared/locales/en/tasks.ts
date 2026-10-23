@@ -694,8 +694,8 @@ export const EN_TASKS: Record<string, string> = {
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
-  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。':
-    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. Sub-conversation branches are never pushed to the remote, and are deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话标记完成后删除分支。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. The branch is deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
   '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成':
     "This sub-conversation's branch still has changes that aren't merged into the original branch ({n} commits, {d} uncommitted files). Merge or delete the branch first, then mark it done",
   '独立目录没删掉：{error}。等文件不再被占用后再标记一次完成，或者手动删掉 {dir} 和分支 {branch}':
