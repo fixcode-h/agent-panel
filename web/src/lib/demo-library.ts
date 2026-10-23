@@ -125,12 +125,16 @@ const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
-const installedBundled = new Set<string>()
+const installedBundled = new Map<string, BundledSkill['status'][string]>([
+  // 预置两条和自带不一样的，演示版里才看得到「更新全部」的效果
+  ['brainstorming', 'changed'],
+  ['blender', 'changed'],
+])
 function bundledList(): BundledSkill[] {
   return Object.entries(BUNDLED)
     .map(([file, text]) => {
       const [category, name] = file.split('/skills/')[1].split('/')
-      const status: BundledSkill['status'] = { shared: installedBundled.has(name) ? 'same' : 'missing' }
+      const status: BundledSkill['status'] = { shared: installedBundled.get(name) ?? 'missing' }
       return { name, category, description: frontField(text, 'description'), files: 0, status }
     })
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -170,9 +174,11 @@ export function demoLibrary(
       const done: string[] = []
       const skipped: string[] = []
       for (const n of body.names as string[]) {
-        if (installedBundled.has(n)) skipped.push(n)
+        const now = installedBundled.get(n) ?? 'missing'
+        // 和真接口一样：已经一样的跳过，改过的只有 overwrite 时才换回自带版本
+        if (now === 'same' || (now === 'changed' && !body.overwrite)) skipped.push(n)
         else {
-          installedBundled.add(n)
+          installedBundled.set(n, 'same')
           done.push(n)
         }
       }

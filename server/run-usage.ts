@@ -11,11 +11,15 @@ import { t } from '../shared/i18n.ts'
  * 摘要里也只有一层子对话，前端拿不到多层的用量。执行中的任务（含子对话）用内存里那一份，
  * 速度才是实时的。
  *
+ * 取数只取任务本身（用量、节点、状态），不读完整对话：前端每秒调一次这个接口，
+ * 只为算 token 就把整棵树的消息读上来、把打开过的任务挤出缓存，不值得（见 `getMeta` / `peek`）。
+ * 子对话统计（children-stats）要从 messages 里数报错条数，那一条才读完整任务。
+ *
  * 单独成一个接口文件：`server/tasks.ts` 那边的路由已经很大，聚合规则在 `shared/run-usage.ts` 和
  * `shared/task-export.ts`，这里只负责取数。
  */
 export function runUsageApi(deps: {
-  /** 按 id 取任务（执行中的取内存里那一份） */
+  /** 按 id 取任务本身（用量、节点、状态，不含完整对话）；执行中的取内存里那一份 */
   tasks: {
     /** 只要任务本身（用量、步骤、状态），不带对话：这个接口执行中每秒问一次，不能每次都读每个子对话的对话文件 */
     peek(id: string): Promise<Task | null>

@@ -40,6 +40,7 @@ import {
   childHoldText,
   helpersWorking,
   closeFlow,
+  delegatePrompt,
   dropEndNotes,
   endRun,
   keepAliveVictims,
@@ -87,7 +88,6 @@ import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import {
   abortMerge,
-  branchesOverlap,
   commitMerge,
   commitWorktree,
   createWorktree,
@@ -113,11 +113,20 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
-import { detectVcs } from './projects-analyze.ts'
+import {
+  childTurnSettle,
+  holdWait,
+  markWrapUp,
+  openPlan,
+  settleWait,
+  waitNote,
+  type WrapUpKind,
+} from '../shared/plan.ts'
 import type { PlanWait, TaskProcess } from '../shared/schema.ts'
-import { importTask, parseTaskExport } from '../shared/task-export.ts'
-import { childFilesInfo, collisions, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
+import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
+import { runTree } from '../shared/run-usage.ts'
+import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
+import { detectVcs } from './projects-analyze.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 import { childEnv, isProcessAlive, killTree } from './exec/process.ts'
 import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
@@ -402,6 +411,17 @@ export function tasksApi(deps: {
     const entry = live.get(id)
     if (entry) return entry.task
     const task = await store.get(id)
+    return task ? idle(task) : task
+  }
+  /**
+   * 按 id 取任务本身（用量、节点、状态），不读完整对话：执行中的取内存里那份，其余读任务文件。
+   * 每秒刷一次的用量统计用它：`current` 会把 `.messages.json` 读进 full 缓存，
+   * 一个奔跑中的任务带几个子对话，每秒就把整棵树的消息全读一遍，还会把用户刚看过的任务挤出缓存。
+   */
+  const getMeta = async (id: string) => {
+    const entry = live.get(id)
+    if (entry) return entry.task
+    const task = await store.getMeta(id)
     return task ? idle(task) : task
   }
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
@@ -1292,12 +1312,18 @@ export function tasksApi(deps: {
    * 子对话这一轮结束了：收口父对话计划里等它的那一步。
    * 对话类子对话回复完会把进程留着等下一句，run 一直不返回，收尾处的 reportToParent 等不到，
    * 所以要在这一轮真结束的地方直接按 child + 子对话 id 收一次（settleWait 幂等，收尾时再调一次没有副作用）。
-   * 有没答的提问时不算结束：那是子对话停下来等用户，步骤继续挂着
+   * 「这一轮回复完了」不等于「子对话交付完了」：还有没答的提问、还在跑的后台命令、没做完的计划、
+   * 这一轮之后还要接着做的，都算没交付完——父计划那一步继续等，note 写清在等什么，不标完成。
    */
   function settleChildTurn(child: Task) {
     if (!child.parentTaskId) return
-    const r = childTurnSettle(child)
-    if (!r.over) return
+    const r = childTurnSettle(child, childLeft(child))
+    if (!r.over) {
+      void holdChildWait(child, r.why).catch((e) =>
+        log.warn('task', '更新父对话计划的等待说明失败', { task: child.id, error: (e as Error).message }),
+      )
+      return
+    }
     // 独立分支里的子对话：这一轮结束后收口独立分支（放到下一拍，别在 CLI 收尾的回调里结束它）。
     // 合并成功、这一轮结束、合并后又接着做完的后续轮次都走这里，删不删由 childFlowOf 一套判定决定
     if (isolated(child) && !hasHeld(child.id) && !merging.has(child.id) && !child.resolved) {
@@ -1355,24 +1381,54 @@ export function tasksApi(deps: {
     }).catch((e) => log.warn('task', '子对话结束收口计划失败', { task: child.id, error: (e as Error).message }))
   }
 
+  /** 子对话这一轮结束时的「还差什么没交付」：后台命令在跑、这一轮之后还要接着做 */
+  function childLeft(child: Task) {
+    const jobs = background.list(child.id).filter((j) => j.state === 'queued' || j.state === 'running')
+    return { background: jobs.map((j) => j.name), more: startQueue.has(child.id) || hasHeld(child.id) }
+  }
+
+  /** 子对话这一轮结束了但还没交付完：父对话计划里等它的那一步继续等，note 写清还在等什么 */
+  async function holdChildWait(child: Task, why: string) {
+    if (!child.parentTaskId) return
+    const entry = live.get(child.parentTaskId)
+    const parent = entry?.task ?? (await store.get(child.parentTaskId))
+    if (!parent) return
+    if (!holdWait(parent, 'child', child.id, why).length) return
+    parent.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store
+      .update(parent.id, parent)
+      .catch((e) => log.warn('task', '更新父对话计划的等待说明失败', { task: parent.id, error: (e as Error).message }))
+  }
+
   /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
   async function reportToParent(task: Task) {
     if (!task.parentTaskId) return
     // 合并还在排队：合并的结果会连同测试情况一起告诉父对话，这里再报一次「还没合回」只会让父对话误判。
     // 刚开好独立分支、面板马上在分支目录里接着做的（begin_edit 登记了下一轮）也还没做完
     if (merging.has(task.id) || hasHeld(task.id)) return
-    const status = task.status === 'done' ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
+    // 和回合结束收口用同一个判据：这一轮结束但还没交付完（后台命令在跑、计划没做完、还要接着做）时不回报完成，
+    // 父计划那一步继续等，等真正交付完的那一轮再标完成
+    const r = childTurnSettle(task, childLeft(task))
+    if (!r.over) {
+      await holdChildWait(task, r.why).catch((e) =>
+        log.warn('task', '更新父对话计划的等待说明失败', { task: task.id, error: (e as Error).message }),
+      )
+      return
+    }
+    const status = r.ok ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
     const summary = task.summary || lastReply(task)
     // 在独立分支里做完的：提醒父对话看过结果后合回来
     const merge =
-      isolated(task) && task.status === 'done' && !task.resolved
-        ? `\n（它在独立分支 ${task.worktree!.branch} 里改，还没合回原分支：测试跑通后它调用 submit_merge，面板合进去、它的计划和后台命令也都收尾后才算完成）`
+      isolated(task) && r.ok && !task.resolved
+        ? `
+（它在独立分支 ${task.worktree!.branch} 里改，还没合回原分支：测试跑通后它调用 submit_merge，面板合进去、它的计划和后台命令也都收尾后才算完成）`
         : ''
     const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
     await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`, {
       kind: 'child',
       ref: task.id,
-      ok: task.status === 'done',
+      ok: r.ok,
     })
   }
 
@@ -1594,6 +1650,46 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 让父对话马上处理一件事（子对话的提问交给它决定之类），并把「到底交到了没有」如实告诉调用方。
+   * 父对话正在这一轮里：走和用户消息一样的实时交付 —— CLI 停在等下一句就直接续上、能插话就插话、
+   * 收不下就记下来这一轮结束后处理。不再只看 working：等下一句、收尾中、预热时 working 都是 false，
+   * 但执行位仍然占着，以前直接 followUp 会抛 TaskBusyError、被吞成一条日志，界面上就是「点了没反应」。
+   * 完全空闲才开新一轮；开不起来时返回原因，由界面显示给用户。
+   */
+  async function nudgeParent(parent: Task, text: string) {
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      panel: 'child',
+      at: new Date().toISOString(),
+    }
+    // 刚开始预热、CLI 还没停在等下一句：这一轮收不下，也不能干等它启动完，让用户稍后重试
+    if (live.get(parent.id)?.task.prewarming) return { ok: false as const, error: t('父对话正在启动，稍后再试') }
+    for (let i = 0; i < 2; i++) {
+      const entry = live.get(parent.id)
+      if (entry?.task.status === 'running') {
+        const r = await deliver(entry, msg, text, [])
+        return { ok: true as const, how: r.how }
+      }
+      if (!entry) break
+      // 进程还占着执行位但没在跑这一轮（刚结束、正在收尾）：等它收完再开新一轮
+      await entry.done?.catch(() => {})
+      if (!live.has(parent.id)) break
+    }
+    try {
+      await followUp(parent.id, { text, attachments: [], panel: 'child' })
+      return { ok: true as const, how: 'next' as const }
+    } catch (e) {
+      if (e instanceof TaskBusyError) return { ok: false as const, error: t('父对话正在执行，等它这一轮结束后重试') }
+      return { ok: false as const, error: (e as Error).message }
+    }
+  }
+
+  /**
    * 「提问」关掉时，父对话里还没人回答的子对话提问（历史卡片）一起交给父对话的 AI 决定：
    * 卡片记成已交出、子对话那边的选择弹窗收掉，父对话空闲时开一轮作答。
    * 不做这一步，关掉开关后这些卡片仍停在「等你选择」/「交给父对话决定」，子对话也会一直等着
@@ -1638,33 +1734,51 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 把一张提问卡片交给父对话的 AI 决定：记 delegated（刷新后还是「交给父对话决定」）、收起子对话的选择弹窗，
-   * 父对话空闲时开一轮作答。用户点卡片上的按钮走这个函数。
+   * 把一张提问卡片交给父对话的 AI 决定：先记 delegated 并落盘（刷新后仍是「交给父对话决定」），
+   * 再用实时交付叫起父对话（等下一句、收尾中、刚预热时都要交得到），交不到时把原因写回卡片。
+   * 用户点卡片上的按钮走这个函数。
    */
   async function delegateAsk(parentId: string, msgId: string) {
     const found = live.get(parentId)
     const parent = found?.task ?? (await store.get(parentId))
     const m = parent?.messages.find((x) => x.id === msgId && x.panel === 'ask')
     if (!parent || !m?.ask) return null
-    m.ask = { ...m.ask, delegated: true }
+    const ask = m.ask
+    // 已经交出去、也真的叫起过：重复点击不再叫一次（用户会连点好几下）
+    if (ask.delegated && ask.delegatedAt) {
+      await dropChildAsks(ask.from, [m.id])
+      return { task: parent, nudge: { ok: true as const, how: 'already' as const } }
+    }
+    // 先记成「已交给父对话决定」并落盘：叫父对话时它会重新读这份任务，不先写下去这一步会被新副本盖掉
+    ask.delegated = true
     if (found) found.rev++
     await store.update(parent.id, parent).catch(() => {})
-    await dropChildAsks(m.ask.from, [m.id])
-    // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
-    if (!found?.task.working)
-      await followUp(parent.id, {
-        text: `子对话「${m.ask.title}」${m.ask.kind === 'suggestion' ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${m.ask.from}）。`,
-        attachments: [],
-        panel: 'child',
-      }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
-    // 开那一轮时可能用读到的旧快照写回（写盘是排队的），这里再确认一次，保证刷新后仍然是已交出
-    const after = live.get(parent.id)?.task ?? (await store.get(parent.id))
-    const card = after?.messages.find((x) => x.id === msgId)
-    if (after && card?.ask && !card.ask.delegated) {
-      card.ask = { ...card.ask, delegated: true }
-      await store.update(after.id, after).catch(() => {})
+    await dropChildAsks(ask.from, [m.id])
+    // 问题全文一起交过去：父对话续上等下一句的那次调用时，收件箱不会重新读，只写「在收件箱里」它拿不到内容
+    const nudge = await nudgeParent(parent, delegatePrompt(ask))
+    const cur = live.get(parent.id)?.task ?? parent
+    const at = new Date().toISOString()
+    if (nudge.ok) {
+      // 记下叫起的时间，重复点击据此判断；问题已经随消息交出去了，收件箱里不再留一份免得又答一遍
+      const done = cur.messages.find((x) => x.id === msgId)?.ask
+      if (done) {
+        done.delegatedAt = at
+        delete done.delegatedError
+      }
+      cur.inbox = cur.inbox.filter(
+        (x) => !(x.from === ask.from && x.text.startsWith('（提问）') && x.text.includes(ask.question)),
+      )
+    } else {
+      // 没能叫起父对话：问题留在收件箱里，父对话下一轮还能读到；卡片上另外显示原因和重试
+      if (!cur.inbox.some((x) => x.from === ask.from && x.text.startsWith('（提问）') && x.text.includes(ask.question)))
+        cur.inbox.push({ from: ask.from, title: ask.title, text: `（提问）${ask.question}`, at })
+      const failed = cur.messages.find((x) => x.id === msgId)?.ask
+      if (failed) failed.delegatedError = nudge.error
     }
-    return live.get(parent.id)?.task ?? parent
+    const live2 = live.get(parent.id)
+    if (live2) live2.rev++
+    await store.update(parent.id, cur).catch(() => {})
+    return { task: cur, nudge }
   }
 
   /**
@@ -1680,9 +1794,9 @@ export function tasksApi(deps: {
     const { from, title, question } = m.ask
     const suggestion = m.ask.kind === 'suggestion'
     if (delegate) {
-      const next = await delegateAsk(parent.id, m.id)
-      if (!next) return { error: t('找不到这个提问') }
-      return { task: next }
+      const r = await delegateAsk(parent.id, m.id)
+      if (!r) return { error: t('找不到这个提问') }
+      return r
     }
     const r = await sendToChild(
       parent.id,
@@ -1721,57 +1835,27 @@ export function tasksApi(deps: {
 
   /**
    * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒，并告诉父对话由它协调
+   * 在子对话里留一条提醒（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
+   * 走独立分支的子对话各改各的，撞了是合并时的事，由 git merge 处理，不提醒也不汇报父对话。
    */
   async function checkCollisions(child: Task) {
-    const mine = child.changes.map((c) => c.path)
-    // 共用目录：这一轮什么都没改就不用查；独立分支还要看分支上的提交，不能只看 changes
-    if (!isolated(child) && !mine.length) return
-    const sibs = [...live.values()]
-      .map((e) => e.task)
-      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working)
-    if (!sibs.length) return
-    const repo = isolated(child) ? ((await deps.projects.get(child.projectId))?.path ?? '') : ''
-    const shared: { path: string; with: string }[] = []
-    const others: { title: string; files: string[] }[] = []
-    for (const x of sibs) {
-      // 独立分支：比两个分支从共同基点起各自改过的文件。改同一文件的不同位置时 git 能自动合上、不报冲突，
-      // 但同一个文件两边都动过，合进去就是悄悄把对方的改动盖掉
-      if (isolated(child) && isolated(x) && repo && child.worktree?.branch && x.worktree?.branch) {
-        const files = await branchesOverlap(repo, child.worktree.branch, x.worktree.branch).catch(() => [] as string[])
-        for (const f of files) shared.push({ path: f, with: x.title })
-        // 这一轮还没提交的改动在分支上看不到（submit_merge 时才提交）：用任务记录的改动文件补上
-        if (mine.length) shared.push(...collisions(mine, [{ title: x.title, files: x.changes.map((c) => c.path) }]))
-        continue
-      }
-      // 共用目录：两个子对话在同一个目录里改，后写的可能覆盖先写的
-      if (!isolated(child) && !isolated(x)) others.push({ title: x.title, files: x.changes.map((c) => c.path) })
-    }
-    const seen = new Set<string>()
-    const hit = [...shared, ...collisions(mine, others)].filter((h) => {
-      const key = `${h.path}\n${h.with}`
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    if (!hit.length) return
-    const list = hit.map((h) => `${h.path}（「${h.with}」也在改）`).join('、')
+    const list = collisionNotice(
+      child,
+      [...live.values()].map((e) => e.task),
+    )
+    if (!list) return
     child.messages.push({
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
-      text: t('这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。', { list }),
+      text: t(
+        '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。',
+        { list },
+      ),
       tools: [],
       at: new Date().toISOString(),
     })
-    await messageParent(
-      child,
-      isolated(child)
-        ? `我这一轮改的文件和正在执行的其他子对话分支重叠：${list}。git 合并时不一定报冲突，合进去之前请核对有没有互相盖掉。`
-        : `我这一轮改的文件和正在执行的其他子对话撞了：${list}。共用一个目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
-      true,
-    )
   }
 
   async function start(
@@ -1845,10 +1929,13 @@ export function tasksApi(deps: {
     const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
     const ueRole = !ueProject ? undefined : task.parentTaskId ? 'child' : coordinatorRole ? 'parent' : undefined
     let last = 0
-    // 预热退出要恢复列表时间：最后一次写不能把它改成现在
-    const flush = (keepUpdatedAt = false) =>
+    /**
+     * 落盘。now：对话消息立即写，不等 400ms 合并窗口——关键节点（changed(true)、这一轮结束/失败/停止）
+     * 用它，面板被强杀时不会丢最后一段。keepUpdatedAt：预热收尾要保留原来的列表时间
+     */
+    const flush = (keepUpdatedAt = false, now = false) =>
       store
-        .update(task.id, entry.task, { keepUpdatedAt })
+        .update(task.id, entry.task, { keepUpdatedAt, now })
         .catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
@@ -1856,10 +1943,14 @@ export function tasksApi(deps: {
       entry.rev++
       // 对话的 CLI 回复完会常驻等下一句，不等进程结束：第一次回复完就起标题
       if (entry.task.turnDoneAt) nameOnce(entry.task, startedRun?.cli ?? '')
-      // 流式输出时最多每秒落盘一次，关键节点立即落盘
-      if (f || Date.now() - last > 1000) {
+      // 流式输出时最多每 3 秒落盘一次，关键节点（节点开始/结束、调用完成、提问、等用户决定、这一轮收尾）
+      // 都走 changed(true) 立即落盘（消息文件也不走合并窗口），所以节流只影响正在输出途中的中间态。
+      // 从 1 秒放宽到 3 秒：指纹已经是增量的（见 task-store 的 createStampTracker），
+      // 但整份 messages 的序列化还是 O(全部消息)，3 秒一次把这个成本降下来，
+      // 代价是面板被强杀时最多丢 3 秒的流式输出（正常结束、失败、停止都还会立即写一次）。
+      if (f || Date.now() - last > 3000) {
         last = Date.now()
-        void flush()
+        void flush(false, f === true)
       }
     }
     log.info('task', first ? '开始执行任务' : '继续执行任务', {
@@ -2172,9 +2263,10 @@ export function tasksApi(deps: {
         // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
         if (!prewarm && entry.task.parentTaskId) {
           entry.task.summary = lastReply(entry.task)
-          await flush(keepTime)
+          // 这一轮结束：消息立即落盘，不等合并窗口（进程保活等下一句时这可能是最后一次写）
+          await flush(keepTime, true)
           await reportToParent(entry.task)
-        } else await flush(keepTime)
+        } else await flush(keepTime, true)
         // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
         release(entry)
         // 整轮结束了，没被节点取走的补充不会再有人取
@@ -2449,7 +2541,8 @@ export function tasksApi(deps: {
     for (const k of all) {
       if (!k.parentTaskId) continue
       const cur = live.get(k.id)?.task ?? k
-      if (!cur.working) continue
+      // 和子对话栏里「执行中」的口径一致：标记了「解决」的已经算做完，不再计成在跑
+      if (!cur.working || cur.resolved) continue
       kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
     }
     let list = all.map((t) => {
@@ -2809,20 +2902,44 @@ export function tasksApi(deps: {
     return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)
   })
 
-  // 导入别人导出的任务：建一个只读的任务，放进指定的项目（为空放进聊天）
+  /**
+   * 导出任务：连同它分出的所有子对话（含多层）整理成一个包。
+   * 不交给前端自己拼：要先按 parentTaskId 找出整棵树、按体积上限拦一下，几百 MB 的包不该先传到浏览器再发现装不下。
+   */
+  routes.get('/:id/export', async (c) => {
+    const id = c.req.param('id')
+    const root = await store.get(id)
+    if (!root) return bad(c, t('任务不存在'), 404)
+    try {
+      // 先按摘要找出整棵树的 id，再逐个读完整任务（导出时才读子对话的对话文件，平时不读）
+      const ids = runTree(root, await store.list()).map((x) => x.id)
+      const tree = (await Promise.all(ids.map((x) => (x === id ? root : store.get(x))))).filter((x): x is Task => !!x)
+      const bundle = exportTaskTree(root, tree, await deps.agents.list(), c.req.query('app') ?? '')
+      return c.json({ bundle, bytes: checkExportSize(bundle) })
+    } catch (e) {
+      return bad(c, (e as Error).message)
+    }
+  })
+
+  // 导入别人导出的任务：连同包里的子对话一起建成本机的只读任务，放进指定的项目（为空放进聊天）
   routes.post('/import', async (c) => {
     const body = (await c.req.json().catch(() => null)) as { projectId?: string; bundle?: unknown } | null
     if (!body) return bad(c, t('不是有效的 JSON 文件'))
     const projectId = body.projectId ?? ''
     if (projectId && !(await deps.projects.get(projectId))) return bad(c, t('项目不存在'), 404)
-    let task: Task
+    let created: Task[]
     try {
-      task = importTask(parseTaskExport(body.bundle), projectId, randomUUID())
+      const bundle = parseTaskExport(body.bundle)
+      // 父任务和每个子对话各分配一个本机 id（父在前、子在后）；重复导入同一棵树也不会撞 id
+      created = importTaskTree(bundle, projectId, [randomUUID(), ...bundle.children.map(() => randomUUID())])
     } catch (e) {
       return bad(c, (e as Error).message)
     }
-    log.info('task', '导入任务', { task: task.id, title: task.title })
-    return c.json(await store.create(task), 201)
+    // 按父先子后的顺序落盘：子对话的 parentTaskId 指向的是前面的父任务
+    const saved: Task[] = []
+    for (const task of created) saved.push(await store.create(task))
+    log.info('task', '导入任务', { task: saved[0].id, title: saved[0].title, children: saved.length - 1 })
+    return c.json(saved, 201)
   })
 
   routes.post('/', async (c) => {
@@ -3396,7 +3513,8 @@ export function tasksApi(deps: {
     if (!answer && !body.data.delegate) return bad(c, t('回答是空的'))
     const r = await answerChildAsk(c.req.param('id'), c.req.param('mid'), answer, body.data.delegate)
     if ('error' in r) return bad(c, r.error ?? '')
-    return c.json(r.task)
+    // 带上 nudge：交给父对话决定时到底叫没叫起来，界面据此显示结果或原因（不能只写日志）
+    return c.json({ task: r.task, nudge: 'nudge' in r ? r.nudge : undefined })
   })
 
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
@@ -3737,6 +3855,14 @@ export function tasksApi(deps: {
     /** 所有任务（列表用，只带用户消息）；用量统计按任务里的 turns 聚合 */
     list: () => store.list(),
     /**
+     * 这个会话的进程面板（两路占用 + 每行归属）。
+     * 会话内存的 AI 分析（server/task-memory.ts）用同一份数据，保证报告和界面上的数字一致
+     */
+    processPanel: async (id: string) => {
+      const tk = await current(id)
+      return tk ? processPanel(tk) : null
+    },
+    /**
      * 正在执行的任务数；更新、备份前要等它们结束。
      * 对话停在等下一句、预热时进程还活着但不改任何东西，不算执行中，否则更新会一直等下去
      */
@@ -3761,6 +3887,8 @@ export function tasksApi(deps: {
     ready: () => ready,
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
     get: (id: string) => current(id),
+    /** 同上，但不读完整对话：用量统计、只用到任务元数据的地方用它 */
+    getMeta: (id: string) => getMeta(id),
     /**
      * 只要任务本身、不要对话（用量、状态这类）：执行中的用内存里那份，其余用任务文件里的摘要（只带用户消息）。
      * 不会为了几个数字去读几 MB 的对话文件

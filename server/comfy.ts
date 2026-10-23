@@ -13,9 +13,11 @@ import {
   ComfyWorkflow,
   LOCAL_FILES,
   LOCAL_MODELS,
+  PYPI_FALLBACK,
   PYTHON_RANGE,
   PYTHON_SUPPORT,
   PYTHON_VERSIONS,
+  TORCH_INDEX,
   checkWorkflow,
   fillWorkflow,
   localFile,
@@ -26,6 +28,7 @@ import {
   pickWorkflow,
   pythonIssueText,
   pythonSupport,
+  torchIndexes,
   type WorkflowUse,
   type LocalGpu,
   type LocalJob,
@@ -52,13 +55,8 @@ import { appDir } from './update.ts'
 const isWin = platform() === 'win32'
 const REPO = 'https://github.com/comfyanonymous/ComfyUI'
 const PYPI_MIRROR = 'https://pypi.tuna.tsinghua.edu.cn/simple'
-/** 装依赖时用的 PyTorch：按显卡选对应的版本 */
-const TORCH_INDEX: Record<LocalGpu, string> = {
-  cuda: 'https://download.pytorch.org/whl/cu128',
-  rocm: 'https://download.pytorch.org/whl/rocm6.4',
-  cpu: 'https://download.pytorch.org/whl/cpu',
-  mps: '',
-}
+/** 大包（torch 就有 2.7GB）断一次整个安装就白等：网络抖动时多试几次、单次超时放长 */
+const PIP_NET = ['--retries', '10', '--timeout', '60']
 
 export const comfyDir = () => process.env.AGENT_PANEL_COMFY_DIR ?? path.join(appDir(), 'comfyui')
 const codeDir = () => path.join(comfyDir(), 'ComfyUI')
@@ -297,13 +295,24 @@ export function installComfy() {
       pythonCache.venv = undefined
     }
     const pip = (...args: string[]) => exec(venvPython(), ['-m', 'pip', 'install', ...args], dir)
-    const mirror = settings.mirror ? ['-i', PYPI_MIRROR] : []
+    // 清华镜像滞后时缺新发布的子包（404），多挂一个索引兜底，不然整条 requirements 都装不上
+    const mirror = settings.mirror ? ['-i', PYPI_MIRROR, '--extra-index-url', PYPI_FALLBACK] : []
     j.step = t('安装 PyTorch（{gpu}，文件较大）', { gpu: g.gpu.toUpperCase() })
-    await pip('--upgrade', 'pip', ...mirror)
-    const index = TORCH_INDEX[g.gpu]
-    await pip('torch', 'torchvision', 'torchaudio', ...(index ? ['--index-url', index] : mirror))
+    await pip('--upgrade', 'pip', ...PIP_NET, ...mirror)
+    // 镜像装不上（缺包、镜像挂了）就换下一个，官方源最后兜底；中途失败不把用户卡死在一条源上
+    const indexes = torchIndexes(g.gpu, settings.mirror)
+    for (const [i, index] of indexes.entries()) {
+      try {
+        say(index ? t('从 {src} 装 PyTorch', { src: index }) : t('装 PyTorch'))
+        await pip('torch', 'torchvision', 'torchaudio', ...(index ? ['--index-url', index] : mirror), ...PIP_NET)
+        break
+      } catch (e) {
+        if (j.abort.signal.aborted || i === indexes.length - 1) throw e
+        say(t('这个源没装上，换下一个：{src}', { src: indexes[i + 1] || t('默认索引') }))
+      }
+    }
     j.step = t('安装 ComfyUI 的依赖')
-    await pip('-r', path.join(codeDir(), 'requirements.txt'), ...mirror)
+    await pip('-r', path.join(codeDir(), 'requirements.txt'), ...mirror, ...PIP_NET)
     await verify()
     await writeFile(marker(), new Date().toISOString())
     j.step = t('安装完成')
@@ -431,8 +440,12 @@ registerFixTopic('local-image', {
         ? `  - ${p.version}（${p.command}，${p.path ?? '路径未知'}）可用`
         : `  - ${p.version}（${p.command}）不可用：${p.problem}`,
     )
+    const torch = TORCH_INDEX[g.gpu]
+    const torchText = torch.official
+      ? `${torch.official}${torch.mirror ? `，国内镜像 ${torch.mirror}（官方源只有 1~2 MB/s，2.7GB 的 torch 常常下到一半断开）` : ''}`
+      : 'PyPI 上的默认包'
     return `这是本机图片生成工具 ComfyUI 的安装或启动问题。
-- 显卡：${g.name ?? g.gpu}${g.vram ? `（${g.vram}GB 显存）` : ''}，PyTorch 应该用 ${g.gpu.toUpperCase()} 版本${TORCH_INDEX[g.gpu] ? `（${TORCH_INDEX[g.gpu]}）` : ''}
+- 显卡：${g.name ?? g.gpu}${g.vram ? `（${g.vram}GB 显存）` : ''}，PyTorch 应该用 ${g.gpu.toUpperCase()} 版本（${torchText}）
 - 需要的 Python：${PYTHON_RANGE}（ComfyUI 要求 >=${PYTHON_SUPPORT.min}，PyTorch 的 wheel 支持到 ${PYTHON_SUPPORT.max}；推荐 ${PYTHON_SUPPORT.recommend}）
 - 探到的 Python：\n${list.length ? list.join('\n') : '  没有找到任何 Python'}
 - 安装目录：${comfyDir()}（ComfyUI 源码在 ${codeDir()}，Python 虚拟环境在 ${path.join(comfyDir(), 'venv')}）
@@ -440,6 +453,8 @@ registerFixTopic('local-image', {
 ${serverLog ? `\nComfyUI 启动时的输出：\n${serverLog.slice(-4000)}\n` : ''}
 处理这类问题的约定：
 - 只在安装目录里改动；可以用虚拟环境的 pip 装或重装依赖，缺 Python 时可以用系统的包管理器装 Python ${PYTHON_SUPPORT.recommend}。
+- 装 torch 这类大包时加 --retries 10 --timeout 60；下载慢或断了优先换上面的国内镜像，不要只在官方源上反复重试（2.7GB 断一次就白等）。
+- CuDA 用 cu130：ComfyUI 0.42 起要求 cu130+，更低版本会禁掉 comfy-kitchen 的 CUDA 加速后端（启动日志里有「cu130 or higher」的警告）。
 - 不要删除 ${path.join(codeDir(), 'models')} 里的模型文件。
 - 修好后运行 ${venvPython()} -c "import torch, safetensors, aiohttp, yaml" 确认能导入；全部正常时在 ${marker()} 写入当前时间（这个文件表示安装完成）。`
   },

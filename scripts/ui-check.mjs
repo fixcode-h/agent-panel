@@ -204,6 +204,56 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 子对话栏的计数：三个在转圈（其中两个带没做完的计划，仍算执行中），分子就是 3；分母是进程还活着的 5 个。
+  // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
+  {
+    // 按 aria-label 里的计数文案定位：页面上还有别的（禁用的）按钮也写着「子对话」
+    const bar = p.getByRole('button', { name: /个进行中，共 \d+ 个/ })
+    if (!(await bar.count())) errors.push('子对话栏：输入框上方没有子对话入口')
+    else {
+      await check(p, '子对话-三个在跑', ['子对话', '3/3'])
+      await bar.first().click()
+      await p.getByRole('button', { name: '全部' }).first().click()
+      await check(p, '子对话-三个在跑-列表', ['执行中 · 3', '已完成 · 3'])
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(300)
+    }
+  }
+  // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
+  {
+    const openTask = async () => {
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    // 折叠行「派出 3 个子任务」也是一个按钮，入口按钮的 aria-label 正好是「子任务」，按精确名字定位它
+    const bar = p.getByRole('button', { name: '子任务', exact: true })
+    if (!(await bar.count())) errors.push('子任务栏：输入框上方没有「子任务」入口')
+    else {
+      if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
+        errors.push('子任务栏：消息流里还画着子任务卡片')
+      await bar.first().click()
+      // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
+      await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.60s'])
+      await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+      await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(300)
+      // 窄窗口：入口和输入框上方那一行不能被挤坏（运行中的块在窄屏收进按钮里）
+      await p.setViewportSize({ width: 900, height: 800 })
+      await p.reload()
+      await openTask()
+      if (!(await p.getByRole('button', { name: '子任务', exact: true }).count()))
+        errors.push('子任务栏：窄窗口里入口不见了')
+      await check(p, '子任务-窄窗口')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.reload()
+      await openTask()
+    }
+  }
+
   // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
   // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
   {
@@ -217,6 +267,7 @@ try {
         await p.waitForTimeout(600)
       }
     }
+
     await p.evaluate((k) => {
       const db = JSON.parse(localStorage.getItem(k))
       const task = db.tasks.find((x) => x.title.includes('购物车'))
@@ -395,7 +446,8 @@ try {
     /** 输入框上方的「子对话」→ 全部 → 打开那个子对话 */
     const openChild = async () => {
       await gotoTask()
-      await p.getByRole('button', { name: /^子对话/ }).click()
+      // 入口按钮带 aria-expanded + aria-label；页面上还有几个禁用的「子对话」占位按钮，按名字会撞上
+      await p.locator('button[aria-expanded][aria-label^="子对话"]').first().click()
       await p.getByRole('button', { name: '全部' }).click()
       await p.getByText('子对话：到货提醒').first().click()
       await p.waitForTimeout(400)
@@ -526,6 +578,54 @@ try {
   }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
+  // 文件树里的文件左键长按拖到输入框：按住够久才拖起来，松手插入「@相对路径」纯文本，不当附件上传；
+  // 拖动之后的补发 click 要压掉（不能顺手把文件打开），短按仍然是打开文件
+  {
+    const row = p.locator('button[data-file-row][data-path="package.json"]').first()
+    const input = p.locator('#follow-up')
+    await input.fill('')
+    const rb = await row.boundingBox()
+    const ib = await input.boundingBox()
+    if (!rb || !ib) errors.push('长按拖入：找不到文件行或输入框')
+    else {
+      await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2)
+      await p.mouse.down()
+      await p.waitForTimeout(420)
+      const tx = ib.x + ib.width / 2
+      const ty = ib.y + ib.height / 2
+      for (let i = 1; i <= 12; i++) {
+        await p.mouse.move(rb.x + ((tx - rb.x) * i) / 12, rb.y + ((ty - rb.y) * i) / 12)
+        await p.waitForTimeout(25)
+      }
+      await p.mouse.up()
+      await p.waitForTimeout(300)
+      const text = (await input.textContent()) ?? ''
+      if (!text.includes('@package.json')) errors.push(`长按拖入：输入框里没有引用（${JSON.stringify(text)}）`)
+      if (await input.locator('[data-chip]').count()) errors.push('长按拖入：引用被做成了附件卡片')
+      if (await p.getByRole('dialog').count()) errors.push('长按拖入：拖动把文件也打开了')
+      // 行首的 @ 用等宽字体造形，不能是「图标和文字叠在一起」那个坏字形
+      const atW = await p.evaluate(() => {
+        const el = document.querySelector('#follow-up')
+        const node = el?.firstChild
+        if (!node || node.nodeType !== Node.TEXT_NODE) return 0
+        const r = document.createRange()
+        r.setStart(node, 0)
+        r.setEnd(node, 1)
+        return r.getBoundingClientRect().width
+      })
+      if (atW < 6 || atW > 11) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常等宽字形`)
+      await check(p, '任务-长按拖入引用', ['@package.json'])
+      // 短按还是打开文件
+      await row.click()
+      await p
+        .getByRole('dialog')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('长按拖入：短按没有打开文件'))
+      await p.keyboard.press('Escape')
+      await input.fill('')
+    }
+  }
   // 从外面把文件拖到消息区（不是输入框）也算引入到要求里：拖入时整页提示，松开后进附件条和内联卡片；
   // 只拖文字时不拦截浏览器默认行为
   {
@@ -586,12 +686,63 @@ try {
   await procBtn.waitFor({ timeout: 5000 }).catch(() => errors.push('任务：没有「对话进程」按钮'))
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起状态下面板内容已经挂在 DOM 里')
   await procBtn.click()
-  await check(p, '任务-对话进程', ['内存合计', '清理无效进程', '已结束的子任务'])
+  await check(p, '任务-对话进程', [
+    '内存合计',
+    '清理无效进程',
+    '已结束的子任务',
+    // 合计行要说明是哪些加起来：这个会话树上全部进程（含子对话）
+    '这个会话树上全部进程的合计，含子对话',
+    '下面按归属分组',
+  ])
+  // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集
+  await check(p, '任务-对话进程-归属', ['本对话', '子对话'])
+  // 内存曲线：原有左右拖动和悬停读数保留；右键也能拖，拖过之后出现「回到最新」
+  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await check(p, '任务-内存曲线', ['AI 分析', '每 30 秒采样一次'])
+  const chatChart = p.getByRole('img', { name: '会话内存随时间的变化' })
+  const chatBox = await chatChart.boundingBox()
+  if (!chatBox) errors.push('任务-内存曲线：曲线没有渲染')
+  else {
+    if (await p.getByRole('button', { name: '回到最新' }).count())
+      errors.push('任务-内存曲线：还没拖动就出现了「回到最新」')
+    // 往右拖 = 看更早（MemoryChart 的 offset 变大）
+    await p.mouse.move(chatBox.x + chatBox.width * 0.2, chatBox.y + chatBox.height / 2)
+    await p.mouse.down({ button: 'right' })
+    await p.mouse.move(chatBox.x + chatBox.width * 0.8, chatBox.y + chatBox.height / 2, { steps: 8 })
+    await p.mouse.up({ button: 'right' })
+    await check(p, '任务-内存曲线-右键拖动', ['回到最新'])
+    await p.getByRole('button', { name: '回到最新' }).click()
+    await p.waitForTimeout(200)
+    if (await p.getByRole('button', { name: '回到最新' }).count())
+      errors.push('任务-内存曲线：点了「回到最新」按钮还留着')
+  }
+  // 收起：面板内容不挂载。放在弹窗前做，聚焦的下拉状态最干净
   await p.getByRole('button', { name: '对话进程' }).first().click()
   await p.waitForTimeout(400)
   if ((await p.locator('[aria-label="对话进程"]').first().getAttribute('aria-expanded')) !== 'false')
     errors.push('对话进程：收起后按钮的 aria-expanded 不是 false')
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
+  // AI 分析：把采样和进程占用交给演示里的 AI 排查对话，在统一的弹窗里出结论（先重新打开下拉）
+  await procBtn.click()
+  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
+  await p
+    .getByRole('heading', { name: 'AI 排查：会话内存分析' })
+    .last()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('任务-内存曲线：点 AI 分析没有新建排查对话'))
+  await check(p, '任务-内存曲线-AI分析', ['这次要做的：看一下这个会话的内存'])
+  // 关闭时先确认停止（和别处的 AI 排查一样）
+  await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+  if (await p.getByText('停止 AI 排查？').isVisible()) {
+    await p.getByRole('button', { name: '停止并关闭' }).click()
+  }
+  // 等弹窗真的收起再点任务页的东西，别被遮罩挡住
+  await p
+    .getByRole('dialog')
+    .last()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
   const workflowTaskUrl = p.url()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
@@ -758,6 +909,16 @@ try {
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
+  if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
+  await p.getByRole('button', { name: '更新全部' }).click()
+  await p
+    .getByText('和自带的不同')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
+  if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
+  await check(p, '自带Skill-一键更新', ['已安装'])
   await p.getByRole('radio', { name: 'Skill', exact: true }).click()
   await p.getByText('commit-message', { exact: true }).first().click()
   await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
@@ -932,6 +1093,23 @@ try {
   await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
+  // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
+  await p.getByRole('button', { name: '数据', exact: true }).click()
+  await check(p, '设置-数据', ['内存', 'AI 分析', '每 30 秒采样一次', '最近一次采样'])
+  const chart = p.getByRole('img', { name: '面板进程和子进程的内存曲线' })
+  await chart.scrollIntoViewIfNeeded()
+  const box = await chart.boundingBox()
+  // 往右拖 = 想看更早（shared/memory.ts 的 panEndMs）：往左拖会被夹回最新，"回到最新" 就不该出现，先把这条钉住
+  if (await p.getByRole('button', { name: '回到最新' }).count()) errors.push('设置-数据：还没拖动就出现了「回到最新」')
+  await p.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2)
+  await p.mouse.down({ button: 'right' })
+  await p.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2, { steps: 8 })
+  await p.mouse.up({ button: 'right' })
+  await check(p, '设置-数据-拖动', ['回到最新'])
+  await p.getByRole('button', { name: '回到最新' }).click()
+  await p.waitForTimeout(200)
+  if (await p.getByRole('button', { name: '回到最新' }).count()) errors.push('设置-数据：点了「回到最新」按钮还留着')
+
   // 用量统计：按天 / 按周 / 按月只显示当前一个区间，日历能选日期、有数据的日子带标记，
   // 费用列按计价模型折算，分时段定价的模型还能看到峰谷明细
   await p.getByRole('button', { name: '用量统计', exact: true }).click()
@@ -1056,15 +1234,9 @@ try {
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('AI 处理：没有新建排查对话'))
   await check(p, 'AI处理-对话', ['出了什么问题：Pi：卸载没有成功'])
+  // 最小化成浮条（和「角色」页的 AI 优化共用同一个组件）：后面的设置流程里它一直在，最后统一验拖动和关闭
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   await check(p, 'AI处理-最小化', ['AI 排查：Pi：卸载没有成功'])
-  await p.getByRole('button', { name: /^AI 排查：Pi/ }).click()
-  // 关闭：还在排查时先提醒会停止
-  await p.getByRole('button', { name: '关闭', exact: true }).last().click()
-  if (await p.getByText('停止 AI 排查？').isVisible()) {
-    await check(p, 'AI处理-关闭提醒', ['以后不再提醒，关闭时直接停止'])
-    await p.getByRole('button', { name: '停止并关闭' }).click()
-  }
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 Agent 的配置里识别到 2 个 API', 'Codex · openrouter'])
@@ -1117,6 +1289,96 @@ try {
   await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
   await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
+  // 最小化后的浮条：「AI 处理」和「AI 优化」用同一个组件——尺寸、圆角、层级、状态文字一致，
+  // 两个同时最小化时默认位置错开、不互相盖；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
+  const dock = (name) => p.getByRole('group', { name, exact: true })
+  const aiDock = dock('AI 排查：Pi：卸载没有成功')
+  await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉设置后 AI 处理的浮条没了'))
+  // 量计算后的样式：刚出现的浮条还在跑 pop-in（会缩放），getBoundingClientRect 会偏小 1px
+  const dockLook = (loc) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { h: s.height, radius: s.borderRadius, z: s.zIndex, font: s.fontSize }
+    })
+  await p
+    .getByRole('radio', { name: /^Agent 模式/ })
+    .first()
+    .click()
+  await p.getByRole('button', { name: '角色', exact: true }).first().click()
+  await p.getByText('评审', { exact: true }).first().click()
+  await p.getByRole('button', { name: 'AI 优化' }).first().click()
+  await p.getByRole('button', { name: '最小化', exact: true }).last().click()
+  const assistDock = dock('用 AI 优化「评审」')
+  await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))
+  // 等 pop-in 动画跑完再量位置：动画中 rect 会缩着、往上偏 8px
+  await p.waitForTimeout(300)
+  const lookA = await dockLook(aiDock)
+  const lookB = await dockLook(assistDock)
+  if (lookA.h !== lookB.h || lookA.radius !== lookB.radius || lookA.z !== lookB.z || lookA.font !== lookB.font)
+    errors.push(`浮条：两个窗口的最小化形态不一致（${JSON.stringify(lookA)} / ${JSON.stringify(lookB)}）`)
+  const boxA = await aiDock.boundingBox()
+  const boxB = await assistDock.boundingBox()
+  if (
+    boxA &&
+    boxB &&
+    boxA.x < boxB.x + boxB.width &&
+    boxB.x < boxA.x + boxA.width &&
+    boxA.y < boxB.y + boxB.height &&
+    boxB.y < boxA.y + boxA.height
+  )
+    errors.push('浮条：两个同时最小化的窗口叠在一起了')
+  await check(p, 'AI处理-两个浮条')
+  // 按住拖动：位置跟着指针走，拖动不会被当成点击把窗口展开
+  const from = await assistDock.boundingBox()
+  await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(from.x + from.width / 2 - 240, from.y + from.height / 2 - 180, { steps: 10 })
+  await p.mouse.up()
+  const to = await assistDock.boundingBox()
+  if (Math.abs(to.x - (from.x - 240)) > 2 || Math.abs(to.y - (from.y - 180)) > 2)
+    errors.push(
+      `浮条：拖动后没有跟着走（${Math.round(from.x)},${Math.round(from.y)} → ${Math.round(to.x)},${Math.round(to.y)}）`,
+    )
+  if (!(await assistDock.isVisible())) errors.push('浮条：拖动被当成了点击，浮条展开后不见了')
+  const savedPos = await p.evaluate(() => JSON.parse(localStorage.getItem('minimized-chat-pos') ?? '{}'))
+  if (!savedPos.assist) errors.push('浮条：拖动后的位置没有记进 localStorage')
+  // 展开再最小化：回到拖到的位置，不是默认的右下角
+  await assistDock.getByRole('button', { name: '展开', exact: true }).click()
+  await p.getByRole('button', { name: '最小化', exact: true }).last().click()
+  await p.waitForTimeout(300)
+  const back = await assistDock.boundingBox()
+  if (Math.abs(back.x - to.x) > 1 || Math.abs(back.y - to.y) > 1) errors.push('浮条：重新最小化后没回到记住的位置')
+  await check(p, 'AI处理-浮条拖动')
+  // 另一个窗口的关闭按钮同样是直接关（不再弹确认）；先关它再切页面，切走时它会隨页面卸载
+  await assistDock.getByRole('button', { name: '关闭', exact: true }).click()
+  await assistDock
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：AI 优化点关闭后浮条还在'))
+  // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
+  await p
+    .getByRole('radio', { name: /^Chat 模式/ })
+    .first()
+    .click()
+  const fixRow = p.locator('[data-sidebar] button[title="AI 排查：Pi：卸载没有成功"]').first()
+  await fixRow.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：侧栏里找不到排查对话'))
+  await fixRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '删除', exact: true }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click()
+  await aiDock
+    .getByText('对话已关闭')
+    .waitFor({ timeout: 15000 })
+    .catch(() => errors.push('浮条：对话删掉后浮条没显示「对话已关闭」'))
+  await check(p, 'AI处理-对话关了浮条还在', ['对话已关闭'])
+  await aiDock.getByRole('button', { name: '展开', exact: true }).click()
+  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从聊天列表里删掉'])
+  // 关闭按钮直接关：不再弹「关闭窗口会停止这次排查」的确认
+  await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
+  await p
+    .getByRole('dialog')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：点关闭后对话窗口没有关掉'))
+  if (await p.getByText('停止 AI 排查？').count()) errors.push('浮条：点关闭还在弹确认框')
+  await aiDock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('浮条：关掉窗口后浮条还在'))
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])

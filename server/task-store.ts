@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, rename, rmdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
@@ -28,17 +28,77 @@ const MSG = '.messages.json'
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
 const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
-/**
- * 对话的指纹：只留摘要。原文是每条消息 id + 戳拼起来的长串，几百条消息就是几十 KB，
- * 每个读过的任务都记一份、删任务前一直不放，任务多了就是几十 MB 常驻内存
- */
-const stampOf = (msgs: TaskMessage[]) =>
-  createHash('sha1')
-    .update(`${msgs.length}:${msgs.map((m) => m.id + messageStamp(m)).join(';')}`)
-    .digest('base64')
 
 /** 读过对话的任务最多留这么多个在内存里（正在执行的另外由执行器拿着） */
 const KEEP_FULL = 12
+
+/** 每个任务的指纹缓存：跟上一次算的时候比，只重算变了的那几条消息 */
+type StampCache = {
+  ids: string[]
+  /** 与 ids 对应的骨架（不含工具输出内容），用来认出中间哪条被原地改过 */
+  shapes: string[]
+  /** 与 ids 对应的完整指纹 */
+  stamps: string[]
+  /** 上次整体核对的时间 */
+  verifiedAt: number
+}
+
+/**
+ * 消息指纹的增量计算。
+ *
+ * 为什么不再每次全量算：任务越长，算一次越贵——`messageStamp` 要把每条消息的每个工具输出逐字符扫一遍，
+ * 而执行中的任务每秒钟都会被问一次「消息变了没有、要不要落盘」（`server/tasks.ts` 的 `changed`）。
+ * 一秒一次 O(全部工具输出) 的字符串扫描就是持续的抖动和高位堆，任务越长越明显。
+ *
+ * 现在只在这些位置重算，其余沿用上次存的指纹：
+ * - 最后一条消息：流式输出一直在改它，代价有上界（只有一条）；
+ * - 骨架变了的那条：并发节点会去改不是末尾的消息，骨架（文字、工具名和输出长度类字段）变了就能认出来；
+ * - 到隔一段时间整体重算一次：工具输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
+ *   骨架看不出来，靠这个兜底。漏写盘最多晚一个间隔，下次核对时会认出来并补写。
+ */
+export function createStampTracker(verifyMs = 10_000) {
+  const cache = new Map<string, StampCache>()
+  /** 测试和测量用：完整指纹、骨架各算了多少次 */
+  let full = 0
+  let shape = 0
+  return {
+    /** 消息数组的指纹（存进 written 的那份）：条数 + 每条 id 和指纹 */
+    stamp(id: string, msgs: TaskMessage[]): string {
+      const prev = cache.get(id)
+      const now = Date.now()
+      const verify = !prev || now - prev.verifiedAt >= verifyMs
+      const last = msgs.length - 1
+      const next: StampCache = { ids: [], shapes: [], stamps: [], verifiedAt: verify ? now : prev!.verifiedAt }
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i]
+        const skeleton = messageStamp(m, false)
+        shape++
+        // 末尾那条每次重算；中间的骨架没变就沿用上次的完整指纹
+        const same = !verify && i !== last && prev!.ids[i] === m.id && prev!.shapes[i] === skeleton
+        let stamp: string
+        if (same) stamp = prev!.stamps[i]
+        else {
+          stamp = messageStamp(m)
+          full++
+        }
+        next.ids.push(m.id)
+        next.shapes.push(skeleton)
+        next.stamps.push(stamp)
+      }
+      cache.set(id, next)
+      return `${msgs.length}:${next.ids.map((x, i) => x + next.stamps[i]).join(';')}`
+    },
+    forget(id: string) {
+      cache.delete(id)
+    },
+    clear() {
+      cache.clear()
+    },
+    stats() {
+      return { full, shape }
+    },
+  }
+}
 
 /**
  * 消息文件的最小写入间隔。流式输出时一秒会更新几十次，每次都把几 MB 的对话重新算一遍指纹、
@@ -58,6 +118,8 @@ export function createTaskStore() {
   const full = new Map<string, Task>()
   /** 每个任务上次写入的消息指纹，没变就不重写消息文件 */
   const written = new Map<string, string>()
+  /** 消息指纹的增量缓存，按任务一份 */
+  const stamps = createStampTracker()
   const writing = new Map<string, Promise<void>>()
   /** 消息文件上次写入的时间、窗口内等着写的最新一份和定时器 */
   const msgAt = new Map<string, number>()
@@ -68,6 +130,7 @@ export function createTaskStore() {
     loading = null
     full.clear()
     written.clear()
+    stamps.clear()
     for (const timer of msgTimers.values()) clearTimeout(timer)
     msgTimers.clear()
     msgPending.clear()
@@ -81,12 +144,15 @@ export function createTaskStore() {
     await writeJsonAtomic(fileOf(t), head(t))
   }
 
-  /** 写对话消息：指纹没变就跳过 */
+  /** 写对话消息：指纹没变就跳过（增量算，不每次扫全部工具输出） */
   async function writeMessages(t: Task) {
-    const stamp = stampOf(t.messages)
+    const stamp = stamps.stamp(t.id, t.messages)
     if (written.get(t.id) === stamp) return
-    written.set(t.id, stamp)
     await writeJsonAtomic(msgFileOf(t), t.messages, true)
+    // 写成功才记指纹：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
+    written.set(t.id, stamp)
+    // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
+    msgAt.set(t.id, Date.now())
   }
 
   /** 同任务的写入排队，前一次失败不影响后面的 */
@@ -100,12 +166,12 @@ export function createTaskStore() {
 
   /**
    * 写对话消息文件：不在窗口内就写，窗口内只留最后一次，到点写最新的一份。
-   * 窗口内也要排队写，不能和小文件抢顺序
+   * window 为 false（关键节点、任务结束/失败/停止）时立即写，窗口里排着的那份作废：写的就是最新内容
    */
-  function persistMessages(t: Task): Promise<void> | undefined {
+  function persistMessages(t: Task, window = true): Promise<void> | undefined {
     const id = t.id
     const wait = (msgAt.get(id) ?? 0) + MSG_GAP - Date.now()
-    if (wait > 0) {
+    if (window && wait > 0) {
       msgPending.set(id, t)
       if (!msgTimers.has(id)) {
         msgTimers.set(
@@ -120,7 +186,11 @@ export function createTaskStore() {
       }
       return undefined
     }
-    msgAt.set(id, Date.now())
+    // 立即写：排着的定时器和那份旧内容一起收掉，不做到点又把旧内容写回来
+    const timer = msgTimers.get(id)
+    if (timer) clearTimeout(timer)
+    msgTimers.delete(id)
+    msgPending.delete(id)
     return queueWrite(t, writeMessages)
   }
 
@@ -211,7 +281,7 @@ export function createTaskStore() {
     const p = TaskMessage.array().safeParse(raw)
     // 消息文件丢了或坏了：至少还有用户发的那些
     const task = { ...meta, messages: p.success ? p.data : meta.messages }
-    if (p.success) written.set(id, stampOf(task.messages))
+    if (p.success) written.set(id, stamps.stamp(id, task.messages))
     remember(task)
     return task
   }
@@ -219,13 +289,18 @@ export function createTaskStore() {
   function remember(task: Task) {
     full.delete(task.id)
     full.set(task.id, task)
-    while (full.size > KEEP_FULL) full.delete(full.keys().next().value!)
+    while (full.size > KEEP_FULL) {
+      const old = full.keys().next().value!
+      full.delete(old)
+      // 对话已经不在内存里了，它的指纹缓存也一起丢：下次真的写它的时候重算一次（指纹值不变，不会多写一次盘）
+      stamps.forget(old)
+    }
   }
 
-  function persist(task: Task) {
+  function persist(task: Task, opts?: { now?: boolean }) {
     const next = queueWrite(task, writeFull)
     // 对话文件单独节流：任务本身的小文件每次都写，状态和列表不会落后
-    const msgs = persistMessages(task)
+    const msgs = persistMessages(task, !opts?.now)
     return msgs ? Promise.all([next, msgs]).then(() => {}) : next
   }
 
@@ -235,6 +310,16 @@ export function createTaskStore() {
       return [...(await all()).values()]
     },
     get: getFull,
+    /**
+     * 任务本身（用量、节点、状态、标题…），不读 `.messages.json`：
+     * 返回的 messages 只有任务文件里的那几条用户消息。
+     * 每秒都在刷的用量统计用它——用 getFull 会把整棵树每个任务的对话都读进内存，还会把打开过的任务挤出 full 缓存
+     */
+    async getMeta(id: string): Promise<Task | null> {
+      const hit = full.get(id)
+      if (hit) return hit
+      return (await all()).get(id) ?? null
+    },
     async create(input: TaskData & { id?: string }) {
       const now = new Date().toISOString()
       const item = { ...input, id: input.id ?? randomUUID(), createdAt: now, updatedAt: now } as Task
@@ -247,7 +332,16 @@ export function createTaskStore() {
     async peek(id: string): Promise<Task | null> {
       return (await all()).get(id) ?? null
     },
-    async update(id: string, input: TaskData & { updatedAt?: string }, opts?: { keepUpdatedAt?: boolean }) {
+    /**
+     * keepUpdatedAt：保留原来的列表时间（预热收尾这类）。
+     * now：对话消息立即写，不走 400ms 合并窗口——关键节点（节点开始/结束、提问、任务结束/失败/停止）
+     * 用它，面板被强杀时不会丢最后一段内容；流式输出途中的中间态仍然合并写
+     */
+    async update(
+      id: string,
+      input: TaskData & { updatedAt?: string },
+      opts?: { keepUpdatedAt?: boolean; now?: boolean },
+    ) {
       // 调用方给了完整对话（执行中的落盘都是）就不用再读旧的：读过的对话只留 KEEP_FULL 个，
       // 同时在跑的对话一多（父对话派出十几个子对话），每次落盘都会把别人挤出去、自己又从磁盘重读一遍对话，
       // 读文件 + 校验几 MB 的 JSON 一秒几十次，事件循环被占满，整个面板跟着卡
@@ -258,7 +352,7 @@ export function createTaskStore() {
       const item = { ...old, ...input, id, projectId: old.projectId, updatedAt } as Task
       ;(await all()).set(id, head(item))
       remember(item)
-      await persist(item)
+      await persist(item, opts)
       return item
     },
     async remove(id: string) {
@@ -268,6 +362,7 @@ export function createTaskStore() {
       map.delete(id)
       full.delete(id)
       written.delete(id)
+      stamps.forget(id)
       // 窗口里还等着写的那份一起丢掉，不能删完又被定时器写回来
       const timer = msgTimers.get(id)
       if (timer) clearTimeout(timer)

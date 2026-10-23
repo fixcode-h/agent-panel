@@ -5,6 +5,8 @@
  *   worktree 里改、互不影响；合并回父对话分支时按 git merge 处理（见 exec/worktree.ts）。
  * 认领只在面板内存里，子对话这一轮结束（或停止）就释放；它是协作约定，不拦 CLI 自己的写文件。
  */
+import type { Task } from '../shared/schema.ts'
+import { sharesWorkdir } from '../shared/task.ts'
 
 export interface Claim {
   taskId: string
@@ -106,6 +108,30 @@ export function collisions(mine: string[], others: { title: string; files: strin
         out.push({ path: f, with: o.title })
       }
   return out
+}
+
+/** 查碰撞要用的字段：child 是刚跑完一轮的子对话，peers 是同一个父对话下的其他子对话 */
+export type CollisionChild = Pick<
+  Task,
+  'id' | 'parentTaskId' | 'title' | 'working' | 'wantsWorktree' | 'worktree' | 'changes'
+>
+
+/**
+ * 子对话一轮结束后要不要提示「这些文件和兄弟子对话撞了」：返回提示里列的清单，不需要提示时返回 null。
+ * 只有共用一个工作目录（P4、SVN、没有版本控制，或项目设成共用目录）才可能互相覆盖；
+ * 走独立分支的（Git 项目里的子对话：已建好、还没开、合并回收后继续）各改各的，撞了是合并时的事，不提示，
+ * 也不汇报父对话（调用方拿到 null 就什么都不发）。
+ */
+export function collisionNotice(child: CollisionChild, peers: CollisionChild[]): string | null {
+  if (!sharesWorkdir(child)) return null
+  const mine = child.changes.map((c) => c.path)
+  if (!mine.length) return null
+  const others = peers
+    .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && sharesWorkdir(x))
+    .map((x) => ({ title: x.title, files: x.changes.map((c) => c.path) }))
+  const hit = collisions(mine, others)
+  if (!hit.length) return null
+  return hit.map((h) => `${h.path}（「${h.with}」也在改）`).join('、')
 }
 
 /** 「web/a.ts（「甲」）、…」这种展示，同一个文件被多个子对话改过只留一次 */

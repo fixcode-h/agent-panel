@@ -654,6 +654,18 @@ export function taskStage(x: {
 }
 
 /**
+ * 这个子对话和兄弟子对话是否共用一个工作目录（共用才需要提示「文件撞了」）：
+ * Git 项目里的子对话走独立分支——wantsWorktree 表示这一轮后要开、worktree 有 state 表示已经在自己的分支里
+ * （active 正在用；merged 是合并后回收，继续对话时面板会自动重建），各改各的，真撞了是合并时的事，不用提醒；
+ * 只有都没有（P4、SVN、没有版本控制，或项目设成共用目录）才是共用，后写的会覆盖先写的。
+ * 用户主动丢弃的（discarded）之后回到父对话的目录，也算共用。
+ */
+export function sharesWorkdir(tk: Pick<Task, 'wantsWorktree' | 'worktree'>) {
+  if (tk.wantsWorktree) return false
+  return !tk.worktree || tk.worktree.state === 'discarded'
+}
+
+/**
  * 子对话「本次开启」的时间：最近一轮开始执行的时间。
  * 做完或停下后又接到新任务会开新的一轮，它就往前走，列表里重新排到最前面；
  * 还没执行过任何一轮的按创建时间算。
@@ -953,6 +965,25 @@ export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
 }
 
 /**
+ * 子对话栏上的计数：分子是「还在进行」的数量，分母是进程还活着的子对话数。
+ * 分子取转圈的那一批（childSpinning：这一轮在跑、后台命令、工作流、派出的子任务、计划没做完、
+ * 独立分支没合回），和行首图标、行内徽标、悬浮层默认列表是同一套判定。
+ * 以前分子只用 working 算（三个在转圈、上面却写 1/5），分组又是第三套，于是对不上。
+ * 分母取进程还活着的不包含已关闭的：它们是还能切过去继续说的；
+ * 分母比分子少时兜底不小于分子（进程刚在启动、进程信息还没回来时就是这种情况）。
+ */
+export function childCounts<T extends ChildEntry>(list: T[]) {
+  const running = list.filter(childSpinning).length
+  const alive = list.filter((x) => x.cliAlive).length
+  return { running, total: Math.max(alive, running) }
+}
+
+/** 转圈的那一批：状态栏计数、悬浮层默认列表、输入框上方的卡片都用它，不要各处再 filter 一遍 */
+export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
+  return list.filter(childSpinning)
+}
+
+/**
  * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
  * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
  * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
@@ -1085,17 +1116,35 @@ function textKey(s: string) {
 }
 
 /**
+ * 交给父对话决定时发给它的话：带上问题全文和选项。
+ * 父对话停在等下一句时，这次交付是续上同一个 CLI 调用，收件箱不会重新读；
+ * 只写「问题在收件箱里」它拿不到内容，会不知道要决定什么。
+ */
+export function delegatePrompt(ask: { from: string; title: string; question: string; options: string[] }) {
+  const options = ask.options.length
+    ? `\n\n可选的做法：\n${ask.options.map((x, i) => `${i + 1}. ${x}`).join('\n')}`
+    : ''
+  return `子对话「${ask.title}」在等你决定：\n${ask.question}${options}\n\n决定后用 send_to_conversation 交给它（id: ${ask.from}）。`
+}
+
+/**
  * 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发。
  * 提问卡片是否已回答也要算进去，否则在别处答完（父对话里点选、父对话转达）后卡片仍是「待决定」
+ *
+ * withOutput=false 时不算工具输出的内容指纹（只留长度）：那是「骨架」，用来判断这条消息有没有被改过，
+ * 代价只看长度、不逐字符扫输出，落盘指纹的增量计算用它（见 server/task-store.ts 的 createStampTracker）
  */
-export function messageStamp(m: TaskMessage) {
-  const ask = m.ask ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}` : ''
+export function messageStamp(m: TaskMessage, withOutput = true) {
+  // delegated 也要算进指纹：交给父对话决定后服务端只改了这几个字段，不算的话卡片推不过去，会一直停在「等你选择」
+  const ask = m.ask
+    ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}:${m.ask.delegated ? 1 : 0}:${m.ask.delegatedAt ?? ''}:${m.ask.delegatedError ?? ''}`
+    : ''
   return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${ask}|${m.tools
     .map(
       (t) =>
         // 工具输出要带内容指纹：命令输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
         // 只看长度的话这一步的增量不会推送，界面要等到下一次长度变化才跳一下
-        `${t.output?.length ?? 0}.${t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
+        `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
     )
     .join(',')}`
 }

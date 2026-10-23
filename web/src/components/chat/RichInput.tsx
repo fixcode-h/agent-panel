@@ -305,6 +305,9 @@ export function RichInput({
   const emit = useCallback(() => {
     const node = el.current
     if (!node) return
+    // 全删光之后浏览器会留一个占位的 <br>：它不是用户换的行（换行是自己插的文字），
+    // 留着会读成「\n」，草稿不算空，拖进来的引用也会落到第二行
+    if (node.childNodes.length === 1 && node.firstChild?.nodeName === 'BR') node.replaceChildren()
     const next = serialize(node)
     painted.current = { value: next, preview: cb.current.preview }
     cb.current.onChange(next)

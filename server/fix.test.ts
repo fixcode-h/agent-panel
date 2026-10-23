@@ -60,3 +60,13 @@ test('对话里的面板提示（不是报错、不是用户回答）不进节�
   assert.ok(text.includes('报错：MaxListeners 报错'))
   assert.ok(text.includes('风格？：暗黑'), '用户回答照样带上')
 })
+
+test('「让 AI 直接动手」的提示词要求做到底并验证，不只要方案', () => {
+  const input = FixInput.parse({ title: '本机生图：安装 ComfyUI', ask: '装好 ComfyUI', act: true })
+  const prompt = fixPrompt(input, { os: 'win32', cwd: 'E:\\Software\\comfyui' })
+  assert.ok(prompt.includes('这次要做的：装好 ComfyUI'))
+  assert.ok(!prompt.includes('做了主动检查'), '不写成主动检查')
+  assert.ok(!prompt.includes('在操作时出错了'))
+  assert.ok(prompt.includes('直接动手做'))
+  assert.ok(!prompt.includes('先给结论和方案'), 'act 时不再要求只给方案')
+})

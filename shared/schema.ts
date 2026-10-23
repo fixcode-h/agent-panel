@@ -1012,6 +1012,10 @@ export const TaskMessage = z.object({
       by: z.enum(['user', 'parent']).optional(),
       /** 用户没回答，交给父对话的 AI 决定：卡片显示「交给父对话决定」，子对话不再弹选择 */
       delegated: z.boolean().optional(),
+      /** 成功叫起父对话的时间：重复点「交给父对话决定」时据此判断要不要再叫一次（失败时为空） */
+      delegatedAt: z.string().optional(),
+      /** 上次没能叫起父对话的原因：卡片上显示给用户并给重试，刷新后也还在 */
+      delegatedError: z.string().optional(),
     })
     .optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
@@ -1671,6 +1675,11 @@ export const Settings = z.object({
   backgroundLimit: z.number().int().min(1).max(64).catch(16).default(16),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
+  /**
+   * 设置 →「数据」里内存曲线多久采一次（秒）。采样只放在内存里，保留最近两小时，
+   * 间隔越小曲线越细，但每次都要读一遍子进程的内存（Windows 上用 PowerShell），别调得太小
+   */
+  memorySampleSeconds: z.number().int().min(10).max(3600).catch(30).default(30),
   /** 粘贴的纯文字超过这么多字时存成一个文本文件，输入框里放文件卡片；0 表示不转 */
   longPasteChars: z.number().int().min(0).max(1_000_000).catch(5000).default(5000),
   /** Agent 选「系统默认」时使用的 CLI */
@@ -1915,3 +1924,40 @@ export const ProcessSuggestResult = z.object({
   error: z.string().default(''),
 })
 export type ProcessSuggestResult = z.infer<typeof ProcessSuggestResult>
+
+/**
+ * 会话内存 AI 分析里的一个归属分组：按 ownerTaskId 汇总，子对话只算自己起的进程树。
+ * rss 为 null 表示这个归属的进程都读不到内存（界面显示「未采集」），不是 0
+ */
+export const TaskMemoryOwner = z.object({
+  taskId: z.string().default(''),
+  title: z.string().default(''),
+  /** 是不是当前打开的这个对话 */
+  self: z.boolean().default(false),
+  rss: z.number().nullable().default(null),
+  /** 进程数，以及其中读到 RSS 的个数 */
+  count: z.number().default(0),
+  counted: z.number().default(0),
+})
+export type TaskMemoryOwner = z.infer<typeof TaskMemoryOwner>
+
+/** 会话内存 AI 分析：报告、趋势摘要和交给 AI 的第一句话，界面据此打开排查弹窗 */
+export const TaskMemoryAnalysis = z.object({
+  sampledAt: z.number(),
+  intervalMs: z.number(),
+  /** 交给 AI 的报告正文（中文） */
+  report: z.string().default(''),
+  /** AI 分析的第一句话 */
+  ask: z.string().default(''),
+  /** 相关目录：项目路径；没有项目时为空（服务端用用户目录） */
+  cwd: z.string().default(''),
+  /** 最近一段的趋势，采样不足时 null */
+  trend: z.enum(['up', 'down', 'flat']).nullable().default(null),
+  /** 面板上显示的摘要（和报告里的趋势同源） */
+  trendText: z.string().default(''),
+  owners: z.array(TaskMemoryOwner).default([]),
+  tree: z
+    .object({ tasks: z.number(), children: z.number(), running: z.number() })
+    .default({ tasks: 1, children: 0, running: 0 }),
+})
+export type TaskMemoryAnalysis = z.infer<typeof TaskMemoryAnalysis>

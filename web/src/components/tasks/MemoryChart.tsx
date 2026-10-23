@@ -1,14 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Loader2, Sparkles } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { openAiFix } from '@/lib/ai-fix'
 import { MB, fmtMem } from '@/lib/mem'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
+import { TASK_MEMORY_TOPIC } from '@shared/memory-analysis'
 import type { MemoryPoint } from '@shared/schema'
 
 /**
  * 会话内存曲线：自己用 SVG 画（不引图表库），横轴时间、纵轴内存。
- * 显示的点数按容器宽度算（窄窗口自动少显示几个），左右拖动看更早的采样；
- * 悬停显示那个点的时间和数值。取不到的点（系统进程表读不到）断开，不画成 0
+ * 显示的点数按容器宽度算（窄窗口自动少显示几个），左右拖动看更早的采样（左右键都行）；
+ * 悬停显示那个点的时间和数值。取不到的点（系统进程表读不到）断开，不画成 0。
+ * 底部「AI 分析」把整段采样交给本机 CLI 体检（见 shared/memory-analysis.ts），结论在弹窗里聊
  */
 const HEIGHT = 150
 const PAD = { left: 8, right: 8, top: 10, bottom: 20 }
@@ -16,6 +21,19 @@ const PAD = { left: 8, right: 8, top: 10, bottom: 20 }
 const PX_PER_POINT = 3
 /** 和采样间隔一致：30 秒刷一次，刚好接上新点 */
 const REFRESH_MS = 30_000
+
+/** 上一次「AI 分析」的时间和数据摘要：按对话记在本地，下次打开面板知道什么时候分析过 */
+type LastAnalysis = { at: number; trendText: string }
+const analysisKey = (taskId: string) => `agent-panel:memory-analysis:${taskId}`
+
+function readAnalysis(taskId: string): LastAnalysis | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(analysisKey(taskId)) ?? 'null') as LastAnalysis | null
+    return raw && Number.isFinite(raw.at) && raw.trendText ? raw : null
+  } catch {
+    return null
+  }
+}
 
 function timeLabel(t: number) {
   const d = new Date(t)
@@ -31,6 +49,10 @@ function dayLabel(t: number) {
   return d.toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
+/** 跨天的带上日期，不然「上次分析 09:12」看不出是哪天 */
+const whenLabel = (t: number) =>
+  new Date(t).toDateString() === new Date().toDateString() ? timeLabel(t) : `${dayLabel(t)} ${timeLabel(t)}`
+
 export function MemoryChart({ taskId }: { taskId: string }) {
   const [points, setPoints] = useState<MemoryPoint[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -39,8 +61,14 @@ export function MemoryChart({ taskId }: { taskId: string }) {
   /** 从最新一点往回跳过多少个点：拖动看历史时变大 */
   const [offset, setOffset] = useState(0)
   const [hover, setHover] = useState<number | null>(null)
+  /** 最近一次 AI 分析（时间 + 当时的趋势摘要），结论本身在弹窗里 */
+  const [analysis, setAnalysis] = useState<LastAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [aiError, setAiError] = useState('')
   const box = useRef<HTMLDivElement | null>(null)
   const drag = useRef<{ x: number; offset: number } | null>(null)
+
+  useEffect(() => setAnalysis(readAnalysis(taskId)), [taskId])
 
   useEffect(() => {
     let alive = true
@@ -108,9 +136,13 @@ export function MemoryChart({ taskId }: { taskId: string }) {
   const clampOffset = (v: number) => Math.max(0, Math.min(Math.max(0, points.length - visible), v))
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    // 左右键都能拖动（右键不弹浏览器菜单）：看历史是常用操作，不该只认左键
+    if (e.button !== 0 && e.button !== 2) return
     if (points.length <= visible) return
     drag.current = { x: e.clientX, offset }
     e.currentTarget.setPointerCapture(e.pointerId)
+    // 右键按下时浏览器会选中文字、准备弹菜单，都要拦掉
+    e.preventDefault()
   }
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current
@@ -140,6 +172,38 @@ export function MemoryChart({ taskId }: { taskId: string }) {
     ? [...new Set([0, Math.floor((slice.length - 1) / 3), Math.floor(((slice.length - 1) * 2) / 3), slice.length - 1])]
     : []
 
+  /**
+   * 交给 AI 体检：现算报告（采样序列 + 进程两路 + 任务树规模），在统一的排查弹窗里聊。
+   * 只记下这次分析的时间和趋势摘要，结论本身不在这里重复显示（弹窗里就是完整结论）
+   */
+  const analyze = async () => {
+    if (analyzing) return
+    setAnalyzing(true)
+    setAiError('')
+    try {
+      const d = await api.taskMemoryAnalysis(taskId)
+      const last = { at: d.sampledAt, trendText: d.trendText }
+      try {
+        localStorage.setItem(analysisKey(taskId), JSON.stringify(last))
+      } catch {
+        // 本地存储写不进去（隐私模式、空间满）：这次照常分析，只是下次打开看不到记录
+      }
+      setAnalysis(last)
+      openAiFix({
+        title: t('会话内存分析'),
+        topic: TASK_MEMORY_TOPIC,
+        ask: d.ask,
+        context: d.report,
+        // 相关目录给项目路径：AI 要能按路径去看源码给方案
+        cwd: d.cwd,
+      })
+    } catch (e) {
+      setAiError((e as Error).message)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
   return (
     <div className="px-3 py-2" ref={box}>
       <div className="flex items-baseline justify-between gap-2 text-[0.75rem]">
@@ -153,6 +217,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
       </p>
 
       {error && <p className="mt-1 text-[0.6875rem] text-danger">{error}</p>}
+      {aiError && <p className="mt-1 text-[0.6875rem] text-danger">{t('内存分析没成功：{msg}', { msg: aiError })}</p>}
 
       <div className="relative mt-1">
         <svg
@@ -168,6 +233,8 @@ export function MemoryChart({ taskId }: { taskId: string }) {
           onPointerLeave={() => {
             if (!drag.current) setHover(null)
           }}
+          // 右键拖动时不要弹浏览器菜单
+          onContextMenu={(e) => e.preventDefault()}
         >
           {/* 横线：0、一半、顶，给个数量级参考 */}
           {[0, 0.5, 1].map((r) => (
@@ -227,10 +294,40 @@ export function MemoryChart({ taskId }: { taskId: string }) {
         )}
       </div>
 
-      <p className="mt-0.5 flex items-center justify-between text-[0.6875rem] text-subtle">
-        <span>{t('每 {s} 秒采样一次', { s: 30 })}</span>
-        <span>{points.length > visible && t('左右拖动查看更早')}</span>
-      </p>
+      <div className="mt-0.5 flex items-center justify-between gap-2 text-[0.6875rem] text-subtle">
+        <span className="flex flex-wrap items-center gap-x-2">
+          <span>{t('每 {s} 秒采样一次', { s: 30 })}</span>
+          {offset > 0 ? (
+            <button type="button" className="cursor-pointer text-accent hover:underline" onClick={() => setOffset(0)}>
+              {t('回到最新')}
+            </button>
+          ) : (
+            points.length > visible && <span>{t('左右拖动查看更早')}</span>
+          )}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 shrink-0 px-2"
+          disabled={analyzing || !loaded}
+          title={t('把这个会话的内存采样和进程占用交给 AI，看有没有问题、怎么优化')}
+          onClick={() => void analyze()}
+        >
+          {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {t('AI 分析')}
+        </Button>
+      </div>
+      {analysis && (
+        <button
+          type="button"
+          className="mt-0.5 w-full cursor-pointer truncate text-left text-[0.6875rem] text-subtle hover:text-muted disabled:cursor-default"
+          disabled={analyzing}
+          title={t('重新分析并打开这次排查')}
+          onClick={() => void analyze()}
+        >
+          {t('上次分析 {time}：{trend}', { time: whenLabel(analysis.at), trend: analysis.trendText })}
+        </button>
+      )}
     </div>
   )
 }

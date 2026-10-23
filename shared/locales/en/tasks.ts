@@ -236,7 +236,7 @@ export const EN_TASKS: Record<string, string> = {
   '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
     'The project is set to “No role”, so this chat goes straight to the agent; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
-  '子对话，{n} 个在执行，共 {total} 个': 'Sub-conversations, {n} running of {total}',
+  '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
   运行中: 'Running',
@@ -403,6 +403,8 @@ export const EN_TASKS: Record<string, string> = {
   网页: 'Web',
   技能: 'Skill',
   子任务: 'Subtask',
+  '子任务 {n}': 'Subtasks {n}',
+  '{n} 个失败': '{n} failed',
   '正在输出：{text}': 'Writing: {text}',
   '正在思考：{text}': 'Thinking: {text}',
   '正在启动 Agent…': 'Starting agent…',
@@ -513,6 +515,7 @@ export const EN_TASKS: Record<string, string> = {
   '你没有回答「{title}」': 'You skipped "{title}"',
   '交给正在进行的这一轮（Enter）': 'Hand to the current turn (Enter)',
   '{n} 个附件': '{n} attachments',
+  排队中: 'Queued',
   '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
   等这一轮结束再发: 'Send after this turn finishes',
   排队: 'Queue',
@@ -606,6 +609,15 @@ export const EN_TASKS: Record<string, string> = {
   '想重点看什么（可选）': 'What to focus on (optional)',
   '例如：为什么验收总是不通过、哪些节点最费 token': 'e.g. why reviews keep failing, which nodes use the most tokens',
   '已导入「{title}」': 'Imported "{title}"',
+  '已导入「{title}」和 {n} 个子对话': 'Imported "{title}" and {n} sub-conversations',
+  已导出任务: 'Task exported',
+  '已导出任务和 {n} 个子对话，导入后父子结构能还原':
+    'Exported the task and its {n} sub-conversations; importing restores the same structure',
+  '连同它分出的子对话一起导出，导入后父子结构能还原':
+    'Exports together with its sub-conversations; importing restores the same structure',
+  '这次导出连同子对话有 {size}，超过了 {max} 的上限。可以先删掉不需要的子对话，或者单独导出其中的子对话。':
+    'This export with its sub-conversations is {size}, over the {max} limit. Delete sub-conversations you no longer need first, or export them one at a time.',
+  '缺少导入任务的 id': 'The imported task is missing an id',
   '导入别人导出的任务（对话或工作流执行），只能查看，也可以交给 AI 分析':
     'Import a task someone exported (chat or workflow run). It is read-only and can be analyzed by AI',
   导入任务: 'Import task',
@@ -666,8 +678,8 @@ export const EN_TASKS: Record<string, string> = {
   '已删除全局规则：{text}': 'Global rule removed: {text}',
   '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
     "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
-  '这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。':
-    'These files were also changed by other sub-conversations: {list}. The parent conversation has been asked to coordinate; check the content before merging.',
+  '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。':
+    'These files were also changed by other sub-conversations: {list}. They share the same working directory, so later writes overwrite earlier ones; agree on an order or on who changes which files.',
   '这次合并里两边都改了这些文件：{list}。git 已经自动合并，请核对有没有把对方的改动盖掉。':
     'Both sides changed these files in this merge: {list}. Git merged them automatically; check that no change was overwritten.',
   '对话正在执行，等这一轮结束或停止后再归档':
@@ -774,8 +786,12 @@ export const EN_TASKS: Record<string, string> = {
   展开选择: 'Show choices',
   '{n} 个子对话请你选择': '{n} sub-conversations need your choice',
   '「{title}」请你选择': '"{title}" needs your choice',
-  '父对话会处理这个问题，决定后交给子对话':
-    'The parent conversation will handle this and pass its decision to the sub-conversation',
+  已交给父对话决定: 'Handed to the parent conversation',
+  没能叫起父对话: "Couldn't start the parent conversation",
+  '已交给父对话决定，它会在下一轮处理': 'Handed to the parent conversation; it will handle this in its next turn',
+  '没能叫起父对话：{error}': "Couldn't start the parent conversation: {error}",
+  '父对话正在启动，稍后再试': 'The parent conversation is starting; try again shortly',
+  '父对话正在执行，等它这一轮结束后重试': 'The parent conversation is running; try again after this turn finishes',
   结束这次运行: 'End this run',
   查看节点状态: 'Check node status',
   开独立分支: 'Open separate branch',
@@ -793,7 +809,6 @@ export const EN_TASKS: Record<string, string> = {
   找不到这个提问: 'Question not found',
   这个提问已经回答过了: 'This question has already been answered',
   回答是空的: 'The answer is empty',
-  打开子任务: 'Open subtask',
   子任务执行中: 'Subtasks running',
   '子任务执行中，做完后结果会自动交回给派它的对话':
     'Subtask running; its result goes back to the chat that started it when done',
@@ -868,7 +883,6 @@ export const EN_TASKS: Record<string, string> = {
   '、': ', ',
   '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
-  排队中: 'Queued',
   未命名: 'Untitled',
   // 子对话进度：在做什么、在等什么、多久没新输出
   '最后活动 {ago}': 'last active {ago}',
@@ -926,4 +940,24 @@ export const EN_TASKS: Record<string, string> = {
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
   '每 {s} 秒采样一次': 'Sampled every {s} seconds',
   左右拖动查看更早: 'Drag left or right to see earlier samples',
+  // 会话内存的 AI 分析与进程归属
+  会话内存分析: 'Chat memory analysis',
+  '把这个会话的内存采样和进程占用交给 AI，看有没有问题、怎么优化':
+    'Send this chat’s memory samples and process usage to AI to check for problems and suggest optimizations',
+  '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
+  '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
+  重新分析并打开这次排查: 'Analyze again and open the analysis chat',
+  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
+  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  面板自己的进程: "The panel's own processes",
+  '{n} 个进程': '{n} process(es)',
+  '{n} 个进程的合计': 'Sum of {n} process(es)',
+  '{n} 个进程的内存都没读到，不是 0': 'Memory of all {n} process(es) is unreadable — this is not 0',
+  '（{n} 个未采集）': ' ({n} not collected)',
+  '采样还太少，看不出趋势': 'Not enough samples to tell the trend',
+  '最近 {span} 持续上涨（涨了 {size}，每分钟约 {rate}）':
+    'Rising for the last {span} (up {size}, about {rate} per minute)',
+  '最近 {span} 在回落（降了 {size}）': 'Falling over the last {span} (down {size})',
+  '最近 {span} 基本平稳（变化 {size}）': 'Roughly flat over the last {span} (changed {size})',
 }

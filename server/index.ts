@@ -30,7 +30,9 @@ import { migrateDocSteps } from '../shared/flow.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
+import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
+import { taskMemoryApi } from './task-memory.ts'
 import { usageApi } from './usage.ts'
 import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
@@ -739,6 +741,15 @@ async function sweepStaleWorktrees() {
 app.route('/tasks', tasks.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
+// 会话内存的 AI 分析：采样序列 + 进程面板两路 + 任务树规模，整理成交给本机 CLI 的报告
+app.route(
+  '/tasks',
+  taskMemoryApi({
+    tasks,
+    panel: (id) => tasks.processPanel(id),
+    projects,
+  }).routes,
+)
 // 设置页的用量统计：按天 / 周 / 月聚合各任务每轮执行的 token
 app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
@@ -868,7 +879,21 @@ app.post('/fs/mkdir', async (c) => {
   }
 })
 
-app.route('/data', dataApi({ running: () => tasks.running() + designs.running() }))
+// 内存采样：面板自身的进程 + 它拉起的 CLI 子进程，定时记一次留在内存里，数据页的内存曲线和 AI 分析读它
+const memory = memorySampler({
+  running: () => tasks.running() + designs.running(),
+  scale: async () => {
+    const all = await tasks.list()
+    return {
+      tasks: all.length,
+      chats: all.filter((x) => x.mode === 'chat').length,
+      projects: (await projects.list()).length,
+    }
+  },
+})
+memory.start()
+
+app.route('/data', dataApi({ running: () => tasks.running() + designs.running(), memory }))
 
 const updater = updateApi({
   running: () => tasks.running() + designs.running(),

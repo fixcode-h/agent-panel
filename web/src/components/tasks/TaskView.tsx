@@ -34,17 +34,18 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
-import { HelperCards } from './HelperCards'
+import { HelperBar } from './HelperCards'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
+  childCounts,
   childIcon,
   childStale,
   childStage,
   childWaitText,
-  runningChildren,
   sortChildren,
+  spinningChildren,
   stopReasonText,
   taskBusy,
   taskSummary,
@@ -114,8 +115,6 @@ type Block =
   | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
   /** 工作流的一次运行：节点输出去右边的面板里看 */
   | { kind: 'run'; key: string; run: number }
-  /** 对话里派出的子角色：一行一个「子任务」，点开看它的实时对话流 */
-  | { kind: 'helpers'; key: string; ids: string[] }
 
 /** 以前新建子对话时记的系统提示（中文、英文界面各一种写法） */
 const OLD_CREATED =
@@ -166,10 +165,6 @@ function toBlocks(task: Task): Block[] {
       const b = blocks.at(-1)
       if (b?.kind === 'turn') b.msgs.push(m)
       else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
-      continue
-    }
-    if (!byRun && m.spawned?.length) {
-      blocks.push({ kind: 'helpers', key: m.id, ids: m.spawned })
       continue
     }
     // 没有节点的用户消息（对话里、工作流外的追加要求）单独成一段；
@@ -719,6 +714,15 @@ export function TaskView({
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
   const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
+  // 对话里派出的子任务：输入框上方的「子任务」栏里列出，点开看它的实时对话流。
+  // 工作流任务里节点自己派的子 Agent 显示在节点里，不进这条栏
+  const helperIds = useMemo(() => {
+    if (!task || task.mode === 'workflow' || (task.runs?.length ?? 0) > 0) return []
+    // 旧数据里可能只留下「派出了哪几个」而没有对应的 step（被清掉、导出时丢了）：
+    // 只留真的存在的，一个都不剩时不画这条栏，输入框上方不留空行
+    const known = new Set(task.steps.map((s) => s.id))
+    return [...new Set(task.messages.flatMap((m) => m.spawned ?? []))].filter((id) => known.has(id))
+  }, [task])
   // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slashAgent = task?.mode === 'chat' ? agents.find((a) => a.id === task.agentId) : undefined
   const slashCli =
@@ -908,7 +912,14 @@ export function TaskView({
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
 
-  const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
+  const exportIt = () =>
+    downloadTask(task.id).then(
+      ({ children }) =>
+        toast.success(
+          children ? t('已导出任务和 {n} 个子对话，导入后父子结构能还原', { n: children }) : t('已导出任务'),
+        ),
+      (e: Error) => toast.error(e.message),
+    )
   /**
    * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
    * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
@@ -1199,7 +1210,7 @@ export function TaskView({
                         <Pencil className="h-4 w-4" />
                         {t('重命名')}
                       </MenuItem>
-                      <MenuItem onSelect={exportIt}>
+                      <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
                         <Download className="h-4 w-4" />
                         {t('导出任务')}
                       </MenuItem>
@@ -1315,8 +1326,6 @@ export function TaskView({
                                 onOpen={() => openRunIn(b.run)}
                               />
                             )
-                          ) : b.kind === 'helpers' ? (
-                            <HelperCards key={b.key} task={task} ids={b.ids} teamNames={teamNames} />
                           ) : b.kind === 'steps' ? (
                             <div key={b.key} className="flex flex-col gap-7">
                               {b.roots.map((r) => (
@@ -1466,14 +1475,22 @@ export function TaskView({
                       </div>
                     </div>
                   )}
-                  {!pane && !task.parentTaskId && children.length > 0 && (
-                    <ChildrenBar
-                      children={children}
-                      openChild={openChild}
-                      onOpen={openChildIn}
-                      onClose={() => openChildIn('')}
-                    />
-                  )}
+                  {(() => {
+                    // 子对话入口只在父对话里显示（右栏和子对话自己的页面不列子对话）；
+                    // 子任务入口哪里都显示：它派在哪个对话里，就在哪里看
+                    const showChildren = !pane && !task.parentTaskId && children.length > 0
+                    const helpers = helperIds.length ? { task, ids: helperIds, teamNames } : undefined
+                    if (!showChildren && !helpers) return null
+                    return (
+                      <ChildrenBar
+                        children={showChildren ? children : []}
+                        helpers={helpers}
+                        openChild={openChild}
+                        onOpen={openChildIn}
+                        onClose={() => openChildIn('')}
+                      />
+                    )
+                  })()}
                 </>
 
                 <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
@@ -1773,11 +1790,14 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
  */
 function ChildrenBar({
   children,
+  helpers,
   openChild,
   onOpen,
   onClose,
 }: {
   children: ChildSummary[]
+  /** 派出的子任务：和子对话同一行，点开看它的实时对话流 */
+  helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
   onOpen: (id: string) => void
   onClose: () => void
@@ -1798,13 +1818,12 @@ function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
   const asking = children.filter((c) => c.asking && !c.resolved)
-  const busy = sortChildren(runningChildren(children))
-  const working = busy.length
-  const alive = children.filter((c) => c.cliAlive)
-  // 分母是子对话总数，但不比执行中的少：进程刚好在启动、进程信息还没回来时不能显示成 3/0
-  const total = Math.max(alive.length, working)
-  // 「运行中」只列真正在执行（working）的：进程活着但在等下一句的，在它自己页面上是「等待你的下一条消息」
-  const shown = sortChildren(all ? children : runningChildren(children))
+  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、状态栏的分子是同一套判定（见 childSpinning）
+  const busy = sortChildren(spinningChildren(children))
+  // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
+  const { running: working, total } = childCounts(children)
+  // 「运行中」列转圈的那些：计划没做完、后台命令还没回的子对话也算，不是只看 working
+  const shown = sortChildren(all ? children : spinningChildren(children))
   const current = children.find((c) => c.id === openChild)
 
   return (
@@ -1814,30 +1833,34 @@ function ChildrenBar({
         {/* 这一行铺满内容宽：小卡列表和右侧关闭按钮要有稳定的左右边界，换行时关闭按钮才不跑位 */}
         <div className={cn(plainRow, 'mb-1.5 flex-wrap')}>
           {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={
-              working > 0
-                ? t('子对话，{n} 个在执行，共 {total} 个', { n: working, total })
-                : t('子对话 {n}', { n: total })
-            }
-            onClick={() => setOpen((v) => !v)}
-            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
-          >
-            <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="shrink-0 font-medium">{t('子对话')}</span>
-            {/* 运行中的在前、总数在后：转圈 1/2 读作「1 个在跑，一共 2 个」，总数不重复说两遍 */}
-            {working > 0 ? (
-              <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {working}/{total}
-              </span>
-            ) : (
-              // 没在跑时只写总数，不出现 0/2
-              <span className="shrink-0 text-xs text-subtle tabular-nums">{total}</span>
-            )}
-          </button>
+          {children.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={
+                working > 0
+                  ? t('子对话，{n} 个进行中，共 {total} 个', { n: working, total })
+                  : t('子对话 {n}', { n: total })
+              }
+              onClick={() => setOpen((v) => !v)}
+              className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+            >
+              <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
+              <span className="shrink-0 font-medium">{t('子对话')}</span>
+              {/* 进行中的在前、总数在后：转圈 3/5 读作「3 个还在进行，一共 5 个」，总数不重复说两遍 */}
+              {working > 0 ? (
+                <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {working}/{total}
+                </span>
+              ) : (
+                // 没在跑时只写总数，不出现 0/2
+                <span className="shrink-0 text-xs text-subtle tabular-nums">{total}</span>
+              )}
+            </button>
+          )}
+          {/* 派出的子任务跟在子对话后面：同一栏、同一行，点开看它的实时对话流 */}
+          {helpers && <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />}
           {asking.length > 0 && (
             <button
               type="button"

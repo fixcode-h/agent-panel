@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { TaskExport } from '@shared/task-export'
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -39,6 +40,7 @@ import type {
   KillProcessResult,
   ProcessSuggestResult,
   TaskMemoryHistory,
+  TaskMemoryAnalysis,
   TaskProcesses,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
@@ -82,13 +84,16 @@ import type {
   PromptAiInput,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
-import type { DataKind, DataUsage } from '@shared/data'
+import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
 import type { UsageGrain, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
 
 /** 设计连同正在进行的 AI 对话 / 生成图片 */
 export type DesignFull = Design & { job: DesignJob | null }
+
+/** 交给父对话决定时，父对话到底叫起来没有 */
+export type ChildAskNudge = { ok: true; how: string } | { ok: false; error: string }
 
 /** 设计里图片文件的地址（在线演示里是内存里的 data URL） */
 export const designFileUrl = (id: string, file: string) =>
@@ -362,6 +367,8 @@ export const api = {
     const qs = q.toString()
     return request<TaskMemoryHistory>(`/tasks/${id}/memory${qs ? `?${qs}` : ''}`)
   },
+  /** 会话内存的 AI 分析报告：点「AI 分析」时现算，交给本机 CLI 体检 */
+  taskMemoryAnalysis: (id: string) => request<TaskMemoryAnalysis>(`/tasks/${id}/memory-analysis`),
   taskChildren: (id: string) =>
     request<
       {
@@ -399,9 +406,12 @@ export const api = {
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
+  /** 导入别人导出的任务（连同包里的子对话），只读；projectId 为空放进聊天。返回父任务在前 */
   importTask: (projectId: string, bundle: unknown) =>
-    request<Task>('/tasks/import', json('POST', { projectId, bundle })),
+    request<Task[]>('/tasks/import', json('POST', { projectId, bundle })),
+  /** 导出任务连同它分出的子对话：服务端整理成一个包，超过体积上限时直接报错 */
+  taskExport: (id: string, app = '') =>
+    request<{ bundle: TaskExport; bytes: number }>(`/tasks/${id}/export?app=${encodeURIComponent(app)}`),
   sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
     request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
@@ -531,9 +541,12 @@ export const api = {
   discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
-  /** 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定 */
+  /**
+   * 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定。
+   * nudge 说明父对话叫起来了没有：没叫起来时卡片上要把原因显示给用户，不能只当成功处理
+   */
   answerChildAsk: (id: string, mid: string, body: { answer: string; delegate: boolean }) =>
-    request<Task>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
+    request<{ task: Task; nudge?: ChildAskNudge }>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
@@ -573,6 +586,8 @@ export const api = {
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),
+  /** 只取内存采样（最新一个 + 序列 + 面板规模）：内存曲线按采样间隔刷新用它，不遍历数据目录 */
+  memoryUsage: () => request<MemoryUsage>('/data/memory'),
   revealData: () => request<{ ok: boolean; dir: string }>('/data/reveal', json('POST', {})),
   revealLogs: () => request<{ ok: boolean; dir: string }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),

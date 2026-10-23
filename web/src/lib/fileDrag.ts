@@ -1,5 +1,6 @@
-// 文件树里的文件和文件夹可以右键按住拖到输入框：松手时在输入框光标处插入它的引用。
-// 不用 HTML5 的 draggable：右键按住拖动在浏览器和系统上触发得并不可靠，也拿不到「拖到了哪个输入框上」做高亮。
+// 文件树里的文件和文件夹可以左键长按后拖到输入框：松手时在输入框光标处插入它的引用。
+// 不用 HTML5 的 draggable：dragstart 由浏览器接管，拖到哪个输入框、预览长什么样都得跟着它，
+// 也拿不到「拖到了哪个输入框上」做高亮。右键留给右键菜单，所以用长按作为拖动的手势。
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { t } from '@shared/i18n'
 
@@ -9,10 +10,18 @@ export interface FileRef {
   kind: 'file' | 'dir'
 }
 
-/** 移动超过这么多像素才算拖动：右键单击仍然正常弹菜单 */
-const THRESHOLD = 4
-/** 拖动结束后的一小段时间里也压掉右键菜单：Windows 上右键松手会补发一次 contextmenu */
-const GUARD = 300
+/** 左键按住这么久才开始拖：短按仍然是单击（打开文件、展开目录） */
+export const LONG_PRESS_MS = 300
+/**
+ * 长按是否已经够久。抽成纯函数单独测：定时器到点和指针移动都按这一个判断，
+ * 免得两处阈值写得不一样（拖起来太灵或太迟钝）。
+ */
+export const longPressed = (elapsed: number) => elapsed >= LONG_PRESS_MS
+/**
+ * 拖动结束后的一小段时间里压掉浏览器补发的那次 click：长按起点和松手都还在文件行上时，
+ * 浏览器照样会认定这是一次单击并打开文件。
+ */
+const CLICK_GUARD = 200
 
 interface Target {
   el: HTMLElement
@@ -23,21 +32,22 @@ interface Target {
 let targets: Target[] = []
 /** 现在光标停在哪个输入框上（高亮用） */
 let hovered: HTMLElement | null = null
-let dragging = false
-let guardUntil = 0
 let installed = false
+/** 拖动刚结束到用户下一次真正点击之间，补发的那次 click 要拦掉 */
+let clickUntil = 0
 const watchers = new Set<() => void>()
 const notify = () => watchers.forEach((w) => w())
 
 /**
- * 拖动中、或刚拖完时弹出的右键菜单不是用户点的，一律拦掉。
- * Radix 的右键菜单在 contextmenu 里打开，捕获阶段拦住就不用改各个菜单。
+ * 拖动松手后浏览器还会补一次 click（按下和松开落在同一个元素上时），
+ * 捕获阶段压掉这一次：否则长按拖动会顺带把文件打开，或者把输入框里的光标挪到指针位置。
  */
-function installGuard() {
+function installClickGuard() {
   window.addEventListener(
-    'contextmenu',
+    'click',
     (e) => {
-      if (!dragging && Date.now() > guardUntil) return
+      if (Date.now() > clickUntil) return
+      clickUntil = 0
       e.preventDefault()
       e.stopPropagation()
     },
@@ -109,16 +119,26 @@ function ghost(item: FileRef) {
 }
 
 /**
- * 开始一次右键拖动：鼠标移动超过阈值才进入拖动状态，
+ * 开始一次拖动：左键按住够 LONG_PRESS_MS 才进入拖动状态，
  * 经过某个输入框时把它标成高亮，松手交给它；没落在输入框上就什么也不做。
+ * 右键在菜单里，这里只认左键（触摸、笔的按下也是 0）。
  */
-export function startFileDrag(item: FileRef, from: { x: number; y: number }) {
+export function startFileDrag(item: FileRef, press: { clientX: number; clientY: number; button: number }) {
+  if (press.button !== 0) return
   if (!installed) {
     installed = true
-    installGuard()
+    installClickGuard()
   }
+  const from = { x: press.clientX, y: press.clientY }
+  /** 指针最后停在的位置：长按到点时 ghost 按它画，按住不动也能看到能拖 */
+  let at = from
   let moving = false
+  /** 长按之后真的动过：按住不动就松手算取消，不插引用 */
+  let wandered = false
   let view: ReturnType<typeof ghost> | null = null
+  const startedAt = Date.now()
+  // 按住期间禁掉文本选择：长按不能被当成拖选文件名；松手时不管拖没拖起来都恢复
+  document.body.style.userSelect = 'none'
 
   // 命中取面积最小的那个：外层容器里套输入框时落在最里层
   const hit = (x: number, y: number) =>
@@ -139,43 +159,59 @@ export function startFileDrag(item: FileRef, from: { x: number; y: number }) {
     if (view) view.hint.style.color = next ? 'var(--color-accent)' : 'var(--color-subtle)'
   }
 
+  const follow = () => {
+    if (!view) return
+    view.box.style.transform = `translate(${at.x + 12}px, ${at.y + 12}px)`
+    over(at.x, at.y)
+  }
+
+  const begin = () => {
+    if (moving) return
+    moving = true
+    view = ghost(item)
+    document.body.append(view.box)
+    document.documentElement.style.cursor = 'copy'
+    // 长按前页面上可能已经选了一段文字，拖起来时清掉
+    window.getSelection()?.removeAllRanges()
+    follow()
+  }
+
   const move = (e: PointerEvent) => {
+    at = { x: e.clientX, y: e.clientY }
     if (!moving) {
-      if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < THRESHOLD) return
-      moving = true
-      dragging = true
-      view = ghost(item)
-      document.body.append(view.box)
-      document.documentElement.style.cursor = 'copy'
-      document.body.style.userSelect = 'none'
-      // 拖动起来以后菜单不该再跟着手指弹出来
-      window.getSelection()?.removeAllRanges()
+      // 时间没到之前移动只是等：把「移动超过阈值」当拖动的话，快速划过页面也会拖出引用
+      if (!longPressed(Date.now() - startedAt)) return
+      begin()
     }
-    view!.box.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 12}px)`
-    over(e.clientX, e.clientY)
+    wandered = true
+    follow()
   }
 
   const finish = (e: PointerEvent | null) => {
+    window.clearTimeout(hold)
     window.removeEventListener('pointermove', move, true)
     window.removeEventListener('pointerup', up, true)
     window.removeEventListener('pointercancel', cancel, true)
+    document.body.style.userSelect = ''
     if (moving) {
-      dragging = false
-      guardUntil = Date.now() + GUARD
+      clickUntil = Date.now() + CLICK_GUARD
       view?.box.remove()
       view = null
       document.documentElement.style.cursor = ''
-      document.body.style.userSelect = ''
       hovered = null
       notify()
     }
-    if (e && moving) hit(e.clientX, e.clientY)?.drop(item)
+    if (e && wandered) hit(e.clientX, e.clientY)?.drop(item)
   }
 
   const up = (e: PointerEvent) => finish(e)
   const cancel = () => finish(null)
+  // 按住不动也会进入拖动：到点就亮出 ghost，告诉用户可以拖了
+  const hold = window.setTimeout(() => {
+    if (longPressed(Date.now() - startedAt)) begin()
+  }, LONG_PRESS_MS)
 
-  // 捕获阶段接住：输入框、右键菜单自己也会监听这些事件
+  // 捕获阶段接住：输入框自己也会监听这些事件
   window.addEventListener('pointermove', move, true)
   window.addEventListener('pointerup', up, true)
   window.addEventListener('pointercancel', cancel, true)

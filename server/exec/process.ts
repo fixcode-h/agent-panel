@@ -42,6 +42,9 @@ export interface ProcessResult {
 /** 还在跑的子进程：程序退出时按这上面的 pid 统一清理 */
 const live = new Map<number, ReturnType<typeof spawn>>()
 
+/** 还在跑的子进程 pid：内存采样用它统计 CLI 子进程占了多少，不要另外维护一份 */
+export const activePids = () => [...live.keys()]
+
 /** pid 还在不在（不关心它是什么进程） */
 export function isProcessAlive(pid: number) {
   try {

@@ -287,6 +287,8 @@ function SettingsBody({
     childConcurrency: childValid ? childN : initial.childConcurrency,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
+    // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
+    memorySampleSeconds: initial.memorySampleSeconds,
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
     clis: Object.fromEntries(

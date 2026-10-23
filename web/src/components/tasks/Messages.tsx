@@ -5,17 +5,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
 import { fmtSecs } from '@/lib/tasks'
-import {
-  addFoldCut,
-  foldCuts,
-  foldStats,
-  keptOut,
-  liveHelpers,
-  replyText,
-  segOpenOf,
-  splitFolds,
-  toggleSegOpen,
-} from '@/lib/fold'
+import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -26,7 +16,6 @@ import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
-import { HelperCards } from './HelperCards'
 import { RunningNow, runningTools } from './RunningNow'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
@@ -463,16 +452,17 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
 }
 
 /**
- * 夹在 AI 回复里、不是谁说的话的几种消息：派出的子任务、面板推回的结果。
+ * 夹在 AI 回复里、不是谁说的话的几种消息：面板推回的结果、子对话的提问。
  * 和工具调用一样缩进在头像后面；不是这几种返回 null
  */
 function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
   // 子对话的回报只给 AI 看，界面上不画
   if (m.panel === 'child') return <Fragment key={m.id} />
+  // 派出的子任务在输入框上方的「子任务」栏里看：消息流里不再画卡片，
+  // 这条消息只用来记派出了哪几个，已完成的那一轮折叠行上仍写着「派出 n 个子任务」
+  if (m.spawned?.length) return <Fragment key={m.id} />
   const body =
-    m.spawned?.length && task ? (
-      <HelperCards task={task} ids={m.spawned} teamNames={teamNames} />
-    ) : m.panel === 'ask' && m.ask ? (
+    m.panel === 'ask' && m.ask ? (
       <ChildAskCard m={m} task={task} teamNames={teamNames} />
     ) : m.panel ? (
       <PanelRow m={m} teamNames={teamNames} />
@@ -486,7 +476,7 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
   )
 }
 
-/** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字） */
+/** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字）：面板结果和派出子任务的那条 */
 const transparent = (m: TaskMessage) => !!m.panel || !!m.spawned?.length
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
@@ -758,34 +748,16 @@ export function FoldedRun({
     </button>
   )
   // 折叠开关下面紧跟着还在运行的东西：收起时它们正好在总结上面
-  // 还在跑的子任务也一样：卡片留在折叠外面，能看到它这会儿在跑什么，跑完才跟着这一段收起来
-  const liveSubs = task ? liveHelpers(before, task.steps) : []
-  const liveCards =
-    !open && task && liveSubs.length ? (
-      <div className="flex flex-col gap-1">
-        {liveSubs.map((x) => (
-          <HelperCards key={x.msg.id} task={task} ids={x.ids} teamNames={teamNames} />
-        ))}
-      </div>
-    ) : null
-  const head =
-    running || liveCards ? (
-      <div className="flex flex-col gap-1.5">
-        {toggle}
-        {running}
-        {liveCards}
-      </div>
-    ) : (
-      toggle
-    )
-  // 还在跑的子任务状态、输出和实时对话都在变：算进签名，否则这几行会停在派出去时的样子
-  const liveKey = liveSubs.length
-    ? `${task?.messages.length ?? 0}|${liveSubs
-        .map((x) => x.ids.map((id) => `${id}:${task?.steps.find((s) => s.id === id)?.output.length ?? 0}`).join(','))
-        .join('|')}`
-    : ''
+  const head = running ? (
+    <div className="flex flex-col gap-1.5">
+      {toggle}
+      {running}
+    </div>
+  ) : (
+    toggle
+  )
   // slot 每次都是新画的元素：给内容算个签名，内容没变时整段回复不重画
-  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? runningKey(msgs, task) : ''}|${liveKey}`
+  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? runningKey(msgs, task) : ''}`
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；

@@ -12,6 +12,22 @@ export function nearBottom(
 }
 
 /**
+ * 一次滚动事件之后还跟不跟着底部走。只有「真的往上滚了」（scrollTop 变小）才算用户翻上去：
+ * 我们自己贴底时设的 scrollTop，滚动事件要到下一帧才派发，这中间流式输出又插进一张工具卡片、一大段文字，
+ * 事件里读到的就是「离底部很远」——光看离底部多远会把这种情况误判成用户翻上去，之后就再也不跟了
+ * （偶发的「对话进行中不回到底部」就是这么来的）。往下滚、位置没变只是内容变高，都保持原来的状态。
+ */
+export function stillPinned(
+  box: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  prevTop: number,
+  pinned: boolean,
+  threshold = STICK_THRESHOLD,
+) {
+  if (nearBottom(box, threshold)) return true
+  return box.scrollTop < prevTop - 1 ? false : pinned
+}
+
+/**
  * 贴底滚动：打开时就停在最新内容，之后内容变高跟着走，用户往上翻看时不打扰（滚回底部附近再接着跟）。
  *
  * 只在消息长度变化时滚不够：
@@ -37,6 +53,8 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
   }, [])
   // 用户把内容翻上去了就不再拽回底部
   const pinned = useRef(true)
+  // 上一次看到的 scrollTop：判断这次滚动是不是往上
+  const lastTop = useRef(0)
   // 离开底部（可以显示「回到底部」）：只在真的变了时才 setState，滚动过程中不反复重渲染
   const [away, setAway] = useState(false)
   const awayRef = useRef(false)
@@ -49,16 +67,19 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
   const onScroll = useCallback(() => {
     const el = box.current
     if (!el) return
-    const near = nearBottom(el, threshold)
-    pinned.current = near
-    markAway(!near)
+    pinned.current = stillPinned(el, lastTop.current, pinned.current, threshold)
+    lastTop.current = el.scrollTop
+    markAway(!nearBottom(el, threshold))
   }, [threshold, markAway])
 
   // 主动回到最新内容：点了「回到底部」，或者刚发出一条消息、点了某一步时接着看最新的
   const pin = useCallback(() => {
     pinned.current = true
     const el = box.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      lastTop.current = el.scrollTop
+    }
     markAway(false)
   }, [markAway])
 
@@ -72,7 +93,9 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
     pinned.current = true
     markAway(false)
     const stick = () => {
-      if (pinned.current) node.scrollTop = node.scrollHeight
+      if (!pinned.current) return
+      node.scrollTop = node.scrollHeight
+      lastTop.current = node.scrollTop
     }
     stick()
     let raf = 0

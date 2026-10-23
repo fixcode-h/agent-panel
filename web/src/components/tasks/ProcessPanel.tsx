@@ -8,6 +8,7 @@ import { MB, fmtMem } from '@/lib/mem'
 import { fmtDuration } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { ownerMemoryText, ownersOf } from '@shared/memory-analysis'
 import type { TaskProcess, TaskProcesses } from '@shared/schema'
 import { MemoryChart } from './MemoryChart'
 
@@ -204,7 +205,10 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
         <>
           <div className="border-b border-line px-3 py-2 text-[0.75rem] leading-relaxed">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-muted">{t('内存合计')}</span>
+              <span className="text-muted">
+                {t('内存合计')}
+                <span className="ml-1 text-[0.6875rem] text-subtle">{t('这个会话树上全部进程的合计，含子对话')}</span>
+              </span>
               <span className="font-medium tabular-nums">{fmtMem(data?.totalMemory ?? null)}</span>
             </div>
             <p className="mt-0.5 text-[0.6875rem] text-subtle">
@@ -213,6 +217,9 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
                 cli: fmtMem(data?.cliMemory ?? null),
               })}
               {data?.unavailable ? ` · ${data.unavailable}` : ''}
+            </p>
+            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
+              {t('下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊')}
             </p>
           </div>
 
@@ -235,13 +242,45 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
                 ) : data.processes.length === 0 ? (
                   <p className="px-3 py-6 text-center text-[0.75rem] text-subtle">{t('这个对话现在没有在跑的进程')}</p>
                 ) : (
-                  data.processes.map((p) => (
-                    <ProcessRow
-                      key={p.pid}
-                      proc={p}
-                      disabled={busy}
-                      onKill={() => setConfirm({ kind: 'kill', proc: p })}
-                    />
+                  ownersOf(data.processes, taskId).map((g) => (
+                    <div key={g.taskId || 'none'} className="border-b border-line/60 last:border-0">
+                      {/* 组头就是这个归属自己的合计：子对话的行只算它起的进程，不把别的对话的算进来 */}
+                      <div className="flex items-baseline justify-between gap-2 bg-sel/50 px-3 py-1">
+                        <span
+                          className="min-w-0 truncate text-[0.6875rem] font-medium text-muted"
+                          title={g.title || undefined}
+                        >
+                          <span className="text-subtle">
+                            {g.self ? t('本对话') : g.taskId ? t('子对话') : t('面板自己的进程')}
+                          </span>
+                          {g.title && ` · ${g.title}`}
+                        </span>
+                        <span
+                          className="shrink-0 text-[0.6875rem] tabular-nums text-muted"
+                          title={
+                            g.rss === null
+                              ? t('{n} 个进程的内存都没读到，不是 0', { n: g.count })
+                              : t('{n} 个进程的合计', { n: g.counted })
+                          }
+                        >
+                          {ownerMemoryText(g)}
+                          <span className="ml-1 text-subtle">
+                            {t('{n} 个进程', { n: g.count })}
+                            {g.rss !== null && g.counted < g.count
+                              ? t('（{n} 个未采集）', { n: g.count - g.counted })
+                              : ''}
+                          </span>
+                        </span>
+                      </div>
+                      {g.processes.map((p) => (
+                        <ProcessRow
+                          key={p.pid}
+                          proc={p}
+                          disabled={busy}
+                          onKill={() => setConfirm({ kind: 'kill', proc: p })}
+                        />
+                      ))}
+                    </div>
                   ))
                 )}
               </div>
@@ -292,7 +331,7 @@ function ProcessRow({ proc, disabled, onKill }: { proc: TaskProcess; disabled: b
           {proc.command || t('（没有命令行）')}
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6875rem] text-subtle">
-          {proc.ownerTitle && <span className="max-w-[45%] truncate text-muted">{proc.ownerTitle}</span>}
+          {/* 归属已经在分组头上写了，这一行只说进程自己的事 */}
           <span>{proc.kind === 'child' ? t('子进程') : t('CLI')}</span>
           <span>·</span>
           <span className="tabular-nums">{proc.durationMs === null ? t('未知') : fmtDuration(proc.durationMs)}</span>

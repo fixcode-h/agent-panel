@@ -35,6 +35,7 @@ import {
   type TaskProcess,
   type TaskProcesses,
   type TaskMemoryHistory,
+  type TaskMemoryAnalysis,
   type TaskStep,
   type TaskTurn,
   type CliInstallJob,
@@ -47,9 +48,17 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
-import { DATA_KINDS, type DataKind } from '@shared/data'
+import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
+import {
+  TASK_MEMORY_ASK,
+  clipReport,
+  ownersOf,
+  taskMemoryReport,
+  taskMemoryTrend,
+  taskTrendText,
+} from '@shared/memory-analysis'
 import { descendantTotals } from '@shared/task-export'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
@@ -89,7 +98,7 @@ import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/buil
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
-import { importTask, parseTaskExport } from '@shared/task-export'
+import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
@@ -721,6 +730,55 @@ const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) =>
 const utf8ToB64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
 const b64ToUtf8 = (b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0)))
 
+/**
+ * 在线演示的内存采样：按 30 秒一个点，模拟最近两小时（真机是服务端定时采样，这里是演示数据）。
+ * 两小时是因为曲线默认只显示一小时，右键拖动往前看时得还有更早的点，否则演示里拖不动。
+ * 用时间算，不存随机值：同一时刻刷新曲线是稳定的，过一会儿再看才会动——和真机的采样一样能看到起伏。
+ */
+function demoDataMemory(d: Db, now = Date.now()): MemoryUsage {
+  const INTERVAL_MS = 30_000
+  // 和真机一样保留两小时的点：曲线默认看一小时，右键拖动才有的往前看
+  const COUNT = 240
+  const last = Math.floor(now / INTERVAL_MS)
+  const tasks = d.tasks ?? []
+  const running = tasks.filter((x) => x.status === 'running').length
+  const MB = 1024 * 1024
+  // 「进程」这一路：运行中的任务各占一份 CLI；演示数据里没有运行中的任务时模拟一个，
+  // 否则第二路永远是 0，看不出两路曲线的设计（真机上没有子进程时是真实的 0，界面显示「没有子进程」）
+  const cliProcesses = running || 1
+  const samples = Array.from({ length: COUNT }, (_, i) => {
+    const k = last - (COUNT - 1 - i)
+    const wave = Math.sin(k / 6) * 5 + Math.sin(k / 17) * 8
+    const rss = Math.round((108 + wave + (i / COUNT) * 22) * MB)
+    const heapUsed = Math.round((76 + wave * 0.8 + (i / COUNT) * 14) * MB)
+    const child = Math.round((cliProcesses * 96 + Math.sin(k / 4) * 18 + (i / COUNT) * 60) * MB)
+    return {
+      at: new Date(k * INTERVAL_MS).toISOString(),
+      rss,
+      heapTotal: 128 * MB,
+      heapUsed,
+      external: Math.round((4 + Math.sin(k / 9) * 1.5) * MB),
+      arrayBuffers: Math.round((2 + Math.sin(k / 11) * 0.8) * MB),
+      running,
+      child,
+    }
+  })
+  const memory = samples[samples.length - 1]
+  return {
+    memory,
+    samples,
+    sampling: { intervalMs: INTERVAL_MS, keepMs: 2 * 60 * 60_000 },
+    uptimeMs: 2 * 60 * 60_000 + 12 * 60_000,
+    child: { processes: cliProcesses, bytes: memory.child },
+    scale: {
+      tasks: tasks.length,
+      chats: tasks.filter((x) => x.mode === 'chat').length,
+      projects: d.projects.length,
+      running,
+    },
+  }
+}
+
 function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
   if (!action && method === 'GET') {
     const kinds = DATA_KINDS.map((k) => {
@@ -732,9 +790,10 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
       const files = Object.values(DEMO_DATA_FILES[k.id](d))
       return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
     })
-    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0
-    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, memory: { rss: heap, heapUsed: heap } }
+    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, ...demoDataMemory(d) }
   }
+  // 内存曲线按采样间隔刷新：演示版也返回同样的结构，曲线和「AI 分析」都能试
+  if (action === 'memory' && method === 'GET') return demoDataMemory(d)
   if (action === 'reveal') fail('在线演示不能打开本机目录')
   if (action === 'clear') {
     const k = (body as { kind: DataKind }).kind
@@ -2060,6 +2119,62 @@ function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
   return { sampledAt: now, intervalMs, capacity, points }
 }
 
+/** 演示版的内存分析：和正式后端同一套口径（shared/memory-analysis.ts），数字来自演示数据 */
+function demoMemoryAnalysis(task: Task, tasks: Task[], projects: Project[]): TaskMemoryAnalysis {
+  const history = demoMemory(task, new URLSearchParams())
+  const points = history.points
+  const panel = demoProcesses(task, tasks)
+  const owners = ownersOf(panel.processes, task.id)
+  const tree = runTree(task, tasks)
+  const contexts = tree
+    .map((x) => {
+      let best = { context: 0, window: 0 }
+      for (const u of Object.values(x.usage?.agents ?? {})) {
+        if ((u.context ?? 0) > best.context) best = { context: u.context ?? 0, window: u.window ?? 0 }
+      }
+      return { id: x.id, title: x.title, ...best, self: x.id === task.id }
+    })
+    .filter((x) => x.context > 0)
+  const project = projects.find((p) => p.id === task.projectId) ?? null
+  const trend = taskMemoryTrend(points)
+  const report = taskMemoryReport({
+    task: { title: task.title, mode: task.mode, status: task.status },
+    project: project ? { name: project.name, path: project.path } : null,
+    points,
+    intervalMs: history.intervalMs,
+    panel: { cliMemory: panel.cliMemory, serverMemory: panel.serverMemory, unavailable: panel.unavailable },
+    owners,
+    tree: {
+      tasks: tree.length,
+      children: tree.length - 1,
+      running: tree.filter((x) => x.status === 'running').length,
+    },
+    contexts,
+  })
+  return {
+    sampledAt: Date.now(),
+    intervalMs: history.intervalMs,
+    report: clipReport(report),
+    ask: TASK_MEMORY_ASK,
+    cwd: project?.path ?? '',
+    trend: trend?.trend ?? null,
+    trendText: taskTrendText(trend),
+    owners: owners.map(({ taskId, title, self, rss, count, counted }) => ({
+      taskId,
+      title,
+      self,
+      rss,
+      count,
+      counted,
+    })),
+    tree: {
+      tasks: tree.length,
+      children: tree.length - 1,
+      running: tree.filter((x) => x.status === 'running').length,
+    },
+  }
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2078,14 +2193,18 @@ function tasksRoute(
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
-  // 导入别人导出的任务：和正式版一样建成只读的
+  // 导入别人导出的任务：和正式版一样连同包里的子对话一起建成只读的，返回父任务在前的整棵树
   if (id === 'import' && method === 'POST') {
     const b = (body ?? {}) as { projectId?: string; bundle?: unknown }
     if (b.projectId && !d.projects.some((p) => p.id === b.projectId)) fail('项目不存在')
-    const task = importTask(parseTaskExport(b.bundle), b.projectId ?? '', `demo-${crypto.randomUUID()}`)
-    tasks.unshift(task)
+    const bundle = parseTaskExport(b.bundle)
+    const made = importTaskTree(bundle, b.projectId ?? '', [
+      `demo-${crypto.randomUUID()}`,
+      ...bundle.children.map(() => `demo-${crypto.randomUUID()}`),
+    ])
+    tasks.unshift(...made)
     persist()
-    return task
+    return made
   }
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
   if (
@@ -2201,10 +2320,16 @@ function tasksRoute(
     if (method === 'POST' && rid) return demoKill(task, Number(rid))
   }
   if (sub === 'memory' && method === 'GET') return demoMemory(task, query)
+  if (sub === 'memory-analysis' && method === 'GET') return demoMemoryAnalysis(task, tasks, d.projects ?? [])
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')
     return descendantTotals(runTree(task, tasks).filter((x) => x.id !== task.id))
+  // 导出任务连同子对话：和正式后端一样把整棵树整理成一个包，超体积时不生成
+  if (sub === 'export' && method === 'GET') {
+    const bundle = exportTaskTree(task, tasks, d.agents ?? [], query.get('app') ?? '')
+    return { bundle, bytes: checkExportSize(bundle) }
+  }
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
@@ -2218,7 +2343,8 @@ function tasksRoute(
           summary: x.summary,
           working: x.working,
           updatedAt: x.updatedAt,
-          cliAlive: live.has(x.id),
+          // 进程还活着：正在跑的一定活着（演示里没有真的进程，就按 working 认）
+          cliAlive: live.has(x.id) || x.working,
           startedAt: childStartedAt(x),
           // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
           requests: (x.requests ?? []).length,
@@ -2262,13 +2388,14 @@ function tasksRoute(
     void followUp(d, task, f.text, false, f.attachments)
     return task
   }
-  // 回答子对话的提问：演示里只把卡片标成已回答
+  // 回答子对话的提问：演示里只把卡片标成已回答 / 已交给父对话决定
   if (sub === 'child-asks' && rid) {
     const m = task.messages.find((x) => x.id === rid && x.ask) ?? fail('找不到这个提问')
     const a = body as { answer: string; delegate: boolean }
     if (!a.delegate) m.ask = { ...m.ask!, answer: a.answer, by: 'user' }
+    else m.ask = { ...m.ask!, delegated: true, delegatedAt: new Date().toISOString() }
     persist()
-    return task
+    return { task, nudge: a.delegate ? { ok: true, how: 'next' } : undefined }
   }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
@@ -2464,8 +2591,141 @@ function spreadSteps(t: Task) {
   }
 }
 
+/** 示例对话派出的子任务：输入框上方的「子任务」栏、列表和只读窗口都要有东西看 */
+function demoHelper(task: Task, agent: { id: string; name: string }) {
+  const end = task.messages.at(-1)?.at ?? new Date().toISOString()
+  const start = new Date(Date.parse(end) - 8_600).toISOString()
+  // 这个对话在模拟执行时已经派过子角色（@chat/sub/h1、h2），取一个没被占用的编号：
+  // 用同一个 id 会跟已有的子任务撞在一起，列表里只显示前一个同 id 的标题
+  const used = new Set(task.steps.map((s) => s.id))
+  const id = (() => {
+    let i = 1
+    while (used.has(`@chat/sub/h${i}`)) i++
+    return `@chat/sub/h${i}`
+  })()
+  const title = '核对角标的订阅时机'
+  const result = '角标在首次渲染时读了一次购物车快照，加购后没有订阅 `cart:changed`。问题在 `CartBadge.tsx`。'
+  task.steps.push({
+    id,
+    parentId: '@chat',
+    slot: 'sub',
+    round: 0,
+    workflowId: '',
+    flowId: '',
+    nodeId: '',
+    kind: 'agent',
+    title,
+    agentId: agent.id,
+    status: 'done',
+    startedAt: start,
+    endedAt: end,
+    spentMs: 0,
+    waitMs: 0,
+    waitStartedAt: '',
+    output: result,
+    verdict: '',
+    rounds: 0,
+    interrupted: false,
+    command: [],
+    changes: [],
+    runId: 1,
+  })
+  const at = new Date(Date.parse(end) - 8_000).toISOString()
+  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）
+  const own = {
+    id: 'demo-' + crypto.randomUUID(),
+    role: 'agent' as const,
+    agentId: agent.id,
+    step: id,
+    text: result,
+    tools: [],
+    at: end,
+  }
+  // 派出它的那条系统消息：消息流里不画卡片，折叠行上仍写着「派出 1 个子任务」
+  const spawned = {
+    id: 'demo-' + crypto.randomUUID(),
+    role: 'system' as const,
+    agentId: '',
+    step: '',
+    text: '「' + task.title + '」派出 1 个子角色：' + title,
+    tools: [],
+    at,
+    spawned: [id],
+  }
+  const last = task.messages
+    .map((m, i) => (m.role === 'agent' ? i : -1))
+    .filter((i) => i >= 0)
+    .at(-1)
+  task.messages.splice(last ?? task.messages.length, 0, spawned, own)
+}
+
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
 /** 演示里的执行计划：一份做完带总结的，一份正在做（一步在等端到端测试，一步展开着子步骤） */
+/**
+ * 示例父对话的子对话：状态栏的计数和浮层的分组都要有东西看。
+ * 三个在跑——其中两个的计划还没做完（在跑就算执行中，不归未完成），
+ * 一个没在跑但计划没做完（归未完成），四个已做完。进程活着的 5 个，所以栏上应该是 3/5。
+ */
+async function demoChildren(d: Db, parent: Task, agent: { id: string }) {
+  const plan = (done: number, total: number) => ({
+    id: 'p1',
+    title: '修复角标不刷新',
+    createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    doneAt: '',
+    summary: '',
+    autoSummary: false,
+    steps: Array.from({ length: total }, (_, i) => ({
+      id: String(i + 1),
+      title: `第 ${i + 1} 步`,
+      status: (i < done ? 'done' : 'pending') as PlanStatus,
+      note: '',
+      waits: [],
+      startedAt: '',
+      endedAt: '',
+      children: [],
+    })),
+  })
+  const make = async (
+    title: string,
+    how: { working?: boolean; alive?: boolean; plan?: ReturnType<typeof plan>; resolved?: boolean } = {},
+  ) => {
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: parent.projectId,
+        mode: 'chat',
+        parentTaskId: parent.id,
+        workflowId: '',
+        agentId: agent.id,
+        prompt: title,
+        attachments: [],
+        cli: '',
+        model: '',
+        effort: '',
+        params: {},
+        askUser: false,
+      },
+      true,
+    )
+    await done
+    // 执行过程中任务可能被换成新对象，按 id 取回来再改
+    const it = d.tasks?.find((x) => x.id === task.id) ?? task
+    it.title = title
+    it.working = !!how.working
+    it.resolved = !!how.resolved
+    if (how.plan) it.plans = [how.plan]
+    // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
+    if (how.alive) live.set(it.id, { stop: false })
+    return it
+  }
+  await make('Git+worktree 不再提示文件撞车', { working: true, alive: true })
+  await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
+  await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
+  await make('修侧栏时间显示', { resolved: true })
+  await make('核对通知时序', { resolved: true })
+  await make('拆分规则检查脚本', { resolved: true })
+}
+
 function demoPlans(task: Task) {
   const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
   const item = (id: string, title: string, status: PlanStatus, start = 0, end = 0) => ({
@@ -2635,6 +2895,8 @@ async function seedTasks(d: Db) {
     await done
     demoPlans(task)
     back(task, 60 * 3)
+    demoHelper(task, fe)
+    await demoChildren(d, task, fe)
   }
   if (shop) {
     const { task, done } = createTask(

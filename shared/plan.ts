@@ -428,19 +428,92 @@ export function settleWait(
   return hit
 }
 
+/** 子对话这一轮结束时还差什么没交付：由调用方按服务端的状态算好传进来（计划在下面自己看） */
+export interface ChildTurnLeft {
+  /** 这个子对话还有正在跑、排队等着跑的后台命令（名字） */
+  background?: string[]
+  /** 这一轮结束后还会接着执行：排队的要求、面板交过来的消息、正要开始的下一轮 */
+  more?: boolean
+}
+
+export interface ChildTurnSettle {
+  over: boolean
+  ok: boolean
+  /** 不收口时在等什么：写进父对话计划那一步的 note；收口时是一句说明 */
+  why: string
+}
+
 /**
- * 子对话这一轮结束（跑完一轮、CLI 停在等用户下一句）时，父对话计划里等它的那一步该怎么收口：
- * - 还有没答的提问 / 确认：子对话是停下来等用户（死约定：子对话要停下等用户时必须先提问），
- *   不算结束，步骤继续挂着等
+ * 子对话这一轮结束（跑完一轮、CLI 停在等用户下一句）时，父对话计划里等它的那一步该怎么收口。
+ * 「这一轮回复完了」不等于「子对话交付完了」：面板判定的完成条件是计划做完、后台命令收尾、
+ * 没有待答的提问、不在执行。所以收口要按下面这些条件看，不能只看 working：
+ * - 还有没答的提问 / 确认：子对话是停下来等用户（死约定：子对话要停下等用户时必须先提问），继续等
  * - 被停止、执行失败：算结束但没成功，退回进行中并写上原因（settleWait 本来就这个语义）
- * - 其余（包括 status 还是 running、只是没在跑、在等下一句）：这一轮交付完了，算成功
- * 正在跑的（working）不能当成完成，免得还在写代码的子对话被提前标完成
+ * - 还在执行、这一轮结束后还会接着做、还有后台命令在跑、计划还没做完：继续等，不标完成
+ * - 这些都没有：交付完了，算成功
  */
-export function childTurnSettle(task: Pick<Task, 'status' | 'working' | 'requests'>): { over: boolean; ok: boolean } {
-  if (task.requests.length) return { over: false, ok: false }
-  if (task.status === 'failed' || task.status === 'stopped') return { over: true, ok: false }
-  if (task.working) return { over: false, ok: false }
-  return { over: true, ok: true }
+export function childTurnSettle(
+  task: Pick<Task, 'status' | 'working' | 'requests' | 'plans'>,
+  left: ChildTurnLeft = {},
+): ChildTurnSettle {
+  if (task.requests.length) return { over: false, ok: false, why: '子对话有没答的提问，在等用户回答' }
+  if (task.status === 'failed') return { over: true, ok: false, why: '子对话执行失败了' }
+  if (task.status === 'stopped') return { over: true, ok: false, why: '子对话被停止了' }
+  if (task.working) return { over: false, ok: false, why: '子对话还在执行' }
+  if (left.more) return { over: false, ok: false, why: '子对话这一轮结束后还要接着处理排队的消息' }
+  const jobs = left.background ?? []
+  if (jobs.length)
+    return {
+      over: false,
+      ok: false,
+      why: `子对话还有后台命令在跑：${jobs.map((x) => `「${x}」`).join('、')}`,
+    }
+  // 计划做完了会收起（doneAt），这时 activePlan 是 undefined，不会再挡住收口
+  const plan = activePlan(task)
+  const todo = plan ? plan.steps.filter((s) => s.status !== 'done') : []
+  if (todo.length)
+    return {
+      over: false,
+      ok: false,
+      why: `子对话的计划还没做完：${todo
+        .slice(0, 3)
+        .map((s) => `「${s.title}」`)
+        .join('、')}${todo.length > 3 ? ` 等 ${todo.length} 步` : ''}`,
+    }
+  return { over: true, ok: true, why: '子对话交付完了：计划、后台命令都收尾了' }
+}
+
+/**
+ * 收口推迟：子对话这一轮结束了但还没交付完，父对话计划里等它的那一步继续等着，note 写清在等什么。
+ * 只改等待中的那一项的 note（状态保持 waiting / 父步骤有在做的就还是 running），
+ * 不往父对话刷消息——每轮结束都推一条，父对话会被淹没。
+ * 返回 note 真的变了的步骤标题；空数组表示计划里没有在等它，不用落盘
+ */
+export function holdWait(
+  task: PlanTask,
+  kind: PlanWait['kind'],
+  ref: string,
+  why: string,
+  now = new Date().toISOString(),
+): string[] {
+  const plan = activePlan(task)
+  if (!plan) return []
+  const changed: string[] = []
+  const visit = (item: PlanItem, parent?: PlanStep) => {
+    const w = item.waits.find((x) => x.kind === kind && x.ref === ref && x.state === 'waiting')
+    if (!w) return
+    const note = clean(`还在等它：${why}`, 300)
+    if (item.status === 'waiting' && item.note === note) return
+    item.note = note
+    setStatus(item, 'waiting', now)
+    if (parent) rollUp(parent, now)
+    changed.push(item.title)
+  }
+  for (const s of plan.steps) {
+    for (const c of s.children) visit(c, s)
+    visit(s)
+  }
+  return changed
 }
 
 /** 推回对话的结果前面加一句：它是计划里哪一步在等的，先处理这一步 */

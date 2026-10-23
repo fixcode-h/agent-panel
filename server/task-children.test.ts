@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../shared/i18n.ts'
 import { Task } from '../shared/schema.ts'
-import { childStartedAt, runningChildren, sortChildren, taskSummary } from '../shared/task.ts'
+import { childCounts, childStage, childStartedAt, runningChildren, sortChildren, taskSummary } from '../shared/task.ts'
 
 setLang('zh')
 
@@ -218,4 +218,59 @@ test('父对话的「执行中」：自己有子对话在跑时也算，但不�
   assert.equal(withKids.working, false, '也不是父对话自己在跑')
   // 没有子对话在跑时字段不出现，侧栏按原来的 working 判断
   assert.equal(taskSummary(parsed).childrenWorking, undefined)
+})
+
+test('子对话计数：在跑又带着没做完计划的，归「执行中」，和行内「执行中」标签、转圈图标同一批', () => {
+  // 这是「三个子对话在转圈，状态栏却写 1/5」那次的场景：在跑的子对话计划还没做完，
+  // 分组不能把它归到「未完成」，否则列表里转着圈、标题却是未完成，计数也会少算。
+  const list = [
+    kid('a', { working: true, cliAlive: true }),
+    kid('b', { working: true, cliAlive: true, plan: { done: 1, total: 2 } }),
+    kid('c', { working: true, cliAlive: true, plan: { done: 1, total: 2 } }),
+    kid('waiting1', { cliAlive: true }),
+    kid('waiting2', { cliAlive: true }),
+    kid('closed', { cliAlive: false }),
+  ]
+  for (const id of ['a', 'b', 'c']) {
+    const x = list.find((y) => y.id === id)!
+    assert.equal(childStage(x), 'running', `${id} 在跑，就算计划没做完也是执行中`)
+  }
+  assert.equal(childStage(list.find((x) => x.id === 'waiting1')!), 'done', '没在跑、计划做完了的是已完成')
+  assert.equal(runningChildren(list).length, 3)
+  // 分子 3（执行中）和浮层「执行中」分组、行内的「执行中」标签是同一批；分母是进程还活着的 5 个
+  assert.deepEqual(childCounts(list), { running: 3, total: 5 })
+})
+
+test('子对话计数：标记「解决」但还在跑的，仍然算进行中（不能让它从计数里消失）', () => {
+  const list = [
+    kid('running', { working: true, cliAlive: true }),
+    kid('resolved', { working: true, cliAlive: true, resolved: true }),
+  ]
+  assert.deepEqual(childCounts(list), { running: 2, total: 2 }, '还在跑就算进去，不能因为标了解决就藏起来')
+})
+
+test('子对话计数：进程信息还没回来时分母不小于分子，不显示成 3/0', () => {
+  const list = [kid('a', { working: true }), kid('b', { working: true }), kid('c', { working: true })]
+  assert.deepEqual(childCounts(list), { running: 3, total: 3 })
+})
+
+test('子对话计数：没有子对话时是 0/0', () => {
+  assert.deepEqual(childCounts([]), { running: 0, total: 0 })
+})
+
+test('子对话计数：计划没做完但这一轮没在跑的，也转圈、也算进分子', () => {
+  // 「未完成」组的行首也转圈（见 shared/task.ts 的 childIcon）：计数只算 working 就会出现
+  // 「列表里三个在转圈、上面写 1/5」，所以分子取转圈的那一批。
+  const list = [kid('unfinished', { cliAlive: true, plan: { done: 1, total: 3 } })]
+  assert.equal(childStage(list[0]), 'unfinished')
+  assert.deepEqual(childCounts(list), { running: 1, total: 1 })
+})
+
+test('子对话计数：在等你选择的不转圈，不算进分子', () => {
+  const list = [
+    kid('asking', { working: true, cliAlive: true, asking: 1 }),
+    kid('running', { working: true, cliAlive: true }),
+  ]
+  assert.equal(childStage(list[0]), 'you', '有未回答的提问时这一行说的是「等你选择」')
+  assert.deepEqual(childCounts(list), { running: 1, total: 2 }, '等你的那一行不转圈，就不算进行中，但仍占分母')
 })

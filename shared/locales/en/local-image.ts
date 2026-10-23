@@ -23,6 +23,14 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   运行中: 'Running',
   '已安装，未启动': 'Installed, not running',
   一键安装: 'Install',
+  '让 AI 安装': 'Let AI install',
+  '让「AI 创建」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch':
+    'Have the agent set under "AI creation" install ComfyUI and PyTorch on this computer',
+  '本机生图：安装 ComfyUI': 'Local images: install ComfyUI',
+  '从 {src} 装 PyTorch': 'Installing PyTorch from {src}',
+  '装 PyTorch': 'Installing PyTorch',
+  '这个源没装上，换下一个：{src}': 'This index failed, trying the next one: {src}',
+  默认索引: 'the default index',
   启动: 'Start',
   电脑环境: 'Hardware',
   '显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢':
