@@ -294,6 +294,17 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     return task ? idle(task) : task
   }
+  /**
+   * 按 id 取任务本身（用量、节点、状态），不读完整对话：执行中的取内存里那份，其余读任务文件。
+   * 每秒刷一次的用量统计用它：`current` 会把 `.messages.json` 读进 full 缓存，
+   * 一个奔跑中的任务带几个子对话，每秒就把整棵树的消息全读一遍，还会把用户刚看过的任务挤出缓存。
+   */
+  const getMeta = async (id: string) => {
+    const entry = live.get(id)
+    if (entry) return entry.task
+    const task = await store.getMeta(id)
+    return task ? idle(task) : task
+  }
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
@@ -1179,8 +1190,12 @@ export function tasksApi(deps: {
       entry.rev++
       // 对话的 CLI 回复完会常驻等下一句，不等进程结束：第一次回复完就起标题
       if (entry.task.turnDoneAt) nameOnce(entry.task, startedRun?.cli ?? '')
-      // 流式输出时最多每秒落盘一次，关键节点立即落盘
-      if (f || Date.now() - last > 1000) {
+      // 流式输出时最多每 3 秒落盘一次，关键节点（节点开始/结束、调用完成、提问、等用户决定、这一轮收尾）
+      // 都走 changed(true) 立即落盘，所以节流只影响正在输出途中的中间态。
+      // 从 1 秒放宽到 3 秒：指纹已经是增量的（见 task-store 的 createStampTracker），
+      // 但整份 messages 的序列化还是 O(全部消息)，3 秒一次把这个成本降下来，
+      // 代价是面板被强杀时最多丢 3 秒的流式输出（正常结束、失败、停止都还会立即写一次）。
+      if (f || Date.now() - last > 3000) {
         last = Date.now()
         void flush()
       }
@@ -2689,6 +2704,8 @@ export function tasksApi(deps: {
     ready: () => ready,
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
     get: (id: string) => current(id),
+    /** 同上，但不读完整对话：用量统计、只用到任务元数据的地方用它 */
+    getMeta: (id: string) => getMeta(id),
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
       shuttingDown = true
