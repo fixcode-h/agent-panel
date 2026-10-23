@@ -209,6 +209,83 @@ export interface LocalJob {
   error?: string
 }
 
+/**
+ * 本机生图对 Python 的版本要求：检测、安装、报错文案和界面都从这里取，不要在别处另写一份范围。
+ * - ComfyUI 的 pyproject.toml 要求 >=3.10；README 说 3.13 支持得最好，3.14 能用但个别自定义节点可能有问题
+ * - PyTorch 2.9 起给 3.14 出了 wheel（cp314），2.8 及以前只到 cp313，所以 3.14 能用
+ * - torchvision 的 requires-python 是 `!=3.14.1,>=3.10`：恰好 3.14.1 装不上，列进 blocked 单独提示
+ */
+export const PYTHON_SUPPORT = {
+  min: '3.10',
+  max: '3.14',
+  /** 没装 Python 时提示装哪个：ComfyUI 说支持得最好的版本 */
+  recommend: '3.13',
+  /** 有 PyTorch 的 wheel、但 ComfyUI 的某个依赖还没发这个版本的包的具体版本 */
+  blocked: ['3.14.1'],
+}
+
+/** 支持的版本范围，拼进文案用：`3.10 ~ 3.14` */
+export const PYTHON_RANGE = `${PYTHON_SUPPORT.min} ~ ${PYTHON_SUPPORT.max}`
+
+/** 从 min 到 max 的次版本号，从高到低：找 Python 时按这个顺序试，安装就用找到的最高版本 */
+export const PYTHON_VERSIONS: string[] = (() => {
+  const [major, minMinor] = PYTHON_SUPPORT.min.split('.').map(Number)
+  const maxMinor = Number(PYTHON_SUPPORT.max.split('.')[1])
+  return Array.from({ length: maxMinor - minMinor + 1 }, (_, i) => `${major}.${maxMinor - i}`)
+})()
+
+export type PythonIssue = 'too-old' | 'too-new' | 'blocked'
+
+/** 只按版本判断能不能用来装 ComfyUI，不管装没装：范围外、或依赖还没发对应包的版本都不行 */
+export function pythonSupport(version: string): { ok: true } | { ok: false; issue: PythonIssue } {
+  const v = version.trim()
+  const [major, minor] = v.split('.').map(Number)
+  const num = (x: string) => {
+    const [a, b] = x.split('.').map(Number)
+    return a * 1000 + b
+  }
+  if (!major || num(v) < num(PYTHON_SUPPORT.min)) return { ok: false, issue: 'too-old' }
+  if (!minor || num(v) > num(PYTHON_SUPPORT.max)) return { ok: false, issue: 'too-new' }
+  if (PYTHON_SUPPORT.blocked.includes(v)) return { ok: false, issue: 'blocked' }
+  return { ok: true }
+}
+
+/** 版本不支持的说明：告诉用户为什么不行、该装哪个 */
+export function pythonIssueText(version: string, issue: PythonIssue): string {
+  if (issue === 'too-old') return t('Python {v} 太旧了：本机生图要 {range}', { v: version, range: PYTHON_RANGE })
+  if (issue === 'too-new')
+    return t('Python {v} 太新了：PyTorch 还没有这个版本的安装包，目前支持到 {range}', {
+      v: version,
+      range: PYTHON_RANGE,
+    })
+  return t('Python {v} 装不上：ComfyUI 的依赖还没有这个版本的安装包，请改用 {recommend}', {
+    v: version,
+    recommend: PYTHON_SUPPORT.recommend,
+  })
+}
+
+/** 探测 Python 的输出：第一行是版本（sys.version_info），第二行是解释器路径（sys.executable） */
+export function parsePythonProbe(stdout: string): { version?: string; path?: string } {
+  const lines = stdout
+    .trim()
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+  const version = /^\d+\.\d+(\.\d+)?$/.test(lines[0] ?? '') ? lines[0] : undefined
+  return { version, path: lines[1] || undefined }
+}
+
+/** 探测到的一个 Python：调用命令、解释器路径、版本，以及能不能用来装 ComfyUI */
+export interface LocalPython {
+  /** 调用的命令，例如 `py -3.14`、`/usr/bin/python3.12` */
+  command: string
+  /** 解释器的真实路径（sys.executable） */
+  path?: string
+  version: string
+  usable: boolean
+  /** 不能用的原因（usable 为 false 时） */
+  problem?: string
+}
+
 export interface LocalStatus {
   /** 安装目录：软件目录下的 comfyui/ */
   dir: string
@@ -217,7 +294,10 @@ export interface LocalStatus {
   /** 用已有的 ComfyUI（设置里填了地址）时不管安装和启动 */
   external: boolean
   url: string
-  python?: string
+  /** 检测到的 Python：能用的按版本从高到低排在前面，用不了的带原因 */
+  pythons: LocalPython[]
+  /** 已经装好的虚拟环境里的解释器：启动 ComfyUI、装依赖用的就是它 */
+  venv?: LocalPython
   gpu: LocalGpu
   gpuName?: string
   /** 显存（GB），检测不到时为空 */

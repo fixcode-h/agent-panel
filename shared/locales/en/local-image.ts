@@ -14,8 +14,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '配置本机生图（ComfyUI）…': 'Set up local images (ComfyUI)…',
   本机模型: 'Local model',
   'ComfyUI 工作流': 'ComfyUI workflows',
-  '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python 3.10 ~ 3.13；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。':
-    'Run open-source image models on this computer with ComfyUI: no quota and no online generation, great for large batches of icons and assets. Installs into the comfyui folder in the app directory and needs Python 3.10–3.13; practical only with a dedicated GPU (NVIDIA, 8 GB+ VRAM) or Apple Silicon.',
+  '用 ComfyUI 在本机跑开源图片模型，不花额度、不用联网生成，适合大批量的图标和素材。安装在软件目录下的 comfyui 文件夹里，需要 Python {range}；有独立显卡（NVIDIA 8GB 显存以上）或苹果芯片的电脑才实用。':
+    'Run open-source image models on this computer with ComfyUI: no quota and no online generation, great for large batches of icons and assets. Installs into the comfyui folder in the app directory and needs Python {range}; practical only with a dedicated GPU (NVIDIA, 8 GB+ VRAM) or Apple Silicon.',
   ComfyUI: 'ComfyUI',
   状态: 'Status',
   '使用已有的 ComfyUI：{url}': 'Using existing ComfyUI: {url}',
@@ -27,8 +27,24 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   电脑环境: 'Hardware',
   '显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢':
     'The GPU decides which PyTorch build is installed; without a GPU it uses the CPU, which works but is very slow',
+  显卡: 'GPU',
+  解释器: 'Interpreter',
+  '其它 Python': 'Other Pythons',
+  '没有可用的 Python': 'No usable Python',
+  '已经装好：启动 ComfyUI 用这个虚拟环境的解释器':
+    'Installed: ComfyUI starts with this virtual environment interpreter',
+  '安装时会用 {cmd}': 'Installing will use {cmd}',
+  '下面的版本用不了，装 Python {v} 后再点「一键安装」':
+    'The versions below cannot be used. Install Python {v}, then click "Install"',
+  '没有检测到 Python，装 Python {v} 后再点「一键安装」': 'Python not found. Install Python {v}, then click "Install"',
+  '装 Python {v}（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH）后回来点「一键安装」；也可以点出错后的「AI 处理」让 AI 帮你装。':
+    'Install Python {v} (https://www.python.org/downloads/ ; on Windows tick Add to PATH), then click "Install"; or click "Fix with AI" after a failure and let the agent do it.',
+  'Python {v} 太旧了：本机生图要 {range}': 'Python {v} is too old: local images need {range}',
+  'Python {v} 太新了：PyTorch 还没有这个版本的安装包，目前支持到 {range}':
+    'Python {v} is too new: there is no PyTorch build for it yet, {range} is supported',
+  'Python {v} 装不上：ComfyUI 的依赖还没有这个版本的安装包，请改用 {recommend}':
+    "Python {v} won't work: ComfyUI's dependencies have no build for it yet. Use {recommend}",
   '{n}GB 显存': '{n} GB VRAM',
-  '没有找到 Python': 'Python not found',
   '「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。':
     '"Handle with AI" hands the failed step and its output to the agent set under "AI Create", which diagnoses and repairs the environment in the install folder.',
   '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。':
@@ -166,8 +182,10 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '下载失败（{status}）：{url}': 'Download failed ({status}): {url}',
   准备安装: 'Preparing install',
   '检查 Python': 'Checking Python',
-  '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。':
-    'Python 3.10–3.13 not found. Install Python 3.12 (https://www.python.org/downloads/ ; on Windows tick Add to PATH) and retry, or click "Fix with AI" to have AI install it.',
+  '检测到的 Python 都用不了（{list}）。': 'None of the detected Pythons can be used ({list}).',
+  '没有找到 Python。': 'Python not found. ',
+  '请安装 Python {v}（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。':
+    'Install Python {v} (https://www.python.org/downloads/ ; on Windows tick Add to PATH) and retry, or click "Fix with AI" to have the agent install it.',
   '使用 Python {v}（{cmd}）': 'Using Python {v} ({cmd})',
   '显卡：{gpu}': 'GPU: {gpu}',
   '下载 ComfyUI': 'Downloading ComfyUI',
