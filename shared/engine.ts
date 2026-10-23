@@ -82,17 +82,7 @@ import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
-import {
-  activePlan,
-  applyPlan,
-  bindRun,
-  bindWait,
-  endRun,
-  finishPlan,
-  planText,
-  unsummarized,
-  type PlanItemInput,
-} from './plan.ts'
+import { activePlan, applyPlan, bindRun, bindWait, endRun, finishPlan, planText, type PlanItemInput } from './plan.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 const SLOT_PROMPT: Record<string, string> = {
@@ -281,7 +271,7 @@ export interface Orchestra {
   planning: boolean
   /** step：这次运行是计划里的哪个主步骤（不写就在计划末尾加一步） */
   plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
-  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 写总结 */
+  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   setPlan(input: { title?: string; steps?: PlanItemInput[] }): { ok: boolean; info: string }
   finishPlan(summary: string): { ok: boolean; info: string }
@@ -897,12 +887,7 @@ function planPart(host: EngineHost, coordinator: boolean) {
   const { task } = host
   if (!task.projectId) return ''
   const cur = activePlan(task)
-  const owed = unsummarized(task)
-  const now = cur
-    ? `当前计划：\n${planText(task, cur)}`
-    : owed
-      ? `上一份计划「${owed.title || '未命名'}」已经全部完成，还没写总结：先调用 finish_plan 写总结。\n${planText(task, owed)}`
-      : '现在没有进行中的计划。'
+  const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   return `## 执行计划
 ${now}
 
@@ -912,7 +897,7 @@ ${now}
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
-- 当前计划的步骤全部完成后必须调用 finish_plan 写总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题；这一轮回复的结尾也把总结告诉用户。之后再有新内容，用 set_plan 开一份新的计划（写 title）。
+- 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
 - 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
     coordinator
       ? `
@@ -2915,8 +2900,6 @@ async function runConversationTurn(host: EngineHost, who: string) {
       () => orch?.helperBatch(),
       (text) => host.steer?.('', text) ?? Promise.resolve(false),
     )
-    // 计划做完了必须写总结：这一轮结束时还没写就追一次，还不写就取最后的回复当总结
-    let askedSummary = false
     // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
     for (let i = 0; i < 30; i++) {
       orch = makeOrchestra(
@@ -2950,28 +2933,7 @@ async function runConversationTurn(host: EngineHost, who: string) {
         continue
       }
       const plans = takePendingPlans(host)
-      if (!plans.length) {
-        const owed = task.projectId && !host.halted ? unsummarized(task) : undefined
-        if (owed && !askedSummary) {
-          askedSummary = true
-          prompt = `（面板）计划「${owed.title || '这份计划'}」的步骤都完成了，还没写总结。现在调用 finish_plan 写总结（必须）：做了什么、验证结果、改了哪些地方、遗留问题，并在回复里告诉用户。\n${planText(task, owed)}`
-          continue
-        }
-        if (owed) {
-          // 追了一次还是没写：取最后一条回复当总结，标上是面板代取的，界面上看得出来
-          owed.summary =
-            clip(
-              [...task.messages]
-                .reverse()
-                .find((m) => m.role === 'agent' && m.text.trim())
-                ?.text.trim() ?? '',
-              6000,
-            ) || t('（AI 没有写总结）')
-          owed.autoSummary = true
-          host.changed(true)
-        }
-        break
-      }
+      if (!plans.length) break
       const results: string[] = []
       for (const p of plans) {
         const out = await startPlan(host, p)

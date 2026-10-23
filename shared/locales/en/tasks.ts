@@ -19,7 +19,6 @@ export const EN_TASKS: Record<string, string> = {
   更新计划: 'Update plan',
   '{n} 个步骤': '{n} steps',
   计划总结: 'Plan summary',
-  '（AI 没有写总结）': '(The AI wrote no summary)',
   // 文件浏览
   文件: 'Files',
   关闭文件: 'Close files',

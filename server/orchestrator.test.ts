@@ -79,12 +79,10 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
     }
     if (turn === 2) {
       assert.match(call.prompt, /## 计划执行结果/)
+      // 计划跑完就结束了：面板不再追一轮要总结，这一轮直接把结论写给用户
       return { ok: true, text: '做完了' }
     }
-    // 工作流是计划里的一步，跑完计划就做完了：没写总结时面板追一轮要总结
-    assert.match(call.prompt, /finish_plan/)
-    assert.equal(call.orch!.finishPlan('做完了功能').ok, true)
-    return { ok: true, text: '总结好了' }
+    return { ok: true, text: '好的' }
   })
   h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
 
@@ -92,7 +90,7 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
   assert.equal(task.status, 'done')
   assert.equal(task.plans.length, 1)
   assert.equal(task.plans[0].steps[0].run, 1)
-  assert.equal(task.plans[0].summary, '做完了功能')
+  assert.equal(task.plans[0].summary, '', '计划做完不再要求写总结')
   assert.equal(task.runSeq, 1)
   assert.equal(task.runs.length, 1)
   assert.equal(task.runs[0].status, 'done')
@@ -108,7 +106,7 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
     '不再有常驻编排器',
   )
   const talks = log.filter((c) => !c.step)
-  assert.equal(talks.length, 3, '对话一轮 + 计划结果一轮 + 追要总结一轮')
+  assert.equal(talks.length, 2, '对话一轮 + 计划结果一轮，不再追要总结')
   assert.equal(talks[1].sessionKey, 'm')
   assert.equal(log.filter((c) => !!c.step).length, 2, '两个节点各执行一次')
 })
