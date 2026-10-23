@@ -136,6 +136,20 @@ export const EN_APP: Record<string, string> = {
   不指定: 'None',
   '删除分类「{name}」？': 'Delete category “{name}”?',
   '分类里的项目不会被删除，会变成未分类。': 'Projects in this category won’t be deleted; they become uncategorized.',
+  '带「内置」标记的分类可以改名，不能删除。': 'Categories marked “Built-in” can be renamed but not deleted.',
+
+  // 自带的项目分类（shared/builtin/project-categories.ts）
+  内置: 'Built-in',
+  'Web 应用': 'Web app',
+  '网站、管理后台等前后端分离的 Web 项目': 'Websites and admin consoles with a separate front end and back end',
+  游戏客户端: 'Game client',
+  'Unreal 客户端工程：玩法、关卡和界面': 'Unreal client projects: gameplay, levels and UI',
+  后端服务: 'Backend service',
+  '服务端接口、数据库和内部服务': 'Server APIs, databases and internal services',
+  工具与脚本: 'Tools & scripts',
+  '命令行工具、自动化脚本、构建与部署': 'CLI tools, automation scripts, builds and deploys',
+  文档与设计: 'Docs & design',
+  '需求文档、设计稿、界面与素材': 'Requirement docs, mockups, UI and assets',
 
   // 项目设置
   新项目: 'New project',

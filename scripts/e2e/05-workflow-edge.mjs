@@ -1023,6 +1023,20 @@ await runShard('工作流条件与失败', async (api) => {
   // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
   assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
   assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
+  // 项目分类：新装/升级时补齐一组内置分类，删内置的会被拒绝；自建分类还是能删
+  const cats = await call('GET', '/project-categories')
+  assert.equal(cats.filter((c) => c.builtin).length, 5, '自带一组内置项目分类')
+  const delBuiltin = await fetch(`${base}/project-categories/${cats.find((c) => c.builtin).id}`, {
+    method: 'DELETE',
+    // 服务端要求非 GET 请求带 JSON 的 content-type，不带会被中间件当成 415
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.equal(delBuiltin.status, 409, '内置分类不能删')
+  assert.match((await delBuiltin.json()).error, /内置分类不能删除/)
+  const mine = await call('POST', '/project-categories', { name: '临时分类', description: '', workflowId: '' })
+  assert.equal(mine.builtin, false, '自建分类不带内置标记')
+  await call('DELETE', `/project-categories/${mine.id}`)
+  assert.ok(!(await call('GET', '/project-categories')).some((c) => c.id === mine.id), '自建分类删得掉')
   // 任务按项目分目录，任务文件里只有用户的消息，完整对话在 .messages.json 里，打开任务时才读
   const legacyFile = path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.json')
   assert.ok(existsSync(legacyFile), '旧的 tasks.json 拆成按项目分目录的任务文件')

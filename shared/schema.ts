@@ -578,7 +578,10 @@ export const ProjectCategoryInput = z.object({
 })
 export type ProjectCategoryInput = z.infer<typeof ProjectCategoryInput>
 
-export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape)
+export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape).extend({
+  /** 自带的分类：不能删除（判定按固定 id，见 shared/builtin/project-categories.ts）；旧数据缺这个字段时按 false 读 */
+  builtin: z.boolean().default(false),
+})
 export type ProjectCategory = z.infer<typeof ProjectCategory>
 
 /** 每个工作流一份暴露项取值（key 是工作流 id，值是 Workflow.expose 里的 key → 值） */

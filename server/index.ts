@@ -74,6 +74,11 @@ import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
 import {
+  builtinProjectCategories,
+  isBuiltinProjectCategory,
+  projectCategoryDeleteError,
+} from '../shared/builtin/project-categories.ts'
+import {
   ensureProjectAgents,
   migrateProjectsToGeneral,
   pruneMergedAgents,
@@ -114,6 +119,7 @@ const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Wo
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
   'project-categories.json',
   ProjectCategory,
+  builtinProjectCategories,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 
@@ -537,6 +543,8 @@ app.delete('/workflows/:id', async (c) => {
 })
 
 // ---- 项目分类 ----
+/** 带 builtin 标记返回：新建的自建分类也明确给 false，和 GET 里的字段一致 */
+const withBuiltinFlag = (x: ProjectCategory) => ({ ...x, builtin: isBuiltinProjectCategory(x.id) })
 async function parseProjectCategory(body: unknown, selfId?: string) {
   const p = ProjectCategoryInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
@@ -546,11 +554,14 @@ async function parseProjectCategory(body: unknown, selfId?: string) {
   return { data: p.data }
 }
 
-app.get('/project-categories', async (c) => c.json(await projectCategories.list()))
+app.get('/project-categories', async (c) =>
+  // builtin 标记以固定 id 为准：旧数据或手改的文件里缺这个字段时也返回正确的值，和删除判定一致
+  c.json((await projectCategories.list()).map(withBuiltinFlag)),
+)
 
 app.post('/project-categories', async (c) => {
   const r = await parseProjectCategory(await c.req.json())
-  return r.error ? bad(c, r.error) : c.json(await projectCategories.create(r.data!), 201)
+  return r.error ? bad(c, r.error) : c.json(withBuiltinFlag(await projectCategories.create(r.data!)), 201)
 })
 
 app.put('/project-categories/:id', async (c) => {
@@ -558,12 +569,14 @@ app.put('/project-categories/:id', async (c) => {
   const r = await parseProjectCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
   const x = await projectCategories.update(id, r.data!)
-  return x ? c.json(x) : bad(c, t('分类不存在'), 404)
+  return x ? c.json(withBuiltinFlag(x)) : bad(c, t('分类不存在'), 404)
 })
 
 // 删除分类时，其中的项目变为未分类
 app.delete('/project-categories/:id', async (c) => {
   const id = c.req.param('id')
+  const err = projectCategoryDeleteError(id)
+  if (err) return bad(c, err, 409)
   if (!(await projectCategories.remove(id))) return bad(c, t('分类不存在'), 404)
   for (const p of await projects.list()) {
     if (p.categoryId === id) await projects.update(p.id, { ...p, categoryId: '' })

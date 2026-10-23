@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Layers, Plus, Trash2 } from 'lucide-react'
 import type { ProjectCategory, ProjectCategoryInput } from '@shared/schema'
+import { isBuiltinProjectCategory } from '@shared/builtin/project-categories'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
@@ -11,7 +12,7 @@ import { Field, Input } from '@/components/ui/input'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 import { t } from '@shared/i18n'
 
-const toInput = ({ id, createdAt, updatedAt, ...rest }: ProjectCategory): ProjectCategoryInput => rest
+const toInput = ({ id, createdAt, updatedAt, builtin: _b, ...rest }: ProjectCategory): ProjectCategoryInput => rest
 
 /** 设置里的「项目分类」：分类决定项目默认用哪个工作流，改动自动保存 */
 export function ProjectCategoryList() {
@@ -32,6 +33,8 @@ export function ProjectCategoryList() {
       <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t('项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。')}
       </p>
+      {/* 内置分类按固定 id 认，改名不影响；说清楚为什么没有删除按钮 */}
+      <p className="text-xs leading-relaxed text-subtle">{t('带「内置」标记的分类可以改名，不能删除。')}</p>
       {projectCategories.length === 0 && (
         <p className="rounded-xl border border-dashed p-6 text-center text-[0.8125rem] text-subtle">
           {t('还没有项目分类。')}
@@ -52,6 +55,7 @@ export function ProjectCategoryList() {
 
 function CategoryRow({ category }: { category: ProjectCategory }) {
   const { projects, setProjectCategories, setProjects } = useData()
+  const builtin = isBuiltinProjectCategory(category.id)
   const [draft, setDraft] = useState<ProjectCategoryInput>(() => toInput(category))
   const [deleting, setDeleting] = useState(false)
   const valid = !!draft.name.trim()
@@ -85,17 +89,27 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
         <span className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium">{draft.name || t('未命名分类')}</span>
+        {builtin && (
+          <span
+            className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent"
+            title={t('内置分类不能删除')}
+          >
+            {t('内置')}
+          </span>
+        )}
         <span className="shrink-0 text-xs text-subtle">{t('{n} 个项目', { n: members })}</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('删除分类「{name}」', { name: category.name })}
-          title={t('删除分类')}
-          className="hover:text-danger"
-          onClick={() => setDeleting(true)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        {!builtin && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('删除分类「{name}」', { name: category.name })}
+            title={t('删除分类')}
+            className="hover:text-danger"
+            onClick={() => setDeleting(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
       <div className="flex flex-wrap gap-3">
         <Field label={t('名称')} className="flex-[1_1_160px]" error={valid ? undefined : t('名称不能为空')}>
