@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createBackground, type BgJob } from './background.ts'
+import { createBackground, type BgJob, type BgTimers } from './background.ts'
 import { childHoldsOf } from '../shared/task.ts'
 
 function repo() {
@@ -21,6 +21,48 @@ function repo() {
 function nodeScript(dir: string, name: string, code: string) {
   writeFileSync(path.join(dir, name), code)
   return `node ${name}`
+}
+
+/** 把控制权交回事件循环，让排队的微任务（promise 的 then）跑完 */
+const tick = () => new Promise<void>((r) => setImmediate(r))
+
+/**
+ * 可控的假时钟：只有 advance() 推进时间才触发定时器。
+ * 后台命令的超时兜底不能靠真实计时——等真实定时器时事件循环先空掉，node:test 会把用例判成 cancelledByParent
+ */
+function fakeClock() {
+  let now = 0
+  let seq = 0
+  const timers = new Map<number, { at: number; run: () => void }>()
+  return {
+    impl: {
+      setTimeout(fn: () => void, ms: number) {
+        const id = ++seq
+        timers.set(id, { at: now + Math.max(0, ms), run: fn })
+        return id
+      },
+      clearTimeout(handle: unknown) {
+        timers.delete(handle as number)
+      },
+    } satisfies BgTimers,
+    /** 推进时间：到点的定时器按先后顺序执行，每执行一个就让微任务跑完 */
+    async advance(ms: number) {
+      const target = now + ms
+      for (;;) {
+        const due = [...timers.entries()]
+          .filter(([, t]) => t.at <= target)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0]
+        if (!due) break
+        timers.delete(due[0])
+        now = due[1].at
+        due[1].run()
+        await tick()
+      }
+      now = target
+    },
+    /** 还排着的定时器：用例结束前应该清空 */
+    pending: () => [...timers.keys()],
+  }
 }
 
 /** 收集跑完的结果，等到够数为止 */
@@ -111,27 +153,32 @@ test('进程不退出（close 永远不来）：停止后记录先置终态，�
     started = true
     return new Promise<never>(() => {})
   }
-  const { bg } = collect(1, { run: never, killGraceMs: 200 })
+  // 兜底计时换成假时钟：推进时间才到点，不靠真实等待
+  const clock = fakeClock()
+  const { bg } = collect(1, { run: never, killGraceMs: 200, timers: clock.impl })
   const dir = mkdtempSync(path.join(tmpdir(), 'bg-stuck-'))
   bg.start({ taskId: 't1', name: '卡住', command: 'npm test', cwd: '', root: dir, exclusive: false })
   // 等它真的跑起来：算指纹那一步也可能被 stop 拦住，那样测不到「close 不来」
   for (let i = 0; i < 40 && !started; i++) await new Promise((r) => setTimeout(r, 50))
   assert.ok(started, '命令已经开始跑')
   assert.equal(bg.list('t1')[0].state, 'running', '先算在执行中')
-  const t0 = Date.now()
 
   const pending = () => bg.list('t1').filter((j) => j.state === 'queued' || j.state === 'running').length
   const task = { status: 'done' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
   assert.ok(childHoldsOf(task, { background: pending() }).includes('background'), '卡住时确实拦着')
 
-  // stop 不能无限等进程：上限到了就放，记录已经先置终态了
-  await bg.stop('t1')
-  assert.ok(Date.now() - t0 < 4000, '停止不会挂死调用方')
+  // stop 不能无限等一个不来的 close：上限到了就放，记录已经先置终态了
+  const stopped = bg.stop('t1')
+  await clock.advance(200)
   const job = bg.list('t1')[0]
   assert.equal(job.state, 'stopped', '记录先置终态')
   assert.match(job.lines.join('\n'), /进程未在 \d+ 秒内退出/)
   assert.equal(pending(), 0, '不再算还在跑')
   assert.ok(!childHoldsOf(task, { background: pending() }).includes('background'), '门禁放行')
+  // close 永远不来：stop 靠上限（killGraceMs + 2000）放行，不再挂着调用方
+  await clock.advance(2000)
+  await stopped
+  assert.deepEqual(clock.pending(), [], '没有残留的兜底定时器')
 })
 
 test('启动时清理上次遗留的记录：running / queued 都置终态，不再拦着完成', () => {

@@ -41,6 +41,27 @@ const KEEP_JOBS = 20
 const KILL_GRACE_MS = 8000
 
 /**
+ * 兜底计时用的定时器。默认是真实的 setTimeout；测试换成可控的假时钟，推进时间就能到点，
+ * 不靠真实等待（等真实定时器时事件循环先空掉，node:test 会把用例判成 cancelledByParent）
+ */
+export interface BgTimers {
+  setTimeout(fn: () => void, ms: number): unknown
+  clearTimeout(handle: unknown): void
+}
+
+const realTimers: BgTimers = {
+  setTimeout(fn, ms) {
+    const t = setTimeout(fn, ms)
+    // 兜底计时不许拖住进程退出：进程里只剩它时该退就退
+    t.unref?.()
+    return t
+  },
+  clearTimeout(handle) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>)
+  },
+}
+
+/**
  * 工作目录的指纹：git 状态（改了、删了、多了文件都算，忽略掉的文件不算）加当前提交号；不是 git 仓库时返回空，不做比较。
  * 只用只读命令：git stash create 会写 index.lock，同一个目录并发跑后台命令时两边抢锁，失败一侧被 catch 成空指纹，
  * 于是「跑的期间文件被改过」这个提醒会偶发漏报。
@@ -61,11 +82,12 @@ async function fingerprint(dir: string) {
 
 export function createBackground(
   onDone: (job: BgJob, text: string) => void,
-  /** 测试用：换掉真正跑命令的实现、缩短停止后的等待上限 */
-  deps: { run?: typeof runShellIn; killGraceMs?: number } = {},
+  /** 测试用：换掉真正跑命令的实现、缩短停止后的等待上限、换成假时钟 */
+  deps: { run?: typeof runShellIn; killGraceMs?: number; timers?: BgTimers } = {},
 ) {
   const runShell = deps.run ?? runShellIn
   const killGraceMs = deps.killGraceMs ?? KILL_GRACE_MS
+  const timers = deps.timers ?? realTimers
   const jobs = new Map<string, BgJob>()
   const aborts = new Map<string, AbortController>()
   /** 正在跑的命令什么时候真正结束：停止后要等进程退出再删工作目录（Windows 上进程占着目录删不掉） */
@@ -73,7 +95,7 @@ export function createBackground(
   /** 独占的命令（编译这类）按项目目录排队 */
   const chains = new Map<string, Promise<unknown>>()
   /** 停止后等进程退出的计时（见 armKillGrace） */
-  const killTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const killTimers = new Map<string, unknown>()
 
   /**
    * 一次后台命令的终态只从这里定：进程真结束、被停止、启动就失败、等不到进程退出，全走这里。
@@ -87,8 +109,8 @@ export function createBackground(
     if (info.note) j.lines.push(info.note)
     j.endedAt = new Date().toISOString()
     const t = killTimers.get(j.id)
-    if (t) {
-      clearTimeout(t)
+    if (t !== undefined) {
+      timers.clearTimeout(t)
       killTimers.delete(j.id)
     }
     return true
@@ -97,7 +119,7 @@ export function createBackground(
   /** 停止后开始计时：到点记录还不是终态就先置 stopped，不让门禁和「彻底完成」等一个不来的 close */
   function armKillGrace(j: BgJob) {
     if (j.endedAt || killTimers.has(j.id)) return
-    const t = setTimeout(() => {
+    const t = timers.setTimeout(() => {
       killTimers.delete(j.id)
       const note = `（进程未在 ${Math.round(killGraceMs / 1000)} 秒内退出：记录已置终态，但它可能还在跑）`
       if (!finish(j, 'stopped', { note })) return
@@ -107,7 +129,6 @@ export function createBackground(
         command: j.command,
       })
     }, killGraceMs)
-    t.unref?.()
     killTimers.set(j.id, t)
   }
 
@@ -258,11 +279,12 @@ export function createBackground(
         if (p) waits.push(p)
       }
       const wait = Promise.allSettled(waits).then(() => {})
+      let capTimer: unknown
       const cap = new Promise<void>((r) => {
-        const t = setTimeout(r, killGraceMs + 2000)
-        t.unref?.()
+        capTimer = timers.setTimeout(r, killGraceMs + 2000)
       })
-      return Promise.race([wait, cap])
+      // 进程真退出了就撤掉上限计时，别留一个没人等的定时器（测试里靠它断言没有残留）
+      return Promise.race([wait, cap]).finally(() => timers.clearTimeout(capTimer))
     },
     /**
      * 上一次退出（被强杀、崩溃）时还没结束的记录：进程已经不在了，不能再算「还在跑」。
