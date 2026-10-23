@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Loader2, Plus, Search, Sparkles, Terminal, Trash2 } from 'lucide-react'
 import type { LibraryCli, LibraryItem } from '@shared/library'
@@ -39,14 +39,20 @@ export function LibraryPage() {
   const [creating, setCreating] = useState(false)
   const [ai, setAi] = useState(false)
 
-  const load = () =>
-    api
-      .library(kind)
+  // 切换分页前发出的读取（例如保存后刷新）晚回来时不能盖掉新分页的列表
+  const current = useRef(kind)
+  current.current = kind
+  const load = () => {
+    const k = kind
+    return api
+      .library(k)
       .then((d) => {
+        if (current.current !== k) return
         setData(d)
         setError('')
       })
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => current.current === k && setError((e as Error).message))
+  }
   useEffect(() => {
     setData(null)
     void load()
