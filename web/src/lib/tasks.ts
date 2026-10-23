@@ -27,23 +27,23 @@ export const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
 
 /**
- * 实时速度：正在输出的 Agent 的 token/s 之和（工作流里可能几个节点同时输出）。
- * 没有输出时显示这一轮最后一次的速度；刚开始还没有输出时为 0。实现和「整个运行」的统计共用一个（shared/run-usage）。
+ * 实时速度：只算正在输出的 Agent 的 token/s（工作流里可能几个节点同时输出），没在输出就是 0。
+ * 实现在 shared/run-usage（和「整个运行」的分层同一条规则）：不拿 lastTps 冒充实时速度。
  */
-export { liveTps } from '@shared/run-usage'
+export { tpsNow } from '@shared/run-usage'
 
 /**
  * Token 浮层里的分组：有子对话或派出的子任务时才分开列「本对话」「子任务与子对话」，
  * 没有时返回空数组，浮层退化成只显示总数和输入输出（不出现「子任务 0」这种噪音行）。
- * 子任务的速度 = 整个运行的速度 − 本对话的速度，两项加起来正好是整体。
+ * 两行的速度都是实时值，加起来就是整体的速度（停下的部分不贡献速度）。
  */
 export function tokenGroups(
-  run: Pick<RunUsage, 'own' | 'sub' | 'tps' | 'runTps' | 'children' | 'helpers'>,
+  run: Pick<RunUsage, 'own' | 'sub' | 'tps' | 'subTps' | 'children' | 'helpers'>,
 ): { key: 'own' | 'sub'; tokens: number; tps: number }[] {
   if (!run.children && !run.helpers && tokenCount(run.sub) === 0) return []
   return [
     { key: 'own', tokens: tokenCount(run.own), tps: run.tps },
-    { key: 'sub', tokens: tokenCount(run.sub), tps: Math.max(0, run.runTps - run.tps) },
+    { key: 'sub', tokens: tokenCount(run.sub), tps: run.subTps },
   ]
 }
 

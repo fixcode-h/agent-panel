@@ -126,11 +126,95 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
-  // Token 胶囊：点开浮层看整个运行的合计（演示里的任务没有子对话，退化成只显示总数和输入输出）
+  // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()
     await check(p, '任务-Token浮层', ['整个运行', '缓存命中'])
     await p.keyboard.press('Escape')
+  }
+  // 浮层里的速度只算正在输出的：造两种数据各截一张（演示数据用完改回去，不影响后面的截图）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    /** writing：父对话在写、子对话和子任务都停了（留着上一轮很高的速度）；idle：全都没在输出 */
+    const setup = (mode) =>
+      p.evaluate(
+        ([k, m]) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const parent = db.tasks.find((x) => x.title.includes('购物车'))
+          const agent = (tps, lastTps) => ({
+            context: 96000,
+            window: 200000,
+            model: 'claude-sonnet-5-5',
+            tps,
+            lastTps,
+            outputTokens: 1000,
+            genMs: 1000,
+          })
+          // 自己的步骤和派出的子任务分开用两个角色，界面才能把两层的速度拆开
+          for (const s of parent.steps) s.agentId = s.slot === 'sub' ? 'demo-helper' : 'demo-own'
+          parent.status = m === 'writing' ? 'running' : 'done'
+          parent.usage.agents = {
+            'demo-own': agent(m === 'writing' ? 42 : 0, m === 'writing' ? 42 : 900),
+            // 已经停下的子任务：lastTps 还留着 2041.7，不能算进速度
+            'demo-helper': agent(0, 2041.7),
+          }
+          db.tasks = db.tasks.filter((x) => !x.id.startsWith('demo-speed-'))
+          for (const [i, id] of ['demo-speed-c1', 'demo-speed-c2'].entries()) {
+            db.tasks.push({
+              ...structuredClone(parent),
+              id,
+              parentTaskId: i ? 'demo-speed-c1' : parent.id,
+              rootTaskId: parent.id,
+              title: i ? '子对话：核对通知时序' : '子对话：角标订阅',
+              status: 'done',
+              steps: [],
+              messages: [],
+              usage: {
+                agents: { 'demo-child': agent(0, 3000) },
+                inputTokens: 2000,
+                outputTokens: 200,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                costUsd: 0.01,
+              },
+            })
+          }
+          localStorage.setItem(k, JSON.stringify(db))
+        },
+        [key, mode],
+      )
+    // 重新加载后回到任务页（当前路由就是任务页，不用再点头部）
+    const gotoTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    const openToken = async () => {
+      await gotoTask()
+      await p.getByTitle('Token 用量').first().click()
+      await p.waitForTimeout(500)
+    }
+    const popover = async () => (await p.getByRole('dialog').last().innerText()).replace(/\s+/g, ' ')
+    // 父对话在写：整体 = 本对话，子任务与子对话那行是「空闲」
+    await setup('writing')
+    await openToken()
+    await check(p, '任务-Token浮层-父对话在写', ['整个运行', '空闲', '42.0 token/s'])
+    const writing = await popover()
+    if (/2041\.7|3000\.0/.test(writing)) errors.push(`Token 浮层：停下的子任务还在贡献速度（${writing}）`)
+    await p.keyboard.press('Escape')
+    // 全都没在输出：不显示任何残留速度
+    await setup('idle')
+    await openToken()
+    await check(p, '任务-Token浮层-全都空闲', ['整个运行', '空闲'])
+    const idle = await popover()
+    if (/token\/s/.test(idle)) errors.push(`Token 浮层：全都空闲时还显示速度（${idle}）`)
+    await p.keyboard.press('Escape')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await gotoTask()
   }
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
