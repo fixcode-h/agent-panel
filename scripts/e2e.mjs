@@ -1673,6 +1673,94 @@ try {
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
 
+    // ---- 子对话请父对话决定、而父对话正停在等下一句：点「交给父对话决定」要真的续上那一轮，卡片也要换状态 ----
+    {
+      let waiting = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: '',
+        cli: 'commandcode',
+        askUser: false,
+        prompt: 'FAKE_WAIT 父对话先看代码',
+      })
+      await call('POST', `/tasks/${waiting.id}/presence`, { viewerId: 'e2e', active: true })
+      for (let i = 0; i < 100; i++) {
+        waiting = await call('GET', `/tasks/${waiting.id}`)
+        if (waiting.awaitingUser) break
+        await sleep(100)
+      }
+      assert.ok(waiting.awaitingUser, '父对话停在等下一句上')
+      assert.equal(waiting.working, false, '等下一句不算执行中，但执行位还占着')
+      const waitKid = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            parentTaskId: waiting.id,
+            prompt: 'ASK_PARENT 选一个方案',
+          })
+        ).id,
+        20000,
+      )
+      const card = (await call('GET', `/tasks/${waiting.id}`)).messages.find((m) => m.panel === 'ask')
+      assert.ok(card?.ask, '父对话里记了提问卡片')
+      const waitBefore = readLog(log + '.wait').length
+      // 以前只看 working：停在等下一句时 working 是 false，直接 followUp 撞上执行位抛 TaskBusyError，
+      // 被 .catch 吞成一条日志，接口还返回成功，界面上就是「点了好几次没反应」
+      const handed = await call('POST', `/tasks/${waiting.id}/child-asks/${card.id}`, {
+        answer: '',
+        delegate: true,
+      })
+      assert.equal(handed.nudge?.ok, true, '接口告诉界面父对话叫起来了')
+      const handedAsk = handed.task.messages.find((m) => m.id === card.id)?.ask
+      assert.equal(handedAsk.delegated, true, '卡片马上换成已交给父对话决定')
+      assert.ok(handedAsk.delegatedAt, '记下叫起的时间')
+      assert.equal(handedAsk.delegatedError, undefined, '叫起来了就不该留失败原因')
+      // 真续上了停在等下一句的那个 CLI：它收到的下一句里有问题全文和选项（不是只写「问题在收件箱里」）
+      let handled = waiting
+      for (let i = 0; i < 200; i++) {
+        handled = await call('GET', `/tasks/${waiting.id}`)
+        if (handled.messages.some((m) => m.role === 'agent' && m.text.includes('等到的下一句'))) break
+        await sleep(150)
+      }
+      assert.ok(
+        handled.messages.some((m) => m.role === 'agent' && m.text.includes('等到的下一句')),
+        '父对话真的开了一轮（续上等下一句的那个进程）',
+      )
+      const gotWait = readLog(log + '.wait')
+        .slice(waitBefore)
+        .at(-1)
+      assert.ok(gotWait, '等下一句的 CLI 收到了下一句')
+      assert.match(gotWait.got, /在等你决定/, '交还给父对话的是这件事')
+      assert.match(gotWait.got, /用 A 方案还是 B 方案？/, '问题全文一起交过去')
+      assert.match(gotWait.got, /1\. A 方案/, '选项也一起交过去')
+      // 用户会连点好几下：已经叫起过就不再叫，不重复开轮、不重复往对话里塞消息
+      const again = await call('POST', `/tasks/${waiting.id}/child-asks/${card.id}`, {
+        answer: '',
+        delegate: true,
+      })
+      assert.equal(again.nudge?.ok, true)
+      assert.equal(again.nudge?.how, 'already', '重复点击直接返回，不再叫一次')
+      assert.equal(
+        again.task.messages.filter((m) => m.panel === 'child' && m.text.includes('在等你决定')).length,
+        1,
+        '父对话只收到一条这次的提问',
+      )
+      assert.equal(
+        again.task.messages.find((m) => m.id === card.id)?.ask.delegatedAt,
+        handedAsk.delegatedAt,
+        '叫起时间不变',
+      )
+      // 重新拉一次任务（页面刷新）：卡片状态在服务端，不是只存在前端的临时状态
+      const refetched = (await call('GET', `/tasks/${waiting.id}`)).messages.find((m) => m.id === card.id)
+      assert.equal(refetched.ask.delegated, true, '刷新后仍是已交给父对话决定')
+      assert.equal(refetched.ask.answer, undefined, '还没被回答')
+      await call('DELETE', `/tasks/${waitKid.id}`)
+      await call('DELETE', `/tasks/${waiting.id}`)
+      step('父对话停在等下一句时点交给父对话决定：真续上这一轮，卡片换成已交给父对话决定，重复点击不重复开轮')
+    }
+
     // ---- 执行计划：步骤挂在后台命令上等结果，结果回来自动标完成；计划做完没写总结时面板追一轮要总结 ----
     {
       const planned = await waitDone(

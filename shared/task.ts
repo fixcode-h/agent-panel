@@ -538,6 +538,18 @@ function textKey(s: string) {
 }
 
 /**
+ * 交给父对话决定时发给它的话：带上问题全文和选项。
+ * 父对话停在等下一句时，这次交付是续上同一个 CLI 调用，收件箱不会重新读；
+ * 只写「问题在收件箱里」它拿不到内容，会不知道要决定什么。
+ */
+export function delegatePrompt(ask: { from: string; title: string; question: string; options: string[] }) {
+  const options = ask.options.length
+    ? `\n\n可选的做法：\n${ask.options.map((x, i) => `${i + 1}. ${x}`).join('\n')}`
+    : ''
+  return `子对话「${ask.title}」在等你决定：\n${ask.question}${options}\n\n决定后用 send_to_conversation 交给它（id: ${ask.from}）。`
+}
+
+/**
  * 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发。
  * 提问卡片是否已回答也要算进去，否则在别处答完（父对话里点选、父对话转达）后卡片仍是「待决定」
  *
@@ -545,7 +557,10 @@ function textKey(s: string) {
  * 代价只看长度、不逐字符扫输出，落盘指纹的增量计算用它（见 server/task-store.ts 的 createStampTracker）
  */
 export function messageStamp(m: TaskMessage, withOutput = true) {
-  const ask = m.ask ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}` : ''
+  // delegated 也要算进指纹：交给父对话决定后服务端只改了这几个字段，不算的话卡片推不过去，会一直停在「等你选择」
+  const ask = m.ask
+    ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}:${m.ask.delegated ? 1 : 0}:${m.ask.delegatedAt ?? ''}:${m.ask.delegatedError ?? ''}`
+    : ''
   return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${ask}|${m.tools
     .map(
       (t) =>

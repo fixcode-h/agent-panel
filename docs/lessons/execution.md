@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/tasks.ts, shared/plan.ts, shared/plan.test.ts, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -27,6 +27,12 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/plan.ts, shared/plan.test.
 - 规则：子对话回合结束时收口父对话计划（`shared/plan.ts` 的 `childTurnSettle`）不能只看 `working`/`requests`/`status`：还要看它自己有没有没做完的计划步骤、有没有正在跑或排队的后台命令（`background.list` 里 `state` 是 `queued`/`running`）、这一轮之后还要不要接着做（`hasHeld`、`startQueue`）。没收口时用 `holdWait` 让父计划那一步继续等、note 写清在等什么，不要标完成；`server/tasks.ts` 的 `reportToParent` 用同一个判据。计划做完了会收起（`activePlan` 是 undefined），不会永远挡住收口，所以判据里不要写计时。
 - 起因：子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图里「计划 6/8」与实际不符），实际还有子对话在改代码、跑界面检查。
 - 防线：`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例。
+
+## 交给另一个对话的任务要走实时交付，失败必须显示给用户
+
+- 规则：让父对话去处理一件事（子对话的提问交给它决定之类）时，不能按 `working` 判断它空闲：停在等下一句、收尾中、预热时 `working` 都是 false，但执行位还占着，直接 `followUp` 会抛 `TaskBusyError`。用 `deliver`（等下一句就直接续上、能插话就插话、收不下记到这一轮结束后处理），只有 `live` 里没有进程时才 `followUp`；问题全文和选项一起交过去，续上同一个进程时收件箱不会重读。叫不起来时把原因返回给接口，界面显示原因并给重试，不能只写日志；卡片状态字段（如 `delegated`）必须进 `messageStamp`，否则服务端改了也不推送。
+- 起因：点「交给父对话决定」好几次父对话都没动：它停在等下一句时 `working=false`，`followUp` 撞上执行位后只留了一条 `log.warn`，接口照样返回成功。
+- 防线：`shared/task-stamp.test.ts`、`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」用例。
 
 ## 每个收 CliEvent 的地方都要把工具行收尾
 

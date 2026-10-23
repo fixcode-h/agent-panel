@@ -960,6 +960,10 @@ export const TaskMessage = z.object({
       by: z.enum(['user', 'parent']).optional(),
       /** 用户没回答，交给父对话的 AI 决定：卡片显示「交给父对话决定」，子对话不再弹选择 */
       delegated: z.boolean().optional(),
+      /** 成功叫起父对话的时间：重复点「交给父对话决定」时据此判断要不要再叫一次（失败时为空） */
+      delegatedAt: z.string().optional(),
+      /** 上次没能叫起父对话的原因：卡片上显示给用户并给重试，刷新后也还在 */
+      delegatedError: z.string().optional(),
     })
     .optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */

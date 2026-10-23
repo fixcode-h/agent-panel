@@ -27,6 +27,7 @@ import {
   beginRun,
   childStartedAt,
   closeFlow,
+  delegatePrompt,
   dropEndNotes,
   endRun,
   messageStamp,
@@ -1059,8 +1060,48 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 让父对话马上处理一件事（子对话的提问交给它决定之类），并把「到底交到了没有」如实告诉调用方。
+   * 父对话正在这一轮里：走和用户消息一样的实时交付 —— CLI 停在等下一句就直接续上、能插话就插话、
+   * 收不下就记下来这一轮结束后处理。不再只看 working：等下一句、收尾中、预热时 working 都是 false，
+   * 但执行位仍然占着，以前直接 followUp 会抛 TaskBusyError、被吞成一条日志，界面上就是「点了没反应」。
+   * 完全空闲才开新一轮；开不起来时返回原因，由界面显示给用户。
+   */
+  async function nudgeParent(parent: Task, text: string) {
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      panel: 'child',
+      at: new Date().toISOString(),
+    }
+    // 刚开始预热、CLI 还没停在等下一句：这一轮收不下，也不能干等它启动完，让用户稍后重试
+    if (live.get(parent.id)?.task.prewarming) return { ok: false as const, error: t('父对话正在启动，稍后再试') }
+    for (let i = 0; i < 2; i++) {
+      const entry = live.get(parent.id)
+      if (entry?.task.status === 'running') {
+        const r = await deliver(entry, msg, text, [])
+        return { ok: true as const, how: r.how }
+      }
+      if (!entry) break
+      // 进程还占着执行位但没在跑这一轮（刚结束、正在收尾）：等它收完再开新一轮
+      await entry.done?.catch(() => {})
+      if (!live.has(parent.id)) break
+    }
+    try {
+      await followUp(parent.id, { text, attachments: [], panel: 'child' })
+      return { ok: true as const, how: 'next' as const }
+    } catch (e) {
+      if (e instanceof TaskBusyError) return { ok: false as const, error: t('父对话正在执行，等它这一轮结束后重试') }
+      return { ok: false as const, error: (e as Error).message }
+    }
+  }
+
+  /**
    * 用户在父对话的提问卡片上回答：答案直接交给子对话，并告诉父对话的 AI 不用再回答；
-   * 不回答而是交给父对话决定时（delegate），父对话空闲就开一轮让它处理收件箱里的提问
+   * 不回答而是交给父对话决定时（delegate），先叫起父对话，叫不起来就把原因返回给界面
    */
   async function answerChildAsk(parentId: string, msgId: string, answer: string, delegate: boolean) {
     const entry = live.get(parentId)
@@ -1070,19 +1111,38 @@ export function tasksApi(deps: {
     if (m.ask.answer !== undefined) return { error: t('这个提问已经回答过了') }
     const { from, title, question } = m.ask
     if (delegate) {
-      // 记在卡片上（刷新后还是「交给父对话决定」），子对话那边不再弹选择
-      m.ask = { ...m.ask, delegated: true }
-      if (entry) entry.rev++
-      else await store.update(parent.id, parent)
-      await dropChildAsks(from, [m.id])
-      // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
-      if (!entry?.task.working)
-        await followUp(parent.id, {
-          text: `子对话「${title}」在等你决定（问题在收件箱里）。决定后用 send_to_conversation 交给它（id: ${from}）。`,
-          attachments: [],
-          panel: 'child',
-        }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
-      return { task: live.get(parent.id)?.task ?? parent }
+      // 已经交出去、也真的叫起过：重复点击不再叫一次（用户会连点好几下）
+      if (m.ask.delegated && m.ask.delegatedAt)
+        return { task: live.get(parent.id)?.task ?? parent, nudge: { ok: true as const, how: 'already' as const } }
+      // 先记成「已交给父对话决定」并落盘：叫父对话时它会重新读这份任务，不先写下去这一步会被新副本盖掉
+      m.ask.delegated = true
+      await store.update(parent.id, parent)
+      // 问题全文一起交过去：父对话续上等下一句的那次调用时，收件箱不会重新读，只写「在收件箱里」它拿不到内容
+      const nudge = await nudgeParent(parent, delegatePrompt(m.ask))
+      const cur = live.get(parent.id)?.task ?? parent
+      const at = new Date().toISOString()
+      if (nudge.ok) {
+        // 记下叫起的时间，重复点击据此判断；问题已经随消息交出去了，收件箱里不再留一份免得又答一遍
+        const done = cur.messages.find((x) => x.id === msgId)?.ask
+        if (done) {
+          done.delegatedAt = at
+          delete done.delegatedError
+        }
+        cur.inbox = cur.inbox.filter(
+          (x) => !(x.from === from && x.text.startsWith('（提问）') && x.text.includes(question)),
+        )
+        await dropChildAsks(from, [m.id])
+      } else {
+        // 没能叫起父对话：问题留在收件箱里，父对话下一轮还能读到；卡片上另外显示原因和重试
+        if (!cur.inbox.some((x) => x.from === from && x.text.startsWith('（提问）') && x.text.includes(question)))
+          cur.inbox.push({ from, title, text: `（提问）${question}`, at })
+        const failed = cur.messages.find((x) => x.id === msgId)?.ask
+        if (failed) failed.delegatedError = nudge.error
+      }
+      const live2 = live.get(parent.id)
+      if (live2) live2.rev++
+      await store.update(parent.id, cur)
+      return { task: cur, nudge }
     }
     const r = await sendToChild(parent.id, from, `关于你刚才的提问，用户的决定：\n${answer}`)
     if (!r.ok) return { error: r.info }
@@ -2369,7 +2429,8 @@ export function tasksApi(deps: {
     if (!answer && !body.data.delegate) return bad(c, t('回答是空的'))
     const r = await answerChildAsk(c.req.param('id'), c.req.param('mid'), answer, body.data.delegate)
     if ('error' in r) return bad(c, r.error ?? '')
-    return c.json(r.task)
+    // 带上 nudge：交给父对话决定时到底叫没叫起来，界面据此显示结果或原因（不能只写日志）
+    return c.json({ task: r.task, nudge: 'nudge' in r ? r.nudge : undefined })
   })
 
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
