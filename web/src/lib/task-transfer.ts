@@ -16,6 +16,14 @@ async function appVersion() {
   return (await api.appVersion().catch(() => null))?.current ?? ''
 }
 
+/**
+ * 子对话（含多层）的统计合计：服务端读完整子对话算好，前端只拿几个数字。
+ * 拿不到时不影响导出，只是报告里少一组合计数（不能因此输出一份互相矛盾的数字）。
+ */
+async function childrenStats(id: string) {
+  return api.taskChildrenStats(id).catch(() => undefined)
+}
+
 function download(name: string, text: string) {
   const blob = new Blob([text], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -30,8 +38,8 @@ function download(name: string, text: string) {
 
 /** 导出整个任务（对话或工作流执行）：取完整内容，去掉本机信息和密钥，存成 JSON 文件 */
 export async function downloadTask(id: string, agents: Agent[]) {
-  const task = await api.task(id)
-  const bundle = exportTask(task, agents, await appVersion())
+  const [task, children, app] = await Promise.all([api.task(id), childrenStats(id), appVersion()])
+  const bundle = exportTask(task, agents, app, new Date(), children)
   download(exportFileName(task.title), JSON.stringify(bundle, null, 2))
 }
 
@@ -62,7 +70,11 @@ function toBase64(s: string) {
  */
 export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; projectId: string; focus?: string }) {
   const app = await appVersion()
-  const bundles: TaskExport[] = opts.tasks.map((tk) => exportTask(tk, withImportedAgents(opts.agents, tk), app))
+  const bundles: TaskExport[] = await Promise.all(
+    opts.tasks.map(async (tk) =>
+      exportTask(tk, withImportedAgents(opts.agents, tk), app, new Date(), await childrenStats(tk.id)),
+    ),
+  )
   const first = opts.tasks[0]
   const title =
     opts.tasks.length > 1

@@ -301,3 +301,36 @@ test('回复完停在等下一句时被停下：这一轮算正常结束，不�
   await runEngineTurn(host(half, [], async () => ({ ok: false, stopped: true, error: '已停止' })))
   assert.equal(half.turns.at(-1)?.status, 'stopped')
 })
+
+test('list_conversations：父对话能看到子对话在做什么、在等什么、多久没新输出', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '看下子对话' } as never, undefined, '', 'p4'),
+    id: 'p4',
+  } as Task
+  const log: AgentCall[] = []
+  const h = host(task, log, async (call) => {
+    const text = await call.orch!.conversations()
+    assert.match(text, /改后端/)
+    assert.match(text, /等 1 个后台命令/)
+    assert.match(text, /在做：跑测试/)
+    assert.match(text, /最后活动/)
+    return { ok: true, text: '好' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => [
+    {
+      id: 'c1',
+      title: '改后端',
+      status: 'running',
+      busy: true,
+      summary: '在改接口',
+      at: '2026-01-01T10:00:00Z',
+      doing: '跑测试',
+      waiting: '等 1 个后台命令',
+      lastActivityAt: new Date().toISOString(),
+    },
+  ]
+
+  await runEngineTurn(h)
+  assert.equal(log.length, 1)
+})

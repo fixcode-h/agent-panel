@@ -36,8 +36,9 @@ import type {
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
-import type { ChildActivity, ChildHold } from '@shared/task'
+import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
+import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -336,6 +337,8 @@ export const api = {
   task: (id: string) => request<Task>(`/tasks/${id}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
+  /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
+  taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
   taskChildren: (id: string) =>
     request<
       {
@@ -353,14 +356,18 @@ export const api = {
         requests?: number
         /** 请用户选择、还没人回答的提问数（也是「停在等你」的一种） */
         asking?: number
-        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」 */
-        plan?: { done: number; total: number }
+        /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」；正在做的那一步也带上 */
+        plan?: { done: number; total: number; step?: string; child?: string }
         /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */
         unmerged?: boolean
         /** 在独立 worktree 里改时的分支 */
         branch?: string
         /** 正在执行时这会儿在做什么 */
         activity?: ChildActivity
+        /** 最后有动静的时间：几分钟没新输出、又不能用等待解释时，行上标黄 / 标红 */
+        lastActivityAt?: string
+        /** 这会儿在等什么：等用户回答、等后台命令、等子任务、等工作流、等下一句 */
+        waiting?: ChildWait
         /** 用户标记了「解决」：列表归到「已完成」并带标记 */
         resolved?: boolean
         /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */

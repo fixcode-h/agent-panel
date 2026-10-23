@@ -942,6 +942,8 @@ export const ToolUse = z.object({
   output: z.string().optional(),
   /** 工具执行失败 */
   failed: z.boolean().optional(),
+  /** 工具进程的退出码（CLI 报得出时才有）：有输出但退出码非零，和什么都没跑出来，排查时是两回事 */
+  exitCode: z.number().optional(),
   /** 还在执行（命令的输出会边跑边更新） */
   running: z.boolean().optional(),
   /** 这次调用跑了多久（毫秒）：跑完才有 */

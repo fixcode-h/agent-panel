@@ -82,7 +82,7 @@ import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
-import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
   activePlan,
@@ -286,7 +286,8 @@ export interface Orchestra {
   plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
-  setPlan(input: { title?: string; steps?: PlanItemInput[] }): { ok: boolean; info: string }
+  /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
+  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): { ok: boolean; info: string }
   finishPlan(summary: string): { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
@@ -420,6 +421,12 @@ export interface EngineHost {
       busy?: boolean
       summary: string
       at: string
+      /** 这会儿在做什么（正在调的工具、计划做到第几步）：有空就不至于以「没动静」为由猜它卡住了 */
+      doing?: string
+      /** 在等什么（等用户回答、等后台命令、等子任务）：不是在跑也不是卡住 */
+      waiting?: string
+      /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
+      lastActivityAt?: string
     }[]
   >
   /** 新建子对话并异步执行，返回后父对话继续；完成后由宿主把结果回报到父对话 */
@@ -1028,7 +1035,7 @@ ${now}
 
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
-- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。
+- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
@@ -2438,7 +2445,16 @@ function makeOrchestra(
       const list = await host.listConversations()
       if (!list.length) return '（还没有子对话）'
       return list
-        .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
+        .map((c) =>
+          [
+            `- ${c.id}｜${c.title}｜${c.status}`,
+            c.summary ? `：${clip(c.summary, 200)}` : '',
+            // 在等什么、最后有动静多久了：「是不是卡住了」靠这两项回答，不再让人拿分支时间戳猜
+            c.waiting ? `｜${c.waiting}` : '',
+            c.doing ? `｜在做：${c.doing}` : '',
+            c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : `｜最近 ${timeAgo(c.at)}`,
+          ].join(''),
+        )
         .join('\n')
     },
     async createConversation(title, message, files, step) {
@@ -2939,8 +2955,8 @@ async function conversationPrompt(
 ${
   host.task.parentTaskId
     ? host.ueBuild
-      ? '别的子对话改不到这里，你也不用认领文件，放心改。这是 UE 项目，不在这里编译，见上面的「UE 编译交给父对话申请」。'
-      : '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
+      ? '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。这是 UE 项目，不在这里编译，见上面的「UE 编译交给父对话申请」。'
+      : '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
 不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
@@ -2969,7 +2985,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
           ? list
               .map(
                 (c) =>
-                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}：${clip(c.summary, 200) || '（还没有结果）'}`,
+                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}${c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
               )
               .join('\n')
           : '（还没有子对话）'
@@ -3001,7 +3017,9 @@ ${
   host.childIsolation === 'worktree'
     ? `## 子对话各自在独立分支里改
 要改代码的子对话都有自己的独立分支目录，互相看不到对方改到一半的文件。
+- 新建子对话时仍要用 files 写清它负责的文件或目录（相对项目根）：独立分支之间看不到对方的改动，两边先后改同一个文件时 git 往往能自动合上、不报冲突，等于悄悄把对方的改动盖掉。面板会按 files 和别的子对话声明的范围、已经改过的文件核对，重叠时在创建结果里提醒你；收到提醒就拆开范围，或者把同一批文件交给同一个子对话。
 - 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。合回去只代表改动进了你的分支，不等于它做完了：它还有计划没做完、后台命令还在跑、待回答的提问或者这一轮没结束时，面板不会把它标成完成，你也不要当它已经交付完了。
+- 合并结果里写着「两边都改了这些文件」时，那个文件两边都动过（git 没报冲突也算了）：让子对话核对内容、确认没有把对方的改动盖掉，再当它交付完了。
 - 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
 - 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`

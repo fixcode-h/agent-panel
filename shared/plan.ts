@@ -1,6 +1,7 @@
 /**
  * 对话的执行计划（task.plans）：Agent 用 set_plan 交整份列表，面板在这里合并，守住几条规则：
  * - 最多两层：主步骤和子步骤
+ * - 交整份列表时，没写进新列表的未完成步骤算删掉；只交变更步骤（partial）时，没写到的步骤原样留着
  * - 完成的步骤锁死：之后交的列表里改它、删它都无效，同样的内容要做就新加一步
  * - 整份都完成后计划收起（doneAt），这份计划就算结束；之后的新内容直接开一份新计划（finish_plan 只是提前结束）
  * - 等待中的步骤挂着后台命令、子对话：结果回来时 settleWait 按编号找到它，成功就标完成，失败退回进行中
@@ -132,7 +133,8 @@ function setStatus(item: PlanItem, status: PlanStatus, now: string) {
 
 /**
  * 合并一层列表：已有的按 id（其次按标题）对上；完成的原样留着、不吃新的改动；
- * 没写进新列表的未完成项删掉，完成的放回原来的位置
+ * 没写进新列表的未完成项删掉，完成的放回原来的位置。
+ * keep：只交变更步骤（partial）时为真，没写到的项一律放回原位、当成没动过
  */
 function mergeLevel<T extends PlanItem>(
   old: T[],
@@ -141,6 +143,7 @@ function mergeLevel<T extends PlanItem>(
   update: (cur: T, x: PlanItemInput) => void,
   nextId: () => string,
   locked: string[],
+  keep = false,
 ): T[] {
   const used = new Set<T>()
   const ids = new Set(old.map((x) => x.id))
@@ -165,9 +168,9 @@ function mergeLevel<T extends PlanItem>(
     ids.add(fresh)
     out.push(make(x, fresh))
   }
-  // 漏写的完成项放回原位
+  // 漏写的完成项放回原位（只交变更步骤时，漏写的未完成项也放回原位）
   old.forEach((o, i) => {
-    if (used.has(o) || o.status !== 'done') return
+    if (used.has(o) || (o.status !== 'done' && !keep)) return
     out.splice(Math.min(i, out.length), 0, o)
   })
   return out
@@ -228,10 +231,12 @@ function ensureWrapUp(plan: TaskPlan, kind: WrapUpKind, prev: PlanStep | undefin
  */
 export function applyPlan(
   task: PlanTask,
-  input: { title?: string; steps?: PlanItemInput[] },
+  input: { title?: string; steps?: PlanItemInput[]; partial?: boolean },
   now = new Date().toISOString(),
   wrapUp?: WrapUpKind,
 ): { ok: boolean; info: string } {
+  // 只交变更步骤：步骤一多时分两批交，没写到的未完成步骤不删（模型拼大段 JSON 容易出错）
+  const partial = input.partial === true
   const steps = Array.isArray(input.steps) ? input.steps.filter((x) => x && typeof x === 'object') : []
   if (!steps.length) return { ok: false, info: 'steps 是空的：至少写一个主步骤' }
   task.plans ??= []
@@ -286,6 +291,7 @@ export function applyPlan(
       },
       () => `${step.id}.${++n}`,
       locked,
+      partial,
     )
   }
   const before = plan.steps.filter((s) => s.status !== 'done').map((s) => s.title)
@@ -321,6 +327,7 @@ export function applyPlan(
     },
     () => String(++seq),
     locked,
+    partial,
   )
   const notes0: string[] = []
   if (wrapUp) {

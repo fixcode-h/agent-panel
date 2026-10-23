@@ -9,6 +9,7 @@ import {
   cacheMismatch,
   applyChanges,
   demoEvolution,
+  descendantTotals,
   exportTask,
   importTask,
   lineDiff,
@@ -17,6 +18,7 @@ import {
   redactSecrets,
   resolveChange,
   stripEvolution,
+  taskReport,
   taskStats,
 } from '../shared/task-export.ts'
 
@@ -90,6 +92,66 @@ test('导出：带版本号和统计，去掉会话、命令、项目、附件�
   assert.equal(s.nodes[0].cacheHitRate, 0.6)
   assert.equal(s.nodes[0].errors, 1)
   assert.equal(s.reworks, 1, '验收两轮算返工一次')
+})
+
+test('统计：子对话（含多层）的成本汇总进 children 和 combined，报告写出两组数', () => {
+  const child = Task.parse({
+    ...task,
+    id: 't2',
+    parentTaskId: 't1',
+    title: '子对话',
+    runMs: 30_000,
+    steps: [],
+    messages: [
+      { id: 'c1', role: 'system', step: '', text: '执行出错：超时', error: true, at },
+      {
+        id: 'c2',
+        role: 'agent',
+        agentId: coder.id,
+        step: '',
+        text: '跑了',
+        at,
+        tools: [{ kind: 'run', label: 'npm test', failed: true }],
+      },
+    ],
+    usage: { inputTokens: 2000, outputTokens: 400, cacheReadTokens: 1200, costUsd: 0.02 },
+  })
+  const grand = Task.parse({
+    ...child,
+    id: 't3',
+    parentTaskId: 't2',
+    runMs: 5000,
+    messages: [],
+    usage: { inputTokens: 500, outputTokens: 100, cacheReadTokens: 0, costUsd: 0.005 },
+  })
+  const kids = descendantTotals([child, grand])
+  assert.equal(kids.tasks, 2, '两个子对话，不含父对话')
+  assert.equal(kids.inputTokens, 2500)
+  assert.equal(kids.outputTokens, 500)
+  assert.equal(kids.durationMs, 35_000)
+  assert.equal(kids.cacheHitRate, 0.48, '命中率按合计重算')
+  assert.equal(kids.errors, 2, '报错消息 + 失败的工具调用')
+  assert.equal(kids.failedTools, 1)
+
+  const b = exportTask(task, [coder], '', new Date(at), kids)
+  const s = b.stats as ReturnType<typeof taskStats>
+  assert.equal(s.inputTokens, 1000, '顶层仍是自身')
+  assert.equal(s.children.tasks, 2)
+  assert.equal(s.combined.tasks, 3)
+  assert.equal(s.combined.inputTokens, 3500)
+  assert.equal(s.combined.outputTokens, 700)
+  assert.equal(s.combined.cacheHitRate, 0.514)
+
+  const report = analysisReport([b])
+  assert.match(report, /（自身，不含子对话）/)
+  assert.match(report, /子对话 2 个/)
+  assert.match(report, /含子对话合计（3 个任务）/)
+  assert.match(report, /输入 3\.5k/, '合计不是父对话自己的 1.0k')
+  // 旧版本的导出文件里没有 children/combined：只写自身，不报错
+  const legacy = { ...b, stats: { ...s, children: undefined, combined: undefined } }
+  const old = analysisReport([legacy])
+  assert.ok(!old.includes('含子对话合计'), '没有子对话数据时不写合计行')
+  assert.ok(!old.includes('（自身，不含子对话）'))
 })
 
 test('导入：只读任务，Agent 存在任务里；格式不对、版本太新时给出原因', () => {
@@ -179,6 +241,15 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
   assert.equal(wf.flows[0].nodes[0].tier, 'high', '原来的工作流不动')
 })
 
+test('节点的最终输出原样导出：保留末尾的 handoff 文件去向，不再二次截断', () => {
+  // 引擎已经把输出截到 MAX_OUTPUT，超长部分的全文存在 handoff 文件、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）
+  const file = 'C:\\Users\\me\\.agent-panel\\handoff\\t1\\n1.md'
+  const output = `${'甲'.repeat(4000)}\n\n（完整结果有 9000 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
+  const report = analysisReport([exportTask(Task.parse({ ...task, steps: [{ ...task.steps[0], output }] }), [coder])])
+  assert.ok(report.includes(`完整内容在文件 ${file}`), '保留 handoff 文件路径，分析时知道去哪读全文')
+  assert.ok(!report.includes('后面省略'), '导出不再静默截断')
+})
+
 test('报告：用户要求不截断、失败工具单独统计、改动按节点归属、过程带时间', () => {
   const long = `## 约束\n${'不要动 server/tasks.ts 里的并发逻辑。'.repeat(400)}`
   const withTools = Task.parse({
@@ -216,11 +287,99 @@ test('报告：用户要求不截断、失败工具单独统计、改动按节�
   assert.match(report, /\*\*用户\*\*：\d{2}:\d{2}:\d{2} ## 约束/, '用户消息带时间')
   assert.match(report, /\*\*AI（开发）\*\*：\d{2}:\d{2}:\d{2} 跑了一下/, 'AI 回复带时间')
   assert.match(report, /距上一条 15m0s/, '间隔大的单独提示，能看出等待在哪')
-  assert.match(report, /追加要求\/对话 0 轮（对话页开着时/, '轮数的口径写清楚')
-  assert.match(report, /用户消息 2 条：\d{2}:\d{2}、\d{2}:\d{2}/, '列出每条用户消息的时间')
+  assert.match(report, /轮次：用户消息 2 条，分成 0 轮执行（这条记录没有分轮信息/, '轮数的口径写清楚')
+  assert.match(report, /用户发言时间：\d{2}:\d{2}、\d{2}:\d{2}/, '列出每条用户消息的时间')
   assert.match(report, /## 改动的文件（按节点记录）/, '改动按节点列')
   assert.match(report, /### 别人的节点[\s\S]*别人的\.ts/)
   assert.ok(!/## 改动的文件\n/.test(report), '不再用任务级差额冒充本任务的产出')
+})
+
+/** 两轮各执行 10 分钟、中间空了 2 小时 20 分：跨度 2h40m，执行 20m，空闲 2h20m */
+function twoRounds() {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  return Task.parse({
+    ...task,
+    createdAt: '2026-10-19T09:00:00.000Z',
+    updatedAt: '2026-10-19T11:40:00.000Z',
+    runMs: 20 * 60_000,
+    waitMs: 0,
+    steps: [],
+    messages: [
+      { id: 'u1', role: 'user', text: '加个按钮', at: '2026-10-19T09:00:00.000Z' },
+      { id: 'u2', role: 'user', text: '再改一下', at: '2026-10-19T11:30:00.000Z' },
+    ],
+    turns: [
+      {
+        id: 'r1',
+        title: '加个按钮',
+        status: 'done',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T09:10:00.000Z',
+        from,
+      },
+      {
+        id: 'r2',
+        title: '再改一下',
+        status: 'done',
+        startedAt: '2026-10-19T11:30:00.000Z',
+        endedAt: '2026-10-19T11:40:00.000Z',
+        from,
+      },
+    ],
+  })
+}
+
+test('统计：跨度里没有归属的空档算空闲，轮次和用户消息写在一处', () => {
+  const rec = twoRounds()
+  const s = taskStats(rec)
+  assert.equal(s.spanMs, 160 * 60_000, '跨度按记录里的时间戳算：09:00 到 11:40')
+  assert.equal(s.durationMs, 20 * 60_000)
+  assert.equal(s.idleMs, 140 * 60_000, '两轮之间没有进程在跑的空档算空闲，不再没有归属')
+  assert.equal(s.asks, 2, '用户消息条数从记录里数，和轮次分开写')
+  assert.equal(s.turns, 2)
+  const report = taskReport(exportTask(rec, [coder]))
+  assert.match(report, /跨度 2h40m：执行 20m0s，等用户 0s，空闲 2h20m/)
+  assert.match(report, /轮次：用户消息 2 条，分成 2 轮执行/)
+})
+
+test('旧导出没有跨度和空闲字段：按记录现算，不写 NaN', () => {
+  const b = exportTask(twoRounds(), [coder])
+  const old = {
+    ...b,
+    stats: { durationMs: 20 * 60_000, waitMs: 0, turns: 1, turnsUnfinished: 0 },
+  } as Parameters<typeof taskReport>[0]
+  const report = taskReport(old)
+  assert.match(report, /跨度 2h40m：执行 20m0s，等用户 0s，空闲 2h20m/)
+  assert.match(report, /轮次：用户消息 2 条，分成 1 轮执行/)
+  assert.ok(!report.includes('NaN'), '旧数据不把 NaN 交给用户')
+})
+
+test('失败详情：命令用完整原文，带上退出码，没输出时写明', () => {
+  const cmd = `git worktree list ${'--porcelain '.repeat(20)}`.trim()
+  const label = `${cmd.slice(0, 120)}…`
+  const tk = Task.parse({
+    ...task,
+    messages: [
+      {
+        id: 'a1',
+        role: 'agent',
+        agentId: coder.id,
+        step: 'handle',
+        text: '跑命令',
+        at,
+        tools: [
+          // label 是截断过的一行，input 才是实际执行的完整命令
+          { kind: 'run', label, input: cmd, exitCode: 1, output: 'fatal: not a git repository', failed: true },
+          // grep 没匹配到：退出码非零但没有任何输出
+          { kind: 'run', label: 'grep -r foo src', input: 'grep -r foo src', exitCode: 1, failed: true },
+        ],
+      },
+    ],
+  })
+  const report = analysisReport([exportTask(tk, [coder])])
+  assert.ok(report.includes(cmd), '命令用完整原文，不读被截断的 label')
+  assert.match(report, /（退出码 1）\nfatal: not a git repository/, '退出码和输出写在一起')
+  assert.match(report, /grep -r foo src（退出码 1）\n（没有输出）/, '没输出时写明，不和退出码非零混在一起')
 })
 
 test('按行对比', () => {

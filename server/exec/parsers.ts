@@ -30,7 +30,16 @@ export type CliEvent =
   /** 压缩了上下文：before 是压缩前的 token 数，context 是压缩后的（CLI 给了才有） */
   | { type: 'compacted'; context?: number; before?: number }
   /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
-  | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string; detail?: string }
+  /** exitCode：CLI 报得出命令的退出码时给（Claude Code 的 tool_use_result.code、Pi 的 structuredContent.exit_code），没有就不写 */
+  | {
+      type: 'tool_result'
+      id: string
+      output: string
+      failed?: boolean
+      exitCode?: number
+      patch?: string
+      detail?: string
+    }
   /** 模型在生成、但不显示的输出（Pi 流式给出的工具参数）：只算进实时速度，不然写大文件时速度会被校准得偏高 */
   | { type: 'gen'; text: string }
   /**
@@ -331,6 +340,8 @@ export function claudeParser(cwd: string): Parser {
             id: b.tool_use_id,
             output: clipDetail(toolText(b.content)),
             failed: !!b.is_error,
+            // Bash 的 tool_use_result 里有 { code, stdout, stderr }，之前只取了 content，退出码就这么丢了
+            exitCode: num(o.tool_use_result?.code),
             patch,
           })
     } else if (o.type === 'result' || (o.total_cost_usd !== undefined && o.usage)) {
@@ -635,15 +646,18 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
           out.push(ev)
           break
         }
-        case 'tool_result':
+        case 'tool_result': {
+          const exitCode = num(g('exitCode'))
           if (str(g('id')))
             out.push({
               type: 'tool_result',
               id: str(g('id')),
               output: clipDetail(str(g('output')) || str(g('error'))),
               failed: !!g('failed'),
+              ...(exitCode === undefined ? {} : { exitCode }),
             })
           break
+        }
         // 命令执行中推送的输出：`text` 是新增的一段（Codex 的增量），`snapshot` 是到目前为止的全部输出
         // （Pi 的 partialResult），两种都发成 tool_delta，由接收方按快照处理
         case 'tool_delta': {

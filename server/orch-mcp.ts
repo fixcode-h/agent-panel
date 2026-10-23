@@ -123,11 +123,16 @@ export function orchTools(o: Orchestra) {
             name: 'set_plan',
             title: '更新计划',
             description:
-              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。返回合并后的计划和每一步的 id。',
+              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。步骤一多（10 条以上）就分两批交：一批带 partial: true 只写要变的步骤，没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。返回合并后的计划和每一步的 id。',
             inputSchema: {
               type: 'object',
               properties: {
                 title: { type: 'string', description: '这份计划的名字（开新计划时写）' },
+                partial: {
+                  type: 'boolean',
+                  description:
+                    '只交变更步骤：为 true 时没写到的步骤留在计划里不动（不删、不重新计数）；新加的步骤照常追加。默认 false：没写到的未完成步骤算删掉',
+                },
                 steps: {
                   type: 'array',
                   description: '主步骤，按执行顺序',
@@ -239,7 +244,7 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description:
-                    '这个子对话负责的文件或目录（相对项目根），面板替它认领；子对话共用一个目录，别的子对话不会再改这些',
+                    '这个子对话负责的文件或目录（相对项目根）：共用目录时面板替它认领，别的子对话要等它做完；独立分支时用来核对有没有和别的子对话改到同一个文件（两边改同一文件时 git 常常自动合并、不报冲突）',
                 },
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
@@ -604,7 +609,11 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'set_plan': {
-      const r = o.setPlan({ title: str(a?.title), steps: Array.isArray(a?.steps) ? a.steps : [] })
+      const r = o.setPlan({
+        title: str(a?.title),
+        steps: Array.isArray(a?.steps) ? a.steps : [],
+        partial: a?.partial === true,
+      })
       return text(r.info, !r.ok)
     }
     case 'finish_plan': {
