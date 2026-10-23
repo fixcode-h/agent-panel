@@ -207,7 +207,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     }
     case 'submit_merge':
     case 'submit_build':
-      return as(t('合回原分支'), firstLine(a.note))
+      return as(t('完成并合回'), firstLine(a.note), 'other', text(a.tests))
     case 'start_plan':
     case 'run_workflow':
       return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))

@@ -498,6 +498,13 @@ if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
 if (input.includes('还没写总结') && input.includes('finish_plan'))
   await panelCall('finish_plan', { summary: '改好了代码，测试通过' })
+// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后交给面板合回去
+if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
+  writeFileSync('child-done.txt', 'done\n')
+  const got = await panelCall('submit_merge', { note: '改完了', tests: 'npm test 通过' })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)

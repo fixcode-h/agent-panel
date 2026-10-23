@@ -1551,22 +1551,30 @@ try {
     const editLog = readLog(log + '.edit')
     assert.ok(editLog.length && !editLog.at(-1).got.isError, '子对话调用 begin_edit 开了分支')
     assert.equal(editLog.at(-1).cwd, project.path, '开分支前在原目录里')
-    wtKid = await waitTask(wtKid.id, () => calls().at(-1)?.cwd !== project.path)
+    // 分支目录里做完一轮没调用 submit_merge：面板催它一次合回去（这一句也是在分支目录里的一轮）
+    const nudges = (x) => x.messages.filter((m) => m.panel === 'build' && m.text.includes('没合回父对话分支'))
+    wtKid = await waitTask(wtKid.id, (x) => nudges(x).length > 0 && !x.working)
+    const wtCall = calls().find((c) => c.cwd !== project.path && (c.input ?? '').includes('之前的对话'))
+    assert.ok(wtCall, '开分支后在分支目录里开了新会话')
     assert.equal(wtKid.worktree?.state, 'active', '子对话要改文件时开了独立分支')
     assert.ok(
       !wtKid.messages.some((m) => m.role === 'system' && m.text.includes('已开独立分支')),
       '开分支不另记居中提示，begin_edit 这次调用本身就是对话里的一行',
     )
-    assert.equal(calls().at(-1).cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
-    assert.match(calls().at(-1).input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
-    assert.ok(!calls().at(-1).args.includes('--resume'), '换了目录不续接旧会话')
+    assert.equal(wtCall.cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
+    assert.match(wtCall.input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
+    assert.ok(!wtCall.args.includes('--resume'), '换了目录不续接旧会话')
     assert.ok(
       !gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '提交在子对话的分支上，项目目录不受影响',
     )
     const wtList = await call('GET', `/tasks/${wtParent.id}/children`)
     assert.equal(wtList.find((x) => x.id === wtKid.id)?.branch, wtKid.worktree.branch, '子对话列表带上分支')
-    const wtPrompt = JSON.stringify(calls().at(-1))
+    await sleep(500)
+    const afterNudge = await call('GET', `/tasks/${wtKid.id}`)
+    assert.equal(nudges(afterNudge).length, 1, '做完没合并只催一次')
+    assert.match(nudges(afterNudge)[0].text, /submit_merge/, '催的时候说明用 submit_merge 合回去')
+    const wtPrompt = JSON.stringify(wtCall)
     assert.match(wtPrompt, /别的子对话改不到这里/, '提示里说明了在独立分支里改')
     assert.match(wtPrompt, /在独立分支里验证，再合回原分支/, '提示里说明在自己的分支里编译测试、再合回去')
     assert.match(wtPrompt, /submit_merge/, '合回原分支用 submit_merge')
@@ -1629,6 +1637,38 @@ try {
     assert.equal(rebornList[0].state, 'active')
     step('子对话工作区被回收后继续：自动重建同名分支并在新目录里执行')
     step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
+    // 子对话做完（测试跑通）调用 submit_merge：面板直接合回父对话的分支，子对话标记完成，独立分支回收
+    await waitDone(wtKid.id, 20000)
+    for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
+    const doneKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: wtParent.id,
+          prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE 子对话做完自动合并',
+        })
+      ).id,
+      20000,
+    )
+    const mergeLog = readLog(log + '.merge')
+    assert.ok(mergeLog.length && !mergeLog.at(-1).got.isError, '子对话调用 submit_merge 提交了合并')
+    const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 20000)
+    assert.ok(closed.resolved, '合进父对话的分支后子对话标记完成')
+    assert.ok(!existsSync(closed.worktree.path), '完成后独立分支的目录回收了')
+    assert.match(
+      gitIn(project.path, 'log', '-1', '--format=%s').toString(),
+      /Agent 面板：合并「/,
+      '改动合进了父对话所在的分支',
+    )
+    assert.notEqual(gitIn(project.path, 'rev-parse', 'HEAD').toString().trim(), headBefore, '父对话的分支多了合并提交')
+    assert.ok(
+      closed.messages.some((m) => m.panel === 'build' && m.text.includes('已合回原分支')),
+      '合并结果记在子对话里',
+    )
+    step('子对话测试跑通后 submit_merge：面板合回父对话分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
       (
