@@ -1,5 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal, Workflow } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -7,11 +7,12 @@ import { RowShell, ToolRow } from './ToolRow'
 import { fmtSecs } from '@/lib/tasks'
 import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
+import { useChildOpen } from './child-open'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
 import { currentRun, topSteps } from '@shared/flow'
-import { runRunning } from '@shared/task'
+import { convStateText, runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -405,43 +406,58 @@ const MessageBody = memo(
     jobsSig(a.task) === jobsSig(b.task),
 )
 
-/** 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）：AI 回复里的一行，点开看全文 */
+/**
+ * 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）和父子对话之间的往来（子对话状态、收尾请求）：
+ * 都画成 AI 回复里的一行，像一次工具调用，点开看全文
+ */
 const PANEL_KIND = {
   background: { icon: Terminal, verb: () => t('后台命令') },
   build: { icon: GitMerge, verb: () => t('合并编译') },
   helpers: { icon: Bot, verb: () => t('子任务结果') },
-  // 子对话的回报不画出来（inlineEntry 先拦掉），这里只为类型完整
-  child: { icon: Info, verb: () => t('子对话') },
+  child: { icon: Workflow, verb: () => t('子对话状态') },
+  wrapup: { icon: GitMerge, verb: () => t('子对话请求') },
   note: { icon: Info, verb: () => t('设置') },
 } as const
 
+/** 正文开头的【面板】【子对话状态】这类标签是说给 AI 的，界面上第一行不重复它 */
+const LEAD_TAG = /^【[^】]{1,12}】/
+
 function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
   const [open, setOpen] = useState(false)
+  const openChild = useChildOpen()
   const kind = PANEL_KIND[m.panel === 'ask' || !m.panel ? 'background' : m.panel]
   const Icon = kind.icon
   // 结尾那句「处理完这个结果后重新总结」是说给 AI 的，界面上不显示
   const body = m.text
-    .replace(/^【面板】/, '')
+    .replace(LEAD_TAG, '')
     .replace(/\n处理完这个结果后[^\n]*$/, '')
     .trim()
-  // 一行里放第一句：后台命令「名字」跑完了：失败……；子任务结果放交回了几个
+  // 一行里放第一句：后台命令「名字」跑完了：失败……；子任务结果放交回了几个；
+  // 子对话状态放「标题 · 状态」（新数据带 child，旧数据按第一行）
   const head =
     m.panel === 'helpers'
       ? t('{n} 个子任务交回了结果', { n: Math.max(1, (body.match(/^### /gm) ?? []).length) })
-      : body
-          .split('\n')[0]
-          .replace(/^(后台命令|合并编译)/, '')
-          .trim()
-  const failed = m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过/.test(body.split('\n')[0])
+      : m.child && m.panel === 'child'
+        ? [m.child.title, convStateText(m.child.state)].filter(Boolean).join(' · ')
+        : body
+            .split('\n')[0]
+            .replace(/^(后台命令|合并编译)/, '')
+            .trim()
+  const failed =
+    m.panel === 'child'
+      ? m.child?.state === 'failed'
+      : m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过|没能合回/.test(body.split('\n')[0])
   // 面板推回的结果没有单独的窗口：点哪里都是展开收起，在行内看全文
   return (
     <RowShell
       glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />}
-      verb={kind.verb()}
+      verb={m.panel === 'child' && !m.child ? t('对话消息') : kind.verb()}
       title={head}
       open={open}
       // 一句话的说明（执行中改设置）没有更多可看的，不能展开
       onToggle={body.includes('\n') || m.panel !== 'note' ? () => setOpen(!open) : undefined}
+      onOpen={m.child && openChild ? () => openChild(m.child!.id) : undefined}
+      openTip={m.child ? t('打开子对话') : undefined}
       failed={failed}
     >
       <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
@@ -456,8 +472,6 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
  * 和工具调用一样缩进在头像后面；不是这几种返回 null
  */
 function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
-  // 子对话的回报只给 AI 看，界面上不画
-  if (m.panel === 'child') return <Fragment key={m.id} />
   // 派出的子任务在输入框上方的「子任务」栏里看：消息流里不再画卡片，
   // 这条消息只用来记派出了哪几个，已完成的那一轮折叠行上仍写着「派出 n 个子任务」
   if (m.spawned?.length) return <Fragment key={m.id} />

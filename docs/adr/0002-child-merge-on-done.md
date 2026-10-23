@@ -1,6 +1,6 @@
 # ADR 0002：子对话测试跑通即由面板合回父对话分支
 
-状态：被替代（被 [0003](./0003-child-complete-before-recycle.md) 替代「决策」里「合进去就把子对话标记完成」这一条，其余结论仍有效） · 2026-10-23
+状态：被替代（被 [0003](./0003-child-complete-before-recycle.md) 替代「合进去就把子对话标记完成」；被 [0005](./0005-conversation-states.md) 替代「`submit_merge` 后面板直接合并」，改为请父对话 `finish_child` 收尾；其余结论仍有效） · 2026-10-23
 
 ## 背景
 

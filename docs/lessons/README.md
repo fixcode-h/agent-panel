@@ -58,13 +58,14 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 
 ## 分片
 
-| 分片                         | 管什么                                        |
-| ---------------------------- | --------------------------------------------- |
-| [cli.md](./cli.md)           | CLI 定义、参数、模型和思考强度、写回 CLI 配置 |
-| [ui.md](./ui.md)             | 界面、文案、样式                              |
-| [builtin.md](./builtin.md)   | 内置 Agent、工作流、Skill、提示词             |
-| [data.md](./data.md)         | 数据结构、存储、升级兼容、出包                |
-| [testing.md](./testing.md)   | 单测、端到端、假 CLI、界面检查                |
-| [server.md](./server.md)     | 服务端接口、访问令牌                          |
-| [local-image.md](./local-image.md) | 本机生图（ComfyUI 安装、启动）          |
-| [worktree.md](./worktree.md) | 独立工作目录、依赖隔离                        |
+| 分片                               | 管什么                                         |
+| ---------------------------------- | ---------------------------------------------- |
+| [cli.md](./cli.md)                 | CLI 定义、参数、模型和思考强度、写回 CLI 配置  |
+| [ui.md](./ui.md)                   | 界面、文案、样式                               |
+| [builtin.md](./builtin.md)         | 内置 Agent、工作流、Skill、提示词              |
+| [data.md](./data.md)               | 数据结构、存储、升级兼容、出包                 |
+| [testing.md](./testing.md)         | 单测、端到端、假 CLI、界面检查                 |
+| [server.md](./server.md)           | 服务端接口、访问令牌                           |
+| [local-image.md](./local-image.md) | 本机生图（ComfyUI 安装、启动）                 |
+| [worktree.md](./worktree.md)       | 独立工作目录、依赖隔离                         |
+| [state.md](./state.md)             | 对话状态、父子对话同步和收尾、停止、跟随到底部 |

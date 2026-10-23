@@ -238,7 +238,16 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     }
     case 'submit_merge':
     case 'submit_build':
-      return as(t('完成并合回'), firstLine(a.note), 'other', text(a.tests))
+      return as(t('请父对话收尾'), firstLine(a.note), 'other', text(a.tests))
+    // 父对话收尾子对话：标题写子对话的名字（结果里有），点它打开那个子对话
+    case 'finish_child':
+      return as(t('收尾子对话'), quoted || firstLine(a.id), 'agent')
+    case 'request_build':
+      return as(t('申请编译'), firstLine(a.note), 'other', text(a.note))
+    case 'list_peers':
+      return as(t('查看其他父对话'), '')
+    case 'message_peer':
+      return as(t('给其他父对话传话'), firstLine(a.text), 'other', text(a.text))
     case 'start_plan':
     case 'run_workflow':
       return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))
@@ -306,7 +315,7 @@ function waitSummary(tool: ToolUse, a: Record<string, unknown>) {
 export function panelChildId(tool: ToolUse) {
   const name = panelName(tool)
   if (name === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
-  if (name === 'send_to_conversation') return firstLine(toolArgs(tool).id)
+  if (name === 'send_to_conversation' || name === 'finish_child') return firstLine(toolArgs(tool).id)
   return ''
 }
 

@@ -127,6 +127,7 @@ export interface RealContext {
   branch?: EngineHost['branch']
   wrapUp?: EngineHost['wrapUp']
   submitMerge?: EngineHost['submitMerge']
+  finishChild?: EngineHost['finishChild']
   ueBuild?: EngineHost['ueBuild']
   peers?: EngineHost['peers']
   messagePeer?: EngineHost['messagePeer']
@@ -1853,6 +1854,7 @@ export async function runRealTurn(ctx: RealContext) {
     branch: ctx.branch,
     wrapUp: ctx.wrapUp,
     submitMerge: ctx.submitMerge,
+    finishChild: ctx.finishChild,
     ueBuild: ctx.ueBuild,
     peers: ctx.peers,
     messagePeer: ctx.messagePeer,

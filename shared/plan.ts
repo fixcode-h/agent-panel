@@ -37,7 +37,7 @@ export type WrapUpKind = NonNullable<PlanStep['wrapUp']>
 export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
   merge: {
     title: '收尾：合回父对话所在的分支',
-    note: '编译测试跑通、前面的步骤都做完后调用 submit_merge；面板合进去后自动标完成，不用自己标',
+    note: '前面的步骤都做完、编译测试跑通后调用 submit_merge 请父对话收尾；父对话合进去后面板自动标完成，不用自己标',
   },
   p4: {
     title: '收尾：按文件类型把改动分进各自的 changelist',
@@ -187,6 +187,15 @@ function rollUp(step: PlanStep, now: string) {
 }
 
 /** 全部完成时收起计划：记完成时间，这份计划就此结束 */
+/**
+ * 计划里除了「合回父对话所在的分支」这一步之外还没做完的步骤：子对话只剩合回时才能请父对话收尾。
+ * 合回那一步是父对话收尾时由面板标完成的，不能拿它挡住收尾请求本身
+ */
+export function openWork(task: Pick<Task, 'plans'>): PlanStep[] {
+  const plan = activePlan(task)
+  return plan ? plan.steps.filter((s) => s.status !== 'done' && s.wrapUp !== 'merge') : []
+}
+
 function closeIfDone(plan: TaskPlan, now: string) {
   if (plan.doneAt || !plan.steps.length) return false
   if (!plan.steps.every((s) => s.status === 'done')) return false
@@ -428,61 +437,6 @@ export function settleWait(
   return hit
 }
 
-/** 子对话这一轮结束时还差什么没交付：由调用方按服务端的状态算好传进来（计划在下面自己看） */
-export interface ChildTurnLeft {
-  /** 这个子对话还有正在跑、排队等着跑的后台命令（名字） */
-  background?: string[]
-  /** 这一轮结束后还会接着执行：排队的要求、面板交过来的消息、正要开始的下一轮 */
-  more?: boolean
-}
-
-export interface ChildTurnSettle {
-  over: boolean
-  ok: boolean
-  /** 不收口时在等什么：写进父对话计划那一步的 note；收口时是一句说明 */
-  why: string
-}
-
-/**
- * 子对话这一轮结束（跑完一轮、CLI 停在等用户下一句）时，父对话计划里等它的那一步该怎么收口。
- * 「这一轮回复完了」不等于「子对话交付完了」：面板判定的完成条件是计划做完、后台命令收尾、
- * 没有待答的提问、不在执行。所以收口要按下面这些条件看，不能只看 working：
- * - 还有没答的提问 / 确认：子对话是停下来等用户（死约定：子对话要停下等用户时必须先提问），继续等
- * - 被停止、执行失败：算结束但没成功，退回进行中并写上原因（settleWait 本来就这个语义）
- * - 还在执行、这一轮结束后还会接着做、还有后台命令在跑、计划还没做完：继续等，不标完成
- * - 这些都没有：交付完了，算成功
- */
-export function childTurnSettle(
-  task: Pick<Task, 'status' | 'working' | 'requests' | 'plans'>,
-  left: ChildTurnLeft = {},
-): ChildTurnSettle {
-  if (task.requests.length) return { over: false, ok: false, why: '子对话有没答的提问，在等用户回答' }
-  if (task.status === 'failed') return { over: true, ok: false, why: '子对话执行失败了' }
-  if (task.status === 'stopped') return { over: true, ok: false, why: '子对话被停止了' }
-  if (task.working) return { over: false, ok: false, why: '子对话还在执行' }
-  if (left.more) return { over: false, ok: false, why: '子对话这一轮结束后还要接着处理排队的消息' }
-  const jobs = left.background ?? []
-  if (jobs.length)
-    return {
-      over: false,
-      ok: false,
-      why: `子对话还有后台命令在跑：${jobs.map((x) => `「${x}」`).join('、')}`,
-    }
-  // 计划做完了会收起（doneAt），这时 activePlan 是 undefined，不会再挡住收口
-  const plan = activePlan(task)
-  const todo = plan ? plan.steps.filter((s) => s.status !== 'done') : []
-  if (todo.length)
-    return {
-      over: false,
-      ok: false,
-      why: `子对话的计划还没做完：${todo
-        .slice(0, 3)
-        .map((s) => `「${s.title}」`)
-        .join('、')}${todo.length > 3 ? ` 等 ${todo.length} 步` : ''}`,
-    }
-  return { over: true, ok: true, why: '子对话交付完了：计划、后台命令都收尾了' }
-}
-
 /**
  * 收口推迟：子对话这一轮结束了但还没交付完，父对话计划里等它的那一步继续等着，note 写清在等什么。
  * 只改等待中的那一项的 note（状态保持 waiting / 父步骤有在做的就还是 running），
@@ -557,13 +511,13 @@ export function bindRun(task: PlanTask, stepId: string, run: number, title: stri
 }
 
 /**
- * 面板替 Agent 推进收尾步骤：合回分支排上队标进行中，合进去标完成，没合进去退回进行中写上原因。
+ * 面板替 Agent 推进收尾步骤：请父对话收尾时标等待中，合进去标完成，没合进去退回进行中写上原因。
  * 没有进行中的计划、计划里没有这种收尾时什么也不做（没列计划的子对话照旧按 submit_merge 收尾）
  */
 export function markWrapUp(
   task: PlanTask,
   kind: WrapUpKind,
-  status: 'running' | 'done',
+  status: 'running' | 'waiting' | 'done',
   note = '',
   now = new Date().toISOString(),
 ) {

@@ -1,8 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
-import type { Task } from './schema.ts'
+import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import {
+  convState,
+  convStateText,
+  messageStamp,
+  stageOf,
   childActivity,
   childActivityText,
   childComplete,
@@ -495,4 +499,38 @@ test('childWaitText：等待原因说成一句话', () => {
   assert.equal(childWaitText({ kind: 'background', n: 2 }), '等 2 个后台命令')
   assert.equal(childWaitText({ kind: 'answer', n: 1 }), '等用户回答 1 个提问')
   assert.equal(childWaitText(undefined), '')
+})
+
+test('convState：8 个状态各自的判定和优先级（ADR 0005）', () => {
+  const base = { status: 'running' as const }
+  assert.equal(convState({ ...base, working: true }), 'running')
+  assert.equal(convState({ ...base, background: 1 }), 'waiting')
+  assert.equal(convState({ ...base, workflow: true }), 'waiting')
+  assert.equal(convState({ ...base, helpers: true }), 'waiting')
+  // 要你处理的排最前：在跑的同时有提问也先说在等你
+  assert.equal(convState({ ...base, working: true, asking: 1 }), 'needs')
+  assert.equal(convState({ status: 'failed' }), 'failed')
+  assert.equal(convState({ status: 'stopped', stopReason: 'user' }), 'stopped')
+  assert.equal(convState({ status: 'stopped', stopReason: 'parent' }), 'stopped')
+  // 彻底完成后面板收掉进程：不是中断
+  assert.equal(convState({ status: 'stopped', stopReason: 'finish' }), 'done')
+  assert.equal(convState({ ...base, unfinished: true }), 'unfinished')
+  assert.equal(convState({ ...base, unmerged: true }), 'unfinished')
+  assert.equal(convState({ ...base, unfinished: true, unmerged: true, wrapup: true }), 'wrapup')
+  assert.equal(convState({ ...base, wrapup: true, resolved: true }), 'done')
+  assert.equal(convState(base), 'done')
+  // 归组：列表的 5 组从这里来
+  assert.equal(stageOf('waiting'), 'running')
+  assert.equal(stageOf('wrapup'), 'unfinished')
+  assert.equal(stageOf('failed'), 'you')
+  assert.equal(convStateText('wrapup'), '待收尾')
+})
+
+test('messageStamp：工具行收掉运行中、记上耗时也算变化（停止后不再一直转圈）', () => {
+  const tool = { kind: 'run', label: 'ls', detail: '', output: 'a', running: true } as unknown as ToolUse
+  const msg = { id: 'm', role: 'agent', text: '', tools: [tool] } as unknown as TaskMessage
+  const before = messageStamp(msg)
+  delete tool.running
+  tool.ms = 10
+  assert.notEqual(messageStamp(msg), before)
 })

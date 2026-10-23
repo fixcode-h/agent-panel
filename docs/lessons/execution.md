@@ -16,13 +16,6 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 - 起因：`steerTask` 只要回包就返回 `'steer'`，网关吞掉请求时那条补充永久丢失；ADR 0002 那次用户回答撞上子对话刚结束一轮，消息被吞，e2e 约一半失败。
 - 防线：`server/exec/delivery.test.ts`；`scripts/e2e.mjs` 的「子对话请父对话决定」。
 
-## 父子对话之间的交付：消息走 deliver，收口按面板的完成条件判断
-
-- 规则：让父对话处理一件事（子对话的提问交给它决定之类）时不能按 `working` 判断它空闲：停在等下一句、收尾中、预热时 `working` 都是 false，但执行位还占着，直接 `followUp` 会抛 `TaskBusyError`。用 `deliver`（能续就续、能插话就插话、收不下记到这一轮结束后处理），只有 `live` 里没有进程时才 `followUp`；问题全文和选项一起交过去。叫不起来时把原因返回接口，界面显示原因并给重试；卡片状态字段（如 `delegated`）必须进 `messageStamp`，否则服务端改了也不推送。
-- 规则：子对话回合结束时收口父对话计划（`shared/plan.ts` 的 `childTurnSettle`）不能只看 `working`、`requests`、`status`：还要看没做完的计划步骤、正在跑或排队的后台命令（`background.list` 的 `queued`/`running`）、这一轮之后要不要接着做（`hasHeld`、`startQueue`）。没收口时用 `holdWait` 让那一步继续等、note 写清在等什么；`server/tasks.ts` 的 `reportToParent` 用同一判据。计划做完会收起（`activePlan` 是 undefined），判据里不要写计时。
-- 起因：点「交给父对话决定」好几次父对话都没动，`followUp` 撞上执行位后只留一条 `log.warn`；子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图「计划 6/8」与实际不符）。
-- 防线：`shared/task-stamp.test.ts`、`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例；`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」。
-
 ## 每个收 CliEvent 的地方都要把工具行收尾
 
 - 规则：任务页之外自己拼消息的地方（`server/assist.ts` 的 AI 创建 / 分析、`server/designs.ts` 的 UI 设计）和 runner 一样处理工具事件：`tool_result` 删掉 `running`、`tool_delta` 的 `snapshot` 直接替换输出，结束（停止、超时、退出）时把还在跑的行全部收掉。给 CLI 新加工具字段时把这几处一起过一遍。
