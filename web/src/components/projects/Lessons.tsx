@@ -575,7 +575,7 @@ const lessonTime = (l: { createdAt: string; updatedAt: string }) => l.updatedAt 
 export function ProjectLessonsCard({ project }: { project: Project }) {
   const { openProject } = useNav()
   const all = project.lessons
-  const recent = [...all].sort((a, b) => lessonTime(b).localeCompare(lessonTime(a))).slice(0, 4)
+  const recent = [...all].sort((a, b) => lessonTime(b).localeCompare(lessonTime(a))).slice(0, 5)
   const fromAgent = all.filter((l) => l.source === 'agent').length
   return (
     <section className="flex flex-col">
