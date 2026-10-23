@@ -27,3 +27,9 @@ paths: server/exec/runner.ts, server/assist.ts, server/designs.ts, server/exec/d
 - 规则：任务页之外自己拼消息的地方（`server/assist.ts` 的 AI 创建 / 分析、`server/designs.ts` 的 UI 设计）和 runner 一样处理工具事件：`tool_result` 删掉 `running`、`tool_delta` 的 `snapshot` 直接替换输出，结束（停止、超时、退出）时把还在跑的行全部收掉。给 CLI 新加工具字段时把这几处一起过一遍。
 - 起因：Pi 的 `tool_execution_start` 带 `running: true`，AI 分析项目配置里只补了输出、没收掉标记，codemode 和里面的读取、查找一直转圈（c5e408d 加标记时只改了 runner）；任务页被打断时 `endTool` 也没清 `running`。
 - 防线：`scripts/e2e.mjs` 的「工具结束后不再显示运行中」（用 Pi 跑 AI 创建）。
+
+## 交给对话的消息碰上上一轮收尾时不能丢
+
+- 规则：面板替别人往对话里投消息（子对话回答、催合并、后台结果）时，对话「不在 running 但执行位还占着」是正常的收尾窗口。`followUp` 报 `TaskBusyError` 时把消息记进对话并 `holdForNextTurn`，等收尾结束还没人取就自己补开一轮，不能只记一条日志就算了。
+- 起因：子对话完成即合并那次（ADR 0002）端到端测试偶发超时：用户回答了子对话的提问，`sendToChild` 撞上子对话刚结束一轮、还在回报父对话，消息被吞掉，对话里什么都没有。
+- 防线：`scripts/e2e.mjs` 的「子对话请父对话决定」用例（偶发，修之前约一半失败）。

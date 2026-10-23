@@ -669,7 +669,30 @@ export function tasksApi(deps: {
     void (async () => {
       const free = await takeSlot(parentId)
       try {
-        await followUp(id, { text: message, attachments: [], panel })
+        try {
+          await followUp(id, { text: message, attachments: [], panel })
+        } catch (e) {
+          // 上一轮刚结束、还在收尾（回报父对话、写盘）时执行位还占着：记进对话，登记成下一轮要处理的，
+          // 收尾那边会接着开新一轮；收尾已经过了那一步就由这里补开，消息不能丢
+          const cur = live.get(id)
+          if (!(e instanceof TaskBusyError) || !cur) throw e
+          const msg: TaskMessage = {
+            id: randomUUID(),
+            role: panel ? 'system' : 'user',
+            agentId: '',
+            step: '',
+            text: message,
+            tools: [],
+            ...(panel ? { panel } : {}),
+            at: new Date().toISOString(),
+          }
+          cur.task.messages.push(msg)
+          holdForNextTurn(id, msg)
+          cur.rev++
+          await store.update(id, cur.task)
+          await cur.done?.catch(() => {})
+          if (hasHeld(id) && !live.has(id)) await followUp(id)
+        }
         await live.get(id)?.done
       } finally {
         free()
