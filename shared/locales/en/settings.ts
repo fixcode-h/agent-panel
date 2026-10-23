@@ -135,8 +135,8 @@ export const EN_SETTINGS: Record<string, string> = {
   跟随全局设置: 'Follow the global setting',
   搜索时跳过的目录: 'Folders skipped when searching',
   相对项目根: 'Relative to the project root',
-  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。':
-    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder.',
+  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。':
+    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder. In Git projects, folders already in .gitignore are skipped automatically; only add the ones it does not cover.',
   '目录名，回车添加': 'Folder name, press Enter to add',
   '填入 UE 排除清单': 'Fill in the UE exclusion list',
   清空: 'Clear',

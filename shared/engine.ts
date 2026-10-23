@@ -79,7 +79,7 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
-import { searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
+import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
@@ -383,6 +383,11 @@ export interface EngineHost {
    * 写进搜索那一段，Agent 直接照着拼 `-g '!目录'`，不靠临场叮嘱
    */
   searchExclude?: string[]
+  /**
+   * 工作目录是 Git 仓库：rg / git grep / CLI 自带的搜索本来就跳过 .gitignore 里的产物，
+   * 搜索段只需补项目自己填的目录，并提醒别加 --no-ignore 把它们又扫回来
+   */
+  searchInGit?: boolean
   /** 按 id 取工作流和这次运行要用的快照、技能槽；id 为空表示项目的默认工作流 */
   resolveWorkflow?: (
     id: string,
@@ -772,20 +777,32 @@ function dropRerun(host: EngineHost, step: TaskStep) {
 }
 
 /**
- * 同一轮执行里的授权情况：项目设置的推送策略、这个对话里用户已经做过的选择、本机已经登录的外部工具。
- * 只写已经具备的能力，没装的、没授权的不要列出来，免得模型去试。
- */
-/**
  * 这个项目的搜索排除清单：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼带排除的命令。
- * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；没有清单时不出这一段
+ * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；内置默认总在，所以这一段总会出现
  */
 function searchPart(host: EngineHost) {
   const project = { searchExclude: host.searchExclude }
   const line = searchExcludePrompt(project)
   if (!line) return ''
-  return `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。\n例如 \`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`（没有 rg 时用 \`git grep\`，它天然跳过生成物）；\`find\` 用 \`-path '*/<目录>' -prune -o\` 跳过这些目录。不要在这些目录里搜。`
+  const extra = searchExcludeGlobs(project, { onlyProject: true })
+  // Git 仓库里内置默认清单靠 .gitignore 就挡住了，rg 再列一遍只会误伤真叫 build / out 的源码目录；
+  // 最常见的漏网是 Agent 自己加 --no-ignore / -uu，所以明说不要加
+  const rg = host.searchInGit
+    ? `这是 Git 仓库：rg、\`git grep\` 和 CLI 自带的搜索工具默认已经跳过 .gitignore 里的文件和隐藏目录，不要加 \`--no-ignore\`、\`-u\` / \`-uu\`、\`--hidden\` 把它们扫回来；rg 只需${extra ? `再排除 .gitignore 没覆盖的：\`rg ${extra} <关键字> <目录>\`` : `限定目录：\`rg <关键字> <目录>\``}。`
+    : `这里没有 .gitignore 可依赖，rg 要带上整份排除：\`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`。`
+  return [
+    `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。`,
+    `- 起点先限定到模块目录（CLI 自带的搜索工具也把路径参数设成模块目录），没命中再逐级扩大。`,
+    `- ${rg}`,
+    `- \`find\` 不读 .gitignore，必须限深度并剪掉这些目录：\`find <目录> -maxdepth 4 ${searchExcludeFindPrune(project)} -type f -name '<文件名>' -print\`；不要 \`find .\` 或 \`grep -r\` 扫整个仓库。`,
+    `- 要看被排除目录里的内容（例如 Saved/Logs 下的日志）时，直接把那个目录当起点去读或搜，不要因此去掉整份排除。`,
+  ].join('\n')
 }
 
+/**
+ * 同一轮执行里的授权情况：项目设置的推送策略、这个对话里用户已经做过的选择、本机已经登录的外部工具。
+ * 只写已经具备的能力，没装的、没授权的不要列出来，免得模型去试。
+ */
 function policyPart(host: EngineHost) {
   const p = host.policy
   if (!p) return ''

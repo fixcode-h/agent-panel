@@ -315,7 +315,37 @@ test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也
   assert.equal(prompts.length, 1)
   assert.match(prompts[0], /## 搜索排除（这个项目）/, '通用约束后面带上这个项目的排除清单')
   assert.match(prompts[0], /搜索时排除：[^\n]*Saved/)
-  assert.match(prompts[0], /-g '!Saved'/, 'rg 的排除写法直接给出来')
+  assert.match(prompts[0], /-g '!Saved\/'/, 'rg 的排除写法直接给出来')
+  assert.match(prompts[0], /-g '!node_modules\/'/, '不是 Git 仓库时 rg 要带整份清单')
+  assert.match(prompts[0], /find <目录> -maxdepth 4 \\\( -type d \\\( -name 'Saved'/, 'find 的剪枝也直接给出来')
   assert.match(prompts[0], /找 Bug 在这一层定位时也用同样的排除/, '找 Bug 那段用同一份清单')
   assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
+})
+
+test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并提醒别加 --no-ignore', async () => {
+  const prompts: string[] = []
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '找一下这个报错' } as never, undefined, '', 's1'),
+    id: 's1',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '找一下这个报错',
+    searchExclude: ['Saved'],
+    searchInGit: true,
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async (call) => {
+      prompts.push(call.prompt)
+      return { ok: true, text: '好了' }
+    },
+  })
+  const part = prompts[0].slice(prompts[0].indexOf('## 搜索排除（这个项目）'))
+  assert.match(part, /不要加 `--no-ignore`/)
+  assert.match(part, /`rg -g '!Saved\/' <关键字> <目录>`/, 'rg 只带项目填的，内置默认交给 .gitignore')
+  assert.doesNotMatch(part.split('\n## ')[0], /-g '!node_modules\/'/)
+  // find 不读 .gitignore，Git 仓库里也要整份剪枝
+  assert.match(part, /-name 'node_modules'/)
 })
