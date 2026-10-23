@@ -840,7 +840,10 @@ export function childLastActivity(t: Pick<Task, 'messages' | 'steps' | 'updatedA
 
 /** 「3 分钟前」这类相对时间：子对话列表、计划面板、给父对话的对话清单都用它 */
 export function timeAgo(iso: string, now = Date.now()) {
-  const s = Math.max(0, (now - new Date(iso).getTime()) / 1000)
+  if (!iso) return ''
+  const at = new Date(iso).getTime()
+  if (!Number.isFinite(at)) return ''
+  const s = Math.max(0, (now - at) / 1000)
   if (s < 60) return t('刚刚')
   if (s < 3600) return t('{n} 分钟前', { n: Math.floor(s / 60) })
   if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
