@@ -938,6 +938,11 @@ export const TaskMessage = z.object({
   error: z.boolean().optional(),
   /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
   transient: z.boolean().optional(),
+  /**
+   * 计划启动时写进对话的那条提示（把计划输入又抄了一遍）：对话流里不画出来，
+   * 但数据照旧保留，历史任务、导出和继续执行都读得到
+   */
+  planStart: z.boolean().optional(),
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /**

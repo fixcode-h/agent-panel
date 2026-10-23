@@ -619,6 +619,20 @@ export function system(host: EngineHost, text: string, step = '', error = false,
   })
 }
 
+/** 计划 / 工作流启动的那条提示：只是把计划输入又抄了一遍，界面上不显示（用户知道自己让 Agent 干了什么），数据里留着 */
+function planStarted(host: EngineHost, text: string, step = '') {
+  host.task.messages.push({
+    id: host.newId(),
+    role: 'system',
+    agentId: '',
+    step,
+    text,
+    tools: [],
+    planStart: true,
+    at: now(),
+  })
+}
+
 /** 这一轮用掉的花费和 token 超过工作流的上限时，返回暂停的说明 */
 function overBudget(host: EngineHost): string {
   const w = host.workflow
@@ -2262,7 +2276,7 @@ function makeOrchestra(
       askPlan(host, { workflowId: workflowId.trim(), input: input.trim(), step: step?.trim() })
       const wf = workflowId ? task.runs.flatMap((r) => r.workflows).find((w) => w.id === workflowId) : undefined
       const label = wf?.name || workflowId || '默认工作流'
-      system(
+      planStarted(
         host,
         t('开始执行计划（{name}）：{input}', { name: label, input: clip(input || t('按工作流走一遍'), 300) }),
         where,
@@ -2760,7 +2774,7 @@ async function conversationPrompt(
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
 ${
   host.task.parentTaskId
-    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支、完成这个子对话，见上面的「在独立分支里验证，再合回原分支」。'
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
 不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
@@ -2821,7 +2835,7 @@ ${
   host.childIsolation === 'worktree'
     ? `## 子对话各自在独立分支里改
 要改代码的子对话都有自己的独立分支目录，互相看不到对方改到一半的文件。
-- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支，合进去这个子对话就标记完成；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。
+- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。合回去只代表改动进了你的分支，不等于它做完了：它还有计划没做完、后台命令还在跑、待回答的提问或者这一轮没结束时，面板不会把它标成完成，你也不要当它已经交付完了。
 - 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
 - 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`
