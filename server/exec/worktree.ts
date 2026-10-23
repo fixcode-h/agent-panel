@@ -105,6 +105,73 @@ export async function createWorktree(repo: string, taskId: string, title: string
   return { path: dir, branch, baseBranch: baseBranch === 'HEAD' ? '' : baseBranch, state: 'active', note: '' }
 }
 
+/** 分支在本地仓库里还在 */
+async function hasBranch(cwd: string, branch: string) {
+  return (await git(cwd, 'rev-parse', '-q', '--verify', `refs/heads/${branch}`)).code === 0
+}
+
+/**
+ * 工作区被回收后又被继续（合并完删了目录和分支、用户手动清理过）：按原来的分支名把工作区建回来。
+ * - 目录和分支都在：什么都不做，直接接着用；
+ * - 目录没了、分支还在：把那个分支检出来，之前没合完的提交还在；
+ * - 目录和分支都没了：从 cwd 现在的提交重新开一个同名分支（已经合回原分支的对话继续改，从这里往前走）。
+ * cwd 是子对话时传父对话的目录，基点就是父对话所在的分支。
+ * 建不出来时抛错，并把这半截目录清掉，不留半成品。
+ */
+export async function ensureWorktree(
+  cwd: string,
+  wt: TaskWorktree,
+  taskId: string,
+  title: string,
+): Promise<{ worktree: TaskWorktree; rebuilt: boolean }> {
+  await checkRepo(cwd)
+  const branch = wt.branch || branchName(taskId, title)
+  const dir = wt.path || path.join(WORKTREES_DIR, taskId)
+  if (existsSync(dir) && (await hasBranch(cwd, branch))) return { worktree: wt, rebuilt: false }
+  const baseBranch = (await git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim()
+  const branchAlive = await hasBranch(cwd, branch)
+  // 目录还在、分支没了这种不一致：先把残留目录清掉，否则 worktree add 会因为目录已存在失败
+  await wipe(dir)
+  // 目录是手动删掉的时候，git 里还登记着这个工作区：先 prune，不然同名分支会被当成「已经在别处检出」
+  await git(cwd, 'worktree', 'prune')
+  await mkdir(WORKTREES_DIR, { recursive: true })
+  const big = await isBigProject(cwd)
+  const r = await capture(
+    'git',
+    ['-c', 'core.quotepath=off', 'worktree', 'add', ...(branchAlive ? [dir, branch] : ['-b', branch, dir, 'HEAD'])],
+    cwd,
+    big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
+    10 * 60_000,
+  )
+  if (r.code !== 0) {
+    // 失败也可能已经建出目录来：清掉，下次重试从干净的状态开始
+    await git(cwd, 'worktree', 'remove', '--force', dir)
+    await wipe(dir)
+    await git(cwd, 'worktree', 'prune')
+    throw new Error(
+      t('重建独立工作区失败：{error}', { error: (r.stderr || r.stdout).trim().split('\n').slice(-4).join('\n') }) +
+        '\n' +
+        t(
+          '已经尝试重建（分支 {branch}，目录 {dir}），没有留下半个工作区。可以到原目录跑 git worktree prune 和 git branch -d {branch} 清掉残留后再试一次；或者把这个对话的独立分支删掉，让它回到原目录执行。',
+          {
+            branch,
+            dir,
+          },
+        ),
+    )
+  }
+  await prepare(dir, cwd)
+  const next: TaskWorktree = {
+    ...wt,
+    path: dir,
+    branch,
+    baseBranch: baseBranch === 'HEAD' ? '' : baseBranch,
+    state: 'active',
+    note: '',
+  }
+  return { worktree: next, rebuilt: true }
+}
+
 /** 没配置 git 用户时用面板的身份提交，免得提交失败 */
 async function identity(cwd: string) {
   const email = (await git(cwd, 'config', 'user.email')).stdout.trim()
@@ -187,17 +254,23 @@ export async function worktreeStatus(repo: string, wt: TaskWorktree): Promise<Wo
   return { exists, branch: true, ahead, dirty, merged: ahead === 0 && dirty === 0 }
 }
 
+/**
+ * 删掉一个独立目录。里面可能有指向项目依赖的链接（见 prepare），先解开再递归删，
+ * 免得顺着链接把项目的 node_modules 一起删掉
+ */
+async function wipe(dir: string) {
+  if (!existsSync(dir)) return
+  for (const name of await readdir(dir).catch(() => [] as string[])) {
+    const full = path.join(dir, name)
+    if ((await lstat(full).catch(() => null))?.isSymbolicLink()) await rm(full, { force: true }).catch(() => {})
+  }
+  await rm(dir, { recursive: true, force: true }).catch(() => {})
+}
+
 /** 删掉独立目录；force 时连分支一起删（丢弃），否则分支已经合并，用 -d 删 */
 export async function removeWorktree(repo: string, wt: TaskWorktree, force: boolean) {
   await git(repo, 'worktree', 'remove', '--force', wt.path)
-  if (existsSync(wt.path)) {
-    // 里面可能有指向项目依赖的链接：先解开，免得递归删除顺着链接把项目的 node_modules 删掉
-    for (const name of await readdir(wt.path).catch(() => [] as string[])) {
-      const full = path.join(wt.path, name)
-      if ((await lstat(full).catch(() => null))?.isSymbolicLink()) await rm(full, { force: true }).catch(() => {})
-    }
-    await rm(wt.path, { recursive: true, force: true }).catch(() => {})
-  }
+  await wipe(wt.path)
   await git(repo, 'worktree', 'prune')
   await git(repo, 'branch', force ? '-D' : '-d', wt.branch)
 }

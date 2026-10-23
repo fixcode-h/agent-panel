@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { createWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
+import { createWorktree, ensureWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
 
 // 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
 setLang('zh')
@@ -140,6 +140,65 @@ test('开分支时的原分支后来被删了：和原目录现在的提交比�
   } finally {
     await removeWorktree(repo, wt, true)
   }
+})
+
+test('工作区被回收后又继续：分支还在就接回去，分支也没了就按同名分支重新开', async () => {
+  const repo = project()
+  const id = tid()
+  const wt = await createWorktree(repo, id, '重建')
+  writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
+  git(wt.path, 'add', '-A')
+  git(wt.path, 'commit', '-qm', 'b')
+  // 只把目录删掉（分支还在，git 里还登记着这个工作区）：重建后回到同名分支，分支上没合回的提交还在
+  rmSync(wt.path, { recursive: true, force: true })
+  assert.ok(!existsSync(wt.path))
+  assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '删目录不会顺着链接删掉项目的依赖')
+  let back = await ensureWorktree(repo, wt, id, '重建')
+  assert.ok(back.rebuilt, '重建了')
+  assert.equal(back.worktree.path, wt.path, '还用原来的目录')
+  assert.equal(back.worktree.branch, wt.branch, '分支名沿用原来的')
+  assert.equal(back.worktree.state, 'active')
+  assert.equal(readFileSync(path.join(wt.path, 'b.txt'), 'utf8').replace(/\r\n/g, '\n'), 'b\n', '接回分支上原来的提交')
+  assert.equal((await worktreeStatus(repo, back.worktree)).ahead, 1, '分支上的提交还算没合回原分支')
+  // 目录和分支都在：什么都不做，每次都重建会白跑一遍 git
+  assert.deepEqual(await ensureWorktree(repo, back.worktree, id, '重建'), { worktree: back.worktree, rebuilt: false })
+  await removeWorktree(repo, back.worktree, true)
+
+  // 合并完清理掉目录和分支（标记完成、面板合并后的回收）：继续时按同名分支从当前提交重新开
+  const id2 = tid()
+  const gone = await createWorktree(repo, id2, '再来一轮')
+  writeFileSync(path.join(gone.path, 'c.txt'), 'c\n')
+  git(gone.path, 'add', '-A')
+  git(gone.path, 'commit', '-qm', 'c')
+  git(repo, 'merge', '--no-ff', '--no-edit', '-m', '合并', gone.branch)
+  await removeWorktree(repo, gone, true)
+  assert.equal(git(repo, 'branch', '--list', gone.branch).toString().trim(), '', '分支已经删掉了')
+  back = await ensureWorktree(repo, gone, id2, '再来一轮')
+  assert.ok(back.rebuilt, '分支没了也重建')
+  assert.equal(back.worktree.branch, gone.branch, '同名分支重新建出来')
+  assert.equal(back.worktree.state, 'active', '重建后又能接着改')
+  assert.equal(
+    readFileSync(path.join(back.worktree.path, 'c.txt'), 'utf8').replace(/\r\n/g, '\n'),
+    'c\n',
+    '从现在的提交新开，已经合回原分支的改动都在',
+  )
+  assert.equal((await worktreeStatus(repo, back.worktree)).merged, true, '刚建出来算作已经在原分支里')
+  await removeWorktree(repo, back.worktree, true)
+})
+
+test('重建不了时给出处理办法，不留半创建的工作区', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '占用')
+  // 同名分支已经被另一个工作目录检出：git 不会把它再检出一份
+  const elsewhere = path.join(tmp, `busy-${Math.random().toString(36).slice(2, 8)}`)
+  const err = await ensureWorktree(repo, { ...wt, path: elsewhere }, 'x', '占用').catch((e: Error) => e)
+  assert.ok(err instanceof Error, '建不出来时抛错')
+  assert.match(err.message, /重建独立工作区失败/, '说清哪一步失败')
+  assert.match(err.message, /已经尝试重建/, '说明已经试过重建')
+  assert.match(err.message, /git worktree prune/, '给出下一步怎么处理')
+  assert.ok(!existsSync(elsewhere), '失败时不留半创建的工作区')
+  assert.ok(existsSync(wt.path), '原来那个工作区不受影响')
+  await removeWorktree(repo, wt, true)
 })
 
 test('原目录换了分支就不合并，冲突时带上 conflict 标记并撤回', async () => {

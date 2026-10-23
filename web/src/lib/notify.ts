@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { setBaseTitle } from './page-signal'
+import { countWorking, initialTitleState, nextTitleState, titleFor, titleWait, type TitleState } from './title-count'
 
 const KEY = 'notify-task-done'
 
@@ -26,6 +27,49 @@ export async function setNotify(on: boolean) {
 const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('任务失败了'), stopped: t('任务已暂停') }
 
 /**
+ * 标题里显示正在执行的任务数。数量什么时候改由 title-count.ts 的状态机决定，
+ * 这里只按它给的时机改标题：同一时间最多排一个定时器。
+ */
+function useRunningTitle(tasks: Task[]) {
+  const count = useRef(0)
+  count.current = countWorking(tasks)
+  const state = useRef<TitleState | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const shown = useRef('')
+  const tick = useRef(() => {})
+  tick.current = () => {
+    clearTimeout(timer.current)
+    timer.current = undefined
+    const now = Date.now()
+    const prev = state.current ?? initialTitleState(count.current, now)
+    const next = nextTitleState(prev, count.current, now)
+    state.current = next
+    const title = titleFor(next.shown)
+    if (title !== shown.current) {
+      shown.current = title
+      setBaseTitle(title)
+    }
+    const wait = titleWait(next, now)
+    if (wait !== undefined) timer.current = setTimeout(() => tick.current(), wait)
+  }
+  useEffect(() => {
+    tick.current()
+  }, [tasks])
+  useEffect(() => {
+    // 后台标签页的定时器会被浏览器拖慢，切回来时按当前状态重算一次，别停在旧数字上
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick.current()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clearTimeout(timer.current)
+      timer.current = undefined
+    }
+  }, [])
+}
+
+/**
  * 任务从执行中变成完成 / 失败时：页面不在前台就发系统通知；标签页标题显示正在执行的任务数。
  * 跑很久的工作流不用一直盯着页面。
  */
@@ -34,13 +78,11 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
+  useRunningTitle(tasks)
   useEffect(() => {
     const before = prev.current
     const next = new Map(tasks.map((task) => [task.id, { status: task.status, done: task.turnDoneAt ?? '' }]))
     prev.current = next
-    // 标题里的数量只在 CLI 真的处理时算，预热/等下一句不算
-    const running = tasks.filter((task) => task.working).length
-    setBaseTitle(running ? `(${running}) ${t('Agent 面板')}` : t('Agent 面板'))
     // 新出现的确认请求：页面不在前台时也通知
     const reqs = new Set(tasks.flatMap((task) => (task.requests ?? []).map((r) => r.id)))
     const fresh = tasks.filter((task) => (task.requests ?? []).some((r) => !asked.current.has(r.id)))

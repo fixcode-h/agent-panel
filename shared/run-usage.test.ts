@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AgentUsage, StepUsage, Task, TaskStep } from './schema.ts'
-import { helperSteps, liveTps, ownTokens, runTree, runUsage, tokenCount, tokensOf } from './run-usage.ts'
+import { helperSteps, ownTokens, runTree, runUsage, tokenCount, tokensOf, tpsNow } from './run-usage.ts'
 
 /** 节点的用量：只要 token 和费用，上下文那几项给默认值 */
 const u = (inputTokens: number, outputTokens: number, costUsd = 0): StepUsage => ({
@@ -39,11 +39,13 @@ const task = (
     usage?: Partial<Pick<Task['usage'], 'inputTokens' | 'outputTokens' | 'costUsd'>>
     agents?: Task['usage']['agents']
     parentTaskId?: string
+    status?: Task['status']
   } = {},
 ) =>
   ({
     id,
     parentTaskId: opts.parentTaskId,
+    status: opts.status ?? 'running',
     steps: opts.steps ?? [],
     usage: {
       agents: opts.agents ?? {},
@@ -91,10 +93,13 @@ test('整个运行：总数 = 父对话 + 所有子对话（含多层）+ 派出
 
 test('整个运行：速度分「本对话」和「整体」，同一个角色只算一次', () => {
   const run = runUsage(parent(), kids())
-  // 本对话的 Agent（a1）在输出；helper 没有输出，用它这一轮最后一次的速度
+  // 只有 a1 在输出：helper 和 c2 虽然留着 lastTps，已经停下就不贡献速度
   assert.equal(run.tps, 50)
-  // 本对话 50 + 子任务 10 + 子对话 c1 20 + c2 5
-  assert.equal(run.runTps, 85)
+  assert.equal(run.runTps, 70)
+  // 子任务与子对话只算在跑的那几个（c1 的 20）
+  assert.equal(run.subTps, 20)
+  // 两层的速度加起来一定等于整体
+  assert.equal(run.tps + run.subTps, run.runTps)
 
   // 父子共用一个角色时分不开：算进本对话，整体速度不会因为两处相加而偏大
   const shared = runUsage(
@@ -164,9 +169,91 @@ test('子对话按 parentTaskId 逐层找，不看列表顺序，也不绕圈', 
   )
 })
 
-test('速度：正在输出用 tps，都没输出时用这一轮最后一次的', () => {
+test('速度：只算正在输出的，混着 lastTps 也不冒充实时', () => {
   const t = task('p1', { agents: { a1: agent(10, 8), a2: agent(0, 5) } })
-  assert.equal(liveTps(t), 10)
-  assert.equal(liveTps(t, ['a2']), 5)
-  assert.equal(liveTps(t, []), 0)
+  assert.equal(tpsNow(t), 10)
+  assert.equal(tpsNow(t, ['a2']), 0)
+  assert.equal(tpsNow(t, []), 0)
+  // 已经结束的任务不算速度：面板重启前留下的 tps 不是「现在」的速度
+  assert.equal(tpsNow(task('p1', { status: 'done', agents: { a1: agent(10, 8) } })), 0)
+  assert.equal(tpsNow(task('p1', { status: 'stopped', agents: { a1: agent(10, 8) } })), 0)
+})
+
+test('速度：全都空闲时整体和分层都是 0，不留上一条的残值', () => {
+  // 三条都停下来了，但各自都留着上一轮最后一次的速度
+  const idle = task('p1', {
+    steps: [step('n1', '', u(100, 10), 'a1'), step('n1/sub/h1', 'sub', u(20, 2), 'helper')],
+    usage: { inputTokens: 120, outputTokens: 12 },
+    agents: { a1: agent(0, 900), helper: agent(0, 2041.7) },
+  })
+  const child = task('c1', { parentTaskId: 'p1', agents: { a2: agent(0, 3000) } })
+  const run = runUsage(idle, [idle, child])
+  assert.equal(run.tps, 0)
+  assert.equal(run.subTps, 0)
+  assert.equal(run.runTps, 0)
+})
+
+test('速度：只有父对话在写时整体等于父对话，子任务与子对话那层是 0', () => {
+  const writing = task('p1', {
+    steps: [step('n1', '', u(100, 10), 'a1'), step('n1/sub/h1', 'sub', u(20, 2), 'helper')],
+    usage: { inputTokens: 120, outputTokens: 12 },
+    agents: { a1: agent(42, 42), helper: agent(0, 2041.7) },
+  })
+  // 子对话已经停下，lastTps 还挂着 3000
+  const stopped = task('c1', { parentTaskId: 'p1', agents: { a2: agent(0, 3000) } })
+  const run = runUsage(writing, [writing, stopped])
+  assert.equal(run.tps, 42)
+  assert.equal(run.subTps, 0)
+  assert.equal(run.runTps, 42)
+})
+
+test('速度：父对话空闲、子对话在写时整体等于子对话，本对话那层是 0', () => {
+  const idle = task('p1', {
+    steps: [step('n1', '', u(100, 10), 'a1')],
+    usage: { inputTokens: 100, outputTokens: 10 },
+    agents: { a1: agent(0, 800) },
+  })
+  const writing = task('c1', { parentTaskId: 'p1', agents: { a2: agent(17, 17) } })
+  const alsoWriting = task('c2', { parentTaskId: 'c1', agents: { a3: agent(5, 0) } })
+  const run = runUsage(idle, [idle, writing, alsoWriting])
+  assert.equal(run.tps, 0)
+  assert.equal(run.subTps, 22)
+  assert.equal(run.runTps, 22)
+})
+
+test('速度：三层都在写时各算各的，加起来等于整体', () => {
+  const t = task('p1', {
+    steps: [step('n1', '', u(100, 10), 'a1'), step('n1/sub/h1', 'sub', u(20, 2), 'helper')],
+    usage: { inputTokens: 120, outputTokens: 12 },
+    agents: { a1: agent(10, 10), helper: agent(7, 7) },
+  })
+  const child = task('c1', { parentTaskId: 'p1', agents: { a2: agent(5, 5) } })
+  const run = runUsage(t, [t, child])
+  assert.equal(run.tps, 10)
+  assert.equal(run.subTps, 7 + 5)
+  assert.equal(run.runTps, 22)
+})
+
+test('速度：对话自己的 Agent 没挂在节点上也算本对话', () => {
+  // 对话的一轮不是节点，只有派出的子任务会挂成 slot: sub：只按步骤分的话对话自己的速度会整个丢掉
+  const chat = task('p1', {
+    steps: [step('@chat/sub/h1', 'sub', u(20, 2), 'helper')],
+    usage: { inputTokens: 120, outputTokens: 12 },
+    agents: { a1: agent(42, 42), helper: agent(0, 2041.7) },
+  })
+  const run = runUsage(chat, [chat])
+  assert.equal(run.tps, 42)
+  assert.equal(run.subTps, 0)
+  assert.equal(run.runTps, 42)
+
+  // 子任务刚派出去、还没开始写：父子都算在写的
+  const both = task('p2', {
+    steps: [step('@chat/sub/h1', 'sub', u(20, 2), 'helper')],
+    usage: { inputTokens: 120, outputTokens: 12 },
+    agents: { a1: agent(10, 10), helper: agent(4, 4) },
+  })
+  const run2 = runUsage(both, [both])
+  assert.equal(run2.tps, 10)
+  assert.equal(run2.subTps, 4)
+  assert.equal(run2.runTps, 14)
 })

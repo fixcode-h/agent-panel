@@ -1601,6 +1601,33 @@ try {
       !gitIn(project.path, 'branch', '--list', merged.task.worktree.branch).toString().trim(),
       '标记完成后分支也删掉了',
     )
+    // 已经合回原分支、workspace 和分支都被回收的子对话又被继续：按原来的名字重建工作区再执行，
+    // 不报「项目目录不存在」，也不偷偷退回共用目录
+    const oldBranch = merged.task.worktree.branch
+    const rebornTask = await call('POST', `/tasks/${wtKid.id}/messages`, {
+      text: 'COMMIT 继续这个图标的第二轮优化',
+    })
+    assert.equal(rebornTask.worktree?.state, 'active', '继续时自动重建独立分支')
+    assert.equal(rebornTask.worktree.branch, oldBranch, '分支名沿用这条对话原来的')
+    assert.equal(rebornTask.worktree.path, wtDir, '工作区建回原来的目录')
+    assert.equal(rebornTask.worktree.baseBranch, merged.task.worktree.baseBranch, '合并回原来的分支')
+    assert.ok(existsSync(wtDir), '重建后的独立目录在磁盘上')
+    // 等这一轮真的跑起来：假 CLI 的调用记录里有新那句要求
+    const rebornStart = Date.now()
+    while (!calls().some((c) => (c.input ?? '').includes('第二轮优化'))) {
+      if (Date.now() - rebornStart > 30000) throw new Error('重建后的子对话没有开始执行')
+      await sleep(150)
+    }
+    assert.equal(calls().at(-1).cwd, wtDir, '这一轮在重建后的目录里执行')
+    const rebornNow = await call('GET', `/tasks/${wtKid.id}`)
+    assert.ok(
+      !rebornNow.messages.some((m) => m.error || (m.text ?? '').includes('项目目录不存在')),
+      '不再报项目目录不存在',
+    )
+    const rebornList = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
+    assert.equal(rebornList[0].branch, oldBranch, '状态栏上显示重建后的分支')
+    assert.equal(rebornList[0].state, 'active')
+    step('子对话工作区被回收后继续：自动重建同名分支并在新目录里执行')
     step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(

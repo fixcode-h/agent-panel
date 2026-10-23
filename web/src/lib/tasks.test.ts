@@ -70,18 +70,31 @@ const tokens = (inputTokens: number, outputTokens: number) => ({
 test('Token 分组：没有子对话和子任务时不出现「子任务 0」', () => {
   // 只有本对话：分组为空，浮层和以前一样只显示总数和输入输出
   assert.deepEqual(
-    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 12, runTps: 12, children: 0, helpers: 0 }),
+    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 12, subTps: 0, children: 0, helpers: 0 }),
     [],
   )
   // 有子任务与子对话：两行，两行的速度加起来正好是整体速度
-  const groups = tokenGroups({ own: tokens(100, 10), sub: tokens(50, 5), tps: 12, runTps: 20, children: 1, helpers: 2 })
+  const groups = tokenGroups({
+    own: tokens(100, 10),
+    sub: tokens(50, 5),
+    tps: 12,
+    subTps: 8,
+    children: 1,
+    helpers: 2,
+  })
   assert.deepEqual(groups, [
     { key: 'own', tokens: 110, tps: 12 },
     { key: 'sub', tokens: 55, tps: 8 },
   ])
   // 子任务刚派出去、还没花 token：有数量也要列出来（否则用户看不出有子任务在跑）
   assert.equal(
-    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 3, runTps: 3, children: 0, helpers: 1 }).length,
+    tokenGroups({ own: tokens(100, 10), sub: tokens(0, 0), tps: 3, subTps: 0, children: 0, helpers: 1 }).length,
     2,
   )
+  // 子任务那一行的速度就是子任务与子对话自己的实时速度（停下的部分是 0，不当成噪声去掉）
+  const idle = tokenGroups({ own: tokens(100, 10), sub: tokens(50, 5), tps: 0, subTps: 0, children: 1, helpers: 0 })
+  assert.deepEqual(idle, [
+    { key: 'own', tokens: 110, tps: 0 },
+    { key: 'sub', tokens: 55, tps: 0 },
+  ])
 })

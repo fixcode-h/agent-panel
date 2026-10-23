@@ -78,6 +78,14 @@ try {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await check(p, '首页', ['新建任务', '工作流'])
+  // 左侧栏不再有独立的「文件」入口：文件的入口只在项目页右侧的文件面板里
+  if (
+    await p
+      .locator('nav[aria-label="主导航"] button')
+      .filter({ hasText: /^文件$/ })
+      .count()
+  )
+    errors.push('侧栏：还留着「文件」这个入口')
   // 对话方式下输入「/」：内置命令、CLI 自己的命令和 Skill
   await p.goto(base + '#/chat')
   await p.locator('#task-prompt').fill('/')
@@ -126,11 +134,95 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
-  // Token 胶囊：点开浮层看整个运行的合计（演示里的任务没有子对话，退化成只显示总数和输入输出）
+  // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()
     await check(p, '任务-Token浮层', ['整个运行', '缓存命中'])
     await p.keyboard.press('Escape')
+  }
+  // 浮层里的速度只算正在输出的：造两种数据各截一张（演示数据用完改回去，不影响后面的截图）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    /** writing：父对话在写、子对话和子任务都停了（留着上一轮很高的速度）；idle：全都没在输出 */
+    const setup = (mode) =>
+      p.evaluate(
+        ([k, m]) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const parent = db.tasks.find((x) => x.title.includes('购物车'))
+          const agent = (tps, lastTps) => ({
+            context: 96000,
+            window: 200000,
+            model: 'claude-sonnet-5-5',
+            tps,
+            lastTps,
+            outputTokens: 1000,
+            genMs: 1000,
+          })
+          // 自己的步骤和派出的子任务分开用两个角色，界面才能把两层的速度拆开
+          for (const s of parent.steps) s.agentId = s.slot === 'sub' ? 'demo-helper' : 'demo-own'
+          parent.status = m === 'writing' ? 'running' : 'done'
+          parent.usage.agents = {
+            'demo-own': agent(m === 'writing' ? 42 : 0, m === 'writing' ? 42 : 900),
+            // 已经停下的子任务：lastTps 还留着 2041.7，不能算进速度
+            'demo-helper': agent(0, 2041.7),
+          }
+          db.tasks = db.tasks.filter((x) => !x.id.startsWith('demo-speed-'))
+          for (const [i, id] of ['demo-speed-c1', 'demo-speed-c2'].entries()) {
+            db.tasks.push({
+              ...structuredClone(parent),
+              id,
+              parentTaskId: i ? 'demo-speed-c1' : parent.id,
+              rootTaskId: parent.id,
+              title: i ? '子对话：核对通知时序' : '子对话：角标订阅',
+              status: 'done',
+              steps: [],
+              messages: [],
+              usage: {
+                agents: { 'demo-child': agent(0, 3000) },
+                inputTokens: 2000,
+                outputTokens: 200,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                costUsd: 0.01,
+              },
+            })
+          }
+          localStorage.setItem(k, JSON.stringify(db))
+        },
+        [key, mode],
+      )
+    // 重新加载后回到任务页（当前路由就是任务页，不用再点头部）
+    const gotoTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    const openToken = async () => {
+      await gotoTask()
+      await p.getByTitle('Token 用量').first().click()
+      await p.waitForTimeout(500)
+    }
+    const popover = async () => (await p.getByRole('dialog').last().innerText()).replace(/\s+/g, ' ')
+    // 父对话在写：整体 = 本对话，子任务与子对话那行是「空闲」
+    await setup('writing')
+    await openToken()
+    await check(p, '任务-Token浮层-父对话在写', ['整个运行', '空闲', '42.0 token/s'])
+    const writing = await popover()
+    if (/2041\.7|3000\.0/.test(writing)) errors.push(`Token 浮层：停下的子任务还在贡献速度（${writing}）`)
+    await p.keyboard.press('Escape')
+    // 全都没在输出：不显示任何残留速度
+    await setup('idle')
+    await openToken()
+    await check(p, '任务-Token浮层-全都空闲', ['整个运行', '空闲'])
+    const idle = await popover()
+    if (/token\/s/.test(idle)) errors.push(`Token 浮层：全都空闲时还显示速度（${idle}）`)
+    await p.keyboard.press('Escape')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await gotoTask()
   }
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
@@ -800,31 +892,42 @@ try {
     await check(p, '任务-浅色-Token浮层', ['整个运行', '缓存命中'])
     await p.keyboard.press('Escape')
   }
-  // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
+  // 项目首页右侧的文件面板：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存。
+  // 左侧栏原来的独立文件页已经去掉，这里验证的是同一套 FileExplorer
   {
-    await p.goto(base + '#/files')
+    await p.goto(base)
+    await p.waitForTimeout(400)
+    // #/projects 的地址里带项目 id，演示里的 id 每次生成都不一样，从侧栏点进去
+    await p.locator('[data-sidebar]').getByText('商城前台').first().click()
+    // 面板打开时才开始读文件：清掉之前页面记下的请求，再看打开面板读了哪几层
+    await p.evaluate(() => {
+      window.__fileCalls = []
+    })
+    await p.getByRole('button', { name: '显示文件', exact: true }).first().click()
     await p.waitForTimeout(800)
+    const panel = p.locator('aside').filter({ has: p.getByPlaceholder('查找文件') })
     const calls = () => p.evaluate(() => (window.__fileCalls ?? []).filter((x, i, a) => a.indexOf(x) === i).join(','))
     const first = await calls()
-    if (first !== '') errors.push(`文件页：首屏不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
-    const row = (name) => p.locator(`main button[title="${name}"]`).first()
+    if (first !== '') errors.push(`文件面板：打开时不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
+    const row = (name) => panel.locator(`button[title="${name}"]`).first()
     // 根目录这一层有 src、tests 和几个文件，没有更深层的内容
     await row('src')
       .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：根目录没有列出 src'))
+      .catch(() => errors.push('文件面板：根目录没有列出 src'))
     await row('tests')
       .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('文件页：根目录没有列出 tests'))
-    if (await row('src/App.tsx').count()) errors.push('文件页：没展开 src 就列出了它下面的文件')
-    if (await p.getByText('共 20000 个文件', { exact: false }).count()) errors.push('文件页：还在显示全量文件数量')
-    await check(p, '文件-根目录一层', ['src', 'README.md'])
+      .catch(() => errors.push('文件面板：根目录没有列出 tests'))
+    if (await row('src/App.tsx').count()) errors.push('文件面板：没展开 src 就列出了它下面的文件')
+    if (await panel.getByText('共 20000 个文件', { exact: false }).count())
+      errors.push('文件面板：还在显示全量文件数量')
+    await check(p, '文件面板-根目录一层', ['src', 'README.md'])
     // 展开 src：这时才读 src 这一层
     await row('src').click()
     await row('src/App.tsx')
       .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：展开 src 后没有读它这一层'))
-    if (!(await calls()).split(',').includes('src')) errors.push('文件页：展开 src 时没有请求这一层')
-    await check(p, '文件-展开一层', ['api', 'App.tsx'])
+      .catch(() => errors.push('文件面板：展开 src 后没有读它这一层'))
+    if (!(await calls()).split(',').includes('src')) errors.push('文件面板：展开 src 时没有请求这一层')
+    await check(p, '文件面板-展开一层', ['api', 'App.tsx'])
     // 收起再展开：不重复请求
     await row('src').click()
     await p.waitForTimeout(200)
@@ -834,15 +937,15 @@ try {
       .waitFor({ timeout: 3000 })
       .catch(() => {})
     const after = await p.evaluate(() => (window.__fileCalls ?? []).length)
-    if (after !== before) errors.push(`文件页：收起再展开又请求了一次（${before} → ${after}）`)
+    if (after !== before) errors.push(`文件面板：收起再展开又请求了一次（${before} → ${after}）`)
     // 名称搜索：还没展开的深层文件也能搜到，结果是平铺的
-    await p.getByPlaceholder('查找文件').fill('Restock')
-    await p
-      .locator('main button[title="src/components/RestockButton.tsx"]')
+    await panel.getByPlaceholder('查找文件').fill('Restock')
+    await panel
+      .locator('button[title="src/components/RestockButton.tsx"]')
       .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：名称搜索没有找到还没展开的深层文件'))
-    await check(p, '文件-名称搜索', ['RestockButton'])
-    await p.getByPlaceholder('查找文件').fill('')
+      .catch(() => errors.push('文件面板：名称搜索没有找到还没展开的深层文件'))
+    await check(p, '文件面板-名称搜索', ['RestockButton'])
+    await panel.getByPlaceholder('查找文件').fill('')
     await p.waitForTimeout(400)
 
     // 右键菜单：文件行、文件夹行、空白处各一次；右键本身不能打开文件或展开目录
@@ -863,7 +966,7 @@ try {
     for (const item of ['打开', '复制相对路径', '复制绝对路径', '在文件夹中打开'])
       if (!fileMenu.includes(item)) errors.push(`文件右键：菜单里没有「${item}」`)
     if (await p.getByRole('dialog').count()) errors.push('文件右键：右键打开了文件窗口')
-    await check(p, '文件-右键菜单')
+    await check(p, '文件面板-右键菜单')
     await closeMenu()
     if (await p.getByRole('dialog').count()) errors.push('文件右键：菜单项没点，文件窗口却开着')
     // 文件夹行右键：菜单是「展开」，目录没有被展开
@@ -881,13 +984,13 @@ try {
     if (dirItems[0] !== '展开') errors.push(`文件夹右键：第一项是「${dirItems[0]}」，不是「展开」`)
     if (dirItems.includes('打开')) errors.push('文件夹右键：出现了只给文件的「打开」')
     if (await row('tests/cart.test.ts').count()) errors.push('文件夹右键：右键把目录展开了')
-    await check(p, '文件-文件夹右键菜单')
+    await check(p, '文件面板-文件夹右键菜单')
     await closeMenu()
     // 空白处右键：整棵树的菜单。
     // 行的按钮是整宽的，右上角又被搜索栏占着，所以在树的右键触发元素（min-h-full 那层）
     // 右下角的空白上点真实鼠标。每次先把滚动区滚到底，保证这块空白在视口里。
-    const scroll = p.locator('main div.min-h-full').first().locator('..')
-    const blankTrigger = () => p.locator('main div.min-h-full').first()
+    const scroll = panel.locator('div.min-h-full').first().locator('..')
+    const blankTrigger = () => panel.locator('div.min-h-full').first()
     const openBlankMenu = async (label) => {
       await scroll
         .evaluate((el) => {
@@ -910,7 +1013,7 @@ try {
     const blankMenu = await menuText().catch(() => '')
     for (const item of ['刷新', '全部展开', '全部收起', '复制项目路径', '在文件夹中打开'])
       if (!blankMenu.includes(item)) errors.push(`空白处右键：菜单里没有「${item}」`)
-    await check(p, '文件-空白处右键菜单')
+    await check(p, '文件面板-空白处右键菜单')
     await closeMenu()
     await menu()
       .first()
@@ -935,8 +1038,8 @@ try {
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
-    const collapsedRows = await p
-      .locator('main button[title="src/App.tsx"]')
+    const collapsedRows = await panel
+      .locator('button[title="src/App.tsx"]')
       .count()
       .catch(() => 0)
     if (collapsedRows) errors.push('全部收起：收起后目录下面还显示着子项')
@@ -961,13 +1064,13 @@ try {
     await p.waitForTimeout(900)
     const afterExpand = await calls()
     const requested = afterExpand.split(',').filter((x) => x && !beforeExpand.split(',').includes(x))
-    const known = await p
-      .locator('main button[title]')
+    const known = await panel
+      .locator('button[title]')
       .evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''))
     const unknown = requested.filter((p2) => !known.some((k) => k.startsWith(p2 + '/')))
     if (unknown.length) errors.push(`全部展开：读了界面上还没有的目录「${unknown.join('、')}」`)
     await p.waitForTimeout(300)
-    await check(p, '文件-全部展开')
+    await check(p, '文件面板-全部展开')
     await p.keyboard.press('Escape')
   }
   // 项目设置：测试步骤和按 Agent 派生的参数都要能正常显示，不能溢出、不能串行
@@ -1064,17 +1167,21 @@ try {
       .catch(() => errors.push('英文界面：执行中发的消息没有立刻出现'))
     if (await p.getByText('Queue', { exact: false }).count()) errors.push('英文界面：还能看到 Queue')
     await check(p, '英文-执行中发消息')
-    // 英文的文件页：搜索框、计数文案都换成英文
-    await p.goto(base + '#/files')
+    // 英文的文件面板：搜索框、计数文案都换成英文
+    await p.goto(base)
+    await p.waitForTimeout(400)
+    await p.locator('[data-sidebar]').getByText('商城前台').first().click()
+    await p.getByRole('button', { name: 'Show files', exact: true }).first().click()
     await p.waitForTimeout(900)
-    if (!(await p.getByPlaceholder('Find file').count())) errors.push('英文界面：文件页的搜索框没有换成 Find file')
-    if (!(await p.getByText('files read', { exact: false }).count())) errors.push('英文界面：文件页的计数还是中文')
-    await p.locator('main button[title="src"]').first().click()
-    await p
-      .locator('main button[title="src/App.tsx"]')
+    if (!(await p.getByPlaceholder('Find file').count())) errors.push('英文界面：文件面板的搜索框没有换成 Find file')
+    if (!(await p.getByText('files read', { exact: false }).count())) errors.push('英文界面：文件面板的计数还是中文')
+    const enPanel = p.locator('aside').filter({ has: p.getByPlaceholder('Find file') })
+    await enPanel.locator('button[title="src"]').first().click()
+    await enPanel
+      .locator('button[title="src/App.tsx"]')
       .waitFor({ timeout: 8000 })
       .catch(() => {})
-    await check(p, '文件-英文', ['files read'])
+    await check(p, '文件面板-英文', ['files read'])
   } else errors.push('英文界面：设置里没有语言选择')
 
   // 发出去的图片消息：气泡里直接显示图片，点开浮层能看大图；取不到图时回落成图标，不显示破图

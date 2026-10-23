@@ -3,7 +3,6 @@ import * as D from '@radix-ui/react-dialog'
 import {
   Bot,
   FolderGit2,
-  FolderOpen,
   MessageSquare,
   MessageSquarePlus,
   PanelLeft,
@@ -44,7 +43,7 @@ type Item = {
  */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { projects, tasks, agents, workflows } = useData()
-  const { route, go, openSettings, openProject } = useNav()
+  const { go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const list = useRef<HTMLDivElement>(null)
@@ -58,8 +57,6 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const items = useMemo<Item[]>(() => {
     const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
     const recent = [...tasks].filter((x) => !x.archived).sort(byAskedAt)
-    // 文件页按项目看：跟着正在看的项目走，不在项目里时用第一个项目
-    const filesId = (route.page === 'files' || route.page === 'projects' ? route.id : undefined) ?? projects[0]?.id
     return [
       {
         id: 'new-task',
@@ -75,14 +72,6 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         label: t('新建聊天'),
         icon: MessageSquarePlus,
         run: () => go({ page: 'chat' }),
-      },
-      {
-        id: 'files',
-        group: t('操作'),
-        label: t('文件'),
-        sub: t('浏览项目里的文件'),
-        icon: FolderOpen,
-        run: () => (filesId ? go({ page: 'files', id: filesId }) : openProject()),
       },
       {
         id: 'sidebar',
@@ -127,7 +116,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         run: () => go({ page: 'workflows', id: w.id }),
       })),
     ]
-  }, [projects, tasks, agents, workflows, route, go, openSettings, openProject])
+  }, [projects, tasks, agents, workflows, go, openSettings])
 
   // 没输入时每组只露几条，免得列表太长；输入后按名称和副标题匹配
   const q = query.trim().toLowerCase()

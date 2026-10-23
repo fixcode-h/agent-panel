@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, Hourglass, ListChecks, Loader2 } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, ListChecks, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, Task, TaskPlan } from '@shared/schema'
 import { planChildren, planProgress, shownPlan } from '@shared/plan'
@@ -17,8 +17,35 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
 }
 
 /**
+ * 等待中的沙漏：上腔的沙流到下半腔堆起来，中轴一条细沙在落，一轮流完整体翻个身接着流。
+ * 动效全在 index.css（plan-hourglass-*）：翻转只在沙全落到下腔时做，
+ * 而且翻转后画出来的样子和初始状态重合，所以循环回开头不闪跳
+ */
+function PlanHourglass({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" className={cn('plan-hourglass', className)}>
+      <g className="plan-hourglass-turn">
+        {/* 上腔、下腔的沙：同一段 scaleY 动画，下半腔晚半个循环 */}
+        <polygon points="7.45,3.45 16.55,3.45 12.65,10.4 11.35,10.4" className="plan-hourglass-sand" />
+        <polygon
+          points="11.35,13.6 12.65,13.6 16.55,20.55 7.45,20.55"
+          className="plan-hourglass-sand plan-hourglass-sand-bottom"
+        />
+        <path
+          className="plan-hourglass-glass"
+          d="M6.2 2.6h11.6M6.2 21.4h11.6M7 3l4.3 7.8v2.4L7 21M17 3l-4.3 7.8v2.4L17 21"
+        />
+        <line className="plan-hourglass-stream" x1="12" y1="10.2" x2="12" y2="18.6" />
+        {/* 翻转 180° 后落沙是在上半腔那边，所以另一条线晚半个循环出现 */}
+        <line className="plan-hourglass-stream plan-hourglass-stream-up" x1="12" y1="5.4" x2="12" y2="13.8" />
+      </g>
+    </svg>
+  )
+}
+
+/**
  * 计划步骤的勾选圆点（清单样式）：完成是实心圆里一个勾，待做是空心圆，
- * 进行中是转动的强调色圆弧，等待中是圆里一个慢慢呼吸的沙漏
+ * 进行中是转动的强调色圆弧，等待中是圆里一个流动并翻转的沙漏
  */
 function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
   const box = cn('grid shrink-0 place-items-center rounded-full', small ? 'h-3.5 w-3.5' : 'h-[1.125rem] w-[1.125rem]')
@@ -40,7 +67,7 @@ function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
   if (status === 'waiting')
     return (
       <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-warning text-warning')}>
-        <Hourglass className={cn('plan-waiting', small ? 'h-2 w-2' : 'h-2.5 w-2.5')} strokeWidth={2.5} />
+        <PlanHourglass className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} />
       </span>
     )
   return <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')} />
@@ -109,7 +136,7 @@ export function PlanButton({ task }: { task: Task }) {
         )}
         {!finished && p.waiting > 0 && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-warning">
-            <Hourglass className="plan-waiting h-3 w-3" />
+            <PlanHourglass className="h-3 w-3" />
             {t('{n} 个在等待', { n: p.waiting })}
           </span>
         )}
