@@ -76,7 +76,9 @@ function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
 /** 步骤后面的一小段：等待中写在等什么，完成写用了多久，进行中写做了多久 */
 function itemMeta(x: PlanItem, now: number) {
   const waits = x.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
-  if (x.status === 'waiting' && waits.length) return t('等：{what}', { what: waits.join(t('、')) })
+  if (x.status === 'waiting' && waits.length)
+    // 面板写的 note 在这里一起显示：子对话没交付完时它会写清还在等什么（等的是谁由 waits 带出）
+    return [t('等：{what}', { what: waits.join(t('、')) }), x.note].filter(Boolean).join(' · ')
   const from = Date.parse(x.startedAt)
   if (!Number.isFinite(from)) return ''
   if (x.status === 'done') {
@@ -84,6 +86,13 @@ function itemMeta(x: PlanItem, now: number) {
     return Number.isFinite(end) && end > from ? fmtDuration(end - from) : ''
   }
   return x.status === 'running' ? fmtDuration(now - from) : ''
+}
+
+/** 步骤下面那行小字：等待中 note 已经并进 meta（等谁 + 还在等什么），其余情况再把备注接在后面 */
+function itemLine(x: PlanItem, now: number) {
+  const meta = itemMeta(x, now)
+  const inMeta = x.status === 'waiting' && x.waits.some((w) => w.state === 'waiting')
+  return [meta, inMeta ? '' : x.note].filter(Boolean).join(' · ')
 }
 
 /**
@@ -214,7 +223,7 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
   // 状态一变就回到默认：做完的立即收起，开始做的展开
   useEffect(() => setManual(null), [step.status])
   const open = kids.length > 0 && (manual ?? active)
-  const meta = itemMeta(step, now)
+  const meta = itemLine(step, now)
   const doneKids = kids.filter((c) => c.status === 'done').length
   return (
     <li>
@@ -268,7 +277,7 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
       {open && (
         <ol className="mb-1 ml-[2.4375rem] flex flex-col">
           {kids.map((c) => {
-            const m = itemMeta(c, now)
+            const m = itemLine(c, now)
             return (
               <li key={c.id} className="flex min-w-0 items-start gap-2.5 rounded-md py-1 pr-2">
                 <span className="mt-0.5">
@@ -283,14 +292,14 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
                   >
                     {c.title}
                   </span>
-                  {(m || c.note) && (
+                  {m && (
                     <span
                       className={cn(
                         'truncate text-[0.6875rem]',
                         c.status === 'waiting' ? 'text-warning' : 'text-subtle',
                       )}
                     >
-                      {[m, c.note].filter(Boolean).join(' · ')}
+                      {m}
                     </span>
                   )}
                 </span>
