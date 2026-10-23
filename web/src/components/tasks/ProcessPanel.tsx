@@ -9,6 +9,7 @@ import { fmtDuration } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import type { TaskProcess, TaskProcesses } from '@shared/schema'
+import { MemoryChart } from './MemoryChart'
 
 /** 下拉按钮上的状态点：没有数据时不画，有孤儿进程是黄，内存占用高是红 */
 type Dot = 'none' | 'ok' | 'warn' | 'bad'
@@ -270,7 +271,7 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
           )}
         </>
       ) : (
-        <div className="px-3 py-6 text-center text-[0.75rem] text-subtle">{t('还没有内存采样，30 秒后开始记录')}</div>
+        <MemoryChart taskId={taskId} />
       )}
     </div>
   )

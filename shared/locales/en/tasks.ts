@@ -919,5 +919,10 @@ export const EN_TASKS: Record<string, string> = {
     'The process is still running; it may need higher permission or is busy. Try again later',
   '进程没有结束（可能权限不足）': 'The process did not stop (it may need higher permission)',
   没有结束这个进程: 'Could not stop this process',
+  '面板 {v}': 'Panel {v}',
+  '进程 {v}': 'Processes {v}',
+  会话内存随时间的变化: 'Chat memory over time',
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
+  '每 {s} 秒采样一次': 'Sampled every {s} seconds',
+  左右拖动查看更早: 'Drag left or right to see earlier samples',
 }
