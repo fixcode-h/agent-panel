@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readdir, rm, symlink, appendFile, lstat } from 'node:fs/promises'
 import path from 'node:path'
 import type { TaskWorktree } from '../../shared/schema.ts'
+import { type ChildHold, childHoldText } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
 import { DATA_DIR } from '../store.ts'
 import { capture } from './process.ts'
@@ -273,6 +274,20 @@ export async function removeWorktree(repo: string, wt: TaskWorktree, force: bool
   await wipe(wt.path)
   await git(repo, 'worktree', 'prune')
   await git(repo, 'branch', force ? '-D' : '-d', wt.branch)
+}
+
+/**
+ * 子对话彻底完成后回收独立分支：还差条件（见 shared/task.ts 的 childHolds）就原样保留，返回原因；
+ * 全部满足才删掉目录和分支。合并成功、这一轮结束、后台命令结束都走这里，
+ * 调用方负责先把等下一句的 CLI 和还在跑的后台命令停下来。
+ */
+export async function releaseWorktree(repo: string, wt: TaskWorktree, holds: ChildHold[]): Promise<string> {
+  if (holds.length) return childHoldText(holds)
+  // 再核一次合并状态：这里删了就找不回来了，不能只靠调用方记得传对
+  const st = await worktreeStatus(repo, wt).catch(() => null)
+  if (!st?.merged) return childHoldText(['unmerged'])
+  await removeWorktree(repo, wt, true)
+  return ''
 }
 
 /** 目录当前所在的分支；分离 HEAD 时返回空 */

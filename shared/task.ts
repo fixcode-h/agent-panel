@@ -14,6 +14,7 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
+import { openPlan } from './plan.ts'
 import { attachChip, chipMarker, quoteBlock } from './composer.ts'
 
 export function taskTitle(prompt: string) {
@@ -348,11 +349,83 @@ export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(
 export type TaskStage = 'you' | 'running' | 'unfinished' | 'done' | 'stopped'
 
 /**
+ * 子对话离「彻底完成」还差哪几样（见 childHolds），空数组才算做完了
+ */
+export type ChildHold = 'working' | 'background' | 'plan' | 'asking' | 'requests' | 'unmerged'
+
+/**
+ * 子对话彻底完成要满足的条件，缺哪个列哪个：
+ * - working：这一轮还在跑
+ * - background：后台命令还在跑 / 排队（结果推回来还要接着做）
+ * - plan：计划还没做完（见 shared/plan.ts 的 openPlan）
+ * - asking：还有待用户回答的提问
+ * - requests：还有待用户确认的请求
+ * - unmerged：独立分支还有没合回父对话分支的改动
+ *
+ * 合并成功、一轮结束、标记完成、回收独立分支、面板阶段显示都读这一份：
+ * 以前合并成功就当场标完成、删 worktree，计划、提问、后台命令全都没查，
+ * 于是「已完成」和「还在跑」同时成立、目录还在被写就被删掉。
+ */
+export function childHolds(x: {
+  working?: boolean
+  /** 还在跑、排队的后台命令数 */
+  background?: number
+  /** 还没做完的计划进度（openPlan） */
+  plan?: { done: number; total: number }
+  asking?: number
+  requests?: number
+  /** 独立分支还没合回父对话的分支；没有独立分支时传 false / 不传 */
+  unmerged?: boolean
+}): ChildHold[] {
+  const holds: ChildHold[] = []
+  if (x.working) holds.push('working')
+  if (x.background) holds.push('background')
+  if (x.plan && x.plan.done < x.plan.total) holds.push('plan')
+  if (x.asking) holds.push('asking')
+  if (x.requests) holds.push('requests')
+  if (x.unmerged) holds.push('unmerged')
+  return holds
+}
+
+/** 子对话彻底完成了：可以标完成、回收独立分支 */
+export const childComplete = (x: Parameters<typeof childHolds>[0]) => childHolds(x).length === 0
+
+/**
+ * 子对话的任务状态换成 childHolds 的入参：服务端置完成、删独立分支、界面显示都从这里取，不要各写一套。
+ * merged 传 false 表示独立分支还没合回去；不传或 true 表示已经合了（或者根本没有独立分支）。
+ */
+export function childHoldsOf(
+  task: Pick<Task, 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'>,
+  x: { background?: number; merged?: boolean } = {},
+): ChildHold[] {
+  return childHolds({
+    working: task.working,
+    background: x.background,
+    plan: openPlan(task),
+    asking: task.parentAsks?.length ?? 0,
+    requests: task.requests.length,
+    unmerged: x.merged === false,
+  })
+}
+
+/** 还差什么才算做完：给用户看的一句话（分支状态行、标记完成的提示共用） */
+export function childHoldText(holds: ChildHold[]) {
+  const what: Record<ChildHold, string> = {
+    working: t('这一轮还在执行'),
+    background: t('后台命令还没跑完'),
+    plan: t('计划还没做完'),
+    asking: t('还有等你回答的提问'),
+    requests: t('还有等你确认的请求'),
+    unmerged: t('独立分支还没合回原分支'),
+  }
+  return holds.map((h) => what[h]).join(t('、'))
+}
+
+/**
  * 一个任务属于哪个阶段：
- * - 已标记解决（子对话）→ 已完成
  * - 有等用户确认的请求或没回答的提问 → 需要你处理
  * - 执行失败 → 需要你处理
- * - 正在跑这一轮 → 执行中
+ * - 正在跑这一轮，或者后台命令还在跑 → 执行中
  * - 用户 / 父对话主动停下 → 已停止
  * - 计划还没做完（见 shared/plan.ts 的 openPlan）→ 未完成：交付了一半，不算已完成
  * - 其余 → 已完成
@@ -360,7 +433,9 @@ export type TaskStage = 'you' | 'running' | 'unfinished' | 'done' | 'stopped'
  * 「已停止」只认 status === 'stopped'：对话交付完一轮后 status 仍是 running，
  * 只是 working 变回 false、CLI 在等下一句，它已经做完了，不能算停止。
  * 子对话要停下来等用户时应当先提问（见内置「通用约束」），所以没在跑也没提问就等于交付完了；
- * 但计划没做完的不算：那是真的还剩任务，别让它看起来已完成。
+ * 但计划没做完、后台命令还在跑的不算：那是真的还剩任务，别让它看起来已完成。
+ * 「已标记解决」排在这几条之后：正常只在彻底完成时标记（见 childHolds），
+ * 万一标早了也不能盖住还在跑、计划没做完这些事实。
  */
 export function taskStage(x: {
   status: Task['status']
@@ -372,14 +447,15 @@ export function taskStage(x: {
   requests?: number
   /** 还没回答的提问数 */
   asking?: number
+  /** 还在跑、排队的后台命令数：有它就还在执行 */
+  background?: number
   /** 计划还没做完：列表里归「未完成」，不算交付完 */
   unfinished?: boolean
 }): TaskStage {
-  if (x.resolved) return 'done'
   if (x.requests || x.asking) return 'you'
   if (x.status === 'failed') return 'you'
-  if (x.working) return 'running'
-  if (x.status === 'stopped') return 'stopped'
+  if (x.working || x.background) return 'running'
+  if (x.status === 'stopped' && !x.resolved) return 'stopped'
   if (x.unfinished) return 'unfinished'
   return 'done'
 }
@@ -409,6 +485,8 @@ export interface ChildEntry {
   resolved?: boolean
   /** 还没做完的计划：「计划 7/8」，有它就不算已完成 */
   plan?: { done: number; total: number }
+  /** 还在跑、排队的后台命令数：有它就算还在执行（见 childHolds） */
+  background?: number
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
@@ -432,11 +510,19 @@ const stageRank: TaskStage[] = ['you', 'running', 'unfinished', 'done', 'stopped
 export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.plan })
 
 /**
- * 浮层「运行中」只列真正在执行（working）的子对话：进程活着但在等下一句的，
- * 在它自己页面上是「等待你的下一条消息」，混进来就会被当成还在跑。
+ * 子对话这会儿真的在干活：这一轮在跑，或者后台命令还在跑（进程活着等下一句不算）。
+ * 界面上的转圈、行内「执行中」、「运行中」汇总都用它，别只看 working：
+ * 后台命令跑在服务端，CLI 只是在等结果，那时子对话其实还没做完。
+ */
+export const childRunning = (x: Pick<ChildEntry, 'working' | 'background'>) => !!x.working || !!x.background
+
+/**
+ * 浮层「运行中」只列真正在干活（working 或后台命令还在跑）的子对话：进程活着但在等下一句的，
+ * 在它自己页面上是「等待你的下一条消息」，混进来就会被当成还在跑；
+ * 反过来，已标记解决但还在跑的也要列出来——「已完成」不能盖住还在跑。
  */
 export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
-  return list.filter((x) => x.working && !x.resolved)
+  return list.filter((x) => childRunning(x))
 }
 
 /**
