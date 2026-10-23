@@ -860,13 +860,23 @@ await runShard('工作流条件与失败', async (api) => {
     const tInfo = await call('GET', `/tasks/${tAtt.id}/files`)
     assert.deepEqual(Object.keys(tInfo).sort(), ['branch', 'dir', 'isGit'])
     // 在系统里打开：文件、目录、空路径（项目目录）都接受，越权路径被拒绝
-    // （测试环境没有图形界面，只验证参数校验和返回，实际打开由 revealItem 静默处理）
-    const fileReveal = await call('POST', `/project-files/${project.id}/reveal?path=README.md`, {})
-    assert.equal(fileReveal.ok, true)
-    const dirReveal = await call('POST', `/project-files/${project.id}/reveal?path=src`, {})
-    assert.equal(dirReveal.ok, true)
-    const rootReveal = await call('POST', `/project-files/${project.id}/reveal`, {})
-    assert.equal(rootReveal.ok, true)
+    // 机器上没有文件管理器（WSL 默认没有 xdg-open）时必须回带原因的失败，不能静默回 ok
+    const revealPost = async (url, body = {}) => {
+      const r = await fetch(base + url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return { status: r.status, ...(await r.json()) }
+    }
+    const revealOk = (r) =>
+      r.ok === true || ((r.status === 400 || r.status === 404) && /没能打开|没能在文件夹中显示/.test(r.error ?? ''))
+    const fileReveal = await revealPost(`/project-files/${project.id}/reveal?path=README.md`)
+    assert.ok(revealOk(fileReveal), JSON.stringify(fileReveal))
+    const dirReveal = await revealPost(`/project-files/${project.id}/reveal?path=src`)
+    assert.ok(revealOk(dirReveal), JSON.stringify(dirReveal))
+    const rootReveal = await revealPost(`/project-files/${project.id}/reveal`)
+    assert.ok(revealOk(rootReveal), JSON.stringify(rootReveal))
     // 越权路径要带 JSON 请求体：不带 content-type 的写请求会先被全局中间件以 415 拒掉
     const badReveal = await fetch(`${base}/project-files/${project.id}/reveal?path=${encodeURIComponent('../..')}`, {
       method: 'POST',
@@ -875,10 +885,10 @@ await runShard('工作流条件与失败', async (api) => {
     })
     assert.equal(badReveal.status, 404, '不能打开项目目录外面的路径')
     assert.match((await badReveal.json()).error, /只能查看项目目录里的文件/)
-    const tReveal = await call('POST', `/tasks/${tAtt.id}/reveal`, { path: 'README.md' })
-    assert.equal(tReveal.ok, true)
-    const tRootReveal = await call('POST', `/tasks/${tAtt.id}/reveal`, {})
-    assert.equal(tRootReveal.ok, true, '任务目录也能整体打开')
+    const tReveal = await revealPost(`/tasks/${tAtt.id}/reveal`, { path: 'README.md' })
+    assert.ok(revealOk(tReveal), JSON.stringify(tReveal))
+    const tRootReveal = await revealPost(`/tasks/${tAtt.id}/reveal`)
+    assert.ok(revealOk(tRootReveal), `任务目录也能整体打开：${JSON.stringify(tRootReveal)}`)
   }
   step('文件浏览：只列一层、深层名称搜索、越权路径、任务目录同样按层、在系统里打开')
   // Agent 自己提交了改动：仍然算在任务的更改里（和任务开始时的提交比）

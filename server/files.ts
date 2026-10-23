@@ -599,11 +599,11 @@ export async function revealInDir(dir: string, want: string): Promise<void> {
   const full = await into(dir, norm(want))
   const info = await stat(full).catch(() => null)
   if (info?.isDirectory()) {
-    revealItem(full)
+    await revealItem(full)
     return
   }
   // 文件：选中它；文件已经被删掉时打开所在的文件夹
-  revealItem(info?.isFile() ? full : path.dirname(full))
+  await revealItem(info?.isFile() ? full : path.dirname(full))
 }
 
 /** 写接口的入参：字段都在这里校验，名字的单段规则在 oneName 里 */
