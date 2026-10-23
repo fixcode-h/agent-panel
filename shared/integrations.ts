@@ -210,7 +210,71 @@ const cloudflared: Integration = {
   },
 }
 
+/**
+ * Vercel CLI：授权后 Agent 可以直接用 vercel 部署、查看部署状态、管理域名和环境变量。
+ * 命令行为按 vercel@65.2.0 的源码核对（未在真实账号上跑过 login/部署）。
+ */
+const vercel: Integration = {
+  id: 'vercel',
+  name: 'Vercel CLI',
+  description: t('授权后 Agent 可以直接用 vercel 部署项目和预览、查看部署状态、管理域名与环境变量。'),
+  command: 'vercel',
+  versionArgs: ['--version'],
+  docsUrl: 'https://vercel.com/docs/cli',
+  install: {
+    win32: 'npm i -g vercel',
+    darwin: 'npm i -g vercel',
+    linux: 'npm i -g vercel',
+  },
+  setup: {
+    // 依次回退到 pnpm、yarn；Linux 多一条 sudo -n，没有免密 sudo 时直接失败，不会卡在输密码上
+    win32: [
+      ['npm', 'i', '-g', 'vercel'],
+      ['pnpm', 'add', '-g', 'vercel'],
+      ['yarn', 'global', 'add', 'vercel'],
+    ],
+    darwin: [
+      ['npm', 'i', '-g', 'vercel'],
+      ['pnpm', 'add', '-g', 'vercel'],
+      ['yarn', 'global', 'add', 'vercel'],
+    ],
+    linux: [
+      ['npm', 'i', '-g', 'vercel'],
+      ['sudo', '-n', 'npm', 'i', '-g', 'vercel'],
+      ['pnpm', 'add', '-g', 'vercel'],
+      ['yarn', 'global', 'add', 'vercel'],
+    ],
+  },
+  auth: {
+    // 未登录输出 {"loggedIn":false} 且退出码 1；已登录的输出含 "username"（非 TTY 下默认只写一行用户名，JSON 更好认）
+    status: ['whoami', '--format', 'json'],
+    // device code flow：CLI 打印 https://vercel.com/oauth/device?user_code=XXXX-XXXX，然后等浏览器里完成授权
+    login: ['login'],
+    // 没有把 token 存进凭据的子命令（--token / VERCEL_TOKEN 只对单次命令生效），所以不配 token
+    logout: ['logout'],
+    account: /"username"\s*:\s*"([^"]+)"/,
+    // 授权码就是授权链接里的 user_code，不依赖 CLI 额外打印的那句提示
+    code: /[?&]user_code=([A-Za-z0-9-]{4,})/,
+    hint: t(
+      '还没有登录 Vercel。点「浏览器授权」，在打开的页面里完成授权；也可以给 vercel 命令设置 VERCEL_TOKEN 环境变量来用 Token。',
+    ),
+  },
+  // 关掉每次命令的更新检查和遥测提示（vercel 认这两个变量）
+  env: { NO_UPDATE_NOTIFIER: '1', VERCEL_TELEMETRY_DISABLED: '1' },
+}
+
 /** 内置的授权工具；以后加 GitLab 之类只管往这里加一份定义 */
-export const INTEGRATIONS: Integration[] = [github, cloudflared]
+export const INTEGRATIONS: Integration[] = [github, cloudflared, vercel]
 
 export const getIntegration = (id: string) => INTEGRATIONS.find((x) => x.id === id)
+
+/**
+ * 检测输出 → 是否已登录、登录着哪个账号。
+ * 只认退出码：各家「没登录」的措辞不一样，退出码最稳；账号正则只对已登录的输出用。
+ * 抽成纯函数，服务端检测和单元测试走同一份判断，测试不用起进程、不用连网。
+ */
+export function authState(def: Integration, code: number | null, output: string) {
+  const authed = code === 0
+  const account = authed && def.auth.account ? (output.match(def.auth.account)?.[1] ?? '') : ''
+  return { authed, account }
+}

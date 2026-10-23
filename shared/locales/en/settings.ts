@@ -856,12 +856,16 @@ export const EN_SETTINGS: Record<string, string> = {
     'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
   '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。':
     'Once authorized, agents can expose local services to the internet through Cloudflare Tunnel with cloudflared, e.g. to show a panel under development on a remote machine.',
+  '授权后 Agent 可以直接用 vercel 部署项目和预览、查看部署状态、管理域名与环境变量。':
+    'Once authorized, agents can use vercel to deploy projects and previews, check deployment status, and manage domains and environment variables.',
   已授权: 'Authorized',
   未授权: 'Not authorized',
   '还没有登录 GitHub。点「浏览器授权」，或者用 Personal Access Token 授权。':
     'Not signed in to GitHub yet. Choose "Authorize in browser", or authorize with a personal access token.',
   '还没有登录 Cloudflare。点「浏览器授权」，在打开的页面里选一个域名即可。':
     'Not signed in to Cloudflare yet. Choose "Authorize in browser" and pick a domain on the page that opens.',
+  '还没有登录 Vercel。点「浏览器授权」，在打开的页面里完成授权；也可以给 vercel 命令设置 VERCEL_TOKEN 环境变量来用 Token。':
+    'Not signed in to Vercel yet. Choose "Authorize in browser" and finish on the page that opens; you can also set the VERCEL_TOKEN environment variable for vercel commands.',
   '没有检测到 {command}，先安装再授权。': 'Could not find {command}. Install it before authorizing.',
   浏览器授权: 'Authorize in browser',
   '用 Token 授权': 'Authorize with a token',
