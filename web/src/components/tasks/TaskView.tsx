@@ -30,6 +30,7 @@ import {
   GraduationCap,
   CircleStop,
   MessageCircleQuestion,
+  Copy,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
@@ -94,7 +95,7 @@ import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { dropChip, forSend } from '@shared/composer'
+import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 
@@ -855,6 +856,19 @@ export function TaskView({
   const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
 
   const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
+  /**
+   * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
+   * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
+   */
+  const copyIt = () => {
+    void api
+      .taskTranscript(task.id)
+      .then((a) => navigator.clipboard.writeText(pathText(a.path)))
+      .then(
+        () => toast.success(t('对话已复制，粘贴到输入框会变成一张会话卡片')),
+        (e: Error) => toast.error(t('复制对话失败：{msg}', { msg: e.message })),
+      )
+  }
 
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
   // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
@@ -1133,6 +1147,10 @@ export function TaskView({
                       <MenuItem onSelect={exportIt}>
                         <Download className="h-4 w-4" />
                         {t('导出任务')}
+                      </MenuItem>
+                      <MenuItem onSelect={copyIt}>
+                        <Copy className="h-4 w-4" />
+                        {t('复制对话')}
                       </MenuItem>
                       {/* CLI 还连着、只是在等下一句时也能分析：只有真的在处理这一轮才不行 */}
                       <MenuItem disabled={running && working} onSelect={() => setAnalyzing(true)}>

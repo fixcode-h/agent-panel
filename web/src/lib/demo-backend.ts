@@ -1685,7 +1685,13 @@ function route(method: string, url: string, body: unknown): unknown {
         ? ((d.tasks ?? []).find((x) => x.id === id)?.title ?? fail('任务不存在'))
         : ((demoDesigns('GET', id, undefined, null) as { title: string }).title ?? fail('设计不存在'))
     const name = `会话-${title.slice(0, 40)}.md`
-    return { name, path: `/demo/uploads/${crypto.randomUUID()}/${name}`, size: 4096, mime: 'text/markdown' }
+    const path = `/demo/uploads/${crypto.randomUUID()}/${name}`
+    // 和真实服务端一样把转录内容存下来：粘贴回剪贴板里的路径时能认回附件、点开能看到内容
+    demoUploads.set(
+      path,
+      `data:text/markdown;charset=utf-8,${encodeURIComponent(`# 参考会话：${title}\n\n这是演示里的对话记录。`)}`,
+    )
+    return { name, path, size: 4096, mime: 'text/markdown' }
   }
   if (res === 'designs' && id === 'styles') return demoStyles(method, sub, body ?? {})
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)

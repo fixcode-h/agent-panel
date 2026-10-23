@@ -186,6 +186,7 @@ export function ChatComposer({
       {drop.over && !dropScope && <DropHint />}
       {chips.refOver && <FileRefHint />}
       {chips.viewer}
+      {chips.chipMenu}
       {above}
       <RichInput
         id={id}

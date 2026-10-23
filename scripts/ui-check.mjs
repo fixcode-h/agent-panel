@@ -43,7 +43,13 @@ const errors = []
 let n = 0
 
 async function page(viewport) {
-  const p = await browser.newPage({ viewport, locale: 'zh-CN' })
+  // 复制图片、复制对话要往系统剪贴板里写，验证时还要读回来对一下
+  const ctx = await browser.newContext({
+    viewport,
+    locale: 'zh-CN',
+    permissions: ['clipboard-read', 'clipboard-write'],
+  })
+  const p = await ctx.newPage()
   p.on('pageerror', (e) => errors.push(`页面出错：${e.message}`))
   p.on('console', (m) => {
     if (m.type() !== 'error') return
@@ -113,6 +119,22 @@ try {
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
   // 输入框上方不再有附件条
   if (await p.getByRole('button', { name: '移除 截图.png' }).count()) errors.push('输入框上方还有附件条')
+  // 右键卡片弹出面板自己的菜单（不是浏览器原生菜单），点「复制图片」真的写进系统剪贴板
+  await imageChip.click({ button: 'right' })
+  const copyImageItem = p.getByRole('menuitem', { name: '复制图片' })
+  await copyImageItem.waitFor({ timeout: 3000 }).catch(() => errors.push('行内图片卡片：右键没有弹出卡片菜单'))
+  await check(p, '输入框卡片-右键菜单', ['复制图片'])
+  await copyImageItem.click()
+  await p
+    .getByText('图片已复制到剪贴板')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('行内图片卡片：复制图片后没有成功提示'))
+  const clipTypes = await p
+    .evaluate(async () => (await navigator.clipboard.read()).flatMap((i) => i.types))
+    .catch(() => null)
+  if (!clipTypes) errors.push('行内图片卡片：读不到剪贴板（权限或浏览器不支持）')
+  else if (!clipTypes.includes('image/png'))
+    errors.push(`行内图片卡片：剪贴板里没有 PNG（${clipTypes.join(',') || '空'}）`)
   // 点图片能看大图
   await imageChip.locator('img').click()
   await p
@@ -1239,6 +1261,26 @@ try {
       if (!chip.src || chip.broken) errors.push(`图片气泡：缩略图没有显示出来（src=${chip.src || '空'}）`)
     }
     await check(p, '对话-图片气泡')
+    // 右上角「⋯」里的「复制对话」：剪贴板里是转录文件的路径，粘贴回输入框变成一张会话卡片，不是一段文字
+    await p.getByRole('button', { name: '更多操作' }).first().click()
+    await p.getByRole('menuitem', { name: '复制对话' }).click()
+    await p
+      .getByText('对话已复制，粘贴到输入框会变成一张会话卡片')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('复制对话：没有成功提示'))
+    const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!/\.md\s*$/.test(copied)) errors.push(`复制对话：剪贴板里不是转录文件的路径（${copied || '空'}）`)
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+V')
+    const convChip = p.locator('#follow-up [data-chip="file"]')
+    await convChip.waitFor({ timeout: 5000 }).catch(() => errors.push('复制对话：粘贴后输入框里没有出现会话卡片'))
+    // 卡片背后要有附件（才能发给 Agent），输入框里不能留着那段路径文字
+    const draftText = await p
+      .locator('#follow-up')
+      .innerText()
+      .catch(() => '')
+    if (copied.trim() && draftText.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
+    await check(p, '复制对话-粘贴成卡片')
     // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
     await bubble.evaluate((el) => el.click())
     await p
