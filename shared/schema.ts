@@ -1220,6 +1220,17 @@ export const TaskRun = z.object({
 })
 export type TaskRun = z.infer<typeof TaskRun>
 
+/** 界面上显示的一条后台命令（server/background.ts 的 BgJob 去掉输出） */
+export const TaskJob = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running']),
+  /** 开始跑的时间；排队中为空 */
+  startedAt: z.string().default(''),
+})
+export type TaskJob = z.infer<typeof TaskJob>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -1358,6 +1369,11 @@ export const TaskData = z.object({
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
+  /**
+   * 还在跑或排队的后台命令：服务端发给界面时按当时的情况带上，不存盘。
+   * 对话这一轮已经说完、命令还在后台跑时，界面靠它在回复上面转圈
+   */
+  jobs: z.array(TaskJob).optional(),
   /** CLI 最近一次完成一轮回复的时间：判断「完成但没看」用，和进程是否结束无关 */
   turnDoneAt: z.string().default(''),
   /**

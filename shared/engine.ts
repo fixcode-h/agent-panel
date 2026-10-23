@@ -305,12 +305,12 @@ export interface Orchestra {
     info: string
   }>
   checkBackground(id: string): string
-  /** 独立分支里的子对话：验证通过后把改动交给面板合回原分支（排队，结果推回来） */
+  /** 独立分支里的子对话：测试跑通就调用，面板合回原分支后子对话算完成（排队，结果推回来） */
   canSubmit: boolean
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitMerge(note: string): Promise<{ ok: boolean; info: string }>
+  submitMerge(note: string, tests: string): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
@@ -411,8 +411,8 @@ export interface EngineHost {
   branch?: string
   /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。推送要先合到这里再从这里推 */
   worktreeHome?: string
-  /** 独立分支里的子对话：合回原分支（面板排队试合并，有冲突撤回，结果推回子对话） */
-  submitMerge?: (note: string) => Promise<{ ok: boolean; info: string }>
+  /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
+  submitMerge?: (note: string, tests: string) => Promise<{ ok: boolean; info: string }>
   /**
    * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
    * 不传时提示里不带这一段（没有项目的聊天、在线演示）
@@ -824,8 +824,8 @@ function buildPart(host: EngineHost) {
   return `## 在独立分支里验证，再合回原分支
 编译、测试都在你这个独立分支的目录里跑，不用交给别人。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
-- 按下面的「验证」跑通后先提交到你的分支，再调用 submit_merge：面板排队把它合回原分支（父对话所在的分支），有冲突会撤回并把冲突推回给你。
-- 合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
+- 测试跑通就是完成的标记：按下面的「验证」跑通后调用 submit_merge，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成，独立分支随后回收。有冲突会撤回并把冲突推回给你。
+- 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
 }
 
 /** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
@@ -2337,9 +2337,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note) {
+    async submitMerge(note, tests) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim())
+      const r = await host.submitMerge(note.trim(), tests.trim())
       if (r.ok) {
         system(host, t('已提交合并，等面板合回原分支'), where)
         host.changed(true)
@@ -2760,7 +2760,7 @@ async function conversationPrompt(
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
 ${
   host.task.parentTaskId
-    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支、完成这个子对话，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
 不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
@@ -2821,8 +2821,8 @@ ${
   host.childIsolation === 'worktree'
     ? `## 子对话各自在独立分支里改
 要改代码的子对话都有自己的独立分支目录，互相看不到对方改到一半的文件。
-- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支，有冲突撤回并推回给那个子对话。一次只合一个。
-- 每次合并的结果会告诉你。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
+- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支，合进去这个子对话就标记完成；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。
+- 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
 - 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`
     : `## 子对话共用一个目录

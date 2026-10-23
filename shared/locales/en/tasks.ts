@@ -676,7 +676,7 @@ export const EN_TASKS: Record<string, string> = {
   '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。':
     'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps. Test and review steps inside workflows are not affected.',
   '已提交合并，等面板合回原分支': 'Submitted; waiting for the panel to merge it into the original branch',
-  合回原分支: 'Merge into original branch',
+  完成并合回: 'Finish and merge back',
   可能相关的对话: 'Possibly related chats',
   '看起来和这些对话是同一件事，可以直接发过去接着做：':
     'These chats look like the same piece of work. You can send it there and continue:',
@@ -809,4 +809,6 @@ export const EN_TASKS: Record<string, string> = {
   '、': ', ',
   '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
+  排队中: 'Queued',
+  未命名: 'Untitled',
 }

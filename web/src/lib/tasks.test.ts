@@ -98,3 +98,15 @@ test('Token 分组：没有子对话和子任务时不出现「子任务 0」', 
     { key: 'sub', tokens: 55, tps: 0 },
   ])
 })
+
+test('放到后台的命令记下面板给的编号：命令还在跑时那一行一直转圈', () => {
+  const view = toolView(
+    tool('mcp__panel__run_background', '', {
+      input: '{"command":"npm test","name":"单元测试"}',
+      output: '已放到后台（编号 1a2b3c4d）。跑完结果会自动推回给你，先去做不依赖它的事。',
+    }),
+  )
+  assert.equal(view?.job, '1a2b3c4d')
+  assert.equal(view?.tool.label, '单元测试')
+  assert.equal(toolView(tool('mcp__panel__check_background', '', { input: '{"id":"1a2b3c4d"}' }))?.job, undefined)
+})
