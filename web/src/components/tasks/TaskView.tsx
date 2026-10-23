@@ -38,6 +38,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childStage,
+  childRunning,
   runningChildren,
   sortChildren,
   taskBusy,
@@ -247,6 +248,12 @@ interface ChildSummary {
   requests?: number
   /** 还没做完的计划进度：有它就不算已完成，行上显示「计划 7/8」 */
   plan?: { done: number; total: number }
+  /** 还在跑、排队的后台命令数：有它就算还在执行（见 shared/task.ts 的 childRunning） */
+  background?: number
+  /** 工作流运行还没跑完：也是还在执行 */
+  workflow?: boolean
+  /** 派出的子任务还在跑：也是还在执行 */
+  helpers?: boolean
   /** 请用户选择、还没人回答的提问数 */
   asking?: number
   /** 在独立 worktree 里改时的分支 */
@@ -1834,7 +1841,7 @@ function ChildrenBar({
                       )}
                     >
                       <span className="mt-0.5 shrink-0">
-                        <TaskStatusIcon status={c.status} working={c.working && !c.resolved} />
+                        <TaskStatusIcon status={c.status} working={childRunning(c)} />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="flex min-w-0 items-center gap-1.5">
@@ -1862,11 +1869,11 @@ function ChildrenBar({
                               {t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total })}
                             </span>
                           )}
-                          {c.working && !c.resolved && (
+                          {childRunning(c) && (
                             <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
                           )}
                         </span>
-                        {c.working && !c.resolved
+                        {childRunning(c)
                           ? activityText(c.activity) && (
                               <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
                             )

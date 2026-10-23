@@ -666,7 +666,6 @@ export const EN_TASKS: Record<string, string> = {
     "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. Sub-conversation branches are never pushed to the remote, and are deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
   '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成':
     "This sub-conversation's branch still has changes that aren't merged into the original branch ({n} commits, {d} uncommitted files). Merge or delete the branch first, then mark it done",
-  '对话正在执行，等这一轮结束后再标记完成': 'The conversation is running. Mark it done after this turn ends',
   '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
     "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
   小改动也跑: 'Run for small changes',
@@ -782,6 +781,17 @@ export const EN_TASKS: Record<string, string> = {
   未合并: 'Not merged',
   '正在执行，不改动原目录': 'Running, original folder untouched',
   '已在「{branch}」里': 'Already in “{branch}”',
+  '已在「{branch}」里，独立分支先留着：{why}': 'Already in “{branch}”; keeping the separate branch for now: {why}',
+  这一轮还在执行: 'Still running this turn',
+  后台命令还没跑完: 'Background commands are still running',
+  工作流还没跑完: 'The workflow run is not finished',
+  派出的子任务还没跑完: 'Its subtasks are still running',
+  计划还没做完: 'The plan is not finished',
+  还有等你回答的提问: 'Questions are waiting for your answer',
+  还有等你确认的请求: 'Requests are waiting for your confirmation',
+  独立分支还没合回原分支: 'The separate branch is not merged back yet',
+  '查不到这个子对话独立分支的状态（git 没读出来）：先确认分支已经合并，再标记完成':
+    'Cannot read the state of this sub-chat’s separate branch (git failed). Make sure the branch is merged, then mark it complete',
   '{n} 个提交': '{n} commit(s)',
   '{n} 个文件未提交': '{n} uncommitted file(s)',
   '未合并到「{branch}」：{what}': 'Not merged into “{branch}”: {what}',
