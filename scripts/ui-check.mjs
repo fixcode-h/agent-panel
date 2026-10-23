@@ -670,12 +670,63 @@ try {
   await procBtn.waitFor({ timeout: 5000 }).catch(() => errors.push('任务：没有「对话进程」按钮'))
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起状态下面板内容已经挂在 DOM 里')
   await procBtn.click()
-  await check(p, '任务-对话进程', ['内存合计', '清理无效进程', '已结束的子任务'])
+  await check(p, '任务-对话进程', [
+    '内存合计',
+    '清理无效进程',
+    '已结束的子任务',
+    // 合计行要说明是哪些加起来：这个会话树上全部进程（含子对话）
+    '这个会话树上全部进程的合计，含子对话',
+    '下面按归属分组',
+  ])
+  // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集
+  await check(p, '任务-对话进程-归属', ['本对话', '子对话'])
+  // 内存曲线：原有左右拖动和悬停读数保留；右键也能拖，拖过之后出现「回到最新」
+  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await check(p, '任务-内存曲线', ['AI 分析', '每 30 秒采样一次'])
+  const chatChart = p.getByRole('img', { name: '会话内存随时间的变化' })
+  const chatBox = await chatChart.boundingBox()
+  if (!chatBox) errors.push('任务-内存曲线：曲线没有渲染')
+  else {
+    if (await p.getByRole('button', { name: '回到最新' }).count())
+      errors.push('任务-内存曲线：还没拖动就出现了「回到最新」')
+    // 往右拖 = 看更早（MemoryChart 的 offset 变大）
+    await p.mouse.move(chatBox.x + chatBox.width * 0.2, chatBox.y + chatBox.height / 2)
+    await p.mouse.down({ button: 'right' })
+    await p.mouse.move(chatBox.x + chatBox.width * 0.8, chatBox.y + chatBox.height / 2, { steps: 8 })
+    await p.mouse.up({ button: 'right' })
+    await check(p, '任务-内存曲线-右键拖动', ['回到最新'])
+    await p.getByRole('button', { name: '回到最新' }).click()
+    await p.waitForTimeout(200)
+    if (await p.getByRole('button', { name: '回到最新' }).count())
+      errors.push('任务-内存曲线：点了「回到最新」按钮还留着')
+  }
+  // 收起：面板内容不挂载。放在弹窗前做，聚焦的下拉状态最干净
   await p.getByRole('button', { name: '对话进程' }).first().click()
   await p.waitForTimeout(400)
   if ((await p.locator('[aria-label="对话进程"]').first().getAttribute('aria-expanded')) !== 'false')
     errors.push('对话进程：收起后按钮的 aria-expanded 不是 false')
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
+  // AI 分析：把采样和进程占用交给演示里的 AI 排查对话，在统一的弹窗里出结论（先重新打开下拉）
+  await procBtn.click()
+  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
+  await p
+    .getByRole('heading', { name: 'AI 排查：会话内存分析' })
+    .last()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('任务-内存曲线：点 AI 分析没有新建排查对话'))
+  await check(p, '任务-内存曲线-AI分析', ['这次要做的：看一下这个会话的内存'])
+  // 关闭时先确认停止（和别处的 AI 排查一样）
+  await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+  if (await p.getByText('停止 AI 排查？').isVisible()) {
+    await p.getByRole('button', { name: '停止并关闭' }).click()
+  }
+  // 等弹窗真的收起再点任务页的东西，别被遮罩挡住
+  await p
+    .getByRole('dialog')
+    .last()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
   const workflowTaskUrl = p.url()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言

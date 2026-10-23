@@ -931,4 +931,24 @@ export const EN_TASKS: Record<string, string> = {
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
   '每 {s} 秒采样一次': 'Sampled every {s} seconds',
   左右拖动查看更早: 'Drag left or right to see earlier samples',
+  // 会话内存的 AI 分析与进程归属
+  会话内存分析: 'Chat memory analysis',
+  '把这个会话的内存采样和进程占用交给 AI，看有没有问题、怎么优化':
+    'Send this chat’s memory samples and process usage to AI to check for problems and suggest optimizations',
+  '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
+  '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
+  重新分析并打开这次排查: 'Analyze again and open the analysis chat',
+  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
+  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  面板自己的进程: "The panel's own processes",
+  '{n} 个进程': '{n} process(es)',
+  '{n} 个进程的合计': 'Sum of {n} process(es)',
+  '{n} 个进程的内存都没读到，不是 0': 'Memory of all {n} process(es) is unreadable — this is not 0',
+  '（{n} 个未采集）': ' ({n} not collected)',
+  '采样还太少，看不出趋势': 'Not enough samples to tell the trend',
+  '最近 {span} 持续上涨（涨了 {size}，每分钟约 {rate}）':
+    'Rising for the last {span} (up {size}, about {rate} per minute)',
+  '最近 {span} 在回落（降了 {size}）': 'Falling over the last {span} (down {size})',
+  '最近 {span} 基本平稳（变化 {size}）': 'Roughly flat over the last {span} (changed {size})',
 }

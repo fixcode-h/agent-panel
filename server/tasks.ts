@@ -3825,6 +3825,14 @@ export function tasksApi(deps: {
     /** 所有任务（列表用，只带用户消息）；用量统计按任务里的 turns 聚合 */
     list: () => store.list(),
     /**
+     * 这个会话的进程面板（两路占用 + 每行归属）。
+     * 会话内存的 AI 分析（server/task-memory.ts）用同一份数据，保证报告和界面上的数字一致
+     */
+    processPanel: async (id: string) => {
+      const tk = await current(id)
+      return tk ? processPanel(tk) : null
+    },
+    /**
      * 正在执行的任务数；更新、备份前要等它们结束。
      * 对话停在等下一句、预热时进程还活着但不改任何东西，不算执行中，否则更新会一直等下去
      */

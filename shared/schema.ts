@@ -1924,3 +1924,40 @@ export const ProcessSuggestResult = z.object({
   error: z.string().default(''),
 })
 export type ProcessSuggestResult = z.infer<typeof ProcessSuggestResult>
+
+/**
+ * 会话内存 AI 分析里的一个归属分组：按 ownerTaskId 汇总，子对话只算自己起的进程树。
+ * rss 为 null 表示这个归属的进程都读不到内存（界面显示「未采集」），不是 0
+ */
+export const TaskMemoryOwner = z.object({
+  taskId: z.string().default(''),
+  title: z.string().default(''),
+  /** 是不是当前打开的这个对话 */
+  self: z.boolean().default(false),
+  rss: z.number().nullable().default(null),
+  /** 进程数，以及其中读到 RSS 的个数 */
+  count: z.number().default(0),
+  counted: z.number().default(0),
+})
+export type TaskMemoryOwner = z.infer<typeof TaskMemoryOwner>
+
+/** 会话内存 AI 分析：报告、趋势摘要和交给 AI 的第一句话，界面据此打开排查弹窗 */
+export const TaskMemoryAnalysis = z.object({
+  sampledAt: z.number(),
+  intervalMs: z.number(),
+  /** 交给 AI 的报告正文（中文） */
+  report: z.string().default(''),
+  /** AI 分析的第一句话 */
+  ask: z.string().default(''),
+  /** 相关目录：项目路径；没有项目时为空（服务端用用户目录） */
+  cwd: z.string().default(''),
+  /** 最近一段的趋势，采样不足时 null */
+  trend: z.enum(['up', 'down', 'flat']).nullable().default(null),
+  /** 面板上显示的摘要（和报告里的趋势同源） */
+  trendText: z.string().default(''),
+  owners: z.array(TaskMemoryOwner).default([]),
+  tree: z
+    .object({ tasks: z.number(), children: z.number(), running: z.number() })
+    .default({ tasks: 1, children: 0, running: 0 }),
+})
+export type TaskMemoryAnalysis = z.infer<typeof TaskMemoryAnalysis>
