@@ -1823,8 +1823,8 @@ function ChildrenBar({
                       key={c.id}
                       type="button"
                       onClick={() => {
+                        // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
                         onOpen(c.id)
-                        setOpen(false)
                       }}
                       className={cn(
                         'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
