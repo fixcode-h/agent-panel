@@ -34,16 +34,15 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
-import { type Project, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
+import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
-  childSpinning,
+  childIcon,
   childStage,
-  childRunning,
-  childWaiting,
   runningChildren,
   sortChildren,
+  stopReasonText,
   taskBusy,
   taskSummary,
   withTaskModel,
@@ -268,6 +267,8 @@ interface ChildSummary {
   resolved?: boolean
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
+  /** 停在 stopped 的原因：/children 响应里没有，加载时对停下的子对话单独取（见 loadChildren） */
+  stopReason?: StopReason
 }
 
 /** 子对话这会儿在做什么，一句话：跑的节点、等的子任务、正在用的工具或正在说的话 */
@@ -356,6 +357,28 @@ export function TaskView({
   // 父对话里的子对话：点开在右栏看，右栏同一时间只显示一个。
   // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
   const [children, setChildren] = useState<ChildSummary[]>([])
+  // 子对话的停下原因只有完整任务上有（/children 给的是摘要）：停下的各取一次，行上才能写清是谁结束的
+  // （见 stopReasonText）。停下后原因不会变，取到的记在 ref 里，4 秒一次的轮询不再重复问
+  const childStopReasons = useRef(new Map<string, StopReason>())
+  const loadChildren = useCallback(async (id: string) => {
+    const list = await api.taskChildren(id)
+    // 又跑起来了就清掉旧原因：下次停下可能是另一个来源
+    for (const c of list) if (c.status !== 'stopped') childStopReasons.current.delete(c.id)
+    await Promise.all(
+      list
+        .filter((c) => c.status === 'stopped' && !childStopReasons.current.has(c.id))
+        .map((c) =>
+          api
+            .task(c.id)
+            .then((t) => {
+              if (t.stopReason) childStopReasons.current.set(c.id, t.stopReason)
+            })
+            // 没取到就下次轮询再试：先按「已暂停」显示，不在这里编个原因
+            .catch(() => {}),
+        ),
+    )
+    return list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c))
+  }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
   // 子对话请用户选择的弹窗收起时记下当时是哪几个提问：来了新的提问再弹出来
   const [askFolded, setAskFolded] = useState('')
@@ -535,8 +558,7 @@ export function TaskView({
     }
     let alive = true
     const load = () =>
-      api
-        .taskChildren(task.id)
+      loadChildren(task.id)
         .then((list) => alive && setChildren(list))
         .catch(() => {})
     void load()
@@ -562,8 +584,7 @@ export function TaskView({
   useEffect(() => {
     if (!task?.id || task.parentTaskId) return
     let alive = true
-    api
-      .taskChildren(task.id)
+    loadChildren(task.id)
       .then((list) => alive && setChildren(list))
       .catch(() => {})
     return () => {
@@ -1352,8 +1373,7 @@ export function TaskView({
                           project={project}
                           kids={children}
                           onSpawned={(id) =>
-                            void api
-                              .taskChildren(task.id)
+                            void loadChildren(task.id)
                               .then(setChildren)
                               .catch(() => {})
                               .finally(() => openChildIn(id))
@@ -1880,71 +1900,83 @@ function ChildrenBar({
                       {g.label} · {g.items.length}
                     </p>
                   )}
-                  {g.items.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
-                        onOpen(c.id)
-                      }}
-                      className={cn(
-                        'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
-                        c.id === openChild && 'bg-sel',
-                      )}
-                    >
-                      <span className="mt-0.5 shrink-0">
-                        <TaskStatusIcon
-                          status={c.status}
-                          working={childRunning(c)}
-                          spin={childSpinning(c)}
-                          waiting={childWaiting(c)}
-                        />
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                            {c.title}
+                  {g.items.map((c) => {
+                    // 图标、行内徽标、摘要都读同一个判定（见 shared/task.ts 的 childIcon）：
+                    // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
+                    // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
+                    const icon = childIcon(c)
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
+                          onOpen(c.id)
+                        }}
+                        className={cn(
+                          'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                          c.id === openChild && 'bg-sel',
+                        )}
+                      >
+                        <span className="mt-0.5 shrink-0">
+                          <TaskStatusIcon
+                            status={c.status}
+                            icon={icon}
+                            label={c.status === 'stopped' ? stopReasonText(c.stopReason) : undefined}
+                          />
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                              {c.title}
+                            </span>
+                            {!c.cliAlive && (
+                              <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                                {t('已关闭')}
+                              </span>
+                            )}
+                            {/* 徽标也按图标分支：同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
+                            {c.resolved && icon === 'done' && (
+                              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success">
+                                <CheckCircle2 className="h-3 w-3" />
+                                {t('已解决')}
+                              </span>
+                            )}
+                            {icon === 'waiting' && (
+                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
+                                {t('等你选择')}
+                              </span>
+                            )}
+                            {icon === 'running' && !!c.plan && (
+                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
+                                {t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total })}
+                              </span>
+                            )}
+                            {icon === 'running' && (
+                              <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
+                            )}
+                            {/* 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText） */}
+                            {(icon === 'stopped' || icon === 'idle') && (
+                              <span className="shrink-0 text-[0.6875rem] text-subtle">
+                                {stopReasonText(c.stopReason)}
+                              </span>
+                            )}
                           </span>
-                          {!c.cliAlive && (
-                            <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                              {t('已关闭')}
+                          {icon === 'running'
+                            ? activityText(c.activity) && (
+                                <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
+                              )
+                            : c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
+                          {c.branch && (
+                            <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
+                              <GitBranch className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{c.branch}</span>
                             </span>
-                          )}
-                          {c.resolved && (
-                            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success">
-                              <CheckCircle2 className="h-3 w-3" />
-                              {t('已解决')}
-                            </span>
-                          )}
-                          {!!c.asking && !c.resolved && (
-                            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
-                              {t('等你选择')}
-                            </span>
-                          )}
-                          {!!c.plan && !c.resolved && (
-                            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
-                              {t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total })}
-                            </span>
-                          )}
-                          {childRunning(c) && (
-                            <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
                           )}
                         </span>
-                        {childRunning(c)
-                          ? activityText(c.activity) && (
-                              <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
-                            )
-                          : c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
-                        {c.branch && (
-                          <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
-                            <GitBranch className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{c.branch}</span>
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    )
+                  })}
                 </Fragment>
               ))}
               {!shown.length && (
