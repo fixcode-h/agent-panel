@@ -5,7 +5,8 @@ import { capture } from './exec/process.ts'
 
 /**
  * 检测本机能用的命令行环境（只在 Windows 上有意义），结果缓存；设置页可以要求重新检测。
- * 顺序就是推荐顺序：WSL > Git Bash > PowerShell > cmd
+ * 顺序就是推荐顺序：Git Bash > WSL > PowerShell > cmd。
+ * Git Bash 在前：它直接用 Windows 路径，项目在 F: 这类盘上时不像 WSL 的 /mnt/f 那样慢
  */
 let cache: Promise<ShellReport> | null = null
 /** 最近一次按设置选出的 shell：工具说明是同步拼的，用它告诉 Agent 命令在哪执行 */
@@ -19,10 +20,10 @@ export function detectShells(fresh = false) {
 async function detect(): Promise<ShellReport> {
   if (process.platform !== 'win32') return { platform: process.platform, shells: [{ id: 'sh', path: 'sh' }] }
   const shells: ShellInfo[] = []
-  const distros = await wslDistros()
-  if (distros.length) shells.push({ id: 'wsl', path: 'wsl.exe', distros })
   const bash = await gitBash()
   if (bash) shells.push({ id: 'gitbash', path: bash })
+  const distros = await wslDistros()
+  if (distros.length) shells.push({ id: 'wsl', path: 'wsl.exe', distros })
   shells.push({ id: 'powershell', path: 'powershell.exe' }, { id: 'cmd', path: 'cmd.exe' })
   return { platform: process.platform, shells }
 }

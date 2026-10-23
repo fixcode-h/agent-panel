@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createBackground, type BgJob } from './background.ts'
+import { childHoldsOf } from '../shared/task.ts'
 
 function repo() {
   const dir = mkdtempSync(path.join(tmpdir(), 'bg-'))
@@ -23,14 +24,14 @@ function nodeScript(dir: string, name: string, code: string) {
 }
 
 /** 收集跑完的结果，等到够数为止 */
-function collect(n: number) {
+function collect(n: number, deps: Parameters<typeof createBackground>[1] = {}) {
   const got: { job: BgJob; text: string }[] = []
   let done: () => void = () => {}
   const all = new Promise<void>((r) => (done = r))
   const bg = createBackground((job, text) => {
     got.push({ job, text })
     if (got.length === n) done()
-  })
+  }, deps)
   return { bg, got, all }
 }
 
@@ -101,4 +102,77 @@ test('停止对话时正在跑的会结束，排队的不再执行，也不再�
   assert.equal(existsSync(path.join(dir, 'never.txt')), false)
   bg.forget('t1')
   assert.deepEqual(bg.list('t1'), [])
+})
+
+test('进程不退出（close 永远不来）：停止后记录先置终态，门禁不再拦', async () => {
+  // 假 runner 永不 resolve，模拟孙进程握着 stdout、close 一直不来
+  let started = false
+  const never = () => {
+    started = true
+    return new Promise<never>(() => {})
+  }
+  const { bg } = collect(1, { run: never, killGraceMs: 200 })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-stuck-'))
+  bg.start({ taskId: 't1', name: '卡住', command: 'npm test', cwd: '', root: dir, exclusive: false })
+  // 等它真的跑起来：算指纹那一步也可能被 stop 拦住，那样测不到「close 不来」
+  for (let i = 0; i < 40 && !started; i++) await new Promise((r) => setTimeout(r, 50))
+  assert.ok(started, '命令已经开始跑')
+  assert.equal(bg.list('t1')[0].state, 'running', '先算在执行中')
+  const t0 = Date.now()
+
+  const pending = () => bg.list('t1').filter((j) => j.state === 'queued' || j.state === 'running').length
+  const task = { status: 'done' as const, working: false, requests: [], parentAsks: [], plans: [], steps: [] }
+  assert.ok(childHoldsOf(task, { background: pending() }).includes('background'), '卡住时确实拦着')
+
+  // stop 不能无限等进程：上限到了就放，记录已经先置终态了
+  await bg.stop('t1')
+  assert.ok(Date.now() - t0 < 4000, '停止不会挂死调用方')
+  const job = bg.list('t1')[0]
+  assert.equal(job.state, 'stopped', '记录先置终态')
+  assert.match(job.lines.join('\n'), /进程未在 \d+ 秒内退出/)
+  assert.equal(pending(), 0, '不再算还在跑')
+  assert.ok(!childHoldsOf(task, { background: pending() }).includes('background'), '门禁放行')
+})
+
+test('启动时清理上次遗留的记录：running / queued 都置终态，不再拦着完成', () => {
+  const bg = createBackground(() => {})
+  const now = new Date().toISOString()
+  const stale: BgJob[] = [
+    {
+      id: 'old1',
+      taskId: 't1',
+      name: '旧编译',
+      command: 'npm run build',
+      cwd: '/x',
+      exclusive: true,
+      state: 'running',
+      code: null,
+      startedAt: now,
+      endedAt: '',
+      lines: [],
+      changed: false,
+    },
+    {
+      id: 'old2',
+      taskId: 't1',
+      name: '排队的',
+      command: 'npm test',
+      cwd: '/x',
+      exclusive: true,
+      state: 'queued',
+      code: null,
+      startedAt: '',
+      endedAt: '',
+      lines: [],
+      changed: false,
+    },
+  ]
+  assert.equal(bg.recover(stale), 2)
+  for (const j of stale) {
+    assert.equal(j.state, 'failed')
+    assert.ok(j.endedAt)
+    assert.match(j.lines.join('\n'), /面板上次退出时还没结束/)
+  }
+  // 已经终态的不再改一遍
+  assert.equal(bg.recover(stale), 0)
 })

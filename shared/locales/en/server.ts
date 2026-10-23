@@ -95,6 +95,7 @@ export const EN_SERVER: Record<string, string> = {
   '{method} 没有响应': '{method} did not respond',
   '找不到命令「{cmd}」': 'Command not found: “{cmd}”',
   解析输出出错: 'Output parse error',
+  '进程树未在 5 秒内退出，先结束等待': 'The process tree did not exit within 5 seconds; stopped waiting',
   '你回答了「{title}」：{answer}': 'You answered “{title}”: {answer}',
   '你允许了：{title}': 'You allowed: {title}',
   '你拒绝了：{title}': 'You denied: {title}',

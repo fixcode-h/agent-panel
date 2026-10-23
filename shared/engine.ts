@@ -32,6 +32,7 @@ import {
   type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
+  type StopReason,
   type Task,
   type TaskRun,
   type TaskStep,
@@ -78,9 +79,10 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
+import { searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
-import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { activePlan, applyPlan, bindRun, bindWait, endRun, finishPlan, planText, type PlanItemInput } from './plan.ts'
 
@@ -364,6 +366,11 @@ export interface EngineHost {
   waitChat?: (signal: AbortSignal) => Promise<string | null>
   /** 这一轮的停止信号：等子任务时停止任务不再等 */
   signal?: AbortSignal
+  /**
+   * 停下这一轮的原因（见 StopReason）：'user' 是用户自己按的暂停，
+   * 其余是父对话收尾、换 CLI、面板重启这些顺带结束的动作。收尾时读现值的，所以要传函数
+   */
+  stopReason?: () => StopReason | undefined
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
   /**
@@ -371,6 +378,11 @@ export interface EngineHost {
    * 不传时说明文件不带这一段（在线演示）
    */
   fileFormat?: { encoding: 'utf8' | 'utf8-bom'; eol: 'lf' | 'crlf' }
+  /**
+   * 项目设置里的搜索排除目录（项目自己填的会补上内置默认，见 search-exclude.ts）：
+   * 写进搜索那一段，Agent 直接照着拼 `-g '!目录'`，不靠临场叮嘱
+   */
+  searchExclude?: string[]
   /** 按 id 取工作流和这次运行要用的快照、技能槽；id 为空表示项目的默认工作流 */
   resolveWorkflow?: (
     id: string,
@@ -763,6 +775,17 @@ function dropRerun(host: EngineHost, step: TaskStep) {
  * 同一轮执行里的授权情况：项目设置的推送策略、这个对话里用户已经做过的选择、本机已经登录的外部工具。
  * 只写已经具备的能力，没装的、没授权的不要列出来，免得模型去试。
  */
+/**
+ * 这个项目的搜索排除清单：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼带排除的命令。
+ * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；没有清单时不出这一段
+ */
+function searchPart(host: EngineHost) {
+  const project = { searchExclude: host.searchExclude }
+  const line = searchExcludePrompt(project)
+  if (!line) return ''
+  return `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。\n例如 \`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`（没有 rg 时用 \`git grep\`，它天然跳过生成物）；\`find\` 用 \`-path '*/<目录>' -prune -o\` 跳过这些目录。不要在这些目录里搜。`
+}
+
 function policyPart(host: EngineHost) {
   const p = host.policy
   if (!p) return ''
@@ -918,6 +941,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     policyPart(host),
     goalPart(host),
     rulesPart(host),
+    searchPart(host),
     buildPart(host),
     fileFormatPart(host),
     `## 通用要求\n完成后用${promptLangWord()}简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
@@ -2761,6 +2785,7 @@ async function conversationPrompt(
     policyPart(host),
     goalPart(host),
     rulesPart(host),
+    searchPart(host),
     inboxPart(host),
     buildPart(host),
     verifyPart(host),
@@ -3009,17 +3034,27 @@ function finish(host: EngineHost, r: Fail) {
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error, '', false, true)
-  else if (r.stopped)
+  else if (r.stopped) {
+    // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
+    // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
+    const reason = host.stopReason?.() ?? 'user'
+    host.task.stopReason = reason
+    const next = host.task.mode === 'workflow' ? t('点「继续流程」') : t('点「继续执行」')
     system(
       host,
-      host.task.mode === 'workflow'
-        ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
-        : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'),
+      reason === 'user'
+        ? host.task.mode === 'workflow'
+          ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
+          : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
+        : t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
+            reason: stopReasonText(reason),
+            next,
+          }),
       '',
       false,
       true,
     )
-  else {
+  } else {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
       .map((s) => t('「{title}」', { title: s.title }))
@@ -3048,6 +3083,8 @@ function finish(host: EngineHost, r: Fail) {
 export async function runEngineTurn(host: EngineHost) {
   const { task } = host
   task.status = 'running'
+  // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
+  task.stopReason = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算
   task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行

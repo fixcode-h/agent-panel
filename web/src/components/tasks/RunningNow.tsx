@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
 import { useNow } from '@/lib/useNow'
+import { fmtDuration, fmtSecs } from '@/lib/tasks'
 import { RowShell, ToolRow } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
 import { t } from '@shared/i18n'
@@ -11,6 +12,25 @@ export const runningTools = (msgs: { role: string; tools: ToolUse[] }[]) =>
   msgs.flatMap((m) => (m.role === 'agent' ? m.tools.filter((x) => x.running) : []))
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+
+/** 子对话的时长：不到 1 秒和工具行一样写 0.83s，再长换成「2 分 47 秒」这种好读的写法 */
+const childTime = (ms: number) => (ms < 1000 ? fmtSecs(ms) : fmtDuration(ms))
+
+/**
+ * 子对话这一行右边显示的时长：还在干活就走到现在（每秒刷新）；
+ * 停在等你（待确认的请求、没回答的提问）时停在最后一次有变化的时刻，不会一直往上涨
+ */
+function childMs(
+  k: { working?: boolean; requests?: number; asking?: number; startedAt?: string; updatedAt?: string },
+  now: number,
+) {
+  const start = k.startedAt ? Date.parse(k.startedAt) : 0
+  // 没有开始时间（旧数据、演示数据）就不显示，别从 1970 算起
+  if (!start) return undefined
+  const waiting = !k.working || !!k.requests || !!k.asking
+  const end = waiting && k.updatedAt ? Date.parse(k.updatedAt) : now
+  return Math.max(0, (Number.isFinite(end) ? end : now) - start)
+}
 
 function JobRow({ job, now }: { job: TaskJob; now: number }) {
   const [open, setOpen] = useState(false)
@@ -56,7 +76,7 @@ export function RunningNow({
   const jobs = background ? (task?.jobs ?? []) : []
   // 子对话在后台干活：看 working（CLI 正在处理一轮），进程只是活着、等下一句时不算
   const kids = background && task ? children.filter((x) => x.working && !x.resolved) : []
-  const now = useNow(jobs.length > 0)
+  const now = useNow(jobs.length > 0 || kids.length > 0)
   if (!tools.length && !jobs.length && !kids.length) return null
   const list = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
@@ -72,6 +92,8 @@ export function RunningNow({
           glyph={spin}
           verb={t('子对话')}
           title={k.title || t('未命名')}
+          ms={childMs(k, now)}
+          msFormat={childTime}
           open={false}
           onOpen={openChild ? () => openChild(k.id) : undefined}
           openTip={t('在右侧打开子对话')}

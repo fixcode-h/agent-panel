@@ -10,6 +10,7 @@ import {
   type CliStatus,
   type Project,
   type Settings,
+  type StopReason,
   type Task,
   type TaskMessage,
   type ToolUse,
@@ -45,6 +46,7 @@ import {
   type EngineHost,
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
+import { searchExcludeOf } from '../../shared/search-exclude.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -81,6 +83,13 @@ export interface RealContext {
   /** 本轮用户输入 */
   prompt: string
   signal: AbortSignal
+  /** 为什么停下这一轮：'user' 是用户按的暂停，其余是顺带结束的动作（见 EngineHost.stopReason） */
+  stopReason?: () => StopReason | undefined
+  /**
+   * 开始保活（CLI 回复完停在等下一句）时通知宿主：宿主按全局上限收掉最久没用的保活会话，
+   * 不然页面开着过、又切走的对话会各留一个进程，叠起来就是十几个
+   */
+  onKeepAlive?: (taskId: string) => void
   /**
    * 对话这一轮真的结束了（CLI 报了这一轮的结果，或者回复完停在等下一句）。
    * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到
@@ -1309,7 +1318,11 @@ async function runAgent(
     task.prewarming = false
     // 等子任务时页面显示「等待 n 个子任务完成」，不是「等待你的下一条消息」
     if (helpers) waitingHelpers = true
-    else task.awaitingUser = true
+    else {
+      task.awaitingUser = true
+      // 进保活前先让宿主按全局上限收一批最久没用的
+      ctx.onKeepAlive?.(task.id)
+    }
     // 停在等待上：空闲时间记进等待，不算执行。keepAlive 会让这次调用一直不返回
     if (!prewarmMode && !helpers) pauseRun(task)
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
@@ -1504,6 +1517,18 @@ async function runAgent(
       errors: errors.join('\n'),
       stderr: r.stderr.trim().split('\n').slice(-20).join('\n'),
     })
+  // CLI 根本没起来（可执行文件找不到、node_modules 被清空、路径不对）：这是失败，不是停止。
+  // 必须排在 abort 判定前面：进程起不来时面板也可能同时收到过停止信号，
+  // 那时写成 stopped 就会显示成「已暂停」，用户还以为自己按了暂停
+  if (r.spawnError)
+    return {
+      ok: false,
+      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
+        error: r.spawnError,
+        cli: def.name,
+        hint: def.installHint,
+      }),
+    }
   // 停止时 CLI 自己中断了这一轮（进程正常退出），也算停止
   if (r.killed === 'stopped' || (ctx.signal.aborted && !r.killed))
     return { ok: false, stopped: true, error: t('已停止') }
@@ -1522,15 +1547,6 @@ async function runAgent(
         .join('\n'),
     }
   }
-  if (r.spawnError)
-    return {
-      ok: false,
-      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
-        error: r.spawnError,
-        cli: def.name,
-        hint: def.installHint,
-      }),
-    }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
     const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')]
@@ -1800,6 +1816,8 @@ export async function runRealTurn(ctx: RealContext) {
     newId: ctx.newId,
     // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
     fileFormat: projectFormat(ctx.project, ctx.settings),
+    // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
+    searchExclude: searchExcludeOf(ctx.project),
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     listConversations: ctx.listConversations,
@@ -1822,6 +1840,7 @@ export async function runRealTurn(ctx: RealContext) {
     lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     signal: ctx.signal,
+    stopReason: ctx.stopReason,
     // 对话等子任务时用户发来的消息：马上开一轮回复
     waitChat: ctx.task.mode === 'chat' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱

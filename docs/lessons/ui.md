@@ -1,5 +1,5 @@
 ---
-paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
+paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui-check.mjs
 ---
 
 # 界面、文案和样式
@@ -38,11 +38,11 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 起因：15c1a1d 把后台命令结果当用户消息推回，新建子对话又多记一条居中提示，用户要求改成工具条目；之后「要改文件了，已开独立分支…」截断了 AI 的回复，子对话的汇报、提问在父对话里居中铺满一屏，用户再次指出。
 - 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`、`scripts/e2e.mjs`（开分支不记提示、提问卡片）。
 
-## 「对话在不在动手」看 working，不看 status
+## 一个状态只允许一处判定：图标、分组、计数、徽标都读它
 
-- 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`（CLI 进程还在），能不能合并、删除、切分支、AI 分析这类操作，以及「回复完才显示」的卡片，都要看 `task.working`；服务端对应用 `live.get(id)?.task.working`，不要用 `live.has(id)`。
-- 起因：独立分支条按 `status === 'running'` 隐藏合并按钮，对话做完了也合并不了，用户问「对话完成了为什么没有合并按钮」；后来「AI 分析执行结果」菜单和分析结果卡片又按 `status` 判断，用户问「对话结束了为啥还不可以 AI 分析」。
-- 防线：`scripts/e2e.mjs` 的独立分支用例。
+- 规则：子对话 / 任务的展示只读 `shared/task.ts` 的 `childIcon(entry)`；`childStage`、`childRunning`、`childSpinning`、`childWaiting`、`taskBusy` 都由它派生，`TaskStatusIcon` 传 `icon={childIcon(c)}`，不要再按 `status + working` 各算一遍。操作权限（合并、删除、切分支、AI 分析）仍按 `task.working` / `live.get(id)?.task.working`，不用 `live.has(id)`。
+- 起因：子对话列表分组读 `childStage`、图标读 `status + working`，出现「已完成组里的项不显示对勾」「已解决的项画成暂停」；侧栏计数、标题 `(n)` 又各一套，两行在转圈却写「1 个执行中」。用户连问三次。
+- 防线：`shared/task-stage.test.ts` 的 childIcon 一致性用例、`web/src/lib/title-count.test.ts`。
 
 ## 工具条目统一点法
 
@@ -61,3 +61,10 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 规则：认「这段行内代码是不是文件路径」用 `web/src/lib/file-path.ts` 的 `parsePath` / `linkPaths`，别再在原地写正则。字符集用 `\p{L}\p{N}`（带 `u`），不能用 `\w`（只认 ASCII，中文目录和文件名整条漏掉）；扩展名白名单要带图片格式（png/jpg/jpeg/gif/webp/bmp），不误判靠「按段校验 + 扩展名白名单 + 显式拒绝 URL 和命令加参数」，不要靠收紧字符集。
 - 起因：消息里 `ui-shots/107-对话-图片气泡.png` 这类中文路径点不开，`\w` 不匹配中文、`EXT` 里也没有图片扩展名。
 - 防线：`web/src/lib/file-path.test.ts`（`console.log`、`a.b`、`1.2.3`、URL、`node scripts/e2e.mjs` 必须仍不匹配），`scripts/ui-check.mjs` 的「对话-路径可点」。
+
+## 输入框不能因为外面重渲染被重画或重挂载
+
+- 规则：`RichInput` 的整棵重画（`paint` → `replaceChildren`）只在文字真的变了时做。上传完成只是缩略图有了，按卡片就地换 `img`（`updatePreviews`），不要重画——重画会把输入法组合里的字擦掉、光标只能靠重设选区恢复，用户会觉得「打一半丢了焦点」。输入法组合期间（`compositionstart` 到 `compositionend`）跳过的重画放到组合结束后再补。卡片上的操作（删除、打开、右键）要在点击时重新取 `actions()`，不能闭包捕获画卡片那一刻的 `files`，否则上传完成前画出来的卡片拿不到刚传完的附件（删除点了没反应）。
+- 规则（重渲染）：对话页输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot`（折叠开关）这类每次新画的 ReactNode 要用内容签名（`slotKey`）比，否则每次推送整段回复都重画；每次渲染都调用的格式化（时间、数字）复用 `Intl` 实例，不要每次 new。
+- 起因：用户反馈 Agent 实时输出时打字卡、回车发送卡，输入框偶尔莫名其妙失去焦点。实测 300 条消息每 200ms 推一次：一次提交 76ms（最大 157ms），3 秒内 14 个 longtask；`formatAt` 每次渲染新建 `Intl` 格式化占 109ms/3s；带 `slot` 的回复 memo 从未命中（每次推送重画 20 条）；上传完成时 `replaceChildren` 重画整个输入框。
+- 防线：`scripts/ui-check.mjs`（任务页把演示任务改成执行中，断言推送期间输入框没有重挂载、没丢焦点、文字不丢；行内图片卡片上传后还能删除）。

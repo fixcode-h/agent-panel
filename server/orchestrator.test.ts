@@ -77,12 +77,9 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
       assert.equal(r.ok, true)
       return { ok: true, text: '开始处理' }
     }
-    if (turn === 2) {
-      assert.match(call.prompt, /## 计划执行结果/)
-      // 计划跑完就结束了：面板不再追一轮要总结，这一轮直接把结论写给用户
-      return { ok: true, text: '做完了' }
-    }
-    return { ok: true, text: '好的' }
+    // 工作流跑完：结果交回同一个会话；计划全部完成就结束了，不再追一轮要总结
+    assert.match(call.prompt, /## 计划执行结果/)
+    return { ok: true, text: '做完了' }
   })
   h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
 
@@ -90,7 +87,7 @@ test('对话里启动计划：同步跑完工作流，再把结果交回同一�
   assert.equal(task.status, 'done')
   assert.equal(task.plans.length, 1)
   assert.equal(task.plans[0].steps[0].run, 1)
-  assert.equal(task.plans[0].summary, '', '计划做完不再要求写总结')
+  assert.equal(task.plans[0].summary, '', '不再写计划总结')
   assert.equal(task.runSeq, 1)
   assert.equal(task.runs.length, 1)
   assert.equal(task.runs[0].status, 'done')

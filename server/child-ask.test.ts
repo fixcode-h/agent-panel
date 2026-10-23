@@ -25,6 +25,34 @@ const api = () => tasksApi({ agents: empty, workflows: empty, projects: empty, p
 const store = createTaskStore()
 /** 读落盘后的最新状态：tasksApi 那边写盘，测试这边的 store 有自己的缓存 */
 const read = async (id: string) => (await createTaskStore().get(id))!
+/**
+ * 等到状态落盘：自动交出会顺手给父对话开一轮，写盘是排队的，立刻读可能还是旧快照
+ * （合并 dev 后这条时序更明显，所以按条件轮询而不是固定等待）
+ */
+const readUntil = async (id: string, ok: (t: Awaited<ReturnType<typeof read>>) => boolean, ms = 4000) => {
+  for (let i = 0; i < ms / 50; i++) {
+    const t = await read(id)
+    if (ok(t)) return t
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return read(id)
+}
+/** 通过 tasksApi 自己的读接口看状态：写盘是排队的，另开一个 store 可能读到旧快照 */
+const askState = async (t: ReturnType<typeof api>, id: string) =>
+  (await (await t.routes.request(`/${id}`)).json()) as Awaited<ReturnType<typeof read>>
+const askStateUntil = async (
+  t: ReturnType<typeof api>,
+  id: string,
+  ok: (x: Awaited<ReturnType<typeof read>>) => boolean,
+  ms = 4000,
+) => {
+  for (let i = 0; i < ms / 50; i++) {
+    const x = await askState(t, id)
+    if (ok(x)) return x
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return askState(t, id)
+}
 
 const make = async (id: string, over: Record<string, unknown> = {}) =>
   store.create({ ...newTask({ projectId: '', mode: 'chat', prompt: id } as never, undefined, '', id), id, ...over })
@@ -40,7 +68,9 @@ test('「提问」关着：子对话提问自动交给父对话决定，不产�
   // 子对话：没有挂着等用户选的弹窗（界面上就是卡片和「需要你处理」的计数）
   assert.equal((await read('c1')).parentAsks?.length ?? 0, 0, '子对话上没有等用户选的弹窗')
   // 父对话：卡片记成已交出（和用户点「交给父对话决定」同一个字段），问题也进了收件箱
-  const parent = await read('p1')
+  const parent = await askStateUntil(t, 'p1', (x) =>
+    x.messages.some((m) => m.panel === 'ask' && m.ask?.delegated === true),
+  )
   const ask = parent.messages.find((m) => m.panel === 'ask')!
   assert.equal(ask.ask?.delegated, true)
   assert.equal(ask.ask?.question, '接口要不要改成 B 方案？')
@@ -61,7 +91,9 @@ test('「提问」开着：仍然交给用户选，不自动交出', async () =>
   await t.askParent('c2', '先做前端还是后端？', ['前端', '后端'])
   const kid = await read('c2')
   assert.equal(kid.parentAsks?.length, 1, '子对话挂着等用户选的卡片')
-  const ask = (await read('p2')).messages.find((m) => m.panel === 'ask')!
+  const ask = (await askStateUntil(t, 'p2', (x) => x.messages.some((m) => m.panel === 'ask'))).messages.find(
+    (m) => m.panel === 'ask',
+  )!
   assert.equal(ask.ask?.delegated, undefined, '没有自动交出')
 })
 
@@ -78,8 +110,12 @@ test('用户点「交给父对话决定」和自动交出，落到同样的状�
     body: JSON.stringify({ delegate: true }),
   })
   assert.equal(res.status, 200)
-  const after = (await read('p3')).messages.find((m) => m.id === pending.id)!
-  assert.equal(after.ask?.delegated, true, '点按钮交出也记同一个字段')
+  const after = await askStateUntil(
+    t,
+    'p3',
+    (x) => x.messages.find((m) => m.id === pending.id)?.ask?.delegated === true,
+  )
+  assert.equal(after.messages.find((m) => m.id === pending.id)?.ask?.delegated, true, '点按钮交出也记同一个字段')
   assert.equal((await read('c3')).parentAsks?.length ?? 0, 0, '子对话的弹窗收起')
 })
 
@@ -91,7 +127,13 @@ test('收尾建议：「提问」关着时同样自动交给父对话，不弹�
   const r = await t.askParent('c4', '接着补两个模块的回归测试', ['继续补测试（推荐）', '先停在这'], 'suggestion')
   assert.equal(r.ok, true)
   assert.equal((await read('c4')).parentAsks?.length ?? 0, 0, '建议不弹给用户')
-  const ask = (await read('p4')).messages.find((m) => m.panel === 'ask')!
+  const parent = await askStateUntil(
+    t,
+    'p4',
+    (x) => x.messages.some((m) => m.panel === 'ask' && m.ask?.delegated === true),
+    8000,
+  )
+  const ask = parent.messages.find((m) => m.panel === 'ask')!
   assert.equal(ask.ask?.delegated, true)
   assert.equal(ask.ask?.kind, 'suggestion')
 })

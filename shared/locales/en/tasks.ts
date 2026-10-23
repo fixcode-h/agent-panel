@@ -9,16 +9,12 @@ export const EN_TASKS: Record<string, string> = {
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
   '{n} 个在等待': '{n} waiting',
-  正在写总结: 'Writing summary',
   '以前的计划 · {n}': 'Earlier plans · {n}',
-  总结: 'Summary',
-  '（AI 没写总结，取的是最后一条回复）': '(The AI wrote no summary; this is its last reply)',
-  '步骤都完成了，AI 正在写总结': 'All steps are done; the AI is writing the summary',
   未命名的计划: 'Untitled plan',
   '{done}/{total} 步': '{done}/{total} steps',
   更新计划: 'Update plan',
   '{n} 个步骤': '{n} steps',
-  计划总结: 'Plan summary',
+  结束计划: 'End plan',
   // 文件浏览
   文件: 'Files',
   关闭文件: 'Close files',
@@ -346,6 +342,14 @@ export const EN_TASKS: Record<string, string> = {
   已完成: 'Done',
   未完成: 'Unfinished',
   已暂停: 'Paused',
+  父对话结束时一起结束: 'Ended together with the parent chat',
+  '换 CLI / 模型时中断': 'Interrupted when switching CLI / model',
+  归档时结束: 'Ended on archive',
+  面板重启时中断: 'Interrupted by panel restart',
+  页面切走后结束: 'Ended after the page was left',
+  闲置太久已回收: 'Recycled after being idle too long',
+  被新消息打断: 'Interrupted by a new message',
+  做完后收尾: 'Cleanup after finishing',
 
   // 任务页
   已删除任务: 'Task deleted',
@@ -688,10 +692,12 @@ export const EN_TASKS: Record<string, string> = {
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
-  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。':
-    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. Sub-conversation branches are never pushed to the remote, and are deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话标记完成后删除分支。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. The branch is deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
   '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成':
     "This sub-conversation's branch still has changes that aren't merged into the original branch ({n} commits, {d} uncommitted files). Merge or delete the branch first, then mark it done",
+  '独立目录没删掉：{error}。等文件不再被占用后再标记一次完成，或者手动删掉 {dir} 和分支 {branch}':
+    'The separate folder could not be deleted: {error}. Mark it done again once the files are no longer in use, or delete {dir} and branch {branch} manually',
   '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
     "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
   小改动也跑: 'Run for small changes',

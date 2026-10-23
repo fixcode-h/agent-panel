@@ -5,6 +5,7 @@ import {
   type FileChange,
   type NewTaskInput,
   type StepUsage,
+  type StopReason,
   type Task,
   type TaskData,
   type TaskMessage,
@@ -661,7 +662,16 @@ export function childStartedAt(t: Pick<Task, 'turns' | 'createdAt'>) {
   return t.turns.at(-1)?.startedAt || t.createdAt
 }
 
-/** 子对话列表排序要用的字段：父对话的子对话栏、悬浮窗列表都传这些进来 */
+/**
+ * 一行任务现在的图标。分组（childStage）、行内徽标、侧栏计数、标题里的 (n) 都从这一份派生，
+ * 只允许这一处判定「它在干什么」：以前分组读 childStage、图标读 status + working、计数又是第三套，
+ * 于是出现「已完成分组里的项不显示对勾」「已解决的项画成暂停」「两行在转圈、计数写 1」。
+ */
+export type TaskIcon = 'running' | 'waiting' | 'done' | 'stopped' | 'idle' | 'failed'
+
+/**
+ * 子对话列表排序要用的字段：父对话的子对话栏、悬浮窗列表都传这些进来
+ */
 export interface ChildEntry {
   id: string
   title: string
@@ -685,6 +695,8 @@ export interface ChildEntry {
   helpers?: boolean
   /** 独立分支还没合回父对话的分支：不算彻底完成，列表里归「未完成」（见 childHolds 的 unmerged） */
   unmerged?: boolean
+  /** 停在 stopped 的原因：只有 'user' 是用户自己按的暂停，别的都是顺带结束（见 StopReason） */
+  stopReason?: StopReason
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
@@ -712,13 +724,56 @@ export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.p
  * 一眼看出它还在跑，不会把「未完成」当成做完了。
  * 等用户处理（提问、待确认）不转：那是在等你，转圈会把「等你选择」说成「还在跑」
  */
-export const childSpinning = (x: ChildEntry) => {
-  const st = childStage(x)
-  return st === 'running' || st === 'unfinished'
+/** 停下原因的文案：只有用户按的暂停才说「已暂停」，别的一律说清是谁结束的 */
+export function stopReasonText(reason: StopReason | undefined): string {
+  switch (reason) {
+    case 'parent':
+      return t('父对话结束时一起结束')
+    case 'switch':
+      return t('换 CLI / 模型时中断')
+    case 'archive':
+      return t('归档时结束')
+    case 'restart':
+      return t('面板重启时中断')
+    case 'presence':
+      return t('页面切走后结束')
+    case 'idle':
+      return t('闲置太久已回收')
+    case 'supersede':
+      return t('被新消息打断')
+    case 'finish':
+      return t('做完后收尾')
+    default:
+      return t('已暂停')
+  }
 }
 
+/**
+ * 这一行现在该显示什么图标：分组、行内徽标、计数都读它，判定只在这一处。
+ * 优先级（和 taskStage 的顺序一致）：
+ * - 执行失败 → failed（配具体原因）
+ * - 这一轮在跑 / 后台命令 / 工作流 / 派出的子任务还在跑、计划没做完、独立分支没合回 → running（转圈）
+ * - 有提问 / 待确认 → waiting（等你处理）
+ * - 用户自己按的暂停 → stopped（暂停图标）
+ * - 别的动作顺带结束的（父对话收尾、换 CLI、面板重启、页面切走）→ idle（停下了，但别说成「你暂停了」）
+ * - 其余 → done（完成态，含 resolved 和「彻底做完、CLI 关了」）
+ */
+export function childIcon(x: ChildEntry): TaskIcon {
+  const st = childStage(x)
+  if (st === 'you') return x.status === 'failed' ? 'failed' : 'waiting'
+  if (st === 'running') return 'running'
+  // 未完成（计划没做完、独立分支没合回）也转圈：还没做完，不能画成静止的
+  if (st === 'unfinished') return 'running'
+  if (st === 'done') return 'done'
+  // 停下：只有用户按的暂停才是暂停图标，别的来源要说清是谁结束的
+  return x.stopReason && x.stopReason !== 'user' ? 'idle' : 'stopped'
+}
+
+/** 行首要不要转圈：就是图标是 running，见 childIcon */
+export const childSpinning = (x: ChildEntry) => childIcon(x) === 'running'
+
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
-export const childWaiting = (x: ChildEntry) => childStage(x) === 'you' && !!(x.asking || x.requests)
+export const childWaiting = (x: ChildEntry) => childIcon(x) === 'waiting'
 
 /**
  * 子对话这会儿真的在干活：这一轮在跑、后台命令还在跑，或者工作流运行没完（进程活着等下一句不算）。
@@ -806,6 +861,39 @@ export function taskBusy(t: Pick<Task, 'status' | 'steps' | 'working' | 'childre
   return t.working || !!t.childrenWorking || helpersWorking(t) || runRunning(t)
 }
 
+/**
+ * 列表里「执行中」的条数：侧栏项目名的「N 个执行中」、标签页标题的 (n) 都读这个，
+ * 行首图标也是同一个判定（taskBusy）——以前标题只看 working，两行在转圈却写「1 个执行中」。
+ */
+export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
+  return list.filter((t) => taskBusy(t)).length
+}
+
+/**
+ * 保活会话（回复完停在等下一句、CLI 进程还没退）超过全局上限时要结束哪几个：
+ * 只从没人在看的里面挑最近使用时间最早的（LRU），`exceptId` 是刚进入保活的那个，不算；
+ * 正在看的页面不算（用户马上会回来发消息，回收了反而要重新启动）。
+ * 返回要结束的 id，从最久没用的开始；没超限返回空数组。limit 为 0 表示不限制。
+ */
+export function keepAliveVictims(
+  list: Pick<Task, 'id' | 'awaitingUser' | 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>[],
+  limit: number,
+  exceptId = '',
+  watched: (id: string) => boolean = () => false,
+): string[] {
+  if (!limit) return []
+  const idle = list.filter((t) => t.awaitingUser && t.id !== exceptId && !watched(t.id))
+  // 刚进入保活的那一个也算进上限：已有 idle 数 + 1 超过 limit 时要收掉差的那么多
+  const over = idle.length + 1 - limit
+  if (over <= 0) return []
+  const used = (t: Pick<Task, 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>) =>
+    t.turnSeenAt || t.turnDoneAt || t.updatedAt || ''
+  return idle
+    .sort((a, b) => used(a).localeCompare(used(b)))
+    .slice(0, over)
+    .map((t) => t.id)
+}
+
 export function taskSummary(t: Task): Task {
   const first = t.messages.find((m) => m.role === 'user')
   return {
@@ -819,8 +907,9 @@ export function taskSummary(t: Task): Task {
     sessions: {},
     command: [],
     workflows: [],
-    // 运行记录里有共享状态和节点消息，列表用不到；任务页会取完整内容
-    runs: [],
+    // 运行记录里有共享状态和节点消息，列表用不到；但 runRunning 判定「还在跑」要看最后一条的 status / endedAt，
+    // 清空就会让摘要和完整任务算出两种结果（侧栏计数、行首转圈、标题 (n) 跟着不一致）
+    runs: (t.runs ?? []).slice(-1).map((r) => ({ ...r, workflows: [], skillSlots: {}, state: {}, messages: [] })),
     workflowName: t.workflowName || t.workflows.find((w) => w.id === t.workflowId)?.name || '',
   }
 }

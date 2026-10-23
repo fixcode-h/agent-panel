@@ -291,3 +291,31 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     /## 授权情况[\s\S]{0,10}推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内/,
   )
 })
+
+test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
+  const prompts: string[] = []
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '找一下这个报错' } as never, undefined, '', 's1'),
+    id: 's1',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '找一下这个报错',
+    // 项目设置里填的（UE 预设）：提示词里要能直接照着拼 -g '!Saved'
+    searchExclude: ['Saved', 'Intermediate'],
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async (call) => {
+      prompts.push(call.prompt)
+      return { ok: true, text: '好了' }
+    },
+  })
+  assert.equal(prompts.length, 1)
+  assert.match(prompts[0], /## 搜索排除（这个项目）/, '通用约束后面带上这个项目的排除清单')
+  assert.match(prompts[0], /搜索时排除：[^\n]*Saved/)
+  assert.match(prompts[0], /-g '!Saved'/, 'rg 的排除写法直接给出来')
+  assert.match(prompts[0], /找 Bug 在这一层定位时也用同样的排除/, '找 Bug 那段用同一份清单')
+  assert.match(prompts[0], /node_modules/, '内置默认清单也在（项目没填时至少挡住依赖和产物）')
+})

@@ -114,6 +114,9 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
+  const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
+  const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
+  const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
   const [children, setChildren] = useState(String(initial.childConcurrency))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
@@ -247,6 +250,10 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
+  const unreadMin = Number(unread)
+  const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
+  const keepN = Number(keepAlive)
+  const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
   const largeN = Number(largeMB)
@@ -269,6 +276,9 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
+    unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
+    keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
+    reclaimIdleCli: reclaim,
     childConcurrency: childValid ? childN : initial.childConcurrency,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
@@ -522,6 +532,14 @@ function SettingsBody({
                 </div>
               </Row>
               <Row
+                title={t('自动回收闲置 Agent')}
+                desc={t(
+                  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
+                )}
+              >
+                <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
+              </Row>
+              <Row
                 title={t('离开对话后保留多久')}
                 desc={t(
                   '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。',
@@ -539,6 +557,44 @@ function SettingsBody({
                   {!presenceValid && (
                     <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
                   )}
+                </div>
+              </Row>
+              <Row
+                title={t('没看过的回复保留多久')}
+                desc={t(
+                  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={unread}
+                    onChange={(e) => setUnread(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!unreadValid}
+                    className={cn('h-9', !unreadValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('没看过的回复保留多久（分钟）')}
+                  />
+                  {!unreadValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
+                  )}
+                </div>
+              </Row>
+              <Row
+                title={t('同时保活的会话上限')}
+                desc={t(
+                  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={keepAlive}
+                    onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!keepValid}
+                    className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时保活的会话上限')}
+                  />
+                  {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
                 </div>
               </Row>
               <Row

@@ -63,7 +63,7 @@ test('完成的步骤锁死：改它、删它都无效，放回原位', () => {
   assert.ok(activePlan(task)!.steps.some((s) => s.title === 'A' && s.status === 'done'))
 })
 
-test('子步骤都完成，主步骤跟着完成；全部完成后要先写总结才能开新计划', () => {
+test('子步骤都完成，主步骤跟着完成；全部完成后计划结束，可以直接开新计划', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: 'A', children: [{ title: 'a1' }, { title: 'a2' }] }] })
   const r = applyPlan(task, {
@@ -78,24 +78,26 @@ test('子步骤都完成，主步骤跟着完成；全部完成后要先写总�
       },
     ],
   })
-  assert.match(r.info, /finish_plan/)
+  assert.match(r.info, /计划的步骤全部完成了：这份计划结束/)
   assert.equal(activePlan(task), undefined)
-  assert.ok(unsummarized(task))
-  assert.equal(applyPlan(task, { steps: [{ title: 'B' }] }).ok, false)
-  assert.ok(finishPlan(task, '做完了 A').ok)
-  assert.equal(unsummarized(task), undefined)
-  // 新内容开一份新计划，旧的留着
-  applyPlan(task, { steps: [{ title: 'A' }] })
+  assert.equal(unsummarized(task), undefined, '不再欠总结')
+  // 直接开一份新计划，旧的留着
+  assert.equal(applyPlan(task, { steps: [{ title: 'A' }] }).ok, true)
   assert.equal(task.plans.length, 2)
   assert.equal(activePlan(task)!.steps[0].status, 'pending')
 })
 
-test('还有没完成的步骤时不收总结', () => {
+test('finish_plan 主动结束计划：不写总结也能结束，传了也不保存', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: 'A', status: 'done' }, { title: 'B' }] })
-  const r = finishPlan(task, '总结')
-  assert.equal(r.ok, false)
-  assert.match(r.info, /「B」/)
+  const r = finishPlan(task, '做完了 A')
+  assert.equal(r.ok, true)
+  assert.match(r.info, /这份计划结束/)
+  assert.match(r.info, /「B」/, '说清楚哪些步骤还没完成')
+  assert.equal(activePlan(task), undefined)
+  assert.equal(task.plans[0].doneAt === '', false)
+  assert.equal(task.plans[0].summary, '', '传了总结也不落盘')
+  assert.match(finishPlan(task).info, /没有进行中的计划/)
 })
 
 test('等待：挂上后台命令，成功自动完成；失败退回进行中', () => {
@@ -176,7 +178,7 @@ test('工作流做主步骤：没指定步骤就在末尾加一步，跑完标�
   assert.equal(activePlan(task)!.steps[1].run, 3)
   assert.equal(activePlan(task)!.steps[1].status, 'running')
   endRun(task, 3, true)
-  assert.ok(unsummarized(task))
+  assert.equal(unsummarized(task), undefined, '做完就结束，不欠总结')
   // 没有计划时启动工作流：开一份计划，工作流是第一步
   const other = fresh()
   bindRun(other, '', 1, '工作流「默认」')

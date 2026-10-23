@@ -133,6 +133,14 @@ export const EN_SETTINGS: Record<string, string> = {
     'Used for text files created or rewritten in this project, and the convention roles follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
   '和全局设置不同时，在这里单独指定': 'Override the global setting here',
   跟随全局设置: 'Follow the global setting',
+  搜索时跳过的目录: 'Folders skipped when searching',
+  相对项目根: 'Relative to the project root',
+  'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。':
+    'Agents skip these folders when looking for files or searching code. Searching a whole large project takes minutes and matches a pile of build output, so agents read the project docs first, narrow down to a module, then search only that folder.',
+  '目录名，回车添加': 'Folder name, press Enter to add',
+  '填入 UE 排除清单': 'Fill in the UE exclusion list',
+  清空: 'Clear',
+  '此外始终跳过：{list}': 'Also always skipped: {list}',
 
   // 默认 CLI
   '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
@@ -357,6 +365,17 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
+  '自动回收闲置 Agent': 'Reclaim idle agents automatically',
+  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。':
+    'Agents that finished and have nobody watching are reclaimed after the two windows below; coming back restarts one in a few seconds and resumes the conversation. Turned off, they are no longer reclaimed by time and only limited by "Max kept-alive conversations", so these processes keep piling up.',
+  没看过的回复保留多久: 'Keep unread replies for',
+  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。':
+    'Minutes; 0 reclaims as soon as the reply finishes. When a turn finished but you have not opened the conversation yet (the orange dot in the sidebar is still on), the agent is kept at most this long; after that opening it restarts the agent and resumes the conversation.',
+  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
+  同时保活的会话上限: 'Max kept-alive conversations',
+  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。':
+    'How many finished conversations with no page open may stay alive waiting for your next message. Beyond this, the least recently used one is closed (opening it again restarts it once). 0 means no limit.',
+  '填 0 到 50 之间的整数': 'Enter a whole number from 0 to 50',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
@@ -985,8 +1004,8 @@ export const EN_SETTINGS: Record<string, string> = {
   修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
   // 命令行环境
   命令行环境: 'Command shell',
-  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。有 WSL 默认用 WSL，没有就用 Git Bash。':
-    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to WSL when installed, otherwise Git Bash.',
+  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。默认用 Git Bash（Windows 路径可以直接用），没有 Git Bash 时用 WSL，再没有用 cmd。':
+    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to Git Bash (Windows paths work directly), then WSL when Git Bash is missing, then cmd.',
   '重新检测（刚装了 WSL 或 Git 时用）': 'Detect again (after installing WSL or Git)',
   // 设置里的用量统计：shared/usage.ts 的粒度标签和 components/usage/UsageSection.tsx 的表格
   按天: 'Daily',

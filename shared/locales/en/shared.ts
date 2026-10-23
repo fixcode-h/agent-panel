@@ -115,6 +115,10 @@ export const EN_SHARED: Record<string, string> = {
     '{nodes} failed. See the error in the node for details. Click "Continue flow" to retry, or enter new instructions below.',
   '已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。':
     'Paused. Click "Continue flow" to pick up where it left off, or enter new instructions below.',
+  '点「继续执行」': 'Resume',
+  '点「继续流程」': 'Continue flow',
+  '这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。':
+    'This turn was interrupted: {reason}. {next} to pick up where it left off, or enter new instructions below.',
   '工作流的主流程还没有连到「开始」的节点，请先在流程图里从「开始」连线':
     'No node in the main flow is connected to "Start" yet. Draw a connection from "Start" in the flow chart first',
   '工作流不存在，可能已被删除': 'The workflow does not exist. It may have been deleted',
