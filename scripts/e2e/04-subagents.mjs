@@ -199,7 +199,20 @@ await runShard('子对话与计划', async (api) => {
     })
     assert.equal(early.status, 409, '有没合并的改动时不标记完成')
     assert.match((await early.json()).error, /先合并或删除分支/)
-    const merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
+    // 催合并那条消息会让子对话再跑一轮：等它这一轮结束再合，不然会撞上「对话正在执行」
+    let merged
+    await waitFor(
+      async () => {
+        try {
+          merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
+          return true
+        } catch (e) {
+          if (/正在执行/.test(String(e))) return false
+          throw e
+        }
+      },
+      { label: '子对话这一轮结束后合并' },
+    )
     assert.equal(merged.task.worktree.state, 'active', '合并后分支留着，对话还能接着改')
     assert.ok(
       gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
