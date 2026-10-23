@@ -116,6 +116,14 @@ if (bom.length)
     ].join('\n'),
   )
 
+// 5. 附件的两个路径：记进对话的用上传目录的原路径，拷进任务目录的 placed 只给 CLI
+// （见 docs/lessons/data.md「附件有两个路径」）
+for (const f of files) {
+  if (!/^server\/.+\.ts$/.test(f) || /\.test\.ts$/.test(f)) continue
+  if (/attachments:\s*placed\b/.test(read(f)))
+    errors.push(`${f} 把拷进任务目录的附件（placed）记进了对话：对话里要存上传目录的原路径，placed 只给 CLI`)
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exit(1)

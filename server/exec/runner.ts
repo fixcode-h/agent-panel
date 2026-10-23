@@ -6,6 +6,7 @@ import {
   defaultAgent,
   type Agent,
   type AgentUsage,
+  type Attachment,
   type CliStatus,
   type Project,
   type Settings,
@@ -145,8 +146,8 @@ const notes = new Map<string, string[]>()
  * 用户发消息时直接作为工具结果交回去，进程不用结束再 --resume；页面切走宽限到了就让它结束这一轮
  */
 interface Waiter {
-  /** 用户发来下一句：记进对话再交给正在等的 CLI */
-  deliver: (msg: TaskMessage) => void
+  /** 用户发来下一句：记进对话再交给正在等的 CLI（placed 是拷进任务目录的那份，只有 CLI 用） */
+  deliver: (msg: TaskMessage, placed?: Attachment[]) => void
   /** 用户离开了：结束等待 */
   cancel: () => void
   /** 输入框里的 CLI/模型/强度还是启动这个进程时的那一套 */
@@ -162,14 +163,14 @@ const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 
  * 没有在等时返回 none；等着的进程已经不是输入框里的选择时返回 stale，
  * 调用方等它退出后按新的选择重新开始，不能把消息交给旧 CLI。
  */
-export function deliverWait(task: Task, msg: TaskMessage): 'ok' | 'stale' | 'none' {
+export function deliverWait(task: Task, msg: TaskMessage, placed?: Attachment[]): 'ok' | 'stale' | 'none' {
   const w = waiters.get(task.id)?.values().next().value
   if (!w) return 'none'
   if (!w.current()) {
     w.cancel()
     return 'stale'
   }
-  w.deliver(msg)
+  w.deliver(msg, placed)
   return 'ok'
 }
 
@@ -198,11 +199,11 @@ function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) =>
     }
     const onAbort = () => done(null)
     const w: Waiter = {
-      deliver: (msg) => {
+      deliver: (msg, placed) => {
         task.messages.push(msg)
         task.working = true
         changed(true)
-        done(withAttachments(msg.text, msg.attachments ?? []))
+        done(withAttachments(msg.text, placed ?? msg.attachments ?? []))
       },
       cancel: () => done(null),
       // 进程已经退出了，下一轮按输入框里现在的选择开
@@ -1339,7 +1340,7 @@ async function runAgent(
         }
         const onAbort = () => done(null)
         waiter = {
-          deliver: (msg) => {
+          deliver: (msg, placed) => {
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             task.messages.push(msg)
@@ -1349,7 +1350,7 @@ async function runAgent(
             task.working = true
             // 之后的输出另起一条，排在用户消息后面
             cur = undefined
-            const text = withAttachments(msg.text, msg.attachments ?? [])
+            const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
             done(text)
