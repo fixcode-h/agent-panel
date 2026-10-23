@@ -34,6 +34,9 @@ export interface ProcessResult {
 /** 还在跑的子进程：程序退出时按这上面的 pid 统一清理 */
 const live = new Map<number, ReturnType<typeof spawn>>()
 
+/** 还在跑的子进程 pid：内存采样用它统计 CLI 子进程占了多少，不要另外维护一份 */
+export const activePids = () => [...live.keys()]
+
 /** 结束整个进程树：CLI 往往会再起子进程（shell、MCP 服务等） */
 export function killTree(pid: number, force = false) {
   if (isWin) {

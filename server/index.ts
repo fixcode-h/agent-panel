@@ -30,6 +30,7 @@ import { migrateDocSteps } from '../shared/flow.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
+import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
 import { usageApi } from './usage.ts'
 import { runUsageApi } from './run-usage.ts'
@@ -788,7 +789,21 @@ app.post('/fs/mkdir', async (c) => {
   }
 })
 
-app.route('/data', dataApi({ running: () => tasks.running() + designs.running() }))
+// 内存采样：面板自身的进程 + 它拉起的 CLI 子进程，定时记一次留在内存里，数据页的内存曲线和 AI 分析读它
+const memory = memorySampler({
+  running: () => tasks.running() + designs.running(),
+  scale: async () => {
+    const all = await tasks.list()
+    return {
+      tasks: all.length,
+      chats: all.filter((x) => x.mode === 'chat').length,
+      projects: (await projects.list()).length,
+    }
+  },
+})
+memory.start()
+
+app.route('/data', dataApi({ running: () => tasks.running() + designs.running(), memory }))
 
 const updater = updateApi({
   running: () => tasks.running() + designs.running(),

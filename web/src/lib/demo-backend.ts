@@ -43,7 +43,7 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
-import { DATA_KINDS, type DataKind } from '@shared/data'
+import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runUsage } from '@shared/run-usage'
 import { newLessonId, upsertLesson } from '@shared/lessons'
@@ -708,6 +708,55 @@ const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) =>
 const utf8ToB64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
 const b64ToUtf8 = (b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0)))
 
+/**
+ * 在线演示的内存采样：按 30 秒一个点，模拟最近两小时（真机是服务端定时采样，这里是演示数据）。
+ * 两小时是因为曲线默认只显示一小时，右键拖动往前看时得还有更早的点，否则演示里拖不动。
+ * 用时间算，不存随机值：同一时刻刷新曲线是稳定的，过一会儿再看才会动——和真机的采样一样能看到起伏。
+ */
+function demoMemory(d: Db, now = Date.now()): MemoryUsage {
+  const INTERVAL_MS = 30_000
+  // 和真机一样保留两小时的点：曲线默认看一小时，右键拖动才有的往前看
+  const COUNT = 240
+  const last = Math.floor(now / INTERVAL_MS)
+  const tasks = d.tasks ?? []
+  const running = tasks.filter((x) => x.status === 'running').length
+  const MB = 1024 * 1024
+  // 「进程」这一路：运行中的任务各占一份 CLI；演示数据里没有运行中的任务时模拟一个，
+  // 否则第二路永远是 0，看不出两路曲线的设计（真机上没有子进程时是真实的 0，界面显示「没有子进程」）
+  const cliProcesses = running || 1
+  const samples = Array.from({ length: COUNT }, (_, i) => {
+    const k = last - (COUNT - 1 - i)
+    const wave = Math.sin(k / 6) * 5 + Math.sin(k / 17) * 8
+    const rss = Math.round((108 + wave + (i / COUNT) * 22) * MB)
+    const heapUsed = Math.round((76 + wave * 0.8 + (i / COUNT) * 14) * MB)
+    const child = Math.round((cliProcesses * 96 + Math.sin(k / 4) * 18 + (i / COUNT) * 60) * MB)
+    return {
+      at: new Date(k * INTERVAL_MS).toISOString(),
+      rss,
+      heapTotal: 128 * MB,
+      heapUsed,
+      external: Math.round((4 + Math.sin(k / 9) * 1.5) * MB),
+      arrayBuffers: Math.round((2 + Math.sin(k / 11) * 0.8) * MB),
+      running,
+      child,
+    }
+  })
+  const memory = samples[samples.length - 1]
+  return {
+    memory,
+    samples,
+    sampling: { intervalMs: INTERVAL_MS, keepMs: 2 * 60 * 60_000 },
+    uptimeMs: 2 * 60 * 60_000 + 12 * 60_000,
+    child: { processes: cliProcesses, bytes: memory.child },
+    scale: {
+      tasks: tasks.length,
+      chats: tasks.filter((x) => x.mode === 'chat').length,
+      projects: d.projects.length,
+      running,
+    },
+  }
+}
+
 function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
   if (!action && method === 'GET') {
     const kinds = DATA_KINDS.map((k) => {
@@ -719,9 +768,10 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
       const files = Object.values(DEMO_DATA_FILES[k.id](d))
       return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
     })
-    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0
-    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, memory: { rss: heap, heapUsed: heap } }
+    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, ...demoMemory(d) }
   }
+  // 内存曲线按采样间隔刷新：演示版也返回同样的结构，曲线和「AI 分析」都能试
+  if (action === 'memory' && method === 'GET') return demoMemory(d)
   if (action === 'reveal') fail('在线演示不能打开本机目录')
   if (action === 'clear') {
     const k = (body as { kind: DataKind }).kind

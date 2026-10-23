@@ -1553,6 +1553,11 @@ export const Settings = z.object({
   childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
+  /**
+   * 设置 →「数据」里内存曲线多久采一次（秒）。采样只放在内存里，保留最近两小时，
+   * 间隔越小曲线越细，但每次都要读一遍子进程的内存（Windows 上用 PowerShell），别调得太小
+   */
+  memorySampleSeconds: z.number().int().min(10).max(3600).catch(30).default(30),
   /** 粘贴的纯文字超过这么多字时存成一个文本文件，输入框里放文件卡片；0 表示不转 */
   longPasteChars: z.number().int().min(0).max(1_000_000).catch(5000).default(5000),
   /** Agent 选「系统默认」时使用的 CLI */

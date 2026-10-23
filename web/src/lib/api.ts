@@ -76,7 +76,7 @@ import type {
   PromptAiInput,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
-import type { DataKind, DataUsage } from '@shared/data'
+import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
 import type { UsageGrain, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
@@ -535,6 +535,8 @@ export const api = {
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),
+  /** 只取内存采样（最新一个 + 序列 + 面板规模）：内存曲线按采样间隔刷新用它，不遍历数据目录 */
+  memoryUsage: () => request<MemoryUsage>('/data/memory'),
   revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
   revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
