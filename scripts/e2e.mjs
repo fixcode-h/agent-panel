@@ -1641,21 +1641,17 @@ try {
     await waitDone(wtKid.id, 20000)
     for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
     const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
-    const doneKid = await waitDone(
-      (
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'chat',
-          agentId: B.id,
-          parentTaskId: wtParent.id,
-          prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE 子对话做完自动合并',
-        })
-      ).id,
-      20000,
-    )
+    const doneKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: wtParent.id,
+      prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE 子对话做完自动合并',
+    })
+    // 开分支的那一轮结束后面板才在分支目录里接着做：等到合并完成，不等第一轮结束
+    const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 30000)
     const mergeLog = readLog(log + '.merge')
     assert.ok(mergeLog.length && !mergeLog.at(-1).got.isError, '子对话调用 submit_merge 提交了合并')
-    const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 20000)
     assert.ok(closed.resolved, '合进父对话的分支后子对话标记完成')
     assert.ok(!existsSync(closed.worktree.path), '完成后独立分支的目录回收了')
     assert.match(
