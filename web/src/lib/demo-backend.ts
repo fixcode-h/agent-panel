@@ -2010,6 +2010,9 @@ function tasksRoute(
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
         startedAt: childStartedAt(x),
+        // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
+        requests: (x.requests ?? []).length,
+        asking: x.parentAsks?.length ?? 0,
         // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
         plan: openPlan(x),
         resolved: x.resolved === true,
