@@ -33,6 +33,7 @@ import {
   type PlanStatus,
   type Task,
   type TaskStep,
+  type TaskTurn,
   type CliInstallJob,
   type CliModels,
   type CliUpdate,
@@ -2349,6 +2350,49 @@ function demoPlans(task: Task) {
   ]
 }
 
+/**
+ * 演示任务的用量：几轮分散在最近十几天（故意空出两天），日历上能看到有数据的日子，
+ * 按周、按月也有数。演示里本来没有 turns，不补的话用量统计永远是空的。
+ * 金额按美元记在 usage 上，只当 CLI 上报的费用作对照；表格里的费用按计价模型实时折算。
+ */
+function seedDemoUsage(task: Task, minutes: number) {
+  if (task.turns?.length) return
+  // 任务的「最近一天」：createdAt 已经按 back() 的偏移移过，不会再被重复改
+  const last = new Date(new Date(task.createdAt).getTime() + minutes * 60_000)
+  const turns: TaskTurn[] = []
+  const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }
+  for (let i = 0; i < 12; i++) {
+    // 隔几天空一天：日历上的点不必连成一片
+    if (i === 5 || i === 9) continue
+    const day = new Date(last.getFullYear(), last.getMonth(), last.getDate() - i)
+    const startedAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 10 + (i % 7), 12 + i)
+    const input = 320_000 + i * 41_000
+    const output = 26_000 + i * 3_100
+    const cacheRead = Math.round(input * 0.62)
+    const cacheWrite = Math.round(input * 0.08)
+    usage.inputTokens += input
+    usage.outputTokens += output
+    usage.cacheReadTokens += cacheRead
+    usage.cacheWriteTokens += cacheWrite
+    usage.costUsd += 0.42 + i * 0.03
+    turns.push({
+      id: `demo-turn-${task.id.slice(-8)}-${i}`,
+      title: '',
+      agentId: '',
+      status: 'done',
+      startedAt: startedAt.toISOString(),
+      endedAt: new Date(startedAt.getTime() + 90_000).toISOString(),
+      from: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 },
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      waitMs: 0,
+    })
+  }
+  task.turns = turns
+  task.usage = { ...(task.usage ?? {}), ...usage, agents: task.usage?.agents ?? {} }
+}
+
 async function seedTasks(d: Db) {
   const [shop, admin] = d.projects
   const fe = d.agents.find((a) => a.name === '前端开发')
@@ -2376,6 +2420,7 @@ async function seedTasks(d: Db) {
       t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
       spreadSteps(t)
     }
+    seedDemoUsage(t, minutes)
   }
   if (admin) {
     const { task, done } = createTask(

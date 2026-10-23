@@ -921,6 +921,54 @@ try {
   await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
+  // 用量统计：按天 / 按周 / 按月只显示当前一个区间，日历能选日期、有数据的日子带标记，
+  // 费用列按计价模型折算，分时段定价的模型还能看到峰谷明细
+  await p.getByRole('button', { name: '用量统计', exact: true }).click()
+  await check(p, '设置-用量统计-按天', ['用量统计', '费用', '合计'])
+  // 计价模型是下拉框的 aria-label，页面上显示的是选中的模型名，所以按 role 查而不是按文本
+  if (!(await p.getByRole('combobox', { name: '计价模型' }).count())) errors.push('用量统计：没有计价模型选择器')
+  const usageRows = () => p.locator('section[aria-label="用量统计"] table tbody tr')
+  const dayRows = await usageRows().count()
+  if (dayRows > 1) errors.push(`用量统计：按天视图应该只显示一个区间，现在有 ${dayRows} 行`)
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：分时段定价的模型没有显示峰谷明细')
+  // 日历：能打开、有数据的日子有标记、能翻月
+  await p.locator('[data-usage-period-trigger]').click()
+  await p
+    .locator('[data-usage-calendar]')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('用量统计：点区间标签没有打开日历'))
+  const markedDays = await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').count()
+  if (!markedDays) errors.push('用量统计：日历上没有标出有数据的日子')
+  if (!(await p.getByLabel('上个月').count())) errors.push('用量统计：日历没有翻月按钮')
+  await check(p, '设置-用量统计-日历')
+  await p.keyboard.press('Escape')
+  // 周 / 月：同样只显示一个区间，标签跟着粒度变
+  await p.getByRole('tab', { name: '按周', exact: true }).click()
+  await p.waitForTimeout(300)
+  const weekLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/第 \d+ 周/.test(weekLabel)) errors.push(`用量统计：按周的标签不是一周（${weekLabel}）`)
+  if ((await usageRows().count()) > 7) errors.push('用量统计：按周视图超过了一周的天数')
+  await check(p, '设置-用量统计-按周')
+  await p.getByRole('tab', { name: '按月', exact: true }).click()
+  await p.waitForTimeout(300)
+  const monthLabel = await p.locator('[data-usage-period-trigger]').innerText()
+  if (!/\d{4}年\d+月/.test(monthLabel)) errors.push(`用量统计：按月的标签不是一个月（${monthLabel}）`)
+  await check(p, '设置-用量统计-按月')
+  // 换计价模型：合计和峰谷明细跟着换，单价表按新模型走
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek V4 Pro' }).click()
+  await p.waitForTimeout(300)
+  await check(p, '设置-用量统计-计价模型', ['DeepSeek V4 Pro'])
+  // 下拉框要能完整显示模型名：截断成「DeepSeek V4 P…」也算没排整齐
+  const clipped = await p
+    .getByRole('combobox', { name: '计价模型' })
+    .evaluate((el) => el.scrollWidth > el.clientWidth + 1)
+  if (clipped) errors.push('用量统计：计价模型下拉的文字被截断了')
+  if (!(await p.locator('[data-usage-tiers]').count())) errors.push('用量统计：换计价模型后峰谷明细没了')
+  // 换回默认模型，后面的检查不受影响
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
+  await p.waitForTimeout(300)
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
