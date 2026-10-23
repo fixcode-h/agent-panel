@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readdir, rm, symlink, appendFile, lstat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rm, symlink, appendFile, lstat, readFile, readlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { TaskWorktree } from '../../shared/schema.ts'
 import { type ChildHold, childHoldText } from '../../shared/task.ts'
 import { t } from '../../shared/i18n.ts'
 import { DATA_DIR } from '../store.ts'
 import { capture } from './process.ts'
+import { log } from '../log.ts'
 
 /** 任务的独立工作目录放在数据目录里，不放进项目目录，免得被项目自己的 git 和工具扫到 */
 export const WORKTREES_DIR = path.join(DATA_DIR, 'worktrees')
@@ -28,28 +29,128 @@ const branchName = (taskId: string, title: string) => {
 /** 不复制过去的环境文件：带后缀的通常是本机真实密钥，只留在项目目录里，子对话需要时自己问用户 */
 const SECRET_ENV = /^\.env\.(local|production|prod|development|dev|staging|test)$/i
 
+/** 依赖目录会被 npm / pip 按各自那份 package.json 修剪，必须各用各的，不能链接共用 */
+const DEP_DIRS = ['node_modules', '.venv', 'venv', 'vendor']
+
+/** 一批复制多少个文件：27k 个文件、596MB 的 node_modules 实测 12–20 秒，再往上并发提升不明显 */
+const COPY_BATCH = 64
+
 /**
- * 把项目目录里 git 不管、但跑起来需要的东西接到独立目录：
- * - node_modules（以及 .venv 之类的虚拟环境）建目录链接，不复制，装一次两边共用；
- * - .env 这类环境文件复制一份，子对话的测试才能起得来。含密钥的文件（.env.local 等）不复制。
+ * 把整个依赖目录复制一份到独立目录（逐层建目录、逐文件复制）。
+ * 不用硬链接：跨分卷用不了（数据目录在 C:、项目常在别的盘），同分卷时 npm 原地重写
+ * node_modules/.package-lock.json 又会顺着 inode 改到项目那一份。复制最稳，代价是一次性成本。
+ * 复制失败时把没复制完的目录删掉：留着的话下次 existsSync 会当成已经准备好，问题被藏起来。
+ */
+async function cloneDir(from: string, to: string) {
+  const dirs: string[] = []
+  const files: [string, string][] = []
+  const links: [string, string][] = []
+  const walk = async (src: string, dst: string) => {
+    dirs.push(dst)
+    for (const e of await readdir(src, { withFileTypes: true })) {
+      const s = path.join(src, e.name)
+      const d = path.join(dst, e.name)
+      if (e.isDirectory()) await walk(s, d)
+      else if (e.isSymbolicLink()) links.push([s, d])
+      else files.push([s, d])
+    }
+  }
+  await walk(from, to)
+  for (const d of dirs) await mkdir(d, { recursive: true })
+  // 依赖里的符号链接（npm 在 Linux/macOS 上给 .bin 建的那种）按原来的相对目标重建；
+  // Windows 上建不了就复制目标内容（那边走的是 .cmd，不影响命令能不能跑起来）
+  for (const [s, d] of links) {
+    const target = await readlink(s).catch(() => '')
+    const ok = target
+      ? await symlink(target, d).then(
+          () => true,
+          () => false,
+        )
+      : false
+    if (!ok) await copyFile(s, d).catch(() => {})
+  }
+  for (let i = 0; i < files.length; i += COPY_BATCH) {
+    await Promise.all(files.slice(i, i + COPY_BATCH).map(([s, d]) => copyFile(s, d).catch(() => {})))
+  }
+  return files.length
+}
+
+interface PackageJson {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}
+
+async function packageJson(dir: string): Promise<PackageJson | null> {
+  const text = await readFile(path.join(dir, 'package.json'), 'utf8').catch(() => '')
+  if (!text) return null
+  // 手写坏的 package.json 不在这里报错：这里只是顺手检查依赖全不全
+  try {
+    return JSON.parse(text) as PackageJson
+  } catch {
+    return null
+  }
+}
+
+/**
+ * package.json 里声明、但 node_modules 里没装上的包。
+ * 共用依赖被某个工作目录跑安装/清理修剪掉之后，后面的命令只会各自报「找不到模块」；
+ * 开独立目录时先看一眼，直接把「哪个目录、少了什么、怎么补」写进面板日志。
+ */
+export async function missingDeps(dir: string) {
+  const pkg = await packageJson(dir)
+  if (!pkg) return []
+  const want = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
+  return want.filter((name) => !existsSync(path.join(dir, 'node_modules', name, 'package.json')))
+}
+
+/** 依赖不完整时说清缺哪些、怎么补，别让后面每条命令各报一句「找不到模块」 */
+function warnMissingDeps(dir: string, missing: string[]) {
+  if (!missing.length) return
+  log.error('worktree', '依赖不完整：这个目录里少装了声明的包，接下来会接连报「找不到模块」', {
+    dir: path.join(dir, 'node_modules'),
+    missing: missing.slice(0, 20).join('、') + (missing.length > 20 ? ` 等 ${missing.length} 个` : ''),
+    recover:
+      '在一份完整的独立目录里跑 npm ci --include=dev，或者把完好的 node_modules 整份复制回来；不要在多个对话共用的目录里跑 npm install / npm ci',
+  })
+}
+
+/**
+ * 把项目里的依赖目录复制一份到独立目录，不建链接：链接过去时子对话在自己的目录里跑 npm install
+ * 会按它那份 package.json 修剪依赖，剪掉的正是项目里那一份真目录（2026-10 的事故：主工作区
+ * node_modules 从满装变成 0 项，几个对话的验证一起失败）。返回复制过去的目录名。
  * 失败不算错：Agent 自己在独立目录里也会看到缺什么。
  */
-async function prepare(dir: string, repo: string) {
-  const linked: string[] = []
-  const linkDir = async (name: string) => {
+export async function isolateDeps(dir: string, repo: string) {
+  const prepared: string[] = []
+  for (const name of DEP_DIRS) {
     const from = path.join(repo, name)
     const to = path.join(dir, name)
-    if (!existsSync(from) || existsSync(to)) return
-    // Windows 上用 junction，不需要管理员权限；其他平台用普通目录符号链接
-    const ok = await symlink(from, to, process.platform === 'win32' ? 'junction' : 'dir').then(
-      () => true,
-      () => false,
-    )
-    if (ok) linked.push(name)
+    if (!existsSync(from)) continue
+    const st = await lstat(to).catch(() => null)
+    // 早先开的工作目录里是链接，正好是事故的来源：换成独立的一份，它再跑安装也动不到项目
+    if (st?.isSymbolicLink()) await rm(to, { force: true }).catch(() => {})
+    else if (st) continue
+    const started = Date.now()
+    const files = await cloneDir(from, to).catch(async (e: Error) => {
+      await rm(to, { recursive: true, force: true }).catch(() => {})
+      log.warn('worktree', '依赖目录没复制过去，这个工作目录里要自己装', {
+        from,
+        error: e.message,
+      })
+      return 0
+    })
+    if (!files) continue
+    prepared.push(name)
+    log.info('worktree', '依赖目录复制到独立目录', { name, files, ms: Date.now() - started })
   }
-  await Promise.all(['node_modules', '.venv', 'venv', 'vendor'].map(linkDir))
+  return prepared
+}
+
+/** 独立目录的准备工作：依赖各用一份（见 isolateDeps），环境文件复制一份——含密钥的 .env.local 等不复制 */
+async function prepare(dir: string, repo: string) {
+  const prepared = await isolateDeps(dir, repo)
   // 项目没忽略这些目录时，合并前的 git add -A 会把整个依赖装进提交：写进这个工作目录自己的 exclude
-  for (const name of linked) {
+  for (const name of prepared) {
     const ignored = await capture('git', ['check-ignore', '-q', name], dir, process.env, 10_000)
     if (ignored.code === 0) continue
     const exclude = await capture('git', ['rev-parse', '--git-path', 'info/exclude'], dir, process.env, 10_000)
@@ -61,6 +162,7 @@ async function prepare(dir: string, repo: string) {
     const from = path.join(repo, name)
     await copyFile(from, path.join(dir, name)).catch(() => {})
   }
+  warnMissingDeps(repo, await missingDeps(repo))
 }
 
 /** 能不能开独立分支：要是 git 仓库、至少有一个提交；不能时抛出给用户看的原因 */
@@ -256,8 +358,8 @@ export async function worktreeStatus(repo: string, wt: TaskWorktree): Promise<Wo
 }
 
 /**
- * 删掉一个独立目录。里面可能有指向项目依赖的链接（见 prepare），先解开再递归删，
- * 免得顺着链接把项目的 node_modules 一起删掉
+ * 删掉一个独立目录。早先开的独立目录里 node_modules 是指向项目的链接（见 prepare 的迁移），
+ * 先解开链接再递归删，免得顺着链接把项目的依赖一起删掉
  */
 async function wipe(dir: string) {
   if (!existsSync(dir)) return

@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -10,6 +20,8 @@ import { childHolds, childHoldsOf } from '../../shared/task.ts'
 import {
   createWorktree,
   ensureWorktree,
+  isolateDeps,
+  missingDeps,
   mergeWorktree,
   releaseWorktree,
   removeWorktree,
@@ -35,6 +47,7 @@ function project(): string {
   writeFileSync(path.join(dir, 'README.md'), '# demo\n')
   mkdirSync(path.join(dir, 'node_modules', 'dep'), { recursive: true })
   writeFileSync(path.join(dir, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  writeFileSync(path.join(dir, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
   writeFileSync(path.join(dir, '.env'), 'TOKEN=dev\n')
   writeFileSync(path.join(dir, '.env.local'), 'SECRET=real\n')
   git(dir, 'init', '-q')
@@ -47,7 +60,7 @@ test('独立目录接上项目的依赖和环境文件，不复制密钥', async
   const repo = project()
   const wt = await createWorktree(repo, tid(), '测试任务')
   try {
-    // 依赖用链接，不复制一份
+    // 依赖各用一份独立副本（不是链接，见下面「依赖隔离」的用例）
     assert.ok(existsSync(path.join(wt.path, 'node_modules', 'dep', 'index.js')), '依赖能读到')
     // .env 复制，含密钥的 .env.local 不复制
     assert.equal(readFileSync(path.join(wt.path, '.env'), 'utf8').trim(), 'TOKEN=dev', '环境文件复制过去')
@@ -321,4 +334,47 @@ test('父分支没推送到远端、远端还有新提交：都仍然算合回�
   } finally {
     if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
   }
+})
+
+test('依赖隔离：独立目录的依赖是各自的一份，在里面删依赖不影响项目', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '依赖隔离')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    // 链接共用时，子对话按自己那份 package.json 修剪依赖，剪掉的正是项目里的真目录（2026-10 的事故）
+    assert.equal(lstatSync(mine).isSymbolicLink(), false, 'node_modules 不是链接')
+    assert.notEqual(realpathSync(mine), realpathSync(path.join(repo, 'node_modules')), '和项目那份是两个目录')
+    // 模拟 npm 在独立目录里修剪依赖
+    rmSync(mine, { recursive: true, force: true })
+    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份依赖还在')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖隔离：早先开的工作目录里依赖是链接，准备时换成独立的一份', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '链接迁移')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    // 旧版本开出来的目录长这样：node_modules 是指向项目的链接
+    rmSync(mine, { recursive: true, force: true })
+    symlinkSync(path.join(repo, 'node_modules'), mine, process.platform === 'win32' ? 'junction' : 'dir')
+    await isolateDeps(wt.path, repo)
+    assert.equal(lstatSync(mine).isSymbolicLink(), false, '链接换成了独立副本')
+    assert.ok(existsSync(path.join(mine, 'dep', 'index.js')), '依赖还在')
+    // 换完之后在副本里删东西，项目那份不动
+    rmSync(path.join(mine, 'dep'), { recursive: true, force: true })
+    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份没被删')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖隔离：声明了但没装上的包列得出来，好在日志里直接说清少了什么', async () => {
+  const repo = project()
+  writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { dep: '1', gone: '1' } }))
+  assert.deepEqual(await missingDeps(repo), ['gone'])
+  // 没有 package.json 的目录不算异常：别的目录、非 node 项目都这样
+  assert.deepEqual(await missingDeps(path.join(tmp, '拿不到')), [])
 })
