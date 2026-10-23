@@ -952,10 +952,8 @@ function LevelRows({
                   tabIndex={-1}
                   onClick={() => (e.kind === 'dir' ? onToggle(e.path) : onOpen(e.path))}
                   onFocus={() => onFocusPath(e.path)}
-                  // 右键按住这一行拖到输入框里：左键还是打开 / 展开，不抢左键
-                  onPointerDown={(ev) => {
-                    if (ev.button === 2) startFileDrag({ path: e.path, kind: e.kind }, { x: ev.clientX, y: ev.clientY })
-                  }}
+                  // 左键长按这一行拖到输入框里：短按还是打开 / 展开，右键还是菜单
+                  onPointerDown={(ev) => startFileDrag({ path: e.path, kind: e.kind }, ev)}
                   style={{ paddingLeft: `${indent(depth, compact)}px` }}
                   className={cn(
                     'flex w-full cursor-pointer items-center gap-1.5 rounded pr-2 text-left text-[0.8125rem] outline-none hover:bg-sel focus:bg-sel aria-selected:bg-sel/70',
@@ -1138,10 +1136,8 @@ function FileRow({
           aria-selected={option ? option.selected : undefined}
           onMouseEnter={option?.onHover}
           onClick={() => onOpen(path, line, hitLines)}
-          // 搜索结果也是文件行，一样能右键拖进输入框
-          onPointerDown={(ev) => {
-            if (ev.button === 2) startFileDrag({ path, kind: 'file' }, { x: ev.clientX, y: ev.clientY })
-          }}
+          // 搜索结果也是文件行，一样能左键长按拖进输入框
+          onPointerDown={(ev) => startFileDrag({ path, kind: 'file' }, ev)}
           className={className}
           title={path}
         >
