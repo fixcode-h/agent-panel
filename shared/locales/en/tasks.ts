@@ -869,4 +869,14 @@ export const EN_TASKS: Record<string, string> = {
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
   排队中: 'Queued',
   未命名: 'Untitled',
+  // 子对话进度：在做什么、在等什么、多久没新输出
+  '最后活动 {ago}': 'last active {ago}',
+  '已 {n} 分钟没有新输出': 'No new output for {n} min',
+  '等用户回答 {n} 个提问': 'Waiting for you to answer {n} question(s)',
+  '等用户确认 {n} 项': 'Waiting for you to confirm {n} item(s)',
+  '等 {n} 个后台命令': 'Waiting for {n} background command(s)',
+  '等子任务：{list}': 'Waiting for subtasks: {list}',
+  等工作流跑完: 'Waiting for the workflow to finish',
+  等下一句: 'Waiting for your next message',
+  '计划 {done}/{total} · {step}': 'Plan {done}/{total} · {step}',
 }

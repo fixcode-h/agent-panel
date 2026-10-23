@@ -39,7 +39,9 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childIcon,
+  childStale,
   childStage,
+  childWaitText,
   runningChildren,
   sortChildren,
   stopReasonText,
@@ -47,6 +49,7 @@ import {
   taskSummary,
   withTaskModel,
   type ChildActivity,
+  type ChildWait,
   type TaskStage,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
@@ -257,8 +260,8 @@ interface ChildSummary {
   startedAt: string
   /** 正在等用户确认的请求数 */
   requests?: number
-  /** 还没做完的计划进度：有它就不算已完成，行上显示「计划 7/8」 */
-  plan?: { done: number; total: number }
+  /** 还没做完的计划进度：有它就不算已完成，行上显示「计划 7/8」；带上正在做的那一步 */
+  plan?: { done: number; total: number; step?: string; child?: string }
   /** 还在跑、排队的后台命令数：有它就算还在执行（见 shared/task.ts 的 childRunning） */
   background?: number
   /** 工作流运行还没跑完：也是还在执行 */
@@ -275,8 +278,30 @@ interface ChildSummary {
   resolved?: boolean
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
+  /** 最后有动静的时间：执行中几分钟没新输出时标黄 / 标红（见 childStale） */
+  lastActivityAt?: string
+  /** 这会儿在等什么（不是在跑也不是卡住）：等用户回答、等后台命令、等子任务 */
+  waiting?: ChildWait
   /** 停在 stopped 的原因：/children 直接给；演示后端没有这一项时单独取（见 loadChildren） */
   stopReason?: StopReason
+}
+
+/** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
+function childNote(c: ChildSummary, running: boolean) {
+  const doing = activityText(c.activity)
+  const plan = c.plan?.step || c.plan?.child
+  return running ? [doing, plan].filter(Boolean).join(' · ') : childWaitText(c.waiting) || c.summary
+}
+
+/**
+ * 执行中但是很久没有新输出：标黄 / 标红，父对话不用拿分支时间戳猜它是不是卡住了。
+ * 等后台命令、等用户这类能解释的等待不算（见 shared/task.ts 的 childStale）
+ */
+function staleLine(c: ChildSummary) {
+  const level = childStale({ working: c.working, wait: c.waiting, lastActivityAt: c.lastActivityAt })
+  if (!level || !c.lastActivityAt) return undefined
+  const mins = Math.max(1, Math.round((Date.now() - Date.parse(c.lastActivityAt)) / 60000))
+  return { text: t('已 {n} 分钟没有新输出', { n: mins }), cls: level === 'stale' ? 'text-danger' : 'text-warning' }
 }
 
 /** 子对话这会儿在做什么，一句话：跑的节点、等的子任务、正在用的工具或正在说的话 */
@@ -1454,7 +1479,7 @@ export function TaskView({
                       {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
                       <div className="mx-auto max-w-(--content-w)">
                         <div className={cn(plainRow, 'mb-1 w-fit max-w-full')}>
-                          <PlanButton task={task} />
+                          <PlanButton task={task} children={children} />
                         </div>
                       </div>
                     </div>
@@ -1849,23 +1874,30 @@ function ChildrenBar({
           {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
           {busy.length > 0 && (
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              {busy.slice(0, 3).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => onOpen(c.id)}
-                  title={`${c.title}${activityText(c.activity) ? ` · ${activityText(c.activity)}` : ''}`}
-                  className={cn(
-                    'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
-                    c.id === openChild ? 'border-line-strong' : 'border-line',
-                  )}
-                >
-                  {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
-                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-accent" />
-                  <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
-                  <span className="min-w-0 flex-1 truncate text-subtle">{activityText(c.activity)}</span>
-                </button>
-              ))}
+              {busy.slice(0, 3).map((c) => {
+                // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
+                const stale = staleLine(c)
+                const line = childNote(c, true)
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onOpen(c.id)}
+                    title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
+                    className={cn(
+                      'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                      c.id === openChild ? 'border-line-strong' : 'border-line',
+                    )}
+                  >
+                    {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                    <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
+                    <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
+                    <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
+                      {stale ? stale.text : line}
+                    </span>
+                  </button>
+                )
+              })}
               {busy.length > 3 && <span className="shrink-0 text-xs text-subtle">+{busy.length - 3}</span>}
             </div>
           )}
@@ -1920,6 +1952,9 @@ function ChildrenBar({
                     // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
                     // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
                     const icon = childIcon(c)
+                    // 那一行下面的说明：执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
+                    const line = childNote(c, icon === 'running')
+                    const stale = staleLine(c)
                     return (
                       <button
                         key={c.id}
@@ -1977,11 +2012,12 @@ function ChildrenBar({
                               </span>
                             )}
                           </span>
-                          {icon === 'running'
-                            ? activityText(c.activity) && (
-                                <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
-                              )
-                            : c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
+                          {(line || stale) && (
+                            <span className="flex min-w-0 items-center gap-1">
+                              {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}
+                              {stale && <span className={cn('shrink-0 text-xs', stale.cls)}>· {stale.text}</span>}
+                            </span>
+                          )}
                           {c.branch && (
                             <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
                               <GitBranch className="h-3 w-3 shrink-0" />

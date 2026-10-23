@@ -66,7 +66,10 @@ import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
+  childActivity,
+  childLastActivity,
   childStartedAt,
+  childWait,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -2035,22 +2038,30 @@ function tasksRoute(
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
-      .map((x) => ({
-        id: x.id,
-        title: x.title,
-        status: x.status,
-        summary: x.summary,
-        working: x.working,
-        updatedAt: x.updatedAt,
-        cliAlive: live.has(x.id),
-        startedAt: childStartedAt(x),
-        // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
-        requests: (x.requests ?? []).length,
-        asking: x.parentAsks?.length ?? 0,
-        // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
-        plan: openPlan(x),
-        resolved: x.resolved === true,
-      }))
+      .map((x) => {
+        const doing = childActivity(x)
+        const open = openPlan(x)
+        return {
+          id: x.id,
+          title: x.title,
+          status: x.status,
+          summary: x.summary,
+          working: x.working,
+          updatedAt: x.updatedAt,
+          cliAlive: live.has(x.id),
+          startedAt: childStartedAt(x),
+          // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
+          requests: (x.requests ?? []).length,
+          asking: x.parentAsks?.length ?? 0,
+          // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成；带上正在做的那一步
+          plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
+          // 和正式版一致：父对话的子对话栏靠这两项显示在做什么、多久没新输出
+          activity: doing,
+          lastActivityAt: childLastActivity(x),
+          waiting: childWait(x, { cliAlive: live.has(x.id) }),
+          resolved: x.resolved === true,
+        }
+      })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
   if (sub === 'messages') {

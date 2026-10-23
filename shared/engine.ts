@@ -82,7 +82,7 @@ import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
-import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
   activePlan,
@@ -421,6 +421,12 @@ export interface EngineHost {
       busy?: boolean
       summary: string
       at: string
+      /** 这会儿在做什么（正在调的工具、计划做到第几步）：有空就不至于以「没动静」为由猜它卡住了 */
+      doing?: string
+      /** 在等什么（等用户回答、等后台命令、等子任务）：不是在跑也不是卡住 */
+      waiting?: string
+      /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
+      lastActivityAt?: string
     }[]
   >
   /** 新建子对话并异步执行，返回后父对话继续；完成后由宿主把结果回报到父对话 */
@@ -2439,7 +2445,16 @@ function makeOrchestra(
       const list = await host.listConversations()
       if (!list.length) return '（还没有子对话）'
       return list
-        .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
+        .map((c) =>
+          [
+            `- ${c.id}｜${c.title}｜${c.status}`,
+            c.summary ? `：${clip(c.summary, 200)}` : '',
+            // 在等什么、最后有动静多久了：「是不是卡住了」靠这两项回答，不再让人拿分支时间戳猜
+            c.waiting ? `｜${c.waiting}` : '',
+            c.doing ? `｜在做：${c.doing}` : '',
+            c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : `｜最近 ${timeAgo(c.at)}`,
+          ].join(''),
+        )
         .join('\n')
     },
     async createConversation(title, message, files, step) {
@@ -2970,7 +2985,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
           ? list
               .map(
                 (c) =>
-                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}：${clip(c.summary, 200) || '（还没有结果）'}`,
+                  `- ${c.id}｜${c.title}｜${c.busy ? '执行中' : c.status}${c.waiting ? `｜${c.waiting}` : ''}${c.lastActivityAt ? `｜最后活动 ${timeAgo(c.lastActivityAt)}` : ''}：${clip(c.summary, 200) || '（还没有结果）'}`,
               )
               .join('\n')
           : '（还没有子对话）'

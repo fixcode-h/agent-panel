@@ -13,15 +13,8 @@ export const statusLabel: Record<TaskStatus, string> = {
   failed: t('失败'),
 }
 
-/** 「3 分钟前」这类相对时间 */
-export function timeAgo(iso: string, now = Date.now()) {
-  const s = Math.max(0, (now - new Date(iso).getTime()) / 1000)
-  if (s < 60) return t('刚刚')
-  if (s < 3600) return t('{n} 分钟前', { n: Math.floor(s / 60) })
-  if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
-  if (s < 86400 * 30) return t('{n} 天前', { n: Math.floor(s / 86400) })
-  return new Date(iso).toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN')
-}
+/** 「3 分钟前」这类相对时间：实现在 shared/task（服务端给父对话的清单也用它），这里只转出去 */
+export { timeAgo } from '@shared/task'
 
 export const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))

@@ -3,13 +3,19 @@ import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task } from './schema.ts'
 import {
+  childActivity,
+  childActivityText,
   childComplete,
   childHolds,
   childHoldsOf,
   childHoldText,
   childIcon,
+  childLastActivity,
   childSpinning,
   childStage,
+  childStale,
+  childWait,
+  childWaitText,
   childWaiting,
   keepAliveVictims,
   runRunning,
@@ -350,4 +356,143 @@ test('keepAliveVictims：超过上限时结束最久没用的，正在看的和�
   )
   // 0 表示不限制
   assert.deepEqual(keepAliveVictims(list, 0, 'd'), [])
+})
+
+/** 子对话的任务快照：只写被测字段，其余给最小默认值 */
+const kidTask = (over: Partial<Task> = {}) =>
+  ({
+    id: 'k',
+    title: '子对话',
+    status: 'running',
+    working: false,
+    messages: [],
+    steps: [],
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    updatedAt: '2026-01-01T10:00:00Z',
+    ...over,
+  }) as unknown as Task
+
+/** 一份没做完的计划：第一步做完、第二步在跑（或等待中） */
+const planOf = (status: 'running' | 'waiting' = 'running') =>
+  [
+    {
+      id: 'p1',
+      title: '修 Bug',
+      doneAt: '',
+      steps: [
+        { id: 's1', title: '改后端', status: 'done', note: '', waits: [], children: [], startedAt: '', endedAt: '' },
+        {
+          id: 's2',
+          title: '补测试',
+          status,
+          note: '',
+          waits: [],
+          children: [],
+          startedAt: '2026-01-01T09:00:00Z',
+          endedAt: '',
+        },
+      ],
+    },
+  ] as unknown as Task['plans']
+
+test('childWait：等用户 > 等确认 > 等后台命令 > 等子任务 > 等工作流 > 等下一句', () => {
+  const ask = kidTask({ parentAsks: [{}] as never, requests: [] as never })
+  assert.deepEqual(childWait(ask, { background: 2, cliAlive: true }), { kind: 'answer', n: 1 })
+
+  const confirm = kidTask({ requests: [{}] as never })
+  assert.deepEqual(childWait(confirm, { background: 2, cliAlive: true }), { kind: 'confirm', n: 1 })
+
+  // 后台命令在服务端跑，任务里只有编号：数量由调用方传
+  assert.deepEqual(childWait(kidTask({ working: true }), { background: 2 }), { kind: 'background', n: 2 })
+
+  // 派出去的子任务（spawn_agents 的步骤）还在跑
+  const sub = kidTask({
+    working: true,
+    steps: [{ id: 'h1', title: '查代码', status: 'running', slot: 'sub' }] as never,
+  })
+  assert.deepEqual(childWait(sub), { kind: 'helpers', list: ['查代码'] })
+
+  // 工作流运行还没结束：工具调用早返回了，运行本身还在跑
+  const run = kidTask({ working: true, runs: [{ status: 'running', endedAt: '' }] as never })
+  assert.deepEqual(childWait(run), { kind: 'workflow' })
+
+  // 进程活着但这一轮已经结束：在等下一句，不是卡住
+  assert.deepEqual(childWait(kidTask({ working: false }), { cliAlive: true }), { kind: 'next' })
+  assert.equal(childWait(kidTask({ working: false }), { cliAlive: false }), undefined)
+})
+
+test('childStale：执行中很久没新输出标黄 / 标红，能解释的等待不标', () => {
+  const now = Date.parse('2026-01-01T10:10:00Z')
+  const at = (iso: string) => ({ working: true, lastActivityAt: iso })
+
+  assert.equal(childStale(at('2026-01-01T10:09:30Z'), now), '')
+  // 模型一步要几十秒，两分钟以内不动不算异常
+  assert.equal(childStale(at('2026-01-01T10:08:30Z'), now), '')
+  assert.equal(childStale(at('2026-01-01T10:07:00Z'), now), 'slow')
+  assert.equal(childStale(at('2026-01-01T09:55:00Z'), now), 'stale')
+  // 等后台命令、等用户、等工作流时没有新输出是正常的
+  assert.equal(childStale({ ...at('2026-01-01T09:55:00Z'), wait: { kind: 'background', n: 1 } }, now), '')
+  assert.equal(childStale({ ...at('2026-01-01T09:55:00Z'), wait: { kind: 'answer', n: 1 } }, now), '')
+  // 没在跑就不标
+  assert.equal(childStale({ working: false, lastActivityAt: '2026-01-01T09:00:00Z' }, now), '')
+})
+
+test('childLastActivity：最后一条消息、节点结束时间和任务更新时间里取最晚的', () => {
+  const msg = (at: string) => ({ id: at, role: 'agent' as const, agentId: '', step: '', text: '', tools: [], at })
+  assert.equal(
+    childLastActivity(kidTask({ updatedAt: '2026-01-01T10:00:00Z', messages: [msg('2026-01-01T10:05:00Z')] as never })),
+    '2026-01-01T10:05:00Z',
+  )
+  assert.equal(
+    childLastActivity(
+      kidTask({
+        updatedAt: '2026-01-01T10:00:00Z',
+        messages: [msg('2026-01-01T10:05:00Z')] as never,
+        steps: [{ id: 's', title: '节点', status: 'running', endedAt: '2026-01-01T10:08:00Z' }] as never,
+      }),
+    ),
+    '2026-01-01T10:08:00Z',
+  )
+  // 都没有时退回任务更新时间，不返回空串以外的异常
+  assert.equal(childLastActivity(kidTask({ updatedAt: '2026-01-01T10:00:00Z' })), '2026-01-01T10:00:00Z')
+})
+
+test('childActivity：没在跑也带出计划当前步骤，父对话不用翻计划窗口', () => {
+  const task = kidTask({ working: false, plans: planOf() })
+  const a = childActivity(task)
+  assert.deepEqual(a?.plan, { title: '补测试', child: undefined, done: 1, total: 2 })
+  // 没在跑、也没有计划时为空
+  assert.equal(childActivity(kidTask({ working: false })), undefined)
+
+  // 在跑时附上计划当前步骤，正在做的动作照常给
+  const running = kidTask({
+    working: true,
+    plans: planOf(),
+    messages: [
+      {
+        id: 'm1',
+        role: 'agent',
+        agentId: '',
+        step: '',
+        text: '',
+        tools: [{ id: 'x', kind: 'bash', name: 'bash', label: 'npm run test:unit', running: true }],
+        at: '2026-01-01T10:00:00Z',
+      },
+    ] as never,
+  })
+  const doing = childActivity(running)
+  assert.equal(doing?.tool?.label, 'npm run test:unit')
+  assert.equal(doing?.plan?.title, '补测试')
+  // 一句话版本：在做什么 + 计划做到第几步
+  assert.match(childActivityText(doing), /npm run test:unit/)
+  assert.match(childActivityText(doing), /计划 1\/2 · 补测试/)
+})
+
+test('childWaitText：等待原因说成一句话', () => {
+  assert.equal(childWaitText({ kind: 'next' }), '等下一句')
+  assert.equal(childWaitText({ kind: 'background', n: 2 }), '等 2 个后台命令')
+  assert.equal(childWaitText({ kind: 'answer', n: 1 }), '等用户回答 1 个提问')
+  assert.equal(childWaitText(undefined), '')
 })

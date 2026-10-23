@@ -29,7 +29,12 @@ import {
   advanceChild,
   askOptions,
   beginRun,
+  childActivity,
+  childActivityText,
+  childLastActivity,
   childStartedAt,
+  childWait,
+  childWaitText,
   childFlowOf,
   childHoldsOf,
   childHoldText,
@@ -47,7 +52,6 @@ import {
   taskSummary,
   withAttachments,
   withTaskModel,
-  type ChildActivity,
   type ChildFlowStop,
   type ChildHold,
 } from '../shared/task.ts'
@@ -439,30 +443,6 @@ export function tasksApi(deps: {
   const refreshAgents = async () => (liveAgents = await deps.agents.list())
 
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
-  /**
-   * 子对话这会儿在做什么（父对话的子对话栏里接在名字后面）：在跑的工作流节点、在等的子任务、
-   * 正在调用的工具，或者正在说的最后一句。没在执行时没有
-   */
-  function activityOf(tk: Task): ChildActivity | undefined {
-    if (!tk.working) return undefined
-    const running = tk.steps.filter((s) => s.status === 'running' && s.kind !== 'main')
-    const nodes = running.filter((s) => !s.parentId).map((s) => s.title)
-    if (nodes.length) return { steps: nodes }
-    const helpers = running.filter((s) => s.slot === 'sub').map((s) => s.title)
-    const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && !m.step)
-    const tool =
-      [...(last?.tools ?? [])].reverse().find((x) => x.running) ?? (last?.text.trim() ? undefined : last?.tools.at(-1))
-    if (tool) return { tool: { kind: tool.kind, name: tool.name, label: tool.label.slice(0, 200) } }
-    if (helpers.length) return { helpers }
-    const line = (last?.text ?? '')
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .at(-1)
-    if (line) return { text: line.slice(0, 200) }
-    return { thinking: true }
-  }
-
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
     return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
@@ -1970,6 +1950,7 @@ export function tasksApi(deps: {
           // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
           return kids.map((k) => {
             const cur = live.get(k.id)?.task ?? k
+            // 在做什么、在等什么、多久没新输出：父对话问「是不是卡住了」时不用再去猜
             return {
               id: cur.id,
               title: cur.title,
@@ -1977,6 +1958,9 @@ export function tasksApi(deps: {
               busy: cur.working || startQueue.has(cur.id),
               summary: cur.summary || lastReply(cur),
               at: cur.updatedAt,
+              doing: childActivityText(childActivity(cur)),
+              waiting: childWaitText(childWait(cur, { background: pendingJobs(cur.id), cliAlive: live.has(cur.id) })),
+              lastActivityAt: childLastActivity(cur),
             }
           })
         },
@@ -2379,6 +2363,10 @@ export function tasksApi(deps: {
     const items = await Promise.all(
       kids.map(async (t) => {
         const liveTask = live.get(t.id)?.task ?? t
+        // 子对话栏、超时判定、计划面板都读这两份：同一处算出「在做什么」和「在等什么」
+        const doing = childActivity(liveTask)
+        const pending = pendingJobs(liveTask.id)
+        const open = openPlan(liveTask)
         return {
           id: liveTask.id,
           title: liveTask.title,
@@ -2393,19 +2381,23 @@ export function tasksApi(deps: {
           // 总览分组用：等用户确认的请求数、还在跑的后台命令数、独立 worktree 的分支
           requests: liveTask.requests.length,
           // 后台命令跑在服务端，CLI 只是在等结果：有这个就还当执行中，不能显示成已完成
-          background: pendingJobs(liveTask.id),
+          background: pending,
           // start_plan 启动的工作流运行还没跑完：「启动工作流」那一行工具调用早就返回了，不能凭它当结束
           workflow: runRunning(liveTask),
           // 它派出去的子任务还在跑：结果交回来它还要接着做，也不能算做完了
           helpers: helpersWorking(liveTask),
-          // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」
-          plan: openPlan(liveTask),
+          // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
+          plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
           // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childUnmerged）
           unmerged: await childUnmerged(liveTask, project),
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
-          activity: activityOf(liveTask),
+          activity: doing,
+          // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时，界面上标黄 / 标红
+          lastActivityAt: childLastActivity(liveTask),
+          // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）：不是在跑也不是卡住
+          waiting: childWait(liveTask, { background: pending, cliAlive: live.has(liveTask.id) }),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
           // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
