@@ -286,7 +286,8 @@ export interface Orchestra {
   plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
-  setPlan(input: { title?: string; steps?: PlanItemInput[] }): { ok: boolean; info: string }
+  /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
+  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): { ok: boolean; info: string }
   finishPlan(summary: string): { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
@@ -1028,7 +1029,7 @@ ${now}
 
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
-- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。
+- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
