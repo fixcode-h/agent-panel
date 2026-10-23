@@ -76,6 +76,15 @@ export const RETIRED_BUNDLED: Record<string, Record<string, string>> = {
     'SKILL.md': '219b4d0fd8865eb8090937c8da7d7a9fbd04495047ad23c8d07f8b9168f71bab',
     'templates/task.p4change.md': 'a41e477fb24cda426533c1cd14d267f99a7a7f42fb926286a67c0b328146ed26',
   },
+  // 下面两个是部署到「分类/名字」目录的（设置 → 部署）。UE 编译改由父对话申请执行，资源锁和编译排队交给面板
+  'ue/ue-multi-agent-coordination': {
+    'SKILL.md': '12cfcf5a1f554b11e11ebd37de04befee5c3dd7895f8f74ada486c694c70585e',
+  },
+  // .luac 只由项目测试步骤里的编译生成，不再单独带一份编译技能
+  'ue/lua-luac-compiler': {
+    'SKILL.md': '5ff4623b346db832f5142bb4534321c8ce6548f4686db0569e62f6e965732c49',
+    'scripts/check_lua_syntax.py': '23376e1d476162a1ad8bed2c4c2814dda03e98fc317c927489d85e9a91a22acc',
+  },
 }
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex')

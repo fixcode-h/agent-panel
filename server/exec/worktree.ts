@@ -178,8 +178,8 @@ export async function checkRepo(repo: string) {
   if (head.code !== 0) throw new Error(t('项目还没有任何提交，不能用独立分支执行'))
 }
 
-/** UE 这类大项目：项目目录或仓库根目录里有 .uproject */
-async function isBigProject(repo: string) {
+/** UE 这类大项目：项目目录或仓库根目录里有 .uproject（UE 项目的编译也按这个判断归父对话） */
+export async function isBigProject(repo: string) {
   const root = (await git(repo, 'rev-parse', '--show-toplevel')).stdout.trim() || repo
   for (const dir of new Set([repo, root])) {
     const names = await readdir(dir).catch(() => [] as string[])

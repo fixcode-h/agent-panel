@@ -295,6 +295,16 @@ export function createBackground(
         })
         .join('\n')
     },
+    /**
+     * 这个目录里还没结束的独占命令（正在跑的在前）：UE 编译按目录占位，申请时告诉申请方现在谁占着、
+     * 也让占着的一方知道后面有人在等。不同目录（各自的 worktree）互不占位
+     */
+    occupants(root: string) {
+      const dir = path.resolve(root)
+      return [...jobs.values()]
+        .filter((x) => x.exclusive && !x.endedAt && (x.cwd === dir || x.cwd.startsWith(dir + path.sep)))
+        .sort((a, b) => (a.state === 'running' ? 0 : 1) - (b.state === 'running' ? 0 : 1))
+    },
     /** 这个对话还在跑的后台命令（界面上显示） */
     list(taskId: string) {
       return [...jobs.values()].filter((j) => j.taskId === taskId)

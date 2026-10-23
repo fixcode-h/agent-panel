@@ -6,7 +6,7 @@ user-invocable: true
 
 # UE 项目结构
 
-C++ 代码风格见 `cpp-code-style`，多 Agent 并行时的资源冲突见 `ue-multi-agent-coordination`，Lua 见 `lua-code-style`。这里讲项目怎么组织、怎么编译、怎么验证。
+C++ 代码风格见 `cpp-code-style`，Lua 见 `lua-code-style`。这里讲项目怎么组织、怎么编译、怎么验证。
 
 ## 先确认的事实
 

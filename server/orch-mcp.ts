@@ -263,6 +263,48 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
+    ...(o.ueBuild === 'parent'
+      ? [
+          {
+            name: 'request_build',
+            title: '申请编译',
+            description:
+              'UE 项目：收到子对话的编译申请或用户要求时，向面板申请编译（跑项目测试步骤里的编译）。编译是占位的资源：同一编译目录同一时间只编译一次，别的父对话占着时排在后面，面板会告诉你是谁、也告诉对方你在等。马上返回，结果推回给你。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                note: { type: 'string', description: '为什么编译：哪些子对话申请的、包含哪些改动' },
+                ...(o.plans ? { step: stepField('这次编译') } : {}),
+              },
+              required: ['note'],
+            },
+          },
+        ]
+      : []),
+    ...(o.peers
+      ? [
+          {
+            name: 'list_peers',
+            title: '查看其他父对话',
+            description: '列出同一项目里的其他父对话：id、标题、状态、是否占着编译。要和它们协调前先用它。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'message_peer',
+            title: '给其他父对话传话',
+            description:
+              '给同一项目里的另一个父对话传话（例如你在等它的编译、要改它也在改的公共文件）：它正在执行就实时送达，空闲就放进它的收件箱，下一轮处理。只协调，不替它做决定。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '父对话 id（list_peers 里有）' },
+                text: { type: 'string', description: '要告诉它的事，写清背景和你希望它怎么配合' },
+              },
+              required: ['id', 'text'],
+            },
+          },
+        ]
+      : []),
     ...(o.child
       ? [
           {
@@ -326,10 +368,39 @@ export function orchTools(o: Orchestra) {
                       tests: {
                         type: 'string',
                         description:
-                          '在独立分支里跑了哪些编译、测试，结果如何（例如「npm run typecheck、npm test 全部通过」）',
+                          o.ueBuild === 'child'
+                            ? '做了哪些不用编译的检查、结果如何，并写明「UE 编译已申请父对话」'
+                            : '在独立分支里跑了哪些编译、测试，结果如何（例如「npm run typecheck、npm test 全部通过」）',
                       },
+                      ...(o.ueBuild === 'child'
+                        ? {
+                            build: {
+                              type: 'boolean',
+                              description:
+                                'UE 项目：合回原分支后替你向父对话申请编译（默认 true）；只改文档、注释这类不影响编译的内容时写 false',
+                            },
+                          }
+                        : {}),
                     },
                     required: ['tests'],
+                  },
+                },
+              ]
+            : []),
+          // 有独立分支的走 submit_merge 的 build：改动要先合回父对话的目录才编得到
+          ...(o.ueBuild === 'child' && !o.canSubmit
+            ? [
+                {
+                  name: 'request_build',
+                  title: '申请编译',
+                  description:
+                    'UE 项目：子对话不编译。改完、做完不用编译的检查后调用，向父对话申请编译；父对话按申请向面板占位编译，结果由父对话转给你。马上返回。',
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      note: { type: 'string', description: '改了哪些模块和文件、需要编哪个目标、做过哪些检查' },
+                    },
+                    required: ['note'],
                   },
                 },
               ]
@@ -609,7 +680,17 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     // submit_build 是旧名字：保活的 CLI 进程拿的还是旧工具列表
     case 'submit_merge':
     case 'submit_build': {
-      const r = await o.submitMerge(str(a?.note), str(a?.tests))
+      const r = await o.submitMerge(str(a?.note), str(a?.tests), o.ueBuild === 'child' ? a?.build !== false : undefined)
+      return text(r.info, !r.ok)
+    }
+    case 'request_build': {
+      const r = await o.requestBuild(str(a?.note), str(a?.step) || undefined)
+      return text(r.info, !r.ok)
+    }
+    case 'list_peers':
+      return text(await o.listPeers())
+    case 'message_peer': {
+      const r = await o.messagePeer(str(a?.id), str(a?.text))
       return text(r.info, !r.ok)
     }
     case 'message_parent': {
@@ -738,14 +819,14 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_merge 测试跑通后合回原分支、完成子对话（结果会推回来）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? (o.ueBuild === 'child' ? 'submit_merge 检查完合回原分支并申请编译（UE 不在子对话里编译）、' : 'submit_merge 测试跑通后合回原分支、完成子对话（结果会推回来）、') : o.ueBuild === 'child' ? 'request_build 向父对话申请编译（UE 不在子对话里编译）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
   if (o.planning)
-    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}${o.ueBuild === 'parent' ? 'request_build 收到编译申请时向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   if (o.coordinator)
-    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${o.ueBuild === 'parent' ? '收到编译申请时用 request_build 向面板占位编译；' : ''}${o.peers ? 'list_peers / message_peer 和同项目的其他父对话协调；' : ''}${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   return o.self.endsWith('@main')
     ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务，${collect}${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
     : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，${collect}；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`

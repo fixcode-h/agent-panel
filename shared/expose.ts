@@ -1,5 +1,6 @@
 import type { Agent, FlowNode, ParamValues, Workflow, WorkflowExpose } from './schema.ts'
 import { projectAgentValues, workflowAgentIds } from './agent-params.ts'
+import { RETIRED_SKILLS } from './skill-guide.ts'
 
 /**
  * 工作流暴露项：工作流里用 `{{槽名}}` 在技能列表、节点参数、工作流说明里占位，
@@ -157,5 +158,7 @@ export function exposeSlots(w: Pick<Workflow, 'expose'>, params: ParamValues) {
 
 /** 把技能列表里的 `{{槽名}}` 换成任务快照里的取值；没配到的槽（残留的 {{…}}）丢掉 */
 export function fillSkills(skills: string[], slots: Record<string, string>) {
-  return skills.map((s) => fillSlots(s, slots).trim()).filter((s) => s && !/\{\{[^}]*\}\}/.test(s))
+  return skills
+    .map((s) => fillSlots(s, slots).trim())
+    .filter((s) => s && !/\{\{[^}]*\}\}/.test(s) && !RETIRED_SKILLS.has(s))
 }
