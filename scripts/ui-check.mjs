@@ -363,6 +363,18 @@ try {
       errors.push('子对话运行视图：标题栏左边没有返回子对话的按钮')
     if (!(await p.getByRole('button', { name: '关闭子对话面板' }).count()))
       errors.push('子对话运行视图：标题栏右边没有关闭子对话面板的按钮')
+    // 子对话启动的工作流也能补充要求：输入框跟着放进运行视图底下，盖住的子对话里不再留一个
+    {
+      const box = await p.evaluate(() => {
+        const view = document.querySelector('button[aria-label="返回子对话"]')?.closest('.absolute')
+        return {
+          inView: view?.querySelectorAll('#follow-up').length ?? 0,
+          under: view?.parentElement ? [...view.parentElement.querySelectorAll('#follow-up')].length : 0,
+        }
+      })
+      if (box.inView !== 1) errors.push(`子对话运行视图：底下应该有一个输入框（现在 ${box.inView} 个）`)
+      else if (box.under !== 1) errors.push(`子对话运行视图：被盖住的子对话里还留着输入框（共 ${box.under} 个）`)
+    }
     // 窄窗口：标题截断，但返回和 ✕ 不能被挤掉（手机上子对话面板占满整个宽度）
     {
       await p.setViewportSize({ width: 420, height: 860 })

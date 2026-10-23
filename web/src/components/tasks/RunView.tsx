@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ArrowLeft, Copy, Loader2, MoreHorizontal, Workflow as WorkflowIcon, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { StepStatus, Task, ToolUse } from '@shared/schema'
@@ -34,6 +35,7 @@ export function RunView({
   tool,
   onBack,
   onClose,
+  footer,
 }: {
   /** 子对话自己的任务：运行和节点的输出都在它上面 */
   task: Task
@@ -44,6 +46,8 @@ export function RunView({
   onBack: () => void
   /** 关掉子对话面板本身；不给时不显示 ✕ */
   onClose?: () => void
+  /** 子对话的输入框：跟着这次运行放在底下，和右栏运行面板（RunPanel）用的是同一个 */
+  footer?: ReactNode
 }) {
   // Esc 和返回按钮一样回子对话，不关面板
   useEscape(true, onBack)
@@ -136,6 +140,7 @@ export function RunView({
           </div>
         </div>
       )}
+      {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
     </div>
   )
 }
