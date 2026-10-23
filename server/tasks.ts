@@ -73,6 +73,7 @@ import {
   commitMerge,
   commitWorktree,
   createWorktree,
+  ensureWorktree,
   mergeBlocker,
   currentBranch,
   mergeWorktree,
@@ -424,6 +425,58 @@ export function tasksApi(deps: {
       next.catch(() => {}),
     )
     return next
+  }
+
+  /**
+   * 独立分支的工作区被回收了（合并完、标记完成、用户手动清理），对话又被继续：
+   * 按原来的分支名把工作区建回来再执行，而不是直接报「项目目录不存在」。
+   * 分支还在就从它接着改，分支也没了就从现在所在的分支重新开同名分支；合并回哪里也按当前目录重算。
+   * 返回空字符串：不用重建或重建好了；返回的是给用户看的失败说明（已经尝试重建、怎么重试）。
+   * 没开过独立分支、或者用户主动删除（discarded）的对话不受影响，仍在原目录执行。
+   */
+  async function restoreWorktree(tk: Task, project: Project): Promise<string> {
+    const wt = tk.worktree
+    if (!wt || (wt.state !== 'active' && wt.state !== 'merged')) return ''
+    if (existsSync(wt.path)) return ''
+    // 子对话从父对话现在的目录开、合回那里；顶层对话就是项目目录
+    const cwd = (tk.parentTaskId ? await worktreeHome(tk, project) : '') || project.path
+    try {
+      const r = await ensureWorktree(cwd, wt, tk.id, tk.title)
+      tk.worktree = r.worktree
+      // 改动从重建这一刻重新算：之前的改动已经合回原分支了
+      tk.baseRef = await gitHead(r.worktree.path).catch(() => tk.baseRef)
+      tk.baseline = (await gitNumstat(r.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+      tk.updatedAt = new Date().toISOString()
+      await store.update(tk.id, tk)
+      log.info('task', '重建了独立分支的工作区', {
+        task: tk.id,
+        branch: r.worktree.branch,
+        base: r.worktree.baseBranch,
+        path: r.worktree.path,
+      })
+      return ''
+    } catch (e) {
+      log.warn('task', '重建独立分支的工作区失败', { task: tk.id, error: (e as Error).message })
+      return (e as Error).message
+    }
+  }
+
+  /** 重建失败时按「执行出错」记进对话：错误留得住，用户能照着里面写的重试 */
+  function recordWorktreeError(tk: Task, error: string) {
+    tk.status = 'failed'
+    tk.working = false
+    tk.awaitingUser = false
+    tk.updatedAt = new Date().toISOString()
+    tk.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t('执行出错：{error}', { error }),
+      tools: [],
+      error: true,
+      at: new Date().toISOString(),
+    })
   }
 
   /**
@@ -1083,6 +1136,8 @@ export function tasksApi(deps: {
     // 项目里给必备角色填的参数当作这个项目里的默认值（对话、节点、派出去的子 Agent 都按它）
     agents = withProjectParams(agents, found ?? undefined)
     if (task.projectId) await ensureChildWorktree(entry, found)
+    // 独立分支的工作区被回收后又继续（父对话交给子对话、面板重启后续接）：先建回来，再按新目录执行
+    const restoreErr = !prewarm && found ? await restoreWorktree(entry.task, found) : ''
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await taskDir(task).catch(() => found.path) : ''
@@ -1142,6 +1197,8 @@ export function tasksApi(deps: {
     const run = (async () => {
       // 项目被删掉后任务还在，这时没有目录可以执行
       if (!project) throw new Error(t('任务所属的项目已经不存在'))
+      // 工作区建不回来就别再跑下去了：runRealTurn 里只会报「项目目录不存在」，用户不知道该怎么办
+      if (restoreErr) throw new Error(restoreErr)
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
       const snapshot = await gitNumstat(project.path, entry.task.baseRef).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
@@ -1415,6 +1472,29 @@ export function tasksApi(deps: {
     }
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
+    // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录
+    const project = next.projectId ? await deps.projects.get(next.projectId) : null
+    const restoreErr = project ? await restoreWorktree(next, project) : ''
+    if (restoreErr) {
+      if (!m.recorded) {
+        next.messages.push({
+          id: randomUUID(),
+          role: m.panel ? 'system' : 'user',
+          agentId: '',
+          step: '',
+          text: m.text,
+          ...(m.panel ? { panel: m.panel } : {}),
+          ...(expanded ? { prompt: expanded } : {}),
+          tools: [],
+          ...(m.attachments.length ? { attachments: m.attachments } : {}),
+          at: new Date().toISOString(),
+        })
+      }
+      recordWorktreeError(next, restoreErr)
+      await store.update(id, next)
+      release(entry)
+      return next
+    }
     // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await placeInTask(next, m.attachments))
     if (!m.recorded) {
@@ -1831,6 +1911,10 @@ export function tasksApi(deps: {
   async function prewarmChat(task: Task, force = false): Promise<Task> {
     if (live.has(task.id)) return live.get(task.id)!.task
     if (task.imported || task.mode !== 'chat') return task
+    // 独立分支的工作区已经被回收（合并完、标记完成）：预热不了，也不自动去建分支，
+    // 等用户真发消息时再重建（后台打开对话页面不应该多出一个分支）
+    const wt = task.worktree
+    if (wt && (wt.state === 'active' || wt.state === 'merged') && !existsSync(wt.path)) return task
     // 没有会话、刚撤回时下一轮本来就要重开，预热没有意义
     if (!task.sessions[task.agentId] || task.rewind) return task
     // 落盘里还写着「执行中」但内存里没有这个任务：进程早就不在了（面板重启、崩溃），

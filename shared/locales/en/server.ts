@@ -296,6 +296,9 @@ export const EN_SERVER: Record<string, string> = {
   '项目不是 git 仓库，不能用独立分支执行': 'The project is not a git repository, so it cannot run on a separate branch',
   '项目还没有任何提交，不能用独立分支执行': 'The project has no commits yet, so it cannot run on a separate branch',
   创建独立分支失败: 'Failed to create the separate branch',
+  '重建独立工作区失败：{error}': 'Failed to rebuild the separate workspace: {error}',
+  '已经尝试重建（分支 {branch}，目录 {dir}），没有留下半个工作区。可以到原目录跑 git worktree prune 和 git branch -d {branch} 清掉残留后再试一次；或者把这个对话的独立分支删掉，让它回到原目录执行。':
+    'Tried to rebuild it (branch {branch}, folder {dir}) and left nothing half-created. In the project folder, run git worktree prune and git branch -d {branch} to clear the leftovers and try again, or delete this conversation’s separate branch so it runs in the project folder.',
   '这个目录不是 git 仓库': 'This directory is not a git repository',
   '没有这个分支：{branch}': 'There is no branch named {branch}',
   切换分支失败: 'Failed to switch branches',
