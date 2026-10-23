@@ -6,6 +6,7 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import {
   INTEGRATIONS,
+  authState,
   getIntegration,
   type Integration,
   type IntegrationInstallJob,
@@ -86,9 +87,8 @@ async function readAuth(def: Integration) {
   if (def.auth.file) return { authed: existsSync(credentialFile(def)), account: '', output: '' }
   const s = await capture(commandPath(def) ?? def.command, def.auth.status ?? [], homedir(), quietEnv(def), 15_000)
   const output = sanitize([s.stdout, s.stderr].filter(Boolean).join('\n'))
-  const authed = s.code === 0
-  const account = authed && def.auth.account ? (output.match(def.auth.account)?.[1] ?? '') : ''
-  return { authed, account, output }
+  // 登录判定和账号正则都在 shared/integrations.ts 的 authState 里，单元测试用固定样例验证同一份逻辑
+  return { ...authState(def, s.code, output), output }
 }
 
 /** 检测一个工具：装了没有、什么版本、登录没有、登录着哪个账号 */
