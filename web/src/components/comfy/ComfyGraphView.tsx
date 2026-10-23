@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -6,7 +6,11 @@ import {
   Handle,
   Position,
   ReactFlow,
+  ReactFlowProvider,
   applyNodeChanges,
+  getNodesBounds,
+  useNodesInitialized,
+  useReactFlow,
   type Edge,
   type Node,
   type NodeChange,
@@ -36,8 +40,23 @@ interface NodeData extends Record<string, unknown> {
 const ROW = 28
 const HEAD = 44
 const COL = 300
+/** 节点标题行加内边距的实际高度，用来算内容尺寸和画布高度 */
+const NODE_HEAD = 48
+/** 同列两个节点之间留的空隙 */
+const GAP = 36
+/** 节点宽（和 ComfyNode 的 w-[260px] 一致），用来估算内容宽度 */
+const NODE_W = 260
+/** 适应时四周留的空隙 */
+const PAD = 20
+/** 左边留给缩放控件（+/−/适应）的宽度，不让它压在节点上 */
+const CONTROL_GUTTER = 48
+/** 适应后缩得太小文字就看不清了：低于这个比例按它居中，剩下的靠拖动和「适应」看 */
+const MIN_READABLE_ZOOM = 0.5
+const MAX_ZOOM = 1
+/** 画布最低高度，内容再少也留得住节点 */
+const MIN_CANVAS_H = 220
 
-/** 按连线分层：没有上游的放最左边，其余放在最深的上游右边一列 */
+/** 按连线分层：没有上游的放最左边，其余放在最深的上游右边一列。同时给出内容的外接尺寸 */
 function layout(graph: Graph) {
   const depth = new Map<string, number>()
   const visit = (id: string, seen: Set<string>): number => {
@@ -56,14 +75,31 @@ function layout(graph: Graph) {
   const cols = new Map<number, string[]>()
   for (const [id, d] of depth) cols.set(d, [...(cols.get(d) ?? []), id])
   const pos = new Map<string, { x: number; y: number }>()
+  let maxDepth = 0
+  let maxY = 0
   for (const [d, ids] of cols) {
     let y = 0
     for (const id of ids) {
+      const inputs = Object.keys(graph[id].inputs).length
       pos.set(id, { x: d * COL, y })
-      y += HEAD + Object.keys(graph[id].inputs).length * ROW + 40
+      // 节点自己的高度（标题行 + 每个输入一行）加下面留的间隔
+      y += NODE_HEAD + inputs * ROW + GAP
     }
+    maxDepth = Math.max(maxDepth, d)
+    maxY = Math.max(maxY, y - GAP)
   }
-  return pos
+  return { pos, width: maxDepth * COL + NODE_W, height: maxY }
+}
+
+/** 视口高度，画布跟着它放大缩小 */
+function useViewportHeight() {
+  const [height, setHeight] = useState(() => (typeof window === 'undefined' ? 900 : window.innerHeight))
+  useEffect(() => {
+    const onResize = () => setHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return height
 }
 
 function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolean; onChange: (v: unknown) => void }) {
@@ -180,7 +216,33 @@ export function ComfyGraphView({
   const ids = Object.keys(graph).join('|')
   // 节点位置只在节点增删时重新排，改值、拖动时保持
   // oxlint-disable-next-line react-hooks/exhaustive-deps
-  const pos = useMemo(() => layout(graph), [ids])
+  const { pos, width: estimateW, height: estimateH } = useMemo(() => layout(graph), [ids])
+  const [width, setWidth] = useState(0)
+  // 节点真实尺寸（字号、内边距都算上）比估算准，量到之后高度按它算
+  const [bounds, setBounds] = useState<{ width: number; height: number } | null>(null)
+  const viewportH = useViewportHeight()
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (rect) setWidth(rect.width)
+    })
+    observer.observe(el)
+    setWidth(el.clientWidth)
+    return () => observer.disconnect()
+  }, [])
+  // 高度按内容实际占的高度给（适应后能填满），内容多时收在视口的一定比例内，不再写死一屏
+  const height = useMemo(() => {
+    const contentW = bounds?.width ?? estimateW
+    const contentH = bounds?.height ?? estimateH
+    const maxH = Math.max(MIN_CANVAS_H, Math.round(viewportH * 0.62))
+    const fitW = width > PAD * 2 + CONTROL_GUTTER ? (width - PAD - CONTROL_GUTTER) / contentW : 1
+    const zoom = Math.max(Math.min(MAX_ZOOM, fitW), MIN_READABLE_ZOOM)
+    const wanted = contentH * Math.min(zoom, MAX_ZOOM) + PAD * 2
+    return Math.round(Math.min(maxH, Math.max(MIN_CANVAS_H, wanted)))
+  }, [width, bounds, estimateW, estimateH, viewportH])
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   useEffect(() => {
     const used = new Map<string, Set<number>>()
@@ -230,12 +292,86 @@ export function ComfyGraphView({
     [graph],
   )
   return (
-    <div className="h-[600px] overflow-hidden rounded-xl border bg-field/40">
+    <div ref={box} className="overflow-hidden rounded-xl border bg-field/40" style={{ height }}>
+      <ReactFlowProvider>
+        <GraphCanvas
+          nodes={nodes}
+          edges={edges}
+          contentKey={`${ids}:${height}`}
+          onBounds={setBounds}
+          onNodesChange={(c: NodeChange<Node<NodeData>>[]) => setNodes((ns) => applyNodeChanges(c, ns))}
+        />
+      </ReactFlowProvider>
+    </div>
+  )
+}
+
+/**
+ * 节点尺寸量好、容器尺寸变了、换了工作流时重新适应到可视区：能全部放进来的就整体居中；
+ * 放进来的话要缩到看不清，就按可读的比例居中，超出部分靠拖动和「适应」看
+ */
+const GraphCanvas = memo(function GraphCanvas({
+  nodes,
+  edges,
+  contentKey,
+  onBounds,
+  onNodesChange,
+}: {
+  nodes: Node<NodeData>[]
+  edges: Edge[]
+  contentKey: string
+  onBounds: (b: { width: number; height: number }) => void
+  onNodesChange: (c: NodeChange<Node<NodeData>>[]) => void
+}) {
+  const flow = useReactFlow()
+  const ready = useNodesInitialized()
+  const box = useRef<HTMLDivElement>(null)
+  const last = useRef({ width: 0, height: 0 })
+  const [size, setSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (rect) setSize({ width: rect.width, height: rect.height })
+    })
+    observer.observe(el)
+    setSize({ width: el.clientWidth, height: el.clientHeight })
+    return () => observer.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!ready || size.width < PAD * 2 || size.height < PAD * 2) return
+    const bounds = getNodesBounds(flow.getNodes())
+    if (!bounds.width || !bounds.height) return
+    // 内容尺寸报给外层定画布高度；尺寸没变就不报，免得来回重算
+    if (Math.abs(last.current.width - bounds.width) >= 1 || Math.abs(last.current.height - bounds.height) >= 1) {
+      last.current = { width: bounds.width, height: bounds.height }
+      onBounds(last.current)
+    }
+    const fit = Math.min(
+      (size.width - PAD - CONTROL_GUTTER) / bounds.width,
+      (size.height - PAD * 2) / bounds.height,
+      MAX_ZOOM,
+    )
+    const zoom = Math.max(Math.min(MAX_ZOOM, fit), MIN_READABLE_ZOOM)
+    // 左边留出控件的位置，剩下的空间里居中
+    const areaW = size.width - PAD - CONTROL_GUTTER
+    flow.setViewport(
+      {
+        x: CONTROL_GUTTER + (areaW - bounds.width * zoom) / 2 - bounds.x * zoom,
+        y: (size.height - bounds.height * zoom) / 2 - bounds.y * zoom,
+        zoom,
+      },
+      { duration: 0 },
+    )
+  }, [ready, size.width, size.height, contentKey, flow, onBounds])
+  return (
+    <div ref={box} className="h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        onNodesChange={(c: NodeChange<Node<NodeData>>[]) => setNodes((ns) => applyNodeChanges(c, ns))}
+        onNodesChange={onNodesChange}
         nodesConnectable={false}
         fitView
         fitViewOptions={{ padding: 0.06 }}
@@ -248,4 +384,4 @@ export function ComfyGraphView({
       </ReactFlow>
     </div>
   )
-}
+})

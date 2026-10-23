@@ -179,7 +179,7 @@ export function ComfyPage() {
   const draftIsNew = draft && !data?.list.some((w) => w.id === draft.id)
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-hidden">
+    <main className="flex min-w-0 flex-1 flex-col lg:h-full lg:overflow-hidden">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1">
           <h1 className="text-[0.9375rem] font-semibold">{t('ComfyUI 工作流')}</h1>
@@ -227,8 +227,8 @@ export function ComfyPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <aside className="flex shrink-0 flex-col gap-3 overflow-y-auto border-b p-3 md:w-[300px] md:border-r md:border-b-0">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <aside className="flex max-h-[42vh] shrink-0 flex-col gap-3 overflow-y-auto border-b p-3 lg:max-h-none lg:w-[204px] lg:border-r lg:border-b-0 2xl:w-[248px]">
           {!data ? (
             <p className="p-3 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
           ) : (
@@ -240,8 +240,8 @@ export function ComfyPage() {
                 <section key={g.title} className="flex flex-col gap-0.5">
                   <h2 className="px-2 pb-1 text-[0.71875rem] font-medium text-subtle">{g.title}</h2>
                   {!g.items.length && (
-                    <p className="px-2 py-1 text-[0.75rem] text-subtle">
-                      {t('还没有。可以复制内置的来改，或者用 AI 生成、从 ComfyUI 导入。')}
+                    <p className="px-2 pb-1 text-[0.75rem] leading-relaxed text-subtle">
+                      {t('还没有，可以导入或让 AI 生成')}
                     </p>
                   )}
                   {g.items.map((w) => (
@@ -286,7 +286,7 @@ export function ComfyPage() {
           {!draft ? (
             <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : (
-            <div className="mx-auto flex max-w-[860px] flex-col gap-4 p-4 md:p-6">
+            <div className="flex flex-col gap-4 p-4 md:p-6">
               <div className="flex flex-wrap items-center gap-2">
                 {readOnly && (
                   <span className="inline-flex items-center gap-1 rounded-md bg-sel px-2 py-0.5 text-[0.75rem] text-muted">
@@ -337,47 +337,49 @@ export function ComfyPage() {
                   {note}
                 </p>
               )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('名称')}>
-                  <Input value={draft.name} disabled={readOnly} onChange={(e) => edit({ name: e.target.value })} />
-                </Field>
-                <Field label={t('用途')}>
-                  <Select
-                    aria-label={t('用途')}
-                    value={draft.use}
+              <div className="flex max-w-[1000px] flex-col gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label={t('名称')}>
+                    <Input value={draft.name} disabled={readOnly} onChange={(e) => edit({ name: e.target.value })} />
+                  </Field>
+                  <Field label={t('用途')}>
+                    <Select
+                      aria-label={t('用途')}
+                      value={draft.use}
+                      disabled={readOnly}
+                      onChange={(e) => edit({ use: e.target.value as ComfyWorkflow['use'] })}
+                      options={WORKFLOW_USES.map((u) => ({ value: u, label: WORKFLOW_USE_LABEL[u] }))}
+                    />
+                  </Field>
+                  <Field label={t('用到的模型')}>
+                    <Select
+                      aria-label={t('用到的模型')}
+                      value={draft.model || 'none'}
+                      disabled={readOnly}
+                      onChange={(e) => edit({ model: e.target.value === 'none' ? '' : e.target.value })}
+                      options={[
+                        ...LOCAL_MODELS.map((m) => ({ value: m.id, label: m.name })),
+                        { value: 'none', label: t('自己的模型（不检查下载）') },
+                      ]}
+                    />
+                  </Field>
+                  <Field label={t('说明')}>
+                    <Input
+                      value={draft.description}
+                      disabled={readOnly}
+                      onChange={(e) => edit({ description: e.target.value })}
+                    />
+                  </Field>
+                </div>
+                <Field label={t('附加要求（英文，加在每张图的描述后面）')}>
+                  <Textarea
+                    rows={2}
+                    value={draft.extra}
                     disabled={readOnly}
-                    onChange={(e) => edit({ use: e.target.value as ComfyWorkflow['use'] })}
-                    options={WORKFLOW_USES.map((u) => ({ value: u, label: WORKFLOW_USE_LABEL[u] }))}
-                  />
-                </Field>
-                <Field label={t('用到的模型')}>
-                  <Select
-                    aria-label={t('用到的模型')}
-                    value={draft.model || 'none'}
-                    disabled={readOnly}
-                    onChange={(e) => edit({ model: e.target.value === 'none' ? '' : e.target.value })}
-                    options={[
-                      ...LOCAL_MODELS.map((m) => ({ value: m.id, label: m.name })),
-                      { value: 'none', label: t('自己的模型（不检查下载）') },
-                    ]}
-                  />
-                </Field>
-                <Field label={t('说明')}>
-                  <Input
-                    value={draft.description}
-                    disabled={readOnly}
-                    onChange={(e) => edit({ description: e.target.value })}
+                    onChange={(e) => edit({ extra: e.target.value })}
                   />
                 </Field>
               </div>
-              <Field label={t('附加要求（英文，加在每张图的描述后面）')}>
-                <Textarea
-                  rows={2}
-                  value={draft.extra}
-                  disabled={readOnly}
-                  onChange={(e) => edit({ extra: e.target.value })}
-                />
-              </Field>
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center gap-3">
                   <span className="flex-1 text-[0.78125rem] font-medium text-muted">
