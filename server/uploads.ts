@@ -136,11 +136,19 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
     const file = path.resolve(p.data.path)
     if (!(await stat(file).catch(() => null))) return c.json({ error: t('附件已经不在了') }, 404)
     if (p.data.reveal) {
-      revealItem(file)
+      try {
+        await revealItem(file)
+      } catch (e) {
+        return c.json({ error: (e as Error).message }, 400)
+      }
       return c.json({ ok: true, revealed: true })
     }
-    if (openWithSystem(file)) return c.json({ ok: true, revealed: false })
-    revealItem(file)
+    try {
+      if (await openWithSystem(file)) return c.json({ ok: true, revealed: false })
+      await revealItem(file)
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
     return c.json({ ok: true, revealed: true })
   })
   return routes

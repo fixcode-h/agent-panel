@@ -233,7 +233,7 @@ export const api = {
   /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
   cliSpecs: () => request<UserClis>('/clis/specs'),
   reloadCliSpecs: () => request<UserClis>('/clis/specs/reload', json('POST', {})),
-  revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
+  revealCliSpecs: () => request<{ ok: boolean; dir: string }>('/clis/specs/reveal', json('POST', {})),
   cliCommands: (id: string, projectId = '') =>
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   /** own：只要 CLI 自己的 Skill，不含 ~/.agents/skills 里共用的 */
@@ -550,8 +550,8 @@ export const api = {
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),
-  revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
-  revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
+  revealData: () => request<{ ok: boolean; dir: string }>('/data/reveal', json('POST', {})),
+  revealLogs: () => request<{ ok: boolean; dir: string }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
@@ -628,5 +628,6 @@ export const api = {
   reloadExtension: (browser: string) =>
     request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
-  revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
+  revealProject: (projectId: string) =>
+    request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
 }

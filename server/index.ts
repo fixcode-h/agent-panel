@@ -347,8 +347,12 @@ app.put('/settings', async (c) => {
 app.get('/clis/specs', (c) => c.json(userClis()))
 app.post('/clis/specs/reveal', async (c) => {
   await mkdir(CLI_CONFIG_DIR, { recursive: true })
-  revealDir(CLI_CONFIG_DIR)
-  return c.json({ ok: true })
+  try {
+    await revealDir(CLI_CONFIG_DIR)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir: CLI_CONFIG_DIR })
 })
 app.post('/clis/specs/reload', async (c) => {
   loadUserClis()
@@ -726,11 +730,15 @@ app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----
 const designs = designsApi({ projects })
-app.post('/designs/browser/reveal', (c) => {
+app.post('/designs/browser/reveal', async (c) => {
   const dir = extensionDir()
   if (!dir) return bad(c, t('没有找到扩展目录'))
-  revealDir(dir)
-  return c.json({ ok: true })
+  try {
+    await revealDir(dir)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir })
 })
 // 刷新扩展：1.3 起的扩展自己重新加载；更早的版本做不到，只能打开扩展页面让用户点刷新
 app.post('/designs/browser/reload', async (c) => {
@@ -753,10 +761,10 @@ app.post('/designs/browser/install', async (c) => {
   if (!dir) return bad(c, t('没有找到扩展目录'))
   try {
     openExtensionsPage(String(browser ?? ''))
+    await revealItem(dir)
   } catch (e) {
     return bad(c, (e as Error).message)
   }
-  revealItem(dir)
   return c.json({ dir })
 })
 app.route('/designs', designs.routes)
@@ -820,8 +828,12 @@ app.post('/fs/reveal', async (c) => {
     .then((s) => s.isDirectory())
     .catch(() => false)
   if (!ok) return bad(c, t('目录不存在：{dir}', { dir }))
-  revealDir(dir)
-  return c.json({ ok: true })
+  try {
+    await revealDir(dir)
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ ok: true, dir })
 })
 
 app.get('/fs/list', async (c) => {
