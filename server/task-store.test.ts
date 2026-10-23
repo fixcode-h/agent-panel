@@ -145,30 +145,29 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
   // 换成一个能认出来的内容：没重写就还是它
   const marker = '[{"id":"marker","role":"user","text":"手写的","tools":[]}]'
   writeFileSync(file, marker, 'utf8')
-  await store.update(created.id, { ...created, messages: created.messages })
+  // 立即落盘（关键节点就这样调）：不走 400ms 合并窗口，断言才能直接看文件
+  await store.update(created.id, { ...created, messages: created.messages }, { now: true })
   assert.equal(readFileSync(file, 'utf8'), marker, '消息没变不重写')
 
   const ids = (raw: string) => JSON.parse(raw) as { id: string; text: string }[]
   // 消息文件按 400ms 窗口合并写：等窗口过去再读，否则读到的是上一次落地的那份
   const settle = () => new Promise((r) => setTimeout(r, 500))
 
-  // 新增一条
+  // 新增一条：关键节点（changed(true) 就这么调）立即落盘，当场可读
   const added = [...created.messages, msg('c', '第三条')]
-  await store.update(created.id, { ...created, messages: added })
-  await settle()
+  await store.update(created.id, { ...created, messages: added }, { now: true })
   assert.deepEqual(
     ids(readFileSync(file, 'utf8')).map((x) => x.id),
     ['a', 'b', 'c'],
   )
 
-  // 替换最后一条
+  // 替换最后一条：普通更新（流式中间态）落在窗口里，窗口过去后必须是最新那份
   await store.update(created.id, { ...created, messages: [...added.slice(0, 2), msg('c', '第三条，接着写')] })
   await settle()
   assert.equal(ids(readFileSync(file, 'utf8')).at(-1)?.text, '第三条，接着写')
 
   // 返工删消息：回到两条
-  await store.update(created.id, { ...created, messages: created.messages })
-  await settle()
+  await store.update(created.id, { ...created, messages: created.messages }, { now: true })
   assert.deepEqual(
     ids(readFileSync(file, 'utf8')).map((x) => x.id),
     ['a', 'b'],
@@ -220,6 +219,28 @@ test('消息连续更新时对话文件按间隔合并写，窗口内的最后�
   await store.remove(task.id)
   await new Promise((r) => setTimeout(r, 600))
   assert.equal(existsSync(file), false, '删掉的任务不会被定时器写回来')
+})
+
+test('合并窗口里紧接着的立即落盘不会被窗口吞掉，也不会被窗口里的旧内容覆盖', async () => {
+  const store = createTaskStore()
+  const task = await store.create(
+    TaskData.parse({ projectId: '', title: '窗口', mode: 'chat', status: 'running', messages: [msg('a', '一')] }),
+  )
+  const file = path.join(dir, 'tasks', 'chats', `${task.id}.messages.json`)
+  const ids = () => (JSON.parse(readFileSync(file, 'utf8')) as { id: string }[]).map((x) => x.id)
+  assert.deepEqual(ids(), ['a'], '创建时就写入')
+
+  // 第一次普通更新：落在窗口里，只排队不写
+  await store.update(task.id, { ...task, messages: [msg('a', '一'), msg('b', '二')] })
+  assert.deepEqual(ids(), ['a'], '窗口内先不写')
+
+  // 紧接着的第二次改动是关键节点（changed(true) 就是这么调的）：必须立即落盘，不能被窗口吞掉
+  await store.update(task.id, { ...task, messages: [msg('a', '一'), msg('b', '二'), msg('c', '三')] }, { now: true })
+  assert.deepEqual(ids(), ['a', 'b', 'c'], '关键节点立即落盘，不等窗口')
+
+  // 窗口到点不能把更旧的那份（两条）写回来
+  await new Promise((r) => setTimeout(r, 600))
+  assert.deepEqual(ids(), ['a', 'b', 'c'], '窗口里排着的旧内容作废')
 })
 
 test('同时在跑的对话超过内存里留的份数：落盘带着完整对话时照样写对，peek 只给任务本身', async () => {

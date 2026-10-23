@@ -148,8 +148,11 @@ export function createTaskStore() {
   async function writeMessages(t: Task) {
     const stamp = stamps.stamp(t.id, t.messages)
     if (written.get(t.id) === stamp) return
-    written.set(t.id, stamp)
     await writeJsonAtomic(msgFileOf(t), t.messages, true)
+    // 写成功才记指纹：写失败（磁盘满、杀毒软件占着文件）时下一次还要重试，不然这段对话就再也不落盘了
+    written.set(t.id, stamp)
+    // 窗口按「真的写了盘」的时间算：窗口里合并写的那一次也要算，不然下一次会提前破窗口
+    msgAt.set(t.id, Date.now())
   }
 
   /** 同任务的写入排队，前一次失败不影响后面的 */
@@ -163,12 +166,12 @@ export function createTaskStore() {
 
   /**
    * 写对话消息文件：不在窗口内就写，窗口内只留最后一次，到点写最新的一份。
-   * 窗口内也要排队写，不能和小文件抢顺序
+   * window 为 false（关键节点、任务结束/失败/停止）时立即写，窗口里排着的那份作废：写的就是最新内容
    */
-  function persistMessages(t: Task): Promise<void> | undefined {
+  function persistMessages(t: Task, window = true): Promise<void> | undefined {
     const id = t.id
     const wait = (msgAt.get(id) ?? 0) + MSG_GAP - Date.now()
-    if (wait > 0) {
+    if (window && wait > 0) {
       msgPending.set(id, t)
       if (!msgTimers.has(id)) {
         msgTimers.set(
@@ -183,7 +186,11 @@ export function createTaskStore() {
       }
       return undefined
     }
-    msgAt.set(id, Date.now())
+    // 立即写：排着的定时器和那份旧内容一起收掉，不做到点又把旧内容写回来
+    const timer = msgTimers.get(id)
+    if (timer) clearTimeout(timer)
+    msgTimers.delete(id)
+    msgPending.delete(id)
     return queueWrite(t, writeMessages)
   }
 
@@ -290,10 +297,10 @@ export function createTaskStore() {
     }
   }
 
-  function persist(task: Task) {
+  function persist(task: Task, opts?: { now?: boolean }) {
     const next = queueWrite(task, writeFull)
     // 对话文件单独节流：任务本身的小文件每次都写，状态和列表不会落后
-    const msgs = persistMessages(task)
+    const msgs = persistMessages(task, !opts?.now)
     return msgs ? Promise.all([next, msgs]).then(() => {}) : next
   }
 
@@ -325,7 +332,16 @@ export function createTaskStore() {
     async peek(id: string): Promise<Task | null> {
       return (await all()).get(id) ?? null
     },
-    async update(id: string, input: TaskData & { updatedAt?: string }, opts?: { keepUpdatedAt?: boolean }) {
+    /**
+     * keepUpdatedAt：保留原来的列表时间（预热收尾这类）。
+     * now：对话消息立即写，不走 400ms 合并窗口——关键节点（节点开始/结束、提问、任务结束/失败/停止）
+     * 用它，面板被强杀时不会丢最后一段内容；流式输出途中的中间态仍然合并写
+     */
+    async update(
+      id: string,
+      input: TaskData & { updatedAt?: string },
+      opts?: { keepUpdatedAt?: boolean; now?: boolean },
+    ) {
       // 调用方给了完整对话（执行中的落盘都是）就不用再读旧的：读过的对话只留 KEEP_FULL 个，
       // 同时在跑的对话一多（父对话派出十几个子对话），每次落盘都会把别人挤出去、自己又从磁盘重读一遍对话，
       // 读文件 + 校验几 MB 的 JSON 一秒几十次，事件循环被占满，整个面板跟着卡
@@ -336,7 +352,7 @@ export function createTaskStore() {
       const item = { ...old, ...input, id, projectId: old.projectId, updatedAt } as Task
       ;(await all()).set(id, head(item))
       remember(item)
-      await persist(item)
+      await persist(item, opts)
       return item
     },
     async remove(id: string) {
