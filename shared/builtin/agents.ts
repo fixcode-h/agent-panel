@@ -451,6 +451,7 @@ ${BUG_METHOD}
         options: ['快速', '彻底'],
         default: '快速',
         description: '快速：找到就停；彻底：把相关的入口、调用方和测试都列全',
+        when: { key: 'target', values: ['定位代码'], not: false },
       }),
       p({
         key: 'stack',
@@ -465,6 +466,7 @@ ${BUG_METHOD}
         options: ['综合', '架构', '资产', '构建', '测试'],
         default: '综合',
         description: '技术栈选 ue 时才用；综合：架构、构建和影响面一次看完',
+        when: { key: 'stack', values: ['ue'], not: false },
       }),
       p({
         key: 'tests',
@@ -472,6 +474,7 @@ ${BUG_METHOD}
         type: 'bool',
         default: true,
         description: '方向是影响面时，同时列出已有测试、缺的边界和回归用例',
+        when: { key: 'target', values: ['影响面'], not: false },
       }),
     ],
     instructions: `你负责只读调研：把问题查清楚，交回有出处的结论。不修改任何文件，不提交、不推送。
@@ -657,6 +660,7 @@ ${VCS_TEXT}
         options: ['通用', 'ue', 'lua', 'ts', 'csharp'],
         default: '通用',
         description: '规模是 architectural 时按技术栈落架构契约',
+        when: { key: 'scale', values: ['architectural'], not: false },
       }),
     ],
     instructions: `你负责把需求收敛成可以确认的设计，不写实现代码。
@@ -732,7 +736,14 @@ ${SCENE_TEXT}
       SCENE,
       LANG,
       VCS,
-      p({ key: 'tdd', label: 'TDD', type: 'bool', default: true, description: 'UE 项目一般关掉' }),
+      p({
+        key: 'tdd',
+        label: 'TDD',
+        type: 'bool',
+        default: true,
+        description: 'UE 项目一般关掉',
+        when: { key: 'task', values: ['实现'], not: false },
+      }),
       p({
         key: 'records',
         label: '任务记录',
@@ -835,6 +846,7 @@ ${VCS_TEXT}
         default: '按需开分支',
         description:
           '子对话在哪里改：按任务开分支、都在同一分支上按文件范围分工，或者一个子对话一个 worktree；P4 / SVN 按「不开分支」理解',
+        when: { key: 'vcs', values: ['p4', 'svn', '无'], not: true },
       }),
       p({
         key: 'merge',
@@ -842,6 +854,7 @@ ${VCS_TEXT}
         options: ['子对话合回父分支', '父对话统一合并', '只提交不合并'],
         default: '子对话合回父分支',
         description: '谁把改动合进父对话所在的分支：子对话自己合、父对话统一合，或者只留本地提交等父对话处理',
+        when: { key: 'vcs', values: ['p4', 'svn', '无'], not: true },
       }),
       p({ key: 'commit', label: '提交方式', options: ['本地提交', '只检查'], default: '本地提交' }),
     ],
@@ -849,7 +862,7 @@ ${VCS_TEXT}
 
 ${VCS_TEXT}
 
-Git 的工作区模式是「{{branch}}」，合并方向是「{{merge}}」；P4 和 SVN 按「不开分支、不合并」理解，改动直接留在工作副本或 pending 里。
+{{#if branch}}Git 的工作区模式是「{{branch}}」，合并方向是「{{merge}}」；P4 和 SVN 按「不开分支、不合并」理解，改动直接留在工作副本或 pending 里。{{else}}不开分支、不合并：改动直接留在工作副本或 pending 里。{{/if}}
 {{#if branch=按需开分支}}子对话在本分支上按任务范围改，需要分支时由父对话开并交代分支名；不为一个任务重复开第二份工作区。{{/if}}
 {{#if branch=不开分支}}所有人按文件范围分工在同一个分支上改，不开分支、不建 worktree。{{/if}}
 {{#if branch=独立工作树}}一个子对话一份 git worktree 和一个独立分支，依赖和构建产物不提交；子对话彻底完成后（已合回父分支、验证通过、不再需要工作区）由父对话删掉工作树和分支并清残留。{{/if}}

@@ -18,7 +18,16 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import type { Agent, ParamValue, Project, ProjectInput, TestStep, Workflow, WorkflowExpose } from '@shared/schema'
+import type {
+  Agent,
+  ParamValue,
+  ParamValues,
+  Project,
+  ProjectInput,
+  TestStep,
+  Workflow,
+  WorkflowExpose,
+} from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
 import {
   derivedParams,
@@ -43,6 +52,7 @@ import type { ProjectProposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
+import { resolveParams } from '@shared/agent-role'
 import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
@@ -1360,7 +1370,11 @@ function AgentParamsEditor({
   /** 工作流 expose 已经管着的参数 key：同 key 只渲染一次，由 expose 那边负责 */
   hidden: Set<string>
 }) {
-  const mine = agents.filter((d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key))
+  // 联动按这个 Agent 自己的参数顺序算：前面参数没选到的不显示，选项跟着前面的取值缩小
+  const view = resolveParams(group.params, values as ParamValues)
+  const mine = agents.filter(
+    (d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key) && !view.hidden.includes(d.key),
+  )
   if (!mine.length) return null
   return (
     <div className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
@@ -1373,7 +1387,12 @@ function AgentParamsEditor({
         </Button>
       </div>
       {mine.map((d) => (
-        <DerivedParamField key={d.key} d={d} value={values[d.key]} onChange={(v) => onChange(d.key, v)} />
+        <DerivedParamField
+          key={d.key}
+          d={view.options[d.key] ? { ...d, options: view.options[d.key] } : d}
+          value={values[d.key]}
+          onChange={(v) => onChange(d.key, v)}
+        />
       ))}
     </div>
   )

@@ -8,6 +8,18 @@ export type ParamValue = z.infer<typeof ParamValue>
 export type ParamValues = Record<string, ParamValue>
 
 /**
+ * 参数的显示条件：前面某个参数取这些值时才成立。
+ * values 为空表示「有值」（开关打开、多选选了、文本不空）；not 取反（不是这些值 / 没有值）。
+ * 开关的取值写 'true' / 'false'。
+ */
+export const ParamCond = z.object({
+  key: z.string().trim().min(1).max(40),
+  values: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  not: z.boolean().default(false),
+})
+export type ParamCond = z.infer<typeof ParamCond>
+
+/**
  * Agent 向外暴露的参数：角色设定里用 {{key}} 引用、用 {{#if key=值}}…{{/if}} 分支，
  * 同一个 Agent 换个参数就能走不同的做法。对话时用默认值，没有默认值（ask）的先问用户；
  * 工作流节点上可以直接改。
@@ -29,6 +41,18 @@ export const AgentParam = z.object({
   /** 没有默认值：对话开始前问用户选，工作流节点上必须填 */
   ask: z.boolean().default(false),
   description: z.string().trim().max(200).default(''),
+  /** 只在前面的参数满足条件时显示和生效；不满足时这个参数不用问、按空值处理 */
+  when: ParamCond.optional(),
+  /**
+   * 选项跟着前面的参数变：前面那个参数取 map 里的某个值时，只能选对应的这些选项。
+   * map 里没列的取值不限制；某个取值对应空数组表示这时这个参数不适用（同 when 不满足）。
+   */
+  optionsBy: z
+    .object({
+      key: z.string().trim().min(1).max(40),
+      map: z.record(z.string().max(60), z.array(z.string().trim().min(1).max(60)).max(30)),
+    })
+    .optional(),
 })
 export type AgentParam = z.infer<typeof AgentParam>
 

@@ -1,4 +1,11 @@
-import { type Agent, type AgentParam, type NodeTier, type ParamValue, type ParamValues } from './schema.ts'
+import {
+  type Agent,
+  type AgentParam,
+  type NodeTier,
+  type ParamCond,
+  type ParamValue,
+  type ParamValues,
+} from './schema.ts'
 import { t } from './i18n.ts'
 import { tierOf } from './settings.ts'
 import { fillSkills } from './expose.ts'
@@ -57,26 +64,99 @@ export function coerceValue(p: AgentParam, v: ParamValue | undefined): ParamValu
   }
 }
 
+/** 参数的取值写成一组字符串，用来判断条件：多选是选中的每一项，开关是 true / false，空值是空数组 */
+export function condValues(v: ParamValue | undefined): string[] {
+  if (v === undefined || v === '') return []
+  if (Array.isArray(v)) return v
+  return [String(v)]
+}
+
+/** 显示条件成立没有：values 为空时看有没有值（开关关着、数字 0 算没有） */
+export function condMet(c: ParamCond, values: ParamValues): boolean {
+  const vs = condValues(values[c.key])
+  const hit = c.values.length
+    ? c.values.some((w) => vs.includes(w))
+    : vs.length > 0 && !(vs.length === 1 && (vs[0] === 'false' || vs[0] === '0'))
+  return c.not ? !hit : hit
+}
+
+/** 按前面参数的取值，这个参数这时能选的选项；不受限制返回 undefined */
+function allowedOptions(p: AgentParam, values: ParamValues): string[] | undefined {
+  if (!p.optionsBy) return undefined
+  const picked = condValues(values[p.optionsBy.key])
+  // 前面那个还没选、或者选的值没列规则时不限制
+  if (!picked.length || picked.some((v) => !(v in p.optionsBy!.map))) return undefined
+  const allow = new Set(picked.flatMap((v) => p.optionsBy!.map[v]))
+  return p.options.filter((o) => allow.has(o))
+}
+
+/** 条件引用的参数在不在前面：引用自己、后面的或不存在的参数时条件不算数（配置页会提醒） */
+export function condDepOk(params: AgentParam[], i: number, key: string | undefined) {
+  return !!key && params.slice(0, i).some((x) => x.key === key)
+}
+
+/** 条件取值显示的字：开关的 true / false 写成「打开 / 关闭」 */
+const condValueText = (dep: AgentParam | undefined, v: string) =>
+  dep?.type === 'bool' ? (v === 'true' ? '打开' : '关闭') : v
+
+/** 显示条件写成一句话，例如「任务是 实现 / 修 Bug 时」「TDD 打开时」；给提示词和界面共用 */
+export function condText(c: ParamCond, params: AgentParam[]) {
+  const dep = params.find((x) => x.key === c.key)
+  const name = dep ? paramLabel(dep) : c.key
+  if (!c.values.length) return c.not ? `${name}为空时` : `${name}有值时`
+  if (dep?.type === 'bool' && c.values.length === 1) {
+    const on = (c.values[0] === 'true') !== c.not
+    return `${name}${on ? '打开' : '关闭'}时`
+  }
+  const list = c.values.map((v) => condValueText(dep, v)).join(' / ')
+  return `${name}${c.not ? '不是' : '是'} ${list} 时`
+}
+
 /**
  * 参数实际用的值：给了就用给的，否则用默认值；要问用户（ask）又没给的列进 missing。
  * 只有一层：节点上的值 / 对话里选的值 覆盖 Agent 的默认值。
+ *
+ * 参数之间可以联动（按顺序从前往后算）：
+ * - when 不满足、或者依赖的参数自己就被隐藏了，这个参数隐藏：不问、值按空处理，列进 hidden；
+ * - optionsBy 按前面参数的取值缩小选项，列进 options；缩到一个都不剩时同样隐藏。
+ *   给的值或默认值不在缩小后的选项里时，单选退到第一个可选项（要问用户的仍然问），多选去掉不能选的。
  */
 export function resolveParams(params: AgentParam[], given: ParamValues = {}) {
   const values: ParamValues = {}
   const missing: AgentParam[] = []
-  for (const p of params) {
-    const g = coerceValue(p, given[p.key])
+  const hidden: string[] = []
+  const options: Record<string, string[]> = {}
+  params.forEach((p, i) => {
+    const when = condDepOk(params, i, p.when?.key) ? p.when : undefined
+    const by = condDepOk(params, i, p.optionsBy?.key) ? p.optionsBy : undefined
+    const opts = by ? allowedOptions({ ...p, optionsBy: by }, values) : undefined
+    if (
+      (when && (hidden.includes(when.key) || !condMet(when, values))) ||
+      (by && hidden.includes(by.key)) ||
+      (opts && !opts.length && p.options.length)
+    ) {
+      hidden.push(p.key)
+      values[p.key] = emptyValue(p)
+      return
+    }
+    if (opts) options[p.key] = opts
+    const q = opts ? { ...p, options: opts } : p
+    const g = coerceValue(q, given[p.key])
     if (!isEmptyValue(g) || (g !== undefined && (p.type === 'bool' || p.type === 'number'))) {
       values[p.key] = g!
-      continue
+      return
     }
-    const d = p.ask ? undefined : coerceValue(p, p.default)
-    if (d !== undefined) values[p.key] = d
+    const d = p.ask ? undefined : coerceValue(q, p.default)
+    if (d !== undefined && !(opts && isEmptyValue(d) && !isEmptyValue(p.default))) values[p.key] = d
     else if (p.ask) missing.push(p)
-    else values[p.key] = emptyValue(p)
-  }
-  return { values, missing }
+    else values[p.key] = opts && p.type === 'select' ? opts[0] : emptyValue(p)
+  })
+  return { values, missing, hidden, options }
 }
+
+/** 参数这时实际显示的样子：被前面的参数缩小了选项的，换成缩小后的选项 */
+export const shownParam = (p: AgentParam, options: Record<string, string[]>): AgentParam =>
+  options[p.key] ? { ...p, options: options[p.key] } : p
 
 /** 条件里的一项是否成立：key（有值）、!key（没值）、key=a|b、key!=a */
 function test(cond: string, values: ParamValues): boolean {
@@ -117,6 +197,33 @@ export function renderTemplate(text: string, values: ParamValues) {
   return out.replace(/\{\{\s*([^#/{}\s][^{}]*?)\s*\}\}/g, (all, key: string) =>
     key in values ? valueText(values[key]) : all,
   )
+}
+
+/** 条件里的参数名：key、!key、key=…、key!=… */
+const COND_KEY = /^(\s*!?\s*)([^=!\s]+)/
+
+/** 角色设定里引用到的参数名（{{key}} 和 {{#if 条件}} 里的） */
+export function templateKeys(text: string) {
+  const keys = new Set<string>()
+  for (const m of text.matchAll(/\{\{\s*#if\s+([^}]+)\}\}/g)) {
+    const k = COND_KEY.exec(m[1])?.[2]
+    if (k) keys.add(k)
+  }
+  for (const m of text.matchAll(/\{\{\s*([^#/{}\s][^{}]*?)\s*\}\}/g)) if (m[1] !== 'else') keys.add(m[1])
+  return keys
+}
+
+/** 参数改名时把角色设定里的引用一起改：{{from}}、{{#if from…}}；别的写法不动 */
+export function renameParamRefs(text: string, from: string, to: string) {
+  if (!from || !to || from === to) return text
+  return text
+    .replace(/\{\{(\s*)#if\s+([^}]+)\}\}/g, (all, sp: string, cond: string) => {
+      const m = COND_KEY.exec(cond)
+      return m && m[2] === from ? `{{${sp}#if ${m[1]}${to}${cond.slice(m[0].length)}}}` : all
+    })
+    .replace(/\{\{(\s*)([^#/{}\s][^{}]*?)(\s*)\}\}/g, (all, a: string, k: string, b: string) =>
+      k === from ? `{{${a}${to}${b}}}` : all,
+    )
 }
 
 /** 引入的 Agent，按顺序展开（去重、跳过循环和停用的），不含自己 */
@@ -253,18 +360,21 @@ export function composeRole(
   given: ParamValues = {},
   slots: Record<string, string> = {},
 ) {
-  const { values } = resolveParams(agent.params, given)
+  const { values, hidden } = resolveParams(agent.params, given)
   const parts: string[] = []
   const own = renderTemplate(agent.instructions, values).trim()
   if (own) parts.push(own)
   const subs = includedAgents(agent, agents)
   for (const { agent: s } of subs) {
-    const sv = resolveParams(s.params, { ...values }).values
+    // 被联动隐藏的参数不往下传：引入的 Agent 按它自己的默认值走
+    const passed = Object.fromEntries(Object.entries(values).filter(([k]) => !hidden.includes(k)))
+    const sv = resolveParams(s.params, passed).values
     const text = renderTemplate(s.instructions, sv).trim()
     if (text) parts.push(`## 引入的 Agent：${s.name}\n${s.description ? `${s.description}\n\n` : ''}${text}`)
   }
-  if (agent.params.length) {
-    const lines = agent.params.map((p) => `- ${paramLabel(p)}（${p.key}）：${valueText(values[p.key]) || '（空）'}`)
+  const shown = agent.params.filter((p) => !hidden.includes(p.key))
+  if (shown.length) {
+    const lines = shown.map((p) => `- ${paramLabel(p)}（${p.key}）：${valueText(values[p.key]) || '（空）'}`)
     parts.push(`## 本次的参数\n按这些参数决定做法：\n${lines.join('\n')}`)
   }
   const skills = [...new Set(fillSkills([...agent.skills, ...subs.flatMap((s) => s.agent.skills)], slots))]

@@ -686,6 +686,11 @@ try {
   await p.getByRole('textbox', { name: '新选项' }).press('Enter')
   await p.getByRole('button', { name: '删除选项「svn」' }).scrollIntoViewIfNeeded()
   await check(p, 'Agent-参数选项', ['svn'])
+  // 参数联动：后面的参数按前面的选择决定显示，规则在参数卡片里配
+  await p.getByRole('combobox', { name: '显示条件' }).click()
+  await p.getByRole('option', { name: /（target）/ }).click()
+  await p.getByRole('group', { name: '条件取值' }).scrollIntoViewIfNeeded()
+  await check(p, 'Agent-参数联动', ['选了其中一个时', '选项跟随', '联动'])
   await p.getByRole('tab', { name: /^角色设定/ }).click()
   await check(p, '角色-角色设定', ['通用约束', '实际交给它的设定'])
   await p.getByRole('tab', { name: /^概览/ }).click()
