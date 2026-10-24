@@ -107,6 +107,33 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
   await p.keyboard.press('Escape')
+  // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
+  await p.goto(base + '#/design/demo-design-inventory')
+  await check(p, 'UI设计-画板数据', ['星辉宝石'])
+  await p.waitForTimeout(300)
+  assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 20, '背包按数据渲染 20 个格子')
+  assert.ok(await p.getByText('3', { exact: true }).first().isVisible(), '格子里显示物品数量')
+  // 第一个格子选中：高亮显示、锁定图标隐藏（隐藏的控件数就是锁定图标那一个）
+  const hiddenInFirstSlot = () =>
+    p.evaluate(() => {
+      const slot = document.querySelector('[data-ac="WBP_ItemSlot"]')
+      if (!slot) return -1
+      // 列表条目里的控件没有 data-wid（不能单独选中），按计算样式找隐藏的那个
+      return [...slot.querySelectorAll('*')].filter((n) => getComputedStyle(n).visibility === 'hidden').length
+    })
+  assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')
+  await p.getByRole('radio', { name: '数据' }).click()
+  await check(p, 'UI设计-数据面板', ['运行时假数据', '只影响画板预览，导出时剔除', 'Items', '添加一行'])
+  // 数据面板改第一行：锁定打开，切回画板就能看到锁
+  await p.getByRole('checkbox', { name: '锁定' }).first().check()
+  await p.getByRole('radio', { name: '画板' }).click()
+  await check(p, 'UI设计-画板数据-锁定')
+  await p.waitForTimeout(300)
+  assert.equal(await hiddenInFirstSlot(), 0, '第一格按数据改成锁定后显示锁图标')
+  // 来回切换不丢编辑
+  await p.getByRole('radio', { name: '数据' }).click()
+  assert.ok(await p.getByRole('checkbox', { name: '锁定' }).first().isChecked(), '切回来锁定的值还在')
+  await p.getByRole('radio', { name: '画板' }).click()
   await p.goto(base + '#/design/new')
   await check(p, 'UI设计-新建', ['开始设计'])
   // 先出原画：新的游戏界面默认打开「原画」，AI 先出几张整屏原画，显示在左边挑

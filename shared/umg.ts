@@ -759,6 +759,12 @@ export function linearColor(hex: unknown) {
 /** 字号：UE 的 Size 是 96 DPI 下的磅值，屏幕像素 = Size × 4 / 3 */
 export const fontPx = (size: number) => (size * 4) / 3
 
+/**
+ * 画板运行时假数据的绑定属性（见 design-data.ts）：DataSet、DataField、States。
+ * 这些只在画板预览时生效，导出 UE / 网页时整组去掉。
+ */
+export const DATA_PROPS = ['DataSet', 'DataField', 'States'] as const
+
 /** 树里用到的图片 id */
 export function usedImages(roots: Widget[]) {
   const ids = new Set<string>()
@@ -1013,6 +1019,8 @@ export function exportWidget(
     return v
   }
   const props = conv(w.Properties)
+  // 画板预览用的假数据绑定和状态不进导出结果
+  for (const k of DATA_PROPS) delete props[k]
   if (w.Type === 'SizeBox')
     for (const k of [
       'WidthOverride',

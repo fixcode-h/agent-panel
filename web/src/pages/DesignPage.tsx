@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 import {
   ChevronDown,
   Clapperboard,
+  Database,
+  LayoutTemplate,
   Settings2,
   Workflow,
   Download,
@@ -85,6 +87,8 @@ import { SaveIndicator } from '@/components/layout/Detail'
 import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationPanel'
 import { renameInAnimations } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
+import { DataPanel } from '@/components/design/DataPanel'
+import { emptyData } from '@shared/design-data'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
@@ -328,6 +332,8 @@ function Designer({ id }: { id: string }) {
   const [promptsOpen, setPromptsOpen] = useState(false)
   /** 左边显示原画还是界面；对照模板：把确认的原画半透明盖在界面上 */
   const [view, setView] = useState<'ui' | 'concept'>('ui')
+  /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
+  const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
   const [overlay, setOverlay] = useState(false)
   /** 替用户发给 AI 的话（确认模板后开始搭界面） */
   const [request, setRequest] = useState<{ id: string; text: string }>()
@@ -361,7 +367,8 @@ function Designer({ id }: { id: string }) {
 
   // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
   const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
-  const shownDoc = doc && live ? { ...doc, root: live.root, components: live.components } : doc
+  const shownDoc =
+    doc && live ? { ...doc, root: live.root, components: live.components, data: live.data ?? doc.data } : doc
   const tree = doc ? treeOf(doc, target) : undefined
   const shownTree = shownDoc ? (treeOf(shownDoc, target) ?? tree) : undefined
   // 子控件被删掉或改名了：回到主界面
@@ -1112,6 +1119,7 @@ function Designer({ id }: { id: string }) {
                 )
               }
               images={renderImages}
+              data={(shownDoc ?? doc).data ?? emptyData()}
               overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
               components={shownDoc?.components ?? doc.components}
               selected={selected}
@@ -1170,32 +1178,75 @@ function Designer({ id }: { id: string }) {
                 busy={ed.running}
               />
             )}
-            {view === 'ui' && approvedConcept && !target && (
-              <button
-                onClick={() => setOverlay(!overlay)}
-                aria-pressed={overlay}
-                title={t('把确认的原画模板半透明盖在界面上，对照着调')}
-                className={cn(
-                  'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[0.75rem] text-white/70 shadow-pop hover:text-white',
-                  overlay && 'text-accent hover:text-accent',
-                )}
+            <div className="absolute top-3 left-3 z-50 flex items-center gap-2">
+              <div
+                role="radiogroup"
+                aria-label={t('主区域显示')}
+                className="inline-flex h-8 items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
               >
-                <Layers className="h-3.5 w-3.5" />
-                {t('对照模板')}
-              </button>
-            )}
+                {(
+                  [
+                    ['canvas', LayoutTemplate, t('画板')],
+                    ['data', Database, t('数据')],
+                  ] as const
+                ).map(([key, Icon, label]) => (
+                  <button
+                    key={key}
+                    role="radio"
+                    aria-checked={board === key}
+                    title={label}
+                    onClick={() => setBoard(key)}
+                    className={cn(
+                      'inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] hover:text-white',
+                      board === key && 'bg-white/10 text-white',
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {board === 'canvas' && view === 'ui' && approvedConcept && !target && (
+                <button
+                  onClick={() => setOverlay(!overlay)}
+                  aria-pressed={overlay}
+                  title={t('把确认的原画模板半透明盖在界面上，对照着调')}
+                  className={cn(
+                    'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[0.75rem] text-white/70 shadow-pop hover:text-white',
+                    overlay && 'text-accent hover:text-accent',
+                  )}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  {t('对照模板')}
+                </button>
+              )}
+            </div>
             {server.job?.status === 'running' && server.job.capture && !captured.current.has(server.job.capture.id) && (
               <CanvasCapture
                 key={server.job.capture.id}
                 designId={id}
                 req={server.job.capture}
                 images={renderImages}
+                data={doc.data ?? emptyData()}
                 web={server.kind === 'web'}
                 onDone={(cid) => {
                   captured.current.add(cid)
                   setCaptureTick((n) => n + 1)
                 }}
               />
+            )}
+            {board === 'data' && (
+              // 顶部留出「画板 / 数据」切换按钮的位置，面板自己的工具栏从下面一行开始
+              <div className="absolute inset-0 z-40 flex overflow-hidden bg-bg pt-12">
+                <DataPanel
+                  data={(shownDoc ?? doc).data ?? emptyData()}
+                  root={shownDoc?.root ?? doc.root}
+                  components={shownDoc?.components ?? doc.components}
+                  images={doc.images}
+                  imageUrl={imageUrl}
+                  onChange={(next, key) => ed.change((d) => ({ ...d, data: next }), key)}
+                />
+              </div>
             )}
             {compare && (
               <VersionCompare

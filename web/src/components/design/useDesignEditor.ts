@@ -9,6 +9,7 @@ import { t } from '@shared/i18n'
 
 const docOf = (d: DesignFull): DesignDoc => ({
   title: d.title,
+  data: d.data ?? { sets: [] },
   designSize: d.designSize,
   style: d.style,
   root: d.root,

@@ -724,4 +724,35 @@ export const EN_DESIGN: Record<string, string> = {
   按建议修改: 'Apply suggestion',
   '「按建议修改」会把这条要求作为一条新消息发给 AI；想改措辞可以先复制。':
     '“Apply suggestion” sends this request to the AI as a new message; copy it first if you want to reword it.',
+
+  // 画板与数据面板
+  主区域显示: 'Main area',
+  画板: 'Canvas',
+  数据: 'Data',
+  运行时假数据: 'Mock runtime data',
+  '只影响画板预览，导出时剔除': 'Canvas preview only, removed on export',
+  新建集合: 'New set',
+  还没有运行时数据: 'No runtime data yet',
+  '让 AI 搭界面时会一起给出这个界面需要的数据结构；有了集合以后，列表控件按行渲染，格子里就能看到物品、选中和锁定状态。也可以先手动新建一个集合。':
+    'The AI provides the data structure for this screen when it builds the UI. Once a set exists, list widgets render by row, so you can see items, selected and locked states in the slots. You can also create a set manually.',
+  集合名称: 'Set name',
+  '用在 {where}': 'Used by {where}',
+  还没有控件绑定这个集合: 'No widget uses this set yet',
+  '{n} 行': '{n} rows',
+  删除集合: 'Delete set',
+  '这个集合还没有字段：加上字段以后，行里的值才能绑定到控件。':
+    'This set has no fields yet: add fields so row values can bind to widgets.',
+  添加字段: 'Add field',
+  添加一行: 'Add row',
+  '没有行时，绑定的列表在画板里是空的': 'With no rows, the bound list is empty on the canvas',
+  删除这一行: 'Delete this row',
+  字段类型: 'Field type',
+  删除这个字段: 'Delete this field',
+  是: 'Yes',
+  否: 'No',
+  '（空）': '(empty)',
+  文字: 'Text',
+  数字: 'Number',
+  开关: 'Toggle',
+  图片: 'Image',
 }
