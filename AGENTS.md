@@ -28,6 +28,7 @@
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
+- **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。
 
 ## 文档地图
 

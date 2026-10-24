@@ -1,0 +1,85 @@
+name: Bug 报告
+description: 报告一个功能性 Bug（安全问题请勿走这里，见 SECURITY.md）
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先搜一下 [已有的 Issue](https://github.com/fixcode-h/agent-panel/issues)，避免重复。
+
+        **涉及密钥泄露、越权访问本机、命令注入这类安全问题，请不要在这里公开**，
+        按 [SECURITY.md](https://github.com/fixcode-h/agent-panel/blob/dev/SECURITY.md) 私下报告。
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序写清楚怎么走到出问题的地方，能稳定复现最好。
+      placeholder: |
+        1. 打开「项目」页面，新建一个绑定本地目录的项目
+        2. 在项目下新建任务，选工作流「...」
+        3. 点开始执行，等 10 秒
+        4. 看到 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的结果
+      placeholder: 你希望看到什么。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际的结果
+      description: 有报错原文、日志或截图就贴上来；贴之前把密钥、令牌、真实路径打码。
+      placeholder: 实际看到了什么，报错原文是什么。
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: agent-panel 版本
+      description: 最新 Release 的版本号，或 `dev` 分支的提交号（`git rev-parse --short HEAD`）。
+      placeholder: v0.28.0 / c45eb69
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: Windows 11 23H2 / macOS 15.2 / Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js 版本
+      description: 运行 `node -v` 的结果。
+      placeholder: v20.18.1
+    validations:
+      required: true
+
+  - type: input
+    id: cli
+    attributes:
+      label: 涉及的 CLI 与版本
+      description: 哪几个编码 CLI、什么版本。界面问题和 CLI 无关就写「不涉及」。
+      placeholder: Claude Code 2.x / Codex 0.x / 不涉及
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 数据目录（默认 `~/.agent-panel`）里的相关 JSON、浏览器控制台报错、服务端日志等。贴之前删掉密钥和真实路径。
+    validations:
+      required: false
