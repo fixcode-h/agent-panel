@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import {
   Activity,
   ArrowDownLeft,
+  Check,
   ArrowUpRight,
   CircleHelp,
   ClipboardList,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { PeerKind, TaskMessage } from '@shared/schema'
+import type { SendTarget } from '@/lib/tasks'
 import { LEAD_TAG, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
 import { convStateText } from '@shared/task'
 import { t } from '@shared/i18n'
@@ -76,6 +78,8 @@ export interface PeerLineProps {
   /** 发出时面板给的回执（已实时送达、在后台执行……） */
   receipt?: string
   ms?: number
+  /** 旧记录里同一段话逐个交给了几个子对话：只画一行，展开列出每个收件人和回执 */
+  targets?: SendTarget[]
 }
 
 /**
@@ -89,8 +93,15 @@ export function PeerLine(p: PeerLineProps) {
   const Icon = PEER_ICON[p.kind]
   const Dir = p.dir === 'in' ? ArrowDownLeft : ArrowUpRight
   const subject = p.subject || subjectLine(p.body) || peerKindText(p.kind)
-  const who = p.dir === 'in' ? t('已收到{name}发来的消息', { name: p.name }) : t('发给{name}的消息', { name: p.name })
-  const child = p.childId && openChild ? () => openChild(p.childId!) : undefined
+  const many = p.targets && p.targets.length > 1 ? p.targets : undefined
+  const names = many?.map((x) => x.name).join('、') ?? ''
+  const who =
+    p.dir === 'in'
+      ? t('已收到{name}发来的消息', { name: p.name })
+      : many
+        ? t('发给 {n} 个子对话的同一条消息', { n: many.length })
+        : t('发给{name}的消息', { name: p.name })
+  const child = !many && p.childId && openChild ? () => openChild(p.childId!) : undefined
   return (
     <>
       <RowShell
@@ -114,7 +125,14 @@ export function PeerLine(p: PeerLineProps) {
         openTip={t('在窗口里查看这条消息')}
         detail={
           <span className="max-w-[40%] shrink-0 truncate font-sans text-subtle">
-            {[p.state, p.dir === 'in' ? t('来自 {name}', { name: p.name }) : t('发给 {name}', { name: p.name })]
+            {[
+              p.state,
+              p.dir === 'in'
+                ? t('来自 {name}', { name: p.name })
+                : many
+                  ? t('发给 {n} 个：{names}', { n: many.length, names })
+                  : t('发给 {name}', { name: p.name }),
+            ]
               .filter(Boolean)
               .join(' · ')}
           </span>
@@ -141,14 +159,50 @@ export function PeerLine(p: PeerLineProps) {
               </button>
             )}
           </div>
+          {many && <TargetList targets={many} openChild={openChild ?? undefined} />}
           <div className="max-h-[min(50vh,420px)] overflow-y-auto px-3 py-2 text-[0.8125rem]">
             <Markdown text={p.body || subject} teamNames={new Set()} />
           </div>
-          {p.receipt && <div className="border-t px-3 py-1.5 font-sans text-[0.75rem] text-subtle">{p.receipt}</div>}
+          {p.receipt && !many && (
+            <div className="border-t px-3 py-1.5 font-sans text-[0.75rem] text-subtle">{p.receipt}</div>
+          )}
         </div>
       </RowShell>
       {win && <PeerDialog {...p} subject={subject} who={who} openChild={child} onClose={() => setWin(false)} />}
     </>
+  )
+}
+
+/** 同一段话的几个收件人：每人一行，送到没有、面板的回执（取第一行），子对话可以直接打开 */
+function TargetList({ targets, openChild }: { targets: SendTarget[]; openChild?: (id: string) => void }) {
+  return (
+    <ul className="mx-3 mt-2 flex flex-col divide-y rounded-md border font-sans text-[0.75rem]">
+      {targets.map((x, i) => (
+        <li key={`${x.child ?? x.name}-${i}`} className="flex min-w-0 items-center gap-2 px-2 py-1">
+          {x.failed ? (
+            <X className="h-3 w-3 shrink-0 text-danger" aria-label={t('没送到')} />
+          ) : (
+            <Check className="h-3 w-3 shrink-0 text-subtle" aria-label={t('已送达')} />
+          )}
+          <span className="shrink-0 font-medium">{x.name}</span>
+          {x.receipt && (
+            <span className={cn('min-w-0 flex-1 truncate', x.failed ? 'text-danger' : 'text-subtle')} title={x.receipt}>
+              {x.receipt.split('\n')[0]}
+            </span>
+          )}
+          {x.child && openChild && (
+            <button
+              type="button"
+              onClick={() => openChild(x.child!)}
+              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 text-subtle hover:text-fg"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {t('打开')}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -161,6 +215,7 @@ function PeerDialog({
   title,
   name,
   receipt,
+  targets,
   openChild,
   onClose,
 }: PeerLineProps & { who: string; openChild?: () => void; onClose: () => void }) {
@@ -224,9 +279,14 @@ function PeerDialog({
             </D.Close>
           </header>
           <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
+            {targets && targets.length > 1 && (
+              <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>
+            )}
             <Markdown text={text} teamNames={new Set()} />
           </div>
-          {receipt && <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>}
+          {receipt && !(targets && targets.length > 1) && (
+            <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>
+          )}
         </D.Content>
       </D.Portal>
     </D.Root>

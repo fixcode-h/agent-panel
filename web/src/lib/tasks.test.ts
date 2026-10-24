@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
+import { groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -119,6 +119,21 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(old?.job, '6a369828')
   assert.equal(old?.tool.name, '后台命令')
   assert.equal(old?.tool.label, 'npx playwright install')
+  // CLI 在结果前面插了自己的说明（Command Code 的 repair_note）：照样认出编号，没拿到结果前算在等
+  const noted = toolView(
+    tool('mcp__panel__run_background', '', {
+      input: '{"command":"node scripts/ui-check.mjs 02"}',
+      output: '<repair_note>Coerced string `exclusive` to a boolean.</repair_note>\n已放到后台（编号 fb0d6fa4）。',
+    }),
+  )
+  assert.equal(noted?.job, 'fb0d6fa4')
+  assert.equal(noted?.waiting, true)
+  const done = toolView(
+    tool('mcp__panel__run_background', '', {
+      output: '已放到后台（编号 fb0d6fa4）。\n\n【后台命令 fb0d6fa4 已结束】后台命令「检查」跑完了：成功',
+    }),
+  )
+  assert.equal(done?.waiting, undefined, '结果接上了就不再等')
 })
 
 test('后台命令：命令在 input 原文里时，折叠行显示命令，不再只剩「后台命令」', () => {
@@ -224,4 +239,25 @@ test('toolView：给别的对话发消息的几个工具画成「发送消息」
   assert.deepEqual(chat?.send, { kind: 'chat', to: '测试', body: '接口改名了' })
   // 别的面板工具不是发消息
   assert.equal(toolView(tool('mcp__panel__get_status', ''))?.send, undefined)
+})
+
+test('groupTools：相邻几次把同一段话交给不同子对话合成一行，别的工具和不同的话各占一行', () => {
+  const send = (id: string, message: string) =>
+    tool('MCP', 'panel · send_to_conversation', {
+      input: JSON.stringify({ id, message }),
+      output: `已交给子对话「${id}」`,
+    })
+  const read = tool('读取', 'a.ts', { kind: 'read' })
+  const groups = groupTools([
+    send('c1', '规则'),
+    send('c2', '规则'),
+    send('c3', '规则'),
+    send('c1', '别的'),
+    read,
+    send('c2', '别的'),
+  ])
+  assert.deepEqual(
+    groups.map((g) => g.length),
+    [3, 1, 1, 1],
+  )
 })

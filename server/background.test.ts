@@ -401,3 +401,53 @@ test('子任务起的命令记下它的步骤，父对话自己起的不带；�
   )
   void bg.stop('t')
 })
+
+test('那一行收口：CLI 在结果前面插了说明也认得出，结果到了才算完成；不认识的编号收成「结果丢失」', async () => {
+  const { settleJobRow, reapLostJobs } = await import('./background.ts')
+  const { bgPendingIds, opensWindow } = await import('../shared/panel-tools.ts')
+  const out =
+    '<repair_note>Coerced string `exclusive` to a boolean.</repair_note>\n已放到后台（编号 fb0d6fa4）。面板盯着它直到真正结束。\n计划步骤「重跑检查」已标成等待中'
+  const tool = { kind: 'other' as const, name: 'MCP', label: 'panel · run_background', detail: '', output: out, ms: 80 }
+  const build = {
+    kind: 'other' as const,
+    name: 'MCP',
+    label: 'panel · request_build',
+    detail: '',
+    output: '已申请编译（编译、打包），编号 1a2b3c4d、5e6f7a8b。编译目录空闲，马上开始。',
+    ms: 10,
+  }
+  const task = { messages: [{ tools: [tool, build] }] } as unknown as Parameters<typeof settleJobRow>[0]
+  assert.deepEqual(bgPendingIds(out), ['fb0d6fa4'], '前面插了 repair_note 也认得出编号')
+  assert.equal(
+    settleJobRow(task, 'fb0d6fa4', '【后台命令 fb0d6fa4 已结束】后台命令「检查」跑完了：成功', true, 95_000, ''),
+    true,
+  )
+  assert.equal(tool.ms, 95_000, '记真实用时')
+  assert.deepEqual(bgPendingIds(tool.output), [])
+  assert.equal(settleJobRow(task, 'fb0d6fa4', 'x', true, 1, ''), false, '同一条不重复接')
+  // 申请的编译有两条：第一条结束还在等第二条
+  settleJobRow(task, '1a2b3c4d', '【后台命令 1a2b3c4d 已结束】后台命令「编译」跑完了：成功', true, 1000, '')
+  assert.deepEqual(bgPendingIds(build.output), ['5e6f7a8b'])
+  // 面板重启后不认识第二条：收成失败，不再转圈
+  assert.equal(
+    reapLostJobs(task, () => false),
+    1,
+  )
+  assert.deepEqual(bgPendingIds(build.output), [])
+  assert.equal((build as { failed?: boolean }).failed, true)
+  assert.match(build.output, /结果没有拿到/)
+  // 开窗口的写法被拦下
+  assert.equal(opensWindow('npm run build && start cmd /k "npm test"'), true)
+  assert.equal(opensWindow('npm start'), false)
+  const bg = createBackground(() => {})
+  const r = bg.start({
+    taskId: 't',
+    name: 'x',
+    command: 'start "" cmd /c npm test',
+    cwd: '',
+    root: tmpdir(),
+    exclusive: false,
+  })
+  assert.equal(r.ok, false)
+  assert.match(r.info, /不要新开命令行窗口/)
+})

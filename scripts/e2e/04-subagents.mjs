@@ -70,7 +70,7 @@ await runShard('子对话与计划', async (api) => {
     )
     step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
 
-    // 父对话页切走、宽限期（测试里 1.2 秒）到了：在运行的子对话不能跟着失活，要自己跑完（ADR 0010）
+    // 父对话页切走、宽限期（测试里 1.2 秒）到了：在运行的子对话不能跟着失活，要自己跑完（ADR 0012）
     let away = await mkChild('子对话切走', 'SLOW 父对话切走后照样跑完')
     await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话切走后照样跑完')), {
       label: '子对话开始执行',

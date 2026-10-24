@@ -549,3 +549,37 @@ test('子任务：被停止时标成打断，不像没开始过', async () => {
   assert.equal(sub.status, 'pending')
   assert.equal(sub.interrupted, true)
 })
+
+test('子任务：派「评审」时面板把改动附进提示词，复看只附上一轮之后的增量', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const since: (string | undefined)[] = []
+  const { task, log, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '评审', instructions: '看改动', agent: '评审' }]).ids
+      await o.wait(first, 1000)
+      const again = o.spawn([{ title: '复看', instructions: '处置：R1 已修', resume: first[0] }]).ids
+      await o.wait(again, 1000)
+      return '一步结果'
+    }
+    return '验收结论：通过\n必须处置：无'
+  })
+  host.agents = [...agents, { ...agent('r', '评审'), origin: 'builtin:reviewer' }]
+  let n = 0
+  host.reviewDiff = async (s) => {
+    since.push(s)
+    n++
+    return { snapshot: `tree${n}`, stat: ' a.ts | 2 +-', diff: `@@ 第 ${n} 次的差异 @@` }
+  }
+  await runEngineTurn(host)
+  assert.deepEqual(since, [undefined, 'tree1'], '复看和上一轮的快照比')
+  const calls = log.filter((c) => c.step?.slot === 'sub')
+  assert.match(calls[0].prompt, /这次的全部改动/)
+  assert.match(calls[0].prompt, /第 1 次的差异/)
+  assert.match(calls[1].prompt, /上一轮评审之后的增量/)
+  assert.match(calls[1].prompt, /第 2 次的差异/)
+  assert.deepEqual(
+    task.steps.filter((s) => s.slot === 'sub').map((s) => s.snapshot),
+    ['tree1', 'tree2'],
+  )
+})
