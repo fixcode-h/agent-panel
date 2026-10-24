@@ -373,6 +373,15 @@ export interface Orchestra {
     find(files: string[], opts?: LessonQuery): Promise<string>
     record(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
+  /** P4 工作区：按文件类型把改动分进各自的 pending（面板执行，不是 P4 项目时没有） */
+  p4Split?: EngineHost['p4Split']
+}
+
+/** p4_split_changelists 的参数：从哪个 changelist 分、只分哪些文件、每类一句描述 */
+export interface P4SplitArgs {
+  from?: string
+  files?: string[]
+  descriptions: Partial<Record<'C++' | 'XLSX' | 'Lua' | 'Other', string>>
 }
 
 export interface EngineHost {
@@ -573,6 +582,8 @@ export interface EngineHost {
     globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
   }
+  /** P4 工作区（项目里的对话）：按文件类型分 changelist，由面板跑 p4，规则不靠 Agent 自觉 */
+  p4Split?: (input: P4SplitArgs) => Promise<{ ok: boolean; info: string }>
 }
 
 /** Agent 用 record_lesson 记的一条教训 */
@@ -944,12 +955,29 @@ function wrapUpPart(host: EngineHost) {
     return `${head}
 做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。`
   return `${head}
-这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）。收尾时按文件类型把本次任务的文件分到不同的 pending changelist，不能全留在 default，也不能都放进同一个：
+${p4Rules(host)}做完再把这一步标完成。不 submit、不 revert、不 sync。`
+}
+
+/**
+ * P4 分 changelist 的规则：项目里的对话都要知道（以前只写给子对话，父对话自己放 CL 时建出过「[C++/Lua] …」），
+ * 有 p4_split_changelists 时交给面板分，Agent 只写描述
+ */
+function p4Rules(host: EngineHost) {
+  const head = `这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）；edit 前用 p4 fstat -T haveRev,headRev <文件> 看是不是最新版本，本地版本落后（haveRev 小于 headRev）时先告诉用户要同步，你自己不 sync。把改动放进 pending changelist 时按文件类型分开，不能全留在 default，也不能把几类放进同一个（不要建「[C++/Lua] …」这种）：
 - [C++]：.c / .cc / .cpp / .cxx / .h / .hh / .hpp / .inl / .ixx / .mm
-- [XLSX]：.xlsx / .xlsm / .xlsb / .xls
+- [XLSX]（表格）：.xlsx / .xlsm / .xlsb / .xls / .csv
 - [Lua]：.lua（只提交源码，不编译成 .luac，也不提交 .luac）
 - [Other]：其余要提交的代码、资源和配置
-只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（约 40 字内）。做完用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，再把这一步标完成。不 submit、不 revert、不 sync。`
+`
+  if (host.p4Split)
+    return `${head}调用 p4_split_changelists 分：面板按上面的类型建 pending 并挪文件，你只在 descriptions 里给这次有文件的每一类写一句中文描述（约 40 字内，不带标签）。default 里有不属于这次任务的文件时用 files 只列本次的；已经混在一个 pending 里的用 from 写它的编号拆开。本来就在你已有 pending 里的文件留在原处。看它返回的编号和回读结果，`
+  return `${head}只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（约 40 字内）。用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，`
+}
+
+/** 不是子对话收尾的场合（父对话、工作流节点）：P4 项目里也要按类型分 changelist */
+function p4Part(host: EngineHost) {
+  if (!host.p4Split || host.wrapUp === 'p4') return ''
+  return `## P4 changelist\n${p4Rules(host)}不 submit、不 revert、不 sync。`
 }
 
 /** 对话的目标：用户在父对话设置里写的，父对话按它取舍，子对话知道自己这部分是为了什么 */
@@ -2684,6 +2712,7 @@ function makeOrchestra(
           record: (input) => host.lessons!.record(input),
         }
       : undefined,
+    p4Split: host.p4Split,
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
@@ -3160,6 +3189,7 @@ async function conversationPrompt(
     backgroundPart(host),
     planPart(host, coordinator),
     wrapUpPart(host),
+    p4Part(host),
     // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt

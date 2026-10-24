@@ -797,6 +797,7 @@ export const EN_TASKS: Record<string, string> = {
   开独立分支: 'Open separate branch',
   认领文件: 'Claim files',
   释放文件: 'Release files',
+  '按类型分 changelist': 'Split changelists by type',
   查看项目教训: 'Read project lessons',
   读取共享状态: 'Read shared state',
   写入共享状态: 'Write shared state',

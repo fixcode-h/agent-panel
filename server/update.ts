@@ -9,6 +9,7 @@ import { CACHE_DIR } from './store.ts'
 import {
   REPO,
   STALE_UPDATE_MS,
+  compareVersions,
   pickUpdate,
   type AppRelease,
   type AppReleases,
@@ -246,6 +247,12 @@ export function updateApi(deps: {
   const isStale = (job: AppUpdateJob & { force?: boolean }) =>
     Date.now() - Date.parse(job.updatedAt ?? '') > STALE_UPDATE_MS
 
+  /**
+   * 版本号大的在前，同号按发布时间：几个提交连着推时出包有快有慢，按发布时间排会把 0.28.997 排到 0.28.999 上面
+   */
+  const newestFirst = (a: AppRelease, b: AppRelease) =>
+    compareVersions(b.version, a.version) || b.publishedAt.localeCompare(a.publishedAt)
+
   async function releases(refresh: boolean): Promise<AppRelease[]> {
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
     if (!refresh && cache && Date.now() - cache.at < CHECK_EVERY) return cache.list
@@ -279,7 +286,7 @@ export function updateApi(deps: {
         }
       })
       .filter((r) => r.tarUrl)
-      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+      .sort(newestFirst)
     cache = { at: Date.now(), list }
     await mkdir(path.dirname(CACHE_FILE()), { recursive: true })
     await writeFile(CACHE_FILE(), JSON.stringify(cache)).catch((e) => log.warn('update', '记录检查结果失败', e))
@@ -480,7 +487,8 @@ export function updateApi(deps: {
         return c.json({
           ...base,
           checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
-          releases: list.slice(0, 5),
+          // 缓存里可能是旧版按发布时间排的列表，这里再按版本号排一次
+          releases: [...list].sort(newestFirst).slice(0, 5),
           update: pickUpdate(current, list),
         } satisfies AppReleases)
       } catch (e) {

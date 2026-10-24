@@ -321,7 +321,16 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const p4 = await promptsOf({ parentTaskId: 'parent' }, { wrapUp: 'p4' })
   assert.match(p4[0], /完成」就是改动已按文件类型分进各自的 pending changelist/)
   assert.match(p4[0], /\[C\+\+\][\s\S]*\[XLSX\][\s\S]*\[Lua\][\s\S]*\[Other\]/)
-  assert.match(p4[0], /不能全留在 default，也不能都放进同一个/)
+  assert.match(p4[0], /不能全留在 default，也不能把几类放进同一个/)
+  // 有面板的分 changelist 工具时交给它分；父对话自己放 CL 也要守同一套规则（曾经建出「[C++/Lua] …」）
+  const p4Tool = await promptsOf(
+    { parentTaskId: 'parent' },
+    { wrapUp: 'p4', p4Split: async () => ({ ok: true, info: '' }) },
+  )
+  assert.match(p4Tool[0], /调用 p4_split_changelists 分/)
+  const p4Main = await promptsOf({}, { p4Split: async () => ({ ok: true, info: '' }) })
+  assert.match(p4Main[0], /## P4 changelist[\s\S]*调用 p4_split_changelists 分/)
+  assert.doesNotMatch(p4[0], /## P4 changelist/, '子对话的收尾已经写了，不重复一段')
   // 共用父对话目录的 Git 子对话没有收尾这一步
   const shared = await promptsOf({ parentTaskId: 'parent' })
   assert.doesNotMatch(shared[0], /## 收尾：计划的最后一步/)

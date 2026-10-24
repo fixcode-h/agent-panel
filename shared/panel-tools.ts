@@ -30,6 +30,7 @@ export const PANEL_TOOL_NAMES = [
   'close_run',
   'claim_files',
   'release_files',
+  'p4_split_changelists',
   'project_lessons',
   'record_lesson',
   'read_state',
