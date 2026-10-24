@@ -50,8 +50,9 @@ export function useUnreadTasks() {
 }
 
 /** 这一轮完成但用户还没打开看过：侧栏橙点、服务端据此保留 CLI 进程 */
-export const isTaskUnread = (task: Pick<Task, 'turnDoneAt' | 'turnSeenAt'>) =>
-  !!task.turnDoneAt && task.turnDoneAt !== task.turnSeenAt
+export const isTaskUnread = (task: Pick<Task, 'turnDoneAt' | 'turnSeenAt' | 'jobs'>) =>
+  // 交出去的后台命令还没跑完：这一轮说完了但对话还在等结果，不算「完成了没看」
+  !!task.turnDoneAt && task.turnDoneAt !== task.turnSeenAt && !task.jobs?.length
 
 /**
  * 项目里的对话完成一轮时，用户正开着它就不提示，开着别的页面就在侧栏标一个点。

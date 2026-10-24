@@ -404,6 +404,22 @@ test('Pi：面板工具是裸名字，记成 MCP 调用，不当成子 Agent', (
   assert.equal(tool.tool.label, 'panel · wait_agents')
 })
 
+test('带服务名前缀的面板工具也认得出：run_background 不能因为名字里有 run 被当成 CLI 自己的命令', () => {
+  const parse = parserFor('pi', CWD)
+  for (const name of ['panel_run_background', 'mcp__panel-1a2b__run_background', 'mcp_panel-1a2b_run_background']) {
+    const ev = parse({
+      type: 'tool_execution_start',
+      toolName: name,
+      toolCallId: name,
+      args: { command: 'npx playwright install', name: '装浏览器' },
+    })
+    const tool = ev.find((e) => e.type === 'tool')
+    assert.ok(tool && tool.type === 'tool', name)
+    assert.equal(tool.tool.kind, 'other', name)
+    assert.equal(tool.tool.label, 'panel · run_background', name)
+  }
+})
+
 test('Pi：未命中的输入比命中的多时也加上缓存，工具参数只算速度，面板工具没接上要显示出来', () => {
   const parse = parserFor('pi', CWD)
   const usage = { input: 5000, output: 40, cacheRead: 1000, cacheWrite: 0, totalTokens: 6040, cost: { total: 0 } }

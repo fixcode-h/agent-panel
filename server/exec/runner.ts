@@ -135,6 +135,7 @@ export interface RealContext {
   beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
+  stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
 }
 
@@ -1862,6 +1863,7 @@ export async function runRealTurn(ctx: RealContext) {
     beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
+    stopBackground: ctx.stopBackground,
     lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     signal: ctx.signal,
