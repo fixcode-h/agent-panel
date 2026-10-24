@@ -7,20 +7,19 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 ## 测试请求要真的走到被测逻辑
 
 - 规则：e2e 请求要满足全局中间件（Host / Origin、JSON 请求体，否则 415），断言具体的错误信息，不只看状态码。
-- 起因：3aa0b22，越权测试一直被 415 拦下，越权校验本身从没测到。
+- 起因：3aa0b22，越权测试一直被 415 拦下。
 - 防线：人工。
 
 ## 测试不依赖系统语言
 
 - 规则：断言 `t()` 文案的测试在文件顶部 `setLang('zh')`（见 `server/files.test.ts`）；`shared/i18n.ts` 的语言是模块级全局，`server/lang.ts` 会在导入时按 `process.env.LANG` 改它（例如 `server/files.ts` → `server/settings.ts` → `server/lang.ts`），不要靠「别的文件先设过」或环境变量。e2e 已固定服务端 `LANG=zh_CN`。
-- 起因：3ab9a8d 英文系统上单测失败；同一个坑又踩一次——CI 的 `LANG=en_US.UTF-8` 让 11 个单测拿到英文报错文案，本地 Windows 全过。
-- 复现：`LANG=en_US.UTF-8 npm run test:unit`。
+- 起因：3ab9a8d 英文系统上单测失败；同一个坑又踩一次——CI 的 `LANG=en_US.UTF-8` 让 11 个单测拿到英文报错文案。
 - 防线：CI。
 
-## 改执行流程时假 CLI 跟着改
+## 改执行流程时假 CLI 跟着改，触发词别撞上旧词
 
-- 规则：`scripts/fake-cli` 要模拟真实 CLI 的会话方式（RPC 常驻多轮、插话、中断）；执行流程改了，假 CLI 也补上对应行为，否则 e2e 测的是旧流程。
-- 起因：7a875fe、74bc98a，RPC 常驻后假 CLI 只能跑一轮。
+- 规则：`scripts/fake-cli` 要模拟真实 CLI 的会话方式（RPC 常驻多轮、插话、中断）；执行流程改了，假 CLI 也补上对应行为，否则 e2e 测的是旧流程。新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（`SLOW` 会让这一轮先等几秒），用意思明确、不会撞上的词。
+- 起因：7a875fe、74bc98a RPC 常驻后假 CLI 只能跑一轮；加「后台命令还在跑」用例时用 `BG_SLOW` 命中了 `SLOW` 慢回合。
 - 防线：`npm run test:e2e`。
 
 ## 在 Claude Code 里开发时别嵌套跑 claude
@@ -36,7 +35,7 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 在 WSL 里跑 e2e 要用 Linux 装的依赖
 
-- 规则：Windows 的 `node_modules` 里是 win32 原生包，WSL 里跑 e2e 会报「installed for another platform」/「服务没有启动」。worktree 的 `node_modules` 若是指向主仓库的软链接，先删掉软链接，在这个目录里 `NODE_ENV=development npm ci` 装一份自己的，不要在主仓库里装。`.git` 文件里是 Windows 路径，WSL 里跑 `rules-check.mjs`（用到 `git ls-files`）要带上 `GIT_DIR=/mnt/<盘>/…/.git/worktrees/<名称> GIT_WORK_TREE=$PWD`。
+- 规则：Windows 的 `node_modules` 里是 win32 原生包，WSL 里跑 e2e 会报「installed for another platform」。worktree 的 `node_modules` 若是指向主仓库的软链接，先删掉，在这个目录里 `NODE_ENV=development npm ci` 装一份自己的，不要在主仓库里装。`.git` 文件里是 Windows 路径，WSL 里跑 `rules-check.mjs` 要带上 `GIT_DIR=/mnt/<盘>/…/.git/worktrees/<名称> GIT_WORK_TREE=$PWD`。
 - 起因：直接在 `/mnt/e` 里跑 e2e 卡在 esbuild 二进制不匹配；worktree 软链到主仓库时装什么都会落到 Windows 那份上。
 - 防线：人工（CI 的 Ubuntu 步骤始终是干净的 Linux 依赖）。
 
@@ -49,14 +48,8 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 ## e2e 里起的资源要登记，退出别指望它们自己关
 
 - 规则：`scripts/e2e/harness.mjs`（各分片共用）里起的 `http.createServer`、子进程都用 `onExit()` 登记；关 server 先 `closeAllConnections()` 再 `close()`，只 `close()` 会留下 keep-alive 连接。收尾时 `cleanupAll()` 之后按退出码强制退出，不等事件循环自然清空。
-- 起因：`/accounts/api-models` 的 `name` 改成必填后 e2e 报 400，临时 `apiSrv` 没关，进程挂 95 分钟。
+- 起因：一次 `/accounts/api-models` 报 400 后临时 `apiSrv` 没关，进程挂了 95 分钟。
 - 防线：`npm run test:e2e`（每个分片 10 分钟看门狗 + 收尾后 2 秒强制退出）。
-
-## 假 CLI 的触发词别包含已有的触发词
-
-- 规则：`scripts/fake-cli` 按 `input.includes('关键词')` 决定行为，新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（例如 `SLOW` 会让这一轮先等几秒）；用意思明确、不会撞上的词。
-- 起因：加「后台命令还在跑」的 e2e 时用了 `BG_SLOW`，命中了旧的 `SLOW` 慢回合，回合拖到后台命令跑完才结束，断言一直失败。
-- 防线：人工。
 
 ## e2e 按分片并行，共享环境只在 harness 里改
 
@@ -64,8 +57,8 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 - 起因：原 82 个 step 串行、单进程，加用例就线性变长。
 - 防线：`npm run test:e2e`。
 
-## 等状态用 waitFor，别写固定 sleep
+## 等状态、等日志记录都用 waitFor，别写固定 sleep
 
-- 规则：`runShard` 提供 `waitFor(条件, { timeout, interval, label })`：等「CLI 被调用」「任务进入 running」这类状态，条件一到就继续，超时才失败。只有「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制，e2e 默认压到最小。
-- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等。
-- 防线：人工。
+- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等「CLI 被调用」「任务进入 running」这类状态，也等假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录——任务状态置位常早于 CLI 收到响应、再写日志，状态满足了就立刻读日志会读空（CI 并行跑分片时窗口更大）。条件一到就继续，超时才失败；只有「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制，e2e 默认压到最小。
+- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等；出包 CI 上 `04-subagents.mjs` 的收尾断言偶发失败就是上面那个窗口（把 `.finish` 写入延后 300ms 必现）。
+- 防线：`npm run test:e2e`。
