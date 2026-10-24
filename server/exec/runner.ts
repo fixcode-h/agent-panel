@@ -1040,6 +1040,18 @@ async function runAgent(
     })
   }
   /**
+   * 这一轮结束的回调只发一次：CLI 的 result 和「回复完停在等下一句」都会走到 markTurnDone，
+   * 两处都记会让子对话把同一个状态重复上报父对话（父对话里一条汇报显示两遍）。
+   * 用户发来下一条消息、或者子任务的结果交回让 CLI 接着做，都算新的一段（见 listen 和 waitNext）。
+   */
+  let turnEnded = false
+  const endTurn = () => {
+    if (turnEnded) return
+    turnEnded = true
+    markTurnDone(task)
+    ctx.onTurnEnd?.()
+  }
+  /**
    * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
    * 之后有任何真正的输出就停。超时写一行警告、标成卡住；后来又有输出了，警告标成已恢复。
    * 只看对话：工作流里几个节点同时跑，卡住的是哪一个由空闲检测管
@@ -1311,8 +1323,7 @@ async function runAgent(
           task.working = false
           // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
           if (ev.ok && !prewarmMode && !emptyTurn()) {
-            markTurnDone(task)
-            ctx.onTurnEnd?.()
+            endTurn()
           }
         }
         break
@@ -1465,6 +1476,9 @@ async function runAgent(
       if (!text || ctx.signal.aborted) return null
       // 子任务的结果到了、接着干：从这一刻继续算执行
       resumeRun(task)
+      // 交回的结果会让 CLI 接着做，这一段的结束要照常上报：result 之后停在这里等子任务时
+      // 这一轮已经标记过结束了（见 endTurn），不复位会吞掉交回后那次结束
+      turnEnded = false
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
@@ -1499,8 +1513,7 @@ async function runAgent(
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
     if (!prewarmMode && chat && !op && !helpers) {
-      markTurnDone(task)
-      ctx.onTurnEnd?.()
+      endTurn()
     }
     ctx.changed(true)
     try {
@@ -1536,6 +1549,7 @@ async function runAgent(
             const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
+            turnEnded = false
             arm(text)
             done(text)
           },

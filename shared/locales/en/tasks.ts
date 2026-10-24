@@ -990,6 +990,8 @@ export const EN_TASKS: Record<string, string> = {
   '已收到{name}发来的消息': 'Received a message from {name}',
   '发给{name}的消息': 'Message to {name}',
   '来自 {name}': 'from {name}',
+  '来自 {name}（{title}）': 'from {name} ({title})',
+  '发给 {name}（{title}）': 'to {name} ({title})',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',
