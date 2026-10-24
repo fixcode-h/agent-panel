@@ -160,6 +160,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
+  // 标题栏的项目名：点开是项目下的对话
+  打开项目: 'Open project',
+  打开聊天: 'Open chat',
+  这个项目还没有对话: 'No conversations in this project yet',
+
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',

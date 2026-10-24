@@ -108,6 +108,7 @@ import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
+import { ProjectSwitch } from './ProjectSwitch'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -1009,12 +1010,8 @@ export function TaskView({
                     {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
                     {!pane && (
                       <>
-                        <button
-                          onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
-                          className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
-                        >
-                          {project?.name ?? t('聊天')}
-                        </button>
+                        {/* 项目名点开是项目下的对话；「打开项目」在浮层底部 */}
+                        <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />
                         <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
                       </>
                     )}

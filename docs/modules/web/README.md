@@ -10,6 +10,7 @@
 - 页面：项目、任务、工作流、Agent、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。
+- 任务页标题栏左上角的项目名（`web/src/components/tasks/ProjectSwitch.tsx`，由 `TaskView.tsx` 的标题栏接入，浮层用 `web/src/components/ui/menu.tsx` 的 `Popover`）：点开列出当前项目下的对话，筛选和排序与侧栏一致（未归档、不含子对话、最近发言在前），每项显示标题和状态文字（状态判定用 `shared/task.ts` 的 `taskState`，文字用 `convStateText`），当前对话高亮；点一项在对话页打开（项目对话 `{ page: 'projects', id: project.id, sub: task.id }`，Chat 用 `{ page: 'chat', id }`）。浮层底部「打开项目」（Chat 模式为「打开聊天」）进项目页 / Chat 首页，原来点项目名直接进项目页的行为换成了这个入口；Chat 模式项目名显示「聊天」，列不属于任何项目的最近聊天。回归验证见 `scripts/ui/02-task.mjs`（点项目名出现列表、点一项打开、键盘上下选择 + Enter、Esc 关闭、点「打开项目」进项目页）。
 - 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。
 - 项目设置「AI 初始化」页（`web/src/components/projects/ProjectInitPanel.tsx`、`ProjectSettingsDialog.tsx`）：初始化推荐随项目保存，重开时用 `buildGroups` 的 `same` 判定算差异，「应用推荐（n 项）」只改草稿、点「确认」才保存，无差异时提示「已和当前设置一致」；没有保存过推荐时只提供重新初始化。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。

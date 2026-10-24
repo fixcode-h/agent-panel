@@ -1292,4 +1292,134 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       }
     }
   }
+  // 标题栏左上角的项目名：点开是项目下的对话，点一项就地打开，Esc 关闭，「打开项目」还在
+  {
+    const projBtn = p.locator('header').getByRole('button', { name: '商城前台', exact: true })
+    if (
+      !(await projBtn
+        .first()
+        .waitFor({ timeout: 10000 })
+        .then(
+          () => true,
+          () => false,
+        ))
+    )
+      errors.push('标题栏：左上角没有项目名入口')
+    else {
+      // 页面上可能还留着别的弹层：按浮层独有的「打开项目」认这一个
+      const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
+      const title = () => p.locator('header nav h2').first().innerText()
+      await projBtn.first().click()
+      if (
+        !(await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('标题栏：点项目名没有弹出对话列表')
+      else {
+        const text = (await pop.innerText()).replace(/\s+/g, ' ')
+        if (!text.includes('购物车右上角')) errors.push(`标题栏浮层：没有列出当前对话（${text}）`)
+        if (!text.includes('商品详情页')) errors.push(`标题栏浮层：没有列出项目下的其他对话（${text}）`)
+        if (!text.includes('打开项目')) errors.push('标题栏浮层：没有「打开项目」入口')
+        if (!(await pop.locator('[aria-current="true"]').count())) errors.push('标题栏浮层：当前对话没有高亮')
+
+        // 重新点开浮层；没打开就记错误，后面的断言照常跑。
+        // 先等页面稳定：上一步的导航会让标题栏重渲染，紧接着点击可能落在正在换掉的节点上
+        const reopen = async (what) => {
+          await p.waitForTimeout(200)
+          if (await pop.isVisible().catch(() => false)) {
+            await p.keyboard.press('Escape')
+            await pop.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+          }
+          await projBtn.first().click()
+          const ok = await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!ok) errors.push(`标题栏浮层：${what}时浮层没有重新打开`)
+          return ok
+        }
+
+        // 鼠标点另一条：就地打开，浮层收起
+        await pop
+          .getByRole('button', { name: /商品详情页/ })
+          .first()
+          .click({ timeout: 10000 })
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：点一条对话后没有关闭')
+        const opened = await title().catch(() => '')
+        if (!opened.includes('商品详情页'))
+          errors.push(`标题栏浮层：点「商品详情页…」后没有打开那个对话（标题是「${opened}」）`)
+        await check(p, '任务-项目对话浮层-打开另一条')
+
+        // 键盘：上下选择 + Enter 回到购物车那条。中间等一轮摘要刷新（2.5s），
+        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话
+        await reopen('键盘测试')
+        await p.keyboard.press('ArrowDown')
+        await p.waitForTimeout(3000)
+        await p.keyboard.press('Enter')
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：键盘 Enter 后没有关闭')
+        const back = await title().catch(() => '')
+        if (!back.includes('购物车右上角'))
+          errors.push(`标题栏浮层：键盘上下选择后没有回到购物车那条（标题是「${back}」）`)
+
+        // Esc 关闭
+        await reopen('Esc 测试')
+        await p.keyboard.press('Escape')
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：按 Esc 没有关闭')
+        else await check(p, '任务-项目对话浮层-Esc关闭')
+
+        // 原来的「打开项目」入口还在：底部的这一项进项目页
+        await reopen('「打开项目」测试')
+        await pop.getByRole('button', { name: '打开项目', exact: true }).click({ timeout: 10000 })
+        if (
+          !(await p
+            .waitForFunction(() => /^#\/projects\/[^/]+$/.test(location.hash), { timeout: 5000 })
+            .then(
+              () => true,
+              () => false,
+            ))
+        )
+          errors.push('标题栏浮层：点「打开项目」没有回到项目页')
+        else await check(p, '任务-项目对话浮层-打开项目')
+      }
+    }
+  }
+  // 浮层的截图放在所有交互之后：重新进任务页、打开浮层再截图。
+  // 截图前的等待（布局、动画）不依赖后面还有交互，避免偶发的焦点变化把截图和断言搅在一起
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p
+      .getByTitle('Token 用量')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    const projBtn = p.locator('header').getByRole('button', { name: '商城前台', exact: true })
+    await projBtn.first().click()
+    await p.waitForTimeout(200)
+    // 页面刚导航完时偶尔第一次点击没展开：没开时补点一次，已打开的不再点（避免反而关掉）
+    const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
+    if (!(await pop.isVisible().catch(() => false))) await projBtn.first().click()
+    await pop.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
+    await check(p, '任务-项目对话浮层', ['商城前台', '购物车右上角', '商品详情页', '打开项目'])
+  }
 })
