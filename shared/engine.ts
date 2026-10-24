@@ -519,6 +519,8 @@ export interface EngineHost {
     cwd: string
     exclusive: boolean
     timeoutMinutes?: number
+    /** 发起它的子任务步骤：子任务调用时写它自己的步骤 id，结果推回时据此标注来源 */
+    step?: string
   }) => Promise<{
     ok: boolean
     info: string
@@ -2522,16 +2524,24 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
-    // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件、不用后台命令（推回的结果没有地方接）
+    // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件（推回的结果由同一个对话处理）
     child: !helper && !!task.parentTaskId && !!host.messageParent,
     claims: !helper && !!host.claimFiles,
-    canBackground: !helper && !!host.runBackground,
+    // 子任务也能用后台命令：命今跑在同一个对话的目录里、结果也推回同一个对话，只是记录上带自己的步骤 id，
+    // 运行区据此按「子任务 + 命令名」单独列出（见 web/src/components/tasks/RunningNow.tsx）
+    canBackground: !!host.runBackground,
     async runBackground(input) {
       if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
       if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
       const { step, ...job } = input
-      const r = await host.runBackground(job)
-      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'background', ref: r.id, label: job.name }) : ''
+      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id；父对话没点名不带，运行区据此区分两种来源
+      const owner = step?.trim() || (helper ? self.id : '')
+      const r = await host.runBackground(owner ? { ...job, step: owner } : job)
+      // 计划里的步骤挂上「等这条命令」：子任务的步骤不在计划里（它是 slot='sub' 的步骤），不挂
+      const wait =
+        !helper && r.ok && r.id && owner
+          ? bindWait(task, owner, { kind: 'background', ref: r.id, label: job.name })
+          : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
     },

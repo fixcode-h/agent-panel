@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { createBackground, type BgJob, type BgTimers } from './background.ts'
+import { createBackground, uiJobs, type BgJob, type BgTimers } from './background.ts'
 import { childHoldsOf } from '../shared/task.ts'
 
 function repo() {
@@ -372,5 +372,32 @@ test('限时：写了 timeout_minutes 就按它，超过上限按上限', () => 
   assert.equal(ms(a.id), 5 * 60_000)
   assert.equal(ms(b.id), 8 * 3600_000)
   assert.equal(ms(c.id), 2 * 3600_000)
+  void bg.stop('t')
+})
+
+test('子任务起的命令记下它的步骤，父对话自己起的不带；发给界面的映射带上它', async () => {
+  const bg = createBackground(() => {}, { run: (() => new Promise(() => {})) as never })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-step-'))
+  const a = bg.start({
+    taskId: 't',
+    step: '@chat/sub/h1',
+    name: '子任务起的',
+    command: 'x',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+  })
+  const b = bg.start({ taskId: 't', name: '父对话起的', command: 'x', cwd: '', root: dir, exclusive: false })
+  const list = bg.list('t')
+  assert.equal(list.find((j) => j.id === a.id)!.step, '@chat/sub/h1')
+  assert.ok(!('step' in list.find((j) => j.id === b.id)!), '父对话自己起的不写 step，运行区据此分开列')
+  // 界面上拿到的字段：子任务起的带 step，父对话起的不带；只列还在跑的
+  const shown = uiJobs(list)
+  assert.equal(shown.find((j) => j.id === a.id)!.step, '@chat/sub/h1')
+  assert.ok(!('step' in shown.find((j) => j.id === b.id)!))
+  assert.deepEqual(
+    shown.map((j) => j.id),
+    [a.id, b.id],
+  )
   void bg.stop('t')
 })

@@ -127,8 +127,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
   {
     const openTask = () => backToTask()
-    // 折叠行「派出 3 个子任务」也是一个按钮，入口按钮的 aria-label 正好是「子任务」，按精确名字定位它
-    const bar = p.getByRole('button', { name: '子任务', exact: true })
+    // 折叠行「派出 3 个子任务」也是一个按钮；入口按钮的 aria-label 就是「子任务」。
+    // 按 aria-label 定位，不按可见名字：运行区里子任务起的后台命令行首也写「子任务」，按名字会选错那一行
+    const subBar = () => p.locator('button[aria-label="子任务"]')
+    const bar = subBar()
     if (!(await bar.count())) errors.push('子任务栏：输入框上方没有「子任务」入口')
     else {
       // 数字和子对话一个写法：在跑时「运行中/总数」，没在跑时只写总数（这一份全做完了）
@@ -161,18 +163,70 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.evaluate((k) => {
         const db = JSON.parse(localStorage.getItem(k))
         const parent = db.tasks.find((x) => x.title.includes('购物车'))
-        const sub = parent.steps.find((x) => x.slot === 'sub')
+        // 按标题挑那一个：主对话里还有模拟执行派出的子任务（复现问题…），取第一个会插到别的行上
+        const sub = parent.steps.find((x) => x.slot === 'sub' && x.title === '核对角标的订阅时机')
+        if (!sub) throw new Error('演示数据里找不到「核对角标的订阅时机」这个子任务')
         sub.status = 'running'
         sub.endedAt = ''
+        // 子任务起了一条还在跑的后台命令：运行区要按「子任务 + 命令名」列出来（老数据没有 jobs 字段）
+        parent.jobs = [
+          {
+            id: 'job-ui-sub',
+            step: sub.id,
+            name: '单测',
+            command: 'npm run test:unit',
+            state: 'running',
+            startedAt: new Date(Date.now() - 65_000).toISOString(),
+          },
+        ]
         localStorage.setItem(k, JSON.stringify(db))
       }, key)
       await p.reload()
       await openTask()
       await check(p, '子任务-执行中只留计数', ['子任务', '1/3'])
-      // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法
-      const runLabel = (await p.getByRole('button', { name: '子任务', exact: true }).first().innerText())
-        .replace(/\s+/g, ' ')
-        .trim()
+      // 运行区：子任务起的后台命令单独一行（行首「子任务」、标题是那一步、后面跟命令名和耗时），
+      // 计时和父对话的后台命令同一个（RowShell 里的 fmtDuration）
+      const subJobShown = await p
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+              [...box.children].some((r) => {
+                // innerText 里「子任务」和标题之间是换行：先压成单个空格再比值
+                const x = (r.innerText || '').replace(/\s+/g, ' ').trim()
+                return x.startsWith('子任务 核对角标的订阅时机')
+              }),
+            ),
+          { timeout: 10000 },
+        )
+        .then(
+          () => true,
+          () => false,
+        )
+      const subJobRow = subJobShown
+        ? await p.evaluate(() => {
+            const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+              [...b.children].some((r) => (r.innerText || '').trim().startsWith('子任务')),
+            )
+            return (box ? [...box.children] : [])
+              .map((r) => (r.innerText || '').replace(/\s+/g, ' ').trim())
+              .find((x) => x.startsWith('子任务') && x.includes('核对角标的订阅时机'))
+          })
+        : ''
+      if (!subJobRow) {
+        // 失败时把运行区实际画了什么都带上：分不清是数据没到、没归到子任务，还是根本没渲染
+        const drawn = await p.evaluate(() =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((b) =>
+            [...b.children].map((r) => (r.innerText || '').replace(/\s+/g, ' ').trim()),
+          ),
+        )
+        errors.push(`运行区：子任务起的后台命令没有按「子任务 + 标题」列出来（当前行：${drawn.join(' | ') || '无'}）`)
+      } else {
+        if (!subJobRow.includes('单测')) errors.push(`运行区：子任务的后台命令没显示命令名，现在是「${subJobRow}」`)
+        if (!/(\d+m )?\d+(\.\d+)?s/.test(subJobRow))
+          errors.push(`运行区：子任务的后台命令行没有计时，现在是「${subJobRow}」`)
+      }
+      // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法（按 aria-label 定位输入框上方的入口）
+      const runLabel = (await subBar().first().innerText()).replace(/\s+/g, ' ').trim()
       if (!/^子任务 1\/3$/.test(runLabel)) errors.push(`子任务栏：执行中应该写「运行中/总数」，现在是「${runLabel}」`)
       const rowText = await p.evaluate(() => {
         const sub = [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '子任务')
@@ -198,8 +252,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
             () => true,
             () => false,
           )
-      if (!(await seen(p.getByRole('button', { name: '子任务', exact: true }))))
-        errors.push('子任务栏：窄窗口里入口不见了')
+      if (!(await seen(subBar()))) errors.push('子任务栏：窄窗口里入口不见了')
       if (!(await seen(p.getByRole('button', { name: /^子对话/ })))) errors.push('子对话栏：窄窗口里入口不见了')
       await check(p, '子任务-窄窗口')
       await p.setViewportSize({ width: 1440, height: 900 })
