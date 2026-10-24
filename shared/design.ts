@@ -712,7 +712,7 @@ const gameRules = (
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
-- **列表、背包、商店、技能栏这类界面的数据要在同一轮里给出**：搭完列表控件和条目子控件后调用 set_data，写这个列表需要的数据结构（字段 key、type、label、对应控件）和 3~8 行示例（背包物品要有图标、数量、选中/锁定/空格子这些状态）。然后给列表控件写 Properties.DataSet="<集合 name>"，给条目子控件里要显示数据的控件写 Properties.DataField="<字段 key>"。
+- **列表、背包、商店、技能栏这类界面的数据要在同一轮里给出**：搭完列表控件和条目子控件后调用 set_data，写这个列表需要的数据结构（字段 key、type、label、对应控件）和 3~8 行示例（背包物品要有图标、数量、选中/锁定/空格子这些状态）。然后给列表控件写 Properties.DataSet="<集合 name>"，给条目子控件里要显示数据的控件写 Properties.DataField="<字段 key>"。一个界面有好几份数据（例如背包物品、任务列表、技能栏）时，一次 set_data 写多个集合，每个列表控件在自己的 DataSet 里绑对应的集合；同一个集合可以给多个控件用，不要把所有列表都硬绑到第一个集合。
 - 同一个格子在不同数据下样子不同的（选中、锁定、空格子），把 Properties.States 写在格子里对应的控件上（例如高亮框 Image 写 [{"Name":"Selected","When":{"Field":"selected","Equals":true},"Properties":{"RenderOpacity":1}}]，基准 RenderOpacity 写 0），状态图仍然用设计里的图片（"img:<id>"）。**不要把选中态、悬停态的效果图单独贴在画布上模拟状态**：状态属于子控件，由数据决定，画布按数据渲染。
 `
 
@@ -863,7 +863,7 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 从零搭界面：先 create_components 建好子控件（每个子控件一次），再 replace_widget 把根控件换成只有几个大区块的骨架，然后用 add_widgets 一块一块往各区块里填，每块一次调用
 - 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets；duplicate_widgets 复制控件（重复的卡片、按钮）；wrap_widget 给控件外面套一层面板
 - 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
-- 运行时数据：set_data 定义这个界面需要的数据结构（name、fields、rows），列表控件写 DataSet、条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
+- 运行时数据：set_data 可以一次定义多个数据结构（name、fields、rows），每个列表控件在自己的 DataSet 里绑对应的集合（可以不同控件绑不同集合、同一集合给多个控件用），条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
 - 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。

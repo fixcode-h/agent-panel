@@ -91,7 +91,7 @@ import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationP
 import { renameInAnimations, setKeyAt, type AnimProp, type AnimValue } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
 import { DataPanel } from '@/components/design/DataPanel'
-import { emptyData } from '@shared/design-data'
+import { bindDataSet, emptyData } from '@shared/design-data'
 import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
@@ -1333,7 +1333,14 @@ function Designer({ id }: { id: string }) {
                   components={shownDoc?.components ?? doc.components}
                   images={doc.images}
                   imageUrl={imageUrl}
+                  scope={id}
                   onChange={(next, key) => ed.change((d) => ({ ...d, data: next }), key)}
+                  onBind={(where, key) =>
+                    ed.change(
+                      (d) => ({ ...d, ...bindDataSet(d.root, d.components, where, key) }),
+                      `data:bind:${where.id}`,
+                    )
+                  }
                 />
               </div>
             )}
