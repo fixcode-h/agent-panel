@@ -836,6 +836,31 @@ function Designer({ id }: { id: string }) {
     }
   }
 
+  /** 点「AI 分析」：先保存当前改动，再走同一条对话通道做只读检查，不改设计、不生成图片 */
+  const analyze = async (run: ChatRun) => {
+    try {
+      ed.absorb(await api.saveDesign(id, doc))
+      ed.absorb(
+        await api.designChat(id, {
+          text: t('分析当前设计'),
+          source: { kind: 'none' },
+          count,
+          annotations: [],
+          attachments: [],
+          run,
+          askUser: false,
+          concept: false,
+          mode: 'analyze',
+        }),
+      )
+      return true
+    } catch (e) {
+      // 分析失败也要让用户看到原因；服务端还会在对话里补一条错误消息
+      toast.error((e as Error).message)
+      return false
+    }
+  }
+
   // ---- 原画 ----
   const conceptUrl = (c: ConceptImage) => designFileUrl(id, c.file)
   const approvedConcept = concept.images.find((i) => i.id === concept.approved)
@@ -1483,6 +1508,7 @@ function Designer({ id }: { id: string }) {
               count={count}
               onCount={setCount}
               onSend={send}
+              onAnalyze={analyze}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
               kind={server.kind}
               designId={id}

@@ -19,6 +19,7 @@ import { t } from './i18n.ts'
 import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
+import { DesignAnalysis } from './design-analysis.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -172,6 +173,8 @@ export const DesignMessage = z.object({
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 用户这条消息选的整体风格（风格库里的名字），显示在消息上 */
   style: z.string().optional(),
+  /** 「AI 分析」的结果：总体结论和对话过程 / UI 结果 / 生成能力三段的检查项 */
+  analysis: DesignAnalysis.optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -456,6 +459,8 @@ export const DesignChatInput = z.object({
     .optional(),
   /** 「先出原画」开关：没有确认的模板时，这一轮只出整屏的效果图给用户挑，不搭界面 */
   concept: z.boolean().default(false),
+  /** analyze：点「AI 分析」发起的只读分析，不修改设计、不生成图片；不写就是普通对话 */
+  mode: z.enum(['chat', 'analyze']).optional(),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 
@@ -557,6 +562,8 @@ export interface DesignJob {
   status: 'running' | 'done' | 'failed'
   /** design：AI 在改结构；concepts：在出原画；images：在生成图片 */
   phase: 'design' | 'concepts' | 'images'
+  /** chat：普通设计对话；analyze：只读分析（只显示、不改设计） */
+  mode?: 'chat' | 'analyze'
   concepts?: ConceptJob
   /** 等页面交回的画布截图 */
   capture?: CaptureRequest

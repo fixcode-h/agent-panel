@@ -694,4 +694,34 @@ export const EN_DESIGN: Record<string, string> = {
   '画布是空的：这棵树里还没有可截的控件，先搭好界面再截图':
     'The canvas is empty: this tree has no widgets to capture yet. Build the interface before taking a screenshot',
   '截图渲染失败：{error}': 'Screenshot rendering failed: {error}',
+  // AI 分析
+  'AI 分析': 'AI analysis',
+  取消分析: 'Cancel analysis',
+  '分析中…': 'Analyzing…',
+  停止这次分析: 'Stop this analysis',
+  等当前这一轮结束再分析: 'Wait for the current round to finish before analyzing',
+  '等 AI 回答完再分析': 'Answer the AI’s question before analyzing',
+  '检查当前的对话和设计是否合理，列出需要修改的地方':
+    'Check whether the current conversation and design make sense and list what needs changing',
+  正在分析设计: 'Analyzing the design',
+  分析当前设计: 'Analyze the current design',
+  '分析完成。': 'Analysis complete.',
+  'AI 分析结果': 'Analysis result',
+  '{n} 条建议': '{n} suggestions',
+  '这次没有解析出结构化的检查项，可以先看上面的结论，或者再分析一次。':
+    'No structured checks were parsed this time. Read the conclusion above or run the analysis again.',
+  对话过程问题: 'Conversation process issues',
+  'UI 结果问题': 'UI result issues',
+  生成能力改进建议: 'AI generation improvements',
+  没有发现明显问题: 'No obvious issues',
+  '证据：': 'Evidence: ',
+  高: 'High',
+  中: 'Medium',
+  低: 'Low',
+  复制这条建议: 'Copy this suggestion',
+  等当前这一轮结束再修改: 'Wait for the current round to finish before applying this',
+  '把这条要求发给 AI': 'Send this request to the AI',
+  按建议修改: 'Apply suggestion',
+  '「按建议修改」会把这条要求作为一条新消息发给 AI；想改措辞可以先复制。':
+    '“Apply suggestion” sends this request to the AI as a new message; copy it first if you want to reword it.',
 }
