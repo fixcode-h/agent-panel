@@ -30,3 +30,4 @@
 | 改界面文案                                 | `web/src` 里的 `t('中文')` + `shared/locales/en/`                      |
 | 改端到端覆盖                               | `scripts/e2e/` 下按主题分片，模拟 CLI 在 `scripts/fake-cli/`           |
 | 改内置角色、工作流模板                     | `shared/builtin/`，判定标准见 [agent-catalog.md](agent-catalog.md)     |
+| 改 Agent 的回复 / 思考语言                 | `shared/prompt-lang.ts` + `server/exec/runner.ts` + [cli-config.md](cli-config.md) |

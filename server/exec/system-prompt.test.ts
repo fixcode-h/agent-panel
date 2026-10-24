@@ -7,6 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile, rm } from 'node:fs/promises'
 import { getCli } from '../../shared/clis.ts'
+import { PROMPT_LANG_ENV, promptLangModSource } from '../../shared/prompt-lang.ts'
 import { writeSystemPrompt } from './invoke.ts'
 
 const ROLE = '你是这个项目对话的统筹：判断用户的每条消息怎么处理。\n\n## 规则\n- 要动手的任务分给子对话\n- 不改文件'
@@ -36,4 +37,34 @@ test('写角色说明文件：内容原样保留换行，路径里没有换行',
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('Command Code 用 --mod 追加语言规则，没有路径时不传这个参数', () => {
+  const def = getCli('commandcode')!
+  assert.equal(def.systemPromptMod, true)
+  // 常驻协议走 rpcArgs：面板实际就是这样启动 Command Code 的
+  const mod = '/data/mods/agent-panel-prompt-lang.mjs'
+  const args = def.buildArgs({
+    model: 'deepseek/deepseek-v4-flash',
+    permission: 'accept-edits',
+    extraArgs: [],
+    systemPromptModPath: mod,
+  })
+  const at = args.indexOf('--mod')
+  assert.ok(at >= 0, '要用 --mod 加载追加语言规则的 mod')
+  assert.equal(args[at + 1], mod)
+  const plain = def.buildArgs({ model: 'deepseek/deepseek-v4-flash', permission: 'accept-edits', extraArgs: [] })
+  assert.ok(!plain.includes('--mod'), '没有语言规则时不加载 mod')
+})
+
+test('系统提示词通道按 CLI 声明走：有 --append-system-prompt 的不用 mod', () => {
+  for (const id of ['claude', 'codex', 'pi']) assert.equal(getCli(id)?.systemPromptFlag, true, id)
+  assert.ok(!getCli('commandcode')?.systemPromptFlag)
+})
+
+test('语言 mod 源码：两种语言的规则都在，按环境变量取', () => {
+  const src = promptLangModSource()
+  assert.match(src, new RegExp(PROMPT_LANG_ENV))
+  assert.match(src, /## 回复语言/)
+  assert.match(src, /## Reply language/)
 })

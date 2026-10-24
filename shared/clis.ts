@@ -34,6 +34,11 @@ export interface BuildOptions {
   resume?: string
   /** 追加的系统提示词（只有支持的 CLI 会用到，其余拼进任务描述） */
   systemPrompt?: string
+  /**
+   * 系统提示词通过 mod / 插件文件追加时的文件路径（Command Code 的 `--mod`）：
+   * 由面板生成，内容是「回复正文和思考过程用哪种语言」的规则
+   */
+  systemPromptModPath?: string
   maxTurns?: number
   /** 工作目录之外还允许读写的目录（例如附件所在的目录） */
   addDirs?: string[]
@@ -106,6 +111,11 @@ export interface CliDefinition {
    * 传路径就不用把多行提示词塞进参数里（Windows 上的参数不能带换行，见 process.ts）
    */
   systemPromptFileFlag?: string
+  /**
+   * 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板写一个只追加「回复语言」规则的 mod，
+   * 参数里传路径（`{systemPromptModPath}`）
+   */
+  systemPromptMod?: boolean
   /** 非交互执行的参数（不含任务描述，任务描述走 stdin） */
   buildArgs: (o: BuildOptions) => string[]
   installHint: string
