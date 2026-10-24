@@ -346,11 +346,14 @@ test('运行区的后台命令按来源分：挂在子任务上的单独列，�
     { id: 'j3', step: '3' },
     // 步骤已经不在了（子任务被删、旧记录）：当成父对话自己的，不能丢在两边都不列
     { id: 'j4', step: '@chat/sub/h9' },
+    // 同一个子任务起的第二、三条命令：和 j1 归成一行，不能列成三个同名子任务
+    { id: 'j5', step: '@chat/sub/h1' },
+    { id: 'j6', step: '@chat/sub/h1' },
   ]
   const { sub, own } = splitStepJobs(steps, jobs)
   assert.deepEqual(
-    sub.map((x) => [x.step.id, x.job.id]),
-    [['@chat/sub/h1', 'j1']],
+    sub.map((x) => [x.step.id, x.jobs.map((j) => j.id)]),
+    [['@chat/sub/h1', ['j1', 'j5', 'j6']]],
     '只有 slot=sub 的步骤算子任务：父对话挂在自己计划步骤（slot=step）上的仍算自己的',
   )
   assert.deepEqual(
