@@ -1,5 +1,5 @@
 import type { DataUsage, MemorySample, MemoryUsage } from './data.ts'
-import { t } from './i18n.ts'
+import { fmtDuration } from './duration.ts'
 
 /**
  * 内存采样怎么显示、怎么交给 AI 分析。
@@ -18,16 +18,8 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-/** 进程运行了多久：2 天 3 小时 / 5 小时 12 分 / 3 分钟 / 20 秒 */
-export function formatUptime(ms: number) {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return t('{n} 秒', { n: s })
-  const min = Math.round(s / 60)
-  if (min < 60) return t('{n} 分钟', { n: min })
-  const h = Math.floor(min / 60)
-  if (h < 24) return t('{h} 小时 {m} 分', { h, m: min % 60 })
-  return t('{d} 天 {h} 小时', { d: Math.floor(h / 24), h: h % 24 })
-}
+/** 进程运行了多久：和别处一样用统一的耗时写法（1d 3h / 2h 5m / 4m 3.6s / 41.2s） */
+export const formatUptime = fmtDuration
 
 /** 采样时刻按本地时间显示：曲线的时间轴、最近一次采样时间用；跨天的带上月-日 */
 export function formatSampleTime(at: string, now = new Date()) {

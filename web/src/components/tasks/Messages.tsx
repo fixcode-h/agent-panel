@@ -4,7 +4,7 @@ import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
-import { fmtSecs } from '@/lib/tasks'
+import { fmtDuration } from '@/lib/tasks'
 import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
@@ -119,7 +119,7 @@ export function NoteMessage({
 
 /** 这一轮模型请求用了多久：两步之间看起来在等的时间基本都在这里 */
 function ModelTime({ ms }: { ms: number }) {
-  return <span className="text-xs text-subtle tabular-nums">{t('模型 {s}s', { s: (ms / 1000).toFixed(2) })}</span>
+  return <span className="text-xs text-subtle tabular-nums">{t('模型 {time}', { time: fmtDuration(ms) })}</span>
 }
 
 /**
@@ -141,7 +141,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
       >
         <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
         <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
-        {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtSecs(thinkingMs)}</span>}
+        {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtDuration(thinkingMs)}</span>}
         {!live && !!ms && <ModelTime ms={ms} />}
         <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
       </button>

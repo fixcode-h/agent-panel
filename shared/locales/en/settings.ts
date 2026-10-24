@@ -293,7 +293,6 @@ export const EN_SETTINGS: Record<string, string> = {
   面板内存分析: 'Panel memory analysis',
   '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 CLI（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。':
     'Panel is the memory of the Node process running the panel itself; Processes is the combined memory of the coding CLIs it launched (running tasks). When it cannot be read it shows "not collected" instead of 0. Samples are taken at the interval above and kept for two hours; right-drag the chart to look further back, drag to the rightmost edge to return to the latest.',
-  '{d} 天 {h} 小时': '{d}d {h}h',
   '{n} 个文件': '{n} files',
   清理: 'Clear',
   '已清理{name}': 'Cleared {name}',

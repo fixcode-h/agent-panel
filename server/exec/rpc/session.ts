@@ -1,4 +1,5 @@
 import { t } from '../../../shared/i18n.ts'
+import { fmtDuration } from '../../../shared/duration.ts'
 import { log } from '../../log.ts'
 import type { CliEvent } from '../parsers.ts'
 import type { RpcAdapter, RpcContext, RpcIo, RpcRequestOptions } from './types.ts'
@@ -19,7 +20,7 @@ export interface RpcDiagnose {
  * 只报「没有响应」时用户没法判断是自己机器慢、CLI 卡在启动，还是进程已经崩了。
  */
 function timeoutError(method: string, ms: number, diagnose?: RpcDiagnose): string {
-  const lines = [t('{method} 没有响应（已等 {seconds} 秒）', { method, seconds: Math.round(ms / 1000) })]
+  const lines = [t('{method} 没有响应（已等 {wait}）', { method, wait: fmtDuration(ms) })]
   const alive = diagnose?.alive?.()
   if (alive !== undefined) lines.push(alive ? t('进程还在运行') : t('进程已经退出'))
   const tail = (diagnose?.stderr?.() ?? '').trim().split('\n').slice(-3).join('\n')

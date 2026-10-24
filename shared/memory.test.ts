@@ -13,7 +13,6 @@ import {
   panEndMs,
 } from './memory.ts'
 
-// formatUptime 出来的单位是界面文案：固定中文，不跟着本机语言走
 setLang('zh')
 
 const MB = 1024 * 1024
@@ -36,10 +35,11 @@ test('大小和运行时长按人看得懂的方式显示', () => {
   assert.equal(formatBytes(1536), '1.5 KB')
   assert.equal(formatBytes(1.5 * MB), '1.5 MB')
   assert.equal(formatBytes(2 * 1024 * MB), '2.00 GB')
-  assert.equal(formatUptime(20_000), '20 秒')
-  assert.equal(formatUptime(5 * 60_000), '5 分钟')
-  assert.equal(formatUptime(3 * 3600_000 + 12 * 60_000), '3 小时 12 分')
-  assert.equal(formatUptime(51 * 3600_000), '2 天 3 小时')
+  // 运行时长和别处的耗时用同一套写法（shared/duration）
+  assert.equal(formatUptime(20_000), '20s')
+  assert.equal(formatUptime(5 * 60_000), '5m 0s')
+  assert.equal(formatUptime(3 * 3600_000 + 12 * 60_000), '3h 12m')
+  assert.equal(formatUptime(51 * 3600_000), '2d 3h')
 })
 
 test('采样时刻显示本地时间，跨天带上月-日', () => {
