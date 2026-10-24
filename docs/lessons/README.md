@@ -62,6 +62,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | ---------------------------------- | ---------------------------------------------- |
 | [cli.md](./cli.md)                 | CLI 定义、参数、模型和思考强度、写回 CLI 配置  |
 | [ui.md](./ui.md)                   | 界面、文案、样式                               |
+| [status-bar.md](./status-bar.md)   | 任务页输入框上方的状态栏（三行、+N）           |
 | [builtin.md](./builtin.md)         | 内置 Agent、工作流、Skill、提示词              |
 | [data.md](./data.md)               | 数据结构、存储、升级兼容、出包                 |
 | [testing.md](./testing.md)         | 单测、端到端、假 CLI、界面检查                 |
