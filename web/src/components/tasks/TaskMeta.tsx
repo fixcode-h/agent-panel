@@ -65,6 +65,7 @@ export function TaskMeta({
   workflowName,
   node,
   onTask,
+  onOpenChild,
 }: {
   task: Task
   projectName?: string
@@ -75,6 +76,8 @@ export function TaskMeta({
   node?: TaskStep
   /** 压缩上下文之后把新的任务状态交回页面 */
   onTask: (task: Task) => void
+  /** 在右栏打开子对话；子对话自己的面板（pane）不传，不再套一层 */
+  onOpenChild?: (id: string) => void
 }) {
   const { agents } = useData()
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -91,6 +94,7 @@ export function TaskMeta({
         projectPath={projectPath}
         workflowName={workflowName}
         onTask={onTask}
+        onOpenChild={onOpenChild}
       />
     </div>
   )
@@ -286,14 +290,18 @@ function EnvChip({
   projectPath,
   workflowName,
   onTask,
+  onOpenChild,
 }: {
   task: Task
   projectName?: string
   projectPath?: string
   workflowName?: string
   onTask: (task: Task) => void
+  onOpenChild?: (id: string) => void
 }) {
   const { agents, settings } = useData()
+  // 点独立分支那一行打开子对话后要主动收起环境弹层
+  const [open, setOpen] = useState(false)
   const { modelOf } = useAgentView()
   const dir = useDirInfo(projectPath ?? '')
   const idle = task.status !== 'running'
@@ -319,7 +327,7 @@ function EnvChip({
   const wt = task.worktree?.state === 'active' ? task.worktree : null
   const own = useWorktrees(task.id, worktreeKey(task), !!wt)?.find((x) => x.taskId === task.id)
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(chip, 'min-w-0 max-w-[min(480px,70vw)]')}
         title={projectPath || t('环境')}
@@ -363,7 +371,19 @@ function EnvChip({
           {dir?.gitBranch && (
             <BranchRow key={projectPath} path={projectPath ?? ''} branch={dir.gitBranch} disabled={!idle} />
           )}
-          {projectPath && <WorktreeSection task={task} />}
+          {projectPath && (
+            <WorktreeSection
+              task={task}
+              onOpenChild={
+                onOpenChild
+                  ? (id) => {
+                      setOpen(false)
+                      onOpenChild(id)
+                    }
+                  : undefined
+              }
+            />
+          )}
           <div className="flex items-center gap-2">
             {task.mode === 'workflow' ? (
               <>

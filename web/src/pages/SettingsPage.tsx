@@ -113,6 +113,7 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
+  const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
@@ -250,6 +251,8 @@ function SettingsBody({
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
   const idleMin = Number(idle)
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
+  const childAskMin = Number(childAsk)
+  const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const unreadMin = Number(unread)
@@ -277,6 +280,7 @@ function SettingsBody({
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
+    childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -537,6 +541,26 @@ function SettingsBody({
                 </div>
               </Row>
               <Row
+                title={t('子对话没有输出时自动询问')}
+                desc={t(
+                  '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={childAsk}
+                    onChange={(e) => setChildAsk(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!childAskValid}
+                    className={cn('h-9', !childAskValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('子对话没有输出时自动询问（分钟）')}
+                  />
+                  {!childAskValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不问')}</span>
+                  )}
+                </div>
+              </Row>
+              <Row
                 title={t('自动回收闲置 Agent')}
                 desc={t(
                   '回复完没人看着的空闲 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。正在执行的对话不受这两段时间和数量上限管，页面切到后台也照样跑完。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
@@ -699,7 +723,7 @@ function SettingsBody({
                 <Row
                   title={t('网络代理')}
                   desc={t(
-                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时用环境变量 HTTPS_PROXY。',
+                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口），没开代理软件就不会走代理。也认环境变量 HTTPS_PROXY。',
                   )}
                 >
                   <Input

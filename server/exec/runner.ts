@@ -267,10 +267,19 @@ export function forgetNotes(taskId: string) {
  * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
  * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
  * 工作流里交给正在跑的节点，按原来的说法结合当前任务处理。
+ * fromParent：父对话 / 面板发来的（状态询问、收尾提醒），不是用户补充；用「用户补充」的措辞会让模型
+ * 把它当成无关信息先放着，子对话就不会回答状态询问了。
  */
-export const steerNote = (text: string, chat: boolean) => {
+export const steerNote = (text: string, chat: boolean, fromParent = false) => {
   // 补充是一条新的用户消息，重复一次语言要求，别让模型接着上一段换成别的语言
   const remind = promptLangReminder()
+  if (fromParent)
+    return (
+      '父对话 / 面板在你执行中发来一条消息（不是用户发的补充）：\n' +
+      '- 和当前任务有关（状态询问、交代任务、调整方向）：按它处理并回复；\n' +
+      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事。\n\n' +
+      `${remind}\n\n内容：\n${text}`
+    )
   return chat
     ? '用户在你执行中补充了信息。先判断它和当前任务的关系：\n' +
         '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
@@ -293,7 +302,8 @@ export async function steerTask(
   // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
   const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode === 'chat' && isHelperStep(task, s.step)))
   const took: Steerer[] = []
-  for (const s of all) if (await s.steer(steerNote(text, task.mode === 'chat'))) took.push(s)
+  for (const s of all)
+    if (await s.steer(steerNote(text, task.mode === 'chat', msg.peer?.rel === 'parent'))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
@@ -1040,6 +1050,18 @@ async function runAgent(
     })
   }
   /**
+   * 这一轮结束的回调只发一次：CLI 的 result 和「回复完停在等下一句」都会走到 markTurnDone，
+   * 两处都记会让子对话把同一个状态重复上报父对话（父对话里一条汇报显示两遍）。
+   * 用户发来下一条消息、或者子任务的结果交回让 CLI 接着做，都算新的一段（见 listen 和 waitNext）。
+   */
+  let turnEnded = false
+  const endTurn = () => {
+    if (turnEnded) return
+    turnEnded = true
+    markTurnDone(task)
+    ctx.onTurnEnd?.()
+  }
+  /**
    * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
    * 之后有任何真正的输出就停。超时写一行警告、标成卡住；后来又有输出了，警告标成已恢复。
    * 只看对话：工作流里几个节点同时跑，卡住的是哪一个由空闲检测管
@@ -1311,8 +1333,7 @@ async function runAgent(
           task.working = false
           // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
           if (ev.ok && !prewarmMode && !emptyTurn()) {
-            markTurnDone(task)
-            ctx.onTurnEnd?.()
+            endTurn()
           }
         }
         break
@@ -1423,7 +1444,9 @@ async function runAgent(
         // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
         cur = undefined
         ctx.changed(true)
-        return mine.map((m) => steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat'))
+        return mine.map((m) =>
+          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat', m.peer?.rel === 'parent'),
+        )
       },
     }
     addNoteTaker(task.id, taker)
@@ -1465,6 +1488,9 @@ async function runAgent(
       if (!text || ctx.signal.aborted) return null
       // 子任务的结果到了、接着干：从这一刻继续算执行
       resumeRun(task)
+      // 交回的结果会让 CLI 接着做，这一段的结束要照常上报：result 之后停在这里等子任务时
+      // 这一轮已经标记过结束了（见 endTurn），不复位会吞掉交回后那次结束
+      turnEnded = false
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
@@ -1499,8 +1525,7 @@ async function runAgent(
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
     if (!prewarmMode && chat && !op && !helpers) {
-      markTurnDone(task)
-      ctx.onTurnEnd?.()
+      endTurn()
     }
     ctx.changed(true)
     try {
@@ -1536,6 +1561,7 @@ async function runAgent(
             const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
+            turnEnded = false
             arm(text)
             done(text)
           },

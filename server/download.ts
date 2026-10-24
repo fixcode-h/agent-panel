@@ -11,7 +11,10 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { t } from '../shared/i18n.ts'
-import { netFetch } from './net.ts'
+import { netFetch, type NetInit } from './net.ts'
+
+/** 和 netFetch 一样用：下载的每处请求都经过它，测试可以替换 */
+export type NetFetch = (url: string, init?: NetInit) => Promise<Response>
 
 export interface DownloadOptions {
   /** 已下载的字节数（增量，续传时会先报一次已有的部分）；一片重下时用负数扣回重复的部分 */
@@ -24,13 +27,17 @@ export interface DownloadOptions {
   connections?: number
   /** 每片多大，默认 16 MB */
   chunkSize?: number
-  /** 多久没有收到数据算卡住，默认 45 秒 */
+  /** 多久没有收到数据算卡住，默认 45 秒（单连接下载 90 秒）；每次回退到另一条路时重新计时 */
   idleMs?: number
+  /** 测试或调用方替换网络请求；默认是带代理回退的 netFetch */
+  fetch?: NetFetch
 }
 
 const CONNECTIONS = 8
 const CHUNK = 16 * 1024 * 1024
 const IDLE_MS = 45_000
+/** 等响应头的上限：连不上时交给 netFetch 换代理，不用一直挂着 */
+const HEAD_TIMEOUT_MS = 20_000
 /** 每片最多试几次（连接被重置、读超时这类临时错误重试；4xx 不重试） */
 const TRIES = 4
 
@@ -132,8 +139,12 @@ async function openPart(part: string) {
 /**
  * 探测服务端：小请求确认是否支持 Range、文件多大、版本标识（变了说明文件被替换，旧的分片作废）
  */
-async function probe(url: string, headers: Record<string, string>, signal: AbortSignal | undefined) {
-  const res = await netFetch(url, { headers: { ...headers, Range: 'bytes=0-0' }, signal })
+async function probe(url: string, headers: Record<string, string>, signal: AbortSignal | undefined, fetcher: NetFetch) {
+  const res = await fetcher(url, {
+    headers: { ...headers, Range: 'bytes=0-0' },
+    signal,
+    timeoutMs: HEAD_TIMEOUT_MS,
+  })
   if (!res.ok) throw new HttpError(res.status, failed(res.status, url))
   const contentRange = res.headers.get('content-range') ?? ''
   const total = Number(/\/\s*(\d+)\s*$/.exec(contentRange)?.[1] ?? res.headers.get('content-length')) || 0
@@ -162,10 +173,22 @@ async function writeState(file: string, state: PartState) {
 }
 
 /** 单连接流式下载：服务端不支持 Range 时用，从 0 覆盖写 */
-async function stream(url: string, part: string, headers: Record<string, string>, o: DownloadOptions) {
+async function stream(
+  url: string,
+  part: string,
+  headers: Record<string, string>,
+  o: DownloadOptions,
+  fetcher: NetFetch,
+) {
   const idle = watch(o.signal, o.idleMs ?? IDLE_MS * 2)
   try {
-    const res = await netFetch(url, { headers, signal: idle.signal })
+    const res = await fetcher(url, {
+      headers,
+      signal: idle.signal,
+      timeoutMs: HEAD_TIMEOUT_MS,
+      // 回退到另一条路时重新计时，空闲预算只管这一条路上多久没数据
+      onAttempt: () => idle.reset(),
+    })
     if (!res.ok || !res.body) throw new HttpError(res.status, failed(res.status, url))
     const total = Number(res.headers.get('content-length')) || 0
     if (total) o.onTotal?.(total)
@@ -193,14 +216,17 @@ async function fetchSpan(
   ac: AbortController,
   idleMs: number,
   onBytes: (n: number) => void,
+  fetcher: NetFetch,
 ) {
   const want = end - start
   const idle = watch(ac.signal, idleMs)
   let written = 0
   try {
-    const res = await netFetch(url, {
+    const res = await fetcher(url, {
       headers: { ...headers, Range: `bytes=${start}-${end - 1}` },
       signal: idle.signal,
+      timeoutMs: HEAD_TIMEOUT_MS,
+      onAttempt: () => idle.reset(),
     })
     if (res.status === 200) throw new NotRanged('服务端忽略了 Range')
     if (res.status !== 206) throw new HttpError(res.status, failed(res.status, url))
@@ -236,6 +262,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
   const connections = Math.max(1, o.connections ?? CONNECTIONS)
   const chunk = Math.max(64 * 1024, o.chunkSize ?? CHUNK)
   const idleMs = o.idleMs ?? IDLE_MS
+  const fetcher = o.fetch ?? netFetch
   /** 这个文件已经报给调用方的净进度；退回单连接时要扣回去 */
   let reported = 0
   const report = (n: number) => {
@@ -243,12 +270,12 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
     if (n) o.onBytes?.(n)
   }
 
-  const info = await probe(url, headers, o.signal)
+  const info = await probe(url, headers, o.signal, fetcher)
   if (o.signal?.aborted) throw aborted()
   if (info.total) o.onTotal?.(info.total)
   if (!info.ranged || !info.total) {
     await rm(meta, { force: true })
-    await stream(url, part, headers, { ...o, onBytes: report })
+    await stream(url, part, headers, { ...o, onBytes: report }, fetcher)
     await rename(part, to)
     return
   }
@@ -307,7 +334,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
       for (let attempt = 1; ; attempt++) {
         if (failure || ac.signal.aborted) return
         try {
-          await fetchSpan(url, fh, span, headers, ac, idleMs, report)
+          await fetchSpan(url, fh, span, headers, ac, idleMs, report, fetcher)
           done = addSpan(done, span)
           // 每片都写状态，进程被杀只丢正在下的几片；但不用每片都落盘
           if (i === jobs.length - 1 || Date.now() - lastWrite > 1000) await save()
@@ -346,7 +373,7 @@ export async function downloadFile(url: string, to: string, o: DownloadOptions =
     // 中途有分片没按 Range 返回：整份文件从头单连接下，已经报过的进度扣回去
     report(-reported)
     await rm(meta, { force: true })
-    await stream(url, part, headers, { ...o, onBytes: report })
+    await stream(url, part, headers, { ...o, onBytes: report }, fetcher)
     await rename(part, to)
     return
   }

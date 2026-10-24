@@ -16,6 +16,17 @@ import { fmtDuration } from '../lib/duration.mjs'
 import { startServer } from './spawn-server.mjs'
 import { fileURLToPath } from 'node:url'
 
+// 端到端测试自己建仓库、自己跑服务：不能继承外面的 git dir。
+// 在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时，下面建假项目的 `git init` 会把这两个值
+// 写进共享仓库的 .git/config（core.worktree = WSL 路径），主目录所有 git 命令都会失败；
+// 拉起的服务也会继承它们，服务里建的 worktree 同样落到主仓库上（见 docs/lessons/testing.md）。
+// GIT_CONFIG_COUNT 是面板给后台命令注入的防推送配置，测试里自己的 git 不需要它
+delete process.env.GIT_DIR
+delete process.env.GIT_WORK_TREE
+delete process.env.GIT_INDEX_FILE
+delete process.env.GIT_COMMON_DIR
+delete process.env.GIT_CONFIG_COUNT
+
 // 1×1 的透明 PNG，用来测图片文件按原图读取
 export const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',

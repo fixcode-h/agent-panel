@@ -7,7 +7,7 @@
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { globToRegExp, readShards } from './lessons.mjs'
@@ -141,6 +141,61 @@ for (const f of files) {
 
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
+
+// 8. 一轮结束只发一次回调：runner 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出。
+// 两处各发一次时同一轮会被上报两遍（CLI 的 result 和「回复完停在等下一句」相隔几百毫秒，
+// reportKey 按 turnDoneAt 去重挡不住），见 docs/lessons/execution.md「一轮结束只发一次回调」
+{
+  const f = 'server/exec/runner.ts'
+  if (existsSync(path.join(root, f))) {
+    // 按调用次数算，不按行：两个调用写在同一行也是守着「只从 endTurn 发出」；注释里提到不算
+    const code = read(f)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '')
+    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(\)/g) ?? []
+    if (calls.length !== 2)
+      errors.push(
+        `${f} 里一轮结束只能从 endTurn() 一处发出（markTurnDone + onTurnEnd 各一次），实际 ${calls.length} 处`,
+      )
+  }
+}
+
+// 9. 共享仓库的 config 里不能有 core.worktree：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时，
+// 测试里的 git init 会把它们写进共享 config（core.worktree = /mnt/...），
+// 之后主目录所有 git 命令都报 `fatal: Invalid path '/mnt'`，HEAD 也可能变成分离状态（见 docs/lessons/testing.md）
+{
+  // worktree 的 .git 文件里是 Windows 路径（E:/...），在 WSL 里要换成 /mnt/e/... 才找得到；
+  // 解析不出来时报错，不要静默跳过——WSL 正是会写坏 config 的那个环境
+  const hostPath = (p) => {
+    if (process.platform === 'win32') return p
+    const m = /^([A-Za-z]):[\\/](.*)$/.exec(p)
+    return m ? `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}` : p
+  }
+  const dotgit = path.join(root, '.git')
+  let common = dotgit
+  if (existsSync(dotgit) && !statSync(dotgit).isDirectory()) {
+    const m = readFileSync(dotgit, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)
+    if (!m) errors.push(`${dotgit} 读不出 gitdir，没法检查共享 config 里的 core.worktree`)
+    else common = path.resolve(root, hostPath(m[1]))
+  }
+  if (!existsSync(common)) errors.push(`${dotgit} 指向的 ${common} 不存在，没法检查共享 config 里的 core.worktree`)
+  else {
+    const cd = path.join(common, 'commondir')
+    if (existsSync(cd)) common = path.resolve(common, readFileSync(cd, 'utf8').trim())
+    const cfg = path.join(common, 'config')
+    if (existsSync(cfg)) {
+      let inCore = false
+      for (const line of readFileSync(cfg, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+        const s = line.trim()
+        if (/^\[/.test(s)) inCore = /^\[core\]$/i.test(s)
+        else if (inCore && /^worktree\s*=/i.test(s))
+          errors.push(
+            `${cfg} 里写了 core.worktree（${s}）：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时 git init 会写进去，主仓库的 git 命令会全部失败。删掉这一行`,
+          )
+      }
+    }
+  }
+}
 
 if (errors.length) {
   console.error(errors.join('\n'))

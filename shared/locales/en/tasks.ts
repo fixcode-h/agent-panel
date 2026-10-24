@@ -5,6 +5,8 @@ export const EN_TASKS: Record<string, string> = {
   进行中: 'In progress',
   等待中: 'Waiting',
   '等：{what}': 'Waiting on: {what}',
+  '用时 {time}': 'Elapsed {time}',
+  '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
@@ -160,6 +162,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
+  // 标题栏的项目名：点开是项目下的对话
+  打开项目: 'Open project',
+  打开聊天: 'Open chat',
+  这个项目还没有对话: 'No conversations in this project yet',
+
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',
@@ -238,6 +245,7 @@ export const EN_TASKS: Record<string, string> = {
   子对话: 'Sub-conversation',
   '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
+  切换子对话: 'Switch sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
   '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
@@ -884,6 +892,8 @@ export const EN_TASKS: Record<string, string> = {
   // 子对话进度：在做什么、在等什么、多久没新输出
   '最后活动 {ago}': 'last active {ago}',
   '已 {n} 分钟没有新输出': 'No new output for {n} min',
+  '已自动询问，等回复': 'Status asked automatically; waiting for its reply',
+  '已自动询问，仍没有新输出': 'Status asked automatically; still no new output',
   '等用户回答 {n} 个提问': 'Waiting for you to answer {n} question(s)',
   '等用户确认 {n} 项': 'Waiting for you to confirm {n} item(s)',
   '等 {n} 个后台命令': 'Waiting for {n} background command(s)',
@@ -904,7 +914,8 @@ export const EN_TASKS: Record<string, string> = {
   进程: 'Processes',
   内存曲线: 'Memory chart',
   内存合计: 'Total memory',
-  '面板 {server} · 进程 {cli}': 'Panel {server} · processes {cli}',
+  '面板 {server}（不计入对话合计）': 'Panel {server} (not included in this chat’s total)',
+  '这个对话及附属（子对话、子任务）的进程合计': 'Sum of processes in this chat and its sub-conversations and subagents',
   '正在读取进程…': 'Reading processes…',
   这个对话现在没有在跑的进程: 'This chat has no running processes',
   '清理任务已经结束、进程还留着的': 'Cleans up processes left behind by finished tasks',
@@ -931,7 +942,7 @@ export const EN_TASKS: Record<string, string> = {
     'The process is still running; it may need higher permission or is busy. Try again later',
   '进程没有结束（可能权限不足）': 'The process did not stop (it may need higher permission)',
   没有结束这个进程: 'Could not stop this process',
-  '面板 {v}': 'Panel {v}',
+  '面板 {v}（不计入）': 'Panel {v} (not included)',
   '进程 {v}': 'Processes {v}',
   会话内存随时间的变化: 'Chat memory over time',
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
@@ -944,9 +955,8 @@ export const EN_TASKS: Record<string, string> = {
   '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
   '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
   重新分析并打开这次排查: 'Analyze again and open the analysis chat',
-  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
-  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
-    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  '下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Unreadable memory shows “Not collected”, and nothing is spread across chats.',
   面板自己的进程: "The panel's own processes",
   '{n} 个进程': '{n} process(es)',
   '{n} 个进程的合计': 'Sum of {n} process(es)',
@@ -985,6 +995,8 @@ export const EN_TASKS: Record<string, string> = {
   '已收到{name}发来的消息': 'Received a message from {name}',
   '发给{name}的消息': 'Message to {name}',
   '来自 {name}': 'from {name}',
+  '来自 {name}（{title}）': 'from {name} ({title})',
+  '发给 {name}（{title}）': 'to {name} ({title})',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',

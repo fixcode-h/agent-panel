@@ -34,6 +34,7 @@ import {
   beginRun,
   childActivity,
   childActivityText,
+  childIdleAsk,
   childLastActivity,
   childStartedAt,
   childWait,
@@ -91,7 +92,7 @@ import {
 } from './exec/runner.ts'
 import { stopHelper } from '../shared/engine.ts'
 import { makeAlert } from '../shared/alerts.ts'
-import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from './exec/delivery.ts'
+import { dropHeld, hasHeld, holdForNextTurn, removeHeld, takeHeld } from './exec/delivery.ts'
 import {
   forgetPresence,
   isViewing,
@@ -146,7 +147,7 @@ import {
 } from '../shared/plan.ts'
 import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
-import { runTree } from '../shared/run-usage.ts'
+import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
@@ -159,6 +160,7 @@ import {
   cleanableClis,
   commandSummary,
   loadHistory,
+  ownedEntries,
   processSnapshot,
   subtree,
   sumRss,
@@ -2613,6 +2615,8 @@ export function tasksApi(deps: {
               doing: childActivityText(doing),
               waiting: childWaitText(childWait(cur, { background: pendingJobs(cur.id), cliAlive: live.has(cur.id) })),
               lastActivityAt: childLastActivity(cur),
+              // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
+              autoAsk: cur.autoAsk,
             }
           })
         },
@@ -3048,6 +3052,130 @@ export function tasksApi(deps: {
     return { task, how: how || ('held' as const) }
   }
 
+  /** 自动询问状态时一分钟按多少毫秒算：测试用环境变量缩短（和 runner 的 idle 检测同一种做法） */
+  const askUnitMs = Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000
+  /** 下一次扫描的定时器：服务退出时清掉 */
+  let askTimer: ReturnType<typeof setTimeout> | undefined
+
+  /**
+   * 子对话静默到设置的时间就自动问它状态：阈值、防抖和次数上限都在 shared/task.ts 的 childIdleAsk，
+   * 这里只扫内存里还在执行的子对话，经 deliver 以父对话的名义发出去。
+   *
+   * 走 deliver 而不是新开一轮：非阻塞地先试插话 / 交给正在跑的 CLI，收不下就排到这一轮结束后，
+   * 不会占住用户消息的通道。用户的消息还排着（hasHeld）时这一轮不问，先让用户的消息走。
+   * 返回下一次扫描的间隔：阈值的四分之一，最多一分钟，设置改了下一轮就按新的来。
+   */
+  async function askIdleChildren(): Promise<number> {
+    let minutes = 0
+    try {
+      minutes = (await getSettings()).childIdleAskMinutes
+    } catch (e) {
+      log.warn('task', '读取自动询问的设置失败', (e as Error).message)
+    }
+    if (!minutes) return 60_000
+    const next = Math.min(60_000, Math.max(200, (minutes * askUnitMs) / 4))
+    if (shuttingDown) return next
+    const now = Date.now()
+    for (const entry of [...live.values()]) {
+      const tk = entry.task
+      // 只管子对话：顶层对话静默由 idleTimeoutMinutes 那一条提醒
+      if (!tk.parentTaskId || tk.archived) continue
+      if (live.get(tk.id) !== entry) continue
+      // 用户的消息还排着：先让用户的消息走，这一轮不问（下一轮再判断）
+      if (hasHeld(tk.id)) continue
+      const decision = childIdleAsk(
+        {
+          minutes,
+          working: tk.working,
+          lastActivityAt: childLastActivity(tk),
+          wait: childWait(tk, { background: pendingJobs(tk.id), cliAlive: true }),
+          autoAsk: tk.autoAsk,
+          unitMs: askUnitMs,
+        },
+        now,
+      )
+      if (!decision.ask) continue
+      const parent = live.get(tk.parentTaskId)?.task ?? (await store.get(tk.parentTaskId))
+      // 读父对话的时候它可能已经被停止、替换掉了：这一轮就不问了
+      if (!parent || shuttingDown || live.get(tk.id) !== entry) continue
+      const mins = Math.max(1, Math.round(decision.idleMs / askUnitMs))
+      const text =
+        `【状态询问】你已经 ${mins} 分钟没有输出了。请简短报告：现在在做什么、是否卡住；` +
+        `卡住请说明卡在哪一步、需要什么才能继续。没有卡住就说明下一步还要多久，然后接着做。`
+      const msg: TaskMessage = {
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text,
+        tools: [],
+        // 不是用户说的话：CLI 卡住、重启后走 followUp 时也按说明记，不占用户轮次，也不当 rewind 点
+        panel: 'note',
+        peer: await peerOf(parent, 'parent', 'question', '状态询问：这么久没有输出，是否卡住'),
+        at: new Date().toISOString(),
+      }
+      try {
+        const r = await deliver(entry, msg, text, [])
+        // deliver 可能已经重启了卡住的 CLI（换了一份任务）：记在现在的那一份上，别覆盖掉新状态
+        const after = live.get(tk.id)?.task ?? r.task
+        // 这一轮收不下（CLI 没有插话 / 取补充，或者刚好在收尾）：撤掉这条询问。
+        // 留在 held 队列里会让它排在用户消息前面，还会在这一轮结束时开新一轮，把刚收尾的子对话打回未完成。
+        // 算一次尝试，从这一刻起再等一个阈值才重试，满 3 次停手
+        if (r.how === 'held') {
+          removeHeld(tk.id, msg.id)
+          after.messages = after.messages.filter((m) => m.id !== msg.id)
+          after.autoAsk = { at: new Date().toISOString(), count: decision.count, held: true }
+          await store.update(after.id, after)
+          log.info('task', '子对话这一轮收不下自动询问，跳过', {
+            task: tk.id,
+            parent: tk.parentTaskId,
+            minutes: mins,
+            count: decision.count,
+          })
+          continue
+        }
+        // 记成询问交付后的最后活动时间：询问自己的那条消息会把时间刷新到这一刻，
+        // 之后有输出才显示成「已经回复」；重启路径下 followUp 另记的那条也不会让「等回复」立刻消失
+        after.autoAsk = { at: childLastActivity(after) || msg.at, count: decision.count }
+        await store.update(after.id, after)
+        log.info('task', '子对话没有输出，自动问了它的状态', {
+          task: tk.id,
+          parent: tk.parentTaskId,
+          minutes: mins,
+          count: decision.count,
+          how: r.how,
+        })
+      } catch (e) {
+        // 没交出去也算一次尝试：不然每次扫描都会重试，绕过「最多 3 次」。
+        // intoTurn 可能已经把它 push 进对话和 held 队列、落盘时才抛错：照样撤掉，别留到收尾时开新一轮
+        const after = live.get(tk.id)?.task ?? entry.task
+        removeHeld(tk.id, msg.id)
+        after.messages = after.messages.filter((m) => m.id !== msg.id)
+        after.autoAsk = { at: new Date().toISOString(), count: decision.count, held: true }
+        await store.update(after.id, after).catch(() => {})
+        log.warn('task', '自动询问没能交给子对话', { task: tk.id, error: (e as Error).message })
+      }
+    }
+    return next
+  }
+
+  /** 按设置里的间隔扫：启动就扫一次，之后每次用上一次算出的间隔，不改设置也能马上生效 */
+  function armIdleAsk() {
+    const tick = async () => {
+      if (shuttingDown) return
+      let next = 60_000
+      try {
+        next = await askIdleChildren()
+      } catch (e) {
+        log.warn('task', '自动询问子对话状态时出错', (e as Error).message)
+      }
+      if (shuttingDown) return
+      askTimer = setTimeout(tick, next)
+      askTimer.unref?.()
+    }
+    void tick()
+  }
+
   const stopTask = (id: string, reason: StopReason) => {
     // 只有用户自己停止、归档时名下子对话才一起结束（原因记成 parent，不是用户暂停）。
     // 父对话自己的 CLI 已经退了（这一轮说完、只剩子对话在跑）也要停：在这里先做，不受下面「没在跑」的提前返回影响。
@@ -3147,16 +3275,19 @@ export function tasksApi(deps: {
 
   // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
 
-  /** 对话树最上层：子对话、子任务的进程都算进父对话的统计 */
-  const rootIdOf = (tk: Task) => tk.rootTaskId || tk.id
+  /** 这个对话及它下面的全部任务（子对话、子对话的子对话、工作流节点所在的子对话） */
+  const subtreeIdsOf = async (tk: Task) => subtreeTaskIds(await store.list(), tk.id)
 
   /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者正在启动 */
   const taskAlive = (id: string) => live.has(id) || startQueue.has(id)
 
-  /** 这个对话的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计 */
+  /**
+   * 这个对话（含附属的任务）的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计。
+   * 只算自己这一支：打开子对话时看不到父对话和兄弟的进程
+   */
   async function processPanel(tk: Task) {
-    const rootId = rootIdOf(tk)
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const ids = await subtreeIdsOf(tk)
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const now = Date.now()
     const processes: TaskProcess[] = []
@@ -3195,14 +3326,15 @@ export function tasksApi(deps: {
       processes: processes.sort((a, b) => (a.kind === b.kind ? a.pid - b.pid : a.kind === 'cli' ? -1 : 1)),
       cliMemory,
       serverMemory,
-      totalMemory: cliMemory === null ? null : cliMemory + serverMemory,
+      // 面板自己的内存不属于这个对话：合计只算子树里的 CLI 进程，serverMemory 单独给出
+      totalMemory: cliMemory,
       unavailable: map ? '' : t('取不到系统进程信息（权限不足或命令不可用）'),
     }
   }
 
-  /** 这个对话能动的 pid：登记的进程和它们的整棵子树 */
-  async function allowedPids(rootId: string) {
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+  /** 这个对话子树能动的 pid：这些任务登记的进程和它们的整棵子树 */
+  async function allowedPids(ids: Set<string>) {
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const out = new Set<number>()
     for (const e of entries) for (const pid of map ? subtree(e.pid, map) : [e.pid]) out.add(pid)
@@ -3328,6 +3460,8 @@ export function tasksApi(deps: {
           activity: doing,
           // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时，界面上标黄 / 标红
           lastActivityAt: childLastActivity(liveTask),
+          // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」
+          autoAsk: liveTask.autoAsk,
           // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）：不是在跑也不是卡住
           waiting: childWait(liveTask, { background: pending, cliAlive: live.has(liveTask.id) }),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
@@ -3381,7 +3515,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const pid = Number(c.req.param('pid'))
     if (!Number.isInteger(pid) || pid <= 0) return bad(c, t('进程号不对'))
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     if (!allowed.has(pid)) return bad(c, t('这个进程不属于当前对话，不能从这里关闭'))
     killTree(pid)
     // 等一下再看：结束失败（权限不足、被系统占用）要把真实状态告诉用户，不能悄悄把登记删掉
@@ -3402,13 +3536,13 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
     const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
-    const roots = rootIdOf(tk)
+    const ids = await subtreeIdsOf(tk)
     const map = await processSnapshot()
     const { targets, skipped, gone } = cleanableClis({
       entries: trackedClis(),
       map,
       aliveTask: taskAlive,
-      rootTaskId: roots,
+      taskIds: ids,
       only,
     })
     // 进程已经不在的登记顺手清掉（不算「结束」，界面照样显示成已结束）
@@ -3466,7 +3600,7 @@ export function tasksApi(deps: {
     })
     if (r.spawnError) return c.json({ suggestions: [], text: '', error: r.spawnError })
     const parsed = extractJson(text) as { kill?: unknown } | undefined
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     const suggestions = (Array.isArray(parsed?.kill) ? parsed.kill : [])
       .map((x) => x as { pid?: unknown; reason?: unknown })
       .filter((x) => Number.isInteger(x.pid) && allowed.has(Number(x.pid)))
@@ -3481,7 +3615,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const from = Number(c.req.query('from') ?? '')
     const to = Number(c.req.query('to') ?? '')
-    const points = summarize(loadHistory(), rootIdOf(tk), {
+    const points = summarize(loadHistory(), await subtreeIdsOf(tk), {
       from: Number.isFinite(from) && from > 0 ? from : undefined,
       to: Number.isFinite(to) && to > 0 ? to : undefined,
     })
@@ -4022,6 +4156,8 @@ export function tasksApi(deps: {
         return {
           taskId: x.id,
           title: x.title,
+          // 列表按创建时间排，前端不再依赖接口返回的顺序
+          createdAt: x.createdAt,
           child: x.id !== id,
           working: !!x.working,
           branch: wt.branch,
@@ -4653,6 +4789,9 @@ export function tasksApi(deps: {
     return c.body(null, 204)
   })
 
+  // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
+  void ready.then(() => armIdleAsk()).catch(() => {})
+
   return {
     routes,
     /**
@@ -4714,6 +4853,7 @@ export function tasksApi(deps: {
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     async stopAll() {
       shuttingDown = true
+      clearTimeout(askTimer)
       for (const id of live.keys()) stopTask(id, 'restart')
       // 后台命令的记录只在内存里：退出前停掉，并把发起它们的那一行收口成「被停止」，
       // 不然重启后那一行永远停在「已放到后台」，对话和用户都不知道它没跑完

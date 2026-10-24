@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   BUILTIN_WORKFLOWS,
+  LOCAL_FILES,
   LOCAL_MODELS,
   PYTHON_RANGE,
   PYTHON_SUPPORT,
@@ -11,11 +12,13 @@ import {
   fillWorkflow,
   imageUse,
   localSize,
+  localWorkflow,
   parsePythonProbe,
   pickWorkflow,
   pythonIssueText,
   pythonSupport,
   torchIndexes,
+  type ComfyWorkflow,
 } from '../shared/local-image.ts'
 import { t } from '../shared/i18n.ts'
 import { localPrompts } from '../shared/design.ts'
@@ -159,4 +162,92 @@ test('装 PyTorch 开了镜像先用国内的，失败再回退官方源；苹�
   assert.deepEqual(torchIndexes('cuda', false), ['https://download.pytorch.org/whl/cu130'])
   // 苹果芯片的 torch 在 PyPI 上，没有单独的索引
   assert.deepEqual(torchIndexes('mps', true), [''])
+})
+
+test('MOSS-Image 模型：文件都在清单里，地址都在官方仓库', () => {
+  const m = LOCAL_MODELS.find((x) => x.id === 'moss-image')!
+  assert.equal(m.family, 'moss')
+  assert.equal(m.license, 'Apache-2.0')
+  assert.equal(m.base, 1024)
+  assert.equal(m.natural, true)
+  assert.ok(m.vram >= 16)
+  for (const id of m.files) {
+    const f = LOCAL_FILES.find((x) => x.id === id)
+    assert.ok(f, id)
+    assert.match(f.url, /^https:\/\/huggingface\.co\/Comfy-Org\/MOSS-Image\/resolve\/main\//)
+  }
+})
+
+test('MOSS-Image 走 {{layout}} 占位符，不写 {{prompt}} 也能通过检查', () => {
+  const g = BUILTIN_WORKFLOWS.find((w) => w.id === 'game-moss-layout')!.graph
+  assert.deepEqual(checkWorkflow(g), [])
+  const nodes = Object.values(g)
+  const clip = nodes.find((n) => n.class_type === 'CLIPLoader')!
+  assert.equal(clip.inputs.type, 'moss_image')
+  assert.match(String(clip.inputs.clip_name), /qwen3\.5_9b/)
+  const pos = nodes.find((n) => n.class_type === 'CLIPTextEncode' && n.inputs.text === '{{layout}}')
+  assert.ok(pos)
+  assert.equal(
+    nodes.find((n) => n.class_type === 'UNETLoader')?.inputs.unet_name,
+    'moss_image_sft_int8_convrot.safetensors',
+  )
+  assert.equal(nodes.find((n) => n.class_type === 'VAELoader')?.inputs.vae_name, 'flux2-vae_small.safetensors')
+  // 官方模板的跳过层引导：第 22 层，前 50% 步数生效
+  const slg = nodes.find((n) => n.class_type === 'SkipLayerGuidanceDiTSimple')!
+  assert.equal(slg.inputs.single_layers, '22')
+  assert.equal(slg.inputs.start_percent, 0)
+  assert.equal(slg.inputs.end_percent, 0.5)
+  assert.deepEqual(slg.inputs.model, ['unet', 0])
+  // 25 步、CFG 2.5、er_sde
+  const ks = nodes.find((n) => n.class_type === 'KSampler')!
+  assert.equal(ks.inputs.steps, 25)
+  assert.equal(ks.inputs.cfg, 2.5)
+  assert.equal(ks.inputs.sampler_name, 'er_sde')
+  assert.deepEqual(ks.inputs.model, ['slg', 0])
+})
+
+test('导入带 {{layout}} 的工作流不会被自动占位符改成 {{prompt}}', () => {
+  const g = autoPlaceholders({
+    pos: { class_type: 'CLIPTextEncode', inputs: { text: '{{layout}}' } },
+    sample: { class_type: 'KSampler', inputs: { positive: ['pos', 0], seed: 1 } },
+    latent: { class_type: 'EmptyFlux2LatentImage', inputs: { width: 1024, height: 1024, batch_size: 1 } },
+    save: { class_type: 'SaveImage', inputs: { images: ['pos', 0] } },
+  })
+  assert.equal(g.pos.inputs.text, '{{layout}}')
+})
+
+test('MOSS-Image 的 bf16 版本用自己那一套文件', () => {
+  const m = LOCAL_MODELS.find((x) => x.id === 'moss-image-bf16')!
+  const g = localWorkflow(m, { prompt: 'p', negative: 'n', width: 1024, height: 1024, count: 1, seed: 1 })
+  assert.equal(g.unet.inputs.unet_name, 'moss_image_sft_bf16.safetensors')
+  assert.equal(g.clip.inputs.clip_name, 'qwen3.5_9b_bf16.safetensors')
+  assert.equal(g.vae.inputs.vae_name, 'flux2-vae_small.safetensors')
+})
+
+test('fillWorkflow：有布局 JSON 时替换 {{layout}}，没有时回退成描述', () => {
+  const g = BUILTIN_WORKFLOWS.find((w) => w.id === 'game-moss-layout')!.graph
+  const values = {
+    prompt: 'a game menu',
+    negative: 'blurry',
+    width: 1024,
+    height: 1024,
+    count: 1,
+    seed: 7,
+  }
+  const filled = fillWorkflow(g, { ...values, layout: '{"items":[]}' })
+  assert.ok(Object.values(filled).some((n) => n.class_type === 'CLIPTextEncode' && n.inputs.text === '{"items":[]}'))
+  const fallback = fillWorkflow(g, values)
+  assert.ok(Object.values(fallback).some((n) => n.class_type === 'CLIPTextEncode' && n.inputs.text === 'a game menu'))
+  assert.equal(JSON.stringify(fallback).includes('{{layout}}'), false)
+})
+
+test('有布局时优先选能接 {{layout}} 的工作流，没有时保持原来的顺序', () => {
+  const hasLayout = (w: { graph: ComfyWorkflow['graph'] }) => JSON.stringify(w.graph).includes('{{layout}}')
+  assert.equal(
+    pickWorkflow(BUILTIN_WORKFLOWS, 'auto', 'game', 'concept', () => true, hasLayout)?.id,
+    'game-moss-layout',
+  )
+  assert.equal(pickWorkflow(BUILTIN_WORKFLOWS, 'auto', 'game', 'concept', () => true)?.id, 'game-concept')
+  // 别的用途不会因为有布局就跳到 concept 工作流
+  assert.equal(pickWorkflow(BUILTIN_WORKFLOWS, 'auto', 'game', 'icon', () => true, hasLayout)?.id, 'game-icon')
 })

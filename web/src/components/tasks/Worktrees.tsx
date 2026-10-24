@@ -8,6 +8,7 @@ import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { orderWorktrees } from '@/lib/worktrees'
 import { t } from '@shared/i18n'
 import { childHoldText } from '@shared/task'
 
@@ -174,34 +175,56 @@ export function useWorktreeActions(rootId: string) {
 export function WorktreeRow({
   item,
   busy,
+  onOpen,
   onMerge,
   onRemove,
 }: {
   item: WorktreeItem
   busy: boolean
+  /** 打开这一行对应的对话；当前对话自己那行不传，点不了 */
+  onOpen?: () => void
   onMerge: () => void
   onRemove: () => void
 }) {
   const active = item.state === 'active'
   const idle = active && !item.working
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
+        <span className="shrink-0 text-subtle">{item.baseBranch || 'HEAD'}</span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
+        <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={item.branch}>
+          {item.branch}
+        </span>
+      </span>
+      <span className="mt-0.5 block truncate text-[0.6875rem] text-subtle" title={item.path}>
+        {item.child && <span className="text-muted">{item.title} · </span>}
+        {worktreeSummary(item)}
+      </span>
+    </>
+  )
   return (
-    <div className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60">
+    <div
+      data-worktree-row={item.taskId}
+      className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60"
+    >
       <span className="mt-px">
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <WorktreeMark item={item} />}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
-          <span className="shrink-0 text-subtle">{item.baseBranch || 'HEAD'}</span>
-          <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
-          <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={item.branch}>
-            {item.branch}
-          </span>
-        </div>
-        <p className="mt-0.5 truncate text-[0.6875rem] text-subtle" title={item.path}>
-          {item.child && <span className="text-muted">{item.title} · </span>}
-          {worktreeSummary(item)}
-        </p>
-      </div>
+      {onOpen ? (
+        // 原生按钮：Enter / Space 和鼠标点都一样；合并、删除是旁边的独立按钮，不会连带触发
+        <button
+          type="button"
+          onClick={onOpen}
+          title={t('在右侧打开子对话「{title}」', { title: item.title })}
+          aria-label={t('在右侧打开子对话「{title}」', { title: item.title })}
+          className="min-w-0 flex-1 cursor-pointer rounded-md text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1">{body}</div>
+      )}
       {idle && (
         <span className="flex shrink-0 items-center gap-0.5">
           {needsMerge(item) && (
@@ -233,7 +256,14 @@ export function WorktreeRow({
 }
 
 /** 环境弹窗里的「独立分支」一节：对话自己的和名下子对话的 */
-export function WorktreeSection({ task }: { task: Task }) {
+export function WorktreeSection({
+  task,
+  onOpenChild,
+}: {
+  task: Task
+  /** 点中间那行打开对应的子对话；当前对话自己那行不响应 */
+  onOpenChild?: (id: string) => void
+}) {
   const items = useWorktrees(task.id, worktreeKey(task))
   const actions = useWorktreeActions(task.id)
   if (!items?.length) return null
@@ -245,11 +275,12 @@ export function WorktreeSection({ task }: { task: Task }) {
         <span className="flex-1">{t('独立分支')}</span>
         {open > 0 && <span className="text-warning">{t('{n} 个没合并', { n: open })}</span>}
       </div>
-      {items.map((x) => (
+      {orderWorktrees(items).map((x) => (
         <WorktreeRow
           key={x.taskId}
           item={x}
           busy={actions.busy === x.taskId}
+          onOpen={x.child && onOpenChild ? () => onOpenChild(x.taskId) : undefined}
           onMerge={() => void actions.merge(x)}
           onRemove={() => actions.askRemove(x)}
         />
