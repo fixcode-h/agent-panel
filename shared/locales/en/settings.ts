@@ -420,8 +420,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
   网络代理: 'Network proxy',
-  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时用环境变量 HTTPS_PROXY。':
-    "Used to check for and download updates. If GitHub isn't reachable, enter your local proxy address; when empty, the HTTPS_PROXY environment variable is used.",
+  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口），没开代理软件就不会走代理。也认环境变量 HTTPS_PROXY。':
+    "Used to check for and download updates. If GitHub isn't reachable, enter your local proxy address. When empty, it connects directly first and then tries any local proxy that is running (system proxy or common ports); if no proxy app is running, no proxy is used. The HTTPS_PROXY environment variable is used as well.",
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',

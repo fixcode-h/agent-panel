@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronRight, CircleCheck, ListChecks } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
-import { planChildren, planProgress, shownPlan } from '@shared/plan'
+import { planChildren, planProgress, planSpan, shownPlan } from '@shared/plan'
 import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
@@ -97,24 +97,51 @@ function waitText(w: PlanWait, kids?: WaitChild[]) {
   return [label, doing, ago].filter(Boolean).join(' · ')
 }
 
-/** 步骤后面的一小段：等待中写在等什么，完成写用了多久，进行中写做了多久 */
-function itemMeta(x: PlanItem, now: number, kids?: WaitChild[]) {
+/**
+ * 一项的用时（毫秒）：进行中、等待中从 startedAt 算到现在（每秒随 now 涨），
+ * 完成用 endedAt - startedAt 固定住；待做或没有 startedAt 返回空。
+ */
+function itemElapsed(x: PlanItem, now: number): number | undefined {
+  const from = Date.parse(x.startedAt)
+  if (!Number.isFinite(from)) return undefined
+  if (x.status === 'done') {
+    const end = Date.parse(x.endedAt)
+    return Number.isFinite(end) ? Math.max(0, end - from) : undefined
+  }
+  if (x.status === 'running' || x.status === 'waiting') return Math.max(0, now - from)
+  return undefined
+}
+
+/** 步骤右侧的用时：和标题分开、等宽数字，窄屏下也不被标题挤掉 */
+function ItemTime({ item, now }: { item: PlanItem; now: number }) {
+  const ms = itemElapsed(item, now)
+  if (ms === undefined) return null
+  const time = fmtDuration(ms)
+  const label = t('用时 {time}', { time })
+  return (
+    <span
+      data-plan-time=""
+      title={label}
+      aria-label={label}
+      className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+    >
+      {time}
+    </span>
+  )
+}
+
+/** 步骤后面的一小段：只写等待中在等什么，用时已经挪到右侧显示，不再在这里重复 */
+function itemMeta(x: PlanItem, kids?: WaitChild[]) {
   const waits = x.waits.filter((w) => w.state === 'waiting').map((w) => waitText(w, kids))
   if (x.status === 'waiting' && waits.length)
     // 面板写的 note 在这里一起显示：子对话没交付完时它会写清还在等什么（等的是谁由 waits 带出）
     return [t('等：{what}', { what: waits.join(t('、')) }), x.note].filter(Boolean).join(' · ')
-  const from = Date.parse(x.startedAt)
-  if (!Number.isFinite(from)) return ''
-  if (x.status === 'done') {
-    const end = Date.parse(x.endedAt)
-    return Number.isFinite(end) && end > from ? fmtDuration(end - from) : ''
-  }
-  return x.status === 'running' ? fmtDuration(now - from) : ''
+  return ''
 }
 
 /** 步骤下面那行小字：等待中 note 已经并进 meta（等谁 + 还在等什么），其余情况再把备注接在后面 */
-function itemLine(x: PlanItem, now: number, kids?: WaitChild[]) {
-  const meta = itemMeta(x, now, kids)
+function itemLine(x: PlanItem, kids?: WaitChild[]) {
+  const meta = itemMeta(x, kids)
   const inMeta = x.status === 'waiting' && x.waits.some((w) => w.state === 'waiting')
   return [meta, inMeta ? '' : x.note].filter(Boolean).join(' · ')
 }
@@ -137,10 +164,16 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
     return () => document.removeEventListener('mousedown', down)
   }, [open])
   const plan = shownPlan(task)
+  const finished = !!plan?.doneAt
+  // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新
+  const now = useNow(!!plan && !finished)
   if (!plan) return null
   const p = planProgress(task, plan)
-  const finished = !!plan.doneAt
   const current = p.current?.child?.title ?? p.current?.step.title
+  const currentMs = p.current ? itemElapsed(p.current.child ?? p.current.step, now) : undefined
+  const currentTime = currentMs === undefined ? '' : fmtDuration(currentMs)
+  // 标题里已经带着同样的用时就不重复写一遍
+  const withTime = currentTime !== '' && !current?.includes(currentTime)
   return (
     <div ref={ref} className="relative flex min-w-0 shrink items-center">
       <button
@@ -165,6 +198,16 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
           <span className="flex min-w-0 items-center gap-1 text-xs text-subtle">
             <span>·</span>
             <span className="min-w-0 truncate">{current}</span>
+            {withTime && (
+              <span
+                data-plan-current-time=""
+                title={t('用时 {time}', { time: currentTime })}
+                aria-label={t('用时 {time}', { time: currentTime })}
+                className="shrink-0 font-mono tabular-nums"
+              >
+                {currentTime}
+              </span>
+            )}
           </span>
         )}
         {!finished && p.waiting > 0 && (
@@ -183,7 +226,12 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
 function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; children?: WaitChild[] }) {
   const p = planProgress(task, plan)
   const live = !plan.doneAt
-  const now = useNow(live)
+  const tick = useNow(live)
+  // 已经结束的计划把时间停在 doneAt：提前结束（finish_plan）时还有没做完的步骤，
+  // 不能每次打开窗口都按当前时间重算，否则单项用时会超过总用时
+  const closedAt = Date.parse(plan.doneAt)
+  const now = live || !Number.isFinite(closedAt) ? tick : closedAt
+  const total = planSpan(plan, now)
   const older = task.plans.slice(0, -1).reverse()
   const [history, setHistory] = useState(false)
   return (
@@ -196,6 +244,16 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-subtle" title={plan.title}>
           {plan.title || t('执行计划')}
         </span>
+        {total !== undefined && (
+          <span
+            data-plan-total=""
+            title={t('总用时 {time}', { time: fmtDuration(total) })}
+            aria-label={t('总用时 {time}', { time: fmtDuration(total) })}
+            className="shrink-0 font-mono text-xs text-subtle tabular-nums"
+          >
+            {fmtDuration(total)}
+          </span>
+        )}
         <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
           {p.done}/{p.total}
         </span>
@@ -250,7 +308,7 @@ function PlanStepRow({
   // 状态一变就回到默认：做完的立即收起，开始做的展开
   useEffect(() => setManual(null), [step.status])
   const open = kids.length > 0 && (manual ?? active)
-  const meta = itemLine(step, now, waitingKids)
+  const meta = itemLine(step, waitingKids)
   const doneKids = kids.filter((c) => c.status === 'done').length
   return (
     <li>
@@ -271,7 +329,7 @@ function PlanStepRow({
           <span className="flex min-w-0 items-baseline gap-2">
             <span
               className={cn(
-                'min-w-0 flex-1 text-[0.875rem] leading-5',
+                'min-w-0 flex-1 truncate text-[0.875rem] leading-5',
                 step.status === 'pending' ? 'text-muted' : 'text-fg',
                 step.status === 'running' && 'font-medium',
               )}
@@ -283,6 +341,7 @@ function PlanStepRow({
                 {doneKids}/{kids.length}
               </span>
             )}
+            <ItemTime item={step} now={now} />
           </span>
           {(meta || step.note) && (
             <span
@@ -304,20 +363,23 @@ function PlanStepRow({
       {open && (
         <ol className="mb-1 ml-[2.4375rem] flex flex-col">
           {kids.map((c) => {
-            const m = itemLine(c, now, waitingKids)
+            const m = itemLine(c, waitingKids)
             return (
               <li key={c.id} className="flex min-w-0 items-start gap-2.5 rounded-md py-1 pr-2">
                 <span className="mt-0.5">
                   <PlanIcon status={c.status} small />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span
-                    className={cn(
-                      'text-[0.8125rem] leading-[1.125rem]',
-                      c.status === 'pending' ? 'text-subtle' : c.status === 'running' ? 'text-fg' : 'text-muted',
-                    )}
-                  >
-                    {c.title}
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate text-[0.8125rem] leading-[1.125rem]',
+                        c.status === 'pending' ? 'text-subtle' : c.status === 'running' ? 'text-fg' : 'text-muted',
+                      )}
+                    >
+                      {c.title}
+                    </span>
+                    <ItemTime item={c} now={now} />
                   </span>
                   {m && (
                     <span

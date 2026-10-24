@@ -215,6 +215,7 @@ export function RowShell({
   onToggle,
   onOpen,
   openTip,
+  titleTip,
   failed,
   className,
   children,
@@ -251,6 +252,8 @@ export function RowShell({
   rowOpen?: () => void
   leading?: React.ReactNode
   container?: boolean
+  /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
+  titleTip?: string
   failed?: boolean
   className?: string
   children?: React.ReactNode
@@ -313,7 +316,7 @@ export function RowShell({
                   e.stopPropagation()
                   onOpen()
                 }}
-                title={openTip}
+                title={titleTip || openTip}
                 // 只有整行打开的子对话行才用 openTip 当读屏名：别的行（接收消息、工具）标题本身就是名字，
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
@@ -325,7 +328,9 @@ export function RowShell({
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate', titleClass)}>{title}</span>
+              <span className={cn('min-w-0 truncate', titleClass)} title={titleTip}>
+                {title}
+              </span>
             )
           ) : null}
         </span>
@@ -418,6 +423,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
+  // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
+  const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
@@ -479,6 +486,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}
         openTip={target?.tip}
+        titleTip={titleTip}
         failed={tool.failed}
       >
         {

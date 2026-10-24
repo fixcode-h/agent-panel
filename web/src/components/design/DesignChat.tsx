@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Brush,
@@ -48,6 +48,7 @@ import {
 import { ChatReply, DeliveryLine, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
 import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
@@ -683,7 +684,6 @@ export function DesignChat({
     () => count,
   )
   const { run } = useChatRun(pick)
-  const list = useRef<HTMLDivElement>(null)
   const box = useRef<RichInputHandle>(null)
   // 参考图、需求文档：选文件、粘贴截图、拖进来都行，在输入框上方以附件卡片显示
   const files = useAttachments()
@@ -707,12 +707,8 @@ export function DesignChat({
   // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
   const slash = useSlashMenu({ cli: run.cli, scope: 'skills', setText, editor: box })
 
-  // 新消息、输出变化时滚到底（用户往上翻看时不打扰）
-  const stick = useRef(true)
-  useLayoutEffect(() => {
-    const el = list.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages.length, job?.text, job?.parts, job?.phase, running])
+  // 消息区贴底：和任务对话共用同一个判定（只有真的往上滚才松开），换设计时重新贴底
+  const scroller = useConversationScroll(designId)
 
   // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
   const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
@@ -724,7 +720,7 @@ export function DesignChat({
       // 正在回复：整条消息交给服务端补充给这一轮，收不下就在这一轮结束后自动接着处理
       if (sending || (!v && !cites.length)) return
       setSending(true)
-      stick.current = true
+      scroller.pin()
       try {
         if (
           await onSend(v, run, files.attachments, {
@@ -749,7 +745,7 @@ export function DesignChat({
     // 只有标注、引用或附件、没写文字也能发
     if ((!v && !annotations.length && !files.attachments.length && !cites.length) || sending || files.uploading) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     try {
       if (
         await onSend(v, run, files.attachments, {
@@ -784,7 +780,7 @@ export function DesignChat({
     if (analysisState === 'stop') return onStop()
     if (analysisState !== 'analyze') return
     setAnalyzing(true)
-    stick.current = true
+    scroller.pin()
     try {
       await onAnalyze(run)
     } finally {
@@ -795,7 +791,7 @@ export function DesignChat({
   const applyAnalysis = async (v: string) => {
     if (running || sending) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     try {
       await onSend(v, run, [], { askUser, concept, inpaint: false, conceptCount })
     } finally {
@@ -807,7 +803,7 @@ export function DesignChat({
   const answerDesign = async (answers: string[], picked: number[][]) => {
     if (running || sending) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     const style = designQs.flatMap((q, i) => picked[i].map((k) => q.options[k]?.style ?? '')).find(Boolean)
     const text = designQs.length === 1 ? answers[0] : designQs.map((q, i) => `${q.text}：${answers[i]}`).join('\n')
     try {
@@ -827,7 +823,7 @@ export function DesignChat({
   // 页面替用户发的话（确认模板后开始搭界面）：和手动发的一样，正在处理时交给这一轮，收不下就在这一轮结束后接着做
   useEffect(() => {
     if (!request) return
-    stick.current = true
+    scroller.pin()
     void onSend(request.text, run, [], { askUser, concept, inpaint: false })
     // 每个请求只发一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -835,14 +831,7 @@ export function DesignChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        ref={list}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }}
-        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4"
-      >
+      <ConversationShell scroller={scroller}>
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent">
@@ -906,7 +895,7 @@ export function DesignChat({
           ))}
           {designing && job && <LiveReply job={job} />}
         </div>
-      </div>
+      </ConversationShell>
       <div className="relative shrink-0 px-3 pb-3">
         <RequestCard requests={asks.list} onAnswer={asks.answer} onClose={asks.close} className="mb-2" />
         {askDesign && (

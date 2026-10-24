@@ -5,6 +5,8 @@ export const EN_TASKS: Record<string, string> = {
   进行中: 'In progress',
   等待中: 'Waiting',
   '等：{what}': 'Waiting on: {what}',
+  '用时 {time}': 'Elapsed {time}',
+  '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
@@ -159,6 +161,11 @@ export const EN_TASKS: Record<string, string> = {
   '其他操作 {n} 次': 'Other actions ×{n}',
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
+
+  // 标题栏的项目名：点开是项目下的对话
+  打开项目: 'Open project',
+  打开聊天: 'Open chat',
+  这个项目还没有对话: 'No conversations in this project yet',
 
   // 项目首页
   项目设置: 'Project settings',

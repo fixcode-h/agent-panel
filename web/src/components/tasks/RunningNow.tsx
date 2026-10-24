@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
 import { visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
+import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRow } from './ToolRow'
 import { useChildList, useChildOpen, useOpenChildId } from './child-open'
@@ -32,6 +33,7 @@ function childMs(
   return Math.max(0, (Number.isFinite(end) ? end : now) - start)
 }
 
+/** 一条后台命令：标题是名字（没有就用命令第一行），长命令被截断时悬停看完整命令（这一行没有窗口可打开） */
 function JobRow({ job, now }: { job: TaskJob; now: number }) {
   const [open, setOpen] = useState(false)
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
@@ -39,7 +41,8 @@ function JobRow({ job, now }: { job: TaskJob; now: number }) {
     <RowShell
       glyph={spin}
       verb={t('后台命令')}
-      title={job.name}
+      title={jobLabel(job)}
+      titleTip={job.command || jobLabel(job)}
       detail={
         job.state === 'queued' ? <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span> : undefined
       }
@@ -63,7 +66,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
   const starts = jobs.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter((x) => x > 0)
   const started = starts.length ? Math.min(...starts) : 0
   const queued = jobs.every((j) => j.state === 'queued')
-  const names = jobs.map((j) => j.name).join(t('、'))
+  const names = jobs.map(jobLabel).join(t('、'))
   return (
     <RowShell
       glyph={spin}
@@ -72,7 +75,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
       detail={
         <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
           <span className="min-w-0 truncate font-mono" title={names}>
-            {jobs.length === 1 ? jobs[0].name : t('{n} 条后台命令', { n: jobs.length })}
+            {jobs.length === 1 ? jobLabel(jobs[0]) : t('{n} 条后台命令', { n: jobs.length })}
           </span>
           {queued && <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span>}
         </span>
@@ -85,7 +88,7 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
         {jobs.map((j) => (
           <div key={j.id} className="px-3.5 py-2.5">
             <p className="mb-1 flex items-center gap-1.5 text-xs text-subtle">
-              <span className="truncate font-mono">{j.name}</span>
+              <span className="truncate font-mono">{jobLabel(j)}</span>
               {j.state === 'queued' && <span className="shrink-0">{t('排队中')}</span>}
             </p>
             <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
