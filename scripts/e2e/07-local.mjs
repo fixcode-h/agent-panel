@@ -1004,6 +1004,31 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
 
+  // 打开对话页就预热：轮询看到 done 的那一下，引擎刚标完状态、收尾还没释放执行位。
+  // 这里不隔 sleep 紧循环盯住第一轮结束，看到 done 立刻预热（CI 上 60ms 轮询更容易撞进这个窗口）
+  {
+    let r = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '看到 done 就预热',
+    })
+    for (;;) {
+      r = await call('GET', `/tasks/${r.id}`)
+      if (r.status !== 'running') break
+    }
+    assert.equal(r.status, 'done')
+    r = await call('POST', `/tasks/${r.id}/prewarm`, {})
+    assert.ok(r.status === 'running' || r.awaitingUser, '看到 done 后立刻预热也要真的把 CLI 启动回来')
+    // 收掉这个对话的进程，别留给后面的用例
+    await call('POST', `/tasks/${r.id}/seen`, {})
+    await call('POST', `/tasks/${r.id}/presence`, { viewerId: 'e2e', active: false })
+    await waitDone(r.id, 15000)
+  }
+  step('看到第一轮 done 就立刻预热，也要真的把 CLI 启动回来')
+
   // 预热接口本身：切换 CLI/模型后服务端会用它重开进程；打开对话页不再自动调用它
   {
     let w = await call('POST', '/tasks', {
