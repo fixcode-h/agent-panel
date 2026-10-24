@@ -118,7 +118,6 @@ function SettingsBody({
   const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
-  const [children, setChildren] = useState(String(initial.childConcurrency))
   const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
@@ -260,8 +259,6 @@ function SettingsBody({
   const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
   const keepN = Number(keepAlive)
   const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
-  const childN = Number(children)
-  const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
   const bgN = Number(bgLimit)
   const bgValid = bgLimit !== '' && Number.isInteger(bgN) && bgN >= 1 && bgN <= 64
   const largeN = Number(largeMB)
@@ -288,7 +285,6 @@ function SettingsBody({
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
     reclaimIdleCli: reclaim,
-    childConcurrency: childValid ? childN : initial.childConcurrency,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
     // 内存采样间隔在设置 →「数据」里改，这里沿用原来的值
@@ -628,24 +624,6 @@ function SettingsBody({
                     aria-label={t('同时保活的会话上限')}
                   />
                   {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
-                </div>
-              </Row>
-              <Row
-                title={t('同时执行的子对话')}
-                desc={t(
-                  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。',
-                )}
-              >
-                <div className="flex flex-col gap-1">
-                  <Input
-                    inputMode="numeric"
-                    value={children}
-                    onChange={(e) => setChildren(e.target.value.replace(/[^\d]/g, ''))}
-                    aria-invalid={!childValid}
-                    className={cn('h-9', !childValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                    aria-label={t('同时执行的子对话')}
-                  />
-                  {!childValid && <span className="text-xs text-danger">{t('填 1 到 20 之间的整数')}</span>}
                 </div>
               </Row>
               <Row

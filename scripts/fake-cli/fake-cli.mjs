@@ -559,6 +559,11 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
+if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
+  for (let i = 1; i <= 6; i++)
+    await panelCall('create_conversation', { title: `子对话 ${i}`, message: `SLOW 子对话 ${i} 的任务` })
+}
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
 // 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
 {

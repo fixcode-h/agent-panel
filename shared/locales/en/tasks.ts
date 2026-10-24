@@ -675,10 +675,6 @@ export const EN_TASKS: Record<string, string> = {
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
   '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
     "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
-  同时执行的子对话: 'Concurrent sub-conversations',
-  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
-    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
-  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
   同时运行的后台命令: 'Concurrent background commands',
   '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
     'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
@@ -763,7 +759,6 @@ export const EN_TASKS: Record<string, string> = {
   '子对话用指定的 Agent 和模型': 'Use a specific agent and model for sub-chats',
   '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
     "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
-  '{n} 个（跟随设置）': '{n} (from Settings)',
   停止全部子对话: 'Stop all sub-chats',
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',

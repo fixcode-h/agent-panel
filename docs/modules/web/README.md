@@ -17,6 +17,7 @@
 - 输入框上方状态栏固定三行，顺序是计划 → 子任务 → 子对话（`ChildrenBar` 里 `helpers` 行在 `children` 行之前），每行单独一行不换行。
 - 回归：`scripts/ui/02-task.mjs` 覆盖运行区整段文本可点（状态标签、耗时、动作名和键盘 Enter 分别验证）、运行区和右栏标题两处切换下拉（展开、`data-current` 标当前项、Escape 关闭、方向键 + 回车切换，并断言右栏标题换成选中项、选中标记跟着移动；鼠标点选同样核对切换结果）、1024 宽度下行够宽时活动文字和运行区切换按钮都可见，以及状态栏三行顺序。
 - 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。
+- 设置页和对话设置弹窗（`web/src/pages/SettingsPage.tsx`、`web/src/components/tasks/ConversationSettingsDialog.tsx`）：没有「同时执行的子对话」；「同时运行的后台命令」初始值取 `Settings.backgroundLimit`（默认 64）。
 - 项目设置「AI 初始化」页（`web/src/components/projects/ProjectInitPanel.tsx`、`ProjectSettingsDialog.tsx`）：初始化推荐随项目保存，重开时用 `buildGroups` 的 `same` 判定算差异，「应用推荐（n 项）」只改草稿、点「确认」才保存，无差异时提示「已和当前设置一致」；没有保存过推荐时只提供重新初始化。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
 
