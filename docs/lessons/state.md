@@ -36,6 +36,12 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 - 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话卡在收尾 13 分钟，直到用户追问才调用 submit_merge。
 - 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
 
+## 每次 finish_child 结束都刷新父计划，合进去不等于做完
+
+- 规则：`finish_child` 的每条出口（合进去、没合进去、共用目录直接收口、早就完成）都经过 `finishChild` → `syncParentPlan`：按 `childReport` 收口父计划里等它的那一步（`refreshChildWait`），落盘推界面，并把刷新后的计划附在工具结果里。不要在收尾的某一条分支里单独 `settleWait(..., true)`。
+- 起因：2026-10-24 用户要求「每次子对话请求收尾，父对话收尾完成都需要刷新一下计划列表，这个是强制的」；以前只有独立分支合进去那条路改父计划，而且一合进去就标完成（子对话还没收口也算），共用目录的子对话收完父计划一直挂着等待。
+- 防线：`shared/plan.test.ts` 的「父对话收尾子对话后刷新计划」。
+
 ## 「在运行」只看 convActive，在运行的不失活
 
 - 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0010。

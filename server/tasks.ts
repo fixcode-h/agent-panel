@@ -140,6 +140,7 @@ import {
   markWrapUp,
   openPlan,
   openWork,
+  refreshChildWait,
   settleWait,
   waitNote,
   type WrapUpKind,
@@ -1464,13 +1465,60 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 父对话收尾一个子对话（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
-   * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
-   * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
-   * 父对话计划里等它的那一步也标完成。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
-   * 合并就是验收：没请求收尾（没交验证结果）的不收
+   * finish_child 的唯一入口：每次收尾（合进去、没合进去、早就完成了、还不能收）结束后都强制刷新一次父对话的计划，
+   * 并把刷新后的计划附在工具结果里。用户 2026-10-24 定的硬要求：「每次子对话请求收尾，父对话收尾完成都需要刷新一下计划列表」。
+   * 以前只有独立分支合进去的那条路改父计划、而且一合进去就把那一步标完成（子对话还没收口也算），
+   * 共用目录的子对话收尾完父计划一直挂着等待，父对话的 Agent 也看不到计划变成什么样
    */
   async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
+    const r = await finishChildStep(parent, childId)
+    const plan = await syncParentPlan(parent.id, childId).catch((e) => {
+      log.warn('task', '收尾后刷新父对话计划失败', { task: parent.id, error: (e as Error).message })
+      alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
+      return ''
+    })
+    return plan ? { ok: r.ok, info: `${r.info}\n\n${plan}` } : r
+  }
+
+  /**
+   * 收尾之后把父计划里等这个子对话的那一步对齐到子对话现在的状态，和 reportChild 用同一个判据（childReport）：
+   * 已完成标完成，失败、中断退回进行中，其余（合进去了还在收口、没合进去退回给它了）继续等并写清在等什么。
+   * 不按上报去重：每次收尾都刷新、都落盘并推给界面。返回给父对话 Agent 看的计划文字（没有计划时为空）
+   */
+  async function syncParentPlan(parentId: string, childId: string): Promise<string> {
+    const pEntry = live.get(parentId)
+    const pTask = pEntry?.task ?? (await store.get(parentId))
+    if (!pTask) return ''
+    const tk = live.get(childId)?.task ?? (await store.get(childId))
+    let report: ReturnType<typeof childReport> | undefined
+    if (tk?.parentTaskId === parentId) {
+      const jobs = background
+        .list(childId)
+        .filter((j) => j.state === 'queued' || j.state === 'running')
+        .map((j) => j.name)
+      const project = isolated(tk) ? await deps.projects.get(tk.projectId) : null
+      report = childReport(tk, {
+        background: jobs,
+        more: startQueue.has(childId) || hasHeld(childId),
+        unmerged: await childUnmerged(tk, project ?? null),
+      })
+    }
+    const text = refreshChildWait(pTask, { id: childId, title: tk?.title ?? childId }, report)
+    // 计划没变也写一次：rev 变了界面才会重取，保证每次收尾后看到的都是最新的计划
+    pTask.updatedAt = new Date().toISOString()
+    if (pEntry) pEntry.rev++
+    await store.update(pTask.id, pTask, { now: true })
+    return text
+  }
+
+  /**
+   * 收尾一个子对话的实际动作（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
+   * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
+   * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
+   * 父对话计划里等它的那一步由 finishChild 收尾后统一刷新。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
+   * 合并就是验收：没请求收尾（没交验证结果）的不收
+   */
+  async function finishChildStep(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
     if (!tk || tk.parentTaskId !== parent.id)
       return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
@@ -1531,14 +1579,6 @@ export function tasksApi(deps: {
 父对话已经验收合并。计划、后台命令、提问都收口后面板结束这个子对话并删除独立分支；不要再改已经合进去的文件。`,
       { quiet: true, peer: await peerOf(parent, 'parent', 'merge', `已合回原分支：${r.info}`) },
     )
-    // 父对话计划里等它的那一步：合进去就是交付了
-    const pEntry = live.get(parent.id)
-    const pTask = pEntry?.task ?? parent
-    if (settleWait(pTask, 'child', childId, true).length) {
-      pTask.updatedAt = new Date().toISOString()
-      if (pEntry) pEntry.rev++
-      await store.update(pTask.id, pTask).catch(() => {})
-    }
     const finished = !!done && !done.holds.length
     return {
       ok: true,
