@@ -55,7 +55,7 @@ import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '..
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
 import { ensureBundled } from '../bundled-skills.ts'
-import { gitChanges } from './git.ts'
+import { gitChanges, reviewDiff } from './git.ts'
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
 import type { BuildOptions } from '../../shared/clis.ts'
@@ -2078,6 +2078,19 @@ export async function runRealTurn(ctx: RealContext) {
         })
         ctx.changed(true)
       }),
+    reviewDiff: ctx.isGit
+      ? async (since) => {
+          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since)
+          if (!d) return null
+          if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
+          // 太长：完整差异存进交接目录，提示词里只给文件列表和路径
+          const dir = path.join(HANDOFF_DIR, ctx.task.id)
+          await mkdir(dir, { recursive: true })
+          const file = path.join(dir, `review-${d.snapshot.slice(0, 12)}.diff`)
+          await writeFile(file, d.full)
+          return { snapshot: d.snapshot, stat: d.stat, diff: '', file }
+        }
+      : undefined,
     saveHandoff: async (step, text) => {
       const dir = path.join(HANDOFF_DIR, ctx.task.id)
       await mkdir(dir, { recursive: true })

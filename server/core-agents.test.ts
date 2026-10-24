@@ -157,21 +157,31 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   assert.equal(def.category, '必备')
   assert.equal(def.agent.common, true, '别的角色能按名字派它')
   const code = renderTemplate(def.agent.instructions, { target: '代码改动' })
+  // 用户 2026-10-24：意见分高级、中级、低级、建议四级；高级判不通过，高级和中级要执行角色逐条处置
   for (const s of [
-    '🛑 必须改',
-    '💭 建议',
-    '💅 细节',
+    '🔴 高级（必须改）',
+    '🟠 中级（应该改）',
+    '🟡 低级（可以改）',
+    '💡 建议',
     '验收结论：通过',
     '验收结论：不通过',
     'Verdict: pass',
-    '必须改：R1',
+    '必须处置：R1',
     '需要先定的口径',
     '文档要更新',
   ])
     assert.ok(code.includes(s), `评审（代码改动）要写明「${s}」`)
-  // 🛑 的门槛和复看只看增量：没有这两条，复看每轮都会换个角度挑出新的 🛑（ADR 0009）
-  assert.match(code, /🛑 只给这次需求明确要求、用户能看到或能复现的问题/)
-  assert.match(code, /只看本轮新增的 diff 和上一轮每条意见的处置/)
+  assert.match(code, /有高级就判不通过/)
+  assert.match(code, /只看面板附的增量和上一轮每条意见的处置/)
+  // 参照 Claude Code 的代码审查：先找候选、再逐条复核，每条写失败场景，推不出的不报
+  assert.match(code, /第一遍找候选问题/)
+  assert.match(code, /第二遍逐条复核候选/)
+  assert.match(code, /失败场景：具体输入或状态 → 错误结果/)
+  // 用户 2026-10-24：评审只做代码层面的审查，不跑测试、不搭测试环境、不写测试代码
+  assert.match(code, /只做代码层面的审查：不跑测试/, '评审只看代码')
+  assert.match(code, /不写临时的测试或复现脚本/, '评审不写测试脚本')
+  assert.match(code, /同一回合里一起读/, '评审合并读取，少来回')
+  assert.match(code, /面板取好的文件列表和带整个函数的差异/, '用面板附的改动')
   // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
   assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
@@ -194,10 +204,20 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   assert.match(section, /采不采纳由你核实之后决定/, '采不采纳由执行角色定')
   for (const d of ['fix', 'reject', 'defer']) assert.match(section, new RegExp(`- ${d}：`), `处置里有 ${d}`)
   assert.match(section, /resume 接着上一次评审/, '复看接着上一次评审的会话')
-  assert.match(section, /只给增量 diff 和上一轮每条意见的处置/, '复看只给增量')
+  assert.match(section, /面板只附增量/, '复看只给增量')
+  assert.match(
+    section,
+    /面板会把这次的改动（文件列表 \+ 带整个函数的差异）一次附进评审的提示词/,
+    '改动由面板一次附给评审',
+  )
+  assert.match(section, /🔴 高级（必须改，有它评审就写不通过）、🟠 中级/, '四级意见')
   assert.match(section, /最多复看 2 轮/, '复看有上限')
   assert.match(section, /review_triage/, 'submit_merge 带处置')
   assert.match(section, /模块文档/, '收尾前同步模块文档')
+  // 评审提速（2026-10-24 那次三轮评审 20 分钟）：通过后不为改变行为的 💭 再评审一轮；局部修复靠断言不复看；交检查命令给评审复用
+  assert.match(section, /会改变行为、布局或逻辑的低级和建议都不在这一轮落/, '通过后不为建议再开一轮')
+  assert.match(section, /亲手确认改前失败改后通过的，不复看/, '局部修复不复看')
+  assert.match(section, /已经跑过的检查写成「命令 \+ 结果」/, '把跑过的检查交给评审当证据')
   assert.match(section, /submit_merge/, '最后才 submit_merge')
 })
 

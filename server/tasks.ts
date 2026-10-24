@@ -1160,7 +1160,7 @@ export function tasksApi(deps: {
     build = false,
     /** 交接要点（见 ADR 0007）：以后再被叫醒、上下文又大时只带这份摘要 */
     handoff: HandoffInput = {},
-    /** 对最近一次评审每条 🛑 的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
+    /** 对最近一次评审每条高级、中级意见的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
     triage: TriageItem[] = [],
   ): Promise<{ ok: boolean; info: string }> {
     const entry = live.get(childId)

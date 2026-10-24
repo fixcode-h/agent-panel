@@ -1222,6 +1222,8 @@ export const TaskStep = z.object({
    * 复看的评审不用把文档和代码从头再读一遍。空的就用自己的 id（旧数据和新开的子任务都是这样）
    */
   session: z.string().default(''),
+  /** 评审开始时工作区的快照（git 树）：接着这个会话复看时，只把这之后的增量交给评审（见 EngineHost.reviewDiff） */
+  snapshot: z.string().default(''),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */

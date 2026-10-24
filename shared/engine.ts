@@ -158,6 +158,14 @@ export interface AgentCall {
   signal?: AbortSignal
 }
 
+/** 交给评审的改动：snapshot 是这一刻的工作区快照（下一轮复看和它比），diff 太长时 diff 为空、完整内容在 file */
+export interface ReviewDiff {
+  snapshot: string
+  stat: string
+  diff: string
+  file?: string
+}
+
 /** 派一个子 Agent 的要求 */
 export interface HelperSpec {
   title: string
@@ -347,7 +355,7 @@ export interface Orchestra {
     tests: string,
     build?: boolean,
     handoff?: HandoffInput,
-    /** 对最近一次评审每条 🛑 的处置（见 shared/review-gate.ts、ADR 0009） */
+    /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
     triage?: TriageItem[],
   ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
@@ -425,6 +433,11 @@ export interface EngineHost {
   confirm?: (step: TaskStep, text: string) => Promise<{ allow: boolean; answer?: string } | null>
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
   saveHandoff?: (step: TaskStep, text: string) => Promise<string>
+  /**
+   * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
+   * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0009）
+   */
+  reviewDiff?: (since?: string) => Promise<ReviewDiff | null>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
@@ -2345,6 +2358,31 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
   }
 }
 
+/**
+ * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0009）：接着上一轮评审的会话就只带那之后的增量。
+ * 读不到（不是 git 仓库、git 出错）时不带，评审照它的角色设定自己取 diff
+ */
+async function reviewPart(host: EngineHost, step: TaskStep) {
+  if (!host.reviewDiff) return ''
+  const agent = host.agents.find((a) => a.id === step.agentId)
+  if (agent?.origin !== 'builtin:reviewer') return ''
+  const key = step.session || ''
+  const prev = key
+    ? host.task.steps.filter((s) => s !== step && (s.session || s.id) === key && s.snapshot).at(-1)
+    : undefined
+  const d = await host.reviewDiff(prev?.snapshot).catch(() => null)
+  if (!d) return ''
+  step.snapshot = d.snapshot
+  const what = prev ? '上一轮评审之后的增量' : '这次的全部改动（和任务开始时比）'
+  if (!d.stat) return `## 要评审的改动\n${what}：没有改动。`
+  const body = d.diff
+    ? `\`\`\`diff\n${d.diff}\n\`\`\``
+    : d.file
+      ? `差异太长，没有放进来：完整差异在文件 ${d.file}，先读它。`
+      : '差异太长，没有放进来：按上面的文件列表自己取 diff。'
+  return `## 要评审的改动\n面板已经取好了${what}，不用再自己 git diff。每处改动带着它所在的整个函数；还要看调用方、测试这类上下文时，再按路径读那几个文件（一个回合里一起读）。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
+}
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
@@ -2973,6 +3011,7 @@ async function runHelper(
     step.status = 'running'
     step.startedAt = now()
     host.changed(true)
+    const review = await reviewPart(host, step)
     const prompt = [
       ...commonPart(host, ctx.workflow, !!ctx.chat),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
@@ -2980,6 +3019,7 @@ async function runHelper(
         ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
         : '',
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
+      review,
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
@@ -3003,7 +3043,7 @@ async function runHelper(
     if (ac.signal.aborted) return stopped()
     if (r.ok) {
       const late = await settleHelpers(host, step)
-      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的 🛑 / 💭 整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
+      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
       // 完整内容和节点一样存成文件，交回的结果里写明去哪读
       step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text)
       step.status = 'done'
