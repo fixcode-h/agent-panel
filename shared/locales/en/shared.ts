@@ -152,7 +152,6 @@ export const EN_SHARED: Record<string, string> = {
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '「{title}」向主角色提问：{question}': '"{title}" asked the main role: {question}',
-  '「{from}」→「{to}」：{text}': '"{from}" → "{to}": {text}',
   委派: 'Delegated',
   'Kimi（月之暗面）': 'Kimi (Moonshot)',
   '智谱 GLM': 'GLM (Zhipu)',

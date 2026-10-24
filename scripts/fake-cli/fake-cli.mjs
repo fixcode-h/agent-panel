@@ -493,6 +493,10 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
 }
+// 节点之间传话：任务里写了 SEND_MSG 给「目标」、面板也给了 send_message 时，像真的节点那样发一条
+const sendTarget = /SEND_MSG 给「([^」]+)」/.exec(input)?.[1]
+if (sendTarget && input.includes('send_message'))
+  await panelCall('send_message', { to: sendTarget, text: '接口改名了，这边先按新名字写' })
 // 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果
 if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   await panelCall('set_plan', {
