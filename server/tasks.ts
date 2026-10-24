@@ -67,7 +67,8 @@ import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
-import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
+import { branchCommits, gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
+import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -1027,6 +1028,8 @@ export function tasksApi(deps: {
     tests: string,
     /** UE 项目：合回去后父对话要接着编译（独立分支里编不了 UE，见 ADR 0004） */
     build = false,
+    /** 交接要点（见 ADR 0007）：以后再被叫醒、上下文又大时只带这份摘要 */
+    handoff: HandoffInput = {},
   ): Promise<{ ok: boolean; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1061,6 +1064,13 @@ export function tasksApi(deps: {
       }
     if (merging.has(childId) || tk.wrapRequest?.state === 'merging')
       return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
+    // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
+    const missing = handoffMissing(handoff)
+    if (missing.length)
+      return {
+        ok: false,
+        info: `没有请求收尾：handoff 里还缺「${missing.join('、')}」。以后父对话再把消息交给你、上下文又大时，新会话只带这份交接摘要，按下面的模板写（每项写具体路径和结论，不写过程）：\n${handoffTemplate()}`,
+      }
     const parentId = tk.parentTaskId
     const wt = tk.worktree!
     // 先把现在的改动提交到它自己的分支：之后再改的不在这次合并里
@@ -1071,6 +1081,26 @@ export function tasksApi(deps: {
     }
     mergeNudged.delete(childId)
     const at = new Date().toISOString()
+    // 面板补的事实（提交、改动文件）现在就读：合回去以后分支和目录会被删掉
+    const [commits, changed] = await Promise.all([
+      branchCommits(wt.path, tk.baseRef).catch(() => []),
+      gitNumstat(wt.path, tk.baseRef).catch(() => null),
+    ])
+    const request = tk.messages.find((m) => m.role === 'user' && !m.step && !m.panel)?.text ?? ''
+    tk.handoff = {
+      text: handoffText(handoff, {
+        title: tk.title,
+        request,
+        note,
+        tests,
+        branch: wt.branch,
+        base: wt.baseBranch,
+        commits,
+        changed: changed ?? {},
+      }),
+      files: handoff.files ?? '',
+      at,
+    }
     tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
     markWrapUp(tk, 'merge', 'waiting', '已请父对话收尾，等父对话合并')
     tk.updatedAt = at
@@ -2237,7 +2267,8 @@ export function tasksApi(deps: {
         wrapUp: await childWrapUp(entry.task, project?.path),
         submitMerge:
           task.parentTaskId && isolated(entry.task)
-            ? (note, tests, build) => submitMerge(task.id, note, tests, ueRole === 'child' && build !== false)
+            ? (note, tests, build, handoff) =>
+                submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff)
             : undefined,
         ueBuild:
           ueRole === 'child'
@@ -2342,7 +2373,11 @@ export function tasksApi(deps: {
               // 状态用对话的 8 个状态说（见 ConvState），和子对话栏、状态上报是同一个结论
               status: convStateText(convState(childFacts(cur, { background: pendingJobs(cur.id) }))),
               busy: cur.working || startQueue.has(cur.id),
-              summary: cur.summary || lastReply(cur),
+              // 已完成的报关键文件：父对话按它判断新问题该交给谁，比最后一句回复准
+              summary:
+                cur.resolved && cur.handoff?.files
+                  ? `关键文件：${cur.handoff.files.replace(/\s+/g, ' ')}`
+                  : cur.summary || lastReply(cur),
               at: cur.updatedAt,
               doing: childActivityText(doing),
               waiting: childWaitText(childWait(cur, { background: pendingJobs(cur.id), cliAlive: live.has(cur.id) })),
@@ -2554,6 +2589,15 @@ export function tasksApi(deps: {
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
     if (next.parentTaskId && next.resolved) {
       next.resolved = false
+      // 上次的上下文大：开新会话只带交接摘要，不把上次的工具输出全读一遍（见 ADR 0007）。
+      // 旧会话的位置还记在各条消息的轮次上，要完整过程时用户可以回退到旧消息接回去
+      if (!next.rewind && wantsHandoff(next.usage.agents[next.agentId]?.context, !!next.handoff?.text)) {
+        next.rewind = { session: '', through: null, latest: false, summary: next.handoff!.text }
+        log.info('task', '叫醒已完成的子对话：上下文大，开新会话带交接摘要', {
+          task: id,
+          context: next.usage.agents[next.agentId]?.context,
+        })
+      }
       // 又要接着做：再完成一次时该重新上报父对话
       reportedDone.delete(id)
       mergeNudged.delete(id)

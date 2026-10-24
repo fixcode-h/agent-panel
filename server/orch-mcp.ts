@@ -1,6 +1,7 @@
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
+import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -420,8 +421,17 @@ export function orchTools(o: Orchestra) {
                             },
                           }
                         : {}),
+                      handoff: {
+                        type: 'object',
+                        description:
+                          '交接要点：以后父对话再把消息交给你、上下文又大时，新会话只带这份摘要（加上面板补的提交和改动文件），写清下次能直接找到代码和文档的信息',
+                        properties: Object.fromEntries(
+                          HANDOFF_FIELDS.map((f) => [f.key, { type: 'string', description: f.description }]),
+                        ),
+                        required: HANDOFF_FIELDS.filter((f) => f.required).map((f) => f.key),
+                      },
                     },
-                    required: ['tests'],
+                    required: ['tests', 'handoff'],
                   },
                 },
               ]
@@ -728,7 +738,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     // submit_build 是旧名字：保活的 CLI 进程拿的还是旧工具列表
     case 'submit_merge':
     case 'submit_build': {
-      const r = await o.submitMerge(str(a?.note), str(a?.tests), o.ueBuild === 'child' ? a?.build !== false : undefined)
+      const r = await o.submitMerge(
+        str(a?.note),
+        str(a?.tests),
+        o.ueBuild === 'child' ? a?.build !== false : undefined,
+        handoffInput(a?.handoff),
+      )
       return text(r.info, !r.ok)
     }
     case 'request_build': {

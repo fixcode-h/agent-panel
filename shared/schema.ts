@@ -1341,6 +1341,11 @@ export const TaskData = z.object({
       info: z.string().default(''),
     })
     .optional(),
+  /**
+   * 子对话的交接摘要（见 ADR 0007）：submit_merge 时按模板写的关键信息加上面板补的 git 事实。
+   * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
+   */
+  handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
   /**

@@ -510,7 +510,11 @@ if (input.includes('BG_LONG') && input.includes('run_background'))
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后请父对话收尾
 if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
   writeFileSync('child-done.txt', 'done\n')
-  const got = await panelCall('submit_merge', { note: '改完了', tests: 'npm test 通过' })
+  const got = await panelCall('submit_merge', {
+    note: '改完了',
+    tests: 'npm test 通过',
+    handoff: { files: 'child-done.txt — 子对话完成的标记', decisions: '只写一个文件' },
+  })
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
 }
@@ -1357,9 +1361,11 @@ if (kind === 'claude') {
   note('item/started', { item: { id: 'a0', type: 'agentMessage', text: '' } })
   for (const part of reply.match(/.{1,6}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text: reply } })
+  // BIG_CONTEXT：上下文占用大的对话（交接摘要的叫醒判定要用）
+  const big = input.includes('BIG_CONTEXT')
   const usage = {
-    totalTokens: 24300,
-    inputTokens: 24000,
+    totalTokens: big ? 48300 : 24300,
+    inputTokens: big ? 48000 : 24000,
     cachedInputTokens: 20000,
     cacheWriteInputTokens: 0,
     outputTokens: 300,

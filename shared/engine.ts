@@ -14,6 +14,7 @@
  *
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
+import type { HandoffInput } from './handoff.ts'
 import type { ReviewTarget } from './clis.ts'
 import { commonAgents, includedAgents } from './agent-role.ts'
 import {
@@ -324,7 +325,12 @@ export interface Orchestra {
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitMerge(note: string, tests: string, build?: boolean): Promise<{ ok: boolean; info: string }>
+  submitMerge(
+    note: string,
+    tests: string,
+    build?: boolean,
+    handoff?: HandoffInput,
+  ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
   /** children：父对话替哪些子对话申请（结果也推给它们） */
@@ -463,7 +469,12 @@ export interface EngineHost {
    */
   wrapUp?: WrapUpKind
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
-  submitMerge?: (note: string, tests: string, build?: boolean) => Promise<{ ok: boolean; info: string }>
+  submitMerge?: (
+    note: string,
+    tests: string,
+    build?: boolean,
+    handoff?: HandoffInput,
+  ) => Promise<{ ok: boolean; info: string }>
   /**
    * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
    * child：子对话不编译，改完向父对话申请；build 为 true 的 submit_merge 合回去后也自动申请。
@@ -982,7 +993,7 @@ function buildPart(host: EngineHost) {
   return `## 在独立分支里验证，再请父对话收尾
 编译、测试都在你这个独立分支的目录里跑，不用交给别人：合并就是验收，合进去的代码就算验收通过，所以能在你这里做的测试都在合并之前、在这里做完。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
-- 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
+- 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果，handoff 按模板写交接要点（关键文件和模块必填，以后再交给你时上下文大就只带这份摘要，写清哪里的代码、哪些文档、做了什么决定）。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
 - 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。父对话合不进去（冲突）或者觉得验证不够时会退回给你，按它说的处理好再调用。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
 }
 
@@ -1005,7 +1016,7 @@ function uePart(host: EngineHost) {
 这是 UE 项目：编译（Build.bat、UBT、UHT）、Cook、启动 Editor 都不在子对话里做，面板也会拦下这类后台命令。你只改代码，做不需要编译的检查（Lua 语法、静态检查、对照调用方自查），编译向父对话申请：
 ${
   host.submitMerge
-    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」；build 保持 true，父对话合回后在它的目录里编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
+    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」，handoff 按模板写交接要点；build 保持 true，父对话合回后在它的目录里编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
 - 合回去不等于编译通过：编译报错时会交回给你，修好后再 submit_merge 一次。`
     : `- 改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果面板会直接推给你。
 - 编译报错就修好再申请一次；编译通过才算这次改动验证过。`
@@ -2531,9 +2542,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests, build) {
+    async submitMerge(note, tests, build, handoff) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build)
+      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff)
       if (r.ok) host.changed(true)
       return r
     },

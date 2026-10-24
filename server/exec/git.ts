@@ -131,3 +131,10 @@ export async function gitRevertFile(cwd: string, ref: string, file: string) {
     })
   }
 }
+
+/** ref 之后这个分支上的提交（一行一个「短哈希 标题」），给交接摘要用；读不出来返回空 */
+export async function branchCommits(cwd: string, ref: string, max = 20): Promise<string[]> {
+  if (!ref) return []
+  const r = await git(cwd, 'log', '--oneline', '--no-decorate', `-${max}`, `${ref}..HEAD`)
+  return r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []
+}
