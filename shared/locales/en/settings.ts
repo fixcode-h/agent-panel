@@ -1167,6 +1167,9 @@ export const EN_SETTINGS: Record<string, string> = {
     'A local agent reads the project, writes AGENTS.md and the documentation skeleton, then evaluates which workflows fit and how the project should be configured. Apply recommendations one by one, by group or all at once. Each project is initialized once, and the settings can only be saved after that.',
   '已于 {date} 初始化': 'Initialized on {date}',
   这个项目还没有初始化: 'This project has not been initialized',
+  目录已经初始化过: 'This folder is already initialized',
+  '目录里已有初始化写好的 AGENTS.md 和文档，可以直接保存；想要推荐的设置可以重新初始化。':
+    'The folder already has the AGENTS.md and docs written by initialization, so you can save now. Re-initialize to get recommended settings.',
   '项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。':
     'Initialize again after big structural changes: existing documents are only extended, never overwritten.',
   '初始化完成并应用后，才能点「确认」保存项目设置。':

@@ -797,6 +797,8 @@ export interface DirInfo {
   isDir: boolean
   /** 是 git 仓库时的当前分支（分离 HEAD 时为提交号前 7 位） */
   gitBranch: string | null
+  /** 目录里已有「AI 初始化项目」写好的 AGENTS.md（带指向 MODULE-MAP 的文档地图）：同一目录新建项目时不用再初始化 */
+  initialized: boolean
 }
 
 /** 目录所在 git 仓库的本地分支 */

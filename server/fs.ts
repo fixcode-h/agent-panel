@@ -21,18 +21,29 @@ async function gitBranch(dir: string): Promise<string | null> {
   }
 }
 
+/** 初始化写的 AGENTS.md 一定带文档地图（指向 DOC_ROOT/MODULE-MAP.md），手写的一般没有 */
+async function initialized(dir: string) {
+  try {
+    return (await readFile(path.join(dir, 'AGENTS.md'), 'utf8')).includes('MODULE-MAP')
+  } catch {
+    return false
+  }
+}
+
 export async function inspectDir(p: string): Promise<DirInfo> {
   const full = resolvePath(p)
   try {
     const s = await stat(full)
+    const isDir = s.isDirectory()
     return {
       path: full,
       exists: true,
-      isDir: s.isDirectory(),
-      gitBranch: s.isDirectory() ? await gitBranch(full) : null,
+      isDir,
+      gitBranch: isDir ? await gitBranch(full) : null,
+      initialized: isDir && (await initialized(full)),
     }
   } catch {
-    return { path: full, exists: false, isDir: false, gitBranch: null }
+    return { path: full, exists: false, isDir: false, gitBranch: null, initialized: false }
   }
 }
 
