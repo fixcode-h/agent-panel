@@ -261,4 +261,17 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     "This template uses nodes the panel doesn't know: {list}. Start ComfyUI first and add it again; it converts against the nodes you actually have",
   '模板里没有 SaveImage 节点，拿不到生成的图片':
     "The template has no SaveImage node, so it can't produce images",
+  '下载模板列表失败（{status}）': "Couldn't download the template list ({status})",
+  '模板名不对：{name}': 'Invalid template name: {name}',
+  '取模板 {name} 失败（{status}）': "Couldn't fetch template {name} ({status})",
+  '找不到模板 {name}': 'Template {name} not found',
+  '这是视频 / 音频模板，UI 设计只处理图片': 'This is a video/audio template; UI design only produces images',
+  '这个模板没有节点图，取不到依赖': "This template has no node graph, so its dependencies can't be read",
+  '模板依赖的模型都在本地了': 'All models this template needs are already local',
+  '模板里的模型没有可下载的地址，需要自己放到 ComfyUI/models':
+    "This template's models have no download link; put them in ComfyUI/models yourself",
+  '下载 {name} 的模型': 'Download models for {name}',
+  '{n} 个文件没有下载地址，需要自己放到 ComfyUI/models':
+    '{n} files have no download link; put them in ComfyUI/models yourself',
+  '{name} 的模型下载完成': 'Models for {name} downloaded',
 }

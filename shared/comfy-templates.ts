@@ -44,6 +44,8 @@ export interface ComfyTemplateMeta {
   usage: number
   openSource: boolean
   source: 'builtin' | 'comfy'
+  /** 模板产出的内容类型；UI 设计只处理图片 */
+  output?: 'image' | 'video' | 'audio' | '3d' | 'llm'
   /** 需要先喂一张图才能跑（图生图、编辑类） */
   needsInput?: boolean
   /** 节点图已经在本地（内置或缓存过），离线也能预览 */
@@ -643,6 +645,7 @@ function builtinTemplate(model: LocalModel): ComfyTemplate {
     usage: 0,
     openSource: true,
     source: 'builtin',
+    output: 'image',
     available: true,
     graph: localWorkflow(model, PROMPT),
     assets,
