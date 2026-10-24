@@ -819,7 +819,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       if (!command) return text('command 是空的：写要执行的命令', true)
       const r = await o.runBackground({
         command,
-        name: str(a?.name).trim() || command.slice(0, 40),
+        // 没给名字时用命令第一行：名字会写进推回结果的标题（界面按第一行显示），带换行会把「成功 / 失败」截掉
+        name: str(a?.name).trim() || command.split('\n')[0].trim().slice(0, 40),
         cwd: str(a?.cwd).trim(),
         exclusive: a?.exclusive === true,
         ...(Number(a?.timeout_minutes) > 0 && { timeoutMinutes: Number(a?.timeout_minutes) }),

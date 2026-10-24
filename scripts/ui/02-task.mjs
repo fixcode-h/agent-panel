@@ -273,6 +273,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await closed()
     }
   }
+  // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
+  // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
+  {
+    const title = p.locator('button[title*="npm ci > /tmp/npmci.log"]').first()
+    if (!(await title.count())) errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
+    else {
+      await title.scrollIntoViewIfNeeded()
+      const tip = await title.getAttribute('title')
+      if (!tip?.includes('tail -20 /tmp/npmci.log')) errors.push(`后台命令折叠行：悬停提示不是完整命令（${tip}）`)
+      await check(p, '后台命令-折叠行显示命令', ['后台命令', 'npm ci > /tmp/npmci.log 2>&1'])
+    }
+  }
   // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
   {
     const row = p.getByText('发送消息', { exact: true }).first()

@@ -1,4 +1,4 @@
-import type { PeerKind, Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
+import type { PeerKind, Task, TaskJob, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
@@ -132,6 +132,27 @@ const firstLine = (v: unknown) =>
     .split('\n')
     .map((l) => l.trim())
     .find(Boolean) ?? ''
+
+/**
+ * input 是命令原文而不是 JSON：解析层（server/exec/parsers.ts 的 inputText）对带 command 的参数
+ * 直接存命令原文，面板的 run_background 因此拿不到 name / command 两个参数。
+ * 和 toolArgs 同一个口径：只有解析成对象才说明是正常的参数；`true`、`false`、数字这些合法 JSON
+ * 字面量是命令原文（`command: "true"` 是真实存在的 shell 命令），也要拿来当标题。
+ */
+function rawCommand(tool: ToolUse) {
+  const raw = (tool.input ?? '').trim()
+  if (!raw) return undefined
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? undefined : raw
+  } catch {
+    return raw
+  }
+}
+
+/** 后台命令行上的名字：调用方给的名字，没有就用命令第一行（老记录、演示数据可能没有名字） */
+export const jobLabel = (job: Pick<TaskJob, 'name' | 'command'>) =>
+  firstLine(job.name) || firstLine(job.command) || t('后台命令')
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean).join(t('、')) : '')
 
@@ -269,13 +290,12 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 终止自己派出的子任务：标题写终止的原因，展开看终止了哪几个
     case 'stop_subtask':
       return as(t('终止子任务'), firstLine(a.reason), 'agent', tool.output || undefined)
-    case 'run_background':
-      return as(
-        t('后台命令'),
-        firstLine(a.name) || firstLine(a.command) || (tool.kind === 'run' ? tool.label : ''),
-        'other',
-        text(a.command) ?? (tool.kind === 'run' ? tool.label : undefined),
-      )
+    case 'run_background': {
+      // input 可能直接是命令原文（见 rawCommand）：参数解析拿不到 name / command，
+      // 标题用命令第一行，展开的 IN 用完整命令，不能只剩「后台命令」一行
+      const command = text(a.command) ?? rawCommand(tool) ?? (tool.kind === 'run' ? tool.label : undefined)
+      return as(t('后台命令'), firstLine(a.name) || firstLine(command), 'other', command)
+    }
     case 'check_background':
       return as(t('查看后台命令'), firstLine(a.id))
     case 'stop_background':
