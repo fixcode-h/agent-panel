@@ -866,12 +866,12 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 运行时数据：set_data 定义这个界面需要的数据结构（name、fields、rows），列表控件写 DataSet、条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。
+- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。需要 1080p 以上的背景直接按 2048×1152 出图，提交前自检 width、height 都 ≤ 2048；所有工具的数组、对象参数（images、items、slot、questions 等）都按原生 JSON 传，不要字符串化。
 - 图集（sheet）只用于尺寸统一的小图标：同一类、同样大小（边长 ${SHEET_MIN_SIDE}~${SHEET_MAX_SIDE} 像素，例如 96×96 的背包物品、技能、货币、状态图标）、3 个以上，只是画的内容不同时，给它们写同一个 sheet（例如 "items"）。面板让图片模型在一张干净的底色上把它们按相同间距排成整齐的格子（不重叠、不拼成一幅画），再按格子切开，每个图标按各自的 width、height 精确输出，比一张张生成快得多。底框、按钮、面板、进度条、头图、插图这些大图和尺寸各不相同的图不要写 sheet，一张张生成。小图标的 width、height 按在界面上的显示尺寸写准，prompt 写清楚轮廓简洁、主体占满画面、小尺寸下也清晰可辨
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
-- 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句${promptLangWord()}回复你做了什么
+- 当前的控件树已经在上面，不用先 get_tree；check 通过不算完成：每次 update_widgets 之后立刻回读 x/y/宽/高和字号，完成条件是「改完后的全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致」，然后就用几句${promptLangWord()}回复你做了什么
 
 ### 控件的写法（宽松，少写错）
 - {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
@@ -922,7 +922,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
 3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
-4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；最后调 check。
+4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
 `
