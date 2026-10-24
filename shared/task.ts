@@ -1371,6 +1371,14 @@ export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
 }
 
 /**
+ * 子任务还没结束（在跑或在排队）：对话页运行区按这个列子任务行、终止按钮也只在这时出现。
+ * 和子对话的 convActive 一个意思——没做完就算在运行，不因为没选中、在后台就不列
+ */
+export function helperActive(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')
+}
+
+/**
  * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
  * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
  */

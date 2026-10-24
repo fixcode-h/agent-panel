@@ -393,8 +393,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         errors.push(`运行区：子任务起的后台命令没有按「子任务 + 标题」列出来（当前行：${drawn.join(' | ') || '无'}）`)
       } else {
         if (!subJobRow.includes('单测')) errors.push(`运行区：子任务的后台命令没显示命令名，现在是「${subJobRow}」`)
-        if (!/(\d+m )?\d+(\.\d+)?s/.test(subJobRow))
+        // 计时是子任务从开始到现在（演示数据里开始得早，会是「3h 0m」这种写法）
+        if (!/\d+(\.\d+)?[hms]\b/.test(subJobRow))
           errors.push(`运行区：子任务的后台命令行没有计时，现在是「${subJobRow}」`)
+        // 子任务和子对话同一个样式的一行：带状态标签，最后是终止按钮；后台命令并在这一行里，不再另起一行
+        if (!subJobRow.includes('执行中')) errors.push(`运行区：子任务行没有「执行中」状态，现在是「${subJobRow}」`)
+        const stopInRow = await p.evaluate(() =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((b) =>
+            [...b.children].some(
+              (r) =>
+                (r.innerText || '').includes('核对角标的订阅时机') &&
+                !!r.querySelector('button[aria-label="终止子任务"]'),
+            ),
+          ),
+        )
+        if (!stopInRow) errors.push('运行区：子任务行没有终止按钮')
+        await p.locator('[aria-label="运行中"]', { hasText: '核对角标的订阅时机' }).first().scrollIntoViewIfNeeded()
+        await check(p, '子任务-运行区一行')
       }
       // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法（按 aria-label 定位输入框上方的入口）
       const runLabel = (await subBar().first().innerText()).replace(/\s+/g, ' ').trim()
