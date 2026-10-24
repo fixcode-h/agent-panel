@@ -963,7 +963,7 @@ ${p4Rules(host)}做完再把这一步标完成。不 submit、不 revert、不 s
  * 有 p4_split_changelists 时交给面板分，Agent 只写描述
  */
 function p4Rules(host: EngineHost) {
-  const head = `这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）；edit 前用 p4 fstat -T haveRev,headRev <文件> 看是不是最新版本，本地版本落后（haveRev 小于 headRev）时先告诉用户要同步，你自己不 sync。把改动放进 pending changelist 时按文件类型分开，不能全留在 default，也不能把几类放进同一个（不要建「[C++/Lua] …」这种）：
+  const head = `这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）；edit 前用 p4 fstat -T haveRev,headRev <文件> 看是不是最新版本，本地版本落后（haveRev 小于 headRev）时先告诉用户要同步，你自己不 sync。p4 diff / status / reconcile / fstat 都要带具体文件或任务目录，不对整个工作区跑（大项目会扫几分钟本地文件）；查改了哪些文件用 p4 opened -c，它只问服务器、不扫本地。把改动放进 pending changelist 时按文件类型分开，不能全留在 default，也不能把几类放进同一个（不要建「[C++/Lua] …」这种）：
 - [C++]：.c / .cc / .cpp / .cxx / .h / .hh / .hpp / .inl / .ixx / .mm
 - [XLSX]（表格）：.xlsx / .xlsm / .xlsb / .xls / .csv
 - [Lua]：.lua（只提交源码，不编译成 .luac，也不提交 .luac）

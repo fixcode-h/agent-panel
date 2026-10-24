@@ -330,6 +330,7 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.match(p4Tool[0], /调用 p4_split_changelists 分/)
   const p4Main = await promptsOf({}, { p4Split: async () => ({ ok: true, info: '' }) })
   assert.match(p4Main[0], /## P4 changelist[\s\S]*调用 p4_split_changelists 分/)
+  assert.match(p4Main[0], /不对整个工作区跑/, '大项目里不做整个工作区的 p4 扫描')
   assert.doesNotMatch(p4[0], /## P4 changelist/, '子对话的收尾已经写了，不重复一段')
   // 共用父对话目录的 Git 子对话没有收尾这一步
   const shared = await promptsOf({ parentTaskId: 'parent' })
