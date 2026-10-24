@@ -119,6 +119,21 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(old?.job, '6a369828')
   assert.equal(old?.tool.name, '后台命令')
   assert.equal(old?.tool.label, 'npx playwright install')
+  // CLI 在结果前面插了自己的说明（Command Code 的 repair_note）：照样认出编号，没拿到结果前算在等
+  const noted = toolView(
+    tool('mcp__panel__run_background', '', {
+      input: '{"command":"node scripts/ui-check.mjs 02"}',
+      output: '<repair_note>Coerced string `exclusive` to a boolean.</repair_note>\n已放到后台（编号 fb0d6fa4）。',
+    }),
+  )
+  assert.equal(noted?.job, 'fb0d6fa4')
+  assert.equal(noted?.waiting, true)
+  const done = toolView(
+    tool('mcp__panel__run_background', '', {
+      output: '已放到后台（编号 fb0d6fa4）。\n\n【后台命令 fb0d6fa4 已结束】后台命令「检查」跑完了：成功',
+    }),
+  )
+  assert.equal(done?.waiting, undefined, '结果接上了就不再等')
 })
 
 test('「启动工作流」一行认回启动的是第几次运行', () => {

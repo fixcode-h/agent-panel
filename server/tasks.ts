@@ -124,7 +124,16 @@ import {
   isBigProject,
 } from './exec/worktree.ts'
 import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
-import { createBackground, jobMs, jobOutput, uiJobs, type BgJob } from './background.ts'
+import {
+  createBackground,
+  jobDetail,
+  jobMs,
+  jobOutput,
+  reapLostJobs,
+  settleJobRow,
+  uiJobs,
+  type BgJob,
+} from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
@@ -971,29 +980,10 @@ export function tasksApi(deps: {
     const entry = live.get(job.taskId)
     const tk = entry?.task ?? stored
     if (!tk) return
-    const mark = `已放到后台（编号 ${job.id}）`
-    // 申请的编译（request_build）一次排几条：每条跑完把结果接在那一行后面，有一条失败那一行就算失败
-    const build = new RegExp(`^已申请编译（[^）]*），编号 [0-9a-f、]*${job.id}`)
-    for (let i = tk.messages.length - 1; i >= 0; i--) {
-      const hit = tk.messages[i].tools.find((x) => build.test(x.output ?? ''))
-      if (hit) {
-        hit.output = `${hit.output}\n\n${jobOutput(job)}`
-        if (job.state !== 'done') hit.failed = true
-        tk.updatedAt = new Date().toISOString()
-        if (entry) entry.rev++
-        await store.update(tk.id, tk)
-        return
-      }
-      const tool = tk.messages[i].tools.find((x) => x.output?.startsWith(mark))
-      if (!tool) continue
-      tool.output = `${mark}\n\n${jobOutput(job)}`
-      tool.ms = jobMs(job)
-      tool.failed = job.state === 'done' ? undefined : true
-      tool.detail = job.state === 'done' ? '' : job.state === 'stopped' ? '已停止' : `退出码 ${job.code ?? '无'}`
+    if (settleJobRow(tk, job.id, jobOutput(job), job.state === 'done', jobMs(job), jobDetail(job))) {
       tk.updatedAt = new Date().toISOString()
       if (entry) entry.rev++
       await store.update(tk.id, tk)
-      return
     }
   }
 
@@ -1617,6 +1607,17 @@ export function tasksApi(deps: {
 
   /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
   async function withLive(task: Task): Promise<Task> {
+    // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
+    if (reapLostJobs(task, background.known)) {
+      task.updatedAt = new Date().toISOString()
+      const e = live.get(task.id)
+      if (e) e.rev++
+      await store
+        .update(task.id, task)
+        .catch((err) =>
+          log.warn('background', '收口丢失的后台命令失败', { task: task.id, error: (err as Error).message }),
+        )
+    }
     const t = withJobs(task)
     if (task.parentTaskId) return t
     // 0 也写上：理由同 withJobs
