@@ -171,6 +171,42 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'Agent-参数联动', ['选了其中一个时', '选项跟随', '联动'])
   await p.getByRole('tab', { name: /^角色设定/ }).click()
   await check(p, '角色-角色设定', ['通用约束', '实际交给它的设定'])
+  // 参数面板里的说明浮层：面板一打开 Radix 就把焦点挪到第一个问号，说明不该跟着自己弹出来
+  // （以前会出现一个盖住面板的说明），只有 hover 或点问号才出现，而且同时只留一个
+  await p.getByRole('button', { name: /^参数 · / }).click()
+  await p.waitForTimeout(400)
+  if (await p.getByRole('tooltip').count()) errors.push('Agent-参数说明：打开参数面板就自己弹出了说明浮层')
+  const helpTip = p.getByRole('img', { name: '说明' }).first()
+  await helpTip.hover()
+  await p
+    .getByRole('tooltip')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('Agent-参数说明：hover 问号没有出现说明浮层'))
+  let tips = await p.getByRole('tooltip').count()
+  if (tips !== 1) errors.push(`Agent-参数说明：hover 后可见的说明浮层是 ${tips} 个，不是 1 个`)
+  await p.mouse.move(5, 5)
+  await p
+    .getByRole('tooltip')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('Agent-参数说明：鼠标移开后说明浮层没消失'))
+  // 点问号也能打开，不靠 hover 停留的那点延时
+  await helpTip.click()
+  await p
+    .getByRole('tooltip')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('Agent-参数说明：点问号没有打开说明浮层'))
+  tips = await p.getByRole('tooltip').count()
+  if (tips !== 1) errors.push(`Agent-参数说明：点开后有 ${tips} 个说明浮层，不是 1 个`)
+  await p.keyboard.press('Escape')
+  await p
+    .getByRole('tooltip')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('Agent-参数说明：按 Esc 后说明浮层没消失'))
+  await check(p, 'Agent-参数说明')
   await p.getByRole('tab', { name: /^概览/ }).click()
   await check(p, '角色-概览', ['能开启子对话', '能启动计划', '运行环境'])
   await p.goto(base + '#/library')
