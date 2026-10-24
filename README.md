@@ -178,3 +178,11 @@ docs/     专题文档；docs/lessons/ 是开发时踩过的坑，按改动的�
 10. ✅ 子对话：派子任务、合并编译，几个对话各自在独立分支里改
 11. ✅ UI 设计生成与导出（HTML / React / JSON、UMG），ComfyUI、图库、MCP、浏览器扩展
 12. ✅ 外网访问、版本更新、托盘 / 开机自启、在线演示版
+
+## 安全
+
+发现安全问题**不要**开公开 Issue：请按 [SECURITY.md](SECURITY.md) 里的方式私下报告。本项目在本机运行、会接触编码 CLI 和 API key，涉及密钥泄露的报告优先处理。
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 授权。第三方依赖的许可证与版权声明见 [NOTICE](NOTICE)，以及各依赖包目录下随附的 LICENSE 文件。
