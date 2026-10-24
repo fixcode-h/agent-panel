@@ -1,5 +1,5 @@
 ---
-paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, scripts/e2e.mjs, shared/alerts.ts, server/tasks.ts, server/asks.ts, web/src/components/chat/QuestionPanel.tsx, web/src/components/tasks/ChildAskCard.tsx, web/src/components/tasks/RequestCard.tsx, server/designs.ts, web/src/components/design/DesignChat.tsx
+paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, scripts/e2e.mjs, shared/alerts.ts, server/tasks.ts, shared/task.ts, web/src/components/tasks/child-line.ts, server/asks.ts, web/src/components/chat/QuestionPanel.tsx, web/src/components/tasks/ChildAskCard.tsx, web/src/components/tasks/RequestCard.tsx, server/designs.ts, web/src/components/design/DesignChat.tsx
 ---
 
 # 插话、正在执行的命令和没有响应的 CLI
@@ -21,6 +21,12 @@ paths: server/exec/redirect.ts, server/exec/runner.ts, server/exec/rpc/spec.ts, 
 - 规则：会话运行中发消息走服务端的补充接口（设计对话是 `POST /designs/:id/steer`，输入复用 `DesignChatInput`，带附件、标注、引用、风格）：能插话就交给正在跑的这一轮，收不下就记进对话并在这一轮结束后自动开下一轮（`pendingTurns` + `drainTurns`），`delivery` 记清 `steer` / `held` / `next` / 停止后 `lost`，界面用共享的 `deliveryText` 显示，不要一直停在「结束后自动处理」；前端不要造本地 queue 冒充已送达。停止要连「准备新一轮」（`starting`）的窗口一起取消，取消后还得把停止期间登记进 `pendingTurns` 的消息接上，否则它们会一直停在「结束后自动处理」。
 - 起因：2026-10-24 设计对话原来只把纯文字交给 `/steer`，带附件、引用、风格的消息塞进页面本地 queue（「排队中，这一轮结束后发送」），用户要求改成和 Chat 模式一致。
 - 防线：`scripts/e2e/06-assist.mjs` 的「设计补充 / 接续 / 停止测试」；`npm run typecheck` 的漏翻检查。
+
+## 子对话长时间没有输出：面板以父对话的名义自动问，不新开一轮、不挡用户消息
+
+- 规则：判定写成纯函数（`shared/task.ts` 的 `childIdleAsk`），定时器只拿结论执行：0 关闭、只问还在执行的子对话、等用户 / 等后台命令 / 等工作流这类能解释的等待不问、每隔阈值最多问一次、同一段静默最多 3 次，收到输出重新计时。发送走 `server/tasks.ts` 的 `deliver`（先插话、再 notes、最后排到这一轮结束后）；`r.how === 'held'` 时从队列和对话里撤掉这条询问（`removeHeld`），按阈值隔开再试，不能让它排在用户消息前面、也不能在收尾时开新一轮把 `resolved` / `wrapRequest` 清掉。询问以父对话的名义（`peer.rel = 'parent'`）记进子对话，记在 `task.autoAsk`，子对话行上显示「已自动询问，等回复」。
+- 起因：用户要求「子对话 3 分钟没有输出就自动询问下当前状态，看看是否卡死，由父对话来问」，并强调 AI 的所有操作都不能阻挡 CLI 接收新消息。
+- 防线：`shared/task-idle-ask.test.ts` 覆盖阈值、0 关闭、等待、防抖、次数上限和输出重置；`server/exec/delivery.test.ts` 覆盖 held 队列里撤掉询问后用户消息仍排在前面；`scripts/e2e/04-subagents.mjs` 用 `HANG` 假 CLI（`STALL_ONCE` 只在 RPC 分支生效，codex 不认）断言询问送达并被回复、用户消息不被挡。
 
 ## 提问窗口的关闭：这个问题不回答，终止当前对话
 

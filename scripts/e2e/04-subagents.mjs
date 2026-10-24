@@ -950,5 +950,83 @@ await runShard('子对话与计划', async (api) => {
     await call('DELETE', `/tasks/${learned.id}`)
     await call('PUT', `/projects/${project.id}`, { ...projectInput, lessons: [] })
     step('项目教训：接口记录和同名更新，新会话的提示只带全局条目全文和其余标题')
+
+    // ---- 子对话长时间没有输出：面板以父对话的名义自动问它状态，用户消息照样能送达 ----
+    {
+      // 阈值 2 分钟（测试里 1 分钟 = 1.5 秒）：等 CLI 已经被标成没有响应，自动询问走「停掉卡住的 CLI、接回会话」
+      const full = await call('GET', '/settings')
+      await call('PUT', '/settings', { ...full, childIdleAskMinutes: 2 })
+      assert.equal((await call('GET', '/settings')).childIdleAskMinutes, 2, '自动询问的阈值保存成功')
+      const askParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            prompt: '自动询问的父对话',
+          })
+        ).id,
+        20000,
+      )
+      const silent = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: askParent.id,
+        prompt: 'HANG 自动询问静默子对话',
+      })
+      await waitFor(() => calls().some((c) => c.input.includes('HANG 自动询问静默子对话')), {
+        label: '静默的子对话开始执行',
+      })
+      const asked = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${silent.id}`)
+          return t.messages.find((m) => m.text.includes('【状态询问】'))
+        },
+        {
+          label: '自动询问送达子对话',
+          timeout: 20000,
+          describe: async () => {
+            const t = await call('GET', `/tasks/${silent.id}`)
+            return {
+              status: t.status,
+              working: t.working,
+              autoAsk: t.autoAsk,
+              lastAt: t.messages.at(-1)?.at,
+              threshold: (await call('GET', '/settings')).childIdleAskMinutes,
+              tail: t.messages.slice(-3).map((m) => `${m.role}:${m.text.slice(0, 40)}`),
+            }
+          },
+        },
+      )
+      // 以父对话的名义发起：子对话里画成「接收消息」，不是用户说的话
+      assert.equal(asked.peer?.rel, 'parent', '自动询问标明是父对话发来的')
+      // 用户这时发消息：走同一条非阻塞送达路径，不能被询问挡住
+      let sent
+      for (let i = 0; i < 40 && !sent; i++) {
+        try {
+          sent = await call('POST', `/tasks/${silent.id}/messages`, { text: '用户的新消息：先做这个' })
+        } catch (e) {
+          // 这一轮刚好在收尾：等它落盘完再发，409 的请求没有副作用
+          if (!e.message.includes('409')) throw e
+          await sleep(50)
+        }
+      }
+      const mine = sent?.messages.find((m) => m.text.includes('用户的新消息'))
+      assert.ok(mine, '自动询问之后用户的消息照样进了子对话')
+      assert.ok(mine.delivery, `用户消息记录了送达方式（${mine.delivery?.how}）`)
+      assert.notEqual(mine.delivery.how, 'lost', '用户消息不能因为自动询问丢掉')
+      // 子对话回了状态询问（CLI 卡住时面板接回会话重开，询问作为这一轮的内容交给它）
+      await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${silent.id}`)
+          return t.messages.some((m) => m.text.includes('STATUS_ASK_GOT'))
+        },
+        { label: '子对话回复了状态询问', timeout: 20000 },
+      )
+      await call('PUT', '/settings', full)
+      await call('DELETE', `/tasks/${askParent.id}`)
+      step('子对话长时间没有输出：自动询问送达并被回复，用户消息不被挡')
+    }
   }
 })

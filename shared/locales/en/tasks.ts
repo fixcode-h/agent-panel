@@ -889,6 +889,8 @@ export const EN_TASKS: Record<string, string> = {
   // 子对话进度：在做什么、在等什么、多久没新输出
   '最后活动 {ago}': 'last active {ago}',
   '已 {n} 分钟没有新输出': 'No new output for {n} min',
+  '已自动询问，等回复': 'Status asked automatically; waiting for its reply',
+  '已自动询问，仍没有新输出': 'Status asked automatically; still no new output',
   '等用户回答 {n} 个提问': 'Waiting for you to answer {n} question(s)',
   '等用户确认 {n} 项': 'Waiting for you to confirm {n} item(s)',
   '等 {n} 个后台命令': 'Waiting for {n} background command(s)',
