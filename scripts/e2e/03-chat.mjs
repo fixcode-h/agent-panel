@@ -392,7 +392,7 @@ await runShard('对话与续接', async (api) => {
       status: 'done',
       messages: [
         { id: 'm1', role: 'user', text: '帮我看看', at },
-        { id: 'm2', role: 'agent', agentId: 'their-agent', text: '用 sk-abcdefghijklmnopqrstuvwx 调接口', at },
+        { id: 'm2', role: 'agent', agentId: 'their-agent', text: '用 sk-xxxxxxxxxxxxxxxxxxxxxxxx 调接口', at },
       ],
       createdAt: at,
       updatedAt: at,
@@ -403,7 +403,7 @@ await runShard('对话与续接', async (api) => {
   const [imp] = await call('POST', '/tasks/import', { projectId: project.id, bundle })
   assert.equal(imp.projectId, project.id)
   assert.equal(imp.imported.agents[0].name, '他们的 Agent')
-  assert.ok(!JSON.stringify(imp).includes('sk-abcdef'), '导入时去掉密钥')
+  assert.ok(!JSON.stringify(imp).includes('sk-xxxxxxxx'), '导入时去掉密钥')
   await assert.rejects(call('POST', `/tasks/${imp.id}/messages`, { text: '继续' }), /导入的任务/)
   await assert.rejects(call('POST', `/tasks/${imp.id}/fork`, { messageId: 'm1' }), /导入的任务/)
   await assert.rejects(call('PATCH', `/tasks/${imp.id}`, { askUser: true }), /导入的任务/)

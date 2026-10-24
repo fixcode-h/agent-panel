@@ -13,6 +13,7 @@ import {
   Paintbrush,
   Palette,
   Pencil,
+  Quote,
   ScanSearch,
   X,
   RefreshCw,
@@ -28,6 +29,7 @@ import type {
   ImageSource,
   ReplyPart,
   SavedStyle,
+  WidgetCitation,
 } from '@shared/design'
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
@@ -578,6 +580,9 @@ export function DesignChat({
   dir,
   annotations = [],
   onRemoveAnnotation,
+  cites = [],
+  onRemoveCite,
+  onClearCites,
   hasTemplate,
   request,
   conceptDefault = false,
@@ -601,6 +606,8 @@ export function DesignChat({
       concept: boolean
       /** 只重绘原画上蒙版涂过的区域；不支持局部重绘的来源会降级成整张重画 */
       inpaint?: boolean
+      /** 这次一起发出去引用的控件 */
+      refs?: WidgetCitation[]
     },
   ) => Promise<boolean>
   /** 「AI 分析」：只读检查对话和生成的 UI，不改设计、不生成图片 */
@@ -623,6 +630,10 @@ export function DesignChat({
   /** 效果图上还没发出去的标注，发送时一起带上 */
   annotations?: Annotation[]
   onRemoveAnnotation?: (id: string) => void
+  /** 引用到对话里的控件：显示成可删除的引用条，随消息一起发出去 */
+  cites?: WidgetCitation[]
+  onRemoveCite?: (id: string) => void
+  onClearCites?: () => void
 }) {
   // 没发出去的内容按设计分开记，切到别的设计再回来还在
   const [text, setText] = useDraft(`design:${designId}`)
@@ -666,18 +677,27 @@ export function DesignChat({
   const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
   const styleText = styleRef ? t('使用「{name}」风格', { name: styleRef.name }) : ''
   // 排队的要求：这一轮结束后按顺序发出去
-  const [queue, setQueue] = useState<{ id: string; text: string; attachments: Attachment[]; style?: SavedStyle }[]>([])
+  const [queue, setQueue] = useState<
+    { id: string; text: string; attachments: Attachment[]; refs: WidgetCitation[]; style?: SavedStyle }[]
+  >([])
   const enqueue = () => {
-    // 只选了风格、没写字也能排队：风格要跟着这条一起发，不然这一轮结束后就丢了
+    // 只选了风格、引用或附件、没写字也能排队：它们要跟着这条一起发，不然这一轮结束后就丢了
     const v = forSend(text, styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
-    if (!v || files.uploading) return
+    if ((!v && !cites.length) || files.uploading) return
     setQueue((q) => [
       ...q,
-      { id: crypto.randomUUID(), text: v, attachments: files.attachments, ...(styleRef ? { style: styleRef } : {}) },
+      {
+        id: crypto.randomUUID(),
+        text: v,
+        attachments: files.attachments,
+        refs: cites,
+        ...(styleRef ? { style: styleRef } : {}),
+      },
     ])
     setText('')
     files.clear()
     setStyleRef(null)
+    onClearCites?.()
   }
   useEffect(() => {
     const next = queue[0]
@@ -689,6 +709,7 @@ export function DesignChat({
       askUser,
       concept,
       inpaint: false,
+      refs: next.refs,
       ...(next.style ? { style: next.style.en, styleName: next.style.name } : {}),
     }).finally(() => setSending(false))
     // 只在这一轮结束、队列变化时看要不要发下一条
@@ -700,8 +721,8 @@ export function DesignChat({
     // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队。
     // 选了风格时也排队：插话只能带文字，风格要等这一轮结束、随下一轮一起定到设计里
     if (running) {
-      if (!v || sending) return
-      if (files.attachments.length || styleRef || job?.phase !== 'design') {
+      if (sending || (!v && !cites.length)) return
+      if (files.attachments.length || cites.length || styleRef || job?.phase !== 'design') {
         enqueue()
         if (styleRef) toast(t('选的风格会在这一轮结束后随这条一起发出'))
         return
@@ -721,8 +742,8 @@ export function DesignChat({
       }
       return
     }
-    // 只有标注、没写文字也能发：按标注改
-    if ((!v && !annotations.length && !files.attachments.length) || sending || files.uploading) return
+    // 只有标注、引用或附件、没写文字也能发
+    if ((!v && !annotations.length && !files.attachments.length && !cites.length) || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
@@ -731,12 +752,14 @@ export function DesignChat({
           askUser,
           concept,
           inpaint: inpaint && maskReady,
+          refs: cites,
           ...(styleRef ? { style: styleRef.en, styleName: styleRef.name } : {}),
         })
       ) {
         setText('')
         files.clear()
         setStyleRef(null)
+        onClearCites?.()
       }
     } finally {
       setSending(false)
@@ -798,7 +821,7 @@ export function DesignChat({
   // 页面替用户发的话（确认模板后开始搭界面）：正在处理时排队
   useEffect(() => {
     if (!request) return
-    setQueue((q) => [...q, { id: request.id, text: request.text, attachments: [] }])
+    setQueue((q) => [...q, { id: request.id, text: request.text, attachments: [], refs: [] }])
     stick.current = true
     // 每个请求只发一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -966,7 +989,7 @@ export function DesignChat({
             onSync={slash.sync}
             onKeyDown={slash.onKeyDown}
             above={
-              (annotations.length > 0 || styleRef) && (
+              (annotations.length > 0 || styleRef || cites.length > 0) && (
                 <div className="flex flex-col gap-1.5 border-b px-2.5 pt-2.5 pb-2">
                   {styleRef && (
                     <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[0.75rem] text-accent">
@@ -985,6 +1008,7 @@ export function DesignChat({
                     </span>
                   )}
                   {annotations.length > 0 && <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />}
+                  {cites.length > 0 && <CitationChips list={cites} onRemove={onRemoveCite} />}
                 </div>
               )
             }
@@ -1025,8 +1049,12 @@ export function DesignChat({
             sending={sending}
             canSend={
               running
-                ? !!text.trim() || files.attachments.length > 0
-                : !!text.trim() || !!styleRef || annotations.length > 0 || files.attachments.length > 0
+                ? !!text.trim() || files.attachments.length > 0 || cites.length > 0
+                : !!text.trim() ||
+                  !!styleRef ||
+                  annotations.length > 0 ||
+                  files.attachments.length > 0 ||
+                  cites.length > 0
             }
             label={t('告诉 AI 要做什么')}
             placeholder={
@@ -1044,6 +1072,54 @@ export function DesignChat({
         )}
       </div>
     </div>
+  )
+}
+
+/** 引用的控件：输入框上方可删除的引用条，发出后显示在消息上 */
+function CitationChips({
+  list,
+  onRemove,
+  className,
+}: {
+  list: WidgetCitation[]
+  onRemove?: (id: string) => void
+  className?: string
+}) {
+  return (
+    <span className={cn('flex flex-wrap gap-1', className)}>
+      {list.map((c) => (
+        <span
+          key={c.id}
+          title={[
+            c.path,
+            c.target ? t('在子控件 {name} 里', { name: c.target }) : t('主界面'),
+            c.image ? t('图片：{name}', { name: c.image }) : '',
+            c.text ? t('文字：{text}', { text: c.text }) : '',
+          ]
+            .filter(Boolean)
+            .join('\n')}
+          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-line bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted"
+        >
+          <Quote className="h-3 w-3 shrink-0 text-accent" />
+          <span className="truncate font-medium text-fg">{c.name}</span>
+          <span className="shrink-0 text-subtle">
+            {c.type}
+            {c.width || c.height ? ` · ${c.width}×${c.height}` : ''}
+          </span>
+          {onRemove && (
+            <button
+              type="button"
+              aria-label={t('从对话里去掉')}
+              title={t('从对话里去掉')}
+              onClick={() => onRemove(c.id)}
+              className="grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded hover:bg-sel"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -1096,6 +1172,7 @@ function ChatMessage({
         extra={
           <>
             {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
+            {!!msg.refs?.length && <CitationChips list={msg.refs} className="mt-1.5" />}
             {!!msg.annotations?.length && (
               <span className="mt-1.5 flex flex-col gap-0.5 text-[0.71875rem] whitespace-normal text-muted">
                 {msg.annotations.map((a, i) => (

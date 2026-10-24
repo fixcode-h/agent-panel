@@ -19,6 +19,7 @@ import {
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
+import { DesignData } from '@shared/design-data'
 import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
 import { parseDesignAnalysis } from '@shared/design-analysis'
 import type { ToolUse } from '@shared/schema'
@@ -257,6 +258,87 @@ function draw(id: string, w: number, h: number): string {
     g.strokeStyle = 'rgba(217,178,95,0.3)'
     g.lineWidth = 1.5
     g.stroke()
+  } else if (/sword/.test(id)) {
+    g.save()
+    g.translate(w / 2, h / 2)
+    g.rotate(-Math.PI / 4)
+    const s = Math.min(w, h) * 0.34
+    const grd = g.createLinearGradient(0, -s, 0, s)
+    grd.addColorStop(0, '#e8eefc')
+    grd.addColorStop(1, '#7c8aa8')
+    g.fillStyle = grd
+    g.beginPath()
+    g.moveTo(0, -s)
+    g.lineTo(s * 0.16, -s * 0.55)
+    g.lineTo(s * 0.16, s * 0.35)
+    g.lineTo(-s * 0.16, s * 0.35)
+    g.lineTo(-s * 0.16, -s * 0.55)
+    g.closePath()
+    g.fill()
+    g.strokeStyle = '#d9b25f'
+    g.lineWidth = 3
+    g.beginPath()
+    g.moveTo(-s * 0.45, s * 0.35)
+    g.lineTo(s * 0.45, s * 0.35)
+    g.stroke()
+    g.fillStyle = '#4a3520'
+    g.fillRect(-s * 0.09, s * 0.35, s * 0.18, s * 0.42)
+    g.restore()
+  } else if (/potion/.test(id)) {
+    const s = Math.min(w, h) * 0.3
+    g.save()
+    g.translate(w / 2, h / 2)
+    g.fillStyle = '#b9c6d8'
+    g.fillRect(-s * 0.2, -s, s * 0.4, s * 0.4)
+    const grd = g.createLinearGradient(0, -s * 0.4, 0, s)
+    grd.addColorStop(0, '#8ef0c0')
+    grd.addColorStop(1, '#1f8a63')
+    g.fillStyle = grd
+    g.beginPath()
+    g.arc(0, s * 0.25, s * 0.62, 0, Math.PI * 2)
+    g.fill()
+    g.strokeStyle = 'rgba(255,255,255,0.7)'
+    g.lineWidth = 2
+    g.stroke()
+    g.restore()
+  } else if (/scroll/.test(id)) {
+    const s = Math.min(w, h) * 0.32
+    g.save()
+    g.translate(w / 2, h / 2)
+    g.fillStyle = '#e6d7b0'
+    g.fillRect(-s * 0.55, -s * 0.8, s * 1.1, s * 1.6)
+    g.fillStyle = '#c2a878'
+    g.beginPath()
+    g.roundRect(-s * 0.75, -s, s * 1.5, s * 0.28, s * 0.14)
+    g.roundRect(-s * 0.75, s * 0.72, s * 1.5, s * 0.28, s * 0.14)
+    g.fill()
+    g.strokeStyle = '#8a7550'
+    g.lineWidth = 2
+    for (let i = 0; i < 3; i++) {
+      g.beginPath()
+      g.moveTo(-s * 0.35, -s * 0.35 + i * s * 0.35)
+      g.lineTo(s * 0.35, -s * 0.35 + i * s * 0.35)
+      g.stroke()
+    }
+    g.restore()
+  } else if (/lock/.test(id)) {
+    const s = Math.min(w, h) * 0.3
+    g.save()
+    g.translate(w / 2, h / 2)
+    g.strokeStyle = '#c7d2e0'
+    g.lineWidth = s * 0.22
+    g.beginPath()
+    g.arc(0, -s * 0.35, s * 0.55, Math.PI, 0)
+    g.stroke()
+    g.fillStyle = '#8492a6'
+    g.beginPath()
+    g.roundRect(-s * 0.85, -s * 0.3, s * 1.7, s * 1.35, s * 0.22)
+    g.fill()
+    g.fillStyle = '#3b4656'
+    g.beginPath()
+    g.arc(0, s * 0.3, s * 0.2, 0, 7)
+    g.fill()
+    g.restore()
   } else if (/fill/.test(id)) {
     const grd = g.createLinearGradient(0, 0, 0, h)
     grd.addColorStop(0, '#ff6b5a')
@@ -525,6 +607,7 @@ function webTemplate() {
   return {
     reply: '做好了产品首页：顶部导航、左文右图的头图区、三张功能卡片（做成了子控件 FeatureCard）和页脚。',
     style: 'clean modern SaaS, warm neutral palette with orange accent, soft lighting',
+    data: { sets: [] },
     root,
     components: [{ Name: 'FeatureCard', DesignSize: { X: 400, Y: 220 }, Root: card }],
     images: [
@@ -665,6 +748,7 @@ function menuTemplate() {
     reply:
       '做好了暗黑奇幻风格的主菜单：背景、标题牌、三个按钮（按钮三种状态各一张图，九宫格拉伸），「开始游戏」外面叠了一个独立的高亮框。',
     style: 'dark fantasy, carved bronze and stone with gold trim, soft magical glow',
+    data: { sets: [] },
     root,
     components: [],
     images,
@@ -672,12 +756,6 @@ function menuTemplate() {
 }
 
 function inventoryTemplate() {
-  const slots = Array.from({ length: 20 }, (_, i) => ({
-    Type: 'UserWidget',
-    Name: `Slot_${i}`,
-    Class: 'WBP_ItemSlot',
-    Slot: { Row: Math.floor(i / 5), Column: i % 5 },
-  }))
   const root = {
     Type: 'CanvasPanel',
     Name: 'RootCanvas',
@@ -702,8 +780,14 @@ function inventoryTemplate() {
                 Type: 'UniformGridPanel',
                 Name: 'Grid',
                 Slot: { Size: { SizeRule: 'Fill', Value: 1.4 } },
-                Properties: { SlotPadding: { Left: 6, Top: 6, Right: 6, Bottom: 6 } },
-                Children: slots,
+                Properties: {
+                  EntryWidgetClass: 'WBP_ItemSlot',
+                  NumEntries: 20,
+                  NumColumns: 5,
+                  SlotPadding: { Left: 6, Top: 6, Right: 6, Bottom: 6 },
+                  // 画板按 Items 的行数画格子：真的有物品、选中、锁定和空格子
+                  DataSet: 'Items',
+                },
               },
               {
                 Type: 'VerticalBox',
@@ -732,9 +816,36 @@ function inventoryTemplate() {
       },
     ],
   }
+  // 20 行：前 14 个格子有物品，第一格选中、第 14 格锁定，剩下 6 个空格子
+  const items = [
+    ['icon_gem', 3],
+    ['icon_sword', 1],
+    ['icon_potion', 12],
+    ['icon_scroll', 5],
+    ['icon_gem', 99],
+    ['icon_sword', 2],
+    ['icon_potion', 4],
+    ['icon_scroll', 1],
+    ['icon_gem', 7],
+    ['icon_sword', 1],
+    ['icon_potion', 24],
+    ['icon_scroll', 3],
+    ['icon_gem', 1],
+    ['icon_sword', 6],
+  ] as const
+  const rows = [
+    ...items.map(([icon, count], i) => ({
+      icon: `img:${icon}`,
+      count,
+      selected: i === 0,
+      locked: i === 13,
+    })),
+    ...Array.from({ length: 6 }, () => ({ icon: '', count: 0, selected: false, locked: false })),
+  ]
   return {
     reply:
-      '做好了背包：左边 5×4 的格子（每个格子是子控件 WBP_ItemSlot），右边是选中物品的图标、名字和说明。面板底框用九宫格拉伸。',
+      '做好了背包：左边 5×4 的格子（每个格子是子控件 WBP_ItemSlot），右边是选中物品的图标、名字和说明。' +
+      '格子按运行时数据显示：物品图标、数量、选中高亮和锁定标记都在子控件里，用 Items 这份假数据驱动，选中态不再单独贴在画布上。',
     style: 'dark fantasy, carved stone with gold trim',
     root,
     components: [
@@ -748,14 +859,80 @@ function inventoryTemplate() {
             { Type: 'Image', Name: 'SlotBG', Properties: { Brush: img('slot_bg', 112, 112) } },
             {
               Type: 'Image',
+              Name: 'Highlight',
+              Properties: {
+                // 选中时高亮框才显示：状态在子控件里，由数据决定
+                RenderOpacity: 0,
+                Brush: img('slot_highlight', 112, 112),
+                States: [
+                  {
+                    Name: 'Selected',
+                    When: { Field: 'selected', Equals: true },
+                    Properties: { RenderOpacity: 1 },
+                  },
+                ],
+              },
+            },
+            {
+              Type: 'Image',
               Name: 'Icon',
               Slot: { Padding: { Left: 14, Top: 14, Right: 14, Bottom: 14 } },
-              Properties: { Brush: img('icon_gem', 84, 84) },
+              Properties: { Brush: img('icon_gem', 84, 84), DataField: 'icon' },
+            },
+            {
+              Type: 'TextBlock',
+              Name: 'Count',
+              Slot: {
+                Padding: { Left: 0, Top: 0, Right: 7, Bottom: 3 },
+                HorizontalAlignment: 'HAlign_Right',
+                VerticalAlignment: 'VAlign_Bottom',
+              },
+              Properties: {
+                Text: 'x1',
+                Font: { TypefaceFontName: 'Bold', Size: 16 },
+                ColorAndOpacity: '#F3E3B8FF',
+                ShadowOffset: { X: 1, Y: 1 },
+                ShadowColorAndOpacity: '#000000CC',
+                Justification: 'Right',
+                DataField: 'count',
+              },
+            },
+            {
+              Type: 'Image',
+              Name: 'Lock',
+              Slot: { HorizontalAlignment: 'HAlign_Center', VerticalAlignment: 'VAlign_Center' },
+              Properties: {
+                Visibility: 'Hidden',
+                Brush: img('lock_icon', 44, 44),
+                States: [
+                  {
+                    Name: 'Locked',
+                    When: { Field: 'locked', Equals: true },
+                    Properties: { Visibility: 'Visible' },
+                  },
+                ],
+              },
             },
           ],
         },
       },
     ],
+    data: {
+      sets: [
+        {
+          id: 'items',
+          name: 'Items',
+          label: '背包物品',
+          fields: [
+            { key: 'icon', label: '图标', type: 'image', widget: 'WBP_ItemSlot / Icon' },
+            { key: 'count', label: '数量', type: 'number', widget: 'WBP_ItemSlot / Count' },
+            { key: 'selected', label: '选中', type: 'boolean', widget: 'WBP_ItemSlot / Highlight' },
+            { key: 'locked', label: '锁定', type: 'boolean', widget: 'WBP_ItemSlot / Lock' },
+          ],
+          rows,
+        },
+      ],
+    },
     images: [
       {
         id: 'panel_frame',
@@ -775,13 +952,39 @@ function inventoryTemplate() {
         transparent: true,
       },
       {
+        id: 'slot_highlight',
+        name: 'Item_Slot_Selected',
+        prompt: 'golden selection frame that fits the inventory slot, soft glow',
+        width: 112,
+        height: 112,
+        transparent: true,
+      },
+      {
         id: 'icon_gem',
         name: 'Icon_Gem',
         prompt: 'glowing blue crystal gem icon',
-        width: 160,
-        height: 160,
+        width: 84,
+        height: 84,
         transparent: true,
       },
+      { id: 'icon_sword', name: 'Icon_Sword', prompt: 'silver sword icon', width: 84, height: 84, transparent: true },
+      {
+        id: 'icon_potion',
+        name: 'Icon_Potion',
+        prompt: 'green healing potion bottle icon',
+        width: 84,
+        height: 84,
+        transparent: true,
+      },
+      {
+        id: 'icon_scroll',
+        name: 'Icon_Scroll',
+        prompt: 'rolled parchment scroll icon',
+        width: 84,
+        height: 84,
+        transparent: true,
+      },
+      { id: 'lock_icon', name: 'Icon_Lock', prompt: 'padlock lock icon', width: 44, height: 44, transparent: true },
     ],
   }
 }
@@ -841,6 +1044,7 @@ function seed() {
     title: '主菜单',
     designSize: { X: 1920, Y: 1080 },
     style: tpl.style,
+    data: DesignData.parse(tpl.data),
     root: normalizeTree(tpl.root),
     components: [],
     annotations: [],
@@ -872,6 +1076,48 @@ function seed() {
     job: null,
   }
   designs.set(d.id, d)
+  // 背包：格子按运行时假数据渲染，打开就能看到物品、选中、锁定和空格子
+  const inv = inventoryTemplate()
+  const invAt = now()
+  const invD: Full = {
+    id: 'demo-design-inventory',
+    projectId,
+    kind: 'game',
+    title: '背包',
+    designSize: { X: 1920, Y: 1080 },
+    style: inv.style,
+    data: DesignData.parse(inv.data),
+    root: normalizeTree(inv.root),
+    components: inv.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) })),
+    annotations: [],
+    images: inv.images.map((i) =>
+      DesignImage.parse({
+        ...i,
+        variants: [{ file: draw(i.id, i.width, i.height), source: 'cli', width: i.width, height: i.height, at: invAt }],
+      }),
+    ),
+    messages: [
+      {
+        id: randomId(),
+        role: 'user',
+        text: '做一个暗黑奇幻风格的背包界面：左边 5×4 的格子，格子里要有物品图标、数量和选中/锁定状态',
+        at: invAt,
+      },
+      {
+        id: randomId(),
+        role: 'agent',
+        text: inv.reply,
+        at: invAt,
+        images: inv.images.map((i) => i.id),
+        run: { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' },
+      },
+    ],
+    rev: 1,
+    createdAt: invAt,
+    updatedAt: invAt,
+    job: null,
+  }
+  designs.set(invD.id, invD)
 }
 
 async function runChat(
@@ -987,6 +1233,7 @@ async function runChat(
   }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
+  d.data = DesignData.parse(tpl.data)
   d.style = d.style || tpl.style
   for (const im of tpl.images) {
     const old = d.images.find((i) => i.id === im.id)
@@ -1274,6 +1521,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       title: body.title,
       designSize: body.designSize ?? { X: 1920, Y: 1080 },
       style: '',
+      data: { sets: [] },
       root: emptyRoot(body.kind ?? 'game'),
       components: [],
       images: [],
@@ -1316,6 +1564,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       title: body.title,
       designSize: body.designSize,
       style: body.style,
+      data: body.data ? DesignData.parse(body.data) : (d.data ?? { sets: [] }),
       root: body.root as Widget,
       components: body.components,
       animations: body.animations ?? d.animations ?? [],
@@ -1332,6 +1581,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       text: body.text,
       at: now(),
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+      ...(body.refs?.length ? { refs: body.refs } : {}),
       ...(body.answers?.length ? { answers: body.answers } : {}),
       ...(body.style && body.styleName ? { style: body.styleName } : {}),
     })

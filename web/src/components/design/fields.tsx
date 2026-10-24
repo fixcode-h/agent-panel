@@ -30,10 +30,23 @@ export function setPath<T>(o: T, path: string, v: unknown): T {
 const box =
   'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[0.75rem] text-fg outline-none focus:border-focus'
 
-export function FieldRow({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) {
+export function FieldRow({
+  label,
+  children,
+  title,
+  leading,
+}: {
+  label: string
+  children: React.ReactNode
+  title?: string
+  /** 属性名左边的按钮（UE 的关键帧菱形） */
+  leading?: React.ReactNode
+}) {
   return (
-    <div className="flex min-h-8 items-center gap-2 px-3 py-0.5">
-      <span title={title ?? label} className="w-[92px] shrink-0 truncate text-[0.75rem] text-subtle">
+    <div data-field={label} className="flex min-h-8 items-center gap-2 px-3 py-0.5">
+      {leading}
+      {/* 固定宽度让右侧控件上下对齐，名字长时换行显示完整，不截断 */}
+      <span title={title ?? label} className="w-[104px] shrink-0 text-[0.75rem] leading-tight break-words text-subtle">
         {label}
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-1">{children}</div>
