@@ -133,10 +133,21 @@ export function createCollection<I extends object, T extends I & Entity>(
 ) {
   const FILE = dataPath(file)
   let cache: T[] | null = null
+  /**
+   * 第一次从文件读的进行中任务。启动时的后台任务（安装内置工作流、迁移旧项目）和第一个请求
+   * 会同时第一次用同一个集合，必须共用这一次：各自读一遍时，后返回的那次会拿读到的旧快照覆盖 cache
+   */
+  let loading: Promise<void> | null = null
+  /** 数据被整体替换（导入、清理）的次数：读盘期间变过，读到的就是旧内容，不能再写回缓存 */
+  let generation = 0
   let writing = Promise.resolve()
   // 「读快照 → 改 → 写盘」整体串行：只串行写盘的话，两个并发的保存会各自基于旧快照写，后写的那次覆盖掉先写的改动
   let mutating: Promise<unknown> = Promise.resolve()
-  onReset(() => (cache = null))
+  onReset(() => {
+    cache = null
+    loading = null
+    generation++
+  })
 
   function mutate<R>(fn: () => Promise<R>): Promise<R> {
     const run = mutating.catch(() => {}).then(fn)
@@ -144,14 +155,30 @@ export function createCollection<I extends object, T extends I & Entity>(
     return run
   }
 
-  async function list(): Promise<T[]> {
-    if (cache) return cache
+  async function load(gen: number): Promise<void> {
     const raw = await readJson(FILE)
+    // 读盘期间数据被整体替换过：这次读到的是替换前的内容，作废
+    if (gen !== generation) return
+    // 读盘期间已经有 create / update 写进 cache：以内存里的为准。
+    // 覆盖回去会丢掉刚创建的项目（表现为 POST /tasks 报 404「项目不存在」），任务记录也一样
+    if (cache) return
     const items = Array.isArray(raw) ? raw.map((r) => schema.parse(r)) : []
     const missing = builtin().filter((b) => !items.some((x) => x.id === b.id))
     cache = [...missing, ...items]
     if (missing.length) void persist(cache)
-    return cache
+  }
+
+  async function list(): Promise<T[]> {
+    if (!cache) {
+      if (!loading) {
+        const p = load(generation).finally(() => {
+          if (loading === p) loading = null
+        })
+        loading = p
+      }
+      await loading
+    }
+    return cache!
   }
 
   function persist(items: T[]) {

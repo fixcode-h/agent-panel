@@ -908,7 +908,19 @@ await runShard('工作流条件与失败', async (api) => {
   // 看一个文件的差异，撤销它的改动（恢复成任务开始时的样子）
   const d = await call('GET', `/tasks/${tCommit.id}/diff?path=committed.txt`)
   assert.ok(d.git && /\+one\n\+two\n\+three/.test(d.diff), '差异里有新增的行 ' + d.diff)
-  const reverted = await call('POST', `/tasks/${tCommit.id}/revert`, { path: 'committed.txt' })
+  // 任务记录已经停下，CLI 进程可能还被保活着（live 里还在，随后才释放）：等它释放后再撤销，
+  // 不然会撞上 409「任务正在执行」；这不是固定等待，条件一到就继续
+  const reverted = await waitFor(
+    async () => {
+      try {
+        return await call('POST', `/tasks/${tCommit.id}/revert`, { path: 'committed.txt' })
+      } catch (e) {
+        if (/正在执行/.test(String(e))) return null
+        throw e
+      }
+    },
+    { label: '任务停下后撤销改动' },
+  )
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '任务里新建的文件撤销后删掉')
   assert.ok(!reverted.changes.some((c) => c.path === 'committed.txt'), '撤销后不再算在改动里')
   assert.match(
