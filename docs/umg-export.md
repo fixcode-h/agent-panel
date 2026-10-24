@@ -62,6 +62,86 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 - **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。
 - 枚举写 UE 的枚举名，比如 `HAlign_Center`、`VAlign_Fill`、`Visible`、`ScaleToFit`。
 
+## 画板运行时假数据（不导出）
+
+设计文档（`DesignDoc.data`）里可以带一份只给画板预览用的运行时假数据（`shared/design-data.ts`）：
+
+```jsonc
+{
+  "data": {
+    "sets": [
+      {
+        "id": "items",                     // 面板内部 id；normalizeData 在 AI 只写 name 时按 name 补
+        "name": "Items",                   // 绑定用的英文标识
+        "label": "背包物品",
+        "fields": [
+          { "key": "icon", "label": "图标", "type": "image", "widget": "Icon", "note": "" },
+          { "key": "count", "label": "数量", "type": "number", "example": 1 },
+          { "key": "selected", "label": "选中", "type": "boolean", "example": false },
+          { "key": "locked", "label": "锁定", "type": "boolean", "example": false }
+        ],
+        "rows": [
+          { "icon": "img:sword", "count": 1, "selected": true, "locked": false },
+          { "icon": "", "count": 0, "selected": false, "locked": true }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `type` 是 `string` / `number` / `boolean` / `image` / `color`；`image` 的值写设计里图片的 `img:<id>`。
+- `widget` 记这个字段对应条目子控件里的哪个控件，只给面板显示，不影响渲染。
+- 数据存在设计文档顶层，和控件树、图片一起保存；AI 通过 `set_data` 工具写入（结构化结果里是 `AiDesignResult.data`），数据面板也能直接改。
+- 画板按数据渲染出接近真实运行的效果（格子里有物品图标、数量、选中 / 锁定态），这份数据不进 UE，也不进网页导出。
+
+### 绑定规则
+
+只认控件 `Properties` 里的三个属性，都在条目子控件内部声明：
+
+| 属性 | 写在哪 | 作用 |
+| --- | --- | --- |
+| `DataSet` | 列表控件（UniformGridPanel、ListView、TileView、DynamicEntryBox） | 值是集合的 id 或 name，画板上的条目数就是集合的行数（集合没有行时不画条目）；没绑定或集合不存在时按 `NumEntries` / `NumDesignerPreviewEntries` 预览空条目 |
+| `DataField` | 条目子控件里要显示数据的控件 | 值是字段 key，按控件类型显示这一行的值 |
+| `States` | 任意控件（通常写在条目子控件里） | 当前行满足条件时换一套属性，见下 |
+
+`DataField` 按控件类型换成的属性（`DATA_BINDING`）：
+
+| 控件 | 属性 | 说明 |
+| --- | --- | --- |
+| TextBlock、EditableTextBox、Text、WebButton | `Text` | 转成字符串 |
+| Image | `Brush.ResourceObject` | 值是 `img:<id>` 时换图；空字符串把控件设为 `Visibility: "Hidden"`（空格子没有图标） |
+| Picture | `Src` | 同上，网页用 |
+| ProgressBar | `Percent` | 限制在 0~1 |
+| CheckBox | `CheckedState` | `true` 为 `Checked`，否则 `Unchecked` |
+| Input | `Value` | 转成字符串 |
+
+不在表里的控件只套用 `States`，不显示数据。
+
+### 状态
+
+```jsonc
+"States": [
+  { "Name": "Selected", "When": { "Field": "selected", "Equals": true }, "Properties": { "Brush": { "ResourceObject": "img:slot_selected" } } },
+  { "Name": "Locked",   "When": { "Field": "locked", "Equals": true },     "Properties": { "ColorAndOpacity": "#808080FF" } },
+  { "Name": "Normal",   "Properties": {} }
+]
+```
+
+- 按顺序取**第一个匹配**的状态：`When.Field` 的值和 `When.Equals` 比较时统一转成字符串（数据面板填的 `"true"` 和 AI 写的 `true` 都能匹配）。
+- 不写 `When` 就是默认状态；没有状态匹配时用控件原本的属性。
+- 匹配到的 `Properties` 深合并到控件属性上，再套用 `DataField`。
+- 状态图仍然走设计里的图片资源（`"img:<id>"`），选中态的描边 / 发光图放在条目子控件的 Image 里，由 `States` 换 `Brush.ResourceObject`，**不要**把状态效果图单独贴在画布对应位置。
+- 画板渲染不改原来的树：`withRow` 返回新的控件，设计器里看到的属性和保存的数据不受影响。
+
+### 导出时剔除
+
+- **UMG**（`exportDesign` / `exportWidget`）：导出结果按 `Format` / `Version` / `Name` / `DesignSize` / `Textures` / `UserWidgets` / `Root` / `Animations` 重新拼，顶层没有 `data`；每个控件的 `Properties` 里删掉 `DataSet`、`DataField`、`States`（`DATA_PROPS`）。
+- **网页**（`webExport` / `webReactExport`）：只输出控件的具名属性（文字、图片、样式），三个绑定属性不会出现在 HTML / CSS / TSX 里。
+- **导出到项目目录**用的是同一份 JSON，和 ZIP、单个 JSON 的内容一致。
+- UniformGridPanel 导出时格子数仍按 `NumEntries` 展开，不按示例行数；要让画板和导出一致，把 `NumEntries` 设成和示例行数相同。
+- 单测在 `shared/design-data.test.ts`：`exportDesign：假数据和状态绑定都不进导出结果`、`webExport：状态和数据绑定也不出现在网页导出里`，断言导出文本里不含 `DataSet` / `DataField` / `States`，也不含示例数据里的字符串和 `img:` 引用。
+
 ## 动画（Animations）
 
 主界面和每个 `UserWidgets[]` 各自带 `Animations`，对应 Widget Blueprint 里的 WidgetAnimation（没有动画时是空数组）：

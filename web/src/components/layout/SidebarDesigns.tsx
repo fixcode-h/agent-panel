@@ -66,6 +66,7 @@ export function DesignList() {
       const f = await api.design(d.id)
       await api.saveDesign(d.id, {
         title,
+        data: f.data,
         designSize: f.designSize,
         style: f.style,
         root: f.root,

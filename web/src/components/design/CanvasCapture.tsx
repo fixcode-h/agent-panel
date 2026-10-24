@@ -5,6 +5,7 @@ import { t } from '@shared/i18n'
 import { walk, type Widget } from '@shared/umg'
 import { api } from '@/lib/api'
 import { UmgNode, type RenderImage } from './umg-render'
+import type { DesignData } from '@shared/design-data'
 
 /** 整张截图最多等这么久：页面切走或者渲染卡住时不要一直挂着，AI 那边也只会等到超时 */
 const CAPTURE_LIMIT = 15_000
@@ -61,12 +62,15 @@ export function CanvasCapture({
   req,
   images,
   web,
+  data,
   onDone,
 }: {
   designId: string
   req: CaptureRequest
   images: Map<string, RenderImage>
   web: boolean
+  /** 画板假数据：截图和用户看到的画板效果一致 */
+  data?: DesignData
   onDone: (id: string) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
@@ -77,7 +81,7 @@ export function CanvasCapture({
       let count = 0
       walk(req.root, () => count++)
       if (count <= 1) throw new Error(t('画布是空的：这棵树里还没有可截的控件，先搭好界面再截图'))
-      const data = await withLimit(async () => {
+      const png = await withLimit(async () => {
         // 等字体和图片都到了再截，不然截出来是空白
         await document.fonts?.ready
         await Promise.all(
@@ -104,7 +108,7 @@ export function CanvasCapture({
         const r = n.getBoundingClientRect()
         return [{ name: w.Name, type: w.Type, x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height }]
       })
-      await api.designCapture(designId, req.id, { data, rects })
+      await api.designCapture(designId, req.id, { data: png, rects })
     }
     // 截图失败也要把原因交回服务端，AI 才能说清楚是页面没打开、画布空还是渲染失败
     run()
@@ -121,6 +125,7 @@ export function CanvasCapture({
     depth: 0,
     play: false,
     device: web ? ('desktop' as const) : undefined,
+    data,
   }
   // 外层放在屏幕外面，截的是里面那层（它自己的位置是正常的，截出来不会偏）
   return createPortal(
