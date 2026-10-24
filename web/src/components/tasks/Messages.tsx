@@ -1,6 +1,8 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal, Workflow } from 'lucide-react'
-import type { Task, TaskMessage } from '@shared/schema'
+import type { Alert, Task, TaskMessage } from '@shared/schema'
+import { makeAlert } from '@shared/alerts'
+import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
@@ -10,7 +12,7 @@ import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen } from './child-open'
-import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
+import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
 import { currentRun, topSteps } from '@shared/flow'
@@ -20,7 +22,6 @@ import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningTools } from './RunningNow'
-import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
 import { useNow } from '@/lib/useNow'
@@ -35,48 +36,25 @@ function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
 export function SystemNote({
   text,
   error,
+  alert,
   className,
   conversation,
   cwd,
 }: {
   text: string
   error?: boolean
+  /** 报错、警告的分类和原始信息；旧数据只有 error 时按正文归类 */
+  alert?: Alert
   className?: string
   /** 报错前后的对话：交给 AI 时一起带上，它才知道出错时在做什么 */
   conversation?: string
   /** 报错所在的项目目录 */
   cwd?: string
 }) {
-  // 错误用醒目的卡片、左对齐：多行的 CLI 报错居中排时很难读
-  if (error)
-    return (
-      <div
-        role="alert"
-        className="relative flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-fg"
-      >
-        {/* 图标放在和第一行一样高的框里居中，单行、多行都和文字对齐 */}
-        <span className="flex h-[1.625em] shrink-0 items-center">
-          <CircleAlert className="h-4 w-4 text-danger" />
-        </span>
-        {/* 右边留出复制和 AI 处理按钮的位置，长报错不会压在它们下面 */}
-        <span className="min-w-0 pr-14 [overflow-wrap:anywhere]">{text}</span>
-        <span className="absolute top-1.5 right-1.5 flex gap-1">
-          <AiFixButton
-            size="icon-sm"
-            variant="ghost"
-            className="h-6 w-6 bg-card/60"
-            issue={{
-              title: t('对话里的报错：{line}', { line: text.split('\n')[0].slice(0, 80) }),
-              error: text,
-              context: '这条报错出现在 Agent 面板的对话（任务或 UI 设计）里，通常是调用 CLI 时出的问题。',
-              conversation: conversation ?? '',
-              cwd: cwd ?? '',
-            }}
-          />
-          <CopyButton text={text} label={t('复制报错')} className="h-6 w-6 bg-card/60" />
-        </span>
-      </div>
-    )
+  // 报错和警告都画成带底色的一行，点开看这是什么、怎么办和原始信息（见 shared/alerts.ts）。
+  // className 是给居中的说明用的，不传给它：点开的说明要左对齐
+  if (alert || error)
+    return <AlertRow alert={alert ?? makeAlert('error', text)} text={text} conversation={conversation} cwd={cwd} />
   return (
     <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
       <span className="flex h-[1.625em] shrink-0 items-center">
@@ -109,12 +87,14 @@ export function NoteMessage({
   // 按消息上的标记判断，不看文案——用户自己打的字里也可能出现「开始执行计划」
   if (m.planStart) return null
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
-  const around = msgs && m.error ? conversationAround(msgs, msgs.indexOf(m)) : ''
+  const around = msgs && (m.error || m.alert) ? conversationAround(msgs, msgs.indexOf(m)) : ''
   const cwd =
     task?.worktree?.state === 'active'
       ? task.worktree.path
       : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
-  return <SystemNote text={m.text} error={m.error} className={className} conversation={around} cwd={cwd} />
+  return (
+    <SystemNote text={m.text} error={m.error} alert={m.alert} className={className} conversation={around} cwd={cwd} />
+  )
 }
 
 /** 这一轮模型请求用了多久：两步之间看起来在等的时间基本都在这里 */

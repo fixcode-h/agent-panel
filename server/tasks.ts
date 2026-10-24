@@ -79,9 +79,11 @@ import {
   forgetNotes,
   noPushEnv,
   runRealTurn,
+  stalledTurn,
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
+import { makeAlert } from '../shared/alerts.ts'
 import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from './exec/delivery.ts'
 import {
   forgetPresence,
@@ -132,7 +134,7 @@ import {
   waitNote,
   type WrapUpKind,
 } from '../shared/plan.ts'
-import type { PlanWait, TaskProcess } from '../shared/schema.ts'
+import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
 import { runTree } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
@@ -154,7 +156,7 @@ import {
   trackedStatus,
 } from './exec/proc-stats.ts'
 import { extractJson } from '../shared/assist.ts'
-import { invokeCli } from './exec/invoke.ts'
+import { HARD_STOP, invokeCli } from './exec/invoke.ts'
 import { tmpdir } from 'node:os'
 
 /** 发布全局规则的命令：/rule 或 /rules */
@@ -220,6 +222,42 @@ export function tasksApi(deps: {
     freeSlot?: () => void
   }
   const live = new Map<string, Live>()
+
+  /**
+   * 面板自己处理对话时出的错（消息没送到、上报失败、分支删不掉、预热失败）：除了写日志，
+   * 也在这个对话里写一行警告，点开看原因和原始报错。错误不能只留在日志里，用户看不到就以为卡住了
+   */
+  async function panelAlert(
+    taskId: string,
+    kind: AlertKind,
+    text: string,
+    error: unknown,
+    level: 'warn' | 'error' = 'warn',
+  ) {
+    const detail = error instanceof Error ? error.message : String(error ?? '')
+    const entry = live.get(taskId)
+    const tk = entry?.task ?? (await store.get(taskId).catch(() => null))
+    if (!tk || tk.archived) return
+    const at = new Date().toISOString()
+    tk.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      alert: makeAlert(level, detail, kind),
+      at,
+    })
+    tk.updatedAt = at
+    if (entry) entry.rev++
+    else await store.update(tk.id, tk).catch(() => {})
+  }
+  /** 写日志之外也写进对话：catch 里用，自己出错不再往外抛 */
+  const alertOn =
+    (taskId: string, kind: AlertKind, text: string, level: 'warn' | 'error' = 'warn') =>
+    (e: unknown) =>
+      void panelAlert(taskId, kind, text, e, level).catch(() => {})
   /** 子对话共用父对话的目录：改文件前的认领，按父对话分组 */
   const claims = createClaims()
   /**
@@ -614,6 +652,7 @@ export function tasksApi(deps: {
       text: t('执行出错：{error}', { error }),
       tools: [],
       error: true,
+      alert: makeAlert('error', error, 'worktree'),
       at: new Date().toISOString(),
     })
   }
@@ -743,6 +782,7 @@ export function tasksApi(deps: {
       } catch (e) {
         // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
         log.warn('task', '计划步骤等的结果没能马上交给父对话', { task: parent.id, error: (e as Error).message })
+        alertOn(parent.id, 'delivery', t('子对话的结果没能马上交给这个对话，已放进收件箱，下一轮会处理'))(e)
       }
     }
     const msg: TaskMessage = {
@@ -864,7 +904,10 @@ export function tasksApi(deps: {
       } finally {
         free()
       }
-    })().catch((e) => log.error('task', '子对话执行出错', { task: id, error: (e as Error).message }))
+    })().catch((e) => {
+      log.error('task', '子对话执行出错', { task: id, error: (e as Error).message })
+      alertOn(id, 'panel', t('执行这个子对话时出错'), 'error')(e)
+    })
     return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行` }
   }
 
@@ -972,7 +1015,10 @@ export function tasksApi(deps: {
               'build',
               'build',
               /跑完了：失败|被停止了/.test(result),
-            ).catch((e) => log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message }))
+            ).catch((e) => {
+              log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message })
+              alertOn(kid, 'delivery', t('父对话的编译结果没能交给这个对话'), 'error')(e)
+            })
         }
         // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
         try {
@@ -1006,20 +1052,34 @@ export function tasksApi(deps: {
             const entry = live.get(cur.id)
             cur.messages.push(msg)
             holdForNextTurn(cur.id, msg)
+            cur.messages.push({
+              id: randomUUID(),
+              role: 'system',
+              agentId: '',
+              step: '',
+              text: t('后台命令的结果两次都没能交给 CLI，已经记在对话里，下一轮会处理'),
+              tools: [],
+              alert: makeAlert('warn', (err as Error).message, 'delivery'),
+              at: new Date().toISOString(),
+            })
             if (entry) entry.rev++
             await store.update(cur.id, cur)
           })
         }
         // 结果推回去会开新一轮；开不起来时（已停止、已经合并好的）就在这里再试一次回收独立分支
         if (tk.parentTaskId) void settleChildWorktree(tk.id)
-      })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
+      })().catch((e) => {
+        log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message })
+        alertOn(job.taskId, 'delivery', t('后台命令的结果没能推回这个对话'), 'error')(e)
+      })
     },
     {
       onSettle: (job) => {
         const p = settleJobTool(job)
-          .catch((e) =>
-            log.warn('background', '更新后台命令那一行失败', { task: job.taskId, error: (e as Error).message }),
-          )
+          .catch((e) => {
+            log.warn('background', '更新后台命令那一行失败', { task: job.taskId, error: (e as Error).message })
+            alertOn(job.taskId, 'panel', t('后台命令跑完了，但没能更新它那一行的结果'))(e)
+          })
           .finally(() => settling.get(job.id) === p && settling.delete(job.id))
         settling.set(job.id, p)
       },
@@ -1027,9 +1087,10 @@ export function tasksApi(deps: {
         void (async () => {
           const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
           if (tk && !tk.archived) await pushJobNote(tk, job, text)
-        })().catch((e) =>
-          log.warn('background', '提醒对话后台命令没输出失败', { task: job.taskId, error: (e as Error).message }),
-        ),
+        })().catch((e) => {
+          log.warn('background', '提醒对话后台命令没输出失败', { task: job.taskId, error: (e as Error).message })
+          alertOn(job.taskId, 'delivery', t('后台命令的提醒没能交给这个对话'))(e)
+        }),
       // 同时跑几条在设置里改，改完下一条排名额时就按新的算
       maxRunning: async () => (await getSettings()).backgroundLimit,
     },
@@ -1214,6 +1275,7 @@ export function tasksApi(deps: {
       } else await followUp(id, { text, attachments: [], panel, child: meta.child, peer: meta.peer })
     } catch (e) {
       log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
+      alertOn(id, 'delivery', t('一条消息没能马上交给这个对话，已放进收件箱'))(e)
       await noteParent(id, from, text, text, undefined, meta.child, meta.peer)
     }
   }
@@ -1522,6 +1584,7 @@ export function tasksApi(deps: {
       const info = project
         ? await releaseWorktree(project.path, tk.worktree!, []).catch((err) => {
             log.warn('task', '彻底完成后删除独立分支失败', { task: childId, error: (err as Error).message })
+            alertOn(childId, 'worktree', t('对话完成了，但删除独立分支失败，分支和目录还留着'))(err)
             return ''
           })
         : ''
@@ -1705,15 +1768,17 @@ export function tasksApi(deps: {
     if (isolated(child) && !hasHeld(child.id) && !merging.has(child.id) && !child.resolved) {
       setImmediate(
         () =>
-          void settleChildWorktree(child.id).catch((e) =>
-            log.warn('task', '子对话一轮结束收口失败', { task: child.id, error: (e as Error).message }),
-          ),
+          void settleChildWorktree(child.id).catch((e) => {
+            log.warn('task', '子对话一轮结束收口失败', { task: child.id, error: (e as Error).message })
+            alertOn(child.id, 'panel', t('这一轮结束后整理独立分支、上报父对话时出错'))(e)
+          }),
       )
       return
     }
-    void reportChild(child.id).catch((e) =>
-      log.warn('task', '子对话状态上报失败', { task: child.id, error: (e as Error).message }),
-    )
+    void reportChild(child.id).catch((e) => {
+      log.warn('task', '子对话状态上报失败', { task: child.id, error: (e as Error).message })
+      alertOn(child.id, 'delivery', t('这个对话的状态没能报给父对话'))(e)
+    })
   }
 
   /**
@@ -1852,6 +1917,7 @@ export function tasksApi(deps: {
       await entry.done
     } catch (e) {
       log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message })
+      alertOn(sub.id, 'panel', t('执行这个子对话时出错'), 'error')(e)
     } finally {
       free()
     }
@@ -1938,7 +2004,10 @@ export function tasksApi(deps: {
           attachments: [],
           panel: 'child',
           peer,
-        }).catch((e) => log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
+        }).catch((e) => {
+          log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message })
+          alertOn(parent.id, 'delivery', t('子对话等你决定，但没能开一轮来处理，问题在收件箱里'))(e)
+        })
     }
     if (auto)
       return {
@@ -2087,9 +2156,10 @@ export function tasksApi(deps: {
       if (!how) parent.messages.push(msg)
     } else {
       parent.messages.push(msg)
-      await followUp(parent.id, { text, attachments: [], panel: 'child' }).catch((e) =>
-        log.warn('task', '关闭提问时没能开始一轮作答', { error: (e as Error).message }),
-      )
+      await followUp(parent.id, { text, attachments: [], panel: 'child' }).catch((e) => {
+        log.warn('task', '关闭提问时没能开始一轮作答', { error: (e as Error).message })
+        alertOn(parent.id, 'delivery', t('关掉「提问」后没能开一轮去回答子对话的问题'))(e)
+      })
     }
     return true
   }
@@ -2593,6 +2663,7 @@ export function tasksApi(deps: {
           text: t('执行出错：{error}', { error: (e as Error).message }),
           tools: [],
           error: true,
+          alert: makeAlert('error', (e as Error).stack ?? (e as Error).message, 'panel'),
           at: new Date().toISOString(),
         })
       })
@@ -2686,6 +2757,8 @@ export function tasksApi(deps: {
       child?: TaskMessage['child']
       /** 另一个对话发来的：界面画成「接收消息」（见 TaskMessage.peer） */
       peer?: TaskMessage['peer']
+      /** 交给 CLI 的内容和对话里显示的不一样时（例如重启卡住的 CLI 时补上没被处理的那条）：交给 CLI 的这份 */
+      prompt?: string
     },
   ) {
     // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
@@ -2776,7 +2849,12 @@ export function tasksApi(deps: {
       })
     }
     try {
-      return await start(entry, withAttachments(expanded || m.text, placed), false, await deps.agents.list())
+      return await start(
+        entry,
+        withAttachments(m.prompt || expanded || m.text, placed),
+        false,
+        await deps.agents.list(),
+      )
     } catch (e) {
       release(entry)
       throw e
@@ -2794,8 +2872,11 @@ export function tasksApi(deps: {
     text: string,
     attachments: Attachment[],
     placed: Attachment[] = attachments,
-  ) {
+  ): Promise<{ task: Task; how: 'wait' | 'next' | 'restart' | 'steer' | 'notes' | 'next-node' | 'held' }> {
     const task = entry.task
+    // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
+    const stuck = stalledTurn(task.id)
+    if (stuck) return restartStalled(entry, msg, text, placed, stuck.input)
     // 交给 CLI 的是拷进任务目录的那一份（placed）；记进对话的 msg 仍是用户原来的附件，缩略图从附件目录读
     const wait = deliverWait(task, msg, placed)
     if (wait === 'ok') {
@@ -2825,6 +2906,37 @@ export function tasksApi(deps: {
     return intoTurn(entry, msg, text, placed)
   }
 
+  /**
+   * 重启卡住的 CLI：停掉这一轮（原因记成 stalled，不说成用户暂停），接回原会话开新的一轮，
+   * 把没得到回应的那条和新消息一起交过去；对话里只显示新消息本身
+   */
+  async function restartStalled(entry: Live, msg: TaskMessage, text: string, placed: Attachment[], missed: string) {
+    const id = entry.task.id
+    log.warn('task', 'CLI 没有响应，停掉它接回会话重开', { task: id })
+    // 「没有响应」那一行记下结果：停下的说明是临时的，开新一轮时会被去掉
+    for (const m of entry.task.messages)
+      if (m.alert?.kind === 'no_response' && !m.alert.resolved)
+        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 CLI，接回会话重新开始') }
+    stopTask(id, 'stalled')
+    if (entry.done) await entry.done
+    // 停下的这段时间里别的消息已经开了新的一轮：交给那一轮
+    const next = live.get(id)
+    if (next) return deliver(next, msg, text, [], placed)
+    const prompt =
+      `（面板说明：上一条交给你的消息你一直没有回应，CLI 卡住了，面板已经停掉它并接回这个会话。没被处理的那条是：\n${missed}\n\n` +
+      `先处理它，再处理下面这条新消息。）\n\n${text}`
+    const task = await followUp(id, {
+      text: msg.text,
+      attachments: msg.attachments ?? [],
+      placed,
+      ...(msg.panel ? { panel: msg.panel } : {}),
+      ...(msg.child ? { child: msg.child } : {}),
+      ...(msg.peer ? { peer: msg.peer } : {}),
+      prompt,
+    })
+    return { task, how: 'restart' as const }
+  }
+
   /** CLI 没在等下一句：插话 → 登记给 read_user_notes → 记下来这一轮结束后接着处理 */
   async function intoTurn(entry: Live, msg: TaskMessage, text: string, attachments: Attachment[]) {
     const task = entry.task
@@ -2846,7 +2958,8 @@ export function tasksApi(deps: {
     e.stop = true
     // 只有用户按的暂停才标成 'user'，其余调用点必须传清是谁结束的，界面才能不把它说成「已暂停」
     e.stopReason = reason
-    e.abort.abort()
+    // CLI 卡住了（没有响应）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
+    e.abort.abort(reason === 'stalled' ? HARD_STOP : undefined)
     // 用户主动停止父对话：它名下子对话的进程一起结束，不留孤儿（子对话的原因记成 parent，不是用户暂停）
     void closeChildren(id)
   }
@@ -3543,6 +3656,7 @@ export function tasksApi(deps: {
     } catch (e) {
       if (entry) release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
+      alertOn(task.id, 'cli_exit', t('提前启动 CLI 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
       return task
     }
   }

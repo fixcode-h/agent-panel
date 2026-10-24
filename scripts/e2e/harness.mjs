@@ -191,6 +191,8 @@ export async function runShard(shardName, fn) {
       FAKE_SLOW_ROUND_MS: '120',
       FAKE_SLOW_ROUNDS: '20',
       AGENT_PANEL_REDIRECT_MS: '600',
+      // 交给 CLI 后多久没有任何输出算「没有响应」：默认 90 秒，测试里缩短
+      AGENT_PANEL_NO_RESPONSE_MS: '2000',
       // 对话页切走后的宽限也缩短，测试不用等一分钟
       AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
     },
