@@ -2048,15 +2048,15 @@ export const TaskProcess = z.object({
 })
 export type TaskProcess = z.infer<typeof TaskProcess>
 
-/** 一个对话的进程与内存汇总：前端「内存合计」直接读 totalMemory */
+/** 一个对话（含附属子对话、子任务）的进程与内存汇总：前端「内存合计」读 cliMemory */
 export const TaskProcesses = z.object({
   sampledAt: z.number(),
   processes: z.array(TaskProcess).default([]),
-  /** 这个对话树上 CLI 进程的 RSS 合计；取不到系统信息时 null */
+  /** 这个对话及附属任务的 CLI 进程 RSS 合计；取不到系统信息时 null */
   cliMemory: z.number().nullable().default(null),
-  /** 面板 server 自己的 RSS */
+  /** 面板 server 自己的 RSS：不属于这个对话，界面上单独标明、不计入合计 */
   serverMemory: z.number(),
-  /** totalMemory = cliMemory + serverMemory；cliMemory 未知时 null */
+  /** totalMemory = cliMemory，不含面板自己的内存；cliMemory 未知时 null */
   totalMemory: z.number().nullable().default(null),
   /** 系统进程信息取不到的原因；取得到时为空字符串 */
   unavailable: z.string().default(''),
@@ -2066,8 +2066,11 @@ export type TaskProcesses = z.infer<typeof TaskProcesses>
 /** 内存曲线上的一个点：t 采样时刻；cli 未知时 total 也是 null（断开而不是掉到 0） */
 export const MemoryPoint = z.object({
   t: z.number(),
+  /** 面板 server 自己的 RSS，只单独展示，不计入 total */
   server: z.number(),
+  /** 这个对话及附属任务的 CLI 内存 */
   cli: z.number().nullable(),
+  /** total = cli（不含面板）；cli 未知时 null */
   total: z.number().nullable(),
 })
 export type MemoryPoint = z.infer<typeof MemoryPoint>

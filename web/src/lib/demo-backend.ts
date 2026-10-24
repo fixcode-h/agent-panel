@@ -58,7 +58,7 @@ import {
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
-import { runTree, runUsage } from '@shared/run-usage'
+import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
   TASK_MEMORY_ASK,
   clipReport,
@@ -2374,7 +2374,10 @@ const MB = 1024 * 1024
 
 function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
   const now = Date.now()
+  // 和正式后端一个口径：当前对话 + 它的附属，父对话和兄弟不出现
+  const ids = subtreeTaskIds(tasks, task.id)
   const rootId = task.rootTaskId || task.id
+  // 关掉的进程按整棵树记：pid 是按根任务生成的，父对话和子对话的面板看到的是同一个进程
   const gone = demoGone.get(rootId) ?? new Set<number>()
   const base = (hashNum(rootId) % 20000) + 30000
   const started = (x: Task) => {
@@ -2410,8 +2413,8 @@ function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
     status: active,
     kind: 'child',
   })
-  // 在干的子对话
-  for (const kid of tasks.filter((x) => x.parentTaskId === task.id && demoLive(x)).slice(0, 3)) {
+  // 在干的附属任务（子对话、子对话的子对话）
+  for (const kid of tasks.filter((x) => x.id !== task.id && ids.has(x.id) && demoLive(x)).slice(0, 3)) {
     const at = started(kid)
     push(base + 10 + tasks.indexOf(kid), {
       parentPid: null,
@@ -2430,7 +2433,7 @@ function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
   push(base + 99, {
     parentPid: null,
     command: 'claude --mcp-config {"mcpServers":{"panel":{}}} 已结束的子任务',
-    ownerTaskId: `${task.id}-demo-old`,
+    ownerTaskId: task.id,
     ownerTitle: '已结束的子任务',
     startedAt: orphanAt,
     durationMs: now - orphanAt,
@@ -2445,7 +2448,8 @@ function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
     processes: rows,
     cliMemory,
     serverMemory,
-    totalMemory: cliMemory + serverMemory,
+    // 面板自己的内存不计入对话合计
+    totalMemory: cliMemory,
     unavailable: '',
   }
 }
@@ -2501,7 +2505,8 @@ function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
     const wave = Math.sin(t / 900_000 + (base % 7)) * 28 + Math.sin(t / 240_000) * 8
     const cli = Math.round((132 + wave) * MB)
     const server = Math.round((268 + Math.sin(t / 300_000 + 1) * 6) * MB)
-    points.push({ t, server, cli, total: cli + server })
+    // 合计只算这个对话的 CLI；面板自己的内存单独给出，不混进来
+    points.push({ t, server, cli, total: cli })
   }
   return { sampledAt: now, intervalMs, capacity, points }
 }
@@ -3141,6 +3146,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         projectId: parent.projectId,
         mode: 'chat',
         parentTaskId: parent.id,
+        // 和真实后端一样：子对话记下整棵树的最上层，进程 pid 和关闭状态才和父对话共享
+        rootTaskId: parent.rootTaskId || parent.id,
         workflowId: '',
         agentId: agent.id,
         prompt: title,

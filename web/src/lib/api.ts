@@ -405,7 +405,7 @@ export const api = {
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
   taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
-  /** 这个对话的进程树（含子对话、子任务、工作流起的）和内存合计；下拉展开时才调 */
+  /** 这个对话及附属（子对话、子任务、工作流起的）的进程和 CLI 内存合计；面板自身内存单独给、不计入，下拉展开时才调 */
   taskProcesses: (id: string) => request<TaskProcesses>(`/tasks/${id}/processes`),
   killTaskProcess: (id: string, pid: number) =>
     request<KillProcessResult>(`/tasks/${id}/processes/${pid}/kill`, json('POST', {})),
