@@ -1191,6 +1191,108 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   }
   step('MCP 工具：读写 Claude Code / Codex / Gemini CLI 的配置文件，保留其他内容，测试连接能列出工具')
 
+  // 项目设置里的 MCP：识别项目目录里的配置，导入只写各 CLI 的全局配置，项目文件一字不动
+  {
+    // 前面那个最小的 MCP 服务，用来测「测试连接」
+    const miniJs = path.join(tmp, 'mini-mcp.mjs')
+    const server = {
+      name: 'fs',
+      transport: 'stdio',
+      command: process.execPath,
+      args: [miniJs],
+      env: {},
+      url: '',
+      headers: {},
+    }
+    const mcpJson = path.join(project.path, '.mcp.json')
+    const projectMcp = JSON.stringify(
+      {
+        mcpServers: {
+          fs: { command: 'npx', args: ['-y', 'fs-mcp'] },
+          'bad name': { command: 'x' },
+        },
+      },
+      null,
+      2,
+    )
+    writeFileSync(mcpJson, projectMcp)
+    mkdirSync(path.join(project.path, '.vscode'), { recursive: true })
+    writeFileSync(
+      path.join(project.path, '.vscode', 'mcp.json'),
+      JSON.stringify({ servers: { browser: { type: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] } } }),
+    )
+    mkdirSync(path.join(project.path, '.claude'), { recursive: true })
+    writeFileSync(path.join(project.path, '.claude', 'settings.json'), '{ 坏掉的 json')
+
+    let pv = await call('GET', `/project-mcp?projectId=${project.id}`)
+    assert.equal(pv.path, project.path)
+    assert.deepEqual(pv.detected.map((d) => `${d.file}:${d.name}`).sort(), [
+      '.mcp.json:bad name',
+      '.mcp.json:fs',
+      '.vscode/mcp.json:browser',
+    ])
+    assert.equal(pv.detected.find((d) => d.name === 'fs').status, 'new')
+    assert.equal(pv.detected.find((d) => d.name === 'browser').source, 'VS Code 工作区配置')
+    // 名字合不合面板规则要能看出来（导入前要在项目文件里改名）
+    assert.equal(pv.detected.find((d) => d.name === 'bad name').nameOk, false)
+    // 读不懂的文件只提示，不影响别的文件
+    assert.deepEqual(
+      pv.errors.map((e) => e.file),
+      ['.claude/settings.json'],
+    )
+
+    // 项目里的工具也能测试连接（和「MCP 工具」页同一个实现）
+    assert.equal((await call('POST', '/project-mcp/test', { ...server, name: 'fs' })).ok, true)
+
+    // 导入一条：写进 Claude Code 的全局配置，项目文件不变；再读时状态变成「一致」
+    const imp = await call('POST', `/project-mcp/import?projectId=${project.id}`, {
+      items: [{ file: '.mcp.json', name: 'fs', clis: ['claude'] }],
+    })
+    assert.deepEqual(imp.done, [{ name: 'fs', file: '.mcp.json' }])
+    assert.equal(readFileSync(mcpJson, 'utf8'), projectMcp, '项目里的配置文件不能被改')
+    assert.deepEqual(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.fs, {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'fs-mcp'],
+    })
+    assert.equal(imp.overview.detected.find((d) => d.name === 'fs').status, 'same')
+
+    // 名字不合规则的导入会说清原因，不写进任何全局配置
+    const bad = await call('POST', `/project-mcp/import?projectId=${project.id}`, {
+      items: [{ file: '.mcp.json', name: 'bad name', clis: ['claude'] }],
+    })
+    assert.equal(bad.done.length, 0)
+    assert.match(bad.skipped[0].reason, /工具名/)
+
+    // 项目分节写的是同一份配置：停用后「MCP 工具」页也没了
+    const fsServer = {
+      name: 'fs',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', 'fs-mcp'],
+      env: {},
+      url: '',
+      headers: {},
+    }
+    pv = await call('PUT', `/project-mcp/fs?projectId=${project.id}`, { server: fsServer, clis: [] })
+    assert.equal(
+      pv.servers.some((x) => x.name === 'fs'),
+      false,
+    )
+    assert.equal(
+      (await call('GET', '/mcp-tools')).servers.some((x) => x.name === 'fs'),
+      false,
+    )
+
+    // 清理，别影响后面的用例
+    rmSync(mcpJson, { force: true })
+    rmSync(path.join(project.path, '.vscode'), { recursive: true, force: true })
+    rmSync(path.join(project.path, '.claude'), { recursive: true, force: true })
+    pv = await call('GET', `/project-mcp?projectId=${project.id}`)
+    assert.deepEqual(pv.detected, [])
+  }
+  step('项目设置里的 MCP：识别 .mcp.json / .vscode/mcp.json，导入只写各 CLI 的全局配置，项目文件不改')
+
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {
     const trayPort = await freePort()

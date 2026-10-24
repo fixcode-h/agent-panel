@@ -1,4 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
+import { ProjectMcpSection } from './ProjectMcpSection'
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
@@ -10,6 +11,7 @@ import {
   FlaskConical,
   GraduationCap,
   Loader2,
+  Plug,
   Plus,
   Settings2,
   Sparkles,
@@ -615,6 +617,10 @@ function Body({
             <FileText className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             {t('项目说明')}
           </NavItem>
+          <NavItem on={section === 'mcp'} onClick={() => setSection('mcp')}>
+            <Plug className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('MCP')}
+          </NavItem>
           <span className="hidden px-2.5 pt-4 pb-1 text-[0.6875rem] text-subtle md:block">
             {t('各个 Agent 读的说明')}
           </span>
@@ -631,7 +637,11 @@ function Body({
             </NavItem>
           ))}
         </nav>
-        {section === 'doc' || section.startsWith('cli:') ? (
+        {section === 'mcp' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+            <ProjectMcpSection key={project?.id ?? 'new'} project={project} />
+          </div>
+        ) : section === 'doc' || section.startsWith('cli:') ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
             {!docsReady || !docs ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">

@@ -56,6 +56,7 @@ import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
+import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
 import type {
   BundledSkill,
   LibraryCli,
@@ -309,6 +310,20 @@ export const api = {
     request<McpOverview>(`/mcp-tools/${encodeURIComponent(server.name)}`, json('PUT', { server, clis })),
   deleteMcpTool: (name: string) => request<McpOverview>(`/mcp-tools/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   testMcpTool: (server: McpServer) => request<McpTestResult>('/mcp-tools/test', json('POST', server)),
+  /** 项目设置里的 MCP：按项目读，项目目录里识别到的和面板管理的一起返回 */
+  projectMcp: (projectId: string) => request<ProjectMcpOverview>(`/project-mcp?projectId=${projectId}`),
+  saveProjectMcp: (projectId: string, server: McpServer, clis: string[]) =>
+    request<ProjectMcpOverview>(
+      `/project-mcp/${encodeURIComponent(server.name)}?projectId=${projectId}`,
+      json('PUT', { server, clis }),
+    ),
+  deleteProjectMcp: (projectId: string, name: string) =>
+    request<ProjectMcpOverview>(`/project-mcp/${encodeURIComponent(name)}?projectId=${projectId}`, {
+      method: 'DELETE',
+    }),
+  testProjectMcp: (server: McpServer) => request<McpTestResult>('/project-mcp/test', json('POST', server)),
+  importProjectMcp: (projectId: string, items: { file: string; name: string; clis?: string[] }[]) =>
+    request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
