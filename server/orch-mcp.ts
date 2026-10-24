@@ -466,7 +466,7 @@ export function orchTools(o: Orchestra) {
                             reason: {
                               type: 'string',
                               description:
-                                '怎么核实的（读了哪段代码、跑了什么）和结论：fix 写改法和验证，reject 写反例或代码依据，defer 写影响面',
+                                '怎么核实的（读了哪段代码、跑了什么）和结论：评审只看代码、不一定准，写你自己重新评估的结果；fix 写你定的改法和验证，reject 写反例或代码依据，defer 写影响面',
                             },
                           },
                           required: ['id', 'decision', 'reason'],
