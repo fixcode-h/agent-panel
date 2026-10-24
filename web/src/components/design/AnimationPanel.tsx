@@ -108,7 +108,11 @@ export function AnimationPanel({
   tree,
   root,
   selectedNames,
+  current,
+  time,
   onChange,
+  onCurrent,
+  onTime,
   onCommand,
   onSelectWidget,
   onClose,
@@ -120,16 +124,22 @@ export function AnimationPanel({
   root: Widget
   /** 画布上选中的控件名（多选时按点选的顺序） */
   selectedNames: string[]
+  /** 当前动画和播放头时间由页面保存：属性面板的菱形按钮和这里有同一份时间 */
+  current: string
+  time: number
   onChange: (list: UiAnimation[], key: string) => void
+  onCurrent: (name: string) => void
+  onTime: (t: number) => void
   onCommand: (c: AnimCommand | null) => void
   onSelectWidget: (name: string) => void
   onClose: () => void
   web: boolean
 }) {
   const mine = animations.filter((a) => a.in === tree)
-  const [cur, setCur] = useState(mine[0]?.name ?? '')
-  const anim = mine.find((a) => a.name === cur) ?? mine[0]
-  const [time, setTime] = useState(0)
+  const anim = mine.find((a) => a.name === current) ?? mine[0]
+  // 这里沿用原来的写法：选中动画名和时间都写回页面，面板自己不留一份
+  const setCur = onCurrent
+  const setTime = onTime
   const [playing, setPlaying] = useState(false)
   const [sel, setSel] = useState<{ track: number; key: number } | null>(null)
   const names = useMemo(() => allNames(root), [root])
@@ -139,8 +149,8 @@ export function AnimationPanel({
   const span = Math.max(1, Math.ceil((len + 0.25) * 4) / 4)
 
   useEffect(() => {
-    if (anim && anim.name !== cur) setCur(anim.name)
-  }, [anim, cur])
+    if (anim && anim.name !== current) setCur(anim.name)
+  }, [anim, current, setCur])
   // 关掉面板、换动画时画布回到原样
   useEffect(() => () => onCommand(null), [onCommand])
 
@@ -179,7 +189,7 @@ export function AnimationPanel({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [playing, anim, len])
+  }, [playing, anim, len, setTime])
 
   const update = (fn: (a: UiAnimation) => UiAnimation, key = '') => {
     if (!anim) return

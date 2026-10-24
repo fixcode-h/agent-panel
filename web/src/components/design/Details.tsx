@@ -1,8 +1,17 @@
 import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Diamond } from 'lucide-react'
 import { WIDGETS, isWebType, type SlotType, type Widget, type WidgetType } from '@shared/umg'
 import { DEVICE_KEY, propsAt, type Device } from '@shared/web'
 import type { DesignImage } from '@shared/design'
+import {
+  animKeyState,
+  animPropOfField,
+  animValueOf,
+  type AnimKeyState,
+  type AnimProp,
+  type AnimValue,
+  type UiAnimation,
+} from '@shared/anim'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
@@ -442,6 +451,39 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 const shortLabel = (path: string) => path.split('.').slice(-1)[0]
 
+/**
+ * UE Details 里属性名左边的小菱形：在当前动画的播放头位置给这个属性打关键帧。
+ * 实心表示当前时间已有关键帧（再点是更新值），空心描边表示有轨道但这一刻没有，灰色表示还没有轨道。
+ */
+function AnimKeyButton({ state, time, onClick }: { state: AnimKeyState; time: number; onClick: () => void }) {
+  const keyed = state === 'key'
+  const hasTrack = keyed || state === 'no-key'
+  const disabled = state === 'no-anim'
+  const at = time.toFixed(2)
+  const title = disabled
+    ? t('先新建或选择一个动画')
+    : keyed
+      ? t('更新 {t} 秒的关键帧为当前值', { t: at })
+      : t('在 {t} 秒加关键帧', { t: at })
+  return (
+    <button
+      type="button"
+      aria-label={title}
+      aria-pressed={keyed}
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'grid h-5 w-4 shrink-0 place-items-center rounded',
+        disabled ? 'cursor-default text-subtle/40' : 'cursor-pointer hover:bg-sel hover:text-fg',
+        !disabled && (hasTrack ? 'text-accent' : 'text-subtle'),
+      )}
+    >
+      <Diamond className={cn('h-2.5 w-2.5', keyed && 'fill-current')} />
+    </button>
+  )
+}
+
 /** 属性面板（Details）：插槽、外观、通用三组 */
 export function Details({
   widget,
@@ -451,6 +493,9 @@ export function Details({
   url,
   components,
   onChange,
+  anim,
+  animTime = 0,
+  onKey,
   device = 'desktop',
 }: {
   /** 网页 UI 正在按哪个宽度预览：平板、手机时外观的改动只写进这个宽度的断点 */
@@ -461,6 +506,11 @@ export function Details({
   images: DesignImage[]
   url: (img: DesignImage) => string | undefined
   components: string[]
+  /** 当前动画和播放头时间：可动画的属性行左边显示关键帧按钮；没有动画时按钮禁用 */
+  anim?: UiAnimation
+  animTime?: number
+  /** 在当前动画的播放头位置给主选中控件的属性打关键帧，值取属性当前值 */
+  onKey?: (prop: AnimProp, v: AnimValue) => void
   onChange: (w: Widget, key: string) => void
 }) {
   const Icon = WIDGET_ICON[widget.Type]
@@ -477,6 +527,15 @@ export function Details({
   const field = (s: Spec, get: (p: string) => any, set: (p: string, v: unknown) => void) => {
     const v = get(s.path)
     const label = shortLabel(s.path)
+    // 只有能打进动画的属性才有菱形按钮，值取这一行当前的显示值
+    const animProp = animPropOfField(s.path)
+    const leading = animProp ? (
+      <AnimKeyButton
+        state={animKeyState(anim, widget.Name, animProp, animTime)}
+        time={animTime}
+        onClick={() => onKey?.(animProp, animValueOf(animProp, v))}
+      />
+    ) : undefined
     let input: React.ReactNode
     switch (s.kind) {
       case 'num':
@@ -576,7 +635,7 @@ export function Details({
         )
     }
     return (
-      <FieldRow key={s.path} label={label} title={s.path}>
+      <FieldRow key={s.path} label={label} title={s.path} leading={leading}>
         {input}
       </FieldRow>
     )
