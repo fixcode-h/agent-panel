@@ -352,6 +352,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
     await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
+    // 上次初始化的推荐随项目保存：卡片上直接列出和当前设置不同的项，应用后只改草稿
+    await check(p, '项目设置-AI初始化-推荐', ['1 项和当前设置不同', '应用推荐（1 项）'])
+    await dlg.getByRole('button', { name: '应用推荐（1 项）', exact: true }).click()
+    await check(p, '项目设置-AI初始化-已应用', ['已和当前设置一致'])
     await dlg.getByRole('button', { name: '重新初始化' }).click()
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     await p

@@ -11,6 +11,7 @@
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。
 - 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。
+- 项目设置「AI 初始化」页（`web/src/components/projects/ProjectInitPanel.tsx`、`ProjectSettingsDialog.tsx`）：初始化推荐随项目保存，重开时用 `buildGroups` 的 `same` 判定算差异，「应用推荐（n 项）」只改草稿、点「确认」才保存，无差异时提示「已和当前设置一致」；没有保存过推荐时只提供重新初始化。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
 
 ## 入口

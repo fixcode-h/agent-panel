@@ -1201,6 +1201,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
   '{n} 项和当前设置不同，应用后点「确认」保存':
     '{n} differ from the current settings; apply them, then click Confirm to save',
+  '应用推荐（{n} 项）': 'Apply recommendations ({n})',
+  已和当前设置一致: 'Already matches the current settings',
   '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
   没有需要调整的设置: 'No settings need changing',
   全部应用: 'Apply all',

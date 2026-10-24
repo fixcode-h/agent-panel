@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
+import type { ProjectProposal } from './project-init.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -793,6 +794,12 @@ const ProjectFields = z.object({
    * 旧项目也是空的，第一次打开设置时补做一次
    */
   initializedAt: z.string().max(40).default(''),
+  /**
+   * 上次「AI 初始化项目」算出的推荐（结构见 project-init.ts 的 ProjectProposal）。
+   * 存下来后重新打开设置时，卡片上还能直接应用推荐；旧项目没有这个字段，按没有推荐处理。
+   * 这里只标类型，具体校验由服务端用 ProjectProposalSchema 做（两边不能循环引用）
+   */
+  initResult: z.custom<ProjectProposal>().optional(),
   /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面

@@ -63,6 +63,45 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
   await p.keyboard.press('Escape')
   await p.keyboard.press('Escape')
+  // 行尾的眼睛按钮：悬停出现，点了画板收起、名字变淡，再点恢复
+  const startRow = p.getByRole('treeitem', { name: /StartGroup/ })
+  const startId = await startRow.getAttribute('data-tid')
+  await startRow.hover()
+  const eye = startRow.getByRole('button', { name: '隐藏', exact: true })
+  assert.equal(await eye.evaluate((el) => getComputedStyle(el).opacity), '1', '悬停到行上时出现隐藏按钮')
+  const rowBox = await startRow.boundingBox()
+  const eyeBox = await eye.boundingBox()
+  const nameBox = await startRow.locator('span').first().boundingBox()
+  assert.ok(eyeBox.x > nameBox.x, '隐藏按钮在名字后面')
+  assert.ok(rowBox.x + rowBox.width - (eyeBox.x + eyeBox.width) < 16, '隐藏按钮在行尾')
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1)
+  await eye.click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 0, '隐藏后画板不再画这个控件')
+  assert.match(await startRow.locator('span').first().getAttribute('class'), /opacity-50/, '隐藏后树里名字变淡')
+  await check(p, 'UI设计-控件树隐藏')
+  await startRow.getByRole('button', { name: '显示', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1, '再点一次恢复显示')
+  assert.doesNotMatch(await startRow.locator('span').first().getAttribute('class'), /opacity-50/)
+  // 根控件没有隐藏按钮（和原来一样）
+  assert.equal(
+    await p
+      .getByRole('treeitem', { name: /RootCanvas/ })
+      .getByRole('button', { name: /隐藏|显示/ })
+      .count(),
+    0,
+    '根控件没有显示 / 隐藏按钮',
+  )
+  // 右键菜单里的隐藏 / 显示和眼睛按钮是同一份逻辑
+  await startRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '隐藏', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 0, '右键隐藏同样生效')
+  await startRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '显示', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1, '右键显示同样生效')
   // 引用到 AI 对话：输入框上方出现带路径的引用条，可以删掉
   const cite = p.getByTitle(/RootCanvas \/ MenuBox \/ StartGroup/)
   await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
@@ -101,6 +140,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   assert.ok(await labelFits('Size To Content'), 'Size To Content 完整显示')
   assert.ok(await labelFits('RenderTransformPivot'), '长的属性名完整显示')
   await check(p, 'UI设计-属性名完整', ['Size To Content', 'RenderTransformPivot'])
+  // 由内容撑开的文字不能改宽高：属性面板直接说明，不再假装能改 W / H
+  // （控件树里的 treeitem 名字带尺寸，直接点画布上的标题文字选它）
+  await p.getByText('ETERNAL REALM', { exact: true }).first().click()
+  await p.getByText('宽度由内容决定').waitFor()
+  await check(p, 'UI设计-文字尺寸', ['宽度由内容决定', '高度由内容决定'])
+  // 图片：图片适配方式，以及对齐到兄弟控件 / 填满父控件（用 locator 精确断言，不靠文本子串）
+  await p.getByRole('treeitem', { name: /TitlePlate/ }).click()
+  await p.getByRole('combobox', { name: 'ImageFit', exact: true }).waitFor()
+  await p.getByRole('combobox', { name: '对齐到', exact: true }).waitFor()
+  await p.getByRole('button', { name: '填满父控件', exact: true }).waitFor()
+  await check(p, 'UI设计-图片适配', ['对齐到', '填满父控件'])
   // 标注：框选一块，写说明，出现在 AI 输入框上方
   await p.keyboard.press('r')
   const vp = await p.locator('[data-wid]').first().boundingBox()
@@ -188,6 +238,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')
   await p.getByRole('radio', { name: '数据' }).click()
   await check(p, 'UI设计-数据面板', ['运行时假数据', '只影响画板预览，导出时剔除', 'Items', '添加一行'])
+  // 多个数据结构：新建一个集合绑到背包的 Grid 上，画板按控件自己的绑定渲染，不是都用第一个集合
+  await p.getByRole('button', { name: '新建集合' }).first().click()
+  await check(p, 'UI设计-数据面板-多集合', ['data_2', '0 行', '绑定到列表控件'])
+  // 按集合卡片定位：卡片上已经有这个列表控件时下拉不显示它，只有别的集合卡片能换回来
+  const bindGrid = async (id) => {
+    const card = p.locator('section').filter({ has: p.getByText(id, { exact: true }) })
+    await card.getByRole('combobox', { name: '绑定到列表控件' }).click()
+    await p.getByRole('option', { name: /^Grid/ }).click()
+  }
+  await bindGrid('data_2')
+  const data2Card = p.locator('section').filter({ has: p.getByText('data_2', { exact: true }) })
+  await data2Card.getByText('Grid', { exact: true }).waitFor()
+  await check(p, 'UI设计-数据面板-换绑', ['Grid'])
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 0, '绑到没有行的集合，画板不画格子')
+  await p.getByRole('radio', { name: '数据' }).click()
+  // 从原来的集合卡片上换回来：同一个列表控件换绑另一个集合
+  await bindGrid('items')
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 20, '换回 Items 又按 20 行渲染')
+  await p.getByRole('radio', { name: '数据' }).click()
+  // 集合卡片能折叠：折叠后只留卡片头，行数和删除按钮还在；点输入框改名不会误触
+  await p.getByRole('button', { name: '收起集合', exact: true }).first().click()
+  assert.equal(await p.getByText('20 行', { exact: true }).count(), 1, '折叠后卡片头显示行数')
+  await check(p, 'UI设计-数据面板-折叠')
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().waitFor()
+  assert.equal(await p.getByRole('checkbox', { name: '锁定' }).count(), 0, '折叠后不显示行里的字段')
+  assert.ok(
+    await p
+      .getByText(/^\d+ 行$/)
+      .first()
+      .isVisible(),
+    '折叠后仍显示行数',
+  )
+  assert.equal(await p.getByRole('button', { name: '删除集合', exact: true }).count(), 2, '折叠后仍能删除集合')
+  await p.getByRole('textbox', { name: '集合名称' }).first().click()
+  assert.equal(await p.getByRole('button', { name: '展开集合', exact: true }).count(), 1, '点输入框不会展开')
+  // 点卡片头的名字区域也能展开
+  await p.getByText('items', { exact: true }).click()
+  await p.getByRole('checkbox', { name: '锁定' }).first().waitFor()
   // 数据面板改第一行：锁定打开，切回画板就能看到锁
   await p.getByRole('checkbox', { name: '锁定' }).first().check()
   await p.getByRole('radio', { name: '画板' }).click()
@@ -197,12 +289,38 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 来回切换不丢编辑
   await p.getByRole('radio', { name: '数据' }).click()
   assert.ok(await p.getByRole('checkbox', { name: '锁定' }).first().isChecked(), '切回来锁定的值还在')
+  // 折叠状态按设计记住：切到画板再回来，同一次会话里还保持折叠
+  await p.getByRole('button', { name: '收起集合', exact: true }).first().click()
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  await p.getByRole('radio', { name: '数据' }).click()
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().waitFor()
+  assert.equal(await p.getByRole('checkbox', { name: '锁定' }).count(), 0, '切回来还是折叠的')
+  assert.ok(
+    await p
+      .getByText(/^\d+ 行$/)
+      .first()
+      .isVisible(),
+    '切回来仍显示行数',
+  )
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().click()
   await p.getByRole('radio', { name: '画板' }).click()
   await p.goto(base + '#/design/new')
   await check(p, 'UI设计-新建', ['开始设计'])
   // 先出原画：新的游戏界面默认打开「原画」，AI 先出几张整屏原画，显示在左边挑
   await p.getByRole('textbox').first().fill('背包')
   await p.getByRole('button', { name: '开始设计' }).click()
+  // 「原画」按钮右键：设置一次出几张原画，和输入框旁边的「每张 N 版」分开
+  await p.getByRole('button', { name: '先出原画' }).click({ button: 'right' })
+  await p.getByText('一次出几张原画').waitFor()
+  const before = await p.getByRole('menuitemradio', { checked: true }).textContent()
+  await p.getByRole('menuitemradio', { name: '2 张' }).click()
+  await p.keyboard.press('Escape')
+  await p.getByRole('button', { name: '先出原画' }).click({ button: 'right' })
+  const after = await p.getByRole('menuitemradio', { checked: true }).textContent()
+  assert.notEqual(before, after, '右键菜单能改一次出几张原画，选中状态跟着变')
+  await p.keyboard.press('Escape')
+  await check(p, 'UI设计-原画张数', ['一次出几张原画'])
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('暗黑奇幻风格的背包界面')
   await p.keyboard.press('Enter')
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })

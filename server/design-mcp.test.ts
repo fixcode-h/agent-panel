@@ -39,9 +39,9 @@ const design = (): Design => ({
 })
 
 /** 开一个会话，返回调工具的函数 */
-function open(opts: { conceptOnly?: boolean } = {}, files: Partial<DesignFiles> = {}) {
+function open(opts: { conceptOnly?: boolean } = {}, files: Partial<DesignFiles> = {}, d: Design = design()) {
   const m = openDesignSession(
-    design(),
+    d,
     () => {},
     { dir: tmpdir(), attachments: [], imagePath: () => undefined, conceptPath: () => undefined, ...files },
     opts,
@@ -49,16 +49,25 @@ function open(opts: { conceptOnly?: boolean } = {}, files: Partial<DesignFiles> 
   const token = m.url.split('/').pop()!
   const app = designMcpApi()
   let id = 0
-  const call = async (name: string, args: unknown) => {
+  const post = async (method: string, params: unknown) => {
     const r = await app.request(`/design/${token}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
     })
-    const j = (await r.json()) as { result: { content: { text: string }[]; isError?: boolean } }
+    return r.json()
+  }
+  const call = async (name: string, args: unknown) => {
+    const j = (await post('tools/call', { name, arguments: args })) as {
+      result: { content: { text: string }[]; isError?: boolean }
+    }
     return { text: j.result.content[0].text, error: !!j.result.isError }
   }
-  return { call, session: m.session, close: m.close }
+  const list = async () => {
+    const j = (await post('tools/list', {})) as { result: { tools: { name: string; description: string }[] } }
+    return j.result.tools
+  }
+  return { call, list, session: m.session, close: m.close }
 }
 
 const text = (name: string) => ({ Type: 'TextBlock', Name: name, Text: name })
@@ -153,6 +162,134 @@ test('截图交给页面画，返回文件和控件位置，提醒跑出画面�
   assert.ok(err.error)
   assert.equal(err.text, '截图失败：设计页面没有打开')
   off.close()
+  close()
+})
+
+test('四条硬规则写在工具说明里，设计 Agent 每轮都看得到', async () => {
+  const { list, close } = open()
+  const tools = await list()
+  const desc = (name: string) => tools.find((t) => t.name === name)?.description ?? ''
+  // 截图失败：只问一次、不重复调用、视觉结论改成待验证
+  assert.match(desc('screenshot'), /只向用户说一次「请打开这个设计页」/)
+  assert.match(desc('screenshot'), /本轮不要再调 screenshot/)
+  assert.match(desc('screenshot'), /待验证项/)
+  assert.match(desc('view_image'), /source "screenshot:<第几张>"/)
+  assert.match(desc('view_image'), /放大确认一次/)
+  // 出图状态：读一两次、生成中怎么汇报、失败只重试一次
+  assert.match(desc('get_design'), /只调它一两次/)
+  assert.match(desc('get_design'), /背景在出图，我先做其他项，本轮验收不含背景/)
+  assert.match(desc('get_design'), /只重试一次/)
+  assert.match(desc('get_design'), /new 为 true 的是本轮 add_images 刚列或重出的图/)
+  assert.match(desc('get_design'), /这一轮结束才出图，本轮不要等它的状态/)
+  assert.match(desc('add_images'), /2048×1152/)
+  assert.match(desc('add_images'), /≤ 2048/)
+  assert.match(desc('add_images'), /去掉「高分辨率」/)
+  // 引用与传参
+  assert.match(desc('inspect_image'), /image:<id>、concept:<id>、screenshot:<n>/)
+  assert.match(desc('update_widgets'), /不要写成字符串/)
+  assert.match(desc('add_images'), /不要写成字符串/)
+  // 改完回读，check 不是完成条件
+  assert.match(desc('update_widgets'), /回读/)
+  assert.match(desc('update_widgets'), /上一轮没生效/)
+  assert.match(desc('get_tree'), /回读被改控件/)
+  assert.match(desc('check'), /不是完成条件/)
+  assert.match(desc('check'), /改完后的全屏截图/)
+  close()
+})
+
+test('get_design 返回图片的生成状态和失败原因，供 AI 判断要不要等或重出', async () => {
+  const d = design()
+  d.images = [
+    {
+      id: 'bg',
+      name: '背景',
+      prompt: 'p',
+      negative: '',
+      width: 1920,
+      height: 1080,
+      transparent: false,
+      variants: [],
+      selected: 0,
+      status: 'failed',
+      error: '出图失败',
+    },
+    {
+      id: 'icon',
+      name: '图标',
+      prompt: 'p',
+      negative: '',
+      width: 96,
+      height: 96,
+      transparent: true,
+      variants: [],
+      selected: 0,
+      status: 'generating',
+    },
+  ]
+  const { call, close } = open({}, {}, d)
+  const info = JSON.parse((await call('get_design', {})).text) as {
+    images: { id: string; generated: boolean; status: string; error?: string }[]
+  }
+  assert.equal(info.images[0].status, 'failed')
+  assert.equal(info.images[0].error, '出图失败')
+  assert.equal(info.images[1].status, 'generating')
+  assert.equal(info.images[1].error, undefined)
+  close()
+})
+
+test('本轮 add_images 的图在 get_design 里是 pending、new，不会拿旧的 failed 当重试结果', async () => {
+  const d = design()
+  d.images = [
+    {
+      id: 'bg',
+      name: '旧背景',
+      prompt: '旧描述',
+      negative: '',
+      width: 2048,
+      height: 1152,
+      transparent: false,
+      variants: [],
+      selected: 0,
+      status: 'failed',
+      error: '上一轮失败',
+    },
+  ]
+  const { call, close } = open({}, {}, d)
+  const before = JSON.parse((await call('get_design', {})).text) as {
+    images: { id: string; status: string; size: string }[]
+  }
+  assert.equal(before.images[0].status, 'failed', '这一轮还没重出时看到的是上一次的结果')
+  assert.equal(before.images[0].size, '2048x1152')
+  await call('add_images', {
+    images: [
+      { id: 'bg', name: '新背景', prompt: '新描述', negative: '', width: 1920, height: 1080, transparent: false },
+    ],
+  })
+  await call('add_images', { images: [{ id: 'icon', name: '图标', prompt: '新描述', width: 96, height: 96 }] })
+  const after = JSON.parse((await call('get_design', {})).text) as {
+    images: {
+      id: string
+      name: string
+      status: string
+      new?: boolean
+      error?: string
+      size: string
+      generated: boolean
+    }[]
+    newImages: string[]
+  }
+  const bg = after.images.find((i) => i.id === 'bg')!
+  assert.equal(bg.status, 'pending', '本轮重出的图不再显示上一次的 failed')
+  assert.equal(bg.new, true)
+  assert.equal(bg.error, undefined)
+  assert.equal(bg.name, '新背景', '名字用本轮新写的')
+  assert.equal(bg.size, '1920x1080', '尺寸用本轮新写的，不是上一次的 2048x1152')
+  assert.equal(bg.generated, false, '重出的图还没生成，画布上还是上一版')
+  const icon = after.images.find((i) => i.id === 'icon')!
+  assert.equal(icon.status, 'pending')
+  assert.equal(icon.new, true)
+  assert.equal(icon.generated, false)
+  assert.deepEqual(after.newImages, ['bg', 'icon'])
   close()
 })
 

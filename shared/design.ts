@@ -202,6 +202,12 @@ export const DesignMessage = z.object({
   style: z.string().optional(),
   /** 「AI 分析」的结果：总体结论和对话过程 / UI 结果 / 生成能力三段的检查项 */
   analysis: DesignAnalysis.optional(),
+  /**
+   * AI 正在跑的时候发的消息去了哪里：插进当前这一轮，记下来在这一轮结束后自动接着处理，
+   * 已经按新的一轮开始处理，或者这一轮被停止时没送出去（用户要重新发一次）。
+   * 和任务的 DeliveryHow 一样记的是事实，界面按 deliveryText 显示（旧数据没有）
+   */
+  delivery: z.object({ how: z.enum(['steer', 'held', 'next', 'lost']), at: z.string() }).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -472,6 +478,8 @@ export const DesignChatInput = z.object({
   source: ImageSource.default({ kind: 'cli' }),
   /** 每张图生成几版备选 */
   count: z.number().int().min(1).max(4).default(1),
+  /** 「先出原画」时一次出几张：原画张数单独设置，和每张图生成几版不是一回事 */
+  conceptCount: z.number().int().min(1).max(4).default(3),
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
@@ -712,7 +720,7 @@ const gameRules = (
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
-- **列表、背包、商店、技能栏这类界面的数据要在同一轮里给出**：搭完列表控件和条目子控件后调用 set_data，写这个列表需要的数据结构（字段 key、type、label、对应控件）和 3~8 行示例（背包物品要有图标、数量、选中/锁定/空格子这些状态）。然后给列表控件写 Properties.DataSet="<集合 name>"，给条目子控件里要显示数据的控件写 Properties.DataField="<字段 key>"。
+- **列表、背包、商店、技能栏这类界面的数据要在同一轮里给出**：搭完列表控件和条目子控件后调用 set_data，写这个列表需要的数据结构（字段 key、type、label、对应控件）和 3~8 行示例（背包物品要有图标、数量、选中/锁定/空格子这些状态）。然后给列表控件写 Properties.DataSet="<集合 name>"，给条目子控件里要显示数据的控件写 Properties.DataField="<字段 key>"。一个界面有好几份数据（例如背包物品、任务列表、技能栏）时，一次 set_data 写多个集合，每个列表控件在自己的 DataSet 里绑对应的集合；同一个集合可以给多个控件用，不要把所有列表都硬绑到第一个集合。
 - 同一个格子在不同数据下样子不同的（选中、锁定、空格子），把 Properties.States 写在格子里对应的控件上（例如高亮框 Image 写 [{"Name":"Selected","When":{"Field":"selected","Equals":true},"Properties":{"RenderOpacity":1}}]，基准 RenderOpacity 写 0），状态图仍然用设计里的图片（"img:<id>"）。**不要把选中态、悬停态的效果图单独贴在画布上模拟状态**：状态属于子控件，由数据决定，画布按数据渲染。
 `
 
@@ -863,15 +871,15 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 从零搭界面：先 create_components 建好子控件（每个子控件一次），再 replace_widget 把根控件换成只有几个大区块的骨架，然后用 add_widgets 一块一块往各区块里填，每块一次调用
 - 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets；duplicate_widgets 复制控件（重复的卡片、按钮）；wrap_widget 给控件外面套一层面板
 - 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
-- 运行时数据：set_data 定义这个界面需要的数据结构（name、fields、rows），列表控件写 DataSet、条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
+- 运行时数据：set_data 可以一次定义多个数据结构（name、fields、rows），每个列表控件在自己的 DataSet 里绑对应的集合（可以不同控件绑不同集合、同一集合给多个控件用），条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。
+- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。需要 1080p 以上的背景直接按 2048×1152 出图，提交前自检 width、height 都 ≤ 2048；所有工具的数组、对象参数（images、items、slot、questions 等）都按原生 JSON 传，不要字符串化。
 - 图集（sheet）只用于尺寸统一的小图标：同一类、同样大小（边长 ${SHEET_MIN_SIDE}~${SHEET_MAX_SIDE} 像素，例如 96×96 的背包物品、技能、货币、状态图标）、3 个以上，只是画的内容不同时，给它们写同一个 sheet（例如 "items"）。面板让图片模型在一张干净的底色上把它们按相同间距排成整齐的格子（不重叠、不拼成一幅画），再按格子切开，每个图标按各自的 width、height 精确输出，比一张张生成快得多。底框、按钮、面板、进度条、头图、插图这些大图和尺寸各不相同的图不要写 sheet，一张张生成。小图标的 width、height 按在界面上的显示尺寸写准，prompt 写清楚轮廓简洁、主体占满画面、小尺寸下也清晰可辨
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
-- 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句${promptLangWord()}回复你做了什么
+- 当前的控件树已经在上面，不用先 get_tree；check 通过不算完成：每次 update_widgets 之后立刻回读 x/y/宽/高和字号，完成条件是「改完后的全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致」，然后就用几句${promptLangWord()}回复你做了什么
 
 ### 控件的写法（宽松，少写错）
 - {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
@@ -922,7 +930,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
 3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
-4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；最后调 check。
+4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；check 只是辅助，完成条件同下面「用 design 工具改设计」的最后一条（全屏截图 + 每个改动控件的放大图 + 回读数值与汇报一致）。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
 `
