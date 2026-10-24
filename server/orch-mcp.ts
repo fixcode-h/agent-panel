@@ -449,7 +449,7 @@ export function orchTools(o: Orchestra) {
                       review_triage: {
                         type: 'array',
                         description:
-                          '最近一次评审没通过时必填：它的每条 🛑 你自己核实之后的处置。评审的意见是线索不是结论，不要它说什么就改什么，也不要不核实就驳回；处置会连同收尾请求交给父对话',
+                          '最近一次评审列了高级或中级时必填：每条你自己核实之后的处置。评审的意见是线索不是结论，不要它说什么就改什么，也不要不核实就驳回；处置会连同收尾请求交给父对话',
                         items: {
                           type: 'object',
                           properties: {

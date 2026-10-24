@@ -1,4 +1,5 @@
-import { readFile, stat, unlink } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
 import { capture } from './process.ts'
@@ -137,4 +138,45 @@ export async function branchCommits(cwd: string, ref: string, max = 20): Promise
   if (!ref) return []
   const r = await git(cwd, 'log', '--oneline', '--no-decorate', `-${max}`, `${ref}..HEAD`)
   return r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []
+}
+
+/**
+ * 工作区现在的样子写成一棵树（含没跟踪的新文件），用一个临时暂存区，不碰真正的暂存区和提交。
+ * 评审要「上一轮评审之后改了什么」：记下这棵树，下一轮和它比就是增量。读不出来返回空
+ */
+export async function gitSnapshot(cwd: string): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ap-snap-'))
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') }
+  const run = (...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd, env, 30_000)
+  try {
+    const head = (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0
+    if (head && (await run('read-tree', 'HEAD')).code !== 0) return ''
+    // 面板放进来的附件不是改动（见 PANEL_DIR）
+    if ((await run('add', '-A', '--', '.', ':(exclude)attachments')).code !== 0) return ''
+    const tree = await run('write-tree')
+    return tree.code === 0 ? tree.stdout.trim() : ''
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+/** 一次交给评审的差异上限（字）：再长就只附文件列表，完整差异另存文件 */
+const REVIEW_DIFF_MAX = 60_000
+
+/**
+ * 交给评审的改动（ADR 0009）：since 给了就是上一轮评审之后的增量，否则是任务开始以来的全部改动。
+ * 差异带上改动所在的整个函数（-W）：评审只看代码，拿到就能判断，不用再一个文件一个回合地 git diff、读文件；
+ * 不发整个文件，大文件（几千行的组件）整份塞进去每个回合都要重新带上。太长时退回普通上下文，仍太长由调用方存文件
+ */
+export async function reviewDiff(cwd: string, ref: string, since = '') {
+  const snapshot = await gitSnapshot(cwd)
+  if (!snapshot) return null
+  const from = since || (await baseOf(cwd, ref))
+  if (!from) return null
+  const stat = (await git(cwd, 'diff', '--stat=120', from, snapshot)).stdout.trim()
+  if (!stat) return { snapshot, from, stat: '', diff: '', full: '' }
+  const full = (await git(cwd, 'diff', '--no-color', '-W', from, snapshot)).stdout
+  const diff =
+    full.length <= REVIEW_DIFF_MAX ? full : (await git(cwd, 'diff', '--no-color', '-U5', from, snapshot)).stdout
+  return { snapshot, from, stat, diff: diff.length <= REVIEW_DIFF_MAX ? diff : '', full }
 }
