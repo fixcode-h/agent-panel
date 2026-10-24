@@ -83,7 +83,7 @@ import {
 } from '@/components/ui/menu'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationPanel'
-import { renameInAnimations } from '@shared/anim'
+import { renameInAnimations, setKeyAt, type AnimProp, type AnimValue } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
@@ -352,6 +352,14 @@ function Designer({ id }: { id: string }) {
   const [dragImage, setDragImage] = useState<DesignImage | null>(null)
   const [comfyWeb, setComfyWeb] = useState(false)
   const [animCommand, setAnimCommand] = useState<AnimCommand | null>(null)
+  // 当前动画和播放头时间放在页面层：动画面板和属性面板的菱形按钮用同一份
+  const [animName, setAnimName] = useState('')
+  const [animTime, setAnimTime] = useState(0)
+  // 换树（主界面 / 子控件）后从这棵树的第一条动画、第 0 秒开始
+  useEffect(() => {
+    setAnimName('')
+    setAnimTime(0)
+  }, [id, target])
   /** 已经交回的截图请求，不重复画 */
   const captured = useRef(new Set<string>())
   const [, setCaptureTick] = useState(0)
@@ -675,6 +683,21 @@ function Designer({ id }: { id: string }) {
 
   const selWidget = selected ? findWidget(tree, selected) : undefined
   const selParent = selWidget ? findParent(tree, selWidget.id) : undefined
+  // 当前这条树上的动画（页面保存的选中名，找不到就用第一条），属性面板按它的播放头打关键帧
+  const treeAnims = (doc.animations ?? []).filter((a) => a.in === target)
+  const curAnim = treeAnims.find((a) => a.name === animName) ?? treeAnims[0]
+  const pinKey = (prop: AnimProp, v: AnimValue) => {
+    if (!selWidget || !curAnim) return
+    ed.change(
+      (d) => ({
+        ...d,
+        animations: (d.animations ?? []).map((a) =>
+          a.in === curAnim.in && a.name === curAnim.name ? setKeyAt(a, selWidget.Name, prop, animTime, v) : a,
+        ),
+      }),
+      `anim:${curAnim.in}:${curAnim.name}:${selWidget.Name}:${prop}:${animTime}`,
+    )
+  }
   const selImage = doc.images.find((i) => i.id === imageSel)
   // 主界面和每个子控件各是一棵树：找图用在哪、能用到哪些控件上
   const trees = [{ target: '', root: doc.root }, ...doc.components.map((c) => ({ target: c.Name, root: c.Root }))]
@@ -1298,6 +1321,10 @@ function Designer({ id }: { id: string }) {
               animations={doc.animations ?? []}
               tree={target}
               root={tree}
+              current={curAnim?.name ?? ''}
+              time={animTime}
+              onCurrent={setAnimName}
+              onTime={setAnimTime}
               web={server.kind === 'web'}
               selectedNames={[...extra, selected]
                 .filter((x, i, a) => x && a.indexOf(x) === i)
@@ -1451,6 +1478,9 @@ function Designer({ id }: { id: string }) {
                 images={doc.images}
                 url={imageUrl}
                 components={doc.components.map((c) => c.Name)}
+                anim={curAnim}
+                animTime={animTime}
+                onKey={pinKey}
                 onChange={(w, key) => editTree((r) => mapWidget(r, w.id, () => w), key)}
               />
             ) : tab === 'images' && selImage ? (

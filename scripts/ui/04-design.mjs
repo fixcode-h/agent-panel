@@ -39,11 +39,34 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.keyboard.press('Escape')
   // 动画：选中控件，用预设加一个弹出动画，拖播放头预览
   await p.getByRole('treeitem', { name: /StartGroup/ }).click()
+  // 属性面板：只有可动画的属性行左边有 UE 的关键帧菱形；还没有动画时禁用并提示
+  const keyBtn = (label) => p.locator(`[data-field="${label}"] button[aria-pressed]`)
+  assert.ok(await keyBtn('RenderOpacity').isDisabled(), '没有动画时打帧按钮禁用')
+  assert.equal(await keyBtn('Visibility').count(), 0, '不可动画的属性没有打帧按钮')
   // 动画面板默认打开
   await p.getByRole('button', { name: '预设' }).click()
   await p.getByRole('menuitem', { name: '弹出（弹窗）' }).click()
   await check(p, 'UI设计-动画', ['Anim_PopIn', 'StartGroup · 缩放'])
+  assert.equal(await keyBtn('RenderOpacity').count(), 1, '不透明度有打帧按钮')
+  assert.equal(await keyBtn('Translation').count(), 1, '位移有打帧按钮')
+  assert.equal(await keyBtn('Scale').count(), 1, '缩放有打帧按钮')
+  assert.equal(await keyBtn('Angle').count(), 1, '旋转有打帧按钮')
+  // 预设已经在 0 秒给不透明度和缩放打了帧（实心），位移还没有轨道（空心）
+  assert.equal(await p.locator('[data-field="RenderOpacity"] button[aria-pressed="true"]').count(), 1, '已有帧')
+  assert.equal(await p.locator('[data-field="Translation"] button[aria-pressed="true"]').count(), 0, '还没轨道')
+  await check(p, 'UI设计-关键帧按钮', ['RenderOpacity', 'Scale'])
+  // 点位移的菱形：在当前播放头新建轨道并加帧，时间轴里出现这条轨道
+  await keyBtn('Translation').click()
+  await check(p, 'UI设计-打关键帧', ['StartGroup · 位移'])
+  assert.equal(await p.locator('[data-field="Translation"] button[aria-pressed="true"]').count(), 1, '打完变成实心')
   await p.getByRole('button', { name: '关闭动画面板' }).click()
+  // 属性名完整显示：长名字换行，不再为了和开关对齐截成省略号
+  await p.getByRole('treeitem', { name: /Background/ }).click()
+  const labelFits = (label) =>
+    p.locator(`[data-field="${label}"] > span`).evaluate((el) => el.scrollWidth <= el.clientWidth + 1)
+  assert.ok(await labelFits('Size To Content'), 'Size To Content 完整显示')
+  assert.ok(await labelFits('RenderTransformPivot'), '长的属性名完整显示')
+  await check(p, 'UI设计-属性名完整', ['Size To Content', 'RenderTransformPivot'])
   // 标注：框选一块，写说明，出现在 AI 输入框上方
   await p.keyboard.press('r')
   const vp = await p.locator('[data-wid]').first().boundingBox()
