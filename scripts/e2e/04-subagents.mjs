@@ -311,6 +311,7 @@ await runShard('子对话与计划', async (api) => {
     assert.match(closed.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*child-done\.txt/, '面板补上了改动文件')
     // 上下文大的已完成子对话再被叫醒：开新会话只带交接摘要，不接回原会话把上次的工具输出全读一遍
     const logBefore = readLog(log).length
+    const wokeAt = new Date().toISOString()
     await call('POST', `/tasks/${doneKid.id}/messages`, { text: '再补一个小改动' })
     await waitDone(doneKid.id, 20000)
     const revived = readLog(log)
@@ -323,7 +324,12 @@ await runShard('子对话与计划', async (api) => {
     // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话，父对话会跑一轮读收件箱：
     // 等它停下再测下面的提问，免得收件箱被这一轮提前读走
     await waitTask(doneKid.id, (x) => x.resolved, 20000)
-    await waitDone(wtParent.id, 20000)
+    await waitTask(wtParent.id, (p) => p.messages.some((m) => m.child?.id === doneKid.id && m.at > wokeAt), 20000)
+    // 上报可能叫起父对话一轮：连续一阵都停着才算真停下，不然下面的回答会插进这一轮、收件箱里就没有了
+    for (let idle = 0; idle < 5; ) {
+      idle = (await call('GET', `/tasks/${wtParent.id}`)).status === 'running' ? 0 : idle + 1
+      await sleep(100)
+    }
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
