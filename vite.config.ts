@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
+import { writeDemoBuildInfo } from './scripts/lib/demo-build-info.mjs'
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
@@ -22,12 +23,25 @@ const woff2Only = (): Plugin => ({
   },
 })
 
+/**
+ * demo 构建结束时在 dist-demo 里写一份源文件指纹，ui-check 启动时拿它判断产物是不是过期了
+ * （见 scripts/lib/demo-build-info.mjs）。正式构建不写：dist/ 不用界面检查。
+ */
+const demoBuildInfo = (): Plugin => ({
+  name: 'demo-build-info',
+  apply: 'build',
+  // closeBundle 在产物写完之后执行，此时 dist-demo 已经被清空重建过，标记不会被清掉
+  closeBundle() {
+    writeDemoBuildInfo(r('.'), r('./dist-demo'))
+  },
+})
+
 export default defineConfig(({ mode }) => {
   // `vite build --mode demo`：后端在浏览器里模拟，打成单个 JS + CSS，便于做成在线演示页
   const demo = mode === 'demo'
   return {
     root: 'web',
-    plugins: [woff2Only(), react(), tailwindcss()],
+    plugins: [woff2Only(), react(), tailwindcss(), ...(demo ? [demoBuildInfo()] : [])],
     resolve: {
       alias: { '@': r('./web/src'), '@shared': r('./shared') },
     },

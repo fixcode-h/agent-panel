@@ -5,6 +5,7 @@
  */
 import { t } from '@shared/i18n'
 import {
+  resumable,
   childIcon,
   childStale,
   childState,
@@ -59,6 +60,16 @@ export function activityText(a: ChildActivity | undefined) {
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
   return t('正在思考…')
+}
+
+/**
+ * 子对话停下了、独立分支里还有没提交的改动：行上写清几个文件（目录较长，放在 title 里），
+ * 「能不能一键继续」只看 resumable（和服务端 resume 的准入条件同一处）。
+ * 不自动提交、不清理目录：那是用户的改动，只把事实说清
+ */
+export function childDirty(c: ChildSummary) {
+  if (!c.dirty || !resumable(c.status)) return undefined
+  return { text: t('{n} 个文件未提交', { n: c.dirty }), dir: c.dir || '' }
 }
 
 /** 标签的语气：对应下面的样式表，悬浮层和运行区用同一套 */

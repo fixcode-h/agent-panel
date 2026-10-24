@@ -586,9 +586,17 @@ export function RichInput({
           // 组合结束后再补一次重画：组合期间跳过的那些变化在这里落地
           setTimeout(() => setComposeEnd((x) => x + 1), 0)
         }}
+        onBlur={() => {
+          // 组合中切走窗口、输入法异常时 compositionend 可能不来：不在这里清掉，之后的回车会一直被当成组合中而失效
+          composing.current = false
+        }}
         onKeyDown={(e) => {
+          // 输入法组合中的按键（含选字用的回车）全部交给输入法，外部按键处理只看这里的 composing 记录：
+          // 部分 Windows 输入法 compositionend 和 keydown 顺序交错，这时 nativeEvent.isComposing 还是 true，
+          // 照着它过滤会把「中文输入完按的第一下回车」当成组合中的按键吞掉，消息就发不出去
+          if (composing.current) return
           if (cb.current.onKeyDown?.(e)) return
-          if (e.defaultPrevented || e.nativeEvent.isComposing) return
+          if (e.defaultPrevented) return
           if (e.key === 'Backspace' || e.key === 'Delete') {
             const chip = chipBeside(e.key === 'Backspace' ? -1 : 1)
             if (!chip) return
@@ -597,7 +605,7 @@ export function RichInput({
             return
           }
           // 换行自己插：浏览器插出来的 <div>、<br> 读回来不好还原
-          if (e.key === 'Enter' && e.shiftKey && !e.nativeEvent.isComposing) {
+          if (e.key === 'Enter' && e.shiftKey) {
             e.preventDefault()
             api.insert('\n')
           }

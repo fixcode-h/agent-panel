@@ -729,8 +729,8 @@ export const EN_TASKS: Record<string, string> = {
   '角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint':
     'When a role judges a change to be small, it runs only the steps checked here. Good for type checks and lint that finish in under a minute',
   按改动大小决定验证范围: 'Scale verification to the size of the change',
-  '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。':
-    'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps. Test and review steps inside workflows are not affected.',
+  '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都按「适用改动」跑完整的步骤（不适用的一样跳过）。工作流里的测试验收不受影响。':
+    'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps that apply, skipping the ones that do not. Test and review steps inside workflows are not affected.',
   可能相关的对话: 'Possibly related chats',
   '看起来和这些对话是同一件事，可以直接发过去接着做：':
     'These chats look like the same piece of work. You can send it there and continue:',
@@ -1003,4 +1003,26 @@ export const EN_TASKS: Record<string, string> = {
   请求收尾: 'Wrap-up request',
   收尾结果: 'Wrap-up result',
   编译: 'Build',
+  // 输入框：发送被拦下时的一句话，和「执行中发的消息去了哪里」
+  现在还不能发送: 'Cannot send right now',
+  '附件还在上传，稍等一下': 'Attachment is still uploading, one moment',
+  '上一条还在发送，稍等一下': 'The previous message is still sending, one moment',
+  先写点要求再发送: 'Write something before sending',
+  '已交给 CLI，这一轮接着处理': 'Handed to the CLI, it keeps working on this turn',
+  已插进当前这一轮: 'Inserted into the current turn',
+  '已交给正在执行的 CLI，它会在这一轮里读取': 'Handed to the running CLI, it reads it during this turn',
+  已交给工作流里下一个开始的节点: 'Handed to the next node that starts in the workflow',
+  这一轮结束后自动处理: 'Handled automatically when this turn ends',
+  '没送出去：这一轮停下了，重新发一次': 'Not delivered: this turn stopped, send it again',
+  '这一轮已结束，按新的一轮处理': 'This turn already ended, handled as a new turn',
+  'CLI 没有响应，已重启并按新的一轮处理': 'The CLI did not respond; restarted and handled as a new turn',
+  // 停下的子对话：独立分支里没提交的改动
+  '【子对话停止】「{title}」（id {id}）已停下，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在：可以让它继续接着做，或者合并、删除这个独立分支。':
+    '【Child stopped】"{title}" (id {id}) stopped. The isolated branch "{branch}" still has {n} uncommitted files in {path}. The changes are still there: let it keep working, or merge/delete this branch.',
+  已让它接着做: 'Resumed it',
+  '【子对话被打断】「{title}」（id {id}）被新消息打断、马上接着做，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在。':
+    '【Child interrupted】"{title}" (id {id}) was interrupted by a new message and continues right away. The isolated branch "{branch}" still has {n} uncommitted files in {path}. The changes are still there.',
+  '它已经不在停下了，可能已经继续或者做完了': 'It is no longer stopped; it may have resumed or finished',
+  '让它接着做：重新占执行位，从停下的地方继续':
+    'Let it keep working: take the run slot again and continue where it stopped',
 }

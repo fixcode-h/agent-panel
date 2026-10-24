@@ -59,4 +59,8 @@ export function takeHeld(taskId: string): HeldMessage | undefined {
 export const hasHeld = (taskId: string) => !!held.get(taskId)?.length
 
 /** 这一轮停下了（失败、暂停、面板退出）：不再自动接着跑，消息留在对话里由用户决定 */
-export const dropHeld = (taskId: string) => void held.delete(taskId)
+export const dropHeld = (taskId: string) => {
+  const list = held.get(taskId) ?? []
+  held.delete(taskId)
+  return list
+}

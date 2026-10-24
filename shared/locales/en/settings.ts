@@ -4,6 +4,7 @@ export const EN_SETTINGS: Record<string, string> = {
   测试步骤: 'Test steps',
   停用: 'Disabled',
   '，已停用': ', disabled',
+  '，合并时编译': ', builds on merge',
   'AI 生成步骤': 'AI generate steps',
   'AI 生成测试步骤': 'AI generate test steps',
   'AI 配置': 'AI configure',
@@ -37,8 +38,13 @@ export const EN_SETTINGS: Record<string, string> = {
   要执行的命令: 'Command to run',
   工作目录: 'Working directory',
   '工作目录（相对项目根，可空）': 'Working directory (relative to the project root, optional)',
-  执行条件: 'Condition',
-  '执行条件，例如「仅改了 web/ 时」': 'Condition, e.g. "only when web/ changed"',
+  '每条可以写「适用改动」（glob）：只改文档、资源这类没碰到的步骤会被跳过，并在验收结论里写清原因——同时会算上从远端拉取、合并进来的改动。':
+    'Each step can list "Applies to" globs: steps that this change does not touch (docs or assets only, say) are skipped, with the reason written into the verdict; changes pulled or merged in from the remote count as well.',
+  适用改动: 'Applies to',
+  '适用改动（相对项目根的 glob，逗号分隔）：例如 **/*.cpp、**/Build.cs；留空表示总是执行':
+    'Applies to (globs relative to the project root, comma separated), e.g. **/*.cpp, **/Build.cs; leave empty to always run',
+  补充说明: 'Extra note',
+  '补充说明，写给人看（判定以适用改动为准）': 'Extra note for humans (the "Applies to" globs decide whether it runs)',
   超时秒数: 'Timeout (seconds)',
   '超时（秒）': 'Timeout (s)',
   加一条步骤: 'Add a step',
@@ -57,8 +63,8 @@ export const EN_SETTINGS: Record<string, string> = {
   按项目所在系统和命令自己选择执行环境: 'Pick the environment from the system and the command',
   '同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字':
     'Compile one at a time; replace <Target> and <.uproject> with the real names in the project',
-  '有 Lua 改动时执行；按项目实际用的 Lua 版本换命令':
-    'Runs when Lua changed; adjust the command for the Lua version the project uses',
+  '有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令':
+    'Runs when Lua changed; syntax check only, no .luac output; adjust the command for the Lua version the project uses',
   '可选；需要 Editor 的验证登记为延期验证':
     'Optional; checks that need the Editor are registered as deferred verification',
   编译: 'Compile',

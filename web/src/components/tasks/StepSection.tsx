@@ -7,7 +7,7 @@ import { stepDuration, stepLabel, verdictText } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { FoldedRun, SystemNote } from './Messages'
+import { DeliveryLine, FoldedRun, SystemNote } from './Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
@@ -132,7 +132,14 @@ function StepSectionBase({
             return (
               <div key={i} className="flex flex-col gap-4">
                 {r.msgs.map((m) => (
-                  <UserMessage key={m.id} text={m.text} at={m.at} attachments={m.attachments} />
+                  <UserMessage
+                    key={m.id}
+                    text={m.text}
+                    at={m.at}
+                    attachments={m.attachments}
+                    // 执行中补发的要求也写清去了哪里（插进当前轮 / 排到下一轮）：和工作流里的节点无关，用户看得到
+                    extra={m.delivery && <DeliveryLine delivery={m.delivery} />}
+                  />
                 ))}
               </div>
             )

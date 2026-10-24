@@ -547,26 +547,31 @@ export function orchTools(o: Orchestra) {
           },
         ]
       : []),
-    {
-      name: 'read_state',
-      title: '读取共享状态',
-      description: '读这次运行里所有节点共享的状态（键、值、版本、谁写的），长时间执行时中途用它同步进展。',
-      inputSchema: { type: 'object', properties: {} },
-    },
-    {
-      name: 'write_state',
-      title: '写入共享状态',
-      description:
-        '写共享状态的一个键：并发节点都能看到，后写的覆盖先写的。用来同步接口、文件分工、进度和结论，写之前先读一遍别覆盖别人刚写的。',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: '键名，例如 interface、progress、api-changed' },
-          value: { type: 'string', description: '值，写清楚别人需要知道的内容' },
-        },
-        required: ['key', 'value'],
-      },
-    },
+    // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：注册了模型每次调都是「没有共享状态」
+    ...(o.sharedState
+      ? [
+          {
+            name: 'read_state',
+            title: '读取共享状态',
+            description: '读这次运行里所有节点共享的状态（键、值、版本、谁写的），长时间执行时中途用它同步进展。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'write_state',
+            title: '写入共享状态',
+            description:
+              '写共享状态的一个键：并发节点都能看到，后写的覆盖先写的。用来同步接口、文件分工、进度和结论，写之前先读一遍别覆盖别人刚写的。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                key: { type: 'string', description: '键名，例如 interface、progress、api-changed' },
+                value: { type: 'string', description: '值，写清楚别人需要知道的内容' },
+              },
+              required: ['key', 'value'],
+            },
+          },
+        ]
+      : []),
     // 子任务不能再派子任务
     ...(o.helper
       ? []
@@ -882,12 +887,13 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
 export function orchHint(o: Orchestra) {
   // 子任务只做派给它的那件事：不提派子任务、工作流、子对话这些它用不了的工具
   if (o.helper)
-    return '（你有面板工具 panel：get_status 查看其他节点和子任务的状态；read_state / write_state 读写共享状态；send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）'
+    return `（你有面板工具 panel：get_status 查看其他节点和子任务的状态；${o.sharedState ? 'read_state / write_state 读写共享状态；' : ''}send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）`
   // 通用 Agent 写进说明里：不写的话模型很少想到去派别的 Agent
   const common = o.common.length
     ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
     : ''
-  const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
+  // 对话模式没有共享状态（没有 task.runs），说明里也不提，免得模型去调一个不存在的工具
+  const state = o.sharedState ? 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；' : ''
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const bg =
     (o.plans ? 'set_plan 列执行计划、随时更新进度；' : '') +

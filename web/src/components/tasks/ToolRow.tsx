@@ -204,6 +204,12 @@ export function RowShell({
   title,
   titleClass,
   detail,
+  /**
+   * 详情紧跟标题左对齐（占剩余宽度），而不是被标题挤到行尾；耗时仍在行的最右边。
+   * 只给「详情只是说明文字、整行没有展开收起」的行用：详情区会挡掉点击（stopPropagation），
+   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」
+   */
+  detailStart,
   ms,
   open,
   onToggle,
@@ -222,6 +228,7 @@ export function RowShell({
   title?: React.ReactNode
   titleClass?: string
   detail?: React.ReactNode
+  detailStart?: boolean
   /** 跑了多久（毫秒）：显示在最右边，还在跑的每秒更新 */
   ms?: number
   open: boolean
@@ -268,8 +275,10 @@ export function RowShell({
             </span>
           )}
         </button>
-        {/* 标题只占自己文字的宽度：点标题后面的空白也是展开收起 */}
-        <span className="flex min-w-0 flex-1 items-center">
+        {/* 标题只占自己文字的宽度：点标题后面的空白也是展开收起。
+            详情左对齐时标题按内容宽度、上限 25%：1280 开着右栏再缩窗时一行只有 300 多像素，
+            上限大了标题就会把状态标签挤出容器；代价是长标题在 1440 下也会被截短（悬停看全文） */}
+        <span className={cn('flex min-w-0 items-center', detailStart ? 'max-w-[25%]' : 'flex-1')}>
           {title ? (
             onOpen ? (
               <button
@@ -291,7 +300,18 @@ export function RowShell({
             )
           ) : null}
         </span>
-        {detail}
+        {/* 详情左对齐：从标题后面开始排，和标题之间隔一道竖线——标题是可点的，这段只是说明文字。
+            点详情不触发任何动作（哪怕整行带展开），不和标题的点击目标糊成一块 */}
+        {detail && detailStart ? (
+          <span
+            className="flex min-w-0 flex-1 items-center border-l border-line-strong pl-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {detail}
+          </span>
+        ) : (
+          detail
+        )}
         {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
         {toggle && (
           <ChevronRight

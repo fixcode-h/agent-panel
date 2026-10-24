@@ -12,6 +12,7 @@ import {
   type Agent,
   type AskKind,
   type Attachment,
+  type DeliveryHow,
   type Project,
   type ProjectCategory,
   type PeerFrom,
@@ -750,6 +751,8 @@ export function tasksApi(deps: {
     child?: { id: string; title: string; state: ConvState },
     /** 发件对话：父对话里画成一行「接收消息」 */
     peer?: PeerFrom,
+    /** 停下时独立分支里还有没提交的改动：父对话里那一行直接写几个文件、目录在哪，并给「继续」 */
+    worktree?: TaskMessage['worktree'],
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
@@ -775,12 +778,13 @@ export function tasksApi(deps: {
               panel: 'child',
               ...(child && { child }),
               ...(peer && { peer }),
+              ...(worktree && { worktree }),
               at: new Date().toISOString(),
             },
             text,
             [],
           )
-        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child, peer })
+        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child, peer, worktree })
         return
       } catch (e) {
         // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
@@ -799,6 +803,7 @@ export function tasksApi(deps: {
       panel: 'child',
       ...(child && { child }),
       ...(peer && { peer }),
+      ...(worktree && { worktree }),
       at: new Date().toISOString(),
     }
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理
@@ -2734,7 +2739,20 @@ export function tasksApi(deps: {
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         if (entry.task.status === 'done' && hasHeld(task.id) && !shuttingDown)
           await followUp(task.id).catch((e) => console.error(`接着处理执行中收到的消息失败：${(e as Error).message}`))
-        else if (entry.task.status !== 'done') dropHeld(task.id)
+        else if (entry.task.status !== 'done') {
+          // 这一轮没能正常结束（失败、被停止）：排着的消息不会再被自动处理了。
+          // 在对话里把它们改成「没送出去」，用户才知道要重新发一次，而不是一直等着
+          const lost = dropHeld(task.id)
+          if (lost.length) {
+            const at = new Date().toISOString()
+            for (const m of lost)
+              for (const x of entry.task.messages)
+                if (x.id === m.id && x.role === 'user') x.delivery = { how: 'lost', at }
+            await store
+              .update(task.id, entry.task)
+              .catch((e) => log.warn('task', '标记没送出去的消息失败', { task: task.id, error: (e as Error).message }))
+          }
+        }
         // 没在等下一轮时按新的选择直接预热，下一条消息不会再交给旧 CLI；
         // PATCH 自己负责的重启不要在这里重复做
         if (switchedRun && !entry.restart && entry.task.status === 'done' && !hasHeld(task.id) && !shuttingDown)
@@ -2772,6 +2790,10 @@ export function tasksApi(deps: {
       peer?: TaskMessage['peer']
       /** 交给 CLI 的内容和对话里显示的不一样时（例如重启卡住的 CLI 时补上没被处理的那条）：交给 CLI 的这份 */
       prompt?: string
+      /** 这条消息是怎么交给 CLI 的：新记一条时直接写上去，界面据此说「排到下一轮」这类事实（见 DeliveryHow） */
+      delivery?: DeliveryHow
+      /** 停下时独立分支里还有没提交的改动（见 stopWorktreeNote）：父对话里那一行直接写几个文件、目录在哪 */
+      worktree?: TaskMessage['worktree']
     },
   ) {
     // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
@@ -2791,6 +2813,9 @@ export function tasksApi(deps: {
         return next
       }
       m = { text: q.text, attachments: q.attachments, recorded: true }
+      // 这一轮已经结束、马上按新的一轮交给 CLI：把消息上的交付状态从将来的「结束后自动处理」改成实际发生的事
+      const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
+      if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
     }
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
@@ -2818,6 +2843,11 @@ export function tasksApi(deps: {
       next.wrapRequest = undefined
       reportedState.delete(id)
     }
+    // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」
+    const stamp = {
+      ...(m.delivery ? { delivery: { how: m.delivery, at: new Date().toISOString() } } : {}),
+      ...(m.worktree ? { worktree: m.worktree } : {}),
+    }
     // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录
     const project = next.projectId ? await deps.projects.get(next.projectId) : null
     const restoreErr = project ? await restoreWorktree(next, project) : ''
@@ -2835,6 +2865,7 @@ export function tasksApi(deps: {
           ...(expanded ? { prompt: expanded } : {}),
           tools: [],
           ...(m.attachments.length ? { attachments: m.attachments } : {}),
+          ...stamp,
           at: new Date().toISOString(),
         })
       }
@@ -2858,6 +2889,7 @@ export function tasksApi(deps: {
         ...(expanded ? { prompt: expanded } : {}),
         tools: [],
         ...(m.attachments.length ? { attachments: m.attachments } : {}),
+        ...stamp,
         at: new Date().toISOString(),
       })
     }
@@ -2878,6 +2910,7 @@ export function tasksApi(deps: {
    * 一条消息交给正在跑的任务，先试能实时送到 CLI 的办法：
    * CLI 正停在等下一句 → 直接交回同一个进程；支持插话 → 插话；
    * 能用面板工具取补充 → 登记给它取；都收不下就记下来，这一轮结束后马上开始新一轮。
+   * 返回的 how 是这条消息实际去了哪里：调用方把它落到那条消息上，界面才知道该说「插进当前轮」还是「排到下一轮」
    */
   async function deliver(
     entry: Live,
@@ -2885,7 +2918,7 @@ export function tasksApi(deps: {
     text: string,
     attachments: Attachment[],
     placed: Attachment[] = attachments,
-  ): Promise<{ task: Task; how: 'wait' | 'next' | 'restart' | 'steer' | 'notes' | 'next-node' | 'held' }> {
+  ): Promise<{ task: Task; how: DeliveryHow }> {
     const task = entry.task
     // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
     const stuck = stalledTurn(task.id)
@@ -2894,6 +2927,7 @@ export function tasksApi(deps: {
     const wait = deliverWait(task, msg, placed)
     if (wait === 'ok') {
       task.updatedAt = new Date().toISOString()
+      markDelivery(task, msg, 'wait')
       await store.update(task.id, task)
       return { task, how: 'wait' as const }
     }
@@ -2905,14 +2939,26 @@ export function tasksApi(deps: {
       if (next) {
         if (deliverWait(next.task, msg, placed) === 'ok') {
           next.task.updatedAt = new Date().toISOString()
+          markDelivery(next.task, msg, 'wait')
           await store.update(task.id, next.task)
           return { task: next.task, how: 'wait' as const }
         }
         return intoTurn(next, msg, text, placed)
       }
-      // 这次要记进对话的是用户原来的附件（上传目录的绝对路径），拷进任务目录的那份只给 CLI
+      // 这次要记进对话的是用户原来的附件（上传目录的绝对路径），拷进任务目录的那份只给 CLI。
+      // panel / child / peer / worktree 也要带过去：不带的话面板推给父对话的那条（例如「子对话停止 + 未提交改动」）
+      // 会变成一条普通用户消息，行上的「N 个文件未提交」和「继续」都没了
       return {
-        task: await followUp(task.id, { text, attachments: msg.attachments ?? [], placed }),
+        task: await followUp(task.id, {
+          text,
+          attachments: msg.attachments ?? [],
+          placed,
+          delivery: 'next',
+          ...(msg.panel ? { panel: msg.panel } : {}),
+          ...(msg.child ? { child: msg.child } : {}),
+          ...(msg.peer ? { peer: msg.peer } : {}),
+          ...(msg.worktree ? { worktree: msg.worktree } : {}),
+        }),
         how: 'next' as const,
       }
     }
@@ -2946,8 +2992,22 @@ export function tasksApi(deps: {
       ...(msg.child ? { child: msg.child } : {}),
       ...(msg.peer ? { peer: msg.peer } : {}),
       prompt,
+      delivery: 'restart',
     })
     return { task, how: 'restart' as const }
+  }
+
+  /**
+   * 把交付结果记到那条消息上（界面按它说清消息去了哪里）。按 id 找：插话那条记在节点的消息上，
+   * 是异步之前就 push 进去的一份拷贝，改手里这个 msg 不会反映到对话里
+   */
+  function markDelivery(task: Task, msg: TaskMessage, how: DeliveryHow) {
+    const at = new Date().toISOString()
+    for (const m of task.messages)
+      if (m.id === msg.id && m.role === 'user') {
+        m.delivery = { how, at }
+        return
+      }
   }
 
   /** CLI 没在等下一句：插话 → 登记给 read_user_notes → 记下来这一轮结束后接着处理 */
@@ -2958,6 +3018,7 @@ export function tasksApi(deps: {
       task.messages.push(msg)
       holdForNextTurn(task.id, msg)
     }
+    markDelivery(task, msg, how || 'held')
     task.updatedAt = new Date().toISOString()
     await store.update(task.id, task)
     return { task, how: how || ('held' as const) }
@@ -2968,13 +3029,56 @@ export function tasksApi(deps: {
     slots.drain(id, new Error('任务已停止，排队的子对话不再开始'))
     const e = live.get(id)
     if (!e) return
+    // 已经在停了（停止按钮连点、closeChildren 先停一次再补一次）：别再推一条一模一样的提示
+    const firstStop = !e.stop
     e.stop = true
     // 只有用户按的暂停才标成 'user'，其余调用点必须传清是谁结束的，界面才能不把它说成「已暂停」
     e.stopReason = reason
     // CLI 卡住了（没有响应）：不理会中断，直接结束进程，别让用户的新消息再等上几秒
     e.abort.abort(reason === 'stalled' ? HARD_STOP : undefined)
+    // 用户按的暂停、父对话收尾、打断并重发：独立分支里没提交的改动会留在那儿，
+    // 现在就在父对话里点明，不留到用户自己发现
+    if (firstStop && (reason === 'user' || reason === 'parent' || reason === 'supersede'))
+      void stopWorktreeNote(e.task, reason)
     // 用户主动停止父对话：它名下子对话的进程一起结束，不留孤儿（子对话的原因记成 parent，不是用户暂停）
     void closeChildren(id)
+  }
+
+  /**
+   * 停下时独立分支里还有没提交的改动：在父对话里点明几个文件没提交、改动在哪个目录，带着「继续」入口。
+   * 不自动提交、也不清理目录（那是用户和子对话的改动），只把事实说清楚，接着做还是合并由用户定。
+   * reason：被打断重发（supersede）紧接着就会开新的一轮，不能说成「已停下」，否则父对话会以为还要点「继续」
+   */
+  async function stopWorktreeNote(tk: Task, reason: StopReason) {
+    const wt = tk.worktree
+    if (!tk.parentTaskId || !tk.projectId || wt?.state !== 'active') return
+    const project = await deps.projects.get(tk.projectId)
+    if (!project) return
+    // 和 /children 的同一个查询一样走并发闸：父对话停止时 closeChildren 会给每个子对话各触发一次
+    const st = await gitGate(() => worktreeStatus(project.path, wt)).catch(() => null)
+    if (!st?.dirty) return
+    const how = { title: tk.title, id: tk.id, branch: wt.branch, n: st.dirty, path: wt.path }
+    const text =
+      reason === 'supersede'
+        ? t(
+            '【子对话被打断】「{title}」（id {id}）被新消息打断、马上接着做，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在。',
+            how,
+          )
+        : t(
+            '【子对话停止】「{title}」（id {id}）已停下，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在：可以让它继续接着做，或者合并、删除这个独立分支。',
+            how,
+          )
+    await noteParent(
+      tk.parentTaskId,
+      tk,
+      text,
+      text,
+      undefined,
+      // 被打断的那条马上就在跑下一轮，不要说成「已中断」
+      { id: tk.id, title: tk.title, state: reason === 'supersede' ? 'running' : 'stopped' },
+      undefined,
+      { dirty: st.dirty, path: wt.path, branch: wt.branch },
+    ).catch((e) => log.warn('task', '子对话停止时没能提示父对话', { task: tk.id, error: (e as Error).message }))
   }
 
   /**
@@ -3087,33 +3191,48 @@ export function tasksApi(deps: {
     return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
   })
 
-  /** childUnmerged 的结果缓存：子对话 id → 当时的子对话版本、问的时间和结果 */
-  const unmergedSeen = new Map<string, { key: string; at: number; value: boolean }>()
+  /** 子对话独立分支状态的缓存：子对话 id → 当时的子对话版本、问的时间和结果 */
+  const worktreeSeen = new Map<
+    string,
+    { key: string; at: number; value: { merged: boolean; ahead: number; dirty: number } | null }
+  >()
   const UNMERGED_TTL = 10_000
+  /** 停下的子对话不会马上下一次：同一份状态留久一点，父对话页每 4 秒刷一次时不必一直跑 git */
+  const STOPPED_TTL = 60_000
   /** 子对话栏查 git 的并发上限：几十个子对话时别一下子起上百个 git 进程 */
   const gitGate = createGate(4)
 
   /**
-   * 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged）：只问本地 git，和推没推远端无关。
-   * 别的条件都满足了才去问：还在跑、计划没做完时阶段本来就不是「已完成」，
-   * 每 4 秒为这些子对话多跑几次 git 不值得
+   * 子对话独立分支的实际情况（只问本地 git）：合没合回去、还有几个未提交的文件。
+   * 没停的子对话只在「别的条件都满足」时才问：还在跑、计划没做完时本来就轮不到判完成，
+   * 每 4 秒为它们多跑几次 git 不值得。
+   * 已经停下 / 失败的例外：用户点了停止，最想知道的就是「改的东西还在不在」，
+   * 这时候不管计划做没做完都要报出未提交的文件（界面靠它显示「N 个文件未提交 + 继续」）
    */
-  async function childUnmerged(tk: Task, project: Project | null) {
-    if (!project || tk.worktree?.state !== 'active') return false
-    if (childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return false
+  async function childWorktree(tk: Task, project: Project | null) {
+    if (!project || tk.worktree?.state !== 'active') return null
+    const stopped = tk.status === 'stopped' || tk.status === 'failed'
+    if (!stopped && childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return null
     // 子对话没变过就沿用刚问过的结果：父对话页每 4 秒刷一次子对话栏，每个做完的子对话要跑 4 条 git，
     // 子对话一多、再开着两个页面，就是每秒十几个 git 进程抢 CPU 和仓库的锁
-    const key = `${tk.updatedAt}|${tk.worktree.branch}|${tk.worktree.path}`
-    const hit = unmergedSeen.get(tk.id)
-    if (hit && hit.key === key && Date.now() - hit.at < UNMERGED_TTL) return hit.value
+    const key = `${tk.updatedAt}|${tk.status}|${tk.worktree.branch}|${tk.worktree.path}`
+    const ttl = stopped ? STOPPED_TTL : UNMERGED_TTL
+    const hit = worktreeSeen.get(tk.id)
+    if (hit && hit.key === key && Date.now() - hit.at < ttl) return hit.value
     // git 读不出来时不当成没合并：这里只为了让没合回去的子对话不显示成已完成，不该反过来把它卡住
     const st = await gitGate(() => worktreeStatus(project.path, tk.worktree!)).catch(() => null)
-    const value = st ? !st.merged : false
-    unmergedSeen.set(tk.id, { key, at: Date.now(), value })
+    const value = st ? { merged: st.merged, ahead: st.ahead, dirty: st.dirty } : null
+    worktreeSeen.set(tk.id, { key, at: Date.now(), value })
     // 顺手丢掉早就过期的记录，删掉的子对话不会一直留在这里
-    if (unmergedSeen.size > 200)
-      for (const [id, v] of unmergedSeen) if (Date.now() - v.at > UNMERGED_TTL * 6) unmergedSeen.delete(id)
+    if (worktreeSeen.size > 200)
+      for (const [id, v] of worktreeSeen) if (Date.now() - v.at > STOPPED_TTL * 6) worktreeSeen.delete(id)
     return value
+  }
+
+  /** 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged） */
+  async function childUnmerged(tk: Task, project: Project | null) {
+    const st = await childWorktree(tk, project)
+    return !!st && !st.merged
   }
 
   // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
@@ -3130,6 +3249,8 @@ export function tasksApi(deps: {
         const doing = live.has(liveTask.id) ? childActivity(liveTask) : undefined
         const pending = pendingJobs(liveTask.id)
         const open = openPlan(liveTask)
+        // 独立分支的实际情况只问一次 git：既要说「没合回去」，也要说「还有几个文件没提交」
+        const wt = await childWorktree(liveTask, project)
         return {
           id: liveTask.id,
           title: liveTask.title,
@@ -3151,13 +3272,17 @@ export function tasksApi(deps: {
           helpers: helpersWorking(liveTask),
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
-          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childUnmerged）
-          unmerged: await childUnmerged(liveTask, project),
+          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childWorktree）
+          unmerged: !!wt && !wt.merged,
+          // 分支目录里还有几个文件没提交：停下时行上直接写出来，并且给「继续」接着做
+          dirty: wt?.dirty ?? 0,
           // 已经请父对话收尾、还没出结果：行上是「待收尾」
           wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
+          // 独立分支目录：停下时告诉用户改动在哪个目录里
+          dir: liveTask.worktree?.path ?? '',
           activity: doing,
           // 最后有动静的时间：几分钟没有新输出、又不能用等待解释时，界面上标黄 / 标红
           lastActivityAt: childLastActivity(liveTask),
@@ -3746,7 +3871,7 @@ export function tasksApi(deps: {
       const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, await deps.workflows.list()).workflow))
       if (task.status !== 'failed' && task.status !== 'stopped' && !blocked) {
         release(entry)
-        return bad(c, t('只有失败或停止的任务可以继续'))
+        return bad(c, t('只有失败或停止的任务可以继续'), 409)
       }
       // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
       const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }

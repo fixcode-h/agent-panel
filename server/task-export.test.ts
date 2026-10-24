@@ -16,6 +16,7 @@ import {
   importTask,
   importTaskTree,
   lineDiff,
+  NO_TOTALS,
   parseEvolution,
   parseTaskExport,
   redactSecrets,
@@ -25,6 +26,7 @@ import {
   taskReport,
   taskStats,
 } from '../shared/task-export.ts'
+import { endRun, pauseRun, resumeRun } from '../shared/task.ts'
 
 const at = '2026-10-19T00:00:00.000Z'
 const coder = Agent.parse({ id: 'a1', name: '开发', instructions: '写代码', createdAt: at, updatedAt: at })
@@ -342,7 +344,7 @@ test('统计：跨度里没有归属的空档算空闲，轮次和用户消息�
   assert.equal(s.asks, 2, '用户消息条数从记录里数，和轮次分开写')
   assert.equal(s.turns, 2)
   const report = taskReport(exportTask(rec, [coder]))
-  assert.match(report, /跨度 2h 40m：执行 20m 0s，等用户 0s，空闲 2h 20m/)
+  assert.match(report, /跨度 2h 40m：执行 20m 0s（等你确认\/提问 0s 已含在其中），空闲 2h 20m/)
   assert.match(report, /轮次：用户消息 2 条，分成 2 轮执行/)
 })
 
@@ -353,9 +355,629 @@ test('旧导出没有跨度和空闲字段：按记录现算，不写 NaN', () =
     stats: { durationMs: 20 * 60_000, waitMs: 0, turns: 1, turnsUnfinished: 0 },
   } as Parameters<typeof taskReport>[0]
   const report = taskReport(old)
-  assert.match(report, /跨度 2h 40m：执行 20m 0s，等用户 0s，空闲 2h 20m/)
+  assert.match(report, /跨度 2h 40m：执行 20m 0s（等你确认\/提问 0s 已含在其中），空闲 2h 20m/)
   assert.match(report, /轮次：用户消息 2 条，分成 1 轮执行/)
   assert.ok(!report.includes('NaN'), '旧数据不把 NaN 交给用户')
+})
+
+/** 父对话 09:00–13:00（4 小时），两个子对话同时在 09:30–13:00 跑：并行，占用只算一次 3h 30m */
+function withKids() {
+  const root = Task.parse({
+    ...task,
+    id: 'p1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    createdAt: '2026-10-19T09:00:00.000Z',
+    updatedAt: '2026-10-19T13:00:00.000Z',
+    runMs: 20 * 60_000,
+    waitMs: 0,
+    steps: [],
+    messages: [
+      { id: 'p-u1', role: 'user', text: '派两个子对话', at: '2026-10-19T09:00:00.000Z' },
+      { id: 'p-a1', role: 'agent', agentId: coder.id, step: '', text: '都派完了', at: '2026-10-19T13:00:00.000Z' },
+    ],
+  })
+  const kid = (id: string, title: string) =>
+    Task.parse({
+      ...root,
+      id,
+      parentTaskId: 'p1',
+      title,
+      createdAt: '2026-10-19T09:30:00.000Z',
+      updatedAt: '2026-10-19T13:00:00.000Z',
+      messages: [
+        { id: `${id}-u1`, role: 'user', text: '看一下这个模块', at: '2026-10-19T09:30:00.000Z' },
+        { id: `${id}-a1`, role: 'agent', agentId: coder.id, step: '', text: '看完了', at: '2026-10-19T13:00:00.000Z' },
+      ],
+    })
+  return { root, kids: [kid('k1', '子对话一'), kid('k2', '子对话二')] }
+}
+
+test('统计：子对话在后台跑的时间不算父对话空闲，并行时只算一次', () => {
+  const { root, kids } = withKids()
+  const s = exportTaskTree(root, [root, ...kids], [coder]).stats as ReturnType<typeof taskStats>
+  assert.equal(s.spanMs, 4 * 3_600_000, '跨度 09:00 到 13:00')
+  assert.equal(s.childBusyMs, 3.5 * 3_600_000, '两个子对话完全重叠，只算一次')
+  assert.equal(s.idleMs, 10 * 60_000, '空闲只剩父对话自己跑完、子对话跑完的那一段')
+  // 同一段时间不能既算「子对话在跑」又算「空闲」：执行 + 等下一句 + 子对话占用 + 空闲 = 跨度
+  assert.equal(s.durationMs + s.childBusyMs + s.idleMs, s.spanMs, '执行 + 子对话占用 + 空闲 = 跨度')
+  const report = taskReport(exportTaskTree(root, [root, ...kids], [coder]))
+  assert.match(report, /子对话占用 3h 30m/, '报告里写明扣掉了多少')
+  assert.match(report, /空闲 10m 0s/)
+  assert.match(report, /空闲是本任务和名下子对话都没在跑的时候/, '空闲的口径写准，不再说「没有进程在跑」')
+})
+
+test('统计：父一轮覆盖整条记录时，子对话在后台跑的时间仍不算空闲', () => {
+  // 真实记录里对话轮从 beginTurn 到停止一直是 running：不能把整条轮次时间窗当成「父在跑」，
+  // 否则子对话跑 3.5h 会被减成 0，用户最初投诉的「两个差不多的数字」原样保留
+  const { root, kids } = withKids()
+  const oneTurn = Task.parse({
+    ...root,
+    runMs: 20 * 60_000,
+    turns: [
+      {
+        id: 'r1',
+        title: '派两个子对话',
+        status: 'stopped',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T13:00:00.000Z',
+        from: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 },
+      },
+    ],
+  })
+  const b = exportTaskTree(oneTurn, [oneTurn, ...kids], [coder])
+  const s = b.stats as ReturnType<typeof taskStats>
+  assert.equal(s.childBusyMs, 3.5 * 3_600_000, '子对话在后台跑的时间没有被轮次时间窗吞掉')
+  assert.equal(s.idleMs, 10 * 60_000)
+  assert.equal(s.durationMs + s.childBusyMs + s.idleMs, s.spanMs)
+  const report = taskReport(b)
+  assert.match(report, /子对话占用 3h 30m/)
+  assert.doesNotMatch(report, /子对话的时间都落在本任务执行里/, '不能和执行 20m 自相矛盾')
+})
+
+test('统计：子对话与父执行交织、子对话先结束时，占用不会被夹掉', () => {
+  // 父 09:00 开始、跑 10 分钟就停在等子对话，子对话 09:10–10:40 跑 90 分钟，父 11:00 才有下一条消息。
+  // 等子对话的时间已经不算父执行（runner 在 listen(helpers) 里结算掉），子对话占用要全额算，
+  // 不能被 min(占用, 跨度 - 执行) 夹掉一截、也不能再被算成空闲
+  const root = Task.parse({
+    ...task,
+    id: 'mix1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 10 * 60_000,
+    waitMs: 0,
+    idleWaitMs: 0,
+    steps: [],
+    messages: [
+      { id: 'mix1-u1', role: 'user', text: '派个活', at: '2026-10-19T09:00:00.000Z' },
+      { id: 'mix1-u2', role: 'user', text: '结果呢', at: '2026-10-19T11:00:00.000Z' },
+    ],
+    turns: [
+      {
+        id: 'r1',
+        title: '派个活',
+        status: 'done',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T09:10:00.000Z',
+        from: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 },
+      },
+    ],
+  })
+  const kid = Task.parse({
+    ...root,
+    id: 'mix1-k',
+    parentTaskId: 'mix1',
+    title: '子对话',
+    createdAt: '2026-10-19T09:10:00.000Z',
+    runMs: 90 * 60_000,
+    turns: [],
+    messages: [
+      { id: 'mix1-ku', role: 'user', text: '干活', at: '2026-10-19T09:10:00.000Z' },
+      { id: 'mix1-ka', role: 'agent', agentId: coder.id, step: '', text: '干完了', at: '2026-10-19T10:40:00.000Z' },
+    ],
+  })
+  const s = exportTaskTree(root, [root, kid], [coder]).stats as ReturnType<typeof taskStats>
+  assert.equal(s.childBusyMs, 90 * 60_000, '子对话跑了 90 分钟，全额算占用')
+  assert.equal(s.idleMs, 20 * 60_000, '真实空闲只有 10:40–11:00')
+  assert.equal(s.durationMs + s.childBusyMs + s.idleMs, s.spanMs)
+})
+
+test('统计：父自己也在跑的那段不再从空闲里扣一次（四项之和正好是跨度）', () => {
+  // 评审复现的场景：父 09:00–11:00 里 09:00–10:00 在跑，其中一段时间在等子对话（等子任务时 runMs 照样涨），
+  // 子对话 09:10–11:00。父没在忙的只有 10:00–11:00，那段子对话还在跑，算「等子对话」而不是空闲
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const root = Task.parse({
+    ...task,
+    id: 'p2',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    createdAt: '2026-10-19T09:00:00.000Z',
+    updatedAt: '2026-10-19T11:00:00.000Z',
+    runMs: 60 * 60_000,
+    waitMs: 0,
+    steps: [],
+    messages: [
+      { id: 'p2-u1', role: 'user', text: '派个活', at: '2026-10-19T09:00:00.000Z' },
+      // 子对话跑完、父对话被叫醒时用户发来的话：父记录的跨度到这里为止
+      { id: 'p2-u2', role: 'user', text: '结果呢', at: '2026-10-19T11:00:00.000Z' },
+    ],
+    turns: [
+      {
+        id: 'r1',
+        title: '派个活',
+        status: 'done',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T10:00:00.000Z',
+        from,
+      },
+    ],
+  })
+  const kid = Task.parse({
+    ...root,
+    id: 'k1run',
+    parentTaskId: 'p2',
+    title: '子对话',
+    createdAt: '2026-10-19T09:10:00.000Z',
+    turns: [],
+    messages: [
+      { id: 'k1run-u1', role: 'user', text: '干活', at: '2026-10-19T09:10:00.000Z' },
+      { id: 'k1run-a1', role: 'agent', agentId: coder.id, step: '', text: '干完了', at: '2026-10-19T11:00:00.000Z' },
+    ],
+  })
+  const s = exportTaskTree(root, [root, kid], [coder]).stats as ReturnType<typeof taskStats>
+  assert.equal(s.childBusyMs, 60 * 60_000, '只算子对话与父执行不重叠的那段：10:00–11:00')
+  assert.equal(s.idleMs, 0)
+  // 同一段时间不能算两处：执行 + 等用户 + 等子对话 + 空闲 = 跨度
+  assert.equal(s.durationMs + s.childBusyMs + s.idleMs, s.spanMs, '执行 + 子对话占用 + 空闲 = 跨度')
+})
+
+test('统计：子对话没在父对话跨度里跑时不扣空闲', () => {
+  // 子对话的时间窗落在父记录跨度之外（父对话很早就结束了）：扣掉的部分不能超过跨度
+  const { root, kids } = withKids()
+  const lone = Task.parse({
+    ...root,
+    messages: [{ id: 'p-u1', role: 'user', text: '派两个子对话', at: root.createdAt }],
+  })
+  const s = taskStats(lone, Date.now(), NO_TOTALS, 99 * 3_600_000)
+  assert.equal(s.childBusyMs, 0, '扣掉的不会超过跨度')
+  assert.equal(s.idleMs, Math.max(0, s.spanMs - s.durationMs))
+  // 算不出子对话占用的入口（没有子任务记录）：留空，报告里说明空闲可能还含着它们
+  assert.equal(taskStats(kids[0]).childBusyMs, undefined)
+})
+
+test('统计：没正常结束的轮次按结局拆开写，旧记录算「原因没记录」', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  type End = 'done' | 'supersede' | 'user' | 'failed' | 'panel'
+  const turn = (id: string, status: 'done' | 'stopped' | 'failed', end?: End) => ({
+    id,
+    title: id,
+    status,
+    startedAt: '2026-10-19T11:30:00.000Z',
+    endedAt: '2026-10-19T11:40:00.000Z',
+    from,
+    ...(end ? { end } : {}),
+  })
+  const rec = Task.parse({
+    ...twoRounds(),
+    turns: [
+      turn('t1', 'done', 'done'),
+      turn('t2', 'stopped', 'supersede'),
+      turn('t3', 'stopped', 'user'),
+      turn('t4', 'failed', 'failed'),
+      turn('t5', 'stopped', 'panel'),
+      // 旧记录：只有 status，没有结局字段
+      turn('t6', 'stopped'),
+    ],
+  })
+  const s = taskStats(rec)
+  assert.deepEqual(s.turnEnds, { done: 1, running: 0, supersede: 1, user: 1, failed: 1, panel: 1, unknown: 1 })
+  assert.equal(s.turnsUnfinished, 5, '没正常结束的轮次等于各项结局相加')
+  const report = taskReport(exportTask(rec, [coder]))
+  assert.match(
+    report,
+    /其中 5 轮没有正常结束：被新消息接管 1 轮、用户停止 1 轮、失败 1 轮、面板停止 1 轮、原因没记录 1 轮/,
+  )
+})
+
+test('统计：面板重启这类不经过 endTurn 的轮次，按任务的停止原因补上结局', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const stopped = (id: string) => ({
+    id,
+    title: id,
+    status: 'stopped' as const,
+    startedAt: '2026-10-19T11:30:00.000Z',
+    endedAt: '2026-10-19T11:40:00.000Z',
+    from,
+  })
+  const base = twoRounds()
+  // 面板重启：落盘时直接把 running 改成 stopped，没有 end 字段，但整条任务记着 stopReason
+  const restart = Task.parse({ ...base, stopReason: 'restart', turns: [stopped('r1'), stopped('r2')] })
+  assert.deepEqual(taskStats(restart).turnEnds, {
+    done: 0,
+    running: 0,
+    supersede: 0,
+    user: 0,
+    failed: 0,
+    panel: 2,
+    unknown: 0,
+  })
+  assert.match(taskReport(exportTask(restart, [coder])), /面板停止 2 轮/)
+  // 用户暂停
+  const paused = Task.parse({ ...base, stopReason: 'user', turns: [stopped('r1')] })
+  assert.deepEqual(taskStats(paused).turnEnds, {
+    done: 0,
+    running: 0,
+    supersede: 0,
+    user: 1,
+    failed: 0,
+    panel: 0,
+    unknown: 0,
+  })
+  // 旧记录里 status 已经写着失败：按失败算，别挪到「原因没记录」
+  const failed = Task.parse({
+    ...base,
+    turns: [{ ...stopped('r1'), status: 'failed' }, stopped('r2')],
+  })
+  assert.deepEqual(taskStats(failed).turnEnds, {
+    done: 0,
+    running: 0,
+    supersede: 0,
+    user: 0,
+    failed: 1,
+    panel: 0,
+    unknown: 1,
+  })
+})
+
+test('统计：导出时任务还在跑：跨度和执行算到导出那一刻，导入后数字不变', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const running = Task.parse({
+    ...task,
+    id: 'run1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    status: 'running',
+    createdAt: '2026-10-19T09:00:00.000Z',
+    updatedAt: '2026-10-19T09:50:00.000Z',
+    runMs: 60 * 60_000,
+    waitMs: 0,
+    steps: [],
+    messages: [{ id: 'run1-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [{ id: 'r1', title: '跑一下', status: 'running', startedAt: '2026-10-19T09:00:00.000Z', endedAt: '', from }],
+  })
+  const b = exportTask(running, [coder], '', new Date('2026-10-19T10:00:00.000Z'))
+  const s = b.stats as ReturnType<typeof taskStats>
+  assert.equal(s.spanMs, 60 * 60_000, '跨度算到导出这一刻')
+  assert.ok(s.spanMs >= s.durationMs + s.waitMs, '跨度不能比执行时间还短')
+  // 包里这一轮已经按导出这一刻收尾（end: 'panel'）：stats 和记录体说同一种话
+  assert.deepEqual(s.turnEnds, { done: 0, running: 0, supersede: 0, user: 0, failed: 0, panel: 1, unknown: 0 })
+  assert.equal(s.turnsUnfinished, 1, '这一轮没有正常结束（是被导出/面板收掉的）')
+  const report = taskReport(b)
+  assert.match(report, /面板停止 1 轮/)
+  assert.match(report, /导出时任务还在跑/, '头部说明这是执行中的快照')
+  assert.ok(!report.includes('原因没记录'), '还在跑不会被写成原因没记录')
+  // 导入后再算：执行时长和导出时一致，不会凭空少一截
+  const made = importTask(b, 'p9', 'n8', '2026-10-20T10:00:00.000Z')
+  const again = taskStats(made, Date.parse('2026-10-20T10:00:00.000Z'))
+  assert.equal(again.durationMs, s.durationMs, '导入后的执行时长和导出时一致')
+  assert.equal(again.spanMs, s.spanMs, '导入后的跨度和导出时一致')
+})
+
+test('统计：正在执行的那一段还没结算进 runMs，导出时也要算进「执行」', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const live = Task.parse({
+    ...task,
+    id: 'live1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    status: 'running',
+    createdAt: '2026-10-19T09:00:00.000Z',
+    updatedAt: '2026-10-19T09:00:00.000Z',
+    // 这一轮刚开始：runMs 还没结算，只有 runStartedAt
+    runMs: 0,
+    runStartedAt: '2026-10-19T09:00:00.000Z',
+    waitMs: 0,
+    steps: [],
+    messages: [{ id: 'live1-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [{ id: 'r1', title: '跑一下', status: 'running', startedAt: '2026-10-19T09:00:00.000Z', endedAt: '', from }],
+  })
+  const s = exportTask(live, [coder], '', new Date('2026-10-19T10:00:00.000Z')).stats as ReturnType<typeof taskStats>
+  assert.equal(s.durationMs, 60 * 60_000, '执行含正在跑的这段')
+  assert.equal(s.spanMs, 60 * 60_000)
+  assert.equal(s.idleMs, 0, '正在执行的时间不能算成空闲')
+})
+
+test('统计：真实对话里「等下一句」单独记，报告不会出现「其中等待 > 执行」', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const live = Task.parse({
+    ...task,
+    id: 'real1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    status: 'running',
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 0,
+    runStartedAt: '2026-10-19T09:00:00.000Z',
+    waitMs: 0,
+    waitStartedAt: '',
+    idleWaitMs: 0,
+    idleWaitAt: '',
+    steps: [],
+    messages: [{ id: 'real1-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [{ id: 'r1', title: '跑一下', status: 'running', startedAt: '2026-10-19T09:00:00.000Z', endedAt: '', from }],
+  })
+  // 用真实的时间函数走一遍：跑 5 分钟 → 答完停在等下一句 → 次日用户回复 → 再跑 3 分钟 → 结束
+  pauseRun(live, Date.parse('2026-10-19T09:05:00.000Z'))
+  resumeRun(live, Date.parse('2026-10-20T09:00:00.000Z'))
+  pauseRun(live, Date.parse('2026-10-20T09:03:00.000Z'))
+  endRun(live, new Date('2026-10-20T09:03:00.000Z'))
+
+  const s = taskStats(live, Date.parse('2026-10-20T09:03:00.000Z'))
+  assert.equal(s.durationMs, 8 * 60_000, '执行只有两段跑的 8 分钟')
+  assert.equal(s.waitMs, 0, '没有等确认/提问')
+  assert.equal(s.idleWaitMs, 23 * 3_600_000 + 55 * 60_000, '等下一句的 23h55m 单独记')
+  assert.equal(s.durationMs + s.idleMs, s.spanMs, '执行 + 空闲 = 跨度')
+  assert.ok(s.idleWaitMs <= s.idleMs, '等下一句是空闲的一部分，不会比空闲还大')
+  const report = taskReport(exportTask(live, [coder], '', new Date('2026-10-20T09:03:00.000Z')))
+  assert.match(report, /执行 8m 0s（等你确认\/提问 0s 已含在其中）/, '执行和等确认是同一段，写清楚装得下')
+  assert.match(report, /空闲 23h 55m（其中等你回下一句 23h 55m）/, '等下一句算在空闲里，括号里的数不超过主数')
+})
+
+test('统计：面板重启留下的「正在等」记录不会让跨度随查看时间增长', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  // 重启落盘只清了 waitStartedAt 没清 idleWaitAt（老落盘路径）：任务已经停了，不能还按「现在」算等待
+  const rec = Task.parse({
+    ...task,
+    id: 'restart1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    status: 'stopped',
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 10 * 60_000,
+    idleWaitMs: 0,
+    // 重启落盘时漏清的开始时间：比最后一轮结束还晚，它是「等待到此为止」的时间点
+    idleWaitAt: '2026-10-19T09:20:00.000Z',
+    steps: [],
+    messages: [{ id: 'restart1-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [
+      {
+        id: 'r1',
+        title: '跑一下',
+        status: 'stopped',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T09:10:00.000Z',
+        from,
+      },
+    ],
+  })
+  const threeDays = taskStats(rec, Date.parse('2026-10-22T09:00:00.000Z'))
+  const aWeek = taskStats(rec, Date.parse('2026-10-26T09:00:00.000Z'))
+  assert.equal(threeDays.spanMs, 20 * 60_000, '跨度到残留的等待时间点为止，不往后长')
+  assert.equal(aWeek.spanMs, threeDays.spanMs, '跨度不随查看时间增长')
+  assert.equal(aWeek.idleWaitMs, threeDays.idleWaitMs, '等待时间也不会越看越长')
+  // 导出再导入：跨度不会因为清掉残留的开始时间而变小
+  const b = exportTask(rec, [coder], '', new Date('2026-10-22T09:00:00.000Z'))
+  const exported = b.stats as ReturnType<typeof taskStats>
+  assert.equal(exported.spanMs, threeDays.spanMs)
+  const made = importTask(b, 'p9', 'n7', '2026-10-23T09:00:00.000Z')
+  assert.equal(taskStats(made, Date.parse('2026-10-23T09:00:00.000Z')).spanMs, exported.spanMs, '导入后跨度不变')
+})
+
+test('统计：旧记录的 waitMs 里超出执行的那部分是历史「等下一句」，不再和空闲重复算', () => {
+  // 旧口径：答完等下一句也算在 waitMs 里（加了 idleWaitMs 之前的记录都是这样）
+  const rec = Task.parse({
+    ...task,
+    id: 'legacy1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 8 * 60_000,
+    waitMs: (23 * 60 + 55) * 60_000,
+    idleWaitMs: 0,
+    idleWaitAt: '',
+    steps: [],
+    messages: [
+      { id: 'legacy1-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' },
+      { id: 'legacy1-u2', role: 'user', text: '继续', at: '2026-10-20T09:03:00.000Z' },
+    ],
+    turns: [],
+  })
+  const s = taskStats(rec, Date.parse('2026-10-20T09:03:00.000Z'))
+  assert.equal(s.waitMs, 8 * 60_000, '等你确认最多和执行一样长')
+  assert.equal(s.idleWaitMs, (23 * 60 + 47) * 60_000, '超出的部分是历史「等下一句」')
+  assert.equal(s.durationMs + s.idleMs, s.spanMs, '执行 + 空闲 = 跨度，不重复计时')
+  const report = taskReport(exportTask(rec, [coder]))
+  assert.match(report, /执行 8m 0s（等你确认\/提问 8m 0s 已含在其中）/, '括号里的数不超过执行')
+  assert.match(report, /空闲 23h 55m（其中等你回下一句 23h 47m）/, '超出的等待算在空闲里')
+})
+
+test('导出执行中的任务再导入：跨度不会被拉到导入那一刻', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const live = Task.parse({
+    ...task,
+    id: 'live2',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    status: 'running',
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 30 * 60_000,
+    runStartedAt: '2026-10-19T09:30:00.000Z',
+    waitMs: 0,
+    idleWaitMs: 0,
+    idleWaitAt: '',
+    steps: [],
+    messages: [{ id: 'live2-u1', role: 'user', text: '跑一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [{ id: 'r1', title: '跑一下', status: 'running', startedAt: '2026-10-19T09:00:00.000Z', endedAt: '', from }],
+  })
+  const b = exportTask(live, [coder], '', new Date('2026-10-19T10:00:00.000Z'))
+  assert.equal(b.task.exportedWhileRunning, true, '包里标明这是当时还在跑的记录')
+  assert.equal(b.task.turns[0].status, 'stopped', '还在跑的轮次按导出这一刻收尾')
+  assert.equal(b.task.turns[0].endedAt, '2026-10-19T10:00:00.000Z')
+  // 一天后导入再看：跨度仍是导出那一刻的 1 小时，不会被拉到导入时间
+  const made = importTask(b, 'p9', 'n9', '2026-10-20T10:00:00.000Z')
+  const s = taskStats(made, Date.parse('2026-10-20T10:00:00.000Z'))
+  assert.equal(s.spanMs, 60 * 60_000, '跨度不随查看时间增长')
+  assert.equal(s.turnEnds.running, 0, '导入后没有「还在执行」的轮次')
+})
+
+test('统计：等你处理与执行重叠时，报告写成执行的一部分，不引导读者做四项加法', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  // 等确认/提问期间 runMs 不清空：同一段时间既在执行里也在等待里（基线口径，不是这次引入的）
+  const rec = Task.parse({
+    ...task,
+    id: 'overlap1',
+    mode: 'chat',
+    workflowId: '',
+    workflows: [],
+    createdAt: '2026-10-19T09:00:00.000Z',
+    runMs: 60 * 60_000,
+    waitMs: 60 * 60_000,
+    steps: [],
+    messages: [{ id: 'overlap1-u1', role: 'user', text: '确认一下', at: '2026-10-19T09:00:00.000Z' }],
+    turns: [
+      {
+        id: 'r1',
+        title: '确认一下',
+        status: 'done',
+        startedAt: '2026-10-19T09:00:00.000Z',
+        endedAt: '2026-10-19T10:00:00.000Z',
+        from,
+      },
+    ],
+  })
+  const s = taskStats(rec)
+  assert.equal(s.idleMs, 0, '重叠时只会少算空闲，不会算出负数或超跨度')
+  const report = taskReport(exportTask(rec, [coder]))
+  assert.match(report, /执行 1h 0m（等你确认\/提问 1h 0m 已含在其中）/, '等确认写成执行的一部分')
+})
+
+test('统计：旧记录各轮停下原因不同时，只用最后一次的原因给最后那一轮兜底', () => {
+  const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
+  const stopped = (id: string, startedAt: string, endedAt: string) => ({
+    id,
+    title: id,
+    status: 'stopped' as const,
+    startedAt,
+    endedAt,
+    from,
+  })
+  const two = twoRounds()
+  const rec = Task.parse({
+    ...two,
+    stopReason: 'user',
+    turns: [
+      // 这一轮当年是被新消息接管的，但旧记录没记结局：留「原因没记录」，不能按后来那次 user 算
+      stopped('r1', '2026-10-19T09:00:00.000Z', '2026-10-19T09:10:00.000Z'),
+      stopped('r2', '2026-10-19T11:30:00.000Z', '2026-10-19T11:40:00.000Z'),
+    ],
+  })
+  assert.deepEqual(taskStats(rec).turnEnds, {
+    done: 0,
+    running: 0,
+    supersede: 0,
+    user: 1,
+    failed: 0,
+    panel: 0,
+    unknown: 1,
+  })
+})
+
+test('统计：验收重做与节点重跑都记成返工，节点重跑清零 rounds 也不丢', () => {
+  const rec = Task.parse({
+    ...twoRounds(),
+    steps: [
+      // 新数据：验收不通过 2 次后重跑过一遍，rounds 清零后只剩 1 轮，reviews 还留着
+      {
+        id: 'dev',
+        title: '开发',
+        status: 'done',
+        startedAt: at,
+        endedAt: at,
+        rounds: 1,
+        verdict: 'pass',
+        reruns: 1,
+        reviews: 2,
+      },
+      // 旧记录没有 reviews：按 rounds 反推
+      { id: 'old', title: '旧节点', status: 'done', startedAt: at, endedAt: at, rounds: 2, verdict: 'pass' },
+    ],
+  })
+  assert.deepEqual(taskStats(rec).reworkBy, { review: 3, rerun: 1, merge: 0 })
+})
+
+test('报告：空闲的说明和实际算到的口径一致（没算 / 算过是 0 / 有占用）', () => {
+  // 算过、但子对话整个落在父记录跨度之外：占用是 0，不能写成「没算」
+  const { root, kids } = withKids()
+  const outside = kids.map((k) =>
+    Task.parse({
+      ...k,
+      createdAt: '2026-10-19T14:00:00.000Z',
+      messages: [
+        { id: `${k.id}-u1`, role: 'user', text: '晚点做', at: '2026-10-19T14:00:00.000Z' },
+        {
+          id: `${k.id}-a1`,
+          role: 'agent',
+          agentId: coder.id,
+          step: '',
+          text: '做完了',
+          at: '2026-10-19T15:00:00.000Z',
+        },
+      ],
+    }),
+  )
+  const noOverlap = taskReport(exportTaskTree(root, [root, ...outside], [coder]))
+  assert.match(noOverlap, /名下子对话没有另外占掉这条记录里的时间/)
+  // 没算：AI 分析的导出只带统计，拿不到子任务记录（web/src/lib/task-transfer.ts 那条路）
+  const { root: top, child, grand } = tree()
+  const noBusy = taskReport(exportTask(top, [coder], '', new Date(at), descendantTotals([child, grand])))
+  assert.match(noBusy, /这条记录没算子对话的占用，空闲里可能还含它们的时间/)
+})
+
+test('统计：返工按验收重做、同一节点重跑、子对话收尾被驳回分开算', () => {
+  const base = twoRounds()
+  const rec = Task.parse({
+    ...base,
+    steps: [
+      { id: 'dev', title: '开发', status: 'done', startedAt: at, endedAt: at, rounds: 2, verdict: 'pass' },
+      // 验证节点跑了两遍（第一遍失败后重新执行），重新执行时 rounds 会清零，只能靠 reruns 看出来
+      { id: 'verify', title: '验证', status: 'done', startedAt: at, endedAt: at, reruns: 2 },
+    ],
+    messages: [
+      ...base.messages,
+      {
+        id: 'rej',
+        role: 'system',
+        step: '',
+        text: '【父对话收尾】没能合回原分支：冲突',
+        panel: 'build',
+        peer: {
+          id: 'p1',
+          title: '父对话',
+          name: '父对话',
+          rel: 'parent',
+          kind: 'merge',
+          subject: '没能合回原分支：冲突',
+          failed: true,
+        },
+        at,
+      },
+    ],
+  })
+  const s = taskStats(rec)
+  assert.deepEqual(s.reworkBy, { review: 1, rerun: 2, merge: 1 })
+  assert.equal(s.reworks, 4, '返工总数等于三项相加')
+  const report = taskReport(exportTask(rec, [coder]))
+  assert.match(report, /返工 4 次（验收不通过 1 次、同一节点重跑 2 次、子对话收尾被驳回 1 次）/)
 })
 
 test('失败详情：命令用完整原文，带上退出码，没输出时写明', () => {

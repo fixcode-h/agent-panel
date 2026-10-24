@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ChevronRight,
   CheckCircle2,
+  CircleAlert,
   FlaskConical,
   GitBranch,
   GitFork,
@@ -67,7 +68,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { STICK_THRESHOLD, useStickToBottom } from '@/lib/useStickToBottom'
-import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
+import { AgentMessage, ChatReply, DeliveryLine, NoteMessage, PendingAuthor } from './Messages'
 import { ReceivedRow } from './PeerMessage'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -91,7 +92,7 @@ import {
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
-import { childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
+import { childDirty, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
 import { FoldedAskBar, ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -697,7 +698,12 @@ export function TaskView({
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async (input?: string) => {
     const text = input ?? followTa.current?.text() ?? ''
-    if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
+    if (!text.trim() && !files.attachments.length) return
+    // 输入框已经拦过一道（Enter 和按钮同一个 ready）：这里再拦一次，并说清原因，不默默丢掉用户写的字
+    if (sending || files.uploading) {
+      toast.info(files.uploading ? t('附件还在上传，稍等一下') : t('上一条还在发送，稍等一下'))
+      return
+    }
     const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
@@ -756,6 +762,20 @@ export function TaskView({
       toast.error((e as Error).message)
     } finally {
       setResuming(false)
+    }
+  }
+  // 父对话页上给停下的子对话一键继续：走和它自己页面同一个接口（重新占执行位），不另造一套。
+  // 只刷新子对话栏，不往全局任务列表里塞摘要：它会和父对话的 childrenWorking 重复计数（侧栏「N 个执行中」会闪一下）
+  const resumeChild = async (id: string) => {
+    try {
+      await api.resumeTask(id)
+      toast.success(t('已让它接着做'))
+      // 卡片状态本来就 4 秒刷一次，这里先把刚拿到的状态读回来，不用等下一拍
+      void loadChildren(taskId)
+        .then(setChildren)
+        .catch(() => {})
+    } catch (e) {
+      toast.error((e as Error).message)
     }
   }
   const rename = async () => {
@@ -924,6 +944,8 @@ export function TaskView({
         </>
       }
       running={working}
+      // 正在发送上一句：Enter 和按钮一起拦住，并给一句提示（见 ChatComposer 的 blocker）
+      sending={sending}
       onStop={stop}
       leading={
         !working &&
@@ -1281,6 +1303,7 @@ export function TaskView({
                               text={b.m.text}
                               at={b.m.at}
                               attachments={b.m.attachments}
+                              extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
                               actions={
                                 <>
                                   {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
@@ -1413,6 +1436,7 @@ export function TaskView({
                         openChild={openChild}
                         onOpen={openChildIn}
                         onClose={() => openChildIn('')}
+                        onResume={(id) => void resumeChild(id)}
                       />
                     )
                   })()}
@@ -1732,6 +1756,7 @@ function ChildrenBar({
   openChild,
   onOpen,
   onClose,
+  onResume,
 }: {
   children: ChildSummary[]
   /** 派出的子任务：和子对话同一行，点开看它的实时对话流 */
@@ -1739,6 +1764,8 @@ function ChildrenBar({
   openChild: string
   onOpen: (id: string) => void
   onClose: () => void
+  /** 停下的子对话一键继续：重新占执行位，从停下的地方接着做 */
+  onResume: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [all, setAll] = useState(false)
@@ -1900,53 +1927,79 @@ function ChildrenBar({
                     const stale = staleLine(c)
                     // 行上的状态标签和运行区、分组读同一份（见 ./child-line 的 childLabels）
                     const labels = childLabels(c)
+                    // 停下时独立分支里还有没提交的改动：在卡片上直接说出来，并给「继续」
+                    const dirty = childDirty(c)
                     return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
-                          onOpen(c.id)
-                        }}
-                        className={cn(
-                          'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
-                          c.id === openChild && 'bg-sel',
-                        )}
-                      >
-                        <span className="mt-0.5 shrink-0">
-                          <TaskStatusIcon
-                            status={c.status}
-                            icon={icon}
-                            label={c.status === 'stopped' ? stopReasonText(c.stopReason) : undefined}
-                          />
-                        </span>
-                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                          <span className="flex min-w-0 items-center gap-1.5">
-                            <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                              {c.title}
-                            </span>
-                            {/* 状态标签：全部从 childIcon / childState 派生，同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
-                            {labels.map((l) => (
-                              <span key={l.text} className={childLabelClass[l.tone]}>
-                                {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
-                                {l.text}
-                              </span>
-                            ))}
+                      <Fragment key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
+                            onOpen(c.id)
+                          }}
+                          className={cn(
+                            'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                            c.id === openChild && 'bg-sel',
+                          )}
+                        >
+                          <span className="mt-0.5 shrink-0">
+                            <TaskStatusIcon
+                              status={c.status}
+                              icon={icon}
+                              label={c.status === 'stopped' ? stopReasonText(c.stopReason) : undefined}
+                            />
                           </span>
-                          {(line || stale) && (
-                            <span className="flex min-w-0 items-center gap-1">
-                              {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}
-                              {stale && <span className={cn('shrink-0 text-xs', stale.cls)}>· {stale.text}</span>}
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                                {c.title}
+                              </span>
+                              {/* 状态标签：全部从 childIcon / childState 派生，同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
+                              {labels.map((l) => (
+                                <span key={l.text} className={childLabelClass[l.tone]}>
+                                  {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
+                                  {l.text}
+                                </span>
+                              ))}
                             </span>
-                          )}
-                          {c.branch && (
-                            <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
-                              <GitBranch className="h-3 w-3 shrink-0" />
-                              <span className="truncate">{c.branch}</span>
+                            {(line || stale) && (
+                              <span className="flex min-w-0 items-center gap-1">
+                                {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}
+                                {stale && <span className={cn('shrink-0 text-xs', stale.cls)}>· {stale.text}</span>}
+                              </span>
+                            )}
+                            {c.branch && (
+                              <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
+                                <GitBranch className="h-3 w-3 shrink-0" />
+                                <span className="truncate">{c.branch}</span>
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        {dirty && (
+                          // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
+                          <div className="flex min-w-0 items-center gap-1.5 pr-1 pb-1 pl-9">
+                            <CircleAlert className="h-3 w-3 shrink-0 text-warning" />
+                            <span className="shrink-0 text-[0.6875rem] text-warning" title={dirty.dir || undefined}>
+                              {dirty.text}
                             </span>
-                          )}
-                        </span>
-                      </button>
+                            {dirty.dir && (
+                              <span className="min-w-0 truncate font-mono text-[0.6875rem] text-subtle">
+                                {dirty.dir}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onResume(c.id)}
+                              title={t('让它接着做：重新占执行位，从停下的地方继续')}
+                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-accent hover:bg-sel"
+                            >
+                              <RotateCw className="h-3 w-3" />
+                              {t('继续')}
+                            </button>
+                          </div>
+                        )}
+                      </Fragment>
                     )
                   })}
                 </Fragment>

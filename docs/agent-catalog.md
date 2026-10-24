@@ -39,22 +39,22 @@
 
 ## Agent 清单
 
-| key            | 名称             | 能力块               | 通用 | 用到它的工作流                                                                        | 关键参数                                                                        |
-| -------------- | ---------------- | -------------------- | ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `rules`        | 通用约束         | 常驻规则             | —    | 全部（includes）                                                                      | —                                                                               |
-| `orchestrator` | 统筹（必备）     | 项目对话调度         |      | general、ue、bootstrap                                                                | `vcs` `route` `split` `confirm` `report`                                        |
-| `worker`       | 执行（必备）     | 子对话执行           |      | 项目对话运行路径                                                                      | `vcs` `mode` `batch` `verify` `commit`                                          |
-| `helper`       | 子任务（必备）   | 并行收集、核实、计划 |      | —（spawn_agents 不点名时默认用它）                                                    | —                                                                               |
-| `docsync`      | 文档（必备）     | 文档落盘             | ✓    | general、ue、ue-dev、architecture、bootstrap、release、migration                      | `docRoot` `lang` `index` `adr` `bug`                                            |
-| `tester`       | 测试验收（必备） | 构建/测试/验收       | ✓    | general、ue、daily-dev、openspec、bugfix、ue-dev、bootstrap、deps、migration、release | `scope` `env` `regress` `onFail` `write` `serial`                               |
-| `explorer`     | 调研             | 只读调研             | ✓    | ue、ue-dev、bootstrap、openspec、review、migration                                    | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
-| `reviewer`     | 评审（必备）     | 独立评审与复核       | ✓    | review                                                                                | `target`（代码改动 / 方案或结论）`vcs`                                          |
-| `analyst`      | 方案设计         | 需求、方案与架构契约 |      | general、ue、daily-dev、openspec、ue-dev、architecture、migration                     | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
-| `spec`         | 规范撰写         | OpenSpec 产物与门禁  |      | openspec                                                                              | `scene` `stage`                                                                 |
-| `developer`    | 开发             | 写代码               |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
-| `deps`         | 依赖与安全       | 依赖体检与升级       |      | deps                                                                                  | `vcs` `mode` `audit` `license`                                                  |
-| `vcs`          | 版本控制（必备） | 版本控制与交付收尾   | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
-| `blender`      | Blender 建模     | 建模、动画与质检     |      | blender                                                                               | `stage`（含「质检」）                                                           |
+| key            | 名称             | 能力块                     | 通用 | 用到它的工作流                                                                        | 关键参数                                                                        |
+| -------------- | ---------------- | -------------------------- | ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `rules`        | 通用约束         | 常驻规则                   | —    | 全部（includes）                                                                      | —                                                                               |
+| `orchestrator` | 统筹（必备）     | 项目对话调度               |      | general、ue、bootstrap                                                                | `vcs` `route` `split` `confirm` `report`                                        |
+| `worker`       | 执行（必备）     | 子对话执行                 |      | 项目对话运行路径                                                                      | `vcs` `mode` `batch` `verify` `commit`                                          |
+| `helper`       | 子任务（必备）   | 并行收集、核实、计划       |      | —（spawn_agents 不点名时默认用它）                                                    | —                                                                               |
+| `docsync`      | 文档（必备）     | 文档落盘                   | ✓    | general、ue、ue-dev、architecture、bootstrap、release、migration                      | `docRoot` `lang` `index` `adr` `bug`                                            |
+| `tester`       | 测试验收（必备） | 构建/测试/验收             | ✓    | general、ue、daily-dev、openspec、bugfix、ue-dev、bootstrap、deps、migration、release | `scope` `env` `regress` `onFail` `write` `serial`                               |
+| `explorer`     | 调研             | 只读调研（可回写模块文档） | ✓    | ue、ue-dev、bootstrap、openspec、review、migration                                    | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
+| `reviewer`     | 评审（必备）     | 独立评审与复核             | ✓    | review                                                                                | `target`（代码改动 / 方案或结论）`vcs`                                          |
+| `analyst`      | 方案设计         | 需求、方案与架构契约       |      | general、ue、daily-dev、openspec、ue-dev、architecture、migration                     | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
+| `spec`         | 规范撰写         | OpenSpec 产物与门禁        |      | openspec                                                                              | `scene` `stage`                                                                 |
+| `developer`    | 开发             | 写代码                     |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
+| `deps`         | 依赖与安全       | 依赖体检与升级             |      | deps                                                                                  | `vcs` `mode` `audit` `license`                                                  |
+| `vcs`          | 版本控制（必备） | 版本控制与交付收尾         | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
+| `blender`      | Blender 建模     | 建模、动画与质检           |      | blender                                                                               | `stage`（含「质检」）                                                           |
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
 旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 的 `dropLegacyAgent`）。

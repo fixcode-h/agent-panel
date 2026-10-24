@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   beginTurn,
   endRun,
+  idleWaitDuration,
   pauseRun,
   pauseStep,
   resumeRun,
@@ -42,6 +43,8 @@ test('停下时挂着的等待随这一轮结束', () => {
     runStartedAt: at(5),
     waitMs: 0,
     waitStartedAt: at(5),
+    idleWaitMs: 0,
+    idleWaitAt: '',
     steps: [],
     usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 50 },
     turns: [],
@@ -65,13 +68,15 @@ test('停下时挂着的等待随这一轮结束', () => {
   assert.equal(turn.waitMs, 4000)
 })
 
-test('转到后台等用户确认、等回答的时间不算执行，结束这场等待后接着算', () => {
-  // 第 0 秒开始执行，第 5 秒发出提问
+test('答完等下一句的时间不算执行，单独累加，不混进「等你确认/提问」', () => {
+  // 第 0 秒开始执行，第 5 秒答完、停在等下一句
   const task = {
     runMs: 0,
     runStartedAt: at(0),
     waitMs: 0,
     waitStartedAt: '',
+    idleWaitMs: 0,
+    idleWaitAt: '',
     status: 'running',
     createdAt: at(0),
     updatedAt: at(0),
@@ -79,31 +84,39 @@ test('转到后台等用户确认、等回答的时间不算执行，结束这�
   pauseRun(task, ms(5))
   assert.equal(task.runMs, 5000, '停下来之前的才算执行')
   assert.equal(task.runStartedAt, '', '停下时不再累计')
-  assert.equal(task.waitStartedAt, at(5), '从这一刻开始算等待')
+  assert.equal(task.idleWaitAt, at(5), '从这一刻开始等下一句')
+  assert.equal(task.waitStartedAt, '', '等下一句不算「等你确认/提问」')
 
-  // 用户第 100 秒才回答
+  // 用户第 100 秒才回复
   assert.equal(taskDuration(task, ms(100)), 5000, '停着的 95 秒不算执行')
-  assert.equal(waitDuration(task, ms(100)), 95_000)
+  assert.equal(idleWaitDuration(task, ms(100)), 95_000, '这段是等下一句')
+  assert.equal(waitDuration(task, ms(100)), 0, '不混进等你确认的时间')
   resumeRun(task, ms(100))
-  assert.equal(task.waitMs, 95_000, '等待结算进 waitMs')
-  assert.equal(task.runStartedAt, at(100), '从回答的那一刻继续算执行')
+  assert.equal(task.idleWaitMs, 95_000, '等下一句结算进 idleWaitMs')
+  assert.equal(task.waitMs, 0)
+  assert.equal(task.runStartedAt, at(100), '从回复的那一刻继续算执行')
   assert.equal(taskDuration(task, ms(110)), 15_000)
 })
 
-test('停下时停在等待工具上：这段等待收进 waitMs，不算执行', () => {
+test('停下时停在等待工具上：等确认收进 waitMs，等下一句收进 idleWaitMs，都不算执行', () => {
   const task = {
     runMs: 0,
     runStartedAt: at(0),
     waitMs: 0,
     waitStartedAt: '',
+    idleWaitMs: 0,
+    idleWaitAt: '',
     steps: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
     turns: [],
   }
+  // 第 10 秒弹出提问（等确认，同时还在跑），第 20 秒答完、停在等下一句
+  task.waitStartedAt = at(10)
   pauseRun(task, ms(20))
   endRun(task, new Date(ms(120)))
   assert.equal(task.runMs, 20_000, '执行只有前 20 秒')
-  assert.equal(task.waitMs, 100_000, '剩下 100 秒都是等待')
+  assert.equal(task.waitMs, 110_000, '等你回答的 110 秒（含执行里的那一段）')
+  assert.equal(task.idleWaitMs, 100_000, '答完后等下一句的 100 秒单独记')
 })
 
 test('节点被打断后续接，耗时接着累加', () => {

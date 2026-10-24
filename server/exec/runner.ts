@@ -1423,6 +1423,8 @@ async function runAgent(
     if (back) {
       const text = await back
       if (!text || ctx.signal.aborted) return null
+      // 子任务的结果到了、接着干：从这一刻继续算执行
+      resumeRun(task)
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
@@ -1450,8 +1452,9 @@ async function runAgent(
       // 进保活前先让宿主按全局上限收一批最久没用的
       ctx.onKeepAlive?.(task.id)
     }
-    // 停在等待上：空闲时间记进等待，不算执行。keepAlive 会让这次调用一直不返回
-    if (!prewarmMode && !helpers) pauseRun(task)
+    // 停在等待上：这一段不算执行。等用户下一句时记进等待，等子任务时只结算执行时间
+    //（等子对话的时间归到「子对话占用」，不能既算执行又算等待）。keepAlive 会让这次调用一直不返回
+    if (!prewarmMode) pauseRun(task, Date.now(), { idle: !helpers })
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算

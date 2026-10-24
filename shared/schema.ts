@@ -609,8 +609,11 @@ export type FileFormat = z.infer<typeof FileFormat>
 /** 没配置时用的格式：UTF-8 无 BOM、LF */
 export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
 
-export const TestStep = z.object({
-  id: z.string().trim().min(1).max(40),
+/**
+ * 测试步骤的字段（不含 id）：AI 生成 / 补全步骤时整份沿用这里校验，
+ * 新增字段只改这一处，避免提示词、AI 结果和保存校验三份定义走偏。
+ */
+export const TestStepFields = z.object({
   /** 显示名，例如「类型检查」「编译」 */
   name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
   /** 要执行的命令原文 */
@@ -619,8 +622,16 @@ export const TestStep = z.object({
   env: z.enum(TEST_STEP_ENVS).catch('auto').default('auto'),
   /** 相对项目根的工作目录；空表示项目根 */
   cwd: z.string().trim().max(300).default(''),
-  /** 执行条件，例如「仅在改了 web/ 时」「仅发布前」；空表示总是执行 */
+  /** 执行条件的补充说明，写给人看的，例如「仅在发布前跑」；判定以 appliesTo 为准 */
   when: z.string().trim().max(120).default(''),
+  /**
+   * 适用范围：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
+   * 空数组表示总是执行——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑。
+   * 匹配算法只有一份（shared/test-steps.ts 的 matchesGlob / stepApplies）：界面输入用 parseGlobs、
+   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；实际比对由 Agent 按提示词里的
+   * 改动清单做，执行流程里目前还没有按清单自动跳过的地方
+   */
+  appliesTo: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
   /** 超时（秒）；0 表示不限 */
   timeoutSec: z
     .number()
@@ -638,6 +649,10 @@ export const TestStep = z.object({
    * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
    */
   quick: z.boolean().default(false),
+})
+
+export const TestStep = TestStepFields.extend({
+  id: z.string().trim().min(1).max(40),
 })
 export type TestStep = z.infer<typeof TestStep>
 
@@ -1024,6 +1039,17 @@ export const PeerFrom = z.object({
 })
 export type PeerFrom = z.infer<typeof PeerFrom>
 
+/**
+ * 执行中发的那条用户消息最后是怎么交给 CLI 的（面板记录的事实，界面据此写「插进当前轮 / 排到下一轮」）：
+ * wait CLI 正等着下一句，直接交回同一个进程；steer 插进正在执行的这一轮；
+ * notes 交给正在跑的 CLI，它会在这一轮里自己取；next-node 交给工作流里下一个开始的节点；
+ * held 这一轮收不下，结束后自动接着处理；next 这一轮已经结束，按新的一轮处理；
+ * lost 这一轮没能正常结束（失败、停止），排着的消息不会再被自动处理，要用户重新发；
+ * restart CLI 卡住了，停掉后接回会话重开一轮处理
+ */
+export const DeliveryHow = z.enum(['wait', 'steer', 'notes', 'next-node', 'held', 'next', 'lost', 'restart'])
+export type DeliveryHow = z.infer<typeof DeliveryHow>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -1042,6 +1068,11 @@ export const TaskMessage = z.object({
   modelMs: z.number().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
+  /**
+   * 这条用户消息是怎么交给 CLI 的（执行中发的才有，见 DeliveryHow）：记的是事实，
+   * 界面按它告诉用户消息去了哪里（插进当前这一轮 / 排到下一轮 / 这一轮结束后自动处理）
+   */
+  delivery: z.object({ how: DeliveryHow, at: z.string() }).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
   error: z.boolean().optional(),
   /** 报错、警告的分类和原始信息：画成可以点开的警告行（旧数据只有 error 时按正文归类） */
@@ -1068,6 +1099,11 @@ export const TaskMessage = z.object({
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  /**
+   * 子对话停下时独立分支里还有没提交的改动（见 server 的 stopWorktreeNote）：父对话里那一行直接写
+   * 「N 个文件未提交」并给「继续」，不用点开才知道改动在哪个目录、还有几个文件
+   */
+  worktree: z.object({ dirty: z.number(), path: z.string(), branch: z.string().default('') }).optional(),
   /**
    * 另一个对话发来的消息（父对话交代的任务、子对话的状态上报、收尾请求、编译结果、传话……）：
    * 不当成用户说的话，界面上统一画成一行「接收消息 · 已收到 X 发来的消息」，点开看全文。
@@ -1168,6 +1204,13 @@ export const TaskStep = z.object({
   verdict: z.enum(['', 'pass', 'fail']).default(''),
   /** 已经验收了几轮 */
   rounds: z.number().int().default(0),
+  /**
+   * 这个节点又跑了一遍的次数：上一次跑完（不是被打断续接）之后重新执行才算，用于报告里的「返工」。
+   * 重新执行时 rounds 会清零，以前看不出来节点其实已经跑过一遍了（报告写「返工 0 次」）
+   */
+  reruns: z.number().int().default(0),
+  /** 验收不通过、带着意见重做过的次数：同样清零不得，只能单独累加 */
+  reviews: z.number().int().default(0),
   /** 节点自己给出的结论（有条件连线时要求写）：决定走哪条线 */
   branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
@@ -1205,6 +1248,20 @@ export const StopReason = z.enum([
 ])
 export type StopReason = z.infer<typeof StopReason>
 
+/**
+ * 一轮（TaskTurn）是怎么结束的：只有 done 是正常结束，其余几种在报告里分开写，
+ * 以前把它们混成「N 轮没有正常结束」，看不出是被新消息接管、用户停的还是面板收掉的。
+ * 旧记录没有这个字段，按 unknown 算，不要默认成 failed
+ */
+export const TurnEnd = z.enum([
+  'done', // 正常结束
+  'supersede', // 用户发了新消息，这一轮被接管
+  'user', // 用户点了暂停
+  'failed', // 执行失败
+  'panel', // 面板顺带结束的：父对话收尾、页面切走、闲置回收、归档、重启、换 CLI、CLI 没响应
+])
+export type TurnEnd = z.infer<typeof TurnEnd>
+
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
 export const TaskTurn = z.object({
   id: z.string(),
@@ -1221,6 +1278,8 @@ export const TaskTurn = z.object({
     cacheReadTokens: z.number(),
     waitMs: z.number(),
   }),
+  /** 怎么结束的：旧记录没有这个字段，按原因没记录处理（见 TurnEnd） */
+  end: TurnEnd.optional(),
   /** 结束时算好的这一轮用量和等待时间 */
   inputTokens: z.number().default(0),
   outputTokens: z.number().default(0),
@@ -1478,6 +1537,13 @@ export const TaskData = z.object({
   /** 等用户确认、回答问题的累计时间（毫秒），含在 runMs 里；waitStartedAt 是正在等的开始时间 */
   waitMs: z.number().default(0),
   waitStartedAt: z.string().default(''),
+  /**
+   * 答完后停在等用户下一句的累计时间（毫秒）：这段不在 runMs 里，也不算进 waitMs（等你确认/提问）。
+   * 两种等待混在一个数里时，报告会写出「执行 8m（其中等你处理 23h55m）」这种装不下的数
+   */
+  idleWaitMs: z.number().default(0),
+  /** 正在等下一句的开始时间；没在等时为空 */
+  idleWaitAt: z.string().default(''),
   /** 追加要求、对话的每一轮，按时间顺序 */
   turns: z.array(TaskTurn).default([]),
   /** 所有节点：主流程的节点按执行顺序排在前面，执行中产生的子节点追加在后面 */

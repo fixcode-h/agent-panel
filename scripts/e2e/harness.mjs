@@ -7,12 +7,13 @@
  */
 import http from 'node:http'
 import net from 'node:net'
-import { spawn, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fmtDuration } from '../lib/duration.mjs'
+import { startServer } from './spawn-server.mjs'
 import { fileURLToPath } from 'node:url'
 
 // 1×1 的透明 PNG，用来测图片文件按原图读取
@@ -43,8 +44,8 @@ export async function runShard(shardName, fn) {
   mkdirSync(homeDir, { recursive: true })
   const projectDir = path.join(tmp, 'project')
   const log = path.join(tmp, 'calls.jsonl')
-  // 让系统分配一个真正空闲的端口：分片并行时各自抢同一个随机段容易撞上，
-  // 撞了会表现成「服务没有启动」，不靠重试掩盖
+  // 自己探测空闲端口：只给还需要「先拿端口再启动」的用例（见下面 api.freePort）。
+  // 主服务不再用它：探测（listen 后立刻 close）和真正监听之间有窗口，并行的分片会拿到同一个端口
   const freePort = () =>
     new Promise((resolve, reject) => {
       const probe = net.createServer()
@@ -54,8 +55,6 @@ export async function runShard(shardName, fn) {
         probe.close(() => resolve(p))
       })
     })
-  const port = await freePort()
-  const baseUrl = `http://127.0.0.1:${port}/api`
 
   // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
   mkdirSync(projectDir, { recursive: true })
@@ -162,42 +161,41 @@ export async function runShard(shardName, fn) {
   })
   await new Promise((r) => relServer.listen(0, '127.0.0.1', r))
 
-  const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
-    cwd: root,
-    env: {
-      ...process.env,
-      AGENT_PANEL_DATA: dataDir,
-      // 断言按空数据写的，不装内置工作流和 Agent（单元测试里单独测）
-      // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
-      HOME: homeDir,
-      USERPROFILE: homeDir,
-      CLAUDE_CONFIG_DIR: '',
-      CODEX_HOME: '',
-      GEMINI_CLI_HOME: '',
-      // 断言里用的是中文提示，固定用中文界面跑
-      LANG: 'zh_CN.UTF-8',
-      PORT: String(port),
-      FAKE_CLI_LOG: log,
-      AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
-      AGENT_PANEL_RELEASES_URL: `http://127.0.0.1:${relServer.address().port}/releases`,
-      AGENT_PANEL_APP_DIR: appDir,
-      AGENT_PANEL_VERSION: '0.11.5',
-      AGENT_PANEL_NO_RESTART: '1',
-      // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
-      AGENT_PANEL_MINUTE_MS: '1500',
-      // 假 CLI 的模拟耗时：普通回合 80ms（默认 150ms），慢回合 2.4s（默认 10s）。
-      // 需要「任务还在跑」的用例都是等 CLI 启动后再操作（waitFor），不靠等满整段时间
-      FAKE_TURN_MS: '80',
-      FAKE_SLOW_ROUND_MS: '120',
-      FAKE_SLOW_ROUNDS: '20',
-      AGENT_PANEL_REDIRECT_MS: '600',
-      // 交给 CLI 后多久没有任何输出算「没有响应」：默认 90 秒，测试里缩短
-      AGENT_PANEL_NO_RESPONSE_MS: '2000',
-      // 对话页切走后的宽限也缩短，测试不用等一分钟
-      AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
-    },
-    stdio: ['ignore', 'pipe', 'inherit'],
-  })
+  // 服务的环境变量：端口不在里面，由 spawn-server.mjs 决定（PORT=0 让系统分配，服务再把实际端口报回来）
+  const serverEnv = {
+    ...process.env,
+    AGENT_PANEL_DATA: dataDir,
+    // 断言按空数据写的，不装内置工作流和 Agent（单元测试里单独测）
+    // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    CLAUDE_CONFIG_DIR: '',
+    CODEX_HOME: '',
+    GEMINI_CLI_HOME: '',
+    // 断言里用的是中文提示，固定用中文界面跑
+    LANG: 'zh_CN.UTF-8',
+    FAKE_CLI_LOG: log,
+    AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
+    AGENT_PANEL_RELEASES_URL: `http://127.0.0.1:${relServer.address().port}/releases`,
+    AGENT_PANEL_APP_DIR: appDir,
+    AGENT_PANEL_VERSION: '0.11.5',
+    AGENT_PANEL_NO_RESTART: '1',
+    // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
+    AGENT_PANEL_MINUTE_MS: '1500',
+    // 假 CLI 的模拟耗时：普通回合 80ms（默认 150ms），慢回合 2.4s（默认 10s）。
+    // 需要「任务还在跑」的用例都是等 CLI 启动后再操作（waitFor），不靠等满整段时间
+    FAKE_TURN_MS: '80',
+    FAKE_SLOW_ROUND_MS: '120',
+    FAKE_SLOW_ROUNDS: '20',
+    AGENT_PANEL_REDIRECT_MS: '600',
+    // 交给 CLI 后多久没有任何输出算「没有响应」：默认 90 秒，测试里缩短
+    AGENT_PANEL_NO_RESPONSE_MS: '2000',
+    // 对话页切走后的宽限也缩短，测试不用等一分钟
+    AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
+  }
+  // 开发机的 shell 里可能恰好有 PORT（很常见的变量名）：端口由 spawn-server 决定（PORT=0 让系统分配），
+  // 继承下来会让 8 个分片都去抢同一个端口，全量 e2e 全红
+  delete serverEnv.PORT
   /**
    * 退出前要收尾的资源：临时起的 server、子进程。都登记进来，断言失败时统一关掉。
    * 不登记的话，没关的 server 会一直占着事件循环，进程明明已经失败却不退出，CI 会挂到超时才结束
@@ -220,9 +218,6 @@ export async function runShard(shardName, fn) {
       } catch {}
     }
   }
-  onExit(() => server.kill())
-  // close() 只是停止接受新连接，已经建好的 keep-alive 连接会一直挂着（进程因此退不出去），
-  // 所以先把它们断掉再关
   onExit(() => {
     relServer.closeAllConnections()
     relServer.close()
@@ -237,6 +232,25 @@ export async function runShard(shardName, fn) {
   }
   process.on('uncaughtException', fail)
   process.on('unhandledRejection', fail)
+
+  // 服务自己 listen(0) 把实际端口报回来，并回报分片唯一的 instance：端口被残留服务或并行的分片占着时
+  // 立刻失败，不会出现「有东西在 /health 上回 {ok:true} 就当自己的服务起来了」的假通过
+  let main
+  try {
+    main = await startServer({
+      root,
+      shardName,
+      env: serverEnv,
+      // 服务起来之后又退出（崩溃、被其他用例杀掉）时马上让分片失败，不等下一个请求超时
+      onUnexpectedExit: (e) => fail(e),
+    })
+  } catch (e) {
+    // 端口被占、服务启动即退出：直接失败并说清是哪种，不要等到第一个 waitFor 超时
+    fail(e)
+    return
+  }
+  const { port, baseUrl } = main
+  onExit(() => main.stop())
 
   const call = async (method, url, body) => {
     // 下面大部分用例测的是按连线自动执行（每次调用的顺序、提示词都按这个断言）；没有编排器的那条单独写明 dispatch: true
@@ -327,18 +341,6 @@ export async function runShard(shardName, fn) {
     cleanupAll()
     process.exit(1)
   }, WATCHDOG_MS)
-
-  // 分片并行时几个 tsx 服务同时启动，机器忙时首次编译要十几秒：最多等 60 秒，
-  // 不要把「还在编译」误当成「服务没起来」
-  for (let i = 0; ; i++) {
-    try {
-      await call('GET', '/health')
-      break
-    } catch {
-      if (i > 600) throw new Error('服务没有启动（等了 60 秒）')
-      await sleep(100)
-    }
-  }
 
   // ---- 各分片共用的基础数据 ----
   // 基础 CLI 配置：都指向假 CLI，带一个环境变量（断言会检查它传给了子进程）

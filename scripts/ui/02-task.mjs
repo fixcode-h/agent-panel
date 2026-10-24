@@ -68,7 +68,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
               .filter((b) => (b.className || '').includes('text-left'))
               .map((b) => norm(b.innerText))
           : []
-        return { runs, items }
+        // 运行区子对话行的详情（状态标签、当前活动）要跟在标题后面左对齐：
+        // 以前标题 flex-1 占满中间，状态和活动被推到行尾，看起来像居中/靠右居中。
+        // 左对齐后标题和状态两段文字不能糊成一块：中间要有分隔线，且状态不是另一个点击目标
+        const align = [...document.querySelectorAll('[aria-label="运行中"]')]
+          .flatMap((box) => [...box.children])
+          .filter((r) => norm(r.innerText).startsWith('子对话'))
+          .map((row) => {
+            // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
+            const title = [...row.querySelectorAll('button')].find((b) =>
+              (b.getAttribute('title') || '').includes('子对话'),
+            )
+            // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
+            const tags = [...row.querySelectorAll('span')]
+              .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+              .filter((s) => s.getBoundingClientRect().width > 0)
+              .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+            if (!title || !tags.length) return null
+            const tag = tags[0]
+            // 真正负责裁剪的那一层（详情容器）：靠类名取而不靠结构层级，多包一层也不会量错
+            const clip = tag.closest('.overflow-hidden')?.getBoundingClientRect()
+            const sepBox = tag.closest('.border-l')
+            // 耗时是行尾那个等宽数字（tabular-nums），它要贴住行右边
+            const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
+            const rowRight = row.getBoundingClientRect().right
+            return {
+              gap: Math.round(tag.getBoundingClientRect().left - title.getBoundingClientRect().right),
+              // 分隔线不只看类名：类还在但样式被覆盖时也要能发现
+              sep: !!sepBox && parseFloat(getComputedStyle(sepBox).borderLeftWidth) >= 1,
+              // 状态和活动文字不能是另一个点击目标：不在按钮里、鼠标不是手型
+              inButton: !!tag.closest('button'),
+              cursor: getComputedStyle(tag).cursor,
+              tags: tags.length,
+              clipped: tags.some((t) => !!clip && t.getBoundingClientRect().right > clip.right + 1),
+              msGap: ms ? Math.round(rowRight - ms.getBoundingClientRect().right) : null,
+            }
+          })
+          .filter(Boolean)
+        return { runs, items, align }
       })
       if (boxes.runs.length !== boxes.items.length)
         errors.push(`运行区和弹层条目数对不上：运行区 ${boxes.runs.length} 条、弹层 ${boxes.items.length} 条`)
@@ -95,12 +132,133 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .join(',')
       if (order(boxes.runs) !== order(boxes.items))
         errors.push(`运行区和弹层的顺序不一致：运行区 ${order(boxes.runs)}、弹层 ${order(boxes.items)}`)
+      // 左对齐：状态标签只隔一个分隔间距跟在标题后面，两段文字之间有分隔线，
+      // 状态/活动文字不是可点目标，耗时仍在行尾。
+      // 不按「行宽比例」判：标题按内容宽度、上限 25%（见 RowShell），
+      // 长标题的行比例本来就会偏右，拿比例当阈值会把合法布局判红
+      if (!boxes.align.length) errors.push('运行区：子对话行里没找到可以核对对齐的状态标签')
+      else if (boxes.align.length !== boxes.runs.length)
+        errors.push(`运行区：${boxes.runs.length} 条子对话行里只有 ${boxes.align.length} 条能测到标题和状态标签`)
+      // 有「计划 n/m + 执行中」这种一行两个标签的行，才算测到了真实排布
+      if (boxes.align.length && !boxes.align.some((a) => a.tags > 1))
+        errors.push('运行区：没有一行同时显示两个状态标签，核对不到「计划 n/m + 执行中」的排布')
+      for (const a of boxes.align) {
+        if (a.gap < 12 || a.gap > 24) errors.push(`运行区子对话行：状态标签距标题 ${a.gap}px，没有紧跟标题左对齐`)
+        if (!a.sep) errors.push('运行区子对话行：标题和状态之间没有分隔线，两段文字连成一片')
+        if (a.inButton || a.cursor === 'pointer')
+          errors.push(`运行区子对话行：状态/活动文字也是可点目标（inButton ${a.inButton}、cursor ${a.cursor}）`)
+        if (a.clipped) errors.push('运行区子对话行：状态标签被详情容器裁掉了')
+        // 行内边距 px-2.5 = 10px：耗时要贴住行右边，不能被详情挤出容器
+        if (a.msGap === null || a.msGap > 16) errors.push(`运行区子对话行：耗时没贴住行尾（右端距行右缘 ${a.msGap}px）`)
+      }
       await check(p, '子对话-运行区与弹层一致')
+      await check(p, '子对话-运行区左对齐')
       await p.getByRole('button', { name: '全部' }).first().click()
       await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()
     }
+  }
+  // 窄窗口：子对话行的状态标签不能被裁，「计划 1/2」不能变成「计划 1」；
+  // 活动文字是补充信息，窄屏藏起来，宽度留给标签和耗时
+  {
+    await p.setViewportSize({ width: 375, height: 820 })
+    await p.reload()
+    await backToTask()
+    /** 等运行区里出现子对话行（窄屏藏了动作名，按标题按钮的 openTip 定位） */
+    const waitRows = () =>
+      p
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+              [...box.children].some((r) => !!r.querySelector('button[title*="子对话"]')),
+            ),
+          { timeout: 10000 },
+        )
+        .catch(() => {})
+    const measureNarrow = () =>
+      p.evaluate(() => {
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        const rows = [...document.querySelectorAll('[aria-label="运行中"]')]
+          .flatMap((b) => [...b.children])
+          .filter((r) => !!r.querySelector('button[title*="子对话"]'))
+        return {
+          rows: rows.length,
+          // 行宽：1280 那段靠它确认真的复现出了「开着右栏再缩窗」的窄行，
+          // 默认右栏改成关闭时这里会变宽，断言就不会再静默通过
+          rowWidth: rows[0] ? Math.round(rows[0].getBoundingClientRect().width) : 0,
+          items: rows
+            .map((row) => {
+              // 一行可能有几个状态标签（「计划 1/2」+「执行中」），每个都要完整
+              const tags = [...row.querySelectorAll('span')]
+                .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+                .filter((s) => s.getBoundingClientRect().width > 0)
+              if (!tags.length) return null
+              // 真正裁剪的那一层（overflow-hidden）：标签超出它就会被裁掉
+              const clip = tags[0].closest('.overflow-hidden')?.getBoundingClientRect()
+              return {
+                text: tags.map((t) => norm(t.innerText)).join(' + '),
+                clipped: tags.some((t) => !!clip && t.getBoundingClientRect().right > clip.right + 1),
+                // 活动文字（带 truncate 的那一段）在窄屏要隐藏
+                noteShown: [...row.querySelectorAll('span')].some(
+                  (s) =>
+                    (s.className || '').includes('font-sans') &&
+                    (s.className || '').includes('truncate') &&
+                    getComputedStyle(s).display !== 'none',
+                ),
+              }
+            })
+            .filter(Boolean),
+        }
+      })
+    // 375 截图留证据（含两标签的行都要在画面里）；320 更窄，一个标签也不能裁
+    for (const width of [375, 320]) {
+      await p.setViewportSize({ width, height: 820 })
+      await p.reload()
+      await backToTask()
+      await waitRows()
+      const narrow = await measureNarrow()
+      if (!narrow.rows) errors.push(`运行区（${width}px）：没有列出子对话，核对不了状态标签`)
+      else if (narrow.items.length !== narrow.rows)
+        errors.push(`运行区（${width}px）：${narrow.rows} 条子对话行里只有 ${narrow.items.length} 条能测到状态标签`)
+      for (const n of narrow.items) {
+        if (n.clipped) errors.push(`运行区（${width}px）：状态标签「${n.text}」被裁掉了`)
+        if (n.noteShown) errors.push(`运行区（${width}px）：活动文字还占着宽度，状态标签会被挤掉`)
+      }
+      if (width === 375) {
+        // 运行区在消息流里往往滚在视口外：先滚到它，截图里才看得到全部子对话行
+        await p
+          .locator('[aria-label="运行中"]')
+          .first()
+          .scrollIntoViewIfNeeded()
+          .catch(() => {})
+        await check(p, '子对话-运行区窄窗口')
+      }
+    }
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.reload()
+    await backToTask()
+    // 1280 这一格：宽窗口开着右栏再缩下来，运行区一行只剩 300 多像素；
+    // 这里不在窄屏断点内（活动文字还在），状态标签照样不能被裁
+    await p.setViewportSize({ width: 1280, height: 900 })
+    await settle(p)
+    const mid = await measureNarrow()
+    if (!mid.rows) errors.push('运行区（1280px）：没有列出子对话，核对不了状态标签')
+    else if (mid.items.length !== mid.rows)
+      errors.push(`运行区（1280px）：${mid.rows} 条子对话行里只有 ${mid.items.length} 条能测到状态标签`)
+    for (const n of mid.items) if (n.clipped) errors.push(`运行区（1280px）：状态标签「${n.text}」被裁掉了`)
+    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来
+    if (mid.rowWidth > 340)
+      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，没复现出右栏占宽后的窄行（应该 <340）`)
+    // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
+    await p
+      .locator('[aria-label="运行中"]')
+      .first()
+      .scrollIntoViewIfNeeded()
+      .catch(() => {})
+    await check(p, '子对话-运行区1280')
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await settle(p)
   }
   // 子对话交回的状态不再藏起来：画成「接收消息 + 类型 + 内容标题」，点标题弹窗看全文
   {
@@ -869,7 +1027,92 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('执行中发消息：消息没有立刻出现在对话里'))
     if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
     if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
-    await check(p, '任务-执行中发消息')
+    // 交付方式要回传给用户看：演示里这一轮收不下，消息上要写明「结束后自动处理」，不是只存个内部枚举
+    await check(p, '任务-执行中发消息', ['这一轮结束后自动处理'])
+  }
+  // 上一条还在发送时再按回车：只发出一条，而且要说明为什么没发出去（以前是静默什么都不做，看着像卡住了）
+  {
+    const text = '连按两次回车的测试'
+    // 演示版把发消息的请求人为拖慢（见 demo-backend 的 demo-slow-messages），才能真的撞上「上一条还在发送」。
+    // 这个值会被界面检查的演示倍速缩短（scripts/ui/harness.mjs 的 DEMO_SPEED=4），12000 折算下来约 3 秒，余量够两次按键
+    await p.evaluate(() => localStorage.setItem('demo-slow-messages', '12000'))
+    await p.locator('#follow-up').fill(text)
+    await p.locator('#follow-up').press('Enter')
+    await p.locator('#follow-up').press('Enter')
+    const hint = await p
+      .getByText('上一条还在发送，稍等一下')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!hint) errors.push('发送被拦下：没有提示为什么没发出去')
+    await p
+      .locator('.ml-auto', { hasText: text })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {})
+    // 等第一条真的发完（输入框清空），再数：只能有一条
+    await p
+      .waitForFunction(
+        () => !(document.querySelector('#follow-up')?.textContent ?? '').includes('连按两次回车的测试'),
+        { timeout: 10000 },
+      )
+      .catch(() => {})
+    const n = await p.locator('.ml-auto', { hasText: text }).count()
+    if (n !== 1) errors.push(`连按两次回车：发出了 ${n} 条（应该只有 1 条）`)
+    await p.evaluate(() => localStorage.removeItem('demo-slow-messages'))
+    await check(p, '输入框-连按两次回车')
+  }
+  // 中文输入法组合结束后按一下回车就要发出去：部分 Windows 输入法这时 nativeEvent.isComposing 还是 true
+  {
+    const text = '中文输入完直接按回车'
+    await p.locator('#follow-up').focus()
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      // 组合开始 → 字已经落进输入框 → 组合结束（真实输入法的先后顺序）
+      ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      ed.textContent = '中文输入完直接按回车'
+      ed.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      ed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await p.waitForTimeout(200)
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      ed.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true }),
+      )
+    })
+    const sent = await p
+      .locator('.ml-auto', { hasText: text })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!sent) errors.push('输入法组合结束后按一次回车：消息没有发出去')
+    await check(p, '输入框-组合结束后回车发出')
+  }
+  // 反过来：组合中按下的回车（选字用的那一下）不能当成发送
+  {
+    const text = '组合中按下回车不该发出'
+    await p.locator('#follow-up').focus()
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      ed.textContent = '组合中按下回车不该发出'
+      ed.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      ed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await p.waitForTimeout(600)
+    const n = await p.locator('.ml-auto', { hasText: text }).count()
+    if (n) errors.push('输入法组合中按回车：消息被发出去了（选字用的回车不能当成发送）')
+    // 清掉输入框，别影响后面的用例
+    await p.locator('#follow-up').fill('')
+    await check(p, '输入框-组合中回车不发出')
   }
   // 提问窗口右上角的关闭：点了要马上收起、换回输入框，对话暂停（以前停止接口返回的任务还带着提问，关不掉）
   await p.goto(base + '#/chat')

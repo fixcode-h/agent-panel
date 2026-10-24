@@ -321,7 +321,10 @@ async function parseWorkflow(body: unknown, selfId = '') {
   return error ? { error } : { data: p.data }
 }
 
-app.get('/health', (c) => c.json({ ok: true }))
+// 端到端测试启动服务时会给一个分片唯一的标记（AGENT_PANEL_INSTANCE），这里回显它：
+// 调用方（scripts/e2e/spawn-server.mjs）据此确认连上的是自己刚起的服务，
+// 端口被残留进程或并行的分片占着时能立刻发现，不会等到第一个请求超时才看出假通过
+app.get('/health', (c) => c.json({ ok: true, instance: process.env.AGENT_PANEL_INSTANCE ?? '' }))
 // ---- 设置 ----
 /** 回收策略跟着设置走：宽限、上限、总开关；保存后立即生效，不用重启服务 */
 const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
@@ -956,8 +959,18 @@ delete process.env.AGENT_PANEL_RESTARTED
 // 要从外网访问时，由 cloudflared（或用户自己的反向代理）把请求转到 127.0.0.1，见 remote.ts
 configureRemote(port)
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
+  // 把实际端口打出来（一行给工具解析）：PORT=0 时端口由系统分配，端到端测试照着它连，
+  // 不用「先探测空闲端口再传给服务」——探测（listen 后立刻 close）和真正监听之间有窗口，
+  // 并行的分片会拿到同一个端口（见 scripts/e2e/spawn-server.mjs）
+  const addr = server.address()
+  const actualPort = typeof addr === 'object' && addr ? addr.port : port
+  console.log(`AGENT_PANEL_PORT ${actualPort}`)
+  // 其它模块按 PORT 环境变量拼面板地址（ask-mcp、design-mcp、remote）：模块加载时读到的是 0，
+  // 这里把实际端口写回去，否则交给 CLI 的面板 MCP 地址是 127.0.0.1:0，CLI 连不上就直接退出了
+  process.env.PORT = String(actualPort)
+  configureRemote(actualPort)
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
-  const url = withToken(`http://127.0.0.1:${port}`)
+  const url = withToken(`http://127.0.0.1:${actualPort}`)
   console.log(`Agent 面板服务已启动: ${url}`)
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
