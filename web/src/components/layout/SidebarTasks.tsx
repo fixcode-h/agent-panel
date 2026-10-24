@@ -93,10 +93,13 @@ export function TaskRow({
               />
             )}
             <span className="flex shrink-0 items-center gap-1">
-              <ModeIcon
-                aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                className="h-3.5 w-3.5 text-subtle"
-              />
+              {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
+              {attention !== 'running' && (
+                <ModeIcon
+                  aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                  className="h-3.5 w-3.5 text-subtle"
+                />
+              )}
               {attention === 'ask' ? (
                 // Agent 在等你确认操作或回答问题
                 <CircleAlert

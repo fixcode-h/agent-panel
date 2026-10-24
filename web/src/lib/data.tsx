@@ -18,7 +18,8 @@ import { applyAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
-import { taskSummary } from '@shared/task'
+import { helpersWorking, taskSummary } from '@shared/task'
+import { keepLiveFields } from './live-fields'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -86,6 +87,9 @@ function sameTask(a: Task, b: Task) {
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
     a.childrenWorking === b.childrenWorking &&
+    (a.jobs?.length ?? 0) === (b.jobs?.length ?? 0) &&
+    helpersWorking(a) === helpersWorking(b) &&
+    (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
     a.archived === b.archived &&
     a.projectId === b.projectId &&
     a.parentTaskId === b.parentTaskId &&
@@ -211,9 +215,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // 全局列表只存摘要：暂停、继续、改名这些接口回的是带全部对话的完整任务，原样放进来的话
     // 摘要没变时 mergeTasks 会一直沿用这份，整段对话（几 MB）就跟着列表常驻内存，切走对话也不释放
     (full: Task) => {
-      const t = taskSummary(full)
       setTasks((ts) => {
-        const i = ts.findIndex((x) => x.id === t.id)
+        const i = ts.findIndex((x) => x.id === full.id)
+        // 停止、改名这类接口返回的任务不带运行时字段（后台命令、还在运行的子对话数）：沿用列表里的，转圈不闪
+        const t = taskSummary(keepLiveFields(ts[i], full))
         if (i < 0) return [...ts, t]
         // 摘要没变时沿用原数组：流式输出期间每 200ms 来一次，不能每次都让侧栏重算
         if (sameTask(ts[i], t)) return ts

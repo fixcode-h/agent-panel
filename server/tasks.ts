@@ -1122,10 +1122,11 @@ export function tasksApi(deps: {
   void ready.then(() => background.recover()).catch(() => {})
 
   /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
-  const withJobs = (task: Task): Task => {
-    const jobs = uiJobs(background.list(task.id))
-    return jobs.length ? { ...task, jobs } : task
-  }
+  /**
+   * 带上还在跑的后台命令。没有也写成空数组：界面靠「有没有这个字段」分辨这份任务是完整推送（带运行时字段）
+   * 还是别的接口顺手返回的（没带），后者不能把列表和标题栏的转圈清掉（见 web/src/lib/live-fields.ts）
+   */
+  const withJobs = (task: Task): Task => ({ ...task, jobs: uiJobs(background.list(task.id)) })
 
   /**
    * 结束对话的后台命令，连同它名下子对话的：对话停止、归档、删除时调用。
@@ -1578,8 +1579,8 @@ export function tasksApi(deps: {
   async function withLive(task: Task): Promise<Task> {
     const t = withJobs(task)
     if (task.parentTaskId) return t
-    const n = await activeChildren(task.id)
-    return n ? { ...t, childrenWorking: n } : t
+    // 0 也写上：理由同 withJobs
+    return { ...t, childrenWorking: await activeChildren(task.id) }
   }
 
   /**
@@ -3254,7 +3255,7 @@ export function tasksApi(deps: {
     let list = all.map((t) => {
       const n = kids.get(t.id) ?? 0
       // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了
-      return taskSummary(withJobs(n ? { ...t, childrenWorking: n } : t))
+      return taskSummary(withJobs(t.parentTaskId ? t : { ...t, childrenWorking: n }))
     })
     // 子对话不进入项目列表：按 parentId 查询时才返回它们
     const parent = c.req.query('parentId')

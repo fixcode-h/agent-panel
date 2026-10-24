@@ -36,6 +36,7 @@ import {
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { HelperBar } from './HelperCards'
+import { keepLiveFields } from '@/lib/live-fields'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
@@ -433,6 +434,8 @@ export function TaskView({
       prev.status !== next.status ||
       prev.working !== next.working ||
       prev.turnDoneAt !== next.turnDoneAt ||
+      prev.childrenWorking !== next.childrenWorking ||
+      (prev.jobs?.length ?? 0) !== (next.jobs?.length ?? 0) ||
       (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
     const now = Date.now()
     if (important || now - summaryAt.current >= 1000) {
@@ -452,7 +455,9 @@ export function TaskView({
       if (lastTask.current) upsertTask(taskSummary(lastTask.current))
     }, 1000)
   }
-  const apply = (next: Task) => {
+  const apply = (raw: Task) => {
+    // 别的接口顺手返回的任务不带运行时字段：沿用上一份，标题栏和侧栏的转圈不闪（见 keepLiveFields）
+    const next = keepLiveFields(lastTask.current, raw)
     setTask(next)
     pushSummary(next)
   }
