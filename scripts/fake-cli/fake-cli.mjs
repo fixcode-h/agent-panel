@@ -517,6 +517,10 @@ async function panelCall(name, params) {
     )
   return res.result
 }
+// 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
+// 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
+const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
+if (appDo && input.includes('app_do')) await panelCall('app_do', JSON.parse(appDo))
 let beganEdit = false
 if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
   const got = await panelCall('begin_edit', {})

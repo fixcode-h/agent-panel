@@ -1597,6 +1597,11 @@ async function runAgent(
     // 模型自己等过下一句的，结束时不再保活一次
     waited: () => toolWaited,
     orch,
+    // 操控软件的动作：对话（父对话、子对话）才给，派出的子任务是一次性的小活，不该操控软件（见 ADR 0011）
+    app:
+      orch && !orch.helper
+        ? { taskId: task.id, projectId: task.projectId, parentTaskId: task.parentTaskId ?? '' }
+        : undefined,
     // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
     limits: manual,
   }).finally(() => {

@@ -43,6 +43,9 @@ export const PANEL_TOOL_NAMES = [
   'ask_user',
   'read_user_notes',
   'wait_user_message',
+  // 操控软件的两个工具（见 docs/adr/0011）
+  'app_actions',
+  'app_do',
 ] as const
 
 /**
