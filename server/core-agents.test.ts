@@ -202,6 +202,10 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   // ADR 0009：评审只出意见，执行角色逐条核实再处置；不能再写「不要自己把 🛑 判成不重要」
   assert.doesNotMatch(section, /不要自己把 🛑 判成不重要/, '不能要求照单全收')
   assert.match(section, /采不采纳由你核实之后决定/, '采不采纳由执行角色定')
+  // 用户 2026-10-24：评审只看代码、结论不一定准，每条要改的意见当前对话都要重新评估真假、级别和改法再动手
+  assert.match(section, /凡是要你改代码的意见（任何级别），动手前都先自己评估三件事/)
+  assert.match(section, /它给的改法只是参考/)
+  assert.match(section, /自己跑一下或复现确认，不靠它的推导下结论/)
   for (const d of ['fix', 'reject', 'defer']) assert.match(section, new RegExp(`- ${d}：`), `处置里有 ${d}`)
   assert.match(section, /resume 接着上一次评审/, '复看接着上一次评审的会话')
   assert.match(section, /面板只附增量/, '复看只给增量')
