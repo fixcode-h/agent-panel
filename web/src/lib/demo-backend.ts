@@ -3065,6 +3065,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       resolved?: boolean
       /** 塞一个还在跑的后台命令：CLI 在等结果，/children 的 background 和 waiting 都读它 */
       job?: boolean
+      /** 这个后台命令挂在子任务（slot='sub'）名下：运行区要能显示「子任务 + 命令名」 */
+      subJob?: boolean
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -3124,16 +3126,52 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       })
     if (how.plan) it.plans = [how.plan]
     // 后台命令跑在服务端，CLI 只是等结果：这一轮没在跑也还没做完（归「执行中」）
-    if (how.job)
+    if (how.job) {
+      // 挂在子任务上的命令：运行区按「子任务 + 后台命令名」列，演示里也要有一条能看的
+      // （id 取没被占用的：模拟执行时已经派过 @chat/sub/h1、h2）
+      let subId = ''
+      if (how.subJob) {
+        const used = new Set(it.steps.map((s) => s.id))
+        let n = 1
+        while (used.has(`@chat/sub/h${n}`)) n++
+        subId = `@chat/sub/h${n}`
+        it.steps.push({
+          id: subId,
+          parentId: '@chat',
+          slot: 'sub',
+          round: 0,
+          workflowId: '',
+          flowId: '',
+          nodeId: '',
+          kind: 'agent',
+          title: '核对限流规则',
+          agentId: agent.id,
+          status: 'running',
+          startedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+          endedAt: '',
+          spentMs: 0,
+          waitMs: 0,
+          waitStartedAt: '',
+          output: '',
+          verdict: '',
+          rounds: 0,
+          interrupted: false,
+          command: [],
+          changes: [],
+          runId: 1,
+        })
+      }
       it.jobs = [
         {
           id: `job-${it.id}`,
+          ...(subId ? { step: subId } : {}),
           name: '端到端测试',
           command: 'npm run test:e2e',
           state: 'running' as const,
           startedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
         },
       ]
+    }
     // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
     if (how.alive) live.set(it.id, { stop: false })
     return it
@@ -3141,8 +3179,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('Git+worktree 不再提示文件撞车', { working: true, alive: true })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
-  // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来
-  await make('整理 ESLint 规则', { alive: true, job: true })
+  // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下
+  await make('整理 ESLint 规则', { alive: true, job: true, subJob: true })
   // 已标记解决但还在跑：完成标记不能盖住还在跑
   await make('压测导入大文件', { working: true, alive: true, resolved: true })
   await make('修侧栏时间显示', { resolved: true })

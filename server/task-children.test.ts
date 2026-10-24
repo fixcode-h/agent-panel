@@ -13,6 +13,7 @@ import {
   childStartedAt,
   runningChildren,
   sortChildren,
+  splitStepJobs,
   taskSummary,
   visibleChildren,
 } from '../shared/task.ts'
@@ -330,4 +331,37 @@ test('运行区列的子对话：后台命令、工作流、派出的子任务�
     ['background', 'helpers', 'workflow'],
     '同一类里开启时间一样时按 id 兜底排序（同 sortChildren）',
   )
+})
+
+test('运行区的后台命令按来源分：挂在子任务上的单独列，父对话自己起的照旧', () => {
+  const steps = [
+    { id: '@chat', slot: '', title: '对话' },
+    { id: '@chat/sub/h1', slot: 'sub', title: '核对限流规则' },
+    { id: '@chat/sub/h2', slot: 'sub', title: '补登录用例' },
+    { id: '3', slot: 'step', title: '第 3 步' },
+  ]
+  const jobs = [
+    { id: 'j1', step: '@chat/sub/h1' },
+    { id: 'j2' },
+    { id: 'j3', step: '3' },
+    // 步骤已经不在了（子任务被删、旧记录）：当成父对话自己的，不能丢在两边都不列
+    { id: 'j4', step: '@chat/sub/h9' },
+  ]
+  const { sub, own } = splitStepJobs(steps, jobs)
+  assert.deepEqual(
+    sub.map((x) => [x.step.id, x.job.id]),
+    [['@chat/sub/h1', 'j1']],
+    '只有 slot=sub 的步骤算子任务：父对话挂在自己计划步骤（slot=step）上的仍算自己的',
+  )
+  assert.deepEqual(
+    own.map((x) => x.id),
+    ['j2', 'j3', 'j4'],
+  )
+  // 这次改动之前的 jobs 没有 step：全部算父对话的，不能因此把父对话的命令弄丢了
+  const oldJobs: { id: string; step?: string }[] = [{ id: 'old' }]
+  assert.deepEqual(
+    splitStepJobs(steps, oldJobs).own.map((x) => x.id),
+    ['old'],
+  )
+  assert.deepEqual(splitStepJobs(steps, oldJobs).sub, [])
 })

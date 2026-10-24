@@ -576,6 +576,47 @@ await runShard('子对话与计划', async (api) => {
       step('后台命令：说完时还在跑的列在任务上，跑完推回并要求重新总结')
     }
 
+    // ---- 子任务起的后台命令：记录上带它的步骤，结果推回父对话并标注来源，跑完从运行中消失 ----
+    // 以前 step 在引擎里就被丢了，服务端不知道这条命令是哪个子任务起的，运行区只能和父对话自己的命令混在一起列
+    {
+      const spawned = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        prompt: 'SPAWN_SUB_BG 派一个子任务跑命令',
+      })
+      // 子任务起了一条 4 秒的慢命令：还在跑的时候抓，接口上要带 step（RunningNow 按它列「子任务 + 命令名」）
+      const withJob = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${spawned.id}`)
+          return (t.jobs?.length ?? 0) > 0 && t.jobs[0].step ? t : null
+        },
+        { timeout: 30000, label: '子任务起的后台命令带着 step 出现在运行中' },
+      )
+      const job = withJob.jobs[0]
+      const sub = withJob.steps.find((s) => s.slot === 'sub' && s.id === job.step)
+      assert.ok(sub, '子任务起的后台命令带它自己的步骤 id：没有 step 就分不清是谁起的')
+      assert.equal(sub.title, '核对限流规则')
+      assert.equal(sub.parentId, '@chat', '归属的是父对话派出的那一步')
+      // 结果的来源要在推回的消息里写明，父对话才知道这条命令是谁起的
+      const back = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${spawned.id}`)
+          return t.messages.some((m) => m.panel === 'background' && /这条后台命令是子任务/.test(m.text)) ? t : null
+        },
+        { timeout: 30000, label: '子任务的后台结果推回父对话并标注来源' },
+      )
+      assert.match(
+        back.messages.find((m) => m.panel === 'background').text,
+        /这条后台命令是子任务「核对限流规则」起的/,
+        '推回的文本标注是哪个子任务起的',
+      )
+      const settled = await waitDone(back.id, 30000)
+      assert.equal(settled.jobs, undefined, '跑完以后从运行中消失，不再占着子任务那一行')
+      await call('DELETE', `/tasks/${settled.id}`)
+      step('子任务起的后台命令：带子任务步骤，结果推回并标注来源，跑完消失')
+    }
+
     // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
     // 以前运行区自己写 `working && !resolved`，在等后台命令、已解决但还在跑的子对话只在悬浮层里有、
     // 运行区没有，同一个页面对不上数。这里固定接口要如实给「还在跑」和「在等什么」，

@@ -822,6 +822,7 @@ export const EN_TASKS: Record<string, string> = {
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
   后台命令: 'Background command',
+  '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',
   合并编译: 'Merge build',
   子任务结果: 'Subtask results',
   '{n} 个子任务交回了结果': '{n} subtask(s) returned results',

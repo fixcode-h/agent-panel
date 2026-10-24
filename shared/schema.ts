@@ -1384,6 +1384,11 @@ export type TaskRun = z.infer<typeof TaskRun>
 /** 界面上显示的一条后台命令（server/background.ts 的 BgJob 去掉输出） */
 export const TaskJob = z.object({
   id: z.string(),
+  /**
+   * 发起它的子任务步骤（TaskStep.id）：运行区据此把子任务的后台命令按「子任务 + 命令名」列出。
+   * 可选：父对话自己起的、以及这次改动之前存下的记录都没有这个字段
+   */
+  step: z.string().optional(),
   name: z.string(),
   command: z.string(),
   state: z.enum(['queued', 'running']),
