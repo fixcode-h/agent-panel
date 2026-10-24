@@ -11,8 +11,22 @@ import path from 'node:path'
 import { runShard } from './harness.mjs'
 
 await runShard('子对话与计划', async (api) => {
-  const { baseUrl: base, log, gitIn, call, sleep, waitFor, waitDone, waitTask, calls, readLog, step, setupBase } = api
-  const { project, A, B } = await setupBase()
+  const {
+    baseUrl: base,
+    log,
+    gitIn,
+    call,
+    sleep,
+    waitFor,
+    waitDone,
+    waitTask,
+    calls,
+    readLog,
+    step,
+    setupBase,
+    agent,
+  } = api
+  const { project, A, B, C } = await setupBase()
   // ---- 子对话的 CLI 生命周期：列表如实给 cliAlive；打开父对话不启动任何子对话；发消息才启动 ----
   {
     let parent = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })
@@ -107,6 +121,54 @@ await runShard('子对话与计划', async (api) => {
     // 父对话自己也停掉，后面的用例从干净状态开始
     await waitDone(parent.id, 15000)
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
+
+    // 常驻保活的 CLI（Command Code）跑完一轮：同一轮结束只给父对话上报一次。
+    // result 事件和「回复完停在等下一句」是两个信号，两处各记一遍时父对话会收到两条一模一样的「接收消息」，
+    // 前端收拢只是兜旧数据，不能靠它掩盖这里又拆回两处
+    {
+      let keepParent = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        prompt: '保活子对话的父对话',
+      })
+      keepParent = await waitDone(keepParent.id, 20000)
+      const keepKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: C.id,
+        parentTaskId: keepParent.id,
+        // 带 COMMIT：这一轮要真的改了东西，result 那次才不会被「只回一句话」的空回合判定跳过
+        prompt: 'COMMIT 保活的子对话跑一轮',
+      })
+      // 有人在看这个子对话时，回复完才会保活等下一句：这样 result 和保活两个信号都会出现
+      await call('POST', `/tasks/${keepKid.id}/presence`, { viewerId: 'e2e-keepalive', active: true })
+      const reportsOf = (x) => x.messages.filter((m) => m.peer?.kind === 'report' && m.peer.id === keepKid.id)
+      keepParent = await waitTask(keepParent.id, (x) => reportsOf(x).length > 0, 30000)
+      // 用例成立的前提：回复完停在保活等下一句（listen 那一处结束信号真的会出现）
+      const kidNow = await call('GET', `/tasks/${keepKid.id}`)
+      assert.equal(kidNow.awaitingUser, true, '子对话回复完停在保活等下一句')
+      // 两处信号相隔通常不到 1 秒：再等一会儿看有没有第二条（不同 subject 的合法汇报不算）
+      await sleep(1500)
+      keepParent = await call('GET', `/tasks/${keepParent.id}`)
+      const reports = reportsOf(keepParent)
+      const dup = reports.filter(
+        (m, i) =>
+          i > 0 &&
+          m.peer.subject === reports[i - 1].peer.subject &&
+          Math.abs(Date.parse(m.at) - Date.parse(reports[i - 1].at)) < 5000,
+      )
+      assert.equal(
+        dup.length,
+        0,
+        `同一轮结束只上报一次；实际的汇报：${JSON.stringify(reports.map((m) => [m.at, m.peer?.subject]))}`,
+      )
+      await call('POST', `/tasks/${keepKid.id}/stop`)
+      await waitDone(keepKid.id, 15000)
+      await call('POST', `/tasks/${keepParent.id}/stop`)
+      await waitDone(keepParent.id, 15000)
+      step('保活的子对话跑完一轮：父对话只收到一条汇报')
+    }
 
     // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
     const isoNew = await call('POST', '/tasks', {
@@ -832,6 +894,47 @@ await runShard('子对话与计划', async (api) => {
       step('子对话列表：在等后台命令的照样列，父对话在跑时也照样给')
     }
 
+    // ---- 父对话一次派多个子对话：没有子对话并发上限，全部立即开始，没有「排队中」 ----
+    {
+      // 只有能分派、在项目里的顶层对话才是父对话，才有 create_conversation
+      const delegator = await agent({
+        name: '统筹',
+        cli: 'claude',
+        canDelegate: true,
+        instructions: '你负责派子对话。',
+      })
+      // 从这一段开始记 create_conversation 的条数：不按最后 6 条截，少派一条时不会混进前面用例的记录
+      const dispatchedBefore = readLog(log + '.panel').filter((x) => x.name === 'create_conversation').length
+      const many = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: delegator.id,
+        prompt: 'SPAWN_MANY_CHILDREN 派 6 个子对话',
+      })
+      // 这一轮结束时 6 次 create_conversation 都返回了
+      await waitDone(many.id, 30000)
+      const dispatched = readLog(log + '.panel')
+        .filter((x) => x.name === 'create_conversation')
+        .slice(dispatchedBefore)
+      assert.equal(dispatched.length, 6, '父对话派出了 6 个子对话')
+      assert.ok(
+        dispatched.every((x) => !x.isError && x.text.includes('它在后台执行') && !/排队|上限/.test(x.text)),
+        '派出的子对话都立即开始，没有「排队」「到上限」的提示',
+      )
+      // 子对话带 SLOW（每个跑十来秒）：要在这段时间里看到 6 个都在执行，才说明没有排队
+      const kids = await waitFor(
+        async () => {
+          const list = await call('GET', `/tasks/${many.id}/children`)
+          return list.length === 6 && list.every((k) => k.cliAlive && k.working) ? list : undefined
+        },
+        { timeout: 30000, label: '6 个子对话同时执行' },
+      )
+      assert.equal(kids.length, 6, '6 个子对话同时在跑：不再按并发上限排队')
+      await call('POST', `/tasks/${many.id}/stop`)
+      await waitDone(many.id, 20000)
+      step('父对话派多个子对话：全部立即开始，没有并发上限和排队')
+    }
+
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
     const ruleParent = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
@@ -877,7 +980,8 @@ await runShard('子对话与计划', async (api) => {
       (e) => e,
     )
     assert.match(String(childRule.message ?? childRule), /只能在项目对话里发布/)
-    // 对话设置：目标和规则交给子对话，子对话按指定的 CLI 跑，并发上限和停止全部子对话
+    // 对话设置：目标和规则交给子对话，子对话按指定的 CLI 跑，停止全部子对话。
+    // childLimit 是已经去掉的子对话并发上限：旧客户端带上它不能报错，读出来直接忽略
     const conf = await call('PATCH', `/tasks/${ruleParent.id}`, {
       goal: '商品页支持到货通知',
       rules: [{ id: 'r1', text: '只改 src 下的文件', at: new Date().toISOString() }],
@@ -885,7 +989,7 @@ await runShard('子对话与计划', async (api) => {
       childLimit: 2,
     })
     assert.equal(conf.goal, '商品页支持到货通知')
-    assert.equal(conf.childLimit, 2)
+    assert.ok(!('childLimit' in conf), '对话设置里不再有子对话并发上限，旧字段被忽略')
     assert.equal(conf.childRun.cli, 'codex')
     await waitDone((await call('POST', `/tasks/${ruleKid.id}/messages`, { text: '按设置再做一次' })).id, 20000)
     const confLog = calls().at(-1)

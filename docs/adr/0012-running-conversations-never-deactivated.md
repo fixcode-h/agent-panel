@@ -36,7 +36,7 @@
 
 ### 二、服务端补齐事实
 
-- `childActive(tk)`：子对话 `convActive`（带后台命令数）或者在排队、有交过来的消息。
+- `childActive(tk)`：子对话 `convActive`（带后台命令数）或者在启动中（`startQueue`）、有交过来的消息。
 - `withLive(task)`：给完整任务补 `jobs` 和 `childrenWorking`（还在运行的子对话数）。列表、`GET /:id`、SSE 都走它，SSE 的比较键里也带上这个数，子对话开始、做完时标题栏跟着变。
 
 ### 三、失活规则只剩一条

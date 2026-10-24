@@ -35,7 +35,7 @@ export const settingsActions = [
     description:
       '改全局设置的若干项：patch 只写要改的字段（对象会逐层合并，数组整个替换），字段名用 settings.get 读到的。保存后开着的设置窗口会刷新。密钥和访问控制不能改。',
     level: 'write',
-    input: z.object({ patch: z.record(z.string(), z.unknown()).describe('要改的字段，例如 {"childConcurrency": 3}') }),
+    input: z.object({ patch: z.record(z.string(), z.unknown()).describe('要改的字段，例如 {"backgroundLimit": 32}') }),
     run: async (a, ctx) => {
       const bad = Object.keys(a.patch).filter((k) => hidden.has(k))
       if (bad.length) throw new ActionError(`这些设置不能由 AI 改：${bad.join('、')}，请用户自己在设置里改`)

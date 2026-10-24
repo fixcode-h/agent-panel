@@ -407,7 +407,7 @@ export const api = {
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
   taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
-  /** 这个对话的进程树（含子对话、子任务、工作流起的）和内存合计；下拉展开时才调 */
+  /** 这个对话及附属（子对话、子任务、工作流起的）的进程和 CLI 内存合计；面板自身内存单独给、不计入，下拉展开时才调 */
   taskProcesses: (id: string) => request<TaskProcesses>(`/tasks/${id}/processes`),
   killTaskProcess: (id: string, pid: number) =>
     request<KillProcessResult>(`/tasks/${id}/processes/${pid}/kill`, json('POST', {})),
@@ -621,8 +621,8 @@ export const api = {
   /** 提问窗口的关闭：这个问题不回答，这次会话终止 */
   closeAsk: (id: string) => request<{ ok: true }>(`/asks/${id}/close`, { method: 'POST' }),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
-  /** 父对话的设置：目标、全局规则、子对话的执行配置和并发上限 */
-  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'childLimit' | 'title'>) =>
+  /** 父对话的设置：目标、全局规则、子对话的执行配置 */
+  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'title'>) =>
     request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),

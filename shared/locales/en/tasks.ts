@@ -677,10 +677,6 @@ export const EN_TASKS: Record<string, string> = {
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
   '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
     "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
-  同时执行的子对话: 'Concurrent sub-conversations',
-  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
-    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
-  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
   同时运行的后台命令: 'Concurrent background commands',
   '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
     'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
@@ -765,7 +761,6 @@ export const EN_TASKS: Record<string, string> = {
   '子对话用指定的 Agent 和模型': 'Use a specific agent and model for sub-chats',
   '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
     "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
-  '{n} 个（跟随设置）': '{n} (from Settings)',
   停止全部子对话: 'Stop all sub-chats',
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',
@@ -923,7 +918,8 @@ export const EN_TASKS: Record<string, string> = {
   进程: 'Processes',
   内存曲线: 'Memory chart',
   内存合计: 'Total memory',
-  '面板 {server} · 进程 {cli}': 'Panel {server} · processes {cli}',
+  '面板 {server}（不计入对话合计）': 'Panel {server} (not included in this chat’s total)',
+  '这个对话及附属（子对话、子任务）的进程合计': 'Sum of processes in this chat and its sub-conversations and subagents',
   '正在读取进程…': 'Reading processes…',
   这个对话现在没有在跑的进程: 'This chat has no running processes',
   '清理任务已经结束、进程还留着的': 'Cleans up processes left behind by finished tasks',
@@ -950,7 +946,7 @@ export const EN_TASKS: Record<string, string> = {
     'The process is still running; it may need higher permission or is busy. Try again later',
   '进程没有结束（可能权限不足）': 'The process did not stop (it may need higher permission)',
   没有结束这个进程: 'Could not stop this process',
-  '面板 {v}': 'Panel {v}',
+  '面板 {v}（不计入）': 'Panel {v} (not included)',
   '进程 {v}': 'Processes {v}',
   会话内存随时间的变化: 'Chat memory over time',
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
@@ -963,9 +959,8 @@ export const EN_TASKS: Record<string, string> = {
   '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
   '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
   重新分析并打开这次排查: 'Analyze again and open the analysis chat',
-  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
-  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
-    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  '下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Unreadable memory shows “Not collected”, and nothing is spread across chats.',
   面板自己的进程: "The panel's own processes",
   '{n} 个进程': '{n} process(es)',
   '{n} 个进程的合计': 'Sum of {n} process(es)',
@@ -1008,6 +1003,8 @@ export const EN_TASKS: Record<string, string> = {
   '发给 {n} 个：{names}': 'Sent to {n}: {names}',
   没送到: 'Not delivered',
   已送达: 'Delivered',
+  '来自 {name}（{title}）': 'from {name} ({title})',
+  '发给 {name}（{title}）': 'to {name} ({title})',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',

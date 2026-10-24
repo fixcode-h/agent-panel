@@ -111,6 +111,31 @@ export function runTree<T extends { id: string; parentTaskId?: string }>(root: T
 }
 
 /**
+ * 一个任务连同它名下的全部后代（子对话、子对话的子对话……）的 id，不含祖先和兄弟。
+ * 进程面板和内存统计按它算：「这个对话 + 它的附属」。用队列从起点往下找，
+ * seen 里先放起点，脏数据里父子互相指向时也不会转不出来
+ */
+export function subtreeTaskIds(tasks: { id: string; parentTaskId?: string }[], id: string): Set<string> {
+  const kids = new Map<string, string[]>()
+  for (const x of tasks) {
+    if (!x.parentTaskId || x.parentTaskId === x.id) continue
+    const list = kids.get(x.parentTaskId)
+    if (list) list.push(x.id)
+    else kids.set(x.parentTaskId, [x.id])
+  }
+  const out = new Set([id])
+  const queue = [id]
+  while (queue.length) {
+    for (const kid of kids.get(queue.shift()!) ?? []) {
+      if (out.has(kid)) continue
+      out.add(kid)
+      queue.push(kid)
+    }
+  }
+  return out
+}
+
+/**
  * 一组 Agent **现在**的输出速度：只算正在输出的那几条（CLI 那边 1.5 秒没有新输出就把 tps 清零）。
  * 不传 agentIds 就是任务里所有 Agent。
  *

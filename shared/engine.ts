@@ -435,7 +435,7 @@ export interface EngineHost {
   saveHandoff?: (step: TaskStep, text: string) => Promise<string>
   /**
    * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
-   * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0009）
+   * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
    */
   reviewDiff?: (since?: string) => Promise<ReviewDiff | null>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
@@ -2361,7 +2361,7 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 }
 
 /**
- * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0009）：接着上一轮评审的会话就只带那之后的增量。
+ * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0010）：接着上一轮评审的会话就只带那之后的增量。
  * 读不到（不是 git 仓库、git 出错）时不带，评审照它的角色设定自己取 diff
  */
 async function reviewPart(host: EngineHost, step: TaskStep) {

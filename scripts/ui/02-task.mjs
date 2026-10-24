@@ -665,6 +665,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else {
       await row.scrollIntoViewIfNeeded()
       await check(p, '接收消息-子对话上报', ['接收消息', '汇报', '已完成：合回原分支'])
+      // 来源带子对话标题：几个子对话的角色名相同时（都是「前端开发」），靠标题区分
+      for (const title of ['压测导入大文件', '核对通知时序']) {
+        const n = await p.getByText(`来自 前端开发（${title}）`, { exact: false }).count()
+        if (!n) errors.push(`接收消息行没显示子对话标题「${title}」`)
+      }
+      // 同一子对话的同一份汇报在旧数据里写了两遍（演示数据里留了一条这样的样本）：界面上只显示一行，
+      // 不同来源的汇报仍然各占一行
+      const dup = await p.getByText('来自 前端开发（核对通知时序）', { exact: false }).count()
+      if (dup !== 1) errors.push(`同一子对话的重复汇报应该只显示一行，实际 ${dup} 行`)
       await p.getByRole('button', { name: '已完成：合回原分支、标记完成' }).first().click()
       await check(p, '接收消息-弹窗', ['已收到', '打开子对话'])
       await p.keyboard.press('Escape')
@@ -1334,6 +1343,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
     await openChild()
     await check(p, '子对话-面板', ['子对话：到货提醒'])
+    // 子对话的进程面板只算它自己：父对话和兄弟的进程都不能出现
+    {
+      const btn = p.getByRole('button', { name: '对话进程' }).last()
+      await btn.click()
+      const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
+      await panel
+        .getByText('本对话', { exact: true })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => {})
+      const text = (await panel.textContent().catch(() => '')) ?? ''
+      if (!text.includes('本对话')) errors.push('对话进程-子对话：没有「本对话」分组')
+      if (text.includes('购物车右上角的数量角标')) errors.push('对话进程-子对话：显示了父对话的进程')
+      if (text.includes('内存面板增加 AI 分析')) errors.push('对话进程-子对话：显示了兄弟子对话的进程')
+      await check(p, '子对话-对话进程-子树')
+      await p.keyboard.press('Escape')
+    }
     const runTitle = p.locator('button[title="打开这次运行的对话"]')
     if (!(await runTitle.count())) errors.push('子对话：工作流那几行没有「打开这次运行的对话」的入口')
     // 点「启动工作流」这一行：面板内换成这次运行的视图，不是把内容铺在子对话里
@@ -1583,6 +1609,30 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .press('Backspace')
       .catch(() => {})
   }
+  // 进程面板只算当前对话及其附属：购物车这个对话有在跑的子对话，面板里要同时出现
+  // 「本对话」和「子对话」两组，而且子对话的标题就在面板里（不是页面上别处的同名文字）
+  {
+    const btn = p.getByRole('button', { name: '对话进程' }).first()
+    await btn.click()
+    const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
+    await panel
+      .getByText('内存合计')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('对话进程-子树：面板没有打开'))
+    // 进程列表是打开后才异步拉的：等分组头出来再读，别把「正在读取进程…」当成结果
+    await panel
+      .getByText('本对话', { exact: true })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {})
+    const text = (await panel.textContent().catch(() => '')) ?? ''
+    if (!text.includes('本对话')) errors.push('对话进程-子树：没有「本对话」分组')
+    if (!text.includes('子对话')) errors.push('对话进程-子树：父对话没有列出附属子对话的进程')
+    if (!text.includes('内存面板增加 AI 分析')) errors.push('对话进程-子树：面板里找不到子对话的进程归属标题')
+    await check(p, '任务-对话进程-子树')
+    await btn.click()
+    await panel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
   // 对话进程下拉：收起时不挂载面板内容（DOM 里没有节点、也不轮询），展开后才渲染进程列表和内存合计
@@ -1594,8 +1644,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     '内存合计',
     '清理无效进程',
     '已结束的子任务',
-    // 合计行要说明是哪些加起来：这个会话树上全部进程（含子对话）
-    '这个会话树上全部进程的合计，含子对话',
+    // 合计行要说明是哪些加起来：这个对话和它的附属（子对话、子任务）
+    '这个对话及附属（子对话、子任务）的进程合计',
     '下面按归属分组',
   ])
   // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集

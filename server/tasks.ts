@@ -157,10 +157,10 @@ import {
 } from '../shared/plan.ts'
 import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
-import { runTree } from '../shared/run-usage.ts'
+import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { detectVcs } from './projects-analyze.ts'
-import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
+import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
 import { childEnv, isProcessAlive, killTree } from './exec/process.ts'
 import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
 import {
@@ -170,6 +170,7 @@ import {
   cleanableClis,
   commandSummary,
   loadHistory,
+  ownedEntries,
   processSnapshot,
   subtree,
   sumRss,
@@ -240,8 +241,6 @@ export function tasksApi(deps: {
     rev: number
     /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
     restart?: boolean
-    /** 子对话占着的父对话并发名额：停在等下一句（保活）时就让出来，见 releaseSlot */
-    freeSlot?: () => void
   }
   const live = new Map<string, Live>()
 
@@ -289,44 +288,7 @@ export function tasksApi(deps: {
    * 合并回父对话分支时按 git merge 处理，真冲突会撤回并交回子对话，所以它只是信息、不是限制。
    */
   const scopes = new Map<string, Map<string, { title: string; files: string[] }>>()
-  /**
-   * 每个项目对话同时执行的子对话数：父对话分派的子对话超过上限（设置里的 childConcurrency）就排队，
-   * 前面的做完一轮再开始。用户自己在子对话里发消息不排队。
-   * 上限在对话设置里定了就用它，否则跟随全局设置
-   */
-  async function childLimit(parentId: string) {
-    const parent = live.get(parentId)?.task ?? (await store.get(parentId))
-    return parent?.childLimit || (await getSettings()).childConcurrency
-  }
-  const slots = createSlotPool(childLimit)
-  const takeSlot = (parentId: string) => slots.take(parentId)
-  const queued = (parentId: string) => slots.queued(parentId)
-  /**
-   * 子对话让出名额。名额管的是「同时在干活的子对话」，回复完停在等下一句的进程不干活：
-   * 以前要等进程结束（页面宽限期默认一小时）才让，用户点开看过几个子对话后名额就被占满，
-   * 父对话后面派的子对话一直排队，看起来就是卡死了。幂等，多调几次没关系
-   */
-  const releaseSlot = (entry: Live) => {
-    const free = entry.freeSlot
-    entry.freeSlot = undefined
-    free?.()
-  }
-  /**
-   * 保活中的子对话被交了新消息、又开始干活：补占一个名额，名额满时它照样先做（消息已经交给进程了），
-   * 只是后面排队的要等它这一轮做完。拿到名额时这一轮已经结束（又停在等待上或进程退出）就马上还回去
-   */
-  function holdSlot(entry: Live) {
-    const parentId = entry.task.parentTaskId
-    if (!parentId || entry.freeSlot) return
-    void takeSlot(parentId)
-      .then((free) => {
-        if (live.get(entry.task.id) !== entry || !entry.task.working || entry.freeSlot) return free()
-        entry.freeSlot = free
-        void entry.done?.finally(() => releaseSlot(entry))
-      })
-      .catch(() => {})
-  }
-  /** 排队等名额、还没开始执行的子对话：父对话判断「有没有子对话在跑」时也算上 */
+  /** 正在启动、还没取到执行位的子对话：父对话判断「有没有子对话在跑」时也算上 */
   const startQueue = new Set<string>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
@@ -716,7 +678,7 @@ export function tasksApi(deps: {
     return ''
   }
 
-  /** 还在执行或排队等着执行的子对话 */
+  /** 还在执行或正在启动的子对话 */
   async function busyChildren(parentId: string) {
     return (await store.list())
       .filter((x) => x.parentTaskId === parentId)
@@ -847,7 +809,7 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 把一条消息交给子对话：它正在执行就实时送达，空闲就占一个并发名额开新的一轮。
+   * 把一条消息交给子对话：它正在执行就实时送达，空闲就直接开新的一轮。
    * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
    */
   async function sendToChild(
@@ -885,8 +847,6 @@ export function tasksApi(deps: {
         at: new Date().toISOString(),
       }
       const r = await deliver(running, msg, message, [])
-      // 停在等下一句的子对话被唤醒、开始干活：它的名额在停下时让出去了，这里补上
-      if (r.how === 'wait') holdSlot(running)
       const how =
         r.how === 'wait'
           ? '已直接交给子对话，它正在处理'
@@ -900,39 +860,32 @@ export function tasksApi(deps: {
       return { ok: true, info: `「${child.title}」${how}` }
     }
     void (async () => {
-      const free = await takeSlot(parentId)
       try {
-        try {
-          await followUp(id, { text: message, attachments: [], panel, peer })
-          const cur = live.get(id)
-          if (cur) cur.freeSlot = free
-        } catch (e) {
-          // 上一轮刚结束、还在收尾（回报父对话、写盘）时执行位还占着：记进对话，登记成下一轮要处理的，
-          // 收尾那边会接着开新一轮；收尾已经过了那一步就由这里补开，消息不能丢
-          const cur = live.get(id)
-          if (!(e instanceof TaskBusyError) || !cur) throw e
-          const msg: TaskMessage = {
-            id: randomUUID(),
-            role: panel ? 'system' : 'user',
-            agentId: '',
-            step: '',
-            text: message,
-            tools: [],
-            ...(panel ? { panel } : {}),
-            ...(peer && { peer }),
-            at: new Date().toISOString(),
-          }
-          cur.task.messages.push(msg)
-          holdForNextTurn(id, msg)
-          cur.rev++
-          await store.update(id, cur.task)
-          await cur.done?.catch(() => {})
-          if (hasHeld(id) && !live.has(id)) await followUp(id)
+        await followUp(id, { text: message, attachments: [], panel, peer })
+      } catch (e) {
+        // 上一轮刚结束、还在收尾（回报父对话、写盘）时执行位还占着：记进对话，登记成下一轮要处理的，
+        // 收尾那边会接着开新一轮；收尾已经过了那一步就由这里补开，消息不能丢
+        const cur = live.get(id)
+        if (!(e instanceof TaskBusyError) || !cur) throw e
+        const msg: TaskMessage = {
+          id: randomUUID(),
+          role: panel ? 'system' : 'user',
+          agentId: '',
+          step: '',
+          text: message,
+          tools: [],
+          ...(panel ? { panel } : {}),
+          ...(peer && { peer }),
+          at: new Date().toISOString(),
         }
-        await live.get(id)?.done
-      } finally {
-        free()
+        cur.task.messages.push(msg)
+        holdForNextTurn(id, msg)
+        cur.rev++
+        await store.update(id, cur.task)
+        await cur.done?.catch(() => {})
+        if (hasHeld(id) && !live.has(id)) await followUp(id)
       }
+      await live.get(id)?.done
     })().catch((e) => {
       log.error('task', '子对话执行出错', { task: id, error: (e as Error).message })
       alertOn(id, 'panel', t('执行这个子对话时出错'), 'error')(e)
@@ -941,7 +894,7 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 面板替后台命令说的话推回发起的对话：子对话按父对话投递的路子走（正在跑就实时送达，空闲就占名额开新一轮），
+   * 面板替后台命令说的话推回发起的对话：子对话按父对话投递的路子走（正在跑就实时送达，空闲就直接开新一轮），
    * 顶层对话正在跑就实时送达，空闲就直接开新的一轮接着干。送不到要留下记录，不能悄悄丢
    */
   async function pushJobNote(tk: Task, job: BgJob, text: string) {
@@ -1592,7 +1545,7 @@ export function tasksApi(deps: {
     background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length
 
   /**
-   * 子对话还在运行（见 convActive）：在跑、等结果、等回答，或者排着队、还有交过来的消息要接着处理。
+   * 子对话还在运行（见 convActive）：在跑、等结果、等回答、正在启动，或者还有交过来的消息要接着处理。
    * 父对话的「子对话在跑」计数、标题和侧栏的转圈、能不能回收都读它
    */
   const childActive = (tk: Task) =>
@@ -2001,23 +1954,25 @@ export function tasksApi(deps: {
     return { task: tk }
   }
 
-  /** 父对话分派的子对话：占一个执行位再开始，这一轮结束（含它跑的工作流）才让出来 */
-  async function startChild(parentId: string, sub: Task, message: string, agents: Agent[]) {
-    startQueue.add(sub.id)
-    const free = await takeSlot(parentId).finally(() => startQueue.delete(sub.id))
+  /** 父对话分派的子对话：立刻开始执行，不再按并发上限排队 */
+  async function startChild(sub: Task, message: string, agents: Agent[]) {
     try {
-      const got = reserve(sub)
+      // 启动中：父对话判断「有没有子对话在跑」时也算上；取到执行位就清掉
+      startQueue.add(sub.id)
+      let got
+      try {
+        got = reserve(sub)
+      } finally {
+        startQueue.delete(sub.id)
+      }
       // 同一个子对话已经被启动了：复用正在跑的那一轮，不再开第二个进程
       if (!got.fresh) return
       const entry = got.value
-      entry.freeSlot = free
       await start(entry, withAttachments(message, []), true, agents)
       await entry.done
     } catch (e) {
       log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message })
       alertOn(sub.id, 'panel', t('执行这个子对话时出错'), 'error')(e)
-    } finally {
-      free()
     }
   }
 
@@ -2156,6 +2111,16 @@ export function tasksApi(deps: {
     const child = entry?.task ?? (await store.get(childId))
     if (!child?.parentAsks?.some((x) => ids.includes(x.id))) return
     child.parentAsks = child.parentAsks.filter((x) => !ids.includes(x.id))
+    if (entry) entry.rev++
+    else await store.update(child.id, child)
+  }
+
+  /** 交给子对话没成功：把刚收起的提问挂回去，用户还能再答一次 */
+  async function restoreChildAsk(childId: string, ask: NonNullable<Task['parentAsks']>[number]) {
+    const entry = live.get(childId)
+    const child = entry?.task ?? (await store.get(childId))
+    if (!child || child.parentAsks?.some((x) => x.id === ask.id)) return
+    child.parentAsks = [...(child.parentAsks ?? []), ask]
     if (entry) entry.rev++
     else await store.update(child.id, child)
   }
@@ -2334,14 +2299,28 @@ export function tasksApi(deps: {
       if (!r) return { error: t('找不到这个提问') }
       return r
     }
-    const r = await sendToChild(
-      parent.id,
-      from,
-      suggestion ? `关于你刚才的收尾建议，用户的决定：\n${answer}` : `关于你刚才的提问，用户的决定：\n${answer}`,
-      undefined,
-      'answer',
-    )
-    if (!r.ok) return { error: r.info }
+    // 先把子对话上的选择弹窗收起来再交给它：新一轮会从存储里读一份任务快照，
+    // 先开始的话它跑完落盘的那份会把刚收起的弹窗又写回去（父对话卡片已回答，子对话的弹窗却一直留着）。
+    // 交不出去时挂回去，父对话卡片还等着用户再答一次
+    const ask = { id: m.id, question, options: m.ask.options, kind: m.ask.kind }
+    await dropChildAsks(from, [m.id])
+    let r: { ok: boolean; info: string }
+    try {
+      r = await sendToChild(
+        parent.id,
+        from,
+        suggestion ? `关于你刚才的收尾建议，用户的决定：\n${answer}` : `关于你刚才的提问，用户的决定：\n${answer}`,
+        undefined,
+        'answer',
+      )
+    } catch (e) {
+      await restoreChildAsk(from, ask).catch(() => {})
+      throw e
+    }
+    if (!r.ok) {
+      await restoreChildAsk(from, ask).catch(() => {})
+      return { error: r.info }
+    }
     const cur = live.get(parent.id)?.task ?? parent
     settleAsks(cur, from, answer, 'user', m.id) // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
     const note = suggestion
@@ -2522,8 +2501,6 @@ export function tasksApi(deps: {
         stopReason: () => entry.stopReason,
         // 开始保活（CLI 停在等下一句）前先按全局上限收一批最久没用的，别让挂着的进程越来越多
         onKeepAlive: (taskId) => {
-          // 子对话回复完停在等下一句：不再干活，把父对话的并发名额让给排队的子对话
-          if (task.parentTaskId) releaseSlot(entry)
           // 回收计时从现在起算满一整段：执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
           resetIdleCountdown(taskId)
           void enforceKeepAlive(taskId)
@@ -2729,17 +2706,13 @@ export function tasksApi(deps: {
             mine.set(subId, { title: draft.title, files: round })
           }
           const sub = await store.create({ ...draft, id: subId })
-          const limit = await childLimit(entry.task.id)
-          const wait = queued(entry.task.id) > 0 || slots.running(entry.task.id) >= limit
-          void startChild(entry.task.id, sub, message, agents)
+          void startChild(sub, message, agents)
           return {
             ok: true,
             id: sub.id,
             title: sub.title,
             info: [
-              wait
-                ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${limit} 个），它在排队，前面的做完一个就开始`
-                : `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
+              `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
               ...childFilesInfo({
                 isolation: sharedDir ? 'claim' : 'worktree',
                 granted: got.granted,
@@ -3245,8 +3218,6 @@ export function tasksApi(deps: {
   }
 
   const stopTask = (id: string, reason: StopReason) => {
-    // 停止、删除后不会再开始排队的子对话：让等着的调用拿到明确失败，不然它们会一直挂着
-    slots.drain(id, new Error('任务已停止，排队的子对话不再开始'))
     // 只有用户自己停止、归档时名下子对话才一起结束（原因记成 parent，不是用户暂停）。
     // 父对话自己的 CLI 已经退了（这一轮说完、只剩子对话在跑）也要停：在这里先做，不受下面「没在跑」的提前返回影响。
     // 闲置回收、换 CLI、打断重发、CLI 卡住重开只是父对话自己这一轮的事：子对话有自己的进程和状态，
@@ -3329,9 +3300,9 @@ export function tasksApi(deps: {
   async function enforceKeepAlive(selfId = '') {
     const { keepAliveLimit } = await getSettings()
     if (!keepAliveLimit) return
-    // 还在运行的对话（自己或名下子对话、子任务、后台命令没完，提问没回复，排着队）不回收：只收真闲着的。
+    // 还在运行的对话（自己或名下子对话、子任务、后台命令没完，提问没回复）不回收：只收真闲着的。
     // 判定和宽限到期时是同一个（keepAliveBusy → convActive）
-    const pool = [...live.values()].map((e) => e.task).filter((t) => !queued(t.id) && !keepAliveBusy(t.id))
+    const pool = [...live.values()].map((e) => e.task).filter((t) => !keepAliveBusy(t.id))
     // 只放过前台正开着的页面：切走后还在宽限期里的也算进上限（hasViewer 会把它们都当成有人在看，
     // 一小时内点开过的对话全部豁免，上限形同虚设）。这里排掉的只有 running 的，见 keepAliveVictims
     // 刚进入保活的那个也算进上限（+1）；它其实是 busy（后台命令还在跑）时不占名额，别多收一个空闲会话
@@ -3345,16 +3316,19 @@ export function tasksApi(deps: {
 
   // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
 
-  /** 对话树最上层：子对话、子任务的进程都算进父对话的统计 */
-  const rootIdOf = (tk: Task) => tk.rootTaskId || tk.id
+  /** 这个对话及它下面的全部任务（子对话、子对话的子对话、工作流节点所在的子对话） */
+  const subtreeIdsOf = async (tk: Task) => subtreeTaskIds(await store.list(), tk.id)
 
-  /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者排队等名额 */
+  /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者正在启动 */
   const taskAlive = (id: string) => live.has(id) || startQueue.has(id)
 
-  /** 这个对话的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计 */
+  /**
+   * 这个对话（含附属的任务）的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计。
+   * 只算自己这一支：打开子对话时看不到父对话和兄弟的进程
+   */
   async function processPanel(tk: Task) {
-    const rootId = rootIdOf(tk)
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const ids = await subtreeIdsOf(tk)
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const now = Date.now()
     const processes: TaskProcess[] = []
@@ -3393,14 +3367,15 @@ export function tasksApi(deps: {
       processes: processes.sort((a, b) => (a.kind === b.kind ? a.pid - b.pid : a.kind === 'cli' ? -1 : 1)),
       cliMemory,
       serverMemory,
-      totalMemory: cliMemory === null ? null : cliMemory + serverMemory,
+      // 面板自己的内存不属于这个对话：合计只算子树里的 CLI 进程，serverMemory 单独给出
+      totalMemory: cliMemory,
       unavailable: map ? '' : t('取不到系统进程信息（权限不足或命令不可用）'),
     }
   }
 
-  /** 这个对话能动的 pid：登记的进程和它们的整棵子树 */
-  async function allowedPids(rootId: string) {
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+  /** 这个对话子树能动的 pid：这些任务登记的进程和它们的整棵子树 */
+  async function allowedPids(ids: Set<string>) {
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const out = new Set<number>()
     for (const e of entries) for (const pid of map ? subtree(e.pid, map) : [e.pid]) out.add(pid)
@@ -3602,7 +3577,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const pid = Number(c.req.param('pid'))
     if (!Number.isInteger(pid) || pid <= 0) return bad(c, t('进程号不对'))
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     if (!allowed.has(pid)) return bad(c, t('这个进程不属于当前对话，不能从这里关闭'))
     killTree(pid)
     // 等一下再看：结束失败（权限不足、被系统占用）要把真实状态告诉用户，不能悄悄把登记删掉
@@ -3623,13 +3598,13 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
     const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
-    const roots = rootIdOf(tk)
+    const ids = await subtreeIdsOf(tk)
     const map = await processSnapshot()
     const { targets, skipped, gone } = cleanableClis({
       entries: trackedClis(),
       map,
       aliveTask: taskAlive,
-      rootTaskId: roots,
+      taskIds: ids,
       only,
     })
     // 进程已经不在的登记顺手清掉（不算「结束」，界面照样显示成已结束）
@@ -3687,7 +3662,7 @@ export function tasksApi(deps: {
     })
     if (r.spawnError) return c.json({ suggestions: [], text: '', error: r.spawnError })
     const parsed = extractJson(text) as { kill?: unknown } | undefined
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     const suggestions = (Array.isArray(parsed?.kill) ? parsed.kill : [])
       .map((x) => x as { pid?: unknown; reason?: unknown })
       .filter((x) => Number.isInteger(x.pid) && allowed.has(Number(x.pid)))
@@ -3702,7 +3677,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const from = Number(c.req.query('from') ?? '')
     const to = Number(c.req.query('to') ?? '')
-    const points = summarize(loadHistory(), rootIdOf(tk), {
+    const points = summarize(loadHistory(), await subtreeIdsOf(tk), {
       from: Number.isFinite(from) && from > 0 ? from : undefined,
       to: Number.isFinite(to) && to > 0 ? to : undefined,
     })
