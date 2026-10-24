@@ -109,6 +109,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })
   await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
   await check(p, 'UI设计-原画', ['第 1 轮', '用这张做模板'])
+  // 蒙版：在原画上涂一块，出现蒙版工具和「只重绘蒙版」开关（默认还是整张重画）
+  // UI 画布的工具栏也有蒙版按钮，原画面板盖在上面、渲染在后面
+  await p.getByRole('button', { name: '蒙版涂抹' }).last().click()
+  const maskImg = await p.locator('img[alt^="c"]').first().boundingBox()
+  assert.ok(maskImg, '原画显示出来了')
+  await p.mouse.move(maskImg.x + maskImg.width * 0.32, maskImg.y + maskImg.height * 0.4)
+  await p.mouse.down()
+  await p.mouse.move(maskImg.x + maskImg.width * 0.62, maskImg.y + maskImg.height * 0.58, { steps: 8 })
+  await p.mouse.up()
+  await check(p, 'UI设计-蒙版', ['只重绘蒙版', '蒙版'])
   await p.getByRole('button', { name: '用这张做模板' }).click()
   await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
   await p.goto(base + '#/design/new')
@@ -150,7 +160,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
-  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler', '导入到 ComfyUI'])
   // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
   // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
   const graphFit = () =>

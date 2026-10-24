@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
-import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
@@ -65,6 +66,7 @@ import type {
   McpTestResult,
 } from '@shared/library'
 import type {
+  Annotation,
   BrowserStatus,
   Design,
   DesignChatInput,
@@ -82,6 +84,7 @@ import type {
   ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
+  CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
@@ -183,6 +186,7 @@ export const api = {
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
+  localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
   localModel: (id: string, action: 'download' | 'remove') =>
@@ -191,12 +195,35 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  comfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
+  refreshComfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates/refresh', {
+      method: 'POST',
+    }),
+  comfyTemplate: (name: string) =>
+    request<ComfyTemplateDetail & { preview?: ComfyWorkflow['graph'] }>(
+      `/local-image/templates/${encodeURIComponent(name)}`,
+    ),
+  addComfyTemplate: (name: string, kind: 'game' | 'web') =>
+    request<ComfyWorkflow>(`/local-image/templates/${encodeURIComponent(name)}/add`, json('POST', { kind })),
+  downloadComfyTemplate: (name: string) =>
+    request<{ job: LocalJob; files: TemplateAsset[]; skipped: number }>(
+      `/local-image/templates/${encodeURIComponent(name)}/download`,
+      json('POST', {}),
+    ),
   saveComfyWorkflow: (w: ComfyWorkflow) =>
     request<ComfyWorkflow>(`/local-image/workflows/${encodeURIComponent(w.id)}`, json('PUT', w)),
   deleteComfyWorkflow: (id: string) =>
     request<{ ok: boolean }>(`/local-image/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   assistComfyWorkflow: (body: { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }) =>
     request<{ workflow: ComfyWorkflow; note: string }>('/local-image/workflows/assist', json('POST', body)),
+  /** 面板 → ComfyUI：写进它的 userdata/workflows，在 ComfyUI 网页的工作流侧栏里打开 */
+  importComfyWorkflow: (id: string) =>
+    request<{ name: string; filename: string; url: string }>(
+      `/local-image/workflows/${encodeURIComponent(id)}/import`,
+      { method: 'POST' },
+    ),
 
   clis: (refresh = false) => request<CliStatus[]>(`/clis${refresh ? '?refresh=1' : ''}`),
   cliAction: (id: string, action: 'install' | 'uninstall') =>
@@ -615,6 +642,9 @@ export const api = {
     request<DesignFull>(`/designs/${id}/concept`, json('POST', { action, id: conceptId })),
   uploadConcept: (id: string, data: string) =>
     request<DesignFull>(`/designs/${id}/concept/upload`, json('POST', { data })),
+  /** 只重绘原画上蒙版涂过的区域；只有本机 ComfyUI 支持，别的来源服务端会拒绝 */
+  inpaintConcept: (id: string, body: { id: string; mask: Annotation; text?: string; source: ImageSource }) =>
+    request<DesignFull>(`/designs/${id}/concept/inpaint`, json('POST', body)),
   designCapture: (
     id: string,
     captureId: string,
@@ -624,6 +654,9 @@ export const api = {
       error?: string
     },
   ) => request<{ ok: boolean }>(`/designs/${id}/capture/${captureId}`, json('POST', body)),
+  /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
+  designCaptureWait: (id: string, signal: AbortSignal) =>
+    request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
   steerDesign: (id: string, text: string) =>
     request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),

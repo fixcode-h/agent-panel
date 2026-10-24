@@ -18,6 +18,7 @@ import { applyAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
+import { taskSummary } from '@shared/task'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -207,7 +208,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [anyRunning])
   const upsertTask = useCallback(
-    (t: Task) =>
+    // 全局列表只存摘要：暂停、继续、改名这些接口回的是带全部对话的完整任务，原样放进来的话
+    // 摘要没变时 mergeTasks 会一直沿用这份，整段对话（几 MB）就跟着列表常驻内存，切走对话也不释放
+    (full: Task) => {
+      const t = taskSummary(full)
       setTasks((ts) => {
         const i = ts.findIndex((x) => x.id === t.id)
         if (i < 0) return [...ts, t]
@@ -216,7 +220,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const next = ts.slice()
         next[i] = t
         return next
-      }),
+      })
+    },
     [],
   )
   const removeTask = useCallback((id: string) => setTasks((ts) => ts.filter((t) => t.id !== id)), [])

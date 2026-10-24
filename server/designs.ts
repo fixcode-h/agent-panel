@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
-import { openDesignSession, type ConceptRequest, type WidgetRect } from './design-mcp.ts'
+import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
+import { DesignCaptures } from './design-capture.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
 import { getCli } from '../shared/clis.ts'
@@ -23,6 +24,7 @@ import {
   DesignDoc,
   DesignImage,
   GenerateImageInput,
+  InpaintConceptInput,
   NewDesignInput,
   AiPrompts,
   PromptAiInput,
@@ -31,6 +33,7 @@ import {
   conceptPrompt,
   emptyConcept,
   emptyRoot,
+  hasMask,
   imagePrompt,
   type DesignKind,
   localPrompts,
@@ -47,6 +50,7 @@ import {
   projectPromptText,
   AiDesignResult,
   resolveDesignResult,
+  type CaptureRequest,
   type DesignJob,
   type DesignMeta,
   type ImageJobItem,
@@ -63,7 +67,7 @@ import { localGenerate } from './comfy.ts'
 import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
-import { normalizeGenerated, sliceSheet } from './image.ts'
+import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -115,15 +119,6 @@ type Job = DesignJob & {
   sheets?: Map<string, string>
 }
 
-/** 等页面交回的截图：截图 id → 收到后怎么办 */
-type CaptureWait = {
-  designId: string
-  resolve: (v: { png: Buffer; rects: WidgetRect[] }) => void
-  reject: (e: Error) => void
-}
-/** 页面多久没交回截图就算没打开 */
-const CAPTURE_TIMEOUT = 20_000
-
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
   id: d.id,
@@ -139,7 +134,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   let loaded = false
   const writing = new Map<string, Promise<void>>()
   const jobs = new Map<string, Job>()
-  const captures = new Map<string, CaptureWait>()
+  const captures = new DesignCaptures()
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -453,6 +448,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     onProgress: (text: string) => void,
     use: WorkflowUse,
     kind: DesignKind,
+    /** 局部重绘的原图和蒙版图 */
+    inpaint?: { image: Buffer; mask: Buffer },
   ): Promise<Buffer[]> {
     await localGenerate(
       {
@@ -464,6 +461,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         width: size.width,
         height: size.height,
         count,
+        ...(inpaint ? { inpaint } : {}),
         onImage,
         onProgress,
       },
@@ -766,39 +764,22 @@ ${prompt}`,
           return v ? path.join(imagesDir(d.id), v.file) : undefined
         },
         conceptPath: (id) => conceptFile(cache.get(d.id)!, id),
-        // 截图：把这一轮改到现在的树交给页面画出来，页面截好图交回（/capture/:cid）
-        capture: (s, target) =>
-          new Promise((resolve, reject) => {
-            const comp = target ? s.state.components.find((c) => c.Name === target) : undefined
-            const cid = randomUUID()
-            const finish = () => {
-              clearTimeout(timer)
-              captures.delete(cid)
-              if (job.capture?.id === cid) job.capture = undefined
-            }
-            const timer = setTimeout(() => {
-              finish()
-              reject(new Error('页面没有交回截图（设计页面可能没有打开）'))
-            }, CAPTURE_TIMEOUT)
-            captures.set(cid, {
-              designId: d.id,
-              resolve: (v) => {
-                finish()
-                resolve(v)
-              },
-              reject: (e) => {
-                finish()
-                reject(e)
-              },
-            })
-            job.capture = {
-              id: cid,
-              target,
-              root: comp ? comp.Root : s.state.root,
-              components: s.state.components,
-              size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
-            }
-          }),
+        // 截图：把这一轮改到现在的树交给页面画出来，页面截好图交回（/capture/:cid）。
+        // 页面用长轮询取请求（/capture/wait），后台标签页也能及时拿到
+        capture: (s, target) => {
+          const comp = target ? s.state.components.find((c) => c.Name === target) : undefined
+          const view: CaptureRequest = {
+            id: randomUUID(),
+            target,
+            root: comp ? comp.Root : s.state.root,
+            components: s.state.components,
+            size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
+          }
+          job.capture = view
+          return captures.request(d.id, view).finally(() => {
+            if (job.capture?.id === view.id) job.capture = undefined
+          })
+        },
       },
       { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
     )
@@ -1021,7 +1002,7 @@ ${prompt}`,
     } finally {
       mcp.close()
       // 这一轮结束了：还在等的截图不用等了
-      for (const w of captures.values()) if (w.designId === d.id) w.reject(new Error(t('已停止')))
+      captures.stop(d.id, new Error(t('已停止')))
       // 这一轮的工作目录（附件副本、工具的配置）用完就删
       await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
@@ -1738,13 +1719,110 @@ ${prompt}`,
         return bad(c, (e as Error).message)
       }
     })
+    // 只重绘原画上蒙版涂过的区域：把原图和蒙版图交给本机 ComfyUI，用 SetLatentNoiseMask 锁定蒙版外面
+    .post('/:id/concept/inpaint', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const p = InpaintConceptInput.safeParse(await c.req.json())
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const { id: cid, mask, text, source } = p.data
+      // 浏览器标签页和图片 CLI 只接受参考图，做不出像素级的蒙版：让页面对用户说明并整张重画
+      if (source.kind !== 'local') return bad(c, t('当前生成方式不支持局部重绘，只能整张重画'))
+      const img = conceptOf(d).images.find((i) => i.id === cid)
+      if (!img) return bad(c, t('没有这张原画'), 404)
+      if (!hasMask(mask)) return bad(c, t('先在原画上涂出要重绘的区域'))
+      const file = conceptFile(d, cid)
+      const original = file ? await readFile(file).catch(() => undefined) : undefined
+      if (!original?.length) return bad(c, t('原画文件不在了'), 404)
+      const style = await projectStyle(d)
+      const maskPng = encodePng(maskImage(mask.strokes, img.width || d.designSize.X, img.height || d.designSize.Y))
+      startJob(d, async (job) => {
+        job.phase = 'concepts'
+        job.preview = undefined
+        job.text = ''
+        job.parts = undefined
+        const progress = { want: 1, got: 0, text: undefined as string | undefined }
+        job.concepts = progress
+        const cur = cache.get(d.id)!
+        const round = Math.max(0, ...conceptOf(cur).images.map((i) => i.round)) + 1
+        const promptText = [img.prompt, text].filter(Boolean).join('\n')
+        const prompt = conceptPrompt(
+          { prompt: promptText || t('按蒙版里标出的改动重画这一块'), negative: img.negative },
+          cur.designSize,
+          cur.style,
+          style,
+          cur.kind,
+          true,
+        )
+        // 存图串行：结果按到达的顺序编号
+        let chain = Promise.resolve()
+        let got = 0
+        const add = (buf: Buffer) => {
+          got++
+          chain = chain
+            .then(async () => {
+              const dd = cache.get(d.id)!
+              const want = { width: dd.designSize.X, height: dd.designSize.Y, transparent: false }
+              const stored = await storeImage(dd, normalizeGenerated(buf, want))
+              const c0 = conceptOf(dd)
+              const out: ConceptImage = {
+                id: `c${round}_${c0.images.filter((i) => i.round === round).length + 1}`,
+                ...stored,
+                prompt: promptText,
+                negative: img.negative,
+                round,
+                base: img.id,
+                source: 'local',
+                at: now(),
+              }
+              dd.concept = { images: [...c0.images, out], selected: out.id, approved: '' }
+              progress.got++
+              await save(dd)
+            })
+            .catch((e) => log.warn('designs', '保存局部重绘的原画失败', { error: (e as Error).message }))
+        }
+        try {
+          await localRun(
+            source,
+            prompt,
+            {
+              subject: promptText || img.prompt,
+              style: cur.style,
+              projectStyle: style,
+              kind: cur.kind,
+              negative: img.negative,
+            },
+            { width: img.width || cur.designSize.X, height: img.height || cur.designSize.Y },
+            1,
+            job,
+            add,
+            (x) => (progress.text = x),
+            'concept',
+            cur.kind,
+            { image: original, mask: maskPng },
+          )
+        } finally {
+          await chain
+        }
+        if (!got) throw new Error(t('局部重绘没有生成出图片'))
+      })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+
+    // 页面长轮询取 AI 要的截图（screenshot 工具）：有请求立刻返回，没有就挂着等下一次
+    .get('/:id/capture/wait', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      return c.json({ capture: await captures.wait(d.id, c.req.raw.signal) })
+    })
     // 页面交回 AI 要的画布截图（screenshot 工具）；画不出来时交回原因
     .post('/:id/capture/:cid', async (c) => {
-      const w = captures.get(c.req.param('cid'))
-      if (!w || w.designId !== c.req.param('id')) return bad(c, t('这张截图已经不需要了'), 404)
+      const id = c.req.param('id')
+      const cid = c.req.param('cid')
       const body = (await c.req.json().catch(() => ({}))) as { data?: string; rects?: unknown; error?: string }
       if (body.error) {
-        w.reject(new Error(String(body.error).slice(0, 300)))
+        captures.fail(id, cid, String(body.error).slice(0, 300))
         return c.json({ ok: true })
       }
       const png = Buffer.from(String(body.data ?? '').replace(/^data:[^,]*,/, ''), 'base64')
@@ -1756,7 +1834,7 @@ ${prompt}`,
             ? [{ name: r.name, type: String(r.type ?? ''), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }]
             : [],
         )
-      w.resolve({ png, rects })
+      if (!captures.deliver(id, cid, { png, rects })) return bad(c, t('这张截图已经不需要了'), 404)
       return c.json({ ok: true })
     })
     .post('/:id/chat', async (c) => {

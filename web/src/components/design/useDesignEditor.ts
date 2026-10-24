@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { DesignDoc, DesignImage } from '@shared/design'
+import type { DesignDoc, DesignImage, DesignJob } from '@shared/design'
 import type { Widget } from '@shared/umg'
 import { api, type DesignFull } from '@/lib/api'
 import type { SaveStatus } from '@/lib/useAutosave'
@@ -118,6 +118,51 @@ export function useDesignEditor(id: string) {
     }, 1200)
     return () => clearInterval(timer)
   }, [running, id, absorb])
+
+  // AI 要的截图走长轮询：后台标签页里 setInterval 会被浏览器节流到一分钟一次，
+  // 而已经挂着的 fetch 一有响应就继续执行，截图请求才不会等到 20 秒超时。
+  // 页面打开着就一直挂着，不依赖 running（AI 可能在页面切到后台以后才开始）
+  useEffect(() => {
+    // 在线演示没有真实后端，不会有人要截图
+    if (import.meta.env.VITE_DEMO) return
+    const ctrl = new AbortController()
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const loop = async () => {
+      while (!ctrl.signal.aborted) {
+        try {
+          const r = await api.designCaptureWait(id, ctrl.signal)
+          if (ctrl.signal.aborted) return
+          const cap = r.capture
+          if (cap) {
+            setServer((cur) => {
+              if (!cur || cur.job?.capture?.id === cap.id) return cur
+              // 页面还没轮询到 running（后台被节流）时也补一个状态，否则截图组件不挂载
+              const job: DesignJob = cur.job ?? {
+                status: 'running',
+                phase: 'design',
+                text: '',
+                outChars: 0,
+                attempt: 1,
+                startedAt: Date.now(),
+              }
+              return { ...cur, job: { ...job, capture: cap } }
+            })
+          }
+        } catch {
+          if (ctrl.signal.aborted) return
+          // 后端暂时不可用（重启、页面刚切回来）：歇一下再连，不刷请求
+          await new Promise<void>((r) => {
+            retry = setTimeout(r, 2000)
+          })
+        }
+      }
+    }
+    void loop()
+    return () => {
+      ctrl.abort()
+      if (retry) clearTimeout(retry)
+    }
+  }, [id])
 
   // 自动保存：停下 500ms 后保存；离开页面时补存
   const latest = useRef(doc)

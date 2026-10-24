@@ -10,6 +10,7 @@ import {
   Globe,
   Loader2,
   ListPlus,
+  Paintbrush,
   Palette,
   Pencil,
   X,
@@ -17,7 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { extensionSelfReload } from '@shared/design'
+import { extensionSelfReload, hasMask } from '@shared/design'
 import type {
   Annotation,
   BrowserStatus,
@@ -42,7 +43,7 @@ import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMes
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
-import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
+import { AnnotationChips, markColor, markLabel } from './Annotations'
 import { ATTACHMENT_PROMPT, useAttachments } from '@/components/chat/Attachments'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { forSend } from '@shared/composer'
@@ -475,6 +476,42 @@ function ConceptToggle({
   )
 }
 
+/**
+ * 「只重绘蒙版区域」：默认关着，按原来的方式整张重画；打开时只重画涂过的区域。
+ * 只有本机 ComfyUI 能按蒙版重绘，别的生图方式会降级成整张重画，按钮上先说清楚
+ */
+function InpaintToggle({
+  value,
+  onChange,
+  supported,
+}: {
+  value: boolean
+  onChange: (v: boolean) => void
+  supported: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      aria-pressed={value}
+      aria-label={t('只重绘蒙版区域')}
+      title={
+        supported
+          ? t('只重画涂过的区域，其余保持不变（本机 ComfyUI）')
+          : t('当前生成方式不支持局部重绘，勾选后发送会整张重画，并在发送后提示')
+      }
+      className={cn(
+        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
+        value ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+      )}
+    >
+      <Paintbrush className="h-4 w-4" />
+      {t('只重绘蒙版')}
+      {!supported && value && <span className="text-[0.6875rem] text-warning">{t('会整张重画')}</span>}
+    </button>
+  )
+}
+
 /** 每个设计各自记住「先出原画」；没选过时新的空白游戏界面默认打开，已经搭好的界面默认关着 */
 function useConceptFirst(designId: string, fallback: boolean) {
   return useScopedSetting<boolean>(
@@ -558,6 +595,8 @@ export function DesignChat({
       styleName?: string
       answers?: { question: string; answer: string }[]
       concept: boolean
+      /** 只重绘原画上蒙版涂过的区域；不支持局部重绘的来源会降级成整张重画 */
+      inpaint?: boolean
     },
   ) => Promise<boolean>
   onStop: () => void
@@ -593,6 +632,13 @@ export function DesignChat({
   const running = job?.status === 'running'
   const conceptRound = concept && !hasTemplate
   const designing = running && job?.phase === 'design'
+  // 原画上涂了蒙版：可以勾选「只重绘蒙版」，默认还是整张重画
+  const [inpaint, setInpaint] = useState(false)
+  const maskReady = annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
+  const canInpaintHere = source.kind === 'local'
+  useEffect(() => {
+    if (!maskReady) setInpaint(false)
+  }, [maskReady])
   // CLI 执行中的审批和提问
   const asks = useScopeRequests(`design:${designId}`, running)
   // AI 回复里先问用户的问题（例如整体风格）：最后一条回复带问题、还没回答时，问题面板换掉输入框
@@ -636,6 +682,7 @@ export function DesignChat({
     void onSend(next.text, run, next.attachments, {
       askUser,
       concept,
+      inpaint: false,
       ...(next.style ? { style: next.style.en, styleName: next.style.name } : {}),
     }).finally(() => setSending(false))
     // 只在这一轮结束、队列变化时看要不要发下一条
@@ -677,6 +724,7 @@ export function DesignChat({
         await onSend(v, run, files.attachments, {
           askUser,
           concept,
+          inpaint: inpaint && maskReady,
           ...(styleRef ? { style: styleRef.en, styleName: styleRef.name } : {}),
         })
       ) {
@@ -700,6 +748,7 @@ export function DesignChat({
       await onSend(text, run, [], {
         askUser,
         concept,
+        inpaint: false,
         ...(style ? { style } : {}),
         answers: designQs.map((q, i) => ({ question: q.text, answer: answers[i] ?? '' })),
       })
@@ -882,6 +931,9 @@ export function DesignChat({
                   }}
                 />
                 <ConceptToggle value={concept} onChange={setConcept} template={!!hasTemplate} />
+                {maskReady && conceptRound && (
+                  <InpaintToggle value={inpaint} onChange={setInpaint} supported={canInpaintHere} />
+                )}
                 <SourceSelect value={source} onChange={onSource} kind={kind === 'web' ? 'web' : 'game'} />
                 {source.kind !== 'none' && (
                   <Select
@@ -975,12 +1027,12 @@ function ChatMessage({
                   <span key={a.id} className="flex items-center gap-1.5">
                     <span
                       className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"
-                      style={{ background: KIND_COLOR[a.kind] }}
+                      style={{ background: markColor(a) }}
                     >
                       {i + 1}
                     </span>
                     <span className="truncate">
-                      {kindLabel(a.kind)}
+                      {markLabel(a)}
                       {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
                       {a.note ? ` · ${a.note}` : ''}
                     </span>

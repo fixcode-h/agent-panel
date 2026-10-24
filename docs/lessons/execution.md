@@ -26,5 +26,7 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 
 - 规则：`stopTask(id, reason)` 的 `reason` 是必填的 `StopReason`，只有用户点暂停的 `/stop` 传 `'user'`；父对话收尾、换 CLI、归档、删除、面板重启、页面切走、新消息打断各传对应的值。`Live.stopReason` 经 `EngineHost.stopReason()` 写进 `Task.stopReason`，界面按 `childIcon` 和 `stopReasonText` 显示，只有 `'user'` 才画暂停。进程异常退出（`spawnError`、非 0 退出码）走失败并显示原因，不要归成停止。
 - 规则：会话「彻底完成」（`resolved` 且 `childHolds` 为空）时不管有没有独立分支都要 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收才只在 `isolated` 里做。保活中的会话（`awaitingUser`）超过 `Settings.keepAliveLimit` 时用 `keepAliveVictims()` 挑最久没用的结束（`stopTask(id, 'idle')`），排除正在看的页面、刚进入保活的自己、名下还有子对话在跑/排队的父对话。
+- 规则：保活上限里「正在看」只认前台开着的页面（`presence.ts` 的 `isViewing`），不能用 `hasViewer`：后者在切走后的宽限期（默认 60 分钟）里也算有人，一小时内点开过的对话全被豁免，上限等于没有。`hasViewer` 只用来决定「这一轮回复完要不要留进程」。
+- 起因：真实 Pi 下逐个打开 12 个对话各发一句，12 个 `pi` 进程（约 1.5 GB）一直留着，`keepAliveLimit` 4 没生效；改成 `isViewing` 后留 4 个（约 0.55 GB），回到被收掉的对话靠 `--resume` 续接。
 - 起因：主工作区 `node_modules` 被清空那段时间，父对话收尾 abort 名下子对话，`ctx.signal.aborted && !r.killed` 全判成 `stopped`，用户没点暂停却看到「已暂停」；12 个 `pi` 进程只有 7 个对得上在跑的任务，共用目录的子对话 `resolved` 后 CLI 一直留着。
-- 防线：`shared/task-stage.test.ts` 的 `stopReasonText`、`keepAliveVictims` 用例；`stopTask` 第二参数必填由 `npm run typecheck` 拦住。
+- 防线：`shared/task-stage.test.ts` 的 `stopReasonText`、`keepAliveVictims` 用例；`server/presence.test.ts` 的「保活上限只放过前台开着的页面」；`stopTask` 第二参数必填由 `npm run typecheck` 拦住。

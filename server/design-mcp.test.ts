@@ -147,9 +147,11 @@ test('截图交给页面画，返回文件和控件位置，提醒跑出画面�
   assert.match(r.text, /跑出画面的控件：Far/)
   assert.match(r.text, /Panel（Image）10,20 300×200/)
   assert.equal(session.shots.length, 1)
-  // 页面没打开时把原因告诉 AI
-  const off = open({}, { capture: async () => Promise.reject(new Error('页面没有交回截图')) })
-  assert.match((await off.call('screenshot', {})).text, /页面没有交回截图/)
+  // 页面没打开时把准确原因原样告诉 AI，不追加和原因无关的提示
+  const off = open({}, { capture: async () => Promise.reject(new Error('截图失败：设计页面没有打开')) })
+  const err = await off.call('screenshot', {})
+  assert.ok(err.error)
+  assert.equal(err.text, '截图失败：设计页面没有打开')
   off.close()
   close()
 })

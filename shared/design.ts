@@ -67,12 +67,24 @@ export type DesignImage = z.infer<typeof DesignImage>
  */
 export const ANNOTATION_KINDS = ['change', 'add', 'remove', 'keep'] as const
 export type AnnotationKind = (typeof ANNOTATION_KINDS)[number]
+/** 蒙版的一笔：涂抹或擦掉；w 是笔宽（设计稿像素），points 是轨迹 [x, y, x, y, …] */
+export const MaskStroke = z.object({
+  erase: z.boolean().default(false),
+  w: z.number().min(1).max(400).default(48),
+  points: z.array(z.number()).min(2).max(4000),
+})
+export type MaskStroke = z.infer<typeof MaskStroke>
 export const Annotation = z.object({
   id: z.string(),
   kind: z.enum(ANNOTATION_KINDS).default('change'),
-  shape: z.enum(['rect', 'arrow', 'pen', 'pin']),
-  /** rect：[x, y, w, h]；arrow：[x1, y1, x2, y2]（箭头指向第二个点）；pen：[x, y, x, y, …]；pin：[x, y] */
+  shape: z.enum(['rect', 'arrow', 'pen', 'pin', 'mask']),
+  /**
+   * rect：[x, y, w, h]；arrow：[x1, y1, x2, y2]（箭头指向第二个点）；pen：[x, y, x, y, …]；pin：[x, y]；
+   * mask：整个蒙版的外框 [x, y, w, h]
+   */
   points: z.array(z.number()).max(4000),
+  /** mask 的涂抹笔画；旧数据没有 */
+  strokes: z.array(MaskStroke).max(200).default([]),
   note: z.string().max(2000).default(''),
   /** 标在哪棵树上：空是主界面，否则是子控件名 */
   target: z.string().default(''),
@@ -446,6 +458,15 @@ export const DesignChatInput = z.object({
   concept: z.boolean().default(false),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
+
+/** 只重绘原画上蒙版涂过的区域：mask 是那张图上的蒙版标注 */
+export const InpaintConceptInput = z.object({
+  id: z.string().min(1),
+  mask: Annotation,
+  /** 用户这次写的修改要求，拼进生成描述里 */
+  text: z.string().trim().max(8000).default(''),
+  source: ImageSource,
+})
 
 export const GenerateImageInput = z.object({
   source: ImageSource,
@@ -971,7 +992,7 @@ export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
 /** 标注的范围（设计稿像素）：画笔取外框，图钉和箭头取指向的点 */
 export function annotationBox(a: Pick<Annotation, 'shape' | 'points'>) {
   const p = a.points
-  if (a.shape === 'rect') return { x: p[0], y: p[1], w: p[2], h: p[3] }
+  if (a.shape === 'rect' || a.shape === 'mask') return { x: p[0], y: p[1], w: p[2], h: p[3] }
   if (a.shape === 'pin') return { x: p[0], y: p[1], w: 0, h: 0 }
   if (a.shape === 'arrow') return { x: p[2], y: p[3], w: 0, h: 0 }
   const xs = p.filter((_, i) => i % 2 === 0)
@@ -981,15 +1002,46 @@ export function annotationBox(a: Pick<Annotation, 'shape' | 'points'>) {
   return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
 }
 
+/**
+ * 蒙版笔画的外框（设计稿像素）：只算涂抹的笔画，擦掉的区域不参与；
+ * 笔宽也算进去，外框能把整个蒙版包住
+ */
+export function maskBox(strokes: (Pick<MaskStroke, 'points' | 'w'> & { erase?: boolean })[]) {
+  let x1 = Infinity
+  let y1 = Infinity
+  let x2 = -Infinity
+  let y2 = -Infinity
+  for (const s of strokes) {
+    if (s.erase) continue
+    const r = Math.max(0, s.w) / 2
+    for (let i = 0; i + 1 < s.points.length; i += 2) {
+      x1 = Math.min(x1, s.points[i] - r)
+      y1 = Math.min(y1, s.points[i + 1] - r)
+      x2 = Math.max(x2, s.points[i] + r)
+      y2 = Math.max(y2, s.points[i + 1] + r)
+    }
+  }
+  if (!Number.isFinite(x1)) return { x: 0, y: 0, w: 0, h: 0 }
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
+}
+
+/** 这个标注是不是有效的蒙版：有涂抹、没被全部擦掉 */
+export const hasMask = (a: Pick<Annotation, 'shape' | 'strokes'>) =>
+  a.shape === 'mask' && a.strokes.some((s) => !s.erase && s.points.length >= 2)
+
+/** 只有本机 ComfyUI 能按蒙版做局部重绘；浏览器标签页和图片 CLI 只能整张重画 */
+export const canInpaint = (source: Pick<ImageSource, 'kind'>) => source.kind === 'local'
+
 /** 发给 AI 的标注说明：编号、意思、位置、范围里的控件和用户写的说明 */
 export function annotationText(list: Annotation[], size: { X: number; Y: number }) {
-  const shape = { rect: '框选', arrow: '箭头指向', pen: '圈画', pin: '标记点' }
+  const shape = { rect: '框选', arrow: '箭头指向', pen: '圈画', pin: '标记点', mask: '蒙版涂抹' }
   const lines = list.map((a, i) => {
     const b = annotationBox(a)
     const r = (n: number) => Math.round(n)
     const where = b.w || b.h ? `范围 x=${r(b.x)} y=${r(b.y)} 宽=${r(b.w)} 高=${r(b.h)}` : `位置 x=${r(b.x)} y=${r(b.y)}`
     return [
       `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${a.target ? `在子控件 ${a.target} 里，` : ''}${where}`,
+      a.shape === 'mask' ? '   只重绘蒙版覆盖的区域，蒙版外面保持不变' : '',
       a.widgets.length ? `   涉及的控件：${a.widgets.join('、')}` : '',
       a.note.trim() ? `   说明：${a.note.trim()}` : '',
     ]
@@ -1210,7 +1262,10 @@ export function imageRevisionText(feedback: string, marks: Annotation[], size: {
       b.w || b.h
         ? `the area x ${pct(b.x, size.X)}–${pct(b.x + b.w, size.X)}, y ${pct(b.y, size.Y)}–${pct(b.y + b.h, size.Y)}`
         : `around x ${pct(b.x, size.X)}, y ${pct(b.y, size.Y)}`
-    return `${i + 1}. ${verb[a.kind]} at ${where} (from the top-left corner)${a.note.trim() ? `: ${a.note.trim()}` : ''}`
+    const note = a.note.trim() ? `: ${a.note.trim()}` : ''
+    if (a.shape === 'mask')
+      return `${i + 1}. Redraw only inside ${where} (from the top-left corner), keep everything outside that area exactly as it is${note}`
+    return `${i + 1}. ${verb[a.kind]} at ${where} (from the top-left corner)${note}`
   })
   if (!feedback.trim() && !lines.length) return ''
   return [

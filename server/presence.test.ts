@@ -6,6 +6,7 @@ process.env.AGENT_PANEL_PRESENCE_GRACE_MS = '30'
 const {
   forgetPresence,
   hasViewer,
+  isViewing,
   isWatched,
   rescheduleIfUnwatched,
   seenWhileWatched,
@@ -216,4 +217,18 @@ test('保活只在对话页真的开着时生效：没上报过、过了宽限�
   assert.equal(hasViewer(id), false)
 
   setPresenceUnreadKeeper(() => false)
+})
+
+test('保活上限只放过前台开着的页面：切走后宽限期里 hasViewer 还算有人，isViewing 不算', () => {
+  const id = 'presence-viewing'
+  setPresenceIdleHandler(() => {})
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-b', true)
+  assert.equal(isViewing(id), true)
+  setViewer(id, 'tab-a', false)
+  assert.equal(isViewing(id), true, '另一个标签页还开着')
+  setViewer(id, 'tab-b', false)
+  assert.equal(hasViewer(id), true, '宽限期里回来还能接着说')
+  assert.equal(isViewing(id), false, '但已经不在看了，超过保活上限时可以收掉')
+  forgetPresence(id)
 })

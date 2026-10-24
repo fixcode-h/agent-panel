@@ -120,6 +120,40 @@ async function runConcepts(
   job.status = 'done'
 }
 
+/** 演示里的「只重绘蒙版区域」：在这张原画的基础上多出一张候选 */
+async function runInpaint(d: Full, base: { id: string; prompt: string }, text: string) {
+  const job: Job = {
+    status: 'running',
+    phase: 'concepts',
+    text: '',
+    outChars: 0,
+    attempt: 1,
+    startedAt: Date.now(),
+  }
+  d.job = job
+  const cur = d.concept ?? emptyConcept()
+  const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
+  const progress = { want: 1, got: 0 }
+  job.concepts = progress
+  await sleep(1200)
+  const c = d.concept ?? emptyConcept()
+  const img = {
+    id: `c${round}_1`,
+    file: drawConcept(round + 2, d.designSize.X, d.designSize.Y),
+    width: d.designSize.X,
+    height: d.designSize.Y,
+    prompt: [base.prompt, text].filter(Boolean).join('\n'),
+    negative: '',
+    round,
+    base: base.id,
+    source: 'local' as const,
+    at: now(),
+  }
+  d.concept = { images: [...c.images, img], selected: img.id, approved: '' }
+  progress.got++
+  job.status = 'done'
+}
+
 function draw(id: string, w: number, h: number): string {
   const c = document.createElement('canvas')
   c.width = w
@@ -1164,9 +1198,15 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     else void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d
   }
-  // 原画：选中、确认模板、删掉；带图片数据的是上传
+  // 原画：选中、确认模板、删掉；带图片数据的是上传，带蒙版的是局部重绘
   if (sub === 'concept') {
     const c = d.concept ?? emptyConcept()
+    if (body.mask) {
+      if (d.job?.status === 'running') fail('正在处理上一个请求，等它完成或先停止')
+      const base = c.images.find((i) => i.id === body.id) ?? fail('没有这张原画')
+      void runInpaint(d, base, String(body.text ?? ''))
+      return d
+    }
     if (body.data) {
       const round = Math.max(0, ...c.images.map((i) => i.round)) + 1
       const img = {

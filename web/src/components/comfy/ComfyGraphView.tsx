@@ -17,6 +17,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { layoutComfyGraph } from '@shared/comfy-layout'
 import type { ComfyWorkflow } from '@shared/local-image'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -37,15 +38,7 @@ interface NodeData extends Record<string, unknown> {
   onInput: (node: string, key: string, value: unknown) => void
 }
 
-const ROW = 28
 const HEAD = 44
-const COL = 300
-/** 节点标题行加内边距的实际高度，用来算内容尺寸和画布高度 */
-const NODE_HEAD = 48
-/** 同列两个节点之间留的空隙 */
-const GAP = 36
-/** 节点宽（和 ComfyNode 的 w-[260px] 一致），用来估算内容宽度 */
-const NODE_W = 260
 /** 适应时四周留的空隙 */
 const PAD = 20
 /** 左边留给缩放控件（+/−/适应）的宽度，不让它压在节点上 */
@@ -55,41 +48,6 @@ const MIN_READABLE_ZOOM = 0.5
 const MAX_ZOOM = 1
 /** 画布最低高度，内容再少也留得住节点 */
 const MIN_CANVAS_H = 220
-
-/** 按连线分层：没有上游的放最左边，其余放在最深的上游右边一列。同时给出内容的外接尺寸 */
-function layout(graph: Graph) {
-  const depth = new Map<string, number>()
-  const visit = (id: string, seen: Set<string>): number => {
-    if (depth.has(id)) return depth.get(id)!
-    if (seen.has(id) || !graph[id]) return 0
-    seen.add(id)
-    let d = 0
-    for (const v of Object.values(graph[id].inputs)) {
-      const l = linkOf(v)
-      if (l && graph[l[0]]) d = Math.max(d, visit(l[0], seen) + 1)
-    }
-    depth.set(id, d)
-    return d
-  }
-  for (const id of Object.keys(graph)) visit(id, new Set())
-  const cols = new Map<number, string[]>()
-  for (const [id, d] of depth) cols.set(d, [...(cols.get(d) ?? []), id])
-  const pos = new Map<string, { x: number; y: number }>()
-  let maxDepth = 0
-  let maxY = 0
-  for (const [d, ids] of cols) {
-    let y = 0
-    for (const id of ids) {
-      const inputs = Object.keys(graph[id].inputs).length
-      pos.set(id, { x: d * COL, y })
-      // 节点自己的高度（标题行 + 每个输入一行）加下面留的间隔
-      y += NODE_HEAD + inputs * ROW + GAP
-    }
-    maxDepth = Math.max(maxDepth, d)
-    maxY = Math.max(maxY, y - GAP)
-  }
-  return { pos, width: maxDepth * COL + NODE_W, height: maxY }
-}
 
 /** 视口高度，画布跟着它放大缩小 */
 function useViewportHeight() {
@@ -216,7 +174,7 @@ export function ComfyGraphView({
   const ids = Object.keys(graph).join('|')
   // 节点位置只在节点增删时重新排，改值、拖动时保持
   // oxlint-disable-next-line react-hooks/exhaustive-deps
-  const { pos, width: estimateW, height: estimateH } = useMemo(() => layout(graph), [ids])
+  const { positions: pos, width: estW, height: estH } = useMemo(() => layoutComfyGraph(graph), [ids])
   const [width, setWidth] = useState(0)
   // 节点真实尺寸（字号、内边距都算上）比估算准，量到之后高度按它算
   const [bounds, setBounds] = useState<{ width: number; height: number } | null>(null)
@@ -235,14 +193,14 @@ export function ComfyGraphView({
   }, [])
   // 高度按内容实际占的高度给（适应后能填满），内容多时收在视口的一定比例内，不再写死一屏
   const height = useMemo(() => {
-    const contentW = bounds?.width ?? estimateW
-    const contentH = bounds?.height ?? estimateH
+    const contentW = bounds?.width ?? estW
+    const contentH = bounds?.height ?? estH
     const maxH = Math.max(MIN_CANVAS_H, Math.round(viewportH * 0.62))
     const fitW = width > PAD * 2 + CONTROL_GUTTER ? (width - PAD - CONTROL_GUTTER) / contentW : 1
     const zoom = Math.max(Math.min(MAX_ZOOM, fitW), MIN_READABLE_ZOOM)
     const wanted = contentH * Math.min(zoom, MAX_ZOOM) + PAD * 2
     return Math.round(Math.min(maxH, Math.max(MIN_CANVAS_H, wanted)))
-  }, [width, bounds, estimateW, estimateH, viewportH])
+  }, [width, bounds, estW, estH, viewportH])
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   useEffect(() => {
     const used = new Map<string, Set<number>>()

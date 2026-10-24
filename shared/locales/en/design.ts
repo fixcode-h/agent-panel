@@ -329,6 +329,37 @@ export const EN_DESIGN: Record<string, string> = {
   箭头标注: 'Arrow annotation',
   画笔标注: 'Pen annotation',
   打点标注: 'Pin annotation',
+  '蒙版涂抹：涂出要重绘的区域': 'Mask: paint the area to redraw',
+  蒙版笔刷大小: 'Mask brush size',
+  '笔刷大小：{n} 像素': 'Brush size: {n} px',
+  橡皮擦: 'Eraser',
+  撤销上一笔: 'Undo last stroke',
+  蒙版: 'Mask',
+  '只重绘涂过的这块，其余保持不变': 'Only this painted area is redrawn; the rest stays unchanged',
+  '说明这块要改成什么，例如：换成金色描边的按钮':
+    'Describe what this area should become, e.g. a button with a gold outline',
+  '涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘':
+    'Paint the area to redraw; tick “Redraw mask only” on the right and send to inpaint',
+  '用笔刷涂出要重绘的区域，涂错了用橡皮擦或撤销': 'Paint the area to redraw; use the eraser or undo to fix mistakes',
+  只重绘蒙版区域: 'Redraw mask only',
+  '只重画涂过的区域，其余保持不变（本机 ComfyUI）':
+    'Redraw only the painted area, everything else stays (local ComfyUI)',
+  '当前生成方式不支持局部重绘，勾选后发送会整张重画，并在发送后提示':
+    'This image source cannot inpaint: sending will redraw the whole screen and say so afterwards',
+  只重绘蒙版: 'Redraw mask',
+  会整张重画: 'whole screen',
+  '当前生成方式不支持局部重绘，已改成整张重画':
+    'This image source cannot inpaint, so the whole screen is being redrawn',
+  '已按蒙版局部重绘，新的一张在原画里': 'Inpainted the masked area; the new concept is now in the concept list',
+  '上传局部重绘的原图失败：{error}': 'Could not upload the image for inpainting: {error}',
+  '正在准备局部重绘…': 'Preparing the inpaint…',
+  '这个工作流不支持局部重绘，请换成内置工作流或整张重画':
+    'This workflow cannot inpaint; use a built-in workflow or redraw the whole screen',
+  '当前生成方式不支持局部重绘，只能整张重画': 'This image source cannot inpaint; it can only redraw the whole screen',
+  先在原画上涂出要重绘的区域: 'Paint the area to redraw on the concept first',
+  原画文件不在了: 'The concept image file is missing',
+  按蒙版里标出的改动重画这一块: 'Redraw this area following the marked changes',
+  局部重绘没有生成出图片: 'Inpainting produced no image',
   标注工具: 'Annotation tools',
   标注的意思: 'Annotation meaning',
   隐藏标注: 'Hide annotations',
@@ -652,4 +683,15 @@ export const EN_DESIGN: Record<string, string> = {
     'No widget has a matching size; hold Alt to drop on any widget that takes an image',
   当前界面里没有能放图片的控件: 'No widget on this screen takes an image',
   '放到 {name}': 'Drop on {name}',
+  // AI 截图（screenshot 工具）
+  '截图失败：设计页面没有打开。先打开这个设计页（浏览器标签页在后台也可以），再让我截图':
+    'Screenshot failed: the design page is not open. Open this design page first (it can be in a background tab), then ask for the screenshot again',
+  '截图失败：设计页面收到了请求，但没有交出截图（页面可能已经切走，或者渲染卡住了），请重试':
+    'Screenshot failed: the design page received the request but did not return a screenshot (the page may have been left, or rendering is stuck). Try again',
+  '截图超时：设计页面在后台或者渲染卡住了，请重试':
+    'Screenshot timed out: the design page is in the background or rendering is stuck. Try again',
+  '画布没有画出来（页面可能正在切换），请重试': 'The canvas was not drawn (the page may be switching). Try again',
+  '画布是空的：这棵树里还没有可截的控件，先搭好界面再截图':
+    'The canvas is empty: this tree has no widgets to capture yet. Build the interface before taking a screenshot',
+  '截图渲染失败：{error}': 'Screenshot rendering failed: {error}',
 }
