@@ -729,7 +729,7 @@ await runShard('子对话与计划', async (api) => {
       )
       const back = await waitTask(slow.id, (k) => k.messages.some((m) => m.panel === 'background'), 30000)
       const settled = await waitDone(back.id, 20000)
-      assert.equal(settled.jobs, undefined, '跑完以后不再列在运行中')
+      assert.deepEqual(settled.jobs ?? [], [], '跑完以后不再列在运行中')
       assert.match(
         settled.messages.find((m) => m.panel === 'background').text,
         /重新总结整段工作/,
@@ -775,7 +775,7 @@ await runShard('子对话与计划', async (api) => {
         '推回的文本标注是哪个子任务起的',
       )
       const settled = await waitDone(back.id, 30000)
-      assert.equal(settled.jobs, undefined, '跑完以后从运行中消失，不再占着子任务那一行')
+      assert.deepEqual(settled.jobs ?? [], [], '跑完以后从运行中消失，不再占着子任务那一行')
       await call('DELETE', `/tasks/${settled.id}`)
       step('子任务起的后台命令：带子任务步骤，结果推回并标注来源，跑完消失')
     }
