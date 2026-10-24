@@ -1581,6 +1581,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       text: body.text,
       at: now(),
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+      ...(body.refs?.length ? { refs: body.refs } : {}),
       ...(body.answers?.length ? { answers: body.answers } : {}),
       ...(body.style && body.styleName ? { style: body.styleName } : {}),
     })

@@ -8,14 +8,18 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalSpaceAround,
+  ClipboardPaste,
   Maximize,
   Minus,
   Plus,
+  RotateCcw,
 } from 'lucide-react'
 import {
   IMAGE_SLOT,
+  MIN_WIDGET_SIZE,
   findParent,
   findWidget,
+  isWebType,
   walk,
   type Component,
   type Margin,
@@ -31,6 +35,14 @@ import type { Device } from '@shared/web'
 import { animRuntime, compileAnimations, type UiAnimation } from '@shared/anim'
 import type { AnimCommand } from './AnimationPanel'
 import { AnnotationLayer, AnnotationToolbar, TOOL_KEYS, isMarkTool, widgetsIn, type Tool } from './Annotations'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/menu'
+import { WidgetMenuItems, type WidgetMenuActions } from './WidgetMenu'
 
 type Rect = { x: number; y: number; w: number; h: number }
 type DragImage = { id: string; width: number; height: number; nineSlice?: Margin }
@@ -71,8 +83,14 @@ export function Viewport({
   animCommand,
   dragImage,
   onDropImage,
+  actions,
+  onRename,
   data,
 }: {
+  /** 控件右键菜单的动作：和控件树共用一套 */
+  actions: WidgetMenuActions
+  /** 右键「重命名」：页面把控件树里那一行切到改名状态 */
+  onRename: (id: string) => void
   /** 正在从图片列表拖过来的图：高亮能放它、大小合适的控件 */
   dragImage?: DragImage | null
   /** 在控件上松手：把图用到这个控件上 */
@@ -118,6 +136,8 @@ export function Viewport({
   const [box, setBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const scale = zoom || fit
   const [tool, setTool] = useState<Tool>('select')
+  // 右键点在哪个控件上（空是画布空白处）：菜单内容按它显示
+  const [menuId, setMenuId] = useState('')
   const [kind, setKind] = useState<AnnotationKind>('change')
   const [showMarks, setShowMarks] = useState(true)
   const [activeMark, setActiveMark] = useState('')
@@ -318,7 +338,10 @@ export function Viewport({
   }, [animCommand, settle])
 
   const parent = selected ? findParent(root, selected) : undefined
-  const movable = parent?.Type === 'CanvasPanel' && !!findWidget(root, selected)?.Slot
+  const selectedWidget = selected ? findWidget(root, selected) : undefined
+  // 锁定的控件不能拖、不能改大小
+  const movable = parent?.Type === 'CanvasPanel' && !!selectedWidget?.Slot && !selectedWidget.Properties?.Locked
+  const menuWidget = menuId ? findWidget(root, menuId) : undefined
   // 拖动时的对齐参考线（设计稿像素）
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
 
@@ -370,14 +393,23 @@ export function Viewport({
   }
 
   /** 对齐、等间距：按量到的位置算出每个控件要挪多少，一次挪完（撤销时一起退回） */
-  const align = (how: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' | 'hspace' | 'vspace') => {
-    const items = multi.map((id) => ({ id, b: measure(id)! })).filter((x) => x.b)
-    if (items.length < 2) return
+  const align = (
+    how: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' | 'hspace' | 'vspace',
+    only?: string,
+  ) => {
+    // 右键菜单点的是没选中的控件时只对齐它；单个控件对父控件对齐
+    const ids = only && !multi.includes(only) ? [only] : multi
+    const items = ids.map((id) => ({ id, b: measure(id)! })).filter((x) => x.b)
+    if (!items.length) return
+    const one = items.length === 1
+    const ref = one ? (only ? findParent(root, only) : parent) : undefined
+    const bounds = ref ? measure(ref.id) : undefined
+    if (one && !bounds) return
     const key = `align:${Date.now()}`
-    const minX = Math.min(...items.map((x) => x.b.x))
-    const maxX = Math.max(...items.map((x) => x.b.x + x.b.w))
-    const minY = Math.min(...items.map((x) => x.b.y))
-    const maxY = Math.max(...items.map((x) => x.b.y + x.b.h))
+    const minX = bounds ? bounds.x : Math.min(...items.map((x) => x.b.x))
+    const maxX = bounds ? bounds.x + bounds.w : Math.max(...items.map((x) => x.b.x + x.b.w))
+    const minY = bounds ? bounds.y : Math.min(...items.map((x) => x.b.y))
+    const maxY = bounds ? bounds.y + bounds.h : Math.max(...items.map((x) => x.b.y + x.b.h))
     const moves = new Map<string, { dx: number; dy: number }>()
     for (const { id, b } of items) {
       const dx =
@@ -553,6 +585,11 @@ export function Viewport({
           gy.push(by.at)
         }
       }
+      // 缩小到底就停住：再往左上拖也不再改大小，免得缩成 0 或翻转
+      if (mode === 'resize' && me) {
+        dx = Math.max(dx, -Math.max(0, Math.round(me.w - MIN_WIDGET_SIZE)))
+        dy = Math.max(dy, -Math.max(0, Math.round(me.h - MIN_WIDGET_SIZE)))
+      }
       setGuides({ x: gx, y: gy })
       if (dx === lx && dy === ly) return
       onMove(selected, { dx: dx - lx, dy: dy - ly, mode }, key)
@@ -608,196 +645,237 @@ export function Viewport({
               : t('当前界面里没有能放图片的控件')}
         </div>
       )}
-      <div
-        ref={wrap}
-        className={cn(
-          'relative min-h-0 flex-1 overflow-auto',
-          tool === 'hand' && 'cursor-grab active:cursor-grabbing',
-          panning && 'cursor-grabbing [&_*]:cursor-grabbing!',
-        )}
-        onPointerDownCapture={(e) => {
-          if (pan(e)) e.stopPropagation()
-        }}
-        onContextMenu={(e) => {
-          if (!dragged.current) return
-          e.preventDefault()
-          dragged.current = false
-        }}
-        onPointerDown={(e) => {
-          if (e.target === e.currentTarget) onSelect('')
-        }}
-      >
-        <div
-          className="grid min-h-full min-w-full place-items-center px-6 pt-16 pb-12"
-          onPointerDown={(e) => {
-            if (e.target === e.currentTarget) onSelect('')
-          }}
-        >
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
           <div
-            style={{ width: size.X * scale, height: size.Y * scale }}
-            className="relative shrink-0"
-            onDragOver={(e) => {
-              if (!dragImage || play || !onDropImage) return
-              setAnySize(e.altKey)
-              const r = slotAt(e, e.altKey)
-              setHot(r?.id ?? '')
-              if (!r) return
-              e.preventDefault()
-              e.dataTransfer.dropEffect = 'copy'
+            ref={wrap}
+            className={cn(
+              'relative min-h-0 flex-1 overflow-auto',
+              tool === 'hand' && 'cursor-grab active:cursor-grabbing',
+              panning && 'cursor-grabbing [&_*]:cursor-grabbing!',
+            )}
+            onPointerDownCapture={(e) => {
+              if (pan(e)) e.stopPropagation()
             }}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setHot('')
+            onContextMenu={(e) => {
+              // 右键拖动是在平移画布，不弹菜单
+              if (dragged.current) {
+                e.preventDefault()
+                dragged.current = false
+                return
+              }
+              // 点在控件上是控件菜单，点在空白处是画布菜单
+              const id = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')?.dataset.wid ?? ''
+              setMenuId(id)
             }}
-            onDrop={(e) => {
-              if (!dragImage || !onDropImage) return
-              const r = slotAt(e, e.altKey)
-              if (!r) return
-              e.preventDefault()
-              onDropImage(r.id, dragImage.id)
+            onPointerDown={(e) => {
+              if (e.target === e.currentTarget) onSelect('')
             }}
           >
             <div
-              ref={stage}
-              style={{ width: size.X, height: size.Y, transform: `scale(${scale})`, transformOrigin: '0 0' }}
-              className="absolute top-0 left-0 overflow-hidden bg-[#0e0e10] bg-[length:24px_24px] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_12px_40px_-12px_rgba(0,0,0,0.8)] [background-image:linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%),linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%)] [background-position:0_0,12px_12px]"
+              className="grid min-h-full min-w-full place-items-center px-6 pt-16 pb-12"
               onPointerDown={(e) => {
-                if (tool !== 'select') return
-                const el = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')
-                const id = el?.dataset.wid ?? ''
-                if (id && (e.shiftKey || e.ctrlKey || e.metaKey) && onPick) {
-                  onPick(id, true)
-                  return
-                }
-                onSelect(id)
-                // 点到的就是选中的、能拖动的控件时直接开始拖
-                if (id && id === selected) {
-                  if (device && parent?.Type === 'Frame') webDrag(e)
-                  else drag(e, 'move')
-                }
-              }}
-              onDoubleClick={(e) => {
-                if (tool !== 'select') return
-                const id = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')?.dataset.wid
-                if (id) onOpen?.(id)
+                if (e.target === e.currentTarget) onSelect('')
               }}
             >
-              <UmgNode w={root} ctx={ctx} />
-            </div>
-            {overlay && (
-              <img
-                src={overlay}
-                alt=""
-                draggable={false}
-                className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
-              />
-            )}
-            {box && !play && (
               <div
-                className="pointer-events-none absolute"
-                style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}
+                style={{ width: size.X * scale, height: size.Y * scale }}
+                className="relative shrink-0"
+                onDragOver={(e) => {
+                  if (!dragImage || play || !onDropImage) return
+                  setAnySize(e.altKey)
+                  const r = slotAt(e, e.altKey)
+                  setHot(r?.id ?? '')
+                  if (!r) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'copy'
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setHot('')
+                }}
+                onDrop={(e) => {
+                  if (!dragImage || !onDropImage) return
+                  const r = slotAt(e, e.altKey)
+                  if (!r) return
+                  e.preventDefault()
+                  onDropImage(r.id, dragImage.id)
+                }}
               >
-                <div className="absolute inset-0 outline-[1.5px] outline-[#4c9bff] outline-solid" />
-                {movable && (
-                  <div
-                    onPointerDown={(e) => drag(e, 'resize')}
-                    title={t('拖动改变大小')}
-                    className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize rounded-[2px] border border-[#4c9bff] bg-white"
+                <div
+                  ref={stage}
+                  style={{ width: size.X, height: size.Y, transform: `scale(${scale})`, transformOrigin: '0 0' }}
+                  className="absolute top-0 left-0 overflow-hidden bg-[#0e0e10] bg-[length:24px_24px] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_12px_40px_-12px_rgba(0,0,0,0.8)] [background-image:linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%),linear-gradient(45deg,#1a1a1d_25%,transparent_25%,transparent_75%,#1a1a1d_75%)] [background-position:0_0,12px_12px]"
+                  onPointerDown={(e) => {
+                    if (tool !== 'select') return
+                    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')
+                    const id = el?.dataset.wid ?? ''
+                    if (id && (e.shiftKey || e.ctrlKey || e.metaKey) && onPick) {
+                      onPick(id, true)
+                      return
+                    }
+                    onSelect(id)
+                    // 点到的就是选中的、能拖动的控件时直接开始拖
+                    if (id && id === selected) {
+                      if (device && parent?.Type === 'Frame') webDrag(e)
+                      else drag(e, 'move')
+                    }
+                  }}
+                  onDoubleClick={(e) => {
+                    if (tool !== 'select') return
+                    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')?.dataset.wid
+                    if (id) onOpen?.(id)
+                  }}
+                >
+                  <UmgNode w={root} ctx={ctx} />
+                </div>
+                {overlay && (
+                  <img
+                    src={overlay}
+                    alt=""
+                    draggable={false}
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
                   />
                 )}
-              </div>
-            )}
-            {!play &&
-              extraBoxes.map((b, i) => (
-                <div
-                  key={i}
-                  className="pointer-events-none absolute outline-[1.5px] outline-[#4c9bff]/70 outline-dashed"
-                  style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
+                {box && !play && (
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}
+                  >
+                    <div className="absolute inset-0 outline-[1.5px] outline-[#4c9bff] outline-solid" />
+                    {movable && (
+                      <div
+                        onPointerDown={(e) => drag(e, 'resize')}
+                        title={t('拖动改变大小')}
+                        className="pointer-events-auto absolute -right-1.5 -bottom-1.5 h-3 w-3 cursor-nwse-resize rounded-[2px] border border-[#4c9bff] bg-white"
+                      />
+                    )}
+                  </div>
+                )}
+                {!play &&
+                  extraBoxes.map((b, i) => (
+                    <div
+                      key={i}
+                      className="pointer-events-none absolute outline-[1.5px] outline-[#4c9bff]/70 outline-dashed"
+                      style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
+                    />
+                  ))}
+                {dragImage &&
+                  !play &&
+                  shownSlots.map((r) => (
+                    <div
+                      key={r.id}
+                      data-drop-slot={r.name}
+                      className={cn(
+                        'pointer-events-none absolute rounded-[2px] outline-solid',
+                        r.id === hot
+                          ? 'bg-[#35c46a]/25 outline-2 outline-[#35c46a]'
+                          : 'bg-[#35c46a]/8 outline-[1.5px] outline-[#35c46a]/70',
+                      )}
+                      style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }}
+                    >
+                      {r.id === hot && (
+                        <span className="absolute -top-5 left-0 rounded bg-[#35c46a] px-1.5 py-px text-[0.6875rem] whitespace-nowrap text-black">
+                          {t('放到 {name}', { name: r.name })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                {dropLine && (
+                  <div
+                    className="pointer-events-none absolute rounded-full bg-[#4c9bff]"
+                    style={{
+                      left: dropLine.x * scale,
+                      top: dropLine.y * scale,
+                      width: Math.max(2, dropLine.w * scale),
+                      height: Math.max(2, dropLine.h * scale),
+                    }}
+                  />
+                )}
+                {guides.x.map((x) => (
+                  <div
+                    key={`gx${x}`}
+                    className="pointer-events-none absolute top-0 bottom-0 w-px bg-[#ff4fd8]"
+                    style={{ left: x * scale }}
+                  />
+                ))}
+                {guides.y.map((y) => (
+                  <div
+                    key={`gy${y}`}
+                    className="pointer-events-none absolute right-0 left-0 h-px bg-[#ff4fd8]"
+                    style={{ top: y * scale }}
+                  />
+                ))}
+                {!root.Children?.length && (
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
+                    <div className="max-w-[320px] text-[0.78125rem] leading-relaxed text-white/45">
+                      <p className="mb-1 text-[0.84375rem] font-medium text-white/70">{t('还是空白界面')}</p>
+                      {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
+                    </div>
+                  </div>
+                )}
+                <AnnotationLayer
+                  size={size}
+                  scale={scale}
+                  tool={tool}
+                  kind={kind}
+                  list={marks}
+                  visible={showMarks && !play}
+                  active={activeMark}
+                  onActive={setActiveMark}
+                  onCreate={(a) => {
+                    const mark: Annotation = {
+                      ...a,
+                      id: crypto.randomUUID(),
+                      note: '',
+                      target,
+                      widgets: stage.current ? widgetsIn(stage.current, scale, root, a) : [],
+                    }
+                    setMarks((l) => [...l, mark], `ann:add:${mark.id}`)
+                    // 画完马上写说明
+                    setActiveMark(mark.id)
+                  }}
+                  onChange={(a) => setMarks((l) => l.map((x) => (x.id === a.id ? a : x)), `ann:${a.id}`)}
+                  onRemove={(id) => {
+                    setMarks((l) => l.filter((x) => x.id !== id), `ann:rm:${id}`)
+                    setActiveMark('')
+                  }}
                 />
-              ))}
-            {dragImage &&
-              !play &&
-              shownSlots.map((r) => (
-                <div
-                  key={r.id}
-                  data-drop-slot={r.name}
-                  className={cn(
-                    'pointer-events-none absolute rounded-[2px] outline-solid',
-                    r.id === hot
-                      ? 'bg-[#35c46a]/25 outline-2 outline-[#35c46a]'
-                      : 'bg-[#35c46a]/8 outline-[1.5px] outline-[#35c46a]/70',
-                  )}
-                  style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }}
-                >
-                  {r.id === hot && (
-                    <span className="absolute -top-5 left-0 rounded bg-[#35c46a] px-1.5 py-px text-[0.6875rem] whitespace-nowrap text-black">
-                      {t('放到 {name}', { name: r.name })}
-                    </span>
-                  )}
-                </div>
-              ))}
-            {dropLine && (
-              <div
-                className="pointer-events-none absolute rounded-full bg-[#4c9bff]"
-                style={{
-                  left: dropLine.x * scale,
-                  top: dropLine.y * scale,
-                  width: Math.max(2, dropLine.w * scale),
-                  height: Math.max(2, dropLine.h * scale),
-                }}
-              />
-            )}
-            {guides.x.map((x) => (
-              <div
-                key={`gx${x}`}
-                className="pointer-events-none absolute top-0 bottom-0 w-px bg-[#ff4fd8]"
-                style={{ left: x * scale }}
-              />
-            ))}
-            {guides.y.map((y) => (
-              <div
-                key={`gy${y}`}
-                className="pointer-events-none absolute right-0 left-0 h-px bg-[#ff4fd8]"
-                style={{ top: y * scale }}
-              />
-            ))}
-            {!root.Children?.length && (
-              <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
-                <div className="max-w-[320px] text-[0.78125rem] leading-relaxed text-white/45">
-                  <p className="mb-1 text-[0.84375rem] font-medium text-white/70">{t('还是空白界面')}</p>
-                  {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
-                </div>
               </div>
-            )}
-            <AnnotationLayer
-              size={size}
-              scale={scale}
-              tool={tool}
-              kind={kind}
-              list={marks}
-              visible={showMarks && !play}
-              active={activeMark}
-              onActive={setActiveMark}
-              onCreate={(a) => {
-                const mark: Annotation = {
-                  ...a,
-                  id: crypto.randomUUID(),
-                  note: '',
-                  target,
-                  widgets: stage.current ? widgetsIn(stage.current, scale, root, a) : [],
-                }
-                setMarks((l) => [...l, mark], `ann:add:${mark.id}`)
-                // 画完马上写说明
-                setActiveMark(mark.id)
-              }}
-              onChange={(a) => setMarks((l) => l.map((x) => (x.id === a.id ? a : x)), `ann:${a.id}`)}
-              onRemove={(id) => {
-                setMarks((l) => l.filter((x) => x.id !== id), `ann:rm:${id}`)
-                setActiveMark('')
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {menuWidget ? (
+            <WidgetMenuItems
+              w={menuWidget}
+              root={root}
+              actions={actions}
+              kind={isWebType(root.Type) ? 'web' : 'game'}
+              onRename={() => onRename(menuWidget.id)}
+              align={{
+                run: (how) => align(how, menuWidget.id),
+                enabled: findParent(root, menuWidget.id)?.Type === 'CanvasPanel',
               }}
             />
-          </div>
-        </div>
-      </div>
+          ) : (
+            <>
+              <ContextMenuItem disabled={!actions.canPaste} onSelect={() => actions.paste(root.id)}>
+                <ClipboardPaste className="h-4 w-4" />
+                {t('粘贴')}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => setZoom(0)}>
+                <Maximize className="h-4 w-4" />
+                {t('适应窗口')}
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => setZoom(1)}>
+                <RotateCcw className="h-4 w-4" />
+                {t('原始大小')}
+              </ContextMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
       <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
         <AnnotationToolbar
           tool={tool}

@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { ChevronDown, Diamond } from 'lucide-react'
-import { WIDGETS, isWebType, type SlotType, type Widget, type WidgetType } from '@shared/umg'
+import {
+  MIN_WIDGET_SIZE,
+  WIDGETS,
+  clampWidgetSize,
+  isWebType,
+  type SlotType,
+  type Widget,
+  type WidgetType,
+} from '@shared/umg'
 import { DEVICE_KEY, propsAt, type Device } from '@shared/web'
 import type { DesignImage } from '@shared/design'
 import {
@@ -30,7 +38,7 @@ import {
   getPath,
   setPath,
 } from './fields'
-import { WIDGET_ICON } from './Hierarchy'
+import { WIDGET_ICON } from './WidgetMenu'
 
 type Kind =
   | 'num'
@@ -595,7 +603,12 @@ export function Details({
             />
             {mode === 'fixed' && (
               <div className="w-16 shrink-0">
-                <NumInput label={label} min={0} value={v as number} onChange={(n) => set(s.path, n)} />
+                <NumInput
+                  label={label}
+                  min={MIN_WIDGET_SIZE}
+                  value={v as number}
+                  onChange={(n) => set(s.path, clampWidgetSize(n))}
+                />
               </div>
             )}
           </>
@@ -646,6 +659,20 @@ export function Details({
   const stretchX = canvas && slot.LayoutData.Anchors.Minimum.X !== slot.LayoutData.Anchors.Maximum.X
   const stretchY = canvas && slot.LayoutData.Anchors.Minimum.Y !== slot.LayoutData.Anchors.Maximum.Y
   const gs = (p: string) => getPath(slot, p)
+  // 手输宽高按最小尺寸夹紧；拉伸时两边都是边距，任一边都不能大到把宽度挤成负数
+  const clampEdge = (axis: 'x' | 'y', edge: 'start' | 'end', n: number) => {
+    if (!canvas) return n
+    const L = slot.LayoutData
+    const k = axis === 'x' ? 'w' : 'h'
+    const size = parentSize()[k]
+    const min = axis === 'x' ? L.Anchors.Minimum.X : L.Anchors.Minimum.Y
+    const max = axis === 'x' ? L.Anchors.Maximum.X : L.Anchors.Maximum.Y
+    if (min === max) return edge === 'end' ? clampWidgetSize(n) : n
+    const span = (max - min) * size
+    const start = axis === 'x' ? L.Offsets.Left : L.Offsets.Top
+    const end = axis === 'x' ? L.Offsets.Right : L.Offsets.Bottom
+    return Math.min(n, span - (edge === 'start' ? end : start) - MIN_WIDGET_SIZE)
+  }
 
   return (
     <div className="text-[0.75rem]">
@@ -723,12 +750,12 @@ export function Details({
                   <NumInput
                     prefix="L"
                     value={gs('LayoutData.Offsets.Left')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Left', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Left', clampEdge('x', 'start', n))}
                   />
                   <NumInput
                     prefix="R"
                     value={gs('LayoutData.Offsets.Right')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Right', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Right', clampEdge('x', 'end', n))}
                   />
                 </FieldRow>
               ) : (
@@ -741,7 +768,7 @@ export function Details({
                   <NumInput
                     prefix="W"
                     value={gs('LayoutData.Offsets.Right')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Right', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Right', clampEdge('x', 'end', n))}
                   />
                 </FieldRow>
               )}
@@ -750,12 +777,12 @@ export function Details({
                   <NumInput
                     prefix="T"
                     value={gs('LayoutData.Offsets.Top')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Top', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Top', clampEdge('y', 'start', n))}
                   />
                   <NumInput
                     prefix="B"
                     value={gs('LayoutData.Offsets.Bottom')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Bottom', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Bottom', clampEdge('y', 'end', n))}
                   />
                 </FieldRow>
               ) : (
@@ -768,7 +795,7 @@ export function Details({
                   <NumInput
                     prefix="H"
                     value={gs('LayoutData.Offsets.Bottom')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Bottom', n)}
+                    onChange={(n) => setSlot('LayoutData.Offsets.Bottom', clampEdge('y', 'end', n))}
                   />
                 </FieldRow>
               )}

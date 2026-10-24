@@ -95,6 +95,30 @@ export const Annotation = z.object({
 })
 export type Annotation = z.infer<typeof Annotation>
 
+/**
+ * 用户引用到对话里的控件：点右键「引用到 AI 对话」时记下当时的名字、路径、尺寸和用到的图 / 文字。
+ * 存的是快照，AI 之后改了树也不会让已经发出的引用变样。
+ */
+export const WidgetCitation = z.object({
+  /** 引用条自己的 id，用来删除 */
+  id: z.string(),
+  /** 当时的控件 id，只作参考 */
+  widgetId: z.string().default(''),
+  name: z.string(),
+  type: z.string(),
+  /** 在哪个子控件里：空是主界面 */
+  target: z.string().default(''),
+  /** 从根到它的路径，例如 Main / Panel / Grid */
+  path: z.string().default(''),
+  width: z.number().default(0),
+  height: z.number().default(0),
+  /** 用到的图片（img:<id>） */
+  image: z.string().default(''),
+  /** 文字内容（TextBlock 的 Text、输入框的 HintText、网页 Text 等） */
+  text: z.string().default(''),
+})
+export type WidgetCitation = z.infer<typeof WidgetCitation>
+
 /** AI 在动手之前问用户的问题：每个选项有一句说明，style 是选了以后定下来的整体风格（英文） */
 export const DesignQuestion = z.object({
   text: z.string().min(1).max(500),
@@ -161,6 +185,8 @@ export const DesignMessage = z.object({
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */
   attachments: z.array(Attachment).optional(),
+  /** 用户这条消息引用的控件 */
+  refs: z.array(WidgetCitation).optional(),
   /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看（旧数据） */
   thinking: z.string().optional(),
   tools: z.array(z.any()).optional(),
@@ -450,6 +476,8 @@ export const DesignChatInput = z.object({
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 这次一起发的控件引用（右键「引用到 AI 对话」） */
+  refs: z.array(WidgetCitation).max(30).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
   run: z
     .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })
@@ -756,6 +784,8 @@ export function buildDesignPrompt(
   history: DesignMessage[],
   request: string,
   annotations?: Annotation[],
+  /** 用户从画布 / 控件树引用过来的控件 */
+  refs: WidgetCitation[] = [],
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
   /** 风格库里同类（游戏 / 网页）的风格：风格还没定时可以作为选项 */
   styles: SavedStyle[] = [],
@@ -826,6 +856,7 @@ ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
+${refs.length ? `\n${widgetCitationText(refs, d)}\n` : ''}
 ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 你有 design 工具（MCP），每一次调用都会马上显示给用户。**一次输出太长会让连接中途断开、这一轮整个失败**，所以按区域分多次小步提交：
 - 每次调用最多 ${MAX_TOOL_ITEMS} 条 items、合计最多 ${MAX_TOOL_WIDGETS} 个控件（带的子控件也算）、add_images 最多 ${MAX_TOOL_IMAGES} 张，超过会被退回
@@ -1074,6 +1105,25 @@ export const hasMask = (a: Pick<Annotation, 'shape' | 'strokes'>) =>
 
 /** 只有本机 ComfyUI 能按蒙版做局部重绘；浏览器标签页和图片 CLI 只能整张重画 */
 export const canInpaint = (source: Pick<ImageSource, 'kind'>) => source.kind === 'local'
+
+/** 发给 AI 的控件引用说明：编号、路径、尺寸、用到的图片和文字，AI 按它定位用户说的控件 */
+export function widgetCitationText(list: WidgetCitation[], d: Pick<Design, 'designSize'>) {
+  const lines = list.map((r, i) => {
+    const where = r.target ? `在子控件 ${r.target} 里` : '在主界面里'
+    const size = r.width || r.height ? `，尺寸 ${r.width}×${r.height}` : ''
+    return [
+      `${i + 1}. ${r.path || r.name}（${r.type}）${where}${size}`,
+      r.image ? `   用到的图片：${r.image}` : '',
+      r.text.trim() ? `   文字：${r.text.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  })
+  return `## 用户引用的控件
+用户从画布 / 控件树里把下面这些控件引用到了对话里，写「这个控件」「选中的」时指的是它们。改之前先用 find_widgets 或当前控件树确认控件还在、再改。
+设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}。
+${lines.join('\n')}`
+}
 
 /** 发给 AI 的标注说明：编号、意思、位置、范围里的控件和用户写的说明 */
 export function annotationText(list: Annotation[], size: { X: number; Y: number }) {

@@ -39,6 +39,7 @@ import {
   type DesignImage,
   type ImageSource,
   type DesignKind,
+  type WidgetCitation,
 } from '@shared/design'
 import {
   IMAGE_SLOT,
@@ -56,8 +57,10 @@ import {
   mapWidget,
   moveWidget,
   newWidget,
+  pathTo,
   removeWidget,
   replaceWidget,
+  resizeCanvasSlot,
   uniqueName,
   wrapWidget,
   usedImages,
@@ -89,7 +92,8 @@ import { renameInAnimations, setKeyAt, type AnimProp, type AnimValue } from '@sh
 import { Viewport } from '@/components/design/Viewport'
 import { DataPanel } from '@/components/design/DataPanel'
 import { emptyData } from '@shared/design-data'
-import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
+import { Hierarchy, Palette } from '@/components/design/Hierarchy'
+import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
@@ -316,6 +320,10 @@ function Designer({ id }: { id: string }) {
   const [device, setDevice] = useState<Device>('desktop')
   useEffect(() => setExtra([]), [target])
   const [hasClip, setHasClip] = useState(!!clipboard)
+  /** 引用到 AI 对话的控件快照；发送后清掉 */
+  const [cites, setCites] = useState<WidgetCitation[]>([])
+  /** 画布右键「重命名」：让控件树里那一行进入改名状态 */
+  const [renameRequest, setRenameRequest] = useState<{ id: string; at: number }>()
   const [tab, setTab] = useState<'tree' | 'images' | 'widgets'>('tree')
   const [imageSel, setImageSel] = useState('')
   /** 双击图片后在画布区域放大预览的图片 */
@@ -471,7 +479,46 @@ function Designer({ id }: { id: string }) {
     setTab('tree')
   }
 
-  const actions: TreeActions = {
+  /** 把控件当时的样子引用到 AI 对话：名字、路径、尺寸、用到的图和文字都存成快照 */
+  const citeWidget = (wid: string) => {
+    if (!tree || !doc) return
+    const w = findWidget(tree, wid)
+    if (!w) return
+    const el = document.querySelector<HTMLElement>(`[data-wid="${CSS.escape(wid)}"]`)
+    const off = w.Slot?.LayoutData?.Offsets
+    const textOf = (x: Widget): string => {
+      const own = x.Properties?.Text ?? x.Properties?.HintText ?? x.Properties?.Placeholder
+      if (typeof own === 'string' && own.trim()) return own.trim()
+      for (const c of x.Children ?? []) {
+        const v = textOf(c)
+        if (v) return v
+      }
+      return ''
+    }
+    const imgs = [...usedImages([w])].map((imgId) => {
+      const im = doc.images.find((i) => i.id === imgId)
+      return im ? `${im.name}（img:${imgId}）` : `img:${imgId}`
+    })
+    const next: WidgetCitation = {
+      id: crypto.randomUUID(),
+      widgetId: wid,
+      name: w.Name,
+      type: w.Type,
+      target,
+      path: pathTo(tree, wid)
+        .map((x) => x.Name)
+        .join(' / '),
+      width: Math.round(el?.offsetWidth || Number(off?.Right) || 0),
+      height: Math.round(el?.offsetHeight || Number(off?.Bottom) || 0),
+      image: imgs.length ? imgs.join('、') : '',
+      text: textOf(w),
+    }
+    // 同一个控件再引用一次就换成最新的快照
+    setCites((list) => [...list.filter((x) => !(x.widgetId === wid && x.target === target)), next])
+    setChatOpen(true)
+  }
+
+  const actions: WidgetMenuActions = {
     select: (wid) => {
       setSelected(wid)
       setExtra([])
@@ -565,14 +612,6 @@ function Designer({ id }: { id: string }) {
       setSelected(res.id)
     },
     replace: (wid, type) => editTree((r) => replaceWidget(r, wid, type)),
-    shift: (wid, delta) => {
-      if (!tree) return
-      const p = findParent(tree, wid)
-      if (!p) return
-      const from = p.Children!.findIndex((c) => c.id === wid)
-      // moveWidget 往后挪时会先减一，所以下移要给 from + 2
-      editTree((r) => moveWidget(r, wid, p.id, delta > 0 ? from + 2 : Math.max(0, from - 1)))
-    },
     components: doc?.components.filter((c) => c.Name !== target).map((c) => c.Name) ?? [],
     extract: (wid) => {
       if (!tree || !doc) return
@@ -593,12 +632,36 @@ function Designer({ id }: { id: string }) {
       })
       toast.success(t('已提取成子控件 {name}', { name }))
     },
+    lock: (wid) =>
+      editTree((r) =>
+        mapWidget(r, wid, (w) => ({ ...w, Properties: { ...w.Properties, Locked: !w.Properties.Locked } })),
+      ),
+    layer: (wid, how: WidgetLayer) =>
+      editTree((r) => {
+        const w = findWidget(r, wid)
+        const p = findParent(r, wid)
+        if (!w || !p) return r
+        // 画布里的控件按 ZOrder 叠放；其他面板按子控件的先后顺序
+        if (p.Type === 'CanvasPanel' && w.Slot) {
+          const zs = p.Children!.map((c) => Number(c.Slot?.ZOrder) || 0)
+          const z = Number(w.Slot.ZOrder) || 0
+          const next =
+            how === 'top' ? Math.max(...zs) + 1 : how === 'bottom' ? Math.min(...zs) - 1 : z + (how === 'up' ? 1 : -1)
+          return mapWidget(r, wid, (x) => ({ ...x, Slot: { ...x.Slot, ZOrder: next } }))
+        }
+        const from = p.Children!.findIndex((c) => c.id === wid)
+        const index =
+          how === 'up' ? Math.max(0, from - 1) : how === 'down' ? from + 2 : how === 'top' ? 0 : p.Children!.length
+        return moveWidget(r, wid, p.id, index)
+      }),
+    cite: citeWidget,
   }
 
   const onMove = (wid: string, d: { dx: number; dy: number; mode: 'move' | 'resize' }, key: string) =>
     editTree(
       (r) =>
         mapWidget(r, wid, (w) => {
+          if (w.Properties?.Locked) return w
           const L = w.Slot?.LayoutData
           if (!L) return w
           const o = { ...L.Offsets }
@@ -610,17 +673,9 @@ function Designer({ id }: { id: string }) {
             if (sx) o.Right -= d.dx
             if (sy) o.Bottom -= d.dy
           } else {
-            // 拉伸的方向改右 / 下边距，不拉伸的改宽高（对齐点不是左上时位置跟着补偿）
-            if (sx) o.Right -= d.dx
-            else {
-              o.Right = Math.max(1, o.Right + d.dx)
-              o.Left += d.dx * L.Alignment.X
-            }
-            if (sy) o.Bottom -= d.dy
-            else {
-              o.Bottom = Math.max(1, o.Bottom + d.dy)
-              o.Top += d.dy * L.Alignment.Y
-            }
+            // 拉伸的方向改右 / 下边距，不拉伸的改宽高（对齐点不是左上时位置跟着补偿）；
+            // 缩到 MIN_WIDGET_SIZE 就停住，不出现负尺寸或翻转
+            return { ...w, Slot: resizeCanvasSlot(w.Slot!, d.dx, d.dy) }
           }
           return { ...w, Slot: { ...w.Slot, LayoutData: { ...L, Offsets: o } } }
         }),
@@ -786,6 +841,7 @@ function Designer({ id }: { id: string }) {
       answers?: { question: string; answer: string }[]
       concept: boolean
       inpaint?: boolean
+      refs?: WidgetCitation[]
     },
   ) => {
     // 只重绘蒙版：本机 ComfyUI 按蒙版做真正的局部重绘；别的生图方式只能整张重画，先告诉用户再照常发送
@@ -849,11 +905,14 @@ function Designer({ id }: { id: string }) {
       ed.absorb(await api.saveDesign(id, next))
       ed.absorb(
         await api.designChat(id, {
-          text: text.trim() || (annotations.length ? t('按标注修改') : t('参考附件')),
+          text:
+            text.trim() ||
+            (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
           source,
           count,
           annotations,
           attachments,
+          refs: extra.refs ?? [],
           run,
           ...extra,
         }),
@@ -877,6 +936,7 @@ function Designer({ id }: { id: string }) {
           count,
           annotations: [],
           attachments: [],
+          refs: [],
           run,
           askUser: false,
           concept: false,
@@ -1108,6 +1168,12 @@ function Designer({ id }: { id: string }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative flex min-h-0 min-w-0 flex-1">
             <Viewport
+              actions={actions}
+              onRename={(wid) => {
+                setSelected(wid)
+                setTab('tree')
+                setRenameRequest({ id: wid, at: Date.now() })
+              }}
               animations={shownDoc?.animations ?? doc.animations}
               animCommand={animOpen ? animCommand : null}
               dragImage={live ? null : dragImage}
@@ -1468,6 +1534,7 @@ function Designer({ id }: { id: string }) {
                   actions={actions}
                   extra={extra.filter((x) => x !== selected)}
                   onPick={pick}
+                  renameRequest={renameRequest}
                 />
               </>
             ) : tab === 'widgets' ? (
@@ -1605,6 +1672,9 @@ function Designer({ id }: { id: string }) {
               onRemoveAnnotation={(aid) =>
                 ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
               }
+              cites={cites}
+              onRemoveCite={(cid) => setCites((list) => list.filter((c) => c.id !== cid))}
+              onClearCites={() => setCites([])}
               hasTemplate={!!concept.approved}
               request={request}
               conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
