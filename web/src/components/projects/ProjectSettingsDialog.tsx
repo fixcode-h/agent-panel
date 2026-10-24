@@ -9,6 +9,7 @@ import {
   FileText,
   FlaskConical,
   GraduationCap,
+  Library,
   Loader2,
   Plus,
   Settings2,
@@ -61,6 +62,7 @@ import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclud
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { ProjectSkillsSection } from './ProjectSkillsSection'
 import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
@@ -606,6 +608,10 @@ function Body({
             <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             {t('项目教训')}
           </NavItem>
+          <NavItem on={section === 'skills'} onClick={() => setSection('skills')}>
+            <Library className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            Skill
+          </NavItem>
           <NavItem
             on={section === 'doc'}
             onClick={() => setSection('doc')}
@@ -631,7 +637,19 @@ function Body({
             </NavItem>
           ))}
         </nav>
-        {section === 'doc' || section.startsWith('cli:') ? (
+        {section === 'skills' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+            {!project ? (
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
+            ) : !project.path || draft.path.trim() !== project.path ? (
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                {t('本地目录改了，先点「确认」保存，再管理新目录里的技能。')}
+              </p>
+            ) : (
+              <ProjectSkillsSection key={project.id} projectId={project.id} />
+            )}
+          </div>
+        ) : section === 'doc' || section.startsWith('cli:') ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
             {!docsReady || !docs ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">

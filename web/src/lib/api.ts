@@ -65,6 +65,7 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
+import type { ProjectSkillsView } from '@shared/project-skills'
 import type {
   Annotation,
   BrowserStatus,
@@ -303,6 +304,19 @@ export const api = {
     }),
   copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** 项目设置里的 Skill 分节：项目目录下的技能 */
+  projectSkills: (projectId: string) =>
+    request<ProjectSkillsView>(`/project-skills?projectId=${encodeURIComponent(projectId)}`),
+  projectSkillFile: (projectId: string, repo: string, name: string) =>
+    request<LibraryFile>(`/project-skills/file?${new URLSearchParams({ projectId, repo, name })}`),
+  saveProjectSkill: (b: { projectId: string; repo: string; name: string; content: string }) =>
+    request<{ ok: boolean; dir: string }>('/project-skills/file', json('PUT', b)),
+  createProjectSkill: (b: { projectId: string; repo: string; name: string; description?: string }) =>
+    request<{ dir: string }>('/project-skills', json('POST', b)),
+  deleteProjectSkill: (projectId: string, repo: string, name: string) =>
+    request<{ ok: boolean }>(`/project-skills/file?${new URLSearchParams({ projectId, repo, name })}`, {
+      method: 'DELETE',
+    }),
   /** MCP 工具 */
   mcpTools: () => request<McpOverview>('/mcp-tools'),
   saveMcpTool: (server: McpServer, clis: string[]) =>

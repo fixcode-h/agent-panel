@@ -5,6 +5,13 @@
 import { demoAccounts } from './demo-accounts'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
+import {
+  projectSkillRepos,
+  skillIssues,
+  skillTemplate,
+  type ProjectSkill,
+  type ProjectSkillsView,
+} from '@shared/project-skills'
 import { z } from 'zod'
 import {
   Agent,
@@ -1617,6 +1624,95 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
   return structuredClone(local)
 }
 
+/** 演示的项目技能：改了只存在浏览器内存里，刷新页面回到初始内容 */
+const demoProjectSkills: ProjectSkill[] = [
+  {
+    name: 'release-notes',
+    description: '按仓库的提交说明格式整理更新说明',
+    path: '/home/demo/code/web-shop/.agents/skills/release-notes/SKILL.md',
+    dir: '.agents/skills/release-notes',
+    source: '.agents/skills',
+    clis: ['commandcode', 'gemini', 'pi'],
+    issues: [],
+  },
+  {
+    name: 'shop-i18n',
+    description: '',
+    path: '/home/demo/code/web-shop/.claude/skills/shop-i18n/SKILL.md',
+    dir: '.claude/skills/shop-i18n',
+    source: '.claude/skills',
+    clis: ['claude'],
+    issues: ['front matter 里缺少 description：Agent 靠它判断什么时候用这个技能'],
+  },
+]
+
+/** 演示技能的内容：改 SKILL.md 时存这里 */
+const demoSkillFiles = new Map<string, string>([
+  [
+    '.agents/skills/release-notes',
+    '---\nname: release-notes\ndescription: 按仓库的提交说明格式整理更新说明\n---\n\n按最近一次发布的提交整理，一条一行。\n',
+  ],
+  ['.claude/skills/shop-i18n', '---\nname: shop-i18n\n---\n\n把界面文案补上英文。\n'],
+])
+
+/** 项目设置里的 Skill 分节：和 server/project-skills.ts 返回同样的字段 */
+function demoProjectSkillsApi(method: string, seg: string[], query: URLSearchParams, body: Record<string, unknown>) {
+  const projectPath = '/home/demo/code/web-shop'
+  const repos = projectSkillRepos().map((r) => ({ ...r, exists: true }))
+  const view = (): ProjectSkillsView => ({ path: projectPath, repos, skills: demoProjectSkills })
+  const key = (repo: string, name: string) => `${repo}/${name}`
+  const find = (repo: string, name: string) =>
+    demoProjectSkills.find((s) => s.source === repo && s.name === name) ?? fail('没有这一项')
+  const repo = query.get('repo') ?? ''
+  const name = query.get('name') ?? ''
+  if (seg[1] === 'file') {
+    if (method === 'GET') {
+      const skill = find(repo, name)
+      return {
+        content: demoSkillFiles.get(key(repo, name)) ?? '',
+        files: skill.name === 'release-notes' ? ['template.md'] : [],
+      }
+    }
+    if (method === 'DELETE') {
+      find(repo, name)
+      demoProjectSkills.splice(
+        demoProjectSkills.findIndex((s) => s.source === repo && s.name === name),
+        1,
+      )
+      demoSkillFiles.delete(key(repo, name))
+      return { ok: true }
+    }
+    // PUT：改 SKILL.md，问题和说明按新内容重算
+    const skill = find(repo, name)
+    const content = String(body.content ?? '')
+    if (!content.trim()) fail('SKILL.md 不能为空')
+    demoSkillFiles.set(key(repo, name), content)
+    skill.issues = skillIssues(name, content)
+    skill.description = /^description:\s*(.*)$/m.exec(content)?.[1]?.trim() ?? ''
+    return { ok: true, dir: `${repo}/${name}` }
+  }
+  if (method === 'POST') {
+    const target = String(body.repo ?? '')
+    const newName = String(body.name ?? '')
+    if (!target || !newName) fail('名字和目录不能为空')
+    if (demoProjectSkills.some((s) => s.source === target && s.name === newName)) fail(`「${newName}」已经有了`)
+    const description = String(body.description ?? '')
+    const content = skillTemplate(newName, description)
+    demoSkillFiles.set(key(target, newName), content)
+    demoProjectSkills.push({
+      name: newName,
+      description,
+      path: `${projectPath}/${target}/${newName}/SKILL.md`,
+      dir: `${target}/${newName}`,
+      source: target,
+      clis: projectSkillRepos().find((r) => r.dir === target)?.clis ?? [],
+      issues: skillIssues(newName, content),
+    })
+    return { dir: `${target}/${newName}` }
+  }
+  return view()
+}
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -1644,6 +1740,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
+  if (res === 'project-skills') return demoProjectSkillsApi(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'clis') {
     if (id === 'jobs' && !sub) {
       const latest = new Map<string, CliInstallJob>()
