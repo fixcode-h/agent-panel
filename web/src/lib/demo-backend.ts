@@ -2571,6 +2571,11 @@ function tasksRoute(
   }
   if (sub === 'stop') {
     if (live.has(id)) live.get(id)!.stop = true
+    // 和真实后端一样：还在等回答的提问马上作废，返回的任务里不能再带着它，不然提问窗口关不掉
+    if (task.requests?.some((r) => r.kind !== 'confirm')) {
+      task.requests = task.requests.filter((r) => r.kind === 'confirm')
+      persist()
+    }
     // 强制停止：演示里没有常驻 CLI，把这一轮的进程状态直接丢掉就相当于结束了进程
     if (query.get('force')) live.delete(id)
     return task
