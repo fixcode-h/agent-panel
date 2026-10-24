@@ -24,6 +24,7 @@ import {
   DesignDoc,
   DesignImage,
   GenerateImageInput,
+  InpaintConceptInput,
   NewDesignInput,
   AiPrompts,
   PromptAiInput,
@@ -32,6 +33,7 @@ import {
   conceptPrompt,
   emptyConcept,
   emptyRoot,
+  hasMask,
   imagePrompt,
   type DesignKind,
   localPrompts,
@@ -65,7 +67,7 @@ import { localGenerate } from './comfy.ts'
 import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
-import { normalizeGenerated, sliceSheet } from './image.ts'
+import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -446,6 +448,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     onProgress: (text: string) => void,
     use: WorkflowUse,
     kind: DesignKind,
+    /** 局部重绘的原图和蒙版图 */
+    inpaint?: { image: Buffer; mask: Buffer },
   ): Promise<Buffer[]> {
     await localGenerate(
       {
@@ -457,6 +461,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         width: size.width,
         height: size.height,
         count,
+        ...(inpaint ? { inpaint } : {}),
         onImage,
         onProgress,
       },
@@ -1714,6 +1719,97 @@ ${prompt}`,
         return bad(c, (e as Error).message)
       }
     })
+    // 只重绘原画上蒙版涂过的区域：把原图和蒙版图交给本机 ComfyUI，用 SetLatentNoiseMask 锁定蒙版外面
+    .post('/:id/concept/inpaint', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const p = InpaintConceptInput.safeParse(await c.req.json())
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const { id: cid, mask, text, source } = p.data
+      // 浏览器标签页和图片 CLI 只接受参考图，做不出像素级的蒙版：让页面对用户说明并整张重画
+      if (source.kind !== 'local') return bad(c, t('当前生成方式不支持局部重绘，只能整张重画'))
+      const img = conceptOf(d).images.find((i) => i.id === cid)
+      if (!img) return bad(c, t('没有这张原画'), 404)
+      if (!hasMask(mask)) return bad(c, t('先在原画上涂出要重绘的区域'))
+      const file = conceptFile(d, cid)
+      const original = file ? await readFile(file).catch(() => undefined) : undefined
+      if (!original?.length) return bad(c, t('原画文件不在了'), 404)
+      const style = await projectStyle(d)
+      const maskPng = encodePng(maskImage(mask.strokes, img.width || d.designSize.X, img.height || d.designSize.Y))
+      startJob(d, async (job) => {
+        job.phase = 'concepts'
+        job.preview = undefined
+        job.text = ''
+        job.parts = undefined
+        const progress = { want: 1, got: 0, text: undefined as string | undefined }
+        job.concepts = progress
+        const cur = cache.get(d.id)!
+        const round = Math.max(0, ...conceptOf(cur).images.map((i) => i.round)) + 1
+        const promptText = [img.prompt, text].filter(Boolean).join('\n')
+        const prompt = conceptPrompt(
+          { prompt: promptText || t('按蒙版里标出的改动重画这一块'), negative: img.negative },
+          cur.designSize,
+          cur.style,
+          style,
+          cur.kind,
+          true,
+        )
+        // 存图串行：结果按到达的顺序编号
+        let chain = Promise.resolve()
+        let got = 0
+        const add = (buf: Buffer) => {
+          got++
+          chain = chain
+            .then(async () => {
+              const dd = cache.get(d.id)!
+              const want = { width: dd.designSize.X, height: dd.designSize.Y, transparent: false }
+              const stored = await storeImage(dd, normalizeGenerated(buf, want))
+              const c0 = conceptOf(dd)
+              const out: ConceptImage = {
+                id: `c${round}_${c0.images.filter((i) => i.round === round).length + 1}`,
+                ...stored,
+                prompt: promptText,
+                negative: img.negative,
+                round,
+                base: img.id,
+                source: 'local',
+                at: now(),
+              }
+              dd.concept = { images: [...c0.images, out], selected: out.id, approved: '' }
+              progress.got++
+              await save(dd)
+            })
+            .catch((e) => log.warn('designs', '保存局部重绘的原画失败', { error: (e as Error).message }))
+        }
+        try {
+          await localRun(
+            source,
+            prompt,
+            {
+              subject: promptText || img.prompt,
+              style: cur.style,
+              projectStyle: style,
+              kind: cur.kind,
+              negative: img.negative,
+            },
+            { width: img.width || cur.designSize.X, height: img.height || cur.designSize.Y },
+            1,
+            job,
+            add,
+            (x) => (progress.text = x),
+            'concept',
+            cur.kind,
+            { image: original, mask: maskPng },
+          )
+        } finally {
+          await chain
+        }
+        if (!got) throw new Error(t('局部重绘没有生成出图片'))
+      })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+
     // 页面长轮询取 AI 要的截图（screenshot 工具）：有请求立刻返回，没有就挂着等下一次
     .get('/:id/capture/wait', async (c) => {
       const d = await get(c.req.param('id'))

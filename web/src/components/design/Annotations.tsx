@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  Eraser,
   Eye,
   EyeOff,
   Hand,
   MapPin,
   MousePointer2,
   MoveUpRight,
+  Paintbrush,
   PenLine,
   Square,
   Trash2,
+  Undo2,
   X,
   type LucideIcon,
   Play,
 } from 'lucide-react'
-import { ANNOTATION_KINDS, annotationBox, type Annotation, type AnnotationKind } from '@shared/design'
+import { ANNOTATION_KINDS, annotationBox, type Annotation, type AnnotationKind, type MaskStroke } from '@shared/design'
 import { walk, type Widget } from '@shared/umg'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
@@ -22,7 +25,7 @@ import { t } from '@shared/i18n'
  * 标注：在效果图上框选、画箭头、圈画、打点，标出要改的地方，再在 AI 对话里一起发出去。
  * 颜色表示意思：红色修改、蓝色新增、橙色删除、绿色保持不变。
  */
-export type Tool = 'select' | 'hand' | 'play' | 'rect' | 'arrow' | 'pen' | 'pin'
+export type Tool = 'select' | 'hand' | 'play' | 'rect' | 'arrow' | 'pen' | 'pin' | 'mask'
 
 export const KIND_COLOR: Record<AnnotationKind, string> = {
   change: '#f43f5e',
@@ -30,8 +33,14 @@ export const KIND_COLOR: Record<AnnotationKind, string> = {
   remove: '#f59e0b',
   keep: '#22c55e',
 }
+/** 蒙版不是标注的意思，用单独的颜色，和四种标注区分开 */
+export const MASK_COLOR = '#22d3ee'
 export const kindLabel = (k: AnnotationKind) =>
   ({ change: t('修改'), add: t('新增'), remove: t('删除'), keep: t('保持不变') })[k]
+/** 标注显示的颜色和名字：蒙版是块状涂抹，不是修改 / 新增这类意思 */
+export const markColor = (a: Pick<Annotation, 'shape' | 'kind'>) =>
+  a.shape === 'mask' ? MASK_COLOR : KIND_COLOR[a.kind]
+export const markLabel = (a: Pick<Annotation, 'shape' | 'kind'>) => (a.shape === 'mask' ? t('蒙版') : kindLabel(a.kind))
 const KIND_HINT: Record<AnnotationKind, string> = {
   change: t('这里要改'),
   add: t('在这里加东西'),
@@ -47,6 +56,7 @@ const TOOLS: { id: Tool; icon: LucideIcon; label: string; key: string }[] = [
   { id: 'arrow', icon: MoveUpRight, label: t('箭头标注'), key: 'A' },
   { id: 'pen', icon: PenLine, label: t('画笔标注'), key: 'P' },
   { id: 'pin', icon: MapPin, label: t('打点标注'), key: 'T' },
+  { id: 'mask', icon: Paintbrush, label: t('蒙版涂抹：涂出要重绘的区域'), key: 'M' },
 ]
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((x) => [x.key.toLowerCase(), x.id]))
 export const isMarkTool = (tool: Tool) => tool !== 'select' && tool !== 'hand' && tool !== 'play'
@@ -62,6 +72,7 @@ export function AnnotationToolbar({
   onToggleVisible,
   onClear,
   tools,
+  mask,
 }: {
   /** 只列出这些工具（看大图时只要标注工具和选择） */
   tools?: Tool[]
@@ -73,6 +84,15 @@ export function AnnotationToolbar({
   visible: boolean
   onToggleVisible: () => void
   onClear: () => void
+  /** 蒙版工具的参数：笔刷大小、橡皮擦、撤销上一笔 */
+  mask?: {
+    size: number
+    erase: boolean
+    canUndo: boolean
+    onSize: (n: number) => void
+    onErase: (v: boolean) => void
+    onUndo: () => void
+  }
 }) {
   return (
     <div
@@ -88,27 +108,56 @@ export function AnnotationToolbar({
           </ToolButton>
         </span>
       ))}
-      <Sep />
-      <div role="radiogroup" aria-label={t('标注的意思')} className="flex items-center gap-0.5 px-0.5">
-        {ANNOTATION_KINDS.map((k) => (
-          <button
-            key={k}
-            role="radio"
-            aria-checked={kind === k}
-            aria-label={kindLabel(k)}
-            onClick={() => onKind(k)}
-            title={`${kindLabel(k)}：${KIND_HINT[k]}`}
-            className={cn(
-              'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
-              kind === k && 'bg-white/10 text-white',
-            )}
-          >
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} />
-            {/* 只给选中的写字，工具栏在窄的效果区里也放得下 */}
-            {kind === k && <span className="whitespace-nowrap">{kindLabel(k)}</span>}
-          </button>
-        ))}
-      </div>
+      {mask && tool === 'mask' && (
+        <>
+          <Sep />
+          <div className="flex items-center gap-1 px-0.5">
+            <input
+              type="range"
+              min={8}
+              max={160}
+              step={4}
+              value={mask.size}
+              onChange={(e) => mask.onSize(Number(e.target.value))}
+              aria-label={t('蒙版笔刷大小')}
+              title={t('笔刷大小：{n} 像素', { n: mask.size })}
+              className="h-1 w-16 cursor-pointer accent-[#22d3ee]"
+            />
+            <span className="w-7 text-center font-mono text-[0.6875rem] text-white/60">{mask.size}</span>
+            <ToolButton label={t('橡皮擦')} on={mask.erase} onClick={() => mask.onErase(!mask.erase)}>
+              <Eraser className="h-4 w-4" strokeWidth={1.8} />
+            </ToolButton>
+            <ToolButton label={t('撤销上一笔')} onClick={mask.onUndo} disabled={!mask.canUndo}>
+              <Undo2 className="h-4 w-4" strokeWidth={1.8} />
+            </ToolButton>
+          </div>
+        </>
+      )}
+      {tool === 'mask' ? null : (
+        <>
+          <Sep />
+          <div role="radiogroup" aria-label={t('标注的意思')} className="flex items-center gap-0.5 px-0.5">
+            {ANNOTATION_KINDS.map((k) => (
+              <button
+                key={k}
+                role="radio"
+                aria-checked={kind === k}
+                aria-label={kindLabel(k)}
+                onClick={() => onKind(k)}
+                title={`${kindLabel(k)}：${KIND_HINT[k]}`}
+                className={cn(
+                  'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
+                  kind === k && 'bg-white/10 text-white',
+                )}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} />
+                {/* 只给选中的写字，工具栏在窄的效果区里也放得下 */}
+                {kind === k && <span className="whitespace-nowrap">{kindLabel(k)}</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {count > 0 && (
         <>
           <Sep />
@@ -130,22 +179,26 @@ function ToolButton({
   label,
   on,
   onClick,
+  disabled,
   children,
 }: {
   label: string
   on?: boolean
   onClick: () => void
+  disabled?: boolean
   children: React.ReactNode
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       aria-label={label}
       aria-pressed={on}
       title={label}
       className={cn(
         'grid h-7 w-7 cursor-pointer place-items-center rounded-lg transition-colors hover:bg-white/8 hover:text-white',
         on && 'bg-[#4c9bff]/20 text-[#7cb6ff]',
+        disabled && 'cursor-default opacity-30 hover:bg-transparent hover:text-white/70',
       )}
     >
       {children}
@@ -194,6 +247,8 @@ function containing<T extends { x: number; y: number; w: number; h: number }>(el
 /**
  * 标注层：盖在效果图上，坐标是设计稿像素。画图工具下拖动新建标注；选择工具下点编号可以写说明、改意思、删掉。
  */
+type Draft = Pick<Annotation, 'shape' | 'points' | 'kind' | 'strokes'>
+
 export function AnnotationLayer({
   size,
   scale,
@@ -202,6 +257,8 @@ export function AnnotationLayer({
   list,
   visible,
   active,
+  brush = 48,
+  erase = false,
   onActive,
   onCreate,
   onChange,
@@ -214,12 +271,16 @@ export function AnnotationLayer({
   list: Annotation[]
   visible: boolean
   active: string
+  /** 蒙版笔刷大小（设计稿像素） */
+  brush?: number
+  /** 蒙版橡皮擦：擦掉涂过的区域 */
+  erase?: boolean
   onActive: (id: string) => void
-  onCreate: (a: Pick<Annotation, 'shape' | 'points' | 'kind'>) => void
+  onCreate: (a: Draft) => void
   onChange: (a: Annotation) => void
   onRemove: (id: string) => void
 }) {
-  const [draft, setDraft] = useState<Pick<Annotation, 'shape' | 'points' | 'kind'> | null>(null)
+  const [draft, setDraft] = useState<Draft | null>(null)
   const layer = useRef<HTMLDivElement>(null)
   const drawing = isMarkTool(tool)
 
@@ -235,14 +296,43 @@ export function AnnotationLayer({
     e.stopPropagation()
     const [x, y] = toDesign(e)
     if (tool === 'pin') {
-      onCreate({ shape: 'pin', points: [x, y], kind })
+      onCreate({ shape: 'pin', points: [x, y], kind, strokes: [] })
+      return
+    }
+    // 蒙版：一笔一个笔画，涂满一片半透明区域；橡皮擦是同样宽的黑笔画，渲染时盖掉涂抹
+    if (tool === 'mask') {
+      let cur: Draft = {
+        shape: 'mask',
+        kind,
+        points: [x, y, 0, 0],
+        strokes: [{ erase, w: brush, points: [x, y] }],
+      }
+      setDraft(cur)
+      const move = (ev: PointerEvent) => {
+        const [mx, my] = toDesign(ev)
+        const s = cur.strokes[0]
+        const p = s.points
+        // 点太密时跳过，蒙版数据不会太大
+        if (Math.hypot(mx - p[p.length - 2], my - p[p.length - 1]) < 2 / scale) return
+        cur = { ...cur, strokes: [{ ...s, points: [...p, mx, my] }] }
+        setDraft(cur)
+      }
+      const up = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        setDraft(null)
+        onCreate(cur)
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
       return
     }
     const shape = tool as 'rect' | 'arrow' | 'pen'
-    let cur: Pick<Annotation, 'shape' | 'points' | 'kind'> = {
+    let cur: Draft = {
       shape,
       kind,
       points: shape === 'rect' ? [x, y, 0, 0] : shape === 'arrow' ? [x, y, x, y] : [x, y],
+      strokes: [],
     }
     setDraft(cur)
     const move = (ev: PointerEvent) => {
@@ -306,9 +396,9 @@ export function AnnotationLayer({
           ))}
         </defs>
         {shown.map((a) => (
-          <Shape key={a.id} a={a} scale={scale} on={a.id === active} />
+          <Shape key={a.id} id={a.id} a={a} scale={scale} size={size} on={a.id === active} />
         ))}
-        {draft && <Shape a={draft} scale={scale} on />}
+        {draft && <Shape id="draft" a={draft} scale={scale} size={size} on />}
       </svg>
       {shown.map((a, i) => {
         const b = annotationBox(a)
@@ -321,9 +411,9 @@ export function AnnotationLayer({
               e.stopPropagation()
               onActive(a.id === active ? '' : a.id)
             }}
-            title={a.note || kindLabel(a.kind)}
+            title={a.note || markLabel(a)}
             aria-label={t('标注 {n}', { n: i + 1 })}
-            style={{ left: x * scale, top: y * scale, background: KIND_COLOR[a.kind] }}
+            style={{ left: x * scale, top: y * scale, background: markColor(a) }}
             className={cn(
               'pointer-events-auto absolute z-10 grid h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white shadow-[0_1px_4px_rgba(0,0,0,0.5)] ring-2 ring-white/90',
               a.id === active && 'ring-[3px]',
@@ -349,11 +439,24 @@ export function AnnotationLayer({
   )
 }
 
-function Shape({ a, scale, on }: { a: Pick<Annotation, 'shape' | 'points' | 'kind'>; scale: number; on: boolean }) {
-  const c = KIND_COLOR[a.kind]
+function Shape({
+  id,
+  a,
+  scale,
+  size,
+  on,
+}: {
+  id: string
+  a: Draft
+  scale: number
+  size: { X: number; Y: number }
+  on: boolean
+}) {
+  const c = markColor(a)
   // 线宽按屏幕像素算，缩放后不会变粗变细
   const sw = (on ? 3 : 2.25) / scale
   const p = a.points
+  if (a.shape === 'mask') return <MaskShape id={id} a={a} size={size} scale={scale} />
   if (a.shape === 'rect')
     return (
       <rect
@@ -395,6 +498,63 @@ function Shape({ a, scale, on }: { a: Pick<Annotation, 'shape' | 'points' | 'kin
   return <circle cx={p[0]} cy={p[1]} r={14 / scale} fill={c} fillOpacity={0.18} stroke={c} strokeWidth={sw} />
 }
 
+/**
+ * 蒙版：一块半透明的涂抹区域，不是细线。涂抹的笔画是白、橡皮擦是黑，
+ * 合成一个 SVG mask，再用它给整块画面涂上颜色
+ */
+function MaskShape({
+  id,
+  a,
+  size,
+  scale,
+}: {
+  id: string
+  a: Pick<Annotation, 'shape' | 'points' | 'kind' | 'strokes'>
+  size: { X: number; Y: number }
+  scale: number
+}) {
+  const maskId = `ann-mask-${id}`
+  const w = Math.max(1, size.X)
+  const h = Math.max(1, size.Y)
+  const strokes = (a.strokes ?? []).filter((s) => s.points.length >= 2)
+  return (
+    <g>
+      <defs>
+        <mask id={maskId} maskUnits="userSpaceOnUse" x={0} y={0} width={w} height={h}>
+          <rect x={0} y={0} width={w} height={h} fill="black" />
+          {strokes.map((s, i) => (
+            <StrokePath key={i} s={s} color={s.erase ? 'black' : 'white'} />
+          ))}
+        </mask>
+      </defs>
+      <rect x={0} y={0} width={w} height={h} fill={MASK_COLOR} fillOpacity={0.42} mask={`url(#${maskId})`} />
+      {/* 涂抹的轮廓，看得出蒙版边界在哪 */}
+      {strokes
+        .filter((s) => !s.erase)
+        .map((s, i) => (
+          <StrokePath key={i} s={s} color={MASK_COLOR} width={1 / scale} opacity={0.85} />
+        ))}
+    </g>
+  )
+}
+
+function StrokePath({ s, color, width, opacity }: { s: MaskStroke; color: string; width?: number; opacity?: number }) {
+  const p = s.points
+  const w = width ?? s.w
+  if (p.length === 2) return <circle cx={p[0]} cy={p[1]} r={Math.max(0.5, w / 2)} fill={color} fillOpacity={opacity} />
+  return (
+    <polyline
+      points={p.join(' ')}
+      fill="none"
+      stroke={color}
+      strokeOpacity={opacity}
+      strokeWidth={w}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  )
+}
+
 /** 选中一个标注时旁边弹出的小卡片：写说明、改意思、删除 */
 function AnnotationEditor({
   a,
@@ -431,12 +591,16 @@ function AnnotationEditor({
       <div className="mb-2 flex items-center gap-2">
         <span
           className="grid h-5 min-w-5 place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white"
-          style={{ background: KIND_COLOR[a.kind] }}
+          style={{ background: markColor(a) }}
         >
           {index}
         </span>
         <span className="flex-1 truncate text-[0.75rem] text-muted">
-          {a.widgets.length ? a.widgets.join('、') : t('没有对上具体的控件')}
+          {a.shape === 'mask'
+            ? t('只重绘涂过的这块，其余保持不变')
+            : a.widgets.length
+              ? a.widgets.join('、')
+              : t('没有对上具体的控件')}
         </span>
         <button
           onClick={onClose}
@@ -446,7 +610,7 @@ function AnnotationEditor({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      <div className="mb-2 grid grid-cols-4 gap-1">
+      <div className={cn('mb-2 grid grid-cols-4 gap-1', a.shape === 'mask' && 'hidden')}>
         {ANNOTATION_KINDS.map((k) => (
           <button
             key={k}
@@ -480,7 +644,11 @@ function AnnotationEditor({
           }
         }}
         rows={3}
-        placeholder={t('说明要怎么改，例如：按钮换成金色描边')}
+        placeholder={
+          a.shape === 'mask'
+            ? t('说明这块要改成什么，例如：换成金色描边的按钮')
+            : t('说明要怎么改，例如：按钮换成金色描边')
+        }
         aria-label={t('标注说明')}
         className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[0.78125rem] leading-relaxed outline-none placeholder:text-subtle focus:border-focus"
       />
@@ -510,11 +678,11 @@ export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemo
         >
           <span
             className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"
-            style={{ background: KIND_COLOR[a.kind] }}
+            style={{ background: markColor(a) }}
           >
             {i + 1}
           </span>
-          <span className="shrink-0">{kindLabel(a.kind)}</span>
+          <span className="shrink-0">{markLabel(a)}</span>
           {(a.note || a.widgets[0]) && (
             <span className="max-w-[140px] truncate text-subtle">{a.note || a.widgets[0]}</span>
           )}

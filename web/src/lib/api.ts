@@ -66,6 +66,7 @@ import type {
   McpTestResult,
 } from '@shared/library'
 import type {
+  Annotation,
   BrowserStatus,
   Design,
   DesignChatInput,
@@ -641,6 +642,9 @@ export const api = {
     request<DesignFull>(`/designs/${id}/concept`, json('POST', { action, id: conceptId })),
   uploadConcept: (id: string, data: string) =>
     request<DesignFull>(`/designs/${id}/concept/upload`, json('POST', { data })),
+  /** 只重绘原画上蒙版涂过的区域；只有本机 ComfyUI 支持，别的来源服务端会拒绝 */
+  inpaintConcept: (id: string, body: { id: string; mask: Annotation; text?: string; source: ImageSource }) =>
+    request<DesignFull>(`/designs/${id}/concept/inpaint`, json('POST', body)),
   designCapture: (
     id: string,
     captureId: string,

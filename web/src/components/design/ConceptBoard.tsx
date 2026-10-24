@@ -1,7 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { BadgeCheck, Check, ImagePlus, Loader2, Trash2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Annotation, AnnotationKind, ConceptImage, ConceptJob, ConceptState } from '@shared/design'
+import {
+  hasMask,
+  maskBox,
+  type Annotation,
+  type AnnotationKind,
+  type ConceptImage,
+  type ConceptJob,
+  type ConceptState,
+} from '@shared/design'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
@@ -44,6 +52,8 @@ export function ConceptBoard({
   const [kind, setKind] = useState<AnnotationKind>('change')
   const [active, setActive] = useState('')
   const [shown, setShown] = useState(true)
+  const [brush, setBrush] = useState(48)
+  const [erase, setErase] = useState(false)
   const img = useRef<HTMLImageElement>(null)
   const file = useRef<HTMLInputElement>(null)
   const [scale, setScale] = useState(0)
@@ -51,6 +61,26 @@ export function ConceptBoard({
   const size = { X: cur?.width || 1, Y: cur?.height || 1 }
   const target = cur ? `concept:${cur.id}` : ''
   const mine = marks.filter((m) => m.target === target)
+  // 一张原画只有一个蒙版：后续的涂抹和橡皮擦都并到这一条里，撤销就是去掉最后一笔
+  const maskMark = mine.find((m) => m.shape === 'mask')
+  const canUndoMask = !!maskMark && hasMask(maskMark)
+  const undoMask = () => {
+    if (!cur || !maskMark) return
+    const strokes = maskMark.strokes.slice(0, -1)
+    if (!strokes.some((s) => !s.erase)) {
+      onMarks(
+        cur.id,
+        mine.filter((m) => m.id !== maskMark.id),
+      )
+      setActive('')
+      return
+    }
+    const b = maskBox(strokes)
+    onMarks(
+      cur.id,
+      mine.map((m) => (m.id === maskMark.id ? { ...m, strokes, points: [b.x, b.y, b.w, b.h] } : m)),
+    )
+  }
   useLayoutEffect(() => {
     const el = img.current
     if (!el) return
@@ -138,11 +168,12 @@ export function ConceptBoard({
       {cur && (
         <div className="flex shrink-0 justify-center px-3 pb-2">
           <AnnotationToolbar
-            tools={['select', 'rect', 'arrow', 'pen', 'pin']}
+            tools={['select', 'rect', 'arrow', 'pen', 'pin', 'mask']}
             tool={tool}
             onTool={(x) => {
               setTool(x)
               if (isMarkTool(x)) setShown(true)
+              if (x !== 'mask') setErase(false)
             }}
             kind={kind}
             onKind={(k) => {
@@ -155,6 +186,14 @@ export function ConceptBoard({
             onClear={() => {
               onMarks(cur.id, [])
               setActive('')
+            }}
+            mask={{
+              size: brush,
+              erase,
+              canUndo: canUndoMask,
+              onSize: setBrush,
+              onErase: setErase,
+              onUndo: undoMask,
             }}
           />
         </div>
@@ -178,9 +217,37 @@ export function ConceptBoard({
                 list={mine}
                 visible={shown}
                 active={active}
+                brush={brush}
+                erase={erase}
                 onActive={setActive}
                 onCreate={(a) => {
-                  const mark: Annotation = { ...a, id: crypto.randomUUID(), note: '', target, widgets: [cur.id] }
+                  // 蒙版：并进同一张图上已有的蒙版，外框按所有涂抹笔画重算
+                  if (a.shape === 'mask') {
+                    const strokes = [...(maskMark?.strokes ?? []), ...a.strokes]
+                    const b = maskBox(strokes)
+                    const mark: Annotation = maskMark
+                      ? { ...maskMark, strokes, points: [b.x, b.y, b.w, b.h] }
+                      : {
+                          ...a,
+                          id: crypto.randomUUID(),
+                          note: '',
+                          target,
+                          widgets: [cur.id],
+                          strokes,
+                          points: [b.x, b.y, b.w, b.h],
+                        }
+                    onMarks(cur.id, maskMark ? mine.map((m) => (m.id === maskMark.id ? mark : m)) : [...mine, mark])
+                    setActive(mark.id)
+                    return
+                  }
+                  const mark: Annotation = {
+                    ...a,
+                    id: crypto.randomUUID(),
+                    note: '',
+                    target,
+                    widgets: [cur.id],
+                    strokes: [],
+                  }
                   onMarks(cur.id, [...mine, mark])
                   setActive(mark.id)
                 }}
@@ -208,9 +275,13 @@ export function ConceptBoard({
         )}
       </div>
       <p className="pointer-events-none shrink-0 px-3 pb-1 text-center text-[0.71875rem] text-white/40">
-        {mine.length
-          ? t('在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改')
-          : t('挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」')}
+        {tool === 'mask'
+          ? canUndoMask
+            ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
+            : t('用笔刷涂出要重绘的区域，涂错了用橡皮擦或撤销')
+          : mine.length
+            ? t('在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改')
+            : t('挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」')}
       </p>
       <div className="flex shrink-0 gap-3 overflow-x-auto border-t border-white/10 px-3 py-2.5">
         {rounds.map((r) => (

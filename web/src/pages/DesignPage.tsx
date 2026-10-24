@@ -28,6 +28,7 @@ import {
 import type { Attachment } from '@shared/schema'
 import {
   emptyConcept,
+  hasMask,
   imageRevisionText,
   type Annotation,
   type ConceptImage,
@@ -754,8 +755,37 @@ function Designer({ id }: { id: string }) {
       styleName?: string
       answers?: { question: string; answer: string }[]
       concept: boolean
+      inpaint?: boolean
     },
   ) => {
+    // 只重绘蒙版：本机 ComfyUI 按蒙版做真正的局部重绘；别的生图方式只能整张重画，先告诉用户再照常发送
+    if (extra.inpaint) {
+      const mark = doc.annotations.find((a) => a.shape === 'mask' && a.target.startsWith('concept:') && hasMask(a))
+      if (mark) {
+        if (source.kind !== 'local') {
+          toast(t('当前生成方式不支持局部重绘，已改成整张重画'))
+        } else {
+          const cid = mark.target.slice('concept:'.length)
+          try {
+            ed.absorb(await api.saveDesign(id, doc))
+            ed.absorb(
+              await api.inpaintConcept(id, {
+                id: cid,
+                mask: mark,
+                text: text.trim(),
+                source,
+              }),
+            )
+            ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== mark.id) }), 'ann:sent')
+            toast.success(t('已按蒙版局部重绘，新的一张在原画里'))
+            return true
+          } catch (e) {
+            toast.error((e as Error).message)
+            return false
+          }
+        }
+      }
+    }
     // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
     const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))

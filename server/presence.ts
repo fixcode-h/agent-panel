@@ -150,11 +150,19 @@ export function hasViewer(taskId: string) {
 }
 
 /**
+ * 现在有页面正开着这个对话（在前台）。和 hasViewer 不同：切走后的宽限期里 hasViewer 还算有人，这里不算。
+ * 保活数量上限只放过这一种：宽限期里的对话也算进上限，不然一小时内点开过的对话全都豁免，上限形同虚设
+ */
+export function isViewing(taskId: string) {
+  return (viewers.get(taskId)?.size ?? 0) > 0
+}
+
+/**
  * 这一轮刚完成：页面正开着就直接算看过（不亮橙点，也不因为未读一直留着进程）。
  * 没人在看时才需要等用户回来打开。
  */
 export function seenWhileWatched(taskId: string) {
-  return (viewers.get(taskId)?.size ?? 0) > 0
+  return isViewing(taskId)
 }
 
 /** 任务删除、结束后清掉记录 */

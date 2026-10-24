@@ -762,6 +762,35 @@ export function fillWorkflow(
   return fill(graph) as ComfyWorkflow['graph']
 }
 
+/**
+ * 把内置工作流改成局部重绘：原图和蒙版图先上传到 ComfyUI，用 LoadImage 读进来，
+ * VAEEncode 编码原图，再用 SetLatentNoiseMask 把蒙版之外锁住，采样器只重画蒙版区域。
+ * 找不到采样器或者 VAE 的工作流（用户自己导入的）返回 undefined，调用方降级成整张重画
+ */
+export function inpaintWorkflow(
+  graph: ComfyWorkflow['graph'],
+  o: { image: string; mask: string },
+): ComfyWorkflow['graph'] | undefined {
+  const g = structuredClone(graph)
+  const sampler = Object.values(g).find((n) => n.class_type === 'KSampler' || n.class_type === 'SamplerCustomAdvanced')
+  if (!sampler) return undefined
+  // 内置工作流的 VAE：单独加载的取 VAELoader，SDXL / FLUX.1 从 CheckpointLoaderSimple 的第三个输出取
+  const vaeNode = Object.entries(g).find(([, n]) => n.class_type === 'VAELoader')
+  const ckptNode = Object.entries(g).find(([, n]) => n.class_type === 'CheckpointLoaderSimple')
+  const vae: [string, number] | undefined = vaeNode ? [vaeNode[0], 0] : ckptNode ? [ckptNode[0], 2] : undefined
+  if (!vae) return undefined
+  g['ip_image'] = { class_type: 'LoadImage', inputs: { image: o.image } }
+  g['ip_mask'] = { class_type: 'LoadImage', inputs: { image: o.mask } }
+  g['ip_encode'] = { class_type: 'VAEEncode', inputs: { pixels: ['ip_image', 0], vae } }
+  g['ip_masknode'] = { class_type: 'ImageToMask', inputs: { image: ['ip_mask', 0], channel: 'red' } }
+  g['ip_set'] = {
+    class_type: 'SetLatentNoiseMask',
+    inputs: { samples: ['ip_encode', 0], mask: ['ip_masknode', 0] },
+  }
+  sampler.inputs.latent_image = ['ip_set', 0]
+  return g
+}
+
 /** ComfyUI 队列里的一项，面板展示用（节点图也带上，可以在面板里展开看） */
 export interface ComfyQueueEntry {
   /** ComfyUI 的 prompt_id */

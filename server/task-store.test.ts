@@ -9,7 +9,7 @@ import { TaskData, TaskMessage } from '../shared/schema.ts'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-task-store-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { createStampTracker, createTaskStore } = await import('./task-store.ts')
+const { createStampTracker, createTaskStore, messageChars } = await import('./task-store.ts')
 
 const write = (file: string, data: unknown) => {
   mkdirSync(path.dirname(file), { recursive: true })
@@ -289,4 +289,42 @@ test('同时在跑的对话超过内存里留的份数：落盘带着完整对�
     (await store.get(first.id))?.messages.map((m) => m.id),
     ['u', 'a'],
   )
+})
+
+test('内存里的完整对话按合计字数限：几个超长对话就把更早的挤出去，读回来内容不变', async () => {
+  const store = createTaskStore()
+  const big = 'x'.repeat(6_000_000)
+  const make = (title: string) =>
+    store.create({
+      projectId: '',
+      title,
+      mode: 'chat',
+      status: 'done',
+      agentId: '',
+      workflowId: '',
+      steps: [],
+      requests: [],
+      messages: [
+        { id: 'u', role: 'user', text: '做事', tools: [], at: '' },
+        { id: 'a', role: 'agent', text: '', tools: [{ kind: 'run', label: 'ls', output: big }], at: '' },
+      ],
+    } as never)
+  const a = await make('a')
+  const b = await make('b')
+  const c = await make('c')
+  assert.equal(messageChars(c.messages), 6_000_000 + 2 + 2)
+  // 三个合计 1800 万字符，超过上限：最久没用的 a 不再留在内存里，getMeta 只剩任务文件里的用户消息
+  assert.deepEqual(
+    (await store.getMeta(a.id))?.messages.map((m) => m.id),
+    ['u'],
+  )
+  assert.deepEqual(
+    (await store.getMeta(c.id))?.messages.map((m) => m.id),
+    ['u', 'a'],
+    '最近用的留着',
+  )
+  assert.equal((await store.getMeta(b.id))?.messages.length, 2, '最近两个总是留着')
+  // 从磁盘读回来的还是完整的
+  const back = await store.get(a.id)
+  assert.equal(back?.messages[1].tools[0].output?.length, 6_000_000)
 })

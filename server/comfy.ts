@@ -22,6 +22,7 @@ import {
   comfyQueueLists,
   fillWorkflow,
   importableWorkflow,
+  inpaintWorkflow,
   localFile,
   localModel,
   localSize,
@@ -535,6 +536,8 @@ export async function localGenerate(
     width: number
     height: number
     count: number
+    /** 局部重绘：原图和蒙版图（都是 PNG），只重画蒙版涂过的区域 */
+    inpaint?: { image: Buffer; mask: Buffer }
     onImage: (b: Buffer) => void
     onProgress?: (text: string) => void
   },
@@ -558,12 +561,33 @@ export async function localGenerate(
   o.onProgress?.(t('正在启动本机生图…'))
   const url = await startComfy()
   const size = localSize(o.width, o.height, m?.base ?? 1024)
+  // 局部重绘：把原图和蒙版图传给 ComfyUI，用 SetLatentNoiseMask 只重画蒙版区域
+  let graph = wf.graph
+  if (o.inpaint) {
+    const upload = async (data: Buffer, name: string) => {
+      const form = new FormData()
+      const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+      form.append('image', new Blob([bytes], { type: 'image/png' }), name)
+      form.append('overwrite', 'true')
+      const r = await fetch(`${url}/upload/image`, { method: 'POST', body: form, signal })
+      const body = (await r.json().catch(() => ({}))) as { name?: string; subfolder?: string; error?: string }
+      if (!r.ok || !body.name)
+        throw new Error(t('上传局部重绘的原图失败：{error}', { error: body.error ?? String(r.status) }))
+      return body.subfolder ? `${body.subfolder}/${body.name}` : body.name
+    }
+    o.onProgress?.(t('正在准备局部重绘…'))
+    const image = await upload(o.inpaint.image, `panel-inpaint-${Date.now()}.png`)
+    const mask = await upload(o.inpaint.mask, `panel-mask-${Date.now()}.png`)
+    const ip = inpaintWorkflow(graph, { image, mask })
+    if (!ip) throw new Error(t('这个工作流不支持局部重绘，请换成内置工作流或整张重画'))
+    graph = ip
+  }
   const workflow = markSavePrefix(
-    fillWorkflow(wf.graph, {
+    fillWorkflow(graph, {
       prompt,
       negative: p.negative,
       ...size,
-      count: Math.min(4, Math.max(1, o.count)),
+      count: o.inpaint ? 1 : Math.min(4, Math.max(1, o.count)),
       seed: Math.floor(Math.random() * 2 ** 48),
     }),
     wf.name,

@@ -3,7 +3,18 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { blank, chromaKey, contentBox, decodePng, encodePng, fitExact, gridStep, resize, sliceSheet } from './image.ts'
+import {
+  blank,
+  chromaKey,
+  contentBox,
+  decodePng,
+  encodePng,
+  fitExact,
+  gridStep,
+  maskImage,
+  resize,
+  sliceSheet,
+} from './image.ts'
 
 const GREEN: [number, number, number, number] = [0, 255, 0, 255]
 const fill = (img: ReturnType<typeof blank>, x0: number, y0: number, w: number, h: number, c: number[]) => {
@@ -57,4 +68,42 @@ test('图标表按格切开，每个图标裁掉空白后放进各自的尺寸',
 
 test('坐标格的格距取整齐的数', () => {
   assert.deepEqual([gridStep(1920), gridStep(1080), gridStep(300), gridStep(64)], [200, 200, 50, 10])
+})
+
+const red = (img: ReturnType<typeof maskImage>, x: number, y: number) => img.data[(y * img.width + x) * 4]
+
+test('局部重绘的蒙版图：黑底，涂过的地方是白色', () => {
+  const img = maskImage([{ erase: false, w: 20, points: [50, 50] }], 100, 100)
+  assert.deepEqual([img.width, img.height], [100, 100])
+  assert.equal(red(img, 50, 50), 255)
+  assert.equal(img.data[(50 * 100 + 50) * 4 + 3], 255)
+  assert.equal(red(img, 5, 5), 0)
+})
+
+test('局部重绘的蒙版图：沿轨迹涂成一条连续的粗线', () => {
+  const img = maskImage([{ erase: false, w: 10, points: [20, 50, 80, 50] }], 100, 100)
+  assert.equal(red(img, 20, 50), 255)
+  assert.equal(red(img, 50, 50), 255)
+  assert.equal(red(img, 80, 50), 255)
+  assert.equal(red(img, 50, 20), 0)
+})
+
+test('局部重绘的蒙版图：橡皮擦把涂过的区域擦回黑色', () => {
+  const img = maskImage(
+    [
+      { erase: false, w: 40, points: [50, 50] },
+      { erase: true, w: 20, points: [50, 50] },
+    ],
+    100,
+    100,
+  )
+  assert.equal(red(img, 50, 50), 0)
+  assert.equal(red(img, 50, 62), 255)
+})
+
+test('局部重绘的蒙版图：笔画超出画布时裁掉，不越界', () => {
+  const img = maskImage([{ erase: false, w: 60, points: [-20, -20, 120, 120] }], 40, 40)
+  assert.deepEqual([img.width, img.height], [40, 40])
+  assert.equal(red(img, 0, 0), 255)
+  assert.equal(red(img, 39, 39), 255)
 })
