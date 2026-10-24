@@ -1119,6 +1119,95 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('Skills / 命令库：新建、列出、复制给别的 CLI（命令换格式）、删除，名字不能越出目录')
 
+  // 项目设置里的 Skill 分节：只读写项目目录下的技能目录，AI 修复拿得到路径和原文
+  {
+    const repo = '.agents/skills'
+    const skillDir = path.join(projectDir, repo, 'proj-skill')
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(
+      path.join(skillDir, 'SKILL.md'),
+      '---\nname: proj-skill\ndescription: 项目里的测试技能，按团队约定写提交说明\n---\n\n步骤\n',
+    )
+    writeFileSync(path.join(skillDir, 'run.sh'), 'echo hi\n')
+    mkdirSync(path.join(projectDir, repo, 'bad-skill'), { recursive: true })
+    writeFileSync(path.join(projectDir, repo, 'bad-skill/SKILL.md'), '---\nname: bad-skill\n---\n\n正文\n')
+
+    const view = await call('GET', `/project-skills?projectId=${project.id}`)
+    assert.equal(view.path, projectDir)
+    const ok = view.skills.find((s) => s.name === 'proj-skill')
+    assert.equal(ok.description, '项目里的测试技能，按团队约定写提交说明')
+    assert.equal(ok.source, repo)
+    assert.deepEqual(ok.issues, [])
+    assert.ok(ok.clis.length > 1, '.agents/skills 由几个 Agent 共用，技能记下它们')
+    assert.ok(
+      view.repos.some((r) => r.dir === '.claude/skills'),
+      '也能放 Claude Code 的项目技能',
+    )
+    const bad = view.skills.find((s) => s.name === 'bad-skill')
+    assert.match(bad.issues.join(), /description/)
+
+    // 各 Agent 在这个项目下能看到的技能里也有它
+    const seen = await call('GET', `/clis/pi/skills?projectId=${project.id}`)
+    assert.ok(
+      seen.some((s) => s.name === 'proj-skill'),
+      '项目目录里的技能出现在各 Agent 的列表里',
+    )
+
+    const file = await call(
+      'GET',
+      `/project-skills/file?projectId=${project.id}&repo=${encodeURIComponent(repo)}&name=proj-skill`,
+    )
+    assert.match(file.content, /description: 项目里的测试技能，按团队约定写提交说明/)
+    assert.deepEqual(file.files, ['run.sh'], 'SKILL.md 以外的文件也列出来')
+
+    // 新建骨架：写下来的就是合法格式
+    await call('POST', '/project-skills', {
+      projectId: project.id,
+      repo,
+      name: 'new-skill',
+      description: '新建技能的说明够长了',
+    })
+    const made = readFileSync(path.join(projectDir, repo, 'new-skill/SKILL.md'), 'utf8')
+    assert.match(made, /name: new-skill/)
+    assert.match(made, /description: 新建技能的说明够长了/)
+
+    await call('PUT', '/project-skills/file', {
+      projectId: project.id,
+      repo,
+      name: 'new-skill',
+      content: '---\nname: new-skill\ndescription: 改过的说明文字\n---\n\n新的步骤\n',
+    })
+    assert.match(readFileSync(path.join(projectDir, repo, 'new-skill/SKILL.md'), 'utf8'), /改过的说明文字/)
+
+    // 只能碰 Agent 定义里的项目技能目录
+    await assert.rejects(
+      call('PUT', '/project-skills/file', { projectId: project.id, repo: '.git', name: 'x', content: 'x' }),
+      /不能放 Skill/,
+    )
+    await assert.rejects(
+      call('PUT', '/project-skills/file', { projectId: project.id, repo, name: '../evil', content: 'x' }),
+      /名字/,
+    )
+    assert.ok(!existsSync(path.join(projectDir, 'evil')))
+
+    // AI 修复：把 SKILL.md 的路径和原文交给 AI，提示里带项目目录
+    const fix = await call('POST', '/ai-fix', {
+      title: 'Skill「bad-skill」格式有问题',
+      error: bad.issues.join('\n'),
+      context: `SKILL.md：${bad.path}\n\n当前的 SKILL.md：\n\`\`\`markdown\n---\nname: bad-skill\n---\n\n正文\n\`\`\``,
+      cwd: projectDir,
+      topic: 'project-skill',
+    })
+    assert.ok(fix.prompt.includes(bad.path), 'AI 修复要知道改哪份 SKILL.md')
+    assert.ok(fix.prompt.includes(projectDir), 'AI 修复在项目目录里做')
+
+    await call('DELETE', `/project-skills/file?projectId=${project.id}&repo=${encodeURIComponent(repo)}&name=new-skill`)
+    assert.ok(!existsSync(path.join(projectDir, repo, 'new-skill')), '删除连文件夹一起删')
+    rmSync(path.join(projectDir, repo, 'proj-skill'), { recursive: true, force: true })
+    rmSync(path.join(projectDir, repo, 'bad-skill'), { recursive: true, force: true })
+  }
+  step('项目技能：列出项目目录下的技能、新建骨架、改、删，AI 修复带上路径和原文')
+
   // MCP 工具：直接读写各 CLI 自己的配置文件，其他配置原样保留
   {
     const codexToml = path.join(homeDir, '.codex', 'config.toml')

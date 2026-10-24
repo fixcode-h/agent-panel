@@ -303,6 +303,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const dlg = p.getByRole('dialog')
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
+    // 项目技能：项目目录里的和用户级的都列出来，缺说明的技能给出问题提示和 AI 修复
+    await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
+    await check(p, '项目设置-Skill', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
     await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '测试验收'])
     await dlg.getByRole('button', { name: '工作流', exact: true }).click()

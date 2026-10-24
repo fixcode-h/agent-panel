@@ -6,6 +6,7 @@ import { EN_EXTEND } from './en/extend.ts'
 import { EN_FLOW } from './en/flow.ts'
 import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_MCP } from './en/mcp.ts'
+import { EN_PROJECT_SKILLS } from './en/project-skills.ts'
 import { EN_SERVER } from './en/server.ts'
 import { EN_SETTINGS } from './en/settings.ts'
 import { EN_SHARED } from './en/shared.ts'
@@ -25,4 +26,5 @@ export const EN: Record<string, string> = {
   ...EN_EXTEND,
   ...EN_LOCAL_IMAGE,
   ...EN_MCP,
+  ...EN_PROJECT_SKILLS,
 }

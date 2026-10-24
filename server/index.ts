@@ -42,6 +42,7 @@ import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { fixApi } from './fix.ts'
+import { projectSkillsApi } from './project-skills.ts'
 import { isPanelSource } from './panel-source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
@@ -805,6 +806,8 @@ const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
 app.route('/ai-fix', fixApi())
+// 项目设置里的 Skill 分节：项目目录下的技能
+app.route('/project-skills', projectSkillsApi({ projects }))
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----

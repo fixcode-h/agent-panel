@@ -31,6 +31,8 @@ export const EN_MCP: Record<string, string> = {
   '先创建项目，再管这个项目的 MCP 配置。': 'Create the project first, then manage its MCP config.',
   '这个项目还没设本地目录，所以识别不到项目里的配置。在「常规」里填好目录并保存后再回来。':
     'This project has no local directory yet, so config in the project cannot be found. Fill in the directory under "General", save, and come back.',
+  '本地目录改了，先点「确认」保存，再管新目录里的 MCP 配置。':
+    'The local directory changed — save with "Confirm" first, then manage MCP config in the new directory.',
   '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.gemini/settings.json、.codex/config.toml。':
     'No MCP config found in the project. Supported: .mcp.json, .claude/settings*.json, .cursor/mcp.json, .vscode/mcp.json, .gemini/settings.json, .codex/config.toml.',
   '已导入 {n} 条配置': 'Imported {n} entries',
