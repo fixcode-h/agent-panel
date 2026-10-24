@@ -14,9 +14,11 @@ import {
   type Task,
   type TaskMessage,
   type ToolUse,
+  type Alert,
   type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
+import { makeAlert } from '../../shared/alerts.ts'
 import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import {
@@ -171,6 +173,17 @@ interface Waiter {
   current: () => boolean
 }
 const waiters = new Map<string, Set<Waiter>>()
+
+/**
+ * 面板交给 CLI 的东西（一句话、工具结果、一次模型请求）之后多久一点输出都没有，算「没有响应」。
+ * 模型正常都在几秒内开始输出（思考也是流式的）；测试用环境变量缩短
+ */
+const NO_RESPONSE_MS = Number(process.env.AGENT_PANEL_NO_RESPONSE_MS) || 90_000
+/** 只说明 CLI 收下了、不说明模型在回的事件：不算有了响应 */
+const NOT_RESPONSE = new Set(['session', 'turn', 'limits', 'request_start', 'files_changed'])
+/** 任务 id → 卡住的这一轮（没得到回应的那条输入）：下一条消息据此停掉卡住的 CLI、接回会话重开 */
+const stalled = new Map<string, { input: string; since: number }>()
+export const stalledTurn = (taskId: string) => stalled.get(taskId)
 
 /** 预热时不记进对话的事件：正文、思考、工具和待办 */
 const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
@@ -373,6 +386,23 @@ export function autoAnswerQuestions(task: Task) {
   }
 }
 
+/**
+ * 用户停止对话（关掉提问也是停止）：还在等回答的请求马上作废，页面上的提问立刻收起。
+ * 不能等这一轮的进程结束再清：保活的 CLI 卡在等回答时这一轮不会结束，提问就一直关不掉。
+ * 工作流节点的确认不在这里处理：它跟着停止信号自己收掉，继续执行时重新确认
+ */
+export function dropRequests(task: Task) {
+  const drop = task.requests.filter((x) => x.kind !== 'confirm')
+  if (!drop.length) return false
+  task.requests = task.requests.filter((x) => x.kind === 'confirm')
+  for (const req of drop) {
+    const fn = replies.get(req.id)
+    replies.delete(req.id)
+    fn?.({ allow: false, message: '用户暂停了对话，先不要继续，等用户的下一条消息。' })
+  }
+  return true
+}
+
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
   const fn = replies.get(id)
@@ -540,6 +570,7 @@ export function settleNetNotes(notes: NetNote[]) {
     msg.error = undefined
     msg.transient = true
     msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
+    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动续接，从中断的地方继续了') }
   }
 }
 
@@ -552,6 +583,7 @@ export function settleEmptyNotes(notes: EmptyNote[]) {
     msg.error = undefined
     msg.transient = true
     msg.text = [base, '', t('已自动接一轮，这一轮继续做完了。')].join('\n')
+    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动接一轮，继续做完了') }
   }
 }
 const NETWORK_ERROR =
@@ -967,7 +999,79 @@ async function runAgent(
       changed: touched.size - turnMark.touched,
     })
   }
+  /**
+   * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
+   * 之后有任何真正的输出就停。超时写一行警告、标成卡住；后来又有输出了，警告标成已恢复。
+   * 只看对话：工作流里几个节点同时跑，卡住的是哪一个由空闲检测管
+   */
+  let armedAt = 0
+  let armedInput = call.prompt
+  let stallMsg: TaskMessage | undefined
+  const arm = (input?: string) => {
+    if (!chat || op) return
+    armedAt = Date.now()
+    if (input !== undefined) armedInput = input
+  }
+  const heard = () => {
+    armedAt = 0
+    const st = stalled.get(task.id)
+    if (!st) return
+    stalled.delete(task.id)
+    if (stallMsg?.alert && !stallMsg.alert.resolved) {
+      stallMsg.alert = {
+        ...stallMsg.alert,
+        resolved: t('{s} 秒后有输出了，接着在处理', { s: Math.round((Date.now() - st.since) / 1000) }),
+      }
+      ctx.changed(true)
+    }
+  }
+  const stallTimer = setInterval(
+    () => {
+      if (!armedAt || finished || prewarmMode) return
+      // 在等用户、等子任务、等确认：本来就没有输出
+      // 还有工具在跑（并行调用里先回来一个结果）：等的是工具，不是模型
+      if (task.awaitingUser || waitingHelpers || toolStart.size || task.requests.some((x) => asked.includes(x.id))) {
+        armedAt = Date.now()
+        return
+      }
+      const quiet = Date.now() - armedAt
+      if (quiet < NO_RESPONSE_MS) return
+      const since = armedAt
+      armedAt = 0
+      stalled.set(task.id, { input: armedInput, since })
+      const secs = Math.round(quiet / 1000)
+      stallMsg = {
+        id: ctx.newId(),
+        role: 'system',
+        agentId,
+        step,
+        text: t('{cli} 收到消息 {s} 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
+          cli: def.name,
+          s: secs,
+        }),
+        tools: [],
+        alert: makeAlert(
+          'warn',
+          [
+            t('{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。', { cli: def.name, s: secs }),
+            t('交给它的最后一条内容：'),
+            clip(armedInput, 800),
+          ].join('\n'),
+          'no_response',
+        ),
+        at: new Date().toISOString(),
+      }
+      task.messages.push(stallMsg)
+      log.warn('agent', `${def.name} 交出消息后 ${secs} 秒没有输出，标成卡住`, { task: task.id, step })
+      ctx.changed(true)
+    },
+    Math.min(5000, Math.max(50, NO_RESPONSE_MS / 4)),
+  )
+  stallTimer.unref?.()
   const apply = (ev: CliEvent) => {
+    // 有了真正的输出：不算卡住。工具结果交回去、开始一次模型请求后，重新开始等模型的回应
+    if (!NOT_RESPONSE.has(ev.type)) heard()
+    if (ev.type === 'tool_result' || ev.type === 'request_start') arm()
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
     // 延迟取走的补充：CLI 开始下一次模型请求时说明它真的接受了补充，之后的输出另起一条。
@@ -1146,12 +1250,15 @@ async function runAgent(
       case 'notice': {
         // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
         const m = !cur || cur.text.trim() ? newMsg() : cur
+        // CLI 自己报的重试、失败：画成警告行，点开看是哪一类、怎么办
+        const kind = /重试|retry/i.test(ev.text) && !ev.failed ? 'retry' : undefined
         m.tools.push({
           kind: 'other',
           name: t('提示'),
           label: ev.text,
           detail: '',
           ...(ev.failed ? { failed: true } : {}),
+          ...(ev.failed || kind ? { alert: makeAlert(ev.failed ? 'error' : 'warn', ev.text, kind) } : {}),
         })
         break
       }
@@ -1319,6 +1426,7 @@ async function runAgent(
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
+      arm(text)
       ctx.changed(true)
       return text
     }
@@ -1385,6 +1493,7 @@ async function runAgent(
             const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
+            arm(text)
             done(text)
           },
           cancel: () => done(null),
@@ -1420,6 +1529,7 @@ async function runAgent(
       }
     : undefined
 
+  if (!prewarmMode) arm()
   const r = await invokeCli({
     cliId,
     command: cs.command,
@@ -1448,6 +1558,7 @@ async function runAgent(
                 { cli: def.name, n: idleMinutes },
               ),
               tools: [],
+              alert: makeAlert('warn', t('最后一次输出在 {n} 分钟前', { n: idleMinutes }), 'idle'),
               at: new Date().toISOString(),
             })
             ctx.changed(true)
@@ -1470,6 +1581,8 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    clearInterval(stallTimer)
+    stalled.delete(task.id)
     clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
@@ -1638,6 +1751,7 @@ async function runAgent(
         ].join('\n'),
         tools: [],
         error: true,
+        alert: makeAlert('warn', raw, 'network'),
         at: new Date().toISOString(),
       }
       task.messages.push(note)
@@ -1692,6 +1806,7 @@ async function runAgent(
         text: note,
         tools: [],
         error: true,
+        alert: makeAlert('warn', what, 'empty_turn'),
         at: new Date().toISOString(),
       })
       const pushed = task.messages.at(-1)!
@@ -1731,6 +1846,7 @@ async function runAgent(
       text: note,
       tools: [],
       error: true,
+      alert: makeAlert('error', what, 'empty_turn'),
       at: new Date().toISOString(),
     })
     ctx.changed(true)
@@ -1746,7 +1862,7 @@ async function runAgent(
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined
-  const sysMsg = (text: string, error?: boolean) => {
+  const sysMsg = (text: string, error?: boolean, alert?: Alert) => {
     task.messages.push({
       id: ctx.newId(),
       role: 'system',
@@ -1755,6 +1871,7 @@ async function runAgent(
       text,
       tools: [],
       ...(error ? { error } : {}),
+      ...(alert || error ? { alert: alert ?? makeAlert('error', text) } : {}),
       at: new Date().toISOString(),
     })
     ctx.changed(true)
@@ -1768,6 +1885,8 @@ async function runAgent(
         : t('这次没有拿到 {cli} 的任何输出和用量：这条要求很可能没有被处理，可以重发或换一个模型再试。', {
             cli: def.name,
           }),
+      false,
+      texts.length || errors.length ? undefined : makeAlert('warn', errors.join('\n'), 'empty_turn'),
     )
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
   if (op?.kind === 'compact' && def.compact === 'summary') {
@@ -1789,7 +1908,7 @@ async function runAgent(
   ) {
     sysMsg(t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }))
     const c = await runAgent(ctx, { ...call, op: { kind: 'compact' } })
-    if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true)
+    if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true, makeAlert('error', c.error))
   }
   return done
 }
