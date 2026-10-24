@@ -12,6 +12,7 @@ import {
   Settings2,
   Sparkles,
   Trash2,
+  Upload,
   Wand2,
 } from 'lucide-react'
 import {
@@ -35,6 +36,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { useLocalImage } from '@/components/settings/LocalImageSection'
 import { ComfyGraphView } from '@/components/comfy/ComfyGraphView'
+import { ComfyQueuePanel } from '@/components/comfy/ComfyQueuePanel'
 
 type Kind = 'game' | 'web'
 type View = 'graph' | 'json'
@@ -66,6 +68,9 @@ export function ComfyPage() {
   const [importing, setImporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [web, setWeb] = useState(false)
+  /** 刚导入到 ComfyUI 的工作流：网页弹窗顶部告诉用户去侧栏哪里打开 */
+  const [webImported, setWebImported] = useState<{ name: string; filename: string } | null>(null)
+  const [pushing, setPushing] = useState(false)
   const [st] = useLocalImage()
   const [view, setViewState] = useState<View>(loadView)
   const setView = (v: View) => {
@@ -162,6 +167,40 @@ export function ComfyPage() {
       graph: graph ?? draft.graph,
     })
 
+  /** 面板 → ComfyUI：把当前工作流写进它的工作流列表；有没保存的修改先保存（ComfyUI 读的是存下来的那份） */
+  const pushToComfy = async (o: { openWeb?: boolean; quiet?: boolean } = {}) => {
+    if (!draft || pushing) return
+    setPushing(true)
+    // 先打开网页：ComfyUI 没启动时这里会显示「正在启动并导入」，不用等按钮转完才看到反应
+    if (o.openWeb) {
+      setWebImported(null)
+      setWeb(true)
+    }
+    try {
+      if (dirty) {
+        if (!graph || problems.length) {
+          toast.error(t('节点图有问题，先修好再导入'))
+          return
+        }
+        await save()
+      }
+      const r = await api.importComfyWorkflow(draft.id)
+      setWebImported(r)
+      if (!o.quiet) toast.success(t('已导入到 ComfyUI 的工作流列表：{name}', { name: r.name }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setPushing(false)
+    }
+  }
+  // 打开网页时把当前工作流一起带过去；有没保存的修改时不自动导入，免得把旧的内容推过去
+  const openWeb = () => {
+    setWebImported(null)
+    setWeb(true)
+    if (draft && dirty) toast.message(t('有没保存的修改：保存后才会把工作流导入到 ComfyUI'))
+    else if (draft) void pushToComfy({ quiet: true })
+  }
+
   const exportJson = () => {
     if (!draft) return
     const blob = new Blob([JSON.stringify(graph ?? draft.graph, null, 2)], { type: 'application/json' })
@@ -206,11 +245,21 @@ export function ComfyPage() {
             <FileInput className="h-3.5 w-3.5" />
             {t('导入')}
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void pushToComfy({ openWeb: true })}
+            disabled={!draft || pushing}
+            title={t('把当前工作流导入到 ComfyUI 的工作流列表，在 ComfyUI 网页里打开')}
+          >
+            {pushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            {t('导入到 ComfyUI')}
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => setAsk('create')}>
             <Sparkles className="h-3.5 w-3.5" />
             {t('AI 生成')}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setWeb(true)} title={t('在面板里打开 ComfyUI 的网页')}>
+          <Button size="sm" variant="ghost" onClick={openWeb} title={t('在面板里打开 ComfyUI 的网页')}>
             <Globe className="h-3.5 w-3.5" />
             {t('ComfyUI 网页')}
             <span className={cn('h-1.5 w-1.5 rounded-full', running ? 'bg-success' : 'bg-line-strong')} />
@@ -283,6 +332,7 @@ export function ComfyPage() {
         </aside>
 
         <section className="min-h-0 flex-1 overflow-y-auto">
+          <ComfyQueuePanel className="mx-4 mt-4 md:mx-6 md:mt-6" />
           {!draft ? (
             <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : (
@@ -467,7 +517,15 @@ export function ComfyPage() {
           await load()
         }}
       />
-      <ComfyWebDialog open={web} onOpenChange={setWeb} />
+      <ComfyWebDialog
+        open={web}
+        onOpenChange={(o) => {
+          setWeb(o)
+          if (!o) setWebImported(null)
+        }}
+        imported={webImported}
+        importing={pushing}
+      />
     </main>
   )
 }

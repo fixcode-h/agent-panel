@@ -1,6 +1,6 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
-import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { ComfyQueueState, ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
@@ -183,6 +183,7 @@ export const api = {
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
+  localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
   localModel: (id: string, action: 'download' | 'remove') =>
@@ -197,6 +198,12 @@ export const api = {
     request<{ ok: boolean }>(`/local-image/workflows/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   assistComfyWorkflow: (body: { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }) =>
     request<{ workflow: ComfyWorkflow; note: string }>('/local-image/workflows/assist', json('POST', body)),
+  /** 面板 → ComfyUI：写进它的 userdata/workflows，在 ComfyUI 网页的工作流侧栏里打开 */
+  importComfyWorkflow: (id: string) =>
+    request<{ name: string; filename: string; url: string }>(
+      `/local-image/workflows/${encodeURIComponent(id)}/import`,
+      { method: 'POST' },
+    ),
 
   clis: (refresh = false) => request<CliStatus[]>(`/clis${refresh ? '?refresh=1' : ''}`),
   cliAction: (id: string, action: 'install' | 'uninstall') =>

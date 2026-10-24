@@ -17,16 +17,22 @@ import {
   PYTHON_VERSIONS,
   TORCH_INDEX,
   checkWorkflow,
+  comfyImportFile,
+  comfyQueueEntry,
+  comfyQueueLists,
   fillWorkflow,
+  importableWorkflow,
   localFile,
   localModel,
   localSize,
+  markSavePrefix,
   mirrorUrl,
   parsePythonProbe,
   pickWorkflow,
   pythonIssueText,
   pythonSupport,
   torchIndexes,
+  type ComfyQueueState,
   type WorkflowUse,
   type LocalGpu,
   type LocalJob,
@@ -478,6 +484,9 @@ export async function workflowReady(wf: ComfyWorkflow) {
   return !m || m.files.every((f) => existsSync(filePath(f)))
 }
 
+/** 面板提交任务时用的 client_id，也是 WebSocket 的 clientId：队列、历史和进度事件都按它对应 */
+const CLIENT_ID = 'agent-panel'
+
 /**
  * 用本机的 ComfyUI 生成：按指定的工作流（或按图片用途自动选的），count 张放在同一批里；
  * 轮询结果，取回图片交给 onImage
@@ -517,17 +526,24 @@ export async function localGenerate(
   o.onProgress?.(t('正在启动本机生图…'))
   const url = await startComfy()
   const size = localSize(o.width, o.height, m?.base ?? 1024)
-  const workflow = fillWorkflow(wf.graph, {
-    prompt,
-    negative: p.negative,
-    ...size,
-    count: Math.min(4, Math.max(1, o.count)),
-    seed: Math.floor(Math.random() * 2 ** 48),
-  })
+  const workflow = markSavePrefix(
+    fillWorkflow(wf.graph, {
+      prompt,
+      negative: p.negative,
+      ...size,
+      count: Math.min(4, Math.max(1, o.count)),
+      seed: Math.floor(Math.random() * 2 ** 48),
+    }),
+    wf.name,
+  )
+  // extra_data 会进 ComfyUI 的队列和历史：在 ComfyUI 网页里也能看出这个任务是谁、用哪个工作流提交的
+  const extra_data = {
+    agent_panel: { source: 'design', workflowId: wf.id, name: wf.name, kind: o.kind, use: o.use },
+  }
   const res = await fetch(`${url}/prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, client_id: 'agent-panel' }),
+    body: JSON.stringify({ prompt: workflow, client_id: CLIENT_ID, extra_data }),
     signal,
   })
   const body = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: unknown; node_errors?: unknown }
@@ -577,6 +593,129 @@ export async function localGenerate(
   } finally {
     signal.removeEventListener('abort', cancel)
   }
+}
+
+/** 进度事件：prompt_id → 最近一次进的步数；只有面板的 WebSocket 连着时才有 */
+const progress = new Map<string, { value: number; max: number; node?: string; at: number }>()
+let socket: WebSocket | undefined
+let socketUrl = ''
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+/** 最后一次有人来问队列的时间：没人看的时候不用一直保持 WebSocket */
+let lastPoll = 0
+
+/**
+ * 连上 ComfyUI 的 WebSocket 收执行进度。ComfyUI 只在执行时推进度事件，所以面板一边轮询队列，
+ * 这里一边保持连接；地址变了、连接断了就重连
+ */
+function listenProgress(url: string) {
+  const wsUrl = `${url.replace(/^http/, 'ws')}/ws?clientId=${CLIENT_ID}`
+  if (socket && socketUrl === wsUrl && socket.readyState <= WebSocket.OPEN) return
+  socket?.close()
+  socket = undefined
+  socketUrl = wsUrl
+  try {
+    const ws = new WebSocket(wsUrl)
+    socket = ws
+    ws.addEventListener('message', (e) => {
+      // ComfyUI 也会推二进制的预览帧，只处理 JSON
+      if (typeof e.data !== 'string' || !e.data.startsWith('{')) return
+      let msg: { type?: string; data?: Record<string, unknown> }
+      try {
+        msg = JSON.parse(e.data) as typeof msg
+      } catch {
+        return
+      }
+      const d = msg.data ?? {}
+      const id = String(d.prompt_id ?? '')
+      if (!id) return
+      const at = Date.now()
+      if (msg.type === 'progress')
+        progress.set(id, {
+          value: Number(d.value) || 0,
+          max: Number(d.max) || 0,
+          node: d.node ? String(d.node) : undefined,
+          at,
+        })
+      else if (msg.type === 'execution_start') progress.set(id, { value: 0, max: 0, at })
+      else if (msg.type === 'execution_success' || msg.type === 'execution_error') progress.delete(id)
+      // 节点跑完了 executing 的 node 会变成 null，这个 prompt 也就结束了
+      else if (msg.type === 'executing' && !d.node) progress.delete(id)
+    })
+    ws.addEventListener('close', () => {
+      if (socket === ws) socket = undefined
+      // 没人在看队列就不再重连，免得 ComfyUI 停掉后一直空转
+      if (Date.now() - lastPoll > 15_000 || retryTimer) return
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined
+        if (Date.now() - lastPoll <= 15_000) listenProgress(url)
+      }, 3000)
+    })
+    ws.addEventListener('error', () => ws.close())
+  } catch {
+    socket = undefined
+  }
+}
+
+/** 丢太久没更新的进度（ComfyUI 重启、任务被删时收不到结束事件） */
+function pruneProgress() {
+  const limit = Date.now() - 10 * 60_000
+  for (const [id, p] of progress) if (p.at < limit) progress.delete(id)
+}
+
+/** ComfyUI 现在在跑什么：读它的队列，带上面板 WebSocket 收到的进度 */
+export async function localQueue(): Promise<ComfyQueueState> {
+  const url = await baseUrl()
+  if (!(await alive(url))) return { up: false, url, running: [], pending: [] }
+  lastPoll = Date.now()
+  listenProgress(url)
+  pruneProgress()
+  const raw = await fetch(`${url}/queue`, { signal: AbortSignal.timeout(5000) })
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => ({}))
+  const lists = comfyQueueLists(raw)
+  const entry = (x: unknown, status: 'running' | 'pending') => {
+    const e = comfyQueueEntry(x, status)
+    if (!e) return undefined
+    const p = progress.get(e.id)
+    return { ...e, progress: p ? { value: p.value, max: p.max, node: p.node } : undefined }
+  }
+  return {
+    up: true,
+    url,
+    running: lists.running.flatMap((x) => entry(x, 'running') ?? []),
+    pending: lists.pending.flatMap((x) => entry(x, 'pending') ?? []),
+  }
+}
+
+/**
+ * 把面板里的工作流导入 ComfyUI：写到它的 userdata/workflows 目录，ComfyUI 网页的「工作流」侧栏里能打开。
+ * 面板存的是接口格式（带占位符），先换成能直接跑的示例值。ComfyUI 前端不支持用 URL 参数打开工作流，
+ * 所以导入后由界面提示用户到侧栏里点开，不假装已经打开
+ */
+export async function importWorkflowToComfy(id: string) {
+  const wf = (await allWorkflows()).find((w) => w.id === id)
+  if (!wf) throw new Error(t('找不到工作流 {id}', { id }))
+  const url = await startComfy()
+  const filename = comfyImportFile(wf)
+  const body = JSON.stringify(importableWorkflow(wf), null, 2)
+  const path = `workflows%2F${encodeURIComponent(filename)}`
+  const post = (api: boolean) =>
+    fetch(`${url}${api ? '/api' : ''}/userdata/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(15_000),
+    })
+  let res = await post(true)
+  // 旧版 ComfyUI 没有 /api 前缀的 userdata 接口
+  if (res.status === 404) res = await post(false)
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(
+      t('导入到 ComfyUI 失败（{status}）：{error}', { status: String(res.status), error: detail.slice(0, 300) }),
+    )
+  }
+  return { name: wf.name, filename, url }
 }
 
 interface ComfyHistory {
@@ -723,6 +862,7 @@ export function comfyApi() {
     }
   }
   routes.get('/status', wrap(localStatus))
+  routes.get('/queue', wrap(localQueue))
   routes.post(
     '/install',
     wrap(() => void installComfy()),
@@ -765,6 +905,8 @@ export function comfyApi() {
     await saveWorkflows((l) => l.filter((w) => w.id !== id))
     return c.json({ ok: true })
   })
+  // 面板 → ComfyUI：写进它的 userdata/workflows，在 ComfyUI 网页的工作流侧栏里打开
+  routes.post('/workflows/:id/import', (c) => wrap(() => importWorkflowToComfy(c.req.param('id')))(c))
   routes.post('/workflows/assist', async (c) => {
     const body = (await c.req.json()) as { kind?: string; instruction?: string; base?: unknown }
     const base = body.base ? ComfyWorkflow.safeParse(body.base) : undefined
