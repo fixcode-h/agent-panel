@@ -841,11 +841,15 @@ function Designer({ id }: { id: string }) {
       answers?: { question: string; answer: string }[]
       concept: boolean
       inpaint?: boolean
+      /** 「先出原画」时一次出几张，和每张图生成几版分开 */
+      conceptCount?: number
       refs?: WidgetCitation[]
     },
   ) => {
+    // 这一轮还在跑：走补充的通道，能插话就交给这一轮，收不下就在这一轮结束后自动接着处理
+    const running = server?.job?.status === 'running'
     // 只重绘蒙版：本机 ComfyUI 按蒙版做真正的局部重绘；别的生图方式只能整张重画，先告诉用户再照常发送
-    if (extra.inpaint) {
+    if (extra.inpaint && !running) {
       const mark = doc.annotations.find((a) => a.shape === 'mask' && a.target.startsWith('concept:') && hasMask(a))
       if (mark) {
         if (source.kind !== 'local') {
@@ -872,10 +876,11 @@ function Designer({ id }: { id: string }) {
         }
       }
     }
-    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
+    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计。
+    // 这一轮正在跑时生成不了，标记随消息一起交给这一轮
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
-    const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))
-    if (imgMarks.length) {
+    const annotations = running ? doc.annotations : doc.annotations.filter((a) => !a.target.startsWith('img:'))
+    if (imgMarks.length && !running) {
       if (source.kind === 'none') {
         toast.error(t('先在对话框下面选生成图片的方式'))
         return false
@@ -902,22 +907,30 @@ function Designer({ id }: { id: string }) {
     // 标注随这条消息一起发出，发出后从效果图上清掉
     const next = { ...doc, annotations: [] }
     try {
-      ed.absorb(await api.saveDesign(id, next))
-      ed.absorb(
-        await api.designChat(id, {
-          text:
-            text.trim() ||
-            (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
-          source,
-          count,
-          annotations,
-          attachments,
-          refs: extra.refs ?? [],
-          run,
-          ...extra,
-        }),
-      )
+      // 这一轮还在跑时不再回写页面状态：AI 正在改，写回去可能盖掉它刚改的部分
+      if (!running) ed.absorb(await api.saveDesign(id, next))
+      const body = {
+        text:
+          text.trim() ||
+          (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
+        source,
+        count,
+        annotations,
+        attachments,
+        refs: extra.refs ?? [],
+        run,
+        ...extra,
+        // 原画张数没给时沿用「每张几版」，和以前一样；不能让它被 extra 里的 undefined 覆盖
+        conceptCount: extra.conceptCount ?? count,
+      }
+      const sent = running ? await api.steerDesign(id, body) : undefined
+      ed.absorb(sent ?? (await api.designChat(id, body)))
       if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
+      // 运行中发的消息要告诉用户去了哪里：插进了这一轮，还是等这一轮结束自动接着处理
+      if (sent) {
+        if (sent.steered) toast.success(t('已补充给正在进行的这一轮'))
+        else toast.success(t('这一轮收不下，结束后自动接着处理'))
+      }
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -934,6 +947,7 @@ function Designer({ id }: { id: string }) {
           text: t('分析当前设计'),
           source: { kind: 'none' },
           count,
+          conceptCount: count,
           annotations: [],
           attachments: [],
           refs: [],

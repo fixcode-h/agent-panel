@@ -202,6 +202,12 @@ export const DesignMessage = z.object({
   style: z.string().optional(),
   /** 「AI 分析」的结果：总体结论和对话过程 / UI 结果 / 生成能力三段的检查项 */
   analysis: DesignAnalysis.optional(),
+  /**
+   * AI 正在跑的时候发的消息去了哪里：插进当前这一轮，记下来在这一轮结束后自动接着处理，
+   * 已经按新的一轮开始处理，或者这一轮被停止时没送出去（用户要重新发一次）。
+   * 和任务的 DeliveryHow 一样记的是事实，界面按 deliveryText 显示（旧数据没有）
+   */
+  delivery: z.object({ how: z.enum(['steer', 'held', 'next', 'lost']), at: z.string() }).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -472,6 +478,8 @@ export const DesignChatInput = z.object({
   source: ImageSource.default({ kind: 'cli' }),
   /** 每张图生成几版备选 */
   count: z.number().int().min(1).max(4).default(1),
+  /** 「先出原画」时一次出几张：原画张数单独设置，和每张图生成几版不是一回事 */
+  conceptCount: z.number().int().min(1).max(4).default(3),
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */

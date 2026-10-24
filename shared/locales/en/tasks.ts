@@ -518,14 +518,14 @@ export const EN_TASKS: Record<string, string> = {
   '你回答了：{answers}': 'You answered: {answers}',
   '你没有回答「{title}」': 'You skipped "{title}"',
   '交给正在进行的这一轮（Enter）': 'Hand to the current turn (Enter)',
-  '{n} 个附件': '{n} attachments',
   排队中: 'Queued',
   '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
   等这一轮结束再发: 'Send after this turn finishes',
   排队: 'Queue',
-  '这一轮不能补充，已改成排队': "Can't add to this turn, queued instead",
-  '排队中，这一轮结束后发送': 'Queued, sends after this turn',
-  'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
+  已补充给正在进行的这一轮: 'Added to the current turn',
+  '这一轮收不下，结束后自动接着处理': "This turn can't take it, so it runs right after",
+  'AI 正在处理：发送会补充给这一轮，收不下就在结束后自动接着处理':
+    'AI is working: sending adds to this turn, or is handled right after it',
   复制报错: 'Copy error',
   '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
     '· Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals). This is a Google server-side restriction, not a panel problem. Use an API instead: add a Gemini API key under "API settings" (get one at aistudio.google.com), then switch the sign-in method to API on the Gemini CLI page. Google Workspace or paid Code Assist accounts can still sign in with an account.',

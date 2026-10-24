@@ -203,6 +203,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 先出原画：新的游戏界面默认打开「原画」，AI 先出几张整屏原画，显示在左边挑
   await p.getByRole('textbox').first().fill('背包')
   await p.getByRole('button', { name: '开始设计' }).click()
+  // 「原画」按钮右键：设置一次出几张原画，和输入框旁边的「每张 N 版」分开
+  await p.getByRole('button', { name: '先出原画' }).click({ button: 'right' })
+  await p.getByText('一次出几张原画').waitFor()
+  const before = await p.getByRole('menuitemradio', { checked: true }).textContent()
+  await p.getByRole('menuitemradio', { name: '2 张' }).click()
+  await p.keyboard.press('Escape')
+  await p.getByRole('button', { name: '先出原画' }).click({ button: 'right' })
+  const after = await p.getByRole('menuitemradio', { checked: true }).textContent()
+  assert.notEqual(before, after, '右键菜单能改一次出几张原画，选中状态跟着变')
+  await p.keyboard.press('Escape')
+  await check(p, 'UI设计-原画张数', ['一次出几张原画'])
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('暗黑奇幻风格的背包界面')
   await p.keyboard.press('Enter')
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })
