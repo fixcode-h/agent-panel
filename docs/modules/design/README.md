@@ -9,7 +9,7 @@
 
 - UI 设计：按 UI 项目组织设计，每个设计有控件树、设计尺寸、风格说明、效果图和切图，和任务分开存储（数据目录下 `designs/`，每个设计一个 JSON，图片放在同一层的设计目录里）。
 - AI 对话：用户描述要求，设计 AI 通过 MCP 工具改控件树、加图片和动画、出原画；一轮里可以同时出原画和切图。
-- 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。
+- 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。本机出整屏原画时，已下载 MOSS-Image、工作流选 auto、画布上又已有文字和带描述的图片，就优先用 MOSS-Image 的布局工作流，位置取自画布控件。
 - 导出：导出 ZIP、JSON、React 网页，或把切图和控件树导出到项目目录，给 UE 用的格式见 [umg-export](../../umg-export.md)。
 - 页面截图：设计 AI 要「看」页面时，向正在盯着这个设计的页面要一张截图。
 - 待确认的提问：AI 和 CLI 的提问、审批走 `server/asks.ts`，对话里弹问题面板，回答作为一条消息发回去。
@@ -42,9 +42,20 @@
 | `shared/design-ops.ts`                     | 控件树的操作和校验                                                                            |
 | `shared/anim.ts`、`shared/design-data.ts`  | 动画、画板预览数据                                                                            |
 | `shared/umg.ts`                            | 导出 UE 的控件树格式                                                                          |
+| `shared/moss.ts`                           | 从设计稿控件树取布局项，换算成 MOSS-Image 的布局 JSON（中心原点、像素、yxyx）                 |
 | `web/src/pages/DesignPage.tsx`             | 页面、`send()`、生成参数、导出                                                                |
 | `web/src/components/design/DesignChat.tsx` | 对话、发送、附件、控件引用、提问面板                                                          |
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
+
+## MOSS-Image 布局出图（2026-10-24）
+
+- 目的：整屏原画里要出现准确的中英文、并且按设计稿的位置摆放时，把画布上的文字块和主要元素转成 MOSS-Image 的布局 JSON 一起交给工作流，而不是只靠自然语言描述位置。
+- 取布局项（`shared/moss.ts` 的 `designLayoutItems`）：只取有实际文字的文字块（跳过默认的 `Text Block` / `Text`）和用到了有 `prompt` 描述图片的控件；文字块的 `caption` 写字号、粗细、对齐和颜色，文字内容放在 `text` 里。坐标按 `CanvasPanelSlot` 逐层累加；非 `CanvasPanel` 容器里的控件和网页 `Frame` 根量不出像素位置，直接跳过；最多 24 项。宁可少给几项，不给错坐标。
+- 编译布局（`mossBbox` / `mossLayoutJson`）：设计稿像素按实际出图尺寸等比换算，左 / 上 `floor`、右 / 下 `ceil`，越界裁剪，减画布中心后按 `yxyx` 输出；空框丢弃。输出单行 JSON：`summary.caption` 放这次的正向描述，`items` 里是 `text` / `object`，并带 `bbox_coord_space: "abs_centralized"`、`bbox_format: "yxyx"`。没有有效项时返回 `undefined`。
+- 注入（`server/comfy.ts` 的 `localGenerate`）：只有工作流图里含 `{{layout}}` 才编译并注入，宽高用实际出图尺寸（`localSize`，64 的倍数，满足 MOSS 要求的 16 的倍数），不用设计稿尺寸；`auto` 模式下有布局时优先选同一用途里能接 `{{layout}}` 的工作流。工作流不吃 `{{layout}}`、或这次没有布局项时退化成普通文生图，不报错。
+- 入口：`server/designs.ts` 的 `generateConcepts` 从 `cur.root`、`cur.images`、`cur.designSize` 取布局项传给 `localRun`；还没搭控件树（先出原画阶段）或控件位置量不出来时 `items` 为空，自动回退。`generateImages`（切图）和局部重绘的 `localRun` 不传布局。
+- 工作流：内置 `game-moss-layout`（「MOSS-Image：按 JSON 布局出图」，`use: concept`，模型 `moss-image`），正向提示词写 `{{layout}}`；`fillWorkflow` 在没有布局字符串时用描述顶上，`checkWorkflow` 允许只有 `{{layout}}`、没有 `{{prompt}}` 的工作流。
+- 验证：`shared/moss.test.ts` 覆盖 bbox 换算、JSON 格式和设计树提取；`server/local-image.test.ts` 覆盖 MOSS 模型文件、`game-moss-layout`、`fillWorkflow` 的 `{{layout}}` 回退和 `pickWorkflow` 的 `prefer`。**未做真实出图验证**：需要本机 ComfyUI 0.42+ 并下载 MOSS-Image 模型，本次没有在真实 ComfyUI 上跑过位置准确度。
 
 ## 本次行为变化（2026-10-24）
 
