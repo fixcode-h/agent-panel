@@ -2803,7 +2803,8 @@ function tasksRoute(
     if (task.working) fail('对话正在执行，等这一轮结束后再处理独立分支')
     if (rid === 'merge') {
       demoMerged.add(task.id)
-      return { task, into: task.worktree.baseBranch || 'main' }
+      // 字段和正式后端对齐：没有真的 git，两边提交记录和重叠文件都是空
+      return { task, into: task.worktree.baseBranch || 'main', overlap: [], sides: null }
     }
     const merged = demoMerged.has(task.id)
     task.worktree = {

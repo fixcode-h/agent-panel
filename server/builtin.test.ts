@@ -629,6 +629,34 @@ test('上一版的「通用约束」「执行」「版本控制」副本升级�
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
 })
 
+test('版本控制角色：合并前弄清双方意图、判重、判新旧，合并后补齐并验证；严格度可切', () => {
+  const vcs = agents.find((a) => a.id === 'vcs')!
+  const review = vcs.params.find((p) => p.key === 'mergeReview')!
+  assert.deepEqual(review.options, ['标准', '严格'], '合并审查有两档严格度')
+  assert.equal(review.default, '标准', '默认标准：多读几屏提交和 diff、多跑一次受影响范围的检查，不拖慢日常合并')
+  const role = composeRole(vcs, agents)
+  for (const clause of [
+    '先弄清两边为什么这么写',
+    'git log --format',
+    'docs/lessons/',
+    '判重',
+    '判新旧',
+    '禁止 ours/theirs 整块覆盖',
+    '重叠但没冲突的文件同样逐处核对',
+    '合并后补齐',
+    'typecheck / lint',
+    '逐文件核对结果',
+  ])
+    assert.ok(role.includes(clause), `合并审查条款缺「${clause}」`)
+  assert.match(role, /理解不了对方的意图时不要猜/, '理解不清就先别合，不拆掉看着多余的内容')
+  assert.doesNotMatch(role, /严格模式/, '标准模式不带严格模式的额外要求')
+  const strict = composeRole(vcs, agents, { mergeReview: '严格' })
+  assert.match(strict, /严格模式：每个改动过的文件逐条写核对结论/, '严格模式逐文件写结论')
+  assert.match(strict, /合并前后各跑一次项目快速检查/, '严格模式合并前后各跑一次检查')
+  const submitOnly = composeRole(vcs, agents, { merge: '只提交不合并' })
+  assert.doesNotMatch(submitOnly, /合并审查（严格度/, '只提交不合并时不要求合并审查')
+})
+
 test('上一版的「通用项目」「UE 项目」副本升级：工作流说明和交付节点的推送措辞跟着改', async () => {
   const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
   const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })

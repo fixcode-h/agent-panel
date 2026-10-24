@@ -23,6 +23,8 @@ import {
   ensureWorktree,
   isolateDeps,
   mergeOverlap,
+  mergeSides,
+  mergeSidesText,
   mergeWorktree,
   missingDeps,
   releaseWorktree,
@@ -243,6 +245,17 @@ test('两边都改了同一个文件的不同位置：合并不报冲突，但�
     const r = await mergeWorktree(repo, wt, '合并', repo, true)
     assert.equal(r.into, wt.baseBranch)
     assert.deepEqual(r.overlap, ['README.md'], '合并成功也把重叠文件带出来')
+    // 自动合上也要把双方的提交记录交出来：接手核对的人要知道各自为什么这么改
+    assert.ok(r.sides, '合并成功也带上双方提交记录')
+    assert.ok(
+      r.sides!.into.commits.some((c) => c.includes('原目录改正文')),
+      '原分支的提交记录 ' + JSON.stringify(r.sides),
+    )
+    assert.ok(
+      r.sides!.by.commits.some((c) => c.includes('分支改标题')),
+      '独立分支的提交记录 ' + JSON.stringify(r.sides),
+    )
+    assert.match(mergeSidesText(r.sides!), /必须逐文件核对/, '重叠但没冲突也要逐文件核对')
     // 确实没有冲突、两边改动都在，但同一个文件被两边改过
     assert.match(readFileSync(path.join(repo, 'README.md'), 'utf8'), /分支改的标题[\s\S]*原目录改的正文/)
     // 都合完了，共同基点变成分支自己的提交，再比就没有重叠
@@ -283,6 +296,43 @@ test('原目录换了分支就不合并，冲突时带上 conflict 标记并撤�
     assert.ok(err instanceof Error && err.conflict)
     assert.equal(git(repo, 'status', '--porcelain').toString().trim(), '')
     assert.equal(readFileSync(path.join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# 原目录改的\n')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('冲突时交回双方的提交记录，看清各自为什么这么改再合', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '冲突记录')
+  try {
+    writeFileSync(path.join(wt.path, 'README.md'), '# 分支里改的标题\n')
+    git(wt.path, 'commit', '-qam', '分支：把标题改成新写法')
+    writeFileSync(path.join(repo, 'README.md'), '# 原目录改的标题\n')
+    git(repo, 'commit', '-qam', '原目录：标题也改了，方向不同')
+    // 合并前就能算出来：各有哪些提交、改了哪些文件、哪些两边都动过
+    const sides = await mergeSides(repo, wt.branch)
+    assert.equal(sides.into.branch, wt.baseBranch)
+    assert.equal(sides.into.count, 1)
+    assert.ok(
+      sides.into.commits.some((c) => c.includes('原目录：标题也改了')),
+      '原分支的提交说明',
+    )
+    assert.equal(sides.by.count, 1)
+    assert.ok(
+      sides.by.commits.some((c) => c.includes('分支：把标题改成新写法')),
+      '独立分支的提交说明',
+    )
+    assert.deepEqual(sides.overlap, ['README.md'])
+    const err = await mergeWorktree(repo, wt, '合并', repo, true).catch((e) => e as Error & { conflict?: boolean })
+    assert.ok(err instanceof Error && err.conflict, '带上 conflict 标记')
+    assert.match(err.message, /双方的提交记录/, '冲突时把双方的提交记录一起交回')
+    assert.match(err.message, /原目录：标题也改了/, '列出原分支的提交说明')
+    assert.match(err.message, /分支：把标题改成新写法/, '列出独立分支的提交说明')
+    assert.match(err.message, /两边都改过这些文件：README\.md/, '标出两边都动过的文件')
+    assert.match(err.message, /必须逐文件核对/, '要求写核对结论')
+    // 冲突撤回：目标目录没被改动
+    assert.equal(git(repo, 'status', '--porcelain').toString().trim(), '')
+    assert.equal(readFileSync(path.join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# 原目录改的标题\n')
   } finally {
     await removeWorktree(repo, wt, true)
   }

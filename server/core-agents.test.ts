@@ -185,7 +185,7 @@ test('「写 Bug 记录」只在文档角色里定义一次，版本控制角色
   // 文档落盘只有一个出口：版本控制角色只做提交 / pending 收尾，不再有「同步文档」「写 Bug 记录」两个开关
   assert.deepEqual(
     vcs.params.map((p) => p.key),
-    ['vcs', 'branch', 'merge', 'commit'],
+    ['vcs', 'branch', 'merge', 'mergeReview', 'commit'],
   )
   assert.match(vcs.instructions, /不改文档/, '版本控制角色要写清自己不写文档')
   assert.match(vcs.instructions, /派「文档」角色/, '需要写 ADR / 模块文档 / bugs.md 时交给文档角色')
