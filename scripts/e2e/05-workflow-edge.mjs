@@ -173,6 +173,26 @@ await runShard('工作流条件与失败', async (api) => {
   assert.match(d2.message, /自己的判断|不要再提问/, '问题让 CLI 自己选')
   step('提问开关关着：审批照样等用户，问题让 CLI 自己选最合适的做法')
 
+  // 提问窗口右上角的关闭就是停止：CLI 还卡在等回答，停止接口返回的任务里也不能再带着提问，不然窗口关不掉
+  ask = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'ASK 关掉',
+    askUser: true,
+  })
+  const r4 = await waitReq()
+  await call('POST', `/tasks/${ask.id}/requests/${r4.id}`, { allow: true })
+  const r5 = await waitReq()
+  assert.equal(r5.kind, 'question')
+  const stopped = await call('POST', `/tasks/${ask.id}/stop`)
+  assert.equal(stopped.requests.length, 0, '停止后马上没有在等的提问')
+  assert.equal((await call('GET', `/tasks/${ask.id}`)).requests.length, 0)
+  await assert.rejects(call('POST', `/tasks/${ask.id}/requests/${r5.id}`, { allow: true }), /已经结束/)
+  ask = await waitDone(ask.id)
+  assert.equal(ask.requests.length, 0)
+  step('关掉提问（停止）：在等回答的提问马上作废，提问窗口收起')
+
   // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
   const wfBranch = await call('POST', '/workflows', {
     name: '条件分支',

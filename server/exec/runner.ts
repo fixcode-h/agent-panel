@@ -386,6 +386,23 @@ export function autoAnswerQuestions(task: Task) {
   }
 }
 
+/**
+ * 用户停止对话（关掉提问也是停止）：还在等回答的请求马上作废，页面上的提问立刻收起。
+ * 不能等这一轮的进程结束再清：保活的 CLI 卡在等回答时这一轮不会结束，提问就一直关不掉。
+ * 工作流节点的确认不在这里处理：它跟着停止信号自己收掉，继续执行时重新确认
+ */
+export function dropRequests(task: Task) {
+  const drop = task.requests.filter((x) => x.kind !== 'confirm')
+  if (!drop.length) return false
+  task.requests = task.requests.filter((x) => x.kind === 'confirm')
+  for (const req of drop) {
+    const fn = replies.get(req.id)
+    replies.delete(req.id)
+    fn?.({ allow: false, message: '用户暂停了对话，先不要继续，等用户的下一条消息。' })
+  }
+  return true
+}
+
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
   const fn = replies.get(id)

@@ -74,6 +74,7 @@ import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsH
 import {
   answerRequest,
   autoAnswerQuestions,
+  dropRequests,
   cancelWait,
   deliverWait,
   forgetNotes,
@@ -4351,6 +4352,14 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     // 用户点「暂停」是唯一标成 user 的路径：别处停任务必须写清是谁结束的（见 StopReason）
     stopTask(id, 'user')
+    // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉
+    const e = live.get(id)
+    const tk = e?.task ?? (await store.get(id))
+    if (tk && dropRequests(tk)) {
+      tk.updatedAt = new Date().toISOString()
+      if (e) trackWait(e.task)
+      await store.update(tk.id, tk)
+    }
     // 停止就是这个对话先别干了：它和名下子对话的后台命令一起停掉，不然跑完的结果推回来又会开新的一轮
     void endBackground(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；

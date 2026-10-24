@@ -349,6 +349,25 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       await new Promise((r) => setTimeout(r, 300))
     }
   }
+  // 演示提问：对话里说「问我」时，先问你一个问题（换掉输入框），回答、不回答或关掉（暂停）后才接着输出
+  if (!call.step && /问我|ask me/i.test(ctx.prompt)) {
+    const id = ctx.newId()
+    ;(task.requests ??= []).push({
+      id,
+      step: '',
+      agentId: call.agentId,
+      kind: 'question',
+      title: '日期显示用哪种格式？',
+      detail: '',
+      options: ['2026-10-24', '10月24日'],
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+    // 和真实的保活 CLI 一样：卡在等回答时停止信号收不掉这个提问，只能靠停止接口把它作废
+    while (task.requests.some((r) => r.id === id)) await new Promise((r) => setTimeout(r, 300))
+    // 关掉提问就是暂停：请求被停止接口收掉了，这一轮到此为止
+    if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
+  }
   if (!call.step && ctx.first)
     task.todos = [
       { text: '搜索相关代码', status: 'done', agentId: call.agentId },
