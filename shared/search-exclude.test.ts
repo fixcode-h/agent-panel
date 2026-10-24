@@ -7,6 +7,7 @@ import {
   searchExcludeGlobs,
   searchExcludeOf,
   searchExcludePrompt,
+  searchExcludeRgConfig,
 } from './search-exclude.ts'
 import { ProjectInput } from './schema.ts'
 
@@ -65,4 +66,13 @@ test('搜索排除配置能存进项目并读回来（序列化往返）', () =>
   assert.deepEqual(saved.searchExclude, input.searchExclude)
   const reread = ProjectInput.parse(JSON.parse(JSON.stringify(saved)))
   assert.deepEqual(reread.searchExclude, input.searchExclude)
+})
+
+test('rg 配置：只排除目录；Git 仓库里只给项目自己填的', () => {
+  const p = { searchExclude: ['Saved', 'Intermediate/'] }
+  const all = searchExcludeRgConfig(p)
+  assert.deepEqual(all.slice(0, 2), ['--glob=!Saved/', '--glob=!Intermediate/'])
+  assert.ok(all.includes('--glob=!node_modules/'))
+  assert.deepEqual(searchExcludeRgConfig(p, { onlyProject: true }), ['--glob=!Saved/', '--glob=!Intermediate/'])
+  assert.deepEqual(searchExcludeRgConfig({}, { onlyProject: true }), [])
 })

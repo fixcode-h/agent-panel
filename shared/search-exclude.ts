@@ -80,6 +80,19 @@ export function searchExcludeGlobs(
 }
 
 /**
+ * ripgrep 配置文件的内容（每行一个参数）：面板用 RIPGREP_CONFIG_PATH 交给 CLI，
+ * Agent 自己跑的 rg 和 CLI 内置的搜索（底下也是 rg）不靠提示词也会跳过这些目录。
+ * 和 searchExcludeGlobs 同样只排除目录、显式把排除目录当起点时照样能搜；Git 仓库里只给项目自己填的
+ */
+export function searchExcludeRgConfig(
+  project: { searchExclude?: string[] } | undefined,
+  opts: { onlyProject?: boolean } = {},
+): string[] {
+  const list = searchExcludeOf(project)
+  return (opts.onlyProject ? list.filter((d) => !DEFAULT_SEARCH_EXCLUDE.includes(d)) : list).map((d) => `--glob=!${d}/`)
+}
+
+/**
  * find 的剪枝表达式：`\( -type d \( -name A -o -name B \) \) -prune -o`，拼在起点目录和条件之间。
  * find 不读 .gitignore，Git 仓库里也要用完整清单；只剪目录，不会把同名文件一起吞掉
  */

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
-import { mkdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import {
   aliasAgent,
   defaultAgent,
@@ -34,7 +35,7 @@ import {
   withTaskModel,
 } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
-import { HANDOFF_DIR } from '../store.ts'
+import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
@@ -49,7 +50,7 @@ import {
   type EngineHost,
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
-import { searchExcludeOf } from '../../shared/search-exclude.ts'
+import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -872,6 +873,7 @@ async function runAgent(
     // 用户在环境变量里自己写了同名的，以设置里这一档的值为准（写在后面）
     ...limitEnvVars(def, limits),
     ...noPushEnv(task),
+    ...(await searchExcludeEnv(ctx)),
   ])
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
@@ -1946,6 +1948,33 @@ export function noPushEnv(task: Task): { key: string; value: string }[] {
     { key: 'GIT_CONFIG_KEY_0', value: 'url.agent-panel-no-push://.pushInsteadOf' },
     { key: 'GIT_CONFIG_VALUE_0', value: '' },
   ]
+}
+
+/**
+ * 搜索排除交给 rg 自己执行：大项目（尤其 P4 这种没有 .gitignore 的）只靠提示词时，
+ * CLI 内置搜索照样扫进 Intermediate、Saved 这些产物目录，一次搜几分钟。
+ * 写一份 ripgrep 配置、用 RIPGREP_CONFIG_PATH 指过去；用户本来设了的，把原来的内容放在前面一起带上
+ */
+async function searchExcludeEnv(ctx: RealContext): Promise<{ key: string; value: string }[]> {
+  const lines = searchExcludeRgConfig(ctx.project, { onlyProject: ctx.isGit })
+  if (!lines.length) return []
+  const own = process.env.RIPGREP_CONFIG_PATH
+  const prev = own ? await readFile(own, 'utf8').catch(() => '') : ''
+  const body = [prev.trimEnd(), ...lines].filter(Boolean).join('\n') + '\n'
+  // 按内容起名、已有就不再写：并行的几个 Agent 同时启动时，rg 不会读到写了一半的文件
+  const file = path.join(CACHE_DIR, 'rg', `${createHash('sha1').update(body).digest('hex').slice(0, 16)}.rc`)
+  try {
+    if (!existsSync(file)) {
+      await mkdir(path.dirname(file), { recursive: true })
+      const tmp = `${file}.${process.pid}.tmp`
+      await writeFile(tmp, body)
+      await rename(tmp, file)
+    }
+  } catch (e) {
+    log.warn('agent', '写搜索排除配置失败', e)
+    return []
+  }
+  return [{ key: 'RIPGREP_CONFIG_PATH', value: file }]
 }
 
 async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
