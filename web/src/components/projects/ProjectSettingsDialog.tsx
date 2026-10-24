@@ -279,9 +279,6 @@ function Body({
   const [signals, setSignals] = useState<string[]>([])
   // 这次打开弹窗里 AI 初始化的结果：推荐项在「AI 初始化」页逐项或整体应用
   const [init, setInit] = useState<ProjectProposal | null>(null)
-  // 没单独选工作流时跟随分类的默认工作流，同样算选好了（服务端也是这么解析的）
-  const valid =
-    !!draft.name.trim() && !!(draft.workflowId || projectCategories.find((c) => c.id === draft.categoryId)?.workflowId)
   const set = <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   // 名称没填，或者名称就是原来的文件夹名时，换目录后名称跟着变成新的文件夹名；手动改过的名称不动
   const pickDir = (path: string) =>
@@ -291,6 +288,21 @@ function Body({
       return { ...d, path, name: follow && folderName(path) ? folderName(path) : d.name }
     })
   const dir = useDirInfo(draft.path)
+  // 目录里已有初始化写好的 AGENTS.md 和文档（比如上次初始化完没保存、删了项目再建）：直接算初始化过，不用再跑一遍。
+  // 只记是不是这样认出来的：目录再换成没初始化过的，要撤回
+  const [dirInit, setDirInit] = useState(false)
+  useEffect(() => {
+    if (dir === undefined) return
+    if (dir?.initialized && !draft.initializedAt) {
+      setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+      setDirInit(true)
+    } else if (!dir?.initialized && dirInit) {
+      setDraft((d) => ({ ...d, initializedAt: '' }))
+      setDirInit(false)
+    }
+    // 只跟着目录检测结果走
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [dir])
   const category = projectCategories.find((c) => c.id === draft.categoryId)
   const inherited = workflows.find((w) => w.id === category?.workflowId)
   const own = workflows.find((w) => w.id === draft.workflowId)
@@ -298,6 +310,9 @@ function Body({
   const general =
     workflows.find((w) => w.origin === 'builtin:project-general') ?? workflows.find((w) => w.name === GENERAL_NAME)
   const active = own ?? inherited ?? general
+  // 没单独选工作流时跟随分类的默认工作流；分类也没有就用「通用项目」，保存时写进去（服务端要求有默认工作流）。
+  // 初始化推荐的默认工作流和这个回退一致时「全部应用」没东西可点，不能因此一直存不了
+  const valid = !!draft.name.trim() && !!active
   // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
   const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
   const setParam = (id: string, key: string, value: ParamValue) =>
@@ -411,6 +426,7 @@ function Body({
       params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
     })
     setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+    setDirInit(false)
     setSection('init')
     // AGENTS.md 刚被改过，「项目说明」页要读新的
     if (project?.path)
@@ -455,7 +471,12 @@ function Body({
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
-      const input = { ...draft, name: draft.name.trim(), lessons: [...draft.lessons, ...fresh] }
+      const input = {
+        ...draft,
+        name: draft.name.trim(),
+        workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
+        lessons: [...draft.lessons, ...fresh],
+      }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
         for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
@@ -696,6 +717,7 @@ function Body({
                 workflows={workflows}
                 activeId={active?.id ?? ''}
                 fallbackId={init ? (fallbackWorkflow(init.type)?.id ?? '') : ''}
+                fromDir={dirInit}
                 globalFormat={globalFormat}
                 canStart={!!draft.path.trim()}
                 starting={analyzing || ai?.kind === 'project'}
@@ -1105,6 +1127,15 @@ function Body({
             onClick={() => setSection('init')}
           >
             {t('先完成「AI 初始化项目」才能保存')}
+          </button>
+        )}
+        {!!draft.initializedAt && !active && (
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-warning hover:underline"
+            onClick={() => setSection('workflows')}
+          >
+            {t('请为项目选择子对话默认工作流')}
           </button>
         )}
         <Button onClick={() => void confirm()} disabled={!valid || saving || !draft.initializedAt}>

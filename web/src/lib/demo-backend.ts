@@ -167,7 +167,8 @@ const fail = (msg: string): never => {
 
 // ---- 模拟的本机目录 ----
 const HOME = '/home/demo'
-const TREE: Record<string, { git?: string; branches?: string[] }> = {
+// init：目录里已有 AI 初始化写好的 AGENTS.md 和文档框架（还没建项目），新建项目时不用再初始化
+const TREE: Record<string, { git?: string; branches?: string[]; init?: boolean }> = {
   '/home/demo': {},
   '/home/demo/code': {},
   '/home/demo/code/web-shop': { git: 'main', branches: ['main', 'feat/checkout', 'fix/cart-total'] },
@@ -179,6 +180,7 @@ const TREE: Record<string, { git?: string; branches?: string[] }> = {
   '/home/demo/code/game-client/Source': {},
   '/home/demo/code/game-client/Content': {},
   '/home/demo/code/notes': {},
+  '/home/demo/code/lua-helper': { git: 'main', init: true },
   '/home/demo/Documents': {},
   '/home/demo/Downloads': {},
 }
@@ -199,7 +201,7 @@ function normalize(p: string) {
 function inspectDir(p: string): DirInfo {
   const path = normalize(p)
   const node = TREE[path]
-  return { path, exists: !!node, isDir: !!node, gitBranch: node?.git ?? null }
+  return { path, exists: !!node, isDir: !!node, gitBranch: node?.git ?? null, initialized: !!node?.init }
 }
 
 function listDir(p: string): DirListing {
@@ -2020,6 +2022,9 @@ function route(method: string, url: string, body: unknown): unknown {
     const input = parse(ProjectInput, body)
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')
+    // 和服务端一样：没指定默认工作流、分类也没有时不能保存
+    if (!input.workflowId && !d.projectCategories.find((c) => c.id === input.categoryId)?.workflowId)
+      fail('请为项目选择子对话默认工作流')
     if (input.path) input.path = normalize(input.path)
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }

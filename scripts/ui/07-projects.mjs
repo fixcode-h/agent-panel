@@ -369,4 +369,52 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '提取全局教训-已写入', ['条全局教训'])
     await p.keyboard.press('Escape')
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
+
+  // 新建项目：没单独选工作流时按「通用项目」算（正式版启动时自动装好，演示里先手动添加），
+  // 初始化完不应用任何推荐（比如推荐都和当前一致、「全部应用」没东西可点）也要能点「创建」
+  await p.goto(base + '#/workflows')
+  await p.getByRole('button', { name: '添加内置或导入的工作流' }).first().click()
+  await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
+  await p
+    .getByRole('dialog')
+    .locator('li', { has: p.getByText('通用项目', { exact: true }) })
+    .getByRole('button', { name: '添加', exact: true })
+    .click()
+  await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
+  await p.goto(base + '#/projects')
+  const createButton = () => p.getByRole('dialog').getByRole('button', { name: '创建', exact: true })
+  const newProject = async (dirPath) => {
+    await p.getByRole('button', { name: '新建项目' }).first().click()
+    await p.getByRole('dialog').getByLabel('本地目录').fill(dirPath)
+  }
+  await newProject('/home/demo/code/notes')
+  await check(p, '新建项目-未初始化', ['才能保存'])
+  assert.equal(await createButton().isDisabled(), true, '新建项目：没初始化时「创建」应该不能点')
+  await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化项目' }).first().click()
+  await p
+    .getByRole('button', { name: '查看推荐并应用' })
+    .click({ timeout: 20000 })
+    .catch(() => errors.push('新建项目：等不到「查看推荐并应用」'))
+  await check(p, '新建项目-初始化完成', ['初始化完成', '推荐设置'])
+  if (await createButton().isDisabled()) errors.push('新建项目：初始化完成后「创建」还是不能点')
+  else {
+    await createButton().click()
+    await p
+      .getByRole('dialog')
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('新建项目：点「创建」后弹窗没关（创建失败）'))
+    await check(p, '新建项目-已创建', ['notes'])
+  }
+
+  // 目录里已有初始化写好的 AGENTS.md 和文档：认出来，不用再初始化就能创建
+  await newProject('/home/demo/code/lua-helper')
+  await p
+    .getByRole('dialog')
+    .getByText('才能保存')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('新建项目：目录已经初始化过，还要求先初始化'))
+  if (await createButton().isDisabled()) errors.push('新建项目：目录已经初始化过，「创建」还是不能点')
+  await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化', exact: true }).click()
+  await check(p, '新建项目-目录已初始化', ['目录已经初始化过', '重新初始化'])
+  await p.keyboard.press('Escape')
 })

@@ -239,6 +239,7 @@ export function ProjectInitPanel({
   workflows,
   activeId,
   fallbackId,
+  fromDir,
   globalFormat,
   canStart,
   starting,
@@ -253,6 +254,8 @@ export function ProjectInitPanel({
   activeId: string
   /** AI 没评估出默认工作流时按项目类型选的内置工作流 */
   fallbackId: string
+  /** 没在这里初始化过，但目录里已有初始化写好的 AGENTS.md 和文档 */
+  fromDir: boolean
   globalFormat: FileFormat
   /** 选好本地目录才能开始 */
   canStart: boolean
@@ -320,16 +323,20 @@ export function ProjectInitPanel({
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="text-[0.875rem] font-medium">
-                {draft.initializedAt
-                  ? t('已于 {date} 初始化', { date: new Date(draft.initializedAt).toLocaleString() })
-                  : t('这个项目还没有初始化')}
+                {fromDir
+                  ? t('目录已经初始化过')
+                  : draft.initializedAt
+                    ? t('已于 {date} 初始化', { date: new Date(draft.initializedAt).toLocaleString() })
+                    : t('这个项目还没有初始化')}
               </span>
               <span className="text-[0.78125rem] text-subtle">
-                {draft.initializedAt
-                  ? t('项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。')
-                  : canStart
-                    ? t('初始化完成并应用后，才能点「确认」保存项目设置。')
-                    : t('先在「常规」里选好本地目录。')}
+                {fromDir
+                  ? t('目录里已有初始化写好的 AGENTS.md 和文档，可以直接保存；想要推荐的设置可以重新初始化。')
+                  : draft.initializedAt
+                    ? t('项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。')
+                    : canStart
+                      ? t('初始化完成并应用后，才能点「确认」保存项目设置。')
+                      : t('先在「常规」里选好本地目录。')}
               </span>
             </div>
             {startButton}
