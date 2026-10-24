@@ -643,7 +643,8 @@ async function screenshot(s: Session, target: string) {
   try {
     shot = await s.files.capture(s, target)
   } catch (e) {
-    return text(`${(e as Error).message}。先用 get_tree 和 check 检查`, true)
+    // 页面没打开、画布为空、渲染失败各自有准确原因，直接交给 AI，别盖成一句笼统的提示
+    return text((e as Error).message, true)
   }
   await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
   const file = path.join(s.files.dir, 'views', `screenshot-${s.shots.length + 1}.png`)

@@ -82,6 +82,7 @@ import type {
   ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
+  CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
@@ -624,6 +625,9 @@ export const api = {
       error?: string
     },
   ) => request<{ ok: boolean }>(`/designs/${id}/capture/${captureId}`, json('POST', body)),
+  /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
+  designCaptureWait: (id: string, signal: AbortSignal) =>
+    request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
   steerDesign: (id: string, text: string) =>
     request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
