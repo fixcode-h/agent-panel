@@ -887,7 +887,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 演示内容不够长，先把这一轮撑高，再滚到中部看署名行的位置
   {
     const stuck = await p.evaluate(async () => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       const row = [...document.querySelectorAll('*')].find((el) => getComputedStyle(el).position === 'sticky')
       if (!sc || !row) return 'no-sticky'
       const col = row.parentElement
@@ -906,9 +906,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else if (stuck.top !== 0 || stuck.top2 !== 0)
       errors.push(`署名吸顶：滚到回复中部时署名行没固定在顶部（top=${stuck.top}/${stuck.top2}）`)
     await p.evaluate(() => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       sc.scrollTop = 0
     })
+    // 回到底部只浮在消息区里：滚上去后按钮不能跑到消息区外面压住输入框和信息条
+    await p.waitForTimeout(150)
+    const back = p.getByRole('button', { name: '回到底部' })
+    if (!(await back.count())) errors.push('任务-回到底部：往上滚之后没有出现按钮')
+    else {
+      const b = await back.boundingBox()
+      const sc = await p.locator('[data-conversation-scroll="messages"]').boundingBox()
+      if (!b || !sc) errors.push('任务-回到底部：拿不到按钮或消息区的位置')
+      else if (b.y + b.height > sc.y + sc.height + 1)
+        errors.push(
+          `任务-回到底部：按钮落在消息区外面（按钮底 ${Math.round(b.y + b.height)}，消息区底 ${Math.round(sc.y + sc.height)}）`,
+        )
+    }
+    await check(p, '任务-回到底部')
     await check(p, '任务-署名吸顶')
   }
   // 启动命令只留图标，点开才显示完整命令
@@ -976,7 +990,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 只拖文字时不拦截浏览器默认行为
   {
     const dropped = await p.evaluate(async () => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       if (!sc) return { error: '没有消息区' }
       const box = sc.getBoundingClientRect()
       const at = (dt, x, y) => ({ bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y })
