@@ -39,7 +39,7 @@ import {
   type AgentParamGroup,
   type DerivedParam,
 } from '@shared/agent-params'
-import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
+import { ENV_LABEL, newTestStepId, parseGlobs } from '@shared/test-steps'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -946,7 +946,7 @@ function Body({
                   onChange={(v) => set('scaledVerify', v)}
                   label={t('按改动大小决定验证范围')}
                   tip={t(
-                    '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。',
+                    '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都按「适用改动」跑完整的步骤（不适用的一样跳过）。工作流里的测试验收不受影响。',
                   )}
                 />
                 <TestStepsEditor
@@ -1332,6 +1332,17 @@ function TestStepsEditor({
   aiRunning: boolean
 }) {
   const patch = (i: number, p: Partial<TestStep>) => onChange(steps.map((s, j) => (j === i ? { ...s, ...p } : s)))
+  // 「适用改动」在输入过程中保存用户敲的原文（逗号、空格原样回显），失焦后才按 parseGlobs 归一。
+  // 每次按键就 parse 再 join 会把刚敲下的逗号吞掉，手敲不进第二条 glob，续敲会拼成匹配不上的串。
+  // 草稿按步骤 id 记：上下移动不会串到别的步骤；内部生成的步骤 id 可能重复（两个都叫 node-typecheck），
+  // 那时草稿会短暂盖住 AI 回填的新值，下一次失焦就对上了
+  const [appliesDraft, setAppliesDraft] = useState<Record<string, string>>({})
+  const dropDraft = (id: string) =>
+    setAppliesDraft((d) => {
+      const next = { ...d }
+      delete next[id]
+      return next
+    })
   const move = (i: number, d: number) => {
     const j = i + d
     if (j < 0 || j >= steps.length) return
@@ -1346,6 +1357,9 @@ function TestStepsEditor({
         <span className="min-w-0 flex-1 text-xs leading-relaxed text-subtle">
           {t(
             '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。',
+          )}
+          {t(
+            '每条可以写「适用改动」（glob）：只改文档、资源这类没碰到的步骤会被跳过，并在验收结论里写清原因——同时会算上从远端拉取、合并进来的改动。',
           )}
         </span>
         <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>
@@ -1415,6 +1429,19 @@ function TestStepsEditor({
               placeholder={t('要执行的命令')}
               onChange={(e) => patch(i, { command: e.target.value })}
             />
+            <Input
+              className="h-8 font-mono text-xs"
+              value={appliesDraft[s.id] ?? (s.appliesTo ?? []).join(', ')}
+              aria-label={t('适用改动')}
+              placeholder={t('适用改动（相对项目根的 glob，逗号分隔）：例如 **/*.cpp、**/Build.cs；留空表示总是执行')}
+              onChange={(e) => {
+                // 原文留给输入框，步骤里存解析后的 glob：保存和提示词都读后者
+                const text = e.target.value
+                setAppliesDraft((d) => ({ ...d, [s.id]: text }))
+                patch(i, { appliesTo: parseGlobs(text) })
+              }}
+              onBlur={() => dropDraft(s.id)}
+            />
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="h-8 flex-[1_1_120px] font-mono text-xs"
@@ -1426,8 +1453,8 @@ function TestStepsEditor({
               <Input
                 className="h-8 flex-[1_1_140px] text-xs"
                 value={s.when}
-                aria-label={t('执行条件')}
-                placeholder={t('执行条件，例如「仅改了 web/ 时」')}
+                aria-label={t('补充说明')}
+                placeholder={t('补充说明，写给人看（判定以适用改动为准）')}
                 onChange={(e) => patch(i, { when: e.target.value })}
               />
               <Input
@@ -1479,6 +1506,7 @@ function TestStepsEditor({
                 env: 'auto',
                 cwd: '',
                 when: '',
+                appliesTo: [],
                 timeoutSec: 0,
                 note: '',
                 enabled: true,

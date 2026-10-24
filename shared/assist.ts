@@ -28,6 +28,7 @@ import {
   END,
   START,
   TEST_STEP_ENVS,
+  TestStepFields,
   type Agent,
   type AgentInput,
   type Category,
@@ -747,7 +748,9 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - command：要执行的命令原文，必须是项目里真实存在的命令
 - env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断（Windows 上默认 Git Bash）；只有确实必须在 WSL 里跑的（例如 agent-panel 的 e2e）才标 wsl
 - cwd：相对项目根的工作目录，没有就留空
-- when：执行条件，例如「仅在改了 web/ 时」「仅发布前」，没有就留空
+- appliesTo：适用改动，相对项目根的 glob 数组，例如 ["**/*.cpp", "**/*.h", "**/*.cs", "**/*.uproject"]。
+  改动清单里一个都不匹配时这一步会被跳过，所以按「改了哪些文件才真的需要跑」来填；拿不准就写空数组（空表示总是执行）
+- when：写给人看的补充说明，例如「仅发布前跑」，没有就留空；判定只看 appliesTo
 - timeoutSec：超时秒数，0 表示不限
 - note：给执行者看的说明，例如「同一时间只编译一次」
 - enabled：默认 true
@@ -756,13 +759,15 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建；编译类放在需要它之前。
 - 只写项目里真的有的命令：先看 package.json 的 scripts，没有脚本就不要编 \`npm run xxx\`。
 - UE 项目给编译（\`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`）、Lua 语法检查、可选的 AutomationTest；需要 Editor 的标成 enabled: false 并在 note 里说明。
-- 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。`,
+- 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。
+- 编译和构建类步骤要填 appliesTo：改到源码或构建清单（Build.cs、Cargo.toml、.uproject 等）才跑；只改文档、资源、配置时不跑。
+  测试类步骤同样按时它真正覆盖的源码来填。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
 先用两三句${promptLangWord()}说明你看到了什么、为什么这样排${ctx.projectPath ? '' : '，以及哪些命令要用户按项目实际情况改'}。
 然后输出且只输出一个 \`\`\`json 代码块：
 \`\`\`json
-{ "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
+{ "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "appliesTo": ["**/*.ts", "**/*.tsx", "**/tsconfig*.json"], "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
 \`\`\`
 字段名不能改；没有的字段可以不写（会按默认值补）。`,
     `## 对话\n${convo}`,
@@ -869,23 +874,21 @@ function paramSpecFor(ctx: AssistContext) {
   return all.filter((d) => d.agents.some((a) => a.id === ctx.paramAgentId))
 }
 
-const TEST_STEP_SHAPE = z.object({
+/**
+ * AI 给出的测试步骤：字段和项目里保存的那份是同一个定义（shared/schema.ts 的 TestStepFields），
+ * 新加字段不会只在一边生效；AI 只是可以不给 id，由这里补。
+ */
+const TEST_STEP_SHAPE = TestStepFields.extend({
   id: z.string().trim().max(40).optional(),
-  name: z.string().trim().min(1, 'name 不能为空').max(60),
-  command: z.string().trim().min(1, 'command 不能为空').max(2000),
+  // AI 的输出严格校验：环境、超时写错就让它改，不悄悄回退。尤其 timeoutSec——schema 里的 catch(0)
+  // 会把非法值变成 0，而 0 是不限时，等于把写错的超时静默当成永不超时。只有保存下来的老数据才按 catch 回退
   env: z.enum(TEST_STEP_ENVS).default('auto'),
-  cwd: z.string().trim().max(300).default(''),
-  when: z.string().trim().max(120).default(''),
   timeoutSec: z
     .number()
     .int()
     .min(0)
     .max(24 * 3600)
     .default(0),
-  note: z.string().trim().max(300).default(''),
-  enabled: z.boolean().default(true),
-  merge: z.boolean().default(false),
-  quick: z.boolean().default(false),
 })
 
 /**

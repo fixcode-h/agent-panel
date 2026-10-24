@@ -55,7 +55,8 @@ type TestStep = {
   command: string // 要执行的命令原文
   env: 'auto' | 'wsl' | 'powershell' | 'cmd' | 'bash'
   cwd: string // 相对项目根的工作目录，空表示项目根
-  when: string // 执行条件，例如「仅改了 web/ 时」
+  appliesTo: string[] // 适用改动：改动清单里有文件匹配这些 glob 才跑；空数组表示总是执行
+  when: string // 补充说明，写给人看的，例如「仅发布前跑」；判定以 appliesTo 为准
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
   quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
@@ -64,9 +65,49 @@ type TestStep = {
 }
 ```
 
-- 旧项目没有这个字段时默认 `[]`，不会读坏。
+- 旧项目没有这个字段时默认 `[]`，不会读坏；老步骤的 `appliesTo` 是空数组，表示**总是执行**，升级不会漏跑。
 - `Project.wslDistro`：标了 `wsl` 的步骤用哪个发行版，空时用 `Ubuntu-24.04`。
-- 项目设置里可以增删、上下移、启停；保存到 `ProjectInput` 时按 zod 校验。
+- 项目设置里可以增删、上下移、启停、填「适用改动」；保存到 `ProjectInput` 时按 zod 校验。
+
+### 按改动范围筛选（`appliesTo`）
+
+测试只做有意义的那几条：UE 没改 C++ 就不编译 C++，C# 没动过就不跑 `dotnet build`。
+
+- **匹配算法只有一份**：`shared/test-steps.ts` 的 `matchesGlob` / `stepApplies(step, changedFiles)`。
+  界面的输入解析（`parseGlobs`）、交给 Agent 的提示词（`appliesToText`）、单测都读它，不在前端或别的地方再写一套 glob 判断。
+  真正的比对由 Agent 按提示词里的改动清单做（执行流程里目前还没有按清单自动跳过的地方）。
+- **glob 语法**：相对项目根的路径，支持 `**`（跨目录）、`*`、`?`；`**/*.cpp` 也认仓库根下的 `a.cpp`；
+  没写通配符的写法按「精确命中或目录前缀」算（`web/src` 和 `web/` 都等价于 `web/src/**`、`web/**`）——
+  项目教训里习惯写 `src/payment/**` / `web/src` 这种，照抄进来不会变成永远匹配不上的规则。
+  界面上用逗号（中英文都认）分隔，由 `parseGlobs` 切分（最多 30 条，和 schema 的上限一致）。
+- **改动清单的口径是「这次任务实际波及的改动」**，不是只看自己那几个 commit：
+  - Git：`git diff --name-only <任务基线>...HEAD`（三点比较，含合并进来的内容）再加上 `git status --short` 里的工作区改动；
+  - Perforce：`p4 opened` 加上 `p4 diff` 里本次涉及的文件；其它版本控制按项目自己的约定。
+  - **拉取 / 合并远端更新后按合并后的清单重新判断**：合并进来的文件也算本次改动，涉及的步骤要正常执行，
+    不能以「这部分不是我改的」为理由跳过——只按自己的提交判断会把别人合进来的 C++ 改动漏掉。
+- 一个步骤的 `appliesTo` 和清单**完全不匹配才跳过**，跳过的要在验收结论里写一行
+  「跳过：步骤名 — 本次及合并进来的改动都没有 X（实际改的是 …）」；一条都不匹配时写
+  「本次改动不涉及配置的测试步骤 — 本次改的是 …」，不能默默什么都不说。
+- **取不到改动清单时按总是执行**：项目没有版本控制、命令失败、不知道任务基线时，清单是空的，
+  未知不等于不相关——宁可多跑也不能静默漏跑，同时要在结论里说明这次为什么没筛。
+  `stepApplies(step, [])` 同样返回 `true`，口径只有这一处。
+- 禁止「为了保险把所有步骤都跑一遍」：没匹配上的步骤跑了不算验证，还拖时间。
+  有 `merge: true` 的编译被选中时，仍然遵守「同一时间只编译一次」；这类步骤在提示词的步骤行里标「合并时编译」。
+- **范围是「整体」时不筛**：发布前验证、整体验收、依赖升级后确认步骤这几类节点把范围参数写成 `整体`
+  （`shared/builtin/workflows.ts` 里硬编码），它们的存在意义就是不按改动清单筛——按步骤顺序全跑，
+  跳过的只能因为环境跑不了（需要 Editor、需要别的系统），不能写「本次没改 X」。`CHANGED_FILES_RULE` 第 0 条
+  写了这条优先级，和测试角色里 `{{#if scope=本次改动}}` 的分支一致。
+- 没写 `appliesTo` 的步骤（老项目升级上来的、用户新加的）表示总是执行。
+- **升级提示**：以前把条件写在 `when` 里的步骤（例如「仅改了 web/ 时」），升级后 `appliesTo` 是空数组，
+  按「总是执行」处理——不会漏跑，但那条文字条件已经不再生效。要恢复原来的筛选，把条件改填到「适用改动」里；
+  `when` 现在只当人看的补充说明。
+
+`shared/builtin/agents.ts` 里测试角色（`tester`）的角色设定也写了同一条规则，
+但**真正带规则的是注入的提示词**（`testStepsBlock` 的 `CHANGED_FILES_RULE`），角色设定只是强调。
+
+端到端分片 `scripts/e2e/08-test-steps.mjs` 只保证「规则交到了角色手上」（提示词里有清单口径、合并口径、跳过要求），
+fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪批文件、含「只改了文档但合并进来 C++ 改动」）
+由 `shared/test-steps.test.ts` 用真实改动清单钉住。行为层的覆盖等判定接进执行流程后再补。
 
 ### 怎么交给 Agent
 
@@ -86,6 +127,8 @@ type TestStep = {
 - 小改动（文案、样式、注释、文档、配置值，一两个文件几十行内的局部修改，不动接口 / 数据结构 / 执行流程 / 构建配置 / 依赖）
   只跑 `quick` 的步骤；一条都没标就让 Agent 挑一个最快的检查。拿不准、快速检查没过都按大改动。
 - 大改动跑完整步骤，或者走带测试验收的工作流。工作流里的测试验收节点不受这个开关影响。
+- 两种大小都先按 `appliesTo` 筛掉不适用的步骤（「先看改动再决定跑哪些」）：小改动是「在适用的步骤里只跑 `quick` 的」，
+  不是「直接跳过编译类步骤」；跳过的都要写清原因。
 - 独立分支的子对话调用 `submit_build` 时传 `small: true`，合并编译只跑同时标了 `merge` 和 `quick` 的步骤
   （`mergeStepsFor`）；一条都没有时照常跑全部合并步骤，不会因为没配过而少编译。结果里写明跳过了哪些。
 - 关掉开关时提示改成「每次都跑完整步骤」，`small` 也不再生效。
@@ -109,9 +152,18 @@ type TestStep = {
 `defaultTestSteps(kind, { windows, scripts })` 按技术栈给一份：
 
 - Node / TypeScript：只列 `package.json` 里**真的有的** scripts（typecheck / lint / test:unit / test:e2e / build）；
-  Windows 上 `test:e2e` 标成 `wsl`。
-- UE：编译（`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex`）、Lua 语法检查（`luac -p`，不生成 `.luac`）、可选的 AutomationTest（默认停用）。
-- Rust / Go / Python / .NET / CMake 各给常用的检查、测试、构建。
+  Windows 上 `test:e2e` 标成 `wsl`。`appliesTo` 取源码 glob（`**/*.ts`、`**/*.tsx`…）加清单文件：
+  类型检查还看 `**/tsconfig*.json`、`**/package.json`，lint 另加 js / jsx / mjs / cjs / css / json / md / yml，
+  构建另加 js / jsx / mjs / css / html / json。纯 JS 项目（只有 `.js` / `.jsx` / `.cjs`）改源码时单测、端到端、
+  构建同样要跑，所以这几个 glob 也进 `nodeRun` 和 `node-build`——只有类型检查不认它们（tsc 不编纯 JS）。
+- UE：编译（`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex`）适用于
+  `**/*.cpp`、`**/*.h`、`**/*.inl`、`**/*.cs`、`**/*.uproject`、`**/*.uplugin`——UBT 按 Build.cs / Target.cs
+  生成编译规则、按 .uproject / .uplugin 找模块和插件，改了就得重编；只改资源（`.uasset` / `.umap`）或
+  配置（`.ini`）时不编译。Lua 语法检查（`luac -p`，不生成 `.luac`）只看 `**/*.lua`；
+  可选的 AutomationTest 默认停用，适用范围是 `**/*.cpp`、`**/*.h`（测试本身是 C++ 写的）。
+- Rust / Go / Python / .NET / CMake 各给常用的检查、测试、构建，`appliesTo` 取源码加清单文件
+  （Cargo.toml / Cargo.lock、go.mod / go.sum、pyproject.toml / pytest.ini / requirements.txt、
+  csproj / sln / props / targets、`**/CMakeLists.txt` / `**/*.cmake`）；`cargo fmt --check` 只看 `**/*.rs`。
 
 「AI 初始化项目」先用 `POST /projects/analyze` 快速扫一遍（这份默认步骤当线索），再让本机 Agent 在项目目录里写 AGENTS.md 和文档框架（`skills/docs/project-documentation`），评估工作流、推荐测试步骤和项目设置（`shared/project-init.ts`）。推荐项在项目设置的「AI 初始化」页逐项或整体应用，用户确认保存后才生效；`Project.initializedAt` 为空的项目（含旧项目）不能保存设置。
 

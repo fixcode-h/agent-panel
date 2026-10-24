@@ -224,7 +224,7 @@ ${workflowList(opts.workflows, opts.defaultChoices)}
 - wslDistro：测试步骤里有必须在 WSL 跑的步骤时用哪个发行版，没有就不写
 - scaledVerify：true 时小改动只跑标了 quick 的步骤；完整测试特别慢（例如 UE 编译）时推荐 true
 
-测试步骤 steps：Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto；Windows 上默认走 Git Bash，只有确实必须在 WSL 里跑的才标 wsl）、cwd（相对项目根）、when、timeoutSec（0 不限）、note、enabled、quick（几十秒内跑完的检查标 true）。先静态检查和单元测试，再端到端和构建。`,
+测试步骤 steps：Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto；Windows 上默认走 Git Bash，只有确实必须在 WSL 里跑的才标 wsl）、cwd（相对项目根）、appliesTo（适用改动：改了哪些文件才跑这一步，相对项目根的 glob 数组，例如 ["**/*.cpp"]；空数组表示总是执行；编译和构建要按源码与构建清单填，只改文档、资源时不跑）、when（写给人看的补充说明）、timeoutSec（0 不限）、note、enabled、quick（几十秒内跑完的检查标 true）。先静态检查和单元测试，再端到端和构建。`,
     opts.rules.trim() ? `## 用户补充的规则（优先遵守）\n${opts.rules.trim()}` : '',
     `## 输出格式
 先用三五句${lang}说明：项目是做什么的、写了哪些文档、推荐的要点和需要用户注意的地方。
