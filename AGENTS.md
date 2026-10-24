@@ -34,6 +34,8 @@
 
 | 要做的事                                     | 先读                                                                                   |
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 文档入口、快速开始、文档索引                 | [docs/README.md](docs/README.md)                                                       |
+| 改动该放哪个模块、模块之间怎么依赖           | [docs/MODULE-MAP.md](docs/MODULE-MAP.md)，模块细则在 `docs/modules/`                   |
 | 接新 CLI、改参数 / 输出解析 / 思考强度 / API | [docs/cli-config.md](docs/cli-config.md)（开头有接入检查清单）                         |
 | 模型的上下文、最大输出、强度                 | [docs/model-catalog.md](docs/model-catalog.md)                                         |
 | 增删合并内置角色或工作流                     | [docs/agent-catalog.md](docs/agent-catalog.md)（判定标准）                             |
