@@ -4,12 +4,14 @@
 // 3. 教训分片的格式和大小：有 paths、每条有「规则」、单个分片不超过 6 KB、paths 至少命中一个文件
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
+// 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { globToRegExp, readShards } from './lessons.mjs'
+import { checkModuleDocsInRoot } from './lib/doc-modules.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
@@ -136,6 +138,9 @@ for (const f of files) {
         errors.push(`${f}:${i + 1} 用 delete 清任务字段，落盘后旧值还在，改成写 undefined：${l.trim()}`)
     })
 }
+
+// 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
+errors.push(...checkModuleDocsInRoot(root))
 
 if (errors.length) {
   console.error(errors.join('\n'))

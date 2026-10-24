@@ -1376,7 +1376,7 @@ export function mergeChanges(into: FileChange[], add: FileChange[]) {
 /**
  * 一次调用自己的改动：只统计 CLI 亲自报告的文件改动（Write、Edit 这类工具报的 file 事件）。
  * 没有报告过文件时返回空：工作区差值里混着同一工作区里并行子对话、别的任务改的文件，
- * 全算给它会让只读调研节点显示成「改文件 32/28」。任务级的整体改动另记在 task.changes。
+ * 全算给它会让没报告文件的节点显示成「改文件 32/28」。任务级的整体改动另记在 task.changes。
  */
 export function ownedChanges(since: FileChange[], touched: Set<string>): FileChange[] {
   if (!touched.size) return []
