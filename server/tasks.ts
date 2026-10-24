@@ -1481,6 +1481,22 @@ export function tasksApi(deps: {
     state === 'wrapup' ? `wrapup|${tk.wrapRequest?.at ?? ''}` : `${state}|${tk.turnDoneAt}|${tk.status}`
 
   /**
+   * 正在做的「彻底完成」：删独立分支的目录和分支、清后台命令。
+   * 继续执行（追加要求）要等它结束再重建目录：收尾和重建撞在一起时，刚重建起来的分支可能又被这次收尾删掉
+   * （测试里表现为刚重建的分支状态又变回「已合并」）。并发的两次收尾共用同一次，不重复删。
+   */
+  const completing = new Map<string, Promise<void | ChildFlowStop>>()
+  function completeChildOnce(childId: string, tk: Task): Promise<void | ChildFlowStop> {
+    const running = completing.get(childId)
+    if (running) return running
+    const p = completeChild(childId, tk).finally(() => {
+      if (completing.get(childId) === p) completing.delete(childId)
+    })
+    completing.set(childId, p)
+    return p
+  }
+
+  /**
    * 第 4 步：子对话这一侧把自己置为完成。
    * 独立分支的目录和分支只在这一步回收（合并成功不等于做完了，别在别处删目录：
    * 还在跑、计划没做完、后台命令还在写目录时删了就把改动一起丢了），
@@ -1488,6 +1504,9 @@ export function tasksApi(deps: {
    */
   async function completeChild(childId: string, tk: Task): Promise<void | ChildFlowStop> {
     const entry = live.get(childId)
+    // 这次收尾推进到一半时用户又发消息继续了：live 里已经换成新的一轮（resume 会重新 reserve、克隆新任务），
+    // 这次完成作废。否则收尾结束时会把旧快照写回去，刚重建的分支又被标成「已合并」
+    if (entry && entry.task !== tk) return { holds: ['working'], info: t('子对话又开始执行了，等这一轮结束再收尾') }
     // 彻底完成就不再留着会话进程：共用父目录的子对话也一样。
     // 以前这一步只在独立分支里做，共用目录的子对话 resolved 之后 CLI 还在等下一句，
     // 只能等 presence 宽限期（未读的连计时都不排）兜底，实测会留下十几个没人用的进程。
@@ -1563,7 +1582,7 @@ export function tasksApi(deps: {
     const run = await advanceChild(
       childFlowOf(tk, { background: pendingJobs(childId), reported: done || reportedDone.has(childId) }),
       {
-        complete: () => completeChild(childId, tk),
+        complete: () => completeChildOnce(childId, tk),
         // 第 5 步：上报父对话，走统一的状态上报（见 reportChild）：说法、计划收口和别的状态变化是同一套
         report: async () => {
           reportedDone.add(childId)
@@ -2669,6 +2688,8 @@ export function tasksApi(deps: {
       peer?: TaskMessage['peer']
     },
   ) {
+    // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
+    await completing.get(id)?.catch(() => {})
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
     const got = reserve(task)
