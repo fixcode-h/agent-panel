@@ -43,6 +43,7 @@ import {
   childHoldText,
   childFacts,
   childReport,
+  convActive,
   convState,
   convStateText,
   type ConvState,
@@ -88,6 +89,7 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
+import { stopHelper } from '../shared/engine.ts'
 import { makeAlert } from '../shared/alerts.ts'
 import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from './exec/delivery.ts'
 import {
@@ -314,12 +316,10 @@ export function tasksApi(deps: {
   }
   /** 排队等名额、还没开始执行的子对话：父对话判断「有没有子对话在跑」时也算上 */
   const startQueue = new Set<string>()
-  // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
-  // 父对话的 CLI 结束时它名下子对话的进程一起结束，不留孤儿
-  setPresenceIdleHandler((id) => {
-    cancelWait(id)
-    void closeChildren(id)
-  })
+  // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
+  // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
+  // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0010）
+  setPresenceIdleHandler((id) => cancelWait(id))
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
     const tk = live.get(id)?.task
@@ -1557,6 +1557,29 @@ export function tasksApi(deps: {
   /** 后台命令还在跑 / 排队：结果推回来还要接着做，不算彻底结束 */
   const pendingJobs = (id: string) =>
     background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length
+
+  /**
+   * 子对话还在运行（见 convActive）：在跑、等结果、等回答，或者排着队、还有交过来的消息要接着处理。
+   * 父对话的「子对话在跑」计数、标题和侧栏的转圈、能不能回收都读它
+   */
+  const childActive = (tk: Task) =>
+    startQueue.has(tk.id) || hasHeld(tk.id) || convActive(convState(childFacts(tk, { background: pendingJobs(tk.id) })))
+
+  /** 名下还在运行的子对话数：all 是已经取好的任务列表（列表接口一次算完所有父对话） */
+  async function activeChildren(parentId: string, all?: Task[]) {
+    let n = 0
+    for (const k of all ?? (await store.list()))
+      if (k.parentTaskId === parentId && childActive(live.get(k.id)?.task ?? k)) n++
+    return n
+  }
+
+  /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
+  async function withLive(task: Task): Promise<Task> {
+    const t = withJobs(task)
+    if (task.parentTaskId) return t
+    const n = await activeChildren(task.id)
+    return n ? { ...t, childrenWorking: n } : t
+  }
 
   /**
    * 父对话已经收到「子对话已完成」上报的子对话。只在进程里记：重启后把已经置完成（resolved）的当作上报过了，
@@ -3042,6 +3065,11 @@ export function tasksApi(deps: {
   const stopTask = (id: string, reason: StopReason) => {
     // 停止、删除后不会再开始排队的子对话：让等着的调用拿到明确失败，不然它们会一直挂着
     slots.drain(id, new Error('任务已停止，排队的子对话不再开始'))
+    // 只有用户自己停止、归档时名下子对话才一起结束（原因记成 parent，不是用户暂停）。
+    // 父对话自己的 CLI 已经退了（这一轮说完、只剩子对话在跑）也要停：在这里先做，不受下面「没在跑」的提前返回影响。
+    // 闲置回收、换 CLI、打断重发、CLI 卡住重开只是父对话自己这一轮的事：子对话有自己的进程和状态，
+    // 还在跑的不能跟着被杀，做完结果照样推回父对话（见 ADR 0010）
+    if (reason === 'user' || reason === 'archive') void closeChildren(id)
     const e = live.get(id)
     if (!e) return
     // 已经在停了（停止按钮连点、closeChildren 先停一次再补一次）：别再推一条一模一样的提示
@@ -3055,27 +3083,22 @@ export function tasksApi(deps: {
     // 现在就在父对话里点明，不留到用户自己发现
     if (firstStop && (reason === 'user' || reason === 'parent' || reason === 'supersede'))
       void stopWorktreeNote(e.task, reason)
-    // 用户主动停止父对话：它名下子对话的进程一起结束，不留孤儿（子对话的原因记成 parent，不是用户暂停）
-    void closeChildren(id)
   }
 
   /**
-   * 这个对话这一轮是不是还在跑：正在执行的对话不受两个回收时长和保活上限管，
-   * 不管页面开着还是已经切到后台。只有停在等下一句（awaitingUser、CLI 进程留着、
-   * 没有后台命令在跑、名下也没有子对话）的才算空闲会话。
-   * 在跑的包括：这一轮没收尾（含在等它派出的子任务）、CLI 正在回话或预热中、
-   * 后台命令还没跑完（跑完要把结果交给它汇报，收了就断了），以及名下还有活着的子对话
-   * （收了父对话会连子对话的进程一起停掉，见 closeChildren）。
-   * 还在排队等名额的子对话不算：它们不在 live 里，这里查不到，父对话这时会被当作空闲（与以前一致，
-   * 拿到名额后照旧启动；要一并保护得在 startChild 里记一份「子 → 父」的归属）
+   * 这个对话还在运行，不能回收、失活（ADR 0010）：两个回收时长、保活上限都先问它，页面开着还是切到后台都一样。
+   * 判定就是 convActive（自己在跑、在等子任务 / 子对话 / 后台命令 / 工作流，有没回复的提问和请求），
+   * 再加上这一轮没收尾、在预热、还有排队的消息。只有停在等下一句、什么都没挂着的才是空闲会话。
+   * 名下子对话只算还在运行的（childActive）：父对话被回收不会再连带停掉子对话，闲着的子对话不用护着它
    */
   function keepAliveBusy(id: string): boolean {
     const entry = live.get(id)
     if (!entry) return false
-    // 后台命令和子对话数不在任务数据里，按运行时情况算好传给纯函数（判定本身在 shared/task.ts，能单测）
-    const running = background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length
-    const children = [...live.values()].filter((e) => e !== entry && e.task.parentTaskId === id).length
-    return keepAliveBusyOf(entry.task, { background: running, children })
+    if (startQueue.has(id) || hasHeld(id)) return true
+    const children = [...live.values()].filter(
+      (e) => e !== entry && e.task.parentTaskId === id && childActive(e.task),
+    ).length
+    return keepAliveBusyOf(entry.task, { background: pendingJobs(id), children })
   }
 
   /**
@@ -3124,11 +3147,9 @@ export function tasksApi(deps: {
   async function enforceKeepAlive(selfId = '') {
     const { keepAliveLimit } = await getSettings()
     if (!keepAliveLimit) return
-    // 名下有子对话在跑或在排队的父对话不回收：stopTask 会把子对话一起结束，那是真的误杀
-    const withKids = new Set([...live.values()].map((e) => e.task.parentTaskId).filter((id) => !!id))
-    const pool = [...live.values()]
-      .map((e) => e.task)
-      .filter((t) => !withKids.has(t.id) && !queued(t.id) && !keepAliveBusy(t.id))
+    // 还在运行的对话（自己或名下子对话、子任务、后台命令没完，提问没回复，排着队）不回收：只收真闲着的。
+    // 判定和宽限到期时是同一个（keepAliveBusy → convActive）
+    const pool = [...live.values()].map((e) => e.task).filter((t) => !queued(t.id) && !keepAliveBusy(t.id))
     // 只放过前台正开着的页面：切走后还在宽限期里的也算进上限（hasViewer 会把它们都当成有人在看，
     // 一小时内点开过的对话全部豁免，上限形同虚设）。这里排掉的只有 running 的，见 keepAliveVictims
     // 刚进入保活的那个也算进上限（+1）；它其实是 busy（后台命令还在跑）时不占名额，别多收一个空闲会话
@@ -3210,13 +3231,11 @@ export function tasksApi(deps: {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
     const all = (await store.list()).map((t) => idle(live.get(t.id)?.task ?? t))
-    // 子对话在跑时父对话也算执行中：一次算好所有父对话名下的数量，前端不用再为每个任务发请求
+    // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
+    // 口径和标题栏、能不能回收是同一个（childActive）：等结果、等回答的子对话也算，不只看 working
     const kids = new Map<string, number>()
     for (const k of all) {
-      if (!k.parentTaskId) continue
-      const cur = live.get(k.id)?.task ?? k
-      // 和子对话栏里「执行中」的口径一致：标记了「解决」的已经算做完，不再计成在跑
-      if (!cur.working || cur.resolved) continue
+      if (!k.parentTaskId || !childActive(k)) continue
       kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
     }
     let list = all.map((t) => {
@@ -3346,6 +3365,23 @@ export function tasksApi(deps: {
     await closeChildren(parent.id)
     await Promise.all(kids.map((k) => endBackground(k.id)))
     return c.json({ stopped: before })
+  })
+
+  /**
+   * 终止对话派出的一个子任务（界面上的终止按钮）：还在跑的结束它的 CLI，还在排队的不再开始，
+   * 按「已终止」交回给派它的对话；对话本身、别的子任务都不动
+   */
+  routes.post('/:id/subtasks/stop', async (c) => {
+    const id = c.req.param('id')
+    const body = await c.req.json().catch(() => ({}))
+    const stepId = typeof body?.step === 'string' ? body.step : ''
+    const tk = await current(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const step = tk.steps.find((s) => s.id === stepId && s.slot === 'sub')
+    if (!step) return bad(c, t('找不到这个子任务'), 404)
+    if (!stopHelper(id, step.id, '用户在界面上终止了这个子任务')) return bad(c, t('这个子任务已经结束了'), 409)
+    log.info('task', '用户终止了子任务', { task: id, step: step.id })
+    return c.json(await current(id))
   })
 
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
@@ -3492,13 +3528,15 @@ export function tasksApi(deps: {
           .filter((j) => j.state === 'queued' || j.state === 'running')
           .map((j) => `${j.id}:${j.state}`)
           .join(',')
+      // 名下子对话还在运行的数量也要比：子对话开始、做完不改父对话本身，标题栏的转圈要跟着变
+      const liveKey = async () => `${jobKey()}|${await activeChildren(id)}`
       while (!closed) {
         // 没在执行的任务先只看任务本身的更新时间：完整对话在内存里只留十几个，被挤出去后
         // 每秒都 current() 一次就是每秒从磁盘重读、校验一遍几 MB 的对话；没变就不用读
         const e = live.get(id)
         if (!e && meta) {
           const head = await store.peek(id)
-          if (head && `${head.updatedAt}|${jobKey()}` === seen.slice(seen.indexOf('#') + 1)) {
+          if (head && `${head.updatedAt}|${await liveKey()}` === seen.slice(seen.indexOf('#') + 1)) {
             if (Date.now() - beat > 15_000) {
               await stream.writeSSE({ event: 'ping', data: '' })
               beat = Date.now()
@@ -3512,12 +3550,12 @@ export function tasksApi(deps: {
           await send('gone', {})
           break
         }
-        const t = withJobs(cur)
+        const t = await withLive(cur)
         // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务。
-        // 后台命令开始、结束不一定改任务本身（对话空闲时），状态单独算进去
+        // 后台命令开始、结束、子对话开始做完都不一定改任务本身（对话空闲时），单独算进去
         const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
         // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
-        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}`
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })
@@ -3557,7 +3595,7 @@ export function tasksApi(deps: {
 
   routes.get('/:id', async (c) => {
     const task = await current(c.req.param('id'))
-    return task ? c.json(withJobs(task)) : bad(c, t('任务不存在'), 404)
+    return task ? c.json(await withLive(task)) : bad(c, t('任务不存在'), 404)
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
@@ -4367,8 +4405,9 @@ export function tasksApi(deps: {
         !!afterRun &&
         (beforeRun.cli !== afterRun.cli || beforeRun.model !== afterRun.model || beforeRun.effort !== afterRun.effort))
     if (!runChanged) return c.json(task)
-    // 正在回复这一轮：不能现在换进程；这一轮结束时 start 的收尾会按新的选择重开
-    if (e?.task.working) return c.json(task)
+    // 正在回复这一轮、或者在等派出的子任务（它们跑在这个进程的这一轮里）：不能现在换进程；
+    // 这一轮结束时 start 的收尾、下一条消息交付时都会按新的选择重开
+    if (e?.task.working || (e && helpersWorking(e.task))) return c.json(task)
     // 空闲的常驻 CLI：让它结束，按新的选择重新预热，命令和上下文不再显示旧 CLI
     if (e) {
       e.restart = true
@@ -4376,8 +4415,7 @@ export function tasksApi(deps: {
       if (!canceled) stopTask(id, 'switch')
       if (!e.done) return c.json(task)
       await e.done
-      // 换了 CLI/模型后旧进程的上下文不能留：名下子对话的进程一起结束，下次发消息再按新的启动
-      await closeChildren(id)
+      // 子对话不跟着重启：它们有自己的 CLI 和模型，还在跑的被杀就是误杀
       // 这一轮结束后要处理的消息由收尾的 followUp 用新的选择接着跑，不要在这里和它抢执行位
       if (live.has(id)) return c.json(live.get(id)!.task)
       if (!canceled) task.status = 'done'
@@ -4530,12 +4568,21 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     // 用户点「暂停」是唯一标成 user 的路径：别处停任务必须写清是谁结束的（见 StopReason）
     stopTask(id, 'user')
-    // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉
-    const e = live.get(id)
-    const tk = e?.task ?? (await store.get(id))
-    if (tk && dropRequests(tk)) {
+    // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
+    // 停止是停掉这个对话附属的一切：名下子对话的提问、确认、请用户决定的选择也一起作废
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id)
+    for (const tid of [id, ...kids.map((k) => k.id)]) {
+      const e = live.get(tid)
+      const tk = e?.task ?? (await store.get(tid))
+      if (!tk) continue
+      const asked = !!tk.parentAsks?.length
+      if (asked) tk.parentAsks = []
+      if (!dropRequests(tk) && !asked) continue
       tk.updatedAt = new Date().toISOString()
-      if (e) trackWait(e.task)
+      if (e) {
+        trackWait(e.task)
+        e.rev++
+      }
       await store.update(tk.id, tk)
     }
     // 停止就是这个对话先别干了：它和名下子对话的后台命令一起停掉，不然跑完的结果推回来又会开新的一轮

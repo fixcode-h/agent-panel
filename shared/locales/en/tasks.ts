@@ -1025,4 +1025,15 @@ export const EN_TASKS: Record<string, string> = {
   '它已经不在停下了，可能已经继续或者做完了': 'It is no longer stopped; it may have resumed or finished',
   '让它接着做：重新占执行位，从停下的地方继续':
     'Let it keep working: take the run slot again and continue where it stopped',
+  '已终止子任务「{title}」': 'Stopped subtask "{title}"',
+  终止子任务: 'Stop subtask',
+  '终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话':
+    'Stop subtask: a running one ends now, a queued one never starts, and it is handed back to the conversation as stopped',
+  终止: 'Stop',
+  已终止: 'Stopped',
+  '已终止，没做完的部分不会交回': 'Stopped; the unfinished part is not handed back',
+  '子任务已终止，派它的对话会收到终止原因。这里只能查看':
+    'The subtask was stopped; the conversation that sent it gets the reason. View only',
+  后台命令执行中: 'Background command running',
+  工作流执行中: 'Workflow running',
 }

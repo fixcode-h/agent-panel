@@ -150,6 +150,8 @@ export interface AgentCall {
   orch?: Orchestra
   /** 预热：打开对话页时先用 --resume 启动，只等下一句，不算一轮、不记输出 */
   prewarm?: boolean
+  /** 只停这一次调用（终止单个子任务）；整个任务停止仍走宿主的信号 */
+  signal?: AbortSignal
 }
 
 /** 派一个子 Agent 的要求 */
@@ -282,6 +284,8 @@ export interface Orchestra {
   helperBatch(): Promise<HelperBatch> | undefined
   status(): string
   spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
+  /** 终止自己派出的子任务（不写 ids 就是全部还没结束的）；why 会写进交回的结果 */
+  stopHelpers(ids: string[], why: string): { ok: boolean; info: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
   ask(question: string, ms: number): Promise<{ answer?: string; pending?: boolean; error?: string }>
   send(to: string, text: string): Promise<{ ok: boolean; info: string }>
@@ -2243,6 +2247,21 @@ interface OrchState {
   queue: (() => void)[]
 }
 const orchStates = new WeakMap<EngineHost, OrchState>()
+
+/**
+ * 正在跑、在排队的子任务：任务 id + 子任务 id → 终止它用的开关。
+ * 界面上的终止按钮（服务端的路由）和对话的 stop_subtask 工具都走 stopHelper，只停这一个，不动对话本身
+ */
+const helperStops = new Map<string, AbortController>()
+const helperKey = (taskId: string, stepId: string) => `${taskId}\n${stepId}`
+
+/** 终止一个子任务：还在跑就结束它的 CLI，还在排队就不再开始。why 写进交回给对话的结果；没找到返回 false */
+export function stopHelper(taskId: string, stepId: string, why: string) {
+  const ac = helperStops.get(helperKey(taskId, stepId))
+  if (!ac || ac.signal.aborted) return false
+  ac.abort(why)
+  return true
+}
 function orchState(host: EngineHost): OrchState {
   let st = orchStates.get(host)
   if (!st) {
@@ -2309,7 +2328,9 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
     .map((k) =>
       k.status === 'done'
         ? `### ${k.title}\n${k.output || '（没有文字输出）'}`
-        : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`,
+        : k.status === 'skipped' && st.errors.get(k.id)
+          ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
+          : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`,
     )
     .join('\n\n')
 }
@@ -2763,6 +2784,32 @@ function makeOrchestra(
       host.changed(true)
       return { ids: made.map((m) => m.step.id) }
     },
+    stopHelpers(ids, why) {
+      if (helper) return { ok: false, info: '子任务不能终止别的子任务' }
+      const mine = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
+      const want = ids.length
+        ? ids.map((id) => mine.find((s) => s.id === id || s.title === id))
+        : mine.filter((s) => s.status === 'running' || s.status === 'pending')
+      const missing = ids.filter((_, i) => !want[i])
+      const done: string[] = []
+      const over: string[] = []
+      for (const s of want) {
+        if (!s) continue
+        if (stopHelper(task.id, s.id, why)) done.push(`${s.id}｜${s.title}`)
+        else over.push(`${s.id}｜${s.title}`)
+      }
+      if (!done.length && !over.length && !missing.length) return { ok: false, info: '没有还在执行或排队的子任务' }
+      return {
+        ok: done.length > 0,
+        info: [
+          done.length ? `已终止 ${done.length} 个子任务：${done.join('、')}。它们会按「已终止」交回，不用等。` : '',
+          over.length ? `这些已经结束了，不用终止：${over.join('、')}` : '',
+          missing.length ? `找不到这些子任务（只能终止你自己派出的）：${missing.join('、')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      }
+    },
     async wait(ids, ms) {
       const mine = ids.length
         ? ids
@@ -2839,11 +2886,42 @@ async function runHelper(
   siblings: string[],
 ) {
   const st = orchState(host)
+  const ac = new AbortController()
+  const key = helperKey(host.task.id, step.id)
+  helperStops.set(key, ac)
+  /** 被终止了：记成跳过，原因交回给派它的对话（见 settleHelpers） */
+  const stopped = () => {
+    step.status = 'skipped'
+    // 交回给派它的对话看的说明，不翻译
+    st.errors.set(step.id, `已终止：${String(ac.signal.reason || '没写原因')}`)
+    step.endedAt = now()
+    host.changed(true)
+  }
   // 有名额就当场占住；没有才排队。等待者被唤醒时不自己加一，名额由释放方直接交接，
-  // 否则唤醒到它真正继续之间新来的子 Agent 会看到还没满，又多占一个
+  // 否则唤醒到它真正继续之间新来的子 Agent 会看到还没满，又多占一个。
+  // 排队时被终止：从队里拿掉，不占名额，直接按终止交回
+  let entered = true
   if (st.running < MAX_HELPERS_RUNNING) st.running++
-  else await new Promise<void>((r) => st.queue.push(r))
+  else
+    entered = await new Promise<boolean>((resolve) => {
+      const enter = () => {
+        ac.signal.removeEventListener('abort', leave)
+        resolve(true)
+      }
+      const leave = () => {
+        const i = st.queue.indexOf(enter)
+        if (i >= 0) st.queue.splice(i, 1)
+        resolve(false)
+      }
+      st.queue.push(enter)
+      ac.signal.addEventListener('abort', leave, { once: true })
+    })
+  if (!entered) {
+    helperStops.delete(key)
+    return stopped()
+  }
   try {
+    if (ac.signal.aborted) return stopped()
     if (host.halted) return
     step.status = 'running'
     step.startedAt = now()
@@ -2872,7 +2950,10 @@ async function runHelper(
       // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
       // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
       orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
+      signal: ac.signal,
     })
+    // 单独终止的：不管 CLI 怎么收的尾，都按终止交回（整个任务停止时 ac 没被触发，照旧走下面）
+    if (ac.signal.aborted) return stopped()
     if (r.ok) {
       const late = await settleHelpers(host, step)
       // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的 🛑 / 💭 整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
@@ -2893,6 +2974,7 @@ async function runHelper(
     step.endedAt = now()
     host.changed(true)
   } finally {
+    helperStops.delete(key)
     // 名额直接交给排在最前面的那个，running 保持不变；没人排队时才真正空出来
     const next = st.queue.shift()
     if (next) next()

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
-import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import { runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -68,9 +68,11 @@ const workflow = (steps: StepSpec[], withCheck = false): Workflow =>
     ],
   })
 
+type Failed = { ok: false; stopped?: boolean; error: string }
+
 function makeHost(
   w: Workflow,
-  reply: (call: AgentCall) => string | Promise<string> | { ok: false; stopped?: boolean; error: string },
+  reply: (call: AgentCall) => string | Promise<string | Failed> | Failed,
   confirm?: EngineHost['confirm'],
 ) {
   const task = {
@@ -243,6 +245,41 @@ test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下', async (
   assert.equal(helper.status, 'done')
   // wait 已经取回的结果不再重复并进节点输出
   assert.equal(task.steps.find((s) => s.id === 'a/step/s1')!.output, '一步结果')
+})
+
+test('终止子任务：只停那一个，按「已终止」交回，别的子任务和节点照常做完', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  let report = ''
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const ids = call.orch!.spawn([
+        { title: '慢的', instructions: '一直查' },
+        { title: '快的', instructions: '查一下' },
+      ]).ids
+      // 子任务都开始以后再终止「慢的」（界面上的按钮走的就是 stopHelper）
+      await new Promise((r) => setTimeout(r, 10))
+      const r = call.orch!.stopHelpers([ids[0]], '方向错了')
+      assert.equal(r.ok, true)
+      assert.match(r.info, /已终止 1 个子任务/)
+      assert.equal(stopHelper('t', ids[0], '再停一次'), false, '已经停了的不能再停')
+      const got = await call.orch!.wait(ids, 1000)
+      report = JSON.stringify(got.done)
+      return '一步结果'
+    }
+    if (call.step?.title === '慢的') {
+      // 模拟一直在跑的 CLI：直到这一次调用自己的信号被触发
+      await new Promise<void>((r) => call.signal?.addEventListener('abort', () => r(), { once: true }))
+      return { ok: false as const, stopped: true, error: '已停止' }
+    }
+    return '快的结果'
+  })
+  await runEngineTurn(host)
+  const slow = task.steps.find((s) => s.title === '慢的')!
+  const fast = task.steps.find((s) => s.title === '快的')!
+  assert.equal(slow.status, 'skipped')
+  assert.equal(fast.status, 'done')
+  assert.equal(task.steps.find((s) => s.id === 'a')!.status, 'done')
+  assert.match(report, /已终止：方向错了/)
 })
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {

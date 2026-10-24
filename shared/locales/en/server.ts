@@ -222,6 +222,8 @@ export const EN_SERVER: Record<string, string> = {
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',
   任务不存在: 'Task not found',
+  找不到这个子任务: 'Subtask not found',
+  这个子任务已经结束了: 'This subtask has already finished',
   缺少项目: 'Project is required',
   '项目还没有指定工作流，请选择一个工作流或改用直接对话':
     'This project has no workflow yet. Choose a workflow or use direct chat instead.',

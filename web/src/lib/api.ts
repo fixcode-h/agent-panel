@@ -465,6 +465,8 @@ export const api = {
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
+  /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */
+  stopSubtask: (id: string, step: string) => request<Task>(`/tasks/${id}/subtasks/stop`, json('POST', { step })),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（连同包里的子对话），只读；projectId 为空放进聊天。返回父任务在前 */
   importTask: (projectId: string, bundle: unknown) =>

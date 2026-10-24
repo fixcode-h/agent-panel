@@ -9,6 +9,7 @@ export const PANEL_TOOL_NAMES = [
   'list_conversations',
   'spawn_agents',
   'wait_agents',
+  'stop_subtask',
   'run_background',
   'check_background',
   'stop_background',

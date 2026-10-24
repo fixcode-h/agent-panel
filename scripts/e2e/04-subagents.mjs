@@ -70,6 +70,22 @@ await runShard('子对话与计划', async (api) => {
     )
     step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
 
+    // 父对话页切走、宽限期（测试里 1.2 秒）到了：在运行的子对话不能跟着失活，要自己跑完（ADR 0010）
+    let away = await mkChild('子对话切走', 'SLOW 父对话切走后照样跑完')
+    await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话切走后照样跑完')), {
+      label: '子对话开始执行',
+    })
+    assert.ok(
+      ((await call('GET', `/tasks/${parent.id}`)).childrenWorking ?? 0) >= 1,
+      '父对话详情也带上还在运行的子对话数：标题栏据此转圈',
+    )
+    await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: false })
+    away = await waitDone(away.id, 20000)
+    assert.equal(away.status, 'done', `父对话没人看、宽限到了，子对话照样跑完（${away.status} / ${away.stopReason}）`)
+    assert.notEqual(away.stopReason, 'parent', '不是被父对话连带停掉的')
+    await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: true })
+    step('父对话切走：宽限到期不连带停掉还在跑的子对话')
+
     // 父对话的 CLI 结束时一起结束子对话的进程
     let slow = await mkChild('子对话二', 'SLOW 父对话关闭时一起结束')
     await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话关闭时一起结束')), {

@@ -47,7 +47,10 @@ import {
   sortChildren,
   visibleChildren,
   stopReasonText,
+  taskActive,
   taskBusy,
+  taskState,
+  taskWaitText,
   taskSummary,
   withTaskModel,
   type TaskStage,
@@ -943,7 +946,9 @@ export function TaskView({
           )}
         </>
       }
-      running={working}
+      // 对话还在运行（自己在跑，或者子对话、子任务、后台命令、工作流还没完）就是停止按钮：
+      // 停止会把这些附属的一起停掉（见服务端 /stop），判定和标题栏、侧栏同一个（taskActive）
+      running={working || taskActive(task)}
       // 正在发送上一句：Enter 和按钮一起拦住，并给一句提示（见 ChatComposer 的 blocker）
       sending={sending}
       onStop={stop}
@@ -1013,9 +1018,14 @@ export function TaskView({
                         <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
                       </>
                     )}
+                    {/* 标题前的状态和侧栏、项目首页同一个判定（taskState）：自己在跑、在等子对话 / 子任务 /
+                        后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
                     <TaskStatusIcon
-                      status={task.childrenWorking ? 'running' : task.status}
+                      status={task.status}
                       working={taskBusy(task)}
+                      spin={taskBusy(task)}
+                      waiting={taskState(task) === 'needs'}
+                      label={taskWaitText(task) || undefined}
                       className="ml-1"
                     />
                     {renaming !== null ? (

@@ -15,7 +15,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, groupByDay, taskBusy } from '@shared/task'
+import { askedAt, byAskedAt, groupByDay, taskBusy, taskState } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -60,12 +60,14 @@ export function TaskRow({
   const menu = useTaskRowMenu(task, onDeleted)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
-  // 自己在执行、名下子对话在执行、或者在等派出的子任务：都算「还在跑」（转圈）
-  const busy = taskBusy(task)
+  // 状态只从 taskState 来（和标题栏、项目首页同一个判定）：自己在执行、在等子对话 / 子任务 / 后台命令 / 工作流
+  // 都转圈；有没回复的提问、请求是「需要你处理」
+  const state = taskState(task)
+  const busy = state === 'running' || state === 'waiting'
   // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
-  const online = task.status === 'running' && !busy
+  const online = task.status === 'running' && !busy && state !== 'needs'
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
-  const attention = task.requests?.length ? 'ask' : busy ? 'running' : task.status === 'failed' ? 'failed' : ''
+  const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
   return (
     <>
       <ContextMenu>

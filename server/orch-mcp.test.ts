@@ -150,6 +150,7 @@ test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失
     'read_state',
     'write_state',
     'spawn_agents',
+    'stop_subtask',
     'wait_agents',
     'send_message',
     'read_messages',
