@@ -54,6 +54,18 @@ export const EN_DESIGN: Record<string, string> = {
   '上 / 下': 'Top / Bottom',
   'Y / 高': 'Y / Height',
   '行 / 列': 'Row / Column',
+  对齐到: 'Align to',
+  '把位置和大小设成同一个 CanvasPanel 里另一个控件（或父控件）的矩形':
+    'Set the position and size to another widget’s rectangle (or the parent’s) in the same CanvasPanel',
+  选择控件: 'Choose widget',
+  填满父控件: 'Fill parent',
+  宽度由内容决定: 'Width set by content',
+  高度由内容决定: 'Height set by content',
+  '打开后宽高由内容撑开，W / H 不起作用；要固定大小就关掉':
+    'When on, width and height follow the content and W / H have no effect; turn it off for a fixed size',
+  'Border 的子控件默认留 4px 内边距，槽位图和底图会错开；要对齐就把内边距清零':
+    'Children of a Border get 4px padding by default, so slot art drifts from the background; clear the padding to line them up',
+  清零内边距: 'Clear padding',
   外观: 'Appearance',
   面板: 'Panels',
   常用: 'Common',

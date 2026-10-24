@@ -12,6 +12,8 @@ export type Vec2 = { X: number; Y: number }
 export type Margin = { Left: number; Top: number; Right: number; Bottom: number }
 export type HAlign = 'HAlign_Fill' | 'HAlign_Left' | 'HAlign_Center' | 'HAlign_Right'
 export type VAlign = 'VAlign_Fill' | 'VAlign_Top' | 'VAlign_Center' | 'VAlign_Bottom'
+/** 图片放进控件的方式：Fill 拉伸填满（旧数据没有这个字段时也是它）；Contain / Cover 保持比例；Original 用图片原尺寸 */
+export type ImageFit = 'Fill' | 'Contain' | 'Cover' | 'Original'
 
 export interface Brush {
   /** "img:<id>" 指向设计里的图片；为空时按 UE 的白色画刷画，颜色取 TintColor */
@@ -23,6 +25,8 @@ export interface Brush {
   Margin: Margin
   Tiling: 'NoTile' | 'Horizontal' | 'Vertical' | 'Both'
   TintColor: string
+  /** 面板内部属性：图片按什么方式放进控件（不导出）。不写 = Fill，和以前 100% × 100% 的渲染一致 */
+  ImageFit?: ImageFit
   /** DrawAs 为 RoundedBox 时的圆角 */
   OutlineSettings?: { CornerRadii: { X: number; Y: number; Z: number; W: number }; Color: string; Width: number }
 }
@@ -263,7 +267,8 @@ export const WIDGETS: Record<WidgetType, WidgetDef> = {
     ShadowOffset: { X: 1, Y: 1 },
     ShadowColorAndOpacity: '#00000000',
     Justification: 'Left',
-    AutoWrapText: false,
+    // 默认按控件宽度换行：不换行的长文字会顶出控件、压到背景装饰上
+    AutoWrapText: true,
   })),
   Button: W('Button', 'common', 'one', 'ButtonSlot', '按钮：四种状态各一张图，里面可以放文字或图标', () => ({
     WidgetStyle: {
@@ -524,6 +529,87 @@ export function resizeCanvasSlot(
   axis(0)
   axis(1)
   return { ...slot, LayoutData: { ...L, Offsets: o } }
+}
+
+/** 控件在父控件里的矩形（像素），和设计器画出来的位置一致 */
+export interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * CanvasPanelSlot 换算成父控件坐标里的矩形：拉伸的轴由两个锚点和边距决定，
+ * 不拉伸的轴由锚点、偏移和对齐点决定（对齐点把控件挪到锚点左边那么多）。
+ * bAutoSize 的控件宽高由内容决定，这里只能按 Offsets 算，面板里不拿它当对齐基准。
+ */
+export function canvasSlotRect(slot: Record<string, any> | undefined, parent: { w: number; h: number }): Rect {
+  const L = slot?.LayoutData ?? {}
+  const o = L.Offsets ?? {}
+  const a = L.Anchors ?? { Minimum: { X: 0, Y: 0 }, Maximum: { X: 0, Y: 0 } }
+  const al = L.Alignment ?? { X: 0, Y: 0 }
+  const axis = (i: 0 | 1) => {
+    const P = i ? parent.h : parent.w
+    const k = i ? 'Y' : 'X'
+    const lo = i ? 'Top' : 'Left'
+    const hi = i ? 'Bottom' : 'Right'
+    const min = Number(a.Minimum?.[k]) || 0
+    const max = Number(a.Maximum?.[k]) || 0
+    const start = Number(o[lo]) || 0
+    const end = Number(o[hi]) || 0
+    // 拉伸：宽度是两个锚点之间的跨度减掉左右边距（和 umg-render 的 left/right 定位一致）
+    if (min !== max) return { pos: min * P + start, size: Math.max(MIN_WIDGET_SIZE, (max - min) * P - start - end) }
+    const size = Math.max(MIN_WIDGET_SIZE, end)
+    return { pos: min * P + start - (Number(al[k]) || 0) * size, size }
+  }
+  const x = axis(0)
+  const y = axis(1)
+  return { x: x.pos, y: y.pos, w: x.size, h: y.size }
+}
+
+/**
+ * 把矩形写回 CanvasPanelSlot：锚点归零、对齐点左上，之后的位置和大小就是这一块像素，
+ * 尺寸夹到最小尺寸。尺寸由内容决定（bAutoSize）的控件对齐后也按矩形走。
+ */
+export function rectToCanvasSlot(slot: Record<string, any> | undefined, rect: Rect): Record<string, any> {
+  const L = slot?.LayoutData ?? {}
+  return {
+    ...(slot ?? {}),
+    LayoutData: {
+      ...L,
+      Offsets: {
+        Left: Math.round(rect.x),
+        Top: Math.round(rect.y),
+        Right: clampWidgetSize(rect.w),
+        Bottom: clampWidgetSize(rect.h),
+      },
+      Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 0, Y: 0 } },
+      Alignment: { X: 0, Y: 0 },
+    },
+    bAutoSize: false,
+  }
+}
+
+/**
+ * 图片按适配方式画进控件时的 background-size / position。
+ * 铺贴（Tiling）时不用它：那张图按 ImageSize 平铺，位置始终从左上角开始。
+ */
+export function imageFitStyle(
+  fit: ImageFit | undefined,
+  img: { width: number; height: number },
+): { size: string; position: string } {
+  switch (fit) {
+    case 'Contain':
+      return { size: 'contain', position: 'center' }
+    case 'Cover':
+      return { size: 'cover', position: 'center' }
+    case 'Original':
+      return { size: `${img.width}px ${img.height}px`, position: 'left top' }
+    default:
+      // Fill：不写 ImageFit 的旧数据也走这里，和以前的 100% × 100% 一致
+      return { size: '100% 100%', position: '0 0' }
+  }
 }
 
 export const newId = () => Math.random().toString(36).slice(2, 10)
@@ -1074,7 +1160,13 @@ export function exportWidget(
     if (typeof v === 'string' && /^#[0-9a-f]{6,8}$/i.test(v)) return linearColor(v)
     if (typeof v === 'string' && v.startsWith('img:')) return tex.get(v.slice(4)) ?? ''
     if (Array.isArray(v)) return v.map(conv)
-    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, conv(x)]))
+    // ImageFit 是面板里的图片适配方式，UE 里没有这个属性，导出时和 Locked 一样去掉
+    if (v && typeof v === 'object')
+      return Object.fromEntries(
+        Object.entries(v)
+          .filter(([k]) => k !== 'ImageFit')
+          .map(([k, x]) => [k, conv(x)]),
+      )
     return v
   }
   const props = conv(w.Properties)
