@@ -70,7 +70,7 @@ const paramText = (v: ParamValue | undefined) =>
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** 把初始化结果和当前草稿对照，整理成按设置页分组的推荐项 */
-function buildGroups(
+export function buildGroups(
   p: ProjectProposal,
   draft: ProjectInput,
   ctx: { workflows: Workflow[]; activeId: string; fallbackId: string; globalFormat: FileFormat },
@@ -98,9 +98,11 @@ function buildGroups(
       apply: (d) => ({ ...d, description: p.description }),
     })
 
+  // 推荐可能是很久以前保存的：里面引用的工作流后来被删了就不能再应用，否则保存会失败
+  const exists = (id: string) => ctx.workflows.some((w) => w.id === id)
   // 默认工作流：AI 评估出的那个；没评估出时按项目类型落到内置的「通用项目」/「UE 项目」
-  const def = p.workflows.find((w) => w.verdict === 'default')
-  const defId = def?.id || ctx.fallbackId
+  const def = p.workflows.find((w) => w.verdict === 'default' && exists(w.id))
+  const defId = def?.id || (exists(ctx.fallbackId) ? ctx.fallbackId : '')
   const wf: Rec[] = []
   if (defId)
     wf.push({
@@ -112,7 +114,7 @@ function buildGroups(
       same: draft.workflowId === defId || (!draft.workflowId && ctx.activeId === defId),
       apply: (d) => ({ ...d, workflowId: defId, workflowIds: d.workflowIds.filter((x) => x !== defId) }),
     })
-  for (const o of p.workflows.filter((w) => w.verdict === 'optional'))
+  for (const o of p.workflows.filter((w) => w.verdict === 'optional' && exists(w.id)))
     wf.push({
       id: `optional:${o.id}`,
       label: t('可选工作流「{name}」', { name: o.name }),
@@ -275,6 +277,13 @@ export function ProjectInitPanel({
     setDraft((d) => todo.reduce((acc, r) => r.apply(acc), d))
     setApplied((s) => new Set([...s, ...todo.map((r) => r.id)]))
   }
+  // 上次初始化的推荐随项目保存：重开设置时按同一套 same 判定算出和当前设置不同的项
+  const saved = draft.initResult
+  const savedPending = saved
+    ? buildGroups(saved, draft, { workflows, activeId, fallbackId, globalFormat })
+        .flatMap((g) => g.recs)
+        .filter((r) => !r.same)
+    : []
   const skipped = result?.workflows.filter((w) => w.verdict === 'skip') ?? []
   const startButton = (
     <Button
@@ -341,6 +350,21 @@ export function ProjectInitPanel({
             </div>
             {startButton}
           </div>
+          {draft.initializedAt && saved && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-field/40 px-3 py-2">
+              <span className="min-w-0 flex-1 text-[0.75rem] leading-relaxed text-subtle">
+                {savedPending.length
+                  ? t('{n} 项和当前设置不同，应用后点「确认」保存', { n: savedPending.length })
+                  : t('已和当前设置一致')}
+              </span>
+              {savedPending.length > 0 && (
+                <Button size="sm" variant="secondary" onClick={() => apply(savedPending)}>
+                  <Check className="h-3.5 w-3.5" />
+                  {t('应用推荐（{n} 项）', { n: savedPending.length })}
+                </Button>
+              )}
+            </div>
+          )}
           {!draft.initializedAt && (
             <ol className="grid gap-2 sm:grid-cols-2">
               {[

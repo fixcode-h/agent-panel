@@ -27,6 +27,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
+import { ProjectProposalSchema } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
@@ -616,6 +617,11 @@ async function parseProject(body: unknown) {
   p.data.workflowParams = Object.fromEntries(Object.entries(p.data.workflowParams).filter(([id]) => known.has(id)))
   // 请求里带了默认 Agent 字段就说明用户设置过：以后不再用升级迁移覆盖
   if (body && typeof body === 'object' && 'defaultAgentId' in body) p.data.agentSet = true
+  if (p.data.initResult !== undefined) {
+    const saved = ProjectProposalSchema.safeParse(p.data.initResult)
+    if (!saved.success) return { error: z.prettifyError(saved.error) }
+    p.data.initResult = saved.data
+  }
   if (p.data.path) p.data.path = resolvePath(p.data.path)
   return { data: p.data }
 }
@@ -663,6 +669,9 @@ app.put('/projects/:id', async (c) => {
   // 初始化标记同理：只有项目设置页会带上它，脚本改设置不会把它清掉
   if (body && typeof body === 'object' && !('initializedAt' in body))
     r.data!.initializedAt = (await projects.get(c.req.param('id')))?.initializedAt ?? ''
+  // 保存的推荐也是：没带的请求保留上次初始化的结果
+  if (body && typeof body === 'object' && !('initResult' in body))
+    r.data!.initResult = (await projects.get(c.req.param('id')))?.initResult
   const x = await projects.update(c.req.param('id'), r.data!)
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
