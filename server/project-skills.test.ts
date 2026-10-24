@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { setLang } from '../shared/i18n.ts'
 import { projectSkillRepos, skillIssues, skillTemplate } from '../shared/project-skills.ts'
 import {
   createProjectSkill,
@@ -11,6 +12,10 @@ import {
   readProjectSkill,
   writeProjectSkill,
 } from './project-skills.ts'
+
+// 这里断言的是 project-skills.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
+// （CI 上是英文，断言的中文原文就成了「“commit-style” already exists」这类英文）
+setLang('zh')
 
 /** 临时项目目录：里面放 .agents/skills 和 .claude/skills 两份技能 */
 function project() {

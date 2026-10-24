@@ -160,7 +160,7 @@ test('对话记录带上工具名、参数、输出和耗时，便于指出哪�
   ]
   const t = conversationTrace(messages)
   assert.match(t, /AI：在等切图/)
-  assert.match(t, /MCP · design · sleep 参数：30 → 还在生成，耗时 30 秒/)
+  assert.match(t, /MCP · design · sleep 参数：30 → 还在生成，耗时 30s/)
   assert.match(t, /MCP · design · check（失败）/)
 })
 

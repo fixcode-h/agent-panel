@@ -120,7 +120,6 @@ export const EN_AGENTS: Record<string, string> = {
   正在写说明: 'Writing',
   正在思考: 'Thinking',
   '{cli} 正在生成': '{cli} is generating',
-  '{n} 秒': '{n}s',
   '这次用 {model}': 'Using {model} this time',
   'Agent 自动选择的模型': 'the model the agent picks',
   '用 AI 创建角色': 'Create role with AI',

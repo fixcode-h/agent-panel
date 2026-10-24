@@ -3476,12 +3476,28 @@ export function tasksApi(deps: {
   })
 
   /**
+   * 执行位还占着、但这一轮已经结束（status 已标完 done、收尾还在落盘）时，预热不能直接把它原样返回：
+   * 那样拿到的是 done，CLI 根本没启动。还在真跑（执行中 / 停在等下一句 / 正在预热）的才复用，
+   * 收尾中的等它释放；等完之后又被新的一轮占住就返回那一份，没有就返回 undefined 走正常启动流程
+   */
+  async function reusedPrewarmEntry(id: string): Promise<Task | undefined> {
+    const entry = live.get(id)
+    if (!entry) return undefined
+    const now = entry.task
+    if (now.status === 'running' || now.awaitingUser || now.prewarming) return now
+    await entry.done?.catch(() => {})
+    return live.get(id)?.task
+  }
+
+  /**
    * 在后台用 --resume 启动对话的 CLI，让它停在等下一句的工具上。
    * force：用户刚换了 CLI/模型/强度，即使会话属于旧 CLI 也要按新的选择重开，
    * 把之前的对话带过去，下一条消息直接交给新进程。
    */
   async function prewarmChat(task: Task, force = false): Promise<Task> {
-    if (live.has(task.id)) return live.get(task.id)!.task
+    // 执行位收尾中（已经 done）时等它释放，别把没启动的 done 原样交回去
+    const reused = await reusedPrewarmEntry(task.id)
+    if (reused) return reused
     if (task.imported || task.mode !== 'chat') return task
     // 独立分支的工作区已经被回收（合并完、标记完成）：预热不了，也不自动去建分支，
     // 等用户真发消息时再重建（后台打开对话页面不应该多出一个分支）
@@ -3516,7 +3532,9 @@ export function tasksApi(deps: {
       // Claude Code、Codex 有自己的协议，不走面板的等待工具
       if (def.rpc?.nativeAsk) return task
       if (!force && task.sessionCli && task.sessionCli !== run.cli) return task
-      if (live.has(task.id)) return live.get(task.id)!.task
+      // 走到这里之前可能又有别的请求占住执行位：真在跑就复用，收尾中就先等它释放
+      const again = await reusedPrewarmEntry(task.id)
+      if (again) return again
       const got = reserve(task)
       entry = got.value
       // 另一个请求已经先占住（真正发消息或另一次预热）：复用它的执行位，不再开第二个 CLI
@@ -3532,7 +3550,10 @@ export function tasksApi(deps: {
   // 打开对话页时调用
   routes.post('/:id/prewarm', async (c) => {
     const id = c.req.param('id')
-    if (live.has(id)) return c.json(await current(id))
+    // 看到 done 就立刻预热的请求会撞在「状态标完、执行位还没释放」的那几毫秒上：
+    // 先等它收尾，再按正常流程启动，不要返回一份没启动的 done
+    const reused = await reusedPrewarmEntry(id)
+    if (reused) return c.json(reused)
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
     return c.json(await prewarmChat(task))

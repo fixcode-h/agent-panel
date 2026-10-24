@@ -69,19 +69,66 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else {
       if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
         errors.push('子任务栏：消息流里还画着子任务卡片')
+      // 状态栏顺序：计划单独占一行在最上面，这一行里子任务在子对话前面
+      const order = await p.evaluate(() => {
+        const btns = [...document.querySelectorAll('button')]
+        const sub = btns.find((b) => b.getAttribute('aria-label') === '子任务')
+        const child = btns.find((b) => (b.getAttribute('aria-label') || '').startsWith('子对话'))
+        if (!sub || !child) return null
+        const at = (b) => b.getBoundingClientRect()
+        return { sub: at(sub).left, subTop: at(sub).top, child: at(child).left, childTop: at(child).top }
+      })
+      if (!order) errors.push('状态栏：找不到「子任务」或「子对话」入口，核对不了顺序')
+      else if (order.sub > order.child && Math.abs(order.subTop - order.childTop) < 4)
+        errors.push('状态栏顺序：子任务应该排在子对话前面')
       await bar.first().click()
       // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
-      await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.60s'])
+      await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
       await p.keyboard.press('Escape')
       await closed()
-      // 窄窗口：入口和输入框上方那一行不能被挤坏（运行中的块在窄屏收进按钮里）
+      // 执行中的子任务只在按钮上标 x/y，不再在旁边排成「标题 + 耗时」的运行卡片（那种卡片只给子对话）
+      const key = 'agent-panel-demo-v3'
+      const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+      await p.evaluate((k) => {
+        const db = JSON.parse(localStorage.getItem(k))
+        const parent = db.tasks.find((x) => x.title.includes('购物车'))
+        const sub = parent.steps.find((x) => x.slot === 'sub')
+        sub.status = 'running'
+        sub.endedAt = ''
+        localStorage.setItem(k, JSON.stringify(db))
+      }, key)
+      await p.reload()
+      await openTask()
+      await check(p, '子任务-执行中只留计数', ['子任务', '1/3'])
+      const rowText = await p.evaluate(() => {
+        const sub = [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '子任务')
+        const row = sub?.parentElement?.parentElement
+        return row ? [...row.querySelectorAll('button')].map((b) => (b.innerText || '').replace(/\s+/g, ' ')) : []
+      })
+      if (rowText.some((x) => x.includes('核对角标的订阅时机')))
+        errors.push('子任务栏：执行中的子任务又排成了「标题 + 耗时」卡片')
+      await check(p, '子任务-执行中')
+      await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+      await p.reload()
+      await openTask()
+      // 窄窗口：入口和输入框上方那一行不能被挤坏；两个计数入口都保留，只是换行
       await p.setViewportSize({ width: 900, height: 800 })
       await p.reload()
       await openTask()
-      if (!(await p.getByRole('button', { name: '子任务', exact: true }).count()))
+      // 子对话列表是异步取的（4 秒一轮），刷新后要等它回来再判断，不能立刻 count
+      const seen = (locator) =>
+        locator
+          .first()
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+      if (!(await seen(p.getByRole('button', { name: '子任务', exact: true }))))
         errors.push('子任务栏：窄窗口里入口不见了')
+      if (!(await seen(p.getByRole('button', { name: /^子对话/ })))) errors.push('子对话栏：窄窗口里入口不见了')
       await check(p, '子任务-窄窗口')
       await p.setViewportSize({ width: 1440, height: 900 })
       await p.reload()

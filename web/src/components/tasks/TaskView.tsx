@@ -62,7 +62,7 @@ import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { plainLine, startedRun, toolVerb, toolView } from '@/lib/tasks'
+import { fmtDuration, plainLine, startedRun, toolVerb, toolView } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -1846,6 +1846,8 @@ function ChildrenBar({
       <div className="relative mx-auto max-w-(--content-w)">
         {/* 这一行铺满内容宽：小卡列表和右侧关闭按钮要有稳定的左右边界，换行时关闭按钮才不跑位 */}
         <div className={cn(plainRow, 'mb-1.5 flex-wrap')}>
+          {/* 子任务排在子对话前面（计划单独在上一行）：常驻的是两个计数入口，窄屏下换行保留，不省略任何一个 */}
+          {helpers && <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />}
           {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
           {children.length > 0 && (
             <button
@@ -1873,8 +1875,6 @@ function ChildrenBar({
               )}
             </button>
           )}
-          {/* 派出的子任务跟在子对话后面：同一栏、同一行，点开看它的实时对话流 */}
-          {helpers && <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />}
           {asking.length > 0 && (
             <button
               type="button"
@@ -2327,5 +2327,6 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => s.slot === 'sub' && s.parentId === '@chat' && s.status === 'running')
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
-  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {n} 秒', { n: Math.floor(idle / 1000) })}</>
+  // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
+  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
 }

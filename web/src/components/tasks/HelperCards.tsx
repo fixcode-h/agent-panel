@@ -3,7 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { ListTree, Loader2, X } from 'lucide-react'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { currentActivity, fmtSecs, stepActivity } from '@/lib/tasks'
+import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
 import { stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
@@ -15,7 +15,8 @@ import { Msgs } from './Messages'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
-const helperTime = (step: TaskStep, now: number) => (step.startedAt || step.endedAt ? fmtSecs(stepMs(step, now)) : '')
+const helperTime = (step: TaskStep, now: number) =>
+  step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
 
 /** 列表里的顺序：正在跑的、排队的、没做完的、做完的；同一组里按派出的顺序 */
 const helperRank = (s: TaskStep) =>
@@ -49,7 +50,8 @@ function helperBrief(task: Task, step: TaskStep) {
 /**
  * 输入框上方的「子任务」入口，和子对话同一行、同一个弹层样式：
  * 派出的子任务不再画在消息流里，点这里的条目打开只读的子任务窗口看它的实时对话流。
- * 正在跑的直接在栏上排一块（标题 + 耗时），一眼看到进度；执行中和失败的数量在按钮上标出来
+ * 栏上只有这一个计数入口（执行中 x/y、失败数），不再把运行中的子任务单独排成卡片——
+ * 运行中的卡片只给子对话用，子任务在跑的信息从这里的 x/y 就能看出来。
  */
 export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[]; teamNames: Set<string> }) {
   const { agents } = useData()
@@ -107,30 +109,6 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
           </span>
         )}
       </button>
-      {/* 正在跑的在栏上直接排出来：窄屏只留按钮里的数量，点开弹层看 */}
-      {running.length > 0 && (
-        <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden md:flex">
-          {running.slice(0, 2).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setWin(s.id)}
-              title={`${s.title} · ${helperBrief(task, s)}`}
-              className="flex h-7 w-48 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border border-line bg-card px-2.5 text-xs transition-colors hover:bg-sel"
-            >
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="absolute inset-0 animate-ping rounded-full bg-accent/60" />
-                <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
-              </span>
-              <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{s.title}</span>
-              <span className="min-w-0 flex-1 truncate text-right font-mono text-[0.6875rem] text-subtle tabular-nums">
-                {helperTime(s, now)}
-              </span>
-            </button>
-          ))}
-          {running.length > 2 && <span className="shrink-0 text-xs text-subtle">+{running.length - 2}</span>}
-        </div>
-      )}
       {open && (
         // 以这一行状态栏为基准向上弹：和「子对话」的浮层对齐，不挤在按钮下面
         <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
@@ -215,7 +193,7 @@ export function HelperWindow({
   // 打开就停在最新输出（首帧算不完的高度下一帧和布局稳定后再补），之后跟着新内容走；用户往上翻了就不再拽回来
   const scroller = useStickToBottom(id)
   if (!step) return null
-  const time = step.endedAt && !live ? fmtSecs(stepMs(step, now)) : ''
+  const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
   return (
     <D.Root open onOpenChange={(o) => !o && onClose()}>
       <D.Portal>

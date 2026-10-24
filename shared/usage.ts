@@ -148,6 +148,15 @@ export function periodStart(grain: UsageGrain, d: Date) {
   return grain === 'day' ? midnight(d) : grain === 'week' ? weekStart(d) : new Date(d.getFullYear(), d.getMonth(), 1)
 }
 
+/**
+ * 这一段是不是「当前」：按天是今天、按周是本周、按月是本月。
+ * 传区间里任意一天都行（先归一化到区间第一天再比），工具条用它决定要不要出「重置」按钮：
+ * 已经在当前区间时没东西可重置。
+ */
+export function isCurrentPeriod(grain: UsageGrain, day: Date, now: Date = new Date()) {
+  return periodStart(grain, day).getTime() === periodStart(grain, now).getTime()
+}
+
 /** 从某个桶往前数 n 个桶 */
 export function shiftPeriod(grain: UsageGrain, start: Date, n: number) {
   if (grain === 'day') return new Date(start.getFullYear(), start.getMonth(), start.getDate() + n)

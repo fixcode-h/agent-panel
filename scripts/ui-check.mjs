@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { availableParallelism, tmpdir } from 'node:os'
 import path from 'node:path'
+import { fmtDuration } from './lib/duration.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -54,7 +55,7 @@ const limit = Math.max(
 )
 const timingDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-ui-timings-'))
 const startedAt = Date.now()
-const fmtMs = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)
+
 const timingFile = (file) => path.join(timingDir, file.replace(/\.mjs$/, '.json'))
 const readTiming = (file) => {
   try {
@@ -108,7 +109,7 @@ const worker = async () => {
     const r = await runShard(file)
     results.push(r)
     process.stdout.write(
-      `${r.code === 0 ? '✓' : '✗'} [${i + 1}/${shards.length}] ${name}（${fmtMs(r.ms)}）${r.code === 0 ? '' : `失败，退出码 ${r.code}`}\n`,
+      `${r.code === 0 ? '✓' : '✗'} [${i + 1}/${shards.length}] ${name}（${fmtDuration(r.ms)}）${r.code === 0 ? '' : `失败，退出码 ${r.code}`}\n`,
     )
   }
 }
@@ -116,16 +117,16 @@ await Promise.all(Array.from({ length: Math.min(limit, shards.length) }, worker)
 results.sort((a, b) => a.file.localeCompare(b.file))
 
 const elapsed = Date.now() - startedAt
-console.log(`\n══════ 汇总（总 ${fmtMs(elapsed)}）══════`)
+console.log(`\n══════ 汇总（总 ${fmtDuration(elapsed)}）══════`)
 for (const r of results) {
   const timing = readTiming(r.file)
   const count = timing ? `，${timing.steps.length} 张截图` : ''
-  console.log(`${r.code === 0 ? '✓' : '✗'} ${r.name.padEnd(16)} ${fmtMs(r.ms).padStart(8)}${count}`)
+  console.log(`${r.code === 0 ? '✓' : '✗'} ${r.name.padEnd(16)} ${fmtDuration(r.ms).padStart(8)}${count}`)
   // 成功时打印最慢的 3 步（--verbose 打全部），失败时原样打印全部输出方便定位
   if (r.code === 0) {
     const steps = timing?.steps ?? []
     const shown = verbose ? steps : [...steps].sort((a, b) => b.ms - a.ms).slice(0, 3)
-    for (const s of shown) console.log(`    ${fmtMs(s.ms).padStart(7)}  ${s.name}`)
+    for (const s of shown) console.log(`    ${fmtDuration(s.ms).padStart(7)}  ${s.name}`)
   } else {
     console.log(`\n───── ${r.name} 失败，完整输出 ─────`)
     for (const line of r.out) console.log(line)

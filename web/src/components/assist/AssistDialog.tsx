@@ -48,6 +48,7 @@ import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 import { AskToggle, ScopeRequests, useNewAskUser } from '@/components/chat/AskToggle'
 import { askUserDefault } from '@/lib/askUserDefault'
 import { t } from '@shared/i18n'
+import { fmtDuration } from '@shared/duration'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
 
@@ -324,7 +325,7 @@ function JobProgress({
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  const secs = job.startedAt ? Math.max(0, Math.round((now - job.startedAt) / 1000)) : 0
+  const elapsed = job.startedAt ? Math.max(0, now - job.startedAt) : 0
   const writingJson = (job.outChars ?? 0) > job.text.length + 20
   const phase =
     job.attempt > 1
@@ -342,7 +343,7 @@ function JobProgress({
       {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-        {phase}…<span className="tabular-nums">{t('{n} 秒', { n: secs })}</span>
+        {phase}…<span className="tabular-nums">{fmtDuration(elapsed)}</span>
       </span>
     </div>
   )

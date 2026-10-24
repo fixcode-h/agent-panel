@@ -172,7 +172,7 @@ test('进程不退出（close 永远不来）：停止后记录先置终态，�
   await clock.advance(200)
   const job = bg.list('t1')[0]
   assert.equal(job.state, 'stopped', '记录先置终态')
-  assert.match(job.lines.join('\n'), /进程未在 \d+ 秒内退出/)
+  assert.match(job.lines.join('\n'), /进程未在 [\d.]+s 内退出/)
   assert.equal(pending(), 0, '不再算还在跑')
   assert.ok(!childHoldsOf(task, { background: pending() }).includes('background'), '门禁放行')
   // close 永远不来：stop 靠上限（killGraceMs + 2000）放行，不再挂着调用方

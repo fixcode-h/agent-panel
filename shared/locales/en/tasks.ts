@@ -132,8 +132,8 @@ export const EN_TASKS: Record<string, string> = {
   // 模型选择、实时数据
   模型: 'Model',
   思考强度: 'Effort',
-  '等待模型 · 已 {n} 秒': 'Waiting for model · {n}s',
-  '模型 {s}s': 'Model {s}s',
+  '等待模型 · 已 {wait}': 'Waiting for model · {wait}',
+  '模型 {time}': 'Model {time}',
   实时输出速度: 'Live output speed',
   '输入 {input} · 输出 {output}': 'Input {input} · Output {output}',
 
@@ -416,9 +416,6 @@ export const EN_TASKS: Record<string, string> = {
   '正在输出：{text}': 'Writing: {text}',
   '正在思考：{text}': 'Thinking: {text}',
   '正在启动 Agent…': 'Starting agent…',
-  '{s} 秒': '{s}s',
-  '{m} 分 {s} 秒': '{m}m {s}s',
-  '{h} 小时 {m} 分': '{h}h {m}m',
   ' 第 {n} 轮': ' round {n}',
   '验收 {n} 轮 · 未通过': 'Review: {n} rounds · Failed',
   '验收 {n} 轮 · 通过': 'Review: {n} rounds · Passed',

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { compactTree, usedImages, walk, type Widget } from './umg.ts'
 import type { ToolUse } from './schema.ts'
 import type { Design, DesignMessage, ReplyPart } from './design.ts'
+import { fmtDuration } from './duration.ts'
 
 /**
  * AI 分析：检查当前设计对话和生成的 UI 是否合理，以及 AI 生成能力还能加强哪里。
@@ -174,7 +175,7 @@ export function conversationTrace(messages: DesignMessage[], limit = 8): string 
       : ((m.tools ?? []) as ToolUse[])
     for (const t of tools) {
       const name = [t.name, t.label].filter(Boolean).join(' · ') || '工具'
-      const ms = t.ms ? `，耗时 ${Math.round(t.ms / 1000)} 秒` : ''
+      const ms = t.ms ? `，耗时 ${fmtDuration(t.ms)}` : ''
       const input = t.input ? ` 参数：${clip(t.input.replace(/\s+/g, ' '), 160)}` : ''
       const output = t.output ? ` → ${clip(t.output.replace(/\s+/g, ' '), 220)}` : ''
       lines.push(`  - ${name}${input}${output}${ms}${t.failed ? '（失败）' : ''}`)

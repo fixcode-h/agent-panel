@@ -416,8 +416,8 @@ test('Pi RPC：请求超时时，错误里带等待秒数、进程状态和 stde
   await waitMs(1200)
   const message = failedError(events)
   assert.ok(
-    message.startsWith(t('{method} 没有响应（已等 {seconds} 秒）', { method: 'get_state', seconds: 1 })),
-    `带上等了多少秒：${message}`,
+    message.startsWith(t('{method} 没有响应（已等 {wait}）', { method: 'get_state', wait: '1s' })),
+    `带上等了多久：${message}`,
   )
   assert.ok(message.includes(t('进程还在运行')), `带上进程状态：${message}`)
   assert.ok(message.includes(t('stderr 最后几行：')), `带上 stderr 尾巴：${message}`)
