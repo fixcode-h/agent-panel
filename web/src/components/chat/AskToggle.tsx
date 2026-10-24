@@ -96,11 +96,18 @@ export function useScopeRequests(scope: string, active: boolean) {
     await api.answerAsk(id, r)
     setList((l) => l.filter((x) => x.id !== id))
   }
-  return { list, answer }
+  /** 提问窗口的关闭：不回答，这次会话终止（服务端停掉它，和点停止一样） */
+  const close = async () => {
+    const id = list[0]?.id
+    if (!id) return
+    await api.closeAsk(id)
+    setList([])
+  }
+  return { list, answer, close }
 }
 
 /** 等你处理的审批和提问，贴在输入框上方 */
 export function ScopeRequests({ scope, active, className }: { scope: string; active: boolean; className?: string }) {
-  const { list, answer } = useScopeRequests(scope, active)
-  return <RequestCard requests={list} className={className} onAnswer={answer} />
+  const { list, answer, close } = useScopeRequests(scope, active)
+  return <RequestCard requests={list} className={className} onAnswer={answer} onClose={close} />
 }

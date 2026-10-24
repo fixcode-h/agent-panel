@@ -151,7 +151,7 @@ export function assistApi(deps: {
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
-      const asks = askSession(`assist:${job.id}`)
+      const asks = askSession(`assist:${job.id}`, () => job.abort.abort())
       const r = await invokeCli({
         askUser: asks.askUser,
         onAsk: asks.onAsk,

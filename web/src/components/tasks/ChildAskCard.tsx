@@ -62,7 +62,9 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
   if (task && !task.askUser && !answered) return null
 
   const status = answered ? (
-    <span className="shrink-0 font-sans text-subtle">{ask.by === 'user' ? t('你已决定') : t('父对话已决定')}</span>
+    <span className="shrink-0 font-sans text-subtle">
+      {ask.declined ? t('你没回答，子对话已终止') : ask.by === 'user' ? t('你已决定') : t('父对话已决定')}
+    </span>
   ) : delegated ? (
     <span className={cn('shrink-0 font-sans', nudgeError ? 'text-destructive' : 'text-subtle')}>
       {nudgeError ? t('没能叫起父对话') : t('已交给父对话决定')}
@@ -161,9 +163,9 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
 /**
  * 子对话自己的输入框处：它请用户决定、还没人回答的提问，复用 Agent 提问的选择弹窗。
  * 几个提问一起问时一题一页，全部选完一起交回；选择直接交给子对话，父对话的 AI 也会知道。
- * 收起后输入框回来，在输入框里回复也算回答了
+ * 右上角的关闭：这些提问都不回答，子对话终止
  */
-export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => void }) {
+export function ParentAskPanel({ task, onClosed }: { task: Task; onClosed: (t: Task) => void }) {
   const asks = task.parentAsks ?? []
   const parentId = task.parentTaskId
   if (!asks.length || !parentId) return null
@@ -198,30 +200,14 @@ export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => voi
       onSubmit={(answers) => answerAll(answers, false)}
       onSkip={() => answerAll([], true)}
       skipLabel={t('交给父对话决定')}
-      onClose={onFold}
-      closeLabel={t('先收起，在输入框里回复')}
+      onClose={async () => {
+        try {
+          onClosed(await api.closeParentAsks(task.id))
+        } catch (e) {
+          toast.error((e as Error).message)
+        }
+      }}
+      closeLabel={t('不回答，终止子对话')}
     />
-  )
-}
-
-/** 选择弹窗收起后贴在输入框上方的一条：提醒还有提问（或收尾建议）在等，点一下重新展开 */
-export function FoldedAskBar({ n, suggestion, onOpen }: { n: number; suggestion?: boolean; onOpen: () => void }) {
-  return (
-    <div className="mx-auto mb-2 flex max-w-(--content-w) items-center gap-2 rounded-xl border border-warning/45 bg-warning/5 px-3 py-2 text-[0.8125rem]">
-      <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-warning" />
-      <span className="min-w-0 flex-1 truncate">
-        {suggestion
-          ? n > 1
-            ? t('有 {n} 条收尾建议在等你选择', { n })
-            : t('有一条收尾建议在等你选择')
-          : n > 1
-            ? t('有 {n} 个问题在等你选择', { n })
-            : t('有一个问题在等你选择')}
-        <span className="text-subtle"> · {t('在输入框里回复也算回答')}</span>
-      </span>
-      <Button variant="ghost" size="sm" onClick={onOpen} className="h-7 shrink-0 text-xs">
-        {t('展开选择')}
-      </Button>
-    </div>
   )
 }

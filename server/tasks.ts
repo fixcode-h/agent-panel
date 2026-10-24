@@ -2085,11 +2085,18 @@ export function tasksApi(deps: {
    * 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起。
    * 给了 msgId 只收这一张（用户在弹窗里一个个回答时，别的提问还在等）
    */
-  function settleAsks(parent: Task, childId: string, answer: string, by: 'user' | 'parent', msgId?: string) {
+  function settleAsks(
+    parent: Task,
+    childId: string,
+    answer: string,
+    by: 'user' | 'parent',
+    msgId?: string,
+    declined = false,
+  ) {
     const ids: string[] = []
     for (const m of parent.messages)
       if (m.panel === 'ask' && m.ask?.from === childId && m.ask.answer === undefined && (!msgId || m.id === msgId)) {
-        m.ask = { ...m.ask, answer: answer.slice(0, 2000), by }
+        m.ask = { ...m.ask, answer: answer.slice(0, 2000), by, ...(declined ? { declined } : {}) }
         ids.push(m.id)
       }
     if (ids.length)
@@ -4564,8 +4571,8 @@ export function tasksApi(deps: {
     }
   })
 
-  routes.post('/:id/stop', async (c) => {
-    const id = c.req.param('id')
+  /** 用户停止这个对话：停止按钮、提问窗口的关闭都走这里 */
+  async function userStop(id: string) {
     // 用户点「暂停」是唯一标成 user 的路径：别处停任务必须写清是谁结束的（见 StopReason）
     stopTask(id, 'user')
     // 还在等回答的提问、确认马上作废并落盘：不然返回的任务还带着它们，提问窗口关不掉。
@@ -4587,12 +4594,54 @@ export function tasksApi(deps: {
     }
     // 停止就是这个对话先别干了：它和名下子对话的后台命令一起停掉，不然跑完的结果推回来又会开新的一轮
     void endBackground(id)
+  }
+
+  routes.post('/:id/stop', async (c) => {
+    const id = c.req.param('id')
+    await userStop(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
     // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {
       cancelWait(id)
       forgetNotes(id)
     }
+    return c.json(await current(id))
+  })
+
+  // 子对话请用户决定的提问，用户点了关闭：这些提问不回答，子对话终止。
+  // 父对话里的提问卡片记成「不回答」，它的 AI 也从收件箱知道，不会再替用户决定
+  routes.post('/:id/parent-asks/close', async (c) => {
+    const id = c.req.param('id')
+    const e = live.get(id)
+    const child = e?.task ?? (await store.get(id))
+    if (!child) return bad(c, t('任务不存在'), 404)
+    const asks = child.parentAsks ?? []
+    if (asks.length && child.parentTaskId) {
+      const pe = live.get(child.parentTaskId)
+      const parent = pe?.task ?? (await store.get(child.parentTaskId))
+      if (parent) {
+        settleAsks(parent, id, t('不回答，终止了子对话'), 'user', undefined, true)
+        parent.inbox = parent.inbox.filter((x) => !(x.from === id && x.text.startsWith('（提问）')))
+        parent.inbox.push({
+          from: id,
+          title: child.title,
+          text: '（用户不回答你收到的提问，终止了这个子对话，不用再替用户决定）',
+          at: new Date().toISOString(),
+        })
+        parent.updatedAt = new Date().toISOString()
+        if (pe) pe.rev++
+        await store.update(parent.id, parent)
+      }
+    }
+    // 子对话这边马上去掉：settleAsks 收起弹窗是异步的，返回的任务里不能再带着它
+    child.parentAsks = []
+    child.updatedAt = new Date().toISOString()
+    if (e) e.rev++
+    await store.update(child.id, child)
+    // 终止：连等下一句的 CLI 进程一起结束（同强制停止），子对话这一轮多半已经说完、停在等回答
+    await userStop(id)
+    cancelWait(id)
+    forgetNotes(id)
     return c.json(await current(id))
   })
 

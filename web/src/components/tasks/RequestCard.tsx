@@ -45,7 +45,7 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
       requests={task.requests ?? []}
       agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
       onAnswer={async (id, r) => onAnswered(await api.answerRequest(task.id, id, r))}
-      // 关掉提问：先不回答，把对话暂停；之后发消息或继续执行时 AI 再接着做
+      // 关掉提问：这个问题不回答，终止对话；之后发消息或继续执行时 AI 再接着做
       onClose={async () => onAnswered(await api.stopTask(task.id))}
     />
   )
@@ -65,7 +65,7 @@ export function RequestCard({
   requests: TaskRequest[]
   onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => Promise<void>
   agent?: { name: string; icon: string; cli: string }
-  /** 提问右上角的关闭（暂停对话）；不给就没有关闭按钮 */
+  /** 提问右上角的关闭（不回答，终止对话）；不给就没有关闭按钮 */
   onClose?: () => Promise<void>
   className?: string
 }) {

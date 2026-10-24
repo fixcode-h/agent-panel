@@ -70,7 +70,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
     log.info('docs', `用 ${def.name} 优化 ${input.path}`, { dir })
-    const asks = askSession(`doc:${job.id}`)
+    const asks = askSession(`doc:${job.id}`, () => job.abort.abort())
     const r = await invokeCli({
       askUser: asks.askUser,
       onAsk: asks.onAsk,

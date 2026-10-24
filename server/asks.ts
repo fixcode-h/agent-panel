@@ -19,7 +19,7 @@ export const AUTO_ANSWER: AskReply = {
   message: '用户现在不回答问题：请按你的判断选最合适的方案直接继续，不要再提问，最后在说明里写一句你选了什么。',
 }
 
-const pending = new Map<string, { scope: string; req: TaskRequest; reply: (r: AskReply) => void }>()
+const pending = new Map<string, { scope: string; req: TaskRequest; reply: (r: AskReply) => void; stop: () => void }>()
 const askUser = new Map<string, boolean>()
 
 /** 这个会话的问题要不要交给用户；没设置过时不交（CLI 自己选） */
@@ -49,13 +49,26 @@ export function answerAsk(id: string, r: AskReply) {
   return true
 }
 
+/** 提问窗口的关闭：这个问题不回答，这次会话终止（和点停止一样） */
+export function closeAsk(id: string) {
+  const p = pending.get(id)
+  if (!p) return false
+  pending.delete(id)
+  p.reply({ allow: false, message: '用户不回答这个问题，终止了这次会话。' })
+  p.stop()
+  return true
+}
+
 /**
  * 一次 CLI 调用用的：askUser、onAsk 直接交给 invokeCli，调用结束后 done() 把没回答的作废
- * （进程已经结束，回答也交不回去了）
+ * （进程已经结束，回答也交不回去了）。
+ * stop 是这次会话的停止（和页面上的停止按钮一样）；不给时用 signal：调用方把它并进 invokeCli 的 signal
  */
-export function askSession(scope: string) {
+export function askSession(scope: string, stop?: () => void) {
   const ids: string[] = []
+  const ctl = new AbortController()
   return {
+    signal: ctl.signal,
     askUser: () => wantsAnswers(scope),
     onAsk: (ev: AskEvent) => {
       const id = randomUUID()
@@ -63,6 +76,7 @@ export function askSession(scope: string) {
       pending.set(id, {
         scope,
         reply: ev.reply,
+        stop: stop ?? (() => ctl.abort()),
         req: {
           id,
           step: '',
@@ -98,6 +112,10 @@ export function asksApi() {
         const p = RequestAnswer.safeParse(await c.req.json().catch(() => ({})))
         if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
         if (!answerAsk(c.req.param('id'), p.data)) return c.json({ error: t('这个请求已经结束了') }, 404)
+        return c.json({ ok: true })
+      })
+      .post('/:id/close', (c) => {
+        if (!closeAsk(c.req.param('id'))) return c.json({ error: t('这个请求已经结束了') }, 404)
         return c.json({ ok: true })
       })
   )

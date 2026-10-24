@@ -531,6 +531,54 @@ await runShard('子对话与计划', async (api) => {
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
       '父对话的收件箱里换成「用户已回答」，不会再答一遍',
     )
+    // 子对话页的选择弹窗点了关闭：这些提问不回答，子对话终止；父对话的卡片记成不回答，它的 AI 也不会再替用户决定
+    {
+      const closeKid = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            parentTaskId: askParentTask.id,
+            prompt: 'ASK_PARENT 关掉这个提问',
+          })
+        ).id,
+        20000,
+      )
+      const pending = await waitFor(
+        async () => {
+          const p = await call('GET', `/tasks/${askParentTask.id}`)
+          const m = p.messages.find((x) => x.panel === 'ask' && x.ask.from === closeKid.id)
+          return m && p.inbox.some((x) => x.from === closeKid.id && x.text.startsWith('（提问）')) ? m : undefined
+        },
+        { label: '第二个子对话的提问进了父对话' },
+      )
+      assert.equal((await call('GET', `/tasks/${closeKid.id}`)).parentAsks?.length, 1)
+      const closedKid = await call('POST', `/tasks/${closeKid.id}/parent-asks/close`)
+      assert.deepEqual(closedKid.parentAsks, [], '返回的子对话里已经没有提问，弹窗马上收起')
+      await waitFor(
+        async () =>
+          (await call('GET', `/tasks/${askParentTask.id}/children`)).find((x) => x.id === closeKid.id)?.cliAlive ===
+          false,
+        { label: '子对话终止：CLI 进程结束' },
+      )
+      assert.notEqual((await call('GET', `/tasks/${closeKid.id}`)).status, 'running')
+      const p2 = await call('GET', `/tasks/${askParentTask.id}`)
+      const card = p2.messages.find((m) => m.id === pending.id)
+      assert.equal(card.ask.by, 'user')
+      assert.match(card.ask.answer, /不回答/, '父对话的卡片记成不回答')
+      assert.equal(card.ask.declined, true, '卡片上写「你没回答」，不是「你已决定」')
+      assert.ok(
+        !p2.inbox.some((x) => x.from === closeKid.id && x.text.startsWith('（提问）')) &&
+          p2.inbox.some((x) => x.from === closeKid.id && x.text.includes('不用再替用户决定')),
+        '父对话的收件箱里换成「用户不回答」',
+      )
+      await assert.rejects(
+        call('POST', `/tasks/${askParentTask.id}/child-asks/${pending.id}`, { answer: 'A 方案', delegate: false }),
+        /已经回答过/,
+      )
+    }
+    step('子对话请你决定的提问点了关闭：不回答，子对话终止，父对话不再替你决定')
     await call('DELETE', `/tasks/${askParentTask.id}`)
     // ---- 收尾前评审：完整测试之前派「评审」，评审给 🛑 时 submit_merge 被拦下，改完复看通过才合回 ----
     {

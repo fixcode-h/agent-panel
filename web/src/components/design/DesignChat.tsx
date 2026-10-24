@@ -902,7 +902,7 @@ export function DesignChat({
         </div>
       </div>
       <div className="relative shrink-0 px-3 pb-3">
-        <RequestCard requests={asks.list} onAnswer={asks.answer} className="mb-2" />
+        <RequestCard requests={asks.list} onAnswer={asks.answer} onClose={asks.close} className="mb-2" />
         {askDesign && (
           <QuestionPanel
             questions={designQs.map((q) => ({
@@ -914,6 +914,9 @@ export function DesignChat({
             onSubmit={answerDesign}
             onSkip={() => setDismissed(lastMsg?.id ?? '')}
             skipLabel={t('自己说')}
+            // 这一轮已经结束了，没有要终止的：关闭就是这些问题不回答
+            onClose={() => setDismissed(lastMsg?.id ?? '')}
+            closeLabel={t('不回答')}
           />
         )}
         {job && (running || job.images?.some((i) => i.status === 'failed')) && job.phase === 'images' ? (

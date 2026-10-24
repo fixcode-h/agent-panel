@@ -533,7 +533,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const reads: Promise<void>[] = []
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
-    const asks = askSession(job.scope)
+    const asks = askSession(job.scope, () => job.abort.abort())
     const r = await invokeCli({
       askUser: asks.askUser,
       onAsk: asks.onAsk,
@@ -849,7 +849,7 @@ ${prompt}`,
         let text = ''
         const errors: string[] = []
         let result: { ok: boolean; error?: string } | undefined
-        const asks = askSession(job.scope)
+        const asks = askSession(job.scope, () => job.abort.abort())
         const r = await invokeCli({
           noAskTool: true,
           askUser: asks.askUser,
@@ -1246,7 +1246,8 @@ ${prompt}`,
         cwd,
         env: childEnv(cs.env),
         input: prompt + extra,
-        signal,
+        // 提问窗口的关闭也会停掉这一次
+        signal: AbortSignal.any([signal, asks.signal]),
         timeoutMs: 5 * 60_000,
         onEvent: (ev) => {
           if (ev.type === 'text_delta') text += ev.text

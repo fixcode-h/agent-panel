@@ -246,7 +246,7 @@ export const EN_APP: Record<string, string> = {
   '：先安装并启用一个 Agent，才能运行角色和工作流。': ': Install and enable an agent to run roles and workflows.',
   '去启用 {name}': 'Enable {name}',
   // 提问弹窗关闭、项目右键一键归档/删除未运行的对话
-  关闭并暂停对话: 'Close and pause the conversation',
+  '不回答，终止对话': "Don't answer and end the conversation",
   归档所有未运行的对话: 'Archive all idle conversations',
   删除所有未运行的对话: 'Delete all idle conversations',
   '{ok} 个成功，{failed} 个失败': '{ok} succeeded, {failed} failed',

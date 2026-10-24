@@ -1122,6 +1122,8 @@ export const TaskMessage = z.object({
       answer: z.string().optional(),
       /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
       by: z.enum(['user', 'parent']).optional(),
+      /** 用户点了选择窗口的关闭：没回答，子对话终止了 */
+      declined: z.boolean().optional(),
       /** 用户没回答，交给父对话的 AI 决定：卡片显示「交给父对话决定」，子对话不再弹选择 */
       delegated: z.boolean().optional(),
       /** 成功叫起父对话的时间：重复点「交给父对话决定」时据此判断要不要再叫一次（失败时为空） */

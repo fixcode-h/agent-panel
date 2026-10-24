@@ -2795,6 +2795,21 @@ function tasksRoute(
     persist()
     return { task, nudge: a.delegate ? { ok: true, how: 'next' } : undefined }
   }
+  // 子对话请用户决定的提问点了关闭：都不回答，父对话的卡片记成不回答，子对话终止
+  if (sub === 'parent-asks' && rid === 'close') {
+    const parent = tasks.find((x) => x.id === task.parentTaskId)
+    for (const a of task.parentAsks ?? []) {
+      const m = parent?.messages.find((x) => x.id === a.id && x.ask)
+      if (m) m.ask = { ...m.ask!, answer: '不回答，终止了子对话', by: 'user', declined: true }
+    }
+    task.parentAsks = []
+    if (live.has(id)) live.get(id)!.stop = true
+    task.working = false
+    task.status = 'stopped'
+    task.stopReason = 'user'
+    persist()
+    return task
+  }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
@@ -3224,6 +3239,31 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('修侧栏时间显示', { resolved: true })
   await make('核对通知时序', { resolved: true })
   await make('拆分规则检查脚本', { resolved: true })
+  // 请用户决定的子对话：一次问了两个问题，子对话页的输入框换成选择弹窗，父对话里是两张提问卡片
+  {
+    const asker = await make('购物车缓存方案')
+    // 父对话开着「提问」才把子对话的提问交给用户：关着时卡片不出现，交给父对话的 AI 决定
+    parent.askUser = true
+    const qs = [
+      { q: '购物车数量用哪种缓存？', options: ['内存缓存', 'localStorage'] },
+      { q: '缓存多久失效？', options: ['5 分钟', '切页面时刷新'] },
+    ]
+    asker.parentAsks = qs.map((x, i) => {
+      const id = `${asker.id}-ask${i + 1}`
+      parent.messages.push({
+        id,
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: x.q,
+        tools: [],
+        panel: 'ask',
+        ask: { from: asker.id, title: asker.title, question: x.q, options: x.options, kind: 'question' },
+        at: new Date().toISOString(),
+      })
+      return { id, question: x.q, options: x.options, kind: 'question' as const }
+    })
+  }
   // 父对话给子任务传话（send_message）：发件方画成一行「发送消息 · 传话」，不再把整段正文铺成居中的系统块
   parent.messages.push({
     id: 'demo-send-message',
