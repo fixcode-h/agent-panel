@@ -584,6 +584,7 @@ function ImportModal({
         use: 'any',
         description: '',
         model: '',
+        assets: [],
         extra: '',
         graph,
         updatedAt: '',

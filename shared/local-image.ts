@@ -9,8 +9,19 @@ import { t } from './i18n.ts'
  * 模型文件和工作流参数都取自 ComfyUI 官方的工作流模板（Comfy-Org/workflow_templates），下载地址是 Hugging Face 上的官方重新打包版。
  */
 
-/** ComfyUI/models 下的目录 */
-export type LocalDir = 'checkpoints' | 'diffusion_models' | 'text_encoders' | 'vae' | 'loras'
+/**
+ * ComfyUI/models 下的目录。模板商店里的工作流还会用到 controlnet、clip_vision、upscale_models，
+ * 这些不预置在模型清单里，按模板依赖按需下载
+ */
+export type LocalDir =
+  | 'checkpoints'
+  | 'diffusion_models'
+  | 'text_encoders'
+  | 'vae'
+  | 'loras'
+  | 'controlnet'
+  | 'clip_vision'
+  | 'upscale_models'
 
 export interface LocalFile {
   id: string
@@ -582,6 +593,8 @@ export const ComfyWorkflow = z.object({
   description: z.string().max(2000).default(''),
   /** 用到的内置模型（LOCAL_MODELS 的 id），用来检查下载了没有；自己的模型留空 */
   model: z.string().default(''),
+  /** 模板带进来的依赖文件（ComfyUI/models 下的相对路径），用来判断缺不缺文件；自己的模型留空 */
+  assets: z.array(z.string()).default([]),
   /** 加在描述后面的要求（英文），针对这类资源调过的 */
   extra: z.string().max(4000).default(''),
   graph: z.record(
@@ -616,6 +629,7 @@ const builtin = (
   kind,
   use,
   model,
+  assets: [],
   description,
   extra,
   graph: localWorkflow(localModel(model)!, { ...P, steps }),
