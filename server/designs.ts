@@ -58,7 +58,17 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
+import {
+  exportDesign,
+  migrateGrids,
+  nineSliceRatios,
+  normalizeTree,
+  syncBrushSlices,
+  uniqueName,
+  usedImages,
+  walk,
+  type SliceImage,
+} from '../shared/umg.ts'
 import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
@@ -120,6 +130,27 @@ type Job = DesignJob & {
   sheets?: Map<string, string>
 }
 
+/**
+ * 图片的九宫格和画刷的九宫格参数对齐：图片的 nineSlice 统一成 0~1 的比例（老数据把像素直接写进去过），
+ * 引用它的 Box/Border 画刷的 Margin 用同一组比例、ImageSize 用图片实际尺寸。
+ * 加载、保存和 AI 改完都跑一遍，渲染和导出拿到的就是同一组数，不会切到边框花纹。
+ */
+function normalizeSlices(d: Design): Design {
+  const imgs = new Map<string, SliceImage>()
+  for (const i of d.images) {
+    const v = i.variants[Math.min(Math.max(0, i.selected), i.variants.length - 1)]
+    const width = v?.width || i.width
+    const height = v?.height || i.height
+    const nine = nineSliceRatios(i.nineSlice, width, height)
+    const slice = nine && (nine.Left || nine.Top || nine.Right || nine.Bottom) ? nine : undefined
+    imgs.set(i.id, { id: i.id, width, height, transparent: i.transparent, nineSlice: slice })
+    i.nineSlice = slice
+  }
+  d.root = syncBrushSlices(d.root, imgs)
+  d.components = d.components.map((c) => ({ ...c, Root: syncBrushSlices(c.Root, imgs) }))
+  return d
+}
+
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
   id: d.id,
@@ -147,11 +178,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       const p = Design.safeParse(raw)
       if (p.success) {
         const d = p.data as Design
-        cache.set(d.id, {
-          ...d,
-          root: migrateGrids(d.root),
-          components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
-        })
+        cache.set(
+          d.id,
+          normalizeSlices({
+            ...d,
+            root: migrateGrids(d.root),
+            components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+          }),
+        )
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
@@ -258,6 +292,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const set = (patch: Partial<DesignImage>) => {
       const dd = cache.get(d.id)!
       dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
+      normalizeSlices(dd)
       void save(dd)
     }
     let first = -1
@@ -294,18 +329,20 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     sink.set({ status: 'generating', error: undefined })
     item.status = 'generating'
     const ref = templateRef(d, source)
+    // 九宫格图按透明处理：四周的圆角/花纹外面必须能抠掉，白底会被边距放大出来
+    const transparent = img.transparent || !!img.nineSlice
     try {
       const rest =
         source.kind === 'local'
           ? await localRun(
               source,
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
               {
                 subject: withRevision(img.prompt, revision),
                 style: cache.get(d.id)!.style,
                 projectStyle: style,
                 kind: d.kind,
-                chroma: img.transparent,
+                chroma: transparent,
                 negative: img.negative,
               },
               img,
@@ -320,12 +357,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             ? await browserGenerate(
                 {
                   tabId: source.tabId,
-                  prompt: withRevision(
-                    imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
-                    revision,
-                  ),
+                  prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
                   count,
-                  chroma: img.transparent,
+                  chroma: transparent,
                   concurrency: (await getSettings()).imageGen.concurrency,
                   onProgress: (text) => (item.text = text),
                   onImage: (b) => sink.add(b),
@@ -334,7 +368,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
             : await cliGenerate(
                 // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-                withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+                withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref), revision),
                 count,
                 job,
                 (b) => sink.add(b),
@@ -1003,6 +1037,7 @@ ${prompt}`,
           if (old) cur.images = cur.images.map((i) => (i.id === im.id ? { ...i, ...fields } : i))
           else cur.images.push(DesignImage.parse({ id: im.id, ...fields }))
         }
+        normalizeSlices(cur)
         if (changed) cur.rev++
         cur.messages.push({
           id: randomUUID(),
@@ -1477,6 +1512,7 @@ ${prompt}`,
         annotations: doc.annotations,
         animations: doc.animations,
       })
+      normalizeSlices(d)
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })

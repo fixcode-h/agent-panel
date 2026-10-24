@@ -791,6 +791,73 @@ export const IMAGE_SLOT: Partial<Record<WidgetType, string>> = {
   WebButton: 'BackgroundImage',
 }
 
+/**
+ * 图片的九宫格边距统一成 0~1 的比例（图片面板和 schema 都按比例存）。
+ * AI 有时按像素写（990×936 的框写成 140/120/100/90），超过 1 的按图片宽高换算，再限制在 0~0.49。
+ */
+export function nineSliceRatios(ns: Margin | undefined, width: number, height: number): Margin | undefined {
+  if (!ns) return undefined
+  const one = (v: number, size: number) => {
+    if (!(v > 0) || !(size > 0)) return 0
+    return Math.min(0.49, v > 1 ? v / size : v)
+  }
+  return {
+    Left: one(ns.Left, width),
+    Top: one(ns.Top, height),
+    Right: one(ns.Right, width),
+    Bottom: one(ns.Bottom, height),
+  }
+}
+
+const hasSlice = (m: Margin) => m.Left + m.Top + m.Right + m.Bottom > 0
+
+export interface SliceImage {
+  id: string
+  width: number
+  height: number
+  transparent: boolean
+  nineSlice?: Margin
+}
+
+/**
+ * 画刷的九宫格参数按图片修正：图片的 nineSlice 是唯一来源（图片面板里能改），
+ * 引用它的 Box/Border 画刷用同一组比例，ImageSize 填图片实际尺寸。
+ * AI 手写的 Margin 和 ImageSize 经常和图片对不上，切线和边宽就会切到花纹。
+ * 只改透明图：不透明的九宫格图多半是整张底图，边距里是图片自己的底色，放大出来反而露白。
+ */
+export function syncBrushSlices(w: Widget, imgs: Map<string, SliceImage>): Widget {
+  const fix = (v: any): any => {
+    if (!v || typeof v !== 'object') return v
+    if (Array.isArray(v)) {
+      let changed = false
+      const out = v.map((x) => {
+        const y = fix(x)
+        if (y !== x) changed = true
+        return y
+      })
+      return changed ? out : v
+    }
+    if (typeof v.ResourceObject === 'string' && v.ResourceObject.startsWith('img:')) {
+      const img = imgs.get(v.ResourceObject.slice(4))
+      if (img?.nineSlice && img.transparent && (v.DrawAs === 'Box' || v.DrawAs === 'Border'))
+        return { ...v, Margin: { ...img.nineSlice }, ImageSize: { X: img.width, Y: img.height } }
+    }
+    let changed = false
+    const out: Record<string, any> = {}
+    for (const [k, x] of Object.entries(v)) {
+      const y = fix(x)
+      if (y !== x) changed = true
+      out[k] = y
+    }
+    return changed ? out : v
+  }
+  const props = fix(w.Properties)
+  const kids = w.Children?.map((c) => syncBrushSlices(c, imgs))
+  const kidsChanged = !!kids && kids.some((c, i) => c !== w.Children![i])
+  if (props === w.Properties && !kidsChanged) return w
+  return { ...w, Properties: props, ...(kids ? { Children: kids } : {}) }
+}
+
 /** 把图用到控件上：设好画刷的图片；九宫格的图按 Box 拉伸，Image 顺便把尺寸设成图片尺寸 */
 export function assignImage(w: Widget, img: { id: string; width: number; height: number; nineSlice?: Margin }): Widget {
   const path = IMAGE_SLOT[w.Type]
@@ -802,12 +869,13 @@ export function assignImage(w: Widget, img: { id: string; width: number; height:
   const last = keys[keys.length - 1]
   // 网页控件的图片属性就是一个 "img:<id>" 字符串
   if (WIDGETS[w.Type]?.group === 'web') return { ...w, Properties: { ...props, [last]: `img:${img.id}` } }
+  const nine = nineSliceRatios(img.nineSlice, img.width, img.height)
   cur[last] = {
     ...brush(),
     ...(cur[last] ?? {}),
     ResourceObject: `img:${img.id}`,
     ImageSize: { X: img.width, Y: img.height },
-    ...(img.nineSlice ? { DrawAs: 'Box', Margin: img.nineSlice } : {}),
+    ...(nine && hasSlice(nine) ? { DrawAs: 'Box', Margin: nine } : {}),
   }
   return { ...w, Properties: props }
 }
