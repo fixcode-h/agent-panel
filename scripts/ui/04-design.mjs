@@ -63,6 +63,45 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
   await p.keyboard.press('Escape')
   await p.keyboard.press('Escape')
+  // 行尾的眼睛按钮：悬停出现，点了画板收起、名字变淡，再点恢复
+  const startRow = p.getByRole('treeitem', { name: /StartGroup/ })
+  const startId = await startRow.getAttribute('data-tid')
+  await startRow.hover()
+  const eye = startRow.getByRole('button', { name: '隐藏', exact: true })
+  assert.equal(await eye.evaluate((el) => getComputedStyle(el).opacity), '1', '悬停到行上时出现隐藏按钮')
+  const rowBox = await startRow.boundingBox()
+  const eyeBox = await eye.boundingBox()
+  const nameBox = await startRow.locator('span').first().boundingBox()
+  assert.ok(eyeBox.x > nameBox.x, '隐藏按钮在名字后面')
+  assert.ok(rowBox.x + rowBox.width - (eyeBox.x + eyeBox.width) < 16, '隐藏按钮在行尾')
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1)
+  await eye.click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 0, '隐藏后画板不再画这个控件')
+  assert.match(await startRow.locator('span').first().getAttribute('class'), /opacity-50/, '隐藏后树里名字变淡')
+  await check(p, 'UI设计-控件树隐藏')
+  await startRow.getByRole('button', { name: '显示', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1, '再点一次恢复显示')
+  assert.doesNotMatch(await startRow.locator('span').first().getAttribute('class'), /opacity-50/)
+  // 根控件没有隐藏按钮（和原来一样）
+  assert.equal(
+    await p
+      .getByRole('treeitem', { name: /RootCanvas/ })
+      .getByRole('button', { name: /隐藏|显示/ })
+      .count(),
+    0,
+    '根控件没有显示 / 隐藏按钮',
+  )
+  // 右键菜单里的隐藏 / 显示和眼睛按钮是同一份逻辑
+  await startRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '隐藏', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 0, '右键隐藏同样生效')
+  await startRow.click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '显示', exact: true }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-wid="' + startId + '"]').count(), 1, '右键显示同样生效')
   // 引用到 AI 对话：输入框上方出现带路径的引用条，可以删掉
   const cite = p.getByTitle(/RootCanvas \/ MenuBox \/ StartGroup/)
   await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
