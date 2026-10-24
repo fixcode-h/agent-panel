@@ -386,34 +386,43 @@ export function removeFlatBackground(img: Img, tolerance = 28): Img {
 }
 
 /**
+ * 透明图的内容最多占画布的 96%，四边至少留 2%：
+ * 模型经常把内容画偏或者画到边上，按统一比例重新摆一遍，透明边距才不会一边 0 一边上百像素。
+ * 先裁掉空白再摆，所以重复归一化结果不变。
+ */
+export const CONTENT_FILL = 0.96
+
+/**
  * 把图精确变成 width×height：
- * - 透明的元素先裁掉四周的空白，再放进去：比例接近（相差 15% 以内）直接拉伸铺满，差得多就保持比例居中，其余透明
+ * - 透明的元素先裁掉四周的空白，再按比例缩到画布的 96% 以内、严格居中，其余透明。
+ *   不再因为比例接近（15% 以内）就拉伸：拉伸会把透明边距拉没，也会把内容改形。
  * - 不透明的图：比例接近直接缩放，差得多就按比例铺满后裁掉多出的部分（居中）
  * stretch 时（九宫格）总是直接缩放，边角和中心的比例在 UE 里由九宫格处理
  */
 export function fitExact(img: Img, width: number, height: number, o: { stretch?: boolean; trim?: boolean } = {}): Img {
-  let src = img
   const transparent = hasAlpha(img)
-  if (transparent && o.trim !== false && !o.stretch) {
+  if (o.stretch) return resize(img, width, height)
+  let src = img
+  if (transparent && o.trim !== false) {
     const box = contentBox(img)
     if (box) src = crop(img, box.x, box.y, box.w, box.h)
   }
-  const ratio = src.width / src.height
-  const want = width / height
-  const close = Math.abs(ratio / want - 1) <= 0.15
-  if (o.stretch || close) return resize(src, width, height)
-  if (transparent) {
-    const k = Math.min(width / src.width, height / src.height)
-    const w = Math.max(1, Math.round(src.width * k))
-    const h = Math.max(1, Math.round(src.height * k))
-    const out = blank(width, height)
-    paste(out, resize(src, w, h), Math.round((width - w) / 2), Math.round((height - h) / 2))
-    return out
+  if (!transparent) {
+    const ratio = src.width / src.height
+    const want = width / height
+    const close = Math.abs(ratio / want - 1) <= 0.15
+    if (close) return resize(src, width, height)
+    const k = Math.max(width / src.width, height / src.height)
+    const w = Math.max(width, Math.round(src.width * k))
+    const h = Math.max(height, Math.round(src.height * k))
+    return crop(resize(src, w, h), Math.round((w - width) / 2), Math.round((h - height) / 2), width, height)
   }
-  const k = Math.max(width / src.width, height / src.height)
-  const w = Math.max(width, Math.round(src.width * k))
-  const h = Math.max(height, Math.round(src.height * k))
-  return crop(resize(src, w, h), Math.round((w - width) / 2), Math.round((h - height) / 2), width, height)
+  const k = Math.min((width * CONTENT_FILL) / src.width, (height * CONTENT_FILL) / src.height)
+  const w = Math.max(1, Math.round(src.width * k))
+  const h = Math.max(1, Math.round(src.height * k))
+  const out = blank(width, height)
+  paste(out, resize(src, w, h), Math.round((width - w) / 2), Math.round((height - h) / 2))
+  return out
 }
 
 /** 生成的图存成设计里要的精确尺寸；解不开（不是 PNG）时原样返回 */
@@ -425,13 +434,16 @@ export function normalizeGenerated(
   const img = decodePng(buf)
   if (!img) return buf
   let cur = img
-  // 要透明的图：画的是纯绿底就抠掉；没按要求画绿底、但底是纯色的，按边上的颜色抠
-  if (want.transparent && o.key !== false) {
+  // 要透明的图：画的是纯绿底就抠掉；没按要求画绿底、但底是纯色的，按边上的颜色抠。
+  // 九宫格图也要抠：四周的圆角和花纹外面必须是透明的，留着白底在边距里会露出来
+  if ((want.transparent || want.nineSlice) && o.key !== false) {
     cur = chromaKey(cur)
     if (!hasAlpha(cur)) cur = removeFlatBackground(cur)
   }
   const exact = cur.width === want.width && cur.height === want.height && cur === img
-  if (exact) return buf
+  // 尺寸一样、也没抠过：原样用。透明图例外：模型给的尺寸对不代表内容在画布中间，
+  // 必须重新裁空白、居中（以前这里提前返回，裁空白和居中全被跳过）
+  if (exact && !want.transparent) return buf
   let fitted = fitExact(cur, want.width, want.height, { stretch: !!want.nineSlice, trim: want.transparent })
   // 缩得很小（例如 1024 的图缩成 96 的图标）时细节会发虚：按缩小的倍数补一点锐化
   const k = Math.min(cur.width / want.width, cur.height / want.height)

@@ -63,6 +63,8 @@ interface Session {
   views: number
   /** 「先出原画」阶段：只能出原画、提问、看图，不能改控件树和列切图 */
   conceptOnly: boolean
+  /** 「AI 分析」：只读，不能改设计、出原画或提问，只能用检查类的工具 */
+  readOnly: boolean
   /** 这一轮要出的原画（generate_concepts），这一轮结束后生成 */
   concepts: ConceptRequest[]
   /** 用户在输入框选的原画张数：给了就按它出，AI 写的 count 不算 */
@@ -110,7 +112,7 @@ export function openDesignSession(
   design: Design,
   onChange: (s: Session) => void,
   files: DesignFiles,
-  opts: { conceptOnly?: boolean; conceptCount?: number } = {},
+  opts: { conceptOnly?: boolean; conceptCount?: number; readOnly?: boolean } = {},
 ) {
   const token = randomUUID()
   const s: Session = {
@@ -122,6 +124,7 @@ export function openDesignSession(
     files,
     views: 0,
     conceptOnly: !!opts.conceptOnly,
+    readOnly: !!opts.readOnly,
     concepts: [],
     conceptCount: opts.conceptCount,
     history: [],
@@ -424,6 +427,9 @@ function tooBig(items: number, widgets: number) {
   return undefined
 }
 
+/** 只读分析时也要挡掉：会改设计、出原画或让用户回答的工具 */
+const READONLY_BLOCKED = new Set(['set_design', 'ask_user', 'generate_concepts', 'undo'])
+
 const MUTATING = new Set([
   'add_widgets',
   'update_widgets',
@@ -717,6 +723,12 @@ async function callTool(s: Session, raw: string, args: any) {
   const name = ALIASES[raw] ?? raw
   const a = unstring(args && typeof args === 'object' ? args : {})
   const at = (x: any) => (str(x?.in) ? { in: str(x.in) } : {})
+  // 「AI 分析」只读：把改设计、出原画、提问的调用挡掉，保证分析不会动到设计
+  if (s.readOnly && (MUTATING.has(name) || READONLY_BLOCKED.has(name)))
+    return text(
+      '这一轮只做分析，不要修改设计、不要出原画或提问。用 get_design、get_tree、find_widgets、check、screenshot 这些只读工具确认，然后直接给出结论。',
+      true,
+    )
   // 「先出原画」：用户确认模板之前不搭界面、不列切图
   if (s.conceptOnly && MUTATING.has(name))
     return text(

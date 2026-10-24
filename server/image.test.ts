@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  CONTENT_FILL,
   blank,
   chromaKey,
   contentBox,
@@ -12,6 +13,7 @@ import {
   fitExact,
   gridStep,
   maskImage,
+  normalizeGenerated,
   resize,
   sliceSheet,
 } from './image.ts'
@@ -39,7 +41,7 @@ test('纯绿底抠成透明，内容范围找得准；角上不是绿色的不�
   assert.equal(chromaKey(white), white)
 })
 
-test('生成的图精确变成要的尺寸：比例接近拉伸，差得多保持比例居中', () => {
+test('生成的图精确变成要的尺寸：透明图保持比例居中，不拉伸', () => {
   const g = blank(100, 100, GREEN)
   fill(g, 20, 30, 60, 30, [200, 20, 20, 255])
   const k = chromaKey(g)
@@ -50,6 +52,50 @@ test('生成的图精确变成要的尺寸：比例接近拉伸，差得多保�
   assert.deepEqual([b.width, b.height], [50, 50])
   assert.equal(b.data[3], 0, '多出来的部分是透明的')
   assert.deepEqual([resize(g, 7, 13).width, resize(g, 7, 13).height], [7, 13])
+})
+
+const margins = (img: ReturnType<typeof blank>) => {
+  const box = contentBox(img)!
+  return { L: box.x, T: box.y, R: img.width - box.x - box.w, B: img.height - box.y - box.h, box }
+}
+
+test('透明图内容画偏了：裁到内容、等比居中，四边都留透明边距', () => {
+  const g = blank(380, 270)
+  fill(g, 0, 0, 264, 234, [200, 20, 20, 255])
+  const m = margins(fitExact(g, 380, 270))
+  assert.ok(m.L > 0 && m.T > 0, '贴左上的内容要移进来')
+  assert.ok(Math.abs(m.L - m.R) <= 1 && Math.abs(m.T - m.B) <= 1, '左右、上下边距各自对称')
+  assert.ok(m.box.w <= Math.ceil(380 * CONTENT_FILL) && m.box.h <= Math.ceil(270 * CONTENT_FILL))
+  assert.ok(Math.abs(m.box.w / m.box.h / (264 / 234) - 1) < 0.02, '比例不变，不拉伸')
+})
+
+test('尺寸已经对、内容贴边的透明图，normalizeGenerated 也会重新摆到中间', () => {
+  const g = blank(380, 270)
+  fill(g, 0, 0, 264, 234, [200, 20, 20, 255])
+  const out = normalizeGenerated(encodePng(g), { width: 380, height: 270, transparent: true })
+  const m = margins(decodePng(out)!)
+  assert.ok(m.L > 0 && m.T > 0 && m.R > 0 && m.B > 0)
+  assert.ok(Math.abs(m.L - m.R) <= 1 && Math.abs(m.T - m.B) <= 1)
+})
+
+test('不透明图尺寸已经对时原样返回，不重新编码', () => {
+  const buf = encodePng(blank(64, 64, [10, 20, 30, 255]))
+  assert.equal(normalizeGenerated(buf, { width: 64, height: 64, transparent: false }), buf)
+})
+
+test('九宫格图走 stretch：直接缩放到目标尺寸，不裁内容', () => {
+  const g = blank(200, 100)
+  fill(g, 0, 0, 200, 100, [10, 20, 200, 255])
+  const out = fitExact(g, 100, 50, { stretch: true })
+  assert.deepEqual([out.width, out.height], [100, 50])
+  assert.deepEqual([...out.data.subarray(0, 4)], [10, 20, 200, 255])
+})
+
+test('contentBox 的阈值：几乎透明的边缘不算内容', () => {
+  const g = blank(40, 40)
+  fill(g, 0, 0, 40, 40, [255, 255, 255, 8])
+  fill(g, 10, 10, 20, 20, [255, 255, 255, 200])
+  assert.deepEqual(contentBox(g), { x: 10, y: 10, w: 20, h: 20 })
 })
 
 test('图标表按格切开，每个图标裁掉空白后放进各自的尺寸', () => {

@@ -20,6 +20,7 @@ import {
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
 import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
+import { parseDesignAnalysis } from '@shared/design-analysis'
 import type { ToolUse } from '@shared/schema'
 import { demoMs } from './demo-speed'
 
@@ -1014,6 +1015,151 @@ async function runChat(
   job.status = 'done'
 }
 
+/** 演示里的「AI 分析」：读当前设计的控件和图片，给三段结论，不改设计 */
+async function runAnalysis(d: Full, run = { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' }) {
+  const job: Job = {
+    status: 'running',
+    phase: 'design',
+    mode: 'analyze',
+    text: '',
+    outChars: 0,
+    attempt: 1,
+    startedAt: Date.now(),
+    run,
+  }
+  d.job = job
+  await sleep(400)
+  let parts: ReplyPart[] = []
+  for (const ch of '先看控件树、图片和最近的工具调用，再给结论。'.match(/.{1,3}/g) ?? []) {
+    await sleep(24)
+    job.parts = parts = addToParts(parts, { type: 'thinking', text: ch, delta: true })
+  }
+  for (const [name, arg] of [
+    ['get_design', ''],
+    ['get_tree', ''],
+    ['check', ''],
+    ['screenshot', ''],
+  ]) {
+    await sleep(180)
+    job.parts = parts = addToParts(parts, {
+      type: 'tool',
+      tool: {
+        kind: 'other',
+        name: 'MCP',
+        label: `design · ${name}`,
+        detail: '',
+        input: arg,
+        output: name === 'check' ? '检查完成' : '好了',
+      },
+    })
+  }
+  const tools = [...d.messages]
+    .reverse()
+    .flatMap((m) => (m.parts ?? []).flatMap((p) => p.tools as ToolUse[]))
+    .slice(0, 5)
+    .map((t) => t.label)
+  const noSlice = d.images.filter((i) => !i.nineSlice)
+  const unused = d.images.filter((i) => !JSON.stringify(d.root).includes(`img:${i.id}`))
+  const summary = `这个「${d.title}」的结构基本可用，但对话里有重复等待和检查，图片的九宫格设置也不完整。建议先补自动校验，再调整对话节奏。`
+  const findings = [
+    {
+      area: 'process',
+      title: '同一状态上重复检查',
+      detail: '改完一处又反复调 check / get_tree，期间没有新的改动，工具输出也没有带来新信息，拖慢了一轮。',
+      evidence: tools.length
+        ? `最近一轮的工具调用：${tools.join('、')}；其中 check 在同一版控件树上出现了不止一次。`
+        : '这一轮还没有改动的工具调用，只有需求描述；可以先让 AI 搭完骨架再统一检查。',
+      suggestion: '每改完一个区域只调一次 check；同一版控件树不要连续 get_tree，需要看结果时直接看上一次的输出。',
+      priority: 'medium',
+    },
+    {
+      area: 'process',
+      title: '等待切图的方式浪费了时间',
+      detail: '切图还在生成时反复等待再回来查询，期间没有推进别的区域，整个对话被一张图卡住。',
+      evidence: `当前设计有 ${d.images.length} 张图片，其中 ${d.images.filter((i) => i.status === 'pending' || i.status === 'generating').length} 张还在排队或生成。`,
+      suggestion: '切图生成期间继续搭下一块控件，等一轮结束再统一检查；不要用 sleep 反复轮询生成状态。',
+      priority: 'medium',
+    },
+    {
+      area: 'ui',
+      title: '图片缺少九宫格设置',
+      detail: '面板和按钮这类要拉伸的图没有 nineSlice，换分辨率或拉宽后会变形。',
+      evidence: noSlice.length
+        ? `${noSlice.length} 张图片没有 nineSlice，例如 ${noSlice
+            .slice(0, 3)
+            .map((i) => `${i.name}（${i.width}×${i.height}）`)
+            .join('、')}。`
+        : '所有图片都设置了 nineSlice。',
+      suggestion:
+        '给面板底框、按钮底图、进度条这类要拉伸的图片设置 nineSlice，并把画刷 DrawAs 改成 Box、Margin 用同样的比例。',
+      priority: 'medium',
+    },
+    {
+      area: 'ui',
+      title: unused.length ? '有图片没有被控件引用' : '控件层级和命名可以再统一',
+      detail: unused.length
+        ? '列了图但没有用到控件上，导出后会多出没用上的贴图。'
+        : '树的层级清楚，但按钮、图标和图标的命名还可以统一成同一套前缀。',
+      evidence: unused.length
+        ? `没有引用的图片：${unused
+            .slice(0, 4)
+            .map((i) => i.name)
+            .join('、')}。`
+        : `当前设计 ${d.title} 的控件树里引用的图片和图片列表一致。`,
+      suggestion: unused.length
+        ? '把没引用的图片用上，或者从图片列表里删掉，保证每张图都能在树里找到用处。'
+        : '按钮统一用 Btn_ 前缀、图标统一用 Icon_ 前缀，子控件名和它们的根控件保持一致。',
+      priority: 'medium',
+    },
+    {
+      area: 'capability',
+      title: '生成后自动跑一遍结构校验',
+      detail: '现在要等 AI 自己想起来调 check；把校验挂到每轮结束前，能稳定拦住默认文字、越界和未引用图片。',
+      evidence: `当前设计有 ${d.messages.length} 条消息，最近一轮才出现 check；不是每次改动后都有校验。`,
+      suggestion:
+        '在提示词里要求「每次改完一个区域后调 check，最后必须再调一次」，并把默认文字、控件越界、图片未引用作为必须修掉的问题。',
+      priority: 'high',
+    },
+    {
+      area: 'capability',
+      title: '把常用布局写进系统提示词',
+      detail: '背包、列表、技能栏这些固定结构每次都在重新描述，容易漏掉 EntryWidgetClass、网格列数这类属性。',
+      evidence: `当前设计的控件树有 ${JSON.stringify(d.root).length} 个字符，结构主要靠这一轮对话临时描述。`,
+      suggestion:
+        '在提示词里补上背包格子、技能栏、列表页的模板写法（控件类型、EntryWidgetClass、列数、间距），让 AI 直接按模板搭。',
+      priority: 'medium',
+    },
+    {
+      area: 'capability',
+      title: '切图按用途分组生成',
+      detail: '同类小图标一张张生成很慢，尺寸也不统一；可以按 sheet 分组，大图再单独生成。',
+      evidence: `当前有 ${d.images.length} 张图片，其中透明小图 ${d.images.filter((i) => i.transparent).length} 张。`,
+      suggestion:
+        '把尺寸相同的物品、技能、货币图标放进同一个 sheet 批量生成，面板底框和按钮底图继续单张生成并设置 nineSlice。',
+      priority: 'low',
+    },
+  ]
+  const reply = `\`\`\`json\n${JSON.stringify({ summary, findings })}\n\`\`\``
+  const analysis = parseDesignAnalysis(reply)
+  for (const ch of summary.match(/.{1,4}/g) ?? []) {
+    await sleep(24)
+    job.parts = parts = addToParts(parts, { type: 'text', text: ch, delta: true })
+    job.text += ch
+    job.outChars += 4
+  }
+  d.messages.push({
+    id: randomId(),
+    role: 'agent',
+    text: analysis.summary || summary,
+    at: now(),
+    run,
+    parts,
+    analysis,
+  })
+  d.updatedAt = now()
+  job.status = 'done'
+}
+
 async function genImages(d: Full, ids: string[], count: number, job: Job) {
   job.phase = 'images'
   job.text = ''
@@ -1189,6 +1335,11 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       ...(body.answers?.length ? { answers: body.answers } : {}),
       ...(body.style && body.styleName ? { style: body.styleName } : {}),
     })
+    // AI 分析：只读，不套模板、不改设计
+    if (body.mode === 'analyze') {
+      void runAnalysis(d, body.run)
+      return d
+    }
     const concept = d.concept ?? emptyConcept()
     if (
       !concept.approved &&

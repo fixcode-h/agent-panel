@@ -65,6 +65,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await check(p, 'UI设计-写入', ['replace_widget'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
+  // AI 分析：只读检查对话和生成的 UI，结果回到对话里，分三段并带「按建议修改」
+  await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
+  await p
+    .getByText('正在分析设计')
+    .waitFor({ timeout: 15000 })
+    .catch(() => {})
+  await p.getByText('AI 分析结果').waitFor({ timeout: 15000 })
+  await check(p, 'UI设计-AI分析', ['对话过程问题', 'UI 结果问题', '生成能力改进建议', '按建议修改'])
   await p.getByRole('tab', { name: /图片/ }).click()
   await check(p, 'UI设计-图片')
   // 把图片拖到画布上：能放、大小合适的控件高亮，松手就用上（用脚本发拖放事件，无头浏览器的鼠标拖不出 HTML5 拖放）

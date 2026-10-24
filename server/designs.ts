@@ -58,7 +58,17 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
+import {
+  exportDesign,
+  migrateGrids,
+  nineSliceRatios,
+  normalizeTree,
+  syncBrushSlices,
+  uniqueName,
+  usedImages,
+  walk,
+  type SliceImage,
+} from '../shared/umg.ts'
 import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
@@ -76,6 +86,7 @@ import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
 import { stripToolMarkup, withAttachments } from '../shared/task.ts'
+import { buildDesignAnalysisPrompt, cleanAnalysisParts, parseDesignAnalysis } from '../shared/design-analysis.ts'
 import { imageSize, zip } from './zip.ts'
 
 /**
@@ -119,6 +130,27 @@ type Job = DesignJob & {
   sheets?: Map<string, string>
 }
 
+/**
+ * 图片的九宫格和画刷的九宫格参数对齐：图片的 nineSlice 统一成 0~1 的比例（老数据把像素直接写进去过），
+ * 引用它的 Box/Border 画刷的 Margin 用同一组比例、ImageSize 用图片实际尺寸。
+ * 加载、保存和 AI 改完都跑一遍，渲染和导出拿到的就是同一组数，不会切到边框花纹。
+ */
+function normalizeSlices(d: Design): Design {
+  const imgs = new Map<string, SliceImage>()
+  for (const i of d.images) {
+    const v = i.variants[Math.min(Math.max(0, i.selected), i.variants.length - 1)]
+    const width = v?.width || i.width
+    const height = v?.height || i.height
+    const nine = nineSliceRatios(i.nineSlice, width, height)
+    const slice = nine && (nine.Left || nine.Top || nine.Right || nine.Bottom) ? nine : undefined
+    imgs.set(i.id, { id: i.id, width, height, transparent: i.transparent, nineSlice: slice })
+    i.nineSlice = slice
+  }
+  d.root = syncBrushSlices(d.root, imgs)
+  d.components = d.components.map((c) => ({ ...c, Root: syncBrushSlices(c.Root, imgs) }))
+  return d
+}
+
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
   id: d.id,
@@ -146,11 +178,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       const p = Design.safeParse(raw)
       if (p.success) {
         const d = p.data as Design
-        cache.set(d.id, {
-          ...d,
-          root: migrateGrids(d.root),
-          components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
-        })
+        cache.set(
+          d.id,
+          normalizeSlices({
+            ...d,
+            root: migrateGrids(d.root),
+            components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+          }),
+        )
       } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
@@ -257,6 +292,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const set = (patch: Partial<DesignImage>) => {
       const dd = cache.get(d.id)!
       dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
+      normalizeSlices(dd)
       void save(dd)
     }
     let first = -1
@@ -293,18 +329,20 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     sink.set({ status: 'generating', error: undefined })
     item.status = 'generating'
     const ref = templateRef(d, source)
+    // 九宫格图按透明处理：四周的圆角/花纹外面必须能抠掉，白底会被边距放大出来
+    const transparent = img.transparent || !!img.nineSlice
     try {
       const rest =
         source.kind === 'local'
           ? await localRun(
               source,
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
               {
                 subject: withRevision(img.prompt, revision),
                 style: cache.get(d.id)!.style,
                 projectStyle: style,
                 kind: d.kind,
-                chroma: img.transparent,
+                chroma: transparent,
                 negative: img.negative,
               },
               img,
@@ -319,12 +357,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             ? await browserGenerate(
                 {
                   tabId: source.tabId,
-                  prompt: withRevision(
-                    imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
-                    revision,
-                  ),
+                  prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind), revision),
                   count,
-                  chroma: img.transparent,
+                  chroma: transparent,
                   concurrency: (await getSettings()).imageGen.concurrency,
                   onProgress: (text) => (item.text = text),
                   onImage: (b) => sink.add(b),
@@ -333,7 +368,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               )
             : await cliGenerate(
                 // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-                withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+                withRevision(imagePrompt(img, cache.get(d.id)!.style, transparent, style, d.kind, !!ref), revision),
                 count,
                 job,
                 (b) => sink.add(b),
@@ -683,6 +718,8 @@ ${prompt}`,
     const def = getCli(cliId)!
     const cs = cliSettings(settings, cliId)
     job.run = run
+    // 分析任务在页面上显示「正在分析」，按钮也能据此变成取消
+    job.mode = input.mode
     setAskUser(job.scope, input.askUser)
     // 每一轮一个单独的工作目录：放设计工具的配置和附件，结束后删掉
     const cwd = path.join(tmpdir(), 'agent-panel-design', randomUUID())
@@ -781,7 +818,12 @@ ${prompt}`,
           })
         },
       },
-      { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
+      {
+        conceptOnly: mode === 'concept',
+        conceptCount: mode === 'concept' ? input.count : undefined,
+        // 分析只读：工具的修改、出原画和提问都会被挡掉
+        readOnly: input.mode === 'analyze',
+      },
     )
     // 工作目录本来就是面板这一轮的临时目录，{dir} 的文件（Pi 的桥接扩展）也放这里，结束时一起删
     const tools = mcpConfig(def.mcp, 'design', mcp.url, cwd)
@@ -825,21 +867,24 @@ ${prompt}`,
           cwd,
           env: childEnv(cs.env),
           input:
-            buildDesignPrompt(
-              cache.get(d.id)!,
-              history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
-                (facts.length ? `\n\n${facts.join('\n')}` : '') +
-                // 用户这次选了整体风格：明说一句，不然 AI 只在风格说明里看到它，容易沿用之前对话里的风格
-                (input.style
-                  ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
-                  : ''),
-              input.annotations.filter((a) => !a.target.startsWith('concept:')),
-              project,
-              // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
-              [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
-              mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
-            ) + extra,
+            input.mode === 'analyze'
+              ? // 分析：只读，提示词里已经带上控件树、图片、原画和最近的工具调用
+                buildDesignAnalysisPrompt(cache.get(d.id)!, history) + extra
+              : buildDesignPrompt(
+                  cache.get(d.id)!,
+                  history,
+                  withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
+                    (facts.length ? `\n\n${facts.join('\n')}` : '') +
+                    // 用户这次选了整体风格：明说一句，不然 AI 只在风格说明里看到它，容易沿用之前对话里的风格
+                    (input.style
+                      ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
+                      : ''),
+                  input.annotations.filter((a) => !a.target.startsWith('concept:')),
+                  project,
+                  // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
+                  [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
+                  mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
+                ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
@@ -904,6 +949,24 @@ ${prompt}`,
           throw new Error(
             [t('{cli} 执行失败：{detail}', { cli: def.name, detail }), ...failureHints(detail, def)].join('\n\n'),
           )
+        }
+        // 分析只读：不走设计的结构校验（设计本来就可能有要分析的问题），直接解析结果存进消息
+        if (input.mode === 'analyze') {
+          const analysis = parseDesignAnalysis(stripToolMarkup(text.trim()))
+          const cur = cache.get(d.id)!
+          cur.messages.push({
+            id: randomUUID(),
+            role: 'agent',
+            text: analysis.summary || t('分析完成。'),
+            at: now(),
+            run,
+            // 回复里只留说明，JSON 检查项放到 analysis 里由卡片显示
+            parts: finalParts(cleanAnalysisParts(parts)),
+            analysis,
+          })
+          await save(cur)
+          job.preview = undefined
+          return { ids: [], concepts: [] }
         }
         // 回复就是普通文字；改动都在工具里做好了
         const touched = sess.applied > 0 || sess.images.length > 0
@@ -974,6 +1037,7 @@ ${prompt}`,
           if (old) cur.images = cur.images.map((i) => (i.id === im.id ? { ...i, ...fields } : i))
           else cur.images.push(DesignImage.parse({ id: im.id, ...fields }))
         }
+        normalizeSlices(cur)
         if (changed) cur.rev++
         cur.messages.push({
           id: randomUUID(),
@@ -1448,6 +1512,7 @@ ${prompt}`,
         annotations: doc.annotations,
         animations: doc.animations,
       })
+      normalizeSlices(d)
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
@@ -1859,10 +1924,13 @@ ${prompt}`,
         ...(p.data.style && p.data.styleName ? { style: p.data.styleName } : {}),
       })
       await save(d)
-      // AI 改之前自动存一个版本，改坏了可以回去
-      await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
+      // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
+      if (p.data.mode !== 'analyze')
+        await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
       startJob(d, async (job) => {
         const { ids, concepts } = await chat(d, p.data, job)
+        // 分析只出结论，不出原画和切图
+        if (p.data.mode === 'analyze') return
         if (concepts.length) {
           if (p.data.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
           await generateConcepts(d, concepts, p.data.source, job)
