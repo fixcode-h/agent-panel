@@ -757,6 +757,23 @@ export const EN_DESIGN: Record<string, string> = {
   还没有控件绑定这个集合: 'No widget uses this set yet',
   '{n} 行': '{n} rows',
   删除集合: 'Delete set',
+  收起集合: 'Collapse set',
+  展开集合: 'Expand set',
+  绑定到列表控件: 'Bind to list widgets',
+  '选择列表控件…': 'Choose a list widget…',
+  '当前 {name}': 'currently {name}',
+  解除绑定: 'Unbind',
+  没有可绑定的列表控件: 'No list widgets to bind',
+  数据绑定有问题: 'Data binding issues',
+  '数据集合 id 重复：{id}': 'Duplicate data set id: {id}',
+  '数据集合名字重复：{name}': 'Duplicate data set name: {name}',
+  '集合 {name} 的字段重复：{key}': 'Duplicate field in set {name}: {key}',
+  '集合 {name} 第 {row} 行的 {key} 不是 "img:<图片 id>"：{value}':
+    'Row {row} of set {name}: {key} must be "img:<image id>", got {value}',
+  '集合 {name} 第 {row} 行的 {key} 引用了不存在的图片 {image}':
+    'Row {row} of set {name}: {key} references a missing image {image}',
+  '{widget} 的 DataSet 指向不存在的集合 {key}：把控件改成已有的集合，或让 AI 用 set_data 补一个同名集合':
+    '{widget} points DataSet at a missing set {key}: switch the widget to an existing set, or have the AI add a set with that name via set_data',
   '这个集合还没有字段：加上字段以后，行里的值才能绑定到控件。':
     'This set has no fields yet: add fields so row values can bind to widgets.',
   添加字段: 'Add field',

@@ -953,7 +953,8 @@ async function callTool(s: Session, raw: string, args: any) {
       s.onChange(s)
       return text(
         `已定义 ${norm.sets.length} 个数据集合：${norm.sets.map((x) => `${x.name}（${x.rows.length} 行）`).join('、')}。` +
-          `列表控件写 DataSet="${norm.sets[0].name}"，条目子控件里的控件写 DataField="<字段 key>"。`,
+          `每个列表控件在自己的 Properties.DataSet 里写要用的集合 name，不同控件可以绑不同集合；` +
+          `条目子控件里的控件写 DataField="<字段 key>"。`,
       )
     }
     case 'set_design': {

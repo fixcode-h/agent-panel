@@ -188,6 +188,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   assert.equal(await hiddenInFirstSlot(), 1, '第一格有选中高亮、没有锁定图标')
   await p.getByRole('radio', { name: '数据' }).click()
   await check(p, 'UI设计-数据面板', ['运行时假数据', '只影响画板预览，导出时剔除', 'Items', '添加一行'])
+  // 多个数据结构：新建一个集合绑到背包的 Grid 上，画板按控件自己的绑定渲染，不是都用第一个集合
+  await p.getByRole('button', { name: '新建集合' }).first().click()
+  await check(p, 'UI设计-数据面板-多集合', ['data_2', '0 行', '绑定到列表控件'])
+  // 按集合卡片定位：卡片上已经有这个列表控件时下拉不显示它，只有别的集合卡片能换回来
+  const bindGrid = async (id) => {
+    const card = p.locator('section').filter({ has: p.getByText(id, { exact: true }) })
+    await card.getByRole('combobox', { name: '绑定到列表控件' }).click()
+    await p.getByRole('option', { name: /^Grid/ }).click()
+  }
+  await bindGrid('data_2')
+  const data2Card = p.locator('section').filter({ has: p.getByText('data_2', { exact: true }) })
+  await data2Card.getByText('Grid', { exact: true }).waitFor()
+  await check(p, 'UI设计-数据面板-换绑', ['Grid'])
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 0, '绑到没有行的集合，画板不画格子')
+  await p.getByRole('radio', { name: '数据' }).click()
+  // 从原来的集合卡片上换回来：同一个列表控件换绑另一个集合
+  await bindGrid('items')
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  assert.equal(await p.locator('[data-ac="WBP_ItemSlot"]').count(), 20, '换回 Items 又按 20 行渲染')
+  await p.getByRole('radio', { name: '数据' }).click()
+  // 集合卡片能折叠：折叠后只留卡片头，行数和删除按钮还在；点输入框改名不会误触
+  await p.getByRole('button', { name: '收起集合', exact: true }).first().click()
+  assert.equal(await p.getByText('20 行', { exact: true }).count(), 1, '折叠后卡片头显示行数')
+  await check(p, 'UI设计-数据面板-折叠')
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().waitFor()
+  assert.equal(await p.getByRole('checkbox', { name: '锁定' }).count(), 0, '折叠后不显示行里的字段')
+  assert.ok(
+    await p
+      .getByText(/^\d+ 行$/)
+      .first()
+      .isVisible(),
+    '折叠后仍显示行数',
+  )
+  assert.equal(await p.getByRole('button', { name: '删除集合', exact: true }).count(), 2, '折叠后仍能删除集合')
+  await p.getByRole('textbox', { name: '集合名称' }).first().click()
+  assert.equal(await p.getByRole('button', { name: '展开集合', exact: true }).count(), 1, '点输入框不会展开')
+  // 点卡片头的名字区域也能展开
+  await p.getByText('items', { exact: true }).click()
+  await p.getByRole('checkbox', { name: '锁定' }).first().waitFor()
   // 数据面板改第一行：锁定打开，切回画板就能看到锁
   await p.getByRole('checkbox', { name: '锁定' }).first().check()
   await p.getByRole('radio', { name: '画板' }).click()
@@ -197,6 +239,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 来回切换不丢编辑
   await p.getByRole('radio', { name: '数据' }).click()
   assert.ok(await p.getByRole('checkbox', { name: '锁定' }).first().isChecked(), '切回来锁定的值还在')
+  // 折叠状态按设计记住：切到画板再回来，同一次会话里还保持折叠
+  await p.getByRole('button', { name: '收起集合', exact: true }).first().click()
+  await p.getByRole('radio', { name: '画板' }).click()
+  await p.waitForTimeout(200)
+  await p.getByRole('radio', { name: '数据' }).click()
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().waitFor()
+  assert.equal(await p.getByRole('checkbox', { name: '锁定' }).count(), 0, '切回来还是折叠的')
+  assert.ok(
+    await p
+      .getByText(/^\d+ 行$/)
+      .first()
+      .isVisible(),
+    '切回来仍显示行数',
+  )
+  await p.getByRole('button', { name: '展开集合', exact: true }).first().click()
   await p.getByRole('radio', { name: '画板' }).click()
   await p.goto(base + '#/design/new')
   await check(p, 'UI设计-新建', ['开始设计'])
