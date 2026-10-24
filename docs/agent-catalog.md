@@ -47,7 +47,7 @@
 | `spec`         | 规范撰写         | OpenSpec 产物与门禁  |      | openspec                                                                              | `scene` `stage`                                                                 |
 | `developer`    | 开发             | 写代码               |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
 | `deps`         | 依赖与安全       | 依赖体检与升级       |      | deps                                                                                  | `vcs` `mode` `audit` `license`                                                  |
-| `vcs`          | 版本控制（必备） | 版本控制与交付收尾   | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `commit`                                                 |
+| `vcs`          | 版本控制（必备） | 版本控制与交付收尾   | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
 | `blender`      | Blender 建模     | 建模、动画与质检     |      | blender                                                                               | `stage`（含「质检」）                                                           |
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，

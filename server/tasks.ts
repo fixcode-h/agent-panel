@@ -102,7 +102,8 @@ import {
   ensureWorktree,
   mergeBlocker,
   currentBranch,
-  mergeOverlap,
+  mergeSides,
+  mergeSidesText,
   mergeWorktree,
   removeWorktree,
   releaseWorktree,
@@ -1591,21 +1592,24 @@ export function tasksApi(deps: {
     const blocked = await mergeBlocker(target)
     if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
     // 两边都改过的文件：git 只在同一处改动上报冲突，同一个文件改不同位置会静默合上。
-    // 合并前记下来，合进去时一并告诉子对话和父对话「这个文件两边都动过，核对有没有盖掉对方的改动」
-    const overlap = await mergeOverlap(target, wt.branch).catch(() => [] as string[])
+    // 合并前连同双方的提交记录一起记下来：合进去时一并告诉子对话和父对话「这个文件两边都动过」，
+    // 并且让他们能按提交说明和文档看懂各自为什么这么改，而不是只看 diff 拿主意（见 project-vcs 的「合并审查」）
+    const sides = await mergeSides(target, wt.branch).catch(() => null)
+    const overlap = sides?.overlap ?? []
+    const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
     const m = await trialMerge(target, wt.branch)
     if (!m.ok)
       return {
         ok: false,
         info: m.dirty
-          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}`
-          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}`,
+          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
+          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
       }
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
     try {
       const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
       const both = overlap.length
-        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过，请核对有没有把对方的改动盖掉。`
+        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
         : ''
       return {
         ok: true,
@@ -3736,7 +3740,7 @@ export function tasksApi(deps: {
     }
     const wt = tk.worktree!
     try {
-      const { into, overlap } = await mergeWorktree(
+      const { into, overlap, sides } = await mergeWorktree(
         project.path,
         wt,
         `Agent 面板：合并「${tk.title}」`,
@@ -3747,9 +3751,11 @@ export function tasksApi(deps: {
       // 同一个文件两边都改过时，git 可能自动合上、不报冲突：在对话里留一条，用户才知道要核对内容
       if (overlap.length) {
         const cur = (await store.get(id)) ?? tk
-        const note = t('这次合并里两边都改了这些文件：{list}。git 已经自动合并，请核对有没有把对方的改动盖掉。', {
-          list: overlap.join('、'),
-        })
+        const note =
+          t(
+            '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。',
+            { list: overlap.join('、') },
+          ) + (sides ? `\n\n${mergeSidesText(sides)}` : '')
         await store.update(id, {
           ...cur,
           messages: [
@@ -3766,7 +3772,7 @@ export function tasksApi(deps: {
           ],
         })
       }
-      return c.json({ task: await current(id), into, overlap })
+      return c.json({ task: await current(id), into, overlap, sides })
     } catch (e) {
       return c.json({ error: (e as Error).message, conflict: !!(e as { conflict?: boolean }).conflict }, 409)
     }
