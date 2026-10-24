@@ -7,6 +7,8 @@ import { RowShell, ToolRow } from './ToolRow'
 import { fmtSecs } from '@/lib/tasks'
 import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
+import { ReceivedRow } from './PeerMessage'
+import { peerOfMessage } from '@shared/peer-message'
 import { useChildOpen } from './child-open'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -478,6 +480,9 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
   const body =
     m.panel === 'ask' && m.ask ? (
       <ChildAskCard m={m} task={task} teamNames={teamNames} />
+    ) : peerOfMessage(m) ? (
+      // 另一个对话发来的（任务、上报、收尾、编译、传话）：统一画成「接收消息」
+      <ReceivedRow m={m} />
     ) : m.panel ? (
       <PanelRow m={m} teamNames={teamNames} />
     ) : null
@@ -491,7 +496,7 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
 }
 
 /** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字）：面板结果和派出子任务的那条 */
-const transparent = (m: TaskMessage) => !!m.panel || !!m.spawned?.length
+const transparent = (m: TaskMessage) => !!m.panel || !!m.peer || !!m.spawned?.length
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
 export function Msgs({

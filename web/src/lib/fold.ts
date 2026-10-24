@@ -10,8 +10,12 @@ import { toolView, type ToolView } from './tasks'
 /** 正文里显示的文字：模型当成文字说出来的工具调用写法去掉，那些在工具的折叠块里已经有了 */
 export const replyText = (m: TaskMessage) => (m.role === 'agent' ? stripToolMarkup(m.text) : m.text)
 
-/** 留在折叠外面的：报错（要让人看到）、子对话的提问（要人回答）；子对话的回报界面上本来就不画 */
-export const keptOut = (m: TaskMessage) => m.panel === 'ask' || (m.role === 'system' && !m.panel && !m.spawned?.length)
+/**
+ * 留在折叠外面的：报错（要让人看到）、子对话的提问（要人回答）、对话之间收发的消息
+ * （父对话交代的、子对话上报的都摆在台面上，不收进「做了什么」的折叠里）
+ */
+export const keptOut = (m: TaskMessage) =>
+  m.panel === 'ask' || !!m.peer || (m.role === 'system' && !m.panel && !m.spawned?.length)
 
 /**
  * 派出的子任务里还没收尾的（排队中、执行中，口径和 engine 里算子任务名额一样）：
@@ -92,7 +96,7 @@ export function foldStats(msgs: TaskMessage[]) {
   if (last < 0) return { last, parts: [] as string[], failed: 0 }
   const before = msgs.slice(0, last)
   const process = msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
-  const folded = before.filter((m) => !keptOut(m) && m.role !== 'agent' && m.panel !== 'child')
+  const folded = before.filter((m) => !keptOut(m) && m.role !== 'agent' && m.panel !== 'child' && m.panel !== 'wrapup')
   const helpers = folded.reduce((n, m) => n + (m.spawned?.length ?? 0), 0)
   // 中间说过的几段说明（最后一条是回复本身，不算）
   const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
