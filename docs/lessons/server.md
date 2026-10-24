@@ -30,7 +30,7 @@ paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.t
 
 ## 只要任务本身时不读对话：轮询接口用 peek，不用 get
 
-- 规则：用量、状态、子对话栏这类只看 `usage` / `steps` / `status` 的地方用 `store.peek` 或 `tasksApi().peek`（执行中的取内存，其余取任务文件），不要 `store.get` / `current`——完整对话在内存里只留 `KEEP_FULL` 份，被挤出去后每次 get 都是读盘加校验几 MB 的 JSON。`store.update` 收到带 `messages` 的完整任务时也不再读旧对话。
+- 规则：用量、状态、子对话栏这类只看 `usage` / `steps` / `status` 的地方用 `store.peek` 或 `tasksApi().peek`（执行中的取内存，其余取任务文件），不要 `store.get` / `current`——完整对话在内存里只留 `KEEP_FULL` 份（合计字数还受 `KEEP_CHARS` 限，几个超长对话就会挤掉别的），被挤出去后每次 get 都是读盘加校验几 MB 的 JSON。`store.update` 收到带 `messages` 的完整任务时也不再读旧对话。
 - 起因：父对话开了十几个子对话后面板卡死：`/run-usage` 执行中每秒为每个子对话 get 一次，同时在跑的对话超过 12 个时每次落盘又互相挤出缓存、重读对话文件。
 - 防线：`server/task-store.test.ts` 的「同时在跑的对话超过内存里留的份数」。
 

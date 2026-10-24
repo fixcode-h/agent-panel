@@ -82,7 +82,7 @@ import {
 import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from './exec/delivery.ts'
 import {
   forgetPresence,
-  hasViewer,
+  isViewing,
   rescheduleIfUnwatched,
   setPresenceIdleHandler,
   setPresenceUnreadKeeper,
@@ -2585,7 +2585,9 @@ export function tasksApi(deps: {
     // 名下有子对话在跑或在排队的父对话不回收：stopTask 会把子对话一起结束，那是真的误杀
     const withKids = new Set([...live.values()].map((e) => e.task.parentTaskId).filter((id) => !!id))
     const pool = [...live.values()].map((e) => e.task).filter((t) => !withKids.has(t.id) && !queued(t.id))
-    const victims = keepAliveVictims(pool, keepAliveLimit, selfId, hasViewer)
+    // 只放过前台正开着的页面：切走后还在宽限期里的也算进上限（hasViewer 会把它们都当成有人在看，
+    // 一小时内点开过的对话全部豁免，逐个点开十几个对话就留下十几个 CLI 进程）
+    const victims = keepAliveVictims(pool, keepAliveLimit, selfId, isViewing)
     for (const id of victims) {
       log.info('task', '保活的会话超过上限，结束最久没用的', { task: id, limit: keepAliveLimit })
       stopTask(id, 'idle')

@@ -31,6 +31,23 @@ const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.ro
 
 /** 读过对话的任务最多留这么多个在内存里（正在执行的另外由执行器拿着） */
 const KEEP_FULL = 12
+/**
+ * 留在内存里的对话合计最多这么多字符（正文、思考、工具的输入输出）。只按个数限的话，
+ * 十几个带大段工具输出的长对话（每个几百万字符）能占上百 MB，打开过一遍就一直挂着；
+ * 超了先丢最久没用的，最近用的两个总是留着（刚打开的那个马上还要用）。中文字符在内存里两个字节，约 32 MB
+ */
+const KEEP_CHARS = 16_000_000
+const KEEP_MIN = 2
+
+/** 一个任务的对话大概多大：只累加字符串长度，不序列化，执行中每次落盘都算一遍也不贵 */
+export function messageChars(msgs: TaskMessage[]) {
+  let n = 0
+  for (const m of msgs) {
+    n += m.text.length + (m.thinking?.length ?? 0) + (m.prompt?.length ?? 0)
+    for (const t of m.tools) n += t.label.length + (t.input?.length ?? 0) + (t.output?.length ?? 0)
+  }
+  return n
+}
 
 /** 每个任务的指纹缓存：跟上一次算的时候比，只重算变了的那几条消息 */
 type StampCache = {
@@ -116,6 +133,9 @@ export function createTaskStore() {
   let loading: Promise<Map<string, Task>> | null = null
   /** 已经读了对话的任务（最近用过的在后面） */
   const full = new Map<string, Task>()
+  /** full 里每个任务的对话字符数（messageChars）和合计 */
+  const sizes = new Map<string, number>()
+  let fullChars = 0
   /** 每个任务上次写入的消息指纹，没变就不重写消息文件 */
   const written = new Map<string, string>()
   /** 消息指纹的增量缓存，按任务一份 */
@@ -129,6 +149,8 @@ export function createTaskStore() {
     metas = null
     loading = null
     full.clear()
+    sizes.clear()
+    fullChars = 0
     written.clear()
     stamps.clear()
     for (const timer of msgTimers.values()) clearTimeout(timer)
@@ -286,12 +308,21 @@ export function createTaskStore() {
     return task
   }
 
+  function drop(id: string) {
+    full.delete(id)
+    fullChars -= sizes.get(id) ?? 0
+    sizes.delete(id)
+  }
+
   function remember(task: Task) {
-    full.delete(task.id)
+    drop(task.id)
     full.set(task.id, task)
-    while (full.size > KEEP_FULL) {
+    const n = messageChars(task.messages)
+    sizes.set(task.id, n)
+    fullChars += n
+    while (full.size > KEEP_FULL || (fullChars > KEEP_CHARS && full.size > KEEP_MIN)) {
       const old = full.keys().next().value!
-      full.delete(old)
+      drop(old)
       // 对话已经不在内存里了，它的指纹缓存也一起丢：下次真的写它的时候重算一次（指纹值不变，不会多写一次盘）
       stamps.forget(old)
     }
@@ -360,7 +391,7 @@ export function createTaskStore() {
       const meta = map.get(id)
       if (!meta) return false
       map.delete(id)
-      full.delete(id)
+      drop(id)
       written.delete(id)
       stamps.forget(id)
       // 窗口里还等着写的那份一起丢掉，不能删完又被定时器写回来

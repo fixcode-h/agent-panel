@@ -229,7 +229,7 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
 过了宽限进程正常退出。这两种宽限都会排计时：橙点只有用户点开才会消，不收的话进程永远挂着。
 保活会话的总数上限由「同时保活的会话上限」（`keepAliveLimit`，默认 4，填 0 不限制）管，实现在 `server/tasks.ts` 的 `enforceKeepAlive`：
-超了先结束最久没用、又没人在看的那个（名下有子对话在跑的不动，那是真误杀）。
+超了先结束最久没用、又没人在看的那个（「在看」只算前台开着的页面，切走后宽限期里的也算进上限；名下有子对话在跑的不动，那是真误杀）。
 设置里的「自动回收闲置 Agent」（`reclaimIdleCli`）关掉后只是不再按上面两段时间计时回收，数量上限照旧。
 回收后用户再打开会冷启动一次，会话靠 `--resume` 续接，代价是几秒钟。
 面板被强杀（`taskkill /F`、崩溃）时来不及停的 CLI 记在数据目录 `run/cli-pids.json`，下次启动只清理命令行里认得出是面板起的
