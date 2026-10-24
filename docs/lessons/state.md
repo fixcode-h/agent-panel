@@ -29,3 +29,9 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 - 规则：`useStickToBottom` 贴底时只有 `scrollTop` 变小（用户往上滚）才松开（`stillPinned`）。内容变高后浏览器补发的 scroll 事件里 `scrollTop` 没变、离底部却变远了，按距离判断会误以为用户滚走。
 - 起因：用户 2026-10-23 反馈对话进行中偶发不回到底部。
 - 防线：`web/src/lib/useStickToBottom.test.ts` 的 `stillPinned` 用例。
+
+## 等子对话的步骤只由面板标完成；子对话收尾只走 submit_merge
+
+- 规则：计划里挂着等待（子对话、后台命令）的步骤，Agent 自己标完成不算，面板在结果推回时标；父对话开子对话、交消息没写 step 时挂在正在做（或在等）的那一步。独立分支里的子对话不派「版本控制」收尾（`spawn` 直接拒），自己或子任务 `git merge` 过去后计划停在「合回」时也要提醒它 submit_merge。
+- 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话卡在收尾 13 分钟，直到用户追问才调用 submit_merge。
+- 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。

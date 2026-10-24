@@ -55,6 +55,12 @@
 
 摘要在 `submit_merge` 时生成，父对话退回、子对话再请求时覆盖。叫醒时只用一次（`rewind` 用完由 runner 清掉），新会话的 id 写回 `task.sessions`。旧会话的位置还记在各条消息的轮次上，用户要完整过程时可以在对话里回退到旧消息接回去。
 
+## 验证
+
+`scripts/real-cli/pi-handoff.mjs` 用真实 Pi 加按剧本回答的模拟模型（`scripts/real-cli/mock-model.mjs`）跑完整流程：缺 handoff 被拒、按模板写好后收尾、父对话合回、叫醒时按上下文大小开新会话或接回原会话、叫醒后再请求收尾。不进 CI（要装 Pi）。
+
+真实 Pi 下发现：完成时 `delete tk.wrapRequest` 落不了盘（`store.update` 是合并写），收尾请求一直挂在 `merging`，叫醒后的 submit_merge 永远被拒。已改成写 `undefined`，并只认内存里的合并中状态。另外 Pi 按 schema 校验工具参数，完全没带 `handoff` 时在 Pi 那一层就被拦下（报错里没有模板，靠参数说明），`files` 写空才会收到面板的模板。
+
 ## 分期
 
 一次做完。

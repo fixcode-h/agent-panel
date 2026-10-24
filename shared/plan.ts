@@ -304,6 +304,10 @@ export function applyPlan(
     )
   }
   const before = plan.steps.filter((s) => s.status !== 'done').map((s) => s.title)
+  // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）
+  const waitingBefore = new Set(
+    plan.steps.flatMap((s) => [s, ...s.children]).filter((x) => x.status !== 'done' && waitingOn(x).length),
+  )
   // 合并前记下没做完的收尾：Agent 漏写时原样放回，合回分支这种由面板标完成的也要知道它原来的状态
   const prevWrap = plan.steps.find((s) => s.wrapUp && s.status !== 'done')
   const prevWrapStatus = prevWrap?.status
@@ -349,6 +353,17 @@ export function applyPlan(
     }
   }
   for (const t of before) if (!plan.steps.some((s) => s.title === t)) dropped.push(t)
+  // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
+  // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
+  const held: string[] = []
+  for (const s of plan.steps)
+    for (const x of [...s.children, s])
+      if (x.status === 'done' && waitingBefore.has(x)) {
+        setStatus(x, 'waiting', now)
+        held.push(`「${x.title}」（等：${waitingOn(x).join('、')}）`)
+        // 子步骤退回了，主步骤也不能算完成（rollUp 不会把已完成的主步骤改回去）
+        if (x !== s && s.status === 'done') setStatus(s, 'waiting', now)
+      }
   for (const s of plan.steps) rollUp(s, now)
   const closed = closeIfDone(target, now)
   const notes = [
@@ -357,9 +372,23 @@ export function applyPlan(
       : '',
     dropped.length ? `已从计划里去掉：${dropped.map((x) => `「${x}」`).join('、')}` : '',
     ...notes0,
+    held.length
+      ? `这些步骤还在等结果，不能自己标完成：${held.join('、')}。结果推回来时面板会标完成；确实不再等就用 finish_plan 结束这份计划。`
+      : '',
     closed ? '计划的步骤全部完成了：这份计划结束，之后有新内容用 set_plan 开新的计划。' : '',
   ].filter(Boolean)
   return { ok: true, info: [`计划已更新：\n${planText(task, target)}`, ...notes].join('\n\n') }
+}
+
+/** 这一项还在等的结果（子对话、后台命令）的名字 */
+function waitingOn(item: PlanItem) {
+  return item.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
+}
+
+/** 计划里正在做的那一步（不算收尾；没有进行中的就取在等的那一步）：开子对话时没指定步骤，就挂在它上面 */
+export function runningStepId(task: Pick<Task, 'plans'>) {
+  const steps = activePlan(task)?.steps.filter((s) => !s.wrapUp) ?? []
+  return (steps.find((s) => s.status === 'running') ?? steps.find((s) => s.status === 'waiting'))?.id ?? ''
 }
 
 /** 找当前计划里的一项（主步骤或子步骤）；parent 是子步骤所在的主步骤 */

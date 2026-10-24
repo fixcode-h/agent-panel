@@ -32,3 +32,9 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 - 规则：`placeAttachments()` 拷进任务执行目录后给的是相对路径 `attachments/名字`，这份只用在交给 CLI 的提示词和 `deliver()` 的 `placed` 参数里。写进 `task.messages[].attachments` 的必须是用户上传时那份绝对路径（数据目录的 `uploads/…`）：气泡缩略图、看大图、导出、复制路径都按它读。`followUp()`、`deliver()`、`deliverWait()` 和 runner 里的 waiter 传参时两者不能混用——`deliverWait(task, msg, placed)` 里的 `msg` 只用来记对话。读取侧 `/uploads/raw` 认 `attachments/名字` 是按文件名回上传目录找（只认一级文件名），那是兜旧数据，不是新数据可以存相对路径的理由。
 - 起因：6f60814 把附件改成拷进对话目录后，`deliver()` 的 `stale` 分支把 `placed` 当成用户原来的附件传给 `followUp()` 记进对话，消息里存成 `attachments/截图-071747.png`，而 raw 接口只认绝对路径 → 气泡和看大图的浮层都是破图。
 - 防线：`scripts/e2e.mjs` 的保活用例断言记进对话的是 `dataDir/uploads` 下的绝对路径；`server/uploads-raw.test.ts` 覆盖相对路径兜底和越界拒绝；`scripts/rules-check.mjs` 拦 `attachments: placed`。
+
+## 清掉任务上的字段写 undefined，不用 delete
+
+- 规则：要清掉 Task 上的可选字段（`wrapRequest`、`rewind` 这类）时写 `x.field = undefined`，不要 `delete x.field`：`store.update` 是把传入的字段盖到旧记录上（`{ ...old, ...input }`），删掉的键盖不掉旧值，落盘后还是原样。由 `scripts/rules-check.mjs` 拦（确实不是 Task 的对象在行尾写 `delete-ok: 原因`）。
+- 起因：2026-10-24 用户导出的对话里 7 个已完成的子对话都挂着 `wrapRequest: merging`；叫醒后 submit_merge 一直被拒「父对话正在合并你的分支」（真实 Pi 复现）。
+- 防线：`scripts/real-cli/pi-handoff.mjs` 的「叫醒后再请求收尾」；规则检查第 6 条。

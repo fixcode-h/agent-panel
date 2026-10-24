@@ -93,10 +93,14 @@ import {
   endRun,
   finishPlan,
   planText,
+  runningStepId,
   WRAP_UP,
   type PlanItemInput,
   type WrapUpKind,
 } from './plan.ts'
+
+/** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
+const VCS_ORIGIN = 'builtin:vcs'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 const SLOT_PROMPT: Record<string, string> = {
@@ -2386,7 +2390,7 @@ function makeOrchestra(
     hasMain: !!ctx.main,
     planner,
     common: commonAgents(host.agents)
-      .filter((a) => a.id !== self.agentId)
+      .filter((a) => a.id !== self.agentId && !(host.submitMerge && a.origin === VCS_ORIGIN))
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
     autoReturn: !!ctx.chat && !helper,
@@ -2502,7 +2506,9 @@ function makeOrchestra(
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
-      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'child', ref: r.id, label: title.trim() }) : ''
+      // 没指定步骤就挂在正在做的那一步：不挂的话那一步一标完成，父对话的计划就「已完成」了，子对话却还没合回
+      const at = step?.trim() || runningStepId(task)
+      const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
     },
@@ -2510,7 +2516,8 @@ function makeOrchestra(
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       const r = await host.sendToConversation(id.trim(), message)
-      const wait = r.ok && step ? bindWait(task, step, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
+      const at = step?.trim() || runningStepId(task)
+      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
@@ -2635,6 +2642,20 @@ function makeOrchestra(
       if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
       // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
       const helperRole = host.agents.find((a) => a.origin === 'builtin:helper' && a.enabled)
+      // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
+      // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
+      if (host.submitMerge) {
+        const vcs = list.find((x) => {
+          const want = x.agent?.trim()
+          return want && host.agents.some((a) => a.origin === VCS_ORIGIN && (a.id === want || a.name === want))
+        })
+        if (vcs)
+          return {
+            ids: [],
+            error:
+              '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
+          }
+      }
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
         const agent =
