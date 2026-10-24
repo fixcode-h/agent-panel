@@ -5,6 +5,7 @@ import {
   Download,
   FileInput,
   Globe,
+  LayoutGrid,
   Loader2,
   Lock,
   Plus,
@@ -37,6 +38,7 @@ import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { useLocalImage } from '@/components/settings/LocalImageSection'
 import { ComfyGraphView } from '@/components/comfy/ComfyGraphView'
 import { ComfyQueuePanel } from '@/components/comfy/ComfyQueuePanel'
+import { TemplateStore } from '@/components/comfy/TemplateStore'
 
 type Kind = 'game' | 'web'
 type View = 'graph' | 'json'
@@ -71,6 +73,7 @@ export function ComfyPage() {
   /** 刚导入到 ComfyUI 的工作流：网页弹窗顶部告诉用户去侧栏哪里打开 */
   const [webImported, setWebImported] = useState<{ name: string; filename: string } | null>(null)
   const [pushing, setPushing] = useState(false)
+  const [store, setStore] = useState(false)
   const [st] = useLocalImage()
   const [view, setViewState] = useState<View>(loadView)
   const setView = (v: View) => {
@@ -240,7 +243,11 @@ export function ComfyPage() {
             { id: 'web', label: t('网页 UI') },
           ]}
         />
-        <div className="flex items-center gap-1.5">
+        <div className="flex w-full flex-wrap items-center justify-end gap-1.5 md:w-auto">
+          <Button size="sm" variant="secondary" onClick={() => setStore(true)}>
+            <LayoutGrid className="h-3.5 w-3.5" />
+            {t('模板商店')}
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setImporting(true)}>
             <FileInput className="h-3.5 w-3.5" />
             {t('导入')}
@@ -526,6 +533,25 @@ export function ComfyPage() {
         imported={webImported}
         importing={pushing}
       />
+      {store && (
+        <TemplateStore
+          kind={kind}
+          status={st}
+          onClose={() => setStore(false)}
+          onImport={() => {
+            setStore(false)
+            setImporting(true)
+          }}
+          onAdded={(wf) => {
+            setStore(false)
+            setDraft(null)
+            setDirty(false)
+            setSel(wf.id)
+            void load()
+            go({ page: 'comfy', id: kind, sub: wf.id })
+          }}
+        />
+      )}
     </main>
   )
 }
@@ -642,6 +668,7 @@ function ImportModal({
         use: 'any',
         description: '',
         model: '',
+        assets: [],
         extra: '',
         graph,
         updatedAt: '',

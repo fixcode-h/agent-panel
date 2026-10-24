@@ -69,12 +69,21 @@ import {
   BUILTIN_WORKFLOWS,
   ComfyWorkflow,
   comfyImportFile,
+  LOCAL_FILES,
+  LOCAL_MODELS,
   localModel,
   localFile,
+  localWorkflow,
   modelReady,
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
+import {
+  builtinTemplates,
+  builtinTemplateMeta,
+  type ComfyTemplateMeta,
+  type TemplateAsset,
+} from '@shared/comfy-templates'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
@@ -1338,6 +1347,138 @@ const local: LocalStatus = {
   vram: 24,
   files: [],
 }
+/** 模板商店的演示：内置模板照实给，官方模板给几条示例（不联网），详情用一张 SDXL 节点图 */
+const DEMO_GRAPH = localWorkflow(localModel('sdxl')!, {
+  prompt: '{{prompt}}',
+  negative: '{{negative}}',
+  width: '{{width}}',
+  height: '{{height}}',
+  count: '{{count}}',
+  seed: '{{seed}}',
+})
+const DEMO_ASSETS: Record<string, TemplateAsset[]> = {
+  'z-image-turbo': [
+    {
+      dir: 'diffusion_models',
+      file: 'z_image_turbo_bf16.safetensors',
+      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors',
+      gb: 11.46,
+    },
+    {
+      dir: 'text_encoders',
+      file: 'qwen_3_4b.safetensors',
+      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors',
+      gb: 7.49,
+    },
+    {
+      dir: 'vae',
+      file: 'ae.safetensors',
+      url: 'https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors',
+      gb: 0.31,
+    },
+  ],
+  image_sdxl_simple: [
+    {
+      dir: 'checkpoints',
+      file: 'sd_xl_base_1.0.safetensors',
+      url: 'https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors',
+      gb: 6.46,
+    },
+  ],
+}
+const DEMO_OFFICIAL: ComfyTemplateMeta[] = [
+  {
+    name: 'image_sdxl_simple',
+    title: 'SDXL1.0: Text to Image (Simple)',
+    description: 'Generate high-quality images from text prompts using the SDXL 1.0 model.',
+    category: 'Image',
+    tags: ['Image', 'Text to Image'],
+    models: ['SDXL'],
+    size: 6979321856,
+    date: '2024-02-22',
+    username: 'ComfyUI',
+    usage: 412,
+    openSource: true,
+    source: 'comfy',
+    output: 'image',
+    available: true,
+  },
+  {
+    name: 'z-image-turbo',
+    title: 'Z-Image-Turbo: Text to Image',
+    description: 'An efficient image generation model that supports English and Chinese prompts.',
+    category: 'Image',
+    tags: ['Image', 'Text to Image'],
+    models: ['Z-Image-Turbo'],
+    size: 20830591386,
+    date: '2025-11-27',
+    username: 'ComfyUI',
+    usage: 15150,
+    openSource: true,
+    source: 'comfy',
+    output: 'image',
+    available: true,
+  },
+  {
+    name: 'image_qwen_image_2_1_image_edit',
+    title: 'Qwen Image 2.1: Image Edit',
+    description: 'Edit images by feeding reference images through one checkpoint.',
+    category: 'Character & Fashion',
+    tags: ['Image Edit'],
+    models: ['Qwen Image 2.1'],
+    size: 26736171418,
+    date: '2026-09-20',
+    username: 'ComfyUI',
+    usage: 17538,
+    openSource: true,
+    source: 'comfy',
+    output: 'image',
+    needsInput: true,
+    available: true,
+  },
+  {
+    name: 'video_wan2_2_i2v',
+    title: 'Wan 2.2 14B Image to Video',
+    description: 'Turn a still image into a short video clip.',
+    category: 'Video',
+    tags: ['Video'],
+    models: ['Wan 2.2'],
+    size: 28000000000,
+    date: '2025-07-28',
+    username: 'ComfyUI',
+    usage: 9000,
+    openSource: true,
+    source: 'comfy',
+    output: 'video',
+    needsInput: true,
+    available: true,
+  },
+]
+const demoBuiltin = () => builtinTemplates(LOCAL_MODELS)
+const demoBuiltinMeta = (): ComfyTemplateMeta[] =>
+  demoBuiltin().map((tpl) => {
+    const meta = builtinTemplateMeta([tpl])[0]
+    const model = tpl.name.startsWith('builtin:') ? tpl.name.slice('builtin:'.length) : ''
+    return { ...meta, ready: model ? modelReady(localModel(model)!, local) : false }
+  })
+const demoAssetHave = (file: string) => {
+  const f = LOCAL_FILES.find((x) => x.file === file)
+  return !!f && local.files.includes(f.id)
+}
+const demoAssetsOf = (name: string) =>
+  (DEMO_ASSETS[name] ?? demoBuiltin().find((x) => x.name === `builtin:${name}`)?.assets ?? []).map((a) => ({
+    ...a,
+    have: demoAssetHave(a.file),
+  }))
+const demoCatalog = () => ({
+  templates: [
+    ...demoBuiltinMeta(),
+    ...DEMO_OFFICIAL.map((m) => ({ ...m, ready: demoAssetsOf(m.name).every((a) => a.have) })),
+  ],
+  updatedAt: '',
+  cached: false,
+})
+
 let demoWorkflows: ComfyWorkflow[] = []
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
@@ -1400,6 +1541,50 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
       j.status = 'done'
       done()
     }, demoMs(400))
+  }
+  if (action === 'templates') {
+    if (!id || id === 'refresh') return demoCatalog()
+    const builtin = demoBuiltin().find((x) => x.name === id)
+    const found = demoBuiltinMeta().find((x) => x.name === id) ?? DEMO_OFFICIAL.find((x) => x.name === id)
+    if (!found) return fail('找不到模板')
+    const meta = found
+    const assets = demoAssetsOf(builtin ? builtin.name.slice('builtin:'.length) : id)
+    if (sub === 'add') {
+      const kind = (body as { kind?: string } | undefined)?.kind === 'web' ? 'web' : 'game'
+      const wf: ComfyWorkflow = {
+        id: `wf_${Date.now().toString(36)}`,
+        name: `${meta.title}（副本）`,
+        kind,
+        use: 'any',
+        description: meta.description,
+        model: builtin ? builtin.name.slice('builtin:'.length) : '',
+        assets: assets.map((a) => `${a.dir}/${a.file}`),
+        extra: '',
+        graph: builtin?.graph ?? DEMO_GRAPH,
+        updatedAt: '',
+      }
+      demoWorkflows.push(wf)
+      return wf
+    }
+    if (sub === 'download') {
+      const files = assets.filter((a) => !a.have)
+      tick(
+        files.map((a) => `下载 ${a.file}`),
+        () => {
+          for (const a of files) {
+            const f = LOCAL_FILES.find((x) => x.file === a.file)
+            if (f && !local.files.includes(f.id)) local.files.push(f.id)
+          }
+        },
+        files.reduce((n, a) => n + a.gb * 1024 ** 3, 0),
+      )
+      return { job: local.job, files, skipped: 0 }
+    }
+    return {
+      template: { ...meta, ready: assets.every((a) => a.have) },
+      ...(builtin ? { graph: builtin.graph } : { preview: DEMO_GRAPH }),
+      assets,
+    }
   }
   if (action === 'install' && method === 'POST')
     tick(

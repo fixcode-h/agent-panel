@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
-import type { ComfyQueueState, ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
@@ -82,6 +83,7 @@ import type {
   ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
+  CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
@@ -192,6 +194,23 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  comfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
+  refreshComfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates/refresh', {
+      method: 'POST',
+    }),
+  comfyTemplate: (name: string) =>
+    request<ComfyTemplateDetail & { preview?: ComfyWorkflow['graph'] }>(
+      `/local-image/templates/${encodeURIComponent(name)}`,
+    ),
+  addComfyTemplate: (name: string, kind: 'game' | 'web') =>
+    request<ComfyWorkflow>(`/local-image/templates/${encodeURIComponent(name)}/add`, json('POST', { kind })),
+  downloadComfyTemplate: (name: string) =>
+    request<{ job: LocalJob; files: TemplateAsset[]; skipped: number }>(
+      `/local-image/templates/${encodeURIComponent(name)}/download`,
+      json('POST', {}),
+    ),
   saveComfyWorkflow: (w: ComfyWorkflow) =>
     request<ComfyWorkflow>(`/local-image/workflows/${encodeURIComponent(w.id)}`, json('PUT', w)),
   deleteComfyWorkflow: (id: string) =>
@@ -631,6 +650,9 @@ export const api = {
       error?: string
     },
   ) => request<{ ok: boolean }>(`/designs/${id}/capture/${captureId}`, json('POST', body)),
+  /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
+  designCaptureWait: (id: string, signal: AbortSignal) =>
+    request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
   steerDesign: (id: string, text: string) =>
     request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
