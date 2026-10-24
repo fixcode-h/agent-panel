@@ -1009,6 +1009,48 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
 
+  // 保活中切换界面语言：系统提示词和 mod 的环境变量固定在旧进程里，新消息的提醒却是新语言；
+  // 不能把下一句交给旧进程，要按新语言重开（和换 CLI / 模型同一条路）
+  {
+    const beforePids = new Set(readLog(log).map((x) => x.pid))
+    const cur = await call('GET', '/settings')
+    let w = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '先看代码',
+    })
+    await call('POST', `/tasks/${w.id}/seen`, {})
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
+    w = await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${w.id}`)
+        return t.awaitingUser ? t : null
+      },
+      { timeout: 20000, label: '切换语言前停在等下一句' },
+    )
+    const first = readLog(log).filter((x) => !beforePids.has(x.pid))
+    assert.equal(new Set(first.map((x) => x.pid)).size, 1, '第一轮只有一个进程')
+    const n = readLog(log).length
+    await call('PUT', '/settings', { ...cur, language: 'en' })
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
+    const next = await waitFor(
+      () => {
+        const rows = readLog(log).slice(n)
+        return rows.length ? rows : null
+      },
+      { timeout: 20000, label: '语言变了以后按新语言重开进程' },
+    )
+    assert.ok(!first.some((x) => x.pid === next[0].pid), '语言变了不能把下一句交给旧语言的进程')
+    assert.match(next[0].input, /Keep writing both your reply and your reasoning \/ thinking in English/)
+    await call('PUT', '/settings', { ...cur })
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
+    await waitDone(w.id, 15000)
+  }
+  step('保活中切换界面语言：不再交给旧进程，按新语言重开')
+
   // ---- 正在执行的对话不受回收限制：两个时长和保活上限只管「回复完停在等下一句」的空闲会话 ----
   {
     // 这一轮停在「等后台命令结果」上（CLI 注册了 waiter，任务 awaitingUser=true）。
