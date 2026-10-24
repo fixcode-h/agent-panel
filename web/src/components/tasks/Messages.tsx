@@ -30,7 +30,7 @@ import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
 import { currentRun, topSteps } from '@shared/flow'
-import { convStateText, deliveryText, runRunning } from '@shared/task'
+import { convStateText, deliveryText, helperActive, runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -255,7 +255,15 @@ function runningKey(msgs: TaskMessage[], task?: Task) {
   const jobs = task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
   const runs = task?.runs?.map((r) => `${r.id}:${r.status}`).join(',') ?? ''
   const steps = task?.steps?.map((s) => s.status[0]).join('') ?? ''
-  return `${tools}|${jobs}|${runs}|${steps}|${task?.status ?? ''}`
+  // 运行区里子任务那几行写着它这会儿在做什么：没结束的子任务有新输出也要重画
+  const active = new Set(task?.steps?.filter(helperActive).map((s) => s.id))
+  const helperOut = active.size
+    ? (task?.messages ?? [])
+        .filter((m) => active.has(m.step))
+        .map((m) => `${m.text.length}.${m.tools.length}`)
+        .join(',')
+    : ''
+  return `${tools}|${jobs}|${runs}|${steps}|${helperOut}|${task?.status ?? ''}`
 }
 
 /** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
@@ -766,6 +774,7 @@ export function FoldedRun({
   hideAuthor,
   stickyAuthor,
   running,
+  runningSig,
   foldId,
 }: {
   msgs: TaskMessage[]
@@ -781,6 +790,11 @@ export function FoldedRun({
   stickyAuthor?: boolean
   /** 还在运行的工具、后台命令和子对话：放在最后的回复（总结）上面，不收进折叠 */
   running?: React.ReactNode
+  /**
+   * 运行区自己的开关（这一段列不列子对话、子任务、后台命令）：要算进签名。
+   * 不算的话新的一轮开始后，上一轮还是「最新」时画的那份运行区被缓存住，上下两段回复各列一遍
+   */
+  runningSig?: string
   /** 这一段在一轮里的标识（`轮 key#第几段`）：展开 / 收起的状态按它记，重新挂载、来新内容都不会被打回收起 */
   foldId?: string
 }) {
@@ -833,7 +847,7 @@ export function FoldedRun({
     toggle
   )
   // slot 每次都是新画的元素：给内容算个签名，内容没变时整段回复不重画
-  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? runningKey(msgs, task) : ''}`
+  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? `${runningSig ?? ''}:${runningKey(msgs, task)}` : ''}`
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；
@@ -963,18 +977,12 @@ export function ChatReply({
         const isTail = i === lastPart
         // 流式输出时工具就在过程里转圈；收尾的段只列还没收尾的工具，后台的东西和工作流运行只在最新一段列
         const indent = isLive || !foldStats(part).parts.length
+        const kids = !!latest && isTail
+        const jobs = !!last && isTail && !tailLive
         const running =
           isTail || (!isLive && runningTools(part).length) ? (
             <>
-              {!isLive && (
-                <RunningNow
-                  task={task}
-                  tools={runningTools(part)}
-                  jobs={!!last && isTail && !tailLive}
-                  kids={!!latest && isTail}
-                  indent={indent}
-                />
-              )}
+              {!isLive && <RunningNow task={task} tools={runningTools(part)} jobs={jobs} kids={kids} indent={indent} />}
               {isTail && <PlanRunRow task={task} msgs={msgs} last={last} indent={indent} />}
             </>
           ) : undefined
@@ -986,6 +994,7 @@ export function ChatReply({
             foldId={`${key}#${i}`}
             stickyAuthor={!author && i === 0}
             running={running}
+            runningSig={`${kids ? 'k' : ''}${jobs ? 'j' : ''}${last ? 't' : ''}${isLive ? 'l' : ''}`}
           />
         )
       })}

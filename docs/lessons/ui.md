@@ -43,6 +43,6 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 ## 输入框不能被外面重渲染重画或重挂载
 
 - 规则：`RichInput` 整棵重画（`paint` → `replaceChildren`）只在文字真变了时做：上传完成只换卡片里的 `img`（`updatePreviews`）；重画会擦掉组合中的字，组合期间（`compositionstart` → `compositionend`）跳过的重画等结束后补。卡片操作点击时重新取 `actions()`，别闭包捕获画卡片那刻的 `files`。
-- 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 这类新画的 ReactNode 用内容签名 `slotKey` 比；格式化复用 `Intl` 实例，别每次 new。
+- 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 用签名 `slotKey` 比，签名要含 slot 的全部输入（如 `runningSig`，漏了上下两段回复各列一遍子对话）；`Intl` 实例复用。
 - 起因：用户反馈实时输出时打字卡、输入框失焦；实测 `Intl` 每次新建占 109ms/3s，`slot` 的 memo 从未命中。
 - 防线：`scripts/ui-check.mjs`（推送期间输入框不重挂载、不丢焦点；行内图片卡片上传后还能删除）。
