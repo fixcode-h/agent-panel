@@ -549,9 +549,6 @@ export const EN_DESIGN: Record<string, string> = {
     'The design follows this style once chosen; it is sent to the AI with your message.',
   '使用「{name}」风格': 'Use the "{name}" style',
   '风格：{name}': 'Style: {name}',
-  一轮出几张原画: 'Concepts per round',
-  '原画 {n} 张': '{n} concepts',
-  选的风格会在这一轮结束后随这条一起发出: 'The chosen style will be sent with this message when the current turn ends',
   不用这个风格: "Don't use this style",
   '（副本）': '(copy)',
   '已复制到「我的风格」，可以改了': 'Copied to "My styles"; you can edit it now',
@@ -584,9 +581,12 @@ export const EN_DESIGN: Record<string, string> = {
   先出原画: 'Concept first',
   '已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）':
     'A concept template is approved, so the AI builds the UI from it (unset it in Concept to pick again)',
-  '先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面）':
-    'Draws a few full-screen concepts for you to pick from and builds the UI after you approve one (click to build directly)',
-  '直接搭界面（点一下改成先出原画）': 'Builds the UI directly (click to draw concepts first)',
+  '先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面；右键设置一次出几张）':
+    'Draws a few full-screen concepts for you to pick from and builds the UI after you approve one (click to build directly; right-click to set how many per round)',
+  '直接搭界面（点一下改成先出原画；右键设置一次出几张）':
+    'Builds the UI directly (click to draw concepts first; right-click to set how many per round)',
+  一次出几张原画: 'How many concepts per round',
+  '{n} 张': '{n}',
   '描述想要的界面，AI 先画几张整屏的原画给你挑，可以在图上标注修改；确认一张作为模板后再搭界面、出切图。':
     'Describe the screen you want. The AI first draws a few full-screen concepts for you to pick from and mark up; once you approve one as the template, it builds the UI and generates the assets.',
   '描述界面，AI 先出几张原画给你挑…': 'Describe the screen; the AI will draw a few concepts first…',

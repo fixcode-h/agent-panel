@@ -29,10 +29,47 @@ type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
 
 const designs = new Map<string, Full>()
+/** 运行中收不下的消息：这一轮结束后按顺序接着跑（和真服务端一样），带上对话里那条消息的 id */
+const pendingChats = new Map<
+  string,
+  { id: string; text: string; source: ImageSource; count: number; run?: DemoRun }[]
+>()
+type DemoRun = { cli: string; model: string; effort: string }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, demoMs(ms)))
 const now = () => new Date().toISOString()
 const fail = (msg: string): never => {
   throw new Error(msg)
+}
+
+/** 把用户的一条要求记进演示的对话：文字、标注、附件、引用、回答和选的风格，和真服务端一样；返回消息 id */
+function pushUser(d: Full, body: Record<string, any>, delivery?: 'steer' | 'held' | 'next' | 'lost') {
+  if (body.style) d.style = body.style
+  const id = randomId()
+  d.messages.push({
+    id,
+    role: 'user',
+    text: String(body.text ?? ''),
+    at: now(),
+    ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+    ...(body.attachments?.length ? { attachments: body.attachments } : {}),
+    ...(body.refs?.length ? { refs: body.refs } : {}),
+    ...(body.answers?.length ? { answers: body.answers } : {}),
+    ...(body.style && body.styleName ? { style: body.styleName } : {}),
+    ...(delivery ? { delivery: { how: delivery, at: now() } } : {}),
+  })
+  d.updatedAt = now()
+  return id
+}
+
+/** 这一轮结束了：有排队的消息就接着开下一轮；消息上从「结束后自动处理」改成「按新的一轮处理」 */
+function flushPending(d: Full) {
+  if (d.job?.status === 'running') return
+  const rest = pendingChats.get(d.id)
+  const next = rest?.shift()
+  if (!next) return
+  if (!rest?.length) pendingChats.delete(d.id)
+  d.messages = d.messages.map((m) => (m.id === next.id ? { ...m, delivery: { how: 'next' as const, at: now() } } : m))
+  void runChat(d, next.text, next.source, next.count, next.run)
 }
 
 // ---- 示意图：按图片 id 里的关键词画 ----
@@ -120,6 +157,7 @@ async function runConcepts(
     progress.got++
   }
   job.status = 'done'
+  flushPending(d)
 }
 
 /** 演示里的「只重绘蒙版区域」：在这张原画的基础上多出一张候选 */
@@ -154,6 +192,7 @@ async function runInpaint(d: Full, base: { id: string; prompt: string }, text: s
   d.concept = { images: [...c.images, img], selected: img.id, approved: '' }
   progress.got++
   job.status = 'done'
+  flushPending(d)
 }
 
 function draw(id: string, w: number, h: number): string {
@@ -1196,6 +1235,7 @@ async function runChat(
     })
     d.updatedAt = now()
     job.status = 'done'
+    flushPending(d)
     return
   }
   addVersion(d, `AI 修改前：${text.slice(0, 24)}`, true)
@@ -1260,6 +1300,7 @@ async function runChat(
       job,
     )
   job.status = 'done'
+  flushPending(d)
 }
 
 /** 演示里的「AI 分析」：读当前设计的控件和图片，给三段结论，不改设计 */
@@ -1405,6 +1446,7 @@ async function runAnalysis(d: Full, run = { cli: 'claude', model: 'claude-opus-4
   })
   d.updatedAt = now()
   job.status = 'done'
+  flushPending(d)
 }
 
 async function genImages(d: Full, ids: string[], count: number, job: Job) {
@@ -1574,28 +1616,19 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
   }
   if (sub === 'chat') {
     if (d.job?.status === 'running') fail('正在处理上一个请求，等它完成或先停止')
-    if (body.style) d.style = body.style
-    d.messages.push({
-      id: randomId(),
-      role: 'user',
-      text: body.text,
-      at: now(),
-      ...(body.annotations?.length ? { annotations: body.annotations } : {}),
-      ...(body.refs?.length ? { refs: body.refs } : {}),
-      ...(body.answers?.length ? { answers: body.answers } : {}),
-      ...(body.style && body.styleName ? { style: body.styleName } : {}),
-    })
+    pushUser(d, body)
     // AI 分析：只读，不套模板、不改设计
     if (body.mode === 'analyze') {
       void runAnalysis(d, body.run)
       return d
     }
     const concept = d.concept ?? emptyConcept()
+    // 原画张数用「原画」按钮右键菜单里设的那个数，和每张图生成几版（body.count）分开
     if (
       !concept.approved &&
       (body.concept || (body.annotations ?? []).some((a: { target: string }) => a.target.startsWith('concept:')))
     )
-      void runConcepts(d, body.text, body.run, body.count ?? 3)
+      void runConcepts(d, body.text, body.run, body.conceptCount ?? 3)
     else void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d
   }
@@ -1659,14 +1692,40 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     return metaOf(d)
   }
   if (sub === 'stop') {
+    // 用户点了停止：排着的消息不再自动处理，对话里标明没送出去，让人知道要重新发一次
+    const dropped = new Set((pendingChats.get(d.id) ?? []).map((x) => x.id))
+    pendingChats.delete(d.id)
+    if (dropped.size)
+      d.messages = d.messages.map((m) =>
+        dropped.has(m.id) ? { ...m, delivery: { how: 'lost' as const, at: now() } } : m,
+      )
     if (d.job) d.job.status = 'done'
     return d.job
   }
-  // 和真的一样：正在改设计时把话补充给这一轮
+  // 和真的一样：正在改设计时把整条消息补充给这一轮；收不下就记进对话，这一轮结束后自动接着处理
   if (sub === 'steer') {
-    if (d.job?.status !== 'running' || d.job.phase !== 'design') return { steered: false }
-    d.messages.push({ id: randomId(), role: 'user', text: String(body.text ?? ''), at: now() })
-    return { steered: true }
+    if (d.job?.status === 'running' && d.job.phase === 'design') {
+      pushUser(d, body, 'steer')
+      return { ...d, steered: true, queued: false }
+    }
+    if (d.job?.status === 'running') {
+      const id = pushUser(d, body, 'held')
+      pendingChats.set(d.id, [
+        ...(pendingChats.get(d.id) ?? []),
+        {
+          id,
+          text: String(body.text ?? ''),
+          source: body.source ?? { kind: 'cli' },
+          count: body.count ?? 1,
+          run: body.run,
+        },
+      ])
+      return { ...d, steered: false, queued: true }
+    }
+    // 这一轮刚好结束了：直接开始新的一轮
+    pushUser(d, body)
+    void runChat(d, String(body.text ?? ''), body.source ?? { kind: 'cli' }, body.count ?? 1, body.run)
+    return { ...d, steered: false, queued: false }
   }
   if (sub === 'images') {
     const data = String(body.data)
@@ -1698,7 +1757,10 @@ export function demoGenerate(id: string, imageId: string, body: any) {
   d.job = job
   const im = d.images.find((i) => i.id === imageId) ?? fail('图片不存在')
   im.status = 'pending'
-  void genImages(d, [imageId], body.count ?? 1, job).then(() => (job.status = 'done'))
+  void genImages(d, [imageId], body.count ?? 1, job).then(() => {
+    job.status = 'done'
+    flushPending(d)
+  })
   return d
 }
 
