@@ -159,6 +159,9 @@ function sendOf(name: string, tool: ToolUse): ToolView['send'] {
   if (name === 'send_to_conversation')
     return { kind: 'task', to: quoted || firstLine(a.id) || t('子对话'), body: str(a.message) }
   if (name === 'message_peer') return { kind: 'chat', to: quoted || t('其他父对话'), body: str(a.text) }
+  // 节点之间、给子任务传话：收件方在工具结果里（「已交给正在执行的「测试」」），没有就用参数里的 to
+  if (name === 'send_message')
+    return { kind: 'chat', to: quoted || firstLine(a.to) || t('其他节点'), body: str(a.text) }
   if (name === 'message_parent') {
     const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
     return {
@@ -330,7 +333,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'ask_main':
       return as(t('向主角色提问'), firstLine(a.question), 'other', text(a.question))
     case 'send_message':
-      return as(t('传话'), [firstLine(a.to), firstLine(a.text)].filter(Boolean).join(' · '), 'other', text(a.text))
+      return as(t('发送消息'), quoted || firstLine(a.to), 'other', text(a.text))
     case 'read_messages':
       return as(t('查看消息'), '')
     case 'read_user_notes':

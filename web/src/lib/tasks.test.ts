@@ -152,7 +152,7 @@ test('「启动工作流」一行认回启动的是第几次运行', () => {
   assert.equal(startedRun(other, toolView(start('另一件事'))!.tool), undefined)
 })
 
-test('toolView：给别的对话发消息的三个工具画成「发送消息」，带类型、收件方和正文', () => {
+test('toolView：给别的对话发消息的几个工具画成「发送消息」，带类型、收件方和正文', () => {
   const send = toolView(
     tool('mcp__panel__send_to_conversation', '', {
       input: '{"id":"c1","message":"把侧栏时间改成相对时间"}',
@@ -172,6 +172,14 @@ test('toolView：给别的对话发消息的三个工具画成「发送消息」
     tool('mcp__panel__message_peer', '', { input: '{"id":"p2","text":"我先编"}', output: '已交给父对话「美术」' }),
   )
   assert.deepEqual(peer?.send, { kind: 'chat', to: '美术', body: '我先编' })
+  // 节点之间、给子任务传话（send_message）：正文由这一行承载，不再铺成居中的系统块
+  const chat = toolView(
+    tool('mcp__panel__send_message', '', {
+      input: '{"to":"测试","text":"接口改名了"}',
+      output: '已交给正在执行的「测试」',
+    }),
+  )
+  assert.deepEqual(chat?.send, { kind: 'chat', to: '测试', body: '接口改名了' })
   // 别的面板工具不是发消息
   assert.equal(toolView(tool('mcp__panel__get_status', ''))?.send, undefined)
 })

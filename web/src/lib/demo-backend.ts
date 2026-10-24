@@ -3107,6 +3107,25 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('修侧栏时间显示', { resolved: true })
   await make('核对通知时序', { resolved: true })
   await make('拆分规则检查脚本', { resolved: true })
+  // 父对话给子任务传话（send_message）：发件方画成一行「发送消息 · 传话」，不再把整段正文铺成居中的系统块
+  parent.messages.push({
+    id: 'demo-send-message',
+    role: 'agent',
+    agentId: agent.id,
+    step: '',
+    text: '',
+    tools: [
+      {
+        kind: 'other',
+        name: 'mcp__panel__send_message',
+        label: '传话',
+        detail: '',
+        input: '{"to":"核对通知时序","text":"接口改名了，这边先按新名字改，改完告诉我。"}',
+        output: '已放进「核对通知时序」的收件箱，它用 read_messages 能看到',
+      },
+    ],
+    at: new Date().toISOString(),
+  })
 }
 
 function demoPlans(task: Task) {

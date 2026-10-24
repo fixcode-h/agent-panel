@@ -995,6 +995,7 @@ export const EN_TASKS: Record<string, string> = {
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',
   其他父对话: 'Other parent conversation',
+  其他节点: 'Other agent',
   交代任务: 'Task',
   回答: 'Answer',
   提问: 'Question',

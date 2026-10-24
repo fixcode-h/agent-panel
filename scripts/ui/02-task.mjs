@@ -60,6 +60,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await closed()
     }
   }
+  // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
+  {
+    const row = p.getByText('发送消息', { exact: true }).first()
+    if (!(await row.count())) errors.push('父对话里没有「发送消息」行：send_message 又被铺成居中的说明块')
+    else {
+      await row.scrollIntoViewIfNeeded()
+      await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
+    }
+  }
   // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
   {
     const openTask = () => backToTask()

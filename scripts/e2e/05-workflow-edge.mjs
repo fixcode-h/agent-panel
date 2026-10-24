@@ -431,6 +431,49 @@ await runShard('工作流条件与失败', async (api) => {
   }
   step('工作流没有再常驻编排器：节点直接执行、自己的结论决定分支，追加要求交给默认执行 Agent')
 
+  // ---- 节点之间传话（send_message）：记成一次工具调用，不把整段正文铺成居中的系统块 ----
+  {
+    const wfTalk = await call('POST', '/workflows', {
+      name: '节点之间传话',
+      description: '',
+      mainAgentId: A.id,
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [node('t1', '实现', B.id, 'SEND_MSG 给「测一下」写代码。'), node('t2', '测一下', B.id, '跑测试。')],
+          edges: [
+            { id: 'e1', from: 'start', to: 't1' },
+            { id: 'e2', from: 't1', to: 't2' },
+            { id: 'e3', from: 't2', to: 'end' },
+          ],
+        },
+      ],
+      entryFlowId: 'main',
+      document: '',
+    })
+    let talk = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'workflow',
+      workflowId: wfTalk.id,
+      prompt: '节点之间传话',
+    })
+    talk = await waitDone(talk.id)
+    assert.equal(talk.status, 'done', JSON.stringify(talk.messages.filter((m) => m.role === 'system')))
+    // 假 CLI 直接调面板的 MCP，不产生 CLI 的 tool_use 事件：工具行的渲染由单测和界面检查覆盖，
+    // 这里检查服务端记下的运行记录，以及不再往对话流里铺居中的系统块
+    const sent = talk.runs?.at(-1)?.messages?.find((m) => /接口改名了/.test(m.text))
+    assert.ok(sent, '传话记进这次运行的消息记录')
+    assert.equal(sent.to, 't2', '收件方是「测一下」那个节点')
+    assert.ok(
+      !talk.messages.some((m) => m.role === 'system' && !m.panel && /」→「/.test(m.text)),
+      '传话不再铺成居中的系统块',
+    )
+    await call('DELETE', `/tasks/${talk.id}`)
+    await call('DELETE', `/workflows/${wfTalk.id}`)
+    step('节点之间传话：画成发送消息的工具调用，不再铺成居中的系统块')
+  }
+
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
   bad = await waitDone(bad.id)
