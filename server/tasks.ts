@@ -147,7 +147,7 @@ import {
 } from '../shared/plan.ts'
 import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
-import { runTree } from '../shared/run-usage.ts'
+import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
@@ -160,6 +160,7 @@ import {
   cleanableClis,
   commandSummary,
   loadHistory,
+  ownedEntries,
   processSnapshot,
   subtree,
   sumRss,
@@ -3304,16 +3305,19 @@ export function tasksApi(deps: {
 
   // ---- 进程与内存：标题栏下拉里的进程列表、关闭、清理、内存曲线 ----
 
-  /** 对话树最上层：子对话、子任务的进程都算进父对话的统计 */
-  const rootIdOf = (tk: Task) => tk.rootTaskId || tk.id
+  /** 这个对话及它下面的全部任务（子对话、子对话的子对话、工作流节点所在的子对话） */
+  const subtreeIdsOf = async (tk: Task) => subtreeTaskIds(await store.list(), tk.id)
 
   /** 进程面板判断「任务还活着」：还在内存里执行、保活等下一句，或者排队等名额 */
   const taskAlive = (id: string) => live.has(id) || startQueue.has(id)
 
-  /** 这个对话的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计 */
+  /**
+   * 这个对话（含附属的任务）的进程树（登记的主进程 + 它起的子进程，MCP 服务都算进去）和内存合计。
+   * 只算自己这一支：打开子对话时看不到父对话和兄弟的进程
+   */
   async function processPanel(tk: Task) {
-    const rootId = rootIdOf(tk)
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+    const ids = await subtreeIdsOf(tk)
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const now = Date.now()
     const processes: TaskProcess[] = []
@@ -3352,14 +3356,15 @@ export function tasksApi(deps: {
       processes: processes.sort((a, b) => (a.kind === b.kind ? a.pid - b.pid : a.kind === 'cli' ? -1 : 1)),
       cliMemory,
       serverMemory,
-      totalMemory: cliMemory === null ? null : cliMemory + serverMemory,
+      // 面板自己的内存不属于这个对话：合计只算子树里的 CLI 进程，serverMemory 单独给出
+      totalMemory: cliMemory,
       unavailable: map ? '' : t('取不到系统进程信息（权限不足或命令不可用）'),
     }
   }
 
-  /** 这个对话能动的 pid：登记的进程和它们的整棵子树 */
-  async function allowedPids(rootId: string) {
-    const entries = trackedClis().filter((e) => e.owner?.rootTaskId === rootId)
+  /** 这个对话子树能动的 pid：这些任务登记的进程和它们的整棵子树 */
+  async function allowedPids(ids: Set<string>) {
+    const entries = ownedEntries(trackedClis(), ids)
     const map = await processSnapshot()
     const out = new Set<number>()
     for (const e of entries) for (const pid of map ? subtree(e.pid, map) : [e.pid]) out.add(pid)
@@ -3540,7 +3545,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const pid = Number(c.req.param('pid'))
     if (!Number.isInteger(pid) || pid <= 0) return bad(c, t('进程号不对'))
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     if (!allowed.has(pid)) return bad(c, t('这个进程不属于当前对话，不能从这里关闭'))
     killTree(pid)
     // 等一下再看：结束失败（权限不足、被系统占用）要把真实状态告诉用户，不能悄悄把登记删掉
@@ -3561,13 +3566,13 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const body = (await c.req.json().catch(() => ({}))) as { pids?: unknown }
     const only = Array.isArray(body.pids) ? body.pids.filter((x): x is number => Number.isInteger(x)) : []
-    const roots = rootIdOf(tk)
+    const ids = await subtreeIdsOf(tk)
     const map = await processSnapshot()
     const { targets, skipped, gone } = cleanableClis({
       entries: trackedClis(),
       map,
       aliveTask: taskAlive,
-      rootTaskId: roots,
+      taskIds: ids,
       only,
     })
     // 进程已经不在的登记顺手清掉（不算「结束」，界面照样显示成已结束）
@@ -3625,7 +3630,7 @@ export function tasksApi(deps: {
     })
     if (r.spawnError) return c.json({ suggestions: [], text: '', error: r.spawnError })
     const parsed = extractJson(text) as { kill?: unknown } | undefined
-    const allowed = await allowedPids(rootIdOf(tk))
+    const allowed = await allowedPids(await subtreeIdsOf(tk))
     const suggestions = (Array.isArray(parsed?.kill) ? parsed.kill : [])
       .map((x) => x as { pid?: unknown; reason?: unknown })
       .filter((x) => Number.isInteger(x.pid) && allowed.has(Number(x.pid)))
@@ -3640,7 +3645,7 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     const from = Number(c.req.query('from') ?? '')
     const to = Number(c.req.query('to') ?? '')
-    const points = summarize(loadHistory(), rootIdOf(tk), {
+    const points = summarize(loadHistory(), await subtreeIdsOf(tk), {
       from: Number.isFinite(from) && from > 0 ? from : undefined,
       to: Number.isFinite(to) && to > 0 ? to : undefined,
     })
