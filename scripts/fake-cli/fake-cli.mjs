@@ -516,6 +516,15 @@ if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes(
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
 if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
+// 子任务起的后台命令：子任务的 input 里有「派出的子 Agent」（它没有对话提示词里的长命令说明，不按 run_background 字样判断）。
+// 命令不点名 step（引擎记子任务自己的步骤 id），看的是运行区和推回的归属
+if (input.includes('SUB_BG') && input.includes('派出的子 Agent'))
+  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '子任务慢测试' })
+// 派一个会起后台命令的子任务（SUB_BG 只出现在子任务的指令里）
+if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
+  })
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
 // 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
 {

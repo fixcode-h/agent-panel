@@ -117,7 +117,7 @@ import {
   isBigProject,
 } from './exec/worktree.ts'
 import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
-import { createBackground, jobMs, jobOutput, type BgJob } from './background.ts'
+import { createBackground, jobMs, jobOutput, uiJobs, type BgJob } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
@@ -1000,7 +1000,10 @@ export function tasksApi(deps: {
         }
         // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
         const hit = settleWait(tk, 'background', job.id, job.state === 'done')
-        const text = waitNote(hit) + result
+        // 子任务起的命令：结果照常推回这个对话，但要写清是哪个子任务起的，否则父对话看到一条命令不知道来源
+        const owner = job.step ? tk.steps.find((s) => s.id === job.step && s.slot === 'sub') : undefined
+        const from = owner ? t('这条后台命令是子任务「{title}」起的。\n', { title: owner.title }) : ''
+        const text = waitNote(hit) + from + result
         if (hit.length) {
           const entry = live.get(tk.id)
           if (entry) entry.rev++
@@ -1105,16 +1108,7 @@ export function tasksApi(deps: {
 
   /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
   const withJobs = (task: Task): Task => {
-    const jobs = background
-      .list(task.id)
-      .filter((j) => j.state === 'queued' || j.state === 'running')
-      .map((j) => ({
-        id: j.id,
-        name: j.name,
-        command: j.command,
-        state: j.state as 'queued' | 'running',
-        startedAt: j.startedAt,
-      }))
+    const jobs = uiJobs(background.list(task.id))
     return jobs.length ? { ...task, jobs } : task
   }
 

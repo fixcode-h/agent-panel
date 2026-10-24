@@ -6,6 +6,7 @@ import { currentShell } from './shells.ts'
 import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
 import { fmtDuration } from '../shared/duration.ts'
+import type { TaskJob } from '../shared/schema.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -15,6 +16,8 @@ import { fmtDuration } from '../shared/duration.ts'
 export interface BgJob {
   id: string
   taskId: string
+  /** 发起它的子任务步骤（TaskStep.id）；父对话自己起的不带，运行区据此把子任务的后台命令单独列出 */
+  step?: string
   name: string
   command: string
   cwd: string
@@ -39,6 +42,23 @@ export interface BgJob {
   changed: boolean
   /** 额外的环境变量（子对话的独立分支禁止推送） */
   env?: { key: string; value: string }[]
+}
+
+/**
+ * 发给界面的后台命令（只带还在跑的）：映射只写这一处，测试直接测它。
+ * step 只在有值时带：老记录和父对话自己起的都不带，界面上按它区分来源（见 shared/task.ts 的 splitStepJobs）
+ */
+export function uiJobs(list: BgJob[]): TaskJob[] {
+  return list
+    .filter((j) => j.state === 'queued' || j.state === 'running')
+    .map((j) => ({
+      id: j.id,
+      ...(j.step ? { step: j.step } : {}),
+      name: j.name,
+      command: j.command,
+      state: j.state as 'queued' | 'running',
+      startedAt: j.startedAt,
+    }))
 }
 
 /** 没写限时的后台命令最多跑多久 */
@@ -345,6 +365,8 @@ export function createBackground(
     /** 排一条后台命令，马上返回；root 是对话的目录（cwd 相对它），也是比较文件有没有变的范围 */
     start(input: {
       taskId: string
+      /** 子任务（slot='sub' 的步骤）发起时传它自己的步骤 id：结果推回和运行区都要认出是谁起的 */
+      step?: string
       name: string
       command: string
       cwd: string
@@ -359,6 +381,8 @@ export function createBackground(
       const j: BgJob = {
         id: randomUUID().slice(0, 8),
         taskId: input.taskId,
+        // 老的 jobs 文件里没有 step，读出来是 undefined：只在有值时写入，保持记录形状不变
+        ...(input.step?.trim() ? { step: input.step.trim() } : {}),
         name: input.name,
         command: input.command,
         cwd,

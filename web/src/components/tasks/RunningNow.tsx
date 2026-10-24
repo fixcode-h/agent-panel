@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
-import { visibleChildren } from '@shared/task'
+import { visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRow } from './ToolRow'
@@ -31,15 +31,27 @@ function childMs(
   return Math.max(0, (Number.isFinite(end) ? end : now) - start)
 }
 
-function JobRow({ job, now }: { job: TaskJob; now: number }) {
+function JobRow({ job, now, step }: { job: TaskJob; now: number; step?: string }) {
   const [open, setOpen] = useState(false)
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
+  // 子任务起的命令：行首写「子任务」、标题是那一步的名字、后面跟命令名（计时口径和父对话的后台命令一样）
+  const detail =
+    step || job.state === 'queued' ? (
+      <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
+        {step && (
+          <span className="min-w-0 truncate font-mono" title={job.name}>
+            {job.name}
+          </span>
+        )}
+        {job.state === 'queued' && <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span>}
+      </span>
+    ) : undefined
   return (
     <RowShell
       glyph={spin}
-      verb={t('后台命令')}
-      title={job.name}
-      detail={job.state === 'queued' && <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span>}
+      verb={step ? t('子任务') : t('后台命令')}
+      title={step ?? job.name}
+      detail={detail}
       ms={started ? now - started : undefined}
       open={open}
       onToggle={() => setOpen(!open)}
@@ -79,17 +91,22 @@ export function RunningNow({
   const children = useChildList()
   const openChild = useChildOpen()
   const list = jobs ? (task?.jobs ?? []) : []
+  // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧；判定只有 splitStepJobs 一处
+  const { sub: stepJobs, own: ownJobs } = splitStepJobs(task?.steps ?? [], list)
   // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren），
   // 以前这里只认 working 且没标解决，弹层里有、运行区没有，同一个页面对不上数
   const rows = kids ? visibleChildren(children) : []
-  const now = useNow(list.length > 0 || rows.length > 0)
-  if (!tools.length && !list.length && !rows.length) return null
+  const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0)
+  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length) return null
   const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
       {tools.map((x, i) => (
         <ToolRow key={`t${i}`} tool={x} task={task} />
       ))}
-      {list.map((j) => (
+      {stepJobs.map(({ step, job }) => (
+        <JobRow key={job.id} job={job} now={now} step={step.title || t('未命名')} />
+      ))}
+      {ownJobs.map((j) => (
         <JobRow key={j.id} job={j} now={now} />
       ))}
       {rows.map((k) => {
