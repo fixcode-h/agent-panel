@@ -1,0 +1,59 @@
+name: 功能建议
+description: 提出新功能、改进现有交互或流程的建议
+title: '[建议] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢建议。提交前请先搜一下 [已有的 Issue](https://github.com/fixcode-h/agent-panel/issues)，避免重复；
+        也看一眼 [路线图](https://github.com/fixcode-h/agent-panel#路线图)，可能已经在计划里了。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决的问题
+      description: 说清现在的痛点和场景，而不是直接给方案——维护者可能想到更好的做法。
+      placeholder: 我在同时跑多个任务时，... 导致 ...，希望 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议的做法
+      description: 你希望它怎么工作，交互和界面大致是什么样。
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的其他做法
+      description: 提一下你排除的方案和原因，以及现在是怎么绕过去的。
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 这个建议主要涉及
+      multiple: true
+      options:
+        - 界面与交互
+        - 任务与工作流执行
+        - CLI 接入与输出解析
+        - 项目与 Agent 配置
+        - Skill 与扩展（浏览器扩展 / MCP）
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 参考的截图、其他工具的做法、相关文档链接等。
+    validations:
+      required: false

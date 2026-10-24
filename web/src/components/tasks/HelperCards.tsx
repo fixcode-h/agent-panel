@@ -4,7 +4,7 @@ import { ListTree, Loader2, X } from 'lucide-react'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
-import { stepMs } from '@shared/task'
+import { helperRunning, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { useEscape } from '@/lib/useEscape'
@@ -19,13 +19,12 @@ const helperTime = (step: TaskStep, now: number) =>
   step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
 
 /** 列表里的顺序：正在跑的、排队的、没做完的、做完的；同一组里按派出的顺序 */
-const helperRank = (s: TaskStep) =>
-  s.status === 'running' ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : 3
+const helperRank = (s: TaskStep) => (helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : 3)
 
 /** 列表分组：和子对话「全部」里同一套分组写法，只是按节点自己的状态分 */
 const helperGroups = (list: TaskStep[]) =>
   [
-    { key: 'running', label: t('执行中'), items: list.filter((s) => s.status === 'running') },
+    { key: 'running', label: t('执行中'), items: list.filter(helperRunning) },
     { key: 'pending', label: t('排队中'), items: list.filter((s) => s.status === 'pending') },
     {
       key: 'unfinished',
@@ -74,7 +73,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
     .map((id) => task.steps.find((s) => s.id === id))
     .filter((s): s is TaskStep => !!s)
     .sort((a, b) => helperRank(a) - helperRank(b))
-  const running = steps.filter((s) => s.status === 'running')
+  const running = steps.filter(helperRunning)
   const failed = steps.filter((s) => s.status === 'failed')
   const now = useNow(running.length > 0)
   // 角色名：默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来
@@ -91,17 +90,15 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
         className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
       >
         <ListTree className="h-3.5 w-3.5 shrink-0 text-subtle" />
-        <span className="shrink-0 font-medium">{t('子任务 {n}', { n: steps.length })}</span>
-        {/* 执行中写成 2/3（分母是子任务总数），没在执行时只显示总数 */}
-        {running.length > 0 && (
-          <span
-            aria-label={t('{n} 个执行中', { n: running.length })}
-            className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent"
-          >
-            <span className="text-subtle">·</span>
+        <span className="shrink-0 font-medium">{t('子任务')}</span>
+        {/* 和子对话那一栏同一个写法：在跑时「运行中/总数」，没在跑时只写总数，字号、间距、颜色都对齐 */}
+        {running.length > 0 ? (
+          <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
             <Loader2 className="h-3 w-3 animate-spin" />
             {running.length}/{steps.length}
           </span>
+        ) : (
+          <span className="shrink-0 text-xs text-subtle tabular-nums">{steps.length}</span>
         )}
         {failed.length > 0 && (
           <span className="shrink-0 rounded-full bg-danger/12 px-1.5 text-[0.6875rem] text-danger">

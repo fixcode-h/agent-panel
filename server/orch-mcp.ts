@@ -57,6 +57,11 @@ const planItem = {
       description: '待做 / 进行中 / 等待中 / 完成',
     },
     note: { type: 'string', description: '一句备注：在等什么、卡在哪；没有不写' },
+    review: {
+      type: 'boolean',
+      description:
+        '这一步是评审本次改动（子对话收尾前必须有这样一步：派「评审」时标等待中、拿回结论后标完成）。没标的话 submit_merge 会被拒绝',
+    },
   },
   required: ['title'],
 }

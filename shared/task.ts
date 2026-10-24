@@ -10,6 +10,7 @@ import {
   type TaskData,
   type TaskMessage,
   type TaskRequest,
+  type TaskStep,
   type TaskTurn,
   type ToolUse,
   type Workflow,
@@ -929,7 +930,7 @@ export function childWait(
   const requests = tk.requests?.length ?? 0
   if (requests) return { kind: 'confirm', n: requests }
   if (x.background) return { kind: 'background', n: x.background }
-  const helpers = tk.steps.filter((s) => s.slot === 'sub' && s.status === 'running').map((s) => s.title)
+  const helpers = tk.steps.filter(helperRunning).map((s) => s.title)
   if (helpers.length) return { kind: 'helpers', list: helpers }
   if (runRunning(tk)) return { kind: 'workflow' }
   if (!tk.working && x.cliAlive) return { kind: 'next' }
@@ -950,7 +951,7 @@ export function childActivity(tk: Pick<Task, 'working' | 'steps' | 'messages' | 
   const running = tk.steps.filter((s) => s.status === 'running' && s.kind !== 'main')
   const nodes = running.filter((s) => !s.parentId).map((s) => s.title)
   if (nodes.length) return { steps: nodes, plan: doing }
-  const helpers = running.filter((s) => s.slot === 'sub').map((s) => s.title)
+  const helpers = running.filter(helperRunning).map((s) => s.title)
   const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && !m.step)
   const tool =
     [...(last?.tools ?? [])].reverse().find((x) => x.running) ?? (last?.text.trim() ? undefined : last?.tools.at(-1))
@@ -1131,7 +1132,8 @@ export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
  * 分母比分子少时兜底不小于分子（进程刚在启动、进程信息还没回来时就是这种情况）。
  */
 export function childCounts<T extends ChildEntry>(list: T[]) {
-  const running = list.filter(childSpinning).length
+  // 分子就是转圈的那一批：不再自己 filter 一遍 childSpinning，免得两处哪天判断条件写岔
+  const running = spinningChildren(list).length
   const alive = list.filter((x) => x.cliAlive).length
   return { running, total: Math.max(alive, running) }
 }
@@ -1156,6 +1158,17 @@ export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
     if (byStart) return byStart
     return a.id.localeCompare(b.id)
   })
+}
+
+/**
+ * 对话页运行区要列的子对话：就是悬浮层「运行中」的那一批（spinningChildren），
+ * 顺序也用它那一套（sortChildren：正在跑的在先，同类按派出时间）。
+ * 弹窗、状态栏计数、消息流运行区全读这一个函数，别各处再 filter 一遍：
+ * 以前运行区写的是 `working && !resolved`，于是「在等后台命令」「已解决但还在跑」「计划没做完」
+ * 这几类弹窗里有、运行区没有，同一个页面上两处条目数对不上。
+ */
+export function visibleChildren<T extends ChildEntry>(list: T[]): T[] {
+  return sortChildren(spinningChildren(list))
 }
 
 /**
@@ -1198,11 +1211,19 @@ function dayLabel(d: Date, now: Date, loc: string) {
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
 /**
+ * 子任务这会儿在跑：输入框上方的计数、弹层「执行中」分组、子对话的「等子任务」都读它。
+ * 以前这几处各写一份 `slot === 'sub' && status === 'running'`，口径一变就会有的是 2、有的是 3。
+ */
+export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return s.slot === 'sub' && s.status === 'running'
+}
+
+/**
  * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
  * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
  */
 export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
-  return t.status === 'running' && t.steps.some((s) => s.slot === 'sub' && s.status === 'running')
+  return t.status === 'running' && t.steps.some(helperRunning)
 }
 
 /** 列表里的「执行中」：自己在执行、名下子对话在执行、在等它派出的子任务，或者工作流运行还没跑完 */

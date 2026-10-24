@@ -41,19 +41,14 @@ import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkf
 import {
   childCounts,
   childIcon,
-  childState,
-  convStateText,
-  childStale,
   childStage,
-  childWaitText,
+  helperRunning,
   sortChildren,
-  spinningChildren,
+  visibleChildren,
   stopReasonText,
   taskBusy,
   taskSummary,
   withTaskModel,
-  type ChildActivity,
-  type ChildWait,
   type TaskStage,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
@@ -62,7 +57,7 @@ import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, plainLine, startedRun, toolVerb, toolView } from '@/lib/tasks'
+import { fmtDuration, startedRun } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -96,6 +91,7 @@ import {
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
+import { childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
 import { FoldedAskBar, ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -244,80 +240,6 @@ const BLOCK_LIMIT = 30
  */
 function sameJson<T>(cur: T, next: T): T {
   return JSON.stringify(cur) === JSON.stringify(next) ? cur : next
-}
-
-/** 父对话里的子对话入口：标题、状态、最近结果 */
-interface ChildSummary {
-  id: string
-  title: string
-  status: Task['status']
-  summary: string
-  working: boolean
-  updatedAt: string
-  /** 进程还活着（预热、等下一句、正在执行） */
-  cliAlive: boolean
-  /** 本次开启的时间（最近一轮开始执行），列表按它排序 */
-  startedAt: string
-  /** 正在等用户确认的请求数 */
-  requests?: number
-  /** 还没做完的计划进度：有它就不算已完成，行上显示「计划 7/8」；带上正在做的那一步 */
-  plan?: { done: number; total: number; step?: string; child?: string }
-  /** 还在跑、排队的后台命令数：有它就算还在执行（见 shared/task.ts 的 childRunning） */
-  background?: number
-  /** 工作流运行还没跑完：也是还在执行 */
-  workflow?: boolean
-  /** 派出的子任务还在跑：也是还在执行 */
-  helpers?: boolean
-  /** 独立分支还没合回父对话的分支：不算彻底完成，归「未完成」 */
-  unmerged?: boolean
-  /** 已经请父对话收尾、还没出结果：「待收尾」 */
-  wrapup?: boolean
-  /** 请用户选择、还没人回答的提问数 */
-  asking?: number
-  /** 在独立 worktree 里改时的分支 */
-  branch?: string
-  /** 用户标记了「解决」：归到「已完成」并带标记 */
-  resolved?: boolean
-  /** 正在执行时这会儿在做什么 */
-  activity?: ChildActivity
-  /** 最后有动静的时间：执行中几分钟没新输出时标黄 / 标红（见 childStale） */
-  lastActivityAt?: string
-  /** 这会儿在等什么（不是在跑也不是卡住）：等用户回答、等后台命令、等子任务 */
-  waiting?: ChildWait
-  /** 停在 stopped 的原因：/children 直接给；演示后端没有这一项时单独取（见 loadChildren） */
-  stopReason?: StopReason
-}
-
-/** 子对话那一行下面的说明：执行中写正在做什么，其余写它在等什么或最近结果 */
-function childNote(c: ChildSummary, running: boolean) {
-  const doing = activityText(c.activity)
-  const plan = c.plan?.step || c.plan?.child
-  return running ? [doing, plan].filter(Boolean).join(' · ') : childWaitText(c.waiting) || c.summary
-}
-
-/**
- * 执行中但是很久没有新输出：标黄 / 标红，父对话不用拿分支时间戳猜它是不是卡住了。
- * 等后台命令、等用户这类能解释的等待不算（见 shared/task.ts 的 childStale）
- */
-function staleLine(c: ChildSummary) {
-  const level = childStale({ working: c.working, wait: c.waiting, lastActivityAt: c.lastActivityAt })
-  if (!level || !c.lastActivityAt) return undefined
-  const mins = Math.max(1, Math.round((Date.now() - Date.parse(c.lastActivityAt)) / 60000))
-  return { text: t('已 {n} 分钟没有新输出', { n: mins }), cls: level === 'stale' ? 'text-danger' : 'text-warning' }
-}
-
-/** 子对话这会儿在做什么，一句话：跑的节点、等的子任务、正在用的工具或正在说的话 */
-function activityText(a: ChildActivity | undefined) {
-  if (!a) return ''
-  if (a.steps?.length) return a.steps.join(t('、'))
-  if (a.tool) {
-    // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
-    const v = toolView({ ...a.tool, detail: '' })?.tool ?? { ...a.tool, detail: '' }
-    return `${toolVerb(v)} ${v.label}`.trim()
-  }
-  if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
-  if (a.text) return plainLine(a.text)
-  return t('正在思考…')
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
@@ -1315,6 +1237,8 @@ export function TaskView({
                                 teamNames={teamNames}
                                 live={working && i + hidden === blocks.length - 1}
                                 last={!working && i + hidden === blocks.length - 1}
+                                // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
+                                latest={i + hidden === blocks.length - 1}
                                 fallback={byCli ? chatRun : undefined}
                                 command={task.command}
                               />
@@ -1832,12 +1756,12 @@ function ChildrenBar({
 
   // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
   const asking = children.filter((c) => c.asking && !c.resolved)
-  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、状态栏的分子是同一套判定（见 childSpinning）
-  const busy = sortChildren(spinningChildren(children))
+  // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
+  const busy = visibleChildren(children)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍
   const { running: working, total } = childCounts(children)
-  // 「运行中」列转圈的那些：计划没做完、后台命令还没回的子对话也算，不是只看 working
-  const shown = sortChildren(all ? children : spinningChildren(children))
+  // 「运行中」列转圈的那些：计划没做完、后台命令还没回、已解决但还在跑的子对话也算（见 visibleChildren）
+  const shown = all ? sortChildren(children) : visibleChildren(children)
   const current = children.find((c) => c.id === openChild)
 
   return (
@@ -1971,11 +1895,11 @@ function ChildrenBar({
                     // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
                     // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
                     const icon = childIcon(c)
-                    // 行上的状态字和分组、图标是同一个判定（见 shared/task.ts 的 ConvState）
-                    const state = childState(c)
                     // 那一行下面的说明：执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
                     const line = childNote(c, icon === 'running')
                     const stale = staleLine(c)
+                    // 行上的状态标签和运行区、分组读同一份（见 ./child-line 的 childLabels）
+                    const labels = childLabels(c)
                     return (
                       <button
                         key={c.id}
@@ -2001,44 +1925,13 @@ function ChildrenBar({
                             <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
                               {c.title}
                             </span>
-                            {!c.cliAlive && (
-                              <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                                {t('已关闭')}
+                            {/* 状态标签：全部从 childIcon / childState 派生，同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
+                            {labels.map((l) => (
+                              <span key={l.text} className={childLabelClass[l.tone]}>
+                                {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
+                                {l.text}
                               </span>
-                            )}
-                            {/* 徽标也按图标分支：同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
-                            {c.resolved && icon === 'done' && (
-                              <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success">
-                                <CheckCircle2 className="h-3 w-3" />
-                                {t('已解决')}
-                              </span>
-                            )}
-                            {icon === 'waiting' && (
-                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
-                                {t('等你选择')}
-                              </span>
-                            )}
-                            {icon === 'running' && !!c.plan && (
-                              <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
-                                {t('计划 {done}/{total}', { done: c.plan.done, total: c.plan.total })}
-                              </span>
-                            )}
-                            {icon === 'running' && (
-                              <span
-                                className={cn(
-                                  'shrink-0 text-[0.6875rem]',
-                                  state === 'wrapup' ? 'text-success' : 'text-accent',
-                                )}
-                              >
-                                {convStateText(state)}
-                              </span>
-                            )}
-                            {/* 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText） */}
-                            {(icon === 'stopped' || icon === 'idle') && (
-                              <span className="shrink-0 text-[0.6875rem] text-subtle">
-                                {stopReasonText(c.stopReason)}
-                              </span>
-                            )}
+                            ))}
                           </span>
                           {(line || stale) && (
                             <span className="flex min-w-0 items-center gap-1">
@@ -2262,6 +2155,7 @@ function ChatTurn({
   teamNames,
   live,
   last,
+  latest,
   fallback,
   command,
 }: {
@@ -2270,6 +2164,8 @@ function ChatTurn({
   teamNames: Set<string>
   live: boolean
   last: boolean
+  /** 对话里的最新一轮（和父对话在不在跑无关）：运行区的子对话、后台命令按它列 */
+  latest: boolean
   fallback?: ChatRun
   /** 对话任务最近一次启动 Agent 的命令 */
   command?: string[]
@@ -2286,6 +2182,7 @@ function ChatTurn({
       teamNames={teamNames}
       live={live}
       last={last}
+      latest={latest}
       fold
       author={withCommand}
       command={withCommand ? undefined : command}
@@ -2325,7 +2222,7 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     !!task.requests.length ||
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
-  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.parentId === '@chat' && s.status === 'running')
+  const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
   return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>

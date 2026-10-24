@@ -104,8 +104,10 @@ import {
   closeFlow,
   dropEndNotes,
   endRun,
+  helpersWorking,
   newTask,
   questionAnswers,
+  runRunning,
   taskSummary,
   trackWait,
   withAttachments,
@@ -2690,6 +2692,8 @@ function tasksRoute(
       .map((x) => {
         const doing = childActivity(x)
         const open = openPlan(x)
+        // 还在跑 / 排队的后台命令：和正式版一样，CLI 在等命令结果时也算还没做完
+        const background = (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length
         return {
           id: x.id,
           title: x.title,
@@ -2708,7 +2712,15 @@ function tasksRoute(
           // 和正式版一致：父对话的子对话栏靠这两项显示在做什么、多久没新输出
           activity: doing,
           lastActivityAt: childLastActivity(x),
-          waiting: childWait(x, { cliAlive: live.has(x.id) }),
+          // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
+          background,
+          workflow: runRunning(x),
+          helpers: helpersWorking(x),
+          unmerged: x.worktree?.state === 'active',
+          wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
+          branch: x.worktree?.branch ?? '',
+          stopReason: x.stopReason ?? '',
+          waiting: childWait(x, { background, cliAlive: live.has(x.id) }),
           resolved: x.resolved === true,
         }
       })
@@ -2809,7 +2821,8 @@ function tasksRoute(
     if (task.working) fail('对话正在执行，等这一轮结束后再处理独立分支')
     if (rid === 'merge') {
       demoMerged.add(task.id)
-      return { task, into: task.worktree.baseBranch || 'main' }
+      // 字段和正式后端对齐：没有真的 git，两边提交记录和重叠文件都是空
+      return { task, into: task.worktree.baseBranch || 'main', overlap: [], sides: null }
     }
     const merged = demoMerged.has(task.id)
     task.worktree = {
@@ -3019,9 +3032,10 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
 /** 演示里的执行计划：一份做完带总结的，一份正在做（一步在等端到端测试，一步展开着子步骤） */
 /**
- * 示例父对话的子对话：状态栏的计数和浮层的分组都要有东西看。
- * 三个在跑——其中两个的计划还没做完（在跑就算执行中，不归未完成），
- * 一个没在跑但计划没做完（归未完成），四个已做完。进程活着的 5 个，所以栏上应该是 3/5。
+ * 示例父对话的子对话：状态栏的计数、浮层的分组、消息流里的运行区都要有东西看。
+ * 五个在转圈（状态栏上是 5/5）：三个在跑（其中两个的计划还没做完，在跑就算执行中、不归未完成）、
+ * 一个在等后台命令、一个已标记解决但还在跑（「已完成」不能盖住还在跑）；另外三个已做完。
+ * 进程活着的也是这五个，所以分母不会比分子少
  */
 async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: string }) {
   const plan = (done: number, total: number) => ({
@@ -3044,7 +3058,14 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   })
   const make = async (
     title: string,
-    how: { working?: boolean; alive?: boolean; plan?: ReturnType<typeof plan>; resolved?: boolean } = {},
+    how: {
+      working?: boolean
+      alive?: boolean
+      plan?: ReturnType<typeof plan>
+      resolved?: boolean
+      /** 塞一个还在跑的后台命令：CLI 在等结果，/children 的 background 和 waiting 都读它 */
+      job?: boolean
+    } = {},
   ) => {
     const { task, done } = createTask(
       d,
@@ -3102,6 +3123,17 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         at: new Date().toISOString(),
       })
     if (how.plan) it.plans = [how.plan]
+    // 后台命令跑在服务端，CLI 只是等结果：这一轮没在跑也还没做完（归「执行中」）
+    if (how.job)
+      it.jobs = [
+        {
+          id: `job-${it.id}`,
+          name: '端到端测试',
+          command: 'npm run test:e2e',
+          state: 'running' as const,
+          startedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+        },
+      ]
     // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
     if (how.alive) live.set(it.id, { stop: false })
     return it
@@ -3109,9 +3141,32 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('Git+worktree 不再提示文件撞车', { working: true, alive: true })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
+  // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来
+  await make('整理 ESLint 规则', { alive: true, job: true })
+  // 已标记解决但还在跑：完成标记不能盖住还在跑
+  await make('压测导入大文件', { working: true, alive: true, resolved: true })
   await make('修侧栏时间显示', { resolved: true })
   await make('核对通知时序', { resolved: true })
   await make('拆分规则检查脚本', { resolved: true })
+  // 父对话给子任务传话（send_message）：发件方画成一行「发送消息 · 传话」，不再把整段正文铺成居中的系统块
+  parent.messages.push({
+    id: 'demo-send-message',
+    role: 'agent',
+    agentId: agent.id,
+    step: '',
+    text: '',
+    tools: [
+      {
+        kind: 'other',
+        name: 'mcp__panel__send_message',
+        label: '传话',
+        detail: '',
+        input: '{"to":"核对通知时序","text":"接口改名了，这边先按新名字改，改完告诉我。"}',
+        output: '已放进「核对通知时序」的收件箱，它用 read_messages 能看到',
+      },
+    ],
+    at: new Date().toISOString(),
+  })
 }
 
 function demoPlans(task: Task) {

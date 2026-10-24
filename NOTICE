@@ -1,0 +1,8 @@
+agent-panel
+Copyright 2026 fixcode-h
+
+本产品使用第三方开源依赖，各自的许可证与版权声明见 package.json 中的依赖及其
+node_modules/<包名>/ 目录下随包分发的 LICENSE 文件。
+
+本产品包含或调用的外部 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi 等）
+不随本仓库分发，其许可条款以各自项目为准。

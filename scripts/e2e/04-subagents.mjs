@@ -309,6 +309,11 @@ await runShard('子对话与计划', async (api) => {
     )
     // 这一轮已经答完（CLI 报过完成）后合并回收才把它收掉：不能留下「被中断」，用户会以为它没做完
     assert.equal(closed.status, 'done', '正常收尾的子对话被回收后仍是完成状态，不是 stopped')
+    // 评审在计划里是独立一步（不是藏在某步内部），合并前它已经标完成
+    assert.ok(
+      closed.plans?.at(-1)?.steps.some((s) => s.review && s.status === 'done'),
+      '计划里有标 review 的评审步骤，且已完成',
+    )
     assert.ok(
       !closed.messages.some(
         (m) => m.role === 'system' && (m.text.includes('这一轮被中断') || m.text.includes('已暂停')),
@@ -330,16 +335,31 @@ await runShard('子对话与计划', async (api) => {
     assert.ok(!revived.resume, '没有接回原会话')
     assert.match(revived.input, /## 之前对话的摘要[\s\S]*## 关键文件和模块\nchild-done\.txt/, '新会话带上交接摘要')
     step('已完成的子对话再被叫醒：上下文大时开新会话只带交接摘要')
-    // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话，父对话会跑一轮读收件箱：
-    // 等它停下再测下面的提问，免得收件箱被这一轮提前读走
+    // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话
     await waitTask(doneKid.id, (x) => x.resolved, 20000)
     await waitTask(wtParent.id, (p) => p.messages.some((m) => m.child?.id === doneKid.id && m.at > wokeAt), 20000)
-    // 上报可能叫起父对话一轮：连续一阵都停着才算真停下，不然下面的回答会插进这一轮、收件箱里就没有了
+    // 上报会再叫起父对话一轮（收尾请求）：等它跑完，别和下一段抢项目目录
     for (let idle = 0; idle < 5; ) {
       idle = (await call('GET', `/tasks/${wtParent.id}`)).status === 'running' ? 0 : idle + 1
       await sleep(100)
     }
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
+    // 提问这一段另用一个刚建好的父对话：上面刚收尾的子对话会各自 submit_merge，每次都会把父对话叫起一轮
+    // （【收尾请求】），合并结果推回子对话后它们还会再跑一轮、再叫一次父对话。提问和回答要是落进这样的一轮，
+    // 走的是「实时交付」而不是收件箱，下面的「换成用户已回答」就不存在了——CI 上偶发失败就是这个。
+    // 新父对话名下还没有子对话，没有谁会叫起它，提问一定落进收件箱。
+    const askParentTask = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          prompt: '父对话',
+          askUser: true,
+        })
+      ).id,
+      20000,
+    )
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
       (
@@ -347,13 +367,13 @@ await runShard('子对话与计划', async (api) => {
           projectId: project.id,
           mode: 'chat',
           agentId: B.id,
-          parentTaskId: wtParent.id,
+          parentTaskId: askParentTask.id,
           prompt: 'ASK_PARENT 选一个方案',
         })
       ).id,
       20000,
     )
-    let askParent = await call('GET', `/tasks/${wtParent.id}`)
+    let askParent = await call('GET', `/tasks/${askParentTask.id}`)
     const askMsg = askParent.messages.find((m) => m.panel === 'ask')
     assert.ok(askMsg, '父对话里记了提问卡片')
     assert.equal(askMsg.ask.from, askKid.id)
@@ -368,7 +388,16 @@ await runShard('子对话与计划', async (api) => {
       !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
       '提问不再是居中的系统提示',
     )
-    await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
+    // 回答之前先确认这张提问真的落在父对话的收件箱里：父对话正在跑一轮时提问会实时交给它、不进收件箱，
+    // 那种情况这段要断言的「换成用户已回答」本来就不会出现。等条件成立再回答，不靠时间差
+    await waitFor(
+      async () =>
+        (await call('GET', `/tasks/${askParentTask.id}`)).inbox.some(
+          (x) => x.from === askKid.id && x.text.startsWith('（提问）'),
+        ),
+      { label: '提问进了父对话的收件箱' },
+    )
+    await call('POST', `/tasks/${askParentTask.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
     await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
     // 对话之间的消息带上发件方和类型：子对话里画成「接收消息」，不当成用户说的话
     const kidMsgs = (await call('GET', `/tasks/${askKid.id}`)).messages
@@ -377,7 +406,7 @@ await runShard('子对话与计划', async (api) => {
     const answerMsg = kidMsgs.find((m) => m.text.includes('用户的决定'))
     assert.equal(answerMsg.peer?.kind, 'answer', '卡片上的回答交给子对话时标成「回答」')
     assert.ok(answerMsg.peer.subject.includes('B 方案'), '标题里接上答案')
-    askParent = await call('GET', `/tasks/${wtParent.id}`)
+    askParent = await call('GET', `/tasks/${askParentTask.id}`)
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
     assert.equal(answeredAsk.ask.by, 'user')
@@ -387,6 +416,94 @@ await runShard('子对话与计划', async (api) => {
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
       '父对话的收件箱里换成「用户已回答」，不会再答一遍',
     )
+    await call('DELETE', `/tasks/${askParentTask.id}`)
+    // ---- 收尾前评审：完整测试之前派「评审」，评审给 🛑 时 submit_merge 被拦下，改完复看通过才合回 ----
+    {
+      // 假 CLI 每次都在工作目录写输出文件：和分支里那份一样就合得回去，先清掉项目目录里遗留的那份
+      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
+      const reviewKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: wtParent.id,
+        prompt: 'COMMIT BEGIN_EDIT REVIEW_BLOCK SUBMIT_MERGE 评审给必须改项时不许合回',
+      })
+      const closed = await waitTask(reviewKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 40000)
+      const reviews = closed.steps.filter((s) => s.slot === 'sub' && s.title === '评审改动')
+      assert.equal(reviews.length, 2, '收尾时派了两次评审：第一次给 🛑，改完再复看')
+      assert.match(reviews[0].output, /^验收结论：不通过/, '第一次评审的第一行就是结论（长报告被截断也读得到）')
+      assert.match(reviews[0].output, /🛑/, '后面列出必须改项')
+      assert.match(reviews[1].output, /^验收结论：通过/, '复看的第一行是通过')
+      // 评审是计划里的独立步骤：用户能在计划面板上看到这一步和它的状态
+      const planSteps = closed.plans?.at(-1)?.steps ?? []
+      const planReviews = planSteps.filter((s) => s.review)
+      assert.equal(planReviews.length, 2, '计划里有两个独立的评审步骤：评审本次改动、复看评审')
+      assert.ok(
+        planReviews.every((s) => s.status === 'done'),
+        '两个评审步骤最后都是完成',
+      )
+      assert.ok(
+        planSteps.some((s) => s.title === '按评审意见修改' && !s.review),
+        '按评审意见修改也单列成一步，不和其他步骤合并',
+      )
+      const planLog = readLog(log + '.plan')
+      assert.ok(
+        planLog.some((x) => x.steps.some((s) => s.review === true && s.status === 'waiting')),
+        '派评审时计划里的评审步骤标成等待中',
+      )
+      // 评审不通过时直接请父对话收尾：面板按结论拦下，不合进去
+      assert.ok(
+        readLog(log + '.review').some((x) => x.rejected),
+        '🛑 没改完就调用 submit_merge 时被面板拦下',
+      )
+      const failedMerge = readLog(log + '.merge').find((x) => x.got.isError && /评审/.test(JSON.stringify(x.got)))
+      assert.ok(failedMerge, '拒绝的理由说清了是评审没过')
+      assert.match(JSON.stringify(failedMerge.got), /不通过/, '拦下时告诉它评审结论是不通过')
+      // 复看通过后才真的合回父对话所在的分支
+      assert.ok(
+        readLog(log + '.merge').some((x) => !x.got.isError),
+        '复看通过后 submit_merge 成功，父对话合回分支',
+      )
+      assert.notEqual(
+        gitIn(project.path, 'rev-parse', 'HEAD').toString().trim(),
+        headBefore,
+        '父对话的分支多了合并提交',
+      )
+      step('收尾前评审：计划里的独立评审步骤、🛑 时拦下、复看通过后才合回')
+    }
+    // ---- 计划里只写了评审的标题、没标 review：submit_merge 被拒，补上之后才合回 ----
+    {
+      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      const mergesBefore = readLog(log + '.merge').length
+      const kid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: wtParent.id,
+        prompt: 'COMMIT BEGIN_EDIT NO_REVIEW_PLAN SUBMIT_MERGE 计划里没写评审步骤时不许合回',
+      })
+      const closed = await waitTask(kid.id, (x) => x.resolved && x.worktree?.state === 'merged', 40000)
+      const merges = readLog(log + '.merge').slice(mergesBefore)
+      assert.ok(
+        merges.some((x) => x.got.isError && /计划里缺少评审步骤/.test(JSON.stringify(x.got))),
+        '计划里的评审步骤没标 review 时 submit_merge 被拦下，理由写清了缺的是评审步骤',
+      )
+      assert.ok(
+        merges.some((x) => !x.got.isError),
+        '补上带 review 标记的评审步骤后 submit_merge 成功、合回父对话分支',
+      )
+      assert.ok(
+        closed.plans?.at(-1)?.steps.some((s) => s.review && s.status === 'done'),
+        '补上的评审步骤在计划里且已完成',
+      )
+      assert.equal(
+        closed.steps.filter((s) => s.slot === 'sub' && s.title === '评审改动').length,
+        1,
+        '评审本身只派了一次：拦下的是计划少了一步，不是评审没过',
+      )
+      step('计划里缺少评审步骤：submit_merge 被拦下，补上后才合回')
+    }
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
@@ -457,6 +574,58 @@ await runShard('子对话与计划', async (api) => {
       )
       await call('DELETE', `/tasks/${slow.id}`)
       step('后台命令：说完时还在跑的列在任务上，跑完推回并要求重新总结')
+    }
+
+    // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
+    // 以前运行区自己写 `working && !resolved`，在等后台命令、已解决但还在跑的子对话只在悬浮层里有、
+    // 运行区没有，同一个页面对不上数。这里固定接口要如实给「还在跑」和「在等什么」，
+    // 界面那两处读同一份（见 shared/task.ts 的 visibleChildren）。
+    {
+      const p2 = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
+        20000,
+      )
+      // 在等后台命令：这一轮说完了，命令还在跑，CLI 在等结果
+      const bg = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: p2.id,
+        prompt: 'BG_LONG 跑测试',
+      })
+      await waitTask(bg.id, (k) => !k.working && (k.jobs?.length ?? 0) > 0, 30000)
+      // 还在跑的子对话：用来验「父对话在跑时列表照样给」
+      const busy = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: p2.id,
+        prompt: 'SLOW 还在跑',
+      })
+      await waitFor(async () => (await call('GET', `/tasks/${busy.id}`)).working === true, {
+        timeout: 15000,
+        label: '子对话开始执行',
+      })
+      // 还没跑完时不能标「解决」：这一轮还在执行就先拒，不把「还在跑」写成「已完成」
+      // （「已解决但还在跑」那个显示状态只出现在收尾流程的时间窗口里，
+      // 判定矩阵由单测覆盖，页面由界面检查的演示数据覆盖）
+      await assert.rejects(call('PATCH', `/tasks/${busy.id}`, { resolved: true }), /还在执行/)
+
+      const kids = await call('GET', `/tasks/${p2.id}/children`)
+      const bgRow = kids.find((x) => x.id === bg.id)
+      assert.ok(bgRow, '在等后台命令的子对话出现在父对话的列表里')
+      assert.ok(bgRow.background >= 1, '还在跑的后台命令数如实给：界面靠它把这一条列进运行区')
+      assert.equal(bgRow.waiting?.kind, 'background', '在等什么要说成「等后台命令」，不能被当成卡住')
+      assert.equal(kids.find((x) => x.id === busy.id).working, true, '还在跑的子对话如实报 working')
+
+      // 父对话自己在跑时，列表照样给：运行区按最新一轮列，不再看父对话在不在跑
+      await call('POST', `/tasks/${p2.id}/messages`, { text: 'SLOW 接着做' })
+      const during = await call('GET', `/tasks/${p2.id}/children`)
+      assert.equal(during.length, kids.length, '父对话在跑时子对话列表不变，运行区照样列得出来')
+      assert.ok(during.find((x) => x.id === bg.id)?.background >= 1, '父对话在跑时后台命令的状态也照样给')
+
+      await call('POST', `/tasks/${p2.id}/stop`)
+      step('子对话列表：在等后台命令的照样列，父对话在跑时也照样给')
     }
 
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----

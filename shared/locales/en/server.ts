@@ -317,6 +317,16 @@ export const EN_SERVER: Record<string, string> = {
   提交改动失败: 'Failed to commit the changes',
   '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。':
     'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in that directory; the directory was not changed. You can merge branch {name} manually there.',
+  '算不出两个分支的共同基点，给不出双方的提交记录':
+    'Cannot find the common base of the two branches, so the commit history of both sides is unavailable',
+  '双方的提交记录（合并前先看清各自为什么这么改，按 project-vcs 技能 git.md 的「合并审查」做）：':
+    'Commits on both sides (read why each side changed things before merging; follow the Merge review section of git.md in the project-vcs skill):',
+  '·「{branch}」{count} 个提交，改 {files} 个文件：{commits}':
+    '· "{branch}": {count} commits, {files} files changed: {commits}',
+  '（还有 {n} 个提交没列出，需要时自己看 git log）': ' ({n} more commits not listed; run git log if needed)',
+  没有提交: 'no commits',
+  '两边都改过这些文件：{list}。必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论。':
+    'Both sides changed these files: {list}. Check each file to be sure no change was overwritten, and write the result into the merge conclusion.',
   这个任务没有待处理的独立分支: 'This task has no pending separate branch',
   '· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。':
     '· {cli} does not seem to be logged in, or the login has expired. In a terminal, {how}, then come back and click "Continue".',

@@ -302,8 +302,96 @@ export async function branchesOverlap(repo: string, a: string, b: string): Promi
 }
 
 /** 本分支和目标目录现在所在分支都改过的文件（见 branchesOverlap） */
-export async function mergeOverlap(target: string, branch: string): Promise<string[]> {
+export function mergeOverlap(target: string, branch: string): Promise<string[]> {
   return branchesOverlap(target, 'HEAD', branch)
+}
+
+/** 合并双方各自做了什么：各有哪些提交、改了哪些文件 */
+export interface MergeSide {
+  /** 分支名；目标目录分离 HEAD 时是 HEAD */
+  branch: string
+  /** 比共同基点多的提交数 */
+  count: number
+  /** 这些提交，一行一个「短 hash 标题」（最多列 MAX_SIDE_COMMITS 条） */
+  commits: string[]
+  /** 这个分支改过的文件 */
+  files: string[]
+}
+
+/** 合并前两边的情况：交给接手合并的一方看懂双方意图，见 project-vcs 技能的「合并审查」 */
+export interface MergeSides {
+  /** 共同基点 */
+  base: string
+  /** 目标目录现在所在的分支（改动要合进来的那一边） */
+  into: MergeSide
+  /** 要合进来的分支 */
+  by: MergeSide
+  /** 两边都改过的文件：git 自动合上也可能互相盖掉，必须逐文件核对 */
+  overlap: string[]
+}
+
+/** 最多列多少条提交：多了会把交回给子对话的信息撑很长，超出部分让接手的人自己看 git log */
+const MAX_SIDE_COMMITS = 20
+
+/**
+ * 合并前把两边各自的提交记录和改动文件算出来。
+ * 只告诉接手方「哪些文件冲突」不够：看不到对方为什么这么改，就分不清该保留哪段意图、哪些是已经废弃的旧实现，
+ * 结果要么两套并存、要么把对方真正需要的内容合丢。合完目标目录已经是合并后的提交，比不出来，必须在合并前取。
+ */
+export async function mergeSides(target: string, branch: string): Promise<MergeSides> {
+  const mb = await git(target, 'merge-base', 'HEAD', branch)
+  const base = mb.code === 0 ? mb.stdout.trim() : ''
+  if (!base) throw new Error(t('算不出两个分支的共同基点，给不出双方的提交记录'))
+  const side = async (ref: string, name: string): Promise<MergeSide> => {
+    const log = await git(target, 'log', '--format=%h %s', `${base}..${ref}`)
+    const commits = log.code === 0 ? log.stdout.split('\n').filter(Boolean) : []
+    // -z 按 NUL 分隔、不做路径转义：文件名带中文和空格也不会被拆错
+    const list = await git(target, 'diff', '-z', '--name-only', base, ref)
+    return {
+      branch: name,
+      count: commits.length,
+      commits: commits.slice(0, MAX_SIDE_COMMITS),
+      files: list.code === 0 ? list.stdout.split('\0').filter(Boolean) : [],
+    }
+  }
+  const into = await currentBranch(target)
+  const [mine, theirs] = await Promise.all([side('HEAD', into || 'HEAD'), side(branch, branch)])
+  const also = new Set(theirs.files)
+  return { base, into: mine, by: theirs, overlap: mine.files.filter((f) => also.has(f)).sort() }
+}
+
+/**
+ * 双方的提交记录写成给接手方看的几行：各自动了什么、各为什么（提交说明），以及两边都动过的地方必须核对。
+ * 接在冲突提示和「自动合并但两边都改过同一文件」的提示后面，让接手的人有依据判断，而不是只看 diff 拍脑袋。
+ */
+export function mergeSidesText(sides: MergeSides): string {
+  const side = (s: MergeSide) => {
+    const more =
+      s.count > s.commits.length
+        ? t('（还有 {n} 个提交没列出，需要时自己看 git log）', { n: String(s.count - s.commits.length) })
+        : ''
+    return (
+      t('·「{branch}」{count} 个提交，改 {files} 个文件：{commits}', {
+        branch: s.branch,
+        count: String(s.count),
+        files: String(s.files.length),
+        commits: s.commits.join('；') || t('没有提交'),
+      }) + more
+    )
+  }
+  const lines = [
+    t('双方的提交记录（合并前先看清各自为什么这么改，按 project-vcs 技能 git.md 的「合并审查」做）：'),
+    side(sides.into),
+    side(sides.by),
+  ]
+  if (sides.overlap.length)
+    lines.push(
+      t('两边都改过这些文件：{list}。必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论。', {
+        list:
+          sides.overlap.slice(0, 20).join('、') + (sides.overlap.length > 20 ? ` 等 ${sides.overlap.length} 个` : ''),
+      }),
+    )
+  return lines.join('\n')
 }
 
 /** 没配置 git 用户时用面板的身份提交，免得提交失败 */
@@ -328,8 +416,11 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
         base: wt.baseBranch,
       }),
     )
-  // 合并前记下两边都改过的文件：合完目标目录已经是合并后的提交，比不出来
-  const overlap = await mergeOverlap(target, wt.branch).catch(() => [] as string[])
+  // 合并前记下两边都改过的文件和各自的提交记录：合完目标目录已经是合并后的提交，比不出来
+  const sides = await mergeSides(target, wt.branch).catch(() => null)
+  const overlap = sides?.overlap ?? []
+  // 冲突时把双方的提交记录一起交回：只给冲突文件的话，接手的人看不到对方为什么这么改
+  const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
   const m = await git(target, ...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch)
   if (m.code !== 0) {
     await git(target, 'merge', '--abort')
@@ -338,16 +429,18 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
         t('合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。', {
           branch: into,
           name: wt.branch,
-        }) + `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}`,
+        }) +
+          `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}` +
+          about,
       ),
-      { conflict: true },
+      { conflict: true, sides },
     )
   }
   if (!keep) {
     const problem = await removeWorktree(repo, wt, false)
     if (problem) log.warn('worktree', '合并成功但独立目录没删掉，下次回收时再试', { dir: wt.path, error: problem })
   }
-  return { into, overlap }
+  return { into, overlap, sides }
 }
 
 /** 独立分支现在的情况：目录还在不在、比原分支多几个提交、有几个没提交的文件、是不是已经都合回原分支 */

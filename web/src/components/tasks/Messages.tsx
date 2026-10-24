@@ -829,6 +829,7 @@ export function ChatReply({
   command,
   actions,
   last,
+  latest,
   fold,
   children,
 }: {
@@ -844,6 +845,12 @@ export function ChatReply({
   actions?: React.ReactNode
   /** 最后一轮：操作一直显示 */
   last?: boolean
+  /**
+   * 对话里的最新一轮（和父对话自己在不在跑无关）：
+   * 运行区的子对话按它列。以前直接用 last，而 last 含「父对话没在跑」，
+   * 于是父对话自己在跑时运行区整段不渲染，子对话一条也列不出来。
+   */
+  latest?: boolean
   /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
   children?: React.ReactNode
 }) {
@@ -886,7 +893,8 @@ export function ChatReply({
                 <RunningNow
                   task={task}
                   tools={runningTools(part)}
-                  background={!!last && isTail && !tailLive}
+                  jobs={!!last && isTail && !tailLive}
+                  kids={!!latest && isTail}
                   indent={indent}
                 />
               )}
@@ -905,7 +913,7 @@ export function ChatReply({
         )
       })}
       {/* 回复还在流式输出：后台命令、子对话列在正在写的内容下面，写完总结后挪到总结上面 */}
-      {fold && tailLive && last && <RunningNow task={task} tools={[]} background indent />}
+      {fold && tailLive && latest && <RunningNow task={task} tools={[]} jobs kids indent />}
       {children}
     </>
   )

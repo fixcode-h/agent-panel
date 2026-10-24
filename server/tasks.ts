@@ -1,4 +1,4 @@
-import { withProjectParams } from '../shared/builtin/core.ts'
+import { coreDefinition, withProjectParams } from '../shared/builtin/core.ts'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
@@ -71,6 +71,7 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
+import { reviewGate } from '../shared/review-gate.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -105,7 +106,8 @@ import {
   ensureWorktree,
   mergeBlocker,
   currentBranch,
-  mergeOverlap,
+  mergeSides,
+  mergeSidesText,
   mergeWorktree,
   removeWorktree,
   releaseWorktree,
@@ -1180,6 +1182,19 @@ export function tasksApi(deps: {
           .map((x) => `${x.id}「${x.title}」`)
           .join('、')}）。做完并用 set_plan 标完成；确实不做的从计划里删掉并说明原因，再调用 submit_merge。`,
       }
+    // 合回前必须先评审：收尾流程是 改完 → 快速检查 → 评审（计划里的独立步骤） → 按意见改 → 完整测试 → submit_merge，
+    // 评审就是一次普通的 spawn_agents，结论从它的输出里读（见 shared/review-gate.ts）。
+    // 子任务是按 id 或名字找角色的：用户自己建了同名的「评审」时，派出去的可能是那个，所以名字也认
+    const reviewerName = coreDefinition('reviewer').agent.name
+    // 读不到角色列表时单独说明：兜底成空数组会让门禁报「还没有真的派过评审」，把模型引向重复派评审
+    const known = await deps.agents.list().catch(() => null)
+    if (!known) return { ok: false, info: '没有请求收尾：读取角色列表失败，稍后再试一次。' }
+    const review = reviewGate(
+      tk.steps,
+      (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
+      activePlan(tk)?.steps ?? [],
+    )
+    if (!review.ok) return review
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
     if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
@@ -1674,21 +1689,24 @@ export function tasksApi(deps: {
     const blocked = await mergeBlocker(target)
     if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
     // 两边都改过的文件：git 只在同一处改动上报冲突，同一个文件改不同位置会静默合上。
-    // 合并前记下来，合进去时一并告诉子对话和父对话「这个文件两边都动过，核对有没有盖掉对方的改动」
-    const overlap = await mergeOverlap(target, wt.branch).catch(() => [] as string[])
+    // 合并前连同双方的提交记录一起记下来：合进去时一并告诉子对话和父对话「这个文件两边都动过」，
+    // 并且让他们能按提交说明和文档看懂各自为什么这么改，而不是只看 diff 拿主意（见 project-vcs 的「合并审查」）
+    const sides = await mergeSides(target, wt.branch).catch(() => null)
+    const overlap = sides?.overlap ?? []
+    const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
     const m = await trialMerge(target, wt.branch)
     if (!m.ok)
       return {
         ok: false,
         info: m.dirty
-          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}`
-          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}`,
+          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}${about}`
+          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}${about}`,
       }
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
     try {
       const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
       const both = overlap.length
-        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过，请核对有没有把对方的改动盖掉。`
+        ? `\n两边都改了这些文件：${overlap.slice(0, 20).join('、')}${overlap.length > 20 ? ` 等 ${overlap.length} 个` : ''}。git 已经自动合并，但同一个文件两边都动过：必须逐文件核对有没有盖掉对方的改动，核对结论写进合并结论（见 project-vcs 技能 git.md 的「合并审查」）。`
         : ''
       return {
         ok: true,
@@ -3872,7 +3890,7 @@ export function tasksApi(deps: {
     }
     const wt = tk.worktree!
     try {
-      const { into, overlap } = await mergeWorktree(
+      const { into, overlap, sides } = await mergeWorktree(
         project.path,
         wt,
         `Agent 面板：合并「${tk.title}」`,
@@ -3883,9 +3901,11 @@ export function tasksApi(deps: {
       // 同一个文件两边都改过时，git 可能自动合上、不报冲突：在对话里留一条，用户才知道要核对内容
       if (overlap.length) {
         const cur = (await store.get(id)) ?? tk
-        const note = t('这次合并里两边都改了这些文件：{list}。git 已经自动合并，请核对有没有把对方的改动盖掉。', {
-          list: overlap.join('、'),
-        })
+        const note =
+          t(
+            '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。',
+            { list: overlap.join('、') },
+          ) + (sides ? `\n\n${mergeSidesText(sides)}` : '')
         await store.update(id, {
           ...cur,
           messages: [
@@ -3902,7 +3922,7 @@ export function tasksApi(deps: {
           ],
         })
       }
-      return c.json({ task: await current(id), into, overlap })
+      return c.json({ task: await current(id), into, overlap, sides })
     } catch (e) {
       return c.json({ error: (e as Error).message, conflict: !!(e as { conflict?: boolean }).conflict }, 409)
     }

@@ -1,10 +1,11 @@
 # Agent 面板
 
-一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code），
+一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code、Gemini CLI、Pi），
 由主 Agent 和子 Agent 按工作流的流程图执行：连线决定先后，没有先后关系的节点同时执行，节点里的每一步可以挂载验收流程，不通过就退回修改。
 界面参考 Claude Code。
 
-**在线预览：https://fixcode-h.github.io/agent-panel/** （展示 dev 分支的最新内容；预览版在浏览器里模拟执行，不调用 CLI）
+**在线预览**在仓库主页 About 里的网址（GitHub Pages：https://fixcode-h.github.io/agent-panel/ ），内容是 dev 分支的最新版；
+预览版在浏览器里模拟执行，不调用 CLI。
 
 **下载：[Releases](https://github.com/fixcode-h/agent-panel/releases)** 。包只从 main 发布；解压后只需要 Node.js 20+，Windows 双击 `AgentPanel.exe`（不弹命令行窗口，图标在任务栏通知区，启动后自动打开浏览器，右键图标退出），macOS / Linux 运行 `./start.sh`，想开机自动在后台运行就执行一次 `./install-service.sh`。Windows 第一次运行如果提示「Windows 已保护你的电脑」，是因为托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。
 
@@ -31,6 +32,11 @@
 - **项目教训**：角色在项目里返工过的地方记成规则（项目设置 · 项目教训），以后这个项目里的角色都照着做。
   对话里用户消息下面点「记成项目教训」可以手动记或交给角色整理；角色被纠正后也会自己记一条（标「角色记录」）。
   每条可以写管哪些文件：新会话只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再按需取全文，条目多了也不占满上下文
+- **项目设置 · MCP**：识别项目目录里各个工具认的 MCP 配置（`.mcp.json`、`.cursor/mcp.json`、`.vscode/mcp.json`、`.gemini/settings.json`、`.codex/config.toml`），
+  一键导入成面板管理的 MCP 工具；面板管理的工具写进 Claude Code、Codex、Gemini CLI、Pi 各自的配置文件（Command Code 的 MCP 配置暂时不管），可以按 CLI 启停、增删改、测试连接。
+  配置读不懂、连不上时把原文和问题交给本机 CLI 排查，改完列表自动刷新
+- **项目设置 · Skill**：列出项目里各 CLI 会读的技能目录（`.agents/skills`、`.claude/skills` 等，跟着项目一起提交），
+  可以新建、改 `SKILL.md`、删除，并检查格式问题；「AI 优化」按你的要求改写说明和正文，看过结果再决定写入，「AI 修复」把内容和问题一起交给本机 CLI 处理
 - **任务**：首页和项目页都可以直接输入新任务，左侧栏按时间列出最近的任务。任务可以按工作流执行，也可以直接和一个 Agent 对话。
   项目页的新建输入框里可以选这次对话用不用项目设置的 Agent（默认用）：不用时不带角色设定，直接和 CLI 对话；
   Agent 的参数在新建时在这里填，对话开始后不能再改 Agent 和参数，CLI、模型和思考强度仍可以在对话页里换。
@@ -44,7 +50,7 @@
   页面不在前台时任务完成会弹出系统通知（设置里打开）。每个页面都有自己的地址，刷新、前进后退、复制链接都能回到原处
 - **设置**（左下角，参考 Claude 的设置弹窗）：单步超时、系统默认 CLI、AI 创建的默认 CLI 和补充规则，
   以及每个 CLI 的三档模型（模型 + 思考强度）、默认模型（可以是某一档）、默认思考强度、上下文窗口、最大输出、权限、可执行文件路径、额外参数、环境变量；
-  每个 CLI 可以一键安装、更新、卸载，模型列表从本机 CLI 读取（Codex、Command Code），跟着 CLI 的版本和账号走；
+  每个 CLI 可以一键安装、更新、卸载，模型列表从本机 CLI 读取（Claude Code 读它的 `settings.json` 和环境变量，Codex、Command Code、Pi 读 CLI 自己的列表），跟着 CLI 的版本和账号走；
   模型的上下文窗口、最大输出和思考强度按[模型目录](docs/model-catalog.md)识别，目录里没有的按 1M / 128K 估算，
   也可以让 AI 联网补全，结果写进 `~/.agent-panel/config/models.json`；
   「版本更新」对比 GitHub Releases 上的包，有新版本时可以一键更新，也可以下载或切换到最近的五个包（数据保留）
@@ -54,11 +60,13 @@
 
 需要 Node.js 20+、git，以及至少安装一个 CLI：
 
-| CLI          | 安装                                       | 设置里的默认命令 |
-| ------------ | ------------------------------------------ | ---------------- |
-| Claude Code  | `npm install -g @anthropic-ai/claude-code` | `claude`         |
-| Codex        | `npm install -g @openai/codex`             | `codex`          |
-| Command Code | `npm install -g command-code`              | `cmdc`           |
+| CLI          | 安装                                             | 设置里的默认命令 |
+| ------------ | ------------------------------------------------ | ---------------- |
+| Claude Code  | `npm install -g @anthropic-ai/claude-code`       | `claude`         |
+| Codex        | `npm install -g @openai/codex`                   | `codex`          |
+| Command Code | `npm install -g command-code`                    | `cmdc`           |
+| Gemini CLI   | `npm install -g @google/gemini-cli`              | `gemini`         |
+| Pi           | `npm install -g @earendil-works/pi-coding-agent` | `pi`             |
 
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。
 
@@ -74,7 +82,7 @@ npm run build
 npm start          # http://127.0.0.1:8787
 ```
 
-数据保存在 `data/` 下的 JSON 文件（已加入 .gitignore），可用环境变量 `AGENT_PANEL_DATA` 指定目录。
+数据保存在本机的数据目录（默认 `~/.agent-panel`，里面是 JSON 文件），可用环境变量 `AGENT_PANEL_DATA` 指定别的目录。
 服务只监听 127.0.0.1，因为它会在本机启动 CLI、读写项目目录。
 
 ## 任务是怎么执行的
@@ -112,8 +120,10 @@ npm start          # http://127.0.0.1:8787
 
 ```bash
 npm run typecheck
+npm run lint       # oxlint、Prettier 格式检查、规则检查和密钥扫描
 npm run test:unit  # 执行引擎、CLI 输出解析、内置模板、前端纯逻辑等单元测试
-npm run test:e2e   # 用 scripts/fake-cli 模拟三种 CLI 的输出，走完整流程（需要 macOS / Linux 和 git）
+npm run test:e2e   # 用 scripts/fake-cli 模拟各个 CLI 的输出，走完整流程（需要 macOS / Linux 和 git）
+node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo，分片并行跑，截图在 ui-shots/
 ```
 
 单元测试覆盖多步骤节点的顺序执行、步骤间交接、失败即停、每步确认 / 验收、中断续跑和子 Agent 归属，
@@ -121,7 +131,8 @@ npm run test:e2e   # 用 scripts/fake-cli 模拟三种 CLI 的输出，走完整
 前端也跑同一套 `tsx --test`（`web/src/**/*.test.ts`）：只测不和浏览器打交道的纯逻辑（引用卡片、推送增量合并、
 就绪检查、思考强度选项），不引额外的测试框架；要真实浏览器的交给界面检查和端到端测试。
 
-端到端测试覆盖：设置与检测、按连线执行的工作流（校验没有依赖的节点确实同时运行）跨三个 CLI、调用参数、
+端到端测试覆盖：设置与检测、按连线执行的工作流（校验没有依赖的节点确实同时运行）跨多个 CLI、调用参数、
+项目设置的 MCP 识别与导入（项目里原有的配置文件不改）和项目 Skill 读写、
 开始 / 验收 / 结束流程（验收不通过退回、轮数用完失败）、流程节点、引用其他工作流、循环嵌套、思考强度、
 续接会话、对话任务、停止、失败、系统默认 CLI 和模型档位、AI 创建（格式校验、自动修正、优化、工作流引用解析）、找不到命令、CLI 停用、读取模型列表、安装 / 卸载 CLI。
 
@@ -143,20 +154,32 @@ GitHub Actions：`.github/workflows/ci.yml` 在推送到 dev 和 PR 时跑类型
 ## 目录结构
 
 ```
-shared/   前后端共享：数据结构（schema.ts）、CLI 注册表（clis.ts）、流程图逻辑（flow.ts）、工作流执行引擎（engine.ts）、默认设置、在线演示用的模拟执行
-server/   Hono API、JSON 存储、CLI 检测、模型读取、安装 / 卸载、任务管理
-  exec/   真实执行：进程管理、三种 CLI 的输出解析、git 改动统计、工作流调度
+shared/   前后端共享：数据结构（schema.ts）、CLI 注册表（clis.ts 和 clis/ 下的配置）、流程图逻辑（flow.ts）、
+          工作流执行引擎（engine.ts）、内置角色和工作流模板（builtin/）、英文文案（locales/en/）、默认设置、在线演示用的模拟执行
+server/   Hono API、JSON 存储、CLI 检测、模型读取、安装 / 卸载、任务管理、MCP 配置读写
+  exec/   真实执行：进程管理、各 CLI 的输出解析（常驻协议适配在 rpc/）、git 改动统计、工作流调度
 web/      React 前端
-  src/components/assist/  AI 创建 / 优化对话框
-  src/components/files/   文件树和文件弹窗，项目文件系统面板（项目首页和任务页右栏共用）
-  src/components/flow/    流程图布局（Pipeline）和工作流流程编辑器
-  src/components/tasks/   任务列表、对话页、任务流程图、右侧面板
-  src/pages/              页面（含 SettingsPage）
-scripts/  端到端测试、模拟 CLI、出包、规则检查
+  src/components/  assist/（AI 创建 / 优化）、ai-fix/（AI 处理对话框）、flow/（流程图布局和流程编辑）、
+                   files/（文件树和文件面板）、tasks/（任务列表、对话页、任务流程图、右栏）、projects/、settings/
+  src/pages/       Agents、Workflows、Home、Projects、Chat、Library（Skills 与命令）、Mcp、Design、Comfy、Settings
+scripts/  端到端测试（e2e/、e2e.mjs）、模拟 CLI（fake-cli/）、界面检查（ui-check.mjs）、出包、
+          规则检查 / 漏翻检查 / 密钥扫描、教训检索、托盘和开机自启脚本
 skills/   自带的 Skill（见 skills/README.md）
-extension/ 浏览器扩展（UI 设计用网页生图）
-docs/     专题文档；docs/lessons/ 是开发时踩过的坑，按改动的文件取用
+extension/ 浏览器扩展：让面板用已登录的 Gemini / ChatGPT 网页生图
+docs/     专题文档（见下面「文档」）；docs/lessons/ 是开发时踩过的坑，按改动的文件取用
 ```
+
+## 文档
+
+- [docs/cli-config.md](docs/cli-config.md)：接新 CLI、参数 / 输出解析 / 思考强度 / API 模式（开头有接入检查清单）
+- [docs/model-catalog.md](docs/model-catalog.md)：模型的上下文窗口、最大输出和思考强度怎么定
+- [docs/agent-catalog.md](docs/agent-catalog.md)：增删合并内置角色或工作流的判定标准
+- [docs/agent-test-steps.md](docs/agent-test-steps.md)：测试步骤、角色参数、子对话隔离和合并编译
+- [skills/README.md](skills/README.md)：自带 Skill 的分类、写法和运行依赖
+- [docs/umg-export.md](docs/umg-export.md)：UI 设计的导出格式（给 UE 生成 Widget Blueprint 的数据）
+- [docs/adr/README.md](docs/adr/README.md)：架构决策记录（ADR），什么时候写、各节怎么写
+- [docs/lessons/README.md](docs/lessons/README.md)：踩过的坑怎么记、怎么取用
+- [AGENTS.md](AGENTS.md)：在这个仓库里工作的约定（分支、命令、提交说明、硬规则），给人和 AI 看
 
 ## 如何扩展
 
@@ -178,3 +201,11 @@ docs/     专题文档；docs/lessons/ 是开发时踩过的坑，按改动的�
 10. ✅ 子对话：派子任务、合并编译，几个对话各自在独立分支里改
 11. ✅ UI 设计生成与导出（HTML / React / JSON、UMG），ComfyUI、图库、MCP、浏览器扩展
 12. ✅ 外网访问、版本更新、托盘 / 开机自启、在线演示版
+
+## 安全
+
+发现安全问题**不要**开公开 Issue：请按 [SECURITY.md](SECURITY.md) 里的方式私下报告。本项目在本机运行、会接触编码 CLI 和 API key，涉及密钥泄露的报告优先处理。
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 授权。第三方依赖的许可证与版权声明见 [NOTICE](NOTICE)，以及各依赖包目录下随附的 LICENSE 文件。

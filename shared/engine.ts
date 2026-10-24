@@ -2747,13 +2747,9 @@ function makeOrchestra(
       if (target.status === 'done' || target.status === 'failed' || target.status === 'skipped')
         return { ok: false, info: `「${target.title}」已经结束了，消息没有送到` }
       const body = `来自「${self.title || '对话'}」的消息：${text.trim()}`
-      // 先记进这次运行，界面和重启后都能看到；交给正在跑的节点时再标成已读，避免它重复看到
+      // 先记进这次运行，界面和重启后都能看到；交给正在跑的节点时再标成已读，避免它重复看到。
+      // 不再另 push 一条 system 消息：发件方已经有「发送消息」工具行（正文可展开），再铺一条居中块会把整段正文摊在对话流里
       const kept = sendRunMessage(host, where, target.id, body)
-      system(
-        host,
-        t('「{from}」→「{to}」：{text}', { from: self.title, to: target.title, text: clip(text, 500) }),
-        where,
-      )
       host.changed(true)
       if (target.status === 'running' && host.steer && (await host.steer(target.id, body))) {
         const rec = runRecord(task)

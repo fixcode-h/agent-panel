@@ -20,6 +20,7 @@ await runShard('工作流条件与失败', async (api) => {
     log,
     PNG_1PX,
     git,
+    gitIn,
     call,
     sleep,
     waitFor,
@@ -449,6 +450,49 @@ await runShard('工作流条件与失败', async (api) => {
     await call('DELETE', `/workflows/${wfMain.id}`)
   }
   step('工作流没有再常驻编排器：节点直接执行、自己的结论决定分支，追加要求交给默认执行 Agent')
+
+  // ---- 节点之间传话（send_message）：记成一次工具调用，不把整段正文铺成居中的系统块 ----
+  {
+    const wfTalk = await call('POST', '/workflows', {
+      name: '节点之间传话',
+      description: '',
+      mainAgentId: A.id,
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [node('t1', '实现', B.id, 'SEND_MSG 给「测一下」写代码。'), node('t2', '测一下', B.id, '跑测试。')],
+          edges: [
+            { id: 'e1', from: 'start', to: 't1' },
+            { id: 'e2', from: 't1', to: 't2' },
+            { id: 'e3', from: 't2', to: 'end' },
+          ],
+        },
+      ],
+      entryFlowId: 'main',
+      document: '',
+    })
+    let talk = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'workflow',
+      workflowId: wfTalk.id,
+      prompt: '节点之间传话',
+    })
+    talk = await waitDone(talk.id)
+    assert.equal(talk.status, 'done', JSON.stringify(talk.messages.filter((m) => m.role === 'system')))
+    // 假 CLI 直接调面板的 MCP，不产生 CLI 的 tool_use 事件：工具行的渲染由单测和界面检查覆盖，
+    // 这里检查服务端记下的运行记录，以及不再往对话流里铺居中的系统块
+    const sent = talk.runs?.at(-1)?.messages?.find((m) => /接口改名了/.test(m.text))
+    assert.ok(sent, '传话记进这次运行的消息记录')
+    assert.equal(sent.to, 't2', '收件方是「测一下」那个节点')
+    assert.ok(
+      !talk.messages.some((m) => m.role === 'system' && !m.panel && /」→「/.test(m.text)),
+      '传话不再铺成居中的系统块',
+    )
+    await call('DELETE', `/tasks/${talk.id}`)
+    await call('DELETE', `/workflows/${wfTalk.id}`)
+    step('节点之间传话：画成发送消息的工具调用，不再铺成居中的系统块')
+  }
 
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
@@ -1029,6 +1073,92 @@ await runShard('工作流条件与失败', async (api) => {
   await call('DELETE', `/tasks/${tIso.id}`)
   await call('DELETE', `/tasks/${tDrop.id}`)
   step('独立分支：任务在 git worktree 里执行，合并或丢弃后清理分支和目录')
+  // ---- 合并审查：冲突和「git 自动合上但两边改过同一文件」都要把双方的提交记录交回，能看懂各自为什么这么改 ----
+  {
+    const before = git('rev-parse', 'HEAD').toString().trim()
+    // 前面的用例在项目目录里留了一个没跟踪的 claude-output.txt，独立分支里也有同名文件，会挡住合并：先挪开，测完恢复
+    const blockerPath = path.join(projectDir, 'claude-output.txt')
+    const blockerText = existsSync(blockerPath) ? readFileSync(blockerPath, 'utf8') : ''
+    rmSync(blockerPath, { force: true })
+    const commit = (...a) => git('-c', 'user.name=t', '-c', 'user.email=t@t', ...a)
+    const commitIn = (dir, ...a) => gitIn(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a)
+    // 专门的多行文件：README 只有一行，两边改动会挤进同一个 hunk，构不出「改不同位置」的场景
+    const notePath = path.join(projectDir, 'merge-note.md')
+    writeFileSync(notePath, '# 标题\n\n正文\n\n结尾\n')
+    commit('add', 'merge-note.md')
+    commit('commit', '-qm', '原目录：加一份合并审查用的说明')
+    // 场景里改了 merge-note.md、合并提交也进了项目：测完退回原样，后面的用例不受影响
+    const restore = () => {
+      git('checkout', '-q', '--', 'merge-note.md')
+      git('reset', '-q', '--keep', before)
+      rmSync(notePath, { force: true })
+      rmSync(path.join(projectDir, 'committed.txt'), { force: true })
+    }
+    let tOverlap
+    let tConflict
+    try {
+      // 重叠不冲突：两边改同一个文件的不同位置，git 会自动合上不报冲突
+      tOverlap = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: A.id,
+        prompt: 'COMMIT BEGIN_EDIT 重叠合并',
+        isolate: true,
+      })
+      tOverlap = await waitTask(tOverlap.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
+      writeFileSync(path.join(tOverlap.worktree.path, 'merge-note.md'), '# 分支改的标题\n\n正文\n\n结尾\n')
+      commitIn(tOverlap.worktree.path, 'commit', '-qam', '分支：把标题改成新写法')
+      writeFileSync(notePath, '# 标题\n\n原目录改的正文\n\n结尾\n')
+      commit('commit', '-qam', '原目录：正文补一段说明')
+      const merged = await call('POST', `/tasks/${tOverlap.id}/worktree/merge`)
+      assert.deepEqual(merged.overlap, ['merge-note.md'], '两边都改过的文件要交出来：自动合上也可能互相盖掉')
+      assert.ok(
+        merged.sides?.into?.commits?.some((c) => c.includes('原目录：正文补一段说明')),
+        '带上原分支的提交记录 ' + JSON.stringify(merged.sides),
+      )
+      assert.ok(
+        merged.sides?.by?.commits?.some((c) => c.includes('分支：把标题改成新写法')),
+        '带上独立分支的提交记录 ' + JSON.stringify(merged.sides),
+      )
+      const note = (await call('GET', `/tasks/${tOverlap.id}`)).messages.filter((m) => m.role === 'system').at(-1)
+      assert.match(note.text, /必须逐文件核对/, '重叠不冲突也要求核对有没有盖掉对方的改动')
+      assert.match(note.text, /双方的提交记录/, '核对要有双方的提交记录作依据')
+      const text = readFileSync(notePath, 'utf8')
+      assert.match(text, /分支改的标题[\s\S]*原目录改的正文/, '两边改动都在，没有互相盖掉')
+
+      // 真冲突：两边改 merge-note.md 的同一行（标题那行）
+      tConflict = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: A.id,
+        prompt: 'COMMIT BEGIN_EDIT 冲突合并',
+        isolate: true,
+      })
+      tConflict = await waitTask(tConflict.id, (t) =>
+        existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')),
+      )
+      writeFileSync(path.join(tConflict.worktree.path, 'merge-note.md'), '# 分支版本\n\n正文\n\n结尾\n')
+      commitIn(tConflict.worktree.path, 'commit', '-qam', '分支：标题换成分支版本')
+      writeFileSync(notePath, '# 原目录版本\n\n正文\n\n结尾\n')
+      commit('commit', '-qam', '原目录：标题换成原目录版本')
+      const conflict = await call('POST', `/tasks/${tConflict.id}/worktree/merge`).catch((e) => e)
+      assert.ok(conflict instanceof Error, '冲突时合并失败')
+      assert.match(conflict.message, /双方的提交记录/, '冲突时也要交出双方的提交记录')
+      assert.match(conflict.message, /原目录：标题换成原目录版本/, '列出原分支的提交说明')
+      assert.match(conflict.message, /分支：标题换成分支版本/, '列出独立分支的提交说明')
+      assert.match(conflict.message, /必须逐文件核对/, '会冲突的文件也要逐处核对')
+      assert.equal(readFileSync(notePath, 'utf8'), '# 原目录版本\n\n正文\n\n结尾\n', '冲突撤回，项目目录没被改')
+    } finally {
+      restore()
+      if (blockerText) writeFileSync(blockerPath, blockerText)
+      for (const x of [tOverlap, tConflict]) {
+        if (!x) continue
+        await call('POST', `/tasks/${x.id}/worktree/discard`).catch(() => {})
+        await call('DELETE', `/tasks/${x.id}`).catch(() => {})
+      }
+    }
+    step('合并审查：冲突和自动合上的重叠文件都把双方提交记录交回，要求逐文件核对')
+  }
   // Agent 输出里提到的文件可以点开看：只能读项目目录里的
   const rd = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
   assert.equal(rd.content, '# demo\n')

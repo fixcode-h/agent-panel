@@ -11,7 +11,15 @@ import type {
 } from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
-import { CORE_AGENTS, coreDefinition, sameCore, syncCore, upgradeParamDefaults } from './core.ts'
+import {
+  CORE_AGENTS,
+  coreDefinition,
+  isCoreAgent,
+  keepParamValues,
+  sameCore,
+  syncCore,
+  upgradeParamDefaults,
+} from './core.ts'
 import {
   LEGACY_AGENT_FIELDS,
   LEGACY_AGENT_FIELDS_MORE,
@@ -489,7 +497,7 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
- * 启动时确保六个必备角色（统筹、执行、文档、测试验收、版本控制、子任务）都在，并按内置定义同步一遍（见 ./core.ts）：
+ * 启动时确保七个必备角色（统筹、执行、文档、评审、测试验收、版本控制、子任务）都在，并按内置定义同步一遍（见 ./core.ts）：
  * 缺的建出来，已有的把名称、设定、Skill、能力、参数定义换成当前版本，保留用户填的参数值和运行配置。
  * 没有变化的不写盘，重复启动不会反复改文件。
  */
@@ -588,7 +596,9 @@ export async function upgradeBuiltinAgents(state: BuiltinState, api: { updateAge
       name: b.agent.name,
       description: b.agent.description,
       instructions: b.agent.instructions,
-      params: b.agent.params,
+      // 必备角色参数的值存在副本的 default 里：这里直接换成新定义会把用户填的值（比如评审的 target）冲掉。
+      // 启动顺序是先 upgradeBuiltinAgents 再 ensureProjectAgents，所以这一步就得把取值带过去
+      params: isCoreAgent(cur) ? keepParamValues(b.agent.params, cur.params) : b.agent.params,
       skills: b.agent.skills,
       common: b.agent.common,
       enabled: cur.enabled,

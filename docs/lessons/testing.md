@@ -12,13 +12,13 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 测试不依赖系统语言
 
-- 规则：断言 `t()` 文案的测试在文件顶部 `setLang('zh')`（见 `server/files.test.ts`）；`shared/i18n.ts` 的语言是模块级全局，`server/lang.ts` 会在导入时按 `process.env.LANG` 改它（例如 `server/files.ts` → `server/settings.ts` → `server/lang.ts`），不要靠「别的文件先设过」或环境变量。e2e 已固定服务端 `LANG=zh_CN`。
+- 规则：断言 `t()` 文案的测试在文件顶部 `setLang('zh')`（见 `server/files.test.ts`）；`shared/i18n.ts` 的语言是模块级全局，`server/lang.ts` 会按 `process.env.LANG` 在导入时改它，不要靠「别的文件先设过」或环境变量。e2e 已固定服务端 `LANG=zh_CN`。
 - 起因：3ab9a8d 英文系统上单测失败；同一个坑又踩一次——CI 的 `LANG=en_US.UTF-8` 让 11 个单测拿到英文报错文案。
 - 防线：CI。
 
 ## 改执行流程时假 CLI 跟着改，触发词别撞上旧词
 
-- 规则：`scripts/fake-cli` 要模拟真实 CLI 的会话方式（RPC 常驻多轮、插话、中断）；执行流程改了，假 CLI 也补上对应行为，否则 e2e 测的是旧流程。新加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被它包含的旧词（`SLOW` 会让这一轮先等几秒），用意思明确、不会撞上的词。
+- 规则：`scripts/fake-cli` 要模拟真实 CLI 的会话方式（RPC 常驻多轮、插话、中断）；执行流程改了，假 CLI 也补上对应行为，否则 e2e 测的是旧流程。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 看有没有被包含的旧词（`SLOW` 会让这一轮先等几秒），用不会撞上的词。
 - 起因：7a875fe、74bc98a RPC 常驻后假 CLI 只能跑一轮；加「后台命令还在跑」用例时用 `BG_SLOW` 命中了 `SLOW` 慢回合。
 - 防线：`npm run test:e2e`。
 
@@ -41,7 +41,7 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 自己起服务做验证时清掉面板的环境变量
 
-- 规则：在面板的会话里（托盘启动的） `AGENT_PANEL_TRAY=1` 会传下去，服务进了托盘模式， stdin 一结束就退出，表现成「服务已启动」之后连不上。写验证脚本拉起服务时把 `AGENT_PANEL_TRAY` 和 `AGENT_PANEL_SUPERVISED` 置空；接口都在 `/api` 下（`/api/health`），不是根路径。
+- 规则：面板的会话里（托盘启动的）`AGENT_PANEL_TRAY=1` 会传下去，服务进托盘模式，stdin 一结束就退出，表现成「服务已启动」之后连不上。写验证脚本拉起服务时把 `AGENT_PANEL_TRAY`、`AGENT_PANEL_SUPERVISED` 置空；接口在 `/api` 下（`/api/health`）。
 - 起因：验证「强制停止」时自己起服务，连试了几次都报「服务没有启动」，实际是服务启动后立即退出了。
 - 防线：人工。
 
@@ -53,12 +53,12 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## e2e 按分片并行，共享环境只在 harness 里改
 
-- 规则：`scripts/e2e.mjs` 只是并行 runner，场景在 `scripts/e2e/NN-*.mjs`，每个分片调一次 `runShard()`；临时目录、假 CLI 日志、端口、服务、看门狗、收尾和基础数据（`setupBase()`）都在 `scripts/e2e/harness.mjs`。新用例放进主题相符的分片；分片间不能有依赖，缺前置就在本分片自己建（漏了直接 ReferenceError）。
+- 规则：`scripts/e2e.mjs` 只是并行 runner，场景在 `scripts/e2e/NN-*.mjs`，每个分片调一次 `runShard()`；临时目录、假 CLI 日志、端口、服务、看门狗、收尾和 `setupBase()` 都在 `scripts/e2e/harness.mjs`。新用例放进主题相符的分片；分片间不能有依赖，缺前置在本分片自己建（漏了 ReferenceError）。
 - 起因：原 82 个 step 串行、单进程，加用例就线性变长。
 - 防线：`npm run test:e2e`。
 
-## 等状态、等日志记录都用 waitFor，别写固定 sleep
+## 等状态用 waitFor，别写固定 sleep 或「安静一阵」
 
-- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等「CLI 被调用」「任务进入 running」这类状态，也等假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录——任务状态置位常早于 CLI 收到响应、再写日志，状态满足了就立刻读日志会读空（CI 并行跑分片时窗口更大）。条件一到就继续，超时才失败；只有「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制，e2e 默认压到最小。
-- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等；出包 CI 上 `04-subagents.mjs` 的收尾断言偶发失败就是上面那个窗口（把 `.finish` 写入延后 300ms 必现）。
+- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等「CLI 被调用」「任务进入 running」这类状态，也等假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录——状态置位常早于 CLI 收到响应、再写日志，满足了就立刻读会读空。条件一到就继续，超时才失败；「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。等对话空闲不能只看它一阵没在跑：子对话 `submit_merge` 会经 `wakeTask` 叫起父对话一轮；给这段单独建一个没有子对话的父对话，再用 `waitFor` 等要断言的条件。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制。
+- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等；CI 上 `04-subagents.mjs` 的收尾断言偶发失败就是上面那个窗口（`.finish` 写入延后 300ms 必现），「换成用户已回答」偶发 `actual: false` 是 500ms 安静循环正好落在两次叫醒之间。
 - 防线：`npm run test:e2e`。

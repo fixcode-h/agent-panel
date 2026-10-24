@@ -7,7 +7,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../shared/i18n.ts'
 import { Task } from '../shared/schema.ts'
-import { childCounts, childStage, childStartedAt, runningChildren, sortChildren, taskSummary } from '../shared/task.ts'
+import {
+  childCounts,
+  childStage,
+  childStartedAt,
+  runningChildren,
+  sortChildren,
+  taskSummary,
+  visibleChildren,
+} from '../shared/task.ts'
 
 setLang('zh')
 
@@ -273,4 +281,53 @@ test('子对话计数：在等你选择的不转圈，不算进分子', () => {
   ]
   assert.equal(childStage(list[0]), 'you', '有未回答的提问时这一行说的是「等你选择」')
   assert.deepEqual(childCounts(list), { running: 1, total: 2 }, '等你的那一行不转圈，就不算进行中，但仍占分母')
+})
+
+test('运行区列的子对话：和悬浮层「运行中」、状态栏计数是同一批，已解决但还在跑的也要列', () => {
+  // 这一条盯着「两处口径」：运行区以前自己写 `working && !resolved`，
+  // 于是等后台命令、计划没做完、已解决但还在跑的子对话只在弹层里有，同一个页面对不上数
+  const at = (n: number) => `2026-10-21T0${n}:00:00.000Z`
+  const list = [
+    kid('working', { working: true, cliAlive: true, startedAt: at(1) }),
+    // 在等后台命令：这一轮没在跑，CLI 在等命令结果
+    kid('background', { working: false, cliAlive: true, background: 1, startedAt: at(2) }),
+    // 计划没做完，CLI 已经停了
+    kid('unfinished', { working: false, cliAlive: false, plan: { done: 1, total: 3 }, startedAt: at(3) }),
+    // 已经请父对话收尾、还没出结果
+    kid('wrapup', { working: false, cliAlive: true, wrapup: true, startedAt: at(4) }),
+    // 已标记解决但还在跑：resolved 不能盖住还在跑
+    kid('resolved-running', { working: true, cliAlive: true, resolved: true, startedAt: at(5) }),
+    // 在等你拍板：那是等你，不是还在跑，不列
+    kid('asking', { working: true, cliAlive: true, asking: 1, startedAt: at(6) }),
+    // 真的做完了、进程还活着的也不列
+    kid('done', { status: 'done', resolved: true, cliAlive: true, startedAt: at(7) }),
+  ]
+  const shown = visibleChildren(list)
+  assert.deepEqual(
+    shown.map((x) => x.id),
+    ['resolved-running', 'background', 'working', 'wrapup', 'unfinished'],
+    '在跑的那一类在前（同类按本次开启时间倒序），再是计划没做完、待收尾的',
+  )
+  assert.equal(shown.length, childCounts(list).running, '运行区的条数就是状态栏分子，不许两处各算一遍')
+  assert.deepEqual(
+    shown.map((x) => x.id),
+    sortChildren(list)
+      .filter((x) => shown.includes(x))
+      .map((x) => x.id),
+    '顺序和悬浮层列表（sortChildren）一致',
+  )
+})
+
+test('运行区列的子对话：后台命令、工作流、派出的子任务也算在跑，和行首图标同一处判定', () => {
+  const list = [
+    kid('background', { background: 2 }),
+    kid('workflow', { workflow: true }),
+    kid('helpers', { helpers: true }),
+    kid('idle', {}),
+  ]
+  assert.deepEqual(
+    visibleChildren(list).map((x) => x.id),
+    ['background', 'helpers', 'workflow'],
+    '同一类里开启时间一样时按 id 兜底排序（同 sortChildren）',
+  )
 })
