@@ -245,6 +245,7 @@ export const EN_TASKS: Record<string, string> = {
   子对话: 'Sub-conversation',
   '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
+  切换子对话: 'Switch sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
   '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
