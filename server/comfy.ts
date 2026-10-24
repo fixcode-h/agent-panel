@@ -43,6 +43,7 @@ import {
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { localPrompts } from '../shared/design.ts'
+import { mossLayoutJson, type MossLayoutItem, type MossLayoutSize } from '../shared/moss.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
@@ -536,6 +537,8 @@ export async function localGenerate(
     width: number
     height: number
     count: number
+    /** 布局：设计稿像素的项和设计稿尺寸；工作流用 {{layout}} 时按实际出图尺寸换算后注入 */
+    layout?: { size: MossLayoutSize; items: MossLayoutItem[] }
     /** 局部重绘：原图和蒙版图（都是 PNG），只重画蒙版涂过的区域 */
     inpaint?: { image: Buffer; mask: Buffer }
     onImage: (b: Buffer) => void
@@ -546,7 +549,16 @@ export async function localGenerate(
   const list = await allWorkflows()
   const ready = new Set<string>()
   for (const w of list) if (await workflowReady(w)) ready.add(w.id)
-  const wf = pickWorkflow(list, o.workflow, o.kind, o.use, (w) => ready.has(w.id))
+  // 有布局时优先用能接 {{layout}} 的工作流；没有就按用途选普通的，布局不生效也不会报错
+  const wantsLayout = !!o.layout?.items.length
+  const wf = pickWorkflow(
+    list,
+    o.workflow,
+    o.kind,
+    o.use,
+    (w) => ready.has(w.id),
+    wantsLayout ? (w) => JSON.stringify(w.graph).includes('{{layout}}') : undefined,
+  )
   if (!wf)
     throw new Error(
       o.workflow === 'auto'
@@ -582,6 +594,11 @@ export async function localGenerate(
     if (!ip) throw new Error(t('这个工作流不支持局部重绘，请换成内置工作流或整张重画'))
     graph = ip
   }
+  // 工作流里有 {{layout}} 才编译布局：宽高用实际出图尺寸，位置按设计稿比例换算
+  const layout =
+    o.layout?.items.length && JSON.stringify(graph).includes('{{layout}}')
+      ? mossLayoutJson(o.layout.items, { source: o.layout.size, size, caption: prompt })
+      : undefined
   const workflow = markSavePrefix(
     fillWorkflow(graph, {
       prompt,
@@ -589,6 +606,7 @@ export async function localGenerate(
       ...size,
       count: o.inpaint ? 1 : Math.min(4, Math.max(1, o.count)),
       seed: Math.floor(Math.random() * 2 ** 48),
+      layout,
     }),
     wf.name,
   )
@@ -842,6 +860,7 @@ ${input.instruction}
 格式要求：
 - 输出 ComfyUI 的接口格式（API format）JSON：{ "节点id": { "class_type": "...", "inputs": { ... } } }，连线写成 ["节点id", 输出序号]。
 - 参数用占位符：正向描述写 "{{prompt}}"，反向描述写 "{{negative}}"（可以在前后加固定的英文要求），宽、高、张数、随机种子分别写成 "{{width}}"、"{{height}}"、"{{count}}"、"{{seed}}"（整个值就是占位符）。
+- 要按坐标摆放文字和元素的工作流（例如 MOSS-Image）把正向描述写成 "{{layout}}"：生成时传入布局 JSON，没有布局时自动回退成描述。
 - 必须有 SaveImage 节点输出图片。
 - 只用下面列出的节点和已经下载的模型文件${info ? '' : '（ComfyUI 没在运行，拿不到完整的节点列表；只用 ComfyUI 自带的核心节点）'}。
 - 先用一两句话说明你的思路和改动，再给一个 \`\`\`json 代码块，里面是：{ "name": "工作流名称", "use": "icon|button|panel|background|concept|illustration|any 之一", "model": "用到的内置模型 id（${LOCAL_MODELS.map((m) => m.id).join('、')}，用别的模型留空）", "description": "一句话说明用在哪里", "extra": "加在描述后面的英文要求，可以为空", "graph": { ... } }
