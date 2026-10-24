@@ -1,4 +1,4 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
@@ -1420,14 +1420,14 @@ export function TaskView({
                 </div>
 
                 {/* 计划和子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间。
-                    有子对话时分成两行：计划在上、子对话在下，子对话这一行和输入框左对齐，
-                    不为了两边并排把子对话挤到右边 */}
+                    固定三行（见 ChildrenBar）：计划在上、子对话中间、子任务在下，每行各自不换行，
+                    三行都和输入框左对齐 */}
                 <>
                   {task.plans?.length > 0 && (
                     <div className="shrink-0 px-3 md:px-6">
                       {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
                       <div className="mx-auto max-w-(--content-w)">
-                        <div className={cn(plainRow, 'mb-1 w-fit max-w-full')}>
+                        <div data-status-row="plan" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
                           <PlanButton task={task} children={children} />
                         </div>
                       </div>
@@ -1759,7 +1759,7 @@ function ChildrenBar({
   onResume,
 }: {
   children: ChildSummary[]
-  /** 派出的子任务：和子对话同一行，点开看它的实时对话流 */
+  /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
   onOpen: (id: string) => void
@@ -1791,16 +1791,37 @@ function ChildrenBar({
   const shown = all ? sortChildren(children) : visibleChildren(children)
   const current = children.find((c) => c.id === openChild)
 
+  // 小块的个数按这一行实际能用的宽度算：放不下的收成「+N」，不折到下一行去挤子任务，
+  // 窗口拉宽 / 缩窄时跟着变（不再是写死的 slice(0, 3)）。
+  // 用回调 ref + ResizeObserver，节点挂上再量；卡片大小跟着根字号（设置里能改字号）走，不写死像素
+  const [cardsEl, setCardsEl] = useState<HTMLDivElement | null>(null)
+  const [box, setBox] = useState({ room: 0, card: 224, gap: 6, more: 40 })
+  useLayoutEffect(() => {
+    if (!cardsEl) return
+    const read = () => {
+      // w-56 = 14rem、gap-1.5 = 0.375rem；「+N」按钮连同间距按 2.5rem 预留
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      setBox({ room: cardsEl.clientWidth, card: rem * 14, gap: rem * 0.375, more: rem * 2.5 })
+    }
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(cardsEl)
+    return () => ro.disconnect()
+  }, [cardsEl])
+  const cardSlot = box.card + box.gap
+  const fitAll = Math.floor((box.room + box.gap) / cardSlot)
+  const shownCards =
+    fitAll >= busy.length ? busy.length : Math.max(0, Math.floor(Math.max(0, box.room - box.more) / cardSlot))
+  const hiddenCards = busy.length - shownCards
+
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
-      {/* 弹窗以这一行内容为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
+      {/* 弹窗以这两行为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
-        {/* 这一行铺满内容宽：小卡列表和右侧关闭按钮要有稳定的左右边界，换行时关闭按钮才不跑位 */}
-        <div className={cn(plainRow, 'mb-1.5 flex-wrap')}>
-          {/* 子任务排在子对话前面（计划单独在上一行）：常驻的是两个计数入口，窄屏下换行保留，不省略任何一个 */}
-          {helpers && <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />}
-          {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
-          {children.length > 0 && (
+        {/* 状态栏的后两行（计划在调用处单独一行）：子对话在中、子任务在下，各自只占一行、不换行。
+            子对话行左边是计数入口、右边是关闭按钮，中间的小块放不下就收成「+N」 */}
+        {children.length > 0 && (
+          <div data-status-row="children" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <button
               type="button"
               aria-expanded={open}
@@ -1810,7 +1831,7 @@ function ChildrenBar({
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
-              className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
               <span className="shrink-0 font-medium">{t('子对话')}</span>
@@ -1825,64 +1846,92 @@ function ChildrenBar({
                 <span className="shrink-0 text-xs text-subtle tabular-nums">{total}</span>
               )}
             </button>
-          )}
-          {asking.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpen(asking[0].id)}
-              title={asking.map((c) => c.title).join('\n')}
-              className="flex h-7 max-w-64 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
-            >
-              <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 truncate">
-                {asking.length > 1
-                  ? t('{n} 个子对话请你选择', { n: asking.length })
-                  : t('「{title}」请你选择', { title: asking[0].title })}
-              </span>
-            </button>
-          )}
-          {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
-          {busy.length > 0 && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              {busy.slice(0, 3).map((c) => {
-                // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
-                const stale = staleLine(c)
-                const line = childNote(c, true)
-                return (
+            {asking.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpen(asking[0].id)}
+                title={asking.map((c) => c.title).join('\n')}
+                className="flex h-7 max-w-64 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
+              >
+                <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">
+                  {asking.length > 1
+                    ? t('{n} 个子对话请你选择', { n: asking.length })
+                    : t('「{title}」请你选择', { title: asking[0].title })}
+                </span>
+              </button>
+            )}
+            {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开。
+                这一层量到的宽度就是能放小块的宽度，超出被裁掉之前已经按个数收成「+N」 */}
+            {busy.length > 0 && (
+              // 至少给「+N」留出 2.5rem：窄屏下「请你选择」占满行时，这个容器会被挤成 0 宽，
+              // 里面的数字被 overflow-hidden 整个裁掉，看着像没显示
+              <div
+                ref={setCardsEl}
+                data-child-cards
+                className="flex min-w-10 flex-1 items-center gap-1.5 overflow-hidden"
+              >
+                {busy.slice(0, shownCards).map((c) => {
+                  // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
+                  const stale = staleLine(c)
+                  const line = childNote(c, true)
+                  return (
+                    <button
+                      key={c.id}
+                      data-child-card
+                      type="button"
+                      onClick={() => onOpen(c.id)}
+                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
+                      className={cn(
+                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                        c.id === openChild ? 'border-line-strong' : 'border-line',
+                      )}
+                    >
+                      {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                      <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
+                      <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
+                      <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
+                        {stale ? stale.text : line}
+                      </span>
+                    </button>
+                  )
+                })}
+                {hiddenCards > 0 && (
+                  // 放不下的真实个数：紧跟最后一块，点开还是那个能看全部的浮层
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => onOpen(c.id)}
-                    title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
-                    className={cn(
-                      'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
-                      c.id === openChild ? 'border-line-strong' : 'border-line',
-                    )}
+                    data-child-more
+                    aria-label={t('还有 {n} 个子对话', { n: hiddenCards })}
+                    title={busy
+                      .slice(shownCards)
+                      .map((c) => c.title)
+                      .join('\n')}
+                    onClick={() => setOpen((v) => !v)}
+                    className="shrink-0 cursor-pointer rounded-lg px-1.5 py-1 text-xs text-subtle tabular-nums transition-colors hover:bg-sel hover:text-fg"
                   >
-                    {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
-                    <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
-                    <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
-                    <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
-                      {stale ? stale.text : line}
-                    </span>
+                    +{hiddenCards}
                   </button>
-                )
-              })}
-              {busy.length > 3 && <span className="shrink-0 text-xs text-subtle">+{busy.length - 3}</span>}
-            </div>
-          )}
-          {current && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t('关闭子对话')}
-              title={t('关闭子对话')}
-              className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+                )}
+              </div>
+            )}
+            {current && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t('关闭子对话')}
+                title={t('关闭子对话')}
+                className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+        {helpers && (
+          <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
+            <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
+          </div>
+        )}
         {open && (
           <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
             <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -1933,6 +1982,7 @@ function ChildrenBar({
                       <Fragment key={c.id}>
                         <button
                           type="button"
+                          data-child-item
                           onClick={() => {
                             // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
                             onOpen(c.id)
@@ -2040,8 +2090,9 @@ function childGroups(list: ChildSummary[], grouped: boolean) {
 const barRow =
   'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
 /**
- * 计划和子对话那两行：不套框，当作输入框上方的一行轻量信息。
- * 左内边距 2.5 加上行内按钮自己的 px-1.5，正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
+ * 输入框上方的状态栏（计划、子对话、子任务各一行）：不套框，当作轻量信息。
+ * 每行各自 flex-nowrap、只占一行；左内边距 2.5 加上行内按钮自己的 px-1.5，
+ * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */
 const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
 const barIcon =

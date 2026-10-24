@@ -282,7 +282,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
     }
   }
-  // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
+  // 派出的子任务不再铺在消息流里：入口在输入框上方单独一行，点开是列表和只读窗口
   {
     const openTask = () => backToTask()
     // 折叠行「派出 3 个子任务」也是一个按钮；入口按钮的 aria-label 就是「子任务」。
@@ -296,18 +296,122 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!/^子任务 \d+$/.test(doneLabel)) errors.push(`子任务栏：没在跑时应该只写总数，现在是「${doneLabel}」`)
       if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
         errors.push('子任务栏：消息流里还画着子任务卡片')
-      // 状态栏顺序：计划单独占一行在最上面，这一行里子任务在子对话前面
-      const order = await p.evaluate(() => {
-        const btns = [...document.querySelectorAll('button')]
-        const sub = btns.find((b) => b.getAttribute('aria-label') === '子任务')
-        const child = btns.find((b) => (b.getAttribute('aria-label') || '').startsWith('子对话'))
-        if (!sub || !child) return null
-        const at = (b) => b.getBoundingClientRect()
-        return { sub: at(sub).left, subTop: at(sub).top, child: at(child).left, childTop: at(child).top }
-      })
-      if (!order) errors.push('状态栏：找不到「子任务」或「子对话」入口，核对不了顺序')
-      else if (order.sub > order.child && Math.abs(order.subTop - order.childTop) < 4)
-        errors.push('状态栏顺序：子任务应该排在子对话前面')
+      // 状态栏固定三行：计划在上、子对话中间、子任务在下；每行只占一行、不换行，
+      // 子对话小块放不下时收成「+N」，不折到下一行去挤子任务
+      const measureBars = () =>
+        p.evaluate(() => {
+          const row = (name) => {
+            const el = document.querySelector(`[data-status-row="${name}"]`)
+            if (!el) return null
+            const r = el.getBoundingClientRect()
+            const kids = [...el.children].map((c) => c.getBoundingClientRect())
+            // 行内元素按 items-center 对齐，高度不同时 top 本来就会差一两像素：
+            // 比竖直中心，换行时掉下去的那一块中心和第一块差一行高
+            const mid = (k) => k.top + k.height / 2
+            return {
+              top: Math.round(r.top),
+              bottom: Math.round(r.bottom),
+              height: Math.round(r.height),
+              sameTop: kids.every((k) => Math.abs(mid(k) - mid(kids[0])) < 4),
+            }
+          }
+          const children = document.querySelector('[data-status-row="children"]')
+          const cards = children
+            ? [...children.querySelectorAll('[data-child-card]')].map((c) => c.getBoundingClientRect())
+            : []
+          const more = children?.querySelector('[data-child-more]')
+          const room = children?.querySelector('[data-child-cards]')?.getBoundingClientRect()
+          const moreBox = more?.getBoundingClientRect()
+          return {
+            plan: row('plan'),
+            children: row('children'),
+            helpers: row('helpers'),
+            cards: cards.length,
+            cardW: cards.length ? Math.round(cards[0].width) : 0,
+            hidden: more ? Number((more.textContent || '').replace(/[^\d]/g, '')) : 0,
+            cardRight: cards.length ? Math.round(Math.max(...cards.map((c) => c.right))) : 0,
+            roomW: room ? Math.round(room.width) : 0,
+            roomLeft: room ? Math.round(room.left) : 0,
+            roomRight: room ? Math.round(room.right) : 0,
+            moreW: moreBox ? Math.round(moreBox.width) : 0,
+            moreLeft: moreBox ? Math.round(moreBox.left) : 0,
+            moreRight: moreBox ? Math.round(moreBox.right) : 0,
+          }
+        })
+      /** 三行的顺序、单行不换行、小块 + 隐藏数 = 在跑的子对话数 */
+      const checkBars = async (where, busy) => {
+        const b = await measureBars()
+        if (!b.plan || !b.children || !b.helpers) {
+          errors.push(`状态栏（${where}）：没有同时出现计划、子对话、子任务三行`)
+          return b
+        }
+        if (b.plan.bottom > b.children.top + 1 || b.children.bottom > b.helpers.top + 1)
+          errors.push(
+            `状态栏（${where}）：三行顺序不对（计划 ${b.plan.top}-${b.plan.bottom}、子对话 ${b.children.top}-${b.children.bottom}、子任务 ${b.helpers.top}-${b.helpers.bottom}）`,
+          )
+        for (const [name, r] of [
+          ['计划', b.plan],
+          ['子对话', b.children],
+          ['子任务', b.helpers],
+        ]) {
+          if (!r.sameTop) errors.push(`状态栏（${where}）：「${name}」这一行换行了`)
+          if (r.height > 40) errors.push(`状态栏（${where}）：「${name}」这一行占了 ${r.height}px，不是单行`)
+        }
+        if (b.cards + b.hidden !== busy)
+          errors.push(`状态栏（${where}）：子对话小块 ${b.cards} 个 + 隐藏 ${b.hidden} 个，应该等于在跑的 ${busy} 个`)
+        if (b.cards && b.cardW < 200) errors.push(`状态栏（${where}）：子对话小块被压到 ${b.cardW}px，不是固定宽度`)
+        if (b.hidden > 0) {
+          // 数字必须真的看得见：容器被挤成 0 宽时，overflow-hidden 会把「+N」整个裁掉
+          if (b.roomW < 1) errors.push(`状态栏（${where}）：卡片容器宽 0，「+N」没有位置，用户看不到隐藏数`)
+          else if (b.moreLeft < b.roomLeft - 1 || b.moreRight > b.roomRight + 1)
+            errors.push(
+              `状态栏（${where}）：「+N」超出卡片容器被裁掉（容器 ${b.roomLeft}-${b.roomRight}、+N ${b.moreLeft}-${b.moreRight}）`,
+            )
+          if (b.cards && b.cardRight > b.moreLeft) errors.push(`状态栏（${where}）：小块压到「+N」上`)
+        }
+        return b
+      }
+      // 在跑的子对话数从入口按钮的 aria-label 读，跟着演示数据走，不写死 5
+      const childLabel =
+        (await p.locator('button[aria-expanded][aria-label^="子对话"]').first().getAttribute('aria-label')) ?? ''
+      const busy = Number(childLabel.match(/(\d+) 个进行中/)?.[1] ?? 0)
+      if (!busy) errors.push(`状态栏：子对话入口没写「n 个进行中」（现在是「${childLabel}」），核对不了小块个数`)
+      // 先量宽窗口：左右两栏都在，1920 时中间还有位置放小块
+      await p.setViewportSize({ width: 1920, height: 900 })
+      await settle(p)
+      const wide = await checkBars('1920', busy)
+      if (wide && busy && !wide.cards) errors.push('状态栏（1920）：宽窗口里一个小块都没显示，+N 没有按可用宽度让位')
+      await check(p, '状态栏-三行')
+      // 验收标准 2 的后半句：点「+N」还是能看到全部，不只是个数字
+      if (wide && wide.hidden > 0) {
+        await p.locator('[data-child-more]').click()
+        const listed = await p.evaluate(
+          () => document.querySelectorAll('div.absolute.bottom-full [data-child-item]').length,
+        )
+        if (listed !== busy)
+          errors.push(`状态栏（1920）：点「+${wide.hidden}」后浮层里列了 ${listed} 个子对话，应该是在跑的 ${busy} 个`)
+        await check(p, '状态栏-三行-展开全部')
+        await p.keyboard.press('Escape')
+        await p
+          .waitForFunction(() => !document.querySelector('div.absolute.bottom-full'), { timeout: 3000 })
+          .catch(() => {})
+      }
+      // 缩窄窗口：「+N」跟着变大、小块变少，三行仍然各自一行（不重新加载，量的是同一条状态栏）
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await settle(p)
+      const mid = await checkBars('1440', busy)
+      if (mid && wide && wide.hidden > 0 && !(mid.hidden > wide.hidden))
+        errors.push(`状态栏（1440）：窗口变窄后隐藏数没变多（1920 是 ${wide.hidden} 个、1440 是 ${mid.hidden} 个）`)
+      await check(p, '状态栏-三行-1440')
+      await p.setViewportSize({ width: 375, height: 820 })
+      await settle(p)
+      const narrow = await checkBars('375', busy)
+      if (narrow && mid && !(narrow.hidden >= mid.hidden))
+        errors.push(`状态栏（375）：窗口变窄后隐藏数反而变少（1440 是 ${mid.hidden} 个、375 是 ${narrow.hidden} 个）`)
+      await check(p, '状态栏-三行-375')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.reload()
+      await openTask()
       await bar.first().click()
       // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
@@ -397,7 +501,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
       await p.reload()
       await openTask()
-      // 窄窗口：入口和输入框上方那一行不能被挤坏；两个计数入口都保留，只是换行
+      // 窄窗口：两个计数入口各自占一行、都要保留，不能被挤没
       await p.setViewportSize({ width: 900, height: 800 })
       await p.reload()
       await openTask()
