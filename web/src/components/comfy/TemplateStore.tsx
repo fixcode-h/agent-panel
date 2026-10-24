@@ -391,6 +391,11 @@ function TemplateDetail({
               </span>
             </div>
           )}
+          {jobForThis && job?.status === 'failed' && job.error && (
+            <p className="rounded-xl border border-danger/40 bg-danger/5 px-3 py-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">
+              {job.error}
+            </p>
+          )}
 
           <section className="flex flex-col gap-1.5">
             <h3 className="text-[0.78125rem] font-medium text-muted">{t('节点图')}</h3>

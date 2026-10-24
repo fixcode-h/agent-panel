@@ -204,7 +204,7 @@ export function ComfyPage() {
             { id: 'web', label: t('网页 UI') },
           ]}
         />
-        <div className="flex items-center gap-1.5">
+        <div className="flex w-full flex-wrap items-center justify-end gap-1.5 md:w-auto">
           <Button size="sm" variant="secondary" onClick={() => setStore(true)}>
             <LayoutGrid className="h-3.5 w-3.5" />
             {t('模板商店')}
