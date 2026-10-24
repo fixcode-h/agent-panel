@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
-import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
@@ -191,6 +192,23 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  comfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
+  refreshComfyTemplates: () =>
+    request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates/refresh', {
+      method: 'POST',
+    }),
+  comfyTemplate: (name: string) =>
+    request<ComfyTemplateDetail & { preview?: ComfyWorkflow['graph'] }>(
+      `/local-image/templates/${encodeURIComponent(name)}`,
+    ),
+  addComfyTemplate: (name: string, kind: 'game' | 'web') =>
+    request<ComfyWorkflow>(`/local-image/templates/${encodeURIComponent(name)}/add`, json('POST', { kind })),
+  downloadComfyTemplate: (name: string) =>
+    request<{ job: LocalJob; files: TemplateAsset[]; skipped: number }>(
+      `/local-image/templates/${encodeURIComponent(name)}/download`,
+      json('POST', {}),
+    ),
   saveComfyWorkflow: (w: ComfyWorkflow) =>
     request<ComfyWorkflow>(`/local-image/workflows/${encodeURIComponent(w.id)}`, json('PUT', w)),
   deleteComfyWorkflow: (id: string) =>

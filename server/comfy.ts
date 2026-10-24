@@ -44,6 +44,8 @@ import { downloadFile, removeDownload } from './download.ts'
 import { getSettings } from './settings.ts'
 import { registerFixTopic } from './fix.ts'
 import { appDir } from './update.ts'
+import { templateApi } from './comfy-templates.ts'
+import type { ComfyNodeInfo, TemplateAsset } from '../shared/comfy-templates.ts'
 
 /**
  * 本机生图：在软件目录的 comfyui/ 下装 ComfyUI（源码 + 独立的 Python 虚拟环境），按需启动，
@@ -337,6 +339,30 @@ export function downloadModel(id: string) {
   })
 }
 
+/**
+ * 模板依赖的模型文件：和下载模型走同一条分片并发通道（断点续传、镜像、取消、进度都一样）。
+ * 文件来自模板说明里的 Hugging Face 地址，模板商店已经过滤过域名和文件名。
+ */
+function downloadTemplateFiles(files: TemplateAsset[], label: string, skipped: number) {
+  return begin('download', t('下载 {name} 的模型', { name: label }), async (j) => {
+    j.model = `template:${label}`
+    const mirror = (await getSettings()).imageGen.local.mirror
+    const total = files.reduce((n, f) => n + f.gb * 1024 ** 3, 0)
+    j.progress = { done: 0, total }
+    if (skipped) say(t('{n} 个文件没有下载地址，需要自己放到 ComfyUI/models', { n: skipped }))
+    for (const f of files) {
+      j.step = t('下载 {file}', { file: f.file })
+      const url = mirrorUrl(f.url, mirror)
+      say(url)
+      await downloadFile(url, path.join(codeDir(), 'models', f.dir, f.file), {
+        signal: j.abort.signal,
+        onBytes: (n) => (j.progress!.done += n),
+      })
+    }
+    j.step = t('{name} 的模型下载完成', { name: label })
+  })
+}
+
 /** 删掉模型的文件；别的已下载模型还在用的文件留着 */
 export async function removeModel(id: string) {
   const m = localModel(id)
@@ -471,9 +497,15 @@ async function saveWorkflows(fn: (list: ComfyWorkflow[]) => ComfyWorkflow[]) {
   await next
 }
 
-/** 工作流能不能跑：用到的内置模型下载好了（用已有的 ComfyUI 时不检查，模型由用户自己放） */
+/**
+ * 工作流能不能跑：模板带进来的依赖文件都在，或关联的内置模型下载好了
+ * （用已有的 ComfyUI 时不检查，模型由用户自己放）
+ */
 export async function workflowReady(wf: ComfyWorkflow) {
-  if ((await getSettings()).imageGen.local.url || !wf.model) return true
+  if ((await getSettings()).imageGen.local.url) return true
+  const models = path.join(codeDir(), 'models')
+  if (wf.assets?.length) return wf.assets.every((a) => existsSync(path.join(models, a)))
+  if (!wf.model) return true
   const m = localModel(wf.model)
   return !m || m.files.every((f) => existsSync(filePath(f)))
 }
@@ -788,6 +820,21 @@ export function comfyApi() {
   routes.post(
     '/detect',
     wrap(() => void ((pythonCache = {}), (gpuInfo = undefined))),
+  )
+  // ComfyUI 模板商店：浏览官方模板、看节点图、下载依赖、添加成工作流
+  routes.route(
+    '/templates',
+    templateApi({
+      saveWorkflow: async (wf) => {
+        await saveWorkflows((list) => [...list.filter((w) => w.id !== wf.id), { ...wf, builtin: undefined }])
+      },
+      nodeInfo: async () => {
+        const info = await nodeTypes()
+        return info as unknown as Map<string, ComfyNodeInfo> | undefined
+      },
+      modelsDir: () => path.join(codeDir(), 'models'),
+      download: (files, label, skipped) => downloadTemplateFiles(files, label, skipped),
+    }),
   )
   return routes
 }
