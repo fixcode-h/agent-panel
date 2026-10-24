@@ -13,6 +13,7 @@ import {
   Paintbrush,
   Palette,
   Pencil,
+  ScanSearch,
   X,
   RefreshCw,
   Sparkles,
@@ -44,6 +45,8 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/compo
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, markColor, markLabel } from './Annotations'
+import { DesignAnalysisCard } from './DesignAnalysisCard'
+import { analysisButtonState } from '@shared/design-analysis'
 import { ATTACHMENT_PROMPT, useAttachments } from '@/components/chat/Attachments'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { forSend } from '@shared/composer'
@@ -567,6 +570,7 @@ export function DesignChat({
   count,
   onCount,
   onSend,
+  onAnalyze,
   onStop,
   onRetry,
   kind = 'game',
@@ -599,6 +603,8 @@ export function DesignChat({
       inpaint?: boolean
     },
   ) => Promise<boolean>
+  /** 「AI 分析」：只读检查对话和生成的 UI，不改设计、不生成图片 */
+  onAnalyze: (run: ChatRun) => Promise<boolean | void>
   onStop: () => void
   /** 已经确认了原画模板：「先出原画」开关不再起作用，AI 照着模板做 */
   hasTemplate?: boolean
@@ -737,6 +743,38 @@ export function DesignChat({
     }
   }
 
+  // 「AI 分析」：只读检查当前对话和设计。分析中的按钮变成取消，不占输入框和工具栏
+  const [analyzing, setAnalyzing] = useState(false)
+  const analysisRunning = running && job?.mode === 'analyze'
+  const analysisState = analysisButtonState({
+    running,
+    mode: job?.mode,
+    sending: sending || analyzing,
+    asking: askDesign,
+  })
+  const analyze = async () => {
+    if (analysisState === 'stop') return onStop()
+    if (analysisState !== 'analyze') return
+    setAnalyzing(true)
+    stick.current = true
+    try {
+      await onAnalyze(run)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+  // 分析建议：作为一条新消息走现有的发送流程，可以继续补充再发
+  const applyAnalysis = async (v: string) => {
+    if (running || sending) return
+    setSending(true)
+    stick.current = true
+    try {
+      await onSend(v, run, [], { askUser, concept, inpaint: false })
+    } finally {
+      setSending(false)
+    }
+  }
+
   // 回答了 AI 问的问题：全部答案一起作为一条消息发出去；选了带 style 的选项（整体风格）先定到设计里
   const answerDesign = async (answers: string[], picked: number[][]) => {
     if (running || sending) return
@@ -825,6 +863,8 @@ export function DesignChat({
               msgs={messages}
               dir={dir}
               last={i === messages.length - 1 && !running}
+              disabled={running || sending}
+              onApplyAnalysis={(v) => void applyAnalysis(v)}
               onResend={
                 running
                   ? undefined
@@ -881,8 +921,37 @@ export function DesignChat({
             ))}
           </div>
         )}
-        <div className="flex min-w-0 items-center pb-1">
+        <div className="flex min-w-0 items-center gap-1 pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => void analyze()}
+            disabled={analysisState === 'disabled' || analysisState === 'busy' || analyzing}
+            aria-label={analysisRunning ? t('取消分析') : analyzing ? t('分析中…') : t('AI 分析')}
+            title={
+              analysisState === 'stop'
+                ? t('停止这次分析')
+                : analysisState === 'busy'
+                  ? t('等当前这一轮结束再分析')
+                  : analysisState === 'disabled'
+                    ? t('等 AI 回答完再分析')
+                    : t('检查当前的对话和设计是否合理，列出需要修改的地方')
+            }
+            className={cn(
+              'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.75rem] transition-colors',
+              analysisRunning || analyzing ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sel hover:text-fg',
+              (analysisState === 'disabled' || analysisState === 'busy' || analyzing) &&
+                'cursor-default opacity-45 hover:bg-transparent hover:text-muted',
+            )}
+          >
+            {analysisRunning || analyzing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ScanSearch className="h-3.5 w-3.5" />
+            )}
+            {analysisRunning ? t('取消分析') : analyzing ? t('分析中…') : t('AI 分析')}
+          </button>
         </div>
         {!askDesign && !asksQuestion(asks.list) && (
           <ChatComposer
@@ -983,6 +1052,8 @@ function ChatMessage({
   msgs,
   dir,
   last,
+  disabled,
+  onApplyAnalysis,
   onResend,
 }: {
   msg: DesignMessage
@@ -992,6 +1063,10 @@ function ChatMessage({
   dir?: string
   /** 最后一条回复：时间和操作一直显示 */
   last?: boolean
+  /** 正在执行或发送：分析卡片上的「按建议修改」先不让点 */
+  disabled?: boolean
+  /** 分析卡片里点了「按建议修改」：把要求交给对话 */
+  onApplyAnalysis?: (text: string) => void
   /** 把这条要求放回输入框重新编辑 */
   onResend?: (text: string) => void
 }) {
@@ -1069,6 +1144,11 @@ function ChatMessage({
           {t('需要的图片：{n} 张', { n: msg.images.length })}
         </span>
       )}
+      {!!msg.analysis && (
+        <div className="pl-[38px]">
+          <DesignAnalysisCard analysis={msg.analysis} disabled={disabled} onApply={onApplyAnalysis} />
+        </div>
+      )}
     </ChatReply>
   )
 }
@@ -1131,9 +1211,11 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
               ? t('正在生成图片 {i}/{n}', { i: done, n: items.length })
               : job.phase === 'concepts'
                 ? t('正在出原画 {i}/{n}', { i: job.concepts?.got ?? 0, n: job.concepts?.want ?? 0 })
-                : job.attempt > 1
-                  ? t('检查还有问题，正在接着改')
-                  : t('正在设计')}
+                : job.mode === 'analyze'
+                  ? t('正在分析设计')
+                  : job.attempt > 1
+                    ? t('检查还有问题，正在接着改')
+                    : t('正在设计')}
         </span>
         {running && (
           <span className="ml-auto shrink-0 font-mono text-[0.6875rem] font-normal text-subtle tabular-nums">

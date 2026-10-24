@@ -76,6 +76,7 @@ import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
 import { stripToolMarkup, withAttachments } from '../shared/task.ts'
+import { buildDesignAnalysisPrompt, cleanAnalysisParts, parseDesignAnalysis } from '../shared/design-analysis.ts'
 import { imageSize, zip } from './zip.ts'
 
 /**
@@ -683,6 +684,8 @@ ${prompt}`,
     const def = getCli(cliId)!
     const cs = cliSettings(settings, cliId)
     job.run = run
+    // 分析任务在页面上显示「正在分析」，按钮也能据此变成取消
+    job.mode = input.mode
     setAskUser(job.scope, input.askUser)
     // 每一轮一个单独的工作目录：放设计工具的配置和附件，结束后删掉
     const cwd = path.join(tmpdir(), 'agent-panel-design', randomUUID())
@@ -781,7 +784,12 @@ ${prompt}`,
           })
         },
       },
-      { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
+      {
+        conceptOnly: mode === 'concept',
+        conceptCount: mode === 'concept' ? input.count : undefined,
+        // 分析只读：工具的修改、出原画和提问都会被挡掉
+        readOnly: input.mode === 'analyze',
+      },
     )
     // 工作目录本来就是面板这一轮的临时目录，{dir} 的文件（Pi 的桥接扩展）也放这里，结束时一起删
     const tools = mcpConfig(def.mcp, 'design', mcp.url, cwd)
@@ -825,21 +833,24 @@ ${prompt}`,
           cwd,
           env: childEnv(cs.env),
           input:
-            buildDesignPrompt(
-              cache.get(d.id)!,
-              history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
-                (facts.length ? `\n\n${facts.join('\n')}` : '') +
-                // 用户这次选了整体风格：明说一句，不然 AI 只在风格说明里看到它，容易沿用之前对话里的风格
-                (input.style
-                  ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
-                  : ''),
-              input.annotations.filter((a) => !a.target.startsWith('concept:')),
-              project,
-              // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
-              [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
-              mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
-            ) + extra,
+            input.mode === 'analyze'
+              ? // 分析：只读，提示词里已经带上控件树、图片、原画和最近的工具调用
+                buildDesignAnalysisPrompt(cache.get(d.id)!, history) + extra
+              : buildDesignPrompt(
+                  cache.get(d.id)!,
+                  history,
+                  withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
+                    (facts.length ? `\n\n${facts.join('\n')}` : '') +
+                    // 用户这次选了整体风格：明说一句，不然 AI 只在风格说明里看到它，容易沿用之前对话里的风格
+                    (input.style
+                      ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
+                      : ''),
+                  input.annotations.filter((a) => !a.target.startsWith('concept:')),
+                  project,
+                  // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
+                  [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
+                  mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
+                ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
@@ -904,6 +915,24 @@ ${prompt}`,
           throw new Error(
             [t('{cli} 执行失败：{detail}', { cli: def.name, detail }), ...failureHints(detail, def)].join('\n\n'),
           )
+        }
+        // 分析只读：不走设计的结构校验（设计本来就可能有要分析的问题），直接解析结果存进消息
+        if (input.mode === 'analyze') {
+          const analysis = parseDesignAnalysis(stripToolMarkup(text.trim()))
+          const cur = cache.get(d.id)!
+          cur.messages.push({
+            id: randomUUID(),
+            role: 'agent',
+            text: analysis.summary || t('分析完成。'),
+            at: now(),
+            run,
+            // 回复里只留说明，JSON 检查项放到 analysis 里由卡片显示
+            parts: finalParts(cleanAnalysisParts(parts)),
+            analysis,
+          })
+          await save(cur)
+          job.preview = undefined
+          return { ids: [], concepts: [] }
         }
         // 回复就是普通文字；改动都在工具里做好了
         const touched = sess.applied > 0 || sess.images.length > 0
@@ -1859,10 +1888,13 @@ ${prompt}`,
         ...(p.data.style && p.data.styleName ? { style: p.data.styleName } : {}),
       })
       await save(d)
-      // AI 改之前自动存一个版本，改坏了可以回去
-      await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
+      // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
+      if (p.data.mode !== 'analyze')
+        await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
       startJob(d, async (job) => {
         const { ids, concepts } = await chat(d, p.data, job)
+        // 分析只出结论，不出原画和切图
+        if (p.data.mode === 'analyze') return
         if (concepts.length) {
           if (p.data.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
           await generateConcepts(d, concepts, p.data.source, job)
