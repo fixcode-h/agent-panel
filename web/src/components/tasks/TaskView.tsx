@@ -1489,6 +1489,8 @@ export function TaskView({
                     workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
                     node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
                     onTask={apply}
+                    // 子对话自己的面板里不再套一层右栏
+                    onOpenChild={pane ? undefined : openChildIn}
                   />
                 </div>
                 {/* 子对话里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。

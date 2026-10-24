@@ -4052,6 +4052,8 @@ export function tasksApi(deps: {
         return {
           taskId: x.id,
           title: x.title,
+          // 列表按创建时间排，前端不再依赖接口返回的顺序
+          createdAt: x.createdAt,
           child: x.id !== id,
           working: !!x.working,
           branch: wt.branch,

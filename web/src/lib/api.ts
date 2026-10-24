@@ -137,6 +137,8 @@ const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(
 export interface WorktreeItem {
   taskId: string
   title: string
+  /** 对话的创建时间：列表按它排序，父对话永远在第一位 */
+  createdAt: string
   /** 是名下的子对话的（不是对话自己的） */
   child: boolean
   /** 那个对话正在动手 */
