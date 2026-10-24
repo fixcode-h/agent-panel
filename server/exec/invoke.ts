@@ -56,6 +56,8 @@ export interface CliControl {
 
 /** 中断后等 CLI 自己收尾的时间，超过就直接结束进程 */
 const INTERRUPT_GRACE_MS = 8000
+/** 停止时带上这个原因（abort(HARD_STOP)）：不发中断等它收尾，直接结束进程。CLI 已经卡住时，它不会理会中断 */
+export const HARD_STOP = 'hard-stop'
 
 /**
  * 调用一次 CLI，把输出统一成 CliEvent。Claude Code、Command Code 是「stdin 写任务描述 + stdout 一行一个事件」，
@@ -151,7 +153,7 @@ export async function invokeCli(o: {
   }
   const hard = new AbortController()
   const onStop = () => {
-    if (!control.interrupt()) return hard.abort()
+    if (o.signal?.reason === HARD_STOP || !control.interrupt()) return hard.abort()
     setTimeout(() => hard.abort(), INTERRUPT_GRACE_MS).unref?.()
   }
   if (o.signal?.aborted) hard.abort()

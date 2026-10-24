@@ -1,4 +1,5 @@
 import { EN_AGENTS } from './en/agents.ts'
+import { EN_ALERTS } from './en/alerts.ts'
 import { EN_APP } from './en/app.ts'
 import { EN_CHANGES } from './en/changes.ts'
 import { EN_DESIGN } from './en/design.ts'
@@ -27,4 +28,5 @@ export const EN: Record<string, string> = {
   ...EN_LOCAL_IMAGE,
   ...EN_MCP,
   ...EN_PROJECT_SKILLS,
+  ...EN_ALERTS,
 }

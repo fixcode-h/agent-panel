@@ -1071,6 +1071,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('被新消息打断')
     case 'finish':
       return t('做完后收尾')
+    case 'stalled':
+      return t('CLI 没有响应，面板重启了它')
     default:
       return t('已暂停')
   }
