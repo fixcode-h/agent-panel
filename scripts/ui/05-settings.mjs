@@ -80,9 +80,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.keyboard.press('t')
   await rangeBecomes((r) => r !== pickedRange)
   const todayRange = await usageRange()
+  // 已经在今天（当前区间）时不应该出现重置按钮
+  const resetBtn = p.getByRole('button', { name: '重置', exact: true })
+  if (await resetBtn.count()) errors.push('用量统计：已经在今天时还有重置按钮')
   await p.keyboard.press('[')
   await rangeBecomes((r) => r !== todayRange)
   if ((await usageRange()) === todayRange) errors.push('用量统计：按 [ 没有切到上一个区间')
+  // 手动翻了区间：出现重置按钮，点它回到今天，按钮跟着消失
+  if (!(await resetBtn.count())) errors.push('用量统计：翻到别的区间后没有出现重置按钮')
+  else {
+    await check(p, '设置-用量统计-重置按钮')
+    await resetBtn.click()
+    await rangeBecomes((r) => r === todayRange)
+    if ((await usageRange()) !== todayRange) errors.push('用量统计：点重置没回到今天')
+    if (await resetBtn.count()) errors.push('用量统计：点重置回到今天后重置按钮还留着')
+  }
+  await p.keyboard.press('[')
+  await rangeBecomes((r) => r !== todayRange)
   await p.keyboard.press(']')
   await rangeBecomes((r) => r === todayRange)
   if ((await usageRange()) !== todayRange) errors.push('用量统计：按 ] 没有回到下一个区间')
@@ -96,17 +110,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => {})
   if (await p.locator('[data-usage-calendar]').count()) errors.push('用量统计：Esc 没有关掉日历')
   if (!(await p.getByRole('dialog').isVisible())) errors.push('用量统计：Esc 把设置也关掉了')
-  // 周 / 月：同样只显示一个区间，标签跟着粒度变
+  // 周 / 月：同样只显示一个区间，标签跟着粒度变；切粒度直接落在当前区间
+  const nowDate = new Date()
+  // 本周从周一起算，和 shared/usage.ts 的 periodStart 一致
+  const monday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - ((nowDate.getDay() + 6) % 7))
+  const monthDay = (d) => `${d.getMonth() + 1}月${d.getDate()}日`
   await p.getByRole('tab', { name: '按周', exact: true }).click()
   await rangeBecomes((r) => /第 \d+ 周/.test(r))
   const weekLabel = await p.locator('[data-usage-period-trigger]').innerText()
   if (!/第 \d+ 周/.test(weekLabel)) errors.push(`用量统计：按周的标签不是一周（${weekLabel}）`)
+  if (!weekLabel.includes(monthDay(monday))) errors.push(`用量统计：切到按周没有落到本周（${weekLabel}）`)
+  if (await resetBtn.count()) errors.push('用量统计：切到本周后还有重置按钮')
   if ((await usageRows().count()) > 7) errors.push('用量统计：按周视图超过了一周的天数')
   await check(p, '设置-用量统计-按周')
   await p.getByRole('tab', { name: '按月', exact: true }).click()
   await rangeBecomes((r) => /\d{4}年\d+月/.test(r))
   const monthLabel = await p.locator('[data-usage-period-trigger]').innerText()
   if (!/\d{4}年\d+月/.test(monthLabel)) errors.push(`用量统计：按月的标签不是一个月（${monthLabel}）`)
+  if (!monthLabel.includes(`${nowDate.getFullYear()}年${nowDate.getMonth() + 1}月`))
+    errors.push(`用量统计：切到按月没有落到本月（${monthLabel}）`)
+  if (await resetBtn.count()) errors.push('用量统计：切到本月后还有重置按钮')
   await check(p, '设置-用量统计-按月')
   // 换计价模型：合计和峰谷明细跟着换，单价表按新模型走
   await p.getByRole('combobox', { name: '计价模型' }).click()

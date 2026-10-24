@@ -5,6 +5,7 @@ import {
   aggregateUsage,
   dayKey,
   formatTokens,
+  isCurrentPeriod,
   isoWeek,
   periodLabel,
   sumBuckets,
@@ -266,6 +267,30 @@ test('区间：天是一天，周是周一到周日，月是整个自然月', ()
   assert.equal(usagePeriod('month', local(2026, 2, 15)).days.length, 28)
   assert.equal(usagePeriod('month', local(2028, 2, 1)).days.length, 29)
   assert.equal(dayKey(usagePeriod('month', local(2026, 12, 31)).end), '2026-12-31')
+})
+
+test('当前区间：按天是今天、按周是本周一、按月是一号', () => {
+  // 2026-10-20 是周二，本周从 10 月 19 日起
+  const day = local(2026, 10, 20)
+  assert.equal(isCurrentPeriod('day', local(2026, 10, 20), day), true)
+  assert.equal(isCurrentPeriod('day', local(2026, 10, 19), day), false)
+  assert.equal(isCurrentPeriod('week', local(2026, 10, 19), day), true)
+  // 区间中间的一天也算在同一段里
+  assert.equal(isCurrentPeriod('week', local(2026, 10, 25), day), true)
+  assert.equal(isCurrentPeriod('week', local(2026, 10, 12), day), false)
+  assert.equal(isCurrentPeriod('month', local(2026, 10, 1), day), true)
+  assert.equal(isCurrentPeriod('month', local(2026, 10, 31), day), true)
+  assert.equal(isCurrentPeriod('month', local(2026, 9, 30), day), false)
+})
+
+test('当前区间：跨年时本周仍按周一起算', () => {
+  // 2027-01-01 是周五，所在周从 2026-12-28（周一）起
+  const newYear = local(2027, 1, 1)
+  assert.equal(isCurrentPeriod('week', local(2026, 12, 28), newYear), true)
+  assert.equal(isCurrentPeriod('week', local(2026, 12, 27), newYear), false)
+  assert.equal(isCurrentPeriod('month', local(2027, 1, 1), newYear), true)
+  assert.equal(isCurrentPeriod('month', local(2026, 12, 1), newYear), false)
+  assert.equal(isCurrentPeriod('day', local(2026, 12, 31), newYear), false)
 })
 
 test('区间标签：周写第几周和起止日期', () => {
