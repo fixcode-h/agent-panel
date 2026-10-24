@@ -361,18 +361,19 @@ export async function runShard(shardName, fn) {
     await call('PUT', '/settings', settings)
     return { cli, settings }
   }
+  /** 建一个 Agent：分片要自己造 Agent（例如能分派子对话的统筹）时也用它 */
+  const agent = (o) =>
+    call('POST', '/agents', {
+      description: '',
+      model: '',
+      icon: 'bot',
+      categoryId: '',
+      instructions: '',
+      extraArgs: [],
+      enabled: true,
+      ...o,
+    })
   const createAgents = async () => {
-    const agent = (o) =>
-      call('POST', '/agents', {
-        description: '',
-        model: '',
-        icon: 'bot',
-        categoryId: '',
-        instructions: '',
-        extraArgs: [],
-        enabled: true,
-        ...o,
-      })
     const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
     const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
     const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
@@ -471,6 +472,7 @@ export async function runShard(shardName, fn) {
     step,
     onExit,
     cli,
+    agent,
     putSettings,
     createAgents,
     createWorkflow,

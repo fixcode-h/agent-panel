@@ -77,3 +77,8 @@ test('没有 queue 的旧任务照常读出来', () => {
   const t = Task.parse(base({}))
   assert.equal(t.messages.length, 2)
 })
+
+test('旧任务里已经去掉的 childLimit：读出来直接忽略，不报错', () => {
+  const t = Task.parse(base({ childLimit: 2 }))
+  assert.equal('childLimit' in t, false, '清掉已删除的子对话并发上限')
+})

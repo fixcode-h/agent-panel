@@ -88,7 +88,6 @@ export function newTask(
     summary: '',
     rules: [],
     goal: '',
-    childLimit: 0,
     wantsWorktree: false,
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
