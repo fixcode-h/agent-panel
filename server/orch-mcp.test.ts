@@ -336,3 +336,19 @@ test('收尾建议：推送 / PR / submit / 合并主干这类建议被挡下来
   })
   assert.equal(calls.length, 1)
 })
+
+test('后台命令没给名字时取命令第一行：推回结果的标题不会被换行截断', async () => {
+  const names: string[] = []
+  const o = {
+    runBackground: async (input: { name: string }) => {
+      names.push(input.name)
+      return { ok: true, id: 'abc12345', info: '已放到后台（编号 abc12345）。' }
+    },
+  } as unknown as Orchestra
+  const r = await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build' })
+  assert.match(text(r), /已放到后台/)
+  assert.equal(names[0], 'npm ci', '名字带换行会把推回结果的「成功 / 失败」截掉')
+  // 给了名字就照用
+  await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build', name: '装依赖' })
+  assert.equal(names[1], '装依赖')
+})

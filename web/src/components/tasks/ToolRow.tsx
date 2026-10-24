@@ -215,6 +215,7 @@ export function RowShell({
   onToggle,
   onOpen,
   openTip,
+  titleTip,
   failed,
   className,
   children,
@@ -236,6 +237,8 @@ export function RowShell({
   onToggle?: () => void
   onOpen?: () => void
   openTip?: string
+  /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
+  titleTip?: string
   failed?: boolean
   className?: string
   children?: React.ReactNode
@@ -287,7 +290,7 @@ export function RowShell({
                   e.stopPropagation()
                   onOpen()
                 }}
-                title={openTip}
+                title={titleTip || openTip}
                 className={cn(
                   'min-w-0 cursor-pointer truncate text-left text-fg/75 decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
@@ -296,7 +299,9 @@ export function RowShell({
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate', titleClass)}>{title}</span>
+              <span className={cn('min-w-0 truncate', titleClass)} title={titleTip}>
+                {title}
+              </span>
             )
           ) : null}
         </span>
@@ -388,6 +393,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
+  // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
+  const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
@@ -449,6 +456,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}
         openTip={target?.tip}
+        titleTip={titleTip}
         failed={tool.failed}
       >
         {
