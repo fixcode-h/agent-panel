@@ -56,7 +56,7 @@ npm run typecheck    # 类型检查 + 漏翻检查
 npm run lint         # oxlint、Prettier 格式检查、规则检查（scripts/rules-check.mjs）
 npm run test:unit    # 单元测试和 CLI 输出解析测试
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
-node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo，分片在 scripts/ui/ 并行跑，截图在 ui-shots/
+node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版
 npm run package      # 出包到 release/（正式版，不含演示内容）

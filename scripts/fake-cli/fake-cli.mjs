@@ -12,6 +12,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
+import { wrapRequestIds } from './wrap-request.mjs'
 
 const args = process.argv.slice(2)
 // Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
@@ -615,12 +616,14 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
     }
   }
 }
-// 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾
-const wrapReq = /【收尾请求】[^\n]*（id ([^）\s]+)）/.exec(input)
-if (wrapReq && input.includes('finish_child')) {
-  const got = await panelCall('finish_child', { id: wrapReq[1] })
-  if (process.env.FAKE_CLI_LOG)
-    appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id: wrapReq[1], got }) + '\n')
+// 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾。
+// 一轮里可能同时有几个子对话的收尾请求，每个都要处理（只处理第一个会让后面的子对话等到超时）
+if (input.includes('finish_child')) {
+  for (const id of wrapRequestIds(input)) {
+    const got = await panelCall('finish_child', { id })
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, got }) + '\n')
+  }
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {

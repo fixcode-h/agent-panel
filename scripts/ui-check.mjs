@@ -16,15 +16,14 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { availableParallelism, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
+import { assertDemoBuildFresh } from './lib/demo-build-info.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const shardDir = path.join(root, 'scripts/ui')
 
-if (!existsSync(path.join(root, 'dist-demo/index.html'))) {
-  console.error('先运行 npx vite build --mode demo')
-  process.exit(1)
-}
+// 产物不存在，或者源码改过之后没重新构建：打印变了的文件并失败，不拿旧产物跑出假结果
+assertDemoBuildFresh(root)
 
 const argv = process.argv.slice(2)
 const verbose = argv.includes('--verbose')
