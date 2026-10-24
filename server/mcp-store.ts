@@ -235,6 +235,17 @@ function fromObject(name: string, o: Record<string, any>, s: McpStore): McpServe
   }
 }
 
+/**
+ * 从 { 名字: 配置 } 的表里读出工具。项目里各种 mcpServers / servers 写法共用这一处：
+ * Claude Code、Cursor、Gemini CLI 的 mcpServers 和 VS Code 的 servers 字段名不同，但条目结构一样（见 server/project-mcp.ts）
+ */
+export function readServerTable(table: Record<string, any>, s: McpStore): Record<string, McpServer> {
+  const out: Record<string, McpServer> = {}
+  for (const [name, v] of Object.entries(table))
+    if (v && typeof v === 'object') out[name] = fromObject(name, v as any, s)
+  return out
+}
+
 function toObject(sv: McpServer, s: McpStore, old: Record<string, any> = {}) {
   // 保留别的字段（例如 Gemini CLI 的 trust），只换掉面板管的这几个
   const o = { ...old }
@@ -303,6 +314,20 @@ async function dropServer(d: Def, name: string) {
   if (!root[s.key] || !(name in root[s.key])) return
   delete root[s.key][name]
   await writeJsonAtomic(file, root)
+}
+
+/** 按 CLI id 把工具写进它的配置文件（项目里的配置导入时用，和 mcp-tools 接口走同一套写入） */
+export async function writeMcpTo(cliId: string, sv: McpServer) {
+  const d = managed().find((x) => x.id === cliId)
+  if (!d) throw new Error(t('{cli} 不支持管理 MCP 工具', { cli: cliId }))
+  await putServer(d, sv)
+}
+
+/** 按 CLI id 从它的配置文件里删掉一个工具 */
+export async function removeMcpFrom(cliId: string, name: string) {
+  const d = managed().find((x) => x.id === cliId)
+  if (!d) throw new Error(t('{cli} 不支持管理 MCP 工具', { cli: cliId }))
+  await dropServer(d, name)
 }
 
 export async function mcpOverview(): Promise<McpOverview> {

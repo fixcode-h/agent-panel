@@ -1,4 +1,5 @@
 import { CliSkills } from '@/components/settings/CliSkills'
+import { ProjectMcpSection } from './ProjectMcpSection'
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
@@ -11,6 +12,7 @@ import {
   GraduationCap,
   Library,
   Loader2,
+  Plug,
   Plus,
   Settings2,
   Sparkles,
@@ -612,6 +614,10 @@ function Body({
             <Library className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             Skill
           </NavItem>
+          <NavItem on={section === 'mcp'} onClick={() => setSection('mcp')}>
+            <Plug className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('MCP')}
+          </NavItem>
           <NavItem
             on={section === 'doc'}
             onClick={() => setSection('doc')}
@@ -637,7 +643,21 @@ function Body({
             </NavItem>
           ))}
         </nav>
-        {section === 'skills' ? (
+        {section === 'mcp' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+            {!project ? (
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                {t('先创建项目，再管这个项目的 MCP 配置。')}
+              </p>
+            ) : !project.path || draft.path.trim() !== project.path ? (
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
+                {t('本地目录改了，先点「确认」保存，再管新目录里的 MCP 配置。')}
+              </p>
+            ) : (
+              <ProjectMcpSection key={project.id} project={project} />
+            )}
+          </div>
+        ) : section === 'skills' ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
             {!project ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>

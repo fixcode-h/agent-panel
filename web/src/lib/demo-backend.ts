@@ -121,6 +121,7 @@ import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoDeploy } from './demo-deploy'
+import { demoProjectMcp } from './demo-project-mcp'
 import {
   demoDesigns,
   demoGenerate,
@@ -1737,6 +1738,10 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
+  if (res === 'project-mcp') {
+    const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))
+    return demoProjectMcp(method, seg, body ?? {}, activeClis(), project?.path ?? '')
+  }
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
