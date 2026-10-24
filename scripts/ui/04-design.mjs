@@ -101,6 +101,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   assert.ok(await labelFits('Size To Content'), 'Size To Content 完整显示')
   assert.ok(await labelFits('RenderTransformPivot'), '长的属性名完整显示')
   await check(p, 'UI设计-属性名完整', ['Size To Content', 'RenderTransformPivot'])
+  // 由内容撑开的文字不能改宽高：属性面板直接说明，不再假装能改 W / H
+  // （控件树里的 treeitem 名字带尺寸，直接点画布上的标题文字选它）
+  await p.getByText('ETERNAL REALM', { exact: true }).first().click()
+  await p.getByText('宽度由内容决定').waitFor()
+  await check(p, 'UI设计-文字尺寸', ['宽度由内容决定', '高度由内容决定'])
+  // 图片：图片适配方式，以及对齐到兄弟控件 / 填满父控件（用 locator 精确断言，不靠文本子串）
+  await p.getByRole('treeitem', { name: /TitlePlate/ }).click()
+  await p.getByRole('combobox', { name: 'ImageFit', exact: true }).waitFor()
+  await p.getByRole('combobox', { name: '对齐到', exact: true }).waitFor()
+  await p.getByRole('button', { name: '填满父控件', exact: true }).waitFor()
+  await check(p, 'UI设计-图片适配', ['对齐到', '填满父控件'])
   // 标注：框选一块，写说明，出现在 AI 输入框上方
   await p.keyboard.press('r')
   const vp = await p.locator('[data-wid]').first().boundingBox()

@@ -458,7 +458,8 @@ function Designer({ id }: { id: string }) {
     const [w, h] = NEW_SIZE[type] ?? [200, 50]
     const slotType = WIDGETS[parent.Type].slot
     const slot = defaultSlot(slotType, 40 + (n % 10) * 16, 40 + (n % 10) * 16, w, h)
-    if (slotType === 'CanvasPanelSlot' && type === 'TextBlock') slot!.bAutoSize = true
+    // 文字默认按控件宽度换行（WIDGETS.TextBlock 的默认值），也不再自动撑开：
+    // 以前这里给 TextBlock 设 bAutoSize=true，宽高由文字撑开，会顶出父控件、压到背景的装饰上
     const wd = newWidget(type, name, slot)
     if (type === 'UserWidget') wd.Class = cls
     editTree((r) => insertWidget(r, parent!.id, wd, index))
@@ -1587,6 +1588,7 @@ function Designer({ id }: { id: string }) {
                 key={selWidget.id}
                 device={server.kind === 'web' ? device : 'desktop'}
                 widget={selWidget}
+                parent={selParent}
                 slotType={selParent ? WIDGETS[selParent.Type].slot : undefined}
                 parentSize={() => {
                   const el =

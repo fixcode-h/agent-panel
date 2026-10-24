@@ -10,7 +10,7 @@ import {
   StretchHorizontal,
   StretchVertical,
 } from 'lucide-react'
-import { parseColor, type Brush, type Margin, type Vec2 } from '@shared/umg'
+import { parseColor, type Brush, type ImageFit, type Margin, type Vec2 } from '@shared/umg'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -442,7 +442,8 @@ export function BrushInput({
             set({
               ResourceObject: v,
               ImageSize: { X: img.width, Y: img.height },
-              ...(ns ? { DrawAs: 'Box', Margin: ns } : {}),
+              // 九宫格图自动按 Box 拉伸：ImageFit 在这里用不上，和切 DrawAs 时一样清掉
+              ...(ns ? { DrawAs: 'Box', Margin: ns, ImageFit: undefined } : {}),
             })
           }}
         />
@@ -453,9 +454,32 @@ export function BrushInput({
           label="DrawAs"
           value={b.DrawAs ?? 'Image'}
           options={['Image', 'Box', 'Border', 'RoundedBox', 'NoDrawType']}
-          onChange={(v) => set({ DrawAs: v as Brush['DrawAs'] })}
+          onChange={(v) => {
+            const next: Brush = { ...b, DrawAs: v as Brush['DrawAs'] }
+            // 九宫格、平铺不用 ImageFit，切过去时清掉，免得留下面板上看不到的属性
+            if (v !== 'Image') delete next.ImageFit
+            onChange(next)
+          }}
         />
       </div>
+      {/* 旧数据不写 DrawAs，按 Image 算，和上面的下拉显示保持一致 */}
+      {(b.DrawAs ?? 'Image') === 'Image' && (
+        <div className="flex items-center gap-1">
+          <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Fit</span>
+          <EnumInput
+            label="ImageFit"
+            value={b.ImageFit ?? 'Fill'}
+            options={['Fill', 'Contain', 'Cover', 'Original']}
+            onChange={(v) => {
+              // Fill 就是旧数据的默认行为，不写进属性里，和以前的设计保持一致
+              if (v === 'Fill') {
+                const { ImageFit: _, ...rest } = b
+                onChange(rest)
+              } else onChange({ ...b, ImageFit: v as ImageFit })
+            }}
+          />
+        </div>
+      )}
       <div className="flex items-center gap-1">
         <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Size</span>
         <Vec2Input value={b.ImageSize} onChange={(ImageSize) => set({ ImageSize })} />

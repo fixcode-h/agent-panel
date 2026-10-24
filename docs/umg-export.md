@@ -57,9 +57,10 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 
 - **颜色**：`{ "R", "G", "B", "A", "Hex" }`。R/G/B 是线性空间（`FLinearColor`），`Hex` 是界面上看到的 sRGB `#RRGGBBAA`，用 `FColor::FromHex` 也可以。
 - **图片**：画刷的 `ResourceObject` 是贴图名（`T_xxx`），空字符串表示没有图片。`DrawAs` 为 `Box` 时按贴图的 `NineSlice` 或画刷自己的 `Margin` 九宫格拉伸。
-- **CanvasPanelSlot**：`LayoutData.Offsets / Anchors / Alignment`、`bAutoSize`、`ZOrder`，和 `FAnchorData` 一致。
+- **图片适配**：设计器里的 `Brush.ImageFit`（`Fill` / `Contain` / `Cover` / `Original`）只是面板中图片怎么放进控件的显示方式，不写时按 `Fill`（拉伸填满，旧设计的行为）。它不是 UMG 属性，导出时和 `Locked` 一样去掉；要在 UE 里得到同样的效果，用图片自身的尺寸、`DrawAs` 或 SizeBox 表达。
+- **CanvasPanelSlot**：`LayoutData.Offsets / Anchors / Alignment`、`bAutoSize`、`ZOrder`，和 `FAnchorData` 一致。设计器里的「对齐到」「填满父控件」会把 `Anchors` 归零、`Alignment` 设成左上并关掉 `bAutoSize`，写入的是父控件坐标里的像素矩形。
 - **SizeBox**：除了 `WidthOverride` 等数值，还带 `bOverride_WidthOverride` 等开关（数值大于 0 时为 true）。
-- **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。
+- **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。TextBlock 默认 `AutoWrapText: true`（按控件宽度换行），设计器里关掉 Size To Content 的文字超出控件范围会被裁剪；打开 Size To Content 的仍按内容撑开。设计里已存的值原样导出。
 - 枚举写 UE 的枚举名，比如 `HAlign_Center`、`VAlign_Fill`、`Visible`、`ScaleToFit`。
 
 ## 画板运行时假数据（不导出）

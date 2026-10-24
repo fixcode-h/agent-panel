@@ -5,6 +5,7 @@ import {
   entryCount,
   fontPx,
   gridCell,
+  imageFitStyle,
   isWebType,
   parseColor,
   type Brush,
@@ -115,12 +116,15 @@ export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string):
     }
   }
   const tile = b.Tiling && b.Tiling !== 'NoTile'
-  const size = tile ? `${b.ImageSize?.X ?? img.width}px ${b.ImageSize?.Y ?? img.height}px` : '100% 100%'
+  const fit = tile
+    ? { size: `${b.ImageSize?.X ?? img.width}px ${b.ImageSize?.Y ?? img.height}px`, position: '0 0' }
+    : imageFitStyle(b.ImageFit, img)
   const repeat = { Horizontal: 'repeat-x', Vertical: 'repeat-y', Both: 'repeat' }[b.Tiling as string] ?? 'no-repeat'
   if (isWhite(b.TintColor ?? '#FFFFFFFF') && (!tint || isWhite(tint)))
     return {
       backgroundImage: url,
-      backgroundSize: size,
+      backgroundSize: fit.size,
+      backgroundPosition: fit.position,
       backgroundRepeat: repeat,
       opacity: alpha < 1 ? alpha : undefined,
     }
@@ -129,13 +133,16 @@ export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string):
     backgroundImage: url,
     backgroundColor: color,
     backgroundBlendMode: 'multiply',
-    backgroundSize: size,
+    backgroundSize: fit.size,
+    backgroundPosition: fit.position,
     backgroundRepeat: repeat,
     maskImage: url,
-    maskSize: size,
+    maskSize: fit.size,
+    maskPosition: fit.position,
     maskRepeat: repeat,
     WebkitMaskImage: url,
-    WebkitMaskSize: size,
+    WebkitMaskSize: fit.size,
+    WebkitMaskPosition: fit.position,
   }
 }
 
@@ -498,6 +505,9 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           letterSpacing: f.LetterSpacing ? `${f.LetterSpacing / 1000}em` : undefined,
           textAlign: ({ Left: 'left', Center: 'center', Right: 'right' } as const)[p.Justification as 'Left'] ?? 'left',
           whiteSpace: p.AutoWrapText ? 'pre-wrap' : 'pre',
+          // 文字超出控件范围时裁掉，不再压到父控件的背景装饰上；长串（没有空格）也按控件宽度断行
+          overflow: 'hidden',
+          overflowWrap: p.AutoWrapText ? 'anywhere' : undefined,
           lineHeight: 1.2,
           fontFamily: '"Roboto", "Noto Sans SC", system-ui, sans-serif',
           WebkitTextStroke: ol ? `${ol}px ${cssColor(f.OutlineSettings.OutlineColor)}` : undefined,
