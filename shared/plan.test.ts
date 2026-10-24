@@ -1,7 +1,7 @@
 import { childReport } from './task.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Task } from './schema.ts'
+import type { PlanStep, Task, TaskPlan } from './schema.ts'
 import {
   activePlan,
   applyPlan,
@@ -13,6 +13,7 @@ import {
   markWrapUp,
   openPlan,
   planProgress,
+  planSpan,
   runningStepId,
   settleWait,
   unsummarized,
@@ -367,6 +368,86 @@ test('工作流做主步骤：没指定步骤就在末尾加一步，跑完标�
   const other = fresh()
   bindRun(other, '', 1, '工作流「默认」')
   assert.equal(activePlan(other)!.steps[0].title, '工作流「默认」')
+})
+
+test('计划用时：进行中会涨，完成后停在最晚的 endedAt，缺 createdAt 退到最早的 startedAt', () => {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const base = Date.parse('2026-10-24T10:00:00.000Z')
+  const item = (over: Partial<PlanStep>): PlanStep => ({
+    id: '1',
+    title: '步骤',
+    status: 'pending',
+    note: '',
+    waits: [],
+    startedAt: '',
+    endedAt: '',
+    children: [],
+    ...over,
+  })
+  const plan = (steps: PlanStep[], over: Partial<TaskPlan> = {}): TaskPlan => ({
+    id: 'p1',
+    title: '',
+    steps,
+    createdAt: '',
+    doneAt: '',
+    summary: '',
+    autoSummary: false,
+    ...over,
+  })
+
+  // 进行中：从创建时间算到现在，now 走得越久数值越大
+  const running = plan([item({ status: 'running', startedAt: iso(base) })], { createdAt: iso(base) })
+  assert.equal(planSpan(running, base + 10_000), 10_000)
+  assert.equal(planSpan(running, base + 25_000), 25_000)
+
+  // 完成：取最晚一项的 endedAt（不是计划自己的 doneAt），两次不同 now 结果一样
+  const done = plan(
+    [
+      item({ id: '1', status: 'done', startedAt: iso(base), endedAt: iso(base + 60_000) }),
+      item({ id: '2', status: 'done', startedAt: iso(base + 60_000), endedAt: iso(base + 120_000) }),
+    ],
+    { createdAt: iso(base), doneAt: iso(base + 150_000) },
+  )
+  assert.equal(planSpan(done, base + 200_000), 120_000)
+  assert.equal(planSpan(done, base + 900_000), 120_000, '完成后不再增长')
+
+  // 提前结束（finish_plan）还有没做完的步骤：停在 doneAt，不能拿已完成项的 endedAt 当结束时间，
+  // 否则总用时会比未完成项的单项用时还短
+  const earlyTask = fresh()
+  applyPlan(
+    earlyTask,
+    {
+      steps: [{ title: 'A', status: 'done' }, { title: 'B' }],
+    },
+    iso(base),
+  )
+  finishPlan(earlyTask, undefined, iso(base + 600_000))
+  assert.equal(planSpan(earlyTask.plans![0], base + 900_000), 600_000)
+  assert.equal(planSpan(earlyTask.plans![0], base + 1_800_000), 600_000, '提前结束后也停住')
+
+  // 没有 createdAt 的旧数据：退到最早一步（含子步骤）的 startedAt
+  const legacy = plan([
+    item({
+      id: '1',
+      status: 'running',
+      startedAt: iso(base + 300_000),
+      children: [
+        {
+          id: '1.1',
+          title: '子步骤',
+          status: 'done',
+          note: '',
+          waits: [],
+          startedAt: iso(base + 180_000),
+          endedAt: iso(base + 240_000),
+        },
+      ],
+    }),
+  ])
+  assert.equal(planSpan(legacy, base + 600_000), 420_000, '最早一步是子步骤的 10:03')
+
+  // 一个时间都没有：没有可显示的总用时
+  assert.equal(planSpan(plan([item({ status: 'pending' })]), base), undefined)
 })
 
 test('没做完的计划给进度：列表里显示「计划 7/8」、不算已完成', () => {

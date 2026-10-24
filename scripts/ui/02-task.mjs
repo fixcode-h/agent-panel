@@ -729,7 +729,112 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
-  await p.keyboard.press('Escape')
+  // 每个计划项右侧带耗时、顶部带总用时：进行中的在涨、完成的固定、待做的不显示；
+  // 用时从标题下方的小字里搬走了，等待中的那一项只剩「等：…」
+  {
+    const readPlan = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        // 按标题那一格定位到它自己的行，子步骤的用时不会被当成主步骤的
+        const titleSpan = (title) => [...dlg.querySelectorAll('span')].find((s) => norm(s.textContent) === title)
+        const timeOf = (title) => norm(titleSpan(title)?.parentElement?.querySelector('[data-plan-time]')?.textContent)
+        const metaOf = (title) =>
+          norm(titleSpan(title)?.parentElement?.parentElement?.querySelector('span.line-clamp-2')?.textContent)
+        const total = dlg.querySelector('[data-plan-total]')
+        const cur = document.querySelector('[data-plan-current-time]')
+        return {
+          total: norm(total?.textContent),
+          totalLabel: total?.getAttribute('aria-label') || '',
+          items: [...dlg.querySelectorAll('[data-plan-time]')].map((e) => ({
+            text: norm(e.textContent),
+            label: e.getAttribute('aria-label') || '',
+          })),
+          current: { text: norm(cur?.textContent), label: cur?.getAttribute('aria-label') || '' },
+          done: timeOf('角标订阅购物车变化'),
+          running: timeOf('覆盖删除商品后角标归零'),
+          waitingMeta: metaOf('跑端到端测试'),
+          doneMeta: metaOf('角标订阅购物车变化'),
+        }
+      })
+    const a = await readPlan()
+    if (!a) errors.push('执行计划：没找到计划窗口')
+    else {
+      // fmtDuration 的几种写法：秒、分+秒、时+分、天+时、毫秒级
+      const duration = (text) => /^(<0\.1s|(\d+d )?\d+h \d+m|\d+d \d+h|(\d+m )?\d+(\.\d+)?s)$/.test(text)
+      if (!duration(a.total)) errors.push(`执行计划：顶部没有显示总用时（「${a.total}」）`)
+      if (!a.totalLabel.startsWith('总用时 '))
+        errors.push(`执行计划：总用时缺少「总用时」说明（aria-label「${a.totalLabel}」）`)
+      // 完成 1 项 + 等待 1 项 + 进行中 1 项 + 子步骤完成/进行中各 1 项；待做的两项没有耗时
+      if (a.items.length !== 5) errors.push(`执行计划：${a.items.length} 项有耗时，应该是 5 项（待做的两项不显示）`)
+      for (const x of a.items) {
+        if (!duration(x.text)) errors.push(`执行计划：耗时「${x.text}」不是时长格式`)
+        if (!x.label.startsWith('用时 ')) errors.push(`执行计划：耗时缺少「用时」说明（aria-label「${x.label}」）`)
+      }
+      if (!a.current.text || !a.current.label.startsWith('用时 '))
+        errors.push(`执行计划：计划按钮上正在做的那一步没有带耗时（「${a.current.text}」/「${a.current.label}」）`)
+      if (!duration(a.done) || !duration(a.running))
+        errors.push(`执行计划：完成/进行中的步骤没有耗时（完成「${a.done}」、进行中「${a.running}」）`)
+      if (a.waitingMeta !== '等：端到端测试')
+        errors.push(`执行计划：等待中的说明不对（「${a.waitingMeta}」，应该只有「等：端到端测试」）`)
+      if (a.doneMeta) errors.push(`执行计划：完成的步骤下面还重复显示用时（「${a.doneMeta}」）`)
+      // 进行中每秒在涨；完成的用 endedAt 固定住
+      await p.waitForTimeout(1600)
+      const b = await readPlan()
+      if (!b) errors.push('执行计划：等了一秒后计划窗口不见了')
+      else {
+        if (b.total === a.total) errors.push(`执行计划：进行中总用时没有走（一直是 ${a.total}）`)
+        if (b.running === a.running) errors.push(`执行计划：进行中的步骤耗时没有走（一直是 ${a.running}）`)
+        if (b.done !== a.done) errors.push(`执行计划：完成的步骤耗时还在变（${a.done} → ${b.done}）`)
+      }
+    }
+    await p.keyboard.press('Escape')
+  }
+  // 全部完成后总用时停在最晚一项的结束时间，不再每秒增长
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      const plan = task.plans.at(-1)
+      const iso = (ms) => new Date(ms).toISOString()
+      const end = Date.now() - 60_000
+      plan.steps.forEach((s, i) => {
+        const start = end - 240_000 + i * 40_000
+        s.status = 'done'
+        s.startedAt = iso(start)
+        s.endedAt = iso(start + 30_000)
+        s.waits = []
+        for (const [j, c] of (s.children ?? []).entries()) {
+          c.status = 'done'
+          c.startedAt = iso(start + j * 5_000)
+          c.endedAt = iso(start + (j + 1) * 5_000)
+        }
+      })
+      plan.doneAt = iso(end)
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.reload()
+    await backToTask()
+    await p.getByRole('button', { name: '执行计划' }).click()
+    const total = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        return (dlg?.querySelector('[data-plan-total]')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      })
+    const first = await total()
+    await p.waitForTimeout(1800)
+    const second = await total()
+    if (!first) errors.push('执行计划：全部完成后不显示总用时')
+    else if (second !== first) errors.push(`执行计划：全部完成后总用时还在涨（${first} → ${second}）`)
+    await check(p, '执行计划-完成后停住')
+    await p.keyboard.press('Escape')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
+  }
   // 子对话里点「启动工作流」：在子对话这块面板内换成那次运行的视图，标题栏左边能返回子对话，
   // 右边是 ⋯ 和 ✕（✕ 关掉子对话面板本身，和返回不一样），返回后子对话原样回来
   {
