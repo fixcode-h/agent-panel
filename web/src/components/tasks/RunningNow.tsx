@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
+import { visibleChildren } from '@shared/task'
+import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRow } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
+import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { t } from '@shared/i18n'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结上面，不能跟着过程一起折叠 */
@@ -56,51 +59,82 @@ function JobRow({ job, now }: { job: TaskJob; now: number }) {
 export function RunningNow({
   task,
   tools,
-  background,
+  jobs,
+  kids,
   indent,
 }: {
   task?: Task
   /** 这一段里还没收尾的工具调用；回复还在流式输出时它们就在过程里转圈，不用再列一遍 */
   tools: ToolUse[]
-  /** 列出对话的后台命令和子对话：只在对话最新的一轮上列，旧的几轮不重复 */
-  background: boolean
+  /** 列出对话的后台命令：只在对话最新的一轮上列，旧的几轮不重复 */
+  jobs: boolean
+  /**
+   * 列出子对话：读的是和悬浮层「运行中」、状态栏计数同一批（见 shared/task.ts 的 visibleChildren），
+   * 所以两处条目数、顺序、状态标签一致；不再自己写 `working && !resolved`
+   */
+  kids: boolean
   /** 不在折叠开关下面、单独成行时，和工具调用一样缩进在头像后面 */
   indent?: boolean
 }) {
   const children = useChildList()
   const openChild = useChildOpen()
-  const jobs = background ? (task?.jobs ?? []) : []
-  // 子对话在后台干活：看 working（CLI 正在处理一轮），进程只是活着、等下一句时不算
-  const kids = background && task ? children.filter((x) => x.working && !x.resolved) : []
-  const now = useNow(jobs.length > 0 || kids.length > 0)
-  if (!tools.length && !jobs.length && !kids.length) return null
-  const list = (
+  const list = jobs ? (task?.jobs ?? []) : []
+  // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren），
+  // 以前这里只认 working 且没标解决，弹层里有、运行区没有，同一个页面对不上数
+  const rows = kids ? visibleChildren(children) : []
+  const now = useNow(list.length > 0 || rows.length > 0)
+  if (!tools.length && !list.length && !rows.length) return null
+  const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
       {tools.map((x, i) => (
         <ToolRow key={`t${i}`} tool={x} task={task} />
       ))}
-      {jobs.map((j) => (
+      {list.map((j) => (
         <JobRow key={j.id} job={j} now={now} />
       ))}
-      {kids.map((k) => (
-        <RowShell
-          key={k.id}
-          glyph={spin}
-          verb={t('子对话')}
-          title={k.title || t('未命名')}
-          ms={childMs(k, now)}
-          open={false}
-          onOpen={openChild ? () => openChild(k.id) : undefined}
-          openTip={t('在右侧打开子对话')}
-        />
-      ))}
+      {rows.map((k) => {
+        // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
+        // 标题、状态、计划进度、正在做什么两处显示一致
+        const labels = childLabels(k)
+        const note = childNote(k, true)
+        const stale = staleLine(k)
+        return (
+          <RowShell
+            key={k.id}
+            glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />}
+            verb={t('子对话')}
+            title={k.title || t('未命名')}
+            open={false}
+            onOpen={openChild ? () => openChild(k.id) : undefined}
+            openTip={t('在右侧打开子对话')}
+            detail={
+              <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
+                {labels.map((l) => (
+                  <span key={l.text} className={childLabelClass[l.tone]}>
+                    {l.text}
+                  </span>
+                ))}
+                {(note || stale) && (
+                  <span
+                    className={cn('min-w-0 truncate font-sans', stale ? stale.cls : 'text-subtle')}
+                    title={[note, stale?.text].filter(Boolean).join(' · ')}
+                  >
+                    {stale ? stale.text : note}
+                  </span>
+                )}
+              </span>
+            }
+            ms={childMs(k, now)}
+          />
+        )
+      })}
     </div>
   )
-  if (!indent) return list
+  if (!indent) return box
   return (
     <div className="flex gap-3">
       <span className="w-[26px] shrink-0" />
-      <div className="min-w-0 flex-1">{list}</div>
+      <div className="min-w-0 flex-1">{box}</div>
     </div>
   )
 }
