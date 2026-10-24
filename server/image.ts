@@ -597,3 +597,49 @@ export function drawGrid(img: Img, o: { origin: { x: number; y: number }; zoom: 
     if (gy !== o.origin.y || o.origin.y > 0) label(out, String(gy), 1, Math.round((gy - o.origin.y) * o.zoom) + 2, kk)
   return out
 }
+
+/**
+ * 蒙版图（给 ComfyUI 的 inpaint 用）：黑底，涂过的区域白色，橡皮擦的笔画把涂过的地方擦回黑色。
+ * 笔画按设计稿像素画，尺寸和原画一致；ComfyUI 的 ImageToMask 取红色通道当蒙版
+ */
+export function maskImage(
+  strokes: { erase: boolean; w: number; points: number[] }[],
+  width: number,
+  height: number,
+): Img {
+  const img = blank(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)), [0, 0, 0, 255])
+  const stamp = (cx: number, cy: number, r: number, v: number) => {
+    const x0 = Math.max(0, Math.floor(cx - r))
+    const x1 = Math.min(img.width - 1, Math.ceil(cx + r))
+    const y0 = Math.max(0, Math.floor(cy - r))
+    const y1 = Math.min(img.height - 1, Math.ceil(cy + r))
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++) {
+        if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 > r * r) continue
+        const o = (y * img.width + x) * 4
+        img.data[o] = v
+        img.data[o + 1] = v
+        img.data[o + 2] = v
+        img.data[o + 3] = 255
+      }
+  }
+  for (const s of strokes) {
+    const v = s.erase ? 0 : 255
+    const r = Math.max(0.5, s.w / 2)
+    const p = s.points
+    if (p.length < 2) continue
+    // 一笔是一条圆头粗线：沿轨迹按半径的一半打圆点，点之间不会断
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      stamp(p[i], p[i + 1], r, v)
+      if (i + 3 >= p.length) continue
+      const x1 = p[i + 2]
+      const y1 = p[i + 3]
+      const steps = Math.max(1, Math.ceil(Math.hypot(x1 - p[i], y1 - p[i + 1]) / Math.max(1, r / 2)))
+      for (let k = 1; k < steps; k++) {
+        const t = k / steps
+        stamp(p[i] + (x1 - p[i]) * t, p[i + 1] + (y1 - p[i + 1]) * t, r, v)
+      }
+    }
+  }
+  return img
+}
