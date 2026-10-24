@@ -4,16 +4,17 @@ import { t } from '../i18n.ts'
 import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
 
 /**
- * 必备角色：项目对话离不开的六个能力块。启动时自动装好、不能删除，也不能改成别的角色：
+ * 必备角色：项目对话离不开的七个能力块。启动时自动装好、不能删除，也不能改成别的角色：
  * 名称、角色设定、Skill、能力开关、参数的定义都由面板维护，每次启动按内置定义同步；
  * 用户能改的只有运行配置（CLI、模型、思考强度、权限、额外参数、开场要求、标签）和参数的取值。
- * 这样「统筹把文档交给文档角色」「执行派测试验收去跑」「交付前交版本控制收尾」这类约定才靠得住，
+ * 这样「统筹把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
  * 不会因为某个角色被改成别的而断掉。
  */
 export const CORE_AGENTS = [
   { key: 'orchestrator' },
   { key: 'worker' },
   { key: 'docsync' },
+  { key: 'reviewer' },
   { key: 'tester' },
   { key: 'vcs' },
   { key: 'helper' },
@@ -38,6 +39,8 @@ export function coreUse(key: CoreKey) {
       return t('子对话默认使用')
     case 'docsync':
       return t('所有项目文档按规则落盘')
+    case 'reviewer':
+      return t('改动和结论的独立评审')
     case 'tester':
       return t('构建、测试和验收')
     case 'vcs':

@@ -250,14 +250,15 @@ export const EN_AGENTS: Record<string, string> = {
   关闭并终止生成: 'Close and stop generating',
   必备: 'Core',
   '必备角色 · {use}': 'Core role · {use}',
-  '项目对话离不开的四个角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。':
-    "One of the four roles every project conversation relies on. It can't be deleted or turned into a different role. Its name, instructions, abilities and skills are maintained by the panel and updated with each release; you can change the parameters and runtime below, and each project can tune the parameters in its settings.",
+  '项目对话离不开的必备角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。':
+    "One of the core roles every project conversation relies on. It can't be deleted or turned into a different role. Its name, instructions, abilities and skills are maintained by the panel and updated with each release; you can change the parameters and runtime below, and each project can tune the parameters in its settings.",
   '这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。':
     "These are the defaults for all projects. To use different values in one project, change them under Core roles in that project's settings.",
   '由面板维护，只读。Skill：{list}': 'Maintained by the panel, read-only. Skills: {list}',
   项目对话默认使用: 'Default for project conversations',
   子对话默认使用: 'Default for sub-conversations',
   所有项目文档按规则落盘: 'Writes every project document by the rules',
+  改动和结论的独立评审: 'Independent review of changes and conclusions',
   '构建、测试和验收': 'Build, test and acceptance',
   '版本控制、合并与交付收尾': 'Version control, merging and delivery wrap-up',
   派出的并行子任务默认使用: 'Default for parallel subtasks that get spawned',

@@ -24,6 +24,8 @@ export interface PlanItemInput {
   title?: string
   status?: string
   note?: string
+  /** 这一步是评审本次改动（子对话收尾前必须，submit_merge 会校验） */
+  review?: boolean
   children?: PlanItemInput[]
 }
 
@@ -144,6 +146,8 @@ function mergeLevel<T extends PlanItem>(
   nextId: () => string,
   locked: string[],
   keep = false,
+  /** 主步骤这一层带 review 标记（子步骤没有这个字段） */
+  withReview = false,
 ): T[] {
   const used = new Set<T>()
   const ids = new Set(old.map((x) => x.id))
@@ -158,6 +162,9 @@ function mergeLevel<T extends PlanItem>(
       if (cur.status === 'done') {
         // 完成的不再改：同样的内容要再做，新加一步
         if (asStatus(x.status) !== 'done' || (title && title !== cur.title)) locked.push(cur.title)
+        // review 是标记不是内容：已完成的主步骤也允许补上或去掉（模型可能先标完成才发现漏标）。
+        // 不能按 'review' in cur 判断：旧计划数据里就没有这个字段，那样标记永远写不进去
+        if (withReview && x.review !== undefined) (cur as unknown as PlanStep).review = x.review === true
       } else update(cur, x)
       out.push(cur)
       continue
@@ -324,6 +331,7 @@ export function applyPlan(
         startedAt: '',
         endedAt: '',
         children: [],
+        review: x.review === true,
       }
       setStatus(step, asStatus(x.status), now)
       mergeChildren(step, x.children)
@@ -332,6 +340,8 @@ export function applyPlan(
     (cur, x) => {
       if (x.title?.trim()) cur.title = clean(x.title, 120)
       if (x.note !== undefined) cur.note = clean(x.note, 300)
+      // review 是标记不是内容：已完成的步骤也允许补上或去掉（模型可能先标完成，才发现漏标）
+      if (x.review !== undefined) cur.review = x.review === true
       const want = asStatus(x.status)
       mergeChildren(cur, x.children)
       // 主步骤标了完成：没写完成的子步骤一起算完成（Agent 说这一步做完了）
@@ -341,6 +351,7 @@ export function applyPlan(
     () => String(++seq),
     locked,
     partial,
+    true,
   )
   const notes0: string[] = []
   if (wrapUp) {

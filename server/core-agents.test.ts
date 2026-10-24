@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
 import { BUG_METHOD, BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate } from '../shared/agent-role.ts'
-import { ensureProjectAgents } from '../shared/builtin/install.ts'
+import { ensureProjectAgents, upgradeBuiltinAgents } from '../shared/builtin/install.ts'
 import {
   CORE_AGENTS,
   coreDefinition,
@@ -60,14 +61,41 @@ function memory() {
   }
 }
 
-test('必备角色：启动时四个都装好，重复启动不再改', async () => {
+test('必备角色：启动时七个都装好，重复启动不再改', async () => {
   const m = memory()
   const r = await ensureProjectAgents(m.state(), m.ops)
   for (const c of CORE_AGENTS) assert.ok(findCore(m.agents, c.key), `缺 ${c.key}`)
-  assert.ok(r.created.length >= 4)
+  assert.ok(r.created.length >= 7)
   const again = await ensureProjectAgents(m.state(), m.ops)
   assert.equal(again.created.length, 0)
   assert.equal(again.synced.length, 0, '没有变化时不写盘')
+})
+
+test('必备角色：「评审」也是必备，老项目里的普通副本升级后进必备分类、参数取值不丢', async () => {
+  const m = memory()
+  // 老项目：评审是随工作流装进来的普通副本，放在「通用」分类里
+  const old = await m.ops.createAgent({
+    ...coreDefinition('reviewer').agent,
+    categoryId: 'c-generic',
+    includes: [],
+    tags: [],
+    origin: 'builtin:reviewer',
+    params: coreDefinition('reviewer').agent.params.map((p) =>
+      p.key === 'target' ? { ...p, default: '方案或结论' } : p,
+    ),
+  })
+  const r = await ensureProjectAgents(m.state(), m.ops)
+  const now = findCore(m.agents, 'reviewer')!
+  assert.equal(now.id, old.id, '不新建，直接升级已有的那个')
+  assert.ok(
+    r.synced.some((x) => x.origin === 'builtin:reviewer'),
+    '评审这次被同步：分类换掉、参数取值保留',
+  )
+  const coreCat = m.state().categories.find((c) => c.name === '必备')!
+  assert.equal(now.categoryId, coreCat.id, '分类换成必备')
+  assert.equal(now.common, true, '别的角色能按名字派它')
+  assert.ok(isCoreAgent(now), '来源还是 builtin:reviewer，删不掉')
+  assert.equal(now.params.find((p) => p.key === 'target')?.default, '方案或结论', '用户填的参数值保留')
 })
 
 test('通用约束：连续工具操作时要报告可见进度', () => {
@@ -118,6 +146,74 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_METHOD))
   assert.ok(!renderTemplate(dev, { task: '实现' }).includes(BUG_METHOD))
   assert.ok(!renderTemplate(dev, { task: '性能问题' }).includes(BUG_METHOD), '性能问题按基线走，不套 Bug 的逐层定位')
+})
+
+test('评审：仍是必备角色，收尾时要按代码改动给分级意见和验收结论', () => {
+  assert.ok(
+    CORE_AGENTS.some((c) => c.key === 'reviewer'),
+    '评审在必备角色里',
+  )
+  const def = coreDefinition('reviewer')
+  assert.equal(def.category, '必备')
+  assert.equal(def.agent.common, true, '别的角色能按名字派它')
+  const code = renderTemplate(def.agent.instructions, { target: '代码改动' })
+  for (const s of ['🛑 必须改', '💭 建议', '💅 细节', '验收结论：通过', '验收结论：不通过', 'Verdict: pass'])
+    assert.ok(code.includes(s), `评审（代码改动）要写明「${s}」`)
+  // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
+  const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
+  assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
+})
+
+test('执行角色：评审写进计划单独成步，收尾顺序是改完→快速检查→评审→按意见改→完整测试→submit_merge', () => {
+  const worker = renderTemplate(BUILTIN_AGENTS.find((a) => a.key === 'worker')!.agent.instructions, { mode: '自动' })
+  const at = worker.indexOf('## 收尾前评审（计划里的独立步骤）')
+  assert.ok(at > 0, '有「收尾前评审」一节')
+  const section = worker.slice(at, worker.indexOf('\n## ', at + 1))
+  assert.match(section, /快速检查/, '先跑快速检查')
+  assert.match(
+    section,
+    /单独一条主步骤（标题写清是评审，例如「评审本次改动」），并标 review: true/,
+    '评审要单独写进计划并标 review',
+  )
+  assert.match(section, /派的时候把计划里那一步标成等待中/, '派评审时计划里那一步标等待中')
+  assert.match(
+    section,
+    /再新加一条评审步骤（同样标 review: true）复看/,
+    '按 🛑 改完要复看，并且复看也是计划里标 review 的一步',
+  )
+  assert.match(section, /通过」之后，才跑完整测试和编译/, '评审通过后才跑完整测试')
+  assert.match(section, /submit_merge/, '最后才 submit_merge')
+})
+
+test('必备角色：停在旧指纹的旧副本升级时，也不冲掉用户填的参数值', async () => {
+  const m = memory()
+  const legacy = LEGACY_AGENT_FIELDS.reviewer ?? LEGACY_AGENT_FIELDS_MORE.reviewer?.[0]
+  assert.ok(legacy, '评审有旧指纹可用')
+  // 老项目：副本还是「评审员」那一版的设定，用户改过 target 的取值
+  const old = await m.ops.createAgent({
+    ...coreDefinition('reviewer').agent,
+    name: legacy.name,
+    description: legacy.description,
+    instructions: legacy.instructions,
+    categoryId: 'c-generic',
+    includes: [],
+    tags: [],
+    origin: 'builtin:reviewer',
+    params: coreDefinition('reviewer').agent.params.map((p) =>
+      p.key === 'target' ? { ...p, default: '方案或结论' } : p,
+    ),
+  })
+  // 启动顺序：先按旧指纹升级定义（upgradeBuiltinAgents），再按必备角色同步（ensureProjectAgents）
+  await upgradeBuiltinAgents(m.state(), m.ops)
+  await ensureProjectAgents(m.state(), m.ops)
+  const now = findCore(m.agents, 'reviewer')!
+  assert.equal(now.id, old.id)
+  assert.equal(now.name, '评审', '设定升级成新的')
+  assert.equal(
+    now.params.find((p) => p.key === 'target')?.default,
+    '方案或结论',
+    '升级旧指纹时也要把用户填的参数取值带过去',
+  )
 })
 
 test('必备角色：改了设定会被同步回内置定义，参数取值和运行配置保留', async () => {

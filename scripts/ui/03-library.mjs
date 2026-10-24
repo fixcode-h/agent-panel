@@ -136,14 +136,28 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('AI 分析：发了新内容后结果没有自动收起'))
   await check(p, 'AI分析-发送后收起')
   await p.goto(base + '#/agents')
-  await check(p, 'Agent', ['命令预览'])
+  // 必备角色自成一个分组：评审也是必备角色（子对话收尾前派它看 diff）
+  await check(p, 'Agent', ['命令预览', '必备', '评审'])
+  // 必备分组后面跟着计数（评审升进来之后是 7）：label 和计数是两个 span，只查文本查不出数字
+  const coreHead = await p.evaluate(() => {
+    const label = [...document.querySelectorAll('span')].find((el) => el.textContent?.trim() === '必备')
+    return label?.parentElement?.textContent?.trim() ?? ''
+  })
+  if (!/必备\s*·\s*7/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 7（读到「${coreHead}」）`)
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
   await p.keyboard.press('Escape')
-  // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
-  // 角色页按「概览 / 角色设定 / 参数 / Skill 与开场白」分页
+  // 评审是必备角色：参数定义和角色设定由面板维护，参数页只改取值、角色设定只读
+  const search = p.getByPlaceholder('搜索名称、简介、模型或标签')
+  await search.fill('评审')
   await p.getByText('评审', { exact: true }).first().click()
+  await p.getByRole('tab', { name: /^参数/ }).click()
+  await check(p, 'Agent-必备参数', ['这里改的是所有项目的默认取值'])
+  await p.getByRole('tab', { name: /^角色设定/ }).click()
+  await check(p, 'Agent-必备角色设定', ['由面板维护，只读'])
+  // 复制一份就是普通 Agent（参数定义可以改）：在副本上检查参数的选项编辑、联动
+  await p.getByRole('button', { name: '复制一份' }).click()
   await p.getByRole('tab', { name: /^参数/ }).click()
   await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
   await p.getByRole('textbox', { name: '新选项' }).fill('svn')

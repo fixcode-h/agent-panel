@@ -309,6 +309,11 @@ await runShard('子对话与计划', async (api) => {
     )
     // 这一轮已经答完（CLI 报过完成）后合并回收才把它收掉：不能留下「被中断」，用户会以为它没做完
     assert.equal(closed.status, 'done', '正常收尾的子对话被回收后仍是完成状态，不是 stopped')
+    // 评审在计划里是独立一步（不是藏在某步内部），合并前它已经标完成
+    assert.ok(
+      closed.plans?.at(-1)?.steps.some((s) => s.review && s.status === 'done'),
+      '计划里有标 review 的评审步骤，且已完成',
+    )
     assert.ok(
       !closed.messages.some(
         (m) => m.role === 'system' && (m.text.includes('这一轮被中断') || m.text.includes('已暂停')),
@@ -387,6 +392,93 @@ await runShard('子对话与计划', async (api) => {
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
       '父对话的收件箱里换成「用户已回答」，不会再答一遍',
     )
+    // ---- 收尾前评审：完整测试之前派「评审」，评审给 🛑 时 submit_merge 被拦下，改完复看通过才合回 ----
+    {
+      // 假 CLI 每次都在工作目录写输出文件：和分支里那份一样就合得回去，先清掉项目目录里遗留的那份
+      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
+      const reviewKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: wtParent.id,
+        prompt: 'COMMIT BEGIN_EDIT REVIEW_BLOCK SUBMIT_MERGE 评审给必须改项时不许合回',
+      })
+      const closed = await waitTask(reviewKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 40000)
+      const reviews = closed.steps.filter((s) => s.slot === 'sub' && s.title === '评审改动')
+      assert.equal(reviews.length, 2, '收尾时派了两次评审：第一次给 🛑，改完再复看')
+      assert.match(reviews[0].output, /^验收结论：不通过/, '第一次评审的第一行就是结论（长报告被截断也读得到）')
+      assert.match(reviews[0].output, /🛑/, '后面列出必须改项')
+      assert.match(reviews[1].output, /^验收结论：通过/, '复看的第一行是通过')
+      // 评审是计划里的独立步骤：用户能在计划面板上看到这一步和它的状态
+      const planSteps = closed.plans?.at(-1)?.steps ?? []
+      const planReviews = planSteps.filter((s) => s.review)
+      assert.equal(planReviews.length, 2, '计划里有两个独立的评审步骤：评审本次改动、复看评审')
+      assert.ok(
+        planReviews.every((s) => s.status === 'done'),
+        '两个评审步骤最后都是完成',
+      )
+      assert.ok(
+        planSteps.some((s) => s.title === '按评审意见修改' && !s.review),
+        '按评审意见修改也单列成一步，不和其他步骤合并',
+      )
+      const planLog = readLog(log + '.plan')
+      assert.ok(
+        planLog.some((x) => x.steps.some((s) => s.review === true && s.status === 'waiting')),
+        '派评审时计划里的评审步骤标成等待中',
+      )
+      // 评审不通过时直接请父对话收尾：面板按结论拦下，不合进去
+      assert.ok(
+        readLog(log + '.review').some((x) => x.rejected),
+        '🛑 没改完就调用 submit_merge 时被面板拦下',
+      )
+      const failedMerge = readLog(log + '.merge').find((x) => x.got.isError && /评审/.test(JSON.stringify(x.got)))
+      assert.ok(failedMerge, '拒绝的理由说清了是评审没过')
+      assert.match(JSON.stringify(failedMerge.got), /不通过/, '拦下时告诉它评审结论是不通过')
+      // 复看通过后才真的合回父对话所在的分支
+      assert.ok(
+        readLog(log + '.merge').some((x) => !x.got.isError),
+        '复看通过后 submit_merge 成功，父对话合回分支',
+      )
+      assert.notEqual(
+        gitIn(project.path, 'rev-parse', 'HEAD').toString().trim(),
+        headBefore,
+        '父对话的分支多了合并提交',
+      )
+      step('收尾前评审：计划里的独立评审步骤、🛑 时拦下、复看通过后才合回')
+    }
+    // ---- 计划里只写了评审的标题、没标 review：submit_merge 被拒，补上之后才合回 ----
+    {
+      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      const mergesBefore = readLog(log + '.merge').length
+      const kid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: wtParent.id,
+        prompt: 'COMMIT BEGIN_EDIT NO_REVIEW_PLAN SUBMIT_MERGE 计划里没写评审步骤时不许合回',
+      })
+      const closed = await waitTask(kid.id, (x) => x.resolved && x.worktree?.state === 'merged', 40000)
+      const merges = readLog(log + '.merge').slice(mergesBefore)
+      assert.ok(
+        merges.some((x) => x.got.isError && /计划里缺少评审步骤/.test(JSON.stringify(x.got))),
+        '计划里的评审步骤没标 review 时 submit_merge 被拦下，理由写清了缺的是评审步骤',
+      )
+      assert.ok(
+        merges.some((x) => !x.got.isError),
+        '补上带 review 标记的评审步骤后 submit_merge 成功、合回父对话分支',
+      )
+      assert.ok(
+        closed.plans?.at(-1)?.steps.some((s) => s.review && s.status === 'done'),
+        '补上的评审步骤在计划里且已完成',
+      )
+      assert.equal(
+        closed.steps.filter((s) => s.slot === 'sub' && s.title === '评审改动').length,
+        1,
+        '评审本身只派了一次：拦下的是计划少了一步，不是评审没过',
+      )
+      step('计划里缺少评审步骤：submit_merge 被拦下，补上后才合回')
+    }
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
