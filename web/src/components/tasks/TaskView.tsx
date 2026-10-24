@@ -1050,6 +1050,8 @@ export function TaskView({
           workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
           node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
           onTask={apply}
+          // 子对话自己的面板里不再套一层右栏
+          onOpenChild={pane ? undefined : openChildIn}
         />
       </div>
     </>

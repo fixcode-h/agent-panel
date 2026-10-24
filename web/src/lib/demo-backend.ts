@@ -2866,6 +2866,7 @@ function tasksRoute(
         return {
           taskId: x.id,
           title: x.title,
+          createdAt: x.createdAt,
           child: x.id !== task.id,
           working: !!x.working,
           branch: wt.branch,
@@ -3135,6 +3136,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       job?: boolean
       /** 这个后台命令挂在子任务（slot='sub'）名下：运行区要能显示「子任务 + 命令名」 */
       subJob?: boolean
+      /** 独立分支：at 是创建时间（分钟前），列表按它排序，故意和创建顺序不一致 */
+      worktree?: { branch: string; state?: 'active' | 'merged' | 'discarded'; at?: number }
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -3161,6 +3164,16 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     it.title = title
     it.working = !!how.working
     it.resolved = !!how.resolved
+    if (how.worktree) {
+      it.createdAt = new Date(Date.now() - (how.worktree.at ?? 0) * 60_000).toISOString()
+      it.worktree = {
+        path: `E:\\Project\\demo\\.agent-panel\\worktrees\\${how.worktree.branch.replace(/[/\\]/g, '-')}`,
+        branch: how.worktree.branch,
+        baseBranch: 'main',
+        state: how.worktree.state ?? 'active',
+        note: how.worktree.state === 'merged' ? 'main' : '',
+      }
+    }
     // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」
     if (it.messages[0])
       it.messages[0].peer = {
@@ -3247,14 +3260,30 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     if (how.alive) live.set(it.id, { stop: false })
     return it
   }
-  await make('Git+worktree 不再提示文件撞车', { working: true, alive: true })
+  // 这条本来就在跑，挂上未合并的独立分支不会改变它在「执行中」里的归属和计数
+  await make('Git+worktree 不再提示文件撞车', {
+    working: true,
+    alive: true,
+    // 创建时间比后面两条新，接口返回的顺序却在这条最前：界面必须按时间重排
+    worktree: { branch: 'agent-panel/git-worktree', at: 10 },
+  })
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
-  // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下
-  await make('整理 ESLint 规则', { alive: true, job: true, subJob: true })
+  // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
+  // 这条和下面两条带独立分支：创建时间故意和列表顺序不一致，界面要按时间排而不是按接口顺序
+  await make('整理 ESLint 规则', {
+    alive: true,
+    job: true,
+    subJob: true,
+    worktree: { branch: 'agent-panel/eslint-rules', at: 30 },
+  })
   // 已标记解决但还在跑：完成标记不能盖住还在跑
   await make('压测导入大文件', { working: true, alive: true, resolved: true })
-  await make('修侧栏时间显示', { resolved: true })
+  // 已经合回 main 的那条：列表里保留，点行仍能打开它的对话
+  await make('修侧栏时间显示', {
+    resolved: true,
+    worktree: { branch: 'agent-panel/sidebar-time', state: 'merged', at: 50 },
+  })
   await make('核对通知时序', { resolved: true })
   await make('拆分规则检查脚本', { resolved: true })
   // 请用户决定的子对话：一次问了两个问题，子对话页的输入框换成选择弹窗，父对话里是两张提问卡片
@@ -3493,6 +3522,14 @@ async function seedTasks(d: Db) {
     await done
     demoPlans(task)
     back(task, 60 * 3)
+    // 父对话自己也在独立分支里：环境弹窗的列表第一条永远是它，点它不打开任何东西
+    task.worktree = {
+      path: 'E:\\Project\\demo\\.agent-panel\\worktrees\\cart-badge',
+      branch: 'agent-panel/cart-badge',
+      baseBranch: 'main',
+      state: 'active',
+      note: '',
+    }
     demoHelper(task, fe)
     await demoChildren(d, task, fe)
     // 这个对话改过两个文件：「改动」Tab 和差异窗口（含上一个/下一个导航）都要有东西看

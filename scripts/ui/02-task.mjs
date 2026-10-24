@@ -32,6 +32,126 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
+  // 环境弹窗里的「独立分支」：父对话在最前、其余按创建时间从早到晚（演示数据的创建顺序和时间故意不一致）；
+  // 点中间那行在右栏打开对应子对话，合并/删除按钮各管各的，父对话自己那行点不了
+  {
+    const env = p.locator('button[aria-label="环境"]').first()
+    /** 右栏是不是子对话面板：aside 的 aria-label 在「文件 / 子对话 / 运行 n」之间切换 */
+    const paneOpen = () => p.getByRole('complementary', { name: '子对话' }).count()
+    const openEnv = async () => {
+      const shown = p.getByText('独立分支', { exact: true }).first()
+      // 取消删除确认后弹层可能还开着，再点一次会把它收起来
+      if (!(await shown.isVisible().catch(() => false))) await env.click()
+      await shown.waitFor({ timeout: 5000 })
+    }
+    const closeEnv = async () => {
+      await p.keyboard.press('Escape')
+      await p
+        .getByText('独立分支', { exact: true })
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    /** 弹窗里各行的文字、能不能点、父对话行（不能点）是不是第一个 */
+    const rows = () =>
+      p.evaluate(() =>
+        [...document.querySelectorAll('[data-worktree-row]')].map((el) => {
+          const open = el.querySelector('button[aria-label^="在右侧打开子对话"]')
+          return {
+            text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
+            clickable: !!open,
+            cursor: open ? getComputedStyle(open).cursor : getComputedStyle(el).cursor,
+          }
+        }),
+      )
+    // 演示数据的创建顺序是 Git+worktree → ESLint → 修侧栏，创建时间正好相反
+    const kids = ['修侧栏时间显示', '整理 ESLint 规则', 'Git+worktree 不再提示文件撞车']
+    const checkOrder = async (where) => {
+      const list = await rows()
+      if (list.length !== kids.length + 1) {
+        errors.push(`独立分支（${where}）：列出 ${list.length} 行，应该有父对话 + ${kids.length} 个子对话`)
+        return
+      }
+      if (!list[0].text.includes('agent-panel/cart-badge') || list[0].clickable)
+        errors.push(`独立分支（${where}）：第一行不是父对话自己（${JSON.stringify(list[0])}）`)
+      if (list.slice(1).some((x) => !x.clickable)) errors.push(`独立分支（${where}）：子对话行不是可点按钮`)
+      if (list.slice(1).some((x) => x.cursor !== 'pointer')) errors.push(`独立分支（${where}）：子对话行的鼠标不是手型`)
+      const got = kids.map((title) => list.slice(1).findIndex((x) => x.text.includes(title)))
+      if (got.some((i) => i < 0) || got.join(',') !== '0,1,2')
+        errors.push(`独立分支（${where}）：没有按创建时间升序（${got.join(',')}）`)
+    }
+    await openEnv()
+    await check(p, '独立分支-计数', ['3 个没合并'])
+    await checkOrder('排序')
+    await check(p, '独立分支-顺序')
+    // 父对话自己那行点了不打开任何对话
+    await p.locator('[data-worktree-row]').first().click()
+    if (await paneOpen()) errors.push('独立分支：点父对话自己那行打开了对话面板')
+    // 点删除按钮不会连带打开对话：弹的是删除确认，右栏保持原样
+    const row = p.locator('[data-worktree-row]').filter({ hasText: '整理 ESLint 规则' })
+    await row.getByRole('button', { name: '删除独立分支' }).click()
+    const asked = p
+      .getByText('删除独立分支 agent-panel/eslint-rules？')
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!(await asked)) errors.push('独立分支：点删除按钮没有弹出确认框')
+    else {
+      if (await paneOpen()) errors.push('独立分支：点删除按钮把对话也打开了')
+      await p.getByRole('button', { name: '取消' }).last().click()
+      await p
+        .getByText('删除独立分支 agent-panel/eslint-rules？')
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    // 键盘可达：聚焦子对话行按 Enter，就在右栏打开对应子对话。
+    // 取消删除确认后弹层可能还在收起，先等它关掉再重新打开，别聚焦到正在卸载的节点上
+    await closeEnv()
+    await openEnv()
+    // 子对话栏、运行区里也有同名按钮：限定在独立分支这一行里
+    const target = p
+      .locator('[data-worktree-row]')
+      .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+    await target.focus()
+    await p.keyboard.press('Enter')
+    // 子对话面板标题栏右边那个 ✕ 的 aria-label 是「关闭子对话」（运行视图里叫「关闭子对话面板」）；
+    // 子对话栏的卡片里也有同名按钮，限定在右栏 aside 里，别点错
+    const closePane = p
+      .getByRole('complementary', { name: '子对话' })
+      .getByRole('button', { name: '关闭子对话', exact: true })
+    const pane = await closePane.waitFor({ timeout: 5000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!pane) errors.push('独立分支：用键盘在行上按 Enter 没有打开子对话')
+    else {
+      // 面板先出来、子对话内容后加载：等标题真的画出来再判断打开的是哪一个
+      const rightTitle = await p
+        .locator('[data-task-panel]')
+        .getByText('Git+worktree 不再提示文件撞车')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!rightTitle) errors.push('独立分支：右栏打开的不是对应的子对话')
+      await closePane.click()
+      await closePane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    await check(p, '独立分支-打开子对话')
+    // 刷新后顺序、计数都不变
+    await p.reload()
+    await backToTask()
+    await openEnv()
+    await check(p, '独立分支-刷新后计数', ['3 个没合并'])
+    await checkOrder('刷新后')
+    await check(p, '独立分支-刷新后顺序')
+    await closeEnv()
+  }
   // 子对话栏的计数：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），分母是进程还活着的 5 个。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
   {
@@ -1781,8 +1901,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await check(p, '任务-项目对话浮层-打开另一条')
 
         // 键盘：上下选择 + Enter 回到购物车那条。中间等一轮摘要刷新（2.5s），
-        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话
+        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话。
+        // Radix 打开后要等下一帧才把焦点移到监听方向键的那层，浮层刚可见时按键会丢，先等焦点到位
         await reopen('键盘测试')
+        const focused = await p
+          .waitForFunction(
+            () => {
+              const el = document.activeElement
+              const dialog = el?.closest('[role="dialog"]')
+              // Radix 的 Content 自己也是 role=dialog、tabIndex=-1：要的是它里面监听方向键的那层
+              return !!el && el.getAttribute('tabindex') === '-1' && !!dialog && el !== dialog
+            },
+            { timeout: 3000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!focused) errors.push('标题栏浮层：打开后键盘焦点没有落到列表上')
         await p.keyboard.press('ArrowDown')
         await p.waitForTimeout(3000)
         await p.keyboard.press('Enter')
