@@ -13,6 +13,7 @@ import {
   markWrapUp,
   openPlan,
   planProgress,
+  runningStepId,
   settleWait,
   unsummarized,
 } from './plan.ts'
@@ -173,6 +174,38 @@ test('子步骤在等子对话：结果回来子步骤完成，主步骤跟着�
   settleWait(task, 'child', 'kid', true)
   assert.equal(activePlan(task), undefined)
   assert.equal(task.plans[0].steps[0].status, 'done')
+})
+
+test('还在等子对话的步骤，Agent 自己标完成不算：退回等待中，父对话的计划不会先「已完成」', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: '派子对话修图', status: 'running' },
+      { title: '汇总', children: [{ title: '查日志' }] },
+    ],
+  })
+  // 开子对话时没写 step：挂在正在做的那一步
+  assert.equal(runningStepId(task), '1')
+  bindWait(task, runningStepId(task), { kind: 'child', ref: 'kid', label: '修图' })
+  bindWait(task, '2.1', { kind: 'background', ref: 'job', label: '日志' })
+  const r = applyPlan(task, {
+    steps: [
+      { id: '1', title: '派子对话修图', status: 'done' },
+      { id: '2', title: '汇总', status: 'done' },
+    ],
+  })
+  const plan = activePlan(task)!
+  assert.ok(plan, '计划没有结束')
+  assert.equal(plan.steps[0].status, 'waiting')
+  assert.equal(plan.steps[1].children[0].status, 'waiting', '主步骤标完成也带不走在等的子步骤')
+  assert.equal(plan.steps[1].status, 'waiting', '子步骤退回了，主步骤也不算完成')
+  assert.match(r.info, /还在等结果，不能自己标完成：「派子对话修图」（等：修图）/)
+  // 结果推回来才标完成
+  settleWait(task, 'child', 'kid', true)
+  settleWait(task, 'background', 'job', true)
+  assert.equal(activePlan(task), undefined, '都回来了，计划结束')
+  // 没有进行中的步骤就不挂
+  assert.equal(runningStepId(fresh()), '')
 })
 
 test('子对话这一轮结束：交付完了标完成、没交付完继续等、失败退回进行中', () => {

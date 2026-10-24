@@ -320,6 +320,10 @@ await runShard('子对话与计划', async (api) => {
     assert.ok(!revived.resume, '没有接回原会话')
     assert.match(revived.input, /## 之前对话的摘要[\s\S]*## 关键文件和模块\nchild-done\.txt/, '新会话带上交接摘要')
     step('已完成的子对话再被叫醒：上下文大时开新会话只带交接摘要')
+    // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话，父对话会跑一轮读收件箱：
+    // 等它停下再测下面的提问，免得收件箱被这一轮提前读走
+    await waitTask(doneKid.id, (x) => x.resolved, 20000)
+    await waitDone(wtParent.id, 20000)
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(

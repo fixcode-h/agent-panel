@@ -122,7 +122,16 @@ import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
-import { holdWait, markWrapUp, openPlan, openWork, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
+import {
+  activePlan,
+  holdWait,
+  markWrapUp,
+  openPlan,
+  openWork,
+  settleWait,
+  waitNote,
+  type WrapUpKind,
+} from '../shared/plan.ts'
 import type { PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
 import { runTree } from '../shared/run-usage.ts'
@@ -1109,8 +1118,8 @@ export function tasksApi(deps: {
           .map((x) => `${x.id}「${x.title}」`)
           .join('、')}）。做完并用 set_plan 标完成；确实不做的从计划里删掉并说明原因，再调用 submit_merge。`,
       }
-    if (merging.has(childId) || tk.wrapRequest?.state === 'merging')
-      return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
+    // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
+    if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
     const missing = handoffMissing(handoff)
     if (missing.length)
@@ -1352,8 +1361,9 @@ export function tasksApi(deps: {
     if (!steered) tk.messages.push(msg)
     // 计划最后一步「合回父对话所在的分支」由面板标完成：计划做完才走得到完成那一步
     markWrapUp(tk, 'merge', 'done', '已合回父对话所在的分支')
-    // 收尾请求办完了：合进去之后它就不再是「待收尾」
-    delete tk.wrapRequest
+    // 收尾请求办完了：合进去之后它就不再是「待收尾」。
+    // 写 undefined 不用 delete：store.update 是把传入的字段盖到旧记录上，删掉的键盖不掉旧值
+    tk.wrapRequest = undefined
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
@@ -1380,8 +1390,7 @@ export function tasksApi(deps: {
         ? { ok: false, info: `子对话「${tk.title}」还没做完：${r.info}` }
         : { ok: true, info: `子对话「${tk.title}」已标完成（它和你共用目录，改动已经在原目录里，不用合并）` }
     }
-    if (merging.has(childId) || tk.wrapRequest?.state === 'merging')
-      return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
+    if (merging.has(childId)) return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
     if (tk.wrapRequest?.state !== 'requested')
       return {
         ok: false,
@@ -1502,7 +1511,7 @@ export function tasksApi(deps: {
       tk.worktree = { ...tk.worktree!, state: 'merged', note: tk.worktree!.baseBranch }
     }
     tk.resolved = true
-    delete tk.wrapRequest
+    tk.wrapRequest = undefined
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
@@ -1714,13 +1723,19 @@ export function tasksApi(deps: {
     if (background.list(child.id).some((j) => j.state === 'queued' || j.state === 'running')) return false
     const project = await deps.projects.get(child.projectId)
     const st = project ? await worktreeStatus(project.path, child.worktree!).catch(() => null) : null
-    if (!st || st.merged) return false
+    if (!st) return false
+    // 分支已经在原分支里了（子对话或它派的子任务自己 git merge 过去），计划却还停在「合回」这一步：
+    // 不提醒的话没人会去调用 submit_merge，计划一直卡在收尾、子对话也一直不算完成
+    const wrapOpen = !!activePlan(child)?.steps.some((s) => s.wrapUp === 'merge' && s.status !== 'done')
+    if (st.merged && !wrapOpen) return false
     mergeNudged.add(child.id)
     const what = [st.ahead ? `${st.ahead} 个提交` : '', st.dirty ? `${st.dirty} 个未提交的文件` : ''].filter(Boolean)
     const r = await sendToChild(
       child.parentTaskId,
       child.id,
-      `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}），也还没请父对话收尾。按「验证」在你的分支里跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；没合回去之前不算做完。验证没过就修好再交，确实不该合并就说明原因。`,
+      st.merged
+        ? '【面板】你的分支已经在父对话的分支里了，但还没请父对话收尾，计划停在「合回父对话所在的分支」。直接调用 submit_merge（tests 写上跑过的验证），父对话确认后面板标完成并删除分支。以后收尾都用 submit_merge，不要自己或派子任务去 git merge。'
+        : `【面板】你的独立分支里还有没合回父对话分支的改动（${what.join('、')}），也还没请父对话收尾。按「验证」在你的分支里跑通编译和测试后调用 submit_merge（tests 写上跑了什么、结果如何），父对话会合并、标完成并删除分支；没合回去之前不算做完。验证没过就修好再交，确实不该合并就说明原因。`,
       'build',
     )
     return r.ok
@@ -2689,10 +2704,11 @@ export function tasksApi(deps: {
       mergeNudged.delete(id)
     }
     // 请过收尾又开始干活（父对话退回、用户追加要求）：收尾请求作废，做完要重新请求；正在合并的不动
-    if (next.wrapRequest && next.wrapRequest.state !== 'merging') {
+    // （记录上是 merging、内存里却没在合并的是残留：旧版本完成时没清掉，留着它 submit_merge 会一直被拒）
+    if (next.wrapRequest && !merging.has(id)) {
       if (next.wrapRequest.state === 'requested')
         markWrapUp(next, 'merge', 'running', '又有新的要求：做完、验证后再请父对话收尾')
-      delete next.wrapRequest
+      next.wrapRequest = undefined
       reportedState.delete(id)
     }
     // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录

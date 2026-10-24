@@ -3,6 +3,7 @@
 // 2. 文档里写的仓库路径必须存在，避免改名、删文件后文档还指着旧路径
 // 3. 教训分片的格式和大小：有 paths、每条有「规则」、单个分片不超过 6 KB、paths 至少命中一个文件
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
+// 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -122,6 +123,18 @@ for (const f of files) {
   if (!/^server\/.+\.ts$/.test(f) || /\.test\.ts$/.test(f)) continue
   if (/attachments:\s*placed\b/.test(read(f)))
     errors.push(`${f} 把拷进任务目录的附件（placed）记进了对话：对话里要存上传目录的原路径，placed 只给 CLI`)
+}
+
+// 6. 清掉任务字段写 undefined：store.update 把传入的字段盖到旧记录上，delete 掉的键盖不掉旧值
+// （见 docs/lessons/data.md「清掉任务上的字段写 undefined」）
+for (const f of files) {
+  if (!/^server\/.+\.ts$/.test(f) || /\.test\.ts$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\bdelete\s+(?:tk|task|next|cur|child|parent)\.\w+\s*$/.test(l) && !/delete-ok/.test(l))
+        errors.push(`${f}:${i + 1} 用 delete 清任务字段，落盘后旧值还在，改成写 undefined：${l.trim()}`)
+    })
 }
 
 if (errors.length) {
