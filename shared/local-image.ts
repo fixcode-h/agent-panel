@@ -102,14 +102,51 @@ export const LOCAL_FILES: LocalFile[] = [
     url: `${HF}/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Lightning-8steps-V1.0.safetensors`,
     gb: 1.7,
   },
+  {
+    id: 'flux1-dev',
+    dir: 'checkpoints',
+    file: 'flux1-dev-fp8.safetensors',
+    url: `${HF}/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors`,
+    gb: 17.2,
+  },
+  {
+    id: 'zimage-int8',
+    dir: 'diffusion_models',
+    file: 'z_image_turbo_int8_convrot.safetensors',
+    url: `${HF}/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`,
+    gb: 11.3,
+  },
 ]
 
-export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'sdxl' | 'qwen'
+export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen'
+
+/** 模型按用途分组展示；顺序就是设置页里从上到下的顺序 */
+export const LOCAL_MODEL_GROUPS = [
+  {
+    id: 'text',
+    title: t('文本生图'),
+    desc: t('主力模型：按描述整张出图，图标、插画、背景和整屏原画都用得上'),
+  },
+  {
+    id: 'fast',
+    title: t('加速与量化'),
+    desc: t('少步数或量化版本：出图更快、占显存更少，适合批量试稿和显存紧的电脑'),
+  },
+  {
+    id: 'light',
+    title: t('低显存'),
+    desc: t('8GB 显存左右也能跑；社区风格模型和 LoRA 最多'),
+  },
+] as const
+
+export type LocalCategory = (typeof LOCAL_MODEL_GROUPS)[number]['id']
 
 export interface LocalModel {
   id: string
   name: string
   family: LocalFamily
+  /** 设置页里的分组 */
+  category: LocalCategory
   files: string[]
   /** 建议的显存（GB）；不够时 ComfyUI 会把一部分放到内存里，能跑但慢 */
   vram: number
@@ -128,6 +165,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'z-image-turbo',
     name: 'Z-Image Turbo',
     family: 'zimage',
+    category: 'text',
     files: ['zimage-unet', 'qwen3-4b', 'flux-ae'],
     vram: 16,
     use: t('主力推荐：图标、按钮、面板、插画、整屏原画都好用，8 步出图，听得懂中文描述'),
@@ -137,13 +175,14 @@ export const LOCAL_MODELS: LocalModel[] = [
     natural: true,
   },
   {
-    id: 'flux2-klein',
-    name: 'FLUX.2 [klein] 4B',
-    family: 'flux2klein',
-    files: ['klein-unet', 'qwen3-4b', 'flux2-vae'],
-    vram: 12,
-    use: t('显存 12GB 左右的首选：4 步出图最快，适合大批量的道具图标、草图和反复试风格'),
-    license: 'Apache-2.0',
+    id: 'flux1-dev',
+    name: 'FLUX.1 [dev]',
+    family: 'flux1dev',
+    category: 'text',
+    files: ['flux1-dev'],
+    vram: 16,
+    use: t('质量优先：20 步出图，光影和材质更细腻，适合定风格的插画和原画；非商用许可'),
+    license: 'FLUX.1 [dev] Non-Commercial',
     base: 1024,
     natural: true,
   },
@@ -151,6 +190,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'qwen-image',
     name: 'Qwen-Image（Lightning 8 步）',
     family: 'qwen',
+    category: 'text',
     files: ['qwen-unet', 'qwen-te', 'qwen-vae', 'qwen-lightning'],
     vram: 24,
     use: t('图里要有文字时用：标题、按钮上的中英文字写得准，也擅长海报式的整屏原画；体积大，要 24GB 显存'),
@@ -159,9 +199,34 @@ export const LOCAL_MODELS: LocalModel[] = [
     natural: true,
   },
   {
+    id: 'flux2-klein',
+    name: 'FLUX.2 [klein] 4B',
+    family: 'flux2klein',
+    category: 'fast',
+    files: ['klein-unet', 'qwen3-4b', 'flux2-vae'],
+    vram: 12,
+    use: t('显存 12GB 左右的首选：4 步出图最快，适合大批量的道具图标、草图和反复试风格'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
+    id: 'z-image-turbo-int8',
+    name: 'Z-Image Turbo Int8',
+    family: 'zimage',
+    category: 'fast',
+    files: ['zimage-int8', 'qwen3-4b', 'flux-ae'],
+    vram: 12,
+    use: t('Z-Image Turbo 的量化版本：同样 8 步，文件更小、显存占用更低，适合显存 12GB 左右的电脑'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
     id: 'flux1-schnell',
     name: 'FLUX.1 [schnell]',
     family: 'flux1',
+    category: 'fast',
     files: ['schnell'],
     vram: 12,
     use: t('老牌快速模型：4 步出图，质感好，适合背景图和插画；单个文件，下载最省事'),
@@ -173,6 +238,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'sdxl',
     name: 'SDXL 1.0',
     family: 'sdxl',
+    category: 'light',
     files: ['sdxl'],
     vram: 8,
     use: t('8GB 显存也能跑；社区的风格模型和 LoRA 最多（像素风、卡通、二次元），可以换成自己下载的同类模型'),
@@ -443,6 +509,29 @@ export function localWorkflow(
         latent: n('EmptySD3LatentImage', latent),
         sample: ksampler(['shift', 0], o.steps ?? 8, 1, 'euler', 'simple'),
         decode: n('VAEDecode', { samples: ['sample', 0], vae: ['vae', 0] }),
+        save: save(['decode', 0]),
+      }
+    case 'flux1dev':
+      return {
+        ckpt: n('CheckpointLoaderSimple', { ckpt_name: f('flux1-dev') }),
+        pos: n('CLIPTextEncode', { text: o.prompt, clip: ['ckpt', 1] }),
+        neg: n('CLIPTextEncode', { text: o.negative, clip: ['ckpt', 1] }),
+        // dev 是蒸馏 guidance 的模型：cfg 保持 1，提示词强度由 FluxGuidance 控制
+        guide: n('FluxGuidance', { conditioning: ['pos', 0], guidance: 3.5 }),
+        latent: n('EmptySD3LatentImage', latent),
+        sample: n('KSampler', {
+          model: ['ckpt', 0],
+          seed: o.seed,
+          steps: o.steps ?? 20,
+          cfg: 1,
+          sampler_name: 'euler',
+          scheduler: 'simple',
+          positive: ['guide', 0],
+          negative: ['neg', 0],
+          latent_image: ['latent', 0],
+          denoise: 1,
+        }),
+        decode: n('VAEDecode', { samples: ['sample', 0], vae: ['ckpt', 2] }),
         save: save(['decode', 0]),
       }
     case 'flux1':

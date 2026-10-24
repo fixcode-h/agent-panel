@@ -223,4 +223,17 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   'AI 没有给出能用的工作流：{error}': "AI didn't produce a usable workflow: {error}",
   '内置的工作流不能修改，请先复制一份': "Built-in workflows can't be edited. Make a copy first",
   请写下要求: 'Please describe what you want',
+  文本生图: 'Text to image',
+  '主力模型：按描述整张出图，图标、插画、背景和整屏原画都用得上':
+    'Main models: render a whole image from a description; good for icons, illustrations, backgrounds and full-screen concepts',
+  加速与量化: 'Fast and quantized',
+  '少步数或量化版本：出图更快、占显存更少，适合批量试稿和显存紧的电脑':
+    'Fewer steps or quantized versions: faster and lighter on VRAM, good for batches of drafts and smaller GPUs',
+  低显存: 'Low VRAM',
+  '8GB 显存左右也能跑；社区风格模型和 LoRA 最多':
+    'Runs on about 8 GB VRAM; the largest collection of community style models and LoRAs',
+  '质量优先：20 步出图，光影和材质更细腻，适合定风格的插画和原画；非商用许可':
+    'Quality first: 20 steps with finer lighting and materials, good for style-setting illustrations and concept art; non-commercial license',
+  'Z-Image Turbo 的量化版本：同样 8 步，文件更小、显存占用更低，适合显存 12GB 左右的电脑':
+    'Quantized Z-Image Turbo: same 8 steps with smaller files and lower VRAM use, good for 12 GB GPUs',
 }

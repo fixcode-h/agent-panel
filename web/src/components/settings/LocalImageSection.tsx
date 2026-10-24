@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { ArrowDown, Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import {
   INSTALL_ASK,
+  LOCAL_MODEL_GROUPS,
   LOCAL_MODELS,
   PYTHON_RANGE,
   PYTHON_SUPPORT,
@@ -326,62 +327,76 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。',
           )}
         </p>
-        <div className="flex flex-col gap-2">
-          {LOCAL_MODELS.map((m) => {
-            const ok = modelReady(m, st)
-            const downloading = busy && job?.kind === 'download' && job.model === m.id
-            const size = modelGb(m, (f) => st.files.includes(f))
-            const tight = !!st.vram && st.vram < m.vram
+        <div className="flex flex-col gap-5">
+          {LOCAL_MODEL_GROUPS.map((g) => {
+            const models = LOCAL_MODELS.filter((m) => m.category === g.id)
+            if (!models.length) return null
             return (
-              <div
-                key={m.id}
-                className={cn('flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:gap-4')}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[0.84375rem] font-medium">
-                    {m.name}
-                    {m.recommended && (
-                      <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent">
-                        {t('推荐')}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{m.use}</p>
-                  <p className={cn('mt-0.5 text-[0.75rem] text-subtle', tight && 'text-warning')}>
-                    {t('建议显存 {n}GB', { n: m.vram })} · {ok ? t('已下载') : t('下载约 {size}', { size: gb(size) })} ·{' '}
-                    {m.license}
-                  </p>
+              <section key={g.id} className="flex flex-col gap-2">
+                <div>
+                  <h4 className="text-[0.8125rem] font-medium">{g.title}</h4>
+                  <p className="mt-0.5 text-[0.75rem] leading-relaxed text-subtle">{g.desc}</p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {!st.external &&
-                    (ok ? (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title={t('删除模型文件')}
-                        aria-label={t('删除模型文件')}
-                        onClick={() => setRemoving(m)}
+                <div className="flex flex-col gap-2">
+                  {models.map((m) => {
+                    const ok = modelReady(m, st)
+                    const downloading = busy && job?.kind === 'download' && job.model === m.id
+                    const size = modelGb(m, (f) => st.files.includes(f))
+                    const tight = !!st.vram && st.vram < m.vram
+                    return (
+                      <div
+                        key={m.id}
+                        className={cn('flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:gap-4')}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant={m.recommended ? 'primary' : 'secondary'}
-                        disabled={busy || !st.installed}
-                        title={st.installed ? undefined : t('先安装 ComfyUI')}
-                        onClick={() => void act(() => api.localModel(m.id, 'download'))}
-                      >
-                        {downloading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Download className="h-3.5 w-3.5" />
-                        )}
-                        {t('下载')}
-                      </Button>
-                    ))}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[0.84375rem] font-medium">
+                            {m.name}
+                            {m.recommended && (
+                              <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent">
+                                {t('推荐')}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{m.use}</p>
+                          <p className={cn('mt-0.5 text-[0.75rem] text-subtle', tight && 'text-warning')}>
+                            {t('建议显存 {n}GB', { n: m.vram })} ·{' '}
+                            {ok ? t('已下载') : t('下载约 {size}', { size: gb(size) })} · {m.license}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {!st.external &&
+                            (ok ? (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                title={t('删除模型文件')}
+                                aria-label={t('删除模型文件')}
+                                onClick={() => setRemoving(m)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant={m.recommended ? 'primary' : 'secondary'}
+                                disabled={busy || !st.installed}
+                                title={st.installed ? undefined : t('先安装 ComfyUI')}
+                                onClick={() => void act(() => api.localModel(m.id, 'download'))}
+                              >
+                                {downloading ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="h-3.5 w-3.5" />
+                                )}
+                                {t('下载')}
+                              </Button>
+                            ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
+              </section>
             )
           })}
         </div>
