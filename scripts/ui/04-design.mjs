@@ -31,12 +31,46 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.waitForTimeout(200)
   assert.ok(Math.abs((await zoomText()) - z0) <= 2, '滚轮往下缩回去')
   await p.getByRole('button', { name: '适应窗口' }).click()
+  // 画布空白处右键：粘贴、适应窗口、原始大小
+  const stageBox = await p.locator('[data-wid]').first().boundingBox()
+  await p.mouse.click(stageBox.x - 10, stageBox.y + stageBox.height / 2, { button: 'right' })
+  await check(p, 'UI设计-画布空白菜单', ['粘贴', '适应窗口', '原始大小'])
+  await p.keyboard.press('Escape')
+  // 画布控件右键：和控件树同一套菜单，层级有二级菜单
+  await p.getByText('ETERNAL REALM', { exact: true }).click({ button: 'right' })
+  await check(p, 'UI设计-画布右键', ['引用到 AI 对话', '锁定', '层级', '对齐', '删除'])
+  await p.getByRole('menuitem', { name: '层级' }).hover()
+  await check(p, 'UI设计-画布右键层级', ['置顶', '上移一层', '下移一层', '置底'])
+  await p.keyboard.press('Escape')
+  await p.keyboard.press('Escape')
+  // 缩到最小：拖右下角一直往左上，宽高停在最小尺寸，不会变负或翻转
+  await p.getByRole('treeitem', { name: /TitlePlate/ }).click()
+  await p.getByTitle('拖动改变大小').waitFor()
+  const handle = await p.getByTitle('拖动改变大小').boundingBox()
+  assert.ok(handle, '选中的画布控件有缩放手柄')
+  await p.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(handle.x - 2000, handle.y - 2000, { steps: 8 })
+  await p.mouse.up()
+  await p.waitForTimeout(200)
+  assert.equal(Number(await p.getByRole('textbox', { name: 'W' }).inputValue()), 8, '宽度停在最小尺寸')
+  assert.equal(Number(await p.getByRole('textbox', { name: 'H' }).inputValue()), 8, '高度停在最小尺寸')
+  await check(p, 'UI设计-最小尺寸', ['X / 宽', 'Y / 高'])
+  await p.keyboard.press('Control+z')
   // 控件树右键菜单和二级菜单
   await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
   await p.getByRole('menuitem', { name: '包裹为' }).hover()
   await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
   await p.keyboard.press('Escape')
   await p.keyboard.press('Escape')
+  // 引用到 AI 对话：输入框上方出现带路径的引用条，可以删掉
+  const cite = p.getByTitle(/RootCanvas \/ MenuBox \/ StartGroup/)
+  await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '引用到 AI 对话' }).click()
+  await cite.waitFor()
+  await check(p, 'UI设计-引用', ['StartGroup'])
+  await p.getByRole('button', { name: '从对话里去掉' }).click()
+  await cite.waitFor({ state: 'detached' })
   // 动画：选中控件，用预设加一个弹出动画，拖播放头预览
   await p.getByRole('treeitem', { name: /StartGroup/ }).click()
   // 动画面板默认打开
@@ -55,9 +89,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.keyboard.press('Enter')
   await check(p, 'UI设计-标注', ['按钮换成金色描边'])
   await p.keyboard.press('v')
+  // 引用的控件随消息一起发出去：发出后输入框上的引用条清掉，消息里保留
+  await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '引用到 AI 对话' }).click()
+  await cite.waitFor()
   // 发给 AI：流式输出，生成图片时进度固定在输入框上方
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('按钮再大一点')
   await p.keyboard.press('Enter')
+  await p.getByRole('button', { name: '从对话里去掉' }).waitFor({ state: 'detached' })
+  await cite.waitFor()
+  await check(p, 'UI设计-引用消息', ['StartGroup'])
   // 思考、调设计工具、说明按顺序边出边显示
   await p.getByText('check', { exact: true }).first().waitFor({ timeout: 15000 })
   // 生成图片只有几秒：一出现就先截「生成中」，再截写入的工具调用（机器慢时先截写入会错过生成中）

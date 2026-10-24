@@ -880,6 +880,7 @@ ${prompt}`,
                       ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
                       : ''),
                   input.annotations.filter((a) => !a.target.startsWith('concept:')),
+                  input.refs,
                   project,
                   // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
                   [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
@@ -1920,6 +1921,7 @@ ${prompt}`,
         at: now(),
         ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
         ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
+        ...(p.data.refs.length ? { refs: p.data.refs } : {}),
         ...(p.data.answers?.length ? { answers: p.data.answers } : {}),
         ...(p.data.style && p.data.styleName ? { style: p.data.styleName } : {}),
       })
