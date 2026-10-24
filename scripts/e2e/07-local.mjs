@@ -1433,7 +1433,9 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     let out = ''
     child.stdout.on('data', (d) => (out += d))
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
-    for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
+    // 等服务启动：分片并行时这台机器上同时有好几个 tsx 在首次编译，--prod 再起一个服务可能超过 10 秒，
+    // 30 秒和 harness 等服务启动的上限一致，避免把「还在编译」误判成没启动
+    for (let i = 0; i < 300 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
     assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}/?token=`), '托盘模式输出带令牌的地址')
     const waitOut = async (text) => {
       for (let i = 0; i < 100 && !out.includes(text); i++) await sleep(100)

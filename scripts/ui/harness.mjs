@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { assertDemoBuildFresh } from '../lib/demo-build-info.mjs'
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const dist = path.join(root, 'dist-demo')
@@ -32,10 +33,8 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
  * 文件名前缀（01、02…）用作截图的前缀，同一分片里的截图按顺序编号。
  */
 export async function runShard(file, fn) {
-  if (!existsSync(path.join(dist, 'index.html'))) {
-    console.error('先运行 npx vite build --mode demo')
-    process.exit(1)
-  }
+  // 直接跑单个分片时也要拦陈旧产物：总入口虽然已经校验过，这里再算一次很便宜
+  assertDemoBuildFresh(root)
   const prefix = path.basename(file).match(/^(\d+)-/)?.[1] ?? '00'
   mkdirSync(out, { recursive: true })
 
