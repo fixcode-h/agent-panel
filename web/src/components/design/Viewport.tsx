@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
 import type { Annotation, AnnotationKind } from '@shared/design'
+import type { DesignData } from '@shared/design-data'
 import type { Device } from '@shared/web'
 import { animRuntime, compileAnimations, type UiAnimation } from '@shared/anim'
 import type { AnimCommand } from './AnimationPanel'
@@ -84,6 +85,7 @@ export function Viewport({
   onDropImage,
   actions,
   onRename,
+  data,
 }: {
   /** 控件右键菜单的动作：和控件树共用一套 */
   actions: WidgetMenuActions
@@ -124,6 +126,8 @@ export function Viewport({
   animations?: UiAnimation[]
   /** 动画面板的指令：停在某个时间或播放一次 */
   animCommand?: AnimCommand | null
+  /** 画板的运行时假数据：列表按它渲染条目、控件按它显示状态 */
+  data?: DesignData
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -610,6 +614,7 @@ export function Viewport({
     play,
     device,
     tree: target,
+    data,
   }
 
   // 动画：运行模式里按触发方式自动播放（打开时、悬停、点击、滚动到可见）；平时只在动画面板拖播放头、点播放时动

@@ -791,7 +791,7 @@ ${prompt}`,
     if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 Agent', { cli: def.name }))
     const mcp = openDesignSession(
       cache.get(d.id)!,
-      (s) => (job.preview = { ...s.state, applied: s.applied }),
+      (s) => (job.preview = { ...s.state, data: s.data, applied: s.applied }),
       {
         dir: cwd,
         attachments: attachments.map((a) => ({ name: a.name, path: a.path })),
@@ -811,6 +811,7 @@ ${prompt}`,
             root: comp ? comp.Root : s.state.root,
             components: s.state.components,
             size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
+            data: s.data ?? s.design.data,
           }
           job.capture = view
           return captures.request(d.id, view).finally(() => {
@@ -841,7 +842,7 @@ ${prompt}`,
         job.text = ''
         job.parts = undefined
         job.outChars = 0
-        job.preview = sess.applied ? { ...sess.state, applied: sess.applied } : undefined
+        job.preview = sess.applied ? { ...sess.state, data: sess.data, applied: sess.applied } : undefined
         // 工具调用的 id → 在分段里的位置（第几段、第几个），结果回来时更新那一条
         const toolAt = new Map<string, [number, number]>()
         let parts: ReplyPart[] = []
@@ -976,6 +977,7 @@ ${prompt}`,
           style: sess.style,
           designSize: sess.designSize,
           questions: sess.questions,
+          data: sess.data,
           images: sess.images,
           // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
           ops: touched ? [] : undefined,
@@ -985,6 +987,7 @@ ${prompt}`,
           root: sess.state.root,
           components: sess.state.components,
           animations: sess.state.animations ?? [],
+          data: sess.data ?? cache.get(d.id)?.data,
         })
         let problems = ''
         if ('error' in res) {
@@ -1002,6 +1005,7 @@ ${prompt}`,
             root: sess.state.root,
             components: sess.state.components,
             animations: sess.state.animations,
+            data: ok.data.data,
           }
         }
         const cur = cache.get(d.id)!
@@ -1010,6 +1014,7 @@ ${prompt}`,
           res.root ||
           res.components ||
           res.animations ||
+          res.data ||
           r2.designSize ||
           r2.style !== undefined ||
           r2.images.length
@@ -1017,6 +1022,7 @@ ${prompt}`,
         if (res.root) cur.root = res.root
         if (res.components) cur.components = res.components
         if (res.animations) cur.animations = res.animations
+        if (res.data) cur.data = res.data
         if (r2.designSize) cur.designSize = r2.designSize
         if (r2.style !== undefined) cur.style = r2.style
         const ids: string[] = []
@@ -1507,6 +1513,7 @@ ${prompt}`,
         title: doc.title,
         designSize: doc.designSize,
         style: doc.style,
+        data: doc.data,
         root: normalizeTree(doc.root),
         components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,

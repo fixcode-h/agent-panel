@@ -15,6 +15,7 @@ import {
   type Design,
 } from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
+import { DATA_TYPES, normalizeData, type DesignData } from '../shared/design-data.ts'
 import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } from '../shared/anim.ts'
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -69,8 +70,10 @@ interface Session {
   concepts: ConceptRequest[]
   /** 用户在输入框选的原画张数：给了就按它出，AI 写的 count 不算 */
   conceptCount?: number
+  /** 这一轮定下的画板假数据（见 design-data.ts），最后和设计一起存下 */
+  data?: DesignData
   /** 每次改动前的样子，undo 用 */
-  history: { state: OpsState; images: Session['images'] }[]
+  history: { state: OpsState; images: Session['images']; data?: DesignData }[]
   /** 截过的画布截图，view_image 里写 screenshot:<第几张> */
   shots: string[]
 }
@@ -127,6 +130,7 @@ export function openDesignSession(
     readOnly: !!opts.readOnly,
     concepts: [],
     conceptCount: opts.conceptCount,
+    data: design.data,
     history: [],
     shots: [],
   }
@@ -301,6 +305,45 @@ const TOOLS = [
     inputSchema: NAMES,
   },
   {
+    name: 'set_data',
+    description:
+      '定义画板预览用的运行时假数据（只影响左侧画板，不导出）。每项一个数据集合：name 用英文标识（例如 Items），label 是中文名，fields 写这个界面需要的数据结构，rows 写示例行。' +
+      '列表控件（UniformGridPanel / ListView / TileView / DynamicEntryBox）在 Properties 里写 DataSet="<集合 name>"，格子数按 rows 的数量渲染。' +
+      '条目子控件里的控件写 DataField="<字段 key>" 显示这一行的值：TextBlock 换成文字，Image 换图（值写 "img:<图片 id>"，空字符串表示这个格子没有物品，控件隐藏），ProgressBar 换成百分比，CheckBox 换成勾选。' +
+      '同一个控件在不同数据下要换样子时写 States：[{ "Name":"Selected", "When":{"Field":"selected","Equals":true}, "Properties":{…} }]，匹配到哪条就把 Properties 深合并到控件上（按顺序取第一条，不写 When 是默认状态）。状态图仍然用设计里的图片（"img:<id>"）。' +
+      '按 name 替换已有的同名集合，其他集合保留。',
+    inputSchema: obj(
+      {
+        sets: {
+          type: 'array',
+          items: obj(
+            {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              label: { type: 'string' },
+              fields: {
+                type: 'array',
+                items: obj(
+                  {
+                    key: { type: 'string' },
+                    label: { type: 'string' },
+                    type: { type: 'string', enum: DATA_TYPES },
+                    example: { description: '新建一行时的默认值' },
+                    widget: { type: 'string', description: '对应条目子控件里的哪个控件' },
+                  },
+                  ['key'],
+                ),
+              },
+              rows: { type: 'array', items: { type: 'object' }, description: '每项是 { 字段 key: 值 }' },
+            },
+            ['name', 'fields'],
+          ),
+        },
+      },
+      ['sets'],
+    ),
+  },
+  {
     name: 'set_design',
     description: 'style 写整体美术风格（英文，生成每张图时都会带上），designSize 改设计稿尺寸；只写要改的。',
     inputSchema: obj({ style: { type: 'string' }, designSize: SIZE }),
@@ -445,6 +488,7 @@ const MUTATING = new Set([
   'add_images',
   'add_animations',
   'remove_animations',
+  'set_data',
   'edit',
 ])
 
@@ -452,7 +496,7 @@ const MUTATING = new Set([
 function apply(s: Session, ops: unknown[]) {
   const lines: string[] = []
   let ok = 0
-  const before = { state: s.state, images: s.images }
+  const before = { state: s.state, images: s.images, data: s.data }
   ops.forEach((op, i) => {
     const r = applyOp(s.state, op)
     if ('error' in r) lines.push(ops.length > 1 ? `第 ${i + 1} 条失败：${r.error}` : r.error)
@@ -528,7 +572,13 @@ function warnings(s: Session) {
 export function checkSession(s: Session) {
   return resolveDesignResult(
     { reply: '', images: s.images, ops: [] },
-    { ...s.design, root: s.state.root, components: s.state.components, animations: s.state.animations ?? [] },
+    {
+      ...s.design,
+      root: s.state.root,
+      components: s.state.components,
+      animations: s.state.animations ?? [],
+      data: s.data ?? s.design.data,
+    },
   )
 }
 
@@ -795,6 +845,12 @@ async function callTool(s: Session, raw: string, args: any) {
           })),
           newImages: s.images.map((i) => i.id),
           animations: animationsBrief(s.state.animations ?? []),
+          data: (s.data ?? s.design.data)?.sets.map((x) => ({
+            id: x.id,
+            name: x.name,
+            fields: x.fields.map((f) => `${f.key}:${f.type}`),
+            rows: x.rows.length,
+          })),
         }),
       )
     case 'add_widgets':
@@ -879,9 +935,26 @@ async function callTool(s: Session, raw: string, args: any) {
       const merged = [...s.images.filter((x) => !p.data.some((y) => y.id === x.id)), ...p.data]
       const bad = sheetProblems(merged)
       if (bad.length) return text(`没有记下：\n${bad.join('\n')}`, true)
-      s.history.push({ state: s.state, images: s.images })
+      s.history.push({ state: s.state, images: s.images, data: s.data })
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)
+    }
+    case 'set_data': {
+      const list = Array.isArray(a.sets) ? a.sets : a.name ? [a] : []
+      if (!list.length) return text('sets 要写数据集合的数组，每项有 name、fields、rows', true)
+      const norm = normalizeData({ sets: list })
+      if (!norm.sets.length)
+        return text('数据集合的格式不对：每项至少要有 name，fields 里每项要有 key，rows 里每项是 { 字段名: 值 }', true)
+      const existing = (s.data ?? s.design.data)?.sets ?? []
+      const sets = [...existing.filter((x) => !norm.sets.some((n) => n.name === x.name || n.id === x.id)), ...norm.sets]
+      s.history.push({ state: s.state, images: s.images, data: s.data })
+      s.data = { sets }
+      s.applied++
+      s.onChange(s)
+      return text(
+        `已定义 ${norm.sets.length} 个数据集合：${norm.sets.map((x) => `${x.name}（${x.rows.length} 行）`).join('、')}。` +
+          `列表控件写 DataSet="${norm.sets[0].name}"，条目子控件里的控件写 DataField="<字段 key>"。`,
+      )
     }
     case 'set_design': {
       // 旧的 set_style、set_design_size 的写法也认
@@ -940,6 +1013,7 @@ async function callTool(s: Session, raw: string, args: any) {
       const back = s.history.splice(s.history.length - steps, steps)[0]
       s.state = back.state
       s.images = back.images
+      s.data = back.data
       s.onChange(s)
       return text(`撤回了 ${steps} 次修改`)
     }

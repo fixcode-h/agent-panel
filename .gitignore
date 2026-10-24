@@ -23,6 +23,27 @@ logs/
 # 测试里假 CLI 偶尔留在仓库根目录的输出
 /commandcode-output.txt
 
+# 本机凭据、环境变量文件和设置快照：只在本机用，不进仓库
+# （scripts/secret-check.mjs 会拦住误提交；示例文件用 .example / .sample / .template 结尾）
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+**/credentials.json
+**/settings.local.json
+
+# 编辑器的本机设置
+**/.vscode/settings.json
+**/.idea/workspace.xml
+
 # 用户在对话里粘贴的截图和文件，面板拷进来给 Agent 看的，不进仓库
 /attachments/
 

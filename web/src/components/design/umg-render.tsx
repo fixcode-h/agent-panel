@@ -15,6 +15,7 @@ import {
 import { WebNode } from './web-render'
 import type { Device } from '@shared/web'
 import { animKey } from '@shared/anim'
+import { dataRows, withRow, type DataRow, type DesignData } from '@shared/design-data'
 
 /**
  * 用 HTML 近似 UMG 的布局，在设计器里预览。视觉都来自图片（画刷），HTML 只负责摆位置：
@@ -41,6 +42,10 @@ export interface RenderCtx {
   device?: Device
   /** 正在画的是哪棵树（主界面是空，子控件里是子控件名）：给控件打上动画用的标记 data-an */
   tree?: string
+  /** 画板的运行时假数据（见 design-data.ts），只在预览里生效 */
+  data?: DesignData
+  /** 当前条目用的是哪一行数据：列表渲染条目时传进来 */
+  row?: DataRow
 }
 
 const H_JUSTIFY: Record<string, string> = {
@@ -231,13 +236,15 @@ export function UmgNode({
   parent?: Widget
   ctx: RenderCtx
 }) {
+  // 套用当前数据行：状态覆盖和字段绑定只在渲染时生效，不改设计树
+  const ww = withRow(w, ctx.row)
   // 网页 UI 的控件（以及放在 Frame 里的子控件引用）按网页的规则画
-  if (isWebType(w.Type) || slotType === 'FlexSlot') return <WebNode w={w} parent={parent} ctx={ctx} />
-  if (w.Properties?.Visibility === 'Collapsed') return null
+  if (isWebType(ww.Type) || slotType === 'FlexSlot') return <WebNode w={ww} parent={parent} ctx={ctx} />
+  if (ww.Properties?.Visibility === 'Collapsed') return null
   const s = slotStyle(slotType, w.Slot, parent)
   return (
     <div style={s.style} data-slot={ctx.interactive ? w.id : undefined}>
-      <UmgBody w={w} ctx={ctx} fillX={s.fillX} fillY={s.fillY} />
+      <UmgBody w={ww} ctx={ctx} fillX={s.fillX} fillY={s.fillY} />
     </div>
   )
 }
@@ -301,9 +308,11 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
       const kids = w.Children ?? []
       // 格子在属性里设：同一个子控件按格子数、列数排开，每格四周留 SlotPadding，和 UE 的 UniformGridPanel 一样等大
       const comp = ctx.components.get(String(p.EntryWidgetClass ?? ''))
+      // 绑定了数据集合：格子数和每格内容都按假数据来（集合是空的就是 0 个格子）
+      const dataList = dataRows(ctx.data, w)
       if (!kids.length) {
-        const n = entryCount(w)
-        if (!comp || ctx.depth > 6 || !n)
+        const n = dataList ? dataList.length : entryCount(w)
+        if (!comp || ctx.depth > 6 || (!dataList && !n))
           return el(
             {
               width: fillX ? undefined : 200,
@@ -314,8 +323,10 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
               fontSize: 11,
               color: '#60a5fa',
             },
-            `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}`,
+            `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}${dataList ? ` · ${n} 行数据` : ''}`,
           )
+        // 集合有绑定但没有行：空网格，占住原来的位置
+        if (dataList && !n) return el({ width: fillX ? undefined : 200, height: fillY ? undefined : 120 })
         const cols = Math.min(n, Math.max(1, Number(p.NumColumns) || 1))
         const sp = p.SlotPadding ?? {}
         const cellW = Math.max(Number(p.MinDesiredSlotWidth) || 0, comp.DesignSize.X + (sp.Left ?? 0) + (sp.Right ?? 0))
@@ -356,7 +367,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
                     height: fy ? '100%' : comp.DesignSize.Y,
                   }}
                 >
-                  <UmgNode w={comp.Root} ctx={sub} />
+                  <UmgNode w={comp.Root} ctx={dataList ? { ...sub, row: dataList[i] } : sub} />
                 </div>
               </div>
             )
@@ -623,10 +634,11 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
     case 'ListView':
     case 'TileView':
     case 'DynamicEntryBox': {
-      // 条目是运行时生成的：按 NumDesignerPreviewEntries 预览几条，和 UE 设计器一样
+      // 条目是运行时生成的：有数据集合时按数据行渲染，否则和 UE 设计器一样预览几条
       const comp = ctx.components.get(String(p.EntryWidgetClass ?? ''))
-      const n = Math.max(0, Math.min(50, Number(p.NumDesignerPreviewEntries) || 0))
-      if (!comp || ctx.depth > 6 || !n)
+      const rows = dataRows(ctx.data, w)
+      const n = rows ? rows.length : Math.max(0, Math.min(50, Number(p.NumDesignerPreviewEntries) || 0))
+      if (!comp || ctx.depth > 6 || (!rows && !n))
         return el(
           {
             width: fillX ? undefined : 200,
@@ -637,7 +649,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
             fontSize: 11,
             color: '#60a5fa',
           },
-          `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}`,
+          `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}${rows ? ` · ${n} 行数据` : ''}`,
         )
       const tile = w.Type === 'TileView'
       const vertical =
@@ -675,7 +687,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
               gridArea: p.EntryBoxType === 'Overlay' ? '1 / 1' : undefined,
             }}
           >
-            <UmgNode w={comp.Root} ctx={sub} />
+            <UmgNode w={comp.Root} ctx={rows ? { ...sub, row: rows[i] } : sub} />
           </div>
         )),
       )
