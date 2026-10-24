@@ -14,6 +14,7 @@ import {
   type TaskStep,
   type TaskTurn,
   type ToolUse,
+  type TurnEnd,
   type Workflow,
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
@@ -103,6 +104,8 @@ export function newTask(
     runStartedAt: now,
     waitMs: 0,
     waitStartedAt: '',
+    idleWaitMs: 0,
+    idleWaitAt: '',
     turns: [],
     ...(input.mode === 'workflow' ? planTask(workflow) : { steps: [] }),
     messages: [
@@ -148,31 +151,70 @@ export function beginRun(task: { runStartedAt: string }, now = new Date()) {
   task.runStartedAt = now.toISOString()
 }
 
-type Pausable = { runStartedAt: string; runMs: number; waitMs: number; waitStartedAt: string }
+type Pausable = {
+  runStartedAt: string
+  runMs: number
+  waitMs: number
+  waitStartedAt: string
+  idleWaitMs: number
+  idleWaitAt: string
+}
 
 /**
- * 执行中停在等待上（等用户确认 / 回答 / 下一句）：先把已经跑的执行时间结算进 runMs，
- * 停下的这一刻开始算等待，之后的空闲不再算执行。
+ * 执行中停在等待上（答完了，等用户下一条消息）：先把已经跑的执行时间结算进 runMs，
+ * 停下的这一刻开始算「等下一句」（idleWaitMs），之后的空闲不再算执行。
  * keepAlive 让一次 CLI 调用一直不返回，不在这里断开的话整段空闲都会被算成执行时间。
+ *
+ * 「等下一句」和「等用户确认 / 提问」（waitMs，那段同时算在执行里）分开记：
+ * 混在一个数里时报告会写出「执行 8m（其中等你处理 23h55m）」这种装不下的数，也会和「空闲」重复计时
  */
-export function pauseRun(task: Pausable, now = Date.now()) {
+export function pauseRun(task: Pausable, now = Date.now(), opts?: { idle?: boolean }) {
   if (!task.runStartedAt) return
   task.runMs += Math.max(0, now - Date.parse(task.runStartedAt))
   task.runStartedAt = ''
-  if (!task.waitStartedAt) task.waitStartedAt = new Date(now).toISOString()
+  // 等子对话时（idle: false）不记「等用户回下一句」：这段时间父对话没在跑，也不是在等用户；
+  // 它归到「本任务没在跑」的那一段里，由报告的「子对话占用」扣出来，不然会同时算成等待和占用
+  if (opts?.idle === false) return
+  if (!task.idleWaitAt) task.idleWaitAt = new Date(now).toISOString()
 }
 
-/** 等到了（用户回答 / 发来下一句）：等待结算进 waitMs，从这一刻继续算执行 */
+/** 等到了（用户回答 / 发来下一句）：两种等待各自结算，从这一刻继续算执行 */
 export function resumeRun(task: Pausable, now = Date.now()) {
   if (task.waitStartedAt) {
     task.waitMs = (task.waitMs ?? 0) + Math.max(0, now - Date.parse(task.waitStartedAt))
     task.waitStartedAt = ''
   }
+  if (task.idleWaitAt) {
+    task.idleWaitMs = (task.idleWaitMs ?? 0) + Math.max(0, now - Date.parse(task.idleWaitAt))
+    task.idleWaitAt = ''
+  }
   if (!task.runStartedAt) task.runStartedAt = new Date(now).toISOString()
 }
 
+/**
+ * 答完后等用户下一句的总时间（毫秒）：不算执行，也不算「等你确认/提问」。
+ * 只有还在跑的任务（status 为 running 或没给）才把正在等的那段算到 now；
+ * 已经停下的任务留着 idleWaitAt 只是没清掉，再按 now 算会让跨度和等待时间随查看时间一直涨
+ */
+export function idleWaitDuration(
+  o: Partial<{ idleWaitMs: number; idleWaitAt: string; status: string }>,
+  now = Date.now(),
+) {
+  const live = !!o.idleWaitAt && (o.status === undefined || o.status === 'running')
+  return (o.idleWaitMs ?? 0) + (live ? Math.max(0, now - Date.parse(o.idleWaitAt!)) : 0)
+}
+
 export function endRun(
-  task: TurnHost & { runMs: number; runStartedAt: string; waitMs: number; waitStartedAt: string; steps: Timed[] },
+  task: TurnHost & {
+    runMs: number
+    runStartedAt: string
+    waitMs: number
+    waitStartedAt: string
+    idleWaitMs: number
+    idleWaitAt: string
+    steps: Timed[]
+    stopReason?: StopReason
+  },
   now = new Date(),
 ) {
   if (task.runStartedAt) task.runMs += Math.max(0, now.getTime() - Date.parse(task.runStartedAt))
@@ -180,8 +222,15 @@ export function endRun(
   // 停下时还挂着的请求随这一轮结束，等待也到此为止（包含停在等待工具上的那段）
   task.waitMs = waitDuration(task, now.getTime())
   task.waitStartedAt = ''
+  // 等下一句的那段也结算掉：这里不看 status——收尾时 status 可能已经改成 done/stopped，
+  // 按 status 判 live 会把整段等待丢掉；留着开始时间，下次结算还会把之后的时间算进去
+  task.idleWaitMs =
+    (task.idleWaitMs ?? 0) + (task.idleWaitAt ? Math.max(0, now.getTime() - Date.parse(task.idleWaitAt)) : 0)
+  task.idleWaitAt = ''
   for (const o of task.steps) closeWait(o, now.getTime())
-  for (const turn of task.turns ?? []) if (turn.status === 'running') endTurn(task, turn, 'stopped', now.getTime())
+  // 还挂着的轮次照现在的停止原因收掉：面板重启、父对话收尾、用户暂停要能分开说
+  for (const turn of task.turns ?? [])
+    if (turn.status === 'running') endTurn(task, turn, 'stopped', now.getTime(), task.stopReason)
 }
 
 type TurnHost = Timed & {
@@ -225,9 +274,30 @@ export function turnStats(task: TurnHost, turn: TaskTurn, now = Date.now()) {
   }
 }
 
-export function endTurn(task: TurnHost, turn: TaskTurn, status: TaskTurn['status'], now = Date.now()) {
+export function endTurn(
+  task: TurnHost,
+  turn: TaskTurn,
+  status: TaskTurn['status'],
+  now = Date.now(),
+  reason?: StopReason,
+) {
   if (turn.status !== 'running') return
-  Object.assign(turn, turnStats(task, turn, now), { status, endedAt: new Date(now).toISOString() })
+  const end = turnEndOf(status, reason)
+  Object.assign(turn, turnStats(task, turn, now), { status, endedAt: new Date(now).toISOString() }, end ? { end } : {})
+}
+
+/**
+ * 一轮的结局：按状态和停止原因归类。旧记录没有 end 字段，返回 undefined（报告里算「原因没记录」），
+ * 不能默认成失败——那时多半只是保活结束或用户切走了页面
+ */
+export function turnEndOf(status: TaskTurn['status'], reason?: StopReason): TurnEnd | undefined {
+  if (status === 'done') return 'done'
+  if (status === 'failed') return 'failed'
+  if (reason === 'supersede') return 'supersede'
+  if (reason === 'user') return 'user'
+  // 其余都是面板（或别的动作）顺带结束的：父对话收尾、页面切走、闲置回收、归档、重启、换 CLI、CLI 没响应
+  if (reason) return 'panel'
+  return undefined
 }
 
 type Timed = { waitMs: number; waitStartedAt: string }

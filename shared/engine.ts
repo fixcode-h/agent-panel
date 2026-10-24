@@ -350,6 +350,11 @@ export interface Orchestra {
   toParent(text: string, question: boolean, options?: string[], kind?: AskKind): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
+  /**
+   * 这次运行有共享状态（存在 task.runs 里）：工作流运行才有，对话模式没有。
+   * 没有时 read_state / write_state 根本不注册，注册了也只会让模型每次都调出「这次运行没有共享状态」
+   */
+  sharedState: boolean
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
@@ -591,7 +596,11 @@ function runState(task: Task): Record<string, RunStateEntry> {
 
 /** 交给节点的共享状态快照：并发节点开始前读一次，执行中也可以用 read_state 再读 */
 function statePart(task: Task) {
-  const entries = Object.entries(runState(task))
+  // 只注入「这一次还在跑的运行」的状态：对话里跑过 start_plan 之后 task.runs 留着上一次运行，
+  // 再注入旧状态会误导模型，而对话模式根本没注册 read_state / write_state（提示里也不能提）
+  const rec = runRecord(task)
+  if (!rec || rec.status !== 'running') return ''
+  const entries = Object.entries(rec.state)
   if (!entries.length) return ''
   const lines = entries.slice(0, 50).map(([k, v]) => {
     const who = v.by || '未知节点'
@@ -841,6 +850,10 @@ function dropNodeSteps(host: EngineHost, step: TaskStep) {
       .map((s) => s.id),
   )
   if (!drop.size) return
+  // 这些单元记录整条要删掉：它们记着的验收不通过次数、重跑次数先汇总到节点上，不然重跑一次就少算一遍
+  const gone = host.task.steps.filter((s) => drop.has(s.id))
+  step.reviews = (step.reviews ?? 0) + gone.reduce((n, s) => n + (s.reviews ?? 0), 0)
+  step.reruns = (step.reruns ?? 0) + gone.reduce((n, s) => n + (s.reruns ?? 0), 0)
   host.task.steps = host.task.steps.filter((s) => !drop.has(s.id))
   host.task.messages = host.task.messages.filter((m) => !drop.has(m.step))
 }
@@ -1092,7 +1105,7 @@ ${now}
   }`
 }
 
-function commonPart(host: EngineHost, w?: Workflow) {
+function commonPart(host: EngineHost, w?: Workflow, chat = false) {
   const { original, extra } = userRequests(host.task)
   return [
     `## 用户需求\n${original}`,
@@ -1100,7 +1113,9 @@ function commonPart(host: EngineHost, w?: Workflow) {
     promptLangRules(),
     extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
-    statePart(host.task),
+    // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 后 task.runs 会留着上一次运行，
+    // 注入旧状态会让模型去调根本没注册的 read_state / write_state
+    chat ? '' : statePart(host.task),
     policyPart(host),
     goalPart(host),
     rulesPart(host),
@@ -1217,10 +1232,13 @@ async function runNodeSingle(
   if (step.status === 'done') return { ok: true, output: step.output }
   if (host.halted) return { ok: false, halted: true, error: '' }
   // 上次执行到一半被打断、CLI 会话还在：续接会话接着做，不从头再来
-  const resumeHalf = step.interrupted && !!host.task.sessions[step.id] && node.kind === 'agent'
+  const half = step.interrupted
+  const resumeHalf = half && !!host.task.sessions[step.id] && node.kind === 'agent'
   step.interrupted = false
   if (!resumeHalf) {
     dropRerun(host, step)
+    // 上一遍跑完了（不是被打断续接）这里又跑一遍：记成返工，重新执行时 rounds 会清零，不记就看不出来跑过两次
+    if (!half && step.endedAt) step.reruns = (step.reruns ?? 0) + 1
     // 重新执行：耗时和等待从头算；续接时接着之前做的时间累加
     step.spentMs = 0
     step.waitMs = 0
@@ -1395,6 +1413,8 @@ async function runNodeSingle(
         system(host, t('「{title}」的验收流程没有写「验收结论」，按通过处理。', { title: step.title }), step.id)
       host.changed(true)
       if (verdict !== 'fail') return null
+      // 不通过、要带着意见重做这一轮：单独累加，重新执行节点时 rounds 会清零，从 rounds 反推会少算
+      step.reviews = (step.reviews ?? 0) + 1
       if (host.halted) return { ok: false, halted: true, error: '' }
       if (n >= node.hooks.maxRounds)
         return {
@@ -1596,6 +1616,8 @@ async function runNodeSteps(
   step.interrupted = false
   if (!resume) {
     dropNodeSteps(host, step)
+    // 同 runNodeSingle：上一遍跑完过又从头来一遍，记成返工
+    if (step.endedAt) step.reruns = (step.reruns ?? 0) + 1
     step.spentMs = 0
     step.waitMs = 0
   }
@@ -1688,6 +1710,8 @@ async function runNodeSteps(
     r.interrupted = false
     if (!half) {
       dropRerun(host, r)
+      // 这一步上一遍跑完过又从头来：和节点级一样记成返工，验证步骤在节点内重跑才算得出来
+      if (r.endedAt) r.reruns = (r.reruns ?? 0) + 1
       r.spentMs = 0
       r.waitMs = 0
     }
@@ -1793,6 +1817,8 @@ async function runNodeSteps(
       if (!verdict) system(host, t('「{title}」的验收流程没有写「验收结论」，按通过处理。', { title: r.title }), r.id)
       host.changed(true)
       if (verdict !== 'fail') return null
+      // 同 runNodeSingle：验收不通过要重做的次数单独累加
+      r.reviews = (r.reviews ?? 0) + 1
       if (host.halted) return { ok: false, halted: true, error: '' }
       if (n >= unit.maxRounds)
         return {
@@ -2397,6 +2423,9 @@ function makeOrchestra(
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
     autoReturn: !!ctx.chat && !helper,
+    // 对话（含它派出的子任务）用不到共享状态：对话里跑过 start_plan 之后 task.runs 会残留上一次运行，
+    // 只看 runs 会把工具又注册回来，读到的还是上一次运行的 state
+    sharedState: !ctx.chat && !!runRecord(task),
     helperBatch() {
       const going = st.batches.get(self.id)
       if (going) return going
@@ -2801,7 +2830,7 @@ async function runHelper(
     step.startedAt = now()
     host.changed(true)
     const prompt = [
-      ...commonPart(host, ctx.workflow),
+      ...commonPart(host, ctx.workflow, !!ctx.chat),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
       siblings.length
@@ -2817,8 +2846,9 @@ async function runHelper(
       prompt,
       sessionKey: step.id,
       tier,
-      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话
-      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true }, step),
+      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
+      // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
+      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
     })
     if (r.ok) {
       const late = await settleHelpers(host, step)
@@ -3020,7 +3050,7 @@ async function conversationPrompt(
     backgroundPart(host),
     planPart(host, coordinator),
     wrapUpPart(host),
-    statePart(host.task),
+    // 对话模式没有共享状态工具：这里不注入（跑过 start_plan 时 task.runs 里是上一次运行的旧状态）
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
       ? `## 执行目录
@@ -3177,7 +3207,9 @@ async function runConversationTurn(host: EngineHost, who: string) {
         // 这一轮 CLI 已经报过完成（turnDoneAt）才被收掉：例如子对话交付完合并回收、父对话收尾、保活上限，
         // 这时用户没点暂停、活也已经干完，不能记成被打断。和 endTurn 用同一个判据，两处结论必须一致
         const answered = !!turn && !!r.stopped && (answeredAll(task, turn) || finishedStop(host))
-        if (turn) endTurn(task, turn, answered ? 'done' : r.stopped ? 'stopped' : 'failed')
+        // 停止原因记进这一轮的结局：面板重启、父对话收尾、用户暂停在报告里要能分开算
+        if (turn)
+          endTurn(task, turn, answered ? 'done' : r.stopped ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
         if (host.prewarm) {
           task.status = r.stopped && !answered ? 'stopped' : (host.prewarmFrom ?? 'done')
           return
@@ -3438,7 +3470,7 @@ export async function runEngineTurn(host: EngineHost) {
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, main.step.agentId)
     if (turn) host.changed(true)
     const r = await mainTurn(host, main, 'plan', firstPlanEvent(host.prompt, !replanned))
-    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
     if (!r.ok) {
       if (host.prewarm) {
         task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
@@ -3470,7 +3502,7 @@ export async function runEngineTurn(host: EngineHost) {
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, main.step.agentId)
     if (turn) host.changed(true)
     const r = await mainTurn(host, main, 'plan', planEvent(host.prompt, run, blocked ?? undefined))
-    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
     if (!r.ok) {
       if (host.prewarm) {
         task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
@@ -3508,7 +3540,7 @@ export async function runEngineTurn(host: EngineHost) {
       ...(task.mode === 'workflow' ? { tier: '' as NodeTier } : {}),
       ...(host.prewarm ? { prewarm: true } : {}),
     })
-    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed', Date.now(), host.stopReason?.())
     // 预热失败（CLI 没装好、会话续不上等）不算这一轮：回到原来的状态，等用户发消息时再按正常流程报错
     if (!r.ok) {
       if (host.prewarm) {

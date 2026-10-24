@@ -828,6 +828,11 @@ await runShard('本机请求与设置', async (api) => {
         rec.tools.filter((n) => ['ask_user', 'wait_user_message', 'read_user_notes'].includes(n)),
         cli === 'commandcode' ? ['ask_user', 'read_user_notes', 'wait_user_message'] : ['ask_user'],
       )
+      // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：这两个工具不注册，模型不会调到一个必然失败的
+      assert.ok(
+        !rec.tools.includes('read_state') && !rec.tools.includes('write_state'),
+        `${cli}：对话模式不注册 read_state / write_state`,
+      )
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
