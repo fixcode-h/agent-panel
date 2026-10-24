@@ -4,7 +4,7 @@ import type { Task, TaskJob, ToolUse } from '@shared/schema'
 import { visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
-import { RowShell, ToolRow } from './ToolRow'
+import { RowShell, ToolRows } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
 import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { t } from '@shared/i18n'
@@ -31,27 +31,17 @@ function childMs(
   return Math.max(0, (Number.isFinite(end) ? end : now) - start)
 }
 
-function JobRow({ job, now, step }: { job: TaskJob; now: number; step?: string }) {
+function JobRow({ job, now }: { job: TaskJob; now: number }) {
   const [open, setOpen] = useState(false)
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
-  // 子任务起的命令：行首写「子任务」、标题是那一步的名字、后面跟命令名（计时口径和父对话的后台命令一样）
-  const detail =
-    step || job.state === 'queued' ? (
-      <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
-        {step && (
-          <span className="min-w-0 truncate font-mono" title={job.name}>
-            {job.name}
-          </span>
-        )}
-        {job.state === 'queued' && <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span>}
-      </span>
-    ) : undefined
   return (
     <RowShell
       glyph={spin}
-      verb={step ? t('子任务') : t('后台命令')}
-      title={step ?? job.name}
-      detail={detail}
+      verb={t('后台命令')}
+      title={job.name}
+      detail={
+        job.state === 'queued' ? <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span> : undefined
+      }
       ms={started ? now - started : undefined}
       open={open}
       onToggle={() => setOpen(!open)}
@@ -59,6 +49,50 @@ function JobRow({ job, now, step }: { job: TaskJob; now: number; step?: string }
       <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
         {job.command}
       </pre>
+    </RowShell>
+  )
+}
+
+/**
+ * 子任务起的后台命令：一个子任务只占一行（行首「子任务」、标题是它的名字），后面写命令名或「n 条后台命令」，
+ * 展开看每条命令。计时从最早开始的那条算，和父对话的后台命令同一个口径
+ */
+function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now: number }) {
+  const [open, setOpen] = useState(false)
+  const starts = jobs.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter((x) => x > 0)
+  const started = starts.length ? Math.min(...starts) : 0
+  const queued = jobs.every((j) => j.state === 'queued')
+  const names = jobs.map((j) => j.name).join(t('、'))
+  return (
+    <RowShell
+      glyph={spin}
+      verb={t('子任务')}
+      title={title}
+      detail={
+        <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
+          <span className="min-w-0 truncate font-mono" title={names}>
+            {jobs.length === 1 ? jobs[0].name : t('{n} 条后台命令', { n: jobs.length })}
+          </span>
+          {queued && <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span>}
+        </span>
+      }
+      ms={started ? now - started : undefined}
+      open={open}
+      onToggle={() => setOpen(!open)}
+    >
+      <div className="flex flex-col divide-y border-t bg-card/60">
+        {jobs.map((j) => (
+          <div key={j.id} className="px-3.5 py-2.5">
+            <p className="mb-1 flex items-center gap-1.5 text-xs text-subtle">
+              <span className="truncate font-mono">{j.name}</span>
+              {j.state === 'queued' && <span className="shrink-0">{t('排队中')}</span>}
+            </p>
+            <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+              {j.command}
+            </pre>
+          </div>
+        ))}
+      </div>
     </RowShell>
   )
 }
@@ -100,11 +134,9 @@ export function RunningNow({
   if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length) return null
   const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
-      {tools.map((x, i) => (
-        <ToolRow key={`t${i}`} tool={x} task={task} />
-      ))}
-      {stepJobs.map(({ step, job }) => (
-        <JobRow key={job.id} job={job} now={now} step={step.title || t('未命名')} />
+      <ToolRows tools={tools} task={task} />
+      {stepJobs.map(({ step, jobs }) => (
+        <StepJobsRow key={step.id} title={step.title || t('未命名')} jobs={jobs} now={now} />
       ))}
       {ownJobs.map((j) => (
         <JobRow key={j.id} job={j} now={now} />

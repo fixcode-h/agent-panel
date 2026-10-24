@@ -19,7 +19,7 @@ import { api } from '@/lib/api'
 import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { RowShell, ToolRow } from './ToolRow'
+import { RowShell, ToolRows } from './ToolRow'
 import { fmtDuration } from '@/lib/tasks'
 import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
 import { ChildAskCard } from './ChildAskCard'
@@ -386,9 +386,7 @@ const MessageBody = memo(
           {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
           {!hideProcess && m.tools.length > 0 && (
             <div className="flex flex-col gap-1">
-              {m.tools.map((t, i) => (
-                <ToolRow key={i} tool={t} task={task} />
-              ))}
+              <ToolRows tools={m.tools} task={task} />
             </div>
           )}
           {m.text && (

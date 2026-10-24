@@ -819,6 +819,7 @@ export const EN_TASKS: Record<string, string> = {
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
   后台命令: 'Background command',
+  '{n} 条后台命令': '{n} background commands',
   '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',
   合并编译: 'Merge build',
   子任务结果: 'Subtask results',
@@ -988,6 +989,10 @@ export const EN_TASKS: Record<string, string> = {
   '已收到{name}发来的消息': 'Received a message from {name}',
   '发给{name}的消息': 'Message to {name}',
   '来自 {name}': 'from {name}',
+  '发给 {n} 个子对话的同一条消息': 'The same message sent to {n} sub-conversations',
+  '发给 {n} 个：{names}': 'Sent to {n}: {names}',
+  没送到: 'Not delivered',
+  已送达: 'Delivered',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',

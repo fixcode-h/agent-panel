@@ -282,6 +282,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
     }
   }
+  // 同一段话逐个交给几个子对话的旧记录：合成一行「发给 3 个」，展开列出每个收件人
+  {
+    const row = p.getByText('发给 3 个：', { exact: false }).first()
+    if (!(await row.count())) errors.push('同一段话交给几个子对话：没有合成一行「发给 3 个」')
+    else {
+      await row.scrollIntoViewIfNeeded()
+      if ((await p.getByText('截图失败就不下视觉结论', { exact: false }).count()) !== 1)
+        errors.push('同一段话交给几个子对话：还是画成了好几行')
+      await row.click()
+      await check(p, '发送消息-同一段话合成一行', ['发送消息', '交代任务', '发给 3 个子对话的同一条消息'])
+      await row.click()
+    }
+  }
   // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
   {
     const openTask = () => backToTask()

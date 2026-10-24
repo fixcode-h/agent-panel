@@ -1292,33 +1292,35 @@ export function visibleChildren<T extends ChildEntry>(list: T[]): T[] {
   return sortChildren(spinningChildren(list))
 }
 
-/** 运行区里一条「子任务 + 它起的后台命令」：
- */
+/** 运行区里一条子任务和它起的后台命令：一个子任务只占一行，不管起了几条命令 */
 export interface SubStepJob<S, J> {
   step: S
-  job: J
+  jobs: J[]
 }
 
 /**
- * 运行区的后台命令按来源分成两批：sub 是子任务（slot='sub' 的步骤）起的，own 是父对话自己起的
- * （包括它挂在自己计划步骤上的）。
- * 判定只写这一处：job.step 指向的步骤是子任务才算；以前运行区把子任务起的和父对话起的一起列成
- * 「后台命令」，看不出是谁在等。父对话自己起的照旧。
- * 老记录没有 job.step，自然落到 own（兼容旧数据）。
+ * 运行区的后台命令按来源分成两批：sub 是子任务（slot='sub' 的步骤）起的，按子任务归成一行；
+ * own 是父对话自己起的（包括它挂在自己计划步骤上的）。
+ * 判定只写这一处：job.step 指向的步骤是子任务才算。以前一条命令一行，一个子任务起了三条命令就列成三个
+ * 同名的「子任务」（用户 2026-10-24 反馈）。老记录没有 job.step，自然落到 own（兼容旧数据）。
  */
 export function splitStepJobs<S extends { id: string; slot?: string }, J extends { step?: string }>(
   steps: S[],
   jobs: J[],
 ): { sub: SubStepJob<S, J>[]; own: J[] } {
   const subs = new Map(steps.filter((s) => s.slot === 'sub').map((s) => [s.id, s]))
-  const sub: SubStepJob<S, J>[] = []
+  const rows = new Map<string, SubStepJob<S, J>>()
   const own: J[] = []
   for (const j of jobs) {
     const step = j.step ? subs.get(j.step) : undefined
-    if (step) sub.push({ step, job: j })
-    else own.push(j)
+    if (!step) {
+      own.push(j)
+      continue
+    }
+    const row = rows.get(step.id) ?? rows.set(step.id, { step, jobs: [] }).get(step.id)!
+    row.jobs.push(j)
   }
-  return { sub, own }
+  return { sub: [...rows.values()], own }
 }
 
 /**

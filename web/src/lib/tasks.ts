@@ -151,6 +151,14 @@ export interface ToolView {
   send?: { kind: PeerKind; to: string; body: string }
 }
 
+/** 几次交给子对话合成一行时的一个收件方：名字、能打开的子对话、面板给的回执、有没有送到 */
+export interface SendTarget {
+  name: string
+  child?: string
+  receipt?: string
+  failed?: boolean
+}
+
 /** 给另一个对话发消息的几个工具：收件方是谁、哪一类、正文 */
 function sendOf(name: string, tool: ToolUse): ToolView['send'] {
   const a = toolArgs(tool)
@@ -204,6 +212,25 @@ export function toolView(tool: ToolUse): ToolView | null {
   const a = toolArgs(tool)
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
   return { tool: { ...tool, name: mcp[2], label: arg ? firstLine(arg).slice(0, 120) : '' }, server: mcp[1] }
+}
+
+/**
+ * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组：以前父对话会把用户的一条要求逐个转给
+ * 四五个子对话（现在面板拒绝这么发，见 shared/peer-message.ts 的 sentToOther），旧记录里只画一行「发送消息」，展开看每个收件人，不再刷出四五行一模一样的标题。
+ * 返回的每组画成一行；只有一个工具的组照常画
+ */
+export function groupTools(tools: ToolUse[]): ToolUse[][] {
+  const out: ToolUse[][] = []
+  let key = ''
+  for (const tool of tools) {
+    const send = toolView(tool)?.send
+    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方
+    const k = send && send.body && panelName(tool) === 'send_to_conversation' ? `${send.kind}\n${send.body}` : ''
+    if (k && k === key) out[out.length - 1].push(tool)
+    else out.push([tool])
+    key = k
+  }
+  return out
 }
 
 /**
