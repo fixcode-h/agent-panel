@@ -259,19 +259,57 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   缺模型: 'Missing models',
   '模板用了面板不认识的节点：{list}。请先启动 ComfyUI 再添加，它会按实际安装的节点来转换':
     "This template uses nodes the panel doesn't know: {list}. Start ComfyUI first and add it again; it converts against the nodes you actually have",
-  '模板里没有 SaveImage 节点，拿不到生成的图片':
-    "The template has no SaveImage node, so it can't produce images",
+  '模板里没有 SaveImage 节点，拿不到生成的图片': "The template has no SaveImage node, so it can't produce images",
   '下载模板列表失败（{status}）': "Couldn't download the template list ({status})",
   '模板名不对：{name}': 'Invalid template name: {name}',
   '取模板 {name} 失败（{status}）': "Couldn't fetch template {name} ({status})",
   '找不到模板 {name}': 'Template {name} not found',
   '这是视频 / 音频模板，UI 设计只处理图片': 'This is a video/audio template; UI design only produces images',
   '这个模板没有节点图，取不到依赖': "This template has no node graph, so its dependencies can't be read",
-  '模板依赖的模型都在本地了': 'All models this template needs are already local',
+  模板依赖的模型都在本地了: 'All models this template needs are already local',
   '模板里的模型没有可下载的地址，需要自己放到 ComfyUI/models':
     "This template's models have no download link; put them in ComfyUI/models yourself",
   '下载 {name} 的模型': 'Download models for {name}',
   '{n} 个文件没有下载地址，需要自己放到 ComfyUI/models':
     '{n} files have no download link; put them in ComfyUI/models yourself',
   '{name} 的模型下载完成': 'Models for {name} downloaded',
+  官方模板列表已更新: 'Official template list updated',
+  模板商店: 'Template store',
+  '从面板内置和 ComfyUI 官方模板里挑一个，看节点图和依赖；缺的模型可以直接下载。':
+    'Pick a built-in or ComfyUI official template, preview its graph and dependencies, and download missing models right here.',
+  '导入 ComfyUI 工作流': 'Import a ComfyUI workflow',
+  刷新官方模板: 'Refresh official templates',
+  返回工作流: 'Back to workflows',
+  '官方列表更新于 {time}': 'Official list updated {time}',
+  '离线快照：联网后点「刷新官方模板」拿完整列表':
+    'Offline snapshot: go online and click "Refresh official templates" for the full list',
+  搜索模板: 'Search templates',
+  '搜索模板、模型或标签': 'Search templates, models or tags',
+  来源: 'Source',
+  依赖状态: 'Dependencies',
+  排序: 'Sort',
+  '{n} 个模板': '{n} templates',
+  没有符合条件的模板: 'No templates match',
+  '节点图已缓存，离线也能预览': 'Graph cached, previews offline',
+  没有模型信息: 'No model info',
+  依赖已就绪: 'Dependencies ready',
+  打开后检查依赖: 'Open to check dependencies',
+  已添加到工作流: 'Added to workflows',
+  返回列表: 'Back to list',
+  '下载中…': 'Downloading…',
+  '下载缺失的模型（{n} 个）': 'Download missing models ({n})',
+  添加为工作流: 'Add as workflow',
+  '这是视频或音频模板，UI 设计只处理图片，添加后也不能用于这里的出图。':
+    "This is a video or audio template; UI design only produces images, so it can't be used here even after adding.",
+  '这个模板需要先喂一张图（图生图 / 编辑）。UI 设计目前只按文字出图，可以在 ComfyUI 网页里打开使用。':
+    'This template needs an input image (image-to-image / edit). UI design currently generates from text only; open it in the ComfyUI web UI instead.',
+  这个模板没有可预览的节点图: 'This template has no previewable graph',
+  依赖的模型文件: 'Model files needed',
+  没有识别到模型文件: 'No model files detected',
+  '模板说明里没有列出模型文件；在 ComfyUI 里打开时会提示缺少什么。':
+    "The template doesn't list model files; ComfyUI will tell you what's missing when you open it.",
+  '缺失的文件没有下载地址，需要自己放到 ComfyUI 的 models 目录。':
+    'Missing files have no download link; put them in the ComfyUI models folder yourself.',
+  缺: 'Missing',
+  需要自己放: 'Add manually',
 }

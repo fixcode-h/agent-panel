@@ -148,9 +148,7 @@ export function filterTemplates(list: ComfyTemplateMeta[], q: TemplateQuery): Co
     if (q.sort === 'newest') return byDate(a, b)
     if (q.sort === 'smallest') return (a.size || Number.MAX_SAFE_INTEGER) - (b.size || Number.MAX_SAFE_INTEGER)
     // 面板内置的排最前（装了就能跑），其余按官方热度
-    return (
-      Number(a.source !== 'builtin') - Number(b.source !== 'builtin') || b.usage - a.usage || byDate(a, b)
-    )
+    return Number(a.source !== 'builtin') - Number(b.source !== 'builtin') || b.usage - a.usage || byDate(a, b)
   })
 }
 
@@ -220,7 +218,12 @@ export function normalizeLinks(raw: unknown): UiLink[] {
       target_slot: Number(src.target_slot),
       type: typeof src.type === 'string' ? src.type : undefined,
     }
-    if (Object.values(link).slice(0, 5).every((v) => Number.isFinite(v))) out.push(link)
+    if (
+      Object.values(link)
+        .slice(0, 5)
+        .every((v) => Number.isFinite(v))
+    )
+      out.push(link)
   }
   return out
 }
@@ -409,7 +412,11 @@ const KNOWN_WIDGETS: Record<string, (string | null)[]> = {
 }
 
 /** 没有控件、但确实是 ComfyUI 节点的类型；用来区分「未知节点」和「只是没有参数」 */
-const KNOWN_EMPTY = new Set(Object.entries(KNOWN_WIDGETS).filter(([, v]) => !v.length).map(([k]) => k))
+const KNOWN_EMPTY = new Set(
+  Object.entries(KNOWN_WIDGETS)
+    .filter(([, v]) => !v.length)
+    .map(([k]) => k),
+)
 
 export interface ComfyNodeInfo {
   input?: {

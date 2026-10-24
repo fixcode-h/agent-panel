@@ -1,610 +1,452 @@
 [
- {
-  "name": "video_minimax_h3_i2v",
-  "title": "MiniMax H3: Image to Video",
-  "description": "Turn a starting image into a short, high-quality video clip with MiniMax H3, a unified multimodal model that generates visuals and synchronized audio in a single pass. The workflow takes 1 input image and produces 1 video output, with optional text or reference media to steer motion, style, or sound. Ideal for rapid concept visualization, character-driven animation tests, and creating shareable social media clips with built-in sound design.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Int8",
-   "Video"
-  ],
-  "models": [
-   "MiniMax H3"
-  ],
-  "size": 44452911514,
-  "date": "2026-08-02",
-  "username": "ComfyUI",
-  "usage": 21648,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "video_ltx2_3_i2v",
-  "title": "LTX-2.3: Image to Video",
-  "description": "Upload an image to generate a video with improved motion consistency and fine details, including enhanced support for portrait formats and audio quality.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Video"
-  ],
-  "models": [
-   "LTX-2.3",
-   "Lightricks"
-  ],
-  "size": 47244640256,
-  "date": "2026-03-05",
-  "username": "ComfyUI",
-  "usage": 18137,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "image_qwen_image_2_1_image_edit",
-  "title": "Qwen Image 2.1: Image Edit",
-  "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K.",
-  "category": "Image",
-  "tags": [
-   "Image Edit",
-   "Int8"
-  ],
-  "models": [
-   "Qwen Image 2.1"
-  ],
-  "size": 26736171418,
-  "date": "2026-09-20",
-  "username": "ComfyUI",
-  "usage": 17538,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "image_z_image_turbo",
-  "title": "Z-Image-Turbo: Text to Image",
-  "description": "An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.",
-  "category": "Image",
-  "tags": [
-   "Image",
-   "Text to Image"
-  ],
-  "models": [
-   "Z-Image-Turbo"
-  ],
-  "size": 20830591386,
-  "date": "2025-11-27",
-  "username": "ComfyUI",
-  "usage": 15150,
-  "openSource": true,
-  "output": "image",
-  "needsInput": false
- },
- {
-  "name": "video_wan2_2_14B_i2v",
-  "title": "Wan 2.2 14B Image to Video",
-  "description": "Transform static images into dynamic videos with precise motion control and style preservation using Wan 2.2.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Video"
-  ],
-  "models": [
-   "Wan",
-   "Wan2.2"
-  ],
-  "size": 38010460570,
-  "date": "2025-07-29",
-  "username": "ComfyUI",
-  "usage": 10700,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "image_krea2_turbo_t2i",
-  "title": "Krea-2: Text to Image",
-  "description": "Generate images from text prompts using Krea 2, a foundation model built for aesthetic quality and creative control. It focuses on rendering expressive and artistic styles. Ideal for concept art exploration, visual brainstorming, and creating stylized imagery for design projects.",
-  "category": "Image",
-  "tags": [
-   "Text to Image"
-  ],
-  "models": [
-   "Krea 2"
-  ],
-  "size": 19112604467,
-  "date": "2026-06-24",
-  "username": "ComfyUI",
-  "usage": 9439,
-  "openSource": true,
-  "output": "image",
-  "needsInput": false
- },
- {
-  "name": "video_minimax_h3_r2v",
-  "title": "MiniMax H3: Reference to Video",
-  "description": "Generate a new video by feeding MiniMax H3 a reference image, up to nine images, three videos, and three audio clips alongside a text prompt, letting the model match character identity, motion, camera, voice, or style from those sources while producing native stereo audio in a single pass. Output is a single MP4 video at up to 2K resolution and 24fps for roughly 15 seconds. Ideal for character-consistent animation, style-transfer video generation, and audio-synced content creation.",
-  "category": "Video",
-  "tags": [
-   "Reference to Video",
-   "Int8",
-   "Video"
-  ],
-  "models": [
-   "MiniMax H3"
-  ],
-  "size": 44452911514,
-  "date": "2026-08-02",
-  "username": "ComfyUI",
-  "usage": 8616,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "image_qwen_image_2_1_t2i",
-  "title": "Qwen Image 2.1: Text to Image",
-  "description": "Generate images from text prompts with Qwen Image 2.1, the latest open-weight Qwen-Image model, producing a single 1024×1024 image over 25 sampling steps. Generation and instruction-based editing share one model with native 2K output, professional typography, and alpha-channel support. Ideal for poster and layout design, transparent asset creation, and rapid concept visualization.",
-  "category": "Image",
-  "tags": [
-   "Text to Image",
-   "Int8"
-  ],
-  "models": [
-   "Qwen Image 2.1"
-  ],
-  "size": 26736171418,
-  "date": "2026-09-20",
-  "username": "ComfyUI",
-  "usage": 4938,
-  "openSource": true,
-  "output": "image",
-  "needsInput": false
- },
- {
-  "name": "video_ltx2_5_i2v",
-  "title": "LTX-2.5: Image to Video",
-  "description": "Generate video from a single image using LTX-2.5, producing a high-fidelity clip with industry-leading pixel quality and native multishot capability that holds character, environment, and lighting across connected scenes. Ideal for cinematic production, VFX shot creation, and content pipelines requiring fast, locally deployable video generation.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Int8",
-   "Video"
-  ],
-  "models": [
-   "LTX-2.5"
-  ],
-  "size": 56908316672,
-  "date": "2026-08-11",
-  "username": "ComfyUI",
-  "usage": 4258,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "video_minimax_h3_t2v",
-  "title": "MiniMax H3: Text to Video",
-  "description": "Generate video with native stereo audio directly from a text prompt using MiniMax H3, an omni-modal model that synthesizes voice, sound effects, and music in a single pass. Output is up to 2K resolution, 24fps, and roughly 15 seconds long, with no file inputs required — just a prompt to one video output. Ideal for rapid concept visualization, social media content creation, and audio-synced storytelling.",
-  "category": "Video",
-  "tags": [
-   "Text to Video",
-   "Int8",
-   "Video"
-  ],
-  "models": [
-   "MiniMax H3"
-  ],
-  "size": 56908316672,
-  "date": "2026-08-02",
-  "username": "ComfyUI",
-  "usage": 4189,
-  "openSource": true,
-  "output": "video",
-  "needsInput": false
- },
- {
-  "name": "image_qwen_image_edit_2509",
-  "title": "Qwen Image Edit 2509",
-  "description": "Advanced image editing with multi-image support, improved consistency, and ControlNet integration.",
-  "category": "Image",
-  "tags": [
-   "ControlNet",
-   "Image Edit"
-  ],
-  "models": [
-   "Qwen-Image"
-  ],
-  "size": 31782757990,
-  "date": "2025-09-25",
-  "username": "ComfyUI",
-  "usage": 3451,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "video_fastvideo_fasth3_i2v",
-  "title": "FastVideo FastH3: Image to Video",
-  "description": "Generate video with synchronized native audio from a single still image using MiniMax H3 and the FastH3 8-step checkpoint. One image produces one video output with matching voice, sound effects, and music in a single pass. Ideal for animating portraits, bringing product shots to life, and quick social media clips.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Int8"
-  ],
-  "models": [
-   "MiniMax H3"
-  ],
-  "size": 45097156608,
-  "date": "2026-09-15",
-  "username": "ComfyUI",
-  "usage": 2477,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "image_flux2",
-  "title": "FLUX.2 Dev",
-  "description": "Generate photorealistic images with multi-reference consistency and professional text rendering.",
-  "category": "Image",
-  "tags": [
-   "Image",
-   "Image Edit",
-   "Text to Image"
-  ],
-  "models": [
-   "FLUX",
-   "FLUX.2 Dev"
-  ],
-  "size": 74088185856,
-  "date": "2025-11-26",
-  "username": "ComfyUI",
-  "usage": 2080,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "image_qwen_image_2_1_turbo_image_edit",
-  "title": "Qwen Image 2.1 Turbo: Image edit",
-  "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K",
-  "category": "Image",
-  "tags": [
-   "Image Edit"
-  ],
-  "models": [
-   "Qwen Image 2.1"
-  ],
-  "size": 41016937677,
-  "date": "2026-10-13",
-  "username": "ComfyUI",
-  "usage": 1560,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "image_qwen_image_edit_2511_int8",
-  "title": "Qwen Image Edit 2511 Int8: Image Edit",
-  "description": "Edit images with Qwen Image Edit 2511 Int8, using a quantized model for faster inference while maintaining high quality. Input one image and receive one edited output. Ideal for character-consistent portrait editing, multi-person group photo fusion, and industrial design modifications.",
-  "category": "Image",
-  "tags": [
-   "Image Edit",
-   "Int8"
-  ],
-  "models": [
-   "Qwen Image Edit 2511"
-  ],
-  "size": 31031138714,
-  "date": "2026-07-10",
-  "username": "ComfyUI",
-  "usage": 1466,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "video_wan_animate2",
-  "title": "Wan Animate 2: Motion Transfer",
-  "description": "Animate a still character using a driving video with Wan Animate 2, transferring motion directly from video frames without any pose extraction or skeleton preprocessing. The output preserves the reference character's identity while generating a fresh background and camera movement from your text prompt. Ideal for motion transfer, action mimicry, and character animation replacement projects.",
-  "category": "Video",
-  "tags": [
-   "Motion Control",
-   "Int8"
-  ],
-  "models": [
-   "Wan Animate"
-  ],
-  "size": 25662429594,
-  "date": "2026-08-07",
-  "username": "ComfyUI",
-  "usage": 1409,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "video_ltx2_5_t2v",
-  "title": "LTX-2.5: Text to Video",
-  "description": "Generate cinematic video from a text prompt using LTX-2.5, a production-ready diffusion model that outputs a single video file with optional spatial upscaling for enhanced resolution. Ideal for film previsualization, commercial storyboards, and high-volume content creation pipelines.",
-  "category": "Video",
-  "tags": [
-   "Video",
-   "Text to Video",
-   "Int8"
-  ],
-  "models": [
-   "LTX-2.5"
-  ],
-  "size": 53150220288,
-  "date": "2026-08-11",
-  "username": "ComfyUI",
-  "usage": 1400,
-  "openSource": true,
-  "output": "video",
-  "needsInput": false
- },
- {
-  "name": "image_flux3_klein_t2i",
-  "title": "FLUX 3 Image Klein: Text to Image",
-  "description": "Generate images from text prompts using FLUX 3 Image Klein, producing a single saved image with no file inputs required. Ideal for concept art, marketing visuals, and rapid prototyping of scene ideas from written descriptions.",
-  "category": "Image",
-  "tags": [
-   "Text to Image"
-  ],
-  "models": [
-   "FLUX 3 Image"
-  ],
-  "size": 21474836480,
-  "date": "2026-10-15",
-  "username": "ComfyUI",
-  "usage": 1287,
-  "openSource": true,
-  "output": "image",
-  "needsInput": false
- },
- {
-  "name": "template_purz_wan22_animate_auto_character_replace",
-  "title": "Wan2.2 Animate: Automatic Character Replacement",
-  "description": "Upload a video and a character image. Automatically replace the character in the video using the Wan2.2 Animate model.",
-  "category": "Character & Fashion",
-  "tags": [
-   "Video",
-   "Character Replacement",
-   "Video Edit"
-  ],
-  "models": [
-   "wan2.2 Animate"
-  ],
-  "size": 28776280883,
-  "date": "2026-03-08",
-  "username": "PurzBeats",
-  "usage": 1233,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "image_flux2_klein_image_edit_9b_base",
-  "title": "FLUX.2 [Klein] 9B: Image Edit",
-  "description": "BFL undistilled foundation model. Maximum flexibility and control. Great for fine-tuning.",
-  "category": "Image",
-  "tags": [
-   "Image",
-   "Text to Image"
-  ],
-  "models": [
-   "FLUX",
-   "FLUX.2 Klein"
-  ],
-  "size": 19327352832,
-  "date": "2026-01-16",
-  "username": "ComfyUI",
-  "usage": 1116,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "video_ltx2_3_ia2v",
-  "title": "LTX-2.3: Image Audio to Video",
-  "description": "Upload an image and an audio file to generate a high-quality video with synchronized lip movements using LTX-2.3.",
-  "category": "Video",
-  "tags": [
-   "Image to Video",
-   "Lip Sync",
-   "Video"
-  ],
-  "models": [
-   "LTX-2.3"
-  ],
-  "size": 42949672960,
-  "date": "2026-03-09",
-  "username": "ComfyUI",
-  "usage": 1044,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "image_flux3_klein_image_edit",
-  "title": "FLUX 3 Image Klein: Image Edit",
-  "description": "Edit an existing image with FLUX 3 Image Klein by supplying one input image and two text prompts, producing one refined output alongside a side-by-side comparison view. Ideal for targeted retouching, style adjustments, and detail corrections that preserve the original composition.",
-  "category": "Image",
-  "tags": [
-   "Image Edit"
-  ],
-  "models": [
-   "FLUX 3 Image"
-  ],
-  "size": 21474836480,
-  "date": "2026-10-15",
-  "username": "ComfyUI",
-  "usage": 1007,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "video_wan21_scail2_character_replacement",
-  "title": "SCAIL-2: Character Replacement",
-  "description": "Upload 1 reference character image and 1 driving video. Generate an animated video of the character matching the driving video's motion. Ideal for character animation, in-video character replacement, and motion transfer projects.",
-  "category": "Video",
-  "tags": [
-   "Character Replacement"
-  ],
-  "models": [
-   "SCAIL-2"
-  ],
-  "size": 44775034061,
-  "date": "2026-06-15",
-  "username": "ComfyUI",
-  "usage": 969,
-  "openSource": true,
-  "output": "video",
-  "needsInput": true
- },
- {
-  "name": "utility_seedvr2_image_upscale",
-  "title": "Image Upscale: SeedVR2",
-  "description": "Upload an image to upscale it with SeedVR2 and generate a high-definition output.",
-  "category": "Image Tools",
-  "tags": [
-   "Image Upscale"
-  ],
-  "models": [
-   "SeedVR2"
-  ],
-  "size": 17716740096,
-  "date": "2026-02-06",
-  "username": "ComfyUI",
-  "usage": 913,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "template_qwen_multiangle.app",
-  "title": "Generate Multiple Angles with 3D Camera Node",
-  "description": "Generate camera angle variations of your input with an easy to use 3D camera angle node.",
-  "category": "Image Tools",
-  "tags": [
-   "Image Edit"
-  ],
-  "models": [
-   "Qwen-Image-Edit"
-  ],
-  "size": 31245887078,
-  "date": "2026-10-13",
-  "username": "ComfyUI",
-  "usage": 777,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "utility_seedvr2_7b_int8_upscale_image",
-  "title": "Image Upscale: SeedVR2 7B Int8",
-  "description": "Upscale images using SeedVR2 7B Int8, a one-step diffusion model that enhances resolution through adversarial training and adaptive window attention. Input 1 image and receive 1 upscaled output with improved detail and clarity. Ideal for restoring low-resolution photos, preparing assets for print, or sharpening lightly degraded digital images.",
-  "category": "Image Tools",
-  "tags": [
-   "Image Upscale",
-   "Int8"
-  ],
-  "models": [
-   "SeedVR2"
-  ],
-  "size": 8804682957,
-  "date": "2026-07-13",
-  "username": "ComfyUI",
-  "usage": 532,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "templates-wan2_1_infinitetalk_music",
-  "title": "Audio-Driven Character Lip Sync Video",
-  "description": "Upload a character image and an audio file. Generate a lip-sync video where the character's mouth movements match the provided audio track.",
-  "category": "Character & Fashion",
-  "tags": [
-   "Audio to Video",
-   "Lip Sync",
-   "Video"
-  ],
-  "models": [
-   "Wan2.1 InfiniteTalk"
-  ],
-  "size": 10737418240,
-  "date": "2026-02-19",
-  "username": "hellorob",
-  "usage": 380,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "templates-1_click_multiple_character_angles-v1.0",
-  "title": "1 Click Multiple Character Angles",
-  "description": "Upload an image of your character and get multiple views of that image from different angles",
-  "category": "Character & Fashion",
-  "tags": [
-   "Image Edit"
-  ],
-  "models": [
-   "Qwen-Image-Edit"
-  ],
-  "size": 31245887078,
-  "date": "2025-12-08",
-  "username": "hellorob",
-  "usage": 360,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "templates-qwen_image_edit-crop_and_stitch-fusion",
-  "title": "Relight Composited Product",
-  "description": "Upload a composited image of your product, draw a mask in the mask editor and relight your product into the scene.",
-  "category": "Product & Ads",
-  "tags": [
-   "Image Edit",
-   "LoRA",
-   "Relight"
-  ],
-  "models": [
-   "Qwen-Image-Edit"
-  ],
-  "size": 0,
-  "date": "2025-12-11",
-  "username": "hellorob",
-  "usage": 37,
-  "openSource": true,
-  "output": "image",
-  "needsInput": true
- },
- {
-  "name": "templates_text_prompt_to_360hdr.app",
-  "title": "Equirectangular HDR Skybox Generator",
-  "description": "Prompt an environment and generate a equirectangular hdr image to use as skybox or lookdev in game development.",
-  "category": "Brand & Design",
-  "tags": [
-   "Game",
-   "LoRA",
-   "3D"
-  ],
-  "models": [
-   "Qwen-Image",
-   "SeedVR2"
-  ],
-  "size": 31782757990,
-  "date": "2026-03-06",
-  "username": "shane",
-  "usage": 19,
-  "openSource": true,
-  "output": "image",
-  "needsInput": false
- }
+  {
+    "name": "video_minimax_h3_i2v",
+    "title": "MiniMax H3: Image to Video",
+    "description": "Turn a starting image into a short, high-quality video clip with MiniMax H3, a unified multimodal model that generates visuals and synchronized audio in a single pass. The workflow takes 1 input image and produces 1 video output, with optional text or reference media to steer motion, style, or sound. Ideal for rapid concept visualization, character-driven animation tests, and creating shareable social media clips with built-in sound design.",
+    "category": "Video",
+    "tags": ["Image to Video", "Int8", "Video"],
+    "models": ["MiniMax H3"],
+    "size": 44452911514,
+    "date": "2026-08-02",
+    "username": "ComfyUI",
+    "usage": 21648,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "video_ltx2_3_i2v",
+    "title": "LTX-2.3: Image to Video",
+    "description": "Upload an image to generate a video with improved motion consistency and fine details, including enhanced support for portrait formats and audio quality.",
+    "category": "Video",
+    "tags": ["Image to Video", "Video"],
+    "models": ["LTX-2.3", "Lightricks"],
+    "size": 47244640256,
+    "date": "2026-03-05",
+    "username": "ComfyUI",
+    "usage": 18137,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "image_qwen_image_2_1_image_edit",
+    "title": "Qwen Image 2.1: Image Edit",
+    "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K.",
+    "category": "Image",
+    "tags": ["Image Edit", "Int8"],
+    "models": ["Qwen Image 2.1"],
+    "size": 26736171418,
+    "date": "2026-09-20",
+    "username": "ComfyUI",
+    "usage": 17538,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "image_z_image_turbo",
+    "title": "Z-Image-Turbo: Text to Image",
+    "description": "An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.",
+    "category": "Image",
+    "tags": ["Image", "Text to Image"],
+    "models": ["Z-Image-Turbo"],
+    "size": 20830591386,
+    "date": "2025-11-27",
+    "username": "ComfyUI",
+    "usage": 15150,
+    "openSource": true,
+    "output": "image",
+    "needsInput": false
+  },
+  {
+    "name": "video_wan2_2_14B_i2v",
+    "title": "Wan 2.2 14B Image to Video",
+    "description": "Transform static images into dynamic videos with precise motion control and style preservation using Wan 2.2.",
+    "category": "Video",
+    "tags": ["Image to Video", "Video"],
+    "models": ["Wan", "Wan2.2"],
+    "size": 38010460570,
+    "date": "2025-07-29",
+    "username": "ComfyUI",
+    "usage": 10700,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "image_krea2_turbo_t2i",
+    "title": "Krea-2: Text to Image",
+    "description": "Generate images from text prompts using Krea 2, a foundation model built for aesthetic quality and creative control. It focuses on rendering expressive and artistic styles. Ideal for concept art exploration, visual brainstorming, and creating stylized imagery for design projects.",
+    "category": "Image",
+    "tags": ["Text to Image"],
+    "models": ["Krea 2"],
+    "size": 19112604467,
+    "date": "2026-06-24",
+    "username": "ComfyUI",
+    "usage": 9439,
+    "openSource": true,
+    "output": "image",
+    "needsInput": false
+  },
+  {
+    "name": "video_minimax_h3_r2v",
+    "title": "MiniMax H3: Reference to Video",
+    "description": "Generate a new video by feeding MiniMax H3 a reference image, up to nine images, three videos, and three audio clips alongside a text prompt, letting the model match character identity, motion, camera, voice, or style from those sources while producing native stereo audio in a single pass. Output is a single MP4 video at up to 2K resolution and 24fps for roughly 15 seconds. Ideal for character-consistent animation, style-transfer video generation, and audio-synced content creation.",
+    "category": "Video",
+    "tags": ["Reference to Video", "Int8", "Video"],
+    "models": ["MiniMax H3"],
+    "size": 44452911514,
+    "date": "2026-08-02",
+    "username": "ComfyUI",
+    "usage": 8616,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "image_qwen_image_2_1_t2i",
+    "title": "Qwen Image 2.1: Text to Image",
+    "description": "Generate images from text prompts with Qwen Image 2.1, the latest open-weight Qwen-Image model, producing a single 1024×1024 image over 25 sampling steps. Generation and instruction-based editing share one model with native 2K output, professional typography, and alpha-channel support. Ideal for poster and layout design, transparent asset creation, and rapid concept visualization.",
+    "category": "Image",
+    "tags": ["Text to Image", "Int8"],
+    "models": ["Qwen Image 2.1"],
+    "size": 26736171418,
+    "date": "2026-09-20",
+    "username": "ComfyUI",
+    "usage": 4938,
+    "openSource": true,
+    "output": "image",
+    "needsInput": false
+  },
+  {
+    "name": "video_ltx2_5_i2v",
+    "title": "LTX-2.5: Image to Video",
+    "description": "Generate video from a single image using LTX-2.5, producing a high-fidelity clip with industry-leading pixel quality and native multishot capability that holds character, environment, and lighting across connected scenes. Ideal for cinematic production, VFX shot creation, and content pipelines requiring fast, locally deployable video generation.",
+    "category": "Video",
+    "tags": ["Image to Video", "Int8", "Video"],
+    "models": ["LTX-2.5"],
+    "size": 56908316672,
+    "date": "2026-08-11",
+    "username": "ComfyUI",
+    "usage": 4258,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "video_minimax_h3_t2v",
+    "title": "MiniMax H3: Text to Video",
+    "description": "Generate video with native stereo audio directly from a text prompt using MiniMax H3, an omni-modal model that synthesizes voice, sound effects, and music in a single pass. Output is up to 2K resolution, 24fps, and roughly 15 seconds long, with no file inputs required — just a prompt to one video output. Ideal for rapid concept visualization, social media content creation, and audio-synced storytelling.",
+    "category": "Video",
+    "tags": ["Text to Video", "Int8", "Video"],
+    "models": ["MiniMax H3"],
+    "size": 56908316672,
+    "date": "2026-08-02",
+    "username": "ComfyUI",
+    "usage": 4189,
+    "openSource": true,
+    "output": "video",
+    "needsInput": false
+  },
+  {
+    "name": "image_qwen_image_edit_2509",
+    "title": "Qwen Image Edit 2509",
+    "description": "Advanced image editing with multi-image support, improved consistency, and ControlNet integration.",
+    "category": "Image",
+    "tags": ["ControlNet", "Image Edit"],
+    "models": ["Qwen-Image"],
+    "size": 31782757990,
+    "date": "2025-09-25",
+    "username": "ComfyUI",
+    "usage": 3451,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "video_fastvideo_fasth3_i2v",
+    "title": "FastVideo FastH3: Image to Video",
+    "description": "Generate video with synchronized native audio from a single still image using MiniMax H3 and the FastH3 8-step checkpoint. One image produces one video output with matching voice, sound effects, and music in a single pass. Ideal for animating portraits, bringing product shots to life, and quick social media clips.",
+    "category": "Video",
+    "tags": ["Image to Video", "Int8"],
+    "models": ["MiniMax H3"],
+    "size": 45097156608,
+    "date": "2026-09-15",
+    "username": "ComfyUI",
+    "usage": 2477,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "image_flux2",
+    "title": "FLUX.2 Dev",
+    "description": "Generate photorealistic images with multi-reference consistency and professional text rendering.",
+    "category": "Image",
+    "tags": ["Image", "Image Edit", "Text to Image"],
+    "models": ["FLUX", "FLUX.2 Dev"],
+    "size": 74088185856,
+    "date": "2025-11-26",
+    "username": "ComfyUI",
+    "usage": 2080,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "image_qwen_image_2_1_turbo_image_edit",
+    "title": "Qwen Image 2.1 Turbo: Image edit",
+    "description": "Edit images with Qwen-Image-2.1 by feeding two reference images through a single checkpoint that handles both generation and editing, then comparing the result against the original. Ideal for character-consistent edits, product cutout compositing with real transparency, and style-transfer passes at native 2K",
+    "category": "Image",
+    "tags": ["Image Edit"],
+    "models": ["Qwen Image 2.1"],
+    "size": 41016937677,
+    "date": "2026-10-13",
+    "username": "ComfyUI",
+    "usage": 1560,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "image_qwen_image_edit_2511_int8",
+    "title": "Qwen Image Edit 2511 Int8: Image Edit",
+    "description": "Edit images with Qwen Image Edit 2511 Int8, using a quantized model for faster inference while maintaining high quality. Input one image and receive one edited output. Ideal for character-consistent portrait editing, multi-person group photo fusion, and industrial design modifications.",
+    "category": "Image",
+    "tags": ["Image Edit", "Int8"],
+    "models": ["Qwen Image Edit 2511"],
+    "size": 31031138714,
+    "date": "2026-07-10",
+    "username": "ComfyUI",
+    "usage": 1466,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "video_wan_animate2",
+    "title": "Wan Animate 2: Motion Transfer",
+    "description": "Animate a still character using a driving video with Wan Animate 2, transferring motion directly from video frames without any pose extraction or skeleton preprocessing. The output preserves the reference character's identity while generating a fresh background and camera movement from your text prompt. Ideal for motion transfer, action mimicry, and character animation replacement projects.",
+    "category": "Video",
+    "tags": ["Motion Control", "Int8"],
+    "models": ["Wan Animate"],
+    "size": 25662429594,
+    "date": "2026-08-07",
+    "username": "ComfyUI",
+    "usage": 1409,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "video_ltx2_5_t2v",
+    "title": "LTX-2.5: Text to Video",
+    "description": "Generate cinematic video from a text prompt using LTX-2.5, a production-ready diffusion model that outputs a single video file with optional spatial upscaling for enhanced resolution. Ideal for film previsualization, commercial storyboards, and high-volume content creation pipelines.",
+    "category": "Video",
+    "tags": ["Video", "Text to Video", "Int8"],
+    "models": ["LTX-2.5"],
+    "size": 53150220288,
+    "date": "2026-08-11",
+    "username": "ComfyUI",
+    "usage": 1400,
+    "openSource": true,
+    "output": "video",
+    "needsInput": false
+  },
+  {
+    "name": "image_flux3_klein_t2i",
+    "title": "FLUX 3 Image Klein: Text to Image",
+    "description": "Generate images from text prompts using FLUX 3 Image Klein, producing a single saved image with no file inputs required. Ideal for concept art, marketing visuals, and rapid prototyping of scene ideas from written descriptions.",
+    "category": "Image",
+    "tags": ["Text to Image"],
+    "models": ["FLUX 3 Image"],
+    "size": 21474836480,
+    "date": "2026-10-15",
+    "username": "ComfyUI",
+    "usage": 1287,
+    "openSource": true,
+    "output": "image",
+    "needsInput": false
+  },
+  {
+    "name": "template_purz_wan22_animate_auto_character_replace",
+    "title": "Wan2.2 Animate: Automatic Character Replacement",
+    "description": "Upload a video and a character image. Automatically replace the character in the video using the Wan2.2 Animate model.",
+    "category": "Character & Fashion",
+    "tags": ["Video", "Character Replacement", "Video Edit"],
+    "models": ["wan2.2 Animate"],
+    "size": 28776280883,
+    "date": "2026-03-08",
+    "username": "PurzBeats",
+    "usage": 1233,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "image_flux2_klein_image_edit_9b_base",
+    "title": "FLUX.2 [Klein] 9B: Image Edit",
+    "description": "BFL undistilled foundation model. Maximum flexibility and control. Great for fine-tuning.",
+    "category": "Image",
+    "tags": ["Image", "Text to Image"],
+    "models": ["FLUX", "FLUX.2 Klein"],
+    "size": 19327352832,
+    "date": "2026-01-16",
+    "username": "ComfyUI",
+    "usage": 1116,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "video_ltx2_3_ia2v",
+    "title": "LTX-2.3: Image Audio to Video",
+    "description": "Upload an image and an audio file to generate a high-quality video with synchronized lip movements using LTX-2.3.",
+    "category": "Video",
+    "tags": ["Image to Video", "Lip Sync", "Video"],
+    "models": ["LTX-2.3"],
+    "size": 42949672960,
+    "date": "2026-03-09",
+    "username": "ComfyUI",
+    "usage": 1044,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "image_flux3_klein_image_edit",
+    "title": "FLUX 3 Image Klein: Image Edit",
+    "description": "Edit an existing image with FLUX 3 Image Klein by supplying one input image and two text prompts, producing one refined output alongside a side-by-side comparison view. Ideal for targeted retouching, style adjustments, and detail corrections that preserve the original composition.",
+    "category": "Image",
+    "tags": ["Image Edit"],
+    "models": ["FLUX 3 Image"],
+    "size": 21474836480,
+    "date": "2026-10-15",
+    "username": "ComfyUI",
+    "usage": 1007,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "video_wan21_scail2_character_replacement",
+    "title": "SCAIL-2: Character Replacement",
+    "description": "Upload 1 reference character image and 1 driving video. Generate an animated video of the character matching the driving video's motion. Ideal for character animation, in-video character replacement, and motion transfer projects.",
+    "category": "Video",
+    "tags": ["Character Replacement"],
+    "models": ["SCAIL-2"],
+    "size": 44775034061,
+    "date": "2026-06-15",
+    "username": "ComfyUI",
+    "usage": 969,
+    "openSource": true,
+    "output": "video",
+    "needsInput": true
+  },
+  {
+    "name": "utility_seedvr2_image_upscale",
+    "title": "Image Upscale: SeedVR2",
+    "description": "Upload an image to upscale it with SeedVR2 and generate a high-definition output.",
+    "category": "Image Tools",
+    "tags": ["Image Upscale"],
+    "models": ["SeedVR2"],
+    "size": 17716740096,
+    "date": "2026-02-06",
+    "username": "ComfyUI",
+    "usage": 913,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "template_qwen_multiangle.app",
+    "title": "Generate Multiple Angles with 3D Camera Node",
+    "description": "Generate camera angle variations of your input with an easy to use 3D camera angle node.",
+    "category": "Image Tools",
+    "tags": ["Image Edit"],
+    "models": ["Qwen-Image-Edit"],
+    "size": 31245887078,
+    "date": "2026-10-13",
+    "username": "ComfyUI",
+    "usage": 777,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "utility_seedvr2_7b_int8_upscale_image",
+    "title": "Image Upscale: SeedVR2 7B Int8",
+    "description": "Upscale images using SeedVR2 7B Int8, a one-step diffusion model that enhances resolution through adversarial training and adaptive window attention. Input 1 image and receive 1 upscaled output with improved detail and clarity. Ideal for restoring low-resolution photos, preparing assets for print, or sharpening lightly degraded digital images.",
+    "category": "Image Tools",
+    "tags": ["Image Upscale", "Int8"],
+    "models": ["SeedVR2"],
+    "size": 8804682957,
+    "date": "2026-07-13",
+    "username": "ComfyUI",
+    "usage": 532,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "templates-wan2_1_infinitetalk_music",
+    "title": "Audio-Driven Character Lip Sync Video",
+    "description": "Upload a character image and an audio file. Generate a lip-sync video where the character's mouth movements match the provided audio track.",
+    "category": "Character & Fashion",
+    "tags": ["Audio to Video", "Lip Sync", "Video"],
+    "models": ["Wan2.1 InfiniteTalk"],
+    "size": 10737418240,
+    "date": "2026-02-19",
+    "username": "hellorob",
+    "usage": 380,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "templates-1_click_multiple_character_angles-v1.0",
+    "title": "1 Click Multiple Character Angles",
+    "description": "Upload an image of your character and get multiple views of that image from different angles",
+    "category": "Character & Fashion",
+    "tags": ["Image Edit"],
+    "models": ["Qwen-Image-Edit"],
+    "size": 31245887078,
+    "date": "2025-12-08",
+    "username": "hellorob",
+    "usage": 360,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "templates-qwen_image_edit-crop_and_stitch-fusion",
+    "title": "Relight Composited Product",
+    "description": "Upload a composited image of your product, draw a mask in the mask editor and relight your product into the scene.",
+    "category": "Product & Ads",
+    "tags": ["Image Edit", "LoRA", "Relight"],
+    "models": ["Qwen-Image-Edit"],
+    "size": 0,
+    "date": "2025-12-11",
+    "username": "hellorob",
+    "usage": 37,
+    "openSource": true,
+    "output": "image",
+    "needsInput": true
+  },
+  {
+    "name": "templates_text_prompt_to_360hdr.app",
+    "title": "Equirectangular HDR Skybox Generator",
+    "description": "Prompt an environment and generate a equirectangular hdr image to use as skybox or lookdev in game development.",
+    "category": "Brand & Design",
+    "tags": ["Game", "LoRA", "3D"],
+    "models": ["Qwen-Image", "SeedVR2"],
+    "size": 31782757990,
+    "date": "2026-03-06",
+    "username": "shane",
+    "usage": 19,
+    "openSource": true,
+    "output": "image",
+    "needsInput": false
+  }
 ]
