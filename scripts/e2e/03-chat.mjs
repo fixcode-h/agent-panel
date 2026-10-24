@@ -635,6 +635,41 @@ await runShard('对话与续接', async (api) => {
     assert.ok(c.input.includes('之前对话的摘要') && c.input.includes('接着做'), '新会话带上摘要')
     step('压缩上下文：Codex 用 thread/compact/start，Claude Code 用 /compact，Command Code 写摘要后开新会话')
 
+    // ---- CLI 收下消息后一直没有输出 ----
+    // 先在对话里写一行「CLI 没有响应」的警告；再发消息时不再插进卡住的这一轮，而是停掉它、接回会话重开，
+    // 没被处理的那条和新消息一起交过去
+    let st = await chatWith({ cli: 'commandcode' }, 'STALL_ONCE 先做这件')
+    const stallAlert = (x) => x.messages.find((m) => m.alert?.kind === 'no_response')
+    st = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${st.id}`)
+        return stallAlert(x) ? x : null
+      },
+      { label: '没有响应的警告', timeout: 15000 },
+    )
+    assert.equal(st.status, 'running', '只是警告，不自动停')
+    assert.equal(stallAlert(st).alert.level, 'warn')
+    assert.match(stallAlert(st).alert.detail, /STALL_ONCE 先做这件/, '原始信息里写着交给它的那条')
+    const stalledSession = Object.values(st.sessions ?? {})[0]
+    assert.ok(stalledSession, '卡住前已经拿到会话')
+    const sentAt = Date.now()
+    await call('POST', `/tasks/${st.id}/messages`, { text: '还在吗' })
+    // 卡住的 CLI 不理会中断：直接结束进程，不等中断的宽限时间
+    assert.ok(Date.now() - sentAt < 4000, `发消息不用等卡住的 CLI 收尾（用了 ${Date.now() - sentAt}ms）`)
+    st = await waitDone(st.id)
+    assert.equal(st.status, 'done')
+    c = calls().at(-1)
+    assert.equal(c.args[c.args.indexOf('--resume') + 1], stalledSession, '接回原来的会话')
+    assert.ok(
+      c.input.includes('一直没有回应') && c.input.includes('STALL_ONCE 先做这件') && c.input.includes('还在吗'),
+      '没被处理的那条和新消息一起交过去',
+    )
+    assert.equal(st.messages.filter((m) => m.role === 'user' && m.text === '还在吗').length, 1, '对话里只显示新消息')
+    assert.match(stallAlert(st).alert.resolved ?? '', /停掉了卡住的 CLI/, '警告那一行记下面板重启了它')
+    assert.notEqual(st.stopReason, 'user', '不说成用户暂停')
+    assert.ok(st.messages.at(-1).role === 'agent', '重开后有回复')
+    step('CLI 收下消息后没有输出：先警告，下一条消息停掉它、接回会话重开并带上没处理的那条')
+
     // ---- 审查改动 ----
     await call('POST', `/tasks/${a.id}/review`)
     a = await waitDone(a.id)

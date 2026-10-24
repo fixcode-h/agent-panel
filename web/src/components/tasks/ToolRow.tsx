@@ -26,6 +26,8 @@ import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
 import { PeerLine } from './PeerMessage'
+import { AlertRow } from './AlertRow'
+import { makeAlert } from '@shared/alerts'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -320,6 +322,10 @@ export function ToolRow({
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示；别的 MCP 工具名当动作
   const view = toolView(raw)
   if (view === null) return null
+  // CLI 报的重试、失败：画成带底色的警告行，点开看是哪一类、怎么办（旧数据只有 failed 的提示行按正文归类）
+  const alert =
+    raw.alert ?? (raw.kind === 'other' && raw.failed && raw.name === t('提示') ? makeAlert('error', raw.label) : null)
+  if (alert) return <AlertRow alert={alert} text={raw.label} />
   // 给另一个对话发消息：和收件方的「接收消息」一样画成「发送消息 + 类型 + 内容标题」
   if (view.send)
     return (

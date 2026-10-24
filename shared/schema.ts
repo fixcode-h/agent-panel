@@ -934,6 +934,41 @@ export const TaskPatch = z
   .partial()
 export type TaskPatch = z.infer<typeof TaskPatch>
 
+/**
+ * 对话里的报错和警告分哪几类（说明和处理办法见 shared/alerts.ts）：界面画成一行带底色的「警告」，
+ * 点开看这是什么、怎么办和原始信息。所有错误都要这样显示在对话里，不能只写日志
+ */
+export const AlertKind = z.enum([
+  'network', // 连不上模型服务、连接中断
+  'rate_limit', // 被限流、服务过载
+  'auth', // 登录过期、密钥无效
+  'quota', // 余额或额度用完
+  'context', // 上下文超长
+  'model', // 模型名不对、接口拒绝这次请求
+  'cli_missing', // 找不到 CLI 命令
+  'cli_exit', // CLI 没做完这一轮就退出、执行失败
+  'no_response', // 交给 CLI 后迟迟没有任何输出
+  'idle', // 执行中很久没有输出
+  'timeout', // 超过单步时限被停掉
+  'empty_turn', // 这一轮没有产出
+  'retry', // CLI 自己在重试
+  'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
+  'worktree', // 独立分支建不起来、删不掉
+  'panel', // 面板自己出错
+])
+export type AlertKind = z.infer<typeof AlertKind>
+
+export const Alert = z.object({
+  kind: AlertKind,
+  /** warn 黄底：还在处理或可能自己恢复；error 红底：这一步失败了，需要处理 */
+  level: z.enum(['warn', 'error']),
+  /** 原始信息：CLI 的报错、stderr、面板的异常，点开时原样显示 */
+  detail: z.string().default(''),
+  /** 后来恢复了（重试成功、又有输出了）：一句说明，行变成灰色 */
+  resolved: z.string().optional(),
+})
+export type Alert = z.infer<typeof Alert>
+
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
   kind: z.enum(['read', 'edit', 'run', 'search', 'web', 'skill', 'agent', 'compact', 'other']),
@@ -956,6 +991,8 @@ export const ToolUse = z.object({
   ms: z.number().optional(),
   /** 还在等结果的调用从什么时候开始（毫秒时间戳）：界面边跑边显示已经用了多久，跑完换成 ms */
   startedAt: z.number().optional(),
+  /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
+  alert: Alert.optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
@@ -1007,6 +1044,8 @@ export const TaskMessage = z.object({
   attachments: z.array(Attachment).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
   error: z.boolean().optional(),
+  /** 报错、警告的分类和原始信息：画成可以点开的警告行（旧数据只有 error 时按正文归类） */
+  alert: Alert.optional(),
   /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
   transient: z.boolean().optional(),
   /**
@@ -1162,6 +1201,7 @@ export const StopReason = z.enum([
   'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
   'supersede', // 用户发了新消息，打断当前这一轮
   'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
+  'stalled', // CLI 没有响应，用户发新消息时面板停掉它、接回会话重开
 ])
 export type StopReason = z.infer<typeof StopReason>
 

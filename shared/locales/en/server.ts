@@ -154,6 +154,7 @@ export const EN_SERVER: Record<string, string> = {
   父对话不存在: 'Parent conversation not found',
   子对话不能再创建子对话: 'A sub-conversation cannot create another sub-conversation',
   子对话必须和父对话在同一个项目: 'A sub-conversation must belong to the same project as its parent',
+  '子对话又开始执行了，等这一轮结束再收尾': 'The sub-conversation is running again. Wrap it up after this round ends',
   找不到这个角色: 'Role not found',
   请先选择本地目录: 'Choose a local folder first',
   'npm run {k}': 'npm run {k}',

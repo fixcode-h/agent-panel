@@ -1508,6 +1508,10 @@ if (kind === 'claude') {
       }
       process.exit(6)
     }
+    // STALL_ONCE：收下这一轮后一个字都不回，像向模型的请求卡住了（测「CLI 没有响应」）。
+    // 面板停掉它、接回会话重开时提示里带上「一直没有回应」，这次照常回复
+    if (input.includes('STALL_ONCE') && !input.includes('一直没有回应'))
+      await new Promise(() => setInterval(() => {}, 60_000))
     const r = turnReply()
     // 一个字都不回：只报这一轮正常结束，没有正文也没有用量（网关把请求吞掉、带图请求被拒时就是这样）
     if (silentTurn()) {

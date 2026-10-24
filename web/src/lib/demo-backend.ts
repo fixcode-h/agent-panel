@@ -39,6 +39,7 @@ import {
   Settings,
   type PlanStatus,
   type Task,
+  type TaskMessage,
   type TaskProcess,
   type TaskProcesses,
   type TaskMemoryHistory,
@@ -2572,6 +2573,11 @@ function tasksRoute(
   }
   if (sub === 'stop') {
     if (live.has(id)) live.get(id)!.stop = true
+    // 和真实后端一样：还在等回答的提问马上作废，返回的任务里不能再带着它，不然提问窗口关不掉
+    if (task.requests?.some((r) => r.kind !== 'confirm')) {
+      task.requests = task.requests.filter((r) => r.kind === 'confirm')
+      persist()
+    }
     // 强制停止：演示里没有常驻 CLI，把这一轮的进程状态直接丢掉就相当于结束了进程
     if (query.get('force')) live.delete(id)
     return task
@@ -3390,9 +3396,44 @@ async function seedTasks(d: Db) {
         true,
       )
       await done
+      if (c.minutes > 60 * 24) demoAlerts(task)
       back(task, c.minutes)
     }
   }
+}
+
+/** 对话里的报错和警告长什么样：一条已恢复的网络断开、一条 CLI 没有响应、一条额度用完（见 shared/alerts.ts） */
+function demoAlerts(task: Task) {
+  const at = new Date().toISOString()
+  const note = (text: string, alert: TaskMessage['alert']): TaskMessage => ({
+    id: `demo-${crypto.randomUUID()}`,
+    role: 'system',
+    agentId: '',
+    step: '',
+    text,
+    tools: [],
+    alert,
+    at,
+  })
+  task.messages.push(
+    note('Claude Code 执行失败：\n· 和模型服务的连接中途断开了。\n\n正在自动续接会话重试（第 1/2 次）…', {
+      kind: 'network',
+      level: 'warn',
+      detail: 'API Error: Stream connection failed mid-response: terminated',
+      resolved: '已自动续接，从中断的地方继续了',
+    }),
+    note('Claude Code 收到消息 90 秒了还没有任何输出。直接再发一条消息，面板会停掉它、接回这个会话重新开始。', {
+      kind: 'no_response',
+      level: 'warn',
+      detail:
+        'Claude Code 在 90 秒里没有任何输出（没有思考、正文或工具调用）。\n交给它的最后一条内容：\n后台命令「等待 CI」跑完了：成功',
+    }),
+    note('Claude Code 执行失败（退出码 1）：', {
+      kind: 'quota',
+      level: 'error',
+      detail: 'API Error: 402 {"type":"error","error":{"type":"billing_error","message":"Insufficient balance"}}',
+    }),
+  )
 }
 
 /**

@@ -79,6 +79,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
@@ -711,7 +712,7 @@ export function system(host: EngineHost, text: string, step = '', error = false,
     step,
     text,
     tools: [],
-    ...(error && { error }),
+    ...(error && { error, alert: makeAlert('error', text) }),
     ...(transient && { transient }),
     at: now(),
   })

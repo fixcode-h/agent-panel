@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：任务页：子对话、子任务、Token 浮层、执行计划、文件拖入、对话进程和内存曲线、工作流任务的节点、执行中发消息
+ * 界面检查分片：任务页：子对话、子任务、Token 浮层、执行计划、文件拖入、对话进程和内存曲线、工作流任务的节点、执行中发消息、提问窗口的关闭
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -817,5 +817,31 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
     if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
     await check(p, '任务-执行中发消息')
+  }
+  // 提问窗口右上角的关闭：点了要马上收起、换回输入框，对话暂停（以前停止接口返回的任务还带着提问，关不掉）
+  await p.goto(base + '#/chat')
+  await p.locator('#task-prompt').fill('问我日期用哪种格式再改')
+  await p.waitForTimeout(300)
+  await p.locator('#task-prompt').press('Enter')
+  const ask = p.getByRole('dialog', { name: 'AI 的问题' })
+  if (
+    !(await ask.waitFor({ timeout: 20000 }).then(
+      () => true,
+      () => false,
+    ))
+  )
+    errors.push('提问窗口：对话里说「问我」后没有弹出提问')
+  else {
+    await check(p, '提问窗口', ['日期显示用哪种格式？', '提交回答'])
+    await ask.getByRole('button', { name: '关闭并暂停对话' }).click()
+    if (
+      !(await ask.waitFor({ state: 'detached', timeout: 5000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('提问窗口：点右上角的关闭后提问没有收起')
+    else if (!(await p.locator('#follow-up').isVisible())) errors.push('提问窗口：关掉后输入框没有回来')
+    else await check(p, '提问窗口-关闭后')
   }
 })

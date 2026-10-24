@@ -335,16 +335,31 @@ await runShard('子对话与计划', async (api) => {
     assert.ok(!revived.resume, '没有接回原会话')
     assert.match(revived.input, /## 之前对话的摘要[\s\S]*## 关键文件和模块\nchild-done\.txt/, '新会话带上交接摘要')
     step('已完成的子对话再被叫醒：上下文大时开新会话只带交接摘要')
-    // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话，父对话会跑一轮读收件箱：
-    // 等它停下再测下面的提问，免得收件箱被这一轮提前读走
+    // 叫醒的这一轮没有新改动，结束后又收口完成、上报父对话
     await waitTask(doneKid.id, (x) => x.resolved, 20000)
     await waitTask(wtParent.id, (p) => p.messages.some((m) => m.child?.id === doneKid.id && m.at > wokeAt), 20000)
-    // 上报可能叫起父对话一轮：连续一阵都停着才算真停下，不然下面的回答会插进这一轮、收件箱里就没有了
+    // 上报会再叫起父对话一轮（收尾请求）：等它跑完，别和下一段抢项目目录
     for (let idle = 0; idle < 5; ) {
       idle = (await call('GET', `/tasks/${wtParent.id}`)).status === 'running' ? 0 : idle + 1
       await sleep(100)
     }
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
+    // 提问这一段另用一个刚建好的父对话：上面刚收尾的子对话会各自 submit_merge，每次都会把父对话叫起一轮
+    // （【收尾请求】），合并结果推回子对话后它们还会再跑一轮、再叫一次父对话。提问和回答要是落进这样的一轮，
+    // 走的是「实时交付」而不是收件箱，下面的「换成用户已回答」就不存在了——CI 上偶发失败就是这个。
+    // 新父对话名下还没有子对话，没有谁会叫起它，提问一定落进收件箱。
+    const askParentTask = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          prompt: '父对话',
+          askUser: true,
+        })
+      ).id,
+      20000,
+    )
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
       (
@@ -352,13 +367,13 @@ await runShard('子对话与计划', async (api) => {
           projectId: project.id,
           mode: 'chat',
           agentId: B.id,
-          parentTaskId: wtParent.id,
+          parentTaskId: askParentTask.id,
           prompt: 'ASK_PARENT 选一个方案',
         })
       ).id,
       20000,
     )
-    let askParent = await call('GET', `/tasks/${wtParent.id}`)
+    let askParent = await call('GET', `/tasks/${askParentTask.id}`)
     const askMsg = askParent.messages.find((m) => m.panel === 'ask')
     assert.ok(askMsg, '父对话里记了提问卡片')
     assert.equal(askMsg.ask.from, askKid.id)
@@ -373,7 +388,16 @@ await runShard('子对话与计划', async (api) => {
       !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
       '提问不再是居中的系统提示',
     )
-    await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
+    // 回答之前先确认这张提问真的落在父对话的收件箱里：父对话正在跑一轮时提问会实时交给它、不进收件箱，
+    // 那种情况这段要断言的「换成用户已回答」本来就不会出现。等条件成立再回答，不靠时间差
+    await waitFor(
+      async () =>
+        (await call('GET', `/tasks/${askParentTask.id}`)).inbox.some(
+          (x) => x.from === askKid.id && x.text.startsWith('（提问）'),
+        ),
+      { label: '提问进了父对话的收件箱' },
+    )
+    await call('POST', `/tasks/${askParentTask.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
     await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
     // 对话之间的消息带上发件方和类型：子对话里画成「接收消息」，不当成用户说的话
     const kidMsgs = (await call('GET', `/tasks/${askKid.id}`)).messages
@@ -382,7 +406,7 @@ await runShard('子对话与计划', async (api) => {
     const answerMsg = kidMsgs.find((m) => m.text.includes('用户的决定'))
     assert.equal(answerMsg.peer?.kind, 'answer', '卡片上的回答交给子对话时标成「回答」')
     assert.ok(answerMsg.peer.subject.includes('B 方案'), '标题里接上答案')
-    askParent = await call('GET', `/tasks/${wtParent.id}`)
+    askParent = await call('GET', `/tasks/${askParentTask.id}`)
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
     assert.equal(answeredAsk.ask.by, 'user')
@@ -392,6 +416,7 @@ await runShard('子对话与计划', async (api) => {
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
       '父对话的收件箱里换成「用户已回答」，不会再答一遍',
     )
+    await call('DELETE', `/tasks/${askParentTask.id}`)
     // ---- 收尾前评审：完整测试之前派「评审」，评审给 🛑 时 submit_merge 被拦下，改完复看通过才合回 ----
     {
       // 假 CLI 每次都在工作目录写输出文件：和分支里那份一样就合得回去，先清掉项目目录里遗留的那份
