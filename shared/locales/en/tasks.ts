@@ -411,7 +411,6 @@ export const EN_TASKS: Record<string, string> = {
   网页: 'Web',
   技能: 'Skill',
   子任务: 'Subtask',
-  '子任务 {n}': 'Subtasks {n}',
   '{n} 个失败': '{n} failed',
   '正在输出：{text}': 'Writing: {text}',
   '正在思考：{text}': 'Thinking: {text}',

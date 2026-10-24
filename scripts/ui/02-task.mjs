@@ -32,17 +32,72 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
-  // 子对话栏的计数：三个在转圈（其中两个带没做完的计划，仍算执行中），分子就是 3；分母是进程还活着的 5 个。
+  // 子对话栏的计数：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），分母是进程还活着的 5 个。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
   {
     // 按 aria-label 里的计数文案定位：页面上还有别的（禁用的）按钮也写着「子对话」
     const bar = p.getByRole('button', { name: /个进行中，共 \d+ 个/ })
     if (!(await bar.count())) errors.push('子对话栏：输入框上方没有子对话入口')
     else {
-      await check(p, '子对话-三个在跑', ['子对话', '3/3'])
+      await check(p, '子对话-五个在跑', ['子对话', '5/5'])
       await bar.first().click()
+      // 消息流里的运行区和弹层「运行中」是同一批条目（见 shared/task.ts 的 visibleChildren）：
+      // 条数、顺序、状态标签都要对得上。以前运行区自己写 working && !resolved，
+      // 在等后台命令、已解决但还在跑的子对话只在弹层里有，同一个页面对不上数。
+      await p
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+              [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+            ),
+          { timeout: 10000 },
+        )
+        .catch(() => errors.push('运行区：消息流里没有列出子对话'))
+      const boxes = await p.evaluate(() => {
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        // 运行区里子对话行以「子对话」开头（同一段里还有工具行、后台命令行）
+        const runs = [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+          [...box.children].map((r) => norm(r.innerText)).filter((x) => x.startsWith('子对话')),
+        )
+        // 弹层「运行中」：整行宽、左对齐的按钮就是条目（顶部 tab、关闭按钮的类名不同）
+        const tray = [...document.querySelectorAll('div.absolute.bottom-full')].find((d) =>
+          [...d.querySelectorAll('button')].some((b) => (b.className || '').includes('text-left')),
+        )
+        const items = tray
+          ? [...tray.querySelectorAll('button')]
+              .filter((b) => (b.className || '').includes('text-left'))
+              .map((b) => norm(b.innerText))
+          : []
+        return { runs, items }
+      })
+      if (boxes.runs.length !== boxes.items.length)
+        errors.push(`运行区和弹层条目数对不上：运行区 ${boxes.runs.length} 条、弹层 ${boxes.items.length} 条`)
+      // 两处的状态标签一致：计划没做完的写「计划 1/2」、在等后台命令的写「等结果」+ 在等什么、
+      // 已标记解决但还在跑的仍然是「执行中」（完成标记不能盖住还在跑）
+      for (const tag of ['计划 1/2', '等结果', '等 1 个后台命令', '执行中']) {
+        if (!boxes.runs.some((x) => x.includes(tag))) errors.push(`运行区：没有显示「${tag}」`)
+        if (!boxes.items.some((x) => x.includes(tag))) errors.push(`弹层：没有显示「${tag}」`)
+      }
+      if (boxes.runs.some((x) => x.includes('已解决')))
+        errors.push('运行区：已标记解决但还在跑的那条被写成了「已解决」')
+      // 顺序也一致：正在跑的在前，同一类里按本次开启的时间倒序（两处读同一个 sortChildren）
+      const titles = [
+        'Git+worktree 不再提示文件撞车',
+        '内存面板增加 AI 分析',
+        '子任务卡片移到子对话那一栏',
+        '整理 ESLint 规则',
+        '压测导入大文件',
+      ]
+      const order = (list) =>
+        titles
+          .map((x) => list.findIndex((y) => y.includes(x)))
+          .filter((i) => i >= 0)
+          .join(',')
+      if (order(boxes.runs) !== order(boxes.items))
+        errors.push(`运行区和弹层的顺序不一致：运行区 ${order(boxes.runs)}、弹层 ${order(boxes.items)}`)
+      await check(p, '子对话-运行区与弹层一致')
       await p.getByRole('button', { name: '全部' }).first().click()
-      await check(p, '子对话-三个在跑-列表', ['执行中 · 3', '已完成 · 3'])
+      await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()
     }
@@ -76,6 +131,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const bar = p.getByRole('button', { name: '子任务', exact: true })
     if (!(await bar.count())) errors.push('子任务栏：输入框上方没有「子任务」入口')
     else {
+      // 数字和子对话一个写法：在跑时「运行中/总数」，没在跑时只写总数（这一份全做完了）
+      const doneLabel = (await bar.first().innerText()).replace(/\s+/g, ' ').trim()
+      if (!/^子任务 \d+$/.test(doneLabel)) errors.push(`子任务栏：没在跑时应该只写总数，现在是「${doneLabel}」`)
       if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
         errors.push('子任务栏：消息流里还画着子任务卡片')
       // 状态栏顺序：计划单独占一行在最上面，这一行里子任务在子对话前面
@@ -111,6 +169,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.reload()
       await openTask()
       await check(p, '子任务-执行中只留计数', ['子任务', '1/3'])
+      // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法
+      const runLabel = (await p.getByRole('button', { name: '子任务', exact: true }).first().innerText())
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (!/^子任务 1\/3$/.test(runLabel)) errors.push(`子任务栏：执行中应该写「运行中/总数」，现在是「${runLabel}」`)
       const rowText = await p.evaluate(() => {
         const sub = [...document.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === '子任务')
         const row = sub?.parentElement?.parentElement
@@ -219,6 +282,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await openTask()
+  }
+  // 父对话自己在跑时运行区仍然列出子对话：以前运行区绑在「最后一段」上（last 含 !working），
+  // 父对话一跑整段就不渲染，子对话一条也列不出来
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      task.working = true
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.reload()
+    await backToTask()
+    // 子对话列表 4 秒一轮，先等运行区里真的出现子对话行再数
+    const seenKids = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ),
+        { timeout: 10000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!seenKids) errors.push('父对话在跑时运行区没有列出子对话')
+    else {
+      const n = await p.evaluate(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length,
+      )
+      if (n !== 5) errors.push(`父对话在跑时运行区列了 ${n} 个子对话，应该和弹层一样是 5 个`)
+    }
+    await check(p, '子对话-父对话在跑时仍列出')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
   }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {

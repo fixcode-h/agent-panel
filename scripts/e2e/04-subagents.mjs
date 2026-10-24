@@ -459,6 +459,58 @@ await runShard('子对话与计划', async (api) => {
       step('后台命令：说完时还在跑的列在任务上，跑完推回并要求重新总结')
     }
 
+    // ---- 子对话列表口径：在等后台命令的照样列，父对话自己在跑时也照样给 ----
+    // 以前运行区自己写 `working && !resolved`，在等后台命令、已解决但还在跑的子对话只在悬浮层里有、
+    // 运行区没有，同一个页面对不上数。这里固定接口要如实给「还在跑」和「在等什么」，
+    // 界面那两处读同一份（见 shared/task.ts 的 visibleChildren）。
+    {
+      const p2 = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
+        20000,
+      )
+      // 在等后台命令：这一轮说完了，命令还在跑，CLI 在等结果
+      const bg = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: p2.id,
+        prompt: 'BG_LONG 跑测试',
+      })
+      await waitTask(bg.id, (k) => !k.working && (k.jobs?.length ?? 0) > 0, 30000)
+      // 还在跑的子对话：用来验「父对话在跑时列表照样给」
+      const busy = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: p2.id,
+        prompt: 'SLOW 还在跑',
+      })
+      await waitFor(async () => (await call('GET', `/tasks/${busy.id}`)).working === true, {
+        timeout: 15000,
+        label: '子对话开始执行',
+      })
+      // 还没跑完时不能标「解决」：这一轮还在执行就先拒，不把「还在跑」写成「已完成」
+      // （「已解决但还在跑」那个显示状态只出现在收尾流程的时间窗口里，
+      // 判定矩阵由单测覆盖，页面由界面检查的演示数据覆盖）
+      await assert.rejects(call('PATCH', `/tasks/${busy.id}`, { resolved: true }), /还在执行/)
+
+      const kids = await call('GET', `/tasks/${p2.id}/children`)
+      const bgRow = kids.find((x) => x.id === bg.id)
+      assert.ok(bgRow, '在等后台命令的子对话出现在父对话的列表里')
+      assert.ok(bgRow.background >= 1, '还在跑的后台命令数如实给：界面靠它把这一条列进运行区')
+      assert.equal(bgRow.waiting?.kind, 'background', '在等什么要说成「等后台命令」，不能被当成卡住')
+      assert.equal(kids.find((x) => x.id === busy.id).working, true, '还在跑的子对话如实报 working')
+
+      // 父对话自己在跑时，列表照样给：运行区按最新一轮列，不再看父对话在不在跑
+      await call('POST', `/tasks/${p2.id}/messages`, { text: 'SLOW 接着做' })
+      const during = await call('GET', `/tasks/${p2.id}/children`)
+      assert.equal(during.length, kids.length, '父对话在跑时子对话列表不变，运行区照样列得出来')
+      assert.ok(during.find((x) => x.id === bg.id)?.background >= 1, '父对话在跑时后台命令的状态也照样给')
+
+      await call('POST', `/tasks/${p2.id}/stop`)
+      step('子对话列表：在等后台命令的照样列，父对话在跑时也照样给')
+    }
+
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
     const ruleParent = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
