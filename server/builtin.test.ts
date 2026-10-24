@@ -697,3 +697,67 @@ test('上一版的「通用项目」「UE 项目」副本升级：工作流说�
     assert.equal(wf, null, `${key} 再启动不再改`)
   }
 })
+
+test('调研、子任务、评审三个角色：先读模块地图和模块文档再读代码', () => {
+  const text = (key: string) => BUILTIN_AGENTS.find((b) => b.key === key)!.agent.instructions
+  // 三个角色共用同一句定位顺序（措辞只有一份），删掉它三处会一起红
+  const lookup =
+    /先读文档根的 `MODULE-MAP\.md`[\s\S]*?再看文档根下的 `modules\/<模块>\/README\.md`（本项目即 `docs\/modules\/<模块>\/README\.md`）在不在，在就先读/
+  for (const [key, who] of [
+    ['explorer', '调研'],
+    ['helper', '子任务'],
+    ['reviewer', '评审'],
+  ] as const) {
+    assert.match(text(key), lookup, `${who}角色先查模块地图定位模块，有模块文档就先读`)
+    assert.match(text(key), /不做无目标的全局搜索/, `${who}角色不无脑全局搜代码`)
+    assert.match(text(key), /以代码为准/, `${who}角色文档与实现不一致时以代码为准`)
+  }
+  // 只读角色不写文档，写文档的三个角色要合并、新建时同步表格行、模块没了删除
+  const writers: [string, string, RegExp][] = [
+    ['explorer', '调研', /docs\/modules\/<模块>\/README\.md/],
+    ['helper', '子任务', /docs\/modules\/<模块>\/README\.md/],
+    ['docsync', '文档', /modules\/<模块>\/README\.md/],
+  ]
+  for (const [key, who, docPath] of writers) {
+    const s = text(key)
+    assert.match(s, /模块表加一行/, `${who}角色新建模块文档时同步模块表`)
+    assert.match(s, docPath, `${who}角色把结论写进对应的模块文档`)
+    assert.match(s, /合并/, `${who}角色已有文档时合并，不整文件覆盖`)
+    assert.match(s, /已经不存在/, `${who}角色在模块没了时删除文档并同步模块表`)
+  }
+  assert.match(text('docsync'), /写之前先读/, '文档角色写之前先读模块地图和模块文档')
+  // 删模块文档时目录和表格行要一起处理：都删，或都留（状态写 retired），不能只删一边
+  assert.match(text('docsync'), /删掉 `modules\/<模块>\/` 整个目录/, '文档角色删掉模块文档目录')
+  assert.match(text('docsync'), /模块表删掉那一行/, '文档角色同步删掉模块表那一行')
+  assert.match(text('docsync'), /retired/, '文档角色保留迁移线索时表格行也保留')
+  // 评审特有：先看历史 Bug，意见里写清依据了哪个模块文档小节 + 代码行
+  assert.match(text('reviewer'), /bugs\.md/, '评审先看 bugs.md 里的历史问题')
+  assert.match(text('reviewer'), /读了哪个模块文档的哪一节 \+ `path:line` 复核/, '评审意见写清文档小节 + 代码行')
+  assert.match(text('worker'), /docs\/MODULE-MAP\.md/, '执行角色调研模块前先看模块地图和模块文档')
+})
+
+test('停在上一版的「调研」也能升级：先查模块地图和模块文档，结论回写', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  // 上一版指纹放在 MORE 数组末尾（见 shared/builtin/legacy.ts）
+  const oldExplorer = {
+    ...agents.find((a) => a.id === 'explorer')!,
+    ...LEGACY_AGENT_FIELDS_MORE.explorer.at(-1)!,
+    id: 'local-explorer',
+    origin: 'builtin:explorer',
+    params: [],
+    skills: [],
+  }
+  const state = { agents: [oldExplorer], categories: [], tags: [], workflows: [] }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 1, '上一版的「调研」副本升级')
+  const explorer = updated[0]
+  assert.match(explorer.instructions, /先读文档根的/, '调研先查模块地图定位模块')
+  assert.match(explorer.instructions, /回写模块文档/, '调研结论回写模块文档')
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
+})

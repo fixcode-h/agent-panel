@@ -10,7 +10,7 @@ test('节点自己的改动只认 CLI 报告的文件', () => {
 })
 
 test('CLI 没报告过文件（只读节点）：工作区差值不算给它', () => {
-  // 只读调研节点不产生 file 事件，差值里是同一工作区并行子对话改的文件
+  // 没报告文件的节点不产生 file 事件，差值里是同一工作区并行子对话改的文件
   const since = [change('server/a.ts', 32), change('shared/b.ts', 28)]
   assert.deepEqual(ownedChanges(since, new Set()), [])
 })

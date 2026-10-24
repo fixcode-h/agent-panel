@@ -29,6 +29,7 @@
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
 - **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。
+- **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs.md`）。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录并同步 `MODULE-MAP.md` 的表格行。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
 
 ## 文档地图
 
@@ -36,6 +37,7 @@
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |
 | 文档入口、快速开始、文档索引                 | [docs/README.md](docs/README.md)                                                       |
 | 改动该放哪个模块、模块之间怎么依赖           | [docs/MODULE-MAP.md](docs/MODULE-MAP.md)，模块细则在 `docs/modules/`                   |
+| 模块文档的先读、合并与删除                   | [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)        |
 | 接新 CLI、改参数 / 输出解析 / 思考强度 / API | [docs/cli-config.md](docs/cli-config.md)（开头有接入检查清单）                         |
 | 模型的上下文、最大输出、强度                 | [docs/model-catalog.md](docs/model-catalog.md)                                         |
 | 增删合并内置角色或工作流                     | [docs/agent-catalog.md](docs/agent-catalog.md)（判定标准）                             |
