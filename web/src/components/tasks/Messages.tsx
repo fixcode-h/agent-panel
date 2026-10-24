@@ -1,7 +1,21 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Loader2, Terminal, Workflow } from 'lucide-react'
+import {
+  Bot,
+  Brain,
+  ChevronRight,
+  CircleAlert,
+  GitMerge,
+  Info,
+  Loader2,
+  RotateCw,
+  SendHorizontal,
+  Terminal,
+  Workflow,
+} from 'lucide-react'
 import type { Alert, Task, TaskMessage } from '@shared/schema'
 import { makeAlert } from '@shared/alerts'
+import { toast } from 'sonner'
+import { api } from '@/lib/api'
 import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -16,7 +30,7 @@ import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
 import { currentRun, topSteps } from '@shared/flow'
-import { convStateText, runRunning } from '@shared/task'
+import { convStateText, deliveryText, runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -94,6 +108,27 @@ export function NoteMessage({
       : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
   return (
     <SystemNote text={m.text} error={m.error} alert={m.alert} className={className} conversation={around} cwd={cwd} />
+  )
+}
+
+/**
+ * 执行中发的消息去了哪里：用户气泡底部一行小字，写的是用户能看懂的事实（插进当前轮 / 排到下一轮 / 结束后自动处理），
+ * 不直接把内部枚举值摆出来（见 shared/task.ts 的 deliveryText）。对话页和工作流节点都读这一份
+ */
+export function DeliveryLine({ delivery }: { delivery: NonNullable<TaskMessage['delivery']> }) {
+  const text = deliveryText(delivery.how)
+  if (!text) return null
+  return (
+    <span
+      className={cn(
+        'mt-1.5 flex items-center gap-1 text-[0.75rem]',
+        // 没送出去的需要用户重发：和其他交付状态一样的灰色会被滑过去
+        delivery.how === 'lost' ? 'text-warning' : 'text-subtle',
+      )}
+    >
+      <SendHorizontal className="h-3 w-3 shrink-0" />
+      {text}
+    </span>
   )
 }
 
@@ -429,13 +464,24 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
     m.panel === 'child'
       ? m.child?.state === 'failed'
       : m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过|没能合回/.test(body.split('\n')[0])
-  // 面板推回的结果没有单独的窗口：点哪里都是展开收起，在行内看全文
+  // 停下时独立分支里还有没提交的改动：行上（不用点开）就写清几个文件、目录在哪，并给一键继续
+  const wt = m.worktree
   return (
     <RowShell
       glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />}
       verb={m.panel === 'child' && !m.child ? t('对话消息') : kind.verb()}
       title={head}
       open={open}
+      detail={
+        wt ? (
+          <>
+            <span className="shrink-0 text-[0.6875rem] text-warning" title={wt.path}>
+              {t('{n} 个文件未提交', { n: wt.dirty })}
+            </span>
+            {m.child?.id && <ResumeChild id={m.child.id} />}
+          </>
+        ) : undefined
+      }
       // 一句话的说明（执行中改设置）没有更多可看的，不能展开
       onToggle={body.includes('\n') || m.panel !== 'note' ? () => setOpen(!open) : undefined}
       onOpen={m.child && openChild ? () => openChild(m.child!.id) : undefined}
@@ -446,6 +492,39 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
         <Markdown text={body} teamNames={teamNames} />
       </div>
     </RowShell>
+  )
+}
+
+/**
+ * 停下的子对话一键继续：重新占执行位、从停下的地方接着做（和子对话自己页面的「继续执行」同一个接口）。
+ * 按钮放在这一行的尾部，点它不能顺带展开 / 收起整行
+ */
+function ResumeChild({ id }: { id: string }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={(e) => {
+        e.stopPropagation()
+        setBusy(true)
+        api
+          .resumeTask(id)
+          .then(
+            () => toast.success(t('已让它接着做')),
+            // 这一行是停下来那一刻的历史记录：它后来可能已经被继续或做完了，服务端会拒（409），
+            // 拒的时候说清现在的情况，别把「只有失败或停止的任务可以继续」直接摊给用户
+            (err: Error & { status?: number }) =>
+              toast.error(err.status === 409 ? t('它已经不在停下了，可能已经继续或者做完了') : err.message),
+          )
+          .finally(() => setBusy(false))
+      }}
+      title={t('让它接着做：重新占执行位，从停下的地方继续')}
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent hover:bg-sel disabled:opacity-50"
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+      {t('继续')}
+    </button>
   )
 }
 

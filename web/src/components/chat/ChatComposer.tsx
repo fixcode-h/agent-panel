@@ -145,7 +145,39 @@ export function ChatComposer({
   )
   const typed = canSend ?? (!!text.trim() || files.attachments.length > 0)
   const ready = typed && !sending && !files.uploading
-  const submit = () => onSubmit(text)
+  const [hint, setHint] = useState('')
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const warn = useCallback((text: string) => {
+    setHint(text)
+    if (hintTimer.current) clearTimeout(hintTimer.current)
+    hintTimer.current = setTimeout(() => setHint(''), 4000)
+  }, [])
+  // 发出去（发送、排队）就把「为什么没发出去」的提示收掉：先被拦、马上又发成功时不能还挂着上一句
+  const clearHint = () => {
+    if (hintTimer.current) clearTimeout(hintTimer.current)
+    setHint('')
+  }
+  const submit = () => {
+    clearHint()
+    onSubmit(text)
+  }
+  // 发送被拦下时给一句话：Enter 和按钮走同一个 ready（见下面的 onKeyDown），
+  // 拦下却什么都不说，用户只会觉得回车没反应
+  const blocker = disabled
+    ? t('现在还不能发送')
+    : files.uploading
+      ? t('附件还在上传，稍等一下')
+      : sending
+        ? t('上一条还在发送，稍等一下')
+        : !typed
+          ? t('先写点要求再发送')
+          : ''
+  useEffect(
+    () => () => {
+      if (hintTimer.current) clearTimeout(hintTimer.current)
+    },
+    [],
+  )
   // 空 / 非空只在切换时通知一次：外面（任务页）用它决定要不要显示「继续执行」
   const empty = !text.trim()
   const emptyCb = useRef(onEmptyChange)
@@ -196,12 +228,15 @@ export function ChatComposer({
         onSync={onSync}
         onKeyDown={(e) => {
           if (onKeyDown?.(e)) return true
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            submit()
+          if (e.key !== 'Enter' || e.shiftKey) return false
+          e.preventDefault()
+          // 和发送按钮同一个判定：不能发就说清原因，不要默默什么都不做
+          if (!ready || disabled) {
+            warn(blocker)
             return true
           }
-          return false
+          submit()
+          return true
         }}
         onPaste={chips.onPaste}
         label={label}
@@ -230,6 +265,11 @@ export function ChatComposer({
         )}
         {tools}
         <span className="flex-1" />
+        {hint && (
+          <span role="status" aria-live="polite" className="min-w-0 truncate text-[0.75rem] text-warning">
+            {hint}
+          </span>
+        )}
         {leading}
         {actions ??
           (running ? (
@@ -237,7 +277,11 @@ export function ChatComposer({
               {typed && onQueue && (
                 <button
                   type="button"
-                  onClick={onQueue}
+                  onClick={() => {
+                    // 排队也算发出去了：不能还挂着上一次被拦下时的「为什么没发出去」
+                    clearHint()
+                    onQueue()
+                  }}
                   disabled={sending}
                   title={t('等这一轮结束再发')}
                   className={cn(
@@ -255,13 +299,19 @@ export function ChatComposer({
                   disabled={!ready || !!disabled}
                   sending={sending}
                   size={size}
-                  title={t('交给正在进行的这一轮（Enter）')}
+                  title={!ready || disabled ? blocker : t('交给正在进行的这一轮（Enter）')}
                 />
               )}
               {onStop && <StopButton onClick={onStop} size={size} />}
             </>
           ) : (
-            <SendButton onClick={submit} disabled={!ready || !!disabled} sending={sending} size={size} />
+            <SendButton
+              onClick={submit}
+              disabled={!ready || !!disabled}
+              sending={sending}
+              size={size}
+              title={!ready || disabled ? blocker : undefined}
+            />
           ))}
       </div>
     </div>

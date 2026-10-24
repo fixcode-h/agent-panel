@@ -171,9 +171,17 @@ const DEMO_GLOBAL_LESSONS: GlobalLesson[] = [
   },
 ]
 
-class HttpError extends Error {}
-const fail = (msg: string): never => {
-  throw new HttpError(msg)
+class HttpError extends Error {
+  constructor(
+    message: string,
+    /** 状态码：正式后端用 409 表示「现在不能做」，界面按它区分提示（见 api.ts 的 err.status） */
+    readonly status = 400,
+  ) {
+    super(message)
+  }
+}
+const fail = (msg: string, status = 400): never => {
+  throw new HttpError(msg, status)
 }
 
 // ---- 模拟的本机目录 ----
@@ -2176,6 +2184,14 @@ function demoUsage(d: Db, query: URLSearchParams) {
 export async function handle(method: string, url: string, body: unknown) {
   // 稍微延迟一下，模拟真实请求，让「保存中」等状态能被看到
   await new Promise((r) => setTimeout(r, demoMs(120)))
+  // 界面检查用：让发消息的请求慢一点回来，模拟「上一条还在发送」时又按了一次回车。
+  // 只有演示版里有这段代码，正式包里没有演示后端
+  let slow = 0
+  try {
+    slow = Number(globalThis.localStorage?.getItem('demo-slow-messages') ?? 0)
+  } catch {}
+  if (slow > 0 && method === 'POST' && /\/tasks\/[^/]+\/messages$/.test(url))
+    await new Promise((r) => setTimeout(r, demoMs(slow)))
   const d = load()
   if (!d.tasks) {
     d.tasks = []
@@ -2717,6 +2733,9 @@ function tasksRoute(
           workflow: runRunning(x),
           helpers: helpersWorking(x),
           unmerged: x.worktree?.state === 'active',
+          // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）
+          dirty: x.worktree?.state === 'active' ? 1 : 0,
+          dir: x.worktree?.path ?? '',
           wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
           branch: x.worktree?.branch ?? '',
           stopReason: x.stopReason ?? '',
@@ -2739,6 +2758,8 @@ function tasksRoute(
         text: f.text,
         tools: [],
         ...(f.attachments.length ? { attachments: f.attachments } : {}),
+        // 和正式后端对齐：执行中发的消息记下交付结果（演示里这一轮收不下，结束后接着处理）
+        delivery: { how: 'held' as const, at: new Date().toISOString() },
         at: new Date().toISOString(),
       }
       task.messages.push(msg)
@@ -2890,9 +2911,9 @@ function tasksRoute(
     return { path: file, dir: '', diff, git: false, before: false }
   }
   if (sub === 'resume') {
-    if (live.has(task.id)) fail('任务正在执行')
+    if (live.has(task.id)) fail('任务正在执行', 409)
     const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, d.workflows).workflow))
-    if (task.status !== 'failed' && task.status !== 'stopped' && !blocked) fail('只有失败或停止的任务可以继续')
+    if (task.status !== 'failed' && task.status !== 'stopped' && !blocked) fail('只有失败或停止的任务可以继续', 409)
     if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
       const fresh =
         d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')

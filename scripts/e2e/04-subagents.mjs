@@ -5,7 +5,7 @@
  * 互不影响。总入口 scripts/e2e.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { rmSync, existsSync } from 'node:fs'
+import { rmSync, existsSync, writeFileSync } from 'node:fs'
 
 import path from 'node:path'
 import { runShard } from './harness.mjs'
@@ -344,6 +344,105 @@ await runShard('子对话与计划', async (api) => {
       await sleep(100)
     }
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
+    // ---- 停下来时独立分支里还有没提交的改动：父对话里要说清几个文件、在哪个目录，并能一键继续 ----
+    {
+      const stopParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: A.id,
+            prompt: '父对话',
+            askUser: true,
+          })
+        ).id,
+        20000,
+      )
+      // 带 PLAN_NEXT：这一轮会留一个没做完的计划（停止时计划不会自动收起）。
+      // 带 SLOW：这一轮要跑十来秒，够在它还在跑的时候放进一个没提交的文件、再点停止
+      const stopKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: stopParent.id,
+        prompt: 'BEGIN_EDIT PLAN_NEXT SLOW 停下时分支里还有没提交的改动',
+      })
+      // 假 CLI 在这一轮开头就调用 begin_edit 开分支：等它真的在分支里跑起来
+      const branch = await waitFor(
+        async () => {
+          const me = await call('GET', `/tasks/${stopKid.id}`)
+          return me.status === 'running' && me.worktree?.state === 'active' ? me.worktree : undefined
+        },
+        { timeout: 40000, label: '子对话开好独立分支并在跑' },
+      )
+      // 分支目录里放一个没提交的文件：用户点停止时它就留在那儿（面板不自动提交、也不清理）
+      writeFileSync(path.join(branch.path, 'dirty-when-stopped.txt'), 'x\n')
+      await call('POST', `/tasks/${stopKid.id}/stop`)
+      // 停止是异步收尾的：等父对话里真的出现那条提示，不靠固定等待
+      const note = await waitFor(
+        async () =>
+          (await call('GET', `/tasks/${stopParent.id}`)).messages.find(
+            (m) => m.worktree?.dirty > 0 && m.child?.id === stopKid.id,
+          ),
+        { timeout: 20000, label: '父对话收到「有未提交改动」的提示' },
+      )
+      // 提示里写的是可读的事实：几个文件、在哪个目录，不是内部的枚举值
+      assert.match(note.text, /个文件没有提交/, '提示里写清还有几个文件没提交')
+      assert.ok(note.text.includes(branch.path), '提示里写上独立分支目录')
+      assert.equal(note.worktree.path, branch.path, '提示里带上目录，界面不用再查一次')
+      assert.equal(note.child.state, 'stopped', '那一行标出子对话已经停下')
+      // 等它真的停下（停止是异步收尾），再看子对话卡片
+      await waitFor(async () => (await call('GET', `/tasks/${stopKid.id}`)).status === 'stopped', {
+        label: '子对话停下',
+      })
+      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪
+      const row = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      // 停止时计划还没做完（用户最常遇到的停止情形，见上面的 PLAN_NEXT），
+      // 这时也要照样报出没提交的文件，不能因为「还有 holds」就当成不需要判完成而什么都不给
+      const kidDone = await call('GET', `/tasks/${stopKid.id}`)
+      assert.ok(
+        kidDone.plans?.at(-1)?.steps.some((s) => s.status !== 'done'),
+        '子对话还留着没做完的计划（就是要覆盖的 holds 场景）',
+      )
+      assert.ok(row.dirty > 0, '子对话卡片带上没提交的文件数（计划没做完时也要有）')
+      assert.equal(row.dir, branch.path, '子对话卡片带上独立分支目录')
+      // 一键继续走的是面板已有的「继续」接口（重新占执行位），不另造一套
+      const resumed = await call('POST', `/tasks/${stopKid.id}/resume`, {})
+      assert.equal(resumed.status, 'running', '一键继续后重新占住执行位接着做')
+      await waitDone(stopKid.id, 40000)
+      // 打断并重发（supersede=dirty）：那条提示不能说成「已停下」，它马上就接着做
+      const cutKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: stopParent.id,
+        prompt: 'BEGIN_EDIT SLOW 会被新消息打断的子对话',
+      })
+      const cutBranch = await waitFor(
+        async () => {
+          const me = await call('GET', `/tasks/${cutKid.id}`)
+          return me.status === 'running' && me.worktree?.state === 'active' ? me.worktree : undefined
+        },
+        { timeout: 40000, label: '打断用例的子对话在分支里跑' },
+      )
+      writeFileSync(path.join(cutBranch.path, 'dirty-when-interrupted.txt'), 'x\n')
+      await call('POST', `/tasks/${cutKid.id}/messages`, { text: '马上改成这条', interrupt: true })
+      const cutNote = await waitFor(
+        async () =>
+          (await call('GET', `/tasks/${stopParent.id}`)).messages.find(
+            (m) => m.child?.id === cutKid.id && m.text.includes('被打断'),
+          ),
+        { timeout: 20000, label: '父对话收到「被打断」的提示' },
+      )
+      assert.equal(cutNote.child.state, 'running', '被打断的那条不写成「已中断」，它马上接着做')
+      assert.match(cutNote.text, /个文件没有提交/, '被打断时也说清还有几个文件没提交')
+      await call('POST', `/tasks/${cutKid.id}/stop`)
+      await waitFor(async () => (await call('GET', `/tasks/${cutKid.id}`)).status === 'stopped', {
+        timeout: 20000,
+        label: '打断用例的子对话停下',
+      })
+      step('停下的子对话：父对话里提示「有未提交改动 + 目录」，可以一键继续；被打断时不说成「已停止」')
+    }
     // 提问这一段另用一个刚建好的父对话：上面刚收尾的子对话会各自 submit_merge，每次都会把父对话叫起一轮
     // （【收尾请求】），合并结果推回子对话后它们还会再跑一轮、再叫一次父对话。提问和回答要是落进这样的一轮，
     // 走的是「实时交付」而不是收件箱，下面的「换成用户已回答」就不存在了——CI 上偶发失败就是这个。

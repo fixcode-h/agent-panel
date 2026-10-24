@@ -446,6 +446,10 @@ export const api = {
         plan?: { done: number; total: number; step?: string; child?: string }
         /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */
         unmerged?: boolean
+        /** 独立分支目录里还有几个文件没提交：停下时行上直接写出来 */
+        dirty?: number
+        /** 独立分支目录：和上面的脏改动一起说明改动在哪 */
+        dir?: string
         /** 在独立 worktree 里改时的分支 */
         branch?: string
         /** 正在执行时这会儿在做什么 */
