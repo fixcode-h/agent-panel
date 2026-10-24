@@ -1268,7 +1268,7 @@ export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
  * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
  * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
  * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
- * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 TaskView 的 childGroups，
+ * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 ChildSwitcher 的 childGroups，
  * 它按 list 的先后往各组里放，所以两边顺序一致。
  */
 export function sortChildren<T extends ChildEntry>(list: T[]): T[] {

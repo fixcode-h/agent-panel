@@ -5,8 +5,9 @@ import { visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRow } from './ToolRow'
-import { useChildList, useChildOpen } from './child-open'
+import { useChildList, useChildOpen, useOpenChildId } from './child-open'
 import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
+import { ChildSwitcher } from './ChildSwitcher'
 import { t } from '@shared/i18n'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结上面，不能跟着过程一起折叠 */
@@ -124,6 +125,8 @@ export function RunningNow({
 }) {
   const children = useChildList()
   const openChild = useChildOpen()
+  // 右栏当前打开的子对话：切换下拉用它标出当前项
+  const openId = useOpenChildId()
   const list = jobs ? (task?.jobs ?? []) : []
   // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧；判定只有 splitStepJobs 一处
   const { sub: stepJobs, own: ownJobs } = splitStepJobs(task?.steps ?? [], list)
@@ -153,12 +156,24 @@ export function RunningNow({
         return (
           <RowShell
             key={k.id}
+            // 行自己的宽度当容器查询的基准（见 RowShell 的 container）：右栏开着时同样的视口
+            // 宽度下行会窄一半，按视口断点会误判
+            container
+            // 标题左边切换子对话：和输入框上方、右栏标题旁的入口读同一份列表。
+            // 行窄到放不下时先收起这个按钮（状态标签和耗时优先），输入框上方的入口仍能切换
+            leading={
+              openChild ? (
+                <ChildSwitcher list={children} current={openId} onOpen={openChild} className="@max-[380px]:hidden" />
+              ) : undefined
+            }
             glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />}
             // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
             // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
             verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}
             title={k.title || t('未命名')}
             open={false}
+            // 整段文本（动作名、标题、状态标签、正在做什么、耗时）都能点开这个子对话
+            rowOpen={openChild ? () => openChild(k.id) : undefined}
             onOpen={openChild ? () => openChild(k.id) : undefined}
             // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
             openTip={t('在右侧打开子对话「{title}」', { title: k.title || t('未命名') })}
@@ -172,11 +187,14 @@ export function RunningNow({
                     {l.text}
                   </span>
                 ))}
-                {/* 窄屏下行的宽度留给状态标签和耗时：活动文字是补充信息，md 以上再显示，
-                    不让标签被 overflow-hidden 裁成「计划 1」 */}
+                {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的
+                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文 */}
                 {(note || stale) && (
                   <span
-                    className={cn('hidden min-w-0 truncate font-sans md:block', stale ? stale.cls : 'text-subtle')}
+                    className={cn(
+                      'hidden min-w-0 truncate font-sans @min-[380px]:block',
+                      stale ? stale.cls : 'text-subtle',
+                    )}
                     title={[note, stale?.text].filter(Boolean).join(' · ')}
                   >
                     {stale ? stale.text : note}
