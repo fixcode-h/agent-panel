@@ -58,7 +58,9 @@ const detected: Omit<ProjectMcpDetected, 'status'>[] = [
   }),
 ]
 
-const same = (a: McpServer, b: McpServer) => JSON.stringify({ ...a, name: '' }) === JSON.stringify({ ...b, name: '' })
+/** 只看配置内容：名字和「装在哪些 Agent」不算（全局那条是 McpEntry，多了 clis 字段） */
+const same = (a: McpServer, b: McpServer) =>
+  JSON.stringify({ ...a, name: '', clis: undefined }) === JSON.stringify({ ...b, name: '', clis: undefined })
 
 function overview(active: string[], path: string): ProjectMcpOverview {
   const base = demoMcpOverview(active)
