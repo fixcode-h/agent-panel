@@ -3070,6 +3070,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     reviews: 0,
     interrupted: false,
     session: '',
+    snapshot: '',
     command: [],
     changes: [],
     runId: 1,
@@ -3253,6 +3254,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           reviews: 0,
           interrupted: false,
           session: '',
+          snapshot: '',
           command: [],
           changes: [],
           runId: 1,
@@ -3362,6 +3364,28 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         output: '已放进「核对通知时序」的收件箱，它用 read_messages 能看到',
       },
     ],
+    at: new Date().toISOString(),
+  })
+  // 旧记录：同一段话逐个交给了几个子对话（现在面板会拒绝），界面合成一行「发送消息 · 交代任务 · 发给 3 个」
+  const rule = '【用户刚定的硬规则】截图失败就不下视觉结论，把看起来不对的地方写成待验证项。'
+  parent.messages.push({
+    id: 'demo-send-same',
+    role: 'agent',
+    agentId: agent.id,
+    step: '',
+    text: '',
+    tools: (d.tasks ?? [])
+      .filter((x) => x.parentTaskId === parent.id)
+      .slice(0, 3)
+      .map((k) => ({
+        kind: 'other' as const,
+        name: 'MCP',
+        label: 'panel · send_to_conversation',
+        detail: '',
+        input: JSON.stringify({ id: k.id, message: rule }),
+        output: `「${k.title}」子对话正在执行，已实时送达`,
+        ms: 100,
+      })),
     at: new Date().toISOString(),
   })
 }

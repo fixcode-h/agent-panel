@@ -1,5 +1,5 @@
 ---
-paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server/*store*.ts, server/settings.ts, server/tasks.ts, server/update*.ts, server/exec/worktree.ts, web/src/components/tasks/Worktrees.tsx, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts, server/attachments.ts, server/uploads.ts, web/src/components/chat/AttachmentView.tsx, web/src/components/chat/Attachments.tsx
+paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server/*store*.ts, server/settings.ts, server/tasks.ts, server/update*.ts, server/exec/worktree.ts, web/src/components/tasks/Worktrees.tsx, scripts/package.mjs, web/src/lib/demo-backend.ts, web/src/lib/api.ts, server/attachments.ts, server/uploads.ts, web/src/components/chat/AttachmentView.tsx, web/src/components/chat/Attachments.tsx, web/src/components/projects/ProjectSettingsDialog.tsx
 ---
 
 # 数据结构、存储、升级兼容和出包
@@ -44,3 +44,9 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 - 规则：要清掉 Task 上的可选字段（`wrapRequest`、`rewind` 这类）时写 `x.field = undefined`，不要 `delete x.field`：`store.update` 是把传入的字段盖到旧记录上（`{ ...old, ...input }`），删掉的键盖不掉旧值，落盘后还是原样。由 `scripts/rules-check.mjs` 拦（确实不是 Task 的对象在行尾写 `delete-ok: 原因`）。
 - 起因：2026-10-24 用户导出的对话里 7 个已完成的子对话都挂着 `wrapRequest: merging`；叫醒后 submit_merge 一直被拒「父对话正在合并你的分支」（真实 Pi 复现）。
 - 防线：`scripts/real-cli/pi-handoff.mjs` 的「叫醒后再请求收尾」；规则检查第 6 条。
+
+## 弹窗外的 AI 会话记住结果该存到哪个对象
+
+- 规则：关掉弹窗还在跑的 AI 会话（项目设置的 `AiSession`）要记下途中建好的对象（`projectId`），应用时打开那个对象；没保存的新建草稿暂存在弹窗外壳。不能靠重开空白的新建弹窗来应用，保存时会多建一个同名项目。
+- 起因：新建项目时 AI 初始化 → 关掉设置 → 点「查看推荐并应用」，多出同名项目、目录也丢了（0e1df58 修复）。
+- 防线：`scripts/ui/07-projects.mjs` 的「先创建再应用」「关掉设置再应用」。

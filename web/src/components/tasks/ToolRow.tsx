@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { fmtDuration, toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useChildOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
@@ -217,6 +217,7 @@ export function RowShell({
   openTip,
   titleTip,
   failed,
+  action,
   className,
   children,
   /**
@@ -255,6 +256,8 @@ export function RowShell({
   /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
   titleTip?: string
   failed?: boolean
+  /** 耗时后面的操作按钮（子任务的终止）：自己处理点击，不触发展开收起 */
+  action?: React.ReactNode
   className?: string
   children?: React.ReactNode
 }) {
@@ -348,6 +351,11 @@ export function RowShell({
           detail
         )}
         {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
+        {action && (
+          <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+            {action}
+          </span>
+        )}
         {toggle && (
           <ChevronRight
             className={cn(
@@ -400,6 +408,52 @@ export function ToolRow({
   return <ToolLine view={view} task={task} />
 }
 
+/**
+ * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
+ * 展开列出每个收件人
+ */
+export function ToolRows({
+  tools,
+  task,
+}: {
+  tools: ToolUse[]
+  task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
+}) {
+  return (
+    <>
+      {groupTools(tools).map((g, i) =>
+        g.length === 1 ? <ToolRow key={i} tool={g[0]} task={task} /> : <SendGroupRow key={i} tools={g} task={task} />,
+      )}
+    </>
+  )
+}
+
+function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'status'> }) {
+  const views = tools.map((x) => ({ tool: x, view: toolView(x) }))
+  const send = views[0].view!.send!
+  const targets: SendTarget[] = views.map(({ tool, view }) => ({
+    name: view?.send?.to ?? '',
+    ...(view?.child && { child: view.child }),
+    ...(tool.output?.trim() && { receipt: tool.output.trim() }),
+    ...(tool.failed && { failed: true }),
+  }))
+  const pending = (x: ToolUse) => x.running || (x.ms === undefined && !!x.startedAt && task?.status === 'running')
+  const done = tools.filter((x) => x.ms !== undefined)
+  return (
+    <PeerLine
+      dir="out"
+      kind={send.kind}
+      name={send.to}
+      subject=""
+      body={send.body}
+      failed={tools.every((x) => x.failed)}
+      running={tools.some(pending)}
+      ms={done.length === tools.length ? Math.max(...done.map((x) => x.ms!)) : undefined}
+      targets={targets}
+    />
+  )
+}
+
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
@@ -414,7 +468,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
   const ids = view.job ? [view.job] : (view.jobs ?? [])
   const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
-  const bg = mine.length > 0
+  // 有结果之前一直转圈：任务上的后台命令列表还没推到（刚交出去、页面刚打开）也一样，不能先显示成完成
+  const bg = mine.length > 0 || !!view.waiting
   // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」
   const starts = mine.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter(Boolean)
   const jobStart = starts.length ? Math.min(...starts) : 0
@@ -442,6 +497,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     </span>
   ) : queued ? (
     <span className="shrink-0 text-subtle">{t('排队中')}</span>
+  ) : bg && !mine.length ? (
+    <span className="shrink-0 text-subtle">{t('等结果')}</span>
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )

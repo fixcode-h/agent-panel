@@ -178,8 +178,9 @@ await runShard('工作流任务', async (api) => {
   assert.ok(c1.args.includes('--permission-mode') && c1.args.includes('acceptEdits'))
   assert.match(c1.input, /流程「主流程」的节点：分析/)
   assert.match(c1.input, /## 本节点要做的事\n先分析。/)
-  // 末尾再提醒一次语言（长提示词里中间的规则容易被忽略）
+  // 末尾再提醒一次语言（长提示词里中间的规则容易被忽略）：面板工具那行说明插在它前面
   assert.match(c1.input, /回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。$/)
+  assert.match(c1.input, /（面板工具）[\s\S]*回复正文和思考过程继续用中文/)
   assert.doesNotMatch(c1.input, /同时进行的节点/)
   // 节点都用默认 CLI：乙（固定 Codex）、丙（固定 Command Code）的节点也交给 Claude Code
   const c2 = [cp1, cp2].find((x) => x.input.includes('节点：实现'))

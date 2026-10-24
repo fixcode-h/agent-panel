@@ -36,6 +36,7 @@ import { useModelCatalog } from '@/lib/model-catalog'
 import { resumeInstallJobs, setInstallFinish } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
+import { onSettingsReloaded } from '@/lib/ui-actions'
 import { cn, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
@@ -1107,6 +1108,9 @@ export function SettingsDialog({
 }) {
   const { settings } = useData()
   const [cur, setCur] = useState(section ?? 'general')
+  // 对话里的 AI 改了设置：窗口里的表单用新值重建，免得自动保存把旧值写回去
+  const [rev, setRev] = useState(0)
+  useEffect(() => onSettingsReloaded(() => setRev((n) => n + 1)), [])
   useEffect(() => {
     if (open) setCur(section ?? 'general')
   }, [open, section])
@@ -1121,7 +1125,7 @@ export function SettingsDialog({
           className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <D.Title className="sr-only">{t('设置')}</D.Title>
-          {settings && <SettingsBody initial={settings} section={cur} onSection={setCur} />}
+          {settings && <SettingsBody key={rev} initial={settings} section={cur} onSection={setCur} />}
         </D.Content>
       </D.Portal>
     </D.Root>

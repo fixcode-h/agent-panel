@@ -15,6 +15,8 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useAiFix } from '@/lib/ai-fix'
+import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
+import { api } from '@/lib/api'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -97,6 +99,35 @@ function TaskWatcher() {
   return null
 }
 
+/**
+ * 对话里的 Agent 要页面做的界面操作（服务端动作表推来的 ui 事件，见 web/src/lib/ui-actions.ts）。
+ * 名字和 server/app-actions 里 pushUi / ctx.ui 用的一致；加界面操作在这里加一项
+ */
+function UiActions({ reopenProject }: { reopenProject: (id: string, section?: string, item?: string) => void }) {
+  const { go, openSettings } = useNav()
+  const { setSettings } = useData()
+  useUiActions({
+    navigate: (a) => {
+      const page = str(a.page)
+      if (page && page in PAGES) go({ page: page as Route['page'], id: str(a.id), sub: str(a.sub) })
+    },
+    open_settings: (a) => openSettings(str(a.section)),
+    open_project: (a) => {
+      const id = str(a.id)
+      if (id) reopenProject(id, str(a.section), str(a.item))
+    },
+    reload_settings: () =>
+      void api
+        .settings()
+        .then((fresh) => {
+          setSettings(fresh)
+          settingsReloaded()
+        })
+        .catch(() => {}),
+  })
+  return null
+}
+
 /** 命令面板和全局快捷键（要在导航上下文里面） */
 function Shortcuts() {
   const [open, setOpen] = useState(false)
@@ -155,6 +186,13 @@ export function App() {
         <div className="flex min-h-full flex-col md:h-full">
           <TaskWatcher />
           <Shortcuts />
+          <UiActions
+            reopenProject={(id, section, item) => {
+              // 先关再开：弹窗已经开着时也按这次要的那一栏重新打开（例如 AI 初始化要从头开始）
+              setProject((s) => ({ ...s, open: false }))
+              setTimeout(() => setProject({ open: true, id, section, item }), 0)
+            }}
+          />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">

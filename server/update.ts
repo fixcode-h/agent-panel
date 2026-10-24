@@ -601,6 +601,8 @@ export function restartProcess(close: () => void) {
     cwd: process.cwd(),
     env: { ...process.env, AGENT_PANEL_RESTARTED: '1' },
     stdio: 'inherit',
+    // 面板起的进程一律不弹窗口（没有控制台时 Windows 会给新进程开一个）
+    windowsHide: true,
   })
   child.on('spawn', () => setTimeout(() => process.exit(0), 200))
   child.on('error', (e) => console.error(`重启失败：${e.message}`))

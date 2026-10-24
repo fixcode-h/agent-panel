@@ -8,6 +8,8 @@ import type { AskQuestion } from '../shared/schema.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
+import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
+import type { ActionCaller } from './app-actions/registry.ts'
 
 /**
  * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code、Gemini CLI）一个提问工具：
@@ -40,6 +42,8 @@ const sessions = new Map<
     wait?: () => Promise<string | null>
     /** 编排工具：工作流节点和对话的调用才有 */
     orch?: Orchestra
+    /** 操控软件的动作（app_actions / app_do）：对话的调用才有，值是调用者 */
+    app?: ActionCaller
     pending: Set<(r: AskReply) => void>
   }
 >()
@@ -170,7 +174,13 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   const orch = s.orch ? orchTools(s.orch) : []
-  const tools = [...(s.ask ? [TOOL] : []), ...(s.notes ? [NOTES_TOOL] : []), ...(s.wait ? [WAIT_TOOL] : []), ...orch]
+  const tools = [
+    ...(s.ask ? [TOOL] : []),
+    ...(s.notes ? [NOTES_TOOL] : []),
+    ...(s.wait ? [WAIT_TOOL] : []),
+    ...orch,
+    ...(s.app ? APP_TOOLS : []),
+  ]
   switch (msg.method) {
     case 'initialize':
       return reply({
@@ -188,6 +198,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
       if (name === NOTES_TOOL.name && s.notes) return reply(await callNotes(s))
       if (s.orch && orch.some((x) => x.name === name))
         return reply(await callOrchTool(s.orch, String(name), msg.params?.arguments ?? {}))
+      if (s.app && APP_TOOLS.some((x) => x.name === name))
+        return reply(await callAppTool(s.app, String(name), msg.params?.arguments ?? {}))
       if (name === WAIT_TOOL.name && s.wait) {
         const text = await s.wait()
         return reply({
@@ -204,13 +216,14 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
 /**
  * 开一个面板工具通道：url 交给 CLI，close 在这一轮结束时调用（还没回答的问题作废）。
  * ask 是向用户提问；notes 取用户在这轮执行中补充的信息（CLI 没有插话协议时用）；
- * wait 等用户在这个对话里的下一句；orch 是编排工具。都不给就别开
+ * wait 等用户在这个对话里的下一句；orch 是编排工具；app 是操控软件的动作（调用者）。都不给就别开
  */
 export function openAskBridge(o: {
   ask?: Ask
   notes?: () => string[]
   wait?: () => Promise<string | null>
   orch?: Orchestra
+  app?: ActionCaller
 }) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }

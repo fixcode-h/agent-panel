@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, web/src/lib/peer-dedupe.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -26,11 +26,11 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 - 起因：`node_modules` 被清空时父对话收尾 abort 子对话，`ctx.signal.aborted && !r.killed` 全判成 `stopped`，用户没点暂停却看到「已暂停」；12 个进程只有 7 个对得上，共用目录的子对话 `resolved` 后 CLI 一直留着。
 - 防线：`shared/task-stage.test.ts` 的 `stopReasonText`、`keepAliveVictims` 用例；`server/presence.test.ts` 的「保活上限只放过前台开着的页面」；`stopTask` 第二参数必填由 typecheck 拦住。
 
-## 后台命令交出去不等于做完：监管到结束
+## 后台命令交出去不等于做完：没结果就一直转圈
 
-- 规则：面板替对话跑的后台命令（`run_background`、`request_build`）要盯到结束：发起行转圈到结束、换真实用时和结果（`settleJobTool`）；长时间没输出、跑得久提醒（`onNotice`）；推送失败要重试并留在对话里，不能只写日志。`taskBusy`、未读看 `jobs`。CLI 自带后台命令（Claude Code 的 `run_in_background`、`Monitor`）关掉，长命令走面板。见 ADR 0006。
-- 起因：带前缀的 `panel_run_background` 被解析成「运行命令」，0.09 秒完成；结果没推回，模型前台 `sleep` 轮询，用户以为停了。
-- 防线：`server/background.test.ts` 的「监管」「限时」用例；`server/exec/parsers.test.ts` 的「带服务名前缀的面板工具」；`web/src/lib/tasks.test.ts` 的旧数据用例。
+- 规则：后台命令那一行按输出里「还没拿到结果的编号」（`bgPendingIds`，不锚定开头）判断转圈，结果段带编号接在后面（`settleJobRow`）；跑得久、没输出要提醒对话；推送失败重试并留在对话里。命令一律静默跑，不新开窗口。见 ADR 0006。
+- 起因：带前缀的工具名被当成「运行命令」0.09 秒完成；Command Code 在结果前插 `<repair_note>`，锚定开头的匹配认不出编号，又显示完成；模型 `start cmd` 弹窗跑测试。
+- 防线：`server/background.test.ts`「那一行收口」「监管」；`web/src/lib/tasks.test.ts`。
 
 ## 一轮结束只发一次回调，result 和保活等待同出口
 

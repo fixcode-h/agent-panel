@@ -14,6 +14,7 @@ import {
   openPlan,
   planProgress,
   planSpan,
+  refreshChildWait,
   runningStepId,
   settleWait,
   unsummarized,
@@ -560,4 +561,36 @@ test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划
     false,
   )
   assert.equal(markWrapUp(task, 'merge', 'done'), false)
+})
+
+test('父对话收尾子对话后刷新计划：合进去还没收口继续等，收口了才标完成，每次都给出计划', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改登录页', status: 'running' }, { title: '发版' }] })
+  bindWait(task, '1', { kind: 'child', ref: 'kid', label: '登录页' })
+  const kid = { id: 'kid', title: '登录页' }
+  // 合进去了但子对话这一轮还没结束：不能先把父计划标完成（用户见过父计划已完成、子对话却没完）
+  const held = refreshChildWait(task, kid, { settle: 'hold', why: '计划 3/4' })
+  assert.equal(activePlan(task)!.steps[0].status, 'waiting')
+  assert.match(held, /收尾后的计划/)
+  assert.match(held, /还在等它：计划 3\/4/)
+  assert.doesNotMatch(held, /没有步骤在等/)
+  // 收口了：标完成，计划文字跟着变
+  const done = refreshChildWait(task, kid, { settle: 'ok', why: '' })
+  assert.equal(activePlan(task)!.steps[0].status, 'done')
+  assert.match(done, /\[x\] 1 改登录页/)
+  // 失败退回进行中
+  const other = fresh()
+  applyPlan(other, { steps: [{ title: 'A', status: 'running' }] })
+  bindWait(other, '1', { kind: 'child', ref: 'kid', label: 'A' })
+  refreshChildWait(other, kid, { settle: 'fail', why: '执行失败了' })
+  assert.equal(activePlan(other)!.steps[0].status, 'running')
+})
+
+test('父对话收尾子对话后刷新计划：计划里没挂它时点明要 Agent 自己标，没有计划时不出', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改登录页', status: 'running' }] })
+  const text = refreshChildWait(task, { id: 'kid', title: '登录页' }, { settle: 'ok', why: '' })
+  assert.match(text, /没有步骤在等子对话「登录页」/)
+  assert.equal(activePlan(task)!.steps[0].status, 'running', '没挂等待的步骤不替 Agent 乱标')
+  assert.equal(refreshChildWait(fresh(), { id: 'kid', title: 'x' }, { settle: 'ok', why: '' }), '')
 })

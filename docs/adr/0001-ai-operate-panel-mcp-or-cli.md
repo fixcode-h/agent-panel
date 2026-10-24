@@ -1,6 +1,6 @@
 # ADR 0001：让 AI 对话操作面板自身功能——走 MCP 工具，CLI 只做可选薄壳
 
-- 状态：提议（已定方向，待实施；实施前不需要再改本文件）
+- 状态：被 [0011](./0011-app-actions-for-agents.md) 替代（选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具）
 - 日期：2026-10-23
 - 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
 - 相关文档：`docs/cli-config.md`（`mcp` 能力、面板工具的接入方式）、`AGENTS.md`（硬规则与安全边界）、`docs/lessons/server.md`

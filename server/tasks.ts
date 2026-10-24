@@ -125,7 +125,16 @@ import {
   isBigProject,
 } from './exec/worktree.ts'
 import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
-import { createBackground, jobMs, jobOutput, uiJobs, type BgJob } from './background.ts'
+import {
+  createBackground,
+  jobDetail,
+  jobMs,
+  jobOutput,
+  reapLostJobs,
+  settleJobRow,
+  uiJobs,
+  type BgJob,
+} from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
@@ -141,6 +150,7 @@ import {
   markWrapUp,
   openPlan,
   openWork,
+  refreshChildWait,
   settleWait,
   waitNote,
   type WrapUpKind,
@@ -282,7 +292,7 @@ export function tasksApi(deps: {
   const startQueue = new Set<string>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
-  // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0010）
+  // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0012）
   setPresenceIdleHandler((id) => cancelWait(id))
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
@@ -924,29 +934,10 @@ export function tasksApi(deps: {
     const entry = live.get(job.taskId)
     const tk = entry?.task ?? stored
     if (!tk) return
-    const mark = `已放到后台（编号 ${job.id}）`
-    // 申请的编译（request_build）一次排几条：每条跑完把结果接在那一行后面，有一条失败那一行就算失败
-    const build = new RegExp(`^已申请编译（[^）]*），编号 [0-9a-f、]*${job.id}`)
-    for (let i = tk.messages.length - 1; i >= 0; i--) {
-      const hit = tk.messages[i].tools.find((x) => build.test(x.output ?? ''))
-      if (hit) {
-        hit.output = `${hit.output}\n\n${jobOutput(job)}`
-        if (job.state !== 'done') hit.failed = true
-        tk.updatedAt = new Date().toISOString()
-        if (entry) entry.rev++
-        await store.update(tk.id, tk)
-        return
-      }
-      const tool = tk.messages[i].tools.find((x) => x.output?.startsWith(mark))
-      if (!tool) continue
-      tool.output = `${mark}\n\n${jobOutput(job)}`
-      tool.ms = jobMs(job)
-      tool.failed = job.state === 'done' ? undefined : true
-      tool.detail = job.state === 'done' ? '' : job.state === 'stopped' ? '已停止' : `退出码 ${job.code ?? '无'}`
+    if (settleJobRow(tk, job.id, jobOutput(job), job.state === 'done', jobMs(job), jobDetail(job))) {
       tk.updatedAt = new Date().toISOString()
       if (entry) entry.rev++
       await store.update(tk.id, tk)
-      return
     }
   }
 
@@ -1114,7 +1105,7 @@ export function tasksApi(deps: {
     build = false,
     /** 交接要点（见 ADR 0007）：以后再被叫醒、上下文又大时只带这份摘要 */
     handoff: HandoffInput = {},
-    /** 对最近一次评审每条 🛑 的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
+    /** 对最近一次评审每条高级、中级意见的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
     triage: TriageItem[] = [],
   ): Promise<{ ok: boolean; info: string }> {
     const entry = live.get(childId)
@@ -1418,13 +1409,60 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 父对话收尾一个子对话（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
-   * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
-   * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
-   * 父对话计划里等它的那一步也标完成。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
-   * 合并就是验收：没请求收尾（没交验证结果）的不收
+   * finish_child 的唯一入口：每次收尾（合进去、没合进去、早就完成了、还不能收）结束后都强制刷新一次父对话的计划，
+   * 并把刷新后的计划附在工具结果里。用户 2026-10-24 定的硬要求：「每次子对话请求收尾，父对话收尾完成都需要刷新一下计划列表」。
+   * 以前只有独立分支合进去的那条路改父计划、而且一合进去就把那一步标完成（子对话还没收口也算），
+   * 共用目录的子对话收尾完父计划一直挂着等待，父对话的 Agent 也看不到计划变成什么样
    */
   async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
+    const r = await finishChildStep(parent, childId)
+    const plan = await syncParentPlan(parent.id, childId).catch((e) => {
+      log.warn('task', '收尾后刷新父对话计划失败', { task: parent.id, error: (e as Error).message })
+      alertOn(parent.id, 'panel', t('收尾子对话后刷新计划失败'))(e)
+      return ''
+    })
+    return plan ? { ok: r.ok, info: `${r.info}\n\n${plan}` } : r
+  }
+
+  /**
+   * 收尾之后把父计划里等这个子对话的那一步对齐到子对话现在的状态，和 reportChild 用同一个判据（childReport）：
+   * 已完成标完成，失败、中断退回进行中，其余（合进去了还在收口、没合进去退回给它了）继续等并写清在等什么。
+   * 不按上报去重：每次收尾都刷新、都落盘并推给界面。返回给父对话 Agent 看的计划文字（没有计划时为空）
+   */
+  async function syncParentPlan(parentId: string, childId: string): Promise<string> {
+    const pEntry = live.get(parentId)
+    const pTask = pEntry?.task ?? (await store.get(parentId))
+    if (!pTask) return ''
+    const tk = live.get(childId)?.task ?? (await store.get(childId))
+    let report: ReturnType<typeof childReport> | undefined
+    if (tk?.parentTaskId === parentId) {
+      const jobs = background
+        .list(childId)
+        .filter((j) => j.state === 'queued' || j.state === 'running')
+        .map((j) => j.name)
+      const project = isolated(tk) ? await deps.projects.get(tk.projectId) : null
+      report = childReport(tk, {
+        background: jobs,
+        more: startQueue.has(childId) || hasHeld(childId),
+        unmerged: await childUnmerged(tk, project ?? null),
+      })
+    }
+    const text = refreshChildWait(pTask, { id: childId, title: tk?.title ?? childId }, report)
+    // 计划没变也写一次：rev 变了界面才会重取，保证每次收尾后看到的都是最新的计划
+    pTask.updatedAt = new Date().toISOString()
+    if (pEntry) pEntry.rev++
+    await store.update(pTask.id, pTask, { now: true })
+    return text
+  }
+
+  /**
+   * 收尾一个子对话的实际动作（finish_child，见 ADR 0005）：子对话已经请求收尾（submit_merge），
+   * 面板按父对话排队把它的分支合回父对话所在的分支（git 操作是确定的，交给面板做，父对话只决定收不收），
+   * 合进去后把它计划里的收尾步骤标完成、按 childFlowOf 收口（结束进程、删独立分支和分支、置完成），
+   * 父对话计划里等它的那一步由 finishChild 收尾后统一刷新。没合进去（冲突、原目录有挡路的改动）退回给子对话处理，它处理好会再请求。
+   * 合并就是验收：没请求收尾（没交验证结果）的不收
+   */
+  async function finishChildStep(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
     if (!tk || tk.parentTaskId !== parent.id)
       return { ok: false, info: '找不到这个子对话：id 从 list_conversations 取，只能收尾你自己名下的子对话' }
@@ -1485,14 +1523,6 @@ export function tasksApi(deps: {
 父对话已经验收合并。计划、后台命令、提问都收口后面板结束这个子对话并删除独立分支；不要再改已经合进去的文件。`,
       { quiet: true, peer: await peerOf(parent, 'parent', 'merge', `已合回原分支：${r.info}`) },
     )
-    // 父对话计划里等它的那一步：合进去就是交付了
-    const pEntry = live.get(parent.id)
-    const pTask = pEntry?.task ?? parent
-    if (settleWait(pTask, 'child', childId, true).length) {
-      pTask.updatedAt = new Date().toISOString()
-      if (pEntry) pEntry.rev++
-      await store.update(pTask.id, pTask).catch(() => {})
-    }
     const finished = !!done && !done.holds.length
     return {
       ok: true,
@@ -1531,6 +1561,17 @@ export function tasksApi(deps: {
 
   /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
   async function withLive(task: Task): Promise<Task> {
+    // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
+    if (reapLostJobs(task, background.known)) {
+      task.updatedAt = new Date().toISOString()
+      const e = live.get(task.id)
+      if (e) e.rev++
+      await store
+        .update(task.id, task)
+        .catch((err) =>
+          log.warn('background', '收口丢失的后台命令失败', { task: task.id, error: (err as Error).message }),
+        )
+    }
     const t = withJobs(task)
     if (task.parentTaskId) return t
     // 0 也写上：理由同 withJobs
@@ -3180,7 +3221,7 @@ export function tasksApi(deps: {
     // 只有用户自己停止、归档时名下子对话才一起结束（原因记成 parent，不是用户暂停）。
     // 父对话自己的 CLI 已经退了（这一轮说完、只剩子对话在跑）也要停：在这里先做，不受下面「没在跑」的提前返回影响。
     // 闲置回收、换 CLI、打断重发、CLI 卡住重开只是父对话自己这一轮的事：子对话有自己的进程和状态，
-    // 还在跑的不能跟着被杀，做完结果照样推回父对话（见 ADR 0010）
+    // 还在跑的不能跟着被杀，做完结果照样推回父对话（见 ADR 0012）
     if (reason === 'user' || reason === 'archive') void closeChildren(id)
     const e = live.get(id)
     if (!e) return
@@ -3198,7 +3239,7 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 这个对话还在运行，不能回收、失活（ADR 0010）：两个回收时长、保活上限都先问它，页面开着还是切到后台都一样。
+   * 这个对话还在运行，不能回收、失活（ADR 0012）：两个回收时长、保活上限都先问它，页面开着还是切到后台都一样。
    * 判定就是 convActive（自己在跑、在等子任务 / 子对话 / 后台命令 / 工作流，有没回复的提问和请求），
    * 再加上这一轮没收尾、在预热、还有排队的消息。只有停在等下一句、什么都没挂着的才是空闲会话。
    * 名下子对话只算还在运行的（childActive）：父对话被回收不会再连带停掉子对话，闲着的子对话不用护着它
@@ -3495,11 +3536,32 @@ export function tasksApi(deps: {
     const stepId = typeof body?.step === 'string' ? body.step : ''
     const tk = await current(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
+    // 「停止全部子任务」（用户让 AI 停、或脚本调）：还没结束的一个个停，已经结束的 stopHelper 会跳过
+    if (body?.all === true) {
+      const stopped = tk.steps
+        .filter((s) => s.slot === 'sub' && stopHelper(id, s.id, '用户要求终止全部子任务'))
+        .map((s) => s.id)
+      if (stopped.length) log.info('task', '终止了全部子任务', { task: id, n: stopped.length })
+      return c.json({ stopped: stopped.length })
+    }
     const step = tk.steps.find((s) => s.id === stepId && s.slot === 'sub')
     if (!step) return bad(c, t('找不到这个子任务'), 404)
     if (!stopHelper(id, step.id, '用户在界面上终止了这个子任务')) return bad(c, t('这个子任务已经结束了'), 409)
     log.info('task', '用户终止了子任务', { task: id, step: step.id })
     return c.json(await current(id))
+  })
+
+  /** 停止这个对话和它名下子对话的全部后台命令（对话本身不停）；返回停了几条 */
+  routes.post('/:id/background/stop', async (c) => {
+    const id = c.req.param('id')
+    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id)
+    const before = [id, ...kids.map((k) => k.id)].reduce(
+      (n, tid) => n + background.list(tid).filter((j) => j.state === 'queued' || j.state === 'running').length,
+      0,
+    )
+    await endBackground(id)
+    return c.json({ stopped: before })
   })
 
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */

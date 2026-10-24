@@ -701,7 +701,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
     }
   }
-  // 派出的子任务不再铺在消息流里：入口在输入框上方单独一行，点开是列表和只读窗口
+  // 同一段话逐个交给几个子对话的旧记录：合成一行「发给 3 个」，展开列出每个收件人
+  {
+    const row = p.getByText('发给 3 个：', { exact: false }).first()
+    if (!(await row.count())) errors.push('同一段话交给几个子对话：没有合成一行「发给 3 个」')
+    else {
+      await row.scrollIntoViewIfNeeded()
+      if ((await p.getByText('截图失败就不下视觉结论', { exact: false }).count()) !== 1)
+        errors.push('同一段话交给几个子对话：还是画成了好几行')
+      await row.click()
+      await check(p, '发送消息-同一段话合成一行', ['发送消息', '交代任务', '发给 3 个子对话的同一条消息'])
+      await row.click()
+    }
+  }
+  // 派出的子任务不再铺在消息流里：入口在输入框上方单独一行（状态栏三行），点开是列表和只读窗口
   {
     const openTask = () => backToTask()
     // 折叠行「派出 3 个子任务」也是一个按钮；入口按钮的 aria-label 就是「子任务」。
@@ -904,8 +917,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         errors.push(`运行区：子任务起的后台命令没有按「子任务 + 标题」列出来（当前行：${drawn.join(' | ') || '无'}）`)
       } else {
         if (!subJobRow.includes('单测')) errors.push(`运行区：子任务的后台命令没显示命令名，现在是「${subJobRow}」`)
-        if (!/(\d+m )?\d+(\.\d+)?s/.test(subJobRow))
+        // 计时是子任务从开始到现在（演示数据里开始得早，会是「3h 0m」这种写法）
+        if (!/\d+(\.\d+)?[hms]\b/.test(subJobRow))
           errors.push(`运行区：子任务的后台命令行没有计时，现在是「${subJobRow}」`)
+        // 子任务和子对话同一个样式的一行：带状态标签，最后是终止按钮；后台命令并在这一行里，不再另起一行
+        if (!subJobRow.includes('执行中')) errors.push(`运行区：子任务行没有「执行中」状态，现在是「${subJobRow}」`)
+        const stopInRow = await p.evaluate(() =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((b) =>
+            [...b.children].some(
+              (r) =>
+                (r.innerText || '').includes('核对角标的订阅时机') &&
+                !!r.querySelector('button[aria-label="终止子任务"]'),
+            ),
+          ),
+        )
+        if (!stopInRow) errors.push('运行区：子任务行没有终止按钮')
+        await p.locator('[aria-label="运行中"]', { hasText: '核对角标的订阅时机' }).first().scrollIntoViewIfNeeded()
+        await check(p, '子任务-运行区一行')
       }
       // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法（按 aria-label 定位输入框上方的入口）
       const runLabel = (await subBar().first().innerText()).replace(/\s+/g, ' ').trim()

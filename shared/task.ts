@@ -484,7 +484,7 @@ export function convState(x: ConvFacts): ConvState {
 /**
  * 这个对话还在运行：执行中、等结果（子对话、子任务、后台命令、工作流还没完）、等你处理（提问、请求没回复）。
  * 「在运行的对话不能杀」只认这一个判定：没人在看、不是当前选中的、保活超上限、父对话的 CLI 结束，
- * 都不能把还在运行的对话或它的子对话停掉（见 ADR 0010）。只有用户自己停止、归档、删除才停
+ * 都不能把还在运行的对话或它的子对话停掉（见 ADR 0012）。只有用户自己停止、归档、删除才停
  */
 export const convActive = (s: ConvState) => s === 'running' || s === 'waiting' || s === 'needs'
 
@@ -1435,6 +1435,14 @@ export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
 }
 
 /**
+ * 子任务还没结束（在跑或在排队）：对话页运行区按这个列子任务行、终止按钮也只在这时出现。
+ * 和子对话的 convActive 一个意思——没做完就算在运行，不因为没选中、在后台就不列
+ */
+export function helperActive(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')
+}
+
+/**
  * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
  * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
  */
@@ -1502,7 +1510,7 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
- * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0010）。
+ * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0012）。
  * 状态部分就是 convActive（taskFacts）：在跑、在等子任务 / 子对话 / 后台命令 / 工作流、有没回复的提问和请求；
  * 另外这一轮没收尾、在预热也算。后台命令数和名下还在运行的子对话数不在任务数据里，由调用方按运行时情况传。
  */

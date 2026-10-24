@@ -132,6 +132,35 @@ test('对话 Agent 没开「按工作流执行计划」：没有 start_plan 能�
   assert.equal(log.length, 1)
 })
 
+test('协调 Agent：一条消息只交给一个子对话，同一段话再发给别的子对话被拒绝', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '定成硬规则' } as never, undefined, '', 'p1'),
+    id: 'p1',
+  } as Task
+  const log: AgentCall[] = []
+  const sent: string[] = []
+  const h = host(task, log, async (call) => {
+    const rule = '【硬规则】截图失败就不下视觉结论'
+    assert.equal((await call.orch!.sendToConversation('c1', rule)).ok, true)
+    const again = await call.orch!.sendToConversation('c2', rule)
+    assert.equal(again.ok, false)
+    assert.match(again.info, /一条消息只交给一个子对话/)
+    // 给同一个子对话补充、换一段话给别的子对话照常放行
+    assert.equal((await call.orch!.sendToConversation('c1', rule)).ok, true)
+    assert.equal((await call.orch!.sendToConversation('c2', '改按钮颜色')).ok, true)
+    return { ok: true, text: '已交给最相关的子对话。' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => []
+  h.sendToConversation = async (id) => {
+    sent.push(id)
+    return { ok: true, info: `已交给「${id}」` }
+  }
+
+  await runEngineTurn(h)
+  assert.deepEqual(sent, ['c1', 'c1', 'c2'])
+})
+
 test('协调 Agent：新建子对话并交给它，子对话自己不能再分派', async () => {
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '实现登录' } as never, undefined, '', 'p1'),
