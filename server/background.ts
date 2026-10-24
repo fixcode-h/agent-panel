@@ -5,6 +5,7 @@ import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
+import { fmtDuration } from '../shared/duration.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -77,21 +78,13 @@ const STATE_TEXT: Record<BgJob['state'], string> = {
   stopped: '已停止',
 }
 
-/** 用时的说法：不到一分钟写秒，再长写「几分几秒」 */
-function fmtSecs(ms: number) {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s} 秒`
-  const m = Math.floor(s / 60)
-  return m < 60 ? `${m} 分 ${s % 60} 秒` : `${Math.floor(m / 60)} 小时 ${m % 60} 分`
-}
-
 /** 真正的用时：从开始跑到结束；没跑起来（排队时被停）就从交给面板算 */
 export const jobMs = (j: BgJob) => Math.max(0, Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))
 
 function headText(j: BgJob) {
   return j.state === 'stopped'
-    ? `后台命令「${j.name}」被停止了（跑了 ${fmtSecs(jobMs(j))}）`
-    : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${fmtSecs(jobMs(j))}）`
+    ? `后台命令「${j.name}」被停止了（跑了 ${fmtDuration(jobMs(j))}）`
+    : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${fmtDuration(jobMs(j))}）`
 }
 
 /** 对话里发起这条命令的那一行工具调用跑完后显示什么：结果和输出结尾 */
@@ -241,19 +234,19 @@ export function createBackground(
       const quiet = t - Date.parse(j.lastOutputAt || j.startedAt)
       const last = j.lines.slice(-10).join('\n')
       const out = last ? `\n最后的输出：\n\`\`\`\n${last}\n\`\`\`` : ''
-      const left = `面板会在跑满 ${fmtSecs(j.timeoutMs)} 时停掉它。`
+      const left = `面板会在跑满 ${fmtDuration(j.timeoutMs)} 时停掉它。`
       if (quiet >= stallMs && !j.stalled) {
         j.stalled = true
         j.nextCheckMs = Math.max(j.nextCheckMs ?? 0, ran + checkFirstMs)
         deps.onNotice?.(
           j,
-          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtSecs(ran)}，最近 ${fmtSecs(quiet)} 没有任何输出，可能卡住了（下载或解压完了却没退出、在等输入、死锁）。\n命令：${j.command}${out}\n先用 check_background 看它现在的状态，再用只读命令核对它该产出的东西（文件、进程）在不在；确认卡住就用 stop_background 停掉，查清原因再重跑。它还在正常干活（只是不输出）就不用管，结果照样会推回来。${left}`,
+          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtDuration(ran)}，最近 ${fmtDuration(quiet)} 没有任何输出，可能卡住了（下载或解压完了却没退出、在等输入、死锁）。\n命令：${j.command}${out}\n先用 check_background 看它现在的状态，再用只读命令核对它该产出的东西（文件、进程）在不在；确认卡住就用 stop_background 停掉，查清原因再重跑。它还在正常干活（只是不输出）就不用管，结果照样会推回来。${left}`,
         )
       } else if (j.nextCheckMs !== undefined && ran >= j.nextCheckMs) {
         j.nextCheckMs = ran * 2
         deps.onNotice?.(
           j,
-          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtSecs(ran)}，还没结束（最近一次输出在 ${fmtSecs(quiet)} 前）。\n命令：${j.command}${out}\n看一眼进度是否正常：输出一直在重复（反复重试、死循环）或者明显跑偏就用 stop_background 停掉；正常就不用管，结束后结果会推回来，下一次提醒在跑满 ${fmtSecs(j.nextCheckMs)} 时。${left}`,
+          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtDuration(ran)}，还没结束（最近一次输出在 ${fmtDuration(quiet)} 前）。\n命令：${j.command}${out}\n看一眼进度是否正常：输出一直在重复（反复重试、死循环）或者明显跑偏就用 stop_background 停掉；正常就不用管，结束后结果会推回来，下一次提醒在跑满 ${fmtDuration(j.nextCheckMs)} 时。${left}`,
         )
       }
       stallTimers.set(j.id, timers.setTimeout(tick, every))
@@ -272,7 +265,7 @@ export function createBackground(
     if (j.endedAt || killTimers.has(j.id)) return
     const t = timers.setTimeout(() => {
       killTimers.delete(j.id)
-      const note = `（进程未在 ${Math.round(killGraceMs / 1000)} 秒内退出：记录已置终态，但它可能还在跑）`
+      const note = `（进程未在 ${fmtDuration(killGraceMs)} 内退出：记录已置终态，但它可能还在跑）`
       if (!finish(j, 'stopped', { note })) return
       log.warn('background', '后台命令的进程没在限期内退出，记录先置终态', {
         id: j.id,
@@ -326,7 +319,7 @@ export function createBackground(
     const after = before ? await fingerprint(root).catch(() => '') : ''
     j.changed = !!before && !!after && before !== after
     if (r.spawnError) j.lines.push(r.spawnError)
-    if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtSecs(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
+    if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtDuration(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
     const state = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'
     // 已经被停止兜底置过终态（close 来晚了）：不再改状态，也不重复推结果
     if (!finish(j, state, { code: r.code })) return
@@ -425,10 +418,10 @@ export function createBackground(
           const tail = j.lines.slice(-15).join('\n')
           // 用时和「多久没输出」一起给：只看状态分不清是在正常跑还是卡住了
           const when = j.endedAt
-            ? `，用时 ${fmtSecs(Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))}`
+            ? `，用时 ${fmtDuration(Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))}`
             : j.startedAt
-              ? `，已经跑了 ${fmtSecs(t - Date.parse(j.startedAt))}，最近一次输出在 ${fmtSecs(t - Date.parse(j.lastOutputAt || j.startedAt))} 前`
-              : `，排队 ${fmtSecs(t - Date.parse(j.createdAt))}`
+              ? `，已经跑了 ${fmtDuration(t - Date.parse(j.startedAt))}，最近一次输出在 ${fmtDuration(t - Date.parse(j.lastOutputAt || j.startedAt))} 前`
+              : `，排队 ${fmtDuration(t - Date.parse(j.createdAt))}`
           return `- ${j.id}「${j.name}」：${STATE_TEXT[j.state]}${j.code !== null ? `（退出码 ${j.code}）` : ''}${when}${tail ? `\n${tail}` : ''}`
         })
         .join('\n')

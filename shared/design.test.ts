@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Annotation, annotationBox, annotationText, canInpaint, hasMask, imageRevisionText, maskBox } from './design.ts'
+import {
+  Annotation,
+  DesignChatInput,
+  DesignMessage,
+  WidgetCitation,
+  annotationBox,
+  annotationText,
+  canInpaint,
+  hasMask,
+  imageRevisionText,
+  maskBox,
+  widgetCitationText,
+} from './design.ts'
 
 const mask = (strokes: { erase?: boolean; w?: number; points: number[] }[]): Annotation => {
   const list = strokes.map((s) => ({ erase: false, w: 40, ...s }))
@@ -73,4 +85,46 @@ test('只有本机 ComfyUI 能做局部重绘', () => {
   assert.equal(canInpaint({ kind: 'cli' }), false)
   assert.equal(canInpaint({ kind: 'browser' }), false)
   assert.equal(canInpaint({ kind: 'none' }), false)
+})
+
+test('控件引用：旧消息没有 refs 也能解析，新消息保留引用快照', () => {
+  const old = DesignMessage.parse({ id: 'm1', role: 'user', text: '旧消息', at: '2026-10-24T00:00:00.000Z' })
+  assert.equal(old.refs, undefined)
+  const ref = WidgetCitation.parse({ id: 'c1', name: 'Grid_Slots', type: 'TileView' })
+  assert.equal(ref.target, '')
+  assert.equal(ref.width, 0)
+  const msg = DesignMessage.parse({
+    id: 'm2',
+    role: 'user',
+    text: '引用',
+    at: '2026-10-24T00:00:00.000Z',
+    refs: [ref],
+  })
+  assert.equal(msg.refs?.[0].name, 'Grid_Slots')
+  // 发送接口不带 refs 时按空数组
+  const input = DesignChatInput.parse({ text: '看看这个' })
+  assert.deepEqual(input.refs, [])
+})
+
+test('发给 AI 的引用说明写明路径、尺寸、用到的图片和文字', () => {
+  const ref = WidgetCitation.parse({
+    id: 'c1',
+    widgetId: 'w1',
+    name: 'Grid_Slots',
+    type: 'TileView',
+    target: 'Inventory',
+    path: 'Main / Inventory / Grid_Slots',
+    width: 640,
+    height: 480,
+    image: 'slot_bg（img:img_slot）',
+    text: '背包',
+  })
+  const text = widgetCitationText([ref], { designSize: { X: 1920, Y: 1080 } })
+  assert.match(text, /Main \/ Inventory \/ Grid_Slots/)
+  assert.match(text, /TileView/)
+  assert.match(text, /在子控件 Inventory 里/)
+  assert.match(text, /640×480/)
+  assert.match(text, /img_slot/)
+  assert.match(text, /背包/)
+  assert.match(text, /1920×1080/)
 })

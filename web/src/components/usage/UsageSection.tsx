@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, RotateCcw } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
   USAGE_GRAINS,
   USAGE_LOOKBACK_DAYS,
   dayKey,
   formatTokens,
+  isCurrentPeriod,
   periodLabel,
   periodStart,
   shiftPeriod,
@@ -63,8 +64,10 @@ function Stat({ label, value }: { label: string; value: number }) {
  * 设置里的「用量统计」：按天 / 按周 / 按月只展示当前一个区间，用工具条上的选择器切区间。
  *
  * 聚合仍在服务端做（`GET /usage`），一次取近一年的按天数据；周、月的合计由按天相加，
- * 所以切粒度不用重新请求。默认落在今天 / 本周 / 本月，还没有用量时退到最近一个有数据的区间
- * 并在界面上写清显示的是哪一段（用户手动选过的区间不会被自动改掉）。
+ * 所以切粒度不用重新请求。切粒度总是落在新粒度的当前区间（今天 / 本周 / 本月），
+ * 翻区间、选日期后区间不在当前时工具条上多一个「重置」回到当前。
+ * 当前区间还没有用量时退到最近一个有数据的区间并在界面上写清显示的是哪一段
+ * （用户手动选过的区间不会被自动改掉）。
  *
  * 费用按「计价模型」的官方单价折算（`shared/pricing.ts`）；CLI 自己上报的 costUsd 只作对照，
  * 不参与合计，避免两个都叫「费用」的数字混在一起。
@@ -80,7 +83,7 @@ export function UsageSection({
   const [grain, setGrain] = useState<UsageGrain>('day')
   /** 当前区间的第一天；按天是那天，按周是周一，按月是一号 */
   const [anchor, setAnchor] = useState<Date>(() => new Date())
-  /** 用户手动选过区间：不再自动退到最近有数据的那一段 */
+  /** 用户主动选过区间（翻区间、选日期、点重置）：不再自动退到最近有数据的那一段 */
   const [picked, setPicked] = useState(false)
   /** 默认定位时因为今天 / 本周 / 本月没有用量后退了：只在这一次说清显示了哪一段 */
   const [fallback, setFallback] = useState(false)
@@ -155,8 +158,9 @@ export function UsageSection({
   /** 一档的 token 量（输入 + 输出，和表格口径一致） */
   const tierTokens = (x: { inputTokens: number; outputTokens: number }) => x.inputTokens + x.outputTokens
   const shown = periodLabel(selected)
-  const onToday = todayStart.getTime() === selected.start.getTime()
-  const fellBack = fallback && !picked && !onToday && rows.length > 0
+  // 已经在当前区间（今天 / 本周 / 本月）时没什么可重置的，按钮不显示
+  const onCurrent = isCurrentPeriod(grain, selected.start, today0)
+  const fellBack = fallback && !picked && !onCurrent && rows.length > 0
 
   const select = (day: Date) => {
     setAnchor(periodStart(grain, day))
@@ -168,15 +172,16 @@ export function UsageSection({
     setPicked(true)
     setFallback(false)
   }
-  const goToday = () => {
+  /** 重置 / T 键：回到这个粒度对应的今天、本周、本月（和截图里「回到今天」同一个语义） */
+  const resetToCurrent = () => {
     setAnchor(periodStart(grain, new Date()))
     setPicked(true)
     setFallback(false)
   }
   const changeGrain = (g: UsageGrain) => {
-    // 换粒度时保留当前日期所在的那一段（例如 10月23日 → 10月 → 10月19日那一周）
+    // 换粒度就落到新粒度的当前区间（今天 / 本周 / 本月），不停在旧区间
     setGrain(g)
-    setAnchor(periodStart(g, anchor))
+    setAnchor(periodStart(g, new Date()))
     setPicked(false)
     setFallback(false)
   }
@@ -209,7 +214,7 @@ export function UsageSection({
       step(1)
     } else if (key === 't') {
       e.preventDefault()
-      goToday()
+      resetToCurrent()
     } else if (key === 'r') {
       e.preventDefault()
       setTick((n) => n + 1)
@@ -222,6 +227,7 @@ export function UsageSection({
       : grain === 'week'
         ? t('本周还没有用量，显示最近有数据的一周：{shown}', { shown })
         : t('本月还没有用量，显示最近有数据的一个月：{shown}', { shown })
+  const resetTitle = grain === 'day' ? t('重置到今天') : grain === 'week' ? t('重置到本周') : t('重置到本月')
 
   const listEmpty = !loading && !rows.length
 
@@ -260,6 +266,13 @@ export function UsageSection({
           onChange={select}
           label={shown}
         />
+        {/* 手动了区间才出现：已经在今天 / 本周 / 本月时按钮不占位置 */}
+        {!onCurrent && (
+          <Button variant="ghost" size="sm" title={resetTitle} onClick={resetToCurrent}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('重置')}
+          </Button>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <Select
             aria-label={t('计价模型')}

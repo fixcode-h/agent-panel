@@ -56,6 +56,7 @@ import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
+import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
 import type {
   BundledSkill,
   LibraryCli,
@@ -65,6 +66,7 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
+import type { ProjectSkillsView } from '@shared/project-skills'
 import type {
   Annotation,
   BrowserStatus,
@@ -303,12 +305,39 @@ export const api = {
     }),
   copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** 项目设置里的 Skill 分节：项目目录下的技能 */
+  projectSkills: (projectId: string) =>
+    request<ProjectSkillsView>(`/project-skills?projectId=${encodeURIComponent(projectId)}`),
+  projectSkillFile: (projectId: string, repo: string, name: string) =>
+    request<LibraryFile>(`/project-skills/file?${new URLSearchParams({ projectId, repo, name })}`),
+  saveProjectSkill: (b: { projectId: string; repo: string; name: string; content: string }) =>
+    request<{ ok: boolean; dir: string }>('/project-skills/file', json('PUT', b)),
+  createProjectSkill: (b: { projectId: string; repo: string; name: string; description?: string }) =>
+    request<{ dir: string }>('/project-skills', json('POST', b)),
+  deleteProjectSkill: (projectId: string, repo: string, name: string) =>
+    request<{ ok: boolean }>(`/project-skills/file?${new URLSearchParams({ projectId, repo, name })}`, {
+      method: 'DELETE',
+    }),
   /** MCP 工具 */
   mcpTools: () => request<McpOverview>('/mcp-tools'),
   saveMcpTool: (server: McpServer, clis: string[]) =>
     request<McpOverview>(`/mcp-tools/${encodeURIComponent(server.name)}`, json('PUT', { server, clis })),
   deleteMcpTool: (name: string) => request<McpOverview>(`/mcp-tools/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   testMcpTool: (server: McpServer) => request<McpTestResult>('/mcp-tools/test', json('POST', server)),
+  /** 项目设置里的 MCP：按项目读，项目目录里识别到的和面板管理的一起返回 */
+  projectMcp: (projectId: string) => request<ProjectMcpOverview>(`/project-mcp?projectId=${projectId}`),
+  saveProjectMcp: (projectId: string, server: McpServer, clis: string[]) =>
+    request<ProjectMcpOverview>(
+      `/project-mcp/${encodeURIComponent(server.name)}?projectId=${projectId}`,
+      json('PUT', { server, clis }),
+    ),
+  deleteProjectMcp: (projectId: string, name: string) =>
+    request<ProjectMcpOverview>(`/project-mcp/${encodeURIComponent(name)}?projectId=${projectId}`, {
+      method: 'DELETE',
+    }),
+  testProjectMcp: (server: McpServer) => request<McpTestResult>('/project-mcp/test', json('POST', server)),
+  importProjectMcp: (projectId: string, items: { file: string; name: string; clis?: string[] }[]) =>
+    request<ProjectMcpImportResult>(`/project-mcp/import?projectId=${projectId}`, json('POST', { items })),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),

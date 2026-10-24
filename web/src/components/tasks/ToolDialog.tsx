@@ -4,7 +4,7 @@ import { Copy, Loader2, Terminal, TerminalSquare, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { fmtSecs } from '@/lib/tasks'
+import { fmtDuration } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { Button } from '@/components/ui/button'
 
@@ -196,7 +196,7 @@ export function CommandDialog({
                 )}
               />
               {failed ? t('失败') : running ? t('执行中') : t('完成')}
-              {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtSecs(elapsed)}</span>}
+              {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
             </span>
             <Button
               variant="ghost"

@@ -26,6 +26,63 @@ export const ANIM_PROP_LABEL: Record<AnimProp, string> = {
 export const propRest = (p: AnimProp): AnimValue =>
   p === 'Scale' ? { X: 1, Y: 1 } : p === 'Translation' ? { X: 0, Y: 0 } : p === 'RenderOpacity' ? 1 : 0
 
+/** 属性面板里能打关键帧的字段（和 UE Details 里的属性名一致）：只有这几项对应动画属性 */
+export const ANIM_FIELD: Record<string, AnimProp> = {
+  RenderOpacity: 'RenderOpacity',
+  'RenderTransform.Translation': 'Translation',
+  'RenderTransform.Scale': 'Scale',
+  'RenderTransform.Angle': 'Angle',
+}
+/** 属性面板的字段路径 → 动画属性；不是可动画的属性返回 undefined（不加关键帧按钮） */
+export const animPropOfField = (path: string): AnimProp | undefined => ANIM_FIELD[path]
+
+/** 关键帧时间的比较精度：属性面板和播放头的时间精确到 0.01 秒 */
+export const KEY_EPS = 0.001
+const keyTime = (t: number) => Math.round(Math.max(0, Math.min(120, t)) * 1000) / 1000
+
+/** 控件某个属性在动画里的轨道 */
+export function trackOf(anim: Pick<UiAnimation, 'tracks'> | undefined, widget: string, prop: AnimProp) {
+  return anim?.tracks.find((t) => t.widget === widget && t.prop === prop)
+}
+
+/** 关键帧按钮的状态：没有动画、还没有这条轨道、有轨道但当前时间没有关键帧、当前时间已有关键帧 */
+export type AnimKeyState = 'no-anim' | 'no-track' | 'no-key' | 'key'
+export function animKeyState(anim: UiAnimation | undefined, widget: string, prop: AnimProp, t: number): AnimKeyState {
+  if (!anim) return 'no-anim'
+  const tr = trackOf(anim, widget, prop)
+  if (!tr) return 'no-track'
+  return tr.keys.some((k) => Math.abs(k.t - t) <= KEY_EPS) ? 'key' : 'no-key'
+}
+
+/** 属性面板里的值 → 动画值：向量缺一个轴用初始值补，数字不是数就用初始值 */
+export function animValueOf(prop: AnimProp, raw: unknown): AnimValue {
+  if (!isVecProp(prop)) {
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : propRest(prop)
+  }
+  const rest = propRest(prop) as { X: number; Y: number }
+  const o = (raw ?? {}) as { X?: unknown; Y?: unknown }
+  const x = Number(o.X)
+  const y = Number(o.Y)
+  return { X: Number.isFinite(x) ? x : rest.X, Y: Number.isFinite(y) ? y : rest.Y }
+}
+
+/**
+ * 在某个时间给控件的属性打一个关键帧（UE 里点属性左边的菱形按钮）：
+ * 还没有轨道就新建，当前时间已有关键帧就更新值（保留原来的缓动），不重复插。
+ */
+export function setKeyAt(anim: UiAnimation, widget: string, prop: AnimProp, t: number, v: AnimValue): UiAnimation {
+  const at = keyTime(t)
+  const tr = trackOf(anim, widget, prop)
+  if (!tr) return { ...anim, tracks: [...anim.tracks, { widget, prop, keys: [{ t: at, v, ease: 'ease-out' }] }] }
+  const old = tr.keys.find((k) => Math.abs(k.t - at) <= KEY_EPS)
+  const keys = [
+    ...tr.keys.filter((k) => Math.abs(k.t - at) > KEY_EPS),
+    { t: at, v, ease: old?.ease ?? ('ease-out' as Ease) },
+  ].sort((a, b) => a.t - b.t)
+  return { ...anim, tracks: anim.tracks.map((x) => (x === tr ? { ...x, keys } : x)) }
+}
+
 export const EASES = [
   'linear',
   'constant',

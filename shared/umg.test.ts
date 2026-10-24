@@ -4,7 +4,18 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assignImage, brush, nineSliceRatios, syncBrushSlices, type Brush, type Widget } from './umg.ts'
+import {
+  MIN_WIDGET_SIZE,
+  assignImage,
+  brush,
+  clampWidgetSize,
+  defaultSlot,
+  nineSliceRatios,
+  resizeCanvasSlot,
+  syncBrushSlices,
+  type Brush,
+  type Widget,
+} from './umg.ts'
 
 const border = (b: Brush): Widget => ({
   id: 'w1',
@@ -106,4 +117,47 @@ test('assignImage：没有九宫格的图不写 Margin', () => {
   assert.equal(b.DrawAs, 'Image')
   assert.deepEqual([b.Margin.Left, b.Margin.Top, b.Margin.Right, b.Margin.Bottom], [0, 0, 0, 0])
   assert.deepEqual(b.ImageSize, { X: 96, Y: 96 })
+})
+
+test('clampWidgetSize：宽高不小于最小尺寸，非法值也按最小尺寸算', () => {
+  assert.equal(MIN_WIDGET_SIZE, 8)
+  assert.equal(clampWidgetSize(0), MIN_WIDGET_SIZE)
+  assert.equal(clampWidgetSize(-30), MIN_WIDGET_SIZE)
+  assert.equal(clampWidgetSize(12.4), 12)
+  assert.equal(clampWidgetSize(Number.NaN), MIN_WIDGET_SIZE)
+})
+
+test('resizeCanvasSlot：非拉伸缩到最小尺寸后停住，不会出现负宽高或翻转', () => {
+  const slot = defaultSlot('CanvasPanelSlot', 10, 20, 100, 50)!
+  const out = resizeCanvasSlot(slot, -500, -500)
+  assert.equal(out.LayoutData.Offsets.Right, MIN_WIDGET_SIZE)
+  assert.equal(out.LayoutData.Offsets.Bottom, MIN_WIDGET_SIZE)
+  assert.equal(out.LayoutData.Offsets.Left, 10)
+  assert.equal(out.LayoutData.Offsets.Top, 20)
+  // 再从最小尺寸往大拖，能正常变大
+  const grow = resizeCanvasSlot(out, 12, 6)
+  assert.equal(grow.LayoutData.Offsets.Right, MIN_WIDGET_SIZE + 12)
+  assert.equal(grow.LayoutData.Offsets.Bottom, MIN_WIDGET_SIZE + 6)
+})
+
+test('resizeCanvasSlot：对齐点不是左上时按实际变化的宽高补偿位置', () => {
+  const slot = defaultSlot('CanvasPanelSlot', 40, 40, 100, 100)!
+  slot.LayoutData.Alignment = { X: 0.5, Y: 0.5 }
+  const out = resizeCanvasSlot(slot, 20, 20)
+  assert.equal(out.LayoutData.Offsets.Right, 120)
+  assert.equal(out.LayoutData.Offsets.Left, 50)
+  assert.equal(out.LayoutData.Offsets.Bottom, 120)
+  assert.equal(out.LayoutData.Offsets.Top, 50)
+})
+
+test('resizeCanvasSlot：拉伸时按父控件尺寸夹紧边距', () => {
+  const slot = defaultSlot('CanvasPanelSlot', 10, 10, 80, 80)!
+  slot.LayoutData.Anchors = { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } }
+  slot.LayoutData.Offsets = { Left: 10, Top: 10, Right: 10, Bottom: 10 }
+  const out = resizeCanvasSlot(slot, -500, -500, { w: 120, h: 90 })
+  assert.equal(out.LayoutData.Offsets.Right, 120 - 10 - MIN_WIDGET_SIZE)
+  assert.equal(out.LayoutData.Offsets.Bottom, 90 - 10 - MIN_WIDGET_SIZE)
+  // 左、上边距不受影响
+  assert.equal(out.LayoutData.Offsets.Left, 10)
+  assert.equal(out.LayoutData.Offsets.Top, 10)
 })

@@ -12,6 +12,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
+import { fmtDuration } from '../lib/duration.mjs'
 import { fileURLToPath } from 'node:url'
 
 // 1×1 的透明 PNG，用来测图片文件按原图读取
@@ -308,7 +309,6 @@ export async function runShard(shardName, fn) {
   // 计时：step 在该步断言全部跑完后调用，所以两次 step 的时间差就是上一步的耗时。
   // 没有这个数字就不知道优化该往哪放，也不知道改完到底快了多少
   const startedAt = Date.now()
-  const fmtMs = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)
   const timings = []
   let lastStepAt = startedAt
   let lastStep = '启动服务'
@@ -318,7 +318,7 @@ export async function runShard(shardName, fn) {
     lastStepAt = now
     timings.push({ name, ms })
     lastStep = name
-    console.log(`✓ ${name}（${fmtMs(ms)}）`)
+    console.log(`✓ ${name}（${fmtDuration(ms)}）`)
   }
   const watchdog = setTimeout(() => {
     console.error(`[${shardName}] 超过 ${Math.round(WATCHDOG_MS / 60000)} 分钟没有跑完，最后完成：${lastStep}`)
@@ -477,10 +477,10 @@ export async function runShard(shardName, fn) {
   const reportTimings = () => {
     const total = Date.now() - startedAt
     const top = [...timings].sort((a, b) => b.ms - a.ms).slice(0, 10)
-    console.log(`\n[${shardName}] 总耗时 ${fmtMs(total)}，共 ${timings.length} 步`)
+    console.log(`\n[${shardName}] 总耗时 ${fmtDuration(total)}，共 ${timings.length} 步`)
     if (top.length) {
       console.log('最慢的 10 步：')
-      top.forEach((t, i) => console.log(`  ${String(i + 1).padStart(2)}. ${fmtMs(t.ms).padStart(7)}  ${t.name}`))
+      top.forEach((t, i) => console.log(`  ${String(i + 1).padStart(2)}. ${fmtDuration(t.ms).padStart(7)}  ${t.name}`))
     }
     // 分片并行时由 runner 通过这个环境变量把每个分片的计时收集到一个文件里
     const out = process.env.AGENT_PANEL_E2E_TIMINGS

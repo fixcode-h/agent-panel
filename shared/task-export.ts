@@ -13,6 +13,7 @@ import { runTree } from './run-usage.ts'
 import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
+import { fmtDuration } from './duration.ts'
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
 export const TASK_EXPORT_VERSION = 1
@@ -608,14 +609,6 @@ export function withImportedAgents(agents: Agent[], task: Pick<Task, 'imported'>
 
 export const EVOLUTION_LANG = 'workflow-evolution'
 
-const fmtMs = (ms: number) => {
-  const s = Math.round(ms / 1000)
-  return s < 60
-    ? `${s}s`
-    : s < 3600
-      ? `${Math.floor(s / 60)}m${s % 60}s`
-      : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`
-}
 const fmtK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const pct = (r: number) => `${Math.round(r * 100)}%`
 /**
@@ -654,13 +647,13 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 跨度 ${fmtMs(st.spanMs)}：执行 ${fmtMs(st.durationMs)}，等用户 ${fmtMs(st.waitMs)}，空闲 ${fmtMs(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
+    `- 跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}，等用户 ${fmtDuration(st.waitMs)}，空闲 ${fmtDuration(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
     `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
     ...(kids.tasks
       ? [
-          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtMs(kids.durationMs)}，其中等用户 ${fmtMs(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
-          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtMs(all.durationMs)}，其中等用户 ${fmtMs(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
+          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtDuration(kids.durationMs)}，其中等用户 ${fmtDuration(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
+          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtDuration(all.durationMs)}，其中等用户 ${fmtDuration(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
         ]
       : []),
     ...(cacheMismatch(st)
@@ -693,7 +686,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     )
     for (const n of st.nodes)
       lines.push(
-        `| ${n.id} | ${n.title} | ${[n.kind, n.slot].filter(Boolean).join('/')} | ${agentName(n.agentId)} | ${n.status}${n.interrupted ? '（被打断）' : ''} | ${fmtMs(n.ms)} | ${fmtMs(n.waitMs)} | ${n.rounds}/${n.verdict || '-'} | ${fmtK(n.inputTokens)}/${pct(n.cacheHitRate)} | ${fmtK(n.outputTokens)} | ${n.files} | ${n.errors} |`,
+        `| ${n.id} | ${n.title} | ${[n.kind, n.slot].filter(Boolean).join('/')} | ${agentName(n.agentId)} | ${n.status}${n.interrupted ? '（被打断）' : ''} | ${fmtDuration(n.ms)} | ${fmtDuration(n.waitMs)} | ${n.rounds}/${n.verdict || '-'} | ${fmtK(n.inputTokens)}/${pct(n.cacheHitRate)} | ${fmtK(n.outputTokens)} | ${n.files} | ${n.errors} |`,
       )
   }
   for (const w of tk.workflows) {
@@ -772,7 +765,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     const stamp = at(m.at ?? '')
     // 和上一条同一秒的合并显示，不重复刷时间；间隔超过 1 分钟单独提示，看出等待在哪
     const gap = m.at && last ? Date.parse(m.at) - Date.parse(last) : 0
-    if (gap > 60_000) lines.push('', `_（距上一条 ${fmtMs(gap)}）_`)
+    if (gap > 60_000) lines.push('', `_（距上一条 ${fmtDuration(gap)}）_`)
     if (stamp) last = m.at ?? ''
     const failed = m.tools.filter((x) => x.failed)
     const tools = m.tools.length

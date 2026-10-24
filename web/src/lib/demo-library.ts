@@ -112,7 +112,11 @@ const mcpClis = (active: string[]) =>
     name: c.name,
     file: c.mcpStore!.file,
   }))
-const overview = (active: string[]): McpOverview => ({
+
+/** 项目设置里的 MCP 分节在演示版也用这同一份数据：正式版里两边本来就是同一份配置 */
+export const demoMcpClis = mcpClis
+export const demoMcpServers = servers
+export const demoMcpOverview = (active: string[]): McpOverview => ({
   clis: mcpClis(active),
   // 停用的 CLI 不在「装在哪些 CLI」里显示
   servers: servers
@@ -161,12 +165,12 @@ export function demoLibrary(
         ],
       }
     }
-    if (!id) return overview(active)
+    if (!id) return demoMcpOverview(active)
     const name = decodeURIComponent(id)
     const at = servers.findIndex((s) => s.name === name)
     if (at >= 0) servers.splice(at, 1)
     if (method === 'PUT') servers.push({ ...(body.server as McpServer), name, clis: body.clis ?? [] })
-    return overview(active)
+    return demoMcpOverview(active)
   }
   // 自带 Skill：内容取仓库 skills/ 下的 SKILL.md，装没装记在内存里
   if (id === 'bundled') {

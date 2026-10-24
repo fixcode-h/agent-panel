@@ -108,8 +108,8 @@ export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
   return out.sort((a, b) => a.name.localeCompare(b.name) || a.cli.localeCompare(b.cli))
 }
 
-/** Skill 文件夹里 SKILL.md 以外的文件（两层以内） */
-async function extraFiles(dir: string) {
+/** Skill 文件夹里 SKILL.md 以外的文件（两层以内）；项目技能（server/project-skills.ts）也用它 */
+export async function extraFiles(dir: string) {
   const out: string[] = []
   const walk = async (rel: string, depth: number) => {
     for (const e of await readdir(path.join(dir, rel), { withFileTypes: true }).catch(() => [])) {

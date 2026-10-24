@@ -474,12 +474,57 @@ export function defaultSlot(
 /** 所有控件都有的属性 */
 export const COMMON_PROPS = () => ({
   Visibility: 'Visible',
+  /** 设计器里锁住：不能拖动、改大小、用方向键挪，导出时去掉 */
+  Locked: false,
   RenderOpacity: 1,
   bIsEnabled: true,
   ToolTipText: '',
   RenderTransform: { Translation: { X: 0, Y: 0 }, Scale: { X: 1, Y: 1 }, Shear: { X: 0, Y: 0 }, Angle: 0 },
   RenderTransformPivot: { X: 0.5, Y: 0.5 },
 })
+
+/** 控件在设计稿里的最小尺寸（像素）：拖右下角、属性面板手输都按它夹紧，避免缩成 0 或翻转 */
+export const MIN_WIDGET_SIZE = 8
+
+/** 宽高夹到最小尺寸；非法值按最小尺寸算 */
+export function clampWidgetSize(n: number): number {
+  return Math.max(MIN_WIDGET_SIZE, Math.round(Number.isFinite(n) ? n : MIN_WIDGET_SIZE))
+}
+
+/**
+ * 拖动右下角改 CanvasPanelSlot 的大小。非拉伸的改宽高，拉伸的改到父控件右边的距离；
+ * 两种都夹到 MIN_WIDGET_SIZE，缩小到底后不再变小、也不会翻转。
+ */
+export function resizeCanvasSlot(
+  slot: Record<string, any>,
+  dx: number,
+  dy: number,
+  parent?: { w: number; h: number },
+): Record<string, any> {
+  const L = slot.LayoutData
+  if (!L?.Offsets || !L?.Anchors) return slot
+  const o = { ...L.Offsets }
+  const axis = (i: 0 | 1): void => {
+    const lo = i ? 'Top' : 'Left'
+    const hi = i ? 'Bottom' : 'Right'
+    const d = i ? dy : dx
+    const aMin = L.Anchors.Minimum[i ? 'Y' : 'X']
+    const aMax = L.Anchors.Maximum[i ? 'Y' : 'X']
+    const al = L.Alignment?.[i ? 'Y' : 'X'] ?? 0
+    if (aMin !== aMax) {
+      const span = parent ? (aMax - aMin) * (i ? parent.h : parent.w) : undefined
+      const max = span === undefined ? Infinity : span - o[lo] - MIN_WIDGET_SIZE
+      o[hi] = Math.min(o[hi] - d, max)
+    } else {
+      const width = clampWidgetSize(o[hi] + d)
+      o[lo] += (width - o[hi]) * al
+      o[hi] = width
+    }
+  }
+  axis(0)
+  axis(1)
+  return { ...slot, LayoutData: { ...L, Offsets: o } }
+}
 
 export const newId = () => Math.random().toString(36).slice(2, 10)
 
@@ -759,6 +804,12 @@ export function linearColor(hex: unknown) {
 /** 字号：UE 的 Size 是 96 DPI 下的磅值，屏幕像素 = Size × 4 / 3 */
 export const fontPx = (size: number) => (size * 4) / 3
 
+/**
+ * 画板运行时假数据的绑定属性（见 design-data.ts）：DataSet、DataField、States。
+ * 这些只在画板预览时生效，导出 UE / 网页时整组去掉。
+ */
+export const DATA_PROPS = ['DataSet', 'DataField', 'States'] as const
+
 /** 树里用到的图片 id */
 export function usedImages(roots: Widget[]) {
   const ids = new Set<string>()
@@ -1013,6 +1064,10 @@ export function exportWidget(
     return v
   }
   const props = conv(w.Properties)
+  // 锁定只是设计器的状态，UE 里没有这个属性
+  delete props.Locked
+  // 画板预览用的假数据绑定和状态不进导出结果
+  for (const k of DATA_PROPS) delete props[k]
   if (w.Type === 'SizeBox')
     for (const k of [
       'WidthOverride',

@@ -42,6 +42,7 @@ import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { fixApi } from './fix.ts'
+import { projectSkillsApi } from './project-skills.ts'
 import { isPanelSource } from './panel-source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
@@ -51,6 +52,7 @@ import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
+import { projectMcpApi } from './project-mcp.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
@@ -373,6 +375,8 @@ app.route('/accounts', accountsApi())
 app.route('/integrations', integrationsApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
+// 项目设置里的 MCP：项目目录里识别到的配置，项目目录按 projectId 现取
+app.route('/project-mcp', projectMcpApi({ projectPath: async (id) => (await projects.get(id))?.path ?? '' }))
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/clis', modelsApi())
@@ -802,6 +806,8 @@ const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
 app.route('/ai-fix', fixApi())
+// 项目设置里的 Skill 分节：项目目录下的技能
+app.route('/project-skills', projectSkillsApi({ projects }))
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----

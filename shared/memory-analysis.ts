@@ -1,6 +1,7 @@
 import type { MemoryPoint, TaskProcess } from './schema.ts'
 import { t } from './i18n.ts'
 import { formatBytes, formatUptime } from './memory.ts'
+import { fmtDuration } from './duration.ts'
 
 /**
  * 会话内存的 AI 分析与进程归属：会话内存曲线（`web/src/components/tasks/MemoryChart.tsx`）和
@@ -91,14 +92,8 @@ export function taskTrendText(tr: TaskMemoryTrend | null): string {
   return t('最近 {span} 基本平稳（变化 {size}）', { span, size: formatBytes(tr.delta) })
 }
 
-/** 报告固定用中文（和 shared/fix.ts 的提示词一致），不走界面词典 */
-function spanText(ms: number) {
-  const min = Math.round(Math.max(0, ms) / 60_000)
-  if (min < 1) return '不到 1 分钟'
-  if (min < 60) return `${min} 分钟`
-  const h = Math.floor(min / 60)
-  return min % 60 ? `${h} 小时 ${min % 60} 分` : `${h} 小时`
-}
+/** 报告里的时间跨度：和界面同一套耗时写法 */
+const spanText = fmtDuration
 
 /** 一个归属分组的进程树合计：子对话只算它自己起的那些进程，不摊派、不拿别人的凑数 */
 export interface OwnerGroup {

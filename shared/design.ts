@@ -20,6 +20,7 @@ import { promptLangWord } from './prompt-lang.ts'
 import { applyOps } from './design-ops.ts'
 import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 import { DesignAnalysis } from './design-analysis.ts'
+import { DesignData, checkData, dataBrief, normalizeData } from './design-data.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -94,6 +95,30 @@ export const Annotation = z.object({
 })
 export type Annotation = z.infer<typeof Annotation>
 
+/**
+ * 用户引用到对话里的控件：点右键「引用到 AI 对话」时记下当时的名字、路径、尺寸和用到的图 / 文字。
+ * 存的是快照，AI 之后改了树也不会让已经发出的引用变样。
+ */
+export const WidgetCitation = z.object({
+  /** 引用条自己的 id，用来删除 */
+  id: z.string(),
+  /** 当时的控件 id，只作参考 */
+  widgetId: z.string().default(''),
+  name: z.string(),
+  type: z.string(),
+  /** 在哪个子控件里：空是主界面 */
+  target: z.string().default(''),
+  /** 从根到它的路径，例如 Main / Panel / Grid */
+  path: z.string().default(''),
+  width: z.number().default(0),
+  height: z.number().default(0),
+  /** 用到的图片（img:<id>） */
+  image: z.string().default(''),
+  /** 文字内容（TextBlock 的 Text、输入框的 HintText、网页 Text 等） */
+  text: z.string().default(''),
+})
+export type WidgetCitation = z.infer<typeof WidgetCitation>
+
 /** AI 在动手之前问用户的问题：每个选项有一句说明，style 是选了以后定下来的整体风格（英文） */
 export const DesignQuestion = z.object({
   text: z.string().min(1).max(500),
@@ -160,6 +185,8 @@ export const DesignMessage = z.object({
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */
   attachments: z.array(Attachment).optional(),
+  /** 用户这条消息引用的控件 */
+  refs: z.array(WidgetCitation).optional(),
   /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看（旧数据） */
   thinking: z.string().optional(),
   tools: z.array(z.any()).optional(),
@@ -185,6 +212,11 @@ export const ComponentSchema = z.object({ Name: z.string(), DesignSize: Vec2Sche
 
 export const DesignDoc = z.object({
   title: z.string().trim().min(1).max(100),
+  /**
+   * 画板预览用的运行时假数据（数据结构 + 示例行）：只在画板里按数据渲染，
+   * 导出 UE / 网页时完全剔除，见 design-data.ts
+   */
+  data: DesignData.default({ sets: [] }),
   /** 设计稿尺寸（UE 里的 DPI 缩放基准，通常 1920×1080） */
   designSize: Vec2Schema.default({ X: 1920, Y: 1080 }),
   /** 整体美术风格，生成每张图时都带上，保持一致 */
@@ -197,11 +229,13 @@ export const DesignDoc = z.object({
   /** 动画（UE 的 Widget Animation；网页是动效），见 anim.ts */
   animations: z.array(UiAnimation).max(300).default([]),
 })
-export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components' | 'animations'> & {
+export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components' | 'animations' | 'data'> & {
   root: Widget
   components: Component[]
   /** 旧数据没有 */
   animations?: UiAnimation[]
+  /** 旧数据没有（zod 读取时会补空数据） */
+  data?: DesignData
 }
 
 export const Design = DesignDoc.extend({
@@ -442,6 +476,8 @@ export const DesignChatInput = z.object({
   annotations: z.array(Annotation).max(200).default([]),
   /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 这次一起发的控件引用（右键「引用到 AI 对话」） */
+  refs: z.array(WidgetCitation).max(30).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
   run: z
     .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })
@@ -556,6 +592,8 @@ export interface CaptureRequest {
   root: Widget
   components: Component[]
   size: { X: number; Y: number }
+  /** 画板假数据：截图和用户看到的画板效果一致 */
+  data?: DesignData
 }
 
 export interface DesignJob {
@@ -577,7 +615,13 @@ export interface DesignJob {
   images?: ImageJobItem[]
   outChars: number
   /** AI 用工具改的过程中，改到现在的样子；页面在 AI 改的过程中显示它，applied 是已经应用了几步 */
-  preview?: { root: Widget; components: Component[]; animations?: UiAnimation[]; applied: number }
+  preview?: {
+    root: Widget
+    components: Component[]
+    animations?: UiAnimation[]
+    data?: DesignData
+    applied: number
+  }
   attempt: number
   error?: string
   startedAt: number
@@ -648,6 +692,11 @@ export const AiDesignResult = z.object({
   ops: z.array(z.any()).max(500).optional(),
   /** 这一轮改完的动画（MCP 会话里的），给了就整个换掉 */
   animations: z.array(UiAnimation).optional(),
+  /**
+   * 画板预览用的运行时假数据，只影响画板、不导出。
+   * 宽松接收：AI 可以只写 name，resolveDesignResult 里用 normalizeData 补 id 和默认值
+   */
+  data: z.any().optional(),
   /** 先问用户（整体风格还没定时）；有它时这一轮不改设计 */
   questions: z.array(DesignQuestion).optional(),
 })
@@ -663,6 +712,8 @@ const gameRules = (
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
+- **列表、背包、商店、技能栏这类界面的数据要在同一轮里给出**：搭完列表控件和条目子控件后调用 set_data，写这个列表需要的数据结构（字段 key、type、label、对应控件）和 3~8 行示例（背包物品要有图标、数量、选中/锁定/空格子这些状态）。然后给列表控件写 Properties.DataSet="<集合 name>"，给条目子控件里要显示数据的控件写 Properties.DataField="<字段 key>"。
+- 同一个格子在不同数据下样子不同的（选中、锁定、空格子），把 Properties.States 写在格子里对应的控件上（例如高亮框 Image 写 [{"Name":"Selected","When":{"Field":"selected","Equals":true},"Properties":{"RenderOpacity":1}}]，基准 RenderOpacity 写 0），状态图仍然用设计里的图片（"img:<id>"）。**不要把选中态、悬停态的效果图单独贴在画布上模拟状态**：状态属于子控件，由数据决定，画布按数据渲染。
 `
 
 const webRules = (
@@ -676,6 +727,7 @@ const webRules = (
 - 用户附上了网页截图或参考图时，照着截图还原布局、配色和文字，截图里的插图、头像、图标列成要生成的图片。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 Text 的 Text 都写成页面上要显示的真实内容（标题、按钮文案、说明文字），不要留默认的 "Text"；动态的数据写成真实格式的示例（「¥1,299」「2026-10-17」「128 条评论」）。颜色一律写 "#RRGGBBAA"。
+- 页面上重复出现的数据（卡片、商品列表）可以先用一个卡片子控件展示；要给用户一份可以改着看的示例数据时，用 set_data 定义字段和示例行，并在 Text / Picture 上写 Properties.DataField="<字段 key>"。网页没有列表控件，不要为了数据额外加控件。
 `
 
 const GAME_MOTION = `- 参照 UE 的 UMG 动画：每个动画导出成 Widget Blueprint 里的一个 WidgetAnimation（轨道是控件的 RenderOpacity、RenderTransform），trigger 决定什么时候播（show 是 Construct 时、hover / click 绑到 source 控件上、manual 由蓝图调用）。
@@ -732,6 +784,8 @@ export function buildDesignPrompt(
   history: DesignMessage[],
   request: string,
   annotations?: Annotation[],
+  /** 用户从画布 / 控件树引用过来的控件 */
+  refs: WidgetCitation[] = [],
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
   /** 风格库里同类（游戏 / 网页）的风格：风格还没定时可以作为选项 */
   styles: SavedStyle[] = [],
@@ -796,16 +850,20 @@ ${comps.length ? JSON.stringify(comps) : '（没有）'}
 ${imgs.length ? JSON.stringify(imgs) : '（没有）'}
 动画：
 ${d.animations?.length ? JSON.stringify(animationsBrief(d.animations)) : '（没有）'}
+运行时数据（画板预览用的假数据，不导出）：
+${dataBrief(d.data) || '（没有）'}
 ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
+${refs.length ? `\n${widgetCitationText(refs, d)}\n` : ''}
 ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 你有 design 工具（MCP），每一次调用都会马上显示给用户。**一次输出太长会让连接中途断开、这一轮整个失败**，所以按区域分多次小步提交：
 - 每次调用最多 ${MAX_TOOL_ITEMS} 条 items、合计最多 ${MAX_TOOL_WIDGETS} 个控件（带的子控件也算）、add_images 最多 ${MAX_TOOL_IMAGES} 张，超过会被退回
 - 从零搭界面：先 create_components 建好子控件（每个子控件一次），再 replace_widget 把根控件换成只有几个大区块的骨架，然后用 add_widgets 一块一块往各区块里填，每块一次调用
 - 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets；duplicate_widgets 复制控件（重复的卡片、按钮）；wrap_widget 给控件外面套一层面板
 - 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
+- 运行时数据：set_data 定义这个界面需要的数据结构（name、fields、rows），列表控件写 DataSet、条目里的控件写 DataField、状态写 States；搭列表、背包、商店、排行榜这类界面时要在同一轮里给出，用户打开「数据」面板就能直接改这些示例行
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
 - 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。
@@ -901,7 +959,13 @@ export function resolveDesignResult(
   d: Design,
 ):
   | { error: string }
-  | { result: z.infer<typeof AiDesignResult>; root?: Widget; components?: Component[]; animations?: UiAnimation[] } {
+  | {
+      result: z.infer<typeof AiDesignResult>
+      root?: Widget
+      components?: Component[]
+      animations?: UiAnimation[]
+      data?: DesignData
+    } {
   const p = AiDesignResult.safeParse(raw)
   if (!p.success) return { error: z.prettifyError(p.error) }
   const r = p.data
@@ -979,6 +1043,9 @@ export function resolveDesignResult(
     walk(w, (x) => set.add(x.Name))
     return set
   }
+  // 运行时假数据只在画板里用，不导出；绑定和图片引用要对得上
+  const finalData = r.data ? normalizeData(r.data, d.data) : undefined
+  errors.push(...checkData(finalData ?? d.data, { imageIds, root: finalRoot, components: finalComps }))
   errors.push(
     ...checkAnimations(
       animations ?? d.animations ?? [],
@@ -986,7 +1053,7 @@ export function resolveDesignResult(
     ).map((e) => `${e}：用 add_animations 改好或 remove_animations 删掉`),
   )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
-  return { result: r, root, components: after, animations }
+  return { result: r, root, components: after, animations, data: finalData }
 }
 
 export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
@@ -1038,6 +1105,25 @@ export const hasMask = (a: Pick<Annotation, 'shape' | 'strokes'>) =>
 
 /** 只有本机 ComfyUI 能按蒙版做局部重绘；浏览器标签页和图片 CLI 只能整张重画 */
 export const canInpaint = (source: Pick<ImageSource, 'kind'>) => source.kind === 'local'
+
+/** 发给 AI 的控件引用说明：编号、路径、尺寸、用到的图片和文字，AI 按它定位用户说的控件 */
+export function widgetCitationText(list: WidgetCitation[], d: Pick<Design, 'designSize'>) {
+  const lines = list.map((r, i) => {
+    const where = r.target ? `在子控件 ${r.target} 里` : '在主界面里'
+    const size = r.width || r.height ? `，尺寸 ${r.width}×${r.height}` : ''
+    return [
+      `${i + 1}. ${r.path || r.name}（${r.type}）${where}${size}`,
+      r.image ? `   用到的图片：${r.image}` : '',
+      r.text.trim() ? `   文字：${r.text.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  })
+  return `## 用户引用的控件
+用户从画布 / 控件树里把下面这些控件引用到了对话里，写「这个控件」「选中的」时指的是它们。改之前先用 find_widgets 或当前控件树确认控件还在、再改。
+设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}。
+${lines.join('\n')}`
+}
 
 /** 发给 AI 的标注说明：编号、意思、位置、范围里的控件和用户写的说明 */
 export function annotationText(list: Annotation[], size: { X: number; Y: number }) {
