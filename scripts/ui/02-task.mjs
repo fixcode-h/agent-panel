@@ -110,7 +110,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 取消删除确认后弹层可能还在收起，先等它关掉再重新打开，别聚焦到正在卸载的节点上
     await closeEnv()
     await openEnv()
-    const target = p.getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+    // 子对话栏、运行区里也有同名按钮：限定在独立分支这一行里
+    const target = p
+      .locator('[data-worktree-row]')
+      .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
     await target.focus()
     await p.keyboard.press('Enter')
     // 子对话面板标题栏右边那个 ✕ 的 aria-label 是「关闭子对话」（运行视图里叫「关闭子对话面板」）；
@@ -1904,7 +1908,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .waitForFunction(
             () => {
               const el = document.activeElement
-              return !!el && el.getAttribute('tabindex') === '-1' && !!el.closest('[role="dialog"]')
+              const dialog = el?.closest('[role="dialog"]')
+              // Radix 的 Content 自己也是 role=dialog、tabIndex=-1：要的是它里面监听方向键的那层
+              return !!el && el.getAttribute('tabindex') === '-1' && !!dialog && el !== dialog
             },
             { timeout: 3000 },
           )
