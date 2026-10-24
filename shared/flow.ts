@@ -341,6 +341,7 @@ export function blankStep(o: Partial<TaskStep> & Pick<TaskStep, 'id' | 'title'>)
     reruns: 0,
     reviews: 0,
     interrupted: false,
+    session: '',
     command: [],
     changes: [],
     runId: 1,

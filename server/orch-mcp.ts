@@ -2,6 +2,7 @@ import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
+import { triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -31,12 +32,18 @@ const tasksField = (o: Orchestra) => ({
   items: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: '子任务的短标题（显示在任务进度里）' },
+      title: { type: 'string', description: '子任务的短标题（显示在任务进度里）；不写取 instructions 的第一行' },
       instructions: { type: 'string', description: '要做什么、范围、产出；子任务只看得到这些和用户需求' },
       agent: agentField(o),
       tier: { type: 'string', enum: ['high', 'medium', 'low'], description: '模型档位；不写跟你一样' },
+      resume: {
+        type: 'string',
+        description:
+          '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。那个子任务要已经结束；agent 不写或写同一个角色',
+      },
     },
-    required: ['title', 'instructions'],
+    // title 不必填：缺了引擎取 instructions 第一行（见 engine.ts 的 spawn），因为漏写标题被拒、白费一次调用不值
+    required: ['instructions'],
   },
 })
 
@@ -439,6 +446,32 @@ export function orchTools(o: Orchestra) {
                         ),
                         required: HANDOFF_FIELDS.filter((f) => f.required).map((f) => f.key),
                       },
+                      review_triage: {
+                        type: 'array',
+                        description:
+                          '最近一次评审没通过时必填：它的每条 🛑 你自己核实之后的处置。评审的意见是线索不是结论，不要它说什么就改什么，也不要不核实就驳回；处置会连同收尾请求交给父对话',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            id: {
+                              type: 'string',
+                              description: '评审意见的编号（R1、R2…）；评审没编号时写那条意见的原话摘要',
+                            },
+                            decision: {
+                              type: 'string',
+                              enum: ['fix', 'reject', 'defer'],
+                              description:
+                                'fix：核实是真问题、在这次范围里，已改并验证；reject：核实不成立；defer：真问题但范围外 / 只在构造的极端数据上成立 / 代价大于收益，这次不改、交接时列为已知问题',
+                            },
+                            reason: {
+                              type: 'string',
+                              description:
+                                '怎么核实的（读了哪段代码、跑了什么）和结论：fix 写改法和验证，reject 写反例或代码依据，defer 写影响面',
+                            },
+                          },
+                          required: ['id', 'decision', 'reason'],
+                        },
+                      },
                     },
                     required: ['tests', 'handoff'],
                   },
@@ -757,6 +790,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         str(a?.tests),
         o.ueBuild === 'child' ? a?.build !== false : undefined,
         handoffInput(a?.handoff),
+        triageInput(a?.review_triage),
       )
       return text(r.info, !r.ok)
     }
@@ -830,6 +864,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
           instructions: str(x.instructions),
           agent: str(x.agent) || undefined,
           tier: str(x.tier) || undefined,
+          resume: str(x.resume) || undefined,
         }))
       const r = o.spawn(list)
       if (r.error) return text(r.error, true)

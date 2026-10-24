@@ -58,6 +58,7 @@ import {
   runRunning,
   trackWait,
   waitDuration,
+  idleWaitDuration,
   newTask,
   taskSummary,
   withAttachments,
@@ -73,7 +74,7 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
-import { reviewGate } from '../shared/review-gate.ts'
+import { reviewGate, triageText, type TriageItem } from '../shared/review-gate.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -366,6 +367,9 @@ export function tasksApi(deps: {
         // 等待和节点耗时也算到最后一次落盘为止
         waitMs: waitDuration(task, Date.parse(task.updatedAt)),
         waitStartedAt: '',
+        // 「等下一句」和等你处理一样结到最后一次落盘：留着 idleWaitAt，继续执行时会从很久以前接着算
+        idleWaitMs: idleWaitDuration(task, Date.parse(task.updatedAt)),
+        idleWaitAt: '',
         turns: (task.turns ?? []).map((x) =>
           x.status === 'running' ? { ...x, status: 'stopped' as const, endedAt: task.updatedAt } : x,
         ),
@@ -1154,6 +1158,8 @@ export function tasksApi(deps: {
     build = false,
     /** 交接要点（见 ADR 0007）：以后再被叫醒、上下文又大时只带这份摘要 */
     handoff: HandoffInput = {},
+    /** 对最近一次评审每条 🛑 的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
+    triage: TriageItem[] = [],
   ): Promise<{ ok: boolean; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1197,6 +1203,7 @@ export function tasksApi(deps: {
       tk.steps,
       (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
       activePlan(tk)?.steps ?? [],
+      triage,
     )
     if (!review.ok) return review
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
@@ -1234,6 +1241,7 @@ export function tasksApi(deps: {
         base: wt.baseBranch,
         commits,
         changed: changed ?? {},
+        triage: triageText(triage),
       }),
       files: handoff.files ?? '',
       at,
@@ -1250,7 +1258,7 @@ export function tasksApi(deps: {
       parentId,
       tk,
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩合回了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}
+它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}
 请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
       { panel: 'wrapup', child, peer: await peerOf(tk, 'child', 'wrapup', note || '只剩合回，请收尾') },
     )
@@ -2476,8 +2484,8 @@ export function tasksApi(deps: {
         wrapUp: await childWrapUp(entry.task, project?.path),
         submitMerge:
           task.parentTaskId && isolated(entry.task)
-            ? (note, tests, build, handoff) =>
-                submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff)
+            ? (note, tests, build, handoff, triage) =>
+                submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff, triage)
             : undefined,
         ueBuild:
           ueRole === 'child'

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PlanStep, TaskStep } from '../shared/schema.ts'
 import { applyPlan } from '../shared/plan.ts'
-import { reviewGate } from '../shared/review-gate.ts'
+import { blockingIds, reviewGate, triageInput } from '../shared/review-gate.ts'
 
 const REVIEWER = 'a-reviewer'
 const isReviewer = (id: string) => id === REVIEWER
@@ -94,11 +94,60 @@ test('评审门禁：英文的 Verdict: pass 也认（回复语言不定时）',
   assert.equal(reviewGate([sub({ output: 'No blockers.\nVerdict: pass' })], isReviewer, planDone).ok, true)
 })
 
-test('评审门禁：结论是不通过时拦下，要求改完再复看', () => {
+test('评审门禁：不通过时不要求复看到通过，要求逐条写处置（ADR 0009）', () => {
   const r = reviewGate([sub({ output: blocked })], isReviewer, planDone)
   assert.equal(r.ok, false)
-  assert.match(r.ok === false ? r.info : '', /「不通过」/)
-  assert.match(r.ok === false ? r.info : '', /再派一次「评审」复看/)
+  assert.match(r.ok === false ? r.info : '', /还没写处置/)
+  assert.match(r.ok === false ? r.info : '', /review_triage/)
+  // 评审没编号：写一条处置（id 写意见原话摘要）就放行，采不采纳是执行角色的事
+  const t = [
+    { id: '少判空', decision: 'fix' as const, reason: '读了 server/tasks.ts:1120，确实会空指针，已补判空和用例' },
+  ]
+  assert.equal(reviewGate([sub({ output: blocked })], isReviewer, planDone, t).ok, true)
+})
+
+const numbered = [
+  '验收结论：不通过',
+  '必须改：R1、R2',
+  '🛑 R1 server/a.ts:10 少判空',
+  '🛑 R2 shared/b.ts:20 口径不一致',
+  '💭 建议：命名可以短一点',
+].join('\n')
+
+test('评审门禁：每个 🛑 编号都要有处置，缺哪个说哪个', () => {
+  const one = [{ id: 'R1', decision: 'fix' as const, reason: '核实是真问题，已补判空并加用例' }]
+  const r = reviewGate([sub({ output: numbered })], isReviewer, planDone, one)
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /R2 还没有处置/)
+  const both = [
+    ...one,
+    {
+      id: 'r2',
+      decision: 'reject' as const,
+      reason: '两处都按 runMs 算，评审把 waitMs 看成了 runMs（shared/b.ts:20）',
+    },
+  ]
+  assert.equal(reviewGate([sub({ output: numbered })], isReviewer, planDone, both).ok, true, '编号不分大小写')
+})
+
+test('评审门禁：处置的理由太短不算（说不清怎么核实的）', () => {
+  const t = [
+    { id: 'R1', decision: 'fix' as const, reason: '改了' },
+    { id: 'R2', decision: 'defer' as const, reason: '范围外：重启落盘那段归另一个子对话，影响已停止任务的跨度' },
+  ]
+  const r = reviewGate([sub({ output: numbered })], isReviewer, planDone, t)
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /R1 的理由太短/)
+})
+
+test('评审门禁：🛑 编号写在开头那行就认，正文被截断也不漏', () => {
+  assert.deepEqual(blockingIds('验收结论：不通过\n必须改：R1、R2、R3\n🛑 R1 …'), ['R1', 'R2', 'R3'])
+  assert.deepEqual(blockingIds('验收结论：通过\n必须改：无'), [])
+})
+
+test('评审门禁：写了通过却列了带编号的 🛑，按有 🛑 处理', () => {
+  const output = '验收结论：通过\n🛑 R1 server/a.ts:10 少判空'
+  assert.equal(reviewGate([sub({ output })], isReviewer, planDone).ok, false)
 })
 
 test('评审门禁：改完复看通过后放行，只看最后一次', () => {
@@ -151,4 +200,12 @@ test('计划：评审步骤的 review 标记会存下来，完成之后也能补
   const after = stepsOf().find((s) => s.title === '评审本次改动')!
   assert.equal(after.review, true, 'done 之后仍能补上 review 标记')
   assert.equal(after.status, 'done')
+})
+
+test('评审门禁：工具参数里的处置认不出的项丢掉', () => {
+  assert.deepEqual(
+    triageInput([{ id: 'R1', decision: 'fix', reason: '已改' }, { id: 'R2', decision: 'maybe' }, null, 'x']),
+    [{ id: 'R1', decision: 'fix', reason: '已改' }],
+  )
+  assert.deepEqual(triageInput('R1'), [])
 })
