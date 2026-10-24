@@ -79,6 +79,7 @@ import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { localGenerate } from './comfy.ts'
 import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
+import { designLayoutItems, type MossLayoutItem } from '../shared/moss.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
 import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
@@ -501,6 +502,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     kind: DesignKind,
     /** 局部重绘的原图和蒙版图 */
     inpaint?: { image: Buffer; mask: Buffer },
+    /** 画布上量出来的布局；没有、或工作流不吃 {{layout}} 时自动退化成普通文生图 */
+    layout?: { size: { width: number; height: number }; items: MossLayoutItem[] },
   ): Promise<Buffer[]> {
     await localGenerate(
       {
@@ -512,6 +515,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         width: size.width,
         height: size.height,
         count,
+        ...(layout ? { layout } : {}),
         ...(inpaint ? { inpaint } : {}),
         onImage,
         onProgress,
@@ -1269,6 +1273,10 @@ ${prompt}`,
       const round = Math.max(0, ...conceptOf(cur).images.map((i) => i.round)) + 1
       const ref = req.base && source.kind === 'cli' ? conceptFile(cur, req.base) : undefined
       const prompt = conceptPrompt(req, cur.designSize, cur.style, style, cur.kind, !!ref)
+      // 画布上已经有文字 / 带描述的图片时，把它们的位置一起交给布局工作流；
+      // 还没搭控件树、或者控件不在 CanvasPanel 里量不出位置时为空，自动退化成普通文生图
+      const items = designLayoutItems(cur.root, cur.images, cur.designSize)
+      const layout = items.length ? { size: { width: cur.designSize.X, height: cur.designSize.Y }, items } : undefined
       // 存图串行：同一轮的几张按到达的顺序编号
       let chain = Promise.resolve()
       // 每个请求最多收它要的张数：多出来的不存，进度也不会超过总数
@@ -1318,6 +1326,8 @@ ${prompt}`,
                 (text) => (progress.text = text),
                 'concept',
                 cur.kind,
+                undefined,
+                layout,
               )
             : source.kind === 'browser'
               ? await browserGenerate(

@@ -11,6 +11,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base + '#/design/demo-design-menu')
   await check(p, 'UI设计', ['控件树', 'AI 对话', 'StartGroup'])
+  // 设计对话和 Chat 模式共用同一个对话页壳：消息区有共享的标记
+  assert.equal(await p.locator('[data-conversation-scroll="messages"]').count(), 1, '设计对话使用共用的消息区')
   // 滚轮在画布上缩放（以鼠标为中心），不滚动整个页面
   const zoomText = async () =>
     Number(

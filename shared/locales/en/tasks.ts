@@ -5,6 +5,8 @@ export const EN_TASKS: Record<string, string> = {
   进行中: 'In progress',
   等待中: 'Waiting',
   '等：{what}': 'Waiting on: {what}',
+  '用时 {time}': 'Elapsed {time}',
+  '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
