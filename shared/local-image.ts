@@ -9,8 +9,19 @@ import { t } from './i18n.ts'
  * 模型文件和工作流参数都取自 ComfyUI 官方的工作流模板（Comfy-Org/workflow_templates），下载地址是 Hugging Face 上的官方重新打包版。
  */
 
-/** ComfyUI/models 下的目录 */
-export type LocalDir = 'checkpoints' | 'diffusion_models' | 'text_encoders' | 'vae' | 'loras'
+/**
+ * ComfyUI/models 下的目录。模板商店里的工作流还会用到 controlnet、clip_vision、upscale_models，
+ * 这些不预置在模型清单里，按模板依赖按需下载
+ */
+export type LocalDir =
+  | 'checkpoints'
+  | 'diffusion_models'
+  | 'text_encoders'
+  | 'vae'
+  | 'loras'
+  | 'controlnet'
+  | 'clip_vision'
+  | 'upscale_models'
 
 export interface LocalFile {
   id: string
@@ -102,14 +113,51 @@ export const LOCAL_FILES: LocalFile[] = [
     url: `${HF}/lightx2v/Qwen-Image-Lightning/resolve/main/Qwen-Image-Lightning-8steps-V1.0.safetensors`,
     gb: 1.7,
   },
+  {
+    id: 'flux1-dev',
+    dir: 'checkpoints',
+    file: 'flux1-dev-fp8.safetensors',
+    url: `${HF}/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors`,
+    gb: 17.2,
+  },
+  {
+    id: 'zimage-int8',
+    dir: 'diffusion_models',
+    file: 'z_image_turbo_int8_convrot.safetensors',
+    url: `${HF}/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`,
+    gb: 11.3,
+  },
 ]
 
-export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'sdxl' | 'qwen'
+export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen'
+
+/** 模型按用途分组展示；顺序就是设置页里从上到下的顺序 */
+export const LOCAL_MODEL_GROUPS = [
+  {
+    id: 'text',
+    title: t('文本生图'),
+    desc: t('主力模型：按描述整张出图，图标、插画、背景和整屏原画都用得上'),
+  },
+  {
+    id: 'fast',
+    title: t('加速与量化'),
+    desc: t('少步数或量化版本：出图更快、占显存更少，适合批量试稿和显存紧的电脑'),
+  },
+  {
+    id: 'light',
+    title: t('低显存'),
+    desc: t('8GB 显存左右也能跑；社区风格模型和 LoRA 最多'),
+  },
+] as const
+
+export type LocalCategory = (typeof LOCAL_MODEL_GROUPS)[number]['id']
 
 export interface LocalModel {
   id: string
   name: string
   family: LocalFamily
+  /** 设置页里的分组 */
+  category: LocalCategory
   files: string[]
   /** 建议的显存（GB）；不够时 ComfyUI 会把一部分放到内存里，能跑但慢 */
   vram: number
@@ -128,6 +176,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'z-image-turbo',
     name: 'Z-Image Turbo',
     family: 'zimage',
+    category: 'text',
     files: ['zimage-unet', 'qwen3-4b', 'flux-ae'],
     vram: 16,
     use: t('主力推荐：图标、按钮、面板、插画、整屏原画都好用，8 步出图，听得懂中文描述'),
@@ -137,13 +186,14 @@ export const LOCAL_MODELS: LocalModel[] = [
     natural: true,
   },
   {
-    id: 'flux2-klein',
-    name: 'FLUX.2 [klein] 4B',
-    family: 'flux2klein',
-    files: ['klein-unet', 'qwen3-4b', 'flux2-vae'],
-    vram: 12,
-    use: t('显存 12GB 左右的首选：4 步出图最快，适合大批量的道具图标、草图和反复试风格'),
-    license: 'Apache-2.0',
+    id: 'flux1-dev',
+    name: 'FLUX.1 [dev]',
+    family: 'flux1dev',
+    category: 'text',
+    files: ['flux1-dev'],
+    vram: 16,
+    use: t('质量优先：20 步出图，光影和材质更细腻，适合定风格的插画和原画；非商用许可'),
+    license: 'FLUX.1 [dev] Non-Commercial',
     base: 1024,
     natural: true,
   },
@@ -151,6 +201,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'qwen-image',
     name: 'Qwen-Image（Lightning 8 步）',
     family: 'qwen',
+    category: 'text',
     files: ['qwen-unet', 'qwen-te', 'qwen-vae', 'qwen-lightning'],
     vram: 24,
     use: t('图里要有文字时用：标题、按钮上的中英文字写得准，也擅长海报式的整屏原画；体积大，要 24GB 显存'),
@@ -159,9 +210,34 @@ export const LOCAL_MODELS: LocalModel[] = [
     natural: true,
   },
   {
+    id: 'flux2-klein',
+    name: 'FLUX.2 [klein] 4B',
+    family: 'flux2klein',
+    category: 'fast',
+    files: ['klein-unet', 'qwen3-4b', 'flux2-vae'],
+    vram: 12,
+    use: t('显存 12GB 左右的首选：4 步出图最快，适合大批量的道具图标、草图和反复试风格'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
+    id: 'z-image-turbo-int8',
+    name: 'Z-Image Turbo Int8',
+    family: 'zimage',
+    category: 'fast',
+    files: ['zimage-int8', 'qwen3-4b', 'flux-ae'],
+    vram: 12,
+    use: t('Z-Image Turbo 的量化版本：同样 8 步，文件更小、显存占用更低，适合显存 12GB 左右的电脑'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
     id: 'flux1-schnell',
     name: 'FLUX.1 [schnell]',
     family: 'flux1',
+    category: 'fast',
     files: ['schnell'],
     vram: 12,
     use: t('老牌快速模型：4 步出图，质感好，适合背景图和插画；单个文件，下载最省事'),
@@ -173,6 +249,7 @@ export const LOCAL_MODELS: LocalModel[] = [
     id: 'sdxl',
     name: 'SDXL 1.0',
     family: 'sdxl',
+    category: 'light',
     files: ['sdxl'],
     vram: 8,
     use: t('8GB 显存也能跑；社区的风格模型和 LoRA 最多（像素风、卡通、二次元），可以换成自己下载的同类模型'),
@@ -445,6 +522,29 @@ export function localWorkflow(
         decode: n('VAEDecode', { samples: ['sample', 0], vae: ['vae', 0] }),
         save: save(['decode', 0]),
       }
+    case 'flux1dev':
+      return {
+        ckpt: n('CheckpointLoaderSimple', { ckpt_name: f('flux1-dev') }),
+        pos: n('CLIPTextEncode', { text: o.prompt, clip: ['ckpt', 1] }),
+        neg: n('CLIPTextEncode', { text: o.negative, clip: ['ckpt', 1] }),
+        // dev 是蒸馏 guidance 的模型：cfg 保持 1，提示词强度由 FluxGuidance 控制
+        guide: n('FluxGuidance', { conditioning: ['pos', 0], guidance: 3.5 }),
+        latent: n('EmptySD3LatentImage', latent),
+        sample: n('KSampler', {
+          model: ['ckpt', 0],
+          seed: o.seed,
+          steps: o.steps ?? 20,
+          cfg: 1,
+          sampler_name: 'euler',
+          scheduler: 'simple',
+          positive: ['guide', 0],
+          negative: ['neg', 0],
+          latent_image: ['latent', 0],
+          denoise: 1,
+        }),
+        decode: n('VAEDecode', { samples: ['sample', 0], vae: ['ckpt', 2] }),
+        save: save(['decode', 0]),
+      }
     case 'flux1':
       return {
         ckpt: n('CheckpointLoaderSimple', { ckpt_name: f('schnell') }),
@@ -493,6 +593,8 @@ export const ComfyWorkflow = z.object({
   description: z.string().max(2000).default(''),
   /** 用到的内置模型（LOCAL_MODELS 的 id），用来检查下载了没有；自己的模型留空 */
   model: z.string().default(''),
+  /** 模板带进来的依赖文件（ComfyUI/models 下的相对路径），用来判断缺不缺文件；自己的模型留空 */
+  assets: z.array(z.string()).default([]),
   /** 加在描述后面的要求（英文），针对这类资源调过的 */
   extra: z.string().max(4000).default(''),
   graph: z.record(
@@ -527,6 +629,7 @@ const builtin = (
   kind,
   use,
   model,
+  assets: [],
   description,
   extra,
   graph: localWorkflow(localModel(model)!, { ...P, steps }),
@@ -686,6 +789,141 @@ export function inpaintWorkflow(
   }
   sampler.inputs.latent_image = ['ip_set', 0]
   return g
+}
+
+/** ComfyUI 队列里的一项，面板展示用（节点图也带上，可以在面板里展开看） */
+export interface ComfyQueueEntry {
+  /** ComfyUI 的 prompt_id */
+  id: string
+  /** 队列里的序号 */
+  number: number
+  status: 'running' | 'pending'
+  /** 面板提交时写的来源：AI 设计生成，或用户在 ComfyUI 网页里跑的（没有来源信息） */
+  source?: 'design' | 'panel'
+  workflowId?: string
+  workflowName?: string
+  /** 图片用途（图标、背景…），面板提交时带上 */
+  use?: string
+  /** 执行进度，由服务端从 ComfyUI 的 WebSocket 事件里收集 */
+  progress?: { value: number; max: number; node?: string }
+  /** 接口格式的节点图 */
+  prompt: ComfyWorkflow['graph']
+}
+
+/** ComfyUI 现在在跑什么、还排着什么 */
+export interface ComfyQueueState {
+  up: boolean
+  url: string
+  running: ComfyQueueEntry[]
+  pending: ComfyQueueEntry[]
+}
+
+const asRecord = (x: unknown): Record<string, unknown> | undefined =>
+  x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : undefined
+
+/**
+ * ComfyUI 的 /queue 有两代格式：旧版 { queue_running, queue_pending }，每一项是
+ * [序号, prompt_id, 节点图, extra_data] 的数组；新版 { Running, Pending }，每一项是对象。
+ * 两种都认，避免 ComfyUI 升级后面板读不到队列
+ */
+export function comfyQueueLists(raw: unknown): { running: unknown[]; pending: unknown[] } {
+  const r = asRecord(raw) ?? {}
+  const list = (x: unknown) => (Array.isArray(x) ? x : [])
+  return { running: list(r.Running ?? r.queue_running), pending: list(r.Pending ?? r.queue_pending) }
+}
+
+/** 队列项里出图节点的文件名前缀（面板提交时写的是 agent-panel/工作流名） */
+export function comfySavePrefix(graph: ComfyWorkflow['graph']): string | undefined {
+  for (const n of Object.values(graph))
+    if (n?.class_type === 'SaveImage' && typeof n.inputs?.filename_prefix === 'string') return n.inputs.filename_prefix
+  return undefined
+}
+
+/** 把队列项（新旧两种）解成面板要的字段；节点图拿不到时返回 undefined */
+export function comfyQueueEntry(raw: unknown, status: 'running' | 'pending'): ComfyQueueEntry | undefined {
+  let id = ''
+  let number = 0
+  let prompt: unknown
+  let extra: unknown
+  if (Array.isArray(raw)) {
+    number = Number(raw[0]) || 0
+    id = String(raw[1] ?? '')
+    prompt = raw[2]
+    extra = raw[3]
+  } else {
+    const o = asRecord(raw)
+    if (!o) return undefined
+    id = String(o.prompt_id ?? '')
+    number = Number(o.number) || 0
+    prompt = o.prompt
+    extra = o.extra_data
+  }
+  const graph = asRecord(prompt) as ComfyWorkflow['graph'] | undefined
+  if (!id || !graph) return undefined
+  const meta = asRecord(asRecord(extra)?.agent_panel)
+  const prefix = comfySavePrefix(graph)
+  // 名称优先用提交时的来源信息；别的途径跑的任务从文件名前缀里认
+  const name = String(meta?.name ?? '').trim() || (prefix ? prefix.replace(/^agent-panel\//, '') : '')
+  return {
+    id,
+    number,
+    status,
+    source: meta?.source === 'design' ? 'design' : meta ? 'panel' : undefined,
+    workflowId: meta?.workflowId ? String(meta.workflowId) : undefined,
+    workflowName: name || undefined,
+    use: meta?.use ? String(meta.use) : undefined,
+    prompt: graph,
+  }
+}
+
+/** SaveImage 的输出前缀：agent-panel/工作流名，队列、历史和输出文件名里都能认出来 */
+export function comfyFilenamePrefix(name: string): string {
+  const safe = name
+    .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+  return `agent-panel/${safe || 'workflow'}`
+}
+
+/** 提交前把 SaveImage 的文件名前缀换成可辨识的工作流名（不改原图，返回新的） */
+export function markSavePrefix(graph: ComfyWorkflow['graph'], name: string): ComfyWorkflow['graph'] {
+  const prefix = comfyFilenamePrefix(name)
+  return Object.fromEntries(
+    Object.entries(graph).map(([id, n]) => [
+      id,
+      n.class_type === 'SaveImage' ? { ...n, inputs: { ...n.inputs, filename_prefix: prefix } } : n,
+    ]),
+  )
+}
+
+/**
+ * 面板里存的是带占位符的接口格式工作流，ComfyUI 的输入框不认 {{width}} 这类字符串：
+ * 导入成 ComfyUI 工作流时换成能直接跑的示例值
+ */
+export function importableWorkflow(wf: ComfyWorkflow): ComfyWorkflow['graph'] {
+  return markSavePrefix(
+    fillWorkflow(wf.graph, {
+      prompt: wf.description || wf.name,
+      negative: '',
+      width: 1024,
+      height: 1024,
+      count: 1,
+      seed: Math.floor(Math.random() * 2 ** 31),
+    }),
+    wf.name,
+  )
+}
+
+/** 导入到 ComfyUI 的 userdata/workflows 下的文件名：名字放前面方便在侧栏认，id 保证重复导入覆盖同一个文件 */
+export function comfyImportFile(wf: Pick<ComfyWorkflow, 'id' | 'name'>): string {
+  const safe = wf.name
+    .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+  const id = wf.id.replace(/[^\w-]/g, '').slice(0, 40)
+  return `${safe || 'workflow'}-${id || 'x'}.json`
 }
 
 /** 工作流有没有问题：要有出图的节点、要用到 {{prompt}}，连线指向的节点要存在 */

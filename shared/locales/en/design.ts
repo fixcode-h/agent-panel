@@ -683,4 +683,15 @@ export const EN_DESIGN: Record<string, string> = {
     'No widget has a matching size; hold Alt to drop on any widget that takes an image',
   当前界面里没有能放图片的控件: 'No widget on this screen takes an image',
   '放到 {name}': 'Drop on {name}',
+  // AI 截图（screenshot 工具）
+  '截图失败：设计页面没有打开。先打开这个设计页（浏览器标签页在后台也可以），再让我截图':
+    'Screenshot failed: the design page is not open. Open this design page first (it can be in a background tab), then ask for the screenshot again',
+  '截图失败：设计页面收到了请求，但没有交出截图（页面可能已经切走，或者渲染卡住了），请重试':
+    'Screenshot failed: the design page received the request but did not return a screenshot (the page may have been left, or rendering is stuck). Try again',
+  '截图超时：设计页面在后台或者渲染卡住了，请重试':
+    'Screenshot timed out: the design page is in the background or rendering is stuck. Try again',
+  '画布没有画出来（页面可能正在切换），请重试': 'The canvas was not drawn (the page may be switching). Try again',
+  '画布是空的：这棵树里还没有可截的控件，先搭好界面再截图':
+    'The canvas is empty: this tree has no widgets to capture yet. Build the interface before taking a screenshot',
+  '截图渲染失败：{error}': 'Screenshot rendering failed: {error}',
 }

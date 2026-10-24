@@ -1,9 +1,56 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { CaptureRequest } from '@shared/design'
+import { t } from '@shared/i18n'
 import { walk, type Widget } from '@shared/umg'
 import { api } from '@/lib/api'
 import { UmgNode, type RenderImage } from './umg-render'
+
+/** 整张截图最多等这么久：页面切走或者渲染卡住时不要一直挂着，AI 那边也只会等到超时 */
+const CAPTURE_LIMIT = 15_000
+
+/**
+ * 后台标签页里 requestAnimationFrame 不跑，而 html-to-image 内部也靠它等图片渲染完。
+ * 截图期间把 rAF 临时换成定时器，前台页面不受影响
+ */
+async function withFrameFallback<T>(fn: () => Promise<T>): Promise<T> {
+  if (document.visibilityState !== 'hidden') return fn()
+  const raf = window.requestAnimationFrame
+  const caf = window.cancelAnimationFrame
+  const timers = new Map<number, ReturnType<typeof setTimeout>>()
+  let seq = 0
+  window.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    const id = ++seq
+    timers.set(
+      id,
+      setTimeout(() => {
+        timers.delete(id)
+        cb(performance.now())
+      }, 16),
+    )
+    return id
+  }
+  window.cancelAnimationFrame = (id) => {
+    const timer = timers.get(id)
+    if (timer !== undefined) clearTimeout(timer)
+    timers.delete(id)
+  }
+  try {
+    return await fn()
+  } finally {
+    for (const timer of timers.values()) clearTimeout(timer)
+    window.requestAnimationFrame = raf
+    window.cancelAnimationFrame = caf
+  }
+}
+
+function withLimit<T>(fn: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(t('截图超时：设计页面在后台或者渲染卡住了，请重试'))), CAPTURE_LIMIT)
+  })
+  return Promise.race([fn(), limit]).finally(() => clearTimeout(timer))
+}
 
 /**
  * AI 要看画布的截图（设计工具的 screenshot）：在页面外按 1:1 画出这棵树，截成 PNG 交回服务端，
@@ -26,17 +73,28 @@ export function CanvasCapture({
   useEffect(() => {
     const run = async () => {
       const el = box.current
-      if (!el) throw new Error('画布没有画出来')
-      // 等字体和图片都到了再截，不然截出来是空白
-      await document.fonts?.ready
-      await Promise.all(
-        [...el.querySelectorAll('img')].map((img) =>
-          img.complete ? null : new Promise((r) => img.addEventListener('load', r, { once: true })),
-        ),
-      )
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-      const { toPng } = await import('html-to-image')
-      const data = await toPng(el, { width: req.size.X, height: req.size.Y, pixelRatio: 1 })
+      if (!el) throw new Error(t('画布没有画出来（页面可能正在切换），请重试'))
+      let count = 0
+      walk(req.root, () => count++)
+      if (count <= 1) throw new Error(t('画布是空的：这棵树里还没有可截的控件，先搭好界面再截图'))
+      const data = await withLimit(async () => {
+        // 等字体和图片都到了再截，不然截出来是空白
+        await document.fonts?.ready
+        await Promise.all(
+          [...el.querySelectorAll('img')].map((img) =>
+            img.complete ? null : new Promise((r) => img.addEventListener('load', r, { once: true })),
+          ),
+        )
+        return withFrameFallback(async () => {
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+          const { toPng } = await import('html-to-image')
+          try {
+            return await toPng(el, { width: req.size.X, height: req.size.Y, pixelRatio: 1 })
+          } catch (e) {
+            throw new Error(t('截图渲染失败：{error}', { error: (e as Error).message || t('未知错误') }))
+          }
+        })
+      })
       const byId = new Map<string, Widget>()
       walk(req.root, (w) => byId.set(w.id, w))
       const base = el.getBoundingClientRect()
@@ -48,6 +106,7 @@ export function CanvasCapture({
       })
       await api.designCapture(designId, req.id, { data, rects })
     }
+    // 截图失败也要把原因交回服务端，AI 才能说清楚是页面没打开、画布空还是渲染失败
     run()
       .catch((e) => api.designCapture(designId, req.id, { error: (e as Error).message }).catch(() => {}))
       .finally(() => onDone(req.id))

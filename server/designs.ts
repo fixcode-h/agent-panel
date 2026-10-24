@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
-import { openDesignSession, type ConceptRequest, type WidgetRect } from './design-mcp.ts'
+import { openDesignSession, type ConceptRequest } from './design-mcp.ts'
+import { DesignCaptures } from './design-capture.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
 import { getCli } from '../shared/clis.ts'
@@ -49,6 +50,7 @@ import {
   projectPromptText,
   AiDesignResult,
   resolveDesignResult,
+  type CaptureRequest,
   type DesignJob,
   type DesignMeta,
   type ImageJobItem,
@@ -117,15 +119,6 @@ type Job = DesignJob & {
   sheets?: Map<string, string>
 }
 
-/** 等页面交回的截图：截图 id → 收到后怎么办 */
-type CaptureWait = {
-  designId: string
-  resolve: (v: { png: Buffer; rects: WidgetRect[] }) => void
-  reject: (e: Error) => void
-}
-/** 页面多久没交回截图就算没打开 */
-const CAPTURE_TIMEOUT = 20_000
-
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
   id: d.id,
@@ -141,7 +134,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   let loaded = false
   const writing = new Map<string, Promise<void>>()
   const jobs = new Map<string, Job>()
-  const captures = new Map<string, CaptureWait>()
+  const captures = new DesignCaptures()
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -771,39 +764,22 @@ ${prompt}`,
           return v ? path.join(imagesDir(d.id), v.file) : undefined
         },
         conceptPath: (id) => conceptFile(cache.get(d.id)!, id),
-        // 截图：把这一轮改到现在的树交给页面画出来，页面截好图交回（/capture/:cid）
-        capture: (s, target) =>
-          new Promise((resolve, reject) => {
-            const comp = target ? s.state.components.find((c) => c.Name === target) : undefined
-            const cid = randomUUID()
-            const finish = () => {
-              clearTimeout(timer)
-              captures.delete(cid)
-              if (job.capture?.id === cid) job.capture = undefined
-            }
-            const timer = setTimeout(() => {
-              finish()
-              reject(new Error('页面没有交回截图（设计页面可能没有打开）'))
-            }, CAPTURE_TIMEOUT)
-            captures.set(cid, {
-              designId: d.id,
-              resolve: (v) => {
-                finish()
-                resolve(v)
-              },
-              reject: (e) => {
-                finish()
-                reject(e)
-              },
-            })
-            job.capture = {
-              id: cid,
-              target,
-              root: comp ? comp.Root : s.state.root,
-              components: s.state.components,
-              size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
-            }
-          }),
+        // 截图：把这一轮改到现在的树交给页面画出来，页面截好图交回（/capture/:cid）。
+        // 页面用长轮询取请求（/capture/wait），后台标签页也能及时拿到
+        capture: (s, target) => {
+          const comp = target ? s.state.components.find((c) => c.Name === target) : undefined
+          const view: CaptureRequest = {
+            id: randomUUID(),
+            target,
+            root: comp ? comp.Root : s.state.root,
+            components: s.state.components,
+            size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
+          }
+          job.capture = view
+          return captures.request(d.id, view).finally(() => {
+            if (job.capture?.id === view.id) job.capture = undefined
+          })
+        },
       },
       { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
     )
@@ -1026,7 +1002,7 @@ ${prompt}`,
     } finally {
       mcp.close()
       // 这一轮结束了：还在等的截图不用等了
-      for (const w of captures.values()) if (w.designId === d.id) w.reject(new Error(t('已停止')))
+      captures.stop(d.id, new Error(t('已停止')))
       // 这一轮的工作目录（附件副本、工具的配置）用完就删
       await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
@@ -1833,13 +1809,20 @@ ${prompt}`,
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
+
+    // 页面长轮询取 AI 要的截图（screenshot 工具）：有请求立刻返回，没有就挂着等下一次
+    .get('/:id/capture/wait', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      return c.json({ capture: await captures.wait(d.id, c.req.raw.signal) })
+    })
     // 页面交回 AI 要的画布截图（screenshot 工具）；画不出来时交回原因
     .post('/:id/capture/:cid', async (c) => {
-      const w = captures.get(c.req.param('cid'))
-      if (!w || w.designId !== c.req.param('id')) return bad(c, t('这张截图已经不需要了'), 404)
+      const id = c.req.param('id')
+      const cid = c.req.param('cid')
       const body = (await c.req.json().catch(() => ({}))) as { data?: string; rects?: unknown; error?: string }
       if (body.error) {
-        w.reject(new Error(String(body.error).slice(0, 300)))
+        captures.fail(id, cid, String(body.error).slice(0, 300))
         return c.json({ ok: true })
       }
       const png = Buffer.from(String(body.data ?? '').replace(/^data:[^,]*,/, ''), 'base64')
@@ -1851,7 +1834,7 @@ ${prompt}`,
             ? [{ name: r.name, type: String(r.type ?? ''), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }]
             : [],
         )
-      w.resolve({ png, rects })
+      if (!captures.deliver(id, cid, { png, rects })) return bad(c, t('这张截图已经不需要了'), 404)
       return c.json({ ok: true })
     })
     .post('/:id/chat', async (c) => {

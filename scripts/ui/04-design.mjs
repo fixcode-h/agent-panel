@@ -160,7 +160,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
-  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler', '导入到 ComfyUI'])
   // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
   // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
   const graphFit = () =>
