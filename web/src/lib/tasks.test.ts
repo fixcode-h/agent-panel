@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { startedRun, tokenGroups, toolView } from './tasks.ts'
+import { groupTools, startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -182,4 +182,25 @@ test('toolView：给别的对话发消息的几个工具画成「发送消息」
   assert.deepEqual(chat?.send, { kind: 'chat', to: '测试', body: '接口改名了' })
   // 别的面板工具不是发消息
   assert.equal(toolView(tool('mcp__panel__get_status', ''))?.send, undefined)
+})
+
+test('groupTools：相邻几次把同一段话交给不同子对话合成一行，别的工具和不同的话各占一行', () => {
+  const send = (id: string, message: string) =>
+    tool('MCP', 'panel · send_to_conversation', {
+      input: JSON.stringify({ id, message }),
+      output: `已交给子对话「${id}」`,
+    })
+  const read = tool('读取', 'a.ts', { kind: 'read' })
+  const groups = groupTools([
+    send('c1', '规则'),
+    send('c2', '规则'),
+    send('c3', '规则'),
+    send('c1', '别的'),
+    read,
+    send('c2', '别的'),
+  ])
+  assert.deepEqual(
+    groups.map((g) => g.length),
+    [3, 1, 1, 1],
+  )
 })

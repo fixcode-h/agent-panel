@@ -3,7 +3,7 @@
  * 收件方的消息带 TaskMessage.peer，发件方是一次工具调用（send_to_conversation、message_parent、message_peer）；
  * 两边都画成一行「发送消息 / 接收消息 + 类型 + 内容标题」，类型决定图标和小标签
  */
-import type { PeerFrom, PeerKind, TaskMessage } from './schema.ts'
+import type { PeerFrom, PeerKind, Task, TaskMessage } from './schema.ts'
 import { t } from './i18n.ts'
 
 /** 正文开头的【收尾请求】【子对话状态】这类标签是说给 AI 的，标题里不重复它 */
@@ -66,5 +66,28 @@ export function peerOfMessage(m: TaskMessage): PeerFrom | undefined {
       ...(m.child.state === 'failed' && { failed: true }),
     }
   }
+  return undefined
+}
+
+/**
+ * 同一段话之前已经交给了别的子对话：返回那个子对话的 id。一条消息只交给一个子对话（用户 2026-10-24 定的），
+ * 父对话把用户的一句话逐个转给四五个子对话会被拒绝。按对话里记下的 send_to_conversation 调用查，
+ * 跨轮次也认得出；失败的那次不算，再发给同一个子对话（补充、催）照常放行
+ */
+export function sentToOther(task: Pick<Task, 'messages'>, id: string, message: string): string | undefined {
+  const body = message.trim()
+  if (!body) return undefined
+  for (const m of task.messages)
+    for (const tool of m.tools) {
+      if (tool.failed || !/\bsend_to_conversation\b/.test(`${tool.name ?? ''} ${tool.label}`)) continue
+      let a: { id?: unknown; message?: unknown }
+      try {
+        a = JSON.parse(tool.input ?? '')
+      } catch {
+        continue
+      }
+      const to = typeof a?.id === 'string' ? a.id.trim() : ''
+      if (to && to !== id && typeof a.message === 'string' && a.message.trim() === body) return to
+    }
   return undefined
 }

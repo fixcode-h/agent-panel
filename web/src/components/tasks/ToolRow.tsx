@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { fmtDuration, toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useChildOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
@@ -363,6 +363,52 @@ export function ToolRow({
       />
     )
   return <ToolLine view={view} task={task} />
+}
+
+/**
+ * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
+ * 展开列出每个收件人
+ */
+export function ToolRows({
+  tools,
+  task,
+}: {
+  tools: ToolUse[]
+  task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
+}) {
+  return (
+    <>
+      {groupTools(tools).map((g, i) =>
+        g.length === 1 ? <ToolRow key={i} tool={g[0]} task={task} /> : <SendGroupRow key={i} tools={g} task={task} />,
+      )}
+    </>
+  )
+}
+
+function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'status'> }) {
+  const views = tools.map((x) => ({ tool: x, view: toolView(x) }))
+  const send = views[0].view!.send!
+  const targets: SendTarget[] = views.map(({ tool, view }) => ({
+    name: view?.send?.to ?? '',
+    ...(view?.child && { child: view.child }),
+    ...(tool.output?.trim() && { receipt: tool.output.trim() }),
+    ...(tool.failed && { failed: true }),
+  }))
+  const pending = (x: ToolUse) => x.running || (x.ms === undefined && !!x.startedAt && task?.status === 'running')
+  const done = tools.filter((x) => x.ms !== undefined)
+  return (
+    <PeerLine
+      dir="out"
+      kind={send.kind}
+      name={send.to}
+      subject=""
+      body={send.body}
+      failed={tools.every((x) => x.failed)}
+      running={tools.some(pending)}
+      ms={done.length === tools.length ? Math.max(...done.map((x) => x.ms!)) : undefined}
+      targets={targets}
+    />
+  )
 }
 
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {

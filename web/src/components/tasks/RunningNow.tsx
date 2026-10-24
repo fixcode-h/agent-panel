@@ -4,7 +4,7 @@ import type { Task, TaskJob, ToolUse } from '@shared/schema'
 import { visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
-import { RowShell, ToolRow } from './ToolRow'
+import { RowShell, ToolRows } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
 import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { t } from '@shared/i18n'
@@ -134,9 +134,7 @@ export function RunningNow({
   if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length) return null
   const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
-      {tools.map((x, i) => (
-        <ToolRow key={`t${i}`} tool={x} task={task} />
-      ))}
+      <ToolRows tools={tools} task={task} />
       {stepJobs.map(({ step, jobs }) => (
         <StepJobsRow key={step.id} title={step.title || t('未命名')} jobs={jobs} now={now} />
       ))}

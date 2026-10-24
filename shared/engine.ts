@@ -79,6 +79,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
@@ -101,6 +102,9 @@ import {
   type PlanItemInput,
   type WrapUpKind,
 } from './plan.ts'
+
+/** 每个父对话交给子对话的话 → 交给了哪个子对话（见 sendToConversation：一条消息只交给一个子对话） */
+const handedOff = new WeakMap<object, Map<string, string>>()
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -2592,7 +2596,21 @@ function makeOrchestra(
     async sendToConversation(id, message, step) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
+      // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
+      // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
+      // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
+      const handed = handedOff.get(task) ?? new Map<string, string>()
+      handedOff.set(task, handed)
+      const prev = handed.get(message.trim())
+      const other = (prev !== id.trim() ? prev : undefined) ?? sentToOther(task, id.trim(), message)
+      if (other)
+        return {
+          ok: false,
+          info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
+        }
+      handed.set(message.trim(), id.trim())
       const r = await host.sendToConversation(id.trim(), message)
+      if (!r.ok) handed.delete(message.trim())
       const at = step?.trim() || runningStepId(task)
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
       if (r.ok) host.changed(true)
@@ -3249,7 +3267,7 @@ ${
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
 2. 现有子对话都不相关，要改代码、要排查问题或者要做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起；子对话会自己列计划并执行。改动再小（一行、一个文案）也交给子对话。
 3. 只是一般问题、讨论、查询：自己回答。
-一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
+一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话：用户的一条消息（连同用户定下的规则、约定）只交给关联最紧密的那一个子对话，和别的子对话手上的事无关就不转给它们；同一段话再交给别的子对话会被面板拒绝。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
 
 ## 分派前只收集到模块为止
 分派前花少量时间把方向找准就交出去，不要自己把问题分析到底：
