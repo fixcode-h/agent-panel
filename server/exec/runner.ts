@@ -128,6 +128,7 @@ export interface RealContext {
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']
   wrapUp?: EngineHost['wrapUp']
+  p4Split?: EngineHost['p4Split']
   submitMerge?: EngineHost['submitMerge']
   finishChild?: EngineHost['finishChild']
   ueBuild?: EngineHost['ueBuild']
@@ -1992,6 +1993,7 @@ export async function runRealTurn(ctx: RealContext) {
     worktreeHome: ctx.worktreeHome,
     branch: ctx.branch,
     wrapUp: ctx.wrapUp,
+    p4Split: ctx.p4Split,
     submitMerge: ctx.submitMerge,
     finishChild: ctx.finishChild,
     ueBuild: ctx.ueBuild,

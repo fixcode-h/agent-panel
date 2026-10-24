@@ -325,6 +325,8 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('认领文件'), list(a.paths))
     case 'release_files':
       return as(t('释放文件'), list(a.paths))
+    case 'p4_split_changelists':
+      return as(t('按类型分 changelist'), a.from ? `#${firstLine(a.from)}` : 'default', 'other', '')
     case 'record_lesson':
       return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
     case 'project_lessons':

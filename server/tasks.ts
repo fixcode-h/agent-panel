@@ -168,6 +168,7 @@ import {
 import { extractJson } from '../shared/assist.ts'
 import { HARD_STOP, invokeCli } from './exec/invoke.ts'
 import { tmpdir } from 'node:os'
+import { p4Runner, splitChangelists } from './p4-split.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 const RULE_CMD = /^\/rules?(?=\s|$)/i
@@ -2512,6 +2513,11 @@ export function tasksApi(deps: {
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         wrapUp: await childWrapUp(entry.task, project?.path),
+        // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
+        p4Split:
+          dir && project?.path && (await isP4(project.path))
+            ? (input) => splitChangelists(p4Runner(dir), input)
+            : undefined,
         submitMerge:
           task.parentTaskId && isolated(entry.task)
             ? (note, tests, build, handoff, triage) =>

@@ -519,6 +519,43 @@ export function orchTools(o: Orchestra) {
             : []),
         ]
       : []),
+    ...(o.p4Split
+      ? [
+          {
+            name: 'p4_split_changelists',
+            title: '按类型分 changelist',
+            description:
+              'P4 工作区：把改动按文件类型分进各自的 pending changelist（[C++]、[XLSX] 表格、[Lua]、[Other] 各一个），由面板建 changelist 并挪文件，不 submit。要把改动放进 pending 时用它，不要自己建一个把几类混在一起的。缺哪类的描述会先列出各类文件、不动任何东西。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                descriptions: {
+                  type: 'object',
+                  description: '这次有文件的每一类写一句中文描述（约 40 字内，不带 [类型] 标签，不写函数名和文件列表）',
+                  properties: {
+                    'C++': { type: 'string' },
+                    XLSX: { type: 'string', description: '表格：.xlsx / .xls / .csv 等' },
+                    Lua: { type: 'string' },
+                    Other: { type: 'string' },
+                  },
+                },
+                from: {
+                  type: 'string',
+                  description:
+                    '从哪个 changelist 分：不写是 default；写 pending 的编号会把混在里面的几类拆开（挪空后删掉原来的）',
+                },
+                files: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    '只分这些文件（本地路径或 depot 路径）；不写分来源里的全部文件。default 里有别的改动时用它只列本次任务的',
+                },
+              },
+              required: ['descriptions'],
+            },
+          },
+        ]
+      : []),
     ...(o.lessons
       ? [
           {
@@ -852,6 +889,18 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         )
       const options = (Array.isArray(a?.options) ? a.options : []).map(String)
       const r = await o.toParent(body, true, askOptions(options, 'suggestion'), 'suggestion')
+      return text(r.info, !r.ok)
+    }
+    case 'p4_split_changelists': {
+      if (!o.p4Split) return text('这里不是 P4 工作区', true)
+      const d = a?.descriptions && typeof a.descriptions === 'object' ? (a.descriptions as Record<string, unknown>) : {}
+      const descriptions = Object.fromEntries(
+        (['C++', 'XLSX', 'Lua', 'Other'] as const)
+          .filter((k) => typeof d[k] === 'string')
+          .map((k) => [k, String(d[k])]),
+      )
+      const files = Array.isArray(a?.files) ? a.files.map(String) : undefined
+      const r = await o.p4Split({ descriptions, from: str(a?.from) || undefined, files })
       return text(r.info, !r.ok)
     }
     case 'claim_files': {

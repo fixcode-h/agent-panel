@@ -173,3 +173,44 @@ test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作�
     delete process.env.AGENT_PANEL_RELEASES_URL
   }
 })
+
+test('版本列表按版本号从新到旧排：后出包的旧版本不会排到最新版上面', async () => {
+  const http = await import('node:http')
+  const rel = (v: string, at: string) => ({
+    tag_name: `v${v}`,
+    prerelease: false,
+    published_at: at,
+    body: '',
+    html_url: '',
+    assets: [{ name: `agent-panel-${v}.zip`, browser_download_url: `http://127.0.0.1/${v}.zip`, size: 1 }],
+  })
+  const server = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    // 0.28.997 比 0.28.999 晚出包：以前按发布时间排，它排在了最上面
+    res.end(
+      JSON.stringify([
+        rel('0.28.997', '2026-10-24T11:38:52Z'),
+        rel('0.28.999', '2026-10-24T11:38:13Z'),
+        rel('0.28.995', '2026-10-24T11:31:47Z'),
+      ]),
+    )
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  process.env.AGENT_PANEL_RELEASES_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}/releases`
+  try {
+    const { api: routes } = updateApi({
+      running: () => 0,
+      restart: () => {},
+      stopAll: async () => {},
+      interrupted: () => [],
+    })
+    const body = await (await routes.request('/releases?refresh=1')).json()
+    assert.deepEqual(
+      body.releases.map((r: { version: string }) => r.version),
+      ['0.28.999', '0.28.997', '0.28.995'],
+    )
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()))
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})

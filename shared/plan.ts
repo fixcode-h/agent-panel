@@ -43,7 +43,7 @@ export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
   },
   p4: {
     title: '收尾：按文件类型把改动分进各自的 changelist',
-    note: '[C++]、[XLSX]、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；描述写一行「[类型] 中文短句」，p4 describe 回读确认没乱码。不 submit',
+    note: '调用 p4_split_changelists：[C++]、[XLSX]（表格）、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；每类写一句中文描述。不 submit',
   },
 }
 
