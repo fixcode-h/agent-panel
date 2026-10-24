@@ -425,7 +425,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
   const ids = view.job ? [view.job] : (view.jobs ?? [])
   const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
-  const bg = mine.length > 0
+  // 有结果之前一直转圈：任务上的后台命令列表还没推到（刚交出去、页面刚打开）也一样，不能先显示成完成
+  const bg = mine.length > 0 || !!view.waiting
   // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」
   const starts = mine.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter(Boolean)
   const jobStart = starts.length ? Math.min(...starts) : 0
@@ -451,6 +452,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     </span>
   ) : queued ? (
     <span className="shrink-0 text-subtle">{t('排队中')}</span>
+  ) : bg && !mine.length ? (
+    <span className="shrink-0 text-subtle">{t('等结果')}</span>
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
