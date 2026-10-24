@@ -70,3 +70,4 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [local-image.md](./local-image.md) | 本机生图（ComfyUI 安装、启动）                 |
 | [worktree.md](./worktree.md)       | 独立工作目录、依赖隔离                         |
 | [state.md](./state.md)             | 对话状态、父子对话同步和收尾、停止、跟随到底部 |
+| [design.md](./design.md)           | UI 设计 Agent 的截图、出图、引用和验收         |
