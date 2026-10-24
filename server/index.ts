@@ -61,6 +61,8 @@ import { packagesApi } from './cli-packages.ts'
 import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
+import { appActionsApi, setActionHost } from './app-actions/index.ts'
+import { callApi } from './app-actions/registry.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { setPresenceReclaimPolicy } from './presence.ts'
 import { GlobalLessons, Settings } from '../shared/schema.ts'
@@ -917,6 +919,13 @@ const updater = updateApi({
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())
+// 操控软件的动作表（见 ADR 0011）：Agent 经 MCP 调，人和脚本经 /api/actions 调；
+// 动作进程内调上面这些接口，和界面点按钮走同一段代码
+app.route('/actions', appActionsApi())
+setActionHost({
+  api: (method, path, body) => callApi((req) => app.fetch(req), method, path, body),
+  ui: (action, args) => signalPages({ type: 'ui', action, args }),
+})
 // 新版本启动后问用户要不要继续被上次强制更新打断的任务
 app.route(
   '/app',

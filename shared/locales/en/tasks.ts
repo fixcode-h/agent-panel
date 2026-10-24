@@ -805,6 +805,8 @@ export const EN_TASKS: Record<string, string> = {
   传话: 'Message',
   查看消息: 'Read messages',
   查看用户补充: 'Read user notes',
+  查看软件操作: 'List app actions',
+  操作软件: 'Operate the app',
   向用户提问: 'Ask user',
   等待用户消息: 'Wait for user message',
   找不到这个提问: 'Question not found',

@@ -415,6 +415,15 @@ function Body({
       setAnalyzing(false)
     }
   }
+  // 对话里的 AI 按用户要求初始化项目（动作 project.init 打开时带 item=start）：打开就开始，不用再点按钮
+  const autoInit = useRef(initialSection === 'init' && item === 'start')
+  useEffect(() => {
+    if (!autoInit.current) return
+    autoInit.current = false
+    void startInit()
+    // 只在打开时看一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // AI 没评估出默认工作流时按项目类型落到内置的「通用项目」/「UE 项目」
   const fallbackWorkflow = (type: 'general' | 'ue') => {
     const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME

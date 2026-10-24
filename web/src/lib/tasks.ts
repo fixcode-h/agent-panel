@@ -379,6 +379,16 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       )
     case 'wait_user_message':
       return as(t('等待用户消息'), '')
+    // 操控软件：标题写动作名，展开看参数和结果
+    case 'app_actions':
+      return as(t('查看软件操作'), firstLine(a.group), 'read')
+    case 'app_do':
+      return as(
+        t('操作软件'),
+        firstLine(a.action),
+        'other',
+        a.args && typeof a.args === 'object' && Object.keys(a.args).length ? JSON.stringify(a.args, null, 2) : '',
+      )
   }
   return undefined
 }

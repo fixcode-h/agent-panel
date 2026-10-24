@@ -11,6 +11,8 @@ import { prepareAuth } from '../accounts.ts'
 import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
+import { APP_HINT } from '../app-actions/mcp.ts'
+import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
@@ -108,6 +110,8 @@ export async function invokeCli(o: {
   mcp?: { name: string; url: string }[]
   /** 编排工具：和提问、等下一句一起挂在面板的 MCP 上 */
   orch?: Orchestra
+  /** 操控软件的动作（app_actions / app_do）：对话的调用才给，值是调用者（见 ADR 0011） */
+  app?: ActionCaller
   /** 设置里手动改的上下文窗口、最大输出：CLI 定义里写了 limitFile 时，这一轮写进它的配置文件 */
   limits?: { context?: number; maxOutput?: number }
   /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
@@ -183,11 +187,13 @@ export async function invokeCli(o: {
       ...(own && notes ? { notes } : {}),
       ...(own && wait ? { wait } : {}),
       ...(o.orch ? { orch: o.orch } : {}),
+      ...(o.orch && o.app ? { app: o.app } : {}),
     })
     // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：子对话共用一个目录，同时在跑的几轮各用一个名字，
     // 不然后写的会把先写的那一项冲掉。用参数传的不受影响，保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
     servers.unshift({ name: fileBased ? `panel-${bridge.url.slice(-6)}` : 'panel', url: bridge.url })
+    if (o.orch && o.app) input = `${input}\n\n${APP_HINT}`
     if (own) {
       // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
       if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`

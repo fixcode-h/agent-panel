@@ -5,7 +5,10 @@ import { streamSSE } from 'hono/streaming'
  * 托盘要页面做的事：点图标时把已经打开的面板切到前台（focus），右键「设置」时顺便打开设置（view）。
  * 浏览器不让外面的程序切换标签页，所以由页面把标题临时加上 mark，托盘按标题找到这个标签页再切过去。
  */
-export type PageSignal = { type: 'focus'; mark: string; view?: 'settings' }
+export type PageSignal =
+  | { type: 'focus'; mark: string; view?: 'settings' }
+  /** Agent 经动作表（server/app-actions）要页面做的界面操作，页面在 web/src/lib/ui-actions.ts 里找处理函数 */
+  | { type: 'ui'; action: string; args: Record<string, unknown> }
 
 const pages = new Set<(s: PageSignal) => void>()
 
