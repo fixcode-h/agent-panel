@@ -590,6 +590,8 @@ export const EN_TASKS: Record<string, string> = {
   '面板框架的问题要在 agent-panel 源代码项目里修':
     'Panel framework issues can only be fixed in an agent-panel source project',
   '在右侧打开子对话「{title}」': 'Open child conversation "{title}" on the right',
+  '打开子任务「{title}」': 'Open subtask "{title}"',
+  '后台命令 {name}': 'Background command {name}',
   处理中: 'Working',
   角色优化: 'Role improvements',
   工作流优化: 'Workflow improvements',

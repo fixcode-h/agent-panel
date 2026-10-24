@@ -11,6 +11,7 @@ import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
@@ -37,8 +38,28 @@ async function stopHelper(task: Task, step: TaskStep) {
   }
 }
 
-/** 终止按钮：列表行和子任务窗口共用 */
-function StopHelper({ task, step, label }: { task: Task; step: TaskStep; label?: boolean }) {
+/**
+ * 对话里派出的子任务（按派出顺序、去重）：输入框上方的「子任务」栏和消息流里的运行区读同一份。
+ * 工作流任务里节点自己派的子 Agent 显示在节点里，不算；旧数据里只留下「派出了哪几个」而 step 已经没了的不列
+ */
+export function chatHelperIds(task: Task) {
+  if (task.mode === 'workflow' || (task.runs?.length ?? 0) > 0) return []
+  const known = new Set(task.steps.map((s) => s.id))
+  return [...new Set(task.messages.flatMap((m) => m.spawned ?? []))].filter((id) => known.has(id))
+}
+
+/** 终止按钮：列表行、运行区那一行（compact，和行高对齐）和子任务窗口共用 */
+export function StopHelper({
+  task,
+  step,
+  label,
+  compact,
+}: {
+  task: Task
+  step: TaskStep
+  label?: boolean
+  compact?: boolean
+}) {
   const [busy, setBusy] = useState(false)
   if (!stoppable(step)) return null
   return (
@@ -54,9 +75,13 @@ function StopHelper({ task, step, label }: { task: Task; step: TaskStep; label?:
         await stopHelper(task, step)
         setBusy(false)
       }}
-      className="shrink-0 text-subtle hover:text-danger"
+      className={cn('shrink-0 text-subtle hover:text-danger', compact && 'h-5 w-5 rounded')}
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+      {busy ? (
+        <Loader2 className={cn('animate-spin', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
+      ) : (
+        <Square className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+      )}
       {label && t('终止')}
     </Button>
   )
@@ -77,7 +102,7 @@ const helperGroups = (list: TaskStep[]) =>
   ].filter((g) => g.items.length)
 
 /** 列表里每个子任务下面那行：还在跑的写它这会儿在做什么，做完的写交回结果的第一句 */
-function helperBrief(task: Task, step: TaskStep) {
+export function helperBrief(task: Task, step: TaskStep) {
   if (step.status === 'running') return currentActivity(stepActivity(task, step.id, true)) || t('已开始，还没有输出')
   if (step.status === 'pending') return t('子任务在排队，前面的做完就开始')
   if (step.status === 'skipped') return t('已终止，没做完的部分不会交回')

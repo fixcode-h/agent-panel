@@ -35,7 +35,7 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
-import { HelperBar } from './HelperCards'
+import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -648,15 +648,8 @@ export function TaskView({
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
   const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  // 对话里派出的子任务：输入框上方的「子任务」栏里列出，点开看它的实时对话流。
-  // 工作流任务里节点自己派的子 Agent 显示在节点里，不进这条栏
-  const helperIds = useMemo(() => {
-    if (!task || task.mode === 'workflow' || (task.runs?.length ?? 0) > 0) return []
-    // 旧数据里可能只留下「派出了哪几个」而没有对应的 step（被清掉、导出时丢了）：
-    // 只留真的存在的，一个都不剩时不画这条栏，输入框上方不留空行
-    const known = new Set(task.steps.map((s) => s.id))
-    return [...new Set(task.messages.flatMap((m) => m.spawned ?? []))].filter((id) => known.has(id))
-  }, [task])
+  // 对话里派出的子任务：输入框上方的「子任务」栏里列出，点开看它的实时对话流；一个都没有时不画这条栏
+  const helperIds = useMemo(() => (task ? chatHelperIds(task) : []), [task])
   // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slashAgent = task?.mode === 'chat' ? agents.find((a) => a.id === task.agentId) : undefined
   const slashCli =

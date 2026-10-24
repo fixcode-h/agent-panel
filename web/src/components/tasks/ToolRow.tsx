@@ -216,6 +216,7 @@ export function RowShell({
   onOpen,
   openTip,
   failed,
+  action,
   className,
   children,
 }: {
@@ -237,6 +238,8 @@ export function RowShell({
   onOpen?: () => void
   openTip?: string
   failed?: boolean
+  /** 耗时后面的操作按钮（子任务的终止）：自己处理点击，不触发展开收起 */
+  action?: React.ReactNode
   className?: string
   children?: React.ReactNode
 }) {
@@ -313,6 +316,11 @@ export function RowShell({
           detail
         )}
         {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
+        {action && (
+          <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+            {action}
+          </span>
+        )}
         {toggle && (
           <ChevronRight
             className={cn(

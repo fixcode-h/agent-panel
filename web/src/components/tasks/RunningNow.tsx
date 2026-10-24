@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import type { Task, TaskJob, ToolUse } from '@shared/schema'
-import { visibleChildren, splitStepJobs } from '@shared/task'
+import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
+import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs } from '@shared/task'
 import { cn } from '@/lib/utils'
+import { useData } from '@/lib/data'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
 import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
+import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结上面，不能跟着过程一起折叠 */
@@ -98,6 +100,65 @@ function StepJobsRow({ title, jobs, now }: { title: string; jobs: TaskJob[]; now
 }
 
 /**
+ * 对话派出的、还没结束的子任务：和子对话同一个样式的一行——转圈、「子任务」、标题（点开只读窗口）、
+ * 状态标签、这会儿在做什么、耗时，最后是终止按钮。它起的后台命令并进这一行的标签，不再单独占一行
+ */
+function HelperRow({
+  task,
+  step,
+  jobs,
+  now,
+  onOpen,
+}: {
+  task: Task
+  step: TaskStep
+  jobs: TaskJob[]
+  now: number
+  onOpen: () => void
+}) {
+  const { agents } = useData()
+  // 默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来（和子任务栏同一个口径）
+  const agent = agents.find((a) => a.id === step.agentId && a.origin !== 'builtin:helper')
+  const running = helperRunning(step)
+  const title = step.title || t('未命名')
+  const note = helperBrief(task, step)
+  const names = jobs.map((j) => j.name).join(t('、'))
+  return (
+    <RowShell
+      glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', running ? 'text-accent' : 'text-subtle')} />}
+      verb={<span className="sr-only md:not-sr-only">{t('子任务')}</span>}
+      title={title}
+      open={false}
+      onOpen={onOpen}
+      openTip={t('打开子任务「{title}」', { title })}
+      detailStart
+      detail={
+        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          {agent && <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')}>{agent.name}</span>}
+          <span className={running ? childLabelClass.accent : childLabelClass.subtle}>
+            {running ? t('执行中') : t('排队中')}
+          </span>
+          {jobs.length > 0 && (
+            <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')} title={names}>
+              {jobs.length === 1
+                ? t('后台命令 {name}', { name: jobs[0].name })
+                : t('{n} 条后台命令', { n: jobs.length })}
+            </span>
+          )}
+          {note && (
+            <span className="hidden min-w-0 truncate font-sans text-subtle md:block" title={note}>
+              {note}
+            </span>
+          )}
+        </span>
+      }
+      ms={step.startedAt ? stepMs(step, now) : undefined}
+      action={<StopHelper task={task} step={step} compact />}
+    />
+  )
+}
+
+/**
  * 还在运行的东西统一放在一段回复的总结上面：没收尾的工具调用、后台命令、还在干活的子对话。
  * 不收进过程的折叠，一直转圈，跑完就从这里消失；命令的结果推回来后 AI 会接着处理、重新总结，
  * 新的一段回复上面再按那时的情况列一遍。什么都没在跑时不占位置
@@ -130,12 +191,38 @@ export function RunningNow({
   // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren），
   // 以前这里只认 working 且没标解决，弹层里有、运行区没有，同一个页面对不上数
   const rows = kids ? visibleChildren(children) : []
-  const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0)
-  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length) return null
+  // 对话派出的子任务：和子对话一样，只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
+  // 在跑的排前面，同一组按派出的顺序
+  const helpers = useMemo(() => {
+    if (!kids || !task) return []
+    const steps = chatHelperIds(task)
+      .map((id) => task.steps.find((s) => s.id === id))
+      .filter((s): s is TaskStep => !!s && helperActive(s))
+    return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
+  }, [kids, task])
+  // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
+  const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
+  const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
+  const [win, setWin] = useState('')
+  const { agents } = useData()
+  const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
+  const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0)
+  if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length) return null
   const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
-      {stepJobs.map(({ step, jobs }) => (
+      {task &&
+        helpers.map((s) => (
+          <HelperRow
+            key={s.id}
+            task={task}
+            step={s}
+            jobs={helperJobs.get(s.id) ?? []}
+            now={now}
+            onOpen={() => setWin(s.id)}
+          />
+        ))}
+      {restJobs.map(({ step, jobs }) => (
         <StepJobsRow key={step.id} title={step.title || t('未命名')} jobs={jobs} now={now} />
       ))}
       {ownJobs.map((j) => (
@@ -186,6 +273,7 @@ export function RunningNow({
           />
         )
       })}
+      {task && win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
   )
   if (!indent) return box

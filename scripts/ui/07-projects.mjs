@@ -7,6 +7,9 @@
 import assert from 'node:assert/strict'
 import { runShard } from './harness.mjs'
 
+// 演示数据存在 localStorage 的这个键里（web/src/lib/demo-backend.ts）
+const DEMO_DB_KEY = 'agent-panel-demo-v3'
+
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
@@ -447,5 +450,73 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await createButton().isDisabled()) errors.push('新建项目：目录已经初始化过，「创建」还是不能点')
   await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化', exact: true }).click()
   await check(p, '新建项目-目录已初始化', ['目录已经初始化过', '重新初始化'])
+
+  // 新建项目时 AI 初始化还在跑：收起对话、关掉设置，之后在对话里点「查看推荐并应用」。
+  // 项目已经先创建了的，要回到那个项目应用；还没创建的，草稿（目录）要还在。都不能多出一个同名项目
+  const countAt = (dir) =>
+    p.evaluate(
+      ([key, dir]) =>
+        (JSON.parse(localStorage.getItem(key) ?? '{}').projects ?? []).filter((x) => x.path === dir).length,
+      [DEMO_DB_KEY, dir],
+    )
+  // 浮条默认在右下角，会挡住设置弹窗的「创建」：收起后拖到上面去
+  const minimize = async () => {
+    await p.getByRole('button', { name: '最小化' }).click()
+    const box = await p.getByRole('group', { name: /AI 初始化项目/ }).boundingBox()
+    await p.mouse.move(box.x + 8, box.y + box.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(box.x - 300, 80, { steps: 5 })
+    await p.mouse.up()
+  }
+  const initInBackground = async () => {
+    await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化项目' }).first().click()
+    await minimize()
+  }
+  const finishInit = async (label) => {
+    await p.getByRole('button', { name: '展开' }).click()
+    await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('button')].some(
+            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
+          ),
+        null,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push(`${label}：等不到「查看推荐并应用」`))
+    await p.getByRole('button', { name: '查看推荐并应用' }).click()
+    await p
+      .getByRole('dialog')
+      .getByText('初始化完成')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push(`${label}：应用后没回到「AI 初始化」页`))
+  }
+  await p.getByRole('dialog').getByRole('button', { name: '重新初始化' }).click()
+  await minimize()
+  await createButton().click()
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
+  await finishInit('先创建再应用')
+  if (await createButton().count()) errors.push('先创建再应用：应用时打开的是新建项目，不是刚创建的项目')
+  await p.getByRole('dialog').getByRole('button', { name: '全部应用' }).click()
+  // 按旧的错误行为这里是「创建」：照样点下去，看会不会多出一个项目
+  await p
+    .getByRole('dialog')
+    .getByRole('button', { name: /^(确认|创建)$/ })
+    .click()
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
+  const afterSaved = await countAt('/home/demo/code/lua-helper')
+  if (afterSaved !== 1) errors.push(`先创建再应用：这个目录应该只有一个项目，实际 ${afterSaved} 个`)
+
+  await newProject('/home/demo/Documents')
+  await initInBackground()
   await p.keyboard.press('Escape')
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
+  await finishInit('关掉设置再应用')
+  await check(p, '新建项目-关掉设置后应用', ['初始化完成', '全部应用'])
+  await p.getByRole('dialog').getByRole('button', { name: '全部应用' }).click()
+  await createButton().click()
+  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
+  const afterClosed = await countAt('/home/demo/Documents')
+  if (afterClosed !== 1)
+    errors.push(`关掉设置再应用：这个目录应该只有一个项目（目录要还在草稿里），实际 ${afterClosed} 个`)
 })

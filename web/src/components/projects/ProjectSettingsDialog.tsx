@@ -89,6 +89,8 @@ type AiSession = {
   start?: string
   /** AI 初始化要的目录和扫描线索（Body 关掉后草稿就没了，先存下来） */
   subject?: Record<string, string>
+  /** 在新建项目里开的会话，会话没结束项目就先保存了：结果要应用到这个项目，不能再按新建项目打开 */
+  projectId?: string
 }
 
 /** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
@@ -156,12 +158,21 @@ export function ProjectSettingsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { workflows, agents } = useData()
+  const { openProject } = useNav()
   // AI 会话放在外壳：关掉项目设置时 AssistDialog 不卸载，生成继续跑，最小化的浮条留在屏幕上
   const [ai, setAi] = useState<AiSession | null>(null)
   // Body 挂载时注册「把结果填进表单」；它没挂载（设置关着）时先排队，重新打开后补上
   const applyRef = useRef<ApplyAi | null>(null)
   const queued = useRef<Proposal[]>([])
+  // 新建项目还没保存就关掉了设置：草稿留到下次打开，应用结果时接着用（不然目录、名称都没了）
+  const stash = useRef<ProjectInput | null>(null)
   const apply = (p: Proposal) => {
+    // 会话期间项目已经建好：打开那个项目再应用。按新建项目打开会再建一个同名的
+    if (ai?.projectId && project?.id !== ai.projectId) {
+      queued.current.push(p)
+      openProject(ai.projectId, 'init')
+      return
+    }
     if (applyRef.current) {
       applyRef.current(p)
       return
@@ -174,8 +185,14 @@ export function ProjectSettingsDialog({
   useEffect(() => {
     if (pid.current === project?.id) return
     pid.current = project?.id
+    // 会话里刚建好的项目接着用这份会话
+    if (project?.id && project.id === ai?.projectId) return
     setAi(null)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id])
+  useEffect(() => {
+    if (!ai) stash.current = null
+  }, [ai])
   const aiWorkflow = ai?.workflowId ? workflows.find((w) => w.id === ai.workflowId) : undefined
   return (
     <>
@@ -196,8 +213,10 @@ export function ProjectSettingsDialog({
                 item={item}
                 ai={ai}
                 onAssist={setAi}
+                onCreated={(id) => setAi((s) => (s ? { ...s, projectId: id } : s))}
                 applyRef={applyRef}
                 queued={queued}
+                stash={stash}
                 onClose={() => onOpenChange(false)}
               />
             )}
@@ -230,8 +249,10 @@ function Body({
   item,
   ai,
   onAssist,
+  onCreated,
   applyRef,
   queued,
+  stash,
   onClose,
 }: {
   project?: Project
@@ -240,9 +261,13 @@ function Body({
   /** 这次打开设置时的 AI 会话（外壳持有，关掉设置也不丢） */
   ai: AiSession | null
   onAssist: (s: AiSession) => void
+  /** 新建的项目保存好了（会话要跟着这个项目走） */
+  onCreated: (id: string) => void
   /** 应用函数和排队的结果由外壳持有，设置重新打开后要接得上 */
   applyRef: { current: ApplyAi | null }
   queued: { current: Proposal[] }
+  /** 新建项目时会话还在跑就关掉设置，草稿暂存在这里 */
+  stash: { current: ProjectInput | null }
   onClose: () => void
 }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
@@ -250,8 +275,22 @@ function Body({
   const [draft, setDraft] = useState<ProjectInput>(() =>
     project
       ? toInput(project)
-      : // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
-        { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' },
+      : (stash.current ??
+          // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
+          { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' }),
+  )
+  // 新建项目时 AI 会话还在跑就关掉了：草稿留给下次打开
+  const draftNow = useRef(draft)
+  draftNow.current = draft
+  const created = useRef(false)
+  const keep = useRef(false)
+  keep.current = !project && !!ai && !created.current
+  useEffect(
+    () => () => {
+      if (keep.current) stash.current = draftNow.current
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [],
   )
   // 页面上的项目列表是启动时读的：对话里的角色后来用 record_lesson 记的教训不在里面。
   // 打开时重新读一次，把新记的教训补进草稿，教训页才看得到，保存时也不会把它们盖掉
@@ -499,6 +538,10 @@ function Body({
       } else {
         const p = await api.createProject(input)
         setProjects((ps) => [...ps, p])
+        created.current = true
+        keep.current = false
+        stash.current = null
+        onCreated(p.id)
         go({ page: 'projects', id: p.id })
       }
       onClose()
