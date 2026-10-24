@@ -951,6 +951,8 @@ export interface ChildEntry {
   stopReason?: StopReason
   /** 最后有动静的时间（见 childLastActivity）：超时没新输出时标黄 / 标红 */
   lastActivityAt?: string
+  /** 面板以父对话的名义自动问过它状态、在等回复（见 childIdleAsk / childAutoAskWaiting） */
+  autoAsk?: { at: string; count: number; held?: boolean }
   /** 这会儿在等什么（见 childWait）：不是在跑也不是卡住 */
   waiting?: ChildWait
 }
@@ -1124,6 +1126,69 @@ export function childStale(
   if (idle >= CHILD_STALE_MS) return 'stale'
   if (idle >= CHILD_SLOW_MS) return 'slow'
   return ''
+}
+
+/**
+ * 子对话多久没有输出就自动问它状态：阈值、上限和判定都写在这里，定时器只拿结论执行。
+ * 只问还在执行的子对话；等用户、等后台命令、等工作流、等子任务这类能解释的等待不问
+ * （那时候没输出是正常的）。上一次询问本身会刷新子对话的最后活动时间，所以从询问时间往后算静默；
+ * 子对话回了话（lastActivityAt 晚于上一次询问）时次数清零，重新从阈值开始。
+ */
+export const CHILD_IDLE_ASK_MAX = 3
+
+export interface ChildIdleAskDecision {
+  ask: boolean
+  /** 不问的原因：off 关闭、not-running 没在执行、waiting 在等能解释的东西、too-soon 没到阈值、limit 问够了 */
+  reason?: 'off' | 'not-running' | 'waiting' | 'too-soon' | 'limit'
+  /** 已经静默了多久（毫秒） */
+  idleMs: number
+  /** 这一次问过之后是这一轮静默里的第几次；不问时是现在的次数 */
+  count: number
+}
+
+export function childIdleAsk(
+  x: {
+    /** 设置里的分钟数，0 关闭 */
+    minutes: number
+    working?: boolean
+    lastActivityAt?: string
+    /** 能解释的等待（见 childWait）：等用户、等后台命令、等工作流、等子任务时不问 */
+    wait?: ChildWait
+    /** 上一次自动询问的记录 */
+    autoAsk?: { at: string; count: number }
+    /** 一分钟多少毫秒：测试里缩短时间用，默认 60 秒 */
+    unitMs?: number
+  },
+  now = Date.now(),
+): ChildIdleAskDecision {
+  if (x.minutes <= 0) return { ask: false, reason: 'off', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (!x.working) return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (x.wait && x.wait.kind !== 'next')
+    return { ask: false, reason: 'waiting', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
+  if (!Number.isFinite(last)) return { ask: false, reason: 'too-soon', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  const asked = x.autoAsk ? Date.parse(x.autoAsk.at) : NaN
+  // 询问自己的那条消息也在 messages 里：从它之后继续算静默，否则每次问完都会重新等满一轮
+  const since = Number.isFinite(asked) ? Math.max(last, asked) : last
+  const idleMs = Math.max(0, now - since)
+  // 问过之后子对话有了新的输出：重新从 0 次算
+  const count = Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
+  if (idleMs < x.minutes * (x.unitMs ?? 60_000)) return { ask: false, reason: 'too-soon', idleMs, count }
+  if (count >= CHILD_IDLE_ASK_MAX) return { ask: false, reason: 'limit', idleMs, count }
+  return { ask: true, idleMs, count: count + 1 }
+}
+
+/** 自动问过状态、之后还没有新的输出：子对话栏写「已自动询问，等回复」，父对话不用再问一遍 */
+export function childAutoAskWaiting(x: {
+  autoAsk?: { at: string; count: number; held?: boolean }
+  lastActivityAt?: string
+}) {
+  // 没交出去的那次已经从队列里撤掉了，不在等回复
+  if (!x.autoAsk?.at || x.autoAsk.held) return false
+  const asked = Date.parse(x.autoAsk.at)
+  if (!Number.isFinite(asked)) return false
+  const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
+  return !Number.isFinite(last) || last <= asked
 }
 
 /** 子对话列表里状态分类的先后：要你处理的在最上面，然后执行中、未完成、做完的、停下的 */

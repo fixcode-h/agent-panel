@@ -6,6 +6,7 @@
 import { t } from '@shared/i18n'
 import {
   resumable,
+  childAutoAskWaiting,
   childIcon,
   childStale,
   childState,
@@ -43,6 +44,12 @@ export function childNote(c: ChildSummary, running: boolean) {
  */
 export function staleLine(c: ChildSummary) {
   const level = childStale({ working: c.working, wait: c.waiting, lastActivityAt: c.lastActivityAt })
+  // 面板已经自动问过、还没有回复：说清在等它回；静默太久（红色）时仍按可能卡住提醒，
+  // 不能让「等回复」把红色提示顶掉（见 shared/task.ts 的 childIdleAsk）
+  if (childAutoAskWaiting(c)) {
+    if (level === 'stale') return { text: t('已自动询问，仍没有新输出'), cls: 'text-danger' }
+    return { text: t('已自动询问，等回复'), cls: 'text-accent' }
+  }
   if (!level || !c.lastActivityAt) return undefined
   const mins = Math.max(1, Math.round((Date.now() - Date.parse(c.lastActivityAt)) / 60000))
   return { text: t('已 {n} 分钟没有新输出', { n: mins }), cls: level === 'stale' ? 'text-danger' : 'text-warning' }
