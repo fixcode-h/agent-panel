@@ -80,7 +80,7 @@ export const RETIRED_BUNDLED: Record<string, Record<string, string>> = {
   'ue/ue-multi-agent-coordination': {
     'SKILL.md': '12cfcf5a1f554b11e11ebd37de04befee5c3dd7895f8f74ada486c694c70585e',
   },
-  // .luac 只由项目测试步骤里的编译生成，不再单独带一份编译技能
+  // Lua 只做语法检查，不编译成 .luac，不再单独带一份编译技能
   'ue/lua-luac-compiler': {
     'SKILL.md': '5ff4623b346db832f5142bb4534321c8ce6548f4686db0569e62f6e965732c49',
     'scripts/check_lua_syntax.py': '23376e1d476162a1ad8bed2c4c2814dda03e98fc317c927489d85e9a91a22acc',

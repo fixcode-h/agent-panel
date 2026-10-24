@@ -31,7 +31,7 @@ docs/adr/NNNN-短横线-英文名.md
 ```
 
 - `NNNN` 四位序号，从 `0001` 起，按提交顺序递增，**不复用、不重排**。删掉的号空着。
-- 英文名用 kebab-case，2～5 个词，说清主题：`0002-child-conversation-isolation.md`、`0003-luac-not-encryption.md`。
+- 英文名用 kebab-case，2～5 个词，说清主题：`0002-child-merge-on-done.md`、`0003-child-complete-before-recycle.md`。
 - 中文标题写在文件第一行 `# ADR NNNN：中文标题`，文件名不用中文（避免 Windows 和 CI 上的编码问题）。
 
 ## 一条怎么写

@@ -146,7 +146,7 @@ export function defaultTestSteps(
       }),
       step('ue-lua', t('Lua 语法检查'), 'luac -p <文件>', {
         quick: true,
-        note: t('有 Lua 改动时执行；按项目实际用的 Lua 版本换命令'),
+        note: t('有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令'),
       }),
       step(
         'ue-automation',

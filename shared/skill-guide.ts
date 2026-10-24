@@ -31,7 +31,7 @@ const GUIDE: Record<string, string> = {
 export const RETIRED_SKILLS = new Set([
   // UE 编译统一由父对话申请执行，资源锁和编译排队由面板管，不再需要这份协调规则
   'ue-multi-agent-coordination',
-  // .luac 只由项目测试步骤里的编译生成
+  // Lua 只做语法检查（luac -p），不编译成 .luac，不再单独带一份字节码编译技能
   'lua-luac-compiler',
 ])
 

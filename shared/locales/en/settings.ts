@@ -57,8 +57,8 @@ export const EN_SETTINGS: Record<string, string> = {
   按项目所在系统和命令自己选择执行环境: 'Pick the environment from the system and the command',
   '同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字':
     'Compile one at a time; replace <Target> and <.uproject> with the real names in the project',
-  '有 Lua 改动时执行；按项目实际用的 Lua 版本换命令':
-    'Runs when Lua changed; adjust the command for the Lua version the project uses',
+  '有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令':
+    'Runs when Lua changed; syntax check only, no .luac output; adjust the command for the Lua version the project uses',
   '可选；需要 Editor 的验证登记为延期验证':
     'Optional; checks that need the Editor are registered as deferred verification',
   编译: 'Compile',
