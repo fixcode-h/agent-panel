@@ -290,7 +290,7 @@ test('报告：用户要求不截断、失败工具单独统计、改动按节�
   assert.match(report, /失败详情：[\s\S]*FAIL 3 tests/, '失败工具带输出，能看原因')
   assert.match(report, /\*\*用户\*\*：\d{2}:\d{2}:\d{2} ## 约束/, '用户消息带时间')
   assert.match(report, /\*\*AI（开发）\*\*：\d{2}:\d{2}:\d{2} 跑了一下/, 'AI 回复带时间')
-  assert.match(report, /距上一条 15m0s/, '间隔大的单独提示，能看出等待在哪')
+  assert.match(report, /距上一条 15m 0s/, '间隔大的单独提示，能看出等待在哪')
   assert.match(report, /轮次：用户消息 2 条，分成 0 轮执行（这条记录没有分轮信息/, '轮数的口径写清楚')
   assert.match(report, /用户发言时间：\d{2}:\d{2}、\d{2}:\d{2}/, '列出每条用户消息的时间')
   assert.match(report, /## 改动的文件（按节点记录）/, '改动按节点列')
@@ -298,7 +298,7 @@ test('报告：用户要求不截断、失败工具单独统计、改动按节�
   assert.ok(!/## 改动的文件\n/.test(report), '不再用任务级差额冒充本任务的产出')
 })
 
-/** 两轮各执行 10 分钟、中间空了 2 小时 20 分：跨度 2h40m，执行 20m，空闲 2h20m */
+/** 两轮各执行 10 分钟、中间空了 2 小时 20 分：跨度 2h 40m，执行 20m 0s，空闲 2h 20m */
 function twoRounds() {
   const from = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, waitMs: 0 }
   return Task.parse({
@@ -342,7 +342,7 @@ test('统计：跨度里没有归属的空档算空闲，轮次和用户消息�
   assert.equal(s.asks, 2, '用户消息条数从记录里数，和轮次分开写')
   assert.equal(s.turns, 2)
   const report = taskReport(exportTask(rec, [coder]))
-  assert.match(report, /跨度 2h40m：执行 20m0s，等用户 0s，空闲 2h20m/)
+  assert.match(report, /跨度 2h 40m：执行 20m 0s，等用户 0s，空闲 2h 20m/)
   assert.match(report, /轮次：用户消息 2 条，分成 2 轮执行/)
 })
 
@@ -353,7 +353,7 @@ test('旧导出没有跨度和空闲字段：按记录现算，不写 NaN', () =
     stats: { durationMs: 20 * 60_000, waitMs: 0, turns: 1, turnsUnfinished: 0 },
   } as Parameters<typeof taskReport>[0]
   const report = taskReport(old)
-  assert.match(report, /跨度 2h40m：执行 20m0s，等用户 0s，空闲 2h20m/)
+  assert.match(report, /跨度 2h 40m：执行 20m 0s，等用户 0s，空闲 2h 20m/)
   assert.match(report, /轮次：用户消息 2 条，分成 1 轮执行/)
   assert.ok(!report.includes('NaN'), '旧数据不把 NaN 交给用户')
 })

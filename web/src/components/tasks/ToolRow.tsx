@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { fmtSecs, toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { fmtDuration, toolVerb, toolView, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useChildOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
@@ -203,7 +203,6 @@ export function RowShell({
   titleClass,
   detail,
   ms,
-  msFormat,
   open,
   onToggle,
   onOpen,
@@ -223,8 +222,6 @@ export function RowShell({
   detail?: React.ReactNode
   /** 跑了多久（毫秒）：显示在最右边，还在跑的每秒更新 */
   ms?: number
-  /** 改成别的写法：工具调用用精确到两位小数的 1.23s，子对话这种跑得久的用「2 分 47 秒」 */
-  msFormat?: (ms: number) => string
   open: boolean
   /** 不给就不能展开（没有可看的内容），点哪里都不动 */
   onToggle?: () => void
@@ -293,7 +290,7 @@ export function RowShell({
           ) : null}
         </span>
         {detail}
-        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{(msFormat ?? fmtSecs)(ms)}</span>}
+        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
         {toggle && (
           <ChevronRight
             className={cn(

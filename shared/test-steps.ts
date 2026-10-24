@@ -1,5 +1,6 @@
 import { TEST_STEP_ENVS, type TestStep } from './schema.ts'
 import { t } from './i18n.ts'
+import { fmtDuration } from './duration.ts'
 
 /**
  * 项目级测试步骤：项目设置里维护，新建对话时快照进任务，测试 Agent 按它执行。
@@ -62,7 +63,7 @@ export function testStepsText(steps: TestStep[], platform: string, wslDistro = '
       ]
       if (s.cwd) lines.push(`   - 工作目录：${s.cwd}（相对项目根）`)
       if (s.when) lines.push(`   - 执行条件：${s.when}`)
-      if (s.timeoutSec) lines.push(`   - 超时：${s.timeoutSec} 秒`)
+      if (s.timeoutSec) lines.push(`   - 超时：${fmtDuration(s.timeoutSec * 1000)}`)
       if (s.note) lines.push(`   - 说明：${s.note}`)
       const note = envNote(s, platform)
       if (note) lines.push(`   - 环境：${note}`)

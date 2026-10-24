@@ -2,6 +2,7 @@ import type { PeerKind, Task, TaskStatus, TaskStep, ToolUse } from '@shared/sche
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
+import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
 import { PANEL_TOOL_NAMES } from '@shared/panel-tools'
@@ -394,17 +395,8 @@ export function plainLine(text: string, last = false) {
   return (last ? lines.at(-1) : lines[0]) ?? ''
 }
 
-/** 一次操作的耗时：秒，保留两位小数，例如 1.23s */
-export function fmtSecs(ms: number) {
-  return `${(Math.max(0, ms) / 1000).toFixed(2)}s`
-}
-
-export function fmtDuration(ms: number) {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return t('{s} 秒', { s })
-  if (s < 3600) return t('{m} 分 {s} 秒', { m: Math.floor(s / 60), s: String(s % 60).padStart(2, '0') })
-  return t('{h} 小时 {m} 分', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
-}
+/** 耗时：实现在 shared/duration（界面、报告、后台命令文案共用同一处），这里只转出去 */
+export { fmtDuration }
 
 export function stepDuration(
   step: { startedAt: string; endedAt: string; status: string; spentMs?: number },

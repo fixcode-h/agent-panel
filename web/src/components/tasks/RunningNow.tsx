@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, ToolUse } from '@shared/schema'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, fmtSecs } from '@/lib/tasks'
 import { RowShell, ToolRow } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
 import { t } from '@shared/i18n'
@@ -12,9 +11,6 @@ export const runningTools = (msgs: { role: string; tools: ToolUse[] }[]) =>
   msgs.flatMap((m) => (m.role === 'agent' ? m.tools.filter((x) => x.running) : []))
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-
-/** 子对话的时长：不到 1 秒和工具行一样写 0.83s，再长换成「2 分 47 秒」这种好读的写法 */
-const childTime = (ms: number) => (ms < 1000 ? fmtSecs(ms) : fmtDuration(ms))
 
 /**
  * 子对话这一行右边显示的时长：还在干活就走到现在（每秒刷新）；
@@ -93,7 +89,6 @@ export function RunningNow({
           verb={t('子对话')}
           title={k.title || t('未命名')}
           ms={childMs(k, now)}
-          msFormat={childTime}
           open={false}
           onOpen={openChild ? () => openChild(k.id) : undefined}
           openTip={t('在右侧打开子对话')}
