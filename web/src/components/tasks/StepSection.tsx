@@ -28,7 +28,8 @@ function runs(msgs: TaskMessage[]) {
   const out: { step: string; user: boolean; msgs: TaskMessage[] }[] = []
   for (const m of msgs) {
     const last = out.at(-1)
-    const user = m.role === 'user'
+    // 父对话交代的话 role 也是 user：画成「接收消息」，跟着节点输出走
+    const user = m.role === 'user' && !m.peer
     if (last && last.step === m.step && last.user === user) last.msgs.push(m)
     else out.push({ step: m.step, user, msgs: [m] })
   }

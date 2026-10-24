@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Bot,
   Box,
   Bug,
   Check,
+  ChevronDown,
   ChevronRight,
   Code2,
   Copy,
@@ -73,6 +74,16 @@ const issueText = (f: CodeIssue) =>
 const changeText = (r: ResolvedChange) =>
   [`## ${r.field}（${r.scope}）`, r.change.reason, r.after ? `改成：\n${r.after}` : ''].filter(Boolean).join('\n\n')
 
+/** 整份分析结果写成的文字：摘要、代码问题、优化建议，标题行的复制和引用用它 */
+const resultText = (evo: { summary?: string; issues: CodeIssue[] }, rows: ResolvedChange[]) =>
+  [
+    evo.summary ?? '',
+    evo.issues.length ? `# 代码问题\n\n${evo.issues.map(issueText).join('\n\n')}` : '',
+    rows.length ? `# 优化建议\n\n${rows.map(changeText).join('\n\n')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
 /** 修复子对话的标题：同一条问题再进来时按标题认出已经开过的子对话 */
 const fixTitle = (f: CodeIssue) => `修复：${f.title || f.detail.split('\n')[0]}`.slice(0, 80)
 const sourceTitle = (r: ResolvedChange) => `写进源代码：${r.scope} · ${r.field}`.slice(0, 80)
@@ -124,7 +135,7 @@ const itemAction =
 const rowButton = 'h-7 px-2 text-xs'
 
 /** 每条结果后面的两个小按钮：引用到输入框（接着和 AI 讨论这一条）、复制 */
-function ItemActions({ text }: { text: () => string }) {
+function ItemActions({ text, stop }: { text: () => string; stop?: boolean }) {
   return (
     <span className="flex shrink-0 items-center">
       <button
@@ -133,6 +144,8 @@ function ItemActions({ text }: { text: () => string }) {
         title={t('引用到输入框')}
         aria-label={t('引用')}
         onClick={(e) => {
+          // 放在能点开收起的标题行里时不要顺带切换
+          if (stop) e.stopPropagation()
           if (!quoteFrom(e.currentTarget, text())) toast(t('这里没有可以引用到的输入框'))
         }}
       >
@@ -143,7 +156,10 @@ function ItemActions({ text }: { text: () => string }) {
         className={itemAction}
         title={t('复制')}
         aria-label={t('复制')}
-        onClick={() => copyText(text())}
+        onClick={(e) => {
+          if (stop) e.stopPropagation()
+          copyText(text())
+        }}
       >
         <Copy className="h-3.5 w-3.5" />
       </button>
@@ -355,14 +371,31 @@ export function EvolutionCard({
 }) {
   const { workflows, agents, setWorkflows, setAgents } = useData()
   const openChild = useChildOpen()
-  const hit = useMemo(
-    () =>
-      // 分析对话回复完 CLI 往往还连着等下一句：不在处理这一轮就画出来，不等进程结束
-      task.mode === 'chat' && !(task.status === 'running' && task.working)
-        ? [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.includes('```' + EVOLUTION_LANG))
-        : undefined,
-    [task],
+  const hit = useMemo(() => {
+    if (task.mode !== 'chat') return undefined
+    // 分析对话回复完 CLI 往往还连着等下一句：不在处理这一轮就画出来，不等进程结束。
+    // 正在回复时只看最后一条用户消息之前的：结果固定在输入框上方，接着追问时还留着（折叠），正在写的那条没写完不解析
+    const msgs = task.messages
+    let end = msgs.length
+    if (task.status === 'running' && task.working) while (end > 0 && msgs[end - 1].role !== 'user') end--
+    for (let i = end - 1; i >= 0; i--)
+      if (msgs[i].role === 'agent' && msgs[i].text.includes('```' + EVOLUTION_LANG)) return msgs[i]
+    return undefined
+  }, [task])
+  // 用户发了新内容就收起来，把位置让给对话；有了新的分析结果再展开。
+  // 打开对话时结果之后已经有用户消息的，一开始就是收起的
+  const userCount = task.messages.filter((m) => m.role === 'user').length
+  const hitId = hit?.id ?? ''
+  const [open, setOpen] = useState(
+    () => !hit || !task.messages.slice(task.messages.indexOf(hit) + 1).some((m) => m.role === 'user'),
   )
+  const seen = useRef({ userCount, hitId })
+  useEffect(() => {
+    const prev = seen.current
+    seen.current = { userCount, hitId }
+    if (hitId && hitId !== prev.hitId && prev.hitId) setOpen(true)
+    else if (userCount > prev.userCount) setOpen(false)
+  }, [userCount, hitId])
   const evo = useMemo(() => (hit ? parseEvolution(hit.text) : null), [hit])
   const rows = useMemo(
     () => evo?.changes.map((c) => resolveChange(c, workflows, agents)) ?? [],
@@ -467,123 +500,169 @@ export function EvolutionCard({
   const flowRows = rows.filter((r) => r.change.target !== 'agent')
   const allIssues = () => evo.issues.map(issueText).join('\n\n')
 
+  const quote = (e: React.MouseEvent<HTMLElement>, text: string) => {
+    e.stopPropagation()
+    if (!quoteFrom(e.currentTarget, text)) toast(t('这里没有可以引用到的输入框'))
+  }
+  const copy = (e: React.MouseEvent<HTMLElement>, text: string) => {
+    e.stopPropagation()
+    copyText(text)
+  }
+  const sectionActions = (text: () => string) => (
+    <>
+      <button type="button" onClick={(e) => quote(e, text())} className={headButton}>
+        <Quote className="h-3.5 w-3.5" />
+        {t('全部引用')}
+      </button>
+      <button type="button" onClick={(e) => copy(e, text())} className={headButton}>
+        <Copy className="h-3.5 w-3.5" />
+        {t('复制')}
+      </button>
+    </>
+  )
+
   return (
     <section
       aria-label={t('分析结果')}
-      className="overflow-hidden rounded-xl border border-line-strong bg-card shadow-card"
+      className="mx-auto mb-2 flex max-h-[50vh] max-w-(--content-w) flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-card"
     >
-      <header className="flex items-start gap-3 px-4 py-3.5">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-          <Sparkles className="h-4 w-4" />
+      {/* 固定在输入框上方：标题行点一下展开收起；收起时只剩这一行，摘要截成一行 */}
+      <header
+        className={cn('flex shrink-0 cursor-pointer items-start gap-3 px-4', open ? 'py-3.5' : 'py-2')}
+        onClick={() => setOpen(!open)}
+      >
+        <span
+          className={cn(
+            'grid shrink-0 place-items-center rounded-lg bg-accent-soft text-accent',
+            open ? 'h-8 w-8' : 'h-6 w-6',
+          )}
+        >
+          <Sparkles className={open ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
         </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className={cn('flex min-w-0 flex-1 gap-1', open ? 'flex-col' : 'items-center self-center')}>
+          <div className={cn('flex items-center gap-x-2 gap-y-1', open ? 'flex-wrap' : 'shrink-0')}>
             <h3 className="text-[0.875rem] font-semibold">{t('分析结果')}</h3>
             {evo.issues.length > 0 && <Badge tone="warning">{t('{n} 个代码问题', { n: evo.issues.length })}</Badge>}
             {evo.changes.length > 0 && <Badge tone="accent">{t('{n} 项优化建议', { n: evo.changes.length })}</Badge>}
           </div>
-          {evo.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>}
+          {evo.summary &&
+            (open ? (
+              <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>
+            ) : (
+              <span className="ml-1 min-w-0 truncate text-[0.8125rem] text-subtle">{evo.summary}</span>
+            ))}
         </div>
+        <span className={cn('flex shrink-0 items-center text-xs text-subtle', open ? '' : 'self-center')}>
+          <ItemActions text={() => resultText(evo, rows)} stop />
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? t('收起分析结果') : t('展开分析结果')}
+            title={open ? t('收起分析结果') : t('展开分析结果')}
+            className={itemAction}
+            onClick={(e) => {
+              e.stopPropagation()
+              setOpen(!open)
+            }}
+          >
+            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && 'rotate-180')} />
+          </button>
+        </span>
       </header>
-      {evo.issues.length > 0 && (
-        <div className="border-t">
-          <SectionHead icon={Bug} title={t('代码问题')} count={evo.issues.length}>
-            <button
-              type="button"
-              onClick={(e) => {
-                if (!quoteFrom(e.currentTarget, allIssues())) toast(t('这里没有可以引用到的输入框'))
-              }}
-              className={headButton}
-            >
-              <Quote className="h-3.5 w-3.5" />
-              {t('全部引用')}
-            </button>
-            <button type="button" onClick={() => copyText(allIssues())} className={headButton}>
-              <Copy className="h-3.5 w-3.5" />
-              {t('复制')}
-            </button>
-          </SectionHead>
-          {issueGroups(evo.issues).map((g) => (
-            <div key={`${g.scope}:${g.name}`} className="pb-1">
-              <div className="flex items-center gap-2 px-4 pt-2 pb-1">
-                <span className="text-[0.78125rem] font-medium">{g.name}</span>
-                {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
-                <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
-              </div>
-              <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-field/40">
-                {g.items.map((f, i) => {
-                  // 面板框架的问题只能在面板自己的源代码里修
-                  const blocked = f.scope === 'panel' && !panelSource
-                  return (
-                    <li key={i} className="flex items-start gap-3 px-3 py-2.5">
-                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                      <div className="flex min-w-0 flex-1 flex-col gap-1">
-                        {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
-                        {f.detail && (
-                          <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">
-                            {f.detail}
+      {open && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {evo.issues.length > 0 && (
+            <div className="border-t">
+              <SectionHead icon={Bug} title={t('代码问题')} count={evo.issues.length}>
+                {sectionActions(allIssues)}
+              </SectionHead>
+              {issueGroups(evo.issues).map((g) => (
+                <div key={`${g.scope}:${g.name}`} className="pb-1">
+                  <div className="flex items-center gap-2 px-4 pt-2 pb-1">
+                    <span className="text-[0.78125rem] font-medium">{g.name}</span>
+                    {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
+                    <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
+                  </div>
+                  <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-field/40">
+                    {g.items.map((f, i) => {
+                      // 面板框架的问题只能在面板自己的源代码里修
+                      const blocked = f.scope === 'panel' && !panelSource
+                      return (
+                        <li key={i} className="flex items-start gap-3 px-3 py-2.5">
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                          <div className="flex min-w-0 flex-1 flex-col gap-1">
+                            {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
+                            {f.detail && (
+                              <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">
+                                {f.detail}
+                              </span>
+                            )}
+                            {f.files.length > 0 && (
+                              <span className="mt-0.5 flex flex-wrap gap-1.5">
+                                {f.files.map((x) => (
+                                  <code
+                                    key={x}
+                                    className="rounded-md border bg-card px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle"
+                                  >
+                                    {x}
+                                  </code>
+                                ))}
+                              </span>
+                            )}
+                          </div>
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            <ItemActions text={() => issueText(f)} />
+                            {canSpawn && (
+                              <ChildButton
+                                title={fixTitle(f)}
+                                label={t('修复')}
+                                icon={Wrench}
+                                child={childOf(fixTitle(f))}
+                                disabled={blocked}
+                                tip={
+                                  blocked
+                                    ? t('面板框架的问题要在 agent-panel 源代码项目里修')
+                                    : t('开一个子对话来修这个问题')
+                                }
+                                onStart={() => spawn(fixTitle(f), fixPrompt(f))}
+                              />
+                            )}
                           </span>
-                        )}
-                        {f.files.length > 0 && (
-                          <span className="mt-0.5 flex flex-wrap gap-1.5">
-                            {f.files.map((x) => (
-                              <code
-                                key={x}
-                                className="rounded-md border bg-card px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle"
-                              >
-                                {x}
-                              </code>
-                            ))}
-                          </span>
-                        )}
-                      </div>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        <ItemActions text={() => issueText(f)} />
-                        {canSpawn && (
-                          <ChildButton
-                            title={fixTitle(f)}
-                            label={t('修复')}
-                            icon={Wrench}
-                            child={childOf(fixTitle(f))}
-                            disabled={blocked}
-                            tip={
-                              blocked
-                                ? t('面板框架的问题要在 agent-panel 源代码项目里修')
-                                : t('开一个子对话来修这个问题')
-                            }
-                            onStart={() => spawn(fixTitle(f), fixPrompt(f))}
-                          />
-                        )}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      {roleRows.length > 0 && (
-        <div className="border-t">
-          <SectionHead icon={Bot} title={t('角色优化')} count={roleRows.length} />
-          {changeList(roleRows)}
-        </div>
-      )}
-      {flowRows.length > 0 && (
-        <div className="border-t">
-          <SectionHead icon={Workflow} title={t('工作流优化')} count={flowRows.length} />
-          {changeList(flowRows)}
-        </div>
-      )}
-      {pending.length > 1 && (
-        <div className="flex items-center gap-3 border-t bg-field/50 px-4 py-2.5">
-          <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
-          </span>
-          <Button size="sm" disabled={busy} onClick={() => apply(pending)}>
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {t('全部应用（{n} 项）', { n: pending.length })}
-          </Button>
+          )}
+          {roleRows.length > 0 && (
+            <div className="border-t">
+              <SectionHead icon={Bot} title={t('角色优化')} count={roleRows.length}>
+                {sectionActions(() => roleRows.map(changeText).join('\n\n'))}
+              </SectionHead>
+              {changeList(roleRows)}
+            </div>
+          )}
+          {flowRows.length > 0 && (
+            <div className="border-t">
+              <SectionHead icon={Workflow} title={t('工作流优化')} count={flowRows.length}>
+                {sectionActions(() => flowRows.map(changeText).join('\n\n'))}
+              </SectionHead>
+              {changeList(flowRows)}
+            </div>
+          )}
+          {pending.length > 1 && (
+            <div className="flex items-center gap-3 border-t bg-field/50 px-4 py-2.5">
+              <span className="min-w-0 flex-1 text-xs text-subtle">
+                {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
+              </span>
+              <Button size="sm" disabled={busy} onClick={() => apply(pending)}>
+                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {t('全部应用（{n} 项）', { n: pending.length })}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </section>

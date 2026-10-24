@@ -20,8 +20,18 @@ export interface BgJob {
   exclusive: boolean
   state: 'queued' | 'running' | 'done' | 'failed' | 'stopped'
   code: number | null
+  /** 交给面板的时间：排队也算在等结果的时间里 */
+  createdAt: string
   startedAt: string
   endedAt: string
+  /** 最后一次有输出（stdout 或 stderr）的时间：太久没输出要提醒对话，可能卡住了 */
+  lastOutputAt: string
+  /** 已经提醒过对话「很久没输出」：同一段沉默只提醒一次，有了新输出再重新计 */
+  stalled?: boolean
+  /** 这条命令最多跑多久（毫秒）：到点面板停掉它，结果照常推回 */
+  timeoutMs: number
+  /** 下一次「跑了很久，看一眼」的时间点（从开始跑算的毫秒数），见 CHECK_FIRST_MS */
+  nextCheckMs?: number
   /** 最近的输出（只留结尾） */
   lines: string[]
   /** 跑的期间工作目录里的文件变了：结果可能已经不准 */
@@ -30,8 +40,10 @@ export interface BgJob {
   env?: { key: string; value: string }[]
 }
 
-/** 没有限时的后台命令最多跑多久 */
-const MAX_MS = 2 * 3600_000
+/** 没写限时的后台命令最多跑多久 */
+const DEFAULT_TIMEOUT_MS = 2 * 3600_000
+/** 限时最多能写多长：再长的事（等发布、长时间压测）也不该无人看管地挂着 */
+export const MAX_TIMEOUT_MS = 8 * 3600_000
 const KEEP_LINES = 300
 /** 每个对话最多留多少条记录（做完的旧记录丢掉） */
 const KEEP_JOBS = 20
@@ -46,6 +58,47 @@ const KILL_GRACE_MS = 8000
  * 面板和整台机器一起卡住。超过上限的照样马上返回、记成排队，前面的跑完一条就开始
  */
 const MAX_RUNNING = 16
+/**
+ * 跑着的命令多久没有任何输出就提醒发起的对话：命令卡住（下载完了却不退出、等输入）时，
+ * 对话不能一直以为它还在正常跑，要看一眼、必要时停掉重跑。只提醒，不替它停
+ */
+const STALL_MS = 10 * 60_000
+/**
+ * 跑得久的命令（就算一直有输出）到这些时间点提醒对话看一眼进度：第一次 15 分钟，之后每次翻倍（30、60、120 分钟……）。
+ * 一直在刷输出的死循环、重试不停的下载不会被「没输出」认出来，靠这个让对话主动检查；翻倍是为了正常的长编译不被反复打扰
+ */
+const CHECK_FIRST_MS = 15 * 60_000
+
+const STATE_TEXT: Record<BgJob['state'], string> = {
+  queued: '排队中',
+  running: '运行中',
+  done: '成功',
+  failed: '失败',
+  stopped: '已停止',
+}
+
+/** 用时的说法：不到一分钟写秒，再长写「几分几秒」 */
+function fmtSecs(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} 秒`
+  const m = Math.floor(s / 60)
+  return m < 60 ? `${m} 分 ${s % 60} 秒` : `${Math.floor(m / 60)} 小时 ${m % 60} 分`
+}
+
+/** 真正的用时：从开始跑到结束；没跑起来（排队时被停）就从交给面板算 */
+export const jobMs = (j: BgJob) => Math.max(0, Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))
+
+function headText(j: BgJob) {
+  return j.state === 'stopped'
+    ? `后台命令「${j.name}」被停止了（跑了 ${fmtSecs(jobMs(j))}）`
+    : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${fmtSecs(jobMs(j))}）`
+}
+
+/** 对话里发起这条命令的那一行工具调用跑完后显示什么：结果和输出结尾 */
+export function jobOutput(j: BgJob) {
+  const tail = j.lines.join('\n').slice(-6000)
+  return `${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${tail ? `\n\n${tail}` : ''}`
+}
 
 /**
  * 兜底计时用的定时器。默认是真实的 setTimeout；测试换成可控的假时钟，推进时间就能到点，
@@ -94,6 +147,17 @@ export function createBackground(
     run?: typeof runShellIn
     killGraceMs?: number
     timers?: BgTimers
+    /**
+     * 每条命令置终态时（成功、失败、被停止都算）：对话里发起它的那一行工具调用要换成真实的用时和结果，
+     * 不然界面上一直是交出去那一刻的「完成 0.09s」
+     */
+    onSettle?: (job: BgJob) => void
+    /** 跑着的命令要对话看一眼：太久没有输出（见 STALL_MS）、跑了很久（见 CHECK_FIRST_MS） */
+    onNotice?: (job: BgJob, text: string) => void
+    stallMs?: number
+    checkFirstMs?: number
+    /** 测试用：现在的时间（配合假时钟） */
+    now?: () => number
     /** 同时跑的上限：每次排名额时重新取（设置里改了马上生效） */
     maxRunning?: number | (() => number | Promise<number>)
   } = {},
@@ -101,6 +165,10 @@ export function createBackground(
   const runShell = deps.run ?? runShellIn
   const killGraceMs = deps.killGraceMs ?? KILL_GRACE_MS
   const timers = deps.timers ?? realTimers
+  const stallMs = deps.stallMs ?? STALL_MS
+  const checkFirstMs = deps.checkFirstMs ?? CHECK_FIRST_MS
+  const now = deps.now ?? Date.now
+  const iso = () => new Date(now()).toISOString()
   /** 最近一次取到的上限：排队提示是同步拼的，用它 */
   let maxRunning = typeof deps.maxRunning === 'number' ? deps.maxRunning : MAX_RUNNING
   const limit = async () => {
@@ -125,6 +193,8 @@ export function createBackground(
   const chains = new Map<string, Promise<unknown>>()
   /** 停止后等进程退出的计时（见 armKillGrace） */
   const killTimers = new Map<string, unknown>()
+  /** 盯着「多久没输出」的计时（见 watchStall） */
+  const stallTimers = new Map<string, unknown>()
 
   /**
    * 一次后台命令的终态只从这里定：进程真结束、被停止、启动就失败、等不到进程退出，全走这里。
@@ -136,14 +206,65 @@ export function createBackground(
     j.state = state
     if (info.code !== undefined) j.code = info.code
     if (info.note) j.lines.push(info.note)
-    j.endedAt = new Date().toISOString()
+    j.endedAt = iso()
     releaseGate(j.id)
     const t = killTimers.get(j.id)
     if (t !== undefined) {
       timers.clearTimeout(t)
       killTimers.delete(j.id)
     }
+    const st = stallTimers.get(j.id)
+    if (st !== undefined) {
+      timers.clearTimeout(st)
+      stallTimers.delete(j.id)
+    }
+    try {
+      deps.onSettle?.(j)
+    } catch (e) {
+      log.warn('background', '后台命令结束后更新对话失败', { id: j.id, error: (e as Error).message })
+    }
     return true
+  }
+
+  /**
+   * 跑着的时候一直盯着：超过 stallMs 没有任何输出提醒对话一次（有了新输出再重新计）；
+   * 跑到 nextCheckMs 提醒对话看一眼进度，之后间隔翻倍。只提醒，停不停由对话决定（stop_background）。
+   * 用一串 setTimeout 而不是 setInterval：假时钟只有 setTimeout
+   */
+  function watch(j: BgJob) {
+    const every = Math.min(60_000, Math.max(50, Math.min(stallMs, checkFirstMs) / 4))
+    const tick = () => {
+      stallTimers.delete(j.id)
+      if (j.endedAt) return
+      const t = now()
+      const ran = t - Date.parse(j.startedAt)
+      const quiet = t - Date.parse(j.lastOutputAt || j.startedAt)
+      const last = j.lines.slice(-10).join('\n')
+      const out = last ? `\n最后的输出：\n\`\`\`\n${last}\n\`\`\`` : ''
+      const left = `面板会在跑满 ${fmtSecs(j.timeoutMs)} 时停掉它。`
+      if (quiet >= stallMs && !j.stalled) {
+        j.stalled = true
+        j.nextCheckMs = Math.max(j.nextCheckMs ?? 0, ran + checkFirstMs)
+        deps.onNotice?.(
+          j,
+          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtSecs(ran)}，最近 ${fmtSecs(quiet)} 没有任何输出，可能卡住了（下载或解压完了却没退出、在等输入、死锁）。\n命令：${j.command}${out}\n先用 check_background 看它现在的状态，再用只读命令核对它该产出的东西（文件、进程）在不在；确认卡住就用 stop_background 停掉，查清原因再重跑。它还在正常干活（只是不输出）就不用管，结果照样会推回来。${left}`,
+        )
+      } else if (j.nextCheckMs !== undefined && ran >= j.nextCheckMs) {
+        j.nextCheckMs = ran * 2
+        deps.onNotice?.(
+          j,
+          `【面板】后台命令「${j.name}」（编号 ${j.id}）已经跑了 ${fmtSecs(ran)}，还没结束（最近一次输出在 ${fmtSecs(quiet)} 前）。\n命令：${j.command}${out}\n看一眼进度是否正常：输出一直在重复（反复重试、死循环）或者明显跑偏就用 stop_background 停掉；正常就不用管，结束后结果会推回来，下一次提醒在跑满 ${fmtSecs(j.nextCheckMs)} 时。${left}`,
+        )
+      }
+      stallTimers.set(j.id, timers.setTimeout(tick, every))
+    }
+    stallTimers.set(j.id, timers.setTimeout(tick, every))
+  }
+
+  /** 有输出：记下时间，之前提醒过「没输出」的重新计 */
+  const heard = (j: BgJob) => {
+    j.lastOutputAt = iso()
+    j.stalled = false
   }
 
   /** 停止后开始计时：到点记录还不是终态就先置 stopped，不让门禁和「彻底完成」等一个不来的 close */
@@ -163,11 +284,7 @@ export function createBackground(
   }
 
   const resultText = (j: BgJob) => {
-    const secs = Math.round((Date.parse(j.endedAt) - Date.parse(j.startedAt)) / 1000)
-    const head =
-      j.state === 'stopped'
-        ? `后台命令「${j.name}」被停止了`
-        : `后台命令「${j.name}」跑完了：${j.state === 'done' ? '成功' : '失败'}（退出码 ${j.code ?? '无'}，用时 ${secs} 秒）`
+    const head = headText(j)
     const warn = j.changed ? '\n注意：它跑的期间工作目录里的文件被改过，结果可能已经不准，必要时重跑一次。' : ''
     const tail = j.lines.join('\n').slice(-(j.state === 'done' ? 1500 : 6000))
     // 结果回来是新的一轮：界面上这一轮的回复就是最新的总结（上一轮的总结说的还是「在等结果」），所以要整体重写
@@ -180,7 +297,10 @@ export function createBackground(
     const ac = new AbortController()
     aborts.set(j.id, ac)
     j.state = 'running'
-    j.startedAt = new Date().toISOString()
+    j.startedAt = iso()
+    j.lastOutputAt = j.startedAt
+    j.nextCheckMs = checkFirstMs
+    watch(j)
     const before = await fingerprint(root).catch(() => '')
     // 算指纹的时候对话可能已经被删了：不再启动
     if (ac.signal.aborted) {
@@ -190,20 +310,23 @@ export function createBackground(
     }
     const r = await runShell(j.command, j.cwd, {
       shell: await currentShell(),
-      timeoutMs: MAX_MS,
+      timeoutMs: j.timeoutMs,
       signal: ac.signal,
       env: j.env,
       onLine: (l) => {
+        heard(j)
         j.lines.push(l)
         if (j.lines.length > KEEP_LINES) j.lines.splice(0, j.lines.length - KEEP_LINES)
       },
+      // 进度条、下载进度多写在 stderr：也算有动静，不然下载着的命令会被当成卡住
+      onStderr: () => heard(j),
     })
     aborts.delete(j.id)
     if (r.stderr.trim()) j.lines.push(...r.stderr.trim().split('\n').slice(-40))
     const after = before ? await fingerprint(root).catch(() => '') : ''
     j.changed = !!before && !!after && before !== after
     if (r.spawnError) j.lines.push(r.spawnError)
-    if (r.killed === 'timeout') j.lines.push('（超过两小时，已停止）')
+    if (r.killed === 'timeout') j.lines.push(`（跑满 ${fmtSecs(j.timeoutMs)} 的限时还没结束，面板已停止它）`)
     const state = r.killed === 'stopped' ? 'stopped' : r.code === 0 && !r.spawnError ? 'done' : 'failed'
     // 已经被停止兜底置过终态（close 来晚了）：不再改状态，也不重复推结果
     if (!finish(j, state, { code: r.code })) return
@@ -235,6 +358,8 @@ export function createBackground(
       root: string
       exclusive: boolean
       env?: { key: string; value: string }[]
+      /** 最多跑多少分钟：不写按默认两小时，最多八小时 */
+      timeoutMinutes?: number
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
@@ -245,11 +370,17 @@ export function createBackground(
         command: input.command,
         cwd,
         exclusive: input.exclusive,
+        timeoutMs:
+          input.timeoutMinutes && input.timeoutMinutes > 0
+            ? Math.min(MAX_TIMEOUT_MS, Math.round(input.timeoutMinutes * 60_000))
+            : DEFAULT_TIMEOUT_MS,
         ...(input.env?.length ? { env: input.env } : {}),
         state: 'queued',
         code: null,
+        createdAt: iso(),
         startedAt: '',
         endedAt: '',
+        lastOutputAt: '',
         lines: [],
         changed: false,
       }
@@ -281,19 +412,38 @@ export function createBackground(
       return {
         ok: true,
         id: j.id,
-        info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}${full ? `，面板同时最多跑 ${maxRunning} 条后台命令，它可能要等前面的跑完` : ''}。跑完结果会自动推回给你，先去做不依赖它的事。`,
+        info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}${full ? `，面板同时最多跑 ${maxRunning} 条后台命令，它可能要等前面的跑完` : ''}。面板盯着它直到真正结束，结果（成功、失败、被停止、长时间没输出）都会推回给你：先去做不依赖它的事，没有别的事就结束这一轮等结果，不要用 sleep 轮询。`,
       }
     },
     /** 查状态；不传编号列出这个对话的全部 */
     check(taskId: string, id: string) {
       const list = [...jobs.values()].filter((j) => j.taskId === taskId && (!id || j.id === id))
       if (!list.length) return id ? `没有编号 ${id} 的后台命令` : '这个对话没有后台命令'
+      const t = now()
       return list
         .map((j) => {
           const tail = j.lines.slice(-15).join('\n')
-          return `- ${j.id}「${j.name}」：${j.state}${j.code !== null ? `（退出码 ${j.code}）` : ''}${tail ? `\n${tail}` : ''}`
+          // 用时和「多久没输出」一起给：只看状态分不清是在正常跑还是卡住了
+          const when = j.endedAt
+            ? `，用时 ${fmtSecs(Date.parse(j.endedAt) - Date.parse(j.startedAt || j.createdAt))}`
+            : j.startedAt
+              ? `，已经跑了 ${fmtSecs(t - Date.parse(j.startedAt))}，最近一次输出在 ${fmtSecs(t - Date.parse(j.lastOutputAt || j.startedAt))} 前`
+              : `，排队 ${fmtSecs(t - Date.parse(j.createdAt))}`
+          return `- ${j.id}「${j.name}」：${STATE_TEXT[j.state]}${j.code !== null ? `（退出码 ${j.code}）` : ''}${when}${tail ? `\n${tail}` : ''}`
         })
         .join('\n')
+    },
+    /** 停掉这个对话的一条后台命令（对话判断它卡住了）：结果照常推回，说明是被停止的 */
+    stopOne(taskId: string, id: string) {
+      const j = jobs.get(id)
+      if (!j || j.taskId !== taskId) return { ok: false, info: `没有编号 ${id} 的后台命令` }
+      if (j.endedAt) return { ok: false, info: `编号 ${id} 已经结束了（${STATE_TEXT[j.state]}）` }
+      if (j.state === 'queued') finish(j, 'stopped')
+      else {
+        aborts.get(j.id)?.abort()
+        armKillGrace(j)
+      }
+      return { ok: true, info: `已停止后台命令「${j.name}」（编号 ${j.id}）` }
     },
     /**
      * 这个目录里还没结束的独占命令（正在跑的在前）：UE 编译按目录占位，申请时告诉申请方现在谁占着、
@@ -305,6 +455,10 @@ export function createBackground(
         .filter((x) => x.exclusive && !x.endedAt && (x.cwd === dir || x.cwd.startsWith(dir + path.sep)))
         .sort((a, b) => (a.state === 'running' ? 0 : 1) - (b.state === 'running' ? 0 : 1))
     },
+    /** 还没结束的全部后台命令（面板退出前要一条条收口） */
+    active() {
+      return [...jobs.values()].filter((j) => !j.endedAt)
+    },
     /** 这个对话还在跑的后台命令（界面上显示） */
     list(taskId: string) {
       return [...jobs.values()].filter((j) => j.taskId === taskId)
@@ -314,10 +468,11 @@ export function createBackground(
      * 返回的 Promise 尽量等进程真正退出（好让调用方接着删工作目录），但不无限等：
      * 孙进程握着 stdout 时 close 可能永远不来，记录已经先置终态了，这里到上限就放
      */
-    stop(taskId: string) {
+    stop(taskId: string, note?: string) {
       const waits: Promise<void>[] = []
       for (const j of jobs.values()) {
         if (j.taskId !== taskId) continue
+        if (note && !j.endedAt) j.lines.push(note)
         if (j.state === 'queued') {
           finish(j, 'stopped')
           continue

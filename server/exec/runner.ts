@@ -135,6 +135,7 @@ export interface RealContext {
   beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
+  stopBackground?: EngineHost['stopBackground']
   lessons?: EngineHost['lessons']
 }
 
@@ -319,7 +320,9 @@ function transcript(task: Task, upto: number) {
   for (const m of task.messages.slice(0, upto)) {
     if (m.step || m.role === 'system' || !m.text.trim()) continue
     const text = m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text
-    lines.push(`${m.role === 'user' ? '用户' : '你'}：${text.trim()}`)
+    // 父对话交代的任务、回答 role 也是 user：说清是父对话说的，新会话别当成用户的话
+    const who = m.role === 'user' ? (m.peer ? `父对话「${m.peer.title || m.peer.name}」` : '用户') : '你'
+    lines.push(`${who}：${text.trim()}`)
   }
   return lines.join('\n\n')
 }
@@ -1862,6 +1865,7 @@ export async function runRealTurn(ctx: RealContext) {
     beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
+    stopBackground: ctx.stopBackground,
     lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     signal: ctx.signal,

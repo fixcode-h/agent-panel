@@ -109,6 +109,16 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(view?.job, '1a2b3c4d')
   assert.equal(view?.tool.label, '单元测试')
   assert.equal(toolView(tool('mcp__panel__check_background', '', { input: '{"id":"1a2b3c4d"}' }))?.job, undefined)
+  // 旧数据：带前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板的回复认回来，照样转圈
+  const old = toolView({
+    kind: 'run',
+    label: 'npx playwright install',
+    detail: '',
+    output: '已放到后台（编号 6a369828）。跑完结果会自动推回给你，先去做不依赖它的事。',
+  } as Parameters<typeof toolView>[0])
+  assert.equal(old?.job, '6a369828')
+  assert.equal(old?.tool.name, '后台命令')
+  assert.equal(old?.tool.label, 'npx playwright install')
 })
 
 test('「启动工作流」一行认回启动的是第几次运行', () => {
@@ -140,4 +150,28 @@ test('「启动工作流」一行认回启动的是第几次运行', () => {
   // 认不回同一次调用时不乱认到别的运行上
   const other = task([msg(1, '@main', [failed]), msg(2, 'n1')], [step('@main', 1), step('n1', 1)])
   assert.equal(startedRun(other, toolView(start('另一件事'))!.tool), undefined)
+})
+
+test('toolView：给别的对话发消息的三个工具画成「发送消息」，带类型、收件方和正文', () => {
+  const send = toolView(
+    tool('mcp__panel__send_to_conversation', '', {
+      input: '{"id":"c1","message":"把侧栏时间改成相对时间"}',
+      output: '「修侧栏」正在执行，已实时送达',
+    }),
+  )
+  assert.deepEqual(send?.send, { kind: 'task', to: '修侧栏', body: '把侧栏时间改成相对时间' })
+  assert.equal(send?.child, 'c1')
+  const ask = toolView(
+    tool('mcp__panel__message_parent', '', { input: '{"text":"用哪个库？","question":true,"options":["a","b"]}' }),
+  )
+  assert.equal(ask?.send?.kind, 'question')
+  assert.equal(ask?.send?.body, '用哪个库？\n\n1. a\n2. b')
+  const report = toolView(tool('mcp__panel__message_parent', '', { input: '{"text":"做完了"}' }))
+  assert.equal(report?.send?.kind, 'report')
+  const peer = toolView(
+    tool('mcp__panel__message_peer', '', { input: '{"id":"p2","text":"我先编"}', output: '已交给父对话「美术」' }),
+  )
+  assert.deepEqual(peer?.send, { kind: 'chat', to: '美术', body: '我先编' })
+  // 别的面板工具不是发消息
+  assert.equal(toolView(tool('mcp__panel__get_status', ''))?.send, undefined)
 })

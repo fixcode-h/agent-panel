@@ -1,6 +1,7 @@
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
+import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -104,6 +105,11 @@ export function orchTools(o: Orchestra) {
                   type: 'boolean',
                   description: '编译、打包这类会抢文件锁的命令设为 true：按项目排队，同一时间只跑一个',
                 },
+                timeout_minutes: {
+                  type: 'number',
+                  description:
+                    '最多跑多少分钟，到点面板停掉它并把结果推回；按命令正常要多久写宽一些，不写默认 120，最多 480',
+                },
                 ...(o.plans ? { step: stepField('这条命令') } : {}),
               },
               required: ['command'],
@@ -112,8 +118,15 @@ export function orchTools(o: Orchestra) {
           {
             name: 'check_background',
             title: '查看后台命令',
-            description: '查后台命令的状态和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
+            description:
+              '查后台命令的状态、已经跑了多久、多久没输出和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
             inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+          },
+          {
+            name: 'stop_background',
+            title: '停止后台命令',
+            description: '停掉这个对话的一条后台命令：确认它卡住了（长时间没输出、跑偏了）才用，停掉后查清原因再重跑。',
+            inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
           },
         ]
       : []),
@@ -408,8 +421,17 @@ export function orchTools(o: Orchestra) {
                             },
                           }
                         : {}),
+                      handoff: {
+                        type: 'object',
+                        description:
+                          '交接要点：以后父对话再把消息交给你、上下文又大时，新会话只带这份摘要（加上面板补的提交和改动文件），写清下次能直接找到代码和文档的信息',
+                        properties: Object.fromEntries(
+                          HANDOFF_FIELDS.map((f) => [f.key, { type: 'string', description: f.description }]),
+                        ),
+                        required: HANDOFF_FIELDS.filter((f) => f.required).map((f) => f.key),
+                      },
                     },
-                    required: ['tests'],
+                    required: ['tests', 'handoff'],
                   },
                 },
               ]
@@ -698,12 +720,17 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         name: str(a?.name).trim() || command.slice(0, 40),
         cwd: str(a?.cwd).trim(),
         exclusive: a?.exclusive === true,
+        ...(Number(a?.timeout_minutes) > 0 && { timeoutMinutes: Number(a?.timeout_minutes) }),
         step: str(a?.step).trim(),
       })
       return text(r.info, !r.ok)
     }
     case 'check_background':
       return text(o.checkBackground(str(a?.id)))
+    case 'stop_background': {
+      const r = o.stopBackground(str(a?.id))
+      return text(r.info, !r.ok)
+    }
     case 'begin_edit': {
       const r = await o.beginEdit()
       return text(r.info, !r.ok)
@@ -711,7 +738,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     // submit_build 是旧名字：保活的 CLI 进程拿的还是旧工具列表
     case 'submit_merge':
     case 'submit_build': {
-      const r = await o.submitMerge(str(a?.note), str(a?.tests), o.ueBuild === 'child' ? a?.build !== false : undefined)
+      const r = await o.submitMerge(
+        str(a?.note),
+        str(a?.tests),
+        o.ueBuild === 'child' ? a?.build !== false : undefined,
+        handoffInput(a?.handoff),
+      )
       return text(r.info, !r.ok)
     }
     case 'request_build': {

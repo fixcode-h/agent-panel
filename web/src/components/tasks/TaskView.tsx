@@ -73,6 +73,7 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { STICK_THRESHOLD, useStickToBottom } from '@/lib/useStickToBottom'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
+import { ReceivedRow } from './PeerMessage'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
@@ -122,9 +123,6 @@ type Block =
 const OLD_CREATED =
   /^(新建了子对话「.*」，这条消息交给它处理|Created sub-conversation “.*”; this message is handed to it)$/
 
-/** 以前子对话做完后在父对话里记的通知，和居中显示的汇报、提问（现在汇报只给 AI，提问是卡片） */
-const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过|汇报：|提问：)/
-
 /** 以前开独立分支时记的居中提示：现在 begin_edit 这次调用本身显示成「开独立分支 分支名」 */
 const OLD_WORKTREE = /^(要改文件了，已开独立分支 |Ready to edit files: opened separate branch )/
 
@@ -158,12 +156,15 @@ function toBlocks(task: Task): Block[] {
     if (m.step && helpers.length && inHelper(m.step)) continue
     // 旧对话里新建子对话时记的居中提示：现在这次工具调用本身就显示成「新建子对话 标题」，不再重复
     if (m.role === 'system' && !m.step && OLD_CREATED.test(m.text)) continue
-    // 子对话交回父对话的回报只给父对话的 AI 看：做完了看子对话栏和列表里的绿勾（旧数据没有标记，按文字认）
-    if (m.role === 'system' && !m.step && (m.panel === 'child' || (!m.panel && OLD_CHILD_NOTE.test(m.text)))) continue
     if (m.role === 'system' && !m.step && !m.panel && OLD_WORKTREE.test(m.text)) continue
     // 派出的子任务、面板推回的结果（后台命令、合并编译、子任务结果）都是 AI 这一轮回复里的一行，
     // 归进当前这轮回复，不单独成段，也不显示成用户消息
-    if (!m.step && ((!byRun && m.spawned?.length) || m.panel)) {
+    // 父对话交代的任务、回答（role 是 user）：自成一段，画成「接收消息」，不显示成用户消息
+    if (!m.step && m.peer && m.role === 'user') {
+      blocks.push({ kind: 'msg', m })
+      continue
+    }
+    if (!m.step && ((!byRun && m.spawned?.length) || m.panel || m.peer)) {
       const b = blocks.at(-1)
       if (b?.kind === 'turn') b.msgs.push(m)
       else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
@@ -1343,6 +1344,13 @@ export function TaskView({
                                 />
                               ))}
                             </div>
+                          ) : b.m.peer ? (
+                            <div key={b.m.id} className="flex gap-3">
+                              <span className="w-[26px] shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <ReceivedRow m={b.m} />
+                              </div>
+                            </div>
                           ) : b.m.role === 'user' ? (
                             <UserMessage
                               key={b.m.id}
@@ -1401,17 +1409,6 @@ export function TaskView({
                           ),
                         )}
                         <NextWorkflows task={task} />
-                        <EvolutionCard
-                          task={task}
-                          project={project}
-                          kids={children}
-                          onSpawned={(id) =>
-                            void loadChildren(task.id)
-                              .then(setChildren)
-                              .catch(() => {})
-                              .finally(() => openChildIn(id))
-                          }
-                        />
                         {running &&
                           task.mode === 'chat' &&
                           working &&
@@ -1498,6 +1495,19 @@ export function TaskView({
                 </>
 
                 <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+                  {/* 「AI 分析」的结果固定在输入框上方，接着追问时也看得到；发新内容时它自己收起 */}
+                  <EvolutionCard
+                    key={task.id}
+                    task={task}
+                    project={project}
+                    kids={children}
+                    onSpawned={(id) =>
+                      void loadChildren(task.id)
+                        .then(setChildren)
+                        .catch(() => {})
+                        .finally(() => openChildIn(id))
+                    }
+                  />
                   <TaskRequestCard task={task} onAnswered={apply} />
                   {askOpen ? (
                     <ParentAskPanel task={task} onFold={() => setAskFolded(askKey)} />

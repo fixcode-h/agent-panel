@@ -267,7 +267,7 @@ await runShard('子对话与计划', async (api) => {
       mode: 'chat',
       agentId: B.id,
       parentTaskId: wtParent.id,
-      prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE 子对话做完自动合并',
+      prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE BIG_CONTEXT 子对话做完自动合并',
     })
     // 开分支的那一轮结束后面板才在分支目录里接着做：等到合并完成，不等第一轮结束
     const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 30000)
@@ -280,7 +280,10 @@ await runShard('子对话与计划', async (api) => {
     )
     const wrapParent = await call('GET', `/tasks/${wtParent.id}`)
     assert.ok(
-      wrapParent.messages.some((m) => m.panel === 'wrapup' && m.child?.id === doneKid.id),
+      wrapParent.messages.some(
+        (m) =>
+          m.panel === 'wrapup' && m.child?.id === doneKid.id && m.peer?.kind === 'wrapup' && m.peer.rel === 'child',
+      ),
       '收尾请求在父对话里是一行「子对话请求」',
     )
     assert.ok(closed.resolved, '合进父对话的分支后子对话标记完成')
@@ -303,6 +306,20 @@ await runShard('子对话与计划', async (api) => {
       ),
       '答完一轮后被合并回收，不写「这一轮被中断」',
     )
+    // 交接摘要（ADR 0007）：子对话写的关键信息加面板补的提交和改动文件，分支删掉后还留着
+    assert.match(closed.handoff?.text ?? '', /## 关键文件和模块\nchild-done\.txt — 子对话完成的标记/)
+    assert.match(closed.handoff.text, /## 合回的改动（分支 [^）]+）[\s\S]*child-done\.txt/, '面板补上了改动文件')
+    // 上下文大的已完成子对话再被叫醒：开新会话只带交接摘要，不接回原会话把上次的工具输出全读一遍
+    const logBefore = readLog(log).length
+    await call('POST', `/tasks/${doneKid.id}/messages`, { text: '再补一个小改动' })
+    await waitDone(doneKid.id, 20000)
+    const revived = readLog(log)
+      .slice(logBefore)
+      .find((x) => x.kind === 'codex' && x.input.includes('再补一个小改动'))
+    assert.ok(revived, '叫醒后执行了这一轮')
+    assert.ok(!revived.resume, '没有接回原会话')
+    assert.match(revived.input, /## 之前对话的摘要[\s\S]*## 关键文件和模块\nchild-done\.txt/, '新会话带上交接摘要')
+    step('已完成的子对话再被叫醒：上下文大时开新会话只带交接摘要')
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
@@ -334,6 +351,13 @@ await runShard('子对话与计划', async (api) => {
     )
     await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
     await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
+    // 对话之间的消息带上发件方和类型：子对话里画成「接收消息」，不当成用户说的话
+    const kidMsgs = (await call('GET', `/tasks/${askKid.id}`)).messages
+    // 这个子对话是直接建的（用户发的第一句），只有卡片上的回答经父对话交过来
+    assert.equal(kidMsgs[0].peer, undefined, '用户自己建子对话时第一句仍是用户消息')
+    const answerMsg = kidMsgs.find((m) => m.text.includes('用户的决定'))
+    assert.equal(answerMsg.peer?.kind, 'answer', '卡片上的回答交给子对话时标成「回答」')
+    assert.ok(answerMsg.peer.subject.includes('B 方案'), '标题里接上答案')
     askParent = await call('GET', `/tasks/${wtParent.id}`)
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
@@ -357,7 +381,14 @@ await runShard('子对话与计划', async (api) => {
       )
       assert.equal(planned.plans.length, 1, '列了一份计划')
       // 计划结束看它自己的完成字段（doneAt），不再拿 summary 当哨兵
-      const done = await waitTask(planned.id, (k) => !!k.plans[0]?.doneAt, 30000)
+      // 计划先收口、结果消息后推回（中间要写盘）：两样都到了再查，不然偶发读到还没推回的那一刻
+      const done = await waitTask(
+        planned.id,
+        (k) =>
+          !!k.plans[0]?.doneAt &&
+          k.messages.some((m) => m.panel === 'background' && m.text.includes('计划步骤「跑测试」')),
+        30000,
+      )
       const plan = done.plans[0]
       assert.deepEqual(
         plan.steps.map((x) => [x.title, x.status]),

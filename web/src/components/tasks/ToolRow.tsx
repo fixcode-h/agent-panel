@@ -25,6 +25,7 @@ import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
+import { PeerLine } from './PeerMessage'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -197,6 +198,7 @@ export function RowShell({
   glyph,
   verb,
   badge,
+  badgeClass,
   title,
   titleClass,
   detail,
@@ -214,6 +216,8 @@ export function RowShell({
   verb?: React.ReactNode
   /** 动作名后面淡色的小标签（MCP 的服务名） */
   badge?: string
+  /** 小标签换颜色（对话之间的消息按类型、报错标色） */
+  badgeClass?: string
   title?: React.ReactNode
   titleClass?: string
   detail?: React.ReactNode
@@ -255,7 +259,12 @@ export function RowShell({
           {glyph}
           {verb && <span className="font-sans font-medium text-fg/85">{verb}</span>}
           {badge && (
-            <span className="rounded bg-sel px-1.5 py-px font-sans text-[0.6875rem] leading-4 text-subtle">
+            <span
+              className={cn(
+                'rounded px-1.5 py-px font-sans text-[0.6875rem] leading-4',
+                badgeClass ?? 'bg-sel text-subtle',
+              )}
+            >
               {badge}
             </span>
           )}
@@ -314,6 +323,22 @@ export function ToolRow({
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示；别的 MCP 工具名当动作
   const view = toolView(raw)
   if (view === null) return null
+  // 给另一个对话发消息：和收件方的「接收消息」一样画成「发送消息 + 类型 + 内容标题」
+  if (view.send)
+    return (
+      <PeerLine
+        dir="out"
+        kind={view.send.kind}
+        name={view.send.to}
+        subject=""
+        body={view.send.body}
+        failed={raw.failed}
+        running={raw.running || (raw.ms === undefined && !!raw.startedAt && task?.status === 'running')}
+        childId={view.child}
+        receipt={raw.output?.trim()}
+        ms={raw.ms}
+      />
+    )
   return <ToolLine view={view} task={task} />
 }
 
@@ -328,7 +353,15 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const verb = toolVerb(tool)
   // 还在等结果（任务还在跑、没有耗时）：每秒刷新已经用了多久，等子任务、长命令不再看着像卡住
   const pending = tool.ms === undefined && !!tool.startedAt && task?.status === 'running'
-  const now = useNow(pending)
+  // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
+  const ids = view.job ? [view.job] : (view.jobs ?? [])
+  const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
+  const bg = mine.length > 0
+  // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」
+  const starts = mine.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter(Boolean)
+  const jobStart = starts.length ? Math.min(...starts) : 0
+  const queued = bg && mine.every((j) => j.state === 'queued')
+  const now = useNow(pending || bg)
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
@@ -336,8 +369,6 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
 
-  // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈，跑完结果会推回对话
-  const bg = !!view.job && !!task?.jobs?.some((j) => j.id === view.job)
   const glyph =
     tool.running || bg ? (
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -349,6 +380,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
       {diff[2] && <span className="text-danger">{diff[2]}</span>}
     </span>
+  ) : queued ? (
+    <span className="shrink-0 text-subtle">{t('排队中')}</span>
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
@@ -388,7 +421,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         badge={view.server}
         title={tool.label}
         detail={detail}
-        ms={pending ? now - tool.startedAt! : tool.ms}
+        ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}

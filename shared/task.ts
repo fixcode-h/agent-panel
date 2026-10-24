@@ -1204,8 +1204,11 @@ export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
 }
 
 /** 列表里的「执行中」：自己在执行、名下子对话在执行、在等它派出的子任务，或者工作流运行还没跑完 */
-export function taskBusy(t: Pick<Task, 'status' | 'steps' | 'working' | 'childrenWorking'> & { runs?: Task['runs'] }) {
-  return t.working || !!t.childrenWorking || helpersWorking(t) || runRunning(t)
+export function taskBusy(
+  t: Pick<Task, 'status' | 'steps' | 'working' | 'childrenWorking'> & { runs?: Task['runs']; jobs?: Task['jobs'] },
+) {
+  // 后台命令还没跑完也算：这一轮说完了，但对话在等结果（见 ConvState 的 waiting），不能显示成做完了
+  return t.working || !!t.childrenWorking || helpersWorking(t) || runRunning(t) || !!t.jobs?.length
 }
 
 /**

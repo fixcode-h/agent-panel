@@ -14,6 +14,7 @@
  *
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
+import type { HandoffInput } from './handoff.ts'
 import type { ReviewTarget } from './clis.ts'
 import { commonAgents, includedAgents } from './agent-role.ts'
 import {
@@ -306,17 +307,30 @@ export interface Orchestra {
   claims: boolean
   /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
   canBackground: boolean
-  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean; step?: string }): Promise<{
+  runBackground(input: {
+    command: string
+    name: string
+    cwd: string
+    exclusive: boolean
+    timeoutMinutes?: number
+    step?: string
+  }): Promise<{
     ok: boolean
     info: string
   }>
   checkBackground(id: string): string
+  stopBackground(id: string): { ok: boolean; info: string }
   /** 独立分支里的子对话：测试跑通就调用，面板合回原分支后子对话算完成（排队，结果推回来） */
   canSubmit: boolean
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitMerge(note: string, tests: string, build?: boolean): Promise<{ ok: boolean; info: string }>
+  submitMerge(
+    note: string,
+    tests: string,
+    build?: boolean,
+    handoff?: HandoffInput,
+  ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
   /** children：父对话替哪些子对话申请（结果也推给它们） */
@@ -455,7 +469,12 @@ export interface EngineHost {
    */
   wrapUp?: WrapUpKind
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
-  submitMerge?: (note: string, tests: string, build?: boolean) => Promise<{ ok: boolean; info: string }>
+  submitMerge?: (
+    note: string,
+    tests: string,
+    build?: boolean,
+    handoff?: HandoffInput,
+  ) => Promise<{ ok: boolean; info: string }>
   /**
    * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
    * child：子对话不编译，改完向父对话申请；build 为 true 的 submit_merge 合回去后也自动申请。
@@ -489,7 +508,13 @@ export interface EngineHost {
    * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
    * exclusive 的（编译这类）按项目排队，同一时间只跑一个
    */
-  runBackground?: (input: { command: string; name: string; cwd: string; exclusive: boolean }) => Promise<{
+  runBackground?: (input: {
+    command: string
+    name: string
+    cwd: string
+    exclusive: boolean
+    timeoutMinutes?: number
+  }) => Promise<{
     ok: boolean
     info: string
     /** 后台命令的编号：计划步骤挂等待时用，结果回来按它找到步骤 */
@@ -497,6 +522,8 @@ export interface EngineHost {
   }>
   /** 查后台命令：不传编号列出这个对话的全部 */
   checkBackground?: (id: string) => string
+  /** 停掉这个对话的一条后台命令：对话看出它卡住了时用 */
+  stopBackground?: (id: string) => { ok: boolean; info: string }
   /**
    * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
    * 父对话自己也带上，分派时提醒子对话
@@ -966,7 +993,7 @@ function buildPart(host: EngineHost) {
   return `## 在独立分支里验证，再请父对话收尾
 编译、测试都在你这个独立分支的目录里跑，不用交给别人：合并就是验收，合进去的代码就算验收通过，所以能在你这里做的测试都在合并之前、在这里做完。
 - 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
-- 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
+- 只剩合回时调用 submit_merge 请父对话收尾：计划其余步骤都做完、后台命令都结束、没有等回答的提问、按下面的「验证」跑通，tests 写上跑了哪些编译、测试和结果，handoff 按模板写交接要点（关键文件和模块必填，以后再交给你时上下文大就只带这份摘要，写清哪里的代码、哪些文档、做了什么决定）。面板把改动提交到你的分支，父对话合回原分支（父对话所在的分支）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。调用后结束这一轮。
 - 验证没跑通不要调用，先修好；做完却不调用的，面板会提醒你。父对话合不进去（冲突）或者觉得验证不够时会退回给你，按它说的处理好再调用。合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
 }
 
@@ -989,7 +1016,7 @@ function uePart(host: EngineHost) {
 这是 UE 项目：编译（Build.bat、UBT、UHT）、Cook、启动 Editor 都不在子对话里做，面板也会拦下这类后台命令。你只改代码，做不需要编译的检查（Lua 语法、静态检查、对照调用方自查），编译向父对话申请：
 ${
   host.submitMerge
-    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」；build 保持 true，父对话合回后在它的目录里编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
+    ? `- 你在独立分支里，这个目录编不了 UE（没有中间产物、大文件没检出）：检查完调用 submit_merge 请父对话收尾，tests 写上做了哪些检查，并写明「UE 编译交父对话」，handoff 按模板写交接要点；build 保持 true，父对话合回后在它的目录里编译。只改文档、注释、配置说明这类不影响编译的内容时 build 写 false。
 - 合回去不等于编译通过：编译报错时会交回给你，修好后再 submit_merge 一次。`
     : `- 改完、检查完调用 request_build 向父对话申请编译，note 写清改了哪些模块和文件、需要编哪个目标；然后结束这一轮，编译结果面板会直接推给你。
 - 编译报错就修好再申请一次；编译通过才算这次改动验证过。`
@@ -1025,7 +1052,8 @@ function backgroundPart(host: EngineHost) {
 预计超过一分钟的命令（完整测试、端到端测试、长时间的检查、编译）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
 - 等结果的时候接着做不依赖它的事：读代码、写文档、改和这条命令无关的文件。不要改这条命令要检查的文件，改了结果就不算数（面板会标出期间被改过）。
 - 编译、打包这类会抢文件锁的命令把 exclusive 设为 true，面板按项目排队，同一时间只跑一个。
-- 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
+- 面板一直盯着它直到真正结束：成功、失败、被停止、超过限时都会把结果推回来；十分钟没有任何输出、或者跑了很久（15 分钟起，之后间隔翻倍）也会提醒你看一眼。按命令正常要多久写 timeout_minutes（写宽一些），不写默认两小时。手上没有别的事时直接结束这一轮，对话会停在「等结果」，结果到了接着处理；不要反复调用 check_background 轮询，也不要用 sleep 干等。
+- 结果推回来先核对用时和输出是不是合理；提醒你没输出时用 check_background 看一眼，确认卡住就用 stop_background 停掉、查清原因再重跑。
 - 不要在前台用 sleep 等待（等 CI、等部署、等别的进程）：前台命令跑着时用户发来的消息要等它结束才能处理。要等就把等待和检查写成一条命令交给 run_background，或者直接结束这一轮、告诉用户你在等什么。
 - 几秒就能跑完的命令照常直接执行。`
 }
@@ -2502,6 +2530,9 @@ function makeOrchestra(
     checkBackground(id) {
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
     },
+    stopBackground(id) {
+      return host.stopBackground ? host.stopBackground(id.trim()) : { ok: false, info: '这里没有后台命令' }
+    },
     canSubmit: !helper && !!host.submitMerge,
     // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
     canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
@@ -2511,9 +2542,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests, build) {
+    async submitMerge(note, tests, build, handoff) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build)
+      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff)
       if (r.ok) host.changed(true)
       return r
     },

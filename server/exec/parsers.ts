@@ -3,7 +3,7 @@ import type { CliLimits, ToolUse } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
-import { PANEL_TOOL_NAMES } from '../../shared/panel-tools.ts'
+import { panelToolName } from '../../shared/panel-tools.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
 export type CliEvent =
@@ -436,8 +436,11 @@ export function codexUsage(delta: Record<string, number>, last: Record<string, n
 // ---- Command Code：cmdc -p --output-format json（NDJSON 事件流 + 最后一行结果） ----
 function genericTool(name: string, input: any, cwd: string): CliEvent {
   // 面板自己的工具（Pi 的桥接扩展注册的是裸名字）：记成 MCP 调用，界面按做了什么显示；
-  // 不先认出来的话 wait_agents、spawn_agents 会因为名字里有 agent 被当成 CLI 自己的子 Agent
-  if ((PANEL_TOOL_NAMES as readonly string[]).includes(name)) return otherTool(`mcp__panel__${name}`, input)
+  // 不先认出来的话 wait_agents、spawn_agents 会因为名字里有 agent 被当成 CLI 自己的子 Agent。
+  // 带服务名前缀的（panel_run_background 这类）也要认：不然名字里有 run 就被当成 CLI 自己的命令，
+  // 界面显示成「运行命令」、0.09 秒就「完成」，看不出命令还在后台跑
+  const panel = panelToolName(name)
+  if (panel) return otherTool(`mcp__panel__${panel}`, input)
   const n = name.toLowerCase()
   const file = rel(cwd, input?.path ?? input?.file_path ?? input?.filePath ?? input?.absolute_path ?? input?.file)
   if (/skill/.test(n))

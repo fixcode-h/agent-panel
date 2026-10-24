@@ -74,6 +74,9 @@ test('foldStats：报错和子对话的提问不进统计，也不收进折叠',
   assert.equal(keptOut(err), true)
   assert.equal(keptOut(ask), true)
   assert.equal(keptOut(panel('x3', 'background', '后台命令跑完了')), false)
+  // 对话之间收发的消息摆在台面上：子对话的上报、父对话交代的话都不收进折叠
+  const peer = { id: 'c1', title: '子对话', name: '程序', rel: 'child' as const, kind: 'report' as const, subject: '' }
+  assert.equal(keptOut({ ...panel('x4', 'child', '【子对话状态】已完成'), peer }), true)
 
   const stats = foldStats([err, ask, agent('m1', '回复')])
   assert.deepEqual(stats.parts, [])
