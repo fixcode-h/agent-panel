@@ -3192,26 +3192,32 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         subject: title,
       }
     // 做完的子对话给父对话交回一条状态：父对话里画成「接收消息 · 汇报」
-    if (how.resolved)
-      parent.messages.push({
+    if (how.resolved) {
+      const report = {
         id: `${it.id}-report`,
-        role: 'system',
+        role: 'system' as const,
         agentId: '',
         step: '',
         text: `【子对话状态】「${title}」（id ${it.id}）已完成：合回原分支、标记完成`,
         tools: [],
-        panel: 'child',
+        panel: 'child' as const,
         child: { id: it.id, title, state: 'done' },
         peer: {
           id: it.id,
           title,
           name: agent.name ?? title,
-          rel: 'child',
-          kind: 'report',
+          rel: 'child' as const,
+          kind: 'report' as const,
           subject: '已完成：合回原分支、标记完成',
         },
         at: new Date().toISOString(),
-      })
+      }
+      parent.messages.push(report)
+      // 旧数据里同一份汇报曾被写两遍（runner 一轮结束回调发了两次，见 peer-dedupe.ts）：
+      // 演示里留一条这样的样本，界面上应该只显示一行
+      if (title === '核对通知时序')
+        parent.messages.push({ ...report, id: `${it.id}-report-dup`, at: new Date(Date.now() + 300).toISOString() })
+    }
     if (how.plan) it.plans = [how.plan]
     // 后台命令跑在服务端，CLI 只是等结果：这一轮没在跑也还没做完（归「执行中」）
     if (how.job) {

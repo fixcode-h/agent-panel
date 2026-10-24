@@ -12,7 +12,7 @@ import { runShard } from './harness.mjs'
 
 await runShard('子对话与计划', async (api) => {
   const { baseUrl: base, log, gitIn, call, sleep, waitFor, waitDone, waitTask, calls, readLog, step, setupBase } = api
-  const { project, A, B } = await setupBase()
+  const { project, A, B, C } = await setupBase()
   // ---- 子对话的 CLI 生命周期：列表如实给 cliAlive；打开父对话不启动任何子对话；发消息才启动 ----
   {
     let parent = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })
@@ -107,6 +107,54 @@ await runShard('子对话与计划', async (api) => {
     // 父对话自己也停掉，后面的用例从干净状态开始
     await waitDone(parent.id, 15000)
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
+
+    // 常驻保活的 CLI（Command Code）跑完一轮：同一轮结束只给父对话上报一次。
+    // result 事件和「回复完停在等下一句」是两个信号，两处各记一遍时父对话会收到两条一模一样的「接收消息」，
+    // 前端收拢只是兜旧数据，不能靠它掩盖这里又拆回两处
+    {
+      let keepParent = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        prompt: '保活子对话的父对话',
+      })
+      keepParent = await waitDone(keepParent.id, 20000)
+      const keepKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: C.id,
+        parentTaskId: keepParent.id,
+        // 带 COMMIT：这一轮要真的改了东西，result 那次才不会被「只回一句话」的空回合判定跳过
+        prompt: 'COMMIT 保活的子对话跑一轮',
+      })
+      // 有人在看这个子对话时，回复完才会保活等下一句：这样 result 和保活两个信号都会出现
+      await call('POST', `/tasks/${keepKid.id}/presence`, { viewerId: 'e2e-keepalive', active: true })
+      const reportsOf = (x) => x.messages.filter((m) => m.peer?.kind === 'report' && m.peer.id === keepKid.id)
+      keepParent = await waitTask(keepParent.id, (x) => reportsOf(x).length > 0, 30000)
+      // 用例成立的前提：回复完停在保活等下一句（listen 那一处结束信号真的会出现）
+      const kidNow = await call('GET', `/tasks/${keepKid.id}`)
+      assert.equal(kidNow.awaitingUser, true, '子对话回复完停在保活等下一句')
+      // 两处信号相隔通常不到 1 秒：再等一会儿看有没有第二条（不同 subject 的合法汇报不算）
+      await sleep(1500)
+      keepParent = await call('GET', `/tasks/${keepParent.id}`)
+      const reports = reportsOf(keepParent)
+      const dup = reports.filter(
+        (m, i) =>
+          i > 0 &&
+          m.peer.subject === reports[i - 1].peer.subject &&
+          Math.abs(Date.parse(m.at) - Date.parse(reports[i - 1].at)) < 5000,
+      )
+      assert.equal(
+        dup.length,
+        0,
+        `同一轮结束只上报一次；实际的汇报：${JSON.stringify(reports.map((m) => [m.at, m.peer?.subject]))}`,
+      )
+      await call('POST', `/tasks/${keepKid.id}/stop`)
+      await waitDone(keepKid.id, 15000)
+      await call('POST', `/tasks/${keepParent.id}/stop`)
+      await waitDone(keepParent.id, 15000)
+      step('保活的子对话跑完一轮：父对话只收到一条汇报')
+    }
 
     // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
     const isoNew = await call('POST', '/tasks', {

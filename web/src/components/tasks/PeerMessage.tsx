@@ -78,6 +78,14 @@ export interface PeerLineProps {
   ms?: number
 }
 
+/** 行右侧写的来源：几个子对话的角色名相同时（都是「执行」），带上各自的对话标题才分得清是哪一条 */
+function sideOf(p: PeerLineProps) {
+  const title = p.title && p.title !== p.name ? p.title : ''
+  if (p.dir === 'in')
+    return title ? t('来自 {name}（{title}）', { name: p.name, title }) : t('来自 {name}', { name: p.name })
+  return title ? t('发给 {name}（{title}）', { name: p.name, title }) : t('发给 {name}', { name: p.name })
+}
+
 /**
  * 对话之间的一条消息：「发送消息 / 接收消息 + 类型 + 内容标题」，像一次工具调用。
  * 点整行在下面展开全文，点中间的标题弹窗看全文
@@ -114,9 +122,7 @@ export function PeerLine(p: PeerLineProps) {
         openTip={t('在窗口里查看这条消息')}
         detail={
           <span className="max-w-[40%] shrink-0 truncate font-sans text-subtle">
-            {[p.state, p.dir === 'in' ? t('来自 {name}', { name: p.name }) : t('发给 {name}', { name: p.name })]
-              .filter(Boolean)
-              .join(' · ')}
+            {[p.state, sideOf(p)].filter(Boolean).join(' · ')}
           </span>
         }
         ms={p.ms}

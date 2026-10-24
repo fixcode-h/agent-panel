@@ -665,6 +665,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else {
       await row.scrollIntoViewIfNeeded()
       await check(p, '接收消息-子对话上报', ['接收消息', '汇报', '已完成：合回原分支'])
+      // 来源带子对话标题：几个子对话的角色名相同时（都是「前端开发」），靠标题区分
+      for (const title of ['压测导入大文件', '核对通知时序']) {
+        const n = await p.getByText(`来自 前端开发（${title}）`, { exact: false }).count()
+        if (!n) errors.push(`接收消息行没显示子对话标题「${title}」`)
+      }
+      // 同一子对话的同一份汇报在旧数据里写了两遍（演示数据里留了一条这样的样本）：界面上只显示一行，
+      // 不同来源的汇报仍然各占一行
+      const dup = await p.getByText('来自 前端开发（核对通知时序）', { exact: false }).count()
+      if (dup !== 1) errors.push(`同一子对话的重复汇报应该只显示一行，实际 ${dup} 行`)
       await p.getByRole('button', { name: '已完成：合回原分支、标记完成' }).first().click()
       await check(p, '接收消息-弹窗', ['已收到', '打开子对话'])
       await p.keyboard.press('Escape')
