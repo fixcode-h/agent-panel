@@ -656,7 +656,7 @@ const gameRules = (
   d: Design,
 ) => `- 游戏 UI 的视觉全部用图片：面板底框、按钮底图、高亮框、选中框、进度条底和填充、图标、分隔线、装饰都是独立的图片，用 Image 或画刷引用（"img:<图片 id>"），不要指望用纯色块拼出效果。文字用 TextBlock。
 - 一张图只画一个元素（例如只画按钮底图，不带文字；高亮框单独一张），这样在 UE 里能分别替换和复用。按钮的 Normal / Hovered / Pressed 可以各一张图，也可以共用一张再用 TintColor 区分。
-- 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
+- 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同一组数：nineSlice 和 Margin 都是 0~1 的**比例**（按图片宽高算，不是像素），ImageSize 填图片的实际宽高（例如 990×936），不要留默认的 32×32。拿不准就把九宫格往花纹内侧收，宁可比花纹宽一点，也不要切进花纹。九宫格图的四周（圆角、花纹外）必须是透明的：生成时一律按透明处理，不要同时声明成不透明，否则边距里会露出白底。
 - 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）用 create_components 提取成子控件，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
 - 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
 - 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
@@ -1088,7 +1088,7 @@ export function imagePrompt(
     img.nineSlice
       ? 'It will be stretched as a 9-slice: keep the corners decorated and the edges and center plain and uniform.'
       : '',
-    img.transparent
+    img.transparent || img.nineSlice
       ? chroma
         ? 'Background: perfectly flat pure green #00FF00 everywhere outside the element (chroma key), no shadows or gradients on the background, do not use green inside the element.'
         : 'Transparent background (alpha), nothing outside the element.'
