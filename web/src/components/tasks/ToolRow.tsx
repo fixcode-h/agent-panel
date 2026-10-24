@@ -219,6 +219,18 @@ export function RowShell({
   failed,
   className,
   children,
+  /**
+   * 整行都是打开入口（子对话行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
+   * 不传时行为完全不变——工具行、后台命令、子任务行仍然点哪里都展开收起
+   */
+  rowOpen,
+  /** 行最左边的额外控件（子对话切换下拉），在图标和动作名之前 */
+  leading,
+  /**
+   * 行自己的宽度当容器查询的基准：子对话行按这一行的实际宽度决定显示哪些补充信息，
+   * 不能只看视口（右栏开着时 1280 的行只有 300 左右，1024 收着右栏时还有 700 多）
+   */
+  container,
 }: {
   glyph: React.ReactNode
   verb?: React.ReactNode
@@ -237,6 +249,9 @@ export function RowShell({
   onToggle?: () => void
   onOpen?: () => void
   openTip?: string
+  rowOpen?: () => void
+  leading?: React.ReactNode
+  container?: boolean
   /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
   titleTip?: string
   failed?: boolean
@@ -244,25 +259,36 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
+  // 整行打开优先（子对话行没有展开收起）；其余行仍是整行点了展开
+  const activate = rowOpen ?? toggle
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
-      {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开 */}
+      {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
+          子对话行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
-        onClick={toggle}
+        onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 font-mono text-xs text-muted',
-          toggle && 'cursor-pointer hover:text-fg',
+          'group flex w-full min-w-0 items-center px-2.5 py-1.5 font-mono text-xs text-muted',
+          container && '@container',
+          // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
+          rowOpen ? 'gap-1.5' : 'gap-2',
+          activate && 'cursor-pointer hover:text-fg',
+          rowOpen && 'transition-colors hover:bg-sel/60',
         )}
       >
+        {leading}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            toggle?.()
+            activate?.()
           }}
-          disabled={!toggle}
+          disabled={!activate}
           aria-expanded={toggle ? open : undefined}
-          title={toggle ? (open ? t('收起') : t('展开')) : undefined}
+          // 整行打开时动作名也是入口：读屏名用「打开子对话…」，title 留给标题按钮，
+          // 界面检查靠 title 找标题，两个按钮都写会让它量错位置
+          aria-label={rowOpen ? openTip : undefined}
+          title={rowOpen ? undefined : toggle ? (open ? t('收起') : t('展开')) : undefined}
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
@@ -291,6 +317,9 @@ export function RowShell({
                   onOpen()
                 }}
                 title={titleTip || openTip}
+                // 只有整行打开的子对话行才用 openTip 当读屏名：别的行（接收消息、工具）标题本身就是名字，
+                // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
+                aria-label={rowOpen ? openTip : undefined}
                 className={cn(
                   'min-w-0 cursor-pointer truncate text-left text-fg/75 decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
@@ -305,12 +334,13 @@ export function RowShell({
             )
           ) : null}
         </span>
-        {/* 详情左对齐：从标题后面开始排，和标题之间隔一道竖线——标题是可点的，这段只是说明文字。
-            点详情不触发任何动作（哪怕整行带展开），不和标题的点击目标糊成一块 */}
+        {/* 详情左对齐：从标题后面开始排，和标题之间隔一道竖线。普通行里这段只是说明文字，
+            点它不触发任何动作（哪怕整行带展开）；整行打开的行（rowOpen）里它和标题一样属于入口 */}
         {detail && detailStart ? (
           <span
             className="flex min-w-0 flex-1 items-center border-l border-line-strong pl-2"
-            onClick={(e) => e.stopPropagation()}
+            // 整行打开时详情也属于入口（子对话行）：不拦点击，点了直接冒泡到行上
+            onClick={rowOpen ? undefined : (e) => e.stopPropagation()}
           >
             {detail}
           </span>

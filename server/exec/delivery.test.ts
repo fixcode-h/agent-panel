@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import type { Task, TaskMessage } from '../../shared/schema.ts'
-import { addNoteTaker, dropHeld, hasHeld, holdForNextTurn, removeNoteTaker, takeHeld } from './delivery.ts'
+import { addNoteTaker, dropHeld, hasHeld, holdForNextTurn, removeHeld, removeNoteTaker, takeHeld } from './delivery.ts'
 import { steerTask } from './runner.ts'
 
 setLang('zh')
@@ -41,6 +41,26 @@ test('这一轮失败或暂停：不再自动接着跑，消息留在对话里',
   const id = 'task-drop'
   holdForNextTurn(id, { ...msg('m1', '算了'), attachments: [] })
   dropHeld(id)
+  assert.equal(hasHeld(id), false)
+})
+
+test('撤掉一条自动询问时，用户的消息保持原来的顺序', () => {
+  const id = 'task-remove'
+  holdForNextTurn(id, { ...msg('ask', '【状态询问】'), attachments: [] })
+  holdForNextTurn(id, { ...msg('user', '用户的新消息'), attachments: [] })
+  removeHeld(id, 'ask')
+  assert.equal(hasHeld(id), true)
+  assert.deepEqual(takeHeld(id), { id: 'user', text: '用户的新消息', attachments: [] })
+  assert.equal(hasHeld(id), false)
+})
+
+test('撤掉不存在的 id 不影响队列；全撤完就清掉', () => {
+  const id = 'task-remove-missing'
+  holdForNextTurn(id, { ...msg('a', 'a'), attachments: [] })
+  removeHeld(id, 'nope')
+  assert.equal(hasHeld(id), true)
+  assert.equal(takeHeld(id)?.id, 'a')
+  removeHeld(id, 'a')
   assert.equal(hasHeld(id), false)
 })
 

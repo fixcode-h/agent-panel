@@ -2748,6 +2748,8 @@ function tasksRoute(
           // 和正式版一致：父对话的子对话栏靠这两项显示在做什么、多久没新输出
           activity: doing,
           lastActivityAt: childLastActivity(x),
+          // 和正式后端对齐：面板自动问过状态、还没回复时行上显示「已自动询问」
+          autoAsk: x.autoAsk,
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),

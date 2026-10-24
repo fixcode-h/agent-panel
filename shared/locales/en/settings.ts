@@ -391,6 +391,11 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 turns it off. When an agent prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so an agent stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
+  子对话没有输出时自动询问: 'Ask a sub-conversation for its status when it goes quiet',
+  '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。':
+    'Minutes; 0 turns it off. When a sub-conversation prints nothing for this long, the panel asks it, in the parent conversation\'s name, what it is doing and whether it is stuck. Any new output restarts the timer; after at most 3 asks it hands over to "Warn when there is no output" above. The two timers are independent, and the automatic ask only asks — it never stops the conversation.',
+  '子对话没有输出时自动询问（分钟）': 'Ask a sub-conversation for its status when it goes quiet (minutes)',
+  '填 0 到 1440 之间的整数，0 表示不问': 'Enter a whole number from 0 to 1440; 0 turns it off',
   离开对话后保留多久: 'Keep the conversation alive after you leave',
   '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话：正在执行的对话不管页面开着还是切到后台，都不会因为这个时长被收掉。':
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process. Only idle conversations waiting for your next message count: a turn still running keeps going whether its page is open or in the background, and this window never closes it.',

@@ -1,4 +1,15 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
@@ -41,19 +52,15 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
-  childIcon,
-  childStage,
   helperRunning,
   sortChildren,
   visibleChildren,
-  stopReasonText,
   taskActive,
   taskBusy,
   taskState,
   taskWaitText,
   taskSummary,
   withTaskModel,
-  type TaskStage,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
@@ -95,7 +102,8 @@ import {
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
-import { childDirty, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
+import { childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -346,6 +354,10 @@ export function TaskView({
     return list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c))
   }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
+  // 右栏打开的是子对话时，它在自己的 Provider 里读不到父对话的列表和跳转：
+  // 这里在组件顶层取外层的值（Provider 之外），标题旁的切换下拉用它，不另取一份数据
+  const outerChildren = useContext(ChildListCtx)
+  const outerNav = useContext(PaneNavCtx)
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
@@ -977,7 +989,7 @@ export function TaskView({
   )
 
   // 对话页的停靠区：计划和子对话贴在输入框上方、在消息流外面，不跟着滚，也不插在用户消息和回复之间。
-  // 固定三行（见 ChildrenBar）：计划在上、子对话中间、子任务在下，每行各自不换行，三行都和输入框左对齐
+  // 固定三行（见 ChildrenBar）：计划在上、子任务中间、子对话在下，每行各自不换行，三行都和输入框左对齐
   const conversationDock = (
     <>
       {task.plans?.length > 0 && (
@@ -1049,7 +1061,9 @@ export function TaskView({
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
-        <PaneNavCtx.Provider value={pane || task.parentTaskId ? { run: openPaneRun } : { child: openChildRow }}>
+        <PaneNavCtx.Provider
+          value={pane || task.parentTaskId ? { run: openPaneRun, openChild } : { child: openChildRow, openChild }}
+        >
           <ChildListCtx.Provider value={children}>
             <div
               className={cn(
@@ -1075,6 +1089,16 @@ export function TaskView({
                         <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />
                         <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
                       </>
+                    )}
+                    {/* 右栏打开子对话：标题左边给一个下拉，和消息流里的入口一样列出父对话的全部子对话，
+                        点一项就地切换；列表中用外层（父对话）的那份数据，当前这一项带勾选 */}
+                    {pane && task.parentTaskId && outerNav?.child && (
+                      <ChildSwitcher
+                        list={outerChildren}
+                        current={task.id}
+                        onOpen={(id) => outerNav?.child?.(id)}
+                        className="ml-1"
+                      />
                     )}
                     {/* 标题前的状态和侧栏、项目首页同一个判定（taskState）：自己在跑、在等子对话 / 子任务 /
                         后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
@@ -1785,8 +1809,13 @@ function ChildrenBar({
     <div ref={ref} className="shrink-0 px-3 md:px-6">
       {/* 弹窗以这两行为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
-        {/* 状态栏的后两行（计划在调用处单独一行）：子对话在中、子任务在下，各自只占一行、不换行。
+        {/* 状态栏的后两行（计划在调用处单独一行）：子任务在上、子对话在下，各自只占一行、不换行。
             子对话行左边是计数入口、右边是关闭按钮，中间的小块放不下就收成「+N」 */}
+        {helpers && (
+          <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
+            <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
+          </div>
+        )}
         {children.length > 0 && (
           <div data-status-row="children" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <button
@@ -1894,11 +1923,6 @@ function ChildrenBar({
             )}
           </div>
         )}
-        {helpers && (
-          <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
-            <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
-          </div>
-        )}
         {open && (
           <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
             <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -1934,15 +1958,6 @@ function ChildrenBar({
                     </p>
                   )}
                   {g.items.map((c) => {
-                    // 图标、行内徽标、摘要都读同一个判定（见 shared/task.ts 的 childIcon）：
-                    // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
-                    // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
-                    const icon = childIcon(c)
-                    // 那一行下面的说明：执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
-                    const line = childNote(c, icon === 'running')
-                    const stale = staleLine(c)
-                    // 行上的状态标签和运行区、分组读同一份（见 ./child-line 的 childLabels）
-                    const labels = childLabels(c)
                     // 停下时独立分支里还有没提交的改动：在卡片上直接说出来，并给「继续」
                     const dirty = childDirty(c)
                     return (
@@ -1959,39 +1974,8 @@ function ChildrenBar({
                             c.id === openChild && 'bg-sel',
                           )}
                         >
-                          <span className="mt-0.5 shrink-0">
-                            <TaskStatusIcon
-                              status={c.status}
-                              icon={icon}
-                              label={c.status === 'stopped' ? stopReasonText(c.stopReason) : undefined}
-                            />
-                          </span>
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                                {c.title}
-                              </span>
-                              {/* 状态标签：全部从 childIcon / childState 派生，同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
-                              {labels.map((l) => (
-                                <span key={l.text} className={childLabelClass[l.tone]}>
-                                  {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
-                                  {l.text}
-                                </span>
-                              ))}
-                            </span>
-                            {(line || stale) && (
-                              <span className="flex min-w-0 items-center gap-1">
-                                {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}
-                                {stale && <span className={cn('shrink-0 text-xs', stale.cls)}>· {stale.text}</span>}
-                              </span>
-                            )}
-                            {c.branch && (
-                              <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
-                                <GitBranch className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{c.branch}</span>
-                              </span>
-                            )}
-                          </span>
+                          {/* 图标、状态标签、说明、分支和标题旁的下拉读同一份，两处不再各画一套 */}
+                          <ChildRowContent c={c} />
                         </button>
                         {dirty && (
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
@@ -2032,32 +2016,11 @@ function ChildrenBar({
   )
 }
 
-/**
- * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、未完成、做完的、停下的；
- * 「运行中」只列真正在执行（working）的几个，不分组。分组用 childStage（taskStage 再加上「计划没做完」）：
- * 和状态图标、行内标签是同一套映射，排序也用这一套，组内顺序和 sortChildren 一致
- */
-function childGroups(list: ChildSummary[], grouped: boolean) {
-  if (!grouped) return [{ key: 'all', label: '', items: list }]
-  const groups: { key: TaskStage; label: string; items: ChildSummary[] }[] = [
-    { key: 'you', label: t('需要你处理'), items: [] },
-    { key: 'running', label: t('执行中'), items: [] },
-    { key: 'unfinished', label: t('未完成'), items: [] },
-    { key: 'done', label: t('已完成'), items: [] },
-    { key: 'stopped', label: t('已停止'), items: [] },
-  ]
-  for (const c of list) {
-    const g = groups.find((x) => x.key === childStage(c))
-    if (g) g.items.push(c)
-  }
-  return groups.filter((g) => g.items.length)
-}
-
 /** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */
 const barRow =
   'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
 /**
- * 输入框上方的状态栏（计划、子对话、子任务各一行）：不套框，当作轻量信息。
+ * 输入框上方的状态栏（计划、子任务、子对话各一行）：不套框，当作轻量信息。
  * 每行各自 flex-nowrap、只占一行；左内边距 2.5 加上行内按钮自己的 px-1.5，
  * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */

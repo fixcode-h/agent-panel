@@ -782,7 +782,9 @@ const turnReply = () => {
     return `${review.trim()}
 
 这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
+  // 面板自动询问子对话状态（长时间没有输出）：回复带上标记，端到端测试据此确认它真的收到了
+  const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
 }
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
@@ -1085,8 +1087,10 @@ if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
   codexDone('completed')
 }
 
-// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
-if (input.includes('HANG')) {
+// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）。
+// 面板判定它没有响应、接回会话重开时提示里带「一直没有回应」：那一轮照常回复，
+// 用来测「长时间没有输出时自动询问」之后还能收到回复
+if (input.includes('HANG') && !input.includes('一直没有回应')) {
   process.stderr.write('Invalid API key · Please run /login\n')
   await new Promise(() => setInterval(() => {}, 60_000))
 }

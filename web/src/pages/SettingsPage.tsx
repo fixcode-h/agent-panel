@@ -113,6 +113,7 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
+  const [childAsk, setChildAsk] = useState(String(initial.childIdleAskMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
@@ -251,6 +252,8 @@ function SettingsBody({
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
   const idleMin = Number(idle)
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
+  const childAskMin = Number(childAsk)
+  const childAskValid = childAsk !== '' && Number.isInteger(childAskMin) && childAskMin >= 0 && childAskMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const unreadMin = Number(unread)
@@ -280,6 +283,7 @@ function SettingsBody({
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
+    childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -537,6 +541,26 @@ function SettingsBody({
                   />
                   {!idleValid && (
                     <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不检测')}</span>
+                  )}
+                </div>
+              </Row>
+              <Row
+                title={t('子对话没有输出时自动询问')}
+                desc={t(
+                  '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={childAsk}
+                    onChange={(e) => setChildAsk(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!childAskValid}
+                    className={cn('h-9', !childAskValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('子对话没有输出时自动询问（分钟）')}
+                  />
+                  {!childAskValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不问')}</span>
                   )}
                 </div>
               </Row>
