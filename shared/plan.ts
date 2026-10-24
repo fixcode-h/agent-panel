@@ -510,6 +510,31 @@ export function holdWait(
   return changed
 }
 
+/**
+ * 父对话收尾一个子对话（finish_child）之后刷新计划：等它的那一步按子对话现在的状态收口
+ * （report 来自 childReport：ok 标完成、fail 退回进行中、hold 继续等并写清在等什么），返回给父对话 Agent 看的计划文字。
+ * report 为空（子对话找不到了）只出计划。计划里没有步骤在等它时点明，让 Agent 自己把对应步骤标好。
+ * 没有进行中的计划返回空串
+ */
+export function refreshChildWait(
+  task: PlanTask,
+  child: { id: string; title: string },
+  report?: { settle: 'hold' | 'ok' | 'fail'; why: string },
+  now = new Date().toISOString(),
+) {
+  const plan = activePlan(task)
+  if (!plan) return ''
+  const tracked = plan.steps
+    .flatMap((s) => [...s.children, s])
+    .some((x) => x.waits.some((w) => w.kind === 'child' && w.ref === child.id))
+  if (report?.settle === 'hold') holdWait(task, 'child', child.id, report.why, now)
+  else if (report) settleWait(task, 'child', child.id, report.settle === 'ok', now)
+  // settleWait 在步骤全完成时会把计划收起：收起了也要把最后的样子给 Agent 看
+  const missing =
+    report && !tracked ? `\n计划里没有步骤在等子对话「${child.title}」：对照它的结果用 set_plan 把对应的步骤标好。` : ''
+  return `收尾后的计划：\n${planText(task, plan)}${missing}`
+}
+
 /** 推回对话的结果前面加一句：它是计划里哪一步在等的，先处理这一步 */
 export function waitNote(hit: { title: string; done: boolean }[]) {
   if (!hit.length) return ''
