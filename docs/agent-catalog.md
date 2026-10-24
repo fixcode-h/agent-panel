@@ -25,10 +25,16 @@
 
 ## 必备角色
 
-`orchestrator`（统筹）、`worker`（执行）、`docsync`（文档）、`tester`（测试验收）、`vcs`（版本控制）、`helper`（子任务）是项目对话离不开的六个能力块，
+`orchestrator`（统筹）、`worker`（执行）、`docsync`（文档）、`reviewer`（评审）、`tester`（测试验收）、`vcs`（版本控制）、`helper`（子任务）是项目对话离不开的七个能力块，
 定义在 `shared/builtin/core.ts`：启动时自动装好、不能删除，名称、角色设定、Skill、能力开关和参数定义每次启动按内置定义同步，
 用户只能改参数取值和运行配置（CLI、模型、思考强度、权限），项目里还能在 `Project.agentParams` 按项目覆盖参数。
-它们之间靠名字协作（统筹和执行把要落盘的文档派给「文档」、把验证派给「测试验收」、把改完文件后的版本管理交给「版本控制」），所以不能被改成别的角色。
+它们之间靠名字协作（统筹和执行把要落盘的文档派给「文档」、把验证派给「测试验收」、收尾时在完整测试前派「评审」、把改完文件后的版本管理交给「版本控制」），所以不能被改成别的角色。
+「评审」的时机是子对话收尾：改完并跑过快速检查之后、跑完整测试和编译之前，派它看限定范围的 diff。
+评审必须在子对话的计划里占一条独立的主步骤（标 `review: true`）：派的时候标等待中、拿回结论后标完成，
+计划面板上能看到这一步和它的状态；按意见修改、复看也各自单列成步。
+`submit_merge` 前面板会校验三件事：计划里有标 `review` 的步骤、那一步已完成、评审的第一行是「验收结论：通过」
+（`shared/review-gate.ts`；先读首行，首行没有结论才退回全文最后一条——子任务输出太长时只保留开头，结论写在末尾会被截掉）；
+有 🛑 没改完时合不回去。
 改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
 
 ## Agent 清单
@@ -42,7 +48,7 @@
 | `docsync`      | 文档（必备）     | 文档落盘             | ✓    | general、ue、ue-dev、architecture、bootstrap、release、migration                      | `docRoot` `lang` `index` `adr` `bug`                                            |
 | `tester`       | 测试验收（必备） | 构建/测试/验收       | ✓    | general、ue、daily-dev、openspec、bugfix、ue-dev、bootstrap、deps、migration、release | `scope` `env` `regress` `onFail` `write` `serial`                               |
 | `explorer`     | 调研             | 只读调研             | ✓    | ue、ue-dev、bootstrap、openspec、review、migration                                    | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
-| `reviewer`     | 评审             | 独立评审与复核       | ✓    | review                                                                                | `target`（代码改动 / 方案或结论）`vcs`                                          |
+| `reviewer`     | 评审（必备）     | 独立评审与复核       | ✓    | review                                                                                | `target`（代码改动 / 方案或结论）`vcs`                                          |
 | `analyst`      | 方案设计         | 需求、方案与架构契约 |      | general、ue、daily-dev、openspec、ue-dev、architecture、migration                     | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
 | `spec`         | 规范撰写         | OpenSpec 产物与门禁  |      | openspec                                                                              | `scene` `stage`                                                                 |
 | `developer`    | 开发             | 写代码               |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |

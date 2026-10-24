@@ -319,7 +319,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill 再切回', ['新建 Skill'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
-    await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '测试验收'])
+    await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '评审', '测试验收', '版本控制'])
     await dlg.getByRole('button', { name: '工作流', exact: true }).click()
     await check(p, '项目设置-工作流', ['AI 配置'])
     await dlg

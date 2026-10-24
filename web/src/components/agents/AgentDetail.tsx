@@ -359,7 +359,7 @@ export function AgentDetail({
                   <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
                   <span className="text-muted">
                     {t(
-                      '项目对话离不开的四个角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。',
+                      '项目对话离不开的必备角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。',
                     )}
                   </span>
                 </div>

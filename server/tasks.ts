@@ -1,4 +1,4 @@
-import { withProjectParams } from '../shared/builtin/core.ts'
+import { coreDefinition, withProjectParams } from '../shared/builtin/core.ts'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
@@ -71,6 +71,7 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
+import { reviewGate } from '../shared/review-gate.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -1119,6 +1120,19 @@ export function tasksApi(deps: {
           .map((x) => `${x.id}「${x.title}」`)
           .join('、')}）。做完并用 set_plan 标完成；确实不做的从计划里删掉并说明原因，再调用 submit_merge。`,
       }
+    // 合回前必须先评审：收尾流程是 改完 → 快速检查 → 评审（计划里的独立步骤） → 按意见改 → 完整测试 → submit_merge，
+    // 评审就是一次普通的 spawn_agents，结论从它的输出里读（见 shared/review-gate.ts）。
+    // 子任务是按 id 或名字找角色的：用户自己建了同名的「评审」时，派出去的可能是那个，所以名字也认
+    const reviewerName = coreDefinition('reviewer').agent.name
+    // 读不到角色列表时单独说明：兜底成空数组会让门禁报「还没有真的派过评审」，把模型引向重复派评审
+    const known = await deps.agents.list().catch(() => null)
+    if (!known) return { ok: false, info: '没有请求收尾：读取角色列表失败，稍后再试一次。' }
+    const review = reviewGate(
+      tk.steps,
+      (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
+      activePlan(tk)?.steps ?? [],
+    )
+    if (!review.ok) return review
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
     if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟

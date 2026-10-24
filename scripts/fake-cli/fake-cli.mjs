@@ -75,6 +75,9 @@ if (args.includes('--version')) {
 // Codex 的 app-server：按行读 JSON-RPC 请求，回答 initialize、model/list，并按 thread/start、turn/start 执行一轮；
 // stdin 不关闭就一直等
 let input = ''
+// 评审这类只读子任务（角色设定里有「你负责独立评审」）：它的 input 里还带着子对话的用户原话（COMMIT、BEGIN_EDIT 这些场景标记），
+// 不能让它跟着做场景动作，也不往子对话的工作目录里写文件。input 每轮都会换，所以写成函数、用时再算
+const isReviewRole = () => [input, ...args].join('\n').includes('你负责独立评审')
 let appThread = ''
 let appResume = ''
 let developer = ''
@@ -469,6 +472,8 @@ async function panelCall(name, params) {
       .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
+  // 没有面板 MCP（子任务、评审这类没有面板工具的角色）：像没这个工具一样报错，不要让整个进程崩掉
+  if (!url) return { isError: true, content: [{ type: 'text', text: '这个角色没有面板工具' }] }
   const rpc = (id, method, params) =>
     fetch(url, {
       method: 'POST',
@@ -511,16 +516,95 @@ if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes(
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
 if (input.includes('BG_LONG') && input.includes('run_background'))
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
-// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样跑通测试后请父对话收尾
-if (input.includes('SUBMIT_MERGE') && input.includes('submit_merge') && !beganEdit) {
-  writeFileSync('child-done.txt', 'done\n')
-  const got = await panelCall('submit_merge', {
-    note: '改完了',
-    tests: 'npm test 通过',
-    handoff: { files: 'child-done.txt — 子对话完成的标记', decisions: '只写一个文件' },
-  })
-  if (process.env.FAKE_CLI_LOG)
-    appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+// 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
+// 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
+{
+  // 评审子是任务角色（isReviewRole）：它没有面板工具，也不应换收尾流程
+  // 交回结果的那一轮 input 里只有「你派出的子任务都结束了…」，不再带用户原话，所以按 [fake-review] 标记驱动后续
+  const back = [...input.matchAll(/\[fake-review\] (pass|fail)/g)].at(-1)?.[1]
+  const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
+  if (!beganEdit && !isReviewRole() && (asked || back)) {
+    const review = (instructions) =>
+      panelCall('spawn_agents', { tasks: [{ agent: '评审', title: '评审改动', instructions }] })
+    // 评审是计划里的独立步骤：派的时候标等待中，拿回结论后标完成（面板 submit_merge 前会校验这一步）
+    const plan = (steps) => {
+      if (process.env.FAKE_CLI_LOG)
+        appendFileSync(process.env.FAKE_CLI_LOG + '.plan', JSON.stringify({ kind, steps }) + '\n')
+      return panelCall('set_plan', { steps })
+    }
+    const planOf = (stage) => {
+      const code = { title: '改代码', status: 'done' }
+      const first = { title: '评审本次改动', status: 'done', review: true }
+      const fix = { title: '按评审意见修改', status: 'done' }
+      const again = { title: '复看评审', status: 'done', review: true }
+      const test = { title: '跑完整测试', status: 'done' }
+      if (stage === 'asked') return [code, { title: '评审本次改动', status: 'waiting', review: true }]
+      // 评审不通过时先只列到「按评审意见修改」：带着一条没做完的复看去请收尾，会被「计划还有步骤没做完」拦住，测不到评审结论那一道
+      if (stage === 'fix') return [code, first, fix]
+      if (stage === 'again') return [code, first, fix, { title: '复看评审', status: 'waiting', review: true }]
+      return blocked ? [code, first, fix, again, test] : [code, first, test]
+    }
+    // 交回结果那一轮没有用户原话：这次是不是 🛑 场景、计划里要不要故意漏标 review，都记在临时目录的文件里（按工作目录区分）
+    const flag = path.join(tmpdir(), `fake-review-${path.basename(process.cwd())}`)
+    if (input.includes('REVIEW_BLOCK')) writeFileSync(flag, '1')
+    if (input.includes('NO_REVIEW_PLAN')) writeFileSync(flag + '-noreview', '1')
+    const blocked = existsSync(flag)
+    const noReview = existsSync(flag + '-noreview')
+    const merge = async () => {
+      writeFileSync('child-done.txt', 'done\n')
+      const got = await panelCall('submit_merge', {
+        note: '改完了',
+        tests: 'npm test 通过',
+        handoff: { files: 'child-done.txt — 子对话完成的标记', decisions: '只写一个文件' },
+      })
+      if (process.env.FAKE_CLI_LOG)
+        appendFileSync(process.env.FAKE_CLI_LOG + '.merge', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+      return got
+    }
+    if (!back) {
+      // 第一次评审：任务里有 REVIEW_BLOCK 时让它数落出必须改项。标记写在 instructions 里，
+      // 因为评审的 input 还带着子对话的原始需求（含 REVIEW_BLOCK），光看整个 input 分不出是哪一次
+      // NO_REVIEW_PLAN：计划里只写标题、不标 review，用来验证「计划里缺少评审步骤」那一道
+      await plan(
+        input.includes('NO_REVIEW_PLAN')
+          ? [
+              { title: '改代码', status: 'done' },
+              { title: '评审本次改动', status: 'done' },
+            ]
+          : planOf('asked'),
+      )
+      await review(
+        `看这次改动的限定范围 diff，第一行写验收结论，再按 🛑 / 💭 / 💅 分级。REVIEW_MARK:${input.includes('REVIEW_BLOCK') ? 'fail' : 'pass'}`,
+      )
+    } else if (back === 'fail') {
+      // 按评审意见改：写一个这次分支独有的文件，否则分支和父分支没差异，合回去不会产生合并提交
+      writeFileSync('review-fixed.txt', 'fixed\n')
+      // 评审标完成 + 单列一条「按评审意见修改」
+      await plan(planOf('fix'))
+      // 🛑 没改完却直接请父对话收尾：面板按评审结论拦下，这一轮的拒绝也记下来供测试检查
+      const rejected = await merge()
+      if (process.env.FAKE_CLI_LOG)
+        appendFileSync(
+          process.env.FAKE_CLI_LOG + '.review',
+          JSON.stringify({ kind, rejected: rejected.isError === true }) + '\n',
+        )
+      // 改完把复看写进计划（独立步骤、同样标 review）再派一次评审
+      await plan(planOf('again'))
+      await review('改完了，再看一遍限定范围的 diff，第一行给验收结论。REVIEW_MARK:pass')
+    } else {
+      if (noReview) {
+        // 计划里只有标题、没标 review：先请一次收尾，面板要按「计划里缺少评审步骤」拦下
+        const rejected = await merge()
+        if (process.env.FAKE_CLI_LOG)
+          appendFileSync(
+            process.env.FAKE_CLI_LOG + '.review',
+            JSON.stringify({ kind, rejected: rejected.isError === true, reason: 'plan' }) + '\n',
+          )
+      }
+      await plan(planOf('pass'))
+      await merge()
+    }
+  }
 }
 // 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾
 const wrapReq = /【收尾请求】[^\n]*（id ([^）\s]+)）/.exec(input)
@@ -586,7 +670,7 @@ const codexDone = (status, error) => {
   note('turn/completed', { turn: { id: 't1', status, error: error ? { message: error } : null, items: [] } })
   process.exit(0)
 }
-const file = `${kind}-output.txt`
+const file = isReviewRole() ? path.join(tmpdir(), `${kind}-output.txt`) : `${kind}-output.txt`
 // 「AI 创建」的回复：一段说明 + JSON
 const assistText = () => {
   const pick = (tag) => input.match(new RegExp(`${tag}:(.*)`))?.[1]?.trim()
@@ -636,6 +720,23 @@ const turnReply = () => {
         : input.includes('## 事件：子 Agent 提问')
           ? '\n主 Agent 的回答：用方案一'
           : ''
+  // 子对话收尾前派的评审（agent 写「评审」）：按分级给意见，最后一行给验收结论。
+  // 结论由派它的子对话在 instructions 里用 REVIEW_MARK:pass / REVIEW_MARK:fail 指定（取最后一次），
+  // 不能光看「input 里有没有 REVIEW_BLOCK」：评审的 input 里也带着子对话的原始需求。
+  // 结尾的 [fake-review] pass/fail 是给下一轮识别用的：它会把这段输出作为子任务结果交回给派它的子对话。
+  // 角色设定走 CLI 的 system prompt（在 args 里，不在 input），所以两份拼起来看才认得出来它是评审
+  const roleText = [input, ...args].join('\n')
+  const mark = [...roleText.matchAll(/REVIEW_MARK:(pass|fail)/g)].at(-1)?.[1] ?? 'pass'
+  const review = roleText.includes('你负责独立评审')
+    ? mark === 'fail'
+      ? '\n验收结论：不通过\n🛑 必须改：child-done.txt 只写了一行，补上改了什么。\n[fake-review] fail'
+      : '\n验收结论：通过\n💭 建议：提交说明可以再具体一点。\n[fake-review] pass'
+    : ''
+  // 评审子任务按约定把验收结论写在第一行：门禁先读首行，长报告被截断时也不会丢结论
+  if (review)
+    return `${review.trim()}
+
+这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
 }
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
@@ -1226,8 +1327,8 @@ if (kind === 'claude') {
   })
   out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
-  // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）
-  if (input.includes('COMMIT') && !beganEdit) {
+  // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）；评审这种只读子任务不做
+  if (input.includes('COMMIT') && !beganEdit && !isReviewRole()) {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')
@@ -1365,8 +1466,10 @@ if (kind === 'claude') {
   note('item/started', { item: { id: 'a0', type: 'agentMessage', text: '' } })
   for (const part of reply.match(/.{1,6}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text: reply } })
-  // BIG_CONTEXT：上下文占用大的对话（交接摘要的叫醒判定要用）
-  const big = input.includes('BIG_CONTEXT')
+  // BIG_CONTEXT：上下文占用大的对话（交接摘要的叫醒判定要用）。
+  // 面板交回子任务结果的那一轮接的是同一个会话，上下文不会比派子任务那轮小；这里也按大值报，
+  // 免得「最后一轮只有一句交回说明」把上下文算小，叫醒已完成的子对话时误判成小上下文
+  const big = input.includes('BIG_CONTEXT') || input.includes('你派出的子任务都结束了')
   const usage = {
     totalTokens: big ? 48300 : 24300,
     inputTokens: big ? 48000 : 24000,
