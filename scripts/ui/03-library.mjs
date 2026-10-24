@@ -121,6 +121,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'AI分析-修复子对话')
   await p.getByRole('button', { name: /全部应用/ }).click()
   await check(p, 'AI分析-已应用', ['已应用'])
+  // 结果固定在输入框上方：能收起成一行、再展开；发新内容时自己收起
+  await p.getByRole('button', { name: '收起分析结果' }).click()
+  if (await p.getByText('工作流优化', { exact: true }).count()) errors.push('AI 分析：收起后还能看到结果内容')
+  await check(p, 'AI分析-收起')
+  await p.getByRole('button', { name: '展开分析结果' }).click()
+  await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 5000 })
+  await p.locator('#follow-up').first().click()
+  await p.keyboard.type('接着说说第一个问题')
+  await p.keyboard.press('Enter')
+  await p
+    .getByRole('button', { name: '展开分析结果' })
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('AI 分析：发了新内容后结果没有自动收起'))
+  await check(p, 'AI分析-发送后收起')
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
