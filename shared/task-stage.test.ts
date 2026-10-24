@@ -21,6 +21,7 @@ import {
   childWait,
   childWaitText,
   childWaiting,
+  keepAliveBusy,
   keepAliveVictims,
   runRunning,
   stopReasonText,
@@ -347,6 +348,13 @@ test('keepAliveVictims：超过上限时结束最久没用的，正在看的和�
   ]
   // 上限 3、刚进来的 d：只超一个，收掉最久没用的 a（running 不在等下一句，不算）
   assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 3, 'd'), ['a'])
+  // 正在执行的对话不占名额：只剩它一个时上限多小都不收它（它连候选都不是）
+  assert.deepEqual(keepAliveVictims([list[3]], 1, 'd'), [], 'running 的既不算名额也不会被选走')
+  assert.deepEqual(
+    keepAliveVictims([list[3], alive('d', '2026-01-01T13:00:00Z')], 1, 'd'),
+    [],
+    '只有一个空闲的，没超限',
+  )
   // 上限 2：超两个就收两个，从最久没用的开始
   assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 2, 'd'), ['a', 'c'])
   // 没超限不动
@@ -360,6 +368,24 @@ test('keepAliveVictims：超过上限时结束最久没用的，正在看的和�
   )
   // 0 表示不限制
   assert.deepEqual(keepAliveVictims(list, 0, 'd'), [])
+  // 不传 exceptId（刚进入保活的那个自己还在忙、不占名额）：不能把那个 +1 算进去，否则会多收一个
+  assert.deepEqual(keepAliveVictims(list, 2, ''), ['a'], '上限 2、3 个空闲：只收最久没用的一个')
+  assert.deepEqual(keepAliveVictims(list, 3, ''), [], '上限 3、3 个空闲：正好到顶，一个都不收')
+})
+
+test('keepAliveBusy：只有停在等下一句、名下没东西在跑的才算空闲', () => {
+  const idle = { status: 'running' as const, working: false, awaitingUser: true, prewarming: false }
+  assert.equal(keepAliveBusy(idle), false, '停在等下一句：空闲，可以被上限/时长收')
+  // 正在回话、正在启动：都不是空闲
+  assert.equal(keepAliveBusy({ ...idle, working: true }), true, 'CLI 正在回话')
+  assert.equal(keepAliveBusy({ ...idle, prewarming: true }), true, '还在启动')
+  // 这一轮没收尾（等它派出的子任务、跑工作流节点）：awaitingUser 还是 false
+  assert.equal(keepAliveBusy({ ...idle, awaitingUser: false }), true, '这一轮没收尾')
+  assert.equal(keepAliveBusy({ ...idle, status: 'done', awaitingUser: false }), false, '已经结束的一轮不算在跑')
+  // 后台命令还在跑、名下还有活着的子对话：都要等它们回来接着干
+  assert.equal(keepAliveBusy(idle, { background: 1 }), true, '后台命令还在跑')
+  assert.equal(keepAliveBusy(idle, { children: 1 }), true, '名下有子对话活着')
+  assert.equal(keepAliveBusy(idle, { background: 0, children: 0 }), false, '都没有：空闲')
 })
 
 /** 子对话的任务快照：只写被测字段，其余给最小默认值 */
