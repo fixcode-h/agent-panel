@@ -16,6 +16,87 @@ export const ENV_LABEL: Record<TestStep['env'], string> = {
   bash: 'bash',
 }
 
+/**
+ * 把一条 glob 转成正则。支持 `**`（跨目录；`**` 后面接斜杠还能匹配零层目录）、`*`、`?`；
+ * 以 / 结尾的写法按目录算（`web/` 等于 `web/**`）。没写通配符的也按目录前缀算（`web/src` 等于 `web/src/**`）：
+ * 项目教训里的 glob 就是这么写的（`shared/lessons.ts` 的 `web/src` 能匹配 `web/src/App.tsx`），
+ * 用户照抄进「适用改动」时不能变成一条永远匹配不上的规则、把步骤静默跳掉。
+ * 路径统一用 /，Windows 传来的反斜杠先换掉。
+ */
+function globToRegExp(glob: string) {
+  let g = glob.trim().replace(/\\/g, '/')
+  if (!g) return null
+  while (g.endsWith('/')) g = g.slice(0, -1)
+  // 没有通配符的写法（`web/src`、`web/`）按「精确命中或作为目录前缀」算，两种写法都认
+  const plain = !!g && !/[*?]/.test(g)
+  let re = ''
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i]
+    if (c === '*') {
+      if (g[i + 1] === '*') {
+        i++
+        // `**/` 可以匹配零层目录，`**/*.cpp` 才认得出仓库根下的 a.cpp
+        if (g[i + 1] === '/') {
+          i++
+          re += '(?:.*/)?'
+        } else re += '.*'
+      } else re += '[^/]*'
+    } else if (c === '?') re += '[^/]'
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  return new RegExp(`^${re}${plain ? '(?:/.*)?' : ''}$`, 'i')
+}
+
+const GLOB_CACHE = new Map<string, RegExp | null>()
+
+/** 一个改动文件是否匹配这条 glob（相对项目根，两侧都按 / 比） */
+export function matchesGlob(file: string, glob: string) {
+  const f = file.trim().replace(/\\/g, '/')
+  if (!f) return false
+  let re = GLOB_CACHE.get(glob)
+  if (re === undefined) {
+    re = globToRegExp(glob)
+    GLOB_CACHE.set(glob, re)
+  }
+  return !!re?.test(f)
+}
+
+/** 这条步骤写了的适用范围（去掉空项）；空数组表示没写，总是执行 */
+export function stepGlobs(step: Pick<TestStep, 'appliesTo'>) {
+  return (step.appliesTo ?? []).map((g) => g.trim()).filter(Boolean)
+}
+
+/**
+ * 这条步骤对这批改动适不适用——匹配判定的唯一实现，单测和以后要接进执行流程的代码都走它。
+ * 口径是「这次任务实际波及的改动」：自己改的、从远端拉取或合并进来的都算。
+ * 两种情况按总是执行：没写适用范围（老项目升级上来的步骤）；改动清单为空——
+ * 空清单意味着取不到（没有版本控制、命令失败、不知道基线），未知不等于不相关，宁可多跑不能漏跑。
+ */
+export function stepApplies(step: Pick<TestStep, 'appliesTo'>, changedFiles: string[]) {
+  const globs = stepGlobs(step)
+  if (!globs.length || !changedFiles.length) return true
+  return changedFiles.some((f) => globs.some((g) => matchesGlob(f, g)))
+}
+
+/**
+ * 界面上那行文字怎么变回 glob 列表：逗号（中英文都认）和换行分隔，去掉空项。
+ * 最多留 30 条（和 schema.ts 里的 .max(30) 同一个上限），超出的丢弃是故意的：
+ * 三十条以上说明该拆成多条步骤或直接用一条宽一点的 glob，多了反而看不清哪条命中
+ */
+export function parseGlobs(text: string) {
+  return text
+    .split(/[,，\n]/)
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .slice(0, 30)
+}
+
+/** 交给 Agent 的「适用改动」一行：没写范围时说明总是执行，免得 Agent 当成条件缺失 */
+export function appliesToText(step: Pick<TestStep, 'appliesTo'>) {
+  const globs = stepGlobs(step)
+  return globs.length ? globs.join('、') : '未设置，总是执行'
+}
+
 /** 平台判断用的关键词：任务快照里存 process.platform，界面上的判断也按它 */
 export const isWindows = (platform: string) => /^win/i.test(platform)
 
@@ -58,11 +139,12 @@ export function testStepsText(steps: TestStep[], platform: string, wslDistro = '
   return steps
     .map((s, i) => {
       const lines = [
-        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.enabled ? '' : t('，已停用')}）`,
+        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.merge ? t('，合并时编译') : ''}${s.enabled ? '' : t('，已停用')}）`,
         `   - 命令：${stepCommand(s, platform, wslDistro)}`,
       ]
       if (s.cwd) lines.push(`   - 工作目录：${s.cwd}（相对项目根）`)
-      if (s.when) lines.push(`   - 执行条件：${s.when}`)
+      lines.push(`   - 适用改动（清单里一个都不匹配就跳过这一步）：${appliesToText(s)}`)
+      if (s.when) lines.push(`   - 补充说明：${s.when}`)
       if (s.timeoutSec) lines.push(`   - 超时：${fmtDuration(s.timeoutSec * 1000)}`)
       if (s.note) lines.push(`   - 说明：${s.note}`)
       const note = envNote(s, platform)
@@ -73,13 +155,31 @@ export function testStepsText(steps: TestStep[], platform: string, wslDistro = '
 }
 
 /**
+ * 改动清单怎么取、怎么筛步骤：提示词里唯一的一份，testStepsBlock 和 verifyBlock 都用它。
+ * 口径是「这次任务实际波及的改动」——自己改的、从远端拉取或合并进来的都算；
+ * 只按自己的提交判断的话，合并进来的 C++ 改动会被漏掉，编译该跑却没跑。
+ */
+export const CHANGED_FILES_RULE = `先取本次实际改了什么，再决定跑哪几条（不要为了保险全部跑一遍）：
+0. 先看这次要跑的范围：范围是「整体」，或者任务说明要求「全跑一遍」「发布前验证」「整体验收」「依赖升级后确认步骤」时，**不按改动清单筛**——按步骤顺序全部执行，跳过的只能因为环境跑不了（比如需要 Editor、需要别的系统），不能写「本次没改 X」当理由；发布前验证、整体验收这类节点存在的意义就是不筛。范围是「本次改动」时才按下面的清单筛。
+1. 改动清单是「任务起点 → 当前 HEAD」的完整变更，不是只看自己的那几个提交：Git 用「git diff --name-only <任务基线>...HEAD」（三点比较，含合并进来的内容），再补上「git status --short」里的工作区改动。任务基线就是任务开始时的 HEAD（开工时记下的 git rev-parse HEAD）；拿不到就退回「git diff --name-only $(git merge-base HEAD <主分支>)..HEAD」。Perforce 用「p4 opened」加上「p4 diff」里本次涉及的文件；其它版本控制按项目自己的约定。
+2. 拉取或合并远端更新后，按合并后的改动清单重新判断：合并进来的文件也算本次改动，涉及的步骤要正常执行，不能以「这部分不是我改的」为理由跳过。
+   例：自己只改了文档、但从远端合并进来 C++ 改动 → 编译照跑；自己改了 C++、合并进来的是文档 → 编译照跑；两边都只有文档 → 才可以跳过并写原因。
+3. 取不到改动清单时（项目没有版本控制、命令失败、不知道任务基线）按总是执行：清单未知不等于不相关，这种情况宁可多跑也不能漏跑，并在结论里说明这次为什么没筛。
+4. 一条步骤的「适用改动」和这份清单完全不匹配才跳过；跳过的写一行：「跳过：<步骤名> — 本次及合并进来的改动都没有 <这类文件>（实际改的是 <改了什么>）」。所有步骤都跳过时写「本次改动不涉及配置的测试步骤 — 本次改的是 …」，不能不吭声。
+5. 没写「适用改动」的步骤表示总是执行（老项目升级上来的步骤）。
+6. 名字后面标了「合并时编译」的步骤被选中时，同一时间仍然只编译一次：等它结束再跑下一条。`
+
+/**
  * 注入工作流说明后面的项目测试步骤。没有配置时给出兜底：让 Agent 自己找命令，并在结果里建议配置。
+ * 提示词里先教怎么按改动清单筛，再列步骤：不筛的话 Agent 会为了保险全部跑一遍。
  * 新建对话时写进任务快照，之后改项目设置不影响已经开始的任务。
  */
 export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = '') {
   const active = steps.filter((s) => s.enabled)
-  const head = `## 项目测试步骤\n当前系统：${platform || '未知'}。这些步骤由项目设置维护，测试与验收时按顺序执行：`
-  if (active.length) return `${head}\n${testStepsText(active, platform, wslDistro)}`
+  const head = `## 项目测试步骤
+当前系统：${platform || '未知'}。这些步骤由项目设置维护。**不要无脑全跑**：先看这次要跑的范围（下面的第 0 条）和实际改了什么，再决定跑哪几条。`
+  if (active.length)
+    return `${head}\n\n${CHANGED_FILES_RULE}\n\n步骤（每条写了「适用改动」：相对项目根的 glob，改动清单里一个都不匹配就跳过）：\n${testStepsText(active, platform, wslDistro)}`
   const off = steps.filter((s) => !s.enabled)
   if (off.length)
     return `${head}\n项目里配置的步骤都已停用（${off.map((s) => s.name).join(t('、'))}）。先按下面的兜底方式找命令，并在结果里建议用户启用或补充步骤。`
@@ -100,21 +200,26 @@ export function verifyBlock(steps: TestStep[], o: { platform: string; wslDistro?
   // 关掉时不分大小，「快速」标记没有意义，不写出来免得 Agent 只跑这几条
   const shown = o.scaled ? active : active.map((s) => ({ ...s, quick: false }))
   const list = active.length
-    ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）：\n${testStepsText(shown, o.platform, o.wslDistro)}`
+    ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）：
+${testStepsText(shown, o.platform, o.wslDistro)}`
     : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
   if (!o.scaled)
     return `## 验证
-这个项目要求每次改动都跑完整的测试步骤，改完按顺序全部跑通再说完成。
+这个项目要求每次改动都跑完整的测试步骤：先按改动清单筛出适用的步骤，再按筛选后的顺序全部跑通才说完成。
+${CHANGED_FILES_RULE}
+
 ${list}`
   const fast = quick.length
     ? `只跑标「快速」的步骤（${quick.map((s) => s.name).join('、')}）`
     : '挑一个最快的检查跑（类型检查、lint 或改动文件的语法检查，几十秒内跑完的）'
   return `## 验证按改动大小定
-改完先判断这次改动的大小，再决定验证范围：
+改完先判断这次改动的大小，再决定验证范围；两种大小都先按改动清单筛出适用的步骤：
+${CHANGED_FILES_RULE}
+
 - 小改动：只改文案、样式、注释、文档、配置值，或者一两个文件里几十行以内的局部修改，不动接口、数据结构、执行流程、构建配置和依赖。${fast}，通过就收尾，不跑单元测试、端到端、完整构建，也不为它启动工作流。
-- 其他都算大改动：按项目的测试步骤完整跑一遍（太长的放到后台）。
+- 其他都算大改动：按筛选后的步骤完整跑一遍（太长的放到后台），不要为了保险全部跑一遍。
 - 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
-- 回复里用一句话写明按哪种验证的、跑了什么。
+- 回复里用一句话写明按哪种验证的、跑了什么，跳过的步骤写清原因。
 ${list}`
 }
 
@@ -130,6 +235,8 @@ export function defaultTestSteps(
     env: 'auto',
     cwd: '',
     when: '',
+    // 空表示总是执行：只有确实知道「改了哪些文件才需要跑」的步骤才填 appliesTo
+    appliesTo: [],
     timeoutSec: 0,
     note: '',
     enabled: true,
@@ -137,15 +244,28 @@ export function defaultTestSteps(
     quick: false,
     ...extra,
   })
+  // 各技术栈真正会进构建 / 测试的文件：源码加上清单文件（清单变了编译单元和依赖就变了）。
+  // 只改文档、资源、脚本这些不进编译的东西时，对应的编译和测试步骤不跑
+  const rustSrc = ['**/*.rs', '**/Cargo.toml', '**/Cargo.lock']
+  const goSrc = ['**/*.go', '**/go.mod', '**/go.sum']
+  const pySrc = ['**/*.py', '**/pyproject.toml', '**/setup.cfg', '**/pytest.ini', '**/requirements*.txt']
+  const netSrc = ['**/*.cs', '**/*.csproj', '**/*.sln', '**/*.props', '**/*.targets']
+  const cmakeSrc = ['**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/CMakeLists.txt', '**/*.cmake']
   if (kind === 'ue')
     return [
       step('ue-build', t('编译'), 'Build.bat <Target> Win64 Development -Project=<项目>.uproject -WaitMutex', {
         env: 'cmd',
         merge: true,
+        // UBT 按这些文件算编译规则：C++ 源码；Build.cs / Target.cs 这类 *.cs 脚本（改了它 UBT 会重新生成
+        // 编译规则，不重编就还在用旧的）；.uproject / .uplugin（模块和插件列表）。只改资源（.uasset /
+        // .umap）、配置（.ini）或文档时不用重编，这也正是最常见的「改了点东西要不要编」的分界
+        appliesTo: ['**/*.cpp', '**/*.h', '**/*.inl', '**/*.cs', '**/*.uproject', '**/*.uplugin'],
         note: t('同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字'),
       }),
       step('ue-lua', t('Lua 语法检查'), 'luac -p <文件>', {
         quick: true,
+        // luac 只解析 Lua 源文件，改了 Lua 才需要跑
+        appliesTo: ['**/*.lua'],
         note: t('有 Lua 改动时执行；只做语法检查，不生成 .luac；按项目实际用的 Lua 版本换命令'),
       }),
       step(
@@ -153,6 +273,8 @@ export function defaultTestSteps(
         t('自动化测试'),
         'UnrealEditor-Cmd.exe <项目>.uproject -ExecCmds="Automation RunTests <测试名>; Quit" -unattended -nullrhi',
         {
+          // 自动化测试本身是 C++ 写的（AutomationTest），只有源码变了才需要重跑
+          appliesTo: ['**/*.cpp', '**/*.h'],
           note: t('可选；需要 Editor 的验证登记为延期验证'),
           enabled: false,
         },
@@ -160,48 +282,74 @@ export function defaultTestSteps(
     ]
   if (kind === 'rust')
     return [
-      step('rust-fmt', t('格式检查'), 'cargo fmt --check', { quick: true }),
-      step('rust-clippy', t('静态检查'), 'cargo clippy --all-targets -- -D warnings'),
-      step('rust-test', t('单元测试'), 'cargo test'),
-      step('rust-build', t('构建'), 'cargo build', { merge: true }),
+      // cargo fmt 只格式化 .rs，改了 Cargo.toml 不需要重新格式化
+      step('rust-fmt', t('格式检查'), 'cargo fmt --check', { quick: true, appliesTo: ['**/*.rs'] }),
+      step('rust-clippy', t('静态检查'), 'cargo clippy --all-targets -- -D warnings', { appliesTo: rustSrc }),
+      step('rust-test', t('单元测试'), 'cargo test', { appliesTo: rustSrc }),
+      step('rust-build', t('构建'), 'cargo build', { merge: true, appliesTo: rustSrc }),
     ]
   if (kind === 'go')
     return [
-      step('go-vet', t('静态检查'), 'go vet ./...', { quick: true }),
-      step('go-test', t('单元测试'), 'go test ./...'),
-      step('go-build', t('构建'), 'go build ./...', { merge: true }),
+      step('go-vet', t('静态检查'), 'go vet ./...', { quick: true, appliesTo: goSrc }),
+      step('go-test', t('单元测试'), 'go test ./...', { appliesTo: goSrc }),
+      step('go-build', t('构建'), 'go build ./...', { merge: true, appliesTo: goSrc }),
     ]
   if (kind === 'python')
     return [
-      step('py-test', t('单元测试'), 'pytest'),
-      step('py-build', t('构建'), 'python -m build', { enabled: false }),
+      step('py-test', t('单元测试'), 'pytest', { appliesTo: pySrc }),
+      step('py-build', t('构建'), 'python -m build', { enabled: false, appliesTo: pySrc }),
     ]
   if (kind === 'dotnet')
     return [
-      step('net-build', t('构建'), 'dotnet build', { merge: true }),
-      step('net-test', t('单元测试'), 'dotnet test'),
+      step('net-build', t('构建'), 'dotnet build', { merge: true, appliesTo: netSrc }),
+      step('net-test', t('单元测试'), 'dotnet test', { appliesTo: netSrc }),
     ]
   if (kind === 'cmake')
     return [
-      step('cmake-build', t('构建'), 'cmake --build build', { merge: true }),
-      step('cmake-test', t('测试'), 'ctest'),
+      step('cmake-build', t('构建'), 'cmake --build build', { merge: true, appliesTo: cmakeSrc }),
+      step('cmake-test', t('测试'), 'ctest', { appliesTo: cmakeSrc }),
     ]
   // Node / TypeScript：只列出项目里真的有的 scripts，不编不存在的命令
   const has = (k: string) => !!opts.scripts?.[k]
   const node: TestStep[] = []
+  // 类型检查只看能进 tsc 的 TS 源码；单测、端到端看所有会被加载的源码（含纯 JS 项目：只有 .js / .jsx / .cjs
+  // 的项目改源码同样得跑）；lint 还管样式和文档（prettier 检查 css / json / md / yml）
+  const nodeSrc = ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts']
+  const nodeJs = ['**/*.js', '**/*.jsx', '**/*.cjs']
+  const nodeRun = [...nodeSrc, ...nodeJs, '**/*.mjs', '**/package.json']
   if (has('typecheck'))
-    node.push(step('node-typecheck', t('类型检查'), 'npm run typecheck', { merge: true, quick: true }))
-  if (has('lint')) node.push(step('node-lint', t('代码检查'), 'npm run lint', { quick: true }))
-  if (has('test:unit')) node.push(step('node-unit', t('单元测试'), 'npm run test:unit'))
+    node.push(
+      step('node-typecheck', t('类型检查'), 'npm run typecheck', {
+        merge: true,
+        quick: true,
+        appliesTo: [...nodeSrc, '**/tsconfig*.json', '**/package.json'],
+      }),
+    )
+  if (has('lint'))
+    node.push(
+      step('node-lint', t('代码检查'), 'npm run lint', {
+        quick: true,
+        appliesTo: [...nodeSrc, ...nodeJs, '**/*.mjs', '**/*.css', '**/*.json', '**/*.md', '**/*.yml', '**/*.yaml'],
+      }),
+    )
+  if (has('test:unit')) node.push(step('node-unit', t('单元测试'), 'npm run test:unit', { appliesTo: nodeRun }))
   if (has('test:e2e'))
     node.push(
       step('node-e2e', t('端到端测试'), 'npm run test:e2e', {
         // Windows 上 e2e 一般要在 WSL 里跑，避免路径和 shell 差异
         env: opts.windows ? 'wsl' : 'auto',
+        appliesTo: nodeRun,
         note: opts.windows ? t('Windows 上在 WSL 里执行，不要在 PowerShell 里直接跑') : '',
       }),
     )
-  if (has('build')) node.push(step('node-build', t('构建'), 'npm run build', { merge: true }))
+  if (has('build'))
+    node.push(
+      step('node-build', t('构建'), 'npm run build', {
+        merge: true,
+        // 构建要重新打包的是源码和前端产物配置：JS 项目改 .js / .jsx / .cjs 同样要重建
+        appliesTo: [...nodeSrc, ...nodeJs, '**/*.mjs', '**/*.css', '**/*.html', '**/*.json'],
+      }),
+    )
   return node
 }
 

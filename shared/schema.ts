@@ -609,8 +609,11 @@ export type FileFormat = z.infer<typeof FileFormat>
 /** 没配置时用的格式：UTF-8 无 BOM、LF */
 export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
 
-export const TestStep = z.object({
-  id: z.string().trim().min(1).max(40),
+/**
+ * 测试步骤的字段（不含 id）：AI 生成 / 补全步骤时整份沿用这里校验，
+ * 新增字段只改这一处，避免提示词、AI 结果和保存校验三份定义走偏。
+ */
+export const TestStepFields = z.object({
   /** 显示名，例如「类型检查」「编译」 */
   name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
   /** 要执行的命令原文 */
@@ -619,8 +622,16 @@ export const TestStep = z.object({
   env: z.enum(TEST_STEP_ENVS).catch('auto').default('auto'),
   /** 相对项目根的工作目录；空表示项目根 */
   cwd: z.string().trim().max(300).default(''),
-  /** 执行条件，例如「仅在改了 web/ 时」「仅发布前」；空表示总是执行 */
+  /** 执行条件的补充说明，写给人看的，例如「仅在发布前跑」；判定以 appliesTo 为准 */
   when: z.string().trim().max(120).default(''),
+  /**
+   * 适用范围：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
+   * 空数组表示总是执行——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑。
+   * 匹配算法只有一份（shared/test-steps.ts 的 matchesGlob / stepApplies）：界面输入用 parseGlobs、
+   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；实际比对由 Agent 按提示词里的
+   * 改动清单做，执行流程里目前还没有按清单自动跳过的地方
+   */
+  appliesTo: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
   /** 超时（秒）；0 表示不限 */
   timeoutSec: z
     .number()
@@ -638,6 +649,10 @@ export const TestStep = z.object({
    * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
    */
   quick: z.boolean().default(false),
+})
+
+export const TestStep = TestStepFields.extend({
+  id: z.string().trim().min(1).max(40),
 })
 export type TestStep = z.infer<typeof TestStep>
 

@@ -555,6 +555,8 @@ function seed(): Db {
               env: 'auto',
               cwd: '',
               when: '',
+              // 演示里展示「适用改动」：只改文档时这一步会被跳过
+              appliesTo: ['**/*.ts', '**/*.tsx', '**/package.json'],
               timeoutSec: 0,
               note: '',
               enabled: true,
@@ -567,7 +569,8 @@ function seed(): Db {
               command: 'npm run test:e2e',
               env: 'wsl',
               cwd: '',
-              when: '仅改了 web/ 时',
+              when: '仅发布前跑',
+              appliesTo: ['**/*.ts', '**/*.tsx', 'src/**'],
               timeoutSec: 600,
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,

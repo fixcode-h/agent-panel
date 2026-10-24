@@ -326,7 +326,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^测试步骤/ })
       .first()
       .click()
-    await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '小改动也跑', '按改动大小决定验证范围'])
+    // 适用改动：不符合这次改动的步骤会跳过（判定在 shared/test-steps.ts 的 stepApplies）
+    await check(p, '项目设置-测试步骤', [
+      'AI 生成步骤',
+      'WSL 发行版',
+      '小改动也跑',
+      '按改动大小决定验证范围',
+      '每条可以写「适用改动」',
+    ])
+    // 「适用改动」能看见也能改：带出已配的 glob，而且逐字符敲第二条不会被归一化吞掉
+    // （输入框保留原文、失焦才 parse；每次按键就 parse 再回显会把刚敲的逗号删掉）
+    const applies = dlg.getByLabel('适用改动').first()
+    assert.equal(await applies.inputValue(), '**/*.ts, **/*.tsx, **/package.json', '「适用改动」要带出已经配好的 glob')
+    await check(p, '项目设置-适用改动')
+    await applies.fill('**/*.cpp')
+    await applies.pressSequentially(', **/*.h')
+    assert.equal(await applies.inputValue(), '**/*.cpp, **/*.h', '手敲第二条 glob 时逗号不能被吞掉')
+    await check(p, '项目设置-适用改动-手敲两条')
     // 项目教训：演示项目里有手动记的和角色记的，按文件生效的显示范围
     await dlg
       .getByRole('button', { name: /^项目教训/ })
