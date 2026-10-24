@@ -1606,8 +1606,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await check(p, '任务-项目对话浮层-打开另一条')
 
         // 键盘：上下选择 + Enter 回到购物车那条。中间等一轮摘要刷新（2.5s），
-        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话
+        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话。
+        // Radix 打开后要等下一帧才把焦点移到监听方向键的那层，浮层刚可见时按键会丢，先等焦点到位
         await reopen('键盘测试')
+        const focused = await p
+          .waitForFunction(
+            () => {
+              const el = document.activeElement
+              return !!el && el.getAttribute('tabindex') === '-1' && !!el.closest('[role="dialog"]')
+            },
+            { timeout: 3000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!focused) errors.push('标题栏浮层：打开后键盘焦点没有落到列表上')
         await p.keyboard.press('ArrowDown')
         await p.waitForTimeout(3000)
         await p.keyboard.press('Enter')
