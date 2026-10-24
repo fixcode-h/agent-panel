@@ -3309,6 +3309,27 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       return { id, question: x.q, options: x.options, kind: 'question' as const }
     })
   }
+  // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON 参数），
+  // 折叠行要用它兜底显示命令，不能只剩「后台命令」。界面检查按这条断言
+  parent.messages.push({
+    id: 'demo-run-background',
+    role: 'agent',
+    agentId: agent.id,
+    step: '',
+    text: '',
+    tools: [
+      {
+        kind: 'other',
+        name: 'mcp__panel__run_background',
+        label: '',
+        detail: '',
+        input: 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log',
+        output: '已放到后台（编号 3f2a91cd）。跑完结果会自动推回给你，先去做不依赖它的事。',
+        ms: 90,
+      },
+    ],
+    at: new Date().toISOString(),
+  })
   // 父对话给子任务传话（send_message）：发件方画成一行「发送消息 · 传话」，不再把整段正文铺成居中的系统块
   parent.messages.push({
     id: 'demo-send-message',
