@@ -7,10 +7,10 @@
  * 服务端和在线演示共用。
  */
 import { z } from 'zod'
-import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
+import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
 import { includedAgents } from './agent-role.ts'
 import { runTree } from './run-usage.ts'
-import { stepMs, stepUsage, withAttachments } from './task.ts'
+import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
@@ -55,6 +55,43 @@ export interface StepCounts {
 }
 
 /**
+ * 轮次的结局计数：done 之外的都算没正常结束。unknown 是旧记录（那时只有 status，没记结局），
+ * 报告里单独写「原因没记录」，不能混成失败
+ */
+export interface TurnEndCounts {
+  done: number
+  /** 导出时还在执行的轮次：它没结束，既不算正常结束也不算「没有正常结束」 */
+  running: number
+  supersede: number
+  user: number
+  failed: number
+  panel: number
+  unknown: number
+}
+
+export const NO_TURN_ENDS: TurnEndCounts = {
+  done: 0,
+  running: 0,
+  supersede: 0,
+  user: 0,
+  failed: 0,
+  panel: 0,
+  unknown: 0,
+}
+
+/** 返工按原因分开计数：只写一个总数看不出是验收没过、节点重跑还是子对话收尾被打回 */
+export interface ReworkCounts {
+  /** 节点验收不通过后重做 */
+  review: number
+  /** 同一个节点上一遍跑完之后又从头执行了一遍 */
+  rerun: number
+  /** 父对话驳回子对话收尾（没能合回原分支），它处理完再来一次 */
+  merge: number
+}
+
+export const NO_REWORKS: ReworkCounts = { review: 0, rerun: 0, merge: 0 }
+
+/**
  * 统计里可以相加的那几项：任务自身、它的子对话合计、含子对话的合计都用这一套。
  * 子对话是独立的 Task，只靠 parentTaskId 关联，不在父任务的 usage 里，所以必须单独累加，
  * 否则用户看到的只是父对话自己那一份（几十个子对话的成本整个看不见）。
@@ -63,7 +100,10 @@ export interface StatsTotal {
   /** 合计里包含几个任务：自身是 1，含子对话合计是整棵树的个数 */
   tasks: number
   durationMs: number
+  /** 等用户确认 / 提问的时间，含在 durationMs 里 */
   waitMs: number
+  /** 答完后等用户下一句的时间，不在 durationMs 里（在空闲里扣掉） */
+  idleWaitMs: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -71,17 +111,22 @@ export interface StatsTotal {
   costUsd: number
   steps: StepCounts
   reworks: number
+  /** 返工的明细，和 reworks 加起来一致 */
+  reworkBy: ReworkCounts
   errors: number
   failedTools: number
   /** 追加要求、对话的轮数（一次 CLI 调用一轮） */
   turns: number
   turnsUnfinished: number
+  /** 没正常结束的轮次按结局分开，报告里分类写 */
+  turnEnds: TurnEndCounts
 }
 
 export const NO_TOTALS: StatsTotal = {
   tasks: 0,
   durationMs: 0,
   waitMs: 0,
+  idleWaitMs: 0,
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,
@@ -89,10 +134,12 @@ export const NO_TOTALS: StatsTotal = {
   costUsd: 0,
   steps: { total: 0, done: 0, failed: 0, skipped: 0, pending: 0 },
   reworks: 0,
+  reworkBy: NO_REWORKS,
   errors: 0,
   failedTools: 0,
   turns: 0,
   turnsUnfinished: 0,
+  turnEnds: NO_TURN_ENDS,
 }
 
 export interface TaskStats extends Omit<StatsTotal, 'tasks'> {
@@ -100,6 +147,11 @@ export interface TaskStats extends Omit<StatsTotal, 'tasks'> {
   spanMs: number
   /** 跨度里既不算执行也不算等用户的部分：进程退出了、用户在忙别的 */
   idleMs: number
+  /**
+   * 子对话占用的时长（已从 idleMs 里扣掉，并行时只算一次）。
+   * undefined：这个导出入口没算子对话（拿不到子任务记录），空闲里还含着它们的时间
+   */
+  childBusyMs?: number
   /** 用户消息条数：和轮数不是一个口径，报告里两个都写出来 */
   asks: number
   nodes: NodeStat[]
@@ -116,6 +168,7 @@ export function ownTotals(s: Omit<StatsTotal, 'tasks'>): StatsTotal {
     tasks: 1,
     durationMs: s.durationMs,
     waitMs: s.waitMs,
+    idleWaitMs: s.idleWaitMs,
     inputTokens: s.inputTokens,
     outputTokens: s.outputTokens,
     cacheReadTokens: s.cacheReadTokens,
@@ -123,10 +176,12 @@ export function ownTotals(s: Omit<StatsTotal, 'tasks'>): StatsTotal {
     costUsd: s.costUsd,
     steps: s.steps,
     reworks: s.reworks,
+    reworkBy: s.reworkBy,
     errors: s.errors,
     failedTools: s.failedTools,
     turns: s.turns,
     turnsUnfinished: s.turnsUnfinished,
+    turnEnds: s.turnEnds,
   }
 }
 
@@ -138,6 +193,7 @@ export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
     tasks: a.tasks + b.tasks,
     durationMs: a.durationMs + b.durationMs,
     waitMs: a.waitMs + b.waitMs,
+    idleWaitMs: a.idleWaitMs + b.idleWaitMs,
     inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     cacheReadTokens,
@@ -151,10 +207,24 @@ export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
       pending: a.steps.pending + b.steps.pending,
     },
     reworks: a.reworks + b.reworks,
+    reworkBy: {
+      review: a.reworkBy.review + b.reworkBy.review,
+      rerun: a.reworkBy.rerun + b.reworkBy.rerun,
+      merge: a.reworkBy.merge + b.reworkBy.merge,
+    },
     errors: a.errors + b.errors,
     failedTools: a.failedTools + b.failedTools,
     turns: a.turns + b.turns,
     turnsUnfinished: a.turnsUnfinished + b.turnsUnfinished,
+    turnEnds: {
+      done: a.turnEnds.done + b.turnEnds.done,
+      running: a.turnEnds.running + b.turnEnds.running,
+      supersede: a.turnEnds.supersede + b.turnEnds.supersede,
+      user: a.turnEnds.user + b.turnEnds.user,
+      failed: a.turnEnds.failed + b.turnEnds.failed,
+      panel: a.turnEnds.panel + b.turnEnds.panel,
+      unknown: a.turnEnds.unknown + b.turnEnds.unknown,
+    },
   }
 }
 
@@ -193,26 +263,163 @@ const failedToolsOf = (task: Task, step?: string) =>
     .filter((m) => (step === undefined ? true : m.step === step))
     .reduce((n, m) => n + m.tools.filter((x) => x.failed).length, 0)
 
-/**
- * 记录从头到尾的跨度（毫秒）：创建、消息、轮次、节点里最晚的时间减去最早的。
- * 不用 updatedAt：导入的任务会把它改成导入时间，跨度会凭空变长。
- */
-export function recordSpan(rec: {
+/** 算时间跨度用得到的字段：创建时间、消息、轮次、节点的时间戳和状态 */
+type SpanRecord = {
   createdAt: string
   messages: { at?: string }[]
-  turns?: { startedAt: string; endedAt?: string }[]
-  steps?: { startedAt: string; endedAt?: string }[]
-}) {
-  const ats: number[] = [Date.parse(rec.createdAt)]
-  for (const m of rec.messages) ats.push(Date.parse(m.at ?? ''))
-  for (const t of rec.turns ?? []) ats.push(Date.parse(t.startedAt), Date.parse(t.endedAt ?? ''))
-  for (const s of rec.steps ?? []) ats.push(Date.parse(s.startedAt), Date.parse(s.endedAt ?? ''))
-  const ok = ats.filter(Number.isFinite)
-  if (!ok.length) return 0
-  return Math.max(0, Math.max(...ok) - Math.min(...ok))
+  turns?: { startedAt: string; endedAt?: string; status?: string }[]
+  steps?: { startedAt: string; endedAt?: string; status?: string }[]
+  /** 正在等确认 / 正在等下一句的开始时间：跨度要盖住这段，不然会报出「跨度 5m，等你处理 3h55m」 */
+  waitStartedAt?: string
+  idleWaitAt?: string
+  /** 任务自己的状态：已经停下的记录里残留的「正在等」只是没清掉，不能再按现在算 */
+  status?: string
 }
 
-export function taskStats(task: Task, now = Date.now(), children: StatsTotal = NO_TOTALS): TaskStats {
+type Span = { start: number; end: number }
+
+/**
+ * 一段记录（轮次 / 节点）的起止时间：结束了用结束时间，还在跑的给得出「现在」时按现在算。
+ * 还没收尾的轮次没有 endedAt，只取开始时间的话窗口会退化成零长，算忙时会漏掉整段。
+ */
+function spanOf(x: { startedAt: string; endedAt?: string; status?: string }, now: number) {
+  const start = Date.parse(x.startedAt)
+  const ended = Date.parse(x.endedAt ?? '')
+  const end = Number.isFinite(ended) ? ended : now && x.status === 'running' ? now : NaN
+  return Number.isFinite(start) && Number.isFinite(end) && end > start ? { start, end } : undefined
+}
+
+/**
+ * 记录从头到尾的窗口（毫秒时间戳）：创建、消息、轮次、节点里最早和最晚的时间。
+ * 不用 updatedAt：导入的任务会把它改成导入时间，跨度会凭空变长。
+ * now：还在跑的轮次、节点按它算结束时间，不给时只认已经记下的时间戳。
+ */
+export function recordWindow(rec: SpanRecord, now = 0) {
+  const ats: number[] = [Date.parse(rec.createdAt)]
+  for (const m of rec.messages) ats.push(Date.parse(m.at ?? ''))
+  for (const t of rec.turns ?? []) {
+    const w = spanOf(t, now)
+    ats.push(Date.parse(t.startedAt), w ? w.end : Date.parse(t.endedAt ?? ''))
+  }
+  for (const s of rec.steps ?? []) {
+    const w = spanOf(s, now)
+    ats.push(Date.parse(s.startedAt), w ? w.end : Date.parse(s.endedAt ?? ''))
+  }
+  // 还在等的这一段：任务还在跑时算到现在（跨度要盖住它），已经停下的只认开始那一刻
+  for (const x of [rec.waitStartedAt, rec.idleWaitAt])
+    if (x) ats.push(now && (rec.status === undefined || rec.status === 'running') ? now : Date.parse(x))
+  const ok = ats.filter(Number.isFinite)
+  if (!ok.length) return { start: 0, end: 0 }
+  return { start: Math.min(...ok), end: Math.max(...ok) }
+}
+
+/** 记录的跨度（毫秒）：窗口的大小；now 给了就把还在跑的轮次、节点算到现在，导出执行中的任务时跨度才不小 */
+export function recordSpan(rec: SpanRecord, now = 0) {
+  const w = recordWindow(rec, now)
+  return Math.max(0, w.end - w.start)
+}
+
+/** 几个时间段裁进 [from, to] 再合并成不重叠的区间：并行/重叠的部分只算一次 */
+function mergeRanges(spans: Span[], from: number, to: number): Span[] {
+  const list = spans
+    .map((x) => ({ start: Math.max(x.start, from), end: Math.min(x.end, to) }))
+    .filter((x) => x.end > x.start)
+    .sort((a, b) => a.start - b.start)
+  const out: Span[] = []
+  for (const x of list) {
+    const last = out.at(-1)
+    if (last && x.start <= last.end) last.end = Math.max(last.end, x.end)
+    else out.push({ ...x })
+  }
+  return out
+}
+
+/** 合并后这些时间段的合计时长（毫秒） */
+function rangesMs(list: Span[]) {
+  return list.reduce((n, x) => n + Math.max(0, x.end - x.start), 0)
+}
+
+/**
+ * 名下子对话（含多层）在父记录跨度里占用了多久（毫秒）——以前这段整个被算成父对话的「空闲」，
+ * 用户看到过两个一模一样的 3h48m。
+ * 子对话窗口先裁进父记录的跨度、并行/重叠的合并成一次；和父自己执行时间的重叠由 taskStats 统一夹
+ * （`min(子对话占用, 跨度 - 执行)`）。不能按轮次时间窗逐段相减：对话轮从开始到被停止一直是 running，
+ * 会把「答完等下一句」那段也算成父在跑，子对话占用就被减成 0，用户投诉的现象原样保留。
+ */
+export function childBusyMs(root: SpanRecord, kids: SpanRecord[], now = 0) {
+  const win = recordWindow(root, now)
+  if (win.end <= win.start || !kids.length) return 0
+  const kidSpans: Span[] = []
+  for (const k of kids) {
+    const w = recordWindow(k, now)
+    if (w.end > w.start) kidSpans.push(w)
+  }
+  return rangesMs(mergeRanges(kidSpans, win.start, win.end))
+}
+
+/**
+ * 轮次按结局分开计数：没正常结束的轮次以前混成一个数，看不出是被新消息接管、用户停的还是面板收掉的。
+ * reason 是任务的 stopReason：面板重启、预热带起来这些轮次不经过 endTurn（落盘时直接改 status），
+ * 没有 end 字段，只能靠它兜底，否则最常见的「面板重启」会全变成「原因没记录」。
+ */
+export function turnEndCounts(turns: TaskTurn[], reason?: StopReason): TurnEndCounts {
+  const c = { ...NO_TURN_ENDS }
+  // 兜底只能用最后一次停下的原因，而它只解释「被这次停止一起收掉」的那几轮：
+  // 旧记录里每轮停下的原因各不相同，统一按最后一个算会把「被新消息接管」说成「用户停止」
+  const ends = turns.map((x) => Date.parse(x.endedAt ?? '')).filter(Number.isFinite)
+  const lastEnd = ends.length ? Math.max(...ends) : 0
+  for (const x of turns) {
+    if (x.status === 'running') {
+      // 导出时还没跑完：既不算正常结束，也还没「没有正常结束」，报告里单独写「还在执行」
+      c.running++
+      continue
+    }
+    if (x.status === 'done') {
+      c.done++
+      continue
+    }
+    // 自己记下的结局优先：status 已经说明失败的按失败算，停止的看任务停下来的原因
+    const last = !!lastEnd && Date.parse(x.endedAt) === lastEnd
+    const fallback =
+      x.status === 'failed' ? 'failed' : x.status === 'stopped' && last ? turnEndOf('stopped', reason) : undefined
+    const end = x.end ?? fallback
+    // 手改过的数据里可能是别的值：认不出就算原因没记录，别给计数对象加多余的键
+    if (end && end !== 'done' && end in c) c[end]++
+    else c.unknown++
+  }
+  return c
+}
+
+/** 父对话驳回子对话收尾：收尾结果那条消息标了 failed；旧记录还没有 peer 字段，按正文认 */
+const mergeRejects = (task: Task) =>
+  task.messages.filter(
+    (m) => (m.peer?.kind === 'merge' && m.peer.failed) || m.text.startsWith('【父对话收尾】没能合回'),
+  ).length
+
+/** 返工按原因分开：验收重做、同一节点重跑、子对话收尾被驳回来重做 */
+export function reworkCounts(task: Task): ReworkCounts {
+  return {
+    // reviews 是验收不通过那一刻累加的，节点重跑清零 rounds 也不会丢；旧记录没有这个字段，退回按 rounds 反推
+    review: task.steps.reduce(
+      (n, s) => n + Math.max(s.reviews ?? 0, Math.max(0, s.rounds - (s.verdict === 'pass' ? 1 : 0))),
+      0,
+    ),
+    rerun: task.steps.reduce((n, s) => n + Math.max(0, s.reruns ?? 0), 0),
+    merge: mergeRejects(task),
+  }
+}
+
+/**
+ * 一个任务的统计。childBusy：子对话在它的跨度里在跑的时长（见 childBusyMs），
+ * 传进来就从空闲里扣掉，不传时按没有子对话在跑算
+ */
+export function taskStats(
+  task: Task,
+  now = Date.now(),
+  children: StatsTotal = NO_TOTALS,
+  /** 子对话占用的时长；不传表示这个入口算不出（见 TaskStats.childBusyMs） */
+  childBusy?: number,
+): TaskStats {
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
   const nodes = task.steps.map((s): NodeStat => {
     const u = stepUsage(s)
@@ -241,12 +448,24 @@ export function taskStats(task: Task, now = Date.now(), children: StatsTotal = N
   })
   const count = (st: TaskStep['status']) => task.steps.filter((s) => s.status === st).length
   const u = task.usage
-  const durationMs = task.runMs ?? 0
-  const waitMs = task.waitMs ?? 0
-  const spanMs = recordSpan(task)
+  // 还在执行的这一段没结算进 runMs / waitMs：不算进来，导出的报告会写成「执行 0s、空闲一整段」，
+  // 和界面上的「总耗时」（taskDuration 含 live）也对不上
+  const durationMs = (task.runMs ?? 0) + (task.runStartedAt ? Math.max(0, now - Date.parse(task.runStartedAt)) : 0)
+  const waitMs = waitDuration(task, now)
+  // 旧记录（加 idleWaitMs 之前）把「答完等下一句」也算在 waitMs 里：超出执行时间的那部分只能是它，
+  // 否则报告会写出「等你确认 23h55m 已含在执行 8m 里」，同一段又算进空闲，用户投诉的就是这句
+  const overWait = Math.max(0, waitMs - durationMs)
+  // 取大不取和：新记录里 idleWaitMs 已经记过「等下一句」，再和 overWait 相加会把同一段算两遍
+  const idleWaitMs = Math.max(idleWaitDuration(task, now), overWait)
+  const confirmWaitMs = Math.max(0, Math.min(waitMs, durationMs))
+  // 还在跑的轮次、节点要算到现在；没有轮次/节点的旧记录时间戳不全，跨度按执行时间兜底，不能比执行还短
+  const spanMs = Math.max(recordSpan(task, now), durationMs)
+  const reworkBy = reworkCounts(task)
+  const turnEnds = turnEndCounts(task.turns ?? [], task.stopReason)
   const own = ownTotals({
     durationMs,
-    waitMs,
+    waitMs: confirmWaitMs,
+    idleWaitMs,
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
@@ -259,17 +478,26 @@ export function taskStats(task: Task, now = Date.now(), children: StatsTotal = N
       skipped: count('skipped'),
       pending: count('pending') + count('running'),
     },
-    reworks: task.steps.reduce((n, s) => n + Math.max(0, s.rounds - (s.verdict === 'pass' ? 1 : 0)), 0),
+    reworks: reworkBy.review + reworkBy.rerun + reworkBy.merge,
+    reworkBy,
     errors: task.messages.filter((m) => m.error).length + failedToolsOf(task),
     failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
-    turnsUnfinished: (task.turns ?? []).filter((x) => x.status !== 'done').length,
+    // 没正常结束的轮次 = 各种结局相加，和 turnEnds 对得上（旧记录落在 unknown 里）
+    turnsUnfinished: turnEnds.supersede + turnEnds.user + turnEnds.failed + turnEnds.panel + turnEnds.unknown,
+    turnEnds,
   })
   const { tasks: _tasks, ...self } = own
+  // 空闲 = 跨度里除了本任务在跑之外的部分。等你处理的时间已经在 durationMs 里（等确认、提问时
+  // runMs 不清空），再减一次就重复扣了；等下一句那段本来就在空闲里，报告的「其中等你处理」会写出来
+  // 空闲 = 跨度里本任务没在跑的部分；答完后等下一句本来就在空闲里（报告里写成「其中」），等你确认的那部分在执行里
+  const freeMs = Math.max(0, spanMs - durationMs)
+  const busyMs = childBusy === undefined ? undefined : Math.max(0, Math.min(childBusy, freeMs))
   return {
     ...self,
     spanMs,
-    idleMs: Math.max(0, spanMs - durationMs - waitMs),
+    idleMs: Math.max(0, freeMs - (busyMs ?? 0)),
+    childBusyMs: busyMs,
     asks: task.messages.filter((m) => m.role === 'user').length,
     nodes,
     children,
@@ -343,7 +571,12 @@ const ExportedTask = TaskData.omit({
   turnDoneAt: true,
   awaitingUser: true,
   prewarming: true,
-}).extend({ createdAt: z.string(), updatedAt: z.string() })
+}).extend({
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  /** 导出时这个任务还在跑：报告里说明这是当时的快照，不至于让人以为统计漏了一段 */
+  exportedWhileRunning: z.boolean().default(false),
+})
 export type ExportedTask = z.infer<typeof ExportedTask>
 
 /**
@@ -395,8 +628,8 @@ export function checkExportSize(bundle: TaskExport): number {
   return bytes
 }
 
-/** 任务在导出文件里的样子：去掉只在本机有意义的字段，运行中的临时状态都按空闲算 */
-function exportedBody(task: Task): ExportedTask {
+/** 任务在导出文件里的样子：去掉只在本机有意义的字段，运行中的临时状态都按导出这一刻收尾 */
+function exportedBody(task: Task, now: Date): ExportedTask {
   const {
     id: _id,
     projectId: _p,
@@ -415,13 +648,33 @@ function exportedBody(task: Task): ExportedTask {
     imported: _i,
     ...rest
   } = task
+  const at = now.toISOString()
   return {
     ...rest,
-    // 还在执行的任务导出的是当时的样子
+    // 还在执行的任务导出的是当时的样子：状态和还在跑的轮次、节点都按导出这一刻收尾。
+    // 不收尾的话，导入后再算统计（recordSpan 会拿「现在」当还在跑的结束时间）跨度会一直涨
     status: rest.status === 'running' ? 'stopped' : rest.status,
+    exportedWhileRunning: rest.status === 'running',
+    // live 的执行 / 等待先结算进累计值再清开始时间：只清不结算，导入后执行时长会凭空少一截
+    runMs: (task.runMs ?? 0) + (task.runStartedAt ? Math.max(0, now.getTime() - Date.parse(task.runStartedAt)) : 0),
     runStartedAt: '',
+    waitMs: waitDuration(task, now.getTime()),
     waitStartedAt: '',
-    steps: rest.steps.map((s) => ({ ...s, command: [], waitStartedAt: '' })),
+    idleWaitMs: idleWaitDuration(task, now.getTime()),
+    // 已经停下的记录里残留的 idleWaitAt 是「等待到此为止」的时间点，清掉跨度会前后不一致；
+    // 还在跑的那份已经结算进 idleWaitMs，清掉才不会带着一个会继续长的开始时间
+    idleWaitAt: rest.status === 'running' ? '' : (task.idleWaitAt ?? ''),
+    turns: rest.turns.map((x) =>
+      x.status === 'running'
+        ? { ...x, status: 'stopped' as const, endedAt: x.endedAt || at, end: 'panel' as const }
+        : x,
+    ),
+    steps: rest.steps.map((s) => ({
+      ...s,
+      command: [],
+      waitStartedAt: '',
+      ...(s.status === 'running' ? { status: 'pending' as const, endedAt: s.endedAt || at } : {}),
+    })),
     // 附件只留名字和大小：路径是本机的，文件也不在导出里（路径字段不能为空，填文件名）
     messages: rest.messages.map((m) =>
       m.attachments ? { ...m, attachments: m.attachments.map((a) => ({ ...a, path: a.name })) } : m,
@@ -435,8 +688,10 @@ export function exportTask(
   app = '',
   now = new Date(),
   children: StatsTotal = NO_TOTALS,
+  /** 子对话占用的时长：只有拿得到整棵树记录的导出入口（exportTaskTree）能算，其余入口留空 */
+  childBusy?: number,
 ): TaskExport {
-  const body = exportedBody(task)
+  const body = exportedBody(task, now)
   // 导入的任务再导出时，用导入时带来的 Agent
   const pool = importedAgentsPool([task], agents)
   const used = taskAgents(task, pool).map((a) => ({ ...a, categoryId: '', tags: [] }))
@@ -449,7 +704,8 @@ export function exportTask(
     children: [],
     agents: used,
     // 用 steps 的副本：算统计时 stepUsage 会给缺省值补上 usage，别把导出过程写回内存里的任务
-    stats: taskStats({ ...task, steps: body.steps }, now.getTime(), children),
+    // 统计按导出后的记录体算：和包里存的任务保持一致，导出、导入、AI 分析三处数字不会打架
+    stats: taskStats({ ...task, ...body }, now.getTime(), children, childBusy),
   })
 }
 
@@ -469,9 +725,17 @@ export function exportTaskTree(root: Task, all: Task[], agents: Agent[], app = '
   // 按 parentTaskId 逐层往下找，同一个任务只收一次（两个父对话共用一个子对话时不会重复）
   const kids = runTree(root, all).filter((x) => x.id !== root.id)
   const pool = importedAgentsPool([root, ...kids], agents)
-  const bundle = exportTask(root, pool, app, now, descendantTotals(kids))
+  // 子对话在父记录跨度里跑了多久：报告里从父对话的空闲里扣掉，同一段时间不再重复计时
+  const bundle = exportTask(
+    root,
+    pool,
+    app,
+    now,
+    descendantTotals(kids, now.getTime()),
+    childBusyMs(root, kids, now.getTime()),
+  )
   bundle.children = kids.map((k) => ({
-    ...exportedBody(k),
+    ...exportedBody(k, now),
     id: k.id,
     // 直接挂在父任务下的写空：父任务的 id 不出现在包里（导入时会重新分配），指向它没法还原
     parentTaskId: k.parentTaskId === root.id ? '' : k.parentTaskId,
@@ -623,11 +887,22 @@ const localTime = (iso: string) => {
 }
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
 
+/** 轮次结局在报告里的说法，和 schema 的 TurnEnd 一一对应 */
+const TURN_END_TEXT: Record<keyof TurnEndCounts, string> = {
+  done: '正常结束',
+  running: '还在执行',
+  supersede: '被新消息接管',
+  user: '用户停止',
+  failed: '失败',
+  panel: '面板停止',
+  unknown: '原因没记录',
+}
+
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
 export function taskReport(b: TaskExport, maxOutput = 4000) {
   const tk = b.task
   // 旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告
-  const computed = taskStats({ ...tk, id: '', projectId: '' } as Task)
+  const computed = taskStats({ ...tk, id: '', projectId: '' } as unknown as Task)
   const raw = (b.stats ?? {}) as Partial<TaskStats>
   const st: TaskStats = {
     ...computed,
@@ -641,19 +916,61 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const own = ownTotals(st)
   const kids = st.children?.tasks ? st.children : NO_TOTALS
   const all = st.combined?.tasks ? st.combined : addTotals(own, kids)
+  // 没正常结束的轮次按结局分开写：只有和总数对得上时才拆，旧导出缺结局字段时只写总数
+  const ends = st.turnEnds ?? NO_TURN_ENDS
+  const ended = ['supersede', 'user', 'failed', 'panel', 'unknown'] as const
+  const endSum = ended.reduce((n, k) => n + ends[k], 0)
+  const endText = ended
+    .filter((k) => ends[k])
+    .map((k) => `${TURN_END_TEXT[k]} ${ends[k]} 轮`)
+    .join('、')
+  const turnParts: string[] = []
+  if (st.turnsUnfinished)
+    turnParts.push(
+      `${st.turnsUnfinished} 轮没有正常结束${endSum === st.turnsUnfinished && endText ? `：${endText}` : ''}`,
+    )
+  // 导出时还在跑的那几轮单独说，别混进「没有正常结束」
+  if (ends.running) turnParts.push(`${ends.running} 轮还在执行`)
+  const unfinished = turnParts.length ? `（其中 ${turnParts.join('；')}）` : ''
+  // 返工按原因分开写：只写一个总数看不出是验收没过、节点重跑还是子对话收尾被打回
+  const by = st.reworkBy ?? NO_REWORKS
+  const reworkParts = [
+    by.review ? `验收不通过 ${by.review} 次` : '',
+    by.rerun ? `同一节点重跑 ${by.rerun} 次` : '',
+    by.merge ? `子对话收尾被驳回 ${by.merge} 次` : '',
+  ].filter(Boolean)
+  const reworkText = st.reworks && reworkParts.length ? `（${reworkParts.join('、')}）` : ''
+  // 合计行也要分类：子对话收尾被驳回那条消息写在子对话里，只写总数就看不到
+  const allBy = all.reworkBy ?? NO_REWORKS
+  const allReworkParts = [
+    allBy.review ? `验收不通过 ${allBy.review} 次` : '',
+    allBy.rerun ? `同一节点重跑 ${allBy.rerun} 次` : '',
+    allBy.merge ? `子对话收尾被驳回 ${allBy.merge} 次` : '',
+  ].filter(Boolean)
+  const allReworkText = all.reworks && allReworkParts.length ? `（${allReworkParts.join('、')}）` : ''
+  // 空闲的口径要和实算的对得上：没算子对话占用的入口（AI 分析那份导出）不能写成「同一段时间只算一处」
+  // 空闲 = 本任务没在跑、子对话也没在跑的时候；等你确认的时间算在执行里，等你回下一句的时间算在空闲里。
+  // 各段互不重叠：执行 + 等你回下一句 + 子对话占用 + 空闲 = 跨度
+  const idleNote = !kids.tasks
+    ? '空闲是本任务没在跑的时候（含你答完后等下一句的时间）。'
+    : st.childBusyMs === undefined
+      ? '这条记录没算子对话的占用，空闲里可能还含它们的时间。'
+      : st.childBusyMs
+        ? '空闲是本任务和名下子对话都没在跑的时候；子对话占用含它们自己在等的时候。'
+        : '空闲是本任务和名下子对话都没在跑的时候；名下子对话没有另外占掉这条记录里的时间。'
   const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
   const lines: string[] = [
     `# 执行记录：${tk.title}`,
-    `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
+    `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}${tk.exportedWhileRunning ? '（导出时任务还在跑，统计到导出那一刻）' : ''}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}，等用户 ${fmtDuration(st.waitMs)}，空闲 ${fmtDuration(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
-    `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
+    `- 跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}（等你确认/提问 ${fmtDuration(st.waitMs)} 已含在其中），${st.childBusyMs ? `子对话占用 ${fmtDuration(st.childBusyMs)}，` : ''}空闲 ${fmtDuration(st.idleMs)}${st.idleWaitMs ? `（其中等你回下一句 ${fmtDuration(Math.min(st.idleWaitMs, st.idleMs))}）` : ''}。${idleNote}`,
+    `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${unfinished}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
     ...(kids.tasks
       ? [
           `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtDuration(kids.durationMs)}，其中等用户 ${fmtDuration(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
-          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtDuration(all.durationMs)}，其中等用户 ${fmtDuration(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
+          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtDuration(all.durationMs)}，其中等用户 ${fmtDuration(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次${allReworkText}，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
         ]
       : []),
     ...(cacheMismatch(st)
@@ -661,7 +978,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
           `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 CLI 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
         ]
       : []),
-    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
+    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次${reworkText}；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
   ]
   // 用户每条要求的发出时间：判断「后面越来越慢」时看相邻两条之间隔了多久
   const asks = tk.messages.filter((m) => m.role === 'user')

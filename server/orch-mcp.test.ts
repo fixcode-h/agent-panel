@@ -119,6 +119,10 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
   assert.equal(log.filter((c) => c.dispatching).length, 0, '没有主 Agent 调度轮')
+  // 工作流节点仍然拿得到共享状态：这个能力不能因为对话模式不注册就被一起砍掉
+  // （工具表另有一处 deepEqual 断言含 read_state / write_state；节点内 read_state 能读出 a 写的值）
+  const withState = task.runs[0]?.state.interface
+  assert.ok(withState && withState.version >= 1, '节点 a 写的共享状态留在这次运行里')
   assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子角色/.test(m.text)))
 })
 
@@ -185,7 +189,19 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', prompt: '做功能' } as never, undefined, '', 't3'),
     id: 't3',
-  } as Task
+    // 对话里跑过 start_plan：task.runs 里留着上一次运行的记录和它写下的共享状态
+    runSeq: 1,
+    runs: [
+      {
+        id: 1,
+        workflowId: 'wf',
+        // 进程被强杀 / 面板重启时 task.runs 不会收尾，status 一直停在 running
+        status: 'running',
+        state: { interface: { value: '上一轮工作流留下的接口约定', version: 2, by: 'a', at: '' } },
+        messages: [],
+      },
+    ],
+  } as unknown as Task
   let orch: AgentCall['orch']
   const prompts: string[] = []
   const h: EngineHost = {
@@ -196,7 +212,14 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
-      if (call.step?.slot === 'sub') return { ok: true, text: '页面查好了' }
+      if (call.step?.slot === 'sub') {
+        // 对话里的子任务用不上共享状态：即使对话跑过 start_plan、task.runs 还留着上一次运行，
+        // 也不能把这两个工具注册回来，更不能把上一次运行的 state 交给它
+        assert.equal(call.orch!.sharedState, false)
+        assert.ok(!orchTools(call.orch!).some((x) => x.name === 'read_state' || x.name === 'write_state'))
+        assert.doesNotMatch(orchHint(call.orch!), /read_state/)
+        return { ok: true, text: '页面查好了' }
+      }
       prompts.push(call.prompt)
       orch = call.orch
       if (prompts.length === 1) {
@@ -213,6 +236,17 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   assert.equal(orch!.autoReturn, true)
   assert.ok(!orchTools(orch!).some((x) => x.name === 'wait_agents'))
   assert.doesNotMatch(orchHint(orch!), /wait_agents/)
+  // 共享状态只存在于工作流运行的 task.runs 里，对话模式没有：不注册这两个工具，说明里也不提，
+  // 否则对话里的子任务一调就得到「这次运行没有共享状态」
+  assert.equal(orch!.sharedState, false)
+  assert.ok(!orchTools(orch!).some((x) => x.name === 'read_state' || x.name === 'write_state'))
+  assert.doesNotMatch(orchHint(orch!), /read_state/)
+  // prompt 里也不能注入上一次运行的共享状态、不能教模型用这两个没注册的工具
+  assert.ok(prompts.length > 0)
+  for (const p of prompts) {
+    assert.doesNotMatch(p, /## 共享状态/, '对话的 prompt 不注入上一次运行的共享状态')
+    assert.doesNotMatch(p, /read_state/, '提示里不提没注册的工具')
+  }
   assert.match(text(await callOrchTool(orch!, 'wait_agents', {})), /做完 1 个/)
   // 对话这一轮结束后停下等子任务，结果交回同一个会话接着做；对话里记成面板消息，不是用户消息
   assert.equal(prompts.length, 2)
