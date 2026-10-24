@@ -762,6 +762,141 @@ export function fillWorkflow(
   return fill(graph) as ComfyWorkflow['graph']
 }
 
+/** ComfyUI 队列里的一项，面板展示用（节点图也带上，可以在面板里展开看） */
+export interface ComfyQueueEntry {
+  /** ComfyUI 的 prompt_id */
+  id: string
+  /** 队列里的序号 */
+  number: number
+  status: 'running' | 'pending'
+  /** 面板提交时写的来源：AI 设计生成，或用户在 ComfyUI 网页里跑的（没有来源信息） */
+  source?: 'design' | 'panel'
+  workflowId?: string
+  workflowName?: string
+  /** 图片用途（图标、背景…），面板提交时带上 */
+  use?: string
+  /** 执行进度，由服务端从 ComfyUI 的 WebSocket 事件里收集 */
+  progress?: { value: number; max: number; node?: string }
+  /** 接口格式的节点图 */
+  prompt: ComfyWorkflow['graph']
+}
+
+/** ComfyUI 现在在跑什么、还排着什么 */
+export interface ComfyQueueState {
+  up: boolean
+  url: string
+  running: ComfyQueueEntry[]
+  pending: ComfyQueueEntry[]
+}
+
+const asRecord = (x: unknown): Record<string, unknown> | undefined =>
+  x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>) : undefined
+
+/**
+ * ComfyUI 的 /queue 有两代格式：旧版 { queue_running, queue_pending }，每一项是
+ * [序号, prompt_id, 节点图, extra_data] 的数组；新版 { Running, Pending }，每一项是对象。
+ * 两种都认，避免 ComfyUI 升级后面板读不到队列
+ */
+export function comfyQueueLists(raw: unknown): { running: unknown[]; pending: unknown[] } {
+  const r = asRecord(raw) ?? {}
+  const list = (x: unknown) => (Array.isArray(x) ? x : [])
+  return { running: list(r.Running ?? r.queue_running), pending: list(r.Pending ?? r.queue_pending) }
+}
+
+/** 队列项里出图节点的文件名前缀（面板提交时写的是 agent-panel/工作流名） */
+export function comfySavePrefix(graph: ComfyWorkflow['graph']): string | undefined {
+  for (const n of Object.values(graph))
+    if (n?.class_type === 'SaveImage' && typeof n.inputs?.filename_prefix === 'string') return n.inputs.filename_prefix
+  return undefined
+}
+
+/** 把队列项（新旧两种）解成面板要的字段；节点图拿不到时返回 undefined */
+export function comfyQueueEntry(raw: unknown, status: 'running' | 'pending'): ComfyQueueEntry | undefined {
+  let id = ''
+  let number = 0
+  let prompt: unknown
+  let extra: unknown
+  if (Array.isArray(raw)) {
+    number = Number(raw[0]) || 0
+    id = String(raw[1] ?? '')
+    prompt = raw[2]
+    extra = raw[3]
+  } else {
+    const o = asRecord(raw)
+    if (!o) return undefined
+    id = String(o.prompt_id ?? '')
+    number = Number(o.number) || 0
+    prompt = o.prompt
+    extra = o.extra_data
+  }
+  const graph = asRecord(prompt) as ComfyWorkflow['graph'] | undefined
+  if (!id || !graph) return undefined
+  const meta = asRecord(asRecord(extra)?.agent_panel)
+  const prefix = comfySavePrefix(graph)
+  // 名称优先用提交时的来源信息；别的途径跑的任务从文件名前缀里认
+  const name = String(meta?.name ?? '').trim() || (prefix ? prefix.replace(/^agent-panel\//, '') : '')
+  return {
+    id,
+    number,
+    status,
+    source: meta?.source === 'design' ? 'design' : meta ? 'panel' : undefined,
+    workflowId: meta?.workflowId ? String(meta.workflowId) : undefined,
+    workflowName: name || undefined,
+    use: meta?.use ? String(meta.use) : undefined,
+    prompt: graph,
+  }
+}
+
+/** SaveImage 的输出前缀：agent-panel/工作流名，队列、历史和输出文件名里都能认出来 */
+export function comfyFilenamePrefix(name: string): string {
+  const safe = name
+    .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+  return `agent-panel/${safe || 'workflow'}`
+}
+
+/** 提交前把 SaveImage 的文件名前缀换成可辨识的工作流名（不改原图，返回新的） */
+export function markSavePrefix(graph: ComfyWorkflow['graph'], name: string): ComfyWorkflow['graph'] {
+  const prefix = comfyFilenamePrefix(name)
+  return Object.fromEntries(
+    Object.entries(graph).map(([id, n]) => [
+      id,
+      n.class_type === 'SaveImage' ? { ...n, inputs: { ...n.inputs, filename_prefix: prefix } } : n,
+    ]),
+  )
+}
+
+/**
+ * 面板里存的是带占位符的接口格式工作流，ComfyUI 的输入框不认 {{width}} 这类字符串：
+ * 导入成 ComfyUI 工作流时换成能直接跑的示例值
+ */
+export function importableWorkflow(wf: ComfyWorkflow): ComfyWorkflow['graph'] {
+  return markSavePrefix(
+    fillWorkflow(wf.graph, {
+      prompt: wf.description || wf.name,
+      negative: '',
+      width: 1024,
+      height: 1024,
+      count: 1,
+      seed: Math.floor(Math.random() * 2 ** 31),
+    }),
+    wf.name,
+  )
+}
+
+/** 导入到 ComfyUI 的 userdata/workflows 下的文件名：名字放前面方便在侧栏认，id 保证重复导入覆盖同一个文件 */
+export function comfyImportFile(wf: Pick<ComfyWorkflow, 'id' | 'name'>): string {
+  const safe = wf.name
+    .replace(/[\\/:*?"<>|\n\r\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+  const id = wf.id.replace(/[^\w-]/g, '').slice(0, 40)
+  return `${safe || 'workflow'}-${id || 'x'}.json`
+}
+
 /** 工作流有没有问题：要有出图的节点、要用到 {{prompt}}，连线指向的节点要存在 */
 export function checkWorkflow(graph: ComfyWorkflow['graph'], known?: Set<string>): string[] {
   const errors: string[] = []

@@ -68,6 +68,7 @@ import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import {
   BUILTIN_WORKFLOWS,
   ComfyWorkflow,
+  comfyImportFile,
   LOCAL_FILES,
   LOCAL_MODELS,
   localModel,
@@ -1481,7 +1482,14 @@ const demoCatalog = () => ({
 let demoWorkflows: ComfyWorkflow[] = []
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
+  // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
+  if (action === 'queue') return { up: local.running, url: local.url, running: [], pending: [] }
   if (action === 'workflows') {
+    if (method === 'POST' && sub === 'import' && id) {
+      const wf = [...BUILTIN_WORKFLOWS, ...demoWorkflows].find((w) => w.id === id)
+      if (!wf) return fail('找不到工作流')
+      return { name: wf.name, filename: comfyImportFile(wf), url: local.url }
+    }
     if (id === 'assist') {
       // 演示没有 AI：在参考的工作流上做一点改动，说明一下
       const b = body as { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }

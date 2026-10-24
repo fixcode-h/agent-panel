@@ -223,6 +223,26 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   'AI 没有给出能用的工作流：{error}': "AI didn't produce a usable workflow: {error}",
   '内置的工作流不能修改，请先复制一份': "Built-in workflows can't be edited. Make a copy first",
   请写下要求: 'Please describe what you want',
+  // 运行中的工作流与导入到 ComfyUI
+  'ComfyUI 正在运行的工作流': 'Workflows running in ComfyUI',
+  正在生成: 'Generating',
+  排队中: 'Queued',
+  '{n} 个任务': '{n} jobs',
+  未命名工作流: 'Untitled workflow',
+  'AI 设计': 'AI design',
+  面板: 'Panel',
+  查看节点图: 'Show node graph',
+  '正在启动 ComfyUI 并导入工作流…': 'Starting ComfyUI and importing the workflow…',
+  '已导入到 ComfyUI 的工作流列表：{name}': 'Imported into the ComfyUI workflow list: {name}',
+  '在 ComfyUI 右侧的「工作流」侧栏里点开它（ComfyUI 不支持用网址直接打开某个工作流）。':
+    'Open it from the Workflows sidebar in ComfyUI (ComfyUI has no URL parameter for opening a workflow).',
+  '导入到 ComfyUI': 'Import to ComfyUI',
+  '把当前工作流导入到 ComfyUI 的工作流列表，在 ComfyUI 网页里打开':
+    'Import the current workflow into the ComfyUI workflow list and open the ComfyUI web UI',
+  '节点图有问题，先修好再导入': 'Fix the node graph problems before importing',
+  '有没保存的修改：保存后才会把工作流导入到 ComfyUI':
+    'There are unsaved changes: save them before the workflow can be imported into ComfyUI',
+  '导入到 ComfyUI 失败（{status}）：{error}': 'Import to ComfyUI failed ({status}): {error}',
   文本生图: 'Text to image',
   '主力模型：按描述整张出图，图标、插画、背景和整屏原画都用得上':
     'Main models: render a whole image from a description; good for icons, illustrations, backgrounds and full-screen concepts',
