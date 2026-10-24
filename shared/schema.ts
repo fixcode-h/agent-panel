@@ -1215,6 +1215,11 @@ export const TaskStep = z.object({
   branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  /**
+   * 子任务接着哪个 CLI 会话跑（task.sessions 的键）：spawn_agents 带 resume 时是被接着的那个子任务的会话，
+   * 复看的评审不用把文档和代码从头再读一遍。空的就用自己的 id（旧数据和新开的子任务都是这样）
+   */
+  session: z.string().default(''),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */

@@ -432,3 +432,73 @@ test('彻底完成后面板收掉进程（finish）：CLI 没来得及报完成�
   assert.equal(finished.stopReason, undefined)
   assert.ok(!finished.messages.some((m) => m.role === 'system'), '没有任何中断说明')
 })
+
+test('子任务：resume 接着之前那个子任务的会话，复看的评审不用从头再读（ADR 0009）', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const errors: (string | undefined)[] = []
+  const { task, log, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '评审', instructions: '看全量 diff', agent: '验收' }]).ids
+      await o.wait(first, 1000)
+      // 换了角色不能接；不存在的 id 也不能接
+      errors.push(o.spawn([{ title: '复看', instructions: '增量', agent: '开发', resume: first[0] }]).error)
+      errors.push(o.spawn([{ title: '复看', instructions: '增量', resume: 'nope' }]).error)
+      const again = o.spawn([{ title: '复看', instructions: '只看增量', resume: first[0] }]).ids
+      await o.wait(again, 1000)
+      return '一步结果'
+    }
+    return '验收结论：通过'
+  })
+  await runEngineTurn(host)
+  const subs = task.steps.filter((s) => s.slot === 'sub')
+  assert.equal(subs.length, 2)
+  assert.equal(subs[1].session, subs[0].id, '复看记下接着的是哪个会话')
+  assert.equal(subs[1].agentId, 'v', '不写 agent 时沿用上一次的角色')
+  const calls = log.filter((c) => c.step?.slot === 'sub')
+  assert.deepEqual(
+    calls.map((c) => c.sessionKey),
+    [subs[0].id, subs[0].id],
+  )
+  assert.match(calls[1].prompt, /之前那个会话的延续/)
+  assert.match(errors[0] ?? '', /另一个角色/)
+  assert.match(errors[1] ?? '', /不是你派过的子任务/)
+})
+
+test('子任务：输出超过交接上限时完整内容存成文件，不再只截开头', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const long = `验收结论：不通过\n${'🛑 R1 一条很长的意见。'.repeat(500)}\n🛑 R9 最后一条`
+  const saved: string[] = []
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const ids = call.orch!.spawn([{ title: '评审', instructions: '看 diff' }]).ids
+      await call.orch!.wait(ids, 1000)
+      return '一步结果'
+    }
+    return long
+  })
+  host.saveHandoff = async (_step, text) => {
+    saved.push(text)
+    return '/tmp/handoff/h1.md'
+  }
+  await runEngineTurn(host)
+  const sub = task.steps.find((s) => s.slot === 'sub')!
+  assert.equal(saved[0], long, '完整输出交给 saveHandoff')
+  assert.match(sub.output, /完整内容在文件 \/tmp\/handoff\/h1\.md/)
+  assert.ok(sub.output.startsWith('验收结论：不通过'))
+})
+
+test('子任务：被停止时标成打断，不像没开始过', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const { task, host } = makeHost(w, (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const ids = call.orch!.spawn([{ title: '评审', instructions: '看 diff' }]).ids
+      return call.orch!.wait(ids, 1000).then(() => '一步结果')
+    }
+    return { ok: false as const, stopped: true, error: '' }
+  })
+  await runEngineTurn(host)
+  const sub = task.steps.find((s) => s.slot === 'sub')!
+  assert.equal(sub.status, 'pending')
+  assert.equal(sub.interrupted, true)
+})

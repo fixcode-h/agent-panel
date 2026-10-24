@@ -63,6 +63,8 @@ export function handoffText(
     base: string
     commits: string[]
     changed: Record<string, string>
+    /** 评审意见的处置（triageText 写好的几行）：哪些采纳、哪些驳回、哪些留作已知问题 */
+    triage?: string
   },
 ): string {
   const files = Object.entries(facts.changed)
@@ -73,6 +75,7 @@ export function handoffText(
     ...HANDOFF_FIELDS.map((f) => (h[f.key] ? `## ${f.title}\n${clip(h[f.key]!, 3000)}` : '')),
     facts.note ? `## 这次改了什么\n${clip(facts.note, 600)}` : '',
     facts.tests ? `## 当时的验证\n${clip(facts.tests, 1200)}` : '',
+    facts.triage ? `## 评审意见的处置\n${clip(facts.triage, 2000)}` : '',
     facts.commits.length || files.length
       ? [
           `## 合回的改动（分支 ${facts.branch}）`,

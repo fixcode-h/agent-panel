@@ -157,8 +157,21 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   assert.equal(def.category, '必备')
   assert.equal(def.agent.common, true, '别的角色能按名字派它')
   const code = renderTemplate(def.agent.instructions, { target: '代码改动' })
-  for (const s of ['🛑 必须改', '💭 建议', '💅 细节', '验收结论：通过', '验收结论：不通过', 'Verdict: pass'])
+  for (const s of [
+    '🛑 必须改',
+    '💭 建议',
+    '💅 细节',
+    '验收结论：通过',
+    '验收结论：不通过',
+    'Verdict: pass',
+    '必须改：R1',
+    '需要先定的口径',
+    '文档要更新',
+  ])
     assert.ok(code.includes(s), `评审（代码改动）要写明「${s}」`)
+  // 🛑 的门槛和复看只看增量：没有这两条，复看每轮都会换个角度挑出新的 🛑（ADR 0009）
+  assert.match(code, /🛑 只给这次需求明确要求、用户能看到或能复现的问题/)
+  assert.match(code, /只看本轮新增的 diff 和上一轮每条意见的处置/)
   // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
   assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
@@ -176,12 +189,15 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
     '评审要单独写进计划并标 review',
   )
   assert.match(section, /派的时候把计划里那一步标成等待中/, '派评审时计划里那一步标等待中')
-  assert.match(
-    section,
-    /再新加一条评审步骤（同样标 review: true）复看/,
-    '按 🛑 改完要复看，并且复看也是计划里标 review 的一步',
-  )
-  assert.match(section, /通过」之后，才跑完整测试和编译/, '评审通过后才跑完整测试')
+  // ADR 0009：评审只出意见，执行角色逐条核实再处置；不能再写「不要自己把 🛑 判成不重要」
+  assert.doesNotMatch(section, /不要自己把 🛑 判成不重要/, '不能要求照单全收')
+  assert.match(section, /采不采纳由你核实之后决定/, '采不采纳由执行角色定')
+  for (const d of ['fix', 'reject', 'defer']) assert.match(section, new RegExp(`- ${d}：`), `处置里有 ${d}`)
+  assert.match(section, /resume 接着上一次评审/, '复看接着上一次评审的会话')
+  assert.match(section, /只给增量 diff 和上一轮每条意见的处置/, '复看只给增量')
+  assert.match(section, /最多复看 2 轮/, '复看有上限')
+  assert.match(section, /review_triage/, 'submit_merge 带处置')
+  assert.match(section, /模块文档/, '收尾前同步模块文档')
   assert.match(section, /submit_merge/, '最后才 submit_merge')
 })
 

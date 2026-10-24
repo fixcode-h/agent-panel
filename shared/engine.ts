@@ -84,6 +84,8 @@ import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
+import { parseVerdict } from './verdict.ts'
+import type { TriageItem } from './review-gate.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
@@ -158,6 +160,8 @@ export interface HelperSpec {
   agent?: string
   /** 默认 CLI 的档位；不写跟发起的节点 */
   tier?: string
+  /** 接着之前哪个子任务（id）的会话做：复看的评审接着上一次评审，读过的文档和代码不用再读一遍 */
+  resume?: string
 }
 
 /** 子 Agent 的状态（wait_agents 的结果） */
@@ -335,6 +339,8 @@ export interface Orchestra {
     tests: string,
     build?: boolean,
     handoff?: HandoffInput,
+    /** 对最近一次评审每条 🛑 的处置（见 shared/review-gate.ts、ADR 0009） */
+    triage?: TriageItem[],
   ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
@@ -484,6 +490,7 @@ export interface EngineHost {
     tests: string,
     build?: boolean,
     handoff?: HandoffInput,
+    triage?: TriageItem[],
   ) => Promise<{ ok: boolean; info: string }>
   /**
    * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
@@ -702,18 +709,7 @@ interface MainCtl {
 
 type FlowResult = { ok: true; output: string } | Fail
 
-/**
- * 从验收输出里读结论（也用于条件连线的「结论」）；没写结论时视为通过。
- * 回复语言跟随面板设置（见 prompt-lang.ts），但结论靠固定的说法识别，所以提示词里两种写法都给了：
- * 中文「结论：通过 / 不通过」、英文「Verdict: pass / fail」，回复换成英文也不会丢结论。
- */
-export function parseVerdict(text: string): 'pass' | 'fail' | '' {
-  const all = [...text.matchAll(/结论\s*[:：]\s*\**\s*(不通过|通过)/g)]
-  if (all.length) return all.at(-1)![1] === '通过' ? 'pass' : 'fail'
-  const en = [...text.matchAll(/verdict\s*[:：]\s*(pass|fail)/gi)]
-  if (en.length) return en.at(-1)![1].toLowerCase() === 'pass' ? 'pass' : 'fail'
-  return ''
-}
+export { parseVerdict }
 
 export function system(host: EngineHost, text: string, step = '', error = false, transient = false) {
   host.task.messages.push({
@@ -2589,9 +2585,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests, build, handoff) {
+    async submitMerge(note, tests, build, handoff, triage) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff)
+      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage)
       if (r.ok) host.changed(true)
       return r
     },
@@ -2696,9 +2692,31 @@ function makeOrchestra(
               '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
           }
       }
+      // 接着之前的子任务：同一个会话同一时间只能跑一轮，还在跑的、同一批里两个都要接的都拒绝
+      const resumed = new Map<HelperSpec, TaskStep>()
+      for (const spec of list) {
+        const id = spec.resume?.trim()
+        if (!id) continue
+        const prev = mine.find((s) => s.id === id)
+        if (!prev) return { ids: [], error: `resume 写的「${id}」不是你派过的子任务（用 spawn_agents 返回的 id）` }
+        const key = prev.session || prev.id
+        const busyKey = mine.some(
+          (s) =>
+            (s.session || s.id) === key && (s.status === 'running' || (s.status === 'pending' && st.helpers.has(s.id))),
+        )
+        if (busyKey) return { ids: [], error: `「${prev.title}」的会话还在跑，等它结束再接着用` }
+        if ([...resumed.values()].some((s) => (s.session || s.id) === key))
+          return { ids: [], error: `同一批里不能有两个子任务都接着「${prev.title}」的会话` }
+        const want = spec.agent?.trim()
+        if (want && !host.agents.some((a) => a.id === prev.agentId && (a.id === want || a.name === want)))
+          return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
+        resumed.set(spec, prev)
+      }
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
+        const prev = resumed.get(spec)
         const agent =
+          (prev && host.agents.find((a) => a.id === prev.agentId)) ||
           (want && host.agents.find((a) => a.id === want || a.name === want)) ||
           helperRole ||
           host.agents.find((a) => a.id === self.agentId)
@@ -2712,6 +2730,7 @@ function makeOrchestra(
           kind: 'agent',
           title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
           agentId: agent?.id ?? self.agentId,
+          session: prev ? prev.session || prev.id : '',
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
@@ -2832,6 +2851,9 @@ async function runHelper(
     const prompt = [
       ...commonPart(host, ctx.workflow, !!ctx.chat),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
+      step.session
+        ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
+        : '',
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
@@ -2844,7 +2866,8 @@ async function runHelper(
       step,
       agentId: step.agentId,
       prompt,
-      sessionKey: step.id,
+      // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
+      sessionKey: step.session || step.id,
       tier,
       // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
       // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
@@ -2852,12 +2875,17 @@ async function runHelper(
     })
     if (r.ok) {
       const late = await settleHelpers(host, step)
-      step.output = clip(late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text, MAX_OUTPUT)
+      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的 🛑 / 💭 整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
+      // 完整内容和节点一样存成文件，交回的结果里写明去哪读
+      step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text)
       step.status = 'done'
     } else {
       step.status = r.stopped || r.halted ? 'pending' : 'failed'
-      if (r.stopped || r.halted) pauseStep(step)
-      else {
+      // 被停止的标成打断：报告和界面才能说清「这一轮被停了、结论没出来」，而不是像还没开始
+      if (r.stopped || r.halted) {
+        pauseStep(step)
+        step.interrupted = true
+      } else {
         st.errors.set(step.id, r.error)
         system(host, r.error || t('执行失败'), step.id, true)
       }

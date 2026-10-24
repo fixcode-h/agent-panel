@@ -14,6 +14,9 @@ import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttac
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
+import { leadVerdict } from './verdict.ts'
+
+const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
 export const TASK_EXPORT_VERSION = 1
@@ -87,9 +90,11 @@ export interface ReworkCounts {
   rerun: number
   /** 父对话驳回子对话收尾（没能合回原分支），它处理完再来一次 */
   merge: number
+  /** 子任务（评审、测试验收）给了「不通过」：以前不算返工，评审连退八次报告还写「返工 0 次」 */
+  sub: number
 }
 
-export const NO_REWORKS: ReworkCounts = { review: 0, rerun: 0, merge: 0 }
+export const NO_REWORKS: ReworkCounts = { review: 0, rerun: 0, merge: 0, sub: 0 }
 
 /**
  * 统计里可以相加的那几项：任务自身、它的子对话合计、含子对话的合计都用这一套。
@@ -211,6 +216,7 @@ export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
       review: a.reworkBy.review + b.reworkBy.review,
       rerun: a.reworkBy.rerun + b.reworkBy.rerun,
       merge: a.reworkBy.merge + b.reworkBy.merge,
+      sub: (a.reworkBy.sub ?? 0) + (b.reworkBy.sub ?? 0),
     },
     errors: a.errors + b.errors,
     failedTools: a.failedTools + b.failedTools,
@@ -406,6 +412,8 @@ export function reworkCounts(task: Task): ReworkCounts {
     ),
     rerun: task.steps.reduce((n, s) => n + Math.max(0, s.reruns ?? 0), 0),
     merge: mergeRejects(task),
+    // 结论按评审门禁同一种读法（首行优先），派出去的子任务只有评审、测试验收会写结论
+    sub: task.steps.filter((s) => s.slot === 'sub' && s.status === 'done' && leadVerdict(s.output) === 'fail').length,
   }
 }
 
@@ -478,7 +486,7 @@ export function taskStats(
       skipped: count('skipped'),
       pending: count('pending') + count('running'),
     },
-    reworks: reworkBy.review + reworkBy.rerun + reworkBy.merge,
+    reworks: reworkBy.review + reworkBy.rerun + reworkBy.merge + reworkBy.sub,
     reworkBy,
     errors: task.messages.filter((m) => m.error).length + failedToolsOf(task),
     failedTools: failedToolsOf(task),
@@ -498,7 +506,8 @@ export function taskStats(
     spanMs,
     idleMs: Math.max(0, freeMs - (busyMs ?? 0)),
     childBusyMs: busyMs,
-    asks: task.messages.filter((m) => m.role === 'user').length,
+    // 父对话、别的对话交过来的消息有 peer：不是用户说的，不算进「用户消息」
+    asks: task.messages.filter((m) => m.role === 'user' && !m.peer).length,
     nodes,
     children,
     combined: addTotals(own, children),
@@ -938,6 +947,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     by.review ? `验收不通过 ${by.review} 次` : '',
     by.rerun ? `同一节点重跑 ${by.rerun} 次` : '',
     by.merge ? `子对话收尾被驳回 ${by.merge} 次` : '',
+    by.sub ? `子任务验收不通过 ${by.sub} 次` : '',
   ].filter(Boolean)
   const reworkText = st.reworks && reworkParts.length ? `（${reworkParts.join('、')}）` : ''
   // 合计行也要分类：子对话收尾被驳回那条消息写在子对话里，只写总数就看不到
@@ -946,6 +956,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     allBy.review ? `验收不通过 ${allBy.review} 次` : '',
     allBy.rerun ? `同一节点重跑 ${allBy.rerun} 次` : '',
     allBy.merge ? `子对话收尾被驳回 ${allBy.merge} 次` : '',
+    allBy.sub ? `子任务验收不通过 ${allBy.sub} 次` : '',
   ].filter(Boolean)
   const allReworkText = all.reworks && allReworkParts.length ? `（${allReworkParts.join('、')}）` : ''
   // 空闲的口径要和实算的对得上：没算子对话占用的入口（AI 分析那份导出）不能写成「同一段时间只算一处」
@@ -981,7 +992,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次${reworkText}；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
   ]
   // 用户每条要求的发出时间：判断「后面越来越慢」时看相邻两条之间隔了多久
-  const asks = tk.messages.filter((m) => m.role === 'user')
+  const asks = tk.messages.filter((m) => m.role === 'user' && !m.peer)
   if (asks.length > 1)
     lines.push(
       `- 用户发言时间：${asks
@@ -1068,8 +1079,9 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
       const s = tk.steps.find((x) => x.id === step)
       lines.push('', s ? `### 节点：${s.title}（${s.id}，${s.status}）` : '### 节点之外')
     }
-    const who =
-      m.role === 'user'
+    const who = m.peer
+      ? `${PEER_REL[m.peer.rel] ?? '别的对话'}（${m.peer.name || m.peer.title || m.peer.id}）发来`
+      : m.role === 'user'
         ? '用户'
         : m.role === 'system'
           ? m.error

@@ -912,7 +912,7 @@ test('统计：验收重做与节点重跑都记成返工，节点重跑清零 r
       { id: 'old', title: '旧节点', status: 'done', startedAt: at, endedAt: at, rounds: 2, verdict: 'pass' },
     ],
   })
-  assert.deepEqual(taskStats(rec).reworkBy, { review: 3, rerun: 1, merge: 0 })
+  assert.deepEqual(taskStats(rec).reworkBy, { review: 3, rerun: 1, merge: 0, sub: 0 })
 })
 
 test('报告：空闲的说明和实际算到的口径一致（没算 / 算过是 0 / 有占用）', () => {
@@ -974,7 +974,7 @@ test('统计：返工按验收重做、同一节点重跑、子对话收尾被�
     ],
   })
   const s = taskStats(rec)
-  assert.deepEqual(s.reworkBy, { review: 1, rerun: 2, merge: 1 })
+  assert.deepEqual(s.reworkBy, { review: 1, rerun: 2, merge: 1, sub: 0 })
   assert.equal(s.reworks, 4, '返工总数等于三项相加')
   const report = taskReport(exportTask(rec, [coder]))
   assert.match(report, /返工 4 次（验收不通过 1 次、同一节点重跑 2 次、子对话收尾被驳回 1 次）/)
@@ -1159,4 +1159,52 @@ test('导出同一棵树两次结果一致，体积超过上限时拒绝生成�
   const big = exportTaskTree(root, [root, child, grand], [coder], '0.30.0', new Date(at))
   big.task.messages[0].text = 'x'.repeat(TASK_EXPORT_MAX_BYTES + 1024)
   assert.throws(() => checkExportSize(big), /上限/, '超过上限时不生成一个打不开的文件')
+})
+
+test('统计：评审、测试验收的子任务给了不通过也记成返工（ADR 0009）', () => {
+  const base = twoRounds()
+  const sub = (id: string, output: string) => ({
+    id,
+    parentId: '@chat',
+    slot: 'sub',
+    title: '评审',
+    status: 'done',
+    startedAt: at,
+    endedAt: at,
+    output,
+  })
+  const rec = Task.parse({
+    ...base,
+    steps: [
+      sub('h1', '验收结论：不通过\n必须改：R1'),
+      // 首行通过、正文提到上一轮「不通过」的复看不算返工
+      sub('h2', '验收结论：通过\n上一轮的「验收结论：不通过」都已改掉'),
+      sub('h3', '查到了三处调用'),
+    ],
+  })
+  const s = taskStats(rec)
+  assert.equal(s.reworkBy.sub, 1)
+  assert.equal(s.reworks, 1)
+  assert.match(taskReport(exportTask(rec, [coder])), /子任务验收不通过 1 次/)
+})
+
+test('统计：父对话交过来的消息不算用户消息，过程里写清是谁发的', () => {
+  const base = twoRounds()
+  const rec = Task.parse({
+    ...base,
+    messages: [
+      ...base.messages,
+      {
+        id: 'p1',
+        role: 'user',
+        text: '## 父对话替你定的方向：A',
+        at: '2026-10-19T11:35:00.000Z',
+        peer: { id: 'parent', name: '统筹', rel: 'parent', kind: 'answer' },
+      },
+    ],
+  })
+  assert.equal(taskStats(rec).asks, 2)
+  const md = taskReport(exportTask(rec, [coder]))
+  assert.match(md, /用户消息 2 条/)
+  assert.match(md, /父对话（统筹）发来/)
 })
