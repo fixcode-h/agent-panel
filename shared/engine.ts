@@ -934,7 +934,7 @@ function wrapUpPart(host: EngineHost) {
 这是 P4 工作区，修改前先 p4 edit / add 进 default changelist（限定到具体文件）。收尾时按文件类型把本次任务的文件分到不同的 pending changelist，不能全留在 default，也不能都放进同一个：
 - [C++]：.c / .cc / .cpp / .cxx / .h / .hh / .hpp / .inl / .ixx / .mm
 - [XLSX]：.xlsx / .xlsm / .xlsb / .xls
-- [Lua]：.lua 和对应生成的 .luac
+- [Lua]：.lua（只提交源码，不编译成 .luac，也不提交 .luac）
 - [Other]：其余要提交的代码、资源和配置
 只建这次真的有文件的类型；本来就在你（当前用户、当前 client）已有 pending 里的文件留在原 changelist，不挪别人的。新建用 p4 change -i 读 UTF-8 临时文件，再 p4 reopen -c <编号> <文件>；描述只写一行「[类型] 中文短句」（约 40 字内）。做完用 p4 opened -c <编号> 核对每个文件、p4 describe -s 回读确认描述没有乱码，再把这一步标完成。不 submit、不 revert、不 sync。`
 }
