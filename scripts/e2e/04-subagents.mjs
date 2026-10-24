@@ -273,7 +273,16 @@ await runShard('子对话与计划', async (api) => {
     const closed = await waitTask(doneKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 30000)
     const mergeLog = readLog(log + '.merge')
     assert.ok(mergeLog.length && !mergeLog.at(-1).got.isError, '子对话调用 submit_merge 请父对话收尾')
-    const finishLog = readLog(log + '.finish')
+    // 父对话是在 finish_child 的 HTTP 响应回来之后才补写这条记录的（fake-cli），而 resolved 在服务端返回前就置位了：
+    // 等到 resolved 就立刻读文件，会在「服务端已置位、记录还没落盘」这段窗口里读空（CI 上并行跑分片时窗口更大）。
+    // 这里等记录真的出现（它是父对话调过 finish_child 的直接证据），不要靠固定等待凑时间
+    const finishLog = await waitFor(
+      () => {
+        const hit = readLog(log + '.finish').filter((x) => x.id === doneKid.id && !x.got.isError)
+        return hit.length ? hit : undefined
+      },
+      { timeout: 10000, label: '父对话调用 finish_child 的记录' },
+    )
     assert.ok(
       finishLog.some((x) => x.id === doneKid.id && !x.got.isError),
       '父对话收到收尾请求后调用 finish_child 收尾',
