@@ -1027,7 +1027,92 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('执行中发消息：消息没有立刻出现在对话里'))
     if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
     if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
-    await check(p, '任务-执行中发消息')
+    // 交付方式要回传给用户看：演示里这一轮收不下，消息上要写明「结束后自动处理」，不是只存个内部枚举
+    await check(p, '任务-执行中发消息', ['这一轮结束后自动处理'])
+  }
+  // 上一条还在发送时再按回车：只发出一条，而且要说明为什么没发出去（以前是静默什么都不做，看着像卡住了）
+  {
+    const text = '连按两次回车的测试'
+    // 演示版把发消息的请求人为拖慢（见 demo-backend 的 demo-slow-messages），才能真的撞上「上一条还在发送」。
+    // 这个值会被界面检查的演示倍速缩短（scripts/ui/harness.mjs 的 DEMO_SPEED=4），12000 折算下来约 3 秒，余量够两次按键
+    await p.evaluate(() => localStorage.setItem('demo-slow-messages', '12000'))
+    await p.locator('#follow-up').fill(text)
+    await p.locator('#follow-up').press('Enter')
+    await p.locator('#follow-up').press('Enter')
+    const hint = await p
+      .getByText('上一条还在发送，稍等一下')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!hint) errors.push('发送被拦下：没有提示为什么没发出去')
+    await p
+      .locator('.ml-auto', { hasText: text })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {})
+    // 等第一条真的发完（输入框清空），再数：只能有一条
+    await p
+      .waitForFunction(
+        () => !(document.querySelector('#follow-up')?.textContent ?? '').includes('连按两次回车的测试'),
+        { timeout: 10000 },
+      )
+      .catch(() => {})
+    const n = await p.locator('.ml-auto', { hasText: text }).count()
+    if (n !== 1) errors.push(`连按两次回车：发出了 ${n} 条（应该只有 1 条）`)
+    await p.evaluate(() => localStorage.removeItem('demo-slow-messages'))
+    await check(p, '输入框-连按两次回车')
+  }
+  // 中文输入法组合结束后按一下回车就要发出去：部分 Windows 输入法这时 nativeEvent.isComposing 还是 true
+  {
+    const text = '中文输入完直接按回车'
+    await p.locator('#follow-up').focus()
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      // 组合开始 → 字已经落进输入框 → 组合结束（真实输入法的先后顺序）
+      ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      ed.textContent = '中文输入完直接按回车'
+      ed.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      ed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await p.waitForTimeout(200)
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      ed.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, isComposing: true }),
+      )
+    })
+    const sent = await p
+      .locator('.ml-auto', { hasText: text })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!sent) errors.push('输入法组合结束后按一次回车：消息没有发出去')
+    await check(p, '输入框-组合结束后回车发出')
+  }
+  // 反过来：组合中按下的回车（选字用的那一下）不能当成发送
+  {
+    const text = '组合中按下回车不该发出'
+    await p.locator('#follow-up').focus()
+    await p.evaluate(() => {
+      const ed = document.querySelector('#follow-up')
+      ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      ed.textContent = '组合中按下回车不该发出'
+      ed.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      ed.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await p.waitForTimeout(600)
+    const n = await p.locator('.ml-auto', { hasText: text }).count()
+    if (n) errors.push('输入法组合中按回车：消息被发出去了（选字用的回车不能当成发送）')
+    // 清掉输入框，别影响后面的用例
+    await p.locator('#follow-up').fill('')
+    await check(p, '输入框-组合中回车不发出')
   }
   // 提问窗口右上角的关闭：点了要马上收起、换回输入框，对话暂停（以前停止接口返回的任务还带着提问，关不掉）
   await p.goto(base + '#/chat')

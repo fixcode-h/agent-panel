@@ -785,6 +785,9 @@ await runShard('对话与续接', async (api) => {
     assert.equal('queue' in q, false, '不再有排队字段')
     assert.equal(q.messages.length, before + 1, '消息马上进对话')
     assert.equal(q.messages.at(-1).text, '执行中补一句')
+    // 交付方式回传给前端：能插进当前这一轮就说清楚，不是只存个内部枚举值
+    assert.equal(q.messages.at(-1).delivery?.how, 'steer', '插进当前这一轮的消息记下交付方式')
+    assert.ok(Date.parse(q.messages.at(-1).delivery.at) > 0, '交付时间也记上')
     assert.equal(q.status, 'running', '这一轮还在跑')
     // Command Code 用常驻 RPC 的 turn/steer，同样立刻进对话
     let c = await call('POST', '/tasks', {
@@ -801,6 +804,11 @@ await runShard('对话与续接', async (api) => {
     assert.ok(
       c.messages.some((m) => m.role === 'user' && m.text === '命令行也来一句'),
       'Command Code 的消息也立刻进对话',
+    )
+    assert.equal(
+      c.messages.find((m) => m.text === '命令行也来一句')?.delivery?.how,
+      'steer',
+      'Command Code 用 turn/steer 插进这一轮，交付方式也回传',
     )
     q = await waitDone(q.id)
     c = await waitDone(c.id)
@@ -821,23 +829,64 @@ await runShard('对话与续接', async (api) => {
     })
     const g0 = calls().filter((c) => c.kind === 'gemini').length
     await waitFor(() => calls().filter((c) => c.kind === 'gemini').length > g0, { label: 'Gemini 开始执行' })
-    g = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理这条' })
-    assert.equal(g.messages.at(-1).text, '这一轮结束后处理这条', '交不出去的消息也立刻进对话')
-    assert.equal(g.status, 'running', '第一轮还没结束')
-    // 第一轮结束后自动开新一轮：等两轮都跑完（中间会短暂停在 done）
+    // CLI 正在跑长命令时连发两条：两条各自记下「这一轮结束后自动处理」，都会交给 CLI 处理
+    const h1 = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理这条' })
+    const h2 = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理另一条' })
+    assert.equal(h1.messages.at(-1).text, '这一轮结束后处理这条', '交不出去的消息也立刻进对话')
+    assert.equal(h1.messages.at(-1).delivery?.how, 'held', '这一轮收不下的记成「结束后自动处理」')
+    assert.equal(h2.messages.at(-1).text, '这一轮结束后处理另一条')
+    assert.equal(h2.messages.at(-1).delivery?.how, 'held', '第二条也一样记下交付方式')
+    assert.equal(h2.status, 'running', '第一轮还没结束')
+    // 第一轮结束后自动逐条开新一轮：等三轮都跑完（中间会短暂停在 done）
     const t1 = Date.now()
     for (;;) {
       g = await call('GET', `/tasks/${g.id}`)
       const users = g.messages.filter((m) => m.role === 'user').length
       const finished =
-        g.status !== 'running' && users >= 2 && calls().filter((c) => c.kind === 'gemini').length >= g0 + 2
+        g.status !== 'running' && users >= 3 && calls().filter((c) => c.kind === 'gemini').length >= g0 + 3
       if (finished) break
-      if (Date.now() - t1 > 30000) throw new Error('执行中收到的消息没有在下一轮接着处理')
+      if (Date.now() - t1 > 40000) throw new Error('执行中收到的消息没有在下一轮接着处理')
       await sleep(100)
     }
     assert.equal(g.status, 'done')
     const texts = g.messages.filter((m) => m.role === 'user').map((m) => m.text)
-    assert.deepEqual(texts, ['SLOW 交不出去的消息', '这一轮结束后处理这条'], '这一轮结束后自动接着处理，不重复记消息')
+    assert.deepEqual(
+      texts,
+      ['SLOW 交不出去的消息', '这一轮结束后处理这条', '这一轮结束后处理另一条'],
+      '两条排队的消息都接着处理了，不重复记消息',
+    )
+    // 两条都被真的交给了 CLI：不是只记在对话里
+    const seen = calls()
+      .filter((c) => c.kind === 'gemini')
+      .map((c) => c.input)
+      .join('\n')
+    assert.ok(seen.includes('这一轮结束后处理这条'), '第一条排队的消息交给了 CLI')
+    assert.ok(seen.includes('这一轮结束后处理另一条'), '第二条排队的消息也交给了 CLI')
+    assert.deepEqual(
+      g.messages.filter((m) => m.role === 'user').map((m) => m.delivery?.how),
+      [undefined, 'next', 'next'],
+      '排队消息被取走后，状态从「结束后自动处理」改成实际发生的事（按新的一轮处理）',
+    )
+    // 这一轮收不下的消息，用户又点了停止：标成「没送出去」，让用户知道要重发
+    let x = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'gemini',
+      prompt: 'SLOW 停下前排队的消息',
+    })
+    const x0 = calls().filter((c) => c.kind === 'gemini').length
+    await waitFor(() => calls().filter((c) => c.kind === 'gemini').length > x0, { label: 'Gemini 开始执行' })
+    x = await call('POST', `/tasks/${x.id}/messages`, { text: '停止后要重发的这条' })
+    assert.equal(x.messages.at(-1).delivery?.how, 'held', '先记成「结束后自动处理」')
+    await call('POST', `/tasks/${x.id}/stop`)
+    await waitFor(
+      async () => {
+        const now = await call('GET', `/tasks/${x.id}`)
+        return now.messages.find((m) => m.text === '停止后要重发的这条')?.delivery?.how === 'lost' ? now : undefined
+      },
+      { timeout: 20000, label: '停止后排队消息标成没送出去' },
+    )
     // 打断：停下当前这一轮马上处理
     let r = await call('POST', '/tasks', {
       projectId: project.id,
