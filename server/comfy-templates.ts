@@ -96,7 +96,9 @@ async function cachedIndex(): Promise<{ updatedAt: string; list: SnapshotItem[] 
   if (!raw || typeof raw !== 'object') return undefined
   const r = raw as { updatedAt?: unknown; list?: unknown }
   if (!Array.isArray(r.list)) return undefined
-  const list = r.list.filter((x): x is SnapshotItem => !!x && typeof x === 'object' && typeof (x as SnapshotItem).name === 'string')
+  const list = r.list.filter(
+    (x): x is SnapshotItem => !!x && typeof x === 'object' && typeof (x as SnapshotItem).name === 'string',
+  )
   return { updatedAt: str(r.updatedAt), list }
 }
 
@@ -273,8 +275,14 @@ export function templateApi(deps: TemplateDeps) {
       return c.json({ error: (e as Error).message }, 400)
     }
   }
-  routes.get('/', wrap(() => templateCatalog(deps.modelsDir())))
-  routes.post('/refresh', wrap(() => refreshTemplates(deps.modelsDir())))
+  routes.get(
+    '/',
+    wrap(() => templateCatalog(deps.modelsDir())),
+  )
+  routes.post(
+    '/refresh',
+    wrap(() => refreshTemplates(deps.modelsDir())),
+  )
   routes.get('/:name', (c) => wrap(() => templateDetail(c.req.param('name'), deps.modelsDir()))(c))
   routes.post('/:name/add', async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { kind?: string }

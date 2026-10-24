@@ -189,10 +189,7 @@ test('不认识的节点直接报错，不生成跑不了的工作流', () => {
     ],
     links: [[1, 1, 0, 2, 0, 'IMAGE']],
   }
-  assert.throws(
-    () => templateToWorkflow(ui, meta({ title: 'X' }), { kind: 'game', id: 'wf' }),
-    /MysteryNode/,
-  )
+  assert.throws(() => templateToWorkflow(ui, meta({ title: 'X' }), { kind: 'game', id: 'wf' }), /MysteryNode/)
 })
 
 test('子图展开：内部节点加前缀，输出接到外面的节点', () => {

@@ -20,7 +20,10 @@ test('模板名和下载地址做校验：不让拼出目录外，也不下非 H
   assert.equal(safeTemplateName('image_sdxl_simple'), true)
   assert.equal(safeTemplateName('../secret'), false)
   assert.equal(safeTemplateName('a/b'), false)
-  assert.equal(downloadUrl('https://huggingface.co/Comfy-Org/x/resolve/main/a.safetensors'), 'https://huggingface.co/Comfy-Org/x/resolve/main/a.safetensors')
+  assert.equal(
+    downloadUrl('https://huggingface.co/Comfy-Org/x/resolve/main/a.safetensors'),
+    'https://huggingface.co/Comfy-Org/x/resolve/main/a.safetensors',
+  )
   assert.equal(downloadUrl('https://hf-mirror.com/x'), undefined)
   assert.equal(downloadUrl('http://huggingface.co/x'), undefined)
   assert.equal(downloadUrl('https://example.com/a.safetensors'), undefined)
@@ -43,10 +46,11 @@ test('内置模板详情直接给接口格式的节点图和依赖文件', async
   const detail = await templateDetail('builtin:z-image-turbo', empty)
   assert.ok(detail.graph)
   assert.equal(detail.template.source, 'builtin')
-  assert.deepEqual(
-    detail.assets.map((a) => `${a.dir}/${a.file}`).sort(),
-    ['diffusion_models/z_image_turbo_bf16.safetensors', 'text_encoders/qwen_3_4b.safetensors', 'vae/ae.safetensors'],
-  )
+  assert.deepEqual(detail.assets.map((a) => `${a.dir}/${a.file}`).sort(), [
+    'diffusion_models/z_image_turbo_bf16.safetensors',
+    'text_encoders/qwen_3_4b.safetensors',
+    'vae/ae.safetensors',
+  ])
   assert.ok(detail.assets.every((a) => a.have === false))
 })
 
