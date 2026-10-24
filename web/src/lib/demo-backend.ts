@@ -2910,7 +2910,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
  * 三个在跑——其中两个的计划还没做完（在跑就算执行中，不归未完成），
  * 一个没在跑但计划没做完（归未完成），四个已做完。进程活着的 5 个，所以栏上应该是 3/5。
  */
-async function demoChildren(d: Db, parent: Task, agent: { id: string }) {
+async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: string }) {
   const plan = (done: number, total: number) => ({
     id: 'p1',
     title: '修复角标不刷新',
@@ -2957,6 +2957,37 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string }) {
     it.title = title
     it.working = !!how.working
     it.resolved = !!how.resolved
+    // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」
+    if (it.messages[0])
+      it.messages[0].peer = {
+        id: parent.id,
+        title: parent.title,
+        name: '统筹',
+        rel: 'parent',
+        kind: 'task',
+        subject: title,
+      }
+    // 做完的子对话给父对话交回一条状态：父对话里画成「接收消息 · 汇报」
+    if (how.resolved)
+      parent.messages.push({
+        id: `${it.id}-report`,
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: `【子对话状态】「${title}」（id ${it.id}）已完成：合回原分支、标记完成`,
+        tools: [],
+        panel: 'child',
+        child: { id: it.id, title, state: 'done' },
+        peer: {
+          id: it.id,
+          title,
+          name: agent.name ?? title,
+          rel: 'child',
+          kind: 'report',
+          subject: '已完成：合回原分支、标记完成',
+        },
+        at: new Date().toISOString(),
+      })
     if (how.plan) it.plans = [how.plan]
     // 进程还活着（cliAlive）：演示里没有真的进程，用 live 登记一下
     if (how.alive) live.set(it.id, { stop: false })

@@ -25,6 +25,7 @@ import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
+import { PeerLine } from './PeerMessage'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -197,6 +198,7 @@ export function RowShell({
   glyph,
   verb,
   badge,
+  badgeClass,
   title,
   titleClass,
   detail,
@@ -214,6 +216,8 @@ export function RowShell({
   verb?: React.ReactNode
   /** 动作名后面淡色的小标签（MCP 的服务名） */
   badge?: string
+  /** 小标签换颜色（对话之间的消息按类型、报错标色） */
+  badgeClass?: string
   title?: React.ReactNode
   titleClass?: string
   detail?: React.ReactNode
@@ -255,7 +259,12 @@ export function RowShell({
           {glyph}
           {verb && <span className="font-sans font-medium text-fg/85">{verb}</span>}
           {badge && (
-            <span className="rounded bg-sel px-1.5 py-px font-sans text-[0.6875rem] leading-4 text-subtle">
+            <span
+              className={cn(
+                'rounded px-1.5 py-px font-sans text-[0.6875rem] leading-4',
+                badgeClass ?? 'bg-sel text-subtle',
+              )}
+            >
               {badge}
             </span>
           )}
@@ -314,6 +323,22 @@ export function ToolRow({
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示；别的 MCP 工具名当动作
   const view = toolView(raw)
   if (view === null) return null
+  // 给另一个对话发消息：和收件方的「接收消息」一样画成「发送消息 + 类型 + 内容标题」
+  if (view.send)
+    return (
+      <PeerLine
+        dir="out"
+        kind={view.send.kind}
+        name={view.send.to}
+        subject=""
+        body={view.send.body}
+        failed={raw.failed}
+        running={raw.running || (raw.ms === undefined && !!raw.startedAt && task?.status === 'running')}
+        childId={view.child}
+        receipt={raw.output?.trim()}
+        ms={raw.ms}
+      />
+    )
   return <ToolLine view={view} task={task} />
 }
 

@@ -280,7 +280,10 @@ await runShard('子对话与计划', async (api) => {
     )
     const wrapParent = await call('GET', `/tasks/${wtParent.id}`)
     assert.ok(
-      wrapParent.messages.some((m) => m.panel === 'wrapup' && m.child?.id === doneKid.id),
+      wrapParent.messages.some(
+        (m) =>
+          m.panel === 'wrapup' && m.child?.id === doneKid.id && m.peer?.kind === 'wrapup' && m.peer.rel === 'child',
+      ),
       '收尾请求在父对话里是一行「子对话请求」',
     )
     assert.ok(closed.resolved, '合进父对话的分支后子对话标记完成')
@@ -348,6 +351,13 @@ await runShard('子对话与计划', async (api) => {
     )
     await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
     await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
+    // 对话之间的消息带上发件方和类型：子对话里画成「接收消息」，不当成用户说的话
+    const kidMsgs = (await call('GET', `/tasks/${askKid.id}`)).messages
+    // 这个子对话是直接建的（用户发的第一句），只有卡片上的回答经父对话交过来
+    assert.equal(kidMsgs[0].peer, undefined, '用户自己建子对话时第一句仍是用户消息')
+    const answerMsg = kidMsgs.find((m) => m.text.includes('用户的决定'))
+    assert.equal(answerMsg.peer?.kind, 'answer', '卡片上的回答交给子对话时标成「回答」')
+    assert.ok(answerMsg.peer.subject.includes('B 方案'), '标题里接上答案')
     askParent = await call('GET', `/tasks/${wtParent.id}`)
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')

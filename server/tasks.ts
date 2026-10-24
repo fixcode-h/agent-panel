@@ -14,6 +14,8 @@ import {
   type Attachment,
   type Project,
   type ProjectCategory,
+  type PeerFrom,
+  type PeerKind,
   type StopReason,
   type TaskMessage,
   type Workflow,
@@ -119,6 +121,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
+import { subjectLine } from '../shared/peer-message.ts'
 import { holdWait, markWrapUp, openPlan, openWork, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
 import type { PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
@@ -478,6 +481,29 @@ export function tasksApi(deps: {
   let liveAgents: Agent[] = []
   const refreshAgents = async () => (liveAgents = await deps.agents.list())
 
+  /**
+   * 对话之间收发的消息带上「谁发来的」（见 TaskMessage.peer）：收件方界面画成一行「接收消息」，不当成用户说的话。
+   * 名字用发件对话的角色名（统筹、程序），找不到角色时用对话标题
+   */
+  async function peerOf(
+    from: Task,
+    rel: PeerFrom['rel'],
+    kind: PeerKind,
+    subject: string,
+    failed = false,
+  ): Promise<PeerFrom> {
+    const agent = (await deps.agents.list().catch(() => liveAgents)).find((a) => a.id === from.agentId)
+    return {
+      id: from.id,
+      title: from.title,
+      name: agent?.name || from.title,
+      rel,
+      kind,
+      subject: subjectLine(subject),
+      ...(failed && { failed: true }),
+    }
+  }
+
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
@@ -669,8 +695,10 @@ export function tasksApi(deps: {
     body: string,
     inboxText = body,
     settle?: { kind: PlanWait['kind']; ref: string; ok: boolean; onlyIfWaiting?: boolean },
-    /** 子对话的状态上报：父对话里画成一行「子对话状态」（见 Messages 的 PanelRow），带上是谁、什么状态 */
+    /** 子对话的状态上报：带上是谁、什么状态（行右边写状态，点开能跳到子对话） */
     child?: { id: string; title: string; state: ConvState },
+    /** 发件对话：父对话里画成一行「接收消息」 */
+    peer?: PeerFrom,
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
@@ -695,12 +723,13 @@ export function tasksApi(deps: {
               tools: [],
               panel: 'child',
               ...(child && { child }),
+              ...(peer && { peer }),
               at: new Date().toISOString(),
             },
             text,
             [],
           )
-        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child })
+        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child, peer })
         return
       } catch (e) {
         // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
@@ -714,9 +743,10 @@ export function tasksApi(deps: {
       step: '',
       text,
       tools: [],
-      // 父对话里画成一行「子对话状态」（像一次工具调用），点开看全文
+      // 父对话里画成一行「接收消息」（像一次工具调用），点开看全文
       panel: 'child',
       ...(child && { child }),
+      ...(peer && { peer }),
       at: new Date().toISOString(),
     }
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理
@@ -748,10 +778,20 @@ export function tasksApi(deps: {
     message: string,
     /** 面板自己推的结果（后台命令、合并编译）：对话里显示成 AI 回复里的一行，不是用户消息 */
     panel?: TaskMessage['panel'],
+    /**
+     * 父对话发来的是哪一类（交代任务、回答、收尾结果、编译结果）：子对话里画成「接收消息」，不当成用户说的话。
+     * 不给时是面板自己的消息（后台命令结果、催合并），照旧画成面板的一行
+     */
+    kind?: PeerKind,
+    failed = false,
   ): Promise<{ ok: boolean; info: string }> {
     const child = live.get(id)?.task ?? (await store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: READONLY }
+    const parent = kind ? (live.get(parentId)?.task ?? (await store.get(parentId))) : undefined
+    // 回答是「用户的决定：」换行再写答案：标题里接成一行
+    const subject = kind === 'answer' ? message.replace(/：\n/, '：') : message
+    const peer = parent && kind ? await peerOf(parent, 'parent', kind, subject, failed) : undefined
     const running = live.get(id)
     if (running?.task.status === 'running') {
       // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
@@ -763,6 +803,7 @@ export function tasksApi(deps: {
         text: message,
         tools: [],
         ...(panel ? { panel } : {}),
+        ...(peer && { peer }),
         at: new Date().toISOString(),
       }
       const r = await deliver(running, msg, message, [])
@@ -784,7 +825,7 @@ export function tasksApi(deps: {
       const free = await takeSlot(parentId)
       try {
         try {
-          await followUp(id, { text: message, attachments: [], panel })
+          await followUp(id, { text: message, attachments: [], panel, peer })
           const cur = live.get(id)
           if (cur) cur.freeSlot = free
         } catch (e) {
@@ -800,6 +841,7 @@ export function tasksApi(deps: {
             text: message,
             tools: [],
             ...(panel ? { panel } : {}),
+            ...(peer && { peer }),
             at: new Date().toISOString(),
           }
           cur.task.messages.push(msg)
@@ -914,9 +956,14 @@ export function tasksApi(deps: {
         if (forward) {
           buildFor.delete(job.id)
           for (const kid of forward.children)
-            await sendToChild(forward.parent, kid, `【父对话编译结果】${result}`, 'build').catch((e) =>
-              log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message }),
-            )
+            await sendToChild(
+              forward.parent,
+              kid,
+              `【父对话编译结果】${result}`,
+              'build',
+              'build',
+              /跑完了：失败|被停止了/.test(result),
+            ).catch((e) => log.warn('task', '编译结果推给子对话失败', { task: kid, error: (e as Error).message }))
         }
         // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
         try {
@@ -1115,7 +1162,7 @@ export function tasksApi(deps: {
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩合回了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
 它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}
 请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
-      { panel: 'wrapup', child },
+      { panel: 'wrapup', child, peer: await peerOf(tk, 'child', 'wrapup', note || '只剩合回，请收尾') },
     )
     return {
       ok: true,
@@ -1131,7 +1178,12 @@ export function tasksApi(deps: {
     id: string,
     from: Task,
     text: string,
-    meta: { panel?: TaskMessage['panel']; child?: { id: string; title: string; state: ConvState } } = {},
+    meta: {
+      panel?: TaskMessage['panel']
+      child?: { id: string; title: string; state: ConvState }
+      /** 发件对话：收件方画成一行「接收消息」 */
+      peer?: PeerFrom
+    } = {},
   ) {
     const running = live.get(id)
     const panel = meta.panel ?? 'child'
@@ -1146,13 +1198,14 @@ export function tasksApi(deps: {
           tools: [],
           panel,
           ...(meta.child && { child: meta.child }),
+          ...(meta.peer && { peer: meta.peer }),
           at: new Date().toISOString(),
         }
         await deliver(running, msg, text, [])
-      } else await followUp(id, { text, attachments: [], panel, child: meta.child })
+      } else await followUp(id, { text, attachments: [], panel, child: meta.child, peer: meta.peer })
     } catch (e) {
       log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
-      await noteParent(id, from, text, text, undefined, meta.child)
+      await noteParent(id, from, text, text, undefined, meta.child, meta.peer)
     }
   }
 
@@ -1167,7 +1220,11 @@ export function tasksApi(deps: {
       child,
       `【编译申请】子对话「${child.title}」（id ${child.id}）申请 UE 编译：${note}${checks ? `\n它做过的检查：${checks.slice(0, 400)}` : ''}
 按申请处理：还有别的子对话的申请没编时合成一次，用 request_build 向面板申请编译，children 写上这些子对话的 id；编译结果面板会同时推给你和它们，失败时它们自己修好再申请。`,
-      { panel: 'wrapup', child: { id: child.id, title: child.title, state: 'waiting' } },
+      {
+        panel: 'wrapup',
+        child: { id: child.id, title: child.title, state: 'waiting' },
+        peer: await peerOf(child, 'child', 'build', `申请 UE 编译：${note}`),
+      },
     )
   }
 
@@ -1235,6 +1292,10 @@ export function tasksApi(deps: {
         h.id,
         parent,
         `【编译占位】父对话「${parent.title}」（id ${parent.id}）申请了编译（${note.slice(0, 200)}），排在你占着的编译后面，你的编译跑完它会自动开始。你还要连着编、或者需要它等你的改动时，用 message_peer 告诉它。`,
+        undefined,
+        undefined,
+        undefined,
+        await peerOf(parent, 'peer', 'build', `排在你后面等编译：${note}`),
       )
     const who = holders.map((x) => `「${x.title}」`).join('、')
     return {
@@ -1271,7 +1332,7 @@ export function tasksApi(deps: {
   async function childMerged(
     childId: string,
     text: string,
-    opts: { quiet?: boolean } = {},
+    opts: { quiet?: boolean; peer?: PeerFrom } = {},
   ): Promise<{ holds: ChildHold[]; info: string } | undefined> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1284,6 +1345,7 @@ export function tasksApi(deps: {
       text,
       tools: [],
       panel: 'build',
+      ...(opts.peer && { peer: opts.peer }),
       at: new Date().toISOString(),
     }
     const steered = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
@@ -1357,6 +1419,8 @@ export function tasksApi(deps: {
         `【父对话收尾】没能合回原分支：${r.info}
 在你的分支里处理好、重新跑通验证后再调用 submit_merge 请父对话收尾。`,
         'build',
+        'merge',
+        true,
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
     }
@@ -1364,7 +1428,7 @@ export function tasksApi(deps: {
       childId,
       `【父对话收尾】已合回原分支：${r.info}
 父对话已经验收合并。计划、后台命令、提问都收口后面板结束这个子对话并删除独立分支；不要再改已经合进去的文件。`,
-      { quiet: true },
+      { quiet: true, peer: await peerOf(parent, 'parent', 'merge', `已合回原分支：${r.info}`) },
     )
     // 父对话计划里等它的那一步：合进去就是交付了
     const pEntry = live.get(parent.id)
@@ -1599,6 +1663,7 @@ export function tasksApi(deps: {
       text,
       r.settle === 'hold' ? undefined : { kind: 'child', ref: tk.id, ok: r.settle === 'ok' },
       { id: tk.id, title: tk.title, state: r.state },
+      await peerOf(tk, 'child', 'report', r.why, r.state === 'failed'),
     )
   }
 
@@ -1722,7 +1787,16 @@ export function tasksApi(deps: {
     if (fresh)
       for (const k of [...live.values()].filter((e) => e.task.parentTaskId === tk.id && e.task.working)) {
         const body = `父对话发布了新的全局规则，接下来必须遵守：${fresh}`
-        const msg: TaskMessage = { id: randomUUID(), role: 'system', agentId: '', step: '', text: body, tools: [], at }
+        const msg: TaskMessage = {
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: body,
+          tools: [],
+          peer: await peerOf(tk, 'parent', 'rule', fresh),
+          at,
+        }
         const how = await steerTask(k.task, body, msg).catch(() => false)
         if (!how) k.task.messages.push(msg)
         k.rev++
@@ -1777,6 +1851,8 @@ export function tasksApi(deps: {
     const body = opts.length ? `${text}\n\n可选的做法：\n${opts.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : text
     // 自动交给父对话时把「谁来答」写进正文：父对话的 AI 之后从对话历史和收件箱读到的就是这句
     const why = auto ? '\n\n（「提问」关着，用户不会回答：请你按最合理的做法直接决定，别再问用户）' : ''
+    // 提问卡片（ask）自己就说明了是谁问的；其余（汇报、自动交给父对话 AI 的提问）画成「接收消息」
+    const peer = await peerOf(child, 'child', question ? 'question' : 'report', text)
     const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
@@ -1785,6 +1861,7 @@ export function tasksApi(deps: {
       text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}${why}`,
       tools: [],
       panel: question && !auto ? 'ask' : 'child',
+      ...(!(question && !auto) && { peer }),
       ...(question && !auto
         ? {
             ask: {
@@ -1826,6 +1903,7 @@ export function tasksApi(deps: {
           text: `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
           attachments: [],
           panel: 'child',
+          peer,
         }).catch((e) => log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
     }
     if (auto)
@@ -2051,6 +2129,8 @@ export function tasksApi(deps: {
       parent.id,
       from,
       suggestion ? `关于你刚才的收尾建议，用户的决定：\n${answer}` : `关于你刚才的提问，用户的决定：\n${answer}`,
+      undefined,
+      'answer',
     )
     if (!r.ok) return { error: r.info }
     const cur = live.get(parent.id)?.task ?? parent
@@ -2301,6 +2381,7 @@ export function tasksApi(deps: {
                 peer.id,
                 entry.task,
                 `【父对话传话】来自「${entry.task.title}」（id ${entry.task.id}）：${text}\n要回话就用 message_peer 回给它；只协调，不用替它做决定。`,
+                { peer: await peerOf(entry.task, 'peer', 'chat', text) },
               )
               return { ok: true, info: `已交给父对话「${peer.title}」` }
             }
@@ -2402,6 +2483,8 @@ export function tasksApi(deps: {
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
           // 只有直接调接口没给时才退回用户消息开头
           if (title.trim()) draft.title = title.trim().slice(0, 80)
+          // 第一条要求是父对话交代的：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
+          if (draft.messages[0]) draft.messages[0].peer = await peerOf(entry.task, 'parent', 'task', message)
           // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
           // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
           const sharedDir = project.childIsolation !== 'worktree'
@@ -2451,7 +2534,8 @@ export function tasksApi(deps: {
           }
         },
         sendToConversation: async (id, message) => {
-          const r = await sendToChild(entry.task.id, id, message)
+          // 父对话交给已有子对话：子对话里画成「接收消息 · 交代任务」，不当成用户说的话
+          const r = await sendToChild(entry.task.id, id, message, undefined, 'task')
           // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
           if (r.ok && settleAsks(entry.task, id, message, 'parent')) entry.rev++
           return r
@@ -2566,6 +2650,8 @@ export function tasksApi(deps: {
       panel?: TaskMessage['panel']
       /** 子对话状态上报、收尾请求：是哪个子对话、什么状态（见 TaskMessage.child） */
       child?: TaskMessage['child']
+      /** 另一个对话发来的：界面画成「接收消息」（见 TaskMessage.peer） */
+      peer?: TaskMessage['peer']
     },
   ) {
     const task = await store.get(id)
@@ -2622,6 +2708,7 @@ export function tasksApi(deps: {
           text: m.text,
           ...(m.panel ? { panel: m.panel } : {}),
           ...(m.child ? { child: m.child } : {}),
+          ...(m.peer ? { peer: m.peer } : {}),
           ...(expanded ? { prompt: expanded } : {}),
           tools: [],
           ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -2644,6 +2731,7 @@ export function tasksApi(deps: {
         text: m.text,
         ...(m.panel ? { panel: m.panel } : {}),
         ...(m.child ? { child: m.child } : {}),
+        ...(m.peer ? { peer: m.peer } : {}),
         ...(expanded ? { prompt: expanded } : {}),
         tools: [],
         ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -3169,8 +3257,9 @@ export function tasksApi(deps: {
         const s = task.steps.find((x) => x.id === step)
         if (s) lines.push(`## 节点：${s.title}`)
       }
-      const who =
-        m.role === 'user'
+      const who = m.peer
+        ? `${m.peer.name || m.peer.title}发来的消息`
+        : m.role === 'user'
           ? '用户'
           : m.role === 'system'
             ? '出错'

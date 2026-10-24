@@ -47,6 +47,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await closed()
     }
   }
+  // 子对话交回的状态不再藏起来：画成「接收消息 + 类型 + 内容标题」，点标题弹窗看全文
+  {
+    const row = p.getByText('接收消息', { exact: true }).first()
+    if (!(await row.count())) errors.push('父对话里没有「接收消息」行：子对话交回的上报被藏起来了')
+    else {
+      await row.scrollIntoViewIfNeeded()
+      await check(p, '接收消息-子对话上报', ['接收消息', '汇报', '已完成：合回原分支'])
+      await p.getByRole('button', { name: '已完成：合回原分支、标记完成' }).first().click()
+      await check(p, '接收消息-弹窗', ['已收到', '打开子对话'])
+      await p.keyboard.press('Escape')
+      await closed()
+    }
+  }
   // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
   {
     const openTask = () => backToTask()

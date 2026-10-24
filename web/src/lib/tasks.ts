@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
+import type { PeerKind, Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
@@ -146,6 +146,27 @@ export interface ToolView {
   jobs?: string[]
   /** 这次调用启动了一次工作流：点标题打开这次运行的对话，不是一段文本 */
   startsRun?: boolean
+  /** 给另一个对话发消息（交给子对话、回报父对话、给其他父对话传话）：画成一行「发送消息」 */
+  send?: { kind: PeerKind; to: string; body: string }
+}
+
+/** 给另一个对话发消息的几个工具：收件方是谁、哪一类、正文 */
+function sendOf(name: string, tool: ToolUse): ToolView['send'] {
+  const a = toolArgs(tool)
+  const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  if (name === 'send_to_conversation')
+    return { kind: 'task', to: quoted || firstLine(a.id) || t('子对话'), body: str(a.message) }
+  if (name === 'message_peer') return { kind: 'chat', to: quoted || t('其他父对话'), body: str(a.text) }
+  if (name === 'message_parent') {
+    const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
+    return {
+      kind: a.question ? 'question' : 'report',
+      to: t('父对话'),
+      body: [str(a.text), opts].filter(Boolean).join('\n\n'),
+    }
+  }
+  return undefined
 }
 
 /**
@@ -164,8 +185,10 @@ export function toolView(tool: ToolUse): ToolView | null {
         ? /^已申请编译（[^）]*），编号 ([0-9a-f、]+)。/.exec(tool.output ?? '')?.[1]?.split('、')
         : undefined
     const startsRun = name === 'start_plan' || name === 'run_workflow'
+    const send = sendOf(name, tool)
     return {
       tool: panel,
+      ...(send && { send }),
       ...(child && { child }),
       ...(job && { job }),
       ...(jobs?.length && { jobs }),
@@ -230,7 +253,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'create_conversation':
       return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
     case 'send_to_conversation':
-      return as(t('交给子对话'), quoted || firstLine(a.id), 'agent', text(a.message))
+      return as(t('发送消息'), quoted || firstLine(a.id), 'agent', text(a.message))
     case 'list_conversations':
       return as(t('查看子对话'), '')
     // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
@@ -253,7 +276,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'message_parent': {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
-      return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text), 'other', body || undefined)
+      return as(t('发送消息'), firstLine(a.text), 'other', body || undefined)
     }
     case 'suggest_next_step': {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
@@ -271,7 +294,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'list_peers':
       return as(t('查看其他父对话'), '')
     case 'message_peer':
-      return as(t('给其他父对话传话'), firstLine(a.text), 'other', text(a.text))
+      return as(t('发送消息'), firstLine(a.text), 'other', text(a.text))
     case 'start_plan':
     case 'run_workflow':
       return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))

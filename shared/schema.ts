@@ -961,6 +961,30 @@ export type ToolUse = z.infer<typeof ToolUse>
 export const AskKind = z.enum(['question', 'suggestion'])
 export type AskKind = z.infer<typeof AskKind>
 
+/**
+ * 对话之间收发的消息分哪几类：收发两边都按它挑图标和小标签，一眼分得出是交代任务还是上报、收尾、编译。
+ * task 交代任务、answer 回答提问、question 提问、report 汇报和状态上报、wrapup 请求收尾、
+ * merge 收尾结果、build 编译（申请、占位、结果）、rule 全局规则、chat 父对话之间传话
+ */
+export const PeerKind = z.enum(['task', 'answer', 'question', 'report', 'wrapup', 'merge', 'build', 'rule', 'chat'])
+export type PeerKind = z.infer<typeof PeerKind>
+
+/** 这条消息是另一个对话发来的：谁发的（角色名、对话标题）、它和收件方是什么关系、哪一类、是不是报错 */
+export const PeerFrom = z.object({
+  id: z.string(),
+  title: z.string().default(''),
+  /** 发件对话的角色名（「统筹」「程序」）：界面写「已收到 X 发来的消息」 */
+  name: z.string().default(''),
+  /** 发件方相对收件方：parent 父对话、child 子对话、peer 同项目的其他父对话 */
+  rel: z.enum(['parent', 'child', 'peer']),
+  kind: PeerKind.default('report'),
+  /** 内容标题：一行里显示的那句（交代的事、状态、收尾结果）；为空时取正文第一行 */
+  subject: z.string().default(''),
+  /** 报错、失败、没合进去这一类：行标红 */
+  failed: z.boolean().optional(),
+})
+export type PeerFrom = z.infer<typeof PeerFrom>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -1003,6 +1027,12 @@ export const TaskMessage = z.object({
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  /**
+   * 另一个对话发来的消息（父对话交代的任务、子对话的状态上报、收尾请求、编译结果、传话……）：
+   * 不当成用户说的话，界面上统一画成一行「接收消息 · 已收到 X 发来的消息」，点开看全文。
+   * 交给 CLI 的内容不变（父对话交代的任务 role 仍是 user，轮次、回退照旧按它算）
+   */
+  peer: PeerFrom.optional(),
   /** panel 为 ask 时：哪个子对话问的、问了什么、可选的做法，以及谁怎么回答的 */
   ask: z
     .object({
