@@ -609,11 +609,15 @@ export const api = {
    */
   answerChildAsk: (id: string, mid: string, body: { answer: string; delegate: boolean }) =>
     request<{ task: Task; nudge?: ChildAskNudge }>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
+  /** 子对话请用户决定的提问，用户点了关闭：都不回答，子对话终止 */
+  closeParentAsks: (id: string) => request<Task>(`/tasks/${id}/parent-asks/close`, { method: 'POST' }),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
+  /** 提问窗口的关闭：这个问题不回答，这次会话终止 */
+  closeAsk: (id: string) => request<{ ok: true }>(`/asks/${id}/close`, { method: 'POST' }),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
   /** 父对话的设置：目标、全局规则、子对话的执行配置和并发上限 */
   updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'childLimit' | 'title'>) =>

@@ -96,7 +96,7 @@ import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
 import { childDirty, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
-import { FoldedAskBar, ParentAskPanel } from './ChildAskCard'
+import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
@@ -345,8 +345,6 @@ export function TaskView({
     return list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c))
   }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
-  // 子对话请用户选择的弹窗收起时记下当时是哪几个提问：来了新的提问再弹出来
-  const [askFolded, setAskFolded] = useState('')
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
@@ -886,10 +884,7 @@ export function TaskView({
 
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
   // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
-  const parentAsks = task.parentAsks ?? []
-  const askKey = parentAsks.map((x) => x.id).join(',')
-  const askShown = parentAsks.length > 0 && !task.imported && !asksQuestion(task.requests)
-  const askOpen = askShown && askFolded !== askKey
+  const askOpen = (task.parentAsks ?? []).length > 0 && !task.imported && !asksQuestion(task.requests)
   const composer = !task.imported && !asksQuestion(task.requests) && !askOpen && (
     <ChatComposer
       id="follow-up"
@@ -1467,17 +1462,7 @@ export function TaskView({
                     }
                   />
                   <TaskRequestCard task={task} onAnswered={apply} />
-                  {askOpen ? (
-                    <ParentAskPanel task={task} onFold={() => setAskFolded(askKey)} />
-                  ) : (
-                    askShown && (
-                      <FoldedAskBar
-                        n={parentAsks.length}
-                        suggestion={parentAsks.every((a) => a.kind === 'suggestion')}
-                        onOpen={() => setAskFolded('')}
-                      />
-                    )
-                  )}
+                  {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
                   <WorktreeBar task={task} />
                   {flowLeft && !task.imported && (
                     <FlowBar

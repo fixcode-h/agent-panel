@@ -1114,7 +1114,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.locator('#follow-up').fill('')
     await check(p, '输入框-组合中回车不发出')
   }
-  // 提问窗口右上角的关闭：点了要马上收起、换回输入框，对话暂停（以前停止接口返回的任务还带着提问，关不掉）
+  // 提问窗口右上角的关闭：这个问题不回答、终止对话，窗口马上收起、换回输入框（以前停止接口返回的任务还带着提问，关不掉）
   await p.goto(base + '#/chat')
   await p.locator('#task-prompt').fill('问我日期用哪种格式再改')
   await p.waitForTimeout(300)
@@ -1129,7 +1129,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push('提问窗口：对话里说「问我」后没有弹出提问')
   else {
     await check(p, '提问窗口', ['日期显示用哪种格式？', '提交回答'])
-    await ask.getByRole('button', { name: '关闭并暂停对话' }).click()
+    await ask.getByRole('button', { name: '不回答，终止对话' }).click()
     if (
       !(await ask.waitFor({ state: 'detached', timeout: 5000 }).then(
         () => true,
@@ -1139,5 +1139,53 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       errors.push('提问窗口：点右上角的关闭后提问没有收起')
     else if (!(await p.locator('#follow-up').isVisible())) errors.push('提问窗口：关掉后输入框没有回来')
     else await check(p, '提问窗口-关闭后')
+  }
+  // 子对话请你决定的提问（一次问了两个）：右上角的关闭也是不回答、终止子对话，不再只是收起
+  await p.goto(base)
+  await p.getByText('购物车右上角', { exact: false }).first().click()
+  const go = p.getByRole('button', { name: '去选择' }).first()
+  if (
+    !(await go.waitFor({ timeout: 10000 }).then(
+      () => true,
+      () => false,
+    ))
+  )
+    errors.push('子对话提问：父对话里没有「去选择」')
+  else {
+    await go.scrollIntoViewIfNeeded()
+    await go.click()
+    const kidAsk = p.getByRole('dialog', { name: 'AI 的问题' }).filter({ hasText: '需要你选择' })
+    if (
+      !(await kidAsk.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('子对话提问：点「去选择」后没有弹出选择窗口')
+    else {
+      await check(p, '子对话提问', ['需要你选择', '购物车数量用哪种缓存？', '问题 2'])
+      await kidAsk.getByRole('button', { name: '不回答，终止子对话' }).click()
+      if (
+        !(await kidAsk.waitFor({ state: 'detached', timeout: 5000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('子对话提问：点关闭后选择窗口没有收起')
+      else if (await p.getByText('展开选择', { exact: true }).count())
+        errors.push('子对话提问：关闭后还留着「展开选择」，只是收起了没有终止')
+      else {
+        await check(p, '子对话提问-关闭后', ['继续执行'])
+        // 父对话里的两张提问卡片记成不回答（演示里父对话页不轮询，刷新一下再看）
+        await p.reload()
+        await p
+          .getByText('你没回答，子对话已终止', { exact: false })
+          .first()
+          .waitFor({ timeout: 10000 })
+          .catch(() => errors.push('子对话提问：关闭后父对话里的提问卡片没有记成不回答'))
+        if (await p.getByRole('button', { name: '去选择' }).count())
+          errors.push('子对话提问：关闭后父对话里还有「去选择」')
+      }
+    }
   }
 })

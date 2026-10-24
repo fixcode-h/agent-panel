@@ -53,9 +53,9 @@ export function QuestionPanel({
   /** 不回答（让 AI 自己选）或改用输入框；不给就没有这个按钮 */
   onSkip?: () => unknown
   skipLabel?: string
-  /** 右上角的关闭：先不回答，暂停对话；不给就没有这个按钮 */
+  /** 右上角的关闭：这个问题不回答，终止当前对话；不给就没有这个按钮 */
   onClose?: () => unknown
-  /** 关闭按钮的提示，默认「关闭并暂停对话」 */
+  /** 关闭按钮的提示，默认「不回答，终止对话」 */
   closeLabel?: string
   /** 左上角的标题，默认「需要你回答」 */
   label?: string
@@ -177,8 +177,8 @@ export function QuestionPanel({
         {onClose && (
           <button
             type="button"
-            aria-label={closeLabel ?? t('关闭并暂停对话')}
-            title={closeLabel ?? t('关闭并暂停对话')}
+            aria-label={closeLabel ?? t('不回答，终止对话')}
+            title={closeLabel ?? t('不回答，终止对话')}
             disabled={closing || busy}
             onClick={async () => {
               setClosing(true)
