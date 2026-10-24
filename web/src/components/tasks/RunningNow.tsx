@@ -111,7 +111,8 @@ export function RunningNow({
       ))}
       {rows.map((k) => {
         // 行上的状态标签、当前活动、多久没新输出都和悬浮层那一行读同一份（见 ./child-line）：
-        // 标题、状态、计划进度、正在做什么两处显示一致
+        // 标题、状态、计划进度、正在做什么两处显示一致。
+        // 这段详情按弹层里的观感跟在标题后面左对齐（detailStart），不再贴到行尾
         const labels = childLabels(k)
         const note = childNote(k, true)
         const stale = staleLine(k)
@@ -119,21 +120,29 @@ export function RunningNow({
           <RowShell
             key={k.id}
             glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />}
-            verb={t('子对话')}
+            // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
+            // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
+            verb={<span className="sr-only md:not-sr-only">{t('子对话')}</span>}
             title={k.title || t('未命名')}
             open={false}
             onOpen={openChild ? () => openChild(k.id) : undefined}
-            openTip={t('在右侧打开子对话')}
+            // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
+            openTip={t('在右侧打开子对话「{title}」', { title: k.title || t('未命名') })}
+            detailStart
             detail={
-              <span className="flex min-w-0 max-w-[58%] shrink items-center gap-1.5 overflow-hidden">
-                {labels.map((l) => (
-                  <span key={l.text} className={childLabelClass[l.tone]}>
+              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                {labels.map((l, i) => (
+                  // 超窄屏（<359px）只留第一个状态标签：两个并排会被 overflow-hidden 裁掉，
+                  // 读起来像「等结 0.1s」；这时活动文字也已隐藏，只保留最要紧的那个状态
+                  <span key={l.text} className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden')}>
                     {l.text}
                   </span>
                 ))}
+                {/* 窄屏下行的宽度留给状态标签和耗时：活动文字是补充信息，md 以上再显示，
+                    不让标签被 overflow-hidden 裁成「计划 1」 */}
                 {(note || stale) && (
                   <span
-                    className={cn('min-w-0 truncate font-sans', stale ? stale.cls : 'text-subtle')}
+                    className={cn('hidden min-w-0 truncate font-sans md:block', stale ? stale.cls : 'text-subtle')}
                     title={[note, stale?.text].filter(Boolean).join(' · ')}
                   >
                     {stale ? stale.text : note}

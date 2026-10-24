@@ -68,7 +68,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
               .filter((b) => (b.className || '').includes('text-left'))
               .map((b) => norm(b.innerText))
           : []
-        return { runs, items }
+        // 运行区子对话行的详情（状态标签、当前活动）要跟在标题后面左对齐：
+        // 以前标题 flex-1 占满中间，状态和活动被推到行尾，看起来像居中/靠右居中。
+        // 左对齐后标题和状态两段文字不能糊成一块：中间要有分隔线，且状态不是另一个点击目标
+        const align = [...document.querySelectorAll('[aria-label="运行中"]')]
+          .flatMap((box) => [...box.children])
+          .filter((r) => norm(r.innerText).startsWith('子对话'))
+          .map((row) => {
+            // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
+            const title = [...row.querySelectorAll('button')].find((b) =>
+              (b.getAttribute('title') || '').includes('子对话'),
+            )
+            // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
+            const tags = [...row.querySelectorAll('span')]
+              .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+              .filter((s) => s.getBoundingClientRect().width > 0)
+              .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+            if (!title || !tags.length) return null
+            const tag = tags[0]
+            // 真正负责裁剪的那一层（详情容器）：靠类名取而不靠结构层级，多包一层也不会量错
+            const clip = tag.closest('.overflow-hidden')?.getBoundingClientRect()
+            const sepBox = tag.closest('.border-l')
+            // 耗时是行尾那个等宽数字（tabular-nums），它要贴住行右边
+            const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
+            const rowRight = row.getBoundingClientRect().right
+            return {
+              gap: Math.round(tag.getBoundingClientRect().left - title.getBoundingClientRect().right),
+              // 分隔线不只看类名：类还在但样式被覆盖时也要能发现
+              sep: !!sepBox && parseFloat(getComputedStyle(sepBox).borderLeftWidth) >= 1,
+              // 状态和活动文字不能是另一个点击目标：不在按钮里、鼠标不是手型
+              inButton: !!tag.closest('button'),
+              cursor: getComputedStyle(tag).cursor,
+              tags: tags.length,
+              clipped: tags.some((t) => !!clip && t.getBoundingClientRect().right > clip.right + 1),
+              msGap: ms ? Math.round(rowRight - ms.getBoundingClientRect().right) : null,
+            }
+          })
+          .filter(Boolean)
+        return { runs, items, align }
       })
       if (boxes.runs.length !== boxes.items.length)
         errors.push(`运行区和弹层条目数对不上：运行区 ${boxes.runs.length} 条、弹层 ${boxes.items.length} 条`)
@@ -95,12 +132,133 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .join(',')
       if (order(boxes.runs) !== order(boxes.items))
         errors.push(`运行区和弹层的顺序不一致：运行区 ${order(boxes.runs)}、弹层 ${order(boxes.items)}`)
+      // 左对齐：状态标签只隔一个分隔间距跟在标题后面，两段文字之间有分隔线，
+      // 状态/活动文字不是可点目标，耗时仍在行尾。
+      // 不按「行宽比例」判：标题按内容宽度、上限 25%（见 RowShell），
+      // 长标题的行比例本来就会偏右，拿比例当阈值会把合法布局判红
+      if (!boxes.align.length) errors.push('运行区：子对话行里没找到可以核对对齐的状态标签')
+      else if (boxes.align.length !== boxes.runs.length)
+        errors.push(`运行区：${boxes.runs.length} 条子对话行里只有 ${boxes.align.length} 条能测到标题和状态标签`)
+      // 有「计划 n/m + 执行中」这种一行两个标签的行，才算测到了真实排布
+      if (boxes.align.length && !boxes.align.some((a) => a.tags > 1))
+        errors.push('运行区：没有一行同时显示两个状态标签，核对不到「计划 n/m + 执行中」的排布')
+      for (const a of boxes.align) {
+        if (a.gap < 12 || a.gap > 24) errors.push(`运行区子对话行：状态标签距标题 ${a.gap}px，没有紧跟标题左对齐`)
+        if (!a.sep) errors.push('运行区子对话行：标题和状态之间没有分隔线，两段文字连成一片')
+        if (a.inButton || a.cursor === 'pointer')
+          errors.push(`运行区子对话行：状态/活动文字也是可点目标（inButton ${a.inButton}、cursor ${a.cursor}）`)
+        if (a.clipped) errors.push('运行区子对话行：状态标签被详情容器裁掉了')
+        // 行内边距 px-2.5 = 10px：耗时要贴住行右边，不能被详情挤出容器
+        if (a.msGap === null || a.msGap > 16) errors.push(`运行区子对话行：耗时没贴住行尾（右端距行右缘 ${a.msGap}px）`)
+      }
       await check(p, '子对话-运行区与弹层一致')
+      await check(p, '子对话-运行区左对齐')
       await p.getByRole('button', { name: '全部' }).first().click()
       await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()
     }
+  }
+  // 窄窗口：子对话行的状态标签不能被裁，「计划 1/2」不能变成「计划 1」；
+  // 活动文字是补充信息，窄屏藏起来，宽度留给标签和耗时
+  {
+    await p.setViewportSize({ width: 375, height: 820 })
+    await p.reload()
+    await backToTask()
+    /** 等运行区里出现子对话行（窄屏藏了动作名，按标题按钮的 openTip 定位） */
+    const waitRows = () =>
+      p
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+              [...box.children].some((r) => !!r.querySelector('button[title*="子对话"]')),
+            ),
+          { timeout: 10000 },
+        )
+        .catch(() => {})
+    const measureNarrow = () =>
+      p.evaluate(() => {
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        const rows = [...document.querySelectorAll('[aria-label="运行中"]')]
+          .flatMap((b) => [...b.children])
+          .filter((r) => !!r.querySelector('button[title*="子对话"]'))
+        return {
+          rows: rows.length,
+          // 行宽：1280 那段靠它确认真的复现出了「开着右栏再缩窗」的窄行，
+          // 默认右栏改成关闭时这里会变宽，断言就不会再静默通过
+          rowWidth: rows[0] ? Math.round(rows[0].getBoundingClientRect().width) : 0,
+          items: rows
+            .map((row) => {
+              // 一行可能有几个状态标签（「计划 1/2」+「执行中」），每个都要完整
+              const tags = [...row.querySelectorAll('span')]
+                .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+                .filter((s) => s.getBoundingClientRect().width > 0)
+              if (!tags.length) return null
+              // 真正裁剪的那一层（overflow-hidden）：标签超出它就会被裁掉
+              const clip = tags[0].closest('.overflow-hidden')?.getBoundingClientRect()
+              return {
+                text: tags.map((t) => norm(t.innerText)).join(' + '),
+                clipped: tags.some((t) => !!clip && t.getBoundingClientRect().right > clip.right + 1),
+                // 活动文字（带 truncate 的那一段）在窄屏要隐藏
+                noteShown: [...row.querySelectorAll('span')].some(
+                  (s) =>
+                    (s.className || '').includes('font-sans') &&
+                    (s.className || '').includes('truncate') &&
+                    getComputedStyle(s).display !== 'none',
+                ),
+              }
+            })
+            .filter(Boolean),
+        }
+      })
+    // 375 截图留证据（含两标签的行都要在画面里）；320 更窄，一个标签也不能裁
+    for (const width of [375, 320]) {
+      await p.setViewportSize({ width, height: 820 })
+      await p.reload()
+      await backToTask()
+      await waitRows()
+      const narrow = await measureNarrow()
+      if (!narrow.rows) errors.push(`运行区（${width}px）：没有列出子对话，核对不了状态标签`)
+      else if (narrow.items.length !== narrow.rows)
+        errors.push(`运行区（${width}px）：${narrow.rows} 条子对话行里只有 ${narrow.items.length} 条能测到状态标签`)
+      for (const n of narrow.items) {
+        if (n.clipped) errors.push(`运行区（${width}px）：状态标签「${n.text}」被裁掉了`)
+        if (n.noteShown) errors.push(`运行区（${width}px）：活动文字还占着宽度，状态标签会被挤掉`)
+      }
+      if (width === 375) {
+        // 运行区在消息流里往往滚在视口外：先滚到它，截图里才看得到全部子对话行
+        await p
+          .locator('[aria-label="运行中"]')
+          .first()
+          .scrollIntoViewIfNeeded()
+          .catch(() => {})
+        await check(p, '子对话-运行区窄窗口')
+      }
+    }
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.reload()
+    await backToTask()
+    // 1280 这一格：宽窗口开着右栏再缩下来，运行区一行只剩 300 多像素；
+    // 这里不在窄屏断点内（活动文字还在），状态标签照样不能被裁
+    await p.setViewportSize({ width: 1280, height: 900 })
+    await settle(p)
+    const mid = await measureNarrow()
+    if (!mid.rows) errors.push('运行区（1280px）：没有列出子对话，核对不了状态标签')
+    else if (mid.items.length !== mid.rows)
+      errors.push(`运行区（1280px）：${mid.rows} 条子对话行里只有 ${mid.items.length} 条能测到状态标签`)
+    for (const n of mid.items) if (n.clipped) errors.push(`运行区（1280px）：状态标签「${n.text}」被裁掉了`)
+    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来
+    if (mid.rowWidth > 340)
+      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，没复现出右栏占宽后的窄行（应该 <340）`)
+    // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
+    await p
+      .locator('[aria-label="运行中"]')
+      .first()
+      .scrollIntoViewIfNeeded()
+      .catch(() => {})
+    await check(p, '子对话-运行区1280')
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await settle(p)
   }
   // 子对话交回的状态不再藏起来：画成「接收消息 + 类型 + 内容标题」，点标题弹窗看全文
   {
