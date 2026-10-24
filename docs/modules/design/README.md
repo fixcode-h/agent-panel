@@ -16,7 +16,7 @@
 
 ## 入口与数据流
 
-- 页面入口：`web/src/pages/DesignPage.tsx` 管页面状态、参数和 `send()`；`web/src/components/design/DesignChat.tsx` 是对话面板（输入框、附件、控件引用、提问面板）；`web/src/components/design/useDesignEditor.ts` 管页面状态和轮询。
+- 页面入口：`web/src/pages/DesignPage.tsx` 管页面状态、参数和 `send()`；`web/src/components/design/DesignChat.tsx` 是对话面板（输入框、附件、控件引用、提问面板），对话主体用共享的 `ConversationShell` 和 `useConversationScroll`（`web/src/components/chat/ConversationShell.tsx`），设计特化（工具栏、原画/图源/张数、标注、引用、进度、AI 分析、提问面板、排队与补充、停止）仍从 `DesignChat.tsx` 的 `children` 插槽和壳外的输入框区传进去，共享壳里没有设计专用分支；`web/src/components/design/useDesignEditor.ts` 管页面状态和轮询。
 - 发起一轮（没在跑）：`send()` 先 `api.saveDesign` 回写页面状态，再 `POST /designs/:id/chat` → 路由校验 `DesignChatInput` 和 CLI 是否启用 → `beginChat()`。
 - `beginChat()`（`server/designs.ts`）：`recordMessage()` 记用户消息 → 保存 → 非分析时先存一个版本 → `startJob()`。
 - `beginChat()` 在进入 `save` / `addVersion` 前先用进程内的 `starting` 集合占住这个设计，同时往 `jobs` 放一个占位 job（`status: 'running'`、`phase: 'design'`、没有 `control`）：准备期间页面（`GET /designs/:id`）看到的是「在跑」，轮询不会因为上一轮 `done` 停掉；这一轮真正开始时 `startJob()` 覆盖它，取消或出错时在 `finally` 里删掉。
@@ -56,6 +56,7 @@
 - 原画张数和「每张几版」拆成两个设置：`DesignChatInput` 新增 `conceptCount`（1–4，默认 3，见 `shared/design.ts`），只给「先出原画」用；`count` 仍然只表示每张图生成几版。前端「原画」按钮右键菜单设置原画张数（`design-concept-count`，按设计用 `useScopedSetting` 记住，第一次打开沿用当前 `count`），底部下拉永远显示「每张 N 版」；服务端 `chat()` 把 `input.conceptCount` 传给 `openDesignSession` 的 `conceptCount`，也作为 `buildDesignPrompt` 的原画张数（`conceptSection` 的「这一轮出 N 张」，原来传 `input.count`）；`input.count` 只用在 `generateImages` 生成切图，两者不互相覆盖。演示版 `demo-design.ts` 的 `runConcepts` 也用它。
 - 演示版 `web/src/lib/demo-design.ts` 同步：`steer` 分支、`pendingChats` 接续、`pushUser` 记 `delivery`、`flushPending()` 把排队的 `held` 改成 `next` 再开下一轮、`stop` 改 `lost`。
 - 插话时附件给的是上传目录里的绝对路径，不是这一轮工作目录里的副本；`delivery` 记的是服务端实际做成了什么，不能用界面本地队列冒充已送达。
+- 设计对话改用 Chat 模式同一套对话页壳（`web/src/components/chat/ConversationShell.tsx`）：原来 `DesignChat.tsx` 自己维护的 `useLayoutEffect` 贴底和 `<40px` 滚动判定删掉，统一用 `useStickToBottom`（只有用户真的往上滚才松开），并补上「回到底部」；消息区宽度/内边距和任务对话一致。
 
 ## 回归验证
 
@@ -63,7 +64,7 @@
 - `npm run lint`
 - `npm run test:unit`
 - `npm run test:e2e:wsl`（Windows 上在 WSL 里跑）；本次覆盖 `scripts/e2e/06-assist.mjs` 的「设计补充测试」（插话成功、无 job 时直接开一轮）、「设计接续测试」（CLI 没有插话通道时消息进对话并在这一轮结束后自动接着处理）和「设计停止测试」（停止时排队消息标 `lost`、停止后再发的消息能接着开始新一轮）。
-- `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 的「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
+- `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
 
 ## 待确认
 
