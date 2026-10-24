@@ -45,6 +45,7 @@ import {
   IMAGE_SLOT,
   WIDGETS,
   allNames,
+  applyVisibility,
   assignImage,
   canAddChild,
   cloneWidget,
@@ -61,6 +62,7 @@ import {
   removeWidget,
   replaceWidget,
   resizeCanvasSlot,
+  toggledVisibility,
   uniqueName,
   wrapWidget,
   usedImages,
@@ -383,8 +385,21 @@ function Designer({ id }: { id: string }) {
 
   // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
   const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
+  // 这一段显示的是这一轮的预览，不是本地保存的树：眼睛按钮先改在预览上（见 toggleVisible），
+  // 这一轮结束后再落到保存的设计里，否则点了看起来没反应，结束时还会被 AI 的结果覆盖
+  const [liveVis, setLiveVis] = useState<Record<string, string>>({})
+  const pendingVis = useRef<Record<string, string>>({})
   const shownDoc =
-    doc && live ? { ...doc, root: live.root, components: live.components, data: live.data ?? doc.data } : doc
+    doc && live
+      ? {
+          ...doc,
+          root: applyVisibility(live.root, liveVis),
+          components: Object.keys(liveVis).length
+            ? live.components.map((c) => ({ ...c, Root: applyVisibility(c.Root, liveVis) }))
+            : live.components,
+          data: live.data ?? doc.data,
+        }
+      : doc
   const tree = doc ? treeOf(doc, target) : undefined
   const shownTree = shownDoc ? (treeOf(shownDoc, target) ?? tree) : undefined
   // 子控件被删掉或改名了：回到主界面
@@ -430,6 +445,26 @@ function Designer({ id }: { id: string }) {
       const n = fn(r)
       return n === r ? d : setTree(d, target, n)
     }, key)
+
+  // AI 这一轮改完，页面换成服务端存下的树：把修改期间点的显示 / 隐藏补上去
+  useEffect(() => {
+    if (live || !Object.keys(pendingVis.current).length) return
+    const vis = pendingVis.current
+    pendingVis.current = {}
+    setLiveVis({})
+    // 预览期间可能切过子控件，点过的控件不都在当前这棵树上：按整份设计补
+    ed.change((d) => {
+      const root = applyVisibility(d.root, vis)
+      const components = d.components.map((c) => {
+        const r = applyVisibility(c.Root, vis)
+        return r === c.Root ? c : { ...c, Root: r }
+      })
+      if (root === d.root && components.every((c, i) => c === d.components[i])) return d
+      return { ...d, root, components }
+    }, 'vis:ai')
+    // 只在这一轮 AI 修改结束时补一次；ed.change 每次渲染都是新的对象，写进依赖会一直触发
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [live])
 
   const addWidget = (type: WidgetType, cls?: string, into?: string) => {
     if (!tree || !doc) return
@@ -569,16 +604,19 @@ function Designer({ id }: { id: string }) {
       editTree((r) => insertWidget(r, p.id, c, p.Children!.findIndex((x) => x.id === wid) + 1))
       setSelected(c.id)
     },
-    toggleVisible: (wid) =>
-      editTree((r) =>
-        mapWidget(r, wid, (w) => ({
-          ...w,
-          Properties: {
-            ...w.Properties,
-            Visibility: w.Properties.Visibility === 'Collapsed' ? 'Visible' : 'Collapsed',
-          },
-        })),
-      ),
+    toggleVisible: (wid) => {
+      const shown = shownTree ?? tree
+      const w = shown && findWidget(shown, wid)
+      if (!w) return
+      const next = toggledVisibility(w.Properties?.Visibility)
+      // AI 修改期间画板和控件树显示的是预览：先记在预览上，这一轮结束后再落进保存的设计
+      if (live) {
+        pendingVis.current = { ...pendingVis.current, [wid]: next }
+        setLiveVis(pendingVis.current)
+        return
+      }
+      editTree((r) => mapWidget(r, wid, (x) => ({ ...x, Properties: { ...x.Properties, Visibility: next } })))
+    },
     copy: (wid) => {
       const w = tree && findWidget(tree, wid)
       if (!w) return
