@@ -1039,6 +1039,17 @@ export const PeerFrom = z.object({
 })
 export type PeerFrom = z.infer<typeof PeerFrom>
 
+/**
+ * 执行中发的那条用户消息最后是怎么交给 CLI 的（面板记录的事实，界面据此写「插进当前轮 / 排到下一轮」）：
+ * wait CLI 正等着下一句，直接交回同一个进程；steer 插进正在执行的这一轮；
+ * notes 交给正在跑的 CLI，它会在这一轮里自己取；next-node 交给工作流里下一个开始的节点；
+ * held 这一轮收不下，结束后自动接着处理；next 这一轮已经结束，按新的一轮处理；
+ * lost 这一轮没能正常结束（失败、停止），排着的消息不会再被自动处理，要用户重新发；
+ * restart CLI 卡住了，停掉后接回会话重开一轮处理
+ */
+export const DeliveryHow = z.enum(['wait', 'steer', 'notes', 'next-node', 'held', 'next', 'lost', 'restart'])
+export type DeliveryHow = z.infer<typeof DeliveryHow>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -1057,6 +1068,11 @@ export const TaskMessage = z.object({
   modelMs: z.number().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
+  /**
+   * 这条用户消息是怎么交给 CLI 的（执行中发的才有，见 DeliveryHow）：记的是事实，
+   * 界面按它告诉用户消息去了哪里（插进当前这一轮 / 排到下一轮 / 这一轮结束后自动处理）
+   */
+  delivery: z.object({ how: DeliveryHow, at: z.string() }).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
   error: z.boolean().optional(),
   /** 报错、警告的分类和原始信息：画成可以点开的警告行（旧数据只有 error 时按正文归类） */
@@ -1083,6 +1099,11 @@ export const TaskMessage = z.object({
    * 父对话里画成一行「子对话状态」，点开看全文；旧数据没有这一项时按正文第一行显示
    */
   child: z.object({ id: z.string(), title: z.string().default(''), state: z.string().default('') }).optional(),
+  /**
+   * 子对话停下时独立分支里还有没提交的改动（见 server 的 stopWorktreeNote）：父对话里那一行直接写
+   * 「N 个文件未提交」并给「继续」，不用点开才知道改动在哪个目录、还有几个文件
+   */
+  worktree: z.object({ dirty: z.number(), path: z.string(), branch: z.string().default('') }).optional(),
   /**
    * 另一个对话发来的消息（父对话交代的任务、子对话的状态上报、收尾请求、编译结果、传话……）：
    * 不当成用户说的话，界面上统一画成一行「接收消息 · 已收到 X 发来的消息」，点开看全文。

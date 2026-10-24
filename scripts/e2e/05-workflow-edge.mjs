@@ -326,7 +326,8 @@ await runShard('工作流条件与失败', async (api) => {
     g2 = await call('POST', `/tasks/${g2.id}/end-flow`)
     assert.equal(g2.flowClosed, true)
     assert.equal(gateOf(g2, 'go').status, 'skipped')
-    await assert.rejects(call('POST', `/tasks/${g2.id}/resume`), /400/, '结束的流程不能再继续')
+    // 409：和「子对话已经不在停下了」同一个判定（界面靠这个状态码给「它已经不在停下了」的提示）
+    await assert.rejects(call('POST', `/tasks/${g2.id}/resume`), /409/, '结束的流程不能再继续')
     // 工作流的输入框也能用「/命令」：按默认 CLI 展开成普通的要求，对话里显示原文
     const nInit = calls().length
     g2 = await waitDone((await call('POST', `/tasks/${g2.id}/messages`, { text: '/init' })).id)

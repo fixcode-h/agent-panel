@@ -2,6 +2,7 @@
 import {
   type AskKind,
   type Attachment,
+  type DeliveryHow,
   type FileChange,
   type NewTaskInput,
   type StepUsage,
@@ -858,6 +859,10 @@ export interface ChildEntry {
   helpers?: boolean
   /** 独立分支还没合回父对话的分支：不算彻底完成，列表里归「未完成」（见 childHolds 的 unmerged） */
   unmerged?: boolean
+  /** 独立分支目录里还有几个文件没提交（停下时提示用户改动还在，并且可以接着做） */
+  dirty?: number
+  /** 独立分支目录：和 dirty 一起说明改动在哪 */
+  dir?: string
   /** 已经请父对话收尾、还没出结果：列表里是「待收尾」（见 ConvState） */
   wrapup?: boolean
   /** 停在 stopped 的原因：只有 'user' 是用户自己按的暂停，别的都是顺带结束（见 StopReason） */
@@ -1078,6 +1083,40 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('已暂停')
   }
 }
+
+/**
+ * 用户消息的交付结果一句话：用户在对话里能看懂的实际情况，不直接摆出内部枚举值。
+ * 「插进当前轮」和「排到下一轮」必须说清区别：看得出这条消息是现在就会被处理，还是等这一轮完。
+ */
+export function deliveryText(how: DeliveryHow | undefined): string {
+  switch (how) {
+    case 'wait':
+      return t('已交给 CLI，这一轮接着处理')
+    case 'steer':
+      return t('已插进当前这一轮')
+    case 'notes':
+      return t('已交给正在执行的 CLI，它会在这一轮里读取')
+    case 'next-node':
+      return t('已交给工作流里下一个开始的节点')
+    case 'held':
+      return t('这一轮结束后自动处理')
+    case 'lost':
+      return t('没送出去：这一轮停下了，重新发一次')
+    case 'next':
+      return t('这一轮已结束，按新的一轮处理')
+    case 'restart':
+      return t('CLI 没有响应，已重启并按新的一轮处理')
+    default:
+      return ''
+  }
+}
+
+/**
+ * 服务端让不让「继续」这个对话（POST /tasks/:id/resume 的准入条件：停在失败或停止）。
+ * 名字故意不叫 canResume：界面上「继续」按钮能不能按还要看输入框空不空、流程没走完等（见 TaskView 的 canResume），
+ * 两者同名不同义容易接错
+ */
+export const resumable = (status: Task['status']) => status === 'stopped' || status === 'failed'
 
 /**
  * 这一行现在该显示什么图标：分组、行内徽标、计数都读它，判定只在这一处。
