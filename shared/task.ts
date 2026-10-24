@@ -450,6 +450,8 @@ export interface ConvFacts {
   workflow?: boolean
   /** 派出去的子任务还在跑（见 helpersWorking） */
   helpers?: boolean
+  /** 名下还在动的子对话数（它们的 convState 是执行中、等结果、等你处理，见 convActive） */
+  children?: number
   /** 计划还没做完 */
   unfinished?: boolean
   /** 独立分支还没合回父对话的分支 */
@@ -462,20 +464,30 @@ export interface ConvFacts {
 
 /**
  * 对话的状态，优先级从上到下：
- * 要你处理的最先（不然会被「执行中」盖住，用户不知道在等他）→ 失败 → 执行中 → 等结果 → 中断 →
+ * 要你处理的最先（不然会被「执行中」盖住，用户不知道在等他）→ 失败（没有还会推回来的结果时）→ 执行中 → 等结果 → 中断 →
  * 待收尾 → 未完成 → 已完成。
  * 「已置完成」不盖住还在跑、还在等的事实：万一标早了，界面仍然如实显示在跑。
  */
 export function convState(x: ConvFacts): ConvState {
   if (x.requests || x.asking) return 'needs'
-  if (x.status === 'failed') return 'failed'
+  // 还有会推回来的结果（子对话、子任务、后台命令、工作流）时这一轮失败了也还在运行：结果回来会接着开一轮，
+  // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
+  const pending = !!(x.background || x.workflow || x.helpers || x.children)
+  if (x.status === 'failed' && !pending) return 'failed'
   if (x.working) return 'running'
-  if (x.background || x.workflow || x.helpers) return 'waiting'
+  if (pending) return 'waiting'
   if (x.status === 'stopped' && !x.resolved && x.stopReason !== 'finish') return 'stopped'
   if (x.wrapup && !x.resolved) return 'wrapup'
   if (x.unfinished || x.unmerged) return 'unfinished'
   return 'done'
 }
+
+/**
+ * 这个对话还在运行：执行中、等结果（子对话、子任务、后台命令、工作流还没完）、等你处理（提问、请求没回复）。
+ * 「在运行的对话不能杀」只认这一个判定：没人在看、不是当前选中的、保活超上限、父对话的 CLI 结束，
+ * 都不能把还在运行的对话或它的子对话停掉（见 ADR 0010）。只有用户自己停止、归档、删除才停
+ */
+export const convActive = (s: ConvState) => s === 'running' || s === 'waiting' || s === 'needs'
 
 /** 状态的说法：子对话栏、给父对话的上报、list_conversations 都用这一份 */
 export function convStateText(s: ConvState | string): string {
@@ -1364,12 +1376,55 @@ export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
   return t.status === 'running' && t.steps.some(helperRunning)
 }
 
-/** 列表里的「执行中」：自己在执行、名下子对话在执行、在等它派出的子任务，或者工作流运行还没跑完 */
-export function taskBusy(
-  t: Pick<Task, 'status' | 'steps' | 'working' | 'childrenWorking'> & { runs?: Task['runs']; jobs?: Task['jobs'] },
-) {
-  // 后台命令还没跑完也算：这一轮说完了，但对话在等结果（见 ConvState 的 waiting），不能显示成做完了
-  return t.working || !!t.childrenWorking || helpersWorking(t) || runRunning(t) || !!t.jobs?.length
+/** 判定任务对外状态要读的字段：列表摘要和完整任务都有（childrenWorking、jobs 由服务端补） */
+export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
+  Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
+    runs?: Task['runs']
+    jobs?: Task['jobs']
+  }
+
+/**
+ * 顶层对话（也适用于子对话自己的页面）的事实：和 childFacts 是同一套，只是后台命令、子对话数取服务端补好的字段。
+ * 侧栏、项目首页、标题栏、标签页计数都从这里经 convState 得出状态，别再各拼一套「在不在跑」
+ */
+export function taskFacts(x: TaskFactsInput): ConvFacts {
+  return {
+    status: x.status,
+    working: x.working,
+    resolved: x.resolved === true,
+    requests: x.requests?.length ?? 0,
+    asking: x.parentAsks?.length ?? 0,
+    background: x.jobs?.length ?? 0,
+    workflow: runRunning(x),
+    helpers: helpersWorking(x),
+    children: x.childrenWorking ?? 0,
+    stopReason: x.stopReason,
+  }
+}
+
+/** 任务对外的状态：见 convState */
+export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
+
+/** 任务还在运行（不能被回收、失活）：见 convActive */
+export const taskActive = (x: TaskFactsInput) => convActive(taskState(x))
+
+/**
+ * 列表里的「执行中」（转圈）：自己在执行，或者在等结果——名下子对话、派出的子任务、后台命令、工作流还没完。
+ * 等你处理（提问、请求）不转圈，画成提问图标，但同样算还在运行（taskActive）
+ */
+export function taskBusy(x: TaskFactsInput) {
+  const s = taskState(x)
+  return s === 'running' || s === 'waiting'
+}
+
+/** 「等结果」时在等什么：项目首页、标题栏悬停写这一句，和 convState 用同一份事实 */
+export function taskWaitText(x: TaskFactsInput): string {
+  const f = taskFacts(x)
+  if (f.children) return t('子对话执行中')
+  if (f.helpers) return t('子任务执行中')
+  if (f.background) return t('后台命令执行中')
+  if (f.workflow) return t('工作流执行中')
+  return ''
 }
 
 /**
@@ -1381,21 +1436,19 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
- * 保活回收判定：这个对话这一轮还在跑吗？在跑的不按两段时间回收、也不参与上限淘汰。
- * 只有停在等下一句（awaitingUser）且没有后台命令在跑、名下没有子对话的才算空闲会话。
- * 后台命令数和名下活着的子对话数不在任务数据里，由调用方按运行时情况传（见 server/tasks.ts）。
- * 还在排队等名额的子对话不在其中：它们还没启进程，与以前一致（见 server/tasks.ts 的 startQueue）。
+ * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0010）。
+ * 状态部分就是 convActive（taskFacts）：在跑、在等子任务 / 子对话 / 后台命令 / 工作流、有没回复的提问和请求；
+ * 另外这一轮没收尾、在预热也算。后台命令数和名下还在运行的子对话数不在任务数据里，由调用方按运行时情况传。
  */
 export function keepAliveBusy(
-  t: Pick<Task, 'status' | 'working' | 'awaitingUser' | 'prewarming'>,
+  t: TaskFactsInput & Partial<Pick<Task, 'awaitingUser' | 'prewarming'>>,
   x: { background?: number; children?: number } = {},
 ) {
   // CLI 正在回话 / 还在启动
   if (t.working || t.prewarming) return true
   // 这一轮没收尾：包括在等它派出的子任务（那时 awaitingUser 仍是 false）
   if (t.status === 'running' && !t.awaitingUser) return true
-  // 后台命令还没跑完（跑完要把结果交给它汇报）、或者名下还有活着的子对话（收了父对话会把子对话一起停掉）
-  return !!x.background || !!x.children
+  return convActive(convState({ ...taskFacts(t), background: x.background ?? 0, children: x.children ?? 0 }))
 }
 
 /**

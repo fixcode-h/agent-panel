@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
 import {
+  convActive,
   convState,
+  taskActive,
+  taskState,
+  taskWaitText,
   convStateText,
   messageStamp,
   stageOf,
@@ -374,8 +378,10 @@ test('keepAliveVictims：超过上限时结束最久没用的，正在看的和�
 })
 
 test('keepAliveBusy：只有停在等下一句、名下没东西在跑的才算空闲', () => {
-  const idle = { status: 'running' as const, working: false, awaitingUser: true, prewarming: false }
+  const idle = { status: 'running' as const, working: false, awaitingUser: true, prewarming: false, steps: [] }
   assert.equal(keepAliveBusy(idle), false, '停在等下一句：空闲，可以被上限/时长收')
+  // 有没回复的提问、请求：还在运行（convActive），不能收
+  assert.equal(keepAliveBusy({ ...idle, requests: [{}] as never }), true, '请求还没回复')
   // 正在回话、正在启动：都不是空闲
   assert.equal(keepAliveBusy({ ...idle, working: true }), true, 'CLI 正在回话')
   assert.equal(keepAliveBusy({ ...idle, prewarming: true }), true, '还在启动')
@@ -384,7 +390,7 @@ test('keepAliveBusy：只有停在等下一句、名下没东西在跑的才算�
   assert.equal(keepAliveBusy({ ...idle, status: 'done', awaitingUser: false }), false, '已经结束的一轮不算在跑')
   // 后台命令还在跑、名下还有活着的子对话：都要等它们回来接着干
   assert.equal(keepAliveBusy(idle, { background: 1 }), true, '后台命令还在跑')
-  assert.equal(keepAliveBusy(idle, { children: 1 }), true, '名下有子对话活着')
+  assert.equal(keepAliveBusy(idle, { children: 1 }), true, '名下有子对话还在运行')
   assert.equal(keepAliveBusy(idle, { background: 0, children: 0 }), false, '都没有：空闲')
 })
 
@@ -559,4 +565,33 @@ test('messageStamp：工具行收掉运行中、记上耗时也算变化（停�
   delete tool.running
   tool.ms = 10
   assert.notEqual(messageStamp(msg), before)
+})
+
+test('对外状态统一：子对话、子任务、后台命令、工作流没完，提问没回复，对话都还在运行（ADR 0010）', () => {
+  const base = { status: 'running' as const, steps: [], working: false }
+  // 这一轮说完了，但名下子对话还在动：等结果，转圈，不能回收
+  assert.equal(taskState({ ...base, childrenWorking: 2 }), 'waiting')
+  assert.equal(taskBusy({ ...base, childrenWorking: 2 }), true)
+  assert.equal(taskWaitText({ ...base, childrenWorking: 2 }), '子对话执行中')
+  // 后台命令、子任务
+  assert.equal(taskBusy({ ...base, jobs: [{}] as never }), true)
+  assert.equal(taskWaitText({ ...base, jobs: [{}] as never }), '后台命令执行中')
+  const helper = { id: '@chat/sub/h1', slot: 'sub', status: 'running' } as never
+  assert.equal(taskWaitText({ ...base, steps: [helper] }), '子任务执行中')
+  // 提问没回复：不转圈（画成提问图标），但同样算还在运行
+  assert.equal(taskState({ ...base, requests: [{}] as never }), 'needs')
+  assert.equal(taskBusy({ ...base, requests: [{}] as never }), false)
+  assert.equal(taskActive({ ...base, requests: [{}] as never }), true)
+  assert.equal(taskActive({ ...base, parentAsks: [{}] as never }), true)
+  // 真闲着的：可以回收
+  assert.equal(taskActive(base), false)
+  assert.equal(taskActive({ ...base, status: 'done' }), false)
+  // 这一轮失败了但还有会推回来的结果：还在运行，不是失败
+  assert.equal(convState({ status: 'failed', background: 1 }), 'waiting')
+  assert.equal(convState({ status: 'failed', children: 1 }), 'waiting')
+  assert.equal(convState({ status: 'failed' }), 'failed')
+  assert.deepEqual(
+    (['running', 'waiting', 'needs', 'failed', 'stopped', 'unfinished', 'wrapup', 'done'] as const).filter(convActive),
+    ['running', 'waiting', 'needs'],
+  )
 })

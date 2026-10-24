@@ -617,6 +617,24 @@ export function orchTools(o: Orchestra) {
               : '派子任务并行处理互不相关的几块工作（收集资料、查代码、核实结论、出计划），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果，节点结束前没取的结果也会并进你的输出。子任务不能再派子任务。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
             inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
           },
+          {
+            name: 'stop_subtask',
+            title: '终止子任务',
+            description:
+              '终止你派出的子任务：方向错了、已经不需要了、卡住不动时用。还在跑的马上结束，还在排队的不再开始，它们按「已终止」交回，不用再等。ids 不写就终止你派出的全部还没结束的子任务。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ids: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: '子任务的 id（spawn_agents 返回的）或标题；不写就是全部还没结束的',
+                },
+                reason: { type: 'string', description: '为什么终止，一句话' },
+              },
+              required: ['reason'],
+            },
+          },
           // 对话里子任务做完会自动交回，不给等待工具：给了模型就会每隔几十秒调一次轮询，白白占着上下文
           ...(o.autoReturn
             ? []
@@ -873,6 +891,12 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
           ? `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n可以结束这一轮回复了，它们全部做完后结果会自动交回给你。`
           : `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n用 wait_agents 取结果。`,
       )
+    }
+    case 'stop_subtask': {
+      const ids = Array.isArray(a?.ids) ? a.ids.map(String).filter((x: string) => x.trim()) : []
+      const why = str(a?.reason).trim() || '派它的对话决定不再需要'
+      const r = o.stopHelpers(ids, why)
+      return text(r.info, !r.ok)
     }
     case 'wait_agents': {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String) : []

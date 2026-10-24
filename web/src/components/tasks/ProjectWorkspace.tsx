@@ -18,9 +18,11 @@ import { toast } from 'sonner'
 import type { Project, Task } from '@shared/schema'
 import {
   byAskedAt,
-  helpersWorking,
   stopReasonText,
+  taskActive,
   taskBusy,
+  taskState,
+  taskWaitText,
   taskDuration,
   taskSummary,
   waitDuration,
@@ -223,12 +225,10 @@ function ProjectHome({ project }: { project: Project }) {
 
 /** 这个任务现在要不要你处理：有确认请求、出错了、或者做完了还没看 */
 function needsYou(tk: Task) {
-  if (tk.working) return tk.requests.length > 0
-  return (
-    tk.requests.length > 0 ||
-    tk.status === 'failed' ||
-    (!!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt && !tk.childrenWorking)
-  )
+  // 状态只从 taskState 来：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」
+  const s = taskState(tk)
+  if (s === 'needs' || s === 'failed') return true
+  return !taskActive(tk) && !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
 }
 
 /**
@@ -256,6 +256,8 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
   const w = workflows.find((x) => x.id === task.workflowId)
   const tops = task.steps.filter((s) => !s.parentId && s.kind !== 'main')
   const done = tops.filter((s) => s.status === 'done').length
+  const state = taskState(task)
+  const busy = state === 'running' || state === 'waiting'
   if (menu.renaming)
     return (
       <li className="flex items-center px-4 py-3">
@@ -277,7 +279,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               onClick={onOpen}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
             >
-              <TaskStatusIcon status={task.status} working={taskBusy(task)} />
+              <TaskStatusIcon status={task.status} working={busy} spin={busy} waiting={state === 'needs'} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[0.875rem]">{task.title}</span>
                 <span className="truncate text-xs text-subtle">
@@ -290,20 +292,28 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               <span
                 className={cn(
                   'hidden shrink-0 text-xs sm:block',
-                  task.status === 'failed' ? 'text-danger' : taskBusy(task) ? 'text-accent' : 'text-subtle',
+                  state === 'failed'
+                    ? 'text-danger'
+                    : state === 'needs'
+                      ? 'text-warning'
+                      : busy
+                        ? 'text-accent'
+                        : 'text-subtle',
                 )}
               >
-                {task.status === 'done'
-                  ? timeAgo(task.updatedAt, now)
-                  : task.status === 'running' && !taskBusy(task)
-                    ? t('等待你的下一条消息')
-                    : task.childrenWorking && !task.working
-                      ? t('子对话执行中')
-                      : helpersWorking(task) && !task.working
-                        ? t('子任务执行中')
-                        : task.status === 'stopped'
-                          ? stopReasonText(task.stopReason)
-                          : statusLabel[task.status]}
+                {state === 'needs'
+                  ? t('等你处理')
+                  : state === 'waiting'
+                    ? taskWaitText(task)
+                    : state === 'running'
+                      ? statusLabel.running
+                      : task.status === 'done'
+                        ? timeAgo(task.updatedAt, now)
+                        : task.status === 'running'
+                          ? t('等待你的下一条消息')
+                          : task.status === 'stopped'
+                            ? stopReasonText(task.stopReason)
+                            : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

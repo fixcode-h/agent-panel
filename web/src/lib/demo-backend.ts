@@ -94,6 +94,7 @@ import {
 } from '@shared/comfy-templates'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
+import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
@@ -2748,6 +2749,13 @@ function tasksRoute(
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
+  // 终止一个子任务：和正式版一样走 stopHelper，排队的马上按「已终止」交回，在跑的这一步跑完后按终止交回
+  if (sub === 'subtasks' && method === 'POST' && rid === 'stop') {
+    const step = typeof (body as { step?: unknown })?.step === 'string' ? (body as { step: string }).step : ''
+    if (!task.steps.some((s) => s.id === step && s.slot === 'sub')) fail('找不到这个子任务', 404)
+    if (!stopHelper(task.id, step, '用户在界面上终止了这个子任务')) fail('这个子任务已经结束了', 409)
+    return task
+  }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
     const cur = live.get(task.id)

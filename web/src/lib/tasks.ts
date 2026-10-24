@@ -266,6 +266,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 等子任务是在等面板派出的那几个，不是 CLI 自己的子 Agent：标题写清楚等了几个、做完几个
     case 'wait_agents':
       return as(t('等待子任务'), waitSummary(tool, a), 'agent')
+    // 终止自己派出的子任务：标题写终止的原因，展开看终止了哪几个
+    case 'stop_subtask':
+      return as(t('终止子任务'), firstLine(a.reason), 'agent', tool.output || undefined)
     case 'run_background':
       return as(
         t('后台命令'),

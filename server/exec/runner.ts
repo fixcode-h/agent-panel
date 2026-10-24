@@ -652,6 +652,18 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
 }
 
 /** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
+/** 两个信号任一触发就触发（AbortSignal.any 要 Node 20.3+，包只要求 20） */
+function anySignal(a: AbortSignal, b: AbortSignal) {
+  const ac = new AbortController()
+  const fire = (x: AbortSignal) => () => ac.abort(x.reason)
+  if (a.aborted || b.aborted) ac.abort((a.aborted ? a : b).reason)
+  else {
+    a.addEventListener('abort', fire(a), { once: true })
+    b.addEventListener('abort', fire(b), { once: true })
+  }
+  return ac.signal
+}
+
 async function runAgent(
   ctx: RealContext,
   call: AgentCall,
@@ -665,6 +677,8 @@ async function runAgent(
   /** 空回合续一轮时写进对话的提示：续上了要收回成普通说明 */
   emptyNotes: EmptyNote[] = [],
 ): Promise<AgentResult> {
+  // 单独终止这一次调用（界面上终止一个子任务）：和整个任务的停止信号合在一起，后面统一看 ctx.signal
+  if (call.signal && !retried) ctx = { ...ctx, signal: anySignal(ctx.signal, call.signal) }
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx

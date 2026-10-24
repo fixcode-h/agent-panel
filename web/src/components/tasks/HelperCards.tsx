@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ListTree, Loader2, X } from 'lucide-react'
+import { ListTree, Loader2, Square, X } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
+import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
 import { helperRunning, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
@@ -18,8 +20,47 @@ import { t } from '@shared/i18n'
 const helperTime = (step: TaskStep, now: number) =>
   step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
 
-/** 列表里的顺序：正在跑的、排队的、没做完的、做完的；同一组里按派出的顺序 */
-const helperRank = (s: TaskStep) => (helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : 3)
+/** 列表里的顺序：正在跑的、排队的、没做完的、做完的、终止的；同一组里按派出的顺序 */
+const helperRank = (s: TaskStep) =>
+  helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
+
+/** 还能终止：在跑或在排队 */
+const stoppable = (s: TaskStep) => s.status === 'running' || s.status === 'pending'
+
+/** 终止一个子任务：结果推送会把状态带回来，这里只管报错 */
+async function stopHelper(task: Task, step: TaskStep) {
+  try {
+    await api.stopSubtask(task.id, step.id)
+    toast.success(t('已终止子任务「{title}」', { title: step.title }))
+  } catch (e) {
+    toast.error((e as Error).message)
+  }
+}
+
+/** 终止按钮：列表行和子任务窗口共用 */
+function StopHelper({ task, step, label }: { task: Task; step: TaskStep; label?: boolean }) {
+  const [busy, setBusy] = useState(false)
+  if (!stoppable(step)) return null
+  return (
+    <Button
+      variant="ghost"
+      size={label ? 'sm' : 'icon-sm'}
+      disabled={busy}
+      aria-label={t('终止子任务')}
+      title={t('终止子任务：在跑的马上结束，排队的不再开始，按「已终止」交回给对话')}
+      onClick={async (e) => {
+        e.stopPropagation()
+        setBusy(true)
+        await stopHelper(task, step)
+        setBusy(false)
+      }}
+      className="shrink-0 text-subtle hover:text-danger"
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+      {label && t('终止')}
+    </Button>
+  )
+}
 
 /** 列表分组：和子对话「全部」里同一套分组写法，只是按节点自己的状态分 */
 const helperGroups = (list: TaskStep[]) =>
@@ -32,12 +73,14 @@ const helperGroups = (list: TaskStep[]) =>
       items: list.filter((s) => s.status === 'failed'),
     },
     { key: 'done', label: t('已完成'), items: list.filter((s) => s.status === 'done') },
+    { key: 'stopped', label: t('已终止'), items: list.filter((s) => s.status === 'skipped') },
   ].filter((g) => g.items.length)
 
 /** 列表里每个子任务下面那行：还在跑的写它这会儿在做什么，做完的写交回结果的第一句 */
 function helperBrief(task: Task, step: TaskStep) {
   if (step.status === 'running') return currentActivity(stepActivity(task, step.id, true)) || t('已开始，还没有输出')
   if (step.status === 'pending') return t('子任务在排队，前面的做完就开始')
+  if (step.status === 'skipped') return t('已终止，没做完的部分不会交回')
   const out =
     step.output
       .trim()
@@ -124,38 +167,48 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
                 {g.items.map((s) => {
                   const agent = who(s)
                   return (
-                    <button
+                    // 行和终止按钮并排：按钮不能嵌在打开窗口的按钮里
+                    <div
                       key={s.id}
-                      type="button"
-                      onClick={() => {
-                        setWin(s.id)
-                        setOpen(false)
-                      }}
-                      className="flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel"
+                      className="flex min-w-0 items-start gap-1 rounded-lg transition-colors hover:bg-sel"
                     >
-                      <span className="mt-0.5 shrink-0">
-                        <StepIcon status={s.status} />
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="min-w-0 truncate text-[0.8125rem]">{s.title}</span>
-                          {agent && (
-                            <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                              <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
-                              {agent.name}
-                            </span>
-                          )}
-                          {s.status === 'running' && (
-                            <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
-                          )}
-                          {s.status === 'failed' && (
-                            <span className="shrink-0 text-[0.6875rem] text-danger">{t('失败')}</span>
-                          )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWin(s.id)
+                          setOpen(false)
+                        }}
+                        className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left"
+                      >
+                        <span className="mt-0.5 shrink-0">
+                          <StepIcon status={s.status} />
                         </span>
-                        <span className="line-clamp-1 text-xs text-subtle">{helperBrief(task, s)}</span>
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="min-w-0 truncate text-[0.8125rem]">{s.title}</span>
+                            {agent && (
+                              <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                                <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+                                {agent.name}
+                              </span>
+                            )}
+                            {s.status === 'running' && (
+                              <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
+                            )}
+                            {s.status === 'failed' && (
+                              <span className="shrink-0 text-[0.6875rem] text-danger">{t('失败')}</span>
+                            )}
+                          </span>
+                          <span className="line-clamp-1 text-xs text-subtle">{helperBrief(task, s)}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
+                          {helperTime(s, now)}
+                        </span>
+                      </button>
+                      <span className="shrink-0 pt-1 pr-1">
+                        <StopHelper task={task} step={s} />
                       </span>
-                      <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{helperTime(s, now)}</span>
-                    </button>
+                    </div>
                   )
                 })}
               </Fragment>
@@ -212,6 +265,7 @@ export function HelperWindow({
               </span>
             )}
             {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+            <StopHelper task={task} step={step} label />
             <D.Close asChild>
               <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
                 <X className="h-4 w-4" />
@@ -235,7 +289,9 @@ export function HelperWindow({
                 ? t('子任务在排队，前面的做完就开始')
                 : step.status === 'failed'
                   ? t('子任务失败了，派它的对话会收到失败原因。这里只能查看')
-                  : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
+                  : step.status === 'skipped'
+                    ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
+                    : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
           </footer>
         </D.Content>
       </D.Portal>
