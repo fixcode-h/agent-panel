@@ -582,6 +582,8 @@ export const EN_TASKS: Record<string, string> = {
   '看过差异再应用；应用后工作流和角色马上按新的内容执行':
     'Review the diffs before applying; workflows and roles use the new content right away',
   分析结果: 'Analysis',
+  收起分析结果: 'Collapse analysis',
+  展开分析结果: 'Expand analysis',
   '{n} 个代码问题': '{n} code issues',
   '{n} 项优化建议': '{n} suggestions',
   代码问题: 'Code issues',

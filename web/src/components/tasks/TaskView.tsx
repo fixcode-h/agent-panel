@@ -1401,17 +1401,6 @@ export function TaskView({
                           ),
                         )}
                         <NextWorkflows task={task} />
-                        <EvolutionCard
-                          task={task}
-                          project={project}
-                          kids={children}
-                          onSpawned={(id) =>
-                            void loadChildren(task.id)
-                              .then(setChildren)
-                              .catch(() => {})
-                              .finally(() => openChildIn(id))
-                          }
-                        />
                         {running &&
                           task.mode === 'chat' &&
                           working &&
@@ -1498,6 +1487,19 @@ export function TaskView({
                 </>
 
                 <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+                  {/* 「AI 分析」的结果固定在输入框上方，接着追问时也看得到；发新内容时它自己收起 */}
+                  <EvolutionCard
+                    key={task.id}
+                    task={task}
+                    project={project}
+                    kids={children}
+                    onSpawned={(id) =>
+                      void loadChildren(task.id)
+                        .then(setChildren)
+                        .catch(() => {})
+                        .finally(() => openChildIn(id))
+                    }
+                  />
                   <TaskRequestCard task={task} onAnswered={apply} />
                   {askOpen ? (
                     <ParentAskPanel task={task} onFold={() => setAskFolded(askKey)} />
