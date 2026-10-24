@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
   Brush,
@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Globe,
   Loader2,
-  ListPlus,
   Paintbrush,
   Palette,
   Pencil,
@@ -39,9 +38,17 @@ import type { ComfyWorkflow } from '@shared/local-image'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
-import { ChatReply, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuTrigger,
+} from '@/components/ui/menu'
+import { ChatReply, DeliveryLine, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
 import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
@@ -445,39 +452,64 @@ function Step({ n, done, title, children }: { n: number; done: boolean; title: s
 
 /**
  * 「先出原画」开关，和「提问」开关放在一起：打开时 AI 先画整屏的效果图给你挑，
- * 确认一张作为模板后才搭界面、出切图；关着时直接搭界面
+ * 确认一张作为模板后才搭界面、出切图；关着时直接搭界面。
+ * 右键设置一次出几张原画，和输入框旁边的「每张几版」是两个独立的数
  */
 function ConceptToggle({
   value,
   onChange,
   template,
+  count,
+  onCount,
 }: {
   value: boolean
   onChange: (v: boolean) => void
   /** 已经确认了模板：AI 照着模板做，开关不起作用 */
   template: boolean
+  /** 一次出几张原画 */
+  count: number
+  onCount: (n: number) => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      aria-pressed={value}
-      aria-label={t('先出原画')}
-      title={
-        template
-          ? t('已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）')
-          : value
-            ? t('先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面）')
-            : t('直接搭界面（点一下改成先出原画）')
-      }
-      className={cn(
-        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
-        value && !template ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
-      )}
-    >
-      <Brush className="h-4 w-4" />
-      {t('原画')}
-    </button>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          aria-pressed={value}
+          aria-label={t('先出原画')}
+          title={
+            template
+              ? t('已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）')
+              : value
+                ? t('先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面；右键设置一次出几张）')
+                : t('直接搭界面（点一下改成先出原画；右键设置一次出几张）')
+          }
+          className={cn(
+            'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
+            value && !template ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+          )}
+        >
+          <Brush className="h-4 w-4" />
+          {t('原画')}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuLabel>{t('一次出几张原画')}</ContextMenuLabel>
+        {[1, 2, 3, 4].map((n) => (
+          <ContextMenuItem
+            key={n}
+            role="menuitemradio"
+            aria-checked={count === n}
+            onSelect={() => onCount(n)}
+            className="justify-between"
+          >
+            {t('{n} 张', { n })}
+            {count === n && <Check className="h-3.5 w-3.5" />}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -606,6 +638,8 @@ export function DesignChat({
       concept: boolean
       /** 只重绘原画上蒙版涂过的区域；不支持局部重绘的来源会降级成整张重画 */
       inpaint?: boolean
+      /** 「先出原画」时一次出几张，和每张图生成几版是两回事 */
+      conceptCount?: number
       /** 这次一起发出去引用的控件 */
       refs?: WidgetCitation[]
     },
@@ -641,8 +675,15 @@ export function DesignChat({
   const [pick, setPick] = useStoredRun(designId)
   const [askUser, setAskUserState] = useAskUser(designId)
   const [concept, setConcept] = useConceptFirst(designId, conceptDefault)
+  // 一次出几张原画：每个设计各自记住；第一次打开沿用输入框现在的「每张几版」，两个数之后互不影响
+  const [conceptCount, setConceptCount] = useScopedSetting<number>(
+    'design-concept-count',
+    designId,
+    (raw) => Math.max(1, Math.min(4, Number(raw) || 3)),
+    String,
+    () => count,
+  )
   const { run } = useChatRun(pick)
-  const list = useRef<HTMLDivElement>(null)
   const box = useRef<RichInputHandle>(null)
   // 参考图、需求文档：选文件、粘贴截图、拖进来都行，在输入框上方以附件卡片显示
   const files = useAttachments()
@@ -666,77 +707,36 @@ export function DesignChat({
   // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
   const slash = useSlashMenu({ cli: run.cli, scope: 'skills', setText, editor: box })
 
-  // 新消息、输出变化时滚到底（用户往上翻看时不打扰）
-  const stick = useRef(true)
-  useLayoutEffect(() => {
-    const el = list.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages.length, job?.text, job?.parts, job?.phase, running])
+  // 消息区贴底：和任务对话共用同一个判定（只有真的往上滚才松开），换设计时重新贴底
+  const scroller = useConversationScroll(designId)
 
   // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
   const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
   const styleText = styleRef ? t('使用「{name}」风格', { name: styleRef.name }) : ''
-  // 排队的要求：这一轮结束后按顺序发出去
-  const [queue, setQueue] = useState<
-    { id: string; text: string; attachments: Attachment[]; refs: WidgetCitation[]; style?: SavedStyle }[]
-  >([])
-  const enqueue = () => {
-    // 只选了风格、引用或附件、没写字也能排队：它们要跟着这条一起发，不然这一轮结束后就丢了
-    const v = forSend(text, styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
-    if ((!v && !cites.length) || files.uploading) return
-    setQueue((q) => [
-      ...q,
-      {
-        id: crypto.randomUUID(),
-        text: v,
-        attachments: files.attachments,
-        refs: cites,
-        ...(styleRef ? { style: styleRef } : {}),
-      },
-    ])
-    setText('')
-    files.clear()
-    setStyleRef(null)
-    onClearCites?.()
-  }
-  useEffect(() => {
-    const next = queue[0]
-    if (running || sending || !next || askDesign) return
-    setQueue((q) => q.slice(1))
-    setSending(true)
-    stick.current = true
-    void onSend(next.text, run, next.attachments, {
-      askUser,
-      concept,
-      inpaint: false,
-      refs: next.refs,
-      ...(next.style ? { style: next.style.en, styleName: next.style.name } : {}),
-    }).finally(() => setSending(false))
-    // 只在这一轮结束、队列变化时看要不要发下一条
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, sending, queue, askDesign])
 
   const send = async () => {
     const v = forSend(text, styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
-    // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队。
-    // 选了风格时也排队：插话只能带文字，风格要等这一轮结束、随下一轮一起定到设计里
     if (running) {
+      // 正在回复：整条消息交给服务端补充给这一轮，收不下就在这一轮结束后自动接着处理
       if (sending || (!v && !cites.length)) return
-      if (files.attachments.length || cites.length || styleRef || job?.phase !== 'design') {
-        enqueue()
-        if (styleRef) toast(t('选的风格会在这一轮结束后随这条一起发出'))
-        return
-      }
       setSending(true)
+      scroller.pin()
       try {
-        const r = await api.steerDesign(designId, v)
-        if (r.steered) setText('')
-        else {
-          enqueue()
-          toast(t('这一轮不能补充，已改成排队'))
+        if (
+          await onSend(v, run, files.attachments, {
+            askUser,
+            concept,
+            inpaint: false,
+            refs: cites,
+            conceptCount,
+            ...(styleRef ? { style: styleRef.en, styleName: styleRef.name } : {}),
+          })
+        ) {
+          setText('')
+          files.clear()
+          setStyleRef(null)
+          onClearCites?.()
         }
-      } catch (e) {
-        toast.error((e as Error).message)
       } finally {
         setSending(false)
       }
@@ -745,7 +745,7 @@ export function DesignChat({
     // 只有标注、引用或附件、没写文字也能发
     if ((!v && !annotations.length && !files.attachments.length && !cites.length) || sending || files.uploading) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     try {
       if (
         await onSend(v, run, files.attachments, {
@@ -753,6 +753,7 @@ export function DesignChat({
           concept,
           inpaint: inpaint && maskReady,
           refs: cites,
+          conceptCount,
           ...(styleRef ? { style: styleRef.en, styleName: styleRef.name } : {}),
         })
       ) {
@@ -779,7 +780,7 @@ export function DesignChat({
     if (analysisState === 'stop') return onStop()
     if (analysisState !== 'analyze') return
     setAnalyzing(true)
-    stick.current = true
+    scroller.pin()
     try {
       await onAnalyze(run)
     } finally {
@@ -790,9 +791,9 @@ export function DesignChat({
   const applyAnalysis = async (v: string) => {
     if (running || sending) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     try {
-      await onSend(v, run, [], { askUser, concept, inpaint: false })
+      await onSend(v, run, [], { askUser, concept, inpaint: false, conceptCount })
     } finally {
       setSending(false)
     }
@@ -802,7 +803,7 @@ export function DesignChat({
   const answerDesign = async (answers: string[], picked: number[][]) => {
     if (running || sending) return
     setSending(true)
-    stick.current = true
+    scroller.pin()
     const style = designQs.flatMap((q, i) => picked[i].map((k) => q.options[k]?.style ?? '')).find(Boolean)
     const text = designQs.length === 1 ? answers[0] : designQs.map((q, i) => `${q.text}：${answers[i]}`).join('\n')
     try {
@@ -810,6 +811,7 @@ export function DesignChat({
         askUser,
         concept,
         inpaint: false,
+        conceptCount,
         ...(style ? { style } : {}),
         answers: designQs.map((q, i) => ({ question: q.text, answer: answers[i] ?? '' })),
       })
@@ -818,25 +820,18 @@ export function DesignChat({
     }
   }
 
-  // 页面替用户发的话（确认模板后开始搭界面）：正在处理时排队
+  // 页面替用户发的话（确认模板后开始搭界面）：和手动发的一样，正在处理时交给这一轮，收不下就在这一轮结束后接着做
   useEffect(() => {
     if (!request) return
-    setQueue((q) => [...q, { id: request.id, text: request.text, attachments: [], refs: [] }])
-    stick.current = true
+    scroller.pin()
+    void onSend(request.text, run, [], { askUser, concept, inpaint: false })
     // 每个请求只发一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        ref={list}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }}
-        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4"
-      >
+      <ConversationShell scroller={scroller}>
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent">
@@ -900,7 +895,7 @@ export function DesignChat({
           ))}
           {designing && job && <LiveReply job={job} />}
         </div>
-      </div>
+      </ConversationShell>
       <div className="relative shrink-0 px-3 pb-3">
         <RequestCard requests={asks.list} onAnswer={asks.answer} onClose={asks.close} className="mb-2" />
         {askDesign && (
@@ -923,29 +918,6 @@ export function DesignChat({
           <JobProgress job={job} onRetry={onRetry} />
         ) : (
           running && job && <JobProgress job={job} />
-        )}
-        {queue.length > 0 && (
-          <div className="mb-2 flex flex-col gap-1 rounded-xl border bg-card px-3 py-2 text-[0.78125rem] shadow-card">
-            <span className="text-[0.71875rem] text-subtle">{t('排队中，这一轮结束后发送')}</span>
-            {queue.map((q) => (
-              <div key={q.id} className="group flex min-w-0 items-center gap-2">
-                <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                <span className="min-w-0 flex-1 truncate">
-                  {q.text || t('{n} 个附件', { n: q.attachments.length })}
-                </span>
-                {q.style && <StyleTag name={q.style.name} title={q.style.en} />}
-                <button
-                  type="button"
-                  aria-label={t('撤回')}
-                  title={t('撤回')}
-                  onClick={() => setQueue((l) => l.filter((x) => x.id !== q.id))}
-                  className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-fg"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
         )}
         <div className="flex min-w-0 items-center gap-1 pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
@@ -1026,20 +998,26 @@ export function DesignChat({
                     if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
                   }}
                 />
-                <ConceptToggle value={concept} onChange={setConcept} template={!!hasTemplate} />
+                <ConceptToggle
+                  value={concept}
+                  onChange={setConcept}
+                  template={!!hasTemplate}
+                  count={conceptCount}
+                  onCount={setConceptCount}
+                />
                 {maskReady && conceptRound && (
                   <InpaintToggle value={inpaint} onChange={setInpaint} supported={canInpaintHere} />
                 )}
                 <SourceSelect value={source} onChange={onSource} kind={kind === 'web' ? 'web' : 'game'} />
                 {source.kind !== 'none' && (
                   <Select
-                    // 先出原画时这个数就是一轮出几张原画
-                    aria-label={conceptRound ? t('一轮出几张原画') : t('每张图生成几版')}
+                    // 只表示每张图生成几版；原画一次出几张在「原画」按钮的右键菜单里，两个数互不影响
+                    aria-label={t('每张图生成几版')}
                     value={String(count)}
                     onChange={(e) => onCount(Number(e.target.value))}
                     options={[1, 2, 3, 4].map((n) => ({
                       value: String(n),
-                      label: conceptRound ? t('原画 {n} 张', { n }) : t('每张 {n} 版', { n }),
+                      label: t('每张 {n} 版', { n }),
                     }))}
                     className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted hover:bg-sel"
                   />
@@ -1048,7 +1026,6 @@ export function DesignChat({
             }
             running={running}
             onStop={onStop}
-            onQueue={enqueue}
             sending={sending}
             canSend={
               running
@@ -1062,7 +1039,7 @@ export function DesignChat({
             label={t('告诉 AI 要做什么')}
             placeholder={
               running
-                ? t('AI 正在处理：发送会补充给这一轮，也可以排队')
+                ? t('AI 正在处理：发送会补充给这一轮，收不下就在结束后自动接着处理')
                 : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
                   ? t('写修改意见，发送后按图上的标记重新生成图片')
                   : annotations.length
@@ -1174,6 +1151,7 @@ function ChatMessage({
         }
         extra={
           <>
+            {msg.delivery && <DeliveryLine delivery={msg.delivery} />}
             {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
             {!!msg.refs?.length && <CitationChips list={msg.refs} className="mt-1.5" />}
             {!!msg.annotations?.length && (

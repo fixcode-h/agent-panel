@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { groupTools, startedRun, tokenGroups, toolView } from './tasks.ts'
+import { groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -134,6 +134,48 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
     }),
   )
   assert.equal(done?.waiting, undefined, '结果接上了就不再等')
+})
+
+test('后台命令：命令在 input 原文里时，折叠行显示命令，不再只剩「后台命令」', () => {
+  // 解析层对带 command 的输入直接存命令原文（不是 JSON），参数解析拿不到 name / command
+  const command = 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log'
+  const plain = tool('mcp__panel__run_background', '', {
+    input: command,
+    output: '已放到后台（编号 1a2b3c4d）。跑完结果会自动推回给你，先去做不依赖它的事。',
+  })
+  const view = toolView(plain)
+  assert.equal(view?.tool.name, '后台命令')
+  assert.equal(view?.tool.label, command)
+  // 展开的 IN 还是完整命令
+  assert.equal(view?.tool.input, command)
+  assert.equal(view?.job, '1a2b3c4d')
+
+  // 多行命令只取第一行：折叠行不换行、不撑破
+  const multi = toolView(tool('mcp__panel__run_background', '', { input: 'npm run build\nls -la\n' }))
+  assert.equal(multi?.tool.label, 'npm run build')
+  assert.equal(multi?.tool.input, 'npm run build\nls -la')
+
+  // 给的 JSON 参数里没有 name：标题用命令
+  const unnamed = toolView(tool('mcp__panel__run_background', '', { input: '{"command":"npm test"}' }))
+  assert.equal(unnamed?.tool.label, 'npm test')
+
+  // 命令本身是合法的 JSON 字面量（true、false 是真实存在的 shell 命令）：同样要当成命令原文
+  for (const literal of ['true', 'false']) {
+    const v = toolView(tool('mcp__panel__run_background', '', { input: literal }))
+    assert.equal(v?.tool.label, literal)
+    assert.equal(v?.tool.input, literal)
+  }
+
+  // 有 name 时优先用名字
+  const named = toolView(tool('mcp__panel__run_background', '', { input: '{"command":"npm test","name":"单元测试"}' }))
+  assert.equal(named?.tool.label, '单元测试')
+})
+
+test('运行区的后台命令名：没有名字时用命令第一行', () => {
+  assert.equal(jobLabel({ name: '端到端测试', command: 'npm run test:e2e' }), '端到端测试')
+  assert.equal(jobLabel({ name: '', command: 'npm run build\nls -la' }), 'npm run build')
+  // 名字和命令都没有时才退回动作名，不能是空串
+  assert.equal(jobLabel({ name: '', command: '' }), '后台命令')
 })
 
 test('「启动工作流」一行认回启动的是第几次运行', () => {

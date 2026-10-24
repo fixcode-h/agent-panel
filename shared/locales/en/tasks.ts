@@ -5,6 +5,8 @@ export const EN_TASKS: Record<string, string> = {
   进行中: 'In progress',
   等待中: 'Waiting',
   '等：{what}': 'Waiting on: {what}',
+  '用时 {time}': 'Elapsed {time}',
+  '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
@@ -160,6 +162,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
+  // 标题栏的项目名：点开是项目下的对话
+  打开项目: 'Open project',
+  打开聊天: 'Open chat',
+  这个项目还没有对话: 'No conversations in this project yet',
+
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',
@@ -238,7 +245,9 @@ export const EN_TASKS: Record<string, string> = {
   子对话: 'Sub-conversation',
   '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
+  切换子对话: 'Switch sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
+  '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
   已关闭: 'Closed',
   解决: 'Resolve',
@@ -518,14 +527,14 @@ export const EN_TASKS: Record<string, string> = {
   '你回答了：{answers}': 'You answered: {answers}',
   '你没有回答「{title}」': 'You skipped "{title}"',
   '交给正在进行的这一轮（Enter）': 'Hand to the current turn (Enter)',
-  '{n} 个附件': '{n} attachments',
   排队中: 'Queued',
   '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
   等这一轮结束再发: 'Send after this turn finishes',
   排队: 'Queue',
-  '这一轮不能补充，已改成排队': "Can't add to this turn, queued instead",
-  '排队中，这一轮结束后发送': 'Queued, sends after this turn',
-  'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
+  已补充给正在进行的这一轮: 'Added to the current turn',
+  '这一轮收不下，结束后自动接着处理': "This turn can't take it, so it runs right after",
+  'AI 正在处理：发送会补充给这一轮，收不下就在结束后自动接着处理':
+    'AI is working: sending adds to this turn, or is handled right after it',
   复制报错: 'Copy error',
   '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
     '· Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals). This is a Google server-side restriction, not a panel problem. Use an API instead: add a Gemini API key under "API settings" (get one at aistudio.google.com), then switch the sign-in method to API on the Gemini CLI page. Google Workspace or paid Code Assist accounts can still sign in with an account.',
@@ -668,10 +677,6 @@ export const EN_TASKS: Record<string, string> = {
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
   '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
     "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
-  同时执行的子对话: 'Concurrent sub-conversations',
-  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
-    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
-  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
   同时运行的后台命令: 'Concurrent background commands',
   '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
     'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
@@ -756,7 +761,6 @@ export const EN_TASKS: Record<string, string> = {
   '子对话用指定的 Agent 和模型': 'Use a specific agent and model for sub-chats',
   '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
     "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
-  '{n} 个（跟随设置）': '{n} (from Settings)',
   停止全部子对话: 'Stop all sub-chats',
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',
@@ -892,6 +896,8 @@ export const EN_TASKS: Record<string, string> = {
   // 子对话进度：在做什么、在等什么、多久没新输出
   '最后活动 {ago}': 'last active {ago}',
   '已 {n} 分钟没有新输出': 'No new output for {n} min',
+  '已自动询问，等回复': 'Status asked automatically; waiting for its reply',
+  '已自动询问，仍没有新输出': 'Status asked automatically; still no new output',
   '等用户回答 {n} 个提问': 'Waiting for you to answer {n} question(s)',
   '等用户确认 {n} 项': 'Waiting for you to confirm {n} item(s)',
   '等 {n} 个后台命令': 'Waiting for {n} background command(s)',
@@ -912,7 +918,8 @@ export const EN_TASKS: Record<string, string> = {
   进程: 'Processes',
   内存曲线: 'Memory chart',
   内存合计: 'Total memory',
-  '面板 {server} · 进程 {cli}': 'Panel {server} · processes {cli}',
+  '面板 {server}（不计入对话合计）': 'Panel {server} (not included in this chat’s total)',
+  '这个对话及附属（子对话、子任务）的进程合计': 'Sum of processes in this chat and its sub-conversations and subagents',
   '正在读取进程…': 'Reading processes…',
   这个对话现在没有在跑的进程: 'This chat has no running processes',
   '清理任务已经结束、进程还留着的': 'Cleans up processes left behind by finished tasks',
@@ -939,7 +946,7 @@ export const EN_TASKS: Record<string, string> = {
     'The process is still running; it may need higher permission or is busy. Try again later',
   '进程没有结束（可能权限不足）': 'The process did not stop (it may need higher permission)',
   没有结束这个进程: 'Could not stop this process',
-  '面板 {v}': 'Panel {v}',
+  '面板 {v}（不计入）': 'Panel {v} (not included)',
   '进程 {v}': 'Processes {v}',
   会话内存随时间的变化: 'Chat memory over time',
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
@@ -952,9 +959,8 @@ export const EN_TASKS: Record<string, string> = {
   '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
   '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
   重新分析并打开这次排查: 'Analyze again and open the analysis chat',
-  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
-  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
-    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  '下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Unreadable memory shows “Not collected”, and nothing is spread across chats.',
   面板自己的进程: "The panel's own processes",
   '{n} 个进程': '{n} process(es)',
   '{n} 个进程的合计': 'Sum of {n} process(es)',
@@ -997,6 +1003,8 @@ export const EN_TASKS: Record<string, string> = {
   '发给 {n} 个：{names}': 'Sent to {n}: {names}',
   没送到: 'Not delivered',
   已送达: 'Delivered',
+  '来自 {name}（{title}）': 'from {name} ({title})',
+  '发给 {name}（{title}）': 'to {name} ({title})',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',

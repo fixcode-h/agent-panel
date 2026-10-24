@@ -52,6 +52,7 @@ import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
 import type { ProjectProposal, Proposal } from '@shared/assist'
+import { readProjectProposal } from '@shared/project-init'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
@@ -96,7 +97,11 @@ type AiSession = {
 /** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
 type ApplyAi = (p: Proposal) => void
 
-const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
+const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => ({
+  ...rest,
+  // 数据文件是用户可改的：保存的推荐读不出来时当作没有推荐
+  initResult: readProjectProposal(rest.initResult),
+})
 const folderName = (p: string) =>
   p
     .replace(/[\\/]+$/, '')
@@ -123,6 +128,7 @@ const blank: ProjectInput = {
   searchExclude: [],
   gitPolicy: 'ask',
   initializedAt: '',
+  initResult: undefined,
 }
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
@@ -468,16 +474,21 @@ function Body({
     const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
     return workflows.find((w) => w.origin === `builtin:project-${type}`) ?? workflows.find((w) => w.name === want)
   }
+  // 刚初始化的结果和上次保存的推荐都按项目类型找内置工作流兜底
+  const initType = init?.type ?? draft.initResult?.type
+  const initFallbackId = initType ? (fallbackWorkflow(initType)?.id ?? '') : ''
   const acceptInit = (p: ProjectProposal) => {
     // 扫描给的工作流参数（结构技能、文档目录）没被 AI 覆盖时一起推荐
     const params = scan && scan.workflow === p.type ? { ...scan.workflowParams, ...p.params } : p.params
     const def = p.workflows.find((w) => w.verdict === 'default')?.id ?? fallbackWorkflow(p.type)?.id
     const expose = workflows.find((w) => w.id === def)?.expose ?? []
-    setInit({
+    const result: ProjectProposal = {
       ...p,
       params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
-    })
-    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+    }
+    setInit(result)
+    // 推荐随项目保存：关掉设置再打开，卡片上还能直接应用（点「确认」才真正写进项目）
+    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString(), initResult: result }))
     setDirInit(false)
     setSection('init')
     // AGENTS.md 刚被改过，「项目说明」页要读新的
@@ -806,7 +817,7 @@ function Body({
                 result={init}
                 workflows={workflows}
                 activeId={active?.id ?? ''}
-                fallbackId={init ? (fallbackWorkflow(init.type)?.id ?? '') : ''}
+                fallbackId={initFallbackId}
                 fromDir={dirInit}
                 globalFormat={globalFormat}
                 canStart={!!draft.path.trim()}

@@ -74,9 +74,14 @@
   "defaultPermission": "accept-edits",
   "modelsFrom": "commandcode",
   "readOnlyPermission": "standard",
+  "systemPromptMod": true,
   "args": [
     {
       "args": ["-p", "--output-format", "json", "--skip-onboarding", "--trust", "--no-auto-update"]
+    },
+    {
+      "if": "systemPromptModPath",
+      "args": ["--mod", "{systemPromptModPath}"]
     },
     {
       "if": "model",
@@ -133,6 +138,10 @@
   "rpcArgs": [
     {
       "args": ["--experimental", "--rpc", "--skip-onboarding", "--trust", "--no-auto-update"]
+    },
+    {
+      "if": "systemPromptModPath",
+      "args": ["--mod", "{systemPromptModPath}"]
     },
     {
       "if": "model",

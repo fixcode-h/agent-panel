@@ -11,12 +11,15 @@ import type { ChildSummary } from './child-line'
  */
 export interface PaneNav {
   child?: (id: string) => void
+  /** 右栏当前打开的子对话：切换下拉用它标出当前项 */
+  openChild?: string
   run?: (tool: ToolUse) => void
 }
 
 export const PaneNavCtx = createContext<PaneNav | null>(null)
 
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
+export const useOpenChildId = () => useContext(PaneNavCtx)?.openChild ?? ''
 export const useRunOpen = () => useContext(PaneNavCtx)?.run ?? null
 
 /**

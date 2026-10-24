@@ -3,8 +3,11 @@ import { ChevronDown, Diamond } from 'lucide-react'
 import {
   MIN_WIDGET_SIZE,
   WIDGETS,
+  canvasSlotRect,
   clampWidgetSize,
   isWebType,
+  rectToCanvasSlot,
+  type Rect,
   type SlotType,
   type Widget,
   type WidgetType,
@@ -495,6 +498,7 @@ function AnimKeyButton({ state, time, onClick }: { state: AnimKeyState; time: nu
 /** 属性面板（Details）：插槽、外观、通用三组 */
 export function Details({
   widget,
+  parent,
   slotType,
   parentSize,
   images,
@@ -509,6 +513,8 @@ export function Details({
   /** 网页 UI 正在按哪个宽度预览：平板、手机时外观的改动只写进这个宽度的断点 */
   device?: Device
   widget: Widget
+  /** 父控件：CanvasPanel 里用来算兄弟控件的位置，插槽插在对齐、填满父控件上用 */
+  parent?: Widget
   slotType?: SlotType
   parentSize: () => { w: number; h: number }
   images: DesignImage[]
@@ -659,6 +665,19 @@ export function Details({
   const stretchX = canvas && slot.LayoutData.Anchors.Minimum.X !== slot.LayoutData.Anchors.Maximum.X
   const stretchY = canvas && slot.LayoutData.Anchors.Minimum.Y !== slot.LayoutData.Anchors.Maximum.Y
   const gs = (p: string) => getPath(slot, p)
+  /** 尺寸由内容决定：这时改 W / H 不起作用，面板上换成提示 */
+  const autoSize = !!slot?.bAutoSize
+  // 同一个 CanvasPanel 里的其他控件拿来当对齐基准；bAutoSize 的宽高算不准，不列
+  const siblings = canvas
+    ? (parent?.Children ?? []).filter((c) => c.id !== widget.id && c.Slot?.LayoutData && !c.Slot.bAutoSize)
+    : []
+  const [alignWith, setAlignWith] = useState('')
+  // 撤销按具体的矩形分开记：连续对齐到不同控件时能一步步退回去
+  const applyRect = (rect: Rect) =>
+    onChange(
+      { ...widget, Slot: rectToCanvasSlot(slot, rect) },
+      `rect:${widget.id}:${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`,
+    )
   // 手输宽高按最小尺寸夹紧；拉伸时两边都是边距，任一边都不能大到把宽度挤成负数
   const clampEdge = (axis: 'x' | 'y', edge: 'start' | 'end', n: number) => {
     if (!canvas) return n
@@ -745,6 +764,32 @@ export function Details({
                   }
                 />
               </FieldRow>
+              <FieldRow
+                label={t('对齐到')}
+                title={t('把位置和大小设成同一个 CanvasPanel 里另一个控件（或父控件）的矩形')}
+              >
+                <Select
+                  aria-label={t('对齐到')}
+                  value={alignWith}
+                  placeholder={t('选择控件')}
+                  disabled={!siblings.length}
+                  options={siblings.map((c) => ({ value: c.id, label: c.Name }))}
+                  onChange={(e) => {
+                    const s = siblings.find((c) => c.id === e.target.value)
+                    if (!s) return
+                    applyRect(canvasSlotRect(s.Slot, parentSize()))
+                    // 选完复位：同一个目标再选一次还能重新对齐（下拉重复选同一个值不触发变更）
+                    setAlignWith('')
+                  }}
+                  className="h-7 rounded-md px-2 text-[0.75rem]"
+                />
+                <button
+                  onClick={() => applyRect({ x: 0, y: 0, w: parentSize().w, h: parentSize().h })}
+                  className="h-7 shrink-0 cursor-pointer rounded-md border border-line bg-field px-2 text-[0.71875rem] whitespace-nowrap hover:border-line-strong"
+                >
+                  {t('填满父控件')}
+                </button>
+              </FieldRow>
               {stretchX ? (
                 <FieldRow label={t('左 / 右')}>
                   <NumInput
@@ -765,11 +810,15 @@ export function Details({
                     value={gs('LayoutData.Offsets.Left')}
                     onChange={(n) => setSlot('LayoutData.Offsets.Left', n)}
                   />
-                  <NumInput
-                    prefix="W"
-                    value={gs('LayoutData.Offsets.Right')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Right', clampEdge('x', 'end', n))}
-                  />
+                  {autoSize ? (
+                    <span className="flex-1 text-[0.6875rem] leading-tight text-subtle">{t('宽度由内容决定')}</span>
+                  ) : (
+                    <NumInput
+                      prefix="W"
+                      value={gs('LayoutData.Offsets.Right')}
+                      onChange={(n) => setSlot('LayoutData.Offsets.Right', clampEdge('x', 'end', n))}
+                    />
+                  )}
                 </FieldRow>
               )}
               {stretchY ? (
@@ -792,11 +841,15 @@ export function Details({
                     value={gs('LayoutData.Offsets.Top')}
                     onChange={(n) => setSlot('LayoutData.Offsets.Top', n)}
                   />
-                  <NumInput
-                    prefix="H"
-                    value={gs('LayoutData.Offsets.Bottom')}
-                    onChange={(n) => setSlot('LayoutData.Offsets.Bottom', clampEdge('y', 'end', n))}
-                  />
+                  {autoSize ? (
+                    <span className="flex-1 text-[0.6875rem] leading-tight text-subtle">{t('高度由内容决定')}</span>
+                  ) : (
+                    <NumInput
+                      prefix="H"
+                      value={gs('LayoutData.Offsets.Bottom')}
+                      onChange={(n) => setSlot('LayoutData.Offsets.Bottom', clampEdge('y', 'end', n))}
+                    />
+                  )}
                 </FieldRow>
               )}
               <FieldRow label="Alignment">
@@ -806,7 +859,7 @@ export function Details({
                   onChange={(v) => setSlot('LayoutData.Alignment', v)}
                 />
               </FieldRow>
-              <FieldRow label="Size To Content">
+              <FieldRow label="Size To Content" title={t('打开后宽高由内容撑开，W / H 不起作用；要固定大小就关掉')}>
                 <BoolInput label="bAutoSize" value={!!slot.bAutoSize} onChange={(v) => setSlot('bAutoSize', v)} />
               </FieldRow>
               <FieldRow label="ZOrder">
@@ -819,6 +872,19 @@ export function Details({
                 <FieldRow label="Padding">
                   <MarginInput value={slot.Padding} onChange={(v) => setSlot('Padding', v)} />
                 </FieldRow>
+              )}
+              {slotType === 'BorderSlot' && Object.values(slot.Padding ?? {}).some((v) => Number(v)) && (
+                <div className="flex items-start gap-2 px-3 pb-1 text-[0.6875rem] leading-relaxed text-subtle">
+                  <span className="flex-1">
+                    {t('Border 的子控件默认留 4px 内边距，槽位图和底图会错开；要对齐就把内边距清零')}
+                  </span>
+                  <button
+                    onClick={() => setSlot('Padding', { Left: 0, Top: 0, Right: 0, Bottom: 0 })}
+                    className="shrink-0 cursor-pointer underline hover:text-fg"
+                  >
+                    {t('清零内边距')}
+                  </button>
+                </div>
               )}
               {'Size' in slot && (
                 <FieldRow label="Size">

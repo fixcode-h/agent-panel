@@ -12,6 +12,7 @@ import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
+import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
@@ -203,6 +204,12 @@ export async function invokeCli(o: {
       if (wait) input = `${input}\n\n${WAIT_HINT}`
     }
   }
+  // 语言提醒由 runner 追加在提示词末尾，上面这些用法说明接在了它后面：挪回最后，
+  // 长提示词里夹在中间的规则容易被忽略（见 runner 的「末尾再提醒一次」）
+  const remind = promptLangReminder()
+  const at = input.lastIndexOf(`\n\n${remind}`)
+  if (at >= 0 && at + 2 + remind.length < input.length)
+    input = `${input.slice(0, at)}${input.slice(at + 2 + remind.length)}\n\n${remind}`
   // 配置里写 {dir} 的文件（Pi 的桥接扩展）放进面板自己的临时目录，不进用户的项目：
   // 项目只读、目录被占用时也不受影响，进程崩溃后留下的也只在面板的缓存里
   const dir = def.mcp && servers.length ? scratchDir() : ''

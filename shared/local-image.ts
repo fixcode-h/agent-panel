@@ -127,9 +127,46 @@ export const LOCAL_FILES: LocalFile[] = [
     url: `${HF}/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`,
     gb: 11.3,
   },
+  // MOSS-Image 的文件名和大小取自 Comfy-Org/MOSS-Image 仓库的文件列表；
+  // flux2-vae_small 和项目已有的 flux2-vae 不是同一个文件，都要下
+  {
+    id: 'moss-unet',
+    dir: 'diffusion_models',
+    file: 'moss_image_sft_int8_convrot.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_int8_convrot.safetensors`,
+    gb: 5.4,
+  },
+  {
+    id: 'moss-te',
+    dir: 'text_encoders',
+    file: 'qwen3.5_9b_w4a8_gptq.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors`,
+    gb: 7.3,
+  },
+  {
+    id: 'moss-vae',
+    dir: 'vae',
+    file: 'flux2-vae_small.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors`,
+    gb: 0.25,
+  },
+  {
+    id: 'moss-unet-bf16',
+    dir: 'diffusion_models',
+    file: 'moss_image_sft_bf16.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors`,
+    gb: 10.2,
+  },
+  {
+    id: 'moss-te-bf16',
+    dir: 'text_encoders',
+    file: 'qwen3.5_9b_bf16.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_bf16.safetensors`,
+    gb: 19.3,
+  },
 ]
 
-export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen'
+export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen' | 'moss'
 
 /** 模型按用途分组展示；顺序就是设置页里从上到下的顺序 */
 export const LOCAL_MODEL_GROUPS = [
@@ -241,6 +278,32 @@ export const LOCAL_MODELS: LocalModel[] = [
     files: ['schnell'],
     vram: 12,
     use: t('老牌快速模型：4 步出图，质感好，适合背景图和插画；单个文件，下载最省事'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
+    id: 'moss-image',
+    name: 'MOSS-Image（布局 JSON）',
+    family: 'moss',
+    category: 'text',
+    files: ['moss-unet', 'moss-te', 'moss-vae'],
+    vram: 16,
+    use: t(
+      '图里要文字、要精确摆放时用：中英文都写得准，还能按布局 JSON 把标题、按钮文字放到指定位置；ComfyUI 要 0.42 以上',
+    ),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
+    id: 'moss-image-bf16',
+    name: 'MOSS-Image SFT（bf16）',
+    family: 'moss',
+    category: 'text',
+    files: ['moss-unet-bf16', 'moss-te-bf16', 'moss-vae'],
+    vram: 32,
+    use: t('MOSS-Image 的 bf16 版本：文字和画质更稳，文件大一半多，32GB 以上显存时用'),
     license: 'Apache-2.0',
     base: 1024,
     natural: true,
@@ -440,7 +503,8 @@ type Node = ComfyNode
 
 /**
  * 生成 ComfyUI 的接口格式工作流（节点 id → 节点）。参数照官方模板：
- * Z-Image 8 步 res_multistep、FLUX.2 klein 4 步、Qwen-Image 加 Lightning LoRA 8 步、FLUX.1 schnell 4 步、SDXL 25 步
+ * Z-Image 8 步 res_multistep、FLUX.2 klein 4 步、Qwen-Image 加 Lightning LoRA 8 步、FLUX.1 schnell 4 步、SDXL 25 步、
+ * MOSS-Image 25 步 er_sde（加官方模板的跳过层引导）
  */
 export function localWorkflow(
   m: LocalModel,
@@ -453,6 +517,8 @@ export function localWorkflow(
     seed: number | string
     /** 覆盖默认的步数（例如原画多走几步） */
     steps?: number
+    /** 正向提示词换成 {{layout}}：生成时传布局 JSON，没有布局时回退成描述 */
+    layout?: boolean
   },
 ): Record<string, Node> {
   const f = (id: string) => localFile(id)!.file
@@ -565,6 +631,30 @@ export function localWorkflow(
         decode: n('VAEDecode', { samples: ['sample', 0], vae: ['ckpt', 2] }),
         save: save(['decode', 0]),
       }
+    case 'moss': {
+      // int8 和 bf16 用同一个节点图，文件按模型实际带的那几个取
+      const byDir = (dir: LocalDir) => m.files.map(localFile).find((x) => x?.dir === dir)?.file ?? ''
+      return {
+        unet: n('UNETLoader', { unet_name: byDir('diffusion_models'), weight_dtype: 'default' }),
+        clip: n('CLIPLoader', { clip_name: byDir('text_encoders'), type: 'moss_image', device: 'default' }),
+        vae: n('VAELoader', { vae_name: byDir('vae') }),
+        // 官方模板的跳过层引导：跳过第 22 层，前一半步数生效，细节不容易糊
+        slg: n('SkipLayerGuidanceDiTSimple', {
+          model: ['unet', 0],
+          double_layers: '',
+          single_layers: '22',
+          start_percent: 0,
+          end_percent: 0.5,
+        }),
+        pos: n('CLIPTextEncode', { text: o.layout ? '{{layout}}' : o.prompt, clip: ['clip', 0] }),
+        neg: n('CLIPTextEncode', { text: o.negative, clip: ['clip', 0] }),
+        latent: n('EmptyFlux2LatentImage', latent),
+        // 25 步、CFG 2.5、er_sde 是官方模板的快速参数；要更接近官方效果可以调到 50 步、CFG 3
+        sample: ksampler(['slg', 0], o.steps ?? 25, 2.5, 'er_sde', 'simple'),
+        decode: n('VAEDecode', { samples: ['sample', 0], vae: ['vae', 0] }),
+        save: save(['decode', 0]),
+      }
+    }
   }
 }
 
@@ -623,6 +713,8 @@ const builtin = (
   description: string,
   extra: string,
   steps?: number,
+  /** 正向提示词用 {{layout}}：生成时传布局 JSON，没有布局时回退成描述 */
+  layout?: boolean,
 ): ComfyWorkflow => ({
   id,
   name,
@@ -632,7 +724,7 @@ const builtin = (
   assets: [],
   description,
   extra,
-  graph: localWorkflow(localModel(model)!, { ...P, steps }),
+  graph: localWorkflow(localModel(model)!, { ...P, steps, layout }),
   builtin: true,
   updatedAt: '',
 })
@@ -685,6 +777,17 @@ export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
     t('整屏界面效果图（原画）：按设计稿比例画出完整界面，用来定风格和布局'),
     'Complete game screen UI concept art mockup, front view, polished production quality, clear layout hierarchy, consistent art style across all elements.',
     12,
+  ),
+  builtin(
+    'game-moss-layout',
+    'game',
+    'concept',
+    'moss-image',
+    t('MOSS-Image：按 JSON 布局出图'),
+    t('整屏原画里要出现准确的中英文、还要按设计稿位置摆放时用：标题、按钮文字和主要元素的位置由布局 JSON 指定'),
+    'Precise UI layout: every text block and UI element appears exactly at its specified position, correct reading order, clean hierarchy.',
+    25,
+    true,
   ),
   builtin(
     'game-pixel',
@@ -746,14 +849,25 @@ export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
 /** 用到的占位符都换成实际的值 */
 export function fillWorkflow(
   graph: ComfyWorkflow['graph'],
-  v: { prompt: string; negative: string; width: number; height: number; count: number; seed: number },
+  v: {
+    prompt: string
+    negative: string
+    width: number
+    height: number
+    count: number
+    seed: number
+    /** 布局 JSON（MOSS-Image）；没有时 {{layout}} 回退成描述，工作流照常能跑 */
+    layout?: string
+  },
 ) {
   const nums: Record<string, number> = { width: v.width, height: v.height, count: v.count, seed: v.seed }
   const fill = (x: unknown): unknown => {
     if (typeof x === 'string') {
       const whole = /^\{\{(\w+)\}\}$/.exec(x)
       if (whole && whole[1] in nums) return nums[whole[1]]
-      return x.replace(/\{\{(prompt|negative)\}\}/g, (_, k: string) => (k === 'prompt' ? v.prompt : v.negative))
+      return x.replace(/\{\{(prompt|negative|layout)\}\}/g, (_, k: string) =>
+        k === 'prompt' ? v.prompt : k === 'negative' ? v.negative : v.layout || v.prompt,
+      )
     }
     if (Array.isArray(x)) return x.map(fill)
     if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, y]) => [k, fill(y)]))
@@ -926,13 +1040,15 @@ export function comfyImportFile(wf: Pick<ComfyWorkflow, 'id' | 'name'>): string 
   return `${safe || 'workflow'}-${id || 'x'}.json`
 }
 
-/** 工作流有没有问题：要有出图的节点、要用到 {{prompt}}，连线指向的节点要存在 */
+/** 工作流有没有问题：要有出图的节点、要用到 {{prompt}}（或 {{layout}}），连线指向的节点要存在 */
 export function checkWorkflow(graph: ComfyWorkflow['graph'], known?: Set<string>): string[] {
   const errors: string[] = []
   const ids = new Set(Object.keys(graph))
   if (!ids.size) return [t('工作流是空的')]
   const text = JSON.stringify(graph)
-  if (!text.includes('{{prompt}}')) errors.push(t('没有用到 {{prompt}}：生成时的描述放不进去'))
+  // 用布局 JSON 的工作流可以不写 {{prompt}}：没有布局时它也会回退成描述
+  if (!text.includes('{{prompt}}') && !text.includes('{{layout}}'))
+    errors.push(t('没有用到 {{prompt}}：生成时的描述放不进去'))
   if (!Object.values(graph).some((n) => n.class_type === 'SaveImage' || n.class_type === 'PreviewImage'))
     errors.push(t('没有 SaveImage 节点：拿不到生成的图片'))
   for (const [id, n] of Object.entries(graph)) {
@@ -968,10 +1084,13 @@ export function pickWorkflow(
   kind: 'game' | 'web',
   use: WorkflowUse,
   ready: (wf: ComfyWorkflow) => boolean,
+  /** 同一用途里优先选的（例如有布局时优先能接 {{layout}} 的工作流） */
+  prefer?: (wf: ComfyWorkflow) => boolean,
 ): ComfyWorkflow | undefined {
   if (want && want !== 'auto') return list.find((w) => w.id === want)
   const mine = list.filter((w) => w.kind === kind && ready(w))
   return (
+    (prefer ? mine.find((w) => w.use === use && prefer(w)) : undefined) ??
     mine.find((w) => w.use === use) ??
     (use === 'button' || use === 'panel' ? mine.find((w) => w.use === 'icon') : undefined) ??
     mine.find((w) => w.use === 'any') ??
@@ -982,7 +1101,7 @@ export function pickWorkflow(
 
 /**
  * 从 ComfyUI 导出的接口格式工作流自动加占位符：接到采样器 positive / negative 的文字节点换成 {{prompt}} / {{negative}}，
- * 空白画布的宽高和批量、采样器的种子换成对应的占位符。已经有占位符的不动
+ * 空白画布的宽高和批量、采样器的种子换成对应的占位符。已经有 {{prompt}} / {{negative}} / {{layout}} 的不动
  */
 export function autoPlaceholders(graph: ComfyWorkflow['graph']): ComfyWorkflow['graph'] {
   const g = structuredClone(graph)
@@ -996,7 +1115,8 @@ export function autoPlaceholders(graph: ComfyWorkflow['graph']): ComfyWorkflow['
     return textNode(n.inputs.conditioning ?? n.inputs.positive, depth + 1)
   }
   for (const n of Object.values(g)) {
-    if (!text.includes('{{prompt}}')) {
+    // 布局工作流的正向节点是 {{layout}}，不能再改成 {{prompt}}，否则导入后布局静默失效
+    if (!text.includes('{{prompt}}') && !text.includes('{{layout}}')) {
       const pos = textNode(n.inputs.positive)
       if (pos) pos.inputs.text = '{{prompt}}'
     }

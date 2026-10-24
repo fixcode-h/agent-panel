@@ -567,7 +567,7 @@ test('messageStamp：工具行收掉运行中、记上耗时也算变化（停�
   assert.notEqual(messageStamp(msg), before)
 })
 
-test('对外状态统一：子对话、子任务、后台命令、工作流没完，提问没回复，对话都还在运行（ADR 0010）', () => {
+test('对外状态统一：子对话、子任务、后台命令、工作流没完，提问没回复，对话都还在运行（ADR 0012）', () => {
   const base = { status: 'running' as const, steps: [], working: false }
   // 这一轮说完了，但名下子对话还在动：等结果，转圈，不能回收
   assert.equal(taskState({ ...base, childrenWorking: 2 }), 'waiting')

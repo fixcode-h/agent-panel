@@ -563,6 +563,11 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
+if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
+  for (let i = 1; i <= 6; i++)
+    await panelCall('create_conversation', { title: `子对话 ${i}`, message: `SLOW 子对话 ${i} 的任务` })
+}
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
 // 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
 {
@@ -786,7 +791,9 @@ const turnReply = () => {
     return `${review.trim()}
 
 这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
+  // 面板自动询问子对话状态（长时间没有输出）：回复带上标记，端到端测试据此确认它真的收到了
+  const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
 }
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
@@ -1089,8 +1096,10 @@ if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
   codexDone('completed')
 }
 
-// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
-if (input.includes('HANG')) {
+// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）。
+// 面板判定它没有响应、接回会话重开时提示里带「一直没有回应」：那一轮照常回复，
+// 用来测「长时间没有输出时自动询问」之后还能收到回复
+if (input.includes('HANG') && !input.includes('一直没有回应')) {
   process.stderr.write('Invalid API key · Please run /login\n')
   await new Promise(() => setInterval(() => {}, 60_000))
 }

@@ -169,11 +169,18 @@ await runShard('工作流任务', async (api) => {
   const [c1, cp1, cp2, c4] = c
   assert.equal(c1.kind, 'claude')
   assert.equal(c1.cwd, projectDir)
-  assert.ok(c1.args.includes('--append-system-prompt') && c1.args.includes('你是甲，负责规划。'))
+  assert.ok(c1.args.includes('--append-system-prompt'))
+  const system = c1.args[c1.args.indexOf('--append-system-prompt') + 1] ?? ''
+  assert.match(system, /你是甲，负责规划。/)
+  // 回复语言规则跟角色说明一起进系统提示词（放在任务描述里时模型不一定遵守）
+  assert.match(system, /## 回复语言/)
   assert.ok(c1.args.includes('--model') && c1.args.includes('sonnet'), 'Agent 没写模型时应使用设置里的默认模型')
   assert.ok(c1.args.includes('--permission-mode') && c1.args.includes('acceptEdits'))
   assert.match(c1.input, /流程「主流程」的节点：分析/)
   assert.match(c1.input, /## 本节点要做的事\n先分析。/)
+  // 末尾再提醒一次语言（长提示词里中间的规则容易被忽略）：面板工具那行说明插在它前面
+  assert.match(c1.input, /回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。$/)
+  assert.match(c1.input, /（面板工具）[\s\S]*回复正文和思考过程继续用中文/)
   assert.doesNotMatch(c1.input, /同时进行的节点/)
   // 节点都用默认 CLI：乙（固定 Codex）、丙（固定 Command Code）的节点也交给 Claude Code
   const c2 = [cp1, cp2].find((x) => x.input.includes('节点：实现'))
@@ -182,7 +189,12 @@ await runShard('工作流任务', async (api) => {
   assert.ok(c2.start < c3.end && c3.start < c2.end, '同一阶段的两个节点应该同时运行')
   assert.ok(Math.min(c2.start, c3.start) >= c1.end, '下游节点要等上游结束')
   assert.ok(c4.start >= Math.max(c2.end, c3.end), '有两个上游的节点要等两个都结束')
-  assert.ok(c2.args.includes('你是乙，负责实现。'), '角色设定照样交给默认 CLI')
+  assert.ok(c2.args.includes('--append-system-prompt'))
+  assert.match(
+    c2.args[c2.args.indexOf('--append-system-prompt') + 1] ?? '',
+    /你是乙，负责实现。/,
+    '角色设定照样交给默认 CLI',
+  )
   assert.match(c2.input, /上游节点的结果[\s\S]*### 分析/)
   assert.match(c2.input, /同时进行的节点[\s\S]*文档（丙）/)
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
@@ -200,7 +212,9 @@ await runShard('工作流任务', async (api) => {
       .slice(n0)
       .find((x) => x.kind === 'codex')
     assert.ok(cx, '对话用 Agent 自己的 CLI')
-    assert.equal(cx.developer, '你是乙，负责实现。', 'Codex 的角色说明通过 developerInstructions 传入')
+    assert.match(cx.developer, /你是乙，负责实现。/, 'Codex 的角色说明通过 developerInstructions 传入')
+    // 回复语言规则也跟角色说明一起交给 Codex
+    assert.match(cx.developer, /## 回复语言/)
     assert.ok(!cx.input.includes('## 你的角色'))
     // AI 第一次回复后按对话内容自动起标题（换掉从消息截的那段），只起一次
     let named = ''

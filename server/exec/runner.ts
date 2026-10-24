@@ -62,7 +62,9 @@ import type { BuildOptions } from '../../shared/clis.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { redirectWait } from './redirect.ts'
-import { t } from '../../shared/i18n.ts'
+import { t, getLang } from '../../shared/i18n.ts'
+import { promptLangReminder, promptLangRules } from '../../shared/prompt-lang.ts'
+import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
@@ -265,14 +267,26 @@ export function forgetNotes(taskId: string) {
  * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
  * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
  * 工作流里交给正在跑的节点，按原来的说法结合当前任务处理。
+ * fromParent：父对话 / 面板发来的（状态询问、收尾提醒），不是用户补充；用「用户补充」的措辞会让模型
+ * 把它当成无关信息先放着，子对话就不会回答状态询问了。
  */
-export const steerNote = (text: string, chat: boolean) =>
-  chat
+export const steerNote = (text: string, chat: boolean, fromParent = false) => {
+  // 补充是一条新的用户消息，重复一次语言要求，别让模型接着上一段换成别的语言
+  const remind = promptLangReminder()
+  if (fromParent)
+    return (
+      '父对话 / 面板在你执行中发来一条消息（不是用户发的补充）：\n' +
+      '- 和当前任务有关（状态询问、交代任务、调整方向）：按它处理并回复；\n' +
+      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事。\n\n' +
+      `${remind}\n\n内容：\n${text}`
+    )
+  return chat
     ? '用户在你执行中补充了信息。先判断它和当前任务的关系：\n' +
-      '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
-      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事，不要现在开始做它；当前任务做完后再处理这条内容。\n\n' +
-      `补充的内容：\n${text}`
-    : `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
+        '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
+        '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事，不要现在开始做它；当前任务做完后再处理这条内容。\n\n' +
+        `${remind}\n\n补充的内容：\n${text}`
+    : `用户在执行中补充了信息，请结合它继续当前的任务：\n${remind}\n\n${text}`
+}
 
 /**
  * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
@@ -288,7 +302,8 @@ export async function steerTask(
   // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
   const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode === 'chat' && isHelperStep(task, s.step)))
   const took: Steerer[] = []
-  for (const s of all) if (await s.steer(steerNote(text, task.mode === 'chat'))) took.push(s)
+  for (const s of all)
+    if (await s.steer(steerNote(text, task.mode === 'chat', msg.peer?.rel === 'parent'))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
@@ -735,13 +750,20 @@ async function runAgent(
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
   const prewarm = chat && !!call.prewarm
-  // 启动这一轮时的选择；执行中换了 CLI/模型/强度，结束时不能还停在旧进程上等下一句
-  const startPick = { cli: task.cli, model: task.model, effort: task.effort }
+  // 启动这一轮时的选择；执行中换了 CLI/模型/强度，或者面板语言变了（系统提示词和 mod 的环境变量固定在
+  // 这个进程里，新消息的提醒却是新语言），结束时都不能还停在旧进程上等下一句
+  const startPick = { cli: task.cli, model: task.model, effort: task.effort, lang: getLang() }
   const stillCurrent = () => {
     const now = agentRun(withTaskModel(found, task), settings)
     // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
     const wt = task.worktree?.state === 'active' ? task.worktree.path : ''
-    return now.cli === cliId && now.model === model && task.effort === startPick.effort && (!wt || wt === cwd)
+    return (
+      now.cli === cliId &&
+      now.model === model &&
+      task.effort === startPick.effort &&
+      getLang() === startPick.lang &&
+      (!wt || wt === cwd)
+    )
   }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
@@ -798,7 +820,12 @@ async function runAgent(
       autoLimits(key, catalog, { entries, protocol: cs.api?.protocol }).context
     )
   }
-  const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
+  const role = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
+  // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
+  // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
+  const instructions = def.systemPromptFlag ? [role, promptLangRules()].filter(Boolean).join('\n\n') : role
+  // Command Code 没有系统提示词参数，改用 --mod 加载的 mod 追加同一段规则（见 prompt-lang-mod.ts）
+  const systemPromptModPath = def.systemPromptMod ? await ensurePromptLangMod() : undefined
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
   await ensureBundled(
     fillSkills(
@@ -839,6 +866,9 @@ async function runAgent(
     const at = step ? input.indexOf(`\n\n${NODE_PART}\n`) : -1
     input = at < 0 ? role + input : `${input.slice(0, at + 2)}${role}${input.slice(at + 2)}`
   }
+  // 末尾再提醒一次：长提示词里夹在中间的规则容易被忽略。原生 /命令（Claude Code 新会话开头要原样认出）
+  // 和压缩、审查（参数另有含义）不追加
+  if (!op && !(chat && ctx.prompt.trim().startsWith('/'))) input = `${input}\n\n${promptLangReminder()}`
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
   const build: BuildOptions = {
@@ -852,6 +882,7 @@ async function runAgent(
     // 审查走 CLI 自己的审查模式，压缩走协议；其余的已经换成普通的一轮
     op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
+    systemPromptModPath,
     // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
     // 节点交接的完整结果也在数据目录里
     addDirs: [
@@ -867,6 +898,8 @@ async function runAgent(
   }
   const env = childEnv([
     ...cs.env,
+    // mod 按它选语言规则（见 prompt-lang-mod.ts）
+    ...(systemPromptModPath ? [{ key: PROMPT_LANG_ENV, value: getLang() }] : []),
     ...(pct && def.autoCompact === 'env' && def.autoCompactEnv
       ? [{ key: def.autoCompactEnv, value: String(pct) }]
       : []),
@@ -1015,6 +1048,18 @@ async function runAgent(
       tools: turnTools(),
       changed: touched.size - turnMark.touched,
     })
+  }
+  /**
+   * 这一轮结束的回调只发一次：CLI 的 result 和「回复完停在等下一句」都会走到 markTurnDone，
+   * 两处都记会让子对话把同一个状态重复上报父对话（父对话里一条汇报显示两遍）。
+   * 用户发来下一条消息、或者子任务的结果交回让 CLI 接着做，都算新的一段（见 listen 和 waitNext）。
+   */
+  let turnEnded = false
+  const endTurn = () => {
+    if (turnEnded) return
+    turnEnded = true
+    markTurnDone(task)
+    ctx.onTurnEnd?.()
   }
   /**
    * 没有响应的检测（见 NO_RESPONSE_MS）：交出一句话、一个工具结果，或 CLI 开始一次模型请求时开始计时，
@@ -1288,8 +1333,7 @@ async function runAgent(
           task.working = false
           // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
           if (ev.ok && !prewarmMode && !emptyTurn()) {
-            markTurnDone(task)
-            ctx.onTurnEnd?.()
+            endTurn()
           }
         }
         break
@@ -1400,7 +1444,9 @@ async function runAgent(
         // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
         cur = undefined
         ctx.changed(true)
-        return mine.map((m) => steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat'))
+        return mine.map((m) =>
+          steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat', m.peer?.rel === 'parent'),
+        )
       },
     }
     addNoteTaker(task.id, taker)
@@ -1442,6 +1488,9 @@ async function runAgent(
       if (!text || ctx.signal.aborted) return null
       // 子任务的结果到了、接着干：从这一刻继续算执行
       resumeRun(task)
+      // 交回的结果会让 CLI 接着做，这一段的结束要照常上报：result 之后停在这里等子任务时
+      // 这一轮已经标记过结束了（见 endTurn），不复位会吞掉交回后那次结束
+      turnEnded = false
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
       task.working = true
@@ -1476,8 +1525,7 @@ async function runAgent(
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
     if (!prewarmMode && chat && !op && !helpers) {
-      markTurnDone(task)
-      ctx.onTurnEnd?.()
+      endTurn()
     }
     ctx.changed(true)
     try {
@@ -1513,6 +1561,7 @@ async function runAgent(
             const text = withAttachments(msg.text, placed ?? msg.attachments ?? [])
             // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
             turnMark = { from: mine.length, touched: touched.size, input: text }
+            turnEnded = false
             arm(text)
             done(text)
           },

@@ -71,9 +71,9 @@ await runShard('Agent 操控软件', async (api) => {
   {
     const list = await call('GET', '/actions')
     assert.ok(list.some((a) => a.name === 'task.stop_subtasks' && a.level === 'danger'))
-    const saved = await call('POST', '/actions/settings.set', { patch: { childConcurrency: 4 } })
-    assert.deepEqual(saved, { childConcurrency: 4 })
-    assert.equal((await call('GET', '/settings')).childConcurrency, 4)
+    const saved = await call('POST', '/actions/settings.set', { patch: { backgroundLimit: 4 } })
+    assert.deepEqual(saved, { backgroundLimit: 4 })
+    assert.equal((await call('GET', '/settings')).backgroundLimit, 4)
     const denied = await call('POST', '/actions/settings.set', { patch: { requireToken: true } }).catch((e) => e)
     assert.ok(denied instanceof Error, '访问令牌开关不能由动作改')
     step('HTTP 入口：列动作、改设置，密钥和访问控制不能改')

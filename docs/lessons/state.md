@@ -38,5 +38,5 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 
 ## 「在运行」只看 convActive，在运行的不失活
 
-- 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0010。
+- 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0012。
 - 防线：`shared/task-stage.test.ts`「对外状态统一」；e2e `04-subagents`「父对话切走」。

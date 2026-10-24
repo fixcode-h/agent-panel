@@ -94,28 +94,24 @@ test('不能给自己发消息', async () => {
 })
 
 test('改设置：密钥和访问控制不能改；对象逐层合并；改完让页面刷新', async () => {
-  const cur = { childConcurrency: 5, apis: [], appearance: { theme: 'dark', fontSize: 14 } }
-  const { calls, ui } = fakeHost({ 'GET /settings': cur, 'PUT /settings': { ...cur, childConcurrency: 3 } })
+  const cur = { backgroundLimit: 5, apis: [], appearance: { theme: 'dark', fontSize: 14 } }
+  const { calls, ui } = fakeHost({ 'GET /settings': cur, 'PUT /settings': { ...cur, backgroundLimit: 3 } })
   const denied = await runAppAction('settings.set', { patch: { apis: [] } }, child)
   assert.match((denied as { error: string }).error, /不能由 AI 改：apis/)
   const unknown = await runAppAction('settings.set', { patch: { nope: 1 } }, child)
   assert.match((unknown as { error: string }).error, /没有这些设置/)
-  const r = await runAppAction(
-    'settings.set',
-    { patch: { childConcurrency: 3, appearance: { theme: 'light' } } },
-    child,
-  )
-  assert.deepEqual(r.ok && r.result, { childConcurrency: 3, appearance: { theme: 'dark', fontSize: 14 } })
+  const r = await runAppAction('settings.set', { patch: { backgroundLimit: 3, appearance: { theme: 'light' } } }, child)
+  assert.deepEqual(r.ok && r.result, { backgroundLimit: 3, appearance: { theme: 'dark', fontSize: 14 } })
   const put = calls.find((c) => c.method === 'PUT')!
-  assert.deepEqual(put.body, { childConcurrency: 3, apis: [], appearance: { theme: 'light', fontSize: 14 } })
+  assert.deepEqual(put.body, { backgroundLimit: 3, apis: [], appearance: { theme: 'light', fontSize: 14 } })
   assert.deepEqual(ui, [{ action: 'reload_settings', args: {} }])
   assert.deepEqual(mergePatch({ a: [1, 2] }, { a: [3] }), { a: [3] })
 })
 
 test('读设置不带密钥类字段', async () => {
-  fakeHost({ 'GET /settings': { childConcurrency: 5, apis: [{ apiKey: 'sk-xxxx' }], clis: {}, requireToken: true } })
+  fakeHost({ 'GET /settings': { backgroundLimit: 5, apis: [{ apiKey: 'sk-xxxx' }], clis: {}, requireToken: true } })
   const r = await runAppAction('settings.get', {}, child)
-  assert.deepEqual(r.ok && r.result, { childConcurrency: 5 })
+  assert.deepEqual(r.ok && r.result, { backgroundLimit: 5 })
 })
 
 test('界面操作：推给页面；没有页面开着时说清楚', async () => {

@@ -332,4 +332,11 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     'Missing files have no download link; put them in the ComfyUI models folder yourself.',
   缺: 'Missing',
   需要自己放: 'Add manually',
+  '图里要文字、要精确摆放时用：中英文都写得准，还能按布局 JSON 把标题、按钮文字放到指定位置；ComfyUI 要 0.42 以上':
+    'Use it when the image needs text placed precisely: reliable Chinese and English rendering, and a layout JSON that puts titles and button labels exactly where you want them. Needs ComfyUI 0.42 or newer.',
+  'MOSS-Image 的 bf16 版本：文字和画质更稳，文件大一半多，32GB 以上显存时用':
+    'The bf16 build of MOSS-Image: steadier text and image quality, much larger files, for 32 GB VRAM or more.',
+  'MOSS-Image：按 JSON 布局出图': 'MOSS-Image: generate from a JSON layout',
+  '整屏原画里要出现准确的中英文、还要按设计稿位置摆放时用：标题、按钮文字和主要元素的位置由布局 JSON 指定':
+    'For full-screen concepts that need accurate Chinese and English text placed exactly as designed: the layout JSON fixes the position of titles, button labels and key elements.',
 }

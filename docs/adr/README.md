@@ -18,8 +18,8 @@
 | [0008](./0008-peer-messages.md)                           | 对话之间的消息统一成「发送消息 / 接收消息」，全部摆在台面上 | 已接受 | 2026-10-24 | 收件方消息带 `peer`（发件方、类型、标题），两边共用 `PeerLine`          |
 | [0009](./0009-review-findings-triaged.md)                 | 评审只出意见，由执行角色逐条核实处置                        | 已接受 | 2026-10-24 | 门禁认「通过」或每条 🛑 的处置（`review_triage`）；复看接着上次会话     |
 | [0010](./0010-review-code-only.md)                        | 评审只看代码，面板一次附上改动，意见分四级                  | 已接受 | 2026-10-24 | 面板附 `git diff -W`，复看只附增量；高级、中级要处置                    |
-| [0010](./0010-running-conversations-never-deactivated.md) | 对话「在运行」只有一个判定，在运行的对话和子对话不失活      | 已接受 | 2026-10-24 | `convActive` 唯一判定；回收前先问；子对话只随用户停止结束；可终止子任务 |
 | [0011](./0011-app-actions-for-agents.md)                  | Agent 操控软件走动作注册表，对 Agent 只暴露两个 MCP 工具    | 已接受 | 2026-10-24 | `app_actions` / `app_do` + `server/app-actions/`；用户命令第一          |
+| [0012](./0012-running-conversations-never-deactivated.md) | 对话「在运行」只有一个判定，在运行的对话和子对话不失活      | 已接受 | 2026-10-24 | `convActive` 唯一判定；回收前先问；子对话只随用户停止结束；可终止子任务 |
 
 状态只有四个词，别自己造近义词：
 

@@ -610,7 +610,8 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     )
     assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
     assert.equal(d.style, 'clean')
-    // 先出原画：开关打开时 AI 不能搭界面，只出整屏原画；原画按设计稿尺寸存成候选，确认模板后照着模板做、出切图
+    // 先出原画：开关打开时 AI 不能搭界面，只出整屏原画；原画按设计稿尺寸存成候选，确认模板后照着模板做、出切图。
+    // 原画张数是 conceptCount（「原画」按钮右键菜单），count 只表示每张图生成几版
     const sketch = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Bag' })
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `做背包 FAKE_MCP:${JSON.stringify([
@@ -619,6 +620,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
       ])}`,
       source: { kind: 'cli' },
       count: 2,
+      conceptCount: 2,
       concept: true,
     })
     d = await waitJob(sketch.id)
@@ -677,8 +679,106 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
     assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
     step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
-    // 没在改设计时补充不了：告诉页面改成排队
-    assert.deepEqual(await call('POST', `/designs/${design.id}/steer`, { text: '再大一点' }), { steered: false })
+    // 没在改设计时发消息：直接开新一轮（以前只回 steered: false，由页面自己维护排队）。
+    // 用一个空的 UI 项目：项目里其他设计已有的图片描述会进设计提示词，里面带 FAIL 会让假 CLI 判成失败
+    const probeProject = await call('POST', '/designs/projects', { name: 'Steer Probe', path: projectDir })
+    const probe = await call('POST', '/designs', { projectId: probeProject.id, kind: 'game', title: '设计补充测试' })
+    const direct = await call('POST', `/designs/${probe.id}/steer`, { text: '再大一点', source: { kind: 'none' } })
+    assert.deepEqual([direct.steered, direct.queued], [false, false], '没在跑时直接开始一轮')
+    assert.equal(direct.messages.at(-1).text, '再大一点', '消息直接进对话')
+    let probeNow = await waitJob(probe.id)
+    assert.equal(probeNow.job.status, 'done', JSON.stringify(probeNow.job.error))
+    // 正在改设计时发消息：整条消息补充给这一轮，消息上记下去了哪里。
+    // 用 Command Code（常驻 RPC 有 turn/steer），能真正插进正在跑的这一轮
+    const probeRun = { cli: 'commandcode', model: '', effort: '' }
+    await call('POST', `/designs/${probe.id}/chat`, {
+      text: 'SLOW 先搭一版',
+      source: { kind: 'none' },
+      run: probeRun,
+    })
+    for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('SLOW 先搭一版')); i++) {
+      if (i > 100) throw new Error('设计对话没有开始执行')
+      await sleep(50)
+    }
+    await sleep(300)
+    const steered = await call('POST', `/designs/${probe.id}/steer`, {
+      text: '左下角再大一点',
+      source: { kind: 'none' },
+      run: probeRun,
+    })
+    assert.equal(steered.steered, true, '正在跑时补充给这一轮')
+    assert.equal(steered.messages.at(-1).delivery?.how, 'steer', '消息记下插进了这一轮')
+    assert.ok(Date.parse(steered.messages.at(-1).delivery.at) > 0, '交付时间也记上')
+    probeNow = await waitJob(probe.id)
+    assert.equal(probeNow.job.status, 'done', JSON.stringify(probeNow.job.error))
+    await call('DELETE', `/designs/${probe.id}`)
+    // 收不下的（CLI 没有插话通道）：消息进对话，这一轮结束后自动接着处理，不用用户再发一次
+    const probe2 = await call('POST', '/designs', { projectId: probeProject.id, kind: 'game', title: '设计接续测试' })
+    const gemRun = { cli: 'gemini', model: '', effort: '' }
+    await call('POST', `/designs/${probe2.id}/chat`, {
+      text: 'SLOW 先画一版',
+      source: { kind: 'none' },
+      run: gemRun,
+    })
+    for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('SLOW 先画一版')); i++) {
+      if (i > 100) throw new Error('设计对话没有开始执行')
+      await sleep(50)
+    }
+    const held = await call('POST', `/designs/${probe2.id}/steer`, {
+      text: '接续处理这句',
+      source: { kind: 'none' },
+      run: gemRun,
+    })
+    assert.equal(held.steered, false, '没有插话通道时分不到这一轮')
+    assert.equal(held.messages.at(-1).delivery?.how, 'held', '记成这一轮结束后自动处理')
+    for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('接续处理这句')); i++) {
+      if (i > 200) throw new Error('这一轮结束后没有自动接着处理')
+      await sleep(100)
+    }
+    d = await waitJob(probe2.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    assert.ok(
+      d.messages.some((m) => m.role === 'user' && m.text === '接续处理这句'),
+      '排队的消息留在对话里',
+    )
+    await call('DELETE', `/designs/${probe2.id}`)
+    // 停止后马上再发：排队的消息标成没送出去（lost），新消息不会卡在「结束后自动处理」，会接着开始新一轮
+    const probe3 = await call('POST', '/designs', { projectId: probeProject.id, kind: 'game', title: '设计停止测试' })
+    await call('POST', `/designs/${probe3.id}/chat`, {
+      text: 'SLOW 先画一版三',
+      source: { kind: 'none' },
+      run: gemRun,
+    })
+    for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('SLOW 先画一版三')); i++) {
+      if (i > 100) throw new Error('设计对话没有开始执行')
+      await sleep(50)
+    }
+    const queuedBeforeStop = await call('POST', `/designs/${probe3.id}/steer`, {
+      text: '停止前排队这句',
+      source: { kind: 'none' },
+      run: gemRun,
+    })
+    assert.equal(queuedBeforeStop.messages.at(-1).delivery?.how, 'held')
+    await call('POST', `/designs/${probe3.id}/stop`)
+    const stopped = await call('GET', `/designs/${probe3.id}`)
+    assert.equal(
+      stopped.messages.find((m) => m.text === '停止前排队这句')?.delivery?.how,
+      'lost',
+      '停止时排队的消息标明没送出去',
+    )
+    await call('POST', `/designs/${probe3.id}/steer`, {
+      text: '停止后再发这句',
+      source: { kind: 'none' },
+      run: gemRun,
+    })
+    for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('停止后再发这句')); i++) {
+      if (i > 200) throw new Error('停止后发的消息没有被接着处理')
+      await sleep(100)
+    }
+    d = await waitJob(probe3.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    await call('DELETE', `/designs/${probe3.id}`)
+    await call('DELETE', `/designs/projects/${probeProject.id}`)
     // 看图量尺寸：inspect_image 量尺寸和颜色，view_image 画坐标格、放大一块，存成文件给 AI 读图
     const pngOf = (w, h, pix) => {
       const raw = Buffer.alloc((w * 3 + 1) * h)

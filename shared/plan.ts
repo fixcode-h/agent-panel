@@ -100,6 +100,31 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
 }
 
 /**
+ * 整份计划的用时（毫秒）：从计划创建算起。
+ * - 全部完成：停在最晚一项的 endedAt；
+ * - 提前结束（finish_plan 写了 doneAt，但还有没做完的步骤）：停在 doneAt；
+ * - 还在进行：算到调用方传入的 now（每秒更新，所以会一直涨）。
+ * 没有 createdAt 的旧数据退到最早一项的 startedAt；一个时间都没有时返回空（不显示）。
+ */
+export function planSpan(plan: TaskPlan, now: number): number | undefined {
+  const items = plan.steps.flatMap((s) => [s, ...s.children])
+  const times = (pick: (x: PlanItem) => string) =>
+    items.map((x) => Date.parse(pick(x))).filter((n) => Number.isFinite(n))
+  const created = Date.parse(plan.createdAt)
+  const starts = times((x) => x.startedAt)
+  const start = Number.isFinite(created) ? created : starts.length ? Math.min(...starts) : NaN
+  if (!Number.isFinite(start)) return undefined
+  const closedAt = Date.parse(plan.doneAt)
+  const ends = times((x) => x.endedAt)
+  const allDone = plan.steps.length > 0 && plan.steps.every((s) => s.status === 'done')
+  // 全部完成：停在最晚一项的 endedAt；提前结束（finish_plan）还有没做完的步骤：停在 doneAt。
+  // 后者不能拿已完成项的 endedAt 当结束时间，否则总用时比未完成项的单项用时还短
+  let end = Number.isFinite(closedAt) ? closedAt : now
+  if (allDone && ends.length) end = Math.max(...ends)
+  return Math.max(0, end - start)
+}
+
+/**
  * 还没做完的计划进度：列表里显示「计划 7/8」，有它就不算交付完（不算已完成）。
  * 计划的步骤全做完时计划已经收起（doneAt），不算「没做完」。
  */

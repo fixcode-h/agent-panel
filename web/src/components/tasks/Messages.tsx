@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 import { RowShell, ToolRows } from './ToolRow'
 import { fmtDuration } from '@/lib/tasks'
 import { addFoldCut, foldCuts, foldStats, keptOut, replyText, segOpenOf, splitFolds, toggleSegOpen } from '@/lib/fold'
+import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
@@ -945,20 +946,22 @@ export function ChatReply({
   /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
   children?: React.ReactNode
 }) {
+  // 旧数据里同一个子对话的同一份汇报被写了两遍：这一轮显示前先收成一条（见 peer-dedupe）
+  const list = dedupePeerReports(msgs)
   // 这一轮收尾时折到第几条消息：之后子对话的回报、后台命令结果又进来、CLI 被重新拉起来时，
   // 前面那段保持折叠，新过程接在它的最后一条回复后面继续显示，不把整轮重新铺开
-  const key = msgs[0]?.id ?? ''
+  const key = list[0]?.id ?? ''
   const [cuts, setCuts] = useState<number[]>(() => foldCuts(key))
   useEffect(() => {
     // 不是执行中就记下收尾位置：第一次画出来就已经收尾（刷新、切回页签、被下面的计划卡片挤成非最后一段）
     // 也要记，否则之后子对话回报把它重新拉起来接着输出时，前面这段会被当成执行中整段铺开。
     // 记录不会重复：位置没往前走时 addFoldCut 返回原来的数组
     if (live) return
-    setCuts(addFoldCut(key, msgs.length))
-  }, [key, live, msgs.length])
+    setCuts(addFoldCut(key, list.length))
+  }, [key, live, list.length])
 
   // 一段已经收尾、又有新内容进来时分成几段：前面的段始终折叠，只有最后一段跟着 live 走
-  const parts = fold ? splitFolds(msgs, cuts) : [msgs]
+  const parts = fold ? splitFolds(list, cuts) : [list]
   // 还在运行的工具、后台命令和子对话放在最新一段的总结上面；结果推回来开了新的一段，就跟着挪到新的总结上面
   const lastPart = lastIndex(parts, (p) => p.length > 0)
   const tailLive = !!live && lastPart === parts.length - 1
@@ -1004,9 +1007,9 @@ export function ChatReply({
     </>
   )
   if (live) return <div className="flex flex-col gap-2">{body}</div>
-  const replies = msgs.map(replyText).filter((x, i) => msgs[i].role === 'agent' && x.trim())
+  const replies = list.map(replyText).filter((x, i) => list[i].role === 'agent' && x.trim())
   return (
-    <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={msgs.at(-1)?.at} actions={actions} always={last}>
+    <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={list.at(-1)?.at} actions={actions} always={last}>
       <div className="flex flex-col gap-2">{body}</div>
     </ReplyFrame>
   )

@@ -478,4 +478,11 @@ export const EN_SERVER: Record<string, string> = {
   '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
   '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
   '为了马上处理新消息，停下了正在执行的命令': 'Stopped the running command to handle the new message right away',
+  直连: 'Direct connection',
+  '代理 {proxy}': 'Proxy {proxy}',
+  '本机代理 {proxy}': 'Local proxy {proxy}',
+  '尝试过的路径：{paths}。': 'Paths tried: {paths}.',
+  '没有发现运行中的本机代理。': 'No running local proxy was found.',
+  '访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
+    "If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
 }

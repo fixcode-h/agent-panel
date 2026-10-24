@@ -3,17 +3,16 @@ import { toast } from 'sonner'
 import { Plus, Square, X } from 'lucide-react'
 import type { Task, TaskRule } from '@shared/schema'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
+import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import { t } from '@shared/i18n'
 
 /**
  * 父对话的设置：参考 Claude Projects 的项目设置，管这个对话的目标、全局规则和名下的子对话。
- * 目标和规则每一轮都交给父对话和子对话；子对话的 CLI / 模型和并发上限只对这个对话生效，不改角色和全局设置。
+ * 目标和规则每一轮都交给父对话和子对话；子对话的 CLI / 模型只对这个对话生效，不改角色和全局设置。
  */
 export function ConversationSettingsDialog({
   task,
@@ -26,7 +25,6 @@ export function ConversationSettingsDialog({
   onOpenChange: (open: boolean) => void
   onSaved: (t: Task) => void
 }) {
-  const { settings } = useData()
   const [title, setTitle] = useState(task.title)
   const [goal, setGoal] = useState(task.goal)
   const [rules, setRules] = useState<TaskRule[]>(task.rules)
@@ -35,10 +33,8 @@ export function ConversationSettingsDialog({
   const [run, setRun] = useState<ChatRun>(task.childRun ?? { cli: '', model: '', effort: '' })
   // 存下实际的 CLI / 模型 / 强度：空值是「默认」，之后改了默认 CLI 子对话也不会悄悄跟着变
   const resolved = useChatRun(run).run
-  const [limit, setLimit] = useState(task.childLimit)
   const [busy, setBusy] = useState(false)
   const [stopping, setStopping] = useState(false)
-  const defLimit = settings?.childConcurrency ?? 5
 
   const addRule = () => {
     const text = rule.trim()
@@ -56,7 +52,6 @@ export function ConversationSettingsDialog({
         goal,
         rules,
         childRun: custom ? resolved : null,
-        childLimit: limit,
       })
       onSaved(saved)
       onOpenChange(false)
@@ -173,19 +168,6 @@ export function ConversationSettingsDialog({
               <ChatModelPicker value={run} onChange={setRun} />
             </div>
           )}
-          <Field label={t('同时执行的子对话')} className="max-w-[320px]">
-            <Select
-              aria-label={t('同时执行的子对话')}
-              value={String(limit)}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              options={[
-                { value: '0', label: t('{n} 个（跟随设置）', { n: defLimit }) },
-                ...[1, 2, 3, 4, 5, 6, 8, 10]
-                  .filter((n) => n !== defLimit)
-                  .map((n) => ({ value: String(n), label: t('{n} 个', { n }) })),
-              ]}
-            />
-          </Field>
           <div className="flex items-center gap-3">
             <Button variant="danger-outline" size="sm" onClick={stopAll} disabled={stopping}>
               <Square className="h-3.5 w-3.5" />

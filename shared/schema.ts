@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
+import type { ProjectProposal } from './project-init.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -794,6 +795,12 @@ const ProjectFields = z.object({
    */
   initializedAt: z.string().max(40).default(''),
   /**
+   * 上次「AI 初始化项目」算出的推荐（结构见 project-init.ts 的 ProjectProposal）。
+   * 存下来后重新打开设置时，卡片上还能直接应用推荐；旧项目没有这个字段，按没有推荐处理。
+   * 这里只标类型，具体校验由服务端用 ProjectProposalSchema 做（两边不能循环引用）
+   */
+  initResult: z.custom<ProjectProposal>().optional(),
+  /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
    */
@@ -940,11 +947,10 @@ export const TaskPatch = z
     params: z.record(z.string(), ParamValue),
     // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
     agentId: z.string(),
-    // 父对话的设置：目标、全局规则、子对话的执行配置和并发上限
+    // 父对话的设置：目标、全局规则、子对话的执行配置
     goal: z.string().trim().max(4000),
     rules: z.array(TaskRule).max(50),
     childRun: z.object({ cli: z.string().max(40), model: z.string().max(200), effort: z.string().max(40) }).nullable(),
-    childLimit: z.number().int().min(0).max(20),
   })
   .partial()
 export type TaskPatch = z.infer<typeof TaskPatch>
@@ -1507,8 +1513,6 @@ export const TaskData = z.object({
   goal: z.string().max(4000).default(''),
   /** 父对话给子对话定的 CLI、模型和思考强度；空表示按执行角色自己的配置 */
   childRun: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
-  /** 这个父对话同时执行的子对话上限；0 表示跟随设置里的 childConcurrency */
-  childLimit: z.number().int().min(0).max(20).default(0),
   /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
   inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
   /**
@@ -1657,6 +1661,22 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /**
+   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
+   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
+   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
+   */
+  autoAsk: z
+    .object({
+      at: z.string(),
+      count: z.number().int().min(0).default(0),
+      /**
+       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
+       * 但不显示「等回复」，也不能让它在收尾时开新一轮
+       */
+      held: z.boolean().optional(),
+    })
+    .optional(),
   /**
    * 名下正在执行的子对话数：只在列表摘要里带，由服务端按子对话的 working 算好。
    * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
@@ -1830,6 +1850,11 @@ export const Settings = z.object({
   /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */
   idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /**
+   * 子对话这么多分钟没有任何输出时，面板以父对话的名义自动问它当前在做什么、是否卡住；0 表示不问。
+   * 和 idleTimeoutMinutes 是两个独立的档位：这里只问、不停止，问过几次仍没有输出就交给那一条提醒 / 自动停止
+   */
+  childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
+  /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。
    * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks.ts 的 keepAliveBusy
@@ -1849,15 +1874,11 @@ export const Settings = z.object({
    */
   keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
-   * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
-   * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
-   */
-  childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
-  /**
    * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
-   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑
+   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑。
+   * 默认 64：一般机器同时跑几十条测试、编译顶得住，只有实在忙不过来时才需要调小
    */
-  backgroundLimit: z.number().int().min(1).max(64).catch(16).default(16),
+  backgroundLimit: z.number().int().min(1).max(64).catch(64).default(64),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
   /**
@@ -2043,15 +2064,15 @@ export const TaskProcess = z.object({
 })
 export type TaskProcess = z.infer<typeof TaskProcess>
 
-/** 一个对话的进程与内存汇总：前端「内存合计」直接读 totalMemory */
+/** 一个对话（含附属子对话、子任务）的进程与内存汇总：前端「内存合计」读 cliMemory */
 export const TaskProcesses = z.object({
   sampledAt: z.number(),
   processes: z.array(TaskProcess).default([]),
-  /** 这个对话树上 CLI 进程的 RSS 合计；取不到系统信息时 null */
+  /** 这个对话及附属任务的 CLI 进程 RSS 合计；取不到系统信息时 null */
   cliMemory: z.number().nullable().default(null),
-  /** 面板 server 自己的 RSS */
+  /** 面板 server 自己的 RSS：不属于这个对话，界面上单独标明、不计入合计 */
   serverMemory: z.number(),
-  /** totalMemory = cliMemory + serverMemory；cliMemory 未知时 null */
+  /** totalMemory = cliMemory，不含面板自己的内存；cliMemory 未知时 null */
   totalMemory: z.number().nullable().default(null),
   /** 系统进程信息取不到的原因；取得到时为空字符串 */
   unavailable: z.string().default(''),
@@ -2061,8 +2082,11 @@ export type TaskProcesses = z.infer<typeof TaskProcesses>
 /** 内存曲线上的一个点：t 采样时刻；cli 未知时 total 也是 null（断开而不是掉到 0） */
 export const MemoryPoint = z.object({
   t: z.number(),
+  /** 面板 server 自己的 RSS，只单独展示，不计入 total */
   server: z.number(),
+  /** 这个对话及附属任务的 CLI 内存 */
   cli: z.number().nullable(),
+  /** total = cli（不含面板）；cli 未知时 null */
   total: z.number().nullable(),
 })
 export type MemoryPoint = z.infer<typeof MemoryPoint>
