@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import {
   MIN_WIDGET_SIZE,
   WIDGETS,
+  applyVisibility,
   assignImage,
   brush,
   canvasSlotRect,
@@ -14,11 +15,13 @@ import {
   defaultSlot,
   exportWidget,
   imageFitStyle,
+  isHiddenVisibility,
   nineSliceRatios,
   normalizeTree,
   rectToCanvasSlot,
   resizeCanvasSlot,
   syncBrushSlices,
+  toggledVisibility,
   type Brush,
   type Widget,
 } from './umg.ts'
@@ -279,4 +282,43 @@ test('resizeCanvasSlot：拉伸时按父控件尺寸夹紧边距', () => {
   // 左、上边距不受影响
   assert.equal(out.LayoutData.Offsets.Left, 10)
   assert.equal(out.LayoutData.Offsets.Top, 10)
+})
+
+test('isHiddenVisibility：Collapsed 和 Hidden 都算看不到', () => {
+  assert.equal(isHiddenVisibility('Collapsed'), true)
+  assert.equal(isHiddenVisibility('Hidden'), true)
+  assert.equal(isHiddenVisibility('Visible'), false)
+  assert.equal(isHiddenVisibility('HitTestInvisible'), false)
+  assert.equal(isHiddenVisibility(undefined), false)
+})
+
+test('toggledVisibility：看不到的（包括 Hidden）点一次就显示，其余隐藏', () => {
+  assert.equal(toggledVisibility('Visible'), 'Collapsed')
+  assert.equal(toggledVisibility(undefined), 'Collapsed')
+  assert.equal(toggledVisibility('HitTestInvisible'), 'Collapsed')
+  // 属性面板选成 Hidden 的控件，眼睛按钮显示「显示」，点一次就要真的显示出来
+  assert.equal(toggledVisibility('Hidden'), 'Visible')
+  assert.equal(toggledVisibility('Collapsed'), 'Visible')
+})
+
+test('applyVisibility：按 id 叠到子控件上，已经不在树上的 id 跳过', () => {
+  const make = (id: string, children: Widget[] = []): Widget => ({
+    id,
+    Type: 'Overlay',
+    Name: id,
+    Properties: {},
+    ...(children.length ? { Children: children } : {}),
+  })
+  const root = make('root', [make('left'), make('right', [make('deep')])])
+  const out = applyVisibility(root, { left: 'Collapsed', deep: 'Hidden', gone: 'Visible' })
+  const [left, right] = out.Children!
+  assert.equal(left.Properties.Visibility, 'Collapsed')
+  assert.equal(right.Properties.Visibility, undefined)
+  assert.equal(right.Children![0].Properties.Visibility, 'Hidden')
+  // 原来的树不动
+  assert.equal(root.Children![0].Properties.Visibility, undefined)
+  // 没有一个 id 命中时原样返回（AI 修改结束时按整份设计补，靠这个引用相等跳过撤销记录）
+  assert.equal(applyVisibility(root, { gone: 'Visible' }), root)
+  // 没有改动时原样返回
+  assert.equal(applyVisibility(root, {}), root)
 })

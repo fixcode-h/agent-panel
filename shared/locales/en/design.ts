@@ -561,9 +561,6 @@ export const EN_DESIGN: Record<string, string> = {
     'The design follows this style once chosen; it is sent to the AI with your message.',
   '使用「{name}」风格': 'Use the "{name}" style',
   '风格：{name}': 'Style: {name}',
-  一轮出几张原画: 'Concepts per round',
-  '原画 {n} 张': '{n} concepts',
-  选的风格会在这一轮结束后随这条一起发出: 'The chosen style will be sent with this message when the current turn ends',
   不用这个风格: "Don't use this style",
   '（副本）': '(copy)',
   '已复制到「我的风格」，可以改了': 'Copied to "My styles"; you can edit it now',
@@ -596,9 +593,12 @@ export const EN_DESIGN: Record<string, string> = {
   先出原画: 'Concept first',
   '已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）':
     'A concept template is approved, so the AI builds the UI from it (unset it in Concept to pick again)',
-  '先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面）':
-    'Draws a few full-screen concepts for you to pick from and builds the UI after you approve one (click to build directly)',
-  '直接搭界面（点一下改成先出原画）': 'Builds the UI directly (click to draw concepts first)',
+  '先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面；右键设置一次出几张）':
+    'Draws a few full-screen concepts for you to pick from and builds the UI after you approve one (click to build directly; right-click to set how many per round)',
+  '直接搭界面（点一下改成先出原画；右键设置一次出几张）':
+    'Builds the UI directly (click to draw concepts first; right-click to set how many per round)',
+  一次出几张原画: 'How many concepts per round',
+  '{n} 张': '{n}',
   '描述想要的界面，AI 先画几张整屏的原画给你挑，可以在图上标注修改；确认一张作为模板后再搭界面、出切图。':
     'Describe the screen you want. The AI first draws a few full-screen concepts for you to pick from and mark up; once you approve one as the template, it builds the UI and generates the assets.',
   '描述界面，AI 先出几张原画给你挑…': 'Describe the screen; the AI will draw a few concepts first…',
@@ -769,6 +769,23 @@ export const EN_DESIGN: Record<string, string> = {
   还没有控件绑定这个集合: 'No widget uses this set yet',
   '{n} 行': '{n} rows',
   删除集合: 'Delete set',
+  收起集合: 'Collapse set',
+  展开集合: 'Expand set',
+  绑定到列表控件: 'Bind to list widgets',
+  '选择列表控件…': 'Choose a list widget…',
+  '当前 {name}': 'currently {name}',
+  解除绑定: 'Unbind',
+  没有可绑定的列表控件: 'No list widgets to bind',
+  数据绑定有问题: 'Data binding issues',
+  '数据集合 id 重复：{id}': 'Duplicate data set id: {id}',
+  '数据集合名字重复：{name}': 'Duplicate data set name: {name}',
+  '集合 {name} 的字段重复：{key}': 'Duplicate field in set {name}: {key}',
+  '集合 {name} 第 {row} 行的 {key} 不是 "img:<图片 id>"：{value}':
+    'Row {row} of set {name}: {key} must be "img:<image id>", got {value}',
+  '集合 {name} 第 {row} 行的 {key} 引用了不存在的图片 {image}':
+    'Row {row} of set {name}: {key} references a missing image {image}',
+  '{widget} 的 DataSet 指向不存在的集合 {key}：把控件改成已有的集合，或让 AI 用 set_data 补一个同名集合':
+    '{widget} points DataSet at a missing set {key}: switch the widget to an existing set, or have the AI add a set with that name via set_data',
   '这个集合还没有字段：加上字段以后，行里的值才能绑定到控件。':
     'This set has no fields yet: add fields so row values can bind to widgets.',
   添加字段: 'Add field',

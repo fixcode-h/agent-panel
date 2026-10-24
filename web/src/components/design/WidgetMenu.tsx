@@ -53,6 +53,7 @@ import {
   canAddChild,
   canReplace,
   findParent,
+  isHiddenVisibility,
   isPanel,
   typesFor,
   type Widget,
@@ -158,7 +159,7 @@ export function WidgetMenuItems({
 }) {
   const parent = findParent(root, w.id)
   const index = parent?.Children?.findIndex((c) => c.id === w.id) ?? -1
-  const hidden = w.Properties?.Visibility === 'Collapsed' || w.Properties?.Visibility === 'Hidden'
+  const hidden = isHiddenVisibility(w.Properties?.Visibility)
   const locked = !!w.Properties?.Locked
   const canvas = parent?.Type === 'CanvasPanel' && !!w.Slot
   const zs = parent?.Children?.map((c) => Number(c.Slot?.ZOrder) || 0) ?? []

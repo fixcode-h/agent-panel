@@ -696,8 +696,9 @@ export const api = {
   /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
   designCaptureWait: (id: string, signal: AbortSignal) =>
     request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
-  steerDesign: (id: string, text: string) =>
-    request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
+  /** AI 正在跑时发消息：整条消息补充给这一轮，收不下就在这一轮结束后自动接着处理 */
+  steerDesign: (id: string, input: DesignChatInput) =>
+    request<DesignFull & { steered: boolean; queued: boolean }>(`/designs/${id}/steer`, json('POST', input)),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
   uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),

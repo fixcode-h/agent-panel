@@ -45,6 +45,7 @@ import {
   IMAGE_SLOT,
   WIDGETS,
   allNames,
+  applyVisibility,
   assignImage,
   canAddChild,
   cloneWidget,
@@ -61,6 +62,7 @@ import {
   removeWidget,
   replaceWidget,
   resizeCanvasSlot,
+  toggledVisibility,
   uniqueName,
   wrapWidget,
   usedImages,
@@ -91,7 +93,7 @@ import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationP
 import { renameInAnimations, setKeyAt, type AnimProp, type AnimValue } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
 import { DataPanel } from '@/components/design/DataPanel'
-import { emptyData } from '@shared/design-data'
+import { bindDataSet, emptyData } from '@shared/design-data'
 import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
@@ -383,8 +385,21 @@ function Designer({ id }: { id: string }) {
 
   // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
   const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
+  // 这一段显示的是这一轮的预览，不是本地保存的树：眼睛按钮先改在预览上（见 toggleVisible），
+  // 这一轮结束后再落到保存的设计里，否则点了看起来没反应，结束时还会被 AI 的结果覆盖
+  const [liveVis, setLiveVis] = useState<Record<string, string>>({})
+  const pendingVis = useRef<Record<string, string>>({})
   const shownDoc =
-    doc && live ? { ...doc, root: live.root, components: live.components, data: live.data ?? doc.data } : doc
+    doc && live
+      ? {
+          ...doc,
+          root: applyVisibility(live.root, liveVis),
+          components: Object.keys(liveVis).length
+            ? live.components.map((c) => ({ ...c, Root: applyVisibility(c.Root, liveVis) }))
+            : live.components,
+          data: live.data ?? doc.data,
+        }
+      : doc
   const tree = doc ? treeOf(doc, target) : undefined
   const shownTree = shownDoc ? (treeOf(shownDoc, target) ?? tree) : undefined
   // 子控件被删掉或改名了：回到主界面
@@ -430,6 +445,26 @@ function Designer({ id }: { id: string }) {
       const n = fn(r)
       return n === r ? d : setTree(d, target, n)
     }, key)
+
+  // AI 这一轮改完，页面换成服务端存下的树：把修改期间点的显示 / 隐藏补上去
+  useEffect(() => {
+    if (live || !Object.keys(pendingVis.current).length) return
+    const vis = pendingVis.current
+    pendingVis.current = {}
+    setLiveVis({})
+    // 预览期间可能切过子控件，点过的控件不都在当前这棵树上：按整份设计补
+    ed.change((d) => {
+      const root = applyVisibility(d.root, vis)
+      const components = d.components.map((c) => {
+        const r = applyVisibility(c.Root, vis)
+        return r === c.Root ? c : { ...c, Root: r }
+      })
+      if (root === d.root && components.every((c, i) => c === d.components[i])) return d
+      return { ...d, root, components }
+    }, 'vis:ai')
+    // 只在这一轮 AI 修改结束时补一次；ed.change 每次渲染都是新的对象，写进依赖会一直触发
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [live])
 
   const addWidget = (type: WidgetType, cls?: string, into?: string) => {
     if (!tree || !doc) return
@@ -570,16 +605,19 @@ function Designer({ id }: { id: string }) {
       editTree((r) => insertWidget(r, p.id, c, p.Children!.findIndex((x) => x.id === wid) + 1))
       setSelected(c.id)
     },
-    toggleVisible: (wid) =>
-      editTree((r) =>
-        mapWidget(r, wid, (w) => ({
-          ...w,
-          Properties: {
-            ...w.Properties,
-            Visibility: w.Properties.Visibility === 'Collapsed' ? 'Visible' : 'Collapsed',
-          },
-        })),
-      ),
+    toggleVisible: (wid) => {
+      const shown = shownTree ?? tree
+      const w = shown && findWidget(shown, wid)
+      if (!w) return
+      const next = toggledVisibility(w.Properties?.Visibility)
+      // AI 修改期间画板和控件树显示的是预览：先记在预览上，这一轮结束后再落进保存的设计
+      if (live) {
+        pendingVis.current = { ...pendingVis.current, [wid]: next }
+        setLiveVis(pendingVis.current)
+        return
+      }
+      editTree((r) => mapWidget(r, wid, (x) => ({ ...x, Properties: { ...x.Properties, Visibility: next } })))
+    },
     copy: (wid) => {
       const w = tree && findWidget(tree, wid)
       if (!w) return
@@ -842,11 +880,15 @@ function Designer({ id }: { id: string }) {
       answers?: { question: string; answer: string }[]
       concept: boolean
       inpaint?: boolean
+      /** 「先出原画」时一次出几张，和每张图生成几版分开 */
+      conceptCount?: number
       refs?: WidgetCitation[]
     },
   ) => {
+    // 这一轮还在跑：走补充的通道，能插话就交给这一轮，收不下就在这一轮结束后自动接着处理
+    const running = server?.job?.status === 'running'
     // 只重绘蒙版：本机 ComfyUI 按蒙版做真正的局部重绘；别的生图方式只能整张重画，先告诉用户再照常发送
-    if (extra.inpaint) {
+    if (extra.inpaint && !running) {
       const mark = doc.annotations.find((a) => a.shape === 'mask' && a.target.startsWith('concept:') && hasMask(a))
       if (mark) {
         if (source.kind !== 'local') {
@@ -873,10 +915,11 @@ function Designer({ id }: { id: string }) {
         }
       }
     }
-    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
+    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计。
+    // 这一轮正在跑时生成不了，标记随消息一起交给这一轮
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
-    const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))
-    if (imgMarks.length) {
+    const annotations = running ? doc.annotations : doc.annotations.filter((a) => !a.target.startsWith('img:'))
+    if (imgMarks.length && !running) {
       if (source.kind === 'none') {
         toast.error(t('先在对话框下面选生成图片的方式'))
         return false
@@ -903,22 +946,30 @@ function Designer({ id }: { id: string }) {
     // 标注随这条消息一起发出，发出后从效果图上清掉
     const next = { ...doc, annotations: [] }
     try {
-      ed.absorb(await api.saveDesign(id, next))
-      ed.absorb(
-        await api.designChat(id, {
-          text:
-            text.trim() ||
-            (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
-          source,
-          count,
-          annotations,
-          attachments,
-          refs: extra.refs ?? [],
-          run,
-          ...extra,
-        }),
-      )
+      // 这一轮还在跑时不再回写页面状态：AI 正在改，写回去可能盖掉它刚改的部分
+      if (!running) ed.absorb(await api.saveDesign(id, next))
+      const body = {
+        text:
+          text.trim() ||
+          (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
+        source,
+        count,
+        annotations,
+        attachments,
+        refs: extra.refs ?? [],
+        run,
+        ...extra,
+        // 原画张数没给时沿用「每张几版」，和以前一样；不能让它被 extra 里的 undefined 覆盖
+        conceptCount: extra.conceptCount ?? count,
+      }
+      const sent = running ? await api.steerDesign(id, body) : undefined
+      ed.absorb(sent ?? (await api.designChat(id, body)))
       if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
+      // 运行中发的消息要告诉用户去了哪里：插进了这一轮，还是等这一轮结束自动接着处理
+      if (sent) {
+        if (sent.steered) toast.success(t('已补充给正在进行的这一轮'))
+        else toast.success(t('这一轮收不下，结束后自动接着处理'))
+      }
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -935,6 +986,7 @@ function Designer({ id }: { id: string }) {
           text: t('分析当前设计'),
           source: { kind: 'none' },
           count,
+          conceptCount: count,
           annotations: [],
           attachments: [],
           refs: [],
@@ -1334,7 +1386,14 @@ function Designer({ id }: { id: string }) {
                   components={shownDoc?.components ?? doc.components}
                   images={doc.images}
                   imageUrl={imageUrl}
+                  scope={id}
                   onChange={(next, key) => ed.change((d) => ({ ...d, data: next }), key)}
+                  onBind={(where, key) =>
+                    ed.change(
+                      (d) => ({ ...d, ...bindDataSet(d.root, d.components, where, key) }),
+                      `data:bind:${where.id}`,
+                    )
+                  }
                 />
               </div>
             )}

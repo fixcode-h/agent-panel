@@ -649,6 +649,20 @@ export function findParent(root: Widget, id: string): Widget | undefined {
   return hit
 }
 
+/** 眼睛按钮认定的隐藏：Collapsed 不占位置，Hidden 占位置但不画，对用户都是看不到 */
+export const isHiddenVisibility = (v: unknown) => v === 'Collapsed' || v === 'Hidden'
+
+/** 眼睛按钮切换：看不到的（Collapsed / Hidden）点一次就显示，其余隐藏起来 */
+export const toggledVisibility = (v: unknown) => (isHiddenVisibility(v) ? 'Visible' : 'Collapsed')
+
+/** 一批控件的显示 / 隐藏叠到树上（id 已经不在树上的跳过），返回新的树 */
+export function applyVisibility(root: Widget, vis: Record<string, string>): Widget {
+  let out = root
+  for (const [id, v] of Object.entries(vis))
+    out = mapWidget(out, id, (w) => ({ ...w, Properties: { ...w.Properties, Visibility: v } }))
+  return out
+}
+
 /** 从根到这个控件的路径（含两端） */
 export function pathTo(root: Widget, id: string): Widget[] {
   if (root.id === id) return [root]
