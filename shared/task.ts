@@ -1272,9 +1272,28 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
+ * 保活回收判定：这个对话这一轮还在跑吗？在跑的不按两段时间回收、也不参与上限淘汰。
+ * 只有停在等下一句（awaitingUser）且没有后台命令在跑、名下没有子对话的才算空闲会话。
+ * 后台命令数和名下活着的子对话数不在任务数据里，由调用方按运行时情况传（见 server/tasks.ts）。
+ * 还在排队等名额的子对话不在其中：它们还没启进程，与以前一致（见 server/tasks.ts 的 startQueue）。
+ */
+export function keepAliveBusy(
+  t: Pick<Task, 'status' | 'working' | 'awaitingUser' | 'prewarming'>,
+  x: { background?: number; children?: number } = {},
+) {
+  // CLI 正在回话 / 还在启动
+  if (t.working || t.prewarming) return true
+  // 这一轮没收尾：包括在等它派出的子任务（那时 awaitingUser 仍是 false）
+  if (t.status === 'running' && !t.awaitingUser) return true
+  // 后台命令还没跑完（跑完要把结果交给它汇报）、或者名下还有活着的子对话（收了父对话会把子对话一起停掉）
+  return !!x.background || !!x.children
+}
+
+/**
  * 保活会话（回复完停在等下一句、CLI 进程还没退）超过全局上限时要结束哪几个：
  * 只从没人在看的里面挑最近使用时间最早的（LRU），`exceptId` 是刚进入保活的那个，不算；
  * 正在看的页面不算（用户马上会回来发消息，回收了反而要重新启动）。
+ * 候选只看 awaitingUser：正在执行的一轮它不是 true（调用方还会把还在跑的子对话、后台命令排在外面）。
  * 返回要结束的 id，从最久没用的开始；没超限返回空数组。limit 为 0 表示不限制。
  */
 export function keepAliveVictims(
@@ -1284,9 +1303,11 @@ export function keepAliveVictims(
   watched: (id: string) => boolean = () => false,
 ): string[] {
   if (!limit) return []
+  // awaitingUser 就是「回复完停在等下一句」：正在跑的这一轮它一直是 false，天然不在候选里
   const idle = list.filter((t) => t.awaitingUser && t.id !== exceptId && !watched(t.id))
-  // 刚进入保活的那一个也算进上限：已有 idle 数 + 1 超过 limit 时要收掉差的那么多
-  const over = idle.length + 1 - limit
+  // 刚进入保活的那一个也算进上限：已有 idle 数 + 1 超过 limit 时要收掉差的那么多。
+  // 没传 exceptId（那个自己还在忙、不占名额）时不能加 1，否则会多收一个空闲会话
+  const over = idle.length + (exceptId ? 1 : 0) - limit
   if (over <= 0) return []
   const used = (t: Pick<Task, 'turnSeenAt' | 'turnDoneAt' | 'updatedAt'>) =>
     t.turnSeenAt || t.turnDoneAt || t.updatedAt || ''

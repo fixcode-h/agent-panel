@@ -59,6 +59,7 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 等状态用 waitFor，别写固定 sleep 或「安静一阵」
 
-- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等「CLI 被调用」「任务进入 running」这类状态，也等假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录——状态置位常早于 CLI 收到响应、再写日志，满足了就立刻读会读空。条件一到就继续，超时才失败；「必须过一段时间、时序才会发生」的地方才留固定等待并写注释。等对话空闲不能只看它一阵没在跑：子对话 `submit_merge` 会经 `wakeTask` 叫起父对话一轮；给这段单独建一个没有子对话的父对话，再用 `waitFor` 等要断言的条件。假 CLI 的耗时用 `FAKE_TURN_MS` / `FAKE_SLOW_ROUND_MS` / `FAKE_SLOW_ROUNDS` 控制。
-- 起因：原脚本 54 处固定 `sleep(800)`，慢机器偶发失败、快机器白等；CI 上 `04-subagents.mjs` 的收尾断言偶发失败就是上面那个窗口（`.finish` 写入延后 300ms 必现），「换成用户已回答」偶发 `actual: false` 是 500ms 安静循环正好落在两次叫醒之间。
+- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等状态，也等假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录（状态置位早于日志写入，满足了立刻读会读空）；只有「必须过一段时间」才留固定等待并写注释。等对话空闲不能只看一阵没在跑（子对话 `submit_merge` 会叫起父对话一轮），要 `waitFor` 等要断言的条件。
+- 反向验证：否定式断言（不被回收/不被停）写完，临时去掉修复的接线（或退回旧实现的关键几行）跑一遍，确认会失败再恢复；旧实现下这条路径要有可观测差异（取消 waiter 要有 waiter、停进程要有进程、回收要有计时器），没差异就是恒真，换构造。结论写进回报。
+- 起因：原脚本 54 处固定 `sleep(800)`；「切到后台不回收运行中的对话」第一版用例用 `SLOW` 切后台，旧实现那时没有 waiter，用例照样通过，改成「停在等后台命令结果」后才有区分度。
 - 防线：`npm run test:e2e`。

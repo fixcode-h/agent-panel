@@ -50,6 +50,7 @@ import {
   delegatePrompt,
   dropEndNotes,
   endRun,
+  keepAliveBusy as keepAliveBusyOf,
   keepAliveVictims,
   messageStamp,
   pauseStep,
@@ -91,6 +92,8 @@ import {
   forgetPresence,
   isViewing,
   rescheduleIfUnwatched,
+  resetIdleCountdown,
+  setPresenceBusy,
   setPresenceIdleHandler,
   setPresenceUnreadKeeper,
   setViewer,
@@ -321,6 +324,8 @@ export function tasksApi(deps: {
     if (!tk) return false
     return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
   })
+  // 两个时长到达时先问这一句：还在跑的对话不按「离开多久」回收（见 keepAliveBusy）
+  setPresenceBusy(keepAliveBusy)
   /** 服务正在退出：不再接着处理这一轮结束后要处理的消息 */
   let shuttingDown = false
   /**
@@ -2432,6 +2437,8 @@ export function tasksApi(deps: {
         onKeepAlive: (taskId) => {
           // 子对话回复完停在等下一句：不再干活，把父对话的并发名额让给排队的子对话
           if (task.parentTaskId) releaseSlot(entry)
+          // 回收计时从现在起算满一整段：执行期间计时器被 busy 挡回去过，不重置会提前收掉刚空下来的会话
+          resetIdleCountdown(taskId)
           void enforceKeepAlive(taskId)
         },
         changed,
@@ -2978,19 +2985,43 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 这个对话这一轮是不是还在跑：正在执行的对话不受两个回收时长和保活上限管，
+   * 不管页面开着还是已经切到后台。只有停在等下一句（awaitingUser、CLI 进程留着、
+   * 没有后台命令在跑、名下也没有子对话）的才算空闲会话。
+   * 在跑的包括：这一轮没收尾（含在等它派出的子任务）、CLI 正在回话或预热中、
+   * 后台命令还没跑完（跑完要把结果交给它汇报，收了就断了），以及名下还有活着的子对话
+   * （收了父对话会连子对话的进程一起停掉，见 closeChildren）。
+   * 还在排队等名额的子对话不算：它们不在 live 里，这里查不到，父对话这时会被当作空闲（与以前一致，
+   * 拿到名额后照旧启动；要一并保护得在 startChild 里记一份「子 → 父」的归属）
+   */
+  function keepAliveBusy(id: string): boolean {
+    const entry = live.get(id)
+    if (!entry) return false
+    // 后台命令和子对话数不在任务数据里，按运行时情况算好传给纯函数（判定本身在 shared/task.ts，能单测）
+    const running = background.list(id).filter((j) => j.state === 'queued' || j.state === 'running').length
+    const children = [...live.values()].filter((e) => e !== entry && e.task.parentTaskId === id).length
+    return keepAliveBusyOf(entry.task, { background: running, children })
+  }
+
+  /**
    * 保活会话的全局上限：CLI 回复完停在等下一句时会留一个进程，页面开着的不算（用户马上回来）。
    * 没人在看又超过设置里的上限时，结束最久没用的那个（reason='idle'），
    * 下次打开靠 --resume 续接，代价是冷启动一次。
+   * 只收空闲会话：正在跑的对话（不管页面开着还是切到后台）不占名额也不被选走
    */
   async function enforceKeepAlive(selfId = '') {
     const { keepAliveLimit } = await getSettings()
     if (!keepAliveLimit) return
     // 名下有子对话在跑或在排队的父对话不回收：stopTask 会把子对话一起结束，那是真的误杀
     const withKids = new Set([...live.values()].map((e) => e.task.parentTaskId).filter((id) => !!id))
-    const pool = [...live.values()].map((e) => e.task).filter((t) => !withKids.has(t.id) && !queued(t.id))
+    const pool = [...live.values()]
+      .map((e) => e.task)
+      .filter((t) => !withKids.has(t.id) && !queued(t.id) && !keepAliveBusy(t.id))
     // 只放过前台正开着的页面：切走后还在宽限期里的也算进上限（hasViewer 会把它们都当成有人在看，
-    // 一小时内点开过的对话全部豁免，逐个点开十几个对话就留下十几个 CLI 进程）
-    const victims = keepAliveVictims(pool, keepAliveLimit, selfId, isViewing)
+    // 一小时内点开过的对话全部豁免，上限形同虚设）。这里排掉的只有 running 的，见 keepAliveVictims
+    // 刚进入保活的那个也算进上限（+1）；它其实是 busy（后台命令还在跑）时不占名额，别多收一个空闲会话
+    const exceptId = selfId && !keepAliveBusy(selfId) ? selfId : ''
+    const victims = keepAliveVictims(pool, keepAliveLimit, exceptId, isViewing)
     for (const id of victims) {
       log.info('task', '保活的会话超过上限，结束最久没用的', { task: id, limit: keepAliveLimit })
       stopTask(id, 'idle')

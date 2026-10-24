@@ -458,11 +458,11 @@ const SLOW_ROUND_MS = envMs('FAKE_SLOW_ROUND_MS', 250)
 const SLOW_ROUNDS = envMs('FAKE_SLOW_ROUNDS', 40)
 // 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
 // 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
-/** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取 */
+/** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取，参数里没有时读这一轮写的配置文件 */
 async function panelCall(name, params) {
   const cfg = args.find((a) => a.startsWith('{"mcpServers"'))
   const servers = cfg ? JSON.parse(cfg).mcpServers : {}
-  const url =
+  const fromArgs =
     servers[
       Object.keys(servers)
         .filter((k) => k.startsWith('panel'))
@@ -472,8 +472,25 @@ async function panelCall(name, params) {
       .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
+  // Command Code、Gemini 把 MCP 写进工作目录的配置文件（.mcp.json / .gemini/settings.json），
+  // 命令行参数里没有地址：和真 CLI 一样从那里读，不然带面板工具的对话看起来像没有工具。
+  // 注意这会让这些 CLI 的用例从「面板工具直接报错」变成真的调工具（测试定义跟着真实行为走）
+  let fromFile
+  if (!fromArgs) {
+    try {
+      fromFile = panelMcpUrl()
+    } catch {}
+  }
+  const url = fromArgs ?? fromFile
   // 没有面板 MCP（子任务、评审这类没有面板工具的角色）：像没这个工具一样报错，不要让整个进程崩掉
-  if (!url) return { isError: true, content: [{ type: 'text', text: '这个角色没有面板工具' }] }
+  if (!url) {
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        `${process.env.FAKE_CLI_LOG}.panel`,
+        JSON.stringify({ kind, name, isError: true, text: '没找到面板 MCP 地址' }) + '\n',
+      )
+    return { isError: true, content: [{ type: 'text', text: '这个角色没有面板工具' }] }
+  }
   const rpc = (id, method, params) =>
     fetch(url, {
       method: 'POST',
@@ -485,7 +502,19 @@ async function panelCall(name, params) {
       return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
     })
   await rpc(1, 'initialize', {})
-  return (await rpc(2, 'tools/call', { name, arguments: params })).result
+  const res = await rpc(2, 'tools/call', { name, arguments: params })
+  // 调用结果记一份：用例里“面板工具没生效”时能看出是没地址、没这个工具还是参数不对
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      `${process.env.FAKE_CLI_LOG}.panel`,
+      JSON.stringify({
+        kind,
+        name,
+        isError: res.result?.isError ?? !!res.error,
+        text: res.result?.content?.[0]?.text ?? res.error,
+      }) + '\n',
+    )
+  return res.result
 }
 let beganEdit = false
 if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
@@ -513,9 +542,13 @@ if (input.includes('PLAN_BG') && input.includes('set_plan')) {
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
 if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
   await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
-// 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈
+// 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈。
+// BG_SLOW 时跑得更久：测保活上限这类用例要在它跑着的时候做别的操作，命令得比整段流程长
 if (input.includes('BG_LONG') && input.includes('run_background'))
-  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},4000)"', name: '慢测试' })
+  await panelCall('run_background', {
+    command: `node -e "setTimeout(()=>{},${input.includes('BG_SLOW') ? 30000 : 4000})"`,
+    name: '慢测试',
+  })
 // 子任务起的后台命令：子任务的 input 里有「派出的子 Agent」（它没有对话提示词里的长命令说明，不按 run_background 字样判断）。
 // 命令不点名 step（引擎记子任务自己的步骤 id），看的是运行区和推回的归属
 if (input.includes('SUB_BG') && input.includes('派出的子 Agent'))
@@ -751,16 +784,17 @@ const turnReply = () => {
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
 // Pi 的桥接扩展在面板自己的临时目录里，用 -e 的绝对路径加载
-const panelExt = () => args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
-const panelMcpUrl = () =>
-  kind === 'pi'
-    ? /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
-    : (() => {
-        const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-        const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
-        const hit = cfg.mcpServers[keys.at(-1)]
-        return hit.httpUrl ?? hit.url
-      })()
+// 用函数声明：panelCall 与 panelMcpUrl 在模块顶层先执行，const 那时还没初始化（TDZ），取地址会直接抛错
+function panelExt() {
+  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
+}
+function panelMcpUrl() {
+  if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
+  const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
+  const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
+  const hit = cfg.mcpServers[keys.at(-1)]
+  return hit.httpUrl ?? hit.url
+}
 
 // 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求会登记给它，模型用面板的工具取走。
 // FAKE_NOTES 时反复取（等页面把补充发过来，最多 6 秒），拿到的话写进回复和日志

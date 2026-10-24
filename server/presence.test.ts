@@ -9,7 +9,9 @@ const {
   isViewing,
   isWatched,
   rescheduleIfUnwatched,
+  resetIdleCountdown,
   seenWhileWatched,
+  setPresenceBusy,
   setPresenceIdleHandler,
   setPresenceGraceMs,
   setPresenceReclaimPolicy,
@@ -189,6 +191,79 @@ test('这一轮完成时页面正开着：算看过，不留橙点也不留着�
   assert.equal(idle, 1, '按宽限期正常回收')
 
   setPresenceUnreadKeeper(() => false)
+  forgetPresence(id)
+})
+
+test('正在执行的对话不受两个时长管：到点不回收，空下来重新计满一整段', async () => {
+  const id = 'presence-busy'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  const unread = new Set([id])
+  setPresenceUnreadKeeper((taskId) => unread.has(taskId))
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  let running = true
+  setPresenceBusy((taskId) => taskId === id && running)
+
+  // 页面还开着、正在跑：本来就不计时，这里明确断言一次，不靠「没调 false」隐式成立
+  setViewer(id, 'tab-open', true)
+  await wait(1000)
+  assert.equal(idle, 0, '页面开着又在跑：不回收')
+  setViewer(id, 'tab-open', false)
+
+  // 页面切到后台（卸载和隐藏报的是一样的 false），宽限过了两轮还在跑
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  await wait(700)
+  assert.equal(idle, 0, '正在执行：宽限到了也不结束这一轮')
+  assert.equal(isWatched(id), true, '还在跑的对话不能因为没人看就被收掉')
+
+  // 这一轮真的结束、开始停着等下一句：从这一刻起重新算满一整段，执行期间过掉的时间不算
+  running = false
+  resetIdleCountdown(id)
+  await wait(20)
+  assert.equal(idle, 0, '刚空下来不立刻回收')
+  await wait(1200)
+  assert.equal(idle, 1, '空满一整段才回收')
+
+  setPresenceBusy(() => false)
+  setPresenceUnreadKeeper(() => false)
+  forgetPresence(id)
+})
+
+test('宽限期设成 0：正在跑的对话不会靠 0ms 定时器反复重排，空下来才回收', async () => {
+  const id = 'presence-zero-grace'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  const unread = new Set([id])
+  setPresenceUnreadKeeper((taskId) => unread.has(taskId))
+  // 宽限期 0：到点就收
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 0 })
+  let running = true
+  setPresenceBusy((taskId) => taskId === id && running)
+
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  await wait(60)
+  assert.equal(idle, 0, '正在跑：0 宽限也不结束这一轮')
+
+  // 关键：busy 时不能排 0ms 定时器反复重排（旧写法会一直自旋）。
+  // 这里变成空闲但不调 resetIdleCountdown：要一直不回收，而不是下一个 tick 就被收掉
+  running = false
+  await wait(60)
+  assert.equal(idle, 0, '执行期间不重排计时：空下来要靠重置计时，不是靠自旋')
+
+  // 这一轮真的结束了（onKeepAlive 会调它）：从现在起按整段算，0 宽限就是立刻收
+  resetIdleCountdown(id)
+  await wait(30)
+  assert.equal(idle, 1, '空下来后按整段回收')
+
+  setPresenceBusy(() => false)
+  setPresenceUnreadKeeper(() => false)
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
   forgetPresence(id)
 })
 
