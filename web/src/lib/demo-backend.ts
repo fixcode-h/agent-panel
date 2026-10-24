@@ -555,6 +555,22 @@ function seed(): Db {
           path: '/home/demo/code/web-shop',
           categoryId: web.id,
           workflowId: '',
+          // 上次 AI 初始化保存的推荐：重开设置时卡片上能直接「应用推荐」
+          initResult: {
+            kind: 'project',
+            name: '商城前台',
+            description: '面向用户的商城网站',
+            type: 'general',
+            steps: [],
+            reasons: { name: 'package.json 的 name', description: 'README 第一段' },
+            docRoot: 'docs',
+            files: [{ path: 'AGENTS.md', action: 'created', summary: '项目说明、常用命令和文档地图' }],
+            workflows: [
+              { id: webFlow.id, name: webFlow.name, verdict: 'default', reason: 'Node 前端项目，日常改动走通用流程' },
+            ],
+            params: {},
+            settings: [{ key: 'gitPolicy', value: 'allow', reason: '平时只改本地代码，需要时直接推送' }],
+          },
           // 演示里的测试步骤：项目设置里能看到增删、排序和启停
           testSteps: [
             {
