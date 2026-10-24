@@ -328,7 +328,15 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const verb = toolVerb(tool)
   // 还在等结果（任务还在跑、没有耗时）：每秒刷新已经用了多久，等子任务、长命令不再看着像卡住
   const pending = tool.ms === undefined && !!tool.startedAt && task?.status === 'running'
-  const now = useNow(pending)
+  // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
+  const ids = view.job ? [view.job] : (view.jobs ?? [])
+  const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
+  const bg = mine.length > 0
+  // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」
+  const starts = mine.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter(Boolean)
+  const jobStart = starts.length ? Math.min(...starts) : 0
+  const queued = bg && mine.every((j) => j.state === 'queued')
+  const now = useNow(pending || bg)
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
@@ -336,8 +344,6 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
 
-  // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈，跑完结果会推回对话
-  const bg = !!view.job && !!task?.jobs?.some((j) => j.id === view.job)
   const glyph =
     tool.running || bg ? (
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -349,6 +355,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
       {diff[2] && <span className="text-danger">{diff[2]}</span>}
     </span>
+  ) : queued ? (
+    <span className="shrink-0 text-subtle">{t('排队中')}</span>
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
@@ -388,7 +396,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         badge={view.server}
         title={tool.label}
         detail={detail}
-        ms={pending ? now - tool.startedAt! : tool.ms}
+        ms={bg ? (jobStart ? now - jobStart : undefined) : pending ? now - tool.startedAt! : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}

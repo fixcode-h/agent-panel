@@ -357,7 +357,14 @@ await runShard('子对话与计划', async (api) => {
       )
       assert.equal(planned.plans.length, 1, '列了一份计划')
       // 计划结束看它自己的完成字段（doneAt），不再拿 summary 当哨兵
-      const done = await waitTask(planned.id, (k) => !!k.plans[0]?.doneAt, 30000)
+      // 计划先收口、结果消息后推回（中间要写盘）：两样都到了再查，不然偶发读到还没推回的那一刻
+      const done = await waitTask(
+        planned.id,
+        (k) =>
+          !!k.plans[0]?.doneAt &&
+          k.messages.some((m) => m.panel === 'background' && m.text.includes('计划步骤「跑测试」')),
+        30000,
+      )
       const plan = done.plans[0]
       assert.deepEqual(
         plan.steps.map((x) => [x.title, x.status]),

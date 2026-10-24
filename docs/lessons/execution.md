@@ -30,3 +30,9 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 - 起因：真实 Pi 下逐个打开 12 个对话各发一句，12 个 `pi` 进程（约 1.5 GB）一直留着，`keepAliveLimit` 4 没生效；改成 `isViewing` 后留 4 个（约 0.55 GB），回到被收掉的对话靠 `--resume` 续接。
 - 起因：主工作区 `node_modules` 被清空那段时间，父对话收尾 abort 名下子对话，`ctx.signal.aborted && !r.killed` 全判成 `stopped`，用户没点暂停却看到「已暂停」；12 个 `pi` 进程只有 7 个对得上在跑的任务，共用目录的子对话 `resolved` 后 CLI 一直留着。
 - 防线：`shared/task-stage.test.ts` 的 `stopReasonText`、`keepAliveVictims` 用例；`server/presence.test.ts` 的「保活上限只放过前台开着的页面」；`stopTask` 第二参数必填由 `npm run typecheck` 拦住。
+
+## 后台命令交出去不等于做完：监管到真正结束
+
+- 规则：面板替对话跑的后台命令（`run_background`、`request_build`）要一直盯到真正结束：发起它的那一行转圈到命令结束、结束后换成真实用时和结果（`settleJobTool`）；长时间没输出、跑得久都要提醒对话（`onNotice`）；结果推送失败要重试并留在对话里，不能只写日志。判「对话在不在动」的地方（`taskBusy`、未读）都要看 `jobs`。CLI 自带的后台命令（Claude Code 的 `run_in_background`、`Monitor`）关掉，长命令统一走面板。见 ADR 0006。
+- 起因：带前缀的 `panel_run_background` 被解析成「运行命令」，0.09 秒就显示完成；下载完成后结果没推回，模型在前台 `sleep` 轮询，用户看到对话停了。
+- 防线：`server/background.test.ts` 的「监管」「限时」用例；`server/exec/parsers.test.ts` 的「带服务名前缀的面板工具」；`web/src/lib/tasks.test.ts` 的旧数据用例。

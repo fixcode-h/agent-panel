@@ -41,6 +41,8 @@ export function runShell(
     timeoutMs: number
     signal?: AbortSignal
     onLine: (l: string) => void
+    /** stderr 按块回调：后台命令靠它知道命令还有动静（进度多写在 stderr） */
+    onStderr?: (text: string) => void
     shell?: Parameters<typeof shellCommand>[2]
     env?: { key: string; value: string }[]
   },
@@ -53,5 +55,6 @@ export function runShell(
     timeoutMs: o.timeoutMs,
     signal: o.signal,
     onLine: o.onLine,
+    onStderr: o.onStderr,
   })
 }

@@ -841,6 +841,7 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个都做完了': 'All {n} done',
   没有派出的子任务: 'No subtasks started',
   查看后台命令: 'Check background command',
+  停止后台命令: 'Stop background command',
   请父对话决定: 'Ask parent chat',
   回报父对话: 'Report to parent chat',
   启动工作流: 'Start workflow',

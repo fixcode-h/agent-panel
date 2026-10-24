@@ -194,8 +194,11 @@ test('启动时清理上次遗留的记录：running / queued 都置终态，不
       exclusive: true,
       state: 'running',
       code: null,
+      createdAt: now,
       startedAt: now,
       endedAt: '',
+      lastOutputAt: now,
+      timeoutMs: 60_000,
       lines: [],
       changed: false,
     },
@@ -208,8 +211,11 @@ test('启动时清理上次遗留的记录：running / queued 都置终态，不
       exclusive: true,
       state: 'queued',
       code: null,
+      createdAt: now,
       startedAt: '',
       endedAt: '',
+      lastOutputAt: '',
+      timeoutMs: 60_000,
       lines: [],
       changed: false,
     },
@@ -280,4 +286,91 @@ test('上限从设置里取：每次排名额时重新读，改了马上生效',
   assert.equal(finishers.length, 3)
   while (finishers.length) finishers.shift()!()
   await all
+})
+
+test('监管：没输出、跑得久都提醒对话；停掉一条后记录置终态，发起它的那一行拿到真实用时', async () => {
+  const clock = fakeClock()
+  let t = 1_000_000
+  let emit: (l: string) => void = () => {}
+  let end: (r: { code: number; killed: null | 'stopped'; stderr: string }) => void = () => {}
+  let started = false
+  const fake = ((_line: string, _cwd: string, o: { onLine: (l: string) => void; signal?: AbortSignal }) =>
+    new Promise((resolve) => {
+      started = true
+      emit = o.onLine
+      end = resolve
+      o.signal?.addEventListener('abort', () => resolve({ code: null, killed: 'stopped', stderr: '' }))
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const notices: string[] = []
+  const settled: BgJob[] = []
+  const bg = createBackground(() => {}, {
+    run: fake,
+    timers: clock.impl,
+    now: () => t,
+    stallMs: 1000,
+    checkFirstMs: 4000,
+    killGraceMs: 100,
+    onNotice: (_j, text) => notices.push(text),
+    onSettle: (j) => settled.push({ ...j }),
+  })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-watch-'))
+  const r = bg.start({ taskId: 't1', name: '装浏览器', command: 'x', cwd: '', root: dir, exclusive: false })
+  assert.match(r.info, /盯着它直到真正结束/)
+  for (let i = 0; i < 40 && !started; i++) await new Promise((r) => setTimeout(r, 25))
+  const step = async (ms: number) => {
+    t += ms
+    await clock.advance(ms)
+  }
+  // 一直有输出：不算卡住
+  for (let i = 0; i < 4; i++) {
+    emit(`下载 ${i * 25}%`)
+    await step(500)
+  }
+  assert.equal(notices.length, 0, '有输出时不提醒')
+  // 不再输出：过了 stallMs 提醒一次，不重复
+  await step(1500)
+  assert.equal(notices.length, 1)
+  assert.match(notices[0], /没有任何输出，可能卡住了/)
+  assert.match(notices[0], /下载 75%/)
+  await step(1500)
+  assert.equal(notices.length, 1, '同一段沉默只提醒一次')
+  // 有了新输出、跑到检查点：提醒看一眼进度
+  for (let i = 0; i < 6; i++) {
+    emit(`解压 ${i}`)
+    await step(500)
+  }
+  assert.ok(
+    notices.some((n) => /还没结束/.test(n)),
+    '跑得久要提醒看一眼',
+  )
+  assert.match(bg.check('t1', r.id!), /运行中，已经跑了/)
+  // 对话判断卡住了：停掉
+  assert.equal(bg.stopOne('t1', 'nope').ok, false)
+  assert.equal(bg.stopOne('t1', r.id!).ok, true)
+  for (let i = 0; i < 40 && !settled.length; i++) await new Promise((r) => setTimeout(r, 25))
+  assert.equal(settled.length, 1, '置终态时通知一次')
+  assert.equal(settled[0].state, 'stopped')
+  void end
+  assert.deepEqual(clock.pending(), [], '结束后不留监管计时')
+})
+
+test('限时：写了 timeout_minutes 就按它，超过上限按上限', () => {
+  const bg = createBackground(() => {}, { run: (() => new Promise(() => {})) as never })
+  const dir = mkdtempSync(path.join(tmpdir(), 'bg-limit-'))
+  const a = bg.start({ taskId: 't', name: 'a', command: 'x', cwd: '', root: dir, exclusive: false, timeoutMinutes: 5 })
+  const b = bg.start({
+    taskId: 't',
+    name: 'b',
+    command: 'x',
+    cwd: '',
+    root: dir,
+    exclusive: false,
+    timeoutMinutes: 9999,
+  })
+  const c = bg.start({ taskId: 't', name: 'c', command: 'x', cwd: '', root: dir, exclusive: false })
+  const ms = (id?: string) => bg.list('t').find((j) => j.id === id)!.timeoutMs
+  assert.equal(ms(a.id), 5 * 60_000)
+  assert.equal(ms(b.id), 8 * 3600_000)
+  assert.equal(ms(c.id), 2 * 3600_000)
+  void bg.stop('t')
 })

@@ -98,6 +98,9 @@ export function toolVerb(tool: ToolUse) {
  */
 const PANEL_TOOL = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
 
+/** run_background 马上返回的那句话：编号是后台命令的 id */
+const BG_STARTED = /^已放到后台（编号 ([0-9a-f]{8})）/
+
 /** 旧数据：Pi 报上来的 wait_agents 被记成了 CLI 自己的子 Agent（没有名字、没有标题），按它的输出认回来 */
 const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任务)/
 
@@ -105,6 +108,8 @@ const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任
 function panelName(tool: ToolUse) {
   const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
   if (hit) return hit[1]
+  // 旧数据：带服务名前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板给的回复认回来
+  if (tool.kind === 'run' && BG_STARTED.test(tool.output ?? '')) return 'run_background'
   return tool.kind === 'agent' && !tool.name && !tool.label && OLD_WAIT.test(tool.output ?? '') ? 'wait_agents' : ''
 }
 
@@ -137,6 +142,8 @@ export interface ToolView {
   child?: string
   /** 放到后台的命令：面板给的编号，命令还在跑时这一行一直转圈 */
   job?: string
+  /** 申请的编译：面板排的几条后台命令（每个编译步骤一条），有一条还没跑完这一行就转圈 */
+  jobs?: string[]
   /** 这次调用启动了一次工作流：点标题打开这次运行的对话，不是一段文本 */
   startsRun?: boolean
 }
@@ -151,9 +158,19 @@ export function toolView(tool: ToolUse): ToolView | null {
   if (panel) {
     const name = panelName(tool)
     const child = panelChildId(tool)
-    const job = name === 'run_background' ? /编号 ([0-9a-f]{8})/.exec(tool.output ?? '')?.[1] : undefined
+    const job = name === 'run_background' ? BG_STARTED.exec(tool.output ?? '')?.[1] : undefined
+    const jobs =
+      name === 'request_build'
+        ? /^已申请编译（[^）]*），编号 ([0-9a-f、]+)。/.exec(tool.output ?? '')?.[1]?.split('、')
+        : undefined
     const startsRun = name === 'start_plan' || name === 'run_workflow'
-    return { tool: panel, ...(child && { child }), ...(job && { job }), ...(startsRun && { startsRun }) }
+    return {
+      tool: panel,
+      ...(child && { child }),
+      ...(job && { job }),
+      ...(jobs?.length && { jobs }),
+      ...(startsRun && { startsRun }),
+    }
   }
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
   if (!mcp) return { tool }
@@ -223,9 +240,16 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'wait_agents':
       return as(t('等待子任务'), waitSummary(tool, a), 'agent')
     case 'run_background':
-      return as(t('后台命令'), firstLine(a.name) || firstLine(a.command), 'other', text(a.command))
+      return as(
+        t('后台命令'),
+        firstLine(a.name) || firstLine(a.command) || (tool.kind === 'run' ? tool.label : ''),
+        'other',
+        text(a.command) ?? (tool.kind === 'run' ? tool.label : undefined),
+      )
     case 'check_background':
       return as(t('查看后台命令'), firstLine(a.id))
+    case 'stop_background':
+      return as(t('停止后台命令'), firstLine(a.id))
     case 'message_parent': {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')

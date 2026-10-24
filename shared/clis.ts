@@ -282,7 +282,8 @@ export const CLIS: CliDefinition[] = [
       // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见。
       // 要改文件时才开独立分支的对话，开之前连改文件的工具一起关掉，免得直接改到原目录
       '--disallowedTools',
-      ['Task', 'Agent', ...(o.noEdit ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : [])].join(','),
+      // Monitor 也是 CLI 自己的后台监视，同样不受面板监管
+      ['Task', 'Agent', 'Monitor', ...(o.noEdit ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : [])].join(','),
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',
@@ -424,6 +425,9 @@ export const CLIS: CliDefinition[] = [
     },
     color: '#c96442',
     envExample: 'ANTHROPIC_API_KEY=sk-ant-...',
+    // 关掉 Claude Code 自带的后台命令（Bash 的 run_in_background、超时自动转后台）：那些命令面板看不见、
+    // 不受对话监管，跑完的结果只在 CLI 进程里，进程被回收就丢了。长命令统一走面板的 run_background
+    env: { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' },
   },
   {
     id: 'codex',

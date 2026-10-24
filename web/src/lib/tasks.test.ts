@@ -109,6 +109,16 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(view?.job, '1a2b3c4d')
   assert.equal(view?.tool.label, '单元测试')
   assert.equal(toolView(tool('mcp__panel__check_background', '', { input: '{"id":"1a2b3c4d"}' }))?.job, undefined)
+  // 旧数据：带前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板的回复认回来，照样转圈
+  const old = toolView({
+    kind: 'run',
+    label: 'npx playwright install',
+    detail: '',
+    output: '已放到后台（编号 6a369828）。跑完结果会自动推回给你，先去做不依赖它的事。',
+  } as Parameters<typeof toolView>[0])
+  assert.equal(old?.job, '6a369828')
+  assert.equal(old?.tool.name, '后台命令')
+  assert.equal(old?.tool.label, 'npx playwright install')
 })
 
 test('「启动工作流」一行认回启动的是第几次运行', () => {

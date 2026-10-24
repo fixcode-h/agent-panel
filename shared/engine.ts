@@ -306,11 +306,19 @@ export interface Orchestra {
   claims: boolean
   /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
   canBackground: boolean
-  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean; step?: string }): Promise<{
+  runBackground(input: {
+    command: string
+    name: string
+    cwd: string
+    exclusive: boolean
+    timeoutMinutes?: number
+    step?: string
+  }): Promise<{
     ok: boolean
     info: string
   }>
   checkBackground(id: string): string
+  stopBackground(id: string): { ok: boolean; info: string }
   /** 独立分支里的子对话：测试跑通就调用，面板合回原分支后子对话算完成（排队，结果推回来） */
   canSubmit: boolean
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
@@ -489,7 +497,13 @@ export interface EngineHost {
    * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
    * exclusive 的（编译这类）按项目排队，同一时间只跑一个
    */
-  runBackground?: (input: { command: string; name: string; cwd: string; exclusive: boolean }) => Promise<{
+  runBackground?: (input: {
+    command: string
+    name: string
+    cwd: string
+    exclusive: boolean
+    timeoutMinutes?: number
+  }) => Promise<{
     ok: boolean
     info: string
     /** 后台命令的编号：计划步骤挂等待时用，结果回来按它找到步骤 */
@@ -497,6 +511,8 @@ export interface EngineHost {
   }>
   /** 查后台命令：不传编号列出这个对话的全部 */
   checkBackground?: (id: string) => string
+  /** 停掉这个对话的一条后台命令：对话看出它卡住了时用 */
+  stopBackground?: (id: string) => { ok: boolean; info: string }
   /**
    * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
    * 父对话自己也带上，分派时提醒子对话
@@ -1025,7 +1041,8 @@ function backgroundPart(host: EngineHost) {
 预计超过一分钟的命令（完整测试、端到端测试、长时间的检查、编译）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
 - 等结果的时候接着做不依赖它的事：读代码、写文档、改和这条命令无关的文件。不要改这条命令要检查的文件，改了结果就不算数（面板会标出期间被改过）。
 - 编译、打包这类会抢文件锁的命令把 exclusive 设为 true，面板按项目排队，同一时间只跑一个。
-- 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
+- 面板一直盯着它直到真正结束：成功、失败、被停止、超过限时都会把结果推回来；十分钟没有任何输出、或者跑了很久（15 分钟起，之后间隔翻倍）也会提醒你看一眼。按命令正常要多久写 timeout_minutes（写宽一些），不写默认两小时。手上没有别的事时直接结束这一轮，对话会停在「等结果」，结果到了接着处理；不要反复调用 check_background 轮询，也不要用 sleep 干等。
+- 结果推回来先核对用时和输出是不是合理；提醒你没输出时用 check_background 看一眼，确认卡住就用 stop_background 停掉、查清原因再重跑。
 - 不要在前台用 sleep 等待（等 CI、等部署、等别的进程）：前台命令跑着时用户发来的消息要等它结束才能处理。要等就把等待和检查写成一条命令交给 run_background，或者直接结束这一轮、告诉用户你在等什么。
 - 几秒就能跑完的命令照常直接执行。`
 }
@@ -2501,6 +2518,9 @@ function makeOrchestra(
     },
     checkBackground(id) {
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
+    },
+    stopBackground(id) {
+      return host.stopBackground ? host.stopBackground(id.trim()) : { ok: false, info: '这里没有后台命令' }
     },
     canSubmit: !helper && !!host.submitMerge,
     // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
