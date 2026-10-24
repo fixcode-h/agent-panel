@@ -60,13 +60,13 @@ const task = Task.parse({
     },
   ],
   messages: [
-    { id: 'm1', role: 'user', text: '加个按钮，key 是 sk-ant-abcdefghijklmnopqrstuvwxyz', at },
+    { id: 'm1', role: 'user', text: '加个按钮，key 是 sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx', at },
     {
       id: 'm2',
       role: 'agent',
       agentId: coder.id,
       step: 'handle',
-      text: '改好了。export API_KEY=supersecretvalue123',
+      text: '改好了。export API_KEY=xxxxxxxxxxxxxxxxxxxx',
       attachments: [{ name: 'a.png', path: '/home/me/uploads/a.png', size: 10, mime: 'image/png' }],
       at,
     },
@@ -84,7 +84,7 @@ test('导出：带版本号和统计，去掉会话、命令、项目、附件�
   assert.equal(b.app, '0.26.1')
   const raw = JSON.stringify(b)
   assert.ok(!raw.includes('sess-1') && !raw.includes('"p1"') && !raw.includes('/home/me'), raw)
-  assert.ok(!raw.includes('sk-ant-abcdef') && !raw.includes('supersecretvalue123'), '密钥去掉了')
+  assert.ok(!raw.includes('sk-ant-xxxx') && !raw.includes('API_KEY=xxxx'), '密钥去掉了')
   assert.match(raw, /\[已移除\]/)
   assert.deepEqual(
     b.agents.map((a) => a.id),
@@ -173,8 +173,8 @@ test('导入：只读任务，Agent 存在任务里；格式不对、版本太�
 })
 
 test('去密钥：常见格式都能认出，普通文字不动', () => {
-  assert.equal(redactSecrets('token: ghp_abcdefghijklmnopqrstuvwxyz1234'), 'token: [已移除]')
-  assert.equal(redactSecrets('Authorization: Bearer abcdefghijklmnopqrstuvwxyz'), 'Authorization: Bearer [已移除]')
+  assert.equal(redactSecrets('token: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), 'token: [已移除]')
+  assert.equal(redactSecrets('Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxx'), 'Authorization: Bearer [已移除]')
   assert.equal(redactSecrets('password="hunter22"'), 'password="[已移除]"')
   assert.equal(redactSecrets('把 token 数量降下来'), '把 token 数量降下来')
 })
