@@ -1,6 +1,9 @@
 # 对话还在输出，状态行却显示「排队等 API 名额」
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit` 通过）
+- 症状：对话还在输出（188.7 token/s），状态行却显示「排队等 API「OpenDesign」空出并发名额」
+- 入口：`TaskView.tsx` 的 `RunPhase`、`runner.ts` 的 `takeApiSlot`、`api-slots.ts` 的 `ApiSlot`
+- 根因类型：让出名额后拿回时写上的标记没被清；`drop()` 在排队中不撤销导致泄漏；显示层无条件优先
 - 模块：`web`（`web/src/components/tasks/TaskView.tsx` 的 `RunPhase`）+ `server-exec`（`server/exec/runner.ts` 的 `takeApiSlot`、`server/api-slots.ts` 的 `ApiSlot`）
 - 关键词：排队、等 API 名额、apiWait、并发上限、token/s、状态行自相矛盾、让出名额、yield、drop、名额泄漏
 

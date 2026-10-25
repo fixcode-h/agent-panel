@@ -1,6 +1,9 @@
 # 子对话还在等后台命令，行上却显示「已关闭」
 
 - 状态：已修复（回归 `web/src/components/tasks/child-line.test.ts` 7 条用例全过：`tsx --test web/src/components/tasks/child-line.test.ts` 退出码 0；`scripts/rules-check.mjs` 通过；类型检查、lint、全量单测由同一改动的代码提交一并跑）
+- 症状：子对话还在等后台命令时，行上同时显示「已关闭」和「计划 13/14 · 等结果」
+- 入口：`web/src/components/tasks/child-line.ts` 的 `childLabels`
+- 根因类型：标签没走 childIcon 派生，只看 cliAlive
 - 模块：`web`（`web/src/components/tasks/child-line.ts` 的 `childLabels`）
 - 关键词：子对话、已关闭、等后台命令、状态标签同屏、`cliAlive`、`childIcon`、`convClosed`、`childClosedHint`
 

@@ -1,8 +1,11 @@
 # UI 项目点不进主页，改之前点整行就折叠
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build` 通过）
+- 症状：UI 项目点不进主页（当时没有主页），且点项目名那一行就折叠
+- 入口：`web/src/components/layout/SidebarDesigns.tsx` 的 `DesignList`、`web/src/pages/DesignPage.tsx`
+- 根因类型：缺项目主页路由；折叠动作挂在整行冒泡上
 - 模块：`web`（`web/src/components/layout/SidebarDesigns.tsx` 的 `DesignList`、`web/src/pages/DesignPage.tsx`、新增 `web/src/components/design/DesignProjectHome.tsx`），配套 `scripts/ui/04-design.mjs`
-- 关键词：UI 项目、项目主页、点项目名、点整行折叠、折叠按钮、箭头、`id: 'home'`、`designHomeRoute`
+- 关键词：UI 项目、项目主页、点项目名、点整行折叠、箭头按钮、折叠按钮、箭头、`id: 'home'`、`designHomeRoute`
 
 ## 现象
 

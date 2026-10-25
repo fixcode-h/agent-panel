@@ -1,6 +1,9 @@
 # 设置页右侧内容太长，没有分类也不知道滚到哪
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`、WSL 里的 `npm run test:e2e` 均通过；界面检查 `scripts/ui-check.mjs` 暂无覆盖设置页小节菜单的分片）
+- 症状：设置页右侧内容太长了，没有分类也不知道滚到哪
+- 入口：`web/src/components/settings/section-nav.tsx`、`web/src/components/settings/parts.tsx` 的 `Group`
+- 根因类型：右侧只有一个长滚动列表，没有任何节内导航
 - 模块：`web`（`web/src/components/settings/section-nav.tsx`、`web/src/lib/section-nav.ts`、`web/src/components/settings/parts.tsx` 的 `Group`、`web/src/pages/SettingsPage.tsx` 的 `setSectionScroll`）
 - 关键词：设置、右侧太长、没有分类、小节菜单、锚点跳转、滚动高亮、Group、section-nav
 

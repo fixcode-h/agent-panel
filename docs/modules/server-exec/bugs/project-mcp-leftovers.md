@@ -1,6 +1,9 @@
 # 项目 .mcp.json 里的面板 MCP 越积越多
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run test:e2e` 通过）
+- 症状：项目 .mcp.json 里堆了几十条 panel-xxxx、orch，项目设置当成可导入的 MCP 列出来
+- 入口：`server/exec/invoke.ts` 的 `invokeCli`
+- 根因类型：异常退出不还原、按快照整文件写回
 - 模块：`server-exec`（`server/exec/invoke.ts`），配套 `server/ask-mcp.ts`、`server/panel-mcp-files.ts`、`server/project-mcp.ts`、`server/index.ts`
 - 关键词：.mcp.json、panel-xxxxxx、orch、127.0.0.1:8787/api/mcp/ask、项目里识别到的配置、只在项目里
 

@@ -1,8 +1,11 @@
 # 环境弹窗的「独立分支」没分类、也没有右键菜单
 
 - 状态：已修复（写文档时本轮重跑 `npx tsx --test web/src/lib/worktrees.test.ts` 6 条全过、`npx prettier --check` 和 `node scripts/rules-check.mjs` 通过；代码改动那边已跑过 `node scripts/ui-check.mjs 02` 并通过，含新增的「独立分支-右键菜单」「独立分支-右键删除确认」）
+- 症状：环境弹窗「独立分支」里已删除和没删除的混在一起列，每项只有行尾悬停出现的两个小按钮
+- 入口：`web/src/components/tasks/Worktrees.tsx` 的 `WorktreeSection` / `WorktreeRow`
+- 根因类型：列表平铺未分组、行上只有两个按钮没有右键菜单
 - 模块：`web`（`web/src/components/tasks/Worktrees.tsx` 的 `WorktreeSection` / `WorktreeRow`，分组口径在 `web/src/lib/worktrees.ts`），配套 `scripts/ui/02-task.mjs`
-- 关键词：独立分支、worktree、已删除 / 未删除、分组、右键菜单、ContextMenu、合并、删除独立分支、行内按钮、`data-worktree-group`
+- 关键词：独立分支、worktree、已删除 / 未删除、分组、分类分组、右键菜单、ContextMenu、合并、删除独立分支、行内按钮、`data-worktree-group`
 
 ## 现象
 

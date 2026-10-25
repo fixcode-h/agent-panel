@@ -1,6 +1,9 @@
 # 设置里找不到「网络代理」开关
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`、WSL 里的 `npm run test:e2e` 均通过；界面检查 `scripts/ui-check.mjs` 暂无覆盖设置页小节菜单的分片）
+- 症状：设置里找不到「网络代理」开关
+- 入口：`web/src/components/settings/NetworkSection.tsx`、`web/src/pages/SettingsPage.tsx` 的 `sectionsFor`
+- 根因类型：原来埋在「常规」一长串里、且只有输入框没有开关
 - 模块：`web`（`web/src/pages/SettingsPage.tsx` 的 `sectionsFor`、`web/src/components/settings/NetworkSection.tsx`），配套 `server`（`server/net.ts` 的 `configuredProxy` / `defaultPlan`）和 `shared/schema.ts` 的 `networkProxyEnabled`
 - 关键词：设置、代理、网络代理、找不到、挪到连接分组、启用代理开关、`networkProxyEnabled`、`configuredProxy`、代理回退
 
