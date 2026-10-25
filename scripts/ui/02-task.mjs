@@ -848,6 +848,74 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      // 窗口最上面那块「派给它的要求」：派发时交给它的原文，按 `##` 小节排开（要做的事在前、验收标准在后）。
+      // 这个子任务已经有对话流，所以默认收起、吸顶在顶部：窗口贴底看最新输出时它仍看得见
+      // （用户报的就是「最上面看不到初始信息」，光把它放在滚动区最前不够，会被贴底滚出视野）
+      {
+        const w = p.getByRole('dialog').last()
+        const card = w.getByRole('region', { name: '派给它的要求' })
+        if (!(await card.count())) errors.push('子任务-窗口：最上面没有「派给它的要求」')
+        else {
+          // 收起态：只剩摘要一句，正文收着
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：有对话流时初始要求没收成摘要一句')
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：有对话流时初始要求默认没收起')
+          // 关键：窗口已贴底，这张卡片仍在滚动区视野内（吸顶），用户不用往上翻
+          const atTop = await card.evaluate((el) => {
+            const sc = el.closest('.overflow-y-auto')
+            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+            const a = sc.getBoundingClientRect()
+            const b = el.getBoundingClientRect()
+            return { inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1, gap: Math.round(b.top - a.top) }
+          })
+          if (!atTop) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
+          else if (!atTop.inView) errors.push(`子任务-窗口：贴底时初始要求不在视野内（距容器顶 ${atTop.gap}px）`)
+          await check(p, '子任务-窗口-初始要求', ['派给它的要求', '查清购物车角标'])
+          // 贴着底看最新输出：要求那块吸顶时不能弄坏窗口本身的贴底行为
+          const box = await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            return sc
+              ? { over: sc.scrollHeight - sc.clientHeight, gap: sc.scrollHeight - sc.scrollTop - sc.clientHeight }
+              : null
+          })
+          if (box && box.over > 40 && box.gap > 40)
+            errors.push(`子任务-窗口：加了初始要求后没有停在最新输出（离底部 ${Math.round(box.gap)}px）`)
+          // 展开：按小节排开，要做的事在前、验收标准在后，两节正文都显示
+          const toggle = card.getByRole('button', { name: /派给它的要求/ }).first()
+          await toggle.click()
+          await settle(p)
+          await check(p, '子任务-窗口-初始要求-展开', ['要做的事', '验收标准'])
+          // 关键：展开后卡片必须在视野内。只断言文本存在拦不住：Playwright 的 visible 不判视口，
+          // 正文被贴底滚动顶到视野之上时照样算 visible（旧写法就是这么漏的）
+          const opened = await card.evaluate((el) => {
+            const sc = el.closest('.overflow-y-auto')
+            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+            const a = sc.getBoundingClientRect()
+            const b = el.getBoundingClientRect()
+            return { inView: b.top >= a.top - 1 && b.top < a.bottom, top: Math.round(b.top - a.top) }
+          })
+          if (!opened) errors.push('子任务-窗口：展开后没找到初始要求所在的滚动容器')
+          else if (!opened.inView)
+            errors.push(`子任务-窗口：展开后初始要求被滚出视野（卡片顶距容器顶 ${opened.top}px）`)
+          const heads = await card.evaluate((el) =>
+            [...el.querySelectorAll(':scope > div > section > p')].map((x) => x.textContent?.trim() ?? ''),
+          )
+          if (heads.indexOf('要做的事') < 0 || heads.indexOf('验收标准') < 0)
+            errors.push(`子任务-窗口：初始要求没按小节显示（当前小节：${heads.join(' / ') || '无'}）`)
+          else if (heads.indexOf('要做的事') > heads.indexOf('验收标准'))
+            errors.push(`子任务-窗口：小节顺序不对，要做的事应该在验收标准前面（当前：${heads.join(' / ')}`)
+          if (!(await card.getByText('只读不改代码', { exact: false }).count()))
+            errors.push('子任务-窗口：初始要求没有显示验收标准的内容')
+          // 再收起：正文收回去，摘要回来
+          await toggle.click()
+          await settle(p)
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：再收起初始要求后正文还显示着')
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：再收起初始要求后没有留下摘要一句')
+        }
+      }
       // 子任务窗口头部的「AI 分析」：弹的是执行记录那一套弹窗（同样的 focus 输入和「开始分析」），
       // 只把范围收窄到这一步。按弹窗作用域找，页面上别处（内存曲线那边）也有「AI 分析」
       const win = p.getByRole('dialog').last()
