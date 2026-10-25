@@ -357,12 +357,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.close()
   }
 
-  // 开发者模式的「抓取界面元素」：设置里打开才有按钮；Esc 退出不引用，左键点中后放一张引用卡片并退出抓取
+  // 开发者模式的「抓取界面元素」：设置里打开才有按钮；Esc 退出不引用；中键点中后放一张引用卡片并退出抓取
+  // （抓取期间左键、右键照常可用；快捷键也能进入和退出抓取）
   {
     const d = await page({ width: 1440, height: 900 })
     await d.goto(base + '#/chat')
     await d.locator('#task-prompt').waitFor()
-    const pickBtn = d.getByRole('button', { name: '抓取界面元素' })
+    const pickBtn = d.getByLabel('抓取界面元素', { exact: true })
     if (await pickBtn.count()) errors.push('元素抓取：没开开发者模式就显示了抓取按钮')
     await d.getByRole('button', { name: '设置' }).first().click()
     await d.getByRole('switch', { name: '开发者模式' }).click()
@@ -374,7 +375,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const overlay = d.locator('[data-element-picker]')
     await pickBtn.click()
     await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
-    await check(d, '元素抓取-悬停', ['点选页面上的元素，引用到对话', '退出抓取'])
+    await check(d, '元素抓取-悬停', ['抓取元素，左键、右键照常可用', '退出抓取'])
     await d.keyboard.press('Escape')
     if (await overlay.count()) errors.push('元素抓取：按 Esc 没有退出抓取模式')
     if (
@@ -384,20 +385,45 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .count()
     )
       errors.push('元素抓取：按 Esc 退出也放了引用')
+    // 快捷键：`·` 进入抓取，再按一次退出（输入框里打字时不触发，先点页面空白处再按）
+    await d.locator('body').click({ position: { x: 5, y: 5 } })
+    await d.keyboard.press('Backquote')
+    if (!(await overlay.count())) errors.push('元素抓取：按快捷键没有进入抓取模式')
+    await d.keyboard.press('Backquote')
+    if (await overlay.count()) errors.push('元素抓取：再按一次快捷键没有退出抓取模式')
+    // 中键抓取：抓取期间左键还能点（点标题不会退出，也不放引用），中键点中后放一张引用卡片并退出
     await pickBtn.click()
-    await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2)
+    await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2, { button: 'middle' })
     const chip = d
       .locator('#task-prompt')
       .getByText(/界面元素/)
       .first()
-    await chip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点中元素后输入框里没有引用卡片'))
-    if (await overlay.count()) errors.push('元素抓取：点中元素后没有退出抓取模式')
+    await chip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：中键点中元素后输入框里没有引用卡片'))
+    if (await overlay.count()) errors.push('元素抓取：中键点中元素后没有退出抓取模式')
     await check(d, '元素抓取-引用')
     await chip.click()
     const quoted = await d.getByRole('dialog').last().innerText()
     for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
       if (!quoted.includes(want)) errors.push(`元素抓取：引用里没有「${want}」`)
     await d.keyboard.press('Escape')
+
+    // 页面上没有输入框时也能抓（例如记忆库页）：抓到后没处放，写进剪贴板并提示。
+    // 先等页面自己加载完（settings 没到之前快捷键还不会生效），断言都要等，不能用一次性 count()
+    await d.goto(base + '#/library')
+    // 等这个页面自己加载完（演示版预置了 skill 列表）：settings 没到之前快捷键还不会生效
+    await d.getByText('commit-message').first().waitFor({ timeout: 10000 })
+    await d.locator('body').click({ position: { x: 5, y: 5 } })
+    await d.keyboard.press('Backquote')
+    await overlay
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素抓取：没有输入框的页面上按快捷键没有进入抓取模式'))
+    await d.mouse.click(600, 300, { button: 'middle' })
+    if (await overlay.count()) errors.push('元素抓取：没有输入框的页面上中键抓完没有退出抓取')
+    await d
+      .getByText('已复制到剪贴板，去输入框里粘贴')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素抓取：没有输入框的页面上抓到元素后没有写剪贴板（没有提示）'))
     await d.close()
   }
 

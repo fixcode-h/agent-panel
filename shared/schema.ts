@@ -1841,8 +1841,26 @@ export const Appearance = z.object({
 })
 export type Appearance = z.infer<typeof Appearance>
 
+/** 抓取元素用的鼠标按键。左键、右键留给页面自己的交互（点按钮、弹菜单），所以默认为中键 */
+export const PICK_BUTTONS = ['middle', 'left', 'right'] as const
+export type PickButton = (typeof PICK_BUTTONS)[number]
+export const DEFAULT_PICK_BUTTON: PickButton = 'middle'
+/** 切换抓取模式的快捷键：`·`（U+00B7），中文输入法下就是反引号那一格 */
+export const DEFAULT_PICK_HOTKEY = '·'
+
 /**
- * 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
+ * 开发者模式的「元素抓取」怎么触发：快捷键和抓取用的鼠标按键。
+ * 存成字符串 / 名字，手改设置文件也能认；写法看 web/src/lib/hotkey.ts
+ */
+export const ElementPicker = z.object({
+  /** 切换抓取模式（开启 / 退出）的快捷键；在输入框里打字时不触发 */
+  hotkey: z.string().trim().min(1).max(40).catch(DEFAULT_PICK_HOTKEY).default(DEFAULT_PICK_HOTKEY),
+  /** 抓取用的鼠标按键 */
+  button: z.enum(PICK_BUTTONS).catch(DEFAULT_PICK_BUTTON).default(DEFAULT_PICK_BUTTON),
+})
+export type ElementPicker = z.infer<typeof ElementPicker>
+
+/** 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
  * 外网的请求一律要求访问令牌，和本机访问不同。
  */
 export const RemoteAccess = z.object({
@@ -1927,6 +1945,8 @@ export const Settings = z.object({
   askUserDefault: z.boolean().default(false),
   /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
   developerMode: z.boolean().catch(false).default(false),
+  /** 抓取元素时用的快捷键和鼠标按键（设置 →「快捷键」里改） */
+  elementPicker: ElementPicker.prefault({}),
   /**
    * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
    * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来

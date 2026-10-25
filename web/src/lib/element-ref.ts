@@ -140,3 +140,22 @@ export function pickStyles(get: (prop: string) => string, rootPx: number): [stri
   }
   return out
 }
+
+/**
+ * 元素引用的包装标记：抓取到的引用复制出去（剪贴板、写文件）时前后各加一行，
+ * 粘回任何对话输入框时认出来还原成引用卡片。标记本身人眼可读，去掉标记后和原文一模一样，
+ * 所以粘到记事本、微信里也还是一段正常的说明文字。
+ *
+ * 这一段的归属是「元素引用可复制粘贴到其他对话」那个改动（parseElementRef / pasteElementRefs 也在那边），
+ * 这里只先补上抓取后写剪贴板要用到的两个；合并时以那边的实现为准，不要各留一份
+ */
+export const ELEMENT_REF_MARK = { head: '[元素引用]', tail: '[/元素引用]' } as const
+
+const isWrapped = (text: string) =>
+  text.startsWith(ELEMENT_REF_MARK.head) && text.trimEnd().endsWith(ELEMENT_REF_MARK.tail)
+
+/** 把引用包成可还原的形式；已经包过的、空的不重复包 */
+export function wrapElementRef(text: string): string {
+  if (!text.trim() || isWrapped(text)) return text
+  return `${ELEMENT_REF_MARK.head}${text}\n${ELEMENT_REF_MARK.tail}`
+}

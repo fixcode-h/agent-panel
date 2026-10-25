@@ -11,6 +11,7 @@ import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDial
 import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
+import { ElementPickHost } from '@/components/chat/ElementPicker'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
@@ -132,7 +133,13 @@ function UiActions({ reopenProject }: { reopenProject: (id: string, section?: st
 function Shortcuts() {
   const [open, setOpen] = useState(false)
   useShortcuts(() => setOpen((o) => !o))
-  return <CommandPalette open={open} onOpenChange={setOpen} />
+  return (
+    <>
+      <CommandPalette open={open} onOpenChange={setOpen} />
+      {/* 开发者模式的抓取：快捷键 + 覆盖层（全页只一份） */}
+      <ElementPickHost />
+    </>
+  )
 }
 
 function ProjectDialog({
