@@ -306,6 +306,13 @@ export const EN_TASKS: Record<string, string> = {
   已复制输出: 'Output copied',
   '正在执行，等待输出…': 'Running — waiting for output…',
   '执行失败，没有输出': 'Failed with no output',
+  '已停止，没有输出': 'Stopped with no output',
+  '这条命令被停止之前没有输出。': 'This command produced no output before it was stopped.',
+  '排队中，还没有输出': 'Queued — no output yet',
+  '前面还有命令在跑，排到它时这里会跟着输出。':
+    'Other commands are still running; output will appear here once it is its turn.',
+  读不到这条命令的输出: 'Cannot read this command’s output',
+  '会自动重试，显示的是上一次读到的输出。': 'Retrying automatically; showing the last output read.',
   这条命令没有输出: 'This command produced no output',
   '这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。':
     'This call wrote nothing to stdout or stderr. Close the window and expand the call to see the error it returned.',

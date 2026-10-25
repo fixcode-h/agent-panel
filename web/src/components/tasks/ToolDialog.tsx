@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Copy, Loader2, Terminal, TerminalSquare, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -6,6 +5,8 @@ import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { fmtDuration } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
+import { useStickToBottom } from '@/lib/useStickToBottom'
+import { jobLive } from '@/lib/job-poll'
 import { Button } from '@/components/ui/button'
 
 /** 窗口最外面那层：和差异窗口、文件窗口一样的大小和动画，内容区铺满屏幕 */
@@ -128,6 +129,29 @@ export function OutputDialog({
 }
 
 /**
+ * 命令行窗口里这条命令的当前阶段。工具行的命令只有执行中、完成、失败；
+ * 后台命令多出「排队中」（还没排到）和「已停止」两种，它们不能显示成「完成」
+ */
+export type CommandPhase = 'queued' | 'running' | 'done' | 'failed' | 'stopped'
+
+/**
+ * 阶段对应的徽标：颜色和文字只写这一处，不传 status 的调用按 running / failed 推出来。
+ * text 写成取值函数：t() 读的是可变当前语言，模块级常量在 import 时就把文字算死了
+ * （和 AnalysisPanel 的 title、Messages 的 verb 同一个写法）
+ */
+const PHASE: Record<CommandPhase, { text: () => string; badge: string; dot: string }> = {
+  queued: { text: () => t('排队中'), badge: 'border-line bg-field text-subtle', dot: 'bg-subtle' },
+  running: {
+    text: () => t('执行中'),
+    badge: 'border-accent/35 bg-accent-soft text-accent',
+    dot: 'animate-pulse bg-accent',
+  },
+  done: { text: () => t('完成'), badge: 'border-line bg-field text-subtle', dot: 'bg-success' },
+  failed: { text: () => t('失败'), badge: 'border-danger/30 bg-danger/10 text-danger', dot: 'bg-danger' },
+  stopped: { text: () => t('已停止'), badge: 'border-line bg-field text-subtle', dot: 'bg-subtle' },
+}
+
+/**
  * 跑命令的工具行点开：像终端一样看这条命令和它的输出。
  * 输出在跑的时候跟着更新，滚动条停在底部时自动跟随
  */
@@ -136,8 +160,13 @@ export function CommandDialog({
   output,
   failed,
   running,
+  status,
   ms,
   startedAt,
+  /** 退出码（后台命令结束后有）：和阶段徽标放在一起，失败时能分清是测试挂了还是进程被杀 */
+  code,
+  /** 拉输出失败的原因（后台命令的窗口轮询接口）：失败也要看到，不能只当没输出 */
+  error,
   open,
   onOpenChange,
 }: {
@@ -145,25 +174,27 @@ export function CommandDialog({
   output?: string
   failed?: boolean
   running?: boolean
+  /** 明确告诉窗口现在是什么阶段（后台命令要区分排队中和已停止）；不传时按 running / failed 推 */
+  status?: CommandPhase
   /** 跑完用了多久（毫秒） */
   ms?: number
   /** 开始的时间：还在跑时每秒往上加，不用等结果回来才看得到用了多久 */
   startedAt?: number
+  /** 退出码（后台命令结束后有）：失败、被停止时要看得到是退出码几还是被信号杀掉 */
+  code?: number | null
+  error?: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const box = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
   const text = output?.replace(/\s+$/, '') ?? ''
   const hasOutput = !!text.trim()
-  const now = useNow(!!running && startedAt !== undefined)
-  const elapsed = running ? (startedAt === undefined ? undefined : now - startedAt) : ms
+  const phase: CommandPhase = status ?? (failed ? 'failed' : running ? 'running' : 'done')
+  const now = useNow(phase === 'running' && startedAt !== undefined)
+  const elapsed = phase === 'running' ? (startedAt === undefined ? undefined : now - startedAt) : ms
   const lines = hasOutput ? text.split('\n').length : 0
-  // 输出变了（命令还在跑）：停在底部时跟着滚
-  useEffect(() => {
-    const el = box.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [output])
+  // 贴底：输出变高时跟着走，用户往上翻看就不拽回来。弹窗的滚动容器比父组件晚一帧才挂上，
+  // 所以用 useStickToBottom 的回调 ref（见 web/src/lib/useStickToBottom.ts），不在父组件的布局副作用里拿节点
+  const stick = useStickToBottom(command)
 
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
@@ -182,21 +213,16 @@ export function CommandDialog({
             <span
               className={cn(
                 'flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-sans text-[0.6875rem]',
-                failed
-                  ? 'border-danger/30 bg-danger/10 text-danger'
-                  : running
-                    ? 'border-accent/35 bg-accent-soft text-accent'
-                    : 'border-line bg-field text-subtle',
+                PHASE[phase].badge,
               )}
             >
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  failed ? 'bg-danger' : running ? 'animate-pulse bg-accent' : 'bg-success',
-                )}
-              />
-              {failed ? t('失败') : running ? t('执行中') : t('完成')}
+              <span className={cn('h-1.5 w-1.5 rounded-full', PHASE[phase].dot)} />
+              {PHASE[phase].text()}
               {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
+              {/* 退出码：只在结束时说，跑着时没有 */}
+              {!jobLive(phase) && code !== undefined && code !== null && (
+                <span className="tabular-nums opacity-80">{t('退出码 {code}', { code })}</span>
+              )}
             </span>
             <Button
               variant="ghost"
@@ -224,11 +250,8 @@ export function CommandDialog({
             </D.Close>
           </header>
           <div
-            ref={box}
-            onScroll={(e) => {
-              const el = e.currentTarget
-              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-            }}
+            ref={stick.ref}
+            onScroll={stick.onScroll}
             className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--code-bg)"
           >
             <div className="px-5 py-4 font-mono text-[0.78125rem] leading-[1.7]">
@@ -245,16 +268,30 @@ export function CommandDialog({
                   <pre
                     className={cn(
                       'min-w-0 flex-1 border-l pl-3 whitespace-pre-wrap [overflow-wrap:anywhere]',
-                      failed ? 'border-danger/40 text-danger/90' : 'border-line text-muted',
+                      phase === 'failed' ? 'border-danger/40 text-danger/90' : 'border-line text-muted',
                     )}
                   >
                     {text}
-                    {running && <Caret />}
+                    {phase === 'running' && <Caret />}
                   </pre>
                 </div>
               )}
+              {/* 拉取失败：写在输出上方而不是只占空状态位——已经有输出时也要看得到（否则窗口停在旧输出上，
+                  徒标还写着「执行中」，用户以为命令还在跑）。拉失败会按 JOB_RETRY_MS 重试，这里说清楚 */}
+              {error && (
+                <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 font-sans">
+                  <TerminalSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                  <div className="min-w-0">
+                    <p className="text-[0.8125rem] font-medium text-danger">{t('读不到这条命令的输出')}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed break-words text-subtle [overflow-wrap:anywhere]">
+                      {error}
+                    </p>
+                    <p className="mt-0.5 text-xs text-subtle">{t('会自动重试，显示的是上一次读到的输出。')}</p>
+                  </div>
+                </div>
+              )}
               {!hasOutput &&
-                (running ? (
+                (!error && phase === 'running' ? (
                   <div className="mt-2.5 flex gap-2.5">
                     <span aria-hidden className="w-2.5 shrink-0" />
                     <p className="flex min-w-0 flex-1 items-center gap-2 border-l border-line pl-3 text-subtle">
@@ -262,18 +299,42 @@ export function CommandDialog({
                       {t('正在执行，等待输出…')}
                     </p>
                   </div>
+                ) : phase === 'queued' ? (
+                  /* 排队中还没有输出：说清它在等什么，不然窗口里一片空白像是坏了 */
+                  <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
+                    <TerminalSquare className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
+                    <div className="min-w-0">
+                      <p className="text-[0.8125rem] font-medium text-muted">{t('排队中，还没有输出')}</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-subtle">
+                        {t('前面还有命令在跑，排到它时这里会跟着输出。')}
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   /* 空状态也说清楚为什么空、下一步看什么，不留一行灰字 */
                   <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
-                    <TerminalSquare className={cn('mt-0.5 h-4 w-4 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
+                    <TerminalSquare
+                      className={cn('mt-0.5 h-4 w-4 shrink-0', phase === 'failed' ? 'text-danger' : 'text-subtle')}
+                    />
                     <div className="min-w-0">
-                      <p className={cn('text-[0.8125rem] font-medium', failed ? 'text-danger' : 'text-muted')}>
-                        {failed ? t('执行失败，没有输出') : t('这条命令没有输出')}
+                      <p
+                        className={cn(
+                          'text-[0.8125rem] font-medium',
+                          phase === 'failed' ? 'text-danger' : 'text-muted',
+                        )}
+                      >
+                        {phase === 'failed'
+                          ? t('执行失败，没有输出')
+                          : phase === 'stopped'
+                            ? t('已停止，没有输出')
+                            : t('这条命令没有输出')}
                       </p>
                       <p className="mt-0.5 text-xs leading-relaxed text-subtle">
-                        {failed
+                        {phase === 'failed'
                           ? t('这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。')
-                          : t('命令正常结束，没有标准输出或错误输出。')}
+                          : phase === 'stopped'
+                            ? t('这条命令被停止之前没有输出。')
+                            : t('命令正常结束，没有标准输出或错误输出。')}
                       </p>
                     </div>
                   </div>
@@ -281,7 +342,7 @@ export function CommandDialog({
             </div>
           </div>
           {/* 底部常驻一条状态：长输出滚到哪都看得出还在跑 */}
-          {running && (
+          {phase === 'running' && (
             <div className="flex h-9 shrink-0 items-center gap-2 border-t bg-card/70 px-4 font-sans text-xs text-muted">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
               {t('正在执行…')}

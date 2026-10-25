@@ -15,7 +15,7 @@ import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
-import { useChildList, useChildOpen } from './child-open'
+import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
@@ -87,22 +87,35 @@ function childMs(
   return Math.max(0, (Number.isFinite(end) ? end : now) - start)
 }
 
-/** 一条后台命令：标题是名字（没有就用命令第一行），长命令被截断时悬停看完整命令（这一行没有窗口可打开） */
+/**
+ * 一条后台命令：标题是名字（没有就用命令第一行），长命令被截断时悬停看完整命令。
+ * 和工具行一样：整行点了展开命令原文，点标题打开命令行窗口看实时输出（命令跑在服务端，输出不在对话里，
+ * 窗口按 jobId 自己轮询，见 JobDialog）。窗口挂在任务页顶层而不是这一行里：命令跑完这一行就消失了，
+ * 跟着行卸载的话用户正好看不到最终输出
+ */
 function JobRow({ job, now }: { job: TaskJob; now: number }) {
   const [open, setOpen] = useState(false)
+  const openJob = useJobOpen()
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
+  const title = jobLabel(job)
   return (
     <RowShell
       glyph={spin}
       verb={t('后台命令')}
-      title={jobLabel(job)}
-      titleTip={job.command || jobLabel(job)}
+      title={title}
+      titleTip={job.command || title}
       detail={
         job.state === 'queued' ? <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span> : undefined
       }
       ms={started ? now - started : undefined}
       open={open}
       onToggle={() => setOpen(!open)}
+      onOpen={
+        openJob
+          ? () => openJob({ id: job.id, command: job.command, state: job.state, startedAt: job.startedAt })
+          : undefined
+      }
+      openTip={t('打开命令行窗口')}
     >
       <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
         {job.command}
