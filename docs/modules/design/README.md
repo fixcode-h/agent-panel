@@ -10,6 +10,7 @@
 - UI 设计：按 UI 项目组织设计，每个设计有控件树、设计尺寸、风格说明、效果图和切图，和任务分开存储（数据目录下 `designs/`，每个设计一个 JSON，图片放在同一层的设计目录里）。
 - AI 对话：用户描述要求，设计 AI 通过 MCP 工具改控件树、加图片和动画、出原画；一轮里可以同时出原画和切图。
 - 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。本机出整屏原画时，已下载 MOSS-Image、工作流选 auto、画布上又已有文字和带描述的图片，就优先用 MOSS-Image 的布局工作流，位置取自画布控件。本机还支持「处理类工作流」（去背景、图生图、放大）和把多个工作流串成一条链出图，见下面「处理类工作流与工作流链」。
+- 标注：在效果图或原画上框选、画箭头、圈画、打点、涂蒙版，标出「改 / 新增 / 删除 / 保持」四种意思，随下一条消息把标注说明一起交给 AI；原画上的蒙版还能走「只重绘蒙版区域」。原画面板里的「发送标注给 AI」和对话框发送是同一条路径（见下方「原画标注的可见性与发送」）。
 - 导出：导出 ZIP、JSON、React 网页，或把切图和控件树导出到项目目录，给 UE 用的格式见 [umg-export](../../umg-export.md)。
 - 页面截图：设计 AI 要「看」页面时，向正在盯着这个设计的页面要一张截图。
 - 待确认的提问：AI 和 CLI 的提问、审批走 `server/asks.ts`，对话里弹问题面板，回答作为一条消息发回去。
@@ -68,13 +69,24 @@
 - 插话时附件给的是上传目录里的绝对路径，不是这一轮工作目录里的副本；`delivery` 记的是服务端实际做成了什么，不能用界面本地队列冒充已送达。
 - 设计对话改用 Chat 模式同一套对话页壳（`web/src/components/chat/ConversationShell.tsx`）：原来 `DesignChat.tsx` 自己维护的 `useLayoutEffect` 贴底和 `<40px` 滚动判定删掉，统一用 `useStickToBottom`（只有用户真的往上滚才松开），并补上「回到底部」；消息区宽度/内边距和任务对话一致。
 
+## 原画标注的可见性与发送
+
+- 背景：原画阶段的标注能力一直是齐的（`ConceptBoard` 的 `AnnotationToolbar` / `AnnotationLayer`，标注经 `doc.annotations` → `DesignPage.send()` → `annotationText` / `maskOf` 注入服务端），但工具栏原来只有图标、原画面板里没有发送入口，用户看不出那是标注工具，也不知道标完怎么发。
+- 工具栏文字（`web/src/components/design/Annotations.tsx`）：`TOOLS` 里标注工具带 `text`（框选 / 箭头 / 画笔 / 打点 / 蒙版），`labels` 打开时 `ToolButton` 在图标下面显示它。只有 `ConceptBoard` 传 `labels`：画布（`Viewport`）和切图预览（`ImagesPanel`）上方已叠着别的控件、放不下两行，保持原来的纯图标。工具栏 `max-w-full` + `flex-wrap`，窄面板换行而不被裁掉；四种「意思」仍然只在选中时显示文字。
+- 常显说明：`TOOL_HINTS` 给当前标注工具一句「怎么画」；已经有标注时改成「已经在底部按钮发出去」。蒙版还要勾「只重绘蒙版区域」，那一步由 `ConceptBoard` 底部单独说。
+- 发送入口：`ConceptBoard` 底部提示行右侧在 `mine.length > 0` 时出现「发送标注给 AI（n）」，回调 `onSendMarks`。`DesignPage` 把它转成 `request = { id, kind: 'send' }`，并先 `setChatOpen(true)`（对话栏收起时 `DesignChat` 没挂载，`request` 没人消费，不先打开就会点了没反应），`DesignChat` 的请求 effect 见到 `kind: 'send'` 就调输入框的 `send()`——不是只发固定文案，所以输入框里写的补充意见、`inpaint` 勾选、引用和风格都照常带上。原来「确认模板后开始搭界面」走的是同一个 `request`，仍然发 `request.text`。
+- 「只重绘蒙版区域」的计数：这个勾选状态提升到 `DesignPage`（`inpaint` + `onInpaint`，按 `doc.annotations` 里有没有 concept 蒙版自动复位），因为走的 `api.inpaintConcept` 分支只发蒙版那一块、只清那一条标注。`ConceptBoard` 另收一个 `inpaintSupported`（`source.kind === 'local'`）：只有真能局部重绘时才把按钮改成「按蒙版重绘（1）」；默认生图方式是图片模型，不支持局部重绘，勾了也是整张重画、全部标注都发，按钮就保持「发送标注给 AI（n）」。三个条件合并到 `shared/design.ts` 的 `sendsMaskOnly({ inpaint, inpaintSupported, marks })`，界面按钮和 `shared/design.test.ts` 的真值表用例读同一份口径。
+- 循环：标注 → `send()` 清空 `doc.annotations` → 服务端 `conceptSection` 带着标注说明出一轮新原画（新的一轮进缩略图列表）→ 可以在新图上接着标。确认模板后原画标注由 `approve()` 清掉。
+
 ## 回归验证
 
 - `npm run typecheck`（含漏翻检查）
 - `npm run lint`
 - `npm run test:unit`
+- `shared/design.test.ts` 的「只重绘蒙版要求「勾了 + 生图方式支持 + 真有蒙版」三个条件同时成立」：`sendsMaskOnly` 的真值表（三个条件单独缺失各一条，外加与 `canInpaint` 口径一致）；去掉 `inpaintSupported` 判断后这条用例会失败。
 - `npm run test:e2e:wsl`（Windows 上在 WSL 里跑）；本次覆盖 `scripts/e2e/06-assist.mjs` 的「设计补充测试」（插话成功、无 job 时直接开一轮）、「设计接续测试」（CLI 没有插话通道时消息进对话并在这一轮结束后自动接着处理）和「设计停止测试」（停止时排队消息标 `lost`、停止后再发的消息能接着开始新一轮）。
 - `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
+- 原画标注：`scripts/ui/04-design.mjs` 的「UI设计-原画标注工具」断言原画阶段工具栏上框选 / 箭头 / 画笔 / 打点 / 蒙版五个文字标签可见；「UI设计-原画标注」在图上框一块、写说明后断言底部出现「发送标注给 AI（1）」且说明显示在标注卡片上；「UI设计-原画标注发出」点这个按钮，断言标注随用户消息出现在对话里、随后出第 2 轮原画；「UI设计-原画标注-收起对话」先收起 AI 对话栏再点这个按钮，断言对话栏自动打开、消息发出；「UI设计-原画标注-不支持局部重绘」画一个蒙版 + 一个框选后勾上「只重绘蒙版区域」，断言按钮仍是「发送标注给 AI（2）」而不是「按蒙版重绘（1）」（演示环境没有本机 ComfyUI，默认生图方式不支持局部重绘）。`ConceptBoard` 的根元素带 `data-concept-board`，用例按它定位，不和画布上的同类型工具栏混。
 
 ## 处理类工作流与工作流链（2026-10-25）
 

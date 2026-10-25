@@ -1114,6 +1114,16 @@ export const hasMask = (a: Pick<Annotation, 'shape' | 'strokes'>) =>
 /** 只有本机 ComfyUI 能按蒙版做局部重绘；浏览器标签页和图片 CLI 只能整张重画 */
 export const canInpaint = (source: Pick<ImageSource, 'kind'>) => source.kind === 'local'
 
+/**
+ * 这次发送是不是只重绘蒙版那一块：勾了「只重绘蒙版区域」、生图方式真能局部重绘、而且真的有蒙版。
+ * 三个条件缺一不可：少判一个就会让原画面板上的「按蒙版重绘（1）」与实际行为矛盾（实际整张重画、全部标注都发）。
+ */
+export const sendsMaskOnly = (o: {
+  inpaint: boolean
+  inpaintSupported: boolean
+  marks: Pick<Annotation, 'shape' | 'strokes'>[]
+}) => o.inpaint && o.inpaintSupported && o.marks.some((a) => hasMask(a))
+
 /** 发给 AI 的控件引用说明：编号、路径、尺寸、用到的图片和文字，AI 按它定位用户说的控件 */
 export function widgetCitationText(list: WidgetCitation[], d: Pick<Design, 'designSize'>) {
   const lines = list.map((r, i) => {
