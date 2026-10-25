@@ -103,6 +103,7 @@ import {
   WRAP_UP,
   type PlanItemInput,
   type PlanKid,
+  type WrapUpAnswer,
   type WrapUpKind,
 } from './plan.ts'
 
@@ -548,10 +549,11 @@ export interface EngineHost {
   /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。父对话要推送时先合到这里再推；子对话的完成只管合回这里，与推送无关 */
   worktreeHome?: string
   /**
-   * 子对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
-   * merge 独立分支合回父对话所在的分支，p4 按文件类型分进各自的 pending changelist；不用收尾的不传
+   * 这个对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
+   * merge 子对话的独立分支合回父对话所在的分支，p4 子对话按文件类型分进各自的 pending changelist，
+   * push 父对话把分支推到远端；不用收尾的不传，'none' 是明确不推送（去掉计划里还挂着的推送收尾）
    */
-  wrapUp?: WrapUpKind
+  wrapUp?: WrapUpAnswer
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
   submitMerge?: (
     note: string,
@@ -983,37 +985,53 @@ function policyPart(host: EngineHost) {
   const wt =
     host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
   const done = '任务做完、验证通过并在本地提交之后'
+  // 推送这一步已经由面板列进计划（push 收尾，见 plan.ts 的 wrapUpKind），所以这里不写「你可以推」，
+  // 只写「按计划最后那一步做」：另写一遍时模型会自己再补一条「推送到远端」步骤，和面板的收尾撞在一起
+  const kind = wrapKind(host)
+  const planned = kind
+    ? `，会列计划的任务：${WRAP_UP[kind].title}已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条`
+    : ''
   const push =
     p.push === 'deny'
       ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
       : p.answered === 'denied'
         ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推。'
         : p.answered === 'allowed' || p.push === 'allow'
-          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}，直接把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${wt}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。只做普通推送：不强推，被拒（远端有新提交）就停下来报告，不自己 pull / rebase；创建 PR、P4 submit、合并到主干不在这个授权里，用户要求时才做。`
+          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}${wt}就把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${planned}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。只做普通推送：不强推，被拒（远端有新提交）就停下来报告，不自己 pull / rebase；创建 PR、P4 submit、合并到主干不在这个授权里，用户要求时才做。`
           : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送（推荐「允许这次推送」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
   return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 推送要用户明确授权」的默认写法优先。\n${tools}`
 }
 
-/** 子对话的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
-function wrapDone(kind: WrapUpKind | undefined) {
+/** 这一轮的收尾种类：'none'（明确不推送）当成没有收尾，提示词里不提它 */
+function wrapKind(host: EngineHost): WrapUpKind | undefined {
+  return host.wrapUp === 'none' ? undefined : host.wrapUp
+}
+
+/** 计划的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
+function wrapDone(kind: WrapUpAnswer | undefined) {
   if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
   if (kind === 'merge') return '改动已合回父对话所在的分支（submit_merge 由面板合并）'
+  if (kind === 'push') return '改动已推到远端，结论里写清了推到哪个远端分支'
   return '改动已经在父对话所在的分支上'
 }
 
 /**
- * 子对话的收尾怎么做：面板把它加成计划的最后一步，这里讲清楚做什么、谁来标完成。
+ * 计划的收尾怎么做：面板把它加成计划的最后一步，这里讲清楚做什么、谁来标完成。
  * P4 的分桶规则写在这里，不靠 project-vcs 技能：对话里的子对话不一定派「版本控制」角色，
  * 没有这段时改动全留在 default 或塞进同一个 changelist
  */
 function wrapUpPart(host: EngineHost) {
-  const kind = host.wrapUp
+  const kind = wrapKind(host)
   if (!kind) return ''
   const head = `## 收尾：计划的最后一步
-面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面；前面的步骤做完、验证通过后再做它。`
+面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面（下一条计划里它仍在最后）；前面的步骤做完、验证通过后再做它。`
   if (kind === 'merge')
     return `${head}
 做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。`
+  // 推送归 Agent 自己做（面板拿不到 git push 的结果，不像合并那样能替它标完成）：讲清做什么、做完自己标
+  if (kind === 'push')
+    return `${head}
+做法：${WRAP_UP.push.note}。计划里的其他步骤都做完、验证通过、改动已在本地提交之后再推；这一步做完自己用 set_plan 把它标完成，面板不会替你标。在独立分支里时按上面「执行目录」那段先合回原分支，再在原目录推原分支。`
   return `${head}
 ${p4Rules(host)}做完再把这一步标完成。不 submit、不 revert、不 sync。`
 }
@@ -1036,7 +1054,7 @@ function p4Rules(host: EngineHost) {
 
 /** 不是子对话收尾的场合（父对话、工作流节点）：P4 项目里也要按类型分 changelist */
 function p4Part(host: EngineHost) {
-  if (!host.p4Split || host.wrapUp === 'p4') return ''
+  if (!host.p4Split || wrapKind(host) === 'p4') return ''
   return `## P4 changelist\n${p4Rules(host)}不 submit、不 revert、不 sync。`
 }
 
@@ -1173,6 +1191,7 @@ function backgroundPart(host: EngineHost) {
 function planPart(host: EngineHost, coordinator: boolean) {
   const { task } = host
   if (!task.projectId) return ''
+  const kind = wrapKind(host)
   const cur = activePlan(task)
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   return `## 执行计划
@@ -1185,7 +1204,12 @@ ${now}
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
 - 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
-- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
+${
+  kind
+    ? `- 计划的最后一步「${WRAP_UP[kind].title}」由面板加在最后，别删、别挪到前面，也不要自己再写一条重复的收尾步骤（见下面「收尾：计划的最后一步」）。
+`
+    : ''
+}- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
     coordinator
       ? `
 - 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
@@ -3508,9 +3532,11 @@ ${
     ? host.ueBuild
       ? '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。这是 UE 项目，不在这里编译，见上面的「UE 编译交给父对话申请」。'
       : '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
-    : '提交留在这个分支上，由用户决定合并还是丢弃。'
+    : wrapKind(host) === 'push'
+      ? `提交留在这个分支上。计划的最后一步是「${WRAP_UP.push.title}」：那时先把它合回原分支（见下面「收尾：计划的最后一步」），再在原分支上推。`
+      : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
-不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
+不要把这个独立分支推送到远端${wrapKind(host) === 'push' ? `（推送归计划的最后一步「${WRAP_UP.push.title}」：合回原分支之后推原分支）` : '，用户明确要求之前一律不推'}。用户要求推送时，先把它合回原分支${
           host.task.parentTaskId
             ? '（调用 submit_merge，合进去后改动就在原分支上了）'
             : `（在原目录里 git merge --no-ff ${wt.branch}）`
