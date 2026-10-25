@@ -20,6 +20,8 @@ import {
   settleWait,
   syncKids,
   unsummarized,
+  WRAP_UP,
+  wrapUpKind,
 } from './plan.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
@@ -627,6 +629,178 @@ test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划
     false,
   )
   assert.equal(markWrapUp(task, 'merge', 'done'), false)
+})
+
+/** 父对话（明确授权推送）的计划：最后一步是推送收尾 */
+const pushTask = () => fresh()
+
+test('父对话的推送收尾：计划最后一步，删掉、挪到中间都放回最后', () => {
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'running' }, { title: '跑测试' }] }, undefined, 'push')
+  let plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => [s.id, s.wrapUp ?? '']),
+    [
+      ['1', ''],
+      ['2', ''],
+      ['3', 'push'],
+    ],
+  )
+  assert.equal(plan.steps[2].title, '收尾：推送到远端')
+  assert.match(plan.steps[2].note, /推成功后把这步标完成/, '推送由 Agent 自己标完成，备注里要写清')
+  // Agent 交的列表里没写收尾：原样放回，id 不变
+  applyPlan(
+    task,
+    { steps: [{ id: '1', title: '改代码', status: 'done' }, { id: '2', title: '跑测试' }, { title: '补文档' }] },
+    undefined,
+    'push',
+  )
+  plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => s.id),
+    ['1', '2', '4', '3'],
+  )
+  assert.equal(plan.steps.at(-1)!.wrapUp, 'push')
+  // 挪到中间也放回最后
+  applyPlan(
+    task,
+    {
+      steps: [
+        { id: '1', title: '改代码', status: 'done' },
+        { id: '3', title: plan.steps.at(-1)!.title },
+        { id: '2', title: '跑测试', status: 'done' },
+        { id: '4', title: '补文档', status: 'done' },
+      ],
+    },
+    undefined,
+    'push',
+  )
+  plan = activePlan(task)!
+  assert.equal(plan.steps.at(-1)!.wrapUp, 'push')
+  assert.equal(plan.doneAt, '', '推送没做完，计划不收起')
+  // 推送由 Agent 自己标完成（不像合回那样被面板退回）
+  applyPlan(task, { steps: [{ id: '3', title: WRAP_UP.push.title, status: 'done' }] }, undefined, 'push')
+  assert.notEqual(task.plans!.at(-1)!.doneAt, '', '推完计划结束')
+})
+
+test('父对话的推送收尾做完后又有新步骤：重新打开挪到最后，不另加一条', () => {
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }, { title: '补测试' }] }, undefined, 'push')
+  const plan = activePlan(task)!
+  const wrap = plan.steps.at(-1)!
+  applyPlan(task, { partial: true, steps: [{ id: wrap.id, title: wrap.title, status: 'done' }] }, undefined, 'push')
+  applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'push')
+  const steps = activePlan(task)!.steps
+  assert.equal(steps.filter((s) => s.wrapUp).length, 1, '计划里只有一条收尾')
+  assert.equal(steps.at(-1)!.id, wrap.id)
+  assert.equal(steps.at(-1)!.status, 'pending')
+})
+
+test('父对话开第二份计划：推送收尾照样加在最后（一轮就做完的改动也要推）', () => {
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'push')
+  applyPlan(task, { partial: true, steps: [{ title: WRAP_UP.push.title, status: 'done' }] }, undefined, 'push')
+  assert.equal(activePlan(task), undefined, '前提：第一份计划做完收起')
+  // 第二份计划有新做的事：推送收尾还是最后一步
+  applyPlan(task, { title: '修评审意见', steps: [{ title: '改代码' }] }, undefined, 'push')
+  let plan = activePlan(task)!
+  assert.equal(plan.steps.at(-1)!.wrapUp, 'push')
+  assert.equal(plan.steps.filter((s) => s.wrapUp).length, 1)
+  // 一轮就做完的改动（交上来的步骤全是 done）：照样要推，收尾还在最后一步。
+  // 看 first 会漏掉——新开的计划 first 一定是 false，那一轮的改动就永远不推
+  applyPlan(
+    task,
+    {
+      partial: true,
+      steps: [
+        { title: '改代码', status: 'done' },
+        { title: plan.steps.at(-1)!.title, status: 'done' },
+      ],
+    },
+    undefined,
+    'push',
+  )
+  applyPlan(task, { title: '小修', steps: [{ title: '改这处', status: 'done' }] }, undefined, 'push')
+  plan = task.plans!.at(-1)!
+  assert.equal(plan.steps.at(-1)!.wrapUp, 'push', '一轮改完也要到推送这一步')
+  assert.equal(plan.doneAt, '', '推送没做完，计划不收起')
+})
+
+test('父对话的推送收尾只在这个对话明确授权时才有', () => {
+  // 项目设置「允许直接推送」、Git 仓库有远端
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'allow' }), 'push')
+  // 这个对话里用户已经同意推送，口径和提示词的授权段一致
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'ask', answered: 'allowed' }), 'push')
+  // 不推送、用户拒绝过：都不加
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'deny' }), undefined)
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'ask', answered: 'denied' }), undefined)
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'allow', answered: 'denied' }), undefined)
+  // 「第一次问一次」还没回答：等回答完、下一轮再加
+  assert.equal(wrapUpKind({ child: false, git: true, push: 'ask' }), undefined)
+  // 不是 Git 仓库 / 没有远端：推送这一步永远做不了，不加
+  assert.equal(wrapUpKind({ child: false, git: false, push: 'allow' }), undefined)
+  // P4 工作区走 changelist，不推 git（工作区建在 git 仓库目录下时也会认到 .git）
+  assert.equal(wrapUpKind({ child: false, p4: true, git: true, push: 'allow' }), undefined)
+  // 子对话保持不碰远端：还是合并回父对话分支或分 changelist
+  assert.equal(wrapUpKind({ child: true, isolated: true, git: true, push: 'allow' }), 'merge')
+  assert.equal(wrapUpKind({ child: true, p4: true, git: true, push: 'allow' }), 'p4')
+  assert.equal(wrapUpKind({ child: true, git: true, push: 'allow' }), undefined)
+  // 项目设置「不推送」不影响子对话：它的收尾是合回分支 / 分 changelist，不推送也要照做
+  assert.equal(wrapUpKind({ child: true, isolated: true, git: true, push: 'deny' }), 'merge')
+  assert.equal(wrapUpKind({ child: true, p4: true, git: true, push: 'deny' }), 'p4')
+  assert.equal(wrapUpKind({ child: true, isolated: true, git: true, push: 'ask', answered: 'denied' }), 'merge')
+})
+
+test('Agent 自己又写了一条推送收尾：认成面板的那一条，计划里只有一条', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码' }, { title: '收尾：推送到远端' }] }, undefined, 'push')
+  const steps = activePlan(task)!.steps
+  assert.equal(steps.filter((x) => x.wrapUp).length, 1, '只有面板的一条推送收尾')
+  assert.equal(steps.at(-1)!.wrapUp, 'push')
+  assert.equal(steps.at(-1)!.title, WRAP_UP.push.title)
+})
+
+test('明确不推送后，计划里挂着的推送收尾被去掉（Agent 自己抄的那条也一起）', () => {
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'push')
+  assert.equal(activePlan(task)!.steps.at(-1)!.wrapUp, 'push')
+  // 用户拒绝推送后再刷新计划：还挂着一步永远做不了的收尾，计划就永远算没做完
+  const r = applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'none')
+  const plan = activePlan(task)!
+  assert.equal(
+    plan.steps.some((s) => s.wrapUp),
+    false,
+  )
+  assert.match(r.info, /推送收尾已去掉/)
+  // Agent 把面板那条删掉、自己写了一条同标题（没有 wrapUp 字段）的普通步骤：也认出来删掉，
+  // 不然计划里还剩一步「收尾：推送到远端」永远做不完
+  const again = pushTask()
+  applyPlan(again, { steps: [{ title: '改代码', status: 'done' }, { title: '收尾: 推送到远端' }] }, undefined, 'push')
+  assert.equal(
+    activePlan(again)!.steps.filter((x) => x.title.includes('远程') || x.title.includes('远端')).length <= 2,
+    true,
+  )
+  applyPlan(again, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'none')
+  assert.equal(
+    activePlan(again)!.steps.filter((x) => x.wrapUp || x.title.includes('推送到远端')).length,
+    0,
+    '标题是收尾的普通步骤也一起去掉',
+  )
+})
+
+test('收尾这一轮算不出来时不删已有的推送收尾（只有明确不推才删）', () => {
+  const task = pushTask()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'push')
+  const wrap = activePlan(task)!.steps.at(-1)!
+  // 这一轮没算出收尾（项目目录没取到）：收尾保持原样，id 不变，下一轮算出来接着用
+  // （这一轮新加的步骤会临时排在它后面，下一轮 ensureWrapUp 会把它挪回最后）
+  applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, undefined)
+  const plan = activePlan(task)!
+  const kept = plan.steps.find((s) => s.wrapUp === 'push')!
+  assert.ok(kept, '收尾没被删掉')
+  assert.equal(kept.id, wrap.id)
+  applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'push')
+  assert.equal(activePlan(task)!.steps.at(-1)!.id, wrap.id, '下一轮挪回最后')
 })
 
 test('父对话收尾子对话后刷新计划：合进去还没收口继续等，收口了才标完成，每次都给出计划', () => {

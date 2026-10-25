@@ -34,7 +34,10 @@ export interface PlanItemInput {
 const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done']
 const STATUS_TEXT: Record<PlanStatus, string> = { pending: '待做', running: '进行中', waiting: '等待中', done: '完成' }
 
-/** 收尾步骤的种类：merge 独立分支合回父对话所在的分支，p4 按文件类型分进各自的 pending changelist */
+/**
+ * 收尾步骤的种类，永远是计划的最后一步：merge 子对话的独立分支合回父对话所在的分支，
+ * p4 子对话按文件类型分进各自的 pending changelist，push 父对话把当前分支推到远端
+ */
 export type WrapUpKind = NonNullable<PlanStep['wrapUp']>
 
 /** 面板加的收尾步骤长什么样：标题、备注都直接写清楚要做什么，Agent 照着做 */
@@ -47,6 +50,48 @@ export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
     title: '收尾：按文件类型把改动分进各自的 changelist',
     note: '调用 p4_split_changelists：[C++]、[XLSX]（表格）、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；每类写一句中文描述。不 submit',
   },
+  push: {
+    title: '收尾：推送到远端',
+    note: '前面的步骤都做完、验证通过并在本地提交之后，把当前分支推到它跟踪的远端分支（没有跟踪分支就推到 origin 同名分支并设上跟踪）；推完回读 git status -sb 确认，结论里写清推到了哪个远端分支；只做普通推送，不强推，被拒就停下来报告。推成功后把这步标完成；这一轮确实没有任何提交、远端也已经是这个提交时，回读确认后直接标完成并说明原因',
+  },
+}
+
+/**
+ * 计划收尾的答案：主类型之外还有『这一轮算不出来』（undefined）和『明确不推』（'none'），后者能去掉旧的推送收尾。
+ * 区分这两种是为了不误删：项目目录这一轮没探测到时不能当成「用户不推了」
+ */
+export type WrapUpAnswer = WrapUpKind | 'none'
+
+/**
+ * 这个对话的计划要不要收尾、收哪种（见 ensureWrapUp）：判定和提示词里「授权情况」那段同一套口径，
+ * 免得计划里有一步推送、提示词却写着不许推（或者反过来）
+ */
+export interface WrapUpInput {
+  /** 父对话（用户直接对话的那个）还是子对话 */
+  child: boolean
+  /** 子对话在独立分支里改（或者要改的时候才开分支） */
+  isolated?: boolean
+  /** P4 工作区 */
+  p4?: boolean
+  /** Git 仓库：推送收尾只在 Git 里成立 */
+  git?: boolean
+  /** 项目设置的推送策略 */
+  push?: 'ask' | 'allow' | 'deny'
+  /** 这个对话里用户对推送做过的选择 */
+  answered?: 'allowed' | 'denied'
+}
+
+export function wrapUpKind(x: WrapUpInput): WrapUpKind | undefined {
+  if (x.child) {
+    if (x.isolated) return 'merge'
+    return x.p4 ? 'p4' : undefined
+  }
+  // 父对话只在明确授权推送时才有这一步：项目设置「不推送」和用户拒绝过都不加；「第一次问一次」还没回答时也不加，
+  // 等这一轮问完、下一轮带上 answered 再加。P4 工作区的改动走 changelist，不推 git（工作区建在 git 仓库目录下时
+  // 也认到 .git，推上去的会是旧历史）
+  if (x.p4 || x.push === 'deny' || x.answered === 'denied') return undefined
+  const allowed = x.answered === 'allowed' || x.push === 'allow'
+  return allowed && x.git ? 'push' : undefined
 }
 
 /** 当前计划：最后一份还没做完的 */
@@ -302,13 +347,16 @@ function closeIfDone(plan: TaskPlan, now: string) {
   return true
 }
 
+/** 标题的归一化比较：空格、半角冒号都不算差别（Agent 抄标题时写法不固定） */
+const wrapTitle = (title: string) => title.replace(/\s+/g, '').replace(/:/g, '：')
+
 /**
  * Agent 自己写的这一步是不是收尾：照抄了面板的收尾（新开计划时把上一份计划的收尾一起抄过来最常见），
  * 或者自己写了「收尾：合回…」「收尾：…changelist」。认成面板的收尾，不然计划里会有两条一样的收尾
  */
 function looksLikeWrapUp(title: string) {
-  const t = title.replace(/\s+/g, '').replace(/:/g, '：')
-  if (Object.values(WRAP_UP).some((w) => w.title.replace(/\s+/g, '') === t)) return true
+  const t = wrapTitle(title)
+  if (Object.values(WRAP_UP).some((w) => wrapTitle(w.title) === t)) return true
   return t.startsWith('收尾') && (t.includes('合回') || /changelist/i.test(t))
 }
 
@@ -345,7 +393,12 @@ function ensureWrapUp(
     return
   }
   const todo = rest.some((s) => !s.wrapUp && s.status !== 'done')
-  const needed = todo || open.length || (first && !plan.steps.some((s) => s.wrapUp))
+  // 推送是每份计划都要做的事，所以这份计划里还没有推送收尾、又有步骤时就加：一轮就把事做完、步骤全标完成时，
+  // 只看 first 会漏掉（新开的计划 first 一定是 false），那一轮的改动就永远不推。
+  // 已经有收尾的（做完也好、挂着也好）仍按原来的判定：只有 todo / open 才重新打开，推完不折腾。
+  // 合回 / 分 changelist 是一次性的收尾，回顾型的计划（全是做完的步骤）不再加，否则永远「只剩收尾」
+  const missing = !plan.steps.some((s) => s.wrapUp === kind) && rest.some((s) => !s.wrapUp)
+  const needed = todo || open.length || (kind === 'push' ? missing : first && !plan.steps.some((s) => s.wrapUp))
   if (!needed) return
   // 做完的收尾之后又有要做的事：重新打开它挪到最后，不另加一条同名的
   const reopen = open.length ? undefined : plan.steps.filter((s) => s.wrapUp === kind && s.status === 'done').at(-1)
@@ -370,15 +423,34 @@ function ensureWrapUp(
 }
 
 /**
+ * 去掉一种还没做完的收尾（连同 Agent 自己照抄了一条同标题的普通步骤），返回有没有删掉东西。
+ * 用在授权变了的时候：计划里留着一步永远做不了的收尾，计划就永远算没做完
+ */
+function dropWrapUp(plan: TaskPlan, kind: WrapUpKind) {
+  const title = wrapTitle(WRAP_UP[kind].title)
+  const list = plan.steps.filter(
+    (s) => s.status !== 'done' && (s.wrapUp === kind || (!s.wrapUp && wrapTitle(s.title) === title)),
+  )
+  if (!list.length) return false
+  plan.steps = plan.steps.filter((s) => !list.includes(s))
+  return true
+}
+
+/**
  * set_plan：交整份计划。没有进行中的计划就开一份新的（上一份做完了就可以直接开新的）。
- * wrapUp 是子对话要做的收尾（见 ensureWrapUp），面板保证它是计划的最后一步。
+ * wrapUp 是这个对话要做的收尾（见 wrapUpKind 和 ensureWrapUp），面板保证它是计划的最后一步。
  * 返回给 Agent 的说明里带上合并后的完整计划和每一项的 id
  */
 export function applyPlan(
   task: PlanTask,
   input: { title?: string; steps?: PlanItemInput[]; partial?: boolean },
   now = new Date().toISOString(),
-  wrapUp?: WrapUpKind,
+  /**
+   * 这个对话的收尾：不传表示「不用收尾」（合回 / 分 changelist 这类一次性收尾就不做了），
+   * 'none' 表示「明确不推送」——只有它能去掉计划里还挂着的推送收尾。
+   * 其余情况（这一轮算不出来，例如项目目录没取到）保持收尾原样，下次算出来再收
+   */
+  wrapUp?: WrapUpKind | 'none',
   /** 这个对话名下的子对话：Agent 在步骤里点到的挂成等待，已经结束的直接收口（见 linkKids） */
   kids?: PlanKid[],
 ): { ok: boolean; info: string } {
@@ -496,14 +568,18 @@ export function applyPlan(
     true,
   )
   const notes0: string[] = []
-  if (wrapUp) {
-    ensureWrapUp(plan, wrapUp, prevWrap, () => String(++seq), now, task.plans.length === 1)
+  const kind = wrapUp === 'none' ? undefined : wrapUp
+  if (kind) {
+    ensureWrapUp(plan, kind, prevWrap, () => String(++seq), now, task.plans.length === 1)
     // 合回分支只有面板说了算：Agent 自己标完成不算，等合并结果
     const merge = plan.steps.find((s) => s.wrapUp === 'merge' && s.status === 'done' && s === prevWrap)
     if (merge && prevWrapStatus !== 'done') {
       setStatus(merge, prevWrapStatus === 'pending' ? 'pending' : 'running', now)
       notes0.push(`「${merge.title}」由面板在合并成功后标完成：调用 submit_merge，不要自己标。`)
     }
+  } else if (wrapUp === 'none' && dropWrapUp(plan, 'push')) {
+    // 推送策略改成不推了（用户拒绝过、或设置改成不推送）：还挂着的推送收尾永远做不了，删掉它计划才收得起来
+    notes0.push(`推送收尾已去掉：「${WRAP_UP.push.title}」不在这次的授权里，不用做，也不用再写进计划。`)
   }
   for (const t of before) if (!plan.steps.includes(t)) dropped.push(t.title)
   // 只交变更步骤时漏写的未完成步骤不删也不提示：模型以为「漏写的会算删掉」，实际它一直挂在原位，

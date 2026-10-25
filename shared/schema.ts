@@ -1399,10 +1399,11 @@ export const PlanStep = PlanItem.extend({
   /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
   run: z.number().int().optional(),
   /**
-   * 面板加的收尾步骤（子对话计划的最后一步）：merge 是独立分支合回父对话所在的分支，由合并结果标完成；
-   * p4 是把改动按文件类型分进各自的 pending changelist，Agent 做完自己标。旧数据没有这个字段，当普通步骤
+   * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
+   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist，Agent 做完自己标；
+   * push 是父对话把分支推到远端，Agent 推完自己标。旧数据没有这个字段，当普通步骤
    */
-  wrapUp: z.enum(['merge', 'p4']).optional(),
+  wrapUp: z.enum(['merge', 'p4', 'push']).optional(),
   /**
    * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
    * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
@@ -1510,6 +1511,29 @@ export const TaskJob = z.object({
   startedAt: z.string().default(''),
 })
 export type TaskJob = z.infer<typeof TaskJob>
+
+/**
+ * 一条后台命令的当前样子（界面上点命令行打开的窗口用它轮询）：
+ * 在跑的时候要给得出已经输出的内容，跑完了也要还能读到最终输出和退出码——用户可能过一阵才点开。
+ * 和 TaskJob 分开：TaskJob 只列还在跑的（运行区那一行），这个带输出和终态
+ */
+export const TaskJobView = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running', 'done', 'failed', 'stopped']),
+  /** 退出码：还在跑、排队中为空 */
+  code: z.number().nullable(),
+  /** 已经输出的内容（只留结尾，见 server/background.ts 的 KEEP_LINES） */
+  output: z.string(),
+  /** 交给面板的时间：排队也算在等结果的时间里 */
+  createdAt: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  /** 最后一次有输出的时间：界面上「多久没动静」看它 */
+  lastOutputAt: z.string(),
+})
+export type TaskJobView = z.infer<typeof TaskJobView>
 
 export const TaskData = z.object({
   projectId: z.string(),

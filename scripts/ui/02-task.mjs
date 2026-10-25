@@ -6,7 +6,7 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
@@ -898,14 +898,130 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
   // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
   {
-    const title = p.locator('button[title*="npm ci > /tmp/npmci.log"]').first()
-    if (!(await title.count())) errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
+    /**
+     * 往「购物车右上角」那条父对话里注入一条运行中的后台命令（用完清掉）。
+     * 不写进演示数据里：这条对话没在跑，后面的「转成弹窗」用例靠它验证浮条写「已完成」，
+     * 常驻一条在跑的命令会让那条变成「执行中」
+     */
+    const KEY = 'agent-panel-demo-v3'
+    const patchJobs = async (jobs) => {
+      await p.evaluate(
+        ([k, list]) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const parent = db.tasks.find((x) => x.title.includes('购物车'))
+          // 总是写数组（没有就空数组）：删字段会被 keepLiveFields 当成「没带运行时字段」而沿用旧的
+          parent.jobs = list ?? []
+          localStorage.setItem(k, JSON.stringify(db))
+        },
+        [KEY, jobs],
+      )
+      await p.reload()
+      await backToTask()
+    }
+    const command = 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log'
+    await patchJobs([
+      {
+        // 编号和上面那个 run_background 工具行里的编号一致：两个入口（工具行、运行区的后台命令行）
+        // 指的是同一条命令，真实后端里就是这么对应的
+        id: '3f2a91cd',
+        name: '安装依赖',
+        command,
+        state: 'running',
+        startedAt: new Date(Date.now() - 69_500).toISOString(),
+      },
+    ])
+    const title = p.locator('[aria-label="运行中"] button[title*="npm ci > /tmp/npmci.log"]').first()
+    if (
+      !(await title.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
     else {
       await title.scrollIntoViewIfNeeded()
       const tip = await title.getAttribute('title')
       if (!tip?.includes('tail -20 /tmp/npmci.log')) errors.push(`后台命令折叠行：悬停提示不是完整命令（${tip}）`)
       await check(p, '后台命令-折叠行显示命令', ['后台命令', 'npm ci > /tmp/npmci.log 2>&1'])
+      // 用户提的：点标题应该打开窗口看实时输出，不是只展开命令原文。
+      // 工具行就是这个交互（整行点击 = 展开、点标题 = 开窗口），后台命令跟它一致
+      await title.click()
+      const dialog = p.getByRole('dialog').first()
+      const opened = await dialog.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!opened) errors.push('后台命令：点标题没有打开命令行窗口')
+      else {
+        // 窗口里是实时输出，不是命令原文：等第一段输出拉回来（演示后端给的假输出里有这一行）
+        const printed = await p
+          .waitForFunction(
+            () => {
+              const d = document.querySelector('[role="dialog"]')
+              return !!d && /transforming|modules transformed|agent-panel@/.test(d.innerText || '')
+            },
+            { timeout: 10000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!printed) errors.push('后台命令窗口：没有显示命令的输出')
+        // 窗口标题是命令本身，带「执行中」阶段（命令还在跑，不能显示成完成）
+        const head = await dialog.innerText()
+        for (const text of ['npm ci > /tmp/npmci.log', '执行中'])
+          if (!head.includes(text)) errors.push(`后台命令窗口：没有显示「${text}」`)
+        await check(p, '后台命令-点标题开窗口看输出')
+        // 窗口和行的关系（命令结束后行消失、窗口不能跟着关）不在这条用例里验：
+        // 演示后端的任务数据在内存里缓存（demo-backend 的 load），改 localStorage 不会生效，造不出
+        // 「这条 job 从 task.jobs 里消失」的推送；而在 DOM 上直接删掉那一行也证明不了什么——
+        // React 不会因为 DOM 被外部改了就卸载组件。这条防线靠结构：窗口挂在 TaskView 的 jobTarget 上
+        // （见 docs/modules/web/README.md），不挂在运行区那一行里
+        await p.keyboard.press('Escape')
+        await closed()
+      }
+      // 事后再想回看这条命令：运行区那一行跑完就没了，只能靠对话里那条 run_background 工具行——
+      // 它的标题也要能打开同一个后台命令窗口（输出、退出码都在里面）
+      await patchJobs(null)
+      // 运行区那一行没了之后，只剩对话里那条 run_background 工具行的标题
+      const pick = p.locator('button[title*="npm ci > /tmp/npmci.log"]').last()
+      if (!(await pick.count())) errors.push('后台命令工具行：找不到那条 run_background 的标题')
+      else {
+        await pick.scrollIntoViewIfNeeded()
+        await pick.click()
+        const again = await p
+          .getByRole('dialog')
+          .first()
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!again) errors.push('后台命令工具行：点标题没打开命令行窗口（命令结束后就没地方回看了）')
+        else {
+          // 探针：看窗口拿到的是哪种状态（拉到没拉到、是不是报错）
+          // 等输出拉回来（演示后端记得这条命令，行不在了也读得到）
+          await p
+            .waitForFunction(
+              () => {
+                const d = document.querySelector('[role="dialog"]')
+                return !!d && /agent-panel@|transforming|EXIT=0/.test(d.innerText || '')
+              },
+              { timeout: 10000 },
+            )
+            .catch(() => {})
+          // 演示后端记得这条命令，行不在了也读得到；结束的给最终输出和退出码
+          const text = await p.getByRole('dialog').first().innerText()
+          if (!/npm ci > \/tmp\/npmci\.log/.test(text)) errors.push('后台命令工具行窗口：没显示命令原文')
+          if (!/transforming|modules transformed|agent-panel@|EXIT=0/.test(text))
+            errors.push(`后台命令工具行窗口：没有显示命令输出（当前内容：${text.replace(/\s+/g, ' ').slice(0, 200)}）`)
+          await check(p, '后台命令-工具行也能回看输出')
+          await p.keyboard.press('Escape')
+          await closed()
+        }
+      }
     }
+    await patchJobs(null)
   }
   // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
   {
@@ -2738,6 +2854,42 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
         errors.push('转成弹窗：收起后对话页还开着')
       await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      // 浮条上的关闭按钮只在悬停时出现、位置在右上角；浮条上不能挂原生 title
+      // （那个「展开」提示一悬停就弹灰框，用户嫌烦）。opacity-0 仍算 visible，所以看 opacity
+      const dockClose = first.locator('[data-dock="close"]')
+      const dockOpacity = () => dockClose.evaluate((el) => Number(getComputedStyle(el).opacity))
+      // 浮条特写当截图证据：全页截图里浮条只在右下角一小块，看不出按钮在不在（shotOf 负责把 clip 夹进视口）
+      await p.mouse.move(5, 5)
+      await settle(p)
+      if ((await dockOpacity()) !== 0) errors.push('转成弹窗：没悬停时浮条的关闭按钮也显示（应为 opacity 0）')
+      await shotOf(p, first, '任务-转成弹窗-浮条-不悬停')
+      await first.hover()
+      await settle(p)
+      if ((await dockOpacity()) !== 1) errors.push('转成弹窗：鼠标放到浮条上关闭按钮没出现')
+      await shotOf(p, first, '任务-转成弹窗-浮条-悬停')
+      const dockTitles = await first.locator('[title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+      if (dockTitles.length) errors.push(`转成弹窗：浮条上还有原生 title 提示：${dockTitles.join('、')}`)
+      // 关闭按钮在浮条右上角：量那个看得见的小圆（光看热区矩形不够，它永远贴 top-0 right-0）
+      const barRect = await first.boundingBox()
+      const dotRect = await dockClose.locator('span').first().boundingBox()
+      if (!barRect || !dotRect) errors.push('转成弹窗：量不到浮条关闭按钮小圆的位置')
+      else {
+        const cx = dotRect.x + dotRect.width / 2 - barRect.x
+        const cy = dotRect.y + dotRect.height / 2 - barRect.y
+        if (cx < barRect.width / 2 || cy > barRect.height / 2)
+          errors.push(
+            `转成弹窗：关闭按钮不在浮条右上角（小圆中心 ${Math.round(cx)},${Math.round(cy)}；浮条 ${Math.round(barRect.width)}×${Math.round(barRect.height)}）`,
+          )
+      }
+      // 点关闭仍能关掉浮条（data-dock 判定没坏），由 06 分片末尾的「AI处理-浮条让位后回来」前面那几步覆盖（那里才是点关闭就真关）
+      await check(p, '任务-转成弹窗-悬停显示关闭')
+      // 点关闭仍能关掉这条浮条（data-dock="close" 判定没坏）：
+      // 06 分片的同类用例在 06:113 之后，那条既有超时会让它跑不到，所以这里也补一份
+      await dockOf(CART).getByRole('button', { name: '关闭', exact: true }).click()
+      await dockOf(CART)
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('转成弹窗：点关闭后对话浮条还在（关闭被当成展开了）'))
+      await check(p, '任务-转成弹窗-点关闭')
       // 再收起另一个对话：只留一个，前一条被换掉
       await p.getByText('商品详情页增加', { exact: false }).first().click()
       // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
@@ -2850,5 +3002,94 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!(await pop.isVisible().catch(() => false))) await projBtn.first().click()
     await pop.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
     await check(p, '任务-项目对话浮层', ['商城前台', '购物车右上角', '商品详情页', '打开项目'])
+  }
+  // 发送消息的一瞬间运行区不能闪没：刚发出的用户消息会自己成一段（见 TaskView 的 toBlocks），
+  // 以前「最新的一轮」按最后一段算，那一轮回复就不再是最新，运行区（子对话行、后台命令行）整块消失，
+  // 等 AI 开口又回来。这里用 MutationObserver 记录整个发送过程里运行区最少的子对话行数，
+  // 不靠等待时序赌那一帧（等待条件用「消息出现在消息区里」这个可观测状态）。
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p
+      .getByTitle('Token 用量')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    // 前面的用例可能把右栏子对话留着（那样页面上有两个 #follow-up）：先关掉，输入框只留父对话那个
+    const pane = p.locator('aside[aria-label="子对话"]')
+    if (await pane.count()) {
+      await p
+        .getByRole('button', { name: '关闭子对话', exact: true })
+        .first()
+        .click()
+        .catch(() => {})
+      await pane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    /** 运行区里现在有几行子对话（和弹层「运行中」是同一批，见 shared/task.ts 的 visibleChildren） */
+    const childRows = () =>
+      p.evaluate(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length,
+      )
+    const listed = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ),
+        { timeout: 10000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    const before = await childRows()
+    if (!listed || before < 2) errors.push(`发送时运行区：进入对话后运行区里只有 ${before} 行子对话，用例前提不成立`)
+    else {
+      // 采样器装在发送之前：从点发送到这条消息画出来，记下运行区最少的子对话行数
+      await p.evaluate(() => {
+        const count = () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length
+        const w = window
+        w.__runningMin = Infinity
+        const sample = () => {
+          const n = count()
+          if (n < w.__runningMin) w.__runningMin = n
+        }
+        sample()
+        w.__runningObs?.disconnect()
+        w.__runningObs = new MutationObserver(sample)
+        w.__runningObs.observe(document.body, { childList: true, subtree: true, characterData: true })
+      })
+      const text = '发送时运行区别闪没'
+      // 父对话那个输入框（右栏若还开着，同一个 id 有两个，取第一个）
+      const box = p.locator('#follow-up').first()
+      await box.fill(text)
+      await box.press('Enter')
+      // 消息区里真的画出了这条消息：输入框在消息区外面，里面的同名文字不会让它提前满足
+      await p
+        .waitForFunction(
+          (want) => !!document.querySelector('[data-conversation-scroll="messages"]')?.innerText.includes(want),
+          text,
+          { timeout: 10000 },
+        )
+        .catch(() => errors.push('发送时运行区：消息没有出现在对话里'))
+      const min = await p.evaluate(() => {
+        window.__runningObs?.disconnect()
+        return window.__runningMin
+      })
+      const after = await childRows()
+      // 采样器一次也没跑到（Infinity）：说明发送没有触发任何 DOM 变化，用例没测到东西，不能当通过
+      if (!Number.isFinite(min)) errors.push('发送时运行区：采样器没有采到任何变化，用例没测到东西')
+      else if (min < before)
+        errors.push(`发送时运行区：发送消息的过程中子对话行从 ${before} 行掉到 ${min} 行（发出去的一瞬间运行区闪没了）`)
+      if (after < before)
+        errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
+      await check(p, '任务-发送消息时运行区不消失', ['子对话'])
+    }
   }
 })

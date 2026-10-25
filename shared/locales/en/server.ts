@@ -223,6 +223,7 @@ export const EN_SERVER: Record<string, string> = {
   '执行出错：{error}': 'Execution error: {error}',
   任务不存在: 'Task not found',
   找不到这个子任务: 'Subtask not found',
+  没有这条后台命令: 'Background command not found',
   这个子任务已经结束了: 'This subtask has already finished',
   缺少项目: 'Project is required',
   '项目还没有指定工作流，请选择一个工作流或改用直接对话':

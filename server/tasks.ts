@@ -74,7 +74,7 @@ import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
-import { branchCommits, gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
+import { branchCommits, gitChanges, gitFileDiff, gitHasRemote, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
 import { reviewGate, triageText, type TriageItem } from '../shared/review-gate.ts'
 import {
@@ -149,13 +149,14 @@ import {
   holdWait,
   markWrapUp,
   openPlan,
+  wrapUpKind,
   openWork,
   refreshChildWait,
   settleWait,
   syncKids,
   type PlanKid,
   waitNote,
-  type WrapUpKind,
+  type WrapUpAnswer,
 } from '../shared/plan.ts'
 import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
@@ -207,13 +208,26 @@ const isP4 = (dir: string) => {
 }
 
 /**
- * 子对话计划最后一步的收尾（见 plan.ts 的 ensureWrapUp）：独立分支（或要改时才开）的合回父对话所在的分支，
- * P4 工作区按文件类型分 changelist；共用父对话目录的 Git 子对话改完就在父对话的分支上，不用收尾
+ * 这个对话计划最后一步的收尾（见 plan.ts 的 wrapUpKind 和 ensureWrapUp）：子对话是独立分支合回父对话所在的
+ * 分支（P4 工作区按文件类型分 changelist，共用目录的 Git 子对话不用收尾），父对话是明确授权推送时把分支推到远端。
+ * 返回 undefined 表示「这一轮算不出来」（项目目录或远端没探测到），此时计划里已有的收尾保持原样
  */
-async function childWrapUp(tk: Task, projectPath: string | undefined): Promise<WrapUpKind | undefined> {
-  if (!tk.parentTaskId || tk.mode !== 'chat') return undefined
-  if (isolated(tk) || tk.wantsWorktree) return 'merge'
-  return projectPath && (await isP4(projectPath)) ? 'p4' : undefined
+async function planWrapUp(
+  tk: Task,
+  projectPath: string | undefined,
+  policy: Project['gitPolicy'] | undefined,
+): Promise<WrapUpAnswer | undefined> {
+  if (tk.mode !== 'chat') return undefined
+  const child = !!tk.parentTaskId
+  const isolatedChild = isolated(tk) || !!tk.wantsWorktree
+  // 明确不推：项目设置不许推、或这个对话里用户拒绝过。这时才去掉计划里还挂着的推送收尾
+  // （只对父对话成立：子对话本来就不碰远端，它的收尾是合回分支 / 分 changelist，不推送也要照做）
+  if (!child && (policy === 'deny' || tk.remotePush === 'denied')) return 'none'
+  // 项目目录没取到（项目被删、读失败）时不知道有没有远端，先不算，别把已有的收尾删掉
+  if (!projectPath) return undefined
+  // 有没有远端、是不是 Git 都按真实工作区判断：SVN、没有远端的本地仓库加一步推送收尾，它永远做不了
+  const [p4, git] = await Promise.all([isP4(projectPath), gitHasRemote(projectPath)])
+  return wrapUpKind({ child, isolated: isolatedChild, p4, git, push: policy, answered: tk.remotePush })
 }
 
 /** 打开对话页时后台启动 CLI 用的提示：只让它停在等下一句上，不做任何事 */
@@ -2582,7 +2596,7 @@ export function tasksApi(deps: {
           : undefined,
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
-        wrapUp: await childWrapUp(entry.task, project?.path),
+        wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
         // P4 项目里的对话和节点都能用：分 changelist 由面板照类型执行，不靠 Agent 自己记得分（见 p4-split.ts）
         p4Split:
           dir && project?.path && (await isP4(project.path))
@@ -3633,6 +3647,18 @@ export function tasksApi(deps: {
     )
     await endBackground(id)
     return c.json({ stopped: before })
+  })
+
+  /**
+   * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
+   * 命令结束后仍然读得到最终输出（用户可能过一阵才点开）；只认这个对话自己的命令，跨对话读别人的当不存在
+   */
+  routes.get('/:id/jobs/:jobId', async (c) => {
+    const id = c.req.param('id')
+    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    const job = background.view(id, c.req.param('jobId'))
+    if (!job) return bad(c, t('没有这条后台命令'), 404)
+    return c.json(job)
   })
 
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */

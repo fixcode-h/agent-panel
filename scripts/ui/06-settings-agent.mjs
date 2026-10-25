@@ -6,12 +6,13 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByRole('button', { name: '设置' }).first().click()
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
-  await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
+  // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
+  await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
   // 三档模型的上下文、最大输出：默认按模型自动填，手动改了能恢复自动；Codex 不接受最大输出
   await p.getByRole('dialog').getByText('Claude Code', { exact: true }).first().click()
@@ -60,6 +61,51 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 最小化成浮条（和「角色」页的 AI 优化共用同一个组件）：后面的设置流程里它一直在，最后统一验拖动和关闭
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   await check(p, 'AI处理-最小化', ['AI 排查：Pi：卸载没有成功'])
+  // 右下角的「Pi 卸载失败」错误提示正好盖在浮条位置上（都是底部右侧）：
+  // 以后的截图和悬停判定都会被它挡住。sonner 默认几秒后自己消失，这里就等它走，不去点关闭
+  // （关闭按钮的显隐由 web/src/index.css 控制，只有 error 类型显示，靠点击反而会卡住）
+  await p
+    .locator('[data-sonner-toast]')
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 })
+    .catch(() => errors.push('浮条：错误提示一直不消失，会挡住浮条'))
+  // 浮条的外观与悬停行为在这里就验一次：后面还有一大段设置流程，没跑到的断言不能当通过。
+  // 关闭按钮用 opacity 隐起来，但隐藏时仍占屏幕位置、照样能点，所以用 computedStyle 的 opacity 判，
+  // 不用 isVisible（opacity-0 也算 visible）；原生 title 测不到，改为断言浮条里没有 title 属性
+  const dockCloseOf = (loc) => loc.locator('[data-dock="close"]')
+  const dockOpacityOf = (loc) => loc.evaluate((el) => Number(getComputedStyle(el).opacity))
+  /** 浮条右上角的关闭按钮：默认不可见、悬停才出现，且没把浮条撑大、没往浮条上挂原生 title */
+  const checkDockClose = async (loc, tag, shot) => {
+    await p.mouse.move(5, 5)
+    await settle(p)
+    if ((await dockOpacityOf(dockCloseOf(loc))) !== 0) errors.push(`${tag}：没悬停时关闭按钮也显示（应为 opacity 0）`)
+    if (shot) await shotOf(p, loc, `${shot}-不悬停特写`)
+    if (shot) await check(p, `${shot}-不悬停`)
+    await loc.hover()
+    await settle(p)
+    if ((await dockOpacityOf(dockCloseOf(loc))) !== 1) errors.push(`${tag}：鼠标放到浮条上关闭按钮没出现`)
+    if (shot) await shotOf(p, loc, `${shot}-悬停特写`)
+    if (shot) await check(p, `${shot}-悬停`)
+    const titles = await loc.locator('[title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+    if (titles.length) errors.push(`${tag}：浮条上还有原生 title 提示：${titles.join('、')}`)
+    // 那个看得见的小圆（按钮里的 span）才代表「视觉上的右上角」，光量热区矩形不够：
+    // 热区永远贴着 top-0 right-0，小圆以后改成左下对齐也照样能过
+    const bar = await loc.boundingBox()
+    const dot = await dockCloseOf(loc).locator('span').first().boundingBox()
+    if (!bar || !dot) errors.push(`${tag}：量不到关闭按钮小圆的位置`)
+    else {
+      const cx = dot.x + dot.width / 2 - bar.x
+      const cy = dot.y + dot.height / 2 - bar.y
+      // 落在浮条右上象限（右半边、上半边）：小圆被挑到右侧中部或左下都会报错。
+      // 不用更严的三分之一：小圆中心实测 cy≈15px（内缩 5 + 半径 10），浮条 44px 的三分之一才 14.7px，会误报
+      if (cx < bar.width / 2 || cy > bar.height / 2)
+        errors.push(
+          `${tag}：关闭按钮不在浮条右上角（小圆中心 ${Math.round(cx)},${Math.round(cy)}；浮条 ${Math.round(bar.width)}×${Math.round(bar.height)}）`,
+        )
+    }
+  }
+  await settle(p)
+  await checkDockClose(p.getByRole('group', { name: 'AI 排查：Pi：卸载没有成功', exact: true }), '浮条', 'AI处理-浮条')
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 Agent 的配置里识别到 2 个 API', 'Codex · openrouter'])
@@ -156,6 +202,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       `浮条：只剩一个时没有贴右下角（右 ${Math.round(viewport.w - (boxB.x + boxB.width))}px、下 ${Math.round(viewport.h - (boxB.y + boxB.height))}px）`,
     )
   await check(p, 'AI处理-浮条只留一个')
+  await checkDockClose(assistDock, '浮条')
   // 按住拖动：位置跟着指针走，拖动不会被当成点击把窗口展开
   const from = await assistDock.boundingBox()
   await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
