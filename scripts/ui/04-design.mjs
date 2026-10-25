@@ -223,6 +223,28 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
   await p.keyboard.press('Escape')
+  // 项目行整行可点：以前只有左边的小箭头能收起，点项目名没反应（用户报的「点项目名没反应」）
+  // 定位项目名而不用最左边的「收起」按钮：两个项目同时存在时按钮顺序不可靠
+  // 限在侧栏里找，避开副栏、对话里同名的文字；分类行按 data-kind 定位，不靠文字子串匹配
+  const side = () => p.locator('[data-sidebar]')
+  const projName = () => side().getByText('暗夜远征', { exact: true }).first()
+  const gameKind = () => side().locator('[data-kind="game"]')
+  // 先断言展开：下面两条断言靠它区分「点了没反应」和「本来就收着」
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '初始是展开的')
+  await projName().click()
+  // 收起后箭头变成「展开」、分类行整个不渲染
+  await side().getByRole('button', { name: '展开', exact: true }).first().waitFor()
+  await gameKind().waitFor({ state: 'detached' })
+  await check(p, 'UI设计-点项目名收起')
+  await projName().click()
+  await gameKind().waitFor()
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '再点项目名又展开了')
+  await check(p, 'UI设计-点项目名展开')
+  // 箭头按钮不能因为冒泡折叠两次（那样点了看着像没反应）
+  await side().getByRole('button', { name: '收起', exact: true }).first().click()
+  await gameKind().waitFor({ state: 'detached' })
+  await side().getByRole('button', { name: '展开', exact: true }).first().click()
+  await gameKind().waitFor()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')
   await check(p, 'UI设计-画板数据', ['星辉宝石'])

@@ -3,12 +3,15 @@ import { toast } from 'sonner'
 import { type Attachment, type Task } from '@shared/schema'
 import { analysisHome, analyzerId, rootIdOf, type AnalysisHome, type AnalysisScope } from '@shared/analysis-home'
 import { t } from '@shared/i18n'
+import { type ClosePlan, closeWindowPlan } from './ai-window-close'
 import { api } from './api'
 
 /**
  * 统一的 AI 分析窗口：面板上所有「AI 分析」「AI 排查」只管调用 openAiWindow，
  * 对话按归属规则建好（见 shared/analysis-home.ts：对话树里的开成父对话的子对话、项目的开项目对话、其余开 Chat），
- * 统一用必备角色「分析」，显示在最外层的同一个窗口（AiWindow）里：最小化成右下角的浮条，分析照常进行；关闭会停止这次分析。
+ * 统一用必备角色「分析」，显示在最外层的同一个窗口（AiWindow）里：最小化成右下角的浮条，分析照常进行。
+ * 关闭（浮条或窗口标题栏的 ✕）只收窗口，同样不停分析：对话在列表里还在、后台跑完会提醒。
+ * 要停分析去对话里的输入框点停止，两个关闭入口都不再兼职停止。
  */
 export interface AiJob {
   /** 窗口和浮条上的说法：AI 排查 / AI 分析 */
@@ -39,6 +42,8 @@ interface State {
   error?: string
 }
 let state: State = { open: false, minimized: false, gone: false, starting: false }
+/** 给测试和排查看的状态快照：只读，不含内部字段的写入口 */
+export type AiWindowSnapshot = Readonly<State>
 const listeners = new Set<() => void>()
 const set = (p: Partial<State>) => {
   state = { ...state, ...p }
@@ -46,6 +51,15 @@ const set = (p: Partial<State>) => {
 }
 
 const running = (s?: Task['status']) => s === 'running'
+/** 还在跑时多久看一次状态：浮条和结束提醒都要跟得上 */
+const RUNNING_POLL_MS = 1500
+/** 结束后多久再看一眼：只看对话还在不在（删了要标「对话已关闭」），不用那么勤 */
+const ENDED_POLL_MS = 5000
+/**
+ * 结束后最多再盯几轮就收手：结束时已经提醒过了，再盯只是为了分辨「删掉了」和「又被接着问了」。
+ * 不封顶的话，关了窗口再也不开 AI 分析的会话里会一直每 5 秒发一次请求，直到刷新页面。
+ */
+const ENDED_POLL_MAX = 12
 
 /**
  * 对话已经删掉了：正式版返回 404，在线演示没有状态码、错误文案是写死的「任务不存在」，
@@ -63,6 +77,8 @@ const isTaskGone = (e: unknown) => {
 function watch(id: string) {
   // 结束只提醒一次：结束后还会放慢节奏继续盯着对话在不在，不能每次都提醒
   let finished = false
+  // 结束后已经慢速盯了几轮：查不多之后就收手，不把轮询永久挂在后台
+  let slowTicks = 0
   const tick = async () => {
     if (state.taskId !== id) return
     try {
@@ -72,7 +88,8 @@ function watch(id: string) {
       // 结束后又被接着问了：这一轮结束时还要再提醒、再交回结果
       if (running(task.status)) {
         finished = false
-        return void setTimeout(tick, 1500)
+        slowTicks = 0
+        return void setTimeout(tick, RUNNING_POLL_MS)
       }
       if (!finished) {
         finished = true
@@ -82,16 +99,23 @@ function watch(id: string) {
             action: { label: t('查看'), onClick: () => set({ open: true, minimized: false }) },
           })
       }
-      // 对话结束了不代表用户关了窗口：放慢节奏继续看一眼，之后删掉时要能标出来
-      setTimeout(tick, 5000)
+      // 对话结束了不代表用户关了窗口：放慢节奏继续看一眼，之后删掉时要能标出来。
+      // 但不能无限盯：关掉窗口又再也不开 AI 分析的会话里，这里会每 5 秒发一次请求直到刷新。
+      // 结束后降到 ENDED_POLL_MS 一次，再盯 ENDED_POLL_MAX 次就收手（还能盖住「被接着问了又结束」这种短期情况）
+      slowTicks += 1
+      if (slowTicks > ENDED_POLL_MAX) return
+      setTimeout(tick, ENDED_POLL_MS)
     } catch (e) {
       if (state.taskId !== id) return
-      // 网络抖动之类的先不判死：下一轮再看
-      if (!isTaskGone(e)) return void setTimeout(tick, 5000)
-      set({ gone: true })
+      if (isTaskGone(e)) return void set({ gone: true })
+      // 网络抖动之类的先不判死：下一轮再看。但后端一直不通时也不能无限发请求，
+      // 和结束后那一支用同一个计数、同一个慢节奏
+      slowTicks += 1
+      if (slowTicks > ENDED_POLL_MAX) return
+      setTimeout(tick, ENDED_POLL_MS)
     }
   }
-  setTimeout(tick, 1500)
+  setTimeout(tick, RUNNING_POLL_MS)
 }
 
 async function start(job: AiJob) {
@@ -119,6 +143,8 @@ async function start(job: AiJob) {
     watch(task.id)
   } catch (e) {
     set({ error: (e as Error).message, starting: false })
+    // 窗口已经关掉了：错误得弹出来，否则用户只看到「正在新建」那句话，真正的原因留在看不见的窗口里
+    if (!state.open) toast.error((e as Error).message)
   }
 }
 
@@ -134,15 +160,44 @@ export function openAiWindow(job: AiJob) {
 }
 
 export const minimizeAiWindow = (minimized: boolean) => set({ minimized })
-/** 收起窗口但不停止（去对话里看了） */
+/** 收起窗口但不停止（去对话里看了），也不提醒：用户自己走过去看的 */
 export const hideAiWindow = () => set({ open: false, minimized: false })
-/** 关掉窗口；还在分析时停下（用户点关闭就是真的关，不再先确认） */
+
+/**
+ * 关掉窗口：只收窗口，不停止分析（浮条和标题栏的两个 ✕ 都是这个）。
+ * taskId / status 故意留着：watch() 靠它们继续盯着，后台跑完照样弹「{label}结束」+「查看」；
+ * 还在分析时再补一句「分析继续在后台进行」，免得用户以为关掉就把分析停了。
+ */
 export function closeAiWindow() {
-  if (state.taskId && running(state.status)) void api.stopTask(state.taskId).catch(() => {})
-  // 清掉 taskId：watch() 的轮询下一轮就自己退出了
-  set({ open: false, minimized: false, taskId: undefined, status: undefined, gone: false })
+  const plan: ClosePlan = closeWindowPlan(state)
+  set(plan.patch)
+  if (!plan.notify) return
+  // 还在新建：只是还没建完，别断言「在后台进行」——建失败时这句就是假的，失败会另外提示
+  if (plan.notify.kind === 'starting')
+    return toast(
+      t('{label}正在新建对话，关掉窗口不影响它继续建：{title}', {
+        label: plan.notify.label,
+        title: plan.notify.title,
+      }),
+      { action: { label: t('查看'), onClick: () => set({ open: true, minimized: false }) } },
+    )
+  toast(t('{label}继续在后台进行：{title}', { label: plan.notify.label, title: plan.notify.title }), {
+    action: { label: t('查看'), onClick: () => set({ open: true, minimized: false }) },
+  })
 }
 export const aiWindowRunning = () => state.starting || running(state.status)
+/** 当前窗口状态的快照：单测和排查用，改状态走上面的函数 */
+export const aiWindowState = (): AiWindowSnapshot => ({ ...state })
+/**
+ * 清回初始状态。单元测试用：state 是模块单例，上一个用例留下的 taskId/starting
+ * 会让下一个用例的 openAiWindow 以为「还有一个在分析」，也会让 watch() 的轮询停不下来。
+ */
+export const resetAiWindow = () => {
+  // 先把 taskId 清掉：已经排上的 watch() 下一拍会因为 state.taskId !== id 直接退出，
+  // 否则旧轮询会和测试里新建的 watch 同时跑（两个用例都用 'task-1'，光换 state 拦不住）
+  state = { open: false, minimized: false, gone: false, starting: false }
+  listeners.forEach((f) => f())
+}
 
 export function useAiWindow() {
   const [, tick] = useState(0)

@@ -495,6 +495,89 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         errors.push('元素抓取：剪贴板里没有完整的元素引用（缺标记或「- 元素：」那行）')
     } else errors.push('元素抓取：读不到剪贴板内容（可能没写进去）')
     await check(d, '元素抓取-剪贴板兜底')
+
+    // 元素引用能带出去：右键卡片「复制内容」写的是带标记的原文，粘到另一个窗口还原成同一张引用卡片。
+    // 复制出去的不是路径也不是本地存储里的编号，所以换个标签页、换个面板实例都认得出（见 lib/element-ref.ts）
+    // 先回对话页：上面那段结尾停在了库页，而这一步要点的是输入框里刚放进去的那张引用卡片
+    await d.goto(base + '#/chat')
+    await d.locator('#task-prompt').waitFor()
+    await chip.waitFor({ timeout: 5000 })
+    await chip.click({ button: 'right' })
+    const copyItem = d.getByRole('menuitem', { name: '复制内容' })
+    await copyItem.waitFor({ timeout: 3000 }).catch(() => errors.push('元素引用复制：右键卡片没有「复制内容」'))
+    await copyItem.click()
+    await d
+      .getByText('引用内容已复制')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素引用复制：复制后没有成功提示'))
+    const marked = await d.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!marked.startsWith('[元素引用]')) errors.push(`元素引用复制：剪贴板里没有引用标记（${marked.slice(0, 24)}）`)
+    if (!marked.trimEnd().endsWith('[/元素引用]')) errors.push('元素引用复制：剪贴板里的标记不完整')
+    await check(d, '元素引用-复制')
+    // 另一个窗口：同一个浏览器的另一个标签页，浏览器只把剪贴板里的文字带过去。
+    // 两个标签页共用本地草稿，先把输入框（和里面恢复出来的卡片）清空，这样出现的卡片只可能是粘来的
+    const b = await d.context().newPage()
+    await b.goto(base + '#/chat')
+    await b.locator('#task-prompt').waitFor({ timeout: 10000 })
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('元素引用粘贴：另一个窗口的输入框清不空，判断不了卡片是不是粘来的'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    const pastedChip = b.locator('#task-prompt [data-chip="quote"]').first()
+    await pastedChip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素引用粘贴：另一个窗口里没有还原成引用卡片'))
+    if ((await b.locator('#task-prompt [data-chip="quote"]').count()) !== 1)
+      errors.push('元素引用粘贴：另一个窗口里粘出来的引用卡片不是一张')
+    const draft = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '')
+    if (draft.includes('[元素引用]')) errors.push('元素引用粘贴：输入框里留着标记文字，没有换成卡片')
+    await check(b, '元素引用-跨窗口粘贴')
+    // 卡片背后是原来那条引用的原文，不是一小段摘要
+    await pastedChip.click()
+    const restored = await b
+      .getByRole('dialog')
+      .last()
+      .innerText()
+      .catch(() => '')
+    for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
+      if (!restored.includes(want)) errors.push(`元素引用粘贴：卡片里没有「${want}」`)
+    await b.keyboard.press('Escape')
+    // 换一套干净的浏览器环境（新的上下文，本地存储是空的）：还能还原，说明靠的是剪贴板里的原文，
+    // 不是本地的编号 → 换浏览器、换面板实例照样有效
+    const c = await page({ width: 1440, height: 900 })
+    await c.goto(base + '#/chat')
+    await c.locator('#task-prompt').waitFor({ timeout: 10000 })
+    await c.locator('#task-prompt').click()
+    await c.keyboard.press('Control+V')
+    await c
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素引用粘贴：全新的浏览器环境里还原不了引用卡片'))
+    await check(c, '元素引用-换浏览器环境粘贴')
+    await c.close()
+    // 只复制了一半标记（截图、截断）时按普通文字粘进来，不能误判成卡片
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b.evaluate((half) => navigator.clipboard.writeText(half), marked.slice(0, 60))
+    await b.keyboard.press('Control+V')
+    await b
+      .waitForFunction(
+        (half) => (document.querySelector('#task-prompt')?.textContent ?? '').includes(half.slice(-12)),
+        marked.slice(0, 60),
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('元素引用粘贴：半截标记的文字没有粘进来'))
+    if (await b.locator('#task-prompt [data-chip="quote"]').count())
+      errors.push('元素引用粘贴：半截标记被误判成了引用卡片')
+    await check(b, '元素引用-标记不完整')
+    await b.close()
     await d.close()
   }
 

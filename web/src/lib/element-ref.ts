@@ -5,6 +5,7 @@
  * 组件层级是抓取时沿 React fiber 往上收集的各层 data-src。这里只放纯逻辑（解析、去重、拼文字），
  * 读 DOM 的部分在 components/chat/ElementPicker.tsx
  */
+import { chipMarker } from '@shared/composer'
 
 /** data-src 里的一处位置 */
 export interface SourceLoc {
@@ -142,20 +143,103 @@ export function pickStyles(get: (prop: string) => string, rootPx: number): [stri
 }
 
 /**
- * 元素引用的包装标记：抓取到的引用复制出去（剪贴板、写文件）时前后各加一行，
+ * 元素引用的包装标记：复制出去时在引用前后各加一行（头标记和正文同一行，尾标记独占一行），
  * 粘回任何对话输入框时认出来还原成引用卡片。标记本身人眼可读，去掉标记后和原文一模一样，
- * 所以粘到记事本、微信里也还是一段正常的说明文字。
- *
- * 这一段的归属是「元素引用可复制粘贴到其他对话」那个改动（parseElementRef / pasteElementRefs 也在那边），
- * 这里只先补上抓取后写剪贴板要用到的两个；合并时以那边的实现为准，不要各留一份
+ * 所以粘到记事本、微信里也还是一段正常的说明文字
  */
 export const ELEMENT_REF_MARK = { head: '[元素引用]', tail: '[/元素引用]' } as const
 
-const isWrapped = (text: string) =>
-  text.startsWith(ELEMENT_REF_MARK.head) && text.trimEnd().endsWith(ELEMENT_REF_MARK.tail)
+/** 这条文字是不是 formatElementRef 的输出：第一行是摘要，并且有一行「- 元素：」 */
+export function isElementRefText(text: string): boolean {
+  const lines = text.trim().split('\n')
+  if (lines.length < 2) return false
+  if (!/^(界面元素|UI 设计控件) /.test(lines[0])) return false
+  return lines.some((l) => /^- 元素：<[^\s>]+/.test(l))
+}
 
 /** 把引用包成可还原的形式；已经包过的、空的不重复包 */
 export function wrapElementRef(text: string): string {
   if (!text.trim() || isWrapped(text)) return text
   return `${ELEMENT_REF_MARK.head}${text}\n${ELEMENT_REF_MARK.tail}`
+}
+
+const isWrapped = (text: string) =>
+  text.startsWith(ELEMENT_REF_MARK.head) && text.trimEnd().endsWith(ELEMENT_REF_MARK.tail)
+
+/** 一段文字里的一条元素引用：位置是它在原文里的 [起, 止)，text 是去掉标记后的原文 */
+export interface ElementRefHit {
+  start: number
+  end: number
+  text: string
+}
+
+/**
+ * 找出文字里所有带标记的元素引用。标记要成对、内部确实是元素引用（isElementRefText）才算，
+ * 只复制了一半、或者只是讲这个标记写法时按普通文字处理，不会被吃掉
+ */
+export function parseElementRef(value: string): ElementRefHit[] {
+  const out: ElementRefHit[] = []
+  const head = ELEMENT_REF_MARK.head
+  const tail = ELEMENT_REF_MARK.tail
+  let at = 0
+  for (;;) {
+    const h = value.indexOf(head, at)
+    if (h < 0) break
+    const t = value.indexOf(tail, h + head.length)
+    if (t < 0) break
+    const text = value.slice(h + head.length, t).replace(/\n$/, '')
+    // 这一段不是引用（例如前面先粘了半截头标记、或者是讲标记写法）：只跳过这个头标记，
+    // 不能直接跳到这里的尾标记——那会把紧跟在后面真的成对的引用整段吞掉
+    if (!isElementRefText(text)) {
+      at = h + head.length
+      continue
+    }
+    at = t + tail.length
+    out.push({ start: h, end: at, text })
+  }
+  return out
+}
+
+/**
+ * 粘贴进来的文字里的元素引用换成卡片标记后的结果：text 是要插进输入框的文字，
+ * made 是换成卡片的块数，kept 是没换成、原文照旧留在 text 里的块数（超了附件上限、拿不到卡片名）
+ */
+export interface PasteElementRefsResult {
+  text: string
+  made: number
+  kept: number
+}
+
+/**
+ * 粘贴进来的文字里有元素引用时，把每块引用换成卡片标记（名字由 quoteOf 给出：它负责存原文、起卡片名），
+ * 其余文字原样留在原位。一段引用都没认出来时返回 undefined，交给原来的粘贴流程
+ *
+ * limit：这次最多换几块（还要留几张卡片的位置）。同一次粘贴里连续建卡片，附件计数不会及时更新，
+ * 不在这里卡住就会超过输入框的附件上限，那张消息最后发不出去；超出的引用原文留在输入框里，不丢内容
+ */
+export function pasteElementRefs(
+  value: string,
+  quoteOf: (ref: string) => string | undefined,
+  limit = Infinity,
+): PasteElementRefsResult | undefined {
+  const hits = parseElementRef(value)
+  if (!hits.length) return undefined
+  let out = ''
+  let last = 0
+  let made = 0
+  for (const hit of hits) {
+    const name = made < limit ? quoteOf(hit.text) : undefined
+    if (!name) continue
+    out += value.slice(last, hit.start)
+    // 卡片两边留空格，和在输入框里插卡片一样，不跟文字粘在一起
+    if (out && !/\s$/.test(out)) out += ' '
+    out += chipMarker('quote', name)
+    last = hit.end
+    // 后面还有文字时才隔一个空格；引用在末尾时不要凭空多一个尾空格
+    const rest = value.slice(last)
+    if (rest && !/^\s/.test(rest)) out += ' '
+    made++
+  }
+  // made=0 时 text 就是原文，调用方不拦阻粘贴，交给原来的流程（原文不丢，超长/路径还能正常处理）
+  return { text: out + value.slice(last), made, kept: hits.length - made }
 }
