@@ -152,6 +152,8 @@ import {
   openWork,
   refreshChildWait,
   settleWait,
+  syncKids,
+  type PlanKid,
   waitNote,
   type WrapUpKind,
 } from '../shared/plan.ts'
@@ -742,6 +744,13 @@ export function tasksApi(deps: {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
     const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
+    // 子对话的上报顺带把计划和名下子对话对齐：只在备注里写了「等 xxx」、没挂上等待的步骤也跟着收口
+    if (child && syncKids(parent, await planKids(parent.id))) {
+      parent.updatedAt = new Date().toISOString()
+      const e = live.get(parent.id)
+      if (e) e.rev++
+      if (settle?.onlyIfWaiting && !hit.length) await store.update(parent.id, parent).catch(() => {})
+    }
     if (settle?.onlyIfWaiting && !hit.length) return
     const text = waitNote(hit) + body
     if (hit.length || wake) {
@@ -1366,6 +1375,21 @@ export function tasksApi(deps: {
    * 已完成标完成，失败、中断退回进行中，其余（合进去了还在收口、没合进去退回给它了）继续等并写清在等什么。
    * 不按上报去重：每次收尾都刷新、都落盘并推给界面。返回给父对话 Agent 看的计划文字（没有计划时为空）
    */
+  /** 名下的子对话（计划对齐用，见 plan.ts 的 linkKids）：正在跑的用内存里的最新状态 */
+  async function planKids(parentId: string): Promise<PlanKid[]> {
+    const kids = (await store.list()).filter((x) => x.parentTaskId === parentId)
+    return kids.map((k) => {
+      const cur = live.get(k.id)?.task ?? k
+      return {
+        id: cur.id,
+        title: cur.title,
+        createdAt: cur.createdAt,
+        done: !!cur.resolved,
+        endedAt: cur.resolved ? cur.updatedAt : '',
+      }
+    })
+  }
+
   async function syncParentPlan(parentId: string, childId: string): Promise<string> {
     const pEntry = live.get(parentId)
     const pTask = pEntry?.task ?? (await store.get(parentId))
@@ -1385,6 +1409,8 @@ export function tasksApi(deps: {
       })
     }
     const text = refreshChildWait(pTask, { id: childId, title: tk?.title ?? childId }, report)
+    // 顺带把计划和名下所有子对话对齐：别的步骤等的子对话早就完成了、或者 Agent 只在备注里写了「等 xxx」也一起收口
+    syncKids(pTask, await planKids(parentId))
     // 计划没变也写一次：rev 变了界面才会重取，保证每次收尾后看到的都是最新的计划
     pTask.updatedAt = new Date().toISOString()
     if (pEntry) pEntry.rev++
@@ -2667,6 +2693,8 @@ export function tasksApi(deps: {
               lastActivityAt: childLastActivity(cur),
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
+              createdAt: cur.createdAt,
+              resolved: !!cur.resolved,
             }
           })
         },

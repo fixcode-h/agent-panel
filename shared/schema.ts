@@ -1338,6 +1338,8 @@ export const PlanWait = z.object({
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
+  /** 开始等的时间（子对话是它的创建时间）：步骤用时从真正开工算起。旧数据没有 */
+  at: z.string().optional(),
 })
 export type PlanWait = z.infer<typeof PlanWait>
 

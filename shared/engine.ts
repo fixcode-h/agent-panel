@@ -100,6 +100,7 @@ import {
   childStepId,
   WRAP_UP,
   type PlanItemInput,
+  type PlanKid,
   type WrapUpKind,
 } from './plan.ts'
 
@@ -313,7 +314,7 @@ export interface Orchestra {
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
-  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): { ok: boolean; info: string }
+  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): Promise<{ ok: boolean; info: string }>
   finishPlan(summary: string): { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
@@ -491,6 +492,9 @@ export interface EngineHost {
       waiting?: string
       /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
       lastActivityAt?: string
+      /** 创建时间、是否已经收尾完成：计划按它们对齐等待中的步骤（见 plan.ts 的 linkKids） */
+      createdAt?: string
+      resolved?: boolean
     }[]
   >
   /** 新建子对话并异步执行，返回后父对话继续；完成后由宿主把结果回报到父对话 */
@@ -2589,9 +2593,18 @@ function makeOrchestra(
       return { ok: true, info: '这一轮结束后会同步跑完这次计划，再把结果交回对话' }
     },
     plans: !!ctx.chat && !helper && !!task.projectId,
-    setPlan(input) {
+    async setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = applyPlan(task, input, undefined, host.wrapUp)
+      // 名下的子对话：步骤里点到的挂上等待、已经完成的直接收口，不靠 Agent 每次都记得带 step
+      const list = host.listConversations ? await host.listConversations().catch(() => []) : []
+      const kids: PlanKid[] = list.map((c) => ({
+        id: c.id,
+        title: c.title,
+        createdAt: c.createdAt ?? '',
+        done: !!c.resolved,
+        endedAt: c.resolved ? c.at : '',
+      }))
+      const r = applyPlan(task, input, undefined, host.wrapUp, kids)
       if (r.ok) host.changed(true)
       return r
     },
