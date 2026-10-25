@@ -1192,8 +1192,18 @@ export const StepUsage = z.object({
 })
 export type StepUsage = z.infer<typeof StepUsage>
 
-/** 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个 */
-export const ApiWait = z.object({ api: z.string(), ahead: z.number().int().default(0) })
+/**
+ * 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个。
+ * reason 区分这次拿名额的性质：'start' 是这一轮还没开始（真的在排队等名额），
+ * 'yield' 是这一轮已经跑起来、临时让出（等子任务 / 等下一句）后拿回。两者不能显示成同一句话：
+ * 让出期间 CLI 往往还在出 token，显示「排队等名额 · 下一个就是这里」会和实时速度自相矛盾。
+ */
+export const ApiWait = z.object({
+  api: z.string(),
+  ahead: z.number().int().default(0),
+  /** 旧快照里没有这个字段，当时的标记都是开始前排队，按 'start' 算 */
+  reason: z.enum(['start', 'yield']).default('start'),
+})
 export type ApiWait = z.infer<typeof ApiWait>
 
 export const TaskStep = z.object({

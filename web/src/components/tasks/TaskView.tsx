@@ -74,7 +74,7 @@ import { useTaskStream } from '@/lib/task-stream'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, startedRun } from '@/lib/tasks'
+import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -1611,7 +1611,11 @@ export function TaskView({
                     (blocks.at(-1)?.kind === 'turn' ? (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
+                        <RunPhase
+                          task={task}
+                          label={t('{name} 正在回复', { name: chatLabel })}
+                          agentIds={[task.agentId]}
+                        />
                         <LiveStats task={task} agentIds={[task.agentId]} />
                       </div>
                     ) : (
@@ -1619,7 +1623,7 @@ export function TaskView({
                       <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          <RunPhase task={task} label={t('思考中…')} />
+                          <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
                           <LiveStats task={task} agentIds={[task.agentId]} />
                         </div>
                       </PendingReply>
@@ -2495,8 +2499,11 @@ function PendingReply({
 /**
  * 执行中的状态文字：最近一段时间没有任何输出、也没有工具在跑，说明在等模型的下一段。
  * 模型请求本身要几秒到几十秒（上下文越大越久），标出来，免得看起来像卡在工具上
+ *
+ * agentIds 要和同一行 LiveStats 的传法一致：判断「真的在出 token」只能看这一行显示的那几个 Agent，
+ * 看全部 Agent 会把「别人在输出、这一轮自己在排队」当成在输出，反而把真排队遮掉
  */
-function RunPhase({ task, label }: { task: Task; label: string }) {
+function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentIds?: string[] }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
@@ -2505,16 +2512,21 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
-  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）
-  if (task.apiWait)
+  // 这一行确实在出 token（同一行右边显示着速度）：就不是「还没开始」，不能标成在排队
+  const streaming = tpsNow(task, agentIds?.every(Boolean) ? agentIds : undefined) > 0
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）。
+  // 只看「开跑前就排着」的标记：让出名额后拿回的（等子任务、等下一句）这一轮已经跑起来了，
+  // 它排的是「交回结果的那一句」而不是「这一轮」，写成排队会和右边的实时速度自相矛盾
+  const wait = apiQueueWait(task, streaming)
+  if (wait)
     return (
       <>
-        {task.apiWait.ahead
-          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: task.apiWait.api, n: task.apiWait.ahead })
-          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: task.apiWait.api })}
+        {wait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: wait.api, n: wait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: wait.api })}
       </>
     )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
-  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+  return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
 }
