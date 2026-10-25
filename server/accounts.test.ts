@@ -70,9 +70,10 @@ test('失败文案分开：退出码 0 但没凭据要说「没有找到登录�
     [t('{cli} 没有完成登录（退出码 {code}）', { cli: 'Command Code', code: '0' }), out].join('\n'),
   )
   // 退出码非 0 保留原来的文案，带上尾部输出方便排查
-  assert.match(
+  // 按 t() 拼期望值：测试进程的界面语言可能是英文，不能直接匹配中文原句
+  assert.equal(
     loginFailure({ outcome: 'unchanged', cli: 'Command Code', code: 2, output: out }),
-    /退出码 2[\s\S]*Already logged in/,
+    [t('{cli} 没有完成登录（退出码 {code}）', { cli: 'Command Code', code: '2' }), out].join('\n'),
   )
 })
 

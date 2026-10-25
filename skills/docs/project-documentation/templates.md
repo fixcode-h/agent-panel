@@ -114,7 +114,7 @@
 - <扫描推断、还没核实的事项>
 ```
 
-## modules/<模块名>/bugs.md（第一次记录 Bug 时才建）
+## modules/<模块名>/bugs.md（第一次记录用户报的 Bug 时才建）
 
 ```markdown
 # <模块名> · Bug 索引

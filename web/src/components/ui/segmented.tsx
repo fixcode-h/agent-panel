@@ -9,7 +9,8 @@ export function Segmented<T extends string>({
 }: {
   value: T
   onChange: (v: T) => void
-  options: { id: T; label: string; disabled?: boolean }[]
+  /** dot：选项上的提示点（例如那一页有要处理的事），文字放在悬停提示里 */
+  options: { id: T; label: string; disabled?: boolean; dot?: string }[]
   label: string
 }) {
   return (
@@ -21,12 +22,14 @@ export function Segmented<T extends string>({
           aria-checked={value === o.id}
           disabled={o.disabled}
           onClick={() => onChange(o.id)}
+          title={o.dot}
           className={cn(
-            'h-8 cursor-pointer rounded-md px-3 text-[0.8125rem] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[0.8125rem] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
             value === o.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
           )}
         >
           {o.label}
+          {o.dot && <span aria-label={o.dot} className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
         </button>
       ))}
     </div>
