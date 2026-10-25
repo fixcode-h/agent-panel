@@ -58,6 +58,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
+  childWait,
   helperRunning,
   sortChildren,
   visibleChildren,
@@ -67,6 +68,7 @@ import {
   taskWaitText,
   taskSummary,
   withTaskModel,
+  type ChildWait,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
@@ -815,6 +817,11 @@ export function TaskView({
 
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
   const noFiles = !task.projectId
+  // 这一轮没在跑时到底在等什么：等后台命令、等子任务、等工作流，还是真停在等下一句。
+  // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
+  // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
+  const chatWait =
+    task.mode === 'chat' ? childWait(task, { background: task.jobs?.length, cliAlive: task.cliAlive }) : undefined
   // 功能面板占右栏（宽屏）：和子对话、运行面板、文件面板同一栏，同一时间只显示一个；子对话、运行开着时让给它们
   const reportOn = !!report && !pane && !reportFolded && !openChild && openRun === 0
   const closeReport = () => {
@@ -1668,16 +1675,11 @@ export function TaskView({
                         </div>
                       </PendingReply>
                     ))}
-                  {/* 只在 CLI 进程真的还活着、停在等下一句时显示（cliAlive 按进程算）：CLI 关了绝不显示 */}
-                  {running && task.mode === 'chat' && !working && task.awaitingUser && task.cliAlive && (
-                    <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                      <MessageSquareText className="h-4 w-4 text-subtle" />
-                      <span className="inline-flex items-baseline">
-                        {t('等待你的下一条消息')}
-                        <WaitDots />
-                      </span>
-                      <LiveStats task={task} agentIds={[task.agentId]} />
-                    </div>
+                  {/* 这一轮没在跑时先说清在等什么：等后台命令、等派出的子任务、等工作流，最后才是真的停在等下一句。
+                      以前只看 awaitingUser 就写「等待你的下一条消息」，子任务还在跑时也这么说
+                      （用户报的：子任务在跑、状态行却说在等你 + 空闲）。判定统一用 childWait，不另写一套 */}
+                  {running && task.mode === 'chat' && !working && chatWait && (
+                    <ChatWaitLine wait={chatWait} awaiting={task.awaitingUser} task={task} />
                   )}
                   {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                     <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
@@ -2544,6 +2546,42 @@ function PendingReply({
   const author = byCli ?? (a ? { name: a.name, cli: a.cli, icon: a.icon, model: modelOf(a) } : undefined)
   if (!author) return <>{children}</>
   return <PendingAuthor author={author}>{children}</PendingAuthor>
+}
+
+/**
+ * 这一轮没在跑时状态行：先说清在等什么结果，真的停在等下一句时才说「等待你的下一条消息」。
+ * 等用户回答、等确认由对话里的提问卡片表达，这里不重复
+ */
+function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boolean; task: Task }) {
+  if (wait.kind === 'answer' || wait.kind === 'confirm') return null
+  // 等下一句要 CLI 真的停在面板工具上等（awaitingUser）：只是预热完、还在启动时不写成在等你
+  if (wait.kind === 'next' && !awaiting) return null
+  // 文案都用已有的：子任务和工作流这两句和 RunPhase 同源，没有新词
+  const text =
+    wait.kind === 'helpers'
+      ? t('等待 {n} 个子任务完成', { n: wait.list.length })
+      : wait.kind === 'background'
+        ? t('等 {n} 个后台命令', { n: wait.n })
+        : wait.kind === 'workflow'
+          ? t('等工作流跑完')
+          : t('等待你的下一条消息')
+  const next = wait.kind === 'next'
+  return (
+    <div className="flex items-center gap-2 text-[0.8125rem] text-muted" data-chat-wait={wait.kind}>
+      {/* 还在等别人的结果：转圈；等你的下一句：对话气泡 + 动态点 */}
+      {next ? (
+        <MessageSquareText className="h-4 w-4 text-subtle" />
+      ) : (
+        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+      )}
+      <span className="inline-flex items-baseline">
+        {text}
+        {next && <WaitDots />}
+      </span>
+      {/* 等下一句时确实空闲（它在等你），等别人的结果时才是「等待中」：不把在干活的对话说成没事做 */}
+      <LiveStats task={task} agentIds={[task.agentId]} waiting={!next} />
+    </div>
+  )
 }
 
 /**
