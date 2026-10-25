@@ -2643,7 +2643,12 @@ export function tasksApi(deps: {
                         ? 'UE 项目里子对话不编译：改完向父对话申请（独立分支里用 submit_merge 并保持 build 为 true，否则用 request_build）。'
                         : 'UE 编译要用 request_build 申请：面板按编译目录占位排队，不从后台命令直接跑。',
                   }
-                return background.start({ ...input, taskId: task.id, root: dir, env: noPushEnv(entry.task) })
+                return background.start({
+                  ...input,
+                  taskId: task.id,
+                  root: dir,
+                  env: noPushEnv(entry.task, project?.gitPolicy),
+                })
               }
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
