@@ -1225,4 +1225,13 @@ export const EN_SETTINGS: Record<string, string> = {
     'Choose a local folder, then initialize the project with AI before saving.',
   '先完成「AI 初始化项目」才能保存': 'Run "AI initialize project" before saving',
   '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
+  // 开发者模式：抓取界面元素
+  开发者模式: 'Developer mode',
+  '打开后对话输入框上多一个「抓取界面元素」按钮：点一下再点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出抓取。':
+    'Adds a "Pick UI element" button to chat inputs: click it, then click any element of the panel\'s UI to quote its source location, component, text and styles into the input, so AI can edit the panel\'s own code. Press Esc to stop picking.',
+  抓取界面元素: 'Pick UI element',
+  '抓取界面元素：点选页面上的元素引用到对话，Esc 退出':
+    'Pick UI element: click an element on the page to quote it in the chat, Esc to cancel',
+  '点选页面上的元素，引用到对话': 'Click an element on the page to quote it in the chat',
+  退出抓取: 'to exit',
 }

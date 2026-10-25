@@ -18,7 +18,14 @@ export const BUILD_INFO_FILE = '.build-info.json'
 
 // 参与构建的源文件：前端源码、前后端共用的 shared、公共资源，以及入口 HTML、构建配置和依赖锁（锁变了产物也可能变）
 const SOURCE_DIRS = ['web/src', 'shared', 'web/public']
-const SOURCE_FILES = ['web/index.html', 'vite.config.ts', 'package.json', 'package-lock.json']
+// 构建插件也决定产物（给原生标签写 data-src），改了要重新构建
+const SOURCE_FILES = [
+  'web/index.html',
+  'vite.config.ts',
+  'scripts/lib/source-loc.mjs',
+  'package.json',
+  'package-lock.json',
+]
 // 测试文件不进产物，改了不需要重新构建
 const TEST_FILE = /\.test\.tsx?$/
 // 提示里最多列这么多个变了的文件，剩下的只报数量
