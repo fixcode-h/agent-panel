@@ -935,7 +935,7 @@ async function runAgent(
       : []),
     // 用户在环境变量里自己写了同名的，以设置里这一档的值为准（写在后面）
     ...limitEnvVars(def, limits),
-    ...noPushEnv(task),
+    ...noPushEnv(task, ctx.project.gitPolicy),
     ...(await searchExcludeEnv(ctx)),
   ])
 
@@ -2079,15 +2079,12 @@ async function runAgent(
 }
 
 /**
- * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
- * 本机已经装好并登录的外部工具（gh、cloudflared 等）。列进提示词，模型不用重新探测
+ * 子对话的独立分支一律不推到远端（推送只由父对话在原分支上做），项目设置成「不推送」时整个项目都不推：
+ * 提示词拦不住所有模型，用 git 的 pushInsteadOf 把所有远端地址的推送改写到一个不存在的协议，
+ * CLI 里跑的 git push 都会失败，拉取不受影响
  */
-/**
- * 子对话的独立分支一律不推到远端（推送只由父对话在原分支上做）：提示词拦不住所有模型，
- * 用 git 的 pushInsteadOf 把所有远端地址的推送改写到一个不存在的协议，CLI 里跑的 git push 都会失败，拉取不受影响
- */
-export function noPushEnv(task: Task): { key: string; value: string }[] {
-  if (!task.parentTaskId || task.worktree?.state !== 'active') return []
+export function noPushEnv(task: Task, gitPolicy?: Project['gitPolicy']): { key: string; value: string }[] {
+  if (gitPolicy !== 'deny' && (!task.parentTaskId || task.worktree?.state !== 'active')) return []
   return [
     { key: 'GIT_CONFIG_COUNT', value: '1' },
     { key: 'GIT_CONFIG_KEY_0', value: 'url.agent-panel-no-push://.pushInsteadOf' },
@@ -2122,6 +2119,10 @@ async function searchExcludeEnv(ctx: RealContext): Promise<{ key: string; value:
   return [{ key: 'RIPGREP_CONFIG_PATH', value: file }]
 }
 
+/**
+ * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
+ * 本机已经装好并登录的外部工具（gh、cloudflared 等）。列进提示词，模型不用重新探测
+ */
 async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   const views = await listIntegrations().catch(() => [])
   return {
