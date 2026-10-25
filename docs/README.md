@@ -13,11 +13,13 @@
 npm install
 npm run dev        # 前端 http://localhost:5173，后端 http://127.0.0.1:8787
 npm run typecheck  # 类型检查 + 漏翻检查
+npm run lint       # oxlint、Prettier 格式检查、规则检查、密钥扫描
 npm run test:unit  # 单元测试
+npm run build      # 正式版前端（在线演示版用 npx vite build --mode demo）
 ```
 
-端到端测试需要 macOS / Linux；在 Windows 上放到 WSL（Ubuntu 24.04）里跑：`npm run test:e2e`。
-界面检查先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`。
+端到端测试需要 macOS / Linux；在 Windows 上放到 WSL（Ubuntu 24.04）里跑：`npm run test:e2e:wsl`（等同于在 WSL 里 `npm run test:e2e`）。
+界面检查先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`。出包用 `npm run package`，产物在 `release/`。
 
 ## 文档索引
 
@@ -27,6 +29,7 @@ npm run test:unit  # 单元测试
 | [modules/shared/README.md](modules/shared/README.md)           | 前后端共享的数据模型、CLI 注册表、流程图和执行引擎   |
 | [modules/server/README.md](modules/server/README.md)           | Hono API、JSON 存储、项目与任务管理                  |
 | [modules/server-exec/README.md](modules/server-exec/README.md) | 真实调用本机 CLI：进程、输出解析、RPC 会话、worktree |
+| [modules/app-actions/README.md](modules/app-actions/README.md) | 操控软件的动作表：Agent 的 `app_actions` / `app_do` 与 `/api/actions` |
 | [modules/design/README.md](modules/design/README.md)           | UI 设计：设计数据、AI 对话、原画与图片生成、导出     |
 | [modules/web/README.md](modules/web/README.md)                 | React 前端：页面、流程图画布、对话输出、演示模式     |
 | [modules/scripts/README.md](modules/scripts/README.md)         | 端到端测试、界面检查、出包、规则检查、托盘程序       |
