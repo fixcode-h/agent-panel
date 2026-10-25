@@ -216,9 +216,10 @@ export function analysisRoute(s: Pick<State, 'taskId' | 'projectId' | 'parentTas
     : { page: 'chat' as const, id: s.taskId }
 }
 
-/** 对话页右栏记住开着哪个子对话、哪次运行（TaskView 读同一组键） */
+/** 对话页右栏记住开着哪个子对话、哪次运行、文件面板收没收起（TaskView 读同一组键） */
 export const paneChildKey = (taskId: string) => `task-child:${taskId}`
 export const paneRunKey = (taskId: string) => `task-run:${taskId}`
+export const paneFilesKey = (taskId: string) => `task-files:${taskId}`
 export const OPEN_CHILD_EVENT = 'agent-panel:open-child'
 
 export function showChildInPane(parentId: string, childId: string) {

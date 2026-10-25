@@ -119,7 +119,7 @@ import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { ProjectSwitch } from './ProjectSwitch'
-import { OPEN_CHILD_EVENT, paneChildKey, paneRunKey } from '@/lib/ai-window'
+import { OPEN_CHILD_EVENT, paneChildKey, paneFilesKey, paneRunKey } from '@/lib/ai-window'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -280,6 +280,9 @@ function writeStored(key: string, value: string) {
 
 const readPaneChild = (taskId: string) => readStored(paneChildKey(taskId))
 const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) || 0
+/** 文件面板收没收起按对话记在本地：没记录过就收起，先给对话让出整块宽度 */
+const readFilesFolded = (taskId: string) => readStored(paneFilesKey(taskId)) !== 'open'
+const writeFilesFolded = (taskId: string, folded: boolean) => writeStored(paneFilesKey(taskId), folded ? '' : 'open')
 function writePaneChild(taskId: string, childId: string) {
   writeStored(paneChildKey(taskId), childId)
   // 子对话和运行面板互斥：右栏同一时间只显示一个
@@ -360,8 +363,8 @@ export function TaskView({
   // 这里在组件顶层取外层的值（Provider 之外），标题旁的切换下拉用它，不另取一份数据
   const outerChildren = useContext(ChildListCtx)
   const outerNav = useContext(PaneNavCtx)
-  // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
-  const [filesFolded, setFilesFolded] = useState(false)
+  // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏。默认收起，用户展开过就按本地记着的来
+  const [filesFolded, setFilesFolded] = useState(() => readFilesFolded(taskId))
   // 右栏开着子对话时再看文件：文件面板盖在子对话上展开。子对话已经占了半边，
   // 并排会把两边都挤坏，所以复用同一栏的位置覆盖，收起后子对话原样回来
   const [childFiles, setChildFiles] = useState(false)
@@ -527,6 +530,7 @@ export function TaskView({
     }
     setOpenChild(readPaneChild(taskId))
     setOpenRun(readPaneRun(taskId))
+    setFilesFolded(readFilesFolded(taskId))
     // 别处（AI 分析窗口「去对话里看」）要在这个对话的右栏打开某个子对话：已经开着的对话页马上切过去
     const onOpen = (e: Event) => {
       const d = (e as CustomEvent<{ parentId: string; childId: string }>).detail
@@ -546,6 +550,11 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, pane])
 
+  // 文件面板的开合：按对话记在本地，下次打开还是用户最后一次选的那样。子对话自己的右栏（pane）不写
+  const toggleFiles = () => {
+    setFilesFolded(!filesFolded)
+    if (!pane) writeFilesFolded(taskId, !filesFolded)
+  }
   // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
   const openChildIn = (id: string) => {
     setOpenChild(id)
@@ -1329,10 +1338,11 @@ export function TaskView({
                       variant="ghost"
                       size="icon-sm"
                       className="hidden xl:inline-flex"
-                      aria-label={openChild ? t('覆盖显示文件') : t('收起文件面板')}
-                      title={openChild ? t('覆盖显示文件') : t('收起文件面板')}
+                      // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
+                      aria-label={openChild ? t('覆盖显示文件') : filesFolded ? t('显示文件') : t('收起文件面板')}
+                      title={openChild ? t('覆盖显示文件') : filesFolded ? t('文件') : t('收起文件面板')}
                       aria-expanded={openChild ? childFiles : !filesFolded}
-                      onClick={() => (openChild ? setChildFiles((v) => !v) : setFilesFolded((v) => !v))}
+                      onClick={() => (openChild ? setChildFiles((v) => !v) : toggleFiles())}
                     >
                       {(openChild ? childFiles : filesFolded) ? (
                         <PanelRight className="h-4 w-4" />
