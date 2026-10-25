@@ -98,6 +98,7 @@ import {
   endRun,
   finishPlan,
   planText,
+  settleWait,
   childStepId,
   WRAP_UP,
   type PlanItemInput,
@@ -319,7 +320,11 @@ export interface Orchestra {
    */
   helperBatch(): Promise<HelperBatch> | undefined
   status(): string
-  spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
+  /**
+   * 派子任务。step：计划里哪一步在等这批子任务（步骤 id，见 set_plan 返回的计划），
+   * 全部结束、结果交回时把这一步标完成，失败或被终止退回进行中并写清原因
+   */
+  spawn(tasks: HelperSpec[], step?: string): { ids: string[]; error?: string; info?: string }
   /** 终止自己派出的子任务（不写 ids 就是全部还没结束的）；why 会写进交回的结果 */
   stopHelpers(ids: string[], why: string): { ok: boolean; info: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -2468,6 +2473,32 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   return [brief, part].filter(Boolean).join('\n\n')
 }
 
+/**
+ * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'，见 spawn 的 step）。
+ * 成功标完成、失败或终止退回进行中并写清原因；子任务还没结束的不动它。
+ *
+ * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
+ * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
+ */
+export function settleHelperWaits(host: EngineHost) {
+  const { task } = host
+  const waiting = new Set(
+    (task.plans ?? []).flatMap((p) =>
+      p.steps.flatMap((s) => [s, ...s.children]).flatMap((x) => x.waits.filter((w) => w.kind === 'helper')),
+    ),
+  )
+  const over = (k: TaskStep) => k.status !== 'running' && (k.status !== 'pending' || !orchState(host).helpers.has(k.id))
+  const hit: { title: string; done: boolean }[] = []
+  // 集合已经按 kind === 'helper' 筛过，这里只看还没收口的
+  for (const w of waiting)
+    if (w.state === 'waiting') {
+      const kid = task.steps.find((s) => s.id === w.ref)
+      if (kid && over(kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
+    }
+  if (hit.length) host.changed(true)
+  return hit
+}
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
@@ -2479,6 +2510,8 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   }
   const late = kids().filter((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))
   for (const k of late) st.delivered.add(k.id)
+  // 计划里等这些子任务的步骤跟着收口：成功标完成，失败/被终止退回进行中
+  settleHelperWaits(host)
   return late
     .map((k) =>
       k.status === 'done'
@@ -2864,7 +2897,7 @@ function makeOrchestra(
       : undefined,
     p4Split: host.p4Split,
     status: () => statusTree(host, self.id),
-    spawn(tasks) {
+    spawn(tasks, step) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
@@ -2977,8 +3010,14 @@ function makeOrchestra(
       )
       // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
       task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
+      // 点名的计划步骤挂上等待：全部结束、结果交回时由 settleHelpers 收口（成功标完成、失败退回进行中）。
+      // 以前 spawn_agents 没有 step，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在那里
+      const at = !helper && ctx.chat ? step?.trim() : ''
+      // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
+      const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
+      if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
       host.changed(true)
-      return { ids: made.map((m) => m.step.id) }
+      return { ids: made.map((m) => m.step.id), ...(waits.length ? { info: waits.join('\n') } : {}) }
     },
     stopHelpers(ids, why) {
       if (helper) return { ok: false, info: '子任务不能终止别的子任务' }
@@ -3015,6 +3054,9 @@ function makeOrchestra(
       const over = (s: TaskStep) => s.status !== 'running' && (s.status !== 'pending' || !st.helpers.has(s.id))
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
+      // 手动取走结果的路径：helperBatch 的入口只看「还没取走的子任务」，取走后就轮不到 settleHelpers，
+      // 计划里等它们的那一步会永远停在等待中。这里直接收口（成功标完成、失败退回进行中）
+      if (done.length) settleHelperWaits(host)
       return {
         done: done.map((s) => helperReport(host, s)),
         running: steps.filter((s) => !over(s)).map((s) => helperReport(host, s)),
