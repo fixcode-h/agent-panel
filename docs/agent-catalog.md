@@ -40,22 +40,22 @@
 
 ## Agent 清单
 
-| key            | 名称             | 能力块                     | 通用 | 用到它的工作流                                                                        | 关键参数                                                                        |
-| -------------- | ---------------- | -------------------------- | ---- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `rules`        | 通用约束         | 常驻规则                   | —    | 全部（includes）                                                                      | —                                                                               |
-| `orchestrator` | 统筹（必备）     | 项目对话调度               |      | general、ue、bootstrap                                                                | `vcs` `route` `split` `confirm` `report`                                        |
-| `worker`       | 执行（必备）     | 子对话执行                 |      | 项目对话运行路径                                                                      | `vcs` `mode` `batch` `verify` `commit`                                          |
-| `helper`       | 子任务（必备）   | 并行收集、核实、计划       |      | —（spawn_agents 不点名时默认用它）                                                    | —                                                                               |
-| `docsync`      | 文档（必备）     | 文档落盘                   | ✓    | general、ue、ue-dev、architecture、bootstrap、release、migration                      | `docRoot` `lang` `index` `adr` `bug`                                            |
-| `tester`       | 测试验收（必备） | 构建/测试/验收             | ✓    | general、ue、daily-dev、openspec、bugfix、ue-dev、bootstrap、deps、migration、release | `scope` `env` `regress` `onFail` `write` `serial`                               |
-| `explorer`     | 调研             | 只读调研（可回写模块文档） | ✓    | ue、ue-dev、bootstrap、openspec、review、migration                                    | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
-| `reviewer`     | 评审（必备）     | 独立评审与复核             | ✓    | review                                                                                | `target`（代码改动 / 方案或结论）`vcs`                                          |
-| `analyst`      | 方案设计         | 需求、方案与架构契约       |      | general、ue、daily-dev、openspec、ue-dev、architecture、migration                     | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
-| `spec`         | 规范撰写         | OpenSpec 产物与门禁        |      | openspec                                                                              | `scene` `stage`                                                                 |
-| `developer`    | 开发             | 写代码                     |      | general、ue、daily-dev、openspec、bugfix、ue-dev、migration                           | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
-| `deps`         | 依赖与安全       | 依赖体检与升级             |      | deps                                                                                  | `vcs` `mode` `audit` `license`                                                  |
-| `vcs`          | 版本控制（必备） | 版本控制与交付收尾         | ✓    | general、ue、ue-dev、daily-dev、openspec、bugfix、deps、release、migration            | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
-| `blender`      | Blender 建模     | 建模、动画与质检           |      | blender                                                                               | `stage`（含「质检」）                                                           |
+| key            | 名称             | 能力块                     | 通用 | 用到它的工作流                                                       | 关键参数                                                                        |
+| -------------- | ---------------- | -------------------------- | ---- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `rules`        | 通用约束         | 常驻规则                   | —    | 全部（includes）                                                     | —                                                                               |
+| `orchestrator` | 统筹（必备）     | 项目对话调度               |      | general、ue（主 Agent）                                              | `vcs` `route` `split` `confirm` `report`                                        |
+| `worker`       | 执行（必备）     | 子对话执行                 |      | 项目对话运行路径                                                     | `vcs` `mode` `batch` `verify` `commit`                                          |
+| `helper`       | 子任务（必备）   | 并行收集、核实、计划       |      | —（spawn_agents 不点名时默认用它）                                   | —                                                                               |
+| `docsync`      | 文档（必备）     | 文档落盘                   | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                            |
+| `tester`       | 测试验收（必备） | 构建/测试/验收             | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `scope` `env` `regress` `onFail` `write` `serial`                               |
+| `explorer`     | 调研             | 只读调研（可回写模块文档） | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
+| `reviewer`     | 评审（必备）     | 独立评审与复核             | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 方案或结论）`vcs`                                          |
+| `analyst`      | 方案设计         | 需求、方案与架构契约       |      | general、ue、openspec、architecture、migration                       | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
+| `spec`         | 规范撰写         | OpenSpec 产物与门禁        |      | openspec                                                             | `scene` `stage`                                                                 |
+| `developer`    | 开发             | 写代码                     |      | general、ue、openspec、bugfix、migration                             | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
+| `deps`         | 依赖与安全       | 依赖体检与升级             |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                  |
+| `vcs`          | 版本控制（必备） | 版本控制与交付收尾         | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
+| `blender`      | Blender 建模     | 建模、动画与质检           |      | blender                                                              | `stage`（含「质检」）                                                           |
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
 旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 的 `dropLegacyAgent`）。
@@ -88,30 +88,56 @@
 
 ## 工作流清单
 
-| key               | 名称                 | 适用场景                               | 主 Agent       | 节点用到的 Agent                                                                                  |
-| ----------------- | -------------------- | -------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| `daily-dev`       | 日常开发             | 边界清楚的功能和改动                   | `developer`    | analyst → developer（验收：tester）→ vcs                                                          |
-| `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ explorer（影响面）→ developer（验收：tester）→ tester → spec → vcs |
-| `bugfix`          | Bug 修复             | Bug、测试失败、线上问题                | `developer`    | developer 修 Bug（验收：tester）→ vcs                                                             |
-| `ue-dev`          | UE 功能开发          | UE 的 C++ / Lua 改动                   | `developer`    | explorer（ue）→ analyst → developer（验收：tester 编译）→ vcs                                     |
-| `architecture`    | 架构设计             | 新模块架构或现有架构评审               | `analyst`      | analyst（architectural）→ analyst（压测）→ docsync（ADR 一律写）                                  |
-| `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（影响面）→ reviewer                                                                      |
-| `blender`         | Blender 建模与动画   | 可拆分模型、动画、导出 UE              | `blender`      | blender 按阶段：规格 → 建模 → 装配到减面 → 质检 → 导出                                            |
-| `bootstrap`       | 项目初始化           | 第一次接一个项目                       | `orchestrator` | explorer → docsync → tester（确认测试步骤）                                                       |
-| `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps → deps（验收：tester）→ vcs                                                                  |
-| `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst → explorer（影响面）→ developer（验收：tester）→ tester（旧数据验证）→ vcs                |
-| `release`         | 发布与回滚           | 出包、发版本、回滚预案                 | `vcs`          | vcs → tester（产物验证）→ docsync（发布说明 + 回滚）→ vcs                                         |
-| `project-general` | 通用项目             | 项目常驻流程（默认）                   | `orchestrator` | 需求与现状 → 方案与实现 → 文档与交付；另有文档初始化、测试验证、验收三条流程                      |
-| `project-ue`      | UE 项目              | UE 项目常驻流程                        | `orchestrator` | 识别与侦察 → 确认方案 → 实现 → 文档同步 → 交付；另有文档初始化、编译验收                          |
+自带工作流**启动时全部自动加入**（用户 2026-10-25 改掉了 10-19「手动添加」的决定），用到的角色随之建好；
+装过的 key 记在数据目录的 `config/builtin-workflows.json`，用户删掉的不再装回来（「通用项目」「UE 项目」缺了照样补），
+以后新加的自带工作流下次启动自动装上。删掉的可以在工作流页的「内置工作流」里重新添加。
 
-### 为什么只新增这四个
+### 改代码的工作流只做到「实现 + 快速检查 + 文档同步」
 
-| 新增                       | 缺口                                       | 为什么现有 Agent 做不了                                                                                    |
-| -------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `bootstrap` 项目初始化     | 所有现有流程都假设文档根、测试步骤已经配好 | `docsync` 只同步已有改动；测试步骤要真的跑一遍才知道对不对，这是 `tester` 的活，但顺序和确认点需要独立流程 |
-| `deps` 依赖升级与安全      | 没有任何一步会看依赖的漏洞和过期           | `tester` 只跑配置好的步骤；`explorer` 只读代码；升级依赖需要「体检 → 分批 → 验证」的闭环                   |
-| `migration` 数据与配置迁移 | 迁移需要「迁移脚本 + 回滚 + 旧数据验证」   | 普通功能开发没有回滚和旧数据样本验证这个环节                                                               |
-| `release` 发布与回滚       | 现有流程只做到本地提交                     | 出包、产物验证、回滚预案和授权检查需要有顺序保证                                                           |
+改代码的工作流由子对话（执行角色）用 `start_plan` 启动，只是子对话计划里的一个主步骤。收尾前评审（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）、
+评审后的完整测试和编译、`submit_merge` 合回父对话分支都由执行角色在工作流之后做，所以工作流里**不放**：
+
+- 评审节点：评审要带交接单、只看 diff，由执行角色派，计划里单列一步；
+- 完整验收（`review: 'check'` 挂测试验收）：那会把完整测试跑在评审前面，评审改完还得再跑一次；
+- 提交 / 交付节点（`vcs`）：独立分支里收尾就是 `submit_merge`，没有它时执行角色自己派「版本控制」；
+- UE 编译：编译归父对话（[ADR 0004](adr/0004-ue-build-by-parent.md)），子对话评审后申请。
+
+实现节点改完只跑项目测试步骤里标「快速」的检查；最后一个节点是「文档」同步，Bug 记录只记用户报的 Bug。
+测试步骤照样注入这些工作流的说明：带 `project-testing` 技能的角色（开发、执行、依赖）也算要跑测试（`withTestSteps`）。
+
+| key               | 名称                 | 适用场景                               | 主 Agent       | 节点                                                                                   |
+| ----------------- | -------------------- | -------------------------------------- | -------------- | -------------------------------------------------------------------------------------- |
+| `project-general` | 通用项目             | 项目默认、边界清楚的功能和改动         | `orchestrator` | analyst（识别现场与方案，确认）→ developer → docsync                                   |
+| `project-ue`      | UE 项目              | UE 的 C++ / Lua 改动                   | `orchestrator` | explorer（ue 侦察）→ analyst（确认）→ developer（不编译）→ docsync                     |
+| `openspec`        | 功能开发（OpenSpec） | 需要完整规范的复杂功能                 | `developer`    | spec → analyst → spec（门禁）→ developer → tester（延期验证项）→ spec（归档）→ docsync |
+| `migration`       | 数据与配置迁移       | 改 schema / 数据格式 / 配置结构        | `developer`    | analyst（含读写方）→ developer → tester（旧数据验证）→ docsync                         |
+| `bugfix`          | Bug 修复             | `worker.mode=总是按工作流` 时的 Bug    | `developer`    | developer 修 Bug → docsync（用户报的 Bug 记录）                                        |
+| `architecture`    | 架构设计             | 新模块架构或现有架构评审               | `analyst`      | analyst（architectural）→ analyst（压测）→ docsync（ADR 一律写）                       |
+| `review`          | 代码评审             | 评审分支 / 提交 / changelist，全程只读 | `reviewer`     | explorer（整理评审交接单）→ reviewer（只评改动的行）                                   |
+| `deps`            | 依赖升级与安全       | 过期、漏洞、大版本升级                 | `deps`         | deps 体检（确认）→ deps 分批升级 → docsync                                             |
+| `release`         | 发布与回滚           | 出包前的范围、产物验证和回滚预案       | `vcs`          | vcs（发布范围）→ tester（产物验证）→ docsync（发布说明 + 回滚）；发布由父对话做        |
+| `blender`         | Blender 建模与动画   | 可拆分模型、动画、导出 UE              | `blender`      | blender 按阶段：规格 → 建模 → 装配到减面 → 质检 → 导出                                 |
+
+### 已合并的工作流
+
+启动时按 `RETIRED_WORKFLOWS`（`shared/builtin/workflows.ts`）处理本机副本：和合并前的定义（`shared/builtin/legacy-workflows.ts`）一致的删掉，
+项目和项目分类里指向它的（默认工作流、可选列表、暴露项取值）改指到接替的那个；用户改过的保留。
+
+| 旧 key      | 合并到            | 原因                                                                           |
+| ----------- | ----------------- | ------------------------------------------------------------------------------ |
+| `daily-dev` | `project-general` | 和「通用项目」的主流程是同一件事                                               |
+| `ue-dev`    | `project-ue`      | 和「UE 项目」的主流程是同一件事                                                |
+| `bootstrap` | `project-general` | 项目设置里的「AI 初始化项目」已经写 AGENTS.md 和文档框架、推荐测试步骤和工作流 |
+
+改工作流定义时把改前那一版追加进 `LEGACY_WORKFLOWS`（只登记真改了的，登记了没变的会每次启动重写一遍），没改过的副本启动时升级。
+
+### 为什么留着这三个补环节的
+
+| 工作流                     | 缺口                                     | 为什么现有 Agent 做不了                                                |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `deps` 依赖升级与安全      | 没有任何一步会看依赖的漏洞和过期         | `tester` 只跑配置好的步骤；升级依赖需要「体检 → 分批 → 验证」的闭环    |
+| `migration` 数据与配置迁移 | 迁移需要「迁移脚本 + 回滚 + 旧数据验证」 | 普通功能开发没有回滚和旧数据样本验证这个环节                           |
+| `release` 发布与回滚       | 现有流程只做到合回父对话分支             | 发布范围、产物验证和回滚预案需要有顺序保证；对外的发布动作仍由父对话做 |
 
 **没新增的**：性能排查（用 `developer.task` 扩充）、跨环境适配（由 `testSteps` + Agent 参数派生覆盖）、
 安全审计之外的安全加固（`deps.audit` + `reviewer` 覆盖）、文档工程（`docsync.adr` 覆盖）、

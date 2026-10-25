@@ -26,6 +26,7 @@ import {
   LEGACY_WORKFLOWS,
   MERGED_AGENTS,
   mergedParams,
+  RETIRED_WORKFLOW_DEFS,
   type LegacyWorkflow,
   type MergedAgent,
 } from './legacy.ts'
@@ -36,16 +37,17 @@ import {
   builtinAgentKeys,
   GENERAL,
   GENERAL_KEY,
-  GENERAL_LEGACY,
   GENERAL_NAME,
   GENERAL_ORIGIN,
+  RETIRED_WORKFLOWS,
   UE_PROJECT_KEY,
   type BuiltinWorkflow,
 } from './workflows.ts'
+import { GENERAL_LEGACY } from './legacy-workflows.ts'
 
 /**
- * 把内置工作流、内置 Agent 建进数据：不自动装，由用户在工作流页、Agent 页的「内置」里明确添加。
- * 怎么新建（接口还是测试里的内存）由调用方传进 ops。
+ * 把内置工作流、内置 Agent 建进数据：自带工作流启动时全部自动装一次（用到的角色随之建好，见 seedProjectWorkflows），
+ * 用户删掉的可以在工作流页的「内置工作流」里再添加回来。怎么新建（接口还是测试里的内存）由调用方传进 ops。
  */
 export interface BuiltinOps {
   createAgent: (input: AgentInput) => Promise<Agent>
@@ -187,8 +189,8 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
   return { workflow, created, newCategories, newTags }
 }
 
-/** 「通用项目」「UE 项目」：启动时自动装一次，项目默认流程要用 */
-const GLOBAL_WORKFLOWS = BUILTIN_WORKFLOWS.filter((w) => w.key === GENERAL_KEY || w.key === UE_PROJECT_KEY)
+/** 「通用项目」「UE 项目」：项目默认流程要用，本机没有时每次启动都补上；其余自带工作流只自动装一次 */
+const ALWAYS_SEEDED = new Set([GENERAL_KEY, UE_PROJECT_KEY])
 
 /** 参数表是否一致（忽略键的顺序） */
 const sameParams = (a: Record<string, unknown>, b: Record<string, unknown>) => {
@@ -528,14 +530,18 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
 }
 
 /**
- * 启动时安装一次项目用的内置工作流（「通用项目」「UE 项目」）：同名或同来源的跳过，不覆盖用户改过的。
+ * 启动时装上自带工作流（用户 2026-10-25 改成默认全部加入，不再手动添加）：同名或同来源的跳过，不覆盖用户改过的。
+ * seeded 是已经自动装过的 key（调用方存盘）：装过一次的、用户后来删掉的不再装回来，只有「通用项目」「UE 项目」缺了就补；
+ * 以后新加的自带工作流不在 seeded 里，下次启动自动装上。
  * 再把本机没改过的旧副本升级到新定义（工作流节点引用、Agent 的角色设定和参数），旧副本引用了
  * 已合并的 Agent 时仍能运行，结果里由调用方提示。
- * 返回装完后的数据，调用方据此更新集合。
+ * 返回装完后的数据和新的 seeded，调用方据此更新集合。
  */
-export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps) {
-  const rest = GLOBAL_WORKFLOWS.filter(
-    (w) => !state.workflows.some((x) => x.origin === originOf(w.key) || x.name === w.name),
+export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps, seeded: string[] = []) {
+  const rest = BUILTIN_WORKFLOWS.filter(
+    (w) =>
+      (ALWAYS_SEEDED.has(w.key) || !seeded.includes(w.key)) &&
+      !state.workflows.some((x) => x.origin === originOf(w.key) || x.name === w.name),
   )
   let cur = state
   let created: Workflow[] = []
@@ -568,7 +574,62 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps)
   const redirected = await redirectMergedWorkflows(cur, api)
   if (redirected.length)
     cur = { ...cur, workflows: cur.workflows.map((w) => redirected.find((x) => x.id === w.id) ?? w) }
-  return { state: cur, created, updated }
+  const nextSeeded = [...new Set([...seeded, ...BUILTIN_WORKFLOWS.map((w) => w.key)])]
+  return { state: cur, created, updated, seeded: nextSeeded }
+}
+
+/**
+ * 合并掉的内置工作流（RETIRED_WORKFLOWS）：本机副本和合并前的定义一致（没改过）、接替的工作流本机也有时，
+ * 返回要删的副本和接替它的本机工作流 id。用户改过的副本、接替的被删掉了的，都留着不动。
+ */
+export function retiredWorkflows(state: Pick<BuiltinState, 'agents' | 'workflows'>) {
+  const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
+  const out: { workflow: Workflow; into: string }[] = []
+  for (const [key, intoKey] of Object.entries(RETIRED_WORKFLOWS)) {
+    const into = state.workflows.find((w) => w.origin === originOf(intoKey))
+    if (!into) continue
+    for (const w of state.workflows.filter((x) => x.origin === originOf(key)))
+      if ((RETIRED_WORKFLOW_DEFS[key] ?? []).some((l) => matchesLegacy(w, l, agentId)))
+        out.push({ workflow: w, into: into.id })
+  }
+  return out
+}
+
+/**
+ * 删掉的工作流在项目和项目分类里的引用改指到接替的工作流：默认工作流、可选列表（去重）、按工作流存的暴露项取值
+ * （接替的那个没有取值时才搬过去）。返回要改的项目和分类，没有引用的不返回。
+ */
+export function redirectWorkflowRefs(
+  projects: Project[],
+  categories: ProjectCategory[],
+  moved: Record<string, string>,
+) {
+  const to = (id: string) => moved[id] ?? id
+  const projectUpdates: Project[] = []
+  for (const p of projects) {
+    const hit =
+      moved[p.workflowId] ||
+      p.workflowIds.some((id) => moved[id]) ||
+      Object.keys(p.workflowParams).some((id) => moved[id])
+    if (!hit) continue
+    const workflowParams = { ...p.workflowParams }
+    for (const [from, into] of Object.entries(moved)) {
+      if (!(from in workflowParams)) continue
+      if (!(into in workflowParams)) workflowParams[into] = workflowParams[from]
+      delete workflowParams[from]
+    }
+    const ids = p.workflowIds.map(to)
+    projectUpdates.push({
+      ...p,
+      workflowId: p.workflowId && to(p.workflowId),
+      workflowIds: ids.filter((id, i) => ids.indexOf(id) === i),
+      workflowParams,
+    })
+  }
+  const categoryUpdates = categories
+    .filter((c) => !!moved[c.workflowId])
+    .map((c) => ({ ...c, workflowId: to(c.workflowId) }))
+  return { projects: projectUpdates, categories: categoryUpdates }
 }
 
 /**

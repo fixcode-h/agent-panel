@@ -91,8 +91,11 @@ import {
   migrateProjectsToGeneral,
   pruneMergedAgents,
   redirectMergedProjects,
+  redirectWorkflowRefs,
+  retiredWorkflows,
   seedProjectWorkflows,
 } from '../shared/builtin/install.ts'
+import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
@@ -159,11 +162,12 @@ for (const w of await workflows.list()) {
 }
 
 /**
- * 项目必须有工作流：「通用项目」「UE 项目」启动时装一次（已经有了就跳过），
+ * 自带工作流启动时默认全部加入（装过一次、后来被删掉的不再装回来，「通用项目」「UE 项目」缺了就补），
  * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
  */
 async function ensureProjectWorkflows() {
   await removeLegacyDefaultAgent()
+  const before = await loadSeededWorkflows()
   const seeded = await seedProjectWorkflows(
     {
       agents: await agents.list(),
@@ -179,9 +183,12 @@ async function ensureProjectWorkflows() {
       updateWorkflow: (id, input) => workflows.update(id, input),
       updateAgent: (id, input) => agents.update(id, input),
     },
+    before,
   )
-  if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
+  if (seeded.seeded.join() !== before.join()) await saveSeededWorkflows(seeded.seeded)
+  if (seeded.created.length) log.info('workflow', '已安装自带工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
+  await retireWorkflows()
   await pruneMerged()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
   const projectAgents = await ensureProjectAgents(
@@ -239,6 +246,21 @@ async function removeLegacyDefaultAgent() {
   }
   await agents.remove(old.id)
   log.info('agent', '已去掉默认 Agent，旧对话改为直接用 CLI')
+}
+
+/**
+ * 合并掉的内置工作流（日常开发、UE 功能开发、项目初始化）：没改过的本机副本删掉，
+ * 项目和项目分类里指向它的改指到接替的工作流；用户改过的副本留着。
+ */
+async function retireWorkflows() {
+  const list = retiredWorkflows({ agents: await agents.list(), workflows: await workflows.list() })
+  if (!list.length) return
+  const moved = Object.fromEntries(list.map((r) => [r.workflow.id, r.into]))
+  const refs = redirectWorkflowRefs(await projects.list(), await projectCategories.list(), moved)
+  for (const p of refs.projects) await projects.update(p.id, p)
+  for (const c of refs.categories) await projectCategories.update(c.id, c)
+  for (const r of list) await workflows.remove(r.workflow.id)
+  log.info('workflow', '已删除合并掉的内置工作流', { list: list.map((r) => r.workflow.name) })
 }
 
 /**
