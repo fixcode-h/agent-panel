@@ -1063,6 +1063,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await bar.first().click()
       // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
+      // 列表里最新的在最上面（用户报的：派出的最后一个排在最下面）：演示数据里「核对角标的订阅时机」是最后派出的，
+      // 按开始时间应该排在「已完成」组的第一行。读的是这一行的实际顺序，不是按标题挑元素
+      const helperOrder = await p.evaluate(() => {
+        const tray = [...document.querySelectorAll('div.absolute.bottom-full')].find((d) =>
+          (d.innerText || '').includes('已完成'),
+        )
+        if (!tray) return null
+        return [...tray.querySelectorAll('button')]
+          .map((b) => (b.innerText || '').replace(/\s+/g, ' ').trim())
+          .filter((x) => x && !x.startsWith('终止'))
+      })
+      if (!helperOrder) errors.push('子任务-列表：找不到子任务浮层')
+      else {
+        const at = helperOrder.findIndex((x) => x.includes('核对角标的订阅时机'))
+        const first = helperOrder.findIndex((x) => x.includes('复现问题') || x.includes('查找相关代码'))
+        if (at < 0) errors.push('子任务-列表：列表里没有「核对角标的订阅时机」')
+        else if (first >= 0 && at > first)
+          errors.push(`子任务-列表：最新派出的「核对角标的订阅时机」没排在最上面（顺序：${helperOrder.join(' | ')}）`)
+      }
+      await check(p, '子任务-列表-最新在上')
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
       // 窗口最上面那块「派给它的要求」：派发时交给它的原文，按 `##` 小节排开（要做的事在前、验收标准在后）。

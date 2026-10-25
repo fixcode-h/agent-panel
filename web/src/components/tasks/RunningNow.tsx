@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
-import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs, type ChildEntry } from '@shared/task'
+import {
+  helperActive,
+  helperRunning,
+  sortHelpers,
+  stepMs,
+  visibleChildren,
+  splitStepJobs,
+  type ChildEntry,
+} from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
@@ -53,12 +61,12 @@ export function runningRows<C extends ChildEntry>({
   }
 }
 
-/** 对话派出的、还没结束的子任务：在跑的排前面 */
+/** 对话派出的、还没结束的子任务：顺序和「子任务」列表同一套（在跑的在前，同一组里最新的在最上面，见 sortHelpers） */
 export function activeHelpers(task: Task) {
   const steps = chatHelperIds(task)
     .map((id) => task.steps.find((s) => s.id === id))
     .filter((s): s is TaskStep => !!s && helperActive(s))
-  return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
+  return sortHelpers(steps)
 }
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
