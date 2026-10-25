@@ -236,3 +236,21 @@ test('pasteElementRefs：只换名额内的那几块，后面的引用原文留�
   assert.equal(out.text.match(/\[引用:/g)?.length, MAX_ATTACHMENTS)
   assert.deepEqual([out.made, out.kept], [MAX_ATTACHMENTS, 2])
 })
+
+test('引用卡片选中复制再粘贴：带出完整原文和标记，粘回来还原成一张卡片', () => {
+  // 用户报的现象：在输入框里选中引用卡片按 Ctrl+C，粘回去成了纯文本、内容还被截断了。
+  // 卡片在页面上显示的是 quoteName 截断到 40 个字的摘要，浏览器原生复制只带到这段摘要；
+  // 复制时改成按 wrapElementRef 写剪贴板（RichInput 的 onCopy → composer-chips 的 copyOfChip），
+  // 走的就是这两个函数：复制出去的必须是完整原文，粘回来必须认得出来
+  const long = formatElementRef({ ...base, text: '继续输入要求 '.repeat(20) })
+  const copied = wrapElementRef(long)
+  assert.ok(copied.includes(long), '复制出去的必须是完整原文，不是截断的摘要')
+  assert.ok(copied.includes(ELEMENT_REF_MARK.head) && copied.trimEnd().endsWith(ELEMENT_REF_MARK.tail))
+  const out = pasteElementRefs(copied, () => '界面元素 RichInput · <div> 继续…#qnew')
+  assert.equal(out?.text, '[引用:界面元素 RichInput · <div> 继续…#qnew]')
+  assert.deepEqual([out?.made, out?.kept], [1, 0])
+  // 「截断」只该出现在写给 AI 看的属性、文字片段上，摘要那行之后的正文（源码位置、选择器）一个字都不能少
+  assert.ok(long.length > 200, '这条用例的原文要够长，不然测不出截断')
+  for (const want of [`${base.source!.file}:${base.source!.line}`, '- 选择器：', '- 元素：'])
+    assert.ok(copied.includes(want), `复制出去的引用里少了「${want}」`)
+})
