@@ -170,6 +170,58 @@ await runShard('子对话与计划', async (api) => {
       step('保活的子对话跑完一轮：父对话只收到一条汇报')
     }
 
+    // 「提问」关着、父对话停在保活等下一句（working 是 false 但执行位占着）时，子对话的提问自动交给父对话：
+    // 要直接交给等着的 CLI 开始作答，不能当成空闲去开新一轮、被「任务正在执行」拒掉后只留一行「消息没有送到」
+    {
+      let waitParent = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: C.id,
+        // 带 COMMIT 和保活的子对话那段一样：这一轮够长，看着它的 presence 先到，回复完才停在等下一句
+        prompt: 'COMMIT 停在等下一句的父对话',
+        askUser: false,
+      })
+      await call('POST', `/tasks/${waitParent.id}/presence`, { viewerId: 'e2e-wait-parent', active: true })
+      // 保活等下一句时 status 仍是 running（waitTask 只认停下的），用 waitFor 看 awaitingUser
+      await waitFor(
+        async () => {
+          const x = await call('GET', `/tasks/${waitParent.id}`)
+          return x.awaitingUser && !x.working
+        },
+        { label: '父对话回复完停在保活等下一句', timeout: 30000 },
+      )
+      const askKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: waitParent.id,
+        prompt: 'ASK_PARENT 父对话等下一句时提问',
+      })
+      // 交给的是同一个保活进程（假 CLI 的调用日志只记启动）：看父对话在这条要求之后有没有新的回复
+      const answered = (x) => {
+        const i = x.messages.findIndex((m) => m.text.includes(`子对话「${askKid.title}」在等你决定`))
+        return i >= 0 && x.messages.slice(i + 1).some((m) => m.role === 'agent')
+      }
+      await waitFor(async () => answered(await call('GET', `/tasks/${waitParent.id}`)), {
+        label: '父对话的 CLI 收到替子对话决定的要求并开始作答',
+        describe: async () =>
+          JSON.stringify(
+            (await call('GET', `/tasks/${waitParent.id}`)).messages.map((m) => [m.role, m.text.slice(0, 60)]),
+          ),
+        timeout: 30000,
+      })
+      waitParent = await call('GET', `/tasks/${waitParent.id}`)
+      assert.ok(
+        !waitParent.messages.some((m) => m.alert?.kind === 'delivery'),
+        `父对话里没有「消息没有送到」：${JSON.stringify(waitParent.messages.filter((m) => m.alert).map((m) => m.text))}`,
+      )
+      await call('POST', `/tasks/${askKid.id}/stop`)
+      await waitDone(askKid.id, 15000)
+      await call('POST', `/tasks/${waitParent.id}/stop`)
+      await waitDone(waitParent.id, 15000)
+      step('父对话停在等下一句时子对话提问：直接交给等着的 CLI，不报「消息没有送到」')
+    }
+
     // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
     const isoNew = await call('POST', '/tasks', {
       projectId: project.id,

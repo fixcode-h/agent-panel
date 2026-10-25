@@ -229,6 +229,8 @@ export const EN_SERVER: Record<string, string> = {
     'This project has no workflow yet. Choose a workflow or use direct chat instead.',
   请选择对话的角色: 'Choose a role to chat with',
   '任务正在执行，请等它完成或先停止': 'The task is running. Wait for it to finish or stop it first.',
+  '这一轮没有正常结束，消息留在对话里，发一条消息或点「继续执行」会处理':
+    'This turn did not finish normally. The message is kept in the conversation and will be handled when you send a message or click Continue.',
   任务正在执行: 'The task is running',
   只有失败或停止的任务可以继续: 'Only failed or stopped tasks can be resumed',
   这个请求已经结束了: 'This request has already ended',
