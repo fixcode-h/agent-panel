@@ -23,6 +23,7 @@ import {
   type SkillUpdates,
 } from '../shared/deploy.ts'
 import { frontField } from '../shared/library.ts'
+import { resolveSkills } from '../shared/skill-guide.ts'
 import { entries, retireBundled, sharedRoot, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
@@ -106,6 +107,8 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
   const all = await entries()
   const root = skillRoot()
   const out: DeployResult = { skills: [], kept: [], removed: [], docs: [] }
+  // 选了特化技能（例如 ue-project-structure）就连它扩展的通用技能一起部署，单独一份读不全
+  run = { ...run, skills: resolveSkills(run.skills) }
   for (const e of all) {
     const dir = path.join(root, e.category)
     const s = await statusIn(e, dir)

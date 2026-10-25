@@ -1,4 +1,6 @@
-# Unreal Engine 架构
+# UE Gameplay 框架与运行时设计
+
+新功能要决定放在哪种载体、谁拥有状态、怎么加载资源、怎么同步时读这份。模块、Build.cs 和导出宏的规则见本技能的 SKILL.md 和 `cpp-code-style`。
 
 ## 适用场景
 
@@ -10,32 +12,20 @@ UE5 C++/Blueprint 项目的框架、Gameplay、资源、网络和数据架构。
 
 ## 类型选择
 
-| 需求 | 优先载体 |
-| --- | --- |
-| 跨地图会话服务 | `UGameInstanceSubsystem` |
-| 每 World 服务 | `UWorldSubsystem` |
-| 每本地玩家服务 | `ULocalPlayerSubsystem` |
-| 服务端比赛规则 | `AGameModeBase`/`AGameMode` |
-| 全体客户端可见比赛状态 | `AGameStateBase`/`AGameState` |
-| 玩家跨 Pawn 的复制状态 | `APlayerState` |
-| 玩家意图、Possession、本地协调 | `APlayerController` |
-| 可控制空间实体 | `APawn`/`ACharacter` |
-| 可复用 Actor 能力 | `UActorComponent` |
-| 非空间规则/运行期对象 | `UObject` 或普通 C++ 类型 |
+| 需求                           | 优先载体                      |
+| ------------------------------ | ----------------------------- |
+| 跨地图会话服务                 | `UGameInstanceSubsystem`      |
+| 每 World 服务                  | `UWorldSubsystem`             |
+| 每本地玩家服务                 | `ULocalPlayerSubsystem`       |
+| 服务端比赛规则                 | `AGameModeBase`/`AGameMode`   |
+| 全体客户端可见比赛状态         | `AGameStateBase`/`AGameState` |
+| 玩家跨 Pawn 的复制状态         | `APlayerState`                |
+| 玩家意图、Possession、本地协调 | `APlayerController`           |
+| 可控制空间实体                 | `APawn`/`ACharacter`          |
+| 可复用 Actor 能力              | `UActorComponent`             |
+| 非空间规则/运行期对象          | `UObject` 或普通 C++ 类型     |
 
 Subsystem 是生命周期容器，不是把所有 Manager 改名后的垃圾桶。Actor 仅用于需要 World、Transform、碰撞、复制或关卡放置的对象。
-
-## 模块与插件
-
-- MUST 让 Build.cs 依赖反映源码依赖方向；Public API 最小化，内部头文件留在 Private。
-- UE C++ 尤其是插件代码默认不添加模块导出宏（如 `SPGAMEFRAMEWORK_API`、`PROJECT_API`）；只有实际跨模块 C++ 调用/链接需要的函数才单独导出，不能因为声明位于 Public、带反射宏、Blueprint 可见或未来可能复用就导出。
-- 新增或保留导出宏前，必须能从 Build.cs 依赖和实际跨模块 include/调用关系证明调用方；无法证明时默认不加。
-- 仅 Lua/UnLua 反射调用/属性访问不构成 C++ 符号导出需求，不因此添加模块导出宏或 `MinimalAPI`；保留绑定机制需要的反射声明。原生绑定实现存在实际跨模块链接需求时另行逐函数判断。
-- 禁止对 UE C++ 类整体添加模块导出宏；跨模块使用的 UObject 反射类仅按需采用 `UCLASS(MinimalAPI)`，类声明仍无导出宏，内部类不添加。普通 C++ 类和其他非 `UCLASS` 类型不适用 `MinimalAPI`。仅给实际跨模块需要的函数（包括必要构造/生命周期函数）添加所属模块导出宏。
-- 成员变量不得添加模块导出宏，跨模块读取通过按需新增并单独导出的访问函数完成，优先返回值或只读视图。`MinimalAPI` 不会自动导出全部函数；验证需覆盖 UHT 和调用方编译/链接。完整规则见 `cpp-code-style` 技能的「UE C++ 插件的模块导出」。
-- SHOULD 按业务能力和可部署/复用边界拆模块；插件只在需要独立启停、复用或交付时建立。
-- MUST NOT 用 Blueprint Function Library 或全局单例绕过模块边界。
-- 模块/插件不是安全边界，跨插件契约仍需版本和兼容策略。
 
 ## UObject 生命周期与所有权
 
@@ -50,6 +40,7 @@ Subsystem 是生命周期容器，不是把所有 Manager 改名后的垃圾桶�
 - 硬引用用于必须随拥有者加载的小型核心资产；可选或重资源使用软引用与 Asset Manager/异步加载。
 - DataTable/DataAsset 是作者数据，不应直接渗透所有运行期对象。
 - 配置进入运行期前 SHOULD 形成不可变、校验后的投影；高频逻辑禁止临时跨表与同步加载。
+- 策划要调的数值不写死在 C++ / Lua 里：做成 `UPROPERTY(EditDefaultsOnly)`、`UDeveloperSettings`（`Config=Game`）、DataTable / DataAsset，代码按名字读取；资产路径用软引用在一处配置，不在代码里散落 `/Game/...` 字符串（通用规则见 `coding-standards` 的 `configuration.md`）。
 - Primary Asset 规则、Bundle、Cook 和 Chunk 必须以目标平台实测。
 
 ## 网络边界
