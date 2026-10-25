@@ -11,6 +11,12 @@
 - 进程管理：启动、结束整个进程树（Windows 用 `taskkill /T /F`）、超时和孤儿进程回收、进程占用统计（`server/exec/process.ts`、`server/exec/orphans.ts`、`server/exec/proc-stats.ts`）。
 - 进程与内存按对话子树归属：每个登记的 CLI 进程带 `owner`（`taskId` / `rootTaskId` / `title`）。进程列表、关闭、清理、AI 清理建议和内存曲线都只认 `owner.taskId` 落在「当前任务 + 它的全部后代」里的登记（子树由 `shared/run-usage.ts` 的 `subtreeTaskIds` 算；`cleanableClis` 的 `taskIds`、`summarize` 的任务 id 集合都是这个口径）。所以打开子对话只看自己这一支，看不到父对话和兄弟。面板 server 自身的 RSS 不属于任何对话，不计入对话合计。历史采样同时写 `roots`（旧的整树口径）和 `tasks`（`aggregateByTask` 按 `owner.taskId` 聚合）：新样本按 `tasks` 求和。只有 `roots` 的旧样本，用当前任务 id 集合去匹配 roots 的 `root` 键（`server/exec/proc-stats.ts` 的 `summarize` / `sampleRss`）：当前是根对话时能还原整棵树；子对话的 id 对不上 roots 键，返回 `null`（未知）而不是 0——否则该点会和升级后的点混成一条 0 起步的曲线，趋势被误判成持续上涨；旧样本 roots 为空（当时整台机器没有任何登记的进程）时才返回 0。
 - API 并发上限：API 设置里的 `maxConcurrent`（0 不限制，默认 0）按 API 计同时在请求模型的 CLI 调用。所有调用都从 `runner.ts` 的 `gatedRunAgent` 进，先拿名额（`server/api-slots.ts`，满了先到先得排队，排队时对话 / 步骤上带 `apiWait`，对话仍算在运行、能停止），结束时还。停在等下一句（`waitNext`）、工具里等子任务或主 Agent（引擎的 `yieldSlot`）时让出名额，接着干之前再拿回；占着名额等子任务会和排队的子任务互相等死。预热不占名额，等到第一句再拿。账号登录的 CLI 不受限。
+  - `apiWait` 带 `reason` 区分来源：`start` 是这一轮还没开始、真的在排队等名额；`yield` 是这一轮已经在跑（CLI 正在出 token）、让出后又拿回时排上的队。两者在界面上不能显示成同一句话，见 `docs/modules/web/README.md` 的运行状态一行（给 `shared/schema.ts` 的 `ApiWait` 加字段时的理由也写在那里）。读写这个标记的只有 `server/exec/api-wait.ts` 的 `markApiWait` / `clearApiWait`。
+  - 标记必须「此刻真的在排队」才存在：`takeApiSlot` 用 `try/finally` 无条件清，不再看「这一次有没有排过队」的闭包变量——复用别处已经在排的队（`ApiSlot` 的 `pending`）时那次回调不会触发，标记就没人清，会跟着快照留到任务结束。
+  - `ApiSlot.drop()` 在排队期间要能撤销排队（内部 `AbortController`），否则名额被放行给一个已经放弃的 slot、永远不还：`used` 永久偏高 → `free()` 长期为 false → 后续调用更频繁排队。给 `ApiSlot` 加排队撤销时要同时保证「放行的名额与持有者一一对应」。
+  - 两代排队交错时必须靠代数（`gen`）保护：`drop()` 后马上重新排队，上一代 `acquire` 的 `finally` 跑得比新一代晚，无条件写回 `pending` / `waiting` 会清掉新一代的撤销句柄，之后的 `drop()` 就撤销不了排队——同一个泄漏换了个入口。两个字段都要比代数后才清理。
+  - 拿回时是 `start` 还是 `yield` 看**让出前手里有没有名额**（`ApiSlot.holding`）：持有过 = 这一轮跑起来后临时让出（`yield`）；没持有过 = 预热（prewarm）对话等用户第一句，这一轮从没出过 token，此刻排队就是真的还没开始（`start`）。不能只看「是 `waitNext` 就写 `yield`」，否则预热首句的真排队会被静默吞成「思考中」。
+  - 它只是内存里的临时状态：`server/task-store.ts` 的 `parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢），否则进程重启后会把一条陈旧标记显示成「在排队」。
 - 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。
 - 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。
 - 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。
@@ -30,7 +36,7 @@
 - `npm run test:unit`（`server/exec/*.test.ts`：解析、进程、RPC、孤儿进程、worktree、停止等）
 - 会话按目录存：`shared/task-session-dir.test.ts` 的「sameDir：Windows 路径的大小写、分隔符、末尾斜杠都不影响判定」「sessionMoved：会话在别的目录里就算搬过」「没记过目录的会话不判为搬过」「对话在没有新字段时退回共用的 sessionDir」「新字段按会话分别记，优先于对话共用的 sessionDir」。改会话续接时特别注意：`resume` 的目录判定必须对子任务也生效，不能写成 `chat &&` 短路（见 `bugs/sub-session-other-project.md`）。
 - 进程与内存口径：`server/exec/proc-stats.test.ts` 的「按任务汇总」「进程归属：只取当前子树任务的登记，祖先、兄弟和无归属的面板动作都不算」「清理白名单：只看当前对话及附属的任务登记」「内存历史：新采样按任务分开记，子对话只加自己这一支」「内存历史：旧样本只有根任务聚合时，子对话是未知而不是 0（不制造 0 起步的假曲线）」「内存历史：合计只算这个对话的 CLI，面板 server 单独给出」；`server/task-memory.test.ts` 的「会话内存分析接口：子对话的采样只加自己这一支，不算父对话和兄弟」；任务树本身在 `shared/run-usage.test.ts`（父/子/孙、兄弟、无关任务、数据里成环）。
-- API 并发上限：`server/api-slots.test.ts`（排队顺序、停止离队、调大上限放行、让出拿回不多占）；`scripts/e2e/07-local.mjs` 的账号和 API 一步里，名额是 1 时第二个对话排队、排队时停止不再启动、对话和它派的两个子任务同用一个 API 不会互相等死。
+- API 并发上限：`server/api-slots.test.ts`（排队顺序、停止离队、调大上限放行、让出拿回不多占、「排队中放弃要撤销排队，放行的名额不能丢在没人持有时」）；`server/exec/api-wait.test.ts`（标记记下就清干净、让出后拿回带 `yield` 且不改步骤状态、开跑前排队才改成排队中、拿到名额或被停止都清掉）；`scripts/e2e/07-local.mjs` 的账号和 API 一步里，名额是 1 时第二个对话排队、排队时停止不再启动、对话和它派的两个子任务同用一个 API 不会互相等死。
 - 改了执行流程、停止、续跑或 worktree 合并后跑 `npm run test:e2e`（用 `scripts/fake-cli` 模拟各 CLI，Windows 上在 WSL 里）
 
 ## 待确认
