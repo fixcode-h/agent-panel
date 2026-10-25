@@ -9,7 +9,7 @@ import { runEngineTurn, system, type AgentCall, type AgentResult } from './engin
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
-import { EVOLUTION_LANG, demoEvolution } from './task-export.ts'
+import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 
 export interface RunContext {
   task: Task
@@ -404,6 +404,15 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       }
     }
   }
+  // 子任务的 AI 分析（子任务窗口里的「AI 分析」）：演示里给出四类结论，不要求工作流修改建议块。
+  // 只认 helperPrompt 写在开头的那行标记：不能认问题里的某句话——整体分析的 focus 是用户自己填的，
+  // 写一句「帮我看派出的一个子任务为什么慢」就会被当成子任务分析，回复里连修改建议块都没了
+  if (!call.step && ctx.first && ctx.prompt.includes(HELPER_SCOPE_MARK))
+    out = {
+      tools: [{ kind: 'read', label: '子任务记录.md', detail: '' }],
+      changes: [],
+      text: '这个子任务花了 **2 分 0 秒**，其中大部分时间花在反复搜同一个符号上，做的事和它的角色设定一致。\n\n### 1. 耗时\n\n- **搜代码 3 次**（`cart`、`CartBadge`、`cart:changed`）花了 1 分 10 秒，第一次搜的命中就在结果里，后两次是重复劳动。\n- 读文件 2 次、命令 0 次，总共不到 10 秒：**时间不在执行上，在找东西上**。\n- 没有等用户、没有等模型的长间隔。\n\n### 2. 是否符合角色\n\n- 角色设定要求「只完成派给它的事、完成后简要总结」，它只读了代码、没有改文件，**符合**。\n- 派给它的要求里写了「找出可疑的地方」，它给了文件和结论，没有漏。\n\n### 3. 优化空间\n\n- 要求里直接给文件路径：`派它时写「看 web/src/components/CartBadge.tsx 的订阅逻辑」`，能省掉 3 次搜索。\n- 结论里直接要求「贴出相关代码行」，回交的结果就不用再回去读一遍。\n\n### 4. 面板框架\n\n- 没有发现问题：耗时、等待和它自己的对话过程都对得上。',
+    }
   // AI 分析执行记录：回复后面带上修改建议，演示里也能看到差异和应用
   if (!call.step && ctx.first && ctx.prompt.includes('```' + EVOLUTION_LANG))
     out = {
