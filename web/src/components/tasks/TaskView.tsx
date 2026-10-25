@@ -110,6 +110,7 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
 import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
 import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
@@ -432,6 +433,10 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
+  // 后台命令行的标题点了：在顶层打开这条命令的窗口。挂在页面顶层而不是运行区那一行里，
+  // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
+  const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
+  const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun && !childFiles, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -712,7 +717,10 @@ export function TaskView({
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
-  useTaskStream(taskId, running, apply)
+  // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
+  // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
+  const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  useTaskStream(taskId, running || jobRunning, apply)
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -1141,7 +1149,11 @@ export function TaskView({
       <FileOpenCtx.Provider value={openFile}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
-          value={pane || task.parentTaskId ? { run: openPaneRun, openChild } : { child: openChildRow, openChild }}
+          value={
+            pane || task.parentTaskId
+              ? { run: openPaneRun, openChild, job: openJob }
+              : { child: openChildRow, openChild, job: openJob }
+          }
         >
           <ChildListCtx.Provider value={children}>
             <div
@@ -1866,6 +1878,7 @@ export function TaskView({
               onConfirm={remove}
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+            <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
             {convSettings && (
               <ConversationSettingsDialog
                 task={task}

@@ -898,14 +898,130 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
   // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
   {
-    const title = p.locator('button[title*="npm ci > /tmp/npmci.log"]').first()
-    if (!(await title.count())) errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
+    /**
+     * 往「购物车右上角」那条父对话里注入一条运行中的后台命令（用完清掉）。
+     * 不写进演示数据里：这条对话没在跑，后面的「转成弹窗」用例靠它验证浮条写「已完成」，
+     * 常驻一条在跑的命令会让那条变成「执行中」
+     */
+    const KEY = 'agent-panel-demo-v3'
+    const patchJobs = async (jobs) => {
+      await p.evaluate(
+        ([k, list]) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const parent = db.tasks.find((x) => x.title.includes('购物车'))
+          // 总是写数组（没有就空数组）：删字段会被 keepLiveFields 当成「没带运行时字段」而沿用旧的
+          parent.jobs = list ?? []
+          localStorage.setItem(k, JSON.stringify(db))
+        },
+        [KEY, jobs],
+      )
+      await p.reload()
+      await backToTask()
+    }
+    const command = 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log'
+    await patchJobs([
+      {
+        // 编号和上面那个 run_background 工具行里的编号一致：两个入口（工具行、运行区的后台命令行）
+        // 指的是同一条命令，真实后端里就是这么对应的
+        id: '3f2a91cd',
+        name: '安装依赖',
+        command,
+        state: 'running',
+        startedAt: new Date(Date.now() - 69_500).toISOString(),
+      },
+    ])
+    const title = p.locator('[aria-label="运行中"] button[title*="npm ci > /tmp/npmci.log"]').first()
+    if (
+      !(await title.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
     else {
       await title.scrollIntoViewIfNeeded()
       const tip = await title.getAttribute('title')
       if (!tip?.includes('tail -20 /tmp/npmci.log')) errors.push(`后台命令折叠行：悬停提示不是完整命令（${tip}）`)
       await check(p, '后台命令-折叠行显示命令', ['后台命令', 'npm ci > /tmp/npmci.log 2>&1'])
+      // 用户提的：点标题应该打开窗口看实时输出，不是只展开命令原文。
+      // 工具行就是这个交互（整行点击 = 展开、点标题 = 开窗口），后台命令跟它一致
+      await title.click()
+      const dialog = p.getByRole('dialog').first()
+      const opened = await dialog.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!opened) errors.push('后台命令：点标题没有打开命令行窗口')
+      else {
+        // 窗口里是实时输出，不是命令原文：等第一段输出拉回来（演示后端给的假输出里有这一行）
+        const printed = await p
+          .waitForFunction(
+            () => {
+              const d = document.querySelector('[role="dialog"]')
+              return !!d && /transforming|modules transformed|agent-panel@/.test(d.innerText || '')
+            },
+            { timeout: 10000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!printed) errors.push('后台命令窗口：没有显示命令的输出')
+        // 窗口标题是命令本身，带「执行中」阶段（命令还在跑，不能显示成完成）
+        const head = await dialog.innerText()
+        for (const text of ['npm ci > /tmp/npmci.log', '执行中'])
+          if (!head.includes(text)) errors.push(`后台命令窗口：没有显示「${text}」`)
+        await check(p, '后台命令-点标题开窗口看输出')
+        // 窗口和行的关系（命令结束后行消失、窗口不能跟着关）不在这条用例里验：
+        // 演示后端的任务数据在内存里缓存（demo-backend 的 load），改 localStorage 不会生效，造不出
+        // 「这条 job 从 task.jobs 里消失」的推送；而在 DOM 上直接删掉那一行也证明不了什么——
+        // React 不会因为 DOM 被外部改了就卸载组件。这条防线靠结构：窗口挂在 TaskView 的 jobTarget 上
+        // （见 docs/modules/web/README.md），不挂在运行区那一行里
+        await p.keyboard.press('Escape')
+        await closed()
+      }
+      // 事后再想回看这条命令：运行区那一行跑完就没了，只能靠对话里那条 run_background 工具行——
+      // 它的标题也要能打开同一个后台命令窗口（输出、退出码都在里面）
+      await patchJobs(null)
+      // 运行区那一行没了之后，只剩对话里那条 run_background 工具行的标题
+      const pick = p.locator('button[title*="npm ci > /tmp/npmci.log"]').last()
+      if (!(await pick.count())) errors.push('后台命令工具行：找不到那条 run_background 的标题')
+      else {
+        await pick.scrollIntoViewIfNeeded()
+        await pick.click()
+        const again = await p
+          .getByRole('dialog')
+          .first()
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!again) errors.push('后台命令工具行：点标题没打开命令行窗口（命令结束后就没地方回看了）')
+        else {
+          // 探针：看窗口拿到的是哪种状态（拉到没拉到、是不是报错）
+          // 等输出拉回来（演示后端记得这条命令，行不在了也读得到）
+          await p
+            .waitForFunction(
+              () => {
+                const d = document.querySelector('[role="dialog"]')
+                return !!d && /agent-panel@|transforming|EXIT=0/.test(d.innerText || '')
+              },
+              { timeout: 10000 },
+            )
+            .catch(() => {})
+          // 演示后端记得这条命令，行不在了也读得到；结束的给最终输出和退出码
+          const text = await p.getByRole('dialog').first().innerText()
+          if (!/npm ci > \/tmp\/npmci\.log/.test(text)) errors.push('后台命令工具行窗口：没显示命令原文')
+          if (!/transforming|modules transformed|agent-panel@|EXIT=0/.test(text))
+            errors.push(`后台命令工具行窗口：没有显示命令输出（当前内容：${text.replace(/\s+/g, ' ').slice(0, 200)}）`)
+          await check(p, '后台命令-工具行也能回看输出')
+          await p.keyboard.press('Escape')
+          await closed()
+        }
+      }
     }
+    await patchJobs(null)
   }
   // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
   {

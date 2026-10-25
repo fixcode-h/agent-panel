@@ -451,3 +451,55 @@ test('那一行收口：CLI 在结果前面插了说明也认得出，结果到�
   assert.equal(r.ok, false)
   assert.match(r.info, /不要新开命令行窗口/)
 })
+
+test('按编号读一条后台命令：跑着能读到已输出的内容，跑完读得到最终输出和退出码', async () => {
+  const dir = repo()
+  const { bg, all } = collect(1)
+  // 先输出一行再等着，好在它跑着的时候读一次
+  const slow = nodeScript(
+    dir,
+    'slow.cjs',
+    "console.log('first-line')\nsetTimeout(() => { console.log('last-line'); process.exit(0) }, 400)\n",
+  )
+  const started = bg.start({ taskId: 't1', name: '慢命令', command: slow, cwd: '', root: dir, exclusive: false })
+  assert.ok(started.ok)
+  const id = started.id!
+
+  // 跑着：读得到状态和已经输出的内容（输出不进对话记录，界面窗口按这个编号自己拉）
+  let view = bg.view('t1', id)
+  for (let i = 0; i < 40 && !(view?.output ?? '').includes('first-line'); i++) {
+    await new Promise((r) => setTimeout(r, 50))
+    view = bg.view('t1', id)
+  }
+  assert.equal(view?.state, 'running')
+  assert.equal(view?.name, '慢命令')
+  assert.equal(view?.command, slow)
+  assert.match(view!.output, /first-line/)
+  assert.equal(view?.code, null, '还没结束时没有退出码')
+  assert.equal(view?.endedAt, '')
+  assert.ok(view?.startedAt, '带着开始时间，窗口里的计时要用')
+  // 输出里不掺面板自己的话（推回对话的 jobOutput 才会写「跑完了」这些）
+  assert.doesNotMatch(view!.output, /跑完了|后台命令「/)
+
+  await all
+  // 跑完：仍然读得到，带最终输出和退出码（用户可能过一阵才点开）
+  view = bg.view('t1', id)
+  assert.equal(view?.state, 'done')
+  assert.equal(view?.code, 0)
+  assert.match(view!.output, /first-line/)
+  assert.match(view!.output, /last-line/)
+  assert.ok(view?.endedAt, '结束后有结束时间')
+})
+
+test('后台命令只给发起它的对话读：跨 taskId、不存在的编号都读不到', async () => {
+  const dir = repo()
+  const { bg, all } = collect(1)
+  const r = bg.start({ taskId: 't1', name: '回显', command: 'echo hello', cwd: '', root: dir, exclusive: false })
+  assert.ok(r.ok)
+  // 别的对话拿着这个编号也读不到（接口里当不存在处理）
+  assert.equal(bg.view('t2', r.id!), null)
+  assert.equal(bg.view('t1', 'no-such-job'), null)
+  await all
+  assert.equal(bg.view('t2', r.id!), null, '结束以后也不给别的对话读')
+  assert.ok(bg.view('t1', r.id!))
+})

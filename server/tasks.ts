@@ -3635,6 +3635,18 @@ export function tasksApi(deps: {
     return c.json({ stopped: before })
   })
 
+  /**
+   * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
+   * 命令结束后仍然读得到最终输出（用户可能过一阵才点开）；只认这个对话自己的命令，跨对话读别人的当不存在
+   */
+  routes.get('/:id/jobs/:jobId', async (c) => {
+    const id = c.req.param('id')
+    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    const job = background.view(id, c.req.param('jobId'))
+    if (!job) return bad(c, t('没有这条后台命令'), 404)
+    return c.json(job)
+  })
+
   /** 这个对话的进程列表和内存合计：标题栏下拉展开时才拉，收起时不请求 */
   routes.get('/:id/processes', async (c) => {
     const tk = await current(c.req.param('id'))

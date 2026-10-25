@@ -7,7 +7,7 @@ import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
 import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
 import { fmtDuration } from '../shared/duration.ts'
-import type { Task, TaskJob } from '../shared/schema.ts'
+import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -437,6 +437,27 @@ export function createBackground(
         ok: true,
         id: j.id,
         info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}${full ? `，面板同时最多跑 ${maxRunning} 条后台命令，它可能要等前面的跑完` : ''}。面板盯着它直到真正结束，结果（成功、失败、被停止、长时间没输出）都会推回给你：先去做不依赖它的事，没有别的事就结束这一轮等结果，不要用 sleep 轮询。`,
+      }
+    },
+    /**
+     * 按编号读一条后台命令的当前样子（界面上点命令行打开的窗口轮询它）。
+     * 只给输出正文、不做任何拼接：这一段是用户要看的命令输出，和推回对话的 jobOutput 不同，
+     * 不掺「跑完了」「退出码」这些面板的话。只认自己对话的编号，跨对话读别人的命令读不到
+     */
+    view(taskId: string, id: string): TaskJobView | null {
+      const j = jobs.get(id)
+      if (!j || j.taskId !== taskId) return null
+      return {
+        id: j.id,
+        name: j.name,
+        command: j.command,
+        state: j.state,
+        code: j.code,
+        output: j.lines.join('\n'),
+        createdAt: j.createdAt,
+        startedAt: j.startedAt,
+        endedAt: j.endedAt,
+        lastOutputAt: j.lastOutputAt,
       }
     },
     /** 查状态；不传编号列出这个对话的全部 */
