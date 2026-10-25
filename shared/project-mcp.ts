@@ -44,3 +44,15 @@ export interface ProjectMcpImportResult {
   done: { name: string; file: string }[]
   skipped: { name: string; file: string; reason: string }[]
 }
+
+/**
+ * 面板自己的 MCP 地址（http://127.0.0.1:<端口>/api/mcp/ask/<令牌>，老版本还有 /api/mcp/orch/<令牌>）。
+ * 这些是面板执行时临时写进项目的，不是用户的工具：项目设置不把它们列成可导入项，执行前和启动时会清掉失效的。
+ * 给 port 时只认这个端口（别的端口可能是另一个正在跑的面板）
+ */
+const PANEL_MCP_URL = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::(\d+))?\/api\/mcp\/(?:ask|orch)\/([\w-]+)\/?$/
+export function isPanelMcpUrl(url: unknown, port?: number) {
+  const m = typeof url === 'string' ? PANEL_MCP_URL.exec(url.trim()) : null
+  return !!m && (port === undefined || Number(m[1] ?? 80) === port)
+}
+export const panelMcpToken = (url: string) => PANEL_MCP_URL.exec(url.trim())?.[2] ?? ''

@@ -484,11 +484,11 @@ async function panelCall(name, params) {
   const fromArgs =
     servers[
       Object.keys(servers)
-        .filter((k) => k.startsWith('panel'))
+        .filter((k) => /^(agent-)?panel/.test(k))
         .at(-1)
     ]?.url ??
     args
-      .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
+      .map((a) => a.match(/^mcp_servers\.((?:agent-)?panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
   // Command Code、Gemini 把 MCP 写进工作目录的配置文件（.mcp.json / .gemini/settings.json），
@@ -813,17 +813,17 @@ const turnReply = () => {
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
 }
-// 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
+// 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
 // Pi 的桥接扩展在面板自己的临时目录里，用 -e 的绝对路径加载
 // 用函数声明：panelCall 与 panelMcpUrl 在模块顶层先执行，const 那时还没初始化（TDZ），取地址会直接抛错
 function panelExt() {
-  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
+  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-(agent-)?panel[\w-]*\.ts$/.test(a))
 }
 function panelMcpUrl() {
   if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
   const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-  const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
+  const keys = Object.keys(cfg.mcpServers).filter((k) => /^(agent-)?panel/.test(k))
   const hit = cfg.mcpServers[keys.at(-1)]
   return hit.httpUrl ?? hit.url
 }

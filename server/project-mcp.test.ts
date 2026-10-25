@@ -46,6 +46,9 @@ test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置',
         mcpServers: {
           fs: { command: 'npx', args: ['-y', 'fs-mcp'] },
           web: { url: 'https://example.com/mcp', headers: { Authorization: 'Bearer x' } },
+          // 面板执行时临时写进来的自己的 MCP（含老版本留下的）：不列成可导入项
+          'panel-19f169': { transport: 'http', url: 'http://127.0.0.1:8787/api/mcp/ask/154197b1-7a0d-40fe' },
+          orch: { url: 'http://127.0.0.1:8787/api/mcp/orch/60a795a2-28a2-48f0' },
         },
       },
       null,
