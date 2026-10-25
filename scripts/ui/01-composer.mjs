@@ -203,6 +203,92 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => '')
     if (copied.trim() && draftText.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
     await check(p, '复制对话-粘贴成卡片')
+    // 已发送消息里带附件卡片的：点消息下面的复制按钮，粘回来要变回卡片，路径不能和正文粘在一起。
+    // 用户报的两个现象都在这里：卡片紧跟着正文时复制出去是「…png前面是…」，findPaths 把后面的中文
+    // 一起当成路径（stat 不到），整段落成纯文本。用刚发出去的那条（气泡里有一张图片卡片）
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+A')
+    await p.keyboard.press('Backspace')
+    await p
+      .waitForFunction(() => !document.querySelector('#follow-up [data-chip]'), null, { timeout: 5000 })
+      .catch(() => errors.push('消息复制-粘贴成卡片：输入框清不空'))
+    // 卡片紧贴正文是用户实际的发送形态：在对话页输入框里先打字再附图片，中间不留空格。
+    // 注意：输入框自己会用 insertChip 在卡片前补一个空格（RichInput 的 insertChip），所以这里得到的是
+    // 「前面是抓取的元素 [图片:…]」，走不到 copyText 新增的「卡片前补空格」分支。
+    // 「粘贴时出现空格 + 粘回来变回卡片」这段全流程靠这里覆盖；
+    // 真正无空格形态（[图片:…]前面是…）由 server/composer.test.ts 的 copyText 用例覆盖
+    await p.locator('#follow-up').fill('前面是抓取的元素')
+    await p
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: '截图-粘贴.png', mimeType: 'image/png', buffer: TINY_PNG })
+    await p
+      .locator('#follow-up [data-chip="image"]')
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('消息复制-粘贴成卡片：附上图片后输入框里没有卡片'))
+    await p
+      .waitForFunction(
+        () =>
+          Object.keys(localStorage).some((k) => {
+            if (!k.startsWith('chat-attach:')) return false
+            try {
+              return JSON.parse(localStorage.getItem(k) ?? '[]').some((x) => x.done?.name === '截图-粘贴.png')
+            } catch {
+              return false
+            }
+          }),
+        undefined,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push('消息复制-粘贴成卡片：图片没有上传完'))
+    await p.locator('#follow-up').press('Enter')
+    // 发出去后回到消息里：找气泡里那张卡片所在的用户消息，点它的复制按钮
+    const sentChip = p.locator('[data-chip="image"][data-name="截图-粘贴.png"]')
+    await sentChip
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('消息复制-粘贴成卡片：发出去以后消息里没有图片卡片'))
+    const sentCopy = sentChip
+      .locator('xpath=ancestor::div[contains(@class,"group/msg")]//button[@aria-label="复制"]')
+      .first()
+    await sentCopy.click()
+    // 点完的反馈是按钮自己把 title 换成「已复制」（内容只是一个 Check 图标，没有文字），
+    // 不能用 getByText('已复制')：那只会匹配到页面上别处的 toast，toast 先消失时就误报「没反应」
+    await p
+      .waitForFunction(
+        () => [...document.querySelectorAll('[aria-label="复制"]')].some((el) => el.getAttribute('title') === '已复制'),
+        undefined,
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('消息复制-粘贴成卡片：点复制后按钮没有变成「已复制」'))
+    const msgCopied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!msgCopied) errors.push('消息复制-粘贴成卡片：剪贴板是空的')
+    // 路径和正文之间要有分隔：不然粘回来时整段中文被当成路径，卡片换不回来
+    if (/截图-粘贴\.png[^\s"]/.test(msgCopied))
+      errors.push(`消息复制-粘贴成卡片：路径后面直接贴着正文（${msgCopied.slice(0, 60)}）`)
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+A')
+    await p.keyboard.press('Backspace')
+    await p
+      .waitForFunction(() => !document.querySelector('#follow-up [data-chip]'), null, { timeout: 5000 })
+      .catch(() => errors.push('消息复制-粘贴成卡片：粘贴前输入框清不空'))
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+V')
+    await p
+      .locator('#follow-up [data-chip="image"][data-name="截图-粘贴.png"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('消息复制-粘贴成卡片：粘回来没有变回图片卡片'))
+    if (await p.locator('#follow-up [data-chip="file"]').count())
+      errors.push('消息复制-粘贴成卡片：附件粘成了文件卡片，不是图片卡片')
+    const repasted = await p
+      .locator('#follow-up')
+      .innerText()
+      .catch(() => '')
+    // 卡片自己显示文件名，所以不能按「有没有文件名」判断；要看路径文字（盘符或 uploads 目录）还在不在
+    if (/[A-Za-z]:\\|uploads[\\/]/.test(repasted))
+      errors.push(`消息复制-粘贴成卡片：粘贴后还留着路径文字（${repasted.slice(0, 60)}）`)
+    if (!repasted.includes('前面是抓取的元素')) errors.push('消息复制-粘贴成卡片：粘贴后正文丢了')
+    await check(p, '消息复制-粘贴成卡片')
     // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
     await bubble.evaluate((el) => el.click())
     await p
@@ -561,6 +647,139 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('元素引用粘贴：全新的浏览器环境里还原不了引用卡片'))
     await check(c, '元素引用-换浏览器环境粘贴')
     await c.close()
+    // 在输入框里**选中卡片按 Ctrl+C**（不是右键菜单）：剪贴板里要同样是带标记的完整原文。
+    // 卡片在页面上的文字是截断到 40 个字的摘要（quoteName），靠浏览器原生复制带出去的就是那段摘要，
+    // 粘回去既认不出是引用卡片、原文也丢了（用户报的现象）；RichInput 的 onCopy 按 copyOf 写剪贴板
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片选中复制：另一个窗口的输入框清不空'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    const selChip = b.locator('#task-prompt [data-chip="quote"]').first()
+    await selChip.waitFor({ timeout: 5000 }).catch(() => errors.push('引用卡片选中复制：先粘不进来就测不了选中复制'))
+    // 选中输入框里的全部内容（含卡片）再复制。不能点卡片：点它会打开原文弹窗，
+    // 之后的键盘输入全落在弹窗里，测的就不是输入框的复制了
+    await b.evaluate(() => {
+      const el = document.querySelector('#task-prompt')
+      el?.focus()
+      const r = document.createRange()
+      if (el) r.selectNodeContents(el)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(r)
+    })
+    await b.keyboard.press('Control+C')
+    const picked = await b.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!picked.startsWith('[元素引用]'))
+      errors.push(`引用卡片选中复制：剪贴板里不是带标记的原文（${picked.slice(0, 32)}）`)
+    // 卡片上只显示截断到 40 个字的摘要；剪贴板里必须是摘要之后的那些行（源码、选择器）也在
+    if (!picked.includes('- 元素：')) errors.push('引用卡片选中复制：剪贴板里没有完整的引用正文')
+    if (!picked.includes('web/src/pages/ChatPage.tsx:')) errors.push('引用卡片选中复制：剪贴板里没有源码位置')
+    if (!picked.includes('- 选择器：'))
+      errors.push('引用卡片选中复制：剪贴板里没有摘要之外的行，像是只复制到卡片上那段摘要')
+    // 粘回来要还原成一张卡片，输入框里不能留着标记文字
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片选中复制：复制后输入框清不空'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('引用卡片选中复制：粘回来没有还原成引用卡片'))
+    const selDraft = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '')
+    if (selDraft.includes('[元素引用]')) errors.push('引用卡片选中复制：粘回来留着一大段标记文字')
+    // 卡片背后是完整原文，不是摘要
+    await b.locator('#task-prompt [data-chip="quote"]').first().click()
+    const selText = await b
+      .getByRole('dialog')
+      .last()
+      .innerText()
+      .catch(() => '')
+    for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
+      if (!selText.includes(want)) errors.push(`引用卡片选中复制：粘回来的卡片里没有「${want}」`)
+    await b.keyboard.press('Escape')
+    await check(b, '元素引用-选中卡片复制')
+    // 剪贴板里同时有 text/plain 和 text/html：粘到 Word、Excel 这类富文本目标时换行还在，
+    // 两张格式装的是同一份完整原文（不是卡片上那段 40 字摘要）
+    const formats = await b
+      .evaluate(async () => {
+        const items = await navigator.clipboard.read()
+        const out = {}
+        for (const item of items) for (const type of item.types) out[type] = await (await item.getType(type)).text()
+        return out
+      })
+      .catch(() => null)
+    if (!formats) errors.push('元素引用-选中卡片复制：读不到剪贴板的两种格式')
+    else {
+      for (const type of ['text/plain', 'text/html']) {
+        if (!(type in formats)) errors.push(`元素引用-选中卡片复制：剪贴板里没有 ${type}`)
+      }
+      // HTML 版里也必须是完整原文：换行在 html 里是 <br>，所以按去掉标签后的文字判断
+      const htmlText = (formats['text/html'] ?? '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '')
+      for (const want of ['- 元素：', 'web/src/pages/ChatPage.tsx:', '- 选择器：'])
+        if (!htmlText.includes(want)) errors.push(`元素引用-选中卡片复制：html 版本里没有「${want}」`)
+      if (!htmlText.includes('[/元素引用]'))
+        errors.push('元素引用-选中卡片复制：html 版本里没有结束标记，粘回输入框认不出卡片')
+    }
+    // 剪切选中的卡片：剪贴板同样写完整原文（onCut 和 onCopy 共用一份序列化），
+    // 而且选中的内容要真的从输入框里删掉、背后的附件一起清掉
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪切前输入框清不空'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：先粘不进来就测不了剪切'))
+    await b.evaluate(() => {
+      const el = document.querySelector('#task-prompt')
+      el?.focus()
+      const r = document.createRange()
+      if (el) r.selectNodeContents(el)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(r)
+    })
+    await b.keyboard.press('Control+X')
+    const cut = await b.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!cut.startsWith('[元素引用]')) errors.push(`引用卡片剪切：剪贴板里不是带标记的原文（${cut.slice(0, 32)}）`)
+    if (!cut.includes('- 元素：') || !cut.includes('- 选择器：'))
+      errors.push('引用卡片剪切：剪贴板里只有摘要，没有完整原文')
+    // 剪切要真的从输入框里删掉（不拦原生剪切时浏览器也会删，拦下后由 onCut 自己删）
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪完输入框里的卡片还在'))
+    // onCut 是程序化 deleteContents()，不是原生删除键：万一浏览器留下占位节点，serialize 读出来是「\n」，
+    // 输入框里多一空行、草稿被判非空。这里直接断言剪完的内容是空的
+    const afterCut = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '<读不到>')
+    if (afterCut.trim()) errors.push(`引用卡片剪切：剪完输入框里还留着内容（${JSON.stringify(afterCut.slice(0, 20))}）`)
+    // 剪完的卡片背后不能再留着附件：再粘回来只该有一张卡片（附件没被重复带走）
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .waitForFunction(() => document.querySelectorAll('#task-prompt [data-chip="quote"]').length === 1, null, {
+        timeout: 5000,
+      })
+      .catch(() => errors.push('引用卡片剪切：剪完再粘回来没有还原成一张引用卡片'))
+    await check(b, '元素引用-剪切卡片')
     // 只复制了一半标记（截图、截断）时按普通文字粘进来，不能误判成卡片
     await b.locator('#task-prompt').click()
     await b.keyboard.press('Control+A')
