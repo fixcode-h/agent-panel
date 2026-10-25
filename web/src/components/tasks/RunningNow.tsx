@@ -1,14 +1,22 @@
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
-import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs, type ChildEntry } from '@shared/task'
+import {
+  helperActive,
+  helperRunning,
+  sortHelpers,
+  stepMs,
+  visibleChildren,
+  splitStepJobs,
+  type ChildEntry,
+} from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
-import { useChildList, useChildOpen } from './child-open'
-import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
+import { useChildList, useChildOpen, useJobOpen } from './child-open'
+import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 
@@ -53,12 +61,12 @@ export function runningRows<C extends ChildEntry>({
   }
 }
 
-/** 对话派出的、还没结束的子任务：在跑的排前面 */
+/** 对话派出的、还没结束的子任务：顺序和「子任务」列表同一套（在跑的在前，同一组里最新的在最上面，见 sortHelpers） */
 export function activeHelpers(task: Task) {
   const steps = chatHelperIds(task)
     .map((id) => task.steps.find((s) => s.id === id))
     .filter((s): s is TaskStep => !!s && helperActive(s))
-  return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
+  return sortHelpers(steps)
 }
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -79,22 +87,35 @@ function childMs(
   return Math.max(0, (Number.isFinite(end) ? end : now) - start)
 }
 
-/** 一条后台命令：标题是名字（没有就用命令第一行），长命令被截断时悬停看完整命令（这一行没有窗口可打开） */
+/**
+ * 一条后台命令：标题是名字（没有就用命令第一行），长命令被截断时悬停看完整命令。
+ * 和工具行一样：整行点了展开命令原文，点标题打开命令行窗口看实时输出（命令跑在服务端，输出不在对话里，
+ * 窗口按 jobId 自己轮询，见 JobDialog）。窗口挂在任务页顶层而不是这一行里：命令跑完这一行就消失了，
+ * 跟着行卸载的话用户正好看不到最终输出
+ */
 function JobRow({ job, now }: { job: TaskJob; now: number }) {
   const [open, setOpen] = useState(false)
+  const openJob = useJobOpen()
   const started = job.startedAt ? Date.parse(job.startedAt) : 0
+  const title = jobLabel(job)
   return (
     <RowShell
       glyph={spin}
       verb={t('后台命令')}
-      title={jobLabel(job)}
-      titleTip={job.command || jobLabel(job)}
+      title={title}
+      titleTip={job.command || title}
       detail={
         job.state === 'queued' ? <span className="shrink-0 font-sans text-subtle">{t('排队中')}</span> : undefined
       }
       ms={started ? now - started : undefined}
       open={open}
       onToggle={() => setOpen(!open)}
+      onOpen={
+        openJob
+          ? () => openJob({ id: job.id, command: job.command, state: job.state, startedAt: job.startedAt })
+          : undefined
+      }
+      openTip={t('打开命令行窗口')}
     >
       <pre className="border-t bg-card/60 px-3.5 py-2.5 font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
         {job.command}
@@ -178,6 +199,9 @@ function HelperRow({
       title={title}
       open={false}
       onOpen={onOpen}
+      // 和子对话行一样整行都是打开入口（用户要求：动作名、标题、状态标签、耗时点了都开只读窗口）。
+      // 行尾的终止按钮自带 stopPropagation，点它只终止、不会连带打开窗口
+      rowOpen={onOpen}
       openTip={t('打开子任务「{title}」', { title })}
       detailStart
       detail={
@@ -186,10 +210,16 @@ function HelperRow({
           <span
             className={running ? childLabelClass.accent : childLabelClass.subtle}
             title={
-              step.apiWait ? t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api }) : undefined
+              step.apiWait?.reason === 'start'
+                ? t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api })
+                : undefined
             }
           >
-            {running ? t('执行中') : step.apiWait ? t('排队等 API「{api}」', { api: step.apiWait.api }) : t('排队中')}
+            {running
+              ? t('执行中')
+              : step.apiWait?.reason === 'start'
+                ? t('排队等 API「{api}」', { api: step.apiWait.api })
+                : t('排队中')}
           </span>
           {jobs.length > 0 && (
             <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')} title={names}>
@@ -274,6 +304,9 @@ export function RunningNow({
         const labels = childLabels(k)
         const note = childNote(k, true)
         const stale = staleLine(k)
+        // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
+        const gone = childClosedHint(k)
+        const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
         return (
           <RowShell
             key={k.id}
@@ -303,16 +336,18 @@ export function RunningNow({
                   </span>
                 ))}
                 {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的
-                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文 */}
-                {(note || stale) && (
+                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文。
+                    gone 单独算在内：没有活动文字时也要能悬停看到「进程已回收」 */}
+                {(note || stale || gone) && (
                   <span
                     className={cn(
                       'hidden min-w-0 truncate font-sans @min-[380px]:block',
                       stale ? stale.cls : 'text-subtle',
                     )}
-                    title={[note, stale?.text].filter(Boolean).join(' · ')}
+                    title={detail}
                   >
-                    {stale ? stale.text : note}
+                    {/* 没有活动文字时退回「进程已回收」那句：不然 span 是空的，悬停根本悬不到 */}
+                    {stale ? stale.text : note || gone}
                   </span>
                 )}
               </span>

@@ -223,28 +223,57 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
   await p.keyboard.press('Escape')
-  // 项目行整行可点：以前只有左边的小箭头能收起，点项目名没反应（用户报的「点项目名没反应」）
-  // 定位项目名而不用最左边的「收起」按钮：两个项目同时存在时按钮顺序不可靠
-  // 限在侧栏里找，避开副栏、对话里同名的文字；分类行按 data-kind 定位，不靠文字子串匹配
+  // 项目行：最前面的箭头按钮才折叠，点项目名打开 UI 项目主页（用户报的「点不开主页」「点整行就折叠」）
+  // 定位项目名不用最左边的「收起」按钮（未按项目限定时多个项目下顺序不可靠），
+  // 箭头按钮用 data-fold={项目id} 锁定；限在侧栏里找，避开副栏、对话里同名的文字；
+  // 分类行按 data-kind 定位，不靠文字子串匹配
   const side = () => p.locator('[data-sidebar]')
-  const projName = () => side().getByText('暗夜远征', { exact: true }).first()
+  const projName = () => side().getByRole('button', { name: /打开项目「暗夜远征」/ })
   const gameKind = () => side().locator('[data-kind="game"]')
-  // 先断言展开：下面两条断言靠它区分「点了没反应」和「本来就收着」
+  const projFold = () => side().locator('[data-fold="demo-ui-project"]')
+  // 主页的断言必须限在主页容器里：侧栏先于页面渲染，侧栏的设计行也有「主菜单」「背包」，
+  // 不限作用域的话主页完全没画出来也会通过（假通过）
+  const home = () => p.locator('[data-design-home="demo-ui-project"]')
+  // 先断言展开：下面几条断言靠它区分「点了没反应」和「本来就收着」
   assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '初始是展开的')
   await projName().click()
-  // 收起后箭头变成「展开」、分类行整个不渲染
-  await side().getByRole('button', { name: '展开', exact: true }).first().waitFor()
+  // 点项目名是打开项目主页，侧栏的折叠状态不变
+  await p.waitForURL(/#\/design\/home\/demo-ui-project/, { timeout: 5000 })
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '点项目名不会折叠')
+  await home().waitFor()
+  // 只断言主页里有的：侧栏也有「暗夜远征」，靠 check 的全局匹配不限定作用域会假通过
+  await home().getByText('个界面').first().waitFor()
+  await home().getByText('最近改动').first().waitFor()
+  await check(p, 'UI设计-项目主页')
+  // 主页容器里真的列出了这个项目的两个设计（侧栏也有同名行，所以要限定作用域）
+  for (const title of ['主菜单', '背包']) await home().getByText(title, { exact: true }).first().waitFor()
+  // 主页里点一行进设计器：点主页里的那一行，不是侧栏的同名行
+  await home()
+    .getByRole('button', { name: /^主菜单/ })
+    .click()
+  await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
+  // 回到主页再试折叠：只有最前面的箭头按钮能折叠
+  await p.goto(base + '#/design/home/demo-ui-project')
+  await gameKind().waitFor()
+  await projFold().click()
   await gameKind().waitFor({ state: 'detached' })
-  await check(p, 'UI设计-点项目名收起')
+  // 折叠后箭头本身还叫「展开」，拿它当定位（名字和状态自洽，且已经按项目锁定，不靠 DOM 顺序）
+  assert.equal(await projFold().getAttribute('aria-expanded'), 'false', '点箭头才折叠')
+  await home().waitFor()
+  await check(p, 'UI设计-箭头收起')
+  await projFold().click()
+  await gameKind().waitFor()
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '箭头再点一次又展开')
+  // 点项目名不折叠，而且留在项目主页
   await projName().click()
-  await gameKind().waitFor()
-  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '再点项目名又展开了')
-  await check(p, 'UI设计-点项目名展开')
-  // 箭头按钮不能因为冒泡折叠两次（那样点了看着像没反应）
-  await side().getByRole('button', { name: '收起', exact: true }).first().click()
-  await gameKind().waitFor({ state: 'detached' })
-  await side().getByRole('button', { name: '展开', exact: true }).first().click()
-  await gameKind().waitFor()
+  await p.waitForURL(/#\/design\/home\/demo-ui-project/, { timeout: 5000 })
+  // 等主页渲染出来当同步点，不用「停一阵」（见教训 lmvnpbhxfu1yg）
+  await home().getByText('个界面').first().waitFor()
+  assert.equal(await projFold().getAttribute('aria-expanded'), 'true', '点项目名不会折叠')
+  assert.equal(await home().count(), 1, '点项目名后仍然在项目主页')
+  // 分类行仍能单独收起展开
+  await side().locator('[data-kind="game"]').click()
+  await side().locator('[data-kind="game"]').click()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')
   await check(p, 'UI设计-画板数据', ['星辉宝石'])
@@ -351,6 +380,94 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })
   await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
   await check(p, 'UI设计-原画', ['第 1 轮', '用这张做模板'])
+  // 原画阶段就能看到标注工具：工具栏上每种标注有文字（用户报「看不到标注工具」：以前只有图标）
+  const board = p.locator('[data-concept-board]')
+  const conceptBar = board.getByRole('toolbar', { name: '标注工具' })
+  for (const name of ['框选', '箭头', '画笔', '打点', '蒙版']) {
+    await conceptBar.getByText(name, { exact: true }).waitFor()
+  }
+  await check(p, 'UI设计-原画标注工具', ['框选', '箭头', '打点', '选一种标注工具'])
+  // 在原画上框一块：工具栏下面给出下一步说明，面板底部出现「发送标注给 AI」按钮
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  const conceptImg = await board.locator('img[alt^="c"]').first().boundingBox()
+  assert.ok(conceptImg, '原画显示出来了')
+  await p.mouse.move(conceptImg.x + conceptImg.width * 0.25, conceptImg.y + conceptImg.height * 0.35)
+  await p.mouse.down()
+  await p.mouse.move(conceptImg.x + conceptImg.width * 0.6, conceptImg.y + conceptImg.height * 0.55, { steps: 8 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('按钮换成金色描边')
+  await p.keyboard.press('Enter')
+  const sendMarks = board.getByRole('button', { name: '发送标注给 AI（1）' })
+  await sendMarks.waitFor()
+  await check(p, 'UI设计-原画标注', ['按钮换成金色描边', '发送标注给 AI（1）'])
+  // 标注随消息发给 AI：顶栏按钮直接发，输入框上的标注条清掉，消息里留下这条标注
+  await sendMarks.click()
+  await sendMarks.waitFor({ state: 'detached' })
+  const sent = p.locator('[data-conversation-scroll="messages"]').getByText('按钮换成金色描边')
+  await sent.first().waitFor({ timeout: 10000 })
+  await check(p, 'UI设计-原画标注发出', ['按钮换成金色描边'])
+  // 发出去之后又出一轮新的原画，能接着标
+  await p.getByText('第 2 轮').waitFor({ timeout: 20000 })
+  await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
+  // 勾了「只重绘蒙版区域」时按钮上的数字要和实际发出去的条数一致（只会发蒙版那一块）
+  await conceptBar.getByRole('button', { name: /^蒙版涂抹/ }).click()
+  const img3 = await board.locator('img[alt^="c"]').first().boundingBox()
+  await p.mouse.move(img3.x + img3.width * 0.35, img3.y + img3.height * 0.45)
+  await p.mouse.down()
+  await p.mouse.move(img3.x + img3.width * 0.5, img3.y + img3.height * 0.55, { steps: 6 })
+  await p.mouse.up()
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  await p.mouse.move(img3.x + img3.width * 0.6, img3.y + img3.height * 0.3)
+  await p.mouse.down()
+  await p.mouse.move(img3.x + img3.width * 0.75, img3.y + img3.height * 0.45, { steps: 6 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('这里要改')
+  await p.keyboard.press('Enter')
+  // 勾选「只重绘蒙版区域」后按钮文案要跟实际行为一致：
+  // 默认生图方式是图片模型（cli），不支持局部重绘——这种时候勾了也是整张重画、两条标注都发，
+  // 按钮就不能写成「按蒙版重绘（1）」（写错了会让人以为只发了一处）
+  await board.getByRole('button', { name: '发送标注给 AI（2）' }).waitFor()
+  const inpaintToggle = p.getByRole('button', { name: '只重绘蒙版区域' })
+  await inpaintToggle.click()
+  // 等勾选真的生效（aria-pressed）再断言按钮文案：不然点空了后面的断言就在赌
+  await p.waitForFunction(
+    () =>
+      [...document.querySelectorAll('button[aria-label="只重绘蒙版区域"]')].some(
+        (el) => el.getAttribute('aria-pressed') === 'true',
+      ),
+    undefined,
+    { timeout: 5000 },
+  )
+  // 不支持局部重绘：按钮保持原样，不喊「按蒙版重绘」；提示由勾选按钮自己给（「会整张重画」）
+  assert.equal(
+    await board.getByRole('button', { name: '按蒙版重绘（1）' }).count(),
+    0,
+    '不支持局部重绘时不能写成按蒙版重绘',
+  )
+  await board.getByRole('button', { name: '发送标注给 AI（2）' }).waitFor()
+  // 截图在勾选状态下拍：降级提示「会整张重画」就挂在勾选按钮上
+  await check(p, 'UI设计-原画标注-不支持局部重绘', ['发送标注给 AI（2）', '会整张重画'])
+  await inpaintToggle.click()
+  // 清掉这两条，后面蒙版那段从头测
+  await conceptBar.getByRole('button', { name: '清除所有标注' }).click()
+  // 收起 AI 对话栏时点「发送标注给 AI」也要真的发出去：先自动把对话栏打开，不静默落空
+  await p.getByRole('button', { name: '收起 AI 对话' }).click()
+  await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).waitFor({ state: 'detached' })
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  const img2 = await board.locator('img[alt^="c"]').first().boundingBox()
+  assert.ok(img2, '第二轮的图显示出来了')
+  await p.mouse.move(img2.x + img2.width * 0.3, img2.y + img2.height * 0.3)
+  await p.mouse.down()
+  await p.mouse.move(img2.x + img2.width * 0.55, img2.y + img2.height * 0.5, { steps: 6 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('标题再大一点')
+  await p.keyboard.press('Enter')
+  await board.getByRole('button', { name: '发送标注给 AI（1）' }).click()
+  // 对话栏自己打开了，消息也发出去了（标注不会留在图上）
+  await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).waitFor({ timeout: 5000 })
+  await p.locator('[data-conversation-scroll="messages"]').getByText('标题再大一点').first().waitFor({ timeout: 10000 })
+  await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
+  await check(p, 'UI设计-原画标注-收起对话', ['标题再大一点'])
   // 蒙版：在原画上涂一块，出现蒙版工具和「只重绘蒙版」开关（默认还是整张重画）
   // UI 画布的工具栏也有蒙版按钮，原画面板盖在上面、渲染在后面
   await p.getByRole('button', { name: '蒙版涂抹' }).last().click()

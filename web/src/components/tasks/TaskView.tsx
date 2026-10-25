@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ArrowLeft,
   ArrowRight,
@@ -45,17 +45,20 @@ import {
   MessageCircleQuestion,
   Copy,
   ClipboardList,
+  PictureInPicture2,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
+  childWait,
   helperRunning,
   sortChildren,
   visibleChildren,
@@ -65,14 +68,16 @@ import {
   taskWaitText,
   taskSummary,
   withTaskModel,
+  type ChildWait,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
+import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, startedRun } from '@/lib/tasks'
+import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -108,8 +113,9 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
-import { childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
 import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
@@ -255,6 +261,25 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
+const PANE_MIN = 280
+/** 右栏拖动时中间至少留下的宽度 */
+const PANE_GAP = 320
+/** 功能面板的默认宽度（原来是 min(440px, 100%) 定宽） */
+const REPORT_PANE_DEFAULT = 440
+/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
+const REPORT_PANE_MIN = 320
+
+/**
+ * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
+ * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
+ * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
+ */
+function paneMax(box: HTMLElement | null, min: number) {
+  const row = box?.parentElement?.clientWidth ?? window.innerWidth
+  return Math.max(min, row - PANE_GAP)
+}
+
 /**
  * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
  * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
@@ -395,15 +420,19 @@ export function TaskView({
   }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
+  // 右栏自己这一栏：量拖动上限时以它为基准，不按全局第一个右栏（见 paneMax）
+  const rail = useRef<HTMLElement>(null)
   // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
   const taskPanel = usePaneWidth(
     'task-panel',
     typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
-    280,
-    () => {
-      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-      return Math.max(340, row - 320)
-    },
+    PANE_MIN,
+    () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+  )
+  // 功能面板和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）：
+  // 初值取原来的定宽 440；窗口比 440 + 中间留的量还窄时按上限收着，和原来的 min(440px, 100%) 一致
+  const reportPane = usePaneWidth('report-panel', REPORT_PANE_DEFAULT, REPORT_PANE_MIN, () =>
+    paneMax(rail.current, REPORT_PANE_MIN),
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -430,6 +459,10 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
+  // 后台命令行的标题点了：在顶层打开这条命令的窗口。挂在页面顶层而不是运行区那一行里，
+  // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
+  const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
+  const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun && !childFiles, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -710,7 +743,10 @@ export function TaskView({
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
-  useTaskStream(taskId, running, apply)
+  // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
+  // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
+  const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  useTaskStream(taskId, running || jobRunning, apply)
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -767,6 +803,9 @@ export function TaskView({
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
+  // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
+  // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
+  const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
@@ -778,6 +817,11 @@ export function TaskView({
 
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
   const noFiles = !task.projectId
+  // 这一轮没在跑时到底在等什么：等后台命令、等子任务、等工作流，还是真停在等下一句。
+  // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
+  // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
+  const chatWait =
+    task.mode === 'chat' ? childWait(task, { background: task.jobs?.length, cliAlive: task.cliAlive }) : undefined
   // 功能面板占右栏（宽屏）：和子对话、运行面板、文件面板同一栏，同一时间只显示一个；子对话、运行开着时让给它们
   const reportOn = !!report && !pane && !reportFolded && !openChild && openRun === 0
   const closeReport = () => {
@@ -1139,7 +1183,11 @@ export function TaskView({
       <FileOpenCtx.Provider value={openFile}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
-          value={pane || task.parentTaskId ? { run: openPaneRun, openChild } : { child: openChildRow, openChild }}
+          value={
+            pane || task.parentTaskId
+              ? { run: openPaneRun, openChild, job: openJob }
+              : { child: openChildRow, openChild, job: openJob }
+          }
         >
           <ChildListCtx.Provider value={children}>
             <div
@@ -1367,6 +1415,26 @@ export function TaskView({
                       </MenuItem>
                     </MenuContent>
                   </Menu>
+                  {/* 转成弹窗：把当前对话收成右下角的浮条，页面回到上一级。
+                      只在对话页本体上给：右栏子对话（pane）、AI 窗口里嵌的（embed）不需要——
+                      右栏本来就在对话旁边、AI 窗口自己已经有最小化按钮；导入的任务只能看，不收。
+                      子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
+                      只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」。 */}
+                  {!pane && !embed && !task.imported && !task.parentTaskId && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t('转成弹窗')}
+                      title={t('转成弹窗（对话继续在后台运行）')}
+                      onClick={() => {
+                        minimizeTask({ id: task.id, projectId: task.projectId || undefined })
+                        // 和 AI 窗口的“去对话里看”相反：收起后回上一级，不同时显示对话页和浮条
+                        go(minimizeBackRoute({ projectId: task.projectId || undefined }))
+                      }}
+                    >
+                      <PictureInPicture2 className="h-4 w-4" />
+                    </Button>
+                  )}
                   {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
                   {report && !pane && (
                     <Button
@@ -1486,8 +1554,9 @@ export function TaskView({
                           teamNames={teamNames}
                           live={working && i + hidden === blocks.length - 1}
                           last={!working && i + hidden === blocks.length - 1}
-                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
-                          latest={i + hidden === blocks.length - 1}
+                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+                          // 刚发出的用户消息排在后面时也算）
+                          latest={i + hidden === latestTurn}
                           fallback={byCli ? chatRun : undefined}
                           command={task.command}
                         />
@@ -1589,7 +1658,11 @@ export function TaskView({
                     (blocks.at(-1)?.kind === 'turn' ? (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
+                        <RunPhase
+                          task={task}
+                          label={t('{name} 正在回复', { name: chatLabel })}
+                          agentIds={[task.agentId]}
+                        />
                         <LiveStats task={task} agentIds={[task.agentId]} />
                       </div>
                     ) : (
@@ -1597,21 +1670,16 @@ export function TaskView({
                       <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          <RunPhase task={task} label={t('思考中…')} />
+                          <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
                           <LiveStats task={task} agentIds={[task.agentId]} />
                         </div>
                       </PendingReply>
                     ))}
-                  {/* 只在 CLI 进程真的还活着、停在等下一句时显示（cliAlive 按进程算）：CLI 关了绝不显示 */}
-                  {running && task.mode === 'chat' && !working && task.awaitingUser && task.cliAlive && (
-                    <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                      <MessageSquareText className="h-4 w-4 text-subtle" />
-                      <span className="inline-flex items-baseline">
-                        {t('等待你的下一条消息')}
-                        <WaitDots />
-                      </span>
-                      <LiveStats task={task} agentIds={[task.agentId]} />
-                    </div>
+                  {/* 这一轮没在跑时先说清在等什么：等后台命令、等派出的子任务、等工作流，最后才是真的停在等下一句。
+                      以前只看 awaitingUser 就写「等待你的下一条消息」，子任务还在跑时也这么说
+                      （用户报的：子任务在跑、状态行却说在等你 + 空闲）。判定统一用 childWait，不另写一套 */}
+                  {running && task.mode === 'chat' && !working && chatWait && (
+                    <ChatWaitLine wait={chatWait} awaiting={task.awaitingUser} task={task} />
                   )}
                   {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                     <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
@@ -1645,6 +1713,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
+                  ref={rail}
                   aria-label={
                     openChild
                       ? childFiles
@@ -1658,12 +1727,15 @@ export function TaskView({
                   }
                   data-task-panel
                   style={{
-                    // 功能面板定宽：放在 AI 分析窗口里时也给对话留出大半
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按原来的默认宽度封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持）
                     width: openChild
                       ? '50%'
-                      : !panel && openRun === 0 && (reportOn || reportCover)
-                        ? 'min(440px, 100%)'
-                        : taskPanel.width,
+                      : !panel && openRun === 0 && reportCover
+                        ? `min(${REPORT_PANE_DEFAULT}px, 100%)`
+                        : !panel && openRun === 0 && reportOn
+                          ? reportPane.width
+                          : taskPanel.width,
                   }}
                   className={cn(
                     'relative shrink-0 flex-col border-l bg-rail',
@@ -1675,6 +1747,11 @@ export function TaskView({
                     (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
+                  {/* 功能面板占右栏（宽屏并排）时也能拖，和文件面板一样记在本机；
+                  窄屏和 pane 里是盖在对话上的抽屉（reportCover），没有并排可拖，那时不挂拖动条 */}
+                  {!panel && reportOn && !reportCover && (
+                    <ResizeHandle pane={reportPane} label={t('拖动调整功能面板的宽度')} className="hidden xl:block" />
+                  )}
                   {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
@@ -1844,6 +1921,7 @@ export function TaskView({
               onConfirm={remove}
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+            <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
             {convSettings && (
               <ConversationSettingsDialog
                 task={task}
@@ -2087,13 +2165,15 @@ function ChildrenBar({
                   // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
                   const stale = staleLine(c)
                   const line = childNote(c, true)
+                  // 进程回收了但还在跑：卡片上不写「已关闭」，悬停补一句（和悬浮层列表同一个提示）
+                  const gone = childClosedHint(c)
                   return (
                     <button
                       key={c.id}
                       data-child-card
                       type="button"
                       onClick={() => onOpen(c.id)}
-                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
+                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}${gone ? ` · ${gone}` : ''}`}
                       className={cn(
                         'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
                         c.id === openChild ? 'border-line-strong' : 'border-line',
@@ -2469,10 +2549,49 @@ function PendingReply({
 }
 
 /**
+ * 这一轮没在跑时状态行：先说清在等什么结果，真的停在等下一句时才说「等待你的下一条消息」。
+ * 等用户回答、等确认由对话里的提问卡片表达，这里不重复
+ */
+function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boolean; task: Task }) {
+  if (wait.kind === 'answer' || wait.kind === 'confirm') return null
+  // 等下一句要 CLI 真的停在面板工具上等（awaitingUser）：只是预热完、还在启动时不写成在等你
+  if (wait.kind === 'next' && !awaiting) return null
+  // 文案都用已有的：子任务和工作流这两句和 RunPhase 同源，没有新词
+  const text =
+    wait.kind === 'helpers'
+      ? t('等待 {n} 个子任务完成', { n: wait.list.length })
+      : wait.kind === 'background'
+        ? t('等 {n} 个后台命令', { n: wait.n })
+        : wait.kind === 'workflow'
+          ? t('等工作流跑完')
+          : t('等待你的下一条消息')
+  const next = wait.kind === 'next'
+  return (
+    <div className="flex items-center gap-2 text-[0.8125rem] text-muted" data-chat-wait={wait.kind}>
+      {/* 还在等别人的结果：转圈；等你的下一句：对话气泡 + 动态点 */}
+      {next ? (
+        <MessageSquareText className="h-4 w-4 text-subtle" />
+      ) : (
+        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+      )}
+      <span className="inline-flex items-baseline">
+        {text}
+        {next && <WaitDots />}
+      </span>
+      {/* 等下一句时确实空闲（它在等你），等别人的结果时才是「等待中」：不把在干活的对话说成没事做 */}
+      <LiveStats task={task} agentIds={[task.agentId]} waiting={!next} />
+    </div>
+  )
+}
+
+/**
  * 执行中的状态文字：最近一段时间没有任何输出、也没有工具在跑，说明在等模型的下一段。
  * 模型请求本身要几秒到几十秒（上下文越大越久），标出来，免得看起来像卡在工具上
+ *
+ * agentIds 要和同一行 LiveStats 的传法一致：判断「真的在出 token」只能看这一行显示的那几个 Agent，
+ * 看全部 Agent 会把「别人在输出、这一轮自己在排队」当成在输出，反而把真排队遮掉
  */
-function RunPhase({ task, label }: { task: Task; label: string }) {
+function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentIds?: string[] }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
@@ -2481,16 +2600,21 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
-  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）
-  if (task.apiWait)
+  // 这一行确实在出 token（同一行右边显示着速度）：就不是「还没开始」，不能标成在排队
+  const streaming = tpsNow(task, agentIds?.every(Boolean) ? agentIds : undefined) > 0
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）。
+  // 只看「开跑前就排着」的标记：让出名额后拿回的（等子任务、等下一句）这一轮已经跑起来了，
+  // 它排的是「交回结果的那一句」而不是「这一轮」，写成排队会和右边的实时速度自相矛盾
+  const wait = apiQueueWait(task, streaming)
+  if (wait)
     return (
       <>
-        {task.apiWait.ahead
-          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: task.apiWait.api, n: task.apiWait.ahead })
-          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: task.apiWait.api })}
+        {wait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: wait.api, n: wait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: wait.api })}
       </>
     )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
-  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+  return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
 }

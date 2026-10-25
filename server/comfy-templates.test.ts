@@ -36,9 +36,9 @@ test('模板名和下载地址做校验：不让拼出目录外，也不下非 H
 test('模板列表：内置模板在前，官方快照离线可浏览', async () => {
   const catalog = await templateCatalog(empty)
   const builtin = catalog.templates.filter((t) => t.source === 'builtin')
-  assert.equal(builtin.length, LOCAL_MODELS.length)
-  // 每个模型都要有一条自己的内置模板，不能漏掉某个模型
-  for (const m of LOCAL_MODELS)
+  assert.equal(builtin.length, LOCAL_MODELS.filter((m) => m.family !== 'birefnet').length)
+  // 每个文生图模型都要有一条自己的内置模板，不能漏掉某个模型（处理类模型不是文生图，走得是工作流和链，没有模板）
+  for (const m of LOCAL_MODELS.filter((x) => x.family !== 'birefnet'))
     assert.ok(
       builtin.some((t) => t.name === `builtin:${m.id}`),
       m.id,

@@ -68,9 +68,6 @@ export function TaskRow({
   // 都转圈；有没回复的提问、请求是「需要你处理」
   const state = taskState(task)
   const busy = state === 'running' || state === 'waiting'
-  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示。
-  // 只认服务端按真实进程算的 cliAlive，不拿 status === 'running' 猜（CLI 关了还画虚线就是误导）
-  const online = !!task.cliAlive && !busy && state !== 'needs'
   // 自己或名下子对话有活着的 CLI：标题流光，不点开也能看出来
   const alive = cliTreeAlive(task)
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
@@ -85,12 +82,10 @@ export function TaskRow({
             onClick={onOpen}
             aria-current={active || undefined}
             title={task.title}
-            data-cli-online={online || undefined}
             data-cli-alive={alive || undefined}
             className={cn(
               'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-transparent text-left text-[0.8125rem] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-              online && 'border-dashed border-line-strong',
               className,
             )}
           >

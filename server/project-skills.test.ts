@@ -84,6 +84,8 @@ test('项目技能：新建骨架格式没问题，读写 SKILL.md 和附带文�
     const read = await readProjectSkill(root, '.agents/skills', 'commit-style')
     assert.match(read.content, /name: commit-style/)
     assert.deepEqual(read.files, ['scripts.sh'])
+    // files 是扁平的文件路径，tree 是完整层级；两个字段由同一棵树得来，不能打架
+    assert.deepEqual(read.tree?.entries, [{ path: 'scripts.sh', type: 'file', size: Buffer.byteLength('echo hi\n') }])
 
     // 改内容时 CRLF 统一成 LF：技能里的脚本要在 WSL / Linux 里跑
     await writeProjectSkill(

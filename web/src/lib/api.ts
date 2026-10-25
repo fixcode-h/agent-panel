@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyChain } from '@shared/comfy-chain'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -43,6 +44,7 @@ import type {
   TaskMemoryHistory,
   TaskMemoryAnalysis,
   TaskProcesses,
+  TaskJobView,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
@@ -68,6 +70,7 @@ import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project
 import type {
   BundledSkill,
   LibraryCli,
+  LibraryEntryContent,
   LibraryFile,
   LibraryItem,
   McpOverview,
@@ -207,6 +210,22 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
+  comfyChains: () =>
+    request<{ list: ComfyChain[]; workflows: ComfyWorkflow[]; ready: string[] }>('/local-image/chains'),
+  saveComfyChain: (chain: ComfyChain) =>
+    request<{ chain: ComfyChain; list: ComfyChain[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}`,
+      json('PUT', chain),
+    ),
+  deleteComfyChain: (id: string) =>
+    request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
+  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+    request<{ images: string[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
+      json('POST', { chain, image, prompt }),
+    ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
   refreshComfyTemplates: () =>
@@ -260,6 +279,9 @@ export const api = {
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
   apiModels: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
+  /** 用一个模型真的发一次最小请求，确认这个模型是通的（服务端带密钥请求，错误原文透传） */
+  probeApiModel: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { model: string }) =>
+    request<{ model: string }>('/accounts/api-probe', json('POST', a)),
   /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
   apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
@@ -315,6 +337,29 @@ export const api = {
     }),
   copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** Skill 文件夹里的单个附加文件（命令没有附加文件） */
+  libraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<LibraryEntryContent>(`/library/entry?${new URLSearchParams(b)}`),
+  saveLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    path: string
+    content: string
+    create?: boolean
+  }) => request<{ ok: boolean }>('/library/entry', json('PUT', b)),
+  deleteLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>(`/library/entry?${new URLSearchParams(b)}`, { method: 'DELETE' }),
+  renameLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    from: string
+    to: string
+    overwrite?: boolean
+  }) => request<{ ok: boolean }>('/library/entry/rename', json('POST', b)),
+  mkdirLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>('/library/entry/mkdir', json('POST', b)),
   /** 项目设置里的 Skill 分节：项目目录下的技能 */
   projectSkills: (projectId: string) =>
     request<ProjectSkillsView>(`/project-skills?projectId=${encodeURIComponent(projectId)}`),
@@ -414,6 +459,12 @@ export const api = {
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
+  /**
+   * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
+   * 命令结束后也读得到最终输出（用户可能过一阵才点开）
+   */
+  taskJob: (taskId: string, jobId: string) =>
+    request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */

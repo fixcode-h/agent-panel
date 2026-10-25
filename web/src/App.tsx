@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { usePageSignals } from '@/lib/page-signal'
 import { Toaster } from 'sonner'
+import { TOAST_VISIBLE_LIMIT } from '@/lib/toast-queue'
 import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
@@ -16,6 +17,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { GlobalHintHost } from '@/components/ui/hint'
+import { TaskDock } from '@/components/tasks/TaskDock'
 import { useAiWindow } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
@@ -232,14 +234,24 @@ export function App() {
             <AiWindow />
           </Suspense>
         )}
+        {/* 「转成弹窗」收起来的对话：和 AI 窗口同在最外层，切走页面也还在（状态在 lib/mini-task） */}
+        <TaskDock />
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />
-        {/* 错误提示要能手动关掉：悬停提示已经自动消失，不会盖着不走；toast 停在屏幕上会挡住内容，
-            所以给错误加关闭按钮（其余类型的关闭按钮由 index.css 里的规则隐掉） */}
+        {/* 提示统一走 web/src/lib/toast.ts（自己排队，同屏上限见 lib/toast-queue.ts 的 TOAST_VISIBLE_LIMIT）：
+            位置在右上角，最新的在最上面、依次往下。
+            `visibleToasts` 必须和队列上限是同一个数：sonner 自己还会按 `index + 1 <= visibleToasts`
+            把超出的那条设成 `data-visible="false"`（opacity 0、不吃指针），默认值是 3，
+            队列放进来的第 4 条就会被它默默藏掉；设成同一个数后两者不打架。
+            `expand` 必须有：不展开时 sonner 把非最上面那条压成一条边（内容透明），
+            和「依次展示下来」相反；展开后鼠标悬上去也不会再整体跳一下。
+            关闭按钮通过 `closeButton` 整体开启，样式在 index.css 里改成「悬停才显示」。 */}
         <Toaster
           theme={dark ? 'dark' : 'light'}
-          position="bottom-right"
+          position="top-right"
+          expand
+          visibleToasts={TOAST_VISIBLE_LIMIT}
           closeButton
           toastOptions={{ closeButtonAriaLabel: t('关闭') }}
         />

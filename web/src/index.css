@@ -721,145 +721,83 @@ body,
 }
 
 /*
- * 计划步骤「等待中」的沙漏（web/src/components/tasks/PlanPanel.tsx 的内联 SVG）：
- * 上腔的沙变少、下半腔的沙堆高，中轴一条细沙在落；一轮流完整体翻转 180° 接着流。
- * 不用转圈——「进行中」已经是转动的圆弧，两种状态要能一眼分开
+ * 计划步骤「等待中」的圆环（web/src/components/tasks/PlanPanel.tsx 的 PlanIcon / WaitRing）：
+ * 整圈虚线，原地明暗呼吸，和「进行中」靠三件事分开 ——
+ * 形状（一圈断续的虚线 vs 一圈只有一道实线弧）、动效类型（原地呼吸 vs 旋转，节奏 1.6s vs 1s）、
+ * 颜色和透明度（warning + 偏淡 vs accent 实色）。前两条在关掉动效后照样成立，颜色只作辅助。
+ * 不做整圈旋转：等距虚线绕圆心转一圈和自身重合，看起来像没在动，白占一个区分维度。
+ * 呼吸也更合「等待」的语义：暂停着等别人，不是自己在跑
  */
-@keyframes plan-hourglass-turn {
+@keyframes plan-wait-pulse {
   0%,
-  40% {
-    /* 沙全落在下腔以后才翻，翻过去画出来的样子正好等于 0% 的初始状态（见下面 sand 的说明） */
-    transform: rotate(0deg);
-    animation-timing-function: ease-in-out;
+  100% {
+    opacity: 0.9;
   }
   50% {
-    transform: rotate(180deg);
-  }
-  90% {
-    transform: rotate(180deg);
-    animation-timing-function: ease-in-out;
-  }
-  100% {
-    transform: rotate(360deg);
+    /* 淡相不能更低：warning 在浅色卡片上已经偏淡，再淡就看不出这是个环、跟待做的空心圆混 */
+    opacity: 0.5;
   }
 }
-
-/*
- * 一个腔体的沙量：上腔从满流到空（0→38%），下一个 50% 里又装满（50→88%）。
- * 下半腔用同一段动画晚半个循环，翻转（40→50%、90→100%）时两边都不动：
- * 下腔那块沙（满的）绕中心转 180° 转上去，画出来正好和上腔满的时候重合，所以翻过去、循环回开头都不闪跳
- */
-@keyframes plan-hourglass-sand {
-  0% {
-    transform: scaleY(1);
-  }
-  38%,
-  50% {
-    transform: scaleY(0);
-  }
-  88%,
-  100% {
-    transform: scaleY(1);
-  }
-}
-
-/* 中轴落沙：在上腔还有沙的时候才有，虚线往下走（落进下半腔，堆上去的沙会把它盖住）。
-   一段动画只管一次流沙，翻身后的那条靠 animation-delay 晚半个循环出场；
-   虚线偏移量取 dasharray 周期（2 + 1.6 = 3.6）的整数倍，循环接回开头看不出来 */
-@keyframes plan-hourglass-stream {
-  0% {
-    stroke-dashoffset: 0;
-    opacity: 0;
-  }
-  2% {
-    opacity: 1;
-  }
-  36% {
-    opacity: 1;
-  }
-  40% {
-    opacity: 0;
-  }
-  100% {
-    stroke-dashoffset: -36;
-    opacity: 0;
-  }
-}
-.plan-hourglass {
-  /* 一轮（一次流完 + 翻转）的时长，改这里三处动效一起变 */
-  --plan-hourglass-cycle: 3s;
-}
-.plan-hourglass-turn {
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  animation: plan-hourglass-turn var(--plan-hourglass-cycle) linear infinite;
-}
-.plan-hourglass-sand {
-  fill: currentColor;
-  /* 以腔体底边为准竖向伸缩：上腔的沙面往下落、下腔的沙从底下往上堆 */
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: plan-hourglass-sand var(--plan-hourglass-cycle) linear infinite;
-}
-.plan-hourglass-sand-bottom {
-  animation: plan-hourglass-sand var(--plan-hourglass-cycle) linear calc(var(--plan-hourglass-cycle) * -0.5) infinite;
-}
-.plan-hourglass-glass {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.plan-wait-ring {
+  /* 一次呼吸的时长：比「进行中」转一圈的 1s 慢，等待的节奏本来就慢 */
+  --plan-wait-cycle: 1.6s;
+  border-style: dashed;
   opacity: 0.9;
-}
-.plan-hourglass-stream {
-  stroke: currentColor;
-  stroke-width: 1.05;
-  stroke-linecap: round;
-  stroke-dasharray: 2 1.6;
-  animation: plan-hourglass-stream var(--plan-hourglass-cycle) linear var(--plan-hourglass-stream-delay, 0s) infinite;
-}
-/* 两条落沙线是彼此的 180° 镜像（上面那条在翻转后才是「下面」），晚半个循环出场 */
-.plan-hourglass-stream-up {
-  --plan-hourglass-stream-delay: calc(var(--plan-hourglass-cycle) * -0.5);
+  animation: plan-wait-pulse var(--plan-wait-cycle) ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  /* 关动效时停在半满的沙漏：有沙、看不出在流，也不隐藏 */
-  .plan-hourglass-turn,
-  .plan-hourglass-sand,
-  .plan-hourglass-sand-bottom,
-  .plan-hourglass-stream {
+  /* 关动效时停在最亮的那一档，虚线环还在：静止时靠「整圈虚线 vs 一道实线弧」和空心圆分开 */
+  .plan-wait-ring {
     animation: none;
-  }
-  .plan-hourglass-sand {
-    transform: scaleY(0.6);
-  }
-  .plan-hourglass-sand-bottom {
-    transform: scaleY(0.4);
-  }
-  .plan-hourglass-stream {
-    opacity: 0.4;
-  }
-  /* 两条落沙线都静止时会叠成一根柱子，静态图里只留下面那条 */
-  .plan-hourglass-stream-up {
-    opacity: 0;
+    opacity: 0.9;
   }
 }
 
-/* 提示分两类：悬停提示（components/ui/hint.tsx）鼠标移开就消失，不放关闭按钮；
-   错误提示会停在屏幕上挡住内容，要能手动关掉。
-   sonner 的关闭按钮只能整体开或逐个 toast 开（toast.error 有两百多处，逐个改不现实），
-   所以 Toaster 上整体开启，再按 data-type 只留错误那一类。
+/* 提示统一走 web/src/lib/toast.ts（排队）和 App.tsx 的 Toaster（右上角、展开堆叠）。
+   这里只管两件视觉上的事：关闭按钮什么时候出现，进出动画多快。
    sonner 自己用 JS 往 head 末尾插样式（排在打包样式表之后），同特异性的规则压不住它，
-   这里带上 html 祖先把优先级提上去。 */
+   所以下面都带上 html 祖先把优先级提上去。 */
+
+/* 关闭按钮平时不显示：提示大多只是告诉用户「做完了」，常显的 ✕ 会抢走正文的注意力。
+   鼠标悬停在这条提示上、或者键盘聚焦到它时才出现；触屏没有悬停，常显。
+
+   两个关键取舍：
+   1) 用 `:focus-visible` 而不是 `:focus-within`：sonner 给每条提示的 li 带了 tabIndex={0}，
+      鼠标点一下正文就会把 li 聚焦上，`:focus-within` 会一直命中——鼠标移开后 ✕ 不收起来。
+   2) 隐藏用 `opacity: 0` + `pointer-events: none`，不用 `display: none`：display:none 的按钮
+      不在 Tab 序列里，而 li 自己一旦失焦（焦点往按钮上走）就不算 `:focus-visible`，按钮会被藏起来、
+      焦点直接被丢回 body，键盘用户反而关不掉。用 opacity 把按钮留在 Tab 序列里，
+      它自己拿到焦点时（`:focus-visible` 或 `:focus`）就显出来，鼠标点正文也不会让它常驻。 */
 html [data-sonner-toast][data-styled='true'] [data-close-button] {
-  display: none;
+  opacity: 0;
+  pointer-events: none;
 }
-html [data-sonner-toast][data-styled='true'][data-type='error'] [data-close-button] {
-  display: flex;
+html [data-sonner-toast][data-styled='true']:hover [data-close-button],
+html [data-sonner-toast][data-styled='true']:focus-visible [data-close-button],
+html [data-sonner-toast][data-styled='true'] [data-close-button]:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
   /* 默认样式让按钮压在右上角外侧，挪进来一点，别盖住第一行文字 */
   top: 6px;
   left: auto;
   right: 6px;
   transform: none;
 }
+@media (hover: none) {
+  html [data-sonner-toast][data-styled='true'] [data-close-button] {
+    opacity: 1;
+    pointer-events: auto;
+    top: 6px;
+    left: auto;
+    right: 6px;
+    transform: none;
+  }
+}
+
+/* 进出动画：sonner 自己的位移过渡是 .4s，但退出的提示 200ms 就被卸载（TIME_BEFORE_UNMOUNT），
+   动画播不完就被掐掉、看起来是「闪一下没了」。压到和卸载时间一样快，退出才完整。 */
+html [data-sonner-toast][data-styled='true'] {
+  transition-duration: 0.2s;
+}
+/* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
+   这里不要用 !important 把它的兜底盖回来。 */

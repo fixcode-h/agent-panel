@@ -12,10 +12,12 @@
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
 - 子对话分派（`server/tasks.ts` 的 `startChild`）：父对话通过 `create_conversation` 派出的子对话立即开始执行，没有子对话并发上限和排队；`startQueue` 只留作短暂的「启动中」标记。工作流节点、合并编译、后台命令等其他占位/排队不变。
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
+- 读一条后台命令的当前样子（`GET /tasks/:id/jobs/:jobId` → `server/background.ts` 的 `view(taskId, id)`，响应体是 `shared/schema.ts` 的 `TaskJobView`）：界面上点后台命令行标题打开的终端窗口按它轮询，命令的输出只在服务端内存的 `BgJob.lines`（`KEEP_LINES` 保留结尾 300 行），不进对话记录，所以必须单独有个读接口。返回 `state` / `code` / `output` / `createdAt` / `startedAt` / `endedAt` / `lastOutputAt`；`output` 是 `lines.join('\n')` 原文，不掺「跑完了」「退出码」这些面板的话（那是推回对话的 `jobOutput` / `resultText` 的事）。排队中、结束后都读得到（用户可能过一阵才点开，结束后要给最终输出和退出码）；归属按 `BgJob.taskId` 校验，跨对话读别人的编号一律当不存在返回 404，和 `/tasks/:id/processes` 只作用于自己子树是同一个口径。回归：`server/background.test.ts`（跑着能读到已输出内容、跑完读得到最终输出和退出码、跨 `taskId` 和不存在的编号读不到）、`server/task-job-view.test.ts`（路由层 404）。
 - 进程与内存路由只作用于当前对话的子树：`/tasks/:id/processes`（列表和合计）、`/tasks/:id/processes/:pid/kill`、`/tasks/:id/processes/clean`、`/tasks/:id/processes/suggest`（AI 清理建议）、`/tasks/:id/memory`（内存曲线）都按 `subtreeIdsOf` 算出的「这个对话 + 它的全部后代」过滤（`shared/run-usage.ts` 的 `subtreeTaskIds`）。关闭进程和 AI 建议用同一集合校验 pid，清理只清子树里的登记残留，不会碰到列表外、属于祖先或兄弟对话的进程。合计只算子树的 CLI 进程：`totalMemory` / `MemoryPoint.total` = `cliMemory` / `cli`，面板自身内存走 `serverMemory` / `server`，不计入对话合计。
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
+- Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见下面的「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见下面的「GitHub 出网与代理回退」。
 - 项目更新时的字段保留与校验（`server/index.ts` 的 `parseProject`、`PUT /projects/:id`）：请求没带 `initResult` 时保留旧值（和 `lessons`、`initializedAt` 同一套做法），带上的用 `ProjectProposalSchema` 严格校验，不合法直接拒绝；初始化推荐因此随项目持久化，重开设置还能应用。
 
@@ -61,13 +63,57 @@
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
 
+## 技能库的多文件管理
+
+`server/library.ts` 除主文件（Skill 的 `SKILL.md`、命令的 `.md` / `.toml`）外，还能单独读写一个 Skill 目录里的附带文件。前端的文件树、编辑、改名、删除都走这里，契约在 `shared/library.ts`。
+
+**数据结构**：`LibraryFile` 是 `{ content, files, tree? }`。`content` 是主文件内容；`files` 保持旧语义（`tree.entries` 里 `type === 'file'` 的 path 扁平列表，前端老代码照旧能用）；`tree` 是 `{ entries, truncated? }`，`entries` 是 `{ path, type: 'file' | 'dir', size? }` 的扁平列表——**目录和文件混在一张表里**，路径统一用 `/`，前端按 `/` 分段就能画出树。排序约定：**同一层目录在前、再按名字排**，并且用广度优先展开，所以父目录一定排在子项前面，截断时留下的也是浅层。命令（`kind: 'command'`）没有附带目录结构，`tree` 是 `undefined`、`files` 是 `[]`。
+
+**接口**（都在 `libraryApi()` 里，错误统一 `400` + `{ error }` 文案）：
+
+| 方法 | 路径 | 参数 | 返回 |
+| --- | --- | --- | --- |
+| GET | `/library/file` | `cli` / `kind` / `name` | `LibraryFile` |
+| GET | `/library/entry` | `cli` / `kind` / `name` / `path` | `{ path, exists, binary?, content, size, mtime? }` |
+| PUT | `/library/entry` | body：`cli` / `kind` / `name` / `path` / `content` | `{ path, bytes }` |
+| DELETE | `/library/entry` | `cli` / `kind` / `name` / `path` | `{ path, deleted }` |
+| POST | `/library/entry/rename` | body：`cli` / `kind` / `name` / `from` / `to` / `overwrite?` | `{ from, to }` |
+
+路径都放在 query 和 body 里、不拼进 URL，所以 `..` 不会在路由层被 normalize 掉，全交给下面那道校验判断。读一个还不存在的文件不报错，返回 `exists: false`（新建前先看一眼很方便）。
+
+**路径安全**（`shared/library.ts` 的 `libraryEntryPath` + `server/library.ts` 的 `entryOf`，两道关）：
+
+1. 字符串层：`..`、`.`、空段、绝对路径、盘符（`C:`）、`\0` 和 Windows 非法字符（`< > : " | ? *`）一律拒绝；反斜杠统一当 `/`，末尾斜杠去掉。
+2. 真实路径层：把路径拼到 `realpath(Skill 目录)` 上，再对「已存在的那一段」`realpath` 一次，确认它仍在 Skill 目录里（`insideDir`）。只靠第 1 道挡不住软链接——Skill 目录里放一个指向外面的目录链接，`link/secret.txt` 字符串上完全合法。找「已存在的那一段」用的是 **`lstat`**：`existsSync` 会跟随软链接，断链时报「不存在」而一路退到 Skill 目录本身，校验就放行了，真正写的时候 OS 会把链接解开、在目录外创建文件。`realpath` 失败（断链、`EACCES`）**直接拒绝**，不回退成字符串路径。
+
+**软链接**：Skill 目录本身是链接时，附件的读写落到**链接指向的真实目录**（`skillRootOf` 先 `realpath`），删文件不动原文件夹——和 `deleteLibrary` 只删链接的约定一致。
+
+Skill 目录**里面**的软链接按「看得见、删得掉、改不了」处理，读、写、删、树四处口径一致：
+
+- 树里标成 `type: 'link'`（不是 `file`，也不给 `size`），不跟进去（可能是链到外面的大目录）；`files` 只放普通文件，不含链接。
+- 读接口返回 `{ exists: true, link: true, content: '', size: 0 }`——**不给内容**：链接的目标可能是目录、可能在 Skill 目录外，给一份前端改完又存不回去的正文只会让人困惑。
+- 写接口拒绝，文案「这是个链接，不能直接改内容」（不是「路径不合法」，用户能据此知道该去改目标文件）。
+- 删接口删的是链接本身，不动目标：链接（文件链接、目录链接、junction）统一走 `rm`——Node 的 `rm` 对链接只删链接本身、不跟进，而且 Windows 上删目录重解析点**不能**走 `unlink`（`DeleteFile` 会报 `EPERM`，必须让 rmdir 系来删）。
+
+**路径校验只校验父目录**（`entryOf`）：把「最后一段的父目录」`realpath` 后要求仍在 Skill 目录内，拦住 `link/secret.txt` 这种穿过软链接目录的访问；最后一段本身是不是链接，交给各操作按 `lstat` 自己决定。最后一段也一起 `realpath` 的话，树里列出来的链接一读就报「路径不合法」，和上面那条口径打架。`realpath` 失败（断链、`EACCES`）**直接拒绝**，不回退成字符串路径——否则一条断链的软链接就能让写入落到目录外。
+
+**二进制与大小**：单个附带文件上限 `LIBRARY_FILE_MAX_BYTES`（1 MiB），读写超限都直接报错、不截断。报错文案按 `LIBRARY_FILE_MAX_KIB`（1024 KB）说，和前端「1.0 MB」的显示口径一致——用 1048 KB 会和 MB 那条自相矛盾。链接和目录的判断放在大小检查**之前**：一个超限的链接该说「这是个链接」，不该让人以为要去删内容。二进制靠「头部有 `\0` 字节」判定（和 `server/files.ts` 的 `readInDir` 一致）：大多数图片、压缩包、可执行文件都带 `\0`，比按扩展名白名单稳（无扩展名的文本不会误判），也不依赖 UTF-8 解码是否报错（非法 UTF-8 会被静默替换成 U+FFFD，判不出来）。命中时返回 `binary: true`、`content: ''`，**`size` 照常返回**（前端要显示「二进制文件，{kb} KB」）。误请求一个目录时返回 `size: 0`，不把目录的元数据大小（64 / 4096 这类）当成文件大小。
+
+**文件树上限**：`LIBRARY_TREE_MAX_ENTRIES`（1000 项，**目录也算一项**），超过就截断并在 `tree.truncated` 标出来。排除规则分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（依赖和版本库目录：`node_modules`、`.git`、`.svn`、`__pycache__`、`.venv`、`venv`）**只对目录生效**，`LIBRARY_TREE_EXCLUDE_FILES`（`.DS_Store`、`Thumbs.db`）**只对文件生效**。不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`：那份清单的语义是「搜代码时跳过的噪音目录」，会把技能里真放内容、刚好叫 `logs` / `build` / `out` 的目录一起抹掉。主文件 `SKILL.md` 不进树（大小写无关判，`skill.md` 也算它），它单独用 `content` 返回。
+
+**删目录与改名**：删目录是递归删，但先用 `countEntries` 数一遍，超过 `LIBRARY_DIR_MAX_DELETE_ENTRIES` 就拒绝（让用户先清掉里面的文件），数条目时不跟进软链接。改名默认 `overwrite: false`，目标已存在报「「{name}」已经有了」；目录不能并进已存在的目录（单独一条文案），也不许把目录移到它自己里面。覆盖时**不先删目标再 rename**：先把目标挪到 `.old-<pid>-<时间戳>` 留底，rename 成功再删留底，失败就把留底改回去，否则 rename / mkdir 任一步失败（Windows 上目标被占用很常见）旧内容就找不回来了；回滚本身也失败时，错误文案带上留底文件名，让用户能自己找回来。源和目标是不是同一个文件用 `sameFile` 判——比 `dev` + `ino`（真实文件身份），**不按字符串小写归一**：小写归一会把 Linux 上 `Notes.md → notes.md` 这种合法改名当成同一文件、返回成功却什么都没做。只差大小写的改名走「先改到临时名、再改到目标」两步，真把名字换掉，也不会在覆盖分支里删掉源文件；第二步失败时把名字改回去，回滚也失败就用「改名失败，原内容留在 {name}」把临时文件名告诉用户，不让文件「改名成功一半」。
+
+**主文件保护**：`entryOf` 用 `rel.toLowerCase() === 'skill.md'` 判（主文件不许走附件接口），文件树也同样大小写无关——NTFS / APFS 不区分大小写，只比大写会让人用 `skill.md` 覆盖或删掉 `SKILL.md`。
+
+**回归**：`server/library.test.ts`（文件树排序与截断、`files` 与 `tree` 一致、路径穿越各种写法、软链接越界与软链接 Skill 的读写落点、二进制识别、读写超限、增删改往返、目录删除上限、命令没有附件）、`server/project-skills.test.ts`（项目技能的 `files` / `tree` 两个字段一致）、`npm run test:e2e` 里「Skills / 命令库」那段（附件写读改删和路径穿越）。
+
 ## GitHub 出网与代理回退
 
 Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net.ts` 把「用哪条路、失败了再试哪条」收在一处，调用方只管传 `timeoutMs` / `signal`。
 
 **出网优先级**（`defaultPlan` → 纯函数 `planFor`）：
 
-1. 设置里的 `proxy`（设置 · 常规 · 网络代理）。地址没写协议时用 `httpProxy` 补 `http://`，否则 `ProxyAgent` 解析不了；socks 这类不支持的地址照原样交给回退，由请求失败后的回退处理。
+1. 设置里的 `proxy`（在「设置 · 网络与代理」），但先过 settings 的「启用代理」开关（`Settings.networkProxyEnabled`，默认 true，加开关之前的老设置按 true 处理，迁移见 `server/settings-migrate.test.ts`）：`server/net.ts` 的 `configuredProxy(settings)` 在开关关闭时返回空串，于是这一条等于没填，直接落到第 2 条环境变量、第 3 条直连。地址没写协议时用 `httpProxy` 补 `http://`，否则 `ProxyAgent` 解析不了；socks 这类不支持的地址照原样交给回退，由请求失败后的回退处理。本机代理自动探测（`localProxies`、`discover`）在第一次尝试失败后照旧执行，不受开关影响。
 2. 环境变量 `HTTPS_PROXY` / `https_proxy` / `HTTP_PROXY` / `http_proxy`，此时 `NO_PROXY` 照常生效。
 3. 直连。
 
@@ -86,7 +132,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 **超时与取消**：每次尝试单独计时（`attemptControl`），上一次因为 `timeoutMs` 超时了，下一次会重新计时；`timeoutMs` 只覆盖等响应头，body 由调用方自己管。调用方自己的 `signal` 被中止（主动取消，或用 `AbortSignal.timeout` 给自己的总预算用完）时不再换路径，把原因原样报出去；换路径只由每次尝试自己的 `timeoutMs` 触发。
 
-**失败文案**（`failure` + `netError`）：保留原始原因（连接超时 / 无法解析域名 / 代理拒绝连接等）。最后一条失败的是直连时，附上原来的 `访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理`；最后一条是代理时，先用 `当前使用代理 xxx，请确认代理能访问 GitHub`，再补一句同样的设置页提示。试过多条路时追加 `尝试过的路径：直连、本机代理 http://…`；探测过、但没有任何本机代理进入尝试列表时追加「没有发现运行中的本机代理。」。报错里的代理地址会去掉账号密码。
+**失败文案**（`failure` + `netError`）：保留原始原因（连接超时 / 无法解析域名 / 代理拒绝连接等）。最后一条失败的是直连时，附上原来的 `访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理`；最后一条是代理时，先用 `当前使用代理 xxx，请确认代理能访问 GitHub`，再补一句同样的设置页提示。试过多条路时追加 `尝试过的路径：直连、本机代理 http://…`；探测过、但没有任何本机代理进入尝试列表时追加「没有发现运行中的本机代理。」。报错里的代理地址会去掉账号密码。
 
 **谁在用**（都因此共用同一套回退）：
 
@@ -96,7 +142,10 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 ## 账号与登录
 
-路由把 `server/accounts.ts` 的 `accountsApi()` 挂在 `/accounts` 下（账号列表、`/:cli/login` 的起 / 查 / 取消、粘贴授权码、`/:cli/save`、切账号、登出、凭据检查、API 模型与余额）。CLI 定义里 `auth` 各个字段的含义见 [cli-config.md](../../cli-config.md) 的「账号登录 `auth`」，这里只记服务端的做法。
+路由把 `server/accounts.ts` 的 `accountsApi()` 挂在 `/accounts` 下（账号列表、`/:cli/login` 的起 / 查 / 取消、粘贴授权码、`/:cli/save`、切账号、登出、凭据检查、API 模型、模型探针与余额）。CLI 定义里 `auth` 各个字段的含义见 [cli-config.md](../../cli-config.md) 的「账号登录 `auth`」，这里只记服务端的做法。
+
+- 全局 API 的三个出网接口都在服务端带密钥请求（页面不直连第三方）：`fetchApiModels`（`POST /accounts/api-models`，列模型）、`probeApiModel`（`POST /accounts/api-probe`，用一个模型真的跑一次最小推理）、`fetchApiBalance`（`POST /accounts/api-balance`，查余额）。探针按协议构造请求：anthropic `/v1/messages`（地址自带 `/v1` 时不重复）、openai-responses `/v1/responses`、openai-chat `/v1/chat/completions`、gemini `/v1beta/models/<模型>:generateContent`；认证头跟着 `authHeader`（`x-api-key` / `bearer`）和协议走，不写死。提示词只有 `ping`、输出 1 个 token，避免探测花额度。
+- 探针的失败一律透传上游原因（`errorDetail` 兼容 `error.message` / `error` / `message` 几种写法，`error` 是对象但没有 `message` 时退到 `type` / `code`，都没有才用状态文本，避免输出 `[object Object]`；截 200 字），200 但正文里没有模型输出也算不通（`looksLikeAnswer` 按协议看 `content` / `candidates` / `output` / `choices`），超时用 `PROBE_TIMEOUT_MS`（60 秒）换成人话，不重试、不把密钥拼进文案。**读 body 阶段的超时单独处理**：上游先回 200、body 迟迟不吐时 `AbortSignal.timeout` 在 `res.text()` 阶段触发，不能 `.catch(() => '')` 吞成空正文，否则会掉进「不是模型回复」分支把超时报成内容不对。Gemini 的模型名先剥 `models/` 前缀再拼路径（和 `fetchApiModels` 同一套归一），手填官方全名也能测。列模型和余额原先各自内联的取错误原因写法也收敛到同一个 `errorDetail`。回归：`server/api-config.test.ts` 的「API 探针」几条（成功 / 404 模型不存在 / 401 带上游原因 / 200 非模型回复 / 读 body 阶段超时 / Gemini 带 `models/` 前缀 / 错误体无 message 时不输出 `[object Object]` / 没填地址、密钥、模型时不发请求）。
 
 - 现在登录着的是谁：`server/accounts.ts` 的 `readLive` 按定义读 `auth.files`、`auth.fields` 和 macOS 钥匙串，一个都读不到就返回空（= 没登录）；`identityOf` 从凭据里认邮箱（认不出的返回空），`fingerprint` 只看凭据内容（sha256(files + keychain) 截 16 位）用于比对和去重。`matchSlot` 把现在的凭据对上已存的账号，`sync` 顺手把变了的凭据写回槽位、更新 active，`saveAs` 存成账号（同邮箱或同指纹的不重复存）。
 - 登录的判定：`startLogin` 先 `sync` 一次，现在登录着但还没存下来的账号先 `saveAs` 存好（否则登录新账号会把旧的弄丢），记下 `before = fingerprint(live)` 后跑 `auth.login`。结局由纯函数 `loginOutcome` 定，共五种：`done`、`spawn-error`、`cancelled`、`no-credential`、`unchanged`。

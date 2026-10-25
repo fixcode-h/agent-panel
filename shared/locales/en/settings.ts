@@ -426,9 +426,20 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个文件 · {size}': '{n} files · {size}',
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
-  网络代理: 'Network proxy',
-  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址，例如 {proxy}；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口，含 v2rayN 默认的 {port}），没开代理软件就不会走代理。只支持 http 代理：v2rayN 默认的入站就是这个端口的 SOCKS，这种环境要把它改成 http / mixed 入站，或者填 http 入站端口；探测不到时照常回退直连。也认环境变量 HTTPS_PROXY。':
-    'Used to check for and download updates. If GitHub is not reachable, enter the address of a local proxy, for example {proxy}. When empty, it connects directly first and then tries any local proxy that is running (system proxy or common ports, including v2rayN default {port}); if no proxy app is running, no proxy is used. Only HTTP proxies are supported: v2rayN default inbound is SOCKS on that port, so either change it to an http / mixed inbound or enter the HTTP inbound port; when nothing is reachable it falls back to a direct connection as usual. The HTTPS_PROXY environment variable is used as well.',
+  网络与代理: 'Network & proxy',
+  启用代理: 'Use a proxy',
+  '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，但仍会先走环境变量 HTTPS_PROXY（设了的话），没设时先直连；请求失败后再自动找本机正在运行的代理（系统代理或常见端口）。':
+    'Used for update checks and downloads. When off, this address is skipped, but HTTPS_PROXY is still used first when set; otherwise it connects directly, and on failure looks for a local proxy that is running (system proxy or common ports).',
+  代理地址: 'Proxy address',
+  '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
+    'Address of a local proxy, for example {proxy}. When empty this address is skipped, with the same order as turning the switch off (environment variable → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
+  本页小节: 'Sections on this page',
+  执行与超时: 'Execution and timeouts',
+  会话保活: 'Keeping sessions alive',
+  后台命令: 'Background commands',
+  界面与启动: 'Interface and startup',
+  输入与文件: 'Input and files',
+  提示与通知: 'Alerts and notifications',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',
@@ -592,6 +603,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '接口返回 {status}：{detail}': 'The API returned {status}: {detail}',
   '接口没有返回模型列表，请自己填写': 'The API returned no model list; enter models yourself',
   先填密钥: 'Enter the API key first',
+  先选一个模型: 'Pick a model first',
+  '模型 {model} 可用': 'Model {model} works',
+  '连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）':
+    'Connection works — {n} models available (no model selected, so only the connection was verified)',
+  '模型 {model} 在 {seconds} 秒内没有响应': 'Model {model} did not respond within {seconds} seconds',
+  '接口返回的内容不是模型回复：{detail}': 'The API did not return a model reply: {detail}',
+  测试连接用的模型: 'Model to test',
+  '选中哪个模型，点「测试连接」就用它真的发一次请求':
+    'The selected model is the one “Test connection” actually sends a request with',
+  '先点「从接口获取」或手动填写模型': 'Click “Fetch from API” first, or type a model name',
   这个厂家不支持余额查询: "This vendor doesn't support balance checks",
   接口没有返回余额信息: 'The API returned no balance information',
   '这个 Agent 没有账号设置': 'This agent has no account settings',
@@ -608,8 +629,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。':
-    'Skills and custom commands in each agent\'s user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Commands in "All agents" are expanded by the panel and work with every agent. Project-level Skills are managed in project settings.',
   '所有 Agent': 'All agents',
   '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
     'Describe what you need and a local agent writes a command that works with every agent',
@@ -630,6 +649,37 @@ export const EN_SETTINGS: Record<string, string> = {
   '/changelog：按最近的提交整理一段给用户看的更新说明':
     '/changelog: turn recent commits into user-facing release notes',
   '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
+  '放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。':
+    'These live in each agent\'s own user directory; entries under "All agents" are expanded by the panel and work with every agent.',
+  '这些是面板自带的技能，统一装在 ~/.agents/skills，所有 Agent 共用。在左边的列表里安装、更新，或换回自带版本。':
+    'These skills ship with the panel and go into ~/.agents/skills, shared by every agent. Install, update or restore them from the list on the left.',
+  '在左边选一项，或新建一个：装好之后所有 Agent 都能用。':
+    'Pick one on the left, or create a new one — once installed, every agent can use it.',
+  没有说明: 'No description',
+  '还没有{kind}': 'No {kind} yet',
+  命令文件: 'Command file',
+  打开这一份: 'Open this copy',
+  文件结构: 'Files',
+  '另有 {n} 个文件': '{n} more files',
+  在这里新建文件: 'New file here',
+  在这里新建目录: 'New folder here',
+  新建目录: 'New folder',
+  删除这个文件: 'Delete this file',
+  '文件太多，只显示了前面一部分。': 'Too many files — only the first part is shown.',
+  '二进制文件（{size}），不能编辑。': 'Binary file ({size}); cannot edit.',
+  '文件超过 1 MB，保存不了，请精简后再试。': 'The file is over 1 MB and cannot be saved — trim it first.',
+  '在 {path} 里新建。': 'Create inside {path}.',
+  '放在技能文件夹的根目录下。': 'Created at the root of the skill folder.',
+  目录名: 'Folder name',
+  文件名: 'File name',
+  '会从磁盘上删掉，不能撤销。': "It is removed from disk and can't be undone.",
+  文件内容: 'File content',
+  '这是个链接，不能在这里改内容。': 'This is a link; its content cannot be edited here.',
+  '这个技能只有 SKILL.md，还没有附加文件。': 'This skill only has SKILL.md — no extra files yet.',
+  '在左边的文件树里点一个文件，就能看内容和改它。': 'Click a file in the tree on the left to view and edit it.',
+  '{n} KB': '{n} KB',
+  '{n} 字节': '{n} bytes',
+  未保存: 'Unsaved',
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
@@ -646,8 +696,6 @@ export const EN_SETTINGS: Record<string, string> = {
   覆盖: 'Overwrite',
   装在: 'Installed in',
   内容: 'Content',
-  '文件夹里还有：': 'Also in the folder: ',
-  '（复制时一起带走，这里不能编辑）': ' (copied along; not editable here)',
   '复制给别的 Agent': 'Copy to other agents',
   先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':

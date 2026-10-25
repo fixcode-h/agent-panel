@@ -99,7 +99,6 @@ export function AiWindow() {
       {open && minimized && (
         <MinimizedChat
           id="ai-fix"
-          slot={0}
           label={heading}
           state={dockState}
           unseen={unseen}

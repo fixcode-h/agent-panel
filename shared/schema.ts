@@ -1192,8 +1192,18 @@ export const StepUsage = z.object({
 })
 export type StepUsage = z.infer<typeof StepUsage>
 
-/** 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个 */
-export const ApiWait = z.object({ api: z.string(), ahead: z.number().int().default(0) })
+/**
+ * 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个。
+ * reason 区分这次拿名额的性质：'start' 是这一轮还没开始（真的在排队等名额），
+ * 'yield' 是这一轮已经跑起来、临时让出（等子任务 / 等下一句）后拿回。两者不能显示成同一句话：
+ * 让出期间 CLI 往往还在出 token，显示「排队等名额 · 下一个就是这里」会和实时速度自相矛盾。
+ */
+export const ApiWait = z.object({
+  api: z.string(),
+  ahead: z.number().int().default(0),
+  /** 旧快照里没有这个字段，当时的标记都是开始前排队，按 'start' 算 */
+  reason: z.enum(['start', 'yield']).default('start'),
+})
 export type ApiWait = z.infer<typeof ApiWait>
 
 export const TaskStep = z.object({
@@ -1389,10 +1399,11 @@ export const PlanStep = PlanItem.extend({
   /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
   run: z.number().int().optional(),
   /**
-   * 面板加的收尾步骤（子对话计划的最后一步）：merge 是独立分支合回父对话所在的分支，由合并结果标完成；
-   * p4 是把改动按文件类型分进各自的 pending changelist，Agent 做完自己标。旧数据没有这个字段，当普通步骤
+   * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
+   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist，Agent 做完自己标；
+   * push 是父对话把分支推到远端，Agent 推完自己标。旧数据没有这个字段，当普通步骤
    */
-  wrapUp: z.enum(['merge', 'p4']).optional(),
+  wrapUp: z.enum(['merge', 'p4', 'push']).optional(),
   /**
    * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
    * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
@@ -1500,6 +1511,29 @@ export const TaskJob = z.object({
   startedAt: z.string().default(''),
 })
 export type TaskJob = z.infer<typeof TaskJob>
+
+/**
+ * 一条后台命令的当前样子（界面上点命令行打开的窗口用它轮询）：
+ * 在跑的时候要给得出已经输出的内容，跑完了也要还能读到最终输出和退出码——用户可能过一阵才点开。
+ * 和 TaskJob 分开：TaskJob 只列还在跑的（运行区那一行），这个带输出和终态
+ */
+export const TaskJobView = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running', 'done', 'failed', 'stopped']),
+  /** 退出码：还在跑、排队中为空 */
+  code: z.number().nullable(),
+  /** 已经输出的内容（只留结尾，见 server/background.ts 的 KEEP_LINES） */
+  output: z.string(),
+  /** 交给面板的时间：排队也算在等结果的时间里 */
+  createdAt: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  /** 最后一次有输出的时间：界面上「多久没动静」看它 */
+  lastOutputAt: z.string(),
+})
+export type TaskJobView = z.infer<typeof TaskJobView>
 
 export const TaskData = z.object({
   projectId: z.string(),
@@ -1969,6 +2003,11 @@ export const Settings = z.object({
   openBrowser: z.boolean().default(true),
   /** 网络代理：检查更新、下载新版本时用。默认地址和各处的示例见 shared/proxy.ts（只支持 http 代理，SOCKS 用不了）；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
   proxy: z.string().trim().default(''),
+  /**
+   * 是否使用上面填的代理地址。默认打开：加这个开关之前填过地址的人升级后行为不变。
+   * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
+   */
+  networkProxyEnabled: z.boolean().catch(true).default(true),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */

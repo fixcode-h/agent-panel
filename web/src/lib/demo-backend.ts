@@ -42,6 +42,8 @@ import {
   type TaskMessage,
   type TaskProcess,
   type TaskProcesses,
+  type TaskJob,
+  type TaskJobView,
   type TaskMemoryHistory,
   type TaskMemoryAnalysis,
   type TaskStep,
@@ -87,6 +89,7 @@ import {
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
+import { ComfyChain } from '@shared/comfy-chain'
 import {
   builtinTemplates,
   builtinTemplateMeta,
@@ -156,6 +159,8 @@ interface Db {
   installed?: Record<string, boolean>
   /** 全局教训；旧版本的演示数据没有这一项 */
   globalLessons?: GlobalLesson[]
+  /** 演示里见过的后台命令（含已经结束的）：和任务一起存，刷新页面后仍然回看得到，见 demoJobView */
+  seenJobs?: Record<string, TaskJob>
 }
 
 /** 演示里的全局教训：一条从别的项目提取来的 */
@@ -1542,6 +1547,8 @@ const demoCatalog = () => ({
 })
 
 let demoWorkflows: ComfyWorkflow[] = []
+/** 演示里存下来的工作流链 */
+let demoChains: ComfyChain[] = []
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -1581,6 +1588,26 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
     const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
     const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
     return { list, ready: ready.map((w) => w.id) }
+  }
+  // 工作流链：演示里存得住，但试跑不真的出图（没有 ComfyUI），返回一条说清楚的错误
+  if (action === 'chains') {
+    const workflows = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
+    const ready = workflows
+      .filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
+      .map((w) => w.id)
+    if (method === 'PUT' && id) {
+      const chain = parse(ComfyChain, { ...(body as object), id })
+      demoChains = demoChains.some((c) => c.id === id)
+        ? demoChains.map((c) => (c.id === id ? chain : c))
+        : [...demoChains, chain]
+      return { chain, list: demoChains }
+    }
+    if (method === 'DELETE' && id) {
+      demoChains = demoChains.filter((c) => c.id !== id)
+      return { list: demoChains }
+    }
+    if (method === 'POST' && sub === 'run') return fail('演示版没有真的 ComfyUI，安装后才能在本地跑工作流链')
+    return { list: demoChains, workflows, ready }
   }
   const tick = (steps: string[], done: () => void, total = 0) => {
     const j: LocalJob = (local.job = {
@@ -2424,6 +2451,57 @@ const demoGone = new Map<string, Set<number>>()
 
 const MB = 1024 * 1024
 
+/**
+ * 演示里见过的后台命令：真实后端的 job 记录一直留到对话被删或超出 KEEP_JOBS，
+ * 所以命令结束后仍然读得到最终输出（只是 uiJobs 不再把它放进 task.jobs，运行区那一行随之消失）。
+ * 演示后端按同样口径在 Db 里记一份快照（跟着任务数据一起存，刷新页面后照样回看得到）
+ */
+
+/**
+ * 演示里的后台命令输出：没有真的进程，按 job 生成一段看着像真的输出。
+ * 输出内容按 job 固定（同一个 id 每次一样），不然反复轮询会看到输出变来变去
+ */
+function demoJobView(task: Task, jobId: string): TaskJobView {
+  const d = load()
+  const live = (task.jobs ?? []).find((j) => j.id === jobId)
+  const seen = (d.seenJobs ??= {})
+  if (live) seen[live.id] = live
+  const job = live ?? seen[jobId]
+  if (!job) fail('没有这条后台命令', 404)
+  persist()
+  const lines = [
+    '（在线演示：模拟的后台命令输出，不会真的执行）',
+    `$ ${job.command}`,
+    '',
+    '> agent-panel@1.0.0 build',
+    '> tsc --noEmit && vite build',
+    '',
+    'vite v7.0.0 building for production...',
+    'transforming...',
+    '✓ 1204 modules transformed.',
+    'dist/assets/index-Dt3mQa.js   412.86 kB │ gzip: 128.44 kB',
+    '✓ built in 4.21s',
+    '',
+    'EXIT=0',
+  ]
+  // 行不在了 = 这条命令已经结束（真实后端里 jobs 里还在，但 task.jobs 里已经不列了）
+  const ended = !live
+  const state = ended ? ('done' as const) : job.state
+  return {
+    id: job.id,
+    name: job.name,
+    command: job.command,
+    state,
+    code: ended ? 0 : null,
+    output: lines.slice(0, job.state === 'queued' && !ended ? 0 : lines.length).join('\n'),
+    createdAt: job.startedAt || new Date().toISOString(),
+    startedAt: job.startedAt,
+    endedAt: ended ? new Date().toISOString() : '',
+    // 和 startedAt 同源：每轮都变的话界面算「多久没动静」会恒为 0
+    lastOutputAt: job.startedAt || new Date().toISOString(),
+  }
+}
+
 function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
   const now = Date.now()
   // 和正式后端一个口径：当前对话 + 它的附属，父对话和兄弟不出现
@@ -2510,6 +2588,14 @@ function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
 function demoLive(task: Task) {
   return task.working === true || live.has(task.id)
 }
+
+/**
+ * 演示里这个对话的 CLI 进程算不算活着（对正式后端 `taskCliAlive` 的替代）。
+ * 演示里没有真的进程：除了 `live` 登记，还得把「停在等下一句 / 这一轮还在跑」也算上——
+ * 这两件事本身就意味着进程活着。`live` 只在本次页面加载里有效，刷新后就空了，
+ * 只按它算会让存盘里明明 `awaitingUser: true` 的对话在刷新后变成「进程已经回收」，`childWait` 也就算不出 `next`
+ */
+const demoCliAlive = (task: Task) => live.has(task.id) || task.working === true || task.awaitingUser === true
 
 function demoKill(task: Task, pid: number) {
   const rootId = task.rootTaskId || task.id
@@ -2637,7 +2723,7 @@ function tasksRoute(
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: live.has(t.id) }))
+          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t) }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -2766,6 +2852,8 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  // 后台命令的实时输出：界面上点命令行标题打开的窗口轮询它。演示里没有真的进程，按 job 给一段看着像真的输出
+  if (sub === 'jobs' && method === 'GET') return demoJobView(task, rid ?? '')
   // 进程面板：演示版给一份稳定的假进程和内存历史，字段和正式后端一致
   if (sub === 'processes') {
     if (method === 'GET' && !rid) return demoProcesses(task, tasks)
@@ -2800,7 +2888,7 @@ function tasksRoute(
           working: x.working,
           updatedAt: x.updatedAt,
           // 进程还活着：正在跑的一定活着（演示里没有真的进程，就按 working 认）
-          cliAlive: live.has(x.id) || x.working,
+          cliAlive: demoCliAlive(x),
           startedAt: childStartedAt(x),
           // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
           requests: (x.requests ?? []).length,
@@ -2823,7 +2911,7 @@ function tasksRoute(
           wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
           branch: x.worktree?.branch ?? '',
           stopReason: x.stopReason ?? '',
-          waiting: childWait(x, { background, cliAlive: live.has(x.id) }),
+          waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
           resolved: x.resolved === true,
           analysis: x.analysis,
         }
@@ -3056,7 +3144,9 @@ function tasksRoute(
     persist()
     return task
   }
-  return task
+  // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
+  // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
+  return { ...task, cliAlive: demoCliAlive(task) }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
@@ -3090,10 +3180,87 @@ function spreadSteps(t: Task) {
   }
 }
 
+/**
+ * 这个对话里最晚的一个时刻：消息时间和节点时间都算。
+ * 演示数据要往对话尾部再塞节点时用它当时间基准——消息时间不代表执行结束的时刻。
+ */
+function latestMoment(task: Task) {
+  let latest = 0
+  const take = (iso?: string) => {
+    const at = iso ? Date.parse(iso) : NaN
+    if (Number.isFinite(at) && at > latest) latest = at
+  }
+  task.messages.forEach((m) => take(m.at))
+  task.steps.forEach((s) => {
+    take(s.startedAt)
+    take(s.endedAt)
+  })
+  return latest ? new Date(latest).toISOString() : new Date().toISOString()
+}
+
+/** 演示里这个子任务跑了多久（列表和运行区上显示的耗时） */
+const DEMO_HELPER_SPENT_MS = 8_600
+
+/** 派出它的那条系统消息比它开始执行早多久 */
+const DEMO_HELPER_SPAWN_LEAD_MS = 800
+
+/**
+ * 用户报的那个场景：这一轮已经回完（awaitingUser、cliAlive 都是 true），派出的子任务还在跑命令。
+ * 状态行应该说「等待 1 个子任务完成」，不能说「等待你的下一条消息」+「空闲」（见 TaskView 的 ChatWaitLine）。
+ * 子任务 id 取没被占用的编号（同 demoHelper / demoChildren）：写死 h1 会和模拟执行派出的子任务撞成同一个 id
+ */
+function demoWaitingHelper(task: Task, agent: { id: string; name: string }) {
+  const startedAt = new Date(Date.now() - 4 * 60_000).toISOString()
+  const used = new Set(task.steps.map((s) => s.id))
+  let n = 1
+  while (used.has(`@chat/sub/h${n}`)) n++
+  task.working = false
+  // 停在等下一句、CLI 还开着：显示层不能只凭这两项就说「在等你」，还要看子任务在不在跑
+  task.awaitingUser = true
+  task.status = 'running'
+  task.steps.push({
+    id: `@chat/sub/h${n}`,
+    parentId: '@chat',
+    slot: 'sub',
+    round: 0,
+    workflowId: '',
+    flowId: '',
+    nodeId: '',
+    kind: 'agent',
+    title: '评审后台命令输出弹窗',
+    agentId: agent.id,
+    status: 'running',
+    startedAt,
+    endedAt: '',
+    spentMs: 0,
+    waitMs: 0,
+    waitStartedAt: '',
+    output: '',
+    verdict: '',
+    rounds: 0,
+    reruns: 0,
+    reviews: 0,
+    interrupted: false,
+    session: '',
+    snapshot: '',
+    command: ['cd /c/Users/demo/.agent-panel/worktrees/0f88e560 && npm run test:e2e'],
+    brief: '',
+    changes: [],
+    runId: 0,
+  })
+  // 不写 live 登记：live 在演示里表示「有一轮正在跑」（followUp / messages 会因此把对话当成执行中，
+  // 发来的消息只能 held 在队列里、没人接手）。这条对话要表达的是「停在等下一句」，
+  // 进程活着由 demoCliAlive 按 awaitingUser 算出来
+}
+
 /** 示例对话派出的子任务：输入框上方的「子任务」栏、列表和只读窗口都要有东西看 */
 function demoHelper(task: Task, agent: { id: string; name: string }) {
-  const end = task.messages.at(-1)?.at ?? new Date().toISOString()
-  const start = new Date(Date.parse(end) - 8_600).toISOString()
+  // 时间摆在整段对话最晚的时刻之后，不是之前：模拟执行派过的子任务（@chat/sub/h1、h2）的 parentId 是
+  // '@chat'，不在 spreadSteps 重排的节点里，它们的时间落在这次执行的尾部；新派的这个若摆在那之前，
+  // 就会比已有的子任务更早开始，列表里「最新的在最上面」（shared/task.ts 的 sortHelpers）排不出来。
+  // 基准也不是「最后一条消息」：消息时间不代表执行结束的时刻。
+  const start = latestMoment(task)
+  const end = new Date(Date.parse(start) + DEMO_HELPER_SPENT_MS).toISOString()
   // 这个对话在模拟执行时已经派过子角色（@chat/sub/h1、h2），取一个没被占用的编号：
   // 用同一个 id 会跟已有的子任务撞在一起，列表里只显示前一个同 id 的标题
   const used = new Set(task.steps.map((s) => s.id))
@@ -3130,21 +3297,47 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     session: '',
     snapshot: '',
     command: [],
-    brief: '看一下购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路查一遍，指出具体在哪个文件哪一行。',
+    // 结构化的要求（和真实 spawn 落盘的 brief 同一个格式）：子任务窗口最上面那块按 `##` 拆成几块显示
+    brief: [
+      '## 要做的事',
+      '查清购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路走一遍，指出问题在哪个文件的哪一行。',
+      '',
+      '## 验收标准',
+      '- 给出具体的文件和行号，只读不改代码',
+      '- 说清角标在什么情况下才刷新',
+    ].join('\n'),
     changes: [],
     runId: 1,
   })
-  const at = new Date(Date.parse(end) - 8_000).toISOString()
-  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）
-  const own = {
-    id: 'demo-' + crypto.randomUUID(),
-    role: 'agent' as const,
-    agentId: agent.id,
-    step: id,
-    text: result,
-    tools: [],
-    at: end,
-  }
+  const at = new Date(Date.parse(start) + DEMO_HELPER_SPAWN_LEAD_MS).toISOString()
+  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）。多出几条过程消息，让对话流超过一屏：
+  // 「派给它的要求」的吸顶、展开后仍在视野内这些行为只有内容超过一屏时才测得出来
+  const steps: [string, number][] = [
+    ['先看购物车角标的取数：它读的是首次渲染时的快照。', 6_600],
+    ['再顺着订阅消息查：加购只本地改状态，没发 `cart:changed`。', 5_200],
+    ['对照了一遍别的页面：结算页订阅了，所以那边是正常的。', 3_800],
+    ['定位到 `CartBadge.tsx` 里那次读快照的地方，记下行号。', 2_400],
+  ]
+  const own = [
+    ...steps.map(([text, ago]) => ({
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text,
+      tools: [],
+      at: new Date(Date.parse(end) - ago).toISOString(),
+    })),
+    {
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text: result,
+      tools: [],
+      at: end,
+    },
+  ]
   // 派出它的那条系统消息：消息流里不画卡片，折叠行上仍写着「派出 1 个子任务」
   const spawned = {
     id: 'demo-' + crypto.randomUUID(),
@@ -3160,7 +3353,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     .map((m, i) => (m.role === 'agent' ? i : -1))
     .filter((i) => i >= 0)
     .at(-1)
-  task.messages.splice(last ?? task.messages.length, 0, spawned, own)
+  task.messages.splice(last ?? task.messages.length, 0, spawned, ...own)
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
@@ -3345,9 +3538,10 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
+  // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
+  // 那会和「计划 / 等结果」同屏矛盾（用户报的问题），界面检查靠它当反例。
   // 这条和下面两条带独立分支：创建时间故意和列表顺序不一致，界面要按时间排而不是按接口顺序
   await make('整理 ESLint 规则', {
-    alive: true,
     job: true,
     subJob: true,
     worktree: { branch: 'agent-panel/eslint-rules', at: 30 },
@@ -3565,11 +3759,17 @@ async function seedTasks(d: Db) {
       t.title.slice(0, 40),
     ]
     t.command = argv
+    // 已经结束的任务，节点的时间跟着消息一起往前挪：只挪消息不挪节点，子任务会显示成「刚刚」、
+    // 和对话的时间轴对不上。正在跑的任务不挪：它的节点时间是真的在跑，任务时长按 runStartedAt 算是真实的，
+    // 只挪节点会让单个节点的耗时比任务总时长还大
+    const finished = t.status !== 'running'
     t.steps.forEach((s) => {
       if (s.startedAt) s.command = argv
+      if (finished && s.startedAt) s.startedAt = shift(s.startedAt)
+      if (finished && s.endedAt) s.endedAt = shift(s.endedAt)
     })
     // 示例任务是瞬间跑完的，给一个像样的执行时长
-    if (t.status !== 'running') {
+    if (finished) {
       t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
       spreadSteps(t)
     }
@@ -3661,9 +3861,35 @@ async function seedTasks(d: Db) {
   }
   // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的
   if (fe) {
+    // 这条演示用户报的那个场景：对话这一轮已经回完（awaitingUser、cliAlive 都是 true），
+    // 但它派出的子任务还在跑命令。状态行应该说「等待 1 个子任务完成」，不能说「等待你的下一条消息」+「空闲」。
+    // 界面检查 02-task 靠它当正例（靠前两条当反例：真的在等下一句）；排在「今天」这一组的最前面
+    const { task: waitTask, done: waitDone } = createTask(
+      d,
+      {
+        projectId: '',
+        mode: 'chat',
+        workflowId: '',
+        agentId: fe.id,
+        prompt: '后台命令弹窗实时看输出',
+        attachments: [],
+        cli: '',
+        model: '',
+        effort: '',
+        isolate: false,
+        askUser: false,
+        params: {},
+      },
+      true,
+    )
+    await waitDone
+    demoWaitingHelper(waitTask, fe)
+    back(waitTask, 4)
+  }
+  if (fe) {
     const chats = [
-      { prompt: '整理一份 Claude Code 和 Codex 的能力对照', minutes: 60 * 3 },
-      { prompt: '排查：侧栏任务的时间显示偶尔不对', minutes: 60 * 26 },
+      { prompt: '整理一份 Claude Code 和 Codex 的能力对照', minutes: 60 * 3, waiting: true },
+      { prompt: '排查：侧栏任务的时间显示偶尔不对', minutes: 60 * 26, waiting: false },
     ]
     for (const c of chats) {
       const { task, done } = createTask(
@@ -3687,6 +3913,13 @@ async function seedTasks(d: Db) {
       await done
       if (c.minutes > 60 * 24) demoAlerts(task)
       back(task, c.minutes)
+      // 真的停在等下一句（没有子任务、也没有后台命令在跑）的对照：状态行写「等待你的下一条消息」才是对的。
+      // 和上面那条一样不写 live 登记：那样会被当成「有一轮在跑」，接着发消息只会 held 在队列里
+      if (c.waiting) {
+        task.status = 'running'
+        task.working = false
+        task.awaitingUser = true
+      }
     }
   }
 }

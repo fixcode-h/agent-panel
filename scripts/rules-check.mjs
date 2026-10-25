@@ -230,6 +230,52 @@ errors.push(...checkModuleDocsInRoot(root))
   }
 }
 
+// 11. 界面检查用例必须写在 runShard 的回调里：runShard 在回调结束后直接 process.exit(0/1)，
+// 写在回调之后的代码永远不执行，分片却照样报「通过」，用例等于没加（见 docs/lessons/ui.md）
+for (const f of files) {
+  if (!/^scripts\/ui\/.+\.mjs$/.test(f) || f.endsWith('harness.mjs')) continue
+  const src = read(f)
+  const at = src.indexOf('await runShard(')
+  if (at < 0) continue
+  // runShard 调用本身以 `})` 结尾，之后除了注释和空行不该再有代码
+  const end = src.indexOf('\n})\n', at)
+  if (end < 0) continue
+  const rest = src
+    .slice(end + 3)
+    .split('\n')
+    .filter((l) => l.trim() && !/^\s*(\/\/|\/\*|\*)/.test(l))
+  if (rest.length)
+    errors.push(
+      `${f} 里 runShard 调用之后还有 ${rest.length} 行代码（${rest[0].trim().slice(0, 60)}）；runShard 结束后会直接退出，这些用例永远不会执行，写进 runShard 的回调里`,
+    )
+}
+
+// 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队
+// （sonner 的 visibleToasts 不是排队，见 web/src/lib/toast-queue.ts），几百处调用点各写一遍不现实，
+// 所以用一个统一入口卡住。Toaster 本体仍然从 sonner 引（只有 App.tsx 用）。
+// 确实要直接拿 sonner 的（例如在入口里实现透传）在那一行或上一行写 `sonner-toast-ok: 原因`。
+for (const f of files) {
+  if (!/^web\/src\/.+\.tsx?$/.test(f) || /^web\/src\/lib\/toast(-queue)?(\.test)?\.ts$/.test(f)) continue
+  const lines = read(f).split('\n')
+  lines.forEach((l, i) => {
+    // 只看从 sonner 引东西的行；`import type` 不算（类型不需要经过队列）
+    if (!/^import\b/.test(l) || !/['"]sonner['"]/.test(l) || /^import\s+type\b/.test(l)) return
+    // `import { toast }`、`import { toast as sonnerToast }`、`import { Toaster, toast }`、
+    // `import sonner from 'sonner'`、`import * as sonner from 'sonner'` 都算
+    const named = /\{[^}]*\}/.test(l) ? (/\{[^}]*\}/.exec(l)?.[0] ?? '') : ''
+    const namedHasToast =
+      /(?:^|[{,\s])(?:toast|sonner)\b/.test(named.replace(/\sas\s+[^,}]+/g, '')) ||
+      /\{[^}]*\b(?:toast|sonner)\s+as\b/.test(named)
+    const defaultImport = /^import\s+(?:toast|sonner)\s*(?:,|from\b)/.test(l)
+    const namespaceImport = /^import\s+\*\s+as\s+(?:toast|sonner)\b/.test(l)
+    if (!namedHasToast && !defaultImport && !namespaceImport) return
+    if (/sonner-toast-ok/.test(l) || /sonner-toast-ok/.test(lines[i - 1] ?? '')) return
+    errors.push(
+      `${f}:${i + 1} 直接从 sonner 引了 toast，提示要排队，改成 import { toast } from '@/lib/toast'：${l.trim()}`,
+    )
+  })
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exit(1)

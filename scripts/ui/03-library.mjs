@@ -164,6 +164,116 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await report.getByText('工作流优化', { exact: true }).count()))
     errors.push('AI 分析：接着追问后右侧的报告不见了')
   await check(p, 'AI分析-追问后报告还在')
+  // 功能面板和中间对话的分界可以左右拖（和文件面板同一套 usePaneWidth / ResizeHandle，各自记宽度）：
+  // 拖动后宽度跟着变、刷新后还是这个宽度；覆盖态（窄屏抽屉）没有并排可拖，那时不该有拖动条
+  {
+    // 拖动条挂在右栏 aside 上（不在 data-analysis-panel 里面）。宽度和位置都从拖动条自己的那一栏量：
+    // 页面背后还留着项目页的右栏，按全局定位会量到别的栏（AI 分析窗口是 Portal 挂在 body 末尾的）
+    const grip = p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible')
+    const railBox = () =>
+      p.evaluate(() => {
+        const g = [...document.querySelectorAll('[role="separator"][aria-label="拖动调整功能面板的宽度"]')].find(
+          (el) => {
+            const r = el.getBoundingClientRect()
+            return r.width > 0 && r.height > 0
+          },
+        )
+        const rail = g?.closest('[data-task-panel]')
+        if (!rail) return null
+        const r = rail.getBoundingClientRect()
+        const row = rail.parentElement?.getBoundingClientRect()
+        return { width: r.width, left: r.x - (row?.x ?? 0), rowW: row?.width ?? 0 }
+      })
+    const width = async () => (await railBox())?.width ?? 0
+    const before = await width()
+    const g = await grip.boundingBox().catch(() => null)
+    if (!(await grip.count())) errors.push('AI分析-功能面板宽度：宽屏时没有拖动条')
+    else if (!g) errors.push('AI分析-功能面板宽度：拖动条量不到位置')
+    else if (Math.abs(before - 440) > 2) errors.push(`AI分析-功能面板宽度：默认宽度是 ${before}，不是 440`)
+    else {
+      // 往左拖 120：右栏在右边，往左拖变宽
+      await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+      await p.mouse.down()
+      await p.mouse.move(g.x - 120, g.y + g.height / 2, { steps: 10 })
+      await p.mouse.up()
+      await settle(p)
+      const after = await width()
+      if (Math.abs(after - (before + 120)) > 4)
+        errors.push(`AI分析-功能面板宽度：拖动后宽度是 ${after}，没到 ${before + 120}`)
+      // 宽度记在本机（usePaneWidth 写 pane:<key>）：存进去的值要等于拖过的宽度，
+      // 而且组件重新挂载时从它初始化——关掉分析窗口再开，宽度不回到默认
+      {
+        const saved = await p.evaluate(() => localStorage.getItem('pane:report-panel'))
+        if (Number(saved) !== Math.round(after))
+          errors.push(`AI分析-功能面板宽度：记下的宽度是 ${saved}，不是 ${after}`)
+        await check(p, 'AI分析-功能面板宽度', ['工作流优化'])
+        // 窗口收起再展开：TaskView 重新挂载，宽度从 localStorage 恢复（不用新建分析对话，后面的归属断言还能用）
+        await p.getByRole('dialog').getByRole('button', { name: '最小化' }).click()
+        await p
+          .getByRole('button', { name: '展开' })
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('AI分析-功能面板宽度：最小化后没有出现浮条'))
+        await p.getByRole('button', { name: '展开' }).click()
+        await report.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
+        await settle(p)
+        const kept = await width()
+        if (Math.abs(kept - after) > 4)
+          errors.push(`AI分析-功能面板宽度：重新展开后宽度是 ${kept}，没保持拖过的 ${after}`)
+        await check(p, 'AI分析-功能面板宽度-重新展开后保持')
+        // 上限按这一栏自己的容器算（paneMax 从右栏的父容器量）：拖到最宽也不会把中间区挤没。
+        // 用量几何关系验证：右栏最宽时左边的中间区仍不小于 320（都从拖动条自己那一栏量，不全局取栏）
+        const wide = await grip.boundingBox().catch(() => null)
+        if (!wide) errors.push('AI分析-功能面板宽度：拖到最宽前量不到拖动条')
+        else {
+          await p.mouse.move(wide.x + wide.width / 2, wide.y + wide.height / 2)
+          await p.mouse.down()
+          await p.mouse.move(wide.x - 2000, wide.y + wide.height / 2, { steps: 10 })
+          await p.mouse.up()
+          await settle(p)
+          const max = await width()
+          // 拖动条落在右栏左边缘：定位已经限定在拖动条自己的那一栏（见 railBox），这里直接用
+          const geo = await railBox()
+          if (!geo) errors.push('AI分析-功能面板宽度：量不到被拖的那一栏')
+          else {
+            if (geo.left < 320 - 2)
+              errors.push(`AI分析-功能面板宽度：拖到最宽后中间只剩 ${Math.round(geo.left)}，小于 320`)
+            if (geo.rowW && max > geo.rowW - 320 + 2)
+              errors.push(`AI分析-功能面板宽度：拖到最宽 ${Math.round(max)}，超过了容器 ${Math.round(geo.rowW)} 减 320`)
+          }
+          await check(p, 'AI分析-功能面板宽度-上限')
+        }
+      }
+      // 双击拖动条恢复默认宽度
+      const g2 = await grip.boundingBox().catch(() => null)
+      if (!g2) errors.push('AI分析-功能面板宽度：恢复默认前量不到拖动条')
+      else {
+        await p.mouse.dblclick(g2.x + g2.width / 2, g2.y + g2.height / 2)
+        await settle(p)
+        const reset = await width()
+        if (Math.abs(reset - 440) > 2) errors.push(`AI分析-功能面板宽度：双击后宽度是 ${reset}，没回到 440`)
+        await check(p, 'AI分析-功能面板宽度-双击恢复')
+        // 窄屏（xl 以下）功能面板是盖在对话上的抽屉（reportCover），没有并排可拖，那时不该有拖动条
+        await p.setViewportSize({ width: 1024, height: 900 })
+        await settle(p)
+        // 窄屏下右栏被 CSS 隐住（xl:flex 生效不了），从标题栏那个只在窄屏显示的按钮盖在对话上打开；
+        // 宽屏那个按钮此刻是 hidden，点它会当成「收起」
+        await p.getByRole('dialog').locator('button[aria-label="分析报告"]:visible').first().click()
+        await p
+          .locator('[data-analysis-panel="run"]')
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('AI分析-功能面板宽度：窄屏下没有打开功能面板'))
+        if (await p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible').count())
+          errors.push('AI分析-功能面板宽度：窄屏覆盖态不该有拖动条')
+        await check(p, 'AI分析-功能面板宽度-窄屏无拖动条')
+        // 抽屉盖着标题栏，用抽屉自己的「收起功能面板」收起；再回到宽屏，后面的用例还是宽屏并排的样子
+        await p.locator('[data-analysis-panel="run"]').getByRole('button', { name: '收起功能面板' }).click()
+        await p.setViewportSize({ width: 1440, height: 900 })
+        await settle(p)
+        if (!(await p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible').count()))
+          errors.push('AI分析-功能面板宽度：回到宽屏后拖动条没有回来')
+      }
+    }
+  }
   // 工作流执行的分析开在项目里（不是挂在某个对话下）：窗口给的是「在项目对话里打开」
   if (!(await p.getByRole('button', { name: '在项目对话里打开' }).count()))
     errors.push('AI 分析：工作流执行的分析没有开在项目对话里')
@@ -247,10 +357,117 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'Agent-参数说明')
   await p.getByRole('tab', { name: /^概览/ }).click()
   await check(p, '角色-概览', ['能开启子对话', '能启动计划', '运行环境'])
+  // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')
-  await check(p, 'Skills与命令', ['commit-message', 'code-review'])
+  await check(p, 'Skills与命令', ['commit-message', 'code-review', '文件结构'])
+  // 地址跟着选中项走：刷新、复制链接能回到同一项
+  await p
+    .getByRole('button', { name: /commit-message/ })
+    .first()
+    .click()
+  await p.waitForFunction(() => location.hash.includes('#/library/commit-message'), { timeout: 5000 }).catch(() => {})
+  if (!(await p.evaluate(() => location.hash)).includes('#/library/commit-message'))
+    errors.push('Skills与命令：点技能后地址里没有记下选中项')
+  // 搜索只过滤列表，不改选中项：搜完清空还要回到原来那一项（以前会把地址改成第一项）
+  const hashBefore = await p.evaluate(() => location.hash)
+  await p.getByPlaceholder('搜索名字和说明').fill('code-review')
+  await p.waitForTimeout(200)
+  if ((await p.evaluate(() => location.hash)) !== hashBefore)
+    errors.push('Skills与命令-搜索：搜索时地址里的选中项被改了')
+  await p.getByPlaceholder('搜索名字和说明').fill('')
+  await p.waitForTimeout(200)
+  if (!(await p.getByLabel('内容', { exact: true }).count()))
+    errors.push('Skills与命令-搜索：清空搜索后详情页没有回到原来那一项')
+  await check(p, 'Skills与命令-搜索')
+  await check(p, 'Skill详情', ['复制给别的 Agent', '保存', 'SKILL.md'])
+  // 详情页里直接编辑主文件并保存：保存按钮只在有改动时可点
+  const editor = p.getByLabel('内容', { exact: true }).first()
+  const mainBefore = await editor.inputValue()
+  await editor.fill(`${mainBefore}\n\n加一行说明，验证详情的保存。`)
+  await p.getByRole('button', { name: '保存', exact: true }).first().click()
+  await p
+    .getByText('已保存')
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('Skill详情：保存后没有提示已保存'))
+  await check(p, 'Skill详情-保存')
+  // 文件结构：主文件置顶，目录默认展开（点一下才收起）；点开文件能看内容
+  await check(p, 'Skill详情-文件树', ['pitfalls.md'])
+  await p.getByRole('button', { name: 'references' }).click()
+  if (await p.getByRole('button', { name: 'pitfalls.md' }).count())
+    errors.push('Skill详情-文件树：点目录没有收起里面的文件')
+  await check(p, 'Skill详情-目录收起')
+  await p.getByRole('button', { name: 'references' }).click()
+  await p.getByRole('button', { name: 'pitfalls.md' }).click()
+  await p
+    .getByLabel('文件内容')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('Skill详情-文件树：点开文件后没有内容框'))
+  const extra = await p
+    .getByLabel('文件内容')
+    .inputValue()
+    .catch(() => '')
+  if (!extra.includes('pitfalls.md')) errors.push(`Skill详情-文件树：读到的内容不对（「${extra.slice(0, 40)}」）`)
+  await check(p, 'Skill详情-附加文件')
+  // 改一个附加文件再保存，重开还在
+  await p.getByLabel('文件内容').fill('# references/pitfalls.md\n\n改过的内容。\n')
+  // 顶部主文件也有「保存」，此时是灰的：按可点击的那个定位附加文件的保存
+  await p.getByRole('button', { name: '保存', exact: true, disabled: false }).first().click()
+  await p
+    .getByText('已保存')
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => {})
+  await p.getByRole('button', { name: 'SKILL.md' }).click()
+  await p.getByRole('button', { name: 'pitfalls.md' }).click()
+  const again = await p
+    .getByLabel('文件内容')
+    .inputValue()
+    .catch(() => '')
+  if (!again.includes('改过的内容')) errors.push('Skill详情-附加文件：保存后重开没有读到改过的内容')
+  await check(p, 'Skill详情-附加文件保存')
+  // 有未保存的改动时，外面刷新一次（改附加文件会触发）不能把编辑器里的内容冲掉（评审 R3）
+  const draft = `${await p.getByLabel('内容', { exact: true }).inputValue()}
+
+没保存的草稿。`
+  await p.getByLabel('内容', { exact: true }).fill(draft)
+  await p.getByRole('button', { name: 'pitfalls.md' }).click()
+  await p.getByLabel('文件内容').waitFor({ timeout: 5000 })
+  if ((await p.getByLabel('内容', { exact: true }).inputValue()) !== draft)
+    errors.push('Skill详情：刷新后主文件里没保存的改动被冲掉了')
+  await check(p, 'Skill详情-未保存不被刷新冲掉')
+  // 留着上面的草稿直接切到另一个技能：新技能的内容必须真的读进来（不能被上一个技能的草稿挡住）
+  await p
+    .getByRole('button', { name: /code-review/ })
+    .first()
+    .click()
+  await p.waitForFunction(() => location.hash.includes('#/library/code-review'), { timeout: 5000 }).catch(() => {})
+  const switched = await p
+    .getByLabel('内容', { exact: true })
+    .inputValue()
+    .catch(() => '')
+  if (!switched.includes('code-review'))
+    errors.push(`Skills与命令：切到另一个技能后编辑器里不是它的内容（「${switched.slice(0, 40)}」）`)
+  await check(p, 'Skills与命令-切技能读新内容')
+
+  // AI 优化还在，而且是对这一项做（入口在详情页头部）
+  await p.getByRole('button', { name: 'AI 优化' }).click()
+  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
+  await p.keyboard.press('Enter')
+  await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
+  await p.getByRole('button', { name: '应用修改' }).click()
+  await p
+    .getByRole('button', { name: '应用修改' })
+    .waitFor({ state: 'detached', timeout: 10000 })
+    .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
+  // 自带 Skill 分页：左边是列表，右边是引导（没有详情）
   await p.getByRole('radio', { name: '自带 Skill' }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  // 自带 Skill 分页没有可新建的东西：「新建」按钮不该出现（以前点了没反应）
+  if (await p.getByRole('button', { name: '新建', exact: true }).count())
+    errors.push('自带Skill：这一页不该有「新建」按钮')
+  await check(p, '自带Skill-没有新建')
+
   // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
   if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
   await p.getByRole('button', { name: '更新全部' }).click()
@@ -261,23 +478,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => {})
   if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
   await check(p, '自带Skill-一键更新', ['已安装'])
-  await p.getByRole('radio', { name: 'Skill', exact: true }).click()
-  await p.getByText('commit-message', { exact: true }).first().click()
-  await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
-  await p.getByRole('button', { name: 'AI 优化' }).click()
-  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
-  await p.keyboard.press('Enter')
-  await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
-  // 应用完 AI 优化的窗口自己关上；等它关掉再关下面的编辑框（以前按 Esc，机器慢时会把编辑框也关掉）
-  await p.getByRole('button', { name: '应用修改' }).click()
-  await p
-    .getByRole('button', { name: '应用修改' })
-    .waitFor({ state: 'detached', timeout: 10000 })
-    .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
-  // 命令：「所有 Agent」的命令和 AI 创建（上面的 Skill 编辑框还开着，先关掉）
-  await p.getByRole('dialog').getByText('关闭', { exact: true }).click()
+  // 命令：详情页没有文件结构（命令只有一个文件），「所有 Agent」的命令和 AI 创建都在
   await p.getByRole('radio', { name: '命令' }).click()
   await check(p, '命令-所有Agent', ['/changelog', '所有 Agent'])
+  await p
+    .getByRole('button', { name: /changelog/ })
+    .first()
+    .click()
+  await p
+    .getByLabel('内容', { exact: true })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('命令详情：没有打开正文编辑框'))
+  if (await p.getByText('文件结构').count()) errors.push('命令详情：命令不该显示文件结构')
+  await check(p, '命令详情', ['复制给别的 Agent'])
   await p.getByRole('button', { name: 'AI 创建' }).click()
   await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('/i18n：找出没翻译的文案，补上英文')
   await p.keyboard.press('Enter')

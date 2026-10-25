@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ExternalLink, FileDown, Loader2, Play, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'

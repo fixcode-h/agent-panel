@@ -12,6 +12,7 @@ import {
   apiModelPrefix,
   apiProvider,
   apiVars,
+  type ApiProtocol,
   fillEdits,
   fillTemplate,
   nativeModelId,
@@ -1017,6 +1018,16 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
 
 // ---- 全局 API：读接口的模型列表 ----
 
+/** Anthropic 接口要求的版本头，列模型和发消息两处都用它 */
+const ANTHROPIC_VERSION = '2023-06-01'
+/** 探测用的提示词极短、输出只给 1 个 token：只为确认这个模型能通，不花额度 */
+const PROBE_PROMPT = 'ping'
+const PROBE_MAX_TOKENS = 1
+/** 探针比列模型慢（要等模型真的回一个 token），给宽一点但仍有限，不无限等 */
+const PROBE_TIMEOUT_MS = 60_000
+/** Gemini 协议没填地址时的官方地址（列模型、发请求都用它） */
+const GEMINI_DEFAULT_BASE = 'https://generativelanguage.googleapis.com'
+
 /**
  * 从 API 读可用的模型：按协议用对应的接口和请求头。
  * 接口地址按实际要用的算（用户填了就用自己的，留空时用厂家默认），和输入框里显示的一致
@@ -1028,7 +1039,7 @@ export async function fetchApiModels(
   if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
   const url =
     api.protocol === 'gemini'
-      ? `${base || 'https://generativelanguage.googleapis.com'}/v1beta/models?pageSize=200`
+      ? `${base || GEMINI_DEFAULT_BASE}/v1beta/models?pageSize=200`
       : api.protocol === 'anthropic'
         ? `${base}${/\/v1$/.test(base) ? '' : '/v1'}/models?limit=1000`
         : `${base}/models`
@@ -1037,7 +1048,7 @@ export async function fetchApiModels(
       ? { 'x-goog-api-key': api.apiKey }
       : api.protocol === 'anthropic'
         ? {
-            'anthropic-version': '2023-06-01',
+            'anthropic-version': ANTHROPIC_VERSION,
             ...(api.authHeader === 'bearer' ? { authorization: `Bearer ${api.apiKey}` } : { 'x-api-key': api.apiKey }),
           }
         : { authorization: `Bearer ${api.apiKey}` }
@@ -1047,10 +1058,7 @@ export async function fetchApiModels(
   const body = (await res.json().catch(() => undefined)) as any
   if (!res.ok)
     throw new Error(
-      t('接口返回 {status}：{detail}', {
-        status: String(res.status),
-        detail: String(body?.error?.message ?? body?.error ?? body?.message ?? res.statusText).slice(0, 200),
-      }),
+      t('接口返回 {status}：{detail}', { status: String(res.status), detail: errorDetail(body, res.statusText) }),
     )
   const list: unknown[] = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : []
   const ids = list
@@ -1077,15 +1085,141 @@ export async function fetchApiBalance(api: Pick<ApiConfig, 'name' | 'apiKey'>): 
   }).catch((e: Error) => {
     throw new Error(t('连不上接口：{error}', { error: e.message }))
   })
-  const body = (await res.json().catch(() => undefined)) as any
+  const body = await res.json().catch(() => undefined)
+  if (!res.ok)
+    throw new Error(
+      t('接口返回 {status}：{detail}', { status: String(res.status), detail: errorDetail(body, res.statusText) }),
+    )
+  return parseApiBalance(body)
+}
+
+// ---- 全局 API：用一个模型真的跑一次请求 ----
+
+/** 探针的输入：只用到列模型和发一个小请求要的字段；模型名只在报错里出现，不写日志 */
+export type ApiProbeInput = Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & {
+  name?: string
+  model: string
+}
+
+/**
+ * 用一个模型真的发一次最小的推理请求，确认这个模型是通的。
+ * 成功返回实际用到的模型名；失败把上游的真实状态码和原因原文带出来，不重试、不吞错误。
+ * 密钥只放在请求头里，错误文案只用固定文案和接口给的原因，不把密钥拼进去。
+ */
+export async function probeApiModel(api: ApiProbeInput): Promise<{ model: string }> {
+  const base = apiBaseUrl(api).replace(/\/+$/, '')
+  if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
+  const apiKey = api.apiKey.trim()
+  if (!apiKey) throw new Error(t('先填密钥'))
+  const model = api.model.trim()
+  if (!model) throw new Error(t('先选一个模型'))
+
+  const [url, body, headers] = probeRequest(api.protocol, base || GEMINI_DEFAULT_BASE, model, apiKey, api.authHeader)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+  }).catch((e: Error) => {
+    // 超时在 Node 里报 TimeoutError：换成好读的一句，别把整套堆栈丢给用户
+    if (e.name === 'TimeoutError')
+      throw new Error(t('模型 {model} 在 {seconds} 秒内没有响应', { model, seconds: String(PROBE_TIMEOUT_MS / 1000) }))
+    throw new Error(t('连不上接口：{error}', { error: e.message }))
+  })
+  const text = await res.text().catch((e: Error) => {
+    // 上游先回 200、body 迟迟不吐时，超时发生在读 body 这一步：不能吞成空正文，
+    // 否则会掉到下面的「不是模型回复」分支，把超时报成内容不对
+    if (e.name === 'TimeoutError')
+      throw new Error(t('模型 {model} 在 {seconds} 秒内没有响应', { model, seconds: String(PROBE_TIMEOUT_MS / 1000) }))
+    // 读 body 断流：交给下面的判断，正文拿不到也算不通
+    return ''
+  })
   if (!res.ok)
     throw new Error(
       t('接口返回 {status}：{detail}', {
         status: String(res.status),
-        detail: String(body?.error?.message ?? body?.error ?? body?.message ?? res.statusText).slice(0, 200),
+        detail: errorDetail(text, res.statusText),
       }),
     )
-  return parseApiBalance(body)
+  // 有的接口出错也回 200：把原因当正文回来时同样算不通
+  if (!looksLikeAnswer(api.protocol, text))
+    throw new Error(t('接口返回的内容不是模型回复：{detail}', { detail: text.slice(0, 200) }))
+  return { model }
+}
+
+/** 从接口回的错误里取一句能看的说明：兼容各家的 error.message / error / message 写法；传正文文本时先解析 */
+function errorDetail(bodyOrText: unknown, statusText: string) {
+  const body = typeof bodyOrText === 'string' ? jsonBody(bodyOrText) : (bodyOrText as any)
+  // error 是对象但没有 message 时（如 {error:{type:'invalid_request_error'}}）不能直接 String()，
+  // 那样会输出 [object Object]；退到 type / code，都没有就只用状态文本
+  const raw = body?.error?.message ?? body?.error ?? body?.message
+  const detail =
+    raw === undefined || raw === null
+      ? statusText
+      : typeof raw === 'string'
+        ? raw
+        : (raw?.message ?? raw?.type ?? raw?.code ?? statusText)
+  return String(detail ?? statusText).slice(0, 200)
+}
+
+/** 正文解成 JSON；不是 JSON 时给 undefined（有的接口出错回的是 HTML 或空正文） */
+function jsonBody(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+/** 回复里真的有一段模型输出才算通 */
+function looksLikeAnswer(protocol: ApiProtocol, text: string) {
+  const body = jsonBody(text)
+  if (protocol === 'anthropic') return Array.isArray(body?.content)
+  if (protocol === 'gemini') return Array.isArray(body?.candidates)
+  if (protocol === 'openai-responses') return !!body?.output
+  return Array.isArray(body?.choices)
+}
+
+/**
+ * 按协议构造最小的一次推理请求：地址、请求体、认证头。
+ * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions，
+ * Gemini 是 /v1beta/models/<模型>:generateContent。
+ */
+function probeRequest(
+  protocol: ApiProtocol,
+  base: string,
+  model: string,
+  apiKey: string,
+  authHeader: ApiConfig['authHeader'],
+): [string, Record<string, unknown>, Record<string, string>] {
+  const v1 = /\/v1$/.test(base) ? base : `${base}/v1`
+  if (protocol === 'anthropic')
+    return [
+      `${v1}/messages`,
+      { model, max_tokens: PROBE_MAX_TOKENS, messages: [{ role: 'user', content: PROBE_PROMPT }] },
+      {
+        'anthropic-version': ANTHROPIC_VERSION,
+        ...(authHeader === 'bearer' ? { authorization: `Bearer ${apiKey}` } : { 'x-api-key': apiKey }),
+      },
+    ]
+  if (protocol === 'gemini')
+    return [
+      // 官方列模型回的是 models/<名字> 全名，手填进去也要能测：剥掉前缀再拼（和 fetchApiModels 一致）
+      `${base}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
+      { contents: [{ parts: [{ text: PROBE_PROMPT }] }], generationConfig: { maxOutputTokens: PROBE_MAX_TOKENS } },
+      { 'x-goog-api-key': apiKey },
+    ]
+  if (protocol === 'openai-responses')
+    return [
+      `${v1}/responses`,
+      { model, input: PROBE_PROMPT, max_output_tokens: PROBE_MAX_TOKENS },
+      { authorization: `Bearer ${apiKey}` },
+    ]
+  return [
+    `${v1}/chat/completions`,
+    { model, max_tokens: PROBE_MAX_TOKENS, messages: [{ role: 'user', content: PROBE_PROMPT }] },
+    { authorization: `Bearer ${apiKey}` },
+  ]
 }
 
 export function accountsApi() {
@@ -1135,6 +1269,17 @@ export function accountsApi() {
           }).safeParse(await c.req.json())
           if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
           return c.json({ models: await fetchApiModels(p.data) })
+        }),
+      )
+      // 用一个模型真的跑一次最小请求，确认这个模型是通的（设置页「测试连接」选了模型时走这里）
+      .post(
+        '/api-probe',
+        guard(async (c) => {
+          const p = ApiConfig.pick({ name: true, protocol: true, baseUrl: true, apiKey: true, authHeader: true })
+            .extend({ model: z.string().trim().min(1) })
+            .safeParse(await c.req.json())
+          if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
+          return c.json(await probeApiModel(p.data))
         }),
       )
       // 查 API 账户余额（在服务端请求：密钥不发给页面里的第三方地址，也不受跨域限制）

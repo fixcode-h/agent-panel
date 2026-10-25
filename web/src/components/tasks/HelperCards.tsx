@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
-import { helperRunning, stepMs } from '@shared/task'
+import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { useEscape } from '@/lib/useEscape'
@@ -16,16 +16,13 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
 import { AnalyzeDialog } from './Evolution'
+import { HelperBriefCard } from './HelperBriefCard'
 import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
 const helperTime = (step: TaskStep, now: number) =>
   step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
-
-/** 列表里的顺序：正在跑的、排队的、没做完的、做完的、终止的；同一组里按派出的顺序 */
-const helperRank = (s: TaskStep) =>
-  helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
 
 /** 还能终止：在跑或在排队 */
 const stoppable = (s: TaskStep) => s.status === 'running' || s.status === 'pending'
@@ -139,10 +136,8 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  const steps = ids
-    .map((id) => task.steps.find((s) => s.id === id))
-    .filter((s): s is TaskStep => !!s)
-    .sort((a, b) => helperRank(a) - helperRank(b))
+  // 顺序见 sortHelpers：执行中 → 排队中 → 未完成 → 已完成 → 已终止，同一档里最新的在最上面
+  const steps = sortHelpers(ids.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s))
   const running = steps.filter(helperRunning)
   const failed = steps.filter((s) => s.status === 'failed')
   const now = useNow(running.length > 0)
@@ -314,6 +309,17 @@ export function HelperWindow({
           </header>
           <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
+              {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
+                  它自己收起吸顶（有对话流时默认收起），窗口贴底看最新输出也不影响它一直可见；
+                  没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
+                  不然贴底会把刚展开的正文顶到视野之上 */}
+              <HelperBriefCard
+                step={step}
+                teamNames={teamNames}
+                msgs={msgs.length}
+                pin={scroller.pin}
+                unpin={scroller.unpin}
+              />
               {msgs.length ? (
                 <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />
               ) : (

@@ -1,4 +1,4 @@
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { AssistKind, Proposal } from '@shared/assist'
 import { t } from '@shared/i18n'
 import { api } from './api'

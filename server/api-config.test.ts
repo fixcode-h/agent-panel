@@ -19,7 +19,7 @@ import {
   setModelInput,
   setModelLimits,
 } from '../shared/accounts.ts'
-import { mergeJson, fetchApiBalance, fetchApiModels } from './accounts.ts'
+import { mergeJson, fetchApiBalance, fetchApiModels, probeApiModel } from './accounts.ts'
 import { toApi } from './api-detect.ts'
 import { agentRun, defaultSettings } from '../shared/settings.ts'
 import { CliSettings } from '../shared/schema.ts'
@@ -401,6 +401,200 @@ test('API 测试连接：成功返回模型，失败带状态和原因', async (
     await assert.rejects(() => fetchApiModels({ ...api, baseUrl: `${baseUrl}/bad` }), /401.*bad key/)
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('API 探针：用选中的模型真的发一次请求，成功返回模型名', async () => {
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json')
+    let raw = ''
+    req.on('data', (c) => (raw += c))
+    req.on('end', () => {
+      const body = JSON.parse(raw || '{}')
+      // 只有列过的模型给回复，其他模型名按不存在回 404
+      if (req.url !== '/v1/chat/completions' || body.model !== 'm-1') {
+        res.statusCode = 404
+        res.end(JSON.stringify({ error: { message: 'model not found' } }))
+        return
+      }
+      res.end(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }))
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as { port: number }
+  const baseUrl = `http://127.0.0.1:${port}`
+  const api = { protocol: 'openai-chat' as const, apiKey: 'k', authHeader: 'x-api-key' as const, baseUrl }
+  try {
+    assert.deepEqual(await probeApiModel({ ...api, model: 'm-1' }), { model: 'm-1' })
+    // 模型不存在时把上游的状态码和原因原文带出来
+    await assert.rejects(() => probeApiModel({ ...api, model: 'nope' }), /404.*model not found/)
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('API 探针：没填地址、没填密钥、没选模型时不发请求，直接说明原因', async () => {
+  const base = { protocol: 'openai-chat' as const, authHeader: 'x-api-key' as const }
+  await assert.rejects(() => probeApiModel({ ...base, name: '自定义 API', baseUrl: ' ', apiKey: 'k', model: 'm-1' }), {
+    message: t('先填接口地址'),
+  })
+  await assert.rejects(() => probeApiModel({ ...base, baseUrl: 'https://x.example', apiKey: '  ', model: 'm-1' }), {
+    message: t('先填密钥'),
+  })
+  await assert.rejects(() => probeApiModel({ ...base, baseUrl: 'https://x.example', apiKey: 'k', model: '  ' }), {
+    message: t('先选一个模型'),
+  })
+})
+
+test('API 探针：401 带上游原因，200 但正文不是模型回复也算不通', async () => {
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/v1/messages') {
+      // bearer 方式给通，x-api-key 方式按密钥错回 401：两种认证头都真的发出去了
+      if (String(req.headers.authorization ?? '').startsWith('Bearer ')) {
+        res.end(JSON.stringify({ content: [{ type: 'text', text: 'pong' }] }))
+        return
+      }
+      res.statusCode = 401
+      res.end(JSON.stringify({ error: { message: 'invalid x-api-key' } }))
+      return
+    }
+    // 200 但只有错误对象：有的网关出错也回 200
+    res.end(JSON.stringify({ error: { message: 'quota exceeded' } }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as { port: number }
+  const baseUrl = `http://127.0.0.1:${port}`
+  try {
+    assert.deepEqual(
+      await probeApiModel({ protocol: 'anthropic', baseUrl, apiKey: 'k', authHeader: 'bearer', model: 'claude' }),
+      { model: 'claude' },
+    )
+    await assert.rejects(
+      () => probeApiModel({ protocol: 'anthropic', baseUrl, apiKey: 'k', authHeader: 'x-api-key', model: 'claude' }),
+      /401.*invalid x-api-key/,
+    )
+    await assert.rejects(
+      () =>
+        probeApiModel({
+          protocol: 'openai-chat',
+          baseUrl: `${baseUrl}/weird`,
+          apiKey: 'k',
+          authHeader: 'x-api-key',
+          model: 'm',
+        }),
+      /不是模型回复/,
+    )
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('API 探针：200 已回到、读 body 时才超时，也报超时而不是「不是模型回复」', async () => {
+  // 上游先给 200 响应头、body 迟迟不吐：超时在 res.text() 阶段触发，不能吞成空正文
+  const real = globalThis.fetch
+  globalThis.fetch = (async () => ({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    text: async () => {
+      const e = new Error('The operation was aborted due to timeout')
+      e.name = 'TimeoutError'
+      throw e
+    },
+  })) as unknown as typeof fetch
+  try {
+    await assert.rejects(
+      () =>
+        probeApiModel({
+          protocol: 'openai-chat',
+          baseUrl: 'https://x.example',
+          apiKey: 'k',
+          authHeader: 'x-api-key',
+          model: 'slow-model',
+        }),
+      { message: t('模型 {model} 在 {seconds} 秒内没有响应', { model: 'slow-model', seconds: '60' }) },
+    )
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('API 探针：Gemini 模型名带 models/ 前缀时先剔掉再拼地址', async () => {
+  const real = globalThis.fetch
+  let called = ''
+  globalThis.fetch = (async (url: string) => {
+    called = String(url)
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ text: 'pong' }] } }] }),
+    }
+  }) as unknown as typeof fetch
+  try {
+    // 官方列模型回的就是 models/<名字> 这种全名，手填进去也要能测
+    await probeApiModel({
+      protocol: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      apiKey: 'k',
+      authHeader: 'x-api-key',
+      model: 'models/gemini-3-pro',
+    })
+    assert.equal(called, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent')
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('API 探针：错误体里没有 message 时不输出 [object Object]', async () => {
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.statusCode = 400
+    // 只给 type 不给 message 的错误体：常见于部分网关
+    res.end(JSON.stringify({ error: { type: 'invalid_request_error' } }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as { port: number }
+  try {
+    await assert.rejects(
+      () =>
+        probeApiModel({
+          protocol: 'openai-chat',
+          baseUrl: `http://127.0.0.1:${port}`,
+          apiKey: 'k',
+          authHeader: 'x-api-key',
+          model: 'm',
+        }),
+      (e: Error) => !e.message.includes('[object Object]') && /400.*invalid_request_error/.test(e.message),
+    )
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+test('API 探针：一直不回时按超时报错，不无限等', async () => {
+  // 真正等 60 秒太久：重写全局 fetch，直接把 AbortSignal.timeout 的报错交回来，验证超时的处理分支
+  const real = globalThis.fetch
+  globalThis.fetch = (async () => {
+    const e = new Error('The operation was aborted due to timeout')
+    e.name = 'TimeoutError'
+    throw e
+  }) as typeof fetch
+  try {
+    await assert.rejects(
+      () =>
+        probeApiModel({
+          protocol: 'openai-chat',
+          baseUrl: 'https://x.example',
+          apiKey: 'k',
+          authHeader: 'x-api-key',
+          model: 'slow-model',
+        }),
+      { message: t('模型 {model} 在 {seconds} 秒内没有响应', { model: 'slow-model', seconds: '60' }) },
+    )
+  } finally {
+    globalThis.fetch = real
   }
 })
 

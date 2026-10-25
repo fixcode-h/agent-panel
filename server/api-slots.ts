@@ -105,17 +105,53 @@ export class ApiSlot {
     return this.held
   }
   private pending?: Promise<boolean>
+  /** 排队中的这次拿名额：放弃时用它把排队撤掉，否则名额会放行给一个已经不要的 slot，永远不还 */
+  private waiting?: AbortController
+  /** 拿名额的代数：drop 放弃了上一代排队后，新一代的 finally 不能被上一代误清 */
+  private gen = 0
   take(signal: AbortSignal, onQueue?: (ahead: number) => void): Promise<boolean> {
     if (this.held) return Promise.resolve(true)
     // 同一次调用两处同时要拿回（等下一句和工具里的等待）：共用一次排队，不多占
-    this.pending ??= acquireApi(this.key, signal, onQueue).then((ok) => {
-      this.pending = undefined
-      if (ok) this.held = true
-      return ok
-    })
+    this.pending ??= this.acquire(signal, onQueue)
     return this.pending
   }
+  private async acquire(signal: AbortSignal, onQueue?: (ahead: number) => void): Promise<boolean> {
+    const gen = ++this.gen
+    // 外部停止和「自己放弃排队」合成一个信号：acquireApi 收到它就离开队伍
+    const give = new AbortController()
+    const onAbort = () => give.abort(signal.reason)
+    if (signal.aborted) give.abort(signal.reason)
+    else signal.addEventListener('abort', onAbort, { once: true })
+    this.waiting = give
+    let ok = false
+    try {
+      ok = await acquireApi(this.key, give.signal, onQueue)
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+      // waiting 和 pending 都要比代数：drop 后马上重新排队时，上一代的终于清理跑得比新一代晚，
+      // 无条件写回会把新一代的撤销句柄清掉，下一次 drop 就撤销不了排队（名额照样漏）
+      if (this.gen === gen) {
+        this.waiting = undefined
+        this.pending = undefined
+      }
+    }
+    if (!ok) return false
+    // 刚被放行（名额已经算到这一次名下）就放弃了：立刻还回去，不然这个名额再也没人还
+    if (give.signal.aborted) {
+      releaseApi(this.key)
+      return false
+    }
+    this.held = true
+    return true
+  }
+  /** 让出名额；排队中则撤销排队，两种情况都不会多占或泄漏 */
   drop() {
+    if (this.waiting) {
+      this.waiting.abort()
+      // 这次排队已经放弃：新的 take 不在这条注定失败的排队上复用
+      this.gen++
+      this.pending = undefined
+    }
     if (!this.held) return
     this.held = false
     releaseApi(this.key)

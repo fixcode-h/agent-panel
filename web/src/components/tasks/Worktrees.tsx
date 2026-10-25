@@ -1,14 +1,32 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ArrowRight, CircleAlert, CircleCheck, GitBranch, GitMerge, Loader2, Sparkles, Trash2 } from 'lucide-react'
-import { toast } from 'sonner'
+import {
+  ArrowRight,
+  CircleAlert,
+  CircleCheck,
+  Copy,
+  GitBranch,
+  GitMerge,
+  Loader2,
+  MessageSquare,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
+import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import { api, type WorktreeItem } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
-import { orderWorktrees } from '@/lib/worktrees'
+import { groupWorktrees } from '@/lib/worktrees'
 import { t } from '@shared/i18n'
 import { childHoldText } from '@shared/task'
 
@@ -171,7 +189,54 @@ export function useWorktreeActions(rootId: string) {
   return { busy, merge, askRemove: setRemoving, confirm }
 }
 
-/** 弹窗里的一行独立分支：状态、分支名、从哪开的，合并和删除按钮 */
+function copyText(text: string) {
+  void navigator.clipboard.writeText(text).then(
+    () => toast.success(t('已复制')),
+    () => toast.error(t('复制失败')),
+  )
+}
+
+/** 右键菜单里一个操作的可用性：不能点时用 reason 说明原因，不要只变灰 */
+type Availability = { ok: true } | { ok: false; reason: string }
+
+/** 合并能不能点：行内按钮和右键菜单同一个判定，免得两边规矩不一致。busy 是这一行正在合并 / 删除 */
+function mergeState(item: WorktreeItem, busy: boolean): Availability {
+  if (item.state !== 'active') return { ok: false, reason: t('这个分支已经删除了') }
+  if (busy) return { ok: false, reason: t('正在处理这个独立分支，等它结束') }
+  if (item.working) return { ok: false, reason: t('对话正在执行，等这一轮结束后再合并') }
+  if (!needsMerge(item)) return { ok: false, reason: t('这个分支没有要合回原分支的改动') }
+  return { ok: true }
+}
+
+function removeState(item: WorktreeItem, busy: boolean): Availability {
+  // 已经删掉的分支后端会直接拒（isolated 只认 active，见 server/tasks.ts 的 discard），
+  // 不能给可点：否则用户确认一遍、才看到一条报错，行内按钮那边却根本没有这个入口
+  if (item.state !== 'active') return { ok: false, reason: t('这个分支已经删除了') }
+  if (busy) return { ok: false, reason: t('正在处理这个独立分支，等它结束') }
+  if (item.working) return { ok: false, reason: t('对话正在执行，等这一轮结束后再删除独立分支') }
+  return { ok: true }
+}
+
+/**
+ * 不能用时的菜单项：不能用真 disabled。`menuItem` 上有 `data-[disabled]:pointer-events-none`，
+ * 禁用后鼠标悬不上、原生 title 的原因根本上不来，点了也没反馈。改成 aria-disabled + 保留指针事件，
+ * 鼠标能悬住看到原因，点了也把原因 toast 出来。
+ */
+function Unavailable({ why, danger, children }: { why: string; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <ContextMenuItem
+      aria-disabled
+      title={why}
+      danger={danger}
+      className="cursor-not-allowed opacity-50"
+      onSelect={() => toast.error(why)}
+    >
+      {children}
+    </ContextMenuItem>
+  )
+}
+
+/** 弹窗里的一行独立分支：状态、分支名、从哪开的，合并和删除按钮（右键还有一组菜单） */
 export function WorktreeRow({
   item,
   busy,
@@ -188,6 +253,8 @@ export function WorktreeRow({
 }) {
   const active = item.state === 'active'
   const idle = active && !item.working
+  const mergeable = mergeState(item, busy)
+  const removable = removeState(item, busy)
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
@@ -204,54 +271,128 @@ export function WorktreeRow({
     </>
   )
   return (
-    <div
-      data-worktree-row={item.taskId}
-      className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60"
-    >
-      <span className="mt-px">
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <WorktreeMark item={item} />}
-      </span>
-      {onOpen ? (
-        // 原生按钮：Enter / Space 和鼠标点都一样；合并、删除是旁边的独立按钮，不会连带触发
-        <button
-          type="button"
-          onClick={onOpen}
-          title={t('在右侧打开子对话「{title}」', { title: item.title })}
-          aria-label={t('在右侧打开子对话「{title}」', { title: item.title })}
-          className="min-w-0 flex-1 cursor-pointer rounded-md text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-worktree-row={item.taskId}
+          className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60"
         >
-          {body}
-        </button>
-      ) : (
-        <div className="min-w-0 flex-1">{body}</div>
-      )}
-      {idle && (
-        <span className="flex shrink-0 items-center gap-0.5">
-          {needsMerge(item) && (
+          <span className="mt-px">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <WorktreeMark item={item} />}
+          </span>
+          {onOpen ? (
+            // 原生按钮：Enter / Space 和鼠标点都一样；合并、删除是旁边的独立按钮，不会连带触发
             <button
               type="button"
-              disabled={busy}
-              onClick={onMerge}
-              title={t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
-              className="flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.6875rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-50"
+              onClick={onOpen}
+              title={t('在右侧打开子对话「{title}」', { title: item.title })}
+              aria-label={t('在右侧打开子对话「{title}」', { title: item.title })}
+              className="min-w-0 flex-1 cursor-pointer rounded-md text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <GitMerge className="h-3.5 w-3.5" />
-              {t('合并')}
+              {body}
             </button>
+          ) : (
+            <div className="min-w-0 flex-1 cursor-default">{body}</div>
           )}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onRemove}
-            title={t('删除独立分支')}
-            aria-label={t('删除独立分支')}
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-subtle transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+          {idle && (
+            <span className="flex shrink-0 items-center gap-0.5">
+              {needsMerge(item) && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onMerge}
+                  title={t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
+                  className="flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.6875rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-50"
+                >
+                  <GitMerge className="h-3.5 w-3.5" />
+                  {t('合并')}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onRemove}
+                title={t('删除独立分支')}
+                aria-label={t('删除独立分支')}
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-subtle transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          )}
+        </div>
+      </ContextMenuTrigger>
+      {/* 右键菜单是行内按钮的补充，合并 / 删除走同一套回调，不另写逻辑 */}
+      <ContextMenuContent>
+        {onOpen ? (
+          <ContextMenuItem title={t('在右侧打开子对话「{title}」', { title: item.title })} onSelect={() => onOpen()}>
+            <MessageSquare className="h-3.5 w-3.5 text-subtle" />
+            {t('打开对话')}
+          </ContextMenuItem>
+        ) : (
+          // 当前对话自己那行：点了也不知道要打开什么，说清楚是它自己的分支
+          <Unavailable why={t('这是当前对话自己的分支')}>
+            <MessageSquare className="h-3.5 w-3.5 text-subtle" />
+            {t('打开对话')}
+          </Unavailable>
+        )}
+        <ContextMenuSeparator />
+        {mergeable.ok ? (
+          <ContextMenuItem
+            title={t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
+            onSelect={onMerge}
           >
+            <GitMerge className="h-3.5 w-3.5 text-subtle" />
+            {t('合并到原分支')}
+          </ContextMenuItem>
+        ) : (
+          <Unavailable why={mergeable.reason}>
+            <GitMerge className="h-3.5 w-3.5 text-subtle" />
+            {t('合并到原分支')}
+          </Unavailable>
+        )}
+        {mergeable.ok ? (
+          <ContextMenuItem
+            title={t('把合并要求发给这个分支的对话，由 AI 解决冲突后合回原分支')}
+            onSelect={() =>
+              void aiMerge([item]).then(
+                () => toast.success(t('已交给 AI 合并，结果会在对话里回复')),
+                (e) => toast.error((e as Error).message),
+              )
+            }
+          >
+            <Sparkles className="h-3.5 w-3.5 text-subtle" />
+            {t('用 AI 合并')}
+          </ContextMenuItem>
+        ) : (
+          <Unavailable why={mergeable.reason}>
+            <Sparkles className="h-3.5 w-3.5 text-subtle" />
+            {t('用 AI 合并')}
+          </Unavailable>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem title={item.branch} onSelect={() => copyText(item.branch)}>
+          <Copy className="h-3.5 w-3.5 text-subtle" />
+          {t('复制分支名')}
+        </ContextMenuItem>
+        <ContextMenuItem title={item.path} onSelect={() => copyText(item.path)}>
+          <Copy className="h-3.5 w-3.5 text-subtle" />
+          {t('复制路径')}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {removable.ok ? (
+          <ContextMenuItem danger title={t('删除独立分支')} onSelect={onRemove}>
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </span>
-      )}
-    </div>
+            {t('删除独立分支')}
+          </ContextMenuItem>
+        ) : (
+          <Unavailable why={removable.reason} danger>
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('删除独立分支')}
+          </Unavailable>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -268,23 +409,38 @@ export function WorktreeSection({
   const actions = useWorktreeActions(task.id)
   if (!items?.length) return null
   const open = unmergedOf(items).length
+  // 按删除与否分组：还留着的（active）和已经删掉的（merged / discarded）。组内保持父对话在前、其余按创建时间
+  const groups = groupWorktrees(items)
+  const row = (x: WorktreeItem) => (
+    <WorktreeRow
+      key={x.taskId}
+      item={x}
+      busy={actions.busy === x.taskId}
+      onOpen={x.child && onOpenChild ? () => onOpenChild(x.taskId) : undefined}
+      onMerge={() => void actions.merge(x)}
+      onRemove={() => actions.askRemove(x)}
+    />
+  )
+  const group = (key: 'live' | 'removed') => (
+    <div data-worktree-group={key} className="flex flex-col gap-1">
+      {/* 组标题带数量：两组都显示标题，一眼看出哪些删了、哪些还在 */}
+      <div className="flex items-center gap-2 pl-1 text-[0.6875rem] text-subtle">
+        <span className="flex-1">{key === 'live' ? t('未删除') : t('已删除')}</span>
+        <span className="tabular-nums">{groups[key].length}</span>
+      </div>
+      {groups[key].map(row)}
+    </div>
+  )
   return (
-    <div className="flex flex-col gap-1 border-t pt-2">
+    <div className="flex flex-col gap-2 border-t pt-2">
       <div className="flex items-center gap-2 text-subtle">
         <GitBranch className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1">{t('独立分支')}</span>
         {open > 0 && <span className="text-warning">{t('{n} 个没合并', { n: open })}</span>}
       </div>
-      {orderWorktrees(items).map((x) => (
-        <WorktreeRow
-          key={x.taskId}
-          item={x}
-          busy={actions.busy === x.taskId}
-          onOpen={x.child && onOpenChild ? () => onOpenChild(x.taskId) : undefined}
-          onMerge={() => void actions.merge(x)}
-          onRemove={() => actions.askRemove(x)}
-        />
-      ))}
+      {/* 空组不渲染，只显示有内容的那组 */}
+      {groups.live.length > 0 && group('live')}
+      {groups.removed.length > 0 && group('removed')}
       {actions.confirm}
     </div>
   )

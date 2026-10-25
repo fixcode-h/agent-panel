@@ -15,12 +15,13 @@ import {
   Trash2,
   Palette,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { DESIGN_HOME, designHomeRoute, designKind, kindFoldKey, kindLabel, toggleFoldKey } from '@/lib/design-projects'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -57,14 +58,9 @@ export function DesignList() {
     byProject.set(d.projectId, [...(byProject.get(d.projectId) ?? []), d])
   const last = (pid: string, fallback: string) => byProject.get(pid)?.[0]?.updatedAt ?? fallback
   const list = [...projects].sort((a, b) => last(b.id, b.updatedAt).localeCompare(last(a.id, a.updatedAt)))
-  // 项目和分类（`项目id:分类id`）共用一份折叠集合，点整行、点箭头都走这里
-  const toggleFold = (key: string) =>
-    setFolded((f) => {
-      const n = new Set(f)
-      if (n.has(key)) n.delete(key)
-      else n.add(key)
-      return n
-    })
+  // 项目和分类（`项目id:分类id`）共用一份折叠集合。只有最前面的箭头按钮和分类行改这个集合，
+  // 点项目名是打开项目主页，不再顺带折叠
+  const toggleFold = (key: string) => setFolded((f) => toggleFoldKey(f, key))
 
   const rename = async (d: DesignMeta, title: string) => {
     setRenaming('')
@@ -140,6 +136,8 @@ export function DesignList() {
       setDesigns((l) => l.filter((x) => x.projectId !== p.id))
       if (route.page === 'design' && designs.some((d) => d.id === route.id && d.projectId === p.id))
         go({ page: 'design' })
+      // 正停在这个项目的主页上：项目没了就回新建设计页
+      else if (route.page === 'design' && route.id === DESIGN_HOME && route.sub === p.id) go({ page: 'design' })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -258,31 +256,23 @@ export function DesignList() {
       {list.map((p) => {
         const ds = byProject.get(p.id) ?? []
         const open = !folded.has(p.id)
-        // 项目名的图标和文字：有设计时包成按钮，空项目时就是纯文本，两处共用一份
-        const nameText = (
-          <>
-            {open ? (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            ) : (
-              <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            )}
-            <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-          </>
-        )
+        const on = route.page === 'design' && route.id === DESIGN_HOME && route.sub === p.id
         return (
           <section key={p.id} className="mb-2">
             <ContextMenu>
               <ContextMenuTrigger asChild>
                 <div
-                  // 整行都能点：以前只有左边的小箭头能点，点项目名没反应，像是要点两次
-                  onClick={() => ds.length > 0 && toggleFold(p.id)}
+                  // 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮
                   className={cn(
-                    'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] text-muted hover:bg-sel/60 hover:text-fg',
-                    ds.length > 0 && 'cursor-pointer',
+                    'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] transition-colors',
+                    on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                   )}
                 >
                   <button
-                    // 折叠只靠整行冒泡（另写 onClick 会折叠两次）；保留按钮是为了键盘可聚焦、aria-expanded 有落点
+                    // 折叠只由这个箭头按钮触发：以前整行可点、靠冒泡折叠，点项目名打不开主页
+                    onClick={() => toggleFold(p.id)}
+                    // 界面检查按项目定位这个按钮：侧栏里 Agent 项目行也有同名「收起」按钮，不能靠 DOM 顺序取第一个
+                    data-fold={p.id}
                     aria-expanded={open}
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
@@ -293,29 +283,26 @@ export function DesignList() {
                   >
                     <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
                   </button>
-                  {ds.length > 0 ? (
-                    <button
-                      // 点击冒泡到整行去折叠；保留按钮是为了能用键盘聚焦、aria-expanded 有落点
-                      aria-expanded={open}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-                    >
-                      {nameText}
-                    </button>
-                  ) : (
-                    // 没有设计时整行本来就不能折叠，项目名不做成按钮：免得多出一个按了没反应的 tab stop
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5">{nameText}</span>
-                  )}
+                  <button
+                    onClick={() => go(designHomeRoute(p.id))}
+                    aria-label={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
+                    title={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                  >
+                    {open ? (
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                    ) : (
+                      <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+                  </button>
                   {ds.length > 0 && (
                     <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
                       {ds.length}
                     </span>
                   )}
                   <button
-                    onClick={(e) => {
-                      // 新建设计是行内自己的动作，别冒泡成折叠
-                      e.stopPropagation()
-                      go({ page: 'design', id: 'new', sub: p.id })
-                    }}
+                    onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
                     aria-label={t('在「{name}」新建设计', { name: p.name })}
                     title={t('新建设计')}
                     className={cn(
@@ -350,9 +337,9 @@ export function DesignList() {
             {open && ds.length > 0 && (
               <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
                 {/* 同一个项目里游戏 UI 和网页 UI 分开列，各自可以收起 */}
-                {KINDS.filter((k) => ds.some((d) => (d.kind ?? 'game') === k.id)).map((k) => {
-                  const list = ds.filter((d) => (d.kind ?? 'game') === k.id)
-                  const key = `${p.id}:${k.id}`
+                {KINDS.filter((k) => ds.some((d) => designKind(d) === k.id)).map((k) => {
+                  const list = ds.filter((d) => designKind(d) === k.id)
+                  const key = kindFoldKey(p.id, k.id)
                   const kOpen = !folded.has(key)
                   return (
                     <div key={k.id} className="flex flex-col gap-px">
@@ -364,9 +351,7 @@ export function DesignList() {
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-left">
-                          {k.id === 'web' ? t('网页 UI') : t('游戏 UI')}
-                        </span>
+                        <span className="min-w-0 flex-1 truncate text-left">{kindLabel(k.id)}</span>
                         <span className="shrink-0 pr-1 text-[0.6875rem] tabular-nums">{list.length}</span>
                       </button>
                       {kOpen && <div className="ml-3 flex flex-col gap-px">{list.map(designRow)}</div>}

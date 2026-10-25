@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ChevronDown,
   Clapperboard,
@@ -108,6 +108,8 @@ import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
+import { DesignProjectHome } from '@/components/design/DesignProjectHome'
+import { DESIGN_HOME } from '@/lib/design-projects'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
 import { SaveStyleButton, StyleLibraryList } from '@/components/design/StyleLibrary'
@@ -117,6 +119,8 @@ const ANIM_KEY = 'agent-panel:design-anim'
 
 export function DesignPage() {
   const { route } = useNav()
+  // 'home' 是 UI 项目主页（项目 id 在 sub），'new' 和没给 id 是新建设计，其余 id 是设计器
+  if (route.id === DESIGN_HOME) return <DesignProjectHome key={route.sub} projectId={route.sub ?? ''} />
   return route.id && route.id !== 'new' ? (
     <Designer key={route.id} id={route.id} />
   ) : (
@@ -345,8 +349,10 @@ function Designer({ id }: { id: string }) {
   /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
   const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
   const [overlay, setOverlay] = useState(false)
-  /** 替用户发给 AI 的话（确认模板后开始搭界面） */
-  const [request, setRequest] = useState<{ id: string; text: string }>()
+  /** 只重绘原画上蒙版涂过的区域（对话侧勾选）：原画面板的发送按钮也要按它换文案 */
+  const [inpaint, setInpaint] = useState(false)
+  /** 替用户发的一条：id 变了就发一次。带 text 是固定发这句话（确认模板后开始搭界面）；`kind: 'send'` 是「发送标注给 AI」，按输入框发送 */
+  const [request, setRequest] = useState<{ id: string; text?: string; kind?: 'send' }>()
   /** 动画面板（时间轴）开着没有，以及它让画布停在哪一刻 */
   const [animOpen, setAnimOpenState] = useState(() => {
     try {
@@ -437,6 +443,11 @@ function Designer({ id }: { id: string }) {
   useEffect(() => {
     if (concept.approved) setView('ui')
   }, [concept.approved])
+  // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
+  const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
+  useEffect(() => {
+    if (!conceptMaskReady) setInpaint(false)
+  }, [conceptMaskReady])
 
   const editTree = (fn: (root: Widget) => Widget, key = '') =>
     ed.change((d) => {
@@ -1307,6 +1318,15 @@ function Designer({ id }: { id: string }) {
                   )
                 }
                 onSelect={(cid) => void conceptAction('select', cid)}
+                onSendMarks={() => {
+                  // 对话栏收起时 DesignChat 没挂载，request 没人消费：先打开对话栏再发，
+                  // 不然点了看着像没反应（标注不消失、不出新原画）
+                  setChatOpen(true)
+                  setRequest({ id: crypto.randomUUID(), kind: 'send' })
+                }}
+                inpaint={inpaint}
+                // 只有本机 ComfyUI 能真做局部重绘；别的生图方式勾了也是整张重画、全部标注都发
+                inpaintSupported={source.kind === 'local'}
                 onApprove={(cid) => void approve(cid)}
                 onRemove={(cid) => void conceptAction('remove', cid)}
                 onUpload={async (data) => {
@@ -1738,6 +1758,8 @@ function Designer({ id }: { id: string }) {
               onClearCites={() => setCites([])}
               hasTemplate={!!concept.approved}
               request={request}
+              inpaint={inpaint}
+              onInpaint={setInpaint}
               conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
             />
           </aside>

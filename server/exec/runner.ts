@@ -22,6 +22,7 @@ import {
 import { getCli } from '../../shared/clis.ts'
 import { makeAlert } from '../../shared/alerts.ts'
 import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
+import { clearApiWait, markApiWait } from './api-wait.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import {
   changesSince,
@@ -731,28 +732,28 @@ function callApi(ctx: RealContext, call: AgentCall) {
 /**
  * 拿名额；满了就排队，排队时对话（或子任务、节点）上标出在等哪个 API、前面还有几个。
  * 排队的子任务、节点显示成「排队中」，拿到再回到执行中。停止信号到了返回 false
+ *
+ * 标记用 try/finally 无条件清：只清「这次排过队」会在复用别处排队时漏清（排队标记就会跟到任务结束）。
+ * reason 区分开跑前排队还是让出后拿回，后者不显示成「排队等名额」。
  */
-async function takeApiSlot(ctx: RealContext, step: TaskStep | undefined, slot: ApiSlot, signal: AbortSignal) {
-  let queued = false
+async function takeApiSlot(
+  ctx: RealContext,
+  step: TaskStep | undefined,
+  slot: ApiSlot,
+  signal: AbortSignal,
+  reason: 'start' | 'yield' = 'start',
+) {
   let before: TaskStep['status'] | undefined
-  const ok = await slot.take(signal, (ahead) => {
-    if (!queued && step?.status === 'running') {
-      before = step.status
-      step.status = 'pending'
-    }
-    queued = true
-    if (step) step.apiWait = { api: slot.name, ahead }
-    else ctx.task.apiWait = { api: slot.name, ahead }
-    ctx.changed(true)
-  })
-  if (queued) {
-    if (step) {
-      delete step.apiWait
-      if (before && step.status === 'pending') step.status = before
-    } else delete ctx.task.apiWait
-    ctx.changed(true)
+  try {
+    return await slot.take(signal, (ahead) => {
+      // 队伍动了会反复回调：before 只在第一次记下，后面不再改状态
+      const b = markApiWait(ctx, step, slot.name, ahead, reason)
+      if (before === undefined) before = b
+    })
+  } finally {
+    // 不管拿到、被停止还是被让出，标记都必须清：它只能表示「此刻真的在排队」
+    clearApiWait(ctx, step, before)
   }
-  return ok
 }
 
 /**
@@ -795,7 +796,7 @@ async function yieldApiSlot<T>(ctx: RealContext, stepId: string, wait: () => Pro
     return await wait()
   } finally {
     const step = stepId ? ctx.task.steps.find((s) => s.id === stepId) : undefined
-    await takeApiSlot(ctx, step, slot, ctx.signal)
+    await takeApiSlot(ctx, step, slot, ctx.signal, 'yield')
   }
 }
 
@@ -1619,10 +1620,14 @@ async function runAgent(
    */
   const waitNext = async (fromTool: boolean): Promise<string | null> => {
     const slot = apiSlots.get(slotKey(task.id, step))
+    // 让出前手里有没有名额，决定拿回时是哪种排队：
+    // 持有过 = 这一轮已经跑起来、临时让出（yield，不显示成排队）；
+    // 没持有过 = 预热（prewarm）对话等第一句，这一轮从没出过 token，此刻排队就是真的还没开始（start）
+    const yielded = !!slot?.holding
     slot?.drop()
     const text = await waitNextRaw(fromTool)
     if (text === null || !slot) return text
-    return (await takeApiSlot(ctx, call.step, slot, ctx.signal)) ? text : null
+    return (await takeApiSlot(ctx, call.step, slot, ctx.signal, yielded ? 'yield' : 'start')) ? text : null
   }
   const waitNextRaw = async (fromTool: boolean): Promise<string | null> => {
     if (fromTool) {

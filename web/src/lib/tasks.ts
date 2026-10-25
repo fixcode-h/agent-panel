@@ -497,3 +497,17 @@ export function verdictText(s: TaskStep) {
   if (!s.rounds || s.kind === 'main') return ''
   return s.verdict === 'fail' ? t('验收 {n} 轮 · 未通过', { n: s.rounds }) : t('验收 {n} 轮 · 通过', { n: s.rounds })
 }
+
+/**
+ * 执行中的状态行要不要显示「排队等 API 名额」：要显示时返回那个标记，否则 undefined。
+ *
+ * 只在「这一轮还没开始、正在排队等名额」时显示（reason 是 'start'）：
+ * 让出名额等子任务 / 等下一句之后拿回的排队（'yield'）属于「交回结果的那一句」，
+ * 这一轮其实仍在输出，写成排队会和同一行右边的实时速度自相矛盾。
+ * 已经在出 token 时也不显示排队：两套数据打架时以「真的在输出」为准。
+ */
+export function apiQueueWait(task: Pick<Task, 'apiWait'>, streaming: boolean) {
+  const wait = task.apiWait
+  if (!wait || wait.reason !== 'start' || streaming) return undefined
+  return wait
+}

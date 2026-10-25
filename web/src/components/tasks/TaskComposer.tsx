@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ArrowUp,
   Bot,
@@ -291,6 +291,7 @@ export function TaskComposer({
           onPaste={chips.onPaste}
           preview={chips.preview}
           actions={chips.chipActions}
+          copyOf={chips.copyOfChip}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
