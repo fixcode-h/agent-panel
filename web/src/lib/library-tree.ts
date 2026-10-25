@@ -1,18 +1,18 @@
 /**
- * 技能文件夹的文件树：后端给的是「扁平条目 + 完整 path」（见 shared/library.ts 的 LibraryFileEntry），
+ * 技能文件夹的文件树：后端给的是「扁平条目 + 完整 path」（见 shared/library.ts 的 LibraryEntry），
  * 目录在前、同级按名字排好序，这里只还原层级，不再排序（重复排序会把后端的目录优先规则弄乱）。
  */
-import type { LibraryFileEntry } from '@shared/library'
+import type { LibraryEntry } from '@shared/library'
 
 /** 一层文件树：目录带子项，文件没有 children */
-export interface TreeRow extends LibraryFileEntry {
+export interface TreeRow extends LibraryEntry {
   /** 从顶层到这里的层级，用来做缩进；顶层是 0 */
   depth: number
   children?: TreeRow[]
 }
 
 /** 扁平条目 → 层级；父目录没单列时（后端不该出现）按目录补出来，路径不丢 */
-export function toTree(items: LibraryFileEntry[]): TreeRow[] {
+export function toTree(items: LibraryEntry[]): TreeRow[] {
   const rows: TreeRow[] = []
   const dirs = new Map<string, TreeRow>()
   const ensureDir = (path: string): TreeRow => {

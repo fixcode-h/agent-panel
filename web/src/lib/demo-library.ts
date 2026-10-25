@@ -3,7 +3,7 @@ import type {
   BundledSkill,
   LibraryCli,
   LibraryFile,
-  LibraryFileEntry,
+  LibraryEntry,
   LibraryItem,
   McpEntry,
   McpOverview,
@@ -25,16 +25,16 @@ interface Item extends LibraryItem {
 }
 
 /** 演示里按路径算文件树：目录在前、同级按名字排，和后端一致 */
-function treeOf(item: Item): LibraryFileEntry[] {
+function treeOf(item: Item): { entries: LibraryEntry[]; truncated?: boolean } {
   const dirs = new Set(item.dirs)
   for (const p of item.extra.keys()) {
     const parts = p.split('/')
     for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'))
   }
-  const out: LibraryFileEntry[] = [...dirs].map((path) => ({ path, type: 'dir' as const }))
+  const out: LibraryEntry[] = [...dirs].map((path) => ({ path, type: 'dir' as const }))
   for (const [path, content] of item.extra)
     out.push({ path, type: 'file', size: new TextEncoder().encode(content).length })
-  return out.sort((a, b) => {
+  const entries = out.sort((a, b) => {
     const ad = a.path.split('/')
     const bd = b.path.split('/')
     // 先按层级逐个比：目录排在同级文件前面
@@ -47,6 +47,8 @@ function treeOf(item: Item): LibraryFileEntry[] {
     }
     return a.type === b.type ? a.path.localeCompare(b.path) : a.type === 'dir' ? -1 : 1
   })
+  // 和真接口一样：超上限时带上 truncated（演示数据远到不了，这里保留字段形状）
+  return { entries }
 }
 
 const extraOf = (paths: string[]) =>
@@ -310,7 +312,7 @@ export function demoLibrary(
     return {
       content: it.content,
       files: [...it.extra.keys()].sort(),
-      tree: kind === 'skill' ? treeOf(it) : [],
+      tree: kind === 'skill' ? treeOf(it) : undefined,
     } satisfies LibraryFile
   }
   if (method === 'DELETE') {

@@ -4,11 +4,11 @@
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { LibraryFileEntry } from '@shared/library'
+import type { LibraryEntry } from '@shared/library'
 import { countFiles, entryName, toTree, visibleRows } from '@/lib/library-tree'
 
-const file = (path: string, size = 10): LibraryFileEntry => ({ path, type: 'file', size })
-const dir = (path: string): LibraryFileEntry => ({ path, type: 'dir' })
+const file = (path: string, size = 10): LibraryEntry => ({ path, type: 'file', size })
+const dir = (path: string): LibraryEntry => ({ path, type: 'dir' })
 
 test('toTree：顶层文件原样成一排，深度都是 0', () => {
   const rows = toTree([file('README.md'), file('notes.txt')])
@@ -106,6 +106,18 @@ test('toTree：只有扁平的 files 列表（旧后端）时也能还原层级'
     visibleRows(rows, new Set()).map((r) => `${r.type}:${r.path}@${r.depth}`),
     ['file:examples.md@0', 'dir:references@0', 'file:references/pitfalls.md@1'],
   )
+})
+
+test('toTree：软链接当文件排在树里，不当目录展开', () => {
+  const rows = toTree([{ path: 'shot.png', type: 'link' }, file('notes.md')])
+  assert.deepEqual(
+    rows.map((r) => [r.path, r.type, r.children]),
+    [
+      ['shot.png', 'link', undefined],
+      ['notes.md', 'file', undefined],
+    ],
+  )
+  assert.equal(countFiles(rows), 2)
 })
 
 test('entryName：取路径最后一段', () => {

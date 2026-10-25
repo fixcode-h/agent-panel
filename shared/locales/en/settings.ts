@@ -674,6 +674,7 @@ export const EN_SETTINGS: Record<string, string> = {
   文件名: 'File name',
   '会从磁盘上删掉，不能撤销。': "It is removed from disk and can't be undone.",
   文件内容: 'File content',
+  '这是个链接，不能在这里改内容。': 'This is a link; its content cannot be edited here.',
   '这个技能只有 SKILL.md，还没有附加文件。': 'This skill only has SKILL.md — no extra files yet.',
   '在左边的文件树里点一个文件，就能看内容和改它。': 'Click a file in the tree on the left to view and edit it.',
   '{n} KB': '{n} KB',

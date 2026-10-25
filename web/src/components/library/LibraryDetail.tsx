@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Copy, Loader2, Save, Sparkles, Terminal, Trash2, Undo2 } from 'lucide-react'
-import type { LibraryCli, LibraryEntryContent, LibraryFile, LibraryFileEntry, LibraryItem } from '@shared/library'
+import type { LibraryCli, LibraryEntry, LibraryEntryContent, LibraryFile, LibraryItem } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -19,8 +19,8 @@ const MAIN_EDITOR_ID = 'library-main-editor'
  * 文件树的数据来源收在这里：后端给了 tree 就用它（已排好序），
  * 只有旧的扁平 files 时按文件造条目，老版本后端也能看到结构、不会一片空白。
  */
-function entriesOf(f: LibraryFile): LibraryFileEntry[] {
-  if (f.tree?.length) return f.tree
+function entriesOf(f: LibraryFile): LibraryEntry[] {
+  if (f.tree?.entries.length) return f.tree.entries
   return (f.files ?? []).map((path) => ({ path, type: 'file' as const }))
 }
 
@@ -52,7 +52,7 @@ export function LibraryDetail({
   const [cli, setCli] = useState(item.cli)
   const [content, setContent] = useState<string | null>(null)
   const [saved, setSaved] = useState('')
-  const [tree, setTree] = useState<LibraryFileEntry[]>([])
+  const [tree, setTree] = useState<LibraryEntry[]>([])
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -80,7 +80,7 @@ export function LibraryDetail({
           editor.current = { content: f.content, saved: f.content }
         }
         setTree(entriesOf(f))
-        setTruncated(!!f.truncated)
+        setTruncated(!!f.tree?.truncated)
         setError('')
       })
       .catch((e) => setError((e as Error).message))
@@ -160,9 +160,6 @@ export function LibraryDetail({
     },
     rename: async (from, to_) => {
       await api.renameLibraryEntry({ cli, kind, name, from, to: to_ })
-    },
-    mkdir: async (p) => {
-      await api.mkdirLibraryEntry({ cli, kind, name, path: p })
     },
     reload: load,
   }

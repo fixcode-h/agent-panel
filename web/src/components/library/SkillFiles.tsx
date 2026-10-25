@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ChevronDown,
   ChevronRight,
@@ -11,7 +11,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
-import { ENTRY_MAX_BYTES, type LibraryEntryContent, type LibraryFileEntry } from '@shared/library'
+import { LIBRARY_FILE_MAX_BYTES, type LibraryEntry, type LibraryEntryContent } from '@shared/library'
 import { t } from '@shared/i18n'
 import { fileIcon } from '@/lib/file-icon'
 import { countFiles, entryName, toTree, visibleRows } from '@/lib/library-tree'
@@ -33,7 +33,6 @@ export interface FilesApi {
   save: (path: string, content: string) => Promise<void>
   remove: (path: string) => Promise<void>
   rename: (from: string, to: string) => Promise<void>
-  mkdir: (path: string) => Promise<void>
   /** 文件树变动后让外面重新读一次树 */
   reload: () => Promise<void>
 }
@@ -57,7 +56,7 @@ export function SkillFiles({
   mainEditorId,
   readOnly,
 }: {
-  entries: LibraryFileEntry[]
+  entries: LibraryEntry[]
   truncated?: boolean
   api: FilesApi
   /** 主文件（SKILL.md）的路径，置顶显示 */
@@ -83,8 +82,10 @@ export function SkillFiles({
   const [del, setDel] = useState<LibraryEntryContent | string | null>(null)
 
   // 附加文件大小按字符串字节数算：保存前先拦一道，不用等服务端报错
-  const tooBig = useMemo(() => new TextEncoder().encode(text).length > ENTRY_MAX_BYTES, [text])
+  const tooBig = useMemo(() => new TextEncoder().encode(text).length > LIBRARY_FILE_MAX_BYTES, [text])
   const dirty = file !== null && text !== file.content
+  // 二进制、链接都不能在这里改内容：链接写进去会顺着链到别处，后端也会拒绝
+  const editable = !!file && !file.binary && !file.link && file.exists !== false
 
   const open = (path: string) => {
     setPicked(path)
@@ -145,7 +146,8 @@ export function SkillFiles({
         if (picked === ask.path) setPicked(dir + value)
       } else {
         const dir = ask.path ? `${ask.path}/` : ''
-        if (ask.kind === 'dir') await api.mkdir(dir + value)
+        // 后端没有单独的建目录接口：写一个占位文件，目录就建出来了（父目录由后端递归创建）
+        if (ask.kind === 'dir') await api.save(`${dir}${value}/.gitkeep`, '')
         else await api.save(dir + value, '')
       }
       setAsk(null)
@@ -310,7 +312,7 @@ export function SkillFiles({
                       {t('重置')}
                     </Button>
                   )}
-                  {!readOnly && !file.binary && (
+                  {!readOnly && editable && (
                     <Button size="sm" onClick={save} disabled={!dirty || busy || tooBig}>
                       {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                       <Save className="h-3.5 w-3.5" />
@@ -330,9 +332,11 @@ export function SkillFiles({
                   )}
                 </div>
               </div>
-              {file.binary ? (
+              {!editable ? (
                 <p className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
-                  {t('二进制文件（{size}），不能编辑。', { size: sizeText(file.size) })}
+                  {file.link
+                    ? t('这是个链接，不能在这里改内容。')
+                    : t('二进制文件（{size}），不能编辑。', { size: sizeText(file.size) })}
                 </p>
               ) : (
                 <Textarea
