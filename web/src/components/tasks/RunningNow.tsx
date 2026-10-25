@@ -8,7 +8,7 @@ import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
 import { useChildList, useChildOpen } from './child-open'
-import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
+import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 
@@ -280,6 +280,9 @@ export function RunningNow({
         const labels = childLabels(k)
         const note = childNote(k, true)
         const stale = staleLine(k)
+        // 进程回收了、对话却还在跑：行上不说「已关闭」（那会和标签同屏矛盾），只在这里补一句
+        const gone = childClosedHint(k)
+        const detail = [note, stale?.text, gone].filter(Boolean).join(' · ')
         return (
           <RowShell
             key={k.id}
@@ -309,16 +312,18 @@ export function RunningNow({
                   </span>
                 ))}
                 {/* 行的宽度留给状态标签和耗时：活动文字是补充信息，行够宽才显示（按这一行自己的
-                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文 */}
-                {(note || stale) && (
+                    宽度，见 RowShell 的 container），不让标签被 overflow-hidden 裁成「计划 1」。悬停看全文。
+                    gone 单独算在内：没有活动文字时也要能悬停看到「进程已回收」 */}
+                {(note || stale || gone) && (
                   <span
                     className={cn(
                       'hidden min-w-0 truncate font-sans @min-[380px]:block',
                       stale ? stale.cls : 'text-subtle',
                     )}
-                    title={[note, stale?.text].filter(Boolean).join(' · ')}
+                    title={detail}
                   >
-                    {stale ? stale.text : note}
+                    {/* 没有活动文字时退回「进程已回收」那句：不然 span 是空的，悬停根本悬不到 */}
+                    {stale ? stale.text : note || gone}
                   </span>
                 )}
               </span>

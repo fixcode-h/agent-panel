@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyChain } from '@shared/comfy-chain'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -207,6 +208,22 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
+  comfyChains: () =>
+    request<{ list: ComfyChain[]; workflows: ComfyWorkflow[]; ready: string[] }>('/local-image/chains'),
+  saveComfyChain: (chain: ComfyChain) =>
+    request<{ chain: ComfyChain; list: ComfyChain[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}`,
+      json('PUT', chain),
+    ),
+  deleteComfyChain: (id: string) =>
+    request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
+  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+    request<{ images: string[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
+      json('POST', { chain, image, prompt }),
+    ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
   refreshComfyTemplates: () =>

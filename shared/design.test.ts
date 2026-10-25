@@ -10,6 +10,7 @@ import {
   canInpaint,
   hasMask,
   imageRevisionText,
+  sendsMaskOnly,
   maskBox,
   widgetCitationText,
 } from './design.ts'
@@ -85,6 +86,26 @@ test('只有本机 ComfyUI 能做局部重绘', () => {
   assert.equal(canInpaint({ kind: 'cli' }), false)
   assert.equal(canInpaint({ kind: 'browser' }), false)
   assert.equal(canInpaint({ kind: 'none' }), false)
+})
+
+test('只重绘蒙版要求「勾了 + 生图方式支持 + 真有蒙版」三个条件同时成立', () => {
+  const mask = { shape: 'mask' as const, strokes: [{ erase: false, w: 48, points: [10, 10, 40, 40] }] }
+  const blank = { shape: 'mask' as const, strokes: [{ erase: true, w: 48, points: [10, 10, 40, 40] }] }
+  const rect = { shape: 'rect' as const, strokes: [] }
+  const only = (o: {
+    inpaint: boolean
+    inpaintSupported: boolean
+    marks: (typeof mask | typeof blank | typeof rect)[]
+  }) => sendsMaskOnly(o)
+  // 三个条件都满足
+  assert.equal(only({ inpaint: true, inpaintSupported: true, marks: [mask, rect] }), true)
+  // 少任何一个都不算：没勾、生图方式不支持（默认的图片模型就是这种）、蒙版被擦空或只有框选
+  assert.equal(only({ inpaint: false, inpaintSupported: true, marks: [mask] }), false)
+  assert.equal(only({ inpaint: true, inpaintSupported: false, marks: [mask] }), false)
+  assert.equal(only({ inpaint: true, inpaintSupported: true, marks: [rect] }), false)
+  assert.equal(only({ inpaint: true, inpaintSupported: true, marks: [blank] }), false)
+  // 生图方式能局部重绘时，和 canInpaint 是同一个口径
+  assert.equal(only({ inpaint: true, inpaintSupported: canInpaint({ kind: 'local' }), marks: [mask] }), true)
 })
 
 test('控件引用：旧消息没有 refs 也能解析，新消息保留引用快照', () => {

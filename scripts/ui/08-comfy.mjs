@@ -37,4 +37,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await m.goto(base + '#/comfy')
   await m.getByRole('button', { name: '模板商店', exact: true }).click()
   await check(m, '模板商店-手机', ['所有模板', 'SDXL1.0: Text to Image (Simple)'])
+
+  // 工作流链：能建链、选段、看到预览区（演示版没有 ComfyUI，试跑会给出说明）
+  // check() 断言的是界面上真看得见的文字；段的下拉框只有 aria-label，用 getByLabel 查
+  await p.goto(base + '#/comfy/game')
+  await check(p, '工作流链', ['工作流链', '新建链'])
+  await p.getByRole('button', { name: '新建链', exact: true }).click()
+  await check(p, '工作流链-新建', ['加一段', '试跑', '选原图'])
+  await p
+    .getByLabel('第 1 段的工作流')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('工作流链：新建后没有第一段的工作流选择器'))
+  await p.getByRole('button', { name: '加一段', exact: true }).click()
+  await p
+    .getByLabel('第 2 段的工作流')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('工作流链：加一段后没有第二段'))
+  await check(p, '工作流链-两段')
 })

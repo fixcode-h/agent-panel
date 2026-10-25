@@ -34,7 +34,7 @@ import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { useData, useNav } from '@/lib/data'
-import type { ComfyWorkflow } from '@shared/local-image'
+import { needsInputImage, workflowInKind, type ComfyWorkflow } from '@shared/local-image'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -137,7 +137,10 @@ export function SourceSelect({
   const { settings, clis } = useData()
   const { openSettings } = useNav()
   const local = useLocalWorkflows()
-  const localReady = local.list.filter((w) => w.kind === kind && local.ready.includes(w.id))
+  const localReady = local.list.filter(
+    // 去背景、图生图、放大这类要一张原图才能跑的工作流不列：这里只能出整张图，选了也只会在生成时失败
+    (w) => workflowInKind(w, kind) && local.ready.includes(w.id) && !needsInputImage(w.graph),
+  )
   const [help, setHelp] = useState(false)
   const browser = useBrowserTabs(help)
   const imgCli = settings?.imageGen.cli || 'codex'
@@ -617,6 +620,8 @@ export function DesignChat({
   onClearCites,
   hasTemplate,
   request,
+  inpaint = false,
+  onInpaint,
   conceptDefault = false,
 }: {
   messages: DesignMessage[]
@@ -650,7 +655,10 @@ export function DesignChat({
   /** 已经确认了原画模板：「先出原画」开关不再起作用，AI 照着模板做 */
   hasTemplate?: boolean
   /** 页面要替用户发的一句话（例如确认模板后让 AI 开始搭界面）：id 变了就发一次 */
-  request?: { id: string; text: string }
+  request?: { id: string; text?: string; kind?: 'send' }
+  /** 只重绘原画上蒙版涂过的区域（在工具栏里勾选）：状态在页面上，原画面板的发送按钮也要读它 */
+  inpaint?: boolean
+  onInpaint?: (v: boolean) => void
   /** 「先出原画」第一次打开时默认开着（新的、空白的游戏界面） */
   conceptDefault?: boolean
   /** 哪个设计：对话的 CLI、模型各个设计分开记 */
@@ -691,12 +699,9 @@ export function DesignChat({
   const conceptRound = concept && !hasTemplate
   const designing = running && job?.phase === 'design'
   // 原画上涂了蒙版：可以勾选「只重绘蒙版」，默认还是整张重画
-  const [inpaint, setInpaint] = useState(false)
+  // （勾选状态存在页面上：原画面板的发送按钮要按它显示「只发蒙版这块」）
   const maskReady = annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
   const canInpaintHere = source.kind === 'local'
-  useEffect(() => {
-    if (!maskReady) setInpaint(false)
-  }, [maskReady])
   // CLI 执行中的审批和提问
   const asks = useScopeRequests(`design:${designId}`, running)
   // AI 回复里先问用户的问题（例如整体风格）：最后一条回复带问题、还没回答时，问题面板换掉输入框
@@ -820,11 +825,13 @@ export function DesignChat({
     }
   }
 
-  // 页面替用户发的话（确认模板后开始搭界面）：和手动发的一样，正在处理时交给这一轮，收不下就在这一轮结束后接着做
+  // 页面替用户发的话：kind 为 send 时是图上的「发送标注给 AI」，走和输入框发送完全一样的路径
+  // （带上输入框里写的意见、蒙版勾选）；否则就是固定的一句话（确认模板后开始搭界面）
   useEffect(() => {
     if (!request) return
     scroller.pin()
-    void onSend(request.text, run, [], { askUser, concept, inpaint: false })
+    if (request.kind === 'send') void send()
+    else void onSend(request.text ?? '', run, [], { askUser, concept, inpaint: false })
     // 每个请求只发一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])
@@ -1006,7 +1013,7 @@ export function DesignChat({
                   onCount={setConceptCount}
                 />
                 {maskReady && conceptRound && (
-                  <InpaintToggle value={inpaint} onChange={setInpaint} supported={canInpaintHere} />
+                  <InpaintToggle value={inpaint} onChange={(v) => onInpaint?.(v)} supported={canInpaintHere} />
                 )}
                 <SourceSelect value={source} onChange={onSource} kind={kind === 'web' ? 'web' : 'game'} />
                 {source.kind !== 'none' && (

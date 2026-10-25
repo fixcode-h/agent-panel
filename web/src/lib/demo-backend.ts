@@ -87,6 +87,7 @@ import {
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
+import { ComfyChain } from '@shared/comfy-chain'
 import {
   builtinTemplates,
   builtinTemplateMeta,
@@ -1542,6 +1543,8 @@ const demoCatalog = () => ({
 })
 
 let demoWorkflows: ComfyWorkflow[] = []
+/** 演示里存下来的工作流链 */
+let demoChains: ComfyChain[] = []
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -1581,6 +1584,26 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
     const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
     const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
     return { list, ready: ready.map((w) => w.id) }
+  }
+  // 工作流链：演示里存得住，但试跑不真的出图（没有 ComfyUI），返回一条说清楚的错误
+  if (action === 'chains') {
+    const workflows = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
+    const ready = workflows
+      .filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
+      .map((w) => w.id)
+    if (method === 'PUT' && id) {
+      const chain = parse(ComfyChain, { ...(body as object), id })
+      demoChains = demoChains.some((c) => c.id === id)
+        ? demoChains.map((c) => (c.id === id ? chain : c))
+        : [...demoChains, chain]
+      return { chain, list: demoChains }
+    }
+    if (method === 'DELETE' && id) {
+      demoChains = demoChains.filter((c) => c.id !== id)
+      return { list: demoChains }
+    }
+    if (method === 'POST' && sub === 'run') return fail('演示版没有真的 ComfyUI，安装后才能在本地跑工作流链')
+    return { list: demoChains, workflows, ready }
   }
   const tick = (steps: string[], done: () => void, total = 0) => {
     const j: LocalJob = (local.job = {
@@ -3371,9 +3394,10 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
+  // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
+  // 那会和「计划 / 等结果」同屏矛盾（用户报的问题），界面检查靠它当反例。
   // 这条和下面两条带独立分支：创建时间故意和列表顺序不一致，界面要按时间排而不是按接口顺序
   await make('整理 ESLint 规则', {
-    alive: true,
     job: true,
     subJob: true,
     worktree: { branch: 'agent-panel/eslint-rules', at: 30 },
