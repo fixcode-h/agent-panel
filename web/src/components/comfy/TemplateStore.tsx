@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ArrowLeft, Check, Download, FileInput, LayoutGrid, Loader2, Network, RefreshCw, Search } from 'lucide-react'
 import {
   TEMPLATE_CATEGORIES,

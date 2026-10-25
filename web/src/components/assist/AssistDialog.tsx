@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Terminal, Wand2, X } from 'lucide-react'
 import {
   applyProposal,

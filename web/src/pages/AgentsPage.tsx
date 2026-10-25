@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { isCoreAgent } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category } from '@shared/schema'

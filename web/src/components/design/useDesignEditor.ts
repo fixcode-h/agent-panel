@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { DesignDoc, DesignImage, DesignJob } from '@shared/design'
 import type { Widget } from '@shared/umg'
 import { api, type DesignFull } from '@/lib/api'

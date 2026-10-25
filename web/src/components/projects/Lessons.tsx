@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
 import {

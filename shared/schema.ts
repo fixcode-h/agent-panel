@@ -1512,6 +1512,29 @@ export const TaskJob = z.object({
 })
 export type TaskJob = z.infer<typeof TaskJob>
 
+/**
+ * 一条后台命令的当前样子（界面上点命令行打开的窗口用它轮询）：
+ * 在跑的时候要给得出已经输出的内容，跑完了也要还能读到最终输出和退出码——用户可能过一阵才点开。
+ * 和 TaskJob 分开：TaskJob 只列还在跑的（运行区那一行），这个带输出和终态
+ */
+export const TaskJobView = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running', 'done', 'failed', 'stopped']),
+  /** 退出码：还在跑、排队中为空 */
+  code: z.number().nullable(),
+  /** 已经输出的内容（只留结尾，见 server/background.ts 的 KEEP_LINES） */
+  output: z.string(),
+  /** 交给面板的时间：排队也算在等结果的时间里 */
+  createdAt: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  /** 最后一次有输出的时间：界面上「多久没动静」看它 */
+  lastOutputAt: z.string(),
+})
+export type TaskJobView = z.infer<typeof TaskJobView>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),

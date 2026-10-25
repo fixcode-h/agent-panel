@@ -12,7 +12,7 @@ import {
   Shrink,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import type { StepUsage, Task, TaskStep } from '@shared/schema'

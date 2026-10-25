@@ -164,6 +164,116 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await report.getByText('工作流优化', { exact: true }).count()))
     errors.push('AI 分析：接着追问后右侧的报告不见了')
   await check(p, 'AI分析-追问后报告还在')
+  // 功能面板和中间对话的分界可以左右拖（和文件面板同一套 usePaneWidth / ResizeHandle，各自记宽度）：
+  // 拖动后宽度跟着变、刷新后还是这个宽度；覆盖态（窄屏抽屉）没有并排可拖，那时不该有拖动条
+  {
+    // 拖动条挂在右栏 aside 上（不在 data-analysis-panel 里面）。宽度和位置都从拖动条自己的那一栏量：
+    // 页面背后还留着项目页的右栏，按全局定位会量到别的栏（AI 分析窗口是 Portal 挂在 body 末尾的）
+    const grip = p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible')
+    const railBox = () =>
+      p.evaluate(() => {
+        const g = [...document.querySelectorAll('[role="separator"][aria-label="拖动调整功能面板的宽度"]')].find(
+          (el) => {
+            const r = el.getBoundingClientRect()
+            return r.width > 0 && r.height > 0
+          },
+        )
+        const rail = g?.closest('[data-task-panel]')
+        if (!rail) return null
+        const r = rail.getBoundingClientRect()
+        const row = rail.parentElement?.getBoundingClientRect()
+        return { width: r.width, left: r.x - (row?.x ?? 0), rowW: row?.width ?? 0 }
+      })
+    const width = async () => (await railBox())?.width ?? 0
+    const before = await width()
+    const g = await grip.boundingBox().catch(() => null)
+    if (!(await grip.count())) errors.push('AI分析-功能面板宽度：宽屏时没有拖动条')
+    else if (!g) errors.push('AI分析-功能面板宽度：拖动条量不到位置')
+    else if (Math.abs(before - 440) > 2) errors.push(`AI分析-功能面板宽度：默认宽度是 ${before}，不是 440`)
+    else {
+      // 往左拖 120：右栏在右边，往左拖变宽
+      await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+      await p.mouse.down()
+      await p.mouse.move(g.x - 120, g.y + g.height / 2, { steps: 10 })
+      await p.mouse.up()
+      await settle(p)
+      const after = await width()
+      if (Math.abs(after - (before + 120)) > 4)
+        errors.push(`AI分析-功能面板宽度：拖动后宽度是 ${after}，没到 ${before + 120}`)
+      // 宽度记在本机（usePaneWidth 写 pane:<key>）：存进去的值要等于拖过的宽度，
+      // 而且组件重新挂载时从它初始化——关掉分析窗口再开，宽度不回到默认
+      {
+        const saved = await p.evaluate(() => localStorage.getItem('pane:report-panel'))
+        if (Number(saved) !== Math.round(after))
+          errors.push(`AI分析-功能面板宽度：记下的宽度是 ${saved}，不是 ${after}`)
+        await check(p, 'AI分析-功能面板宽度', ['工作流优化'])
+        // 窗口收起再展开：TaskView 重新挂载，宽度从 localStorage 恢复（不用新建分析对话，后面的归属断言还能用）
+        await p.getByRole('dialog').getByRole('button', { name: '最小化' }).click()
+        await p
+          .getByRole('button', { name: '展开' })
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('AI分析-功能面板宽度：最小化后没有出现浮条'))
+        await p.getByRole('button', { name: '展开' }).click()
+        await report.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
+        await settle(p)
+        const kept = await width()
+        if (Math.abs(kept - after) > 4)
+          errors.push(`AI分析-功能面板宽度：重新展开后宽度是 ${kept}，没保持拖过的 ${after}`)
+        await check(p, 'AI分析-功能面板宽度-重新展开后保持')
+        // 上限按这一栏自己的容器算（paneMax 从右栏的父容器量）：拖到最宽也不会把中间区挤没。
+        // 用量几何关系验证：右栏最宽时左边的中间区仍不小于 320（都从拖动条自己那一栏量，不全局取栏）
+        const wide = await grip.boundingBox().catch(() => null)
+        if (!wide) errors.push('AI分析-功能面板宽度：拖到最宽前量不到拖动条')
+        else {
+          await p.mouse.move(wide.x + wide.width / 2, wide.y + wide.height / 2)
+          await p.mouse.down()
+          await p.mouse.move(wide.x - 2000, wide.y + wide.height / 2, { steps: 10 })
+          await p.mouse.up()
+          await settle(p)
+          const max = await width()
+          // 拖动条落在右栏左边缘：定位已经限定在拖动条自己的那一栏（见 railBox），这里直接用
+          const geo = await railBox()
+          if (!geo) errors.push('AI分析-功能面板宽度：量不到被拖的那一栏')
+          else {
+            if (geo.left < 320 - 2)
+              errors.push(`AI分析-功能面板宽度：拖到最宽后中间只剩 ${Math.round(geo.left)}，小于 320`)
+            if (geo.rowW && max > geo.rowW - 320 + 2)
+              errors.push(`AI分析-功能面板宽度：拖到最宽 ${Math.round(max)}，超过了容器 ${Math.round(geo.rowW)} 减 320`)
+          }
+          await check(p, 'AI分析-功能面板宽度-上限')
+        }
+      }
+      // 双击拖动条恢复默认宽度
+      const g2 = await grip.boundingBox().catch(() => null)
+      if (!g2) errors.push('AI分析-功能面板宽度：恢复默认前量不到拖动条')
+      else {
+        await p.mouse.dblclick(g2.x + g2.width / 2, g2.y + g2.height / 2)
+        await settle(p)
+        const reset = await width()
+        if (Math.abs(reset - 440) > 2) errors.push(`AI分析-功能面板宽度：双击后宽度是 ${reset}，没回到 440`)
+        await check(p, 'AI分析-功能面板宽度-双击恢复')
+        // 窄屏（xl 以下）功能面板是盖在对话上的抽屉（reportCover），没有并排可拖，那时不该有拖动条
+        await p.setViewportSize({ width: 1024, height: 900 })
+        await settle(p)
+        // 窄屏下右栏被 CSS 隐住（xl:flex 生效不了），从标题栏那个只在窄屏显示的按钮盖在对话上打开；
+        // 宽屏那个按钮此刻是 hidden，点它会当成「收起」
+        await p.getByRole('dialog').locator('button[aria-label="分析报告"]:visible').first().click()
+        await p
+          .locator('[data-analysis-panel="run"]')
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('AI分析-功能面板宽度：窄屏下没有打开功能面板'))
+        if (await p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible').count())
+          errors.push('AI分析-功能面板宽度：窄屏覆盖态不该有拖动条')
+        await check(p, 'AI分析-功能面板宽度-窄屏无拖动条')
+        // 抽屉盖着标题栏，用抽屉自己的「收起功能面板」收起；再回到宽屏，后面的用例还是宽屏并排的样子
+        await p.locator('[data-analysis-panel="run"]').getByRole('button', { name: '收起功能面板' }).click()
+        await p.setViewportSize({ width: 1440, height: 900 })
+        await settle(p)
+        if (!(await p.locator('[role="separator"][aria-label="拖动调整功能面板的宽度"]:visible').count()))
+          errors.push('AI分析-功能面板宽度：回到宽屏后拖动条没有回来')
+      }
+    }
+  }
   // 工作流执行的分析开在项目里（不是挂在某个对话下）：窗口给的是「在项目对话里打开」
   if (!(await p.getByRole('button', { name: '在项目对话里打开' }).count()))
     errors.push('AI 分析：工作流执行的分析没有开在项目对话里')

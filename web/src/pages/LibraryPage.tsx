@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Loader2, Package, Plus, Sparkles, Terminal } from 'lucide-react'
 import type { LibraryCli, LibraryItem } from '@shared/library'
 import { libraryName } from '@shared/library'

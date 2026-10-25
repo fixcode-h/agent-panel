@@ -753,20 +753,51 @@ body,
   }
 }
 
-/* 提示分两类：悬停提示（components/ui/hint.tsx）鼠标移开就消失，不放关闭按钮；
-   错误提示会停在屏幕上挡住内容，要能手动关掉。
-   sonner 的关闭按钮只能整体开或逐个 toast 开（toast.error 有两百多处，逐个改不现实），
-   所以 Toaster 上整体开启，再按 data-type 只留错误那一类。
+/* 提示统一走 web/src/lib/toast.ts（排队）和 App.tsx 的 Toaster（右上角、展开堆叠）。
+   这里只管两件视觉上的事：关闭按钮什么时候出现，进出动画多快。
    sonner 自己用 JS 往 head 末尾插样式（排在打包样式表之后），同特异性的规则压不住它，
-   这里带上 html 祖先把优先级提上去。 */
+   所以下面都带上 html 祖先把优先级提上去。 */
+
+/* 关闭按钮平时不显示：提示大多只是告诉用户「做完了」，常显的 ✕ 会抢走正文的注意力。
+   鼠标悬停在这条提示上、或者键盘聚焦到它时才出现；触屏没有悬停，常显。
+
+   两个关键取舍：
+   1) 用 `:focus-visible` 而不是 `:focus-within`：sonner 给每条提示的 li 带了 tabIndex={0}，
+      鼠标点一下正文就会把 li 聚焦上，`:focus-within` 会一直命中——鼠标移开后 ✕ 不收起来。
+   2) 隐藏用 `opacity: 0` + `pointer-events: none`，不用 `display: none`：display:none 的按钮
+      不在 Tab 序列里，而 li 自己一旦失焦（焦点往按钮上走）就不算 `:focus-visible`，按钮会被藏起来、
+      焦点直接被丢回 body，键盘用户反而关不掉。用 opacity 把按钮留在 Tab 序列里，
+      它自己拿到焦点时（`:focus-visible` 或 `:focus`）就显出来，鼠标点正文也不会让它常驻。 */
 html [data-sonner-toast][data-styled='true'] [data-close-button] {
-  display: none;
+  opacity: 0;
+  pointer-events: none;
 }
-html [data-sonner-toast][data-styled='true'][data-type='error'] [data-close-button] {
-  display: flex;
+html [data-sonner-toast][data-styled='true']:hover [data-close-button],
+html [data-sonner-toast][data-styled='true']:focus-visible [data-close-button],
+html [data-sonner-toast][data-styled='true'] [data-close-button]:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
   /* 默认样式让按钮压在右上角外侧，挪进来一点，别盖住第一行文字 */
   top: 6px;
   left: auto;
   right: 6px;
   transform: none;
 }
+@media (hover: none) {
+  html [data-sonner-toast][data-styled='true'] [data-close-button] {
+    opacity: 1;
+    pointer-events: auto;
+    top: 6px;
+    left: auto;
+    right: 6px;
+    transform: none;
+  }
+}
+
+/* 进出动画：sonner 自己的位移过渡是 .4s，但退出的提示 200ms 就被卸载（TIME_BEFORE_UNMOUNT），
+   动画播不完就被掐掉、看起来是「闪一下没了」。压到和卸载时间一样快，退出才完整。 */
+html [data-sonner-toast][data-styled='true'] {
+  transition-duration: 0.2s;
+}
+/* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
+   这里不要用 !important 把它的兜底盖回来。 */

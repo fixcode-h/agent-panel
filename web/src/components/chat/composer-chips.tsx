@@ -2,7 +2,7 @@
 // 对话输入框（ChatComposer）和新建任务的输入框（TaskComposer）共用
 import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type RefObject } from 'react'
 import { Copy, FileText, Image as ImageIcon } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   chipMarker,
   chips,

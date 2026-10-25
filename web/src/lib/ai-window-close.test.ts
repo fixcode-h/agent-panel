@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import { beforeEach, test } from 'node:test'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { setLang, t } from '@shared/i18n'
 import { closeWindowPlan } from '@/lib/ai-window-close'
 import { aiWindowState, closeAiWindow, hideAiWindow, openAiWindow, resetAiWindow } from '@/lib/ai-window'

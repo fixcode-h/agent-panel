@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Archive, ArchiveRestore, Pause, PencilLine, Play, Trash2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'

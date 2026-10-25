@@ -19,7 +19,7 @@ import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { useChildOpen, useRunOpen } from './child-open'
+import { useChildOpen, useJobOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -207,7 +207,8 @@ export function RowShell({
   /**
    * 详情紧跟标题左对齐（占剩余宽度），而不是被标题挤到行尾；耗时仍在行的最右边。
    * 只给「详情只是说明文字、整行没有展开收起」的行用：详情区会挡掉点击（stopPropagation），
-   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」
+   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」。
+   * 传了 rowOpen 时详情区也算入口，不再挡点击
    */
   detailStart,
   ms,
@@ -221,8 +222,9 @@ export function RowShell({
   className,
   children,
   /**
-   * 整行都是打开入口（子对话行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
-   * 不传时行为完全不变——工具行、后台命令、子任务行仍然点哪里都展开收起
+   * 整行都是打开入口（子对话行、子任务行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
+   * 不传时行为完全不变——工具行、后台命令仍然点哪里都展开收起；行尾的 action 按钮
+   * （终止）始终 stopPropagation，点它不会连带打开窗口
    */
   rowOpen,
   /** 行最左边的额外控件（子对话切换下拉），在图标和动作名之前 */
@@ -262,12 +264,12 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
-  // 整行打开优先（子对话行没有展开收起）；其余行仍是整行点了展开
+  // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
       {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
-          子对话行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
+          子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
         onClick={activate}
         className={cn(
@@ -342,7 +344,7 @@ export function RowShell({
         {detail && detailStart ? (
           <span
             className="flex min-w-0 flex-1 items-center border-l border-line-strong pl-2"
-            // 整行打开时详情也属于入口（子对话行）：不拦点击，点了直接冒泡到行上
+            // 整行打开时详情也属于入口（子对话行、子任务行）：不拦点击，点了直接冒泡到行上
             onClick={rowOpen ? undefined : (e) => e.stopPropagation()}
           >
             {detail}
@@ -459,6 +461,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const [open, setOpen] = useState(false)
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
+  const openJob = useJobOpen()
   const openChild = useChildOpen()
   const openRunPane = useRunOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
@@ -505,21 +508,36 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 「启动工作流」这一行点开什么：子对话面板里就地换成这次运行的视图（能返回），别的位置还是弹运行窗口
   const openRunView = openRunPane ? () => openRunPane(tool) : () => setWin('plan')
   // 点标题打开什么：子对话、这次运行、文件、命令行、差异，或者看完整输出的窗口
-  const target: { open: () => void; tip: string } | undefined = file
-    ? { open: () => openFile?.(file), tip: t('查看文件') }
-    : view.child && openChild
-      ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
-      : view.startsRun && task?.id
-        ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
-          // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口
-          { open: openRunView, tip: t('打开这次运行的对话') }
-        : tool.kind === 'run'
-          ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
-          : tool.kind === 'edit'
-            ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
-            : hasWindow(tool)
-              ? { open: () => setWin('out'), tip: t('打开窗口') }
-              : undefined
+  // 后台命令窗口（run_background / request_build 那一行）：和运行区那一行打开的是同一个窗口，
+  // 命令跑完、运行区那行消失以后，这里仍然能点到——事后回看最终输出和退出码靠它
+  const bgJob = view.job && openJob && task?.id ? view.job : ''
+  const target: { open: () => void; tip: string } | undefined = bgJob
+    ? {
+        open: () =>
+          openJob?.({
+            id: bgJob,
+            command: input,
+            // 先按还在跑画（窗口打开后立刻拉真实状态，拉到 done 就换成完成 + 退出码）
+            state: 'running',
+            startedAt: '',
+          }),
+        tip: t('打开命令行窗口'),
+      }
+    : file
+      ? { open: () => openFile?.(file), tip: t('查看文件') }
+      : view.child && openChild
+        ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
+        : view.startsRun && task?.id
+          ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
+            // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口
+            { open: openRunView, tip: t('打开这次运行的对话') }
+          : tool.kind === 'run'
+            ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
+            : tool.kind === 'edit'
+              ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
+              : hasWindow(tool)
+                ? { open: () => setWin('out'), tip: t('打开窗口') }
+                : undefined
   // 行内展开时的输出：长的只留前一段，后面提示去窗口里看
   const short = output.length > 400 ? `${output.slice(0, 400).trimEnd()}…` : output
   // 命令还在跑：展开时只跟最新的几行，像终端一样往下走；跑完再按现有高度显示完整输出

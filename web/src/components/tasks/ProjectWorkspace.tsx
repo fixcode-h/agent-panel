@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Project, Task } from '@shared/schema'
 import {
   byAskedAt,

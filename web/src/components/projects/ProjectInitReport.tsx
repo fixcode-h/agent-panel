@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, CircleAlert, Loader2 } from 'lucide-react'
 import { DEFAULT_FILE_FORMAT, type Project, type ProjectInput } from '@shared/schema'
 import type { ProjectProposal } from '@shared/project-init'
