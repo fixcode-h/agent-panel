@@ -474,6 +474,52 @@ await runShard('子对话与计划', async (api) => {
       await sleep(100)
     }
     step('子对话测试跑通后请父对话收尾：父对话 finish_child 合回分支，子对话完成并回收独立分支')
+    // ---- 父对话正在跑一轮时子对话请收尾：收尾请求以插话（steer）进入那一轮，父对话照样要合回 ----
+    // 子对话 submit_merge 时父对话正忙（被前一个子对话的状态上报叫起），【收尾请求】走 noteParent → steerTask
+    // 插进父对话这一轮，不再另开一轮。CI 上 10 个分片并行时经常撞上这个时机，以前假 CLI 收到插话只记下来、
+    // 不处理里面的 finish_child，子对话就停在「已请父对话收尾」，下一步只能等到超时。
+    {
+      const busyParent = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '父对话' })).id,
+        20000,
+      )
+      // HOLD_STEER：这一轮不靠固定时长，而是一直挂到真的收到插话才收尾。
+      // 用 SLOW 的固定时长当同步点时，子对话要经过 begin_edit 开分支、派评审、评审交回才能走到 submit_merge，
+      // 往往超过了那个窗口；那一轮先结束，收尾请求就退化成普通新一轮 input，插话这条路径根本没被跑到
+      // （去掉 takeSteer 里处理收尾请求的那段，用例照样通过）。见项目教训 lmvm2cr7ycvig
+      await call('POST', `/tasks/${busyParent.id}/messages`, { text: 'HOLD_STEER 先忙着' })
+      await waitFor(async () => (await call('GET', `/tasks/${busyParent.id}`)).working, {
+        timeout: 20000,
+        label: '父对话正在跑一轮',
+      })
+      const busyKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: busyParent.id,
+        prompt: 'COMMIT BEGIN_EDIT SUBMIT_MERGE 父对话忙着的时候请收尾',
+      })
+      const mergedBusy = await waitTask(busyKid.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
+      assert.ok(mergedBusy.resolved, '父对话正在跑时请收尾，也合回去了')
+      assert.equal(mergedBusy.worktree.state, 'merged', '独立分支回收')
+      // 关键：必须是「插话」那条路办的。父对话那一轮如果先结束了，收尾请求会走普通新一轮 input，
+      // .finish 里照样有记录、merged 照样成立，但插话路径没被覆盖，这个用例就白写了
+      const viaSteer = readLog(log + '.finish').filter((x) => x.id === busyKid.id && x.via === 'steer')
+      assert.ok(viaSteer.length, '收尾请求是以插话交给父对话那一轮的')
+      // 插话那次可能被拒（finishChildStep 在「正在合并」「还没请求收尾」时返回 isError），
+      // 这一轮 input 里同一个请求会再试一次并成功（见 R5 的处理）：所以看「至少成功过一次」
+      assert.ok(
+        viaSteer.some((x) => !x.got.isError),
+        '父对话在这一轮里（插话进来）就调了 finish_child',
+      )
+      // 假 CLI 那一轮确实一直在等插话（不是静默被当成卡住、也不是等满上限自己结束）
+      assert.ok(
+        readLog(log + '.hold').some((x) => x.held && x.kid === busyKid.id),
+        '父对话那一轮一直等到插话进来（HOLD_STEER 记 held）',
+      )
+      await waitDone(busyParent.id, 60000)
+      step('父对话正在跑一轮时子对话请收尾：收尾请求以插话进来，父对话照样合回')
+    }
     // ---- 停下来时独立分支里还有没提交的改动：父对话里要说清几个文件、在哪个目录，并能一键继续 ----
     {
       const stopParent = await waitDone(
