@@ -626,6 +626,14 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 一次派两个子任务（API 并发上限的用例：名额是 1 时两个要一个一个跑，对话等它们时不占名额，不会互相等死）
+if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [
+      { title: '限流子任务一', instructions: 'SLOW 限流子任务一' },
+      { title: '限流子任务二', instructions: 'SLOW 限流子任务二' },
+    ],
+  })
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
   for (let i = 1; i <= 6; i++)

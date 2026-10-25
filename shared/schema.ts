@@ -439,6 +439,11 @@ const WorkflowFields = z.object({
   budgetTokens: z.number().int().min(0).optional(),
   /** 从内置模板建出来的工作流记下来源（builtin:<key>），内置工作流列表里据此显示「删除」 */
   origin: z.string().max(80).optional(),
+  /**
+   * 面板最后一次写这个内置副本时内容的指纹（见 shared/builtin/install.ts 的 workflowFingerprint）：
+   * 现在的内容还是这个指纹就是没改过，启动时直接升级到新定义，不用靠历史版本表逐个比对
+   */
+  builtinHash: z.string().max(32).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>
@@ -846,6 +851,12 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
+/**
+ * AI 分析对话的种类（见 ADR 0014、0016）：标题在列表里和别的对话区分开，右侧功能面板按种类挑内容。
+ * run：分析执行记录（对话、子任务、几次工作流执行）；init：AI 初始化项目；lessons：教训评审；fix：AI 排查报错
+ */
+export const AnalysisKind = z.enum(['run', 'init', 'lessons', 'fix'])
+export type AnalysisKind = z.infer<typeof AnalysisKind>
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
 export const Attachment = z.object({
@@ -899,6 +910,8 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
+  analysis: AnalysisKind.optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -1179,6 +1192,10 @@ export const StepUsage = z.object({
 })
 export type StepUsage = z.infer<typeof StepUsage>
 
+/** 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个 */
+export const ApiWait = z.object({ api: z.string(), ahead: z.number().int().default(0) })
+export type ApiWait = z.infer<typeof ApiWait>
+
 export const TaskStep = z.object({
   /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
@@ -1223,6 +1240,8 @@ export const TaskStep = z.object({
   branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */
+  apiWait: ApiWait.optional(),
   /**
    * 子任务接着哪个 CLI 会话跑（task.sessions 的键）：spawn_agents 带 resume 时是被接着的那个子任务的会话，
    * 复看的评审不用把文档和代码从头再读一遍。空的就用自己的 id（旧数据和新开的子任务都是这样）
@@ -1549,6 +1568,8 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
+  analysis: AnalysisKind.optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
@@ -1578,6 +1599,11 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /**
+   * 每个会话最后一次带上的角色设定的指纹（键同 sessions）：没有系统提示词参数的 CLI 只在第一轮带角色，
+   * 续接时角色变了就补发新版（见 server/exec/runner.ts）
+   */
+  roleHashes: z.record(z.string(), z.string()).optional(),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
@@ -1678,6 +1704,8 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /** 对话这一轮在排队等 API 的并发名额（仍算在运行，可以停止）；拿到就去掉 */
+  apiWait: ApiWait.optional(),
   /**
    * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
    * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，

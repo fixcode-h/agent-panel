@@ -73,3 +73,4 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [state.md](./state.md)                 | 对话状态、父子对话同步和收尾、停止、跟随到底部 |
 | [design.md](./design.md)               | UI 设计 Agent 的截图、出图、引用和验收         |
 | [project-files.md](./project-files.md) | 面板往用户项目里临时写的配置（面板 MCP 条目）  |
+| [retry.md](./retry.md)                 | 报错后重试：在原来的子对话、子任务里接着做     |

@@ -44,6 +44,7 @@ import {
   CircleStop,
   MessageCircleQuestion,
   Copy,
+  ClipboardList,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
@@ -85,8 +86,10 @@ import { ReceivedRow } from './PeerMessage'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
-import { AnalyzeDialog, EvolutionCard } from './Evolution'
-import { LessonReviewCard } from '@/components/projects/LessonReview'
+import { AnalyzeDialog } from './Evolution'
+import { AnalysisPanel, reportTitle } from './AnalysisPanel'
+import { AnalysisMark } from './AnalysisMark'
+import { findReport, isAnalysisTask } from '@/lib/analysis-report'
 import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
@@ -119,7 +122,7 @@ import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { ProjectSwitch } from './ProjectSwitch'
-import { OPEN_CHILD_EVENT, paneChildKey, paneFilesKey, paneRunKey } from '@/lib/ai-window'
+import { OPEN_CHILD_EVENT, paneChildKey, paneFilesKey, paneReportKey, paneRunKey } from '@/lib/ai-window'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -283,6 +286,10 @@ const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) |
 /** 文件面板收没收起按对话记在本地：没记录过就收起，先给对话让出整块宽度 */
 const readFilesFolded = (taskId: string) => readStored(paneFilesKey(taskId)) !== 'open'
 const writeFilesFolded = (taskId: string, folded: boolean) => writeStored(paneFilesKey(taskId), folded ? '' : 'open')
+/** 分析对话的功能面板默认开着：用户收起过才记一笔 */
+const readReportFolded = (taskId: string) => readStored(paneReportKey(taskId)) === 'closed'
+const writeReportFolded = (taskId: string, folded: boolean) =>
+  writeStored(paneReportKey(taskId), folded ? 'closed' : '')
 function writePaneChild(taskId: string, childId: string) {
   writeStored(paneChildKey(taskId), childId)
   // 子对话和运行面板互斥：右栏同一时间只显示一个
@@ -365,6 +372,10 @@ export function TaskView({
   const outerNav = useContext(PaneNavCtx)
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏。默认收起，用户展开过就按本地记着的来
   const [filesFolded, setFilesFolded] = useState(() => readFilesFolded(taskId))
+  // AI 分析对话的功能面板（分析报告、教训评审、项目设置）：宽屏是对话右边的一栏，默认开着、收起按对话记住；
+  // 窄屏和放在父对话右栏里（pane）时没有地方并排，点标题栏的按钮盖在对话上打开
+  const [reportFolded, setReportFolded] = useState(() => readReportFolded(taskId))
+  const [reportCover, setReportCover] = useState(false)
   // 右栏开着子对话时再看文件：文件面板盖在子对话上展开。子对话已经占了半边，
   // 并排会把两边都挤坏，所以复用同一栏的位置覆盖，收起后子对话原样回来
   const [childFiles, setChildFiles] = useState(false)
@@ -531,6 +542,8 @@ export function TaskView({
     setOpenChild(readPaneChild(taskId))
     setOpenRun(readPaneRun(taskId))
     setFilesFolded(readFilesFolded(taskId))
+    setReportFolded(readReportFolded(taskId))
+    setReportCover(false)
     // 别处（AI 分析窗口「去对话里看」）要在这个对话的右栏打开某个子对话：已经开着的对话页马上切过去
     const onOpen = (e: Event) => {
       const d = (e as CustomEvent<{ parentId: string; childId: string }>).detail
@@ -733,6 +746,22 @@ export function TaskView({
     },
   })
 
+  // 分析报告在哪条回复里：画在右侧的功能面板，不再铺在对话区（用户 2026-10-25 要求，ADR 0016）
+  const report = useMemo(() => (task ? findReport(task) : null), [task])
+  const reportId = report?.message.id ?? ''
+  // 出了新的报告（重新分析、接着追问后又出了一份）：收起过的面板重新打开
+  const seenReport = useRef(reportId)
+  useEffect(() => {
+    const prev = seenReport.current
+    seenReport.current = reportId
+    if (!reportId || !prev || reportId === prev) return
+    setReportFolded(false)
+    if (!pane) writeReportFolded(taskId, false)
+    // 只跟着报告换了没有走
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportId])
+  useEscape(reportCover, () => setReportCover(false), true)
+
   // 分段只在任务内容变了时重算：打字、开关面板不再把上千条消息重新归一遍
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -748,6 +777,23 @@ export function TaskView({
 
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
   const noFiles = !task.projectId
+  // 功能面板占右栏（宽屏）：和子对话、运行面板、文件面板同一栏，同一时间只显示一个；子对话、运行开着时让给它们
+  const reportOn = !!report && !pane && !reportFolded && !openChild && openRun === 0
+  const closeReport = () => {
+    if (reportCover) return setReportCover(false)
+    setReportFolded(true)
+    if (!pane) writeReportFolded(taskId, true)
+  }
+  const reportPanel = report && (
+    <AnalysisPanel
+      task={task}
+      project={project}
+      kind={report.kind}
+      text={report.message.text}
+      onTask={apply}
+      onClose={closeReport}
+    />
+  )
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async (input?: string) => {
@@ -1063,20 +1109,6 @@ export function TaskView({
         )
       })()}
       <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-        {/* 「AI 分析」的结果固定在输入框上方，接着追问时也看得到；发新内容时它自己收起 */}
-        <EvolutionCard
-          key={task.id}
-          task={task}
-          project={project}
-          kids={children}
-          onSpawned={(id) =>
-            void loadChildren(task.id)
-              .then(setChildren)
-              .catch(() => {})
-              .finally(() => openChildIn(id))
-          }
-        />
-        <LessonReviewCard key={`lr-${task.id}`} task={task} project={project} />
         <TaskRequestCard task={task} onAnswered={apply} />
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
         <WorktreeBar task={task} />
@@ -1170,13 +1202,16 @@ export function TaskView({
                         className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
                       />
                     ) : (
-                      <h2
-                        title={t('双击重命名')}
-                        onDoubleClick={() => setRenaming(task.title)}
-                        className="min-w-0 truncate px-1 font-medium"
-                      >
-                        {task.title}
-                      </h2>
+                      <>
+                        {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis} className="ml-1" />}
+                        <h2
+                          title={t('双击重命名')}
+                          onDoubleClick={() => setRenaming(task.title)}
+                          className="min-w-0 truncate px-1 font-medium"
+                        >
+                          {task.title}
+                        </h2>
+                      </>
                     )}
                     <ProcessMenu taskId={task.id} />
                     {task.simulated && (
@@ -1330,6 +1365,39 @@ export function TaskView({
                       </MenuItem>
                     </MenuContent>
                   </Menu>
+                  {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
+                  {report && !pane && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="hidden xl:inline-flex"
+                      aria-label={reportTitle(report.kind)}
+                      title={reportOn ? t('收起功能面板') : reportTitle(report.kind)}
+                      aria-pressed={reportOn}
+                      onClick={() => {
+                        if (reportOn) return closeReport()
+                        if (openChild) openChildIn('')
+                        if (openRun) openRunIn(0)
+                        setReportFolded(false)
+                        writeReportFolded(taskId, false)
+                      }}
+                    >
+                      <ClipboardList className={cn('h-4 w-4', reportOn && 'text-accent')} />
+                    </Button>
+                  )}
+                  {report && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={pane ? undefined : 'xl:hidden'}
+                      aria-label={reportTitle(report.kind)}
+                      title={reportTitle(report.kind)}
+                      aria-pressed={reportCover}
+                      onClick={() => setReportCover((v) => !v)}
+                    >
+                      <ClipboardList className={cn('h-4 w-4', reportCover && 'text-accent')} />
+                    </Button>
+                  )}
                   {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；
                   右栏开着子对话时右栏不是文件面板，按钮改成在子对话上覆盖展开文件（运行面板开着时没有文件可看） */}
                   {!pane && !noFiles && openRun === 0 && (
@@ -1339,12 +1407,24 @@ export function TaskView({
                       size="icon-sm"
                       className="hidden xl:inline-flex"
                       // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
-                      aria-label={openChild ? t('覆盖显示文件') : filesFolded ? t('显示文件') : t('收起文件面板')}
-                      title={openChild ? t('覆盖显示文件') : filesFolded ? t('文件') : t('收起文件面板')}
-                      aria-expanded={openChild ? childFiles : !filesFolded}
-                      onClick={() => (openChild ? setChildFiles((v) => !v) : toggleFiles())}
+                      aria-label={
+                        openChild ? t('覆盖显示文件') : filesFolded || reportOn ? t('显示文件') : t('收起文件面板')
+                      }
+                      title={openChild ? t('覆盖显示文件') : filesFolded || reportOn ? t('文件') : t('收起文件面板')}
+                      aria-expanded={openChild ? childFiles : !filesFolded && !reportOn}
+                      onClick={() => {
+                        if (openChild) return setChildFiles((v) => !v)
+                        // 功能面板占着右栏：收起它换成文件
+                        if (reportOn) {
+                          setReportFolded(true)
+                          writeReportFolded(taskId, true)
+                          if (filesFolded) toggleFiles()
+                          return
+                        }
+                        toggleFiles()
+                      }}
                     >
-                      {(openChild ? childFiles : filesFolded) ? (
+                      {(openChild ? childFiles : filesFolded || reportOn) ? (
                         <PanelRight className="h-4 w-4" />
                       ) : (
                         <PanelRightClose className="h-4 w-4" />
@@ -1539,6 +1619,10 @@ export function TaskView({
                 {/* 子对话里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。
                     返回（←）回子对话这一层，✕ 走 onClose 关掉子对话面板本身。
                     输入框跟着放在运行视图底下，和父对话右栏的运行面板一样，看着节点也能补充要求 */}
+                {/* 子对话面板里没有地方并排：功能面板盖在对话上，收起后对话原样回来 */}
+                {pane && reportCover && reportPanel && (
+                  <div className="absolute inset-0 z-30 flex flex-col">{reportPanel}</div>
+                )}
                 {paneRun && (
                   <RunView
                     task={task}
@@ -1562,21 +1646,30 @@ export function TaskView({
                         : t('子对话')
                       : openRun > 0
                         ? t('运行 {n}', { n: openRun })
-                        : t('文件')
+                        : !panel && (reportOn || reportCover) && report
+                          ? reportTitle(report.kind)
+                          : t('文件')
                   }
                   data-task-panel
-                  style={{ width: openChild ? '50%' : taskPanel.width }}
+                  style={{
+                    // 功能面板定宽：放在 AI 分析窗口里时也给对话留出大半
+                    width: openChild
+                      ? '50%'
+                      : !panel && openRun === 0 && (reportOn || reportCover)
+                        ? 'min(440px, 100%)'
+                        : taskPanel.width,
+                  }}
                   className={cn(
                     'relative shrink-0 flex-col border-l bg-rail',
-                    panel || openRun > 0 || openChild
+                    panel || reportCover || openRun > 0 || openChild
                       ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
                       : 'hidden',
                     // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
                     'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-                    (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
+                    (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
-                  {!openChild && !panel && (
+                  {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
                   {openChild ? (
@@ -1651,6 +1744,8 @@ export function TaskView({
                           onClose={() => openRunIn(0)}
                           footer={composer}
                         />
+                      ) : !panel && (reportOn || reportCover) && reportPanel ? (
+                        reportPanel
                       ) : (
                         <TaskFiles
                           task={task}
@@ -1663,10 +1758,10 @@ export function TaskView({
                   )}
                 </aside>
               )}
-              {(panel || openRun > 0) && (
+              {(panel || reportCover || openRun > 0) && (
                 <div
                   className="fixed inset-0 z-30 bg-black/40 xl:hidden"
-                  onClick={() => (openRun > 0 ? openRunIn(0) : setPanel(false))}
+                  onClick={() => (openRun > 0 ? openRunIn(0) : reportCover ? setReportCover(false) : setPanel(false))}
                 />
               )}
             </div>
@@ -1991,6 +2086,7 @@ function ChildrenBar({
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
                       <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
+                      {c.analysis && <AnalysisMark kind={c.analysis} />}
                       <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
                       <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
                         {stale ? stale.text : line}
@@ -2363,6 +2459,15 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）
+  if (task.apiWait)
+    return (
+      <>
+        {task.apiWait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: task.apiWait.api, n: task.apiWait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: task.apiWait.api })}
+      </>
+    )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
   return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>

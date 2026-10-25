@@ -117,7 +117,7 @@ import {
 import { openPlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
-import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
+import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
@@ -770,13 +770,15 @@ function ensureDemoCore(d: Db) {
       updatedAt: at,
     })
   }
-  const rules = d.agents.find((a) => a.origin === 'builtin:rules')
+  // 内置角色（不只是必备角色）都按当前定义同步，和服务端的 upgradeBuiltinAgents 一样
+  const byOrigin = (k: string) => d.agents.find((a) => a.origin === `builtin:${k}`)?.id ?? ''
   d.agents = d.agents.map((a) => {
-    const key = coreKey(a)
-    if (!key) return a
-    const def = coreDefinition(key)
-    const includes = def.includes.map((k) => (k === 'rules' ? (rules?.id ?? '') : '')).filter(Boolean)
-    return { ...a, ...syncCore(a, def, { categoryId: cat.id, includes }), name: a.name || def.agent.name }
+    const key = builtinKey(a)
+    const def = key ? builtinDefinition(key) : undefined
+    if (!def) return a
+    const includes = def.includes.map(byOrigin).filter(Boolean)
+    const categoryId = isCoreAgent(a) ? cat.id : a.categoryId
+    return { ...a, ...syncCore(a, def, { categoryId, includes }), name: a.name || def.agent.name }
   })
 }
 function persist() {
@@ -2078,13 +2080,19 @@ function route(method: string, url: string, body: unknown): unknown {
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
-    // 必备角色只能改参数取值和运行配置；复制出来的是普通角色
-    const coreBefore = method === 'POST' ? undefined : d.agents.find((a) => a.id === id && isCoreAgent(a))
-    if (method === 'POST' && isCoreAgent(input)) input.origin = ''
-    if (coreBefore) {
-      const def = coreDefinition(coreKey(coreBefore)!)
-      const next = syncCore(input, def, { categoryId: coreBefore.categoryId, includes: coreBefore.includes })
-      return update('agents', id, { ...next, name: coreBefore.name, origin: coreBefore.origin }, 'Agent 不存在')
+    // 内置角色只能改参数取值和运行配置（其他内置角色还能改分类、标签、启用）；复制出来的是普通角色
+    const builtinBefore = method === 'POST' ? undefined : d.agents.find((a) => a.id === id && isBuiltinAgent(a))
+    if (
+      method === 'POST' &&
+      isBuiltinAgent(input) &&
+      (isCoreAgent(input) || d.agents.some((a) => a.origin === input.origin))
+    )
+      input.origin = ''
+    if (builtinBefore) {
+      const def = builtinDefinition(builtinKey(builtinBefore)!)!
+      const categoryId = isCoreAgent(builtinBefore) ? builtinBefore.categoryId : input.categoryId
+      const next = syncCore(input, def, { categoryId, includes: builtinBefore.includes })
+      return update('agents', id, { ...next, name: builtinBefore.name, origin: builtinBefore.origin }, 'Agent 不存在')
     }
     // 和服务端一样：去掉引入自己的，会形成循环就拒绝
     const self = method === 'POST' ? '' : id
@@ -2812,6 +2820,7 @@ function tasksRoute(
           stopReason: x.stopReason ?? '',
           waiting: childWait(x, { background, cliAlive: live.has(x.id) }),
           resolved: x.resolved === true,
+          analysis: x.analysis,
         }
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做

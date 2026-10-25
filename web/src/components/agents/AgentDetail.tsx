@@ -67,7 +67,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
-import { coreDefinition, coreKey, coreUse } from '@shared/builtin/core'
+import { builtinDefinition, builtinKey, coreKey, coreUse } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 
 /** 角色设定的模板 */
@@ -168,9 +168,11 @@ export function AgentDetail({
       permission: '',
     }))
   const follow = !draft.cli
-  // 必备角色：设定、能力、Skill 由面板维护，这里只能改参数取值和运行配置
+  // 内置角色（含必备角色）：设定、能力、Skill 由面板维护并随版本更新，这里只能改参数取值和运行配置
   const core = coreKey(agent)
-  const coreDef = core ? coreDefinition(core) : undefined
+  const builtin = builtinKey(agent)
+  const locked = !!builtin
+  const coreDef = builtin ? builtinDefinition(builtin) : undefined
   const coreValues: ParamValues = coreDef
     ? Object.fromEntries(
         draft.params
@@ -261,6 +263,7 @@ export function AgentDetail({
             meta={
               <>
                 {core ? <Badge tone="accent">{t('必备')}</Badge> : <Badge>{category?.name ?? t('未分类')}</Badge>}
+                {locked && !core && <Badge tone="accent">{t('内置')}</Badge>}
                 {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
                 {!draft.enabled ? (
                   <StatusDot tone="muted" label={t('已停用')} />
@@ -290,7 +293,7 @@ export function AgentDetail({
                   <MessageSquare className="h-4 w-4" />
                   {t('对话')}
                 </Button>
-                {!core && (
+                {!locked && (
                   <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
                     <Sparkles className="h-4 w-4 text-accent" />
                     {t('AI 优化')}
@@ -340,11 +343,11 @@ export function AgentDetail({
               },
               {
                 id: 'extras',
-                label: core ? t('开场白') : t('Skill 与开场白'),
+                label: locked ? t('开场白') : t('Skill 与开场白'),
                 icon: Sparkles,
                 // 必备角色的这一页只有开场白，数开场白；其他角色数 Skill
-                extra: (core ? draft.starters.length : draft.skills.length) ? (
-                  <TabCount n={core ? draft.starters.length : draft.skills.length} />
+                extra: (locked ? draft.starters.length : draft.skills.length) ? (
+                  <TabCount n={locked ? draft.starters.length : draft.skills.length} />
                 ) : undefined,
               },
             ]}
@@ -365,7 +368,32 @@ export function AgentDetail({
                 </div>
               </section>
             )}
-            {tab === 'basic' && !core && (
+            {tab === 'basic' && locked && !core && (
+              <>
+                <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
+                    <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
+                    <span className="text-muted">
+                      {t(
+                        '名称、角色设定、能力和 Skill 由面板维护，每次更新都换成最新版本，用到它的对话下一轮就用新版。你可以改参数、运行环境、分类和标签；想改设定就「复制一份」，改复制出来的角色。',
+                      )}
+                    </span>
+                  </div>
+                </section>
+                <FormSection title={t('分类与标签')}>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('分类')}</span>
+                    <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('标签')}</span>
+                    <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
+                  </div>
+                </FormSection>
+              </>
+            )}
+            {tab === 'basic' && !locked && (
               <FormSection title={t('基本信息')}>
                 <div className="flex flex-wrap gap-4">
                   <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
@@ -524,15 +552,17 @@ export function AgentDetail({
               </FormSection>
             )}
 
-            {tab === 'params' && core && coreDef && (
+            {tab === 'params' && locked && coreDef && (
               <FormSection title={t('参数')}>
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">
-                  {t('这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。')}
+                  {core
+                    ? t('这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。')
+                    : t('这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。')}
                 </p>
                 <ParamsForm params={coreDef.agent.params} values={coreValues} onChange={setCoreValues} />
               </FormSection>
             )}
-            {tab === 'extras' && core && (
+            {tab === 'extras' && locked && (
               <FormSection title={t('开场白')}>
                 <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
                 <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
@@ -545,7 +575,7 @@ export function AgentDetail({
                 </Field>
               </FormSection>
             )}
-            {tab === 'role' && core && (
+            {tab === 'role' && locked && (
               <FormSection title={t('角色设定')}>
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">
                   {t('由面板维护，只读。Skill：{list}', { list: draft.skills.join(t('、')) || t('无') })}
@@ -555,7 +585,7 @@ export function AgentDetail({
                 </pre>
               </FormSection>
             )}
-            {tab === 'role' && !core && (
+            {tab === 'role' && !locked && (
               <>
                 <FormSection title={t('角色设定')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
@@ -803,7 +833,7 @@ export function AgentDetail({
                 </FormSection>
               </>
             )}
-            {tab === 'params' && !core && (
+            {tab === 'params' && !locked && (
               <>
                 <FormSection title={t('参数')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
@@ -822,7 +852,7 @@ export function AgentDetail({
               </>
             )}
 
-            {tab === 'extras' && !core && (
+            {tab === 'extras' && !locked && (
               <FormSection title={t('Skill 与开场白')}>
                 <Field
                   label="Skill"

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { type Attachment, type Task } from '@shared/schema'
+import { type AnalysisKind, type Attachment, type Task } from '@shared/schema'
 import { analysisHome, analyzerId, rootIdOf, type AnalysisHome, type AnalysisScope } from '@shared/analysis-home'
 import { t } from '@shared/i18n'
 import { type ClosePlan, closeWindowPlan } from './ai-window-close'
@@ -224,10 +224,12 @@ export async function resolveHome(scope: AnalysisScope): Promise<AnalysisHome> {
 
 /**
  * 按归属规则新建一个分析对话：放在哪由 analysisHome 定，角色用必备角色「分析」。
- * 开成子对话时跟着父对话的「提问」开关；顶层对话按调用方给的
+ * 「提问」默认关着（用户 2026-10-25 要求），开成子对话时也不跟父对话的开关；要问的在对话里打开
  */
 export async function createAnalysisTask(opts: {
   scope: AnalysisScope
+  /** 哪种分析：标题区分、右侧功能面板按它挑内容 */
+  kind: AnalysisKind
   title: string
   prompt: string
   attachments?: Attachment[]
@@ -250,7 +252,8 @@ export async function createAnalysisTask(opts: {
     prompt: opts.prompt,
     attachments: opts.attachments ?? [],
     isolate: false,
-    askUser: home.parentTaskId && root && 'askUser' in root ? !!root.askUser : (opts.askUser ?? false),
+    askUser: opts.askUser ?? false,
+    analysis: opts.kind,
   })
   // 列表里用分析对象当标题，一眼能认出是哪次分析
   return api.renameTask(created.id, opts.title.slice(0, 80)).catch(() => created)
@@ -275,6 +278,8 @@ export function analysisRoute(s: Pick<State, 'taskId' | 'projectId' | 'parentTas
 export const paneChildKey = (taskId: string) => `task-child:${taskId}`
 export const paneRunKey = (taskId: string) => `task-run:${taskId}`
 export const paneFilesKey = (taskId: string) => `task-files:${taskId}`
+/** 分析对话的功能面板收没收起（默认开着） */
+export const paneReportKey = (taskId: string) => `task-report:${taskId}`
 export const OPEN_CHILD_EVENT = 'agent-panel:open-child'
 
 export function showChildInPane(parentId: string, childId: string) {

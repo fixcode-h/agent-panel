@@ -389,6 +389,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .waitFor({ timeout: 30000 })
       .catch(() => errors.push('AI 初始化：对话结束后结果没有交回设置页'))
+    // 初始化对话右侧是设置应用面板（参照老版本 AI 窗口右边的预览）：推荐设置在对话旁边就能逐项应用
+    await p
+      .locator('[data-analysis-panel="init"]')
+      .getByText('推荐设置', { exact: true })
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('AI 初始化：对话右侧没有设置应用面板'))
+    await check(p, 'AI初始化-右侧设置面板', ['写入的文件', '推荐设置'])
     // 关掉分析窗口，回到设置页看推荐
     await p.getByRole('button', { name: '关闭', exact: true }).last().click()
     await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
