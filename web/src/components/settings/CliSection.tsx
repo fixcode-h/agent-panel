@@ -24,6 +24,7 @@ import {
   type Settings,
 } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { PROXY_ENV_EXAMPLE } from '@shared/proxy'
 import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
@@ -897,7 +898,7 @@ export function CliSection({
             rows={2}
             value={draft.envText}
             onChange={(e) => set('envText', e.target.value)}
-            placeholder={def.envExample || 'HTTPS_PROXY=http://127.0.0.1:7890'}
+            placeholder={def.envExample || PROXY_ENV_EXAMPLE}
             className="font-mono text-[0.8125rem]"
             spellCheck={false}
           />

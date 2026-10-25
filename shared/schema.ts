@@ -1897,7 +1897,7 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
-  /** 网络代理：检查更新、下载新版本时用，例如 http://127.0.0.1:7890；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
+  /** 网络代理：检查更新、下载新版本时用。默认地址和各处的示例见 shared/proxy.ts（只支持 http 代理，SOCKS 用不了）；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
   proxy: z.string().trim().default(''),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
