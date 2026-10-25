@@ -682,6 +682,7 @@ export function AnalyzeDialog({
   onOpenChange,
   title,
   intro,
+  placeholder,
   subject,
   start,
 }: {
@@ -691,6 +692,8 @@ export function AnalyzeDialog({
   title?: string
   /** 弹窗里说明会分析什么；不写是执行结果的那段 */
   intro?: string
+  /** 「想重点看什么」的示例；不写是执行结果的那句 */
+  placeholder?: string
   /** 分析对象：窗口和浮条上显示 */
   subject: string
   /** 带上用户写的重点，新建分析对话 */
@@ -745,7 +748,7 @@ export function AnalyzeDialog({
           onChange={(e) => setFocus(e.target.value)}
           maxLength={1000}
           rows={3}
-          placeholder={t('例如：为什么验收总是不通过、哪些节点最费 token')}
+          placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
           className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
         />
       </label>

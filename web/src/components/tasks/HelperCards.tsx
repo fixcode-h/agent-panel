@@ -16,7 +16,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
 import { AnalyzeDialog } from './Evolution'
-import { startSubtaskAnalysis } from '@/lib/task-transfer'
+import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
@@ -262,6 +262,8 @@ export function HelperWindow({
 }) {
   const { agents } = useData()
   const step = task.steps.find((s) => s.id === id)
+  // 点「AI 分析」开的是复用执行记录那一套的弹窗，只把范围收窄到这一步
+  const [analyzing, setAnalyzing] = useState(false)
   const live = step?.status === 'running'
   const now = useNow(live)
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
@@ -269,7 +271,6 @@ export function HelperWindow({
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
   // 打开就停在最新输出（首帧算不完的高度下一帧和布局稳定后再补），之后跟着新内容走；用户往上翻了就不再拽回来
   const scroller = useStickToBottom(id)
-  const [analyzing, setAnalyzing] = useState(false)
   if (!step) return null
   const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
   return (
@@ -293,19 +294,18 @@ export function HelperWindow({
               </span>
             )}
             {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+            {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('AI 分析')}
+              title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
+              onClick={() => setAnalyzing(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('AI 分析')}</span>
+            </Button>
             <StopHelper task={task} step={step} label />
-            {/* 分析开在派它的对话所在那棵树的父对话下（见 shared/analysis-home.ts），在统一的 AI 分析窗口里看 */}
-            {!live && step.status !== 'pending' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                title={t('把这个子任务的对话流和结果交给 AI 分析')}
-                onClick={() => setAnalyzing(true)}
-              >
-                <Sparkles className="h-3.5 w-3.5 text-accent" />
-                {t('AI 分析')}
-              </Button>
-            )}
             <D.Close asChild>
               <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
                 <X className="h-4 w-4" />
@@ -333,21 +333,30 @@ export function HelperWindow({
                     ? t('子任务已终止，派它的对话会收到终止原因。这里只能查看')
                     : t('子任务已结束，结果已交回给派它的对话。这里只能查看')}
           </footer>
-          <AnalyzeDialog
-            open={analyzing}
-            onOpenChange={setAnalyzing}
-            title={t('AI 分析子任务')}
-            intro={t(
-              'AI 会读这个子任务的对话流、工具调用和交回的结果，判断有没有做好派给它的事、慢在哪里、派发的要求写得清不清楚。',
-            )}
-            subject={step.title}
-            start={(focus) => {
-              onClose()
-              return startSubtaskAnalysis({ task, stepId: step.id, agents, focus })
-            }}
-          />
         </D.Content>
       </D.Portal>
+      {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在父对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
+      <AnalyzeDialog
+        open={analyzing}
+        onOpenChange={setAnalyzing}
+        title={t('AI 分析这个子任务')}
+        subject={t('子任务 {title}', { title: step.title })}
+        intro={t(
+          'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。',
+        )}
+        placeholder={t('例如：为什么这一步这么慢、它有没有做角色以外的事')}
+        start={async (focus) => {
+          onClose()
+          return startAnalysis({
+            tasks: [await api.task(task.id)],
+            agents,
+            projectId: task.projectId,
+            focus,
+            scope: { stepId: step.id },
+            scopeTitle: t('子任务 {title}', { title: step.title }),
+          })
+        }}
+      />
     </D.Root>
   )
 }

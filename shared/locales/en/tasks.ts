@@ -824,6 +824,16 @@ export const EN_TASKS: Record<string, string> = {
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
+  // 子任务的 AI 分析（复用执行记录那一套弹窗）
+  'AI 分析这个子任务': 'AI analysis of this subtask',
+  '让 AI 分析这一步的耗时、角色符合度和优化空间':
+    'Let AI analyze how long this step took, whether it fit its role and what could improve',
+  '子任务 {title}': 'subtask {title}',
+  子任务记录: 'Subtask record',
+  '例如：为什么这一步这么慢、它有没有做角色以外的事':
+    'e.g. why this step is slow, whether it did anything outside its role',
+  'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。':
+    "The AI reads only this subtask's record (its time, waits, tokens, role definition, the instructions it was given and its conversation), and judges whether it is too slow, went outside its role, how it could be improved, and whether the panel itself has issues. It only analyzes and changes no files.",
   后台命令: 'Background command',
   '{n} 条后台命令': '{n} background commands',
   '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',
@@ -1062,15 +1072,9 @@ export const EN_TASKS: Record<string, string> = {
     'Starts a conversation with the Analysis role that only analyzes and never edits files; analyses of a conversation open under its parent conversation',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
-  '把这个子任务的对话流和结果交给 AI 分析': "Send this subtask's conversation and result to AI for analysis",
-  'AI 分析子任务': 'AI analysis of subtask',
-  'AI 会读这个子任务的对话流、工具调用和交回的结果，判断有没有做好派给它的事、慢在哪里、派发的要求写得清不清楚。':
-    "The AI reads this subtask's conversation, tool calls and returned result, and judges whether it did the job, where it was slow, and whether the instructions it was given were clear.",
   '{name} 最近 {n} 次执行': 'last {n} runs of {name}',
   'AI 排查': 'AI troubleshooting',
   '{label}结束：{title}': '{label} finished: {title}',
   '上一个{label}还没结束，结束后再试': 'The previous {label} is still running; try again when it finishes',
-  子任务记录: 'subtask-record',
-  '分析子任务：{title}': 'Analyze subtask: {title}',
   '所有 AI 分析、AI 排查的对话默认使用': 'Default for every AI analysis and AI troubleshooting conversation',
 }

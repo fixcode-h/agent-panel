@@ -58,6 +58,7 @@ import { FontSection } from '@/components/settings/FontSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
+import { useSkillUpdates } from '@/lib/skill-updates'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
 import { ShellSetting } from '@/components/settings/ShellSetting'
 import { CustomClis } from '@/components/settings/CustomClis'
@@ -357,6 +358,8 @@ function SettingsBody({
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
+  const deployN = useSkillUpdates().deployed.length
+  const deployDot = deployN ? t('{n} 个部署的技能可以更新', { n: deployN }) : undefined
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
   const defDraft = drafts[defCli]
   const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
@@ -399,6 +402,10 @@ function SettingsBody({
                 <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
                 {s.id === 'update' && update && (
                   <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
+                )}
+                {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
+                {s.id === 'models' && deployDot && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
                 )}
               </button>
             </div>
@@ -467,6 +474,9 @@ function SettingsBody({
                     s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                   )}
                   <span className="truncate">{s.label}</span>
+                  {s.id === 'deploy' && deployDot && (
+                    <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
+                  )}
                   {s.cli && defCli === s.cli.id && (
                     <span className="text-[0.6875rem] font-normal text-subtle">{t('默认')}</span>
                   )}

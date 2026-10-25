@@ -100,6 +100,8 @@ import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
+import { sweepPanelMcp } from './panel-mcp-files.ts'
+import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 
@@ -130,6 +132,15 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
   builtinProjectCategories,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
+
+/** 各项目目录里面板没来得及删的 MCP 条目（关掉、崩溃时留下的）：启动时还没有在跑的对话，凡是指向本面板的都已失效 */
+async function sweepProjectsPanelMcp() {
+  for (const p of await projects.list().catch(() => [])) {
+    if (!p.path || !existsSync(p.path)) continue
+    const n = await sweepPanelMcp(p.path)
+    if (n) log.info('server', '清掉了项目里失效的面板 MCP 条目', { project: p.name, files: n })
+  }
+}
 
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
 for (const w of await workflows.list()) {
@@ -998,6 +1009,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
   setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
   setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
+  // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
+  void sweepProjectsPanelMcp()
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser

@@ -292,7 +292,7 @@ export const merge = (a: any, b: any): any =>
 const held = new Map<string, { count: number; original: string | null }>()
 /** 同一个文件的读改写排队做：几个子对话共用一个目录时会同时往同一个配置文件里加自己的工具 */
 const locks = new Map<string, Promise<unknown>>()
-function locked<T>(file: string, fn: () => Promise<T>) {
+export function lockedFile<T>(file: string, fn: () => Promise<T>) {
   const prev = locks.get(file) ?? Promise.resolve()
   const next = prev.then(fn, fn)
   locks.set(
@@ -302,19 +302,72 @@ function locked<T>(file: string, fn: () => Promise<T>) {
   return next
 }
 
+/** 这个令牌的面板工具通道还开着（清理项目里留下的面板条目时，正在用的不能删） */
+export const liveAskToken = (token: string) => sessions.has(token)
+
+const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
+const isEmpty = (v: unknown) => (Array.isArray(v) ? !v.length : isObj(v) && !Object.keys(v).length)
+
 /**
- * 把配置合并进工作目录里的文件（没有就新建；绝对路径原样用），返回还原的方法；同一个文件被几轮同时用时，最后一轮结束才还原。
+ * 从文件现在的内容里撤掉这一轮加进去的部分（original 是第一次写之前的内容）：
+ * 只动自己加的键和数组项，用户在执行期间改的别的内容、同时在跑的另几轮加的那一项都留着。
+ * 单个值只在还是自己写的那个时才改回原值：同时在跑的另一轮可能已经改成了它要的值
+ */
+export function unmerge(now: any, added: any, original: any): any {
+  if (Array.isArray(now) && Array.isArray(added)) {
+    const keep = new Set(Array.isArray(original) ? original : [])
+    return now.filter((x) => !added.includes(x) || keep.has(x))
+  }
+  if (!isObj(now) || !isObj(added)) return now
+  const out = { ...now }
+  for (const [k, v] of Object.entries(added)) {
+    if (!(k in out)) continue
+    const o = isObj(original) ? original[k] : undefined
+    const nested = (isObj(v) && isObj(out[k])) || (Array.isArray(v) && Array.isArray(out[k]))
+    if (nested) {
+      const r = unmerge(out[k], v, o)
+      if (o === undefined && isEmpty(r)) delete out[k]
+      else out[k] = r
+    } else if (JSON.stringify(out[k]) !== JSON.stringify(v)) continue
+    else if (o === undefined) delete out[k]
+    else out[k] = o
+  }
+  return out
+}
+
+/**
+ * 把配置合并进工作目录里的文件（没有就新建；绝对路径原样用），返回还原的方法。
+ * 还原只撤掉这一轮自己加的那几项，不把整个文件写回执行前的样子：同时在跑的另几轮的条目不受影响，
+ * 执行期间用户（或别的程序）在同一个文件里改的内容也不会被冲掉。文件是这一轮新建的、撤完只剩空壳就删掉。
  * 写到一半失败时把已经写的还原再抛出：调用方据此不加引用这些文件的参数（例如 Pi 的 -e 指向不存在的文件会直接起不来）
  */
 export async function applyConfigFiles(cwd: string, files: { path: string; content: unknown }[]) {
-  const done: string[] = []
+  const done: { to: string; content: unknown; original: string | null }[] = []
   const restore = async () => {
-    for (const to of done) {
-      const h = held.get(to)
-      if (!h || --h.count > 0) continue
-      held.delete(to)
-      if (h.original === null) await rm(to, { force: true })
-      else await writeFile(to, h.original)
+    for (const d of done.splice(0)) {
+      const h = held.get(d.to)
+      const last = !h || --h.count <= 0
+      if (last) held.delete(d.to)
+      // 字符串是整个文件的内容（Pi 的桥接扩展）：最后一轮结束时删掉或写回原文
+      if (typeof d.content === 'string') {
+        if (!last) continue
+        if (d.original === null) await rm(d.to, { force: true })
+        else await writeFile(d.to, d.original)
+        continue
+      }
+      await lockedFile(d.to, async () => {
+        if (!existsSync(d.to)) return
+        const now = parseJson(await readFile(d.to, 'utf8').catch(() => ''))
+        // 用户把文件改成读不懂的样子了：不动它
+        if (now === undefined) return
+        const before = d.original === null ? undefined : parseJson(d.original)
+        const out = unmerge(now, d.content, before)
+        if (d.original === null && isEmpty(out)) await rm(d.to, { force: true })
+        // 撤完和执行前一样：原文写回去，用户的格式（缩进、换行）不变
+        else if (d.original !== null && JSON.stringify(out) === JSON.stringify(before))
+          await writeFile(d.to, d.original)
+        else await writeFile(d.to, JSON.stringify(out, null, 2))
+      })
     }
   }
   try {
@@ -326,7 +379,11 @@ export async function applyConfigFiles(cwd: string, files: { path: string; conte
   return restore
 }
 
-async function writeAll(cwd: string, files: { path: string; content: unknown }[], done: string[]) {
+async function writeAll(
+  cwd: string,
+  files: { path: string; content: unknown }[],
+  done: { to: string; content: unknown; original: string | null }[],
+) {
   for (const f of files) {
     const to = path.resolve(cwd, f.path)
     const cur = held.get(to)
@@ -334,18 +391,21 @@ async function writeAll(cwd: string, files: { path: string; content: unknown }[]
     else {
       held.set(to, { count: 1, original: existsSync(to) ? await readFile(to, 'utf8') : null })
     }
-    done.push(to)
+    const original = held.get(to)!.original
+    // 读不懂的原配置不动它，这一轮没有面板工具
+    if (typeof f.content !== 'string' && original && parseJson(original) === undefined) {
+      done.push({ to, content: {}, original })
+      continue
+    }
+    done.push({ to, content: f.content, original })
     // 字符串是整个文件的内容（例如 Pi 的扩展脚本），直接写，不合并
     if (typeof f.content === 'string') {
       await mkdir(path.dirname(to), { recursive: true })
       await writeFile(to, f.content)
       continue
     }
-    // 读不懂的原配置不动它，这一轮没有面板工具
-    const original = held.get(to)!.original
-    if (original && parseJson(original) === undefined) continue
     // 合并进文件现在的内容：同一个目录里同时在跑的几轮各用一个名字，谁都不会把别人的那一项冲掉
-    await locked(to, async () => {
+    await lockedFile(to, async () => {
       const now = existsSync(to) ? parseJson(await readFile(to, 'utf8').catch(() => '')) : undefined
       await mkdir(path.dirname(to), { recursive: true })
       await writeFile(to, JSON.stringify(merge(now ?? parseJson(original ?? '') ?? {}, f.content), null, 2))

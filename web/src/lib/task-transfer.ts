@@ -7,9 +7,8 @@ import {
   exportFileName,
   exportTask,
   parseTaskExport,
-  subtaskAnalysisPrompt,
-  subtaskReport,
   withImportedAgents,
+  type HelperScope,
   type TaskExport,
 } from '@shared/task-export'
 import { api } from './api'
@@ -75,10 +74,19 @@ function toBase64(s: string) {
 
 /**
  * AI 分析：把一次或几次执行整理成报告附上，按归属规则新建分析对话（见 shared/analysis-home.ts）：
- * 一个对话（含子对话）的分析开成它父对话下的子对话，几次工作流执行、导入的只读记录开在项目里。
- * 角色用必备角色「分析」；回复末尾带修改建议，任务页上看过差异再应用
+ * 一个对话（含子对话、子任务）的分析开成它父对话下的子对话，几次工作流执行、导入的只读记录开在项目里。
+ * 角色用必备角色「分析」；回复末尾带修改建议，任务页上看过差异再应用。
+ * scope 有值时只分析那一个子任务（子任务窗口里的「AI 分析」），报告和提示词都只看这一步。
  */
-export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; projectId: string; focus?: string }) {
+export async function startAnalysis(opts: {
+  tasks: Task[]
+  agents: Agent[]
+  projectId: string
+  focus?: string
+  scope?: HelperScope
+  /** 子任务分析用的副标题（「子任务 <标题>」）：拼进对话标题，在列表里能认出是哪个子任务 */
+  scopeTitle?: string
+}) {
   const app = await appVersion()
   const bundles: TaskExport[] = await Promise.all(
     opts.tasks.map(async (tk) =>
@@ -87,37 +95,21 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
   )
   const first = opts.tasks[0]
   const title =
-    opts.tasks.length > 1
-      ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
-      : t('分析：{title}', { title: first.title })
+    opts.scope && opts.scopeTitle
+      ? t('分析：{title}', { title: `${first.title} → ${opts.scopeTitle}` })
+      : opts.tasks.length > 1
+        ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
+        : t('分析：{title}', { title: first.title })
+  const reportName = opts.scope ? t('子任务记录') : t('执行记录')
   const report = await api.upload({
-    name: `${t('执行记录')}-${first.title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    name: `${reportName}-${(opts.scopeTitle || first.title).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
     mime: 'text/markdown',
-    data: toBase64(analysisReport(bundles)),
+    data: toBase64(analysisReport(bundles, undefined, opts.scope)),
   })
   return createAnalysisTask({
     scope: opts.tasks.length === 1 ? { kind: 'task', task: first } : { kind: 'project', projectId: opts.projectId },
     title,
-    prompt: analysisPrompt(bundles, opts.focus),
-    attachments: [report],
-  })
-}
-
-/**
- * 子任务的 AI 分析：只取这个子任务自己的对话流和交回的结果，开在派它的对话所在那棵树的父对话下
- */
-export async function startSubtaskAnalysis(opts: { task: Task; stepId: string; agents: Agent[]; focus?: string }) {
-  const step = opts.task.steps.find((s) => s.id === opts.stepId)
-  if (!step) throw new Error(t('找不到这个子任务'))
-  const report = await api.upload({
-    name: `${t('子任务记录')}-${step.title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
-    mime: 'text/markdown',
-    data: toBase64(subtaskReport(opts.task, step.id, opts.agents)),
-  })
-  return createAnalysisTask({
-    scope: { kind: 'task', task: opts.task },
-    title: t('分析子任务：{title}', { title: step.title }),
-    prompt: subtaskAnalysisPrompt(opts.task, step, opts.focus),
+    prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
   })
 }
