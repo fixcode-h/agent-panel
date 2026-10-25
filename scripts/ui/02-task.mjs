@@ -2484,6 +2484,72 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       }
     }
   }
+  // 「转成弹窗」：标题栏把当前对话收成右下角的浮条，页面回到上一级；浮条能展开回那个对话。
+  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里两个项目对话都不在跑，浮条写「已完成」
+  {
+    // 两个对话的真实标题（taskTitle 取要求的第一行、超过 32 字截断）
+    const CART = '购物车右上角的数量角标偶尔不刷新，帮我看看原因'
+    const RESTOCK = '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手…'
+    const dockOf = (title) => p.getByRole('group', { name: `对话：${title}`, exact: true })
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByRole('heading', { name: CART, exact: true }).waitFor({ timeout: 8000 })
+    const toDock = p.getByRole('button', { name: '转成弹窗', exact: true })
+    if (!(await toDock.count())) errors.push('转成弹窗：对话页标题栏没有这个按钮')
+    else {
+      await toDock.click()
+      const first = dockOf(CART)
+      await first.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：没出现对话浮条'))
+      // 收起后回到项目页：对话页不能和浮条同时显示同一个对话
+      const hash = await p.evaluate(() => location.hash)
+      if (!/^#\/projects\/[^/]+$/.test(hash)) errors.push(`转成弹窗：收起后应回到项目页，实际停在 ${hash}`)
+      if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
+        errors.push('转成弹窗：收起后对话页还开着')
+      await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      // 再收起另一个对话：只留一个，前一条被换掉
+      await p.getByText('商品详情页增加', { exact: false }).first().click()
+      // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
+      await p
+        .getByRole('heading', { name: RESTOCK, exact: true })
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('转成弹窗：没打开第二个对话'))
+      const second = p.getByRole('button', { name: '转成弹窗', exact: true })
+      await second.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：第二个对话页没有这个按钮'))
+      if ((await second.count()) > 0) {
+        await second.click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：第二个对话收起后没有浮条'))
+        if (await dockOf(CART).count()) errors.push('转成弹窗：同时出现了两个对话浮条（前一条没被换掉）')
+        // 点浮条展开：回到那个对话页，浮条自己收起来
+        const dock = dockOf(RESTOCK)
+        await dock.getByRole('button', { name: '展开', exact: true }).click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：点浮条没回到那个对话'))
+        await dock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('转成弹窗：展开后浮条还在'))
+        await check(p, '任务-转成弹窗只留一个并展开')
+        // 从列表把同一个对话再打开：浮条必须消失（页面和浮条不能同时显示同一个对话）
+        await p.getByRole('button', { name: '转成弹窗', exact: true }).click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：再次收起后没有浮条'))
+        const wasHash = await p.evaluate(() => location.hash)
+        if (!/^#\/projects\/[^/]+$/.test(wasHash)) errors.push(`转成弹窗：再次收起后应回到项目页，实际停在 ${wasHash}`)
+        // 从项目页列表里点回同一个对话（RESTOCK），浮条应该自动让位
+        await p.getByText('商品详情页增加', { exact: false }).first().click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：没从列表打开被收起的那个对话'))
+        await dockOf(RESTOCK)
+          .waitFor({ state: 'detached', timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：从列表打开对话后浮条还在（页面和浮条同时显示同一个对话）'))
+        await check(p, '任务-转成弹窗-从列表打开后浮条消失')
+      }
+    }
+  }
   // 浮层的截图放在所有交互之后：重新进任务页、打开浮层再截图。
   // 截图前的等待（布局、动画）不依赖后面还有交互，避免偶发的焦点变化把截图和断言搅在一起
   {

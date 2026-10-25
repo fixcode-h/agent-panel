@@ -940,7 +940,6 @@ export function AssistDialog({
       {open && minimized && (
         <MinimizedChat
           id="assist"
-          slot={1}
           label={shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
           state={running ? 'running' : unseen ? 'done' : 'idle'}
           unseen={unseen}
