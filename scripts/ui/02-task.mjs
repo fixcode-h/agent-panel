@@ -1576,6 +1576,106 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
     await p.keyboard.press('Escape')
   }
+  // 计划项的状态图标：进行中和等待中不能长得一样（以前一个转、一个沙漏）。
+  // 读计算样式断言：形状（border-style）、动效类型和节奏（animationName + duration）、颜色、透明度、
+  // 尺寸档位、有没有残留 SVG。只断言「有图标」拦不住两个状态被改成一样
+  {
+    await p.getByRole('button', { name: '执行计划' }).click()
+    const readIcons = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        const iconOf = (label) => {
+          const icon = [...dlg.querySelectorAll('[role="img"]')].find((e) => e.getAttribute('aria-label') === label)
+          if (!icon) return null
+          const cs = getComputedStyle(icon)
+          // 尺寸读布局值（offsetWidth/Height），不用 getBoundingClientRect：后者返回旋转后的包围盒，
+          // 「进行中」在 animate-spin 转着，斜到 45° 时 18px 的正方形包围盒会胀成 ~25px，会让断言忽大忽小
+          return {
+            style: cs.borderStyle,
+            color: cs.borderTopColor,
+            // 等待中是 opacity 0.9→0.5 的呼吸，淡相也不能淡到看不见
+            opacity: Number(cs.opacity),
+            transform: norm(cs.transform),
+            // 动画一栏：等待中是 1.6s 原地呼吸，进行中是 1s 旋转，名字和时长都不同
+            spin: norm(cs.animationName) + ' ' + norm(cs.animationDuration),
+            size: icon.offsetWidth + 'x' + icon.offsetHeight,
+            // 图标自己不能带文字（沙漏那种内联 SVG 已经删掉，这里留一条防线）
+            svg: icon.querySelectorAll('svg').length,
+          }
+        }
+        return { running: iconOf('进行中'), waiting: iconOf('等待中'), pending: iconOf('待做'), done: iconOf('完成') }
+      })
+    const icons = await readIcons()
+    if (!icons) errors.push('执行计划：没找到计划窗口，核对不到状态图标')
+    else if (!icons.running || !icons.waiting || !icons.pending || !icons.done)
+      errors.push(
+        `执行计划：状态图标不全（进行中 ${!!icons.running}、等待中 ${!!icons.waiting}、待做 ${!!icons.pending}、完成 ${!!icons.done}）`,
+      )
+    else {
+      // 1. 形状不同：等待中是虚线环，进行中是实线（一圈只有一道弧）
+      if (icons.waiting.style === icons.running.style)
+        errors.push(`执行计划：等待中和进行中的边框样式一样（都是 ${icons.waiting.style}），静态下分不开`)
+      if (icons.waiting.style !== 'dashed')
+        errors.push(`执行计划：等待中不是虚线环（border-style=${icons.waiting.style}）`)
+      if (icons.running.style !== 'solid')
+        errors.push(`执行计划：进行中不是实线弧（border-style=${icons.running.style}）`)
+      // 2. 动效不能用同一套：等待中是原地呼吸（改 opacity），进行中是旋转（改 transform）
+      if (icons.waiting.spin === icons.running.spin)
+        errors.push(`执行计划：等待中和进行中的动效完全一样（${icons.waiting.spin}），只有颜色不同不够分`)
+      if (/none/.test(icons.waiting.spin) || /none/.test(icons.running.spin))
+        errors.push(`执行计划：状态图标没在动（进行中 ${icons.running.spin}、等待中 ${icons.waiting.spin}）`)
+      if (icons.waiting.spin === icons.pending.spin)
+        errors.push(`执行计划：等待中和待做的动效一样（${icons.waiting.spin}），等待中该在动、待做该静止`)
+      // 进行中是旋转（Tailwind 的 spin 关键帧）、等待中是呼吸：同一个关键帧就分不出「在做」和「在等」
+      if (!/^spin /.test(icons.running.spin)) errors.push(`执行计划：进行中不再是旋转（${icons.running.spin}）`)
+      if (icons.waiting.spin.split(' ')[0] === icons.running.spin.split(' ')[0])
+        errors.push(`执行计划：等待中和进行中用的是同一组关键帧（${icons.waiting.spin.split(' ')[0]}）`)
+      // 等距虚线绕圆心转一圈和自身重合，看起来像没在动：呼吸用的关键帧不能让圆环转起来
+      if (icons.waiting.transform && icons.waiting.transform !== 'none')
+        errors.push(`执行计划：等待中的圆环带了 transform（${icons.waiting.transform}），呼吸不该带位移/旋转`)
+      // 3. 颜色只作辅助，但也不能是同一个
+      if (icons.waiting.color === icons.running.color)
+        errors.push(`执行计划：等待中和进行中同色（${icons.waiting.color}）`)
+      // 等待中靠透明度呼吸：整体不能是不透明的，淡相也不能淡到看不见（否则跟待做的静止空心圆混）
+      if (icons.waiting.opacity >= 1)
+        errors.push(`执行计划：等待中的圆环不透明（${icons.waiting.opacity}），呼吸靠的是 opacity`)
+      const PULSE_FLOOR = 0.4
+      if (icons.waiting.opacity < PULSE_FLOOR)
+        errors.push(`执行计划：等待中最淡的一相只有 ${icons.waiting.opacity}，会淡到看不见`)
+      if (icons.pending.opacity !== 1) errors.push(`执行计划：待做不该是半透明的（${icons.pending.opacity}）`)
+      // 待做是静止的空心圆：和等待中靠「有没有动」分开
+      if (!/none/.test(icons.pending.spin)) errors.push(`执行计划：待做的图标在动（${icons.pending.spin}）`)
+      if (icons.pending.style === icons.waiting.style)
+        errors.push('执行计划：待做和等待中的边框样式一样，一个是空心圆一个是虚线环才对')
+      // 换图标不能把计划行搞乱：图标盒子只有两种合法尺寸，不同层级本来就不同大小（主步骤 18px、子步骤 14px），
+      // 不跨层级比；要防的是换了图标后盒子缩了/胀了，所以只看每个状态落在不落在合法档位里
+      const LEGAL_SIZES = ['14x14', '18x18']
+      for (const [name, icon] of [
+        ['进行中', icons.running],
+        ['等待中', icons.waiting],
+        ['待做', icons.pending],
+        ['完成', icons.done],
+      ])
+        if (!LEGAL_SIZES.includes(icon.size))
+          errors.push(`执行计划：「${name}」的图标尺寸是 ${icon.size}，只允许 ${LEGAL_SIZES.join(' / ')}`)
+      if (icons.waiting.svg) errors.push(`执行计划：等待中的图标里还嵌着 ${icons.waiting.svg} 个 SVG（沙漏应已删掉）`)
+      // 折叠头「n 个在等待」前面的小环和计划项里的等待环是同一套样式。
+      // 注意：不能从 [data-plan-total] 往上找 button —— 它渲染在对话框 header 的 span 里，祖先链上没有 button，
+      // 那样取会永远是空、这条断言静默空转。改成按文字找那个折叠按钮，找不到也算失败
+      const headRing = await p.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find((b) => /个在等待/.test(b.textContent || ''))
+        const ring = btn?.querySelector('.plan-wait-ring')
+        return ring ? getComputedStyle(ring).borderStyle : ''
+      })
+      if (!headRing) errors.push('执行计划：折叠头「n 个在等待」前面没找到等待环')
+      else if (headRing !== 'dashed') errors.push(`执行计划：折叠头的小环不是虚线（border-style=${headRing}）`)
+      // 截一张同时含「进行中」和「等待中」的计划图：形状能不能一眼分开得看图确认，光断言样式不够
+      await check(p, '执行计划-状态图标形状对比')
+    }
+    await p.keyboard.press('Escape')
+  }
   // 全部完成后总用时停在最晚一项的结束时间，不再每秒增长
   {
     const key = 'agent-panel-demo-v3'
