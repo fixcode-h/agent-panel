@@ -447,8 +447,7 @@ test('API 探针：没填地址、没填密钥、没选模型时不发请求，�
 })
 
 test('API 探针：401 带上游原因，200 但正文不是模型回复也算不通', async () => {
-  // 上游回的正文只写一份：期望文案用 t() 从它算，不写死中文
-  // （CI 的 LANG 是英文，写死中文的断言本机能过、CI 挂）
+  // 上游回的正文只写一份（响应体和期望文案共用），期望文案按它用 t() 算，不写死中文
   const quotaErrorBody = JSON.stringify({ error: { message: 'quota exceeded' } })
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
