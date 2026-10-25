@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Eye, Loader2, PenLine, RotateCcw, Rocket, Save, Sparkles } from 'lucide-react'
 import { BUNDLED_CATEGORIES } from '@shared/library'
 import { SKILL_TARGET, type DeployConfig, type DeployState, type DeployStatus } from '@shared/deploy'

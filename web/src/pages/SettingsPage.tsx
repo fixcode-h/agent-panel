@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ArrowUpCircle,
   Cpu,

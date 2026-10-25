@@ -5,7 +5,7 @@
 // 引用怎么写见 lib/element-ref.ts，源码位置来自构建时写进 DOM 的 data-src（scripts/lib/source-loc.mjs）
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { SquareDashedMousePointer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData, useNav } from '@/lib/data'

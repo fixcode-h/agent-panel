@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { type AnalysisKind, type Attachment, type Task } from '@shared/schema'
 import { analysisHome, analyzerId, rootIdOf, type AnalysisHome, type AnalysisScope } from '@shared/analysis-home'
 import { t } from '@shared/i18n'

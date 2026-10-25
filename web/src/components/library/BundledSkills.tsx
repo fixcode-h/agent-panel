@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Download, Loader2, Package, RefreshCw } from 'lucide-react'
 import { BUNDLED_CATEGORIES, type BundledSkill } from '@shared/library'
 import { t } from '@shared/i18n'

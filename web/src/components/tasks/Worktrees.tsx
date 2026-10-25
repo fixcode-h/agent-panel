@@ -12,7 +12,7 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import { api, type WorktreeItem } from '@/lib/api'
 import { useData } from '@/lib/data'

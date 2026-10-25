@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'

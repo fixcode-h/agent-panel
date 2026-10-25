@@ -56,7 +56,7 @@ import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/re
 import { TOGGLE_SIDEBAR } from './CommandPalette'
 import { unmergedOf } from '@/components/tasks/Worktrees'
 import { api } from '@/lib/api'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
