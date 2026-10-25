@@ -629,8 +629,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。':
-    'Skills and custom commands in each agent\'s user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Commands in "All agents" are expanded by the panel and work with every agent. Project-level Skills are managed in project settings.',
   '所有 Agent': 'All agents',
   '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
     'Describe what you need and a local agent writes a command that works with every agent',
@@ -651,6 +649,36 @@ export const EN_SETTINGS: Record<string, string> = {
   '/changelog：按最近的提交整理一段给用户看的更新说明':
     '/changelog: turn recent commits into user-facing release notes',
   '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
+  '放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。':
+    'These live in each agent\'s own user directory; entries under "All agents" are expanded by the panel and work with every agent.',
+  '这些是面板自带的技能，统一装在 ~/.agents/skills，所有 Agent 共用。在左边的列表里安装、更新，或换回自带版本。':
+    'These skills ship with the panel and go into ~/.agents/skills, shared by every agent. Install, update or restore them from the list on the left.',
+  '在左边选一项，或新建一个：装好之后所有 Agent 都能用。':
+    'Pick one on the left, or create a new one — once installed, every agent can use it.',
+  没有说明: 'No description',
+  '还没有{kind}': 'No {kind} yet',
+  命令文件: 'Command file',
+  打开这一份: 'Open this copy',
+  文件结构: 'Files',
+  '另有 {n} 个文件': '{n} more files',
+  在这里新建文件: 'New file here',
+  在这里新建目录: 'New folder here',
+  新建目录: 'New folder',
+  删除这个文件: 'Delete this file',
+  '文件太多，只显示了前面一部分。': 'Too many files — only the first part is shown.',
+  '二进制文件（{size}），不能编辑。': 'Binary file ({size}); cannot edit.',
+  '文件超过 1 MB，保存不了，请精简后再试。': 'The file is over 1 MB and cannot be saved — trim it first.',
+  '在 {path} 里新建。': 'Create inside {path}.',
+  '放在技能文件夹的根目录下。': 'Created at the root of the skill folder.',
+  目录名: 'Folder name',
+  文件名: 'File name',
+  '会从磁盘上删掉，不能撤销。': "It is removed from disk and can't be undone.",
+  文件内容: 'File content',
+  '这个技能只有 SKILL.md，还没有附加文件。': 'This skill only has SKILL.md — no extra files yet.',
+  '在左边的文件树里点一个文件，就能看内容和改它。': 'Click a file in the tree on the left to view and edit it.',
+  '{n} KB': '{n} KB',
+  '{n} 字节': '{n} bytes',
+  未保存: 'Unsaved',
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
@@ -667,8 +695,6 @@ export const EN_SETTINGS: Record<string, string> = {
   覆盖: 'Overwrite',
   装在: 'Installed in',
   内容: 'Content',
-  '文件夹里还有：': 'Also in the folder: ',
-  '（复制时一起带走，这里不能编辑）': ' (copied along; not editable here)',
   '复制给别的 Agent': 'Copy to other agents',
   先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':

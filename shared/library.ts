@@ -20,11 +20,37 @@ export interface LibraryCli {
   commandFormat: 'md' | 'toml'
 }
 
+/** Skill 文件夹里的一个条目：目录单列（含空目录），路径用 / 分隔、相对技能文件夹 */
+export interface LibraryFileEntry {
+  path: string
+  type: 'file' | 'dir'
+  /** 文件字节数；目录没有这个字段 */
+  size?: number
+}
+
 export interface LibraryFile {
   content: string
-  /** Skill 文件夹里 SKILL.md 以外的文件（相对路径） */
+  /** Skill 文件夹里 SKILL.md 以外的文件（相对路径）：旧字段，保留兼容 */
   files: string[]
+  /**
+   * 文件树，扁平列表：目录在前、同级按名字排好序（后端排过，前端不再排）。
+   * 后端还没返回树时（旧版本接口）前端按空树处理，不报错。
+   */
+  tree?: LibraryFileEntry[]
+  /** 树超过深度或条目上限时被截断 */
+  truncated?: boolean
 }
+
+/** 附加文件的内容：二进制文件不给内容，前端只能提示不能编辑 */
+export interface LibraryEntryContent {
+  path: string
+  content: string
+  size: number
+  binary: boolean
+}
+
+/** 单个附加文件的大小上限（读写同限，超限报错不截断），和后端一致 */
+export const ENTRY_MAX_BYTES = 1024 * 1024
 
 /** Skill 文件夹名、命令名：字母数字开头，只含字母数字和 . _ -；命令的子目录用「:」分隔 */
 export const libraryName = (kind: 'skill' | 'command', name: string) => {
