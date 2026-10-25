@@ -1420,6 +1420,95 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
         if (!stopInRow) errors.push('运行区：子任务行没有终止按钮')
         await p.locator('[aria-label="运行中"]', { hasText: '核对角标的订阅时机' }).first().scrollIntoViewIfNeeded()
         await check(p, '子任务-运行区一行')
+        // 整行都是打开入口（用户要求：和子对话行一样，动作名、标题、状态标签、耗时点了都开只读窗口）。
+        // 以前只有标题按钮能点，详情区还 stopPropagation 拦着，点「执行中」没反应
+        const rowInfo = await p.evaluate(() => {
+          const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+          const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+            [...b.children].some((r) => norm(r.innerText).includes('核对角标的订阅时机')),
+          )
+          const row = box ? [...box.children].find((r) => norm(r.innerText).includes('核对角标的订阅时机')) : null
+          // 详情区的状态标签：按文案取（角色名「前端开发」、后台命令名也带同一个类），原来它拦截点击
+          const tag = row
+            ? [...row.querySelectorAll('span')].find(
+                (s) =>
+                  (s.className || '').includes('text-[0.6875rem]') &&
+                  s.getBoundingClientRect().width > 0 &&
+                  /^(执行中|排队中|排队等 API)/.test(norm(s.innerText)),
+              )
+            : null
+          if (!tag) return null
+          const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
+          return {
+            title: norm(row.querySelector('button[title*="打开子任务"]')?.innerText || ''),
+            tagText: norm(tag.innerText),
+            // 状态标签和耗时都要跟着整行可点：手型、且不套进按钮（不出现嵌套按钮）
+            tagCursor: getComputedStyle(tag).cursor,
+            tagInButton: !!tag.closest('button'),
+            msCursor: ms ? getComputedStyle(ms).cursor : '',
+          }
+        })
+        if (!rowInfo) errors.push('运行区：子任务行里没找到详情区的状态标签，核对不了整行可点')
+        else {
+          if (rowInfo.tagCursor !== 'pointer')
+            errors.push(`运行区子任务行：详情区不可点（cursor ${rowInfo.tagCursor}），整行都应该能打开子任务窗口`)
+          if (rowInfo.tagInButton) errors.push('运行区子任务行：状态标签被套进了按钮，整行点击不该嵌套按钮')
+          if (rowInfo.msCursor !== 'pointer')
+            errors.push(`运行区子任务行：耗时不可点（cursor ${rowInfo.msCursor}），整行都应该能打开子任务窗口`)
+          // 用 Playwright 的真实点击，不用 evaluate 里的 tag.click()：后者是合成事件，绕过命中测试，
+          // 详情区被挡住、pointer-events-none、滚出视口这些回归它都拦不到
+          const helperRow = p.locator('[aria-label="运行中"] > div').filter({ hasText: '核对角标的订阅时机' }).first()
+          await helperRow
+            .getByText(/^(执行中|排队中|排队等 API)/)
+            .first()
+            .click({ timeout: 5000 })
+            .catch((e) => errors.push(`运行区：点不到子任务行的详情区（${e.message.split('\n')[0]}）`))
+          // 窗口开没开看标题：这个子任务还在跑，窗口里不会有「这里只能查看」那句
+          //（那句只在结束 / 失败 / 终止时才出现）
+          const opened = await p
+            .waitForFunction(
+              (title) =>
+                !!title &&
+                [...document.querySelectorAll('[role="dialog"]')].some((d) => (d.innerText || '').includes(title)),
+              rowInfo.title,
+              { timeout: 3000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+          if (!opened) errors.push(`运行区：点详情区「${rowInfo.tagText}」后没打开子任务「${rowInfo.title}」的窗口`)
+          await check(p, '子任务-整行可点')
+          await p.keyboard.press('Escape')
+          await closed()
+        }
+        // 行尾的终止按钮只终止，不连带打开窗口（RowShell 的 action 自己 stopPropagation，要保住）。
+        // 注意：演示数据里这个子任务没有真在跑的进程，demo-backend 的 stopHelper 会返回 false 并报错，
+        // 所以这一步只验证「点终止不打开窗口」，不验证终止真的生效；行还在，下面「1/3」的计数才成立
+        {
+          const stopBtn = p
+            .locator('[aria-label="运行中"] > div')
+            .filter({ hasText: '核对角标的订阅时机' })
+            .first()
+            .locator('button[aria-label="终止子任务"]')
+          const stopClicked = await stopBtn.click({ timeout: 5000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!stopClicked) errors.push('运行区：子任务行里找不到终止按钮')
+          else {
+            await settle(p)
+            if (await p.getByRole('dialog').count()) errors.push('运行区：点终止按钮把子任务窗口也打开了')
+            await check(p, '子任务-终止按钮不打开窗口')
+            // 演示里的子任务没有真的在跑的进程，终止会弹一句报错 toast；等它自己消失，
+            // 不要留给后面的用例（它会盖住右下角的浮条、截图里也多余）
+            await p
+              .locator('[data-sonner-toast]')
+              .first()
+              .waitFor({ state: 'detached', timeout: 8000 })
+              .catch(() => {})
+          }
+        }
       }
       // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法（按 aria-label 定位输入框上方的入口）
       const runLabel = (await subBar().first().innerText()).replace(/\s+/g, ' ').trim()

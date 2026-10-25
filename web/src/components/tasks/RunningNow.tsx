@@ -199,6 +199,9 @@ function HelperRow({
       title={title}
       open={false}
       onOpen={onOpen}
+      // 和子对话行一样整行都是打开入口（用户要求：动作名、标题、状态标签、耗时点了都开只读窗口）。
+      // 行尾的终止按钮自带 stopPropagation，点它只终止、不会连带打开窗口
+      rowOpen={onOpen}
       openTip={t('打开子任务「{title}」', { title })}
       detailStart
       detail={
