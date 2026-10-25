@@ -30,6 +30,7 @@ import {
   questionAnswers,
   resumeRun,
   sessionChanged,
+  sessionMoved,
   stepUsage,
   withAttachments,
   withTaskModel,
@@ -626,6 +627,12 @@ export function settleEmptyNotes(notes: EmptyNote[]) {
 const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
+/**
+ * 会话在别的项目目录里，CLI 要求交互确认才继续（Pi 的「Session found in different project ... Fork this session into current directory?」）。
+ * 面板里没有交互终端，答不了这个问，CLI 直接按 Aborted 退出。撞上了丢掉会话重开
+ */
+const SESSION_OTHER_PROJECT = /Session found in different project|Fork this session into current directory/i
+
 /** 模型不支持调整思考强度：去掉 --effort 重跑一次，并在进程内记住 */
 const EFFORT_REJECTED =
   /推理强度不可调整|推理强度.{0,10}(不支持|无法)|(effort|reasoning).{0,40}(not (supported|available|adjustable)|can't|cannot|unable)|(not (supported|adjustable)|can't|cannot|unable).{0,40}(effort|reasoning)/i
@@ -796,11 +803,14 @@ async function runAgent(
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
   // 原来的会话接不上，开新会话把之前的对话带过去。
-  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到
-  const moved = chat && !!task.sessionDir && task.sessionDir !== cwd
+  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到。
+  // 子任务一样要查：父对话开了独立分支后，子任务的会话还留在原目录
+  const moved = sessionMoved(task, sessionKey, cwd, chat)
   const switched =
     chat && (sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch) || moved)
   if (switched) resume = undefined
+  // 子任务没有「对话记录」可带：会话在别的目录里就丢掉，这次用完整提示新开一个
+  else if (moved) resume = undefined
   if (retryCarry) {
     // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
     resume = undefined
@@ -1174,6 +1184,8 @@ async function runAgent(
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
+        // 会话按目录存：每个会话都记下是在哪开的，续接前先看（子任务也一样）
+        task.sessionDirs[sessionKey] = cwd
         if (chat) {
           task.sessionCli = cliId
           task.sessionDir = cwd
@@ -1800,7 +1812,21 @@ async function runAgent(
       /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
     ) {
       delete task.sessions[sessionKey]
+      delete task.sessionDirs[sessionKey]
       // 新会话没有之前的上下文，要用完整提示
+      return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
+    }
+    // 会话存在别的项目目录里，CLI 要交互确认分叉才继续（Pi 的「Session found in different project」）：
+    // 非交互模式拿不到回答，CLI 直接按 Aborted 退出。旧任务没记会话目录时只能碰运气，撞上了就丢掉会话重开一次
+    if (resume && !prewarm && !retried && SESSION_OTHER_PROJECT.test(detail)) {
+      delete task.sessions[sessionKey]
+      delete task.sessionDirs[sessionKey]
+      log.warn('agent', `${def.name} 的会话在别的目录里，丢掉后重开`, {
+        task: task.id,
+        step,
+        cwd,
+        detail: detail.slice(0, 500),
+      })
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
     // 接口拒绝了这条会话的历史（换过模型、网关换了上游，或历史里的内容片段丢了）：
@@ -1813,6 +1839,7 @@ async function runAgent(
       (/input\.content/i.test(detail) || /text part\b[^\n]*\bnot found/i.test(detail))
     ) {
       delete task.sessions[sessionKey]
+      delete task.sessionDirs[sessionKey]
       const carry = chat
         ? `## 之前的对话\n${transcript(task, asker ? task.messages.indexOf(asker) : task.messages.length)}`
         : ''
@@ -2029,6 +2056,7 @@ async function runAgent(
   if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
     delete task.sessions[sessionKey]
+    delete task.sessionDirs[sessionKey]
     au().context = 0
     sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
   }

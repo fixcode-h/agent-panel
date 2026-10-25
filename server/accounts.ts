@@ -36,6 +36,7 @@ import { cliSettings } from '../shared/settings.ts'
 import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
 import { apiBalanceUrl, apiBaseUrl } from '../shared/api-vendors.ts'
 import { parseApiBalance, type ApiBalance } from '../shared/api-balance.ts'
+import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
@@ -849,6 +850,85 @@ const findUrl = (text: string) =>
 
 const LOGIN_TIMEOUT = 5 * 60_000
 
+/** 登录进程的结局：除了「凭据变了」，还有几种不能按凭据判断的情况 */
+export type LoginOutcome =
+  /** 凭据变了（或者 CLI 说已经登录着、凭据还在）：登录成功 */
+  | 'done'
+  /** 进程没起来 */
+  | 'spawn-error'
+  /** 用户点了取消 */
+  | 'cancelled'
+  /** 正常结束但读不到凭据：还是没登录 */
+  | 'no-credential'
+  /** 正常结束、原有凭据也没变：这个 CLI 没把登录做下去 */
+  | 'unchanged'
+
+/**
+ * 进程结束后怎么算登录成功。
+ *
+ * 默认看凭据指纹变没变（`before` / `after` 是 `fingerprint` 的结果，读不到凭据时 `after` 为空）。
+ * 但有的 CLI 已经登录时再跑登录命令只会说「已登录」、退出码 0、**凭据文件一个字节都不改**
+ * （Command Code 的 `cmdc login` 输出 `Already logged in`），这种情况凭据永远不变，
+ * 只看指纹会把他本来好好的登录判成失败，所以按 CLI 定义的 `loginAlreadyLoggedIn` 单独放行：
+ * 退出码 0 且读得到凭据就算成功。点「登录其他账号」时 CLI 若同样直接说「已登录」，
+ * 结论就是「现在仍是这个账号」——保存的还是原来的凭据，不是失败。
+ *
+ * 退出码非 0、或者退出码 0 但读不到凭据，都还是失败，不能把真的失败放过去。
+ */
+export function loginOutcome(o: {
+  /** 进程退出码 */
+  code: number | null
+  /** 进程是被谁停掉的 */
+  killed: 'stopped' | 'timeout' | 'idle' | null
+  /** 启动失败的原因 */
+  spawnError?: string
+  /** 启动前读到的凭据指纹，没登录时为空字符串 */
+  before: string
+  /** 进程结束后读到的凭据指纹，读不到凭据时为空 */
+  after: string | undefined
+  /** CLI 定义里的 `auth.loginAlreadyLoggedIn` */
+  alreadyLoggedIn: boolean
+}): LoginOutcome {
+  if (o.spawnError) return 'spawn-error'
+  // 凭据真的写入就是登录成功了，用户这时点取消只是不等了：先看指纹再看 canceled，和改动前一致
+  if (o.after !== undefined && o.after !== o.before) return 'done'
+  if (o.killed === 'stopped') return 'cancelled'
+  if (o.code === 0 && o.alreadyLoggedIn && o.after !== undefined) return 'done'
+  return o.after === undefined ? 'no-credential' : 'unchanged'
+}
+
+/**
+ * 登录失败时给用户看的文案（纯函数，便于单测）。
+ *
+ * 「退出码 0 但读不到凭据」（用户关掉了浏览器里的授权页）和「有凭据但没变、CLI 也没把登录做下去」
+ * 是两种不同的失败，不能共用一句「没有完成登录（退出码 {code}）」：前者要说清是没有凭据，
+ * 后者才是这个 CLI 没响应这次登录。两种都把 CLI 最后的输出接在后面，用户和「AI 处理」能照着排查。
+ *
+ * 只有退出码 0 才换成「没有找到登录凭据」：CLI 自己报错退出（退出码非 0）时用户最需要看到的是退出码，
+ * 和改动前一致，不能因为这时也没凭据就把退出码吞掉。
+ */
+export function loginFailure(o: {
+  outcome: LoginOutcome
+  /** CLI 的名字，填进文案 */
+  cli: string
+  /** 进程退出码 */
+  code: number | null
+  /** 已经清掉 ANSI 的 CLI 输出，只用最后几行 */
+  output: string
+  /** 启动失败的原因（outcome 是 spawn-error 时用） */
+  error?: string
+}): string {
+  if (o.outcome === 'done') return ''
+  if (o.outcome === 'spawn-error') return o.error ?? ''
+  if (o.outcome === 'cancelled') return t('已取消')
+  const tail = o.output.trim() ? o.output.trim().split('\n').slice(-3).join('\n') : ''
+  const head =
+    o.outcome === 'no-credential' && o.code === 0
+      ? t('登录没有完成：没有找到登录凭据')
+      : t('{cli} 没有完成登录（退出码 {code}）', { cli: o.cli, code: String(o.code) })
+  return [head, tail].filter(Boolean).join('\n')
+}
+
 async function startLogin(def: CliDefinition): Promise<LoginJob> {
   const running = logins.get(def.id)
   if (running?.status === 'running') return view(running)
@@ -870,8 +950,9 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     abort: new AbortController(),
   }
   logins.set(def.id, job)
+  // CLI 接终端时会给输出上色，存进 job.output 之前先清掉 ANSI：界面、报错文案、「AI 处理」用的都是这一份
   const take = (text: string) => {
-    job.output = (job.output + text + '\n').slice(-4000)
+    job.output = (job.output + stripAnsi(text) + '\n').slice(-4000)
     job.url ||= findUrl(job.output)
   }
   let settled = false
@@ -919,20 +1000,17 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     onStderr: (s) => take(s.trimEnd()),
   }).then(async (r) => {
     if (settled) return
-    if (r.spawnError) return finish(false, r.spawnError)
     const now = await readLive(def, env).catch(() => undefined)
-    if (now && fingerprint(now) !== before) return finish(true)
-    finish(
-      false,
-      r.killed === 'stopped'
-        ? t('已取消')
-        : [
-            t('{cli} 没有完成登录（退出码 {code}）', { cli: def.name, code: String(r.code) }),
-            job.output.trim().split('\n').slice(-3).join('\n'),
-          ]
-            .filter(Boolean)
-            .join('\n'),
-    )
+    const outcome = loginOutcome({
+      code: r.code,
+      killed: r.killed,
+      spawnError: r.spawnError,
+      before,
+      after: now ? fingerprint(now) : undefined,
+      alreadyLoggedIn: a.loginAlreadyLoggedIn,
+    })
+    if (outcome === 'done') return finish(true)
+    finish(false, loginFailure({ outcome, cli: def.name, code: r.code, output: job.output, error: r.spawnError }))
   })
   return view(job)
 }

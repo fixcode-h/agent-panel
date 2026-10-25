@@ -352,6 +352,12 @@ export const CliAuth = z.object({
     .optional(),
   /** 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录 */
   login: z.array(z.string()).default([]),
+  /**
+   * 已经登录着的时候，再跑登录命令会直接说「已登录」并以退出码 0 退出、不改凭据文件（Command Code 的
+   * `cmdc login` 输出「Already logged in」）。别的 CLI 登录一定写凭据，面板按「凭据变了没有」判断成功；
+   * 这种 CLI 只看凭据会把自己的已登录状态判成登录失败，所以要单独标出来：退出码 0 且读得到凭据就算成功
+   */
+  loginAlreadyLoggedIn: z.boolean().default(false),
   /** 登录时从 stdin 写进去的内容（例如要确认的 y） */
   loginStdin: z.string().default(''),
   /** 登录前先改的配置（例如 Gemini CLI 要先选登录方式） */

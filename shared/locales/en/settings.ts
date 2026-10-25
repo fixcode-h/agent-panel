@@ -425,8 +425,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
   网络代理: 'Network proxy',
-  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口），没开代理软件就不会走代理。也认环境变量 HTTPS_PROXY。':
-    "Used to check for and download updates. If GitHub isn't reachable, enter your local proxy address. When empty, it connects directly first and then tries any local proxy that is running (system proxy or common ports); if no proxy app is running, no proxy is used. The HTTPS_PROXY environment variable is used as well.",
+  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址，例如 {proxy}；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口，含 v2rayN 默认的 {port}），没开代理软件就不会走代理。只支持 http 代理：v2rayN 默认的入站就是这个端口的 SOCKS，这种环境要把它改成 http / mixed 入站，或者填 http 入站端口；探测不到时照常回退直连。也认环境变量 HTTPS_PROXY。':
+    'Used to check for and download updates. If GitHub is not reachable, enter the address of a local proxy, for example {proxy}. When empty, it connects directly first and then tries any local proxy that is running (system proxy or common ports, including v2rayN default {port}); if no proxy app is running, no proxy is used. Only HTTP proxies are supported: v2rayN default inbound is SOCKS on that port, so either change it to an http / mixed inbound or enter the HTTP inbound port; when nothing is reachable it falls back to a direct connection as usual. The HTTPS_PROXY environment variable is used as well.',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',
@@ -735,9 +735,9 @@ export const EN_SETTINGS: Record<string, string> = {
   全选: 'Select all',
   全不选: 'Select none',
   已部署: 'Deployed',
-  本机改过: 'Changed locally',
   覆盖本机改过的技能: 'Overwrite locally changed skills',
-  不勾时保留你改过的版本: 'When unchecked, your changed versions are kept',
+  '不勾时保留本机的版本；面板更新后要勾上才能换成新版本':
+    'When unchecked, the local versions are kept; check it after a panel update to switch to the new versions',
   部署: 'Deploy',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
@@ -1206,8 +1206,27 @@ export const EN_SETTINGS: Record<string, string> = {
     'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
   '{n} 项和当前设置不同，应用后点「确认」保存':
     '{n} differ from the current settings; apply them, then click Confirm to save',
-  '应用推荐（{n} 项）': 'Apply recommendations ({n})',
-  已和当前设置一致: 'Already matches the current settings',
+  '应用这份分析的设置（{n} 项）': 'Apply this analysis ({n})',
+  已应用这份分析的设置: 'Analysis applied',
+  当前设置已经和这份分析的推荐值一致: 'The current settings already match this analysis',
+  '分析报告只保留一份，重新初始化会替换它；已有的文档只补不覆盖。':
+    'Only one analysis report is kept; initializing again replaces it. Existing docs are only filled in, never overwritten.',
+  '这次初始化没有留下分析报告，重新初始化后可以在这里对照推荐值。':
+    'This initialization left no analysis report. Initialize again to compare against recommended values here.',
+  '和推荐值不同的设置（{n} 项）': 'Settings that differ from the recommendation ({n})',
+  '项目设置改过之后和分析报告的推荐不一样了：可以单项应用，应用后点「确认」保存。':
+    'These project settings no longer match the analysis report. Apply them one by one, then click Confirm to save.',
+  '{n} 个自带技能可以更新': '{n} bundled skills can be updated',
+  '{n} 个部署的技能可以更新': '{n} deployed skills can be updated',
+  '部署的技能里有 {n} 个和这一版自带的不同：{names}。到「设置 → 部署」覆盖部署一次即可更新。':
+    '{n} deployed skills differ from this version: {names}. Deploy with overwrite in Settings → Deploy to update them.',
+  去部署: 'Go to Deploy',
+  '{n} 个已安装的技能和这一版自带的不同，点「更新全部」换成新版本（本机改过的内容会被替换）。':
+    '{n} installed skills differ from this version. Click "Update all" to switch to the new versions (local edits will be replaced).',
+  '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
+    '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
+  勾选覆盖: 'Check overwrite',
+  '和自带的不同，可更新': 'Differs from bundled, update available',
   '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
   没有需要调整的设置: 'No settings need changing',
   全部应用: 'Apply all',

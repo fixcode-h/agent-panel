@@ -27,6 +27,7 @@ import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
+import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL } from '@shared/proxy'
 import { defaultCli, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -57,6 +58,7 @@ import { FontSection } from '@/components/settings/FontSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
+import { useSkillUpdates } from '@/lib/skill-updates'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
 import { ShellSetting } from '@/components/settings/ShellSetting'
 import { CustomClis } from '@/components/settings/CustomClis'
@@ -356,6 +358,8 @@ function SettingsBody({
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
+  const deployN = useSkillUpdates().deployed.length
+  const deployDot = deployN ? t('{n} 个部署的技能可以更新', { n: deployN }) : undefined
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
   const defDraft = drafts[defCli]
   const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
@@ -398,6 +402,10 @@ function SettingsBody({
                 <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
                 {s.id === 'update' && update && (
                   <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
+                )}
+                {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
+                {s.id === 'models' && deployDot && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
                 )}
               </button>
             </div>
@@ -466,6 +474,9 @@ function SettingsBody({
                     s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                   )}
                   <span className="truncate">{s.label}</span>
+                  {s.id === 'deploy' && deployDot && (
+                    <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
+                  )}
                   {s.cli && defCli === s.cli.id && (
                     <span className="text-[0.6875rem] font-normal text-subtle">{t('默认')}</span>
                   )}
@@ -726,13 +737,14 @@ function SettingsBody({
                 <Row
                   title={t('网络代理')}
                   desc={t(
-                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口），没开代理软件就不会走代理。也认环境变量 HTTPS_PROXY。',
+                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址，例如 {proxy}；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口，含 v2rayN 默认的 {port}），没开代理软件就不会走代理。只支持 http 代理：v2rayN 默认的入站就是这个端口的 SOCKS，这种环境要把它改成 http / mixed 入站，或者填 http 入站端口；探测不到时照常回退直连。也认环境变量 HTTPS_PROXY。',
+                    { proxy: DEFAULT_PROXY_URL, port: String(DEFAULT_PROXY_PORT) },
                   )}
                 >
                   <Input
                     value={proxy}
                     onChange={(e) => setProxy(e.target.value)}
-                    placeholder="http://127.0.0.1:7890"
+                    placeholder={DEFAULT_PROXY_URL}
                     className="w-[240px] font-mono text-[0.8125rem]"
                     spellCheck={false}
                     aria-label={t('网络代理')}

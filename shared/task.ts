@@ -122,6 +122,7 @@ export function newTask(
     changes: [],
     simulated: false,
     sessions: {},
+    sessionDirs: {},
     command: [],
     usage: { agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
     todos: [],
@@ -382,6 +383,34 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
     model: task.model || (same ? agent.model : ''),
     effort: task.effort || (same ? agent.effort : ''),
   }
+}
+
+/**
+ * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
+ * 用来判断「会话开在哪个目录」与这一轮的目录是否一致。
+ */
+export function sameDir(a: string, b: string) {
+  const norm = (s: string) =>
+    s
+      .replace(/[\\/]+/g, '\\')
+      .replace(/\\+$/, '')
+      .toLowerCase()
+  return !!a && !!b && norm(a) === norm(b)
+}
+
+/**
+ * 会话是不是在别处开的：CLI 的会话按目录存，换了目录续接就找不到。
+ * 先看这个会话自己记的目录（sessionDirs），旧任务只有对话共用的 sessionDir。
+ */
+export function sessionMoved(
+  task: Pick<Task, 'sessionDirs' | 'sessionDir'>,
+  sessionKey: string,
+  cwd: string,
+  /** 对话以外的节点没有 sessionDir 可用 */
+  chat = false,
+) {
+  const at = task.sessionDirs?.[sessionKey] || (chat ? (task.sessionDir ?? '') : '')
+  return !!at && !sameDir(at, cwd)
 }
 
 /**
@@ -1564,6 +1593,7 @@ export function taskSummary(t: Task): Task {
     plans: [],
     baseline: {},
     sessions: {},
+    sessionDirs: {},
     command: [],
     workflows: [],
     // 运行记录里有共享状态和节点消息，列表用不到；但 runRunning 判定「还在跑」要看最后一条的 status / endedAt，

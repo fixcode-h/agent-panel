@@ -59,7 +59,7 @@ export async function entries(): Promise<Entry[]> {
 }
 
 /** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
-const sharedRoot = () => expandHome('~/.agents/skills')
+export const sharedRoot = () => expandHome('~/.agents/skills')
 
 /**
  * 已经下线的自带 Skill：目录名 → 旧版每个文件的 sha256。

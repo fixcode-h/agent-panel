@@ -1316,8 +1316,151 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ timeout: 5000 })
         .catch(() => {})
     }
+    // 验收 5：子对话没打开时，宽屏「收起文件面板」的原行为不变（四条 openChild ? 分支写反会在这里撞红）
+    {
+      await gotoTask()
+      const aside = p.locator('[data-task-panel]')
+      const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
+      if (!(await fold.count())) errors.push('文件面板-原行为：子对话未打开时没有「收起文件面板」')
+      else if ((await fold.getAttribute('aria-expanded')) !== 'true')
+        errors.push('文件面板-原行为：面板展着时按钮没标成已展开')
+      else if (!(await aside.isVisible())) errors.push('文件面板-原行为：默认状态下右栏文件面板不可见')
+      else {
+        await fold.click()
+        await settle(p)
+        // 收起后整栏看不见（xl:hidden），按钮还在标题栏、标成未展开
+        if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：点收起后右栏还占着位置')
+        if ((await fold.getAttribute('aria-expanded')) !== 'false')
+          errors.push('文件面板-原行为：收起后按钮没标成未展开')
+        await check(p, '文件面板-原行为-收起')
+        await fold.click()
+        await settle(p)
+        if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：再点一次文件面板没回来')
+        await check(p, '文件面板-原行为-展开', ['src'])
+      }
+    }
     await openChild()
     await check(p, '子对话-面板', ['子对话：到货提醒'])
+    // 子对话开着时标题栏的文件按钮还在：点了把文件面板盖在子对话上展开，子对话不关；再点（或「回到子对话」、Esc）回来
+    {
+      const aside = p.locator('[data-task-panel]')
+      const fileBtn = p.getByRole('button', { name: '覆盖显示文件', exact: true })
+      const back = p.getByRole('button', { name: '回到子对话', exact: true })
+      /** 等覆盖层真的关上：只看 count 会漏掉正在卸载的那一瞬 */
+      const gone = () =>
+        back.waitFor({ state: 'detached', timeout: 3000 }).then(
+          () => true,
+          () => false,
+        )
+      if (!(await fileBtn.count())) errors.push('子对话+文件面板：子对话开着时标题栏没有文件按钮')
+      else if (!(await fileBtn.isVisible())) errors.push('子对话+文件面板：子对话开着时文件按钮不可见')
+      else {
+        // 子对话自己的标题栏（pane 里的 TaskView）不能再出现一个文件按钮
+        for (const label of ['覆盖显示文件', '收起文件面板'])
+          if (await aside.locator(`button[aria-label="${label}"]`).count())
+            errors.push(`子对话+文件面板：子对话自己的标题栏里也有「${label}」按钮`)
+        const before = await aside.boundingBox()
+        await fileBtn.click()
+        const shown = await back.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        )
+        if (!shown) errors.push('子对话+文件面板：点了文件按钮没有出现文件面板')
+        else {
+          // 盖在子对话上：占的是子对话那一栏的位置和宽度，不是另起一栏把两边挤窄
+          const after = await aside.boundingBox()
+          if (!before || !after) errors.push('子对话+文件面板：量不到右栏的位置')
+          else if (Math.abs(after.x - before.x) > 1 || Math.abs(after.width - before.width) > 1)
+            errors.push(`子对话+文件面板：文件面板把右栏挤变了（${JSON.stringify(before)} → ${JSON.stringify(after)}）`)
+          // 子对话没被关掉，文件面板真的在它上面（子对话的标题就在下面，看不见但还在）
+          const under = await p.evaluate(() => {
+            const box = document.querySelector('[data-task-panel]')
+            const title = [...(box?.querySelectorAll('*') ?? [])].find(
+              (el) => el.textContent?.trim() === '子对话：到货提醒' && el.children.length === 0,
+            )
+            if (!title) return null
+            const r = title.getBoundingClientRect()
+            return { covered: r.width > 0, box: { x: r.x, y: r.y } }
+          })
+          if (!under?.covered) errors.push('子对话+文件面板：盖文件的时候子对话被卸载了，收起后状态就丢了')
+          await check(p, '子对话-文件覆盖', ['src'])
+          if ((await fileBtn.getAttribute('aria-expanded')) !== 'true')
+            errors.push('子对话+文件面板：文件开着时按钮没标成展开')
+          // 「回到子对话」收起：焦点回标题栏那个按钮，键盘用户不会被丢回页面开头
+          await back.click()
+          if (!(await gone())) errors.push('子对话+文件面板：点「回到子对话」没有收起文件面板')
+          const focus = await p.evaluate(() => ({ label: document.activeElement?.getAttribute('aria-label') }))
+          if (focus.label !== '覆盖显示文件')
+            errors.push(`子对话+文件面板：收起后焦点没有回到文件按钮（现在在 ${focus.label ?? 'body'}）`)
+          if (!(await p.getByText('子对话：到货提醒').first().count()))
+            errors.push('子对话+文件面板：点了「回到子对话」后子对话没回来')
+          await check(p, '子对话-文件覆盖-返回', ['子对话：到货提醒'])
+          // 再用标题栏那个按钮自己开、自己关：只能开不能关的写法必须在这里撞红
+          await fileBtn.click()
+          if (
+            !(await back.waitFor({ timeout: 5000 }).then(
+              () => true,
+              () => false,
+            ))
+          )
+            errors.push('子对话+文件面板：第二次点文件按钮没有重新盖开')
+          await fileBtn.click()
+          if (!(await gone())) errors.push('子对话+文件面板：再点标题栏文件按钮没有收起文件面板')
+          await check(p, '子对话-文件覆盖-按钮收起')
+          // 子对话里开着运行视图（它自己也听 Esc）时，Esc 只收文件面板，不能把运行视图一起关掉
+          await p.locator('button[title="打开这次运行的对话"]').first().click()
+          await check(p, '子对话-运行视图-打开', ['第 1 次运行'])
+          await fileBtn.click()
+          await back.waitFor({ timeout: 5000 }).catch(() => errors.push('子对话+文件面板：运行视图上盖不开文件面板'))
+          await p.keyboard.press('Escape')
+          if (!(await gone())) errors.push('子对话+文件面板：按 Esc 没有收起文件面板')
+          if (!(await p.getByRole('button', { name: '返回子对话', exact: true }).count()))
+            errors.push('子对话+文件面板：按 Esc 收起文件时把子对话里的运行视图也关了')
+          await check(p, '子对话-文件覆盖-Esc', ['第 1 次运行'])
+          await p.getByRole('button', { name: '返回子对话', exact: true }).click()
+          await p
+            .getByRole('button', { name: '返回子对话', exact: true })
+            .waitFor({ state: 'detached', timeout: 3000 })
+            .catch(() => {})
+        }
+        // 窄屏（xl 断点以下）：子对话本身就是 fixed z-40 盖着右半屏，父对话标题栏右端那个按钮
+        // 鼠标点不到（被子对话抽屉盖住，改动前就这样）；但按钮仍在无障碍树里、键盘能专注，用键盘走这条路径
+        await p.setViewportSize({ width: 1024, height: 900 })
+        await settle(p)
+        const narrow = p.getByRole('button', { name: '覆盖显示文件', exact: true })
+        if (!(await narrow.count())) errors.push('子对话+文件面板（窄屏）：标题栏没有文件按钮')
+        else {
+          await narrow.focus()
+          await p.keyboard.press('Enter')
+          const ok = await back.waitFor({ timeout: 5000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!ok) errors.push('子对话+文件面板（窄屏）：用键盘按文件按钮没有出现文件面板')
+          else {
+            // 窄屏子对话只占半边、文件树放不下：盖上去时铺满整个屏
+            const cover = p.locator('[data-cover-panel]')
+            const box = await cover.boundingBox()
+            if (!box || box.width < 1000)
+              errors.push(`子对话+文件面板（窄屏）：文件面板没有铺满整个屏（${JSON.stringify(box)}）`)
+            await check(p, '子对话-文件覆盖-窄屏')
+            await back.click()
+            if (!(await gone())) errors.push('子对话+文件面板（窄屏）：点「回到子对话」没有收起文件面板')
+            // 窄屏收焦点收到的是窄屏那个按钮：宽屏按钮在 <1280 是 display:none，focus 不生效
+            const focus = await p.evaluate(() => ({
+              label: document.activeElement?.getAttribute('aria-label'),
+              visible: document.activeElement?.offsetParent !== null,
+            }))
+            if (focus.label !== '覆盖显示文件' || !focus.visible)
+              errors.push(
+                `子对话+文件面板（窄屏）：收起后焦点没有回到可见的文件按钮（现在在 ${focus.label ?? 'body'}）`,
+              )
+          }
+        }
+        await p.setViewportSize({ width: 1440, height: 900 })
+        await settle(p)
+      }
+    }
     // 子对话的进程面板只算它自己：父对话和兄弟的进程都不能出现
     {
       const btn = p.getByRole('button', { name: '对话进程' }).last()

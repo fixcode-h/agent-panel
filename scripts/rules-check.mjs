@@ -5,6 +5,8 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
+// 9. 共享仓库的 config 里不能有 core.worktree
+// 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -192,6 +194,37 @@ errors.push(...checkModuleDocsInRoot(root))
           errors.push(
             `${cfg} 里写了 core.worktree（${s}）：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时 git init 会写进去，主仓库的 git 命令会全部失败。删掉这一行`,
           )
+      }
+    }
+  }
+}
+
+// 10. 默认代理地址只有一个出处：shared/proxy.ts 的 DEFAULT_PROXY_PORT。
+// 其它地方再手写一份 127.0.0.1:<端口>，改默认值时就会漏改一处，界面示例和实际行为对不上。
+// 范围包括 CLI 定义里的 JSON 和 scripts/ 下的脚本（CLI 环境变量示例就写在 shared/clis/*.json 里），
+// 但不扫 *.test.ts：测试里大量写 127.0.0.1:7890 这类固件地址，与默认值无关。
+// 要放宽（例如真实需要写死）在那一行或上一行写 `proxy-port-ok: 原因`。
+{
+  const file = 'shared/proxy.ts'
+  if (!existsSync(path.join(root, file))) errors.push(`${file} 不存在，没法检查默认代理地址是否只有一个出处`)
+  else {
+    const src = read(file)
+    // 允许 10_808 这种带下划线的写法
+    const m = src.match(/export\s+const\s+DEFAULT_PROXY_PORT\s*=\s*(\d[\d_]*)/)
+    if (!m) errors.push(`${file} 里找不到 DEFAULT_PROXY_PORT 的定义`)
+    else {
+      const port = m[1].replace(/_/g, '')
+      const dup = new RegExp(`127\\.0\\.0\\.1:${port}\\b`)
+      for (const f of files) {
+        if (!/^(shared|server|web\/src|scripts)\/.+\.(tsx?|mjs|json)$/.test(f) || f === file) continue
+        if (/\.test\.tsx?$|\.test\.mjs$/.test(f)) continue
+        const lines = read(f).split('\n')
+        lines.forEach((l, i) => {
+          if (!dup.test(l) || /proxy-port-ok/.test(l) || /proxy-port-ok/.test(lines[i - 1] ?? '')) return
+          errors.push(
+            `${f}:${i + 1} 又写了一份默认代理地址的端口，改成从 shared/proxy.ts 的 DEFAULT_PROXY_URL 取（默认代理地址只在那里定义一次）：${l.trim()}`,
+          )
+        })
       }
     }
   }

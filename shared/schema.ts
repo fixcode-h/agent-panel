@@ -1574,6 +1574,12 @@ export const TaskData = z.object({
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
   sessionDir: z.string().optional(),
   /**
+   * 每个会话是在哪个目录里开的（键同 sessions）：CLI 的会话按目录存，在别的目录里续接时找不到。
+   * 子任务接着上一轮做时最容易撞上（父对话中途开了独立分支，子任务的会话还留在原目录）。
+   * 不先看这里，Pi 会去全局找会话，找到别的项目的后停下来问要不要分叉，非交互模式直接按 Aborted 退出
+   */
+  sessionDirs: z.record(z.string(), z.string()).default({}),
+  /**
    * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
    * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
    */
@@ -1899,7 +1905,7 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
-  /** 网络代理：检查更新、下载新版本时用，例如 http://127.0.0.1:7890；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
+  /** 网络代理：检查更新、下载新版本时用。默认地址和各处的示例见 shared/proxy.ts（只支持 http 代理，SOCKS 用不了）；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
   proxy: z.string().trim().default(''),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
