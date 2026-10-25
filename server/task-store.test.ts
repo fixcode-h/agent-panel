@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -327,4 +327,182 @@ test('内存里的完整对话按合计字数限：几个超长对话就把更�
   // 从磁盘读回来的还是完整的
   const back = await store.get(a.id)
   assert.equal(back?.messages[1].tools[0].output?.length, 6_000_000)
+})
+
+/** 一个项目目录下的两条真实对话消息（user + agent） */
+const conversation = (id: string) => [
+  { id: `${id}-u`, role: 'user', text: '帮我看一下这个问题', tools: [], at: '2026-10-25T02:55:00.000Z' },
+  { id: `${id}-a`, role: 'agent', text: '看完了', tools: [], at: '2026-10-25T02:56:00.000Z' },
+]
+
+test('只有 .messages.json、没有任务记录：从对话重建任务，列表里出现且内容完整', async () => {
+  // 断电重启后任务记录丢了、对话文件完好：不能让这个对话从列表里消失
+  const project = 'p-rebuild'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'only-messages'
+  write(path.join(dirOfProject, `${id}.messages.json`), conversation(id))
+  assert.equal(existsSync(path.join(dirOfProject, `${id}.json`)), false, '前提：任务记录不存在')
+
+  const list = await createTaskStore().list()
+  const task = list.find((t) => t.id === id)
+  assert.ok(task, '重建出任务，出现在列表里')
+  assert.equal(task.projectId, project, '归回原来的项目')
+  assert.equal(task.title, '帮我看一下这个问题', '标题取用户的第一句')
+  assert.equal(task.mode, 'chat')
+  assert.equal(task.status, 'stopped')
+  assert.equal(task.stopReason, 'restart', '当作被重启打断，用户可以继续')
+  assert.equal(task.simulated, false, '真实数据不能标成演示')
+
+  // 重建出来的任务记录写回了磁盘：下次启动不用再重建
+  const metaFile = path.join(dirOfProject, `${id}.json`)
+  assert.ok(existsSync(metaFile), '写出了任务记录文件')
+  const saved = JSON.parse(readFileSync(metaFile, 'utf8'))
+  assert.equal(saved.id, id)
+  assert.deepEqual(
+    saved.messages.map((m: { id: string }) => m.id),
+    [`${id}-u`],
+    '任务记录里只放用户消息（对话本身在消息文件里）',
+  )
+
+  // 对话内容完整可打开
+  const back = await createTaskStore().get(id)
+  assert.deepEqual(
+    back?.messages.map((m) => m.id),
+    [`${id}-u`, `${id}-a`],
+  )
+})
+
+test('任务记录损坏（全 0 的空洞文件）：从对话重建，坏文件留档', async () => {
+  const project = 'p-broken-meta'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'broken-meta'
+  write(path.join(dirOfProject, `${id}.messages.json`), conversation(id))
+  // Windows 断电的典型产物：长度对得上、内容全是 0x00
+  writeFileSync(path.join(dirOfProject, `${id}.json`), Buffer.alloc(2048))
+
+  const task = (await createTaskStore().list()).find((t) => t.id === id)
+  assert.ok(task, '任务记录坏了也要出现在列表里')
+  assert.equal(task.title, '帮我看一下这个问题')
+  // 坏的任务记录挪进了缓存目录留档，不是删掉
+  const cacheDir = path.join(dir, 'cache', 'broken')
+  const backups = readdirSync(cacheDir).filter((f) => f.startsWith(`${id}.json.broken-`) && !f.endsWith('.broken.json'))
+  assert.equal(backups.length, 1, '坏的任务记录被留档')
+  assert.equal(readFileSync(path.join(cacheDir, backups[0])).length, 2048, '原样保留原始字节')
+  // 重建出来的新记录能正常读到
+  assert.ok(existsSync(path.join(dirOfProject, `${id}.json`)))
+})
+
+test('对话文件也是全 0：不重建、不伪造，留档后不抛错也不再重试', async () => {
+  const project = 'p-broken-messages'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'broken-messages'
+  mkdirSync(dirOfProject, { recursive: true })
+  writeFileSync(path.join(dirOfProject, `${id}.messages.json`), Buffer.alloc(4096))
+
+  // 启动不能因为它失败
+  const list = await createTaskStore().list()
+  assert.equal(
+    list.find((t) => t.id === id),
+    undefined,
+    '没有可恢复的内容就不出现在列表里',
+  )
+  assert.equal(existsSync(path.join(dirOfProject, `${id}.json`)), false, '绝不写半截任务记录')
+  // 坏对话文件挪进缓存目录留档：下次启动看不到它，不会反复重试
+  const cacheDir = path.join(dir, 'cache', 'broken')
+  const backups = readdirSync(cacheDir).filter(
+    (f) => f.startsWith(`${id}.messages.json.broken-`) && !f.endsWith('.broken.json'),
+  )
+  assert.equal(backups.length, 1)
+  assert.equal(readFileSync(path.join(cacheDir, backups[0])).length, 4096)
+  assert.equal(existsSync(path.join(dirOfProject, `${id}.messages.json`)), false)
+
+  // 再启动一次：还是没有它，也不会再产生新的留档（不反复重试）
+  assert.equal(
+    (await createTaskStore().list()).find((t) => t.id === id),
+    undefined,
+  )
+  assert.equal(
+    readdirSync(cacheDir).filter((f) => f.startsWith(`${id}.messages.json.broken-`) && !f.endsWith('.broken.json'))
+      .length,
+    1,
+    '第二次启动不重复归档',
+  )
+})
+
+test('对话文件能读成 JSON 但内容不是消息列表：不重建，留档', async () => {
+  const project = 'p-wrong-shape'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'wrong-shape'
+  write(path.join(dirOfProject, `${id}.messages.json`), { steps: [], not: 'messages' })
+
+  assert.equal(
+    (await createTaskStore().list()).find((t) => t.id === id),
+    undefined,
+  )
+  assert.equal(existsSync(path.join(dirOfProject, `${id}.json`)), false)
+  assert.equal(
+    existsSync(path.join(dirOfProject, `${id}.messages.json`)),
+    false,
+    '用不了的文件也留档，免得每次启动重读',
+  )
+})
+
+test('已经有任务记录的不会被重建覆盖', async () => {
+  const project = 'p-keep-meta'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'keep-meta'
+  // 任务记录和对话文件都在，记录里的标题是用户自己改的：重建会把它盖掉
+  write(path.join(dirOfProject, `${id}.json`), base(id, { projectId: project, title: '我自己起的名字' }))
+  write(path.join(dirOfProject, `${id}.messages.json`), conversation(id))
+
+  const task = (await createTaskStore().list()).find((t) => t.id === id)
+  assert.equal(task?.title, '我自己起的名字')
+  assert.equal(JSON.parse(readFileSync(path.join(dirOfProject, `${id}.json`), 'utf8')).title, '我自己起的名字')
+})
+
+test('对话文件读不出来（权限 / 占用这类错误）：跳过这一个任务，整个列表照样能用', async () => {
+  const project = 'p-unreadable'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  mkdirSync(dirOfProject, { recursive: true })
+  // 用一个同名目录顶替文件：readFile 报 EISDIR（不是 ENOENT），模拟「文件在、但读不出来」
+  mkdirSync(path.join(dirOfProject, 'unreadable.messages.json'), { recursive: true })
+  // 同目录里再放一个正常任务，确认它不受影响
+  write(path.join(dirOfProject, 'good.json'), base('good', { projectId: project, title: '正常任务' }))
+  write(path.join(dirOfProject, 'good.messages.json'), conversation('good'))
+
+  const store = createTaskStore()
+  // 关键：不能因为一个文件读不出来就抛错（抛了的话任务列表整体消失，和这次 bug 的症状一样）
+  const list = await store.list()
+  assert.equal(list.find((t) => t.id === 'good')?.title, '正常任务')
+  assert.equal(
+    list.find((t) => t.id === 'unreadable'),
+    undefined,
+    '读不出来的不伪造',
+  )
+  // 没有在原位写出一份 meta，也没把它挪走（下次启动还能再试）
+  assert.equal(existsSync(path.join(dirOfProject, 'unreadable.json')), false)
+  assert.ok(existsSync(path.join(dirOfProject, 'unreadable.messages.json')))
+})
+
+test('任务记录过不了 schema 且没能留档：本次可见但不覆盖原文件', async () => {
+  const project = 'p-keep-broken-meta'
+  const dirOfProject = path.join(dir, 'tasks', 'projects', project)
+  const id = 'keep-broken'
+  write(path.join(dirOfProject, `${id}.messages.json`), conversation(id))
+  // 能读成 JSON、但过不了 Task schema（缺 mode / status 这些必填）
+  write(path.join(dirOfProject, `${id}.json`), { id, projectId: project, title: '手改坏了的记录' })
+  const metaFile = path.join(dirOfProject, `${id}.json`)
+  const before = readFileSync(metaFile, 'utf8')
+
+  // 让归档必然失败：把 cache/broken 本身换成一个普通文件，mkdir 和 rename 到它下面都会失败
+  const brokenDir = path.join(dir, 'cache', 'broken')
+  rmSync(brokenDir, { recursive: true, force: true })
+  mkdirSync(path.dirname(brokenDir), { recursive: true })
+  writeFileSync(brokenDir, '占位，不是目录', 'utf8')
+
+  const list = await createTaskStore().list()
+  // 原文件一个字节都不能变（新记录不能盖掉那份手改坏的，它可能还能修）
+  assert.equal(readFileSync(metaFile, 'utf8'), before, '原来的任务记录没有被覆盖')
+  // 这次启动仍然让它可见（能打开、能导出）
+  assert.equal(list.find((t) => t.id === id)?.title, '帮我看一下这个问题')
 })
