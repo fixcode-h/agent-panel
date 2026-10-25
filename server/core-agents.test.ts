@@ -331,6 +331,22 @@ test('「写 Bug 记录」只在文档角色里定义一次，版本控制角色
   assert.ok(agents.length > 0)
 })
 
+test('Bug 记录只记用户报的 Bug，AI 自己写代码、评审发现的问题不写', () => {
+  // 用户要求：bug 文档是用户提出的 bug 分析解决后才写的，开发和评审中自己发现并修掉的问题不进 bugs.md
+  const docsync = coreDefinition('docsync').agent
+  const rendered = renderTemplate(docsync.instructions, { bug: true })
+  assert.match(rendered, /用户报的 Bug/)
+  assert.match(rendered, /评审或跑测试时发现并当场修掉的问题.*不写进 bugs\.md/)
+  assert.match(docsync.params.find((p) => p.key === 'bug')!.description ?? '', /用户报的 Bug/)
+  for (const f of ['skills/coding/systematic-debugging/SKILL.md', 'skills/docs/project-documentation/SKILL.md']) {
+    assert.match(readFileSync(f, 'utf8'), /Bug 记录只记用户报的 Bug/, f)
+  }
+  assert.doesNotMatch(
+    readFileSync('skills/workflow/openspec/SKILL.md', 'utf8'),
+    /发现新的易错点时，先记录到模块 Bug 文档/,
+  )
+})
+
 test('P4 的 changelist 描述只写一行短句，细节留在文档里', () => {
   // 实际出现过长描述（把根因、函数名、步骤全写进 pending），P4V 列表里根本看不完
   const p4 = readFileSync(new URL('../skills/vcs/project-vcs/p4.md', import.meta.url), 'utf8')

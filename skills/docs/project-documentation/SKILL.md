@@ -96,6 +96,7 @@ DOC_ROOT/
 - `modules/<模块名>/README.md`：职责、入口、依赖、边界、数据流、扩展点、常见陷阱、回归测试、证据来源和待确认项。
 - `modules/<模块名>/bugs.md`：按症状、关键词、入口、根因类型、状态和单 Bug 文档链接帮助检索，不重复排查过程。
 - `modules/<模块名>/bugs/<bug-id>.md`：现象、复现条件、影响范围、根因、排查路径、修复、回归测试和防复发护栏。
+- Bug 记录只记用户报的 Bug：用户提出的问题经分析、修复并验证后才写。AI 自己写代码、自测、评审或跑测试时发现并修掉的问题不写 Bug 记录。
 - `CONTEXT.md` 只记稳定术语、概念定义和边界；`CONTEXT-MAP.md` 只记多个上下文的关系、责任边界和交叉术语。
 - `architecture.md` 只描述当前已落地的模块、依赖、数据流和运行边界；架构变了同步更新。
 - `adr/` 只记难逆转、缺少背景会令人困惑、且确实有取舍的决策；被替代的 ADR 标状态并链接新 ADR。
@@ -133,7 +134,7 @@ DOC_ROOT/
 | 新增或修改领域术语 | `CONTEXT.md`，必要时 `CONTEXT-MAP.md` |
 | 对外行为变化 | 当前 change 的 `specs/`；交付后更新 `openspec/specs/` |
 | 模块职责、入口、依赖或数据流变化 | `modules/<模块名>/README.md`（同步状态）、`MODULE-MAP.md`，必要时 `architecture.md` |
-| Bug 根因、修复路径或防复发规则 | `modules/<模块名>/bugs.md` 和 `bugs/<bug-id>.md` |
+| 用户报的 Bug 修复后：根因、修复路径或防复发规则 | `modules/<模块名>/bugs.md` 和 `bugs/<bug-id>.md` |
 | 难以逆转的技术取舍 | `adr/` |
 | API、资源格式或持久化变化 | 对应 `tech/` 契约 |
 | 构建、部署、迁移或排障变化 | 对应 `runbooks/` |
