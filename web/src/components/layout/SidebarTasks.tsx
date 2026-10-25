@@ -84,7 +84,7 @@ export function TaskRow({
           <button
             onClick={onOpen}
             aria-current={active || undefined}
-            title={[task.title, cliAliveHint(task)].filter(Boolean).join('\n')}
+            title={task.title}
             data-cli-online={online || undefined}
             data-cli-alive={alive || undefined}
             className={cn(
@@ -126,7 +126,9 @@ export function TaskRow({
               ) : null}
             </span>
             {analysis && <AnalysisMark kind={task.analysis} />}
+            {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
             <span
+              title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
               className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
               style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
             >
