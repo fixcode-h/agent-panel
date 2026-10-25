@@ -34,6 +34,7 @@ import { currentRun, topSteps } from '@shared/flow'
 import { convStateText, deliveryText, helperActive, runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
+import { stripLessonReview } from '@shared/lesson-review'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningTools } from './RunningNow'
@@ -399,7 +400,11 @@ const MessageBody = memo(
             </div>
           )}
           {m.text && (
-            <Markdown text={stripEvolution(stripDispatch(stripNext(m.text)))} teamNames={teamNames} live={live} />
+            <Markdown
+              text={stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))}
+              teamNames={teamNames}
+              live={live}
+            />
           )}
         </div>
       </div>

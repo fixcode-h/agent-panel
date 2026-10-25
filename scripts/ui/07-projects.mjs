@@ -351,7 +351,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^项目教训/ })
       .first()
       .click()
-    await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    // 默认选中「默认」页签：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的页签里
+    await check(p, '项目设置-项目教训', ['购物车相关改动同时改 legacy-cart', '默认', '加一条'])
+    const defaultTab = dlg.getByRole('tab', { name: /^默认/ })
+    await defaultTab.click()
+    assert.equal(await defaultTab.getAttribute('aria-selected'), 'true', '再点一次选中的页签不能取消选中')
+    await dlg.getByRole('tab', { name: /^支付/ }).click()
+    await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
+    assert.equal(
+      await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),
+      0,
+      '「支付」页签里不该有不带标签的教训',
+    )
     // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
     await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
@@ -399,7 +410,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Backspace')
     // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
     await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
-    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '后台命令报完成后先看用时'])
+    await check(p, '项目首页-项目教训', ['项目教训 · 5', '已改写', '后台命令报完成后先看用时'])
     await p
       .getByRole('button', { name: /新增支付方式写进/ })
       .first()
@@ -412,6 +423,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.getByRole('button', { name: '确认写入全局教训' }).click()
     await check(p, '提取全局教训-已写入', ['条全局教训'])
     await p.keyboard.press('Escape')
+    // AI 评审项目教训：在项目里开一个分析对话，结果在对话里逐条应用
+    await p.keyboard.press('Escape')
+    await p
+      .getByRole('button', { name: /购物车相关改动同时改/ })
+      .first()
+      .click()
+    await p.getByRole('button', { name: 'AI 评审', exact: true }).first().click()
+    await check(p, 'AI评审教训-开始', ['AI 评审项目教训', '开始评审'])
+    await p.getByRole('button', { name: '开始评审' }).click()
+    await p
+      .getByText('2 条建议待处理')
+      .first()
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI 评审教训：等不到评审结果'))
+    await check(p, 'AI评审教训-结果', ['教训评审', '已过期', '可优化', '改成：'])
+    await p
+      .getByRole('region', { name: '教训评审结果' })
+      .getByRole('button', { name: '应用', exact: true })
+      .first()
+      .click()
+    await p
+      .getByText('1 条建议待处理')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('AI 评审教训：应用后没有变成已应用'))
+    await check(p, 'AI评审教训-已应用', ['已应用'])
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 新建项目：没单独选工作流时按「通用项目」算（正式版启动时自动装好，演示里先手动添加），

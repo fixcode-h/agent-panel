@@ -10,6 +10,7 @@ import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
+import { LESSON_REVIEW_LANG } from './lesson-review.ts'
 
 export interface RunContext {
   task: Task
@@ -419,6 +420,38 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       tools: [{ kind: 'read', label: '执行记录.md', detail: '' }],
       changes: [],
       text: `这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，**缓存命中率偏低**。\n\n### 1. 结果质量\n\n- 交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n\n### 2. 工作流\n\n- 节点要求写得笼统，**分析需求** 一步反复确认范围，建议写得更具体。\n- 不需要深度推理的节点可以降到中档。\n\n### 3. Agent\n\n- 角色设定和节点要求有部分重复，可以精简。\n\n### 4. 面板框架\n\n- 见下面的发现。\n\n### 5. 交付的代码\n\n- **商品卡片** 在价格为空时会报错，见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
+    }
+  // AI 评审项目教训：回复后面带上评审块，演示里也能逐条应用（条目 id 对的是演示项目「网上商城」的教训）
+  if (!call.step && ctx.first && ctx.prompt.includes('```' + LESSON_REVIEW_LANG))
+    out = {
+      tools: [
+        { kind: 'read', label: '项目教训.md', detail: '' },
+        { kind: 'search', label: 'legacy-cart', detail: '' },
+      ],
+      changes: [],
+      text: `5 条教训里 3 条写得清楚、和现在的代码对得上，保留。\n\n- **购物车旧接口那条已经过期**：\`src/legacy-cart/\` 目录已经删掉，代码里也搜不到 \`cartV1\`。\n- **mock 那条能写得更好**：现在类型从 \`src/api/schema.ts\` 生成，规则应该指向生成脚本。\n\n\`\`\`${LESSON_REVIEW_LANG}\n${JSON.stringify(
+        {
+          summary: '5 条里 1 条已过期建议删除，1 条可以写得更具体，其余保留。',
+          items: [
+            {
+              id: 'demo-lesson-5',
+              action: 'delete',
+              problems: ['outdated'],
+              why: 'src/legacy-cart/ 已经删掉，代码里搜不到 cartV1，这条不再适用。',
+            },
+            {
+              id: 'demo-lesson-3',
+              action: 'rewrite',
+              problems: ['optimize'],
+              why: '类型现在由 scripts/gen-api.ts 从 src/api/schema.ts 生成，手改 types.ts 会被覆盖。',
+              title: '改接口字段先改 src/api/schema.ts，再跑 npm run gen:api，mock 一起改',
+              rule: 'types.ts 是生成的，不手改；schema 改完跑 npm run gen:api，mock/ 下对应的 JSON 同步改，否则本地开发和 e2e 用的还是旧结构。',
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n\`\`\``,
     }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
