@@ -981,6 +981,14 @@ async function runAgent(
     const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, await readGlobalLessons())
     if (lessons) input = `${input}\n\n${lessons}`
   }
+  // 没有系统提示词参数的 CLI 只在会话第一轮带角色设定。续接旧会话时角色变了（内置角色随版本更新、用户改了设定），
+  // 把新版补发一次，旧对话再聊也按新角色做；以前开的会话没记过，按变了处理补一次
+  const roleHash = instructions ? createHash('sha1').update(instructions).digest('hex').slice(0, 16) : ''
+  const roleStale = !!resume && !op && !!roleHash && task.roleHashes?.[sessionKey] !== roleHash
+  if (instructions && !def.systemPromptFlag && roleStale)
+    input = `## 你的角色（已更新，以这一版为准，之前的角色设定作废）\n${instructions}\n\n${input}`
+  if (instructions && !def.systemPromptFlag && (!resume || roleStale))
+    task.roleHashes = { ...task.roleHashes, [sessionKey]: roleHash }
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
