@@ -223,28 +223,57 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
   await p.keyboard.press('Escape')
-  // 项目行整行可点：以前只有左边的小箭头能收起，点项目名没反应（用户报的「点项目名没反应」）
-  // 定位项目名而不用最左边的「收起」按钮：两个项目同时存在时按钮顺序不可靠
-  // 限在侧栏里找，避开副栏、对话里同名的文字；分类行按 data-kind 定位，不靠文字子串匹配
+  // 项目行：最前面的箭头按钮才折叠，点项目名打开 UI 项目主页（用户报的「点不开主页」「点整行就折叠」）
+  // 定位项目名不用最左边的「收起」按钮（未按项目限定时多个项目下顺序不可靠），
+  // 箭头按钮用 data-fold={项目id} 锁定；限在侧栏里找，避开副栏、对话里同名的文字；
+  // 分类行按 data-kind 定位，不靠文字子串匹配
   const side = () => p.locator('[data-sidebar]')
-  const projName = () => side().getByText('暗夜远征', { exact: true }).first()
+  const projName = () => side().getByRole('button', { name: /打开项目「暗夜远征」/ })
   const gameKind = () => side().locator('[data-kind="game"]')
-  // 先断言展开：下面两条断言靠它区分「点了没反应」和「本来就收着」
+  const projFold = () => side().locator('[data-fold="demo-ui-project"]')
+  // 主页的断言必须限在主页容器里：侧栏先于页面渲染，侧栏的设计行也有「主菜单」「背包」，
+  // 不限作用域的话主页完全没画出来也会通过（假通过）
+  const home = () => p.locator('[data-design-home="demo-ui-project"]')
+  // 先断言展开：下面几条断言靠它区分「点了没反应」和「本来就收着」
   assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '初始是展开的')
   await projName().click()
-  // 收起后箭头变成「展开」、分类行整个不渲染
-  await side().getByRole('button', { name: '展开', exact: true }).first().waitFor()
+  // 点项目名是打开项目主页，侧栏的折叠状态不变
+  await p.waitForURL(/#\/design\/home\/demo-ui-project/, { timeout: 5000 })
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '点项目名不会折叠')
+  await home().waitFor()
+  // 只断言主页里有的：侧栏也有「暗夜远征」，靠 check 的全局匹配不限定作用域会假通过
+  await home().getByText('个界面').first().waitFor()
+  await home().getByText('最近改动').first().waitFor()
+  await check(p, 'UI设计-项目主页')
+  // 主页容器里真的列出了这个项目的两个设计（侧栏也有同名行，所以要限定作用域）
+  for (const title of ['主菜单', '背包']) await home().getByText(title, { exact: true }).first().waitFor()
+  // 主页里点一行进设计器：点主页里的那一行，不是侧栏的同名行
+  await home()
+    .getByRole('button', { name: /^主菜单/ })
+    .click()
+  await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
+  // 回到主页再试折叠：只有最前面的箭头按钮能折叠
+  await p.goto(base + '#/design/home/demo-ui-project')
+  await gameKind().waitFor()
+  await projFold().click()
   await gameKind().waitFor({ state: 'detached' })
-  await check(p, 'UI设计-点项目名收起')
+  // 折叠后箭头本身还叫「展开」，拿它当定位（名字和状态自洽，且已经按项目锁定，不靠 DOM 顺序）
+  assert.equal(await projFold().getAttribute('aria-expanded'), 'false', '点箭头才折叠')
+  await home().waitFor()
+  await check(p, 'UI设计-箭头收起')
+  await projFold().click()
+  await gameKind().waitFor()
+  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '箭头再点一次又展开')
+  // 点项目名不折叠，而且留在项目主页
   await projName().click()
-  await gameKind().waitFor()
-  assert.equal(await gameKind().getAttribute('aria-expanded'), 'true', '再点项目名又展开了')
-  await check(p, 'UI设计-点项目名展开')
-  // 箭头按钮不能因为冒泡折叠两次（那样点了看着像没反应）
-  await side().getByRole('button', { name: '收起', exact: true }).first().click()
-  await gameKind().waitFor({ state: 'detached' })
-  await side().getByRole('button', { name: '展开', exact: true }).first().click()
-  await gameKind().waitFor()
+  await p.waitForURL(/#\/design\/home\/demo-ui-project/, { timeout: 5000 })
+  // 等主页渲染出来当同步点，不用「停一阵」（见教训 lmvnpbhxfu1yg）
+  await home().getByText('个界面').first().waitFor()
+  assert.equal(await projFold().getAttribute('aria-expanded'), 'true', '点项目名不会折叠')
+  assert.equal(await home().count(), 1, '点项目名后仍然在项目主页')
+  // 分类行仍能单独收起展开
+  await side().locator('[data-kind="game"]').click()
+  await side().locator('[data-kind="game"]').click()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')
   await check(p, 'UI设计-画板数据', ['星辉宝石'])
