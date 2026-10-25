@@ -249,6 +249,7 @@ export const EN_TASKS: Record<string, string> = {
   '子对话 {n}': 'Sub-conversations ({n})',
   '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
+  运行区: 'Running items',
   已关闭: 'Closed',
   解决: 'Resolve',
   已解决: 'Resolved',

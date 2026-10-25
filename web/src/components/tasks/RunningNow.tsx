@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
-import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs } from '@shared/task'
+import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs, type ChildEntry } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
@@ -12,9 +12,54 @@ import { childLabelClass, childLabels, childNote, staleLine } from './child-line
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 
-/** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结上面，不能跟着过程一起折叠 */
+/** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结下面，不能跟着过程一起折叠 */
 export const runningTools = (msgs: { role: string; tools: ToolUse[] }[]) =>
   msgs.flatMap((m) => (m.role === 'agent' ? m.tools.filter((x) => x.running) : []))
+
+/**
+ * 运行区这一刻要列的东西：没收尾的工具、子任务、后台命令、子对话。
+ * 判定只写这一处：RunningNow 列什么、分隔线画不画都走它，两处对不上就会出现
+ * 「一根空横线」或者「有内容但没分隔」。子任务、后台命令、子对话的归类见 shared/task.ts
+ * 的 splitStepJobs、chatHelperIds、visibleChildren
+ */
+export function runningRows<C extends ChildEntry>({
+  task,
+  tools,
+  jobs,
+  kids,
+  children,
+}: {
+  task?: Task
+  tools: ToolUse[]
+  jobs: boolean
+  kids: boolean
+  /** 子对话摘要：RunningNow 从 ChildListCtx 拿，调用处也拿得到同一份，传进来免得两处判断不一致 */
+  children: C[]
+}) {
+  const list = jobs ? (task?.jobs ?? []) : []
+  // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧
+  const { sub, own } = splitStepJobs(task?.steps ?? [], list)
+  // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren）
+  const rows = kids ? visibleChildren(children) : []
+  // 对话派出的子任务：只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
+  // 在跑的排前面，同一组按派出的顺序
+  const helpers = kids && task ? activeHelpers(task) : []
+  return {
+    sub,
+    own,
+    rows,
+    helpers,
+    empty: !tools.length && !own.length && !sub.length && !rows.length && !helpers.length,
+  }
+}
+
+/** 对话派出的、还没结束的子任务：在跑的排前面 */
+export function activeHelpers(task: Task) {
+  const steps = chatHelperIds(task)
+    .map((id) => task.steps.find((s) => s.id === id))
+    .filter((s): s is TaskStep => !!s && helperActive(s))
+  return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
+}
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
 
@@ -162,16 +207,15 @@ function HelperRow({
 }
 
 /**
- * 还在运行的东西统一放在一段回复的总结上面：没收尾的工具调用、后台命令、还在干活的子对话。
+ * 还在运行的东西：没收尾的工具调用、后台命令、还在干活的子对话。
  * 不收进过程的折叠，一直转圈，跑完就从这里消失；命令的结果推回来后 AI 会接着处理、重新总结，
- * 新的一段回复上面再按那时的情况列一遍。什么都没在跑时不占位置
+ * 运行区就跟着挂到新一段总结下面。什么都没在跑时不占位置
  */
 export function RunningNow({
   task,
   tools,
   jobs,
   kids,
-  indent,
 }: {
   task?: Task
   /** 这一段里还没收尾的工具调用；回复还在流式输出时它们就在过程里转圈，不用再列一遍 */
@@ -183,26 +227,11 @@ export function RunningNow({
    * 所以两处条目数、顺序、状态标签一致；不再自己写 `working && !resolved`
    */
   kids: boolean
-  /** 不在折叠开关下面、单独成行时，和工具调用一样缩进在头像后面 */
-  indent?: boolean
 }) {
   const children = useChildList()
   const openChild = useChildOpen()
-  const list = jobs ? (task?.jobs ?? []) : []
-  // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧；判定只有 splitStepJobs 一处
-  const { sub: stepJobs, own: ownJobs } = splitStepJobs(task?.steps ?? [], list)
-  // 已标记解决但还在跑、在等后台命令、计划没做完的子对话都要列（见 visibleChildren），
-  // 以前这里只认 working 且没标解决，弹层里有、运行区没有，同一个页面对不上数
-  const rows = kids ? visibleChildren(children) : []
-  // 对话派出的子任务：和子对话一样，只要没结束（在跑、在排队）就列一行，跟子对话同一批出现在最新一段上；
-  // 在跑的排前面，同一组按派出的顺序
-  const helpers = useMemo(() => {
-    if (!kids || !task) return []
-    const steps = chatHelperIds(task)
-      .map((id) => task.steps.find((s) => s.id === id))
-      .filter((s): s is TaskStep => !!s && helperActive(s))
-    return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
-  }, [kids, task])
+  // 列什么只算一次：RunningNow 自己列的行和外面画不画分隔线读的是同一个函数
+  const { sub: stepJobs, own: ownJobs, rows, helpers } = runningRows({ task, tools, jobs, kids, children })
   // 已经有子任务行的，后台命令并进那一行；剩下的（子任务做完了命令还在跑）照旧单独一行
   const helperJobs = new Map(stepJobs.map((x) => [x.step.id, x.jobs]))
   const restJobs = stepJobs.filter((x) => !helpers.some((s) => s.id === x.step.id))
@@ -210,6 +239,8 @@ export function RunningNow({
   const { agents } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const now = useNow(ownJobs.length > 0 || stepJobs.length > 0 || rows.length > 0 || helpers.length > 0)
+  // 只为独立调用方保留的兜底：RunningFooter 已经用 runningRows 先判过空（判空和渲染读同一个值），
+  // 这边不再判会画出只有分割线、没有内容的一块
   if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length) return null
   const box = (
     <div className="flex flex-col gap-1" aria-label={t('运行中')}>
@@ -288,11 +319,5 @@ export function RunningNow({
       {task && win && <HelperWindow task={task} id={win} teamNames={teamNames} onClose={() => setWin('')} />}
     </div>
   )
-  if (!indent) return box
-  return (
-    <div className="flex gap-3">
-      <span className="w-[26px] shrink-0" />
-      <div className="min-w-0 flex-1">{box}</div>
-    </div>
-  )
+  return box
 }
