@@ -1198,14 +1198,24 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
   const now = Date.now()
   const u = stepUsage(step)
   const parent = tk.steps.find((s) => s.id === step.parentId)
+  // 导出时还在跑的任务，schema 里已经收尾过（running → stopped、节点 running → pending），
+  // 照着写会和提示词里「还没结束，记录是快照」自相矛盾，AI 会把它报成「面板状态不对」的假发现。
+  // 整体报告在下面也有同样的补偿（exportedWhileRunning）
+  const asExported = tk.exportedWhileRunning
+  // 排队（没开始过）和「导出时正在跑」都被写成了 pending，只能靠 startedAt 区分
+  const stepState =
+    step.status === 'pending' && step.startedAt && asExported ? 'running（导出时就停在这一刻）' : step.status
+  const main = stepMs(step, now)
   lines.push(
-    `所属：${parent ? `父节点「${parent.title}」（${parent.id}）` : '对话本身'}　状态：${step.status}${step.interrupted ? '（被打断过，每次中断前的执行时间都算在耗时里）' : ''}　开始：${localTime(step.startedAt)}${step.endedAt ? `　结束：${localTime(step.endedAt)}` : ''}`,
+    `所属：${parent ? `父节点「${parent.title}」（${parent.id}）` : '对话本身'}　状态：${stepState}${step.interrupted ? '（被打断过，每次中断前的执行时间都算在耗时里）' : ''}　开始：${localTime(step.startedAt)}${step.endedAt ? `　结束：${localTime(step.endedAt)}` : ''}`,
     '',
     '## 统计',
-    `- 耗时 ${fmtDuration(stepMs(step, now))}（其中等用户确认/提问 ${fmtDuration(waitDuration(step, now))}）；续接时接着之前的会话，之前几次中断前的时间也在里面`,
+    // 括号里是子集，按 min(子集, 主数) 夹（docs/lessons/task-export.md）：缺 endedAt 的旧记录会写出「耗时 0s（其中等用户 3h）」
+    `- 耗时 ${fmtDuration(main)}（其中等用户确认/提问 ${fmtDuration(Math.min(waitDuration(step, now), main))}）；续接时接着之前的会话，之前几次中断前的时间也在里面`,
     `- Token：输入 ${fmtK(u.inputTokens)}（缓存命中 ${fmtK(u.cacheReadTokens)}，${pct(cacheHitRate(u))}），输出 ${fmtK(u.outputTokens)}，费用 $${u.costUsd.toFixed(3)}`,
-    `- 执行这一轮的父任务「${tk.title}」（${tk.mode === 'workflow' ? '工作流执行' : '对话'}，状态 ${tk.status}）：累计执行 ${fmtDuration(taskStats({ ...tk, id: '', projectId: '' } as unknown as Task).durationMs)}；这一轮开始到现在的跨度 ${fmtDuration(recordSpan(tk, now))}`,
-    `- 同一批一起派出的子任务 ${siblings.length} 个：${siblings.length ? siblings.map((s) => `「${s.title}」（${s.id}，${s.status}，耗时 ${fmtDuration(stepMs(s, now))}）`).join('、') : '没有'}`,
+    `- 执行这一轮的父任务「${tk.title}」（${tk.mode === 'workflow' ? '工作流执行' : '对话'}，状态 ${tk.status}${asExported ? '，导出时还在跑，统计到导出那一刻' : ''}）：累计执行 ${fmtDuration(taskStats({ ...tk, id: '', projectId: '' } as unknown as Task).durationMs)}；这一轮开始到现在的跨度 ${fmtDuration(recordSpan(tk, now))}`,
+    // siblings 已经把这一步排除掉了，写「同一批一起派出」会被读成含自己在内的整批数量
+    `- 同一批一起派出的兄弟子任务 ${siblings.length} 个：${siblings.length ? siblings.map((s) => `「${s.title}」（${s.id}，${s.status}，耗时 ${fmtDuration(stepMs(s, now))}）`).join('、') : '没有'}`,
   )
   const a = b.agents.find((x) => x.id === step.agentId)
   if (a) {
@@ -1363,6 +1373,12 @@ ${FRAMEWORK_MAP}
 ${targets.join('\n') || '（没有工作流，只能给 Agent 的建议）'}`
 }
 
+/**
+ * 子任务分析提示词的标记：只由代码写在这里，用户填的 focus 进不来。
+ * 演示版的假 Agent 靠它认出「这是子任务分析」（只认这一行，不认句子里可能被 focus 注入的某句话）
+ */
+export const HELPER_SCOPE_MARK = '<!-- 面板：子任务范围 -->'
+
 /** 子任务分析的要求：只看这一步，四类问题，不给工作流修改块 */
 function helperPrompt(bundles: TaskExport[], focus: string, scope: HelperScope) {
   const tk = bundles[0]?.task
@@ -1371,7 +1387,9 @@ function helperPrompt(bundles: TaskExport[], focus: string, scope: HelperScope) 
   const who = tk ? (tk.mode === 'workflow' ? `工作流执行「${tk.title}」` : `对话「${tk.title}」`) : ''
   // 还在跑的那一步只能分析到目前为止：不写清楚，AI 会把「还没交回结果」当成「子任务没做」
   const running = step?.status === 'running' || step?.status === 'pending'
-  return `分析附件里${who}派出的一个子任务${what}。这次只分析这一个子任务，不看其它子任务和整条业务交付的质量。只分析，不要修改任何文件。
+  // 标记放最前面：用户在 focus 里写什么都挪不动它，也伪造不出它（focus 拼在下面的「用户特别关心」里）
+  return `${HELPER_SCOPE_MARK}
+分析附件里${who}派出的一个子任务${what}。这次只分析这一个子任务，不看其它子任务和整条业务交付的质量。只分析，不要修改任何文件。
 ${running ? '\n注意：这个子任务还没有结束（或还在排队），记录是到导出这一刻的快照。「还没交回结果」本身不是问题，不要当成它没做完。\n' : ''}
 ${promptLangRules()}
 ${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}

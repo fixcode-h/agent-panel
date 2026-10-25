@@ -293,7 +293,7 @@ export function HelperWindow({
               </span>
             )}
             {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-            {/* 窄屏只留图标：���个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
+            {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
             <Button
               variant="ghost"
               size="sm"
@@ -334,7 +334,7 @@ export function HelperWindow({
           </footer>
         </D.Content>
       </D.Portal>
-      {/* 弹窗开在子任务窗口之上：分析完跳到新对话，子任务窗口跟着一起关掉 */}
+      {/* 弹窗开在子任务窗口之上。分析完 startAnalysis 会 go() 跳到新对话，父组件随之卸载，这个子任务窗口跟着消失 */}
       <AnalyzeDialog
         open={analyzing}
         onOpenChange={setAnalyzing}

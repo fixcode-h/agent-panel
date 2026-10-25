@@ -9,7 +9,7 @@ import { runEngineTurn, system, type AgentCall, type AgentResult } from './engin
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
-import { EVOLUTION_LANG, demoEvolution } from './task-export.ts'
+import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 
 export interface RunContext {
   task: Task
@@ -405,8 +405,9 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
     }
   }
   // 子任务的 AI 分析（子任务窗口里的「AI 分析」）：演示里给出四类结论，不要求工作流修改建议块。
-  // 不能用问题里的某句话当标志（用户可能在 focus 里手写同样的句子）：认只有子任务范围才有的那句开头
-  if (!call.step && ctx.first && ctx.prompt.includes('派出的一个子任务'))
+  // 只认 helperPrompt 写在开头的那行标记：不能认问题里的某句话——整体分析的 focus 是用户自己填的，
+  // 写一句「帮我看派出的一个子任务为什么慢」就会被当成子任务分析，回复里连修改建议块都没了
+  if (!call.step && ctx.first && ctx.prompt.includes(HELPER_SCOPE_MARK))
     out = {
       tools: [{ kind: 'read', label: '子任务记录.md', detail: '' }],
       changes: [],
