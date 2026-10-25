@@ -30,6 +30,10 @@ Playwright（界面检查）、esbuild（出包）、Node.js 20+。端到端测�
 ## 回归验证
 
 - 改了端到端：`npm run test:e2e`（CI 里跑同样的命令）。
+- 判「节点并发 / 先后」用引擎记的节点时间，不看假 CLI 进程的 `start` / `end`：`step.startedAt` 在 `shared/engine.ts` 的 `runNodeSingle` 里 spawn **之前**记、`step.endedAt` 在节点结束时记，合起来是「节点执行窗口」（`runFlow` 同一阶段顺序 `for (const n of ready())` 塞进 `running` 再 `Promise.race`，两个节点的 `startedAt` 落在同一毫秒附近）；假 CLI 的 `start` 是 node 进程起来写日志的时刻、`end` 是进程退出时刻，那是「进程存活窗口」。CI 上 10 个分片并行时，同一阶段第二个节点的进程可能晚到第一个 exit 之后才写日志，两个进程窗口就不重叠了，但引擎确实并发调度了（`02-workflow.mjs` 的「同一阶段的两个节点应该同时运行」以前会因此假失败）。反过来，真串行时下游的 `startedAt` 会晚于上游的 `endedAt`，节点时间照样能拦住。断言失败时消息里同时打印两种窗口，一眼能看出是调度真串行还是进程启动慢。验证这类改动用对照实验：`FAKE_STARTUP_DELAY_MS` / `FAKE_STARTUP_DELAY_MATCH`（`fake-cli.mjs`，默认关）只拖慢匹配节点的进程启动，旧断言必须失败、新断言必须通过。
+- 读假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录用 `scripts/e2e/read-log.mjs` 的 `readLog`：它会丢掉末尾正在追加写、还没写完的那一行（否则 `JSON.parse` 抛 `Unterminated string`，整个分片失败在和断言无关的地方），中间行损坏仍然报错，用例在 `read-log.test.mjs`。丢掉的那行写完后正好排在原位置，所以「先读 length 当基线再 slice」的写法不会错位。
+- 要断言 `resolved` / `worktree.state === 'merged'` 这类状态位对应的假 CLI 记录（`.finish`、`.hold`）前，先确认记录已经落盘：状态位是服务端在 `finish_child` 返回时就置位的，而记录是假 CLI 等到 HTTP 响应回来后才追加写，两者之间有窗口（CI 负载下更大）。用 `waitFor` 等记录本身出现，等不到再失败并打印全部条目（`04-subagents.mjs` 的「父对话正在跑一轮时子对话请收尾」曾因此假失败）。对照实验用 `FAKE_FINISH_LOG_DELAY_MS`（默认 0）把落盘拖后，旧写法必须失败、新写法必须通过。
+- 要测「停止」的用例，先 `waitFor` 到假 CLI 真的跑起来了再 `stop`（`03-chat.mjs` 的停止、`07-local.mjs` 的重命名）：建完任务立刻 stop，那一轮（`FAKE_TURN_MS` 默认 150ms）可能已经跑完、任务已是 `done`，stop 成了 no-op，断言 `stopped` 会假失败。
 - 改了假 CLI 的插话或收尾处理（`fake-cli.mjs` 的 `takeSteer()`、`wrapRequestIds()`）：`npm run test:e2e -- 04`，其中「父对话正在跑一轮时子对话请收尾：收尾请求以插话进来，父对话照样合回」一步专门覆盖插话里带【收尾请求】的路径：给父对话发 `HOLD_STEER` 让它真的一直跑到插话进来，断言子对话在 60s 内 `resolved && worktree.state === 'merged'`、`.finish` 里那条记录 `via === 'steer'`（只写 `via: 'input'` 就说明收尾请求退化成普通新一轮，插话路径没被覆盖）、`.hold` 记了 `held: true`（那一轮真的等到插话，不是静默被当成卡住）。把 `takeSteer()` 里处理收尾请求的部分去掉，这一步会以 `超时：done` 失败。
 - 改了界面检查：先 `npx vite build --mode demo`，再 `node scripts/ui-check.mjs`，看 `ui-shots/` 里的截图（改了 `web/src`、`shared` 后没重新构建会被拦下）。
 - 改了检查脚本：`npm run lint`；改了出包：`node scripts/package.mjs 0.0.0 --no-archive` 试跑一次。

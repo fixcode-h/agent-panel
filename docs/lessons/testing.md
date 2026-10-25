@@ -46,12 +46,12 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 - 起因：原 82 个 step 串行单进程，加用例就线性变长；一次 `/accounts/api-models` 报 400 后临时 `apiSrv` 没关，进程挂了 95 分钟。
 - 防线：`npm run test:e2e`（每个分片 10 分钟看门狗 + 收尾后 2 秒强制退出）。
 
-## 等状态用 waitFor，别写固定 sleep 或「安静一阵」
+## 等状态用 waitFor，不用固定 sleep、「安静一阵」或进程存活窗口
 
-- 规则：`runShard` 的 `waitFor(条件, { timeout, interval, label })` 等状态和假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的调用记录（状态置位早于日志写入，读早了是空）；只有必须过一段时间才留固定等待并写注释。等对话空闲不能只看一阵没跑（子对话 `submit_merge` 会叫起父对话），要用 `waitFor` 等断言条件。
-- 反向验证：否定式断言（不被回收/不被停）临时去掉修复接线跑一遍，确认会失败再恢复；旧实现要有可观测差异（取消有 waiter、停进程有进程、回收有计时器），没差异就是恒真，换构造。
-- 起因：原脚本 54 处固定 `sleep(800)`；「切到后台不回收」第一版用 `SLOW` 切后台，旧实现没有 waiter 也通过，改成「停在等后台命令结果」才有区分度。
-- 防线：`npm run test:e2e`。
+- 规则：用 `runShard` 的 `waitFor` 等状态和假 CLI 写在 `FAKE_CLI_LOG + '.xxx'` 里的记录（状态位早于记录写入，读早了是空）；等对话空闲不能只看一阵没跑（子对话 `submit_merge` 会叫起父对话）。判节点并发用引擎的 `step.startedAt/endedAt`（调度窗口），不用假 CLI 的 `start/end`（进程存活窗口）。
+- 反向验证：否定式断言临时去掉修复接线跑一遍，确认会失败再恢复；旧实现没有可观测差异就是恒真。
+- 起因：原脚本 54 处固定 `sleep(800)`；「切到后台不回收」第一版用 `SLOW`，旧实现没有 waiter 也通过。2026-10 dev CI 的 `02-workflow` 并发、`04-subagents` 插话收尾两处也是这一类。
+- 防线：`npm run test:e2e`；对照开关在 `docs/modules/scripts/README.md`。
 
 ## GIT_DIR/GIT_WORK_TREE 只给需要它的那一条命令
 

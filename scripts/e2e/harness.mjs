@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fmtDuration } from '../lib/duration.mjs'
 import { startServer } from './spawn-server.mjs'
+import { readLog } from './read-log.mjs'
 import { fileURLToPath } from 'node:url'
 
 // 端到端测试自己建仓库、自己跑服务：不能继承外面的 git dir。
@@ -318,13 +319,6 @@ export async function runShard(shardName, fn) {
       await sleep(60)
     }
   }
-  const readLog = (f) =>
-    existsSync(f)
-      ? readFileSync(f, 'utf8')
-          .trim()
-          .split('\n')
-          .map((l) => JSON.parse(l))
-      : []
   const calls = () => {
     const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
     return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
