@@ -785,6 +785,7 @@ export function RunningFooter({
   jobs,
   kids,
   last,
+  latest,
   isTail,
 }: {
   task?: Task
@@ -798,6 +799,8 @@ export function RunningFooter({
   kids: boolean
   /** 最新的一轮 */
   last?: boolean
+  /** 对话里的最新一轮（跳过尾部刚发出的用户消息，见 latest-turn） */
+  latest?: boolean
   /** 这一段是一轮里最新的一段：工作流那一行只挂在它下面，旧段不重复列 */
   isTail?: boolean
 }) {
@@ -807,7 +810,11 @@ export function RunningFooter({
   // 总结下面就会出现一条没有内容的横线
   const shownTools = live ? [] : tools
   const rows = runningRows({ task, tools: shownTools, jobs, kids, children })
-  const run = !!isTail && planRunShown(task, msgs, last)
+  // 工作流那一行和子对话、后台命令一样只在最新的一轮上列：latest 已经跳过尾部刚发出的用户消息，
+  // 只看 last 的话，发送的一瞬间它也会跟着消失，AI 开始输出再回来。
+  // 别的调用方（辅助对话、设计对话）没有 latest，仍然只按 last 判
+  const newest = !!last || !!latest
+  const run = !!isTail && planRunShown(task, msgs, newest)
   // 没东西就整个不画：分割线和内容同一个判断，不会在总结下面留一条孤零零的横线
   if (rows.empty && !run) return null
   const box = (
@@ -815,7 +822,7 @@ export function RunningFooter({
     // 之前运行区插在总结上面，看不出哪段是总结、哪段是还在跑的东西
     <div className="flex flex-col gap-1.5 border-t border-line/60 pt-1.5" role="group" aria-label={t('运行区')}>
       <RunningNow task={task} tools={shownTools} jobs={jobs} kids={kids} />
-      {run && <PlanRunRow task={task} msgs={msgs} last={last} />}
+      {run && <PlanRunRow task={task} msgs={msgs} last={newest} />}
     </div>
   )
   return (
@@ -1036,9 +1043,11 @@ export function ChatReply({
         if (!fold) return <Msgs key={i} {...same} live={live} stickyAuthor={!author} />
         const isLive = !!live && tail
         const isTail = i === lastPart
-        // 后台命令：最新一段里，对话停着时看 last，正在写时看 latest（两种情况都对应原来各算一处的那份逻辑）
+        // 子对话和后台命令只在最新的一轮上列。两者都跟 latest 走：latest 已经跳过尾部刚发出的
+        // 用户消息（见 latest-turn），发送的一瞬间它们不会整块消失；以前后台命令在对话停着时
+        // 看 last（「最后一段」），尾部多了用户消息就会和子对话分叉，两行一起闪一下
         const kids = !!latest && isTail
-        const jobs = isTail && (isLive ? !!latest : !!last)
+        const jobs = kids
         // 运行区放在这一段的总结下面（它自己判空：没东西时连分割线也不画）。
         // 不是最新的一段也可能有没收尾的工具（子对话回报把它顶下去了），那些工具仍归它自己列；
         // 子对话、后台命令、工作流运行只在最新的一段列，旧段不重复
@@ -1051,6 +1060,7 @@ export function ChatReply({
             jobs={jobs}
             kids={kids}
             last={last}
+            latest={latest}
             isTail={isTail}
           />
         )

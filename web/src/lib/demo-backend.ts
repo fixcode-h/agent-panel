@@ -42,6 +42,8 @@ import {
   type TaskMessage,
   type TaskProcess,
   type TaskProcesses,
+  type TaskJob,
+  type TaskJobView,
   type TaskMemoryHistory,
   type TaskMemoryAnalysis,
   type TaskStep,
@@ -157,6 +159,8 @@ interface Db {
   installed?: Record<string, boolean>
   /** 全局教训；旧版本的演示数据没有这一项 */
   globalLessons?: GlobalLesson[]
+  /** 演示里见过的后台命令（含已经结束的）：和任务一起存，刷新页面后仍然回看得到，见 demoJobView */
+  seenJobs?: Record<string, TaskJob>
 }
 
 /** 演示里的全局教训：一条从别的项目提取来的 */
@@ -2447,6 +2451,57 @@ const demoGone = new Map<string, Set<number>>()
 
 const MB = 1024 * 1024
 
+/**
+ * 演示里见过的后台命令：真实后端的 job 记录一直留到对话被删或超出 KEEP_JOBS，
+ * 所以命令结束后仍然读得到最终输出（只是 uiJobs 不再把它放进 task.jobs，运行区那一行随之消失）。
+ * 演示后端按同样口径在 Db 里记一份快照（跟着任务数据一起存，刷新页面后照样回看得到）
+ */
+
+/**
+ * 演示里的后台命令输出：没有真的进程，按 job 生成一段看着像真的输出。
+ * 输出内容按 job 固定（同一个 id 每次一样），不然反复轮询会看到输出变来变去
+ */
+function demoJobView(task: Task, jobId: string): TaskJobView {
+  const d = load()
+  const live = (task.jobs ?? []).find((j) => j.id === jobId)
+  const seen = (d.seenJobs ??= {})
+  if (live) seen[live.id] = live
+  const job = live ?? seen[jobId]
+  if (!job) fail('没有这条后台命令', 404)
+  persist()
+  const lines = [
+    '（在线演示：模拟的后台命令输出，不会真的执行）',
+    `$ ${job.command}`,
+    '',
+    '> agent-panel@1.0.0 build',
+    '> tsc --noEmit && vite build',
+    '',
+    'vite v7.0.0 building for production...',
+    'transforming...',
+    '✓ 1204 modules transformed.',
+    'dist/assets/index-Dt3mQa.js   412.86 kB │ gzip: 128.44 kB',
+    '✓ built in 4.21s',
+    '',
+    'EXIT=0',
+  ]
+  // 行不在了 = 这条命令已经结束（真实后端里 jobs 里还在，但 task.jobs 里已经不列了）
+  const ended = !live
+  const state = ended ? ('done' as const) : job.state
+  return {
+    id: job.id,
+    name: job.name,
+    command: job.command,
+    state,
+    code: ended ? 0 : null,
+    output: lines.slice(0, job.state === 'queued' && !ended ? 0 : lines.length).join('\n'),
+    createdAt: job.startedAt || new Date().toISOString(),
+    startedAt: job.startedAt,
+    endedAt: ended ? new Date().toISOString() : '',
+    // 和 startedAt 同源：每轮都变的话界面算「多久没动静」会恒为 0
+    lastOutputAt: job.startedAt || new Date().toISOString(),
+  }
+}
+
 function demoProcesses(task: Task, tasks: Task[]): TaskProcesses {
   const now = Date.now()
   // 和正式后端一个口径：当前对话 + 它的附属，父对话和兄弟不出现
@@ -2789,6 +2844,8 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  // 后台命令的实时输出：界面上点命令行标题打开的窗口轮询它。演示里没有真的进程，按 job 给一段看着像真的输出
+  if (sub === 'jobs' && method === 'GET') return demoJobView(task, rid ?? '')
   // 进程面板：演示版给一份稳定的假进程和内存历史，字段和正式后端一致
   if (sub === 'processes') {
     if (method === 'GET' && !rid) return demoProcesses(task, tasks)

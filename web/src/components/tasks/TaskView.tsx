@@ -51,6 +51,7 @@ import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -110,6 +111,7 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
 import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
 import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
@@ -257,6 +259,25 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
+const PANE_MIN = 280
+/** 右栏拖动时中间至少留下的宽度 */
+const PANE_GAP = 320
+/** 功能面板的默认宽度（原来是 min(440px, 100%) 定宽） */
+const REPORT_PANE_DEFAULT = 440
+/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
+const REPORT_PANE_MIN = 320
+
+/**
+ * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
+ * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
+ * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
+ */
+function paneMax(box: HTMLElement | null, min: number) {
+  const row = box?.parentElement?.clientWidth ?? window.innerWidth
+  return Math.max(min, row - PANE_GAP)
+}
+
 /**
  * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
  * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
@@ -397,15 +418,19 @@ export function TaskView({
   }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
+  // 右栏自己这一栏：量拖动上限时以它为基准，不按全局第一个右栏（见 paneMax）
+  const rail = useRef<HTMLElement>(null)
   // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
   const taskPanel = usePaneWidth(
     'task-panel',
     typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
-    280,
-    () => {
-      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-      return Math.max(340, row - 320)
-    },
+    PANE_MIN,
+    () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+  )
+  // 功能面板和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）：
+  // 初值取原来的定宽 440；窗口比 440 + 中间留的量还窄时按上限收着，和原来的 min(440px, 100%) 一致
+  const reportPane = usePaneWidth('report-panel', REPORT_PANE_DEFAULT, REPORT_PANE_MIN, () =>
+    paneMax(rail.current, REPORT_PANE_MIN),
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -432,6 +457,10 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
+  // 后台命令行的标题点了：在顶层打开这条命令的窗口。挂在页面顶层而不是运行区那一行里，
+  // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
+  const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
+  const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
   // 盖着文件面板时 Esc 先收面板，不弹停止确认
   useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun && !childFiles, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
@@ -712,7 +741,10 @@ export function TaskView({
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
-  useTaskStream(taskId, running, apply)
+  // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
+  // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
+  const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  useTaskStream(taskId, running || jobRunning, apply)
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -769,6 +801,9 @@ export function TaskView({
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
+  // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
+  // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
+  const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
@@ -1141,7 +1176,11 @@ export function TaskView({
       <FileOpenCtx.Provider value={openFile}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
         <PaneNavCtx.Provider
-          value={pane || task.parentTaskId ? { run: openPaneRun, openChild } : { child: openChildRow, openChild }}
+          value={
+            pane || task.parentTaskId
+              ? { run: openPaneRun, openChild, job: openJob }
+              : { child: openChildRow, openChild, job: openJob }
+          }
         >
           <ChildListCtx.Provider value={children}>
             <div
@@ -1508,8 +1547,9 @@ export function TaskView({
                           teamNames={teamNames}
                           live={working && i + hidden === blocks.length - 1}
                           last={!working && i + hidden === blocks.length - 1}
-                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
-                          latest={i + hidden === blocks.length - 1}
+                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+                          // 刚发出的用户消息排在后面时也算）
+                          latest={i + hidden === latestTurn}
                           fallback={byCli ? chatRun : undefined}
                           command={task.command}
                         />
@@ -1671,6 +1711,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
+                  ref={rail}
                   aria-label={
                     openChild
                       ? childFiles
@@ -1684,12 +1725,15 @@ export function TaskView({
                   }
                   data-task-panel
                   style={{
-                    // 功能面板定宽：放在 AI 分析窗口里时也给对话留出大半
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按原来的默认宽度封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持）
                     width: openChild
                       ? '50%'
-                      : !panel && openRun === 0 && (reportOn || reportCover)
-                        ? 'min(440px, 100%)'
-                        : taskPanel.width,
+                      : !panel && openRun === 0 && reportCover
+                        ? `min(${REPORT_PANE_DEFAULT}px, 100%)`
+                        : !panel && openRun === 0 && reportOn
+                          ? reportPane.width
+                          : taskPanel.width,
                   }}
                   className={cn(
                     'relative shrink-0 flex-col border-l bg-rail',
@@ -1701,6 +1745,11 @@ export function TaskView({
                     (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
+                  {/* 功能面板占右栏（宽屏并排）时也能拖，和文件面板一样记在本机；
+                  窄屏和 pane 里是盖在对话上的抽屉（reportCover），没有并排可拖，那时不挂拖动条 */}
+                  {!panel && reportOn && !reportCover && (
+                    <ResizeHandle pane={reportPane} label={t('拖动调整功能面板的宽度')} className="hidden xl:block" />
+                  )}
                   {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
@@ -1870,6 +1919,7 @@ export function TaskView({
               onConfirm={remove}
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+            <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
             {convSettings && (
               <ConversationSettingsDialog
                 task={task}
