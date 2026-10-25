@@ -27,7 +27,16 @@ import {
   upgradeBuiltinAgents,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
-import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE, LEGACY_WORKFLOWS } from '../shared/builtin/legacy.ts'
+import {
+  ANALYST_BEFORE_SKILL_SPLIT,
+  DEVELOPER_BEFORE_SKILL_SPLIT,
+  EXPLORER_BEFORE_PROGRESS,
+  LEGACY_AGENT_FIELDS,
+  LEGACY_AGENT_FIELDS_MORE,
+  LEGACY_WORKFLOWS,
+  RULES_BEFORE_SEARCH_SCOPE,
+  RULES_BEFORE_TURN,
+} from '../shared/builtin/legacy.ts'
 import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled, retireBundled } from './bundled-skills.ts'
@@ -414,10 +423,16 @@ test('停在上一版的「通用约束」「代码侦察」也能升级（「�
       return saved.at(-1)!
     },
   }
-  // 上一版已经发布过的副本：上一版=现在线上用户手里那份（见 LEGACY_AGENT_FIELDS_MORE）
+  // 上一版已经发布过的副本：上一版=现在线上用户手里那份（用具体常量，不用下标：新指纹插在数组前面，[0] 已经不是那一版）
   const prev = (key: 'rules' | 'explorer', id: string) => ({
     ...agents.find((a) => a.id === key)!,
-    ...LEGACY_AGENT_FIELDS_MORE[key][0],
+    ...(key === 'rules'
+      ? {
+          name: '通用约束',
+          description: '所有内置 Agent 都引入的常驻规则：语言、编码、提问、执行纪律和安全边界',
+          instructions: RULES_BEFORE_TURN,
+        }
+      : LEGACY_AGENT_FIELDS_MORE.explorer.at(-1)!),
     id,
     origin: `builtin:${key}`,
     params: [],
@@ -763,4 +778,73 @@ test('停在上一版的「调研」也能升级：先查模块地图和模块�
   assert.match(explorer.instructions, /先读文档根的/, '调研先查模块地图定位模块')
   assert.match(explorer.instructions, /回写模块文档/, '调研结论回写模块文档')
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
+})
+
+test('停在 2026-10-21 那一版（缺「搜索范围」等四段）的四个副本也能升级', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  // 本机一直停在 2026-10-21，指纹表里没有这一版，所以永远不升级：这里逐字复现当时的副本。
+  // name / description 也写当时的值：升级判定是三项全等（见 install.ts 的 upgradeBuiltinAgents）
+  const snapshots: [string, string, string, string][] = [
+    [
+      'rules',
+      '通用约束',
+      '所有内置 Agent 都引入的常驻规则：语言、编码、提问、执行纪律和安全边界',
+      RULES_BEFORE_SEARCH_SCOPE,
+    ],
+    [
+      'explorer',
+      '调研',
+      '只读调研：定位代码、分析改动影响面、侦察 UE 项目、查官方资料，交回带出处的结论',
+      EXPLORER_BEFORE_PROGRESS,
+    ],
+    [
+      'analyst',
+      '方案设计',
+      '收敛需求、压测方案，出可以确认的设计摘要；影响架构时给出候选方案和带验证方式的架构契约',
+      ANALYST_BEFORE_SKILL_SPLIT,
+    ],
+    [
+      'developer',
+      '开发',
+      '写代码的能力块：按已确认的设计实现，或先找到根因再修 Bug、查性能问题，边改边验证',
+      DEVELOPER_BEFORE_SKILL_SPLIT,
+    ],
+  ]
+  const state = {
+    agents: snapshots.map(([key, name, description, instructions]) => ({
+      ...agents.find((a) => a.id === key)!,
+      name,
+      description,
+      instructions,
+      id: `local-${key}`,
+      origin: `builtin:${key}`,
+      params: [],
+      skills: [],
+    })),
+    categories: [],
+    tags: [],
+    workflows: [],
+  }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 4, '四个卡住的副本都升级')
+  const get = (name: string) => updated.find((a) => a.name === name)!
+  assert.match(get('通用约束').instructions, /## 搜索范围/, '补上搜索范围')
+  assert.match(get('通用约束').instructions, /## 回合怎么推进/, '补上回合推进')
+  assert.match(get('调研').instructions, /## 怎么推进（不要空转）/, '补上不要空转')
+  assert.match(get('方案设计').instructions, /ue-project-structure/, '技术栈分支改到新的技能')
+  assert.match(get('开发').instructions, /coding-standards/, '补上编码规范技能')
+  // 再启动：已经换成新定义，不再改
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
+  // 用户改过的不动：加一行就不再和指纹一致
+  const edited = {
+    ...state,
+    agents: [{ ...state.agents[0], instructions: `${RULES_BEFORE_SEARCH_SCOPE}\n我自己加的一条` }],
+  }
+  assert.equal((await upgradeBuiltinAgents(edited, ops)).length, 0, '改过的不升级')
 })
