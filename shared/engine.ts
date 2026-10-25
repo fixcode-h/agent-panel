@@ -2480,20 +2480,26 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
  * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
  * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
  */
+/** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */
+function helperOver(host: EngineHost, k: TaskStep) {
+  const st = orchState(host)
+  return k.status !== 'running' && (k.status !== 'pending' || !st.helpers.has(k.id))
+}
+
 export function settleHelperWaits(host: EngineHost) {
   const { task } = host
+  // 只看在用的这份计划：settleWait 也按 activePlan 找步骤，旧计划里残留的等待项永远收不了口，
+  // 每次交回结果都把那些死项重扫一遍没意义
+  const plan = activePlan(task)
   const waiting = new Set(
-    (task.plans ?? []).flatMap((p) =>
-      p.steps.flatMap((s) => [s, ...s.children]).flatMap((x) => x.waits.filter((w) => w.kind === 'helper')),
-    ),
+    (plan?.steps ?? []).flatMap((s) => [s, ...s.children]).flatMap((x) => x.waits.filter((w) => w.kind === 'helper')),
   )
-  const over = (k: TaskStep) => k.status !== 'running' && (k.status !== 'pending' || !orchState(host).helpers.has(k.id))
   const hit: { title: string; done: boolean }[] = []
   // 集合已经按 kind === 'helper' 筛过，这里只看还没收口的
   for (const w of waiting)
     if (w.state === 'waiting') {
       const kid = task.steps.find((s) => s.id === w.ref)
-      if (kid && over(kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
+      if (kid && helperOver(host, kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
     }
   if (hit.length) host.changed(true)
   return hit
@@ -3051,7 +3057,7 @@ function makeOrchestra(
         : task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').map((s) => s.id)
       const steps = mine.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
       await Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
-      const over = (s: TaskStep) => s.status !== 'running' && (s.status !== 'pending' || !st.helpers.has(s.id))
+      const over = (s: TaskStep) => helperOver(host, s)
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
       // 手动取走结果的路径：helperBatch 的入口只看「还没取走的子任务」，取走后就轮不到 settleHelpers，

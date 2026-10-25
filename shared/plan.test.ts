@@ -818,7 +818,7 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   const plan = activePlan(task)!
   assert.equal(plan.steps.length, 2, '不新建重复步骤')
   assert.equal(old.status, 'done')
-  assert.match(r.info, /这些步骤这次没交上来[\s\S]*修 e2e 失败/)
+  assert.match(r.info, /这些还没做完的主步骤这次没交上来[\s\S]*修 e2e 失败/)
   // 只差标点、全半角、大小的改写（归一化后一样）也算同一个步骤，不会多出一条
   const t2 = fresh()
   applyPlan(t2, { steps: [{ title: '修 e2e 失败：subagents 等 merged 超时', status: 'running' }] })
@@ -828,7 +828,7 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   })
   assert.equal(activePlan(t2)!.steps.length, 1, '只差标点不算新步骤')
   // 它确实被这条更新过（归一化匹配），就不能同时报「没交上来」——两句话会让模型又交一次
-  assert.doesNotMatch(r2.info, /这些步骤这次没交上来/)
+  assert.doesNotMatch(r2.info, /这些还没做完的主步骤这次没交上来/)
   // 只差空格的同一条（标题归一化后相同）：算交上来了，不新建
   const t3 = fresh()
   applyPlan(t3, { steps: [{ title: '跑 e2e 并核实  CI', status: 'running' }, { title: '写文档' }] })
@@ -838,6 +838,16 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   assert.doesNotMatch(r3.info, /没交上来[\s\S]*跑 e2e/)
   assert.match(r3.info, /没交上来[\s\S]*写文档/)
   assert.equal(other.status, 'running', '没交上来的步骤状态不动，并在回复里点名')
+  // 还在等结果的步骤不算「没交上来」：它由面板在结果回来后标完成，让模型去「标完成」只会被 held 退回，
+  // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话
+  const t5 = fresh()
+  applyPlan(t5, { steps: [{ title: '推 dev 并核实 CI 变绿', status: 'running' }, { title: '写文档' }] })
+  bindWait(t5, '1', { kind: 'background', ref: 'job1', label: 'CI' })
+  const r5 = applyPlan(t5, { partial: true, steps: [{ id: '2', status: 'done' }] })
+  assert.equal(activePlan(t5)!.steps[0].status, 'waiting', '还在等结果，状态不变')
+  assert.doesNotMatch(r5.info, /没交上来[\s\S]*推 dev/, '等结果的步骤不该被点名去「标完成」')
+  assert.match(r5.info, /不用交|等结果/, '要说明这类步骤不用交、结果回来面板会标完成')
+  assert.doesNotMatch(r5.info, /还在等结果，不能自己标完成/, '没去标它就不会触发 held 的退回提示')
   // 只带 id 改备注、标题没重写（模型 partial 最常见的写法）：同样算交上来了，不能说它没交上来。
   // 这里「交上来了」的判定必须和 matchOld 同口径：另写一套精确标题比对，会把刚被 id 更新的步骤又报成漏写，
   // 模型看到「已经更新了」和「没交上来」两句互相矛盾的话，就会再交一遍

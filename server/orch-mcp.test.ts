@@ -103,7 +103,7 @@ function host(task: Task, log: AgentCall[]): EngineHost {
  * takeAway：子任务先做完、模型用 wait_agents 把结果取走再收轮（只能手动等的模式里就是这样）。
  * 这时收轮时已经没有「没取回的结果」，收口不能只看这一批（以前只看 late，这一步就永远停在等待中）。
  */
-async function spawnWithStep(helperOk: boolean, takeAway = false) {
+async function spawnWithStep(helperOk: boolean, takeAway = false, mixed = false) {
   const task = {
     ...newTask({ projectId: 'p', mode: 'chat', prompt: '收尾' } as never, undefined, '', 't5'),
     id: 't5',
@@ -125,7 +125,9 @@ async function spawnWithStep(helperOk: boolean, takeAway = false) {
     runAgent: async (call) => {
       if (call.step?.slot === 'sub') {
         finished()
-        return helperOk ? { ok: true, text: '合回去了' } : { ok: false, error: '推送被拦' }
+        // mixed：同一批里一只成功一只失败，最后必须退成进行中（不能因为有一只成功就标完成）
+        const ok = mixed ? call.step.title === '甲' : helperOk
+        return ok ? { ok: true, text: '合回去了' } : { ok: false, error: '推送被拦' }
       }
       orch = call.orch
       if (turn++ === 0) {
@@ -170,6 +172,13 @@ test('spawn_agents 带 step：子任务失败或没跑起来，这一步退回�
   assert.notEqual(plan.steps[0].status, 'done', '子任务没成功，不能盲目标完成')
   assert.equal(plan.steps[0].status, 'running')
   assert.match(plan.steps[0].note, /没成功/)
+})
+
+test('spawn_agents 带 step：同一批一成败，这一步退回进行中而不是完成', async () => {
+  // 这组「甲成功、乙失败」挂在第 2 步上：只要还有一只没成功，整步就不能算完成
+  const { plan } = await spawnWithStep(false, false, true)
+  assert.equal(plan.steps[1].status, 'running', '一只成功一只失败：退回进行中')
+  assert.match(plan.steps[1].note, /没成功/)
 })
 
 test('spawn_agents 带 step：结果已经被 wait_agents 取走，这一步照样收口', async () => {

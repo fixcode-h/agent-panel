@@ -515,12 +515,18 @@ export function applyPlan(
   const touched = new Set<PlanItem>()
   if (partial)
     for (const x of steps) {
-      // 只判断「这一项能不能对回计划里的旧项」，不参与去重：matchOld 的 used 传空集，
-      // 和 mergeLevel 共用 used 的语义不同（同一个旧项被两项命中时那里会新建一条，这里仍算它被交过）
+      // 只判断「这一项能不能对回计划里的旧项」，不参与去重：这里传空 Set 与 mergeLevel 共用 used 的语义
+      // 不同——同一个旧项被两项命中时 mergeLevel 会新建一条，这里仍算它被交过，所以 left 对这情况
+      // 是漏报而不是误报；漏报只是少提醒一句，误报会让模型把已更新的步骤重交一遍
       const got = matchOld(x, before, new Set())
       if (got) touched.add(got)
     }
-  const left = partial ? before.filter((s) => !s.wrapUp && s.status !== 'done' && !touched.has(s)) : []
+  // 还在等结果的步骤不点名让模型去交：它由面板在结果回来后收口，让它去「标完成」只会被下面的 held 退回，
+  // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话（模型会白跑一轮改计划）
+  // 只看还没做完的主步骤；子步骤跟着主步骤走，不单独点名
+  const left = partial
+    ? before.filter((s) => !s.wrapUp && s.status !== 'done' && !waitingOn(s).length && !touched.has(s))
+    : []
   // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
   // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
   const held: string[] = []
@@ -557,7 +563,14 @@ export function applyPlan(
       : '',
     dropped.length ? `已从计划里去掉：${dropped.map((x) => `「${x}」`).join('、')}` : '',
     left.length
-      ? `这些步骤这次没交上来，还按原来的状态留在计划里：${left.map((x) => `「${x.title}」（${STATUS_TEXT[x.status]}）`).join('、')}。做完了就用同样的 id 或标题标完成；不做了就下次交整份列表（不带 partial）时不再写它。`
+      ? `这些还没做完的主步骤这次没交上来，还按原来的状态留在计划里：${left.map((x) => `「${x.title}」（${STATUS_TEXT[x.status]}）`).join('、')}。做完了就用同样的 id 或标题标完成；不做了就下次交整份列表（不带 partial）时不再写它。（子步骤跟着所在的主步骤走，不单独点名。）`
+      : '',
+    // 交给面板收口的那些：说清不用交，免得模型以为漏写了又补一遍（补了也只会被 held 退回）
+    partial && before.some((s) => s.status !== 'done' && waitingOn(s).length)
+      ? `还在等结果的步骤不用交：${before
+          .filter((s) => s.status !== 'done' && waitingOn(s).length)
+          .map((x) => `「${x.title}」`)
+          .join('、')}，结果推回来时面板会标完成。`
       : '',
     ...notes0,
     held.length
