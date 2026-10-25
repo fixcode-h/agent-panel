@@ -1,6 +1,9 @@
 # 已登录时点「登录」被判成「没有完成登录（退出码 0）」，且输出里露 ANSI 残码
 
 - 状态：已修复（代码、单测和端到端用例随同一批改动落地，`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`、`npm run test:e2e:wsl` 均通过）
+- 症状：已经登录 Command Code，点「登录」仍报「没有完成登录（退出码 0）」，输出还露 `[32m` 残码
+- 入口：`server/accounts.ts` 的 `startLogin`、`take`
+- 根因类型：判定逻辑 / 输出清洗
 - 模块：`server`（登录流程 `server/accounts.ts`，配套 `shared/accounts.ts`、`shared/ansi.ts`）
 - 关键词：Already logged in、退出码 0、登录没有完成、登录判定、ANSI 转义、`[32m`、AI 处理输出
 

@@ -80,6 +80,7 @@ React 19、Vite、Tailwind CSS v4、Radix UI、`@xyflow/react`、lucide 图标�
 - 技能页（左列表 + 右详情、文件结构）：`web/src/lib/library-tree.test.ts`（10 条：空目录、深层嵌套、父目录没单列时补目录、折叠、文件计数、旧后端只有扁平 `files` 时也能还原）；界面检查走 `scripts/ui/03-library.mjs` 的「Skill详情」「Skill详情-保存」「Skill详情-文件树」「Skill详情-目录收起」「Skill详情-附加文件」「Skill详情-附加文件保存」「Skill-AI优化」「命令详情」（Windows 上自带 chromium 启动报 `spawn EFTYPE` 时用 `CHROMIUM_PATH` 指向系统 Chrome 再跑）。
 - 任务对话和设计对话的消息区按 `[data-conversation-scroll="messages"]` 定位（`scripts/ui/02-task.mjs`、`scripts/ui/04-design.mjs`），不再依赖具体的类名组合。
 - 界面细则和踩过的坑见 [docs/lessons/ui.md](../../lessons/ui.md)。
+- 本模块的 Bug 索引 `bugs.md` 是生成物：只新增 / 修改 `bugs/<bug-id>.md` 的元数据头，再跑 `npm run docs:bugs` 重写索引，不要手工编辑那张表（细则见 [skills/docs/project-documentation](../../../skills/docs/project-documentation/SKILL.md)「Bug 索引的生成」）。
 
 ## 待确认
 

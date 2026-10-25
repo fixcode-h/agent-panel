@@ -1,6 +1,9 @@
 # 子任务窗口最上面不显示派给它的要求
 
 - 状态：已修复
+- 症状：子任务只读窗口最上面不显示派给它的要求，看不到这个子任务要做什么
+- 入口：`web/src/components/tasks/HelperBriefCard.tsx`、`web/src/lib/helper-brief.ts`
+- 根因类型：`HelperWindow` 没读 `TaskStep.brief`，只渲染对话流
 - 模块：`web`（`web/src/components/tasks/HelperBriefCard.tsx`、`web/src/lib/helper-brief.ts`，接在 `HelperCards.tsx` 的 `HelperWindow` 里）
 - 关键词：子任务窗口、初始信息、派给它的要求、brief、只读窗口、验收标准、旧记录降级
 

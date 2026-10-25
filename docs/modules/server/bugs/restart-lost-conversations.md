@@ -1,6 +1,9 @@
 # 电脑意外重启后，对话从项目列表里消失
 
 - 状态：已修复（代码和新增的单测随同一批改动落地；恢复效果在真实数据目录的副本上验证过，见「回归验证」）
+- 症状：电脑意外重启后，两个对话从项目列表里彻底消失（消息文件完好也没用）
+- 入口：`server/store.ts` 的 `writeJsonAtomic` / `readJsonDetailed`、`server/task-store.ts` 的 `load`
+- 根因类型：落盘未刷盘 + 损坏被当成不存在
 - 模块：`server`（存储 `server/store.ts`、任务记录 `server/task-store.ts`）
 - 关键词：重启、断电、对话消失、任务记录丢失、meta 丢失、全 0、空洞文件、fsync、`cache/broken`、重建
 

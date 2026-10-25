@@ -1,8 +1,11 @@
 # 侧栏普通对话行有一圈虚线边框
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit` 通过）
+- 症状：侧栏普通对话行四周有一圈虚线边框，看着像选中态
+- 入口：`web/src/components/layout/SidebarTasks.tsx` 的 `TaskRow`
+- 根因类型：保活状态被画成整行边框
 - 模块：`web`（`web/src/components/layout/SidebarTasks.tsx` 的 `TaskRow`）
-- 关键词：侧栏、对话列表、虚线边框、border-dashed、data-cli-online、CLI 存活、cliAlive
+- 关键词：侧栏、对话列表、虚线边框、border-dashed、TaskRow、data-cli-online、CLI 存活、cliAlive
 
 ## 现象
 
