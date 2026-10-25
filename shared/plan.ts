@@ -139,6 +139,12 @@ export function openPlan(task: Pick<Task, 'plans' | 'steps'>) {
   return done < total ? { done, total } : undefined
 }
 
+/** 面板写进 note 的「还在等它」前缀：结果回来时按它认出这是过时的面板说明，Agent 自己写的备注不动 */
+export const HOLD_PREFIX = '还在等它：'
+
+/** 面板写进 note 的「等的结果没成功」前缀：重跑成功后它同样过时，和 HOLD_PREFIX 一起清掉 */
+export const FAIL_PREFIX = '等的结果没成功：'
+
 const clean = (s: unknown, max: number) =>
   String(s ?? '')
     .replace(/\s+/g, ' ')
@@ -177,10 +183,35 @@ function spread(items: PlanItem[], from: number, to: number) {
   })
 }
 
+/** 标题归一化：忽略空白、全半角标点和大小写，只有这些差异的改写算同一个步骤 */
+function normTitle(t: string) {
+  return t
+    .normalize('NFKC')
+    .replace(/[\s\p{P}\p{S}]+/gu, '')
+    .toLowerCase()
+}
+
+/** 交上来的一项对回计划里已有的哪一项：先按 id，其次按标题（归一化后），都已用过的不算 */
+function matchOld<T extends PlanItem>(x: PlanItemInput, old: T[], used: Set<T>): T | undefined {
+  const id = clean(x.id, 40)
+  const title = clean(x.title, 120)
+  const byId = id ? old.find((o) => !used.has(o) && o.id === id) : undefined
+  if (byId) return byId
+  if (!title) return undefined
+  const exact = old.find((o) => !used.has(o) && o.title === title)
+  if (exact) return exact
+  // 只差空白、标点、全半角的改写：还是同一步骤。更大幅度的改写不猜——把「修登录文案」并到「修登录超时」
+  // 上会把没做完的步骤标成完成，比多出一条步骤更糟（见 applyPlan 里点名漏写步骤的说明）
+  const key = normTitle(title)
+  return key ? old.find((o) => !used.has(o) && normTitle(o.title) === key) : undefined
+}
+
 /**
  * 合并一层列表：已有的按 id（其次按标题）对上；完成的原样留着、不吃新的改动；
- * 没写进新列表的未完成项删掉，完成的放回原来的位置。
- * keep：只交变更步骤（partial）时为真，没写到的项一律放回原位、当成没动过
+ * 没写进新列表的未完成项删掉。
+ * keep：只交变更步骤（partial）时为真，没写到的项一律留着、当成没动过，位置也不动——计划里原有的按原来的顺序，
+ * 这次新加的追加到最后。交上来的顺序只决定「谁被更新」，不决定位置：以前按旧下标把漏写项插回已经重排过的列表，
+ * 模型把新步骤写在前面时（8 写在 7 前面）两条会互换位置，界面上同一份计划的计数跟着来回变
  */
 function mergeLevel<T extends PlanItem>(
   old: T[],
@@ -199,8 +230,7 @@ function mergeLevel<T extends PlanItem>(
   for (const x of input) {
     const title = clean(x.title, 120)
     const id = clean(x.id, 40)
-    const cur =
-      old.find((o) => !used.has(o) && id && o.id === id) ?? old.find((o) => !used.has(o) && title && o.title === title)
+    const cur = matchOld(x, old, used)
     if (cur) {
       used.add(cur)
       if (cur.status === 'done') {
@@ -210,7 +240,7 @@ function mergeLevel<T extends PlanItem>(
         // 不能按 'review' in cur 判断：旧计划数据里就没有这个字段，那样标记永远写不进去
         if (withReview && x.review !== undefined) (cur as unknown as PlanStep).review = x.review === true
       } else update(cur, x)
-      out.push(cur)
+      if (!keep) out.push(cur)
       continue
     }
     if (!title) continue
@@ -219,9 +249,14 @@ function mergeLevel<T extends PlanItem>(
     ids.add(fresh)
     out.push(make(x, fresh))
   }
-  // 漏写的完成项放回原位（只交变更步骤时，漏写的未完成项也放回原位）
+  if (keep) {
+    // 原有的都在原位（被更新的只有内容变了），这次新加的排在最后
+    const created = out.filter((x) => !old.includes(x))
+    return created.length ? [...old, ...created] : old
+  }
+  // 漏写的完成项放回原来的位置（没写进新列表的未完成项算删掉）
   old.forEach((o, i) => {
-    if (used.has(o) || (o.status !== 'done' && !keep)) return
+    if (used.has(o) || o.status !== 'done') return
     out.splice(Math.min(i, out.length), 0, o)
   })
   return out
@@ -417,11 +452,11 @@ export function applyPlan(
       partial,
     )
   }
-  const before = plan.steps.filter((s) => s.status !== 'done').map((s) => s.title)
-  // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）
-  const waitingBefore = new Set(
-    plan.steps.flatMap((s) => [s, ...s.children]).filter((x) => x.status !== 'done' && waitingOn(x).length),
-  )
+  // 记下合并前还没做完的步骤（按对象）：合并后它还在计划里就算没被去掉。按标题比对会把改写过的标题误报成「去掉」
+  const before = plan.steps.filter((s) => s.status !== 'done')
+  // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）。
+  // 连同子步骤一起算：主步骤被标完成时会级联把子步骤也标完成（见 update 里的 want === 'done'）
+  const waitingBefore = new Set(plan.steps.flatMap((s) => [s, ...s.children]).filter(waitingDeep))
   // 合并前记下没做完的收尾：Agent 漏写时原样放回，合回分支这种由面板标完成的也要知道它原来的状态
   const prevWrap = plan.steps.find((s) => s.wrapUp && s.status !== 'done')
   const prevWrapStatus = prevWrap?.status
@@ -470,7 +505,26 @@ export function applyPlan(
       notes0.push(`「${merge.title}」由面板在合并成功后标完成：调用 submit_merge，不要自己标。`)
     }
   }
-  for (const t of before) if (!plan.steps.some((s) => s.title === t)) dropped.push(t)
+  for (const t of before) if (!plan.steps.includes(t)) dropped.push(t.title)
+  // 只交变更步骤时漏写的未完成步骤不删也不提示：模型以为「漏写的会算删掉」，实际它一直挂在原位，
+  // 界面上就出现早做完的活还写着「进行中/待做」。点名让它按真相处理（以前 13 次 set_plan 的 id 都写空、
+  // 一半步骤没再出现，就是从这里开始对不上的）。
+  // 「交上来了」沿用 matchOld 的同一套判定（id → 标题完全一致 → 归一化一致）：另写一套精确比对，
+  // 会把刚被归一化匹配更新过的步骤又报成没交上来，模型看到互相矛盾的两句话
+  const touched = new Set<PlanItem>()
+  if (partial)
+    for (const x of steps) {
+      // 只判断「这一项能不能对回计划里的旧项」，不参与去重：这里传空 Set 与 mergeLevel 共用 used 的语义
+      // 不同——同一个旧项被两项命中时 mergeLevel 会新建一条，这里仍算它被交过，所以 left 对这情况
+      // 是漏报而不是误报；漏报只是少提醒一句，误报会让模型把已更新的步骤重交一遍
+      const got = matchOld(x, before, new Set())
+      if (got) touched.add(got)
+    }
+  // 还在等结果的步骤不点名让模型去交：它由面板在结果回来后收口，让它去「标完成」只会被下面的 held 退回，
+  // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话（模型会白跑一轮改计划）
+  // 判定要和 held 的 waitingBefore 完全一致（都递归算子步骤），否则子步骤在等、主步骤却被点名一模一样又白跑一轮
+  // 只看还没做完的主步骤；子步骤跟着主步骤走，不单独点名
+  const left = partial ? before.filter((s) => !s.wrapUp && !waitingDeep(s) && !touched.has(s)) : []
   // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
   // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
   const held: string[] = []
@@ -506,6 +560,16 @@ export function applyPlan(
       ? `这些步骤已经完成，不再改动：${[...new Set(locked)].map((x) => `「${x}」`).join('、')}。同样的内容还要再做就新加一步。`
       : '',
     dropped.length ? `已从计划里去掉：${dropped.map((x) => `「${x}」`).join('、')}` : '',
+    left.length
+      ? `这些还没做完的主步骤这次没交上来，还按原来的状态留在计划里：${left.map((x) => `「${x.title}」（${STATUS_TEXT[x.status]}）`).join('、')}。做完了就用同样的 id 或标题标完成；不做了就下次交整份列表（不带 partial）时不再写它。（子步骤跟着所在的主步骤走，不单独点名。）`
+      : '',
+    // 交给面板收口的那些：说清不用交，免得模型以为漏写了又补一遍（补了也只会被 held 退回）
+    partial && before.some(waitingDeep)
+      ? `还在等结果的步骤不用交：${before
+          .filter(waitingDeep)
+          .map((x) => `「${x.title}」`)
+          .join('、')}，结果推回来时面板会标完成。`
+      : '',
     ...notes0,
     held.length
       ? `这些步骤还在等结果，不能自己标完成：${held.join('、')}。结果推回来时面板会标完成；确实不再等就用 finish_plan 结束这份计划。`
@@ -518,6 +582,16 @@ export function applyPlan(
 /** 这一项还在等的结果（子对话、后台命令）的名字 */
 function waitingOn(item: PlanItem) {
   return item.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
+}
+
+/**
+ * 这一项（含它下面的子步骤）还没做完、还挂着等结果：由面板收口，Agent 不该自己标完成、也不用交上来。
+ * left、held、waitingBefore 三处必须同口径——主步骤被标完成会级联把子步骤标完成
+ */
+function waitingDeep(item: PlanItem) {
+  if (item.status === 'done') return false
+  const kids = 'children' in item ? (item as PlanStep).children : []
+  return waitingOn(item).length > 0 || kids.some(waitingDeep)
 }
 
 /** 计划里正在做的那一步（不算收尾；没有进行中的就取在等的那一步）：开子对话时没指定步骤，就挂在它上面 */
@@ -625,8 +699,13 @@ export function settleWait(
     const failed = item.waits.filter((x) => x.state === 'failed')
     if (failed.length) {
       setStatus(item, 'running', now)
-      item.note = `等的结果没成功：${failed.map((x) => x.label || x.ref).join('、')}`
-    } else if (item.status === 'waiting') setStatus(item, 'done', now)
+      item.note = `${FAIL_PREFIX}${failed.map((x) => x.label || x.ref).join('、')}`
+    } else if (item.status === 'waiting') {
+      setStatus(item, 'done', now)
+      // 等都成功了：holdWait 的「还在等它：…」和上一轮失败留下的「等的结果没成功：…」都已经过时，
+      // 留着会让完成的步骤下面挂一行说明。只清面板写的这两种，Agent 自己写的备注（做了什么）留着
+      if (item.note.startsWith(HOLD_PREFIX) || item.note.startsWith(FAIL_PREFIX)) item.note = ''
+    }
     hit.push({ title: item.title, done: item.status === 'done' })
     if (parent) rollUp(parent, now)
   }
@@ -657,7 +736,7 @@ export function holdWait(
   const visit = (item: PlanItem, parent?: PlanStep) => {
     const w = item.waits.find((x) => x.kind === kind && x.ref === ref && x.state === 'waiting')
     if (!w) return
-    const note = clean(`还在等它：${why}`, 300)
+    const note = clean(`${HOLD_PREFIX}${why}`, 300)
     if (item.status === 'waiting' && item.note === note) return
     item.note = note
     setStatus(item, 'waiting', now)

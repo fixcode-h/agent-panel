@@ -1,5 +1,10 @@
 # app-actions：操控软件的动作表
 
+- status: verified
+- source_paths: `server/app-actions/`、`web/src/lib/ui-actions.ts`
+- entry: `server/app-actions/index.ts`
+- analyzed_at: 2026-10-25
+
 为什么这么定见 [ADR 0011](../../adr/0011-app-actions-for-agents.md)。这里只写现在怎么工作、怎么加。
 
 ## 入口
@@ -32,3 +37,9 @@
 - 不能停、不能删调用者自己和它的父对话。
 - 设置里的 `apis`、`clis`、`remoteAccess`、`requireToken` 不读不写（`HIDDEN_SETTINGS`）。
 - 不提供推送、建 PR、发布、P4 提交。
+
+## 回归验证
+
+- `server/app-actions/app-actions.test.ts`：假宿主断言每个动作调了哪个接口、`danger` 和不可停自身 / 父对话的限制。
+- `scripts/e2e/11-app-actions.mjs`：假 CLI 发 `APP_DO:<JSON>` 走完整链路（CLI → `app_do` → 动作 → 面板接口）。
+- 前端接收侧（`web/src/lib/ui-actions.ts`、`App.tsx` 的 `UiActions`）没有界面检查覆盖（`scripts/ui/` 里没有相关用例），改了要手工开页面点一遍。

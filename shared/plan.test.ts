@@ -795,3 +795,191 @@ test('换了一份计划：上一份里还在等的子对话跟着同名步骤�
   settleWait(task, 'child', 'kid-1', true)
   assert.equal(plan.steps[0].status, 'done')
 })
+
+/**
+ * 回归：父对话把一件事先写成一条步骤、后来又把标题改写了一遍（6 与 8 就是同一件事的两条），
+ * 或者只交变更步骤却漏带了 id。以前按标题精确匹配对不上就新建一条，旧步永远停在原状态，
+ * 计划里同一步出现两条、计数（8/13 与 9/11）来回变。
+ */
+test('改写过的标题对回原来那一步：不新建重复步骤，旧步按新的状态走', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: '修单测失败：登录失败文案在英文 locale 下变成英文', status: 'running' },
+      { title: '修 e2e 失败：subagents 等 merged 超时', status: 'running' },
+    ],
+  })
+  const [old, other] = activePlan(task)!.steps
+  // 模型把旧步骤的标题改写了一遍（只差标点、空白、全半角），带上了 id
+  const r = applyPlan(task, {
+    partial: true,
+    steps: [{ id: old.id, title: '修单测失败：登录失败文案 在英文 locale 下 变成英文', status: 'done' }],
+  })
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.length, 2, '不新建重复步骤')
+  assert.equal(old.status, 'done')
+  assert.match(r.info, /这些还没做完的主步骤这次没交上来[\s\S]*修 e2e 失败/)
+  // 只差标点、全半角、大小的改写（归一化后一样）也算同一个步骤，不会多出一条
+  const t2 = fresh()
+  applyPlan(t2, { steps: [{ title: '修 e2e 失败：subagents 等 merged 超时', status: 'running' }] })
+  const r2 = applyPlan(t2, {
+    partial: true,
+    steps: [{ title: '修 e2e 失败: subagents 等 merged 超时', status: 'running' }],
+  })
+  assert.equal(activePlan(t2)!.steps.length, 1, '只差标点不算新步骤')
+  // 它确实被这条更新过（归一化匹配），就不能同时报「没交上来」——两句话会让模型又交一次
+  assert.doesNotMatch(r2.info, /这些还没做完的主步骤这次没交上来/)
+  // 只差空格的同一条（标题归一化后相同）：算交上来了，不新建
+  const t3 = fresh()
+  applyPlan(t3, { steps: [{ title: '跑 e2e 并核实  CI', status: 'running' }, { title: '写文档' }] })
+  const r3 = applyPlan(t3, { partial: true, steps: [{ title: '跑 e2e 并核实 CI', status: 'running' }] })
+  assert.equal(activePlan(t3)!.steps.length, 2, '归一化后一样的标题算同一步骤，不新建')
+  // 这条被归一化匹配更新过，不能说它「没交上来」；真没交上来的「写文档」照常点名
+  assert.doesNotMatch(r3.info, /没交上来[\s\S]*跑 e2e/)
+  assert.match(r3.info, /没交上来[\s\S]*写文档/)
+  assert.equal(other.status, 'running', '没交上来的步骤状态不动，并在回复里点名')
+  // 还在等结果的步骤不算「没交上来」：它由面板在结果回来后标完成，让模型去「标完成」只会被 held 退回，
+  // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话
+  const t5 = fresh()
+  applyPlan(t5, { steps: [{ title: '推 dev 并核实 CI 变绿', status: 'running' }, { title: '写文档' }] })
+  bindWait(t5, '1', { kind: 'background', ref: 'job1', label: 'CI' })
+  const r5 = applyPlan(t5, { partial: true, steps: [{ id: '2', status: 'done' }] })
+  assert.equal(activePlan(t5)!.steps[0].status, 'waiting', '还在等结果，状态不变')
+  assert.doesNotMatch(r5.info, /没交上来[\s\S]*推 dev/, '等结果的步骤不该被点名去「标完成」')
+  assert.match(r5.info, /不用交|等结果/, '要说明这类步骤不用交、结果回来面板会标完成')
+  assert.doesNotMatch(r5.info, /还在等结果，不能自己标完成/, '没去标它就不会触发 held 的退回提示')
+  // 等待挂在子步骤上时同样不能点名：主步骤标完成会级联把子步骤一起标完成（update 里的 want === 'done'），
+  // 然后被 held 按 [s, ...s.children] 递归退回。left 和 held 必须覆盖同一个区间，不然主步骤照样白跑一轮
+  const t6 = fresh()
+  applyPlan(t6, {
+    steps: [
+      { title: '跑端到端', status: 'running', children: [{ title: '跑 local 分片', status: 'running' }] },
+      { title: '写文档' },
+    ],
+  })
+  bindWait(t6, '1.1', { kind: 'background', ref: 'job2', label: 'local 分片' })
+  const r6 = applyPlan(t6, { partial: true, steps: [{ id: '2', status: 'done' }] })
+  assert.doesNotMatch(r6.info, /没交上来[\s\S]*跑端到端/, '子步骤在等结果时，主步骤也不该被点名去「标完成」')
+  assert.match(r6.info, /不用交/, '要说明这类步骤不用交')
+  // 只带 id 改备注、标题没重写（模型 partial 最常见的写法）：同样算交上来了，不能说它没交上来。
+  // 这里「交上来了」的判定必须和 matchOld 同口径：另写一套精确标题比对，会把刚被 id 更新的步骤又报成漏写，
+  // 模型看到「已经更新了」和「没交上来」两句互相矛盾的话，就会再交一遍
+  const t4 = fresh()
+  applyPlan(t4, { steps: [{ title: '修 e2e：subagents 超时', status: 'running' }, { title: '写文档' }] })
+  const r4 = applyPlan(t4, { partial: true, steps: [{ id: '1', note: '跑了一遍', status: 'running' }] })
+  assert.equal(activePlan(t4)!.steps[0].note, '跑了一遍', '按 id 更新的内容生效')
+  assert.doesNotMatch(r4.info, /没交上来[\s\S]*修 e2e/, '按 id 更新的步骤不算没交上来')
+  assert.match(r4.info, /没交上来[\s\S]*写文档/)
+  // 真的改写成另一件事：宁可新加一步，也不能张冠李戴把别的步骤标完成
+  const other2 = fresh()
+  applyPlan(other2, { steps: [{ title: '跑端到端测试', status: 'running' }] })
+  applyPlan(other2, { partial: true, steps: [{ title: '改前端界面布局', status: 'done' }] })
+  assert.deepEqual(
+    activePlan(other2)!.steps.map((s) => [s.title, s.status]),
+    [
+      ['跑端到端测试', 'running'],
+      ['改前端界面布局', 'done'],
+    ],
+    '对不上就新加一步，原来的步骤状态不动',
+  )
+})
+
+test('id 顺序和数组顺序不一致、又混着 partial：完成项留在原位，其余步骤不挪动', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: '修存储', status: 'done' },
+      { title: '评审' },
+      { title: '合并孤儿分支', status: 'done' },
+      { title: '删空文件' },
+      { title: '吸纳远端' },
+    ],
+  })
+  // 只交三步，且交的顺序和数组顺序不一致：旧数据里 8 排在 7 前面的那种
+  applyPlan(task, {
+    partial: true,
+    steps: [
+      { id: '5', title: '吸纳远端', status: 'done' },
+      { id: '2', title: '评审', status: 'running' },
+      { id: '4', title: '删空文件', status: 'done' },
+    ],
+  })
+  assert.deepEqual(
+    activePlan(task)!.steps.map((s) => [s.id, s.status]),
+    [
+      ['1', 'done'],
+      ['2', 'running'],
+      ['3', 'done'],
+      ['4', 'done'],
+      ['5', 'done'],
+    ],
+    '顺序按计划原来的顺序，完成项不回退也不丢',
+  )
+})
+
+test('等的结果成功回来了：把「还在等它」的备注清掉，不留一条已经过时的说明', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '推 dev 并核实 CI 变绿', status: 'running' }, { title: '收尾' }] })
+  bindWait(task, '1', { kind: 'child', ref: 'kid', label: '版本控制' })
+  holdWait(task, 'child', 'kid', '执行中：计划 9/11')
+  assert.match(activePlan(task)!.steps[0].note, /还在等它/)
+  settleWait(task, 'child', 'kid', true)
+  const step = activePlan(task)!.steps[0]
+  assert.equal(step.status, 'done')
+  assert.equal(step.note, '', '成功回来后备注清空，计划面板不再显示「还在等它」')
+  // 失败回来的：备注换成失败原因，留着给人看
+  const bad = fresh()
+  applyPlan(bad, { steps: [{ title: '推 dev', status: 'running' }] })
+  bindWait(bad, '1', { kind: 'child', ref: 'kid2', label: '版本控制' })
+  holdWait(bad, 'child', 'kid2', '执行中')
+  settleWait(bad, 'child', 'kid2', false)
+  assert.equal(activePlan(bad)!.steps[0].status, 'running')
+  assert.match(activePlan(bad)!.steps[0].note, /没成功/)
+})
+
+test('同一步骤先失败后重跑成功：失败的备注不留下来，已经完成的不挂「等的结果没成功」', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '端到端测试', status: 'running' }, { title: '收尾' }] })
+  // 第一次跑失败了：退回进行中并写清原因
+  bindWait(task, '1', { kind: 'background', ref: 'job1', label: '端到端测试（WSL）' })
+  settleWait(task, 'background', 'job1', false)
+  assert.match(activePlan(task)!.steps[0].note, /没成功/)
+  // 重跑一次成功了：那行失败说明已经过时，不能还挂在完成的步骤下面
+  bindWait(task, '1', { kind: 'background', ref: 'job2', label: '端到端测试（WSL）' })
+  settleWait(task, 'background', 'job2', true)
+  const step = activePlan(task)!.steps[0]
+  assert.equal(step.status, 'done')
+  assert.equal(step.note, '', '重跑成功后清掉上一轮的失败说明')
+})
+
+test('子任务的等待项按子任务真实状态收口：已经取走过结果的也要标完成', () => {
+  // 老会话调过 wait_agents 时子任务已被取走，settleHelpers 拿不到这一批；
+  // 收口按「计划里还挂着的 helper 等待」遍历，不看这一批有没有交回
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '派版本控制收尾', status: 'running' }, { title: '汇总' }] })
+  bindWait(task, '1', { kind: 'helper', ref: 'sub/h1', label: '版本控制' })
+  bindWait(task, '2', { kind: 'helper', ref: 'sub/h2', label: '甲' })
+  bindWait(task, '2', { kind: 'helper', ref: 'sub/h3', label: '乙' })
+  assert.equal(activePlan(task)!.steps[1].status, 'waiting')
+  // 子任务 h1 完成、h3 完成、h2 还没完成：第一步收口，第二步继续等
+  settleWait(task, 'helper', 'sub/h1', true)
+  settleWait(task, 'helper', 'sub/h3', true)
+  assert.equal(activePlan(task)!.steps[0].status, 'done')
+  assert.equal(activePlan(task)!.steps[1].status, 'waiting', '还有个子任务没结束，继续等')
+  settleWait(task, 'helper', 'sub/h2', true)
+  // 最后一步也完成：计划整份收起（activePlan 变成 undefined），所以看 plans[0]
+  assert.equal(activePlan(task), undefined, '全部收口，计划结束')
+  assert.equal(task.plans[0].steps[1].status, 'done', '最后一个子任务也完成了，这一步收口')
+})
+
+test('等子任务的步骤：子任务成功了才标完成，失败或被终止退回进行中并写清原因', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '派版本控制收尾', status: 'running' }, { title: '汇总' }] })
+  assert.match(bindWait(task, '1', { kind: 'helper', ref: 'chat/sub/h1', label: '版本控制' }), /等待中/)
+  assert.equal(settleWait(task, 'helper', 'chat/sub/h1', false).length, 1)
+  assert.equal(activePlan(task)!.steps[0].status, 'running')
+  assert.match(activePlan(task)!.steps[0].note, /版本控制/)
+  bindWait(task, '1', { kind: 'helper', ref: 'chat/sub/h2', label: '版本控制' })
+  settleWait(task, 'helper', 'chat/sub/h2', true)
+  assert.equal(activePlan(task)!.steps[0].status, 'done')
+})

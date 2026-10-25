@@ -57,6 +57,14 @@ export function DesignList() {
     byProject.set(d.projectId, [...(byProject.get(d.projectId) ?? []), d])
   const last = (pid: string, fallback: string) => byProject.get(pid)?.[0]?.updatedAt ?? fallback
   const list = [...projects].sort((a, b) => last(b.id, b.updatedAt).localeCompare(last(a.id, a.updatedAt)))
+  // 项目和分类（`项目id:分类id`）共用一份折叠集合，点整行、点箭头都走这里
+  const toggleFold = (key: string) =>
+    setFolded((f) => {
+      const n = new Set(f)
+      if (n.has(key)) n.delete(key)
+      else n.add(key)
+      return n
+    })
 
   const rename = async (d: DesignMeta, title: string) => {
     setRenaming('')
@@ -250,19 +258,31 @@ export function DesignList() {
       {list.map((p) => {
         const ds = byProject.get(p.id) ?? []
         const open = !folded.has(p.id)
+        // 项目名的图标和文字：有设计时包成按钮，空项目时就是纯文本，两处共用一份
+        const nameText = (
+          <>
+            {open ? (
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            ) : (
+              <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            )}
+            <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
+          </>
+        )
         return (
           <section key={p.id} className="mb-2">
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <div className="group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] text-muted hover:bg-sel/60">
+                <div
+                  // 整行都能点：以前只有左边的小箭头能点，点项目名没反应，像是要点两次
+                  onClick={() => ds.length > 0 && toggleFold(p.id)}
+                  className={cn(
+                    'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] text-muted hover:bg-sel/60 hover:text-fg',
+                    ds.length > 0 && 'cursor-pointer',
+                  )}
+                >
                   <button
-                    onClick={() =>
-                      setFolded((f) => {
-                        const n = new Set(f)
-                        if (!n.delete(p.id)) n.add(p.id)
-                        return n
-                      })
-                    }
+                    // 折叠只靠整行冒泡（另写 onClick 会折叠两次）；保留按钮是为了键盘可聚焦、aria-expanded 有落点
                     aria-expanded={open}
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
@@ -273,21 +293,29 @@ export function DesignList() {
                   >
                     <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
                   </button>
-                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    {open ? (
-                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    ) : (
-                      <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-                  </span>
+                  {ds.length > 0 ? (
+                    <button
+                      // 点击冒泡到整行去折叠；保留按钮是为了能用键盘聚焦、aria-expanded 有落点
+                      aria-expanded={open}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                    >
+                      {nameText}
+                    </button>
+                  ) : (
+                    // 没有设计时整行本来就不能折叠，项目名不做成按钮：免得多出一个按了没反应的 tab stop
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">{nameText}</span>
+                  )}
                   {ds.length > 0 && (
                     <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
                       {ds.length}
                     </span>
                   )}
                   <button
-                    onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
+                    onClick={(e) => {
+                      // 新建设计是行内自己的动作，别冒泡成折叠
+                      e.stopPropagation()
+                      go({ page: 'design', id: 'new', sub: p.id })
+                    }}
                     aria-label={t('在「{name}」新建设计', { name: p.name })}
                     title={t('新建设计')}
                     className={cn(
@@ -329,13 +357,8 @@ export function DesignList() {
                   return (
                     <div key={k.id} className="flex flex-col gap-px">
                       <button
-                        onClick={() =>
-                          setFolded((f) => {
-                            const n = new Set(f)
-                            if (!n.delete(key)) n.add(key)
-                            return n
-                          })
-                        }
+                        data-kind={k.id}
+                        onClick={() => toggleFold(key)}
                         aria-expanded={kOpen}
                         className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[0.75rem] text-subtle hover:bg-sel/60 hover:text-fg"
                       >

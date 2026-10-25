@@ -98,6 +98,7 @@ import {
   endRun,
   finishPlan,
   planText,
+  settleWait,
   childStepId,
   WRAP_UP,
   type PlanItemInput,
@@ -319,7 +320,11 @@ export interface Orchestra {
    */
   helperBatch(): Promise<HelperBatch> | undefined
   status(): string
-  spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
+  /**
+   * 派子任务。step：计划里哪一步在等这批子任务（步骤 id，见 set_plan 返回的计划），
+   * 全部结束、结果交回时把这一步标完成，失败或被终止退回进行中并写清原因
+   */
+  spawn(tasks: HelperSpec[], step?: string): { ids: string[]; error?: string; info?: string }
   /** 终止自己派出的子任务（不写 ids 就是全部还没结束的）；why 会写进交回的结果 */
   stopHelpers(ids: string[], why: string): { ok: boolean; info: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -973,15 +978,20 @@ function policyPart(host: EngineHost) {
   // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
   if (host.task.parentTaskId)
     return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp)}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
+  // 「需要推送」要说清是什么时候：技能和角色设定默认都是「本地先行、不主动推送」，
+  // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
+  const wt =
+    host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
+  const done = '任务做完、验证通过并在本地提交之后'
   const push =
     p.push === 'deny'
-      ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
+      ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
       : p.answered === 'denied'
         ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推。'
         : p.answered === 'allowed' || p.push === 'allow'
-          ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
-          : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
-  return `## 授权情况\n${push}\n${tools}`
+          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}，直接把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${wt}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。只做普通推送：不强推，被拒（远端有新提交）就停下来报告，不自己 pull / rebase；创建 PR、P4 submit、合并到主干不在这个授权里，用户要求时才做。`
+          : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送（推荐「允许这次推送」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
+  return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 推送要用户明确授权」的默认写法优先。\n${tools}`
 }
 
 /** 子对话的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
@@ -2474,6 +2484,38 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   return [brief, part].filter(Boolean).join('\n\n')
 }
 
+/** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */
+function helperOver(host: EngineHost, k: TaskStep) {
+  const st = orchState(host)
+  return k.status !== 'running' && (k.status !== 'pending' || !st.helpers.has(k.id))
+}
+
+/**
+ * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'，见 spawn 的 step）。
+ * 成功标完成、失败或终止退回进行中并写清原因；子任务还没结束的不动它。
+ *
+ * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
+ * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
+ */
+export function settleHelperWaits(host: EngineHost) {
+  const { task } = host
+  // 只看在用的这份计划：settleWait 也按 activePlan 找步骤，旧计划里残留的等待项永远收不了口，
+  // 每次交回结果都把那些死项重扫一遍没意义
+  const plan = activePlan(task)
+  const waiting = new Set(
+    (plan?.steps ?? []).flatMap((s) => [s, ...s.children]).flatMap((x) => x.waits.filter((w) => w.kind === 'helper')),
+  )
+  const hit: { title: string; done: boolean }[] = []
+  // 集合已经按 kind === 'helper' 筛过，这里只看还没收口的
+  for (const w of waiting)
+    if (w.state === 'waiting') {
+      const kid = task.steps.find((s) => s.id === w.ref)
+      if (kid && helperOver(host, kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
+    }
+  if (hit.length) host.changed(true)
+  return hit
+}
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
@@ -2485,6 +2527,8 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   }
   const late = kids().filter((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))
   for (const k of late) st.delivered.add(k.id)
+  // 计划里等这些子任务的步骤跟着收口：成功标完成，失败/被终止退回进行中
+  settleHelperWaits(host)
   return late
     .map((k) =>
       k.status === 'done'
@@ -2870,7 +2914,7 @@ function makeOrchestra(
       : undefined,
     p4Split: host.p4Split,
     status: () => statusTree(host, self.id),
-    spawn(tasks) {
+    spawn(tasks, step) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
@@ -2983,8 +3027,14 @@ function makeOrchestra(
       )
       // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
       task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
+      // 点名的计划步骤挂上等待：全部结束、结果交回时由 settleHelpers 收口（成功标完成、失败退回进行中）。
+      // 以前 spawn_agents 没有 step，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在那里
+      const at = !helper && ctx.chat ? step?.trim() : ''
+      // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
+      const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
+      if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
       host.changed(true)
-      return { ids: made.map((m) => m.step.id) }
+      return { ids: made.map((m) => m.step.id), ...(waits.length ? { info: waits.join('\n') } : {}) }
     },
     stopHelpers(ids, why) {
       if (helper) return { ok: false, info: '子任务不能终止别的子任务' }
@@ -3020,9 +3070,12 @@ function makeOrchestra(
       const waiting = () =>
         Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
       await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
-      const over = (s: TaskStep) => s.status !== 'running' && (s.status !== 'pending' || !st.helpers.has(s.id))
+      const over = (s: TaskStep) => helperOver(host, s)
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
+      // 手动取走结果的路径：helperBatch 的入口只看「还没取走的子任务」，取走后就轮不到 settleHelpers，
+      // 计划里等它们的那一步会永远停在等待中。这里直接收口（成功标完成、失败退回进行中）
+      if (done.length) settleHelperWaits(host)
       return {
         done: done.map((s) => helperReport(host, s)),
         running: steps.filter((s) => !over(s)).map((s) => helperReport(host, s)),

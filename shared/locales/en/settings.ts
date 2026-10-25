@@ -307,6 +307,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。':
     'Export to a file, then import it in Settings on another computer. Each kind of data in the file fully replaces what is here.',
   导出数据: 'Export data',
+  '{n} 个文件导出时正在写入或刚被删除，没放进备份：{files}':
+    '{n} files were being written or had just been deleted during export and were left out of the backup: {files}',
   导入数据: 'Import data',
   '导入数据？': 'Import data?',
   '文件不是有效的 JSON': 'The file is not valid JSON',
@@ -1270,13 +1272,38 @@ export const EN_SETTINGS: Record<string, string> = {
   '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
   // 开发者模式：抓取界面元素
   开发者模式: 'Developer mode',
-  '打开后对话输入框上多一个「抓取界面元素」按钮：点一下再点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出抓取。':
-    'Adds a "Pick UI element" button to chat inputs: click it, then click any element of the panel\'s UI to quote its source location, component, text and styles into the input, so AI can edit the panel\'s own code. Press Esc to stop picking.',
+  '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。':
+    'Adds a "Pick UI element" button to chat inputs, and a shortcut to start picking anywhere: while picking, the left and right buttons work as usual; press the mouse button chosen in settings (middle by default) on any element of the panel\'s UI to quote its source location, component, text and styles into the input, so AI can edit the panel\'s own code. Esc stops picking.',
   抓取界面元素: 'Pick UI element',
-  '抓取界面元素：点选页面上的元素引用到对话，Esc 退出':
-    'Pick UI element: click an element on the page to quote it in the chat, Esc to cancel',
-  '点选页面上的元素，引用到对话': 'Click an element on the page to quote it in the chat',
+  '抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出':
+    'Pick UI element: {key} to start or stop, {button} to pick an element on the page, Esc to cancel',
   退出抓取: 'to exit',
+  '{button}抓取元素，左键、右键照常可用': '{button} to pick an element; the left and right buttons keep working',
+  中键: 'Middle button',
+  左键: 'Left button',
+  右键: 'Right button',
+  或: 'or',
+  '已复制到剪贴板，去输入框里粘贴': 'Copied to the clipboard — paste it into the input',
+  '写不进剪贴板，请手动复制下面的引用': 'Could not write to the clipboard; copy the reference below manually',
+  // 设置 →「快捷键」
+  快捷键: 'Shortcuts',
+  抓取元素的快捷键: 'Shortcut for picking an element',
+  '抓取界面元素（开发者模式）的快捷键：按一下进入抓取，再按一下退出。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。':
+    'Shortcut for picking UI elements (developer mode): press it to start picking, press again to stop. It does not trigger while you are typing in an input, unless it includes Ctrl / Alt.',
+  '默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。':
+    'Defaults to “{key}”. If your keyboard cannot type it, click the field on the right and press another combination (for example Ctrl+Shift+E).',
+  '按下想用的键，Esc 取消': 'Press the keys to use, Esc to cancel',
+  '这个写法认不出来，按 Backspace 恢复默认': 'This value is not recognized; press Backspace to restore the default',
+  用哪个鼠标键抓取: 'Mouse button used to pick',
+  '其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单，所以抓取键一般用中键。':
+    'The other two buttons keep working while picking: the left button still clicks, the right button still opens menus, so the middle button is the usual choice.',
+  '抓取期间按 Esc 或再按一次上面的快捷键都能退出；抓到一个元素后也会自动退出。':
+    'While picking, press Esc or the shortcut above to stop; picking also stops after you pick an element.',
+  '快捷键回到「{key}」，抓取键回到中键。': 'Restore the shortcut to “{key}” and the pick button to the middle button.',
+  抓取元素的方式: 'How to pick elements',
+  '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
+  '＋': '+',
+  去修改: 'Change',
   并发上限: 'Concurrency limit',
   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
     'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',

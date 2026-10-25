@@ -169,6 +169,34 @@ test('子任务报告：Skill 槽要透传，写 {{槽名}} 的 Skill 不能被�
     stepId: '@chat/sub/h1',
   })
   assert.match(md, /project-documentation/, '按槽位换好的 Skill 名要出现在角色设定里')
+  // 报告头「Skill：…」也要过 fillSkills：直接 join 原始 skills 会和角色设定里的清单不一致
+  assert.match(md, /Skill：project-documentation/, '报告头的 Skill 清单同样按槽位换好')
+  assert.ok(!md.includes('{{docs}}'), '报告头不能出现没换的槽位原文')
+  // 引入的 Agent 带的技能也算：composeRole 拼角色设定时算了引入 Agent 的技能，报告头少列就还是两处对不上
+  const common = Agent.parse({
+    id: 'a-common',
+    name: '通用约束',
+    instructions: '约束',
+    skills: ['coding-standards'],
+    createdAt: at,
+    updatedAt: at,
+  })
+  const withIncludes = Agent.parse({
+    ...helperAgent,
+    skills: ['project-documentation'],
+    includes: [common.id],
+  })
+  const md2 = taskReport(
+    exportTask(
+      Task.parse({ ...rec, steps: [{ ...rec.steps[0], agentId: withIncludes.id }] }),
+      [withIncludes, common, coder],
+      '',
+      new Date(later),
+    ),
+    4000,
+    { stepId: '@chat/sub/h1' },
+  )
+  assert.match(md2, /Skill：project-documentation、coding-standards/, '引入 Agent 的技能也要出现在报告头')
 })
 
 test('子任务报告：没有要求原文时两种原因都写出来，不拿标题列表冒充要求', () => {
@@ -248,8 +276,26 @@ test('子任务报告：导出时还在跑的任务写明「统计到导出那�
   const md = taskReport(b, 4000, { stepId: '@chat/sub/h1' })
   assert.match(md, /导出时还在跑/, '父任务状态后面要说明这是快照')
   assert.match(md, /状态：running（导出时就停在这一刻）/, '在跑的节点不能写成 pending（会被读成排队）')
+  // 导出时给在跑的节点补了 endedAt，直接写「结束：…」会与同一行的 running 自相矛盾
+  assert.match(md, /导出时还没结束/, '在跑的节点不写结束时间，改成导出时还没结束')
+  assert.ok(!md.includes('结束：'), '在跑的节点不能出现结束时间')
   const prompt = analysisPrompt([b], '', { stepId: '@chat/sub/h1' })
   assert.match(prompt, /还没有结束（或还在排队）/, '提示词这边本来就说明了是快照')
+})
+
+test('子任务报告：被单独停下的节点（父对话还在跑）照旧写真实的结束时间', () => {
+  // 引擎停下一个节点时走 pauseStep：status 置 pending、endedAt 写 now、startedAt 清空（shared/task.ts 的 pauseStep）。
+  // 这种节点不是「导出时在跑」，不能因为同样是 pending 就被写成「导出时还没结束」而丢掉它何时停下
+  const stopped = Task.parse({
+    ...task,
+    status: 'running',
+    steps: [{ ...task.steps[0], status: 'pending', startedAt: '', endedAt: later, spentMs: 120_000 }],
+  })
+  const md = taskReport(exportTask(stopped, [helperAgent, coder], '', new Date(later)), 4000, {
+    stepId: '@chat/sub/h1',
+  })
+  assert.match(md, new RegExp(`结束：${localTime(later)}`), '停下过的节点要写真实结束时间')
+  assert.ok(!md.includes('导出时还没结束'), '不是导出时在跑的节点不能写这句')
 })
 
 test('子任务报告：等待不超过耗时（缺 endedAt 的旧记录不会写出「耗时 0s（其中等用户 3h）」）', () => {
@@ -270,4 +316,24 @@ test('不传 scope 时整体分析的报告和提示词和原来一致', () => {
   const prompt = analysisPrompt([bundle])
   assert.match(prompt, /## 可以修改的对象/)
   assert.match(prompt, /workflow-evolution/)
+})
+
+test('报告头的 Skill：按当前映射换算，下线的技能换成接替它的，没有接替的标成已下线', () => {
+  // 三种情况一次覆盖：技能名已映射（有接替）、已下线（没有接替，会被 fillSkills 滤掉）、正常
+  const mixed = Agent.parse({
+    ...coder,
+    skills: ['test-driven-development', 'ue-multi-agent-coordination', 'project-documentation'],
+  })
+  const rec = Task.parse({ ...task, steps: [{ ...task.steps[0], agentId: mixed.id }] })
+  const md = taskReport(exportTask(rec, [mixed], '', new Date(later)), 4000, { stepId: '@chat/sub/h1' })
+  const head = md.split('\n').find((l) => l.includes('Skill：')) ?? ''
+  // 已映射：显示接替它的当前技能名，不是安装时的旧名
+  assert.match(head, /project-testing/, '已下线的技能要显示接替它的技能名')
+  assert.ok(!head.includes('test-driven-development'), '不能显示已下线的旧技能名')
+  // 正常：原样列出
+  assert.match(head, /project-documentation/, '正常的技能原样列出')
+  // 已下线且没有接替者：明确标出来，不静默丢掉
+  assert.match(head, /ue-multi-agent-coordination（已下线，没有接替的技能）/, '没有接替的技能要明确标成已下线')
+  // 和角色设定那段一致：报告头里的技能名都要是换算后的
+  assert.ok(!head.includes('software-architecture-design'), '没配置的技能不该出现')
 })

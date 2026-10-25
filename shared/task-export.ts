@@ -9,6 +9,8 @@
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
 import { composeRole, includedAgents } from './agent-role.ts'
+import { fillSkills, fillSlots } from './expose.ts'
+import { retiredWithoutSuccessor } from './skill-guide.ts'
 import { runTree } from './run-usage.ts'
 import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
@@ -919,6 +921,21 @@ export interface HelperScope {
   stepId: string
 }
 
+/**
+ * 报告里展示的技能：和同报告「角色设定」段（composeRole）同一个口径——
+ * 把引入的 Agent 的技能也算上，再走 fillSkills（槽替换、下线的技能换成接替它的、特化技能补上通用技能）。
+ * 只算 a.skills 的话，引入 Agent 带了技能时报告头会少列，和下面那段对不上。
+ */
+function skillText(a: Agent, all: Agent[], slots: Record<string, string>) {
+  const raw = [...a.skills, ...includedAgents(a, all).flatMap((s) => s.agent.skills)]
+  const skills = [...new Set(fillSkills(raw, slots))]
+  // 已下线又没有接替者的技能会被 fillSkills 滤掉（不滤的话 CLI 会去找不存在的 SKILL.md）。
+  // 报告是给人排查用的，丢掉会让人以为角色本来就没配它，所以单独标出来，不静默改名也不静默丢。
+  const retired = retiredWithoutSuccessor(raw.map((s) => fillSlots(s, slots).trim()))
+  const parts = [skills.join('、'), ...retired.map((s) => `${s}（已下线，没有接替的技能）`)].filter(Boolean)
+  return parts.length ? `　Skill：${parts.join('、')}` : ''
+}
+
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
 export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope) {
   if (scope) return helperReport(b, maxOutput, scope)
@@ -1068,7 +1085,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       lines.push(
         '',
         `### ${a.name}（agent id: ${a.id}）`,
-        `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${a.skills.length ? `　Skill：${a.skills.join('、')}` : ''}`,
+        `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
       )
       if (a.description) lines.push(a.description)
       if (a.instructions.trim()) lines.push('角色设定：', clip(a.instructions.trim(), 3000))
@@ -1202,12 +1219,16 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
   // 照着写会和提示词里「还没结束，记录是快照」自相矛盾，AI 会把它报成「面板状态不对」的假发现。
   // 整体报告在下面也有同样的补偿（exportedWhileRunning）
   const asExported = tk.exportedWhileRunning
-  // 排队（没开始过）和「导出时正在跑」都被写成了 pending，只能靠 startedAt 区分
-  const stepState =
-    step.status === 'pending' && step.startedAt && asExported ? 'running（导出时就停在这一刻）' : step.status
+  // 排队（没开始过）和「导出时正在跑」都被写成了 pending，只能靠 startedAt 区分：
+  // 被 stop 停下的节点走 pauseStep，startedAt 被清空（shared/task.ts 的 pauseStep），所以 startedAt 还在才是真在跑
+  const wasRunning = step.status === 'pending' && !!step.startedAt && !!asExported
+  const stepState = wasRunning ? 'running（导出时就停在这一刻）' : step.status
   const main = stepMs(step, now)
+  // 导出那一刻真在跑的节点：schema 收尾时给它补了 endedAt（见 exportedBody），直接写「结束」会和状态栏的「running」自相矛盾。
+  // 不能用 `status === 'pending'` 判：被单独停下的节点也是 pending 且带真实 endedAt，那样会把它什么时候停下都抹掉
+  const endText = step.endedAt ? (wasRunning ? '　导出时还没结束' : `　结束：${localTime(step.endedAt)}`) : ''
   lines.push(
-    `所属：${parent ? `父节点「${parent.title}」（${parent.id}）` : '对话本身'}　状态：${stepState}${step.interrupted ? '（被打断过，每次中断前的执行时间都算在耗时里）' : ''}　开始：${localTime(step.startedAt)}${step.endedAt ? `　结束：${localTime(step.endedAt)}` : ''}`,
+    `所属：${parent ? `父节点「${parent.title}」（${parent.id}）` : '对话本身'}　状态：${stepState}${step.interrupted ? '（被打断过，每次中断前的执行时间都算在耗时里）' : ''}　开始：${localTime(step.startedAt)}${endText}`,
     '',
     '## 统计',
     // 括号里是子集，按 min(子集, 主数) 夹（docs/lessons/task-export.md）：缺 endedAt 的旧记录会写出「耗时 0s（其中等用户 3h）」
@@ -1222,7 +1243,7 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
     lines.push(
       '',
       `## 派给它的角色：${a.name}（agent id: ${a.id}）`,
-      `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${a.skills.length ? `　Skill：${a.skills.join('、')}` : ''}`,
+      `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
     )
     if (a.description) lines.push(a.description)
     // 拼好的实际生效设定（自身设定 + 引入的 Agent + 参数 + Skill）：内置角色几乎都引入「通用约束」，

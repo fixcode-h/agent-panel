@@ -56,6 +56,7 @@ npm run typecheck    # 类型检查 + 漏翻检查
 npm run lint         # oxlint、Prettier 格式检查、规则检查（scripts/rules-check.mjs）
 npm run test:unit    # 单元测试和 CLI 输出解析测试
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
+npm run test:e2e:wsl # 同上，在 WSL 里跑（Windows 开发机上用这个）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版
@@ -70,7 +71,7 @@ npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 以前反复返工的几件事，提交前过一遍：
 
 1. `git status --short` 看清楚要提交的文件：新文件都 add 了，测试或 CLI 留下的临时输出没混进来。
-2. `npm run typecheck && npm run lint` 通过（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
+2. 静态检查通过：`npm run typecheck && npm run lint && npm run test:unit`（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
 3. 改了提示词或文案，搜一下测试里有没有断言原句；动了执行流程，跑 `npm run test:e2e`。
 4. `node scripts/lessons.mjs` 对照这次改动的相关教训。
 
