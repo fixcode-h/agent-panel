@@ -10,6 +10,12 @@
  */
 import { runShard } from './harness.mjs'
 
+/**
+ * 和 web/src/components/ui/hint.tsx 里的 SKIP_TAGS 一致：
+ * 这些原生元素的 title 是浏览器自己的语义，实现不接管，用例也不该拿它们当目标。
+ */
+const SKIP_TITLE_TAGS = new Set(['IFRAME', 'OPTION', 'OPTGROUP', 'TITLE', 'STYLE', 'SCRIPT'])
+
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
@@ -118,29 +124,55 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }
   }
 
-  // 长文字：浮层不冒出视口、不超过最大宽度
+  // 长文字：浮层不冒出视口、不超过最大宽度。
+  // 和 disabled 那条一样，找不到目标就算失败：以前「没有就跳过」会让这条用例在改版后静默通过。
   {
     await moveAway()
-    const spot = await p.evaluate(() => {
-      const el = [...document.querySelectorAll('[title]')].find((e) => (e.getAttribute('title') ?? '').length > 30)
-      if (!el) return null
-      const r = el.getBoundingClientRect()
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: el.getAttribute('title') }
-    })
-    if (spot && spot.y > 0 && spot.y < 900) {
-      await p.mouse.move(spot.x, spot.y)
-      await p.waitForTimeout(500)
-      const tb = await tooltip
-        .first()
-        .boundingBox()
-        .catch(() => null)
-      if (tb) {
-        if (tb.width > 321) errors.push(`提示-长文字：浮层宽 ${tb.width}，超过 320`)
-        if (tb.x < 0 || tb.x + tb.width > 1441) errors.push(`提示-长文字：浮层跑出视口（x=${tb.x}, 宽=${tb.width}）`)
-        await check(p, '提示-长文字')
+    // 挑页面上最长的一个 title：不写死某个元素，界面改版后换地方也照样能测到
+    // 要跳过的标签名作为参数传进去：p.evaluate 在浏览器里跑，读不到这里的常量
+    const target = await p.evaluate(
+      (skipTags) => {
+        const skip = new Set(skipTags)
+        const all = [...document.querySelectorAll('[title]')]
+        let best = null
+        let bestLen = 0
+        all.forEach((el, i) => {
+          const text = el.getAttribute('title') ?? ''
+          if (text.length <= 30 || skip.has(el.tagName)) return
+          if (text.length > bestLen) {
+            bestLen = text.length
+            best = i
+          }
+        })
+        return best === null ? null : { index: best, len: bestLen }
+      },
+      [...SKIP_TITLE_TAGS],
+    )
+    if (!target) errors.push('提示-长文字：页面上找不到长度超过 30 的 title 元素，这条用例失去意义')
+    else {
+      // 元素可能在滚动容器外面：先滚进视口再悬停，不能因此跳过
+      const el = p.locator('[title]').nth(target.index)
+      await el.scrollIntoViewIfNeeded()
+      await settle(p)
+      const box = await el.boundingBox()
+      if (!box) errors.push('提示-长文字：滚动后仍然量不到目标元素')
+      else {
+        await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        await p.waitForTimeout(500)
+        const tb = await tooltip
+          .first()
+          .boundingBox()
+          .catch(() => null)
+        if (!tb) errors.push('提示-长文字：悬停长文案元素没有出现提示浮层')
+        else {
+          if (tb.width > 321) errors.push(`提示-长文字：浮层宽 ${tb.width}，超过 320`)
+          if (tb.x < 0 || tb.x + tb.width > 1441) errors.push(`提示-长文字：浮层跑出视口（x=${tb.x}, 宽=${tb.width}）`)
+          // 长文案要真的换行：只允许它比最大宽度窄，不能撑开成一整行横贯页面
+          await check(p, '提示-长文字')
+        }
       }
       await moveAway()
-    } else console.log('· 提示-长文字：页面里没有合适的长 title 元素可测')
+    }
   }
 
   // 窄屏：浮层不能被视口切掉
