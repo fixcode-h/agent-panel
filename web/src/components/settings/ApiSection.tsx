@@ -78,6 +78,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       models: [],
       modelMap: {},
       modelEfforts: {},
+      maxConcurrent: 0,
     })
   return (
     <Group>
@@ -488,6 +489,28 @@ function ApiCard({
                 />
               </label>
             )}
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+              {t('并发上限')}
+              <Input
+                type="number"
+                min={0}
+                max={999}
+                step={1}
+                inputMode="numeric"
+                value={String(a.maxConcurrent ?? 0)}
+                onChange={(e) => {
+                  const n = Math.floor(Number(e.target.value))
+                  onChange({ maxConcurrent: Number.isFinite(n) ? Math.min(999, Math.max(0, n)) : 0 })
+                }}
+                aria-label={t('并发上限')}
+                className="h-9 w-28 font-mono text-[0.8125rem]"
+              />
+              <span className="text-[0.71875rem] text-subtle">
+                {t(
+                  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。',
+                )}
+              </span>
+            </label>
           </div>
           <ApiBalanceRow a={a} />
           <div className="flex flex-col gap-2">

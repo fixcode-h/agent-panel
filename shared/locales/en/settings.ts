@@ -1304,4 +1304,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
   '＋': '+',
   去修改: 'Change',
+  并发上限: 'Concurrency limit',
+  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
+    'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
 }
