@@ -207,7 +207,8 @@ export function RowShell({
   /**
    * 详情紧跟标题左对齐（占剩余宽度），而不是被标题挤到行尾；耗时仍在行的最右边。
    * 只给「详情只是说明文字、整行没有展开收起」的行用：详情区会挡掉点击（stopPropagation），
-   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」
+   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」。
+   * 传了 rowOpen 时详情区也算入口，不再挡点击
    */
   detailStart,
   ms,
@@ -221,8 +222,9 @@ export function RowShell({
   className,
   children,
   /**
-   * 整行都是打开入口（子对话行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
-   * 不传时行为完全不变——工具行、后台命令、子任务行仍然点哪里都展开收起
+   * 整行都是打开入口（子对话行、子任务行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
+   * 不传时行为完全不变——工具行、后台命令仍然点哪里都展开收起；行尾的 action 按钮
+   * （终止）始终 stopPropagation，点它不会连带打开窗口
    */
   rowOpen,
   /** 行最左边的额外控件（子对话切换下拉），在图标和动作名之前 */
@@ -262,12 +264,12 @@ export function RowShell({
   children?: React.ReactNode
 }) {
   const toggle = onToggle
-  // 整行打开优先（子对话行没有展开收起）；其余行仍是整行点了展开
+  // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
       {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
-          子对话行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
+          子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
         onClick={activate}
         className={cn(
@@ -342,7 +344,7 @@ export function RowShell({
         {detail && detailStart ? (
           <span
             className="flex min-w-0 flex-1 items-center border-l border-line-strong pl-2"
-            // 整行打开时详情也属于入口（子对话行）：不拦点击，点了直接冒泡到行上
+            // 整行打开时详情也属于入口（子对话行、子任务行）：不拦点击，点了直接冒泡到行上
             onClick={rowOpen ? undefined : (e) => e.stopPropagation()}
           >
             {detail}
