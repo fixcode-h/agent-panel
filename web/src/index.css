@@ -777,3 +777,21 @@ body,
     opacity: 0;
   }
 }
+
+/* 提示分两类：悬停提示（components/ui/hint.tsx）鼠标移开就消失，不放关闭按钮；
+   错误提示会停在屏幕上挡住内容，要能手动关掉。
+   sonner 的关闭按钮只能整体开或逐个 toast 开（toast.error 有两百多处，逐个改不现实），
+   所以 Toaster 上整体开启，再按 data-type 只留错误那一类。
+   sonner 自己用 JS 往 head 末尾插样式（排在打包样式表之后），同特异性的规则压不住它，
+   这里带上 html 祖先把优先级提上去。 */
+html [data-sonner-toast][data-styled='true'] [data-close-button] {
+  display: none;
+}
+html [data-sonner-toast][data-styled='true'][data-type='error'] [data-close-button] {
+  display: flex;
+  /* 默认样式让按钮压在右上角外侧，挪进来一点，别盖住第一行文字 */
+  top: 6px;
+  left: auto;
+  right: 6px;
+  transform: none;
+}
