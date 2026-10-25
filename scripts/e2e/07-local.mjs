@@ -1507,6 +1507,29 @@ await runShard('本机请求与设置', async (api) => {
     const listed = (await lib('skill')).items.find((i) => i.cli === 'claude' && i.name === 'lib-demo')
     assert.equal(listed.description, '库里的测试 Skill')
     assert.deepEqual((await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')).files, ['notes.md'])
+    // 附件的读写：先写一个子目录里的文件，再读回来，最后在树里看到它
+    const entry = { cli: 'claude', kind: 'skill', name: 'lib-demo', path: 'references/api.md' }
+    await call('PUT', '/library/entry', { ...entry, content: '# API\n' })
+    const got = await call('GET', `/library/entry?${new URLSearchParams(entry)}`)
+    assert.equal(got.content, '# API\n')
+    assert.equal(got.exists, true)
+    const withTree = await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')
+    assert.deepEqual(
+      withTree.tree.entries.map((e) => `${e.type}:${e.path}`),
+      ['dir:references', 'file:notes.md', 'file:references/api.md'],
+    )
+    assert.deepEqual(withTree.files, ['notes.md', 'references/api.md'], 'files 等于树里的文件路径')
+    // 路径穿越被拒
+    await assert.rejects(
+      call('GET', `/library/entry?cli=claude&kind=skill&name=lib-demo&path=${encodeURIComponent('../evil')}`),
+      /相对路径/,
+    )
+    // 改名后旧路径没了、新路径读得到；删掉后从树里消失
+    await call('POST', '/library/entry/rename', { ...entry, from: 'references/api.md', to: 'references/doc.md' })
+    assert.equal((await call('GET', `/library/entry?${new URLSearchParams(entry)}`)).exists, false)
+    await call('DELETE', `/library/entry?${new URLSearchParams({ ...entry, path: 'references/doc.md' })}`)
+    const cleaned = await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')
+    assert.deepEqual(cleaned.files, ['notes.md'])
     await assert.rejects(
       put({ cli: 'claude', kind: 'skill', name: 'lib-demo', create: true, content: 'x' }),
       /已经有了/,
