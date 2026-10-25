@@ -66,7 +66,12 @@ await runShard('子对话与计划', async (api) => {
     // 真正发消息才启动
     const resumed = await call('POST', `/tasks/${kid.id}/messages`, { text: '接着做第二件事' })
     assert.equal(resumed.status, 'running', '发消息才启动这一轮')
+    // cliAlive 按真实进程算：发消息后进程要先起来，等一小会儿再看
     kids = await call('GET', `/tasks/${parent.id}/children`)
+    for (let i = 0; i < 30 && !kids.find((x) => x.id === kid.id)?.cliAlive; i++) {
+      await sleep(100)
+      kids = await call('GET', `/tasks/${parent.id}/children`)
+    }
     assert.equal(kids.find((x) => x.id === kid.id).cliAlive, true, '发消息后进程活着')
     const busy = await call('GET', '/tasks')
     assert.ok(
