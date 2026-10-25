@@ -10,10 +10,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
-  // 内置工作流列表：整理后的能力块和新补的四个流程都要能正常显示，不重复、不溢出
+  // 内置工作流列表：整理后的十个工作流都要能正常显示，不重复、不溢出
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).first().click()
   await p.getByText('从内置工作流添加').first().click()
-  await check(p, '工作流-内置列表', ['日常开发', '依赖升级与安全', '发布与回滚', '项目初始化'])
+  await check(p, '工作流-内置列表', ['通用项目', '依赖升级与安全', '发布与回滚', '代码评审'])
   await p.keyboard.press('Escape')
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
@@ -59,14 +59,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!(await p.getByLabel('这一步要做的事').count())) errors.push('工作流-步骤折叠：再点一下没有展开')
     }
   }
-  // 内置工作流：添加后连同 Agent 一起建好，直接打开
+  // 内置工作流：正式版启动时全部加入，演示里手动添加；添加后连同 Agent 一起建好，直接打开
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
   await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
-  await check(p, '内置工作流', ['日常开发', '功能开发（OpenSpec）', 'Blender 建模与动画'])
+  await check(p, '内置工作流', ['通用项目', '功能开发（OpenSpec）', 'Blender 建模与动画'])
   await p.getByRole('button', { name: '添加', exact: true }).first().click()
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
-  await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
+  await check(p, '内置工作流-添加后', ['识别现场与方案', '文档同步'])
   // 项目里新建对话：输入框上可以选择用不用项目设置的 Agent，对话页不能再换 Agent 和参数
   await p.goto(base)
   const agentSwitch = p.getByRole('switch', { name: '使用项目设置的角色' })
