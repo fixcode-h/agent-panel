@@ -70,6 +70,7 @@ import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project
 import type {
   BundledSkill,
   LibraryCli,
+  LibraryEntryContent,
   LibraryFile,
   LibraryItem,
   McpOverview,
@@ -336,6 +337,29 @@ export const api = {
     }),
   copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** Skill 文件夹里的单个附加文件（命令没有附加文件） */
+  libraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<LibraryEntryContent>(`/library/entry?${new URLSearchParams(b)}`),
+  saveLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    path: string
+    content: string
+    create?: boolean
+  }) => request<{ ok: boolean }>('/library/entry', json('PUT', b)),
+  deleteLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>(`/library/entry?${new URLSearchParams(b)}`, { method: 'DELETE' }),
+  renameLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    from: string
+    to: string
+    overwrite?: boolean
+  }) => request<{ ok: boolean }>('/library/entry/rename', json('POST', b)),
+  mkdirLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>('/library/entry/mkdir', json('POST', b)),
   /** 项目设置里的 Skill 分节：项目目录下的技能 */
   projectSkills: (projectId: string) =>
     request<ProjectSkillsView>(`/project-skills?projectId=${encodeURIComponent(projectId)}`),

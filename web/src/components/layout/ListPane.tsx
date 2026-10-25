@@ -15,10 +15,14 @@ export function ListPane({
   children,
   footer,
   extra,
+  tabs,
+  hideNew,
 }: {
   title: string
   count: number
   onNew: () => void
+  /** 这一页没有可新建的东西时隐藏「新建」（例如技能页的「自带 Skill」分页） */
+  hideNew?: boolean
   query: string
   onQuery: (q: string) => void
   placeholder: string
@@ -26,6 +30,8 @@ export function ListPane({
   footer?: React.ReactNode
   /** 新建按钮左边的额外操作 */
   extra?: React.ReactNode
+  /** 搜索框下面的分页（例如技能页的 Skill / 命令 / 自带 Skill） */
+  tabs?: React.ReactNode
 }) {
   return (
     <section
@@ -38,10 +44,12 @@ export function ListPane({
           <span className="shrink-0 rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
           <div className="ml-auto flex items-center gap-1.5">
             {extra}
-            <Button size="sm" onClick={onNew}>
-              <Plus className="h-4 w-4" />
-              {t('新建')}
-            </Button>
+            {!hideNew && (
+              <Button size="sm" onClick={onNew}>
+                <Plus className="h-4 w-4" />
+                {t('新建')}
+              </Button>
+            )}
           </div>
         </div>
         <label className="relative block">
@@ -54,6 +62,7 @@ export function ListPane({
             className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[0.8125rem] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
           />
         </label>
+        {tabs}
       </div>
       <div className="flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 md:max-h-none">
         {children}
