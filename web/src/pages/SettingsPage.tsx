@@ -27,6 +27,7 @@ import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
+import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL } from '@shared/proxy'
 import { defaultCli, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -724,13 +725,14 @@ function SettingsBody({
                 <Row
                   title={t('网络代理')}
                   desc={t(
-                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口），没开代理软件就不会走代理。也认环境变量 HTTPS_PROXY。',
+                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址，例如 {proxy}；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口，含 v2rayN 默认的 {port}），没开代理软件就不会走代理。只支持 http 代理：v2rayN 默认的入站就是这个端口的 SOCKS，这种环境要把它改成 http / mixed 入站，或者填 http 入站端口；探测不到时照常回退直连。也认环境变量 HTTPS_PROXY。',
+                    { proxy: DEFAULT_PROXY_URL, port: String(DEFAULT_PROXY_PORT) },
                   )}
                 >
                   <Input
                     value={proxy}
                     onChange={(e) => setProxy(e.target.value)}
-                    placeholder="http://127.0.0.1:7890"
+                    placeholder={DEFAULT_PROXY_URL}
                     className="w-[240px] font-mono text-[0.8125rem]"
                     spellCheck={false}
                     aria-label={t('网络代理')}
