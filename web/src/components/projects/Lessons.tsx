@@ -24,7 +24,8 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/tasks'
 import { AssistDialog } from '@/components/assist/AssistDialog'
-import { LessonReviewDialog } from './LessonReview'
+import { AnalyzeDialog } from '@/components/tasks/Evolution'
+import { startLessonReview } from '@/lib/task-transfer'
 
 /** 输入框里的范围：逗号、顿号、空白都能分隔 */
 const splitPaths = (s: string) =>
@@ -60,7 +61,6 @@ export function LessonsEditor({
   onChange,
   project,
   initialOpen,
-  onLeave,
 }: {
   lessons: ProjectLesson[]
   onChange: (v: ProjectLesson[]) => void
@@ -68,8 +68,6 @@ export function LessonsEditor({
   project?: Project
   /** 打开时展开的那条（项目首页点进来的） */
   initialOpen?: string
-  /** 开了评审对话、要跳过去时关掉项目设置 */
-  onLeave?: () => void
 }) {
   const [q, setQ] = useState('')
   // 当前页签：DEFAULT_TAB 是「默认」，放一个标签都没有的教训；任何时候都有一个页签选中
@@ -295,7 +293,18 @@ export function LessonsEditor({
       )}
       {project && <ExtractGlobalLessons project={project} open={extracting} onOpenChange={setExtracting} />}
       {project && (
-        <LessonReviewDialog project={project} open={reviewing} onOpenChange={setReviewing} onLeave={onLeave} />
+        <AnalyzeDialog
+          open={reviewing}
+          onOpenChange={setReviewing}
+          title={t('AI 评审项目教训')}
+          intro={t(
+            'AI 会逐条看已保存的 {n} 条教训：是否必须、是否合理、能不能写得更好、提到的文件和做法是否已经过期、有没有重复。结果在对话里列成建议，每条要你点「应用」才会改，不会自动改。',
+            { n: project.lessons.length },
+          )}
+          placeholder={t('例如：角色自己记的那些、和测试有关的')}
+          subject={t('项目教训')}
+          start={(focus) => startLessonReview({ project, focus })}
+        />
       )}
     </div>
   )

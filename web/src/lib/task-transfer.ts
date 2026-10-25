@@ -116,34 +116,20 @@ export async function startAnalysis(opts: {
 }
 
 /**
- * 分析用的角色：内置的「分析」角色（用户加过才有），没有就用项目的默认角色（agentId 留空）。
- * 项目里的各种 AI 分析都开项目对话、用这个角色，统一归属
+ * 项目教训的 AI 评审：按归属规则在这个项目里开一个分析对话（角色「分析」），教训全文作附件；
+ * 回复末尾的评审块在对话里画成卡片逐条应用
  */
-export const analysisAgentId = (agents: Agent[]) => agents.find((a) => a.origin === 'builtin:analyst')?.id ?? ''
-
-/**
- * 项目教训的 AI 评审：在这个项目里开一个分析对话，教训全文作附件，回复末尾的评审块在对话里画成卡片逐条应用
- */
-export async function startLessonReview(opts: { project: Project; agents: Agent[]; focus?: string }) {
+export async function startLessonReview(opts: { project: Project; focus?: string }) {
   const { project } = opts
   const report = await api.upload({
     name: `${t('项目教训')}-${project.name.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
     mime: 'text/markdown',
     data: toBase64(lessonReviewReport(project.name, project.lessons)),
   })
-  const created = await api.createTask({
-    projectId: project.id,
-    mode: 'chat',
-    workflowId: '',
-    agentId: analysisAgentId(opts.agents),
-    cli: '',
-    model: '',
-    effort: '',
-    params: {},
+  return createAnalysisTask({
+    scope: { kind: 'project', projectId: project.id },
+    title: t('AI 评审：项目教训'),
     prompt: lessonReviewPrompt(project.name, project.lessons.length, opts.focus?.trim()),
     attachments: [report],
-    isolate: false,
-    askUser: false,
   })
-  return api.renameTask(created.id, t('AI 评审：项目教训')).catch(() => created)
 }
