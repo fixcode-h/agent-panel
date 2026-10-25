@@ -134,6 +134,26 @@ export function useComposerChips({
       (e: Error) => toast.error(t('复制失败：{msg}', { msg: e.message })),
     )
   }, [])
+  /**
+   * 一张卡片复制到剪贴板时写什么：和右键菜单的两项一样——引用写带标记的原文（粘回输入框还原成同一张卡片），
+   * 其他附件写它的本机路径（粘回输入框按路径认回卡片，见 lib/element-ref.ts、onPaste）
+   */
+  const copyOfChip = useCallback(
+    (chip: Chip): string | undefined => {
+      const item = files.items.find((x) => x.name === chip.name)
+      const done = item?.done
+      if (chip.kind === 'quote') {
+        // 原文在本地就有（addQuote 时写入），不等上传完成
+        const text = item?.quote ?? done?.quote ?? ''
+        if (!text) return undefined
+        return isElementRefText(text) ? wrapElementRef(text) : text
+      }
+      if (isAttachChip(chip.kind)) return done?.path || undefined
+      // Skill / 命令没有背后文件：写成「/名字」，粘回去当普通文字
+      return `/${chip.name}`
+    },
+    [files.items],
+  )
   const chipActions = useMemo<ChipActions>(
     () => ({
       open: (chip) => {
@@ -181,9 +201,9 @@ export function useComposerChips({
       )}
       {menu.chip.kind === 'file' && (
         <MenuItem
-          disabled={!itemOf(menu.chip.name)?.done?.path}
+          disabled={!copyOfChip(menu.chip)}
           onSelect={() => {
-            copyTextOf(itemOf(menu.chip.name)?.done?.path ?? '', t('路径已复制'))
+            copyTextOf(copyOfChip(menu.chip) ?? '', t('路径已复制'))
             closeMenu()
           }}
         >
@@ -194,10 +214,7 @@ export function useComposerChips({
       {menu.chip.kind === 'quote' && (
         <MenuItem
           onSelect={() => {
-            const item = itemOf(menu.chip.name)
-            const text = item?.quote ?? item?.done?.quote ?? ''
-            // 元素引用带着标记复制：粘到别的对话、别的窗口里会还原成同一张引用卡片（见 lib/element-ref.ts）
-            copyTextOf(isElementRefText(text) ? wrapElementRef(text) : text, t('引用内容已复制'))
+            copyTextOf(copyOfChip(menu.chip) ?? '', t('引用内容已复制'))
             closeMenu()
           }}
         >
@@ -311,6 +328,7 @@ export function useComposerChips({
     onPaste,
     preview,
     chipActions,
+    copyOfChip,
     drop,
     /** 绑到输入框外层容器上：接住文件树拖过来的引用 */
     dropRef,
