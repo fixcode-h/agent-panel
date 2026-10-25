@@ -257,6 +257,25 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
+const PANE_MIN = 280
+/** 右栏拖动时中间至少留下的宽度 */
+const PANE_GAP = 320
+/** 功能面板的默认宽度（原来是 min(440px, 100%) 定宽） */
+const REPORT_PANE_DEFAULT = 440
+/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
+const REPORT_PANE_MIN = 320
+
+/**
+ * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
+ * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
+ * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
+ */
+function paneMax(box: HTMLElement | null, min: number) {
+  const row = box?.parentElement?.clientWidth ?? window.innerWidth
+  return Math.max(min, row - PANE_GAP)
+}
+
 /**
  * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
  * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
@@ -397,15 +416,19 @@ export function TaskView({
   }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
+  // 右栏自己这一栏：量拖动上限时以它为基准，不按全局第一个右栏（见 paneMax）
+  const rail = useRef<HTMLElement>(null)
   // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
   const taskPanel = usePaneWidth(
     'task-panel',
     typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
-    280,
-    () => {
-      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-      return Math.max(340, row - 320)
-    },
+    PANE_MIN,
+    () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+  )
+  // 功能面板和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）：
+  // 初值取原来的定宽 440；窗口比 440 + 中间留的量还窄时按上限收着，和原来的 min(440px, 100%) 一致
+  const reportPane = usePaneWidth('report-panel', REPORT_PANE_DEFAULT, REPORT_PANE_MIN, () =>
+    paneMax(rail.current, REPORT_PANE_MIN),
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -1671,6 +1694,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
+                  ref={rail}
                   aria-label={
                     openChild
                       ? childFiles
@@ -1684,12 +1708,15 @@ export function TaskView({
                   }
                   data-task-panel
                   style={{
-                    // 功能面板定宽：放在 AI 分析窗口里时也给对话留出大半
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按原来的默认宽度封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持）
                     width: openChild
                       ? '50%'
-                      : !panel && openRun === 0 && (reportOn || reportCover)
-                        ? 'min(440px, 100%)'
-                        : taskPanel.width,
+                      : !panel && openRun === 0 && reportCover
+                        ? `min(${REPORT_PANE_DEFAULT}px, 100%)`
+                        : !panel && openRun === 0 && reportOn
+                          ? reportPane.width
+                          : taskPanel.width,
                   }}
                   className={cn(
                     'relative shrink-0 flex-col border-l bg-rail',
@@ -1701,6 +1728,11 @@ export function TaskView({
                     (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
+                  {/* 功能面板占右栏（宽屏并排）时也能拖，和文件面板一样记在本机；
+                  窄屏和 pane 里是盖在对话上的抽屉（reportCover），没有并排可拖，那时不挂拖动条 */}
+                  {!panel && reportOn && !reportCover && (
+                    <ResizeHandle pane={reportPane} label={t('拖动调整功能面板的宽度')} className="hidden xl:block" />
+                  )}
                   {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
