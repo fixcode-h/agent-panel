@@ -33,40 +33,79 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     locator
       .evaluate((btn) => getComputedStyle(btn).opacity !== '0' && getComputedStyle(btn).pointerEvents !== 'none')
       .catch(() => false)
-  /** 屏幕上挂了几条、其中几条真的看得见（sonner 藏起来的算没显示） */
+  /**
+   * 屏幕上的条数：
+   * - mounted：DOM 里挂了几个 `[data-sonner-toast]`
+   * - live：真正还在队列里的（排除 `data-removed="true"`）——sonner 关掉一条后要先把它标成 removed、
+   *   播完退出动画才从 DOM 掉，这期间它照样被 querySelectorAll 数进去。拿 mounted 当基准时，
+   *   基准会被抬高到「补位完成后也回不到」的数，判据就永远等不到。
+   * - visible：live 里真的看得见几条（sonner 的 visibleToasts 藏起来的、以及正在淡出的都不算）
+   */
   const rawStat = () =>
     p.evaluate(() => {
       const all = [...document.querySelectorAll('[data-sonner-toast]')]
+      const live = all.filter((el) => el.getAttribute('data-removed') !== 'true')
       return {
         mounted: all.length,
-        visible: all.filter((el) => {
+        live: live.length,
+        visible: live.filter((el) => {
           const s = getComputedStyle(el)
           return el.getAttribute('data-visible') !== 'false' && s.opacity !== '0' && s.visibility !== 'hidden'
         }).length,
       }
     })
   /**
-   * 等屏幕上正好 n 条、并且每条都真的可见。
-   * 不能读一帧就断言：刚递进去的那条在 mounted 之前 opacity 是 0，会被当成「被 sonner 藏了」。
+   * 等屏幕上正好 n 条「还在队列里」的、并且每条都真的可见，且这个状态连续稳住 hold 毫秒。
+   * 不能读一帧就断言：
+   * - 刚递进去的那条在 mounted 之前 opacity 是 0，会被当成「被 sonner 藏了」；
+   * - 正在播退出动画的那条 opacity 在从 1 淡到 0，会被误判成「看得见」（所以按 removed 排除）；
+   * - 4 秒到期是「移除 + 当场补位」两步，中间那段条数也是对的，一帧采样会把半途当成结论。
+   * 采样在页面里用 rAF 自己做（不往 window 上挂状态）。
+   * 外层再套一道脚本侧硬超时：页面不可见、主线程被长任务占住时 rAF 会停，
+   * 光靠页面里的 deadline 等不到——那会把整个分片挂死（page.evaluate 不吃 setDefaultTimeout）。
    */
-  const waitStat = (n) =>
-    p
-      .waitForFunction(
-        (want) => {
-          const all = [...document.querySelectorAll('[data-sonner-toast]')]
-          if (all.length !== want) return false
-          return all.every((el) => {
-            const s = getComputedStyle(el)
-            return el.getAttribute('data-visible') !== 'false' && s.opacity !== '0' && s.visibility !== 'hidden'
-          })
-        },
-        n,
-        { timeout: 4000 },
-      )
-      .then(
-        () => true,
-        () => false,
-      )
+  const waitStat = async (n, timeout = 4000, hold = 200) => {
+    const sampling = p.evaluate(
+      async ({ want, limit, holdMs }) => {
+        const frames = () =>
+          [...document.querySelectorAll('[data-sonner-toast]')].filter(
+            (el) => el.getAttribute('data-removed') !== 'true',
+          )
+        const ok = () => {
+          const live = frames()
+          return (
+            live.length === want &&
+            live.every((el) => {
+              const s = getComputedStyle(el)
+              return el.getAttribute('data-visible') !== 'false' && s.opacity !== '0' && s.visibility !== 'hidden'
+            })
+          )
+        }
+        const startedAt = performance.now()
+        let stableSince = 0
+        for (;;) {
+          const now = performance.now()
+          if (ok()) {
+            if (!stableSince) stableSince = now
+            if (now - stableSince >= holdMs) return true
+          } else stableSince = 0
+          if (now - startedAt >= limit) return false
+          await new Promise((r) => requestAnimationFrame(() => r()))
+        }
+      },
+      { want: n, limit: timeout, holdMs: hold },
+    )
+    // 定时器用完清掉，别让它拖住分片退出
+    let timer
+    const hardStop = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(false), timeout + 1000)
+    })
+    try {
+      return await Promise.race([sampling.catch(() => false), hardStop])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 
   await p.locator('button[aria-label="环境"]').first().click()
   const envTitle = p.getByText('独立分支', { exact: true }).first()
@@ -80,9 +119,51 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
 
   const row = p.locator('[data-worktree-group="live"] [data-worktree-row]').first()
-  /** 弹一条提示：右键那行 → 复制分支名，等它真的进了 toaster */
-  const popOne = async () => {
-    const before = (await rawStat()).mounted
+  /**
+   * 当前「活着的」提示（排除正在退场的）的元素句柄。
+   * 只比条数不够：「一条到期 + 一条新进」也能凑出满额，所以后面要按元素身份比对。
+   * 先一次 evaluate 取存活元素的下标，再按同一个下标从 elementHandles() 里挑——
+   * 逐个句柄 evaluate 是 N 次 round-trip，会把判定链拖长（到期窗口就在这段里）。
+   */
+  const snapshot = async () => {
+    const alive = await p.evaluate(() =>
+      [...document.querySelectorAll('[data-sonner-toast]')].map((el) => el.getAttribute('data-removed') !== 'true'),
+    )
+    const handles = await toasts.elementHandles()
+    return handles.filter((_, i) => alive[i])
+  }
+  /** 点确定 ✓ 的关闭按钮把屏上的提示全部关掉，并等真的空下来（重建干净状态时用） */
+  const clearAll = async () => {
+    for (let round = 0; round < VISIBLE_LIMIT + 4; round += 1) {
+      if (!(await rawStat()).live) break
+      const box = await toasts
+        .first()
+        .boundingBox()
+        .catch(() => null)
+      if (!box) break
+      await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await p.waitForTimeout(120)
+      const closed = await p
+        .evaluate(() => {
+          const btn = document.querySelector('[data-sonner-toast] [data-close-button]')
+          if (!btn) return false
+          btn.click()
+          return true
+        })
+        .catch(() => false)
+      if (!closed) break
+      await p.waitForTimeout(120)
+    }
+    await p.mouse.move(700, 500)
+  }
+  /**
+   * 弹一条提示：右键那行 → 复制分支名。
+   * `expectQueued` 表示屏上已经满额、新的一条应当只排队不进 DOM。
+   * 这个分支不在这里猜：点击后由调用方用 `sameTop` + 元素身份（keptOthers / gotNew）确认，
+   * 真的进 DOM 了就会挤到最上面，调用方一见 topHandle 不是那一照就报错。
+   */
+  const popOne = async ({ expectQueued = false } = {}) => {
+    const before = (await rawStat()).live
     // 环境弹窗可能在上一步被关掉了（点 ✕ 算弹窗外的点击、或按 Enter 关提示时一并关了），先确保它是开的
     if (!(await row.count())) {
       await p
@@ -96,10 +177,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const item = p.getByRole('menuitem', { name: '复制分支名', exact: true }).first()
     await item.waitFor({ timeout: 5000 })
     await item.click()
-    // 满了（VISIBLE_LIMIT 条在屏上）时新的一条会排队，DOM 条数不会增加
-    await p
-      .waitForFunction((n) => document.querySelectorAll('[data-sonner-toast]').length > n, before, { timeout: 2000 })
-      .catch(() => {})
+    // 满额时这一条只排队，不等 DOM 增长（等不到）；调用方用 sameTop 和元素身份确认
+    if (expectQueued) return
+    return p
+      .waitForFunction(
+        (n) =>
+          [...document.querySelectorAll('[data-sonner-toast]')].filter(
+            (el) => el.getAttribute('data-removed') !== 'true',
+          ).length > n,
+        before,
+        { timeout: 2000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
   }
   /** 保证屏幕上有 n 条：不够就补，多了不管（多了说明排队没生效，由排队用例去拦） */
   const ensure = async (n) => {
@@ -234,10 +326,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           })
           if (!shownOnFocus) errors.push('提示：焦点走到 ✕ 上时按钮反而被藏起来了（键盘用户关不掉）')
           await p.keyboard.press('Enter')
+          // 用活着的条数判（不含正在播退出动画的那条），条数只减不增这一步不会假阳性
           const closed = await p
-            .waitForFunction((n) => document.querySelectorAll('[data-sonner-toast]').length < n, before.mounted, {
-              timeout: 3000,
-            })
+            .waitForFunction(
+              (n) =>
+                [...document.querySelectorAll('[data-sonner-toast]')].filter(
+                  (el) => el.getAttribute('data-removed') !== 'true',
+                ).length < n,
+              before.live,
+              { timeout: 3000 },
+            )
             .then(
               () => true,
               () => false,
@@ -250,26 +348,104 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
 
   /* 补位：关掉最上面那一条，排队的第一条要立刻补上来（不是等它自己的计时走完就丢掉） */
-  await ensure(VISIBLE_LIMIT)
   {
     // 上一步用 Tab + Enter 关掉了提示，这次点击落在弹窗外面，Radix 的环境弹窗跟着关了；
     // 后面还要用「复制分支名」弹提示，先把它重新打开
     if (!(await envTitle.isVisible().catch(() => false))) {
       await p.locator('button[aria-label="环境"]').first().click()
       await envTitle.waitFor({ timeout: 5000 }).catch(() => errors.push('提示：重新打开环境弹窗失败'))
-      await ensure(VISIBLE_LIMIT)
     }
-    const before = (await rawStat()).mounted
-    const first = toasts.first()
-    await first.hover()
-    await first.locator('[data-close-button]').click()
-    const refilled = await p
-      .waitForFunction((n) => document.querySelectorAll('[data-sonner-toast]').length === n, before, { timeout: 5000 })
+    /* 先清空再重建满额：前面几轮 ensure() 弹的提示剩余寿命各不相同（各自 4 秒到期），
+       直接拿它们当背景，验证期间会陆续到期、各自触发一次「移除 + 补位」，
+       屏上条数自己就在变，分不清是我们要的那次补位还是别人的计时到了。
+       并发抢 CPU 时这种撞车更容易踩上，就是之前全量跑偶发失败的原因。 */
+    await clearAll()
+    const emptied = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[data-sonner-toast]')].filter(
+            (el) => el.getAttribute('data-removed') !== 'true',
+          ).length === 0,
+        null,
+        { timeout: 5000 },
+      )
       .then(
         () => true,
         () => false,
       )
-    if (!refilled) errors.push('提示-补位：关掉一条之后排队的那条没有补上来')
+    if (!emptied) {
+      errors.push('提示-补位：没法先把屏上的提示清空，后面量不准补位')
+      return
+    }
+    /* 连弹 VISIBLE_LIMIT 条建出满额。它们各自从投递那一刻开始走 4 秒计时，
+       所以后面的判定链必须短：实测这条链约 1s，而 4 条约 3.7s 后陆续到期。
+       不能靠「先 hover 冻住再重建」——popOne 要右键点菜单，鼠标一离开提示区
+       sonner 就把 expanded 置回 false、计时照走（实测：先弹 1 条再 hover 补满，
+       第 1 条仍在 4.0s 到期）。所以靠的不是冻结，而是判定链本身够短。 */
+    for (let i = 0; i < VISIBLE_LIMIT; i += 1) await popOne()
+    const beforeQueue = await snapshot()
+    if (beforeQueue.length !== VISIBLE_LIMIT) {
+      const s = await rawStat()
+      errors.push(`提示-补位：重建满额失败（屏上只有 ${s.live} 条活着的）`)
+      return
+    }
+    /* 再弹一条：屏上已经满额，这一条只进队列、不进 DOM。
+       不单独等「条数没变」再判一次——那是多一段可能撞上到期的窗口；
+       下面按元素身份确认时，如果它其实进了 DOM，gotNew 会多出一条、keptOthers 也会对不上。 */
+    await popOne({ expectQueued: true })
+    /* 用元素句柄盯住被关的那一条：它真的从 DOM 里移除（＝关闭生效、且退出动画已经播完）
+       才是可观测的关闭事实。不能只看条数——刚点下去时它还在、正在播退出动画。
+       先确认最上面那条就是快照里的第 0 个元素：
+       名额上限失效时第 5 条会直接进 DOM、插到最上面，两者就不是同一条了——
+       那样「等被关元素消失」会等到一条永远不会被关的，最后报成「点了关闭也不消失」，
+       掩盖掉真正的原因（排队没生效）。 */
+    const closing = beforeQueue[0]
+    const topHandle = await toasts.first().elementHandle()
+    const sameTop = topHandle && closing ? await p.evaluate(([a, b]) => a === b, [topHandle, closing]) : false
+    if (!sameTop) {
+      const st = await rawStat()
+      errors.push(`提示-补位：满额后再弹一条，它直接进了界面并排到最上面（现在 ${st.live} 条，排队没生效）`)
+      return
+    }
+    await toasts.first().hover()
+    await toasts.first().locator('[data-close-button]').click()
+    const removed = closing
+      ? await p
+          .waitForFunction((el) => !el.isConnected, closing, { timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+      : false
+    if (!removed) {
+      errors.push('提示-补位：点了关闭按钮，被关的那条一直没从屏幕上移除')
+      return
+    }
+    /* 关闭生效后屏上要重新满额，而且换掉的必须只有我们关的那一条：
+       - 其余那几条句柄仍在（keptOthers）＝ 没有别的提示到期
+       - 出现了一条新的（gotNew）＝ 排队的那条真的补上来了
+       比对要在页面里做：elementHandles() 每次返回新的包装对象，Node 侧 === / includes 永远不相等。 */
+    const refilled = await waitStat(VISIBLE_LIMIT)
+    const { keptOthers, gotNew } = await p.evaluate(
+      ({ before, closingEl }) => {
+        const now = [...document.querySelectorAll('[data-sonner-toast]')].filter(
+          (el) => el.getAttribute('data-removed') !== 'true',
+        )
+        return {
+          keptOthers: before.filter((el) => el !== closingEl).every((el) => now.includes(el)),
+          gotNew: now.some((el) => !before.includes(el)),
+        }
+      },
+      { before: beforeQueue, closingEl: closing },
+    )
+    if (!refilled || !keptOthers || !gotNew) {
+      const s = await rawStat()
+      errors.push(
+        `提示-补位：关掉一条之后排队的那条没有补上来（屏上 ${s.live} 条活着的，应当是 ${VISIBLE_LIMIT} 条；` +
+          `其余几条原样保留 ${keptOthers}，出现新的一条 ${gotNew}）`,
+      )
+    }
+    await p.mouse.move(700, 500)
     await check(p, '提示-排队补位')
   }
 
@@ -321,7 +497,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => {})
     await p.mouse.move(700, 500)
     await p.waitForTimeout(600)
-    const left = (await rawStat()).mounted
+    const left = (await rawStat()).live
     if (left) errors.push(`提示-清空：关掉全部之后又冒出来 ${left} 条（排队没清）`)
     await check(p, '提示-关掉全部不留残余')
   }
