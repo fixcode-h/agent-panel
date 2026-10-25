@@ -603,6 +603,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '接口返回 {status}：{detail}': 'The API returned {status}: {detail}',
   '接口没有返回模型列表，请自己填写': 'The API returned no model list; enter models yourself',
   先填密钥: 'Enter the API key first',
+  先选一个模型: 'Pick a model first',
+  '模型 {model} 可用': 'Model {model} works',
+  '连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）':
+    'Connection works — {n} models available (no model selected, so only the connection was verified)',
+  '模型 {model} 在 {seconds} 秒内没有响应': 'Model {model} did not respond within {seconds} seconds',
+  '接口返回的内容不是模型回复：{detail}': 'The API did not return a model reply: {detail}',
+  测试连接用的模型: 'Model to test',
+  '选中哪个模型，点「测试连接」就用它真的发一次请求':
+    'The selected model is the one “Test connection” actually sends a request with',
+  '先点「从接口获取」或手动填写模型': 'Click “Fetch from API” first, or type a model name',
   这个厂家不支持余额查询: "This vendor doesn't support balance checks",
   接口没有返回余额信息: 'The API returned no balance information',
   '这个 Agent 没有账号设置': 'This agent has no account settings',
