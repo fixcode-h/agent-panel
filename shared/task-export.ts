@@ -8,7 +8,7 @@
  */
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
-import { includedAgents } from './agent-role.ts'
+import { composeRole, includedAgents } from './agent-role.ts'
 import { runTree } from './run-usage.ts'
 import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
@@ -910,8 +910,18 @@ const TURN_END_TEXT: Record<keyof TurnEndCounts, string> = {
   unknown: '原因没记录',
 }
 
+/**
+ * AI 分析只分析一个子任务时传它：报告和提示词都收窄到这一步。
+ * stepId 是 task.steps 里的 id（形如 @chat/sub/h1、n1/review.2/n5），消息按它和它自己派出的下级（`<id>/...`）取，
+ * 和子任务窗口（HelperCards 的 msgs）同一个口径。
+ */
+export interface HelperScope {
+  stepId: string
+}
+
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
-export function taskReport(b: TaskExport, maxOutput = 4000) {
+export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope) {
+  if (scope) return helperReport(b, maxOutput, scope)
   const tk = b.task
   // 旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告
   const computed = taskStats({ ...tk, id: '', projectId: '' } as unknown as Task)
@@ -1064,7 +1074,40 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
       if (a.instructions.trim()) lines.push('角色设定：', clip(a.instructions.trim(), 3000))
     }
   }
-  lines.push('', '## 执行过程')
+  lines.push('', '## 执行过程', ...messageLines(tk, agentName, maxOutput, () => true))
+  const outs = tk.steps.filter((s) => s.output.trim())
+  if (outs.length) {
+    lines.push('', '## 节点的最终输出（交给下游的内容）')
+    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）。
+    // 这里按 maxOutput 再截一次正好切掉那句去向说明，分析时既看不到全文也不知道去哪读，所以原样输出
+    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, s.output.trim())
+  }
+  // 改动的文件按节点自己的记录列：任务级 changes 是「项目目录相对任务开始时」的差额，
+  // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出
+  const mine = tk.steps.filter((s) => s.changes.length)
+  if (mine.length) {
+    lines.push('', '## 改动的文件（按节点记录）', '（只列 CLI 报告的文件改动，不是这个节点期间工作区的全部变化）')
+    for (const s of mine)
+      lines.push('', `### ${s.title}（${s.id}）`, ...s.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
+  } else if (tk.changes.length) {
+    lines.push(
+      '',
+      '## 改动的文件',
+      '（任务级统计：项目目录相对任务开始时全部有变化的文件；同一工作区里别的任务改的文件也会出现在这里）',
+      ...tk.changes.slice(0, 80).map((c) => `- ${c.path} +${c.add} -${c.del}`),
+    )
+  }
+  return lines.join('\n')
+}
+
+/** 报告里每条消息的 Markdown 行（整体报告和子任务报告共用，保证同一个时间戳和间隔口径） */
+function messageLines(
+  tk: ExportedTask,
+  agentName: (id: string) => string,
+  maxOutput: number,
+  keep: (m: ExportedTask['messages'][number]) => boolean,
+) {
+  const lines: string[] = []
   // 每条带上时间：长任务「后面越来越慢」只能靠时间戳定位从哪一步开始变慢
   const at = (iso: string) => {
     if (!iso) return ''
@@ -1076,6 +1119,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   let step = ''
   let last = ''
   for (const m of tk.messages) {
+    if (!keep(m)) continue
     if (m.role === 'system' && !m.error && !m.answers) continue
     if (m.step !== step) {
       step = m.step
@@ -1124,37 +1168,95 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     const limit = m.role === 'user' ? Infinity : maxOutput
     if (body || tools) lines.push(`**${who}**：${stamp}${clip(body, limit)}${tools}${detail}`)
   }
-  const outs = tk.steps.filter((s) => s.output.trim())
-  if (outs.length) {
-    lines.push('', '## 节点的最终输出（交给下游的内容）')
-    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）。
-    // 这里按 maxOutput 再截一次正好切掉那句去向说明，分析时既看不到全文也不知道去哪读，所以原样输出
-    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, s.output.trim())
+  return lines
+}
+
+/**
+ * 一个子任务的报告：只看这一步。带上它的耗时/等待/用量、它所属 Agent 的完整角色设定、派它的要求
+ * （spawn_agents 的 instructions）、同批兄弟子任务、上下文那一轮在干什么，以及它自己的对话过程。
+ * 子任务慢经常是“派它的那一步要求没写清”或“面板在等它”的事，所以上下文只给要不要，不把父对话全部消息铺进去。
+ */
+export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScope) {
+  const tk = b.task
+  const id = scope.stepId
+  const step = tk.steps.find((s) => s.id === id)
+  const ownMsg = (s: string) => s === id || s.startsWith(`${id}/`)
+  // 它自己又派出去的（id 前缀），以及同一批一起派出的兄弟（同一条 spawn_agents 系统消息里的其它 id）
+  // 它自己又派出去的子任务：子任务不能再派子任务（见 engine 的 spawn），只有旧数据或手动改过的记录会有
+  const spawn = [...tk.messages].reverse().find((m) => m.spawned?.includes(id))
+  const siblings = (spawn?.spawned ?? [])
+    .filter((x: string) => x !== id && !ownMsg(x))
+    .map((x: string) => tk.steps.find((s) => s.id === x))
+    .filter((s): s is TaskStep => !!s)
+  const agentName = (aid: string) => (aid ? (b.agents.find((a) => a.id === aid)?.name ?? aid) : '主 Agent')
+  const lines: string[] = [`# 子任务记录：${step?.title ?? id}（${id}）`]
+  if (!step) {
+    // 记录里找不到这一步（旧导出、id 写错）：不要给一份空报告让 AI 凭空猜，直接写清楚
+    lines.push('', '这条记录里找不到这个子任务：它的节点已经从记录里去掉了。可以分析父对话，但看不到它自己的过程。')
+    return lines.join('\n')
   }
-  // 改动的文件按节点自己的记录列：任务级 changes 是「项目目录相对任务开始时」的差额，
-  // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出
-  const mine = tk.steps.filter((s) => s.changes.length)
-  if (mine.length) {
-    lines.push('', '## 改动的文件（按节点记录）', '（只列 CLI 报告的文件改动，不是这个节点期间工作区的全部变化）')
-    for (const s of mine)
-      lines.push('', `### ${s.title}（${s.id}）`, ...s.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
-  } else if (tk.changes.length) {
+  const now = Date.now()
+  const u = stepUsage(step)
+  const parent = tk.steps.find((s) => s.id === step.parentId)
+  lines.push(
+    `所属：${parent ? `父节点「${parent.title}」（${parent.id}）` : '对话本身'}　状态：${step.status}${step.interrupted ? '（被打断过，每次中断前的执行时间都算在耗时里）' : ''}　开始：${localTime(step.startedAt)}${step.endedAt ? `　结束：${localTime(step.endedAt)}` : ''}`,
+    '',
+    '## 统计',
+    `- 耗时 ${fmtDuration(stepMs(step, now))}（其中等用户确认/提问 ${fmtDuration(waitDuration(step, now))}）；续接时接着之前的会话，之前几次中断前的时间也在里面`,
+    `- Token：输入 ${fmtK(u.inputTokens)}（缓存命中 ${fmtK(u.cacheReadTokens)}，${pct(cacheHitRate(u))}），输出 ${fmtK(u.outputTokens)}，费用 $${u.costUsd.toFixed(3)}`,
+    `- 执行这一轮的父任务「${tk.title}」（${tk.mode === 'workflow' ? '工作流执行' : '对话'}，状态 ${tk.status}）：累计执行 ${fmtDuration(taskStats({ ...tk, id: '', projectId: '' } as unknown as Task).durationMs)}；这一轮开始到现在的跨度 ${fmtDuration(recordSpan(tk, now))}`,
+    `- 同一批一起派出的子任务 ${siblings.length} 个：${siblings.length ? siblings.map((s) => `「${s.title}」（${s.id}，${s.status}，耗时 ${fmtDuration(stepMs(s, now))}）`).join('、') : '没有'}`,
+  )
+  const a = b.agents.find((x) => x.id === step.agentId)
+  if (a) {
     lines.push(
       '',
-      '## 改动的文件',
-      '（任务级统计：项目目录相对任务开始时全部有变化的文件；同一工作区里别的任务改的文件也会出现在这里）',
-      ...tk.changes.slice(0, 80).map((c) => `- ${c.path} +${c.add} -${c.del}`),
+      `## 派给它的角色：${a.name}（agent id: ${a.id}）`,
+      `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${a.skills.length ? `　Skill：${a.skills.join('、')}` : ''}`,
     )
+    if (a.description) lines.push(a.description)
+    // 拼好的实际生效设定（自身设定 + 引入的 Agent + 参数 + Skill）：内置角色几乎都引入「通用约束」，
+    // 只看 instructions 字段会漏掉执行纪律、安全边界这些能判定“越界”的要求，而判断角色符合度正需要它们
+    // 子任务不带参数（见 server/exec/runner.ts 的 composeRole 调用：带 step 时传 {}），参数取 Agent 自己的默认值；
+    // Skill 槽要透传，否则 skills 里写 {{槽名}} 的项会被 fillSkills 滤掉，报告里的 Skill 比 CLI 实际拿到的少
+    const role = composeRole(a, b.agents, {}, tk.skillSlots ?? {}).trim()
+    lines.push(
+      '角色设定（拼好的实际生效内容）：',
+      role ? clip(role, 12_000) : '（这个角色没有写角色设定，直接用默认 CLI）',
+    )
+    if (a.common || a.origin === 'builtin:helper')
+      lines.push(`（这是通用角色，派它的对话点名要了「${a.name}」或者用了默认的「子任务」角色）`)
   }
+  // 派给它的要求原文（spawn_agents 的 instructions）：父对话那条系统消息里只有标题列表，不能拿来代替。
+  // 用 ?? '' 兑一下：演示版的任务不过 schema（旧 localStorage 里的 step 没有 brief），直接 .trim() 会抛 TypeError
+  const brief = (step.brief ?? '').trim()
+  if (brief) lines.push('', '## 派给它的要求（原文）', brief)
+  else if (spawn)
+    lines.push(
+      '',
+      '## 派给它的要求',
+      // 空有两种原因：旧记录没保存，或者派它的对话本来只写了标题没写要求（spawn_agents 允许只给 title）。
+      // 只写「旧记录」会把新数据说成面板丢数据，读的人（和 AI）会去让用户补一个本来就没漏的要求
+      '（这条记录里没有派它时的要求原文：旧记录没有保存，或者派它的对话本来就只写了标题没写要求。下面是派出那一刻父对话记的标题列表，不是发给它的要求；它实际收到的要求只能从下面的对话过程和上面的角色设定推断）',
+      spawn.text.trim(),
+    )
+  lines.push('', '## 它的对话过程', ...messageLines(tk, agentName, maxOutput, (m) => ownMsg(m.step)))
+  if (!brief && !spawn)
+    lines.push('', '_（记录里既没有「派它的要求」也没有派出记录：只能从下面的对话过程和角色设定推断它收到了什么。）_')
+  if (step.output.trim()) lines.push('', '## 它交回的结果', step.output.trim())
+  if (step.changes.length)
+    lines.push('', '## 它改过的文件', ...step.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
+  const failed = tk.messages.filter((m) => m.error && ownMsg(m.step))
+  if (failed.length) lines.push('', '## 它遇到的报错', ...failed.map((m) => `- ${clip(m.text.trim(), 600)}`))
   return lines.join('\n')
 }
 
 /** 多次执行合成一份报告（分析一个工作流最近几次的执行） */
-export function analysisReport(bundles: TaskExport[], max = 120_000) {
+export function analysisReport(bundles: TaskExport[], max = 120_000, scope?: HelperScope) {
   const per = Math.floor(max / Math.max(1, bundles.length))
   return bundles
     .map((b, i) => {
-      const r = taskReport(b)
+      const r = taskReport(b, undefined, scope)
       const head = bundles.length > 1 ? `<!-- 第 ${i + 1} 次执行 -->\n` : ''
       return (
         head +
@@ -1175,8 +1277,27 @@ const FRAMEWORK_MAP = `- shared/engine.ts：工作流执行引擎（节点调度
 - server/exec/*.ts：各 CLI 的输出解析和参数
 - shared/task.ts：计时、等待时间、用量统计`
 
+/** 分析一个子任务时要回答的四类问题：耗时、角色符合度、优化空间、面板框架 */
+const HELPER_QUESTIONS = `## 要回答的问题
+只看这一个子任务（不要去分析整条对话或其它子任务），按下面四类给结论，每类都要有依据（引用记录里的原话、命令、时间或数字）：
+1. 耗时：花了多久、时间花在哪（逐步列出耗时最长的几件工具调用和它们各用多久，包括重复的搜代码、读文件、反复跑同一个命令、在错的目录里试）；
+   等用户、等模型、等命令各占了多少，有没有可以换成后台、合并成一次或者直接不做的。
+2. 是否符合角色：它做的事和附件里那段角色设定（拼好的实际生效内容，含引入的 Agent）是否一致——有没有干超出角色的事（该只读的去改了文件、该改造却只给了结论、被要求交回证据却没有），
+   有没有漏掉角色设定里要求的步骤（比如先查模块 bugs.md、先跑快速检查）；附件里有「派给它的要求（原文）」时，逐条对它有没有做到、有没有理解错；
+   只有派出记录、没有要求原文时，不要拿那条标题列表当要求去评，改成从它的对话过程和角色设定推断。
+3. 优化空间：给派它的那段要求（要求原文）和这个角色设定具体的改法：怎么拆步、该补什么约束、该去掉什么多余的话、工具怎么用、哪些调用可以合并或减少。
+   要能直接拿去用，改法写成改好后的完整句子，不要只说「建议更明确」；原文缺失或本来就只给了标题时，只给角色设定和过程上的建议，并写清是「没写要求」还是「记录里没保存」，不要当成同一种问题。
+4. 面板框架：有没有看起来是面板（子任务调度、CLI 调用、把手、计时、“结果交回派它的对话”）本身的问题，例如它明明做完了却一直显示执行中、结果没交回、
+   耗时把等待也算进去、父子任务的时间对不上。面板代码的位置：
+${FRAMEWORK_MAP}
+   只写成发现，写清现象、依据和可能的位置（文件路径，能确定时带行号），不要去改面板代码。
+
+不带任何工作流修改建议块（这个分析只给结论）。`
+
 /** 交给 Agent 的分析要求 */
-export function analysisPrompt(bundles: TaskExport[], focus = '') {
+export function analysisPrompt(bundles: TaskExport[], focus = '', scope?: HelperScope) {
+  // 子任务范围只用得到那一条记录，先分出去：下面两轮遍历（flows、agents）只是整体分析要的
+  if (scope) return helperPrompt(bundles, focus, scope)
   const flows = new Map<string, Workflow>()
   for (const b of bundles) for (const w of b.task.workflows) if (!flows.has(w.id)) flows.set(w.id, w)
   const agents = new Map<string, Agent>()
@@ -1240,6 +1361,21 @@ ${FRAMEWORK_MAP}
 
 ## 可以修改的对象
 ${targets.join('\n') || '（没有工作流，只能给 Agent 的建议）'}`
+}
+
+/** 子任务分析的要求：只看这一步，四类问题，不给工作流修改块 */
+function helperPrompt(bundles: TaskExport[], focus: string, scope: HelperScope) {
+  const tk = bundles[0]?.task
+  const step = tk?.steps.find((s) => s.id === scope.stepId)
+  const what = step ? `「${step.title}」（${step.id}，状态 ${step.status}）` : scope.stepId
+  const who = tk ? (tk.mode === 'workflow' ? `工作流执行「${tk.title}」` : `对话「${tk.title}」`) : ''
+  // 还在跑的那一步只能分析到目前为止：不写清楚，AI 会把「还没交回结果」当成「子任务没做」
+  const running = step?.status === 'running' || step?.status === 'pending'
+  return `分析附件里${who}派出的一个子任务${what}。这次只分析这一个子任务，不看其它子任务和整条业务交付的质量。只分析，不要修改任何文件。
+${running ? '\n注意：这个子任务还没有结束（或还在排队），记录是到导出这一刻的快照。「还没交回结果」本身不是问题，不要当成它没做完。\n' : ''}
+${promptLangRules()}
+${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
+${HELPER_QUESTIONS}`
 }
 
 // ---- 修改建议 ----

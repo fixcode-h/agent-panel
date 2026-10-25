@@ -1232,6 +1232,12 @@ export const TaskStep = z.object({
   snapshot: z.string().default(''),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
+  /**
+   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。
+   * 父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；
+   * 旧记录没有这个字段，报告里如实说明看不到
+   */
+  brief: z.string().default(''),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
@@ -1338,6 +1344,8 @@ export const PlanWait = z.object({
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
+  /** 开始等的时间（子对话是它的创建时间）：步骤用时从真正开工算起。旧数据没有 */
+  at: z.string().optional(),
 })
 export type PlanWait = z.infer<typeof PlanWait>
 
@@ -1917,6 +1925,8 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
+  developerMode: z.boolean().catch(false).default(false),
   /**
    * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
    * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来

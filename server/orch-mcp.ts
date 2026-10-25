@@ -755,7 +755,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'set_plan': {
-      const r = o.setPlan({
+      const r = await o.setPlan({
         title: str(a?.title),
         steps: Array.isArray(a?.steps) ? a.steps : [],
         partial: a?.partial === true,

@@ -197,7 +197,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .map((row) => {
             // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
             const title = [...row.querySelectorAll('button')].find((b) =>
-              // 「打开子对话」只有标题按钮有；切换下拉的 title 是「切换子对话」，不能选中它
               (b.getAttribute('title') || '').includes('打开子对话'),
             )
             // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
@@ -315,47 +314,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           await check(p, '子对话-整段文本可点')
         }
       }
-      // 标题左边的切换下拉：列出全部子对话，当前项带选中标记，点另一项就切换
+      // 运行区：有几个子对话就列几行，行前不再放切换下拉（右栏标题旁的切换下拉照旧）
       {
-        const trigger = p.locator('[aria-label="运行中"] button[aria-label="切换子对话"]').first()
-        if (!(await trigger.count())) errors.push('运行区：子对话行左边没有切换子对话的按钮')
-        else {
-          await trigger.click()
-          await p
-            .locator('[role="menu"] [data-child-item]')
-            .first()
-            .waitFor({ timeout: 3000 })
-            .catch(() => {})
-          const count = await p.locator('[role="menu"] [data-child-item]').count()
-          if (count < 2) errors.push(`切换子对话：下拉里只有 ${count} 项，应该列出全部子对话`)
-          if (!(await p.locator('[role="menu"] [data-current]').count()))
-            errors.push('切换子对话：下拉里没有标出当前打开的那一项')
-          await check(p, '子对话-切换下拉')
-          const next = p.locator('[role="menu"] [data-child-item]:not([data-current])').first()
-          const title = await next
-            .evaluate((el) => (el.querySelector('span.truncate')?.textContent || '').trim())
-            .catch(() => '')
-          if (!title) errors.push('切换子对话：下拉里没有可以切换的另一项')
-          else {
-            await next.click()
-            const switched = await p
-              .waitForFunction(
-                (name) => {
-                  const menu = document.querySelector('[role="menu"]')
-                  const pane = document.querySelector('aside[aria-label="子对话"]')
-                  return !menu && !!pane && (pane.innerText || '').includes(name)
-                },
-                title,
-                { timeout: 3000 },
-              )
-              .then(
-                () => true,
-                () => false,
-              )
-            if (!switched) errors.push(`切换子对话：选了「${title}」后下拉没关或右栏没有切换过去`)
-            await check(p, '子对话-切换下拉-打开')
-          }
-        }
+        if (await p.locator('[aria-label="运行中"] button[aria-label="切换子对话"]').count())
+          errors.push('运行区：子对话行前面不该再有切换子对话的下拉')
+        const kidRows = await p.evaluate(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((b) =>
+              [...b.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+            ).length,
+        )
+        if (kidRows < 2) errors.push(`运行区：在跑的子对话应该一个一行，现在只有 ${kidRows} 行`)
       }
       // 右栏子对话标题行左侧的切换下拉：和运行区那处一致，Esc 关、鼠标和键盘都要真的切过去
       {
@@ -427,9 +396,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           // 键盘：方向键走到一个不是当前项的条目，回车切换
           const nowTitle = await paneTitle()
           await openMenu()
+          // 焦点落进菜单再按键：菜单刚挂上时焦点还在按钮上，按下去的方向键被吞掉（CI 上偶发）
+          await p
+            .waitForFunction(() => !!document.activeElement?.closest('[role="menu"]'), null, { timeout: 3000 })
+            .catch(() => {})
           let picked = ''
           for (let i = 0; i < 12 && !picked; i++) {
             await p.keyboard.press('ArrowDown')
+            // 高亮是按键后下一帧才标上的：等到有一项高亮再读，不然读到的还是按键前的状态
+            await p
+              .waitForFunction(
+                () => !!document.querySelector('[role="menu"] [data-child-item][data-highlighted]'),
+                null,
+                {
+                  timeout: 1000,
+                },
+              )
+              .catch(() => {})
             const hi = (await menuItems()).find((x) => x.highlighted)
             if (hi && hi.title !== nowTitle) picked = hi.title
           }
@@ -624,14 +607,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const midWide = await measureNarrow()
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
-    if (
-      !(await p.evaluate(() =>
-        [...document.querySelectorAll('[aria-label="运行中"] button[aria-label="切换子对话"]')].some(
-          (b) => b.getBoundingClientRect().width > 0,
-        ),
-      ))
-    )
-      errors.push('运行区（1024px）：行够宽，左边的切换下拉却不见了')
     await check(p, '子对话-运行区1024')
     await p.setViewportSize({ width: 1440, height: 900 })
     await p.reload()
@@ -850,6 +825,67 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      // 子任务窗口头部的「AI 分析」：弹的是执行记录那一套弹窗（同样的 focus 输入和「开始分析」），
+      // 只把范围收窄到这一步。按弹窗作用域找，页面上别处（内存曲线那边）也有「AI 分析」
+      const win = p.getByRole('dialog').last()
+      const analyzeBtn = win.getByRole('button', { name: 'AI 分析', exact: true })
+      if (!(await analyzeBtn.count())) errors.push('子任务-窗口：头部没有「AI 分析」按钮')
+      else {
+        await analyzeBtn.first().click()
+        const dlg = p.getByRole('dialog').last()
+        await dlg
+          .getByRole('button', { name: '开始分析' })
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('子任务-窗口：点 AI 分析没有弹出分析弹窗'))
+        const dialogText = (await dlg.textContent().catch(() => '')) ?? ''
+        if (!dialogText.includes('AI 分析这个子任务'))
+          errors.push(`子任务-窗口：弹窗标题不是「AI 分析这个子任务」（当前：${dialogText.slice(0, 60)}）`)
+        if (!dialogText.includes('只读这一个子任务')) errors.push('子任务-窗口：弹窗里没有说明只分析这一步')
+        await check(p, '子任务-窗口-分析弹窗')
+        const before = p.url()
+        const known = await p.evaluate(
+          (k) => (JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []).map((x) => x.id),
+          'agent-panel-demo-v3',
+        )
+        await dlg.getByRole('button', { name: '开始分析' }).click()
+        await p
+          .getByText('优化空间', { exact: false })
+          .first()
+          .waitFor({ timeout: 20000 })
+          .catch(() => errors.push('子任务-窗口：开始分析后没有新建分析对话'))
+        await check(p, '子任务-窗口-分析结果', ['耗时', '是否符合角色', '优化空间'])
+        // 建好后自动跳到新建的分析对话（和现有的 AI 分析一样）。演示版是 hash 路由，pathname 恒为 /，看整条 URL
+        if (p.url() === before) errors.push(`子任务-窗口：分析对话建完后没跳过去（URL 还是 ${before}）`)
+        // 回到购物车那个任务页接着核对后面的项：分析对话同样有「Token 用量」，backToTask() 会以为已经在任务页。
+        // 先把刚建的分析对话从演示数据里去掉，免得后面按文字找元素时命中它的内容。
+        // 要等它真的跑完再改：演示版模块级的 db 还是旧对象，它每 800ms 的 changed 和 finally 里的 persist()
+        // 会把含分析对话的 db 写回 localStorage，改早了会被覆盖
+        await p
+          .waitForFunction(
+            ([k, ids]) => {
+              const db = JSON.parse(localStorage.getItem(k) ?? '{"tasks":[]}')
+              return !(db.tasks ?? []).some((x) => ids.includes(x.id) && x.status === 'running')
+            },
+            ['agent-panel-demo-v3', known],
+            { timeout: 30000 },
+          )
+          .catch(() => errors.push('子任务-窗口：分析对话一直没跑完，后面的核对会受它干扰'))
+        await p.evaluate(
+          ([k, ids]) => {
+            const db = JSON.parse(localStorage.getItem(k))
+            db.tasks = db.tasks.filter((x) => ids.includes(x.id))
+            localStorage.setItem(k, JSON.stringify(db))
+          },
+          ['agent-panel-demo-v3', known],
+        )
+        await p.goto(base)
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p
+          .getByTitle('Token 用量')
+          .first()
+          .waitFor({ timeout: 10000 })
+          .catch(() => {})
+      }
       await p.keyboard.press('Escape')
       await closed()
       // 执行中的子任务只在按钮上标 x/y，不再在旁边排成「标题 + 耗时」的运行卡片（那种卡片只给子对话）
