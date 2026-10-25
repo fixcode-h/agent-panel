@@ -35,6 +35,26 @@ async function files(rel: string): Promise<{ rel: string; size: number }[]> {
 const kindFiles = async (k: DataKind) => (await Promise.all(PATHS[k].map(files))).flat()
 const toPosix = (p: string) => p.split(path.sep).join('/')
 
+/**
+ * 读出要导出的文件（base64）。导出不等任务停下：列出文件和读文件之间，任务可能正好在写
+ * （writeJsonAtomic 的 .tmp 改名掉）或被删。半截的 .tmp 本来就不该进备份；读的时候已经没了的跳过、
+ * 列进 skipped，不让整个导出 500，也不静默丢。read 可替换，测试用它稳定复现「读的时候没了」
+ */
+export async function readBackupFiles(rels: string[], read: (full: string) => Promise<Buffer> = readFile) {
+  const files: Record<string, string> = {}
+  const skipped: string[] = []
+  for (const rel of rels) {
+    if (rel.endsWith('.tmp')) continue
+    try {
+      files[toPosix(rel)] = (await read(path.join(DATA_DIR, rel))).toString('base64')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      skipped.push(toPosix(rel))
+    }
+  }
+  return { files, skipped }
+}
+
 /** 导出时去掉隧道 token：它相当于让别人接管这条隧道，不该跟着备份文件传出去 */
 function withoutTunnelToken(b64: string) {
   try {
@@ -54,6 +74,8 @@ const Backup = z.object({
   exportedAt: z.string(),
   kinds: z.array(z.enum(DATA_KINDS.map((k) => k.id) as [DataKind, ...DataKind[]])),
   files: z.record(z.string(), z.string()),
+  /** 导出时读到一半就没了的文件（任务正在写或刚删）：没放进 files，导出后提示一下 */
+  skipped: z.array(z.string()).optional(),
 })
 
 /** 备份里的路径只能落在对应类别的目录里，不能用 .. 写到数据目录外面 */
@@ -139,10 +161,9 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
       .split(',')
       .filter((k): k is DataKind => DATA_KINDS.some((x) => x.id === k && x.id !== 'cache'))
     if (!kinds.length) return c.json({ error: t('请选择要导出的数据') }, 400)
-    const out: Record<string, string> = {}
-    for (const k of kinds)
-      for (const f of await kindFiles(k))
-        out[toPosix(f.rel)] = (await readFile(path.join(DATA_DIR, f.rel))).toString('base64')
+    const { files: out, skipped } = await readBackupFiles(
+      (await Promise.all(kinds.map(kindFiles))).flat().map((f) => f.rel),
+    )
     if (out['settings.json']) out['settings.json'] = withoutTunnelToken(out['settings.json'])
     const backup: z.infer<typeof Backup> = {
       app: 'agent-panel',
@@ -150,6 +171,7 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
       exportedAt: new Date().toISOString(),
       kinds,
       files: out,
+      ...(skipped.length && { skipped }),
     }
     return c.json(backup)
   })

@@ -105,7 +105,9 @@ let policy = {}
 const steered = []
 // 本轮已经处理过的收尾请求：同一个【收尾请求】既在本轮 input 里、又当插话进来时只合一次
 let tookWrap = new Set()
-// 本轮收到的插话条数：HOLD_STEER 用它判断「这一轮真的等到插话了」。
+// 本轮收到的、带【收尾请求】的插话条数：HOLD_STEER 用它判断「这一轮真的等到收尾请求的插话了」。
+// 只数带收尾请求的：别的插话（子对话状态上报、peer 消息）先到时，不能把这一轮提前放掉，
+// 否则收尾请求又退化成新一轮 input，同步点就不准了。
 // 必须随轮清空（见 startTurn）：steered 和它都是跨轮累积的，保活进程第二轮再带 HOLD_STEER 时
 // 不清零就会「不等直接结束」，又变回这个场景要防的假同步
 let steerCount = 0
@@ -123,7 +125,7 @@ function startTurn(text) {
  */
 async function takeSteer(text) {
   steered.push(text)
-  steerCount++
+  if (wrapRequestIds(text).length) steerCount++
   // 等到插话的那一刻就记下来：这一轮随后会被收口停掉，循环结束之后的记录来不及写（用例会看不到）。
   // kid 是插话里带的子对话 id，用例据此确认记的是本次那一轮
   if (process.env.FAKE_CLI_LOG && input.includes('HOLD_STEER'))
@@ -922,7 +924,7 @@ const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要�
 // 面板重试时会带上「上一次请求没有返回任何内容」，那时正常回复
 const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上一次请求没有返回任何内容')
 
-// HOLD_STEER：这一轮不靠固定时长模拟「在忙」，而是一直挂到真的收到插话（或超时）才继续。
+// HOLD_STEER：这一轮不靠固定时长模拟「在忙」，而是一直挂到真的收到带【收尾请求】的插话（或超时）才继续。
 // 用 SLOW 那段固定时长当同步点时，子对话跑完 begin_edit、评审、再请收尾往往已经超过了那个窗口，
 // 收尾请求就退化成普通新一轮 input，插话那条路根本没被跑到（用例假通过）。
 // 等待期间必须一直有输出：面板按「交出消息后多久没有任何输出」判卡住（AGENT_PANEL_NO_RESPONSE_MS，e2e 里 2 秒），
@@ -931,7 +933,8 @@ const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上�
 // 保活输出只实现了 claude（thinking 事件）：别家 CLI 的保活写法不同，要拿 HOLD_STEER 测别的 CLI 得先补上。
 if (input.includes('HOLD_STEER')) {
   const t0 = Date.now()
-  const holdMs = Number(process.env.FAKE_HOLD_STEER_MS) || 30000
+  // 上限和用例等子对话合回的 60 秒对齐：CI 上 10 个分片并行时，子对话走到 submit_merge 可能超过 30 秒
+  const holdMs = Number(process.env.FAKE_HOLD_STEER_MS) || 60000
   while (!interrupted && steerCount === 0 && Date.now() - t0 < holdMs) {
     await sleep(1000)
     if (kind === 'claude')
