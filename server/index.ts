@@ -80,7 +80,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
-import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
+import { builtinDefinition, builtinKey, isBuiltinAgent, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
 import {
   builtinProjectCategories,
   isBuiltinProjectCategory,
@@ -188,6 +188,12 @@ async function ensureProjectWorkflows() {
   if (seeded.seeded.join() !== before.join()) await saveSeededWorkflows(seeded.seeded)
   if (seeded.created.length) log.info('workflow', '已安装自带工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
+  if (seeded.upgradedAgents.length)
+    log.info('agent', '内置角色已换成当前版本', { list: seeded.upgradedAgents.map((a) => a.name) })
+  if (seeded.replaced.length) {
+    const file = await backupRemovedAgents(seeded.replaced, '内置角色换成了新版本，这是覆盖前你改过的版本')
+    log.info('agent', '内置角色里你改过的设定已备份后覆盖', { list: seeded.replaced.map((a) => a.name), file })
+  }
   await retireWorkflows()
   await pruneMerged()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
@@ -531,8 +537,14 @@ app.get('/agents', async (c) => c.json(await agents.list()))
 
 app.post('/agents', async (c) => {
   const r = await parseAgent(await c.req.json())
-  // 复制出来的必备角色是普通角色：来源去掉，不然会被当成第二个必备角色
-  if (r.data && isCoreAgent(r.data)) r.data.origin = ''
+  // 复制出来的内置角色是普通角色：本机已经有这个来源的就去掉来源，不然会被当成第二个内置角色、跟着内置定义被覆盖。
+  // 「内置 Agent」里添加的（本机还没有）保留来源
+  if (
+    r.data &&
+    isBuiltinAgent(r.data) &&
+    (isCoreAgent(r.data) || (await agents.list()).some((a) => a.origin === r.data!.origin))
+  )
+    r.data.origin = ''
   return r.error ? bad(c, r.error) : c.json(await agents.create(r.data!), 201)
 })
 
@@ -540,12 +552,17 @@ app.put('/agents/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseAgent(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
-  // 必备角色只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）
+  // 内置角色（含必备角色）只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）；
+  // 其他内置角色还能改分类、标签和启用开关，必备角色的分类固定
   const before = await agents.get(id)
-  const core = coreKey(before ?? undefined)
-  if (before && core)
+  const key = builtinKey(before ?? undefined)
+  const def = key ? builtinDefinition(key) : undefined
+  if (before && def)
     r.data = {
-      ...syncCore(r.data!, coreDefinition(core), { categoryId: before.categoryId, includes: before.includes }),
+      ...syncCore(r.data!, def, {
+        categoryId: isCoreAgent(before) ? before.categoryId : r.data!.categoryId,
+        includes: before.includes,
+      }),
       name: before.name,
       origin: before.origin,
       // 一次性升级记录只由启动同步维护，编辑页保存不带它也不能清掉，否则下次启动会把用户关掉的开关又改回去

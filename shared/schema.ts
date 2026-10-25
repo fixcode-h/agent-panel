@@ -439,6 +439,11 @@ const WorkflowFields = z.object({
   budgetTokens: z.number().int().min(0).optional(),
   /** 从内置模板建出来的工作流记下来源（builtin:<key>），内置工作流列表里据此显示「删除」 */
   origin: z.string().max(80).optional(),
+  /**
+   * 面板最后一次写这个内置副本时内容的指纹（见 shared/builtin/install.ts 的 workflowFingerprint）：
+   * 现在的内容还是这个指纹就是没改过，启动时直接升级到新定义，不用靠历史版本表逐个比对
+   */
+  builtinHash: z.string().max(32).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>
@@ -1578,6 +1583,11 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /**
+   * 每个会话最后一次带上的角色设定的指纹（键同 sessions）：没有系统提示词参数的 CLI 只在第一轮带角色，
+   * 续接时角色变了就补发新版（见 server/exec/runner.ts）
+   */
+  roleHashes: z.record(z.string(), z.string()).optional(),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */

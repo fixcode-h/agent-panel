@@ -28,6 +28,8 @@ import {
   seedBuiltins,
   seedProjectWorkflows,
   upgradeBuiltinAgents,
+  upgradeBuiltinWorkflows,
+  workflowFingerprint,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
 import {
@@ -374,9 +376,12 @@ test('没改过的旧「测试运行」升级成「测试验收」，改过的�
   saved.length = 0
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
 
-  // 用户改过简介的不升级
+  // 用户改过的也换成新版（用户 2026-10-25 定的一律覆盖），覆盖前的交给调用方备份
   const edited = { ...oldTester, id: 'my-tester', description: '我自己改过的说明' }
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+  const replaced: Agent[] = []
+  const again = await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops, (a) => replaced.push(a))
+  assert.equal(again[0]?.name, '测试验收')
+  assert.deepEqual(replaced, [], '必备角色的设定本来就不能改（保存时也会纠正），不用备份')
 })
 
 test('没改过的旧「通用约束」「任务 Agent」（现在的「执行」）跟着升级到新规则；改过的不动', async () => {
@@ -412,9 +417,15 @@ test('没改过的旧「通用约束」「任务 Agent」（现在的「执行�
   // 再启动：已经不是旧指纹，不再改
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
 
-  // 用户改过的保留原样
+  // 用户改过的也换成新版，覆盖前的交给调用方备份；没改过的旧版本不用备份
   const edited = { ...old('rules', 'mine'), instructions: `${LEGACY_AGENT_FIELDS.rules.instructions}\n我自己加的一条` }
-  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+  const replaced: Agent[] = []
+  const again = await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops, (a) => replaced.push(a))
+  assert.match(again[0]?.instructions ?? '', /共用工作区/)
+  assert.deepEqual(
+    replaced.map((a) => a.id),
+    ['mine'],
+  )
 })
 
 test('停在上一版的「通用约束」「代码侦察」也能升级（「代码侦察」现在是「调研」）：补回合推进和派工失败的交付底线', async () => {
@@ -462,6 +473,8 @@ test('停在上一版的「通用约束」「代码侦察」也能升级（「�
   const current = {
     ...prev('explorer', 'now'),
     ...BUILTIN_AGENTS.find((b) => b.key === 'explorer')!.agent,
+    // 引入关系也按定义同步：本机没有「通用约束」时引入是空的
+    includes: [],
   }
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: [current] }, ops)).length, 0)
 })
@@ -843,12 +856,17 @@ test('停在 2026-10-21 那一版（缺「搜索范围」等四段）的四个�
   assert.match(get('开发').instructions, /coding-standards/, '补上编码规范技能')
   // 再启动：已经换成新定义，不再改
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
-  // 用户改过的不动：加一行就不再和指纹一致
+  // 用户改过的也覆盖（加一行就不再和任何指纹一致），覆盖前的交给调用方备份；没改过的四个不用备份
   const edited = {
     ...state,
     agents: [{ ...state.agents[0], instructions: `${RULES_BEFORE_SEARCH_SCOPE}\n我自己加的一条` }],
   }
-  assert.equal((await upgradeBuiltinAgents(edited, ops)).length, 0, '改过的不升级')
+  const replaced: Agent[] = []
+  assert.equal((await upgradeBuiltinAgents(edited, ops, (a) => replaced.push(a))).length, 1, '改过的也升级')
+  assert.deepEqual(
+    replaced.map((a) => a.id),
+    ['local-rules'],
+  )
 })
 
 /**
@@ -1118,4 +1136,63 @@ test('合并掉的工作流：没改过的副本删掉、项目引用改指到�
     refs.categories.map((c) => c.workflowId),
     ['u'],
   )
+})
+
+test('内置工作流按副本上记的指纹判断改没改过：停在没登记的旧版本也能升级，改过的不动，拖动坐标不算改', async () => {
+  const w = BUILTIN_WORKFLOWS.find((x) => x.key === 'bugfix') ?? BUILTIN_WORKFLOWS[0]
+  const agentId = (key: string) => `id-${key}`
+  const state = {
+    agents: BUILTIN_AGENTS.map((b) => ({
+      ...agents.find((a) => a.id === b.key)!,
+      id: `id-${b.key}`,
+      origin: `builtin:${b.key}`,
+    })),
+    categories: [],
+    tags: [],
+    workflows: [] as Workflow[],
+  }
+  const saved: Workflow[] = []
+  const ops = {
+    updateWorkflow: async (id: string, input: WorkflowInput) => {
+      const x = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' } as Workflow
+      saved.push(x)
+      return x
+    },
+  } as unknown as BuiltinOps
+  // 一个没登记进 LEGACY_WORKFLOWS 的旧版本：文档少一段。面板写它的时候记了指纹
+  const built = buildWorkflow(w, agentId)
+  const oldInput = {
+    ...built,
+    name: w.name,
+    origin: `builtin:${w.key}`,
+    categoryId: '',
+    tags: [],
+    document: `${built.document}\n旧版多出来的一段`,
+  }
+  const old = {
+    ...WorkflowInput.parse({ ...oldInput, builtinHash: workflowFingerprint(oldInput) }),
+    id: 'wf',
+    createdAt: '',
+    updatedAt: '',
+  } as Workflow
+  // 用户拖过节点：坐标不算改动
+  old.flows[0].nodes[0] = { ...old.flows[0].nodes[0], x: 999, y: 999 }
+  const up = await upgradeBuiltinWorkflows({ ...state, workflows: [old] }, ops)
+  assert.equal(up.length, 1, '没改过的旧版本升级')
+  assert.equal(up[0].document.trim(), built.document.trim())
+  assert.equal(up[0].flows[0].nodes[0].x, 999, '坐标沿用本机的')
+  assert.equal(up[0].builtinHash, workflowFingerprint(up[0]), '升级后指纹跟着更新')
+  // 再启动：已经是当前版本，不再写
+  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: up }, ops)).length, 0)
+
+  // 用户改过（指纹对不上）：不动
+  const edited = { ...old, document: `${old.document}\n我自己加的` }
+  assert.equal((await upgradeBuiltinWorkflows({ ...state, workflows: [edited] }, ops)).length, 0)
+
+  // 以前装的、没记过指纹、内容已经是当前版本：补记一次指纹，内容不变
+  const { builtinHash: _h, ...noMark } = up[0]
+  const marked = await upgradeBuiltinWorkflows({ ...state, workflows: [noMark as Workflow] }, ops)
+  assert.equal(marked.length, 1)
+  assert.equal(marked[0].builtinHash, workflowFingerprint(up[0]))
+  assert.equal(marked[0].document, up[0].document)
 })
