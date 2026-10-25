@@ -1539,3 +1539,74 @@ export function demoEvolution(prompt: string) {
     '\n```'
   )
 }
+
+// ---- 子任务的分析 ----
+
+/**
+ * 一个子任务（spawn_agents 派出的那一步）整理成 Markdown：派它的对话、它自己的对话流、交回的结果。
+ * 只取这一步和它名下的消息，不把整个对话带上：分析只看这个子任务，读得快、不跑偏
+ */
+export function subtaskReport(task: Task, stepId: string, agents: Agent[], maxOutput = 4000) {
+  const step = task.steps.find((s) => s.id === stepId)
+  if (!step) return ''
+  const name = (id: string) => agents.find((a) => a.id === id)?.name || id || '（没有角色）'
+  // 不用 stepUsage：它会给没有用量的步骤补一份空的，导出不该改任务
+  const usage = step.usage
+  const lines = [
+    `# 子任务记录：${step.title}`,
+    '',
+    `- 派它的对话：${task.title}（${task.id}）`,
+    `- 角色：${name(step.agentId)}`,
+    `- 状态：${step.status}${step.interrupted ? '（被打断）' : ''}`,
+    `- 开始：${localTime(step.startedAt) || '（没开始）'}，结束：${localTime(step.endedAt) || '（没结束）'}，用时：${fmtDuration(stepMs(step, Date.now()))}`,
+    usage
+      ? `- token：输入 ${fmtK(usage.inputTokens)}（缓存命中 ${pct(cacheHitRate(usage))}），输出 ${fmtK(usage.outputTokens)}`
+      : '',
+    '',
+    '## 对话流',
+  ].filter((x, i) => x || i > 0)
+  const mine = task.messages.filter((m) => m.step === stepId || m.step.startsWith(`${stepId}/`))
+  for (const m of mine) {
+    if (m.role === 'system' && !m.error) continue
+    const who = m.role === 'user' ? '派给它的要求' : m.role === 'system' ? '报错' : `AI（${name(m.agentId)}）`
+    const body = m.text.trim()
+    const tools = m.tools.length
+      ? `\n工具：${m.tools
+          .slice(0, 30)
+          .map((x) => `${x.name || x.kind} ${x.label}${x.failed ? '（失败）' : ''}`)
+          .join('；')}${m.tools.length > 30 ? `…共 ${m.tools.length} 个` : ''}`
+      : ''
+    const failed = m.tools
+      .filter((x) => x.failed)
+      .slice(0, 5)
+      .map(
+        (x) =>
+          `\n- ${x.name || x.kind} ${(x.input || x.label).trim()}\n${clip((x.output || x.detail || '').trim(), 1200) || '（没有输出）'}`,
+      )
+      .join('')
+    if (body || tools)
+      lines.push(
+        '',
+        `**${who}**：${clip(body, m.role === 'user' ? Infinity : maxOutput)}${tools}${failed ? `\n失败详情：${failed}` : ''}`,
+      )
+  }
+  if (!mine.length) lines.push('', '（没有记录到对话流）')
+  lines.push('', '## 交回的结果', '', step.output.trim() ? clip(step.output.trim(), 20_000) : '（没有交回结果）')
+  return redactSecrets(lines.join('\n'))
+}
+
+/** 子任务分析的提示词：只分析这一个子任务，不出工作流的修改建议块 */
+export function subtaskAnalysisPrompt(task: Pick<Task, 'title'>, step: Pick<TaskStep, 'title'>, focus = '') {
+  return `分析附件里对话「${task.title}」派出的子任务「${step.title}」的完整记录：它有没有做好派给它的事、哪里慢、哪里走了弯路，派它的要求本身写得清不清楚。只分析，不要修改任何文件。
+
+${promptLangRules()}
+${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
+## 要回答的问题
+1. 结果质量：交回的结果是否满足派给它的要求？哪里不够、为什么（引用记录里的原文）。
+2. 过程：读了哪些文件、跑了哪些命令；有没有重复劳动、无目标的全局搜索、失败后反复重试；耗时和 token 花在哪里。
+3. 派发：派给它的要求有没有含糊、缺上下文、范围过大的地方，换成怎样的写法能一次做对。
+4. 角色和面板：有没有看起来是角色设定或面板（子任务调度、结果交回）本身的问题；只写成发现，写清现象和依据。
+
+## 回复格式
+用${promptLangWord()}写：开头两三句给结论，再用「### 1. 结果质量」「### 2. 过程」「### 3. 派发」「### 4. 角色和面板」四个小标题分节，每条都要有依据；没有问题的一节写一句「没有发现问题」。`
+}

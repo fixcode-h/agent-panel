@@ -29,8 +29,9 @@ import {
   type ResolvedChange,
 } from '@shared/task-export'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
-import { startAnalysis } from '@/lib/task-transfer'
+import { useData } from '@/lib/data'
+import { openAiWindow, showChildInPane } from '@/lib/ai-window'
+import { rootIdOf } from '@shared/analysis-home'
 import { cn } from '@/lib/utils'
 import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
@@ -404,8 +405,8 @@ export function EvolutionCard({
   const [busy, setBusy] = useState(false)
   // 刚开的子对话：列表还没刷新到时先按标题记着
   const [started, setStarted] = useState<Record<string, string>>({})
-  // 能开子对话：项目里的顶层对话，不是导入的只读记录
-  const canSpawn = !!project && !!task.projectId && !task.parentTaskId && !task.imported
+  // 能开子对话：项目里的对话，不是导入的只读记录。分析对话本身常是子对话：修复开在同一个父对话下（子对话不能再开子对话）
+  const canSpawn = !!project && !!task.projectId && !task.imported
   const [panelSource, setPanelSource] = useState(false)
   const hasEvo = !!evo
   const projectId = project?.id ?? ''
@@ -426,13 +427,14 @@ export function EvolutionCard({
   const childOf = (title: string): EvolutionChild | undefined =>
     kids.find((k) => k.title === title) ?? (started[title] ? { id: started[title], title, working: true } : undefined)
 
-  /** 在这个分析对话下面开一个子对话，用「执行」角色去做，开好后在右栏打开 */
+  /** 在分析对话所在的父对话下开一个子对话，用「执行」角色去做，开好后在右栏打开 */
   const spawn = async (title: string, prompt: string) => {
     const worker = agents.find((a) => a.origin === 'builtin:worker')
+    const parentId = rootIdOf(task)
     const created = await api.createTask({
       projectId: task.projectId,
       mode: 'chat',
-      parentTaskId: task.id,
+      parentTaskId: parentId,
       workflowId: '',
       agentId: worker?.id ?? project?.defaultAgentId ?? '',
       cli: '',
@@ -447,7 +449,9 @@ export function EvolutionCard({
     // 标题由这里定：之后按标题认出这条已经开过
     await api.renameTask(created.id, title).catch(() => {})
     setStarted((s) => ({ ...s, [title]: created.id }))
-    if (onSpawned) onSpawned(created.id)
+    // 分析对话是子对话时，新开的是它的兄弟：让父对话的右栏切过去
+    if (parentId !== task.id) showChildInPane(parentId, created.id)
+    else if (onSpawned) onSpawned(created.id)
     else openChild?.(created.id)
   }
 
@@ -669,67 +673,70 @@ export function EvolutionCard({
   )
 }
 
-/** AI 分析的弹窗：可以写想重点看什么，开始后新建一个分析对话并打开它 */
+/**
+ * AI 分析的弹窗：可以写想重点看什么，开始后按归属规则新建分析对话（见 shared/analysis-home.ts），
+ * 在统一的 AI 分析窗口里看。对话执行、子任务、几次工作流执行都用它，只是 start 不同
+ */
 export function AnalyzeDialog({
   open,
   onOpenChange,
-  tasks,
-  projectId,
+  title,
+  intro,
+  subject,
+  start,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  /** 要分析的执行（完整内容）；为空时弹窗里取 */
-  tasks: () => Promise<Task[]>
-  projectId: string
+  /** 弹窗标题，例如「AI 分析执行结果」「AI 分析子任务」 */
+  title?: string
+  /** 弹窗里说明会分析什么；不写是执行结果的那段 */
+  intro?: string
+  /** 分析对象：窗口和浮条上显示 */
+  subject: string
+  /** 带上用户写的重点，新建分析对话 */
+  start: (focus: string) => Promise<Task>
 }) {
-  const { agents, upsertTask } = useData()
-  const { go } = useNav()
+  const { upsertTask } = useData()
   const [focus, setFocus] = useState('')
-  const [busy, setBusy] = useState(false)
-  const run = async () => {
-    setBusy(true)
-    try {
-      const list = await tasks()
-      if (!list.length) throw new Error(t('还没有可以分析的执行记录'))
-      const created = await startAnalysis({ tasks: list, agents, projectId, focus })
-      upsertTask(taskSummary(created))
-      onOpenChange(false)
-      setFocus('')
-      go(
-        created.projectId
-          ? { page: 'projects', id: created.projectId, sub: created.id }
-          : { page: 'chat', id: created.id },
-      )
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+  const run = () => {
+    const f = focus
+    onOpenChange(false)
+    setFocus('')
+    openAiWindow({
+      label: t('AI 分析'),
+      title: subject,
+      create: async () => {
+        const created = await start(f)
+        upsertTask(taskSummary(created))
+        return created
+      },
+    })
   }
   return (
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={t('AI 分析执行结果')}
+      title={title ?? t('AI 分析执行结果')}
       footer={
         <>
           <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('用默认角色新建一个对话来分析，只分析不改文件')}
+            {t('用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下')}
           </span>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('取消')}
           </Button>
-          <Button disabled={busy} onClick={run}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          <Button onClick={run}>
+            <Sparkles className="h-4 w-4" />
             {t('开始分析')}
           </Button>
         </>
       }
     >
       <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t(
-          'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
-        )}
+        {intro ??
+          t(
+            'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
+          )}
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>

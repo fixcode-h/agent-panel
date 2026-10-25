@@ -72,7 +72,7 @@ import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { fmtDuration, startedRun } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
-import { downloadTask } from '@/lib/task-transfer'
+import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -118,6 +118,7 @@ import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { ProjectSwitch } from './ProjectSwitch'
+import { OPEN_CHILD_EVENT, paneChildKey, paneRunKey } from '@/lib/ai-window'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -258,8 +259,6 @@ function sameJson<T>(cur: T, next: T): T {
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
-const paneChildKey = (taskId: string) => `task-child:${taskId}`
-const paneRunKey = (taskId: string) => `task-run:${taskId}`
 
 function readStored(key: string) {
   try {
@@ -527,6 +526,23 @@ export function TaskView({
     }
     setOpenChild(readPaneChild(taskId))
     setOpenRun(readPaneRun(taskId))
+    // 别处（AI 分析窗口「去对话里看」）要在这个对话的右栏打开某个子对话：已经开着的对话页马上切过去
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<{ parentId: string; childId: string }>).detail
+      if (d?.parentId !== taskId) return
+      // 先刷新子对话列表：刚开的子对话还不在列表里，直接切过去会被「已经不在」那条判断清掉
+      void loadChildren(taskId)
+        .then((list) => setChildren((cur) => sameJson(cur, list)))
+        .catch(() => {})
+        .finally(() => {
+          setOpenChild(d.childId)
+          setOpenRun(0)
+        })
+    }
+    window.addEventListener(OPEN_CHILD_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_CHILD_EVENT, onOpen)
+    // 只在换了对话时重新挂：loadChildren 每次渲染都是同一份逻辑
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, pane])
 
   // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
@@ -1726,8 +1742,15 @@ export function TaskView({
             <AnalyzeDialog
               open={analyzing}
               onOpenChange={setAnalyzing}
-              tasks={async () => [await api.task(task.id)]}
-              projectId={task.projectId}
+              subject={task.title}
+              start={async (focus) =>
+                startAnalysis({
+                  tasks: [await api.task(task.id)],
+                  agents: localAgents,
+                  projectId: task.projectId,
+                  focus,
+                })
+              }
             />
           </ChildListCtx.Provider>
         </PaneNavCtx.Provider>

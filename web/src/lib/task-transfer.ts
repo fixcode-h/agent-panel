@@ -7,10 +7,13 @@ import {
   exportFileName,
   exportTask,
   parseTaskExport,
+  subtaskAnalysisPrompt,
+  subtaskReport,
   withImportedAgents,
   type TaskExport,
 } from '@shared/task-export'
 import { api } from './api'
+import { createAnalysisTask } from './ai-window'
 
 /** 导出时记下面板版本，导入的人能看出是哪个版本导出的 */
 async function appVersion() {
@@ -71,8 +74,9 @@ function toBase64(s: string) {
 }
 
 /**
- * AI 分析：把一次或几次执行整理成报告附上，新建一个用默认 Agent 的对话来分析。
- * Agent 的回复末尾带修改建议，任务页上看过差异再应用
+ * AI 分析：把一次或几次执行整理成报告附上，按归属规则新建分析对话（见 shared/analysis-home.ts）：
+ * 一个对话（含子对话）的分析开成它父对话下的子对话，几次工作流执行、导入的只读记录开在项目里。
+ * 角色用必备角色「分析」；回复末尾带修改建议，任务页上看过差异再应用
  */
 export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; projectId: string; focus?: string }) {
   const app = await appVersion()
@@ -91,19 +95,29 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
     mime: 'text/markdown',
     data: toBase64(analysisReport(bundles)),
   })
-  const created = await api.createTask({
-    projectId: opts.projectId,
-    mode: 'chat',
-    workflowId: '',
-    agentId: '',
-    cli: '',
-    model: '',
-    effort: '',
-    params: {},
+  return createAnalysisTask({
+    scope: opts.tasks.length === 1 ? { kind: 'task', task: first } : { kind: 'project', projectId: opts.projectId },
+    title,
     prompt: analysisPrompt(bundles, opts.focus),
     attachments: [report],
-    isolate: false,
-    askUser: false,
   })
-  return api.renameTask(created.id, title.slice(0, 80)).catch(() => created)
+}
+
+/**
+ * 子任务的 AI 分析：只取这个子任务自己的对话流和交回的结果，开在派它的对话所在那棵树的父对话下
+ */
+export async function startSubtaskAnalysis(opts: { task: Task; stepId: string; agents: Agent[]; focus?: string }) {
+  const step = opts.task.steps.find((s) => s.id === opts.stepId)
+  if (!step) throw new Error(t('找不到这个子任务'))
+  const report = await api.upload({
+    name: `${t('子任务记录')}-${step.title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    mime: 'text/markdown',
+    data: toBase64(subtaskReport(opts.task, step.id, opts.agents)),
+  })
+  return createAnalysisTask({
+    scope: { kind: 'task', task: opts.task },
+    title: t('分析子任务：{title}', { title: step.title }),
+    prompt: subtaskAnalysisPrompt(opts.task, step, opts.focus),
+    attachments: [report],
+  })
 }

@@ -61,7 +61,7 @@ function memory() {
   }
 }
 
-test('必备角色：启动时七个都装好，重复启动不再改', async () => {
+test('必备角色：启动时八个都装好，重复启动不再改', async () => {
   const m = memory()
   const r = await ensureProjectAgents(m.state(), m.ops)
   for (const c of CORE_AGENTS) assert.ok(findCore(m.agents, c.key), `缺 ${c.key}`)

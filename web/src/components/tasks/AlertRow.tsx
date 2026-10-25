@@ -5,6 +5,7 @@ import { alertInfo } from '@shared/alerts'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import type { AnalysisScope } from '@shared/analysis-home'
 import { CopyButton } from '@/components/chat/ChatMessage'
 
 /**
@@ -16,6 +17,7 @@ export function AlertRow({
   text,
   conversation,
   cwd,
+  home,
   className,
 }: {
   alert: Alert
@@ -24,6 +26,8 @@ export function AlertRow({
   /** 报错前后的对话：交给 AI 时一起带上 */
   conversation?: string
   cwd?: string
+  /** 报错属于哪里：对话里的报错开在它的父对话下（见 shared/analysis-home.ts） */
+  home?: AnalysisScope
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -94,6 +98,7 @@ export function AlertRow({
                   context: `这条报错出现在 Agent 面板的对话里，分类是「${info.title}」：${info.what}`,
                   conversation: conversation ?? '',
                   cwd: cwd ?? '',
+                  home,
                 }}
               />
             )}

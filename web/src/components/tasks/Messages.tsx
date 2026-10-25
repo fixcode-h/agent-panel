@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
+import type { AnalysisScope } from '@shared/analysis-home'
 import {
   Bot,
   Brain,
@@ -55,6 +56,7 @@ export function SystemNote({
   className,
   conversation,
   cwd,
+  home,
 }: {
   text: string
   error?: boolean
@@ -65,11 +67,21 @@ export function SystemNote({
   conversation?: string
   /** 报错所在的项目目录 */
   cwd?: string
+  /** 报错属于哪个对话：「AI 处理」按它定分析对话开在哪 */
+  home?: AnalysisScope
 }) {
   // 报错和警告都画成带底色的一行，点开看这是什么、怎么办和原始信息（见 shared/alerts.ts）。
   // className 是给居中的说明用的，不传给它：点开的说明要左对齐
   if (alert || error)
-    return <AlertRow alert={alert ?? makeAlert('error', text)} text={text} conversation={conversation} cwd={cwd} />
+    return (
+      <AlertRow
+        alert={alert ?? makeAlert('error', text)}
+        text={text}
+        conversation={conversation}
+        cwd={cwd}
+        home={home}
+      />
+    )
   return (
     <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
       <span className="flex h-[1.625em] shrink-0 items-center">
@@ -108,7 +120,15 @@ export function NoteMessage({
       ? task.worktree.path
       : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
   return (
-    <SystemNote text={m.text} error={m.error} alert={m.alert} className={className} conversation={around} cwd={cwd} />
+    <SystemNote
+      text={m.text}
+      error={m.error}
+      alert={m.alert}
+      className={className}
+      conversation={around}
+      cwd={cwd}
+      home={task ? { kind: 'task', task } : undefined}
+    />
   )
 }
 

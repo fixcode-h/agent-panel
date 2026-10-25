@@ -114,6 +114,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
       ].join('\n'),
       cwd: view?.path ?? '',
       topic: 'project-skill',
+      home: { kind: 'project', projectId },
       onDone: () => void load(),
     })
   }
