@@ -1,4 +1,5 @@
-import { CHECK, GENERAL_LEGACY, type FlowSpec } from './workflows.ts'
+import type { FlowSpec } from './workflows.ts'
+import { BEFORE_TIDY, CHECK, GENERAL_LEGACY } from './legacy-workflows.ts'
 import type { ParamValue } from '../schema.ts'
 import { SCENE_TEXT } from './agents.ts'
 import { END, START } from '../flow.ts'
@@ -1698,4 +1699,18 @@ export const LEGACY_WORKFLOWS: Record<string, LegacyWorkflow[]> = {
   ],
   'project-ue': [UE_PREV, { document: UE_BEFORE_REMOTE.document, flows: UE_BEFORE_REMOTE.flows }],
   bugfix: [BUGFIX_PREV, { document: BUGFIX_BEFORE_DOCS.document, flows: BUGFIX_BEFORE_DOCS.flows }],
+}
+
+/**
+ * 2026-10-25 整理（去掉评审、完整验收和提交节点，文档同步收尾）改过的工作流：整理前那一版追加到最后。
+ * 没改的（架构设计、Blender）不登记，否则每次启动都会把一样的定义再写一遍。
+ */
+for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'bugfix', 'review', 'deps', 'release'])
+  (LEGACY_WORKFLOWS[key] ??= []).push(BEFORE_TIDY[key])
+
+/** 合并掉的工作流（workflows.ts 的 RETIRED_WORKFLOWS）没改过时的样子：和它一致的本机副本才删 */
+export const RETIRED_WORKFLOW_DEFS: Record<string, LegacyWorkflow[]> = {
+  'daily-dev': [BEFORE_TIDY['daily-dev']],
+  'ue-dev': [BEFORE_TIDY['ue-dev']],
+  bootstrap: [BEFORE_TIDY.bootstrap],
 }

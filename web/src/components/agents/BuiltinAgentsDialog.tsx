@@ -12,8 +12,8 @@ import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
 
 /**
- * 内置 Agent：按分类列出，点「添加」才建出来（连同它引入的「通用约束」），不会自动装。
- * 已经添加的显示「删除」；添加内置工作流时用到的 Agent 也会自动建，这里能看到。
+ * 内置 Agent：按分类列出，点「添加」建出来（连同它引入的「通用约束」）。
+ * 自带工作流启动时全部加入，用到的 Agent 随之建好，这里能看到；已经添加的显示「删除」。
  */
 export function BuiltinAgentsDialog({
   open,
@@ -56,7 +56,7 @@ export function BuiltinAgentsDialog({
         <div className="flex flex-wrap items-start gap-3">
           <p className="min-w-0 flex-[1_1_320px] text-[0.8125rem] leading-relaxed text-muted">
             {t(
-              '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 Agent。',
+              '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。自带工作流用到的角色启动时已经随之建好，删掉的可以在这里重新添加；引用的自带 Skill 在执行时自动装进 Agent。',
             )}
           </p>
           <Button
