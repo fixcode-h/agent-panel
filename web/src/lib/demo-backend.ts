@@ -3394,9 +3394,10 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
+  // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
+  // 那会和「计划 / 等结果」同屏矛盾（用户报的问题），界面检查靠它当反例。
   // 这条和下面两条带独立分支：创建时间故意和列表顺序不一致，界面要按时间排而不是按接口顺序
   await make('整理 ESLint 规则', {
-    alive: true,
     job: true,
     subJob: true,
     worktree: { branch: 'agent-panel/eslint-rules', at: 30 },
