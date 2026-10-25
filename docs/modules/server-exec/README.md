@@ -16,6 +16,7 @@
   - `ApiSlot.drop()` 在排队期间要能撤销排队（内部 `AbortController`），否则名额被放行给一个已经放弃的 slot、永远不还：`used` 永久偏高 → `free()` 长期为 false → 后续调用更频繁排队。给 `ApiSlot` 加排队撤销时要同时保证「放行的名额与持有者一一对应」。
   - 两代排队交错时必须靠代数（`gen`）保护：`drop()` 后马上重新排队，上一代 `acquire` 的 `finally` 跑得比新一代晚，无条件写回 `pending` / `waiting` 会清掉新一代的撤销句柄，之后的 `drop()` 就撤销不了排队——同一个泄漏换了个入口。两个字段都要比代数后才清理。
   - 拿回时是 `start` 还是 `yield` 看**让出前手里有没有名额**（`ApiSlot.holding`）：持有过 = 这一轮跑起来后临时让出（`yield`）；没持有过 = 预热（prewarm）对话等用户第一句，这一轮从没出过 token，此刻排队就是真的还没开始（`start`）。不能只看「是 `waitNext` 就写 `yield`」，否则预热首句的真排队会被静默吞成「思考中」。
+  - 覆盖分工：端到端测的是「名额满了→第二个对话排队（`apiWait.reason` 为 `'start'`）→前面停了往前挪→排队时能停止」以及「对话让出名额给两个子任务、名额是 1 时子任务一个一个跑」（`scripts/e2e/07-local.mjs` 的并发上限一段）；「让出→拿回」期间两代排队交错、`drop()` 撤销排队不泄漏名额这些毫秒级时序由 `server/api-slots.test.ts` 的单测覆盖，端到端不赌这种时序。
   - 它只是内存里的临时状态：`server/task-store.ts` 的 `parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢），否则进程重启后会把一条陈旧标记显示成「在排队」。
 - 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。
 - 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。

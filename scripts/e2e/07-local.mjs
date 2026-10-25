@@ -683,7 +683,8 @@ await runShard('本机请求与设置', async (api) => {
       { label: '第三个对话排队等 API' },
     )
     assert.equal(queued.status, 'running', '排队中的对话仍算在运行（输入框是停止按钮）')
-    assert.deepEqual(queued.apiWait, { api: '中转 A', ahead: 1 })
+    // reason：这一轮还没开始、真的在排队等名额（'start'）；让出后拿回排上的队是 'yield'，界面不显示成排队
+    assert.deepEqual(queued.apiWait, { api: '中转 A', ahead: 1, reason: 'start' })
     assert.ok(!calls().some((x) => x.input?.includes('并发上限 B')), '名额满了：第二个对话的 CLI 还没启动')
     await call('POST', `/tasks/${qc.id}/stop`)
     const qcDone = await waitDone(qc.id)
