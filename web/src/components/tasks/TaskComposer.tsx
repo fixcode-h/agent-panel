@@ -314,7 +314,7 @@ export function TaskComposer({
               workflowId={workflowId}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
-            <ElementPickButton onPick={chips.addQuote} className="h-8 w-8 rounded-lg" />
+            <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} className="h-8 w-8 rounded-lg" />
             {workflow ? (
               <>
                 {isolateSwitch}

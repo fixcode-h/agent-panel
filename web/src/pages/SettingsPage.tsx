@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   GraduationCap,
   Gauge,
+  Keyboard,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -38,6 +39,8 @@ import { resumeInstallJobs, setInstallFinish } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
 import { onSettingsReloaded } from '@/lib/ui-actions'
+import { hotkeyLabel } from '@/lib/hotkey'
+import { pickButtonLabel } from '@/lib/element-pick'
 import { cn, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
@@ -55,6 +58,7 @@ import { RemoteSection } from '@/components/settings/RemoteSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
+import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
@@ -81,9 +85,13 @@ interface Section {
   group?: string
 }
 
+/** 抓取键的显示名（「常规」里的开发者模式那行写着，细则在「快捷键」） */
+const pickLabel = pickButtonLabel
+
 // 左栏按分组列出，组内顺序就是这里的顺序
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
+  { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
   { id: 'fonts', label: t('字体'), icon: Type, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
@@ -130,6 +138,7 @@ function SettingsBody({
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [developerMode, setDeveloperMode] = useState(initial.developerMode)
+  const [elementPicker, setElementPicker] = useState(initial.elementPicker)
   const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
@@ -276,6 +285,7 @@ function SettingsBody({
     remoteAccess,
     askUserDefault,
     developerMode,
+    elementPicker,
     shell,
     proxy: proxy.trim(),
     contentWidth,
@@ -507,6 +517,7 @@ function SettingsBody({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
           {cur.id === 'styles' && <StylesSettings />}
           {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
+          {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
           {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
           {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
           {cur.id === 'integrations' && <IntegrationsSection />}
@@ -766,10 +777,22 @@ function SettingsBody({
               <Row
                 title={t('开发者模式')}
                 desc={t(
-                  '打开后对话输入框上多一个「抓取界面元素」按钮：点一下再点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出抓取。',
+                  '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。',
                 )}
               >
                 <Switch aria-label={t('开发者模式')} checked={developerMode} onCheckedChange={setDeveloperMode} />
+              </Row>
+              <Row title={t('抓取元素的方式')} desc={t('快捷键和用哪个鼠标键抓取，到「快捷键」里改。')}>
+                <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                  <kbd className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.75rem]">
+                    {hotkeyLabel(elementPicker.hotkey)}
+                  </kbd>
+                  <span>{t('＋')}</span>
+                  <span>{pickLabel(elementPicker.button)}</span>
+                  <Button variant="ghost" size="sm" onClick={() => onSection('shortcuts')}>
+                    {t('去修改')}
+                  </Button>
+                </div>
               </Row>
               <Row
                 title={t('大文件只引用路径')}
