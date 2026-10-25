@@ -66,6 +66,7 @@ import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
 import { ProjectSkillsSection } from './ProjectSkillsSection'
+import { runAssistInProject } from '@/lib/assist-conv'
 import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
@@ -163,7 +164,7 @@ export function ProjectSettingsDialog({
   item?: string
   onOpenChange: (open: boolean) => void
 }) {
-  const { workflows, agents } = useData()
+  const { workflows, agents, projects, setProjects } = useData()
   const { openProject } = useNav()
   // AI 会话放在外壳：关掉项目设置时 AssistDialog 不卸载，生成继续跑，最小化的浮条留在屏幕上
   const [ai, setAi] = useState<AiSession | null>(null)
@@ -185,6 +186,18 @@ export function ProjectSettingsDialog({
     }
     queued.current.push(p)
     if (!open) onOpenChange(true)
+  }
+  // 项目对话里做完的结果：这个项目的设置开着就直接填进草稿；关着（或开的是别的项目）就把推荐记进项目，
+  // 下次打开「AI 初始化」页能直接应用。不自动弹出设置，也不会填进别的项目
+  const deliver = (projectId: string, p: Proposal) => {
+    if (open && applyRef.current && project?.id === projectId) return applyRef.current(p)
+    const cur = projects.find((x) => x.id === projectId)
+    if (p.kind !== 'project' || !cur) return
+    const { id, createdAt: _c, updatedAt: _u, ...input } = cur
+    void api
+      .updateProject(id, { ...input, initializedAt: new Date().toISOString(), initResult: p })
+      .then((saved) => setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x))))
+      .catch((e) => toast.error((e as Error).message))
   }
   // 换了项目就不再沿用上一份会话（AssistDialog 卸载时会停掉还在跑的生成）
   const pid = useRef(project?.id)
@@ -219,6 +232,7 @@ export function ProjectSettingsDialog({
                 item={item}
                 ai={ai}
                 onAssist={setAi}
+                deliver={deliver}
                 onCreated={(id) => setAi((s) => (s ? { ...s, projectId: id } : s))}
                 applyRef={applyRef}
                 queued={queued}
@@ -255,6 +269,7 @@ function Body({
   item,
   ai,
   onAssist,
+  deliver,
   onCreated,
   applyRef,
   queued,
@@ -267,6 +282,8 @@ function Body({
   /** 这次打开设置时的 AI 会话（外壳持有，关掉设置也不丢） */
   ai: AiSession | null
   onAssist: (s: AiSession) => void
+  /** 在项目对话里做完的结果交回来（见外壳的 deliver） */
+  deliver: (projectId: string, p: Proposal) => void
   /** 新建的项目保存好了（会话要跟着这个项目走） */
   onCreated: (id: string) => void
   /** 应用函数和排队的结果由外壳持有，设置重新打开后要接得上 */
@@ -447,13 +464,22 @@ function Body({
       const r = await api.analyzeProject(draft.path)
       setScan(r)
       setSignals(r.signals)
-      // 目录和扫描线索随会话一起存：关掉设置后草稿没了，这两项要交给 AI 继续用
-      onAssist({
-        kind: 'project',
-        title: t('AI 初始化项目'),
-        start: t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置'),
-        subject: { path: draft.path.trim(), scan: scanText(r) },
-      })
+      const start = t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置')
+      const subject = { path: draft.path.trim(), scan: scanText(r) }
+      // 已经建好的项目：在这个项目里开一个对话来做，过程和结果留在项目的对话列表里（AI 分析统一归属）
+      if (project?.id) {
+        runAssistInProject({
+          kind: 'project',
+          projectId: project.id,
+          title: t('AI 初始化项目：{name}', { name: project.name }),
+          start,
+          subject,
+          onProposal: (p) => deliver(project.id, p),
+        })
+        return
+      }
+      // 新建项目还没保存、没有项目可放对话：照旧在 AI 窗口里做。目录和扫描线索随会话一起存，关掉设置后草稿没了也能继续用
+      onAssist({ kind: 'project', title: t('AI 初始化项目'), start, subject })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

@@ -181,7 +181,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
     setAnalyzing(true)
     setAiError('')
     try {
-      const d = await api.taskMemoryAnalysis(taskId)
+      const [d, task] = await Promise.all([api.taskMemoryAnalysis(taskId), api.task(taskId)])
       const last = { at: d.sampledAt, trendText: d.trendText }
       try {
         localStorage.setItem(analysisKey(taskId), JSON.stringify(last))
@@ -196,6 +196,8 @@ export function MemoryChart({ taskId }: { taskId: string }) {
         context: d.report,
         // 相关目录给项目路径：AI 要能按路径去看源码给方案
         cwd: d.cwd,
+        // 会话的内存分析属于这个对话：开在它的父对话下
+        home: { kind: 'task', task },
       })
     } catch (e) {
       setAiError((e as Error).message)

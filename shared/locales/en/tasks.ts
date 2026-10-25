@@ -620,11 +620,7 @@ export const EN_TASKS: Record<string, string> = {
   '工作流「{name}」· 节点「{node}」': 'Workflow "{name}" · node "{node}"',
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
-  '用默认角色新建一个对话来分析，只分析不改文件':
-    'Starts a chat with the default role; it only analyzes and changes no files',
   开始分析: 'Analyze',
-  'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
-    "The AI reads the full run record (messages, each node's result, time, tokens and cache hits), judges the result quality, what in the workflow needs work and whether the panel itself has issues, and suggests changes you can apply. Nothing is applied until you review the diff.",
   '想重点看什么（可选）': 'What to focus on (optional)',
   '例如：为什么验收总是不通过、哪些节点最费 token': 'e.g. why reviews keep failing, which nodes use the most tokens',
   '已导入「{title}」': 'Imported "{title}"',
@@ -1062,4 +1058,29 @@ export const EN_TASKS: Record<string, string> = {
     'The subtask was stopped; the conversation that sent it gets the reason. View only',
   后台命令执行中: 'Background command running',
   工作流执行中: 'Workflow running',
+  // AI 分析的归属与统一窗口
+  '{label}：{title}': '{label}: {title}',
+  在父对话里打开: 'Open in the parent conversation',
+  在项目对话里打开: 'Open in the project conversation',
+  '{where}（分析照常进行）': '{where} (analysis keeps running)',
+  '最小化（分析照常进行）': 'Minimize (analysis keeps running)',
+  关闭并停止分析: 'Close and stop the analysis',
+  '它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
+    'It was removed from the conversation list; this window stays open. Click close in the top-right corner to dismiss it.',
+  '正在新建分析对话…': 'Creating the analysis conversation…',
+  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下':
+    'Starts a conversation with the Analysis role that only analyzes and never edits files; analyses of a conversation open under its parent conversation',
+  'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
+    "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
+  '{name} 最近 {n} 次执行': 'last {n} runs of {name}',
+  'AI 排查': 'AI troubleshooting',
+  '{label}结束：{title}': '{label} finished: {title}',
+  '上一个{label}还没结束，结束后再试': 'The previous {label} is still running; try again when it finishes',
+  '所有 AI 分析、AI 排查的对话默认使用': 'Default for every AI analysis and AI troubleshooting conversation',
+  'AI 初始化项目：{name}': 'AI project setup: {name}',
+  '「{title}」的结果已经交回项目设置，可以去应用':
+    'The result of "{title}" is back in the project settings, ready to apply',
+  '结果的格式还是不对：{error}。可以在对话里让它重新输出':
+    'The result is still malformed: {error}. Ask it to output again in the conversation',
+  没有找到结果: 'No result found',
 }

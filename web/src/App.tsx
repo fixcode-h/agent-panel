@@ -14,7 +14,7 @@ import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette
 import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { useAiFix } from '@/lib/ai-fix'
+import { useAiWindow } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { api } from '@/lib/api'
 
@@ -25,7 +25,7 @@ const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ defa
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
-const AiFixDialog = lazy(() => import('@/components/ai-fix/AiFixDialog').then((m) => ({ default: m.AiFixDialog })))
+const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
@@ -165,7 +165,7 @@ function ProjectDialog({
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
-  const fix = useAiFix()
+  const aiWindow = useAiWindow()
   const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
     open: false,
   })
@@ -215,10 +215,10 @@ export function App() {
             />
           </Suspense>
         )}
-        {/* 「AI 处理」的弹窗：第一次点报错旁的按钮时才加载 */}
-        {fix.issue && (
+        {/* 统一的 AI 分析窗口：第一次点「AI 处理」「AI 分析」时才加载 */}
+        {aiWindow.job && (
           <Suspense fallback={null}>
-            <AiFixDialog />
+            <AiWindow />
           </Suspense>
         )}
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />

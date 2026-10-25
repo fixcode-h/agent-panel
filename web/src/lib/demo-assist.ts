@@ -384,6 +384,27 @@ function projectInitDraft(_text: string, ctx: AssistContext) {
   }
 }
 
+/** 按关键词生成的示例：后台生成和「在项目对话里做」共用 */
+function draftFor(input: AssistInput, ctx: AssistContext, text: string) {
+  return input.kind === 'agent'
+    ? agentDraft(text, ctx)
+    : input.kind === 'skill'
+      ? skillDraft(text, ctx)
+      : input.kind === 'command'
+        ? commandDraft(text, ctx)
+        : input.kind === 'mcp'
+          ? mcpDraft(text, ctx)
+          : input.kind === 'lessons'
+            ? lessonsDraft(text, ctx)
+            : input.kind === 'project'
+              ? projectInitDraft(text, ctx)
+              : workflowDraft(text, ctx)
+}
+
+/** 在项目对话里做完后解析结果：演示没有真的回复，直接给示例的 JSON */
+export const demoDraft = (input: AssistInput, ctx: AssistContext) =>
+  draftFor(input, ctx, [...input.messages].reverse().find((m) => m.role === 'user')?.text ?? '').draft
+
 export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJob {
   const text = [...input.messages].reverse().find((m) => m.role === 'user')?.text ?? ''
   const job: AssistJob = {
@@ -396,20 +417,7 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
     startedAt: Date.now(),
   }
   jobs.set(job.id, job)
-  const gen =
-    input.kind === 'agent'
-      ? agentDraft(text, ctx)
-      : input.kind === 'skill'
-        ? skillDraft(text, ctx)
-        : input.kind === 'command'
-          ? commandDraft(text, ctx)
-          : input.kind === 'mcp'
-            ? mcpDraft(text, ctx)
-            : input.kind === 'lessons'
-              ? lessonsDraft(text, ctx)
-              : input.kind === 'project'
-                ? projectInitDraft(text, ctx)
-                : workflowDraft(text, ctx)
+  const gen = draftFor(input, ctx, text)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`

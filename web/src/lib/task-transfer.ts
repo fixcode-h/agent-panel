@@ -13,6 +13,7 @@ import {
   type TaskExport,
 } from '@shared/task-export'
 import { api } from './api'
+import { createAnalysisTask } from './ai-window'
 
 /** 导出时记下面板版本，导入的人能看出是哪个版本导出的 */
 async function appVersion() {
@@ -73,8 +74,9 @@ export function toBase64(s: string) {
 }
 
 /**
- * AI 分析：把一次或几次执行整理成报告附上，新建一个用默认 Agent 的对话来分析。
- * Agent 的回复末尾带修改建议，任务页上看过差异再应用。
+ * AI 分析：把一次或几次执行整理成报告附上，按归属规则新建分析对话（见 shared/analysis-home.ts）：
+ * 一个对话（含子对话、子任务）的分析开成它父对话下的子对话，几次工作流执行、导入的只读记录开在项目里。
+ * 角色用必备角色「分析」；回复末尾带修改建议，任务页上看过差异再应用。
  * scope 有值时只分析那一个子任务（子任务窗口里的「AI 分析」），报告和提示词都只看这一步。
  */
 export async function startAnalysis(opts: {
@@ -105,21 +107,12 @@ export async function startAnalysis(opts: {
     mime: 'text/markdown',
     data: toBase64(analysisReport(bundles, undefined, opts.scope)),
   })
-  const created = await api.createTask({
-    projectId: opts.projectId,
-    mode: 'chat',
-    workflowId: '',
-    agentId: '',
-    cli: '',
-    model: '',
-    effort: '',
-    params: {},
+  return createAnalysisTask({
+    scope: opts.tasks.length === 1 ? { kind: 'task', task: first } : { kind: 'project', projectId: opts.projectId },
+    title,
     prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
-    isolate: false,
-    askUser: false,
   })
-  return api.renameTask(created.id, title.slice(0, 80)).catch(() => created)
 }
 
 /**
