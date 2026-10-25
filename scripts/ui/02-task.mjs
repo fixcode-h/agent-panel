@@ -396,9 +396,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           // 键盘：方向键走到一个不是当前项的条目，回车切换
           const nowTitle = await paneTitle()
           await openMenu()
+          // 焦点落进菜单再按键：菜单刚挂上时焦点还在按钮上，按下去的方向键被吞掉（CI 上偶发）
+          await p
+            .waitForFunction(() => !!document.activeElement?.closest('[role="menu"]'), null, { timeout: 3000 })
+            .catch(() => {})
           let picked = ''
           for (let i = 0; i < 12 && !picked; i++) {
             await p.keyboard.press('ArrowDown')
+            // 高亮是按键后下一帧才标上的：等到有一项高亮再读，不然读到的还是按键前的状态
+            await p
+              .waitForFunction(
+                () => !!document.querySelector('[role="menu"] [data-child-item][data-highlighted]'),
+                null,
+                {
+                  timeout: 1000,
+                },
+              )
+              .catch(() => {})
             const hi = (await menuItems()).find((x) => x.highlighted)
             if (hi && hi.title !== nowTitle) picked = hi.title
           }
