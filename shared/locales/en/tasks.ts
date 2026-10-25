@@ -251,6 +251,7 @@ export const EN_TASKS: Record<string, string> = {
   运行中: 'Running',
   运行区: 'Running items',
   已关闭: 'Closed',
+  'CLI 进程已回收，继续会重新拉起': 'The CLI process was reclaimed; continuing will start it again',
   解决: 'Resolve',
   已解决: 'Resolved',
   还没有子对话: 'No sub-conversations yet',

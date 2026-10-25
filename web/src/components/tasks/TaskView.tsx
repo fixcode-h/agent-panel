@@ -109,7 +109,7 @@ import {
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
-import { childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
 import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
@@ -2087,13 +2087,15 @@ function ChildrenBar({
                   // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
                   const stale = staleLine(c)
                   const line = childNote(c, true)
+                  // 进程回收了但还在跑：卡片上不写「已关闭」，悬停补一句（和悬浮层列表同一个提示）
+                  const gone = childClosedHint(c)
                   return (
                     <button
                       key={c.id}
                       data-child-card
                       type="button"
                       onClick={() => onOpen(c.id)}
-                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
+                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}${gone ? ` · ${gone}` : ''}`}
                       className={cn(
                         'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
                         c.id === openChild ? 'border-line-strong' : 'border-line',

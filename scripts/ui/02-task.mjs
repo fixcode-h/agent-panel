@@ -285,6 +285,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const bar = p.getByRole('button', { name: /个进行中，共 \d+ 个/ })
     if (!(await bar.count())) errors.push('子对话栏：输入框上方没有子对话入口')
     else {
+      // 分子 5 = 在转圈的；分母是进程还活着的（演示里「整理 ESLint 规则」在等后台命令、CLI 已回收，不算进去），
+      // 分母比分子少时兜底取分子，所以仍是 5/5（见 shared/task.ts 的 childCounts）
       await check(p, '子对话-五个在跑', ['子对话', '5/5'])
       await bar.first().click()
       // 消息流里的运行区和弹层「运行中」是同一批条目（见 shared/task.ts 的 visibleChildren）：
@@ -363,6 +365,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       }
       if (boxes.runs.some((x) => x.includes('已解决')))
         errors.push('运行区：已标记解决但还在跑的那条被写成了「已解决」')
+      // 「已关闭」（CLI 进程回收）不能和「还在跑」的状态同屏：等后台命令的子对话在演示里进程早退了，
+      // 行上如果又写「已关闭」又写「计划 / 等结果」，用户会以为它被关掉了（用户报的问题）
+      for (const [where, list] of [
+        ['运行区', boxes.runs],
+        ['弹层', boxes.items],
+      ]) {
+        const closed = list.filter((x) => x.includes('已关闭'))
+        if (closed.length) errors.push(`${where}：还在跑的对话被写成了「已关闭」：${closed.join(' | ')}`)
+      }
       // 顺序也一致：正在跑的在前，同一类里按本次开启的时间倒序（两处读同一个 sortChildren）
       const titles = [
         'Git+worktree 不再提示文件撞车',
