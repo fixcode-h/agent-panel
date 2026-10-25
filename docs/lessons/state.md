@@ -11,6 +11,12 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 - 起因：点「交给父对话决定」好几次父对话都没动，`followUp` 撞上执行位后只留一条 `log.warn`；2026-10-25 父对话等下一句时自动交出的提问报「任务正在执行」；子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图「计划 6/8」与实际不符）。
 - 防线：`shared/task-stamp.test.ts`、`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例；`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」、04-subagents 的同名提问用例。
 
+## 报错重试在原来的子对话、子任务里接着做，不另起一个
+
+- 规则：子对话失败、被中断要重试，父对话用 `send_to_conversation` 交回原来那个子对话（同一个会话接着做）；`create_conversation` 的标题去掉「（重试）」这类标记（`retryBase`）后和一个失败、中断的子对话一样会被拒绝。派出的子任务失败、被终止、中断后，`spawn_agents` 的 `resume` 写它的 id 就在原来那条记录里重试（同一个 id、会话，`reruns` 加一），不新建记录；只有做完的子任务再接着做（复看评审）才新开一条借会话。交回的失败结果、`reportChild` 的失败 / 中断上报都带上这句重试提示。
+- 起因：用户 2026-10-25 指出对话报错后重试新起了一个对话（例如「子对话子任务挪到总结下面（重试）」），子任务也一样。
+- 防线：`server/orchestrator.test.ts` 的「另建（重试）会被拒绝」、`server/engine-steps.test.ts` 的「失败后 resume … 在原来那个子任务里重试」。
+
 ## 对话状态只在 convState 判，上报只有一个出口，彻底完成不是中断
 
 - 规则：对话（顶层、子对话）只有 `shared/task.ts` 的 8 个 `ConvState`，列表分组、图标、子对话栏文字、`list_conversations`、给父对话的上报都从 `convState` 派生，不在别处再拼「做没做完」。子对话给父对话报状态只走 `reportChild`（按 `reportKey` 去重）。面板因为「彻底完成」而结束进程用 `stopReason: 'finish'`，引擎（`finishedStop`）和 `convState` 都按正常结束处理，不写「这一轮被中断」。

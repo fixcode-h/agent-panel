@@ -1764,7 +1764,9 @@ export function tasksApi(deps: {
     const next =
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
         ? '\n下一步：用 send_to_conversation 让它在自己的分支里跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。'
-        : ''
+        : r.state === 'failed' || r.state === 'stopped'
+          ? `\n要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。`
+          : ''
     const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
     await noteParent(
       tk.parentTaskId,
@@ -1775,7 +1777,8 @@ export function tasksApi(deps: {
       { id: tk.id, title: tk.title, state: r.state },
       await peerOf(tk, 'child', 'report', r.why, r.state === 'failed'),
       undefined,
-      !!next,
+      // 只有「只剩合回却没请收尾」要叫起父对话；失败、中断的重试提示照旧放进收件箱
+      !!next && r.state === 'unfinished',
     )
   }
 
