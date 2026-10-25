@@ -6,6 +6,15 @@
  */
 import { runShard } from './harness.mjs'
 
+/** 点下「下载」后多久内必须看到「进入下载中」或「已经下完」（演示里点下去立刻 busy，给的是并发下重渲染的余量） */
+const DOWNLOAD_START_MS = 3000
+/**
+ * 演示里一条下载是 8 个 tick × `demoMs(400)`；界面检查把 demo-speed 设成 4（见 scripts/ui/harness.mjs），
+ * 也就是 8 × 100ms ≈ 0.8s，再算上下载结束后的状态回查和重渲染。
+ * 10s 是并发抢 CPU 时的余量，不是用来掩盖「没开始」的：那种情况由上一步的 clickedDownload 判断单独拦住。
+ */
+const DOWNLOAD_DONE_MS = 10000
+
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
@@ -150,12 +159,43 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .catch(() => errors.push('部署：没有提示部署结果'))
   await check(p, '设置-部署-完成', ['已部署', '已是最新'])
   // 本机生图：一键安装 ComfyUI、下载推荐的模型（演示里是模拟的进度）
-  await p.getByRole('button', { name: '本机生图' }).click()
+  await p.getByRole('button', { name: '本机生图', exact: true }).click()
   await check(p, '设置-本机生图', ['一键安装', 'Z-Image Turbo', '建议显存'])
-  await p.getByRole('button', { name: '一键安装' }).click()
+  await p.getByRole('button', { name: '一键安装', exact: true }).click()
   await p.getByText('已安装，未启动').waitFor({ timeout: 10000 })
-  await p.getByRole('button', { name: '下载' }).first().click()
-  await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
+  // 「下载」必须精确匹配：子串匹配时第一个命中的是下面「下载和连接」那个小节的页内锚点按钮，
+  // 点它只是把内容区滚过去、模型下载根本没开始，再等「已下载」就必然超时（这条用例曾稳定失败）。
+  // 模型按 LOCAL_MODELS 的顺序分组渲染，推荐的 Z-Image Turbo 排在最前，所以取第一个「下载」。
+  const downloadBtn = p.getByRole('button', { name: '下载', exact: true }).first()
+  const removeModelBtn = p.getByRole('button', { name: '删除模型文件', exact: true })
+  await downloadBtn.click()
+  // 先确认点击真的落到了下载上：要么进入下载中（所有下载按钮 disabled），要么已经下完（这一行换成删除按钮）。
+  // 两者都不算得单独报，否则后面只看到「等不到终态」、看不出是压根没开始还是没跑完。
+  // 下载在演示里只要 ≈0.8s，所以不能只看「是否在下载中」：可能它已经跑完了
+  const clickedDownload = await p
+    .waitForFunction(
+      () => {
+        if (document.querySelector('button[aria-label="删除模型文件"]')) return true
+        const btns = [...document.querySelectorAll('button')].filter((b) => b.textContent?.trim() === '下载')
+        return btns.length > 0 && btns.every((b) => b.disabled)
+      },
+      null,
+      { timeout: DOWNLOAD_START_MS },
+    )
+    .then(
+      () => true,
+      () => false,
+    )
+  if (!clickedDownload) errors.push('本机生图：点了「下载」之后既没开始下载，也没下完（点击落到别处了？）')
+  // 终态认可观测的控件变化，不认文案：下载完成后这一行的按钮换成「删除模型文件」
+  const downloaded = await removeModelBtn
+    .first()
+    .waitFor({ timeout: DOWNLOAD_DONE_MS })
+    .then(
+      () => true,
+      () => false,
+    )
+  if (!downloaded) errors.push('本机生图：下载没有跑完（等不到「删除模型文件」按钮）')
   await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
   // 最小化后的浮条：AI 处理、AI 优化和收起的对话用同一个组件——尺寸、圆角、层级、状态文字一致；
