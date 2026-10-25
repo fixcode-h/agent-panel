@@ -357,6 +357,50 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.close()
   }
 
+  // 开发者模式的「抓取界面元素」：设置里打开才有按钮；Esc 退出不引用，左键点中后放一张引用卡片并退出抓取
+  {
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base + '#/chat')
+    await d.locator('#task-prompt').waitFor()
+    const pickBtn = d.getByRole('button', { name: '抓取界面元素' })
+    if (await pickBtn.count()) errors.push('元素抓取：没开开发者模式就显示了抓取按钮')
+    await d.getByRole('button', { name: '设置' }).first().click()
+    await d.getByRole('switch', { name: '开发者模式' }).click()
+    await check(d, '设置-开发者模式', ['开发者模式', '抓取界面元素'])
+    await d.keyboard.press('Escape')
+    await d.goto(base + '#/chat')
+    const heading = d.getByRole('heading', { name: '有什么可以帮你？' })
+    const hb = await heading.boundingBox()
+    const overlay = d.locator('[data-element-picker]')
+    await pickBtn.click()
+    await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+    await check(d, '元素抓取-悬停', ['点选页面上的元素，引用到对话', '退出抓取'])
+    await d.keyboard.press('Escape')
+    if (await overlay.count()) errors.push('元素抓取：按 Esc 没有退出抓取模式')
+    if (
+      await d
+        .locator('#task-prompt')
+        .getByText(/界面元素/)
+        .count()
+    )
+      errors.push('元素抓取：按 Esc 退出也放了引用')
+    await pickBtn.click()
+    await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2)
+    const chip = d
+      .locator('#task-prompt')
+      .getByText(/界面元素/)
+      .first()
+    await chip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点中元素后输入框里没有引用卡片'))
+    if (await overlay.count()) errors.push('元素抓取：点中元素后没有退出抓取模式')
+    await check(d, '元素抓取-引用')
+    await chip.click()
+    const quoted = await d.getByRole('dialog').last().innerText()
+    for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
+      if (!quoted.includes(want)) errors.push(`元素抓取：引用里没有「${want}」`)
+    await d.keyboard.press('Escape')
+    await d.close()
+  }
+
   const m = await page({ width: 390, height: 844 })
   await m.goto(base)
   await check(m, '手机-首页', ['今天要做什么'])

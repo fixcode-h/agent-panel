@@ -9,6 +9,7 @@ import { t } from '@shared/i18n'
 import { AttachMenu, DropHint, FileRefHint, type useAttachments } from './Attachments'
 import { RichInput, type RichInputHandle } from './RichInput'
 import { useComposerChips } from './composer-chips'
+import { ElementPickButton } from './ElementPicker'
 
 const DRAFT = 'chat-draft:'
 
@@ -263,6 +264,7 @@ export function ChatComposer({
             className={sm ? 'h-7 w-7' : undefined}
           />
         )}
+        <ElementPickButton onPick={chips.addQuote} />
         {tools}
         <span className="flex-1" />
         {hint && (
