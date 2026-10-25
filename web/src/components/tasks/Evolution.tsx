@@ -26,6 +26,7 @@ import {
   parseEvolution,
   resolveChange,
   type CodeIssue,
+  type HelperScope,
   type ResolvedChange,
 } from '@shared/task-export'
 import { api } from '@/lib/api'
@@ -669,18 +670,30 @@ export function EvolutionCard({
   )
 }
 
-/** AI 分析的弹窗：可以写想重点看什么，开始后新建一个分析对话并打开它 */
+/**
+ * AI 分析的弹窗：可以写想重点看什么，开始后新建一个分析对话并打开它。
+ * 两处共用：执行记录整体分析（不传 scope）、子任务窗口里的单个子任务分析（传 scope 和 subtitle）。
+ */
 export function AnalyzeDialog({
   open,
   onOpenChange,
   tasks,
   projectId,
+  scope,
+  subtitle,
+  hint,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   /** 要分析的执行（完整内容）；为空时弹窗里取 */
   tasks: () => Promise<Task[]>
   projectId: string
+  /** 只分析这一个子任务（子任务窗口进来的）；不传就是整条执行记录 */
+  scope?: HelperScope
+  /** 子任务的标题：拼进分析对话的标题，列表里能认出是哪个子任务 */
+  subtitle?: string
+  /** 弹窗里的说明文字：子任务分析要说清楚只看这一步 */
+  hint?: string
 }) {
   const { agents, upsertTask } = useData()
   const { go } = useNav()
@@ -691,7 +704,7 @@ export function AnalyzeDialog({
     try {
       const list = await tasks()
       if (!list.length) throw new Error(t('还没有可以分析的执行记录'))
-      const created = await startAnalysis({ tasks: list, agents, projectId, focus })
+      const created = await startAnalysis({ tasks: list, agents, projectId, focus, scope, scopeTitle: subtitle })
       upsertTask(taskSummary(created))
       onOpenChange(false)
       setFocus('')
@@ -710,7 +723,7 @@ export function AnalyzeDialog({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={t('AI 分析执行结果')}
+      title={scope ? t('AI 分析这个子任务') : t('AI 分析执行结果')}
       footer={
         <>
           <span className="min-w-0 flex-1 text-xs text-subtle">
@@ -727,9 +740,10 @@ export function AnalyzeDialog({
       }
     >
       <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t(
-          'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
-        )}
+        {hint ??
+          t(
+            'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
+          )}
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>
@@ -738,7 +752,11 @@ export function AnalyzeDialog({
           onChange={(e) => setFocus(e.target.value)}
           maxLength={1000}
           rows={3}
-          placeholder={t('例如：为什么验收总是不通过、哪些节点最费 token')}
+          placeholder={
+            scope
+              ? t('例如：为什么这一步这么慢、它有没有做角色以外的事')
+              : t('例如：为什么验收总是不通过、哪些节点最费 token')
+          }
           className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
         />
       </label>

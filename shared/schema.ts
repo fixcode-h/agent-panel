@@ -1232,6 +1232,12 @@ export const TaskStep = z.object({
   snapshot: z.string().default(''),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
+  /**
+   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。
+   * 父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；
+   * 旧记录没有这个字段，报告里如实说明看不到
+   */
+  brief: z.string().default(''),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
