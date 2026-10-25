@@ -828,6 +828,16 @@ export const EN_TASKS: Record<string, string> = {
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
+  // 子任务的 AI 分析（复用执行记录那一套弹窗）
+  'AI 分析这个子任务': 'AI analysis of this subtask',
+  '让 AI 分析这一步的耗时、角色符合度和优化空间':
+    'Let AI analyze how long this step took, whether it fit its role and what could improve',
+  '子任务 {title}': 'subtask {title}',
+  子任务记录: 'Subtask record',
+  '例如：为什么这一步这么慢、它有没有做角色以外的事':
+    'e.g. why this step is slow, whether it did anything outside its role',
+  'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。':
+    "The AI reads only this subtask's record (its time, waits, tokens, role definition, the instructions it was given and its conversation), and judges whether it is too slow, went outside its role, how it could be improved, and whether the panel itself has issues. It only analyzes and changes no files.",
   后台命令: 'Background command',
   '{n} 条后台命令': '{n} background commands',
   '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',

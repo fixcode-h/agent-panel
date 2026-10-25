@@ -7,10 +7,9 @@ import test from 'node:test'
 // 数据目录换成临时的：accounts.ts 在模块顶层就算数据目录，不能碰真正的 ~/.agent-panel
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-accounts-'))
 
-// 界面语言固定成中文：断言里有 t() 算出来的文案（项目教训 lmvjrq7zym1eq）
-const { setLang } = await import('../shared/i18n.ts')
-setLang('zh')
-
+// 语言不在这里固定：accounts.ts 的依赖链会引入 server/lang.ts，它在模块顶层按 process.env.LANG
+// 重新设置全局语言（CI 上是英文，本地 Windows 是中文），先 setLang('zh') 会被它覆盖。
+// 所以这里的期望文案一律用 t() 现算，两种语言下都成立（项目教训 lmvjrq7zym1eq）
 const { loginOutcome, loginFailure } = await import('./accounts.ts')
 const { t } = await import('../shared/i18n.ts')
 const { stripAnsi } = await import('../shared/ansi.ts')

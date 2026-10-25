@@ -5,7 +5,12 @@ import { Hono } from 'hono'
 import { McpStore } from '../shared/cli-spec.ts'
 import { McpServer } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
-import type { ProjectMcpDetected, ProjectMcpImportResult, ProjectMcpOverview } from '../shared/project-mcp.ts'
+import {
+  isPanelMcpUrl,
+  type ProjectMcpDetected,
+  type ProjectMcpImportResult,
+  type ProjectMcpOverview,
+} from '../shared/project-mcp.ts'
 import { mcpOverview, readServerTable, readToml, removeMcpFrom, testMcp, writeMcpTo } from './mcp-store.ts'
 
 /**
@@ -77,7 +82,8 @@ async function scan(dir: string): Promise<{ detected: ProjectMcpDetected[]; erro
       const text = await readFile(file, 'utf8')
       if (!text.trim()) continue
       if (s.store.format === 'toml') {
-        for (const [name, server] of Object.entries(readToml(text, s.store)))
+        for (const [name, server] of Object.entries(readToml(text, s.store))) {
+          if (isPanelMcpUrl(server.url)) continue
           detected.push({
             name,
             server,
@@ -87,11 +93,14 @@ async function scan(dir: string): Promise<{ detected: ProjectMcpDetected[]; erro
             raw: JSON.stringify(server, null, 2),
             nameOk: nameOk(name),
           })
+        }
       } else {
         const root = JSON.parse(text)
         const table = root?.[s.store.key]
         if (!table || typeof table !== 'object' || Array.isArray(table)) continue
-        for (const [name, server] of Object.entries(readServerTable(table, s.store)))
+        for (const [name, server] of Object.entries(readServerTable(table, s.store))) {
+          // 面板执行时临时写进来的自己的 MCP（agent-panel、以前的 panel-xxxx），不是用户的工具，不列出来
+          if (isPanelMcpUrl(server.url)) continue
           detected.push({
             name,
             server,
@@ -101,6 +110,7 @@ async function scan(dir: string): Promise<{ detected: ProjectMcpDetected[]; erro
             raw: JSON.stringify((table as Record<string, unknown>)[name], null, 2),
             nameOk: nameOk(name),
           })
+        }
       }
     } catch (e) {
       errors.push({ file: s.file, error: (e as Error).message })
