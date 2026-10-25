@@ -121,6 +121,17 @@ test('复制用户消息：卡片换成路径后和正文用空格隔开，粘�
   )
   // 前后都紧贴正文时两边各补一个空格，不能留两个
   assert.equal(copyText('前[文件:a.txt]后', [{ name: 'a.txt', path: '/tmp/a.txt', mime: '' }]), '前 /tmp/a.txt 后')
+  // 同理：卡片之间的路径不行，Skill / 命令紧跟路径时也要隔开，否则粘出来是「D:\up\a.png/blender」
+  // （正常发送时 Skill 总在最前面，只有手工拼出来的顺序会这样）
+  assert.equal(
+    copyText('[图片:a.png][技能:blender]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
+    'D:\\up\\a.png /blender',
+  )
+  // 正常顺序（Skill 在开头、后面才是卡片）的输出不变
+  assert.equal(
+    copyText('[技能:blender] 看 [图片:a.png]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
+    '/blender 看 D:\\up\\a.png',
+  )
 })
 
 test('复制用户消息：只有一张卡片时输出就是那个路径，粘贴回来整段认成引用', () => {

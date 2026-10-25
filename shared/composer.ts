@@ -142,6 +142,9 @@ export function copyText(value: string, attachments: readonly AttachLike[] = [])
       continue
     }
     if (!isAttachChip(s.chip.kind)) {
+      // Skill / 命令写成「/名字」。贴着前面的路径时也要隔开，否则读出来是「D:\up\a.png/blender」，
+      // 既不是那个路径也不是那条命令。正常发送时 Skill 总在最前面（forSend 提到最前），这里的空格只在异常顺序下出现
+      if (afterPath) out += ' '
       out += `/${s.chip.name}`
       afterPath = false
       continue

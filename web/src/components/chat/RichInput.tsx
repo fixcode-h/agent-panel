@@ -12,6 +12,7 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { chipMarker, isAttachChip, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
+import { setClipboardText } from '@/lib/clipboard-text'
 import { cn } from '@/lib/utils'
 import { scrollCaretIntoView } from '@/lib/caret'
 import { quoteLabel, quoteText } from '@/lib/quote'
@@ -311,6 +312,29 @@ export function RichInput({
   const [composeEnd, setComposeEnd] = useState(0)
   const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf })
   cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf }
+
+  /**
+   * 选中卡片复制 / 剪切时按卡片的真实内容写剪贴板：浏览器原生复制拿到的是卡片上截断过的摘要
+   * （引用卡片只显示前 40 个字），粘回去原文和标记都没了。
+   * 两种格式一起写：text/plain 给面板自己的输入框还原卡片，text/html 给 Word、Excel 保住换行和缩进。
+   * 返回选中的 range 和在文字里的起点，剪切要用它们删掉内容、把光标留在删完的位置；
+   * 没选中输入框里的东西时返回 null，交给浏览器原生行为
+   */
+  const copySelection = useCallback((e: ClipboardEvent<HTMLDivElement>) => {
+    const node = el.current
+    const sel = window.getSelection()
+    if (!node || !sel || !sel.rangeCount) return null
+    const r = sel.getRangeAt(0)
+    if (r.collapsed || !node.contains(r.commonAncestorContainer)) return null
+    setClipboardText(
+      e.clipboardData,
+      serialize(r.cloneContents(), (chip) => cb.current.copyOf?.(chip)),
+    )
+    const before = document.createRange()
+    before.selectNodeContents(node)
+    before.setEnd(r.startContainer, r.startOffset)
+    return { range: r, at: serialize(before.cloneContents()).length }
+  }, [])
 
   const emit = useCallback(() => {
     const node = el.current
@@ -628,18 +652,17 @@ export function RichInput({
           api.insert(e.clipboardData.getData('text/plain'))
         }}
         onCopy={(e) => {
-          // 选中卡片复制时按卡片的真实内容写剪贴板：浏览器原生复制拿到的是卡片上截断过的摘要
-          // （引用卡片只显示前 40 个字），粘回去原文和标记都没了
-          const node = el.current
-          const sel = window.getSelection()
-          if (!node || !sel || !sel.rangeCount) return
-          const r = sel.getRangeAt(0)
-          if (r.collapsed || !node.contains(r.commonAncestorContainer)) return
+          if (copySelection(e)) e.preventDefault()
+        }}
+        onCut={(e) => {
+          const cut = copySelection(e)
+          if (!cut) return
+          // 拦下原生剪切就得自己删：原生剪切删完以后浏览器再把同样的内容写一遍剪贴板，又是那段摘要。
+          // 删完走 emit，让卡片背后的附件跟着去掉（onChange 按卡片名字对账）
           e.preventDefault()
-          e.clipboardData.setData(
-            'text/plain',
-            serialize(r.cloneContents(), (chip) => cb.current.copyOf?.(chip)),
-          )
+          cut.range.deleteContents()
+          emit()
+          place(cut.at)
         }}
       />
       {!value && placeholder && (
