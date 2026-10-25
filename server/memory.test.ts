@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -10,7 +10,7 @@ process.env.AGENT_PANEL_DATA = dir
 
 const { Hono } = await import('hono')
 const { memorySampler, childMemory } = await import('./memory.ts')
-const { dataApi } = await import('./data.ts')
+const { dataApi, readBackupFiles } = await import('./data.ts')
 const { MemoryUsage, DataUsage } = await import('../shared/data.ts')
 
 const SAMPLE = {
@@ -79,4 +79,34 @@ test('数据页接口带上内存采样和各类占用', async () => {
   assert.equal(body.child.bytes, 300e6)
   assert.equal(body.kinds.length, 5)
   DataUsage.parse(body)
+})
+
+test('导出跳过半截的 .tmp：备份里只有正常文件', async () => {
+  const tasks = path.join(dir, 'tasks')
+  mkdirSync(tasks, { recursive: true })
+  writeFileSync(path.join(tasks, 'keep.json'), '{}')
+  writeFileSync(path.join(tasks, 'keep.json.123.abcd.tmp'), '{')
+  const res = await app().request('/data/export?kinds=tasks')
+  assert.equal(res.status, 200)
+  const body = await res.json()
+  assert.deepEqual(Object.keys(body.files), ['tasks/keep.json'])
+  assert.equal(body.skipped, undefined, '没跳过文件时不带 skipped')
+})
+
+test('导出时文件读的时候已经没了（任务正好在写、刚删）：跳过并列进 skipped，别的错照样抛', async () => {
+  const gone = Object.assign(new Error('gone'), { code: 'ENOENT' })
+  const read = async (full: string) => {
+    if (full.endsWith('b.json')) throw gone
+    return Buffer.from('{}')
+  }
+  const r = await readBackupFiles(['tasks/a.json', 'tasks/b.json', 'tasks/c.json.1.x.tmp'], read)
+  assert.deepEqual(Object.keys(r.files), ['tasks/a.json'])
+  assert.deepEqual(r.skipped, ['tasks/b.json'])
+  const denied = Object.assign(new Error('denied'), { code: 'EACCES' })
+  await assert.rejects(
+    readBackupFiles(['tasks/a.json'], async () => {
+      throw denied
+    }),
+    /denied/,
+  )
 })

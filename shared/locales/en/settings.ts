@@ -307,6 +307,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。':
     'Export to a file, then import it in Settings on another computer. Each kind of data in the file fully replaces what is here.',
   导出数据: 'Export data',
+  '{n} 个文件导出时正在写入或刚被删除，没放进备份：{files}':
+    '{n} files were being written or had just been deleted during export and were left out of the backup: {files}',
   导入数据: 'Import data',
   '导入数据？': 'Import data?',
   '文件不是有效的 JSON': 'The file is not valid JSON',
