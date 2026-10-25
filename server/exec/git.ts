@@ -65,6 +65,12 @@ export async function gitChanges(
     })
 }
 
+/** 配了远端没有（没有远端的仓库推不了，父对话的推送收尾也就没有意义） */
+export async function gitHasRemote(cwd: string): Promise<boolean> {
+  const r = await git(cwd, 'remote')
+  return r.code === 0 && r.stdout.trim() !== ''
+}
+
 /** 本地分支，最近提交的排在前面；current 是当前所在的分支（分离 HEAD 时为空） */
 export async function gitBranches(cwd: string): Promise<{ current: string | null; branches: string[] }> {
   const list = await git(cwd, 'for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads')

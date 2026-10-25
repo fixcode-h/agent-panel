@@ -284,11 +284,17 @@ test('终止子任务：只停那一个，按「已终止」交回，别的子�
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
   /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
-  const promptsOf = async (chat: Record<string, unknown>, extra: Partial<EngineHost> = {}) => {
+  const promptsOf = async (
+    chat: Record<string, unknown>,
+    extra: Partial<EngineHost> = {},
+    /** 任务上 newTask 给不出的字段（worktree 这类运行时状态） */
+    patch: Record<string, unknown> = {},
+  ) => {
     const prompts: string[] = []
     const task = {
       ...newTask({ projectId: 'p', mode: 'chat', prompt: '把剩下的测试补完', ...chat } as never, undefined, '', 'kid'),
       id: 'kid',
+      ...patch,
     } as Task
     await runEngineTurn({
       task,
@@ -357,9 +363,40 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const allow = await promptsOf({}, { policy: { push: 'allow', tools: [] } })
   assert.match(
     allow[0],
-    /允许直接推送」，这就是用户的授权，不用再问。任务做完、验证通过并在本地提交之后，直接把当前分支推到它跟踪的远端分支/,
+    /允许直接推送」，这就是用户的授权，不用再问。任务做完、验证通过并在本地提交之后就把当前分支推到它跟踪的远端分支/,
   )
   assert.match(allow[0], /比角色设定、技能里「不推送 \/ 本地先行 \/ 推送要用户明确授权」的默认写法优先/)
+  // 有推送收尾时（父对话、Git 仓库有远端）：只让模型照着计划的最后一步做，不另写一条重复的推送步骤
+  const allowWrap = await promptsOf({}, { policy: { push: 'allow', tools: [] }, wrapUp: 'push' })
+  assert.match(
+    allowWrap[0],
+    /收尾：推送到远端已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条/,
+  )
+  assert.match(allowWrap[0], /## 收尾：计划的最后一步[\s\S]*推成功后把这步标完成/)
+  assert.match(
+    allowWrap[0],
+    /由面板加在最后，别删、别挪到前面，也不要自己再写一条重复的收尾步骤/,
+    '计划那段也要讲清收尾由面板加',
+  )
+  assert.doesNotMatch(allow[0], /收尾：推送到远端已经在计划的最后一步/, '没有推送收尾时不提这一步')
+  // 父对话在独立分支里：推送收尾和「执行目录」那段要一致（先合回原分支再推，不直接推独立分支）
+  const allowWt = await promptsOf(
+    {},
+    { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
+    { worktree: { state: 'active', branch: 'agent-panel/x', path: '/tmp/wt', baseBranch: 'dev' } },
+  )
+  assert.match(allowWt[0], /计划的最后一步是「收尾：推送到远端」：那时先把它合回原分支/)
+  assert.match(allowWt[0], /推送归计划的最后一步「收尾：推送到远端」：合回原分支之后推原分支/)
+  assert.doesNotMatch(allowWt[0], /提交留在这个分支上，由用户决定合并还是丢弃/, '和推送收尾不矛盾')
+  // 明确不推送（'none'）：计划里不提收尾这一段
+  const none = await promptsOf({}, { policy: { push: 'deny', tools: [] }, wrapUp: 'none' })
+  assert.doesNotMatch(none[0], /## 收尾：计划的最后一步/)
+  // 子对话的推送收尾不成立：子对话永远不碰远端
+  const childWrap = await promptsOf(
+    { parentTaskId: 'parent' },
+    { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
+  )
+  assert.match(childWrap[0], /由父对话决定，不在你的处理范围内/)
   const deny = await promptsOf({}, { policy: { push: 'deny', tools: [] } })
   assert.match(deny[0], /不推送，只做本地提交」。不 push/)
   assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
