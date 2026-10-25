@@ -490,4 +490,6 @@ export const EN_SERVER: Record<string, string> = {
   '没有发现运行中的本机代理。': 'No running local proxy was found.',
   '访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
     "If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  // 任务记录丢失、从对话内容重建出来的标题
+  恢复的对话: 'Recovered conversation',
 }
