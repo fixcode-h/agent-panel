@@ -20,10 +20,11 @@ import {
   type DeployResult,
   type DeployState,
   type DeployStatus,
+  type SkillUpdates,
 } from '../shared/deploy.ts'
 import { frontField } from '../shared/library.ts'
 import { resolveSkills } from '../shared/skill-guide.ts'
-import { entries, retireBundled, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
+import { entries, retireBundled, sharedRoot, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
@@ -90,6 +91,18 @@ async function state(): Promise<DeployState> {
   return { config, template: deployTemplate(), skillRoot: root, skills, targets }
 }
 
+/** 两处装过的自带技能里和这一版自带的不同的：没装的不算要更新 */
+export async function skillUpdates(picked?: string[]): Promise<SkillUpdates> {
+  const all = await entries()
+  const changed = async (dir: (e: Entry) => string) =>
+    (await Promise.all(all.map(async (e) => ((await statusIn(e, dir(e))) === 'changed' ? e.name : '')))).filter(Boolean)
+  const root = skillRoot()
+  // 部署只更新勾选的技能；没勾选、改过的留给用户，算进来提示点就永远消不掉
+  const on = new Set(picked ?? (await loadConfig()).skills)
+  const deployed = (await changed((e) => path.join(root, e.category))).filter((n) => on.has(n))
+  return { shared: await changed(() => sharedRoot()), deployed }
+}
+
 export async function deploy(run: DeployRun): Promise<DeployResult> {
   const all = await entries()
   const root = skillRoot()
@@ -153,6 +166,7 @@ export function deployApi(deps: {
   }
   return new Hono()
     .get('/', async (c) => c.json(await state()))
+    .get('/updates', async (c) => c.json(await skillUpdates()))
     .put('/', async (c) => {
       try {
         await save(await c.req.json())

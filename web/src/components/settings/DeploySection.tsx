@@ -6,6 +6,7 @@ import { SKILL_TARGET, type DeployConfig, type DeployState, type DeployStatus } 
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
+import { refreshSkillUpdates } from '@/lib/skill-updates'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -68,6 +69,8 @@ export function DeploySection() {
   const toggle = <K extends 'skills' | 'clis'>(key: K, id: string, on: boolean) =>
     set({ [key]: on ? [...draft[key], id] : draft[key].filter((x) => x !== id) })
   const changed = st.skills.some((s) => s.status === 'changed')
+  // 勾选了、但和这一版自带的不同：多半是面板更新带来了新内容，要覆盖部署一次才用得上
+  const outdated = st.skills.filter((s) => s.status === 'changed' && draft.skills.includes(s.name))
 
   const save = async () => {
     setBusy('save')
@@ -89,6 +92,8 @@ export function DeploySection() {
         overwrite,
       })
       apply(state)
+      // 侧栏和「部署」上的更新提示点跟着刷新
+      void refreshSkillUpdates()
       const docs = r.docs.filter((d) => d.result !== 'same').length
       toast.success(
         r.skills.length || r.removed.length || docs
@@ -238,6 +243,22 @@ export function DeploySection() {
       </Group>
 
       <Group title={t('要部署的技能（已选 {n} 个）', { n: draft.skills.length })}>
+        {outdated.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            <span className="min-w-0 flex-1 text-[0.78125rem] leading-relaxed">
+              {t('{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。', {
+                n: outdated.length,
+                names: outdated.map((s) => s.name).join(t('、')),
+              })}
+            </span>
+            {!overwrite && (
+              <Button size="sm" variant="secondary" onClick={() => setOverwrite(true)}>
+                {t('勾选覆盖')}
+              </Button>
+            )}
+          </div>
+        )}
         <div className="mb-2 flex flex-wrap items-center gap-3 text-[0.78125rem] text-subtle">
           <span className="min-w-0 flex-1 truncate font-mono" title={st.skillRoot}>
             {st.skillRoot}
@@ -274,7 +295,7 @@ export function DeploySection() {
                                   s.status === 'same' ? 'text-success' : 'text-warning',
                                 )}
                               >
-                                {s.status === 'same' ? t('已部署') : t('本机改过')}
+                                {s.status === 'same' ? t('已部署') : t('和自带的不同，可更新')}
                               </span>
                             )}
                           </p>
@@ -302,7 +323,7 @@ export function DeploySection() {
             checked={overwrite}
             onChange={setOverwrite}
             label={t('覆盖本机改过的技能')}
-            hint={t('不勾时保留你改过的版本')}
+            hint={t('不勾时保留本机的版本；面板更新后要勾上才能换成新版本')}
           />
         )}
         <span className="ml-auto" />

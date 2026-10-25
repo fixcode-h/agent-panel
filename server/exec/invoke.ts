@@ -12,6 +12,7 @@ import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
+import { claimPanelName, sweepPanelMcp } from '../panel-mcp-files.ts'
 import { promptLangReminder } from '../../shared/prompt-lang.ts'
 import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine.ts'
@@ -167,6 +168,7 @@ export async function invokeCli(o: {
   // 模型调用时一直等到用户回答。Claude Code、Codex 走自己的协议，不需要
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
+  let slot: ReturnType<typeof claimPanelName> | undefined
   let run = { ...o, build }
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
@@ -190,10 +192,11 @@ export async function invokeCli(o: {
       ...(o.orch ? { orch: o.orch } : {}),
       ...(o.orch && o.app ? { app: o.app } : {}),
     })
-    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：子对话共用一个目录，同时在跑的几轮各用一个名字，
-    // 不然后写的会把先写的那一项冲掉。用参数传的不受影响，保持固定的名字
+    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：同一个目录里平时只有一项 agent-panel，
+    // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
-    servers.unshift({ name: fileBased ? `panel-${bridge.url.slice(-6)}` : 'panel', url: bridge.url })
+    if (fileBased) slot = claimPanelName(o.cwd, bridge.url.slice(-6))
+    servers.unshift({ name: slot?.name ?? 'panel', url: bridge.url })
     if (o.orch && o.app) input = `${input}\n\n${APP_HINT}`
     if (own) {
       // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
@@ -223,6 +226,8 @@ export async function invokeCli(o: {
         files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
       )
     try {
+      // 先清掉以前没来得及删的面板条目（面板被关掉、崩溃时留下的），项目里不会越积越多
+      if (slot) await sweepPanelMcp(o.cwd)
       restore = await applyConfigFiles(
         o.cwd,
         [...files].map(([p, content]) => ({ path: p, content })),
@@ -249,6 +254,7 @@ export async function invokeCli(o: {
     o.signal?.removeEventListener('abort', onStop)
     bridge?.close()
     await restore?.().catch(() => {})
+    slot?.release()
     await restoreLimits?.().catch(() => {})
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
     if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => {})

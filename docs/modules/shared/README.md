@@ -22,6 +22,7 @@
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
 - 清终端控制序列（`shared/ansi.ts` 的 `stripAnsi`）：清 CSI（SGR 颜色、加粗、清屏、光标移动，7 位 ESC 引导和 8 位 0x9B 引导两种）、OSC、两字符转义和进度条用的 `\r`；**普通方括号文本原样保留**（`[32m]`、Markdown 链接 `[文字](...)` 前面没有 ESC 就不是转义）。CLI 发现 stdout 接终端就上色，而面板把同一份输出用于界面 `<pre>`、报错文案和「AI 处理」上下文，所以在服务端写进 `job.output` 之前清一次（`server/accounts.ts` 的 `take`）。
 - 子对话收尾的评审门禁（`shared/review-gate.ts`）：评审通过，或执行角色对每条高级、中级意见写了处置（`review_triage`）才放行，评审只出意见（[ADR 0009](../../adr/0009-review-findings-triaged.md)、[ADR 0010](../../adr/0010-review-code-only.md)）；验收结论的读法在 `shared/verdict.ts`（`parseVerdict` 取最后一条、`leadVerdict` 首行优先），引擎、门禁、执行报告共用。
+- 任务导出与 AI 分析报告（`shared/task-export.ts`）：`taskReport` / `analysisReport` / `analysisPrompt` 是整体分析（导出、导入、执行记录分析共用）；可选的 `HelperScope = { stepId }` 把三者收窄到一个子任务（子任务窗口的「AI 分析」），报告走 `helperReport`、提示词走 `helperPrompt`（四类问题：耗时、角色符合度、优化空间、面板框架，不要求工作流修改建议块）。`helperReport` 的角色设定用 `composeRole` 拼好的实际生效内容（含引入的 Agent），派给子任务的要求原文取自 `TaskStep.brief`（`shared/engine.ts` 的 `spawn` 落盘；为空时同时说明「旧记录没保存」和「派它时只写了标题」两种可能）。`taskSummary` 会把 `brief` 一起清掉（列表和侧栏读不到、可能上千字）；演示版的 `load()` 对 `db.tasks` 也跑一遍 `Task.parse`，旧 localStorage 里缺新字段的任务才不会在读的时候报 undefined。传了 scope 才走收窄逻辑，不传时行为不变；报告的时间口径不变式见 `docs/lessons/task-export.md`。回归：`server/task-export.test.ts`（整体）和 `server/task-export-helper.test.ts`（子任务范围）。
 
 ## 入口
 

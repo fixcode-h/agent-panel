@@ -59,7 +59,7 @@ export async function entries(): Promise<Entry[]> {
 }
 
 /** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
-const sharedRoot = () => expandHome('~/.agents/skills')
+export const sharedRoot = () => expandHome('~/.agents/skills')
 
 /** 并入 project-testing 的「测试先行」和 writing-tests.md */
 const OLD_TDD: Record<string, string> = {

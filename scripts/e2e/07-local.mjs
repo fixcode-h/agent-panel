@@ -892,7 +892,7 @@ await runShard('本机请求与设置', async (api) => {
     const piExt = calls()
       .filter((x) => x.kind === 'pi')
       .map((x) => x.args[x.args.indexOf('-e') + 1])
-      .find((x) => x && /agent-panel-panel/.test(x))
+      .find((x) => x && /agent-panel-(agent-)?panel/.test(x))
     assert.ok(piExt && path.isAbsolute(piExt) && piExt.startsWith(dataDir), `桥接扩展在面板的数据目录里：${piExt}`)
     assert.ok(!existsSync(piExt), 'Pi 的桥接扩展用完删掉了')
     // 提问开关关着：不弹出，工具让模型自己选
