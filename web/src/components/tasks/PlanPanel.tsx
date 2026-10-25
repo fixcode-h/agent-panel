@@ -343,14 +343,13 @@ function PlanStepRow({
             )}
             <ItemTime item={step} now={now} />
           </span>
-          {(meta || step.note) && (
+          {/* itemLine 已经带上备注：这里再接一次 note，同一句话会显示两遍 */}
+          {meta && (
             <span
               className={cn('line-clamp-2 text-xs', step.status === 'waiting' ? 'text-warning' : 'text-subtle')}
-              title={step.note || meta}
+              title={meta}
             >
-              {[meta, step.status === 'waiting' && step.waits.some((w) => w.state === 'waiting') ? '' : step.note]
-                .filter(Boolean)
-                .join(' · ')}
+              {meta}
             </span>
           )}
         </span>
