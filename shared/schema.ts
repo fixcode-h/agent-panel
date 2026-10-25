@@ -1338,6 +1338,8 @@ export const PlanWait = z.object({
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
+  /** 开始等的时间（子对话是它的创建时间）：步骤用时从真正开工算起。旧数据没有 */
+  at: z.string().optional(),
 })
 export type PlanWait = z.infer<typeof PlanWait>
 
@@ -1917,6 +1919,8 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
+  developerMode: z.boolean().catch(false).default(false),
   /**
    * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
    * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来

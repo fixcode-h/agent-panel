@@ -128,6 +128,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [developerMode, setDeveloperMode] = useState(initial.developerMode)
   const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
@@ -273,6 +274,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    developerMode,
     shell,
     proxy: proxy.trim(),
     contentWidth,
@@ -750,6 +752,14 @@ function SettingsBody({
                   checked={askUserDefault}
                   onCheckedChange={setAskUserDefault}
                 />
+              </Row>
+              <Row
+                title={t('开发者模式')}
+                desc={t(
+                  '打开后对话输入框上多一个「抓取界面元素」按钮：点一下再点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出抓取。',
+                )}
+              >
+                <Switch aria-label={t('开发者模式')} checked={developerMode} onCheckedChange={setDeveloperMode} />
               </Row>
               <Row
                 title={t('大文件只引用路径')}

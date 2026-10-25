@@ -229,6 +229,8 @@ export const EN_SERVER: Record<string, string> = {
     'This project has no workflow yet. Choose a workflow or use direct chat instead.',
   请选择对话的角色: 'Choose a role to chat with',
   '任务正在执行，请等它完成或先停止': 'The task is running. Wait for it to finish or stop it first.',
+  '这一轮没有正常结束，消息留在对话里，发一条消息或点「继续执行」会处理':
+    'This turn did not finish normally. The message is kept in the conversation and will be handled when you send a message or click Continue.',
   任务正在执行: 'The task is running',
   只有失败或停止的任务可以继续: 'Only failed or stopped tasks can be resumed',
   这个请求已经结束了: 'This request has already ended',
@@ -385,6 +387,9 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮 {cli} 没有返回任何内容，用户的要求还没处理':
     'This turn produced no output from {cli}, so the request has not been handled',
+  '回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去':
+    'The reply says it was forwarded to a child conversation, but send_to_conversation was never called this turn, so nothing was sent',
+  '{what}。正在自动接一轮，让它真的发出去…': '{what}. Starting another turn automatically so it actually sends it…',
   '这一轮只回了一句话就结束了，没有动手也没给出结论':
     'This turn ended after a single sentence: nothing was done and no conclusion was given',
   '{what}。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':

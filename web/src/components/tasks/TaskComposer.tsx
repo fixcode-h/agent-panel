@@ -36,6 +36,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
+import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 
@@ -313,6 +314,7 @@ export function TaskComposer({
               workflowId={workflowId}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
+            <ElementPickButton onPick={chips.addQuote} className="h-8 w-8 rounded-lg" />
             {workflow ? (
               <>
                 {isolateSwitch}
