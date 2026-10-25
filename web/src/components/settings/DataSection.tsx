@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Download, FolderOpen, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { DATA_KINDS, type DataKind, type DataUsage } from '@shared/data'
 import { MEMORY_ASK, MEMORY_TOPIC, formatBytes, formatSampleTime, formatUptime, memoryReport } from '@shared/memory'

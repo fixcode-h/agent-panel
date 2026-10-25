@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ChevronRight, Copy, Gamepad2, Globe, Loader2, Palette, Trash2 } from 'lucide-react'
 import { PROMPT_CATEGORY_LABEL, type SavedStyle, type SavedStyleInput } from '@shared/design'
 import { api } from '@/lib/api'

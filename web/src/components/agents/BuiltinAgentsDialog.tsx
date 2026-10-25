@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'

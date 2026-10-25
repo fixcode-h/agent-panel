@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, ChevronDown, FolderPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fieldClass } from './input'

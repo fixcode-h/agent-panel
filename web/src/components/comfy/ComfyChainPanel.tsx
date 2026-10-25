@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ArrowDown, ImagePlus, Loader2, Play, Plus, Save, Trash2, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { IMG2IMG_DENOISE, workflowInKind, type ComfyWorkflow } from '@shared/local-image'

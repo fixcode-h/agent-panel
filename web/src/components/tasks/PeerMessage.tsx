@@ -18,7 +18,7 @@ import {
   Scale,
   X,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { PeerKind, TaskMessage } from '@shared/schema'
 import type { SendTarget } from '@/lib/tasks'
 import { LEAD_TAG, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'

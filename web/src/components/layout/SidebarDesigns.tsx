@@ -15,7 +15,7 @@ import {
   Trash2,
   Palette,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
 import { api } from '@/lib/api'

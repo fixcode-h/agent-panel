@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { Alert, Task, TaskMessage, ToolUse } from '@shared/schema'
 import { makeAlert } from '@shared/alerts'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { api } from '@/lib/api'
 import { AlertRow } from './AlertRow'
 import { useData } from '@/lib/data'

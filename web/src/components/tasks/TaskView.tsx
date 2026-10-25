@@ -12,7 +12,7 @@ import {
 } from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ArrowLeft,
   ArrowRight,
