@@ -1,6 +1,6 @@
 /**
  * 访问外网（GitHub）的请求：Node 自带的 fetch 不走代理，国内访问 GitHub 常常连不上。
- * 设置里填了代理就用它，没填时看环境变量 HTTPS_PROXY / HTTP_PROXY；
+ * 设置里的「启用代理」打开且填了地址就用它，否则看环境变量 HTTPS_PROXY / HTTP_PROXY；
  * 直连或配置的代理连不上时，再自动找本机正在运行的代理（系统代理 → 常见端口）重试一遍。
  */
 import { execFile } from 'node:child_process'
@@ -300,6 +300,7 @@ function dispatcherFor(key: string) {
 
 /**
  * 这次请求一开始走哪条路：设置里的代理优先，其次环境变量（这时 NO_PROXY 生效），最后直连。
+ * set 传的是「实际生效的地址」（已经过了 configuredProxy 的开关判断），这里不再看开关。
  * 设置里填的地址没写协议时补 http://，否则 ProxyAgent 解析不了；socks 这类不支持的照原样传下去，
  * 请求失败后按正常回退处理。
  */
@@ -319,11 +320,19 @@ export function planFor(
   return { kind: 'proxy', key: env, shown: redact(env) }
 }
 
-/** 设置里的代理优先；没填时用环境变量（这时 NO_PROXY 也照常生效） */
+/**
+ * 设置里实际生效的代理地址。开关关着时按「没填」处理：只是不用这里的地址，
+ * 环境变量 HTTPS_PROXY 和本机代理自动探测不受影响（那两条不是这一页的配置，界面上也讲明了）。
+ */
+export function configuredProxy(s: { proxy: string; networkProxyEnabled: boolean }) {
+  return s.networkProxyEnabled ? s.proxy.trim() : ''
+}
+
+/** 设置里的代理（开关打开且填了才算）优先；没填时用环境变量（这时 NO_PROXY 也照常生效） */
 async function defaultPlan(url: string): Promise<ProxyPlan> {
   let set = ''
   try {
-    set = (await getSettings()).proxy.trim()
+    set = configuredProxy(await getSettings())
   } catch {
     // 设置读不出来时按没填处理，仍然可以走环境变量和自动检测
   }
@@ -416,8 +425,7 @@ function failure(error: unknown, tried: Attempt[], probed: boolean, stop: boolea
   if (stop) return new Error(base, { cause: error })
   let message = base
   // 最后一条也是代理时，netError 的代理文案不会再提设置页；需求要求这条提示始终保留
-  if (last.source !== 'direct')
-    message += ' ' + t('访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。')
+  if (last.source !== 'direct') message += ' ' + t('访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。')
   if (tried.length > 1) {
     message += ' ' + t('尝试过的路径：{paths}。', { paths: tried.map(pathLabel).join('、') })
   }
@@ -488,5 +496,5 @@ export function netError(e: unknown, proxy = ''): string {
   const base = detail ? `${err.message}（${detail}）` : err.message
   return proxy
     ? t('{error}。当前使用代理 {proxy}，请确认代理能访问 GitHub。', { error: base, proxy })
-    : t('{error}。访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。', { error: base })
+    : t('{error}。访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。', { error: base })
 }
