@@ -16,6 +16,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
 import { AnalyzeDialog } from './Evolution'
+import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
@@ -334,17 +335,27 @@ export function HelperWindow({
           </footer>
         </D.Content>
       </D.Portal>
-      {/* 弹窗开在子任务窗口之上。分析完 startAnalysis 会 go() 跳到新对话，父组件随之卸载，这个子任务窗口跟着消失 */}
+      {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在父对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
       <AnalyzeDialog
         open={analyzing}
         onOpenChange={setAnalyzing}
-        tasks={async () => [await api.task(task.id)]}
-        projectId={task.projectId}
-        scope={{ stepId: step.id }}
-        subtitle={t('子任务 {title}', { title: step.title })}
-        hint={t(
+        title={t('AI 分析这个子任务')}
+        subject={t('子任务 {title}', { title: step.title })}
+        intro={t(
           'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。',
         )}
+        placeholder={t('例如：为什么这一步这么慢、它有没有做角色以外的事')}
+        start={async (focus) => {
+          onClose()
+          return startAnalysis({
+            tasks: [await api.task(task.id)],
+            agents,
+            projectId: task.projectId,
+            focus,
+            scope: { stepId: step.id },
+            scopeTitle: t('子任务 {title}', { title: step.title }),
+          })
+        }}
       />
     </D.Root>
   )

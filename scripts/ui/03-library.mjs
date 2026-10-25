@@ -127,7 +127,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'AI分析-收起')
   await p.getByRole('button', { name: '展开分析结果' }).click()
   await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 5000 })
-  await p.locator('#follow-up').first().click()
+  // 分析对话在统一的 AI 分析窗口里：输入框是窗口里分析对话的那个（右栏开着修复的子对话，它的输入框在后面）
+  await p.getByRole('dialog').locator('#follow-up').first().click()
   await p.keyboard.type('接着说说第一个问题')
   await p.keyboard.press('Enter')
   await p
@@ -135,15 +136,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('AI 分析：发了新内容后结果没有自动收起'))
   await check(p, 'AI分析-发送后收起')
+  // 工作流执行的分析开在项目里（不是挂在某个对话下）：窗口给的是「在项目对话里打开」
+  if (!(await p.getByRole('button', { name: '在项目对话里打开' }).count()))
+    errors.push('AI 分析：工作流执行的分析没有开在项目对话里')
+  // 看完关掉窗口（还在回答就一起停掉），后面的页面不被它挡住
+  await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).first().click()
+  await p
+    .getByRole('dialog')
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
   await p.goto(base + '#/agents')
   // 必备角色自成一个分组：评审也是必备角色（子对话收尾前派它看 diff）
   await check(p, 'Agent', ['命令预览', '必备', '评审'])
-  // 必备分组后面跟着计数（评审升进来之后是 7）：label 和计数是两个 span，只查文本查不出数字
+  // 必备分组后面跟着计数（评审、分析升进来之后是 8）：label 和计数是两个 span，只查文本查不出数字
   const coreHead = await p.evaluate(() => {
     const label = [...document.querySelectorAll('span')].find((el) => el.textContent?.trim() === '必备')
     return label?.parentElement?.textContent?.trim() ?? ''
   })
-  if (!/必备\s*·\s*7/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 7（读到「${coreHead}」）`)
+  if (!/必备\s*·\s*8/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 8（读到「${coreHead}」）`)
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])

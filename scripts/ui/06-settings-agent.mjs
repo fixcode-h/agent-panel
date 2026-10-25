@@ -194,7 +194,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('浮条：对话删掉后浮条没显示「对话已关闭」'))
   await check(p, 'AI处理-对话关了浮条还在', ['对话已关闭'])
   await aiDock.getByRole('button', { name: '展开', exact: true }).click()
-  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从聊天列表里删掉'])
+  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从对话列表里删掉'])
   // 关闭按钮直接关：不再弹「关闭窗口会停止这次排查」的确认
   await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
   await p

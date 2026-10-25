@@ -376,20 +376,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await dlg.getByRole('button', { name: '应用', exact: true }).click()
     await check(p, '项目设置-AI初始化-已应用', ['已应用这份分析的设置'])
     if (await dlg.getByText('和推荐值不同的设置').count()) errors.push('AI 初始化：单项应用后差异列表还在')
+    // 已经建好的项目：初始化在这个项目里开一个对话来做（AI 分析统一归属），在统一的 AI 分析窗口里看；
+    // 做完结果自动交回设置页的「AI 初始化」
     await dlg.getByRole('button', { name: '重新初始化' }).click()
-    const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     await p
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll('button')].some(
-            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
-          ),
-        null,
-        { timeout: 20000 },
-      )
-      .catch(() => errors.push('AI 初始化：等不到「查看推荐并应用」'))
-    await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
-    await reviewInit.click().catch(() => {})
+      .getByRole('button', { name: '在项目对话里打开' })
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('AI 初始化：已有项目的初始化没有开成项目对话'))
+    await check(p, 'AI初始化-对话')
+    await p
+      .getByText('结果已经交回项目设置', { exact: false })
+      .first()
+      .waitFor({ timeout: 30000 })
+      .catch(() => errors.push('AI 初始化：对话结束后结果没有交回设置页'))
+    // 关掉分析窗口，回到设置页看推荐
+    await p.getByRole('button', { name: '关闭', exact: true }).last().click()
     await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
     await p
       .getByRole('button', { name: '全部应用' })
