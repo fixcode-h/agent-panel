@@ -7,10 +7,9 @@ import test from 'node:test'
 // 数据目录换成临时的：accounts.ts 在模块顶层就算数据目录，不能碰真正的 ~/.agent-panel
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-accounts-'))
 
-// 界面语言固定成中文：断言里有 t() 算出来的文案（项目教训 lmvjrq7zym1eq）
-const { setLang } = await import('../shared/i18n.ts')
-setLang('zh')
-
+// 语言不在这里固定：accounts.ts 的依赖链会引入 server/lang.ts，它在模块顶层按 process.env.LANG
+// 重新设置全局语言（CI 上是英文，本地 Windows 是中文），先 setLang('zh') 会被它覆盖。
+// 所以这里的期望文案一律用 t() 现算，两种语言下都成立（项目教训 lmvjrq7zym1eq）
 const { loginOutcome, loginFailure } = await import('./accounts.ts')
 const { t } = await import('../shared/i18n.ts')
 const { stripAnsi } = await import('../shared/ansi.ts')
@@ -70,9 +69,10 @@ test('失败文案分开：退出码 0 但没凭据要说「没有找到登录�
     [t('{cli} 没有完成登录（退出码 {code}）', { cli: 'Command Code', code: '0' }), out].join('\n'),
   )
   // 退出码非 0 保留原来的文案，带上尾部输出方便排查
-  assert.match(
+  // 按 t() 拼期望值：测试进程的界面语言可能是英文，不能直接匹配中文原句
+  assert.equal(
     loginFailure({ outcome: 'unchanged', cli: 'Command Code', code: 2, output: out }),
-    /退出码 2[\s\S]*Already logged in/,
+    [t('{cli} 没有完成登录（退出码 {code}）', { cli: 'Command Code', code: '2' }), out].join('\n'),
   )
 })
 

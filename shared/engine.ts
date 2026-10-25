@@ -2945,6 +2945,8 @@ function makeOrchestra(
           title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
           agentId: agent?.id ?? self.agentId,
           session: prev ? prev.session || prev.id : '',
+          // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到
+          brief: spec.instructions.trim(),
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
