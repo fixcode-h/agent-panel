@@ -78,6 +78,20 @@ export const BUG_METHOD = `## 找 Bug：按模块逐层定位
 交回：问题在哪个模块、哪一层，根因（路径:行号），怎么确认的（测试或日志输出），改了什么，验证结果，顺带发现。`
 
 /** 调研、评审、子任务共用的定位顺序：先看模块地图和模块文档，再读代码，避免全局乱搜。改这句要同步 server/builtin.test.ts 的 lookup 正则 */
+/**
+ * 写代码的硬规则：执行和开发角色共用。细则在 coding-standards 技能里，
+ * 但模型不一定去读技能，最要紧的几条直接写进角色设定
+ */
+export const CODING_TEXT = `## 写代码的规范
+细则见 coding-standards 技能；下面几条每次改代码都要守住：
+- 先读再写：改之前读要改的文件和同目录的同类文件、调用方；命名、目录、错误处理、日志、注册方式跟着最近的同类走，不引入第二套写法。要写工具函数、常量、类型前先搜项目里有没有现成的，有就复用。
+- 不写死：数值（超时、上限、阈值、尺寸、次数）、文案、路径、URL、键名、开关、颜色等，用到第二次或可能要调的，提成有名字的常量或配置项，放在统一的位置（模块顶部常量区，跨模块的放项目已有的常量 / 配置文件，策划要改的放配置或数据表），所有用到的地方引用这个名字，改一处全局生效。一个概念只定义一次，派生值靠计算，不另存一份。
+- 可扩展：同类的多种情况（选项、映射、平台、格式、类型 → 处理）写成一张数据表或注册表，逻辑遍历它，新增一种情况只加一行 / 一个实现，不用改调用方；但只有一个实现时不建接口、工厂、管理器，不加没人用的参数。
+- 设计模式：新建模块或一类东西会继续加时，先按 coding-standards 的 design-patterns.md 判断有没有对口的模式（注册表、策略、状态机、适配器、门面……），有就用并在结果里写一句用了什么、解决哪种扩展；没有真实的第二种情况就不套模式。
+- 代码本身：函数只做一件事，异常情况提前返回；名字说清意图并带单位；互斥状态用一个状态字段；错误不吞，外部输入在边界校验；订阅、定时器、句柄、文件成对释放；注释写「为什么」。
+- 改动范围：只改任务需要的，不顺手重排或格式化无关代码；改了定义就同步所有引用、测试、文档、翻译，旧数据要能继续读；不留调试代码和注释掉的代码。
+- 交付前把这次的差异从头读一遍，按 coding-standards 的「交付前自查」逐条过，不符合的先改掉；结果里写一行自查结论（例如「自查：新增的超时提成了 X 常量；没有重复实现」）。`
+
 const MODULE_DOC_LOOKUP = `先读文档根的 \`MODULE-MAP.md\`（本项目即 \`docs/MODULE-MAP.md\`）定位目标属于哪个模块，拿到它的路径、职责、入口和模块文档链接；再看文档根下的 \`modules/<模块>/README.md\`（本项目即 \`docs/modules/<模块>/README.md\`）在不在，在就先读（职责、入口、关键文件、数据流、已知问题）把它当起点，只补它没写的、纠正它写错的，不重复它写清的内容。没有模块文档时从 \`MODULE-MAP.md\` 给出的入口文件往下查，不做无目标的全局搜索；文档和实现不一致时以代码为准，回写或评审意见里指出哪条文档过期、正确内容是什么。`
 
 const base = (
@@ -281,7 +295,7 @@ ${VCS_TEXT}
     model: '@high',
     canPlan: true,
     common: false,
-    skills: ['project-vcs', 'project-documentation', '{{projectStructure}}', 'project-testing'],
+    skills: ['project-vcs', 'project-documentation', '{{projectStructure}}', 'coding-standards', 'project-testing'],
     params: [
       VCS,
       p({
@@ -320,10 +334,13 @@ ${VCS_TEXT}
 - 启动计划后等它跑完，再把结果整理给用户：改了什么、验证结果、遗留问题。
 - 你不能创建子对话，也不要假装分派；需要用户决定的事直接问。
 
+${CODING_TEXT}
+
 ${BUG_METHOD}
 
 ## 验证
-{{#if verify=交给测试验收}}改完用 spawn_agents 派「测试验收」按项目测试步骤跑，拿到它的验收结论再报告完成。{{/if}}{{#if verify=自己跑}}改完自己按「项目测试步骤」和 project-testing 的规则跑，记下命令和结果。{{/if}}{{#if verify=自动}}小改动自己按「项目测试步骤」跑相关的检查；改了多个模块或要跑完整构建、端到端测试时，派「测试验收」去跑。{{/if}}
+{{#if verify=交给测试验收}}改完用 spawn_agents 派「测试验收」按项目测试步骤跑，拿到它的验收结论再报告完成。{{/if}}{{#if verify=自己跑}}改完自己按「项目测试步骤」和 project-testing 的规则跑，记下命令和结果。{{/if}}
+新功能和修 Bug 能写自动化测试的，按 project-testing 的「测试先行」先写会失败的用例再实现。{{#if verify=自动}}小改动自己按「项目测试步骤」跑相关的检查；改了多个模块或要跑完整构建、端到端测试时，派「测试验收」去跑。{{/if}}
 没有本轮新鲜的验证证据，不说完成。
 
 ## 收尾前评审（计划里的独立步骤）
@@ -460,7 +477,7 @@ ${BUG_METHOD}
     icon: 'search',
     model: '@medium',
     common: true,
-    skills: ['project-documentation', 'test-driven-development', 'software-architecture-design', 'cpp-code-style'],
+    skills: ['project-documentation', 'coding-standards', 'cpp-code-style'],
     params: [
       SCENE,
       p({
@@ -690,7 +707,7 @@ ${VCS_TEXT}
     description: '收敛需求、压测方案，出可以确认的设计摘要；影响架构时给出候选方案和带验证方式的架构契约',
     icon: 'brain',
     model: '@high',
-    skills: ['brainstorming', 'grilling', 'software-architecture-design', 'project-vcs', 'project-documentation'],
+    skills: ['brainstorming', 'grilling', 'coding-standards', 'project-vcs', 'project-documentation'],
     params: [
       SCENE,
       p({
@@ -725,13 +742,13 @@ ${SCENE_TEXT}
 {{#if scale=architectural}}
 这次影响架构：
 1. 先读事实基线：现有模块、依赖方向、运行时数据流、已有的架构文档和 ADR。
-2. 按复杂度选最小够用的结构，不为假想的需求加层。
+2. 按复杂度选最小够用的结构，不为假想的需求加层；扩展点只放在已经出现的变化方向上，会被调的数值和列表数据做成配置（coding-standards 的 extensibility.md、configuration.md）。
 3. 给出 2–4 个候选方案，每个写清：结构、依赖方向、状态和生命周期、失败处理、扩展点、代价。
 4. 推荐一个方案，写成架构契约：模块边界、对外接口、不变量，以及每条约束怎么验证（测试、lint 规则、构建检查）。
 {{#if stack=ts}}TypeScript 代码库把模块契约落到类型和导出边界上，能用 lint 规则或依赖检查守住的约束写成可执行的检查。{{/if}}
-{{#if stack=ue}}Unreal Engine 项目参考 software-architecture-design 的 UE 专项：模块与插件边界、Subsystem 生命周期、C++ / Blueprint / Lua 的分工，C++ 导出规则见 cpp-code-style。{{/if}}
-{{#if stack=lua}}Lua 项目参考 software-architecture-design 的 Lua 专项和宿主集成边界。{{/if}}
-{{#if stack=csharp}}C# / .NET 项目参考 software-architecture-design 的 .NET 专项。{{/if}}
+{{#if stack=ue}}Unreal Engine 项目参考 ue-project-structure：模块与插件边界看 SKILL.md，Subsystem / Actor / Component 的选择、生命周期、网络权威、资源与配置看它的 gameplay-framework.md；C++ 导出规则见 cpp-code-style。{{/if}}
+{{#if stack=lua}}Lua 项目把模块边界落到 require 的依赖方向上，宿主绑定的接口集中在一层，日志和排版按 lua-code-style。{{/if}}
+{{#if stack=csharp}}C# / .NET 项目把模块契约落到程序集和 internal 边界上，依赖用构造函数注入，配置走 Options。{{/if}}
 需要落骨架时只搭最小可构建、可测试的骨架：目录、入口、依赖配置、一个基础测试，跑通构建再交付。
 {{/if}}
 {{#if grill}}
@@ -769,9 +786,10 @@ ${SCENE_TEXT}
     icon: 'code',
     model: '@high',
     skills: [
+      'coding-standards',
       'cpp-code-style',
       'lua-code-style',
-      'test-driven-development',
+      'project-testing',
       'systematic-debugging',
       'verification-before-completion',
       'task-records',
@@ -809,8 +827,10 @@ ${SCENE_TEXT}
 
 ${VCS_TEXT}
 ${SCENE_TEXT}
+
+${CODING_TEXT}
 {{#if task=实现}}
-- {{#if tdd}}新增行为先写失败的测试，再写实现（test-driven-development）。{{else}}不强制 TDD，但每个改动都要有可执行的验证方式。{{/if}}
+- {{#if tdd}}新增行为按 project-testing 的「测试先行」：先写失败的测试，再写实现。{{else}}不强制 TDD，但每个改动都要有可执行的验证方式。{{/if}}
 - 按可验收的单元批量改完后立即验证；出错按 systematic-debugging 找根因，不靠猜测反复改。
 - 改动前先确认没有覆盖用户已有的改动；只改任务范围内的文件。
 {{#if records}}- 按 task-records 在 DOC_ROOT/worklog/<任务> 下维护 tasks / design / acceptance / handoff，勾选必须引用 acceptance 里的证据。{{/if}}
