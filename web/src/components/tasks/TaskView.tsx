@@ -51,6 +51,7 @@ import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -769,6 +770,9 @@ export function TaskView({
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
+  // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
+  // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
+  const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
@@ -1508,8 +1512,9 @@ export function TaskView({
                           teamNames={teamNames}
                           live={working && i + hidden === blocks.length - 1}
                           last={!working && i + hidden === blocks.length - 1}
-                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
-                          latest={i + hidden === blocks.length - 1}
+                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+                          // 刚发出的用户消息排在后面时也算）
+                          latest={i + hidden === latestTurn}
                           fallback={byCli ? chatRun : undefined}
                           command={task.command}
                         />

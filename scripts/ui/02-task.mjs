@@ -2799,4 +2799,93 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await pop.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
     await check(p, '任务-项目对话浮层', ['商城前台', '购物车右上角', '商品详情页', '打开项目'])
   }
+  // 发送消息的一瞬间运行区不能闪没：刚发出的用户消息会自己成一段（见 TaskView 的 toBlocks），
+  // 以前「最新的一轮」按最后一段算，那一轮回复就不再是最新，运行区（子对话行、后台命令行）整块消失，
+  // 等 AI 开口又回来。这里用 MutationObserver 记录整个发送过程里运行区最少的子对话行数，
+  // 不靠等待时序赌那一帧（等待条件用「消息出现在消息区里」这个可观测状态）。
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p
+      .getByTitle('Token 用量')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    // 前面的用例可能把右栏子对话留着（那样页面上有两个 #follow-up）：先关掉，输入框只留父对话那个
+    const pane = p.locator('aside[aria-label="子对话"]')
+    if (await pane.count()) {
+      await p
+        .getByRole('button', { name: '关闭子对话', exact: true })
+        .first()
+        .click()
+        .catch(() => {})
+      await pane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    /** 运行区里现在有几行子对话（和弹层「运行中」是同一批，见 shared/task.ts 的 visibleChildren） */
+    const childRows = () =>
+      p.evaluate(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length,
+      )
+    const listed = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ),
+        { timeout: 10000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    const before = await childRows()
+    if (!listed || before < 2) errors.push(`发送时运行区：进入对话后运行区里只有 ${before} 行子对话，用例前提不成立`)
+    else {
+      // 采样器装在发送之前：从点发送到这条消息画出来，记下运行区最少的子对话行数
+      await p.evaluate(() => {
+        const count = () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length
+        const w = window
+        w.__runningMin = Infinity
+        const sample = () => {
+          const n = count()
+          if (n < w.__runningMin) w.__runningMin = n
+        }
+        sample()
+        w.__runningObs?.disconnect()
+        w.__runningObs = new MutationObserver(sample)
+        w.__runningObs.observe(document.body, { childList: true, subtree: true, characterData: true })
+      })
+      const text = '发送时运行区别闪没'
+      // 父对话那个输入框（右栏若还开着，同一个 id 有两个，取第一个）
+      const box = p.locator('#follow-up').first()
+      await box.fill(text)
+      await box.press('Enter')
+      // 消息区里真的画出了这条消息：输入框在消息区外面，里面的同名文字不会让它提前满足
+      await p
+        .waitForFunction(
+          (want) => !!document.querySelector('[data-conversation-scroll="messages"]')?.innerText.includes(want),
+          text,
+          { timeout: 10000 },
+        )
+        .catch(() => errors.push('发送时运行区：消息没有出现在对话里'))
+      const min = await p.evaluate(() => {
+        window.__runningObs?.disconnect()
+        return window.__runningMin
+      })
+      const after = await childRows()
+      // 采样器一次也没跑到（Infinity）：说明发送没有触发任何 DOM 变化，用例没测到东西，不能当通过
+      if (!Number.isFinite(min)) errors.push('发送时运行区：采样器没有采到任何变化，用例没测到东西')
+      else if (min < before)
+        errors.push(`发送时运行区：发送消息的过程中子对话行从 ${before} 行掉到 ${min} 行（发出去的一瞬间运行区闪没了）`)
+      if (after < before)
+        errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
+      await check(p, '任务-发送消息时运行区不消失', ['子对话'])
+    }
+  }
 })
