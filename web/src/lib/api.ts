@@ -47,7 +47,7 @@ import type {
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
-import type { AssistInput, AssistJob } from '@shared/assist'
+import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type {
   DeployConfig,
@@ -641,6 +641,12 @@ export const api = {
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
   assistJob: (id: string) => request<AssistJob>(`/assist/${id}`),
+  /** 在项目对话里做的生成：第一句话由服务端按现有数据拼好 */
+  assistPrompt: (input: Omit<AssistInput, 'cli' | 'model' | 'effort' | 'askUser' | 'targetId'>) =>
+    request<{ prompt: string }>('/assist/prompt', json('POST', input)),
+  /** 把对话最后一条回复解析成推荐（格式不对时给出原因） */
+  assistResolve: (input: Omit<AssistInput, 'cli' | 'model' | 'effort' | 'askUser' | 'targetId'> & { text: string }) =>
+    request<{ proposal?: Proposal; error?: string }>('/assist/resolve', json('POST', input)),
   stopAssist: (id: string) => request<AssistJob>(`/assist/${id}/stop`, { method: 'POST' }),
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>

@@ -120,8 +120,8 @@ import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@sh
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
-import { AssistInput } from '@shared/assist'
-import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
+import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist'
+import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoDeploy } from './demo-deploy'
@@ -1877,13 +1877,12 @@ function route(method: string, url: string, body: unknown): unknown {
     return clis()
   }
   if (res === 'assist') {
-    if (method === 'POST' && !id) {
-      const input = parse(AssistInput, body)
+    const ctxOf = (input: AssistInput): AssistContext => {
       const target = input.targetId
         ? (input.kind === 'agent' ? d.agents : d.workflows).find((x) => x.id === input.targetId)
         : undefined
       const settings = Settings.parse(d.settings ?? {})
-      return startDemoAssist(input, {
+      return {
         agents: d.agents,
         categories: d.categories,
         workflows: d.workflows,
@@ -1911,7 +1910,22 @@ function route(method: string, url: string, body: unknown): unknown {
               return { projectName: p?.name, projectLessons: p?.lessons ?? [], globalLessons: d.globalLessons ?? [] }
             })()
           : {}),
-      })
+      }
+    }
+    // 在项目对话里做的初始化：第一句话是演示用的说明，结果按关键词生成的示例解析
+    const ConvInput = AssistInput.extend({ cli: z.string().default('') })
+    if (method === 'POST' && id === 'prompt') {
+      const input = parse(ConvInput, body)
+      return { prompt: input.messages.at(-1)?.text ?? '' }
+    }
+    if (method === 'POST' && id === 'resolve') {
+      const input = parse(ConvInput, body)
+      const r = resolveProposal(input.kind, demoDraft(input, ctxOf(input)), ctxOf(input))
+      return r.proposal ? { proposal: r.proposal } : { error: r.error ?? '没有找到结果' }
+    }
+    if (method === 'POST' && !id) {
+      const input = parse(AssistInput, body)
+      return startDemoAssist(input, ctxOf(input))
     }
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
     return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')

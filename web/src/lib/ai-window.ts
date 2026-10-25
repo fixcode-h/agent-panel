@@ -17,8 +17,8 @@ export interface AiJob {
   title: string
   /** 新建对话：归属、角色已经由 createAnalysisTask 定好 */
   create: () => Promise<Task>
-  /** 分析结束后（不论结果）做什么，例如重新检测 */
-  onDone?: () => void
+  /** 分析结束后（不论结果）做什么，例如重新检测、把结果读回去；对话接着问又结束时会再调一次 */
+  onDone?: (task: Task) => void
 }
 
 interface State {
@@ -69,10 +69,14 @@ function watch(id: string) {
       const task = await api.task(id)
       if (state.taskId !== id) return
       set({ status: task.status })
-      if (running(task.status)) return void setTimeout(tick, 1500)
+      // 结束后又被接着问了：这一轮结束时还要再提醒、再交回结果
+      if (running(task.status)) {
+        finished = false
+        return void setTimeout(tick, 1500)
+      }
       if (!finished) {
         finished = true
-        state.job?.onDone?.()
+        state.job?.onDone?.(task)
         if (!state.open || state.minimized)
           toast(t('{label}结束：{title}', { label: state.job?.label ?? '', title: state.job?.title ?? '' }), {
             action: { label: t('查看'), onClick: () => set({ open: true, minimized: false }) },

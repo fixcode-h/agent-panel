@@ -35,7 +35,7 @@
 `submit_merge` 前面板会校验：计划里有标 `review` 的步骤、那一步已完成、评审第一行写了验收结论
 （`shared/review-gate.ts`；先读首行，首行没有结论才退回全文最后一条——子任务输出太长时只保留开头，结论写在末尾会被截掉）；
 评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。
-「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见下文「AI 分析的归属」）。
+「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见 [ADR 0013](adr/0013-ai-analysis-home.md)）。
 改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
 
 ## Agent 清单

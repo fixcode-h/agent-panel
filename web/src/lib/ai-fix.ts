@@ -23,7 +23,7 @@ export function openAiFix(issue: FixIssue) {
   openAiWindow({
     label: t('AI 排查'),
     title: issue.title,
-    onDone,
+    onDone: onDone && (() => onDone()),
     create: async () => {
       const s = await api.aiFix(input)
       return createAnalysisTask({

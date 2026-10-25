@@ -1077,4 +1077,10 @@ export const EN_TASKS: Record<string, string> = {
   '{label}结束：{title}': '{label} finished: {title}',
   '上一个{label}还没结束，结束后再试': 'The previous {label} is still running; try again when it finishes',
   '所有 AI 分析、AI 排查的对话默认使用': 'Default for every AI analysis and AI troubleshooting conversation',
+  'AI 初始化项目：{name}': 'AI project setup: {name}',
+  '「{title}」的结果已经交回项目设置，可以去应用':
+    'The result of "{title}" is back in the project settings, ready to apply',
+  '结果的格式还是不对：{error}。可以在对话里让它重新输出':
+    'The result is still malformed: {error}. Ask it to output again in the conversation',
+  没有找到结果: 'No result found',
 }
