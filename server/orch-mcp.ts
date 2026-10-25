@@ -55,7 +55,7 @@ const tasksField = (o: Orchestra) => ({
       resume: {
         type: 'string',
         description:
-          '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。那个子任务要已经结束；agent 不写或写同一个角色',
+          '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。失败、被终止或中断的子任务要重试也写它的 id：就在原来那个子任务里接着做（同一个 id 和会话），不要另派一个新的。那个子任务要已经结束；agent 不写或写同一个角色',
       },
       review: {
         type: 'object',
@@ -297,7 +297,7 @@ export function orchTools(o: Orchestra) {
             name: 'create_conversation',
             title: '新建子对话',
             description:
-              '新建一个子对话并把这条需求交给它处理（异步执行，马上返回）。现有子对话都不相关、且需求需要改代码或做较大的研究时用。标题由你分析这条需求后起，不要照抄用户原话的开头几个字。',
+              '新建一个子对话并把这条需求交给它处理（异步执行，马上返回）。现有子对话都不相关、且需求需要改代码或做较大的研究时用。标题由你分析这条需求后起，不要照抄用户原话的开头几个字。子对话报错、失败或被中断要重试时不要新建：用 send_to_conversation 交回原来那个子对话，它在原来的会话里接着做。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -321,7 +321,7 @@ export function orchTools(o: Orchestra) {
             name: 'send_to_conversation',
             title: '交给子对话',
             description:
-              '把消息交给一个已有的子对话继续处理（异步执行）。它和这条消息相关时用，id 从 list_conversations 取。一条消息只交给一个子对话：用户的一条消息（连同用户定下的规则）只挑关联最紧密的那一个交，同一段话不要再发给别的子对话（会被拒绝），也不要换个说法再发。',
+              '把消息交给一个已有的子对话继续处理（异步执行）。它和这条消息相关时用，id 从 list_conversations 取；子对话失败或被中断后要重试也用它交回原来那个子对话，不要新建。一条消息只交给一个子对话：用户的一条消息（连同用户定下的规则）只挑关联最紧密的那一个交，同一段话不要再发给别的子对话（会被拒绝），也不要换个说法再发。',
             inputSchema: {
               type: 'object',
               properties: {
