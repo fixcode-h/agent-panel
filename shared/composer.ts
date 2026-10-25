@@ -122,27 +122,44 @@ export const pathText = (p: string) => (/[\s'"]/.test(p) ? `"${p.replace(/"/g, '
 
 /**
  * 复制一条用户消息：卡片换成它的文件路径（引用给的是存原文的那个文件），Skill / 命令写成「/名字」。
- * 文字里没有卡片的附件（旧消息）放在最前面，和对话里显示的位置一致
+ * 文字里没有卡片的附件（旧消息）放在最前面，和对话里显示的位置一致。
+ *
+ * 路径和前后正文之间一定要留一个空格：不留的话复制出来是「…截图-210356.png前面是抓取的元素」，
+ * 粘贴时 findPaths 会把这整段当成一个路径（路径里本来就可以有汉字），服务端 stat 不到这个「文件」，
+ * 这一截就永远变不回卡片、整条落成纯文本。卡在开头 / 末尾时不补多余的空格，
+ * 只有一张卡片时输出就是那个路径，solePath 仍认得出是文件引用
  */
 export function copyText(value: string, attachments: readonly AttachLike[] = []) {
   const used = new Set<AttachLike>()
   let out = ''
+  // 刚拼进来的是路径：后面接着写正文时要先隔一个空格，不然会被当成同一个路径的一部分
+  let afterPath = false
   for (const s of segments(value)) {
     if ('text' in s) {
+      if (afterPath && s.text && !/^\s/.test(s.text)) out += ' '
+      afterPath = false
       out += s.text
       continue
     }
     if (!isAttachChip(s.chip.kind)) {
+      // Skill / 命令写成「/名字」。贴着前面的路径时也要隔开，否则读出来是「D:\up\a.png/blender」，
+      // 既不是那个路径也不是那条命令。正常发送时 Skill 总在最前面（forSend 提到最前），这里的空格只在异常顺序下出现
+      if (afterPath) out += ' '
       out += `/${s.chip.name}`
+      afterPath = false
       continue
     }
     const a = attachOf(s.chip, attachments)
     if (!a) {
       out += chipMarker(s.chip.kind, s.chip.name)
+      afterPath = false
       continue
     }
     used.add(a)
+    // 卡片前面也要隔开：路径里本来就能有汉字，和前面正文连在一起时粘贴会认错路径（见函数上方说明）
+    if (out && !/\s$/.test(out)) out += ' '
     out += pathText(a.path)
+    afterPath = true
   }
   const rest = attachments.filter((a) => !used.has(a)).map((a) => pathText(a.path))
   if (!rest.length) return out

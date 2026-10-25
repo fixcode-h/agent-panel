@@ -245,6 +245,7 @@ export function ChatComposer({
         disabled={disabled}
         preview={chips.preview}
         actions={chips.chipActions}
+        copyOf={chips.copyOfChip}
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',

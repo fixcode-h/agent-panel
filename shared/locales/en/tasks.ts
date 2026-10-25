@@ -822,6 +822,14 @@ export const EN_TASKS: Record<string, string> = {
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
+  // 子任务窗口最上面那块「派给它的要求」（TaskStep.brief）
+  派给它的要求: 'What it was asked to do',
+  收起派给它的要求: 'Collapse the instructions it was given',
+  展开派给它的要求: 'Expand the instructions it was given',
+  '补充过 {n} 次': 'Updated {n} time(s)',
+  '派发之后又补充过 {n} 次要求': 'The instructions were extended {n} time(s) after dispatch',
+  重试时补充: 'Added on retry',
+  评审交接单: 'Review brief',
   // 子任务的 AI 分析（复用执行记录那一套弹窗）
   'AI 分析这个子任务': 'AI analysis of this subtask',
   '让 AI 分析这一步的耗时、角色符合度和优化空间':
