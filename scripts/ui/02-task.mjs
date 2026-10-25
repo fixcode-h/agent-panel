@@ -71,38 +71,145 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ state: 'detached', timeout: 3000 })
         .catch(() => {})
     }
-    /** 弹窗里各行的文字、能不能点、父对话行（不能点）是不是第一个 */
-    const rows = () =>
-      p.evaluate(() =>
-        [...document.querySelectorAll('[data-worktree-row]')].map((el) => {
-          const open = el.querySelector('button[aria-label^="在右侧打开子对话"]')
-          return {
-            text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
-            clickable: !!open,
-            cursor: open ? getComputedStyle(open).cursor : getComputedStyle(el).cursor,
-          }
-        }),
+    /** 某一组里各行的文字、能不能点、鼠标形状（分组见 data-worktree-group） */
+    const rowsIn = (group) =>
+      p.evaluate(
+        (g) =>
+          [...document.querySelectorAll(`[data-worktree-group="${g}"] [data-worktree-row]`)].map((el) => {
+            const open = el.querySelector('button[aria-label^="在右侧打开子对话"]')
+            return {
+              text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
+              clickable: !!open,
+              cursor: open ? getComputedStyle(open).cursor : getComputedStyle(el).cursor,
+            }
+          }),
+        group,
       )
-    // 演示数据的创建顺序是 Git+worktree → ESLint → 修侧栏，创建时间正好相反
-    const kids = ['修侧栏时间显示', '整理 ESLint 规则', 'Git+worktree 不再提示文件撞车']
+    // 按删除与否分两组：未删除（父对话 + 两个还在的，创建时间从早到晚是 ESLint → Git+worktree）、
+    // 已删除（已合回 main 的那条）
+    const liveKids = ['整理 ESLint 规则', 'Git+worktree 不再提示文件撞车']
+    const removedKids = ['修侧栏时间显示']
     const checkOrder = async (where) => {
-      const list = await rows()
-      if (list.length !== kids.length + 1) {
-        errors.push(`独立分支（${where}）：列出 ${list.length} 行，应该有父对话 + ${kids.length} 个子对话`)
-        return
+      const live = await rowsIn('live')
+      if (live.length !== liveKids.length + 1) {
+        errors.push(`独立分支（${where}）：未删除组列出 ${live.length} 行，应该有父对话 + ${liveKids.length} 个`)
+      } else {
+        if (!live[0].text.includes('agent-panel/cart-badge') || live[0].clickable)
+          errors.push(`独立分支（${where}）：未删除组第一行不是父对话自己（${JSON.stringify(live[0])}）`)
+        if (live.slice(1).some((x) => !x.clickable)) errors.push(`独立分支（${where}）：子对话行不是可点按钮`)
+        if (live.slice(1).some((x) => x.cursor !== 'pointer'))
+          errors.push(`独立分支（${where}）：子对话行的鼠标不是手型`)
+        const got = liveKids.map((title) => live.slice(1).findIndex((x) => x.text.includes(title)))
+        if (got.some((i) => i < 0) || got.join(',') !== '0,1')
+          errors.push(`独立分支（${where}）：未删除组没有按创建时间升序（${got.join(',')}）`)
       }
-      if (!list[0].text.includes('agent-panel/cart-badge') || list[0].clickable)
-        errors.push(`独立分支（${where}）：第一行不是父对话自己（${JSON.stringify(list[0])}）`)
-      if (list.slice(1).some((x) => !x.clickable)) errors.push(`独立分支（${where}）：子对话行不是可点按钮`)
-      if (list.slice(1).some((x) => x.cursor !== 'pointer')) errors.push(`独立分支（${where}）：子对话行的鼠标不是手型`)
-      const got = kids.map((title) => list.slice(1).findIndex((x) => x.text.includes(title)))
-      if (got.some((i) => i < 0) || got.join(',') !== '0,1,2')
-        errors.push(`独立分支（${where}）：没有按创建时间升序（${got.join(',')}）`)
+      const removed = await rowsIn('removed')
+      if (removed.length !== removedKids.length)
+        errors.push(`独立分支（${where}）：已删除组列出 ${removed.length} 行，应该有 ${removedKids.length} 个`)
+      else if (!removed[0].text.includes(removedKids[0]))
+        errors.push(`独立分支（${where}）：已删除组里没有已合并的那条（${JSON.stringify(removed[0])}）`)
     }
     await openEnv()
     await check(p, '独立分支-计数', ['3 个没合并'])
     await checkOrder('排序')
     await check(p, '独立分支-顺序')
+    // 右键菜单：行里右键能开菜单，菜单里有打开对话 / 合并 / AI 合并 / 复制 / 删除；
+    // 正在执行、已经删掉的项合并和删除都不能用，而且要把原因真的送到用户眼前（title + 点了 toast）
+    const menuOf = async (title, group = 'live') => {
+      await p
+        .locator(`[data-worktree-group="${group}"] [data-worktree-row]`)
+        .filter({ hasText: title })
+        .click({ button: 'right' })
+      const menu = p.locator('[data-radix-menu-content], [role="menu"]').first()
+      const shown = await menu.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!shown) errors.push(`独立分支：在「${title}」那行右键没有弹出菜单`)
+      return menu
+    }
+    const closeMenu = async () => {
+      // 点过菜单项之后 Radix 已经自己收起来了，这时再按 Esc 会落到下面的环境弹窗上把它关掉，
+      // 后面的用例就找不到行了；所以先看菜单还在不在，开着才按 Esc
+      const menu = p.locator('[data-radix-menu-content], [role="menu"]').first()
+      if (!(await menu.isVisible().catch(() => false))) return
+      await p.keyboard.press('Escape')
+      await menu.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    // 不能用时用 aria-disabled 而不是真 disabled：真 disabled 会被 pointer-events-none 挡掉，
+    // 鼠标悬不上去、title 的原因根本看不到（评审 R2）。这里断言的就是「悬得到 + 有原因 + 真的置灰了」
+    const unavailable = async (item) =>
+      (await item.getAttribute('aria-disabled')) === 'true' &&
+      (await item.getAttribute('title'))?.length > 0 &&
+      (await item.evaluate(
+        (el) => getComputedStyle(el).pointerEvents !== 'none' && Number(getComputedStyle(el).opacity) < 1,
+      ))
+    {
+      // 这一条还在执行（working）：菜单项要列全，合并和删除不能用并写原因
+      const menu = await menuOf('Git+worktree 不再提示文件撞车')
+      const names = ['打开对话', '合并到原分支', '用 AI 合并', '复制分支名', '复制路径', '删除独立分支']
+      for (const name of names)
+        if (!(await menu.getByRole('menuitem', { name, exact: true }).count()))
+          errors.push(`独立分支：右键菜单里没有「${name}」`)
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      const merge = menu.getByRole('menuitem', { name: '合并到原分支', exact: true })
+      if (!(await unavailable(del))) errors.push('独立分支：正在执行的项在右键菜单里能删除（或缺原因 / 悬不上）')
+      if (!(await unavailable(merge))) errors.push('独立分支：正在执行的项在右键菜单里能合并（或缺原因 / 悬不上）')
+      // 菜单还开着时截图：人工核对菜单项、图标和置灰效果
+      await check(p, '独立分支-右键菜单')
+      await closeMenu()
+    }
+    // 已删除的项：后端 discard 只认 active（server/tasks.ts 的 isolated），点了必被拒，
+    // 所以菜单里的删除必须也是不可用（评审 R1：行内按钮早就隐藏，菜单却可点就两边不一致了）
+    {
+      const menu = await menuOf('修侧栏时间显示', 'removed')
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      const merge = menu.getByRole('menuitem', { name: '合并到原分支', exact: true })
+      if (!(await unavailable(del))) errors.push('独立分支：已删除的项在右键菜单里还能删除（后端会拒）')
+      if (!(await unavailable(merge))) errors.push('独立分支：已删除的项在右键菜单里还能合并')
+      // 点了要把原因 toast 出来，而不是静默无反应。
+      // force: true —— Playwright 的 actionability 检查会把 aria-disabled 当成不可点，
+      // 而真实鼠标是可以点到的（上面已经断言 pointer-events 不是 none），这里要的正是那个点击
+      await del.click({ force: true })
+      const told = await p
+        .getByText('这个分支已经删除了')
+        .first()
+        .waitFor({ timeout: 3000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!told) errors.push('独立分支：点不可用的删除菜单项没有提示原因')
+      await closeMenu()
+    }
+    await check(p, '独立分支-已删除不可操作')
+    // 右键菜单里的合并、删除和行内按钮走同一套逻辑：点删除就弹删除确认（不连带开对话）
+    {
+      const menu = await menuOf('整理 ESLint 规则')
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      if ((await del.getAttribute('aria-disabled')) === 'true')
+        errors.push('独立分支：没在执行、没合并的项在右键菜单里不能删除')
+      else {
+        await del.click()
+        const ok = await p
+          .getByText('删除独立分支 agent-panel/eslint-rules？')
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!ok) errors.push('独立分支：从右键菜单点删除没有弹出确认框')
+        else {
+          if (await paneOpen()) errors.push('独立分支：从右键菜单点删除把对话也打开了')
+          await p.getByRole('button', { name: '取消' }).last().click()
+          await p
+            .getByText('删除独立分支 agent-panel/eslint-rules？')
+            .waitFor({ state: 'detached', timeout: 3000 })
+            .catch(() => {})
+        }
+      }
+    }
+    await check(p, '独立分支-右键删除确认')
     // 父对话自己那行点了不打开任何对话
     await p.locator('[data-worktree-row]').first().click()
     if (await paneOpen()) errors.push('独立分支：点父对话自己那行打开了对话面板')
@@ -848,6 +955,74 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      // 窗口最上面那块「派给它的要求」：派发时交给它的原文，按 `##` 小节排开（要做的事在前、验收标准在后）。
+      // 这个子任务已经有对话流，所以默认收起、吸顶在顶部：窗口贴底看最新输出时它仍看得见
+      // （用户报的就是「最上面看不到初始信息」，光把它放在滚动区最前不够，会被贴底滚出视野）
+      {
+        const w = p.getByRole('dialog').last()
+        const card = w.getByRole('region', { name: '派给它的要求' })
+        if (!(await card.count())) errors.push('子任务-窗口：最上面没有「派给它的要求」')
+        else {
+          // 收起态：只剩摘要一句，正文收着
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：有对话流时初始要求没收成摘要一句')
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：有对话流时初始要求默认没收起')
+          // 关键：窗口已贴底，这张卡片仍在滚动区视野内（吸顶），用户不用往上翻
+          const atTop = await card.evaluate((el) => {
+            const sc = el.closest('.overflow-y-auto')
+            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+            const a = sc.getBoundingClientRect()
+            const b = el.getBoundingClientRect()
+            return { inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1, gap: Math.round(b.top - a.top) }
+          })
+          if (!atTop) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
+          else if (!atTop.inView) errors.push(`子任务-窗口：贴底时初始要求不在视野内（距容器顶 ${atTop.gap}px）`)
+          await check(p, '子任务-窗口-初始要求', ['派给它的要求', '查清购物车角标'])
+          // 贴着底看最新输出：要求那块吸顶时不能弄坏窗口本身的贴底行为
+          const box = await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            return sc
+              ? { over: sc.scrollHeight - sc.clientHeight, gap: sc.scrollHeight - sc.scrollTop - sc.clientHeight }
+              : null
+          })
+          if (box && box.over > 40 && box.gap > 40)
+            errors.push(`子任务-窗口：加了初始要求后没有停在最新输出（离底部 ${Math.round(box.gap)}px）`)
+          // 展开：按小节排开，要做的事在前、验收标准在后，两节正文都显示
+          const toggle = card.getByRole('button', { name: /派给它的要求/ }).first()
+          await toggle.click()
+          await settle(p)
+          await check(p, '子任务-窗口-初始要求-展开', ['要做的事', '验收标准'])
+          // 关键：展开后卡片必须在视野内。只断言文本存在拦不住：Playwright 的 visible 不判视口，
+          // 正文被贴底滚动顶到视野之上时照样算 visible（旧写法就是这么漏的）
+          const opened = await card.evaluate((el) => {
+            const sc = el.closest('.overflow-y-auto')
+            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+            const a = sc.getBoundingClientRect()
+            const b = el.getBoundingClientRect()
+            return { inView: b.top >= a.top - 1 && b.top < a.bottom, top: Math.round(b.top - a.top) }
+          })
+          if (!opened) errors.push('子任务-窗口：展开后没找到初始要求所在的滚动容器')
+          else if (!opened.inView)
+            errors.push(`子任务-窗口：展开后初始要求被滚出视野（卡片顶距容器顶 ${opened.top}px）`)
+          const heads = await card.evaluate((el) =>
+            [...el.querySelectorAll(':scope > div > section > p')].map((x) => x.textContent?.trim() ?? ''),
+          )
+          if (heads.indexOf('要做的事') < 0 || heads.indexOf('验收标准') < 0)
+            errors.push(`子任务-窗口：初始要求没按小节显示（当前小节：${heads.join(' / ') || '无'}）`)
+          else if (heads.indexOf('要做的事') > heads.indexOf('验收标准'))
+            errors.push(`子任务-窗口：小节顺序不对，要做的事应该在验收标准前面（当前：${heads.join(' / ')}`)
+          if (!(await card.getByText('只读不改代码', { exact: false }).count()))
+            errors.push('子任务-窗口：初始要求没有显示验收标准的内容')
+          // 再收起：正文收回去，摘要回来
+          await toggle.click()
+          await settle(p)
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：再收起初始要求后正文还显示着')
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：再收起初始要求后没有留下摘要一句')
+        }
+      }
       // 子任务窗口头部的「AI 分析」：弹的是执行记录那一套弹窗（同样的 focus 输入和「开始分析」），
       // 只把范围收窄到这一步。按弹窗作用域找，页面上别处（内存曲线那边）也有「AI 分析」
       const win = p.getByRole('dialog').last()

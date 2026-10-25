@@ -826,6 +826,14 @@ export const EN_TASKS: Record<string, string> = {
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
+  // 子任务窗口最上面那块「派给它的要求」（TaskStep.brief）
+  派给它的要求: 'What it was asked to do',
+  收起派给它的要求: 'Collapse the instructions it was given',
+  展开派给它的要求: 'Expand the instructions it was given',
+  '补充过 {n} 次': 'Updated {n} time(s)',
+  '派发之后又补充过 {n} 次要求': 'The instructions were extended {n} time(s) after dispatch',
+  重试时补充: 'Added on retry',
+  评审交接单: 'Review brief',
   // 子任务的 AI 分析（复用执行记录那一套弹窗）
   'AI 分析这个子任务': 'AI analysis of this subtask',
   '让 AI 分析这一步的耗时、角色符合度和优化空间':
@@ -887,6 +895,17 @@ export const EN_TASKS: Record<string, string> = {
   '改动都已经在原分支里了，删除分支和它的工作目录不会丢东西。':
     'All changes are already in the original branch, so deleting the branch and its folder loses nothing.',
   '{n} 个没合并': '{n} not merged',
+  未删除: 'Not deleted',
+  已删除: 'Deleted',
+  这个分支已经删除了: 'This branch was already deleted',
+  '正在处理这个独立分支，等它结束': 'This separate branch is being handled; wait for it to finish',
+  这个分支没有要合回原分支的改动: 'This branch has no changes to merge back',
+  这是当前对话自己的分支: 'This is the branch of the current chat',
+  打开对话: 'Open chat',
+  合并到原分支: 'Merge into the original branch',
+  复制分支名: 'Copy branch name',
+  '把合并要求发给这个分支的对话，由 AI 解决冲突后合回原分支':
+    'Sends a merge request to the chat that owns this branch; AI resolves conflicts and merges it back',
   '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
   '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
   '正在检查独立分支…': 'Checking separate branches…',
