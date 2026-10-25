@@ -63,9 +63,3 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：角色参数的取值存在副本的 `default` 里，只改内置定义不会影响已装的副本（分不清用户关掉的和旧默认）。改必备角色的参数默认值时，在 `shared/builtin/core.ts` 的 `DEFAULT_CHANGES` 加一条，启动时只升级一次并记进 `upgrades`。
 - 起因：89dbf5a 把文档角色「写 Bug 记录」改成默认开，用户界面上还是关的。
 - 防线：`server/builtin.test.ts`。
-
-## 只读的评审类角色：给边界和材料，不让它自己去还原背景
-
-- 规则：派只读评审时，背景（需求、改了什么、跑过的检查、调用方约束）由派它的对话整理成交接单交过去；角色设定写死「只评改动的行、不读模块文档和 bugs.md、不全局搜索」和读代码次数、时限这类数字（`shared/review-limits.ts`），差异只取这次该评的文件、每处带几行上下文，不带整个函数。提示词开头也不要带搜索排除、编译收尾这些写给动手角色的段落。
-- 起因：ADR 0010 之后一次评审仍要二十多分钟：`-W` 把几千行组件整个带进差异，顶层对话的「全部改动」混进别人的提交，设定又要它先读模块地图、模块文档和 bugs.md，再去找调用方和测试（[ADR 0013](../adr/0013-review-diff-only-with-brief.md)）。
-- 防线：`server/core-agents.test.ts`、`server/engine-steps.test.ts`（没带交接单拒绝派、只取点名的文件）、`server/exec/review-diff.test.ts`。
