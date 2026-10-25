@@ -230,6 +230,26 @@ errors.push(...checkModuleDocsInRoot(root))
   }
 }
 
+// 11. 界面检查用例必须写在 runShard 的回调里：runShard 在回调结束后直接 process.exit(0/1)，
+// 写在回调之后的代码永远不执行，分片却照样报「通过」，用例等于没加（见 docs/lessons/ui.md）
+for (const f of files) {
+  if (!/^scripts\/ui\/.+\.mjs$/.test(f) || f.endsWith('harness.mjs')) continue
+  const src = read(f)
+  const at = src.indexOf('await runShard(')
+  if (at < 0) continue
+  // runShard 调用本身以 `})` 结尾，之后除了注释和空行不该再有代码
+  const end = src.indexOf('\n})\n', at)
+  if (end < 0) continue
+  const rest = src
+    .slice(end + 3)
+    .split('\n')
+    .filter((l) => l.trim() && !/^\s*(\/\/|\/\*|\*)/.test(l))
+  if (rest.length)
+    errors.push(
+      `${f} 里 runShard 调用之后还有 ${rest.length} 行代码（${rest[0].trim().slice(0, 60)}）；runShard 结束后会直接退出，这些用例永远不会执行，写进 runShard 的回调里`,
+    )
+}
+
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exit(1)
