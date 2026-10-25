@@ -5,6 +5,7 @@ import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { AnalysisMark } from '@/components/tasks/AnalysisMark'
+import { cliAliveHint, cliTreeAlive } from '@/components/tasks/CliAlive'
 import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskRenameInput, useTaskRowMenu } from '@/components/tasks/TaskMenu'
 import {
@@ -67,8 +68,11 @@ export function TaskRow({
   // 都转圈；有没回复的提问、请求是「需要你处理」
   const state = taskState(task)
   const busy = state === 'running' || state === 'waiting'
-  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
-  const online = task.status === 'running' && !busy && state !== 'needs'
+  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示。
+  // 只认服务端按真实进程算的 cliAlive，不拿 status === 'running' 猜（CLI 关了还画虚线就是误导）
+  const online = !!task.cliAlive && !busy && state !== 'needs'
+  // 自己或名下子对话有活着的 CLI：标题流光，不点开也能看出来
+  const alive = cliTreeAlive(task)
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
   // AI 分析开出的对话：标题前加强调色的标签，和普通对话一眼分开
   const analysis = isAnalysisTask(task, agents)
@@ -82,6 +86,7 @@ export function TaskRow({
             aria-current={active || undefined}
             title={task.title}
             data-cli-online={online || undefined}
+            data-cli-alive={alive || undefined}
             className={cn(
               'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-transparent text-left text-[0.8125rem] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
@@ -121,7 +126,14 @@ export function TaskRow({
               ) : null}
             </span>
             {analysis && <AnalysisMark kind={task.analysis} />}
-            <span className="min-w-0 flex-1 truncate">{task.title}</span>
+            {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+            <span
+              title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+              className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
+              style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+            >
+              {task.title}
+            </span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
             <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
               {shortTime(askedAt(task), timeOnly)}

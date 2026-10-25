@@ -42,6 +42,7 @@ import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { AnalysisMark } from './AnalysisMark'
+import { cliAliveHint, cliTreeAlive } from './CliAlive'
 import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
@@ -281,11 +282,23 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               onClick={onOpen}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
             >
-              <TaskStatusIcon status={task.status} working={busy} spin={busy} waiting={state === 'needs'} />
+              <TaskStatusIcon
+                status={task.status}
+                working={busy}
+                spin={busy}
+                waiting={state === 'needs'}
+                cliAlive={!!task.cliAlive}
+              />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex min-w-0 items-center gap-1.5">
                   {isAnalysisTask(task, agents) && <AnalysisMark kind={task.analysis} />}
-                  <span className="truncate text-[0.875rem]">{task.title}</span>
+                  {/* 自己或名下子对话有活着的 CLI：标题流光 */}
+                  <span
+                    title={cliAliveHint(task) || undefined}
+                    className={cn('truncate text-[0.875rem]', cliTreeAlive(task) && 'cli-alive-title')}
+                  >
+                    {task.title}
+                  </span>
                 </span>
                 <span className="truncate text-xs text-subtle">
                   {task.mode === 'workflow'
@@ -314,11 +327,13 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                       ? statusLabel.running
                       : task.status === 'done'
                         ? timeAgo(task.updatedAt, now)
-                        : task.status === 'running'
+                        : task.status === 'running' && task.cliAlive
                           ? t('等待你的下一条消息')
-                          : task.status === 'stopped'
-                            ? stopReasonText(task.stopReason)
-                            : statusLabel[task.status]}
+                          : task.status === 'running'
+                            ? timeAgo(task.updatedAt, now)
+                            : task.status === 'stopped'
+                              ? stopReasonText(task.stopReason)
+                              : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

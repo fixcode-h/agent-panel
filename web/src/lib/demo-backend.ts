@@ -2633,7 +2633,12 @@ function tasksRoute(
     if (method === 'GET') {
       const pid = query.get('projectId')
       // 和正式版一样：子对话不进项目列表，在父对话里看
-      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks).filter((t) => !t.parentTaskId).map(taskSummary)
+      return (
+        (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
+          .filter((t) => !t.parentTaskId)
+          // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
+          .map((t) => taskSummary({ ...t, cliAlive: live.has(t.id) }))
+      )
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
