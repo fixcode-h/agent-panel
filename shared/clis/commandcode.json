@@ -216,6 +216,7 @@
   },
   "auth": {
     "login": ["login"],
+    "loginAlreadyLoggedIn": true,
     "home": "~/.commandcode",
     "files": ["auth.json"],
     "identity": "none",

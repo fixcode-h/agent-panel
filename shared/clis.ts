@@ -334,6 +334,7 @@ export const CLIS: CliDefinition[] = [
       identity: 'claude',
       loginEdits: [],
       loginStdin: '',
+      loginAlreadyLoggedIn: false,
       accountNote: '',
       api: {
         protocols: ['anthropic'],
@@ -541,6 +542,7 @@ export const CLIS: CliDefinition[] = [
       identity: 'codex',
       loginEdits: [],
       loginStdin: '',
+      loginAlreadyLoggedIn: false,
       accountNote: '',
       api: {
         protocols: ['openai-responses'],
