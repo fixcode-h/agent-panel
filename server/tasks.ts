@@ -748,26 +748,12 @@ export function tasksApi(deps: {
       if (entry) entry.rev++
       await store.update(parent.id, parent).catch(() => {})
       try {
-        if (entry?.task.status === 'running') {
-          await deliver(
-            entry,
-            {
-              id: randomUUID(),
-              role: 'system',
-              agentId: '',
-              step: '',
-              text,
-              tools: [],
-              panel: 'child',
-              ...(child && { child }),
-              ...(peer && { peer }),
-              ...(worktree && { worktree }),
-              at: new Date().toISOString(),
-            },
-            text,
-            [],
-          )
-        } else await followUp(parent.id, { text, attachments: [], panel: 'child', child, peer, worktree })
+        await wakeConv(parent.id, text, {
+          panel: 'child',
+          ...(child && { child }),
+          ...(peer && { peer }),
+          ...(worktree && { worktree }),
+        })
         return
       } catch (e) {
         // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
@@ -832,7 +818,7 @@ export function tasksApi(deps: {
     // 回答是「用户的决定：」换行再写答案：标题里接成一行
     const subject = kind === 'answer' ? message.replace(/：\n/, '：') : message
     const peer = parent && kind ? await peerOf(parent, 'parent', kind, subject, failed) : undefined
-    const running = live.get(id)
+    const running = runningConv(id)
     if (running?.task.status === 'running') {
       // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
       const msg: TaskMessage = {
@@ -860,31 +846,8 @@ export function tasksApi(deps: {
       return { ok: true, info: `「${child.title}」${how}` }
     }
     void (async () => {
-      try {
-        await followUp(id, { text: message, attachments: [], panel, peer })
-      } catch (e) {
-        // 上一轮刚结束、还在收尾（回报父对话、写盘）时执行位还占着：记进对话，登记成下一轮要处理的，
-        // 收尾那边会接着开新一轮；收尾已经过了那一步就由这里补开，消息不能丢
-        const cur = live.get(id)
-        if (!(e instanceof TaskBusyError) || !cur) throw e
-        const msg: TaskMessage = {
-          id: randomUUID(),
-          role: panel ? 'system' : 'user',
-          agentId: '',
-          step: '',
-          text: message,
-          tools: [],
-          ...(panel ? { panel } : {}),
-          ...(peer && { peer }),
-          at: new Date().toISOString(),
-        }
-        cur.task.messages.push(msg)
-        holdForNextTurn(id, msg)
-        cur.rev++
-        await store.update(id, cur.task)
-        await cur.done?.catch(() => {})
-        if (hasHeld(id) && !live.has(id)) await followUp(id)
-      }
+      // 上一轮刚结束、还在收尾时执行位还占着：wakeConv 记进对话排到下一轮，收尾过了那一步就由它补开，消息不能丢
+      await wakeConv(id, message, { ...(panel ? { panel } : {}), ...(peer && { peer }) })
       await live.get(id)?.done
     })().catch((e) => {
       log.error('task', '子对话执行出错', { task: id, error: (e as Error).message })
@@ -904,24 +867,8 @@ export function tasksApi(deps: {
       log.info('background', '后台命令的消息已交给子对话', { task: tk.id, job: job.id, how: r.info })
       return
     }
-    const running = live.get(tk.id)
-    if (running?.task.status === 'running') {
-      const msg: TaskMessage = {
-        id: randomUUID(),
-        role: 'system',
-        agentId: '',
-        step: '',
-        text,
-        tools: [],
-        panel: 'background',
-        at: new Date().toISOString(),
-      }
-      const r = await deliver(running, msg, text, [])
-      log.info('background', '后台命令的消息已交给对话', { task: tk.id, job: job.id, how: r.how })
-    } else {
-      await followUp(tk.id, { text, attachments: [], panel: 'background' })
-      log.info('background', '后台命令的消息开了新的一轮', { task: tk.id, job: job.id })
-    }
+    const how = await wakeConv(tk.id, text, { panel: 'background' })
+    log.info('background', '后台命令的消息已交给对话', { task: tk.id, job: job.id, how })
   }
 
   /**
@@ -1216,8 +1163,8 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 把面板的消息交给一个对话并让它马上处理：正在执行就实时送达，空闲就开新的一轮；
-   * 开不起来（正在收尾、被别的操作占着）就退回收件箱，它下一轮开始时一起处理
+   * 把面板的消息交给一个对话并让它马上处理（按 runningConv 交付，见 wakeConv）；
+   * 交不出去（这一轮没正常结束、被别的操作占着）就退回收件箱，它下一轮开始时一起处理
    */
   async function wakeTask(
     id: string,
@@ -1230,24 +1177,12 @@ export function tasksApi(deps: {
       peer?: PeerFrom
     } = {},
   ) {
-    const running = live.get(id)
-    const panel = meta.panel ?? 'child'
     try {
-      if (running?.task.status === 'running') {
-        const msg: TaskMessage = {
-          id: randomUUID(),
-          role: 'system',
-          agentId: '',
-          step: '',
-          text,
-          tools: [],
-          panel,
-          ...(meta.child && { child: meta.child }),
-          ...(meta.peer && { peer: meta.peer }),
-          at: new Date().toISOString(),
-        }
-        await deliver(running, msg, text, [])
-      } else await followUp(id, { text, attachments: [], panel, child: meta.child, peer: meta.peer })
+      await wakeConv(id, text, {
+        panel: meta.panel ?? 'child',
+        ...(meta.child && { child: meta.child }),
+        ...(meta.peer && { peer: meta.peer }),
+      })
     } catch (e) {
       log.warn('task', '没能马上交给对话，放进收件箱', { task: id, error: (e as Error).message })
       alertOn(id, 'delivery', t('一条消息没能马上交给这个对话，已放进收件箱'))(e)
@@ -2053,16 +1988,16 @@ export function tasksApi(deps: {
     parent.updatedAt = msg.at
     if (entry) entry.rev++
     else await store.update(parent.id, parent).catch(() => {})
-    // 自动交给父对话的 AI 作答：正在执行的已经在插话里收到了，空闲的给它开一轮（答案从收件箱里看全文）
+    // 自动交给父对话的 AI 作答：已经从插话里收到的不再叫；其余的按实时交付叫起它（答案从收件箱里看全文）。
+    // 不能只看 working：父对话停在等下一句、正在收尾、预热时 working 是 false 但执行位还占着，直接开新一轮会被拒
     if (auto) {
       await store.update(parent.id, parent).catch(() => {})
-      if (!entry?.task.working)
-        await followUp(parent.id, {
-          text: `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
-          attachments: [],
-          panel: 'child',
-          peer,
-        }).catch((e) => {
+      if (!how)
+        void wakeConv(
+          parent.id,
+          `子对话「${child.title}」${suggestion ? '的收尾建议' : '在等你决定'}（在收件箱里，「提问」关着，用户不会回答）。按已有信息选最合理的做法，把「你替它决定了什么、依据、不对怎么改」写清楚，再用 send_to_conversation 交给它（id: ${child.id}）。`,
+          { panel: 'child', peer },
+        ).catch((e) => {
           log.warn('task', '自动交给父对话决定时没能开始新的一轮', { error: (e as Error).message })
           alertOn(parent.id, 'delivery', t('子对话等你决定，但没能开一轮来处理，问题在收件箱里'))(e)
         })
@@ -2175,7 +2110,7 @@ export function tasksApi(deps: {
     // 刚开始预热、CLI 还没停在等下一句：这一轮收不下，也不能干等它启动完，让用户稍后重试
     if (live.get(parent.id)?.task.prewarming) return { ok: false as const, error: t('父对话正在启动，稍后再试') }
     for (let i = 0; i < 2; i++) {
-      const entry = live.get(parent.id)
+      const entry = runningConv(parent.id)
       if (entry?.task.status === 'running') {
         const r = await deliver(entry, msg, text, [])
         return { ok: true as const, how: r.how }
@@ -2192,6 +2127,74 @@ export function tasksApi(deps: {
       if (e instanceof TaskBusyError) return { ok: false as const, error: t('父对话正在执行，等它这一轮结束后重试') }
       return { ok: false as const, error: (e as Error).message }
     }
+  }
+
+  /**
+   * 对话「正在运行」：占着执行位 —— 执行中、CLI 停在等下一句、预热中、这一轮刚结束还在收尾。
+   * 往对话里交消息、判断能不能直接开新一轮，只认这一个判定（用户 2026-10-25 定的）。
+   * 不要看 working：它只表示 CLI 正在处理这一轮，等下一句、收尾、预热时都是 false，执行位却还占着，
+   * 拿它当「空闲」去 followUp 会被「任务正在执行」拒掉，消息就交不到 CLI。
+   * 返回占着执行位的那一份；没在运行时为空，这时才能直接开新一轮
+   */
+  function runningConv(id: string): Live | undefined {
+    return live.get(id)
+  }
+
+  /**
+   * 面板替别人把一件事交给一个对话（子对话的提问交给父对话决定、计划在等的结果、后台命令的结果……），
+   * 按 runningConv 走和用户发消息同一套交付：
+   * - 正在运行、这一轮还在（执行中、等下一句、预热中）→ deliver：等下一句就直接续上，能插话就插话，收不下就排到这一轮结束后；
+   * - 正在运行、这一轮已经结束还在收尾 → 记进对话、排到下一轮，等它收完；收尾已经过了接着开的那一步就由这里补开；
+   * - 没在运行 → 直接开新一轮。
+   * 这一轮没正常结束（失败、被停止）时排着的会被丢掉：抛错让调用方在对话里留警告。返回这条实际怎么交出去的
+   */
+  async function wakeConv(
+    id: string,
+    text: string,
+    extra: Pick<TaskMessage, 'panel' | 'peer' | 'child' | 'worktree'> = {},
+  ): Promise<DeliveryHow> {
+    for (let i = 0; i < 3; i++) {
+      const entry = runningConv(id)
+      if (!entry) {
+        try {
+          await followUp(id, { text, attachments: [], ...extra })
+          return 'next'
+        } catch (e) {
+          // 并发进来的另一条先占了执行位：下一圈按「正在运行」交给它
+          if (!(e instanceof TaskBusyError)) throw e
+          continue
+        }
+      }
+      // 没有 panel 的是一条普通的用户消息（父对话交代给子对话的话）
+      const msg: TaskMessage = {
+        id: randomUUID(),
+        role: extra.panel ? 'system' : 'user',
+        agentId: '',
+        step: '',
+        text,
+        tools: [],
+        ...(extra.panel ? { panel: extra.panel } : {}),
+        ...(extra.peer ? { peer: extra.peer } : {}),
+        ...(extra.child ? { child: extra.child } : {}),
+        ...(extra.worktree ? { worktree: extra.worktree } : {}),
+        at: new Date().toISOString(),
+      }
+      if (entry.task.status === 'running') return (await deliver(entry, msg, text, [])).how
+      entry.task.messages.push(msg)
+      holdForNextTurn(id, msg)
+      entry.rev++
+      await store.update(id, entry.task)
+      await entry.done?.catch(() => {})
+      if (entry.task.status !== 'done' && !runningConv(id))
+        throw new Error(t('这一轮没有正常结束，消息留在对话里，发一条消息或点「继续执行」会处理'))
+      if (hasHeld(id) && !runningConv(id))
+        await followUp(id).catch((e) => {
+          // 又被别的消息开了新的一轮：排着的这条由那一轮结束后接着处理
+          if (!(e instanceof TaskBusyError)) throw e
+        })
+      return 'held'
+    }
+    throw new TaskBusyError('任务正在执行，请等它完成或先停止')
   }
 
   /**
@@ -2226,16 +2229,13 @@ export function tasksApi(deps: {
       panel: 'child',
       at: new Date().toISOString(),
     }
-    if (working) {
-      const how = await steerTask(parent, text, msg).catch(() => false)
-      if (!how) parent.messages.push(msg)
-    } else {
-      parent.messages.push(msg)
-      await followUp(parent.id, { text, attachments: [], panel: 'child' }).catch((e) => {
+    // 插不进去（或者没在执行）时按实时交付叫起父对话：停在等下一句、收尾中、预热时 working 是 false 但执行位还占着
+    const how = working ? await steerTask(parent, text, msg).catch(() => false) : false
+    if (!how)
+      await wakeConv(parent.id, text, { panel: 'child' }).catch((e) => {
         log.warn('task', '关闭提问时没能开始一轮作答', { error: (e as Error).message })
         alertOn(parent.id, 'delivery', t('关掉「提问」后没能开一轮去回答子对话的问题'))(e)
       })
-    }
     return true
   }
 
@@ -3951,7 +3951,7 @@ export function tasksApi(deps: {
     await settleAskFromChild(id, text).catch((e) =>
       log.warn('task', '回答子对话时没能收起父对话的提问卡片', { task: id, error: (e as Error).message }),
     )
-    let prev = live.get(id)
+    let prev = runningConv(id)
     if (prev?.task.status === 'running') {
       // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），
       // 都收不下就把消息记进对话，这一轮结束后马上开始新一轮接着处理
