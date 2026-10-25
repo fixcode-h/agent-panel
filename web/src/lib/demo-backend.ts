@@ -3130,21 +3130,47 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     session: '',
     snapshot: '',
     command: [],
-    brief: '看一下购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路查一遍，指出具体在哪个文件哪一行。',
+    // 结构化的要求（和真实 spawn 落盘的 brief 同一个格式）：子任务窗口最上面那块按 `##` 拆成几块显示
+    brief: [
+      '## 要做的事',
+      '查清购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路走一遍，指出问题在哪个文件的哪一行。',
+      '',
+      '## 验收标准',
+      '- 给出具体的文件和行号，只读不改代码',
+      '- 说清角标在什么情况下才刷新',
+    ].join('\n'),
     changes: [],
     runId: 1,
   })
   const at = new Date(Date.parse(end) - 8_000).toISOString()
-  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）
-  const own = {
-    id: 'demo-' + crypto.randomUUID(),
-    role: 'agent' as const,
-    agentId: agent.id,
-    step: id,
-    text: result,
-    tools: [],
-    at: end,
-  }
+  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）。多出几条过程消息，让对话流超过一屏：
+  // 「派给它的要求」的吸顶、展开后仍在视野内这些行为只有内容超过一屏时才测得出来
+  const steps: [string, number][] = [
+    ['先看购物车角标的取数：它读的是首次渲染时的快照。', 6_600],
+    ['再顺着订阅消息查：加购只本地改状态，没发 `cart:changed`。', 5_200],
+    ['对照了一遍别的页面：结算页订阅了，所以那边是正常的。', 3_800],
+    ['定位到 `CartBadge.tsx` 里那次读快照的地方，记下行号。', 2_400],
+  ]
+  const own = [
+    ...steps.map(([text, ago]) => ({
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text,
+      tools: [],
+      at: new Date(Date.parse(end) - ago).toISOString(),
+    })),
+    {
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text: result,
+      tools: [],
+      at: end,
+    },
+  ]
   // 派出它的那条系统消息：消息流里不画卡片，折叠行上仍写着「派出 1 个子任务」
   const spawned = {
     id: 'demo-' + crypto.randomUUID(),
@@ -3160,7 +3186,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     .map((m, i) => (m.role === 'agent' ? i : -1))
     .filter((i) => i >= 0)
     .at(-1)
-  task.messages.splice(last ?? task.messages.length, 0, spawned, own)
+  task.messages.splice(last ?? task.messages.length, 0, spawned, ...own)
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
