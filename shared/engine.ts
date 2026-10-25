@@ -97,7 +97,7 @@ import {
   endRun,
   finishPlan,
   planText,
-  runningStepId,
+  childStepId,
   WRAP_UP,
   type PlanItemInput,
   type WrapUpKind,
@@ -2628,7 +2628,7 @@ function makeOrchestra(
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
       // 没指定步骤就挂在正在做的那一步：不挂的话那一步一标完成，父对话的计划就「已完成」了，子对话却还没合回
-      const at = step?.trim() || runningStepId(task)
+      const at = step?.trim() || (r.id ? childStepId(task, r.id, title) : '')
       const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
@@ -2651,7 +2651,7 @@ function makeOrchestra(
       handed.set(message.trim(), id.trim())
       const r = await host.sendToConversation(id.trim(), message)
       if (!r.ok) handed.delete(message.trim())
-      const at = step?.trim() || runningStepId(task)
+      const at = step?.trim() || childStepId(task, id.trim())
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r

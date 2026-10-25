@@ -16,6 +16,7 @@ import {
   planSpan,
   refreshChildWait,
   runningStepId,
+  childStepId,
   settleWait,
   unsummarized,
 } from './plan.ts'
@@ -657,4 +658,24 @@ test('父对话收尾子对话后刷新计划：计划里没挂它时点明要 A
   assert.match(text, /没有步骤在等子对话「登录页」/)
   assert.equal(activePlan(task)!.steps[0].status, 'running', '没挂等待的步骤不替 Agent 乱标')
   assert.equal(refreshChildWait(fresh(), { id: 'kid', title: 'x' }, { settle: 'ok', why: '' }), '')
+})
+
+test('子对话没指定步骤：按标题对上说它的那一步，给它发消息还挂原来那一步', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: '把 OpenDesign 加进内置厂家列表与协议地址', status: 'running' },
+      { title: '默认代理地址改为 127.0.0.1:10808 并让自动探测优先用它' },
+      { title: '子任务弹窗加 AI 分析，复用现有分析窗口' },
+    ],
+  })
+  assert.equal(childStepId(task, 'a', '内置 OpenDesign API 厂家'), '1')
+  bindWait(task, '1', { kind: 'child', ref: 'a', label: '内置 OpenDesign API 厂家' })
+  assert.equal(childStepId(task, 'b', '默认代理地址改为 127.0.0.1:10808'), '2')
+  bindWait(task, '2', { kind: 'child', ref: 'b', label: '代理' })
+  assert.equal(childStepId(task, 'c', '子任务弹窗加 AI 分析'), '3')
+  // 给 b 发后续消息：还挂第 2 步
+  assert.equal(childStepId(task, 'b'), '2')
+  // 对不上的挂在正在做的那一步
+  assert.equal(childStepId(task, 'd', '整理文档'), '1')
 })
