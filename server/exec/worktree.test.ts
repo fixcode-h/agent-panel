@@ -795,3 +795,30 @@ test('两个子对话改同一段同一行：第二个合并被撤回，冲突�
     await removeWorktree(repo, b, true).catch(() => {})
   }
 })
+
+test('合并时原目录的 index.lock 正被别的 git 进程占着：等锁放开再合，不报成冲突', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'lock')
+  try {
+    writeFileSync(path.join(wt.path, 'c.txt'), 'c\n')
+    const lock = path.join(repo, '.git', 'index.lock')
+    writeFileSync(lock, '')
+    const release = setTimeout(() => rmSync(lock, { force: true }), 300)
+    try {
+      await mergeWorktree(repo, wt, '合并', repo, true)
+    } finally {
+      clearTimeout(release)
+    }
+    assert.ok(existsSync(path.join(repo, 'c.txt')), '锁放开后合进去了')
+    // 一直占着：重试几次后照样报错，不会无限等
+    writeFileSync(path.join(wt.path, 'd.txt'), 'd\n')
+    writeFileSync(lock, '')
+    try {
+      await assert.rejects(mergeWorktree(repo, wt, '合并', repo, true), /index\.lock|Unable to write index/)
+    } finally {
+      rmSync(lock, { force: true })
+    }
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})

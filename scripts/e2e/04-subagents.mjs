@@ -504,8 +504,14 @@ await runShard('子对话与计划', async (api) => {
       assert.equal(mergedBusy.worktree.state, 'merged', '独立分支回收')
       // 关键：必须是「插话」那条路办的。父对话那一轮如果先结束了，收尾请求会走普通新一轮 input，
       // .finish 里照样有记录、merged 照样成立，但插话路径没被覆盖，这个用例就白写了
-      const viaSteer = readLog(log + '.finish').filter((x) => x.id === busyKid.id && x.via === 'steer')
-      assert.ok(viaSteer.length, '收尾请求是以插话交给父对话那一轮的')
+      // 等 .finish 那行写下来再看：子对话显示「已合并」时，父对话那边 finish_child 的结果可能还在回给假 CLI 的路上，
+      // 立刻读会偶发读不到（并行跑时约 1/4）
+      const viaSteerOf = () => readLog(log + '.finish').filter((x) => x.id === busyKid.id && x.via === 'steer')
+      await waitFor(async () => viaSteerOf().length > 0, {
+        timeout: 20000,
+        label: '收尾请求是以插话交给父对话那一轮的',
+      })
+      const viaSteer = viaSteerOf()
       // 插话那次可能被拒（finishChildStep 在「正在合并」「还没请求收尾」时返回 isError），
       // 这一轮 input 里同一个请求会再试一次并成功（见 R5 的处理）：所以看「至少成功过一次」
       assert.ok(
