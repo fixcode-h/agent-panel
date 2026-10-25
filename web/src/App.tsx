@@ -15,8 +15,10 @@ import { ElementPickHost } from '@/components/chat/ElementPicker'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { GlobalHintHost } from '@/components/ui/hint'
 import { useAiWindow } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
@@ -191,6 +193,8 @@ export function App() {
         }}
       >
         <div className="flex min-h-full flex-col md:h-full">
+          {/* 全界面的悬停提示：接住所有原生 title，换成统一样式的浮层（全页只挂这一份） */}
+          <GlobalHintHost />
           <TaskWatcher />
           <Shortcuts />
           <UiActions
@@ -231,7 +235,14 @@ export function App() {
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />
-        <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
+        {/* 错误提示要能手动关掉：悬停提示已经自动消失，不会盖着不走；toast 停在屏幕上会挡住内容，
+            所以给错误加关闭按钮（其余类型的关闭按钮由 index.css 里的规则隐掉） */}
+        <Toaster
+          theme={dark ? 'dark' : 'light'}
+          position="bottom-right"
+          closeButton
+          toastOptions={{ closeButtonAriaLabel: t('关闭') }}
+        />
       </NavCtx.Provider>
     </DataProvider>
   )

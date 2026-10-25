@@ -12,6 +12,18 @@ import http from 'node:http'
 import path from 'node:path'
 import { runShard } from './harness.mjs'
 
+/**
+ * 列表时间（updatedAt）比较允许的抖动，单位毫秒。
+ *
+ * updatedAt 是毫秒精度的 ISO 字符串，但两条落盘路径各自 new Date() 取时间，分片并行、负载高时
+ * 会出现 1~2ms 的差（本轮实测：正常情况下 0ms，曾在一次全量跑里出现过 1ms——done 侧晚写了 1ms），
+ * 这不是产品行为变了。
+ * 真出错时（预热退出把列表时间改成现在）updatedAt 会晚至少一个 presence 宽限期——e2e 里
+ * AGENT_PANEL_PRESENCE_GRACE_MS=1200（见 harness.mjs）；所以 200ms 两侧余量都够：它比 1~2ms 的
+ * 抖动宽一百倍，又比 1200ms 的真实变化窄得多——抖动不会把它插穿，真实变化却跑不掉。
+ */
+const UPDATED_AT_TOLERANCE_MS = 200
+
 await runShard('本机请求与设置', async (api) => {
   const {
     baseUrl: base,
@@ -130,7 +142,16 @@ await runShard('本机请求与设置', async (api) => {
 
   // 重命名；停止后继续执行
   assert.equal((await call('PATCH', `/tasks/${sim.id}`, { title: '新标题' })).title, '新标题')
-  let rs = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '停一下再继续' })
+  let rs = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'SLOW 停一下再继续',
+  })
+  // 等 CLI 真的起来再停，而且这一轮必须够长：假 CLI 默认那一轮只要 150ms，光是等它启动再发 stop
+  // 仍然可能抢不到（stop 请求到达时它已经跑完，任务已是 done，stop 成了 no-op，断言 stopped 假失败）。
+  // 带 SLOW 让这一轮持续十来秒，stop 才必然落在它执行期间（和 03-chat.mjs 的停止用例同一写法）
+  await waitFor(() => calls().some((c) => c.input.includes('停一下再继续')), { label: '停止用例的任务开始执行' })
   await call('POST', `/tasks/${rs.id}/stop`)
   rs = await waitDone(rs.id)
   assert.equal(rs.status, 'stopped')
@@ -1459,7 +1480,13 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(w.prewarming, false)
     assert.equal(w.working, false)
     assert.equal(w.turnDoneAt, askedDoneAt, '切走让预热退出不算完成一轮')
-    assert.equal(w.updatedAt, askedUpdatedAt, '预热退出不改列表时间')
+    const updatedAtDrift = Math.abs(Date.parse(w.updatedAt) - Date.parse(askedUpdatedAt))
+    // 值为空或非法时差值是 NaN，不会小于等于容差，断言会失败；消息里标成 <非法> 好一眼看出是值缺失而不是漂移
+    const driftText = Number.isNaN(updatedAtDrift) ? '<非法>' : `${updatedAtDrift}ms`
+    assert.ok(
+      updatedAtDrift <= UPDATED_AT_TOLERANCE_MS,
+      `预热退出不改列表时间（差了 ${driftText}，容差 ${UPDATED_AT_TOLERANCE_MS}ms：${askedUpdatedAt} → ${w.updatedAt}）`,
+    )
   }
   step('预热接口：切换 CLI/模型后按新选择重开进程，停在等下一句；打开对话页不再自动预热')
 
