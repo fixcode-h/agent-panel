@@ -41,10 +41,28 @@ if (isLogin && process.env.FAKE_AUTH) {
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content))
   }
+  const kind = process.env.FAKE_AUTH
+  // 已经登录着的时候再登录：Command Code 只说一句 Already logged in 就退出（退出码 0），凭据文件一个字节都不改，
+  // 输出还带 SGR 转义（真 CLI 是这么打的）。FAKE_AUTH_ALREADY 打开时模拟这条路，用来测面板的登录判定和 ANSI 剥离
+  const already =
+    process.env.FAKE_AUTH_ALREADY && kind === 'commandcode' && existsSync(path.join(home, '.commandcode', 'auth.json'))
+  if (already) {
+    process.stdout.write('\n✓ Authenticated\n\n')
+    process.stdout.write(
+      '\u001b[32m✓\u001b[39m \u001b[1mAlready logged in\u001b[22m，用户 \u001b[36mfake-user\u001b[39m\n\n',
+    )
+    process.stdout.write('\u001b[2mRun\u001b[22m \u001b[36mcmdc\u001b[39m \u001b[2mto get started.\u001b[22m\n\n')
+    process.exit(0)
+  }
+
+  // 用户关掉了浏览器里的授权页：CLI 什么都没写，就以退出码 0 退出了（面板要报「没有找到登录凭据」）
+  if (process.env.FAKE_AUTH_NO_CREDENTIALS) {
+    process.stderr.write('Login cancelled, nothing saved.\n')
+    process.exit(0)
+  }
   process.stderr.write('Starting local login server on http://localhost:1455\n')
   process.stderr.write(`Open this URL in your browser: https://example.com/oauth/authorize?n=${n}\n`)
   await new Promise((r) => setTimeout(r, 300))
-  const kind = process.env.FAKE_AUTH
   if (kind === 'codex') {
     const jwt = `x.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.y`
     put(path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'auth.json'), { tokens: { id_token: jwt, n } })

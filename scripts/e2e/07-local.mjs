@@ -467,6 +467,55 @@ await runShard('本机请求与设置', async (api) => {
       ['Command Code 账号 1'],
       '已经保存过的凭据不重复保存',
     )
+    // 已经登录着再点登录：CLI 只说一句 Already logged in 就退出（退出码 0），凭据文件一个字节都不改，
+    // 不能因此报「登录没有完成」；它带 SGR 转义打印的输出在界面上也不能剩 [32m 这类残码
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        clis: {
+          commandcode: {
+            env: [
+              { key: 'FAKE_AUTH', value: 'commandcode' },
+              { key: 'FAKE_AUTH_ALREADY', value: '1' },
+            ],
+          },
+        },
+      }),
+    )
+    const ccAuth = path.join(homeDir, '.commandcode', 'auth.json')
+    const ccBefore = readFileSync(ccAuth, 'utf8')
+    await call('POST', '/accounts/commandcode/login')
+    j = await waitLogin('commandcode')
+    assert.equal(j.status, 'done', `已登录时再登录要算成功：${JSON.stringify(j)}`)
+    assert.equal(j.error, undefined)
+    assert.equal(readFileSync(ccAuth, 'utf8'), ccBefore, '这条路径 CLI 不改凭据文件')
+    assert.match(j.output, /Already logged in/)
+    assert.doesNotMatch(j.output, /\u001b|\[32m|\[1m|\[22m|\[39m/, '登录输出里没有 ANSI 残码')
+    assert.equal((await list('commandcode')).live.loggedIn, true, '仍是原来那个账号')
+
+    // 真的没登进去（用户关掉了浏览器里的授权页）：CLI 退出码 0 但什么都没写，仍要报失败，
+    // 而且文案说的是「没有找到登录凭据」，不是「没有完成登录（退出码 0）」
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        clis: {
+          commandcode: {
+            env: [
+              { key: 'FAKE_AUTH', value: 'commandcode' },
+              { key: 'FAKE_AUTH_NO_CREDENTIALS', value: '1' },
+            ],
+          },
+        },
+      }),
+    )
+    await call('POST', '/accounts/commandcode/logout')
+    await call('POST', '/accounts/commandcode/login')
+    j = await waitLogin('commandcode')
+    assert.equal(j.status, 'failed', `退出码 0 但没凭据仍算失败：${JSON.stringify(j)}`)
+    assert.match(j.error, /没有找到登录凭据/, '文案要说清是没有凭据')
+    assert.match(j.error, /Login cancelled/, '尾部输出也带上，方便用户看到 CLI 说了什么')
 
     // API：读模型列表（在服务端请求），选用后模型下拉只列这个 API 的模型，地址和密钥按 CLI 的规则传进去
     const apiSrv = http.createServer((req, res) => {
@@ -742,7 +791,7 @@ await runShard('本机请求与设置', async (api) => {
     assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
     await call('PUT', '/settings', base0)
     step(
-      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式把地址和密钥写进 CLI 自己的配置、执行只传模型、协议对不上不用',
+      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息；已登录再登录仍算成功且输出无 ANSI 残码，退 0 但没凭据报「没有找到登录凭据」）；API 模式把地址和密钥写进 CLI 自己的配置、执行只传模型、协议对不上不用',
     )
   }
 
