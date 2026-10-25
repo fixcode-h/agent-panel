@@ -103,6 +103,47 @@ let developer = ''
 let policy = {}
 // 插话收到的内容；Codex 的 turn/steer、Claude Code 执行中写进来的 user 消息
 const steered = []
+// 本轮已经处理过的收尾请求：同一个【收尾请求】既在本轮 input 里、又当插话进来时只合一次
+let tookWrap = new Set()
+// 本轮收到的插话条数：HOLD_STEER 用它判断「这一轮真的等到插话了」。
+// 必须随轮清空（见 startTurn）：steered 和它都是跨轮累积的，保活进程第二轮再带 HOLD_STEER 时
+// 不清零就会「不等直接结束」，又变回这个场景要防的假同步
+let steerCount = 0
+/** 新一轮开始：上一轮处理过的收尾请求、插话计数都不能带到这一轮（同一子对话可以再次请收尾） */
+function startTurn(text) {
+  input = text
+  tookWrap.clear()
+  steerCount = 0
+}
+/**
+ * 收到插话：记下来给用例检查，并像真的 CLI 一样马上处理里面的【收尾请求】。
+ * 父对话正忙时子对话的 submit_merge 是以插话进来的（server/tasks.ts 的 noteParent → steerTask）：
+ * 以前只 push 不处理，父对话那一轮跑完后也不会调用 finish_child，子对话一直停在「已请父对话收尾」，
+ * e2e 就停在这一步等到超时（CI 上 10 个分片并行时父对话正好在跑，必现）。
+ */
+async function takeSteer(text) {
+  steered.push(text)
+  steerCount++
+  // 等到插话的那一刻就记下来：这一轮随后会被收口停掉，循环结束之后的记录来不及写（用例会看不到）。
+  // kid 是插话里带的子对话 id，用例据此确认记的是本次那一轮
+  if (process.env.FAKE_CLI_LOG && input.includes('HOLD_STEER'))
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.hold',
+      JSON.stringify({ kind, held: true, kid: wrapRequestIds(text)[0] ?? '' }) + '\n',
+    )
+  for (const id of wrapRequestIds(text)) {
+    if (tookWrap.has(id)) continue
+    tookWrap.add(id)
+    const got = await panelCall('finish_child', { id })
+    // 失败时不留标记：本轮 input 里同一个收尾请求还有第二次机会（finish_child 会因「子对话又开始执行了」
+    // 这类原因被拒，插话先到、input 后到时正好靠这次重试合上）
+    if (got?.isError) tookWrap.delete(id)
+    // via 标出这个请求是从哪条路来的：插话（父对话正忙）还是本轮 input。
+    // 回归用例要断言“确实是插话那条路办的”，否则父对话那一轮先结束时用例会假通过
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'steer', got }) + '\n')
+  }
+}
 let interrupted = false
 // 压缩、审查、分叉（Codex 的 thread/compact/start、review/start、thread/fork）
 let appOp = ''
@@ -168,7 +209,7 @@ if (args[0] === 'app-server') {
     }
     if (req.method === 'turn/start') {
       console.log(JSON.stringify({ id: req.id, result: { turn: { id: 't1', status: 'inProgress' } } }))
-      input = req.params.input.map((x) => x.text).join('')
+      startTurn(req.params.input.map((x) => x.text).join(''))
       // 执行中继续读：插话、中断
       ;(async () => {
         for (;;) {
@@ -176,7 +217,7 @@ if (args[0] === 'app-server') {
           if (done) return
           const m = JSON.parse(value)
           if (m.method === 'turn/steer') {
-            steered.push(m.params.input.map((x) => x.text).join(''))
+            void takeSteer(m.params.input.map((x) => x.text).join('')).catch(() => {})
             console.log(JSON.stringify({ id: m.id, result: { turnId: 't1' } }))
           } else if (m.method === 'turn/interrupt') {
             interrupted = true
@@ -258,7 +299,7 @@ if (args.includes('--rpc')) {
           },
         })
       else if (m.method === 'turn/start') {
-        input = typeof m.params?.input === 'string' ? m.params.input : ''
+        startTurn(typeof m.params?.input === 'string' ? m.params.input : '')
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1' } })
         say({ jsonrpc: '2.0', method: 'turn/started', params: { seq: ++rpcSeq, turnId: 'turn_1' } })
         started = true
@@ -272,7 +313,7 @@ if (args.includes('--rpc')) {
           } else rpcTurnArrived = true
         }
       } else if (m.method === 'turn/steer') {
-        steered.push(String(m.params?.input ?? ''))
+        void takeSteer(String(m.params?.input ?? '')).catch(() => {})
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1', queued: steered.length } })
       } else if (m.method === 'turn/interrupt') {
         interrupted = true
@@ -371,7 +412,7 @@ if (piRpc) {
       saveHist(h)
       say({ type: 'response', command: 'fork', id: m.id, success: true, data: { text: '', cancelled: false } })
     } else if (m.type === 'prompt') {
-      input = String(m.message ?? '')
+      startTurn(String(m.message ?? ''))
       say({ type: 'response', command: 'prompt', id: m.id, success: true, data: { disposition: 'started' } })
       if (answered) piNextPrompt?.(input)
       if (!answered) {
@@ -379,7 +420,7 @@ if (piRpc) {
         onPrompt?.()
       }
     } else if (m.type === 'steer') {
-      steered.push(String(m.message ?? ''))
+      void takeSteer(String(m.message ?? '')).catch(() => {})
       say({ type: 'response', command: 'steer', id: m.id, success: true, data: { disposition: 'queued' } })
     } else if (m.type === 'clear_queue') {
       // 收回还没取走的插话
@@ -418,7 +459,7 @@ if (streamIn) {
   rl.on('line', (l) => {
     const m = JSON.parse(l)
     // 第一条是任务描述；之后的 user 消息是插话，control_request 的 interrupt 是中断
-    if (started && m.type === 'user') return steered.push(String(m.message?.content ?? ''))
+    if (started && m.type === 'user') return void takeSteer(String(m.message?.content ?? '')).catch(() => {})
     if (m.type === 'control_request' && m.request?.subtype === 'interrupt') return void (interrupted = true)
     started = true
     lines.push(m)
@@ -484,11 +525,11 @@ async function panelCall(name, params) {
   const fromArgs =
     servers[
       Object.keys(servers)
-        .filter((k) => k.startsWith('panel'))
+        .filter((k) => /^(agent-)?panel/.test(k))
         .at(-1)
     ]?.url ??
     args
-      .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
+      .map((a) => a.match(/^mcp_servers\.((?:agent-)?panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
   // Command Code、Gemini 把 MCP 写进工作目录的配置文件（.mcp.json / .gemini/settings.json），
@@ -595,7 +636,17 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
   const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
   if (!beganEdit && !isReviewRole() && (asked || back)) {
     const review = (instructions) =>
-      panelCall('spawn_agents', { tasks: [{ agent: '评审', title: '评审改动', instructions }] })
+      // 第一次派评审要带交接单（ADR 0013，缺 goal / checks 面板会拒绝）；这里复看也是新派，同样带上
+      panelCall('spawn_agents', {
+        tasks: [
+          {
+            agent: '评审',
+            title: '评审改动',
+            instructions,
+            review: { goal: '写好 child-done.txt', changes: 'child-done.txt — 完成标记', checks: 'npm test：通过' },
+          },
+        ],
+      })
     // 评审是计划里的独立步骤：派的时候标等待中，拿回结论后标完成（面板 submit_merge 前会校验这一步）
     const plan = (steps) => {
       if (process.env.FAKE_CLI_LOG)
@@ -680,9 +731,13 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
 // 一轮里可能同时有几个子对话的收尾请求，每个都要处理（只处理第一个会让后面的子对话等到超时）
 if (input.includes('finish_child')) {
   for (const id of wrapRequestIds(input)) {
+    // 这一轮执行中已经以插话处理过（见 takeSteer）：别再合一次
+    if (tookWrap.has(id)) continue
+    tookWrap.add(id)
     const got = await panelCall('finish_child', { id })
+    if (got?.isError) tookWrap.delete(id)
     if (process.env.FAKE_CLI_LOG)
-      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, got }) + '\n')
+      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'input', got }) + '\n')
   }
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
@@ -813,17 +868,17 @@ const turnReply = () => {
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
 }
-// 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
+// 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
 // Pi 的桥接扩展在面板自己的临时目录里，用 -e 的绝对路径加载
 // 用函数声明：panelCall 与 panelMcpUrl 在模块顶层先执行，const 那时还没初始化（TDZ），取地址会直接抛错
 function panelExt() {
-  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
+  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-(agent-)?panel[\w-]*\.ts$/.test(a))
 }
 function panelMcpUrl() {
   if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
   const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-  const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
+  const keys = Object.keys(cfg.mcpServers).filter((k) => /^(agent-)?panel/.test(k))
   const hit = cfg.mcpServers[keys.at(-1)]
   return hit.httpUrl ?? hit.url
 }
@@ -866,6 +921,26 @@ const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要�
 // 复现「网关吞掉请求后空成功收尾」——那一轮会被当成已完成并保活，用户后面发的消息全落进死回合。
 // 面板重试时会带上「上一次请求没有返回任何内容」，那时正常回复
 const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上一次请求没有返回任何内容')
+
+// HOLD_STEER：这一轮不靠固定时长模拟「在忙」，而是一直挂到真的收到插话（或超时）才继续。
+// 用 SLOW 那段固定时长当同步点时，子对话跑完 begin_edit、评审、再请收尾往往已经超过了那个窗口，
+// 收尾请求就退化成普通新一轮 input，插话那条路根本没被跑到（用例假通过）。
+// 等待期间必须一直有输出：面板按「交出消息后多久没有任何输出」判卡住（AGENT_PANEL_NO_RESPONSE_MS，e2e 里 2 秒），
+// 静默等下去会被判成卡住，之后来的消息改走 restartStalled 把这一轮停掉重开，收尾请求就不再是插话（实测复现过）。
+// 真 Agent 忙的时候也一直在思考，这里用 thinking 事件模拟，间隔 1 秒。
+// 保活输出只实现了 claude（thinking 事件）：别家 CLI 的保活写法不同，要拿 HOLD_STEER 测别的 CLI 得先补上。
+if (input.includes('HOLD_STEER')) {
+  const t0 = Date.now()
+  const holdMs = Number(process.env.FAKE_HOLD_STEER_MS) || 30000
+  while (!interrupted && steerCount === 0 && Date.now() - t0 < holdMs) {
+    await sleep(1000)
+    if (kind === 'claude')
+      out({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '.' } },
+      })
+  }
+}
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')

@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
+import { REVIEW_READ_BUDGET, REVIEW_SOFT_LIMIT_MIN } from '../shared/review-limits.ts'
 import { BUG_METHOD, BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { renderTemplate } from '../shared/agent-role.ts'
@@ -168,7 +169,6 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
     'Verdict: pass',
     '必须处置：R1',
     '需要先定的口径',
-    '文档要更新',
   ])
     assert.ok(code.includes(s), `评审（代码改动）要写明「${s}」`)
   assert.match(code, /有高级就判不通过/)
@@ -180,8 +180,16 @@ test('评审：仍是必备角色，收尾时要按代码改动给分级意见�
   // 用户 2026-10-24：评审只做代码层面的审查，不跑测试、不搭测试环境、不写测试代码
   assert.match(code, /只做代码层面的审查：不跑测试/, '评审只看代码')
   assert.match(code, /不写临时的测试或复现脚本/, '评审不写测试脚本')
-  assert.match(code, /同一回合里一起读/, '评审合并读取，少来回')
-  assert.match(code, /面板取好的文件列表和带整个函数的差异/, '用面板附的改动')
+  assert.match(code, /同一回合一起读/, '评审合并读取，少来回')
+  assert.match(code, /面板取好的文件列表和差异/, '用面板附的改动')
+  // 用户 2026-10-25（ADR 0013）：评审只评改动的代码，材料由对话整理成交接单，有读代码次数和时限
+  assert.match(code, /没改的代码不评/, '评审边界：没改的代码不评')
+  assert.match(code, /以 \+ \/ - 开头的行/, '只评改动的行')
+  assert.match(code, /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`，不全局搜索，不通读文件/, '不自己去项目里找')
+  assert.match(code, new RegExp(`最多 ${REVIEW_READ_BUDGET} 次`), '读代码有次数上限')
+  assert.match(code, new RegExp(`${REVIEW_SOFT_LIMIT_MIN} 分钟内交卷`), '有时限')
+  assert.match(code, /评审交接单/, '用对话交来的交接单')
+  assert.doesNotMatch(code, /MODULE-MAP\.md`（本项目即/, '评审代码不走模块定位')
   // 参数被改成「方案或结论」时也要给结论：否则收尾门禁（shared/review-gate.ts）会一直拦着合不回去
   const plan = renderTemplate(def.agent.instructions, { target: '方案或结论' })
   assert.ok(plan.includes('验收结论：通过'), '评审（方案或结论）同样要给验收结论')
@@ -209,11 +217,8 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   for (const d of ['fix', 'reject', 'defer']) assert.match(section, new RegExp(`- ${d}：`), `处置里有 ${d}`)
   assert.match(section, /resume 接着上一次评审/, '复看接着上一次评审的会话')
   assert.match(section, /面板只附增量/, '复看只给增量')
-  assert.match(
-    section,
-    /面板会把这次的改动（文件列表 \+ 带整个函数的差异）一次附进评审的提示词/,
-    '改动由面板一次附给评审',
-  )
+  assert.match(section, /面板会把这次的改动（文件列表 \+ 每处改动前后几行的差异/, '改动由面板一次附给评审')
+  assert.match(section, /带上交接单 review（第一次评审 goal、checks 必填/, '派评审时对话整理交接单')
   assert.match(section, /🔴 高级（必须改，有它评审就写不通过）、🟠 中级/, '四级意见')
   assert.match(section, /最多复看 2 轮/, '复看有上限')
   assert.match(section, /review_triage/, 'submit_merge 带处置')
@@ -221,7 +226,7 @@ test('执行角色：评审写进计划单独成步，收尾顺序是改完→�
   // 评审提速（2026-10-24 那次三轮评审 20 分钟）：通过后不为改变行为的 💭 再评审一轮；局部修复靠断言不复看；交检查命令给评审复用
   assert.match(section, /会改变行为、布局或逻辑的低级和建议都不在这一轮落/, '通过后不为建议再开一轮')
   assert.match(section, /亲手确认改前失败改后通过的，不复看/, '局部修复不复看')
-  assert.match(section, /已经跑过的检查写成「命令 \+ 结果」/, '把跑过的检查交给评审当证据')
+  assert.match(section, /checks 写已经跑过的检查「命令 \+ 结果」/, '把跑过的检查交给评审当证据')
   assert.match(section, /submit_merge/, '最后才 submit_merge')
 })
 
@@ -329,6 +334,22 @@ test('「写 Bug 记录」只在文档角色里定义一次，版本控制角色
   const bugParams = BUILTIN_AGENTS.filter((b) => b.agent.params.some((p) => p.key === 'bug')).map((b) => b.key)
   assert.deepEqual(bugParams, ['docsync'], '「写 Bug 记录」只在文档角色上')
   assert.ok(agents.length > 0)
+})
+
+test('Bug 记录只记用户报的 Bug，AI 自己写代码、评审发现的问题不写', () => {
+  // 用户要求：bug 文档是用户提出的 bug 分析解决后才写的，开发和评审中自己发现并修掉的问题不进 bugs.md
+  const docsync = coreDefinition('docsync').agent
+  const rendered = renderTemplate(docsync.instructions, { bug: true })
+  assert.match(rendered, /用户报的 Bug/)
+  assert.match(rendered, /评审或跑测试时发现并当场修掉的问题.*不写进 bugs\.md/)
+  assert.match(docsync.params.find((p) => p.key === 'bug')!.description ?? '', /用户报的 Bug/)
+  for (const f of ['skills/coding/systematic-debugging/SKILL.md', 'skills/docs/project-documentation/SKILL.md']) {
+    assert.match(readFileSync(f, 'utf8'), /Bug 记录只记用户报的 Bug/, f)
+  }
+  assert.doesNotMatch(
+    readFileSync('skills/workflow/openspec/SKILL.md', 'utf8'),
+    /发现新的易错点时，先记录到模块 Bug 文档/,
+  )
 })
 
 test('P4 的 changelist 描述只写一行短句，细节留在文档里', () => {

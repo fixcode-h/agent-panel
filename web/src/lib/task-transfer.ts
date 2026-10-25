@@ -9,6 +9,7 @@ import {
   exportTask,
   parseTaskExport,
   withImportedAgents,
+  type HelperScope,
   type TaskExport,
 } from '@shared/task-export'
 import { api } from './api'
@@ -73,9 +74,18 @@ export function toBase64(s: string) {
 
 /**
  * AI 分析：把一次或几次执行整理成报告附上，新建一个用默认 Agent 的对话来分析。
- * Agent 的回复末尾带修改建议，任务页上看过差异再应用
+ * Agent 的回复末尾带修改建议，任务页上看过差异再应用。
+ * scope 有值时只分析那一个子任务（子任务窗口里的「AI 分析」），报告和提示词都只看这一步。
  */
-export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; projectId: string; focus?: string }) {
+export async function startAnalysis(opts: {
+  tasks: Task[]
+  agents: Agent[]
+  projectId: string
+  focus?: string
+  scope?: HelperScope
+  /** 子任务分析用的副标题（「子任务 <标题>」）：拼进对话标题，在列表里能认出是哪个子任务 */
+  scopeTitle?: string
+}) {
   const app = await appVersion()
   const bundles: TaskExport[] = await Promise.all(
     opts.tasks.map(async (tk) =>
@@ -84,13 +94,16 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
   )
   const first = opts.tasks[0]
   const title =
-    opts.tasks.length > 1
-      ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
-      : t('分析：{title}', { title: first.title })
+    opts.scope && opts.scopeTitle
+      ? t('分析：{title}', { title: `${first.title} → ${opts.scopeTitle}` })
+      : opts.tasks.length > 1
+        ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
+        : t('分析：{title}', { title: first.title })
+  const reportName = opts.scope ? t('子任务记录') : t('执行记录')
   const report = await api.upload({
-    name: `${t('执行记录')}-${first.title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    name: `${reportName}-${(opts.scopeTitle || first.title).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
     mime: 'text/markdown',
-    data: toBase64(analysisReport(bundles)),
+    data: toBase64(analysisReport(bundles, undefined, opts.scope)),
   })
   const created = await api.createTask({
     projectId: opts.projectId,
@@ -101,7 +114,7 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
     model: '',
     effort: '',
     params: {},
-    prompt: analysisPrompt(bundles, opts.focus),
+    prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
     isolate: false,
     askUser: false,

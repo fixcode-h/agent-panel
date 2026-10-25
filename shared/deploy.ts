@@ -53,6 +53,17 @@ export interface DeployState {
   targets: DeployTarget[]
 }
 
+/**
+ * 自带技能里要更新的：装过、但内容和这一版自带的不同（面板升级带来了新内容，或本机改过）。
+ * 侧栏「Skills 与命令」和设置的「部署」据此亮提示点，告诉用户去哪里更新
+ */
+export interface SkillUpdates {
+  /** 「Skills 与命令 → 自带 Skill」装到 ~/.agents/skills/<名字> 的 */
+  shared: string[]
+  /** 「设置 → 部署」放到 ~/.agents/skills/<分类>/<名字> 的 */
+  deployed: string[]
+}
+
 export interface DeployResult {
   /** 新装或更新的 Skill */
   skills: string[]

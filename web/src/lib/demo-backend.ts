@@ -38,7 +38,7 @@ import {
   NewTaskInput,
   Settings,
   type PlanStatus,
-  type Task,
+  Task,
   type TaskMessage,
   type TaskProcess,
   type TaskProcesses,
@@ -738,6 +738,10 @@ function load(): Db {
   db.tags ??= []
   db.globalLessons ??= DEMO_GLOBAL_LESSONS
   db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
+  // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
+  // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
+  // 空数组（空数组是真值，下面 handle() 里 `if (!d.tasks)` 就再也不会建示例任务了）
+  if (db.tasks) db.tasks = db.tasks.map((t) => Task.parse(t))
   // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
   const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
   if (missingCats.length) db.projectCategories = [...missingCats, ...db.projectCategories]
@@ -3098,6 +3102,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     session: '',
     snapshot: '',
     command: [],
+    brief: '看一下购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路查一遍，指出具体在哪个文件哪一行。',
     changes: [],
     runId: 1,
   })
@@ -3282,6 +3287,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
           session: '',
           snapshot: '',
           command: [],
+          brief: '核对限流规则有没有在设置里生效，跑一遍相关用例，交回结论和证据。',
           changes: [],
           runId: 1,
         })

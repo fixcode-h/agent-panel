@@ -50,7 +50,14 @@ import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
-import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
+import type {
+  DeployConfig,
+  DeployResult,
+  DeployRun,
+  DeployState,
+  GlobalDocOptimize,
+  SkillUpdates,
+} from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ApiBalance } from '@shared/api-balance'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -645,6 +652,7 @@ export const api = {
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
   deployState: () => request<DeployState>('/deploy'),
+  skillUpdates: () => request<SkillUpdates>('/deploy/updates'),
   saveDeploy: (c: DeployConfig) => request<DeployState>('/deploy', json('PUT', c)),
   runDeploy: (r: DeployRun) => request<{ result: DeployResult; state: DeployState }>('/deploy/run', json('POST', r)),
   optimizeGlobalDoc: (input: GlobalDocOptimize) => request<DocJob>('/deploy/optimize', json('POST', input)),

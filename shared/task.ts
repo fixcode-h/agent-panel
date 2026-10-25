@@ -1588,7 +1588,8 @@ export function taskSummary(t: Task): Task {
     ...t,
     askedAt: askedAt(t),
     messages: first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : [],
-    steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], changes: [] })),
+    // brief 是父对话给的要求原文（可能上千字），列表和侧栏都读不到，跟着 output / command 一起清掉
+    steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], brief: '', changes: [] })),
     todos: [],
     plans: [],
     baseline: {},

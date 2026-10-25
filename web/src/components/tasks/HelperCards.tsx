@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ListTree, Loader2, Square, X } from 'lucide-react'
+import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
+import { AnalyzeDialog } from './Evolution'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
@@ -260,6 +261,8 @@ export function HelperWindow({
 }) {
   const { agents } = useData()
   const step = task.steps.find((s) => s.id === id)
+  // 点「AI 分析」开的是复用执行记录那一套的弹窗，只把范围收窄到这一步
+  const [analyzing, setAnalyzing] = useState(false)
   const live = step?.status === 'running'
   const now = useNow(live)
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
@@ -290,6 +293,17 @@ export function HelperWindow({
               </span>
             )}
             {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+            {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('AI 分析')}
+              title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
+              onClick={() => setAnalyzing(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('AI 分析')}</span>
+            </Button>
             <StopHelper task={task} step={step} label />
             <D.Close asChild>
               <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
@@ -320,6 +334,18 @@ export function HelperWindow({
           </footer>
         </D.Content>
       </D.Portal>
+      {/* 弹窗开在子任务窗口之上。分析完 startAnalysis 会 go() 跳到新对话，父组件随之卸载，这个子任务窗口跟着消失 */}
+      <AnalyzeDialog
+        open={analyzing}
+        onOpenChange={setAnalyzing}
+        tasks={async () => [await api.task(task.id)]}
+        projectId={task.projectId}
+        scope={{ stepId: step.id }}
+        subtitle={t('子任务 {title}', { title: step.title })}
+        hint={t(
+          'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。',
+        )}
+      />
     </D.Root>
   )
 }
