@@ -566,8 +566,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .filter((r) => !!r.querySelector('button[title*="打开子对话"]'))
         return {
           rows: rows.length,
-          // 行宽：1280 那段靠它确认真的复现出了「开着右栏再缩窗」的窄行，
-          // 默认右栏改成关闭时这里会变宽，断言就不会再静默通过
+          // 行宽：只用来在报错里写清楚当时的实际值，不作阈值判。
+          // 行宽会随外面套几层缩进变化（运行区从回复内容里挑出来单独成块时少一层），
+          // 写死像素的阈值一改布局就变成假报错
           rowWidth: rows[0] ? Math.round(rows[0].getBoundingClientRect().width) : 0,
           items: rows
             .map((row) => {
@@ -639,9 +640,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else if (mid.items.length !== mid.rows)
       errors.push(`运行区（1280px）：${mid.rows} 条子对话行里只有 ${mid.items.length} 条能测到状态标签`)
     for (const n of mid.items) if (n.clipped) errors.push(`运行区（1280px）：状态标签「${n.text}」被裁掉了`)
-    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来
-    if (mid.rowWidth > 340)
-      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，没复现出右栏占宽后的窄行（应该 <340）`)
+    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来。
+    // 按行自己的行为判，不写死像素：这一行窄于容器查询的 380px 阈值时活动文字必须隐藏，
+    // 和上面 1024px 那段（行够宽、活动文字必须显示）正好是同一套判定的两边，
+    // 两边都成立才说明真的复现了「放不下活动文字」的窄行；行宽写进报错方便排查
+    if (mid.rows && mid.items.some((n) => n.noteShown))
+      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，活动文字还占着宽度，没复现出右栏占宽后的窄行`)
     // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
     await p
       .locator('[aria-label="运行中"]')
@@ -2145,6 +2149,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
       const title = () => p.locator('header nav h2').first().innerText()
       await projBtn.first().click()
+      // 上一步的 reload / 导航会让标题栏重渲染，紧接着那一下点击可能落在正在换掉的节点上而不展开。
+      // 没展开就补点一次（和本文件最后截图那段同一个做法），避免反而关掉已打开的浮层。
+      // 判据看触发按钮自己的展开状态（ProjectSwitch 的 PopoverTrigger 带 data-state），
+      // 不看浮层内容可见：打开后拉列表是 effect，内容晚一帧才齐，拿内容判会误把「已打开」当成「没打开」再点一下关掉
+      const expanded = () =>
+        projBtn
+          .first()
+          .getAttribute('data-state')
+          .then((s) => s === 'open')
+          .catch(() => false)
+      if (!(await expanded())) {
+        await p.waitForTimeout(300)
+        if (!(await expanded())) await projBtn.first().click()
+      }
       if (
         !(await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
           () => true,
