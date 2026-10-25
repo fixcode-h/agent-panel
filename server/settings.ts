@@ -6,6 +6,7 @@ import { defaultSettings } from '../shared/settings.ts'
 
 import { CACHE_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
+import { setApiLimits } from './api-slots.ts'
 
 const FILE = dataPath('settings.json')
 let cache: Settings | null = null
@@ -32,6 +33,7 @@ export async function getSettings(): Promise<Settings> {
       )
     }
     cache = s
+    setApiLimits(s.apis)
     return cache
   }
   // JSON 没坏但字段不合法（手动改错、旧版本留下的值）：不能让每个依赖设置的接口都一直 500。
@@ -59,6 +61,8 @@ let writing: Promise<void> = Promise.resolve()
 export async function saveSettings(s: Settings) {
   cache = s
   applyServerLang(s.language)
+  // 并发上限调大或改成不限制：排着的对话和子任务马上放进去，不用等别人释放
+  setApiLimits(s.apis)
   // 里面有 apis[].apiKey 和 clis[].env，只让当前用户读写
   const next = writing.catch(() => {}).then(() => writeJsonAtomic(FILE, s, false, 0o600))
   writing = next

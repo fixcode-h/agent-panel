@@ -105,7 +105,7 @@ let policy = {}
 const steered = []
 // 本轮已经处理过的收尾请求：同一个【收尾请求】既在本轮 input 里、又当插话进来时只合一次
 let tookWrap = new Set()
-// 本轮收到的、带【收尾请求】的插话条数：HOLD_STEER 用它判断「这一轮真的等到收尾请求的插话了」。
+// 本轮办完的、带【收尾请求】的插话条数：HOLD_STEER 用它判断「这一轮真的等到收尾请求的插话、并且办完了」。
 // 只数带收尾请求的：别的插话（子对话状态上报、peer 消息）先到时，不能把这一轮提前放掉，
 // 否则收尾请求又退化成新一轮 input，同步点就不准了。
 // 必须随轮清空（见 startTurn）：steered 和它都是跨轮累积的，保活进程第二轮再带 HOLD_STEER 时
@@ -125,7 +125,6 @@ function startTurn(text) {
  */
 async function takeSteer(text) {
   steered.push(text)
-  if (wrapRequestIds(text).length) steerCount++
   // 等到插话的那一刻就记下来：这一轮随后会被收口停掉，循环结束之后的记录来不及写（用例会看不到）。
   // kid 是插话里带的子对话 id，用例据此确认记的是本次那一轮
   if (process.env.FAKE_CLI_LOG && input.includes('HOLD_STEER'))
@@ -145,6 +144,9 @@ async function takeSteer(text) {
     if (process.env.FAKE_CLI_LOG)
       appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'steer', got }) + '\n')
   }
+  // 收尾请求办完（finish_child 返回、.finish 记下）才算等到：收到就放掉的话，HOLD_STEER 那一轮
+  // 最多 1 秒后就结束、进程退出，finish_child 还在合并，.finish 那行来不及写，用例在「以插话交给父对话」那步偶发失败
+  if (wrapRequestIds(text).length) steerCount++
 }
 let interrupted = false
 // 压缩、审查、分叉（Codex 的 thread/compact/start、review/start、thread/fork）
@@ -623,6 +625,14 @@ if (input.includes('SUB_BG') && input.includes('派出的子 Agent'))
 if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
+  })
+// 一次派两个子任务（API 并发上限的用例：名额是 1 时两个要一个一个跑，对话等它们时不占名额，不会互相等死）
+if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [
+      { title: '限流子任务一', instructions: 'SLOW 限流子任务一' },
+      { title: '限流子任务二', instructions: 'SLOW 限流子任务二' },
+    ],
   })
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {

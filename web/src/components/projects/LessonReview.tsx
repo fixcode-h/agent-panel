@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, ChevronDown, GraduationCap } from 'lucide-react'
-import type { Project, ProjectLesson, Task } from '@shared/schema'
+import { Check, GraduationCap } from 'lucide-react'
+import type { Project, ProjectLesson } from '@shared/schema'
 import { t } from '@shared/i18n'
 import {
-  LESSON_REVIEW_LANG,
   parseLessonReview,
   reviewItemState,
   type LessonReviewItem,
@@ -32,35 +31,12 @@ const problemText = (p: ReviewProblem) =>
           : t('重复')
 
 /**
- * 评审对话的结果：固定在输入框上方，每条建议写明问题、依据和改成什么，用户点「应用」才写进教训。
- * 「已应用」按当前的教训现算，在项目设置里手动改成一样的也算
+ * 教训评审的报告，画在分析对话右侧的功能面板里（ADR 0016）：每条建议写明问题、依据和改成什么，
+ * 用户点「应用」才写进教训。「已应用」按当前的教训现算，在项目设置里手动改成一样的也算
  */
-export function LessonReviewCard({ task, project }: { task: Task; project?: Project }) {
+export function LessonReviewReport({ text, project }: { text: string; project?: Project }) {
   const { setProjects } = useData()
-  const hit = useMemo(() => {
-    if (task.mode !== 'chat' || !task.projectId) return undefined
-    // 和「AI 分析」的结果一样：正在回复时只看最后一条用户消息之前的，没写完的不解析
-    const msgs = task.messages
-    let end = msgs.length
-    if (task.status === 'running' && task.working) while (end > 0 && msgs[end - 1].role !== 'user') end--
-    for (let i = end - 1; i >= 0; i--)
-      if (msgs[i].role === 'agent' && msgs[i].text.includes('```' + LESSON_REVIEW_LANG)) return msgs[i]
-    return undefined
-  }, [task])
-  const review = useMemo(() => (hit ? parseLessonReview(hit.text) : null), [hit])
-  // 用户接着追问就收起，把位置让给对话；有了新的评审结果再展开
-  const userCount = task.messages.filter((m) => m.role === 'user').length
-  const hitId = hit?.id ?? ''
-  const [open, setOpen] = useState(
-    () => !hit || !task.messages.slice(task.messages.indexOf(hit) + 1).some((m) => m.role === 'user'),
-  )
-  const seen = useRef({ userCount, hitId })
-  useEffect(() => {
-    const prev = seen.current
-    seen.current = { userCount, hitId }
-    if (hitId && hitId !== prev.hitId && prev.hitId) setOpen(true)
-    else if (userCount > prev.userCount) setOpen(false)
-  }, [userCount, hitId])
+  const review = useMemo(() => parseLessonReview(text), [text])
   const [busy, setBusy] = useState(false)
   if (!review || !project) return null
   const lessons = project.lessons
@@ -84,69 +60,27 @@ export function LessonReviewCard({ task, project }: { task: Task; project?: Proj
     }
   }
   return (
-    <section
-      aria-label={t('教训评审结果')}
-      className="mx-auto mb-2 flex max-h-[50vh] max-w-(--content-w) flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-card"
-    >
-      <header
-        className={cn('flex shrink-0 cursor-pointer items-start gap-3 px-4', open ? 'py-3.5' : 'py-2')}
-        onClick={() => setOpen(!open)}
-      >
-        <span
-          className={cn(
-            'grid shrink-0 place-items-center rounded-lg bg-accent-soft text-accent',
-            open ? 'h-8 w-8' : 'h-6 w-6',
+    <section aria-label={t('教训评审结果')} className="flex flex-col pb-3">
+      <div className="flex flex-col gap-2 px-4 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <GraduationCap className="h-3.5 w-3.5 text-accent" />
+          <span className="text-[0.8125rem] font-medium">{t('教训评审')}</span>
+          {pending.length > 0 ? (
+            <Badge tone="accent">{t('{n} 条建议待处理', { n: pending.length })}</Badge>
+          ) : (
+            <Badge tone="success">{rows.length ? t('建议都已处理') : t('没有要改的')}</Badge>
           )}
-        >
-          <GraduationCap className={open ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
-        </span>
-        <div className={cn('flex min-w-0 flex-1 gap-1', open ? 'flex-col' : 'items-center self-center')}>
-          <div className={cn('flex items-center gap-x-2 gap-y-1', open ? 'flex-wrap' : 'shrink-0')}>
-            <h3 className="text-[0.875rem] font-semibold">{t('教训评审')}</h3>
-            {pending.length > 0 ? (
-              <Badge tone="accent">{t('{n} 条建议待处理', { n: pending.length })}</Badge>
-            ) : (
-              <Badge tone="success">{rows.length ? t('建议都已处理') : t('没有要改的')}</Badge>
-            )}
-          </div>
-          {review.summary &&
-            (open ? (
-              <p className="text-[0.8125rem] leading-relaxed text-muted">{review.summary}</p>
-            ) : (
-              <span className="ml-1 min-w-0 truncate text-[0.8125rem] text-subtle">{review.summary}</span>
-            ))}
-        </div>
-        <span className={cn('flex shrink-0 items-center gap-1', open ? '' : 'self-center')}>
-          {open && pending.length > 1 && (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={(e) => {
-                e.stopPropagation()
-                void apply(pending.map((r) => r.it))
-              }}
-            >
+          <span className="flex-1" />
+          {pending.length > 1 && (
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void apply(pending.map((r) => r.it))}>
               {t('全部应用（{n}）', { n: pending.length })}
             </Button>
           )}
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? t('收起评审结果') : t('展开评审结果')}
-            title={open ? t('收起评审结果') : t('展开评审结果')}
-            className="grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-sel/70 hover:text-fg"
-            onClick={(e) => {
-              e.stopPropagation()
-              setOpen(!open)
-            }}
-          >
-            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && 'rotate-180')} />
-          </button>
-        </span>
-      </header>
-      {open && rows.length > 0 && (
-        <ul className="min-h-0 flex-1 divide-y overflow-y-auto border-t">
+        </div>
+        {review.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{review.summary}</p>}
+      </div>
+      {rows.length > 0 && (
+        <ul className="mx-3 mt-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
           {rows.map(({ it, state }, i) => (
             <ReviewRow
               key={`${it.id}-${i}`}
@@ -180,7 +114,7 @@ function ReviewRow({
   const merged = it.merge.map((m) => lessons.find((x) => x.id === m)?.title).filter(Boolean)
   const rewrites = it.action === 'rewrite' || it.action === 'merge'
   return (
-    <li className={cn('flex items-start gap-3 px-4 py-3', state !== 'pending' && 'opacity-60')}>
+    <li className={cn('flex items-start gap-3 px-3 py-3', state !== 'pending' && 'opacity-60')}>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-1.5">
           <Badge tone={it.action === 'delete' || it.action === 'disable' ? 'warning' : 'accent'}>

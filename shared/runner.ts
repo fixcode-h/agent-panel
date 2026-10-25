@@ -453,6 +453,41 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
         2,
       )}\n\`\`\``,
     }
+  // AI 初始化项目（项目对话里做）：回复末尾带上初始化结果的 JSON，演示里对话右侧的设置应用面板也能看到推荐
+  if (!call.step && ctx.first && task.analysis === 'init')
+    out = {
+      tools: [
+        { kind: 'read', label: 'package.json', detail: '' },
+        { kind: 'edit', label: 'AGENTS.md', detail: '' },
+      ],
+      changes: [],
+      text: `读完了项目：前端是 Vite + React，测试用 Vitest 和 Playwright。补全了 AGENTS.md，建好了文档入口和模块地图，推荐的设置在下面。\n\n\`\`\`json\n${JSON.stringify(
+        {
+          name: '商城前台',
+          description: '网上商城的前台页面：商品列表、详情、购物车和下单',
+          type: 'general',
+          reasons: { steps: 'package.json 里有 lint、test 和 e2e 三个脚本' },
+          docRoot: 'docs',
+          files: [
+            { path: 'AGENTS.md', action: 'updated', summary: '补上常用命令和文档地图' },
+            { path: 'docs/README.md', action: 'created', summary: '文档入口' },
+            { path: 'docs/MODULE-MAP.md', action: 'created', summary: '模块地图：页面、购物车、接口' },
+          ],
+          steps: [
+            { name: '代码检查', command: 'npm run lint', env: 'auto', quick: true },
+            { name: '单元测试', command: 'npm test', env: 'auto', quick: true },
+            { name: '端到端测试', command: 'npm run e2e', env: 'auto' },
+          ],
+          workflows: [],
+          settings: {
+            eol: { value: 'lf', reason: '.editorconfig 里写的是 lf' },
+            searchExclude: { value: ['coverage'], reason: '测试覆盖率报告不用搜' },
+          },
+        },
+        null,
+        2,
+      )}\n\`\`\``,
+    }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }

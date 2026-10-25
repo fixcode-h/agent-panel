@@ -96,6 +96,11 @@ export const ApiConfig = z.object({
   modelMap: z.record(z.string(), z.string()).default({}),
   /** 每个模型的默认思考强度：模型名 → 强度 id；没有时用模型目录里的默认值 */
   modelEfforts: z.record(z.string(), z.string()).default({}),
+  /**
+   * 并发上限：用这个 API 同时在请求模型的对话和子任务最多几个，多的排队等前面的释放（见 server/api-slots.ts）。
+   * 0 不限制。按 API 计，不是全局：不同厂家的限流各算各的
+   */
+  maxConcurrent: z.number().int().min(0).max(999).default(0),
 })
 export type ApiConfig = z.infer<typeof ApiConfig>
 
@@ -620,6 +625,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     models: [],
     modelMap: {},
     modelEfforts: {},
+    maxConcurrent: 0,
   }
   const vars = apiVars(base, spec.wire, provider, spec.baseUrl)
   const prefix = api && spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''

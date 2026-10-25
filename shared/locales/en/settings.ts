@@ -967,8 +967,6 @@ export const EN_SETTINGS: Record<string, string> = {
   建议都已处理: 'All suggestions handled',
   没有要改的: 'Nothing to change',
   '全部应用（{n}）': 'Apply all ({n})',
-  收起评审结果: 'Collapse review results',
-  展开评审结果: 'Expand review results',
   '（这条教训已经不在了）': '(This lesson no longer exists)',
   '并入：{titles}': 'Merges in: {titles}',
   '改成：{text}': 'Change to: {text}',
@@ -1304,4 +1302,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
   '＋': '+',
   去修改: 'Change',
+  并发上限: 'Concurrency limit',
+  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
+    'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
 }

@@ -421,7 +421,17 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
   const overlap = sides?.overlap ?? []
   // 冲突时把双方的提交记录一起交回：只给冲突文件的话，接手的人看不到对方为什么这么改
   const about = sides ? `\n\n${mergeSidesText(sides)}` : ''
-  const m = await git(target, ...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch)
+  const args = [...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch]
+  let m = await git(target, ...args)
+  // 别的 git 进程（Agent 自己的 git add / commit、面板的状态查询）正好占着 index.lock：合并根本没开始，
+  // 不是冲突，等一下重试；直接报「有冲突」会让父对话、子对话去处理一个不存在的冲突
+  // 写索引那一步才撞上锁时 git 已经留下了 MERGE_HEAD：先撤掉这次没合成的，再重来（撤也撞锁就下一圈再撤）
+  for (let i = 1; m.code !== 0 && i <= 5 && /index\.lock|Unable to write index/.test(m.stderr); i++) {
+    await new Promise((r) => setTimeout(r, 200 * i))
+    const head = (await git(target, 'rev-parse', '--git-path', 'MERGE_HEAD')).stdout.trim()
+    if (head && existsSync(path.resolve(target, head)) && (await git(target, 'merge', '--abort')).code !== 0) continue
+    m = await git(target, ...args)
+  }
   if (m.code !== 0) {
     await git(target, 'merge', '--abort')
     throw Object.assign(

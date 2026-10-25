@@ -37,6 +37,7 @@
 评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。
 「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见 [ADR 0014](adr/0014-ai-analysis-home.md)）。
 改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
+其他内置角色也一样（[ADR 0015](adr/0015-builtin-roles-follow-definition.md)）：设定由面板维护、每次启动和保存都按定义同步，用户只改参数取值、运行配置、分类、标签和启用；区别只是可以删除、可以停用。
 
 ## Agent 清单
 

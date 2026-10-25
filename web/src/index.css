@@ -623,6 +623,74 @@ body,
   }
 }
 
+/*
+ * 对话里有活着的 CLI：标题上一道高光从左往右流过（参考 Claude Code），CLI 关了就没有。
+ * 文字底色用 --cli-base（默认正文色，侧栏没选中的行传 --muted），高光是强调色
+ */
+.cli-alive-title {
+  background: linear-gradient(
+    100deg,
+    var(--cli-base, var(--fg)) 0%,
+    var(--cli-base, var(--fg)) 38%,
+    var(--accent) 50%,
+    var(--cli-base, var(--fg)) 62%,
+    var(--cli-base, var(--fg)) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: cli-alive-flow 2.6s linear infinite;
+}
+@keyframes cli-alive-flow {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* 「等待你的下一条消息」后面的三个点：依次亮起，表示 CLI 还开着在等 */
+.wait-dots > span {
+  display: inline-block;
+  width: 0.25rem;
+  height: 0.25rem;
+  margin-left: 0.1875rem;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: wait-dot 1.4s ease-in-out infinite both;
+}
+.wait-dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.wait-dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes wait-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.125rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cli-alive-title {
+    animation: none;
+    background-position: 25% 0;
+  }
+  .wait-dots > span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* 设置里的版本更新说明：标题小一号，和正文拉开 */
 .release-notes h1 {
   @apply mb-1 text-[0.875rem] font-semibold;
@@ -776,4 +844,22 @@ body,
   .plan-hourglass-stream-up {
     opacity: 0;
   }
+}
+
+/* 提示分两类：悬停提示（components/ui/hint.tsx）鼠标移开就消失，不放关闭按钮；
+   错误提示会停在屏幕上挡住内容，要能手动关掉。
+   sonner 的关闭按钮只能整体开或逐个 toast 开（toast.error 有两百多处，逐个改不现实），
+   所以 Toaster 上整体开启，再按 data-type 只留错误那一类。
+   sonner 自己用 JS 往 head 末尾插样式（排在打包样式表之后），同特异性的规则压不住它，
+   这里带上 html 祖先把优先级提上去。 */
+html [data-sonner-toast][data-styled='true'] [data-close-button] {
+  display: none;
+}
+html [data-sonner-toast][data-styled='true'][data-type='error'] [data-close-button] {
+  display: flex;
+  /* 默认样式让按钮压在右上角外侧，挪进来一点，别盖住第一行文字 */
+  top: 6px;
+  left: auto;
+  right: 6px;
+  transform: none;
 }
