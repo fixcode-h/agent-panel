@@ -71,3 +71,12 @@ export function skillLine(name: string) {
 
 /** 这个技能有没有写触发说明（界面提示用） */
 export const hasSkillGuide = (name: string) => !!GUIDE[name]
+
+/**
+ * 已下线、又没有接替者的技能名（去重保序）。
+ * 这些技能拼提示词时要丢掉（CLI 去找一个不存在的 SKILL.md 只会报错），但报告是给人排查用的，
+ * 静默丢掉会让人以为角色本来就没配这个技能，所以报告单独把它标成「已下线」。
+ */
+export function retiredWithoutSuccessor(names: string[]) {
+  return [...new Set(names.filter((n) => n in RETIRED_SKILL_MAP && !RETIRED_SKILL_MAP[n]))]
+}
