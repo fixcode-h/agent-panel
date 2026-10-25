@@ -41,6 +41,8 @@ import { projectDefaultWorkflow } from '@shared/project-workflow'
 import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
+import { AnalysisMark } from './AnalysisMark'
+import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -281,7 +283,10 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
             >
               <TaskStatusIcon status={task.status} working={busy} spin={busy} waiting={state === 'needs'} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.875rem]">{task.title}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {isAnalysisTask(task, agents) && <AnalysisMark kind={task.analysis} />}
+                  <span className="truncate text-[0.875rem]">{task.title}</span>
+                </span>
                 <span className="truncate text-xs text-subtle">
                   {task.mode === 'workflow'
                     ? `${task.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`

@@ -846,6 +846,12 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
+/**
+ * AI 分析对话的种类（见 ADR 0014、0015）：标题在列表里和别的对话区分开，右侧功能面板按种类挑内容。
+ * run：分析执行记录（对话、子任务、几次工作流执行）；init：AI 初始化项目；lessons：教训评审；fix：AI 排查报错
+ */
+export const AnalysisKind = z.enum(['run', 'init', 'lessons', 'fix'])
+export type AnalysisKind = z.infer<typeof AnalysisKind>
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
 export const Attachment = z.object({
@@ -899,6 +905,8 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
+  analysis: AnalysisKind.optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -1549,6 +1557,8 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
+  analysis: AnalysisKind.optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,

@@ -109,6 +109,7 @@ export async function startAnalysis(opts: {
   })
   return createAnalysisTask({
     scope: opts.tasks.length === 1 ? { kind: 'task', task: first } : { kind: 'project', projectId: opts.projectId },
+    kind: 'run',
     title,
     prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
@@ -128,6 +129,7 @@ export async function startLessonReview(opts: { project: Project; focus?: string
   })
   return createAnalysisTask({
     scope: { kind: 'project', projectId: project.id },
+    kind: 'lessons',
     title: t('AI 评审：项目教训'),
     prompt: lessonReviewPrompt(project.name, project.lessons.length, opts.focus?.trim()),
     attachments: [report],

@@ -28,12 +28,11 @@ export function openAiFix(issue: FixIssue) {
       const s = await api.aiFix(input)
       return createAnalysisTask({
         scope: home ?? { kind: 'chat' },
+        kind: 'fix',
         title: t('AI 排查：{title}', { title: s.title }),
         prompt: s.prompt,
         cli: s.cli,
         model: s.model,
-        // 排查中 AI 要问的（例如要不要删某个文件）交给用户
-        askUser: true,
       })
     },
   })

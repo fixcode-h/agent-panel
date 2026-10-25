@@ -25,7 +25,7 @@
    - `chat`：面板设置、CLI、本机环境、面板内存这类和项目无关的，开 Chat 模式的对话。
      服务端本来就拒绝「子对话再开子对话」，这条底线不靠前端守。
 2. **必备角色「分析」**（`builtin:analyzer`，第 8 个必备角色）：默认只读，只有提示词明确要求动手（AI 处理、AI 初始化写文档）时才做那一件事；不能开子对话、派子任务。所有分析对话的 `agentId` 都取它（`analyzerId`），没装上时退回不用角色。
-3. **统一窗口**：`web/src/lib/ai-window.ts` + `components/ai-window/AiWindow.tsx`。所有入口只调 `openAiWindow`（AI 处理经 `openAiFix`，执行 / 子任务分析经 `AnalyzeDialog`，初始化经 `runAssistInProject`），对话用 `createAnalysisTask` 按归属建好；窗口里就是那个对话，可最小化、可接着问，「在父对话里打开 / 在项目对话里打开 / 在聊天里打开」跳到它所在的位置。分析结果里「开子对话去修」开在同一个父对话下。
+3. **统一窗口**：`web/src/lib/ai-window.ts` + `components/ai-window/AiWindow.tsx`。所有入口只调 `openAiWindow`（AI 处理经 `openAiFix`，执行 / 子任务分析经 `AnalyzeDialog`，初始化经 `runAssistInProject`），对话用 `createAnalysisTask` 按归属建好；窗口里就是那个对话，可最小化、可接着问，「在父对话里打开 / 在项目对话里打开 / 在聊天里打开」跳到它所在的位置。分析结果的展示和修复见 [ADR 0015](0015-analysis-report-side-panel.md)：报告画在右侧功能面板，修复在当前分析对话里做。
 4. **已有项目的 AI 初始化**改成项目对话：`/assist/prompt` 给第一句话，对话结束后 `/assist/resolve` 把最后一条回复解析成推荐，格式不对时让对话自己修正一次；设置开着就填进草稿，关着就把推荐记进项目。新建项目还没保存时没有项目可放对话，仍走原来的 AI 窗口。
 
 ## 不做
