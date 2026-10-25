@@ -17,7 +17,14 @@ import {
   type ElementInfo,
   type SourceLoc,
 } from '@/lib/element-ref'
-import { deliverPick, pickButtonLabel, pickText, pointerIntent, targetsComposer } from '@/lib/element-pick'
+import {
+  deliverPick,
+  pickButtonLabel,
+  pickText,
+  pointerIntent,
+  targetsComposer,
+  targetsPickedInput,
+} from '@/lib/element-pick'
 import { hotkeyLabel, matchesHotkey, shouldTrigger } from '@/lib/hotkey'
 import { DEFAULT_PICK_BUTTON, DEFAULT_PICK_HOTKEY, type PickButton } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -132,8 +139,75 @@ function labelOf(el: Element) {
 const SWALLOW = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'auxclick', 'dblclick'] as const
 
 /**
+ * 提示条自动淡出：指针进入提示条后延迟多久藏起来、离开后多久回来。
+ * 进出都留一点延迟，鼠标从提示条上方擦过去（去点页面上的按钮）时不会闪一下
+ */
+const TIP_HIDE_DELAY_MS = 150
+const TIP_SHOW_DELAY_MS = 100
+/** 指针离提示条多近就算「在提示条上」，留一点容差，免得贴边时抖 */
+const TIP_HIT_SLACK_PX = 2
+/** 浮标和高亮框之间空出的距离：浮标放框上面时的间距、贴顶放不下改放框下面时贴着框内上沿的距离 */
+const LABEL_OFFSET_PX = 24
+const LABEL_INSET_PX = 4
+
+/**
+ * 判断指针在不在提示的位置上。不靠 pointerenter：提示条自己 pointer-events-none，
+ * 让它可以吃指针事件的话，抓取期间「点按钮、拖线、点下面的元素」就都被它挡住了
+ */
+function isOnTip(x: number, y: number, el: Element | null) {
+  if (!el) return false
+  const r = el.getBoundingClientRect()
+  return (
+    x >= r.left - TIP_HIT_SLACK_PX &&
+    x <= r.right + TIP_HIT_SLACK_PX &&
+    y >= r.top - TIP_HIT_SLACK_PX &&
+    y <= r.bottom + TIP_HIT_SLACK_PX
+  )
+}
+
+/**
+ * 指针停在提示上就把它淡出（它挡着下面要看的地方），移开再淡回来。
+ * 只跟指针位置走：提示条本身一直是 pointer-events-none，点击照样穿透到下面的页面。
+ * 提示条和浮标一起算（一次指针移动只判一遍、只挂一套监听）：它们同时在场，分开挂会重复跑 getBoundingClientRect
+ */
+function useTipFade(near: (x: number, y: number) => [boolean, boolean]) {
+  const [faded, setFaded] = useState<[boolean, boolean]>([false, false])
+  const nearRef = useRef(near)
+  nearRef.current = near
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cur: [boolean, boolean] = [false, false]
+    const at = (e: PointerEvent) => {
+      const on = nearRef.current(e.clientX, e.clientY)
+      if (on[0] === cur[0] && on[1] === cur[1]) return
+      cur = on
+      clearTimeout(timer)
+      // 有任意一块要藏起来就用隐藏延迟，两块都离开才用显示延迟
+      timer = setTimeout(() => setFaded(on), on[0] || on[1] ? TIP_HIDE_DELAY_MS : TIP_SHOW_DELAY_MS)
+    }
+    // 指针离开窗口时不会再有 pointermove：当成移开，回来时照常写回当前状态。
+    // 必须判 relatedTarget：文档内从一个元素移到另一个元素时 mouseout 也会冒泡到 document，
+    // 那不是「离开窗口」——当成移开会把刚起的隐藏计时器清掉，指针停着不动时就再也不淡出了
+    const leave = (e: MouseEvent) => {
+      if (e.relatedTarget) return
+      cur = [false, false]
+      clearTimeout(timer)
+      setFaded([false, false])
+    }
+    window.addEventListener('pointermove', at, { capture: true })
+    document.addEventListener('mouseout', leave)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('pointermove', at, { capture: true })
+      document.removeEventListener('mouseout', leave)
+    }
+  }, [])
+  return faded
+}
+
+/**
  * 抓取模式的开 / 关。全局只一份：按钮进入抓取后按快捷键、或反过来，都不能出现两个覆盖层
- * （两套监听会把同一个中键吃两次）。接口和 useState 的用法一样，只在可写的地方调 setPickActive
+ * （两套监听会把同一个中键吃两次）。接口和 useState 的用法一样，只在可写的地方调 setPick
  */
 let pickActive = false
 const activeListeners = new Set<() => void>()
@@ -169,17 +243,39 @@ let lastUsed: PickTarget | null = null
 /**
  * 现在该往哪个输入框投：优先焦点所在的那个，其次最近聚焦过的；都没有时返回 undefined，
  * 让 deliverPick 走剪贴板。有多个输入框（父对话 + 右栏子对话）时不猜：猜错了会把引用插进另一个对话。
- * 只登记了一个输入框时直接用它，那是页面上唯一的去处
+ * 只登记了一个输入框时直接用它，那是页面上唯一的去处。
+ * 从某个输入框的按钮开启的抓取不用这里猜：目标就是那个输入框（见 takePick）
  */
 function currentTarget(): PickTarget | undefined {
   const size = pickTargets.size
   if (size === 0) return undefined
-  const active = document.activeElement
-  const focused = active ? [...pickTargets].find((t) => t.root.current?.contains(active)) : undefined
+  const focused = composerTarget()
   const recent = lastUsed && pickTargets.has(lastUsed) ? lastUsed : undefined
   // 多输入框时只在焦点相关才投，否则交给剪贴板（见 targetsComposer 的注释）
   if (!targetsComposer({ count: size, focused: !!focused, recent: !!recent })) return undefined
   return focused ?? recent ?? [...pickTargets][0]
+}
+
+/** 焦点所在的那个输入框（没有时 undefined） */
+function composerTarget(): PickTarget | undefined {
+  const active = document.activeElement
+  return active ? [...pickTargets].find((t) => t.root.current?.contains(active)) : undefined
+}
+
+/** 焦点落在输入框里 */
+const composerFocused = () => !!composerTarget()
+
+/** 最近聚焦过某个输入框 */
+const composerRecent = () => !!lastUsed && pickTargets.has(lastUsed)
+
+/**
+ * 这次抓取绑定的输入框：从哪个输入框的按钮进来的就投给哪个（快捷键进来的是 null，按焦点判）。
+ * 全局只一份：抓取状态本身也是全局一份，两套「该投给谁」会分叉
+ */
+let pickedTarget: PickTarget | null = null
+const setPick = (on: boolean, target: PickTarget | null = null) => {
+  pickedTarget = on ? target : null
+  setPickActive(on)
 }
 
 /**
@@ -242,6 +338,14 @@ function PickOverlay({
   const target = useRef<Element | null>(null)
   const cb = useRef({ onPick, onExit })
   cb.current = { onPick, onExit }
+  // 提示条、浮标都要能量出来位置：命中判定和浮标定位都靠它们自己的矩形
+  const tipRef = useRef<HTMLDivElement | null>(null)
+  const labelRef = useRef<HTMLDivElement | null>(null)
+  // [提示条隐藏, 浮标隐藏]：两者各自按自己的矩形判定，一次指针移动只跑一遍
+  const [tipHidden, labelHidden] = useTipFade((x, y) => [
+    isOnTip(x, y, tipRef.current),
+    isOnTip(x, y, labelRef.current),
+  ])
   useEffect(() => {
     const show = () => {
       const el = target.current
@@ -326,10 +430,18 @@ function PickOverlay({
             style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
           />
           <div
-            className="fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.71875rem] text-bg shadow-pop"
+            ref={labelRef}
+            data-pick-label=""
+            // 浮标也挡视线：指针压到它就淡出，不然要点的元素正好被这块牌子盖住
+            className={cn(
+              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.71875rem] text-bg shadow-pop transition-opacity',
+              labelHidden && 'opacity-0',
+            )}
             style={{
               left: Math.max(4, Math.min(r.left, window.innerWidth - 200)),
-              top: below ? Math.min(r.bottom + 4, window.innerHeight - 24) : r.top - 24,
+              top: below
+                ? Math.min(r.bottom + LABEL_INSET_PX, window.innerHeight - LABEL_OFFSET_PX)
+                : r.top - LABEL_OFFSET_PX,
             }}
           >
             <span className="font-semibold">{box.tag}</span>
@@ -340,7 +452,16 @@ function PickOverlay({
           </div>
         </>
       )}
-      <div className="fixed top-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-card px-3.5 py-1.5 text-[0.8125rem] text-fg shadow-pop">
+      <div
+        ref={tipRef}
+        data-pick-tip=""
+        // 淡出而不是挪走、卸载：留着位置就不跳动；也不让 Tab 停在它上面（整条都是纯文字）
+        inert={tipHidden}
+        className={cn(
+          'fixed top-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line-strong bg-card px-3.5 py-1.5 text-[0.8125rem] text-fg shadow-pop transition-opacity',
+          tipHidden && 'opacity-0',
+        )}
+      >
         <SquareDashedMousePointer className="h-4 w-4 text-accent" />
         {t('{button}抓取元素，左键、右键照常可用', { button: pickButtonLabel(button) })}
         <kbd className="rounded border border-line px-1 font-mono text-[0.6875rem] text-muted">Esc</kbd>
@@ -355,16 +476,27 @@ function PickOverlay({
   )
 }
 
-/** 快捷键开启的抓取没有「点的是哪个按钮」，用一个稳定的空 ref */
+/** 快捷键开的抓取没有「点的是哪个按钮」，用一个稳定的空 ref */
 const NO_TRIGGER: RefObject<HTMLElement | null> = { current: null }
 
 /**
- * 抓到一个元素：先退出抓取（不管投递成不成），再把引用交出去。
- * 没有输入框、输入框不收、输入框那边报错都退回剪贴板（见 lib/element-pick.ts 的 deliverPick）
+ * 这次抓取该投给哪个输入框：点某个输入框的按钮开启的，就是那个输入框（不管期间焦点跑到哪里）；
+ * 快捷键开启的按焦点 / 最近聚焦，都没有时交给剪贴板。判定见 lib/element-pick.ts 的 targetsPickedInput
  */
 async function takePick(el: Element, exit: () => void) {
+  // exit 会清掉这次抓取绑定的目标，先取好
+  const picked = pickedTarget
   exit()
-  const target = currentTarget()
+  const alive = picked && pickTargets.has(picked) ? picked : null
+  const target = targetsPickedInput({
+    pinned: !!picked,
+    pinnedAlive: !!alive,
+    count: pickTargets.size,
+    focused: composerFocused(),
+    recent: composerRecent(),
+  })
+    ? (alive ?? currentTarget())
+    : undefined
   lastUsed = target ?? null
   try {
     await deliverPick(pickText(describeElement(el)), {
@@ -397,11 +529,13 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
   const active = usePickActive()
   // 关掉开发者模式时正在抓取的也一起退出
   useEffect(() => {
-    if (!on && active) setPickActive(false)
+    if (!on && active) setPick(false)
   }, [on, active])
   const pickCb = useRef(onPick)
   pickCb.current = onPick
-  // 登记到全局：快捷键开启抓取时要知道该投给哪个输入框。抓取期间页面能正常点，所以只跟焦点
+  // 自己登记进全局的那一项：按钮点击时用它绑上「这次抓取投给这个输入框」
+  const selfRef = useRef<PickTarget | null>(null)
+  // 登记到全局：从按钮开启抓取时用它当投递目标，快捷键开启时靠它参与焦点判定
   useEffect(() => {
     if (!on) return
     const self: PickTarget = {
@@ -412,9 +546,11 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
       },
       root: rootRef ?? { current: null },
     }
+    selfRef.current = self
     pickTargets.add(self)
     return () => {
       pickTargets.delete(self)
+      if (selfRef.current === self) selfRef.current = null
       if (lastUsed === self) lastUsed = null
     }
     // rootRef 是稳定的 ref 对象，只跟着开发者模式的开关登记
@@ -424,7 +560,8 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
   return (
     <button
       type="button"
-      onClick={() => setPickActive(!active)}
+      // 从哪个输入框的按钮进来，抓到的引用就填回哪个输入框（见 takePick）
+      onClick={() => (active ? setPick(false) : setPick(true, selfRef.current))}
       aria-pressed={active}
       aria-label={t('抓取界面元素')}
       title={t('抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出', {
@@ -458,13 +595,13 @@ export function ElementPickHost() {
   const listen = !!on
   // 关闭开发者模式时正在抓取的也一起退出
   useEffect(() => {
-    if (!listen && active) setPickActive(false)
+    if (!listen && active) setPick(false)
   }, [listen, active])
   // 换页面（路由变了）就退出抓取：抓取状态是全局单例，不在这个页面的高亮框上挂着，不退出的话
   // 下一页会带着「已经在抓取中」进来，再按快捷键就成了「退出」而不是「进入」，语义反过来
   const route = useNav().route
   useEffect(() => {
-    setPickActive(false)
+    setPick(false)
     // 只跟着页面走；同一页里的 id / sub 变化（切对话、切分节）不算换页
   }, [route.page])
   // 记住最近聚焦的输入框：有多个输入框时靠它区分该投给哪个
@@ -475,11 +612,12 @@ export function ElementPickHost() {
   useEffect(() => {
     if (!listen) return
     const key = (e: KeyboardEvent) => {
-      // 抓取中时退出交给覆盖层（它还要区分 Esc）；这里只管进入
+      // 抓取中时退出交给覆盖层（它还要区分 Esc）；这里只管进入。
+      // 快捷键没有「点的是哪个按钮」，不绑目标：投给谁按焦点 / 最近聚焦判
       if (active || !matchesHotkey(e, hotkey) || !shouldTrigger(e, document.activeElement)) return
       e.preventDefault()
       e.stopPropagation()
-      setPickActive(true)
+      setPick(true)
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -490,8 +628,8 @@ export function ElementPickHost() {
       trigger={NO_TRIGGER}
       button={button}
       hotkey={hotkey}
-      onExit={() => setPickActive(false)}
-      onPick={(el) => void takePick(el, () => setPickActive(false))}
+      onExit={() => setPick(false)}
+      onPick={(el) => void takePick(el, () => setPick(false))}
     />
   )
 }

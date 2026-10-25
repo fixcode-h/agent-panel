@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyChain } from '@shared/comfy-chain'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -207,6 +208,22 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
+  comfyChains: () =>
+    request<{ list: ComfyChain[]; workflows: ComfyWorkflow[]; ready: string[] }>('/local-image/chains'),
+  saveComfyChain: (chain: ComfyChain) =>
+    request<{ chain: ComfyChain; list: ComfyChain[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}`,
+      json('PUT', chain),
+    ),
+  deleteComfyChain: (id: string) =>
+    request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
+  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+    request<{ images: string[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
+      json('POST', { chain, image, prompt }),
+    ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
   refreshComfyTemplates: () =>
@@ -260,6 +277,9 @@ export const api = {
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
   apiModels: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
+  /** 用一个模型真的发一次最小请求，确认这个模型是通的（服务端带密钥请求，错误原文透传） */
+  probeApiModel: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { model: string }) =>
+    request<{ model: string }>('/accounts/api-probe', json('POST', a)),
   /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
   apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),

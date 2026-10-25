@@ -278,6 +278,105 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '独立分支-刷新后顺序')
     await closeEnv()
   }
+  // 抓取元素：从哪个输入框的按钮进入，抓到的引用就填回哪个输入框（父对话 + 右栏子对话同时在场时也不能插错）。
+  // 以前按焦点 / 最近聚焦猜，两个输入框都在时容易把引用插到另一个对话。
+  // 用独立页面跑：这条用例会往两个输入框里塞引用卡片、开关设置弹窗，放在主页面会把后面的焦点用例带脏
+  {
+    const d = await page({ width: 1440, height: 900 })
+    // 新上下文自己生成一份演示数据：从首页进入、点列表里的那条对话，和本分片开头一致
+    await d.goto(base)
+    const conv = d.getByText('购物车右上角', { exact: false }).first()
+    await conv
+      .waitFor({ timeout: 15000 })
+      .catch(() => errors.push('抓取投递：新页面的演示数据没生成出来（找不到对话列表项）'))
+    await conv.click()
+    await d.locator('#follow-up').waitFor({ timeout: 10000 })
+    await d.getByRole('button', { name: '设置' }).first().click()
+    await d.getByRole('switch', { name: '开发者模式' }).click()
+    await d.keyboard.press('Escape')
+    await d
+      .getByText('开发者模式')
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    // 右栏打开一个子对话：页面上同时有父对话和子对话两个输入框
+    const env = d.locator('button[aria-label="环境"]').first()
+    await env.click()
+    await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
+    await d
+      .locator('[data-worktree-row]')
+      .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+      .click()
+    const childPane = d.getByRole('complementary', { name: '子对话' })
+    await childPane
+      .locator('#follow-up')
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('抓取投递：右栏子对话的输入框没出来'))
+    // 两个输入框的 id 都是 #follow-up（同一个组件），按所在栏区分：子对话在右栏 aside 里
+    const childBox = childPane.locator('#follow-up')
+    const parentBox = d.locator('#follow-up').first()
+    if ((await d.locator('#follow-up').count()) !== 2)
+      errors.push(`抓取投递：页面上应该有父对话和子对话两个输入框（实际 ${await d.locator('#follow-up').count()} 个）`)
+    // 抓取按钮和输入框不在同一个元素里（按钮在 composer 根上、输入框是它的子节点），所以不能靠容器定位；
+    // 按 DOM 顺序取两个按钮，并显式校验归属：第一个在右栏外面（父对话），第二个在右栏 aside 里（子对话）
+    const pickBtns = d.getByLabel('抓取界面元素', { exact: true })
+    const inPane = (i) => pickBtns.nth(i).evaluate((el) => !!el.closest('aside'))
+    if ((await pickBtns.count()) !== 2) errors.push('抓取投递：两个输入框旁边应该各有一个抓取按钮')
+    if (await inPane(0)) errors.push('抓取投递：第一个抓取按钮居然在右栏里，用例的定位假设不成立')
+    if (!(await inPane(1))) errors.push('抓取投递：第二个抓取按钮不在右栏子对话里，用例的定位假设不成立')
+    /** 在指定输入框里抓一个元素：点它的按钮 → 中键点页面上的元素 → 等抓取退出 */
+    const pickInto = async (which, where) => {
+      const overlay = d.locator('[data-element-picker]')
+      await pickBtns.nth(which).click()
+      const on = await overlay.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!on) return errors.push(`抓取投递：点${where}的抓取按钮没有进入抓取模式`)
+      // 先把焦点挪到页面空白处：这条用例验的是「按点的是哪个按钮」判定，
+      // 不能让焦点 / 最近聚焦恰好猜对，否则测不出改动的行为
+      await d.locator('body').click({ position: { x: 5, y: 5 } })
+      // 抓 page 上的一个具体元素（横向导航栏的「任务」）：抓什么不重要，重要的是它落在哪个输入框
+      const nav = await d.getByRole('navigation', { name: '主导航' }).boundingBox()
+      if (!nav) return errors.push('抓取投递：找不到侧边导航，没地方中键抓取')
+      await d.mouse.move(nav.x + nav.width / 2, nav.y + 40)
+      await d.mouse.click(nav.x + nav.width / 2, nav.y + 40, { button: 'middle' })
+      await overlay
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push(`抓取投递：在${where}抓完没有退出抓取`))
+    }
+    /** 卡片张数：隔一会儿再读不算验证，直接等它变多 / 保持不变 */
+    const chipCount = (scope) => scope.locator('[data-chip="quote"]').count()
+    const beforeChild = await chipCount(childBox)
+    const beforeParent = await chipCount(parentBox)
+    await pickInto(1, '子对话输入框')
+    // 等待条件必须和断言同作用域（都是子对话输入框内部）：[data-task-panel] 是整个右栏 aside，
+    // 消息流里的引用卡片也用 data-chip 标记，拿整栏计数当同步点会被旧卡片提前满足
+    const childGot = await d
+      .waitForFunction(
+        (n) => document.querySelectorAll('[data-task-panel] #follow-up [data-chip="quote"]').length > n,
+        beforeChild,
+        { timeout: 5000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!childGot) errors.push('抓取投递：从子对话的按钮进入抓取，引用没有填回子对话输入框')
+    if ((await chipCount(parentBox)) !== beforeParent)
+      errors.push('抓取投递：从子对话的按钮进入抓取，引用却填进了父对话输入框')
+    if ((await chipCount(childBox)) <= beforeChild) errors.push('抓取投递：子对话输入框里没有多出引用卡片')
+    await check(d, '元素抓取-投给点按钮的那个输入框')
+    // 反过来：从父对话的按钮进入，要填回父对话
+    await pickInto(0, '父对话输入框')
+    if ((await chipCount(parentBox)) <= beforeParent)
+      errors.push('抓取投递：从父对话的按钮进入抓取，引用没有填回父对话输入框')
+    if ((await chipCount(childBox)) !== beforeChild + 1)
+      errors.push('抓取投递：从父对话的按钮进入抓取，子对话输入框多出了引用卡片')
+    await check(d, '元素抓取-父对话按钮投父对话')
+    await d.close()
+  }
   // 子对话栏的计数：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），分母是进程还活着的 5 个。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
   {
@@ -2492,6 +2591,72 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         )
           errors.push('标题栏浮层：点「打开项目」没有回到项目页')
         else await check(p, '任务-项目对话浮层-打开项目')
+      }
+    }
+  }
+  // 「转成弹窗」：标题栏把当前对话收成右下角的浮条，页面回到上一级；浮条能展开回那个对话。
+  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里两个项目对话都不在跑，浮条写「已完成」
+  {
+    // 两个对话的真实标题（taskTitle 取要求的第一行、超过 32 字截断）
+    const CART = '购物车右上角的数量角标偶尔不刷新，帮我看看原因'
+    const RESTOCK = '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手…'
+    const dockOf = (title) => p.getByRole('group', { name: `对话：${title}`, exact: true })
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByRole('heading', { name: CART, exact: true }).waitFor({ timeout: 8000 })
+    const toDock = p.getByRole('button', { name: '转成弹窗', exact: true })
+    if (!(await toDock.count())) errors.push('转成弹窗：对话页标题栏没有这个按钮')
+    else {
+      await toDock.click()
+      const first = dockOf(CART)
+      await first.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：没出现对话浮条'))
+      // 收起后回到项目页：对话页不能和浮条同时显示同一个对话
+      const hash = await p.evaluate(() => location.hash)
+      if (!/^#\/projects\/[^/]+$/.test(hash)) errors.push(`转成弹窗：收起后应回到项目页，实际停在 ${hash}`)
+      if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
+        errors.push('转成弹窗：收起后对话页还开着')
+      await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      // 再收起另一个对话：只留一个，前一条被换掉
+      await p.getByText('商品详情页增加', { exact: false }).first().click()
+      // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
+      await p
+        .getByRole('heading', { name: RESTOCK, exact: true })
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('转成弹窗：没打开第二个对话'))
+      const second = p.getByRole('button', { name: '转成弹窗', exact: true })
+      await second.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：第二个对话页没有这个按钮'))
+      if ((await second.count()) > 0) {
+        await second.click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：第二个对话收起后没有浮条'))
+        if (await dockOf(CART).count()) errors.push('转成弹窗：同时出现了两个对话浮条（前一条没被换掉）')
+        // 点浮条展开：回到那个对话页，浮条自己收起来
+        const dock = dockOf(RESTOCK)
+        await dock.getByRole('button', { name: '展开', exact: true }).click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：点浮条没回到那个对话'))
+        await dock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('转成弹窗：展开后浮条还在'))
+        await check(p, '任务-转成弹窗只留一个并展开')
+        // 从列表把同一个对话再打开：浮条必须消失（页面和浮条不能同时显示同一个对话）
+        await p.getByRole('button', { name: '转成弹窗', exact: true }).click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：再次收起后没有浮条'))
+        const wasHash = await p.evaluate(() => location.hash)
+        if (!/^#\/projects\/[^/]+$/.test(wasHash)) errors.push(`转成弹窗：再次收起后应回到项目页，实际停在 ${wasHash}`)
+        // 从项目页列表里点回同一个对话（RESTOCK），浮条应该自动让位
+        await p.getByText('商品详情页增加', { exact: false }).first().click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：没从列表打开被收起的那个对话'))
+        await dockOf(RESTOCK)
+          .waitFor({ state: 'detached', timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：从列表打开对话后浮条还在（页面和浮条同时显示同一个对话）'))
+        await check(p, '任务-转成弹窗-从列表打开后浮条消失')
       }
     }
   }

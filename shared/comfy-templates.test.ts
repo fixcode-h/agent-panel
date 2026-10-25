@@ -226,7 +226,8 @@ test('子图展开：内部节点加前缀，输出接到外面的节点', () =>
 
 test('内置模板每个模型一条，依赖和占位符都完整', () => {
   const list = builtinTemplates(LOCAL_MODELS)
-  assert.equal(list.length, LOCAL_MODELS.length)
+  // 处理类模型（去背景）不是文生图，没有模板；其余每个模型一条
+  assert.equal(list.length, LOCAL_MODELS.filter((m) => m.family !== 'birefnet').length)
   for (const tpl of list) {
     assert.equal(tpl.source, 'builtin')
     assert.ok(tpl.assets.length > 0, tpl.name)

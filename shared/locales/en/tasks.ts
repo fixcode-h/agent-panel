@@ -373,6 +373,10 @@ export const EN_TASKS: Record<string, string> = {
 
   // 任务页
   已删除任务: 'Task deleted',
+  // 转成弹窗（收成右下角的浮条）
+  转成弹窗: 'Open as popup',
+  '转成弹窗（对话继续在后台运行）': 'Open as popup (the chat keeps running in the background)',
+  '对话：{title}': 'Chat: {title}',
   位置: 'Breadcrumb',
   聊天: 'Chat',
   任务标题: 'Task title',

@@ -1,7 +1,7 @@
 /** 抓取期间的鼠标按键分派、抓到的引用投给谁（输入框还是剪贴板） */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { deliverPick, pointerIntent, targetsComposer, type PickTargets } from '@/lib/element-pick'
+import { deliverPick, pointerIntent, targetsComposer, targetsPickedInput, type PickTargets } from '@/lib/element-pick'
 
 /** PointerEvent.buttons 里的位：左 1、右 2、中 4（按 MouseEvent.button 的编号排） */
 const BUTTON_BITS = [1, 4, 2]
@@ -48,6 +48,28 @@ test('targetsComposer：只有一个输入框时直接投，多个时要焦点�
   assert.equal(targetsComposer({ count: 2, focused: false, recent: false }), false)
   // 没有任何输入框（首页、项目页、记忆库页）：走剪贴板
   assert.equal(targetsComposer({ count: 0, focused: false, recent: false }), false)
+})
+
+test('targetsPickedInput：从哪个输入框的按钮进来就投给哪个，不看焦点', () => {
+  // 两个输入框都在（父对话 + 右栏子对话），点的是父对话那个按钮：焦点在子对话里也投父对话
+  assert.equal(targetsPickedInput({ pinned: true, pinnedAlive: true, count: 2, focused: false, recent: true }), true)
+  assert.equal(targetsPickedInput({ pinned: true, pinnedAlive: true, count: 2, focused: false, recent: false }), true)
+  // 目标输入框在抓取期间没了（换了页面、对话被关）：退回剪贴板，不改成猜别的输入框
+  assert.equal(targetsPickedInput({ pinned: true, pinnedAlive: false, count: 1, focused: true, recent: true }), false)
+  assert.equal(targetsPickedInput({ pinned: true, pinnedAlive: false, count: 0, focused: false, recent: false }), false)
+})
+
+test('targetsPickedInput：快捷键进来的没有目标，仍按焦点 / 最近聚焦判', () => {
+  assert.equal(targetsPickedInput({ pinned: false, pinnedAlive: false, count: 1, focused: false, recent: false }), true)
+  assert.equal(targetsPickedInput({ pinned: false, pinnedAlive: false, count: 2, focused: true, recent: false }), true)
+  assert.equal(
+    targetsPickedInput({ pinned: false, pinnedAlive: false, count: 2, focused: false, recent: false }),
+    false,
+  )
+  assert.equal(
+    targetsPickedInput({ pinned: false, pinnedAlive: false, count: 0, focused: false, recent: false }),
+    false,
+  )
 })
 
 test('deliverPick：优先投给开启抓取时的那个输入框', async () => {

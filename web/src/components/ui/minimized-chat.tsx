@@ -1,50 +1,53 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Sparkles, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { DEFAULT_INSET, GAP, clampPos, loadPos, movedEnough, savePos, type Pos } from '@/lib/minimized-chat'
+import { addDock, dockSnapshot, dockVisible, subscribeDock, type ChatDockState } from '@/lib/chat-dock'
+import { DEFAULT_INSET, clampPos, loadPos, movedEnough, savePos, type Pos } from '@/lib/minimized-chat'
 
-/** 浮条高度（h-11）：默认位置的槽位间距也按它算 */
-const DOCK_H = 44
+export type { ChatDockState }
+
 /** 拖动刚结束后浏览器可能补发一次 click，这串时间去重 */
 const CLICK_GUARD = 500
 
-/** 浮条上的状态：两个窗口共用同一套文字，看起来才是同一个东西 */
-export type ChatDockState = 'running' | 'done' | 'ended' | 'gone' | 'idle'
-
+/** 浮条上的状态文字：三类浮条共用同一套，看起来才是同一个东西 */
 const stateText = (s: ChatDockState) =>
   s === 'running'
     ? t('进行中…')
-    : s === 'done'
-      ? t('已完成')
-      : s === 'ended'
-        ? t('已结束')
-        : s === 'gone'
-          ? t('对话已关闭')
-          : ''
+    : s === 'needs'
+      ? t('等你处理')
+      : s === 'failed'
+        ? t('失败')
+        : s === 'done'
+          ? t('已完成')
+          : s === 'ended'
+            ? t('已结束')
+            : s === 'gone'
+              ? t('对话已关闭')
+              : ''
 
 /**
- * 最小化后的浮条：「AI 处理」和「AI 优化」两个窗口都用它，形状、层级、动效、状态文字保持一致。
+ * 最小化后的浮条：「AI 处理」「AI 优化」和收起来的对话都用它，形状、层级、动效、状态文字保持一致。
  *
- * - 可以拖到任意位置，松手后夹回视口内并记进 localStorage（按 id 分开记，两个窗口互不影响）
+ * - 屏幕任意时刻只显示一个浮条：组件挂载即登记到 chat-dock，只有栈顶那个渲染，
+ *   被顶掉的不销毁、留着等栈顶让位（用户要的是「同时只能存在一个最小化弹窗」）
+ * - 可以拖到任意位置，松手后夹回视口内并记进 localStorage（按 id 分开记，各自回到自己的位置）
  * - 拖动用 pointer 事件 + 指针捕获，不用 HTML5 draggable：那样拖不出窗口外、也拿不到稳定的坐标
  * - 移动没超过阈值就当成点击（展开），拖动不会顺带把窗口打开
- * - 关闭做什么由调用方定：AI 分析窗口只收窗口、分析继续在后台跑，AI 优化窗口会停掉那次生成
+ * - 关闭做什么由调用方定：AI 分析窗口只收窗口、分析继续在后台跑，AI 优化窗口会停掉那次生成，
+ *   对话浮条只是收起（对话照常留在列表里）
  */
 export function MinimizedChat({
   id,
-  slot = 0,
   label,
   state,
   unseen,
   onExpand,
   onClose,
 }: {
-  /** 位置记忆的键，也是「跟别的浮条错开」的标识 */
+  /** 位置记忆的键，也是互斥计数里的标识；同一个 id 只能同时有一条浮条 */
   id: string
-  /** 没拖过时从右下角往上排第几档：两个窗口同时最小化也不会叠在一起 */
-  slot?: number
   label: string
   state: ChatDockState
   /** 最小化期间出了结果：没展开过之前在浮条上点一下红点 */
@@ -54,6 +57,14 @@ export function MinimizedChat({
 }) {
   const [pos, setPos] = useState<Pos | null>(() => loadPos(id))
   const [dragging, setDragging] = useState(false)
+  // 浮条互斥：挂载即登记，只有最后一个登记的（栈顶）显示，其余的等它让位。
+  // 登记用 useId 生成的实例号而不是 id：同一个 id 可能同时挂好几份（`AssistDialog` 在几个页面各挂一份），
+  // 按 id 判会让它们都以为自己是栈顶，互斥就被绕过了。
+  // getSnapshot 必须返回稳定引用（见 chat-dock.ts 的 dockSnapshot），否则这里会无限重渲染
+  const instance = useId()
+  const docks = useSyncExternalStore(subscribeDock, dockSnapshot, dockSnapshot)
+  const mine = dockVisible(instance, docks)
+  useEffect(() => addDock(instance), [instance])
   const bar = useRef<HTMLDivElement>(null)
   // 拖动中的位置同步记一份：松手时直接存，不用等 state 更新
   const latest = useRef<Pos | null>(pos)
@@ -141,6 +152,7 @@ export function MinimizedChat({
     return () => window.removeEventListener('resize', onResize)
   }, [pos, id])
 
+  if (!mine) return null
   return createPortal(
     <div
       ref={bar}
@@ -151,9 +163,7 @@ export function MinimizedChat({
       onPointerMove={onPointerMove}
       onPointerUp={(e) => endDrag(e)}
       onPointerCancel={(e) => endDrag(e, false)}
-      style={
-        pos ? { left: pos.x, top: pos.y } : { right: DEFAULT_INSET, bottom: DEFAULT_INSET + slot * (DOCK_H + GAP) }
-      }
+      style={pos ? { left: pos.x, top: pos.y } : { right: DEFAULT_INSET, bottom: DEFAULT_INSET }}
       className={cn(
         // pointer-events-auto：弹窗打开时 Radix 会关掉外面区域的鼠标事件，浮条要能点
         // z-[60]：跟另一个窗口的最小化浮条一致，放到所有弹窗之上——进度得一直看得到、点得到

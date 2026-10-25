@@ -112,8 +112,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
   await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
-  // 最小化后的浮条：「AI 处理」和「AI 优化」用同一个组件——尺寸、圆角、层级、状态文字一致，
-  // 两个同时最小化时默认位置错开、不互相盖；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
+  // 最小化后的浮条：AI 处理、AI 优化和收起的对话用同一个组件——尺寸、圆角、层级、状态文字一致；
+  // 屏幕任意时刻只留一个浮条（用户要求「同时只能存在一个最小化弹窗」）：新最小化的那个把前面的顶掉，
+  // 被顶掉的只是不让位、不销毁，关掉当前这个它就自己回来；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
   const dock = (name) => p.getByRole('group', { name, exact: true })
   const aiDock = dock('AI 排查：Pi：卸载没有成功')
   await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉设置后 AI 处理的浮条没了'))
@@ -123,6 +124,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const s = getComputedStyle(el)
       return { h: s.height, radius: s.borderRadius, z: s.zIndex, font: s.fontSize }
     })
+  await settle(p)
+  // 互斥后两个浮条不会同时在屏：形态一致性先量这一个、后面再量另一个来比
+  const lookA = await dockLook(aiDock)
   await p
     .getByRole('radio', { name: /^Agent 模式/ })
     .first()
@@ -134,24 +138,24 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   const assistDock = dock('用 AI 优化「代码审查」')
   await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))
+  // 只留一个：新最小化的把 AI 处理那个顶掉（它是「收起」不是「关掉」，之后还会回来）
+  await aiDock
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：同时出现了两个浮条（AI 处理那个没让位）'))
+  if (await dock('AI 排查：Pi：卸载没有成功').count()) errors.push('浮条：屏幕上同时有两个浮条')
   // 等 pop-in 动画跑完再量位置：动画中 rect 会缩着、往上偏 8px
   await settle(p)
-  const lookA = await dockLook(aiDock)
   const lookB = await dockLook(assistDock)
   if (lookA.h !== lookB.h || lookA.radius !== lookB.radius || lookA.z !== lookB.z || lookA.font !== lookB.font)
     errors.push(`浮条：两个窗口的最小化形态不一致（${JSON.stringify(lookA)} / ${JSON.stringify(lookB)}）`)
-  const boxA = await aiDock.boundingBox()
+  // 只剩一个浮条，不需要再错开位置：没拖过就贴右下的默认位置
   const boxB = await assistDock.boundingBox()
-  if (
-    boxA &&
-    boxB &&
-    boxA.x < boxB.x + boxB.width &&
-    boxB.x < boxA.x + boxA.width &&
-    boxA.y < boxB.y + boxB.height &&
-    boxB.y < boxA.y + boxA.height
-  )
-    errors.push('浮条：两个同时最小化的窗口叠在一起了')
-  await check(p, 'AI处理-两个浮条')
+  const viewport = await p.evaluate(() => ({ w: innerWidth, h: innerHeight }))
+  if (boxB && (viewport.w - (boxB.x + boxB.width) > 40 || viewport.h - (boxB.y + boxB.height) > 40))
+    errors.push(
+      `浮条：只剩一个时没有贴右下角（右 ${Math.round(viewport.w - (boxB.x + boxB.width))}px、下 ${Math.round(viewport.h - (boxB.y + boxB.height))}px）`,
+    )
+  await check(p, 'AI处理-浮条只留一个')
   // 按住拖动：位置跟着指针走，拖动不会被当成点击把窗口展开
   const from = await assistDock.boundingBox()
   await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -178,6 +182,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await assistDock
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => errors.push('浮条：AI 优化点关闭后浮条还在'))
+  // 被顶掉的那条只是让位：关掉当前这个，AI 处理的浮条自己回来（互斥不是把它关掉）
+  await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉 AI 优化后，被顶掉的 AI 处理浮条没有回来'))
+  await check(p, 'AI处理-浮条让位后回来')
   // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
   await p
     .getByRole('radio', { name: /^Chat 模式/ })
