@@ -32,7 +32,12 @@ export function runAssistInProject(opts: {
     title: opts.title,
     create: async () => {
       const { prompt } = await api.assistPrompt(base)
-      return createAnalysisTask({ scope: { kind: 'project', projectId: opts.projectId }, title: opts.title, prompt })
+      return createAnalysisTask({
+        scope: { kind: 'project', projectId: opts.projectId },
+        kind: 'init',
+        title: opts.title,
+        prompt,
+      })
     },
     onDone: (task) => {
       // 用户停下的不读结果

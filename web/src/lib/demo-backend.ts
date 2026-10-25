@@ -2820,6 +2820,7 @@ function tasksRoute(
           stopReason: x.stopReason ?? '',
           waiting: childWait(x, { background, cliAlive: live.has(x.id) }),
           resolved: x.resolved === true,
+          analysis: x.analysis,
         }
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做

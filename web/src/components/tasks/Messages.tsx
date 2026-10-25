@@ -36,6 +36,7 @@ import { convStateText, deliveryText, runRunning } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
+import { stripInitJson } from '@/lib/analysis-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
@@ -267,7 +268,7 @@ export function AgentMessage({
 const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
 
 /** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
-type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> & { analysis?: Task['analysis'] }
 
 /** 后台命令的状态：跑完时放到后台的那一行要停止转圈 */
 const jobsSig = (task?: ToolTask) => task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
@@ -399,7 +400,9 @@ const MessageBody = memo(
           )}
           {m.text && (
             <Markdown
-              text={stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))}
+              text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
+                stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text)))),
+              )}
               teamNames={teamNames}
               live={live}
             />

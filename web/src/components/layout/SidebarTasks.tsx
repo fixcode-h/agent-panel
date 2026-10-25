@@ -4,6 +4,8 @@ import type { Task } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
+import { AnalysisMark } from '@/components/tasks/AnalysisMark'
+import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskRenameInput, useTaskRowMenu } from '@/components/tasks/TaskMenu'
 import {
   ContextMenu,
@@ -58,6 +60,7 @@ export function TaskRow({
   className?: string
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
+  const { agents } = useData()
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
   // 状态只从 taskState 来（和标题栏、项目首页同一个判定）：自己在执行、在等子对话 / 子任务 / 后台命令 / 工作流
@@ -67,6 +70,8 @@ export function TaskRow({
   // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
   const online = task.status === 'running' && !busy && state !== 'needs'
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
+  // AI 分析开出的对话：标题前加强调色的标签，和普通对话一眼分开
+  const analysis = isAnalysisTask(task, agents)
   const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
   return (
     <>
@@ -115,6 +120,7 @@ export function TaskRow({
                 />
               ) : null}
             </span>
+            {analysis && <AnalysisMark kind={task.analysis} />}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
             <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">

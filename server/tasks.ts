@@ -3555,6 +3555,8 @@ export function tasksApi(deps: {
           waiting: childWait(liveTask, { background: pending, cliAlive: live.has(liveTask.id) }),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
+          // AI 分析开出的子对话：列表里标题单独标出来
+          analysis: liveTask.analysis,
           // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
           stopReason: idle(liveTask).stopReason ?? '',
         }

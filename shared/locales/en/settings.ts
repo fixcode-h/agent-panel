@@ -967,8 +967,6 @@ export const EN_SETTINGS: Record<string, string> = {
   建议都已处理: 'All suggestions handled',
   没有要改的: 'Nothing to change',
   '全部应用（{n}）': 'Apply all ({n})',
-  收起评审结果: 'Collapse review results',
-  展开评审结果: 'Expand review results',
   '（这条教训已经不在了）': '(This lesson no longer exists)',
   '并入：{titles}': 'Merges in: {titles}',
   '改成：{text}': 'Change to: {text}',
