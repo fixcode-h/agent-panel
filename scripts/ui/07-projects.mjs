@@ -424,15 +424,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.getByRole('button', { name: '确认写入全局教训' }).click()
     await check(p, '提取全局教训-已写入', ['条全局教训'])
     await p.keyboard.press('Escape')
-    // AI 评审项目教训：在项目里开一个分析对话，结果在对话里逐条应用
+    // AI 评审项目教训：在项目里开一个分析对话，结果卡片在分析窗口里逐条应用
     await p.keyboard.press('Escape')
     await p
       .getByRole('button', { name: /购物车相关改动同时改/ })
       .first()
       .click()
     await p.getByRole('button', { name: 'AI 评审', exact: true }).first().click()
-    await check(p, 'AI评审教训-开始', ['AI 评审项目教训', '开始评审'])
-    await p.getByRole('button', { name: '开始评审' }).click()
+    await check(p, 'AI评审教训-开始', ['AI 评审项目教训', '开始分析'])
+    // 和别的 AI 分析一样：开在项目对话里、用「分析」角色，过程在统一的 AI 分析窗口里看
+    await p.getByRole('button', { name: '开始分析' }).click()
     await p
       .getByText('2 条建议待处理')
       .first()
@@ -450,6 +451,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('AI 评审教训：应用后没有变成已应用'))
     await check(p, 'AI评审教训-已应用', ['已应用'])
+    // 关掉分析窗口和项目设置，后面的步骤要点得到页面
+    for (let i = 0; i < 3 && (await p.getByRole('dialog').count()); i++) await p.keyboard.press('Escape')
+    await p
+      .getByRole('dialog')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {})
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 新建项目：没单独选工作流时按「通用项目」算（正式版启动时自动装好，演示里先手动添加），

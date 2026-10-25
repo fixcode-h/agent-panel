@@ -321,8 +321,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '先出原画' }).click({ button: 'right' })
   const after = await p.getByRole('menuitemradio', { checked: true }).textContent()
   assert.notEqual(before, after, '右键菜单能改一次出几张原画，选中状态跟着变')
-  await p.keyboard.press('Escape')
+  // 菜单开着时截图再关：先按 Escape 的话，菜单收起得快时文字已经不在页面上，检查会偶发失败
   await check(p, 'UI设计-原画张数', ['一次出几张原画'])
+  await p.keyboard.press('Escape')
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('暗黑奇幻风格的背包界面')
   await p.keyboard.press('Enter')
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })

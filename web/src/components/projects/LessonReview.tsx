@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, ChevronDown, GraduationCap, Loader2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, GraduationCap } from 'lucide-react'
 import type { Project, ProjectLesson, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { taskSummary } from '@shared/task'
 import {
   LESSON_REVIEW_LANG,
   parseLessonReview,
@@ -13,12 +12,10 @@ import {
   type ReviewProblem,
 } from '@shared/lesson-review'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
-import { startLessonReview } from '@/lib/task-transfer'
+import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Modal } from '@/components/ui/modal'
 
 const actionText = (a: ReviewAction) =>
   a === 'rewrite' ? t('改写') : a === 'merge' ? t('合并') : a === 'disable' ? t('停用') : t('删除')
@@ -33,81 +30,6 @@ const problemText = (p: ReviewProblem) =>
         : p === 'outdated'
           ? t('已过期')
           : t('重复')
-
-/**
- * 「AI 评审」入口：在这个项目里开一个分析对话评审全部教训，开好后跳到那个对话。
- * 评审的是已保存的教训，onLeave 关掉项目设置
- */
-export function LessonReviewDialog({
-  project,
-  open,
-  onOpenChange,
-  onLeave,
-}: {
-  project: Project
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  onLeave?: () => void
-}) {
-  const { agents, upsertTask } = useData()
-  const { go } = useNav()
-  const [focus, setFocus] = useState('')
-  const [busy, setBusy] = useState(false)
-  const run = async () => {
-    setBusy(true)
-    try {
-      const created = await startLessonReview({ project, agents, focus })
-      upsertTask(taskSummary(created))
-      onOpenChange(false)
-      setFocus('')
-      onLeave?.()
-      go({ page: 'projects', id: project.id, sub: created.id })
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      title={t('AI 评审项目教训')}
-      footer={
-        <>
-          <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('在这个项目里开一个分析对话来评审，只评审不改文件')}
-          </span>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            {t('取消')}
-          </Button>
-          <Button disabled={busy} onClick={() => void run()}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {t('开始评审')}
-          </Button>
-        </>
-      }
-    >
-      <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t(
-          'AI 会逐条看已保存的 {n} 条教训：是否必须、是否合理、能不能写得更好、提到的文件和做法是否已经过期、有没有重复。结果在对话里列成建议，每条要你点「应用」才会改，不会自动改。',
-          { n: project.lessons.length },
-        )}
-      </p>
-      <label className="flex flex-col gap-1.5 text-[0.8125rem]">
-        <span className="font-medium">{t('想重点看什么（可选）')}</span>
-        <textarea
-          value={focus}
-          onChange={(e) => setFocus(e.target.value)}
-          maxLength={1000}
-          rows={3}
-          placeholder={t('例如：角色自己记的那些、和测试有关的')}
-          className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
-        />
-      </label>
-    </Modal>
-  )
-}
 
 /**
  * 评审对话的结果：固定在输入框上方，每条建议写明问题、依据和改成什么，用户点「应用」才写进教训。

@@ -947,9 +947,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '在这个项目里开一个分析对话，逐条看教训是否必须、是否合理、能否优化、是否过期，建议逐条确认后才应用':
     'Opens an analysis conversation in this project that checks each lesson: is it needed, is it sound, can it be improved, is it outdated. Suggestions apply only after you confirm each one',
   'AI 评审项目教训': 'AI review of project lessons',
-  '在这个项目里开一个分析对话来评审，只评审不改文件':
-    'Opens an analysis conversation in this project. It only reviews and changes no files',
-  开始评审: 'Start review',
   'AI 会逐条看已保存的 {n} 条教训：是否必须、是否合理、能不能写得更好、提到的文件和做法是否已经过期、有没有重复。结果在对话里列成建议，每条要你点「应用」才会改，不会自动改。':
     'AI goes through the {n} saved lessons one by one: is each needed, is it sound, can it be written better, are the files and practices it mentions outdated, are there duplicates. Results are listed as suggestions in the conversation; nothing changes until you click "Apply" on each.',
   '例如：角色自己记的那些、和测试有关的': 'e.g. the ones roles recorded themselves, the ones about testing',
