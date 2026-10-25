@@ -1,8 +1,10 @@
 /**
- * 最小化后的浮条（「AI 处理」和「AI 优化」两个窗口共用）的位置与拖动判定。
+ * 最小化后的浮条的位置与拖动判定。
  *
- * 抽成纯函数单独测：夹回视口、拖动阈值、位置记忆都只有这一份，两个窗口不会再各写一套。
+ * 抽成纯函数单独测：夹回视口、拖动阈值、位置记忆都只有这一份，三个占位不再各写一套。
  * 浏览器里没有 localStorage 时（部分环境、隐私模式）退回内存，所以这些函数在 node 里也能直接测。
+ *
+ * 没拖过时一律贴在右下角：屏幕任意时刻只有一个浮条（见 chat-dock.ts），不存在叠在一起的问题。
  */
 
 /** 拖动时贴边留的空隙：拖到角上也不会只剩一条边露在外面 */
@@ -11,8 +13,6 @@ export const EDGE = 8
 export const DEFAULT_INSET = 20
 /** 按下后移动超过这个距离才算拖动，手抖不会把这次点击吃掉 */
 export const SLOP = 4
-/** 几个浮条同时在场时，按槽位往上错开（高度由组件给，这里只留间隙） */
-export const GAP = 8
 
 const STORE = 'minimized-chat-pos'
 
@@ -39,17 +39,6 @@ export const clampPos = (p: Pos, size: Size, view: View): Pos => ({
 
 /** 按下后是否已经移动够远：够远就算拖动，不再当点击 */
 export const movedEnough = (dx: number, dy: number) => Math.abs(dx) >= SLOP || Math.abs(dy) >= SLOP
-
-/**
- * 没拖过时的默认位置：贴在右下角，按槽位往上排。
- * 「AI 处理」和「AI 优化」可能同时最小化，错开一档才不会互相盖住。
- */
-export const slotPos = (slot: number, size: Size, view: View): Pos =>
-  clampPos(
-    { x: view.w - size.w - DEFAULT_INSET, y: view.h - size.h - DEFAULT_INSET - slot * (size.h + GAP) },
-    size,
-    view,
-  )
 
 type Stored = Record<string, Pos>
 

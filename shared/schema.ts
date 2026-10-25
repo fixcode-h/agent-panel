@@ -1969,6 +1969,11 @@ export const Settings = z.object({
   openBrowser: z.boolean().default(true),
   /** 网络代理：检查更新、下载新版本时用。默认地址和各处的示例见 shared/proxy.ts（只支持 http 代理，SOCKS 用不了）；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
   proxy: z.string().trim().default(''),
+  /**
+   * 是否使用上面填的代理地址。默认打开：加这个开关之前填过地址的人升级后行为不变。
+   * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
+   */
+  networkProxyEnabled: z.boolean().catch(true).default(true),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */

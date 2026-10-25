@@ -408,8 +408,8 @@ export const EN_SERVER: Record<string, string> = {
   证书校验失败: 'certificate verification failed',
   '{error}。当前使用代理 {proxy}，请确认代理能访问 GitHub。':
     '{error}. Using proxy {proxy}; make sure it can reach GitHub.',
-  '{error}。访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
-    "{error}. If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  '{error}。访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。':
+    "{error}. If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
   '{cli} 没有按格式给出新的文件内容，可以再试一次':
     "{cli} didn't return the new file content in the expected format; try again",
   '找不到这次优化，可能已过期': "Can't find this optimization; it may have expired",
@@ -488,8 +488,8 @@ export const EN_SERVER: Record<string, string> = {
   '本机代理 {proxy}': 'Local proxy {proxy}',
   '尝试过的路径：{paths}。': 'Paths tried: {paths}.',
   '没有发现运行中的本机代理。': 'No running local proxy was found.',
-  '访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
-    "If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  '访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。':
+    "If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
   // 任务记录丢失、从对话内容重建出来的标题
   恢复的对话: 'Recovered conversation',
 }

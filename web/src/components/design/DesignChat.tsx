@@ -34,7 +34,7 @@ import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { useData, useNav } from '@/lib/data'
-import type { ComfyWorkflow } from '@shared/local-image'
+import { needsInputImage, workflowInKind, type ComfyWorkflow } from '@shared/local-image'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -137,7 +137,10 @@ export function SourceSelect({
   const { settings, clis } = useData()
   const { openSettings } = useNav()
   const local = useLocalWorkflows()
-  const localReady = local.list.filter((w) => w.kind === kind && local.ready.includes(w.id))
+  const localReady = local.list.filter(
+    // 去背景、图生图、放大这类要一张原图才能跑的工作流不列：这里只能出整张图，选了也只会在生成时失败
+    (w) => workflowInKind(w, kind) && local.ready.includes(w.id) && !needsInputImage(w.graph),
+  )
   const [help, setHelp] = useState(false)
   const browser = useBrowserTabs(help)
   const imgCli = settings?.imageGen.cli || 'codex'

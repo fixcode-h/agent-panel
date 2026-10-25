@@ -108,6 +108,8 @@ import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
+import { DesignProjectHome } from '@/components/design/DesignProjectHome'
+import { DESIGN_HOME } from '@/lib/design-projects'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
 import { SaveStyleButton, StyleLibraryList } from '@/components/design/StyleLibrary'
@@ -117,6 +119,8 @@ const ANIM_KEY = 'agent-panel:design-anim'
 
 export function DesignPage() {
   const { route } = useNav()
+  // 'home' 是 UI 项目主页（项目 id 在 sub），'new' 和没给 id 是新建设计，其余 id 是设计器
+  if (route.id === DESIGN_HOME) return <DesignProjectHome key={route.sub} projectId={route.sub ?? ''} />
   return route.id && route.id !== 'new' ? (
     <Designer key={route.id} id={route.id} />
   ) : (

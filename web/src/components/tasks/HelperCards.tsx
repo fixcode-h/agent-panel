@@ -16,6 +16,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
 import { AnalyzeDialog } from './Evolution'
+import { HelperBriefCard } from './HelperBriefCard'
 import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 
@@ -314,6 +315,17 @@ export function HelperWindow({
           </header>
           <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
+              {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
+                  它自己收起吸顶（有对话流时默认收起），窗口贴底看最新输出也不影响它一直可见；
+                  没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
+                  不然贴底会把刚展开的正文顶到视野之上 */}
+              <HelperBriefCard
+                step={step}
+                teamNames={teamNames}
+                msgs={msgs.length}
+                pin={scroller.pin}
+                unpin={scroller.unpin}
+              />
               {msgs.length ? (
                 <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />
               ) : (

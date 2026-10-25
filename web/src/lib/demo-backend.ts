@@ -87,6 +87,7 @@ import {
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
+import { ComfyChain } from '@shared/comfy-chain'
 import {
   builtinTemplates,
   builtinTemplateMeta,
@@ -1542,6 +1543,8 @@ const demoCatalog = () => ({
 })
 
 let demoWorkflows: ComfyWorkflow[] = []
+/** 演示里存下来的工作流链 */
+let demoChains: ComfyChain[] = []
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -1581,6 +1584,26 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
     const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
     const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
     return { list, ready: ready.map((w) => w.id) }
+  }
+  // 工作流链：演示里存得住，但试跑不真的出图（没有 ComfyUI），返回一条说清楚的错误
+  if (action === 'chains') {
+    const workflows = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
+    const ready = workflows
+      .filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
+      .map((w) => w.id)
+    if (method === 'PUT' && id) {
+      const chain = parse(ComfyChain, { ...(body as object), id })
+      demoChains = demoChains.some((c) => c.id === id)
+        ? demoChains.map((c) => (c.id === id ? chain : c))
+        : [...demoChains, chain]
+      return { chain, list: demoChains }
+    }
+    if (method === 'DELETE' && id) {
+      demoChains = demoChains.filter((c) => c.id !== id)
+      return { list: demoChains }
+    }
+    if (method === 'POST' && sub === 'run') return fail('演示版没有真的 ComfyUI，安装后才能在本地跑工作流链')
+    return { list: demoChains, workflows, ready }
   }
   const tick = (steps: string[], done: () => void, total = 0) => {
     const j: LocalJob = (local.job = {
@@ -3130,21 +3153,47 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     session: '',
     snapshot: '',
     command: [],
-    brief: '看一下购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路查一遍，指出具体在哪个文件哪一行。',
+    // 结构化的要求（和真实 spawn 落盘的 brief 同一个格式）：子任务窗口最上面那块按 `##` 拆成几块显示
+    brief: [
+      '## 要做的事',
+      '查清购物车角标为什么在加购后不更新：从组件取数到订阅消息的链路走一遍，指出问题在哪个文件的哪一行。',
+      '',
+      '## 验收标准',
+      '- 给出具体的文件和行号，只读不改代码',
+      '- 说清角标在什么情况下才刷新',
+    ].join('\n'),
     changes: [],
     runId: 1,
   })
   const at = new Date(Date.parse(end) - 8_000).toISOString()
-  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）
-  const own = {
-    id: 'demo-' + crypto.randomUUID(),
-    role: 'agent' as const,
-    agentId: agent.id,
-    step: id,
-    text: result,
-    tools: [],
-    at: end,
-  }
+  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）。多出几条过程消息，让对话流超过一屏：
+  // 「派给它的要求」的吸顶、展开后仍在视野内这些行为只有内容超过一屏时才测得出来
+  const steps: [string, number][] = [
+    ['先看购物车角标的取数：它读的是首次渲染时的快照。', 6_600],
+    ['再顺着订阅消息查：加购只本地改状态，没发 `cart:changed`。', 5_200],
+    ['对照了一遍别的页面：结算页订阅了，所以那边是正常的。', 3_800],
+    ['定位到 `CartBadge.tsx` 里那次读快照的地方，记下行号。', 2_400],
+  ]
+  const own = [
+    ...steps.map(([text, ago]) => ({
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text,
+      tools: [],
+      at: new Date(Date.parse(end) - ago).toISOString(),
+    })),
+    {
+      id: 'demo-' + crypto.randomUUID(),
+      role: 'agent' as const,
+      agentId: agent.id,
+      step: id,
+      text: result,
+      tools: [],
+      at: end,
+    },
+  ]
   // 派出它的那条系统消息：消息流里不画卡片，折叠行上仍写着「派出 1 个子任务」
   const spawned = {
     id: 'demo-' + crypto.randomUUID(),
@@ -3160,7 +3209,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     .map((m, i) => (m.role === 'agent' ? i : -1))
     .filter((i) => i >= 0)
     .at(-1)
-  task.messages.splice(last ?? task.messages.length, 0, spawned, own)
+  task.messages.splice(last ?? task.messages.length, 0, spawned, ...own)
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
@@ -3345,9 +3394,10 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
   await make('内存面板增加 AI 分析', { working: true, alive: true, plan: plan(1, 2) })
   await make('子任务卡片移到子对话那一栏', { working: true, alive: true, plan: plan(1, 2) })
   // 在等后台命令：这一轮没在跑，但命令还在跑，运行区和弹层都要列出来；命令挂在子任务名下。
+  // 这条故意不带 alive：等后台命令期间 CLI 早退了（cliAlive=false），行上也不能写「已关闭」——
+  // 那会和「计划 / 等结果」同屏矛盾（用户报的问题），界面检查靠它当反例。
   // 这条和下面两条带独立分支：创建时间故意和列表顺序不一致，界面要按时间排而不是按接口顺序
   await make('整理 ESLint 规则', {
-    alive: true,
     job: true,
     subJob: true,
     worktree: { branch: 'agent-panel/eslint-rules', at: 30 },

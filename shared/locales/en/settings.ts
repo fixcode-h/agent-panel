@@ -426,9 +426,20 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个文件 · {size}': '{n} files · {size}',
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
-  网络代理: 'Network proxy',
-  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址，例如 {proxy}；留空时先直连，连不上会自动尝试本机正在运行的代理（系统代理或常见端口，含 v2rayN 默认的 {port}），没开代理软件就不会走代理。只支持 http 代理：v2rayN 默认的入站就是这个端口的 SOCKS，这种环境要把它改成 http / mixed 入站，或者填 http 入站端口；探测不到时照常回退直连。也认环境变量 HTTPS_PROXY。':
-    'Used to check for and download updates. If GitHub is not reachable, enter the address of a local proxy, for example {proxy}. When empty, it connects directly first and then tries any local proxy that is running (system proxy or common ports, including v2rayN default {port}); if no proxy app is running, no proxy is used. Only HTTP proxies are supported: v2rayN default inbound is SOCKS on that port, so either change it to an http / mixed inbound or enter the HTTP inbound port; when nothing is reachable it falls back to a direct connection as usual. The HTTPS_PROXY environment variable is used as well.',
+  网络与代理: 'Network & proxy',
+  启用代理: 'Use a proxy',
+  '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，但仍会先走环境变量 HTTPS_PROXY（设了的话），没设时先直连；请求失败后再自动找本机正在运行的代理（系统代理或常见端口）。':
+    'Used for update checks and downloads. When off, this address is skipped, but HTTPS_PROXY is still used first when set; otherwise it connects directly, and on failure looks for a local proxy that is running (system proxy or common ports).',
+  代理地址: 'Proxy address',
+  '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
+    'Address of a local proxy, for example {proxy}. When empty this address is skipped, with the same order as turning the switch off (environment variable → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
+  本页小节: 'Sections on this page',
+  执行与超时: 'Execution and timeouts',
+  会话保活: 'Keeping sessions alive',
+  后台命令: 'Background commands',
+  界面与启动: 'Interface and startup',
+  输入与文件: 'Input and files',
+  提示与通知: 'Alerts and notifications',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',
@@ -592,6 +603,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '接口返回 {status}：{detail}': 'The API returned {status}: {detail}',
   '接口没有返回模型列表，请自己填写': 'The API returned no model list; enter models yourself',
   先填密钥: 'Enter the API key first',
+  先选一个模型: 'Pick a model first',
+  '模型 {model} 可用': 'Model {model} works',
+  '连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）':
+    'Connection works — {n} models available (no model selected, so only the connection was verified)',
+  '模型 {model} 在 {seconds} 秒内没有响应': 'Model {model} did not respond within {seconds} seconds',
+  '接口返回的内容不是模型回复：{detail}': 'The API did not return a model reply: {detail}',
+  测试连接用的模型: 'Model to test',
+  '选中哪个模型，点「测试连接」就用它真的发一次请求':
+    'The selected model is the one “Test connection” actually sends a request with',
+  '先点「从接口获取」或手动填写模型': 'Click “Fetch from API” first, or type a model name',
   这个厂家不支持余额查询: "This vendor doesn't support balance checks",
   接口没有返回余额信息: 'The API returned no balance information',
   '这个 Agent 没有账号设置': 'This agent has no account settings',

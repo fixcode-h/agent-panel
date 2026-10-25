@@ -9,7 +9,7 @@
 
 - UI 设计：按 UI 项目组织设计，每个设计有控件树、设计尺寸、风格说明、效果图和切图，和任务分开存储（数据目录下 `designs/`，每个设计一个 JSON，图片放在同一层的设计目录里）。
 - AI 对话：用户描述要求，设计 AI 通过 MCP 工具改控件树、加图片和动画、出原画；一轮里可以同时出原画和切图。
-- 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。本机出整屏原画时，已下载 MOSS-Image、工作流选 auto、画布上又已有文字和带描述的图片，就优先用 MOSS-Image 的布局工作流，位置取自画布控件。
+- 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。本机出整屏原画时，已下载 MOSS-Image、工作流选 auto、画布上又已有文字和带描述的图片，就优先用 MOSS-Image 的布局工作流，位置取自画布控件。本机还支持「处理类工作流」（去背景、图生图、放大）和把多个工作流串成一条链出图，见下面「处理类工作流与工作流链」。
 - 标注：在效果图或原画上框选、画箭头、圈画、打点、涂蒙版，标出「改 / 新增 / 删除 / 保持」四种意思，随下一条消息把标注说明一起交给 AI；原画上的蒙版还能走「只重绘蒙版区域」。原画面板里的「发送标注给 AI」和对话框发送是同一条路径（见下方「原画标注的可见性与发送」）。
 - 导出：导出 ZIP、JSON、React 网页，或把切图和控件树导出到项目目录，给 UE 用的格式见 [umg-export](../../umg-export.md)。
 - 页面截图：设计 AI 要「看」页面时，向正在盯着这个设计的页面要一张截图。
@@ -49,7 +49,6 @@
 | `web/src/lib/demo-design.ts`               | 在线演示版在浏览器里模拟同一套接口和发送/接续行为                                             |
 
 ## MOSS-Image 布局出图（2026-10-24）
-
 - 目的：整屏原画里要出现准确的中英文、并且按设计稿的位置摆放时，把画布上的文字块和主要元素转成 MOSS-Image 的布局 JSON 一起交给工作流，而不是只靠自然语言描述位置。
 - 取布局项（`shared/moss.ts` 的 `designLayoutItems`）：只取有实际文字的文字块（跳过默认的 `Text Block` / `Text`）和用到了有 `prompt` 描述图片的控件；文字块的 `caption` 写字号、粗细、对齐和颜色，文字内容放在 `text` 里。坐标按 `CanvasPanelSlot` 逐层累加；非 `CanvasPanel` 容器里的控件和网页 `Frame` 根量不出像素位置，直接跳过；最多 24 项。宁可少给几项，不给错坐标。
 - 编译布局（`mossBbox` / `mossLayoutJson`）：设计稿像素按实际出图尺寸等比换算，左 / 上 `floor`、右 / 下 `ceil`，越界裁剪，减画布中心后按 `yxyx` 输出；空框丢弃。输出单行 JSON：`summary.caption` 放这次的正向描述，`items` 里是 `text` / `object`，并带 `bbox_coord_space: "abs_centralized"`、`bbox_format: "yxyx"`。没有有效项时返回 `undefined`。
@@ -88,6 +87,24 @@
 - `npm run test:e2e:wsl`（Windows 上在 WSL 里跑）；本次覆盖 `scripts/e2e/06-assist.mjs` 的「设计补充测试」（插话成功、无 job 时直接开一轮）、「设计接续测试」（CLI 没有插话通道时消息进对话并在这一轮结束后自动接着处理）和「设计停止测试」（停止时排队消息标 `lost`、停止后再发的消息能接着开始新一轮）。
 - `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
 - 原画标注：`scripts/ui/04-design.mjs` 的「UI设计-原画标注工具」断言原画阶段工具栏上框选 / 箭头 / 画笔 / 打点 / 蒙版五个文字标签可见；「UI设计-原画标注」在图上框一块、写说明后断言底部出现「发送标注给 AI（1）」且说明显示在标注卡片上；「UI设计-原画标注发出」点这个按钮，断言标注随用户消息出现在对话里、随后出第 2 轮原画；「UI设计-原画标注-收起对话」先收起 AI 对话栏再点这个按钮，断言对话栏自动打开、消息发出；「UI设计-原画标注-不支持局部重绘」画一个蒙版 + 一个框选后勾上「只重绘蒙版区域」，断言按钮仍是「发送标注给 AI（2）」而不是「按蒙版重绘（1）」（演示环境没有本机 ComfyUI，默认生图方式不支持局部重绘）。`ConceptBoard` 的根元素带 `data-concept-board`，用例按它定位，不和画布上的同类型工具栏混。
+
+## 处理类工作流与工作流链（2026-10-25）
+
+- 目的：原来的内置工作流都是单图文生图，用户要「去背景 → 图生图」这种叠加出图（前一段的输出图当后一段的输入），以及游戏开发常用的去背景、图生图、放大。
+- 处理类工作流（`shared/local-image.ts`，都是 `kind: 'both'`，游戏和网页两边都列）：
+  - `game-remove-bg`「去背景（透明底 PNG）」：`LoadImage` → `LoadBackgroundRemovalModel` → `RemoveBackground` → `InvertMask` → `JoinImageWithAlpha` → `SaveImage`。节点和接法照 ComfyUI 官方模板 `utility_birefnet_remove_background`（本机 `/object_info` 核对过 6 个节点都存在）：`RemoveBackground` 出前景 mask，`JoinImageWithAlpha` 内部按 `1-mask` 算 alpha，所以必须先 `InvertMask`，否则抠出来的是背景。权重 `Comfy-Org/BiRefNet` 的 `background_removal/birefnet.safetensors`（登记为 `LOCAL_FILES` 的 `birefnet`，`LOCAL_MODELS` 的 `birefnet`，分组「图片处理」）。
+  - `game-img2img`「图生图 · 风格复刻」：取 Z-Image 文生图图再用 `imageToImage` 改成从原图出发（`VAEEncode` → 采样器 `denoise: IMG2IMG_DENOISE` 0.6），参数只有一套。
+  - `game-upscale`「放大 2 倍」：`ImageScaleBy`（lanczos、`UPSCALE_FACTOR` 2），插值放大不做细节修复；`upscale_models` 目录本机为空、没有可确认的权重地址，所以不做模型放大。
+- 输入图约定：处理类工作流的入口是 `LoadImage` 读 `{{image}}`（`IMAGE_PLACEHOLDER`）。`needsInputImage(graph)` 判定「这张图要外部输入」，`pickWorkflow` 的 auto 模式**不选**这类工作流（自动流程手里没有原图，选了只能失败）；设计页「生成图片的方式」（`web/src/components/design/DesignChat.tsx` 的 `SourceSelect`）同样不列它们，ComfyUI 工作流页和链里手动指定时照样能用。`fillWorkflow` 新增 `image` 参数，不传时保留 `{{image}}` 交给链接力；`importableWorkflow` 导入 ComfyUI 时填 `example.png`。
+- 工作流链（`shared/comfy-chain.ts`）：`ComfyChain = { id, name, steps: [{ workflowId, prompt, denoise? }] }`，1~6 段（`CHAIN_MAX_STEPS`）。纯函数：`chainNeedsImage`（第一段要不要外部原图）、`checkChain`（每段有没有 SaveImage、节点类型对不对、锚点会不会被当蒙版用）、`chainNotes`（能跑但结果可能不对的提示，例如去背景夹在链中间会丢 alpha）、`chainGraph`（合并成一张图）。
+- 合并规则：第 i 段的节点 id 加 `s{i}_` 前缀；非最后一段的 `SaveImage` / `PreviewImage` 去掉（中间图不落盘、不重复上传）；下游的输入锚点节点被删除，它原来的消费者（`RemoveBackground.image`、`VAEEncode.pixels` 等）直接接上游出口 `[s{i}_节点id, 序号]`；第一段的锚点保留并填外部传进来的文件名。纯文生图的段接在链中间/末尾时用 `imageToImage` 现场加锚点（有 `KSampler` 设 `denoise`，`SamplerCustomAdvanced` 用 `SplitSigmasDenoise` 只走后半段）。
+- 执行（`server/comfy.ts`）：`localGenerate` 里原样的「上传 → 提交 → 轮询 → 交图」抽成 `uploadImage` 和 `submitGraph`，`localGenerate` 改为调用它们（行为不变）；新增 `localGenerateChain`，复用这两个函数，先校验链（`checkChain`）、把第一段的原图上传一次，再 `chainGraph` 合并 + `fillChainPrompts` 填各段描述 + `fillWorkflow` 统一替换其余占位符，最后一次提交。进度、取消、队列、`markSavePrefix` 全部走现成逻辑。
+- 接口：`GET /local-image/chains`（链 + 可用工作流 + 就绪集合）、`PUT /local-image/chains/:id`（保存前 `checkChain`，不合法直接 400）、`DELETE /local-image/chains/:id`、`POST /local-image/chains/:id/run`（传链 + 一张原图的 data URL，返回输出图 data URL）。链存在数据目录的 `comfy-chains.json`，和 `comfy-workflows.json` 分开，读写互不影响。
+- 段的失效处理：链里存的某个工作流被删掉时，`checkChain` 收 `workflow: ComfyWorkflow | undefined`，按**原下标**报「第 n 段的工作流已经不在了」，不压缩数组（第一段要不要原图、锚点检查都依赖下标）；界面不 `filter` 掉失效段，单段链也照样校验。
+- 链的描述口径：`localGenerateChain` 每段取「段自己的描述 → 本次传进来的描述 → 该工作流自己的说明」，链名（常是「新链」）不当提示词；试跑接口没填描述时传空串，由上面这条兜底。
+- 前端：`web/src/components/comfy/ComfyChainPanel.tsx` 挂在 ComfyPage 的队列面板下面。可以新建链、选段（只列该分类或 `both` 的工作流，模型没下载的标出来）、上下移、删段、给图生图段单独写描述，上传一张原图试跑并看原图和输出图的预览。新建链的默认段由 `defaultChainSteps` 按特征挑「不吃提示词的纯处理段 → 吃提示词的段」（即「去背景 → 图生图」），不按 id 写死。不合法时显示 `checkChain` 的问题、`chainNotes` 的提醒；第一段要原图却还没选时提示。演示版 `web/src/lib/demo-backend.ts` 的 `chains` 分支能存链，试跑返回「演示版没有真的 ComfyUI」。
+- 回归：`shared/comfy-chain.test.ts`（两段 / 三段链的接线、中间图不落盘、纯文生图段改写成图生图、四种组合合并后无断线）、`shared/local-image.test.ts`（三个处理类工作流的节点和连线、`imageToImage` 两种采样器、auto 不选需要输入图的工作流、`{{image}}` 填空与保留）、`server/local-image.test.ts`（内置工作流通过 `checkWorkflow`）。
+- 真实 ComfyUI 验证（本机 0.42.0，`/object_info` 核对 6 个节点存在）：把合并后的链直接 `POST /prompt` 提交——「图生图 → 放大」带一张真实 PNG 时**被 ComfyUI 接受**（节点图和连线合法）；含去背景的链只报 `bg_removal_name: 'birefnet.safetensors' not in []`，即 `models/background_removal` 没装权重，与节点图无关。**完整出图未跑通**：去背景要下载 BiRefNet 权重（设置 → 本机生图 → 「图片处理」），且 Z-Image 权重是否就绪本次未确认。
 
 ## 待确认
 

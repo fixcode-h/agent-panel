@@ -462,6 +462,58 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await pickBtn.click()
     await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
     await check(d, '元素抓取-悬停', ['抓取元素，左键、右键照常可用', '退出抓取'])
+    // 提示条挡视线（用户报的）：鼠标压到它上面要淡出，移开再淡回来。
+    // 等的是 opacity 本身，不是定时器：淡出有过渡，"等一会儿再看" 会时快时慢
+    const tip = d.locator('[data-pick-tip]')
+    /** 等提示条的透明度落到指定状态（hidden：看不见了；shown：完全回来） */
+    const waitTip = (want, why) =>
+      d
+        .waitForFunction(
+          (hidden) => {
+            const el = document.querySelector('[data-pick-tip]')
+            if (!el) return false
+            const v = Number(getComputedStyle(el).opacity)
+            return hidden ? v < 0.05 : v > 0.95
+          },
+          want === 'hidden',
+          { timeout: 3000 },
+        )
+        .catch(() => errors.push(why))
+    const tipBox = await tip.boundingBox()
+    const tipAt = tipBox && { x: tipBox.x + tipBox.width / 2, y: tipBox.y + tipBox.height / 2 }
+    if (!tipAt) errors.push('元素抓取：找不到提示条，测不了悬停淡出')
+    else {
+      await d.mouse.move(tipAt.x, tipAt.y)
+      await waitTip('hidden', '元素抓取：鼠标移到提示条上没有淡出（还是挡着视线）')
+      await check(d, '元素抓取-提示条淡出')
+      // 指针压在提示条上横向扫过（跨过它内部的 kbd、文字这些子元素）时不能弹回去：
+      // 文档内的 mouseout（relatedTarget 非空）不是「离开窗口」，不能把淡出状态清掉。
+      // 采样放在页面里逐帧取最大 opacity：从外面读只能读到某一瞬间，分不出「弹回过」和「没弹过」
+      const sampling = d.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const el = document.querySelector('[data-pick-tip]')
+            if (!el) return resolve(-1)
+            let max = 0
+            const t0 = performance.now()
+            const tick = () => {
+              max = Math.max(max, Number(getComputedStyle(el).opacity))
+              if (performance.now() - t0 < 700) requestAnimationFrame(tick)
+              else resolve(max)
+            }
+            requestAnimationFrame(tick)
+          }),
+      )
+      await d.mouse.move(tipAt.x - tipBox.width * 0.4, tipAt.y, { steps: 4 })
+      await d.mouse.move(tipAt.x + tipBox.width * 0.4, tipAt.y, { steps: 8 })
+      const peak = await sampling
+      if (peak > 0.5)
+        errors.push(`元素抓取：鼠标在提示条上扫过时它又弹回来了（这段时间最大 opacity ${peak.toFixed(2)}）`)
+      // 淡出只是躲开鼠标：抓取模式还在，移开后提示条要回来
+      await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+      await waitTip('shown', '元素抓取：鼠标移开后提示条没有恢复（看不出还在抓取模式）')
+      if (!(await overlay.count())) errors.push('元素抓取：提示条淡出时退出了抓取模式')
+    }
     // 右键要能正常弹出页面自己的菜单，且不退出抓取（以前右键 = 退出抓取）
     await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2, { button: 'right' })
     if (!(await overlay.count())) errors.push('元素抓取：右键点击后退出了抓取（右键应该正常弹菜单）')
@@ -542,6 +594,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
       if (!quoted.includes(want)) errors.push(`元素抓取：引用里没有「${want}」`)
     await d.keyboard.press('Escape')
+
+    // 提示条淡出的时候，点它原来占的位置仍要抓得到下面的元素：躲开鼠标靠的是坐标判定，
+    // 它自己一直 pointer-events-none，不能因为这一改把点击吞掉（吞了就选不中下面的东西）
+    if (tipAt) {
+      await pickBtn.waitFor({ timeout: 10000 })
+      await pickBtn.click()
+      await overlay.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点击穿透用例没能进入抓取'))
+      await d.mouse.move(tipAt.x, tipAt.y)
+      await waitTip('hidden', '元素抓取：点击穿透用例里提示条没有淡出')
+      const cards = () => d.locator('#task-prompt [data-chip="quote"]').count()
+      const before = await cards()
+      await d.mouse.click(tipAt.x, tipAt.y, { button: 'middle' })
+      const picked = await d
+        .waitForFunction((n) => document.querySelectorAll('#task-prompt [data-chip="quote"]').length > n, before, {
+          timeout: 5000,
+        })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!picked) errors.push('元素抓取：提示条淡出时点它原来占的位置没抓到下面的元素（提示条吃掉了点击）')
+      await overlay
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('元素抓取：点击穿透用例抓完没有退出抓取'))
+      await check(d, '元素抓取-提示条淡出后点击穿透')
+    }
 
     // 换页面时抓取要自动退出：抓取状态是全局一份，不退出的话下一个页面会带着「已经在抓取中」进来，
     // 再按快捷键就成了「退出」而不是「进入」，语义反了
@@ -709,6 +787,77 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!selText.includes(want)) errors.push(`引用卡片选中复制：粘回来的卡片里没有「${want}」`)
     await b.keyboard.press('Escape')
     await check(b, '元素引用-选中卡片复制')
+    // 剪贴板里同时有 text/plain 和 text/html：粘到 Word、Excel 这类富文本目标时换行还在，
+    // 两张格式装的是同一份完整原文（不是卡片上那段 40 字摘要）
+    const formats = await b
+      .evaluate(async () => {
+        const items = await navigator.clipboard.read()
+        const out = {}
+        for (const item of items) for (const type of item.types) out[type] = await (await item.getType(type)).text()
+        return out
+      })
+      .catch(() => null)
+    if (!formats) errors.push('元素引用-选中卡片复制：读不到剪贴板的两种格式')
+    else {
+      for (const type of ['text/plain', 'text/html']) {
+        if (!(type in formats)) errors.push(`元素引用-选中卡片复制：剪贴板里没有 ${type}`)
+      }
+      // HTML 版里也必须是完整原文：换行在 html 里是 <br>，所以按去掉标签后的文字判断
+      const htmlText = (formats['text/html'] ?? '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '')
+      for (const want of ['- 元素：', 'web/src/pages/ChatPage.tsx:', '- 选择器：'])
+        if (!htmlText.includes(want)) errors.push(`元素引用-选中卡片复制：html 版本里没有「${want}」`)
+      if (!htmlText.includes('[/元素引用]'))
+        errors.push('元素引用-选中卡片复制：html 版本里没有结束标记，粘回输入框认不出卡片')
+    }
+    // 剪切选中的卡片：剪贴板同样写完整原文（onCut 和 onCopy 共用一份序列化），
+    // 而且选中的内容要真的从输入框里删掉、背后的附件一起清掉
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪切前输入框清不空'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：先粘不进来就测不了剪切'))
+    await b.evaluate(() => {
+      const el = document.querySelector('#task-prompt')
+      el?.focus()
+      const r = document.createRange()
+      if (el) r.selectNodeContents(el)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(r)
+    })
+    await b.keyboard.press('Control+X')
+    const cut = await b.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!cut.startsWith('[元素引用]')) errors.push(`引用卡片剪切：剪贴板里不是带标记的原文（${cut.slice(0, 32)}）`)
+    if (!cut.includes('- 元素：') || !cut.includes('- 选择器：'))
+      errors.push('引用卡片剪切：剪贴板里只有摘要，没有完整原文')
+    // 剪切要真的从输入框里删掉（不拦原生剪切时浏览器也会删，拦下后由 onCut 自己删）
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪完输入框里的卡片还在'))
+    // onCut 是程序化 deleteContents()，不是原生删除键：万一浏览器留下占位节点，serialize 读出来是「\n」，
+    // 输入框里多一空行、草稿被判非空。这里直接断言剪完的内容是空的
+    const afterCut = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '<读不到>')
+    if (afterCut.trim()) errors.push(`引用卡片剪切：剪完输入框里还留着内容（${JSON.stringify(afterCut.slice(0, 20))}）`)
+    // 剪完的卡片背后不能再留着附件：再粘回来只该有一张卡片（附件没被重复带走）
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .waitForFunction(() => document.querySelectorAll('#task-prompt [data-chip="quote"]').length === 1, null, {
+        timeout: 5000,
+      })
+      .catch(() => errors.push('引用卡片剪切：剪完再粘回来没有还原成一张引用卡片'))
+    await check(b, '元素引用-剪切卡片')
     // 只复制了一半标记（截图、截断）时按普通文字粘进来，不能误判成卡片
     await b.locator('#task-prompt').click()
     await b.keyboard.press('Control+A')

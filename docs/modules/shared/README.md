@@ -23,6 +23,8 @@
 - 内置内容：内置角色和工作流模板在 `shared/builtin/`，界面文案的英文在 `shared/locales/en/`。
   本机副本：内置角色每次启动、每次保存都按当前定义同步（`shared/builtin/install.ts` 的 `upgradeBuiltinAgents`、`core.ts` 的 `builtinKey` / `syncCore`，[ADR 0015](../../adr/0015-builtin-roles-follow-definition.md)），用户改过的设定会被覆盖，覆盖前由 `server/index.ts` 备份。`legacy.ts` 的 `LEGACY_AGENT_FIELDS*` 现在只用来判断要不要备份和已合并角色能不能删；**指纹里不要引用会继续变的常量**（`SCENE_TEXT` 等），历史正文用 `LEGACY_SCENE_TEXT` 固定。内置工作流副本记 `builtinHash`（`workflowFingerprint`，坐标不算），内容还是那个指纹就升级，没记过的退回按 `LEGACY_WORKFLOWS` 比。
 - 本机生图（`shared/local-image.ts`）：`LOCAL_FILES` 是 ComfyUI 的下载清单（`dir` / `file` / `url` / `gb`），`LOCAL_MODELS` 是按用途分组的模型条目（决定设置页「本机生图」列出什么、要多少显存，也是工作流可选的内置模型），`LOCAL_MODEL_GROUPS` 是分组顺序；同一文件还负责生成内置工作流的节点图、`{{prompt}}` / `{{negative}}` / `{{width}}` / `{{height}}` / `{{count}}` / `{{seed}}` / `{{layout}}` 的替换、工作流校验和自动挑选。
+  2026-10-25 新增 `{{image}}`（`IMAGE_PLACEHOLDER`）和三个处理类内置工作流（`kind: 'both'`，游戏和网页都列）：`game-remove-bg`（`removeBgGraph`：`LoadBackgroundRemovalModel` + `RemoveBackground` + `InvertMask` + `JoinImageWithAlpha`，权重是 `LOCAL_FILES` 的 `birefnet` / `LOCAL_MODELS` 的 `birefnet`，分组「图片处理」`process`）、`game-img2img`（`imageToImage` 把任意带采样器和 VAE 的工作流改成图生图，`IMG2IMG_DENOISE` 0.6）、`game-upscale`（`upscaleGraph` 的 `ImageScaleBy`，`UPSCALE_FACTOR` 2）。`needsInputImage` 判定需要外部输入图的工作流，`pickWorkflow` 的 auto 模式跳过它们；`checkWorkflow` 允许只有 `{{image}}`、没有 `{{prompt}}` 的图；`fillWorkflow` 的 `image` 参数不传时保留占位符。`localWorkflow` 遇到 `family: 'birefnet'` 直接报错（处理类模型不能文生图），`builtinTemplates` 也不给处理类模型生成文生图模板。
+- 工作流链（`shared/comfy-chain.ts`）：`ComfyChain`（`steps` 1~6 段，每段 `workflowId` / `prompt` / `denoise?`）和纯函数 `chainNeedsImage` / `checkChain` / `chainNotes` / `chainGraph`。`chainGraph` 把各段合成一张图：节点 id 加 `s{i}_` 前缀（`chainPrefix`）、非最后一段去掉 `SaveImage`、下游的 `{{image}}` 锚点节点删掉后把它的消费者直接接上游出口、第一段锚点填外部文件名；纯文生图的段接在后面时用 `imageToImage` 现加锚点。执行在 `server/comfy.ts` 的 `localGenerateChain`，复用 `uploadImage` / `submitGraph`。回归：`shared/comfy-chain.test.ts`。
   2026-10-24 新增 MOSS-Image（`family: 'moss'`，Apache-2.0，`base` 1024，`natural`）：`moss-image` 用 int8 权重（`diffusion_models` 5.4GB、`text_encoders` 7.3GB、`vae` 0.25GB，`vram` 16），`moss-image-bf16` 用 bf16 权重（10.2GB、19.3GB 加同一个 `vae`，`vram` 32）。`localWorkflow` 的 `moss` 分支：`UNETLoader` + `CLIPLoader`（`type: moss_image`）+ `VAELoader` + `SkipLayerGuidanceDiTSimple`（`single_layers: '22'`，0–0.5）+ `KSampler`（25 步、CFG 2.5、`er_sde`、`simple`）；int8 和 bf16 共用同一节点图，文件按模型实际带的取。内置工作流 `game-moss-layout` 的正向提示词写 `{{layout}}`，没有布局时回退成描述。
 - MOSS 布局（`shared/moss.ts`）：`designLayoutItems` 从设计稿控件树取布局项（有实际文字的文字块、用到了有描述图片的控件，只沿 `CanvasPanel` 累加绝对坐标，最多 24 项）；`mossBbox` 把设计稿像素按实际出图尺寸换算成以画布中心为原点、`yxyx` 的 bbox；`mossLayoutJson` 输出单行官方 JSON（`summary.caption`、`items` 的 `text` / `object`、`bbox_coord_space: abs_centralized`、`bbox_format: yxyx`），没有有效项时返回 `undefined`。宽高必须等于实际出图尺寸，换算依赖 `shared/umg.ts` 的 `canvasSlotRect`。
 - 项目 AI 初始化的推荐结构和保存校验（`shared/project-init.ts` 的 `ProjectProposal`、`ProjectProposalSchema`）：推荐随项目以 `initResult` 保存（`shared/schema.ts` 里可选），重开项目设置时拿来和当前设置比对；旧项目没有该字段按「没有推荐」处理，不要求重新初始化。
@@ -40,7 +42,7 @@
 - `shared/clis.ts`：CLI 列表和能力的统一出口。
 - `shared/engine.ts`：执行引擎，被 `server/` 和在线演示的模拟实现调用。
 - `shared/ansi.ts`：`stripAnsi` 清 CLI 输出里的 ANSI 转义，目前由账号登录（`server/accounts.ts`）在存 CLI 输出前调用。
-- `shared/local-image.ts`：本机生图的模型清单、内置工作流和占位符替换；`shared/moss.ts`：控件树到 MOSS 布局 JSON 的换算；`shared/proxy.ts`：本机代理默认值和自动探测的端口顺序。
+- `shared/local-image.ts`：本机生图的模型清单、内置工作流和占位符替换；`shared/comfy-chain.ts`：多个工作流串成一条链（合并成一张节点图）；`shared/moss.ts`：控件树到 MOSS 布局 JSON 的换算；`shared/proxy.ts`：本机代理默认值和自动探测的端口顺序。
 
 ## 依赖
 
