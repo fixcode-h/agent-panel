@@ -1205,7 +1205,9 @@ function Body({
                 <FormSection title={t('版本与推送')}>
                   <Field
                     label={t('推送到远端')}
-                    tip={t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                    tip={t(
+                      '只管 Git 推送，本地提交不受影响。允许直接推送：对话做完、本地提交后直接推到跟踪的远端分支；问一次：那时先问你；不推送：面板直接拦下 git push。创建 PR、P4 submit 仍要你在对话里要求。',
+                    )}
                   >
                     <Select
                       value={draft.gitPolicy}
