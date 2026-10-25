@@ -8,6 +8,7 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 
 - 规则：CLI 报一轮成功但正文、工具、用量都没有时按空回合处理：不保活、交给兜底接一轮并留下说明。保活时一个进程连着多条消息，`runAgent` 的 `mine`、`touched` 是整个进程的；判断这轮做没做事只看这轮开始后输出，重发的是这轮的用户消息。
 - 规则：面板替别人往对话投消息（子对话回答、催合并、后台结果）时，CLI 回包不等于模型看见了，这轮没产出就交回下一轮。`read_user_notes` 没取走的、插话通道送出的都走 `holdForNextTurn`；`TaskBusyError`（执行位还占着，正常收尾窗口）同样记进对话并 hold，收尾没人取就补开一轮，不能只 `log.warn`。
+- 规则：说「已转给子对话」却没调发送工具（`claimsUnsentHandoff`）也按没做完接一轮。
 - 起因：0 token、0 输出的一轮被标成完成并保活，用户催「分析啊」时消息被插进死回合；9e7674d 只修了第一轮，第二句起一个字没回被前一轮正文盖住。
 - 起因：`steerTask` 只要回包就返回 `'steer'`，网关吞请求时补充永久丢失；ADR 0002 的用户回答撞上子对话刚结束一轮，消息被吞，e2e 一半失败。
 - 防线：`server/exec/hints.test.ts`；`server/exec/delivery.test.ts`；`scripts/e2e.mjs` 的 `FAKE_SILENT`、「保活中的第二句一个字都没回」「子对话请父对话决定」用例。

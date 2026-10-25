@@ -565,6 +565,26 @@ export function looksUnfinished(o: {
   )
 }
 
+/** 把话交给子对话的面板工具：调用过其中一个，「已转给子对话」才是真的 */
+// 前面可能贴着服务名前缀（mcp__panel__send_to_conversation），下划线也算单词字符，不能用 \b
+const HANDOFF_TOOL = /(send_to_conversation|create_conversation)(?![a-z_])/
+
+/**
+ * 这一轮嘴上说「已转给 / 已交给子对话」，却没调用过 send_to_conversation、create_conversation：
+ * 消息根本没发出去，子对话不会动，用户在对话里也找不到那一行「发送消息」。
+ * 常见于工具没挂上（Pi 桥接扩展加载失败）或弱一点的模型只在回复里描述了动作。
+ * 只看最后一句回复，并且要求说的是「子对话」：泛泛的「已交给你」「已转给测试」不算
+ */
+export function claimsUnsentHandoff(o: { texts: string[]; tools: { name?: string; label: string }[] }) {
+  if (o.tools.some((x) => HANDOFF_TOOL.test(`${x.name ?? ''} ${x.label}`))) return false
+  const last = [...o.texts]
+    .reverse()
+    .find((x) => x.trim())
+    ?.trim()
+  if (!last) return false
+  return /已经?(转给|转交|转发给|交给|发给|发送给|告诉|通知|同步给)[^。\n]{0,40}子对话/.test(last)
+}
+
 /** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
 export interface NetNote {
   msg: TaskMessage
@@ -1041,13 +1061,14 @@ async function runAgent(
   const emptyTurn = () => {
     if (prewarmMode || op || ctx.signal.aborted) return false
     // texts 要等进程结束后才汇总，这里直接用这次调用的消息，result 到达时就能判断
-    return looksUnfinished({
-      texts: turnMsgs()
-        .filter((m) => m.role === 'agent')
-        .map((m) => m.text),
-      tools: turnTools(),
-      changed: touched.size - turnMark.touched,
-    })
+    const texts = turnMsgs()
+      .filter((m) => m.role === 'agent')
+      .map((m) => m.text)
+    return (
+      looksUnfinished({ texts, tools: turnTools(), changed: touched.size - turnMark.touched }) ||
+      // 说了转给子对话却没发：同样不能保活收尾，要让下面的兜底接一轮把消息真的发出去
+      (emptyRetries < MAX_EMPTY_RETRIES && claimsUnsentHandoff({ texts, tools: turnMsgs().flatMap((m) => m.tools) }))
+    )
   }
   /**
    * 这一轮结束的回调只发一次：CLI 的 result 和「回复完停在等下一句」都会走到 markTurnDone，
@@ -1926,6 +1947,48 @@ async function runAgent(
     ctx.changed(true)
     log.error('agent', `${def.name} 连续只回一句就结束，停止`, { task: task.id, step })
     return { ok: false, error: note }
+  }
+  // 回复里说「已转给子对话」，这一轮却没调用过发消息的工具：消息没发出去。
+  // 按「错误一律显示」先写进对话，再接一轮让它真的发（或者更正说法）；只接一次，和空回合共用次数
+  if (
+    !op &&
+    !prewarm &&
+    !ctx.signal.aborted &&
+    emptyRetries < MAX_EMPTY_RETRIES &&
+    claimsUnsentHandoff({ texts: turnTexts, tools: turnMsgs().flatMap((m) => m.tools) })
+  ) {
+    const what = t('回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去')
+    const note = t('{what}。正在自动接一轮，让它真的发出去…', { what })
+    task.messages.push({
+      id: ctx.newId(),
+      role: 'system',
+      agentId,
+      step,
+      text: note,
+      tools: [],
+      error: true,
+      alert: makeAlert('warn', what, 'empty_turn'),
+      at: new Date().toISOString(),
+    })
+    const pushed = task.messages.at(-1)!
+    log.warn('agent', `${def.name} 说已转给子对话但没调用发送工具，自动接一轮`, { task: task.id, step })
+    ctx.changed(true)
+    return runAgent(
+      ctx,
+      {
+        ...call,
+        prompt:
+          '你上一条回复说已经把内容转给了子对话，但这一轮你没有调用 send_to_conversation，消息并没有发出去，子对话什么都没收到。' +
+          '现在调用 send_to_conversation 把要交代的内容真正发给那个子对话（不知道 id 先用 list_conversations 查；没有合适的就用 create_conversation 新建）。' +
+          '如果其实是更早的轮次里已经发过，就不要重发，直接向用户更正说明。发完再简短告诉用户。',
+      },
+      retried,
+      netRetries,
+      retryCarry,
+      netNotes,
+      emptyRetries + 1,
+      [...emptyNotes, { msg: pushed, base: note }],
+    )
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
   // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
