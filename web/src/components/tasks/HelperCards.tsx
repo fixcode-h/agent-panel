@@ -6,7 +6,7 @@ import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
-import { helperRunning, stepMs } from '@shared/task'
+import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { useEscape } from '@/lib/useEscape'
@@ -23,10 +23,6 @@ import { t } from '@shared/i18n'
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
 const helperTime = (step: TaskStep, now: number) =>
   step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
-
-/** 列表里的顺序：正在跑的、排队的、没做完的、做完的、终止的；同一组里按派出的顺序 */
-const helperRank = (s: TaskStep) =>
-  helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
 
 /** 还能终止：在跑或在排队 */
 const stoppable = (s: TaskStep) => s.status === 'running' || s.status === 'pending'
@@ -140,10 +136,8 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  const steps = ids
-    .map((id) => task.steps.find((s) => s.id === id))
-    .filter((s): s is TaskStep => !!s)
-    .sort((a, b) => helperRank(a) - helperRank(b))
+  // 顺序见 sortHelpers：执行中 → 排队中 → 未完成 → 已完成 → 已终止，同一档里最新的在最上面
+  const steps = sortHelpers(ids.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s))
   const running = steps.filter(helperRunning)
   const failed = steps.filter((s) => s.status === 'failed')
   const now = useNow(running.length > 0)

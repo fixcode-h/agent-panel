@@ -1360,9 +1360,27 @@ export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.filter(childSpinning)
 }
 
+/** 按开始时间倒序：越晚开始的越靠上。旧记录没有开始时间时算最早，交给调用方用 id 兜底 */
+function byStartedDesc(a: { startedAt?: string }, b: { startedAt?: string }) {
+  return (b.startedAt || '').localeCompare(a.startedAt || '')
+}
+
+/**
+ * 列表里「新的在前」：按开始时间倒序，越晚开始的越靠上；时间一样、或者旧记录 / 演示数据没有开始时间时，
+ * 用 id 的序号兜底（`@chat/sub/h10` 比 `h2` 新），保证每次渲染顺序一致不抖动。
+ * 兜底依赖编号随派出递增（engine 的 spawn 用「现存子任务数 + 1」，见 shared/engine.ts 的 n = have + i + 1），
+ * 而删除都是整批的（dropRerun 删父亲下全部 sub、dropNodeSteps 删整棵子树），不会出现「删了 h1、留着 h3」
+ * 再派回一个重复编号，所以这个方向成立。
+ * 子任务列表（sortHelpers）和运行区的子任务行用它；子对话栏（sortChildren）的时间倒序也走 byStartedDesc，
+ * 只是它同一时间按 id 升序兜底（改它会动到子对话列表的既有顺序），别再各处写一遍时间倒序。
+ */
+export function newestFirst(a: { id: string; startedAt?: string }, b: { id: string; startedAt?: string }) {
+  return byStartedDesc(a, b) || b.id.localeCompare(a.id, undefined, { numeric: true })
+}
+
 /**
  * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
- * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
+ * 同一类里按本次开启的时间倒序（见 childStartedAt 和 byStartedDesc），时间一样按 id 升序兜底免得每次渲染抖动。
  * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
  * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 ChildSwitcher 的 childGroups，
  * 它按 list 的先后往各组里放，所以两边顺序一致。
@@ -1371,9 +1389,7 @@ export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.slice().sort((a, b) => {
     const byStage = stageRank.indexOf(childStage(a)) - stageRank.indexOf(childStage(b))
     if (byStage) return byStage
-    const byStart = (b.startedAt || '').localeCompare(a.startedAt || '')
-    if (byStart) return byStart
-    return a.id.localeCompare(b.id)
+    return byStartedDesc(a, b) || a.id.localeCompare(b.id)
   })
 }
 
@@ -1464,6 +1480,23 @@ function dayLabel(d: Date, now: Date, loc: string) {
  */
 export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
   return s.slot === 'sub' && s.status === 'running'
+}
+
+/**
+ * 子任务在列表里的档位：正在跑的、排队的、没做完的、做完的、终止的。
+ * 组与组的顺序由它决定（分组见 HelperCards 的 helperGroups），组内再按 newestFirst 让最新的排在前面。
+ */
+export function helperRank(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
+}
+
+/**
+ * 子任务列表的顺序：先按档位分（执行中 → 排队中 → 未完成 → 已完成 → 已终止），
+ * 同一档里最新的在最上面（见 newestFirst）：用户最后派出的那个就在最上面，不用往下翻。
+ * 输入框上方的「子任务」列表和消息流里运行区的子任务行都读这一个函数，别各处再写一份排序。
+ */
+export function sortHelpers<T extends Pick<TaskStep, 'id' | 'status' | 'slot' | 'startedAt'>>(list: T[]): T[] {
+  return list.slice().sort((a, b) => helperRank(a) - helperRank(b) || newestFirst(a, b))
 }
 
 /**
