@@ -1727,6 +1727,13 @@ export const TaskData = z.object({
    * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
    */
   childrenWorking: z.number().int().min(0).optional(),
+  /**
+   * 这个对话现在有活着的 CLI 进程（服务端按真实进程登记算，不存盘）：
+   * 「等待你的下一条消息」、标题流光、侧栏提示只认它，CLI 关了就绝不显示
+   */
+  cliAlive: z.boolean().optional(),
+  /** 名下有活着的 CLI 进程的子对话数：只在列表摘要里带（父对话），不点开也能看出子对话还开着 CLI */
+  childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /**

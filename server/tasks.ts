@@ -163,7 +163,7 @@ import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
-import { childEnv, isProcessAlive, killTree } from './exec/process.ts'
+import { childEnv, isProcessAlive, killTree, taskCliAlive } from './exec/process.ts'
 import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
 import {
   HISTORY_CAPACITY,
@@ -1029,7 +1029,12 @@ export function tasksApi(deps: {
    * 带上还在跑的后台命令。没有也写成空数组：界面靠「有没有这个字段」分辨这份任务是完整推送（带运行时字段）
    * 还是别的接口顺手返回的（没带），后者不能把列表和标题栏的转圈清掉（见 web/src/lib/live-fields.ts）
    */
-  const withJobs = (task: Task): Task => ({ ...task, jobs: uiJobs(background.list(task.id)) })
+  const withJobs = (task: Task): Task => ({
+    ...task,
+    jobs: uiJobs(background.list(task.id)),
+    // CLI 进程真的还活着：按进程登记算（见 taskCliAlive），界面不再拿 status / awaitingUser 猜
+    cliAlive: taskCliAlive(task.id),
+  })
 
   /**
    * 结束对话的后台命令，连同它名下子对话的：对话停止、归档、删除时调用。
@@ -1522,6 +1527,13 @@ export function tasksApi(deps: {
     return n
   }
 
+  /** 名下 CLI 进程还活着的子对话数：标题流光、侧栏提示用（见 taskCliAlive） */
+  async function cliChildren(parentId: string) {
+    let n = 0
+    for (const k of await store.list()) if (k.parentTaskId === parentId && taskCliAlive(k.id)) n++
+    return n
+  }
+
   /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
   async function withLive(task: Task): Promise<Task> {
     // 面板上次被强杀、崩溃时还没结束的后台命令：记录跟着进程没了，那一行收口成「结果丢失」，不永远转圈
@@ -1538,7 +1550,7 @@ export function tasksApi(deps: {
     const t = withJobs(task)
     if (task.parentTaskId) return t
     // 0 也写上：理由同 withJobs
-    return { ...t, childrenWorking: await activeChildren(task.id) }
+    return { ...t, childrenWorking: await activeChildren(task.id), childrenCli: await cliChildren(task.id) }
   }
 
   /**
@@ -2697,7 +2709,9 @@ export function tasksApi(deps: {
                   : cur.summary || lastReply(cur),
               at: cur.updatedAt,
               doing: childActivityText(doing),
-              waiting: childWaitText(childWait(cur, { background: pendingJobs(cur.id), cliAlive: live.has(cur.id) })),
+              waiting: childWaitText(
+                childWait(cur, { background: pendingJobs(cur.id), cliAlive: taskCliAlive(cur.id) }),
+              ),
               lastActivityAt: childLastActivity(cur),
               // 面板自动问过状态、还没回复：父对话不用再问一遍，也不用猜它有没有被叫过
               autoAsk: cur.autoAsk,
@@ -3439,14 +3453,20 @@ export function tasksApi(deps: {
     // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
     // 口径和标题栏、能不能回收是同一个（childActive）：等结果、等回答的子对话也算，不只看 working
     const kids = new Map<string, number>()
+    // 名下 CLI 还活着的子对话数：侧栏不点开父对话也能看出里面还开着 CLI
+    const kidsCli = new Map<string, number>()
     for (const k of all) {
-      if (!k.parentTaskId || !childActive(k)) continue
+      if (!k.parentTaskId) continue
+      if (taskCliAlive(k.id)) kidsCli.set(k.parentTaskId, (kidsCli.get(k.parentTaskId) ?? 0) + 1)
+      if (!childActive(k)) continue
       kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
     }
     let list = all.map((t) => {
       const n = kids.get(t.id) ?? 0
       // 带上还在跑的后台命令：交出去的命令没跑完，列表里这个对话就还在「等结果」，不能显示成做完了
-      return taskSummary(withJobs(t.parentTaskId ? t : { ...t, childrenWorking: n }))
+      return taskSummary(
+        withJobs(t.parentTaskId ? t : { ...t, childrenWorking: n, childrenCli: kidsCli.get(t.id) ?? 0 }),
+      )
     })
     // 子对话不进入项目列表：按 parentId 查询时才返回它们
     const parent = c.req.query('parentId')
@@ -3521,8 +3541,9 @@ export function tasksApi(deps: {
           summary: liveTask.summary || lastReply(liveTask),
           working: liveTask.working,
           updatedAt: liveTask.updatedAt,
-          // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜
-          cliAlive: live.has(liveTask.id),
+          // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜。
+          // 按真实进程登记算（taskCliAlive），CLI 关了就是 false
+          cliAlive: taskCliAlive(liveTask.id),
           // 排序按本次开启的时间：做完或停下后又接到新任务会开新的一轮，重新排到最前面
           startedAt: childStartedAt(liveTask),
           // 总览分组用：等用户确认的请求数、还在跑的后台命令数、独立 worktree 的分支
@@ -3552,7 +3573,7 @@ export function tasksApi(deps: {
           // 面板以父对话的名义自动问过它状态：之后还没有新输出时行上写「已自动询问，等回复」
           autoAsk: liveTask.autoAsk,
           // 在等什么（等用户回答、等后台命令、等子任务、等工作流、等下一句）：不是在跑也不是卡住
-          waiting: childWait(liveTask, { background: pending, cliAlive: live.has(liveTask.id) }),
+          waiting: childWait(liveTask, { background: pending, cliAlive: taskCliAlive(liveTask.id) }),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
           // AI 分析开出的子对话：列表里标题单独标出来
@@ -3758,8 +3779,10 @@ export function tasksApi(deps: {
           .filter((j) => j.state === 'queued' || j.state === 'running')
           .map((j) => `${j.id}:${j.state}`)
           .join(',')
-      // 名下子对话还在运行的数量也要比：子对话开始、做完不改父对话本身，标题栏的转圈要跟着变
-      const liveKey = async () => `${jobKey()}|${await activeChildren(id)}`
+      // 名下子对话还在运行的数量也要比：子对话开始、做完不改父对话本身，标题栏的转圈要跟着变。
+      // CLI 进程退出也不一定改任务本身（回收保活、进程自己挂掉），「等待你的下一条消息」要马上撤掉
+      const liveKey = async () =>
+        `${jobKey()}|${await activeChildren(id)}|${taskCliAlive(id) ? 1 : 0}|${await cliChildren(id)}`
       while (!closed) {
         // 没在执行的任务先只看任务本身的更新时间：完整对话在内存里只留十几个，被挤出去后
         // 每秒都 current() 一次就是每秒从磁盘重读、校验一遍几 MB 的对话；没变就不用读
@@ -3785,7 +3808,7 @@ export function tasksApi(deps: {
         // 后台命令开始、结束、子对话开始做完都不一定改任务本身（对话空闲时），单独算进去
         const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
         // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
-        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}`
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}|${t.childrenWorking ?? 0}|${t.cliAlive ? 1 : 0}|${t.childrenCli ?? 0}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })

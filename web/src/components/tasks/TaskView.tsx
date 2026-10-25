@@ -50,6 +50,7 @@ import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
@@ -1204,10 +1205,11 @@ export function TaskView({
                     ) : (
                       <>
                         {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis} className="ml-1" />}
+                        {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光，CLI 关了就没有 */}
                         <h2
-                          title={t('双击重命名')}
+                          title={[cliAliveHint(task), t('双击重命名')].filter(Boolean).join(' · ')}
                           onDoubleClick={() => setRenaming(task.title)}
-                          className="min-w-0 truncate px-1 font-medium"
+                          className={cn('min-w-0 truncate px-1 font-medium', cliTreeAlive(task) && 'cli-alive-title')}
                         >
                           {task.title}
                         </h2>
@@ -1600,10 +1602,14 @@ export function TaskView({
                         </div>
                       </PendingReply>
                     ))}
-                  {running && task.mode === 'chat' && !working && task.awaitingUser && (
+                  {/* 只在 CLI 进程真的还活着、停在等下一句时显示（cliAlive 按进程算）：CLI 关了绝不显示 */}
+                  {running && task.mode === 'chat' && !working && task.awaitingUser && task.cliAlive && (
                     <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                       <MessageSquareText className="h-4 w-4 text-subtle" />
-                      <span>{t('等待你的下一条消息')}</span>
+                      <span className="inline-flex items-baseline">
+                        {t('等待你的下一条消息')}
+                        <WaitDots />
+                      </span>
                       <LiveStats task={task} agentIds={[task.agentId]} />
                     </div>
                   )}
@@ -2005,6 +2011,8 @@ function ChildrenBar({
   const shownCards =
     fitAll >= busy.length ? busy.length : Math.max(0, Math.floor(Math.max(0, box.room - box.more) / cardSlot))
   const hiddenCards = busy.length - shownCards
+  // CLI 还活着的子对话数：「子对话」入口流光、悬浮说明用
+  const cliKids = children.filter((c) => c.cliAlive).length
 
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
@@ -2028,10 +2036,17 @@ function ChildrenBar({
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
+              title={cliKids ? t('CLI 存活：{n} 个子对话', { n: cliKids }) : undefined}
               className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-              <span className="shrink-0 font-medium">{t('子对话')}</span>
+              {/* 有子对话的 CLI 还活着：「子对话」三个字流光，和标题、侧栏一致 */}
+              <span
+                className={cn('shrink-0 font-medium', cliKids > 0 && 'cli-alive-title')}
+                style={cliKids > 0 ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+              >
+                {t('子对话')}
+              </span>
               {/* 进行中的在前、总数在后：转圈 3/5 读作「3 个还在进行，一共 5 个」，总数不重复说两遍 */}
               {working > 0 ? (
                 <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
@@ -2087,7 +2102,14 @@ function ChildrenBar({
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
                       <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
-                      <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
+                      <span
+                        className={cn(
+                          'max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg',
+                          c.cliAlive && 'cli-alive-title',
+                        )}
+                      >
+                        {c.title}
+                      </span>
                       <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
                         {stale ? stale.text : line}
                       </span>
