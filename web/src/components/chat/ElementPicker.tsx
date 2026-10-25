@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { SquareDashedMousePointer } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
 import {
   componentChain,
   parseLoc,
@@ -460,6 +460,13 @@ export function ElementPickHost() {
   useEffect(() => {
     if (!listen && active) setPickActive(false)
   }, [listen, active])
+  // 换页面（路由变了）就退出抓取：抓取状态是全局单例，不在这个页面的高亮框上挂着，不退出的话
+  // 下一页会带着「已经在抓取中」进来，再按快捷键就成了「退出」而不是「进入」，语义反过来
+  const route = useNav().route
+  useEffect(() => {
+    setPickActive(false)
+    // 只跟着页面走；同一页里的 id / sub 变化（切对话、切分节）不算换页
+  }, [route.page])
   // 记住最近聚焦的输入框：有多个输入框时靠它区分该投给哪个
   useEffect(() => {
     if (!listen) return
