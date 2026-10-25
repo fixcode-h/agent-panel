@@ -16,6 +16,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { GlobalHintHost } from '@/components/ui/hint'
+import { TaskDock } from '@/components/tasks/TaskDock'
 import { useAiWindow } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
@@ -232,6 +233,8 @@ export function App() {
             <AiWindow />
           </Suspense>
         )}
+        {/* 「转成弹窗」收起来的对话：和 AI 窗口同在最外层，切走页面也还在（状态在 lib/mini-task） */}
+        <TaskDock />
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />

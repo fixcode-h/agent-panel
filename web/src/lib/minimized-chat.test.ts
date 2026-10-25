@@ -1,10 +1,10 @@
 /**
- * 浮条位置的纯逻辑：夹回视口、拖动阈值、默认槽位、位置记忆。
- * 两个窗口（AI 处理 / AI 优化）共用这一套，改尺寸和间距只改这里。
+ * 浮条位置的纯逻辑：夹回视口、拖动阈值、默认位置、位置记忆。
+ * 三类浮条（AI 处理 / AI 优化 / 收起的对话）共用这一套，改尺寸和间距只改这里。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_INSET, EDGE, clampPos, loadPos, movedEnough, savePos, slotPos } from '@/lib/minimized-chat'
+import { DEFAULT_INSET, EDGE, clampPos, loadPos, movedEnough, savePos } from '@/lib/minimized-chat'
 
 const size = { w: 240, h: 44 }
 const view = { w: 1200, h: 800 }
@@ -31,12 +31,11 @@ test('movedEnough：手抖（小于阈值）仍然算点击，超过阈值才算
   assert.equal(movedEnough(0, -5), true)
 })
 
-test('slotPos：默认贴右下角，槽位往上错开，两个浮条不会重叠', () => {
-  const a = slotPos(0, size, view)
-  const b = slotPos(1, size, view)
-  assert.deepEqual(a, { x: view.w - size.w - DEFAULT_INSET, y: view.h - size.h - DEFAULT_INSET })
-  assert.ok(b.y < a.y, '第二个浮条要在第一个上面')
-  assert.ok(a.y - b.y >= size.h, '两个浮条不能叠在一起')
+test('默认位置：贴右下角，和 tailwind 的 right-5 / bottom-5 对上', () => {
+  // 没拖过的浮条用 DEFAULT_INSET 定位（MinimizedChat 里的内联样式）；
+  // 屏幕任意时刻只有一个浮条（见 chat-dock.ts），不再按槽位错开
+  assert.equal(DEFAULT_INSET, 20)
+  assert.ok(DEFAULT_INSET >= EDGE, '默认位置不能贴得比拖动留的边还紧')
 })
 
 test('位置记忆：按 id 分开存，刷新后能读回来，读不到时返回 null', () => {

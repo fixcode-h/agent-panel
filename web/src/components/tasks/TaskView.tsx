@@ -45,6 +45,7 @@ import {
   MessageCircleQuestion,
   Copy,
   ClipboardList,
+  PictureInPicture2,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
@@ -70,6 +71,7 @@ import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
+import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { fmtDuration, startedRun } from '@/lib/tasks'
@@ -1367,6 +1369,26 @@ export function TaskView({
                       </MenuItem>
                     </MenuContent>
                   </Menu>
+                  {/* 转成弹窗：把当前对话收成右下角的浮条，页面回到上一级。
+                      只在对话页本体上给：右栏子对话（pane）、AI 窗口里嵌的（embed）不需要——
+                      右栏本来就在对话旁边、AI 窗口自己已经有最小化按钮；导入的任务只能看，不收。
+                      子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
+                      只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」。 */}
+                  {!pane && !embed && !task.imported && !task.parentTaskId && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t('转成弹窗')}
+                      title={t('转成弹窗（对话继续在后台运行）')}
+                      onClick={() => {
+                        minimizeTask({ id: task.id, projectId: task.projectId || undefined })
+                        // 和 AI 窗口的“去对话里看”相反：收起后回上一级，不同时显示对话页和浮条
+                        go(minimizeBackRoute({ projectId: task.projectId || undefined }))
+                      }}
+                    >
+                      <PictureInPicture2 className="h-4 w-4" />
+                    </Button>
+                  )}
                   {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
                   {report && !pane && (
                     <Button
