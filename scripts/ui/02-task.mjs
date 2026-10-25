@@ -18,6 +18,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       await settle(p)
     }
   }
+  /**
+   * 等页面上的提示（toast）全部退场再点标题栏的按钮。
+   * 两件事一起做，缺一不可：
+   * - 提示在右上角，和「任务进度」这类标题栏按钮抢同一个位置，还挂着时会拦掉点击
+   *   （CI 的 30 秒超时就是这条：locator resolved 到了按钮，但点击被 [data-sonner-toast] 截走）
+   * - sonner 在鼠标悬停在提示上时会把自动关闭的计时冻住（expanded），只等不动手就永远等不到，
+   *   所以先把指针挪回左上角再等
+   */
+  const waitToastsGone = async () => {
+    await p.mouse.move(0, 0)
+    await p
+      .waitForFunction(() => document.querySelectorAll('[data-sonner-toast]').length === 0, undefined, {
+        timeout: 15000,
+      })
+      .catch(() => errors.push('提示：15 秒内没有全部退场（会挡住后面的点击）'))
+  }
   // 宽屏右栏默认收起，不占掉一半宽度（用户提的「分析弹窗一打开就占一半」）；按钮在标题栏，点一下展开
   await check(p, '任务-文件面板默认收起')
   const filesPanel = p.locator('[data-task-panel]').first()
@@ -2572,6 +2588,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .last()
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
+  // 关窗口会弹「AI 排查继续在后台进行」：提示在右上角，正盖着「任务进度」，等它退场再点
+  await waitToastsGone()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p

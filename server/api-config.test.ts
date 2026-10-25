@@ -447,6 +447,8 @@ test('API 探针：没填地址、没填密钥、没选模型时不发请求，�
 })
 
 test('API 探针：401 带上游原因，200 但正文不是模型回复也算不通', async () => {
+  // 上游回的正文只写一份（响应体和期望文案共用），期望文案按它用 t() 算，不写死中文
+  const quotaErrorBody = JSON.stringify({ error: { message: 'quota exceeded' } })
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
     if (req.url === '/v1/messages') {
@@ -460,7 +462,7 @@ test('API 探针：401 带上游原因，200 但正文不是模型回复也算�
       return
     }
     // 200 但只有错误对象：有的网关出错也回 200
-    res.end(JSON.stringify({ error: { message: 'quota exceeded' } }))
+    res.end(quotaErrorBody)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address() as { port: number }
@@ -483,7 +485,7 @@ test('API 探针：401 带上游原因，200 但正文不是模型回复也算�
           authHeader: 'x-api-key',
           model: 'm',
         }),
-      /不是模型回复/,
+      { message: t('接口返回的内容不是模型回复：{detail}', { detail: quotaErrorBody }) },
     )
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
