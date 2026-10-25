@@ -66,9 +66,29 @@ export interface TargetFacts {
 /**
  * 该不该直接投给输入框。只有一个输入框时就是它；有多个时只在「焦点在里面」或「刚在里面待过」才投，
  * 否则返回 false 走剪贴板：多输入框（父对话 + 右栏子对话）时猜错会把引用插进另一个对话，
- * 而需求给的口径是「找不到就放剪贴板让用户自己粘」
+ * 而需求给的口径是「找不到就放剪贴板让用户自己粘」。
+ * 从某个输入框的按钮开启的抓取有确定目标，不走这个判断，见 targetsPickedInput
  */
 export const targetsComposer = (f: TargetFacts) => f.count === 1 || f.focused || f.recent
+
+/** 这次抓取是从哪开始的：点某个输入框的按钮，还是按快捷键 */
+export interface PickOriginFacts extends TargetFacts {
+  /** 从某个输入框的按钮进入的抓取 */
+  pinned: boolean
+  /** 那个输入框现在还在页面上（它还登记着） */
+  pinnedAlive: boolean
+}
+
+/**
+ * 抓到的引用该不该直接进输入框（具体的那个由组件挑）。
+ * 从按钮进来的投给那个输入框：点哪个输入框的按钮就填回哪里，不需要猜焦点，多输入框时也不会插错对话；
+ * 那个输入框在抓取期间没了（换了页面、对话关了）就退回剪贴板，不能改成猜别的输入框把引用插到别处。
+ * 快捷键进来的没有目标，仍按焦点 / 最近聚焦判（见 targetsComposer）
+ */
+export function targetsPickedInput(f: PickOriginFacts) {
+  if (f.pinned) return f.pinnedAlive
+  return targetsComposer(f)
+}
 
 export interface PickTargets {
   /** 开启抓取时正在用的那个输入框；没登记输入框（例如快捷键在别的页面按的）时没有 */

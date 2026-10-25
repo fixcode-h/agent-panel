@@ -376,6 +376,58 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await pickBtn.click()
     await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
     await check(d, '元素抓取-悬停', ['抓取元素，左键、右键照常可用', '退出抓取'])
+    // 提示条挡视线（用户报的）：鼠标压到它上面要淡出，移开再淡回来。
+    // 等的是 opacity 本身，不是定时器：淡出有过渡，"等一会儿再看" 会时快时慢
+    const tip = d.locator('[data-pick-tip]')
+    /** 等提示条的透明度落到指定状态（hidden：看不见了；shown：完全回来） */
+    const waitTip = (want, why) =>
+      d
+        .waitForFunction(
+          (hidden) => {
+            const el = document.querySelector('[data-pick-tip]')
+            if (!el) return false
+            const v = Number(getComputedStyle(el).opacity)
+            return hidden ? v < 0.05 : v > 0.95
+          },
+          want === 'hidden',
+          { timeout: 3000 },
+        )
+        .catch(() => errors.push(why))
+    const tipBox = await tip.boundingBox()
+    const tipAt = tipBox && { x: tipBox.x + tipBox.width / 2, y: tipBox.y + tipBox.height / 2 }
+    if (!tipAt) errors.push('元素抓取：找不到提示条，测不了悬停淡出')
+    else {
+      await d.mouse.move(tipAt.x, tipAt.y)
+      await waitTip('hidden', '元素抓取：鼠标移到提示条上没有淡出（还是挡着视线）')
+      await check(d, '元素抓取-提示条淡出')
+      // 指针压在提示条上横向扫过（跨过它内部的 kbd、文字这些子元素）时不能弹回去：
+      // 文档内的 mouseout（relatedTarget 非空）不是「离开窗口」，不能把淡出状态清掉。
+      // 采样放在页面里逐帧取最大 opacity：从外面读只能读到某一瞬间，分不出「弹回过」和「没弹过」
+      const sampling = d.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const el = document.querySelector('[data-pick-tip]')
+            if (!el) return resolve(-1)
+            let max = 0
+            const t0 = performance.now()
+            const tick = () => {
+              max = Math.max(max, Number(getComputedStyle(el).opacity))
+              if (performance.now() - t0 < 700) requestAnimationFrame(tick)
+              else resolve(max)
+            }
+            requestAnimationFrame(tick)
+          }),
+      )
+      await d.mouse.move(tipAt.x - tipBox.width * 0.4, tipAt.y, { steps: 4 })
+      await d.mouse.move(tipAt.x + tipBox.width * 0.4, tipAt.y, { steps: 8 })
+      const peak = await sampling
+      if (peak > 0.5)
+        errors.push(`元素抓取：鼠标在提示条上扫过时它又弹回来了（这段时间最大 opacity ${peak.toFixed(2)}）`)
+      // 淡出只是躲开鼠标：抓取模式还在，移开后提示条要回来
+      await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+      await waitTip('shown', '元素抓取：鼠标移开后提示条没有恢复（看不出还在抓取模式）')
+      if (!(await overlay.count())) errors.push('元素抓取：提示条淡出时退出了抓取模式')
+    }
     // 右键要能正常弹出页面自己的菜单，且不退出抓取（以前右键 = 退出抓取）
     await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2, { button: 'right' })
     if (!(await overlay.count())) errors.push('元素抓取：右键点击后退出了抓取（右键应该正常弹菜单）')
@@ -456,6 +508,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
       if (!quoted.includes(want)) errors.push(`元素抓取：引用里没有「${want}」`)
     await d.keyboard.press('Escape')
+
+    // 提示条淡出的时候，点它原来占的位置仍要抓得到下面的元素：躲开鼠标靠的是坐标判定，
+    // 它自己一直 pointer-events-none，不能因为这一改把点击吞掉（吞了就选不中下面的东西）
+    if (tipAt) {
+      await pickBtn.waitFor({ timeout: 10000 })
+      await pickBtn.click()
+      await overlay.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点击穿透用例没能进入抓取'))
+      await d.mouse.move(tipAt.x, tipAt.y)
+      await waitTip('hidden', '元素抓取：点击穿透用例里提示条没有淡出')
+      const cards = () => d.locator('#task-prompt [data-chip="quote"]').count()
+      const before = await cards()
+      await d.mouse.click(tipAt.x, tipAt.y, { button: 'middle' })
+      const picked = await d
+        .waitForFunction((n) => document.querySelectorAll('#task-prompt [data-chip="quote"]').length > n, before, {
+          timeout: 5000,
+        })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!picked) errors.push('元素抓取：提示条淡出时点它原来占的位置没抓到下面的元素（提示条吃掉了点击）')
+      await overlay
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('元素抓取：点击穿透用例抓完没有退出抓取'))
+      await check(d, '元素抓取-提示条淡出后点击穿透')
+    }
 
     // 换页面时抓取要自动退出：抓取状态是全局一份，不退出的话下一个页面会带着「已经在抓取中」进来，
     // 再按快捷键就成了「退出」而不是「进入」，语义反了
