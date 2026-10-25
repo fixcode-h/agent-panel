@@ -78,16 +78,19 @@ const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boo
 const svg = (paths: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[1.05em] w-[1.05em] shrink-0 opacity-70">${paths}</svg>`
 
-/** 把一段 DOM 读回带标记的文字 */
-function serialize(node: Node): string {
+/** 把一段 DOM 读回带标记的文字。chipText：卡片换成这个文字（复制到剪贴板用），不传就是卡片标记 */
+function serialize(node: Node, chipText?: (chip: Chip) => string | undefined): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.nodeValue ?? '').replace(/\u00a0/g, ' ')
   if (node instanceof HTMLElement) {
     const kind = node.dataset.chip as ChipKind | undefined
-    if (kind) return chipMarker(kind, node.dataset.name ?? '')
+    if (kind) {
+      const chip = { kind, name: node.dataset.name ?? '' }
+      return chipText?.(chip) ?? chipMarker(kind, chip.name)
+    }
     if (node.tagName === 'BR') return '\n'
   }
   let out = ''
-  node.childNodes.forEach((c) => (out += serialize(c)))
+  node.childNodes.forEach((c) => (out += serialize(c, chipText)))
   return out
 }
 
@@ -270,6 +273,7 @@ export function RichInput({
   className,
   preview,
   actions,
+  copyOf,
 }: {
   value: string
   onChange: (v: string) => void
@@ -291,6 +295,12 @@ export function RichInput({
   preview?: Preview
   /** 卡片上的操作：点卡片打开查看、点右上角删除 */
   actions?: ChipActions
+  /**
+   * 卡片复制到剪贴板时的文字（选中卡片按 Ctrl+C 用）：和右键菜单「复制内容 / 复制路径」一致。
+   * 不传或返回 undefined 时用卡片标记。卡片在页面上的文字是截断过的摘要（引用卡片只显示前 40 个字），
+   * 不能靠浏览器原生复制：那样带出去的是摘要，原文和标记都丢了
+   */
+  copyOf?: (chip: Chip) => string | undefined
 }) {
   const el = useRef<HTMLDivElement>(null)
   // 最后一次画进 DOM 的内容：自己输入引起的变化不再画一遍，否则光标会跳。
@@ -299,8 +309,8 @@ export function RichInput({
   /** 输入法组合中：这时候不重画（会打断输入法），组合结束再补 */
   const composing = useRef(false)
   const [composeEnd, setComposeEnd] = useState(0)
-  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions })
-  cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions }
+  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf })
+  cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf }
 
   const emit = useCallback(() => {
     const node = el.current
@@ -616,6 +626,20 @@ export function RichInput({
           // 只接纯文本，别把网页上的样式带进来
           e.preventDefault()
           api.insert(e.clipboardData.getData('text/plain'))
+        }}
+        onCopy={(e) => {
+          // 选中卡片复制时按卡片的真实内容写剪贴板：浏览器原生复制拿到的是卡片上截断过的摘要
+          // （引用卡片只显示前 40 个字），粘回去原文和标记都没了
+          const node = el.current
+          const sel = window.getSelection()
+          if (!node || !sel || !sel.rangeCount) return
+          const r = sel.getRangeAt(0)
+          if (r.collapsed || !node.contains(r.commonAncestorContainer)) return
+          e.preventDefault()
+          e.clipboardData.setData(
+            'text/plain',
+            serialize(r.cloneContents(), (chip) => cb.current.copyOf?.(chip)),
+          )
         }}
       />
       {!value && placeholder && (
