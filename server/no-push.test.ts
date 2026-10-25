@@ -14,6 +14,8 @@ const wt = { path: '/x', branch: 'b', baseBranch: 'main', state: 'active' } as T
 test('子对话的独立分支：git push 被拦下，拉取不受影响；父对话和没开分支的不拦', () => {
   assert.equal(noPushEnv({ parentTaskId: '', worktree: wt } as Task).length, 0, '顶层对话不拦')
   assert.equal(noPushEnv({ parentTaskId: 'p', worktree: null } as Task).length, 0, '没开分支的子对话不拦')
+  assert.equal(noPushEnv({ parentTaskId: '', worktree: null } as Task, 'allow').length, 0, '允许推送的项目不拦')
+  assert.ok(noPushEnv({ parentTaskId: '', worktree: null } as Task, 'deny').length, '项目设置「不推送」时顶层对话也拦')
   const env = noPushEnv({ parentTaskId: 'p', worktree: wt } as Task)
   assert.ok(env.length)
 
