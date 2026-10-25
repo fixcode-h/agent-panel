@@ -15,13 +15,16 @@ import {
   buildWorkflow,
   builtinAgentKeys,
   GENERAL,
-  GENERAL_LEGACY,
   GENERAL_ORIGIN,
+  RETIRED_WORKFLOWS,
 } from '../shared/builtin/workflows.ts'
+import { BEFORE_TIDY, GENERAL_LEGACY } from '../shared/builtin/legacy-workflows.ts'
 import {
   annotateMergedAgents,
   migrateGeneralWorkflow,
   migrateProjectsToGeneral,
+  redirectWorkflowRefs,
+  retiredWorkflows,
   seedBuiltins,
   seedProjectWorkflows,
   upgradeBuiltinAgents,
@@ -186,17 +189,14 @@ test('旧「通用项目」副本：语义没改时升级成合并后的主流�
   assert.ok(saved, '旧副本被升级')
   const next = r.state.workflows.find((x) => x.id === 'w1')!
   const main = next.flows.find((f) => f.id === 'main')!
+  // 整理后的主流程：识别现场与方案 → 实现 → 文档同步，不再有评审、验收和交付节点
   assert.deepEqual(
     main.nodes.map((n) => n.id),
-    ['discover', 'design', 'docs'],
+    ['design', 'impl', 'docs'],
   )
   assert.deepEqual(
-    main.nodes.find((n) => n.id === 'design')!.steps.map((s) => s.id),
-    ['plan', 'impl'],
-  )
-  assert.deepEqual(
-    main.nodes.find((n) => n.id === 'docs')!.steps.map((s) => s.id),
-    ['docsync', 'deliver'],
+    next.flows.map((f) => f.id),
+    ['main'],
   )
   // 坐标和工作流级字段都保留
   assert.equal(main.nodes.find((n) => n.id === 'design')!.x, 222)
@@ -219,9 +219,9 @@ test('旧「通用项目」副本：语义没改时升级成合并后的主流�
   // 用户改过的副本不动
   const edited = structuredClone(r.state)
   const em = edited.workflows.find((x) => x.id === 'w1')!.flows.find((f) => f.id === 'main')!
-  em.nodes.find((n) => n.id === 'discover')!.title = '我改过的'
+  em.nodes.find((n) => n.id === 'design')!.title = '我改过的'
   assert.equal(await migrateGeneralWorkflow(edited, ops), null)
-  assert.ok(GENERAL.flows.find((f) => f.id === 'main')!.nodes.some((n) => n.steps?.length))
+  assert.ok(!GENERAL.flows.find((f) => f.id === 'main')!.nodes.some((n) => n.agent === 'vcs'))
 })
 
 test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行前自动补齐缺的', async () => {
@@ -763,4 +763,153 @@ test('停在上一版的「调研」也能升级：先查模块地图和模块�
   assert.match(explorer.instructions, /先读文档根的/, '调研先查模块地图定位模块')
   assert.match(explorer.instructions, /回写模块文档/, '调研结论回写模块文档')
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0, '再启动不再改')
+})
+
+/** 测试用的内存 ops：新建的东西按顺序编 id，更新的记下来 */
+function memoryOps() {
+  let n = 0
+  const meta = () => ({ id: `m${++n}`, createdAt: '', updatedAt: '' })
+  const updated: Workflow[] = []
+  const ops: BuiltinOps = {
+    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
+    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
+    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
+    createWorkflow: async (w) => ({ ...WorkflowInput.parse(w), ...meta() }),
+    updateWorkflow: async (id, input) => {
+      const w = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
+      updated.push(w)
+      return w
+    },
+  }
+  return { ops, updated }
+}
+
+test('自带工作流默认全部加入：装过一次的删掉后不再装回来，「通用项目」「UE 项目」缺了就补', async () => {
+  const { ops } = memoryOps()
+  const empty = { agents: [], categories: [], tags: [], workflows: [] }
+  const r = await seedProjectWorkflows(empty, ops)
+  assert.deepEqual(
+    r.state.workflows.map((w) => w.origin).sort(),
+    BUILTIN_WORKFLOWS.map((w) => `builtin:${w.key}`).sort(),
+    '第一次启动全部装上',
+  )
+  assert.deepEqual([...r.seeded].sort(), BUILTIN_WORKFLOWS.map((w) => w.key).sort())
+  // 用到的角色随之建好：每个工作流节点都指向本机的角色
+  const ids = new Set(r.state.agents.map((a) => a.id))
+  for (const w of r.state.workflows)
+    for (const f of w.flows)
+      for (const nd of f.nodes) for (const s of nodeSteps(nd)) if (s.kind === 'agent') assert.ok(ids.has(s.agentId))
+  // 用户删掉「Bug 修复」和「通用项目」：下次启动只补「通用项目」
+  const left = r.state.workflows.filter((w) => w.origin !== 'builtin:bugfix' && w.origin !== GENERAL_ORIGIN)
+  const r2 = await seedProjectWorkflows({ ...r.state, workflows: left }, ops, r.seeded)
+  assert.deepEqual(
+    r2.created.map((w) => w.origin),
+    [GENERAL_ORIGIN],
+  )
+  // 以后新加的自带工作流（不在 seeded 里）照样自动装
+  const r3 = await seedProjectWorkflows(
+    r2.state,
+    ops,
+    r.seeded.filter((k) => k !== 'bugfix'),
+  )
+  assert.deepEqual(
+    r3.created.map((w) => w.origin),
+    ['builtin:bugfix'],
+  )
+})
+
+test('整理改过的工作流：停在整理前那一版、没改过的副本升级，再启动不再改；没改的不登记旧版', async () => {
+  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
+  for (const def of BUILTIN_WORKFLOWS) {
+    const legacy = LEGACY_WORKFLOWS[def.key] ?? []
+    if (!legacy.length) continue
+    // 登记的旧版不能和现在的定义一样，否则每次启动都会重写一遍
+    assert.notDeepEqual(legacy.at(-1), { document: def.document, flows: def.flows }, `${def.key} 登记的旧版没变`)
+  }
+  for (const key of ['project-general', 'project-ue', 'openspec', 'migration', 'bugfix', 'review', 'deps', 'release']) {
+    const def = BUILTIN_WORKFLOWS.find((w) => w.key === key)!
+    const old = BEFORE_TIDY[key]
+    const w: Workflow = {
+      ...WorkflowInput.parse({
+        ...buildWorkflow({ ...def, document: old.document, flows: old.flows }, (k) => k),
+        origin: `builtin:${key}`,
+      }),
+      id: `old-${key}`,
+      createdAt: '',
+      updatedAt: '',
+    }
+    const { ops, updated } = memoryOps()
+    const r = await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [w] }, ops, [
+      ...BUILTIN_WORKFLOWS.map((x) => x.key),
+    ])
+    assert.equal(updated.length, 1, `${key} 的旧副本升级`)
+    const next = r.state.workflows.find((x) => x.id === w.id)!
+    // 改代码的工作流不再带评审、验收和提交节点
+    for (const f of next.flows)
+      for (const nd of f.nodes)
+        for (const s of nodeSteps(nd)) {
+          assert.ok(!s.review || key === 'openspec', `${key}/${nd.title} 还挂着验收流程`)
+          if (key !== 'release') assert.notEqual(s.agentId, 'vcs', `${key}/${nd.title} 还有提交节点`)
+        }
+    const again = memoryOps()
+    await seedProjectWorkflows(
+      { ...r.state, workflows: [next] },
+      again.ops,
+      BUILTIN_WORKFLOWS.map((x) => x.key),
+    )
+    assert.equal(again.updated.length, 0, `${key} 再启动不再改`)
+  }
+})
+
+test('合并掉的工作流：没改过的副本删掉、项目引用改指到接替的，改过的保留', () => {
+  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
+  const make = (key: string, id: string, def = BEFORE_TIDY[key]): Workflow => ({
+    ...WorkflowInput.parse({
+      name: key,
+      mainAgentId: 'developer',
+      entryFlowId: 'main',
+      document: def.document,
+      flows: buildWorkflow({ ...GENERAL, document: def.document, flows: def.flows }, (k) => k).flows,
+      origin: `builtin:${key}`,
+    }),
+    id,
+    createdAt: '',
+    updatedAt: '',
+  })
+  const general = make('project-general', 'g', { document: GENERAL.document, flows: GENERAL.flows })
+  const ue = make('project-ue', 'u', BEFORE_TIDY['project-ue'])
+  const daily = make('daily-dev', 'd')
+  const ueDev = make('ue-dev', 'ud')
+  const boot = { ...make('bootstrap', 'b'), document: '我改过的说明' }
+  const list = retiredWorkflows({ agents: mine, workflows: [general, ue, daily, ueDev, boot] })
+  assert.deepEqual(
+    list.map((r) => [r.workflow.id, r.into]),
+    [
+      ['d', 'g'],
+      ['ud', 'u'],
+    ],
+    '没改过的删掉，改过的「项目初始化」保留',
+  )
+  for (const k of Object.keys(RETIRED_WORKFLOWS)) assert.ok(BEFORE_TIDY[k], `${k} 留了整理前的定义`)
+
+  const project = Project.parse({
+    id: 'p',
+    name: '项目',
+    createdAt: '',
+    updatedAt: '',
+    workflowId: 'd',
+    workflowIds: ['d', 'g', 'b'],
+    workflowParams: { d: { docRoot: 'docs' } },
+  })
+  const other = Project.parse({ id: 'q', name: '别的', createdAt: '', updatedAt: '', workflowId: 'b' })
+  const cat = ProjectCategory.parse({ id: 'c', name: '分类', createdAt: '', updatedAt: '', workflowId: 'ud' })
+  const refs = redirectWorkflowRefs([project, other], [cat], { d: 'g', ud: 'u' })
+  assert.equal(refs.projects.length, 1, '没引用删掉的工作流的项目不动')
+  assert.equal(refs.projects[0].workflowId, 'g')
+  assert.deepEqual(refs.projects[0].workflowIds, ['g', 'b'], '可选列表去重')
+  assert.deepEqual(refs.projects[0].workflowParams, { g: { docRoot: 'docs' } }, '暴露项取值搬过去')
+  assert.deepEqual(
+    refs.categories.map((c) => c.workflowId),
+    ['u'],
+  )
 })

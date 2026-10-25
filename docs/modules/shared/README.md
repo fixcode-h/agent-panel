@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-24
+- analyzed_at: 2026-10-25（本轮核对 `shared/plan.ts` 的合并语义和等待项种类，其余内容沿用 2026-10-24 的分析）
 
 ## 职责
 
@@ -13,6 +13,13 @@
 - CLI 注册表：内置 CLI 定义在 `shared/clis/*.json`，由 `shared/clis.ts` 加载；参数拼装、输出解析方式、支持的能力、Skill 和说明文件位置都写在定义里，面板其他地方按字段走。Agent 的回复语言跟随面板设置，完整规则（正文和思考过程）、提示词末尾的提醒句、Command Code 通过 mod 追加系统提示词时的插件源码都在 `shared/prompt-lang.ts`。
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
+- 对话的执行计划（`shared/plan.ts`）：Agent 用 `set_plan` 交步骤，这里把交上来的列表和面板自己的状态对齐，界面画计划弹窗、服务端改状态都用它。规则逐条写在文件头注释里：最多两层（主步骤和子步骤）；整份列表和只交变更（`partial`）两种提交方式；完成的步骤锁死，改它删它都无效；全部完成就收起计划（`doneAt`）；等待中的步骤由 `settleWait` 按 `kind` + `ref` 收口；收尾（`wrapUp`）由面板加在最后，Agent 漏写、删掉、挪到中间都会被放回。
+  2026-10-25 修掉的合并语义、新加的等待项种类，以及对应的回归，之后改这个文件要守住：
+  - 合并一层列表时，`partial: true` 下**位置由计划原有顺序决定，交上来的顺序只决定谁被更新**，这次新加的步骤追加到最后。以前漏写项按旧下标 `splice` 回去，模型把新步骤写在前面时两条会互换位置（id 顺序和数组顺序不一致），界面上的计数跟着来回变。
+  - 交上来的项对回已有项：先按 `id`，其次标题**完全一致**，再次归一化后一致（`normTitle`：NFKC + 去掉空白 / 标点 / 符号 + 小写）。更大幅度的标题改写**不猜**——把「修登录文案」并到「修登录超时」会把没做完的步骤标成完成，比多出一条步骤更糟；这时新加一步，并在返回给 Agent 的说明里点名那些没对上的未完成步骤「这次没交上来，还按原来的状态留在计划里」。
+  - `settleWait` 成功时清掉 note 里面板写的过时说明（前缀是导出的常量 `HOLD_PREFIX`「还在等它：」），Agent 自己写的备注不动。
+  - 等待项 `PlanWait.kind` 有三种：`background`（后台命令编号）、`child`（子对话 id）、`helper`（`spawn_agents` 派出的子任务步骤 id）。`helper` 由 `shared/engine.ts` 的 `spawn` 用 `bindWait` 登记，`settleHelpers` 里的 `settleHelperWaits` 按子任务的真实结果收口：成功标完成，失败或被终止退回进行中并写清原因。
+  - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`）。
 - 内置内容：内置角色和工作流模板在 `shared/builtin/`，界面文案的英文在 `shared/locales/en/`。
 - 本机生图（`shared/local-image.ts`）：`LOCAL_FILES` 是 ComfyUI 的下载清单（`dir` / `file` / `url` / `gb`），`LOCAL_MODELS` 是按用途分组的模型条目（决定设置页「本机生图」列出什么、要多少显存，也是工作流可选的内置模型），`LOCAL_MODEL_GROUPS` 是分组顺序；同一文件还负责生成内置工作流的节点图、`{{prompt}}` / `{{negative}}` / `{{width}}` / `{{height}}` / `{{count}}` / `{{seed}}` / `{{layout}}` 的替换、工作流校验和自动挑选。
   2026-10-24 新增 MOSS-Image（`family: 'moss'`，Apache-2.0，`base` 1024，`natural`）：`moss-image` 用 int8 权重（`diffusion_models` 5.4GB、`text_encoders` 7.3GB、`vae` 0.25GB，`vram` 16），`moss-image-bf16` 用 bf16 权重（10.2GB、19.3GB 加同一个 `vae`，`vram` 32）。`localWorkflow` 的 `moss` 分支：`UNETLoader` + `CLIPLoader`（`type: moss_image`）+ `VAELoader` + `SkipLayerGuidanceDiTSimple`（`single_layers: '22'`，0–0.5）+ `KSampler`（25 步、CFG 2.5、`er_sde`、`simple`）；int8 和 bf16 共用同一节点图，文件按模型实际带的取。内置工作流 `game-moss-layout` 的正向提示词写 `{{layout}}`，没有布局时回退成描述。

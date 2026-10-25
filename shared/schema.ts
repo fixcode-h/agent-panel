@@ -1338,9 +1338,12 @@ export type TaskTodo = z.infer<typeof TaskTodo>
 export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done'])
 export type PlanStatus = z.infer<typeof PlanStatus>
 
-/** 步骤在等的东西：后台命令（编号）、子对话（id）；结果回来时按它找到步骤 */
+/**
+ * 步骤在等的东西：后台命令（编号）、子对话（id）、子任务（spawn_agents 派出的步骤 id）；
+ * 结果回来时按 kind + ref 找到挂在计划里的那一步
+ */
 export const PlanWait = z.object({
-  kind: z.enum(['background', 'child']),
+  kind: z.enum(['background', 'child', 'helper']),
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),

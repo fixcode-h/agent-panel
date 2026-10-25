@@ -116,8 +116,8 @@ export const EN_EXTEND: Record<string, string> = {
   '已添加「{name}」，新建了 {n} 个角色': 'Added “{name}” and created {n} role(s)',
   '已添加「{name}」': 'Added “{name}”',
   内置工作流: 'Built-in workflows',
-  '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 Agent。':
-    'Ready-made workflows for everyday development, UE / P4 and the art asset pipeline. Adding one also creates the roles it uses (existing ones are reused); bundled skills those roles reference are installed into the agent automatically when they run.',
+  '自带的工作流启动时已经全部加入，用到的角色也随之建好；删掉的可以在这里重新添加。角色引用的自带 Skill 在执行时自动装进 Agent。':
+    'All bundled workflows are added at startup, together with the roles they use; any you delete can be added back here. Bundled skills those roles reference are installed into the agent automatically when they run.',
   已添加: 'Added',
   '{n} 步': '{n} steps',
   '将新建 {n} 个角色': 'will create {n} role(s)',
@@ -130,8 +130,8 @@ export const EN_EXTEND: Record<string, string> = {
   添加内置工作流: 'Add built-in workflows',
   '已添加 {n} 个角色': 'Added {n} roles',
   内置角色: 'Built-in roles',
-  '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 Agent。':
-    'Roles organized for planning, development, quality, docs and delivery, UE, and art. They all include “Common rules”. They are created only when you click Add, and the bundled skills they use are installed into the agent when they run.',
+  '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。自带工作流用到的角色启动时已经随之建好，删掉的可以在这里重新添加；引用的自带 Skill 在执行时自动装进 Agent。':
+    'Roles organized for planning, development, quality, docs and delivery, UE, and art. They all include “Common rules”. Roles used by the bundled workflows are created at startup; any you delete can be added back here. The bundled skills they use are installed into the agent when they run.',
   全部添加: 'Add all',
   添加内置角色: 'Add built-in roles',
   还可以添加整理好的内置角色: 'You can also add ready-made built-in roles',

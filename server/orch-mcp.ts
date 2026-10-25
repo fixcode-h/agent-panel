@@ -689,7 +689,16 @@ export function orchTools(o: Orchestra) {
             description: o.autoReturn
               ? '派子任务并行处理互不相关的几件事（收集资料、查代码、核实结论、出计划），马上返回它们的 id。派完就可以结束这一轮回复：对话会停下等它们全部做完，结果自动交回给你接着做，不用轮询。子任务不能再派子任务、不能启动工作流或子对话。只拆真正能同时做的事，小事自己做更快。'
               : '派子任务并行处理互不相关的几块工作（收集资料、查代码、核实结论、出计划），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果，节点结束前没取的结果也会并进你的输出。子任务不能再派子任务。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
-            inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
+            inputSchema: {
+              type: 'object',
+              properties: {
+                tasks: tasksField(o),
+                // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
+                // 计划里这一步标完成；失败或被终止退回进行中并写清原因
+                ...(o.plans ? { step: stepField('这批子任务') } : {}),
+              },
+              required: ['tasks'],
+            },
           },
           {
             name: 'stop_subtask',
@@ -972,13 +981,14 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
           resume: str(x.resume) || undefined,
           review: briefOf(x.review),
         }))
-      const r = o.spawn(list)
+      // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
+      const stepId = str(a?.step).trim()
+      const r = o.spawn(list, stepId || undefined)
       if (r.error) return text(r.error, true)
-      return text(
-        o.autoReturn
-          ? `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n可以结束这一轮回复了，它们全部做完后结果会自动交回给你。`
-          : `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n用 wait_agents 取结果。`,
-      )
+      const body = o.autoReturn
+        ? `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n可以结束这一轮回复了，它们全部做完后结果会自动交回给你。`
+        : `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n用 wait_agents 取结果。`
+      return text([body, r.info].filter(Boolean).join('\n'))
     }
     case 'stop_subtask': {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String).filter((x: string) => x.trim()) : []
