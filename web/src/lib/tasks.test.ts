@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
+import { apiQueueWait, groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -260,4 +260,32 @@ test('groupTools：相邻几次把同一段话交给不同子对话合成一行�
     groups.map((g) => g.length),
     [3, 1, 1, 1],
   )
+})
+
+/**
+ * 截图上那个矛盾：左边写着「排队等 API 名额 · 下一个就是这里」，右边同一行显示 188.7 token/s。
+ * 这一轮其实在输出，只是等完子任务拿回名额时排上了队 —— 不能显示成「还没开始」。
+ */
+test('状态行：让出名额后拿回的排队不显示成「排队等名额」', () => {
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'yield' } }, false), undefined)
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 3, reason: 'yield' } }, false), undefined)
+})
+
+test('状态行：开跑前真的在排队时照常显示', () => {
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 2, reason: 'start' } }, false)?.ahead, 2)
+  assert.deepEqual(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, false), {
+    api: 'OpenDesign',
+    ahead: 0,
+    reason: 'start',
+  })
+})
+
+test('状态行：已经在出 token 时不当成在排队', () => {
+  // 实时速度大于 0 就是真的在输出，两个信息同时出现时以「在输出」为准
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, true), undefined)
+})
+
+test('状态行：没有标记时什么都不显示', () => {
+  assert.equal(apiQueueWait({}, false), undefined)
+  assert.equal(apiQueueWait({}, true), undefined)
 })
