@@ -34,7 +34,7 @@ export const uiActions = [
     name: 'ui.open_settings',
     title: '打开设置',
     description:
-      '在页面上打开设置窗口。section 可选：general、fonts、categories、tags、global-lessons、models、deploy、apis、assist、integrations、remote、local-image、styles、data、usage、update。',
+      '在页面上打开设置窗口。section 可选：general、fonts、categories、tags、global-lessons、models、deploy、apis、assist、integrations、remote、network、local-image、styles、data、usage、update。',
     level: 'write',
     input: z.object({ section: z.string().optional().describe('打开哪一栏，不写是「常规」') }),
     run: async (a, ctx) => pushUi(ctx, 'open_settings', a),

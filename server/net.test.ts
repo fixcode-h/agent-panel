@@ -13,6 +13,7 @@ const data = await mkdtemp(path.join(tmpdir(), 'agent-panel-net-data-'))
 process.env.AGENT_PANEL_DATA = data
 const {
   attemptOrder,
+  configuredProxy,
   isLocalUrl,
   localProxyCandidates,
   markProxyBad,
@@ -205,6 +206,23 @@ test('一开始走哪条路：设置优先，没写协议补 http://，socks 照
   assert.deepEqual(planFor(RELEASE_URL, '', '', ''), { kind: 'direct', fallback: true })
 })
 
+test('启用代理的开关：关着时不用设置里的地址，环境变量和自动探测照旧', () => {
+  // 开着：用设置里的地址，前后空格去掉
+  assert.equal(configuredProxy({ proxy: ' 127.0.0.1:7890 ', networkProxyEnabled: true }), '127.0.0.1:7890')
+  // 关着：按没填处理，后面的回退逻辑（环境变量、本机探测、直连）照旧
+  assert.equal(configuredProxy({ proxy: '127.0.0.1:7890', networkProxyEnabled: false }), '')
+  // 开关关掉、地址留空的组合也不需要特判
+  assert.equal(configuredProxy({ proxy: '', networkProxyEnabled: false }), '')
+  // 关掉之后，真的算出来的是「环境变量 → 直连」，不会再看设置里的地址
+  const set = configuredProxy({ proxy: 'http://127.0.0.1:7890', networkProxyEnabled: false })
+  assert.deepEqual(planFor(RELEASE_URL, set, 'http://127.0.0.1:10809', ''), {
+    kind: 'proxy',
+    key: 'http://127.0.0.1:10809',
+    shown: 'http://127.0.0.1:10809',
+  })
+  assert.deepEqual(planFor(RELEASE_URL, set, '', ''), { kind: 'direct', fallback: true })
+})
+
 test('NO_PROXY 的写法：域名后缀、通配、端口和前缀点', () => {
   assert.ok(noProxy(RELEASE_URL, 'github.com'))
   assert.ok(noProxy(RELEASE_URL, '.github.com,example.com'))
@@ -251,7 +269,7 @@ test('直连失败、本机没有代理：保持直连失败，并说明没有�
   await assert.rejects(netFetchWith(deps, RELEASE_URL), (e: Error) => {
     assert.match(e.message, /UND_ERR_CONNECT_TIMEOUT/)
     assert.ok(e.message.includes(t('没有发现运行中的本机代理。')), e.message)
-    assert.ok(e.message.includes('网络代理'), e.message)
+    assert.ok(e.message.includes(t('访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。')), e.message)
     return true
   })
   assert.deepEqual(calls, ['direct'])
@@ -377,7 +395,7 @@ test('最后一条是本机代理时，错误里仍然保留设置页的提示',
     discover: async () => [PROXY],
   })
   await assert.rejects(netFetchWith(deps, RELEASE_URL), (e: Error) => {
-    assert.ok(e.message.includes(t('访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。')), e.message)
+    assert.ok(e.message.includes(t('访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。')), e.message)
     assert.ok(
       e.message.includes(
         t('尝试过的路径：{paths}。', {
