@@ -197,7 +197,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .map((row) => {
             // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
             const title = [...row.querySelectorAll('button')].find((b) =>
-              // 「打开子对话」只有标题按钮有；切换下拉的 title 是「切换子对话」，不能选中它
               (b.getAttribute('title') || '').includes('打开子对话'),
             )
             // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
@@ -315,47 +314,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           await check(p, '子对话-整段文本可点')
         }
       }
-      // 标题左边的切换下拉：列出全部子对话，当前项带选中标记，点另一项就切换
+      // 运行区：有几个子对话就列几行，行前不再放切换下拉（右栏标题旁的切换下拉照旧）
       {
-        const trigger = p.locator('[aria-label="运行中"] button[aria-label="切换子对话"]').first()
-        if (!(await trigger.count())) errors.push('运行区：子对话行左边没有切换子对话的按钮')
-        else {
-          await trigger.click()
-          await p
-            .locator('[role="menu"] [data-child-item]')
-            .first()
-            .waitFor({ timeout: 3000 })
-            .catch(() => {})
-          const count = await p.locator('[role="menu"] [data-child-item]').count()
-          if (count < 2) errors.push(`切换子对话：下拉里只有 ${count} 项，应该列出全部子对话`)
-          if (!(await p.locator('[role="menu"] [data-current]').count()))
-            errors.push('切换子对话：下拉里没有标出当前打开的那一项')
-          await check(p, '子对话-切换下拉')
-          const next = p.locator('[role="menu"] [data-child-item]:not([data-current])').first()
-          const title = await next
-            .evaluate((el) => (el.querySelector('span.truncate')?.textContent || '').trim())
-            .catch(() => '')
-          if (!title) errors.push('切换子对话：下拉里没有可以切换的另一项')
-          else {
-            await next.click()
-            const switched = await p
-              .waitForFunction(
-                (name) => {
-                  const menu = document.querySelector('[role="menu"]')
-                  const pane = document.querySelector('aside[aria-label="子对话"]')
-                  return !menu && !!pane && (pane.innerText || '').includes(name)
-                },
-                title,
-                { timeout: 3000 },
-              )
-              .then(
-                () => true,
-                () => false,
-              )
-            if (!switched) errors.push(`切换子对话：选了「${title}」后下拉没关或右栏没有切换过去`)
-            await check(p, '子对话-切换下拉-打开')
-          }
-        }
+        if (await p.locator('[aria-label="运行中"] button[aria-label="切换子对话"]').count())
+          errors.push('运行区：子对话行前面不该再有切换子对话的下拉')
+        const kidRows = await p.evaluate(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((b) =>
+              [...b.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+            ).length,
+        )
+        if (kidRows < 2) errors.push(`运行区：在跑的子对话应该一个一行，现在只有 ${kidRows} 行`)
       }
       // 右栏子对话标题行左侧的切换下拉：和运行区那处一致，Esc 关、鼠标和键盘都要真的切过去
       {
@@ -427,9 +396,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           // 键盘：方向键走到一个不是当前项的条目，回车切换
           const nowTitle = await paneTitle()
           await openMenu()
+          // 焦点落进菜单再按键：菜单刚挂上时焦点还在按钮上，按下去的方向键被吞掉（CI 上偶发）
+          await p
+            .waitForFunction(() => !!document.activeElement?.closest('[role="menu"]'), null, { timeout: 3000 })
+            .catch(() => {})
           let picked = ''
           for (let i = 0; i < 12 && !picked; i++) {
             await p.keyboard.press('ArrowDown')
+            // 高亮是按键后下一帧才标上的：等到有一项高亮再读，不然读到的还是按键前的状态
+            await p
+              .waitForFunction(
+                () => !!document.querySelector('[role="menu"] [data-child-item][data-highlighted]'),
+                null,
+                {
+                  timeout: 1000,
+                },
+              )
+              .catch(() => {})
             const hi = (await menuItems()).find((x) => x.highlighted)
             if (hi && hi.title !== nowTitle) picked = hi.title
           }
@@ -624,14 +607,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const midWide = await measureNarrow()
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
-    if (
-      !(await p.evaluate(() =>
-        [...document.querySelectorAll('[aria-label="运行中"] button[aria-label="切换子对话"]')].some(
-          (b) => b.getBoundingClientRect().width > 0,
-        ),
-      ))
-    )
-      errors.push('运行区（1024px）：行够宽，左边的切换下拉却不见了')
     await check(p, '子对话-运行区1024')
     await p.setViewportSize({ width: 1440, height: 900 })
     await p.reload()

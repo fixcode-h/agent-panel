@@ -16,7 +16,9 @@ import {
   planSpan,
   refreshChildWait,
   runningStepId,
+  childStepId,
   settleWait,
+  syncKids,
   unsummarized,
 } from './plan.ts'
 
@@ -553,6 +555,70 @@ test('合回分支的收尾只由面板标完成，新加的工作流步骤插�
   )
 })
 
+test('新开计划时 Agent 把上一份的收尾也抄过来：认成面板的收尾，只有一条', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'merge')
+  assert.ok(markWrapUp(task, 'merge', 'done'))
+  assert.equal(activePlan(task), undefined, '前提：上一份计划合进去后结束')
+  // 新计划照抄了上一份的收尾、标了完成：不再另加一条没做完的收尾（合没合回以 git 为准）
+  applyPlan(
+    task,
+    {
+      steps: [
+        { title: '加 OpenDesign 条目', status: 'done' },
+        { title: '收尾：合回父对话所在的分支', status: 'done' },
+      ],
+    },
+    undefined,
+    'merge',
+  )
+  let plan = task.plans!.at(-1)!
+  assert.deepEqual(
+    plan.steps.map((s) => s.wrapUp ?? ''),
+    ['', 'merge'],
+  )
+  assert.notEqual(plan.doneAt, '', '都做完了，计划收起')
+  // 合回后回顾一下做了什么（全是做完的步骤）：不加收尾，不然永远「只剩合回」
+  applyPlan(task, { steps: [{ title: '回顾', status: 'done' }] }, undefined, 'merge')
+  plan = task.plans!.at(-1)!
+  assert.equal(
+    plan.steps.some((s) => s.wrapUp),
+    false,
+  )
+  // 有要做的事、又抄了一条没做完的收尾：只有一条，放在最后
+  applyPlan(task, { steps: [{ title: '收尾: 合回父对话所在的分支' }, { title: '修评审意见' }] }, undefined, 'merge')
+  plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => [s.title, s.wrapUp ?? '']),
+    [
+      ['修评审意见', ''],
+      ['收尾：合回父对话所在的分支', 'merge'],
+    ],
+  )
+  // 计划里已经有面板的收尾，Agent 又写了一条同名的：去掉 Agent 那条
+  applyPlan(
+    task,
+    { partial: true, steps: [{ title: '收尾：合回父对话所在的分支（自己写的）', status: 'done' }] },
+    undefined,
+    'merge',
+  )
+  assert.equal(activePlan(task)!.steps.filter((s) => s.title.startsWith('收尾')).length, 1)
+})
+
+test('同一份计划里做完的收尾之后又加了步骤：重新打开挪到最后，不另加一条', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }, { title: '补测试' }] }, undefined, 'p4')
+  const plan = activePlan(task)!
+  const wrap = plan.steps.at(-1)!
+  // P4 收尾先做完了，「补测试」还没做，计划不收起
+  applyPlan(task, { partial: true, steps: [{ id: wrap.id, title: wrap.title, status: 'done' }] }, undefined, 'p4')
+  applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'p4')
+  const steps = activePlan(task)!.steps
+  assert.equal(steps.filter((s) => s.wrapUp).length, 1)
+  assert.equal(steps.at(-1)!.id, wrap.id)
+  assert.equal(steps.at(-1)!.status, 'pending')
+})
+
 test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划里没有收尾步骤', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: '改代码' }] })
@@ -593,4 +659,139 @@ test('父对话收尾子对话后刷新计划：计划里没挂它时点明要 A
   assert.match(text, /没有步骤在等子对话「登录页」/)
   assert.equal(activePlan(task)!.steps[0].status, 'running', '没挂等待的步骤不替 Agent 乱标')
   assert.equal(refreshChildWait(fresh(), { id: 'kid', title: 'x' }, { settle: 'ok', why: '' }), '')
+})
+
+test('子对话没指定步骤：按标题对上说它的那一步，给它发消息还挂原来那一步', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: '把 OpenDesign 加进内置厂家列表与协议地址', status: 'running' },
+      { title: '默认代理地址改为 127.0.0.1:10808 并让自动探测优先用它' },
+      { title: '子任务弹窗加 AI 分析，复用现有分析窗口' },
+    ],
+  })
+  assert.equal(childStepId(task, 'a', '内置 OpenDesign API 厂家'), '1')
+  bindWait(task, '1', { kind: 'child', ref: 'a', label: '内置 OpenDesign API 厂家' })
+  assert.equal(childStepId(task, 'b', '默认代理地址改为 127.0.0.1:10808'), '2')
+  bindWait(task, '2', { kind: 'child', ref: 'b', label: '代理' })
+  assert.equal(childStepId(task, 'c', '子任务弹窗加 AI 分析'), '3')
+  // 给 b 发后续消息：还挂第 2 步
+  assert.equal(childStepId(task, 'b'), '2')
+  // 对不上的挂在正在做的那一步
+  assert.equal(childStepId(task, 'd', '整理文档'), '1')
+})
+
+test('一次把几个没开始的步骤直接标完成：按顺序摊开上次记时间到现在这段，不记成 0 秒', () => {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const base = Date.parse('2026-10-25T01:00:00.000Z')
+  const task = fresh()
+  applyPlan(
+    task,
+    { steps: [{ title: 'A' }, { title: 'B' }, { title: 'C', children: [{ title: 'C1' }, { title: 'C2' }] }] },
+    iso(base),
+  )
+  applyPlan(
+    task,
+    {
+      steps: [
+        { id: '1', title: 'A', status: 'done' },
+        { id: '2', title: 'B', status: 'done' },
+      ],
+      partial: true,
+    },
+    iso(base + 60_000),
+  )
+  const [a, b, c] = task.plans[0].steps
+  assert.deepEqual([a.startedAt, a.endedAt], [iso(base), iso(base + 30_000)])
+  assert.deepEqual([b.startedAt, b.endedAt], [iso(base + 30_000), iso(base + 60_000)])
+  // 子步骤直接标完成：主步骤跟着收，时间取子步骤最早开工、最晚做完
+  applyPlan(
+    task,
+    {
+      steps: [
+        {
+          id: '3',
+          title: 'C',
+          children: [
+            { title: 'C1', status: 'done' },
+            { title: 'C2', status: 'done' },
+          ],
+        },
+      ],
+      partial: true,
+    },
+    iso(base + 120_000),
+  )
+  assert.equal(c.status, 'done')
+  assert.deepEqual([c.children[0].startedAt, c.children[1].endedAt], [iso(base + 60_000), iso(base + 120_000)])
+  assert.deepEqual([c.startedAt, c.endedAt], [iso(base + 60_000), iso(base + 120_000)])
+  assert.equal(planSpan(task.plans[0], base + 999_000), 120_000, '总用时等于各步相加')
+})
+
+test('步骤只在备注里写了「等待 子对话 id」：自动挂上等待，用时从子对话创建算起，子对话完成就标完成', () => {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const base = Date.parse('2026-10-25T01:00:00.000Z')
+  const kids = [
+    {
+      id: '1089f02e-aaaa-bbbb-cccc-000000000001',
+      title: '默认代理改端口',
+      createdAt: iso(base - 600_000),
+      done: false,
+    },
+    {
+      id: 'd3c7b6be-aaaa-bbbb-cccc-000000000002',
+      title: '子任务弹窗加 AI 分析',
+      createdAt: iso(base - 300_000),
+      done: false,
+    },
+  ]
+  const task = fresh()
+  applyPlan(
+    task,
+    {
+      steps: [
+        { title: '默认代理改 127.0.0.1:10808', status: 'waiting', note: '等待 1089f02e 收尾回合并回' },
+        { title: '子任务弹窗加 AI 分析' },
+        { title: '汇总' },
+      ],
+    },
+    iso(base),
+    undefined,
+    kids,
+  )
+  const [s1, s2, s3] = task.plans[0].steps
+  assert.equal(s1.waits[0]?.ref, kids[0].id, '备注里的 id 缩写对上了子对话')
+  assert.equal(s1.startedAt, iso(base - 600_000), '从子对话创建时算起')
+  assert.equal(s2.status, 'waiting', '标题就是子对话的标题：挂上等待')
+  assert.equal(s2.startedAt, iso(base - 300_000))
+  assert.equal(s3.waits.length, 0)
+  assert.equal(planSpan(task.plans[0], base), 600_000, '总用时不比单项短')
+  // Agent 在子对话合回前标完成：退回等待
+  applyPlan(
+    task,
+    { steps: [{ id: '1', title: s1.title, status: 'done' }], partial: true },
+    iso(base + 1000),
+    undefined,
+    kids,
+  )
+  assert.equal(s1.status, 'waiting')
+  // 子对话收尾完成：按它完成的时间标完成
+  kids[0] = { ...kids[0], done: true, endedAt: iso(base + 120_000) } as (typeof kids)[0]
+  assert.equal(syncKids(task, kids, iso(base + 180_000)), true)
+  assert.equal(s1.status, 'done')
+  assert.equal(s1.endedAt, iso(base + 120_000))
+  assert.equal(syncKids(task, kids, iso(base + 190_000)), false, '没变化就不报变')
+})
+
+test('换了一份计划：上一份里还在等的子对话跟着同名步骤走，结果回来照样标完成', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '修登录' }, { title: '整理' }] })
+  bindWait(task, '1', { kind: 'child', ref: 'kid-1', label: '修登录' })
+  finishPlan(task)
+  const kids = [{ id: 'kid-1', title: '修复登录误报', createdAt: '2026-10-25T00:00:00.000Z', done: false }]
+  applyPlan(task, { steps: [{ title: '修登录', status: 'waiting' }, { title: '发版' }] }, undefined, undefined, kids)
+  const plan = activePlan(task)!
+  assert.equal(plan.steps[0].waits[0]?.ref, 'kid-1')
+  settleWait(task, 'child', 'kid-1', true)
+  assert.equal(plan.steps[0].status, 'done')
 })
