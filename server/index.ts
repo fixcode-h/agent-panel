@@ -102,6 +102,7 @@ import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts
 import { installLogging, log, logFile } from './log.ts'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
+import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -688,6 +689,18 @@ app.post('/projects/:id/lessons', async (c) => {
     title: body.title,
     source: 'user',
   })
+  return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
+})
+
+// AI 评审项目教训：用户在评审卡片上逐条点「应用」，一次一条
+app.post('/projects/:id/lessons/review', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { item?: unknown } | null
+  const review = parseLessonReview(
+    '```' + LESSON_REVIEW_LANG + '\n' + JSON.stringify({ items: [body?.item] }) + '\n```',
+  )
+  const item = review?.items[0]
+  if (!item) return bad(c, t('评审建议的格式不对'))
+  const r = await lessons.review(c.req.param('id'), item)
   return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
 })
 
