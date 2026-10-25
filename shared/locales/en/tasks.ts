@@ -1106,4 +1106,9 @@ export const EN_TASKS: Record<string, string> = {
   '在这个分析对话里，把这条优化补进 agent-panel 源代码里的内置定义':
     "In this analysis conversation, add this optimization to the built-in definition in agent-panel's source",
   在这个分析对话里直接修这个问题: 'Fix this issue directly in this analysis conversation',
+  '排队等 API「{api}」空出并发名额 · 前面还有 {n} 个': 'Waiting for a free slot on API "{api}" · {n} ahead',
+  '排队等 API「{api}」空出并发名额 · 下一个就是这里': 'Waiting for a free slot on API "{api}" · next in line',
+  'API「{api}」的并发名额满了，前面的释放了再开始':
+    'API "{api}" is at its concurrency limit; this starts when a slot frees up',
+  '排队等 API「{api}」': 'Waiting for API "{api}"',
 }

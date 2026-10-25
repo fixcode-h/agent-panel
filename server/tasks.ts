@@ -1764,7 +1764,9 @@ export function tasksApi(deps: {
     const next =
       r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
         ? '\n下一步：用 send_to_conversation 让它在自己的分支里跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。'
-        : ''
+        : r.state === 'failed' || r.state === 'stopped'
+          ? `\n要重试就用 send_to_conversation 交回这个子对话（id ${tk.id}），它在原来的会话里接着做；不要另建一个子对话重做。`
+          : ''
     const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
     await noteParent(
       tk.parentTaskId,
@@ -1775,7 +1777,8 @@ export function tasksApi(deps: {
       { id: tk.id, title: tk.title, state: r.state },
       await peerOf(tk, 'child', 'report', r.why, r.state === 'failed'),
       undefined,
-      !!next,
+      // 只有「只剩合回却没请收尾」要叫起父对话；失败、中断的重试提示照旧放进收件箱
+      !!next && r.state === 'unfinished',
     )
   }
 
@@ -2643,7 +2646,12 @@ export function tasksApi(deps: {
                         ? 'UE 项目里子对话不编译：改完向父对话申请（独立分支里用 submit_merge 并保持 build 为 true，否则用 request_build）。'
                         : 'UE 编译要用 request_build 申请：面板按编译目录占位排队，不从后台命令直接跑。',
                   }
-                return background.start({ ...input, taskId: task.id, root: dir, env: noPushEnv(entry.task) })
+                return background.start({
+                  ...input,
+                  taskId: task.id,
+                  root: dir,
+                  env: noPushEnv(entry.task, project?.gitPolicy),
+                })
               }
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
@@ -2796,6 +2804,9 @@ export function tasksApi(deps: {
         entry.task.working = false
         entry.task.awaitingUser = false
         entry.task.prewarming = false
+        // 排队等 API 名额的标记在 runner 里拿到或停止时就去掉；这里兜底，免得停下的对话还显示在排队
+        delete entry.task.apiWait
+        for (const s of entry.task.steps) delete s.apiWait
         // 预热收尾要把原来的列表时间写回去，不能让它变成现在
         let keepTime = false
         // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在

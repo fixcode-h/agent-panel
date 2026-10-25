@@ -31,7 +31,7 @@ const problemText = (p: ReviewProblem) =>
           : t('重复')
 
 /**
- * 教训评审的报告，画在分析对话右侧的功能面板里（ADR 0015）：每条建议写明问题、依据和改成什么，
+ * 教训评审的报告，画在分析对话右侧的功能面板里（ADR 0016）：每条建议写明问题、依据和改成什么，
  * 用户点「应用」才写进教训。「已应用」按当前的教训现算，在项目设置里手动改成一样的也算
  */
 export function LessonReviewReport({ text, project }: { text: string; project?: Project }) {

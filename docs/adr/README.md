@@ -22,7 +22,8 @@
 | [0012](./0012-running-conversations-never-deactivated.md) | 对话「在运行」只有一个判定，在运行的对话和子对话不失活      | 已接受 | 2026-10-24 | `convActive` 唯一判定；回收前先问；子对话只随用户停止结束；可终止子任务                                        |
 | [0013](./0013-review-diff-only-with-brief.md)             | 评审只评改动的行，背景由对话整理成交接单                    | 已接受 | 2026-10-25 | `spawn_agents` 的 `review` 交接单；不读文档不搜项目；软时限                                                    |
 | [0014](./0014-ai-analysis-home.md)                        | AI 分析统一归属、统一用「分析」角色、统一窗口               | 已接受 | 2026-10-25 | `analysisHome` 定归属；必备角色「分析」；`openAiWindow` 一个窗口；已有项目的初始化开项目对话                   |
-| [0015](./0015-analysis-report-side-panel.md)              | 分析报告画在右侧功能面板，单项修复在当前分析对话里做        | 已接受 | 2026-10-25 | 报告是分析的终点；`AnalysisPanel` 三种报告；修复在当前对话发【修复】消息；`Task.analysis` 标题标签；提问默认关 |
+| [0015](./0015-builtin-roles-follow-definition.md)         | 内置角色只认内置定义，每次更新都覆盖成新版                  | 已接受 | 2026-10-25 | 内置角色像必备角色一样每次同步、改过的先备份；Gemini / Command Code 续接时补发新角色；工作流按副本指纹升级     |
+| [0016](./0016-analysis-report-side-panel.md)              | 分析报告画在右侧功能面板，单项修复在当前分析对话里做        | 已接受 | 2026-10-25 | 报告是分析的终点；`AnalysisPanel` 三种报告；修复在当前对话发【修复】消息；`Task.analysis` 标题标签；提问默认关 |
 
 状态只有四个词，别自己造近义词：
 

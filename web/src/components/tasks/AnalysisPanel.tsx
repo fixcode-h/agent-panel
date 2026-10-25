@@ -21,7 +21,7 @@ const KIND = {
 export const reportTitle = (kind: ReportKind) => KIND[kind].title()
 
 /**
- * AI 分析对话右侧的功能面板（ADR 0015）：分析报告不再铺在对话区，画在这里逐项处理。
+ * AI 分析对话右侧的功能面板（ADR 0016）：分析报告不再铺在对话区，画在这里逐项处理。
  * 执行分析是代码问题和优化建议（修复在当前对话里做）、教训评审是逐条应用、项目初始化是推荐设置的应用面板
  */
 export function AnalysisPanel({

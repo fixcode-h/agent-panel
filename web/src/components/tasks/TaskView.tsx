@@ -746,7 +746,7 @@ export function TaskView({
     },
   })
 
-  // 分析报告在哪条回复里：画在右侧的功能面板，不再铺在对话区（用户 2026-10-25 要求，ADR 0015）
+  // 分析报告在哪条回复里：画在右侧的功能面板，不再铺在对话区（用户 2026-10-25 要求，ADR 0016）
   const report = useMemo(() => (task ? findReport(task) : null), [task])
   const reportId = report?.message.id ?? ''
   // 出了新的报告（重新分析、接着追问后又出了一份）：收起过的面板重新打开
@@ -2459,6 +2459,15 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）
+  if (task.apiWait)
+    return (
+      <>
+        {task.apiWait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: task.apiWait.api, n: task.apiWait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: task.apiWait.api })}
+      </>
+    )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
   return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>

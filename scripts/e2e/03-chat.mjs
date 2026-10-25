@@ -112,6 +112,31 @@ await runShard('对话与续接', async (api) => {
   await waitDone(gm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
+  // Gemini 没有系统提示词参数，角色只在会话第一轮带：续接时角色没变不重发，变了（内置角色随版本更新、用户改了）补发新版
+  const gRole = await call('POST', '/agents', {
+    name: '戊',
+    cli: 'gemini',
+    description: '',
+    model: '',
+    icon: 'bot',
+    categoryId: '',
+    extraArgs: [],
+    enabled: true,
+    instructions: '你是戊，旧版设定。',
+  })
+  let gr = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: gRole.id, prompt: '第一轮' })
+  gr = await waitDone(gr.id)
+  assert.match(calls().at(-1).input, /## 你的角色\n你是戊，旧版设定。/, '第一轮带角色设定')
+  await call('POST', `/tasks/${gr.id}/messages`, { text: '第二轮' })
+  await waitDone(gr.id)
+  assert.ok(!calls().at(-1).input.includes('你的角色'), '角色没变时续接不重发')
+  await call('PUT', `/agents/${gRole.id}`, { ...gRole, instructions: '你是戊，新版设定。' })
+  await call('POST', `/tasks/${gr.id}/messages`, { text: '第三轮' })
+  await waitDone(gr.id)
+  c = calls().at(-1)
+  assert.ok(c.args.includes('--resume'), '仍然续接原会话')
+  assert.match(c.input, /## 你的角色（已更新[^\n]*\n你是戊，新版设定。/, '角色变了：续接时补发新版')
+  await call('DELETE', `/tasks/${gr.id}`)
   // 空回合：模型只回一句「我先…」就收尾（零工具、零改动），面板要先把这件事写进对话再自动接一轮；
   // 接上之后模型正常交结果，那条报错卡片要收成普通说明，不能一直挂成失败
   let emp = await call('POST', '/tasks', {

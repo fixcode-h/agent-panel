@@ -307,6 +307,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。':
     'Export to a file, then import it in Settings on another computer. Each kind of data in the file fully replaces what is here.',
   导出数据: 'Export data',
+  '{n} 个文件导出时正在写入或刚被删除，没放进备份：{files}':
+    '{n} files were being written or had just been deleted during export and were left out of the backup: {files}',
   导入数据: 'Import data',
   '导入数据？': 'Import data?',
   '文件不是有效的 JSON': 'The file is not valid JSON',
@@ -1300,4 +1302,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
   '＋': '+',
   去修改: 'Change',
+  并发上限: 'Concurrency limit',
+  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
+    'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
 }

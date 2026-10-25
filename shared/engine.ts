@@ -88,7 +88,7 @@ import { verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { TriageItem } from './review-gate.ts'
-import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
+import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
   activePlan,
@@ -455,6 +455,12 @@ export interface EngineHost {
   changed: (flush?: boolean) => void
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
+  /**
+   * 调用停在工具里等别人（wait_agents 等子任务、ask_main 等主 Agent）：宿主让出这次调用的 API 并发名额，
+   * 等完再拿回（满了要排队）。不让出的话，占着名额等子任务、子任务又排队等名额，会互相等死。
+   * stepId 是在等的那次调用（对话是 @chat）；没有时直接等
+   */
+  yieldSlot?: <T>(stepId: string, wait: () => Promise<T>) => Promise<T>
   /**
    * 节点完成后等用户确认（节点勾了「完成后等我确认」）：返回用户的决定，停止时返回 null。
    * 没有时（例如在线演示之外的宿主不支持）不等待，直接往下走
@@ -972,15 +978,20 @@ function policyPart(host: EngineHost) {
   // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
   if (host.task.parentTaskId)
     return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp)}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
+  // 「需要推送」要说清是什么时候：技能和角色设定默认都是「本地先行、不主动推送」，
+  // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
+  const wt =
+    host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
+  const done = '任务做完、验证通过并在本地提交之后'
   const push =
     p.push === 'deny'
-      ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
+      ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
       : p.answered === 'denied'
         ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推。'
         : p.answered === 'allowed' || p.push === 'allow'
-          ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
-          : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
-  return `## 授权情况\n${push}\n${tools}`
+          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}，直接把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${wt}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。只做普通推送：不强推，被拒（远端有新提交）就停下来报告，不自己 pull / rebase；创建 PR、P4 submit、合并到主干不在这个授权里，用户要求时才做。`
+          : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送（推荐「允许这次推送」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
+  return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 推送要用户明确授权」的默认写法优先。\n${tools}`
 }
 
 /** 子对话的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
@@ -2505,6 +2516,10 @@ export function settleHelperWaits(host: EngineHost) {
   return hit
 }
 
+/** 子任务没做完时交回结果里带的一句：重试要在原来的子任务里接着做，不另派一个 */
+const RETRY_HINT = (id: string) =>
+  `（要重试就调用 spawn_agents，resume 写「${id}」：在原来这个子任务里接着做，不要另派一个新的）`
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
@@ -2522,9 +2537,10 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
     .map((k) =>
       k.status === 'done'
         ? `### ${k.title}\n${k.output || '（没有文字输出）'}`
-        : k.status === 'skipped' && st.errors.get(k.id)
-          ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
-          : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`,
+        : (k.status === 'skipped' && st.errors.get(k.id)
+            ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
+            : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`) +
+          `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
 }
@@ -2756,6 +2772,13 @@ function makeOrchestra(
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
       if (!title.trim())
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
+      // 子对话失败、被中断后要重试：在原来那个子对话里接着做（用户 2026-10-25 定的），不另起一个「（重试）」
+      const again = await retryTarget(host, title)
+      if (again)
+        return {
+          ok: false,
+          info: `子对话「${again.title}」（id ${again.id}）${again.status}：重试不要新建子对话，用 send_to_conversation 交回给它（id ${again.id}），它在原来的会话里接着做，已经做完的不用重做。`,
+        }
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
       // 没指定步骤就挂在正在做的那一步：不挂的话那一步一标完成，父对话的计划就「已完成」了，子对话却还没合回
@@ -2941,7 +2964,8 @@ function makeOrchestra(
         const key = prev.session || prev.id
         const busyKey = mine.some(
           (s) =>
-            (s.session || s.id) === key && (s.status === 'running' || (s.status === 'pending' && st.helpers.has(s.id))),
+            (s.session || s.id) === key &&
+            (s.status === 'running' || (s.status === 'pending' && !s.interrupted && st.helpers.has(s.id))),
         )
         if (busyKey) return { ids: [], error: `「${prev.title}」的会话还在跑，等它结束再接着用` }
         if ([...resumed.values()].some((s) => (s.session || s.id) === key))
@@ -2968,6 +2992,23 @@ function makeOrchestra(
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
         const prev = resumed.get(spec)
+        // 接着的是失败、被终止或中断的子任务：就在原来那个子任务里重试（同一个 id、同一条记录、同一个会话），
+        // 不另起一个新的。做完的子任务再接着做（复看的评审）才新开一条记录、借它的会话
+        if (prev && retriable(prev)) {
+          const again = st.errors.get(prev.id) || (prev.interrupted ? '上次执行到一半被中断了' : '')
+          st.errors.delete(prev.id)
+          st.delivered.delete(prev.id)
+          const more = spec.instructions.trim()
+          if (more && !prev.brief.includes(more))
+            prev.brief = [prev.brief, `## 重试时补充\n${more}`].filter(Boolean).join('\n\n')
+          prev.status = 'pending'
+          prev.interrupted = false
+          prev.output = ''
+          prev.endedAt = ''
+          prev.reruns = (prev.reruns ?? 0) + 1
+          const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
+          return { step: prev, spec, tier, again: again || '上次没有做完' }
+        }
         const agent =
           (prev && host.agents.find((a) => a.id === prev.agentId)) ||
           (want && host.agents.find((a) => a.id === want || a.name === want)) ||
@@ -2990,7 +3031,7 @@ function makeOrchestra(
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
-        return { step, spec, tier }
+        return { step, spec, tier, again: '' }
       })
       for (const m of made)
         st.helpers.set(
@@ -3003,15 +3044,22 @@ function makeOrchestra(
             m.spec,
             m.tier,
             made.filter((x) => x !== m).map((x) => x.step.title),
+            m.again,
           ),
         )
+      const retried = made.filter((m) => m.again)
       system(
         host,
-        t('「{title}」派出 {n} 个子角色：{list}', {
-          title: self.title,
-          n: made.length,
-          list: made.map((m) => m.step.title).join(t('、')),
-        }),
+        retried.length === made.length
+          ? t('「{title}」在原来的子任务里重试：{list}', {
+              title: self.title,
+              list: made.map((m) => m.step.title).join(t('、')),
+            })
+          : t('「{title}」派出 {n} 个子角色：{list}', {
+              title: self.title,
+              n: made.length,
+              list: made.map((m) => m.step.title).join(t('、')),
+            }),
         where,
       )
       // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
@@ -3056,7 +3104,9 @@ function makeOrchestra(
         ? ids
         : task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').map((s) => s.id)
       const steps = mine.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
-      await Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
+      const waiting = () =>
+        Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
       const over = (s: TaskStep) => helperOver(host, s)
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
@@ -3080,7 +3130,8 @@ function makeOrchestra(
       host.changed(true)
       let settled: AgentResult | undefined
       const p = mainTurn(host, main, 'answer', questionEvent(self.title, question)).then((r) => (settled = r))
-      await Promise.race([p, sleep(ms)])
+      const waiting = () => Promise.race([p, sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
       const text = (r: AgentResult) => (r.ok ? stripDispatch(r.text).trim() : '')
       if (settled) return settled.ok ? { answer: text(settled) } : { error: `主 Agent 没能回答：${settled.error}` }
       // 主 Agent 还在忙（排队或在想）：回答到了放进提问者的收件箱，read_messages 取
@@ -3119,6 +3170,30 @@ function makeOrchestra(
   }
 }
 
+/** 去掉标题里「（重试）」「重试 2」「(retry)」这类标记，比较是不是同一件事 */
+export const retryBase = (title: string) =>
+  title
+    .replace(/[（(【[]\s*(?:第\s*\d+\s*次)?\s*(?:重试|再试|retry)\s*\d*\s*[）)】\]]/gi, '')
+    .replace(/\s*[-—:：·|｜]?\s*(?:重试|再试|retry)\s*\d*\s*$/i, '')
+    .trim()
+
+/**
+ * 新建子对话其实是在重试一个失败、中断的子对话：标题去掉重试标记后和它一样。
+ * 返回那个子对话，父对话应该用 send_to_conversation 交回给它
+ */
+async function retryTarget(host: EngineHost, title: string) {
+  if (!host.listConversations) return undefined
+  const base = retryBase(title)
+  if (!base) return undefined
+  const ended = new Set([convStateText('failed'), convStateText('stopped')])
+  const list = await host.listConversations().catch(() => [])
+  return list.find((c) => !c.resolved && !c.busy && ended.has(c.status) && retryBase(c.title) === base)
+}
+
+/** 失败、被终止、被中断的子任务：spawn_agents 的 resume 写它时在原来那条记录里重试 */
+const retriable = (s: TaskStep) =>
+  s.status === 'failed' || s.status === 'skipped' || (s.status === 'pending' && !!s.interrupted)
+
 /** 执行一个派出的子 Agent */
 async function runHelper(
   host: EngineHost,
@@ -3128,6 +3203,8 @@ async function runHelper(
   spec: HelperSpec,
   tier: NodeTier,
   siblings: string[],
+  /** 在原来的子任务里重试：上次为什么没做完（失败原因、被终止、被中断） */
+  again = '',
 ) {
   const st = orchState(host)
   const ac = new AbortController()
@@ -3180,6 +3257,9 @@ async function runHelper(
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       step.session
         ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
+        : '',
+      again
+        ? `## 这是重试\n这个子任务上次没有做完：${clip(again, 600)}。还在同一个会话里的话，先看看之前已经做了哪些，从中断的地方接着做，已经做完的不用重做。`
         : '',
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
       review,
@@ -3471,6 +3551,7 @@ ${
     : `- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
 - 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。`
 }
+- 子对话报错、失败或被中断要重试：用 send_to_conversation 交回原来那个子对话，它在原来的会话里接着做，不要新建一个「（重试）」子对话。派出的子任务也一样：重试时 spawn_agents 的 resume 写原来那个子任务的 id。
 - 子对话只剩合回时会发「收尾请求」给你：看它交的验证结果，够了就调用 finish_child（合回、标完成、删它的分支，都是工具调用，不要自己跑 git）；不够就用 send_to_conversation 把要补的交回给它。合并就是验收，测试要在它合并之前做完。
 
 ## 这条消息怎么处理

@@ -27,6 +27,7 @@ await runShard('本机请求与设置', async (api) => {
     sleep,
     waitFor,
     waitDone,
+    waitTask,
     calls,
     readLog,
     step,
@@ -629,6 +630,75 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(claudeSettings.env?.ANTHROPIC_BASE_URL, 'https://claude.example')
     assert.equal(claudeSettings.env?.ANTHROPIC_AUTH_TOKEN, 'sk-ant', 'Bearer 方式写进 settings.json')
     assert.deepEqual(claudeCall.apiEnv.anthropic, [null, null, null], '不再走环境变量')
+    // API 的并发上限：设成 1 时第二个对话排队（显示在等哪个 API），第一个结束才开始；排队时能停止
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        apis: apis.map((a) => ({ ...a, maxConcurrent: 1 })),
+        clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } },
+      }),
+    )
+    const slowChat = (prompt) =>
+      call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: '',
+        cli: 'codex',
+        model: 'relay-1',
+        prompt,
+      })
+    const qa = await slowChat('SLOW 并发上限 A')
+    await waitFor(async () => calls().some((x) => x.kind === 'codex' && x.input?.includes('并发上限 A')), {
+      label: '第一个对话的 CLI 启动',
+    })
+    const qb = await slowChat('并发上限 B')
+    const qc = await slowChat('并发上限 C')
+    const queued = await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${qc.id}`)
+        return t.apiWait ? t : null
+      },
+      { label: '第三个对话排队等 API' },
+    )
+    assert.equal(queued.status, 'running', '排队中的对话仍算在运行（输入框是停止按钮）')
+    assert.deepEqual(queued.apiWait, { api: '中转 A', ahead: 1 })
+    assert.ok(!calls().some((x) => x.input?.includes('并发上限 B')), '名额满了：第二个对话的 CLI 还没启动')
+    await call('POST', `/tasks/${qc.id}/stop`)
+    const qcDone = await waitDone(qc.id)
+    assert.equal(qcDone.apiWait, undefined, '停止后不再显示排队')
+    assert.equal((await call('GET', `/tasks/${qb.id}`)).apiWait?.ahead, 0, '前面的停了，后面的往前挪')
+    await waitDone(qa.id)
+    await waitDone(qb.id)
+    const qaEnd = calls().find((x) => x.input?.includes('并发上限 A'))?.end
+    const qbStart = calls().find((x) => x.input?.includes('并发上限 B'))
+    assert.ok(qbStart && qaEnd && qbStart.start >= qaEnd, '第二个对话等第一个结束才开始')
+    assert.ok(!calls().some((x) => x.input?.includes('并发上限 C')), '排队时停止的对话不再启动')
+    // 对话派两个子任务、名额是 1：对话等子任务时让出名额，子任务一个一个跑，跑完交回对话接着做，不会互相等死
+    // 子任务用默认 CLI（Claude Code，走「Claude 中转」）：对话也用它，父子抢同一个 API 的名额
+    const sp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'claude',
+      model: 'claude-x',
+      prompt: 'SPAWN_TWO_SUBS 派两个子任务',
+    })
+    const spDone = await waitTask(
+      sp.id,
+      (t) => t.steps.filter((s) => s.slot === 'sub' && s.status === 'done').length === 2,
+      60000,
+    )
+    assert.equal(spDone.status, 'done')
+    const subRuns = calls().filter((x) => x.input?.includes('SLOW 限流子任务'))
+    assert.equal(subRuns.length, 2)
+    const [s1, s2] = subRuns.sort((a, b) => a.start - b.start)
+    assert.ok(s1.end && s2.start >= s1.end, '名额是 1：第二个子任务等第一个结束才开始')
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } } }),
+    )
     // 协议对不上的 API 不会交给 CLI（Codex 选了 Anthropic 的 API）
     await call('PUT', '/settings', withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap2' } } }))
     assert.notEqual((await call('GET', '/clis/codex/models?refresh=1')).auth, 'api')

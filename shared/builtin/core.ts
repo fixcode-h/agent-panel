@@ -55,6 +55,21 @@ export function coreUse(key: CoreKey) {
 
 export const isCoreAgent = (a: Pick<Agent, 'origin'> | undefined) => !!coreKey(a)
 
+/**
+ * 内置角色（必备角色也算）：来源是 builtin:<key> 且这个 key 还有内置定义。
+ * 用户 2026-10-25 定的：内置角色和必备角色一样由面板维护，设定只认内置定义，每次启动、每次保存都换成当前版本，
+ * 不再按「和历史版本逐字一致才升级」判断（历史版本漏登记一次，副本就永远卡在旧版）。想自己改的复制一份再改。
+ * 已合并、下线的角色（MERGED_AGENTS）没有定义，不在这里。
+ */
+export function builtinKey(a: Pick<Agent, 'origin'> | undefined): string | undefined {
+  const k = a?.origin.startsWith('builtin:') ? a.origin.slice(8) : ''
+  return k && BUILTIN_AGENTS.some((b) => b.key === k) ? k : undefined
+}
+
+export const isBuiltinAgent = (a: Pick<Agent, 'origin'> | undefined) => !!builtinKey(a)
+
+export const builtinDefinition = (key: string) => BUILTIN_AGENTS.find((b) => b.key === key)
+
 export const coreDefinition = (key: CoreKey) => BUILTIN_AGENTS.find((b) => b.key === key)!
 
 /** 找本机的某个必备角色 */
@@ -93,8 +108,9 @@ export function upgradeParamDefaults(a: AgentInput, key: CoreKey): AgentInput {
 }
 
 /**
- * 按内置定义改写一个必备角色：定义部分换成内置的，可以改的部分留用户的。
+ * 按内置定义改写一个内置角色（必备角色和其他内置角色都走它）：定义部分换成内置的，可以改的部分留用户的。
  * 启动同步和保存都走它，所以用户（或 AI 优化）改了不该改的字段也会被纠正回来。
+ * 必备角色不能停用；其他内置角色的启用开关、分类（由调用方传）留用户的。
  */
 export function syncCore(
   cur: AgentInput,
@@ -114,7 +130,7 @@ export function syncCore(
     canDelegate: a.canDelegate,
     canPlan: a.canPlan,
     capsSet: true,
-    enabled: true,
+    enabled: KEYS.has(def.key) ? true : cur.enabled,
     categoryId: ids.categoryId,
     includes: ids.includes,
   }

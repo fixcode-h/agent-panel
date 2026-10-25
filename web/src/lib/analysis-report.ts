@@ -3,7 +3,7 @@ import { EVOLUTION_LANG } from '@shared/task-export'
 import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
 
 /**
- * AI 分析对话的「分析报告」：分析结果不再固定在输入框上方，而是画在对话右侧的功能面板里（ADR 0015）。
+ * AI 分析对话的「分析报告」：分析结果不再固定在输入框上方，而是画在对话右侧的功能面板里（ADR 0016）。
  * 这里是纯逻辑：认出哪条回复是报告、报告是哪种、报告里的某一项有没有在这个对话里修过。
  */
 

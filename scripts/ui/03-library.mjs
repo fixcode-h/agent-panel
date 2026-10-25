@@ -111,7 +111,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
   await p.getByRole('button', { name: '看差异' }).first().click()
   await check(p, 'AI分析-建议', ['代码问题', '商品卡片', '面板框架', '工作流优化', '先确认范围', '应用到工作流'])
-  // 报告画在右侧的功能面板里，不在对话区（用户 2026-10-25 要求，ADR 0015）
+  // 报告画在右侧的功能面板里，不在对话区（用户 2026-10-25 要求，ADR 0016）
   const report = p.locator('[data-analysis-panel="run"]')
   if (!(await report.count())) errors.push('AI 分析：报告没有画在右侧的功能面板里')
   if (await p.locator('main').getByText('工作流优化', { exact: true }).count())
