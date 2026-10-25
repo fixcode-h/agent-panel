@@ -15,6 +15,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { CliTag, PageFrame } from '@/components/library/parts'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { BundledSkills } from '@/components/library/BundledSkills'
+import { useSkillUpdates } from '@/lib/skill-updates'
 
 type Kind = 'skill' | 'command'
 /** 页面上的分页：多一个「自带 Skill」 */
@@ -38,6 +39,9 @@ export function LibraryPage() {
   const [edit, setEdit] = useState<LibraryItem | null>(null)
   const [creating, setCreating] = useState(false)
   const [ai, setAi] = useState(false)
+  // 自带技能有新内容：「自带 Skill」分页亮点，进去能看到在哪里更新
+  const upd = useSkillUpdates()
+  const updN = new Set([...upd.shared, ...upd.deployed]).size
 
   // 切换分页前发出的读取（例如保存后刷新）晚回来时不能盖掉新分页的列表
   const current = useRef(kind)
@@ -108,7 +112,11 @@ export function LibraryPage() {
           options={[
             { id: 'skill', label: 'Skill' },
             { id: 'command', label: t('命令') },
-            { id: 'bundled', label: t('自带 Skill') },
+            {
+              id: 'bundled',
+              label: t('自带 Skill'),
+              dot: updN ? t('{n} 个自带技能可以更新', { n: updN }) : undefined,
+            },
           ]}
         />
         <label className="relative block min-w-[200px] flex-1">

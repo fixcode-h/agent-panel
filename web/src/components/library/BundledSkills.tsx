@@ -4,6 +4,8 @@ import { Check, Download, Loader2, Package, RefreshCw } from 'lucide-react'
 import { BUNDLED_CATEGORIES, type BundledSkill } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { useNav } from '@/lib/data'
+import { refreshSkillUpdates, useSkillUpdates } from '@/lib/skill-updates'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
@@ -58,18 +60,46 @@ export function BundledSkills({ query }: { query: string }) {
     } finally {
       // 失败也重读：出错前可能已经装进去了几项，列表得跟磁盘对得上
       await load()
+      void refreshSkillUpdates()
       setBusy('')
     }
   }
   const need = (i: BundledSkill) => i.status.shared !== 'same'
   const outdated = (items ?? []).filter((i) => i.status.shared === 'changed')
   // 一次只跑一个批量操作（都在写 ~/.agents/skills），另一个按钮变灰时说清楚为什么
+  // 「设置 → 部署」那份要在设置里更新：这里指过去，免得用户看到提示点进来却找不到要点哪里
+  const { openSettings } = useNav()
+  const deployed = useSkillUpdates().deployed
   const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
 
   if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
   if (!items) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
   return (
     <div className="flex flex-col gap-4">
+      {deployed.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed">
+            {t('部署的技能里有 {n} 个和这一版自带的不同：{names}。到「设置 → 部署」覆盖部署一次即可更新。', {
+              n: deployed.length,
+              names: deployed.join(t('、')),
+            })}
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => openSettings('deploy')}>
+            {t('去部署')}
+          </Button>
+        </div>
+      )}
+      {outdated.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          <span className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed">
+            {t('{n} 个已安装的技能和这一版自带的不同，点「更新全部」换成新版本（本机改过的内容会被替换）。', {
+              n: outdated.length,
+            })}
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card px-4 py-3">
         <span className="text-[0.8125rem] text-muted">{t('装到')}</span>
         <span className="font-mono text-[0.8125rem] text-muted">~/.agents/skills</span>
