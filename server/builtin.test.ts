@@ -36,6 +36,8 @@ import {
   EXPLORER_BEFORE_PROGRESS,
   LEGACY_AGENT_FIELDS,
   LEGACY_AGENT_FIELDS_MORE,
+  LEGACY_SCENE_TEXT,
+  LEGACY_SCENE_TEXT_SEARCH_SCOPE,
   LEGACY_WORKFLOWS,
   RULES_BEFORE_SEARCH_SCOPE,
   RULES_BEFORE_TURN,
@@ -847,6 +849,126 @@ test('停在 2026-10-21 那一版（缺「搜索范围」等四段）的四个�
     agents: [{ ...state.agents[0], instructions: `${RULES_BEFORE_SEARCH_SCOPE}\n我自己加的一条` }],
   }
   assert.equal((await upgradeBuiltinAgents(edited, ops)).length, 0, '改过的不升级')
+})
+
+/**
+ * 历史指纹里的「识别现场」必须是冻结的正文，不能引用会继续变的 SCENE_TEXT。
+ * 引用活的话，SCENE_TEXT 一改，所有指纹会一起变成最新版：原本能匹配上的旧副本永久匹配不上
+ * （内置角色卡在旧版升不上来），本来该有区别的几个历史版本也会被抹平成同一份内容。
+ * 所以这里断言指纹里的正文是**某一份具体的历史正文**，而不是当前 SCENE_TEXT。
+ */
+test('历史指纹的「识别现场」是冻结正文，不跟着 SCENE_TEXT 变', () => {
+  const all = [...Object.values(LEGACY_AGENT_FIELDS), ...Object.values(LEGACY_AGENT_FIELDS_MORE).flat()].filter(Boolean)
+  const withScene = all.filter((f) => f.instructions.includes('识别现场（不改文件）'))
+  assert.ok(withScene.length > 0, '指纹表里应该有带「识别现场」的历史角色')
+  // 两份冻结正文：10-23 之前那一版，和 10-23 加上「搜索范围」那句之后的那版
+  const frozen = [LEGACY_SCENE_TEXT, LEGACY_SCENE_TEXT_SEARCH_SCOPE]
+  for (const f of withScene) {
+    assert.ok(
+      frozen.some((s) => f.instructions.includes(s)),
+      `「${f.name}」的指纹里的「识别现场」必须是冻结正文，不能引用 SCENE_TEXT`,
+    )
+  }
+  // 关键：当前 SCENE_TEXT 换了内容时，指纹里那份旧正文不能跟着变。
+  // 旧版结尾是「再限定范围搜索。」，新版是「…再限定范围搜（按「搜索范围」的规则带排除，不扫全仓）。」
+  assert.ok(
+    !LEGACY_SCENE_TEXT.includes('不扫全仓'),
+    '10-23 之前那一版不该有「搜索范围」那句；有的话说明它被换成了当前 SCENE_TEXT',
+  )
+  assert.ok(LEGACY_SCENE_TEXT_SEARCH_SCOPE.includes('不扫全仓'), '10-23 起那一版要带「搜索范围」那句')
+  // 两版必须真的不同，否则「按日期选对应的一份」没有意义
+  assert.notEqual(LEGACY_SCENE_TEXT, LEGACY_SCENE_TEXT_SEARCH_SCOPE, '两版冻结正文不能是同一份')
+  // 逐条绑定：每条指纹该用哪一份「识别现场」。只判断「属于两份之一」拦不住「两份互换」——
+  // 把 10-24 写下的 EXPLORER_BEFORE_MODULE_DOC 改回 10-23 之前那一版，集合判断照样通过，
+  // 但那条指纹就再也匹配不上 10-24 的旧副本，正是这次要修的那类缺陷。
+  const sceneOf = (f: { instructions: string }) =>
+    f.instructions.includes(LEGACY_SCENE_TEXT_SEARCH_SCOPE) ? 'search-scope' : 'before-search-scope'
+  // explorer 的「调研」有两条、开头逐字相同（只差「识别现场」段），没法靠开头区分，所以单独按条数断言：
+  // 10-24 写下的那条必须是 search-scope，另一条必须是 before-search-scope。
+  const explorerScene = [LEGACY_AGENT_FIELDS.explorer, ...(LEGACY_AGENT_FIELDS_MORE.explorer ?? [])]
+    .filter(Boolean)
+    .filter((f) => f.instructions.includes('识别现场（不改文件）'))
+  assert.equal(
+    explorerScene.filter((f) => sceneOf(f) === 'search-scope').length,
+    1,
+    'explorer：10-24 那条该用带「搜索范围」那一版',
+  )
+  assert.equal(
+    explorerScene.filter((f) => sceneOf(f) === 'before-search-scope').length,
+    1,
+    'explorer：10-21 那条该用 10-23 之前那一版',
+  )
+  // 其余 key：全部是 10-21~10-22 写下的，必须全用 10-23 之前那一版（先确认找到了那条指纹，再断言版本）
+  const expectScene: [string, string][] = [
+    ['analyst', '你负责把需求收敛成可以确认的设计'],
+    ['developer', '{{#if task=实现}}你负责按已确认的设计'],
+    ['architect', '你负责架构设计和评审。'],
+    ['debugger', '你负责定位并修复问题。没找到根因不修。排查方向'],
+    ['uescout', '你负责 Unreal Engine 项目的只读侦察'],
+  ]
+  for (const [key, head] of expectScene) {
+    const hits = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])]
+      .filter(Boolean)
+      .filter((f) => f.instructions.replace(/\$\{[A-Z_]+\}/g, '').startsWith(head))
+    assert.ok(hits.length, `${key} 的指纹里应该有以这段开头的「识别现场」角色（找不到说明指纹被改过）`)
+    for (const f of hits)
+      assert.equal(
+        sceneOf(f),
+        'before-search-scope',
+        `${key}「${f.name}」该用 10-23 之前那一版，配错版本会匹配不上当时的旧副本`,
+      )
+  }
+  // 上面都是比对内容，挡不住「某条指纹引用了活的 SCENE_TEXT」：只要当前正文恰好等于某份冻结正文，
+  // 内容比对照样通过，等 SCENE_TEXT 下次一改，那条指纹就静默变成最新版了。所以直接看源码。
+  const src = readFileSync(path.resolve(import.meta.dirname, '..', 'shared', 'builtin', 'legacy.ts'), 'utf8')
+  assert.ok(
+    !/\$\{SCENE_TEXT\}/.test(src),
+    'legacy.ts 里不能引用活的 SCENE_TEXT：历史指纹要冻结，引用活的话 SCENE_TEXT 一改指纹就跟着变',
+  )
+})
+
+/**
+ * 和上面同一类问题：工作区段（VCS_TEXT）也在 10-23 加过 SVN 分支，历史指纹里引用的必须是当时那一版。
+ * 两版各一份冻结副本，不许引用 agents.ts 里会继续变的 VCS_TEXT。
+ */
+test('历史指纹的工作区段按指纹写下时的版本冻结，不引用活的 VCS_TEXT', () => {
+  const all = [...Object.values(LEGACY_AGENT_FIELDS), ...Object.values(LEGACY_AGENT_FIELDS_MORE).flat()].filter(Boolean)
+  const withVcs = all.filter((f) => f.instructions.includes('这是 Git 工作区'))
+  assert.ok(withVcs.length > 0, '指纹表里应该有带工作区段的角色')
+  // 带 SVN 分支的和不带 SVN 分支的各占一部分：早于 10-23 的副本没有 SVN，之后的有
+  const withSvn = withVcs.filter((f) => f.instructions.includes('这是 SVN 工作区'))
+  const withoutSvn = withVcs.filter((f) => !f.instructions.includes('这是 SVN 工作区'))
+  assert.ok(withSvn.length > 0, '10-23 之后写下的指纹应该带 SVN 分支')
+  assert.ok(withoutSvn.length > 0, '10-23 之前写下的指纹不该带 SVN 分支')
+  // 只看「两种都存在」拦不住「两份互换」：把「评审员」的 VCS_TEXT_BEFORE_SVN 换成带 SVN 的那份，
+  // 计数不变、测试照样绿，但那条指纹就再也匹配不上 10-21 的旧副本。所以逐条绑定。
+  const vcsOf = (f: { instructions: string }) =>
+    f.instructions.includes('这是 SVN 工作区') ? 'with-svn' : 'without-svn'
+  const expectVcs: [string, string, string][] = [
+    // 10-23 之后写下的：当时已经有 SVN 分支
+    ['worker', '你是项目里一个子对话的执行者', 'with-svn'],
+    ['vcs', '你负责版本控制与交付收尾', 'with-svn'],
+    // 10-22 及更早写下的：当时还没有 SVN 分支
+    ['developer', '你负责按已确认的设计（或 tasks.md）实现', 'without-svn'],
+    // 10-22 写下的「开发」（带「找 Bug 按模块逐层定位」那版）
+    ['developer', '{{#if task=实现}}你负责按已确认的设计', 'without-svn'],
+    ['reviewer', '你负责代码评审，不修改文件。', 'without-svn'],
+    ['debugger', '你负责定位并修复问题。没找到根因不修。排查方向', 'without-svn'],
+    ['vcs', '你负责任务的收尾：', 'without-svn'],
+    ['debugger', '你负责定位并修复 Bug。没找到根因不修。', 'without-svn'],
+    ['worker', '你是项目里一个子对话的执行者，只负责当前这个任务。', 'with-svn'],
+  ]
+  for (const [key, head, want] of expectVcs) {
+    const hits = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])]
+      .filter(Boolean)
+      .filter((f) => f.instructions.replace(/\$\{[A-Z_]+\}/g, '').startsWith(head))
+    assert.ok(hits.length, `${key} 的指纹里应该有以这段开头的角色（找不到说明指纹被改过）`)
+    for (const f of hits)
+      assert.equal(vcsOf(f), want, `${key}「${f.name}」该用 ${want} 那一版工作区段，配错版本会匹配不上当时的旧副本`)
+  }
+  // 源码层面挡住「改回引用活的 VCS_TEXT」：那种写法会把当前版本拼进所有历史指纹
+  const src = readFileSync(path.resolve(import.meta.dirname, '..', 'shared', 'builtin', 'legacy.ts'), 'utf8')
+  assert.ok(!/\$\{VCS_TEXT\}/.test(src), 'legacy.ts 里不能引用活的 VCS_TEXT：历史指纹的工作区段要按写下时的版本冻结')
 })
 
 /** 测试用的内存 ops：新建的东西按顺序编 id，更新的记下来 */

@@ -9,7 +9,8 @@
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type StopReason, type Task, type TaskStep, type TaskTurn } from './schema.ts'
 import { composeRole, includedAgents } from './agent-role.ts'
-import { fillSkills } from './expose.ts'
+import { fillSkills, fillSlots } from './expose.ts'
+import { retiredWithoutSuccessor } from './skill-guide.ts'
 import { runTree } from './run-usage.ts'
 import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
@@ -926,10 +927,13 @@ export interface HelperScope {
  * 只算 a.skills 的话，引入 Agent 带了技能时报告头会少列，和下面那段对不上。
  */
 function skillText(a: Agent, all: Agent[], slots: Record<string, string>) {
-  const skills = [
-    ...new Set(fillSkills([...a.skills, ...includedAgents(a, all).flatMap((s) => s.agent.skills)], slots)),
-  ]
-  return skills.length ? `　Skill：${skills.join('、')}` : ''
+  const raw = [...a.skills, ...includedAgents(a, all).flatMap((s) => s.agent.skills)]
+  const skills = [...new Set(fillSkills(raw, slots))]
+  // 已下线又没有接替者的技能会被 fillSkills 滤掉（不滤的话 CLI 会去找不存在的 SKILL.md）。
+  // 报告是给人排查用的，丢掉会让人以为角色本来就没配它，所以单独标出来，不静默改名也不静默丢。
+  const retired = retiredWithoutSuccessor(raw.map((s) => fillSlots(s, slots).trim()))
+  const parts = [skills.join('、'), ...retired.map((s) => `${s}（已下线，没有接替的技能）`)].filter(Boolean)
+  return parts.length ? `　Skill：${parts.join('、')}` : ''
 }
 
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */

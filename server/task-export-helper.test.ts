@@ -317,3 +317,23 @@ test('不传 scope 时整体分析的报告和提示词和原来一致', () => {
   assert.match(prompt, /## 可以修改的对象/)
   assert.match(prompt, /workflow-evolution/)
 })
+
+test('报告头的 Skill：按当前映射换算，下线的技能换成接替它的，没有接替的标成已下线', () => {
+  // 三种情况一次覆盖：技能名已映射（有接替）、已下线（没有接替，会被 fillSkills 滤掉）、正常
+  const mixed = Agent.parse({
+    ...coder,
+    skills: ['test-driven-development', 'ue-multi-agent-coordination', 'project-documentation'],
+  })
+  const rec = Task.parse({ ...task, steps: [{ ...task.steps[0], agentId: mixed.id }] })
+  const md = taskReport(exportTask(rec, [mixed], '', new Date(later)), 4000, { stepId: '@chat/sub/h1' })
+  const head = md.split('\n').find((l) => l.includes('Skill：')) ?? ''
+  // 已映射：显示接替它的当前技能名，不是安装时的旧名
+  assert.match(head, /project-testing/, '已下线的技能要显示接替它的技能名')
+  assert.ok(!head.includes('test-driven-development'), '不能显示已下线的旧技能名')
+  // 正常：原样列出
+  assert.match(head, /project-documentation/, '正常的技能原样列出')
+  // 已下线且没有接替者：明确标出来，不静默丢掉
+  assert.match(head, /ue-multi-agent-coordination（已下线，没有接替的技能）/, '没有接替的技能要明确标成已下线')
+  // 和角色设定那段一致：报告头里的技能名都要是换算后的
+  assert.ok(!head.includes('software-architecture-design'), '没配置的技能不该出现')
+})
