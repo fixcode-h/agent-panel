@@ -14,6 +14,7 @@ import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
+  ArrowLeft,
   ArrowRight,
   ChevronRight,
   CheckCircle2,
@@ -36,6 +37,7 @@ import {
   Workflow as WorkflowIcon,
   Download,
   FileInput,
+  Files,
   Sparkles,
   Settings2,
   GraduationCap,
@@ -360,6 +362,22 @@ export function TaskView({
   const outerNav = useContext(PaneNavCtx)
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
   const [filesFolded, setFilesFolded] = useState(false)
+  // 右栏开着子对话时再看文件：文件面板盖在子对话上展开。子对话已经占了半边，
+  // 并排会把两边都挤坏，所以复用同一栏的位置覆盖，收起后子对话原样回来
+  const [childFiles, setChildFiles] = useState(false)
+  // 收起覆盖层时「回到子对话」按钮已经被卸载：不收焦点的话键盘用户会被丢回页面开头。
+  // 宽、窄屏是两个按钮（xl 断点切换），只能把焦点还给当前真的显示着的那个：
+  // 给 display:none 的元素 focus() 不生效，焦点会掉回 body
+  const fileBtn = useRef<HTMLButtonElement>(null)
+  const fileBtnNarrow = useRef<HTMLButtonElement>(null)
+  const closeChildFiles = useCallback(() => {
+    setChildFiles(false)
+    requestAnimationFrame(() => {
+      const wide = fileBtn.current
+      const target = wide && wide.offsetParent !== null ? wide : fileBtnNarrow.current
+      target?.focus()
+    })
+  }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
   // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
@@ -382,6 +400,9 @@ export function TaskView({
   useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
   useEscape(progressOpen, () => setProgressOpen(false))
+  // 盖在子对话上的文件面板：Esc 回子对话。capture 独占这次按键：子对话里开着的运行视图、
+  // 计划面板自己也听 Esc，不独占的话一次按键会把它们一起关掉
+  useEscape(childFiles, closeChildFiles, true)
   // 对话里点开的运行卡片：右边看这一次运行的实时输出
   const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
@@ -394,7 +415,8 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
-  useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
+  // 盖着文件面板时 Esc 先收面板，不弹停止确认
+  useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun && !childFiles, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
@@ -510,6 +532,8 @@ export function TaskView({
   // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
   const openChildIn = (id: string) => {
     setOpenChild(id)
+    // 换了子对话、收起子对话时把文件覆盖层一起收掉，免得下次打开时对着另一个子对话开着文件
+    if (!id || id !== openChild) setChildFiles(false)
     if (id) setOpenRun(0)
     if (!pane) writePaneChild(taskId, id)
   }
@@ -1188,14 +1212,17 @@ export function TaskView({
                       <ListPlus className="h-4 w-4" />
                     </Button>
                   )}
+                  {/* 子对话开着时也让点：文件面板盖在子对话上展开，收起后子对话还在 */}
                   {!pane && !noFiles && (
                     <Button
+                      ref={fileBtnNarrow}
                       variant="ghost"
                       size="icon-sm"
                       className="xl:hidden"
-                      aria-label={t('显示文件')}
-                      title={t('文件')}
-                      onClick={() => setPanel(true)}
+                      aria-label={openChild ? t('覆盖显示文件') : t('显示文件')}
+                      title={openChild ? t('覆盖显示文件') : t('文件')}
+                      aria-expanded={openChild ? childFiles : undefined}
+                      onClick={() => (openChild ? setChildFiles((v) => !v) : setPanel(true))}
                     >
                       <PanelRight className="h-4 w-4" />
                     </Button>
@@ -1276,18 +1303,24 @@ export function TaskView({
                       </MenuItem>
                     </MenuContent>
                   </Menu>
-                  {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
-                  {!pane && !noFiles && openRun === 0 && !openChild && (
+                  {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；
+                  右栏开着子对话时右栏不是文件面板，按钮改成在子对话上覆盖展开文件（运行面板开着时没有文件可看） */}
+                  {!pane && !noFiles && openRun === 0 && (
                     <Button
+                      ref={openChild ? fileBtn : undefined}
                       variant="ghost"
                       size="icon-sm"
                       className="hidden xl:inline-flex"
-                      aria-label={t('收起文件面板')}
-                      title={t('收起文件面板')}
-                      aria-expanded={!filesFolded}
-                      onClick={() => setFilesFolded((v) => !v)}
+                      aria-label={openChild ? t('覆盖显示文件') : t('收起文件面板')}
+                      title={openChild ? t('覆盖显示文件') : t('收起文件面板')}
+                      aria-expanded={openChild ? childFiles : !filesFolded}
+                      onClick={() => (openChild ? setChildFiles((v) => !v) : setFilesFolded((v) => !v))}
                     >
-                      {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                      {(openChild ? childFiles : filesFolded) ? (
+                        <PanelRight className="h-4 w-4" />
+                      ) : (
+                        <PanelRightClose className="h-4 w-4" />
+                      )}
                     </Button>
                   )}
                   {pane && onClose && (
@@ -1494,11 +1527,19 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
-                  aria-label={openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
+                  aria-label={
+                    openChild
+                      ? childFiles
+                        ? t('文件')
+                        : t('子对话')
+                      : openRun > 0
+                        ? t('运行 {n}', { n: openRun })
+                        : t('文件')
+                  }
                   data-task-panel
                   style={{ width: openChild ? '50%' : taskPanel.width }}
                   className={cn(
-                    'shrink-0 flex-col border-l bg-rail',
+                    'relative shrink-0 flex-col border-l bg-rail',
                     panel || openRun > 0 || openChild
                       ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
                       : 'hidden',
@@ -1512,14 +1553,51 @@ export function TaskView({
                   )}
                   {openChild ? (
                     // 对话内容区统一用 bg-bg：署名行等粘贴背景的地方在父对话、右栏、弹窗里颜色都一致
-                    <div className="flex min-h-0 w-full flex-1 flex-col bg-bg">
-                      <TaskView
-                        key={openChild}
-                        taskId={openChild}
-                        project={project}
-                        pane
-                        onClose={() => openChildIn('')}
-                      />
+                    <div className="relative flex min-h-0 w-full flex-1 flex-col bg-bg">
+                      {/* 文件面板盖着时，下面的子对话不卸载但也不能被 Tab 到，否则焦点会跑到盖着看不见的输入框上 */}
+                      <div className="flex min-h-0 w-full flex-1 flex-col" inert={childFiles} aria-hidden={childFiles}>
+                        <TaskView
+                          key={openChild}
+                          taskId={openChild}
+                          project={project}
+                          pane
+                          onClose={() => openChildIn('')}
+                        />
+                      </div>
+                      {/* 文件面板盖在子对话上：子对话留在下面没卸载，收起后滚动位置、输入框里写的字都还在；
+                      覆盖层只在自己打开时才挂载，不把文件树的请求带到每次开子对话上。
+                      窄屏子对话只占半边、文件树放不下，盖上去时铺满整个屏（手机上的抽屉习惯） */}
+                      {childFiles && (
+                        // 压在子对话里的运行视图（z-30）上面：盖的是这一栏的内容，不是只盖对话列表
+                        <div
+                          data-cover-panel
+                          className="absolute inset-0 z-40 flex flex-col bg-rail max-xl:fixed max-xl:z-50 max-xl:shadow-pop"
+                        >
+                          {/* 盖在子对话上时文件面板没有自己的标题栏，这里给一个明确的回子对话入口，免得用户找不到怎么回去 */}
+                          <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2 py-1.5">
+                            <span className="flex min-w-0 items-center gap-1.5 pl-1 text-[0.8125rem] font-semibold">
+                              <Files className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                              {t('文件')}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={t('回到子对话')}
+                              title={t('回到子对话')}
+                              onClick={closeChildFiles}
+                            >
+                              <ArrowLeft className="h-4 w-4" />
+                              {t('回到子对话')}
+                            </Button>
+                          </div>
+                          <TaskFiles
+                            task={task}
+                            dir={project?.path}
+                            node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                            onTask={apply}
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
