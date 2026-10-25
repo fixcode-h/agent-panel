@@ -130,7 +130,7 @@ async function takeSteer(text) {
   if (process.env.FAKE_CLI_LOG && input.includes('HOLD_STEER'))
     appendFileSync(
       process.env.FAKE_CLI_LOG + '.hold',
-      JSON.stringify({ kind, held: true, kid: wrapRequestIds(text)[0] ?? '' }) + '\n',
+      JSON.stringify({ kind, held: true, kid: wrapRequestIds(text)[0] ?? '', at: Date.now() }) + '\n',
     )
   for (const id of wrapRequestIds(text)) {
     if (tookWrap.has(id)) continue
@@ -140,9 +140,17 @@ async function takeSteer(text) {
     // 这类原因被拒，插话先到、input 后到时正好靠这次重试合上）
     if (got?.isError) tookWrap.delete(id)
     // via 标出这个请求是从哪条路来的：插话（父对话正忙）还是本轮 input。
-    // 回归用例要断言“确实是插话那条路办的”，否则父对话那一轮先结束时用例会假通过
+    // 回归用例要断言“确实是插话那条路办的”，否则父对话那一轮先结束时用例会假通过。
+    // at 记落盘时刻：用例失败时据此判断是「请求根本没走插话」还是「记录还没写到」
+    // FAKE_FINISH_LOG_DELAY_MS（默认 0）：对照实验用，把落盘拖后以放大「服务端已置位 resolved、记录还没写」的窗口，
+    // 用来验证用例等的到底是这条记录本身
+    const finishDelayMs = Number(process.env.FAKE_FINISH_LOG_DELAY_MS) || 0
+    if (finishDelayMs > 0) await new Promise((r) => setTimeout(r, finishDelayMs))
     if (process.env.FAKE_CLI_LOG)
-      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'steer', got }) + '\n')
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.finish',
+        JSON.stringify({ kind, id, via: 'steer', got, at: Date.now() }) + '\n',
+      )
   }
   // 收尾请求办完（finish_child 返回、.finish 记下）才算等到：收到就放掉的话，HOLD_STEER 那一轮
   // 最多 1 秒后就结束、进程退出，finish_child 还在合并，.finish 那行来不及写，用例在「以插话交给父对话」那步偶发失败
@@ -486,6 +494,13 @@ if (titleFor !== null) {
   if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.title', JSON.stringify({ kind }) + '\n')
   input = ''
 }
+// FAKE_STARTUP_DELAY_MS / FAKE_STARTUP_DELAY_MATCH（默认关）：对照实验用，写调用日志（也就是 start 时间戳）之前先拖一阵，
+// 模拟 CI 高负载下 node 进程还没起来的窗口。陪 MATCH 可以只拖慢某一类节点（例如「节点：文档」），
+// 用来验证 02-workflow 的并发断言测的是调度窗口还是进程窗口（见项目教训 lmvnpbhxfu1yg 的对照组做法）。
+// 只对一次性执行生效：codex app-server 等模式这时候 input 还没读到，空串会拖慢所有调用
+const startupDelayMs = Number(process.env.FAKE_STARTUP_DELAY_MS) || 0
+if (startupDelayMs > 0 && input && input.includes(process.env.FAKE_STARTUP_DELAY_MATCH ?? ''))
+  await new Promise((r) => setTimeout(r, startupDelayMs))
 if (process.env.FAKE_CLI_LOG && titleFor === null) {
   const log = process.env.FAKE_CLI_LOG
   const extra =

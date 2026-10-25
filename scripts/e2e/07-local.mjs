@@ -130,7 +130,16 @@ await runShard('本机请求与设置', async (api) => {
 
   // 重命名；停止后继续执行
   assert.equal((await call('PATCH', `/tasks/${sim.id}`, { title: '新标题' })).title, '新标题')
-  let rs = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '停一下再继续' })
+  let rs = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'SLOW 停一下再继续',
+  })
+  // 等 CLI 真的起来再停，而且这一轮必须够长：假 CLI 默认那一轮只要 150ms，光是等它启动再发 stop
+  // 仍然可能抢不到（stop 请求到达时它已经跑完，任务已是 done，stop 成了 no-op，断言 stopped 假失败）。
+  // 带 SLOW 让这一轮持续十来秒，stop 才必然落在它执行期间（和 03-chat.mjs 的停止用例同一写法）
+  await waitFor(() => calls().some((c) => c.input.includes('停一下再继续')), { label: '停止用例的任务开始执行' })
   await call('POST', `/tasks/${rs.id}/stop`)
   rs = await waitDone(rs.id)
   assert.equal(rs.status, 'stopped')

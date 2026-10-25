@@ -186,9 +186,26 @@ await runShard('工作流任务', async (api) => {
   const c2 = [cp1, cp2].find((x) => x.input.includes('节点：实现'))
   const c3 = [cp1, cp2].find((x) => x.input.includes('节点：文档'))
   assert.ok(c2 && c3 && c2.kind === 'claude' && c3.kind === 'claude', '节点固定用默认 CLI')
-  assert.ok(c2.start < c3.end && c3.start < c2.end, '同一阶段的两个节点应该同时运行')
-  assert.ok(Math.min(c2.start, c3.start) >= c1.end, '下游节点要等上游结束')
-  assert.ok(c4.start >= Math.max(c2.end, c3.end), '有两个上游的节点要等两个都结束')
+  // 并发和先后都看引擎记的「节点执行窗口」（step.startedAt/endedAt：startedAt 在 spawn 之前记、endedAt 在节点结束时记），
+  // 不看假 CLI 进程的 start/end：那是「进程存活窗口」，CI 上 10 个分片并行时，第二个节点的 node 进程
+  // 可能晚到第一个 exit 之后才写日志，两个区间就不重叠了，但引擎确实把两个节点同时放进了 running
+  // （shared/engine.ts 的 runFlow：同一阶段 for (const n of ready()) 顺序塞进 running，再 race 等先完成的）。
+  // 用节点时间既不会把进程启动慢半拍误判成串行，也能拦住真的串行（串行时下游的 startedAt 会晚于上游的 endedAt）
+  const win = (id) => {
+    const s = t.steps.find((x) => x.id === id)
+    assert.ok(s && s.startedAt && s.endedAt, `节点 ${id} 应该有开始和结束时间`)
+    return { start: Date.parse(s.startedAt), end: Date.parse(s.endedAt) }
+  }
+  const [w1, w2, w3, w4] = ['n1', 'n2', 'n3', 'n4'].map(win)
+  // 失败时把引擎节点时间和进程存活窗口一起打出来：下次失败能直接看出是调度真的串行，还是进程启动慢
+  const windows =
+    `引擎节点窗口：n2 ${w2.start}~${w2.end}，n3 ${w3.start}~${w3.end}，n1 ${w1.start}~${w1.end}，n4 ${w4.start}~${w4.end}` +
+    `；进程存活窗口：实现 ${c2.start}~${c2.end}，文档 ${c3.start}~${c3.end}，分析 ${c1.start}~${c1.end}，验收 ${c4.start}~${c4.end}`
+  // 要求严格有正重叠（不是端点点触）：真的并发时两个节点同步塞进 running，startedAt 几乎相同，必然重叠；
+  // 串行时下游的 startedAt 紧接在上游 endedAt 之后，就只剩点触，这一条会拦住它
+  assert.ok(w2.start < w3.end && w3.start < w2.end, `同一阶段的两个节点应该同时运行（${windows}）`)
+  assert.ok(Math.min(w2.start, w3.start) >= w1.end, `下游节点要等上游结束（${windows}）`)
+  assert.ok(w4.start >= Math.max(w2.end, w3.end), `有两个上游的节点要等两个都结束（${windows}）`)
   assert.ok(c2.args.includes('--append-system-prompt'))
   assert.match(
     c2.args[c2.args.indexOf('--append-system-prompt') + 1] ?? '',
