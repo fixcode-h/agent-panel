@@ -1386,7 +1386,14 @@ async function runNodeSingle(
     // 上一轮读过的代码、给过的意见都在会话里，整段历史能命中缓存；不续接的话每轮都从头读一遍
     const prev =
       round === 0 && !resumeHalf && !host.task.sessions[step.id] ? prevRoundSession(host, inv, node.kind, node.id) : ''
-    if (prev) host.task.sessions[step.id] = prev
+    if (prev) {
+      host.task.sessions[step.id] = prev
+      // 会话按目录存：借来的这条会话也要带上它原来是在哪个目录里开的，
+      // 不然换了目录续接时会在 CLI 里撞「会话在别的项目里」（见 runner.ts 的 sessionMoved）
+      const dirs = host.task.sessionDirs ?? {}
+      const at = Object.entries(dirs).find(([k]) => host.task.sessions[k] === prev)?.[1]
+      if (at) dirs[step.id] = at
+    }
     const cont =
       round === 0 && resumeHalf
         ? `上次执行到一半被中断了（停止或面板重启）。请检查已经做了哪些，从中断的地方接着完成本节点「${step.title}」的工作，完成后同样简要总结。`

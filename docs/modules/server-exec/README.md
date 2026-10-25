@@ -27,6 +27,7 @@
 ## 回归验证
 
 - `npm run test:unit`（`server/exec/*.test.ts`：解析、进程、RPC、孤儿进程、worktree、停止等）
+- 会话按目录存：`shared/task-session-dir.test.ts` 的「sameDir：Windows 路径的大小写、分隔符、末尾斜杠都不影响判定」「sessionMoved：会话在别的目录里就算搬过」「没记过目录的会话不判为搬过」「对话在没有新字段时退回共用的 sessionDir」「新字段按会话分别记，优先于对话共用的 sessionDir」。改会话续接时特别注意：`resume` 的目录判定必须对子任务也生效，不能写成 `chat &&` 短路（见 `bugs/sub-session-other-project.md`）。
 - 进程与内存口径：`server/exec/proc-stats.test.ts` 的「按任务汇总」「进程归属：只取当前子树任务的登记，祖先、兄弟和无归属的面板动作都不算」「清理白名单：只看当前对话及附属的任务登记」「内存历史：新采样按任务分开记，子对话只加自己这一支」「内存历史：旧样本只有根任务聚合时，子对话是未知而不是 0（不制造 0 起步的假曲线）」「内存历史：合计只算这个对话的 CLI，面板 server 单独给出」；`server/task-memory.test.ts` 的「会话内存分析接口：子对话的采样只加自己这一支，不算父对话和兄弟」；任务树本身在 `shared/run-usage.test.ts`（父/子/孙、兄弟、无关任务、数据里成环）。
 - 改了执行流程、停止、续跑或 worktree 合并后跑 `npm run test:e2e`（用 `scripts/fake-cli` 模拟各 CLI，Windows 上在 WSL 里）
 
