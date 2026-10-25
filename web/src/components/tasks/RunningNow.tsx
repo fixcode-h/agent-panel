@@ -7,9 +7,8 @@ import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { RowShell, ToolRows } from './ToolRow'
-import { useChildList, useChildOpen, useOpenChildId } from './child-open'
+import { useChildList, useChildOpen } from './child-open'
 import { childLabelClass, childLabels, childNote, staleLine } from './child-line'
-import { ChildSwitcher } from './ChildSwitcher'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
 
@@ -189,8 +188,6 @@ export function RunningNow({
 }) {
   const children = useChildList()
   const openChild = useChildOpen()
-  // 右栏当前打开的子对话：切换下拉用它标出当前项
-  const openId = useOpenChildId()
   const list = jobs ? (task?.jobs ?? []) : []
   // 后台命令按来源分两批：子任务（slot='sub' 的步骤）起的单独列，父对话自己起的照旧；判定只有 splitStepJobs 一处
   const { sub: stepJobs, own: ownJobs } = splitStepJobs(task?.steps ?? [], list)
@@ -247,13 +244,7 @@ export function RunningNow({
             // 行自己的宽度当容器查询的基准（见 RowShell 的 container）：右栏开着时同样的视口
             // 宽度下行会窄一半，按视口断点会误判
             container
-            // 标题左边切换子对话：和输入框上方、右栏标题旁的入口读同一份列表。
-            // 行窄到放不下时先收起这个按钮（状态标签和耗时优先），输入框上方的入口仍能切换
-            leading={
-              openChild ? (
-                <ChildSwitcher list={children} current={openId} onOpen={openChild} className="@max-[380px]:hidden" />
-              ) : undefined
-            }
+            // 行前不放切换子对话的下拉（用户要求去掉）：每个子对话自己一行，要换着看就点另一行
             glyph={<Loader2 className={cn('h-3.5 w-3.5 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />}
             // 窄屏不写动作名：把宽度留给标题、状态标签和耗时，否则「计划 1/2」后面的「执行中」会被裁掉。
             // 用 sr-only 不用 hidden：不占宽度，读屏仍能读到这行是子对话
