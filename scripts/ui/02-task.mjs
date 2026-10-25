@@ -1194,7 +1194,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .waitForFunction(
             ([k, ids]) => {
               const db = JSON.parse(localStorage.getItem(k) ?? '{"tasks":[]}')
-              return !(db.tasks ?? []).some((x) => ids.includes(x.id) && x.status === 'running')
+              // 只等新出现的任务（分析对话）：known 里的演示数据本身就有故意停在 running 的对话
+              // （状态行的正例 / 反例，见 seedTasks），算进去会一直等不到
+              return !(db.tasks ?? []).some((x) => !ids.includes(x.id) && x.status === 'running')
             },
             ['agent-panel-demo-v3', known],
             { timeout: 30000 },
@@ -2777,6 +2779,56 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .waitFor({ state: 'detached', timeout: 5000 })
           .catch(() => errors.push('转成弹窗：从列表打开对话后浮条还在（页面和浮条同时显示同一个对话）'))
         await check(p, '任务-转成弹窗-从列表打开后浮条消失')
+      }
+    }
+  }
+  // 状态行：子任务还在跑时不能说「在等你」+「空闲」（用户报的问题：对话派出的子任务在跑命令，
+  // 状态行却说「等待你的下一条消息」+「空闲」）。演示数据里「后台命令弹窗实时看输出」就是那个场景：
+  // 这一轮已回完、awaitingUser 和 cliAlive 都是 true，但它派出的子任务还在执行。
+  // 按标题在演示数据里查 id 再拼 hash 打开：侧栏的对话列表跟着筛选和滚动，按 title 定位不稳
+  {
+    const openByTitle = async (title) => {
+      await p.goto(base)
+      const id = await p.evaluate(
+        ([k, want]) => (JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []).find((x) => x.title === want)?.id,
+        ['agent-panel-demo-v3', title],
+      )
+      if (!id) return false
+      await p.goto(`${base}#/chat/${encodeURIComponent(id)}`)
+      await p
+        .getByTitle('Token 用量')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .catch(() => {})
+      return true
+    }
+    const opened = await openByTitle('后台命令弹窗实时看输出')
+    if (!opened) errors.push('状态行：演示数据里找不到「后台命令弹窗实时看输出」这个对话')
+    else {
+      // 等状态行按 childWait 算出来（子任务在跑 → helpers），不是等固定时长
+      const line = p.locator('[data-chat-wait]').first()
+      await line.waitFor({ timeout: 10000 }).catch(() => errors.push('状态行：子任务在跑时没有显示等待行'))
+      const kind = await line.getAttribute('data-chat-wait').catch(() => null)
+      if (kind !== 'helpers') errors.push(`状态行：子任务在跑时等待行算成了「${kind}」，应该是 helpers`)
+      const text = ((await line.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
+      if (!text.includes('等待 1 个子任务完成'))
+        errors.push(`状态行：子任务在跑时没写「等待 1 个子任务完成」，写的是「${text}」`)
+      if (text.includes('等待你的下一条消息')) errors.push(`状态行：子任务还在跑却说「等待你的下一条消息」（${text}）`)
+      // 「空闲」也不能出现：父对话没在输出，但它在等子任务，不是没事做
+      if (text.includes('空闲')) errors.push(`状态行：子任务还在跑时速度位写了「空闲」（${text}）`)
+      if (!text.includes('等待中')) errors.push(`状态行：子任务还在跑时速度位该写「等待中」，写的是「${text}」`)
+      await check(p, '任务-等子任务时状态行')
+      // 反例：真的停在等下一句（没有子任务、没有后台命令）时照旧写「等待你的下一条消息」
+      const controlOpened = await openByTitle('整理一份 Claude Code 和 Codex 的能力对照')
+      if (!controlOpened)
+        errors.push('状态行：演示数据里找不到「整理一份 Claude Code 和 Codex 的能力对照」这个对照对话')
+      else {
+        const idle = p.locator('[data-chat-wait="next"]').first()
+        await idle.waitFor({ timeout: 10000 }).catch(() => errors.push('状态行：真的停在等下一句时没有显示等待行'))
+        const idleText = ((await idle.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
+        if (!idleText.includes('等待你的下一条消息'))
+          errors.push(`状态行：真的停在等下一句时没写「等待你的下一条消息」，写的是「${idleText}」`)
+        await check(p, '任务-等下一句时状态行')
       }
     }
   }
