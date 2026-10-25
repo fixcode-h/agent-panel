@@ -709,6 +709,77 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!selText.includes(want)) errors.push(`引用卡片选中复制：粘回来的卡片里没有「${want}」`)
     await b.keyboard.press('Escape')
     await check(b, '元素引用-选中卡片复制')
+    // 剪贴板里同时有 text/plain 和 text/html：粘到 Word、Excel 这类富文本目标时换行还在，
+    // 两张格式装的是同一份完整原文（不是卡片上那段 40 字摘要）
+    const formats = await b
+      .evaluate(async () => {
+        const items = await navigator.clipboard.read()
+        const out = {}
+        for (const item of items) for (const type of item.types) out[type] = await (await item.getType(type)).text()
+        return out
+      })
+      .catch(() => null)
+    if (!formats) errors.push('元素引用-选中卡片复制：读不到剪贴板的两种格式')
+    else {
+      for (const type of ['text/plain', 'text/html']) {
+        if (!(type in formats)) errors.push(`元素引用-选中卡片复制：剪贴板里没有 ${type}`)
+      }
+      // HTML 版里也必须是完整原文：换行在 html 里是 <br>，所以按去掉标签后的文字判断
+      const htmlText = (formats['text/html'] ?? '').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '')
+      for (const want of ['- 元素：', 'web/src/pages/ChatPage.tsx:', '- 选择器：'])
+        if (!htmlText.includes(want)) errors.push(`元素引用-选中卡片复制：html 版本里没有「${want}」`)
+      if (!htmlText.includes('[/元素引用]'))
+        errors.push('元素引用-选中卡片复制：html 版本里没有结束标记，粘回输入框认不出卡片')
+    }
+    // 剪切选中的卡片：剪贴板同样写完整原文（onCut 和 onCopy 共用一份序列化），
+    // 而且选中的内容要真的从输入框里删掉、背后的附件一起清掉
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪切前输入框清不空'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：先粘不进来就测不了剪切'))
+    await b.evaluate(() => {
+      const el = document.querySelector('#task-prompt')
+      el?.focus()
+      const r = document.createRange()
+      if (el) r.selectNodeContents(el)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(r)
+    })
+    await b.keyboard.press('Control+X')
+    const cut = await b.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!cut.startsWith('[元素引用]')) errors.push(`引用卡片剪切：剪贴板里不是带标记的原文（${cut.slice(0, 32)}）`)
+    if (!cut.includes('- 元素：') || !cut.includes('- 选择器：'))
+      errors.push('引用卡片剪切：剪贴板里只有摘要，没有完整原文')
+    // 剪切要真的从输入框里删掉（不拦原生剪切时浏览器也会删，拦下后由 onCut 自己删）
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('引用卡片剪切：剪完输入框里的卡片还在'))
+    // onCut 是程序化 deleteContents()，不是原生删除键：万一浏览器留下占位节点，serialize 读出来是「\n」，
+    // 输入框里多一空行、草稿被判非空。这里直接断言剪完的内容是空的
+    const afterCut = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '<读不到>')
+    if (afterCut.trim()) errors.push(`引用卡片剪切：剪完输入框里还留着内容（${JSON.stringify(afterCut.slice(0, 20))}）`)
+    // 剪完的卡片背后不能再留着附件：再粘回来只该有一张卡片（附件没被重复带走）
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    await b
+      .waitForFunction(() => document.querySelectorAll('#task-prompt [data-chip="quote"]').length === 1, null, {
+        timeout: 5000,
+      })
+      .catch(() => errors.push('引用卡片剪切：剪完再粘回来没有还原成一张引用卡片'))
+    await check(b, '元素引用-剪切卡片')
     // 只复制了一半标记（截图、截断）时按普通文字粘进来，不能误判成卡片
     await b.locator('#task-prompt').click()
     await b.keyboard.press('Control+A')
