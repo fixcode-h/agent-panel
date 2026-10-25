@@ -61,6 +61,36 @@ export async function entries(): Promise<Entry[]> {
 /** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
 export const sharedRoot = () => expandHome('~/.agents/skills')
 
+/** 并入 project-testing 的「测试先行」和 writing-tests.md */
+const OLD_TDD: Record<string, string> = {
+  'SKILL.md': 'cff7f87a724f07dd28080fad53a6d89bda6b00c2746e1f4e0cc37a92c0f5db37',
+  'testing-anti-patterns.md': 'bde453bc258f06543987477c837939afaa774ea2acbd9f308d702fc452bc4283',
+}
+/** 太宽泛、几乎不起作用而下线；扩展点和配置化并入 coding-standards，UE 部分并入 ue-project-structure */
+const OLD_ARCH: Record<string, string> = {
+  'SKILL.md': 'c7a4298b74518422ede6a4517ccd5779a6989f1871fcbbdcaae06782f13932fb',
+  'references/api-and-contracts.md': '8fb1db267e1281fd50e68a1d022d65dd8e322f96cfe307017c8f1ec240a14765',
+  'references/architecture-fit-and-complexity.md': 'fb6a3f5fab4a565dcdc3075ef4117cfce197be32cbfd4fa88cbe9db8d7d04b12',
+  'references/caching.md': 'c55a5f2dc80366e552cbe76de10d70561ea424ab61a9ccff59d26c80b7f1ed25',
+  'references/concurrency-and-async.md': 'b1a22405b797fb710eaf38cbaaf09c8c5ae12a65d1cfd8fbe55b5e3dc83f3b80',
+  'references/csharp-dotnet-architecture.md': 'b7693942779377aabd5435c467e92ecc3a5d370473247612d93e01ee6b62b936',
+  'references/evolution-and-migration.md': '1241a4181dec33159dedca28227e8e3fdc5f778226a4a7372382a6b13c29203a',
+  'references/extensibility.md': 'cfb08d709935a5917409ac33e92f9e8ded4f7899883d433b51e37d2c92d61768',
+  'references/lua-architecture.md': '9dc93ac75eee788fd7403516e97aa972ba74bbba42692b7d8f8a7551b89a0e7b',
+  'references/lua-host-integration.md': '1c4b31fe46e338a7e255b059890cddb6bd9af9c04a0853167deeeeb59bf94e9e',
+  'references/modules-and-dependencies.md': '57067e92abcfea909afabc5b4c617bfbf74d5b799fff48dd4694747c34634656',
+  'references/observability.md': 'ebc22153591401e0825f5b9ca9bb99a74c791776ae38aad030a2c1110506966c',
+  'references/performance.md': 'b5d326bb3899b3d55662036d2cc82ff478c06e2ca62f174591789f8733bbf47b',
+  'references/persistence-and-consistency.md': 'c0c314358282fe9b126c6b07778570bcc72c53e4987cce8bb9d1c1f33b62054d',
+  'references/reliability-and-errors.md': '90f790077c89411424b20b0bcc86dd7e0e1d2cdc49e24e6cb84c7389446ea4ef',
+  'references/runtime-data-projection-and-configuration.md':
+    '8138aff98e18c1a996434f8a15045c0bf306ca5d7552a0a3d3e0c3fac25e7dba',
+  'references/security-boundaries.md': 'bcab446c03814af3903f9990fe322600618168ca3400d5752a9a3ea63b7216c1',
+  'references/state-lifecycle-and-ownership.md': 'a83208ed1aae126fa6f6958106c6ea352c74417921d534c33166d7ea3bed4861',
+  'references/testing-and-fitness-functions.md': 'ddd4a0e856b6fb7c169a465713e5f1e676c597a63ab6c1fd78b343d2d11e0667',
+  'references/unreal-engine-architecture.md': '2f82045afb17a0742fd5c92b8919c244247d028a8e30ec48fab8bc273ec8648b',
+}
+
 /**
  * 已经下线的自带 Skill：目录名 → 旧版每个文件的 sha256。
  * 内容并入 project-vcs 之后，旧副本留着会让 CLI 同时看到两个入口，所以要清掉；
@@ -85,6 +115,11 @@ export const RETIRED_BUNDLED: Record<string, Record<string, string>> = {
     'SKILL.md': '5ff4623b346db832f5142bb4534321c8ce6548f4686db0569e62f6e965732c49',
     'scripts/check_lua_syntax.py': '23376e1d476162a1ad8bed2c4c2814dda03e98fc317c927489d85e9a91a22acc',
   },
+  // 运行 Agent 时补装的是平铺目录，设置 → 部署装的是「分类/名字」，两处都清
+  'test-driven-development': OLD_TDD,
+  'coding/test-driven-development': OLD_TDD,
+  'software-architecture-design': OLD_ARCH,
+  'coding/software-architecture-design': OLD_ARCH,
 }
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex')

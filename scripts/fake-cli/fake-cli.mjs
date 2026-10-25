@@ -636,7 +636,17 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
   const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
   if (!beganEdit && !isReviewRole() && (asked || back)) {
     const review = (instructions) =>
-      panelCall('spawn_agents', { tasks: [{ agent: '评审', title: '评审改动', instructions }] })
+      // 第一次派评审要带交接单（ADR 0013，缺 goal / checks 面板会拒绝）；这里复看也是新派，同样带上
+      panelCall('spawn_agents', {
+        tasks: [
+          {
+            agent: '评审',
+            title: '评审改动',
+            instructions,
+            review: { goal: '写好 child-done.txt', changes: 'child-done.txt — 完成标记', checks: 'npm test：通过' },
+          },
+        ],
+      })
     // 评审是计划里的独立步骤：派的时候标等待中，拿回结论后标完成（面板 submit_merge 前会校验这一步）
     const plan = (steps) => {
       if (process.env.FAKE_CLI_LOG)

@@ -20,6 +20,7 @@
 | [0010](./0010-review-code-only.md)                        | 评审只看代码，面板一次附上改动，意见分四级                  | 已接受 | 2026-10-24 | 面板附 `git diff -W`，复看只附增量；高级、中级要处置                    |
 | [0011](./0011-app-actions-for-agents.md)                  | Agent 操控软件走动作注册表，对 Agent 只暴露两个 MCP 工具    | 已接受 | 2026-10-24 | `app_actions` / `app_do` + `server/app-actions/`；用户命令第一          |
 | [0012](./0012-running-conversations-never-deactivated.md) | 对话「在运行」只有一个判定，在运行的对话和子对话不失活      | 已接受 | 2026-10-24 | `convActive` 唯一判定；回收前先问；子对话只随用户停止结束；可终止子任务 |
+| [0013](./0013-review-diff-only-with-brief.md)             | 评审只评改动的行，背景由对话整理成交接单                    | 已接受 | 2026-10-25 | `spawn_agents` 的 `review` 交接单；不读文档不搜项目；软时限             |
 
 状态只有四个词，别自己造近义词：
 
