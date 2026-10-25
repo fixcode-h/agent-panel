@@ -27,10 +27,12 @@ import { blank, hasAlpha, removeFlatBackground } from './image.ts'
 test('内置工作流都能通过检查，占位符换成实际的值', () => {
   for (const wf of BUILTIN_WORKFLOWS) {
     assert.deepEqual(checkWorkflow(wf.graph), [], wf.id)
-    assert.ok(
-      LOCAL_MODELS.some((m) => m.id === wf.model),
-      wf.id,
-    )
+    // 处理类工作流（纯插值放大）不依赖任何模型，写了模型的就必须在清单里
+    if (wf.model)
+      assert.ok(
+        LOCAL_MODELS.some((m) => m.id === wf.model),
+        wf.id,
+      )
   }
   const g = fillWorkflow(BUILTIN_WORKFLOWS[0].graph, {
     prompt: 'a sword',

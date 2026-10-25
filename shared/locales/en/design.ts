@@ -377,7 +377,6 @@ export const EN_DESIGN: Record<string, string> = {
   '当前生成方式不支持局部重绘，已改成整张重画':
     'This image source cannot inpaint, so the whole screen is being redrawn',
   '已按蒙版局部重绘，新的一张在原画里': 'Inpainted the masked area; the new concept is now in the concept list',
-  '上传局部重绘的原图失败：{error}': 'Could not upload the image for inpainting: {error}',
   '正在准备局部重绘…': 'Preparing the inpaint…',
   '这个工作流不支持局部重绘，请换成内置工作流或整张重画':
     'This workflow cannot inpaint; use a built-in workflow or redraw the whole screen',
