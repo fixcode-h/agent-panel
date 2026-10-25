@@ -1134,6 +1134,7 @@ export const EN_TASKS: Record<string, string> = {
   '每条建议点「应用」才写进项目教训': 'Each suggestion is written to the project lessons only when you click Apply',
   '推荐的设置逐项应用，直接保存进项目': 'Apply recommended settings one by one; they are saved to the project directly',
   收起功能面板: 'Hide side panel',
+  拖动调整功能面板的宽度: 'Drag to resize the side panel',
   '对话正在回复，这一轮结束后再点': 'The conversation is replying; click again after this turn ends',
   '已经在这个对话里处理过，点了再处理一次': 'Already handled in this conversation; click to handle it again',
   已处理: 'Handled',

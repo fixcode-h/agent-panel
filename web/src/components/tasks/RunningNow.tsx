@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import type { Task, TaskJob, TaskStep, ToolUse } from '@shared/schema'
-import { helperActive, helperRunning, stepMs, visibleChildren, splitStepJobs, type ChildEntry } from '@shared/task'
+import {
+  helperActive,
+  helperRunning,
+  sortHelpers,
+  stepMs,
+  visibleChildren,
+  splitStepJobs,
+  type ChildEntry,
+} from '@shared/task'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { jobLabel } from '@/lib/tasks'
@@ -10,7 +18,6 @@ import { RowShell, ToolRows } from './ToolRow'
 import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
-
 import { t } from '@shared/i18n'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结下面，不能跟着过程一起折叠 */
@@ -54,12 +61,12 @@ export function runningRows<C extends ChildEntry>({
   }
 }
 
-/** 对话派出的、还没结束的子任务：在跑的排前面 */
+/** 对话派出的、还没结束的子任务：顺序和「子任务」列表同一套（在跑的在前，同一组里最新的在最上面，见 sortHelpers） */
 export function activeHelpers(task: Task) {
   const steps = chatHelperIds(task)
     .map((id) => task.steps.find((s) => s.id === id))
     .filter((s): s is TaskStep => !!s && helperActive(s))
-  return [...steps.filter(helperRunning), ...steps.filter((s) => !helperRunning(s))]
+  return sortHelpers(steps)
 }
 
 const spin = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -200,10 +207,16 @@ function HelperRow({
           <span
             className={running ? childLabelClass.accent : childLabelClass.subtle}
             title={
-              step.apiWait ? t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api }) : undefined
+              step.apiWait?.reason === 'start'
+                ? t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api })
+                : undefined
             }
           >
-            {running ? t('执行中') : step.apiWait ? t('排队等 API「{api}」', { api: step.apiWait.api }) : t('排队中')}
+            {running
+              ? t('执行中')
+              : step.apiWait?.reason === 'start'
+                ? t('排队等 API「{api}」', { api: step.apiWait.api })
+                : t('排队中')}
           </span>
           {jobs.length > 0 && (
             <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')} title={names}>

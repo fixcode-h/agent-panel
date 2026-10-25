@@ -51,6 +51,7 @@ import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -74,7 +75,7 @@ import { useTaskStream } from '@/lib/task-stream'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, startedRun } from '@/lib/tasks'
+import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -258,6 +259,25 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
+const PANE_MIN = 280
+/** 右栏拖动时中间至少留下的宽度 */
+const PANE_GAP = 320
+/** 功能面板的默认宽度（原来是 min(440px, 100%) 定宽） */
+const REPORT_PANE_DEFAULT = 440
+/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
+const REPORT_PANE_MIN = 320
+
+/**
+ * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
+ * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
+ * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
+ */
+function paneMax(box: HTMLElement | null, min: number) {
+  const row = box?.parentElement?.clientWidth ?? window.innerWidth
+  return Math.max(min, row - PANE_GAP)
+}
+
 /**
  * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
  * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
@@ -398,15 +418,19 @@ export function TaskView({
   }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
+  // 右栏自己这一栏：量拖动上限时以它为基准，不按全局第一个右栏（见 paneMax）
+  const rail = useRef<HTMLElement>(null)
   // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
   const taskPanel = usePaneWidth(
     'task-panel',
     typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
-    280,
-    () => {
-      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-      return Math.max(340, row - 320)
-    },
+    PANE_MIN,
+    () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+  )
+  // 功能面板和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）：
+  // 初值取原来的定宽 440；窗口比 440 + 中间留的量还窄时按上限收着，和原来的 min(440px, 100%) 一致
+  const reportPane = usePaneWidth('report-panel', REPORT_PANE_DEFAULT, REPORT_PANE_MIN, () =>
+    paneMax(rail.current, REPORT_PANE_MIN),
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -777,6 +801,9 @@ export function TaskView({
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
+  // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
+  // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
+  const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
@@ -1520,8 +1547,9 @@ export function TaskView({
                           teamNames={teamNames}
                           live={working && i + hidden === blocks.length - 1}
                           last={!working && i + hidden === blocks.length - 1}
-                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
-                          latest={i + hidden === blocks.length - 1}
+                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+                          // 刚发出的用户消息排在后面时也算）
+                          latest={i + hidden === latestTurn}
                           fallback={byCli ? chatRun : undefined}
                           command={task.command}
                         />
@@ -1623,7 +1651,11 @@ export function TaskView({
                     (blocks.at(-1)?.kind === 'turn' ? (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
+                        <RunPhase
+                          task={task}
+                          label={t('{name} 正在回复', { name: chatLabel })}
+                          agentIds={[task.agentId]}
+                        />
                         <LiveStats task={task} agentIds={[task.agentId]} />
                       </div>
                     ) : (
@@ -1631,7 +1663,7 @@ export function TaskView({
                       <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          <RunPhase task={task} label={t('思考中…')} />
+                          <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
                           <LiveStats task={task} agentIds={[task.agentId]} />
                         </div>
                       </PendingReply>
@@ -1679,6 +1711,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
+                  ref={rail}
                   aria-label={
                     openChild
                       ? childFiles
@@ -1692,12 +1725,15 @@ export function TaskView({
                   }
                   data-task-panel
                   style={{
-                    // 功能面板定宽：放在 AI 分析窗口里时也给对话留出大半
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按原来的默认宽度封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持）
                     width: openChild
                       ? '50%'
-                      : !panel && openRun === 0 && (reportOn || reportCover)
-                        ? 'min(440px, 100%)'
-                        : taskPanel.width,
+                      : !panel && openRun === 0 && reportCover
+                        ? `min(${REPORT_PANE_DEFAULT}px, 100%)`
+                        : !panel && openRun === 0 && reportOn
+                          ? reportPane.width
+                          : taskPanel.width,
                   }}
                   className={cn(
                     'relative shrink-0 flex-col border-l bg-rail',
@@ -1709,6 +1745,11 @@ export function TaskView({
                     (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
+                  {/* 功能面板占右栏（宽屏并排）时也能拖，和文件面板一样记在本机；
+                  窄屏和 pane 里是盖在对话上的抽屉（reportCover），没有并排可拖，那时不挂拖动条 */}
+                  {!panel && reportOn && !reportCover && (
+                    <ResizeHandle pane={reportPane} label={t('拖动调整功能面板的宽度')} className="hidden xl:block" />
+                  )}
                   {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
@@ -2508,8 +2549,11 @@ function PendingReply({
 /**
  * 执行中的状态文字：最近一段时间没有任何输出、也没有工具在跑，说明在等模型的下一段。
  * 模型请求本身要几秒到几十秒（上下文越大越久），标出来，免得看起来像卡在工具上
+ *
+ * agentIds 要和同一行 LiveStats 的传法一致：判断「真的在出 token」只能看这一行显示的那几个 Agent，
+ * 看全部 Agent 会把「别人在输出、这一轮自己在排队」当成在输出，反而把真排队遮掉
  */
-function RunPhase({ task, label }: { task: Task; label: string }) {
+function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentIds?: string[] }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
@@ -2518,16 +2562,21 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
-  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）
-  if (task.apiWait)
+  // 这一行确实在出 token（同一行右边显示着速度）：就不是「还没开始」，不能标成在排队
+  const streaming = tpsNow(task, agentIds?.every(Boolean) ? agentIds : undefined) > 0
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）。
+  // 只看「开跑前就排着」的标记：让出名额后拿回的（等子任务、等下一句）这一轮已经跑起来了，
+  // 它排的是「交回结果的那一句」而不是「这一轮」，写成排队会和右边的实时速度自相矛盾
+  const wait = apiQueueWait(task, streaming)
+  if (wait)
     return (
       <>
-        {task.apiWait.ahead
-          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: task.apiWait.api, n: task.apiWait.ahead })
-          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: task.apiWait.api })}
+        {wait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: wait.api, n: wait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: wait.api })}
       </>
     )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
-  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+  return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
 }

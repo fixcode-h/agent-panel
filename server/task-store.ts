@@ -235,6 +235,11 @@ export function createTaskStore() {
     const t = p.data
     if (raw && typeof raw === 'object' && !Object.prototype.hasOwnProperty.call(raw, 'turnSeenAt'))
       t.turnSeenAt = t.turnDoneAt
+    // 「在排队等名额」是内存里的临时状态（此刻真的在排队才该有），进程重启后不可能还在排。
+    // 旧版本可能在让出名额 / 保活等下一句时漏清它，快照里就带着一条陈旧标记（页面上显示成在排队）；
+    // 这里丢掉，免得重启后凭空显示排队。以后每轮跑起来写回快照时再按当时情况重新写
+    delete t.apiWait
+    for (const s of t.steps) delete s.apiWait
     return t
   }
 

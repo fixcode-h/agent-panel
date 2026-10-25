@@ -3170,10 +3170,38 @@ function spreadSteps(t: Task) {
   }
 }
 
+/**
+ * 这个对话里最晚的一个时刻：消息时间和节点时间都算。
+ * 演示数据要往对话尾部再塞节点时用它当时间基准——消息时间不代表执行结束的时刻。
+ */
+function latestMoment(task: Task) {
+  let latest = 0
+  const take = (iso?: string) => {
+    const at = iso ? Date.parse(iso) : NaN
+    if (Number.isFinite(at) && at > latest) latest = at
+  }
+  task.messages.forEach((m) => take(m.at))
+  task.steps.forEach((s) => {
+    take(s.startedAt)
+    take(s.endedAt)
+  })
+  return latest ? new Date(latest).toISOString() : new Date().toISOString()
+}
+
+/** 演示里这个子任务跑了多久（列表和运行区上显示的耗时） */
+const DEMO_HELPER_SPENT_MS = 8_600
+
+/** 派出它的那条系统消息比它开始执行早多久 */
+const DEMO_HELPER_SPAWN_LEAD_MS = 800
+
 /** 示例对话派出的子任务：输入框上方的「子任务」栏、列表和只读窗口都要有东西看 */
 function demoHelper(task: Task, agent: { id: string; name: string }) {
-  const end = task.messages.at(-1)?.at ?? new Date().toISOString()
-  const start = new Date(Date.parse(end) - 8_600).toISOString()
+  // 时间摆在整段对话最晚的时刻之后，不是之前：模拟执行派过的子任务（@chat/sub/h1、h2）的 parentId 是
+  // '@chat'，不在 spreadSteps 重排的节点里，它们的时间落在这次执行的尾部；新派的这个若摆在那之前，
+  // 就会比已有的子任务更早开始，列表里「最新的在最上面」（shared/task.ts 的 sortHelpers）排不出来。
+  // 基准也不是「最后一条消息」：消息时间不代表执行结束的时刻。
+  const start = latestMoment(task)
+  const end = new Date(Date.parse(start) + DEMO_HELPER_SPENT_MS).toISOString()
   // 这个对话在模拟执行时已经派过子角色（@chat/sub/h1、h2），取一个没被占用的编号：
   // 用同一个 id 会跟已有的子任务撞在一起，列表里只显示前一个同 id 的标题
   const used = new Set(task.steps.map((s) => s.id))
@@ -3222,7 +3250,7 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     changes: [],
     runId: 1,
   })
-  const at = new Date(Date.parse(end) - 8_000).toISOString()
+  const at = new Date(Date.parse(start) + DEMO_HELPER_SPAWN_LEAD_MS).toISOString()
   // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）。多出几条过程消息，让对话流超过一屏：
   // 「派给它的要求」的吸顶、展开后仍在视野内这些行为只有内容超过一屏时才测得出来
   const steps: [string, number][] = [
@@ -3672,11 +3700,17 @@ async function seedTasks(d: Db) {
       t.title.slice(0, 40),
     ]
     t.command = argv
+    // 已经结束的任务，节点的时间跟着消息一起往前挪：只挪消息不挪节点，子任务会显示成「刚刚」、
+    // 和对话的时间轴对不上。正在跑的任务不挪：它的节点时间是真的在跑，任务时长按 runStartedAt 算是真实的，
+    // 只挪节点会让单个节点的耗时比任务总时长还大
+    const finished = t.status !== 'running'
     t.steps.forEach((s) => {
       if (s.startedAt) s.command = argv
+      if (finished && s.startedAt) s.startedAt = shift(s.startedAt)
+      if (finished && s.endedAt) s.endedAt = shift(s.endedAt)
     })
     // 示例任务是瞬间跑完的，给一个像样的执行时长
-    if (t.status !== 'running') {
+    if (finished) {
       t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
       spreadSteps(t)
     }
