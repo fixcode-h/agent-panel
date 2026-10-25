@@ -351,6 +351,94 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })
   await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
   await check(p, 'UI设计-原画', ['第 1 轮', '用这张做模板'])
+  // 原画阶段就能看到标注工具：工具栏上每种标注有文字（用户报「看不到标注工具」：以前只有图标）
+  const board = p.locator('[data-concept-board]')
+  const conceptBar = board.getByRole('toolbar', { name: '标注工具' })
+  for (const name of ['框选', '箭头', '画笔', '打点', '蒙版']) {
+    await conceptBar.getByText(name, { exact: true }).waitFor()
+  }
+  await check(p, 'UI设计-原画标注工具', ['框选', '箭头', '打点', '选一种标注工具'])
+  // 在原画上框一块：工具栏下面给出下一步说明，面板底部出现「发送标注给 AI」按钮
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  const conceptImg = await board.locator('img[alt^="c"]').first().boundingBox()
+  assert.ok(conceptImg, '原画显示出来了')
+  await p.mouse.move(conceptImg.x + conceptImg.width * 0.25, conceptImg.y + conceptImg.height * 0.35)
+  await p.mouse.down()
+  await p.mouse.move(conceptImg.x + conceptImg.width * 0.6, conceptImg.y + conceptImg.height * 0.55, { steps: 8 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('按钮换成金色描边')
+  await p.keyboard.press('Enter')
+  const sendMarks = board.getByRole('button', { name: '发送标注给 AI（1）' })
+  await sendMarks.waitFor()
+  await check(p, 'UI设计-原画标注', ['按钮换成金色描边', '发送标注给 AI（1）'])
+  // 标注随消息发给 AI：顶栏按钮直接发，输入框上的标注条清掉，消息里留下这条标注
+  await sendMarks.click()
+  await sendMarks.waitFor({ state: 'detached' })
+  const sent = p.locator('[data-conversation-scroll="messages"]').getByText('按钮换成金色描边')
+  await sent.first().waitFor({ timeout: 10000 })
+  await check(p, 'UI设计-原画标注发出', ['按钮换成金色描边'])
+  // 发出去之后又出一轮新的原画，能接着标
+  await p.getByText('第 2 轮').waitFor({ timeout: 20000 })
+  await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
+  // 勾了「只重绘蒙版区域」时按钮上的数字要和实际发出去的条数一致（只会发蒙版那一块）
+  await conceptBar.getByRole('button', { name: /^蒙版涂抹/ }).click()
+  const img3 = await board.locator('img[alt^="c"]').first().boundingBox()
+  await p.mouse.move(img3.x + img3.width * 0.35, img3.y + img3.height * 0.45)
+  await p.mouse.down()
+  await p.mouse.move(img3.x + img3.width * 0.5, img3.y + img3.height * 0.55, { steps: 6 })
+  await p.mouse.up()
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  await p.mouse.move(img3.x + img3.width * 0.6, img3.y + img3.height * 0.3)
+  await p.mouse.down()
+  await p.mouse.move(img3.x + img3.width * 0.75, img3.y + img3.height * 0.45, { steps: 6 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('这里要改')
+  await p.keyboard.press('Enter')
+  // 勾选「只重绘蒙版区域」后按钮文案要跟实际行为一致：
+  // 默认生图方式是图片模型（cli），不支持局部重绘——这种时候勾了也是整张重画、两条标注都发，
+  // 按钮就不能写成「按蒙版重绘（1）」（写错了会让人以为只发了一处）
+  await board.getByRole('button', { name: '发送标注给 AI（2）' }).waitFor()
+  const inpaintToggle = p.getByRole('button', { name: '只重绘蒙版区域' })
+  await inpaintToggle.click()
+  // 等勾选真的生效（aria-pressed）再断言按钮文案：不然点空了后面的断言就在赌
+  await p.waitForFunction(
+    () =>
+      [...document.querySelectorAll('button[aria-label="只重绘蒙版区域"]')].some(
+        (el) => el.getAttribute('aria-pressed') === 'true',
+      ),
+    undefined,
+    { timeout: 5000 },
+  )
+  // 不支持局部重绘：按钮保持原样，不喊「按蒙版重绘」；提示由勾选按钮自己给（「会整张重画」）
+  assert.equal(
+    await board.getByRole('button', { name: '按蒙版重绘（1）' }).count(),
+    0,
+    '不支持局部重绘时不能写成按蒙版重绘',
+  )
+  await board.getByRole('button', { name: '发送标注给 AI（2）' }).waitFor()
+  // 截图在勾选状态下拍：降级提示「会整张重画」就挂在勾选按钮上
+  await check(p, 'UI设计-原画标注-不支持局部重绘', ['发送标注给 AI（2）', '会整张重画'])
+  await inpaintToggle.click()
+  // 清掉这两条，后面蒙版那段从头测
+  await conceptBar.getByRole('button', { name: '清除所有标注' }).click()
+  // 收起 AI 对话栏时点「发送标注给 AI」也要真的发出去：先自动把对话栏打开，不静默落空
+  await p.getByRole('button', { name: '收起 AI 对话' }).click()
+  await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).waitFor({ state: 'detached' })
+  await conceptBar.getByRole('button', { name: /^框选标注/ }).click()
+  const img2 = await board.locator('img[alt^="c"]').first().boundingBox()
+  assert.ok(img2, '第二轮的图显示出来了')
+  await p.mouse.move(img2.x + img2.width * 0.3, img2.y + img2.height * 0.3)
+  await p.mouse.down()
+  await p.mouse.move(img2.x + img2.width * 0.55, img2.y + img2.height * 0.5, { steps: 6 })
+  await p.mouse.up()
+  await p.getByRole('textbox', { name: '标注说明' }).fill('标题再大一点')
+  await p.keyboard.press('Enter')
+  await board.getByRole('button', { name: '发送标注给 AI（1）' }).click()
+  // 对话栏自己打开了，消息也发出去了（标注不会留在图上）
+  await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).waitFor({ timeout: 5000 })
+  await p.locator('[data-conversation-scroll="messages"]').getByText('标题再大一点').first().waitFor({ timeout: 10000 })
+  await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
+  await check(p, 'UI设计-原画标注-收起对话', ['标题再大一点'])
   // 蒙版：在原画上涂一块，出现蒙版工具和「只重绘蒙版」开关（默认还是整张重画）
   // UI 画布的工具栏也有蒙版按钮，原画面板盖在上面、渲染在后面
   await p.getByRole('button', { name: '蒙版涂抹' }).last().click()

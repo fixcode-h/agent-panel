@@ -355,6 +355,17 @@ export const EN_DESIGN: Record<string, string> = {
   箭头标注: 'Arrow annotation',
   画笔标注: 'Pen annotation',
   打点标注: 'Pin annotation',
+  框选: 'Box',
+  箭头: 'Arrow',
+  画笔: 'Pen',
+  打点: 'Pin',
+  '在图上拖出一个框，标出要改的区域': 'Drag a box on the image to mark the area to change',
+  '从起点拖到终点，用箭头指向要改的地方': 'Drag from the start to the end to point an arrow at what to change',
+  '按住拖动，把要改的地方圈出来': 'Hold and drag to circle what needs to change',
+  '点一下要改的位置，打一个点': 'Click where it needs to change to drop a pin',
+  '选一种标注工具，在图上标出要改的地方': 'Pick an annotation tool and mark what to change on the image',
+  '已经有 {n} 处标注，点「发送标注给 AI」就按标注改这张原画':
+    '{n} marks are ready; click “Send marks to AI” to revise this concept from them',
   '蒙版涂抹：涂出要重绘的区域': 'Mask: paint the area to redraw',
   蒙版笔刷大小: 'Mask brush size',
   '笔刷大小：{n} 像素': 'Brush size: {n} px',
@@ -584,11 +595,15 @@ export const EN_DESIGN: Record<string, string> = {
   '确认用这张作为最终效果，AI 会照着它搭界面、出切图':
     'Use this as the final look; the AI will build the UI and generate the assets from it',
   用这张做模板: 'Use as template',
+  '把这张图上的 {n} 处标注发给 AI，让它按标注改这张原画':
+    'Send the {n} marks on this image to the AI so it revises this concept',
+  '发送标注给 AI（{n}）': 'Send marks to AI ({n})',
+  '按蒙版重绘（1）': 'Redraw mask (1)',
+  '对话侧勾了「只重绘蒙版区域」：只把蒙版这一块发给 AI，其余标注会留在图上':
+    '“Redraw mask only” is ticked, so only the mask goes to the AI; the other marks stay on the image',
+  '标注 → 发送给 AI → 出一张改过的原画，可以接着标；满意了点「用这张做模板」':
+    'Mark → send to the AI → a revised concept comes back, ready for more marks; when happy, click “Use as template”',
   '正在出原画…': 'Drawing concepts…',
-  '在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改':
-    'Add your feedback in the chat on the right and send; the AI will revise this one',
-  '挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」':
-    "Pick one, mark what to change with the tools above and send; when you're happy, click “Use as template”",
   正在出: 'Drawing',
   先出原画: 'Concept first',
   '已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）':
