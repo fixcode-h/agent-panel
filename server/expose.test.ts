@@ -62,6 +62,20 @@ test('没配到的槽保持原样，能一眼看出漏配；技能列表里残�
   assert.deepEqual(fillSkills(['{{slot}}'], { slot: 'project-testing' }), ['project-testing'])
 })
 
+test('特化技能带上它扩展的通用技能，下线的技能换成接替它的', () => {
+  // UE 项目用 ue-project-structure 时，project-structure 排在它前面一起给
+  assert.deepEqual(fillSkills(['project-vcs', '{{s}}'], { s: 'ue-project-structure' }), [
+    'project-vcs',
+    'project-structure',
+    'ue-project-structure',
+  ])
+  // 旧角色副本里还点着下线的技能：换成接替的，不重复
+  assert.deepEqual(fillSkills(['test-driven-development', 'project-testing', 'software-architecture-design'], {}), [
+    'project-testing',
+    'coding-standards',
+  ])
+})
+
 test('节点参数的覆盖按原来的类型写回，不会变成字符串', () => {
   const w = workflow([
     { key: 'retries', label: '重试', type: 'text', target: 'node', targetId: 'a' },

@@ -1,4 +1,5 @@
-import { type Agent, type Task } from '@shared/schema'
+import { type Agent, type Project, type Task } from '@shared/schema'
+import { lessonReviewPrompt, lessonReviewReport } from '@shared/lesson-review'
 import { t } from '@shared/i18n'
 import {
   analysisPrompt,
@@ -65,7 +66,7 @@ export async function importTaskFile(file: File, projectId: string) {
 }
 
 /** UTF-8 文字转 base64（上传附件用）；分段转，长报告不会撑爆参数个数 */
-function toBase64(s: string) {
+export function toBase64(s: string) {
   const bytes = new TextEncoder().encode(s)
   let bin = ''
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
@@ -112,4 +113,37 @@ export async function startAnalysis(opts: {
     prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
   })
+}
+
+/**
+ * 分析用的角色：内置的「分析」角色（用户加过才有），没有就用项目的默认角色（agentId 留空）。
+ * 项目里的各种 AI 分析都开项目对话、用这个角色，统一归属
+ */
+export const analysisAgentId = (agents: Agent[]) => agents.find((a) => a.origin === 'builtin:analyst')?.id ?? ''
+
+/**
+ * 项目教训的 AI 评审：在这个项目里开一个分析对话，教训全文作附件，回复末尾的评审块在对话里画成卡片逐条应用
+ */
+export async function startLessonReview(opts: { project: Project; agents: Agent[]; focus?: string }) {
+  const { project } = opts
+  const report = await api.upload({
+    name: `${t('项目教训')}-${project.name.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    mime: 'text/markdown',
+    data: toBase64(lessonReviewReport(project.name, project.lessons)),
+  })
+  const created = await api.createTask({
+    projectId: project.id,
+    mode: 'chat',
+    workflowId: '',
+    agentId: analysisAgentId(opts.agents),
+    cli: '',
+    model: '',
+    effort: '',
+    params: {},
+    prompt: lessonReviewPrompt(project.name, project.lessons.length, opts.focus?.trim()),
+    attachments: [report],
+    isolate: false,
+    askUser: false,
+  })
+  return api.renameTask(created.id, t('AI 评审：项目教训')).catch(() => created)
 }

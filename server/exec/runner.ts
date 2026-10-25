@@ -2224,8 +2224,16 @@ export async function runRealTurn(ctx: RealContext) {
         ctx.changed(true)
       }),
     reviewDiff: ctx.isGit
-      ? async (since) => {
-          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since)
+      ? async (since, files) => {
+          // 没点名文件时只取这个对话改过的（和「更改」面板一致）：对话开始前就没提交的改动不算它的，不交给评审
+          const own =
+            files ??
+            (since
+              ? undefined
+              : (await gitChanges(ctx.project.path, ctx.task.baseline, ctx.task.baseRef).catch(() => null))?.map(
+                  (c) => c.path,
+                ))
+          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own)
           if (!d) return null
           if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
           // 太长：完整差异存进交接目录，提示词里只给文件列表和路径

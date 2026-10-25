@@ -86,6 +86,7 @@ import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from 
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
+import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { TriageItem } from './review-gate.ts'
 import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -177,6 +178,28 @@ export interface HelperSpec {
   tier?: string
   /** 接着之前哪个子任务（id）的会话做：复看的评审接着上一次评审，读过的文档和代码不用再读一遍 */
   resume?: string
+  /** 派「评审」时的交接单：派它的对话把评审要用的信息整理好交给它，评审不用自己去项目里找（ADR 0013） */
+  review?: ReviewBrief
+}
+
+/**
+ * 评审交接单（ADR 0013）：派评审的对话手里已经有需求、改动的来龙去脉和检查结果，
+ * 整理好一次交给评审，评审只看改动的代码，不再自己读模块文档、全仓搜索去还原这些。
+ * 第一次评审 goal、checks 必填（复看接着上一次的会话，上下文还在，不用再交）
+ */
+export interface ReviewBrief {
+  /** 这次改动要达成什么、验收标准（有口径的连口径） */
+  goal?: string
+  /** 改了什么、为什么这样改：按文件或模块一两句 */
+  changes?: string
+  /** 已经跑过的检查：命令 + 结果 */
+  checks?: string
+  /** 希望评审重点看的风险点 */
+  focus?: string
+  /** 判断要用、差异里又看不到的事实：调用方怎么用、上游保证了什么、相关的接口签名，对话从读过的代码里摘 */
+  context?: string
+  /** 要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件 */
+  files?: string[]
 }
 
 /** 子 Agent 的状态（wait_agents 的结果） */
@@ -438,7 +461,7 @@ export interface EngineHost {
    * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
    * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
    */
-  reviewDiff?: (since?: string) => Promise<ReviewDiff | null>
+  reviewDiff?: (since?: string, files?: string[]) => Promise<ReviewDiff | null>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
@@ -1176,6 +1199,21 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false) {
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。\n' +
       // 用户明确要求：所有命令静默跑。弹出来的窗口既把结果带走（对话拿不到输出），也打断用户手上的事
       '所有命令都在当前会话里静默执行，不要新开命令行或终端窗口（start、cmd /k、Start-Process、wt、open -a Terminal 这类），除非用户明确要求打开窗口。',
+  ]
+}
+
+/**
+ * 评审代码改动的子任务用的开头（ADR 0013）：只留需求、语言、用户补充、目标和必须遵守的规则。
+ * 工作流说明、搜索排除、编译收尾、授权和文件格式都是写给动手的角色的，评审拿到只会去搜项目、跑检查
+ */
+function reviewCommonPart(host: EngineHost) {
+  const { original, extra } = userRequests(host.task)
+  return [
+    `## 用户需求\n${original}`,
+    promptLangRules(),
+    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
+    goalPart(host),
+    rulesPart(host),
   ]
 }
 
@@ -2371,29 +2409,63 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
   }
 }
 
+const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
+const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（第一行验收结论、第二行必须处置）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
+
+/** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
+function reviewsCode(agent: Agent | undefined) {
+  if (agent?.origin !== 'builtin:reviewer') return false
+  const target = agent.params.find((p) => p.key === 'target')?.default
+  return !target || target === '代码改动'
+}
+
+/** 派评审代码时交接单缺了必填的，返回要补什么；不缺返回空 */
+function briefMissing(spec: HelperSpec) {
+  const b = spec.review
+  const lack = [!b?.goal?.trim() && 'goal（需求和验收标准）', !b?.checks?.trim() && 'checks（跑过的检查：命令 + 结果）']
+  return lack.filter(Boolean).join('、')
+}
+
+/** 交接单写进评审的提示词：对话整理好的就是评审要用的全部背景 */
+function briefPart(b: ReviewBrief | undefined) {
+  if (!b) return ''
+  const rows = [
+    ['要达成什么、验收标准', b.goal],
+    ['改了什么、为什么', b.changes],
+    ['已经跑过的检查', b.checks],
+    ['重点看', b.focus],
+    ['差异里看不到的背景', b.context],
+  ].filter((r): r is [string, string] => !!r[1]?.trim())
+  if (!rows.length) return ''
+  return `## 评审交接单（派你的对话整理）\n这就是评审要用的背景，不用再去读模块文档、搜项目还原它们。\n\n${rows.map(([k, v]) => `### ${k}\n${v.trim()}`).join('\n\n')}`
+}
+
 /**
- * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0010）：接着上一轮评审的会话就只带那之后的增量。
- * 读不到（不是 git 仓库、git 出错）时不带，评审照它的角色设定自己取 diff
+ * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0010、0013）：接着上一轮评审的会话就只带那之后的增量；
+ * 交接单写了 files 的只取那几个文件。读不到（不是 git 仓库、git 出错）时不带，评审照它的角色设定自己取 diff
  */
-async function reviewPart(host: EngineHost, step: TaskStep) {
-  if (!host.reviewDiff) return ''
+async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   const agent = host.agents.find((a) => a.id === step.agentId)
   if (agent?.origin !== 'builtin:reviewer') return ''
+  const brief = briefPart(spec.review)
+  if (!host.reviewDiff) return brief
   const key = step.session || ''
   const prev = key
     ? host.task.steps.filter((s) => s !== step && (s.session || s.id) === key && s.snapshot).at(-1)
     : undefined
-  const d = await host.reviewDiff(prev?.snapshot).catch(() => null)
-  if (!d) return ''
+  const files = (spec.review?.files ?? []).map((f) => f.trim()).filter(Boolean)
+  const d = await host.reviewDiff(prev?.snapshot, files.length ? files : undefined).catch(() => null)
+  if (!d) return brief
   step.snapshot = d.snapshot
   const what = prev ? '上一轮评审之后的增量' : '这次的全部改动（和任务开始时比）'
-  if (!d.stat) return `## 要评审的改动\n${what}：没有改动。`
+  if (!d.stat) return [brief, `## 要评审的改动\n${what}：没有改动。`].filter(Boolean).join('\n\n')
   const body = d.diff
     ? `\`\`\`diff\n${d.diff}\n\`\`\``
     : d.file
       ? `差异太长，没有放进来：完整差异在文件 ${d.file}，先读它。`
       : '差异太长，没有放进来：按上面的文件列表自己取 diff。'
-  return `## 要评审的改动\n面板已经取好了${what}，不用再自己 git diff。每处改动带着它所在的整个函数；还要看调用方、测试这类上下文时，再按路径读那几个文件（一个回合里一起读）。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
+  const part = `## 要评审的改动\n面板已经取好了${what}，不用再自己 git diff。每处改动前后带几行没改的代码，只是帮你看懂改动接在哪里：**只评以 + / - 开头的行**，上下文里没改的代码不评。锁文件、压缩产物这类生成的文件只在列表里，不用评。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
+  return [brief, part].filter(Boolean).join('\n\n')
 }
 
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
@@ -2840,6 +2912,20 @@ function makeOrchestra(
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
+      // 第一次派评审代码改动：交接单必须带需求和跑过的检查（ADR 0013）。
+      // 评审只看改动的代码，这些背景只有派它的对话有；不交，评审就会自己读文档、搜项目去还原，一次评审拖到二十多分钟
+      for (const spec of list) {
+        if (resumed.has(spec)) continue
+        const want = spec.agent?.trim()
+        const role = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+        if (!reviewsCode(role)) continue
+        const lack = briefMissing(spec)
+        if (lack)
+          return {
+            ids: [],
+            error: `派「${role!.name}」评审代码改动要带交接单 review：缺 ${lack}。把你已经知道的整理进去（goal、changes、checks 必写清楚，focus、context、files 按需），评审只看改动的代码，不再自己去项目里找这些背景。`,
+          }
+      }
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
         const prev = resumed.get(spec)
@@ -2859,8 +2945,9 @@ function makeOrchestra(
           title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
           agentId: agent?.id ?? self.agentId,
           session: prev ? prev.session || prev.id : '',
-          // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到
-          brief: spec.instructions.trim(),
+          // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到。
+          // 评审的交接单也是要求的一部分，一起存
+          brief: [spec.instructions.trim(), briefPart(spec.review)].filter(Boolean).join('\n\n'),
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
@@ -3035,9 +3122,13 @@ async function runHelper(
     step.status = 'running'
     step.startedAt = now()
     host.changed(true)
-    const review = await reviewPart(host, step)
+    const role = host.agents.find((a) => a.id === step.agentId)
+    const reviewing = reviewsCode(role)
+    const review = await reviewPart(host, step, spec)
     const prompt = [
-      ...commonPart(host, ctx.workflow, !!ctx.chat),
+      // 评审代码只要需求和必须遵守的规则：搜索范围、编译和收尾、授权这些段落是写给要动手的角色的，
+      // 给评审只会引着它去搜项目、跑检查（ADR 0013）
+      ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat)),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       step.session
         ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
@@ -3051,18 +3142,25 @@ async function runHelper(
     ]
       .filter(Boolean)
       .join('\n\n')
-    const r = await host.runAgent({
-      step,
-      agentId: step.agentId,
-      prompt,
-      // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
-      sessionKey: step.session || step.id,
-      tier,
-      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
-      // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
-      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
-      signal: ac.signal,
-    })
+    // 评审到了软时限还没交卷：传话要它按已确认的交卷（CLI 不支持执行中补充时传不进去，不影响它继续）
+    const wrap = reviewing
+      ? setTimeout(() => void host.steer?.(step.id, REVIEW_WRAP_NOTE).catch(() => false), REVIEW_SOFT_LIMIT_MS)
+      : undefined
+    wrap?.unref?.()
+    const r = await host
+      .runAgent({
+        step,
+        agentId: step.agentId,
+        prompt,
+        // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
+        sessionKey: step.session || step.id,
+        tier,
+        // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
+        // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
+        orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
+        signal: ac.signal,
+      })
+      .finally(() => clearTimeout(wrap))
     // 单独终止的：不管 CLI 怎么收的尾，都按终止交回（整个任务停止时 ac 没被触发，照旧走下面）
     if (ac.signal.aborted) return stopped()
     if (r.ok) {

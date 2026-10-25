@@ -86,6 +86,7 @@ import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog, EvolutionCard } from './Evolution'
+import { LessonReviewCard } from '@/components/projects/LessonReview'
 import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
@@ -1066,6 +1067,7 @@ export function TaskView({
               .finally(() => openChildIn(id))
           }
         />
+        <LessonReviewCard key={`lr-${task.id}`} task={task} project={project} />
         <TaskRequestCard task={task} onAnswered={apply} />
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
         <WorktreeBar task={task} />

@@ -69,6 +69,7 @@ import {
 } from '@shared/memory-analysis'
 import { descendantTotals } from '@shared/task-export'
 import { newLessonId, upsertLesson } from '@shared/lessons'
+import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
@@ -666,6 +667,20 @@ function seed(): Db {
               source: 'agent',
               taskId: '',
               createdAt: '2026-09-22T08:45:00.000Z',
+              updatedAt: '',
+              history: [],
+            },
+            {
+              id: 'demo-lesson-5',
+              title: '购物车相关改动同时改 legacy-cart 的旧接口',
+              rule: '旧版 App 还在调 cartV1，改购物车字段时 src/legacy-cart/ 下的适配层一起改。',
+              cause: '加优惠券字段时旧版 App 购物车白屏。',
+              paths: [],
+              tags: [],
+              enabled: true,
+              source: 'user',
+              taskId: '',
+              createdAt: '2026-08-20T10:00:00.000Z',
               updatedAt: '',
               history: [],
             },
@@ -2136,6 +2151,17 @@ function route(method: string, url: string, body: unknown): unknown {
     d.globalLessons = parse(GlobalLessons, b.lessons)
     persist()
     return d.globalLessons
+  }
+  if (res === 'projects' && id && sub === 'lessons' && seg[3] === 'review' && method === 'POST') {
+    const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
+    const item =
+      parseLessonReview(
+        '```' + LESSON_REVIEW_LANG + '\n' + JSON.stringify({ items: [(body as { item?: unknown })?.item] }) + '\n```',
+      )?.items[0] ?? fail('评审建议的格式不对')
+    if (item.action !== 'delete' && !p.lessons.some((l) => l.id === item.id)) fail('这条教训已经不在了')
+    Object.assign(p, { lessons: applyReviewItem(p.lessons, item), updatedAt: new Date().toISOString() })
+    persist()
+    return p
   }
   if (res === 'projects' && id && sub === 'lessons' && method === 'POST') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')

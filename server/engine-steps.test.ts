@@ -556,7 +556,17 @@ test('子任务：派「评审」时面板把改动附进提示词，复看只�
   const { task, log, host } = makeHost(w, async (call) => {
     if (call.step?.id === 'a/step/s1') {
       const o = call.orch!
-      const first = o.spawn([{ title: '评审', instructions: '看改动', agent: '评审' }]).ids
+      const bare = o.spawn([{ title: '评审', instructions: '看改动', agent: '评审' }])
+      assert.equal(bare.ids.length, 0, '第一次评审没带交接单要拒绝')
+      assert.match(bare.error!, /goal（需求和验收标准）、checks/)
+      const first = o.spawn([
+        {
+          title: '评审',
+          instructions: '看改动',
+          agent: '评审',
+          review: { goal: '按钮改成蓝色', checks: 'npm run typecheck：通过', focus: '暗色主题', files: ['a.ts'] },
+        },
+      ]).ids
       await o.wait(first, 1000)
       const again = o.spawn([{ title: '复看', instructions: '处置：R1 已修', resume: first[0] }]).ids
       await o.wait(again, 1000)
@@ -566,15 +576,24 @@ test('子任务：派「评审」时面板把改动附进提示词，复看只�
   })
   host.agents = [...agents, { ...agent('r', '评审'), origin: 'builtin:reviewer' }]
   let n = 0
-  host.reviewDiff = async (s) => {
+  const scoped: (string[] | undefined)[] = []
+  host.reviewDiff = async (s, files) => {
     since.push(s)
+    scoped.push(files)
     n++
     return { snapshot: `tree${n}`, stat: ' a.ts | 2 +-', diff: `@@ 第 ${n} 次的差异 @@` }
   }
   await runEngineTurn(host)
   assert.deepEqual(since, [undefined, 'tree1'], '复看和上一轮的快照比')
+  assert.deepEqual(scoped, [['a.ts'], undefined], '交接单点名的文件只取它们的差异')
   const calls = log.filter((c) => c.step?.slot === 'sub')
   assert.match(calls[0].prompt, /这次的全部改动/)
+  // ADR 0013：对话整理的交接单写进评审的提示词；只评 + / - 的行；动手角色的段落不给评审
+  assert.match(calls[0].prompt, /## 评审交接单（派你的对话整理）/)
+  assert.match(calls[0].prompt, /### 要达成什么、验收标准\n按钮改成蓝色/)
+  assert.match(calls[0].prompt, /### 已经跑过的检查\nnpm run typecheck：通过/)
+  assert.match(calls[0].prompt, /只评以 \+ \/ - 开头的行/)
+  assert.doesNotMatch(calls[0].prompt, /## 通用要求/, '评审不带写给动手角色的通用要求')
   assert.match(calls[0].prompt, /第 1 次的差异/)
   assert.match(calls[1].prompt, /上一轮评审之后的增量/)
   assert.match(calls[1].prompt, /第 2 次的差异/)

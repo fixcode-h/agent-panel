@@ -1020,6 +1020,7 @@ function Body({
                   onChange={(v) => set('lessons', v)}
                   project={project}
                   initialOpen={item}
+                  onLeave={onClose}
                 />
               </div>
             ) : section === 'tests' ? (

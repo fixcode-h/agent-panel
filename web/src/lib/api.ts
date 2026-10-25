@@ -48,6 +48,7 @@ import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
+import type { LessonReviewItem } from '@shared/lesson-review'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type {
   DeployConfig,
@@ -397,6 +398,9 @@ export const api = {
   /** 记一条项目教训（同名的会更新），返回更新后的项目 */
   addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
     request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
+  /** 应用 AI 评审的一条建议，返回更新后的项目 */
+  applyLessonReview: (id: string, item: LessonReviewItem) =>
+    request<Project>(`/projects/${id}/lessons/review`, json('POST', { item })),
   globalLessons: () => request<GlobalLesson[]>('/global-lessons'),
   /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */
   saveGlobalLessons: (lessons: GlobalLesson[]) =>

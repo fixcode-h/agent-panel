@@ -4,8 +4,11 @@ import { toast } from 'sonner'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
 import {
+  DEFAULT_TAB,
   applyGlobalChanges,
+  inTab,
   lessonHaystack,
+  lessonTabs,
   newGlobalLessonId,
   newLessonId,
   normTags,
@@ -21,6 +24,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/tasks'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { LessonReviewDialog } from './LessonReview'
 
 /** 输入框里的范围：逗号、顿号、空白都能分隔 */
 const splitPaths = (s: string) =>
@@ -46,8 +50,6 @@ const blankLesson = (): ProjectLesson => ({
 
 /** 列表一次画多少条：上万条一次全画出来要好几秒，搜索框也会一个字卡一秒 */
 const PAGE = 100
-/** 筛选栏上列几个标签，其余的靠搜索 */
-const TAG_CHIPS = 12
 
 /**
  * 项目设置里的「教训」：增删改、启停，Agent 自己记的标出来方便复查。
@@ -58,6 +60,7 @@ export function LessonsEditor({
   onChange,
   project,
   initialOpen,
+  onLeave,
 }: {
   lessons: ProjectLesson[]
   onChange: (v: ProjectLesson[]) => void
@@ -65,13 +68,17 @@ export function LessonsEditor({
   project?: Project
   /** 打开时展开的那条（项目首页点进来的） */
   initialOpen?: string
+  /** 开了评审对话、要跳过去时关掉项目设置 */
+  onLeave?: () => void
 }) {
   const [q, setQ] = useState('')
-  const [tag, setTag] = useState('')
+  // 当前页签：DEFAULT_TAB 是「默认」，放一个标签都没有的教训；任何时候都有一个页签选中
+  const [tab, setTab] = useState(() => lessons.find((l) => l.id === initialOpen)?.tags[0] ?? DEFAULT_TAB)
   const [limit, setLimit] = useState(PAGE)
   // 新加的那条直接展开，其余默认收起：条目多了一屏也看得过来
   const [open, setOpen] = useState<string>(initialOpen ?? '')
   const [extracting, setExtracting] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const patch = (id: string, p: Partial<ProjectLesson>) =>
     onChange(lessons.map((l) => (l.id === id ? { ...l, ...p } : l)))
   // 搜索按延后的值算：输入框先跟手，过滤和重画排在后面
@@ -86,19 +93,28 @@ export function LessonsEditor({
     }
   }, [])
   const tags = useMemo(() => tagCounts(lessons), [lessons])
-  const filtered = useMemo(() => {
+  // 先按搜索词筛，页签上的数字跟着变：在一个页签里搜不到时，看数字就知道该去哪个页签找
+  const matched = useMemo(() => {
     const match = queryMatcher(query)
-    return lessons.filter((l) => (!tag || l.tags.includes(tag)) && (!query || match(hay(l))))
-  }, [lessons, query, tag, hay])
-  // 正在展开的那条（项目首页点进来的、刚加的）排在分页外面也要画出来
+    return query ? lessons.filter((l) => match(hay(l))) : lessons
+  }, [lessons, query, hay])
+  const tabs = useMemo(() => lessonTabs(matched, tags), [matched, tags])
+  // 选中的标签被删光了（改了标签、删了条目）就回到「默认」，保证总有一个页签选中
+  const current = tab === DEFAULT_TAB || tags.some(([x]) => x === tab) ? tab : DEFAULT_TAB
+  const filtered = useMemo(() => matched.filter((l) => inTab(l, current)), [matched, current])
+  // 正在展开的那条（项目首页点进来的、刚加的、刚改了标签的）不在这一页或这个页签里也要画出来，免得改着改着不见了
   const shown = useMemo(() => {
     const page = filtered.slice(0, limit)
-    const extra = open ? filtered.find((l, i) => i >= limit && l.id === open) : undefined
+    const extra = open && !page.some((l) => l.id === open) ? lessons.find((l) => l.id === open) : undefined
     return extra ? [extra, ...page] : page
-  }, [filtered, limit, open])
-  // 换了搜索词或标签从头显示
-  useEffect(() => setLimit(PAGE), [query, tag])
+  }, [filtered, limit, open, lessons])
+  // 换了搜索词或页签从头显示
+  useEffect(() => setLimit(PAGE), [query, current])
   const fromAgent = lessons.filter((l) => l.source === 'agent').length
+  const dirty = useMemo(
+    () => !!project && JSON.stringify(project.lessons) !== JSON.stringify(lessons),
+    [project, lessons],
+  )
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -119,6 +135,25 @@ export function LessonsEditor({
           <Button
             size="sm"
             variant="ghost"
+            // 评审的是已保存的教训；草稿改了没保存时先保存，免得评审的和眼前看到的对不上
+            disabled={!project.lessons.length || dirty}
+            title={
+              dirty
+                ? t('教训有没保存的修改，先点「确认」保存再评审')
+                : t(
+                    '在这个项目里开一个分析对话，逐条看教训是否必须、是否合理、能否优化、是否过期，建议逐条确认后才应用',
+                  )
+            }
+            onClick={() => setReviewing(true)}
+          >
+            <GraduationCap className="h-3.5 w-3.5" />
+            {t('AI 评审')}
+          </Button>
+        )}
+        {project && (
+          <Button
+            size="sm"
+            variant="ghost"
             disabled={!project.lessons.some((l) => l.enabled)}
             title={t('让本机 Agent 从已保存的项目教训里挑出换个项目也适用的，逐条确认后写进全局教训')}
             onClick={() => setExtracting(true)}
@@ -131,7 +166,8 @@ export function LessonsEditor({
           size="sm"
           variant="secondary"
           onClick={() => {
-            const l = blankLesson()
+            // 在某个标签的页签里加的，带上这个标签，加完还留在这个页签里
+            const l = { ...blankLesson(), tags: current === DEFAULT_TAB ? [] : [current] }
             onChange([l, ...lessons])
             setOpen(l.id)
             setQ('')
@@ -141,28 +177,25 @@ export function LessonsEditor({
           {t('加一条')}
         </Button>
       </div>
-      {tags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('按标签筛选')}>
-          {tags.slice(0, TAG_CHIPS).map(([x, n]) => (
+      {lessons.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label={t('按标签分页')}>
+          {tabs.map(([x, n]) => (
             <button
               key={x}
               type="button"
-              aria-pressed={tag === x}
-              onClick={() => setTag(tag === x ? '' : x)}
+              role="tab"
+              aria-selected={current === x}
+              // 再点一次选中的页签不取消：总要有一个页签选中
+              onClick={() => setTab(x)}
               className={cn(
                 'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
-                tag === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                current === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
               )}
             >
-              {x}
+              {x === DEFAULT_TAB ? t('默认') : x}
               <span className="ml-1 text-subtle">{n}</span>
             </button>
           ))}
-          {tags.length > TAG_CHIPS && (
-            <span className="text-[0.6875rem] text-subtle">
-              {t('另有 {n} 个标签，用搜索找', { n: tags.length - TAG_CHIPS })}
-            </span>
-          )}
         </div>
       )}
       {lessons.length === 0 && (
@@ -172,7 +205,15 @@ export function LessonsEditor({
           )}
         </p>
       )}
-      {lessons.length > 0 && filtered.length === 0 && <p className="px-1 text-xs text-subtle">{t('没有匹配的教训')}</p>}
+      {lessons.length > 0 && filtered.length === 0 && (
+        <p className="px-1 text-xs text-subtle">
+          {query
+            ? t('这个页签里没有匹配的教训')
+            : current === DEFAULT_TAB
+              ? t('没有不带标签的教训，带标签的在各自的页签里')
+              : t('这个页签里没有教训')}
+        </p>
+      )}
       <ul className="flex flex-col gap-2">
         {shown.map((l) => {
           const expanded = open === l.id || !l.title.trim()
@@ -253,6 +294,9 @@ export function LessonsEditor({
         </Button>
       )}
       {project && <ExtractGlobalLessons project={project} open={extracting} onOpenChange={setExtracting} />}
+      {project && (
+        <LessonReviewDialog project={project} open={reviewing} onOpenChange={setReviewing} onLeave={onLeave} />
+      )}
     </div>
   )
 }
