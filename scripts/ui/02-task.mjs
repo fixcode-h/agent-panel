@@ -6,7 +6,7 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
@@ -2716,6 +2716,42 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
         errors.push('转成弹窗：收起后对话页还开着')
       await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      // 浮条上的关闭按钮只在悬停时出现、位置在右上角；浮条上不能挂原生 title
+      // （那个「展开」提示一悬停就弹灰框，用户嫌烦）。opacity-0 仍算 visible，所以看 opacity
+      const dockClose = first.locator('[data-dock="close"]')
+      const dockOpacity = () => dockClose.evaluate((el) => Number(getComputedStyle(el).opacity))
+      // 浮条特写当截图证据：全页截图里浮条只在右下角一小块，看不出按钮在不在（shotOf 负责把 clip 夹进视口）
+      await p.mouse.move(5, 5)
+      await settle(p)
+      if ((await dockOpacity()) !== 0) errors.push('转成弹窗：没悬停时浮条的关闭按钮也显示（应为 opacity 0）')
+      await shotOf(p, first, '任务-转成弹窗-浮条-不悬停')
+      await first.hover()
+      await settle(p)
+      if ((await dockOpacity()) !== 1) errors.push('转成弹窗：鼠标放到浮条上关闭按钮没出现')
+      await shotOf(p, first, '任务-转成弹窗-浮条-悬停')
+      const dockTitles = await first.locator('[title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+      if (dockTitles.length) errors.push(`转成弹窗：浮条上还有原生 title 提示：${dockTitles.join('、')}`)
+      // 关闭按钮在浮条右上角：量那个看得见的小圆（光看热区矩形不够，它永远贴 top-0 right-0）
+      const barRect = await first.boundingBox()
+      const dotRect = await dockClose.locator('span').first().boundingBox()
+      if (!barRect || !dotRect) errors.push('转成弹窗：量不到浮条关闭按钮小圆的位置')
+      else {
+        const cx = dotRect.x + dotRect.width / 2 - barRect.x
+        const cy = dotRect.y + dotRect.height / 2 - barRect.y
+        if (cx < barRect.width / 2 || cy > barRect.height / 2)
+          errors.push(
+            `转成弹窗：关闭按钮不在浮条右上角（小圆中心 ${Math.round(cx)},${Math.round(cy)}；浮条 ${Math.round(barRect.width)}×${Math.round(barRect.height)}）`,
+          )
+      }
+      // 点关闭仍能关掉浮条（data-dock 判定没坏），由 06 分片末尾的「AI处理-浮条让位后回来」前面那几步覆盖（那里才是点关闭就真关）
+      await check(p, '任务-转成弹窗-悬停显示关闭')
+      // 点关闭仍能关掉这条浮条（data-dock="close" 判定没坏）：
+      // 06 分片的同类用例在 06:113 之后，那条既有超时会让它跑不到，所以这里也补一份
+      await dockOf(CART).getByRole('button', { name: '关闭', exact: true }).click()
+      await dockOf(CART)
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('转成弹窗：点关闭后对话浮条还在（关闭被当成展开了）'))
+      await check(p, '任务-转成弹窗-点关闭')
       // 再收起另一个对话：只留一个，前一条被换掉
       await p.getByText('商品详情页增加', { exact: false }).first().click()
       // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
