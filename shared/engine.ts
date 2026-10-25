@@ -451,6 +451,12 @@ export interface EngineHost {
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
   /**
+   * 调用停在工具里等别人（wait_agents 等子任务、ask_main 等主 Agent）：宿主让出这次调用的 API 并发名额，
+   * 等完再拿回（满了要排队）。不让出的话，占着名额等子任务、子任务又排队等名额，会互相等死。
+   * stepId 是在等的那次调用（对话是 @chat）；没有时直接等
+   */
+  yieldSlot?: <T>(stepId: string, wait: () => Promise<T>) => Promise<T>
+  /**
    * 节点完成后等用户确认（节点勾了「完成后等我确认」）：返回用户的决定，停止时返回 null。
    * 没有时（例如在线演示之外的宿主不支持）不等待，直接往下走
    */
@@ -3011,7 +3017,9 @@ function makeOrchestra(
         ? ids
         : task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').map((s) => s.id)
       const steps = mine.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
-      await Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
+      const waiting = () =>
+        Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
       const over = (s: TaskStep) => s.status !== 'running' && (s.status !== 'pending' || !st.helpers.has(s.id))
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
@@ -3032,7 +3040,8 @@ function makeOrchestra(
       host.changed(true)
       let settled: AgentResult | undefined
       const p = mainTurn(host, main, 'answer', questionEvent(self.title, question)).then((r) => (settled = r))
-      await Promise.race([p, sleep(ms)])
+      const waiting = () => Promise.race([p, sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
       const text = (r: AgentResult) => (r.ok ? stripDispatch(r.text).trim() : '')
       if (settled) return settled.ok ? { answer: text(settled) } : { error: `主 Agent 没能回答：${settled.error}` }
       // 主 Agent 还在忙（排队或在想）：回答到了放进提问者的收件箱，read_messages 取

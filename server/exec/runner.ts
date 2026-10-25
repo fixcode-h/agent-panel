@@ -14,6 +14,7 @@ import {
   type StopReason,
   type Task,
   type TaskMessage,
+  type TaskStep,
   type ToolUse,
   type Alert,
   type Workflow,
@@ -72,6 +73,7 @@ import { orchHint } from '../orch-mcp.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
+import { ApiSlot } from '../api-slots.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -708,6 +710,95 @@ function anySignal(a: AbortSignal, b: AbortSignal) {
   return ac.signal
 }
 
+/**
+ * 正在跑的调用手里的 API 名额：任务 id + 节点 id（对话这一轮是空的）→ 名额。
+ * 等下一句、等子任务、等别的 Agent 回答时让出，接着干之前再拿回（见 waitNext 和 yieldApiSlot）
+ */
+const apiSlots = new Map<string, ApiSlot>()
+const slotKey = (taskId: string, step: string) => `${taskId}\n${step}`
+
+/** 这次调用要用的 API：CLI 的登录方式是 API 时才有；账号登录不受并发上限管 */
+function callApi(ctx: RealContext, call: AgentCall) {
+  const id = ctx.agents.some((a) => a.id === call.agentId) ? call.agentId : aliasAgent(call.agentId)
+  const found = id ? ctx.agents.find((a) => a.id === id) : { ...defaultAgent(), id: '', name: '', description: '' }
+  // 找不到角色时由 runAgent 报错
+  if (!found) return undefined
+  const agent =
+    call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(ctx.settings)) : withTaskModel(found, ctx.task)
+  return cliSettings(ctx.settings, agentRun(agent, ctx.settings).cli).api
+}
+
+/**
+ * 拿名额；满了就排队，排队时对话（或子任务、节点）上标出在等哪个 API、前面还有几个。
+ * 排队的子任务、节点显示成「排队中」，拿到再回到执行中。停止信号到了返回 false
+ */
+async function takeApiSlot(ctx: RealContext, step: TaskStep | undefined, slot: ApiSlot, signal: AbortSignal) {
+  let queued = false
+  let before: TaskStep['status'] | undefined
+  const ok = await slot.take(signal, (ahead) => {
+    if (!queued && step?.status === 'running') {
+      before = step.status
+      step.status = 'pending'
+    }
+    queued = true
+    if (step) step.apiWait = { api: slot.name, ahead }
+    else ctx.task.apiWait = { api: slot.name, ahead }
+    ctx.changed(true)
+  })
+  if (queued) {
+    if (step) {
+      delete step.apiWait
+      if (before && step.status === 'pending') step.status = before
+    } else delete ctx.task.apiWait
+    ctx.changed(true)
+  }
+  return ok
+}
+
+/**
+ * 按 API 的并发上限执行一次调用（对话这一轮、子任务、工作流节点都从这里进）：
+ * 先拿名额再启动 CLI，结束时还回去。名额按 API 计，没设上限的也记着数，改成有上限时马上按实际占用算
+ */
+async function gatedRunAgent(ctx: RealContext, call: AgentCall): Promise<AgentResult> {
+  const api = callApi(ctx, call)
+  if (!api) return runAgent(ctx, call)
+  const key = slotKey(ctx.task.id, call.step?.id ?? '')
+  const slot = new ApiSlot(api.id, api.name)
+  const signal = call.signal ? anySignal(ctx.signal, call.signal) : ctx.signal
+  // 预热只是把 CLI 启动好、等用户的第一句：先不占名额，等到消息再拿（见 waitNext）
+  if (!call.prewarm && !(await takeApiSlot(ctx, call.step, slot, signal)))
+    return { ok: false, stopped: true, error: t('已停止') }
+  const prev = apiSlots.get(key)
+  apiSlots.set(key, slot)
+  try {
+    return await runAgent(ctx, call)
+  } finally {
+    slot.drop()
+    if (apiSlots.get(key) === slot) {
+      if (prev) apiSlots.set(key, prev)
+      else apiSlots.delete(key)
+    }
+  }
+}
+
+/**
+ * 调用停下来等别人（wait_agents 等子任务、ask_main 等主 Agent 回答）时让出名额，等完再拿回：
+ * 占着名额等子任务，子任务又在排队等名额，就互相等死了
+ */
+async function yieldApiSlot<T>(ctx: RealContext, stepId: string, wait: () => Promise<T>): Promise<T> {
+  // 对话自己（@chat）不是一个节点，名额记在空的节点 id 下
+  if (!ctx.task.steps.some((s) => s.id === stepId)) stepId = ''
+  const slot = apiSlots.get(slotKey(ctx.task.id, stepId))
+  if (!slot?.holding) return wait()
+  slot.drop()
+  try {
+    return await wait()
+  } finally {
+    const step = stepId ? ctx.task.steps.find((s) => s.id === stepId) : undefined
+    await takeApiSlot(ctx, step, slot, ctx.signal)
+  }
+}
+
 async function runAgent(
   ctx: RealContext,
   call: AgentCall,
@@ -1122,8 +1213,14 @@ async function runAgent(
     () => {
       if (!armedAt || finished || prewarmMode) return
       // 在等用户、等子任务、等确认：本来就没有输出
-      // 还有工具在跑（并行调用里先回来一个结果）：等的是工具，不是模型
-      if (task.awaitingUser || waitingHelpers || toolStart.size || task.requests.some((x) => asked.includes(x.id))) {
+      // 还有工具在跑（并行调用里先回来一个结果）：等的是工具，不是模型；排队等 API 名额时消息还没交给 CLI
+      if (
+        task.awaitingUser ||
+        waitingHelpers ||
+        task.apiWait ||
+        toolStart.size ||
+        task.requests.some((x) => asked.includes(x.id))
+      ) {
         armedAt = Date.now()
         return
       }
@@ -1508,7 +1605,18 @@ async function runAgent(
           },
         )
       : undefined
+  /**
+   * 停下等下一句 / 等子任务：这段不用模型，让出 API 名额；拿到要处理的内容后先拿回名额再交给 CLI，
+   * 满了就排队（对话上显示在等哪个 API），排队时停止就结束这一轮
+   */
   const waitNext = async (fromTool: boolean): Promise<string | null> => {
+    const slot = apiSlots.get(slotKey(task.id, step))
+    slot?.drop()
+    const text = await waitNextRaw(fromTool)
+    if (text === null || !slot) return text
+    return (await takeApiSlot(ctx, call.step, slot, ctx.signal)) ? text : null
+  }
+  const waitNextRaw = async (fromTool: boolean): Promise<string | null> => {
     if (fromTool) {
       if (finished) return null
       toolWaited = true
@@ -1648,7 +1756,12 @@ async function runAgent(
       ? {
           ms: idleMs,
           // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住
-          busy: () => task.awaitingUser || waitingHelpers || task.requests.some((x) => asked.includes(x.id)),
+          // 排队等 API 名额时也一样
+          busy: () =>
+            task.awaitingUser ||
+            waitingHelpers ||
+            !!(call.step ? call.step.apiWait : task.apiWait) ||
+            task.requests.some((x) => asked.includes(x.id)),
           onWarn: () => {
             task.messages.push({
               id: ctx.newId(),
@@ -2179,7 +2292,8 @@ export async function runRealTurn(ctx: RealContext) {
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
     lessons: ctx.lessons,
-    runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
+    runAgent: (call) => gatedRunAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
+    yieldSlot: (stepId, wait) => yieldApiSlot(ctx, stepId, wait),
     signal: ctx.signal,
     stopReason: ctx.stopReason,
     // 对话等子任务时用户发来的消息：马上开一轮回复

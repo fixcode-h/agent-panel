@@ -1083,4 +1083,9 @@ export const EN_TASKS: Record<string, string> = {
   '结果的格式还是不对：{error}。可以在对话里让它重新输出':
     'The result is still malformed: {error}. Ask it to output again in the conversation',
   没有找到结果: 'No result found',
+  '排队等 API「{api}」空出并发名额 · 前面还有 {n} 个': 'Waiting for a free slot on API "{api}" · {n} ahead',
+  '排队等 API「{api}」空出并发名额 · 下一个就是这里': 'Waiting for a free slot on API "{api}" · next in line',
+  'API「{api}」的并发名额满了，前面的释放了再开始':
+    'API "{api}" is at its concurrency limit; this starts when a slot frees up',
+  '排队等 API「{api}」': 'Waiting for API "{api}"',
 }

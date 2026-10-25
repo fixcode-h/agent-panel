@@ -1179,6 +1179,10 @@ export const StepUsage = z.object({
 })
 export type StepUsage = z.infer<typeof StepUsage>
 
+/** 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个 */
+export const ApiWait = z.object({ api: z.string(), ahead: z.number().int().default(0) })
+export type ApiWait = z.infer<typeof ApiWait>
+
 export const TaskStep = z.object({
   /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
@@ -1223,6 +1227,8 @@ export const TaskStep = z.object({
   branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */
+  apiWait: ApiWait.optional(),
   /**
    * 子任务接着哪个 CLI 会话跑（task.sessions 的键）：spawn_agents 带 resume 时是被接着的那个子任务的会话，
    * 复看的评审不用把文档和代码从头再读一遍。空的就用自己的 id（旧数据和新开的子任务都是这样）
@@ -1675,6 +1681,8 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /** 对话这一轮在排队等 API 的并发名额（仍算在运行，可以停止）；拿到就去掉 */
+  apiWait: ApiWait.optional(),
   /**
    * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
    * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
