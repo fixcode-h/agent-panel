@@ -4576,6 +4576,8 @@ export function tasksApi(deps: {
       // 换了角色后旧会话里是另一个 Agent 的设定：清掉会话，下一轮新开会话并带上之前的对话摘要
       delete task.sessions[task.agentId]
       delete task.sessions[beforeAgentId]
+      delete task.sessionDirs[task.agentId]
+      delete task.sessionDirs[beforeAgentId]
       task.sessionCli = undefined
       const history = task.messages
         .filter((m) => !m.transient && m.text.trim())

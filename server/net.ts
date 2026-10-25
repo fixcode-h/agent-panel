@@ -9,6 +9,7 @@ import { request as httpsRequest, type RequestOptions as HttpsRequestOptions } f
 import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
 import { t } from '../shared/i18n.ts'
+import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL, LOCAL_PROXY_PORTS, MAX_LOCAL_PROXIES } from '../shared/proxy.ts'
 
 /** 和 fetch 一样用；timeoutMs 只限制等到响应头的时间，之后读 body 不受它影响 */
 export interface NetInit extends RequestInit {
@@ -18,12 +19,11 @@ export interface NetInit extends RequestInit {
 }
 
 /**
- * 常见本地代理端口：Clash（7890 / 7891 / 7897）、V2Ray（10809；10808 是 SOCKS）、通用 SOCKS（1080）。
+ * 常见本地代理端口：顺序、含哪几个、默认端口在哪里定义都见 `shared/proxy.ts`。
  * 探测时全部并发跑一遍；真正拿来做请求的本地端口最多 MAX_LOCAL_PROXIES 个（见 pickLocalProxies）。
+ * ⚠ 只认 http 代理：undici 的 ProxyAgent 用不了 socks5，探测也按 `CONNECT` 判活，
+ * 端口是纯 socks 时会探测失败，只能靠用户在设置里填 http 入站端口。
  */
-export const LOCAL_PROXY_PORTS = [7890, 10809, 7891, 7897, 10808, 1080]
-/** 真正尝试时最多用几个本地端口：再多也只是让没有代理的更新等更久 */
-export const MAX_LOCAL_PROXIES = 3
 /** 每个候选项的握手超时 */
 export const PROBE_TIMEOUT_MS = 1200
 /** 探测到的可用代理缓存多久；没有代理时短一些，用户刚开代理软件也能很快用上 */
@@ -228,12 +228,14 @@ export function probeProxy(proxy: string, timeoutMs = PROBE_TIMEOUT_MS, target =
 
 /** 探测候选：系统代理 + 全部本地端口。并发探测，总耗时约等于一次握手超时，多几个端口不会变慢 */
 export function localProxyCandidates(system: string[], ports: number[] = LOCAL_PROXY_PORTS) {
-  return dedupe([...system.map(httpProxy).filter(Boolean), ...ports.map((port) => `http://127.0.0.1:${port}`)])
+  // 默认端口用 DEFAULT_PROXY_URL，其它端口按本机地址拼：以后默认地址换主机或带认证时两边不会不一致
+  const local = ports.map((port) => (port === DEFAULT_PROXY_PORT ? DEFAULT_PROXY_URL : `http://127.0.0.1:${port}`))
+  return dedupe([...system.map(httpProxy).filter(Boolean), ...local])
 }
 
 /**
  * 从探测结果里挑真正要试的：系统代理全部保留（通常是用户自己配的），
- * 本地端口按顺序最多 MAX_LOCAL_PROXIES 个。V2Ray 的 10809 排在第二个端口，不会被 Clash 的端口挤掉。
+ * 本地端口按顺序最多 MAX_LOCAL_PROXIES 个。默认端口排在 LOCAL_PROXY_PORTS 的前几位，不会被 Clash 的端口挤掉（顺序见 `shared/proxy.ts`）。
  */
 export function pickLocalProxies(system: string[], alive: string[], max = MAX_LOCAL_PROXIES) {
   const sys = dedupe(system.map(httpProxy).filter(Boolean))

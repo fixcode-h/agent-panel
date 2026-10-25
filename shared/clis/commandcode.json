@@ -184,7 +184,6 @@
     "user": ["~/.commandcode/skills", "~/.agents/skills"],
     "repo": [".commandcode/skills", ".agents/skills"]
   },
-  "envExample": "HTTPS_PROXY=http://127.0.0.1:7890",
   "i18n": {
     "en": {
       "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。": "Command Code reads AGENTS.md on every start, or .commandcode/AGENTS.md when the root has none. AGENTS.md is the same file as Project notes.",
@@ -216,6 +215,7 @@
   },
   "auth": {
     "login": ["login"],
+    "loginAlreadyLoggedIn": true,
     "home": "~/.commandcode",
     "files": ["auth.json"],
     "identity": "none",

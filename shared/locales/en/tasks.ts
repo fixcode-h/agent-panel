@@ -380,6 +380,8 @@ export const EN_TASKS: Record<string, string> = {
   视图: 'View',
   流程图: 'Flowchart',
   显示文件: 'Show files',
+  覆盖显示文件: 'Show files over the sub-conversation',
+  回到子对话: 'Back to sub-conversation',
   收起文件面板: 'Collapse file panel',
   更多操作: 'More actions',
   重命名: 'Rename',

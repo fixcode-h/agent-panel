@@ -9,6 +9,7 @@
 
 - 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。
 - 设置 schema 和默认值：后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。
+- 本机代理的默认值（`shared/proxy.ts`）：`DEFAULT_PROXY_PORT` / `DEFAULT_PROXY_URL` 是设置页「网络代理」的占位符和说明、CLI 环境变量示例（`PROXY_ENV_EXAMPLE`）、自动探测端口顺序（`LOCAL_PROXY_PORTS`）的唯一出处；`shared/schema.ts` 的 `proxy` 字段注释也指向它。要换默认代理端口只改这一处，别处一律 import（`npm run lint` 的 `rules-check` 会拦住 ts / tsx / mjs / json 里再写的字面量）。默认端口在 v2rayN 里默认跑 socks，mixed 在 10814，纯 socks 时 `ProxyAgent` 用不了、探测会失败。`LOCAL_PROXY_PORTS` 里除了默认端口还有 Clash 的混合端口、老版 v2rayN 的 http 入站、Clash 的 socks 口、Clash Verge Rev 的混合端口和通用的 1080；`MAX_LOCAL_PROXIES`（3）决定真正尝试几个，所以默认端口必须排在前几位。具体顺序和取值只看 `shared/proxy.ts`。
 - CLI 注册表：内置 CLI 定义在 `shared/clis/*.json`，由 `shared/clis.ts` 加载；参数拼装、输出解析方式、支持的能力、Skill 和说明文件位置都写在定义里，面板其他地方按字段走。Agent 的回复语言跟随面板设置，完整规则（正文和思考过程）、提示词末尾的提醒句、Command Code 通过 mod 追加系统提示词时的插件源码都在 `shared/prompt-lang.ts`。
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
@@ -19,6 +20,7 @@
 - 项目 AI 初始化的推荐结构和保存校验（`shared/project-init.ts` 的 `ProjectProposal`、`ProjectProposalSchema`）：推荐随项目以 `initResult` 保存（`shared/schema.ts` 里可选），重开项目设置时拿来和当前设置比对；旧项目没有该字段按「没有推荐」处理，不要求重新初始化。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
+- 清终端控制序列（`shared/ansi.ts` 的 `stripAnsi`）：清 CSI（SGR 颜色、加粗、清屏、光标移动，7 位 ESC 引导和 8 位 0x9B 引导两种）、OSC、两字符转义和进度条用的 `\r`；**普通方括号文本原样保留**（`[32m]`、Markdown 链接 `[文字](...)` 前面没有 ESC 就不是转义）。CLI 发现 stdout 接终端就上色，而面板把同一份输出用于界面 `<pre>`、报错文案和「AI 处理」上下文，所以在服务端写进 `job.output` 之前清一次（`server/accounts.ts` 的 `take`）。
 - 子对话收尾的评审门禁（`shared/review-gate.ts`）：评审通过，或执行角色对每条高级、中级意见写了处置（`review_triage`）才放行，评审只出意见（[ADR 0009](../../adr/0009-review-findings-triaged.md)、[ADR 0010](../../adr/0010-review-code-only.md)）；验收结论的读法在 `shared/verdict.ts`（`parseVerdict` 取最后一条、`leadVerdict` 首行优先），引擎、门禁、执行报告共用。
 - 任务导出与 AI 分析报告（`shared/task-export.ts`）：`taskReport` / `analysisReport` / `analysisPrompt` 是整体分析（导出、导入、执行记录分析共用）；可选的 `HelperScope = { stepId }` 把三者收窄到一个子任务（子任务窗口的「AI 分析」），报告走 `helperReport`、提示词走 `helperPrompt`（四类问题：耗时、角色符合度、优化空间、面板框架，不要求工作流修改建议块）。`helperReport` 的角色设定用 `composeRole` 拼好的实际生效内容（含引入的 Agent），派给子任务的要求原文取自 `TaskStep.brief`（`shared/engine.ts` 的 `spawn` 落盘；为空时同时说明「旧记录没保存」和「派它时只写了标题」两种可能）。`taskSummary` 会把 `brief` 一起清掉（列表和侧栏读不到、可能上千字）；演示版的 `load()` 对 `db.tasks` 也跑一遍 `Task.parse`，旧 localStorage 里缺新字段的任务才不会在读的时候报 undefined。传了 scope 才走收窄逻辑，不传时行为不变；报告的时间口径不变式见 `docs/lessons/task-export.md`。回归：`server/task-export.test.ts`（整体）和 `server/task-export-helper.test.ts`（子任务范围）。
 
@@ -27,7 +29,8 @@
 - `shared/schema.ts`：所有跨前后端的数据结构。
 - `shared/clis.ts`：CLI 列表和能力的统一出口。
 - `shared/engine.ts`：执行引擎，被 `server/` 和在线演示的模拟实现调用。
-- `shared/local-image.ts`：本机生图的模型清单、内置工作流和占位符替换；`shared/moss.ts`：控件树到 MOSS 布局 JSON 的换算。
+- `shared/ansi.ts`：`stripAnsi` 清 CLI 输出里的 ANSI 转义，目前由账号登录（`server/accounts.ts`）在存 CLI 输出前调用。
+- `shared/local-image.ts`：本机生图的模型清单、内置工作流和占位符替换；`shared/moss.ts`：控件树到 MOSS 布局 JSON 的换算；`shared/proxy.ts`：本机代理默认值和自动探测的端口顺序。
 
 ## 依赖
 
@@ -37,6 +40,7 @@
 
 - `npm run typecheck`（包含漏翻检查，改了文案必须同时补英文）
 - `npm run test:unit`（覆盖 `shared/**/*.test.ts`：流程图、执行引擎、CLI 定义、内置模板等；`shared/moss.test.ts` 覆盖 bbox 换算、布局 JSON 格式和控件树提取）
+- `shared/ansi.test.ts`：SGR 颜色、`[1m`/`[22m` 加粗、`[2m`/`[22m` 暗色、8 位 CSI、OSC、`\r`，以及含普通方括号的非 ANSI 文本不被改。
 
 ## 待确认
 

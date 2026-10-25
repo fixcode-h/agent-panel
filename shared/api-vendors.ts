@@ -59,6 +59,12 @@ export const API_VENDORS: ApiVendor[] = [
     urls: { 'openai-chat': 'https://api.minimaxi.com/v1', anthropic: 'https://api.minimaxi.com/anthropic' },
   },
   {
+    // 品牌名不翻译；Anthropic 协议的地址不带 /v1（官方网关就是根地址）
+    name: 'OpenDesign',
+    provider: 'opendesign',
+    urls: { 'openai-chat': 'https://amr-link.open-design.ai/v1', anthropic: 'https://amr-link.open-design.ai' },
+  },
+  {
     name: t('豆包（火山方舟）'),
     provider: 'volcengine',
     urls: { 'openai-chat': 'https://ark.cn-beijing.volces.com/api/v3' },
