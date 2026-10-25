@@ -736,13 +736,15 @@ export function tasksApi(deps: {
     peer?: PeerFrom,
     /** 停下时独立分支里还有没提交的改动：父对话里那一行直接写几个文件、目录在哪，并给「继续」 */
     worktree?: TaskMessage['worktree'],
+    /** 父对话得动手的上报（例如子对话只剩合回却没请收尾）：计划里没等它也叫起父对话，不只放进收件箱 */
+    wake = false,
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
     const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
     if (settle?.onlyIfWaiting && !hit.length) return
     const text = waitNote(hit) + body
-    if (hit.length) {
+    if (hit.length || wake) {
       const entry = live.get(parent.id)
       parent.updatedAt = new Date().toISOString()
       if (entry) entry.rev++
@@ -1746,6 +1748,8 @@ export function tasksApi(deps: {
       r.settle === 'hold' ? undefined : { kind: 'child', ref: tk.id, ok: r.settle === 'ok' },
       { id: tk.id, title: tk.title, state: r.state },
       await peerOf(tk, 'child', 'report', r.why, r.state === 'failed'),
+      undefined,
+      !!next,
     )
   }
 
