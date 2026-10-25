@@ -730,9 +730,8 @@ test('调研、子任务、评审三个角色：先读模块地图和模块文�
   assert.match(text('docsync'), /删掉 `modules\/<模块>\/` 整个目录/, '文档角色删掉模块文档目录')
   assert.match(text('docsync'), /模块表删掉那一行/, '文档角色同步删掉模块表那一行')
   assert.match(text('docsync'), /retired/, '文档角色保留迁移线索时表格行也保留')
-  // 评审特有：先看历史 Bug，意见里写清依据了哪个模块文档小节 + 代码行
-  assert.match(text('reviewer'), /bugs\.md/, '评审先看 bugs.md 里的历史问题')
-  assert.match(text('reviewer'), /读了哪个模块文档的哪一节 \+ `path:line` 复核/, '评审意见写清文档小节 + 代码行')
+  // 评审代码改动（ADR 0013）：材料只有交接单和面板附的差异，不读模块文档和 bugs.md；评审方案或结论时才按上面的顺序定位
+  assert.match(text('reviewer'), /不读 `MODULE-MAP\.md`、模块文档、`bugs\.md`/, '评审代码不读模块文档')
   assert.match(text('worker'), /docs\/MODULE-MAP\.md/, '执行角色调研模块前先看模块地图和模块文档')
 })
 

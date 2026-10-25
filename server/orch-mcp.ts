@@ -26,6 +26,22 @@ function agentField(o: Orchestra) {
   }
 }
 
+/** 评审交接单：只收认得的字段，空的不带 */
+function briefOf(v: unknown): HelperSpec['review'] {
+  if (!v || typeof v !== 'object') return undefined
+  const b = v as Record<string, unknown>
+  const s = (k: string) => (typeof b[k] === 'string' && (b[k] as string).trim() ? (b[k] as string) : undefined)
+  const files = Array.isArray(b.files) ? b.files.filter((f): f is string => typeof f === 'string' && !!f.trim()) : []
+  return {
+    goal: s('goal'),
+    changes: s('changes'),
+    checks: s('checks'),
+    focus: s('focus'),
+    context: s('context'),
+    ...(files.length ? { files } : {}),
+  }
+}
+
 const tasksField = (o: Orchestra) => ({
   type: 'array',
   description: '每一项是一个子任务，互相之间不能有依赖',
@@ -40,6 +56,27 @@ const tasksField = (o: Orchestra) => ({
         type: 'string',
         description:
           '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。那个子任务要已经结束；agent 不写或写同一个角色',
+      },
+      review: {
+        type: 'object',
+        description:
+          '派「评审」看代码改动时的交接单（第一次评审必填 goal 和 checks，复看不用）：把你已经知道的整理给它，评审只看改动的代码，不再自己读文档、搜项目去还原背景',
+        properties: {
+          goal: { type: 'string', description: '这次改动要达成什么、验收标准（有口径的连口径）' },
+          changes: { type: 'string', description: '改了什么、为什么这样改：按文件或模块一两句' },
+          checks: { type: 'string', description: '已经跑过的检查：每条「命令 + 结果」' },
+          focus: { type: 'string', description: '希望重点看的风险点' },
+          context: {
+            type: 'string',
+            description:
+              '判断要用、差异里又看不到的事实：调用方怎么用、上游保证了什么、相关接口签名（从你读过的代码里摘）',
+          },
+          files: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件',
+          },
+        },
       },
     },
     // title 不必填：缺了引擎取 instructions 第一行（见 engine.ts 的 spawn），因为漏写标题被拒、白费一次调用不值
@@ -933,6 +970,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
           agent: str(x.agent) || undefined,
           tier: str(x.tier) || undefined,
           resume: str(x.resume) || undefined,
+          review: briefOf(x.review),
         }))
       const r = o.spawn(list)
       if (r.error) return text(r.error, true)
