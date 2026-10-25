@@ -10,6 +10,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
+  /** 宽屏标题栏的文件按钮：文件面板默认收起，后面的用例要自己先把它点开 */
+  const openFiles = async () => {
+    const open = p.getByRole('button', { name: '显示文件', exact: true })
+    if (await open.count()) {
+      await open.click()
+      await settle(p)
+    }
+  }
+  // 宽屏右栏默认收起，不占掉一半宽度（用户提的「分析弹窗一打开就占一半」）；按钮在标题栏，点一下展开
+  await check(p, '任务-文件面板默认收起')
+  const filesPanel = p.locator('[data-task-panel]').first()
+  if (await filesPanel.isVisible()) errors.push('任务：文件面板默认就展开了，挡住了对话')
+  if ((await p.getByRole('button', { name: '显示文件', exact: true }).getAttribute('aria-expanded')) !== 'false')
+    errors.push('任务：文件面板收起时按钮没标成未展开')
+  await openFiles()
+  if (!(await filesPanel.isVisible())) errors.push('任务：点「显示文件」后文件面板没展开')
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
   /** 刷新后回到购物车那个任务页：当前路由就是任务页，等它画出来；没回到任务页时从列表点进去 */
@@ -20,10 +36,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         () => true,
         () => false,
       )
-    )
+    ) {
+      await openFiles()
       return
+    }
     await p.getByText('购物车右上角', { exact: false }).first().click()
     await token.waitFor({ timeout: 5000 }).catch(() => {})
+    await openFiles()
   }
   /** Esc 关掉弹层之后等它真的卸载，再点下面的东西 */
   const closed = () =>
@@ -547,8 +566,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .filter((r) => !!r.querySelector('button[title*="打开子对话"]'))
         return {
           rows: rows.length,
-          // 行宽：1280 那段靠它确认真的复现出了「开着右栏再缩窗」的窄行，
-          // 默认右栏改成关闭时这里会变宽，断言就不会再静默通过
+          // 行宽：只用来在报错里写清楚当时的实际值，不作阈值判。
+          // 行宽会随外面套几层缩进变化（运行区从回复内容里挑出来单独成块时少一层），
+          // 写死像素的阈值一改布局就变成假报错
           rowWidth: rows[0] ? Math.round(rows[0].getBoundingClientRect().width) : 0,
           items: rows
             .map((row) => {
@@ -620,9 +640,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else if (mid.items.length !== mid.rows)
       errors.push(`运行区（1280px）：${mid.rows} 条子对话行里只有 ${mid.items.length} 条能测到状态标签`)
     for (const n of mid.items) if (n.clipped) errors.push(`运行区（1280px）：状态标签「${n.text}」被裁掉了`)
-    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来
-    if (mid.rowWidth > 340)
-      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，没复现出右栏占宽后的窄行（应该 <340）`)
+    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来。
+    // 按行自己的行为判，不写死像素：这一行窄于容器查询的 380px 阈值时活动文字必须隐藏，
+    // 和上面 1024px 那段（行够宽、活动文字必须显示）正好是同一套判定的两边，
+    // 两边都成立才说明真的复现了「放不下活动文字」的窄行；行宽写进报错方便排查
+    if (mid.rows && mid.items.some((n) => n.noteShown))
+      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，活动文字还占着宽度，没复现出右栏占宽后的窄行`)
     // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
     await p
       .locator('[aria-label="运行中"]')
@@ -1381,27 +1404,52 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ timeout: 5000 })
         .catch(() => {})
     }
-    // 验收 5：子对话没打开时，宽屏「收起文件面板」的原行为不变（四条 openChild ? 分支写反会在这里撞红）
+    // 验收 5：子对话没打开时，宽屏文件按钮的四种 openChild ? 分支不变（写反会在这里撞红）。
+    // 文件面板现在默认收起（见「任务-文件面板默认收起」），这里验的是从收起到展开、再收回去这条路
     {
-      await gotoTask()
+      // 前面的用例展开过文件面板，本地记着「展开」：清掉记录、直接重新加载，
+      // 不走 gotoTask / backToTask（它们会顺手点开面板），验的才是真默认状态
+      await p.evaluate(() => {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('task-files:')) localStorage.removeItem(k)
+      })
+      await p.reload()
+      const token = p.getByTitle('Token 用量').first()
+      if (
+        !(await token.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+      await token.waitFor({ timeout: 5000 }).catch(() => {})
+      await settle(p)
       const aside = p.locator('[data-task-panel]')
+      const open = p.getByRole('button', { name: '显示文件', exact: true })
       const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
-      if (!(await fold.count())) errors.push('文件面板-原行为：子对话未打开时没有「收起文件面板」')
-      else if ((await fold.getAttribute('aria-expanded')) !== 'true')
-        errors.push('文件面板-原行为：面板展着时按钮没标成已展开')
-      else if (!(await aside.isVisible())) errors.push('文件面板-原行为：默认状态下右栏文件面板不可见')
+      if (!(await open.count())) errors.push('文件面板-原行为：子对话未打开时没有「显示文件」')
+      else if ((await open.getAttribute('aria-expanded')) !== 'false')
+        errors.push('文件面板-原行为：默认收起时按钮没标成未展开')
+      else if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：默认就展开了文件面板')
       else {
-        await fold.click()
+        await open.click()
         await settle(p)
-        // 收起后整栏看不见（xl:hidden），按钮还在标题栏、标成未展开
-        if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：点收起后右栏还占着位置')
-        if ((await fold.getAttribute('aria-expanded')) !== 'false')
-          errors.push('文件面板-原行为：收起后按钮没标成未展开')
-        await check(p, '文件面板-原行为-收起')
-        await fold.click()
-        await settle(p)
-        if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：再点一次文件面板没回来')
+        if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：点「显示文件」后右栏没出来')
         await check(p, '文件面板-原行为-展开', ['src'])
+        if (!(await fold.count())) errors.push('文件面板-原行为：展开后没有「收起文件面板」')
+        else if ((await fold.getAttribute('aria-expanded')) !== 'true')
+          errors.push('文件面板-原行为：面板展着时按钮没标成已展开')
+        else {
+          await fold.click()
+          await settle(p)
+          // 收起后整栏看不见（xl:hidden），按钮换成「显示文件」、标成未展开
+          if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：点收起后右栏还占着位置')
+          if ((await open.getAttribute('aria-expanded')) !== 'false')
+            errors.push('文件面板-原行为：收起后按钮没标成未展开')
+          await check(p, '文件面板-原行为-收起')
+          await open.click()
+          await settle(p)
+          if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：再点一次文件面板没回来')
+        }
       }
     }
     await openChild()
@@ -2101,6 +2149,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
       const title = () => p.locator('header nav h2').first().innerText()
       await projBtn.first().click()
+      // 上一步的 reload / 导航会让标题栏重渲染，紧接着那一下点击可能落在正在换掉的节点上而不展开。
+      // 没展开就补点一次（和本文件最后截图那段同一个做法），避免反而关掉已打开的浮层。
+      // 判据看触发按钮自己的展开状态（ProjectSwitch 的 PopoverTrigger 带 data-state），
+      // 不看浮层内容可见：打开后拉列表是 effect，内容晚一帧才齐，拿内容判会误把「已打开」当成「没打开」再点一下关掉
+      const expanded = () =>
+        projBtn
+          .first()
+          .getAttribute('data-state')
+          .then((s) => s === 'open')
+          .catch(() => false)
+      if (!(await expanded())) {
+        await p.waitForTimeout(300)
+        if (!(await expanded())) await projBtn.first().click()
+      }
       if (
         !(await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
           () => true,

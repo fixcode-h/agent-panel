@@ -30,7 +30,7 @@ const stateText = (s: ChatDockState) =>
  * - 可以拖到任意位置，松手后夹回视口内并记进 localStorage（按 id 分开记，两个窗口互不影响）
  * - 拖动用 pointer 事件 + 指针捕获，不用 HTML5 draggable：那样拖不出窗口外、也拿不到稳定的坐标
  * - 移动没超过阈值就当成点击（展开），拖动不会顺带把窗口打开
- * - 关闭是真的把这次任务停掉（调用方负责），不是收起来
+ * - 关闭做什么由调用方定：AI 分析窗口只收窗口、分析继续在后台跑，AI 优化窗口会停掉那次生成
  */
 export function MinimizedChat({
   id,

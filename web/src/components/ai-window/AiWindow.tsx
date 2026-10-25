@@ -19,7 +19,9 @@ import { TaskView } from '@/components/tasks/TaskView'
  * 统一的 AI 分析窗口：「AI 处理」报错、「AI 分析执行结果」、子任务分析、内存分析都在这里看，
  * 里面就是那个分析对话（可以接着问）。对话本身按归属规则开在父对话下、项目里或 Chat 里（见 shared/analysis-home.ts），
  * 「去对话里看」跳到它所在的地方。
- * 最小化后收成右下角的浮条（和「AI 优化」共用同一个组件），分析照常进行；关闭是直接关掉并停止，不再先弹确认。
+ * 最小化后收成右下角的浮条（和「AI 优化」共用同一个组件），分析照常进行。
+ * 关闭（浮条和标题栏的 ✕）只收窗口，同样不停分析：对话留在列表里、后台跑完会提醒，
+ * 想停分析就去对话里的输入框点停止（窗口里嵌的就是那个对话）。
  * 窗口和对话是两回事：对话被删掉时窗口不自动消失，标成「对话已关闭」等用户自己关。
  */
 export function AiWindow() {
@@ -85,7 +87,7 @@ export function AiWindow() {
         variant="ghost"
         size="icon-sm"
         aria-label={t('关闭')}
-        title={running ? t('关闭并停止分析') : t('关闭')}
+        title={running ? t('关闭窗口（分析继续在后台进行）') : t('关闭窗口')}
         onClick={() => closeAiWindow()}
       >
         <X className="h-4 w-4" />
@@ -110,7 +112,8 @@ export function AiWindow() {
       )}
       <D.Root
         open={open && !minimized}
-        // 按 Esc 或点窗口外面：分析中先收起来，免得误触停止；没在分析就直接关
+        // 按 Esc 或点窗口外面：分析中先收起来（浮条还在、状态还看得到）；没在分析就关窗口。
+        // 两种都不停分析：关闭只是收窗口，分析继续在后台跑
         onOpenChange={(o) => {
           if (o) return
           if (running) minimizeAiWindow(true)

@@ -264,7 +264,7 @@ export function ChatComposer({
             className={sm ? 'h-7 w-7' : undefined}
           />
         )}
-        <ElementPickButton onPick={chips.addQuote} />
+        <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} />
         {tools}
         <span className="flex-1" />
         {hint && (

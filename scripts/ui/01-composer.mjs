@@ -357,12 +357,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.close()
   }
 
-  // 开发者模式的「抓取界面元素」：设置里打开才有按钮；Esc 退出不引用，左键点中后放一张引用卡片并退出抓取
+  // 开发者模式的「抓取界面元素」：设置里打开才有按钮；Esc 退出不引用；中键点中后放一张引用卡片并退出抓取
+  // （抓取期间左键、右键照常可用；快捷键也能进入和退出抓取）
   {
     const d = await page({ width: 1440, height: 900 })
     await d.goto(base + '#/chat')
     await d.locator('#task-prompt').waitFor()
-    const pickBtn = d.getByRole('button', { name: '抓取界面元素' })
+    const pickBtn = d.getByLabel('抓取界面元素', { exact: true })
     if (await pickBtn.count()) errors.push('元素抓取：没开开发者模式就显示了抓取按钮')
     await d.getByRole('button', { name: '设置' }).first().click()
     await d.getByRole('switch', { name: '开发者模式' }).click()
@@ -374,7 +375,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const overlay = d.locator('[data-element-picker]')
     await pickBtn.click()
     await d.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
-    await check(d, '元素抓取-悬停', ['点选页面上的元素，引用到对话', '退出抓取'])
+    await check(d, '元素抓取-悬停', ['抓取元素，左键、右键照常可用', '退出抓取'])
+    // 右键要能正常弹出页面自己的菜单，且不退出抓取（以前右键 = 退出抓取）
+    await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2, { button: 'right' })
+    if (!(await overlay.count())) errors.push('元素抓取：右键点击后退出了抓取（右键应该正常弹菜单）')
     await d.keyboard.press('Escape')
     if (await overlay.count()) errors.push('元素抓取：按 Esc 没有退出抓取模式')
     if (
@@ -384,20 +388,196 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .count()
     )
       errors.push('元素抓取：按 Esc 退出也放了引用')
+    // 左键要真的能用（不只是「没被拦」）：点顶栏的「设置」应该真的打开设置弹窗，而且不该退出抓取。
+    // 以前全局吞鼠标事件时，这一个点只会把抓取退掉
     await pickBtn.click()
-    await d.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2)
+    await d.getByRole('button', { name: '设置' }).first().click()
+    const settingsOpen = await d
+      .getByRole('dialog')
+      .first()
+      .waitFor({ timeout: 3000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!settingsOpen) errors.push('元素抓取：抓取期间左键点「设置」没有打开设置弹窗（左键没放行）')
+    await check(d, '元素抓取-左键放行')
+    // 关弹窗用弹窗自己的关闭按钮，不用 Esc：抓取期间 Esc 被覆盖层在捕获阶段吃掉、只退抓取（本来的设计），
+    // 弹窗收不到，光按 Esc 关不掉它，后面的点击就会被遮罩挡住
+    await d.getByRole('button', { name: '关闭设置' }).first().click()
+    await d
+      .getByRole('dialog')
+      .first()
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('元素抓取：左键放行用例没能关掉设置弹窗'))
+
+    // 快捷键：`·` 进入抓取，再按一次退出。上一段（左键放行）结束时抓取还开着，
+    // 先按 Esc 退出，否则这里的第一次 Backquote 会被当成「退出」而不是「进入」（抓取状态全局一份）
+    await d.keyboard.press('Escape')
+    await overlay.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    // 键盘模拟按的是反引号那个物理键（code=Backquote）：中文输入法和小键盘都打出 `·`，实现按 code 兼容。
+    // 必须先等抓取按钮出现：settings 还在读的时候 developerMode 是 undefined，快捷键和按钮都还不生效
+    await pickBtn.waitFor({ timeout: 10000 })
+    // 焦点挪到页面空白处：输入框聚焦时无修饰键的快捷键按设计不触发
+    await d.locator('body').click({ position: { x: 5, y: 5 } })
+    await d.keyboard.press('Backquote')
+    await overlay
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素抓取：按快捷键（Backquote / `·`）没有进入抓取模式'))
+    await check(d, '元素抓取-快捷键进入')
+    await d.keyboard.press('Backquote')
+    await overlay
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('元素抓取：再按一次快捷键没有退出抓取模式'))
+
+    // 中键抓取：中键点中后放一张引用卡片并退出；中键不能把页面滚起来（自动滚动被拦了）
+    await d.locator('#task-prompt').waitFor()
+    await pickBtn.waitFor({ timeout: 10000 })
+    const hb2 = await d.getByRole('heading', { name: '有什么可以帮你？' }).boundingBox()
+    await pickBtn.click()
+    await overlay.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点按钮没有进入抓取模式'))
+    const scrollBefore = await d.evaluate(() => window.scrollY)
+    await d.mouse.click(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2, { button: 'middle' })
+    await d.waitForTimeout(300)
+    const scrollAfter = await d.evaluate(() => window.scrollY)
+    if (scrollAfter !== scrollBefore)
+      errors.push(`元素抓取：中键抓取时页面被滚动了（${scrollBefore} → ${scrollAfter}）`)
     const chip = d
       .locator('#task-prompt')
       .getByText(/界面元素/)
       .first()
-    await chip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：点中元素后输入框里没有引用卡片'))
-    if (await overlay.count()) errors.push('元素抓取：点中元素后没有退出抓取模式')
+    await chip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：中键点中元素后输入框里没有引用卡片'))
+    await overlay
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('元素抓取：中键点中元素后没有退出抓取模式'))
     await check(d, '元素抓取-引用')
     await chip.click()
     const quoted = await d.getByRole('dialog').last().innerText()
     for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
       if (!quoted.includes(want)) errors.push(`元素抓取：引用里没有「${want}」`)
     await d.keyboard.press('Escape')
+
+    // 换页面时抓取要自动退出：抓取状态是全局一份，不退出的话下一个页面会带着「已经在抓取中」进来，
+    // 再按快捷键就成了「退出」而不是「进入」，语义反了
+    await d.goto(base + '#/chat')
+    await pickBtn.waitFor({ timeout: 10000 })
+    await pickBtn.click()
+    await overlay.waitFor({ timeout: 5000 }).catch(() => errors.push('元素抓取：切页前没能进入抓取'))
+    await d.goto(base + '#/library')
+    await d.getByText('commit-message').first().waitFor({ timeout: 10000 })
+    await overlay
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('元素抓取：换页面后抓取模式没有自动退出'))
+    await check(d, '元素抓取-换页退出')
+
+    // 页面上没有输入框时也能抓（记忆库页就在这）：抓到后没处放，写进剪贴板并提示。
+    // 库页没有抓取按钮可等，上面刚确认过 settings 已到位
+    // 等这个页面自己加载完（演示版预置了 skill 列表）
+    await d.getByText('commit-message').first().waitFor({ timeout: 10000 })
+    await d.locator('body').click({ position: { x: 5, y: 5 } })
+    await d.keyboard.press('Backquote')
+    await overlay
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素抓取：没有输入框的页面上按快捷键没有进入抓取模式'))
+    await d.mouse.click(600, 300, { button: 'middle' })
+    await overlay
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('元素抓取：没有输入框的页面上中键抓完没有退出抓取'))
+    await d
+      .getByText('已复制到剪贴板，去输入框里粘贴')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素抓取：没有输入框的页面上抓到元素后没有写剪贴板（没有提示）'))
+    // 剪贴板里的内容要能粘回输入框还原成引用卡片（带标记，不是只有首行摘要）
+    const clipped = await d.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (clipped) {
+      if (!clipped.includes('[元素引用]') || !clipped.includes('- 元素：'))
+        errors.push('元素抓取：剪贴板里没有完整的元素引用（缺标记或「- 元素：」那行）')
+    } else errors.push('元素抓取：读不到剪贴板内容（可能没写进去）')
+    await check(d, '元素抓取-剪贴板兜底')
+
+    // 元素引用能带出去：右键卡片「复制内容」写的是带标记的原文，粘到另一个窗口还原成同一张引用卡片。
+    // 复制出去的不是路径也不是本地存储里的编号，所以换个标签页、换个面板实例都认得出（见 lib/element-ref.ts）
+    // 先回对话页：上面那段结尾停在了库页，而这一步要点的是输入框里刚放进去的那张引用卡片
+    await d.goto(base + '#/chat')
+    await d.locator('#task-prompt').waitFor()
+    await chip.waitFor({ timeout: 5000 })
+    await chip.click({ button: 'right' })
+    const copyItem = d.getByRole('menuitem', { name: '复制内容' })
+    await copyItem.waitFor({ timeout: 3000 }).catch(() => errors.push('元素引用复制：右键卡片没有「复制内容」'))
+    await copyItem.click()
+    await d
+      .getByText('引用内容已复制')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素引用复制：复制后没有成功提示'))
+    const marked = await d.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!marked.startsWith('[元素引用]')) errors.push(`元素引用复制：剪贴板里没有引用标记（${marked.slice(0, 24)}）`)
+    if (!marked.trimEnd().endsWith('[/元素引用]')) errors.push('元素引用复制：剪贴板里的标记不完整')
+    await check(d, '元素引用-复制')
+    // 另一个窗口：同一个浏览器的另一个标签页，浏览器只把剪贴板里的文字带过去。
+    // 两个标签页共用本地草稿，先把输入框（和里面恢复出来的卡片）清空，这样出现的卡片只可能是粘来的
+    const b = await d.context().newPage()
+    await b.goto(base + '#/chat')
+    await b.locator('#task-prompt').waitFor({ timeout: 10000 })
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b
+      .waitForFunction(() => !document.querySelector('#task-prompt [data-chip="quote"]'), null, { timeout: 5000 })
+      .catch(() => errors.push('元素引用粘贴：另一个窗口的输入框清不空，判断不了卡片是不是粘来的'))
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+V')
+    const pastedChip = b.locator('#task-prompt [data-chip="quote"]').first()
+    await pastedChip.waitFor({ timeout: 5000 }).catch(() => errors.push('元素引用粘贴：另一个窗口里没有还原成引用卡片'))
+    if ((await b.locator('#task-prompt [data-chip="quote"]').count()) !== 1)
+      errors.push('元素引用粘贴：另一个窗口里粘出来的引用卡片不是一张')
+    const draft = await b
+      .locator('#task-prompt')
+      .innerText()
+      .catch(() => '')
+    if (draft.includes('[元素引用]')) errors.push('元素引用粘贴：输入框里留着标记文字，没有换成卡片')
+    await check(b, '元素引用-跨窗口粘贴')
+    // 卡片背后是原来那条引用的原文，不是一小段摘要
+    await pastedChip.click()
+    const restored = await b
+      .getByRole('dialog')
+      .last()
+      .innerText()
+      .catch(() => '')
+    for (const want of ['web/src/pages/ChatPage.tsx:', '组件层级', '选择器'])
+      if (!restored.includes(want)) errors.push(`元素引用粘贴：卡片里没有「${want}」`)
+    await b.keyboard.press('Escape')
+    // 换一套干净的浏览器环境（新的上下文，本地存储是空的）：还能还原，说明靠的是剪贴板里的原文，
+    // 不是本地的编号 → 换浏览器、换面板实例照样有效
+    const c = await page({ width: 1440, height: 900 })
+    await c.goto(base + '#/chat')
+    await c.locator('#task-prompt').waitFor({ timeout: 10000 })
+    await c.locator('#task-prompt').click()
+    await c.keyboard.press('Control+V')
+    await c
+      .locator('#task-prompt [data-chip="quote"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('元素引用粘贴：全新的浏览器环境里还原不了引用卡片'))
+    await check(c, '元素引用-换浏览器环境粘贴')
+    await c.close()
+    // 只复制了一半标记（截图、截断）时按普通文字粘进来，不能误判成卡片
+    await b.locator('#task-prompt').click()
+    await b.keyboard.press('Control+A')
+    await b.keyboard.press('Backspace')
+    await b.evaluate((half) => navigator.clipboard.writeText(half), marked.slice(0, 60))
+    await b.keyboard.press('Control+V')
+    await b
+      .waitForFunction(
+        (half) => (document.querySelector('#task-prompt')?.textContent ?? '').includes(half.slice(-12)),
+        marked.slice(0, 60),
+        { timeout: 5000 },
+      )
+      .catch(() => errors.push('元素引用粘贴：半截标记的文字没有粘进来'))
+    if (await b.locator('#task-prompt [data-chip="quote"]').count())
+      errors.push('元素引用粘贴：半截标记被误判成了引用卡片')
+    await check(b, '元素引用-标记不完整')
+    await b.close()
     await d.close()
   }
 

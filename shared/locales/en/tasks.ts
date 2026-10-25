@@ -249,6 +249,7 @@ export const EN_TASKS: Record<string, string> = {
   '子对话 {n}': 'Sub-conversations ({n})',
   '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
+  运行区: 'Running items',
   已关闭: 'Closed',
   解决: 'Resolve',
   已解决: 'Resolved',
@@ -1064,7 +1065,11 @@ export const EN_TASKS: Record<string, string> = {
   在项目对话里打开: 'Open in the project conversation',
   '{where}（分析照常进行）': '{where} (analysis keeps running)',
   '最小化（分析照常进行）': 'Minimize (analysis keeps running)',
-  关闭并停止分析: 'Close and stop the analysis',
+  关闭窗口: 'Close window',
+  '关闭窗口（分析继续在后台进行）': 'Close window (analysis keeps running in the background)',
+  '{label}继续在后台进行：{title}': '{label} keeps running in the background: {title}',
+  '{label}正在新建对话，关掉窗口不影响它继续建：{title}':
+    '{label} is still creating the conversation; closing the window will not interrupt it: {title}',
   '它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
     'It was removed from the conversation list; this window stays open. Click close in the top-right corner to dismiss it.',
   '正在新建分析对话…': 'Creating the analysis conversation…',

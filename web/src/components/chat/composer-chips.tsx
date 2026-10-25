@@ -13,10 +13,11 @@ import {
   type Chip,
   type ChipKind,
 } from '@shared/composer'
-import type { Attachment } from '@shared/schema'
+import { MAX_ATTACHMENTS, type Attachment } from '@shared/schema'
 import { api } from '@/lib/api'
 import { attachmentUrl } from './Attachments'
 import { copyImage, imageCopyBlocked } from '@/lib/clipboard-image'
+import { isElementRefText, pasteElementRefs, wrapElementRef } from '@/lib/element-ref'
 import { MenuItem, PointMenu, MenuSeparator } from '@/components/ui/menu'
 import { useData } from '@/lib/data'
 import { insertFileRef, useFileRefDrop } from '@/lib/fileDrag'
@@ -194,7 +195,9 @@ export function useComposerChips({
         <MenuItem
           onSelect={() => {
             const item = itemOf(menu.chip.name)
-            copyTextOf(item?.quote ?? item?.done?.quote ?? '', t('引用内容已复制'))
+            const text = item?.quote ?? item?.done?.quote ?? ''
+            // 元素引用带着标记复制：粘到别的对话、别的窗口里会还原成同一张引用卡片（见 lib/element-ref.ts）
+            copyTextOf(isElementRefText(text) ? wrapElementRef(text) : text, t('引用内容已复制'))
             closeMenu()
           }}
         >
@@ -224,6 +227,36 @@ export function useComposerChips({
       drop.onPaste(e)
       if (e.defaultPrevented) return
       const pasted = e.clipboardData.getData('text/plain')
+      const ed = editor.current
+      /**
+       * 抓取的元素引用（带 [元素引用] 标记，见 lib/element-ref.ts）：每块换回一张引用卡片。
+       * 原文就在粘贴的文字里，所以从别的对话、别的浏览器标签页、甚至另一个面板实例粘过来都能还原，
+       * 不依赖本地存储和服务端地址。标记不完整的按普通文字走下面的流程
+       */
+      const room = Math.max(0, MAX_ATTACHMENTS - files.items.length)
+      const quoted = ed
+        ? pasteElementRefs(
+            pasted,
+            (ref) => {
+              let name: string | undefined
+              files.addQuote(ref, { added: (items) => (name = items[0]?.name), failed: hooks.failed })
+              return name
+            },
+            room,
+          )
+        : undefined
+      // made 为 0 时没有卡片可放，交给下面的超长 / 路径流程处理原文
+      if (ed && quoted && quoted.made > 0) {
+        // 没换成卡片的引用会按普通文字留在输入框里（内容不丢），但不能默默不提一句
+        if (quoted.kept > 0) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+        e.preventDefault()
+        // 卡片背后的附件 addQuote 已经放好了，这里把卡片标记和其余文字插回粘贴的位置
+        const at = ed.caret()
+        ed.focus()
+        ed.setCaret(at)
+        ed.insert(quoted.text)
+        return
+      }
       // 很长的一段文字（日志、整份文档）存成文本文件，输入框里放它的卡片，不把消息撑满
       const longAt = settings?.longPasteChars ?? 5000
       if (longAt > 0 && pasted.length > longAt) {
@@ -233,7 +266,6 @@ export function useComposerChips({
         return
       }
       const hits = findPaths(pasted)
-      const ed = editor.current
       // 整段就一个路径（复制对话、复制文件路径）：只认这一个，粘贴后就是一张卡片
       const sole = solePath(pasted)
       const refs = sole ? [{ start: 0, end: pasted.length, path: sole }] : hits
@@ -268,7 +300,7 @@ export function useComposerChips({
         })
         .catch(() => put(pasted))
     },
-    [drop, editor, files, settings, addFiles],
+    [drop, editor, files, hooks, settings, addFiles],
   )
 
   return {
