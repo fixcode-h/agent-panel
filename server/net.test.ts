@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setLang, t } from '../shared/i18n.ts'
 import type { NetDeps, ProxyPlan } from './net.ts'
+import { DEFAULT_PROXY_PORT, DEFAULT_PROXY_URL, LOCAL_PROXY_PORTS, MAX_LOCAL_PROXIES } from '../shared/proxy.ts'
 
 // 设置模块会读数据目录，用临时的别碰本机
 const data = await mkdtemp(path.join(tmpdir(), 'agent-panel-net-data-'))
@@ -116,10 +117,11 @@ test('解析 macOS scutil --proxy 的输出', () => {
   assert.deepEqual(parseScutilProxy(text.replace('HTTPSEnable : 1', 'HTTPSEnable : 0')), ['http://127.0.0.1:7890'])
 })
 
-test('探测候选：系统代理在前，本地端口全部列出（V2Ray 的 10809 也在）', () => {
-  assert.deepEqual(localProxyCandidates(['http://127.0.0.1:8080'], [7890, 10809, 7891]), [
+test('探测候选：系统代理在前，本地端口全部列出（v2rayN 的默认端口、老版的 10809 都在）', () => {
+  assert.deepEqual(localProxyCandidates(['http://127.0.0.1:8080'], [7890, DEFAULT_PROXY_PORT, 10809, 7891]), [
     'http://127.0.0.1:8080',
     'http://127.0.0.1:7890',
+    DEFAULT_PROXY_URL,
     'http://127.0.0.1:10809',
     'http://127.0.0.1:7891',
   ])
@@ -131,18 +133,26 @@ test('探测候选：系统代理在前，本地端口全部列出（V2Ray 的 1
   assert.deepEqual(localProxyCandidates([], []), [])
 })
 
-test('真正尝试的代理：系统代理全留，本地端口最多 3 个，V2Ray 不会被 Clash 挤掉', () => {
-  const alive = ['http://127.0.0.1:7890', 'http://127.0.0.1:10809', 'http://127.0.0.1:7891', 'http://127.0.0.1:7897']
-  assert.deepEqual(pickLocalProxies([], alive), alive.slice(0, 3))
-  assert.equal(pickLocalProxies([], alive)[1], 'http://127.0.0.1:10809')
+test('真正尝试的代理：系统代理全留，本地端口最多 3 个，默认端口不会被 Clash 挤掉', () => {
+  const alive = ['http://127.0.0.1:7890', DEFAULT_PROXY_URL, 'http://127.0.0.1:10809', 'http://127.0.0.1:7891']
+  assert.deepEqual(pickLocalProxies([], alive), alive.slice(0, MAX_LOCAL_PROXIES))
+  assert.equal(pickLocalProxies([], alive)[1], DEFAULT_PROXY_URL)
   // 系统代理全部保留，不算进本地端口的 3 个里面
   assert.deepEqual(pickLocalProxies(['http://127.0.0.1:8080'], ['http://127.0.0.1:8080', ...alive]), [
     'http://127.0.0.1:8080',
-    ...alive.slice(0, 3),
+    ...alive.slice(0, MAX_LOCAL_PROXIES),
   ])
   // 探测失败（不在可用列表里）的系统代理不保留
-  assert.deepEqual(pickLocalProxies(['http://127.0.0.1:8080'], alive), alive.slice(0, 3))
+  assert.deepEqual(pickLocalProxies(['http://127.0.0.1:8080'], alive), alive.slice(0, MAX_LOCAL_PROXIES))
   assert.deepEqual(pickLocalProxies([], []), [])
+})
+
+// 用户机器上只跑 v2rayN 这类「默认入站一个端口」的代理软件：它必须在默认顺序的前几个里，
+// 否则会被 MAX_LOCAL_PROXIES 截掉，自动探测永远轮不到它（顺序本身由 shared/proxy.test.ts 钉住）
+test('只开了默认端口的机器也能探测到并使用', () => {
+  const candidates = localProxyCandidates([], LOCAL_PROXY_PORTS)
+  assert.ok(candidates.includes(DEFAULT_PROXY_URL), '默认端口要在探测候选里')
+  assert.deepEqual(pickLocalProxies([], [DEFAULT_PROXY_URL]), [DEFAULT_PROXY_URL])
 })
 
 test('尝试顺序：配置的代理 → 本机代理 → 直连，空字符串表示直连', () => {
