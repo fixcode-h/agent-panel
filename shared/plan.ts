@@ -236,11 +236,40 @@ function closeIfDone(plan: TaskPlan, now: string) {
 }
 
 /**
- * 计划的最后一步必须是一个没做完的收尾步骤（只要还有没做完的步骤，或者从来没收过尾）：
- * 没有就加（Agent 刚删掉的那个原样放回，id 不变），多写了只留一个，挪到中间的放回最后。
- * 已经做完的收尾留在原位：之后又加了要做的步骤，就在最后再收一次尾
+ * Agent 自己写的这一步是不是收尾：照抄了面板的收尾（新开计划时把上一份计划的收尾一起抄过来最常见），
+ * 或者自己写了「收尾：合回…」「收尾：…changelist」。认成面板的收尾，不然计划里会有两条一样的收尾
  */
-function ensureWrapUp(plan: TaskPlan, kind: WrapUpKind, prev: PlanStep | undefined, nextId: () => string) {
+function looksLikeWrapUp(title: string) {
+  const t = title.replace(/\s+/g, '').replace(/:/g, '：')
+  if (Object.values(WRAP_UP).some((w) => w.title.replace(/\s+/g, '') === t)) return true
+  return t.startsWith('收尾') && (t.includes('合回') || /changelist/i.test(t))
+}
+
+/**
+ * 计划的最后一步必须是一个没做完的收尾步骤（只要还有没做完的步骤，或者是第一份计划从来没收过尾）：
+ * 没有就加（Agent 刚删掉的那个原样放回，id 不变），多写了只留一个，挪到中间的放回最后。
+ * Agent 自己写的收尾（多半是新开计划时把上一份的收尾抄了过来）：计划里已经有面板的收尾就去掉它，
+ * 没有就认成面板的收尾、状态照它写的。做完的收尾之后又有要做的事：重新打开挪到最后。
+ * 计划里始终只有一条收尾。分支到底合没合回以 git 为准（见 server/tasks.ts 的 childUnmerged），不靠这一步的状态。
+ * 后来开的计划全是做完的步骤（合回后回顾一下做了什么）不再加收尾：已经合回了，加上就永远「只剩合回」
+ */
+function ensureWrapUp(
+  plan: TaskPlan,
+  kind: WrapUpKind,
+  prev: PlanStep | undefined,
+  nextId: () => string,
+  now: string,
+  first: boolean,
+) {
+  const copies = plan.steps.filter((s) => !s.wrapUp && looksLikeWrapUp(s.title))
+  if (copies.length && plan.steps.some((s) => s.wrapUp)) plan.steps = plan.steps.filter((s) => !copies.includes(s))
+  else
+    for (const s of copies) {
+      s.wrapUp = kind
+      s.title = WRAP_UP[kind].title
+      s.note = WRAP_UP[kind].note
+      s.review = false
+    }
   const open = plan.steps.filter((s) => s.wrapUp && s.status !== 'done')
   const rest = plan.steps.filter((s) => !(s.wrapUp && s.status !== 'done'))
   if (!rest.length) {
@@ -248,9 +277,17 @@ function ensureWrapUp(plan: TaskPlan, kind: WrapUpKind, prev: PlanStep | undefin
     plan.steps = open.slice(0, 1)
     return
   }
-  const needed = !plan.steps.some((s) => s.wrapUp) || rest.some((s) => !s.wrapUp && s.status !== 'done') || open.length
+  const todo = rest.some((s) => !s.wrapUp && s.status !== 'done')
+  const needed = todo || open.length || (first && !plan.steps.some((s) => s.wrapUp))
   if (!needed) return
+  // 做完的收尾之后又有要做的事：重新打开它挪到最后，不另加一条同名的
+  const reopen = open.length ? undefined : plan.steps.filter((s) => s.wrapUp === kind && s.status === 'done').at(-1)
+  if (reopen) {
+    setStatus(reopen, 'pending', now)
+    reopen.note = WRAP_UP[kind].note
+  }
   const keep: PlanStep = open[0] ??
+    reopen ??
     (prev && prev.status !== 'done' ? prev : undefined) ?? {
       id: nextId(),
       title: WRAP_UP[kind].title,
@@ -262,7 +299,7 @@ function ensureWrapUp(plan: TaskPlan, kind: WrapUpKind, prev: PlanStep | undefin
       children: [],
       wrapUp: kind,
     }
-  plan.steps = [...rest, keep]
+  plan.steps = [...rest.filter((s) => s !== keep), keep]
 }
 
 /**
@@ -380,7 +417,7 @@ export function applyPlan(
   )
   const notes0: string[] = []
   if (wrapUp) {
-    ensureWrapUp(plan, wrapUp, prevWrap, () => String(++seq))
+    ensureWrapUp(plan, wrapUp, prevWrap, () => String(++seq), now, task.plans.length === 1)
     // 合回分支只有面板说了算：Agent 自己标完成不算，等合并结果
     const merge = plan.steps.find((s) => s.wrapUp === 'merge' && s.status === 'done' && s === prevWrap)
     if (merge && prevWrapStatus !== 'done') {

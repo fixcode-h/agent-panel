@@ -1797,7 +1797,12 @@ export function tasksApi(deps: {
     if (reportedState.get(childId) === key) return
     reportedState.set(childId, key)
     const summary = tk.summary || lastReply(tk)
-    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
+    // 只剩合回却没请收尾：父对话不能直接 finish_child（要等它请求），点明下一步，免得父对话收到了也不知道该做什么
+    const next =
+      r.state === 'unfinished' && isolated(tk) && !openWork(tk).length
+        ? '\n下一步：用 send_to_conversation 让它在自己的分支里跑通验证后调用 submit_merge；它请求收尾后你再 finish_child。'
+        : ''
+    const text = `【子对话状态】「${tk.title}」（id ${tk.id}）${r.why}${next}${summary ? `\n最近的结果：${summary.slice(0, 1500)}` : ''}`
     await noteParent(
       tk.parentTaskId,
       tk,

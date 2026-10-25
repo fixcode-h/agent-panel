@@ -553,6 +553,70 @@ test('合回分支的收尾只由面板标完成，新加的工作流步骤插�
   )
 })
 
+test('新开计划时 Agent 把上一份的收尾也抄过来：认成面板的收尾，只有一条', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'merge')
+  assert.ok(markWrapUp(task, 'merge', 'done'))
+  assert.equal(activePlan(task), undefined, '前提：上一份计划合进去后结束')
+  // 新计划照抄了上一份的收尾、标了完成：不再另加一条没做完的收尾（合没合回以 git 为准）
+  applyPlan(
+    task,
+    {
+      steps: [
+        { title: '加 OpenDesign 条目', status: 'done' },
+        { title: '收尾：合回父对话所在的分支', status: 'done' },
+      ],
+    },
+    undefined,
+    'merge',
+  )
+  let plan = task.plans!.at(-1)!
+  assert.deepEqual(
+    plan.steps.map((s) => s.wrapUp ?? ''),
+    ['', 'merge'],
+  )
+  assert.notEqual(plan.doneAt, '', '都做完了，计划收起')
+  // 合回后回顾一下做了什么（全是做完的步骤）：不加收尾，不然永远「只剩合回」
+  applyPlan(task, { steps: [{ title: '回顾', status: 'done' }] }, undefined, 'merge')
+  plan = task.plans!.at(-1)!
+  assert.equal(
+    plan.steps.some((s) => s.wrapUp),
+    false,
+  )
+  // 有要做的事、又抄了一条没做完的收尾：只有一条，放在最后
+  applyPlan(task, { steps: [{ title: '收尾: 合回父对话所在的分支' }, { title: '修评审意见' }] }, undefined, 'merge')
+  plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => [s.title, s.wrapUp ?? '']),
+    [
+      ['修评审意见', ''],
+      ['收尾：合回父对话所在的分支', 'merge'],
+    ],
+  )
+  // 计划里已经有面板的收尾，Agent 又写了一条同名的：去掉 Agent 那条
+  applyPlan(
+    task,
+    { partial: true, steps: [{ title: '收尾：合回父对话所在的分支（自己写的）', status: 'done' }] },
+    undefined,
+    'merge',
+  )
+  assert.equal(activePlan(task)!.steps.filter((s) => s.title.startsWith('收尾')).length, 1)
+})
+
+test('同一份计划里做完的收尾之后又加了步骤：重新打开挪到最后，不另加一条', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }, { title: '补测试' }] }, undefined, 'p4')
+  const plan = activePlan(task)!
+  const wrap = plan.steps.at(-1)!
+  // P4 收尾先做完了，「补测试」还没做，计划不收起
+  applyPlan(task, { partial: true, steps: [{ id: wrap.id, title: wrap.title, status: 'done' }] }, undefined, 'p4')
+  applyPlan(task, { partial: true, steps: [{ title: '补文档' }] }, undefined, 'p4')
+  const steps = activePlan(task)!.steps
+  assert.equal(steps.filter((s) => s.wrapUp).length, 1)
+  assert.equal(steps.at(-1)!.id, wrap.id)
+  assert.equal(steps.at(-1)!.status, 'pending')
+})
+
 test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划里没有收尾步骤', () => {
   const task = fresh()
   applyPlan(task, { steps: [{ title: '改代码' }] })
