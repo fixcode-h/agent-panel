@@ -454,10 +454,9 @@ export function applyPlan(
   }
   // 记下合并前还没做完的步骤（按对象）：合并后它还在计划里就算没被去掉。按标题比对会把改写过的标题误报成「去掉」
   const before = plan.steps.filter((s) => s.status !== 'done')
-  // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）
-  const waitingBefore = new Set(
-    plan.steps.flatMap((s) => [s, ...s.children]).filter((x) => x.status !== 'done' && waitingOn(x).length),
-  )
+  // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）。
+  // 连同子步骤一起算：主步骤被标完成时会级联把子步骤也标完成（见 update 里的 want === 'done'）
+  const waitingBefore = new Set(plan.steps.flatMap((s) => [s, ...s.children]).filter(waitingDeep))
   // 合并前记下没做完的收尾：Agent 漏写时原样放回，合回分支这种由面板标完成的也要知道它原来的状态
   const prevWrap = plan.steps.find((s) => s.wrapUp && s.status !== 'done')
   const prevWrapStatus = prevWrap?.status
@@ -523,10 +522,9 @@ export function applyPlan(
     }
   // 还在等结果的步骤不点名让模型去交：它由面板在结果回来后收口，让它去「标完成」只会被下面的 held 退回，
   // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话（模型会白跑一轮改计划）
+  // 判定要和 held 的 waitingBefore 完全一致（都递归算子步骤），否则子步骤在等、主步骤却被点名一模一样又白跑一轮
   // 只看还没做完的主步骤；子步骤跟着主步骤走，不单独点名
-  const left = partial
-    ? before.filter((s) => !s.wrapUp && s.status !== 'done' && !waitingOn(s).length && !touched.has(s))
-    : []
+  const left = partial ? before.filter((s) => !s.wrapUp && !waitingDeep(s) && !touched.has(s)) : []
   // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
   // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
   const held: string[] = []
@@ -566,9 +564,9 @@ export function applyPlan(
       ? `这些还没做完的主步骤这次没交上来，还按原来的状态留在计划里：${left.map((x) => `「${x.title}」（${STATUS_TEXT[x.status]}）`).join('、')}。做完了就用同样的 id 或标题标完成；不做了就下次交整份列表（不带 partial）时不再写它。（子步骤跟着所在的主步骤走，不单独点名。）`
       : '',
     // 交给面板收口的那些：说清不用交，免得模型以为漏写了又补一遍（补了也只会被 held 退回）
-    partial && before.some((s) => s.status !== 'done' && waitingOn(s).length)
+    partial && before.some(waitingDeep)
       ? `还在等结果的步骤不用交：${before
-          .filter((s) => s.status !== 'done' && waitingOn(s).length)
+          .filter(waitingDeep)
           .map((x) => `「${x.title}」`)
           .join('、')}，结果推回来时面板会标完成。`
       : '',
@@ -584,6 +582,16 @@ export function applyPlan(
 /** 这一项还在等的结果（子对话、后台命令）的名字 */
 function waitingOn(item: PlanItem) {
   return item.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
+}
+
+/**
+ * 这一项（含它下面的子步骤）还没做完、还挂着等结果：由面板收口，Agent 不该自己标完成、也不用交上来。
+ * left、held、waitingBefore 三处必须同口径——主步骤被标完成会级联把子步骤标完成
+ */
+function waitingDeep(item: PlanItem) {
+  if (item.status === 'done') return false
+  const kids = 'children' in item ? (item as PlanStep).children : []
+  return waitingOn(item).length > 0 || kids.some(waitingDeep)
 }
 
 /** 计划里正在做的那一步（不算收尾；没有进行中的就取在等的那一步）：开子对话时没指定步骤，就挂在它上面 */

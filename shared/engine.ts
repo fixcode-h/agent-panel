@@ -2473,6 +2473,12 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
   return [brief, part].filter(Boolean).join('\n\n')
 }
 
+/** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */
+function helperOver(host: EngineHost, k: TaskStep) {
+  const st = orchState(host)
+  return k.status !== 'running' && (k.status !== 'pending' || !st.helpers.has(k.id))
+}
+
 /**
  * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'，见 spawn 的 step）。
  * 成功标完成、失败或终止退回进行中并写清原因；子任务还没结束的不动它。
@@ -2480,12 +2486,6 @@ async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
  * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
  * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
  */
-/** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */
-function helperOver(host: EngineHost, k: TaskStep) {
-  const st = orchState(host)
-  return k.status !== 'running' && (k.status !== 'pending' || !st.helpers.has(k.id))
-}
-
 export function settleHelperWaits(host: EngineHost) {
   const { task } = host
   // 只看在用的这份计划：settleWait 也按 activePlan 找步骤，旧计划里残留的等待项永远收不了口，

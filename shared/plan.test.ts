@@ -848,6 +848,19 @@ test('改写过的标题对回原来那一步：不新建重复步骤，旧步�
   assert.doesNotMatch(r5.info, /没交上来[\s\S]*推 dev/, '等结果的步骤不该被点名去「标完成」')
   assert.match(r5.info, /不用交|等结果/, '要说明这类步骤不用交、结果回来面板会标完成')
   assert.doesNotMatch(r5.info, /还在等结果，不能自己标完成/, '没去标它就不会触发 held 的退回提示')
+  // 等待挂在子步骤上时同样不能点名：主步骤标完成会级联把子步骤一起标完成（update 里的 want === 'done'），
+  // 然后被 held 按 [s, ...s.children] 递归退回。left 和 held 必须覆盖同一个区间，不然主步骤照样白跑一轮
+  const t6 = fresh()
+  applyPlan(t6, {
+    steps: [
+      { title: '跑端到端', status: 'running', children: [{ title: '跑 local 分片', status: 'running' }] },
+      { title: '写文档' },
+    ],
+  })
+  bindWait(t6, '1.1', { kind: 'background', ref: 'job2', label: 'local 分片' })
+  const r6 = applyPlan(t6, { partial: true, steps: [{ id: '2', status: 'done' }] })
+  assert.doesNotMatch(r6.info, /没交上来[\s\S]*跑端到端/, '子步骤在等结果时，主步骤也不该被点名去「标完成」')
+  assert.match(r6.info, /不用交/, '要说明这类步骤不用交')
   // 只带 id 改备注、标题没重写（模型 partial 最常见的写法）：同样算交上来了，不能说它没交上来。
   // 这里「交上来了」的判定必须和 matchOld 同口径：另写一套精确标题比对，会把刚被 id 更新的步骤又报成漏写，
   // 模型看到「已经更新了」和「没交上来」两句互相矛盾的话，就会再交一遍
