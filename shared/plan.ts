@@ -464,6 +464,43 @@ export function runningStepId(task: Pick<Task, 'plans'>) {
   return (steps.find((s) => s.status === 'running') ?? steps.find((s) => s.status === 'waiting'))?.id ?? ''
 }
 
+/** 两段文字有多少个相同的相邻两字（中文按字、英文按词）：用来把子对话对上计划里说的是它的那一步 */
+function overlap(a: string, b: string) {
+  const grams = (t: string) => {
+    const units = t.toLowerCase().match(/[a-z0-9]+|[^\sa-z0-9\p{P}]/gu) ?? []
+    return new Set(units.slice(1).map((u, i) => units[i] + u))
+  }
+  const x = grams(a)
+  let n = 0
+  for (const g of grams(b)) if (x.has(g)) n++
+  return n
+}
+
+/**
+ * 子对话没指定计划步骤时挂在哪一步：
+ * - 计划里已经有一步在等这个子对话（给它发后续消息）：还挂那一步，不挪到正在做的那一步上
+ * - 标题和某一步说的是同一件事（新开子对话，一步一个子对话最常见）：挂那一步
+ * - 都对不上才挂在正在做的那一步（runningStepId）
+ * 以前一律挂正在做的那一步：父对话一口气按步骤开了几个子对话，全挂在第 1 步上，
+ * 第 1 步的子对话合回了也一直「等待中」，后面几步谁也不等
+ */
+export function childStepId(task: Pick<Task, 'plans'>, ref: string, title = '') {
+  const plan = activePlan(task)
+  if (!plan) return ''
+  const items = plan.steps.flatMap((s) => [s, ...s.children])
+  const own = items.find((x) => x.status !== 'done' && x.waits.some((w) => w.kind === 'child' && w.ref === ref))
+  if (own) return own.id
+  if (title.trim()) {
+    const scored = plan.steps
+      .filter((s) => !s.wrapUp && !s.run && s.status !== 'done')
+      .map((s) => ({ s, n: overlap(s.title, title) }))
+      .sort((a, b) => b.n - a.n)
+    // 至少对上两处，且比第二名多：分不出是哪一步就不猜
+    if (scored[0] && scored[0].n >= 2 && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].s.id
+  }
+  return runningStepId(task)
+}
+
 /** 找当前计划里的一项（主步骤或子步骤）；parent 是子步骤所在的主步骤 */
 function findItem(plan: TaskPlan, id: string): { item: PlanItem; parent?: PlanStep } | undefined {
   for (const s of plan.steps) {
