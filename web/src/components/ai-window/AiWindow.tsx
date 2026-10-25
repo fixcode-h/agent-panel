@@ -124,7 +124,7 @@ export function AiWindow() {
           <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
           <D.Content
             aria-describedby={undefined}
-            className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
+            className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
           >
             <D.Title className="sr-only">{heading}</D.Title>
             {taskId && !gone ? (

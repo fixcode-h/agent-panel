@@ -87,6 +87,8 @@ function sameTask(a: Task, b: Task) {
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
     a.childrenWorking === b.childrenWorking &&
+    a.cliAlive === b.cliAlive &&
+    a.childrenCli === b.childrenCli &&
     (a.jobs?.length ?? 0) === (b.jobs?.length ?? 0) &&
     helpersWorking(a) === helpersWorking(b) &&
     (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
@@ -203,7 +205,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // 有执行中的任务时定期刷新状态
-  const anyRunning = tasks.some((t) => t.status === 'running')
+  // CLI 还活着的也要刷：进程关掉不一定改状态，侧栏的流光和「CLI 存活」提示要跟着撤
+  const anyRunning = tasks.some((t) => t.status === 'running' || t.cliAlive || !!t.childrenCli)
   useEffect(() => {
     if (!anyRunning) return
     const t = setInterval(() => void reloadTasks().catch(() => {}), 2500)

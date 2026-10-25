@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
-import { newTask } from '../shared/task.ts'
+import { convStateText, newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
 
 /**
@@ -209,6 +209,36 @@ test('协调 Agent：新建子对话并交给它，子对话自己不能再分�
   sh.agents = [agent('m', '协调', { canDelegate: true })]
   await runEngineTurn(sh)
   assert.equal(subLog.length, 1)
+})
+
+test('协调 Agent：子对话失败后另建「（重试）」会被拒绝，要交回原来那个子对话（用户 2026-10-25）', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '重试一下' } as never, undefined, '', 'p1'),
+    id: 'p1',
+  } as Task
+  const log: AgentCall[] = []
+  const made: string[] = []
+  const infos: string[] = []
+  const h = host(task, log, async (call) => {
+    assert.match(call.prompt, /重试：用 send_to_conversation 交回原来那个子对话/)
+    const r = await call.orch!.createConversation('修登录（重试）', '再做一遍')
+    infos.push(r.info)
+    assert.equal(r.ok, false)
+    // 换了一件事照常新建
+    assert.equal((await call.orch!.createConversation('改按钮颜色', '改成蓝色')).ok, true)
+    return { ok: true, text: '已交回原来的子对话。' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => [
+    { id: 'c1', title: '修登录', status: convStateText('failed'), summary: '', at: '' },
+  ]
+  h.createConversation = async ({ title }) => {
+    made.push(title)
+    return { ok: true, id: 'c2', title, info: '已新建' }
+  }
+  await runEngineTurn(h)
+  assert.deepEqual(made, ['改按钮颜色'])
+  assert.match(infos[0], /send_to_conversation 交回给它（id c1）/)
 })
 
 /**

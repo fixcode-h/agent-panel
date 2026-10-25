@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 /** 一条推荐：当前值 → 推荐值，apply 只改草稿（保存项目设置后才生效） */
-interface Rec {
+export interface Rec {
   id: string
   label: string
   reason: string
@@ -231,7 +231,7 @@ export function buildGroups(
  * 推荐项按设置页分组列出：每项「当前值 → 推荐值」，能单独应用，也能整组应用。
  * onlyPending 时只列和当前设置不同的项（重开设置时对照保存的分析报告用）
  */
-function RecGroups({
+export function RecGroups({
   groups,
   apply,
   applied,
@@ -332,6 +332,33 @@ function RecGroups({
 
 const FILE_ICON = { created: FilePlus2, updated: FilePen, kept: File }
 const fileLabel = (a: keyof typeof FILE_ICON) => ({ created: t('新建'), updated: t('修改'), kept: t('未改') })[a]
+
+/** 初始化写过的文件：新建 / 修改 / 未改，每个附一句做了什么 */
+export function InitFileList({ files }: { files: ProjectProposal['files'] }) {
+  return files.length ? (
+    <ul className="flex max-h-[18rem] flex-col divide-y overflow-y-auto rounded-lg border">
+      {files.map((f) => {
+        const Icon = FILE_ICON[f.action]
+        return (
+          <li key={f.path} className="flex items-start gap-2.5 px-3 py-2">
+            <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <code className="truncate font-mono text-[0.75rem]">{f.path}</code>
+              {f.summary && <span className="text-[0.71875rem] text-subtle">{f.summary}</span>}
+            </span>
+            <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
+              {fileLabel(f.action)}
+            </Badge>
+          </li>
+        )
+      })}
+    </ul>
+  ) : (
+    <span className="text-xs text-subtle">
+      {t('Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。')}
+    </span>
+  )
+}
 
 /**
  * 项目设置的「AI 初始化」页：没初始化时说明会做什么并开始；初始化完成后列出写过的文件，
@@ -528,29 +555,7 @@ export function ProjectInitPanel({
               )}
               <span className="ml-auto">{startButton}</span>
             </div>
-            {result.files.length ? (
-              <ul className="flex max-h-[18rem] flex-col divide-y overflow-y-auto rounded-lg border">
-                {result.files.map((f) => {
-                  const Icon = FILE_ICON[f.action]
-                  return (
-                    <li key={f.path} className="flex items-start gap-2.5 px-3 py-2">
-                      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <code className="truncate font-mono text-[0.75rem]">{f.path}</code>
-                        {f.summary && <span className="text-[0.71875rem] text-subtle">{f.summary}</span>}
-                      </span>
-                      <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
-                        {fileLabel(f.action)}
-                      </Badge>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <span className="text-xs text-subtle">
-                {t('Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。')}
-              </span>
-            )}
+            <InitFileList files={result.files} />
           </section>
 
           <div className="flex flex-wrap items-center gap-3">

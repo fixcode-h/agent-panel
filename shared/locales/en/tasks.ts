@@ -454,6 +454,9 @@ export const EN_TASKS: Record<string, string> = {
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
   '执行中也可以输入，这一轮结束后接着处理': "You can type while it runs; it's handled right after this turn",
   等待你的下一条消息: 'Waiting for your next message',
+  'CLI 存活': 'CLI alive',
+  'CLI 存活：本对话和 {n} 个子对话': 'CLI alive: this conversation and {n} child conversations',
+  'CLI 存活：{n} 个子对话': 'CLI alive: {n} child conversations',
   等待执行: 'Waiting to run',
   '运行 {n}': 'Run {n}',
   '{done}/{total} 个节点': '{done}/{total} nodes',
@@ -589,16 +592,12 @@ export const EN_TASKS: Record<string, string> = {
   复制失败: 'Copy failed',
   '看过差异再应用；应用后工作流和角色马上按新的内容执行':
     'Review the diffs before applying; workflows and roles use the new content right away',
-  分析结果: 'Analysis',
-  收起分析结果: 'Collapse analysis',
-  展开分析结果: 'Expand analysis',
   '{n} 个代码问题': '{n} code issues',
   '{n} 项优化建议': '{n} suggestions',
   代码问题: 'Code issues',
   项目代码: 'Project code',
   面板框架: 'Panel framework',
   修复: 'Fix',
-  开一个子对话来修这个问题: 'Start a child conversation to fix this issue',
   '面板框架的问题要在 agent-panel 源代码项目里修':
     'Panel framework issues can only be fixed in an agent-panel source project',
   '在右侧打开子对话「{title}」': 'Open child conversation "{title}" on the right',
@@ -613,8 +612,6 @@ export const EN_TASKS: Record<string, string> = {
     'Update this local role; conversations and nodes using it follow the new content from now on',
   '改进本机的这个工作流，之后的执行按新的内容走': 'Update this local workflow; later runs follow the new content',
   写进源代码: 'Add to source',
-  '开一个子对话，把这条优化补进 agent-panel 源代码里的内置定义':
-    'Start a child conversation that adds this improvement to the built-in definitions in the agent-panel source',
   '全部应用（{n} 项）': 'Apply all ({n})',
   '角色「{name}」': 'Role "{name}"',
   '工作流「{name}」': 'Workflow "{name}"',
@@ -1088,4 +1085,33 @@ export const EN_TASKS: Record<string, string> = {
   '结果的格式还是不对：{error}。可以在对话里让它重新输出':
     'The result is still malformed: {error}. Ask it to output again in the conversation',
   没有找到结果: 'No result found',
+  '正在读取推荐的设置…': 'Reading the recommended settings…',
+  '这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。':
+    "This result is malformed and the recommended settings can't be read: {error}. Ask it to output again in the conversation.",
+  '已应用 {n} 项设置': 'Applied {n} settings',
+  '{n} 项和项目现在的设置不同，应用后直接保存进项目':
+    '{n} differ from the current project settings; applying saves them to the project',
+  全部推荐都已和项目设置一致: 'All recommendations already match the project settings',
+  排查: 'Debug',
+  评审: 'Review',
+  初始化: 'Init',
+  分析: 'Analysis',
+  'AI 分析开出的对话': 'Conversation opened by an AI analysis',
+  分析报告: 'Analysis report',
+  '逐项修复在这个对话里进行，优化看过差异再应用':
+    'Fixes run in this conversation; review the diff before applying optimizations',
+  '每条建议点「应用」才写进项目教训': 'Each suggestion is written to the project lessons only when you click Apply',
+  '推荐的设置逐项应用，直接保存进项目': 'Apply recommended settings one by one; they are saved to the project directly',
+  收起功能面板: 'Hide side panel',
+  '对话正在回复，这一轮结束后再点': 'The conversation is replying; click again after this turn ends',
+  '已经在这个对话里处理过，点了再处理一次': 'Already handled in this conversation; click to handle it again',
+  已处理: 'Handled',
+  '在这个分析对话里，把这条优化补进 agent-panel 源代码里的内置定义':
+    "In this analysis conversation, add this optimization to the built-in definition in agent-panel's source",
+  在这个分析对话里直接修这个问题: 'Fix this issue directly in this analysis conversation',
+  '排队等 API「{api}」空出并发名额 · 前面还有 {n} 个': 'Waiting for a free slot on API "{api}" · {n} ahead',
+  '排队等 API「{api}」空出并发名额 · 下一个就是这里': 'Waiting for a free slot on API "{api}" · next in line',
+  'API「{api}」的并发名额满了，前面的释放了再开始':
+    'API "{api}" is at its concurrency limit; this starts when a slot frees up',
+  '排队等 API「{api}」': 'Waiting for API "{api}"',
 }

@@ -183,8 +183,13 @@ function HelperRow({
       detail={
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           {agent && <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')}>{agent.name}</span>}
-          <span className={running ? childLabelClass.accent : childLabelClass.subtle}>
-            {running ? t('执行中') : t('排队中')}
+          <span
+            className={running ? childLabelClass.accent : childLabelClass.subtle}
+            title={
+              step.apiWait ? t('API「{api}」的并发名额满了，前面的释放了再开始', { api: step.apiWait.api }) : undefined
+            }
+          >
+            {running ? t('执行中') : step.apiWait ? t('排队等 API「{api}」', { api: step.apiWait.api }) : t('排队中')}
           </span>
           {jobs.length > 0 && (
             <span className={cn(childLabelClass.plain, 'max-[359px]:hidden')} title={names}>

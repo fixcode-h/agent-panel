@@ -97,6 +97,7 @@ export function newTask(
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
+    ...(input.analysis && { analysis: input.analysis }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -960,6 +961,8 @@ export interface ChildEntry {
   asking?: number
   /** 用户标记的「解决」：算已完成 */
   resolved?: boolean
+  /** AI 分析开出的子对话（见 Task.analysis）：列表里标题和别的子对话区分开 */
+  analysis?: Task['analysis']
   /** 还没做完的计划：「计划 7/8」，有它就不算已完成；正在做的那一步也带上 */
   plan?: { done: number; total: number; step?: string; child?: string }
   background?: number

@@ -1465,6 +1465,33 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           () => true,
           () => false,
         )
+      /**
+       * 等焦点真的回到标题栏文件按钮上。
+       * 收起时焦点是在面板卸载后的下一帧（requestAnimationFrame）才还回去的（见 TaskView 的 closeChildFiles），
+       * 所以 gone() 返回时读 activeElement 会读到回收之前的那一刻，并行跑时那一帧被拉长就掉到 body；
+       * 这里等的是可观测结果（活动元素的 aria-label），不是等固定时长。
+       * 返回 { ok } 表示等到没等到，没等到时带上实际落点给报错用。
+       */
+      const focusBack = (visible = false) =>
+        p
+          .waitForFunction(
+            (needVisible) => {
+              const el = document.activeElement
+              if (el?.getAttribute('aria-label') !== '覆盖显示文件') return false
+              return !needVisible || el.offsetParent !== null
+            },
+            visible,
+            { timeout: 3000 },
+          )
+          .then(
+            () => ({ ok: true, label: '覆盖显示文件' }),
+            () =>
+              p.evaluate(() => ({
+                ok: false,
+                label: document.activeElement?.getAttribute('aria-label') ?? null,
+                visible: document.activeElement?.offsetParent !== null,
+              })),
+          )
       if (!(await fileBtn.count())) errors.push('子对话+文件面板：子对话开着时标题栏没有文件按钮')
       else if (!(await fileBtn.isVisible())) errors.push('子对话+文件面板：子对话开着时文件按钮不可见')
       else {
@@ -1502,9 +1529,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           // 「回到子对话」收起：焦点回标题栏那个按钮，键盘用户不会被丢回页面开头
           await back.click()
           if (!(await gone())) errors.push('子对话+文件面板：点「回到子对话」没有收起文件面板')
-          const focus = await p.evaluate(() => ({ label: document.activeElement?.getAttribute('aria-label') }))
-          if (focus.label !== '覆盖显示文件')
-            errors.push(`子对话+文件面板：收起后焦点没有回到文件按钮（现在在 ${focus.label ?? 'body'}）`)
+          const focus = await focusBack()
+          if (!focus.ok) errors.push(`子对话+文件面板：收起后焦点没有回到文件按钮（现在在 ${focus.label ?? 'body'}）`)
           if (!(await p.getByText('子对话：到货提醒').first().count()))
             errors.push('子对话+文件面板：点了「回到子对话」后子对话没回来')
           await check(p, '子对话-文件覆盖-返回', ['子对话：到货提醒'])
@@ -1560,13 +1586,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
             await back.click()
             if (!(await gone())) errors.push('子对话+文件面板（窄屏）：点「回到子对话」没有收起文件面板')
             // 窄屏收焦点收到的是窄屏那个按钮：宽屏按钮在 <1280 是 display:none，focus 不生效
-            const focus = await p.evaluate(() => ({
-              label: document.activeElement?.getAttribute('aria-label'),
-              visible: document.activeElement?.offsetParent !== null,
-            }))
-            if (focus.label !== '覆盖显示文件' || !focus.visible)
+            const focus = await focusBack(true)
+            if (!focus.ok)
+              // 焦点可能落在那个 display:none 的宽屏按钮上：它的 aria-label 也是同一个，只打 label 会变成
+              // 「没有回到可见的文件按钮（现在在 覆盖显示文件）」这种自相矛盾的报错，把可见性一起带上
               errors.push(
-                `子对话+文件面板（窄屏）：收起后焦点没有回到可见的文件按钮（现在在 ${focus.label ?? 'body'}）`,
+                `子对话+文件面板（窄屏）：收起后焦点没有回到可见的文件按钮（现在在 ${focus.label ?? 'body'}${focus.visible === false ? '，但它不可见' : ''}）`,
               )
           }
         }

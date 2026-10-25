@@ -6,6 +6,7 @@ import { childIcon, childStage, sortChildren, stopReasonText, type TaskStage } f
 import { cn } from '@/lib/utils'
 import { popoverPanel } from '@/components/ui/menu'
 import { TaskStatusIcon } from './TaskStatusIcon'
+import { AnalysisMark } from './AnalysisMark'
 import { childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
 
 /**
@@ -29,7 +30,11 @@ export function ChildRowContent({ c }: { c: ChildSummary }) {
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>{c.title}</span>
+          {c.analysis && <AnalysisMark kind={c.analysis} />}
+          {/* CLI 还活着：标题流光（和侧栏、标题栏同一个效果）；关了变灰 */}
+          <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? 'cli-alive-title' : 'text-muted')}>
+            {c.title}
+          </span>
           {/* 状态标签全部从 childIcon / childState 派生：同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
           {labels.map((l) => (
             <span key={l.text} className={childLabelClass[l.tone]}>

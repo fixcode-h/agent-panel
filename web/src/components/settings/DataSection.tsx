@@ -125,6 +125,14 @@ export function DataSection() {
       a.download = `agent-panel-${t('数据')}-${stamp}.json`
       a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      const skipped = (data as { skipped?: string[] }).skipped ?? []
+      if (skipped.length)
+        toast.warning(
+          t('{n} 个文件导出时正在写入或刚被删除，没放进备份：{files}', {
+            n: skipped.length,
+            files: skipped.slice(0, 3).join('、'),
+          }),
+        )
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

@@ -1,0 +1,84 @@
+/**
+ * 分析报告挪到右侧功能面板后的判定：哪条回复是报告、是哪种、某一项在当前对话里修过没有。
+ */
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import type { Task, TaskMessage } from '@shared/schema'
+import { EVOLUTION_LANG } from '@shared/task-export'
+import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
+import { findReport, fixHead, fixState, isAnalysisTask, stripInitJson } from './analysis-report'
+
+const msg = (id: string, role: TaskMessage['role'], text: string) =>
+  ({ id, role, text, agentId: '', step: '', tools: [], at: '' }) as unknown as TaskMessage
+const task = (messages: TaskMessage[], extra: Partial<Task> = {}) =>
+  ({ mode: 'chat', status: 'done', working: false, messages, ...extra }) as Task
+
+const evo = '结论\n\n```' + EVOLUTION_LANG + '\n{"summary":"s","changes":[],"issues":[]}\n```'
+const review = '```' + LESSON_REVIEW_LANG + '\n{"items":[]}\n```'
+
+test('认出执行分析和教训评审的报告，取最新的一份', () => {
+  assert.equal(findReport(task([msg('u', 'user', '分析'), msg('a', 'agent', '没有报告')])), null)
+  assert.equal(findReport(task([msg('u', 'user', '分析'), msg('a', 'agent', evo)]))?.kind, 'run')
+  const both = task([
+    msg('u', 'user', '分析'),
+    msg('a', 'agent', evo),
+    msg('u2', 'user', '再评审'),
+    msg('b', 'agent', review),
+  ])
+  assert.equal(findReport(both)?.kind, 'lessons')
+})
+
+test('初始化的 JSON 只在初始化对话里算报告', () => {
+  const json = '说明\n\n```json\n{"name":"x"}\n```'
+  assert.equal(findReport(task([msg('u', 'user', '初始化'), msg('a', 'agent', json)])), null)
+  assert.equal(
+    findReport(task([msg('u', 'user', '初始化'), msg('a', 'agent', json)], { analysis: 'init' }))?.kind,
+    'init',
+  )
+})
+
+test('正在回复时只看最后一条用户消息之前的报告：点修复后报告还在', () => {
+  const tk = task(
+    [
+      msg('u', 'user', '分析'),
+      msg('a', 'agent', evo),
+      msg('f', 'user', `${fixHead('登录失败')}\n\n修它`),
+      msg('b', 'agent', '正在改…'),
+    ],
+    { status: 'running', working: true },
+  )
+  assert.equal(findReport(tk)?.message.id, 'a')
+})
+
+test('修复状态：没发过、正在修、修完', () => {
+  const base = [msg('u', 'user', '分析'), msg('a', 'agent', evo)]
+  assert.equal(fixState(task(base), '登录失败'), 'todo')
+  const sent = [...base, msg('f', 'user', `${fixHead('登录失败')}\n\n修它`)]
+  assert.equal(fixState(task(sent, { status: 'running', working: true }), '登录失败'), 'working')
+  assert.equal(fixState(task([...sent, msg('r', 'agent', '改好了')]), '登录失败'), 'done')
+  // 修完又问了别的：仍然算修过
+  assert.equal(
+    fixState(
+      task([...sent, msg('r', 'agent', '好'), msg('q', 'user', '别的')], { status: 'running', working: true }),
+      '登录失败',
+    ),
+    'done',
+  )
+})
+
+test('分析对话：新对话看 analysis，旧对话看角色', () => {
+  const agents = [
+    { id: 'an', origin: 'builtin:analyzer' },
+    { id: 'w', origin: 'builtin:worker' },
+  ]
+  assert.equal(isAnalysisTask({ analysis: 'run', agentId: '' }, agents), true)
+  assert.equal(isAnalysisTask({ agentId: 'an' }, agents), true)
+  assert.equal(isAnalysisTask({ agentId: 'w' }, agents), false)
+  assert.equal(isAnalysisTask({ agentId: '' }, agents), false)
+})
+
+test('初始化对话的回复在对话区去掉末尾的 JSON', () => {
+  assert.equal(stripInitJson('说明\n\n```json\n{"name":"x"}\n```'), '说明')
+  assert.equal(stripInitJson('只有说明'), '只有说明')
+  assert.equal(stripInitJson('命令\n```\nnpm test\n```'), '命令\n```\nnpm test\n```')
+})
