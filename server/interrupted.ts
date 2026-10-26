@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import path from 'node:path'
 import type { InterruptedTask, InterruptedTasks } from '../shared/version.ts'
 import type { Task } from '../shared/schema.ts'
+import { t } from '../shared/i18n.ts'
+import { openPlan } from '../shared/plan.ts'
 import { CACHE_DIR, readJson, writeJsonAtomic } from './store.ts'
 
 /**
@@ -111,6 +113,19 @@ export function interruptedApi(deps: {
 
 /** 继续执行接口接受的两种状态 */
 const isResumable = (task: Task) => task.status === 'stopped' || task.status === 'failed'
+
+/**
+ * 记下来的「被打断时在做什么」：正在执行的节点 → 没做完的计划进度 → 最后一条要求。
+ * 停在等下一句、计划只做到 12/17 的父对话也要进恢复名单（见 restartUnfinished），
+ * 它没有在跑的节点，只写最后一条要求看不出还剩多少活没做完
+ */
+export function restartDoing(task: Pick<Task, 'steps' | 'plans' | 'messages'>) {
+  const step = task.steps.find((s) => s.status === 'running')?.title
+  if (step) return step
+  const plan = openPlan(task)
+  if (plan) return t('计划 {done}/{total}', { done: plan.done, total: plan.total })
+  return lastAsk(task)
+}
 
 /** 最后一条要求的第一行：没有节点时用它说明当时在做什么 */
 export function lastAsk(task: Pick<Task, 'messages'>) {

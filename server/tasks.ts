@@ -24,6 +24,7 @@ import {
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
+import { restartDoing } from './interrupted.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -58,6 +59,7 @@ import {
   messageStamp,
   pauseStep,
   restartInterrupted,
+  interruptedTaskIds,
   runRunning,
   trackWait,
   waitDuration,
@@ -5068,6 +5070,25 @@ export function tasksApi(deps: {
               .split('\n')[0]
               .slice(0, 60),
         })),
+    /**
+     * 强制更新要记下哪些任务：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
+     * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
+     * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
+     * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+     * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
+     */
+    interruptedTasks: async () => {
+      const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
+      const working = [...liveTasks.values()]
+        .filter((tk) => tk.working)
+        .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
+      // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
+      // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
+      // 在跑的任务用 live 那份，它比落盘的新
+      const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
+      const want = new Set(interruptedTaskIds(all, working))
+      return all.filter((tk) => want.has(tk.id)).map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
+    },
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
     ready: () => ready,
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */

@@ -1012,7 +1012,7 @@ const updater = updateApi({
     await tasks.stopAll()
     killAllProcesses()
   },
-  interrupted: () => tasks.workingTasks(),
+  interrupted: () => tasks.interruptedTasks(),
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())

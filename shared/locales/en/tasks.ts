@@ -468,6 +468,7 @@ export const EN_TASKS: Record<string, string> = {
   '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
   '执行中也可以输入，这一轮结束后接着处理': "You can type while it runs; it's handled right after this turn",
+  '{what}，可以直接输入要求': '{what} — you can still type your request',
   等待你的下一条消息: 'Waiting for your next message',
   'Agent 存活': 'Agent alive',
   'Agent 存活：本对话和 {n} 个子对话': 'Agent alive: this conversation and {n} child conversations',

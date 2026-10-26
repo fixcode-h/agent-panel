@@ -97,7 +97,7 @@ export function UpdateResumeDialog() {
       }
     >
       <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t('强制更新时停掉了这些正在执行的任务。勾选的任务会从被打断的节点接着执行，没勾选的不处理。')}
+        {t('强制更新停掉了这些任务正在做的事。勾选的任务会接着往下执行，没勾选的不处理。')}
       </p>
       <ul className="flex flex-col gap-2">
         {tasks.map((x) => (
