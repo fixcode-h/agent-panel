@@ -933,6 +933,13 @@ export const PresenceInput = z.object({
   active: z.boolean(),
 })
 
+/**
+ * `POST /tasks/:id/seen` 的返回：只回「这一轮看到哪」，不再把整份对话传回去
+ * （打开一次对话页之前要多传 2.4MB，前端其实只拿它把本地那份换个 turnSeenAt）。
+ */
+export const TaskSeenResult = z.object({ turnSeenAt: z.string() })
+export type TaskSeenResult = z.infer<typeof TaskSeenResult>
+
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),

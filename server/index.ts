@@ -5,7 +5,6 @@ import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
-import { serveStatic } from '@hono/node-server/serve-static'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
@@ -31,6 +30,7 @@ import { SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
+import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
@@ -1051,8 +1051,10 @@ const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--p
 if (prod) {
   // 按程序所在目录找前端，不依赖从哪个目录启动
   const dist = path.join(appDir(), 'dist')
-  root.use('/*', serveStatic({ root: dist }))
-  root.get('*', serveStatic({ path: path.join(dist, 'index.html') }))
+  // 自己托管而不是 serveStatic：要 gzip 和缓存头（见 server/static.ts）。
+  // 开发模式前端由 Vite 自己服务，根本不会挂到这里
+  root.use('/*', serveDist(dist))
+  root.get('*', serveIndex(dist))
 }
 
 const port = Number(process.env.PORT ?? 8787)

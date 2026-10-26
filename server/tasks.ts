@@ -21,6 +21,7 @@ import {
   type TaskMessage,
   type Workflow,
   RequestAnswer,
+  type TaskSeenResult,
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
@@ -4312,7 +4313,8 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const p = PresenceInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    // 只判在不在（下面只动内存里的 viewer）：用 current() 会为一次心跳把几 MB 的对话读一遍再校验
+    if (!(await getMeta(id))) return bad(c, t('任务不存在'), 404)
     setViewer(id, p.data.viewerId, p.data.active)
     return c.body(null, 204)
   })
@@ -4321,17 +4323,22 @@ export function tasksApi(deps: {
   routes.post('/:id/seen', async (c) => {
     const id = c.req.param('id')
     const entry = live.get(id)
-    const tk = entry?.task ?? (await store.get(id))
+    // 只要「这一轮看到哪」，不读整份对话：以前这里读 2MB、再把 2.4MB 的完整任务回给前端，
+    // 前端拿它只做一件事——把本地那份的 turnSeenAt 换成新的
+    const tk = entry?.task ?? (await getMeta(id))
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (tk.turnDoneAt && tk.turnSeenAt !== tk.turnDoneAt) {
-      tk.turnSeenAt = tk.turnDoneAt
+      const turnSeenAt = tk.turnDoneAt
       // 只是记「看过了」，不算任务有更新：列表顺序和更新时间都不动
-      if (!entry) await store.update(id, tk, { keepUpdatedAt: true })
-      else entry.rev++
+      if (entry) {
+        entry.task.turnSeenAt = turnSeenAt
+        entry.rev++
+      } else await store.updateMeta(id, { turnSeenAt }, { keepUpdatedAt: true })
       // 看过之后不再因为未读一直留着 CLI：如果已经没人在看，现在就开始算宽限期
       rescheduleIfUnwatched(id)
+      return c.json({ turnSeenAt } satisfies TaskSeenResult)
     }
-    return c.json(tk)
+    return c.json({ turnSeenAt: tk.turnSeenAt } satisfies TaskSeenResult)
   })
 
   // 结束工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理
