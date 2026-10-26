@@ -1,4 +1,4 @@
-import { TEST_STEP_ENVS, type TaskTestRun, type TestStep } from './schema.ts'
+import { TEST_STEP_ENVS, type Project, type TaskTestRun, type TestStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { fmtDuration } from './duration.ts'
 
@@ -95,6 +95,21 @@ export function parseGlobs(text: string) {
 export function appliesToText(step: Pick<TestStep, 'appliesTo'>) {
   const globs = stepGlobs(step)
   return globs.length ? globs.join('、') : '未设置，总是执行'
+}
+
+/**
+ * 这次判断用哪份测试步骤：**以项目当前设置为准**，任务快照只在项目被删、读不到时兜底。
+ * 「调用前现读配置」是用户定的口径（见 docs/agent-test-steps.md「项目设置对进行中的对话生效」）：
+ * 项目设置里改了步骤（勾上/取消「禁止子对话执行」、改命令、停用），已经在跑的对话下一次判断
+ * ——下一轮提示词、下一次子对话合回——就按新配置走，不用等新建对话。
+ * project 传 null / undefined 表示没读到项目（被删、读失败），这时才用快照；
+ * 传进来是空数组表示项目现在确实没有步骤，不能让快照复活——用户删了步骤就该不跑。
+ */
+export function currentTestSteps(
+  snapshot: TestStep[],
+  project: Pick<Project, 'testSteps'> | null | undefined,
+): TestStep[] {
+  return project ? project.testSteps : snapshot
 }
 
 /**
@@ -275,7 +290,7 @@ export const CHANGED_FILES_RULE = `先取本次实际改了什么，再决定跑
 /**
  * 注入工作流说明后面的项目测试步骤。没有配置时给出兜底：让 Agent 自己找命令，并在结果里建议配置。
  * 提示词里先教怎么按改动清单筛，再列步骤：不筛的话 Agent 会为了保险全部跑一遍。
- * 新建对话时写进任务快照，之后改项目设置不影响已经开始的任务。
+ * 工作流任务把步骤写进任务快照；对话执行时以项目当前设置为准（每次拼提示词现取一份）。
  */
 export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = '') {
   const active = steps.filter((s) => s.enabled)

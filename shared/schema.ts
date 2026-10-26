@@ -602,7 +602,8 @@ export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), Para
 /**
  * 项目里的一条测试步骤：按顺序执行命令、检查环境。
  * 步骤属于项目而不是工作流——同一个工作流给不同项目用时，命令各不相同。
- * 新建对话时整份步骤快照进任务，之后改项目设置不影响已经开始的对话。
+ * 新建对话时也快照一份进任务，但执行时以项目当前设置为准（见 shared/test-steps.ts 的 currentTestSteps）：
+ * 改了项目设置，进行中的对话下一次判断就按新步骤走，快照只在项目被删、读不到时兜底。
  */
 export const TEST_STEP_ENVS = ['auto', 'wsl', 'powershell', 'cmd', 'bash'] as const
 
@@ -1788,8 +1789,9 @@ export const TaskData = z.object({
    */
   skillSlots: z.record(z.string(), z.string()).default({}),
   /**
-   * 新建对话时项目里的测试步骤快照：测试 Agent 按它执行，并把原文交给 CLI。
-   * 之后改项目设置不影响已经开始的对话。旧任务没有时为空（Agent 自己找命令）。
+   * 工作流任务新建时、以及「继续流程」时把项目里的测试步骤写一份进任务（纯对话任务为空）。
+   * 执行时以项目当前设置为准，见 shared/test-steps.ts 的 currentTestSteps：拼提示词拿不到项目时整段验证说明
+   * 都不注入（不会退回这份快照）；只有「谁跑这些步骤 / 匹配耗时」这几条在项目读不到时用它兜底。
    */
   testSteps: z.array(TestStep).default([]),
   /** 这次任务里跑过的测试步骤耗时（见 ADR 0018）：子对话自己的后台命令和父对话跑的步骤都记在这里 */

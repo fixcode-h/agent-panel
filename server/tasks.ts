@@ -138,6 +138,7 @@ import {
 import { createParentTests, parentTestFailText, parentTestRun } from './parent-tests.ts'
 import {
   buildSteps,
+  currentTestSteps,
   isUeBuildCommand,
   matchTestStep,
   mergeTestRun,
@@ -239,10 +240,11 @@ const isGit = (dir: string) => {
  * 「禁止子对话执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
  * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
  * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
- * 步骤用任务里的快照（执行时面板也用同一份），没有快照的老任务退回项目现在的配置。
+ * 步骤按项目当前设置判断（用户口径：调用前现读配置）：改了项目设置，进行中的对话下一次判断就按新配置走；
+ * 项目被删、读不到时才退回任务快照。
  */
 async function parentRunRole(tk: Task, project: Project): Promise<{ parentRun?: 'child' | 'parent' }> {
-  const steps = tk.testSteps.length ? tk.testSteps : project.testSteps
+  const steps = currentTestSteps(tk.testSteps, project)
   if (!parentRunSteps(steps).length) return {}
   // 独立分支一定是 Git 仓库，不用再探；顶层对话是否 Git 要问 detectVcs（判定和开 worktree 时同一套）
   const git = isolated(tk) || (await isGit(project.path))
@@ -596,7 +598,8 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 项目级测试步骤和平台：新建对话时快照进任务，测试 Agent 按它执行，之后改项目设置不影响已开始的对话。
+   * 项目级测试步骤和平台：工作流任务把它们写进节点说明的快照；对话执行时按项目当前设置现取
+   * （见 shared/test-steps.ts 的 currentTestSteps），这里快照只是任务上的备份。
    * agents 用来判断某个工作流里有没有测试 Agent（见 withTestSteps）。
    */
   const testOpts = (project: Project) => ({
@@ -1284,14 +1287,24 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 这个子对话要由父对话跑的步骤：优先用任务里的快照（执行环境、命令以它为准），
-   * 对话任务本来没有测试步骤快照（只有工作流任务才快照）时用项目现在的配置——和提示词里
-   * parentRunRole 的判断是同一份来源，不然提示词说「父对话会跑」、执行时却一条都跑不了
+   * 这个子对话要由父对话跑的步骤：以项目当前设置为准（调用前现读），任务快照只在项目被删、
+   * 读不到时兜底——和 parentRunRole 的判断、提示词里的步骤是同一份来源，不然提示词说「父对话会跑」、
+   * 执行时却一条都跑不了。
    */
   async function testStepsOf(tk: Task) {
-    if (tk.testSteps.length) return tk.testSteps
-    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
-    return project?.testSteps ?? []
+    // 读项目失败（文件被占 / 写坏 / 权限）不能默默当成「项目不存在」：那会退回旧快照、把用户刚改的设置
+    // 当成没生效，现象和这个 bug 一模一样还没痕迹。先留一条 warning 再兜底，子对话合并不因此失败
+    const project = tk.projectId
+      ? await deps.projects.get(tk.projectId).catch((e) => {
+          log.warn('task', '读项目失败，按任务快照判断测试步骤', {
+            task: tk.id,
+            project: tk.projectId,
+            error: (e as Error).message,
+          })
+          return null
+        })
+      : null
+    return currentTestSteps(tk.testSteps, project)
   }
 
   /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
@@ -3200,7 +3213,8 @@ export function tasksApi(deps: {
         verify:
           task.mode === 'chat' && found?.id
             ? {
-                steps: task.testSteps.length ? task.testSteps : found.testSteps,
+                // 按项目当前步骤拼这一轮的提示词（一次取一次，这一轮不再重读）；项目读不到才用任务快照
+                steps: currentTestSteps(task.testSteps, found),
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,

@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条；其余内容沿用 2026-10-26 的核对）
+- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」）
 
 ## 职责
 
@@ -18,6 +18,10 @@
 - 删除独立分支（`POST /tasks/:id/worktree/discard`）成功后除了写 store，必须把新的 `worktree` 也同步回内存里那份任务（`entry.task.worktree = next` + `entry.rev++`）：`current()`、`/tasks` 列表摘要（`idle`）和 `/children` 都优先读内存副本，只写 store 的话接口会继续按旧的 `active` 算（`gone` 恒为 false，运行区和计数继续挂着），而且下一次 PATCH 还会拿旧 worktree 把 `discarded` 写回 `active`。回归：`scripts/e2e/05-workflow-edge.mjs` 的「删除独立分支后列表接口读到的也是已删除」。
 - 任务「提问」开关与子对话的联动（`server/tasks.ts` 的 `PATCH /tasks/:id`，规则在 `shared/child-ask.ts`）：`askUser` 是这条对话允不允许提问（引擎按它决定让不让问），父对话把它关掉时，名下已创建的子对话一起关（`applyChildAskUser` 逐条改 `askUser` 并发消息 / 落盘，不只改界面）；`childAskUser` 是「之后新建的子对话默认开不开提问」，右键菜单在 PATCH 里带上一次性的 `applyChildAsk` 决定已创建的子对话要不要一起打开。新建子对话的初始 `askUser` 只在一处算：`createTask`（带 `parentTaskId` 时）和引擎内建的 `createConversation` 都取父对话的 `childAskUser`。界面一侧的设置项、右键菜单和三层优先级见 [web 模块 README](../web/README.md)。
 - 子对话合回后的父对话测试（`server/tasks.ts` 的 `finishChildStep` → `startParentTests`，队列在 `server/parent-tests.ts`）：子对话勾了「禁止子对话执行」的步骤不在它自己的分支里跑（只对子对话生效；父对话自己验证时走 `verifyBlock` 的全量启用步骤，见 [ADR 0018](../../adr/0018-test-steps-run-in-parent.md)），合并成功（`integrate`）后先写 `wrapRequest.state = 'testing'`、把计划里的收尾步骤标等待，把这一批排进队列——由面板在父对话目录里一次只跑一步，后台命令按 `exclusive` 和 UE 编译共用独占队，名字是「父对话测试：<子对话标题> · <步骤名>」，所以父对话运行区看得到谁在跑。全部通过才 `childMerged`（标完成、清 `wrapRequest`、按 `childFlowOf` 收口删分支）；失败把「来自子对话「标题」（id）」+ 失败步骤 + 用时 + 输出推回该子对话，状态记 `test-failed`（与「没合进去」的 `failed` 分开），子对话重新合并时全部重跑（不跳过）。耗时记进任务的 `Task.testRuns`；重启后 `recoverParentTests` 把 `testing` 的重新排队（从第一步重跑），`advanceChildTo` 的 `parentTest` hold 保证没跑完不标完成、不删分支。UE 的 `request_build` 不受影响，仍按 ADR 0004 走。
+  **判断用的步骤以项目当前设置为准**：`parentRunRole`（提示词里谁跑）、`testStepsOf`（`parentStepsOf` 决定合回后要不要转父对话，`recordSelfTestRun` 按它匹配耗时）、engine host 的 `verify.steps`（这一轮提示词里的步骤清单）
+  都过 `shared/test-steps.ts` 的 `currentTestSteps(task.testSteps, project)`：项目存在就用 `project.testSteps`，项目被删 / 读不到才用任务快照。
+  所以改了项目设置，已开始的对话下一次判断（下一轮提示词、下一次子对话合并）就按新设置跑，不需要新建对话；
+  命令在 `background.start` 派发时由当时的步骤算定，一条命令不会中途换成新命令。取项目的点各自只取一次（`deps.projects.get`），不在同一次判断里重读。
 - 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。

@@ -138,5 +138,10 @@ UE 项目已经有同类机制：编译归父对话、按编译目录占位（[A
 
 ## 后续
 
+- 2026-10-26：步骤改成「调用前现读项目设置」，任务快照退化成兜底（`shared/test-steps.ts` 的 `currentTestSteps`）。
+  起因是用户报「设置里勾了禁止子对话执行，已经开始的子对话合并时还是自己跑 e2e」：原来的快照语义不会把新设置带到创建过的对话。
+  现在的判断点：`parentRunRole`、`testStepsOf`（含 `parentStepsOf` 和耗时匹配）、engine host 的 `verify.steps`；
+  项目读不到才用 `Task.testSteps`。一条命令在派发时算定，所以一轮之内不会前后不一致。
+  仍按快照的只有工作流编排（`Task.workflows` / `skillSlots`），见 `docs/agent-test-steps.md` 的同名一节。
 - 2026-10-27：界面文案由「在父对话中执行」改为「禁止子对话执行」，语义未变，只是表述更贴切——这个参数**只针对子对话**，
   父对话自己改代码验证时照常跑这些步骤（父对话侧的步骤清单不走 `parentRunSteps`）。字段名 `runInParent` 保留不改，避免数据迁移。

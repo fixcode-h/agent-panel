@@ -10,6 +10,7 @@ import {
   CHANGED_FILES_RULE,
   TEST_TIME_SUMMARY_RULE,
   appliesToText,
+  currentTestSteps,
   defaultTestSteps,
   matchTestStep,
   matchesGlob,
@@ -180,6 +181,29 @@ test('「禁止子对话执行」的步骤：子对话跳过，合并时编译�
     testSteps: [{ id: 'a', name: '类型检查', command: 'npm run typecheck' }],
   })
   assert.equal(saved.testSteps[0].runInParent, false)
+})
+
+test('项目设置以项目当前为准，任务快照只在读不到项目时兜底', () => {
+  const snapshot = [step([], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', runInParent: false })]
+  const latest = [{ ...snapshot[0], runInParent: true }]
+  // 用户报的那个场景：快照里没勾，项目设置里勾上了 → 子对话下次合并要转父对话
+  assert.deepEqual(
+    parentRunSteps(currentTestSteps(snapshot, { testSteps: latest })).map((s) => s.id),
+    ['e2e'],
+    '项目设置里勾上了就按勾上算，不看快照',
+  )
+  // 反向：快照里勾了，项目设置里取消 → 子对话自己跑
+  assert.deepEqual(parentRunSteps(currentTestSteps(latest, { testSteps: snapshot })), [], '项目设置里取消就按取消算')
+  // 项目读不到 / 被删：快照兜底，不会突然一条步骤都没有
+  assert.deepEqual(currentTestSteps(snapshot, undefined), snapshot)
+  assert.deepEqual(currentTestSteps(snapshot, null), snapshot)
+  // 项目里把步骤删光：就是不跑，不能退回快照（否则用户会以为删除没生效）
+  assert.deepEqual(currentTestSteps(snapshot, { testSteps: [] }), [])
+  // 内容和策略位一并以项目为准：改命令、停用也是下一次判断就生效
+  const changed = [{ ...latest[0], command: 'npm run test:e2e:ci', enabled: false }]
+  const now = currentTestSteps(snapshot, { testSteps: changed })
+  assert.equal(now[0].command, 'npm run test:e2e:ci')
+  assert.deepEqual(parentRunSteps(now), [], '停用后父对话也不跑这条')
 })
 
 test('提示词写清谁跑这一步：子对话不跑、父对话不用自己跑', () => {

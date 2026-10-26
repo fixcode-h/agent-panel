@@ -149,13 +149,50 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 ### 怎么交给 Agent
 
-新建对话时整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的
-「## 项目测试步骤」一段（`shared/test-steps.ts` 的 `testStepsBlock`）。
+工作流任务新建时把整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的
+「## 项目测试步骤」一段（`shared/test-steps.ts` 的 `testStepsBlock`）。对话任务执行时以**项目当前设置**为准
+（见下面「项目设置对进行中的对话生效」）。
 
 - 只注入真的用到了测试 Agent 的工作流（按「Agent 有没有 `scope` + `env` 两个参数」判断，见 `isTestAgent`），
   评审、建模这类流程不会看到一份无关的命令。
-- 之后改项目设置不影响已经开始的对话；「按最新的工作流继续」时才会换。
+- 对话任务每次拼提示词、每次判断谁跑都现读项目设置。
 - 没有配置步骤时给出兜底：让 Agent 按 package.json / Makefile / CI / README 自己找，找不到就报告缺口并建议补上，**不编命令**。
+
+### 项目设置对进行中的对话生效
+
+口径是用户定的「调用前先读配置判断怎么调用」：**不在保存设置时去遍历改写跑着的对话**（那是同步机制），
+而是在每个要作判断的点上现读一次项目设置。已经开始的对话因此不用等新建，改了设置就按新设置跑。
+
+在哪些点现读（`server/tasks.ts`）：
+
+| 判断点                        | 做什么                                                             | 现读的地方                                                                           |
+| ----------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `parentRunRole`               | 提示词里写谁跑这些步骤、要不要转父对话                             | 每次 `start()` 已经取了项目，`currentTestSteps(tk.testSteps, project)`               |
+| `testStepsOf`                 | `parentStepsOf`（合并后转父对话）、`recordSelfTestRun`（耗时匹配） | 每次调用 `deps.projects.get` 取一次                                                  |
+| engine host 的 `verify.steps` | 这一轮提示词里的步骤清单                                           | `currentTestSteps(task.testSteps, found)`，`found` 就是同一次 `start()` 里读到的项目 |
+
+两边都走 `shared/test-steps.ts` 的 `currentTestSteps(snapshot, project)` 一个函数：**项目存在就用项目当前的步骤**
+（策略位、命令原文、超时、工作目录都算），读不到才用任务快照。项目里把步骤清空表示不跑，不能退回快照——
+否则用户会以为删除没生效。
+
+兜底只在“谁跑 / 耗时匹配”这条路成立：拼提示词的分支是 `task.mode === 'chat' && found?.id`，项目被删除（`get` 返回 null）时
+整段验证说明都不注入（不会把旧快照当成最新步骤写进提示词）；读盘失败时 `start()` 会直接失败、把错误报给用户，不会走到拼提示词。
+`testStepsOf` 读项目失败时记一条 `log.warn` 再兜底，不静默当成「项目不存在」——不然现象和这次报的 bug 一样、却无从区分。
+
+「一轮之内不抖」靠两件事：
+
+1. 同一份步骤只在一个判断点取一次，不在这里取一次、那里又取一次；提示词和 `parentRunRole` 用的是同一次
+   `start()` 里读到的项目。
+2. 一条后台命令在 `background.start` 派发那一刻由取到的步骤算定（`stepCommand` 拼出整行），之后不再重读——
+   所以不会出现「前半段用旧命令、后半段用新命令」。合并是另一个时间点，按那一刻项目的最新设置判断，这是有意的。
+
+其它项目设置本来就每轮现读，不需要额外处理：`agentParams`（`withProjectParams`）、`lessons`、`searchExclude`、
+`gitPolicy`、`fileFormat`、`childIsolation`、`scaledVerify`、`wslDistro` 都在 `start()` 里从 `deps.projects.get` 读。
+
+仍按任务快照的只有**工作流编排**（`Task.workflows`、`skillSlots`、`Task.params` 连同项目里填的工作流参数）：
+它定的是「这个对话怎么排流程」，换掉会让已跑的节点、消息和计划对不上，属于「换工作流」而不是「设置生效」。
+已知代价：工作流任务的节点说明里带的命令来自创建时的快照，而 `recordSelfTestRun` 按项目最新命令匹配（`matchTestStep`）；
+中途改了命令后，节点里跑的旧命令会匹配不上，耗时记成「未记录」。是有意的取舍，不是 Bug。
 
 ### 按改动大小决定验证范围
 
@@ -227,7 +264,7 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 - 新建对话时（`taskSnapshot` → `applyExpose(w, params, agents)`）合并进节点 / 步骤参数，优先级：
   **节点上原来的值 < 项目里填的 Agent 参数 < `Workflow.expose`（target=agent，最具体）**。
 - 只写这个 Agent 真的声明了的参数，不会把无关参数塞进节点。
-- 快照定下来后改项目设置不影响已经开始的对话。
+- 工作流参数快照定下来后，改项目设置不影响已经开始的对话（这一条只针对工作流编排参数；测试步骤是现读的，见上面「项目设置对进行中的对话生效」）。
 
 ### 参数联动
 
