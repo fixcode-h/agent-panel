@@ -9,6 +9,7 @@ import {
   startedRun,
   tokenGroups,
   toolView,
+  withTurnSeenAt,
 } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
@@ -314,4 +315,18 @@ test('deliveredToCli：请求报错时服务端其实已交给 CLI 的不要恢�
   assert.equal(deliveredToCli({ delivery: { how: 'pending', at: '' } }), false)
   assert.equal(deliveredToCli({}), false)
   assert.equal(deliveredToCli(undefined), false)
+})
+
+test('withTurnSeenAt：/seen 只回来的「看到哪」合进本地那份，对话不重造、值没变就不换对象', () => {
+  const base = {
+    id: 't1',
+    turnDoneAt: '2026-10-01T03:00:00.000Z',
+    turnSeenAt: '',
+    messages: [{ id: 'm1' }],
+  } as unknown as Parameters<typeof withTurnSeenAt>[0]
+  const next = withTurnSeenAt(base, base.turnDoneAt)
+  assert.equal(next.turnSeenAt, base.turnDoneAt)
+  assert.equal(next.messages, base.messages, '消息数组原样带过去，不从接口整份换回来')
+  // 已经一样就不换对象：侧栏和对话页不用为一次心跳重渲染
+  assert.equal(withTurnSeenAt(next, base.turnDoneAt), next)
 })

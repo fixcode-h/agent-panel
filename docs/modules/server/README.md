@@ -7,7 +7,7 @@
 
 ## 职责
 
-- 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件。
+- 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件（生产模式由 `server/static.ts` 托管构建产物：gzip + 缓存头 + ETag，见下面的加载链路一节）。
 - 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/task-store.ts`。
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
 - 定时计划（左侧导航「计划」）：排期存在数据目录的 `config/schedules.json`（`server/schedules.ts` 用 `createCollection`，登记在 `server/store.ts` 的 `DATA_FILES` 里），随「数据」页的「配置」类一起统计占用、导出和导入（这一类按 `shared/data.ts` 不可清理）。面板进程在跑时按 `SCHEDULE_TICK_MS`（30 秒）轮询，到点用 `server/tasks.ts` 导出的 `startChat` 新建对话，和页面上 `POST /tasks` 走同一个 `createTask`（校验项目 / 角色、建独立分支、拷附件、启动执行），不另造执行链路。进程不在时到点的计划不补跑：超过 `SCHEDULE_MISS_MS`（60 秒）才算错过，只把时间往后推并记下 `missedAt`。写回运行状态前会重读一次，用户在这期间改过的排期不会被快照覆盖。
@@ -38,16 +38,39 @@
 
 `shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
-## 打开一个对话页时服务端重复付的代价（2026-10-26 实测）
+## 打开一个对话页时服务端重复付的代价（2026-10-26 实测，2026-10-27 更新）
 
-单次打开对话页会打到下面几组接口，它们合起来就是「打开慢」的服务端那一半（热数据、本机 loopback，均已复测）：
+单次打开对话页会打到下面几组接口，它们合起来就是「打开慢」的服务端那一半（热数据、本机 loopback，均已复测）。**2026-10-26 的数字是优化前的基线，保留作背景；`/seen`、`/presence`、静态资源三项已在 2026-10-27 改掉，每条后面写的是现在的行为和本次实测；SSE 的 `full` 和 `/children` 的 git 没有动，仍是 P1。**
 
-- `current()`（`server/tasks.ts:492`）→ `store.getFull`（`server/task-store.ts:448`）每次都 `readJson` + `TaskMessage.array().safeParse` 整份 `.messages.json`。2.0MB / 611 条的那份实测 91–133ms，而 `POST /presence`（`server/tasks.ts:4311`）和 `POST /seen`（`server/tasks.ts:4321`）都走这条路径：presence 只是记内存里的 viewer，seen 只需要 `turnSeenAt`，两者都把整份对话读+校验一遍，seen 还把完整任务 2467KB 原样回给前端（前端只拿它做 apply）。
-- `GET /:id/events`（`server/tasks.ts:3914`）建连后先发一次 `full` 事件：实测 2726KB，与上面那次 `GET /:id` 是同一份数据；前端 `useTaskStream` 不信 `running`，只要打开对话页就连。
-- `GET /:id/children`（`server/tasks.ts:3662`）：每个子对话一次 `childWorktree` → `worktreeStatus`（4 条 git），首跑实测 1131ms，之后靠 `worktreeSeen` 的 10s / 60s TTL 降到 2–10ms；前端每 4 秒刷一次，所以子对话多时等于持续跑 git。
-- 静态文件走 `serveStatic`（`server/index.ts:1053`）且没有 gzip：首屏 2506KB 未压缩、`fonts.css` 448KB 未压缩。`:1055` 的 SPA fallback 会把任何找不到的 `/assets/*` 都回 `index.html`（200 + HTML），排查「资源 404」时容易看错，用 content-type 判。
+- **`/seen` 不再读整份对话、也不再回完整任务（2026-10-27 已完成）**：`current()`（`server/tasks.ts:493`）→ `store.getFull`（`server/task-store.ts:448`）每次都 `readJson` + `TaskMessage.array().safeParse` 整份 `.messages.json`，2.0MB / 611 条的那份实测 91–133ms；`POST /seen`（`server/tasks.ts:4323`）以前走的就是这条路径，还把完整任务 2467KB 原样回给前端（前端只拿它做 apply）。现在它取 `live` 里那份、没有才 `getMeta`，只回 `{ turnSeenAt }`（`shared/schema.ts` 的 `TaskSeenResult`）；要落盘时走 `server/task-store.ts` 的 `updateMeta()`——只改任务记录文件，**不读也不写 `.messages.json`**，并且带 `keepUpdatedAt: true`，所以「只是看过了」不算任务更新，列表顺序和更新时间都不动。
+- **`/presence` 只做存在性检查（2026-10-27 已完成）**：`POST /presence`（`server/tasks.ts:4312`）以前同样走 `current()`，为一次心跳把整份对话读一遍再校验。现在只用 `getMeta(id)`（`server/tasks.ts:504`，底层 `store.getMeta` 只查有没有这条任务），之后照旧只动内存里的 viewer。
+- `GET /:id/events`（`server/tasks.ts:3915`）建连后先发一次 `full` 事件：实测 2726KB，与上面那次 `GET /:id` 是同一份数据；前端 `useTaskStream` 不信 `running`，只要打开对话页就连。**仍是 P1，本次未动。**
+- `GET /:id/children`（`server/tasks.ts:3663`）：每个子对话一次 `childWorktree` → `worktreeStatus`（4 条 git），首跑实测 1131ms，之后靠 `worktreeSeen` 的 10s / 60s TTL 降到 2–10ms；前端每 4 秒刷一次，所以子对话多时等于持续跑 git。**仍是 P1，本次未动。**
+- **静态资源改成 gzip + 长缓存（2026-10-27 已完成）**：托管从 `serveStatic`（原 `server/index.ts:1053`）换成 `server/static.ts` 的 `serveDist` / `serveIndex`（挂在 `server/index.ts:1056`）。文本类型（js / css / html / json / svg / map / webmanifest 等）用 Node 内置 `zlib` 的 gzip（level 6），压缩结果按文件缓存、同一文件的并发请求只压一次、构建产物换了（mtime / 大小变）就重压；字体和图片本身已是压缩格式，不压。`/assets/*` 的文件名带内容哈希，回 `public, max-age=31536000, immutable`；`index.html` 和其余不带哈希的文件回 `no-cache`（每次校验，命中就是 304），发版后一定拿得到新入口。两者都带 `W/"…"` 的 ETag 并处理 `If-None-Match`，gzip 与未压缩两份的 ETag 分开（否则会拿压缩版去回不要 gzip 的请求），可压缩类型一律带 `vary: accept-encoding`。**只作用于打包产物**：`npm run dev` 下前端仍由 Vite 自己服务，完全不经过这套缓存头。SPA 兜底照旧——`serveDist` 找不到文件就交给 `serveIndex`，所以任何找不到的路径（含 `/assets/*`）都回 `index.html`（200 + HTML），排查「资源 404」时用 content-type 判。
 
-优化优先级（按收益/风险）：seen 只回 delta（或直接 204）→ presence 用 `getMeta` 而不是 `current` → SSE 支持「我已经有到 X 版本」直接发 patch → children 把 git 结果缓存拉长或改成按需 → 给静态资源加压缩。
+本次实测（同一份 2.12MB / 1000 条消息的对话，本机 loopback、预热 OS 缓存，`curl -s -o /dev/null -w '%{size_download} %{time_total}'`）：
+
+| 请求                                             | 改前                                                                                                  | 改后                                                            |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `POST /api/tasks/:id/seen`                       | 以前走 `current()`、回整份任务：本份是下一行的 2,125,105 字节，2.0MB / 611 条那份实测 2,467KB / 133ms | 41 字节 / 1.0–1.1ms                                             |
+| 旧路径 `GET /api/tasks/:id`（旧 `/seen` 也走它） | 2,125,105 字节 / 11–21ms                                                                              | 未改（首屏那次仍要整份对话）                                    |
+| `POST /api/tasks/:id/presence`                   | 与上面同一条路径（`current()`）                                                                       | 204 / 1.3–2.3ms                                                 |
+| `index-tnFgKEWT.js`                              | 705,555 字节（未压缩）                                                                                | 200,850 字节（gzip）                                            |
+| `fonts-DFrIiuit.css`                             | 459,218 字节（未压缩）                                                                                | 200,798 字节（gzip）                                            |
+| woff2 字体                                       | 不压缩                                                                                                | 不压缩（已是压缩格式）                                          |
+| `index.html`                                     | 3604 字节、无缓存头                                                                                   | 3604 字节、`cache-control: no-cache`，带 `If-None-Match` 回 304 |
+
+整页对比（headless chromium、禁缓存、同一份对话）：改后 ready **575ms**、**75 个请求**、resource timing 传输合计 **3.86MB**（js 822KB / css 219KB / 字体 630KB / API 2.28MB）；改前基线是 ready 1.6–2.4s、114–119 个资源、9.4–10.2MB（见 [web 模块](../web/README.md) 同一段实测）。resource timing 之外还有一次性的 SSE `full` 事件 2,125,149 字节，属于留到下一批的 P1。
+
+前端配套：`web/src/components/tasks/TaskView.tsx` 的 `applySeen` 用 `web/src/lib/tasks.ts` 的 `withTurnSeenAt` 把返回值合进本地，未读判定仍只在 `shared/task.ts` 的 `taskTurnUnread` / `taskDoneDot`（细节见 [web 模块](../web/README.md)）。回归：`server/task-seen.test.ts`（`/seen` 只回 `{ turnSeenAt }`、不改非对话字段时对话文件一个字节都没被重写、已看过时什么都不改、`/presence` 不改对话文件且任务不存在时 404、`updateMeta` 同步内存里那份完整对话）、`server/static.test.ts`（文本资源 gzip 变小、`/assets/*` 长缓存、不要 gzip 的客户端拿原文、字体不压、入口页 no-cache、内容没变回 304 且两份 ETag 分开、越界路径交给 SPA 兜底、`q=0` 不算接受 gzip）、`web/src/lib/tasks.test.ts` 的 `withTurnSeenAt`。
+
+优化优先级（按收益/风险）与进度：
+
+1. seen 只回 delta（或直接 204）——**2026-10-27 已完成**，现在只回 `{ turnSeenAt }`；
+2. presence 用 `getMeta` 而不是 `current`——**2026-10-27 已完成**；
+3. SSE 支持「我已经有到 X 版本」直接发 patch——P1，未做（`full` 事件仍是整份对话，实测 2,125,149 字节）；
+4. children 把 git 结果缓存拉长或改成按需——P1，未做；
+5. 给静态资源加压缩——**2026-10-27 已完成**（gzip + 长缓存 + ETag）。
 
 ## 数据落盘与损坏恢复
 

@@ -541,6 +541,30 @@ export function createTaskStore() {
       await persist(item, opts)
       return item
     },
+    /**
+     * 只改任务本身的几个字段，不读也不写 `.messages.json`。
+     *
+     * 打开对话页（`/seen`）这类请求每次都要改一个小字段：走 `update` 要么把几 MB 的对话读一遍再校验
+     * （实测 2MB / 611 条要 91–133ms），要么调用方传一份不完整的 messages 进来、把对话文件覆盖掉。
+     * patch 里不允许带 messages：对话只能经 `update` / 执行器落盘那条路写。
+     */
+    async updateMeta(
+      id: string,
+      patch: Partial<Omit<TaskData, 'messages'>> & { updatedAt?: string },
+      opts?: { keepUpdatedAt?: boolean },
+    ) {
+      const map = await all()
+      const old = map.get(id)
+      if (!old) return null
+      const updatedAt = opts?.keepUpdatedAt ? (patch.updatedAt ?? old.updatedAt) : new Date().toISOString()
+      const item = { ...old, ...patch, id, projectId: old.projectId, updatedAt } as Task
+      map.set(id, head(item))
+      // 内存里还留着这份对话（刚读过、正在执行）时一起改：不然下一次落盘或推送会把旧值带回去
+      const hit = full.get(id)
+      if (hit) Object.assign(hit, patch, { updatedAt })
+      await queueWrite(item, writeFull)
+      return item
+    },
     async remove(id: string) {
       const map = await all()
       const meta = map.get(id)
