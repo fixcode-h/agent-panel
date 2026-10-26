@@ -1076,6 +1076,10 @@ await runShard('工作流条件与失败', async (api) => {
     }
   }
   assert.equal(dropped.worktree.state, 'discarded')
+  // 删除分支只写 store 的话，列表接口（读内存里那份任务）还会说 active：侧栏计数、运行区判定跟着错，
+  // 下一次 PATCH 还会拿旧 worktree 把 discarded 写回去
+  const listedAfterDrop = (await call('GET', '/tasks')).find((x) => x.id === tDrop.id)
+  assert.equal(listedAfterDrop?.worktree?.state, 'discarded', '删除独立分支后列表接口读到的也是已删除')
   assert.ok(!existsSync(tDrop.worktree.path) && !existsSync(path.join(projectDir, 'committed.txt')), '丢弃后什么都不留')
   assert.equal(git('branch', '--list', tDrop.worktree.branch).toString().trim(), '', '丢弃时删掉任务分支')
   await call('DELETE', `/tasks/${tIso.id}`)
