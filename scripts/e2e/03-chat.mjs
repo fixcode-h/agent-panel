@@ -690,7 +690,7 @@ await runShard('对话与续接', async (api) => {
       '没被处理的那条和新消息一起交过去',
     )
     assert.equal(st.messages.filter((m) => m.role === 'user' && m.text === '还在吗').length, 1, '对话里只显示新消息')
-    assert.match(stallAlert(st).alert.resolved ?? '', /停掉了卡住的 CLI/, '警告那一行记下面板重启了它')
+    assert.match(stallAlert(st).alert.resolved ?? '', /停掉了卡住的 Agent/, '警告那一行记下面板重启了它')
     assert.notEqual(st.stopReason, 'user', '不说成用户暂停')
     assert.ok(st.messages.at(-1).role === 'agent', '重开后有回复')
     step('CLI 收下消息后没有输出：先警告，下一条消息停掉它、接回会话重开并带上没处理的那条')

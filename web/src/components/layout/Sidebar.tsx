@@ -14,6 +14,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderSearch,
+  FileText,
   Layers,
   MessageSquarePlus,
   PencilLine,
@@ -92,6 +93,7 @@ const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'workflows', label: t('工作流'), icon: Workflow },
   { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
   { id: 'mcp', label: t('MCP 工具'), icon: Plug },
+  { id: 'summary', label: t('工作总结'), icon: FileText },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */

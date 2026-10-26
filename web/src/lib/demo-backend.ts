@@ -129,6 +129,7 @@ import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
+import { demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import {
@@ -2004,6 +2005,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
+  if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
   if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
