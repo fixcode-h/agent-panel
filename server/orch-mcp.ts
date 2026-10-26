@@ -1002,18 +1002,18 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const unknown = Object.keys(a && typeof a === 'object' ? a : {}).filter((k) => !SPAWN_TOP_FIELDS.includes(k))
       if (unknown.length)
         return text(
-          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier、resume 可以直接写在顶层`,
+          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier 可以直接写在顶层，只派一个任务时 resume 也可以`,
           true,
         )
       const tasks: any[] = (Array.isArray(a?.tasks) ? a.tasks : []).filter((x: unknown) => x && typeof x === 'object')
       // 写了但不是字符串（数字、数组、对象）不能当成「没写」：会被顶层默认值顶掉，
       // 调用方以为写了 agent / tier / resume，实际一个都没生效
       const notString = (v: unknown) => v !== undefined && v !== null && typeof v !== 'string'
-      const wrong: string[] = ['agent', 'tier', 'resume'].filter((k) => notString(a?.[k])).map((k) => `顶层 ${k}`)
+      const wrongType: string[] = ['agent', 'tier', 'resume'].filter((k) => notString(a?.[k])).map((k) => `顶层 ${k}`)
       tasks.forEach((x, i) => {
-        for (const k of ['agent', 'tier', 'resume']) if (notString(x[k])) wrong.push(`tasks[${i}].${k}`)
+        for (const k of ['agent', 'tier', 'resume']) if (notString(x[k])) wrongType.push(`tasks[${i}].${k}`)
       })
-      if (wrong.length) return text(`spawn_agents 的 ${wrong.join('、')} 要写字符串`, true)
+      if (wrongType.length) return text(`spawn_agents 的 ${wrongType.join('、')} 要写字符串`, true)
       // 顶层 resume 是一批共用的一份：一个会话只能接着跑一轮，配多个任务就说不清谁接它
       const topResume = str(a?.resume) || undefined
       if (topResume && tasks.length > 1)
