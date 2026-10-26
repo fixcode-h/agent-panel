@@ -15,7 +15,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, groupByDay, taskBusy, taskState } from '@shared/task'
+import { askedAt, byAskedAt, groupByDay, taskBusy, taskDoneDot, taskState } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -68,6 +68,9 @@ export function TaskRow({
   const online = task.status === 'running' && !busy && state !== 'needs'
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
   const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
+  // 橙点只在对话真的停在完成态、而且不是当前打开的那个时才画（见 taskDoneDot）：
+  // 未读可能是上一轮留下的，对话后来又跑起来时会和转圈撞在同一行
+  const unreadDot = taskDoneDot(task, !!unread, active)
   return (
     <>
       <ContextMenu>
@@ -84,7 +87,7 @@ export function TaskRow({
               className,
             )}
           >
-            {unread && (
+            {unreadDot && (
               <span
                 role="img"
                 aria-label={t('对话已完成，还没查看')}

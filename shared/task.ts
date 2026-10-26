@@ -1407,6 +1407,24 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
 /** 任务对外的状态：见 convState */
 export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
 
+/**
+ * 这一轮做完了、用户还没打开看过：侧栏橙点、项目首页「需要你处理」都读它。
+ * 交出去的后台命令还没跑完时不算：这一轮说完了但对话还在等结果。
+ * 只是「未读」这个历史事实，能不能画橙点还要看下面的 taskDoneDot。
+ */
+export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jobs?: Task['jobs'] }) =>
+  !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length
+
+/**
+ * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
+ * 未读是上一轮完成时留下的历史事实，对话后来又跑起来（转圈、等你处理、失败、被停）时它还在，
+ * 两个一起画就成了「既完成未看、又还在跑」。当前打开的那个对话也不画。
+ */
+export function taskDoneDot(x: TaskFactsInput, unread: boolean, viewing = false) {
+  if (!unread || viewing) return false
+  return taskState(x) === 'done'
+}
+
 /** 任务还在运行（不能被回收、失活）：见 convActive */
 export const taskActive = (x: TaskFactsInput) => convActive(taskState(x))
 

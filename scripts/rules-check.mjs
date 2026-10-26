@@ -5,6 +5,7 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
+// 8. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -141,6 +142,20 @@ for (const f of files) {
 
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
+
+// 8. 「完成未看」的橙点只在 shared/task.ts 的 taskDoneDot 一处判：组件里直接比 turnDoneAt / turnSeenAt
+// 会和 taskState 各算一套，对话后来又跑起来时橙点和转圈同时出现在一行（见 docs/lessons/ui.md）
+for (const f of files) {
+  if (!/^web\/src\/components\/.+\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\bturnDoneAt\b/.test(l) && /\bturnSeenAt\b/.test(l) && /[!=]==?/.test(l) && !/dot-ok/.test(l))
+        errors.push(
+          `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task.ts 的 taskDoneDot（见 docs/lessons/ui.md）：${l.trim()}`,
+        )
+    })
+}
 
 if (errors.length) {
   console.error(errors.join('\n'))

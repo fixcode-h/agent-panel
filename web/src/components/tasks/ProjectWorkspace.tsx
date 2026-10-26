@@ -19,9 +19,10 @@ import type { Project, Task } from '@shared/schema'
 import {
   byAskedAt,
   stopReasonText,
-  taskActive,
   taskBusy,
+  taskDoneDot,
   taskState,
+  taskTurnUnread,
   taskWaitText,
   taskDuration,
   taskSummary,
@@ -225,10 +226,11 @@ function ProjectHome({ project }: { project: Project }) {
 
 /** 这个任务现在要不要你处理：有确认请求、出错了、或者做完了还没看 */
 function needsYou(tk: Task) {
-  // 状态只从 taskState 来：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」
+  // 状态只从 taskState 来：等你处理、失败都要你看；还在运行的（子对话、子任务、后台命令没完）不算「做完没看」，
+  // 橙点也读同一处判定（taskDoneDot），不自己比 turnDoneAt / turnSeenAt
   const s = taskState(tk)
   if (s === 'needs' || s === 'failed') return true
-  return !taskActive(tk) && !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
+  return taskDoneDot(tk, taskTurnUnread(tk))
 }
 
 /**
