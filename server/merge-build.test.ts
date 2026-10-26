@@ -91,7 +91,8 @@ test('对话的验证说明：按改动大小分开，关掉时一律完整跑',
   const steps = [step({ id: 'tc', name: '类型检查', quick: true }), step({ id: 'e', name: '端到端', merge: false })]
   const on = verifyBlock(steps, { platform: 'linux', scaled: true })
   assert.match(on, /小改动.*只跑标「快速」的步骤（类型检查）/)
-  assert.match(on, /类型检查（自动，快速，合并时编译）/)
+  // 步骤行带上范围：merge 步骤迁移成 changed（命中适用改动才跑），老数据解析时不会变成 always 更不会变成 parent
+  assert.match(on, /类型检查（自动，快速，合并时编译，范围：命中适用改动才跑）/)
   const none = verifyBlock([step({ id: 'e', name: '端到端', merge: false })], {
     platform: 'linux',
     scaled: true,

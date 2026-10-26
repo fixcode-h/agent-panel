@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Task, TaskMessage } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { api } from './api'
 
 type Patch = { meta: Omit<Task, 'messages'>; messages: TaskMessage[]; total: number }
@@ -21,11 +22,23 @@ export function mergePatch(task: Task, p: Patch): Task {
 /**
  * 跟着任务的实时变化：服务端用 SSE 推送增量（见 server/tasks.ts 的 /tasks/:id/events），
  * 合并后交给 onTask。在线演示没有服务端，执行中时定时拉一次。
+ *
+ * hook：打开对话时的加载日志用（只有 TaskView 传）——首份完整任务到了 / 首包之前就连不上。
  */
-export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task) => void) {
+export function useTaskStream(
+  taskId: string,
+  running: boolean,
+  onTask: (t: Task) => void,
+  hook?: { open: () => void; fail: (error: string) => void },
+) {
   const cb = useRef(onTask)
   cb.current = onTask
   const last = useRef<Task | null>(null)
+  // 回调每次渲染都是新的，只存 ref，不进 effect 依赖（不然每次渲染都重连一遍 SSE）
+  const hk = useRef(hook)
+  hk.current = hook
+  // 首包还没到时 EventSource 会反复报 error（它在自己重连），只记第一次
+  const failed = useRef(false)
 
   useEffect(() => {
     if (!import.meta.env.VITE_DEMO) return
@@ -44,12 +57,18 @@ export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task
   useEffect(() => {
     if (import.meta.env.VITE_DEMO) return
     last.current = null
+    // 上一条对话首包前失败过时，这条对话的首次连接错误也要能报出来
+    failed.current = false
     const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events`)
     const emit = (t: Task) => {
       last.current = t
       cb.current(t)
     }
-    es.addEventListener('full', (e) => emit(JSON.parse((e as MessageEvent).data)))
+    es.addEventListener('full', (e) => {
+      failed.current = false
+      hk.current?.open()
+      emit(JSON.parse((e as MessageEvent).data))
+    })
     es.addEventListener('patch', (e) => {
       const p = JSON.parse((e as MessageEvent).data) as Patch
       if (!last.current || last.current.id !== taskId) return
@@ -65,6 +84,12 @@ export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task
       emit(t)
     })
     es.addEventListener('gone', () => es.close())
+    // 首包之前连不上才算这次加载失败（之后断开 EventSource 会自己重连，对话已经能看了）
+    es.addEventListener('error', () => {
+      if (last.current || failed.current) return
+      failed.current = true
+      hk.current?.fail(t('实时更新连接失败，正在重连'))
+    })
     // 断开后 EventSource 会自己重连，重连后服务端先发完整任务
     return () => es.close()
   }, [taskId])

@@ -26,6 +26,71 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
+  // 打开对话时先出现加载日志：逐行打出真的走了哪几步，加载完淡出卸载。
+  // 这里在点开之后立刻断言（面板至少露 MIN_VISIBLE_MS，够测量和截图）
+  const loadTrace = p.locator('[data-load-trace]')
+  const traceShown = await loadTrace.waitFor({ timeout: 3000 }).then(
+    () => true,
+    () => false,
+  )
+  if (!traceShown) errors.push('任务-加载日志：打开对话时没有出现加载面板')
+  else {
+    const card = loadTrace.locator(':scope > div').first()
+    if (!(await loadTrace.getByText('读取对话').count())) errors.push('任务-加载日志：面板里没有「读取对话」这一行')
+    // 「渲染消息」要记到真实耗时：漏了起点（只在两帧后记完成）会恒显示 0s，
+    // 这是 R1 的回归保护——单测只测 load-trace 纯逻辑，删掉 TaskView 里的 start 它照样绿
+    const renderMs = await p
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('[data-trace-step="render"]')
+          const ms = Number(el?.getAttribute('data-trace-ms') ?? '')
+          return Number.isFinite(ms) && ms > 0
+        },
+        undefined,
+        { polling: 'raf', timeout: 2000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!renderMs) errors.push('任务-加载日志：渲染消息没记到耗时（起点漏了会恒显示 0s）')
+    // 居中要相对对话内容区（左边有侧栏，右边可能还有一栏），不是整个视口：量两边留白的差值。
+    // 对话区就是这块面板的父元素（它不在 pane 里时是整个对话页的主区域），不靠 main 选择器猜
+    const cardBox = await card.boundingBox()
+    const areaBox = await loadTrace.evaluate((el) => {
+      const r = el.parentElement?.getBoundingClientRect()
+      return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null
+    })
+    if (!cardBox || !areaBox) errors.push('任务-加载日志：量不到面板或对话区的位置')
+    else {
+      const left = cardBox.x - areaBox.x
+      const right = areaBox.x + areaBox.width - (cardBox.x + cardBox.width)
+      if (Math.abs(left - right) > 2)
+        errors.push(`任务-加载日志：面板没有水平居中（左 ${Math.round(left)}px、右 ${Math.round(right)}px）`)
+      const above = cardBox.y - areaBox.y
+      const below = areaBox.y + areaBox.height - (cardBox.y + cardBox.height)
+      if (Math.abs(above - below) > 2)
+        errors.push(`任务-加载日志：面板没有垂直居中（上 ${Math.round(above)}px、下 ${Math.round(below)}px）`)
+    }
+    // 窄窗口（375）下不能横向溢出。就在这次面板还在的时候切一次宽度：
+    // 另开一个 375 宽的页面从侧栏点进来是不行的，窄屏下侧栏收着，列表项点不到
+    await p.setViewportSize({ width: 375, height: 820 })
+    await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
+    const overflow = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    if (overflow > 1) errors.push(`任务-加载日志-窄屏：出现横向滚动（多出 ${overflow}px）`)
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
+    if (!(await shotOf(p, card, '任务-加载日志'))) errors.push('任务-加载日志：面板没截到图')
+    // 加载完要淡出并卸载，不能一直盖着下面的对话
+    if (
+      !(await loadTrace.waitFor({ state: 'detached', timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('任务-加载日志：加载完成后没有收起')
+  }
+
   /** 宽屏标题栏的文件按钮：文件面板默认收起，后面的用例要自己先把它点开 */
   const openFiles = async () => {
     const open = p.getByRole('button', { name: '显示文件', exact: true })
@@ -2159,8 +2224,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     const a = await readPlan()
     if (!a) errors.push('执行计划：没找到计划窗口')
     else {
-      // fmtDuration 的几种写法：秒、分+秒、时+分、天+时、毫秒级
-      const duration = (text) => /^(<0\.1s|(\d+d )?\d+h \d+m|\d+d \d+h|(\d+m )?\d+(\.\d+)?s)$/.test(text)
+      // fmtDuration 的几种写法：毫秒、秒、分+秒、时+分、天+时
+      const duration = (text) => /^(\d+ms|(\d+d )?\d+h \d+m|\d+d \d+h|(\d+m )?\d+(\.\d+)?s)$/.test(text)
       if (!duration(a.total)) errors.push(`执行计划：顶部没有显示总用时（「${a.total}」）`)
       if (!a.totalLabel.startsWith('总用时 '))
         errors.push(`执行计划：总用时缺少「总用时」说明（aria-label「${a.totalLabel}」）`)

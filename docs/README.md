@@ -23,25 +23,26 @@ npm run build      # 正式版前端（在线演示版用 npx vite build --mode 
 
 ## 文档索引
 
-| 文档                                                           | 内容                                                 |
-| -------------------------------------------------------------- | ---------------------------------------------------- |
-| [MODULE-MAP.md](MODULE-MAP.md)                                 | 模块表：路径、职责、入口、文档链接、状态             |
-| [modules/shared/README.md](modules/shared/README.md)           | 前后端共享的数据模型、CLI 注册表、流程图和执行引擎   |
-| [modules/server/README.md](modules/server/README.md)           | Hono API、JSON 存储、项目与任务管理                  |
-| [modules/server-exec/README.md](modules/server-exec/README.md) | 真实调用本机 CLI：进程、输出解析、RPC 会话、worktree |
+| 文档                                                           | 内容                                                                  |
+| -------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [MODULE-MAP.md](MODULE-MAP.md)                                 | 模块表：路径、职责、入口、文档链接、状态                              |
+| [modules/shared/README.md](modules/shared/README.md)           | 前后端共享的数据模型、CLI 注册表、流程图和执行引擎                    |
+| [modules/server/README.md](modules/server/README.md)           | Hono API、JSON 存储、项目与任务管理                                   |
+| [modules/server-exec/README.md](modules/server-exec/README.md) | 真实调用本机 CLI：进程、输出解析、RPC 会话、worktree                  |
 | [modules/app-actions/README.md](modules/app-actions/README.md) | 操控软件的动作表：Agent 的 `app_actions` / `app_do` 与 `/api/actions` |
-| [modules/design/README.md](modules/design/README.md)           | UI 设计：设计数据、AI 对话、原画与图片生成、导出     |
-| [modules/web/README.md](modules/web/README.md)                 | React 前端：页面、流程图画布、对话输出、演示模式     |
-| [modules/scripts/README.md](modules/scripts/README.md)         | 端到端测试、界面检查、出包、规则检查、托盘程序       |
-| [modules/skills/README.md](modules/skills/README.md)           | 随面板发布的内置 Skill                               |
-| [modules/extension/README.md](modules/extension/README.md)     | 浏览器扩展：用本机已登录的 Gemini / ChatGPT 网页生图 |
-| [cli-config.md](cli-config.md)                                 | 接入新 CLI 的配置文件格式和接入检查清单              |
-| [model-catalog.md](model-catalog.md)                           | 模型的上下文窗口、最大输出、思考强度                 |
-| [agent-catalog.md](agent-catalog.md)                           | 增删合并内置角色和工作流的判定标准                   |
-| [agent-test-steps.md](agent-test-steps.md)                     | 测试步骤、角色参数、子对话隔离和合并编译             |
-| [umg-export.md](umg-export.md)                                 | UI 设计的导出格式                                    |
-| [lessons/README.md](lessons/README.md)                         | 项目教训：返工过的地方整理成按文件取用的规则         |
-| [adr/README.md](adr/README.md)                                 | 架构决策记录（ADR）：为什么这么定、放弃了什么        |
+| [modules/design/README.md](modules/design/README.md)           | UI 设计：设计数据、AI 对话、原画与图片生成、导出                      |
+| [modules/web/README.md](modules/web/README.md)                 | React 前端：页面、流程图画布、对话输出、演示模式                      |
+| [modules/scripts/README.md](modules/scripts/README.md)         | 端到端测试、界面检查、出包、规则检查、托盘程序                        |
+| [modules/skills/README.md](modules/skills/README.md)           | 随面板发布的内置 Skill                                                |
+| [modules/extension/README.md](modules/extension/README.md)     | 浏览器扩展：用本机已登录的 Gemini / ChatGPT 网页生图                  |
+| [cli-config.md](cli-config.md)                                 | 接入新 CLI 的配置文件格式和接入检查清单                               |
+| [model-catalog.md](model-catalog.md)                           | 模型的上下文窗口、最大输出、思考强度                                  |
+| [agent-catalog.md](agent-catalog.md)                           | 增删合并内置角色和工作流的判定标准                                    |
+| [agent-test-steps.md](agent-test-steps.md)                     | 测试步骤、角色参数、子对话隔离和合并编译                              |
+| [umg-export.md](umg-export.md)                                 | UI 设计的导出格式                                                     |
+| [lessons/README.md](lessons/README.md)                         | 项目教训：返工过的地方整理成按文件取用的规则                          |
+| [adr/README.md](adr/README.md)                                 | 架构决策记录（ADR）：为什么这么定、放弃了什么                         |
+| [review/2026-10-backlog.md](review/2026-10-backlog.md)         | 优化与补充清单：按优先级排好、可逐项勾选的待办                        |
 
 ## 文档怎么写
 

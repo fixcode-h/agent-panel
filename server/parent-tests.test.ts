@@ -1,5 +1,5 @@
 /**
- * 父对话测试队列（ADR 0018）：合并后按顺序在父对话目录里跑勾了「禁止子对话执行」的步骤，
+ * 父对话测试队列（ADR 0018 / ADR 0020）：合并后按顺序在父对话目录里跑范围是「全量，合并后由父对话跑」的步骤，
  * 一次只跑一批的一步（多个子对话同时合并时不并发跑重测试），
  * 成功交给子对话收尾，失败把失败的步骤和输出交回去修。
  */
@@ -21,7 +21,7 @@ const step = (id: string, name: string, command = 'run'): TestStep => ({
   note: '',
   enabled: true,
   merge: false,
-  runInParent: true,
+  scope: 'parent',
   quick: false,
 })
 

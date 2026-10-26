@@ -26,18 +26,23 @@ import { Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
 import { PageFrame } from '@/components/library/parts'
+import {
+  forDay,
+  loadSummaryPage,
+  prunePicks,
+  saveSummaryPage,
+  type Pick,
+  type ReportMode,
+  type SummaryPageState,
+} from '@/lib/summary-page'
 
 const NO_TEAM = new Set<string>()
 /** 生成中的轮询间隔：CLI 一轮要跑十几秒，再密也没用 */
 const POLL_MS = 700
 /** 轮询连续失败几次才判失败：面板重启一下、网络断一下不该把还在跑的报告算失败 */
 const POLL_FAIL_MAX = 3
-
-/** 报告要分析的一项：项目 + 该项目里选中的对话（空数组表示今天全部对话） */
-interface Pick {
-  projectId: string
-  taskIds: string[]
-}
+/** 编辑框里的草稿写回存档的间隔：和自动保存一样等停止输入，不必每敲一个字就写一次 localStorage */
+const DRAFT_SAVE_MS = 400
 
 /**
  * 格式自检的问题码 → 页面文案。写成逐条字面量而不是直接拿 shared 里的提示词文案，
@@ -154,17 +159,24 @@ function ProjectPickRow({
 function ReportEditor({
   id,
   md: initial,
+  mode,
+  onMode,
   onCopy,
   onSaved,
+  onDraft,
 }: {
   id: string
   md: string
+  /** 预览 / 编辑由页面记着：切页面回来后还是走之前的那个 tab */
+  mode: ReportMode
+  onMode: (mode: ReportMode) => void
   onCopy: (md: string) => void
   /** 保存成功后把新正文交回去：列表里的快照跟着变，不然再点回这份报告会拿旧内容覆盖 */
   onSaved: (md: string) => void
+  /** 还没保存的编辑也要记着：切页面回来不能变回保存前的正文 */
+  onDraft: (md: string) => void
 }) {
   const [md, setMd] = useState(initial)
-  const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   // 自动保存按报告 id 隔离：组件用 key 按 id 重挂，切走时补存的也是这份报告
   const { status } = useAutosave(
     md,
@@ -191,7 +203,7 @@ function ReportEditor({
         <Segmented
           label={t('报告视图')}
           value={mode}
-          onChange={setMode}
+          onChange={onMode}
           options={[
             { id: 'preview', label: t('预览') },
             { id: 'edit', label: t('编辑') },
@@ -209,7 +221,10 @@ function ReportEditor({
         <Textarea
           aria-label={t('报告内容')}
           value={md}
-          onChange={(e) => setMd(e.target.value)}
+          onChange={(e) => {
+            setMd(e.target.value)
+            onDraft(e.target.value)
+          }}
           className="min-h-[420px] rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-relaxed focus:ring-0"
         />
       ) : (
@@ -222,8 +237,13 @@ function ReportEditor({
 }
 
 export function SummaryPage() {
-  const { projects, clis, settings, tasks, loading } = useData()
+  const { projects, clis, settings, tasks, loading, tasksLoaded } = useData()
   const { day } = todayWindow()
+  // 切走再回来（甚至刷新）接着用上次的页面状态：先按今天校正口径，项目和任务加载完再剪掉已删的
+  const [restored] = useState(() => {
+    const s = loadSummaryPage()
+    return s ? forDay(s, day) : null
+  })
   const usable = useMemo(
     () =>
       orderClis(CLIS, settings?.cliOrder ?? []).filter((c) =>
@@ -231,23 +251,44 @@ export function SummaryPage() {
       ),
     [clis, settings],
   )
-  const [cli, setCli] = useState('')
+  const [cli, setCli] = useState(restored?.cli ?? '')
   /** 已加入的项目：顺序就是报告里分节的顺序 */
-  const [picks, setPicks] = useState<Pick[]>([])
+  const [picks, setPicks] = useState<Pick[]>(restored?.picks ?? [])
   /** 项目下拉当前选到哪个（点「增加」才真的加进去） */
   const [projectDraft, setProjectDraft] = useState('')
   const [job, setJob] = useState<SummaryJob | null>(null)
+  /** 生成中 / 刚生成完的 job id：存到本机，刷新后还能接着看进度或结果 */
+  const [jobId, setJobId] = useState(restored?.jobId ?? '')
   /** 当前打开的这份报告：id 用来保存，md 是它的内容 */
-  const [current, setCurrent] = useState<{ id: string; md: string } | null>(null)
+  const [current, setCurrent] = useState<{ id: string; md: string } | null>(restored?.report ?? null)
+  const [mode, setMode] = useState<ReportMode>(restored?.mode ?? 'preview')
   const [reports, setReports] = useState<SummaryRecord[]>([])
   const [error, setError] = useState('')
   /** 轮询失败次数：连续几次才判失败，见 POLL_FAIL_MAX */
   const pollFails = useRef(0)
   const [pollTick, setPollTick] = useState(0)
+  /** 存档里那份：几个 effect 各自只改自己负责的字段，报告正文可能是还没保存的草稿 */
+  const saved = useRef<SummaryPageState>({
+    day,
+    picks: restored?.picks ?? [],
+    report: restored?.report ?? null,
+    mode: restored?.mode ?? 'preview',
+    jobId: restored?.jobId ?? '',
+    cli: restored?.cli ?? '',
+  })
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 已经剪过一次已删的项目 / 对话：只在加载完的第一时间做，之后用户自己的删除不再提示 */
+  const pruned = useRef(false)
+  /** 存档里恢复出来的报告与 job：挂载时各只能校验一次，用稳定的引用免得 effect 重跑 */
+  const restoredReport = restored?.report ?? null
+  const restoredJob = restored?.jobId ?? ''
+  /** 「新报告已生成」只提示一次：StrictMode 下 effect 会双调，别弹两遍 */
+  const jobDoneNotified = useRef(false)
 
-  // 默认用设置里的「AI 处理」CLI（Assist 用的那个），没设置就用列表里第一个能用的
+  // 默认用设置里的「AI 处理」CLI（Assist 用的那个），没设置就用列表里第一个能用的；
+  // 存档里的 CLI 已经不可用（卸载 / 禁用了）时也回到默认的那个
   useEffect(() => {
-    if (cli || !usable.length) return
+    if (!usable.length || usable.some((c) => c.id === cli)) return
     const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     setCli(usable.find((c) => c.id === pref)?.id ?? usable[0].id)
   }, [cli, usable, settings])
@@ -271,12 +312,121 @@ export function SummaryPage() {
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
       .map((x) => ({ id: x.id, title: x.title || t('未命名对话') }))
 
+  // 恢复出来的报告可能已经不在本机（被挤出最近 SUMMARY_KEEP 份、数据目录重置、演示版刷新）：
+  // 留着它只会在自动保存时一直失败，也存不回来，所以收起并说明
   useEffect(() => {
     void api
       .summary()
-      .then((r) => setReports(r.reports))
+      .then((r) => {
+        setReports(r.reports)
+        if (!restoredReport || r.reports.some((x) => x.id === restoredReport.id)) return
+        setCurrent(null)
+        toast.info(t('上次打开的报告已经不在本机，无法继续编辑'))
+      })
       .catch((e) => setError((e as Error).message))
+  }, [restoredReport])
+
+  /** 编辑框里的草稿：先更新存档里的正文，停止输入后再写回本机 */
+  const draft = (md: string) => {
+    const report = saved.current.report
+    if (!report) return
+    saved.current = { ...saved.current, report: { id: report.id, md } }
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => {
+      draftTimer.current = null
+      saveSummaryPage(saved.current)
+    }, DRAFT_SAVE_MS)
+  }
+
+  // 选择、tab、CLI、生成中的 job 变了就写回：切页面 / 刷新后按这份恢复。
+  // 当前报告不在这里写：草稿已经比 current 新，写成 current 会把刚输入的内容退回去
+  useEffect(() => {
+    saved.current = { ...saved.current, picks, mode, jobId, cli }
+    saveSummaryPage(saved.current)
+  }, [picks, mode, jobId, cli])
+
+  // 换成另一份报告（刚生成完、点开最近的一份）才写 report。
+  // 同一份不再写：存档里的正文是编辑框的草稿，可能比 current.md 新（自动保存还没回写），
+  // 在自动保存窗口内点开同一份不能把刚输入的内容退回去
+  useEffect(() => {
+    const stored = saved.current.report
+    if (current && stored?.id === current.id) return
+    saved.current = { ...saved.current, report: current }
+    saveSummaryPage(saved.current)
+  }, [current])
+
+  // 切走、刷新（F5）、关标签页时把防抖还没写回的草稿补上：下一次进来靠它恢复。
+  // React 的卸载清理在浏览器卸载页面时不会跑，所以还要听 pagehide
+  useEffect(() => {
+    const flush = () => {
+      if (!draftTimer.current) return
+      clearTimeout(draftTimer.current)
+      draftTimer.current = null
+      saveSummaryPage(saved.current)
+    }
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      flush()
+    }
   }, [])
+
+  // 接回上次切走时还在跑的生成：在跑就接着轮询，已结束就按结果收尾，不让用户以为什么都没发生
+  useEffect(() => {
+    if (!restoredJob) return
+    void api
+      .summaryJob(restoredJob)
+      .then((j) => {
+        if (j.status !== 'done') {
+          setJob(j)
+          if (j.status === 'failed') setError(j.error ?? t('生成失败'))
+          return
+        }
+        setJobId('')
+        if (!j.reportId) return
+        // 用户回来后可能已经自己点开了一份报告（包括恢复之后才点开的）：那份不能被顶掉。
+        // 判据读最新的存档，不能只看挂载时恢复的那份
+        const watching = saved.current.report
+        if (watching && watching.id !== j.reportId) {
+          if (!jobDoneNotified.current) {
+            jobDoneNotified.current = true
+            toast.info(t('新报告已经生成，可在「最近的报告」里找到'))
+          }
+          // 列表也刷新一下，否则提示指向的还是旧列表
+          void api
+            .summary()
+            .then((r) => setReports(r.reports))
+            .catch(() => {})
+          return
+        }
+        // 生成完但切走时还没来得及打开：按服务端的最新正文打开这份报告
+        void api
+          .summary()
+          .then((r) => {
+            setReports(r.reports)
+            const rec = r.reports.find((x) => x.id === j.reportId)
+            if (rec) setCurrent({ id: rec.id, md: rec.md })
+          })
+          .catch(() => {})
+      })
+      .catch(() => {
+        // 找不到这次生成（服务端重启、演示版刷新）：不能把「生成中」留在页面上
+        setJobId('')
+      })
+  }, [restoredJob])
+
+  // 项目和任务都加载完后剪掉已经不在的选择：加载中先按存档渲染，免得刚回来就闪一下。
+  // 只在这一时间点做：之后用户自己删的那个不需要再提示
+  useEffect(() => {
+    if (loading || !tasksLoaded || pruned.current) return
+    pruned.current = true
+    const r = prunePicks(picks, projects, tasks)
+    if (!r.removedProjects && !r.removedTasks) return
+    setPicks(r.picks)
+    // 不静默改用户的选择：说清楚哪几项已经没了
+    if (r.removedProjects) toast.info(t('{n} 个项目已不存在，已从选择里移除', { n: r.removedProjects }))
+    if (r.removedTasks) toast.info(t('{n} 个对话已不存在，已从选择里移除', { n: r.removedTasks }))
+  }, [loading, tasksLoaded, picks, projects, tasks])
 
   // 生成中轮询：完成时切到新报告，失败时把 CLI 的报错显示出来
   useEffect(() => {
@@ -332,15 +482,17 @@ export function SummaryPage() {
     setError('')
     // 新的一次从清零开始：上一次连续失败的次数不能带到这一次的第一次轮询
     pollFails.current = 0
+    // 上一次的 job 先从存档里清掉：这次请求失败时，刷新后不该再去接着看旧的那次
+    setJobId('')
     try {
-      setJob(
-        await api.generateSummary({
-          projects: picks.map((x) => ({ projectId: x.projectId, taskIds: x.taskIds })),
-          cli,
-          model: '',
-          effort: '',
-        }),
-      )
+      const next = await api.generateSummary({
+        projects: picks.map((x) => ({ projectId: x.projectId, taskIds: x.taskIds })),
+        cli,
+        model: '',
+        effort: '',
+      })
+      setJob(next)
+      setJobId(next.id)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -505,8 +657,11 @@ export function SummaryPage() {
           key={current.id}
           id={current.id}
           md={current.md}
+          mode={mode}
+          onMode={setMode}
           onCopy={copy}
           onSaved={(md) => setReports((prev) => prev.map((r) => (r.id === current.id ? { ...r, md } : r)))}
+          onDraft={draft}
         />
       )}
 

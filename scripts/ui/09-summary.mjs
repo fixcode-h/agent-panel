@@ -48,6 +48,32 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ timeout: 3000 })
     .catch(() => errors.push('工作总结：加入第二个项目后已选数量没有变成 2'))
 
+  // 切到别的页面再回来：已选的项目（顺序和名字）原样还在（页面状态存在本机，见 web/src/lib/summary-page.ts）
+  const pickNames = async () =>
+    p.getByRole('button', { name: /^删除项目/ }).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  const beforeSwitch = await pickNames()
+  await p.getByRole('button', { name: '计划', exact: true }).first().click()
+  await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
+  await p
+    .getByText('已选 2 个')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('工作总结：切到别的页面再回来，已选的项目没了'))
+  const afterSwitch = await pickNames()
+  if (afterSwitch.join('|') !== beforeSwitch.join('|'))
+    errors.push(`工作总结：切页面回来后项目变了（${beforeSwitch.join('、')} → ${afterSwitch.join('、')}）`)
+  await check(p, '工作总结-切页面回来')
+
+  // 刷新（F5）后选择也还在：存到本机才成立
+  await p.reload()
+  await p
+    .getByRole('button', { name: /^删除项目/ })
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('工作总结：刷新后已选的项目没了'))
+  if ((await pickNames()).join('|') !== beforeSwitch.join('|')) errors.push('工作总结：刷新后选择的项目和刷新前不一样')
+  await check(p, '工作总结-刷新后恢复')
+
   // 每个项目下挑对话：下拉 + 增加，加进去的能在这一项里删掉。
   // 先在两个项目里找一个今天有对话的（演示数据里商城前台今天跑过）
   const taskPicker = p.getByLabel('选择要分析的对话').first()
@@ -111,6 +137,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
   await check(p, '工作总结-编辑')
 
+  // 改几个字但不点保存：切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
+  await area.fill(text + '\n\n（还没保存的草稿）')
+  await p.getByRole('button', { name: '计划', exact: true }).first().click()
+  await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
+  const areaBack = p.getByLabel('报告内容')
+  await areaBack.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：切页面回来后没有回到编辑 tab'))
+  const draftBack = await areaBack.inputValue().catch(() => '')
+  if (!draftBack.includes('（还没保存的草稿）')) errors.push('工作总结：切页面回来后编辑器里还没保存的改动丢了')
+  await check(p, '工作总结-草稿跨页面保留')
+
   // 复制：写到剪贴板，并弹出成功提示
   await p.getByRole('radio', { name: '预览' }).click()
   await p.getByRole('button', { name: '复制' }).first().click()
@@ -122,6 +158,30 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
   if (!copied.includes('## 三、今日小结')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
   await check(p, '工作总结-复制')
+
+  // 项目在别的地方被删掉：回到这一页时它从选择里消失并提示一次，不静默也不拿着错数据去生成。
+  // 演示版的数据库在 localStorage 里（改完要整页导航，只改 hash 会被内存里的数据盖回去）
+  await p.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('agent-panel-demo-v3') || 'null')
+    const state = JSON.parse(localStorage.getItem('summary-page:v1') || 'null')
+    const picked = state?.picks?.[0]?.projectId
+    if (!db || !picked) return
+    db.projects = db.projects.filter((x) => x.id !== picked)
+    localStorage.setItem('agent-panel-demo-v3', JSON.stringify(db))
+  })
+  await p.reload()
+  await p
+    .getByText('1 个项目已不存在，已从选择里移除')
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('工作总结：恢复时没有提示已不存在的项目被移除'))
+  if (await p.getByRole('button', { name: /^删除项目/ }).count()) errors.push('工作总结：已经不存在的项目还留在选择里')
+  await p
+    .getByText('已选 0 个')
+    .first()
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('工作总结：移除已不存在的项目后已选数量没变'))
+  await check(p, '工作总结-已删项目被过滤')
 
   // 手机宽度：项目列表和报告都要能正常换行
   await p.setViewportSize({ width: 480, height: 900 })

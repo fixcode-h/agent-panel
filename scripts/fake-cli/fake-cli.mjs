@@ -641,7 +641,7 @@ if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
 if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
   await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
-// 子对话自己跑项目测试步骤（ADR 0018）：命令和项目里一条 runInParent=false 的步骤完全一致，
+// 子对话自己跑项目测试步骤（ADR 0018 / 0020）：命令和项目里一条 scope 不是 parent 的步骤完全一致，
 // 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
 // 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝
 if (input.includes('BG_TESTSTEP') && input.includes('run_background')) {

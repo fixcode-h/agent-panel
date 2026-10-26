@@ -223,7 +223,7 @@ const HELPER_STOP_POLL_MS = 150
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
-/** 项目目录是不是 Git 仓库（ADR 0018 的「禁止子对话执行」只对 Git 生效）：判定和缓存同 isP4 */
+/** 项目目录是不是 Git 仓库（ADR 0018 / 0020 的 parent 范围只对 Git 生效）：判定和缓存同 isP4 */
 const gitDirs = new Map<string, Promise<boolean>>()
 const isGit = (dir: string) => {
   let got = gitDirs.get(dir)
@@ -237,7 +237,7 @@ const isGit = (dir: string) => {
 }
 
 /**
- * 「禁止子对话执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 范围是 parent 的步骤在这个对话里由谁跑（ADR 0018 / 0020）：只对 Git 项目生效。
  * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
  * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
  * 步骤按项目当前设置判断（用户口径：调用前现读配置）：改了项目设置，进行中的对话下一次判断就按新配置走；
@@ -1018,7 +1018,7 @@ export function tasksApi(deps: {
     (job, result) => {
       void (async () => {
         await settling.get(job.id)
-        // 「禁止子对话执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
+        // 范围为 parent 的测试步骤（ADR 0018 / 0020）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
         if (
           await parentTests.finishJob(job.id, {
             ok: job.state === 'done',
@@ -1176,7 +1176,7 @@ export function tasksApi(deps: {
   const buildFor = new Map<string, { parent: string; children: string[] }>()
 
   /**
-   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「禁止子对话执行」的步骤。
+   * 父对话测试（ADR 0018 / 0020）：子对话合回后，面板在父对话目录里按顺序跑范围为 parent 的步骤（全量单测、全量界面检查、e2e）。
    * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
    * 后台命令本身还走父对话目录的独占队列，和 UE 编译这类同样吃资源的命令共用一条队。
    * 成功才让子对话收尾（标完成、删分支），失败把报错和来源交回它修。
@@ -1210,7 +1210,7 @@ export function tasksApi(deps: {
       const lines = testRunLines(tk.testRuns)
       await childMerged(
         run.childId,
-        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「禁止子对话执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        `【父对话测试通过】父对话在它自己的目录里跑完了范围为「全量，合并后由父对话跑」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
         parent ? { peer: await peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
       )
     },
@@ -1398,11 +1398,11 @@ export function tasksApi(deps: {
         ok: false,
         info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
       }
-    // 合回已完成、父对话在跑勾了「禁止子对话执行」的步骤（ADR 0018）：等它跑完，不能重复请求
+    // 合回已完成、父对话在跑范围为 parent 的步骤（ADR 0018 / 0020）：等它跑完，不能重复请求
     if (parentTesting(childId, tk))
       return {
         ok: false,
-        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「禁止子对话执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
+        info: '没有请求收尾：你的分支已经合回，父对话正在跑范围为「全量，合并后由父对话跑」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
       }
     if (tk.requests.length || tk.parentAsks?.length)
       return {
@@ -1762,7 +1762,7 @@ export function tasksApi(deps: {
     if (tk.wrapRequest?.state === 'testing')
       return {
         ok: false,
-        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「禁止子对话执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
+        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它范围为「全量，合并后由父对话跑」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
       }
     if (tk.wrapRequest?.state !== 'requested')
       return {
@@ -1809,7 +1809,7 @@ export function tasksApi(deps: {
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
     }
-    // 勾了「禁止子对话执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
+    // 范围为 parent 的步骤（ADR 0018 / 0020）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
     const parentSteps = await parentStepsOf(tk)
     if (parentSteps.length) {
@@ -1818,7 +1818,7 @@ export function tasksApi(deps: {
         ok: true,
         info: [
           `已把子对话「${tk.title}」合回：${r.info}`,
-          `合回还没收尾：它勾了「禁止子对话执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
+          `合回还没收尾：它范围为「全量，合并后由父对话跑」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
           req.build
             ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
             : '',
