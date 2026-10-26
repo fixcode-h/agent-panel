@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { DATA_KINDS, DataUsage, MemoryUsage, type DataKind } from '../shared/data.ts'
+import { DATA_KINDS, DataUsage, MemoryUsage, canExport, type DataKind } from '../shared/data.ts'
 import { Settings } from '../shared/schema.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { getSettings } from './settings.ts'
@@ -15,7 +15,10 @@ import { t } from '../shared/i18n.ts'
 const PATHS: Record<DataKind, string[]> = {
   config: ['settings.json', 'config'],
   projects: ['projects'],
-  tasks: ['tasks', 'chats'],
+  // 对话记录（tasks/）和工作目录（chats/<对话 id>）分开算：工作目录里是 Agent 下载的网页快照、
+  // 装好的依赖，几百 MB，不能算进任务记录也不能跟着备份导出
+  tasks: ['tasks'],
+  workspace: ['chats'],
   uploads: ['uploads'],
   cache: ['cache'],
 }
@@ -157,9 +160,7 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
   })
 
   routes.get('/export', async (c) => {
-    const kinds = (c.req.query('kinds') ?? '')
-      .split(',')
-      .filter((k): k is DataKind => DATA_KINDS.some((x) => x.id === k && x.id !== 'cache'))
+    const kinds = (c.req.query('kinds') ?? '').split(',').filter(canExport)
     if (!kinds.length) return c.json({ error: t('请选择要导出的数据') }, 400)
     const { files: out, skipped } = await readBackupFiles(
       (await Promise.all(kinds.map(kindFiles))).flat().map((f) => f.rel),
@@ -181,7 +182,12 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
     const p = Backup.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('不是 Agent 面板导出的数据文件') }, 400)
     if (busy()) return c.json({ error: busy() }, 409)
-    const { kinds, files: fs } = p.data
+    // 只接受能导出的分类：工作目录、独立分支、缓存都不在备份里，伪造一份也别想把 chats/ 清掉
+    const kinds = p.data.kinds.filter(canExport)
+    const fs = p.data.files
+    // 旧版本的「任务记录」把对话工作目录（chats/）也算在里面，旧备份里会带着这些路径：
+    // 它们是执行产物，不写进数据目录，但也不能因此让整份备份导入失败
+    for (const rel of Object.keys(fs)) if (rel === 'chats' || rel.startsWith('chats/')) delete fs[rel]
     const bad = Object.keys(fs).find((r) => !allowed(r, kinds))
     if (bad) return c.json({ error: t('数据文件里有不认识的路径：{path}', { path: bad }) }, 400)
     // 导出时去掉了隧道 token：导入时沿用本机现有的，免得导入后隧道连不上

@@ -59,7 +59,14 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
-import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
+import {
+  BUILD_OUTPUTS,
+  CleanupReport,
+  DATA_KINDS,
+  WorktreeCleanup,
+  type DataKind,
+  type MemoryUsage,
+} from '@shared/data'
 import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
@@ -816,7 +823,7 @@ function persist() {
 }
 
 // ---- 设置里的「数据」：演示没有用户目录，按浏览器里存的演示数据估算占用，导入导出用同样的备份格式 ----
-const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) => Record<string, unknown>> = {
+const DEMO_DATA_FILES: Record<'config' | 'projects' | 'tasks', (d: Db) => Record<string, unknown>> = {
   config: (d) => ({
     'settings.json': d.settings ?? Settings.parse({}),
     'config/agents.json': d.agents,
@@ -880,6 +887,54 @@ function demoDataMemory(d: Db, now = Date.now()): MemoryUsage {
   }
 }
 
+/**
+ * 清理面板的演示数据：对话工作目录 + 构建产物。
+ * 字段和正式的 CleanupReport 一致，演示里看不见的那几个大小是编的
+ */
+function demoCleanup(): CleanupReport {
+  const MB = 1024 * 1024
+  return CleanupReport.parse({
+    chats: {
+      bytes: 316 * MB,
+      files: 1648,
+      top: [
+        {
+          id: 'demo-flight',
+          title: '抓网页快照',
+          bytes: 302 * MB,
+          files: 1560,
+          trashed: false,
+          running: false,
+          orphan: false,
+        },
+        {
+          id: 'demo-old',
+          title: '调研过的一个旧对话',
+          bytes: 12 * MB,
+          files: 88,
+          trashed: true,
+          running: false,
+          orphan: false,
+        },
+        // 记录已经删了、目录还在（删对话时文件被占用）：界面上要能列出来清掉
+        { id: 'demo-orphan', title: '', bytes: 2 * MB, files: 40, trashed: false, running: false, orphan: true },
+      ],
+      more: 0,
+    },
+    builds: BUILD_OUTPUTS.map((b, i) => ({ id: b.id, bytes: (i + 1) * 24 * MB, present: true })),
+  })
+}
+
+/** 独立分支这块单独一个接口（真机要跑 git 判定、递归四 GB），演示数据同样分开给 */
+function demoWorktrees(): WorktreeCleanup {
+  const MB = 1024 * 1024
+  return WorktreeCleanup.parse({
+    bytes: 3.6 * 1024 * MB,
+    stale: [{ dir: 'worktrees/agent-panel/demo-1', bytes: 210 * MB, reason: '任务已收口、改动都已合回原分支' }],
+    staleBytes: 210 * MB,
+  })
+}
+
 function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
   if (!action && method === 'GET') {
     const kinds = DATA_KINDS.map((k) => {
@@ -888,6 +943,11 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
         return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
       }
       if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      // 工作目录和下面的清理清单用同一份演示数据，两个数字对得上
+      if (k.id === 'workspace') {
+        const c = demoCleanup()
+        return { id: k.id, files: c.chats.files, bytes: c.chats.bytes }
+      }
       const files = Object.values(DEMO_DATA_FILES[k.id](d))
       return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
     })
@@ -895,6 +955,14 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
   }
   // 内存曲线按采样间隔刷新：演示版也返回同样的结构，曲线和「AI 分析」都能试
   if (action === 'memory' && method === 'GET') return demoDataMemory(d)
+  // 清理：演示数据只给一份固定的清单，点了清理不真的改（下次刷新还是这样）
+  if (action === 'cleanup' && method === 'GET') return demoCleanup()
+  if (action === 'cleanup/worktrees' && method === 'GET') return demoWorktrees()
+  if (action === 'cleanup/chat' && method === 'POST') return { ok: true, bytes: 302 * 1024 * 1024 }
+  if (action === 'cleanup/worktrees' && method === 'POST')
+    return { ok: true, removed: 1, failed: 0, bytes: 210 * 1024 * 1024 }
+  if (action === 'cleanup/builds' && method === 'POST')
+    return { ok: true, bytes: BUILD_OUTPUTS.length * 24 * 1024 * 1024 }
   if (action === 'reveal') fail('在线演示不能打开本机目录')
   if (action === 'clear') {
     const k = (body as { kind: DataKind }).kind
@@ -2104,7 +2172,7 @@ function route(method: string, url: string, body: unknown): unknown {
     demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
     return a
   }
-  if (res === 'data') return demoData(d, id, method, body, query)
+  if (res === 'data') return demoData(d, [id, sub].filter(Boolean).join('/'), method, body, query)
   if (res === 'project-docs') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     if (sub === 'optimize') return startDemoDocJob(body)
