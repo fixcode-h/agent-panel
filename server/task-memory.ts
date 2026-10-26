@@ -15,7 +15,7 @@ import {
   taskTrendText,
   type TaskContext,
 } from '../shared/memory-analysis.ts'
-import { runTree } from '../shared/run-usage.ts'
+import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
 import { SAMPLE_INTERVAL_MS, loadHistory, summarize, type StoredSample } from './exec/proc-stats.ts'
 import { registerFixTopic } from './fix.ts'
 
@@ -63,11 +63,11 @@ export function taskMemoryApi(deps: {
     const tk = await deps.tasks.get(id)
     if (!tk) return bad(c, t('任务不存在'))
     try {
-      const rootId = tk.rootTaskId || tk.id
       const panel = await deps.panel(id)
-      // 和内存曲线用同一份历史、同一个 rootId：曲线上的两条线就是报告里说的那两个数
-      const points = summarize((deps.history ?? loadHistory)(), rootId).slice(-MAX_POINTS)
-      const tree = runTree(tk, await deps.tasks.list())
+      const all = await deps.tasks.list()
+      // 和进程面板、内存曲线用同一份历史、同一个子树口径：当前对话 + 它下面的子对话
+      const points = summarize((deps.history ?? loadHistory)(), subtreeTaskIds(all, tk.id)).slice(-MAX_POINTS)
+      const tree = runTree(tk, all)
       const kids = tree.filter((x) => x.id !== tk.id)
       const running = tree.filter((x) => x.status === 'running').length
       const contexts: TaskContext[] = tree

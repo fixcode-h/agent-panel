@@ -17,9 +17,9 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { fmtDuration, toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { useChildOpen, useRunOpen } from './child-open'
+import { useChildOpen, useJobOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -207,7 +207,8 @@ export function RowShell({
   /**
    * 详情紧跟标题左对齐（占剩余宽度），而不是被标题挤到行尾；耗时仍在行的最右边。
    * 只给「详情只是说明文字、整行没有展开收起」的行用：详情区会挡掉点击（stopPropagation），
-   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」
+   * 用到有 onToggle 的行上就会让点详情不展开，违反「没有窗口的条目点哪里都展开收起」。
+   * 传了 rowOpen 时详情区也算入口，不再挡点击
    */
   detailStart,
   ms,
@@ -215,9 +216,24 @@ export function RowShell({
   onToggle,
   onOpen,
   openTip,
+  titleTip,
   failed,
+  action,
   className,
   children,
+  /**
+   * 整行都是打开入口（子对话行、子任务行）：动作名、标题、详情和耗时点了都打开，有 hover 和手型。
+   * 不传时行为完全不变——工具行、后台命令仍然点哪里都展开收起；行尾的 action 按钮
+   * （终止）始终 stopPropagation，点它不会连带打开窗口
+   */
+  rowOpen,
+  /** 行最左边的额外控件（子对话切换下拉），在图标和动作名之前 */
+  leading,
+  /**
+   * 行自己的宽度当容器查询的基准：子对话行按这一行的实际宽度决定显示哪些补充信息，
+   * 不能只看视口（右栏开着时 1280 的行只有 300 左右，1024 收着右栏时还有 700 多）
+   */
+  container,
 }: {
   glyph: React.ReactNode
   verb?: React.ReactNode
@@ -236,30 +252,48 @@ export function RowShell({
   onToggle?: () => void
   onOpen?: () => void
   openTip?: string
+  rowOpen?: () => void
+  leading?: React.ReactNode
+  container?: boolean
+  /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
+  titleTip?: string
   failed?: boolean
+  /** 耗时后面的操作按钮（子任务的终止）：自己处理点击，不触发展开收起 */
+  action?: React.ReactNode
   className?: string
   children?: React.ReactNode
 }) {
   const toggle = onToggle
+  // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
+  const activate = rowOpen ?? toggle
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
-      {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开 */}
+      {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
+          子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
-        onClick={toggle}
+        onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 font-mono text-xs text-muted',
-          toggle && 'cursor-pointer hover:text-fg',
+          'group flex w-full min-w-0 items-center px-2.5 py-1.5 font-mono text-xs text-muted',
+          container && '@container',
+          // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
+          rowOpen ? 'gap-1.5' : 'gap-2',
+          activate && 'cursor-pointer hover:text-fg',
+          rowOpen && 'transition-colors hover:bg-sel/60',
         )}
       >
+        {leading}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            toggle?.()
+            activate?.()
           }}
-          disabled={!toggle}
+          disabled={!activate}
           aria-expanded={toggle ? open : undefined}
-          title={toggle ? (open ? t('收起') : t('展开')) : undefined}
+          // 整行打开时动作名也是入口：读屏名用「打开子对话…」，title 留给标题按钮，
+          // 界面检查靠 title 找标题，两个按钮都写会让它量错位置
+          aria-label={rowOpen ? openTip : undefined}
+          title={rowOpen ? undefined : toggle ? (open ? t('收起') : t('展开')) : undefined}
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
@@ -287,7 +321,10 @@ export function RowShell({
                   e.stopPropagation()
                   onOpen()
                 }}
-                title={openTip}
+                title={titleTip || openTip}
+                // 只有整行打开的子对话行才用 openTip 当读屏名：别的行（接收消息、工具）标题本身就是名字，
+                // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
+                aria-label={rowOpen ? openTip : undefined}
                 className={cn(
                   'min-w-0 cursor-pointer truncate text-left text-fg/75 decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
@@ -296,16 +333,19 @@ export function RowShell({
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate', titleClass)}>{title}</span>
+              <span className={cn('min-w-0 truncate', titleClass)} title={titleTip}>
+                {title}
+              </span>
             )
           ) : null}
         </span>
-        {/* 详情左对齐：从标题后面开始排，和标题之间隔一道竖线——标题是可点的，这段只是说明文字。
-            点详情不触发任何动作（哪怕整行带展开），不和标题的点击目标糊成一块 */}
+        {/* 详情左对齐：从标题后面开始排，和标题之间隔一道竖线。普通行里这段只是说明文字，
+            点它不触发任何动作（哪怕整行带展开）；整行打开的行（rowOpen）里它和标题一样属于入口 */}
         {detail && detailStart ? (
           <span
             className="flex min-w-0 flex-1 items-center border-l border-line-strong pl-2"
-            onClick={(e) => e.stopPropagation()}
+            // 整行打开时详情也属于入口（子对话行、子任务行）：不拦点击，点了直接冒泡到行上
+            onClick={rowOpen ? undefined : (e) => e.stopPropagation()}
           >
             {detail}
           </span>
@@ -313,6 +353,11 @@ export function RowShell({
           detail
         )}
         {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
+        {action && (
+          <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+            {action}
+          </span>
+        )}
         {toggle && (
           <ChevronRight
             className={cn(
@@ -365,11 +410,58 @@ export function ToolRow({
   return <ToolLine view={view} task={task} />
 }
 
+/**
+ * 一条消息里的一串工具调用：相邻几次把同一段话交给不同子对话的合成一行「发送消息」（见 groupTools），
+ * 展开列出每个收件人
+ */
+export function ToolRows({
+  tools,
+  task,
+}: {
+  tools: ToolUse[]
+  task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'>
+}) {
+  return (
+    <>
+      {groupTools(tools).map((g, i) =>
+        g.length === 1 ? <ToolRow key={i} tool={g[0]} task={task} /> : <SendGroupRow key={i} tools={g} task={task} />,
+      )}
+    </>
+  )
+}
+
+function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'status'> }) {
+  const views = tools.map((x) => ({ tool: x, view: toolView(x) }))
+  const send = views[0].view!.send!
+  const targets: SendTarget[] = views.map(({ tool, view }) => ({
+    name: view?.send?.to ?? '',
+    ...(view?.child && { child: view.child }),
+    ...(tool.output?.trim() && { receipt: tool.output.trim() }),
+    ...(tool.failed && { failed: true }),
+  }))
+  const pending = (x: ToolUse) => x.running || (x.ms === undefined && !!x.startedAt && task?.status === 'running')
+  const done = tools.filter((x) => x.ms !== undefined)
+  return (
+    <PeerLine
+      dir="out"
+      kind={send.kind}
+      name={send.to}
+      subject=""
+      body={send.body}
+      failed={tools.every((x) => x.failed)}
+      running={tools.some(pending)}
+      ms={done.length === tools.length ? Math.max(...done.map((x) => x.ms!)) : undefined}
+      targets={targets}
+    />
+  )
+}
+
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
+  const openJob = useJobOpen()
   const openChild = useChildOpen()
   const openRunPane = useRunOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
@@ -379,7 +471,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   // 放到后台的命令：调用本身马上就返回了，命令还在后台跑时照样转圈、走表，跑完面板把这一行换成真实的用时和结果
   const ids = view.job ? [view.job] : (view.jobs ?? [])
   const mine = ids.length ? (task?.jobs ?? []).filter((j) => ids.includes(j.id)) : []
-  const bg = mine.length > 0
+  // 有结果之前一直转圈：任务上的后台命令列表还没推到（刚交出去、页面刚打开）也一样，不能先显示成完成
+  const bg = mine.length > 0 || !!view.waiting
   // 申请的编译有几条：从最早开始跑的那条算；都还在排队就写「排队中」
   const starts = mine.map((j) => (j.startedAt ? Date.parse(j.startedAt) : 0)).filter(Boolean)
   const jobStart = starts.length ? Math.min(...starts) : 0
@@ -388,6 +481,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
+  // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
+  const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
@@ -405,27 +500,44 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     </span>
   ) : queued ? (
     <span className="shrink-0 text-subtle">{t('排队中')}</span>
+  ) : bg && !mine.length ? (
+    <span className="shrink-0 text-subtle">{t('等结果')}</span>
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
   // 「启动工作流」这一行点开什么：子对话面板里就地换成这次运行的视图（能返回），别的位置还是弹运行窗口
   const openRunView = openRunPane ? () => openRunPane(tool) : () => setWin('plan')
   // 点标题打开什么：子对话、这次运行、文件、命令行、差异，或者看完整输出的窗口
-  const target: { open: () => void; tip: string } | undefined = file
-    ? { open: () => openFile?.(file), tip: t('查看文件') }
-    : view.child && openChild
-      ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
-      : view.startsRun && task?.id
-        ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
-          // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口
-          { open: openRunView, tip: t('打开这次运行的对话') }
-        : tool.kind === 'run'
-          ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
-          : tool.kind === 'edit'
-            ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
-            : hasWindow(tool)
-              ? { open: () => setWin('out'), tip: t('打开窗口') }
-              : undefined
+  // 后台命令窗口（run_background / request_build 那一行）：和运行区那一行打开的是同一个窗口，
+  // 命令跑完、运行区那行消失以后，这里仍然能点到——事后回看最终输出和退出码靠它
+  const bgJob = view.job && openJob && task?.id ? view.job : ''
+  const target: { open: () => void; tip: string } | undefined = bgJob
+    ? {
+        open: () =>
+          openJob?.({
+            id: bgJob,
+            command: input,
+            // 先按还在跑画（窗口打开后立刻拉真实状态，拉到 done 就换成完成 + 退出码）
+            state: 'running',
+            startedAt: '',
+          }),
+        tip: t('打开命令行窗口'),
+      }
+    : file
+      ? { open: () => openFile?.(file), tip: t('查看文件') }
+      : view.child && openChild
+        ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
+        : view.startsRun && task?.id
+          ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
+            // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口
+            { open: openRunView, tip: t('打开这次运行的对话') }
+          : tool.kind === 'run'
+            ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
+            : tool.kind === 'edit'
+              ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
+              : hasWindow(tool)
+                ? { open: () => setWin('out'), tip: t('打开窗口') }
+                : undefined
   // 行内展开时的输出：长的只留前一段，后面提示去窗口里看
   const short = output.length > 400 ? `${output.slice(0, 400).trimEnd()}…` : output
   // 命令还在跑：展开时只跟最新的几行，像终端一样往下走；跑完再按现有高度显示完整输出
@@ -449,6 +561,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}
         openTip={target?.tip}
+        titleTip={titleTip}
         failed={tool.failed}
       >
         {

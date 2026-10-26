@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { BookmarkPlus, Check, Loader2, Palette } from 'lucide-react'
 import type { DesignKind, SavedStyle, SavedStyleInput } from '@shared/design'
 import { api } from '@/lib/api'

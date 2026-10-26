@@ -11,9 +11,11 @@ process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'proc-stats-'))
 
 const {
   aggregateByRoot,
+  aggregateByTask,
   cleanableClis,
   commandSummary,
   descendants,
+  ownedEntries,
   pushSample,
   subtree,
   sumRss,
@@ -74,6 +76,40 @@ test('按对话汇总：不同对话各算各的，没有归属的登记不参�
   assert.equal(out.size, 2)
 })
 
+test('按任务汇总：父任务和子对话各算自己登记的进程，子对话能单独取到', () => {
+  const map = mapOf([10, 1, 100], [11, 10, 200], [20, 1, 500])
+  const out = aggregateByTask([entry(10, owner('p1', 'p1')), entry(20, owner('c1', 'p1')), entry(99, undefined)], map)
+  assert.deepEqual(out.get('p1'), { rss: 300, pids: 2 })
+  assert.deepEqual(out.get('c1'), { rss: 500, pids: 1 })
+  assert.equal(out.size, 2)
+})
+
+test('按任务汇总：父子都登记了同一个 pid 时只算一次', () => {
+  const map = mapOf([10, 1, 100], [11, 10, 200])
+  const out = aggregateByTask([entry(10, owner('p1', 'p1')), entry(10, owner('c1', 'p1'))], map)
+  assert.deepEqual(out.get('p1'), { rss: 300, pids: 2 })
+  assert.equal(out.has('c1'), false)
+})
+
+test('进程归属：只取当前子树任务的登记，祖先、兄弟和无归属的面板动作都不算', () => {
+  const entries = [
+    entry(1, owner('p1', 'p1')),
+    entry(2, owner('c1', 'p1')),
+    entry(3, owner('c2', 'p1')),
+    entry(4, owner('g1', 'p1')),
+    entry(5, undefined),
+  ]
+  assert.deepEqual(
+    ownedEntries(entries, new Set(['c1', 'g1'])).map((e) => e.owner?.taskId),
+    ['c1', 'g1'],
+  )
+  // 打开子对话：父对话和兄弟的登记都不在列表里
+  assert.deepEqual(
+    ownedEntries(entries, new Set(['c1'])).map((e) => e.pid),
+    [2],
+  )
+})
+
 test('命令行摘要：临时目录和 MCP 配置换掉，限制长度', () => {
   const out = commandSummary(
     'node C:\\Users\\u\\.agent-panel\\cache\\cli-run\\abc\\panel.mjs --mcp-config {"mcpServers":{}}',
@@ -126,18 +162,18 @@ test('清理白名单：只清任务已经不在跑的、命令行仍像面板�
   assert.deepEqual(gone, [])
 })
 
-test('清理白名单：只看自己对话的登记', () => {
+test('清理白名单：只看当前对话及附属的任务登记', () => {
   const panelArgv = 'node /home/u/.agent-panel/cache/cli-run/x/panel.mjs'
-  const map = mapOf([10, 1, 100, panelArgv], [20, 1, 100, panelArgv])
+  const map = mapOf([10, 1, 100, panelArgv], [20, 1, 100, panelArgv], [30, 1, 100, panelArgv])
   const { targets } = cleanableClis({
-    entries: [entry(10, owner('dead', 'other')), entry(20, owner('dead2', 'mine'))],
+    entries: [entry(10, owner('dead', 'other')), entry(20, owner('p1', 'p1')), entry(30, owner('c1', 'p1'))],
     map,
     aliveTask: () => false,
-    rootTaskId: 'mine',
+    taskIds: new Set(['p1', 'c1']),
   })
   assert.deepEqual(
     targets.map((x) => x.pid),
-    [20],
+    [20, 30],
   )
 })
 
@@ -191,15 +227,20 @@ test('内存历史：环形缓冲超过容量时丢掉最旧的', () => {
   )
 })
 
-test('内存历史：按对话汇总，server 一起算进合计', () => {
-  assert.deepEqual(summarize([sample(1, 500), sample(2, 700)], 'r1'), [
-    { t: 1, server: 1000, cli: 500, total: 1500 },
-    { t: 2, server: 1000, cli: 700, total: 1700 },
+test('内存历史：合计只算这个对话的 CLI，面板 server 单独给出', () => {
+  assert.deepEqual(summarize([sample(1, 500), sample(2, 700)], ['r1']), [
+    { t: 1, server: 1000, cli: 500, total: 500 },
+    { t: 2, server: 1000, cli: 700, total: 700 },
   ])
-  // 这个对话没有 CLI 进程时是 0，不是未知
-  assert.deepEqual(summarize([sample(1, 500)], 'other')[0], { t: 1, server: 1000, cli: 0, total: 1000 })
+  // 新样本里这些任务确实没有进程：0，不是未知
+  assert.deepEqual(summarize([sample(1, 0, { roots: [], tasks: [] })], ['other'])[0], {
+    t: 1,
+    server: 1000,
+    cli: 0,
+    total: 0,
+  })
   // 快照取不到：cli 和 total 都是 null（曲线断开，不掉到 0）
-  assert.deepEqual(summarize([sample(1, 0, { roots: [], unavailable: true })], 'r1')[0], {
+  assert.deepEqual(summarize([sample(1, 0, { roots: [], unavailable: true })], ['r1'])[0], {
     t: 1,
     server: 1000,
     cli: null,
@@ -207,14 +248,41 @@ test('内存历史：按对话汇总，server 一起算进合计', () => {
   })
 })
 
+test('内存历史：旧样本只有根任务聚合时，子对话是未知而不是 0（不制造 0 起步的假曲线）', () => {
+  // 升级前的样本：只有 roots，没有 tasks。子对话 c1 的 id 和 roots 的键对不上
+  const old = [sample(1, 500, { roots: [{ root: 'p1', rss: 500, pids: 1 }] })]
+  assert.deepEqual(summarize(old, ['c1'])[0], { t: 1, server: 1000, cli: null, total: null })
+  // 父对话自己能还原整树，照常给数字
+  assert.equal(summarize(old, ['p1'])[0].cli, 500)
+  // 旧样本里整台机器都没有进程：子对话也是 0，不是未知
+  assert.equal(summarize([sample(1, 0, { roots: [] })], ['c1'])[0].cli, 0)
+})
+
+test('内存历史：新采样按任务分开记，子对话只加自己这一支', () => {
+  const tasks = (t: number, list: NonNullable<StoredSample['tasks']>) => sample(t, 0, { roots: [], tasks: list })
+  const list = [
+    tasks(1, [
+      { taskId: 'p1', rss: 100, pids: 1 },
+      { taskId: 'c1', rss: 40, pids: 1 },
+      { taskId: 'c2', rss: 60, pids: 1 },
+    ]),
+  ]
+  // 打开子对话：只有它自己的 40 MB，父对话和兄弟都不算
+  assert.equal(summarize(list, new Set(['c1']))[0].cli, 40)
+  // 打开父对话：它和全部后代加起来
+  assert.equal(summarize(list, new Set(['p1', 'c1', 'c2']))[0].cli, 200)
+  // 一个匹配的任务都没有：0，不是未知
+  assert.equal(summarize(list, new Set(['x']))[0].cli, 0)
+})
+
 test('内存历史：按时间范围裁', () => {
   const list = [sample(1, 1), sample(2, 2), sample(3, 3)]
   assert.deepEqual(
-    summarize(list, 'r1', { from: 2 }).map((x) => x.t),
+    summarize(list, ['r1'], { from: 2 }).map((x) => x.t),
     [2, 3],
   )
   assert.deepEqual(
-    summarize(list, 'r1', { to: 2 }).map((x) => x.t),
+    summarize(list, ['r1'], { to: 2 }).map((x) => x.t),
     [1, 2],
   )
 })

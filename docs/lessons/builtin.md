@@ -12,8 +12,8 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 改内置定义要带升级
 
-- 规则：改 `shared/builtin/` 的定义时同步 `shared/builtin/legacy.ts`，已装副本的升级要幂等（跑两次结果一样），并补升级测试。必备角色（`core.ts` 的 `CORE_AGENTS`）例外，启动时直接同步，只要别改参数 key。
-- 起因：5edc8a2 补漏掉的升级测试。
+- 规则：内置角色启动时直接按定义同步，改定义不用登记旧版本，别改参数 key。内置工作流靠副本的 `builtinHash` 判断没改过，改定义时旧流程仍追加进 `LEGACY_WORKFLOWS`。升级要幂等并补测试。**不要再写「和历史版本逐字一致才升级」**：漏登记一版就永远卡住。
+- 起因：5edc8a2；2026-10-25 四个内置角色卡在没登记的 10-21 版（ADR 0015）。
 - 防线：`server/builtin.test.ts`。
 
 ## 自制 Skill 改名或合并后要清用户目录的旧副本

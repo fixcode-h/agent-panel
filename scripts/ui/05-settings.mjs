@@ -12,7 +12,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '设置' }).first().click()
   // 默认项断言当前真正默认的那一个（不写成「或」，默认再变时要红）：演示后端固定返回 win32 和
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
-  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）'])
+  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）', '子对话没有输出时自动询问'])
+  if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '字体', exact: true }).click()

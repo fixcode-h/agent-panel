@@ -15,7 +15,7 @@ import {
   WrapText,
   X,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import type { FileDiff } from '@shared/files'
 import { t } from '@shared/i18n'

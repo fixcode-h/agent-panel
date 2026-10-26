@@ -12,6 +12,18 @@ import http from 'node:http'
 import path from 'node:path'
 import { runShard } from './harness.mjs'
 
+/**
+ * 列表时间（updatedAt）比较允许的抖动，单位毫秒。
+ *
+ * updatedAt 是毫秒精度的 ISO 字符串，但两条落盘路径各自 new Date() 取时间，分片并行、负载高时
+ * 会出现 1~2ms 的差（本轮实测：正常情况下 0ms，曾在一次全量跑里出现过 1ms——done 侧晚写了 1ms），
+ * 这不是产品行为变了。
+ * 真出错时（预热退出把列表时间改成现在）updatedAt 会晚至少一个 presence 宽限期——e2e 里
+ * AGENT_PANEL_PRESENCE_GRACE_MS=1200（见 harness.mjs）；所以 200ms 两侧余量都够：它比 1~2ms 的
+ * 抖动宽一百倍，又比 1200ms 的真实变化窄得多——抖动不会把它插穿，真实变化却跑不掉。
+ */
+const UPDATED_AT_TOLERANCE_MS = 200
+
 await runShard('本机请求与设置', async (api) => {
   const {
     baseUrl: base,
@@ -27,6 +39,7 @@ await runShard('本机请求与设置', async (api) => {
     sleep,
     waitFor,
     waitDone,
+    waitTask,
     calls,
     readLog,
     step,
@@ -129,7 +142,16 @@ await runShard('本机请求与设置', async (api) => {
 
   // 重命名；停止后继续执行
   assert.equal((await call('PATCH', `/tasks/${sim.id}`, { title: '新标题' })).title, '新标题')
-  let rs = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '停一下再继续' })
+  let rs = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'SLOW 停一下再继续',
+  })
+  // 等 CLI 真的起来再停，而且这一轮必须够长：假 CLI 默认那一轮只要 150ms，光是等它启动再发 stop
+  // 仍然可能抢不到（stop 请求到达时它已经跑完，任务已是 done，stop 成了 no-op，断言 stopped 假失败）。
+  // 带 SLOW 让这一轮持续十来秒，stop 才必然落在它执行期间（和 03-chat.mjs 的停止用例同一写法）
+  await waitFor(() => calls().some((c) => c.input.includes('停一下再继续')), { label: '停止用例的任务开始执行' })
   await call('POST', `/tasks/${rs.id}/stop`)
   rs = await waitDone(rs.id)
   assert.equal(rs.status, 'stopped')
@@ -467,6 +489,55 @@ await runShard('本机请求与设置', async (api) => {
       ['Command Code 账号 1'],
       '已经保存过的凭据不重复保存',
     )
+    // 已经登录着再点登录：CLI 只说一句 Already logged in 就退出（退出码 0），凭据文件一个字节都不改，
+    // 不能因此报「登录没有完成」；它带 SGR 转义打印的输出在界面上也不能剩 [32m 这类残码
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        clis: {
+          commandcode: {
+            env: [
+              { key: 'FAKE_AUTH', value: 'commandcode' },
+              { key: 'FAKE_AUTH_ALREADY', value: '1' },
+            ],
+          },
+        },
+      }),
+    )
+    const ccAuth = path.join(homeDir, '.commandcode', 'auth.json')
+    const ccBefore = readFileSync(ccAuth, 'utf8')
+    await call('POST', '/accounts/commandcode/login')
+    j = await waitLogin('commandcode')
+    assert.equal(j.status, 'done', `已登录时再登录要算成功：${JSON.stringify(j)}`)
+    assert.equal(j.error, undefined)
+    assert.equal(readFileSync(ccAuth, 'utf8'), ccBefore, '这条路径 CLI 不改凭据文件')
+    assert.match(j.output, /Already logged in/)
+    assert.doesNotMatch(j.output, /\u001b|\[32m|\[1m|\[22m|\[39m/, '登录输出里没有 ANSI 残码')
+    assert.equal((await list('commandcode')).live.loggedIn, true, '仍是原来那个账号')
+
+    // 真的没登进去（用户关掉了浏览器里的授权页）：CLI 退出码 0 但什么都没写，仍要报失败，
+    // 而且文案说的是「没有找到登录凭据」，不是「没有完成登录（退出码 0）」
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        clis: {
+          commandcode: {
+            env: [
+              { key: 'FAKE_AUTH', value: 'commandcode' },
+              { key: 'FAKE_AUTH_NO_CREDENTIALS', value: '1' },
+            ],
+          },
+        },
+      }),
+    )
+    await call('POST', '/accounts/commandcode/logout')
+    await call('POST', '/accounts/commandcode/login')
+    j = await waitLogin('commandcode')
+    assert.equal(j.status, 'failed', `退出码 0 但没凭据仍算失败：${JSON.stringify(j)}`)
+    assert.match(j.error, /没有找到登录凭据/, '文案要说清是没有凭据')
+    assert.match(j.error, /Login cancelled/, '尾部输出也带上，方便用户看到 CLI 说了什么')
 
     // API：读模型列表（在服务端请求），选用后模型下拉只列这个 API 的模型，地址和密钥按 CLI 的规则传进去
     const apiSrv = http.createServer((req, res) => {
@@ -580,6 +651,76 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(claudeSettings.env?.ANTHROPIC_BASE_URL, 'https://claude.example')
     assert.equal(claudeSettings.env?.ANTHROPIC_AUTH_TOKEN, 'sk-ant', 'Bearer 方式写进 settings.json')
     assert.deepEqual(claudeCall.apiEnv.anthropic, [null, null, null], '不再走环境变量')
+    // API 的并发上限：设成 1 时第二个对话排队（显示在等哪个 API），第一个结束才开始；排队时能停止
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        apis: apis.map((a) => ({ ...a, maxConcurrent: 1 })),
+        clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } },
+      }),
+    )
+    const slowChat = (prompt) =>
+      call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: '',
+        cli: 'codex',
+        model: 'relay-1',
+        prompt,
+      })
+    const qa = await slowChat('SLOW 并发上限 A')
+    await waitFor(async () => calls().some((x) => x.kind === 'codex' && x.input?.includes('并发上限 A')), {
+      label: '第一个对话的 CLI 启动',
+    })
+    const qb = await slowChat('并发上限 B')
+    const qc = await slowChat('并发上限 C')
+    const queued = await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${qc.id}`)
+        return t.apiWait ? t : null
+      },
+      { label: '第三个对话排队等 API' },
+    )
+    assert.equal(queued.status, 'running', '排队中的对话仍算在运行（输入框是停止按钮）')
+    // reason：这一轮还没开始、真的在排队等名额（'start'）；让出后拿回排上的队是 'yield'，界面不显示成排队
+    assert.deepEqual(queued.apiWait, { api: '中转 A', ahead: 1, reason: 'start' })
+    assert.ok(!calls().some((x) => x.input?.includes('并发上限 B')), '名额满了：第二个对话的 CLI 还没启动')
+    await call('POST', `/tasks/${qc.id}/stop`)
+    const qcDone = await waitDone(qc.id)
+    assert.equal(qcDone.apiWait, undefined, '停止后不再显示排队')
+    assert.equal((await call('GET', `/tasks/${qb.id}`)).apiWait?.ahead, 0, '前面的停了，后面的往前挪')
+    await waitDone(qa.id)
+    await waitDone(qb.id)
+    const qaEnd = calls().find((x) => x.input?.includes('并发上限 A'))?.end
+    const qbStart = calls().find((x) => x.input?.includes('并发上限 B'))
+    assert.ok(qbStart && qaEnd && qbStart.start >= qaEnd, '第二个对话等第一个结束才开始')
+    assert.ok(!calls().some((x) => x.input?.includes('并发上限 C')), '排队时停止的对话不再启动')
+    // 对话派两个子任务、名额是 1：对话等子任务时让出名额，子任务一个一个跑，跑完交回对话接着做，不会互相等死
+    // 子任务用默认 CLI（Claude Code，走「Claude 中转」）：对话也用它，父子抢同一个 API 的名额
+    const sp = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'claude',
+      model: 'claude-x',
+      prompt: 'SPAWN_TWO_SUBS 派两个子任务',
+    })
+    const spDone = await waitTask(
+      sp.id,
+      (t) => t.steps.filter((s) => s.slot === 'sub' && s.status === 'done').length === 2,
+      60000,
+    )
+    assert.equal(spDone.status, 'done')
+    const subRuns = calls().filter((x) => x.input?.includes('SLOW 限流子任务'))
+    assert.equal(subRuns.length, 2)
+    const [s1, s2] = subRuns.sort((a, b) => a.start - b.start)
+    assert.ok(s1.end && s2.start >= s1.end, '名额是 1：第二个子任务等第一个结束才开始')
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } } }),
+    )
     // 协议对不上的 API 不会交给 CLI（Codex 选了 Anthropic 的 API）
     await call('PUT', '/settings', withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap2' } } }))
     assert.notEqual((await call('GET', '/clis/codex/models?refresh=1')).auth, 'api')
@@ -742,7 +883,7 @@ await runShard('本机请求与设置', async (api) => {
     assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
     await call('PUT', '/settings', base0)
     step(
-      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式把地址和密钥写进 CLI 自己的配置、执行只传模型、协议对不上不用',
+      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息；已登录再登录仍算成功且输出无 ANSI 残码，退 0 但没凭据报「没有找到登录凭据」）；API 模式把地址和密钥写进 CLI 自己的配置、执行只传模型、协议对不上不用',
     )
   }
 
@@ -843,7 +984,7 @@ await runShard('本机请求与设置', async (api) => {
     const piExt = calls()
       .filter((x) => x.kind === 'pi')
       .map((x) => x.args[x.args.indexOf('-e') + 1])
-      .find((x) => x && /agent-panel-panel/.test(x))
+      .find((x) => x && /agent-panel-(agent-)?panel/.test(x))
     assert.ok(piExt && path.isAbsolute(piExt) && piExt.startsWith(dataDir), `桥接扩展在面板的数据目录里：${piExt}`)
     assert.ok(!existsSync(piExt), 'Pi 的桥接扩展用完删掉了')
     // 提问开关关着：不弹出，工具让模型自己选
@@ -1008,6 +1149,48 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(w.status, 'done', '切走宽限到了，CLI 自己结束')
   }
   step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
+
+  // 保活中切换界面语言：系统提示词和 mod 的环境变量固定在旧进程里，新消息的提醒却是新语言；
+  // 不能把下一句交给旧进程，要按新语言重开（和换 CLI / 模型同一条路）
+  {
+    const beforePids = new Set(readLog(log).map((x) => x.pid))
+    const cur = await call('GET', '/settings')
+    let w = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: '',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '先看代码',
+    })
+    await call('POST', `/tasks/${w.id}/seen`, {})
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
+    w = await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${w.id}`)
+        return t.awaitingUser ? t : null
+      },
+      { timeout: 20000, label: '切换语言前停在等下一句' },
+    )
+    const first = readLog(log).filter((x) => !beforePids.has(x.pid))
+    assert.equal(new Set(first.map((x) => x.pid)).size, 1, '第一轮只有一个进程')
+    const n = readLog(log).length
+    await call('PUT', '/settings', { ...cur, language: 'en' })
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
+    const next = await waitFor(
+      () => {
+        const rows = readLog(log).slice(n)
+        return rows.length ? rows : null
+      },
+      { timeout: 20000, label: '语言变了以后按新语言重开进程' },
+    )
+    assert.ok(!first.some((x) => x.pid === next[0].pid), '语言变了不能把下一句交给旧语言的进程')
+    assert.match(next[0].input, /Keep writing both your reply and your reasoning \/ thinking in English/)
+    await call('PUT', '/settings', { ...cur })
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
+    await waitDone(w.id, 15000)
+  }
+  step('保活中切换界面语言：不再交给旧进程，按新语言重开')
 
   // ---- 正在执行的对话不受回收限制：两个时长和保活上限只管「回复完停在等下一句」的空闲会话 ----
   {
@@ -1298,7 +1481,13 @@ await runShard('本机请求与设置', async (api) => {
     assert.equal(w.prewarming, false)
     assert.equal(w.working, false)
     assert.equal(w.turnDoneAt, askedDoneAt, '切走让预热退出不算完成一轮')
-    assert.equal(w.updatedAt, askedUpdatedAt, '预热退出不改列表时间')
+    const updatedAtDrift = Math.abs(Date.parse(w.updatedAt) - Date.parse(askedUpdatedAt))
+    // 值为空或非法时差值是 NaN，不会小于等于容差，断言会失败；消息里标成 <非法> 好一眼看出是值缺失而不是漂移
+    const driftText = Number.isNaN(updatedAtDrift) ? '<非法>' : `${updatedAtDrift}ms`
+    assert.ok(
+      updatedAtDrift <= UPDATED_AT_TOLERANCE_MS,
+      `预热退出不改列表时间（差了 ${driftText}，容差 ${UPDATED_AT_TOLERANCE_MS}ms：${askedUpdatedAt} → ${w.updatedAt}）`,
+    )
   }
   step('预热接口：切换 CLI/模型后按新选择重开进程，停在等下一句；打开对话页不再自动预热')
 
@@ -1318,6 +1507,29 @@ await runShard('本机请求与设置', async (api) => {
     const listed = (await lib('skill')).items.find((i) => i.cli === 'claude' && i.name === 'lib-demo')
     assert.equal(listed.description, '库里的测试 Skill')
     assert.deepEqual((await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')).files, ['notes.md'])
+    // 附件的读写：先写一个子目录里的文件，再读回来，最后在树里看到它
+    const entry = { cli: 'claude', kind: 'skill', name: 'lib-demo', path: 'references/api.md' }
+    await call('PUT', '/library/entry', { ...entry, content: '# API\n' })
+    const got = await call('GET', `/library/entry?${new URLSearchParams(entry)}`)
+    assert.equal(got.content, '# API\n')
+    assert.equal(got.exists, true)
+    const withTree = await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')
+    assert.deepEqual(
+      withTree.tree.entries.map((e) => `${e.type}:${e.path}`),
+      ['dir:references', 'file:notes.md', 'file:references/api.md'],
+    )
+    assert.deepEqual(withTree.files, ['notes.md', 'references/api.md'], 'files 等于树里的文件路径')
+    // 路径穿越被拒
+    await assert.rejects(
+      call('GET', `/library/entry?cli=claude&kind=skill&name=lib-demo&path=${encodeURIComponent('../evil')}`),
+      /相对路径/,
+    )
+    // 改名后旧路径没了、新路径读得到；删掉后从树里消失
+    await call('POST', '/library/entry/rename', { ...entry, from: 'references/api.md', to: 'references/doc.md' })
+    assert.equal((await call('GET', `/library/entry?${new URLSearchParams(entry)}`)).exists, false)
+    await call('DELETE', `/library/entry?${new URLSearchParams({ ...entry, path: 'references/doc.md' })}`)
+    const cleaned = await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')
+    assert.deepEqual(cleaned.files, ['notes.md'])
     await assert.rejects(
       put({ cli: 'claude', kind: 'skill', name: 'lib-demo', create: true, content: 'x' }),
       /已经有了/,

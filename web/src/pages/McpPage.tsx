@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { CircleAlert, CircleCheck, Globe, Loader2, Pencil, Plus, Terminal, Trash2, Wand2, Zap } from 'lucide-react'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '@shared/library'
 import { t } from '@shared/i18n'

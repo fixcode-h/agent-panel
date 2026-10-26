@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 /** 一条推荐：当前值 → 推荐值，apply 只改草稿（保存项目设置后才生效） */
-interface Rec {
+export interface Rec {
   id: string
   label: string
   reason: string
@@ -70,7 +70,7 @@ const paramText = (v: ParamValue | undefined) =>
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** 把初始化结果和当前草稿对照，整理成按设置页分组的推荐项 */
-function buildGroups(
+export function buildGroups(
   p: ProjectProposal,
   draft: ProjectInput,
   ctx: { workflows: Workflow[]; activeId: string; fallbackId: string; globalFormat: FileFormat },
@@ -98,9 +98,11 @@ function buildGroups(
       apply: (d) => ({ ...d, description: p.description }),
     })
 
+  // 推荐可能是很久以前保存的：里面引用的工作流后来被删了就不能再应用，否则保存会失败
+  const exists = (id: string) => ctx.workflows.some((w) => w.id === id)
   // 默认工作流：AI 评估出的那个；没评估出时按项目类型落到内置的「通用项目」/「UE 项目」
-  const def = p.workflows.find((w) => w.verdict === 'default')
-  const defId = def?.id || ctx.fallbackId
+  const def = p.workflows.find((w) => w.verdict === 'default' && exists(w.id))
+  const defId = def?.id || (exists(ctx.fallbackId) ? ctx.fallbackId : '')
   const wf: Rec[] = []
   if (defId)
     wf.push({
@@ -112,7 +114,7 @@ function buildGroups(
       same: draft.workflowId === defId || (!draft.workflowId && ctx.activeId === defId),
       apply: (d) => ({ ...d, workflowId: defId, workflowIds: d.workflowIds.filter((x) => x !== defId) }),
     })
-  for (const o of p.workflows.filter((w) => w.verdict === 'optional'))
+  for (const o of p.workflows.filter((w) => w.verdict === 'optional' && exists(w.id)))
     wf.push({
       id: `optional:${o.id}`,
       label: t('可选工作流「{name}」', { name: o.name }),
@@ -225,8 +227,138 @@ function buildGroups(
   ].filter((g) => g.recs.length)
 }
 
+/**
+ * 推荐项按设置页分组列出：每项「当前值 → 推荐值」，能单独应用，也能整组应用。
+ * onlyPending 时只列和当前设置不同的项（重开设置时对照保存的分析报告用）
+ */
+export function RecGroups({
+  groups,
+  apply,
+  applied,
+  onlyPending,
+}: {
+  groups: Group[]
+  apply: (recs: Rec[]) => void
+  applied: Set<string>
+  onlyPending?: boolean
+}) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const shown = groups
+    .map((g) => ({ ...g, recs: onlyPending ? g.recs.filter((r) => !r.same) : g.recs }))
+    .filter((g) => g.recs.length)
+  return (
+    <>
+      {shown.map((g) => {
+        const left = g.recs.filter((r) => !r.same).length
+        return (
+          <section key={g.id} className="overflow-hidden rounded-xl border bg-card">
+            <header className="flex items-center gap-2 border-b bg-panel/60 px-3.5 py-2">
+              <span className="text-[0.8125rem] font-medium">{g.title}</span>
+              <span className="text-xs text-subtle">{left ? t('{n} 项待应用', { n: left }) : t('已一致')}</span>
+              {left > 0 && g.recs.length > 1 && (
+                <Button size="sm" variant="ghost" className="ml-auto" onClick={() => apply(g.recs)}>
+                  {t('应用本组')}
+                </Button>
+              )}
+            </header>
+            <ul className="divide-y">
+              {g.recs.map((r) => (
+                <li key={r.id} className="flex flex-col gap-2 px-3.5 py-3">
+                  <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                    <div className="flex min-w-[180px] flex-[1_1_200px] flex-col gap-0.5">
+                      <span className="text-[0.8125rem] font-medium">{r.label}</span>
+                      {r.reason && <span className="text-[0.75rem] leading-relaxed text-subtle">{r.reason}</span>}
+                    </div>
+                    <div className="flex min-w-0 flex-[2_1_260px] items-start gap-2 text-[0.78125rem]">
+                      {!r.same && (
+                        <>
+                          <span className="min-w-0 flex-1 break-words text-subtle line-through decoration-subtle/50">
+                            {r.current}
+                          </span>
+                          <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
+                        </>
+                      )}
+                      <span className={cn('min-w-0 flex-1 break-words', r.same ? 'text-muted' : 'font-medium')}>
+                        {r.next}
+                      </span>
+                    </div>
+                    <div className="flex w-[92px] shrink-0 justify-end">
+                      {!r.same ? (
+                        <Button size="sm" variant="secondary" onClick={() => apply([r])}>
+                          {t('应用')}
+                        </Button>
+                      ) : applied.has(r.id) ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-success">
+                          <Check className="h-3.5 w-3.5" />
+                          {t('已应用')}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-subtle">{t('已一致')}</span>
+                      )}
+                    </div>
+                  </div>
+                  {r.detail && (
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        className="flex w-fit cursor-pointer items-center gap-1 text-xs text-accent hover:underline"
+                        aria-expanded={open.has(r.id)}
+                        onClick={() =>
+                          setOpen((s) => {
+                            const n = new Set(s)
+                            if (n.has(r.id)) n.delete(r.id)
+                            else n.add(r.id)
+                            return n
+                          })
+                        }
+                      >
+                        <ChevronRight
+                          className={cn('h-3.5 w-3.5 transition-transform', open.has(r.id) && 'rotate-90')}
+                        />
+                        {t('查看推荐的步骤')}
+                      </button>
+                      {open.has(r.id) && r.detail}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      })}
+    </>
+  )
+}
+
 const FILE_ICON = { created: FilePlus2, updated: FilePen, kept: File }
 const fileLabel = (a: keyof typeof FILE_ICON) => ({ created: t('新建'), updated: t('修改'), kept: t('未改') })[a]
+
+/** 初始化写过的文件：新建 / 修改 / 未改，每个附一句做了什么 */
+export function InitFileList({ files }: { files: ProjectProposal['files'] }) {
+  return files.length ? (
+    <ul className="flex max-h-[18rem] flex-col divide-y overflow-y-auto rounded-lg border">
+      {files.map((f) => {
+        const Icon = FILE_ICON[f.action]
+        return (
+          <li key={f.path} className="flex items-start gap-2.5 px-3 py-2">
+            <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <code className="truncate font-mono text-[0.75rem]">{f.path}</code>
+              {f.summary && <span className="text-[0.71875rem] text-subtle">{f.summary}</span>}
+            </span>
+            <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
+              {fileLabel(f.action)}
+            </Badge>
+          </li>
+        )
+      })}
+    </ul>
+  ) : (
+    <span className="text-xs text-subtle">
+      {t('Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。')}
+    </span>
+  )
+}
 
 /**
  * 项目设置的「AI 初始化」页：没初始化时说明会做什么并开始；初始化完成后列出写过的文件，
@@ -265,7 +397,6 @@ export function ProjectInitPanel({
   onStart: () => void
 }) {
   const [applied, setApplied] = useState<Set<string>>(new Set())
-  const [open, setOpen] = useState<Set<string>>(new Set())
   const groups = result ? buildGroups(result, draft, { workflows, activeId, fallbackId, globalFormat }) : []
   const all = groups.flatMap((g) => g.recs)
   const pending = all.filter((r) => !r.same)
@@ -275,6 +406,10 @@ export function ProjectInitPanel({
     setDraft((d) => todo.reduce((acc, r) => r.apply(acc), d))
     setApplied((s) => new Set([...s, ...todo.map((r) => r.id)]))
   }
+  // 上次初始化的推荐随项目保存：重开设置时按同一套 same 判定算出和当前设置不同的项
+  const saved = draft.initResult
+  const savedGroups = saved ? buildGroups(saved, draft, { workflows, activeId, fallbackId, globalFormat }) : []
+  const savedPending = savedGroups.flatMap((g) => g.recs).filter((r) => !r.same)
   const skipped = result?.workflows.filter((w) => w.verdict === 'skip') ?? []
   const startButton = (
     <Button
@@ -333,14 +468,36 @@ export function ProjectInitPanel({
                 {fromDir
                   ? t('目录里已有初始化写好的 AGENTS.md 和文档，可以直接保存；想要推荐的设置可以重新初始化。')
                   : draft.initializedAt
-                    ? t('项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。')
+                    ? saved
+                      ? t('分析报告只保留一份，重新初始化会替换它；已有的文档只补不覆盖。')
+                      : t('项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。')
                     : canStart
                       ? t('初始化完成并应用后，才能点「确认」保存项目设置。')
                       : t('先在「常规」里选好本地目录。')}
               </span>
             </div>
-            {startButton}
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
+              {draft.initializedAt && saved && (
+                <Button
+                  size="sm"
+                  disabled={!savedPending.length}
+                  title={savedPending.length ? undefined : t('当前设置已经和这份分析的推荐值一致')}
+                  onClick={() => apply(savedPending)}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  {savedPending.length
+                    ? t('应用这份分析的设置（{n} 项）', { n: savedPending.length })
+                    : t('已应用这份分析的设置')}
+                </Button>
+              )}
+              {startButton}
+            </div>
           </div>
+          {draft.initializedAt && !fromDir && !saved && (
+            <span className="rounded-lg border border-dashed px-3 py-2 text-[0.75rem] leading-relaxed text-subtle">
+              {t('这次初始化没有留下分析报告，重新初始化后可以在这里对照推荐值。')}
+            </span>
+          )}
           {!draft.initializedAt && (
             <ol className="grid gap-2 sm:grid-cols-2">
               {[
@@ -371,6 +528,20 @@ export function ProjectInitPanel({
         </section>
       )}
 
+      {!result && draft.initializedAt && saved && savedPending.length > 0 && (
+        <>
+          <div className="flex flex-col">
+            <span className="text-[0.875rem] font-semibold">
+              {t('和推荐值不同的设置（{n} 项）', { n: savedPending.length })}
+            </span>
+            <span className="text-xs text-subtle">
+              {t('项目设置改过之后和分析报告的推荐不一样了：可以单项应用，应用后点「确认」保存。')}
+            </span>
+          </div>
+          <RecGroups groups={savedGroups} apply={apply} applied={applied} onlyPending />
+        </>
+      )}
+
       {result && (
         <>
           <section className="flex flex-col gap-2.5 rounded-xl border bg-card p-4">
@@ -384,29 +555,7 @@ export function ProjectInitPanel({
               )}
               <span className="ml-auto">{startButton}</span>
             </div>
-            {result.files.length ? (
-              <ul className="flex max-h-[18rem] flex-col divide-y overflow-y-auto rounded-lg border">
-                {result.files.map((f) => {
-                  const Icon = FILE_ICON[f.action]
-                  return (
-                    <li key={f.path} className="flex items-start gap-2.5 px-3 py-2">
-                      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <code className="truncate font-mono text-[0.75rem]">{f.path}</code>
-                        {f.summary && <span className="text-[0.71875rem] text-subtle">{f.summary}</span>}
-                      </span>
-                      <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
-                        {fileLabel(f.action)}
-                      </Badge>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <span className="text-xs text-subtle">
-                {t('Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。')}
-              </span>
-            )}
+            <InitFileList files={result.files} />
           </section>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -426,84 +575,7 @@ export function ProjectInitPanel({
             </Button>
           </div>
 
-          {groups.map((g) => {
-            const left = g.recs.filter((r) => !r.same).length
-            return (
-              <section key={g.id} className="overflow-hidden rounded-xl border bg-card">
-                <header className="flex items-center gap-2 border-b bg-panel/60 px-3.5 py-2">
-                  <span className="text-[0.8125rem] font-medium">{g.title}</span>
-                  <span className="text-xs text-subtle">{left ? t('{n} 项待应用', { n: left }) : t('已一致')}</span>
-                  {left > 0 && g.recs.length > 1 && (
-                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => apply(g.recs)}>
-                      {t('应用本组')}
-                    </Button>
-                  )}
-                </header>
-                <ul className="divide-y">
-                  {g.recs.map((r) => (
-                    <li key={r.id} className="flex flex-col gap-2 px-3.5 py-3">
-                      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-                        <div className="flex min-w-[180px] flex-[1_1_200px] flex-col gap-0.5">
-                          <span className="text-[0.8125rem] font-medium">{r.label}</span>
-                          {r.reason && <span className="text-[0.75rem] leading-relaxed text-subtle">{r.reason}</span>}
-                        </div>
-                        <div className="flex min-w-0 flex-[2_1_260px] items-start gap-2 text-[0.78125rem]">
-                          {!r.same && (
-                            <>
-                              <span className="min-w-0 flex-1 break-words text-subtle line-through decoration-subtle/50">
-                                {r.current}
-                              </span>
-                              <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-subtle" />
-                            </>
-                          )}
-                          <span className={cn('min-w-0 flex-1 break-words', r.same ? 'text-muted' : 'font-medium')}>
-                            {r.next}
-                          </span>
-                        </div>
-                        <div className="flex w-[92px] shrink-0 justify-end">
-                          {!r.same ? (
-                            <Button size="sm" variant="secondary" onClick={() => apply([r])}>
-                              {t('应用')}
-                            </Button>
-                          ) : applied.has(r.id) ? (
-                            <span className="inline-flex items-center gap-1 text-xs text-success">
-                              <Check className="h-3.5 w-3.5" />
-                              {t('已应用')}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-subtle">{t('已一致')}</span>
-                          )}
-                        </div>
-                      </div>
-                      {r.detail && (
-                        <div className="flex flex-col gap-2">
-                          <button
-                            type="button"
-                            className="flex w-fit cursor-pointer items-center gap-1 text-xs text-accent hover:underline"
-                            aria-expanded={open.has(r.id)}
-                            onClick={() =>
-                              setOpen((s) => {
-                                const n = new Set(s)
-                                if (n.has(r.id)) n.delete(r.id)
-                                else n.add(r.id)
-                                return n
-                              })
-                            }
-                          >
-                            <ChevronRight
-                              className={cn('h-3.5 w-3.5 transition-transform', open.has(r.id) && 'rotate-90')}
-                            />
-                            {t('查看推荐的步骤')}
-                          </button>
-                          {open.has(r.id) && r.detail}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )
-          })}
+          <RecGroups groups={groups} apply={apply} applied={applied} />
 
           {skipped.length > 0 && (
             <section className="flex flex-col gap-1.5 rounded-xl border border-dashed px-3.5 py-3">

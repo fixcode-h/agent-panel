@@ -8,35 +8,53 @@ export function contentPaneWidth() {
   return v > 0 ? v : 1000
 }
 
-/** 可拖动的栏宽：记在本机，下次打开还是这个宽度；上限可以按窗口宽度算 */
-export function usePaneWidth(key: string, initial: number, min: number, max: number | (() => number)) {
+/** 本机记着的栏宽（没记过或不是数就是 0） */
+function storedWidth(key: string) {
+  try {
+    return Number(localStorage.getItem(`pane:${key}`)) || 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * 可拖动的栏宽：记在本机，下次打开还是这个宽度；上限可以按窗口宽度算。
+ * initial 传函数时每次「回到默认」都重新算一遍（例如按容器一半，容器尺寸要挂上之后才知道）。
+ */
+export function usePaneWidth(key: string, initial: number | (() => number), min: number, max: number | (() => number)) {
   const limit = () => Math.max(min, typeof max === 'function' ? max() : max)
   const clamp = (n: number) => Math.round(Math.min(limit(), Math.max(min, n)))
+  const defaultWidth = () => (typeof initial === 'function' ? initial() : initial)
   // 存过的宽度原样恢复：上限只限制拖动，不改变已经习惯的布局（窗口变窄时也先保持）
-  const [width, setWidth] = useState(() => {
-    try {
-      const v = Number(localStorage.getItem(`pane:${key}`))
-      return v || initial
-    } catch {
-      return initial
-    }
-  })
+  const [saved, setSaved] = useState(() => storedWidth(key))
+  const [width, setWidth] = useState(() => saved || defaultWidth())
   /** 正在拖动：拖动时不要给宽度加过渡，否则跟不上鼠标 */
   const [dragging, setDragging] = useState(false)
   const save = (n: number) => {
     try {
       localStorage.setItem(`pane:${key}`, String(n))
     } catch {}
+    setSaved(Math.round(n))
   }
   return {
     width,
     set: (n: number) => setWidth(clamp(n)),
     save,
-    reset: () => (setWidth(initial), save(initial)),
+    reset: () => {
+      // 照样过 clamp：默认值（例如容器一半）在极端容器宽度下可能超出拖动上限，
+      // 靠「下限 >= PANE_GAP 所以一半一定不越界」这种隐含前提以后会随常量调整失效
+      const next = clamp(defaultWidth())
+      setWidth(next)
+      save(next)
+    },
+    /** 没存过时按初值（重新量）改宽度：只在挂载后用量得到真实容器的场合用，不写本机 */
+    fit: (n: number) => setWidth(clamp(n)),
     min,
     max: limit(),
     dragging,
     setDragging,
+    /** 这台机器上有没有拖动记下的宽度：没有时调用方可以按容器尺寸定初值（见 TaskView 的 useHalfPane） */
+    stored: saved > 0,
   }
 }
 

@@ -6,6 +6,7 @@ import { defaultSettings } from '../shared/settings.ts'
 
 import { CACHE_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
+import { setApiLimits } from './api-slots.ts'
 
 const FILE = dataPath('settings.json')
 let cache: Settings | null = null
@@ -20,7 +21,19 @@ export async function getSettings(): Promise<Settings> {
   }
   const parsed = Settings.safeParse(raw)
   if (parsed.success) {
-    cache = parsed.data
+    const s = parsed.data
+    // 后台命令的并发默认值从 16 提到 64：老设置里存着的正好是旧默认值，按「默认值升级」改掉，
+    // 否则这次改动对老用户没有效果。显式设过其他值的保持不动
+    if (s.backgroundLimit === 16) {
+      s.backgroundLimit = 64
+      // 写回只是把迁移落到文件，失败（只读目录、磁盘满）不能连累读取设置：内存里已经按 64 用，
+      // 下次启动还会再试一次，幂等
+      await writeJsonAtomic(FILE, s, false, 0o600).catch((e) =>
+        console.warn(`后台命令并发的默认值没能写回设置文件，按 64 继续运行：${(e as Error).message}`),
+      )
+    }
+    cache = s
+    setApiLimits(s.apis)
     return cache
   }
   // JSON 没坏但字段不合法（手动改错、旧版本留下的值）：不能让每个依赖设置的接口都一直 500。
@@ -48,6 +61,8 @@ let writing: Promise<void> = Promise.resolve()
 export async function saveSettings(s: Settings) {
   cache = s
   applyServerLang(s.language)
+  // 并发上限调大或改成不限制：排着的对话和子任务马上放进去，不用等别人释放
+  setApiLimits(s.apis)
   // 里面有 apis[].apiKey 和 clis[].env，只让当前用户读写
   const next = writing.catch(() => {}).then(() => writeJsonAtomic(FILE, s, false, 0o600))
   writing = next

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ChevronRight,
   CircleAlert,
@@ -114,6 +114,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
       ].join('\n'),
       cwd: view?.path ?? '',
       topic: 'project-skill',
+      home: { kind: 'project', projectId },
       onDone: () => void load(),
     })
   }

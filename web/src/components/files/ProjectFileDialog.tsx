@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import type { FileContent, FileDiff } from '@shared/files'
 import { api } from '@/lib/api'

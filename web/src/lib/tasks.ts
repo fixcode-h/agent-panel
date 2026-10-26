@@ -1,11 +1,11 @@
-import type { PeerKind, Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
+import type { PeerKind, Task, TaskJob, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
-import { PANEL_TOOL_NAMES } from '@shared/panel-tools'
+import { PANEL_TOOL_NAMES, bgJobIds, bgPendingIds } from '@shared/panel-tools'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -99,9 +99,6 @@ export function toolVerb(tool: ToolUse) {
  */
 const PANEL_TOOL = new RegExp(`panel[\\w-]*[\\W_]{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
 
-/** run_background 马上返回的那句话：编号是后台命令的 id */
-const BG_STARTED = /^已放到后台（编号 ([0-9a-f]{8})）/
-
 /** 旧数据：Pi 报上来的 wait_agents 被记成了 CLI 自己的子 Agent（没有名字、没有标题），按它的输出认回来 */
 const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任务)/
 
@@ -110,7 +107,7 @@ function panelName(tool: ToolUse) {
   const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
   if (hit) return hit[1]
   // 旧数据：带服务名前缀的后台命令被解析成了 CLI 自己的「运行命令」，按面板给的回复认回来
-  if (tool.kind === 'run' && BG_STARTED.test(tool.output ?? '')) return 'run_background'
+  if (tool.kind === 'run' && /已放到后台（编号 [0-9a-f]{8}）/.test(tool.output ?? '')) return 'run_background'
   return tool.kind === 'agent' && !tool.name && !tool.label && OLD_WAIT.test(tool.output ?? '') ? 'wait_agents' : ''
 }
 
@@ -133,6 +130,27 @@ const firstLine = (v: unknown) =>
     .map((l) => l.trim())
     .find(Boolean) ?? ''
 
+/**
+ * input 是命令原文而不是 JSON：解析层（server/exec/parsers.ts 的 inputText）对带 command 的参数
+ * 直接存命令原文，面板的 run_background 因此拿不到 name / command 两个参数。
+ * 和 toolArgs 同一个口径：只有解析成对象才说明是正常的参数；`true`、`false`、数字这些合法 JSON
+ * 字面量是命令原文（`command: "true"` 是真实存在的 shell 命令），也要拿来当标题。
+ */
+function rawCommand(tool: ToolUse) {
+  const raw = (tool.input ?? '').trim()
+  if (!raw) return undefined
+  try {
+    const v = JSON.parse(raw)
+    return v && typeof v === 'object' ? undefined : raw
+  } catch {
+    return raw
+  }
+}
+
+/** 后台命令行上的名字：调用方给的名字，没有就用命令第一行（老记录、演示数据可能没有名字） */
+export const jobLabel = (job: Pick<TaskJob, 'name' | 'command'>) =>
+  firstLine(job.name) || firstLine(job.command) || t('后台命令')
+
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean).join(t('、')) : '')
 
 /** 一次工具调用在对话里怎么显示：tool 是改写后的调用，server 是别的 MCP 工具所在的服务（单独淡色标出） */
@@ -145,10 +163,20 @@ export interface ToolView {
   job?: string
   /** 申请的编译：面板排的几条后台命令（每个编译步骤一条），有一条还没跑完这一行就转圈 */
   jobs?: string[]
+  /** 交出去的后台命令还有没拿到结果的：这一行一直转圈，不显示成完成（结果由面板接在输出后面） */
+  waiting?: boolean
   /** 这次调用启动了一次工作流：点标题打开这次运行的对话，不是一段文本 */
   startsRun?: boolean
   /** 给另一个对话发消息（交给子对话、回报父对话、给其他父对话传话）：画成一行「发送消息」 */
   send?: { kind: PeerKind; to: string; body: string }
+}
+
+/** 几次交给子对话合成一行时的一个收件方：名字、能打开的子对话、面板给的回执、有没有送到 */
+export interface SendTarget {
+  name: string
+  child?: string
+  receipt?: string
+  failed?: boolean
 }
 
 /** 给另一个对话发消息的几个工具：收件方是谁、哪一类、正文 */
@@ -183,11 +211,11 @@ export function toolView(tool: ToolUse): ToolView | null {
   if (panel) {
     const name = panelName(tool)
     const child = panelChildId(tool)
-    const job = name === 'run_background' ? BG_STARTED.exec(tool.output ?? '')?.[1] : undefined
-    const jobs =
-      name === 'request_build'
-        ? /^已申请编译（[^）]*），编号 ([0-9a-f、]+)。/.exec(tool.output ?? '')?.[1]?.split('、')
-        : undefined
+    const ids = name === 'run_background' || name === 'request_build' ? bgJobIds(tool.output ?? '') : []
+    const job = name === 'run_background' ? ids[0] : undefined
+    const jobs = name === 'request_build' ? ids : undefined
+    // 交出去的命令还没拿到结果：不管那一刻的调用记的是什么，这一行都算在跑
+    const waiting = ids.length > 0 && bgPendingIds(tool.output ?? '').length > 0
     const startsRun = name === 'start_plan' || name === 'run_workflow'
     const send = sendOf(name, tool)
     return {
@@ -196,6 +224,7 @@ export function toolView(tool: ToolUse): ToolView | null {
       ...(child && { child }),
       ...(job && { job }),
       ...(jobs?.length && { jobs }),
+      ...(waiting && { waiting }),
       ...(startsRun && { startsRun }),
     }
   }
@@ -204,6 +233,25 @@ export function toolView(tool: ToolUse): ToolView | null {
   const a = toolArgs(tool)
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
   return { tool: { ...tool, name: mcp[2], label: arg ? firstLine(arg).slice(0, 120) : '' }, server: mcp[1] }
+}
+
+/**
+ * 一条消息里的工具行，相邻几次「同一段话发给不同子对话」合成一组：以前父对话会把用户的一条要求逐个转给
+ * 四五个子对话（现在面板拒绝这么发，见 shared/peer-message.ts 的 sentToOther），旧记录里只画一行「发送消息」，展开看每个收件人，不再刷出四五行一模一样的标题。
+ * 返回的每组画成一行；只有一个工具的组照常画
+ */
+export function groupTools(tools: ToolUse[]): ToolUse[][] {
+  const out: ToolUse[][] = []
+  let key = ''
+  for (const tool of tools) {
+    const send = toolView(tool)?.send
+    // 只合并交给子对话的：回报父对话、传话本来就只有一个收件方
+    const k = send && send.body && panelName(tool) === 'send_to_conversation' ? `${send.kind}\n${send.body}` : ''
+    if (k && k === key) out[out.length - 1].push(tool)
+    else out.push([tool])
+    key = k
+  }
+  return out
 }
 
 /**
@@ -269,13 +317,12 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 终止自己派出的子任务：标题写终止的原因，展开看终止了哪几个
     case 'stop_subtask':
       return as(t('终止子任务'), firstLine(a.reason), 'agent', tool.output || undefined)
-    case 'run_background':
-      return as(
-        t('后台命令'),
-        firstLine(a.name) || firstLine(a.command) || (tool.kind === 'run' ? tool.label : ''),
-        'other',
-        text(a.command) ?? (tool.kind === 'run' ? tool.label : undefined),
-      )
+    case 'run_background': {
+      // input 可能直接是命令原文（见 rawCommand）：参数解析拿不到 name / command，
+      // 标题用命令第一行，展开的 IN 用完整命令，不能只剩「后台命令」一行
+      const command = text(a.command) ?? rawCommand(tool) ?? (tool.kind === 'run' ? tool.label : undefined)
+      return as(t('后台命令'), firstLine(a.name) || firstLine(command), 'other', command)
+    }
     case 'check_background':
       return as(t('查看后台命令'), firstLine(a.id))
     case 'stop_background':
@@ -352,6 +399,16 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       )
     case 'wait_user_message':
       return as(t('等待用户消息'), '')
+    // 操控软件：标题写动作名，展开看参数和结果
+    case 'app_actions':
+      return as(t('查看软件操作'), firstLine(a.group), 'read')
+    case 'app_do':
+      return as(
+        t('操作软件'),
+        firstLine(a.action),
+        'other',
+        a.args && typeof a.args === 'object' && Object.keys(a.args).length ? JSON.stringify(a.args, null, 2) : '',
+      )
   }
   return undefined
 }
@@ -439,4 +496,18 @@ export function verdictText(s: TaskStep) {
   // 主 Agent 的 rounds 是调度轮数，不是验收
   if (!s.rounds || s.kind === 'main') return ''
   return s.verdict === 'fail' ? t('验收 {n} 轮 · 未通过', { n: s.rounds }) : t('验收 {n} 轮 · 通过', { n: s.rounds })
+}
+
+/**
+ * 执行中的状态行要不要显示「排队等 API 名额」：要显示时返回那个标记，否则 undefined。
+ *
+ * 只在「这一轮还没开始、正在排队等名额」时显示（reason 是 'start'）：
+ * 让出名额等子任务 / 等下一句之后拿回的排队（'yield'）属于「交回结果的那一句」，
+ * 这一轮其实仍在输出，写成排队会和同一行右边的实时速度自相矛盾。
+ * 已经在出 token 时也不显示排队：两套数据打架时以「真的在输出」为准。
+ */
+export function apiQueueWait(task: Pick<Task, 'apiWait'>, streaming: boolean) {
+  const wait = task.apiWait
+  if (!wait || wait.reason !== 'start' || streaming) return undefined
+  return wait
 }

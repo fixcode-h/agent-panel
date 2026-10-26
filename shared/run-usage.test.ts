@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AgentUsage, StepUsage, Task, TaskStep } from './schema.ts'
-import { helperSteps, ownTokens, runTree, runUsage, tokenCount, tokensOf, tpsNow } from './run-usage.ts'
+import { helperSteps, ownTokens, runTree, runUsage, subtreeTaskIds, tokenCount, tokensOf, tpsNow } from './run-usage.ts'
 
 /** 节点的用量：只要 token 和费用，上下文那几项给默认值 */
 const u = (inputTokens: number, outputTokens: number, costUsd = 0): StepUsage => ({
@@ -167,6 +167,27 @@ test('子对话按 parentTaskId 逐层找，不看列表顺序，也不绕圈', 
     runTree(parent(), kids()).map((x) => x.id),
     ['p1', 'c1', 'c2'],
   )
+})
+
+test('子树 id：只含自己、后代，不含父对话和兄弟；脏数据成环也能结束', () => {
+  const all = [
+    task('p1'),
+    task('c1', { parentTaskId: 'p1' }),
+    task('g1', { parentTaskId: 'c1' }),
+    task('c2', { parentTaskId: 'p1' }),
+    task('other'),
+    task('o1', { parentTaskId: 'other' }),
+    task('loopA', { parentTaskId: 'loopB' }),
+    task('loopB', { parentTaskId: 'loopA' }),
+  ]
+  // 子对话只到自己这一支，父对话和兄弟都不在里面
+  assert.deepEqual([...subtreeTaskIds(all, 'c1')].sort(), ['c1', 'g1'])
+  assert.deepEqual([...subtreeTaskIds(all, 'p1')].sort(), ['c1', 'c2', 'g1', 'p1'])
+  assert.deepEqual([...subtreeTaskIds(all, 'other')].sort(), ['o1', 'other'])
+  // 互相指向的脏数据不会转不出来
+  assert.deepEqual([...subtreeTaskIds(all, 'loopA')].sort(), ['loopA', 'loopB'])
+  // 列表里没有自己、也没有后代时就是自己
+  assert.deepEqual([...subtreeTaskIds([], 'x')], ['x'])
 })
 
 test('速度：只算正在输出的，混着 lastTps 也不冒充实时', () => {

@@ -1,12 +1,18 @@
 ---
 name: ue-project-structure
-description: Unreal Engine 项目的结构规范与常见坑：.uproject / .uplugin 与模块划分、Build.cs / Target.cs 依赖、Public / Private 与导出宏、UHT 反射、PIE 与 AutomationTest / FunctionalTest、Cook 与打包、资产命名和引用规则、C++ / Blueprint / Lua 分工。在 UE 项目里确定模块边界、加依赖、碰反射和序列化、跑测试、准备 Cook 或排查构建问题时使用。
+description: project-structure 的 UE 特化扩展，只补引擎特有的部分：.uproject / .uplugin 与模块划分、Build.cs / Target.cs 依赖、Public / Private 与导出宏、UHT 反射、PIE 与 AutomationTest / FunctionalTest、Cook 与打包、资产命名和引用规则、C++ / Blueprint / Lua 分工。在 UE 项目里确定模块边界、加依赖、碰反射和序列化、跑测试、准备 Cook 或排查构建问题、设计 Gameplay 框架时使用。通用的了解项目、找代码、判断改动位置的做法在 project-structure，两份一起用。
 user-invocable: true
 ---
 
 # UE 项目结构
 
-C++ 代码风格见 `cpp-code-style`，Lua 见 `lua-code-style`。这里讲项目怎么组织、怎么编译、怎么验证。
+这份是 `project-structure` 的 UE 特化：通用的部分（了解项目的顺序、怎么缩小范围找代码、现场说明、判断改动该放哪）照 `project-structure` 做，这里只补引擎特有的规则，两份不重复。C++ 代码风格见 `cpp-code-style`，Lua 见 `lua-code-style`，通用编码规范见 `coding-standards`。
+
+细则按需读，本目录下：
+
+| 什么时候                                                                                  | 读                      |
+| ----------------------------------------------------------------------------------------- | ----------------------- |
+| 新功能该放 Subsystem / Actor / Component 哪里，生命周期、网络权威、资源与配置、性能、存档 | `gameplay-framework.md` |
 
 ## 先确认的事实
 
@@ -22,14 +28,14 @@ UE 工程根目录下有几十万文件，在根目录全仓 grep 会把 `Saved/
 
 必须排除的目录（写进项目设置的「搜索时跳过的目录」，提示词会带出来）：
 
-| 目录 | 里面是什么 |
-| --- | --- |
-| `Binaries/` | 编译出的 dll / pdb |
-| `Intermediate/` | UBT / UHT 生成的中间文件（含 `*.generated.h`） |
-| `Saved/` | 日志、自动截图、Cook 与打包产物 |
-| `DerivedDataCache/` | DDC 缓存 |
-| `Build/`、`.vs/` | 平台打包产物、Visual Studio 缓存 |
-| `Plugins/*/Intermediate`、`Plugins/*/Binaries` | 插件各自的产物 |
+| 目录                                           | 里面是什么                                     |
+| ---------------------------------------------- | ---------------------------------------------- |
+| `Binaries/`                                    | 编译出的 dll / pdb                             |
+| `Intermediate/`                                | UBT / UHT 生成的中间文件（含 `*.generated.h`） |
+| `Saved/`                                       | 日志、自动截图、Cook 与打包产物                |
+| `DerivedDataCache/`                            | DDC 缓存                                       |
+| `Build/`、`.vs/`                               | 平台打包产物、Visual Studio 缓存               |
+| `Plugins/*/Intermediate`、`Plugins/*/Binaries` | 插件各自的产物                                 |
 
 `Content/` 里的 `.uasset` / `.umap` 是二进制：只能按文件名找路径，**不要 grep 内容**——搜不到可读文本，还会拖慢整个搜索。要看资产引用了谁，用编辑器的 Reference Viewer（右键资产 → Reference Viewer），不要靠 grep。
 

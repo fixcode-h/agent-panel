@@ -18,7 +18,7 @@ import {
   Trash,
   X,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'

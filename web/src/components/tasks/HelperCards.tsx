@@ -1,28 +1,29 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ListTree, Loader2, Square, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
+import { toast } from '@/lib/toast'
 import type { Task, TaskStep } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { api } from '@/lib/api'
 import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
-import { helperRunning, stepMs } from '@shared/task'
+import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
+import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
+import { AnalyzeDialog } from './Evolution'
+import { HelperBriefCard } from './HelperBriefCard'
+import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
 const helperTime = (step: TaskStep, now: number) =>
   step.startedAt || step.endedAt ? fmtDuration(stepMs(step, now)) : ''
-
-/** 列表里的顺序：正在跑的、排队的、没做完的、做完的、终止的；同一组里按派出的顺序 */
-const helperRank = (s: TaskStep) =>
-  helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
 
 /** 还能终止：在跑或在排队 */
 const stoppable = (s: TaskStep) => s.status === 'running' || s.status === 'pending'
@@ -37,8 +38,28 @@ async function stopHelper(task: Task, step: TaskStep) {
   }
 }
 
-/** 终止按钮：列表行和子任务窗口共用 */
-function StopHelper({ task, step, label }: { task: Task; step: TaskStep; label?: boolean }) {
+/**
+ * 对话里派出的子任务（按派出顺序、去重）：输入框上方的「子任务」栏和消息流里的运行区读同一份。
+ * 工作流任务里节点自己派的子 Agent 显示在节点里，不算；旧数据里只留下「派出了哪几个」而 step 已经没了的不列
+ */
+export function chatHelperIds(task: Task) {
+  if (task.mode === 'workflow' || (task.runs?.length ?? 0) > 0) return []
+  const known = new Set(task.steps.map((s) => s.id))
+  return [...new Set(task.messages.flatMap((m) => m.spawned ?? []))].filter((id) => known.has(id))
+}
+
+/** 终止按钮：列表行、运行区那一行（compact，和行高对齐）和子任务窗口共用 */
+export function StopHelper({
+  task,
+  step,
+  label,
+  compact,
+}: {
+  task: Task
+  step: TaskStep
+  label?: boolean
+  compact?: boolean
+}) {
   const [busy, setBusy] = useState(false)
   if (!stoppable(step)) return null
   return (
@@ -54,9 +75,13 @@ function StopHelper({ task, step, label }: { task: Task; step: TaskStep; label?:
         await stopHelper(task, step)
         setBusy(false)
       }}
-      className="shrink-0 text-subtle hover:text-danger"
+      className={cn('shrink-0 text-subtle hover:text-danger', compact && 'h-5 w-5 rounded')}
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
+      {busy ? (
+        <Loader2 className={cn('animate-spin', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
+      ) : (
+        <Square className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+      )}
       {label && t('终止')}
     </Button>
   )
@@ -77,7 +102,7 @@ const helperGroups = (list: TaskStep[]) =>
   ].filter((g) => g.items.length)
 
 /** 列表里每个子任务下面那行：还在跑的写它这会儿在做什么，做完的写交回结果的第一句 */
-function helperBrief(task: Task, step: TaskStep) {
+export function helperBrief(task: Task, step: TaskStep) {
   if (step.status === 'running') return currentActivity(stepActivity(task, step.id, true)) || t('已开始，还没有输出')
   if (step.status === 'pending') return t('子任务在排队，前面的做完就开始')
   if (step.status === 'skipped') return t('已终止，没做完的部分不会交回')
@@ -90,7 +115,7 @@ function helperBrief(task: Task, step: TaskStep) {
 }
 
 /**
- * 输入框上方的「子任务」入口，和子对话同一行、同一个弹层样式：
+ * 输入框上方的「子任务」入口，单独占状态栏中间一行（计划 → 子任务 → 子对话）、和子对话同一个弹层样式：
  * 派出的子任务不再画在消息流里，点这里的条目打开只读的子任务窗口看它的实时对话流。
  * 栏上只有这一个计数入口（执行中 x/y、失败数），不再把运行中的子任务单独排成卡片——
  * 运行中的卡片只给子对话用，子任务在跑的信息从这里的 x/y 就能看出来。
@@ -112,10 +137,8 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  const steps = ids
-    .map((id) => task.steps.find((s) => s.id === id))
-    .filter((s): s is TaskStep => !!s)
-    .sort((a, b) => helperRank(a) - helperRank(b))
+  // 顺序见 sortHelpers：执行中 → 排队中 → 未完成 → 已完成 → 已终止，同一档里最新的在最上面
+  const steps = sortHelpers(ids.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s))
   const running = steps.filter(helperRunning)
   const failed = steps.filter((s) => s.status === 'failed')
   const now = useNow(running.length > 0)
@@ -235,13 +258,20 @@ export function HelperWindow({
 }) {
   const { agents } = useData()
   const step = task.steps.find((s) => s.id === id)
+  // 点「AI 分析」开的是复用执行记录那一套的弹窗，只把范围收窄到这一步
+  const [analyzing, setAnalyzing] = useState(false)
   const live = step?.status === 'running'
   const now = useNow(live)
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
   const msgs = task.messages.filter((m) => m.step === id || m.step.startsWith(`${id}/`))
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
-  // 打开就停在最新输出（首帧算不完的高度下一帧和布局稳定后再补），之后跟着新内容走；用户往上翻了就不再拽回来
-  const scroller = useStickToBottom(id)
+  // 有要求时打开先停在最上面：那块「派给它的要求」说明这个子任务要做什么，贴底会把它滚出视野，
+  // 用户滚到底部附近之后才跟着新内容走（startAt: 'top'）。
+  // 没有要求（旧记录 / 派发时只写了标题）时卡片整块不渲染，滚动区第一块就是对话流，停顶部没有意义——
+  // 这种窗口照旧贴底看最新输出，所以按有没有要求选起点
+  // 缓存：brief 动辄几千字，而跑着的子任务会因 useNow 高频重渲染，别每次都重新拆一遍
+  const hasBrief = useMemo(() => !helperBriefView(step?.brief).empty, [step?.brief])
+  const scroller = useStickToBottom(id, undefined, true, hasBrief ? 'top' : 'bottom')
   if (!step) return null
   const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
   return (
@@ -265,6 +295,17 @@ export function HelperWindow({
               </span>
             )}
             {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+            {/* 窄屏只留图标：留个 aria-label 和 title，否则入口没有可访问名、悬停也没有提示 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('AI 分析')}
+              title={t('让 AI 分析这一步的耗时、角色符合度和优化空间')}
+              onClick={() => setAnalyzing(true)}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('AI 分析')}</span>
+            </Button>
             <StopHelper task={task} step={step} label />
             <D.Close asChild>
               <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
@@ -274,6 +315,17 @@ export function HelperWindow({
           </header>
           <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
+              {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
+                  它就是普通的第一块内容，不吸顶（吸顶会盖住下面的对话流）；窗口打开时停在顶部所以它一开始就看得见。
+                  有对话流时默认收起，没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
+                  不然跟随底部会把刚展开的正文顶到视野之上 */}
+              <HelperBriefCard
+                step={step}
+                teamNames={teamNames}
+                msgs={msgs.length}
+                pin={scroller.pin}
+                unpin={scroller.unpin}
+              />
               {msgs.length ? (
                 <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} />
               ) : (
@@ -295,6 +347,28 @@ export function HelperWindow({
           </footer>
         </D.Content>
       </D.Portal>
+      {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在父对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
+      <AnalyzeDialog
+        open={analyzing}
+        onOpenChange={setAnalyzing}
+        title={t('AI 分析这个子任务')}
+        subject={t('子任务 {title}', { title: step.title })}
+        intro={t(
+          'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。',
+        )}
+        placeholder={t('例如：为什么这一步这么慢、它有没有做角色以外的事')}
+        start={async (focus) => {
+          onClose()
+          return startAnalysis({
+            tasks: [await api.task(task.id)],
+            agents,
+            projectId: task.projectId,
+            focus,
+            scope: { stepId: step.id },
+            scopeTitle: t('子任务 {title}', { title: step.title }),
+          })
+        }}
+      />
     </D.Root>
   )
 }

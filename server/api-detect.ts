@@ -118,6 +118,7 @@ export function toApi(
     models: modelsOf(obj, src.models),
     modelMap: {},
     modelEfforts: {},
+    maxConcurrent: 0,
   }
   return api
 }
