@@ -5016,27 +5016,30 @@ export function tasksApi(deps: {
       log.info('task', '合并了独立分支', { task: id, branch: wt.branch, into, overlap })
       // 同一个文件两边都改过时，git 可能自动合上、不报冲突：在对话里留一条，用户才知道要核对内容
       if (overlap.length) {
-        const cur = (await store.get(id)) ?? tk
+        // 任务可能还在 live 里（保活等下一句）：current() 优先读内存那份，
+        // 只写 store 的话界面读不到这条提醒，引擎下一次落盘还会把它盖掉
+        const entry = live.get(id)
+        const base = entry?.task ?? (await store.get(id)) ?? tk
         const note =
           t(
             '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。',
             { list: overlap.join('、') },
           ) + (sides ? `\n\n${mergeSidesText(sides)}` : '')
-        await store.update(id, {
-          ...cur,
-          messages: [
-            ...cur.messages,
-            {
-              id: randomUUID(),
-              role: 'system',
-              agentId: '',
-              step: '',
-              text: note,
-              tools: [],
-              at: new Date().toISOString(),
-            },
-          ],
-        })
+        const messages = [
+          ...base.messages,
+          {
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: note,
+            tools: [],
+            at: new Date().toISOString(),
+          },
+        ] as Task['messages']
+        if (entry) entry.task.messages = messages
+        // 这条提醒是合并后马上要看的：不走 400ms 的消息写盘节流，否则紧接着的刷新（和 e2e）读不到它
+        await store.update(id, { ...base, messages }, { now: true })
       }
       return c.json({ task: await current(id), into, overlap, sides })
     } catch (e) {
