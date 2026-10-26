@@ -30,13 +30,13 @@
 
 ## 三、测试与工程效率
 
-- [ ] **每个子对话整份复制 node_modules** — 开子对话时递归复制依赖目录，本机 674MB / 约 2.7 万文件，注释记录实测 12–20 秒/次；6 个并行 = 4GB 写入 — 证据：`server/exec/worktree.ts:40`、`server/exec/worktree.ts:120`，`docs/lessons/worktree.md` — 建议：改成「懒复制 + 白名单」，只在真的要跑命令/测试前才 `isolateDeps`；或对 lock 之外的文件用 reflink/硬链接 — P0
+- [x] **每个子对话整份复制 node_modules** — 已改：依赖只放一份在 `worktrees/<项目>-<哈希>/node_modules`，独立目录里不放、靠 Node / npm 向上解析；本机实测首次约 10s / 682MB、之后每个约 1s / 15MB（改动前 11–12s / 696MB） — 证据：`server/exec/worktree.ts` 的 `ensureSharedDeps`、`server/exec/worktree.test.ts` 的「依赖共用」用例 — P0
 - [ ] **UI 检查墙钟被 task 分片卡住** — 总 128.8s 里 task 独占 128.8s（121 步、3908 行），并行再多也压不下去 — 证据：`ui-timings.json`、`wc -l scripts/ui/02-task.mjs` 计 3908 行 — 建议：拆成 `02-task` / `02b-subagent` / `02c-element-pick`；`scripts/ui-check.mjs:27` 按文件名自动收录，无需改入口 — P1
 - [ ] **界面检查每步都截全页图 + 每步最多等 1s 动画** — `check()` 每调用一次就 `screenshot()` 全页落盘（task 分片 121 张）；`settle()` 用 `Promise.race` 上 1000ms 兜底 — 证据：`scripts/ui/harness.mjs:141`、`scripts/ui/harness.mjs:98` — 建议：成功步骤不截、只失败与里程碑截（或 jpeg q60），`settle` 兜底降到 300ms — P1
 - [ ] **单测并发口径没落进脚本** — `test:unit` 用默认并发，已知会让计时类用例抖；串行要 3–5 分钟。真正吃时间的只有 4 个文件：`server/exec/worktree.test.ts` 46s、`server/exec/pi-rpc.test.ts` 16s、`server/task-store.test.ts` 5s、`server/exec/process.test.ts` 4s — 证据：`package.json:22`（无 `--test-concurrency`）、`server/exec/pi-rpc.test.ts:463`、`server/task-store.test.ts:154` — 建议：拆 `test:unit:timing`（串行）与 `test:unit:rest`（并行），`test:unit` 顺序跑两者 — P1
 - [ ] **worktree.test.ts 每个用例重建一次 git 仓库** — 31 个用例都走 `project()`：新目录 + `git init` + `add` + `commit`，单文件 46s ≈ 1.5s/用例 — 证据：`server/exec/worktree.test.ts:76` — 建议：模块级建一次模板仓库，每例 `cpSync` 复制（含 `.git`）— P1
 - [ ] **Pi 桥接扩展的超时常量写死在定义里，测试只能真等** — 两条用例按设计等满 4000ms 与 8000ms，合计约 12s 纯等待 — 证据：`server/exec/pi-rpc.test.ts:449`、`server/exec/pi-rpc.test.ts:514`，常量源头 `shared/clis/pi.json` 里的 `STEP_TIMEOUT_MS = 4000` / `STEP_ATTEMPTS = 2` — 建议：模板里支持 `{stepTimeout}` / `{attempts}` 占位符，测试注入 300ms 并按注入值断言，生产值仍从 `shared/clis/pi.json` 取 — P1
-- [ ] **e2e 并发不设上限，且与界面检查在 CI 里同时跑** — `limit` 默认等于分片数，12 个分片全并发（12 个服务 + 12 组假 CLI）；CI 的 `test` / `e2e` / `ui` 三个 job 没有 `needs` 关系 — 证据：`scripts/e2e.mjs:34`，对照 `scripts/ui-check.mjs:51` — 建议：给 e2e 一个并发上限（例如 4），CI 里 e2e 与 ui 串行或限制 runner 并发 — P1
+- [x] **e2e 并发不设上限，且与界面检查在 CI 里同时跑** — 已改：默认上限 4（`AGENT_PANEL_E2E_CONCURRENCY` 可覆盖，日志打印并发数，见 `scripts/lib/shard-limit.mjs`）；e2e 单 job 内默认最多 4 个分片；CI 里三个 job 本来就是各自独立的 runner，不需要串行 — 证据：`scripts/e2e.mjs`、`.github/workflows/ci.yml` — P1
 
 ## 四、体验与功能缺口
 

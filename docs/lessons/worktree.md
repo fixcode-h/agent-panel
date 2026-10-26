@@ -4,16 +4,18 @@ paths: server/exec/worktree.ts, server/exec/worktree.test.ts
 
 # 独立工作目录（worktree）
 
-## 依赖各用一份，不能链接共享
+## 依赖只放一份在 worktrees/ 下，靠目录向上查找
 
-- 规则：`server/exec/worktree.ts` 准备独立目录时，`node_modules`（以及 `.venv` / `venv` / `vendor`）要整份复制过去，不建 junction / 符号链接，也别用硬链接——跨分卷用不了，同分卷时 npm 原地重写 `node_modules/.package-lock.json` 会顺着 inode 改到项目那一份。子对话补依赖只在自己的目录里装。
-- 起因：2026-10 的事故，某个子对话在自己的目录里跑安装，npm 按那个分支的 `package.json` 修剪依赖，剪掉的正是链接过去的共用真目录：主工作区 `node_modules` 从满装变成 0 项、`.bin` 也没了，几个对话的验证同时失败。
-- 成本：596MB / 27k 个文件跨分卷复制约 13 秒（一次性），比事后依赖被整片剪掉强。
-- 防线：`server/exec/worktree.test.ts` 里「依赖隔离」的三个用例。
+- 规则：`server/exec/worktree.ts` 的 `ensureSharedDeps` 把项目的 `node_modules` 复制到 `<数据目录>/worktrees/<项目名>-<路径哈希>/node_modules`（按 git 主仓库根分组，同一个项目的子对话共用），每个独立目录里**不放 `node_modules`、不建任何链接**：Node / npm 会沿目录向上解析到这一份，`npm run` 的 PATH 也包含祖先的 `node_modules/.bin`。只有 `package-lock.json`（没有就 `package.json`）变了才重新复制；用 `mkdir node_modules.lock` 抢锁、复制期间每 2 秒更新锁的时间作心跳（进程被杀后别人 15 秒内接手，不用干等）；源目录和 lock 都按项目根读（子对话从父对话的独立目录里开时那里没有 `node_modules`）。`.venv` / `venv` / `vendor` 按自己的路径找依赖，仍然各复制一份。
+- 换装不能「先删旧的再改名」：删到一半被占用会留下残缺的一份，同项目的所有子对话都缺包。正确顺序是「旧目录改名挪开 → 新目录改名进来 → 删旧的」，改名失败时把旧的放回去，任何时刻共用那份要么完整旧版、要么完整新版。
+- 为什么不是链接：2026-10 的事故里子对话的 `node_modules` 是指向项目那份的 junction，npm 按那个分支的 `package.json` 修剪时删掉的正是项目里的真目录（主工作区从满装变成 0 项）。共用真目录 + 祖先解析没有链接，子对话里 `npm install` 的 prefix 是自己的 `package.json`，装的东西写到它自己目录下，剪不到共用这份。
+- 成本（本机 682MB / 约 2.7 万文件）：改动前每个子对话 11–12 秒、696MB；改动后第一次约 10 秒，之后每个约 1 秒，独立目录只占 15MB。
+- 不要做：在共用目录里跑 `npm install` / `npm ci` / `npm prune`（会修剪到同项目的所有子对话）；`sweepWorktrees` 里把项目分组目录下的 `node_modules`、`node_modules.lock` 或复制用的临时目录当残留删掉；多个项目共用同一个位置（后开的项目会把前一个的依赖换掉）。
+- 防线：`server/exec/worktree.test.ts` 的「依赖共用」五个用例（独立目录不复制、只复制一次、lock 变化才刷新、并发开不互相踩、不同项目各一份）和「守护清理不会清掉共用依赖」。
 
 ## 共用目录的依赖坏了要立刻说清
 
-- 规则：开独立目录时用 `missingDeps()` 对 `package.json` 的声明逐个查 `node_modules`，缺了就在面板日志里用 `log.error` 写清哪个目录、缺哪些包、怎么补（在一份完整的目录里 `npm ci --include=dev`，或把完好的 `node_modules` 整份复制回来），不要留给后面每条命令各报一句「找不到模块」。
+- 规则：开独立目录时用 `missingDeps()` 对 `package.json` 的声明逐个查「从该目录向上找到的那份 `node_modules`」，缺了就在面板日志里用 `log.error` 写清哪个目录、缺哪些包、怎么补（在一份完整的目录里 `npm ci --include=dev`，或把完好的 `node_modules` 整份复制回来），不要留给后面每条命令各报一句「找不到模块」。
 - 起因：同一次事故里，几个对话的 typecheck / 测试都只报「找不到模块」，看不出是共用依赖被剪掉了。
 - 防线：`server/exec/worktree.test.ts` 里 `missingDeps` 的用例。
 

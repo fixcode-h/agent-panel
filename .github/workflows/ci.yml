@@ -28,6 +28,10 @@ jobs:
 
   # 端到端单独一个 job：scripts/e2e.mjs 内部并行跑各个分片（各自临时目录、端口和服务），
   # 和上面的类型检查 / 单测 / 构建同时进行，总时长取两者里最慢的那个。
+  # 单 job 内的并发默认最多 4 个分片（AGENT_PANEL_E2E_CONCURRENCY 可覆盖）：12 个分片全开会把
+  # 这台 runner 的 CPU、内存和端口抢满，时序敏感的用例偶发失败。
+  # 和界面检查（ui）保留并行、不加 needs：GitHub 托管的每个 job 各是一台独立 VM，两者不共享
+  # CPU / 内存；串行反而会让总时长多出约 3 分钟。
   # 每个分片自己的看门狗和收尾在 scripts/e2e/harness.mjs 里：卡住时按分片失败退出，不会拖到 workflow 超时。
   e2e:
     runs-on: ubuntu-latest

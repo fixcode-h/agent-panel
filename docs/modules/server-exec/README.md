@@ -21,7 +21,7 @@
 - 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。
 - 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。
 - 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。
-- 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；`claim` 模式的文件认领在 `server/claims.ts`。
+- 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；依赖只放一份在 `worktrees/<项目>-<哈希>/node_modules`，独立目录里不放 `node_modules`、靠 Node / npm 向上解析（`ensureSharedDeps`：lock 变了才重刷，清理时跳过这一份）；`claim` 模式的文件认领在 `server/claims.ts`。
 
 ## 入口
 
