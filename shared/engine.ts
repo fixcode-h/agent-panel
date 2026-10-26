@@ -99,7 +99,7 @@ import {
   finishPlan,
   planText,
   settleWait,
-  childStepId,
+  ensureChildStep,
   WRAP_UP,
   type PlanItemInput,
   type PlanKid,
@@ -109,6 +109,27 @@ import {
 
 /** 每个父对话交给子对话的话 → 交给了哪个子对话（见 sendToConversation：一条消息只交给一个子对话） */
 const handedOff = new WeakMap<object, Map<string, string>>()
+
+/**
+ * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
+ * 取不到列表时当没有子对话（老版本宿主），不影响计划本身
+ */
+async function kidsOf(host: EngineHost): Promise<PlanKid[]> {
+  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
+  return list.map((c) => ({
+    id: c.id,
+    title: c.title,
+    createdAt: c.createdAt ?? '',
+    done: !!c.resolved,
+    endedAt: c.resolved ? c.at : '',
+  }))
+}
+
+/** 一个子对话的标题：取不到时返回空串（调用方退到用 id） */
+async function kidTitleOf(host: EngineHost, id: string) {
+  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
+  return list.find((c) => c.id === id)?.title.trim() ?? ''
+}
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -344,7 +365,7 @@ export interface Orchestra {
   plans: boolean
   /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
   setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): Promise<{ ok: boolean; info: string }>
-  finishPlan(summary: string): { ok: boolean; info: string }
+  finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
@@ -2753,22 +2774,13 @@ function makeOrchestra(
     plans: !!ctx.chat && !helper && !!task.projectId,
     async setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      // 名下的子对话：步骤里点到的挂上等待、已经完成的直接收口，不靠 Agent 每次都记得带 step
-      const list = host.listConversations ? await host.listConversations().catch(() => []) : []
-      const kids: PlanKid[] = list.map((c) => ({
-        id: c.id,
-        title: c.title,
-        createdAt: c.createdAt ?? '',
-        done: !!c.resolved,
-        endedAt: c.resolved ? c.at : '',
-      }))
-      const r = applyPlan(task, input, undefined, host.wrapUp, kids)
+      const r = applyPlan(task, input, undefined, host.wrapUp, await kidsOf(host))
       if (r.ok) host.changed(true)
       return r
     },
-    finishPlan(summary) {
+    async finishPlan(summary) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = finishPlan(task, summary)
+      const r = finishPlan(task, summary, undefined, await kidsOf(host))
       if (r.ok) host.changed(true)
       return r
     },
@@ -2805,8 +2817,9 @@ function makeOrchestra(
         }
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
-      // 没指定步骤就挂在正在做的那一步：不挂的话那一步一标完成，父对话的计划就「已完成」了，子对话却还没合回
-      const at = step?.trim() || (r.id ? childStepId(task, r.id, title) : '')
+      // 没指定步骤就挂到计划里能对上的一步；对不上（或者计划已经结束）由 ensureChildStep 自动补一步，
+      // 不然这一步一标完成，父对话的计划就「已完成」了，子对话却还没合回（用户报过：一堆子对话在跑、计划面板还停在旧状态）
+      const at = r.ok && r.id ? step?.trim() || ensureChildStep(task, r.id, title) : ''
       const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
@@ -2829,8 +2842,10 @@ function makeOrchestra(
       handed.set(message.trim(), id.trim())
       const r = await host.sendToConversation(id.trim(), message)
       if (!r.ok) handed.delete(message.trim())
-      const at = step?.trim() || childStepId(task, id.trim())
-      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
+      // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
+      const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
+      const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
+      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },

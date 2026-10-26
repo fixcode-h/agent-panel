@@ -1,10 +1,9 @@
 # 计划写着「已完成」，展开后还有一步是等待中
 
 - 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit` 通过；`scripts/ui/02-task.mjs` 的「执行计划-提前结束」覆盖，已用「回退到冲突写法会报错、改后通过」两轮界面检查确认断言拦得住）
-- 症状：计划面板折叠头写着「计划已完成」，点开后最后一步还是「等待中」，同一屏自相矛盾
-- 入口：`web/src/components/tasks/PlanPanel.tsx` 的 `PlanButton` / `planHeadline`、`shared/plan.ts` 的 `finishPlan` / `closeIfDone`
-- 根因类型：界面只看 `doneAt`，分不出「全部做完」和「Agent 提前结束、还有步骤没做完」两种来路
 - 模块：`web`（`web/src/components/tasks/PlanPanel.tsx`）+ `shared`（`shared/plan.ts`）
+- 入口：`shared/plan.ts` 的 `planHeadline` / `leftSteps` / `unfinishedSteps`、`web/src/components/tasks/PlanPanel.tsx` 的折叠头
+- 根因类型：折叠头只看 `doneAt` 判「已完成」，分不出「全部做完自动收起」和「finish_plan 提前结束」
 - 关键词：执行计划、计划已完成、计划已结束、doneAt、finish_plan、残留等待中、leftSteps、planHeadline
 
 ## 现象

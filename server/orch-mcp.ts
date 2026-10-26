@@ -809,7 +809,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'finish_plan': {
-      const r = o.finishPlan(str(a?.summary))
+      const r = await o.finishPlan(str(a?.summary))
       return text(r.info, !r.ok)
     }
     case 'read_state':
