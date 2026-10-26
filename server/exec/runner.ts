@@ -1449,6 +1449,8 @@ async function runAgent(
         errors.push(ev.message)
         break
       case 'notice': {
+        // 失败提示（面板工具没接上、重试失败、压缩失败）也写进日志：界面上只留一行，事后排查要能查到
+        if (ev.failed) log.warn('agent', ev.text, { task: task.id, step, cli: def.name })
         // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
         const m = !cur || cur.text.trim() ? newMsg() : cur
         // CLI 自己报的重试、失败：画成警告行，点开看是哪一类、怎么办

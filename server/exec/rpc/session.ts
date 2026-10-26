@@ -5,7 +5,7 @@ import type { CliEvent } from '../parsers.ts'
 import type { RpcAdapter, RpcContext, RpcIo, RpcRequestOptions } from './types.ts'
 
 /** 初始化、开始一轮、插话这些请求等多久；CLI 正常都是立刻回 */
-const REQUEST_TIMEOUT_MS = 15_000
+export const REQUEST_TIMEOUT_MS = 15_000
 
 /** 请求等不到回复时，从外面拿进程的状态（会话引擎自己看不到进程） */
 export interface RpcDiagnose {
