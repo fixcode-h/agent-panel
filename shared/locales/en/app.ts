@@ -273,6 +273,11 @@ export const EN_APP: Record<string, string> = {
   未选对话时分析该项目今天全部对话: 'All of this project’s conversations today are analyzed when none is selected',
   '删除项目 {name}': 'Remove project {name}',
   '删除对话 {title}': 'Remove conversation {title}',
+  '{n} 个项目已不存在，已从选择里移除': '{n} projects no longer exist and were removed from the selection',
+  '{n} 个对话已不存在，已从选择里移除': '{n} conversations no longer exist and were removed from the selection',
+  '上次打开的报告已经不在本机，无法继续编辑':
+    'The report you had open is no longer on this machine and cannot be edited',
+  '新报告已经生成，可在「最近的报告」里找到': 'The new report is ready; find it in “Recent reports”',
   未命名对话: 'Untitled conversation',
   '正在加载…': 'Loading…',
   '报告格式不完整（已自动重试一次）：{issues}': 'Report format is incomplete (retried once): {issues}',
