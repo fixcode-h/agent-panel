@@ -6,7 +6,8 @@ import type { JobTarget } from './JobDialog'
 /**
  * 面板里的跳转，由父对话的任务页提供：
  * - child：工具条目里点子对话的名字，在右栏打开那个子对话；
- * - run：子对话（右栏面板或单独打开）里点「启动工作流」这一行，就地换成那次运行的视图（带返回和输入框）。
+ * - runTool：子对话（右栏面板或单独打开）里点「启动工作流」这一行，就地换成那次运行的视图（带返回和输入框）；
+ * - runView：运行区里那行「工作流」点了，按运行号打开那次运行的视图。
  * 没有提供时（子对话自己不显示子对话、父对话点运行仍是弹窗口）对应的名字不能点。
  * 放在同一个上下文里：任务页的标题栏外面只套一层，不用为了多一个入口再套一层
  */
@@ -14,7 +15,13 @@ export interface PaneNav {
   child?: (id: string) => void
   /** 右栏当前打开的子对话：切换下拉用它标出当前项 */
   openChild?: string
-  run?: (tool: ToolUse) => void
+  /** 点「启动工作流」那条工具调用：认回它启动的是第几次运行，打开那次运行的视图 */
+  runTool?: (tool: ToolUse) => void
+  /**
+   * 运行区里那行「工作流」点了：按运行号打开这次运行的视图（父对话开右栏，子对话就地换成那次运行的视图）。
+   * 和 runTool 的区别：那个认的是「启动工作流」那条工具调用，这个只要一个运行号（见 web/src/lib/run-row.ts 的 runRow）
+   */
+  runView?: (run: number) => void
   /** 后台命令行的标题点了：在任务页顶层打开这条命令的窗口（命令跑完那一行会消失，窗口不能跟着没） */
   job?: (job: JobTarget) => void
 }
@@ -23,7 +30,8 @@ export const PaneNavCtx = createContext<PaneNav | null>(null)
 
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
 export const useOpenChildId = () => useContext(PaneNavCtx)?.openChild ?? ''
-export const useRunOpen = () => useContext(PaneNavCtx)?.run ?? null
+export const useRunToolOpen = () => useContext(PaneNavCtx)?.runTool ?? null
+export const useRunViewOpen = () => useContext(PaneNavCtx)?.runView ?? null
 export const useJobOpen = () => useContext(PaneNavCtx)?.job ?? null
 
 /**

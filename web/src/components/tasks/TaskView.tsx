@@ -1370,8 +1370,8 @@ export function TaskView({
         <PaneNavCtx.Provider
           value={
             pane || task.parentTaskId
-              ? { run: openPaneRun, openChild, job: openJob }
-              : { child: openChildRow, openChild, job: openJob }
+              ? { runTool: openPaneRun, runView: openRunIn, openChild, job: openJob }
+              : { child: openChildRow, runView: openRunIn, openChild, job: openJob }
           }
         >
           <ChildListCtx.Provider value={children}>
