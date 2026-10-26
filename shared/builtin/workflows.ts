@@ -213,6 +213,7 @@ export const GENERAL: BuiltinWorkflow = {
     ['tester', '按项目的测试步骤跑构建、测试和验收'],
     ['docsync', '同步项目文档'],
     ['vcs', '版本控制收尾'],
+    ['worklog', '把今天各项目做完的事汇总成一份简短的 Markdown 报告'],
   ],
   document: `## 适用
 项目里的日常开发：需求、方案、实现、测试、文档、交付。工作流可以按顺序跑很多次，每次都是完整的一遍。
