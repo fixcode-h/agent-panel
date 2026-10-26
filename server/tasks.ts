@@ -4883,6 +4883,8 @@ export function tasksApi(deps: {
   routes.post('/:id/worktree/discard', async (c) => {
     const id = c.req.param('id')!
     if (busyWith(id)) return bad(c, t('对话正在执行，等这一轮结束后再删除独立分支'), 409)
+    // 父对话正在合并这个子对话：先让它合完（或失败）再丢弃，否则两边同时动分支和工作目录
+    if (merging.has(id)) return bad(c, t('父对话正在合并这个子对话，等结果出来再删除独立分支'), 409)
     const tk = await current(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
@@ -4909,8 +4911,9 @@ export function tasksApi(deps: {
       return bad(c, (e as Error).message, 409)
     }
     const cur = (await store.get(id)) ?? tk
-    // 分支丢弃后没有「合回」这一步了：父对话测试的状态一并清掉，按普通「没有分支可合」的路径收尾
-    if (cur.wrapRequest?.state === 'testing' || cur.wrapRequest?.state === 'test-failed') cur.wrapRequest = undefined
+    // 分支丢弃后没有「合回」这一步了：收尾请求和父对话测试的状态一并清掉，按普通「没有分支可合」的路径收尾。
+    // 四种状态里任何一个留着都会让后面某条收尾入口按旧状态说话（评审 R3 / R4）
+    if (cur.wrapRequest) cur.wrapRequest = undefined
     // 计划里的收尾步骤也要收口：它停在「已合回，等父对话跑测试」，不收的话 plan hold 会一直拦住完成（评审 R2）
     markWrapUp(cur, 'merge', 'done', '独立分支已删除，不需要合回')
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }

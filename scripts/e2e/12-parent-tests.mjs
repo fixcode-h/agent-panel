@@ -143,7 +143,7 @@ await runShard('父对话执行测试步骤', async (api) => {
     try {
       dropped = await call('POST', `/tasks/${kid2.id}/worktree/discard`)
     } catch (e) {
-      if (!/执行/.test(e?.message ?? String(e))) throw e
+      if (!/执行|合并/.test(e?.message ?? String(e))) throw e
       await sleep(300)
     }
   }
