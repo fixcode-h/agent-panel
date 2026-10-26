@@ -377,35 +377,38 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
-    await p
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll('button')].some(
-            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
-          ),
-        null,
-        { timeout: 20000 },
-      )
-      .catch(() => errors.push('AI 初始化：等不到「查看推荐并应用」'))
     await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
-    await reviewInit.click().catch(() => {})
+    // 结果直接画在对话右侧的报告面板（下面的检查兜住它一定出现）；旧路径里的「查看推荐并应用」有就点一下
+    if (await reviewInit.count()) await reviewInit.click({ timeout: 10000 }).catch(() => {})
     await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
     await p
       .getByRole('button', { name: '全部应用' })
       .click()
       .catch(() => errors.push('AI 初始化：没有「全部应用」'))
     await check(p, 'AI初始化-全部应用', ['已应用'])
-    // 应用之后计数和按钮要立刻跟上：待应用的项清零，没有可应用项时「全部应用」不可点
-    await check(p, 'AI初始化-全部应用后状态', ['全部推荐都已和当前设置一致'])
-    if (await p.getByText('项待应用').count()) errors.push('AI 初始化：全部应用后还显示「N 项待应用」')
-    const applyAllButton = p.getByRole('button', { name: '全部应用' })
-    if (!(await applyAllButton.isDisabled())) errors.push('AI 初始化：没有可应用项时「全部应用」还能点')
+    // 应用之后计数和按钮要立刻跟上：待应用的项清零、没有可应用项时「全部应用」不可点。
+    // 看的是对话右侧的报告面板（ProjectInitReport），文案是「和项目设置一致」
+    const initPanel = p.locator('[data-analysis-panel="init"]')
+    await initPanel
+      .getByText('全部推荐都已和项目设置一致', { exact: false })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('AI 初始化：全部应用后没有显示「全部推荐都已和项目设置一致」'))
+    if (await initPanel.getByText('项待应用').count()) errors.push('AI 初始化：全部应用后还显示「N 项待应用」')
+    if (!(await initPanel.getByRole('button', { name: '全部应用' }).isDisabled()))
+      errors.push('AI 初始化：没有可应用项时「全部应用」还能点')
+    await check(p, 'AI初始化-全部应用后状态')
     await p
       .getByText('评估后不适用的工作流')
       .scrollIntoViewIfNeeded()
       .catch(() => {})
     await check(p, 'AI初始化-工作流评估', ['评估后不适用的工作流', '可选工作流'])
     await p.keyboard.press('Escape')
+    // 项目设置弹窗和里面的 AI 窗口叠着：一次 Escape 只关最上面那层，关到一层不剩再去点项目首页的输入框
+    for (let i = 0; i < 3 && (await p.locator('[role="dialog"][data-state="open"]').count()); i++) {
+      await p.keyboard.press('Escape')
+      await settle(p).catch(() => {})
+    }
     // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()
     await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
@@ -414,7 +417,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Backspace')
     // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
     await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
-    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '后台命令报完成后先看用时'])
+    await check(p, '项目首页-项目教训', ['项目教训 · 5', '已改写', '后台命令报完成后先看用时'])
     await p
       .getByRole('button', { name: /新增支付方式写进/ })
       .first()

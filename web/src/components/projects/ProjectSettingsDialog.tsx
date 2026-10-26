@@ -574,7 +574,6 @@ function Body({
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
         initResult: init ?? latest?.initResult ?? draft.initResult,
-        initializedAt: draft.initializedAt || latest?.initializedAt || '',
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
