@@ -802,11 +802,15 @@ app.delete('/projects/:id', async (c) => {
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 
 /**
- * 每小时一次的本地清理：回收站里过期的对话物理删除，再清扫没人管的独立目录。
- * 两件事同一节奏，不各起一个定时器
+ * 每小时一次的本地清理：回收站里过期的对话物理删除，清扫没人管的独立目录，
+ * 再兜底回收「任务已经收口、CLI 还活着」的进程（漏停的、重启前留下的）。
+ * 几件事同一节奏，不各起一个定时器
  */
 function runCleanup() {
   void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void tasks
+    .reapSettledClis()
+    .catch((e: Error) => log.warn('exec', '兜底回收已收口任务的 CLI 出错', { error: e.message }))
   void sweepStaleWorktrees()
 }
 

@@ -72,6 +72,7 @@ import {
   newTask,
   taskDeleted,
   taskGone,
+  taskSettled,
   trashLeftDays,
   taskSummary,
   withAttachments,
@@ -199,7 +200,7 @@ import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOver
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
 import { childEnv, isProcessAlive, killTree, taskCliAlive } from './exec/process.ts'
-import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
+import { trackedClis, untrackCliProcess, killTaskClis, reapSettledTaskClis } from './exec/orphans.ts'
 import {
   HISTORY_CAPACITY,
   SAMPLE_INTERVAL_MS,
@@ -235,6 +236,12 @@ const HELPER_STOP_POLL_MS = 150
 /** 对话搜索的缓存上限：留多少个对话、合计多少字符（超了按最久没用的丢，见 cachedMessages） */
 const SEARCH_CACHE_TASKS = 40
 const SEARCH_CACHE_CHARS = 8_000_000
+
+/**
+ * 兜底回收「任务已收口、CLI 还活着」时给的缓冲：停止是异步的（3 秒后才补杀），
+ * 别把正在退出的进程当僵尸再杀一次、再写一条日志
+ */
+const REAP_GRACE_MS = 60_000
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
@@ -2005,6 +2012,12 @@ export function tasksApi(deps: {
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
+    // 落到 resolved 之后再核对一次：上面只停得到本进程 live 里的那一轮，
+    // 重启前留下的、或某条路径漏停的 CLI 还挂在登记里（任务已经完成了，进程留着没人要）。
+    // 日志由 killTaskClis 写，里面带任务和 pid
+    await killTaskClis(childId, killTree).catch((err) =>
+      log.warn('task', '收尾后回收子对话的 CLI 进程失败', { task: childId, error: (err as Error).message }),
+    )
   }
 
   /**
@@ -5951,6 +5964,22 @@ export function tasksApi(deps: {
         await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
       }
       await dropUploads(removed)
+    },
+    /**
+     * 兜底回收：任务已经收口（resolved / 这一轮做完 / 已停下），它登记的 CLI 进程却还活着。
+     * 挂在启动后和每小时那一次清理上（见 server/index.ts 的 runCleanup），不另起定时器。
+     * 「算不算收口」只用 shared/task.ts 的 taskSettled，进程侧由 orphans.ts 核命令行，不误杀用户自己的 CLI。
+     * 返回回收掉的进程（日志里带任务、标题和活了多久），测试用它断言
+     */
+    async reapSettledClis() {
+      const metas = new Map((await store.list()).map((tk) => [tk.id, tk]))
+      const settled = async (id: string) => {
+        // 在跑的用 live 那份，它比落盘的新（刚置 resolved / 刚停下）
+        const tk = live.get(id)?.task ?? metas.get(id)
+        // 读不到（刚建、刚删）：这一轮不动，下一轮再看
+        return !!tk && taskSettled(tk)
+      }
+      return reapSettledTaskClis({ settled, kill: killTree, graceMs: REAP_GRACE_MS })
     },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {
