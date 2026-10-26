@@ -6,6 +6,22 @@
  */
 import { runShard } from './harness.mjs'
 
+/** 判定「窗口停在顶部」的 scrollTop 容差：滚动条贴顶时就是 0，留一点给像素取整 */
+const SCROLL_TOP_EPS = 2
+
+/**
+ * 判「卡片已经滚出视野」时要求可滚量比卡片高出的余量：
+ * 刚好等于卡片高时卡片下边缘正好贴着容器顶，属于临界值，多留几像素才算真的滚出去
+ */
+const SCROLL_OUT_EPS = 2
+
+/**
+ * 造「内容超过一屏」用的视口高度档位（从大到小试，够了就停）。
+ * 子任务窗口高度是 `min(820px, 100dvh-2rem)`，视口越矮内容区越小；演示数据的对话流长度不一，
+ * 固定一档可能仍不足一屏，那样「滚到底卡片该滚出视野」的断言会空转
+ */
+const VIEWPORT_SHRINK_STEPS = [480, 400, 340, 280, 240]
+
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
@@ -1218,8 +1234,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
       // 窗口最上面那块「派给它的要求」：派发时交给它的原文，按 `##` 小节排开（要做的事在前、验收标准在后）。
-      // 这个子任务已经有对话流，所以默认收起、吸顶在顶部：窗口贴底看最新输出时它仍看得见
-      // （用户报的就是「最上面看不到初始信息」，光把它放在滚动区最前不够，会被贴底滚出视野）
+      // 它是滚动区里的第一块普通内容、不吸顶（用户报的「不要悬浮在那」），打开时能看到它靠的是
+      // 窗口在有要求时按 startAt: 'top' 打开停在顶部，不是靠 sticky
       {
         const w = p.getByRole('dialog').last()
         const card = w.getByRole('region', { name: '派给它的要求' })
@@ -1230,50 +1246,53 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
             errors.push('子任务-窗口：有对话流时初始要求没收成摘要一句')
           if (await card.getByText('只读不改代码', { exact: false }).count())
             errors.push('子任务-窗口：有对话流时初始要求默认没收起')
-          // 关键：窗口已贴底，这张卡片仍在滚动区视野内（吸顶），用户不用往上翻
-          const atTop = await card.evaluate((el) => {
-            const sc = el.closest('.overflow-y-auto')
-            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
-            const a = sc.getBoundingClientRect()
-            const b = el.getBoundingClientRect()
-            return { inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1, gap: Math.round(b.top - a.top) }
-          })
+          /** 卡片和它所在滚动容器的位置关系：窗口打开就该停在顶部，卡片完整落在容器里 */
+          const place = () =>
+            card.evaluate((el) => {
+              const sc = el.closest('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+              const a = sc.getBoundingClientRect()
+              const b = el.getBoundingClientRect()
+              // 卡片下面紧接着的那块（对话流）是不是被卡片盖住：两者矩形相交就说明卡片浮在上面
+              const next = el.nextElementSibling
+              const cover = next instanceof HTMLElement ? Math.round(b.bottom - next.getBoundingClientRect().top) : 0
+              return {
+                inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1,
+                gap: Math.round(b.top - a.top),
+                top: Math.round(sc.scrollTop),
+                cover,
+              }
+            })
+          // 打开时停在顶部：卡片在视野内、贴着容器顶，滚动位置在 0 附近（贴底的话卡片会被推到视野之上）
+          const atTop = await place()
           if (!atTop) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
-          else if (!atTop.inView) errors.push(`子任务-窗口：贴底时初始要求不在视野内（距容器顶 ${atTop.gap}px）`)
+          else {
+            if (!atTop.inView) errors.push(`子任务-窗口：打开时初始要求不在视野内（距容器顶 ${atTop.gap}px）`)
+            if (atTop.top > SCROLL_TOP_EPS)
+              errors.push(`子任务-窗口：打开时没停在顶部，初始要求被顶上去（scrollTop ${atTop.top}px）`)
+            if (atTop.cover > 1) errors.push(`子任务-窗口：初始要求盖住了下面的对话流（压住 ${atTop.cover}px）`)
+          }
           await check(p, '子任务-窗口-初始要求', ['派给它的要求', '查清购物车角标'])
-          // 贴着底看最新输出：要求那块吸顶时不能弄坏窗口本身的贴底行为
-          const box = await w.evaluate((el) => {
-            const sc = el.querySelector('.overflow-y-auto')
-            return sc
-              ? { over: sc.scrollHeight - sc.clientHeight, gap: sc.scrollHeight - sc.scrollTop - sc.clientHeight }
-              : null
-          })
-          if (box && box.over > 40 && box.gap > 40)
-            errors.push(`子任务-窗口：加了初始要求后没有停在最新输出（离底部 ${Math.round(box.gap)}px）`)
           // 展开：按小节排开，要做的事在前、验收标准在后，两节正文都显示
           const toggle = card.getByRole('button', { name: /派给它的要求/ }).first()
           await toggle.click()
           await settle(p)
           await check(p, '子任务-窗口-初始要求-展开', ['要做的事', '验收标准'])
           // 关键：展开后卡片必须在视野内。只断言文本存在拦不住：Playwright 的 visible 不判视口，
-          // 正文被贴底滚动顶到视野之上时照样算 visible（旧写法就是这么漏的）
-          const opened = await card.evaluate((el) => {
-            const sc = el.closest('.overflow-y-auto')
-            if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
-            const a = sc.getBoundingClientRect()
-            const b = el.getBoundingClientRect()
-            return { inView: b.top >= a.top - 1 && b.top < a.bottom, top: Math.round(b.top - a.top) }
-          })
+          // 正文被跟随底部顶到视野之上时照样算 visible（旧写法就是这么漏的）
+          const opened = await place()
           if (!opened) errors.push('子任务-窗口：展开后没找到初始要求所在的滚动容器')
           else if (!opened.inView)
-            errors.push(`子任务-窗口：展开后初始要求被滚出视野（卡片顶距容器顶 ${opened.top}px）`)
+            errors.push(`子任务-窗口：展开后初始要求被滚出视野（卡片顶距容器顶 ${opened.gap}px）`)
+          else if (opened.cover > 1)
+            errors.push(`子任务-窗口：展开后初始要求盖住了下面的对话流（压住 ${opened.cover}px）`)
           const heads = await card.evaluate((el) =>
             [...el.querySelectorAll(':scope > div > section > p')].map((x) => x.textContent?.trim() ?? ''),
           )
           if (heads.indexOf('要做的事') < 0 || heads.indexOf('验收标准') < 0)
             errors.push(`子任务-窗口：初始要求没按小节显示（当前小节：${heads.join(' / ') || '无'}）`)
           else if (heads.indexOf('要做的事') > heads.indexOf('验收标准'))
-            errors.push(`子任务-窗口：小节顺序不对，要做的事应该在验收标准前面（当前：${heads.join(' / ')}`)
+            errors.push(`子任务-窗口：小节顺序不对，要做的事应该在验收标准前面（当前：${heads.join(' / ')}）`)
           if (!(await card.getByText('只读不改代码', { exact: false }).count()))
             errors.push('子任务-窗口：初始要求没有显示验收标准的内容')
           // 再收起：正文收回去，摘要回来
@@ -1283,6 +1302,132 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
             errors.push('子任务-窗口：再收起初始要求后正文还显示着')
           if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
             errors.push('子任务-窗口：再收起初始要求后没有留下摘要一句')
+          // 滚到底部附近之后恢复跟随：新内容进来窗口仍停在最新输出（停在顶部不能变成「再也不跟」）
+          await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            if (sc instanceof HTMLElement) sc.scrollTop = sc.scrollHeight
+          })
+          await settle(p)
+          const followed = await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            return sc ? sc.scrollHeight - sc.scrollTop - sc.clientHeight : null
+          })
+          if (followed !== null && followed > 40)
+            errors.push(`子任务-窗口：滚到底部后没接着跟最新输出（离底部 ${Math.round(followed)}px）`)
+          // 不吸顶：卡片是滚动区里的普通一块，滚到底部就该跟着滚出视野。
+          // 上面几条在「内容不足一屏」时区分不出 sticky 和普通块（scrollTop 恒为 0，两种写法都过），
+          // 所以要先造出可滚动：窗口高度是 min(820px, 100dvh-2rem)，矮视口能让内容区小于内容。
+          // 演示数据的对话流长度不等，固定一个高度不一定够，所以逐档压矮到能滚出比卡片还高的一段为止
+          const cardH = await card.evaluate((el) => Math.round(el.getBoundingClientRect().height))
+          let scrolled = null
+          for (const height of VIEWPORT_SHRINK_STEPS) {
+            await p.setViewportSize({ width: 1440, height })
+            await settle(p)
+            scrolled = await w.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement)) return null
+              return { scrollable: Math.round(sc.scrollHeight - sc.clientHeight) }
+            })
+            if (scrolled && scrolled.scrollable >= cardH + SCROLL_OUT_EPS) break
+          }
+          if (!scrolled) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
+          else if (scrolled.scrollable < cardH + SCROLL_OUT_EPS)
+            // 内容没超过一屏就没有「滚出视野」可言，这条断言会假绿，所以前置条件不满足时直接报出来
+            errors.push(
+              `子任务-窗口：压矮到 ${VIEWPORT_SHRINK_STEPS.at(-1)}px 后仍滚不满一张卡片，验证不了不吸顶` +
+                `（可滚 ${scrolled.scrollable}px，卡片高 ${cardH}px）`,
+            )
+          else {
+            await w.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (sc instanceof HTMLElement) sc.scrollTop = sc.scrollHeight
+            })
+            await settle(p)
+            const scrolledOut = await place()
+            if (!scrolledOut) errors.push('子任务-窗口：滚到底后没找到初始要求所在的滚动容器')
+            else if (scrolledOut.inView)
+              errors.push(`子任务-窗口：滚到底后初始要求还浮在容器顶部（距容器顶 ${scrolledOut.gap}px），卡片不该吸顶`)
+          }
+          await p.setViewportSize({ width: 1440, height: 900 })
+          await settle(p)
+          // 截图留在正常尺寸上：截图档案是给人看的，矮窗口里看不出卡片有没有被下面的内容压住
+          await check(p, '子任务-窗口-初始要求-不吸顶')
+          // 没有要求（旧记录：schema 加 brief 之前落盘的 step）时卡片整块不渲染，
+          // 滚动区第一块就是对话流，这时窗口照旧贴底看最新输出——停在顶部会让最新的结果要自己滚下去才看得到
+          // 先记下窗口本身，跑完要把它关掉再重新打开，不然后面的「AI 分析」用例找不到还开着的窗口
+          await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+          await settle(p)
+          // 原值要带回 Node 侧：页面里的 window 属性活不过 p.reload()，挂在那里写回时已经丢了
+          const savedBrief = await p.evaluate((k) => {
+            const db = JSON.parse(localStorage.getItem(k))
+            const parent = db.tasks.find((x) => x.title.includes('购物车'))
+            const sub = parent.steps.find((x) => x.slot === 'sub' && x.title === '核对角标的订阅时机')
+            if (!sub) throw new Error('演示数据里找不到「核对角标的订阅时机」这个子任务')
+            const before = sub.brief
+            sub.brief = ''
+            localStorage.setItem(k, JSON.stringify(db))
+            // 不写死一份 brief：演示数据改了这条用例不用跟
+            return before
+          }, 'agent-panel-demo-v3')
+          await p.reload()
+          await openTask()
+          await bar.first().click()
+          await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+          await settle(p)
+          const noBrief = p.getByRole('dialog').last()
+          if (await noBrief.getByRole('region', { name: '派给它的要求' }).count())
+            errors.push('子任务-窗口：没有 brief 的旧记录不该画出「派给它的要求」')
+          // 造出可滚动再量：内容不足一屏时 gap 恒为 0，这条断言会空转（和上面「不吸顶」同一个道理）
+          let noBriefPos = null
+          for (const height of VIEWPORT_SHRINK_STEPS) {
+            await p.setViewportSize({ width: 1440, height })
+            await settle(p)
+            noBriefPos = await noBrief.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement)) return null
+              return {
+                over: Math.round(sc.scrollHeight - sc.clientHeight),
+                gap: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight),
+              }
+            })
+            if (noBriefPos && noBriefPos.over > SCROLL_TOP_EPS) break
+          }
+          await p.setViewportSize({ width: 1440, height: 900 })
+          await settle(p)
+          // 截图留在正常尺寸上：矮窗口里看不出窗口真实形态（断言用的 noBriefPos 上面已量完）
+          await check(p, '子任务-窗口-无要求仍贴底')
+          if (!noBriefPos) errors.push('子任务-窗口：没有 brief 的旧记录找不到滚动容器')
+          else if (noBriefPos.over <= SCROLL_TOP_EPS)
+            errors.push(
+              `子任务-窗口：压矮到 ${VIEWPORT_SHRINK_STEPS.at(-1)}px 后没有 brief 的旧记录仍不足一屏，验证不了贴底性`,
+            )
+          else if (noBriefPos.gap > SCROLL_TOP_EPS)
+            errors.push(
+              `子任务-窗口：没有 brief 的旧记录打开没贴在最新输出（离底部 ${noBriefPos.gap}px，可滚 ${noBriefPos.over}px）`,
+            )
+          // 恢复现场：把 brief 写回去、重新打开那个子任务窗口，后面的「AI 分析」接着用它
+          await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+          await settle(p)
+          await p.evaluate(
+            ([k, v]) => {
+              const db = JSON.parse(localStorage.getItem(k))
+              const parent = db.tasks.find((x) => x.title.includes('购物车'))
+              const sub = parent.steps.find((x) => x.slot === 'sub' && x.title === '核对角标的订阅时机')
+              // 原值是 undefined（旧记录本来就没这个字段）时也原样写回，不要变成空字符串
+              if (sub) sub.brief = v
+              localStorage.setItem(k, JSON.stringify(db))
+            },
+            ['agent-panel-demo-v3', savedBrief],
+          )
+          await p.reload()
+          await openTask()
+          await bar.first().click()
+          await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+          await settle(p)
+          // 复原真的生效了吗：卡片回来了才算恢复现场（这段写回之前是死代码，重载后丢失，这里就是拦它的）
+          if (!(await p.getByRole('dialog').last().getByRole('region', { name: '派给它的要求' }).count()))
+            errors.push('子任务-窗口：清空 brief 的用例跑完后没把要求写回去（后面的用例会看不到要求）')
+          await settle(p)
         }
       }
       // 子任务窗口头部的「AI 分析」：弹的是执行记录那一套弹窗（同样的 focus 输入和「开始分析」），
