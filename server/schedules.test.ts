@@ -190,14 +190,17 @@ test('只改名字、时间还是同一分钟：状态保持已执行，不会�
   await api.tick(now)
   assert.equal((await find(s.id)).status, 'done')
 
+  // 前端的时间只到分钟：带秒的时间在弹窗里改名字时会被截断成同一分钟的整分，
+  // 旧实现按字符串比较会判成「改了时间」，把已执行的计划重置成待执行
+  const sameMinuteAt = new Date(Date.parse(s.at) + 20_000).toISOString()
   const res = await api.routes.request(`/${s.id}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(plan(`${name}-改名`, { at: s.at })),
+    body: JSON.stringify(plan(`${name}-改名`, { at: sameMinuteAt })),
   })
   assert.equal(res.status, 200)
   const after = (await res.json()) as Schedule
   assert.equal(after.name, `${name}-改名`)
   assert.equal(after.status, 'done')
-  assert.equal(after.at, s.at)
+  assert.equal(after.at, sameMinuteAt)
 })
