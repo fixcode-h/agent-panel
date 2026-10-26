@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Archive, ArchiveRestore, Pause, PencilLine, Play, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
+import { TRASH_RETENTION_DAYS } from '@shared/task'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -89,7 +90,11 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
       open={deleting}
       onOpenChange={setDeleting}
       title={t('删除「{name}」？', { name: task.title })}
-      description={chat ? t('这次聊天的记录会一起删除。') : t('任务的记录会一起删除，项目里的文件不受影响。')}
+      description={
+        chat
+          ? t('这次聊天会移进回收站，{days} 天内可以恢复。', { days: TRASH_RETENTION_DAYS })
+          : t('任务记录会移进回收站，{days} 天内可以恢复；项目里的文件不受影响。', { days: TRASH_RETENTION_DAYS })
+      }
       onConfirm={remove}
     />
   )

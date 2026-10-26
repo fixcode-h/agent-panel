@@ -151,6 +151,8 @@ export function UserMessage({
   attachments,
   extra,
   actions,
+  /** 这条消息在对话里对应的消息 id：搜索结果跳过来时按它定位（见 web/src/lib/message-anchor.ts） */
+  anchorId,
   size = 'md',
 }: {
   text: string
@@ -159,10 +161,11 @@ export function UserMessage({
   /** 气泡里文字下面的内容（例如 UI 设计的标注） */
   extra?: React.ReactNode
   actions?: React.ReactNode
+  anchorId?: string
   size?: 'sm' | 'md'
 }) {
   return (
-    <div className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+    <div data-msg={anchorId} className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
       {(text || extra || !!attachments?.length) && (
         <div
           className={cn(

@@ -1203,10 +1203,13 @@ await runShard('工作流条件与失败', async (api) => {
   assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG_1PX)
   assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=README.md`)).status, 400, '不是图片不能当图片读')
   assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=../../etc/passwd`)).status, 400)
-  // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
+  // 删除先进回收站：附件也留着（恢复后还要用）；永久删除时才一起删掉
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)
-  assert.ok(!existsSync(attDir), '删除任务时删掉它的附件')
+  assert.ok(existsSync(attDir), '进回收站时它的附件还留着')
+  await call('DELETE', `/tasks/${tAtt.id}/permanent`)
+  assert.ok(!existsSync(attDir), '永久删除时删掉它的附件')
+  // 还在用的附件不会因为时间久了被清理
   // 再传一个还没发出去的附件，后面数据目录的统计要用
   await call('POST', '/uploads', {
     name: '草稿.txt',

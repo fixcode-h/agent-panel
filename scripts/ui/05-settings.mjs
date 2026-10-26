@@ -273,6 +273,65 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 没有差异时不能一直亮着；清掉钩子，后面的检查也不受影响
   await setOutdated('')
   if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：没有差异时侧栏「设置」上还有提示')
+  // 回收站与对话内容搜索：删掉的对话先进回收站、能恢复；正文里搜到的对话点开能定位到那条消息。
+  // 用新页面跑：这里要往对话里发消息、删对话，别把上面设置检查的数据带脏
+  {
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base)
+    await d.getByText('购物车右上角', { exact: false }).first().click()
+    const input = d.locator('#follow-up')
+    const hasInput = await input.waitFor({ timeout: 10000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!hasInput) errors.push('对话搜索：对话页的输入框没出来')
+    else {
+      // 只在正文里出现的词：标题里没有它，命令面板和侧栏都得靠搜对话内容才找得到
+      await input.fill('界面检查用的独占词：紫藤花架')
+      await d.keyboard.press('Enter')
+      await d
+        .getByText('紫藤花架')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('对话搜索：消息没有出现在对话里'))
+      // 命令面板：命中显示成「对话标题 + 命中片段」，点它跳到那条消息
+      await d.keyboard.press('Control+k')
+      const search = d.getByRole('combobox').first()
+      await search.fill('紫藤花架')
+      await check(d, '对话搜索-命令面板命中正文', ['对话内容', '紫藤花架'])
+      await d.getByRole('option').filter({ hasText: '购物车右上角' }).first().click()
+      const jumped = await d
+        .waitForFunction(() => /^#\/projects\/[^/]+\/[^/]+\/[^/]+$/.test(location.hash), undefined, { timeout: 5000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!jumped) errors.push('对话搜索：点正文命中后地址里没有消息 id（没有定位到那条消息）')
+      await check(d, '对话搜索-跳到那条消息')
+      // 侧栏搜索框走同一份结果：正文命中列在「对话内容」分组里
+      await d.locator('#sidebar-search').fill('紫藤花架')
+      await check(d, '对话搜索-侧栏命中正文', ['对话内容'])
+      // 回收站：删掉的对话从列表里消失，但能在设置里找到并恢复
+      await d.locator('#sidebar-search').fill('购物车右上角')
+      const sideRow = d.locator('aside').getByText('购物车右上角', { exact: false }).first()
+      await sideRow.click({ button: 'right' })
+      await d.getByRole('menuitem', { name: '删除', exact: true }).click()
+      await d.getByRole('button', { name: '删除', exact: true }).last().click()
+      // 侧栏右键删除没有 toast（只有任务页那个删除按钮才有），这里断言它真的从侧栏结果里消失
+      await d
+        .locator('aside')
+        .getByText('购物车右上角', { exact: false })
+        .first()
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('回收站：删除后侧栏里还有这个对话'))
+      await d.getByRole('button', { name: '设置', exact: true }).first().click()
+      await d.getByRole('button', { name: '数据', exact: true }).click()
+      await check(d, '回收站-列出已删除的对话', ['回收站', '购物车右上角', '恢复', '永久删除'])
+      await d.getByRole('button', { name: '恢复', exact: true }).first().click()
+      await check(d, '回收站-恢复后', ['回收站是空的'])
+    }
+  }
+
   // 英文界面的截图和以前一样放在浅色主题下看
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

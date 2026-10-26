@@ -122,8 +122,11 @@ import {
   taskGone,
   taskSummary,
   trackWait,
+  trashLeftDays,
   withAttachments,
+  type TrashRow,
 } from '@shared/task'
+import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
 import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -2860,6 +2863,59 @@ function demoMemoryAnalysis(task: Task, tasks: Task[], projects: Project[]): Tas
   }
 }
 
+/**
+ * 演示里的正文搜索：和正式版同一份片段口径（shared/task-search.ts），数据都在内存里，直接扫就行。
+ * 已删除（回收站里）的对话同样不参与
+ */
+function demoTasksSearch(tasks: Task[], query: URLSearchParams): { hits: SearchHit[]; scanned: number; more: boolean } {
+  const q = (query.get('q') ?? '').trim()
+  if (!q) return { hits: [], scanned: 0, more: false }
+  const list = tasks.filter((t) => !t.deletedAt).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+  const hits: SearchHit[] = []
+  for (const tk of list) {
+    let taken = 0
+    for (const m of tk.messages) {
+      if (taken >= SEARCH_HITS_PER_TASK || hits.length >= SEARCH_HIT_LIMIT) break
+      const hit = messageHit(m.text, q)
+      if (!hit) continue
+      hits.push({
+        taskId: tk.id,
+        title: tk.title,
+        messageId: m.id,
+        role: m.role,
+        at: m.at,
+        count: hit.count,
+        snippet: hit.snippet,
+        index: hit.index,
+        length: q.length,
+      })
+      taken++
+    }
+    if (hits.length >= SEARCH_HIT_LIMIT) break
+  }
+  return { hits, scanned: list.length, more: false }
+}
+
+/** 回收站列表：字段和正式后端一致（见 server/tasks.ts 的 GET /tasks/trash） */
+function demoTrash(tasks: Task[]): TrashRow[] {
+  const now = Date.now()
+  const deleted = tasks.filter((t) => t.deletedAt)
+  const parents = new Set(deleted.filter((t) => !t.parentTaskId).map((t) => t.id))
+  return deleted
+    .filter((t) => !t.parentTaskId || !parents.has(t.parentTaskId))
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      projectId: t.projectId,
+      parentTaskId: t.parentTaskId ?? '',
+      deletedAt: t.deletedAt!,
+      leftDays: trashLeftDays(t.deletedAt!, now),
+      children: deleted.filter((k) => k.parentTaskId === t.id).length,
+      worktree: t.worktree?.state ?? '',
+    }))
+    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2880,16 +2936,19 @@ function tasksRoute(
         if (!k.parentTaskId || !demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
-      // 和正式版一样：子对话不进项目列表，在父对话里看
+      // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId)
+          .filter((t) => !t.parentTaskId && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
           .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
+  // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
+  if (id === 'search' && method === 'GET') return demoTasksSearch(tasks, query)
+  if (id === 'trash' && method === 'GET') return demoTrash(tasks)
   // 导入别人导出的任务：和正式版一样连同包里的子对话一起建成只读的，返回父任务在前的整棵树
   if (id === 'import' && method === 'POST') {
     const b = (body ?? {}) as { projectId?: string; bundle?: unknown }
@@ -2904,6 +2963,8 @@ function tasksRoute(
     return made
   }
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
+  // 和正式后端一致：进了回收站的对话读不到（列表里也没有它），恢复后又能读
+  if (method === 'GET' && task.deletedAt && !sub) fail('任务不存在')
   if (
     task.imported &&
     (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow'].includes(
@@ -2912,10 +2973,29 @@ function tasksRoute(
       (method === 'PATCH' && Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived')))
   )
     fail('这是导入的任务，只能查看，不能继续执行')
-  if (method === 'DELETE') {
-    if (live.has(id)) live.get(id)!.stop = true
-    remove('tasks', id, '任务不存在')
+  // 删除 = 进回收站；permanent 有自己的一段（在下面），不能被这里先接走
+  if (method === 'DELETE' && !sub) {
+    // 和正式版一样：删除只进回收站（任务记录和对话都留着），保留期内能恢复
+    const at = new Date().toISOString()
+    for (const tk of [task, ...tasks.filter((x) => x.parentTaskId === id)]) {
+      if (live.has(tk.id)) live.get(tk.id)!.stop = true
+      tk.deletedAt ??= at
+    }
+    persist()
     return undefined
+  }
+  if (sub === 'permanent' && method === 'DELETE') {
+    // 永久删除：连子对话一起清掉，不进回收站
+    const ids = new Set([id, ...tasks.filter((x) => x.parentTaskId === id).map((x) => x.id)])
+    for (const tk of tasks.filter((t) => ids.has(t.id))) tasks.splice(tasks.indexOf(tk), 1)
+    persist()
+    return undefined
+  }
+  if (sub === 'restore' && method === 'POST') {
+    for (const tk of [task, ...tasks.filter((x) => x.parentTaskId === id && x.deletedAt)]) delete tk.deletedAt
+    persist()
+    // 演示里没有真的独立分支目录，不会出现目录被清理的情况
+    return { worktreeCleared: false }
   }
   if (sub === 'stop') {
     if (live.has(id)) live.get(id)!.stop = true

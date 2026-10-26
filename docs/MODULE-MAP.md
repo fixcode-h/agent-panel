@@ -36,3 +36,5 @@
 | 改内置角色、工作流模板                                      | `shared/builtin/`，判定标准见 [agent-catalog.md](agent-catalog.md)                                                                                              |
 | 改 Agent 的回复 / 思考语言                                  | `shared/prompt-lang.ts` + `server/exec/runner.ts` + [cli-config.md](cli-config.md)                                                                              |
 | 改工作总结的时间窗口、报告内容                              | `shared/summary.ts`（纯逻辑和提示词）、`server/summary.ts`（跑 CLI、存报告）、`web/src/pages/SummaryPage.tsx`；请求是项目 → 对话两层，报告固定三节              |
+| 改对话删除、回收站保留期、过期清理                          | `shared/task.ts` 的 `TRASH_RETENTION_DAYS` / `taskGone`（删除只做标记）；标记、恢复、物理删除在 `server/tasks.ts`（`enterTrash` / `cleanupTrash` / `purgeTasks`），清理挂在 `server/index.ts` 的 `runCleanup` |
+| 改对话内容搜索的命中口径、片段、上限                        | `shared/task-search.ts`（前后端共用）；扫描与预算在 `server/tasks.ts` 的 `GET /tasks/search`；前端 `web/src/lib/use-task-search.ts`、跳转到消息在 `web/src/lib/message-anchor.ts` |

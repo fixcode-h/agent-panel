@@ -42,9 +42,9 @@ export const EN_APP: Record<string, string> = {
   重命名: 'Rename',
   删除: 'Delete',
   '删除「{name}」？': 'Delete “{name}”?',
-  '这次聊天的记录会一起删除。': 'The chat history will be deleted too.',
-  '任务的记录会一起删除，项目里的文件不受影响。':
-    'The task history will be deleted too. Files in the project are not affected.',
+  '这次聊天会移进回收站，{days} 天内可以恢复。': 'This chat moves to the trash; you can restore it within {days} days.',
+  '任务记录会移进回收站，{days} 天内可以恢复；项目里的文件不受影响。':
+    'The task history moves to the trash and can be restored within {days} days. Files in the project are not affected.',
   最近: 'Recent',
   '还没有聊天。': 'No chats yet.',
   已删除的项目: 'Deleted project',
@@ -191,6 +191,8 @@ export const EN_APP: Record<string, string> = {
   '没有符合的聊天。': 'No matching chats.',
   搜索任务: 'Search tasks',
   '没有符合的任务。': 'No matching tasks.',
+  对话内容: 'Message content',
+  '正在搜对话内容…': 'Searching message content…',
   操作: 'Actions',
   '收起 / 展开侧栏': 'Collapse / expand sidebar',
   打开设置: 'Open settings',
@@ -255,8 +257,8 @@ export const EN_APP: Record<string, string> = {
     'Archived {n} conversations; pick “Archived” in the filter to find them',
   '删除「{name}」里 {n} 个未运行的对话？': 'Delete {n} idle conversations in “{name}”?',
   '归档「{name}」里 {n} 个未运行的对话？': 'Archive {n} idle conversations in “{name}”?',
-  '正在执行的对话、有没合并的独立分支的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。':
-    'Running conversations and ones with unmerged separate branches are left alone. Deleted conversations and their child conversations cannot be recovered. Files in the local folder are not touched.',
+  '正在执行的对话、有没合并的独立分支的对话不受影响。删除的对话会移进回收站，{days} 天内可以在设置 →「数据」→ 回收站里恢复，不会动本地目录里的文件。':
+    'Running conversations and ones with unmerged separate branches are left alone. Deleted conversations move to the trash and can be restored within {days} days in Settings → Data → Trash. Files in the local folder are not touched.',
   '正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。':
     'Running conversations are left alone. Archived conversations are not deleted; pick “Archived” in the filter to find them.',
   // 工作总结

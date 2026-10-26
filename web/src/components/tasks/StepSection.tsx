@@ -134,6 +134,7 @@ function StepSectionBase({
                 {r.msgs.map((m) => (
                   <UserMessage
                     key={m.id}
+                    anchorId={m.id}
                     text={m.text}
                     at={m.at}
                     attachments={m.attachments}

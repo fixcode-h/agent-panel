@@ -508,17 +508,34 @@ export interface ConvFacts {
   gone?: boolean
 }
 
+/** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
+export const TRASH_RETENTION_DAYS = 7
+const DAY_MS = 24 * 60 * 60 * 1000
+/** 剩几天被物理删除：向上取整，0 表示下次清理就删；删除时间读不懂时按已到期算 */
+export function trashLeftDays(deletedAt: string, now = Date.now()): number {
+  const at = Date.parse(deletedAt)
+  if (!Number.isFinite(at)) return 0
+  const left = at + TRASH_RETENTION_DAYS * DAY_MS - now
+  return left > 0 ? Math.ceil(left / DAY_MS) : 0
+}
+
+/** 已经进回收站（删除只是标记，内容还在，见 Task.deletedAt）；过期前仍能恢复 */
+export const taskDeleted = (t: { deletedAt?: string | null }) => !!t.deletedAt
+
 /**
- * 这条对话是不是已经从用户眼前收起了：归档，或者独立分支被用户删掉（子对话列表里归「已删除」的那类，
- * 见 web/src/lib/worktrees.ts 的分组）。
+ * 这条对话是不是已经从用户眼前收起了：归档、独立分支被用户删掉（子对话列表里归「已删除」的那类，
+ * 见 web/src/lib/worktrees.ts 的分组），或者进了回收站（见 Task.deletedAt）。
  * 收起的对话任务记录还在 store 里，status / working 也可能还写着 running（进程是异步收尾的），
  * 所以「算不算在跑」的第一处就把它排掉：运行区、子对话栏、侧栏「N 个执行中」、标题计数都读这一处，
  * 不要在 RunningNow 或各处再叠一层 if，那会让运行区的判空和分隔线对不上（见 Messages.tsx 的 RunningFooter）。
  * 合回分支（merged）不算收起：改动已经进主线，任务本身照常可见。
  * 它只是「已经收起」这个事实，能不能归成已完成还要看它是不是没在动（见 convState）
  */
-export const taskGone = (t: { archived?: boolean; worktree?: Pick<NonNullable<Task['worktree']>, 'state'> | null }) =>
-  t.archived === true || t.worktree?.state === 'discarded'
+export const taskGone = (t: {
+  archived?: boolean
+  deletedAt?: string | null
+  worktree?: Pick<NonNullable<Task['worktree']>, 'state'> | null
+}) => t.archived === true || t.worktree?.state === 'discarded' || taskDeleted(t)
 
 /**
  * 对话的状态，优先级从上到下：
@@ -583,6 +600,7 @@ export function childFacts(
     runs?: Task['runs']
     wrapRequest?: Task['wrapRequest']
     archived?: Task['archived']
+    deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
   },
   x: { background?: number; unmerged?: boolean } = {},
@@ -1309,6 +1327,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('换 Agent / 模型时中断')
     case 'archive':
       return t('归档时结束')
+    case 'delete':
+      return t('删除时结束')
     case 'restart':
       return t('面板重启时中断')
     case 'presence':
@@ -1797,6 +1817,25 @@ export function keepAliveVictims(
     .sort((a, b) => used(a).localeCompare(used(b)))
     .slice(0, over)
     .map((t) => t.id)
+}
+
+/**
+ * 回收站里的一行：设置页「回收站」只显示这几项（标题、删除时间、还剩几天，见 server/tasks.ts 的 GET /tasks/trash）。
+ * 保留期的说法只由 leftDays 算，前端不再自己拿删除时间推一遍
+ */
+export interface TrashRow {
+  id: string
+  title: string
+  projectId: string
+  parentTaskId: string
+  /** 进回收站的时间 */
+  deletedAt: string
+  /** 还剩几天被物理删除，0 表示下次清理就删 */
+  leftDays: number
+  /** 跟着一起进回收站的子对话数 */
+  children: number
+  /** 独立分支状态：active 的恢复后能接着用，其他没有可用的分支 */
+  worktree: string
 }
 
 export function taskSummary(t: Task): Task {

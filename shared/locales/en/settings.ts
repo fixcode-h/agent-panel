@@ -1374,4 +1374,20 @@ export const EN_SETTINGS: Record<string, string> = {
     "Only affects child conversations: the child skips this step, and after its branch is merged back the parent runs it in its own folder and sends the results and durations back; the parent itself still runs it when it verifies its own changes. Best for heavy steps such as end-to-end tests. Steps marked 'builds on merge' are still built by the parent through its build request and are not affected.",
   '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。':
     'Only applies to Git projects: child conversations on other version control systems have no branch to merge back, so this option would never run; it cannot be selected here.',
+  // 设置 →「数据」→ 回收站
+  回收站: 'Trash',
+  '{n} 个对话': '{n} conversations',
+  '删除的对话先进回收站，{days} 天后自动永久删除。恢复后能接着对话；永久删除会清掉对话内容、附件和独立分支。':
+    'Deleted conversations go to the trash first and are permanently removed after {days} days. Restored conversations can be continued; deleting permanently removes the messages, attachments and the isolated branch.',
+  回收站是空的: 'The trash is empty',
+  '{time}删除': 'Deleted {time}',
+  ' · 含 {n} 个子对话': ' · includes {n} children',
+  '{n} 天后永久删除': 'Permanently deleted in {n} days',
+  即将永久删除: 'Permanently deleted soon',
+  永久删除: 'Delete permanently',
+  再点一次: 'Click again',
+  '已恢复「{title}」': 'Restored "{title}"',
+  '「{title}」的独立分支目录已经清理，恢复后需要重新执行':
+    'The isolated branch folder of "{title}" has already been cleaned up; run it again after restoring',
+  '已永久删除「{title}」': 'Permanently deleted "{title}"',
 }

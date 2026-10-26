@@ -18,6 +18,7 @@ import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { byAskedAt } from '@shared/task'
+import { useTaskSearch } from '@/lib/use-task-search'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 /** 快捷键的显示：Mac 上是 ⌘，其他系统是 Ctrl */
@@ -46,6 +47,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { projects, tasks, agents, workflows } = useData()
   const { go, openSettings } = useNav()
   const [query, setQuery] = useState('')
+  // 对话正文的命中：标题里的字由下面的 items 按名称过滤，正文命中按标题匹配不到它们
+  const content = useTaskSearch(query)
   const [index, setIndex] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -119,17 +122,41 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     ]
   }, [projects, tasks, agents, workflows, go, openSettings])
 
-  // 没输入时每组只露几条，免得列表太长；输入后按名称和副标题匹配
+  // 没输入时每组只露几条，免得列表太长；输入后按名称和副标题匹配（正文命中排在标题命中后面）
   const q = query.trim().toLowerCase()
+  const contentItems = useMemo<Item[]>(() => {
+    const taskOf = (id: string) => tasks.find((x) => x.id === id)
+    return content.hits.map((h) => {
+      const tk = taskOf(h.taskId)
+      return {
+        id: `m:${h.taskId}:${h.messageId}`,
+        group: t('对话内容'),
+        label: h.title,
+        sub: h.snippet,
+        icon: MessageSquare,
+        // 带上消息 id：打开对话后由 message-anchor 滚到那一条（可能在折叠段里，会先展开）
+        run: () =>
+          go(
+            tk?.projectId
+              ? { page: 'projects', id: tk.projectId, sub: h.taskId, msg: h.messageId }
+              : { page: 'chat', id: h.taskId, msg: h.messageId },
+          ),
+      }
+    })
+  }, [content.hits, tasks, go])
   const shown = useMemo(() => {
-    if (q) return items.filter((x) => `${x.label} ${x.sub ?? ''}`.toLowerCase().includes(q)).slice(0, 60)
+    if (q)
+      return [
+        ...items.filter((x) => `${x.label} ${x.sub ?? ''}`.toLowerCase().includes(q)).slice(0, 60),
+        ...contentItems,
+      ]
     const per = new Map<string, number>()
     return items.filter((x) => {
       const n = (per.get(x.group) ?? 0) + 1
       per.set(x.group, n)
       return n <= 6
     })
-  }, [items, q])
+  }, [items, q, contentItems])
   const cur = Math.min(index, Math.max(0, shown.length - 1))
   useEffect(() => {
     list.current?.querySelector(`[data-index="${cur}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -183,7 +210,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           </label>
           <div ref={list} id="palette-list" role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
             {shown.length === 0 && (
-              <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">{t('没有找到')}</p>
+              <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">
+                {content.loading ? t('搜索中…') : t('没有找到')}
+              </p>
             )}
             {shown.map((x, i) => (
               <div key={x.id}>
