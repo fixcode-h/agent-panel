@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fmtDuration } from '../lib/duration.mjs'
+import { clearCliOutputs, CLI_OUTPUT_FILES } from '../fake-cli/outputs.mjs'
 import { startServer } from './spawn-server.mjs'
 import { readLog } from './read-log.mjs'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +28,10 @@ delete process.env.GIT_WORK_TREE
 delete process.env.GIT_INDEX_FILE
 delete process.env.GIT_COMMON_DIR
 delete process.env.GIT_CONFIG_COUNT
+
+// 合并被假 CLI 的输出文件挡住时，清掉重试的次数：说明这一轮刚写完，重试几次就过去了；
+// 一直被挡住说明不是残留造成的，要把原始错误抛出去，不能靠重试掩盖
+const CLI_OUTPUT_RETRY_LIMIT = 3
 
 // 1×1 的透明 PNG，用来测图片文件按原图读取
 export const PNG_1PX = Buffer.from(
@@ -331,6 +336,32 @@ export async function runShard(shardName, fn) {
       await sleep(60)
     }
   }
+  /**
+   * 合并子对话的独立分支：每次尝试前先清掉项目目录里假 CLI 的输出文件。
+   * 只清一次不够——任务还在执行时假 CLI 会再写一份（CI 上就是这样让合并撞上未跟踪文件的），
+   * 所以清和重试放在同一个循环里；被这些文件挡住时清掉再来，连着被挡住才当成真的合不上。
+   */
+  async function mergeTask(id, { label = '合并独立分支', timeout = 15000 } = {}) {
+    let merged
+    let blocked = 0
+    await waitFor(
+      async () => {
+        clearCliOutputs(projectDir)
+        try {
+          merged = await call('POST', `/tasks/${id}/worktree/merge`)
+          return true
+        } catch (e) {
+          const message = String(e)
+          // 这一轮还没跑完：等它结束再合，这期间假 CLI 会再往项目目录写一份输出文件
+          if (/正在执行/.test(message)) return false
+          if (CLI_OUTPUT_FILES.some((f) => message.includes(f)) && ++blocked < CLI_OUTPUT_RETRY_LIMIT) return false
+          throw e
+        }
+      },
+      { interval: 50, timeout, label },
+    )
+    return merged
+  }
   const calls = () => {
     const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
     return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
@@ -484,10 +515,12 @@ export async function runShard(shardName, fn) {
     waitFor,
     waitDone,
     waitTask,
+    mergeTask,
     calls,
     readLog,
     step,
     onExit,
+    clearCliOutputs,
     cli,
     agent,
     putSettings,

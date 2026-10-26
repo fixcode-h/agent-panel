@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
 import { wrapRequestIds } from './wrap-request.mjs'
+import { cliOutputFile } from './outputs.mjs'
 
 const args = process.argv.slice(2)
 // Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
@@ -874,7 +875,8 @@ const codexDone = (status, error) => {
   note('turn/completed', { turn: { id: 't1', status, error: error ? { message: error } : null, items: [] } })
   process.exit(0)
 }
-const file = isReviewRole() ? path.join(tmpdir(), `${kind}-output.txt`) : `${kind}-output.txt`
+// 评审角色把输出文件写进系统临时目录（评的是别人的仓库，不往里加文件）；其余就地写在工作目录
+const file = isReviewRole() ? path.join(tmpdir(), cliOutputFile(kind)) : cliOutputFile(kind)
 // 「AI 创建」的回复：一段说明 + JSON
 const assistText = () => {
   const pick = (tag) => input.match(new RegExp(`${tag}:(.*)`))?.[1]?.trim()
