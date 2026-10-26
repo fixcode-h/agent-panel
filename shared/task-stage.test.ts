@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task, TaskMessage, ToolUse } from './schema.ts'
+import type { TaskIcon } from './task.ts'
 import {
   convActive,
   convState,
@@ -209,29 +210,40 @@ test('没彻底完成的子对话行首转圈，在等你选择时不转', () =>
       startedAt: '',
       ...over,
     }) as ChildEntry
-  // 还在干活、计划没做完、后台命令/工作流/派出的子任务还在跑、独立分支没合回：都要转圈
-  assert.equal(childSpinning(kid({ working: true })), true)
-  assert.equal(childSpinning(kid({ plan: { done: 6, total: 9 } })), true)
-  assert.equal(childSpinning(kid({ background: 1 })), true)
-  assert.equal(childSpinning(kid({ workflow: true })), true)
-  assert.equal(childSpinning(kid({ helpers: true })), true)
-  assert.equal(childSpinning(kid({ unmerged: true })), true)
   assert.equal(childStage(kid({ unmerged: true })), 'unfinished')
+  // 已标记解决但分支还没合回：分组上仍是未完成，别一边说未完成一边像做完了
+  assert.equal(childStage(kid({ unmerged: true, resolved: true })), 'unfinished')
+  assert.equal(childStage(kid({})), 'done')
   // 在等你：换成提问图标，转圈会把「等你选择」说成「还在跑」
-  assert.equal(childSpinning(kid({ asking: 1 })), false)
   assert.equal(childWaiting(kid({ asking: 1 })), true)
   assert.equal(childWaiting(kid({ requests: 1 })), true)
   assert.equal(childWaiting(kid({ working: true })), false)
-  assert.equal(childSpinning(kid({ plan: { done: 1, total: 3 }, asking: 1 })), false)
-  // 做完了、停下了、失败了都不转圈
-  assert.equal(childSpinning(kid({})), false)
-  assert.equal(childSpinning(kid({ status: 'stopped' })), false)
-  assert.equal(childSpinning(kid({ status: 'failed' })), false)
-  assert.equal(childSpinning(kid({ plan: { done: 9, total: 9 } })), false)
-  // 已标记解决但分支还没合回：分组上仍是未完成，行首也跟着转，别一边说未完成一边像做完了
-  assert.equal(childStage(kid({ unmerged: true, resolved: true })), 'unfinished')
-  assert.equal(childSpinning(kid({ unmerged: true, resolved: true })), true)
-  assert.equal(childStage(kid({})), 'done')
+  // 每种快照该画成哪个图标：转圈就是图标是 running、等你就是图标是 waiting，
+  // 不再逐个写一遍 childSpinning / childWaiting 的期望值（它们就是这里的一行派生，见 task.ts）
+  const icons: [Partial<ChildEntry>, TaskIcon][] = [
+    // 还在干活、计划没做完、后台命令/工作流/派出的子任务还在跑、独立分支没合回：都要转圈
+    [{ working: true }, 'running'],
+    [{ plan: { done: 6, total: 9 } }, 'running'],
+    [{ background: 1 }, 'running'],
+    [{ workflow: true }, 'running'],
+    [{ helpers: true }, 'running'],
+    [{ unmerged: true }, 'running'],
+    [{ unmerged: true, resolved: true }, 'running'],
+    // 在等你：提问优先于「还在跑」
+    [{ asking: 1 }, 'waiting'],
+    [{ plan: { done: 1, total: 3 }, asking: 1 }, 'waiting'],
+    // 做完了、停下了、失败了都不转圈
+    [{}, 'done'],
+    [{ plan: { done: 9, total: 9 } }, 'done'],
+    [{ status: 'stopped' }, 'stopped'],
+    [{ status: 'failed' }, 'failed'],
+  ]
+  for (const [over, icon] of icons) {
+    const c = kid(over)
+    assert.equal(childIcon(c), icon, `图标不对：${JSON.stringify(c)}`)
+    assert.equal(childSpinning(c), icon === 'running')
+    assert.equal(childWaiting(c), icon === 'waiting')
+  }
 })
 
 /** 列表里的一行：图标、分组、徽标都读 ChildEntry（见 TaskView 的子对话行） */
