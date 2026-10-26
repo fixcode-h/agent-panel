@@ -1465,48 +1465,6 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await openTask()
   }
-  // 父对话自己在跑时运行区仍然列出子对话：以前运行区绑在「最后一段」上（last 含 !working），
-  // 父对话一跑整段就不渲染，子对话一条也列不出来
-  {
-    const key = 'agent-panel-demo-v3'
-    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
-    await p.evaluate((k) => {
-      const db = JSON.parse(localStorage.getItem(k))
-      const task = db.tasks.find((x) => x.title.includes('购物车'))
-      task.status = 'running'
-      task.working = true
-      localStorage.setItem(k, JSON.stringify(db))
-    }, key)
-    await p.reload()
-    await backToTask()
-    // 子对话列表 4 秒一轮，先等运行区里真的出现子对话行再数
-    const seenKids = await p
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
-            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
-          ),
-        { timeout: 10000 },
-      )
-      .then(
-        () => true,
-        () => false,
-      )
-    if (!seenKids) errors.push('父对话在跑时运行区没有列出子对话')
-    else {
-      const n = await p.evaluate(
-        () =>
-          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
-            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
-          ).length,
-      )
-      if (n !== 5) errors.push(`父对话在跑时运行区列了 ${n} 个子对话，应该和弹层一样是 5 个`)
-    }
-    await check(p, '子对话-父对话在跑时仍列出')
-    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
-    await p.reload()
-    await backToTask()
-  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()

@@ -67,6 +67,17 @@ export const UI_SHARD_COVERS = {
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',
   ],
+  // 运行区里的工作流行：从 02b 拆出来的一块（单步就 30 秒，要多次整页重载）
+  '02d-workflow': [
+    'web/src/components/tasks/RunningNow.tsx',
+    'web/src/components/tasks/RunView.tsx',
+    'web/src/components/tasks/Messages.tsx',
+    'web/src/components/tasks/TaskView.tsx',
+    'web/src/components/tasks/TaskMeta.tsx',
+    'web/src/components/files/FileTree.tsx',
+    'web/src/lib/tasks.ts',
+    'web/src/pages/ChatPage.tsx',
+  ],
   '03-library': [
     'web/src/components/library/',
     'web/src/components/agents/',
