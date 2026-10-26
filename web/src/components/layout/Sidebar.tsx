@@ -15,6 +15,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderSearch,
+  FileText,
   Layers,
   MessageSquarePlus,
   PencilLine,
@@ -89,6 +90,7 @@ export function Logo({ className }: { className?: string }) {
 }
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
+  { id: 'summary', label: t('工作总结'), icon: FileText },
   { id: 'schedules', label: t('计划'), icon: CalendarClock },
   { id: 'agents', label: t('角色'), icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },

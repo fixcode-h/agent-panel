@@ -360,6 +360,7 @@ export type PageId =
   | 'comfy'
   | 'library'
   | 'mcp'
+  | 'summary'
 export interface Route {
   page: PageId
   id?: string

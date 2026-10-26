@@ -7,7 +7,7 @@
 
 ## 职责
 
-- 页面：项目、任务、工作流、Agent、计划、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 页面：项目、任务、工作流、Agent、计划、设置、图库、ComfyUI、MCP、工作总结（`web/src/pages/`），不常用的大页面按需加载。
 - 角色页（`web/src/pages/AgentsPage.tsx`）默认按标签分组：没有标签的角色全在「默认」组，组按角色数降序、零组不渲染（规则和单测在 `web/src/lib/agent-groups.ts`）；可以切到按分类分组，分类的增删改和「在这个分类里新建」在那一侧。搜索和标签筛选与分组共存，命中的角色仍按组显示。
 - 计划面板（`web/src/pages/SchedulesPage.tsx`，左侧导航「计划」）：列出计划并显示状态（待执行 / 已执行 / 已跳过 / 已停用）和下次执行时间，错过的标出 `missedAt`、启动失败的显示 `lastError`；新建和编辑用弹窗（新建默认按 `workdayTemplate()` 填好「今日工作」：每天 19:00），时间用 `datetime-local` 按本机时区编辑（`toLocalInput` / `fromLocalInput`），还有启用开关、立即执行、删除。页面按 `SCHEDULE_TICK_MS` 和服务端同一节奏重新拉取列表。演示版只在 localStorage 里读写同样的字段，定时不会真的启动对话，立即执行只给一句提示。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
@@ -66,6 +66,7 @@
 - 设置页的「网络代理」挪到新的「连接」分组下的「网络与代理」分节（`sectionsFor` 里 `{ id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') }`，排在「外部访问」后面），组件是 `web/src/components/settings/NetworkSection.tsx`，内容是「启用代理」开关（`Settings.networkProxyEnabled`，默认 true）+「代理地址」输入（`Settings.proxy`，开关关掉时输入框 `disabled`）。在线演示（`VITE_DEMO`）时不显示这一页（和「外部访问」一样被 filter 掉）。开关的语义以服务端为准：`server/net.ts` 的 `configuredProxy(settings)` 在 `networkProxyEnabled` 为 false 时返回空串，于是 `planFor` 走「环境变量 `HTTPS_PROXY` → 直连」，失败后的本机代理自动探测（`localProxies`）照旧执行——关掉只跳过设置里这个地址，不关闭环境变量和自动探测（说明文字按这个实际行为写）；`server/net.ts` 里两处服务端报错文案随之从「设置 · 常规 · 网络代理」改成「设置 · 网络与代理」。
 - 项目设置「AI 初始化」页（`web/src/components/projects/ProjectInitPanel.tsx`、`ProjectSettingsDialog.tsx`）：初始化推荐随项目保存，重开时用 `buildGroups` 的 `same` 判定算差异，「应用推荐（n 项）」只改草稿、点「确认」才保存，无差异时提示「已和当前设置一致」；没有保存过推荐时只提供重新初始化。初始化对话跑完、结果交回项目时走 `api.saveProjectInitResult`（`PUT /projects/:id/init-result`，`ProjectSettingsDialog.tsx` 的 `deliver`）：**只写 `initResult` / `initializedAt`，服务端自己读最新项目再用 `shared/project-init.ts` 的 `withInitResult` 合并**；对话可能跑好几分钟，整份项目 PUT 回去会把用户这期间应用的推荐覆盖回旧值、界面又变回「N 项待应用」（[bugs/init-apply-overwritten-by-snapshot](bugs/init-apply-overwritten-by-snapshot.md)）。对话右侧报告面板（`ProjectInitReport.tsx` 的 `apply`，逐项 / 整组 / 全部应用）是另一条路径：应用前按 `api.projects()` 取一次最新项目当基线，再保存；`api.projects()` 失败会回落到面板打开时的草稿，这条兜底仍带着「GET → 整份 PUT」的竞态，见该 Bug 记录的「已知限制」。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
+- 工作总结（`web/src/pages/SummaryPage.tsx`）：选项目、生成今天的报告、编辑 / 预览 / 复制，最近的报告从 `/summary` 读回来；演示版的模拟后端在 `web/src/lib/demo-summary.ts`。
 
 ## 入口
 

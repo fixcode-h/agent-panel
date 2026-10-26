@@ -259,4 +259,22 @@ export const EN_APP: Record<string, string> = {
     'Running conversations and ones with unmerged separate branches are left alone. Deleted conversations and their child conversations cannot be recovered. Files in the local folder are not touched.',
   '正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。':
     'Running conversations are left alone. Archived conversations are not deleted; pick “Archived” in the filter to find them.',
+  // 工作总结
+  工作总结: 'Work summary',
+  '选几个项目，把今天（{day}）执行过的对话整理成一份简短的 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。':
+    'Pick a few projects and turn the conversations run today ({day}) into a short Markdown report. Edit, preview, and copy it when it is done; recent reports stay on this machine and can be reopened and edited.',
+  '用哪个 Agent 生成': 'Agent to generate with',
+  生成报告: 'Generate report',
+  '还没有项目，先在侧栏添加一个项目。': 'No projects yet: add one from the sidebar first.',
+  '正在分析今天执行过的对话…': "Analyzing today's conversations…",
+  '已写 {n} 字': '{n} chars written',
+  最近的报告: 'Recent reports',
+  今天的报告: "Today's report",
+  报告视图: 'Report view',
+  报告内容: 'Report content',
+  已复制报告: 'Report copied',
+  已停止生成: 'Generation stopped',
+  '生成中断，这是已经写出的部分': 'Generation was interrupted; this is what was written',
+  '保存中…': 'Saving…',
+  保存失败: 'Save failed',
 }
