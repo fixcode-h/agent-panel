@@ -2398,9 +2398,23 @@ function demoUsage(d: Db, query: URLSearchParams) {
   return usageReport(d.tasks ?? [], { grain, count: UsageQuery.count(query.get('count'), grain) })
 }
 
+/** 演示里每个请求统一等这么一会儿，模拟真实请求，让「保存中」等状态能被看到 */
+const DEMO_BASE_DELAY_MS = 120
+
+/**
+ * 打开对话的两步在正式后端里明显比别的慢（整份对话几 MB、子对话列表首跑要跑 git），
+ * 演示版把这段差别也模拟出来：加载日志才会一行一行出现，而不是一瞬间全绿。
+ * 匹配不上的请求只等上面那个统一延迟。
+ */
+const DEMO_ROUTE_DELAYS: [RegExp, number][] = [
+  [/^\/tasks\/[^/]+$/, 500],
+  [/^\/tasks\/[^/]+\/children$/, 900],
+]
+
 export async function handle(method: string, url: string, body: unknown) {
-  // 稍微延迟一下，模拟真实请求，让「保存中」等状态能被看到
-  await new Promise((r) => setTimeout(r, demoMs(120)))
+  await new Promise((r) => setTimeout(r, demoMs(DEMO_BASE_DELAY_MS)))
+  const extra = method === 'GET' ? DEMO_ROUTE_DELAYS.find(([re]) => re.test(url))?.[1] : undefined
+  if (extra) await new Promise((r) => setTimeout(r, demoMs(extra)))
   // 界面检查用：让发消息的请求慢一点回来，模拟「上一条还在发送」时又按了一次回车。
   // 只有演示版里有这段代码，正式包里没有演示后端
   let slow = 0

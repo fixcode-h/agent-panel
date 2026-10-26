@@ -476,6 +476,28 @@ body,
   }
 }
 
+/* 打开对话时加载日志新出现的一行：淡入并轻微上移，160ms 就够，不做花哨动画 */
+@keyframes trace-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.trace-line {
+  /* both：延迟期间也按起始帧（透明）等，后面的行才会依次出来 */
+  animation: trace-line-in 160ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 关动效时直接出现：日志本身还在，只是不做位移 */
+  .trace-line {
+    animation: none;
+  }
+}
+
 /* 流程图连线：执行中的连线显示流动的虚线 */
 @keyframes flow-dash {
   to {
