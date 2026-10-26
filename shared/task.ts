@@ -1356,6 +1356,59 @@ export function restartInterrupted(
   return childSpinning(entry) && childState(entry) !== 'wrapup'
 }
 
+/**
+ * 面板重启 / 强制更新把 CLI 停掉之后，这条任务还有「要它自己接着干」的活没干完。
+ *
+ * 和 restartInterrupted 分开：那个回答「界面还会不会画成在跑」（含独立分支还没合回，见 childIcon），
+ * 这个回答「重启后该不该把它列进继续名单」（强制更新记录被打断的任务、新版本启动后问用户要不要继续）。
+ * 记录只按「进程还在跑」（working）挑，会把停在等下一句、计划却只做了 12/17 的父对话漏掉：
+ * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+ *
+ * 不算的四种：
+ * - 用户手动暂停（`stopReason: 'user'`）：那是明确的「先别动」，不是一个被强制的更新打断，重启后不能默认接着跑；
+ * - 待收尾（wrapRequest 已请求）：它等的是父对话合并（面板做的），不靠 CLI 进程；
+ * - 独立分支还没合回：同上，重启后照样能收；
+ * - 后台命令：jobs 不存盘（见 schema 的 Task.jobs），重启后无从判断，名单里也就算不到它。
+ *
+ * 工作流任务流程没走完、`status` 已是 `done` 的也不算：它自己那页有「继续流程」入口（`flowLeft`），
+ * 不靠这条恢复名单。
+ */
+export function restartUnfinished(
+  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason'> & { runs?: Task['runs'] },
+): boolean {
+  // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
+  if (task.stopReason === 'user') return false
+  // 已经请求父对话收尾：剩下的事是合并，重启后进程没了也不影响
+  if (task.wrapRequest && task.wrapRequest.state !== 'failed') return false
+  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来
+  if (task.status === 'running') return true
+  // 这一轮说完了，但计划还没做完：重启后没人接着做，它不会自己往前走
+  return !!openPlan(task)
+}
+
+/**
+ * 强制更新停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
+ * - 现在真在跑的（working）；
+ * - 名下还有在跑的子对话的父对话：子对话的结果要交回它，它不在名单里就没人接；
+ * - 被打断后还有活要自己干的（restartUnfinished：这一轮被打断、计划没做完）。
+ * 只按 working 挑会把停在等下一句、计划 12/17 的父对话漏掉：子对话进了恢复名单被继续，
+ * 父对话却停在「已中断」等用户手动点（用户报的现象）。
+ */
+export function interruptedTaskIds(
+  tasks: (Pick<Task, 'id' | 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'imported' | 'archived'> & {
+    runs?: Task['runs']
+  })[],
+  working: { id: string; parentTaskId: string }[] = [],
+): string[] {
+  const ids = new Set<string>()
+  for (const w of working) {
+    ids.add(w.id)
+    if (w.parentTaskId) ids.add(w.parentTaskId)
+  }
+  for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
+  return [...ids]
+}
+
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
 export const childWaiting = (x: ChildEntry) => childIcon(x) === 'waiting'
 

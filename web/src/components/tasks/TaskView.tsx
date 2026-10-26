@@ -1136,6 +1136,10 @@ export function TaskView({
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
+  // 这一轮已说完、名下还有东西在跑（子对话 / 子任务 / 后台命令 / 工作流）：输入框只说「继续输入要求」
+  // 会和旁边的停止按钮自相矛盾——用户看到的是「子对话在跑，父对话却停在等继续」。
+  // 让它说清到底在等什么
+  const waitText = !working ? taskWaitText(task) : ''
 
   const exportIt = () =>
     downloadTask(task.id).then(
@@ -1225,7 +1229,10 @@ export function TaskView({
       sending={sending}
       onStop={stop}
       leading={
+        // 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
+        // 只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点
         !working &&
+        !(task.status === 'stopped' && waitText) &&
         canResume && (
           <Button
             size="sm"
@@ -1247,7 +1254,9 @@ export function TaskView({
       label={t('继续输入要求')}
       placeholder={
         !working
-          ? t('继续输入要求')
+          ? waitText
+            ? t('{what}，可以直接输入要求', { what: waitText })
+            : t('继续输入要求')
           : canSteer
             ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
             : t('执行中也可以输入，这一轮结束后接着处理')
