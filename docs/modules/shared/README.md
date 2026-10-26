@@ -48,6 +48,10 @@
     - **重开要重置总用时的起点**（`TaskPlan.reopenedAt` + `planSpan`）：只清 `doneAt` 会把上一轮的历史时长并进这一轮（计划 10:00 建、10:10 结束、11:00 重开，面板立刻显示 1 小时）。`planSpan` 的起点取 `max(原起点, reopenedAt)`。
     - **`send_to_conversation` 补步骤时必须带子对话标题**（`kidTitleOf` 从 `listConversations` 取）：没标题时会退化成 `子对话：<id>`，用户看不出是哪个子对话。它对应的子对话原来那一步已经 `done` 时**重新打开那一步**（`setStatus(revisit, 'pending')`）而不另开一格——`childStepId` 的 `own` 判定要求 `status !== 'done'`，否则同一件事会在计划里出现两格。
   - 回归：`shared/plan.test.ts`（父对话 push 收尾加在最后、删掉 / 挪到中间都放回最后、做完后又有新步骤就重新打开、一轮改完的第二份计划照样到推送这一步、`wrapUpKind` 的授权边界含 P4 和没有远端、明确不推送后收尾连同抄写的那条一起去掉、算不出来时不删）和 `server/engine-steps.test.ts`（授权段让模型照着计划最后一步做不另写一条、父对话在独立分支里时先合回再推）。
+  - **计划的真假由面板机制兜住，不靠对话自觉**（[ADR 0021](../../adr/0021-plan-model-lifecycle.md)，用户 2026-10-28 报「做到第 4 步、计划还停在第 1 步」）：状态从 4 个扩到 6 个——`pending` / `running`（同一层最多一个，对话在动手）/ `waiting`（挂着 `waits`，在等外部结果）/ `done` / `failed`（没做成、需要处理，**不是**终态）/ `skipped`（明确不做，终态）。终态判定只此一处：`isSettled(status)`，`leftSteps` / `unfinishedSteps` / `openWork`（收尾门禁）/ `closeIfSettled`（原来叫 `closeIfDone`）/ `planProgress` 的完成数都读它——`skipped` 不挡收尾、`failed` 挡。
+    `PlanItem.updatedAt` / `TaskPlan.updatedAt` 记「最后变化时间」（旧数据退回 `startedAt` / `createdAt`，`itemUpdatedAt` / `planUpdatedAt` 是唯一读法）；`applyPlan` 用 `planDigest` 判断内容真变了才推进计划级时间、用 `itemDigest` 判断每一项真变了才推进步骤级时间，Agent 原样重交一遍不算更新（否则滞后计时会被洗掉）。`applyPlan` 合并后还会：`normalizeWaiting` 把没有 `waits` 的「等待中」改成进行中（模型常说等待中其实在做别的），`enforceSingleRunning` 把同一层的多个进行中收成最后一个（返回说明里点名其余的退回待做；还挂着 `waiting` 的退回等待中，保住结果回来时的收口入口），`held` 对「结果还没回来就说完成 / 失败」一并退回等待中。等的结果失败时 `settleWait` / `linkKids` 标 `failed` + `没成功：…` 备注，工作流没走完 `endRun` 也标 `failed`（以前都退回 `running`）。
+    `planNowText` 给每轮提示一句正面自检（「现在：第 2 步「接线」进行中（已 6 分钟），下一步是「跑测试」」）；`planNotice` 是滞后与新输入两条检测的唯一实现（`staleStep` 只看 `running` 且距 `updatedAt` ≥ `PLAN_STALE_MS` 3 分钟，`itemStale` 给界面每行用同一个阈值；`inputUnhandled` 看 `lastInputAt > updatedAt` 且没被 `inputNotedAt` 提醒过；`inputNotedAt` 写的是**本轮开头那次输入**，轮中插话不会被误标成已提醒）。增量还是重开写进提示词规则表，面板兜底在 `applyPlan`：整份提交换掉超过 `PLAN_RESTART_RATIO`（0.5）的未完成步骤时提示「先 `finish_plan` 再开新计划」；`planRebuilt` 判「上一份没做完就结束、这是新开的一份」（界面标「重建」）。
+    回归：`shared/plan.test.ts`（失败不是终态 / 跳过是终态、同一层唯一进行中、无 `waits` 的等待中归一、原样重交不推进时间、滞后阈值差 1 毫秒不提醒且 waiting / failed 不参与、新输入只提醒一次、`planRebuilt`、旧数据时间退回）。
 - 内置内容：内置角色和工作流模板在 `shared/builtin/`，界面文案的英文在 `shared/locales/en/`。
   本机副本：内置角色每次启动、每次保存都按当前定义同步（`shared/builtin/install.ts` 的 `upgradeBuiltinAgents`、`core.ts` 的 `builtinKey` / `syncCore`，[ADR 0015](../../adr/0015-builtin-roles-follow-definition.md)），用户改过的设定会被覆盖，覆盖前由 `server/index.ts` 备份。`legacy.ts` 的 `LEGACY_AGENT_FIELDS*` 现在只用来判断要不要备份和已合并角色能不能删；**指纹里不要引用会继续变的常量**（`SCENE_TEXT` 等），历史正文用 `LEGACY_SCENE_TEXT` 固定。内置工作流副本记 `builtinHash`（`workflowFingerprint`，坐标不算），内容还是那个指纹就升级，没记过的退回按 `LEGACY_WORKFLOWS` 比。
 - 本机生图（`shared/local-image.ts`）：`LOCAL_FILES` 是 ComfyUI 的下载清单（`dir` / `file` / `url` / `gb`），`LOCAL_MODELS` 是按用途分组的模型条目（决定设置页「本机生图」列出什么、要多少显存，也是工作流可选的内置模型），`LOCAL_MODEL_GROUPS` 是分组顺序；同一文件还负责生成内置工作流的节点图、`{{prompt}}` / `{{negative}}` / `{{width}}` / `{{height}}` / `{{count}}` / `{{seed}}` / `{{layout}}` 的替换、工作流校验和自动挑选。
@@ -66,7 +70,7 @@
   现取一次，不在保存设置时去改写跑着的对话（口径是「调用前先读配置」，见 [docs/agent-test-steps.md](../../agent-test-steps.md)）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
   「范围」三档也在这里定（`TestStepFields.scope`：`always` 每次跑、`changed` 命中 `appliesTo` 才跑、`parent` 全量合并后由父对话跑；
-  合并了原来的 `runInParent`，老数据由 `shared/schema.ts` 的 `migrateTestStep` 换算，见 [ADR 0020](../../adr/0020-test-scope-and-incremental-tests.md)）：
+  合并了原来的 `runInParent`，老数据由 `shared/schema.ts` 的 `migrateTestStep` 换算，见 [ADR 0021](../../adr/0020-test-scope-and-incremental-tests.md)）：
   `parentRunSteps` 是「`parent` 由谁跑」的唯一筛选（启用、`scope === 'parent'`、不是 `merge`、有命令），
   但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，标了 `parent` 也不会被跳过；
   子对话的提示词由 `CHILD_INCREMENTAL_RULE` 写死「只跑 `always` + 命中的 `changed`、不跑全量」，`FLAKY_TEST_RULE` 写死

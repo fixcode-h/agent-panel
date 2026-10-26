@@ -20,6 +20,21 @@ import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan, TaskStep
 export const MAX_PLAN_STEPS = 20
 export const MAX_PLAN_CHILDREN = 15
 
+/**
+ * 计划滞后阈值：`running` 的步骤这么久没有任何变化，就在下一轮提示里提醒 Agent 先收口（见 planNotice）。
+ * 面板侧检测与界面警示读同一个值。`waiting` 不参与（跑 10 分钟 e2e 是正常的，那时步骤本来就该是等待中）
+ */
+export const PLAN_STALE_MS = 3 * 60_000
+
+/**
+ * 整份换方向的判定比例：这次整份提交里被换掉的未完成步骤超过这个比例，就提示「应该重开一份计划」，
+ * 而不是在同一份里大换血（见 ADR 0020 的增量 / 重开规则表）
+ */
+export const PLAN_RESTART_RATIO = 0.5
+
+/** 一份计划开出来不到这么久就被换掉：提示 Agent 是不是该在原计划上增量更新，而不是反复重建 */
+export const PLAN_REBUILD_MIN_MS = 2 * 60_000
+
 type PlanTask = Pick<Task, 'plans' | 'steps'>
 
 /** Agent 交上来的一项（主步骤或子步骤） */
@@ -33,8 +48,24 @@ export interface PlanItemInput {
   children?: PlanItemInput[]
 }
 
-const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done']
-const STATUS_TEXT: Record<PlanStatus, string> = { pending: '待做', running: '进行中', waiting: '等待中', done: '完成' }
+const STATUSES: PlanStatus[] = ['pending', 'running', 'waiting', 'done', 'failed', 'skipped']
+const STATUS_TEXT: Record<PlanStatus, string> = {
+  pending: '待做',
+  running: '进行中',
+  waiting: '等待中',
+  done: '完成',
+  failed: '失败',
+  skipped: '跳过',
+}
+
+/**
+ * 终态：不再需要推进、也不算「没做完」。done 是做完了，skipped 是明确不做。
+ * failed 不算终态：它表示「有件事需要对话决断」，留在计划里直到改成 running（重做）或 skipped（放弃）。
+ * 收尾、进度、折叠头的判定都读它，不要各自写 status === 'done'
+ */
+export function isSettled(status: PlanStatus): boolean {
+  return status === 'done' || status === 'skipped'
+}
 
 /**
  * 收尾步骤的种类，永远是计划的最后一步：merge 子对话的独立分支合回父对话所在的分支，
@@ -136,7 +167,8 @@ export function planChildren(task: Pick<Task, 'steps'>, step: PlanStep): PlanIte
 
 /** 计划的进度：完成几个主步骤、一共几个，以及正在做的那一步（子步骤优先） */
 export function planProgress(task: PlanTask, plan: TaskPlan) {
-  const done = plan.steps.filter((s) => s.status === 'done').length
+  // 已处理：完成 + 明确跳过（都是终态）。进度条和「还剩几步」读它，不会因为一步被跳过就永久卡住
+  const done = plan.steps.filter((s) => isSettled(s.status)).length
   let current: { step: PlanStep; child?: PlanItem } | undefined
   for (const s of plan.steps) {
     if (s.status !== 'running') continue
@@ -148,15 +180,14 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
   return { done, total: plan.steps.length, current, waiting: waiting.length }
 }
 
-/**
- * 计划里还没做完的步骤（含子步骤）：`doneAt` 有两种来路——全部做完自动收起，和 finish_plan 提前结束。
+/** 计划里还没做完的步骤（含子步骤）：`doneAt` 有两种来路——全部做完自动收起，和 finish_plan 提前结束。
  * 只看 `doneAt` 分不出这两种，界面要一起看它，才知道该说「计划已完成」还是「计划已结束，还有 N 步没做完」。
- */
+ * 明确跳过的步骤不算遗留（那是处理过的），失败与还在做 / 在等的算 */
 export function leftSteps(plan: TaskPlan): PlanItem[] {
   const left: PlanItem[] = []
   for (const s of plan.steps) {
-    for (const c of s.children) if (c.status !== 'done') left.push(c)
-    if (s.status !== 'done') left.push(s)
+    for (const c of s.children) if (!isSettled(c.status)) left.push(c)
+    if (!isSettled(s.status)) left.push(s)
   }
   return left
 }
@@ -166,7 +197,7 @@ export function leftSteps(plan: TaskPlan): PlanItem[] {
  * （同一屏里两个数字必须对得上）。子步骤遗留算在它所属的主步骤里，不再单独计数
  */
 export function unfinishedSteps(plan: TaskPlan): number {
-  return plan.steps.filter((s) => s.status !== 'done').length
+  return plan.steps.filter((s) => !isSettled(s.status)).length
 }
 
 /**
@@ -176,6 +207,144 @@ export function unfinishedSteps(plan: TaskPlan): number {
 export function planHeadline(plan: TaskPlan): 'open' | 'closed' | 'done' {
   if (!plan.doneAt) return 'open'
   return leftSteps(plan).length ? 'closed' : 'done'
+}
+
+/**
+ * 一项的最后变化时间（毫秒）：有 updatedAt 用它，旧数据退回 startedAt。
+ * 解析不出来时返回 undefined（不能当 0——那会变成「很久以前」，所有旧计划都被判成滞后）
+ */
+export function itemUpdatedAt(item: PlanItem): number | undefined {
+  const at = Date.parse(item.updatedAt || item.startedAt || '')
+  return Number.isFinite(at) ? at : undefined
+}
+
+/** 一份计划的最后变化时间（毫秒）：旧数据退回创建时间；取不到返回 undefined */
+export function planUpdatedAt(plan: TaskPlan): number | undefined {
+  const at = Date.parse(plan.updatedAt || plan.createdAt || '')
+  return Number.isFinite(at) ? at : undefined
+}
+
+/** 现在在做的项：running 的主步骤；它有 running 的子步骤时取子步骤（那才是对话真正在动手的） */
+export function runningItem(task: PlanTask): { item: PlanItem; step: PlanStep } | undefined {
+  const plan = activePlan(task)
+  if (!plan) return undefined
+  for (const s of plan.steps) {
+    if (s.status !== 'running') continue
+    const child = s.children.find((c) => c.status === 'running')
+    return { item: child ?? s, step: s }
+  }
+  return undefined
+}
+
+/**
+ * 计划滞后：有 running 的步骤，且它超过阈值没变化。waiting / failed 不参与：
+ * 前者本来就该在等（跑 10 分钟 e2e 正常），后者已经是一个需要处理的状态
+ */
+export function staleStep(task: PlanTask, now = Date.now(), staleMs = PLAN_STALE_MS) {
+  const cur = runningItem(task)
+  if (!cur) return undefined
+  const at = itemUpdatedAt(cur.item)
+  if (at === undefined) return undefined
+  const ms = now - at
+  if (ms < staleMs) return undefined
+  return { item: cur.item, step: cur.step, ms, since: at }
+}
+
+/**
+ * 某一项是不是「进行中但很久没变化」：界面上的小警示标记和 planNotice 用同一个阈值。
+ * 把 planNotice 给的那一项和每行自己的判定分开，两者读同一个函数，不会出现「提示词说滞后、界面不标」
+ */
+export function itemStale(item: PlanItem, now: number, staleMs = PLAN_STALE_MS): number | undefined {
+  if (item.status !== 'running') return undefined
+  const at = itemUpdatedAt(item)
+  if (at === undefined) return undefined
+  const ms = now - at
+  return ms >= staleMs ? ms : undefined
+}
+
+/**
+ * 最近一次新要求之后计划没动过：返回那次输入距今多久（毫秒）；已经改过计划或已经提醒过那一次时返回 undefined。
+ * 「提醒过」记在 inputNotedAt 上——只提醒一次，否则 Agent 选择了「不改计划、说明一句」时会被每轮重复追问
+ */
+export function inputUnhandled(plan: TaskPlan, now = Date.now()): number | undefined {
+  const input = Date.parse(plan.lastInputAt || '')
+  if (!Number.isFinite(input)) return undefined
+  const noted = Date.parse(plan.inputNotedAt || '')
+  if (Number.isFinite(noted) && noted >= input) return undefined
+  const changed = planUpdatedAt(plan)
+  if (changed !== undefined && changed >= input) return undefined
+  const ms = now - input
+  return ms >= 0 ? ms : undefined
+}
+
+/** 多久说成人话：提示词和日志共用一个写法（分钟取整、不足一分钟按 1 分钟说） */
+function staleMinutes(ms: number) {
+  return Math.max(1, Math.round(ms / 60_000))
+}
+
+/**
+ * 提示词里的正面自检：「现在：第 2 步「接线」进行中（已 6 分钟），下一步是「跑测试」。」
+ * 不是让 Agent 去计划文本里找，而是每轮直接把进度摆在它面前（见 ADR 0020）。
+ * 已用时算从开工（startedAt）到现在，和滞后检测用的「多久没变化」是两回事
+ */
+export function planNowText(task: PlanTask, now = Date.now()): string {
+  const plan = activePlan(task)
+  if (!plan) return ''
+  const order = (s: PlanStep) => plan.steps.indexOf(s) + 1
+  const nextOf = (skip?: PlanStep) => plan.steps.find((s) => s !== skip && s.status === 'pending' && !s.wrapUp)
+  const cur = runningItem(task)
+  if (cur) {
+    const started = Date.parse(cur.item.startedAt)
+    const mins = Number.isFinite(started) ? Math.max(0, Math.round((now - started) / 60_000)) : 0
+    const next = nextOf(cur.step)
+    return `现在：第 ${order(cur.step)} 步「${cur.item.title}」进行中（${mins < 1 ? '刚开始' : `已 ${mins} 分钟`}）${next ? `，下一步是「${next.title}」` : ''}。`
+  }
+  const failed = plan.steps.find((s) => s.status === 'failed')
+  if (failed)
+    return `现在：第 ${order(failed)} 步「${failed.title}」失败了，先处理它（重做就把这一步重新标成进行中，不做了就标成跳过）。`
+  const waiting = plan.steps.find((s) => s.status === 'waiting')
+  if (waiting) {
+    const what = waitingOn(waiting)
+    const next = nextOf(waiting)
+    return `现在：第 ${order(waiting)} 步「${waiting.title}」在等${what.length ? `（${what.join('、')}）` : '结果'}${next ? `，可以接着做「${next.title}」` : ''}。`
+  }
+  const next = nextOf()
+  if (next) return `现在：没有进行中的步骤，下一步是第 ${order(next)} 步「${next.title}」。`
+  return ''
+}
+
+/**
+ * 提示词里要插的计划提醒（滞后 / 新输入后计划没动），没有就空串。
+ * 两条检测共用一个入口：提示词、服务端日志都调它，不各写一套。
+ * 文本是写给 Agent 看的（不翻译），所以不走 t()
+ */
+export function planNotice(task: PlanTask, now = Date.now()): string {
+  const plan = activePlan(task)
+  if (!plan) return ''
+  const lines: string[] = []
+  const stale = staleStep(task, now)
+  if (stale)
+    lines.push(
+      `⚠ 计划还停在「${stale.item.title}」（已 ${staleMinutes(stale.ms)} 分钟没更新）：` +
+        `做完了就把它标完成，在等结果就带 step 重新标成等待中；还在做同一步、内容没变就不用管这条。`,
+    )
+  const unhandled = inputUnhandled(plan, now)
+  if (unhandled !== undefined)
+    lines.push(
+      `⚠ 上一轮进来了新要求（${staleMinutes(unhandled)} 分钟前），计划之后没有变化。` +
+        `如果它确实不改变计划，用一句话说明为什么；要改就现在 set_plan（同一件事增量更新，目标变了就 finish_plan 后开新计划）。`,
+    )
+  return lines.join('\n')
+}
+
+/**
+ * 这份计划是「上一份没做完就结束、随后新开的」：界面上标「重建」，也用来提醒重建过于频繁。
+ * 一份计划正常做完后开的新计划不算重建
+ */
+export function planRebuilt(task: Pick<Task, 'plans'>): boolean {
+  const plans = task.plans ?? []
+  const prev = plans.at(-2)
+  return !!prev?.doneAt && leftSteps(prev).length > 0
 }
 
 /**
@@ -201,7 +370,7 @@ export function planSpan(plan: TaskPlan, now: number): number | undefined {
   if (!Number.isFinite(start)) return undefined
   const closedAt = Date.parse(plan.doneAt)
   const ends = times((x) => x.endedAt)
-  const allDone = plan.steps.length > 0 && plan.steps.every((s) => s.status === 'done')
+  const allDone = plan.steps.length > 0 && plan.steps.every((s) => isSettled(s.status))
   // 全部完成：停在最晚一项的 endedAt；提前结束（finish_plan）还有没做完的步骤：停在 doneAt。
   // 后者不能拿已完成项的 endedAt 当结束时间，否则总用时比未完成项的单项用时还短
   let end = Number.isFinite(closedAt) ? closedAt : now
@@ -241,15 +410,24 @@ function asStatus(v: unknown): PlanStatus {
   if (s === 'in_progress' || s === 'active') return 'running'
   if (s === 'completed' || s === 'finished') return 'done'
   if (s === 'blocked') return 'waiting'
+  if (s === 'fail' || s === 'error') return 'failed'
+  if (s === 'skip' || s === 'cancelled' || s === 'canceled') return 'skipped'
   return STATUSES.includes(s as PlanStatus) ? (s as PlanStatus) : 'pending'
 }
 
-/** 状态变了记时间：第一次开始做记 startedAt（since：知道真正开工的时间就用它），做完记 endedAt */
+/** 一项变化了：记下最后变化时间（滞后检测、界面的「N 分钟前更新」都读它） */
+function touch(item: PlanItem, now: string) {
+  item.updatedAt = now
+}
+
+/** 状态变了记时间：第一次开始做记 startedAt（since：知道真正开工的时间就用它），结束时记 endedAt */
 function setStatus(item: PlanItem, status: PlanStatus, now: string, since = now) {
   if (item.status === status) return
   item.status = status
   if (status !== 'pending' && !item.startedAt) item.startedAt = since < now ? since : now
-  item.endedAt = status === 'done' ? now : ''
+  // failed 不是终态（还要重做或明确跳过），endAt 留给真正的结束
+  item.endedAt = isSettled(status) ? now : ''
+  touch(item, now)
 }
 
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -346,7 +524,7 @@ function mergeLevel<T extends PlanItem>(
   return out
 }
 
-/** 主步骤的状态跟着子步骤走：子步骤都完成就完成，有在做的就算进行中 */
+/** 主步骤的状态跟着子步骤走：子步骤都结束就完成，有失败的就失败，有在做的就算进行中 */
 function rollUp(step: PlanStep, now: string) {
   if (step.run || !step.children.length) return
   // 主步骤的开始、结束跟着子步骤的真实时间走：最早开工的子步骤、最晚做完的子步骤
@@ -355,7 +533,12 @@ function rollUp(step: PlanStep, now: string) {
       .map((c) => c.startedAt)
       .filter(Boolean)
       .sort()[0] ?? now
-  if (step.children.every((c) => c.status === 'done')) {
+  // 子步骤里有失败：主步骤也是失败（需要处理），不能因为其他子步骤做完了就算完成
+  if (step.children.some((c) => c.status === 'failed')) {
+    if (step.status !== 'done') setStatus(step, 'failed', now, first)
+    return
+  }
+  if (step.children.every((c) => isSettled(c.status))) {
     const last = step.children
       .map((c) => c.endedAt)
       .filter(Boolean)
@@ -363,7 +546,7 @@ function rollUp(step: PlanStep, now: string) {
       .at(-1)
     return setStatus(step, 'done', last && last < now ? last : now, first)
   }
-  if (step.status === 'done') return
+  if (step.status === 'done' || step.status === 'failed') return
   if (step.children.some((c) => c.status === 'running')) setStatus(step, 'running', now, first)
   else if (step.children.some((c) => c.status === 'waiting') && step.status === 'pending')
     setStatus(step, 'waiting', now, first)
@@ -376,13 +559,73 @@ function rollUp(step: PlanStep, now: string) {
  */
 export function openWork(task: Pick<Task, 'plans'>): PlanStep[] {
   const plan = activePlan(task)
-  return plan ? plan.steps.filter((s) => s.status !== 'done' && s.wrapUp !== 'merge') : []
+  return plan ? plan.steps.filter((s) => !isSettled(s.status) && s.wrapUp !== 'merge') : []
 }
 
-function closeIfDone(plan: TaskPlan, now: string) {
+/**
+ * 一项的内容指纹（不含时间戳与 children / review）：判断一次提交是不是真的改了这项。
+ * children 的变化各自记在自己的 updatedAt 上；review 是标记不是内容，不算这一步变了
+ */
+function itemDigest(x: PlanItem): string {
+  return [x.id, x.title, x.status, x.note, ...x.waits.map((w) => `${w.kind}:${w.ref}:${w.state}`)].join('\u0001')
+}
+
+/** 计划内容的指纹（不含时间戳）：判断一次 set_plan 是不是真的改了计划 */
+function planDigest(plan: TaskPlan): string {
+  return [plan.title, ...plan.steps.map((s) => [itemDigest(s), ...s.children.map(itemDigest)].join('\u0001'))].join(
+    '\u0002',
+  )
+}
+
+/**
+ * 写着「等待中」却没有在等的东西（没有后台命令、子对话、子任务）：按进行中算。
+ * 否则界面上那一步永远转圈，而对话其实早就在做别的事。有子步骤在等的主步骤不动（它在等子步骤）
+ */
+function normalizeWaiting(plan: TaskPlan, now: string): string[] {
+  const revived: string[] = []
+  for (const s of plan.steps) {
+    for (const c of s.children)
+      if (c.status === 'waiting' && !c.waits.some((w) => w.state === 'waiting')) {
+        setStatus(c, 'running', now)
+        revived.push(c.title)
+      }
+    if (s.status !== 'waiting') continue
+    if (s.waits.some((w) => w.state === 'waiting')) continue
+    if (s.children.some((c) => c.status === 'waiting')) continue
+    setStatus(s, 'running', now)
+    revived.push(s.title)
+  }
+  return revived
+}
+
+/**
+ * 同一层只能有一个「进行中」：多个时只保留最后一个（对话刚转向的那一步），其余退回待做。
+ * 主步骤和子步骤分开算：主步骤进行中、它下面一个子步骤进行中是正常的层级关系
+ */
+function enforceSingleRunning(plan: TaskPlan, now: string): { title: string; to: PlanStatus }[] {
+  const back: { title: string; to: PlanStatus }[] = []
+  const collapse = (items: PlanItem[]) => {
+    const running = items.filter((x) => x.status === 'running')
+    if (running.length < 2) return
+    for (const x of running.slice(0, -1)) {
+      // 还挂着没回来的结果（子对话 / 后台命令）：退回「等待中」而不是「待做」。
+      // settleWait / linkKids 只在状态是 waiting 时收口，退回待做会让这一步永远等不到完成
+      const to: PlanStatus = x.waits.some((w) => w.state === 'waiting') ? 'waiting' : 'pending'
+      setStatus(x, to, now)
+      back.push({ title: x.title, to })
+    }
+  }
+  collapse(plan.steps)
+  for (const s of plan.steps) if (s.children.length) collapse(s.children)
+  return back
+}
+
+/** 计划收起：所有步骤都是终态（完成或明确跳过） */
+function closeIfSettled(plan: TaskPlan, now: string) {
   if (plan.doneAt || !plan.steps.length) return false
-  if (!plan.steps.every((s) => s.status === 'done')) return false
+  if (!plan.steps.every((s) => isSettled(s.status))) return false
   plan.doneAt = now
+  plan.updatedAt = now
   return true
 }
 
@@ -424,14 +667,14 @@ function ensureWrapUp(
       s.note = WRAP_UP[kind].note
       s.review = false
     }
-  const open = plan.steps.filter((s) => s.wrapUp && s.status !== 'done')
-  const rest = plan.steps.filter((s) => !(s.wrapUp && s.status !== 'done'))
+  const open = plan.steps.filter((s) => s.wrapUp && !isSettled(s.status))
+  const rest = plan.steps.filter((s) => !(s.wrapUp && !isSettled(s.status)))
   if (!rest.length) {
     // 只剩收尾这一步：没有别的事要做，计划照常留着它
     plan.steps = open.slice(0, 1)
     return
   }
-  const todo = rest.some((s) => !s.wrapUp && s.status !== 'done')
+  const todo = rest.some((s) => !s.wrapUp && !isSettled(s.status))
   // 推送是每份计划都要做的事，所以这份计划里还没有推送收尾、又有步骤时就加：一轮就把事做完、步骤全标完成时，
   // 只看 first 会漏掉（新开的计划 first 一定是 false），那一轮的改动就永远不推。
   // 已经有收尾的（做完也好、挂着也好）仍按原来的判定：只有 todo / open 才重新打开，推完不折腾。
@@ -447,7 +690,7 @@ function ensureWrapUp(
   }
   const keep: PlanStep = open[0] ??
     reopen ??
-    (prev && prev.status !== 'done' ? prev : undefined) ?? {
+    (prev && !isSettled(prev.status) ? prev : undefined) ?? {
       id: nextId(),
       title: WRAP_UP[kind].title,
       status: 'pending',
@@ -468,7 +711,7 @@ function ensureWrapUp(
 function dropWrapUp(plan: TaskPlan, kind: WrapUpKind) {
   const title = wrapTitle(WRAP_UP[kind].title)
   const list = plan.steps.filter(
-    (s) => s.status !== 'done' && (s.wrapUp === kind || (!s.wrapUp && wrapTitle(s.title) === title)),
+    (s) => !isSettled(s.status) && (s.wrapUp === kind || (!s.wrapUp && wrapTitle(s.title) === title)),
   )
   if (!list.length) return false
   plan.steps = plan.steps.filter((s) => !list.includes(s))
@@ -511,6 +754,8 @@ export function applyPlan(
     }
     task.plans.push(plan)
   }
+  // 合并前的计划内容（含标题）：合并后真变了才推进计划级的「最后变化时间」
+  const digestBefore = planDigest(plan)
   if (input.title?.trim()) plan.title = clean(input.title, 80)
   const locked: string[] = []
   const dropped: string[] = []
@@ -530,7 +775,7 @@ export function applyPlan(
   const mergeChildren = (step: PlanStep, list: PlanItemInput[] | undefined) => {
     // 工作流运行的子步骤就是它的节点，不收 Agent 写的
     if (step.run || !Array.isArray(list)) return
-    if (step.status === 'done') {
+    if (isSettled(step.status)) {
       if (list.some((c) => !step.children.some((o) => o.id === c.id || o.title === clean(c.title, 120))))
         locked.push(step.title)
       return
@@ -554,9 +799,14 @@ export function applyPlan(
         return item
       },
       (cur, x) => {
+        // 先记内容指纹再动字段：标题也是内容的一部分，只改名字同样要刷新最后变化时间
+        const before = itemDigest(cur)
         if (x.title?.trim()) cur.title = clean(x.title, 120)
         if (x.note !== undefined) cur.note = clean(x.note, 300)
         mark(cur, asStatus(x.status))
+        // 只在这项内容真的变了时刷新「最后变化时间」：Agent 按习惯把整份计划原样重交一遍，
+        // 不该把滞后计时洗掉（计划级用 planDigest 守着，步骤级同样要守，否则滞后检测永远不触发）
+        if (itemDigest(cur) !== before) touch(cur, now)
       },
       () => `${step.id}.${++n}`,
       locked,
@@ -564,7 +814,7 @@ export function applyPlan(
     )
   }
   // 记下合并前还没做完的步骤（按对象）：合并后它还在计划里就算没被去掉。按标题比对会把改写过的标题误报成「去掉」
-  const before = plan.steps.filter((s) => s.status !== 'done')
+  const before = plan.steps.filter((s) => !isSettled(s.status))
   // 面板按子对话自动补的步骤（见 ensureChildStep）：Agent 交整份计划时不会写它们，不能当成「不做了」删掉。
   // 记下它们原来在第几位，合并完没被交上来的按原位插回；Agent 自己写了同标题的步骤则照常对上它、改成它的步骤
   const autoBefore = plan.steps.map((s, i) => ({ s, i })).filter((x) => x.s.auto)
@@ -572,7 +822,7 @@ export function applyPlan(
   // 连同子步骤一起算：主步骤被标完成时会级联把子步骤也标完成（见 update 里的 want === 'done'）
   const waitingBefore = new Set(plan.steps.flatMap((s) => [s, ...s.children]).filter(waitingDeep))
   // 合并前记下没做完的收尾：Agent 漏写时原样放回，合回分支这种由面板标完成的也要知道它原来的状态
-  const prevWrap = plan.steps.find((s) => s.wrapUp && s.status !== 'done')
+  const prevWrap = plan.steps.find((s) => s.wrapUp && !isSettled(s.status))
   const prevWrapStatus = prevWrap?.status
   plan.steps = mergeLevel<PlanStep>(
     plan.steps,
@@ -594,6 +844,8 @@ export function applyPlan(
       return step
     },
     (cur, x) => {
+      // 同子步骤：指纹要在改标题之前取，否则「只改步骤名」会被当成没变化
+      const before = itemDigest(cur)
       if (x.title?.trim()) cur.title = clean(x.title, 120)
       if (x.note !== undefined) cur.note = clean(x.note, 300)
       // review 是标记不是内容：已完成的步骤也允许补上或去掉（模型可能先标完成，才发现漏标）
@@ -603,6 +855,8 @@ export function applyPlan(
       // 主步骤标了完成：没写完成的子步骤一起算完成（Agent 说这一步做完了）
       if (want === 'done') for (const c of cur.children) mark(c, 'done')
       mark(cur, want)
+      // 同子步骤：内容真变了才刷新最后变化时间
+      if (itemDigest(cur) !== before) touch(cur, now)
     },
     () => String(++seq),
     locked,
@@ -653,12 +907,20 @@ export function applyPlan(
   const held: string[] = []
   for (const s of plan.steps)
     for (const x of [...s.children, s])
-      if (x.status === 'done' && waitingBefore.has(x)) {
+      // 结果还没回来就说完成 / 失败都不算：退回等待中，等面板收到结果再收口
+      if ((x.status === 'done' || x.status === 'failed') && waitingBefore.has(x)) {
         setStatus(x, 'waiting', now)
         held.push(`「${x.title}」（等：${waitingOn(x).join('、')}）`)
-        // 子步骤退回了，主步骤也不能算完成（rollUp 不会把已完成的主步骤改回去）
-        if (x !== s && s.status === 'done') setStatus(s, 'waiting', now)
+        // 子步骤退回了，主步骤也不能算完成 / 失败（rollUp 不会把已完成 / 失败的主步骤改回去）
+        if (x !== s && (s.status === 'done' || s.status === 'failed')) setStatus(s, 'waiting', now)
       }
+  // 先把面板能从真实事件挂上的等待挂好（子对话 / 已提到它的步骤），再判断「写着等待中却什么也没在等」：
+  // 反过来会把 Agent 写 waiting、下一行才被 linkKids 认出来的步骤先改成进行中，等待就丢了
+  if (kids) linkKids(task, target, kids, now)
+  // 没有等的东西却写着等待中：实际是在动手（模型常说「等待中」其实早就在做别的），按进行中算
+  const revived = normalizeWaiting(plan, now)
+  // 同一层只能有一个进行中：多个时只保留最后一个（对话刚转向的那一步），其余退回待做
+  const collapsed = enforceSingleRunning(plan, now)
   // 直接标完成的步骤按顺序摊开时间；子步骤摊在所在主步骤的时间里（主步骤也是直接标完成的话）
   const end = Date.parse(now)
   spread(
@@ -675,10 +937,29 @@ export function applyPlan(
       own ? Date.parse(s.endedAt) : end,
     )
   }
-  if (kids) linkKids(task, target, kids, now)
   for (const s of plan.steps) rollUp(s, now)
-  const closed = closeIfDone(target, now)
+  const closed = closeIfSettled(target, now)
+  // 换了方向却还在旧计划上打补丁：提醒应该 finish_plan 后开新计划（见 ADR 0020 的增量 / 重开规则表）
+  const restartLike = !partial && before.length >= 2 && dropped.length / before.length > PLAN_RESTART_RATIO
+  // 刚重建的计划很快又在整份改：提醒优先在原计划上增量，而不是反复重建
+  const created = Date.parse(plan.createdAt)
+  const rebuiltFresh =
+    !partial && planRebuilt(task) && Number.isFinite(created) && Date.parse(now) - created < PLAN_REBUILD_MIN_MS
   const notes = [
+    restartLike
+      ? `这次整份提交换掉了 ${dropped.length}/${before.length} 个没做完的步骤：如果目标已经变了，先 finish_plan 结束这份计划、再用 set_plan 开一份新的（旧计划和耗时留在「以前的计划」里）；只是加内容就带 partial 只交变更的步骤。`
+      : '',
+    rebuiltFresh
+      ? `这份计划是刚重建的（${staleMinutes(Date.parse(now) - created)} 分钟前新开的）：如果不是换了方向，应该在原计划上用 set_plan 增量更新（partial: true），不要反复重建。`
+      : '',
+    collapsed.length
+      ? `一份计划里同时只能有一个「进行中」，这些已退回去：${collapsed
+          .map((x) => `「${x.title}」→ ${x.to === 'waiting' ? '等待中（它还在等结果，结果回来会收口）' : '待做'}`)
+          .join('、')}。先做完当前那一步再标下一步。`
+      : '',
+    revived.length
+      ? `这些步骤写着「等待中」却没有在等的东西（没有后台命令 / 子对话 / 子任务），已按「进行中」算：${revived.map((x) => `「${x}」`).join('、')}。跑长命令、派子对话时带上 step，面板会标成等待中。`
+      : '',
     locked.length
       ? `这些步骤已经完成，不再改动：${[...new Set(locked)].map((x) => `「${x}」`).join('、')}。同样的内容还要再做就新加一步。`
       : '',
@@ -699,6 +980,9 @@ export function applyPlan(
       : '',
     closed ? '计划的步骤全部完成了：这份计划结束，之后有新内容用 set_plan 开新的计划。' : '',
   ].filter(Boolean)
+  // 计划内容真变了才推进「最后变化时间」：Agent 把同一份计划原样重交一遍不该把「多久没更新」洗掉，
+  // 但真正改了状态/标题/备注时必须记上（界面的「N 分钟前更新」和「新输入后计划有没有动」都读它）
+  if (planDigest(plan) !== digestBefore) plan.updatedAt = now
   return { ok: true, info: [`计划已更新：\n${planText(task, target)}`, ...notes].join('\n\n') }
 }
 
@@ -712,7 +996,7 @@ function waitingOn(item: PlanItem) {
  * left、held、waitingBefore 三处必须同口径——主步骤被标完成会级联把子步骤标完成
  */
 function waitingDeep(item: PlanItem) {
-  if (item.status === 'done') return false
+  if (isSettled(item.status)) return false
   const kids = 'children' in item ? (item as PlanStep).children : []
   return waitingOn(item).length > 0 || kids.some(waitingDeep)
 }
@@ -749,12 +1033,12 @@ export function childStepId(task: Pick<Task, 'plans'>, ref: string, title = '', 
   const plan = activePlan(task)
   if (!plan) return ''
   const items = plan.steps.flatMap((s) => [s, ...s.children])
-  const own = items.find((x) => x.status !== 'done' && x.waits.some((w) => w.kind === 'child' && w.ref === ref))
+  const own = items.find((x) => !isSettled(x.status) && x.waits.some((w) => w.kind === 'child' && w.ref === ref))
   if (own) return own.id
   if (title.trim()) {
     const scored = plan.steps
       // 自动补的步骤不参与比对：它们的标题都带「子对话：」前缀，会互相误配成同一步（见 ensureChildStep）
-      .filter((s) => !s.wrapUp && !s.run && !s.auto && s.status !== 'done')
+      .filter((s) => !s.wrapUp && !s.run && !s.auto && !isSettled(s.status))
       .map((s) => ({ s, n: overlap(s.title, title) }))
       .sort((a, b) => b.n - a.n)
     // 至少对上两处，且比第二名多：分不出是哪一步就不猜
@@ -863,7 +1147,8 @@ export function bindWait(
   if (!plan) return `（计划里没有步骤 ${id}：现在没有进行中的计划，先用 set_plan 列计划）`
   const got = findItem(plan, id)
   if (!got) return `（计划里没有步骤 ${id}，没有挂上等待）`
-  if (got.item.status === 'done') return `（步骤「${got.item.title}」已经完成，不能再挂等待；要再做就在计划里新加一步）`
+  if (isSettled(got.item.status))
+    return `（步骤「${got.item.title}」已经结束（${STATUS_TEXT[got.item.status]}），不能再挂等待；要再做就在计划里新加一步）`
   // 上一轮已经有结果的等待不留：重跑一次失败的测试时，旧的失败不该拖住这次的结果
   got.item.waits = [
     ...got.item.waits.filter((w) => w.state === 'waiting' && !(w.kind === wait.kind && w.ref === wait.ref)),
@@ -871,11 +1156,13 @@ export function bindWait(
   ]
   setStatus(got.item, 'waiting', now, wait.at || now)
   if (got.parent) rollUp(got.parent, now)
+  plan.updatedAt = now
   return `计划步骤「${got.item.title}」已标成等待中，结果回来会推给你；现在接着做计划的下一步，不要干等。`
 }
 
 /**
- * 等的结果回来了：挂着它的步骤里这一项标成功或失败。一项的等待全部结束时：都成功就标完成，有失败退回进行中。
+ * 等的结果回来了：挂着它的步骤里这一项标成功或失败。一项的等待全部结束时：都成功就标完成，
+ * 有失败就标失败并写上什么没成功（failed 是「需要处理」的状态，不是终态）。
  * 返回受影响的步骤，推回对话的消息里点名让 Agent 先处理它们
  */
 export function settleWait(
@@ -898,7 +1185,8 @@ export function settleWait(
     }
     const failed = item.waits.filter((x) => x.state === 'failed')
     if (failed.length) {
-      setStatus(item, 'running', now)
+      // 失败不退回进行中：那是「对话正在做」的意思。标成失败，等对话决定重做（标 running）还是放弃（标 skipped）
+      setStatus(item, 'failed', now)
       item.note = `${FAIL_PREFIX}${failed.map((x) => x.label || x.ref).join('、')}`
     } else if (item.status === 'waiting') {
       setStatus(item, 'done', now)
@@ -906,14 +1194,15 @@ export function settleWait(
       // 留着会让完成的步骤下面挂一行说明。只清面板写的这两种，Agent 自己写的备注（做了什么）留着
       if (item.note.startsWith(HOLD_PREFIX) || item.note.startsWith(FAIL_PREFIX)) item.note = ''
     }
-    hit.push({ title: item.title, done: item.status === 'done' })
+    hit.push({ title: item.title, done: isSettled(item.status) })
     if (parent) rollUp(parent, now)
   }
   for (const s of plan.steps) {
     for (const c of s.children) visit(c, s)
     visit(s)
   }
-  closeIfDone(plan, now)
+  closeIfSettled(plan, now)
+  plan.updatedAt = now
   return hit
 }
 
@@ -947,6 +1236,7 @@ export function holdWait(
     for (const c of s.children) visit(c, s)
     visit(s)
   }
+  if (changed.length) plan.updatedAt = now
   return changed
 }
 
@@ -961,11 +1251,12 @@ export function finishStepNow(task: PlanTask, stepId: string, note: string, now 
   if (!plan) return `（计划里没有步骤 ${id}：现在没有进行中的计划，先用 set_plan 列计划）`
   const got = findItem(plan, id)
   if (!got) return `（计划里没有步骤 ${id}）`
-  if (got.item.status === 'done') return ''
+  if (isSettled(got.item.status)) return ''
   if (note) got.item.note = clean(note, 300)
   setStatus(got.item, 'done', now)
   if (got.parent) rollUp(got.parent, now)
-  closeIfDone(plan, now)
+  closeIfSettled(plan, now)
+  plan.updatedAt = now
   return `计划步骤「${got.item.title}」已标完成`
 }
 
@@ -1005,13 +1296,13 @@ function linkKids(task: PlanTask, plan: TaskPlan, kids: PlanKid[], now: string) 
   for (const old of task.plans ?? [])
     if (old !== plan)
       for (const x of old.steps.flatMap((s) => [s, ...s.children]))
-        if (x.status !== 'done')
+        if (!isSettled(x.status))
           for (const w of x.waits)
             if (w.kind === 'child' && w.state === 'waiting')
               carried.set(x.title, [...(carried.get(x.title) ?? []), w.ref])
   let changed = false
   const visit = (x: PlanItem, parent?: PlanStep) => {
-    if (x.status === 'done' || (parent ?? (x as PlanStep)).wrapUp || (parent ?? (x as PlanStep)).run) return
+    if (isSettled(x.status) || (parent ?? (x as PlanStep)).wrapUp || (parent ?? (x as PlanStep)).run) return
     if (x.status === 'pending' || x.status === 'waiting') {
       const want = new Map(mentioned(`${x.title} ${x.note}`, kids).map((k) => [k.id, k]))
       for (const ref of carried.get(x.title) ?? []) {
@@ -1038,7 +1329,8 @@ function linkKids(task: PlanTask, plan: TaskPlan, kids: PlanKid[], now: string) 
       changed = true
     }
     if (end && x.status === 'waiting' && !x.waits.some((w) => w.state === 'waiting')) {
-      if (x.waits.some((w) => w.state === 'failed')) setStatus(x, 'running', now)
+      // 失败与 settleWait 同一口径：下标失败（需要处理），不退回进行中
+      if (x.waits.some((w) => w.state === 'failed')) setStatus(x, 'failed', now)
       else setStatus(x, 'done', end > x.startedAt ? end : now)
     }
     if (parent) rollUp(parent, now)
@@ -1047,6 +1339,7 @@ function linkKids(task: PlanTask, plan: TaskPlan, kids: PlanKid[], now: string) 
     for (const c of s.children) visit(c, s)
     visit(s)
   }
+  if (changed) plan.updatedAt = now
   return changed
 }
 
@@ -1055,7 +1348,7 @@ export function syncKids(task: PlanTask, kids: PlanKid[], now = new Date().toISO
   const plan = activePlan(task)
   if (!plan) return false
   const changed = linkKids(task, plan, kids, now)
-  closeIfDone(plan, now)
+  closeIfSettled(plan, now)
   return changed
 }
 
@@ -1109,18 +1402,19 @@ export function bindRun(task: PlanTask, stepId: string, run: number, title: stri
     }
     task.plans.push(plan)
   }
-  let step = plan.steps.find((s) => s.id === stepId.trim() && s.status !== 'done')
+  let step = plan.steps.find((s) => s.id === stepId.trim() && !isSettled(s.status))
   if (!step) {
     const seq = Math.max(0, ...plan.steps.map((s) => Number(s.id) || 0)) + 1
     step = { id: String(seq), title, status: 'pending', note: '', waits: [], startedAt: '', endedAt: '', children: [] }
     // 收尾永远在最后：新加的工作流步骤插在它前面
-    const wrap = plan.steps.findIndex((s) => s.wrapUp && s.status !== 'done')
+    const wrap = plan.steps.findIndex((s) => s.wrapUp && !isSettled(s.status))
     if (wrap >= 0) plan.steps.splice(wrap, 0, step)
     else plan.steps.push(step)
   }
   step.run = run
   step.children = []
   setStatus(step, 'running', now)
+  plan.updatedAt = now
   return step.id
 }
 
@@ -1136,22 +1430,28 @@ export function markWrapUp(
   now = new Date().toISOString(),
 ) {
   const plan = activePlan(task)
-  const step = plan?.steps.find((s) => s.wrapUp === kind && s.status !== 'done')
+  const step = plan?.steps.find((s) => s.wrapUp === kind && !isSettled(s.status))
   if (!plan || !step) return false
   setStatus(step, status, now)
   if (note) step.note = clean(note, 300)
-  closeIfDone(plan, now)
+  closeIfSettled(plan, now)
+  plan.updatedAt = now
   return true
 }
 
-/** 工作流跑完：成功标完成，失败退回进行中并记下原因，交给 Agent 处理 */
+/** 工作流跑完：成功标完成，失败标失败并记下原因，交给 Agent 处理 */
 export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now = new Date().toISOString()) {
   const plan = activePlan(task)
   const step = plan?.steps.find((s) => s.run === run)
   if (!plan || !step) return
   if (ok) setStatus(step, 'done', now)
-  else step.note = clean(`${RUN_FAIL_PREFIX}${error}`, 300)
-  closeIfDone(plan, now)
+  else {
+    // 工作流没走完：和等的结果失败同一口径（failed，需要对话处理），不是「还在做」
+    setStatus(step, 'failed', now)
+    step.note = clean(`${RUN_FAIL_PREFIX}${error}`, 300)
+  }
+  closeIfSettled(plan, now)
+  plan.updatedAt = now
 }
 
 /**
@@ -1166,7 +1466,7 @@ export function settlePlan(task: PlanTask, now = new Date().toISOString()): numb
   if (!plan) return 0
   let settled = 0
   const close = (item: PlanItem) => {
-    if (item.status !== 'done') {
+    if (!isSettled(item.status)) {
       setStatus(item, 'done', now)
       settled++
     }
@@ -1183,8 +1483,9 @@ export function settlePlan(task: PlanTask, now = new Date().toISOString()): numb
     if (s.note.startsWith(RUN_FAIL_PREFIX)) s.note = ''
   }
   if (!settled) return 0
-  // doneAt 可能已经有（finish_plan 提前结束过）：closeIfDone 不会重复写，折叠头按 leftSteps 变 done
-  closeIfDone(plan, now)
+  // doneAt 可能已经有（finish_plan 提前结束过）：closeIfSettled 不会重复写，折叠头按 leftSteps 变 done
+  closeIfSettled(plan, now)
+  plan.updatedAt = now
   return settled
 }
 
@@ -1219,6 +1520,7 @@ export function finishPlan(
   if (!plan) return { ok: false, info: '现在没有进行中的计划' }
   const left = leftSteps(plan)
   plan.doneAt ||= now
+  plan.updatedAt = now
   const running = kids.filter((k) => !k.done)
   return {
     ok: true,
@@ -1237,7 +1539,18 @@ export function finishPlan(
 
 /** 计划的文字版：交给 Agent 看（工具结果、每轮提示），带 id 方便它引用 */
 export function planText(task: PlanTask, plan: TaskPlan) {
-  const mark = (s: PlanStatus) => (s === 'done' ? '[x]' : s === 'running' ? '[>]' : s === 'waiting' ? '[~]' : '[ ]')
+  const mark = (s: PlanStatus) =>
+    s === 'done'
+      ? '[x]'
+      : s === 'running'
+        ? '[>]'
+        : s === 'waiting'
+          ? '[~]'
+          : s === 'failed'
+            ? '[!]'
+            : s === 'skipped'
+              ? '[-]'
+              : '[ ]'
   const line = (x: PlanItem, pad: string) => {
     const wait = x.waits.filter((w) => w.state === 'waiting').map((w) => w.label || w.ref)
     const extra = [x.note, wait.length ? `等：${wait.join('、')}` : ''].filter(Boolean).join('；')

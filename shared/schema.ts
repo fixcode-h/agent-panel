@@ -1480,9 +1480,11 @@ export type TaskTestRun = z.infer<typeof TaskTestRun>
 /**
  * 对话的执行计划：对话分析完列出主步骤，每个主步骤最多再分一层子步骤。
  * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
- * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它
+ * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它。
+ * running 与 waiting 分开：running 是「对话现在在动手」（一份计划里最多一个），waiting 是「在等外部结果」（必须挂着 waits）。
+ * failed：这一步没做成、需要处理（重做或明确跳过），不是终态；skipped：明确不做，终态（见 ADR 0020）
  */
-export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done'])
+export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done', 'failed', 'skipped'])
 export type PlanStatus = z.infer<typeof PlanStatus>
 
 /**
@@ -1508,6 +1510,11 @@ export const PlanItem = z.object({
   waits: z.array(PlanWait).default([]),
   startedAt: z.string().default(''),
   endedAt: z.string().default(''),
+  /**
+   * 这一项最后一次真正变化（状态、标题、备注、等待项）的时间：滞后检测和界面的「N 分钟前更新」读它。
+   * 旧数据没有这个字段，读时退回 startedAt（见 shared/plan.ts 的 itemUpdatedAt）
+   */
+  updatedAt: z.string().optional(),
 })
 export type PlanItem = z.infer<typeof PlanItem>
 
@@ -1548,6 +1555,21 @@ export const TaskPlan = z.object({
   reopenedAt: z.string().optional(),
   /** 所有步骤都完成的时间；没完成时为空 */
   doneAt: z.string().default(''),
+  /**
+   * 这份计划最后一次变化（任何一步的状态、标题、备注，或计划的标题）的时间：
+   * 界面的「N 分钟前更新」和「新输入之后计划有没有动过」都读它。旧数据没有，退回 createdAt
+   */
+  updatedAt: z.string().optional(),
+  /**
+   * 最近一次「带新要求性质」的输入到达时间（用户消息、父对话转达、子对话 / 后台结果里带了新任务）。
+   * 只用来判断「新输入之后计划有没有动过」，不参与状态推进（见 ADR 0020）
+   */
+  lastInputAt: z.string().optional(),
+  /**
+   * 已经为哪一次输入提醒过「计划没跟着改」（对应 lastInputAt 的值）：只提醒一次，
+   * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
+   */
+  inputNotedAt: z.string().optional(),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),

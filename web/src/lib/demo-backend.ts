@@ -3838,6 +3838,8 @@ function demoPlans(task: Task) {
     waits: [],
     startedAt: start ? at(start) : '',
     endedAt: end ? at(end) : '',
+    // 这项最后一次变化：演示里「进行中」的那一步 12 分钟没动了，界面上的滞后标记和「N 分钟前更新」才验得到
+    updatedAt: end ? at(end) : start ? at(start) : '',
   })
   task.plans = [
     {
@@ -3857,6 +3859,8 @@ function demoPlans(task: Task) {
       id: 'p2',
       title: '修复购物车角标',
       createdAt: at(28),
+      // 计划最后变化在第 3 步开始的时候，之后 12 分钟没动过：折叠头的「N 分钟前更新」应该是警示色
+      updatedAt: at(12),
       doneAt: '',
       summary: '',
       autoSummary: false,
@@ -3875,7 +3879,8 @@ function demoPlans(task: Task) {
             item('3.3', '覆盖未登录的本地购物车', 'pending'),
           ],
         },
-        { ...item('4', '整理改动和总结', 'pending'), children: [] },
+        // 失败态：需要对话处理（重做或明确跳过），不是正在跑；没有结束时间，所以不显示用时
+        { ...item('4', '整理改动和总结', 'failed'), note: '等的结果没成功：npm run build', children: [] },
       ],
     },
   ]
