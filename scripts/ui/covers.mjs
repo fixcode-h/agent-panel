@@ -3,7 +3,7 @@
  *
  * 每项是一组「路径前缀」：以 / 结尾表示目录（`web/src/components/tasks/` 命中它下面的所有文件），
  * 否则按完整文件路径算。一个文件可以命中多个分片（设置页同时被 05、06 覆盖；任务页拆出的
- * 02 / 02b / 02c 三片覆盖同一批组件），这时命中的分片都要跑。
+ * 02 / 02b / 02c 三片各断言一批组件，共用 TaskView / Messages 这类被多片断言的），这时命中的分片都要跑。
  *
  * 只写已经确认覆盖到的源码：没有列进来的 web/src 路径（通用 UI 组件、lib 里的公共逻辑、
  * 演示数据这类影响所有页面的）会被 changed-tests 标成「映射不出来」，提示跑全量的界面检查——
@@ -14,23 +14,56 @@
  */
 export const UI_SHARD_COVERS = {
   '01-composer': ['web/src/components/chat/', 'web/src/pages/ChatPage.tsx'],
-  // 任务页拆成 02 / 02b / 02c 三片：它们的场景都在同一批组件里（TaskView 的渲染树），
-  // 拆不出互不重叠的前缀，所以三片登记同一批源码——改任务页的组件时三片一起跑，宁可多跑不漏跑
+  // 任务页拆成 02 / 02b / 02c 三片：它们都经由 TaskView 的渲染树，但断言落在不同组件上。
+  // 只登记「这一片真的断言了它渲染的东西」的文件：三片登记同一批前缀时，改任何一个 TaskView
+  // 下的组件都要跑三片（02-task 一片就 2 分钟）。拿不准的组件不登记：changed-tests 映射不到会
+  // 提示跑全量的界面检查，宁可多跑，也不会因为少登记一条而漏跑一个会坏的页面。
   '02-task': [
-    'web/src/components/tasks/',
-    'web/src/components/files/',
+    'web/src/components/tasks/TaskView.tsx',
+    'web/src/components/tasks/LoadTrace.tsx',
+    'web/src/components/tasks/PeerMessage.tsx',
+    'web/src/components/tasks/HelperCards.tsx',
+    'web/src/components/tasks/HelperBriefCard.tsx',
+    'web/src/components/tasks/JobDialog.tsx',
+    'web/src/components/tasks/ToolDialog.tsx',
+    'web/src/components/tasks/ToolRow.tsx',
+    'web/src/components/tasks/LiveStats.tsx',
+    'web/src/components/tasks/Evolution.tsx',
+    'web/src/components/tasks/ChildSwitcher.tsx',
+    'web/src/components/tasks/RunningNow.tsx',
+    'web/src/components/tasks/Messages.tsx',
+    'web/src/components/tasks/TaskMeta.tsx',
+    'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',
   ],
   '02b-subagent': [
-    'web/src/components/tasks/',
-    'web/src/components/files/',
+    'web/src/components/tasks/TaskView.tsx',
+    'web/src/components/tasks/TaskMeta.tsx',
+    'web/src/components/tasks/RunningNow.tsx',
+    'web/src/components/tasks/Messages.tsx',
+    'web/src/components/tasks/Worktrees.tsx',
+    'web/src/components/tasks/ProcessPanel.tsx',
+    'web/src/components/tasks/PlanPanel.tsx',
+    'web/src/components/tasks/RunView.tsx',
+    'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',
   ],
   '02c-element-pick': [
-    'web/src/components/tasks/',
-    'web/src/components/files/',
+    'web/src/components/tasks/TaskView.tsx',
+    'web/src/components/tasks/TaskMeta.tsx',
+    'web/src/components/tasks/Messages.tsx',
+    'web/src/components/tasks/Worktrees.tsx',
+    'web/src/components/tasks/ProcessPanel.tsx',
+    'web/src/components/tasks/PlanPanel.tsx',
+    'web/src/components/tasks/RunView.tsx',
+    'web/src/components/tasks/TaskMenu.tsx',
+    'web/src/components/tasks/DiffDialog.tsx',
+    'web/src/components/tasks/MemoryChart.tsx',
+    'web/src/components/tasks/RequestCard.tsx',
+    'web/src/components/tasks/ChildAskCard.tsx',
+    'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',
   ],
