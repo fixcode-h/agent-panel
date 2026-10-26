@@ -10,9 +10,12 @@ import {
   endRun,
   finishPlan,
   holdWait,
+  leftSteps,
   markWrapUp,
   openPlan,
+  planHeadline,
   planProgress,
+  unfinishedSteps,
   planSpan,
   refreshChildWait,
   runningStepId,
@@ -152,6 +155,80 @@ test('finish_plan 主动结束计划：不写总结也能结束，传了也不�
   assert.equal(task.plans[0].doneAt === '', false)
   assert.equal(task.plans[0].summary, '', '传了总结也不落盘')
   assert.match(finishPlan(task).info, /没有进行中的计划/)
+})
+
+test('提前结束还有没做完的步骤：doneAt 写上、步骤状态原样留着，leftSteps 报得出来', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'waiting' },
+      { title: 'C', status: 'running' },
+    ],
+  })
+  finishPlan(task)
+  const plan = task.plans![0]
+  assert.notEqual(plan.doneAt, '', '计划确实结束了')
+  // 数据语义不改：那一步是真的还在等 / 在做，状态留原样，不能改写成完成或跳过
+  assert.deepEqual(
+    plan.steps.map((s) => s.status),
+    ['done', 'waiting', 'running'],
+  )
+  // 界面靠 leftSteps 区分「全部做完」和「提前结束」：只看 doneAt 会把提前结束也报成已完成
+  assert.deepEqual(
+    leftSteps(plan).map((s) => s.title),
+    ['B', 'C'],
+  )
+  assert.equal(planProgress(task, plan).done, 1)
+  assert.equal(planProgress(task, plan).total, 3)
+})
+
+test('折叠头说的「几项没做完」和进度是同一套计数：带子步骤时不打架', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'waiting', children: [{ title: 'B1' }, { title: 'B2' }] },
+    ],
+  })
+  finishPlan(task)
+  const plan = task.plans![0]
+  const { done, total } = planProgress(task, plan)
+  // 折叠头只数主步骤（和 total - done 恒等）：以前直接拿 leftSteps 的条目数套「步」字文案，
+  // 会同时出现「3 步没做完」和「1/2」，用户看不出到底还剩几步
+  assert.equal(unfinishedSteps(plan), total - done)
+  // leftSteps 仍然算上子步骤：它是「还剩哪些条目」，给列表和计划文案用
+  assert.equal(leftSteps(plan).length, 3)
+})
+
+test('全部做完收起后 leftSteps 是空的：这种情况下才该说「计划已完成」', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'done' },
+    ],
+  })
+  const plan = task.plans!.at(-1)!
+  assert.notEqual(plan.doneAt, '', '前提：全部完成时计划收起')
+  assert.deepEqual(leftSteps(plan), [])
+})
+
+test('折叠头该说哪件事：还在做 / 全部做完 / 提前结束但还有没做完的步骤', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'running' },
+    ],
+  })
+  assert.equal(planHeadline(task.plans![0]), 'open', '还没结束：只说进度')
+  finishPlan(task)
+  // 提前结束还有遗留：不能写「计划已完成」，界面上还有一步是等待中 / 进行中
+  assert.equal(planHeadline(task.plans![0]), 'closed')
+  const doneTask = fresh()
+  applyPlan(doneTask, { steps: [{ title: 'A', status: 'done' }] })
+  assert.equal(planHeadline(doneTask.plans![0]), 'done', '全部做完收起才说已完成')
 })
 
 test('等待：挂上后台命令，成功自动完成；失败退回进行中', () => {
