@@ -5,12 +5,12 @@
 1. **重启路径**：面板重启后，重启前还在跑的子对话仍显示「进行中」（行首转圈、计进侧栏分组的「N 个执行中」）。启动迁移只覆盖 `status === 'running'`，「这一轮说完了但计划没做完 / 独立分支没合回」的不在范围内。
 2. **运行期路径**：不重启也会出现——页面切走后宽限到期，`server/presence.ts` 的 `evict` 只结束还在等下一句的 CLI，**不落任务状态**，任务一直写着 `status: 'running'`。用户看到一批子对话卡片停在「未完成」，每张下面都写「CLI 进程已回收，继续会重新拉起」，实际都没有在跑（计划停在 5/8、6/8、7/11），而且**在 `running` 状态下没有「继续」按钮**（它只对 `stopped` / `failed` 显示），于是「很多子对话没有拉起」。
 
-- 状态：已修复（两条路径的代码、回归用例随同一批改动落地；`server/task-restart.test.ts` 5/5、`server/reclaim.test.ts` 3/3、`web/src/components/tasks/child-line.test.ts` 10/10 通过，`npm run typecheck`、`npm run lint` 通过，实测见「回归验证」）
+- 状态：已修复（两条路径的代码、回归用例随同一批改动落地；`server/task-restart.test.ts` 5/5、`server/reclaim.test.ts` 5/5、`web/src/components/tasks/child-line.test.ts` 10/10 通过，`npm run typecheck`、`npm run lint` 通过，实测见「回归验证」）
 - 症状：面板重启后，重启前还在跑的子对话在界面上仍显示「进行中」（行首转圈、计进侧栏分组的「N 个执行中」）；页面切走宽限到期后回收了进程，一批子对话卡片仍停在「未完成 + 继续会重新拉起」，实际没有进程、也没有能点的「继续」
 - 入口：`server/tasks.ts` 的 `ready` 启动迁移和 `setPresenceIdleHandler`、`server/exec/reclaim.ts` 的 `settleReclaimed`、`shared/task.ts` 的 `childIcon` / `childState`（`convState` 的 `unfinished` / `unmerged`）/ `resumable`、`web/src/components/tasks/child-line.ts` 的 `convGone`
 - 根因类型：状态收口缺口（重启迁移范围不足、页面回收只结束进程不落状态）+ 状态判定不看进程存活（两处信号不同源）
 - 模块：`server`（启动迁移与回收回调 `server/tasks.ts`、进程清理 `server/exec/orphans.ts`、回收收口 `server/exec/reclaim.ts`、宽限计时 `server/presence.ts`）、`shared`（状态判定 `shared/task.ts`）、`web`（子对话行的提示 `web/src/components/tasks/child-line.ts`）
-- 关键词：重启、页切走回收、presence、页面切走后结束、转圈、执行中、N 个执行中、很多子对话没有拉起、CLI 进程已回收、继续会重新拉起、没有「继续」入口、stopReason restart、stopReason presence、unfinished、unmerged、childIcon、ready、cleanStaleCliProcesses、settleReclaimed、cancelWait、childClosedHint、resumable
+- 关键词：重启、页切走回收、presence、页面切走后结束、转圈、执行中、N 个执行中、很多子对话没有拉起、CLI 进程已回收、Agent 进程已回收、继续会重新拉起、没有「继续」入口、stopReason restart、stopReason presence、unfinished、unmerged、childIcon、ready、cleanStaleCliProcesses、settleReclaimed、cancelWait、childClosedHint、resumable
 
 ## 现象
 
@@ -40,7 +40,7 @@
 1. 子对话这一轮已经说过话了（落盘里 `status` 是 `done`），但**计划没做完**（`openPlan` 有值，例如 6/8）或者**独立分支还没合回**（`worktree.state === 'active'`）。
 2. 这时重启面板（关掉服务再开，或者崩溃后被重新拉起）。
 3. 重启后 `server/exec/orphans.ts` 的 `cleanStaleCliProcesses` 按 `run/cli-pids.json` 把遗留 CLI 杀掉、清掉登记，但**不碰任务记录**；`server/tasks.ts` 的 `ready` 只迁移 `status === 'running'` 的任务，这一类 `status` 是 `done`，原样留在落盘里。
-4. 界面按 `childIcon` 判定：`convState` 因为 `unfinished` / `unmerged` 返回 `unfinished`，`childIcon` 对它返回 `running` → 行首转圈、子对话栏算在跑；同一行 `cliAlive` 是 `false`，`convGone` 返回 `hint`，又挂一句「CLI 进程已回收，继续会重新拉起」。
+4. 界面按 `childIcon` 判定：`convState` 因为 `unfinished` / `unmerged` 返回 `unfinished`，`childIcon` 对它返回 `running` → 行首转圈、子对话栏算在跑；同一行 `cliAlive` 是 `false`，`convGone` 返回 `hint`，又挂一句「Agent 进程已回收，继续会重新拉起」（当时的界面文案叫 CLI，后来统一改叫 Agent）。
 
 本机真实数据里就是这样一条：子对话 `c8f2721d-f0e7-4057-b1ee-734aa377da0a`（父对话 `93b08721-4bab-4f55-93e6-0e2fe180eeab`），落盘里 `status: 'done'`、`working: false`、计划 6/8（`doneAt: ''`）、`worktree.state: 'active'`、没有 `wrapRequest`。
 
@@ -49,7 +49,7 @@
 1. 一个子对话这一轮说完了，CLI 留着等下一句（MCP 工具等回复间隙）：落盘里 `status: 'running'`、`working: false`，计划停在 6/8。
 2. 用户切走页面（或关掉页面、切到别的对话），`server/presence.ts` 的 `scheduleIdle` 开始计宽限（「设置 · 自动回收闲置 Agent」开启时；宽限时长默认 60 分钟，未读的更短），到点 `evict(taskId)`；这一轮还在跑（`busy`）就不回收，只记 `pending`。
 3. `evict` 调 `onIdle`（即 `server/tasks.ts` 的 `setPresenceIdleHandler`），旧实现只有 `cancelWait(id)`：它让在等下一句的 CLI 结束这一轮，**一个字段都不写回任务记录**。
-4. 于是任务永远停在 `status: 'running'`、`working: false`：`convState` 走 `unfinished`（计划没做完）→ `childIcon` 是 `running`（转圈、计入「N 个执行中」），而进程真的没了、`cliAlive` 为假 → `convGone` 给 `hint`「CLI 进程已回收，继续会重新拉起」；「继续」按钮的显示条件是 `shared/task.ts` 的 `resumable(status)`（只看 `stopped` / `failed`），在 `running` 状态下根本不渲染——这一轮既不会自动拉起，用户也没有可点的入口。
+4. 于是任务永远停在 `status: 'running'`、`working: false`：`convState` 走 `unfinished`（计划没做完）→ `childIcon` 是 `running`（转圈、计入「N 个执行中」），而进程真的没了、`cliAlive` 为假 → `convGone` 给 `hint`「Agent 进程已回收，继续会重新拉起」；「继续」按钮的显示条件是 `shared/task.ts` 的 `resumable(status)`（只看 `stopped` / `failed`），在 `running` 状态下根本不渲染——这一轮既不会自动拉起，用户也没有可点的入口。
 
 ## 根因
 
