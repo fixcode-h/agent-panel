@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
   Archive,
+  CalendarClock,
   CircleAlert,
   Bot,
   Code2,
@@ -89,11 +90,12 @@ export function Logo({ className }: { className?: string }) {
 }
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
+  { id: 'summary', label: t('工作总结'), icon: FileText },
+  { id: 'schedules', label: t('计划'), icon: CalendarClock },
   { id: 'agents', label: t('角色'), icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },
   { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
   { id: 'mcp', label: t('MCP 工具'), icon: Plug },
-  { id: 'summary', label: t('工作总结'), icon: FileText },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */

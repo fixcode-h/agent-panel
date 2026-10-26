@@ -27,6 +27,7 @@ import { api } from '@/lib/api'
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
 const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
 const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ default: m.LibraryPage })))
+const SchedulesPage = lazy(() => import('@/pages/SchedulesPage').then((m) => ({ default: m.SchedulesPage })))
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
@@ -37,6 +38,7 @@ const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
 const PAGES: Record<Route['page'], () => React.ReactNode> = {
   home: () => <HomePage />,
+  schedules: () => <SchedulesPage />,
   projects: () => <ProjectsPage />,
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,

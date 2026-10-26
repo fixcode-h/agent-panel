@@ -33,6 +33,7 @@ export const DATA_FILES: Record<string, string> = {
   'tags.json': 'config/tags.json',
   'workflows.json': 'config/workflows.json',
   'project-categories.json': 'config/project-categories.json',
+  'schedules.json': 'config/schedules.json',
   'projects.json': 'projects/projects.json',
   'tasks.json': 'tasks/tasks.json',
   // 工作总结报告是任务记录的派生，跟着任务记录一起清理（见 server/data.ts 的 tasks 类别）
