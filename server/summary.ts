@@ -11,14 +11,17 @@ import { z } from 'zod'
 import { getCli } from '../shared/clis.ts'
 import type { Project, Task } from '../shared/schema.ts'
 import {
+  activeOnDay,
+  checkSummaryFormat,
   collectDayProjects,
   extractSummary,
-  isToday,
   SUMMARY_KEEP,
   SummaryRecord,
   SummaryRequest,
   SummaryReport,
+  skippedProjects,
   summaryPrompt,
+  summaryRetryHint,
   todayWindow,
   type SummaryJob,
 } from '../shared/summary.ts'
@@ -41,10 +44,6 @@ type Reports = {
 }
 
 /** 任务里今天有活动的时间字段：用它先筛出要读完整对话的任务，不用把每个任务都读一遍 */
-const activeToday = (task: Task, day: string) => {
-  if (isToday(task.updatedAt, day) || isToday(task.turnDoneAt, day) || isToday(task.runStartedAt, day)) return true
-  return task.messages.some((m) => isToday(m.at, day))
-}
 
 export function summaryApi(deps: {
   /** 列表只带用户消息（摘要用）：要 Agent 的回复得按 id 再取完整任务，见下面的 run() */
@@ -86,28 +85,41 @@ export function summaryApi(deps: {
     const cs = cliSettings(settings, input.cli)
     const r0 = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
     const all = await deps.projects.list()
-    const chosen = input.projectIds.map((id) => all.find((p) => p.id === id)).filter((p): p is Project => !!p)
+    // 按用户加进来的顺序找项目：这个顺序就是报告里分节的顺序，找不到的直接丢掉
+    const chosen = input.projects.map((p) => all.find((x) => x.id === p.projectId)).filter((p): p is Project => !!p)
     if (!chosen.length) return failed(t('项目不存在'))
     const now = new Date()
     const { day } = todayWindow(now)
     // 列表里的任务只带用户消息（server/task-store.ts 的 head），Agent 的结论不在里面。
     // 先按时间字段筛出今天有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
     const ids = new Set(chosen.map((p) => p.id))
-    const candidates = (await deps.tasks.list()).filter((t) => ids.has(t.projectId) && activeToday(t, day))
+    const candidates = (await deps.tasks.list()).filter((t) => ids.has(t.projectId) && activeOnDay(t, day))
     const full = await Promise.all(candidates.map((t) => deps.tasks.get(t.id)))
+    // 每个项目只分析用户选的对话；taskIds 为空表示该项目今天全部对话
+    const picks = input.projects
+      .filter((p) => ids.has(p.projectId))
+      .map((p) => ({ id: p.projectId, name: chosen.find((x) => x.id === p.projectId)!.name, taskIds: p.taskIds }))
     const projects = collectDayProjects(
       full.filter((t): t is Task => !!t),
-      chosen.map((p) => ({ id: p.id, name: p.name })),
+      picks,
       now,
     )
+    // 用户选了但今天没有可总结内容的项目（只改了状态/归档、没有今天的对话）：记下来给页面提示，不悄悄从报告里删掉
+    const skipped = skippedProjects(picks, projects)
+    if (skipped.length) job.skipped = skipped
     // 提示词里已经带着今天的记录，CLI 不需要再读代码：放在第一个有目录的项目里跑（只读权限），
     // 这样各 CLI 拿到的都是一个正常的项目工作目录，启动时读项目说明也不会出错
     const dir = chosen.find((p) => p.path)?.path || process.cwd()
     const taskCount = projects.reduce((n, p) => n + p.tasks.length, 0)
-    log.info('summary', `用 ${def.name} 生成工作总结`, { day, projects: chosen.length, tasks: taskCount })
+    log.info('summary', `用 ${def.name} 生成工作总结`, {
+      day,
+      projects: chosen.length,
+      tasks: taskCount,
+      picks: picks.map((p) => p.taskIds.length),
+    })
 
     let text = ''
-    const errors: string[] = []
+    let errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
     /** 已经写出来的部分交给页面：失败 / 停止时至少能看、能复制，不用重新跑一遍 */
     const keepPartial = () => {
@@ -115,70 +127,109 @@ export function summaryApi(deps: {
       if (partial.trim()) job.md = partial
     }
     const asks = askSession(`summary:${job.id}`, () => job.abort.abort())
-    const r = await invokeCli({
-      askUser: asks.askUser,
-      onAsk: asks.onAsk,
-      cliId: input.cli,
-      command: cs.command,
-      build: {
-        model: r0.model,
-        effort: r0.effort,
-        permission: def.readOnly || cs.permission,
-        extraArgs: safeArgs(cs.extraArgs),
-      },
-      cwd: dir,
-      env: childEnv(cs.env),
-      input: summaryPrompt({ day, projects }),
-      signal: job.abort.signal,
-      timeoutMs: TIMEOUT,
-      onEvent: (ev) => {
-        if (ev.type === 'text_delta') text += ev.text
-        else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
-        else if (ev.type === 'error') errors.push(ev.message)
-        else if (ev.type === 'thinking')
-          job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
-        else if (ev.type === 'tool') job.tools = [...job.tools, ev.tool.label].slice(-5)
-        else if (ev.type === 'result') result = ev
-        job.outChars = text.length
-      },
-    }).finally(asks.done)
-    if (r.killed === 'stopped') {
-      job.status = 'stopped'
-      keepPartial()
-      return
+    /** 跑一次 CLI：格式不合格重试时再跑一遍，提问卡片和资源都沿用同一个 job */
+    const generate = (prompt: string) => {
+      text = ''
+      errors = []
+      result = undefined
+      // 重试是另一次生成：上一次的思考、工具标签和字数不能混进来（页面上看着像同一次在继续跑）
+      job.thinking = undefined
+      job.tools = []
+      job.outChars = 0
+      return invokeCli({
+        askUser: asks.askUser,
+        onAsk: asks.onAsk,
+        cliId: input.cli,
+        command: cs.command,
+        build: {
+          model: r0.model,
+          effort: r0.effort,
+          permission: def.readOnly || cs.permission,
+          extraArgs: safeArgs(cs.extraArgs),
+        },
+        cwd: dir,
+        env: childEnv(cs.env),
+        input: prompt,
+        signal: job.abort.signal,
+        timeoutMs: TIMEOUT,
+        onEvent: (ev) => {
+          if (ev.type === 'text_delta') text += ev.text
+          else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
+          else if (ev.type === 'error') errors.push(ev.message)
+          else if (ev.type === 'thinking')
+            job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
+          else if (ev.type === 'tool') job.tools = [...job.tools, ev.tool.label].slice(-5)
+          else if (ev.type === 'result') result = ev
+          job.outChars = text.length
+        },
+      })
     }
-    if (r.killed === 'timeout') {
-      keepPartial()
-      return failed(t('超过 {n} 分钟没有完成，已停止', { n: TIMEOUT / 60_000 }))
-    }
-    if (r.spawnError)
-      return failed(
-        t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
+    /** 一次生成失败的原因；成了就返回空串。'stopped' 不是错误，页面按普通提示显示 */
+    const failure = (r: Awaited<ReturnType<typeof invokeCli>>) => {
+      if (r.killed === 'stopped') return 'stopped'
+      if (r.killed === 'timeout') return t('超过 {n} 分钟没有完成，已停止', { n: TIMEOUT / 60_000 })
+      if (r.spawnError)
+        return t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
           error: r.spawnError,
           cli: def.name,
           hint: def.installHint,
-        }),
-      )
-    if (result ? !result.ok : r.code !== 0) {
-      keepPartial()
-      return failed(
-        t('{cli} 执行失败：{detail}', {
+        })
+      if (result ? !result.ok : r.code !== 0)
+        return t('{cli} 执行失败：{detail}', {
           cli: def.name,
           detail:
             [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n') ||
             t('没有更多信息'),
-        }),
-      )
+        })
+      return ''
     }
-    const md = extractSummary(text)
-    if (!md.trim()) return failed(t('{cli} 没有给出报告内容，可以再试一次', { cli: def.name }))
+
+    let md = ''
+    try {
+      const first = await generate(summaryPrompt({ day, projects }))
+      const why = failure(first)
+      if (why === 'stopped') {
+        job.status = 'stopped'
+        keepPartial()
+        return
+      }
+      if (why) {
+        keepPartial()
+        return failed(why)
+      }
+      md = extractSummary(text)
+      if (!md.trim()) return failed(t('{cli} 没有给出报告内容，可以再试一次', { cli: def.name }))
+      // 生成后自己校一遍结构：不合格就带上具体问题再跑一次（只重试一次），
+      // 仍然不合格也保存，但在 job 上标出来，页面上明确提示「格式不完整」，不静默通过
+      let retried = false
+      let check = checkSummaryFormat(md)
+      if (!check.ok) {
+        retried = true
+        log.warn('summary', '工作总结格式不完整，重试一次', { issues: check.issues })
+        const again = await generate(summaryPrompt({ day, projects }) + summaryRetryHint(check.issues))
+        if (again.killed === 'stopped') {
+          job.status = 'stopped'
+          job.md = md
+          return
+        }
+        // 重试失败或没写出东西时保留第一次的结果：总比空着强
+        const next = failure(again) ? '' : extractSummary(text)
+        if (next.trim()) md = next
+        check = checkSummaryFormat(md)
+        if (!check.ok) log.warn('summary', '工作总结重试后格式仍然不完整', { issues: check.issues })
+      }
+      job.format = { ok: check.ok, issues: check.issues, retried }
+    } finally {
+      asks.done()
+    }
     // 先把正文交给页面：保存失败时用户至少能看到、能复制这份报告，不用重新跑一遍
     job.md = md
     try {
       await save(job, {
         day,
-        projectIds: chosen.map((p) => p.id),
-        projectNames: chosen.map((p) => p.name),
+        // 存实际写进报告的项目（被跳过的项目不进元数据，和正文保持一致）
+        projectIds: projects.map((p) => p.projectId),
+        projectNames: projects.map((p) => p.projectName),
         md,
         cli: input.cli,
         model: r0.model,
@@ -199,7 +250,7 @@ export function summaryApi(deps: {
     const job: SummaryJob & { abort: AbortController; at: number } = {
       id: randomUUID(),
       status: 'running',
-      projectIds: input.projectIds,
+      projectIds: input.projects.map((p) => p.projectId),
       md: '',
       tools: [],
       outChars: 0,

@@ -1,20 +1,27 @@
 /**
- * 工作总结：选几个项目，把「今天」执行过的对话交给本机 CLI，生成一份简短的 Markdown 报告。
+ * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），
+ * 把「今天」（本机时区的自然日）执行过的对话交给本机 CLI，生成一份固定三节格式的 Markdown 报告。
  * 报告能编辑（自动保存）、预览、一键复制；最近几份存在数据目录里（见 server/summary.ts），点开能回看。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { AlertTriangle, Copy, FileText, Loader2, Sparkles, Square } from 'lucide-react'
+import { AlertTriangle, Copy, FileText, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
-import { reportTitle, todayWindow, type SummaryJob, type SummaryRecord } from '@shared/summary'
+import {
+  activeOnDay,
+  reportTitle,
+  todayWindow,
+  type SummaryFormatIssue,
+  type SummaryJob,
+  type SummaryRecord,
+} from '@shared/summary'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
@@ -25,6 +32,123 @@ const NO_TEAM = new Set<string>()
 const POLL_MS = 700
 /** 轮询连续失败几次才判失败：面板重启一下、网络断一下不该把还在跑的报告算失败 */
 const POLL_FAIL_MAX = 3
+
+/** 报告要分析的一项：项目 + 该项目里选中的对话（空数组表示今天全部对话） */
+interface Pick {
+  projectId: string
+  taskIds: string[]
+}
+
+/**
+ * 格式自检的问题码 → 页面文案。写成逐条字面量而不是直接拿 shared 里的提示词文案，
+ * 是因为界面文案要过 t() 才会进英文词典；提示词里那份是给 CLI 看的，不翻译
+ */
+function issueText(issue: SummaryFormatIssue) {
+  switch (issue) {
+    case 'title':
+      return t('一级标题不是「# <日期> 工作总结」')
+    case 'sections':
+      return t('缺少固定的三个二级节，或顺序不对')
+    case 'project':
+      return t('项目标题的编号格式不对（应为「### 1.1 项目名」）')
+    case 'item':
+      return t('条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复」')
+    case 'empty':
+      return t('某一节没有内容时没写「暂无」')
+  }
+}
+
+/** 已加入的一个项目：项目名 + 该项目今天有执行的对话 + 对话选择（下拉增加、可删） */
+function ProjectPickRow({
+  name,
+  tasks,
+  picked,
+  disabled,
+  onAddTask,
+  onRemoveTask,
+  onRemove,
+}: {
+  name: string
+  /** 该项目今天有执行的对话；列表里只留标题，拿到的是任务摘要 */
+  tasks: { id: string; title: string }[]
+  /** 已加入要分析的对话 id */
+  picked: string[]
+  disabled: boolean
+  onAddTask: (id: string) => void
+  onRemoveTask: (id: string) => void
+  onRemove: () => void
+}) {
+  // 下拉里不重复列出已经加过的对话；删掉一个后它回到下拉里
+  const rest = tasks.filter((x) => !picked.includes(x.id))
+  const [draft, setDraft] = useState('')
+  useEffect(() => {
+    if (!rest.some((x) => x.id === draft)) setDraft(rest[0]?.id ?? '')
+  }, [rest, draft])
+  const titleOf = (id: string) => tasks.find((x) => x.id === id)?.title ?? id
+  return (
+    <li className="px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[0.8125rem] font-medium">{name}</span>
+        {!!tasks.length && <span className="text-xs text-subtle">{t('今天 {n} 个对话', { n: tasks.length })}</span>}
+        <button
+          type="button"
+          aria-label={t('删除项目 {name}', { name })}
+          onClick={onRemove}
+          disabled={disabled}
+          className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-subtle"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {!tasks.length ? (
+        <p className="mt-1 text-xs text-subtle">{t('今天没有可总结的对话')}</p>
+      ) : (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Select
+              aria-label={t('选择要分析的对话')}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="h-8 w-[260px]"
+              options={rest.map((x) => ({ value: x.id, label: x.title }))}
+              disabled={disabled || !rest.length}
+            />
+            <Button size="sm" variant="secondary" disabled={disabled || !draft} onClick={() => onAddTask(draft)}>
+              <Plus className="h-3.5 w-3.5" />
+              {t('增加')}
+            </Button>
+            <span className="text-xs text-subtle">
+              {picked.length
+                ? t('只分析已选的 {n} 个对话', { n: picked.length })
+                : t('未选对话时分析该项目今天全部对话')}
+            </span>
+          </div>
+          {!!picked.length && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {picked.map((id) => (
+                <span
+                  key={id}
+                  className="flex items-center gap-1 rounded-lg bg-sel px-2 py-1 text-[0.75rem] text-muted"
+                >
+                  <span className="max-w-[240px] truncate">{titleOf(id)}</span>
+                  <button
+                    type="button"
+                    aria-label={t('删除对话 {title}', { title: titleOf(id) })}
+                    onClick={() => onRemoveTask(id)}
+                    disabled={disabled}
+                    className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </li>
+  )
+}
 
 /** 报告正文：预览 / 编辑切换，编辑后自动保存 */
 function ReportEditor({
@@ -98,7 +222,7 @@ function ReportEditor({
 }
 
 export function SummaryPage() {
-  const { projects, clis, settings } = useData()
+  const { projects, clis, settings, tasks, loading } = useData()
   const { day } = todayWindow()
   const usable = useMemo(
     () =>
@@ -108,7 +232,10 @@ export function SummaryPage() {
     [clis, settings],
   )
   const [cli, setCli] = useState('')
-  const [selected, setSelected] = useState<string[]>([])
+  /** 已加入的项目：顺序就是报告里分节的顺序 */
+  const [picks, setPicks] = useState<Pick[]>([])
+  /** 项目下拉当前选到哪个（点「增加」才真的加进去） */
+  const [projectDraft, setProjectDraft] = useState('')
   const [job, setJob] = useState<SummaryJob | null>(null)
   /** 当前打开的这份报告：id 用来保存，md 是它的内容 */
   const [current, setCurrent] = useState<{ id: string; md: string } | null>(null)
@@ -125,13 +252,24 @@ export function SummaryPage() {
     setCli(usable.find((c) => c.id === pref)?.id ?? usable[0].id)
   }, [cli, usable, settings])
 
-  // 默认选中第一个项目：报告一次分析几个项目，先给一个最省的起点
-  const picked = useRef(false)
+  // 下拉只列还没加过的项目：同一个项目不需要加两次
+  const projectOptions = useMemo(
+    () => projects.filter((p) => !picks.some((x) => x.projectId === p.id)).map((p) => ({ value: p.id, label: p.name })),
+    [projects, picks],
+  )
+
+  // 下拉默认选中第一个可加的项目；加完项目后自动移到下一个，接着加不用再点
   useEffect(() => {
-    if (picked.current || !projects.length) return
-    picked.current = true
-    setSelected([projects[0].id])
-  }, [projects])
+    if (projectOptions.some((o) => o.value === projectDraft)) return
+    setProjectDraft(projectOptions[0]?.value ?? '')
+  }, [projectOptions, projectDraft])
+
+  /** 该项目今天有执行的对话（和生成时服务端筛的是同一个判定） */
+  const todayTasks = (projectId: string) =>
+    tasks
+      .filter((x) => x.projectId === projectId && activeOnDay(x, day))
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+      .map((x) => ({ id: x.id, title: x.title || t('未命名对话') }))
 
   useEffect(() => {
     void api
@@ -173,16 +311,36 @@ export function SummaryPage() {
   const running = job?.status === 'running'
   const stopped = job?.status === 'stopped'
   const message = job?.status === 'failed' ? (job.error ?? error) : error
-  const toggle = (id: string, on: boolean) =>
-    setSelected((prev) => (on ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((x) => x !== id)))
+  const addProject = () => {
+    if (!projectDraft || picks.some((x) => x.projectId === projectDraft)) return
+    setPicks((prev) => [...prev, { projectId: projectDraft, taskIds: [] }])
+  }
+  const removeProject = (projectId: string) => setPicks((prev) => prev.filter((x) => x.projectId !== projectId))
+  const addTask = (projectId: string, taskId: string) =>
+    setPicks((prev) =>
+      prev.map((x) =>
+        x.projectId === projectId && !x.taskIds.includes(taskId) ? { ...x, taskIds: [...x.taskIds, taskId] } : x,
+      ),
+    )
+  const removeTask = (projectId: string, taskId: string) =>
+    setPicks((prev) =>
+      prev.map((x) => (x.projectId === projectId ? { ...x, taskIds: x.taskIds.filter((id) => id !== taskId) } : x)),
+    )
 
   const start = async () => {
-    if (!selected.length || !cli) return
+    if (!picks.length || !cli) return
     setError('')
     // 新的一次从清零开始：上一次连续失败的次数不能带到这一次的第一次轮询
     pollFails.current = 0
     try {
-      setJob(await api.generateSummary({ projectIds: selected, cli, model: '', effort: '' }))
+      setJob(
+        await api.generateSummary({
+          projects: picks.map((x) => ({ projectId: x.projectId, taskIds: x.taskIds })),
+          cli,
+          model: '',
+          effort: '',
+        }),
+      )
     } catch (e) {
       setError((e as Error).message)
     }
@@ -210,28 +368,27 @@ export function SummaryPage() {
     <PageFrame
       title={t('工作总结')}
       intro={t(
-        '选几个项目，把今天（{day}）执行过的对话整理成一份简短的 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
+        '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），把今天（{day}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
         { day },
       )}
     >
       <section className="rounded-xl border bg-panel">
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
           <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
-          <span className="text-xs text-subtle">{t('已选 {n} 个', { n: selected.length })}</span>
-          <button
-            type="button"
-            className="cursor-pointer text-xs text-muted hover:text-fg"
-            onClick={() => setSelected(projects.map((p) => p.id))}
-          >
-            {t('全选')}
-          </button>
-          <button
-            type="button"
-            className="cursor-pointer text-xs text-muted hover:text-fg"
-            onClick={() => setSelected([])}
-          >
-            {t('清空')}
-          </button>
+          <Select
+            aria-label={t('选择要总结的项目')}
+            value={projectDraft}
+            onChange={(e) => setProjectDraft(e.target.value)}
+            className="h-8 w-[200px]"
+            placeholder={t('选择项目')}
+            options={projectOptions}
+            disabled={running || !projectOptions.length}
+          />
+          <Button size="sm" variant="secondary" disabled={running || !projectDraft} onClick={addProject}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('增加')}
+          </Button>
+          <span className="text-xs text-subtle">{t('已选 {n} 个', { n: picks.length })}</span>
           <div className="ml-auto flex items-center gap-2">
             {usable.length ? (
               <Select
@@ -250,26 +407,38 @@ export function SummaryPage() {
                 {t('停止')}
               </Button>
             ) : (
-              <Button size="sm" disabled={!selected.length || !cli} onClick={start}>
+              <Button size="sm" disabled={!picks.length || !cli} onClick={start}>
                 <Sparkles className="h-3.5 w-3.5" />
                 {job?.status === 'failed' ? t('重试') : t('生成报告')}
               </Button>
             )}
           </div>
         </div>
-        {projects.length ? (
-          <div className="grid gap-2 px-4 py-3 md:grid-cols-2">
-            {projects.map((p) => (
-              <Checkbox
-                key={p.id}
-                checked={selected.includes(p.id)}
-                onChange={(on) => toggle(p.id, on)}
-                label={p.name}
-              />
-            ))}
-          </div>
-        ) : (
+        {loading ? (
+          <p className="px-4 py-3 text-xs text-subtle">{t('正在加载…')}</p>
+        ) : !projects.length ? (
           <p className="px-4 py-3 text-xs text-subtle">{t('还没有项目，先在侧栏添加一个项目。')}</p>
+        ) : !picks.length ? (
+          <p className="px-4 py-3 text-xs text-subtle">{t('还没有加入项目。选一个项目后点「增加」。')}</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {picks.map((pick) => {
+              const project = projects.find((p) => p.id === pick.projectId)
+              if (!project) return null
+              return (
+                <ProjectPickRow
+                  key={pick.projectId}
+                  name={project.name}
+                  tasks={todayTasks(pick.projectId)}
+                  picked={pick.taskIds}
+                  disabled={running}
+                  onAddTask={(id) => addTask(pick.projectId, id)}
+                  onRemoveTask={(id) => removeTask(pick.projectId, id)}
+                  onRemove={() => removeProject(pick.projectId)}
+                />
+              )
+            })}
+          </ul>
         )}
       </section>
 
@@ -295,6 +464,24 @@ export function SummaryPage() {
       )}
 
       {stopped && <p className="rounded-xl border bg-panel px-4 py-3 text-xs text-subtle">{t('已停止生成')}</p>}
+
+      {/* 用户选了、但今天没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
+      {job?.status === 'done' && !!job.skipped?.length && (
+        <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {t('这些项目没有可写进报告的对话，已跳过：{names}', { names: job.skipped.join('、') })}
+        </p>
+      )}
+
+      {/* 格式自检不通过：重试过一次仍然不完整，页面要明确告知，不能静默当作正常报告 */}
+      {job?.format && !job.format.ok && (
+        <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {t('报告格式不完整（已自动重试一次）：{issues}', {
+            issues: job.format.issues.map(issueText).join('；'),
+          })}
+        </p>
+      )}
 
       {/* 失败 / 停止时已经写出来的正文：没有存进去，但至少能看、能复制，不用重新跑一遍 */}
       {job && job.status !== 'done' && !!job.md.trim() && (

@@ -35,4 +35,4 @@
 | 改端到端覆盖                                                | `scripts/e2e/` 下按主题分片，模拟 CLI 在 `scripts/fake-cli/`                                                                                                    |
 | 改内置角色、工作流模板                                      | `shared/builtin/`，判定标准见 [agent-catalog.md](agent-catalog.md)                                                                                              |
 | 改 Agent 的回复 / 思考语言                                  | `shared/prompt-lang.ts` + `server/exec/runner.ts` + [cli-config.md](cli-config.md)                                                                              |
-| 改工作总结的时间窗口、报告内容                              | `shared/summary.ts`（纯逻辑和提示词）、`server/summary.ts`（跑 CLI、存报告）、`web/src/pages/SummaryPage.tsx`                                                   |
+| 改工作总结的时间窗口、报告内容                              | `shared/summary.ts`（纯逻辑和提示词）、`server/summary.ts`（跑 CLI、存报告）、`web/src/pages/SummaryPage.tsx`；请求是项目 → 对话两层，报告固定三节              |
