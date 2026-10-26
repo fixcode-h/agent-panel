@@ -4,12 +4,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Agent, Tag } from '@shared/schema'
+import { listableAgents } from '@shared/builtin/core'
 import { DEFAULT_AGENT_GROUP, groupAgentsByTag } from '@/lib/agent-groups'
 
 const tag = (id: string, name: string, color: Tag['color'] = 'gray') =>
   ({ id, name, color, description: '', createdAt: '', updatedAt: '' }) as Tag
 
-const agent = (id: string, tags: string[]) => ({ id, name: id, tags }) as Agent
+const agent = (id: string, tags: string[]) => ({ id, name: id, origin: '', tags }) as Agent
 
 const TAGS = [tag('t1', 'alpha'), tag('t2', 'beta'), tag('t3', 'gamma')]
 
@@ -83,6 +84,19 @@ test('用户自建叫「默认」的标签：和内置的「默认」组靠 id �
   // 两组名字相同（都是「默认」），靠 id 不冲突；页面把内置组的标题写成那句带说明的文案，用户不会认错
   assert.notEqual(groups[0].id, groups[1].id)
   assert.equal(groups[1].id, DEFAULT_AGENT_GROUP)
+})
+
+test('角色页分组不含「子任务」（它不作为可选角色展示）', () => {
+  // 角色页先过滤可列的角色，再交给 groupAgentsByTag：不能让它单独撑出一个「默认」组
+  const agents = [{ ...agent('a', []), origin: 'builtin:helper' }, agent('b', ['t1']), agent('c', [])] as Agent[]
+  const groups = groupAgentsByTag(listableAgents(agents), TAGS)
+  assert.deepEqual(
+    groups.map((g) => [g.id, g.agents.map((x) => x.id)]),
+    [
+      ['t1', ['b']],
+      [DEFAULT_AGENT_GROUP, ['c']],
+    ],
+  )
 })
 
 test('已经有角色但一个标签都没有时只剩「默认」组，不会出现空组', () => {

@@ -53,7 +53,21 @@ export function coreUse(key: CoreKey) {
   }
 }
 
+/** 默认子任务角色「子任务」在内置定义里的 key */
+export const HELPER_KEY = 'helper'
+
+/**
+ * 子任务默认用的必备角色（「子任务」，spawn_agents 不写 agent 时用它）。
+ * 它不是用户可选的角色：角色页、内置角色弹窗、选择器都不展示，也不能改名、停用、删除；
+ * 定义要留着，删了所有子任务就没有默认角色和提示词了。
+ */
+export const isHelperAgent = (a: Pick<Agent, 'origin'> | undefined) => coreKey(a) === HELPER_KEY
+
 export const isCoreAgent = (a: Pick<Agent, 'origin'> | undefined) => !!coreKey(a)
+
+/** 界面上可以列出的角色：去掉只由 spawn_agents 兜底使用的默认子任务角色 */
+export const listableAgents = <A extends Pick<Agent, 'origin'>>(agents: A[]): A[] =>
+  agents.filter((a) => !isHelperAgent(a))
 
 /**
  * 内置角色（必备角色也算）：来源是 builtin:<key> 且这个 key 还有内置定义。

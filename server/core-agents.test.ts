@@ -12,6 +12,8 @@ import {
   coreDefinition,
   findCore,
   isCoreAgent,
+  isHelperAgent,
+  listableAgents,
   syncCore,
   withProjectParams,
 } from '../shared/builtin/core.ts'
@@ -285,6 +287,24 @@ test('必备角色：改了设定会被同步回内置定义，参数取值和�
   assert.equal(now.enabled, true, '必备角色不能停用')
   assert.equal(now.model, '@high', '模型是运行配置，保留')
   assert.equal(now.params.find((p) => p.key === 'docRoot')?.default, 'doc/', '参数取值保留')
+})
+
+test('「子任务」是派子任务时的默认角色：不作为可选角色展示，也停用不了、删不掉', async () => {
+  const m = memory()
+  await ensureProjectAgents(m.state(), m.ops)
+  const helper = findCore(m.agents, 'helper')!
+  assert.ok(isHelperAgent(helper), '来源是 builtin:helper：引擎靠它给 spawn_agents 兜底')
+  // 停用它所有子任务就没有默认角色了：保存时按必备角色强制恢复（server/index.ts 的 PUT /agents/:id 走 syncCore）
+  const off = syncCore(AgentInput.parse({ ...helper, enabled: false }), coreDefinition('helper'), {
+    categoryId: helper.categoryId,
+    includes: helper.includes,
+  })
+  assert.equal(off.enabled, true)
+  // 删除保护：删除接口按 isCoreAgent 拦（server/index.ts 返回 409）
+  assert.ok(isCoreAgent(helper))
+  // 角色页、内置角色弹窗、选择器列的是 listableAgents：只有它被去掉
+  assert.deepEqual(listableAgents(m.agents).filter(isHelperAgent), [])
+  assert.equal(listableAgents(m.agents).length, m.agents.length - 1)
 })
 
 test('必备角色：不合法的参数值退回内置默认，定义里没有的参数去掉', () => {

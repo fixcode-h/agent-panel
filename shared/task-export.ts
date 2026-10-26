@@ -14,6 +14,7 @@ import { retiredWithoutSuccessor } from './skill-guide.ts'
 import { runTree } from './run-usage.ts'
 import { idleWaitDuration, stepMs, stepUsage, turnEndOf, waitDuration, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
+import { isHelperAgent } from './builtin/core.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
 import { leadVerdict } from './verdict.ts'
@@ -1255,7 +1256,7 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
       '角色设定（拼好的实际生效内容）：',
       role ? clip(role, 12_000) : '（这个角色没有写角色设定，直接用默认 Agent）',
     )
-    if (a.common || a.origin === 'builtin:helper')
+    if (a.common || isHelperAgent(a))
       lines.push(`（这是通用角色，派它的对话点名要了「${a.name}」或者用了默认的「子任务」角色）`)
   }
   // 派给它的要求原文（spawn_agents 的 instructions）：父对话那条系统消息里只有标题列表，不能拿来代替。

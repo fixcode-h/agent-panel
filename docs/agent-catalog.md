@@ -36,6 +36,8 @@
 （`shared/review-gate.ts`；先读首行，首行没有结论才退回全文最后一条——子任务输出太长时只保留开头，结论写在末尾会被截掉）；
 评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。
 「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见 [ADR 0014](adr/0014-ai-analysis-home.md)）。
+「子任务」（`helper`）保留定义、但**不作为可选角色展示**：它是 `spawn_agents` 不点名时的默认执行角色（`shared/engine.ts` 按 `isHelperAgent` 找它），删了所有子任务就没有默认角色和提示词了；
+角色页、内置角色弹窗和角色选择器都按 `shared/builtin/core.ts` 的 `listableAgents` 把它去掉，计数、分组、搜索也不算它，停用和删除由必备角色保护拦下。
 改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
 其他内置角色也一样（[ADR 0015](adr/0015-builtin-roles-follow-definition.md)）：设定由面板维护、每次启动和保存都按定义同步，用户只改参数取值、运行配置、分类、标签和启用；区别只是可以删除、可以停用。
 
@@ -46,7 +48,7 @@
 | `rules`        | 通用约束         | 常驻规则                   | —    | 全部（includes）                                                     | —                                                                               |
 | `orchestrator` | 统筹（必备）     | 项目对话调度               |      | general、ue（主 Agent）                                              | `vcs` `route` `split` `confirm` `report`                                        |
 | `worker`       | 执行（必备）     | 子对话执行                 |      | 项目对话运行路径                                                     | `vcs` `mode` `batch` `verify` `commit`                                          |
-| `helper`       | 子任务（必备）   | 并行收集、核实、计划       |      | —（spawn_agents 不点名时默认用它）                                   | —                                                                               |
+| `helper`       | 子任务（必备）   | 并行收集、核实、计划       |      | —（spawn_agents 不点名时默认用它，不作为可选角色展示）               | —                                                                               |
 | `docsync`      | 文档（必备）     | 文档落盘                   | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                            |
 | `tester`       | 测试验收（必备） | 构建/测试/验收             | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `scope` `env` `regress` `onFail` `write` `serial`                               |
 | `explorer`     | 调研             | 只读调研（可回写模块文档） | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
