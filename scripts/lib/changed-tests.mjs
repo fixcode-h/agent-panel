@@ -73,7 +73,11 @@ export function shardsFor(file, covers = {}) {
 
 /** 界面检查本身（harness、covers、总入口）改了就全部分片都要跑 */
 const isUiRunner = (file) =>
-  file === 'scripts/ui-check.mjs' || file === 'scripts/ui/harness.mjs' || file === 'scripts/ui/covers.mjs'
+  file === 'scripts/ui-check.mjs' ||
+  file === 'scripts/ui/harness.mjs' ||
+  file === 'scripts/ui/covers.mjs' ||
+  // 任务页三片共用的开场和操作（不是分片，不在 covers 的分片表里）
+  file === 'scripts/ui/task-page.mjs'
 
 /**
  * 定位器。`readFile` 不传时跳过反向 import 那一步（只做同名 / 同目录 / 分片），
