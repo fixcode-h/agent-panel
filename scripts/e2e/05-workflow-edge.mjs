@@ -1059,7 +1059,6 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '删除后任务分支没了')
   // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
   git('reset', '-q', '--keep', 'HEAD~1')
-  writeFileSync(blocker, blockerText)
   let tDrop = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
