@@ -35,14 +35,35 @@ const BUGS = [
 /** 每个项目最多给几条需求 / 几条 Bug，够看出格式即可 */
 const NEEDS_PER_PROJECT = 2
 
+/**
+ * 演示里第二份报告和第一份不一样：点「对比两份」时能看到新增、消失和状态变化。
+ * 第一条状态推进（状态变化）、第二条换成新需求（旧的消失、新的新增），Bug 同理
+ */
+const NEEDS_NEXT = [
+  { ...NEEDS[0], status: '已完成（6/6）', how: '数量以服务端为准，加购和结算都读同一个值' },
+  { title: '搜索框支持拼音输入', status: '进行中（1/3）', how: '输入先转成拼音再匹配商品名' },
+  NEEDS[3],
+]
+const BUGS_NEXT = [
+  {
+    title: '总结页换范围后还显示上一段的报告',
+    cause: '换范围时没把当前报告清掉',
+    fix: '换范围时一起清空当前报告和对比',
+  },
+  BUGS[1],
+]
+
 const reports = new Map<string, SummaryRecord>()
 const jobs = new Map<string, SummaryJob>()
 
-function sampleMd(day: string, names: string[]) {
+/** round > 0（第二份及以后）时换成推进过的条目：演示里两份报告对比能看到差异 */
+function sampleMd(day: string, names: string[], round: number) {
+  const needPool = round ? NEEDS_NEXT : NEEDS
+  const bugPool = round ? BUGS_NEXT : BUGS
   const needs = names.map((name, i) => {
     const picked = Array.from(
       { length: NEEDS_PER_PROJECT },
-      (_, k) => NEEDS[(i * NEEDS_PER_PROJECT + k) % NEEDS.length],
+      (_, k) => needPool[(i * NEEDS_PER_PROJECT + k) % needPool.length],
     )
     return [
       `### 1.${i + 1} ${name}`,
@@ -51,7 +72,7 @@ function sampleMd(day: string, names: string[]) {
     ]
   })
   const bugs = names.map((name, i) => {
-    const bug = BUGS[i % BUGS.length]
+    const bug = bugPool[i % bugPool.length]
     return [`### 2.${i + 1} ${name}`, `1. **${bug.title}**`, `   原因：${bug.cause}`, `   修复：${bug.fix}`, '']
   })
   return [
@@ -134,6 +155,7 @@ export function demoSummary(
         md: sampleMd(
           win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} - ${win.toDay}`,
           chosen.map((p) => p.name),
+          reports.size,
         ),
         cli: 'demo',
         model: '',
