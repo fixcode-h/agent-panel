@@ -191,8 +191,10 @@ test('只改名字、时间还是同一分钟：状态保持已执行，不会�
   assert.equal((await find(s.id)).status, 'done')
 
   // 前端的时间只到分钟：带秒的时间在弹窗里改名字时会被截断成同一分钟的整分，
-  // 旧实现按字符串比较会判成「改了时间」，把已执行的计划重置成待执行
-  const sameMinuteAt = new Date(Date.parse(s.at) + 20_000).toISOString()
+  // 旧实现按字符串比较会判成「改了时间」，把已执行的计划重置成待执行。
+  // 取这一分钟的第 5 秒（和原时间的秒不同），不能直接加 20 秒：秒数大时会跨到下一分钟
+  const minute = Math.floor(Date.parse(s.at) / MINUTE) * MINUTE
+  const sameMinuteAt = new Date(minute + (Date.parse(s.at) === minute + 5000 ? 6000 : 5000)).toISOString()
   const res = await api.routes.request(`/${s.id}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
