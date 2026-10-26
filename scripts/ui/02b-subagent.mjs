@@ -866,8 +866,6 @@ await runShard(import.meta.filename, async (api) => {
 
   // 父对话自己在跑时运行区仍然列出子对话（从 02-task 挪过来：主题属于子对话这一片）：
   // 以前运行区绑在「最后一段」上（last 含 !working），父对话一跑整段就不渲染，子对话一条也列不出来
-  // 父对话自己在跑时运行区仍然列出子对话：以前运行区绑在「最后一段」上（last 含 !working），
-  // 父对话一跑整段就不渲染，子对话一条也列不出来
   {
     const key = 'agent-panel-demo-v3'
     const saved = await p.evaluate((k) => localStorage.getItem(k), key)

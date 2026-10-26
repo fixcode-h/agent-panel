@@ -297,7 +297,8 @@ test('彻底完成才回收独立分支：计划没做完 / 有提问 / 后台�
   writeFileSync(path.join(wt.path, 'README.md'), '# 子对话改的\n')
   // 合并回原分支，但目录和分支先留着（keep）
   await mergeWorktree(repo, wt, '合并', repo, true)
-  const branchAlive = () => git(repo, 'branch', '--list', wt.branch).toString().trim().length > 0
+  // 局部名不要和 kit 导入的 branchAlive(repo, branch) 同名：同名不同签名，改断言时容易调错
+  const branchStillThere = () => git(repo, 'branch', '--list', wt.branch).toString().trim().length > 0
   try {
     // 合并完成只是分支回去了：计划 5/7 还没做完，这一轮、后台命令还在跑时都不能删
     for (const holds of [
@@ -309,12 +310,12 @@ test('彻底完成才回收独立分支：计划没做完 / 有提问 / 后台�
       const why = await releaseWorktree(repo, wt, holds)
       assert.ok(why, '还差条件时说明原因')
       assert.ok(existsSync(wt.path), '独立目录还在，改动不会被删掉')
-      assert.ok(branchAlive(), '分支也还在')
+      assert.ok(branchStillThere(), '分支也还在')
     }
     // 全部条件满足（计划做完、后台命令结束、没有问题、已经合回去）
     assert.equal(await releaseWorktree(repo, wt, childHolds({ plan: { done: 7, total: 7 } })), '')
     assert.ok(!existsSync(wt.path), '彻底完成后目录回收了')
-    assert.ok(!branchAlive(), '分支也回收了')
+    assert.ok(!branchStillThere(), '分支也回收了')
   } finally {
     if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
   }
