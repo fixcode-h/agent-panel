@@ -11,7 +11,7 @@ import test from 'node:test'
 import { setLang } from '../shared/i18n.ts'
 import { openPlan } from '../shared/plan.ts'
 import { Task } from '../shared/schema.ts'
-import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished } from '../shared/task.ts'
+import { childIcon, childSpinning, interruptedTaskIds, restartUnfinished, taskSettled } from '../shared/task.ts'
 
 // 记录写在临时数据目录，别碰本机的；必须在 import server 模块之前指过去
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-restart-'))
@@ -228,4 +228,49 @@ test('恢复名单里的父对话说明它被打断时在做什么：写没做�
     '已请求父对话收尾的任务不进名单：剩下的事是合并，不靠 CLI 进程',
   )
   assert.equal(restartDoing(t), '计划 6/8')
+})
+
+test('重启恢复名单：已收口的不再拉起，只在等下一句的不算被打断', () => {
+  // 用户报的僵尸进程就是这样来的：resolved: true、分支已合回的任务又被重启当「被打断」拉起来
+  const resolved = task('resolved', { status: 'running', plans: [halfPlan()], resolved: true })
+  assert.equal(restartUnfinished(resolved), false)
+  assert.deepEqual(interruptedTaskIds([resolved]), [])
+  // 停在等下一句、计划做完了：留进程只是为了接用户下一句，重启后没有活要干
+  assert.equal(restartUnfinished(task('idle-next', { status: 'running', awaitingUser: true })), false)
+  // 停在等下一句、计划没做完：还有活，照旧进名单（子对话等着被继续）
+  assert.equal(
+    restartUnfinished(task('idle-half', { status: 'running', awaitingUser: true, plans: [halfPlan()] })),
+    true,
+  )
+})
+
+test('终态判定：已收口的任务名下不该再有 CLI 进程', () => {
+  assert.equal(taskSettled(task('resolved', { resolved: true })), true)
+  assert.equal(taskSettled(task('running', { status: 'running', awaitingUser: true })), false, '等下一句是正常保活')
+  assert.equal(taskSettled(task('stopped', { status: 'stopped' })), true)
+  assert.equal(taskSettled(task('done', { status: 'done', plans: [donePlan()] })), true)
+  // 这一轮做完、计划没做完：还有活要干，兜底回收不能把它正在用的进程收掉
+  assert.equal(taskSettled(task('half', { status: 'done', plans: [halfPlan()] })), false)
+  // 待收尾：这一轮结束了，剩下的是父对话合并、跑测试，CLI 进程不该留着
+  assert.equal(
+    taskSettled(
+      task('wrapup', {
+        status: 'done',
+        plans: [halfPlan()],
+        wrapRequest: { state: 'requested', at, note: '', tests: '', info: '' },
+      }),
+    ),
+    true,
+  )
+  // 父对话测试没过、退回修复：它还要自己动手，进程不算残留
+  assert.equal(
+    taskSettled(
+      task('test-failed', {
+        status: 'done',
+        plans: [halfPlan()],
+        wrapRequest: { state: 'test-failed', at, note: '', tests: '', info: '' },
+      }),
+    ),
+    false,
+  )
 })
