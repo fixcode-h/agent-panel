@@ -20,9 +20,13 @@ const DEFAULT_WAIT_S = 40
 /** 交给哪个 Agent：列出通用 Agent，模型不用猜名字 */
 function agentField(o: Orchestra) {
   const list = o.common.map((a) => `「${a.name}」${a.description ? `（${a.description}）` : ''}`).join('、')
+  // 子对话里点名这类角色时不在本地跑：结果在父对话那边，不能让调用方以为要在这里等
+  const hand = o.child
+    ? '点名「禁止子对话执行」的角色（例如「文档」）时不会在这里跑：面板会转交父对话创建，点名的计划步骤立即标完成，不用等它的结果。'
+    : ''
   return {
     type: 'string',
-    description: `交给哪个角色（名字）；不写用必备角色「子任务」${list ? `。也可以点名这些通用角色：${list}` : ''}`,
+    description: `交给哪个角色（名字）；不写用必备角色「子任务」${list ? `。也可以点名这些通用角色：${list}` : ''}${hand ? `。${hand}` : ''}`,
   }
 }
 
@@ -1032,6 +1036,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const stepId = str(a?.step).trim()
       const r = o.spawn(list, stepId || undefined)
       if (r.error) return text(r.error, true)
+      // 整批都转交父对话了：本地一个也没派，不能写成「已派出 0 个子任务」
+      if (!r.ids.length) return text(r.info || '已交给父对话创建这些子任务')
       const body = o.autoReturn
         ? `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n可以结束这一轮回复了，它们全部做完后结果会自动交回给你。`
         : `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n用 wait_agents 取结果。`

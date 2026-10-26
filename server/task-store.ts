@@ -519,6 +519,13 @@ export function createTaskStore() {
       return (await all()).get(id) ?? null
     },
     /**
+     * 已经在内存里的任务（正在跑的、读过的、启动时加载过摘要的）：同步拿，不读盘。
+     * 只给必须同步判断的路径用（转交子任务前确认父对话在不在，见 ADR 0019）；拿到的是内存副本，不要改它
+     */
+    known(id: string): Task | null {
+      return full.get(id) ?? metas?.get(id) ?? null
+    },
+    /**
      * keepUpdatedAt：保留原来的列表时间（预热收尾这类）。
      * now：对话消息立即写，不走 400ms 合并窗口——关键节点（节点开始/结束、提问、任务结束/失败/停止）
      * 用它，面板被强杀时不会丢最后一段内容；流式输出途中的中间态仍然合并写

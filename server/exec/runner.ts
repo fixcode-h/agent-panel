@@ -131,6 +131,10 @@ export interface RealContext {
   messageParent?: EngineHost['messageParent']
   claimFiles?: EngineHost['claimFiles']
   releaseFiles?: EngineHost['releaseFiles']
+  /** 子对话点名「禁止子对话执行」的角色时转交父对话（见 ADR 0019） */
+  forwardSpawn?: EngineHost['forwardSpawn']
+  /** 对话级的 Orchestra：宿主拿它在父对话正在跑时派转交来的子任务 */
+  onOrchestra?: EngineHost['onOrchestra']
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']
@@ -2307,6 +2311,8 @@ export async function runRealTurn(ctx: RealContext) {
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,
+    forwardSpawn: ctx.forwardSpawn,
+    onOrchestra: ctx.onOrchestra,
     lessons: ctx.lessons,
     runAgent: (call) => gatedRunAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     yieldSlot: (stepId, wait) => yieldApiSlot(ctx, stepId, wait),
