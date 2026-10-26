@@ -67,7 +67,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
-import { builtinDefinition, builtinKey, coreKey, coreUse } from '@shared/builtin/core'
+import { builtinDefinition, builtinKey, coreKey, coreUse, listableAgents } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 
 /** 角色设定的模板 */
@@ -202,8 +202,8 @@ export function AgentDetail({
         : []),
   ]
   const live = { ...agent, ...value }
-  // 可以引入的：不是自己、还没引入、引入后不会绕回自己
-  const includable = agents.filter(
+  // 可以引入的：不是自己、还没引入、引入后不会绕回自己（「子任务」不作为可选角色，不允许其它角色引入它）
+  const includable = listableAgents(agents).filter(
     (a) => a.id !== agent.id && !draft.includes.includes(a.id) && !wouldCycle(agent.id, a.id, agents),
   )
   const include = (id: string) =>

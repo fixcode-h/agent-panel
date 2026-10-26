@@ -1,7 +1,7 @@
 import * as C from '@radix-ui/react-context-menu'
 import * as M from '@radix-ui/react-dropdown-menu'
 import * as P from '@radix-ui/react-popover'
-import { ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const popoverPanel =
@@ -89,6 +89,23 @@ export function ContextMenuContent({ children }: { children: React.ReactNode }) 
 
 export function ContextMenuItem({ danger, className, ...props }: C.ContextMenuItemProps & { danger?: boolean }) {
   return <C.Item className={cn(menuItem, danger && 'text-danger', className)} {...props} />
+}
+
+/**
+ * 带勾选框的右键菜单项：Radix 自己会给上 role="menuitemcheckbox" 和 aria-checked，读屏能读到勾没勾。
+ * 未勾选时也占着左侧图标位，勾选时文字不跳
+ */
+export function ContextMenuCheckboxItem({ className, children, ...props }: C.ContextMenuCheckboxItemProps) {
+  return (
+    <C.CheckboxItem className={cn(menuItem, className)} {...props}>
+      <span className="grid h-3.5 w-3.5 shrink-0 place-items-center">
+        <C.ItemIndicator>
+          <Check className="h-3.5 w-3.5" />
+        </C.ItemIndicator>
+      </span>
+      {children}
+    </C.CheckboxItem>
+  )
 }
 
 export function ContextMenuSeparator() {

@@ -270,6 +270,9 @@ export const EN_AGENTS: Record<string, string> = {
   '构建、测试和验收': 'Build, test and acceptance',
   '版本控制、合并与交付收尾': 'Version control, merging and delivery wrap-up',
   派出的并行子任务默认使用: 'Default for parallel subtasks that get spawned',
+  '「子任务」是子任务运行时的默认角色，不能修改或删除':
+    "“Subtask” is the role spawned subtasks run as by default; it can't be edited or deleted",
+  '{name}（不可选）': '{name} (not selectable)',
   必备角色不能删除: "Core roles can't be deleted",
   角色: 'Roles',
   交给角色: 'Role',

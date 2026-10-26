@@ -70,7 +70,7 @@ import { runAssistInProject } from '@/lib/assist-conv'
 import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
-import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
+import { CORE_AGENTS, coreKey, coreUse, findCore, isHelperAgent } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ParamControl, ParamRow, ParamsForm } from '@/components/agents/ParamFields'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
@@ -397,7 +397,8 @@ function Body({
   }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings, categories } = useData()
-  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter((a): a is Agent => !!a)
+  // 「子任务」不作为可选角色展示，也没有参数：跳去角色页的那个按钮只会跳开，不在这个列表里列
+  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter((a): a is Agent => !!a && !isHelperAgent(a))
   // 默认工作流只从「项目」分类里选：项目常驻流程按子对话的需要设计，别的流程放进可选工作流
   const projectCat = categories.find((c) => c.scope === 'workflow' && c.name === PROJECT_WF_CATEGORY)
   const inProjectCat = workflows.filter((w) => projectCat && w.categoryId === projectCat.id)
