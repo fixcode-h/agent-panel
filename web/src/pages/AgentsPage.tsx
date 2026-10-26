@@ -15,7 +15,9 @@ import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { CategoryHeader } from '@/components/agents/CategoryHeader'
-import { TagFilter, TagList } from '@/components/tags/Tags'
+import { TagCountChip, TagFilter, TagList } from '@/components/tags/Tags'
+import { Segmented } from '@/components/ui/segmented'
+import { groupAgentsByTag } from '@/lib/agent-groups'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
@@ -26,11 +28,16 @@ import { t } from '@shared/i18n'
 /** 「必备」分组的 id，和用户分类的 id 不会冲突 */
 const CORE_GROUP = '#core'
 
+/** 列表的分组方式：默认按标签（整理角色靠它），分类视图保留分类的增删改和「在这个分类里新建」 */
+type GroupBy = 'tag' | 'category'
+const GROUP_BY_DEFAULT: GroupBy = 'tag'
+
 export function AgentsPage() {
   const { cliName, cliOf, modelOf } = useAgentView()
   const { loading, agents, categories: allCategories, tags, clis, settings, setAgents, refreshClis } = useData()
   const categories = allCategories.filter((c) => c.scope !== 'workflow')
   const [tag, setTag] = useState('')
+  const [groupBy, setGroupBy] = useState<GroupBy>(GROUP_BY_DEFAULT)
   const { route, go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
@@ -56,7 +63,9 @@ export function AgentsPage() {
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
   const coreCats = new Set(agents.filter(isCoreAgent).map((a) => a.categoryId))
-  const groups = [
+  // 按标签分组：没有标签的角色进「默认」组，组按角色数排、零组不出现（规则和单测在 lib/agent-groups.ts）
+  const tagGroups = groupAgentsByTag(agents.filter(match), tags)
+  const categoryGroups = [
     // 必备角色也单独成组：它们的分类由面板维护，放在用户的分类里反而像是能挪走
     { category: null as Category | null, id: CORE_GROUP, items: agents.filter((a) => isCoreAgent(a) && match(a)) },
     ...[
@@ -71,6 +80,8 @@ export function AgentsPage() {
   ]
     // 没有角色的分类不显示，空着只占位置
     .filter((g) => g.items.length)
+  // 当前视图下的分组只有长度有用（空状态），两种分组的结构不同，不混成一个变量
+  const shownGroups = groupBy === 'tag' ? tagGroups : categoryGroups
 
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
@@ -131,6 +142,40 @@ export function AgentsPage() {
       <StatusDot tone="warning" label={t('Agent 未安装')} />
     )
   }
+
+  // 两种分组共用的一行：分组只决定它在哪几节里出现
+  const row = (a: Agent) => (
+    <ListItem
+      key={a.id}
+      selected={a.id === selected?.id}
+      onClick={() => go({ page: 'agents', id: a.id })}
+      leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
+      title={a.name}
+      subtitle={`${cliName(a)} · ${modelOf(a)}`}
+      tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
+      trailing={<span className="shrink-0">{status(a)}</span>}
+      menu={
+        <>
+          <ContextMenuItem onSelect={() => duplicate(a)}>
+            <Copy className="h-4 w-4" />
+            {t('复制一份')}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            danger
+            disabled={isCoreAgent(a)}
+            onSelect={() => {
+              go({ page: 'agents', id: a.id })
+              setDelReq({ id: a.id, at: Date.now() })
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {t('删除')}
+          </ContextMenuItem>
+        </>
+      }
+    />
+  )
 
   return (
     <>
@@ -200,57 +245,56 @@ export function AgentsPage() {
           </div>
         }
       >
+        <div className="px-1 pb-2">
+          <Segmented
+            label={t('按什么分组')}
+            value={groupBy}
+            onChange={setGroupBy}
+            options={[
+              { id: 'tag', label: t('按标签') },
+              { id: 'category', label: t('按分类') },
+            ]}
+          />
+        </div>
         <TagFilter value={tag} onChange={setTag} used={[...new Set(agents.flatMap((a) => a.tags))]} />
-        {groups.map((g) => (
-          <ListGroup
-            key={g.id || 'none'}
-            header={
-              g.category ? (
-                <CategoryHeader
-                  category={g.category}
-                  count={g.items.length}
-                  onAdd={() => create({ categoryId: g.id })}
-                />
-              ) : (
-                <GroupHeader label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
+        {groupBy === 'tag'
+          ? tagGroups.map((g) => {
+              // 标签名是用户起的，不过翻译（碰上和界面文案同名的标签会被译掉）。
+              // 内置的「无标签」组固定加一句说明：用户也能建一个名叫「默认」的标签，
+              // 两组都叫「默认」就分不清哪一组是没打标签的角色。
+              const name = g.tag ? g.label : t('默认（没有标签）')
+              return (
+                <ListGroup
+                  key={g.id}
+                  groupId={g.id}
+                  label={name}
+                  header={
+                    <GroupHeader label={<TagCountChip name={name} count={g.agents.length} color={g.tag?.color} />} />
+                  }
+                >
+                  {g.agents.map((a) => row(a))}
+                </ListGroup>
               )
-            }
-          >
-            {g.items.map((a) => (
-              <ListItem
-                key={a.id}
-                selected={a.id === selected?.id}
-                onClick={() => go({ page: 'agents', id: a.id })}
-                leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
-                title={a.name}
-                subtitle={`${cliName(a)} · ${modelOf(a)}`}
-                tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
-                trailing={<span className="shrink-0">{status(a)}</span>}
-                menu={
-                  <>
-                    <ContextMenuItem onSelect={() => duplicate(a)}>
-                      <Copy className="h-4 w-4" />
-                      {t('复制一份')}
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      danger
-                      disabled={isCoreAgent(a)}
-                      onSelect={() => {
-                        go({ page: 'agents', id: a.id })
-                        setDelReq({ id: a.id, at: Date.now() })
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      {t('删除')}
-                    </ContextMenuItem>
-                  </>
+            })
+          : categoryGroups.map((g) => (
+              <ListGroup
+                key={g.id || 'none'}
+                header={
+                  g.category ? (
+                    <CategoryHeader
+                      category={g.category}
+                      count={g.items.length}
+                      onAdd={() => create({ categoryId: g.id })}
+                    />
+                  ) : (
+                    <GroupHeader label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
+                  )
                 }
-              />
+              >
+                {g.items.map((a) => row(a))}
+              </ListGroup>
             ))}
-          </ListGroup>
-        ))}
-        {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
+        {!loading && agents.length > 0 && shownGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
         {!loading && !query && !tag && agents.every(isCoreAgent) && (
           <ListEmpty>

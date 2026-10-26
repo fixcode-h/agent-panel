@@ -432,7 +432,7 @@ function LessonFields({
           value={lesson.title}
           maxLength={120}
           onChange={(e) => onChange({ title: e.target.value })}
-          placeholder={t('例如：CLI 才有的能力写进 CLI 的配置字段，代码按字段走')}
+          placeholder={t('例如：Agent 才有的能力写进 Agent 的配置字段，代码按字段走')}
         />
       </Field>
       <Field label={t('说明')}>

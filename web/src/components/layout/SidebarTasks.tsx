@@ -18,7 +18,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, groupByDay, taskBusy, taskState } from '@shared/task'
+import { askedAt, byAskedAt, groupByDay, taskBusy, taskDoneDot, taskState } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -74,6 +74,9 @@ export function TaskRow({
   // AI 分析开出的对话：标题前加强调色的标签，和普通对话一眼分开
   const analysis = isAnalysisTask(task, agents)
   const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
+  // 橙点只在对话真的停在完成态、而且不是当前打开的那个时才画（见 taskDoneDot）：
+  // 未读可能是上一轮留下的，对话后来又跑起来时会和转圈撞在同一行
+  const unreadDot = taskDoneDot(task, !!unread, active)
   return (
     <>
       <ContextMenu>
@@ -93,7 +96,7 @@ export function TaskRow({
                 行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
                 选中 / hover 的背景（画在行上）仍然铺满整行 */}
             <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
-              {unread && (
+              {unreadDot && (
                 <span
                   role="img"
                   aria-label={t('对话已完成，还没查看')}

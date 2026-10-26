@@ -129,6 +129,7 @@ import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
+import { demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import {
@@ -1899,7 +1900,7 @@ function route(method: string, url: string, body: unknown): unknown {
       )
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
-      const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
+      const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 Agent：${id}`)
       return {
         source: 'builtin',
         models: [
@@ -2004,6 +2005,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
+  if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
   if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
@@ -2105,7 +2107,7 @@ function route(method: string, url: string, body: unknown): unknown {
       return undefined
     }
     const input = parse(AgentInput, body)
-    if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
+    if (input.cli && !getCli(input.cli)) fail(`未知的 Agent：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
     // 内置角色只能改参数取值和运行配置（其他内置角色还能改分类、标签、启用）；复制出来的是普通角色

@@ -57,6 +57,7 @@ import {
   keepAliveVictims,
   messageStamp,
   pauseStep,
+  restartInterrupted,
   runRunning,
   trackWait,
   waitDuration,
@@ -103,6 +104,7 @@ import {
   setPresenceUnreadKeeper,
   setViewer,
 } from './presence.ts'
+import { settleReclaimed } from './exec/reclaim.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
@@ -309,7 +311,21 @@ export function tasksApi(deps: {
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
   // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0012）
-  setPresenceIdleHandler((id) => cancelWait(id))
+  setPresenceIdleHandler((id) => {
+    // 回收：先结束还在等下一句的 CLI，再把「界面还会画成在跑」的任务收口成已停止（见 settleReclaimed）。
+    // 只结束进程不落状态的话，任务会一直写着 running / 或做完但计划没做完，列表一直转圈，
+    // 而「继续执行」只在 stopped 时出现——用户看到「继续会重新拉起」却没有入口（用户报的现象）。
+    // 引擎收尾可能把状态改回 done（这一轮做完了），所以有执行位时要等它收完再看一眼
+    cancelWait(id)
+    const entry = live.get(id)
+    // 有执行位的一律等它收尾完再看：刚 reserve、还在启动（done 还没赋值）的窗口里拿旧快照写回，
+    // 会把正在启动的一轮覆盖成已停止；收尾完再判一次，计划没做完的才落静止
+    if (entry) {
+      if (entry.done) void entry.done.then(() => settleReclaimed(store, id, 'presence')).catch(() => {})
+      return
+    }
+    void settleReclaimed(store, id, 'presence')
+  })
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
     const tk = live.get(id)?.task
@@ -336,7 +352,10 @@ export function tasksApi(deps: {
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
   const ready = store.list().then(async (all) => {
-    for (const meta of all.filter((x) => x.status === 'running')) {
+    // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
+    // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
+    // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
+    for (const meta of all.filter((x) => x.status === 'running' || restartInterrupted(x))) {
       // 列表里只有用户消息，改之前取完整的
       const task = await store.get(meta.id)
       if (!task) continue
@@ -376,9 +395,12 @@ export function tasksApi(deps: {
             role: 'system',
             agentId: '',
             step: '',
-            text: t(
-              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
-            ),
+            text:
+              task.status === 'running'
+                ? t(
+                    '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
+                  )
+                : t('面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。'),
             tools: [],
             transient: true,
             at: new Date().toISOString(),
@@ -995,7 +1017,7 @@ export function tasksApi(deps: {
               role: 'system',
               agentId: '',
               step: '',
-              text: t('后台命令的结果两次都没能交给 CLI，已经记在对话里，下一轮会处理'),
+              text: t('后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理'),
               tools: [],
               alert: makeAlert('warn', (err as Error).message, 'delivery'),
               at: new Date().toISOString(),
@@ -3144,7 +3166,7 @@ export function tasksApi(deps: {
     // 「没有响应」那一行记下结果：停下的说明是临时的，开新一轮时会被去掉
     for (const m of entry.task.messages)
       if (m.alert?.kind === 'no_response' && !m.alert.resolved)
-        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 CLI，接回会话重新开始') }
+        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 Agent，接回会话重新开始') }
     stopTask(id, 'stalled')
     if (entry.done) await entry.done
     // 停下的这段时间里别的消息已经开了新的一轮：交给那一轮
@@ -3759,7 +3781,7 @@ export function tasksApi(deps: {
     const settings = await getSettings()
     const cliId = defaultCli(settings)
     const def = getCli(cliId)
-    if (!def) return bad(c, t('没有可用的 CLI'))
+    if (!def) return bad(c, t('没有可用的 Agent'))
     const cs = cliSettings(settings, cliId)
     const run = agentRun({ cli: cliId, model: '', effort: '' }, settings)
     const cwd = path.join(tmpdir(), 'agent-panel-process-review')
@@ -4177,7 +4199,7 @@ export function tasksApi(deps: {
     } catch (e) {
       if (entry) release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
-      alertOn(task.id, 'cli_exit', t('提前启动 CLI 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
+      alertOn(task.id, 'cli_exit', t('提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
       return task
     }
   }

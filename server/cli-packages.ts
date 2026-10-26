@@ -40,7 +40,7 @@ export function packagesApi() {
   const app = new Hono()
   const need = (id: string) => {
     const def = getCli(id)
-    if (!def?.packages) throw new Error(t('这个 CLI 不支持扩展包'))
+    if (!def?.packages) throw new Error(t('这个 Agent 不支持扩展包'))
     return def as Def
   }
   app.get('/:id/packages', async (c) => {

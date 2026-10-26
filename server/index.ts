@@ -27,6 +27,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
+import { SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
@@ -42,6 +43,7 @@ import { designMcpApi } from './design-mcp.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
+import { summaryApi } from './summary.ts'
 import { fixApi } from './fix.ts'
 import { projectSkillsApi } from './project-skills.ts'
 import { isPanelSource } from './panel-source.ts'
@@ -136,6 +138,8 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
   builtinProjectCategories,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
+/** 工作总结报告：存最近几份，用户编辑后也写这里（保留份数见 shared/summary.ts 的 SUMMARY_KEEP） */
+const summaries = createCollection<SummaryReport, SummaryRecord>('summaries.json', SummaryRecord)
 
 /** 各项目目录里面板没来得及删的 MCP 条目（关掉、崩溃时留下的）：启动时还没有在跑的对话，凡是指向本面板的都已失效 */
 async function sweepProjectsPanelMcp() {
@@ -835,6 +839,8 @@ async function sweepStaleWorktrees() {
 }
 
 app.route('/tasks', tasks.routes)
+// 工作总结：选项目生成今天的报告（只读任务记录，不改项目文件）
+app.route('/summary', summaryApi({ tasks, projects, reports: summaries }).routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
 // 会话内存的 AI 分析：采样序列 + 进程面板两路 + 任务树规模，整理成交给本机 CLI 的报告
