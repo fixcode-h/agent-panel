@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { DATA_PROPS, WIDGETS, deepMerge, walk, type Component, type Widget, type WidgetType } from './umg.ts'
+import { t } from './i18n.ts'
+import { DATA_PROPS, WIDGETS, deepMerge, mapWidget, walk, type Component, type Widget, type WidgetType } from './umg.ts'
 
 /**
  * 画板预览用的运行时假数据（mock data）。
@@ -186,6 +187,51 @@ export function dataRows(data: DesignData | undefined, w: Widget): DataRow[] | u
   return set ? set.rows : undefined
 }
 
+/** 设计里的列表控件和它绑定的集合：面板按它给每个控件换绑 */
+export type DataListWidget = {
+  /** 所在的树：主界面是空字符串，子控件是名字 */
+  tree: string
+  /** 控件的 id，改绑定用 */
+  id: string
+  name: string
+  /** 面板显示用的完整名字 */
+  label: string
+  /** Properties.DataSet 原样（可能是集合 id、名字，或者指向不存在的集合） */
+  set: string
+}
+
+export function listWidgets(root: Widget, components: Component[]): DataListWidget[] {
+  const out: DataListWidget[] = []
+  const trees = [{ in: '', root }, ...components.map((c) => ({ in: c.Name, root: c.Root }))]
+  for (const tr of trees)
+    walk(tr.root, (w) => {
+      if (!WIDGETS[w.Type]?.entries) return
+      out.push({
+        tree: tr.in,
+        id: w.id,
+        name: w.Name,
+        label: `${tr.in ? `${tr.in} / ` : ''}${w.Name}`,
+        set: String(w.Properties?.[DATA_SET_PROP] ?? ''),
+      })
+    })
+  return out
+}
+
+/** 把列表控件的 DataSet 换个集合（空字符串是解绑），返回新的控件树，不改原来的 */
+export function bindDataSet(
+  root: Widget,
+  components: Component[],
+  where: { tree: string; id: string },
+  key: string,
+): { root: Widget; components: Component[] } {
+  const bind = (w: Widget) => ({ ...w, Properties: { ...w.Properties, [DATA_SET_PROP]: key } })
+  if (!where.tree) return { root: mapWidget(root, where.id, bind), components }
+  return {
+    root,
+    components: components.map((c) => (c.Name === where.tree ? { ...c, Root: mapWidget(c.Root, where.id, bind) } : c)),
+  }
+}
+
 /** 集合用在哪些控件上（面板显示「用在哪」） */
 export function dataUsage(root: Widget, components: Component[], data: DesignData | undefined): Map<string, string[]> {
   const out = new Map<string, string[]>()
@@ -230,17 +276,18 @@ export function checkData(
   o: { imageIds?: Set<string>; root?: Widget; components?: Component[] } = {},
 ): string[] {
   const out: string[] = []
-  if (!data?.sets.length) return out
+  // 没有任何集合时也要继续查下面的悬空绑定（删掉最后一个集合后列表还指着它）
+  if (!data) return out
   const ids = new Set<string>()
   const names = new Set<string>()
   for (const s of data.sets) {
-    if (ids.has(s.id)) out.push(`数据集合 id 重复：${s.id}`)
-    if (names.has(s.name)) out.push(`数据集合名字重复：${s.name}`)
+    if (ids.has(s.id)) out.push(t('数据集合 id 重复：{id}', { id: s.id }))
+    if (names.has(s.name)) out.push(t('数据集合名字重复：{name}', { name: s.name }))
     ids.add(s.id)
     names.add(s.name)
     const keys = new Set<string>()
     for (const f of s.fields) {
-      if (keys.has(f.key)) out.push(`集合 ${s.name} 的字段重复：${f.key}`)
+      if (keys.has(f.key)) out.push(t('集合 {name} 的字段重复：{key}', { name: s.name, key: f.key }))
       keys.add(f.key)
     }
     for (const [i, row] of s.rows.entries())
@@ -248,9 +295,24 @@ export function checkData(
         if (f.type !== 'image') continue
         const v = row[f.key]
         if (typeof v !== 'string' || !v) continue
-        if (!v.startsWith('img:')) out.push(`集合 ${s.name} 第 ${i + 1} 行的 ${f.key} 不是 "img:<图片 id>"：${v}`)
+        if (!v.startsWith('img:'))
+          out.push(
+            t('集合 {name} 第 {row} 行的 {key} 不是 "img:<图片 id>"：{value}', {
+              name: s.name,
+              row: i + 1,
+              key: f.key,
+              value: v,
+            }),
+          )
         else if (o.imageIds && !o.imageIds.has(v.slice(4)))
-          out.push(`集合 ${s.name} 第 ${i + 1} 行的 ${f.key} 引用了不存在的图片 ${v.slice(4)}`)
+          out.push(
+            t('集合 {name} 第 {row} 行的 {key} 引用了不存在的图片 {image}', {
+              name: s.name,
+              row: i + 1,
+              key: f.key,
+              image: v.slice(4),
+            }),
+          )
       }
   }
   // 列表控件绑定了不存在的集合
@@ -261,7 +323,10 @@ export function checkData(
         const key = String(w.Properties?.[DATA_SET_PROP] ?? '')
         if (!key || findDataSet(data, key)) return
         out.push(
-          `${tr.in ? `${tr.in} / ` : ''}${w.Name} 的 DataSet 指向不存在的集合 ${key}：用 set_data 新建，或改成已有的集合`,
+          t('{widget} 的 DataSet 指向不存在的集合 {key}：把控件改成已有的集合，或让 AI 用 set_data 补一个同名集合', {
+            widget: `${tr.in ? `${tr.in} / ` : ''}${w.Name}`,
+            key,
+          }),
         )
       })
   }

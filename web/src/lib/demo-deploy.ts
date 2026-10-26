@@ -56,6 +56,8 @@ function state(active: string[]): DeployState {
 }
 
 export function demoDeploy(method: string, sub: string | undefined, body: unknown, active: string[]): unknown {
+  // 演示里装的都是这一版的自带技能，没有要更新的
+  if (sub === 'updates') return { shared: [], deployed: [] }
   if (sub === 'optimize') return startDemoGlobalDocJob(body as { content?: string; request?: string })
   if (sub === 'run') {
     const run = DeployRun.parse(body)

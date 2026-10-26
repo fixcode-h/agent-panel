@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildAssistPrompt, resolveProposal, type AssistContext } from './assist.ts'
 import { ProjectInput, Workflow } from './schema.ts'
+import { ProjectProposalSchema, readProjectProposal, type ProjectProposal } from './project-init.ts'
 
 const wf = (id: string, name: string, expose: unknown[] = []) =>
   Workflow.parse({ id, name, createdAt: '', updatedAt: '', mainAgentId: '', expose })
@@ -109,4 +110,47 @@ test('初始化提示词：要求写 AGENTS.md 和文档框架，列出已有工
 
 test('旧项目没有初始化标记：读出来是空的，项目设置里要先初始化才能保存', () => {
   assert.equal(ProjectInput.parse({ name: '旧项目' }).initializedAt, '')
+})
+
+const savedProposal: ProjectProposal = {
+  kind: 'project',
+  name: '商城',
+  description: '面向用户的商城网站',
+  type: 'general',
+  steps: [],
+  reasons: { name: 'package.json 的 name' },
+  docRoot: 'docs',
+  files: [{ path: 'AGENTS.md', action: 'created', summary: '新建' }],
+  workflows: [{ id: 'w-general', name: '通用项目', verdict: 'default', reason: '日常改动' }],
+  params: { docRoot: 'docs' },
+  settings: [
+    { key: 'gitPolicy', value: 'allow', reason: '平时直接推送' },
+    { key: 'searchExclude', value: ['Saved'], reason: '' },
+  ],
+}
+
+test('保存的初始化结果：旧项目没有这个字段时按没有推荐处理', () => {
+  const p = ProjectInput.parse({ name: '旧项目' })
+  assert.equal(p.initializedAt, '')
+  assert.equal(p.initResult, undefined)
+})
+
+test('保存的初始化结果：读数据文件时结构不对按没有推荐处理', () => {
+  assert.equal(readProjectProposal(undefined), undefined)
+  assert.equal(readProjectProposal({ settings: 'oops' }), undefined)
+  assert.deepEqual(readProjectProposal(savedProposal), savedProposal)
+})
+
+test('保存的初始化结果：按 ProjectProposalSchema 原样读写，坏设置值被拒绝', () => {
+  const back = ProjectProposalSchema.parse(JSON.parse(JSON.stringify(savedProposal)))
+  assert.deepEqual(back, savedProposal)
+  assert.deepEqual(ProjectInput.parse({ name: '商城', initResult: savedProposal }).initResult, savedProposal)
+  assert.equal(
+    ProjectProposalSchema.safeParse({ ...savedProposal, settings: [{ key: 'encoding', value: 'gbk' }] }).success,
+    false,
+  )
+  assert.equal(
+    ProjectProposalSchema.safeParse({ ...savedProposal, settings: [{ key: 'unknown', value: true }] }).success,
+    false,
+  )
 })

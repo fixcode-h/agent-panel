@@ -9,7 +9,8 @@ import { runEngineTurn, system, type AgentCall, type AgentResult } from './engin
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
-import { EVOLUTION_LANG, demoEvolution } from './task-export.ts'
+import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
+import { LESSON_REVIEW_LANG } from './lesson-review.ts'
 
 export interface RunContext {
   task: Task
@@ -404,12 +405,88 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       }
     }
   }
+  // 子任务的 AI 分析（子任务窗口里的「AI 分析」）：演示里给出四类结论，不要求工作流修改建议块。
+  // 只认 helperPrompt 写在开头的那行标记：不能认问题里的某句话——整体分析的 focus 是用户自己填的，
+  // 写一句「帮我看派出的一个子任务为什么慢」就会被当成子任务分析，回复里连修改建议块都没了
+  if (!call.step && ctx.first && ctx.prompt.includes(HELPER_SCOPE_MARK))
+    out = {
+      tools: [{ kind: 'read', label: '子任务记录.md', detail: '' }],
+      changes: [],
+      text: '这个子任务花了 **2 分 0 秒**，其中大部分时间花在反复搜同一个符号上，做的事和它的角色设定一致。\n\n### 1. 耗时\n\n- **搜代码 3 次**（`cart`、`CartBadge`、`cart:changed`）花了 1 分 10 秒，第一次搜的命中就在结果里，后两次是重复劳动。\n- 读文件 2 次、命令 0 次，总共不到 10 秒：**时间不在执行上，在找东西上**。\n- 没有等用户、没有等模型的长间隔。\n\n### 2. 是否符合角色\n\n- 角色设定要求「只完成派给它的事、完成后简要总结」，它只读了代码、没有改文件，**符合**。\n- 派给它的要求里写了「找出可疑的地方」，它给了文件和结论，没有漏。\n\n### 3. 优化空间\n\n- 要求里直接给文件路径：`派它时写「看 web/src/components/CartBadge.tsx 的订阅逻辑」`，能省掉 3 次搜索。\n- 结论里直接要求「贴出相关代码行」，回交的结果就不用再回去读一遍。\n\n### 4. 面板框架\n\n- 没有发现问题：耗时、等待和它自己的对话过程都对得上。',
+    }
   // AI 分析执行记录：回复后面带上修改建议，演示里也能看到差异和应用
   if (!call.step && ctx.first && ctx.prompt.includes('```' + EVOLUTION_LANG))
     out = {
       tools: [{ kind: 'read', label: '执行记录.md', detail: '' }],
       changes: [],
       text: `这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，**缓存命中率偏低**。\n\n### 1. 结果质量\n\n- 交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n\n### 2. 工作流\n\n- 节点要求写得笼统，**分析需求** 一步反复确认范围，建议写得更具体。\n- 不需要深度推理的节点可以降到中档。\n\n### 3. Agent\n\n- 角色设定和节点要求有部分重复，可以精简。\n\n### 4. 面板框架\n\n- 见下面的发现。\n\n### 5. 交付的代码\n\n- **商品卡片** 在价格为空时会报错，见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
+    }
+  // AI 评审项目教训：回复后面带上评审块，演示里也能逐条应用（条目 id 对的是演示项目「网上商城」的教训）
+  if (!call.step && ctx.first && ctx.prompt.includes('```' + LESSON_REVIEW_LANG))
+    out = {
+      tools: [
+        { kind: 'read', label: '项目教训.md', detail: '' },
+        { kind: 'search', label: 'legacy-cart', detail: '' },
+      ],
+      changes: [],
+      text: `5 条教训里 3 条写得清楚、和现在的代码对得上，保留。\n\n- **购物车旧接口那条已经过期**：\`src/legacy-cart/\` 目录已经删掉，代码里也搜不到 \`cartV1\`。\n- **mock 那条能写得更好**：现在类型从 \`src/api/schema.ts\` 生成，规则应该指向生成脚本。\n\n\`\`\`${LESSON_REVIEW_LANG}\n${JSON.stringify(
+        {
+          summary: '5 条里 1 条已过期建议删除，1 条可以写得更具体，其余保留。',
+          items: [
+            {
+              id: 'demo-lesson-5',
+              action: 'delete',
+              problems: ['outdated'],
+              why: 'src/legacy-cart/ 已经删掉，代码里搜不到 cartV1，这条不再适用。',
+            },
+            {
+              id: 'demo-lesson-3',
+              action: 'rewrite',
+              problems: ['optimize'],
+              why: '类型现在由 scripts/gen-api.ts 从 src/api/schema.ts 生成，手改 types.ts 会被覆盖。',
+              title: '改接口字段先改 src/api/schema.ts，再跑 npm run gen:api，mock 一起改',
+              rule: 'types.ts 是生成的，不手改；schema 改完跑 npm run gen:api，mock/ 下对应的 JSON 同步改，否则本地开发和 e2e 用的还是旧结构。',
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n\`\`\``,
+    }
+  // AI 初始化项目（项目对话里做）：回复末尾带上初始化结果的 JSON，演示里对话右侧的设置应用面板也能看到推荐
+  if (!call.step && ctx.first && task.analysis === 'init')
+    out = {
+      tools: [
+        { kind: 'read', label: 'package.json', detail: '' },
+        { kind: 'edit', label: 'AGENTS.md', detail: '' },
+      ],
+      changes: [],
+      text: `读完了项目：前端是 Vite + React，测试用 Vitest 和 Playwright。补全了 AGENTS.md，建好了文档入口和模块地图，推荐的设置在下面。\n\n\`\`\`json\n${JSON.stringify(
+        {
+          name: '商城前台',
+          description: '网上商城的前台页面：商品列表、详情、购物车和下单',
+          type: 'general',
+          reasons: { steps: 'package.json 里有 lint、test 和 e2e 三个脚本' },
+          docRoot: 'docs',
+          files: [
+            { path: 'AGENTS.md', action: 'updated', summary: '补上常用命令和文档地图' },
+            { path: 'docs/README.md', action: 'created', summary: '文档入口' },
+            { path: 'docs/MODULE-MAP.md', action: 'created', summary: '模块地图：页面、购物车、接口' },
+          ],
+          steps: [
+            { name: '代码检查', command: 'npm run lint', env: 'auto', quick: true },
+            { name: '单元测试', command: 'npm test', env: 'auto', quick: true },
+            { name: '端到端测试', command: 'npm run e2e', env: 'auto' },
+          ],
+          workflows: [],
+          settings: {
+            eol: { value: 'lf', reason: '.editorconfig 里写的是 lf' },
+            searchExclude: { value: ['coverage'], reason: '测试覆盖率报告不用搜' },
+          },
+        },
+        null,
+        2,
+      )}\n\`\`\``,
     }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Loader2, RefreshCw } from 'lucide-react'
 import type { Settings } from '@shared/schema'
 import { pickShell, recommendedShell, SHELL_LABEL, type ShellReport } from '@shared/shells'

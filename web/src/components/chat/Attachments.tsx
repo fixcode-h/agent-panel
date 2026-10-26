@@ -1,7 +1,7 @@
 // 对话输入框通用的附件：选文件、粘贴截图、拖进来，图片显示缩略图。任务对话和 UI 设计的 AI 对话都用这一套，
 // 以后新的对话输入框直接拿来用
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   AtSign,
   Check,

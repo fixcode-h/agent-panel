@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   Activity,
   Copy,
@@ -14,6 +14,7 @@ import {
 import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowExpose, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { startAnalysis } from '@/lib/task-transfer'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { nodeSteps } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -357,8 +358,12 @@ export function WorkflowDetail({
       <AnalyzeDialog
         open={analyzing}
         onOpenChange={setAnalyzing}
-        tasks={() => Promise.all(runs.map((r) => api.task(r.id)))}
-        projectId={runs[0]?.projectId ?? ''}
+        subject={t('{name} 最近 {n} 次执行', { name: workflow.name, n: runs.length })}
+        start={async (focus) => {
+          const list = await Promise.all(runs.map((r) => api.task(r.id)))
+          if (!list.length) throw new Error(t('还没有可以分析的执行记录'))
+          return startAnalysis({ tasks: list, agents, projectId: list[0].projectId, focus })
+        }}
       />
     </>
   )

@@ -56,6 +56,18 @@ export function takeHeld(taskId: string): HeldMessage | undefined {
   return first
 }
 
+/**
+ * 从这一轮结束后的队列里撤掉一条（自动询问没送出去时用）：后面的消息保持原来的顺序，
+ * 不会因为一条过时的状态询问排在用户消息前面
+ */
+export function removeHeld(taskId: string, id: string) {
+  const list = held.get(taskId)
+  if (!list) return
+  const i = list.findIndex((x) => x.id === id)
+  if (i >= 0) list.splice(i, 1)
+  if (!list.length) held.delete(taskId)
+}
+
 export const hasHeld = (taskId: string) => !!held.get(taskId)?.length
 
 /** 这一轮停下了（失败、暂停、面板退出）：不再自动接着跑，消息留在对话里由用户决定 */

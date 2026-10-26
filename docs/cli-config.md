@@ -22,7 +22,7 @@
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
 3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits` / `modelInput`，
    写完用 CLI 自己的列表或界面核对能选几档。
-4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。角色说明能传文件的写 `systemPromptFileFlag`（Windows 上参数里不能带换行，见 `server/exec/process.ts`）。
+4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。角色说明能传文件的写 `systemPromptFileFlag`（Windows 上参数里不能带换行，见 `server/exec/process.ts`）；没有系统提示词参数、只能靠插件追加的写 `systemPromptMod`（Command Code 的 `--mod`，见下面「回复语言」）。
 5. **能力** `features`：压缩、自动压缩、分叉、插话（`steer` 或 `notes`）、「/命令」，按 CLI 实际支持的写，不支持的面板会走兜底做法。
 6. **测试**：`scripts/fake-cli` 能模拟它（含 RPC 多轮），`server/exec/fixtures/` 录一段真实输出并加解析测试。
 7. **文案**：界面上的名字、说明的英文写进 `i18n.en`。新加的字段登记进本文档的表格，并回头看已有的 CLI 要不要填。
@@ -50,6 +50,7 @@
 | `output`                          | 输出解析，见下面                                                                                                                                        |
 | `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                         |
 | `systemPromptFileFlag`            | 系统提示词能传文件时用的参数（值写成文件路径，例如 Pi 的 `--append-system-prompt`）：填了就把角色说明写进临时目录传路径，参数里不带换行                 |
+| `systemPromptMod`                 | 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板生成一个只追加「回复语言」规则的 mod，参数里传路径（`{systemPromptModPath}`）             |
 | `features`                        | 能力，见下面                                                                                                                                            |
 | `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                                                                |
 | `docsNote`                        | 项目设置里说明文件那一页的说明                                                                                                                          |
@@ -85,8 +86,21 @@
 
 - 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
   同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`systemPrompt`、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`systemPrompt`、`systemPromptModPath`（面板生成的语言 mod 路径）、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
+
+## 回复语言
+
+面板设置里的界面语言决定 Agent 的回复正文和思考过程（reasoning / thinking）用哪种语言，规则在 `shared/prompt-lang.ts`，每轮执行时现算。对话页保活中的进程把系统提示词和 mod 的环境变量固定在了进程里，所以设置换了以后下一句不会再交给它：`server/exec/runner.ts` 的 `stillCurrent` 会比对语言，不一致就结束等待、按新语言重开进程。正在跑的那一轮（含等子任务期间送进去的消息）仍用开始时的语言，下一轮才换。注入方式按 CLI 的能力从强到弱：
+
+1. 有 `systemPromptFlag` 的（Claude Code、Codex、Pi）：规则和角色说明一起进系统提示词。
+2. 有 `systemPromptMod` 的（Command Code）：面板在数据目录生成 `mods/agent-panel-prompt-lang.mjs`，用 `--mod` 加载，`appendSystemPrompt` 把规则追加到系统提示词末尾；语言由环境变量 `AGENT_PANEL_REPLY_LANG` 传，不重写文件。本机验证 Command Code 1.88 可用；更旧的版本不认识这个参数时先升级。
+3. Gemini 等其余 CLI（没有系统提示词参数，也没有 mod 通道）：规则写在任务描述里，并在末尾再提醒一次。
+
+**能力边界**：
+- 模型的原生 reasoning 由它自己的系统提示词和训练决定，提示词只能影响、不能强制。实测 Command Code + DeepSeek 会把任务描述里的中文规则忽略掉（思考输出英文），追加到系统提示词后才稳定；Gemini 这类只有任务描述通道的 CLI 仍可能不遵守。
+- 设置是 `auto` 时，界面语言按浏览器的 `navigator.language` 解析，服务端（`server/lang.ts`）按 `process.env.LANG` / 系统 locale 解析，两边可能不一致（浏览器中文、系统英文）：这时界面是中文，提示词却会按服务端解析出的英文写。要让两边一致，把设置改成固定语言，不要用 `auto`。
+- 不要为了让思考语言变过来去改用户的全局配置。
 
 ## 常驻 RPC `protocol` / `rpc`
 
@@ -234,7 +248,6 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 已知限制（都不影响主行为，改这块时留意）：
 - 待回收标记只在「这一轮结束」（`onKeepAlive`）时补排。若父对话是因为名下有子对话在跑被叫停、而子对话结束时没有东西唤醒它（父计划里没等这一步），这个空闲会话的两段时长会失效，要等用户再点开或被上限淘汰才收。兜底可在子对话 live 记录消失时给父对话补一次 `rescheduleIfUnwatched`。
 - 「名下有子对话」按 `live` 里所有子对话算，不区分子对话本身就是停在等下一句的空闲（保护来自 `stopTask → closeChildren`，否则会连带停掉子对话）。
-- 还在排队等名额的子对话不在 `live` 里，父对话这时会被当作空闲（与以前一致；要一并保护得在 `startChild` 里记「子 → 父」的归属）。
 设置里的「自动回收闲置 Agent」（`reclaimIdleCli`）关掉后只是不再按上面两段时间计时回收，数量上限照旧。
 回收后用户再打开会冷启动一次，会话靠 `--resume` 续接，代价是几秒钟。
 面板被强杀（`taskkill /F`、崩溃）时来不及停的 CLI 记在数据目录 `run/cli-pids.json`，下次启动只清理命令行里认得出是面板起的
@@ -302,6 +315,27 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 | `placeholder`          | 来源输入框的示例                                                                                         |
 
 配置里相对路径的来源是相对配置文件写的，面板交给命令前换成绝对路径（Pi 从别的目录跑 `pi remove ../x` 会找不到）。命令的输出原样显示，失败时用户能看到原因。
+
+## 账号登录 `auth`
+
+面板跑 `auth.login` 打开浏览器登录，成功后把 `auth.home` 下的 `auth.files`、`auth.fields` 和 `auth.keychain` 存成一个账号。
+判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；Gemini CLI 这类登录后不自己退出的也能判对），
+进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
+
+| 字段                   | 说明                                                                                                                                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login`                | 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录                                                                                                                                        |
+| `loginAlreadyLoggedIn` | 已经登录着时再跑登录命令会直接说「已登录」、以退出码 0 退出、**不改凭据文件**的 CLI（Command Code 的 `cmdc login` 输出 `Already logged in`）写 `true`：这时退出码 0 且读得到凭据就算成功，不看凭据变没变 |
+| `loginStdin`           | 登录时从 stdin 写进去的内容（要确认的 `y` 之类）                                                                                                                                                           |
+| `loginEdits`           | 登录前先改的配置（例如 Gemini CLI 先选登录方式），登录完不还原                                                                                                                                             |
+| `home` / `files`       | 凭据目录（`~` 是用户目录，`${ENV:-默认值}` 先取环境变量）和里面的凭据文件                                                                                                                                  |
+| `fields`               | 其他 JSON 文件里属于账号的键（例如 Claude Code 在 `.claude.json` 里记着账号）                                                                                                                              |
+| `keychain`             | macOS 钥匙串里的条目名                                                                                                                                                                                     |
+| `identity`             | 从凭据里认出是哪个账号（邮箱）的方式；`none` 表示认不出，用保存时起的名字                                                                                                                                  |
+| `accountNote`          | 账号区顶部的提醒（例如这个 CLI 对账号类型的限制），界面文案的英文写 `i18n.en`                                                                                                                              |
+
+CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.ts` 的 `stripAnsi`）：CLI 发现标准输出接的是终端就上色，
+网页里 ESC 被吞掉会只剩 `[32m` 这种残码，而同一份文本还要进报错文案、交给「AI 处理」排查。
 
 ## 凭据检查 `auth.check`
 

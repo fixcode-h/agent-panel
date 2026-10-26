@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowLeft, Copy, Loader2, MoreHorizontal, Workflow as WorkflowIcon, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { StepStatus, Task, ToolUse } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { t } from '@shared/i18n'

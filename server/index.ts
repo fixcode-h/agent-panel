@@ -27,6 +27,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
+import { ProjectProposalSchema } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
@@ -61,6 +62,8 @@ import { packagesApi } from './cli-packages.ts'
 import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
+import { appActionsApi, setActionHost } from './app-actions/index.ts'
+import { callApi } from './app-actions/registry.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { setPresenceReclaimPolicy } from './presence.ts'
 import { GlobalLessons, Settings } from '../shared/schema.ts'
@@ -77,7 +80,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
-import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
+import { builtinDefinition, builtinKey, isBuiltinAgent, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
 import {
   builtinProjectCategories,
   isBuiltinProjectCategory,
@@ -88,8 +91,11 @@ import {
   migrateProjectsToGeneral,
   pruneMergedAgents,
   redirectMergedProjects,
+  redirectWorkflowRefs,
+  retiredWorkflows,
   seedProjectWorkflows,
 } from '../shared/builtin/install.ts'
+import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
@@ -97,8 +103,11 @@ import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
+import { sweepPanelMcp } from './panel-mcp-files.ts'
+import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
+import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -128,6 +137,15 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 
+/** 各项目目录里面板没来得及删的 MCP 条目（关掉、崩溃时留下的）：启动时还没有在跑的对话，凡是指向本面板的都已失效 */
+async function sweepProjectsPanelMcp() {
+  for (const p of await projects.list().catch(() => [])) {
+    if (!p.path || !existsSync(p.path)) continue
+    const n = await sweepPanelMcp(p.path)
+    if (n) log.info('server', '清掉了项目里失效的面板 MCP 条目', { project: p.name, files: n })
+  }
+}
+
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
 for (const w of await workflows.list()) {
   if (w.flows.some((f) => f.nodes.length) || !/^##\s/m.test(w.document)) continue
@@ -144,11 +162,12 @@ for (const w of await workflows.list()) {
 }
 
 /**
- * 项目必须有工作流：「通用项目」「UE 项目」启动时装一次（已经有了就跳过），
+ * 自带工作流启动时默认全部加入（装过一次、后来被删掉的不再装回来，「通用项目」「UE 项目」缺了就补），
  * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
  */
 async function ensureProjectWorkflows() {
   await removeLegacyDefaultAgent()
+  const before = await loadSeededWorkflows()
   const seeded = await seedProjectWorkflows(
     {
       agents: await agents.list(),
@@ -164,9 +183,18 @@ async function ensureProjectWorkflows() {
       updateWorkflow: (id, input) => workflows.update(id, input),
       updateAgent: (id, input) => agents.update(id, input),
     },
+    before,
   )
-  if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
+  if (seeded.seeded.join() !== before.join()) await saveSeededWorkflows(seeded.seeded)
+  if (seeded.created.length) log.info('workflow', '已安装自带工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
+  if (seeded.upgradedAgents.length)
+    log.info('agent', '内置角色已换成当前版本', { list: seeded.upgradedAgents.map((a) => a.name) })
+  if (seeded.replaced.length) {
+    const file = await backupRemovedAgents(seeded.replaced, '内置角色换成了新版本，这是覆盖前你改过的版本')
+    log.info('agent', '内置角色里你改过的设定已备份后覆盖', { list: seeded.replaced.map((a) => a.name), file })
+  }
+  await retireWorkflows()
   await pruneMerged()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
   const projectAgents = await ensureProjectAgents(
@@ -224,6 +252,21 @@ async function removeLegacyDefaultAgent() {
   }
   await agents.remove(old.id)
   log.info('agent', '已去掉默认 Agent，旧对话改为直接用 CLI')
+}
+
+/**
+ * 合并掉的内置工作流（日常开发、UE 功能开发、项目初始化）：没改过的本机副本删掉，
+ * 项目和项目分类里指向它的改指到接替的工作流；用户改过的副本留着。
+ */
+async function retireWorkflows() {
+  const list = retiredWorkflows({ agents: await agents.list(), workflows: await workflows.list() })
+  if (!list.length) return
+  const moved = Object.fromEntries(list.map((r) => [r.workflow.id, r.into]))
+  const refs = redirectWorkflowRefs(await projects.list(), await projectCategories.list(), moved)
+  for (const p of refs.projects) await projects.update(p.id, p)
+  for (const c of refs.categories) await projectCategories.update(c.id, c)
+  for (const r of list) await workflows.remove(r.workflow.id)
+  log.info('workflow', '已删除合并掉的内置工作流', { list: list.map((r) => r.workflow.name) })
 }
 
 /**
@@ -494,8 +537,14 @@ app.get('/agents', async (c) => c.json(await agents.list()))
 
 app.post('/agents', async (c) => {
   const r = await parseAgent(await c.req.json())
-  // 复制出来的必备角色是普通角色：来源去掉，不然会被当成第二个必备角色
-  if (r.data && isCoreAgent(r.data)) r.data.origin = ''
+  // 复制出来的内置角色是普通角色：本机已经有这个来源的就去掉来源，不然会被当成第二个内置角色、跟着内置定义被覆盖。
+  // 「内置 Agent」里添加的（本机还没有）保留来源
+  if (
+    r.data &&
+    isBuiltinAgent(r.data) &&
+    (isCoreAgent(r.data) || (await agents.list()).some((a) => a.origin === r.data!.origin))
+  )
+    r.data.origin = ''
   return r.error ? bad(c, r.error) : c.json(await agents.create(r.data!), 201)
 })
 
@@ -503,12 +552,17 @@ app.put('/agents/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseAgent(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
-  // 必备角色只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）
+  // 内置角色（含必备角色）只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）；
+  // 其他内置角色还能改分类、标签和启用开关，必备角色的分类固定
   const before = await agents.get(id)
-  const core = coreKey(before ?? undefined)
-  if (before && core)
+  const key = builtinKey(before ?? undefined)
+  const def = key ? builtinDefinition(key) : undefined
+  if (before && def)
     r.data = {
-      ...syncCore(r.data!, coreDefinition(core), { categoryId: before.categoryId, includes: before.includes }),
+      ...syncCore(r.data!, def, {
+        categoryId: isCoreAgent(before) ? before.categoryId : r.data!.categoryId,
+        includes: before.includes,
+      }),
       name: before.name,
       origin: before.origin,
       // 一次性升级记录只由启动同步维护，编辑页保存不带它也不能清掉，否则下次启动会把用户关掉的开关又改回去
@@ -616,6 +670,11 @@ async function parseProject(body: unknown) {
   p.data.workflowParams = Object.fromEntries(Object.entries(p.data.workflowParams).filter(([id]) => known.has(id)))
   // 请求里带了默认 Agent 字段就说明用户设置过：以后不再用升级迁移覆盖
   if (body && typeof body === 'object' && 'defaultAgentId' in body) p.data.agentSet = true
+  if (p.data.initResult !== undefined) {
+    const saved = ProjectProposalSchema.safeParse(p.data.initResult)
+    if (!saved.success) return { error: z.prettifyError(saved.error) }
+    p.data.initResult = saved.data
+  }
   if (p.data.path) p.data.path = resolvePath(p.data.path)
   return { data: p.data }
 }
@@ -663,6 +722,9 @@ app.put('/projects/:id', async (c) => {
   // 初始化标记同理：只有项目设置页会带上它，脚本改设置不会把它清掉
   if (body && typeof body === 'object' && !('initializedAt' in body))
     r.data!.initializedAt = (await projects.get(c.req.param('id')))?.initializedAt ?? ''
+  // 保存的推荐也是：没带的请求保留上次初始化的结果
+  if (body && typeof body === 'object' && !('initResult' in body))
+    r.data!.initResult = (await projects.get(c.req.param('id')))?.initResult
   const x = await projects.update(c.req.param('id'), r.data!)
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
@@ -677,6 +739,18 @@ app.post('/projects/:id/lessons', async (c) => {
     title: body.title,
     source: 'user',
   })
+  return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
+})
+
+// AI 评审项目教训：用户在评审卡片上逐条点「应用」，一次一条
+app.post('/projects/:id/lessons/review', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { item?: unknown } | null
+  const review = parseLessonReview(
+    '```' + LESSON_REVIEW_LANG + '\n' + JSON.stringify({ items: [body?.item] }) + '\n```',
+  )
+  const item = review?.items[0]
+  if (!item) return bad(c, t('评审建议的格式不对'))
+  const r = await lessons.review(c.req.param('id'), item)
   return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
 })
 
@@ -917,6 +991,13 @@ const updater = updateApi({
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())
+// 操控软件的动作表（见 ADR 0011）：Agent 经 MCP 调，人和脚本经 /api/actions 调；
+// 动作进程内调上面这些接口，和界面点按钮走同一段代码
+app.route('/actions', appActionsApi())
+setActionHost({
+  api: (method, path, body) => callApi((req) => app.fetch(req), method, path, body),
+  ui: (action, args) => signalPages({ type: 'ui', action, args }),
+})
 // 新版本启动后问用户要不要继续被上次强制更新打断的任务
 app.route(
   '/app',
@@ -980,6 +1061,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
   setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
   setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
+  // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
+  void sweepProjectsPanelMcp()
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser

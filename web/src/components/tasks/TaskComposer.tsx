@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ArrowUp,
   Bot,
@@ -36,6 +36,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
+import { ElementPickButton } from '@/components/chat/ElementPicker'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 
@@ -290,6 +291,7 @@ export function TaskComposer({
           onPaste={chips.onPaste}
           preview={chips.preview}
           actions={chips.chipActions}
+          copyOf={chips.copyOfChip}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
@@ -313,6 +315,7 @@ export function TaskComposer({
               workflowId={workflowId}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
+            <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} className="h-8 w-8 rounded-lg" />
             {workflow ? (
               <>
                 {isolateSwitch}

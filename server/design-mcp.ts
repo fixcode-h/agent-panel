@@ -170,12 +170,14 @@ const TOOLS = [
   {
     name: 'get_tree',
     description:
-      '看当前的控件树（只列和默认值不一样的属性）。提示词里已经有开始时的树，一般不用调；in 写子控件名看子控件的树，all 为 true 时连同所有子控件一起返回。',
+      '看当前的控件树（只列和默认值不一样的属性）。提示词里已经有开始时的树，一般不用调；in 写子控件名看子控件的树，all 为 true 时连同所有子控件一起返回。update_widgets 之后回读被改控件的属性也用它。',
     inputSchema: obj({ in: IN, all: { type: 'boolean' } }),
   },
   {
     name: 'get_design',
-    description: '看设计的概况：设计稿尺寸、整体风格、子控件列表、已有图片和这一轮列出的图片。',
+    description:
+      '看设计的概况：设计稿尺寸、整体风格、子控件列表、已有图片和这一轮列出的图片。images 里 status 是生成状态：idle 没生成过、pending 已提交还没出图、generating 正在出图、failed 带 error；new 为 true 的是本轮 add_images 刚列或重出的图（name、size 是本轮新写的，status 一律是 pending，generated 为 false 表示还没出新图，画布上可能还是上一版），这一轮结束才出图，本轮不要等它的状态，也不要拿它当重试失败。' +
+      '需要等图时只调它一两次读 images 的 status，不要 sleep 轮询。看到本轮新列（new: true）或 generating，就按图片名告诉用户「背景在出图，我先做其他项，本轮验收不含背景」（换成这张图的名字），接着做别的；看到 failed 立刻写一句结论（例如「重出失败，画布上仍是 1920×1080 的旧图」），按 add_images 只重试一次，再失败就停手等用户决定。',
     inputSchema: obj({}),
   },
   {
@@ -190,7 +192,8 @@ const TOOLS = [
   {
     name: 'update_widgets',
     description:
-      '改控件的属性和插槽，一次可以改很多个：properties、slot 只写要改的字段，和原来的合并（例如 {"Text":"背包"}、{"padding":[0,24,0,0]}）。UserWidget 换引用的子控件写 class。',
+      '改控件的属性和插槽，一次可以改很多个：properties、slot 只写要改的字段，和原来的合并（例如 {"Text":"背包"}、{"padding":[0,24,0,0]}）。UserWidget 换引用的子控件写 class。' +
+      'items 原样传 JSON 数组，不要写成字符串。改完立刻回读：位置、大小用 screenshot 返回的控件位置表，字号等属性用 get_tree 读（它只列和默认值不同的属性，读不到就是默认值），确认 x/y/宽/高和字号等于你要汇报的值；一致才写进总结，不一致就当场重改，并在回复里说明「上一轮没生效」。',
     inputSchema: batch(
       {
         name: { type: 'string' },
@@ -273,7 +276,8 @@ const TOOLS = [
     description:
       '列出这次要新建或重新生成的图片（id、name、prompt、negative、width、height、transparent、nineSlice、sheet）；同一个 id 再提交会覆盖。图片要设到控件上（"img:<id>"）才会显示。' +
       'prompt 是英文的正向描述（画什么、形状、材质、颜色、细节），negative 是反向提示词（不能出现的东西）。' +
-      `尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，例如 96×96 的背包物品、技能、货币图标）写成一组：同一个 sheet（例如 "items"），面板让图片模型在一张干净的底色上把它们等间距排成格子，再自动切开，快很多；大图（底框、按钮、面板、插图）和尺寸不一样的不要写 sheet，一张张生成。一次最多 ${MAX_TOOL_IMAGES} 张。`,
+      `尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，例如 96×96 的背包物品、技能、货币图标）写成一组：同一个 sheet（例如 "items"），面板让图片模型在一张干净的底色上把它们等间距排成格子，再自动切开，快很多；大图（底框、按钮、面板、插图）和尺寸不一样的不要写 sheet，一张张生成。一次最多 ${MAX_TOOL_IMAGES} 张。` +
+      'images 原样传 JSON 数组，不要写成字符串。需要 1080p 以上的背景时直接写 2048×1152，提交前自检 width、height 都 ≤ 2048。背景图重出失败时只重试一次：prompt 去掉「高分辨率」这类容易让模型崩掉的词，尺寸降到 1920×1080，再失败就停手等用户决定；其他图重试时按原宽高比缩小，不要统一改成 16:9。',
     inputSchema: obj({ images: { type: 'array', items: { type: 'object' } } }, ['images']),
   },
   {
@@ -392,14 +396,15 @@ const TOOLS = [
     name: 'screenshot',
     description:
       '截一张当前画布（用户在左边看到的样子，包括这一轮还没存下的改动），存成图片文件，再用读图的能力看它；同时返回每个控件在画布上的位置和大小，以及跑出画面、大小为 0 的控件。' +
-      'in 写子控件名截子控件。搭完一块或改完以后用它检查效果，和参考图、模板对比。截过的图在 view_image 里写 "screenshot:<第几张>" 可以放大看。',
+      'in 写子控件名截子控件。搭完一块或改完以后用它检查效果，和参考图、模板对比。截过的图在 view_image 里写 "screenshot:<第几张>" 可以放大看。' +
+      '截图失败（页面没打开，或者页面收到了请求但没交出截图）都视为这一轮没有视觉结论能力：本轮不要再调 screenshot，错误里即使写着「请重试」也一样；只向用户说一次「请打开这个设计页」，把「某控件没显示 / 看起来不对」都改成待验证项写进回复。用户说页面打开后，下一轮先截全图，再对这次改动的每个控件用 view_image 放大确认一次，之后才允许写完成总结。',
     inputSchema: obj({ in: IN }),
   },
   {
     name: 'inspect_image',
     description:
       '量一张图：精确的像素尺寸、宽高比、是否透明、内容范围、主要颜色（十六进制）。region 只量图里的一块，points 取指定位置的颜色。照着参考图做界面时用它取准确的尺寸和颜色，不要目测。' +
-      'source 写 "attachment:1"（第几个附件）、"image:<图片 id>"（设计里已有的图）、"concept:<原画 id>"（原画、模板）或 "screenshot:1"（第几张截图）。',
+      'source 写 "attachment:1"（第几个附件）、"image:<图片 id>"（设计里已有的图）、"concept:<原画 id>"（原画、模板）或 "screenshot:1"（第几张截图）。引用图片统一用 image:<id>、concept:<id>、screenshot:<n>，不要写文件名；控件上设图写 "img:<id>"，两者不要混。',
     inputSchema: obj(
       {
         source: { type: 'string' },
@@ -413,7 +418,8 @@ const TOOLS = [
     name: 'view_image',
     description:
       '生成一张方便读数的图：画上坐标格（线上标的是原图像素坐标）、可以放大其中一块，保存成文件，再用你读图的能力看这个文件，按格子读元素的位置和大小，比直接看原图准得多。' +
-      '大图先整张看一遍，再用 region 放大细节处（按钮边缘、图标、文字）。source 同 inspect_image；grid 默认画格子；zoom 不写自动放大到合适。',
+      '大图先整张看一遍，再用 region 放大细节处（按钮边缘、图标、文字）。source 同 inspect_image；grid 默认画格子；zoom 不写自动放大到合适。' +
+      '完成前必做：每次改完，对这次动过的每个控件写 source "screenshot:<第几张>"、region 写它的位置和大小，放大确认一次（没被遮挡、没跑出画面、文字没截断），才能写完成总结。',
     inputSchema: obj(
       { source: { type: 'string' }, region: REGION, grid: { type: 'boolean' }, zoom: { type: 'number' } },
       ['source'],
@@ -421,7 +427,8 @@ const TOOLS = [
   },
   {
     name: 'check',
-    description: '检查当前设计有没有问题（控件放法、引用的子控件和图片、没用上的图、默认文字）。改完后调一次。',
+    description:
+      '检查当前设计有没有问题（控件放法、引用的子控件和图片、没用上的图、默认文字）。改完可以调一次，但 check 通过不是完成条件：完成条件固定为「改完后的全屏截图 + 每个改动控件的放大图 + 回读到的 x/y/宽/高和字号与汇报一致」。',
     inputSchema: obj({}),
   },
 ]
@@ -831,18 +838,39 @@ async function callTool(s: Session, raw: string, args: any) {
       if (a.in && !comp) return text(`没有子控件 ${a.in}`, true)
       return text(JSON.stringify(compactTree(comp ? comp.Root : s.state.root)))
     }
-    case 'get_design':
+    case 'get_design': {
+      // 本轮 add_images 的图要等这一轮结束才并进设计、才开始出图：在这里按 pending 标出来，
+      // 否则同一个 id 重出时 AI 看到的还是上一次的 failed 和旧尺寸，会当成重试没生效
+      const freshById = new Map(s.images.map((i) => [i.id, i]))
       return text(
         JSON.stringify({
           designSize: s.designSize ?? s.design.designSize,
           style: s.style ?? s.design.style,
           components: s.state.components.map((c) => ({ Name: c.Name, DesignSize: c.DesignSize })),
-          images: s.design.images.map((i) => ({
-            id: i.id,
-            name: i.name,
-            size: `${i.width}x${i.height}`,
-            generated: i.variants.length > 0,
-          })),
+          images: [
+            ...s.design.images.map((i) => {
+              const next = freshById.get(i.id)
+              return {
+                id: i.id,
+                name: next?.name ?? i.name,
+                size: next ? `${next.width}x${next.height}` : `${i.width}x${i.height}`,
+                generated: next ? false : i.variants.length > 0,
+                status: next ? 'pending' : i.status,
+                ...(i.error && !next ? { error: i.error } : {}),
+                ...(next ? { new: true } : {}),
+              }
+            }),
+            ...s.images
+              .filter((i) => !s.design.images.some((x) => x.id === i.id))
+              .map((i) => ({
+                id: i.id,
+                name: i.name,
+                size: `${i.width}x${i.height}`,
+                generated: false,
+                status: 'pending' as const,
+                new: true,
+              })),
+          ],
           newImages: s.images.map((i) => i.id),
           animations: animationsBrief(s.state.animations ?? []),
           data: (s.data ?? s.design.data)?.sets.map((x) => ({
@@ -853,6 +881,7 @@ async function callTool(s: Session, raw: string, args: any) {
           })),
         }),
       )
+    }
     case 'add_widgets':
       return apply(
         s,
@@ -953,7 +982,8 @@ async function callTool(s: Session, raw: string, args: any) {
       s.onChange(s)
       return text(
         `已定义 ${norm.sets.length} 个数据集合：${norm.sets.map((x) => `${x.name}（${x.rows.length} 行）`).join('、')}。` +
-          `列表控件写 DataSet="${norm.sets[0].name}"，条目子控件里的控件写 DataField="<字段 key>"。`,
+          `每个列表控件在自己的 Properties.DataSet 里写要用的集合 name，不同控件可以绑不同集合；` +
+          `条目子控件里的控件写 DataField="<字段 key>"。`,
       )
     }
     case 'set_design': {

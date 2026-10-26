@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Workflow } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -13,7 +13,8 @@ import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
 
 /**
- * 内置工作流：按分类列出，点「添加」连同缺的 Agent 一起建出来；已经添加的显示「删除」。
+ * 内置工作流：按分类列出。自带工作流启动时已经全部加入（见 shared/builtin/install.ts 的 seedProjectWorkflows），
+ * 这里主要用来看哪些还在、把删掉的重新添加（连同缺的 Agent 一起建出来）；已经添加的显示「删除」。
  * 删除只删工作流，用到的 Agent 留着（可能被别的工作流用，或者你改过），要删去 Agent 页的「内置 Agent」。
  */
 export function BuiltinDialog({
@@ -60,7 +61,7 @@ export function BuiltinDialog({
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
         <p className="text-[0.8125rem] leading-relaxed text-muted">
           {t(
-            '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 Agent。',
+            '自带的工作流启动时已经全部加入，用到的角色也随之建好；删掉的可以在这里重新添加。角色引用的自带 Skill 在执行时自动装进 Agent。',
           )}
         </p>
         {groups.map((g) => (

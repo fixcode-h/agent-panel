@@ -6,7 +6,7 @@
  */
 import { z } from 'zod'
 import { promptLangWord } from './prompt-lang.ts'
-import { FILE_EOLS, FILE_FORMATS, ParamValue, type TestStep, type Workflow, type WorkflowExpose } from './schema.ts'
+import { FILE_EOLS, FILE_FORMATS, ParamValue, TestStep, type Workflow, type WorkflowExpose } from './schema.ts'
 import { DEFAULT_SEARCH_EXCLUDE } from './search-exclude.ts'
 
 /** 可以推荐的项目设置：值和项目设置里的字段一一对应 */
@@ -58,6 +58,70 @@ export type ProjectProposal = {
   /** 默认工作流暴露项的推荐值，已按暴露项的类型校验 */
   params: Record<string, ParamValue>
   settings: InitSetting[]
+}
+
+/**
+ * 保存到项目里的初始化结果：重开项目设置时据此显示「应用推荐」。
+ * 结构和刚给出的推荐一致，按它严格校验后再存，坏数据不会写进项目文件
+ */
+const savedSetting = <K extends InitSettingKey>(key: K) =>
+  z.object({
+    key: z.literal(key),
+    value: INIT_SETTINGS[key],
+    reason: z.string().trim().max(400).default(''),
+  })
+
+export const ProjectProposalSchema = z.object({
+  kind: z.literal('project'),
+  name: z.string().trim().min(1).max(40),
+  description: z.string().trim().max(200).default(''),
+  type: z.enum(['general', 'ue']).default('general'),
+  steps: z.array(TestStep).max(40).default([]),
+  reasons: z.record(z.string(), z.string().trim().max(400)).default({}),
+  docRoot: z.string().trim().max(300).default(''),
+  files: z
+    .array(
+      z.object({
+        path: z.string().trim().min(1).max(300),
+        action: z.enum(['created', 'updated', 'kept']).default('updated'),
+        summary: z.string().trim().max(300).default(''),
+      }),
+    )
+    .max(120)
+    .default([]),
+  workflows: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        verdict: z.enum(['default', 'optional', 'skip']),
+        reason: z.string().trim().max(400).default(''),
+      }),
+    )
+    .max(80)
+    .default([]),
+  params: z.record(z.string(), ParamValue).default({}),
+  settings: z
+    .array(
+      z.discriminatedUnion('key', [
+        savedSetting('childIsolation'),
+        savedSetting('gitPolicy'),
+        savedSetting('encoding'),
+        savedSetting('eol'),
+        savedSetting('searchExclude'),
+        savedSetting('wslDistro'),
+        savedSetting('scaledVerify'),
+      ]),
+    )
+    .max(30)
+    .default([]),
+})
+
+/** 读数据文件里的推荐：结构不对时当作没有，别让手改坏的数据把设置页打挂 */
+export function readProjectProposal(v: unknown): ProjectProposal | undefined {
+  if (v === undefined || v === null) return undefined
+  const r = ProjectProposalSchema.safeParse(v)
+  return r.success ? r.data : undefined
 }
 
 const Reasoned = z.object({ value: z.unknown(), reason: z.string().trim().max(400).catch('').default('') })

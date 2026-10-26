@@ -16,10 +16,10 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 ## 拖引用、条目点法和弹窗取数
 
 - 规则：文件拖进输入框用左键长按（`fileDrag.ts` 的 `longPressed`，约 300ms），右键留给菜单；拖完压掉补发的 click。
-- 规则：对话里一行一个的条目（工具调用、子任务、面板结果、提问）用 `RowShell`：只有中间标题文字打开窗口，动作名、结果、箭头是展开收起；没有窗口的条目点哪里都展开收起，不要整行做成打开窗口的按钮。`detailStart`（详情左对齐）只给这种没有展开收起、详情只是说明的行用：详情区不吃点击，标题与详情之间留间距或分隔线，别做成两个相邻点击目标。
+- 规则：对话里一行一个的条目（工具调用、子任务、面板结果、提问）用 `RowShell`：整行都是入口的行传 `rowOpen`（动作名、标题、详情、耗时都可点，行尾 `action` 如终止必须自己 `stopPropagation`）；没传的行只有标题开窗口，动作名和箭头是展开收起，`detailStart` 的详情区不吃点击（传了 `rowOpen` 除外）。
 - 规则：会被角色或后台改动的数据（如项目教训）别只用页面缓存，弹窗打开时重新请求合进草稿，否则 `record_lesson` 记的教训在项目设置里看不到。
-- 起因：拖引用原来做成右键按住拖动、子任务一行点哪里都开弹窗，用户要求改；运行区子对话行左对齐后标题和状态糊成一块，用户要求分开。
-- 防线：`scripts/ui-check.mjs` 的「任务-长按拖入引用」。
+- 起因：拖引用原为右键按住拖动、子任务行只有标题能点，用户要求整行可点（参考子对话行）。
+- 防线：`scripts/ui-check.mjs` 的「任务-长按拖入引用」（`scripts/ui/02-task.mjs`）、同文件「子对话-整段文本可点」「子任务-整行可点」「子任务-终止按钮不打开窗口」。
 
 ## 面板的产物不冒充用户、不另起居中提示
 
@@ -43,6 +43,6 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui
 ## 输入框不能被外面重渲染重画或重挂载
 
 - 规则：`RichInput` 整棵重画（`paint` → `replaceChildren`）只在文字真变了时做：上传完成只换卡片里的 `img`（`updatePreviews`）；重画会擦掉组合中的字，组合期间（`compositionstart` → `compositionend`）跳过的重画等结束后补。卡片操作点击时重新取 `actions()`，别闭包捕获画卡片那刻的 `files`。
-- 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 这类新画的 ReactNode 用内容签名 `slotKey` 比；格式化复用 `Intl` 实例，别每次 new。
+- 规则（重渲染）：输入框用 `draftKey` 自管草稿（`ChatComposer` 的 `useDraft`），打字只重渲染输入框；消息列表按 `memo` 比，`slot` 用签名 `slotKey` 比，签名要含 slot 的全部输入（如 `runningSig`，漏了上下两段回复各列一遍子对话）；`Intl` 实例复用。
 - 起因：用户反馈实时输出时打字卡、输入框失焦；实测 `Intl` 每次新建占 109ms/3s，`slot` 的 memo 从未命中。
 - 防线：`scripts/ui-check.mjs`（推送期间输入框不重挂载、不丢焦点；行内图片卡片上传后还能删除）。

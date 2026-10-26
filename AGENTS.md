@@ -29,7 +29,7 @@
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
 - **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。
-- **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs.md`）。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录并同步 `MODULE-MAP.md` 的表格行。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
+- **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs/<bug-id>.md`，只记用户报的 Bug，开发和评审中自己发现的问题不写）。**`docs/modules/<模块>/bugs.md` 是生成物，不要手工编辑**：只写 `bugs/<bug-id>.md` 的元数据头（状态 / 症状 / 入口 / 根因类型 / 关键词），再跑 `npm run docs:bugs` 重写索引；这样多个子对话并行收尾时各自新增一个文件，不会都改同一张表末尾而反复冲突。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录并同步 `MODULE-MAP.md` 的表格行。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
 
 ## 文档地图
 
@@ -56,6 +56,7 @@ npm run typecheck    # 类型检查 + 漏翻检查
 npm run lint         # oxlint、Prettier 格式检查、规则检查（scripts/rules-check.mjs）
 npm run test:unit    # 单元测试和 CLI 输出解析测试
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
+npm run test:e2e:wsl # 同上，在 WSL 里跑（Windows 开发机上用这个）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版
@@ -70,7 +71,7 @@ npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 以前反复返工的几件事，提交前过一遍：
 
 1. `git status --short` 看清楚要提交的文件：新文件都 add 了，测试或 CLI 留下的临时输出没混进来。
-2. `npm run typecheck && npm run lint` 通过（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
+2. 静态检查通过：`npm run typecheck && npm run lint && npm run test:unit`（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
 3. 改了提示词或文案，搜一下测试里有没有断言原句；动了执行流程，跑 `npm run test:e2e`。
 4. `node scripts/lessons.mjs` 对照这次改动的相关教训。
 
@@ -85,7 +86,7 @@ npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 - **开发前必须先切换到 `dev` 分支**：开始任何代码、文档或配置改动之前，先跑 `git switch dev`（本地没有就用 `git switch -c dev origin/dev`），确认 `git status --short --branch` 显示在 `dev` 上再动手。
 - **禁止在 `main` 上直接开发**：不在 `main` 上改文件、提交或推送，包括小改动、文档修改和临时调试。误留在 `main` 时先切回 `dev`，不要在 `main` 上先改完再搬。
 - 如果在 `main` 上发现未提交改动，先确认这些改动是谁的、要不要带走；不要用 `git checkout .`、`git reset --hard` 或覆盖式 stash 把它们清掉。
-- **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。多个助手可能同时往 `dev` 推，推送前先 `git pull --rebase origin dev`。
+- **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。多个助手可能同时往 `dev` 推，推送前先 `git fetch origin dev && git merge origin/dev`。**禁止 rebase**（含 `git pull --rebase`），除非用户明确要求。
 - **只有用户明确说「合并到主干」时，才把 `dev` 合并到 `main`**。不要自行合并，也不要直接往 `main` 提交。
 - 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、代码检查、解析测试、端到端测试、构建、界面检查；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
   - 推送到 `dev`：**只检查，不出包**，不会出现出包的步骤。

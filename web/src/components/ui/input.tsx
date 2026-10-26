@@ -41,6 +41,7 @@ export function Select({
   onChange,
   disabled,
   id,
+  title,
   placeholder,
   'aria-label': ariaLabel,
 }: {
@@ -53,6 +54,8 @@ export function Select({
   className?: string
   disabled?: boolean
   id?: string
+  /** 悬停提示 */
+  title?: string
   'aria-label'?: string
 }) {
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
@@ -61,6 +64,7 @@ export function Select({
     <S.Root value={enc(value)} onValueChange={(v) => onChange({ target: { value: dec(v) } })} disabled={disabled}>
       <S.Trigger
         id={id}
+        title={title}
         aria-label={ariaLabel}
         className={cn(
           fieldClass,

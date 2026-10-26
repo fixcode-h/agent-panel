@@ -30,6 +30,7 @@ export function TaskStatusIcon({
   waiting,
   icon,
   label,
+  cliAlive,
   className,
 }: {
   status: TaskStatus
@@ -40,6 +41,8 @@ export function TaskStatusIcon({
   icon?: TaskIcon
   /** 图标说明，不传用状态名 */
   label?: string
+  /** CLI 进程还活着（服务端的 cliAlive）：给 false 时停着的对话不再说「等待你的下一条消息」 */
+  cliAlive?: boolean
   className?: string
 }) {
   const c = cn('h-4 w-4 shrink-0', className)
@@ -56,7 +59,12 @@ export function TaskStatusIcon({
   if (spin ?? (status === 'running' && working))
     return <Loader2 className={cn(c, 'animate-spin text-accent')} aria-label={name} />
   if (status === 'running' && !working)
-    return <MessageSquare className={cn(c, 'text-subtle')} aria-label={t('等待你的下一条消息')} />
+    return (
+      <MessageSquare
+        className={cn(c, 'text-subtle')}
+        aria-label={cliAlive === false ? name : t('等待你的下一条消息')}
+      />
+    )
   if (status === 'done') return <CircleCheck className={cn(c, 'text-success')} aria-label={name} />
   if (status === 'failed') return <CircleX className={cn(c, 'text-danger')} aria-label={name} />
   return <PauseCircle className={cn(c, 'text-subtle')} aria-label={name} />

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { BookMarked, Check, Loader2, Palette, Pencil, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   PROMPT_CATEGORIES,
   type DesignProject,

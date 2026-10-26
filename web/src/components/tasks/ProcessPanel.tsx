@@ -207,19 +207,20 @@ function ProcessPanelBody({ taskId, onDot }: { taskId: string; onDot: (d: Dot) =
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-muted">
                 {t('内存合计')}
-                <span className="ml-1 text-[0.6875rem] text-subtle">{t('这个会话树上全部进程的合计，含子对话')}</span>
+                <span className="ml-1 text-[0.6875rem] text-subtle">
+                  {t('这个对话及附属（子对话、子任务）的进程合计')}
+                </span>
               </span>
-              <span className="font-medium tabular-nums">{fmtMem(data?.totalMemory ?? null)}</span>
+              <span className="font-medium tabular-nums">{fmtMem(data?.cliMemory ?? null)}</span>
             </div>
             <p className="mt-0.5 text-[0.6875rem] text-subtle">
-              {t('面板 {server} · 进程 {cli}', {
+              {t('面板 {server}（不计入对话合计）', {
                 server: fmtMem(data?.serverMemory ?? null),
-                cli: fmtMem(data?.cliMemory ?? null),
               })}
               {data?.unavailable ? ` · ${data.unavailable}` : ''}
             </p>
             <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-subtle">
-              {t('下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊')}
+              {t('下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊')}
             </p>
           </div>
 

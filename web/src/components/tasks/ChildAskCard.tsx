@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ArrowUpRight, Lightbulb, Loader2, MessageCircleQuestion } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { api } from '@/lib/api'
