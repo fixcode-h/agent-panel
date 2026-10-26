@@ -89,49 +89,55 @@ export function TaskRow({
               className,
             )}
           >
-            {unread && (
-              <span
-                role="img"
-                aria-label={t('对话已完成，还没查看')}
-                title={t('对话已完成，还没查看')}
-                className="h-2 w-2 shrink-0 rounded-full bg-accent"
-              />
-            )}
-            <span className="flex shrink-0 items-center gap-1">
-              {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
-              {attention !== 'running' && (
-                <ModeIcon
-                  aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                  className="h-3.5 w-3.5 text-subtle"
+            {/* 内容整体右缩一点，标题文字不至于一直顶到右边的时间上。缩进不能写进行上的 pl-*：
+                行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
+                选中 / hover 的背景（画在行上）仍然铺满整行 */}
+            <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
+              {unread && (
+                <span
+                  role="img"
+                  aria-label={t('对话已完成，还没查看')}
+                  title={t('对话已完成，还没查看')}
+                  className="h-2 w-2 shrink-0 rounded-full bg-accent"
                 />
               )}
-              {attention === 'ask' ? (
-                // Agent 在等你确认操作或回答问题
-                <CircleAlert
-                  aria-label={t('需要你处理')}
-                  className="h-3.5 w-3.5 shrink-0 text-warning"
-                  strokeWidth={2.4}
-                />
-              ) : attention === 'running' || attention === 'failed' ? (
-                <TaskStatusIcon
-                  status={attention === 'running' ? 'running' : task.status}
-                  working={attention === 'running'}
-                  className="h-3.5 w-3.5"
-                />
-              ) : null}
-            </span>
-            {analysis && <AnalysisMark kind={task.analysis} />}
-            {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
-            <span
-              title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
-              className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
-              style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
-            >
-              {task.title}
-            </span>
-            {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
-            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
-              {shortTime(askedAt(task), timeOnly)}
+              <span className="flex shrink-0 items-center gap-1">
+                {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
+                {attention !== 'running' && (
+                  <ModeIcon
+                    aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                    className="h-3.5 w-3.5 text-subtle"
+                  />
+                )}
+                {attention === 'ask' ? (
+                  // Agent 在等你确认操作或回答问题
+                  <CircleAlert
+                    aria-label={t('需要你处理')}
+                    className="h-3.5 w-3.5 shrink-0 text-warning"
+                    strokeWidth={2.4}
+                  />
+                ) : attention === 'running' || attention === 'failed' ? (
+                  <TaskStatusIcon
+                    status={attention === 'running' ? 'running' : task.status}
+                    working={attention === 'running'}
+                    className="h-3.5 w-3.5"
+                  />
+                ) : null}
+              </span>
+              {analysis && <AnalysisMark kind={task.analysis} />}
+              {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+              <span
+                title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
+                style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+              >
+                {task.title}
+              </span>
+              {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+              {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
+              <span className="shrink-0 pl-1.5 text-[0.6875rem] text-subtle tabular-nums">
+                {shortTime(askedAt(task), timeOnly)}
+              </span>
             </span>
           </button>
         </ContextMenuTrigger>
