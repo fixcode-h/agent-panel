@@ -903,6 +903,25 @@ await runShard('工作流条件与失败', async (api) => {
   assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
+  // 非图片的文件不再拷进对话目录：只在 uploads 里有一份，交给 Agent 的是原来的绝对路径
+  const doc = await call('POST', '/uploads', {
+    name: '需求.txt',
+    mime: 'text/plain',
+    data: Buffer.from('需求内容').toString('base64'),
+  })
+  let tDoc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: L.id,
+    prompt: '按这个改',
+    attachments: [doc],
+  })
+  tDoc = await waitDone(tDoc.id)
+  const kDoc = calls().at(-1)
+  const docSection = kDoc.input.slice(kDoc.input.indexOf('## 附件'))
+  assert.ok(docSection.includes(`- 需求.txt：${doc.path}`), `交给 Agent 的是原来的绝对路径：${docSection}`)
+  assert.ok(!docSection.includes('attachments/需求.txt'), '不给相对路径')
+  assert.ok(!existsSync(path.join(projectDir, 'attachments', '需求.txt')), '文本文件不拷进对话目录')
   // 文件浏览：根信息不带全量文件，列一层才读一层，名称搜索能搜到还没展开的深层文件
   {
     mkdirSync(path.join(projectDir, 'src/api'), { recursive: true })

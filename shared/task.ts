@@ -20,7 +20,7 @@ import {
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
-import { attachChip, chipMarker, quoteBlock } from './composer.ts'
+import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
@@ -41,6 +41,17 @@ export function attachmentRef(a: Pick<Attachment, 'name' | 'mime' | 'quote'>) {
 }
 
 /**
+ * 附件列表里每一行的读法：图片拷进了对话目录、给的是相对路径；其它是本机绝对路径。
+ * 两种形态都有，按附件本身判（attachChip），不能只看路径是不是绝对：
+ * 项目对话里粘贴进来的项目内文件会被 placeAttachments 换成相对路径，但它不是图片。
+ */
+function attachReadNote(a: Pick<Attachment, 'name' | 'mime' | 'quote' | 'path'>) {
+  const image = attachChip(a) === 'image'
+  if (!isAbsolutePath(a.path)) return image ? '对话目录里的图片，相对路径' : '对话目录里的文件，相对路径'
+  return image ? '图片，本机绝对路径' : '本机绝对路径'
+}
+
+/**
  * 交给 Agent 的要求：文字里引用到的附件在原来的位置换成路径，引用卡片换成引用块；
  * 没引用到的引用放在最前面，文件仍然列在后面。
  * CLI 用自己的读文件工具去读（Claude Code、Codex 都能直接看图片）
@@ -53,6 +64,7 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
   for (const a of [...attachments].sort((x, y) => y.name.length - x.name.length)) {
     const ref = attachmentRef(a)
     if (!text.includes(ref)) continue
+    // 原位只换路径、不拼读法标注：用户句子里的路径保持原样，没被引用的附件在末尾列表里带标注（见 attachReadNote）
     text = text.split(ref).join(a.quote !== undefined ? `\n${quoteBlock(a.quote)}` : a.path)
     used.add(a)
   }
@@ -61,8 +73,8 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
   text = text.replace(/^\n+/, '')
   const rest = attachments.filter((a) => !used.has(a) && a.quote === undefined)
   if (!rest.length) return text
-  const list = rest.map((a) => `- ${a.name}：${a.path}`).join('\n')
-  return `${text}\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n${list}`
+  const list = rest.map((a) => `- ${a.name}：${a.path}（${attachReadNote(a)}）`).join('\n')
+  return `${text}\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n${list}`
 }
 
 /** 新建任务的初始数据 */

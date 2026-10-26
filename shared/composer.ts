@@ -96,10 +96,14 @@ export interface AttachLike {
 
 const IMAGE_NAME = /\.(png|jpe?g|gif|webp|bmp)$/i
 
+/** 本机绝对路径（Windows 的 `C:\…` 和不带盘符的 `/…`）；拷进对话目录的附件是相对路径。shared 会打进前端，不能 import node:path */
+export const isAbsolutePath = (p: string) => /^(?:[a-zA-Z]:[\\/]|[\\/])/.test(p)
+
 /** 附件是哪种卡片：带原文的是引用，图片按类型或扩展名认，其他都是文件 */
 export function attachChip(a: Pick<AttachLike, 'name' | 'mime' | 'quote'>): ChipKind {
   if (a.quote !== undefined) return 'quote'
-  return a.mime.startsWith('image/') || IMAGE_NAME.test(a.name) ? 'image' : 'file'
+  // mime 在 schema 里有默认值，但历史落盘数据没经过 zod 解析，可能没有这个字段
+  return a.mime?.startsWith('image/') || IMAGE_NAME.test(a.name) ? 'image' : 'file'
 }
 
 /** 卡片对应的附件：先按名字和类型找，旧数据类型对不上时只按名字 */
