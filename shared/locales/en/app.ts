@@ -273,6 +273,8 @@ export const EN_APP: Record<string, string> = {
   报告视图: 'Report view',
   报告内容: 'Report content',
   已复制报告: 'Report copied',
+  已停止生成: 'Generation stopped',
+  '生成中断，这是已经写出的部分': 'Generation was interrupted; this is what was written',
   '保存中…': 'Saving…',
   保存失败: 'Save failed',
 }

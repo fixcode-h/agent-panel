@@ -9,6 +9,7 @@ import {
   isToday,
   reportTitle,
   SUMMARY_LINE_MAX,
+  SUMMARY_STEPS_MAX,
   SUMMARY_TASKS_PER_PROJECT,
   summaryContext,
   summaryPrompt,
@@ -99,6 +100,26 @@ test('dayTask：只取今天的消息和节点，面板推的消息不算工作�
   assert.equal(d.at, today(10))
 })
 
+test('dayTask：普通对话里的「失败」「异常」不当作 Bug 修复，明确的问题才算', () => {
+  const add = makeTask({
+    title: '接口失败要不要加重试',
+    messages: [msg('user', '这个接口失败了要不要加重试', today(9))],
+  })
+  assert.equal(dayTask(add, '2026-10-23')?.bug, false)
+  const fix = makeTask({ messages: [msg('user', '登录报错了，修一下', today(9))] })
+  assert.equal(dayTask(fix, '2026-10-23')?.bug, true)
+})
+
+test('dayTask：节点多时保留最后几个（和结论同一口径）', () => {
+  const steps = Array.from({ length: SUMMARY_STEPS_MAX + 2 }, (_, i) => step(`s${i}`, `节点${i}`, today(9, i)))
+  const t = makeTask({ messages: [msg('user', '做事', today(9))], steps })
+  const d = dayTask(t, '2026-10-23')
+  assert.ok(d)
+  assert.equal(d.steps.length, SUMMARY_STEPS_MAX)
+  assert.equal(d.steps[0].title, '节点2')
+  assert.equal(d.steps.at(-1)!.title, `节点${SUMMARY_STEPS_MAX + 1}`)
+})
+
 test('dayTask：今天打开但没执行的任务不算', () => {
   const t = makeTask({ messages: [], steps: [] })
   assert.equal(dayTask(t, '2026-10-23'), null)
@@ -139,12 +160,17 @@ test('collectDayProjects：只保留有活动的项目，项目按传入顺序�
   )
 })
 
-test('collectDayProjects：每个项目最多交几条对话给 CLI', () => {
+test('collectDayProjects：每个项目最多交几条对话给 CLI，留下的是最新的', () => {
   const tasks = Array.from({ length: SUMMARY_TASKS_PER_PROJECT + 3 }, (_, i) =>
     makeTask({ id: `t${i}`, projectId: 'p1', messages: [msg('user', `第 ${i} 条`, today(9, i))] }),
   )
   const out = collectDayProjects(tasks, [{ id: 'p1', name: '项目' }], now)
   assert.equal(out[0].tasks.length, SUMMARY_TASKS_PER_PROJECT)
+  // 超过上限时丢掉最早的（t0…t2），留下最新的一批
+  assert.deepEqual(
+    out[0].tasks.map((t) => t.id),
+    Array.from({ length: SUMMARY_TASKS_PER_PROJECT }, (_, i) => `t${SUMMARY_TASKS_PER_PROJECT + 2 - i}`),
+  )
 })
 
 test('summaryContext：按项目分节，带上要求、结论、节点和改动文件', () => {
@@ -215,6 +241,17 @@ test('extractSummary：去掉包着报告的代码块和 CLI 的说明', () => {
   // 没有代码块时就是正文，原样留着一级标题
   assert.equal(extractSummary('# 工作总结\n\n今天没做事'), '# 工作总结\n\n今天没做事\n')
   assert.equal(extractSummary('   '), '')
+})
+
+test('extractSummary：没有标题的代码块也取里面的正文', () => {
+  assert.equal(extractSummary('```markdown\n- **做了**：修好登录报错\n```\n'), '- **做了**：修好登录报错\n')
+})
+
+test('extractSummary：正文后面跟着代码块时保留正文，不把代码块当成报告', () => {
+  const text = '## 面板\n- **做了**：修好登录报错\n\n```bash\nnpm run test\n```\n'
+  const out = extractSummary(text)
+  assert.ok(out.startsWith('## 面板'))
+  assert.ok(out.includes('npm run test'), '正文里的代码块原样留着')
 })
 
 test('reportTitle：取第一行标题，没有标题时用日期', () => {

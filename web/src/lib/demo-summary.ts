@@ -56,7 +56,7 @@ export function demoSummary(
   if (id === 'jobs' && sub) {
     const job = jobs.get(sub)
     if (!job) throw new Error('找不到这次生成，可能已过期')
-    if (tail === 'stop' && job.status === 'running') Object.assign(job, { status: 'failed', error: '已停止' })
+    if (tail === 'stop' && job.status === 'running') Object.assign(job, { status: 'stopped' })
     return job
   }
   // /summary/:id：保存编辑后的正文

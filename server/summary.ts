@@ -13,6 +13,7 @@ import type { Project, Task } from '../shared/schema.ts'
 import {
   collectDayProjects,
   extractSummary,
+  isToday,
   SUMMARY_KEEP,
   SummaryRecord,
   SummaryRequest,
@@ -39,8 +40,15 @@ type Reports = {
   remove(id: string): Promise<boolean>
 }
 
+/** 任务里今天有活动的时间字段：用它先筛出要读完整对话的任务，不用把每个任务都读一遍 */
+const activeToday = (task: Task, day: string) => {
+  if (isToday(task.updatedAt, day) || isToday(task.turnDoneAt, day) || isToday(task.runStartedAt, day)) return true
+  return task.messages.some((m) => isToday(m.at, day))
+}
+
 export function summaryApi(deps: {
-  tasks: { list(): Promise<Task[]> }
+  /** 列表只带用户消息（摘要用）：要 Agent 的回复得按 id 再取完整任务，见下面的 run() */
+  tasks: { list(): Promise<Task[]>; get(id: string): Promise<Task | null> }
   projects: { list(): Promise<Project[]> }
   reports: Reports
 }) {
@@ -52,13 +60,17 @@ export function summaryApi(deps: {
     for (const [id, j] of jobs) if (j.status !== 'running' && Date.now() - j.at > 3600_000) jobs.delete(id)
   }, 600_000).unref()
 
-  /** 生成成功后存一份，并把超出保留份数的旧报告删掉 */
+  /** 生成成功后存一份；裁剪旧报告失败只记日志，不影响「已保存」的结论 */
   async function save(job: SummaryJob, body: Omit<z.infer<typeof SummaryReport>, 'md'> & { md: string }) {
     const record = await deps.reports.create(body)
     job.reportId = record.id
-    job.md = body.md
-    const all = (await deps.reports.list()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-    for (const old of all.slice(SUMMARY_KEEP)) await deps.reports.remove(old.id)
+    try {
+      const all = (await deps.reports.list()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      for (const old of all.slice(SUMMARY_KEEP)) await deps.reports.remove(old.id)
+    } catch (e) {
+      // 报告已经写进去了，清理超量的旧报告失败不能让页面以为没保存上
+      log.warn('summary', '清理旧的工作总结报告失败', (e as Error).message)
+    }
     log.info('summary', `存了一份工作总结报告`, { id: record.id, day: body.day, projects: body.projectIds.length })
     return record
   }
@@ -78,8 +90,13 @@ export function summaryApi(deps: {
     if (!chosen.length) return failed(t('项目不存在'))
     const now = new Date()
     const { day } = todayWindow(now)
+    // 列表里的任务只带用户消息（server/task-store.ts 的 head），Agent 的结论不在里面。
+    // 先按时间字段筛出今天有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
+    const ids = new Set(chosen.map((p) => p.id))
+    const candidates = (await deps.tasks.list()).filter((t) => ids.has(t.projectId) && activeToday(t, day))
+    const full = await Promise.all(candidates.map((t) => deps.tasks.get(t.id)))
     const projects = collectDayProjects(
-      await deps.tasks.list(),
+      full.filter((t): t is Task => !!t),
       chosen.map((p) => ({ id: p.id, name: p.name })),
       now,
     )
@@ -92,6 +109,11 @@ export function summaryApi(deps: {
     let text = ''
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
+    /** 已经写出来的部分交给页面：失败 / 停止时至少能看、能复制，不用重新跑一遍 */
+    const keepPartial = () => {
+      const partial = extractSummary(text)
+      if (partial.trim()) job.md = partial
+    }
     const asks = askSession(`summary:${job.id}`, () => job.abort.abort())
     const r = await invokeCli({
       askUser: asks.askUser,
@@ -120,8 +142,15 @@ export function summaryApi(deps: {
         job.outChars = text.length
       },
     }).finally(asks.done)
-    if (r.killed === 'stopped') return failed(t('已停止'))
-    if (r.killed === 'timeout') return failed(t('超过 {n} 分钟没有完成，已停止', { n: TIMEOUT / 60_000 }))
+    if (r.killed === 'stopped') {
+      job.status = 'stopped'
+      keepPartial()
+      return
+    }
+    if (r.killed === 'timeout') {
+      keepPartial()
+      return failed(t('超过 {n} 分钟没有完成，已停止', { n: TIMEOUT / 60_000 }))
+    }
     if (r.spawnError)
       return failed(
         t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
@@ -130,7 +159,8 @@ export function summaryApi(deps: {
           hint: def.installHint,
         }),
       )
-    if (result ? !result.ok : r.code !== 0)
+    if (result ? !result.ok : r.code !== 0) {
+      keepPartial()
       return failed(
         t('{cli} 执行失败：{detail}', {
           cli: def.name,
@@ -139,8 +169,11 @@ export function summaryApi(deps: {
             t('没有更多信息'),
         }),
       )
+    }
     const md = extractSummary(text)
     if (!md.trim()) return failed(t('{cli} 没有给出报告内容，可以再试一次', { cli: def.name }))
+    // 先把正文交给页面：保存失败时用户至少能看到、能复制这份报告，不用重新跑一遍
+    job.md = md
     try {
       await save(job, {
         day,

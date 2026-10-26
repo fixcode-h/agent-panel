@@ -18,7 +18,11 @@ const reports = createCollection<SummaryReport, ReportRecord>('summaries.json', 
 const app = new Hono()
 app.route(
   '/summary',
-  summaryApi({ tasks: { list: async () => [] }, projects: { list: async () => [] }, reports }).routes,
+  summaryApi({
+    tasks: { list: async () => [], get: async () => null },
+    projects: { list: async () => [] },
+    reports,
+  }).routes,
 )
 
 const json = (method: string, body?: unknown) => ({

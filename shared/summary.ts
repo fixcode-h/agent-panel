@@ -24,9 +24,10 @@ export const SUMMARY_FILES_MAX = 8
 
 /**
  * 命中这些词就认为这条对话可能在修 Bug：提示词里要求写清问题在哪、怎么修的。
- * 只是给 CLI 的线索，最后由它按内容判断
+ * 只收明确指向问题修复的词——「错误」「异常」「失败」在日常需求里太常见（例如「接口失败要不要加重试」），
+ * 会把普通对话也标成 Bug 修复。只是给 CLI 的线索，最后由它按内容判断
  */
-export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '异常', '崩溃', '错误', '失败', 'fix']
+export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '崩溃', 'fix']
 
 /** 生成报告：选中的项目、用哪个 CLI / 模型 / 思考强度跑 */
 export const SummaryRequest = z.object({
@@ -64,7 +65,8 @@ export type SummaryRecord = z.infer<typeof SummaryRecord>
 
 export interface SummaryJob {
   id: string
-  status: 'running' | 'done' | 'failed'
+  /** stopped：用户主动停了（不是错误），页面上按普通提示显示 */
+  status: 'running' | 'done' | 'failed' | 'stopped'
   projectIds: string[]
   /** 生成好的 Markdown */
   md: string
@@ -162,7 +164,8 @@ export function dayTask(task: Task, day: string): DayTask | null {
   }
   const steps = task.steps
     .filter((s) => isToday(s.startedAt, day) || isToday(s.endedAt, day))
-    .slice(0, SUMMARY_STEPS_MAX)
+    // 和 outcomes 一样只留最后几个：报告要说的是最近做完的节点
+    .slice(-SUMMARY_STEPS_MAX)
     .map((s) => ({ title: clip(s.title, 40), status: s.status }))
   for (const s of task.steps) touch(s.endedAt || s.startedAt)
   for (const turn of task.turns) touch(turn.endedAt || turn.startedAt)
@@ -195,7 +198,7 @@ export function collectDayProjects(tasks: Task[], projects: SummaryProjectRef[],
     const d = dayTask(task, day)
     if (!d) continue
     const list = byProject.get(task.projectId) ?? []
-    if (list.length < SUMMARY_TASKS_PER_PROJECT) list.push(d)
+    list.push(d)
     byProject.set(task.projectId, list)
   }
   return projects
@@ -203,8 +206,11 @@ export function collectDayProjects(tasks: Task[], projects: SummaryProjectRef[],
     .map((p) => ({
       projectId: p.id,
       projectName: p.name,
-      // 新的对话在前：报告里先说最近做的
-      tasks: byProject.get(p.id)!.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)),
+      // 先按最近执行排序再截断：超过上限时留下的是今天最新的对话，不是最早创建的
+      tasks: byProject
+        .get(p.id)!
+        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+        .slice(0, SUMMARY_TASKS_PER_PROJECT),
     }))
 }
 
@@ -240,7 +246,7 @@ export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
     '- 只根据下面给出的「今天的执行记录」写，不要分析更早的历史，也不要编造记录里没有的事。',
     '- 报告用 Markdown，每个项目一个二级标题（`## 项目名`），项目下面用 `-` 分条，每条一句话、不超过 40 字，不贴代码、不复述大段过程。',
     '- 每个项目按这几条写（没有内容的条目整条省略）：`- **做了**：今天完成的事`、`- **关键决策**：定下的做法或取舍`、`- **Bug**：问题在哪（模块或现象），怎么修的`、`- **遗留**：还没做完或要注意的。',
-    '- 只有标了「可能是 Bug 修复」的对话才写 `Bug` 一条，要写清问题在哪个模块（或什么现象）、用什么办法修好的，同样一两句话。',
+    '- 只有标了「可能是 Bug 修复」的对话才写 `Bug` 一条，要写清问题在哪个模块（或什么现象）、用什么办法修好的，同样一两句话。标了线索的记录也要按内容判断：看不出明确的问题和修法就不要写这一条。',
     '- 今天没有执行记录的项目不要写；今天的记录里全是占位或空白时，只写一行「今天没有执行记录」。',
     '- 直接输出报告正文：第一行就是项目标题，不要开场白、不要总结段落、不要用代码块包起来。',
     '',
@@ -256,9 +262,11 @@ export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
 export function extractSummary(text: string): string {
   const raw = text.trim()
   if (!raw) return ''
+  // 提示词要求直接给正文；真被 ``` 包起来时（有些 CLI 的习惯）就取这一块，不管里面有没有标题。
+  // 但代码块前面已经有 Markdown 标题时，说明报告正文就在前面，块里是附带的命令或报错，用原文
   const fenced = /```(?:markdown|md)?\s*\n([\s\S]*?)\n?```/i.exec(raw)
-  // 代码块里的内容像报告（有标题或分条）时用它；否则当作 CLI 直接给的就是正文
-  if (fenced && /^#{1,3} /m.test(fenced[1])) return fenced[1].trim() + '\n'
+  const before = fenced ? raw.slice(0, fenced.index) : ''
+  if (fenced && fenced[1].trim() && !/^#{1,6} /m.test(before)) return fenced[1].trim() + '\n'
   return raw + '\n'
 }
 
