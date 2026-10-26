@@ -58,6 +58,10 @@
   2026-10-26 起 `LibraryFile` 有三个字段：`content`（主文件内容）、`files`（旧字段，主文件以外的文件路径扁平列表）、`tree?`（`LibraryTree`＝`{ entries, truncated? }`，**目录和文件混在一张表里**，`LibraryEntry` 是 `{ path, type: 'file' | 'dir', size? }`，路径统一 `/`，同层目录在前、父目录一定排在子项前面）。`files` 必须等于 `tree.entries` 里 `type === 'file'` 的 path（同一个数据源，两个字段不能打架）；命令没有附带目录，`tree` 为 `undefined`。回归：`server/library.test.ts`、`server/project-skills.test.ts`。
   同一文件也是**附件路径安全规则的唯一出处**：`libraryEntryPath` 逐段校验相对路径（挡 `..`、`.`、空段、绝对路径、盘符、`\0` 和 Windows 非法字符，反斜杠统一当 `/`），服务端在 `server/library.ts` 的 `entryOf` 里再补一道 `realpath` 落在 Skill 目录内的校验（字符串层拦不住软链接）。上限常量 `LIBRARY_FILE_MAX_BYTES`（1 MB）、`LIBRARY_TREE_MAX_ENTRIES`（1000，目录也算）、`LIBRARY_DIR_MAX_DELETE_ENTRIES`（目录递归删除前的条目上限）也在这里，服务端和前端都从这里引用，不在别处写数值。文件树排除分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（只对目录生效）、`LIBRARY_TREE_EXCLUDE_FILES`（只对文件生效）——不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`，那份清单会把技能里真叫 `logs` / `build` 的内容目录一起抹掉。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
+  **项目设置对进行中的对话生效**：「这一轮用哪份步骤」只由 `currentTestSteps(snapshot, project)` 决定：
+  项目存在就用项目当前的 `testSteps`（策略位、命令原文、超时、目录都算），项目读不到才用任务快照（读盘失败先记一条 `log.warn` 再兜底，不静默当成项目不存在）；
+  项目里把步骤清空就是不跑，不退回快照。服务端在每个判断点（`parentRunRole`、`testStepsOf`、engine host 的 `verify.steps`）
+  现取一次，不在保存设置时去改写跑着的对话（口径是「调用前先读配置」，见 [docs/agent-test-steps.md](../../agent-test-steps.md)）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
   「禁止子对话执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
   但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，勾了这项不会被跳过；

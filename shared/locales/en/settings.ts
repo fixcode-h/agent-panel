@@ -29,8 +29,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'These steps only fill the form; they take effect after you save the project settings',
   '已填进表单，确认保存后生效': 'Filled into the form; confirm and save to apply',
   没有给出可用的值: 'No usable values were given',
-  '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。':
-    'The test role runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the role finds commands itself and suggests adding them.',
+  '测试角色按这些步骤执行构建、测试和检查。改了这里，进行中的对话下一轮、下一次子对话合并就按新步骤执行（命令、开关都是现读的），不用等新建对话；没配置时角色会自己找命令并建议你补上。':
+    'The test role runs builds, tests and checks following these steps. Edits here apply to the next run of a conversation already under way, and to the next child merge (commands and toggles are read live) — no need to start a new conversation. Without any steps the role finds commands itself and suggests adding them.',
   '还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。':
     'No test steps yet. "AI initialize project" recommends a set based on the project scripts.',
   '步骤名，例如「单元测试」': 'Step name, e.g. "Unit tests"',

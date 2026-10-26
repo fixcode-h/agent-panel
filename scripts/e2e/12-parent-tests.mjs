@@ -7,6 +7,7 @@
  * - 步骤失败时子对话不被标完成、独立分支保留，报错里写明「来自子对话「标题」（id）」；
  * - 再合一次时面板把步骤重跑一遍（tries 累加，不因为跑过一次就跳过）；
  * - 子对话自己跑过的项目步骤也记耗时（by='self'），和父对话跑的那条在同一份记录里；
+ * - 已经开始的对话也按项目当前设置：任务创建时没勾，之后在项目设置里勾上，子对话下一次合并就转给父对话；
  * - GET /fs/vcs 能把 Git 和非 Git 目录分开（设置页据此置灰，只对 Git 项目生效）。
  *
  * 和其他分片并行跑：每个分片自己有临时数据目录、假 CLI 日志、端口和服务（见 harness.mjs）。
@@ -23,7 +24,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const { id: _id, createdAt: _c, updatedAt: _u, ...projectInput } = project
 
   // 一条要父对话跑的步骤 + 一条子对话自己跑的步骤：命令都真跑，耗时是后台命令的真实起止时间
-  const parentStep = (command) => ({
+  const parentStep = (command, runInParent = true) => ({
     id: 'e2e-parent',
     name: '端到端测试',
     command,
@@ -35,7 +36,7 @@ await runShard('父对话执行测试步骤', async (api) => {
     note: '',
     enabled: true,
     merge: false,
-    runInParent: true,
+    runInParent,
     quick: false,
   })
   const selfStep = {
@@ -103,6 +104,32 @@ await runShard('父对话执行测试步骤', async (api) => {
   assert.ok(passed, '父对话测试通过的结果回传给了子对话')
   assert.match(passed.text, /- 端到端测试：父对话跑，通过，/) // 收尾总结要照抄的耗时行
   step('通过：子对话合并后不自己跑，父对话跑完把结果和真实耗时回传，子对话才收尾')
+
+  // ---- 改了项目设置，进行中的对话也生效：任务创建时没勾，合并之前才在设置里勾上 ----
+  // 用户报的现象：项目设置里勾了「禁止子对话执行」，已经开始的子对话合并时还是自己跑 e2e
+  // （任务里是创建时的快照）。现在判断时现读项目设置，这一次合并就该转给父对话。
+  await putSteps([parentStep('node -e "setTimeout(()=>{},200)"', false)])
+  const parent3 = await newParent('父对话（勾选之前创建的）')
+  const kid3 = await newKid(parent3.id, 'COMMIT BEGIN_EDIT 先改文件，合并等一会儿')
+  await dropRootOutput(kid3.id)
+  // 子对话已经在跑，这时才勾上、并把命令换掉：快照里仍是创建时那份（没勾、旧命令）
+  await putSteps([parentStep('node -e "setTimeout(()=>{},250)"', true)])
+  await call('POST', `/tasks/${kid3.id}/messages`, { text: 'SUBMIT_MERGE 现在合并' })
+  const live = await waitTask(kid3.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
+  const liveRuns = live.testRuns.filter((r) => r.by === 'parent')
+  assert.equal(
+    liveRuns.length,
+    1,
+    '项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照',
+  )
+  assert.equal(liveRuns[0].stepName, '端到端测试')
+  assert.ok(liveRuns[0].ok, '父对话真的跑通了这条步骤')
+  // 内容也现读：子对话第二轮拿到的提示词里是改过的命令，不是快照里那条
+  assert.ok(
+    calls().some((c) => (c.input ?? '').includes('setTimeout(()=>{},250)')),
+    '进行中的对话下一轮按项目最新的命令拼提示词',
+  )
+  step('改项目设置立即生效：快照里没勾，合并时按项目当前设置转给父对话')
 
   // ---- 失败：报错写明来自哪个子对话，不标完成、分支保留，再合并时重跑 ----
   await putSteps([parentStep('node -e "process.exit(3)"')])
