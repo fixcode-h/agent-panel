@@ -491,7 +491,7 @@ export const EN_SERVER: Record<string, string> = {
     "Panel tools didn't connect ({error}). This turn can't spawn sub-tasks, create sub-conversations or ask you questions",
   原因未知: 'unknown reason',
   提示: 'Notice',
-  '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
+  '这个 Agent 不支持扩展包': "This agent doesn't support packages",
   不支持这个操作: 'Unsupported action',
   先填包的来源: 'Enter a package source first',
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',

@@ -139,7 +139,7 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
  * 只给还在跑 / 还在等你处理的（见 convGone）：停下、做完、失败的不提这句
  */
 export function childClosedHint(c: ChildSummary) {
-  return convGone(c) === 'hint' ? t('CLI 进程已回收，继续会重新拉起') : ''
+  return convGone(c) === 'hint' ? t('Agent 进程已回收，继续会重新拉起') : ''
 }
 
 /** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致 */

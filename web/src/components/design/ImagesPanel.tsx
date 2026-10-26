@@ -296,7 +296,7 @@ export function ImageDetails({
               title: t('生成图片失败：{name}', { name: image.name }),
               error: image.error,
               context:
-                '这是 Agent 面板 UI 设计里的生成图片（按设置里「生成图片的方式」调用 CLI、API 或本机 ComfyUI）。',
+                '这是 Agent 面板 UI 设计里的生成图片（按设置里「生成图片的方式」调用 Agent、API 或本机 ComfyUI）。',
             }}
           />
         </div>

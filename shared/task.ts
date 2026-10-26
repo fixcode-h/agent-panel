@@ -1242,7 +1242,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'parent':
       return t('父对话结束时一起结束')
     case 'switch':
-      return t('换 CLI / 模型时中断')
+      return t('换 Agent / 模型时中断')
     case 'archive':
       return t('归档时结束')
     case 'restart':
@@ -1256,7 +1256,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'finish':
       return t('做完后收尾')
     case 'stalled':
-      return t('CLI 没有响应，面板重启了它')
+      return t('Agent 没有响应，面板重启了它')
     default:
       return t('已暂停')
   }
@@ -1269,11 +1269,11 @@ export function stopReasonText(reason: StopReason | undefined): string {
 export function deliveryText(how: DeliveryHow | undefined): string {
   switch (how) {
     case 'wait':
-      return t('已交给 CLI，这一轮接着处理')
+      return t('已交给 Agent，这一轮接着处理')
     case 'steer':
       return t('已插进当前这一轮')
     case 'notes':
-      return t('已交给正在执行的 CLI，它会在这一轮里读取')
+      return t('已交给正在执行的 Agent，它会在这一轮里读取')
     case 'next-node':
       return t('已交给工作流里下一个开始的节点')
     case 'held':
@@ -1283,7 +1283,7 @@ export function deliveryText(how: DeliveryHow | undefined): string {
     case 'next':
       return t('这一轮已结束，按新的一轮处理')
     case 'restart':
-      return t('CLI 没有响应，已重启并按新的一轮处理')
+      return t('Agent 没有响应，已重启并按新的一轮处理')
     default:
       return ''
   }

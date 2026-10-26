@@ -342,7 +342,7 @@ export function UsageSection({
                 </span>
                 {total.costUsd > 0 && (
                   <span className="mt-1 block text-subtle">
-                    {t('CLI 上报的费用（{cost}）只作对照，不参与合计。', {
+                    {t('Agent 上报的费用（{cost}）只作对照，不参与合计。', {
                       cost: formatMoney(total.costUsd, 'USD'),
                     })}
                   </span>
