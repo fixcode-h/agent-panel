@@ -4,7 +4,14 @@ import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts
 import { newTask } from '../shared/task.ts'
 import { parseVerdict, runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { getLang, resolveLang, setLang } from '../shared/i18n.ts'
-import { VERDICT_LINE, promptLangRules, promptLangWord } from '../shared/prompt-lang.ts'
+import {
+  PROMPT_LANG_ENV,
+  VERDICT_LINE,
+  promptLangModSource,
+  promptLangReminder,
+  promptLangRules,
+  promptLangWord,
+} from '../shared/prompt-lang.ts'
 import { buildAssistPrompt } from '../shared/assist.ts'
 import { docOptimizePrompt } from '../shared/docs.ts'
 
@@ -174,6 +181,55 @@ test('对话提示词同样注入：切换设置后下一次执行就是新语�
   await withLang('zh', async () => {
     assert.match(await chatPrompt(), /## 回复语言/)
   })
+})
+
+test('子任务提示词：子对话派出的子任务也带回复语言规则', async () => {
+  await withLang('zh', async () => {
+    const log: AgentCall[] = []
+    const w = workflow()
+    const task = {
+      ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't'),
+      id: 't',
+    } as Task
+    const base = host(task, log, [agent('w', '开发')])
+    const h: EngineHost = {
+      ...base,
+      runAgent: async (call) => {
+        log.push(call)
+        // 节点里派一个子任务：子任务的提示词是另一条拼装路径
+        if (!call.step?.slot && call.orch) {
+          const ids = call.orch.spawn([{ title: '子任务', instructions: '查一下' }]).ids
+          await call.orch.wait(ids, 1000)
+        }
+        return { ok: true, text: '做完了' }
+      },
+    }
+    await runEngineTurn(h)
+    const sub = log.find((c) => c.step?.slot === 'sub')
+    assert.ok(sub, '子任务应该真的跑了一次')
+    assert.match(sub!.prompt, /## 回复语言\n界面语言设成了中文/)
+  })
+})
+
+test('末尾提醒：中英文都要求继续用这种语言思考和回复，代码命令不翻译', () => {
+  assert.match(promptLangReminder('zh'), /回复正文和思考过程继续用中文/)
+  assert.match(promptLangReminder('zh'), /代码、命令、日志和报错原文不翻译/)
+  assert.match(promptLangReminder('en'), /both your reply and your reasoning \/ thinking in English/i)
+  assert.match(promptLangReminder('en'), /error messages exactly as they are/i)
+})
+
+test('语言 mod：生成的源码可执行，按环境变量取规则（Command Code 靠它进系统提示词）', async () => {
+  const mod = await import(`data:text/javascript,${encodeURIComponent(promptLangModSource())}`)
+  let hook: (() => string) | undefined
+  mod.default({ hooks: (h: { appendSystemPrompt: () => string }) => (hook = h.appendSystemPrompt) })
+  assert.ok(hook)
+  process.env[PROMPT_LANG_ENV] = 'zh'
+  assert.match(hook!(), /## 回复语言/)
+  assert.match(hook!(), /思考过程（reasoning \/ thinking）都用中文/)
+  process.env[PROMPT_LANG_ENV] = 'en'
+  assert.match(hook!(), /## Reply language/)
+  delete process.env[PROMPT_LANG_ENV]
+  assert.equal(hook!(), '', '没有语言时不追加，避免把空规则塞进系统提示词')
 })
 
 test('配置助手和说明文件优化的提示词：语言规则不抢占第一句（fake-cli 按开头识别流程）', async () => {

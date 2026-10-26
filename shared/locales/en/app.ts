@@ -170,8 +170,8 @@ export const EN_APP: Record<string, string> = {
   '第一次需要推送时问一次（推荐）': 'Ask once when a push is first needed (recommended)',
   允许直接推送: 'Allow pushes directly',
   '不推送，只做本地提交': 'Never push; local commits only',
-  '本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。':
-    'Local commits are unaffected. Pushes, PRs and P4 submits follow this setting and the choice made in each conversation.',
+  '只管 Git 推送，本地提交不受影响。允许直接推送：对话做完、本地提交后直接推到跟踪的远端分支；问一次：那时先问你；不推送：面板直接拦下 git push。创建 PR、P4 submit 仍要你在对话里要求。':
+    'Git pushes only; local commits are unaffected. Allow: once a conversation finishes and commits locally, it pushes to the tracked remote branch. Ask once: it asks you then. Never: the panel blocks git push. PRs and P4 submits still need you to ask in the conversation.',
   是: 'Yes',
   否: 'No',
   删除项目: 'Delete project',

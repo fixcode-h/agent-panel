@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { BadgeCheck, Check, ImagePlus, Loader2, Trash2, Undo2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { BadgeCheck, Check, ImagePlus, Loader2, Send, Trash2, Undo2 } from 'lucide-react'
+import { toast } from '@/lib/toast'
 import {
   hasMask,
   maskBox,
+  sendsMaskOnly,
   type Annotation,
   type AnnotationKind,
   type ConceptImage,
@@ -28,6 +29,11 @@ export function ConceptBoard({
   onApprove,
   onRemove,
   onUpload,
+  onSendMarks,
+  /** 这次发送会走「只重绘蒙版区域」：只发蒙版这一块，其余标注会留在图上 */
+  inpaint,
+  /** 当前生成方式支持局部重绘（只有本机 ComfyUI）：不支持时勾了也只整张重画，按钮不能写成「按蒙版重绘」 */
+  inpaintSupported,
   progress,
   busy,
 }: {
@@ -43,6 +49,12 @@ export function ConceptBoard({
   onApprove: (id: string) => void
   onRemove: (id: string) => void
   onUpload: (data: string) => void
+  /** 把这张图上的标注直接发给 AI（不用再到对话框里手动点发送） */
+  onSendMarks?: () => void
+  /** 对话侧勾选了「只重绘蒙版区域」：这次只发蒙版那一块 */
+  inpaint?: boolean
+  /** 当前生图方式能不能真做局部重绘；不能时按钮文案不改成「按蒙版重绘」 */
+  inpaintSupported?: boolean
   /** 正在出原画的进度 */
   progress?: ConceptJob
   /** AI 正在处理：不能确认模板 */
@@ -94,9 +106,11 @@ export function ConceptBoard({
   const pending = progress ? Math.max(0, progress.want - progress.got) : 0
   const rounds = [...new Set(concept.images.map((i) => i.round))]
   const approved = !!cur && concept.approved === cur.id
+  // 三个条件用 shared 的同一个函数判：勾了、生图方式真能局部重绘、真有蒙版（测试里也是这份口径）
+  const maskOnly = sendsMaskOnly({ inpaint: !!inpaint, inpaintSupported: !!inpaintSupported, marks: mine })
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-[#18181a] text-white/80">
+    <div data-concept-board className="absolute inset-0 z-20 flex flex-col bg-[#18181a] text-white/80">
       <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-[0.75rem]">
         <span className="font-medium text-white">{t('原画')}</span>
         {cur && (
@@ -166,9 +180,10 @@ export function ConceptBoard({
           ))}
       </div>
       {cur && (
-        <div className="flex shrink-0 justify-center px-3 pb-2">
+        <div className="flex shrink-0 items-start justify-center px-3 pb-2">
           <AnnotationToolbar
             tools={['select', 'rect', 'arrow', 'pen', 'pin', 'mask']}
+            labels
             tool={tool}
             onTool={(x) => {
               setTool(x)
@@ -274,15 +289,31 @@ export function ConceptBoard({
           </div>
         )}
       </div>
-      <p className="pointer-events-none shrink-0 px-3 pb-1 text-center text-[0.71875rem] text-white/40">
-        {tool === 'mask'
-          ? canUndoMask
-            ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
-            : t('用笔刷涂出要重绘的区域，涂错了用橡皮擦或撤销')
-          : mine.length
-            ? t('在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改')
-            : t('挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」')}
-      </p>
+      {/* 标注完直接在这里发（在底部提示行右侧）：用户不一定知道要去右边对话框点发送 */}
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1">
+        <p className="text-center text-[0.71875rem] text-white/40">
+          {tool === 'mask'
+            ? canUndoMask
+              ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
+              : t('用笔刷涂出要重绘的区域，涂错了用橡皮擦或撤销')
+            : t('标注 → 发送给 AI → 出一张改过的原画，可以接着标；满意了点「用这张做模板」')}
+        </p>
+        {mine.length > 0 && onSendMarks && (
+          <button
+            onClick={onSendMarks}
+            disabled={busy}
+            title={
+              maskOnly
+                ? t('对话侧勾了「只重绘蒙版区域」：只把蒙版这一块发给 AI，其余标注会留在图上')
+                : t('把这张图上的 {n} 处标注发给 AI，让它按标注改这张原画', { n: mine.length })
+            }
+            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 text-[0.75rem] font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50"
+          >
+            <Send className="h-3.5 w-3.5" />
+            {maskOnly ? t('按蒙版重绘（1）') : t('发送标注给 AI（{n}）', { n: mine.length })}
+          </button>
+        )}
+      </div>
       <div className="flex shrink-0 gap-3 overflow-x-auto border-t border-white/10 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">

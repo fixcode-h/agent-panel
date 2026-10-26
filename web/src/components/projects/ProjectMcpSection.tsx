@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   CircleAlert,
   CircleCheck,
@@ -132,6 +132,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
       context: context.join('\n\n'),
       cwd: project.path,
       topic: 'project-mcp',
+      home: { kind: 'project', projectId: project.id },
       // 修完可能是改了文件，也可能是装了包：重新读一遍列表
       onDone: load,
     })

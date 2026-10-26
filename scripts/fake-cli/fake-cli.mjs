@@ -41,10 +41,28 @@ if (isLogin && process.env.FAKE_AUTH) {
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content))
   }
+  const kind = process.env.FAKE_AUTH
+  // 已经登录着的时候再登录：Command Code 只说一句 Already logged in 就退出（退出码 0），凭据文件一个字节都不改，
+  // 输出还带 SGR 转义（真 CLI 是这么打的）。FAKE_AUTH_ALREADY 打开时模拟这条路，用来测面板的登录判定和 ANSI 剥离
+  const already =
+    process.env.FAKE_AUTH_ALREADY && kind === 'commandcode' && existsSync(path.join(home, '.commandcode', 'auth.json'))
+  if (already) {
+    process.stdout.write('\n✓ Authenticated\n\n')
+    process.stdout.write(
+      '\u001b[32m✓\u001b[39m \u001b[1mAlready logged in\u001b[22m，用户 \u001b[36mfake-user\u001b[39m\n\n',
+    )
+    process.stdout.write('\u001b[2mRun\u001b[22m \u001b[36mcmdc\u001b[39m \u001b[2mto get started.\u001b[22m\n\n')
+    process.exit(0)
+  }
+
+  // 用户关掉了浏览器里的授权页：CLI 什么都没写，就以退出码 0 退出了（面板要报「没有找到登录凭据」）
+  if (process.env.FAKE_AUTH_NO_CREDENTIALS) {
+    process.stderr.write('Login cancelled, nothing saved.\n')
+    process.exit(0)
+  }
   process.stderr.write('Starting local login server on http://localhost:1455\n')
   process.stderr.write(`Open this URL in your browser: https://example.com/oauth/authorize?n=${n}\n`)
   await new Promise((r) => setTimeout(r, 300))
-  const kind = process.env.FAKE_AUTH
   if (kind === 'codex') {
     const jwt = `x.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.y`
     put(path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'auth.json'), { tokens: { id_token: jwt, n } })
@@ -85,6 +103,59 @@ let developer = ''
 let policy = {}
 // 插话收到的内容；Codex 的 turn/steer、Claude Code 执行中写进来的 user 消息
 const steered = []
+// 本轮已经处理过的收尾请求：同一个【收尾请求】既在本轮 input 里、又当插话进来时只合一次
+let tookWrap = new Set()
+// 本轮办完的、带【收尾请求】的插话条数：HOLD_STEER 用它判断「这一轮真的等到收尾请求的插话、并且办完了」。
+// 只数带收尾请求的：别的插话（子对话状态上报、peer 消息）先到时，不能把这一轮提前放掉，
+// 否则收尾请求又退化成新一轮 input，同步点就不准了。
+// 必须随轮清空（见 startTurn）：steered 和它都是跨轮累积的，保活进程第二轮再带 HOLD_STEER 时
+// 不清零就会「不等直接结束」，又变回这个场景要防的假同步
+let steerCount = 0
+/** 新一轮开始：上一轮处理过的收尾请求、插话计数都不能带到这一轮（同一子对话可以再次请收尾） */
+function startTurn(text) {
+  input = text
+  tookWrap.clear()
+  steerCount = 0
+}
+/**
+ * 收到插话：记下来给用例检查，并像真的 CLI 一样马上处理里面的【收尾请求】。
+ * 父对话正忙时子对话的 submit_merge 是以插话进来的（server/tasks.ts 的 noteParent → steerTask）：
+ * 以前只 push 不处理，父对话那一轮跑完后也不会调用 finish_child，子对话一直停在「已请父对话收尾」，
+ * e2e 就停在这一步等到超时（CI 上 10 个分片并行时父对话正好在跑，必现）。
+ */
+async function takeSteer(text) {
+  steered.push(text)
+  // 等到插话的那一刻就记下来：这一轮随后会被收口停掉，循环结束之后的记录来不及写（用例会看不到）。
+  // kid 是插话里带的子对话 id，用例据此确认记的是本次那一轮
+  if (process.env.FAKE_CLI_LOG && input.includes('HOLD_STEER'))
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.hold',
+      JSON.stringify({ kind, held: true, kid: wrapRequestIds(text)[0] ?? '', at: Date.now() }) + '\n',
+    )
+  for (const id of wrapRequestIds(text)) {
+    if (tookWrap.has(id)) continue
+    tookWrap.add(id)
+    const got = await panelCall('finish_child', { id })
+    // 失败时不留标记：本轮 input 里同一个收尾请求还有第二次机会（finish_child 会因「子对话又开始执行了」
+    // 这类原因被拒，插话先到、input 后到时正好靠这次重试合上）
+    if (got?.isError) tookWrap.delete(id)
+    // via 标出这个请求是从哪条路来的：插话（父对话正忙）还是本轮 input。
+    // 回归用例要断言“确实是插话那条路办的”，否则父对话那一轮先结束时用例会假通过。
+    // at 记落盘时刻：用例失败时据此判断是「请求根本没走插话」还是「记录还没写到」
+    // FAKE_FINISH_LOG_DELAY_MS（默认 0）：对照实验用，把落盘拖后以放大「服务端已置位 resolved、记录还没写」的窗口，
+    // 用来验证用例等的到底是这条记录本身
+    const finishDelayMs = Number(process.env.FAKE_FINISH_LOG_DELAY_MS) || 0
+    if (finishDelayMs > 0) await new Promise((r) => setTimeout(r, finishDelayMs))
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.finish',
+        JSON.stringify({ kind, id, via: 'steer', got, at: Date.now() }) + '\n',
+      )
+  }
+  // 收尾请求办完（finish_child 返回、.finish 记下）才算等到：收到就放掉的话，HOLD_STEER 那一轮
+  // 最多 1 秒后就结束、进程退出，finish_child 还在合并，.finish 那行来不及写，用例在「以插话交给父对话」那步偶发失败
+  if (wrapRequestIds(text).length) steerCount++
+}
 let interrupted = false
 // 压缩、审查、分叉（Codex 的 thread/compact/start、review/start、thread/fork）
 let appOp = ''
@@ -150,7 +221,7 @@ if (args[0] === 'app-server') {
     }
     if (req.method === 'turn/start') {
       console.log(JSON.stringify({ id: req.id, result: { turn: { id: 't1', status: 'inProgress' } } }))
-      input = req.params.input.map((x) => x.text).join('')
+      startTurn(req.params.input.map((x) => x.text).join(''))
       // 执行中继续读：插话、中断
       ;(async () => {
         for (;;) {
@@ -158,7 +229,7 @@ if (args[0] === 'app-server') {
           if (done) return
           const m = JSON.parse(value)
           if (m.method === 'turn/steer') {
-            steered.push(m.params.input.map((x) => x.text).join(''))
+            void takeSteer(m.params.input.map((x) => x.text).join('')).catch(() => {})
             console.log(JSON.stringify({ id: m.id, result: { turnId: 't1' } }))
           } else if (m.method === 'turn/interrupt') {
             interrupted = true
@@ -240,7 +311,7 @@ if (args.includes('--rpc')) {
           },
         })
       else if (m.method === 'turn/start') {
-        input = typeof m.params?.input === 'string' ? m.params.input : ''
+        startTurn(typeof m.params?.input === 'string' ? m.params.input : '')
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1' } })
         say({ jsonrpc: '2.0', method: 'turn/started', params: { seq: ++rpcSeq, turnId: 'turn_1' } })
         started = true
@@ -254,7 +325,7 @@ if (args.includes('--rpc')) {
           } else rpcTurnArrived = true
         }
       } else if (m.method === 'turn/steer') {
-        steered.push(String(m.params?.input ?? ''))
+        void takeSteer(String(m.params?.input ?? '')).catch(() => {})
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1', queued: steered.length } })
       } else if (m.method === 'turn/interrupt') {
         interrupted = true
@@ -353,7 +424,7 @@ if (piRpc) {
       saveHist(h)
       say({ type: 'response', command: 'fork', id: m.id, success: true, data: { text: '', cancelled: false } })
     } else if (m.type === 'prompt') {
-      input = String(m.message ?? '')
+      startTurn(String(m.message ?? ''))
       say({ type: 'response', command: 'prompt', id: m.id, success: true, data: { disposition: 'started' } })
       if (answered) piNextPrompt?.(input)
       if (!answered) {
@@ -361,7 +432,7 @@ if (piRpc) {
         onPrompt?.()
       }
     } else if (m.type === 'steer') {
-      steered.push(String(m.message ?? ''))
+      void takeSteer(String(m.message ?? '')).catch(() => {})
       say({ type: 'response', command: 'steer', id: m.id, success: true, data: { disposition: 'queued' } })
     } else if (m.type === 'clear_queue') {
       // 收回还没取走的插话
@@ -400,7 +471,7 @@ if (streamIn) {
   rl.on('line', (l) => {
     const m = JSON.parse(l)
     // 第一条是任务描述；之后的 user 消息是插话，control_request 的 interrupt 是中断
-    if (started && m.type === 'user') return steered.push(String(m.message?.content ?? ''))
+    if (started && m.type === 'user') return void takeSteer(String(m.message?.content ?? '')).catch(() => {})
     if (m.type === 'control_request' && m.request?.subtype === 'interrupt') return void (interrupted = true)
     started = true
     lines.push(m)
@@ -423,6 +494,13 @@ if (titleFor !== null) {
   if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.title', JSON.stringify({ kind }) + '\n')
   input = ''
 }
+// FAKE_STARTUP_DELAY_MS / FAKE_STARTUP_DELAY_MATCH（默认关）：对照实验用，写调用日志（也就是 start 时间戳）之前先拖一阵，
+// 模拟 CI 高负载下 node 进程还没起来的窗口。陪 MATCH 可以只拖慢某一类节点（例如「节点：文档」），
+// 用来验证 02-workflow 的并发断言测的是调度窗口还是进程窗口（见项目教训 lmvnpbhxfu1yg 的对照组做法）。
+// 只对一次性执行生效：codex app-server 等模式这时候 input 还没读到，空串会拖慢所有调用
+const startupDelayMs = Number(process.env.FAKE_STARTUP_DELAY_MS) || 0
+if (startupDelayMs > 0 && input && input.includes(process.env.FAKE_STARTUP_DELAY_MATCH ?? ''))
+  await new Promise((r) => setTimeout(r, startupDelayMs))
 if (process.env.FAKE_CLI_LOG && titleFor === null) {
   const log = process.env.FAKE_CLI_LOG
   const extra =
@@ -466,11 +544,11 @@ async function panelCall(name, params) {
   const fromArgs =
     servers[
       Object.keys(servers)
-        .filter((k) => k.startsWith('panel'))
+        .filter((k) => /^(agent-)?panel/.test(k))
         .at(-1)
     ]?.url ??
     args
-      .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
+      .map((a) => a.match(/^mcp_servers\.((?:agent-)?panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
   // Command Code、Gemini 把 MCP 写进工作目录的配置文件（.mcp.json / .gemini/settings.json），
@@ -517,6 +595,10 @@ async function panelCall(name, params) {
     )
   return res.result
 }
+// 操控软件的动作（ADR 0011）：任务里有 APP_DO:<一行 JSON>、面板也给了 app_do 时，像真的 Agent 那样按用户的指令调一次。
+// 只认用户这一条消息里的标记（附在后面的用法说明里也有 app_do 字样，所以要两个都在）
+const appDo = /APP_DO:(\{.*\})/.exec(input)?.[1]
+if (appDo && input.includes('app_do')) await panelCall('app_do', JSON.parse(appDo))
 let beganEdit = false
 if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
   const got = await panelCall('begin_edit', {})
@@ -559,6 +641,19 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   await panelCall('spawn_agents', {
     tasks: [{ title: '核对限流规则', instructions: 'SUB_BG 跑一条慢命令，跑完把结论交回' }],
   })
+// 一次派两个子任务（API 并发上限的用例：名额是 1 时两个要一个一个跑，对话等它们时不占名额，不会互相等死）
+if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
+  await panelCall('spawn_agents', {
+    tasks: [
+      { title: '限流子任务一', instructions: 'SLOW 限流子任务一' },
+      { title: '限流子任务二', instructions: 'SLOW 限流子任务二' },
+    ],
+  })
+// 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
+if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
+  for (let i = 1; i <= 6; i++)
+    await panelCall('create_conversation', { title: `子对话 ${i}`, message: `SLOW 子对话 ${i} 的任务` })
+}
 // 子对话做完：任务里有 SUBMIT_MERGE、面板给了 submit_merge 时，像真的 Agent 一样先派「评审」（完整测试之前），
 // 最新一次评审通过之后才请父对话收尾；REVIEW_BLOCK 时第一次评审给 🛑，要先被面板拦下、改完复看才合回去
 {
@@ -568,7 +663,17 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
   const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
   if (!beganEdit && !isReviewRole() && (asked || back)) {
     const review = (instructions) =>
-      panelCall('spawn_agents', { tasks: [{ agent: '评审', title: '评审改动', instructions }] })
+      // 第一次派评审要带交接单（ADR 0013，缺 goal / checks 面板会拒绝）；这里复看也是新派，同样带上
+      panelCall('spawn_agents', {
+        tasks: [
+          {
+            agent: '评审',
+            title: '评审改动',
+            instructions,
+            review: { goal: '写好 child-done.txt', changes: 'child-done.txt — 完成标记', checks: 'npm test：通过' },
+          },
+        ],
+      })
     // 评审是计划里的独立步骤：派的时候标等待中，拿回结论后标完成（面板 submit_merge 前会校验这一步）
     const plan = (steps) => {
       if (process.env.FAKE_CLI_LOG)
@@ -653,9 +758,13 @@ if (input.includes('SPAWN_SUB_BG') && input.includes('spawn_agents'))
 // 一轮里可能同时有几个子对话的收尾请求，每个都要处理（只处理第一个会让后面的子对话等到超时）
 if (input.includes('finish_child')) {
   for (const id of wrapRequestIds(input)) {
+    // 这一轮执行中已经以插话处理过（见 takeSteer）：别再合一次
+    if (tookWrap.has(id)) continue
+    tookWrap.add(id)
     const got = await panelCall('finish_child', { id })
+    if (got?.isError) tookWrap.delete(id)
     if (process.env.FAKE_CLI_LOG)
-      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, got }) + '\n')
+      appendFileSync(process.env.FAKE_CLI_LOG + '.finish', JSON.stringify({ kind, id, via: 'input', got }) + '\n')
   }
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
@@ -782,19 +891,21 @@ const turnReply = () => {
     return `${review.trim()}
 
 这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
+  // 面板自动询问子对话状态（长时间没有输出）：回复带上标记，端到端测试据此确认它真的收到了
+  const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
 }
-// 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
+// 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
 // Pi 的桥接扩展在面板自己的临时目录里，用 -e 的绝对路径加载
 // 用函数声明：panelCall 与 panelMcpUrl 在模块顶层先执行，const 那时还没初始化（TDZ），取地址会直接抛错
 function panelExt() {
-  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
+  return args.find((a, i) => args[i - 1] === '-e' && /agent-panel-(agent-)?panel[\w-]*\.ts$/.test(a))
 }
 function panelMcpUrl() {
   if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
   const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-  const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
+  const keys = Object.keys(cfg.mcpServers).filter((k) => /^(agent-)?panel/.test(k))
   const hit = cfg.mcpServers[keys.at(-1)]
   return hit.httpUrl ?? hit.url
 }
@@ -837,6 +948,27 @@ const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要�
 // 复现「网关吞掉请求后空成功收尾」——那一轮会被当成已完成并保活，用户后面发的消息全落进死回合。
 // 面板重试时会带上「上一次请求没有返回任何内容」，那时正常回复
 const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上一次请求没有返回任何内容')
+
+// HOLD_STEER：这一轮不靠固定时长模拟「在忙」，而是一直挂到真的收到带【收尾请求】的插话（或超时）才继续。
+// 用 SLOW 那段固定时长当同步点时，子对话跑完 begin_edit、评审、再请收尾往往已经超过了那个窗口，
+// 收尾请求就退化成普通新一轮 input，插话那条路根本没被跑到（用例假通过）。
+// 等待期间必须一直有输出：面板按「交出消息后多久没有任何输出」判卡住（AGENT_PANEL_NO_RESPONSE_MS，e2e 里 2 秒），
+// 静默等下去会被判成卡住，之后来的消息改走 restartStalled 把这一轮停掉重开，收尾请求就不再是插话（实测复现过）。
+// 真 Agent 忙的时候也一直在思考，这里用 thinking 事件模拟，间隔 1 秒。
+// 保活输出只实现了 claude（thinking 事件）：别家 CLI 的保活写法不同，要拿 HOLD_STEER 测别的 CLI 得先补上。
+if (input.includes('HOLD_STEER')) {
+  const t0 = Date.now()
+  // 上限和用例等子对话合回的 60 秒对齐：CI 上 10 个分片并行时，子对话走到 submit_merge 可能超过 30 秒
+  const holdMs = Number(process.env.FAKE_HOLD_STEER_MS) || 60000
+  while (!interrupted && steerCount === 0 && Date.now() - t0 < holdMs) {
+    await sleep(1000)
+    if (kind === 'claude')
+      out({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '.' } },
+      })
+  }
+}
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -1085,8 +1217,10 @@ if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
   codexDone('completed')
 }
 
-// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
-if (input.includes('HANG')) {
+// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）。
+// 面板判定它没有响应、接回会话重开时提示里带「一直没有回应」：那一轮照常回复，
+// 用来测「长时间没有输出时自动询问」之后还能收到回复
+if (input.includes('HANG') && !input.includes('一直没有回应')) {
   process.stderr.write('Invalid API key · Please run /login\n')
   await new Promise(() => setInterval(() => {}, 60_000))
 }

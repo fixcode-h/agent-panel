@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { Project, Task } from '@shared/schema'
 import {
   byAskedAt,
@@ -42,6 +42,9 @@ import { projectDefaultWorkflow } from '@shared/project-workflow'
 import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
+import { AnalysisMark } from './AnalysisMark'
+import { cliAliveHint, cliTreeAlive } from './CliAlive'
+import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
@@ -281,9 +284,24 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               onClick={onOpen}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
             >
-              <TaskStatusIcon status={task.status} working={busy} spin={busy} waiting={state === 'needs'} />
+              <TaskStatusIcon
+                status={task.status}
+                working={busy}
+                spin={busy}
+                waiting={state === 'needs'}
+                cliAlive={!!task.cliAlive}
+              />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.875rem]">{task.title}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {isAnalysisTask(task, agents) && <AnalysisMark kind={task.analysis} />}
+                  {/* 自己或名下子对话有活着的 CLI：标题流光 */}
+                  <span
+                    title={cliAliveHint(task) || undefined}
+                    className={cn('truncate text-[0.875rem]', cliTreeAlive(task) && 'cli-alive-title')}
+                  >
+                    {task.title}
+                  </span>
+                </span>
                 <span className="truncate text-xs text-subtle">
                   {task.mode === 'workflow'
                     ? `${task.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
@@ -311,11 +329,13 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                       ? statusLabel.running
                       : task.status === 'done'
                         ? timeAgo(task.updatedAt, now)
-                        : task.status === 'running'
+                        : task.status === 'running' && task.cliAlive
                           ? t('等待你的下一条消息')
-                          : task.status === 'stopped'
-                            ? stopReasonText(task.stopReason)
-                            : statusLabel[task.status]}
+                          : task.status === 'running'
+                            ? timeAgo(task.updatedAt, now)
+                            : task.status === 'stopped'
+                              ? stopReasonText(task.stopReason)
+                              : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

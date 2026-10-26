@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Clapperboard, Diamond, Pause, Play, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import {
   ANIM_PRESETS,

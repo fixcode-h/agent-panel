@@ -18,7 +18,7 @@ import {
   type ProjectSkill,
   type ProjectSkillsView,
 } from '../shared/project-skills.ts'
-import { frontField } from '../shared/library.ts'
+import { frontField, type LibraryFile } from '../shared/library.ts'
 import { extraFiles } from './library.ts'
 import { clearSlashCache } from './slash.ts'
 
@@ -73,11 +73,13 @@ export async function listProjectSkills(root: string): Promise<ProjectSkillsView
   }
 }
 
-export async function readProjectSkill(root: string, repo: string, name: string) {
+export async function readProjectSkill(root: string, repo: string, name: string): Promise<LibraryFile> {
   const p = skillPath(root, repo, name)
   if (!existsSync(p.file)) throw new Error(t('没有这一项'))
   const content = (await readFile(p.file, 'utf8')).replace(/^\ufeff/, '')
-  return { content, files: await extraFiles(p.dir) }
+  const tree = await extraFiles(p.dir)
+  // files 是旧字段（扁平的文本路径），tree 是完整的目录结构，两者由同一棵树得来
+  return { content, files: tree.entries.filter((e) => e.type === 'file').map((e) => e.path), tree }
 }
 
 export async function writeProjectSkill(root: string, repo: string, name: string, content: string, create: boolean) {

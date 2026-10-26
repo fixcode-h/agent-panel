@@ -250,6 +250,21 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '少步数或量化版本：出图更快、占显存更少，适合批量试稿和显存紧的电脑':
     'Fewer steps or quantized versions: faster and lighter on VRAM, good for batches of drafts and smaller GPUs',
   低显存: 'Low VRAM',
+  图片处理: 'Image processing',
+  '不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、放大':
+    'No prompt needed: process an existing image, like removing the background (transparent PNG) or upscaling',
+  '按主体分割抠图，输出带透明通道的 PNG：图标去底、把生成的图叠到别的背景上时用':
+    'Segments the subject and outputs a PNG with transparency: for icons without a backdrop, or layering generated art on another background',
+  '去背景（透明底 PNG）': 'Remove background (transparent PNG)',
+  '把图的主体抠出来，输出带透明通道的 PNG：图标去底、把生成的图叠到别的背景上时用；链的开头也可以先接它':
+    'Cuts the subject out and outputs a PNG with transparency: for icons without a backdrop, or layering generated art on another background. Can also be the first step of a chain',
+  '图生图 · 风格复刻': 'Image to image · style transfer',
+  '在已有图的基础上重画：保留构图、布局和大体配色，按描述换掉细节和风格（去噪 {n}）；改配色、换画风、把草图做成正式稿时用':
+    'Redraws an existing image: keeps the composition, layout and overall colors while the description changes details and style (denoise {n}). For recolors, style changes and turning sketches into final art',
+  '放大 {n} 倍': 'Upscale {n}×',
+  '插值放大 {n} 倍，尺寸变大但细节不增强：出完的图当底图、叠到高分辨率界面里时用':
+    'Interpolated {n}× upscale: bigger image without extra detail. For using generated art as a base or placing it in a high-resolution UI',
+  '{name} 是图片处理模型，不能用来文生图': '{name} is an image processing model and cannot generate images from text',
   '8GB 显存左右也能跑；社区风格模型和 LoRA 最多':
     'Runs on about 8 GB VRAM; the largest collection of community style models and LoRAs',
   '质量优先：20 步出图，光影和材质更细腻，适合定风格的插画和原画；非商用许可':
@@ -332,4 +347,56 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     'Missing files have no download link; put them in the ComfyUI models folder yourself.',
   缺: 'Missing',
   需要自己放: 'Add manually',
+  '图里要文字、要精确摆放时用：中英文都写得准，还能按布局 JSON 把标题、按钮文字放到指定位置；ComfyUI 要 0.42 以上':
+    'Use it when the image needs text placed precisely: reliable Chinese and English rendering, and a layout JSON that puts titles and button labels exactly where you want them. Needs ComfyUI 0.42 or newer.',
+  'MOSS-Image 的 bf16 版本：文字和画质更稳，文件大一半多，32GB 以上显存时用':
+    'The bf16 build of MOSS-Image: steadier text and image quality, much larger files, for 32 GB VRAM or more.',
+  'MOSS-Image：按 JSON 布局出图': 'MOSS-Image: generate from a JSON layout',
+  '整屏原画里要出现准确的中英文、还要按设计稿位置摆放时用：标题、按钮文字和主要元素的位置由布局 JSON 指定':
+    'For full-screen concepts that need accurate Chinese and English text placed exactly as designed: the layout JSON fixes the position of titles, button labels and key elements.',
+
+  // 工作流链（多段串起来出图）
+  工作流链: 'Workflow chains',
+  '把几个工作流按顺序串起来：前一段的输出图直接给后一段用，例如「图生图 → 去背景」':
+    'Chain workflows in order: each step feeds its output image straight into the next, for example "image to image → remove background"',
+  新建链: 'New chain',
+  新链: 'New chain',
+  '还没有链。新建一条，选两段就能试：例如先「图生图」重画，再「去背景」抠成透明底。':
+    'No chains yet. Create one and pick two steps: for example "image to image" to redraw, then "remove background" for a transparent PNG.',
+  删除这条链: 'Delete this chain',
+  '第 {n} 段的工作流': 'Workflow for step {n}',
+  '{name}（模型没下载）': '{name} (model not downloaded)',
+  '第 {n} 段的描述': 'Description for step {n}',
+  '这一段的描述，留空用链名': 'Description for this step; leave empty to use the chain name',
+  '删掉第 {n} 段': 'Remove step {n}',
+  删掉这一段: 'Remove this step',
+  加一段: 'Add a step',
+  原图: 'Source image',
+  换一张原图: 'Change source image',
+  选原图: 'Choose source image',
+  这条链的第一段要一张原图: 'The first step of this chain needs a source image',
+  '描述（图生图那一段用）': 'Description (used by the image-to-image step)',
+  试跑: 'Test run',
+  '输出图 {n}': 'Output {n}',
+  上移: 'Move up',
+  下移: 'Move down',
+  读取图片失败: 'Could not read the image',
+  先有能用的工作流才能建链: 'Create a usable workflow before building a chain',
+  '跑完了，但没有拿到图片': 'The run finished without producing an image',
+  链里至少要有一个工作流: 'A chain needs at least one workflow',
+  '一条链最多 {n} 段': 'A chain can have at most {n} steps',
+  '{name} 没有 SaveImage 节点，接不上下一段': '{name} has no SaveImage node, so nothing can follow it',
+  '{name} 读了不止一张输入图，没法接进链里': '{name} reads more than one input image and cannot be chained',
+  '{name} 的输入图还被当成蒙版用，链里接不进去':
+    '{name} uses its input image as a mask, so it cannot take an image from the previous step',
+  '{name} 放在链中间时透明底会在后面的重画里丢掉：图要编码进 VAE 时 alpha 通道不保留。想留住透明背景，把去背景放到链的最后一段':
+    '{name} in the middle of a chain loses the transparency: encoding into the VAE drops the alpha channel. To keep a transparent background, put background removal last.',
+  '链里的工作流 {id} 不存在了，请重新选一下': 'Workflow {id} in the chain no longer exists; pick it again',
+  '这条链的第一段要一张原图，请先选一张': 'The first step of this chain needs a source image; choose one first',
+  '上传图片到 ComfyUI 失败：{error}': 'Uploading the image to ComfyUI failed: {error}',
+  '本机生成中（{name}）…': 'Generating locally ({name})…',
+  '链里的工作流不存在，请重新选一下': 'A workflow in the chain does not exist; pick it again',
+  '链的内容不对：{error}': "The chain content isn't valid: {error}",
+  '上一段的工作流已经不在了，请先重新选一下': 'The workflow in the previous step no longer exists; pick it again first',
+  '第 {n} 段的工作流已经不在了，请重新选一下': 'The workflow in step {n} no longer exists; pick it again',
 }

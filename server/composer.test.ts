@@ -91,6 +91,53 @@ test('复制用户消息：卡片换成路径，带空格的路径加引号，�
   )
   assert.equal(copyText('修复下吧', [img]), '/data/uploads/1/设计稿.png 修复下吧')
   assert.equal(copyText('/blender 做个箱子'), '/blender 做个箱子')
+  // 引用卡片（附件里带 quote）复制成 quote-<编号>.md 的路径：服务端按这个文件名认回原文（server/uploads.ts）
+  const elem = {
+    name: '界面元素 RichInput#qabc',
+    path: '/data/uploads/2/quote-qabc.md',
+    mime: 'text/markdown',
+    quote: '原文',
+  }
+  assert.equal(copyText('看 [引用:界面元素 RichInput#qabc] 这里', [elem]), '看 /data/uploads/2/quote-qabc.md 这里')
+  // 引用卡片没有对应附件时留着卡片标记，不凭空编一个路径出来
+  assert.equal(copyText('看 [引用:一段话#qgone]', []), '看 [引用:一段话#qgone]')
+})
+
+test('复制用户消息：卡片换成路径后和正文用空格隔开，粘回去能按路径认回卡片', () => {
+  // 用户报的现象：卡片紧跟着正文（发送时卡片前面没有空格），复制出来是「…截图.png前面是…」，
+  // 路径和正文粘成一截，粘贴时 findPaths 把「…截图.png前面是抓取的元素」整段当成路径，stat 不到就不换卡片了
+  const shot = { name: '截图-210356.png', path: 'C:\\Users\\Me\\uploads\\1\\截图-210356.png', mime: 'image/png' }
+  const copied = copyText('[图片:截图-210356.png]前面是抓取的元素，后面是复制粘贴的', [shot])
+  assert.equal(copied, 'C:\\Users\\Me\\uploads\\1\\截图-210356.png 前面是抓取的元素，后面是复制粘贴的')
+  // 粘贴流程靠 findPaths 拿到路径：认出来的必须是完整路径，不能把后面的中文也吃进去
+  assert.deepEqual(
+    findPaths(copied).map((h) => h.path),
+    ['C:\\Users\\Me\\uploads\\1\\截图-210356.png'],
+  )
+  // 卡片在末尾、后面没写东西时不留尾空格（整段就是一个路径时才认得出是文件引用）
+  assert.equal(
+    copyText('看这张[图片:图.png]', [{ name: '图.png', path: '/tmp/a/图.png', mime: 'image/png' }]),
+    '看这张 /tmp/a/图.png',
+  )
+  // 前后都紧贴正文时两边各补一个空格，不能留两个
+  assert.equal(copyText('前[文件:a.txt]后', [{ name: 'a.txt', path: '/tmp/a.txt', mime: '' }]), '前 /tmp/a.txt 后')
+  // 同理：卡片之间的路径不行，Skill / 命令紧跟路径时也要隔开，否则粘出来是「D:\up\a.png/blender」
+  // （正常发送时 Skill 总在最前面，只有手工拼出来的顺序会这样）
+  assert.equal(
+    copyText('[图片:a.png][技能:blender]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
+    'D:\\up\\a.png /blender',
+  )
+  // 正常顺序（Skill 在开头、后面才是卡片）的输出不变
+  assert.equal(
+    copyText('[技能:blender] 看 [图片:a.png]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
+    '/blender 看 D:\\up\\a.png',
+  )
+})
+
+test('复制用户消息：只有一张卡片时输出就是那个路径，粘贴回来整段认成引用', () => {
+  const shot = { name: '图.png', path: '/tmp/a/图.png', mime: 'image/png' }
+  assert.equal(copyText('[图片:图.png]', [shot]), '/tmp/a/图.png')
+  assert.equal(solePath(copyText('[图片:图.png]', [shot])), '/tmp/a/图.png')
 })
 
 test('粘贴的文字里找绝对路径：引号里的可以带空格，网址、相对路径不算，句尾标点去掉', () => {

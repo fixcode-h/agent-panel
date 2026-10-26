@@ -64,6 +64,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           models: ['claude-sonnet-5-5'],
           modelMap: {},
           modelEfforts: {},
+          maxConcurrent: 0,
         },
       },
       {
@@ -80,6 +81,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           models: [],
           modelMap: {},
           modelEfforts: {},
+          maxConcurrent: 0,
         },
       },
     ] satisfies DetectedApi[]
@@ -94,6 +96,8 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
             : [`${base.includes('deepseek') ? 'deepseek' : 'gpt'}-chat`, 'gpt-6-sol', 'gpt-6-luna'],
     }
   }
+  // 演示：模型探针不真发请求，直接报能通（前端在模型为空时不会调到这里）
+  if (cli === 'api-probe') return { model: String(body.model ?? '') }
   // 演示：余额按 DeepSeek 的返回格式给一份假数据
   if (cli === 'api-balance')
     return {

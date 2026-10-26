@@ -2,6 +2,7 @@ import path from 'node:path'
 import { type GlobalLesson, GlobalLessons, type Project, type ProjectInput, ProjectLesson } from '../shared/schema.ts'
 import { MAX_LESSONS, newLessonId, normTags, upsertLesson } from '../shared/lessons.ts'
 import { t } from '../shared/i18n.ts'
+import { applyReviewItem, type LessonReviewItem } from '../shared/lesson-review.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 
 type ProjectStore = {
@@ -71,7 +72,24 @@ export function projectLessons(projects: ProjectStore) {
     )
     return run
   }
-  return { record }
+  /** 应用 AI 评审的一条建议（用户在评审卡片上点的）：和 record 同一个队列，不和角色正在记的互相覆盖 */
+  const review = (projectId: string, item: LessonReviewItem) => {
+    const run = queue.then(async () => {
+      const p = await projects.get(projectId)
+      if (!p) return { ok: false, info: t('项目不存在') }
+      if (item.action !== 'delete' && !p.lessons.some((l) => l.id === item.id))
+        return { ok: false, info: t('这条教训已经不在了') }
+      const { id, createdAt, updatedAt, ...input } = p
+      const saved = await projects.update(projectId, { ...input, lessons: applyReviewItem(p.lessons, item) })
+      return { ok: !!saved, info: '', project: saved ?? undefined }
+    })
+    queue = run.then(
+      () => {},
+      () => {},
+    )
+    return run
+  }
+  return { record, review }
 }
 
 const GLOBAL_FILE = path.join(DATA_DIR, 'config', 'global-lessons.json')

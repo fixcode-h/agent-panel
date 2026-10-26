@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   Check,
   ChevronRight,
@@ -40,6 +40,7 @@ import { fmtTokens } from '@shared/model-limits'
 import { matchModel } from '@shared/model-catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
 import { loadCliModels } from '@/lib/cli-models'
+import { probeTarget } from '@/lib/api-probe'
 
 /** 新建时可以从常用的开始：协议定下来，接口地址用厂家默认的（留空，输入框里当灰字提示） */
 const PRESETS: { label: string; protocol: ApiProtocol }[] = [
@@ -78,6 +79,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       models: [],
       modelMap: {},
       modelEfforts: {},
+      maxConcurrent: 0,
     })
   return (
     <Group>
@@ -130,6 +132,8 @@ function ApiCard({
   const [fetching, setFetching] = useState(false)
   const [testing, setTesting] = useState(false)
   const [probe, setProbe] = useState<{ ok: boolean; message: string }>()
+  /** 「测试连接」用哪个模型测；空表示还没选，用模型列表的第一个 */
+  const [probeModel, setProbeModel] = useState('')
   const [found, setFound] = useState<string[]>()
   const [filter, setFilter] = useState('')
   const [draft, setDraft] = useState('')
@@ -186,10 +190,19 @@ function ApiCard({
   }
   const testConnection = async () => {
     setTesting(true)
+    // 选了模型就真的用这个模型发一次请求；一个模型都没有时退回只验证能列出模型
+    const target = probeTarget(modelsForProtocol(a.models, a.protocol), probeModel)
     try {
+      if (target) {
+        await api.probeApiModel({ ...a, model: target })
+        const message = t('模型 {model} 可用', { model: target })
+        setProbe({ ok: true, message })
+        toast.success(message)
+        return
+      }
       const { models } = await api.apiModels(a)
       const list = modelsForProtocol(models, a.protocol)
-      const message = t('连接可用，读到 {n} 个模型', { n: list.length })
+      const message = t('连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）', { n: list.length })
       setProbe({ ok: true, message })
       toast.success(message)
     } catch (e) {
@@ -203,6 +216,18 @@ function ApiCard({
     // 移除模型后它的映射也没用了，一起清掉
     const modelMap = Object.fromEntries(Object.entries(a.modelMap).filter(([k]) => models.includes(k)))
     onChange({ models, modelMap })
+  }
+  /** 可选的模型：只列当前协议能用的，第一个是默认模型 */
+  const probeOptions = useMemo(() => {
+    const list = modelsForProtocol(a.models, a.protocol)
+    return list.length
+      ? list.map((m) => ({ value: m, label: m }))
+      : [{ value: '', label: t('先点「从接口获取」或手动填写模型') }]
+  }, [a.models, a.protocol])
+  /** 换模型后上一次的测试结果就过期了，否则会把「模型 A 可用」误读成 B 也通过了 */
+  const pickProbeModel = (v: string) => {
+    setProbeModel(v)
+    setProbe(undefined)
   }
   const shown = useMemo(
     () => (found ?? []).filter((m) => m.toLowerCase().includes(filter.trim().toLowerCase())),
@@ -488,12 +513,44 @@ function ApiCard({
                 />
               </label>
             )}
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+              {t('并发上限')}
+              <Input
+                type="number"
+                min={0}
+                max={999}
+                step={1}
+                inputMode="numeric"
+                value={String(a.maxConcurrent ?? 0)}
+                onChange={(e) => {
+                  const n = Math.floor(Number(e.target.value))
+                  onChange({ maxConcurrent: Number.isFinite(n) ? Math.min(999, Math.max(0, n)) : 0 })
+                }}
+                aria-label={t('并发上限')}
+                className="h-9 w-28 font-mono text-[0.8125rem]"
+              />
+              <span className="text-[0.71875rem] text-subtle">
+                {t(
+                  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。',
+                )}
+              </span>
+            </label>
           </div>
           <ApiBalanceRow a={a} />
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
               <span className="flex-1" />
+              {/* 用哪个模型测联通：默认是模型列表里的第一个（默认模型），没有模型时提示先获取 */}
+              <Select
+                aria-label={t('测试连接用的模型')}
+                title={t('选中哪个模型，点「测试连接」就用它真的发一次请求')}
+                className="h-8 w-44 font-mono text-[0.75rem]"
+                value={probeTarget(modelsForProtocol(a.models, a.protocol), probeModel)}
+                options={probeOptions}
+                disabled={busy || !probeOptions.some((o) => o.value)}
+                onChange={(e) => pickProbeModel(e.target.value)}
+              />
               <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={testConnection}>
                 {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
                 {t('测试连接')}

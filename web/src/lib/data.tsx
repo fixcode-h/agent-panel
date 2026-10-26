@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type {
   Agent,
   Category,
@@ -56,6 +56,8 @@ interface Data {
   setDesigns: React.Dispatch<React.SetStateAction<DesignMeta[]>>
   /** UI 设计自己的项目，和 Agent 的项目分开 */
   designProjects: DesignProject[]
+  /** 设计项目列表取回来没有：初值是空数组，没取回来时不能当成「项目不存在」 */
+  designProjectsLoaded: boolean
   setDesignProjects: React.Dispatch<React.SetStateAction<DesignProject[]>>
   reloadDesigns: () => Promise<void>
   upsertTask: (t: Task) => void
@@ -87,6 +89,8 @@ function sameTask(a: Task, b: Task) {
     a.turnSeenAt === b.turnSeenAt &&
     a.working === b.working &&
     a.childrenWorking === b.childrenWorking &&
+    a.cliAlive === b.cliAlive &&
+    a.childrenCli === b.childrenCli &&
     (a.jobs?.length ?? 0) === (b.jobs?.length ?? 0) &&
     helpersWorking(a) === helpersWorking(b) &&
     (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
@@ -145,6 +149,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [tasksLoaded, setTasksLoaded] = useState(false)
   const [designs, setDesigns] = useState<DesignMeta[]>([])
   const [designProjects, setDesignProjects] = useState<DesignProject[]>([])
+  const [designProjectsLoaded, setDesignProjectsLoaded] = useState(false)
   const reloadDesigns = useCallback(async () => {
     try {
       const [ps, ds] = await Promise.all([api.designProjects(), api.designs()])
@@ -152,6 +157,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setDesigns(ds)
     } catch {
       // 连不上时保留现有列表
+    } finally {
+      // 取失败也算「问过了」：否则项目主页会一直停在加载中
+      setDesignProjectsLoaded(true)
     }
   }, [])
   useEffect(() => {
@@ -203,7 +211,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // 有执行中的任务时定期刷新状态
-  const anyRunning = tasks.some((t) => t.status === 'running')
+  // CLI 还活着的也要刷：进程关掉不一定改状态，侧栏的流光和「CLI 存活」提示要跟着撤
+  const anyRunning = tasks.some((t) => t.status === 'running' || t.cliAlive || !!t.childrenCli)
   useEffect(() => {
     if (!anyRunning) return
     const t = setInterval(() => void reloadTasks().catch(() => {}), 2500)
@@ -285,6 +294,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       designs,
       setDesigns,
       designProjects,
+      designProjectsLoaded,
       setDesignProjects,
       reloadDesigns,
       upsertTask,
@@ -313,6 +323,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       tasksLoaded,
       designs,
       designProjects,
+      designProjectsLoaded,
       reloadDesigns,
       upsertTask,
       removeTask,

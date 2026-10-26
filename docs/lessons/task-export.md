@@ -1,5 +1,5 @@
 ---
-paths: shared/task-export.ts, server/task-export.test.ts
+paths: shared/task-export.ts, server/task-export.test.ts, server/task-export-helper.test.ts, server/task-export-tree.test.ts
 ---
 
 # 导出报告的口径

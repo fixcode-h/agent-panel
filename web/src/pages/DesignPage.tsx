@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ChevronDown,
   Clapperboard,
@@ -45,6 +45,7 @@ import {
   IMAGE_SLOT,
   WIDGETS,
   allNames,
+  applyVisibility,
   assignImage,
   canAddChild,
   cloneWidget,
@@ -61,6 +62,7 @@ import {
   removeWidget,
   replaceWidget,
   resizeCanvasSlot,
+  toggledVisibility,
   uniqueName,
   wrapWidget,
   usedImages,
@@ -91,7 +93,7 @@ import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationP
 import { renameInAnimations, setKeyAt, type AnimProp, type AnimValue } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
 import { DataPanel } from '@/components/design/DataPanel'
-import { emptyData } from '@shared/design-data'
+import { bindDataSet, emptyData } from '@shared/design-data'
 import { Hierarchy, Palette } from '@/components/design/Hierarchy'
 import type { WidgetLayer, WidgetMenuActions } from '@/components/design/WidgetMenu'
 import { Details } from '@/components/design/Details'
@@ -106,6 +108,8 @@ import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
+import { DesignProjectHome } from '@/components/design/DesignProjectHome'
+import { DESIGN_HOME } from '@/lib/design-projects'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
 import { SaveStyleButton, StyleLibraryList } from '@/components/design/StyleLibrary'
@@ -115,6 +119,8 @@ const ANIM_KEY = 'agent-panel:design-anim'
 
 export function DesignPage() {
   const { route } = useNav()
+  // 'home' 是 UI 项目主页（项目 id 在 sub），'new' 和没给 id 是新建设计，其余 id 是设计器
+  if (route.id === DESIGN_HOME) return <DesignProjectHome key={route.sub} projectId={route.sub ?? ''} />
   return route.id && route.id !== 'new' ? (
     <Designer key={route.id} id={route.id} />
   ) : (
@@ -343,8 +349,10 @@ function Designer({ id }: { id: string }) {
   /** 主区域显示画板还是数据面板：数据面板改的是画板用的运行时假数据 */
   const [board, setBoard] = useState<'canvas' | 'data'>('canvas')
   const [overlay, setOverlay] = useState(false)
-  /** 替用户发给 AI 的话（确认模板后开始搭界面） */
-  const [request, setRequest] = useState<{ id: string; text: string }>()
+  /** 只重绘原画上蒙版涂过的区域（对话侧勾选）：原画面板的发送按钮也要按它换文案 */
+  const [inpaint, setInpaint] = useState(false)
+  /** 替用户发的一条：id 变了就发一次。带 text 是固定发这句话（确认模板后开始搭界面）；`kind: 'send'` 是「发送标注给 AI」，按输入框发送 */
+  const [request, setRequest] = useState<{ id: string; text?: string; kind?: 'send' }>()
   /** 动画面板（时间轴）开着没有，以及它让画布停在哪一刻 */
   const [animOpen, setAnimOpenState] = useState(() => {
     try {
@@ -383,8 +391,21 @@ function Designer({ id }: { id: string }) {
 
   // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
   const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
+  // 这一段显示的是这一轮的预览，不是本地保存的树：眼睛按钮先改在预览上（见 toggleVisible），
+  // 这一轮结束后再落到保存的设计里，否则点了看起来没反应，结束时还会被 AI 的结果覆盖
+  const [liveVis, setLiveVis] = useState<Record<string, string>>({})
+  const pendingVis = useRef<Record<string, string>>({})
   const shownDoc =
-    doc && live ? { ...doc, root: live.root, components: live.components, data: live.data ?? doc.data } : doc
+    doc && live
+      ? {
+          ...doc,
+          root: applyVisibility(live.root, liveVis),
+          components: Object.keys(liveVis).length
+            ? live.components.map((c) => ({ ...c, Root: applyVisibility(c.Root, liveVis) }))
+            : live.components,
+          data: live.data ?? doc.data,
+        }
+      : doc
   const tree = doc ? treeOf(doc, target) : undefined
   const shownTree = shownDoc ? (treeOf(shownDoc, target) ?? tree) : undefined
   // 子控件被删掉或改名了：回到主界面
@@ -422,6 +443,11 @@ function Designer({ id }: { id: string }) {
   useEffect(() => {
     if (concept.approved) setView('ui')
   }, [concept.approved])
+  // 原画上的蒙版被清掉了（发出去了、涂完了又撤销）：「只重绘蒙版」就失效，不能留着
+  const conceptMaskReady = !!doc?.annotations.some((a) => hasMask(a) && a.target.startsWith('concept:'))
+  useEffect(() => {
+    if (!conceptMaskReady) setInpaint(false)
+  }, [conceptMaskReady])
 
   const editTree = (fn: (root: Widget) => Widget, key = '') =>
     ed.change((d) => {
@@ -430,6 +456,26 @@ function Designer({ id }: { id: string }) {
       const n = fn(r)
       return n === r ? d : setTree(d, target, n)
     }, key)
+
+  // AI 这一轮改完，页面换成服务端存下的树：把修改期间点的显示 / 隐藏补上去
+  useEffect(() => {
+    if (live || !Object.keys(pendingVis.current).length) return
+    const vis = pendingVis.current
+    pendingVis.current = {}
+    setLiveVis({})
+    // 预览期间可能切过子控件，点过的控件不都在当前这棵树上：按整份设计补
+    ed.change((d) => {
+      const root = applyVisibility(d.root, vis)
+      const components = d.components.map((c) => {
+        const r = applyVisibility(c.Root, vis)
+        return r === c.Root ? c : { ...c, Root: r }
+      })
+      if (root === d.root && components.every((c, i) => c === d.components[i])) return d
+      return { ...d, root, components }
+    }, 'vis:ai')
+    // 只在这一轮 AI 修改结束时补一次；ed.change 每次渲染都是新的对象，写进依赖会一直触发
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [live])
 
   const addWidget = (type: WidgetType, cls?: string, into?: string) => {
     if (!tree || !doc) return
@@ -458,7 +504,8 @@ function Designer({ id }: { id: string }) {
     const [w, h] = NEW_SIZE[type] ?? [200, 50]
     const slotType = WIDGETS[parent.Type].slot
     const slot = defaultSlot(slotType, 40 + (n % 10) * 16, 40 + (n % 10) * 16, w, h)
-    if (slotType === 'CanvasPanelSlot' && type === 'TextBlock') slot!.bAutoSize = true
+    // 文字默认按控件宽度换行（WIDGETS.TextBlock 的默认值），也不再自动撑开：
+    // 以前这里给 TextBlock 设 bAutoSize=true，宽高由文字撑开，会顶出父控件、压到背景的装饰上
     const wd = newWidget(type, name, slot)
     if (type === 'UserWidget') wd.Class = cls
     editTree((r) => insertWidget(r, parent!.id, wd, index))
@@ -569,16 +616,19 @@ function Designer({ id }: { id: string }) {
       editTree((r) => insertWidget(r, p.id, c, p.Children!.findIndex((x) => x.id === wid) + 1))
       setSelected(c.id)
     },
-    toggleVisible: (wid) =>
-      editTree((r) =>
-        mapWidget(r, wid, (w) => ({
-          ...w,
-          Properties: {
-            ...w.Properties,
-            Visibility: w.Properties.Visibility === 'Collapsed' ? 'Visible' : 'Collapsed',
-          },
-        })),
-      ),
+    toggleVisible: (wid) => {
+      const shown = shownTree ?? tree
+      const w = shown && findWidget(shown, wid)
+      if (!w) return
+      const next = toggledVisibility(w.Properties?.Visibility)
+      // AI 修改期间画板和控件树显示的是预览：先记在预览上，这一轮结束后再落进保存的设计
+      if (live) {
+        pendingVis.current = { ...pendingVis.current, [wid]: next }
+        setLiveVis(pendingVis.current)
+        return
+      }
+      editTree((r) => mapWidget(r, wid, (x) => ({ ...x, Properties: { ...x.Properties, Visibility: next } })))
+    },
     copy: (wid) => {
       const w = tree && findWidget(tree, wid)
       if (!w) return
@@ -841,11 +891,15 @@ function Designer({ id }: { id: string }) {
       answers?: { question: string; answer: string }[]
       concept: boolean
       inpaint?: boolean
+      /** 「先出原画」时一次出几张，和每张图生成几版分开 */
+      conceptCount?: number
       refs?: WidgetCitation[]
     },
   ) => {
+    // 这一轮还在跑：走补充的通道，能插话就交给这一轮，收不下就在这一轮结束后自动接着处理
+    const running = server?.job?.status === 'running'
     // 只重绘蒙版：本机 ComfyUI 按蒙版做真正的局部重绘；别的生图方式只能整张重画，先告诉用户再照常发送
-    if (extra.inpaint) {
+    if (extra.inpaint && !running) {
       const mark = doc.annotations.find((a) => a.shape === 'mask' && a.target.startsWith('concept:') && hasMask(a))
       if (mark) {
         if (source.kind !== 'local') {
@@ -872,10 +926,11 @@ function Designer({ id }: { id: string }) {
         }
       }
     }
-    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
+    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计。
+    // 这一轮正在跑时生成不了，标记随消息一起交给这一轮
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
-    const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))
-    if (imgMarks.length) {
+    const annotations = running ? doc.annotations : doc.annotations.filter((a) => !a.target.startsWith('img:'))
+    if (imgMarks.length && !running) {
       if (source.kind === 'none') {
         toast.error(t('先在对话框下面选生成图片的方式'))
         return false
@@ -902,22 +957,30 @@ function Designer({ id }: { id: string }) {
     // 标注随这条消息一起发出，发出后从效果图上清掉
     const next = { ...doc, annotations: [] }
     try {
-      ed.absorb(await api.saveDesign(id, next))
-      ed.absorb(
-        await api.designChat(id, {
-          text:
-            text.trim() ||
-            (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
-          source,
-          count,
-          annotations,
-          attachments,
-          refs: extra.refs ?? [],
-          run,
-          ...extra,
-        }),
-      )
+      // 这一轮还在跑时不再回写页面状态：AI 正在改，写回去可能盖掉它刚改的部分
+      if (!running) ed.absorb(await api.saveDesign(id, next))
+      const body = {
+        text:
+          text.trim() ||
+          (annotations.length ? t('按标注修改') : attachments.length ? t('参考附件') : t('分析引用的控件')),
+        source,
+        count,
+        annotations,
+        attachments,
+        refs: extra.refs ?? [],
+        run,
+        ...extra,
+        // 原画张数没给时沿用「每张几版」，和以前一样；不能让它被 extra 里的 undefined 覆盖
+        conceptCount: extra.conceptCount ?? count,
+      }
+      const sent = running ? await api.steerDesign(id, body) : undefined
+      ed.absorb(sent ?? (await api.designChat(id, body)))
       if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
+      // 运行中发的消息要告诉用户去了哪里：插进了这一轮，还是等这一轮结束自动接着处理
+      if (sent) {
+        if (sent.steered) toast.success(t('已补充给正在进行的这一轮'))
+        else toast.success(t('这一轮收不下，结束后自动接着处理'))
+      }
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -934,6 +997,7 @@ function Designer({ id }: { id: string }) {
           text: t('分析当前设计'),
           source: { kind: 'none' },
           count,
+          conceptCount: count,
           annotations: [],
           attachments: [],
           refs: [],
@@ -1254,6 +1318,15 @@ function Designer({ id }: { id: string }) {
                   )
                 }
                 onSelect={(cid) => void conceptAction('select', cid)}
+                onSendMarks={() => {
+                  // 对话栏收起时 DesignChat 没挂载，request 没人消费：先打开对话栏再发，
+                  // 不然点了看着像没反应（标注不消失、不出新原画）
+                  setChatOpen(true)
+                  setRequest({ id: crypto.randomUUID(), kind: 'send' })
+                }}
+                inpaint={inpaint}
+                // 只有本机 ComfyUI 能真做局部重绘；别的生图方式勾了也是整张重画、全部标注都发
+                inpaintSupported={source.kind === 'local'}
                 onApprove={(cid) => void approve(cid)}
                 onRemove={(cid) => void conceptAction('remove', cid)}
                 onUpload={async (data) => {
@@ -1333,7 +1406,14 @@ function Designer({ id }: { id: string }) {
                   components={shownDoc?.components ?? doc.components}
                   images={doc.images}
                   imageUrl={imageUrl}
+                  scope={id}
                   onChange={(next, key) => ed.change((d) => ({ ...d, data: next }), key)}
+                  onBind={(where, key) =>
+                    ed.change(
+                      (d) => ({ ...d, ...bindDataSet(d.root, d.components, where, key) }),
+                      `data:bind:${where.id}`,
+                    )
+                  }
                 />
               </div>
             )}
@@ -1587,6 +1667,7 @@ function Designer({ id }: { id: string }) {
                 key={selWidget.id}
                 device={server.kind === 'web' ? device : 'desktop'}
                 widget={selWidget}
+                parent={selParent}
                 slotType={selParent ? WIDGETS[selParent.Type].slot : undefined}
                 parentSize={() => {
                   const el =
@@ -1677,6 +1758,8 @@ function Designer({ id }: { id: string }) {
               onClearCites={() => setCites([])}
               hasTemplate={!!concept.approved}
               request={request}
+              inpaint={inpaint}
+              onInpaint={setInpaint}
               conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
             />
           </aside>
