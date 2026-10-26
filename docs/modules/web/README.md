@@ -8,6 +8,7 @@
 ## 职责
 
 - 页面：项目、任务、工作流、Agent、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 角色页（`web/src/pages/AgentsPage.tsx`）默认按标签分组：没有标签的角色全在「默认」组，组按角色数降序、零组不渲染（规则和单测在 `web/src/lib/agent-groups.ts`）；可以切到按分类分组，分类的增删改和「在这个分类里新建」在那一侧。搜索和标签筛选与分组共存，命中的角色仍按组显示。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。
 - 对话页外壳：`web/src/components/chat/ConversationShell.tsx` 是任务对话（`web/src/components/tasks/TaskView.tsx`）和 UI 设计对话（`web/src/components/design/DesignChat.tsx`）共用的消息流布局：统一宽度和内边距、贴底滚动（`useConversationScroll` 包装 `web/src/lib/useStickToBottom.ts`）、回到底部按钮、输入框停靠区插槽；壳里不判断对话类型，业务内容通过 `children` / `fill` / `overlay` / `dock` 插槽注入。
