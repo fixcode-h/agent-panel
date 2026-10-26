@@ -83,6 +83,7 @@ import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
+import { useLoadTrace } from '@/lib/useLoadTrace'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
@@ -115,6 +116,7 @@ import { AnalysisPanel, reportTitle } from './AnalysisPanel'
 import { AnalysisMark } from './AnalysisMark'
 import { findReport, isAnalysisTask } from '@/lib/analysis-report'
 import { StepSection } from './StepSection'
+import { LoadTrace } from './LoadTrace'
 import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
@@ -391,6 +393,12 @@ export function TaskView({
     nav.go(r)
   }
   const [task, setTask] = useState<Task | null>(null)
+  // 打开这条对话的加载日志：各步在请求真正发起 / 返回的地方记，界面按它逐行打日志
+  const trace = useLoadTrace()
+  // 任务数据到了以后日志盖在对话上淡出，淡完就卸载（不一直占着屏幕）
+  const [traceHidden, setTraceHidden] = useState(false)
+  // 「渲染消息」这一步只记第一次：记下是为哪个任务记的，换对话时不能延用旧的那次结果
+  const traceRenderFor = useRef('')
   // 导入的任务：本机没有的 Agent 用导入时带来的，名字照常显示
   const imported = task?.imported
   const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
@@ -597,6 +605,10 @@ export function TaskView({
     }, 1000)
   }
   const apply = (raw: Task) => {
+    // 数据到手，开始画：渲染这一步从这一刻算到两帧画完（含 React 把消息挂进 DOM 的时间）。
+    // 两条路都会经过这里（GET 与 SSE 首包谁先到都可能），所以起始点记在这，不记在某一条请求的 then 里；
+    // 已经记过完成的不再改（startStep 对非 waiting 的步骤原样返回）
+    trace.start('render')
     // 别的接口顺手返回的任务不带运行时字段：沿用上一份，标题栏和侧栏的转圈不闪（见 keepLiveFields）
     const next = keepLiveFields(lastTask.current, raw)
     setTask(next)
@@ -655,10 +667,26 @@ export function TaskView({
   }, [task])
 
   useEffect(() => {
+    // 换对话：日志从头记（同一个组件实例可能被复用），盖住对话的那一层也重新出来
+    trace.reset()
+    setTraceHidden(false)
+    traceRenderFor.current = ''
+    trace.start('task')
+    // 演示版没有服务端推送：这一步按「不适用」处理，不假装连过
+    if (import.meta.env.VITE_DEMO) trace.skip('stream', t('演示版没有实时推送'))
+    else trace.start('stream')
     api
       .task(taskId)
-      .then(apply)
-      .catch((e) => toast.error((e as Error).message))
+      .then((raw) => {
+        trace.finish('task')
+        apply(raw)
+      })
+      .catch((e) => {
+        // 错误原文照给用户看；后面的步骤标成「未执行」——它们不是卡住了，是没轮到
+        trace.fail('task', (e as Error).message)
+        trace.abort()
+        toast.error((e as Error).message)
+      })
     // 换任务时取一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
@@ -727,17 +755,29 @@ export function TaskView({
   // 子对话列表：父对话页开着时定时刷新状态和摘要；子对话自己不显示子对话。
   // 这里只是只读查询，不给子对话发 presence、也不预热它们的 CLI
   useEffect(() => {
-    if (!task?.id || task.parentTaskId) {
+    // 任务还没拿到时不动：这一步是「还没轮到」，不是「没有子对话」
+    if (!task?.id) return
+    if (task.parentTaskId) {
       setChildren([])
+      // 子对话自己没有子对话列表：这步按「不适用」处理，日志才能走完
+      trace.skip('children', t('这个对话没有子对话'))
       return
     }
     let alive = true
-    const load = () =>
-      loadChildren(task.id)
+    // 只有第一次拉取记进加载日志：后面 4 秒一次的轮询和「打开对话」无关
+    const load = (tracked = false) => {
+      if (tracked) trace.start('children')
+      return loadChildren(task.id)
         .then((list) => alive && setChildren((cur) => sameJson(cur, list)))
-        .catch(() => {})
-    void load()
-    const timer = setInterval(load, 4000)
+        .catch((e) => {
+          if (tracked) trace.fail('children', (e as Error).message)
+        })
+        .finally(() => {
+          if (tracked) trace.finish('children')
+        })
+    }
+    void load(true)
+    const timer = setInterval(() => void load(), 4000)
     return () => {
       alive = false
       clearInterval(timer)
@@ -783,10 +823,15 @@ export function TaskView({
   useEffect(() => {
     if (marked.current === taskId) return
     marked.current = taskId
+    trace.start('seen')
     api
       .markTaskSeen(taskId)
-      .then(applySeen)
-      .catch(() => {})
+      .then((seen) => {
+        trace.finish('seen')
+        applySeen(seen)
+      })
+      // 标记已读失败不影响看对话：只在日志里标红并显示原文，不弹提示
+      .catch((e) => trace.fail('seen', (e as Error).message))
     // 只在换到新的对话时报一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
@@ -844,7 +889,15 @@ export function TaskView({
   // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
   // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
   const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
-  useTaskStream(taskId, running || jobRunning, apply)
+  useTaskStream(taskId, running || jobRunning, apply, {
+    // 首包到了：正常首包直接完成；之前失败过一次又重连上的，把那条失败收回来
+    // （否则重连成功后面板会永久停在「加载失败」，对话其实已经好了）
+    open: () => {
+      trace.recover('stream', t('重新连上了'))
+      trace.finish('stream')
+    },
+    fail: (error) => trace.fail('stream', error),
+  })
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -913,10 +966,27 @@ export function TaskView({
   const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
+  // 消息真的画到屏幕上才算「渲染完成」：两帧之后记，第一帧 React 把消息写进 DOM，第二帧浏览器画出来。
+  // 认任务 id：两条对话切得很快、或者消息还在增量推送时，旧的那次 rAF 不能把后一条记成已渲染
+  useEffect(() => {
+    if (!task || traceRenderFor.current === task.id) return
+    const id = task.id
+    const count = task.messages.length
+    traceRenderFor.current = id
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (traceRenderFor.current !== id) return
+        trace.finish('render', t('{n} 条消息', { n: count }))
+      }),
+    )
+    // 只跟着任务 id；同一条对话的消息增量不重记；trace 的函数是稳定的
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task])
+
   if (!task)
     return (
       <main className="flex flex-1 items-center justify-center text-subtle">
-        <Loader2 className="h-5 w-5 animate-spin" />
+        <LoadTrace steps={trace.steps} />
       </main>
     )
 
@@ -1382,6 +1452,8 @@ export function TaskView({
               )}
             >
               <main ref={setDropArea} className="relative flex min-w-0 flex-1 flex-col bg-bg md:h-full">
+                {/* 打开对话的加载日志：数据到了先盖在对话上，走完停一会儿再淡出（不挡下面的对话） */}
+                {!traceHidden && <LoadTrace overlay steps={trace.steps} onHidden={() => setTraceHidden(true)} />}
                 {/* 从外面把文件拖到对话页任何位置都算引入到要求里；右栏和流程图有自己的拖拽语义，不在范围内 */}
                 {dropOver && <DropOverlay />}
                 <header

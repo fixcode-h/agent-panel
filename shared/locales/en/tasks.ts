@@ -1172,4 +1172,19 @@ export const EN_TASKS: Record<string, string> = {
     'Sub-conversation "{from}" handed you a subtask to create. The panel has already arranged it and the specific request went to that subtask, so you do not need to dispatch anything; the result comes back to you.',
   '上面那条没能派出：{error}。这件子任务需要另外安排':
     'The note above could not be dispatched: {error}. This subtask needs to be arranged another way',
+  // 打开对话时的加载日志（web/src/components/tasks/LoadTrace.tsx）
+  加载对话: 'Loading conversation',
+  加载失败: 'Loading failed',
+  重新连上了: 'Reconnected',
+  读取对话: 'Reading conversation',
+  连接实时更新: 'Connecting live updates',
+  读取子对话: 'Reading sub-conversations',
+  标记已读: 'Marking as read',
+  渲染消息: 'Rendering messages',
+  未执行: 'Not run',
+  '已等 {time}': 'Waiting {time}',
+  '{n} 条消息': '{n} messages',
+  演示版没有实时推送: 'The demo has no live updates',
+  这个对话没有子对话: 'This conversation has no sub-conversations',
+  '实时更新连接失败，正在重连': 'Live updates failed to connect; reconnecting',
 }

@@ -10,12 +10,17 @@ test('不到一分钟写秒，最多一位小数，整数不带 .0', () => {
   assert.equal(fmtDuration(59_860), '59.9s')
 })
 
-test('毫秒级的耗时不写成 0s', () => {
-  assert.equal(fmtDuration(20), '<0.1s')
-  assert.equal(fmtDuration(99), '<0.1s')
-  // 取整到 0.1 秒后到了 0.1 就正常写
-  assert.equal(fmtDuration(100), '0.1s')
-  assert.equal(fmtDuration(150), '0.2s')
+test('一秒以内按毫秒写：加载那几步的耗时差要看得出来', () => {
+  assert.equal(fmtDuration(1), '1ms')
+  assert.equal(fmtDuration(20), '20ms')
+  assert.equal(fmtDuration(38), '38ms')
+  assert.equal(fmtDuration(999), '999ms')
+  // 0.5 毫秒以内的零头归到 0s，不写「0ms」
+  assert.equal(fmtDuration(0.4), '0s')
+  // 四舍五入到 1000ms 的按 1s 写，不出现「1000ms」
+  assert.equal(fmtDuration(999.6), '1s')
+  assert.equal(fmtDuration(1_000), '1s')
+  assert.equal(fmtDuration(1_200), '1.2s')
 })
 
 test('满一分钟转成分 + 秒，秒位保留一位小数', () => {
@@ -57,7 +62,9 @@ test('脚本侧那份副本和界面实现给出同样结果', async () => {
   }
   const cases = [
     0,
+    0.4,
     20,
+    38,
     99,
     100,
     990,
