@@ -4,7 +4,7 @@
  * 运行：npm run test:unit
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -130,6 +130,18 @@ test('永久删除不经过回收站，直接清掉任务记录', async () => {
   assert.ok(!(await trashRows(t)).some((x) => x.id === 'trash-perm'), '回收站里也没了')
 })
 
+test('永久删除才会清掉聊天的工作目录，进回收站时留着（7 天内能恢复）', async () => {
+  await make('trash-chat-dir')
+  // 聊天的工作目录在数据目录的 chats/<id>（见 server/store.ts 的 CHATS_DIR），执行时会建出来
+  const chatDir = path.join(dir, 'chats', 'trash-chat-dir')
+  mkdirSync(chatDir, { recursive: true })
+  const t = api()
+  await t.routes.request('/trash-chat-dir', { method: 'DELETE' })
+  assert.ok(existsSync(chatDir), '进回收站时工作目录还留着')
+  await t.routes.request('/trash-chat-dir/permanent', { method: 'DELETE' })
+  assert.ok(!existsSync(chatDir), '永久删除时工作目录一起删掉')
+})
+
 test('进了回收站的对话读不到：旧链接和 AI 窗口的轮询都靠它判「已关闭」', async () => {
   await make('trash-unreadable')
   const t = api()
@@ -140,7 +152,7 @@ test('进了回收站的对话读不到：旧链接和 AI 窗口的轮询都靠�
   assert.equal((await t.routes.request('/trash-unreadable')).status, 200, '恢复后又能读到')
 })
 
-test('恢复时分支目录已经不在：如实回报，并把分支标成已丢弃', async () => {
+test('恢复时分支目录已经不在：如实回报，worktree 置空（按共用目录继续）', async () => {
   await make('trash-gone-branch', {
     worktree: {
       path: path.join(dir, 'worktrees', 'not-there'),
