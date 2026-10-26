@@ -68,8 +68,14 @@ const spins = (t: Task) =>
 test('进程已回收、状态还写着 running 的等下一句任务：收口成已停止，不再显示在跑', async () => {
   const store = createTaskStore()
   // 这一轮跑完、CLI 留着等下一句：status 还是 running、working 是 false、计划 6/8
-  const waiting = task('reclaimed-wait', { status: 'running', working: false, plans: [halfPlan()] })
-  await store.create(waiting)
+  const waiting = task('reclaimed-wait', {
+    status: 'running',
+    working: false,
+    plans: [halfPlan()],
+    steps: [{ id: 'st1', title: '跑测试', status: 'running' }],
+  })
+  const created = await store.create(waiting)
+  const savedAt = created.updatedAt
   assert.equal(spins(waiting), true, '回收前界面把它画成在跑（等下一句 + 计划没做完）')
 
   assert.equal(await settleReclaimed(store, waiting.id, 'presence'), true)
@@ -79,6 +85,9 @@ test('进程已回收、状态还写着 running 的等下一句任务：收口�
   assert.equal(back.status, 'stopped', '进程回收后不能还写着 running：界面会一直转圈、也没有「继续」入口')
   assert.equal(back.stopReason, 'presence', '是页面宽限回收的，不是用户按的暂停')
   assert.equal(back.working, false)
+  assert.equal(back.updatedAt, savedAt, '回收不是「刚有活动」：列表时间和排序不能往前跳')
+  assert.equal(back.steps[0].status, 'pending', '还在跑的步骤要结掉，否则计划里那一行继续画成在做')
+  assert.equal(back.steps[0].interrupted, true)
   assert.equal(spins(back), false, '图标、分组、计数一起变静止')
   assert.equal(
     childIcon({

@@ -119,3 +119,19 @@ test('页面宽限回收后的静止行：说清继续会重新拉起，不写�
   assert.ok(!line.includes(t('已关闭')), `静止的行不该说「已关闭」：${line.join(' / ')}`)
   assert.ok(line.includes(t('页面切走后结束')), `要说清为什么停下：${line.join(' / ')}`)
 })
+
+test('页面宽限回收后计划没做完的静止行：行上直接写「继续会重新拉起」，不只在悬停里', () => {
+  const reclaimed = closedWaiting({ status: 'stopped', stopReason: 'presence', background: 0, waiting: undefined })
+  const line = texts(reclaimed)
+  assert.ok(line.includes(t('CLI 进程已回收，继续会重新拉起')), `行上要能直接看到这句：${line.join(' / ')}`)
+  assert.ok(line.includes(t('页面切走后结束')), `停下原因也留着：${line.join(' / ')}`)
+  // 计划做完了的行不再补这句：它没有要继续做的事
+  const finished = closedWaiting({
+    status: 'stopped',
+    stopReason: 'presence',
+    background: 0,
+    waiting: undefined,
+    plan: { done: 14, total: 14 },
+  })
+  assert.ok(!texts(finished).includes(t('CLI 进程已回收，继续会重新拉起')))
+})

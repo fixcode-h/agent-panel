@@ -316,10 +316,15 @@ export function tasksApi(deps: {
     // 只结束进程不落状态的话，任务会一直写着 running / 或做完但计划没做完，列表一直转圈，
     // 而「继续执行」只在 stopped 时出现——用户看到「继续会重新拉起」却没有入口（用户报的现象）。
     // 引擎收尾可能把状态改回 done（这一轮做完了），所以有执行位时要等它收完再看一眼
-    const canceled = cancelWait(id)
+    cancelWait(id)
     const entry = live.get(id)
-    if (entry?.done) void entry.done.then(() => settleReclaimed(store, id, 'presence')).catch(() => {})
-    else if (!canceled) void settleReclaimed(store, id, 'presence')
+    // 有执行位的一律等它收尾完再看：刚 reserve、还在启动（done 还没赋值）的窗口里拿旧快照写回，
+    // 会把正在启动的一轮覆盖成已停止；收尾完再判一次，计划没做完的才落静止
+    if (entry) {
+      if (entry.done) void entry.done.then(() => settleReclaimed(store, id, 'presence')).catch(() => {})
+      return
+    }
+    void settleReclaimed(store, id, 'presence')
   })
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {

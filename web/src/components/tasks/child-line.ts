@@ -133,6 +133,10 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）
   if (icon === 'stopped' || icon === 'idle') out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
+  // 进程回收了、这一轮停下但还有没做完的（计划没做完）：行上补一句继续会重新拉起。
+  // 静止的行以前只有悬停里能看到这句，一排卡片只剩「页面切走后结束」，用户以为再也起不来了
+  if (icon === 'idle' && c.plan && c.plan.done < c.plan.total)
+    out.push({ text: t('CLI 进程已回收，继续会重新拉起'), tone: 'subtle' })
   return out
 }
 
