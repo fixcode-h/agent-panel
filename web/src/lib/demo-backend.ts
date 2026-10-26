@@ -119,7 +119,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { openPlan } from '@shared/plan'
+import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -3248,6 +3248,9 @@ function tasksRoute(
     const { childRun, ...rest } = parse(TaskPatch, body)
     Object.assign(task, rest)
     if (childRun !== undefined) task.childRun = childRun ?? undefined
+    // 和正式后端一致（见 server/tasks.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
+    // 否则演示版会停在「已解决但计划还有 n 步没做完」，界面检查就测不到真机上收口后的样子
+    if (rest.resolved === true && task.parentTaskId) settlePlan(task)
     persist()
     return task
   }

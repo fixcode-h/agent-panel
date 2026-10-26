@@ -894,6 +894,10 @@ export const EN_TASKS: Record<string, string> = {
   独立分支还没合回原分支: 'The separate branch is not merged back yet',
   '查不到这个子对话独立分支的状态（git 没读出来）：先确认分支已经合并，再标记完成':
     'Cannot read the state of this sub-chat’s separate branch (git failed). Make sure the branch is merged, then mark it complete',
+  '用户点了「解决」：先停掉还在跑的子任务再收口':
+    'The user clicked Resolve: stopping still-running subtasks before wrapping up',
+  '这些子任务还没停下来：{list}。等它们结束再点「解决」':
+    'These subtasks have not stopped yet: {list}. Wait for them to finish, then click Resolve again',
   '{n} 个提交': '{n} commit(s)',
   '{n} 个文件未提交': '{n} uncommitted file(s)',
   '未合并到「{branch}」：{what}': 'Not merged into “{branch}”: {what}',
