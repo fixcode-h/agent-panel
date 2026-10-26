@@ -634,6 +634,7 @@ export const EN_SETTINGS: Record<string, string> = {
     'Describe what you need and a local agent writes a command that works with every agent',
   '已创建「/{name}」，所有 Agent 都能用': 'Created "/{name}", available to every agent',
   '用 AI 创建命令': 'Create command with AI',
+  '用 AI 创建 Skill': 'Create Skill with AI',
   '本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用':
     'A local agent writes the command file and previews it on the right; once confirmed, every agent can use it',
   '描述你想要的命令：打「/名字」时要让 Agent 做什么、要不要参数。可以从下面的例子开始：':
@@ -651,8 +652,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
   '放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。':
     'These live in each agent\'s own user directory; entries under "All agents" are expanded by the panel and work with every agent.',
-  '这些是面板自带的技能，统一装在 ~/.agents/skills，所有 Agent 共用。在左边的列表里安装、更新，或换回自带版本。':
-    'These skills ship with the panel and go into ~/.agents/skills, shared by every agent. Install, update or restore them from the list on the left.',
   '在左边选一项，或新建一个：装好之后所有 Agent 都能用。':
     'Pick one on the left, or create a new one — once installed, every agent can use it.',
   没有说明: 'No description',
@@ -683,7 +682,6 @@ export const EN_SETTINGS: Record<string, string> = {
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
-  '还没有，点右上角「新建」。': 'Nothing yet — click “New” at the top right.',
   '新建 Skill': 'New Skill',
   新建命令: 'New command',
   '{cli} 里已经有同名的了': '{cli} already has one with this name',
@@ -732,7 +730,23 @@ export const EN_SETTINGS: Record<string, string> = {
   '帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期':
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
-  '用 AI 创建 Skill': 'Create Skill with AI',
+  'AI 创建 Skill': 'Create Skill with AI',
+  'AI 创建命令': 'Create command with AI',
+  '自带 Skill（{n} 个可更新）': 'Bundled skills ({n} to update)',
+  '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
+  '还没有自带 Skill。': 'No bundled skills yet.',
+  '，所有 Agent 共用': ', shared by all agents',
+  '（所有 Agent 共用）': ' (shared by all agents)',
+  '自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。':
+    'Bundled skills ship with the panel and cannot be edited here. To customize one, copy it into your own skills directory.',
+  '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
+    'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
+  '在左边的文件树里点一个文件，看它的内容。': 'Click a file in the tree to see its contents.',
+  '这个技能只有 SKILL.md，点左上的 SKILL.md 看内容。':
+    'This skill is just SKILL.md — click SKILL.md at the top of the tree to read it.',
+  '二进制文件（{bytes} 字节），不显示内容。': 'Binary file ({bytes} bytes) — contents are not shown.',
+  '在左边选一个技能，看它带哪些文件、装没装。':
+    'Pick a skill on the left to see which files it ships and whether it is installed.',
   '本机 Agent 写出 SKILL.md，在右侧预览，确认再应用':
     'The local agent writes SKILL.md; preview it on the right and apply when happy',
   '描述你想要的 Skill，越具体越好。可以从下面的例子开始：':
@@ -1290,11 +1304,7 @@ export const EN_SETTINGS: Record<string, string> = {
     'These project settings no longer match the analysis report. Apply them one by one, then click Confirm to save.',
   '{n} 个自带技能可以更新': '{n} bundled skills can be updated',
   '{n} 个部署的技能可以更新': '{n} deployed skills can be updated',
-  '部署的技能里有 {n} 个和这一版自带的不同：{names}。到「设置 → 部署」覆盖部署一次即可更新。':
-    '{n} deployed skills differ from this version: {names}. Deploy with overwrite in Settings → Deploy to update them.',
   去部署: 'Go to Deploy',
-  '{n} 个已安装的技能和这一版自带的不同，点「更新全部」换成新版本（本机改过的内容会被替换）。':
-    '{n} installed skills differ from this version. Click "Update all" to switch to the new versions (local edits will be replaced).',
   '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
     '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
   勾选覆盖: 'Check overwrite',

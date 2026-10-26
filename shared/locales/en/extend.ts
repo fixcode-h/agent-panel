@@ -104,7 +104,6 @@ export const EN_EXTEND: Record<string, string> = {
   '更新了 {n} 项': 'Updated {n} item(s)',
   都已经是最新的了: 'Everything is up to date',
   装到: 'Install to',
-  '所有 Agent 共用': 'Shared by all agents',
   '只装没有的，已经装了的不动': 'Only installs missing ones; installed ones are left alone',
   安装全部未装的: 'Install all missing',
   更新全部: 'Update all',

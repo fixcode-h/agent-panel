@@ -440,6 +440,7 @@ export const EN_SERVER: Record<string, string> = {
   '名字只能用字母、数字、. _ -': 'Names may only use letters, digits, . _ -',
   名字不对: 'Invalid name',
   没有这一项: 'No such item',
+  没有这个文件: 'No such file',
   '「{name}」已经有了': '“{name}” already exists',
   要填文件路径: 'Enter a file path',
   '路径只能填 Skill 目录里的相对路径': 'The path must be relative and inside the skill folder',

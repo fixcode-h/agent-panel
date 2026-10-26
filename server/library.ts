@@ -24,7 +24,7 @@ import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { clearSlashCache, panelCommandDir, readCommand, scanCommands } from './slash.ts'
 import { ALL_AGENTS } from '../shared/commands.ts'
-import { installBundled, listBundled } from './bundled-skills.ts'
+import { installBundled, listBundled, readBundledEntry } from './bundled-skills.ts'
 import { getSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
 
@@ -549,6 +549,11 @@ export function libraryApi() {
       .get(
         '/bundled',
         guard(async (c) => c.json({ items: await listBundled() })),
+      )
+      // 自带 Skill 的文件内容（只读）：详情页看 SKILL.md 和附件都走这里，path 为空表示主文件
+      .get(
+        '/bundled/entry',
+        guard(async (c) => c.json(await readBundledEntry(c.req.query('name') ?? '', c.req.query('path') ?? ''))),
       )
       .post(
         '/bundled/install',
