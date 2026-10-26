@@ -926,7 +926,7 @@ export function TaskView({
     if (!files.items.length && slash.intercept(content)) return
     // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等
     // settings、项目、git/p4 探测、CLI 拉起这一串（消息本身早已经 SSE 到界面），
-    // 以前就是在这里 await 完才清空，于是出现「气泡已经标了已交给 CLI、输入框还满着」
+    // 以前就是在这里 await 完才清空，于是出现「气泡已经标了已交给 Agent、输入框还满着」
     const attachments = files.attachments
     const messageId = crypto.randomUUID()
     const pending: TaskMessage = {
@@ -937,7 +937,7 @@ export function TaskView({
       text: content,
       tools: [],
       ...(attachments.length ? { attachments } : {}),
-      // 面板还没接收、CLI 还没认领；服务端记下这条后换成「已交给 CLI，这一轮接着处理」
+      // 面板还没接收、Agent 还没认领；服务端记下这条后换成「已交给 Agent，这一轮接着处理」
       delivery: { how: 'pending', at: new Date().toISOString() },
       at: new Date().toISOString(),
     }
@@ -963,7 +963,7 @@ export function TaskView({
         200,
       )
     } catch (e) {
-      // 请求失败不等于没发出去：服务端可能已经收下并推到了界面（消息上已经写着「已交给 CLI」），
+      // 请求失败不等于没发出去：服务端可能已经收下并推到了界面（消息上已经写着「已交给 Agent」），
       // 只是响应因连接中断没回来。先确认这条有没有被服务端记下，记下了就别把原文又放回输入框
       // （那正是用户报的「消息发出去了、输入框里字还在」，用户再回车会再发一条一样的）
       const landed = await landedMessage(task.id, messageId)

@@ -506,7 +506,7 @@ export const messageRecorded = (messages: Pick<TaskMessage, 'id'>[], messageId: 
   messages.some((m) => m.id === messageId)
 
 /**
- * 请求报错时这条消息其实已经交给 CLI 了吗：服务端记下了、又不是「没送出去」，
+ * 请求报错时这条消息其实已经交给 Agent 了吗：服务端记下了、又不是「没送出去」，
  * 就不能把原文再放回输入框（否则会出现「消息发出去了、输入框里字还在」）。
  * 没记下、没有交付记录、或者还停在页面本地的 pending，都返回 false，页面才把原文放回输入框
  */
