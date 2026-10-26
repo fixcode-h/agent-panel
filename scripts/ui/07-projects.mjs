@@ -404,6 +404,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .click()
       .catch(() => errors.push('AI 初始化：没有「全部应用」'))
     await check(p, 'AI初始化-全部应用', ['已应用'])
+    // 应用之后计数和按钮要立刻跟上：待应用的项清零，没有可应用项时「全部应用」不可点
+    await check(p, 'AI初始化-全部应用后状态', ['全部推荐都已和当前设置一致'])
+    if (await p.getByText('项待应用').count()) errors.push('AI 初始化：全部应用后还显示「N 项待应用」')
+    const applyAllButton = p.getByRole('button', { name: '全部应用' })
+    if (!(await applyAllButton.isDisabled())) errors.push('AI 初始化：没有可应用项时「全部应用」还能点')
     await p
       .getByText('评估后不适用的工作流')
       .scrollIntoViewIfNeeded()
