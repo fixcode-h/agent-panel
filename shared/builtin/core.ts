@@ -122,6 +122,24 @@ export function upgradeParamDefaults(a: AgentInput, key: CoreKey): AgentInput {
 }
 
 /**
+ * 必备角色改了「在哪类对话里启动」的默认值（如「文档」从任意改成只在父对话）。
+ * 这个字段用户可以改，而且旧数据里根本不存在（schema 按 any 读），所以同样只在启动时做一次：
+ * 没做过这条升级的副本改成新默认并记进 upgrades；之后用户改回 any 不会被再改回来。
+ */
+const RUN_IN_CHANGES: { id: string; core: CoreKey; runIn: AgentInput['runIn'] }[] = [
+  // 补文档会把子对话卡在那儿空耗：默认改成父对话里创建（ADR 0019）
+  { id: 'docsync.run-in-parent', core: 'docsync', runIn: 'parent' },
+]
+
+/** 对已装的必备角色补做还没做过的启动位置升级（幂等） */
+export function upgradeRunIn(a: AgentInput, key: CoreKey): AgentInput {
+  const todo = RUN_IN_CHANGES.filter((c) => c.core === key && !a.upgrades?.includes(c.id))
+  if (!todo.length) return a
+  const runIn = todo[0].runIn
+  return { ...a, runIn, upgrades: [...(a.upgrades ?? []), ...todo.map((c) => c.id)] }
+}
+
+/**
  * 按内置定义改写一个内置角色（必备角色和其他内置角色都走它）：定义部分换成内置的，可以改的部分留用户的。
  * 启动同步和保存都走它，所以用户（或 AI 优化）改了不该改的字段也会被纠正回来。
  * 必备角色不能停用；其他内置角色的启用开关、分类（由调用方传）留用户的。
@@ -143,6 +161,8 @@ export function syncCore(
     common: a.common,
     canDelegate: a.canDelegate,
     canPlan: a.canPlan,
+    // 启动位置不跟内置定义：用户可以改（包括内置角色），升级只在启动时做一次（见 upgradeRunIn）
+    runIn: cur.runIn,
     capsSet: true,
     enabled: KEYS.has(def.key) ? true : cur.enabled,
     categoryId: ids.categoryId,
@@ -164,6 +184,7 @@ export function sameCore(a: AgentInput, b: AgentInput) {
       x.common,
       x.canDelegate,
       x.canPlan,
+      x.runIn,
       x.capsSet,
       x.upgrades,
       x.enabled,

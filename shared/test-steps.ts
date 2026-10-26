@@ -1,4 +1,4 @@
-import { TEST_STEP_ENVS, type TaskTestRun, type TestStep } from './schema.ts'
+import { TEST_STEP_ENVS, type Project, type TaskTestRun, type TestStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { fmtDuration } from './duration.ts'
 
@@ -98,7 +98,23 @@ export function appliesToText(step: Pick<TestStep, 'appliesTo'>) {
 }
 
 /**
- * 勾了「在父对话中执行」的步骤：子对话不跑，合回父对话的分支后面板在父对话目录里跑一遍，结果回传给它（见 ADR 0018）。
+ * 这次判断用哪份测试步骤：**以项目当前设置为准**，任务快照只在项目被删、读不到时兜底。
+ * 「调用前现读配置」是用户定的口径（见 docs/agent-test-steps.md「项目设置对进行中的对话生效」）：
+ * 项目设置里改了步骤（勾上/取消「禁止子对话执行」、改命令、停用），已经在跑的对话下一次判断
+ * ——下一轮提示词、下一次子对话合回——就按新配置走，不用等新建对话。
+ * project 传 null / undefined 表示没读到项目（被删、读失败），这时才用快照；
+ * 传进来是空数组表示项目现在确实没有步骤，不能让快照复活——用户删了步骤就该不跑。
+ */
+export function currentTestSteps(
+  snapshot: TestStep[],
+  project: Pick<Project, 'testSteps'> | null | undefined,
+): TestStep[] {
+  return project ? project.testSteps : snapshot
+}
+
+/**
+ * 勾了「禁止子对话执行」的步骤：只对子对话生效——子对话不跑，合回父对话的分支后面板在父对话目录里跑一遍，
+ * 结果回传给它（见 ADR 0018）。父对话自己验证时用的是全部启用的步骤（`verifyBlock`），不经过这里。
  * 只取启用的、有命令的；`merge`（合并时编译）不在里面：那条仍由父对话按 ADR 0004 向面板申请编译，
  * 两边都跑会让 UE 编译编两次。
  * 只对 Git 项目的独立分支子对话生效：P4 / SVN / 没有版本控制的子对话没有分支可合，勾了这个字段也不跑这些步骤
@@ -108,7 +124,7 @@ export function parentRunSteps(steps: TestStep[]) {
 }
 
 /**
- * 「在父对话中执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 勾了「禁止子对话执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
  * - 有父对话 + 独立分支（真正会合回的那种子对话）→ child：它不跑，合并后由父对话跑。
  * - 顶层父对话 → parent：子对话合并后由面板在它的目录里跑；它自己改代码时没人替它跑，要自己跑（评审 R2）。
  * - 共用目录的子对话、P4 / SVN / 没有版本控制、没有勾这种步骤 → 空：步骤照常由 Agent 自己跑。
@@ -226,16 +242,16 @@ export function testStepsText(
   steps: TestStep[],
   platform: string,
   wslDistro = '',
-  /** 这一份是给谁看的（见 ADR 0018）：子对话不跑标了「在父对话中执行」的步骤，父对话由面板自动跑 */
+  /** 这一份是给谁看的（见 ADR 0018）：子对话不跑标了「禁止子对话执行」的步骤，父对话由面板自动跑 */
   parentRun: 'child' | 'parent' | '' = '',
 ) {
   return steps
     .map((s, i) => {
-      // 只有这类步骤真的生效的场合才标「在父对话中执行」：非 Git 项目、共用目录的子对话、工作流节点里
+      // 只有这类步骤真的生效的场合才标「禁止子对话执行」：非 Git 项目、共用目录的子对话、工作流节点里
       // 没人代它跑，标出来只会让 Agent 跳过没人跑的步骤
       const inParent = !!s.runInParent && !s.merge && !!parentRun
       const lines = [
-        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.merge ? t('，合并时编译') : ''}${inParent ? t('，在父对话中执行') : ''}${s.enabled ? '' : t('，已停用')}）`,
+        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.merge ? t('，合并时编译') : ''}${inParent ? t('，禁止子对话执行') : ''}${s.enabled ? '' : t('，已停用')}）`,
         `   - 命令：${stepCommand(s, platform, wslDistro)}`,
       ]
       // 由父对话跑的步骤只有这一处说清「谁跑」：两边看到的是同一份步骤，说法必须一致
@@ -274,7 +290,7 @@ export const CHANGED_FILES_RULE = `先取本次实际改了什么，再决定跑
 /**
  * 注入工作流说明后面的项目测试步骤。没有配置时给出兜底：让 Agent 自己找命令，并在结果里建议配置。
  * 提示词里先教怎么按改动清单筛，再列步骤：不筛的话 Agent 会为了保险全部跑一遍。
- * 新建对话时写进任务快照，之后改项目设置不影响已经开始的任务。
+ * 工作流任务把步骤写进任务快照；对话执行时以项目当前设置为准（每次拼提示词现取一份）。
  */
 export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = '') {
   const active = steps.filter((s) => s.enabled)
@@ -307,9 +323,9 @@ export function verifyBlock(
   const inParent = parentRunSteps(active)
   const parentNote = inParent.length
     ? o.parentRun === 'child'
-      ? `\n这些步骤标了「在父对话中执行」：${inParent.map((s) => `「${s.name}」`).join('、')}。你不要跑它们（跑了也不算数，父对话会重新跑），也不要在结果里写跑过；合并后面板由父对话跑，结果回传给你。你的完成条件是「改动已合回父对话所在的分支 + 父对话测试通过」；父对话测试失败时面板会把报错原文推回来，按它修好再调用 submit_merge。`
+      ? `\n这些步骤标了「禁止子对话执行」：${inParent.map((s) => `「${s.name}」`).join('、')}。你不要跑它们（跑了也不算数，父对话会重新跑），也不要在结果里写跑过；合并后面板由父对话跑，结果回传给你。你的完成条件是「改动已合回父对话所在的分支 + 父对话测试通过」；父对话测试失败时面板会把报错原文推回来，按它修好再调用 submit_merge。`
       : o.parentRun === 'parent'
-        ? `\n这些步骤标了「在父对话中执行」：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按清单执行。跑完之前，你计划里等那个子对话的步骤保持等待。`
+        ? `\n这些步骤标了「禁止子对话执行」（只对子对话生效）：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按清单执行。跑完之前，你计划里等那个子对话的步骤保持等待。`
         : ''
     : ''
   const list = active.length

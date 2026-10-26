@@ -1,20 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { CalendarClock, ExternalLink, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, Pencil, Play, Plus, Power, Trash2 } from 'lucide-react'
 import {
   fromLocalInput,
+  groupLabel,
+  groupSchedules,
+  nextRunLabel,
+  outcomeLabel,
+  outcomeOf,
+  outcomeTitle,
   sameMinute,
   SCHEDULE_TICK_MS,
   toLocalInput,
+  WORKDAY_PLAN,
   workdayTemplate,
   type Schedule,
   type ScheduleInput,
   type ScheduleRepeat,
 } from '@shared/schedule'
-import { getLang, t } from '@shared/i18n'
+import { t } from '@shared/i18n'
 import { listableAgents } from '@shared/builtin/core'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
+import { timeAgo } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,27 +30,13 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
-import { Switch } from '@/components/ui/switch'
 import { PageFrame } from '@/components/library/parts'
 
 const DEMO = !!import.meta.env.VITE_DEMO
-
-/** 时间按本机时区显示到分钟：计划只精确到分钟，秒没有意义 */
-const fmtAt = (iso: string) => {
-  const d = new Date(iso)
-  if (!Number.isFinite(d.getTime())) return '—'
-  return d.toLocaleString(getLang() === 'en' ? 'en-US' : 'zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-/** 待执行的排前面、按时间先后；跑过的和停用的放后面 */
-const rank = (s: Schedule) => (s.enabled && s.status === 'pending' ? 0 : 1)
-const sortSchedules = (list: Schedule[]) =>
-  [...list].sort((a, b) => rank(a) - rank(b) || Date.parse(a.at) - Date.parse(b.at))
+/** 启动失败的原文超过这个长度才给「展开全文」：窄屏一行大约只放得下这么多字，再长会被截掉 */
+const ERROR_PREVIEW_CHARS = 30
+/** 模板时间文案：从 WORKDAY_PLAN 算，模板改成别的时刻这里跟着变 */
+const WORKDAY_TIME = `${WORKDAY_PLAN.hour}:${String(WORKDAY_PLAN.minute).padStart(2, '0')}`
 
 const toInput = (s: Schedule): ScheduleInput => ({
   name: s.name,
@@ -54,19 +48,146 @@ const toInput = (s: Schedule): ScheduleInput => ({
   enabled: s.enabled,
 })
 
-function StatusBadge({ schedule: s }: { schedule: Schedule }) {
-  if (!s.enabled) return <Badge>{t('已停用')}</Badge>
-  if (s.status === 'done') return <Badge tone="success">{t('已执行')}</Badge>
-  if (s.status === 'skipped') return <Badge tone="warning">{t('已跳过')}</Badge>
-  return <Badge tone="accent">{t('待执行')}</Badge>
+/** 最近一次结果的色调：问题和错过都要能一眼看见，成功不抢眼 */
+const outcomeTone = { error: 'warning', missed: 'warning', success: 'success', none: 'neutral' } as const
+
+/** 分组标题：组名 + 数量 */
+function GroupHeading({ group, count }: { group: string; count: number }) {
+  return (
+    <h2 className="flex items-center gap-2 text-[0.8125rem] font-semibold text-muted">
+      {group}
+      <span className="rounded-full bg-field px-1.5 text-[0.6875rem] font-normal text-subtle tabular-nums">
+        {count}
+      </span>
+    </h2>
+  )
 }
 
-/** 列表里一行时间说明：下次什么时候跑、上次什么时候跑过 */
-const timeText = (s: Schedule) => {
-  if (!s.enabled) return t('已停用，不会执行')
-  if (s.status === 'pending') return t('下次执行 {time}', { time: fmtAt(s.at) })
-  if (s.lastRunAt) return t('上次执行 {time}', { time: fmtAt(s.lastRunAt) })
-  return t('没有执行过')
+/** 一张计划卡片：名称 → 下次执行 → 重复 / 项目 / 角色 → 最近一次结果 → 操作 */
+function ScheduleCard({
+  schedule: s,
+  now,
+  projectName,
+  agentName,
+  busy,
+  onEdit,
+  onRun,
+  onToggle,
+  onDelete,
+  onOpenTask,
+}: {
+  schedule: Schedule
+  now: number
+  projectName: string
+  agentName: string
+  busy: boolean
+  onEdit: () => void
+  onRun: () => void
+  onToggle: () => void
+  onDelete: () => void
+  onOpenTask: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const outcome = outcomeOf(s)
+  const next = nextRunLabel(s, now)
+  // 实际渲染的文本（错过 / 成功时带「上次启动失败：」前缀）：阈值按它算，
+  // 否则前缀会把一行挤满却不出现「展开全文」，触屏上没有 title 可看
+  const errorText = outcome === 'error' ? s.lastError : t('上次启动失败：{error}', { error: s.lastError })
+  // 失败原文可能很长（带堆栈、带换行）：先显示一行，要看全文再展开
+  const longError = errorText.length > ERROR_PREVIEW_CHARS || s.lastError.includes('\n')
+
+  return (
+    <li className="flex flex-col rounded-xl border bg-card px-4 py-3.5">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        <h3 className={cn('min-w-0 flex-1 truncate text-[0.9375rem] font-semibold', !s.enabled && 'text-muted')}>
+          {s.name}
+        </h3>
+        <div className="flex flex-wrap items-center gap-0.5">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onRun}>
+            <Play className="h-3.5 w-3.5" />
+            {t('立即执行')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+            {t('编辑')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onToggle}>
+            <Power className="h-3.5 w-3.5" />
+            {s.enabled ? t('停用') : t('启用')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-danger hover:bg-danger/10 hover:text-danger"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('删除')}
+          </Button>
+        </div>
+      </div>
+
+      {/* 下次执行：相对时间 + 绝对时间都在这一行；停用 / 单次跑完后只写不会再有下一次，不再加「下次执行」标签 */}
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {next ? (
+          <>
+            <span className="text-xs text-subtle">{t('下次执行')}</span>
+            <span className={cn('text-[0.9375rem] font-medium tabular-nums', s.enabled ? 'text-fg' : 'text-subtle')}>
+              {next}
+            </span>
+          </>
+        ) : (
+          <span className="text-[0.9375rem] font-medium text-subtle">{t('不会再次执行')}</span>
+        )}
+        <Badge>{s.repeat === 'daily' ? t('每天') : t('单次')}</Badge>
+      </div>
+
+      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+        <span>{projectName || t('聊天')}</span>
+        <span className="text-subtle">·</span>
+        <span>{agentName || t('跟随默认 CLI')}</span>
+      </p>
+
+      {/* 最近一次结果：成功 / 错过 / 启动失败各说清发生了什么，失败原文不吞 */}
+      <div className="mt-2.5 flex flex-col gap-1.5 border-t pt-2.5 text-xs">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Badge tone={outcomeTone[outcome]}>{outcomeTitle(s)}</Badge>
+          {/* 徽标已经说了结果，正文只补细节；还没执行过时不再重复同一句话 */}
+          {outcome !== 'error' && outcome !== 'none' && <span className="text-muted">{outcomeLabel(s, now)}</span>}
+          {outcome === 'success' && <span className="text-subtle">{timeAgo(s.lastRunAt, now)}</span>}
+          {!!s.lastTaskId && (
+            <button
+              type="button"
+              onClick={onOpenTask}
+              className="inline-flex cursor-pointer items-center gap-1 text-accent hover:underline"
+            >
+              {t('打开这次执行')}
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {!!s.lastError && (
+          <div className="flex flex-col gap-1">
+            <p
+              className={cn('break-words whitespace-pre-wrap text-warning', !expanded && 'line-clamp-1')}
+              title={expanded ? undefined : s.lastError}
+            >
+              {errorText}
+            </p>
+            {longError && (
+              <button
+                type="button"
+                className="w-fit cursor-pointer text-subtle hover:text-fg"
+                onClick={() => setExpanded((v) => !v)}
+              >
+                {expanded ? t('收起') : t('展开全文')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </li>
+  )
 }
 
 /** 编辑表单的值：时间用 datetime-local 的字符串（本机时区） */
@@ -115,6 +236,11 @@ function ScheduleDialog({
   const [form, setForm] = useState<Form>(() => (schedule ? formOf(schedule) : newForm()))
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
+  /** 一键填入「今日工作」：只改名称、提示词和每天 19:00，用户选的项目和角色保留 */
+  const applyTemplate = () => {
+    const tpl = workdayTemplate(Date.now())
+    setForm((f) => ({ ...f, name: tpl.name, prompt: tpl.prompt, repeat: tpl.repeat, atLocal: toLocalInput(tpl.at) }))
+  }
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
   // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
   const pickable = listableAgents(agents)
@@ -177,11 +303,17 @@ function ScheduleDialog({
         </>
       }
     >
-      {!schedule && (
-        <p className="text-[0.8125rem] text-muted">
-          {t('已按「今日工作」填好：每天 19:00 总结当天的工作，可以直接改。')}
+      {/* 新建默认已按模板填好；改乱了可以一键填回来 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed text-muted">
+          {schedule
+            ? t('改完保存，计划按新的设置执行。')
+            : t('已按「今日工作」填好：每天 {time} 总结当天的工作，可以直接改。', { time: WORKDAY_TIME })}
         </p>
-      )}
+        <Button size="sm" variant="secondary" onClick={applyTemplate}>
+          {t('填入「今日工作」模板')}
+        </Button>
+      </div>
       <label className="flex flex-col gap-1.5">
         <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
         <Input
@@ -191,28 +323,30 @@ function ScheduleDialog({
           onChange={(e) => set('name', e.target.value)}
         />
       </label>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[0.8125rem] font-medium">{t('到点后执行的对话内容')}</span>
-        <Textarea
-          rows={4}
-          value={form.prompt}
-          placeholder={t('交给 Agent 的一句话目标，例如：总结今天做的工作')}
-          onChange={(e) => set('prompt', e.target.value)}
-        />
-      </label>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('在哪个项目里执行')}</span>
-          <Select
-            value={form.projectId}
-            aria-label={t('在哪个项目里执行')}
-            options={[
-              { value: '', label: t('聊天（不属于项目）') },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
-            onChange={(e) => set('projectId', e.target.value)}
+          <span className="text-[0.8125rem] font-medium">{t('执行时间')}</span>
+          <Input
+            type="datetime-local"
+            className="h-10 dark:[color-scheme:dark]"
+            value={form.atLocal}
+            onChange={(e) => set('atLocal', e.target.value)}
           />
         </label>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[0.8125rem] font-medium">{t('重复')}</span>
+          <Segmented
+            label={t('重复')}
+            value={form.repeat}
+            onChange={(v) => set('repeat', v)}
+            options={[
+              { id: 'once', label: t('只执行一次') },
+              { id: 'daily', label: t('每天') },
+            ]}
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] font-medium">{t('用哪个角色')}</span>
           <Select
@@ -231,30 +365,28 @@ function ScheduleDialog({
             onChange={(e) => set('agentId', e.target.value)}
           />
         </label>
-      </div>
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('重复')}</span>
-          <Segmented
-            label={t('重复')}
-            value={form.repeat}
-            onChange={(v) => set('repeat', v)}
-            options={[
-              { id: 'once', label: t('只执行一次') },
-              { id: 'daily', label: t('每天') },
-            ]}
-          />
-        </div>
         <label className="flex flex-col gap-1.5">
-          <span className="text-[0.8125rem] font-medium">{t('执行时间')}</span>
-          <Input
-            type="datetime-local"
-            className="h-10 dark:[color-scheme:dark]"
-            value={form.atLocal}
-            onChange={(e) => set('atLocal', e.target.value)}
+          <span className="text-[0.8125rem] font-medium">{t('在哪个项目里执行')}</span>
+          <Select
+            value={form.projectId}
+            aria-label={t('在哪个项目里执行')}
+            options={[
+              { value: '', label: t('聊天（不属于项目）') },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            onChange={(e) => set('projectId', e.target.value)}
           />
         </label>
       </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[0.8125rem] font-medium">{t('到点后执行的对话内容')}</span>
+        <Textarea
+          rows={5}
+          value={form.prompt}
+          placeholder={t('交给 Agent 的一句话目标，例如：总结今天做的工作')}
+          onChange={(e) => set('prompt', e.target.value)}
+        />
+      </label>
       <p className="text-xs text-subtle">
         {t('时间按本机时区。每天的计划每次执行完自动推到第二天，只执行一次的执行完就停下。')}
       </p>
@@ -263,10 +395,12 @@ function ScheduleDialog({
 }
 
 export function SchedulesPage() {
-  const { projects } = useData()
+  const { projects, agents } = useData()
   const { go } = useNav()
   const [list, setList] = useState<Schedule[] | null>(null)
   const [error, setError] = useState('')
+  /** 相对时间（3 小时后）和数据一起算、一起刷：不和列表数据分开各算一次 */
+  const [now, setNow] = useState(() => Date.now())
   /** 正在新建 / 编辑的那条；'new' 是新建 */
   const [edit, setEdit] = useState<Schedule | 'new' | null>(null)
   const [del, setDel] = useState<Schedule | null>(null)
@@ -280,7 +414,8 @@ export function SchedulesPage() {
     try {
       const next = await api.schedules()
       if (seq !== loadSeq.current) return
-      setList(sortSchedules(next))
+      setList(next)
+      setNow(Date.now())
       setError('')
     } catch (e) {
       if (seq === loadSeq.current) setError((e as Error).message)
@@ -299,7 +434,8 @@ export function SchedulesPage() {
   const saved = (s: Schedule) => {
     // 本地已经是最新的，把在途的轮询请求作废（它带的是保存前的列表）
     loadSeq.current++
-    setList((l) => sortSchedules([...(l ?? []).filter((x) => x.id !== s.id), s]))
+    setList((l) => [...(l ?? []).filter((x) => x.id !== s.id), s])
+    setNow(Date.now())
     setEdit(null)
   }
 
@@ -349,89 +485,42 @@ export function SchedulesPage() {
       ) : !list ? (
         <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
       ) : !list.length ? (
-        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
-          {t('还没有计划。点右上角「新建计划」，默认已经按「今日工作」填好。')}
-        </p>
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center">
+          <p className="max-w-[420px] text-[0.8125rem] leading-relaxed text-subtle">
+            {t('还没有计划。新建一条「今日工作」，每天 {time} 自动总结当天的工作。', { time: WORKDAY_TIME })}
+          </p>
+          <Button onClick={() => setEdit('new')}>
+            <Plus className="h-4 w-4" />
+            {t('新建今日工作')}
+          </Button>
+        </div>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {list.map((s) => {
-            const project = projects.find((p) => p.id === s.projectId)
-            return (
-              <li key={s.id} className="flex items-start gap-3 rounded-xl border bg-card px-4 py-3">
-                <CalendarClock className={cn('mt-0.5 h-4 w-4 shrink-0', s.enabled ? 'text-accent' : 'text-subtle')} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={cn('truncate text-[0.9375rem] font-medium', !s.enabled && 'text-muted')}>
-                      {s.name}
-                    </span>
-                    <StatusBadge schedule={s} />
-                    <Badge>{s.repeat === 'daily' ? t('每天') : t('单次')}</Badge>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-[0.8125rem] leading-relaxed text-muted">{s.prompt}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
-                    <span>{timeText(s)}</span>
-                    <span>{project ? project.name : t('聊天')}</span>
-                    {!!s.agentId && <span>{t('用角色执行')}</span>}
-                    {!!s.missedAt && (
-                      <span className="text-warning">
-                        {t('错过 {time}（面板没开着，不补跑）', { time: fmtAt(s.missedAt) })}
-                      </span>
-                    )}
-                    {!!s.lastError && (
-                      <span className="text-warning">{t('上次启动失败：{error}', { error: s.lastError })}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {!!s.lastTaskId && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title={t('打开这次执行')}
-                      aria-label={t('打开这次执行')}
-                      onClick={() => openTask(s)}
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </Button>
-                  )}
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title={t('立即执行')}
-                    aria-label={t('立即执行')}
-                    disabled={busy === s.id}
-                    onClick={() => void runNow(s)}
-                  >
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title={t('编辑')}
-                    aria-label={t('编辑')}
-                    onClick={() => setEdit(s)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Switch
-                    checked={s.enabled}
-                    aria-label={t('启用这条计划')}
-                    onCheckedChange={(on) => void toggle(s, on)}
+        groupSchedules(list).map(({ group, items }) => (
+          <section key={group} className="flex flex-col gap-2">
+            <GroupHeading group={groupLabel(group)} count={items.length} />
+            <ul className="flex flex-col gap-2">
+              {items.map((s) => {
+                const project = projects.find((p) => p.id === s.projectId)
+                const agent = agents.find((a) => a.id === s.agentId)
+                return (
+                  <ScheduleCard
+                    key={s.id}
+                    schedule={s}
+                    now={now}
+                    projectName={project?.name ?? ''}
+                    agentName={agent?.name ?? ''}
+                    busy={busy === s.id}
+                    onEdit={() => setEdit(s)}
+                    onRun={() => void runNow(s)}
+                    onToggle={() => void toggle(s, !s.enabled)}
+                    onDelete={() => setDel(s)}
+                    onOpenTask={() => openTask(s)}
                   />
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title={t('删除')}
-                    aria-label={t('删除')}
-                    onClick={() => setDel(s)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+                )
+              })}
+            </ul>
+          </section>
+        ))
       )}
 
       {edit && (

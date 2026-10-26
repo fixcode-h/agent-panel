@@ -119,6 +119,8 @@ const base = (
     common: false,
     canDelegate: false,
     canPlan: false,
+    // 默认哪儿都能启动；只有个别角色改成 'parent'（子对话点名时转交父对话，见 ADR 0019）
+    runIn: 'any',
     capsSet: true,
     ...agent,
   },
@@ -378,6 +380,8 @@ Bug 记录只记用户报的 Bug：用户提出的问题经分析、修复并验
     icon: 'doc',
     model: '@low',
     common: true,
+    // 子对话补文档会把它卡在那里等：这类不阻塞主线的角色交给父对话创建（见 ADR 0019）
+    runIn: 'parent',
     skills: ['project-documentation'],
     params: [
       p({

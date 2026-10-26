@@ -152,6 +152,13 @@ export const EN_SHARED: Record<string, string> = {
   '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
   '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
   '「{title}」在原来的子任务里重试：{list}': '"{title}" is retrying in the original subtasks: {list}',
+  '「{title}」{note}': '{title}: {note}',
+  '已转交父对话创建「{title}」{id}': 'Handed "{title}" to the parent conversation{id}',
+  '（id: {id}）': ' (id: {id})',
+  已转交父对话: 'Handed to the parent conversation',
+  '转交父对话创建：{list}（结果交回父对话，这个对话不用等）':
+    'Handed to the parent conversation: {list} (the result goes back to the parent; this conversation does not wait)',
+  '没能转交：{list}': 'Could not hand over: {list}',
   '「{title}」向主角色提问：{question}': '"{title}" asked the main role: {question}',
   委派: 'Delegated',
   'Kimi（月之暗面）': 'Kimi (Moonshot)',
@@ -162,7 +169,7 @@ export const EN_SHARED: Record<string, string> = {
   百度千帆: 'Baidu Qianfan',
   硅基流动: 'SiliconFlow',
   'Ollama（本机）': 'Ollama (local)',
-  '，在父对话中执行': ', runs in parent',
+  '，禁止子对话执行': ', skipped in child conversations',
   自己: 'self',
   '（第 {n} 次，按最后一次算）': ' (attempt {n}, last one counts)',
 }

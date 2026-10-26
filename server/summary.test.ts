@@ -37,7 +37,7 @@ const sample = (): SummaryReport => ({
   day: '2026-10-23',
   projectIds: ['p1'],
   projectNames: ['面板'],
-  md: '## 面板\n- **做了**：修好登录报错\n',
+  md: '# 2026-10-23 工作总结\n\n## 一、需求进度\n\n### 1.1 面板\n1. **修好登录报错** ｜ 已完成\n   实现：刷新 token 后再试\n',
   cli: 'pi',
   model: '',
   effort: '',
@@ -51,9 +51,10 @@ test('列表：没有报告时是空数组', async () => {
 })
 
 test('生成：项目没选、CLI 不认识都直接报错，不启动', async () => {
-  const empty = await app.request('/summary', json('POST', { projectIds: [], cli: 'pi' }))
+  const empty = await app.request('/summary', json('POST', { projects: [], cli: 'pi' }))
   assert.equal(empty.status, 400)
-  const unknown = await app.request('/summary', json('POST', { projectIds: ['p1'], cli: '没有这个 CLI' }))
+  // 请求是「项目 → 对话 id列表」两层：没选对话（taskIds 缺省）也算合法请求，只有 CLI 不认识才拦下
+  const unknown = await app.request('/summary', json('POST', { projects: [{ projectId: 'p1' }], cli: '没有这个 CLI' }))
   assert.equal(unknown.status, 400)
   // 期望值用同一个 t() 生成：写死中文在本机过、英文环境挂（见 docs/lessons/testing.md）
   assert.equal(((await unknown.json()) as { error: string }).error, t('未知的 Agent：{cli}', { cli: '没有这个 CLI' }))
@@ -66,7 +67,10 @@ test('查一次不存在的生成：404', async () => {
 
 test('编辑：保存改过的 Markdown，列表里能读回来', async () => {
   const created = await reports.create(sample())
-  const res = await app.request(`/summary/${created.id}`, json('PUT', { md: '## 面板\n- **做了**：改过的内容\n' }))
+  const res = await app.request(
+    `/summary/${created.id}`,
+    json('PUT', { md: '# 2026-10-23 工作总结\n\n## 三、今日小结\n改过的内容\n' }),
+  )
   assert.equal(res.status, 200)
   const saved = (await res.json()) as SummaryReport & { id: string }
   assert.equal(saved.id, created.id)

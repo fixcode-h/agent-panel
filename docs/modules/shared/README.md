@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-26（本轮给共享层补「在父对话中执行」的步骤筛选和测试耗时记录；其余内容沿用 2026-10-25 的核对）
+- analyzed_at: 2026-10-27（本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
 
 ## 职责
 
@@ -13,7 +13,7 @@
 - CLI 注册表：内置 CLI 定义在 `shared/clis/*.json`，由 `shared/clis.ts` 加载；参数拼装、输出解析方式、支持的能力、Skill 和说明文件位置都写在定义里，面板其他地方按字段走。Agent 的回复语言跟随面板设置，完整规则（正文和思考过程）、提示词末尾的提醒句、Command Code 通过 mod 追加系统提示词时的插件源码都在 `shared/prompt-lang.ts`。
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
-- 定时计划（`shared/schedule.ts`）：`Schedule` / `ScheduleInput` 的 schema（名称、提示词、项目、角色、`once` / `daily` 重复规则、下次执行时间、启用开关、状态和上次结果），以及到点判定的纯函数——`pickDue` 分出该执行的和错过的（超过 `SCHEDULE_MISS_MS` 的算错过），`afterRun` / `afterMiss` / `afterFail` 给出执行后、错过、失败后的字段变化，`nextDailyAt` 按本地日历推到下一次，`workdayTemplate` 是「今日工作」模板（每天 19:00）。前后端共用同一份规则：服务端按它轮询启动对话，界面按它显示下次执行时间；`sameMinute` 是「排期有没有被改过」的比较口径（界面上的时间只到分钟）。单测在 `shared/schedule.test.ts`（注入固定时钟，覆盖到点触发一次、每天重算、错过不补跑、模板时间和 `datetime-local` 互转）。和任务里的执行计划（`shared/plan.ts` 的 `task.plans`）不是一回事。
+- 定时计划（`shared/schedule.ts`）：`Schedule` / `ScheduleInput` 的 schema（名称、提示词、项目、角色、`once` / `daily` 重复规则、下次执行时间、启用开关、状态和上次结果），以及到点判定的纯函数——`pickDue` 分出该执行的和错过的（超过 `SCHEDULE_MISS_MS` 的算错过），`afterRun` / `afterMiss` / `afterFail` 给出执行后、错过、失败后的字段变化，`nextDailyAt` 按本地日历推到下一次，`workdayTemplate` 是「今日工作」模板（每天 19:00）。前后端共用同一份规则：服务端按它轮询启动对话，界面按它显示下次执行时间；`sameMinute` 是「排期有没有被改过」的比较口径（界面上的时间只到分钟）。界面上的分组、排序和文案也都在这里，是唯一来源，卡片和组标题不各自再判一次：`SCHEDULE_GROUPS` 是四组的顺序（`upcoming` / `problem` / `disabled` / `finished`，即即将执行 / 出过问题 / 已停用 / 不会再执行）——用户要的是「即将执行 / 已停用 / 出过问题」三组，单次跑完 / 跳过后既没在等下一次、也不该混进停用（一个要重新排期、一个要打开开关），所以单独成「不会再执行」一组；`outcomeOf` 给出最近一次结果（`lastError` 优先，`missedAt` 不早于 `lastRunAt` 才算最近一次是错过，否则有 `lastRunAt` 就算成功启动过），`willRunAgain`（`enabled && status === 'pending'`）判还会不会自动执行，`groupOf` 按「停用 → 问题 → 还会跑 / 不会再执行」取组（停用优先：用户主动停下的计划不再拿旧问题提醒他）；`whenLabel` / `relativeFuture` / `nextRunLabel` 出时间文案（本机时区、24 小时制，今天 / 今晚（18 点以后）/ 明天 / 后天 / 昨天 / 更远写日期，相对时间写「已到点 / 不到 1 分钟后 / N 分钟后 / N 小时后 / N 天后」、超过 30 天不写；`nextRunLabel` 把两者拼成「今晚 19:00（3 小时后）」，不会再次执行时返回空字符串，由界面写「不会再次执行」）；`groupSchedules` 按组整理（组顺序固定、空组不出现，即将执行按 `at` 升序，其它组按 `lastRunAt` / `missedAt` / `updatedAt` / `at` 取最大倒序），`groupLabel` / `outcomeTitle` / `outcomeLabel` 出组标题、最近一次结果的徽标和那句话。单测在 `shared/schedule.test.ts`（注入固定时钟，覆盖到点触发一次、每天重算、错过不补跑、模板时间和 `datetime-local` 互转，以及最近一次结果的优先级、四组归属与停用优先、组顺序 / 空组不出现 / 组内排序、绝对与相对时间的文案、`nextRunLabel` 不会再次执行时为空）。和任务里的执行计划（`shared/plan.ts` 的 `task.plans`）不是一回事。
 - 任务和子对话的「算不算在跑」（`shared/task.ts`）：图标、分组、计数、徽标、运行区都从 `convState` → `childIcon` 一处来（项目教训 `lmvkmb75vog8n`），不要在界面上再叠一套。2026-10-26 起「已收起」也进这一处判定（用户报「被删除的任务还挂在运行区」）：
   - `taskGone(t)`：`t.archived === true || t.worktree?.state === 'discarded'`——归档，或独立分支被用户删掉（环境弹窗「独立分支」里归「已删除」那一组，见 `web/src/lib/worktrees.ts` 的 `groupWorktrees`）；合回分支（`merged`）不算收起，改动已经进主线、任务本身照常可见。收起的任务记录还在 store 里，`status` / `working` 也可能还写着在跑（进程是异步收尾的），所以「算不算在跑」的第一处就把它排掉。
   - `ConvFacts` 多一个可选 `gone`，由 `childFacts()` / `taskFacts()` 从任务记录算出；`ChildEntry` 也多一个可选 `gone`，由 `GET /tasks/:id/children` 的摘要直接给（见 [server 模块 README](../server/README.md)）。
@@ -27,6 +27,8 @@
   - `settleWait` 成功时清掉 note 里面板写的过时说明（前缀是导出的常量 `HOLD_PREFIX`「还在等它：」），Agent 自己写的备注不动。
   - `settlePlan` 只在用户手动点「解决」这条路径上调用（`server/tasks.ts` 的 `settleChildForUser`，见 [server 模块 README](../server/README.md)）：把最后一份计划里还没做完的步骤连同 `children` 子步骤一次性收成 `done`，还在 `waiting` 的等待项不再等（`state: 'ok'`），面板写的 `HOLD_PREFIX` / `FAIL_PREFIX` 备注清掉（Agent 自己写的备注不动）；工作流步骤（`step.run`）的子项不是 `children` 而是那次运行的节点（见 `planChildren`），所以还会把没跑完的节点标成 `skipped`——不能谎称做完了，但 `stepStatus` 把它算完成，展开计划也不会再出现「头部说完成、展开还有未完成」——并清掉 `endRun` 写的 `RUN_FAIL_PREFIX` 备注；`closeIfDone` 让计划落到 `done`，折叠头走 `planHeadline` 的 `done` 分支、「计划 n/m」不再出现。返回这次收口了几项（步骤 + 运行节点；0 表示没东西可收、调用方不用落盘），没有计划时不动，`finish_plan` 提前结束过的（`closed`）也收成 `done`，已经全部做完的不重复收。父对话收尾（`finish_child`）、一轮结束收口、后台命令结束都不走它，那些路径仍要求计划真做完。回归：`shared/plan.test.ts`（未完成步骤与子步骤递归收口、清等待说明、`closed` 收成 `done`、已完成和没有计划不动）和 `shared/child-flow.test.ts`（没收口的计划先被 `plan` 拦住，收口后走完 complete → report → list）。
   - 等待项 `PlanWait.kind` 有三种：`background`（后台命令编号）、`child`（子对话 id）、`helper`（`spawn_agents` 派出的子任务步骤 id）。`helper` 由 `shared/engine.ts` 的 `spawn` 用 `bindWait` 登记，`settleHelpers` 里的 `settleHelperWaits` 按子任务的真实结果收口：成功标完成，失败或被终止退回进行中并写清原因。
+  - 角色可以「禁止子对话执行」（`AgentInput.runIn: 'parent'`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：`spawn` 在子对话（`task.parentTaskId` 有值）里把这些请求从本地批次摘出来、逐个交给宿主钩子 `host.forwardSpawn`（同步，排队就算交出去），不占 `MAX_HELPERS_PER_STEP` 名额；整批都转交时**不** `bindWait`，而是用 `finishStepNow` 把点名的步骤立即标完成——挂等待会让子对话收尾被一个不在自己这里跑的任务拦住。`spawn` 的 `opts.local` 是父对话派转交来的任务时用的「就本地跑、别再转发」。`runConversationTurn` 每次**开始调对话 AI 前**回调 `host.onOrchestra(orch)`、调完回调 `undefined`（等子任务结果、跑计划、执行节点这些阶段不算能接活），服务端靠它只在 AI 正在处理时直接派、在下一轮开始调 AI 时消费排队。整批里有一件没交出去（例如带 resume 被拒）时返回 `error`、不标完成，模型才知道要补做。
+  - 回归：`server/spawn-forward.test.ts`（字段默认值与旧数据、内置默认值、一次性升级与用户改回、转交而不是本地建、步骤立即完成、接不了时报错、`resume` 不许转交、混合批、`opts.local`）和端到端 `scripts/e2e/13-forward-doc.mjs`。
   - `spawn_agents` 接着之前的子任务做（`resume`）时**沿用原任务的角色**（提示词、CLI、模型都跟着它）：显式写了 `agent` 就用写的，写别的角色照旧拒绝（`「…」是另一个角色跑的`），写了不存在的角色报错；原角色已被删、又没写 `agent` 时报错让调用方点名，**不退回默认「子任务」**——那等于换个角色接着跑原来的会话，交回的结果看不出走了样。`agentId` 为空是旧数据里「没有角色」，不算「角色被删」。重试分支（失败 / 被终止 / 中断的子任务在原记录上重试）里显式点名了别的角色就换过去。`tier` 仍默认跟发起节点（角色决定 CLI 和模型，`shared/settings.ts` 的 `agentRun`）。
   - `spawn_agents` 顶层的 `agent` / `tier` / `resume` 是**整批的默认值**：单个任务里写了以任务里的为准，都没写才落到顶层。顶层 `resume` 配多个任务直接报错（一个会话只能接着跑一轮），顶层出现不认得的字段也报错（`SPAWN_TOP_FIELDS` 白名单），不静默丢掉——「schema 里声明了、代码只在嵌套层读」的字段一丢，就是换了角色、换了新会话，而结果看起来和正常复看一样。这次修的就是它（顶层 `resume` 被丢、复看退回「子任务」角色），见 [server/bugs/helper-resume-lost-role.md](../server/bugs/helper-resume-lost-role.md)。
   - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`；顶层默认值解析；resume 不写 agent 沿用原任务角色、写 agent 用写的、非 resume 不带 agent 才是默认子任务；原角色不存在时报错）。
@@ -58,8 +60,13 @@
   2026-10-26 起 `LibraryFile` 有三个字段：`content`（主文件内容）、`files`（旧字段，主文件以外的文件路径扁平列表）、`tree?`（`LibraryTree`＝`{ entries, truncated? }`，**目录和文件混在一张表里**，`LibraryEntry` 是 `{ path, type: 'file' | 'dir', size? }`，路径统一 `/`，同层目录在前、父目录一定排在子项前面）。`files` 必须等于 `tree.entries` 里 `type === 'file'` 的 path（同一个数据源，两个字段不能打架）；命令没有附带目录，`tree` 为 `undefined`。回归：`server/library.test.ts`、`server/project-skills.test.ts`。
   同一文件也是**附件路径安全规则的唯一出处**：`libraryEntryPath` 逐段校验相对路径（挡 `..`、`.`、空段、绝对路径、盘符、`\0` 和 Windows 非法字符，反斜杠统一当 `/`），服务端在 `server/library.ts` 的 `entryOf` 里再补一道 `realpath` 落在 Skill 目录内的校验（字符串层拦不住软链接）。上限常量 `LIBRARY_FILE_MAX_BYTES`（1 MB）、`LIBRARY_TREE_MAX_ENTRIES`（1000，目录也算）、`LIBRARY_DIR_MAX_DELETE_ENTRIES`（目录递归删除前的条目上限）也在这里，服务端和前端都从这里引用，不在别处写数值。文件树排除分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（只对目录生效）、`LIBRARY_TREE_EXCLUDE_FILES`（只对文件生效）——不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`，那份清单会把技能里真叫 `logs` / `build` 的内容目录一起抹掉。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
+  **项目设置对进行中的对话生效**：「这一轮用哪份步骤」只由 `currentTestSteps(snapshot, project)` 决定：
+  项目存在就用项目当前的 `testSteps`（策略位、命令原文、超时、目录都算），项目读不到才用任务快照（读盘失败先记一条 `log.warn` 再兜底，不静默当成项目不存在）；
+  项目里把步骤清空就是不跑，不退回快照。服务端在每个判断点（`parentRunRole`、`testStepsOf`、engine host 的 `verify.steps`）
+  现取一次，不在保存设置时去改写跑着的对话（口径是「调用前先读配置」，见 [docs/agent-test-steps.md](../../agent-test-steps.md)）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
-  「在父对话中执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  「禁止子对话执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，勾了这项不会被跳过；
   `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
   （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
   收尾总结的「编译 / 测试耗时」要求是 `TEST_TIME_SUMMARY_RULE`，只对独立分支的子对话注入（`shared/engine.ts` 的 `verifyPart`）。
@@ -69,6 +76,9 @@
 - 项目教训的 AI 评审（`shared/lesson-review.ts`）：按 `shared/analysis-home.ts` 的归属规则在项目里开分析对话（`web/src/lib/task-transfer.ts` 的 `startLessonReview` → `createAnalysisTask`，必备角色「分析」，在统一的 AI 分析窗口里看），教训全文作附件；回复末尾的 `lesson-review` 块由 `parseLessonReview` 读出，对话里的卡片（`web/src/components/projects/LessonReview.tsx`）逐条点「应用」才写进教训（`POST /projects/:id/lessons/review` → `applyReviewItem`，和 `record_lesson` 同一个队列），改写、合并把旧版本留进改写记录；「已应用」按当前教训现算（`reviewItemState`），不另存。
 - 子对话收尾的评审门禁（`shared/review-gate.ts`）：评审通过，或执行角色对每条高级、中级意见写了处置（`review_triage`）才放行，评审只出意见（[ADR 0009](../../adr/0009-review-findings-triaged.md)、[ADR 0010](../../adr/0010-review-code-only.md)）；派评审代码时要带交接单 `review`（需求、改动、跑过的检查），评审只评差异里改动的行，边界数字在 `shared/review-limits.ts`（[ADR 0013](../../adr/0013-review-diff-only-with-brief.md)）；验收结论的读法在 `shared/verdict.ts`（`parseVerdict` 取最后一条、`leadVerdict` 首行优先），引擎、门禁、执行报告共用。
 - 工作总结（`shared/summary.ts`）：今天的时间窗口、从任务记录里提炼今天的活动、交给 CLI 的提示词和从回答里取报告，都是纯函数（单测在 `shared/summary.test.ts`）；跑 CLI 和存报告在 `server/summary.ts`。
+  请求结构 `SummaryRequest` 是两层：`projects: { projectId, taskIds[] }[]`，`taskIds` 为空表示这个项目今天的全部对话；`collectDayProjects` 按它筛对话，只保留今天有活动的项目，项目顺序就是用户加进来的顺序（报告分节顺序）。
+  「今天有没有执行」只有 `activeOnDay` 一处判定（`updatedAt` / `turnDoneAt` / `runStartedAt` 或任意消息的时间落在今天），页面列对话和服务端筛数据都用它，不各算一套；`dayTask` 的 `userBug` 只按对话标题和用户提的要求里的关键词判断，Agent 自查修掉的问题不算用户报的 Bug。
+  `summaryPrompt` 用 `SUMMARY_SECTIONS` 写死三节（`## 一、需求进度`、`## 二、用户报告的 Bug`、`## 三、今日小结`），项目用 `### 1.1 项目名` 编号；生成后的格式自检是 `checkSummaryFormat`（问题码在 `SUMMARY_FORMAT_ISSUES`，`summaryRetryHint` 把它们拼成重试提示），提示词、服务端自检和页面提示共用这一份口径。
 - 任务导出与 AI 分析报告（`shared/task-export.ts`）：`taskReport` / `analysisReport` / `analysisPrompt` 是整体分析（导出、导入、执行记录分析共用）；可选的 `HelperScope = { stepId }` 把三者收窄到一个子任务（子任务窗口的「AI 分析」），报告走 `helperReport`、提示词走 `helperPrompt`（四类问题：耗时、角色符合度、优化空间、面板框架，不要求工作流修改建议块）。`helperReport` 的角色设定用 `composeRole` 拼好的实际生效内容（含引入的 Agent），派给子任务的要求原文取自 `TaskStep.brief`（`shared/engine.ts` 的 `spawn` 落盘；为空时同时说明「旧记录没保存」和「派它时只写了标题」两种可能）。`taskSummary` 会把 `brief` 一起清掉（列表和侧栏读不到、可能上千字）；演示版的 `load()` 对 `db.tasks` 也跑一遍 `Task.parse`，旧 localStorage 里缺新字段的任务才不会在读的时候报 undefined。传了 scope 才走收窄逻辑，不传时行为不变；报告的时间口径不变式见 `docs/lessons/task-export.md`。回归：`server/task-export.test.ts`（整体）和 `server/task-export-helper.test.ts`（子任务范围）。
 
 ## 入口

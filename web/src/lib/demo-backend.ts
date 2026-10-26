@@ -60,7 +60,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
-import { sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { afterRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -618,7 +618,7 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
-              // 演示里勾上「在父对话中执行」：合并后由父对话在它的目录里跑，结果回传给子对话
+              // 演示里勾上「禁止子对话执行」：合并后由父对话在它的目录里跑，结果回传给子对话
               runInParent: true,
               quick: false,
             },
@@ -1884,7 +1884,14 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     persist()
     return next
   }
-  if (method === 'POST' && action === 'run') return { schedule: cur, taskId: '' }
+  if (method === 'POST' && action === 'run') {
+    // 演示里不会真的启动对话（taskId 为空，页面会提示），但字段变化和正式后端同一个口径：
+    // 走 afterRun——单次变 done、每天把 at 往后推、清掉上次的错误和旧对话入口
+    const next = { ...cur, ...afterRun(cur, Date.now(), '') }
+    d.schedules = list.map((s) => (s.id === id ? next : s))
+    persist()
+    return { schedule: next, taskId: '' }
+  }
   return fail('不支持的操作')
 }
 

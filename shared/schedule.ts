@@ -6,7 +6,7 @@
  * 和任务里的「执行计划」（task.plans，见 shared/plan.ts）不是一回事，这里叫 Schedule。
  */
 import { z } from 'zod'
-import { t } from './i18n.ts'
+import { getLang, t } from './i18n.ts'
 
 /** 重复规则：只执行一次 / 每天同一时刻执行 */
 export const ScheduleRepeat = z.enum(['once', 'daily'])
@@ -165,4 +165,180 @@ export function fromLocalInput(value: string): string {
   if (!value) return ''
   const d = new Date(value)
   return Number.isFinite(d.getTime()) ? d.toISOString() : ''
+}
+
+/**
+ * 列表里的分组。顺序就是列表里的显示顺序：还能跑的在上、要处理的其次、已经停下的在下。
+ * 「不会再执行」是单次计划跑完之后的状态，和用户主动停用的计划分开：一个要重新排期，一个要打开开关。
+ */
+export const SCHEDULE_GROUPS = ['upcoming', 'problem', 'disabled', 'finished'] as const
+export type ScheduleGroup = (typeof SCHEDULE_GROUPS)[number]
+
+/** 最近一次结果：启动失败 / 错过 / 成功启动 / 还没跑过。徽标、分组、计数都读它，不各自再判一次 */
+export type ScheduleOutcome = 'error' | 'missed' | 'success' | 'none'
+
+/**
+ * 最近一次结果。
+ * 错过记录只有不早于上次启动时才算数：每天的计划成功启动后 missedAt 还留着前一次错过的记录，
+ * 不能一直显示成「错过」。错过和 failed 同时存在时（先启动失败、之后又错过）错过发生得更晚，
+ * 所以先判错过；错误原文由卡片单独的段落继续显示，不会被吞。
+ * lastError 在启动成功时清空，非空且没有更新的错过时，最近一次已知的结果就是启动失败。
+ */
+export function outcomeOf(s: Schedule): ScheduleOutcome {
+  if (s.missedAt) {
+    const missed = Date.parse(s.missedAt)
+    const run = Date.parse(s.lastRunAt)
+    if (!s.lastRunAt || !Number.isFinite(run) || missed >= run) return 'missed'
+  }
+  if (s.lastError) return 'error'
+  return s.lastRunAt ? 'success' : 'none'
+}
+
+/** 到点还会不会自动执行：停用、单次已执行完 / 已跳过、单次启动失败都没有下一次 */
+export function willRunAgain(s: Schedule): boolean {
+  return s.enabled && s.status === 'pending'
+}
+
+/**
+ * 卡片归到哪一组。停用优先：用户主动停下的计划不再拿旧问题提醒他，但错过 / 失败的原因照样显示在卡片上。
+ */
+export function groupOf(s: Schedule): ScheduleGroup {
+  if (!s.enabled) return 'disabled'
+  const outcome = outcomeOf(s)
+  if (outcome === 'error' || outcome === 'missed') return 'problem'
+  return willRunAgain(s) ? 'upcoming' : 'finished'
+}
+
+const MINUTE_MS = 60_000
+const HOUR_MS = 3_600_000
+/** 一天里从几点开始说「今晚」：傍晚以后的计划读起来更自然 */
+const EVENING_HOUR = 18
+/** 超过这个时长就不写相对时间，只留绝对时间（「28 天后」没人算得出来是哪天） */
+const RELATIVE_MAX_DAYS = 30
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+/** 时分：固定 24 小时制，不跟着系统语言变，和界面其它时间一致 */
+const clockOf = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+/** 两个时刻相差几个自然日（按本地日历算，跨夏令时也不会差一天） */
+function dayGap(target: Date, base: Date): number {
+  const a = new Date(target.getFullYear(), target.getMonth(), target.getDate())
+  const b = new Date(base.getFullYear(), base.getMonth(), base.getDate())
+  return Math.round((a.getTime() - b.getTime()) / DAY_MS)
+}
+
+/** 「今晚 19:00」「明天 09:00」「3月5日 19:00」这类绝对时间；过去的写「昨天」 */
+export function whenLabel(iso: string, now = Date.now()): string {
+  const d = new Date(iso)
+  if (!Number.isFinite(d.getTime())) return ''
+  const base = new Date(now)
+  const locale = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const gap = dayGap(d, base)
+  const day =
+    gap === 0
+      ? d.getHours() >= EVENING_HOUR
+        ? t('今晚')
+        : t('今天')
+      : gap === 1
+        ? t('明天')
+        : gap === 2
+          ? t('后天')
+          : gap === -1
+            ? t('昨天')
+            : d.toLocaleDateString(locale, {
+                ...(d.getFullYear() === base.getFullYear() ? {} : { year: 'numeric' as const }),
+                month: 'long',
+                day: 'numeric',
+              })
+  return t('{day} {time}', { day, time: clockOf(d) })
+}
+
+/** 还有多久：「已到点」「12 分钟后」「3 小时后」「5 天后」；太远的不写 */
+export function relativeFuture(iso: string, now = Date.now()): string {
+  const at = Date.parse(iso)
+  if (!Number.isFinite(at)) return ''
+  const left = at - now
+  if (left <= 0) return t('已到点')
+  if (left < MINUTE_MS) return t('不到 1 分钟后')
+  if (left < HOUR_MS) return t('{n} 分钟后', { n: Math.round(left / MINUTE_MS) })
+  if (left < DAY_MS) return t('{n} 小时后', { n: Math.round(left / HOUR_MS) })
+  if (left < RELATIVE_MAX_DAYS * DAY_MS) return t('{n} 天后', { n: Math.round(left / DAY_MS) })
+  return ''
+}
+
+/** 下次执行时间：「今晚 19:00（3 小时后）」；不会再次执行时返回空字符串，界面自己写「不会再次执行」 */
+export function nextRunLabel(s: Schedule, now = Date.now()): string {
+  if (!willRunAgain(s)) return ''
+  const at = Date.parse(s.at)
+  if (!Number.isFinite(at)) return ''
+  const when = whenLabel(s.at, now)
+  const rel = relativeFuture(s.at, now)
+  return rel ? t('{when}（{rel}）', { when, rel }) : when
+}
+
+/** 组内排序用的活动时间：最近一次启动 / 错过 / 改动，取最大的那个。下次执行时间 at 不算：
+ * 它可能是未来（例如停用前排到明年），算进来会把一条早就不动的计划顶到组最上面。 */
+function activityAt(s: Schedule): number {
+  let at = 0
+  for (const iso of [s.lastRunAt, s.missedAt, s.updatedAt]) {
+    const v = Date.parse(iso)
+    if (Number.isFinite(v)) at = Math.max(at, v)
+  }
+  return at
+}
+
+export interface ScheduleBucket {
+  group: ScheduleGroup
+  items: Schedule[]
+}
+
+/**
+ * 按分组整理列表：组的顺序固定，空组不出现。
+ * 组内即将执行的按下次执行时间升序（先跑的在上）；其余组按最近一次活动倒序（刚出问题、刚停用的在上）。
+ */
+export function groupSchedules(list: Schedule[]): ScheduleBucket[] {
+  const buckets = new Map<ScheduleGroup, Schedule[]>(SCHEDULE_GROUPS.map((g) => [g, []]))
+  for (const s of list) buckets.get(groupOf(s))?.push(s)
+  return SCHEDULE_GROUPS.flatMap((group) => {
+    const items = [...(buckets.get(group) ?? [])]
+    items.sort(
+      group === 'upcoming'
+        ? (a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0)
+        : (a, b) => activityAt(b) - activityAt(a),
+    )
+    return items.length ? [{ group, items }] : []
+  })
+}
+
+/** 分组标题（组标题和它的数量文案都由它出） */
+export function groupLabel(group: ScheduleGroup): string {
+  return {
+    upcoming: t('即将执行'),
+    problem: t('出过问题'),
+    disabled: t('已停用'),
+    finished: t('不会再执行'),
+  }[group]
+}
+
+/** 最近一次结果的短标签（卡片徽标用）；详细的一句用 outcomeLabel */
+export function outcomeTitle(s: Schedule): string {
+  return {
+    error: t('启动失败'),
+    missed: t('错过'),
+    success: t('已启动'),
+    none: t('还没执行'),
+  }[outcomeOf(s)]
+}
+
+/** 最近一次结果的一句话：卡片上的徽标旁边用它，耗时不留空也不编造 */
+export function outcomeLabel(s: Schedule, now = Date.now()): string {
+  switch (outcomeOf(s)) {
+    case 'error':
+      return t('启动失败')
+    case 'missed':
+      return t('错过 {time}（面板当时没在跑，不补跑）', { time: whenLabel(s.missedAt, now) })
+    case 'success':
+      return t('成功启动于 {time}', { time: whenLabel(s.lastRunAt, now) })
+    case 'none':
+      return t('还没有执行过')
+  }
 }

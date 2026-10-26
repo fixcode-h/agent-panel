@@ -950,6 +950,25 @@ export function holdWait(
   return changed
 }
 
+/**
+ * 把计划里的一项立即标完成：转交给父对话创建的子任务结果不在这个对话里（见 ADR 0019），
+ * 不能挂等待，否则子对话收尾时一直被这一步拦着。返回给 Agent 的一句说明，找不到这一步时不改计划。
+ */
+export function finishStepNow(task: PlanTask, stepId: string, note: string, now = new Date().toISOString()) {
+  const id = stepId.trim()
+  if (!id) return ''
+  const plan = activePlan(task)
+  if (!plan) return `（计划里没有步骤 ${id}：现在没有进行中的计划，先用 set_plan 列计划）`
+  const got = findItem(plan, id)
+  if (!got) return `（计划里没有步骤 ${id}）`
+  if (got.item.status === 'done') return ''
+  if (note) got.item.note = clean(note, 300)
+  setStatus(got.item, 'done', now)
+  if (got.parent) rollUp(got.parent, now)
+  closeIfDone(plan, now)
+  return `计划步骤「${got.item.title}」已标完成`
+}
+
 /** 这个对话名下的一个子对话（宿主给）：计划按它对上等待、收口 */
 export interface PlanKid {
   id: string

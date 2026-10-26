@@ -58,7 +58,7 @@ type TestStep = {
   when: string // 补充说明，写给人看的，例如「仅发布前跑」；判定以 appliesTo 为准
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
-  runInParent: boolean // 在父对话中执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）
+  runInParent: boolean // 禁止子对话执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）；字段名沿用旧名，语义就是「禁止子对话执行」
   quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
   note: string // 给执行者看的说明
   enabled: boolean
@@ -109,10 +109,13 @@ type TestStep = {
 fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪批文件、含「只改了文档但合并进来 C++ 改动」）
 由 `shared/test-steps.test.ts` 用真实改动清单钉住。行为层的覆盖等判定接进执行流程后再补。
 
-### 在父对话中执行（`runInParent`）
+### 禁止子对话执行（`runInParent`）
 
 端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，几个子对话同时收尾就把机器拖住。
-勾了「在父对话中执行」的步骤**子对话不跑**：子对话照常改完、`submit_merge`，合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话。
+勾了「禁止子对话执行」的步骤**只对子对话生效**：子对话不跑（照常改完、`submit_merge`），合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话；
+父对话自己改代码验证时**照常跑它**——父对话侧的步骤清单是「全部启用的步骤」（`verifyBlock` 的 `active = steps.filter(enabled)`），
+不经过 `parentRunSteps`，所以勾了这项不会让父对话只跑这几步。
+字段名 `runInParent` 沿用旧名（避免数据迁移），界面文案 2026-10-27 起是「禁止子对话执行」。
 （[ADR 0018](./adr/0018-test-steps-run-in-parent.md)）
 
 - **只对 Git 项目的独立分支子对话生效**：子对话先要有独立分支才有「合回」这一步。P4 / SVN / 没有版本控制的子对话没有分支可合，
@@ -120,7 +123,8 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
   执行流程里也不把这些步骤拿出来。共用目录的 Git 子对话同样不生效。
 - **`merge`（合并时编译）的步骤不受影响**：那条仍按 [ADR 0004](./adr/0004-ue-build-by-parent.md) 由父对话 `request_build` 申请，
   同时勾了两项也只走编译链路，不会编译两次。
-- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令）。
+- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令），只用在「谁替子对话跑」的链路；
+  父对话自己验证取的是全部启用的步骤，不经过它（回归：`shared/test-steps.test.ts` 里「只影响子对话」那条用例）。
   提示词按角色说三种话（`parentRunRoleOf` / `verifyBlock`）：独立分支子对话是「你不用跑，跑了也不算数」；
   顶层父对话是「子对话合并后由面板在你的目录里跑、你不用转述，但你自己改代码时没人替你跑、要自己执行」；
   其它对话不传，步骤照常自己跑。角色判断：子对话要有父对话 + 独立分支，顶层对话即使自己开了独立分支也算父对话。
@@ -145,13 +149,50 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 ### 怎么交给 Agent
 
-新建对话时整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的
-「## 项目测试步骤」一段（`shared/test-steps.ts` 的 `testStepsBlock`）。
+工作流任务新建时把整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的
+「## 项目测试步骤」一段（`shared/test-steps.ts` 的 `testStepsBlock`）。对话任务执行时以**项目当前设置**为准
+（见下面「项目设置对进行中的对话生效」）。
 
 - 只注入真的用到了测试 Agent 的工作流（按「Agent 有没有 `scope` + `env` 两个参数」判断，见 `isTestAgent`），
   评审、建模这类流程不会看到一份无关的命令。
-- 之后改项目设置不影响已经开始的对话；「按最新的工作流继续」时才会换。
+- 对话任务每次拼提示词、每次判断谁跑都现读项目设置。
 - 没有配置步骤时给出兜底：让 Agent 按 package.json / Makefile / CI / README 自己找，找不到就报告缺口并建议补上，**不编命令**。
+
+### 项目设置对进行中的对话生效
+
+口径是用户定的「调用前先读配置判断怎么调用」：**不在保存设置时去遍历改写跑着的对话**（那是同步机制），
+而是在每个要作判断的点上现读一次项目设置。已经开始的对话因此不用等新建，改了设置就按新设置跑。
+
+在哪些点现读（`server/tasks.ts`）：
+
+| 判断点                        | 做什么                                                             | 现读的地方                                                                           |
+| ----------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `parentRunRole`               | 提示词里写谁跑这些步骤、要不要转父对话                             | 每次 `start()` 已经取了项目，`currentTestSteps(tk.testSteps, project)`               |
+| `testStepsOf`                 | `parentStepsOf`（合并后转父对话）、`recordSelfTestRun`（耗时匹配） | 每次调用 `deps.projects.get` 取一次                                                  |
+| engine host 的 `verify.steps` | 这一轮提示词里的步骤清单                                           | `currentTestSteps(task.testSteps, found)`，`found` 就是同一次 `start()` 里读到的项目 |
+
+两边都走 `shared/test-steps.ts` 的 `currentTestSteps(snapshot, project)` 一个函数：**项目存在就用项目当前的步骤**
+（策略位、命令原文、超时、工作目录都算），读不到才用任务快照。项目里把步骤清空表示不跑，不能退回快照——
+否则用户会以为删除没生效。
+
+兜底只在“谁跑 / 耗时匹配”这条路成立：拼提示词的分支是 `task.mode === 'chat' && found?.id`，项目被删除（`get` 返回 null）时
+整段验证说明都不注入（不会把旧快照当成最新步骤写进提示词）；读盘失败时 `start()` 会直接失败、把错误报给用户，不会走到拼提示词。
+`testStepsOf` 读项目失败时记一条 `log.warn` 再兜底，不静默当成「项目不存在」——不然现象和这次报的 bug 一样、却无从区分。
+
+「一轮之内不抖」靠两件事：
+
+1. 同一份步骤只在一个判断点取一次，不在这里取一次、那里又取一次；提示词和 `parentRunRole` 用的是同一次
+   `start()` 里读到的项目。
+2. 一条后台命令在 `background.start` 派发那一刻由取到的步骤算定（`stepCommand` 拼出整行），之后不再重读——
+   所以不会出现「前半段用旧命令、后半段用新命令」。合并是另一个时间点，按那一刻项目的最新设置判断，这是有意的。
+
+其它项目设置本来就每轮现读，不需要额外处理：`agentParams`（`withProjectParams`）、`lessons`、`searchExclude`、
+`gitPolicy`、`fileFormat`、`childIsolation`、`scaledVerify`、`wslDistro` 都在 `start()` 里从 `deps.projects.get` 读。
+
+仍按任务快照的只有**工作流编排**（`Task.workflows`、`skillSlots`、`Task.params` 连同项目里填的工作流参数）：
+它定的是「这个对话怎么排流程」，换掉会让已跑的节点、消息和计划对不上，属于「换工作流」而不是「设置生效」。
+已知代价：工作流任务的节点说明里带的命令来自创建时的快照，而 `recordSelfTestRun` 按项目最新命令匹配（`matchTestStep`）；
+中途改了命令后，节点里跑的旧命令会匹配不上，耗时记成「未记录」。是有意的取舍，不是 Bug。
 
 ### 按改动大小决定验证范围
 
@@ -223,7 +264,7 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 - 新建对话时（`taskSnapshot` → `applyExpose(w, params, agents)`）合并进节点 / 步骤参数，优先级：
   **节点上原来的值 < 项目里填的 Agent 参数 < `Workflow.expose`（target=agent，最具体）**。
 - 只写这个 Agent 真的声明了的参数，不会把无关参数塞进节点。
-- 快照定下来后改项目设置不影响已经开始的对话。
+- 工作流参数快照定下来后，改项目设置不影响已经开始的对话（这一条只针对工作流编排参数；测试步骤是现读的，见上面「项目设置对进行中的对话生效」）。
 
 ### 参数联动
 

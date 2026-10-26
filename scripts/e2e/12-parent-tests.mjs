@@ -1,5 +1,5 @@
 /**
- * 端到端分片：勾了「在父对话中执行」的测试步骤由父对话在合并后跑（ADR 0018）
+ * 端到端分片：勾了「禁止子对话执行」的测试步骤由父对话在合并后跑（ADR 0018）
  *
  * 覆盖的是整条链路，不是提示词：
  * - 子对话合并前不跑这条步骤；合并成功后父对话在自己的目录里真跑它（后台命令），
@@ -7,6 +7,7 @@
  * - 步骤失败时子对话不被标完成、独立分支保留，报错里写明「来自子对话「标题」（id）」；
  * - 再合一次时面板把步骤重跑一遍（tries 累加，不因为跑过一次就跳过）；
  * - 子对话自己跑过的项目步骤也记耗时（by='self'），和父对话跑的那条在同一份记录里；
+ * - 已经开始的对话也按项目当前设置：任务创建时没勾，之后在项目设置里勾上，子对话下一次合并就转给父对话；
  * - GET /fs/vcs 能把 Git 和非 Git 目录分开（设置页据此置灰，只对 Git 项目生效）。
  *
  * 和其他分片并行跑：每个分片自己有临时数据目录、假 CLI 日志、端口和服务（见 harness.mjs）。
@@ -23,7 +24,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const { id: _id, createdAt: _c, updatedAt: _u, ...projectInput } = project
 
   // 一条要父对话跑的步骤 + 一条子对话自己跑的步骤：命令都真跑，耗时是后台命令的真实起止时间
-  const parentStep = (command) => ({
+  const parentStep = (command, runInParent = true) => ({
     id: 'e2e-parent',
     name: '端到端测试',
     command,
@@ -35,7 +36,7 @@ await runShard('父对话执行测试步骤', async (api) => {
     note: '',
     enabled: true,
     merge: false,
-    runInParent: true,
+    runInParent,
     quick: false,
   })
   const selfStep = {
@@ -103,6 +104,50 @@ await runShard('父对话执行测试步骤', async (api) => {
   assert.ok(passed, '父对话测试通过的结果回传给了子对话')
   assert.match(passed.text, /- 端到端测试：父对话跑，通过，/) // 收尾总结要照抄的耗时行
   step('通过：子对话合并后不自己跑，父对话跑完把结果和真实耗时回传，子对话才收尾')
+
+  // ---- 改了项目设置，进行中的对话也生效：任务创建时没勾，合并之前才在设置里勾上 ----
+  // 用户报的现象：项目设置里勾了「禁止子对话执行」，已经开始的子对话合并时还是自己跑 e2e
+  // （老版本创建的对话任务里有步骤快照，快照里没有这个字段 → 按 false 读 → 判断不到）。
+  // 这里钉的是用户可观测的那一段：改完设置，进行中的子对话下一轮提示词、下一次合并都按新设置走。
+  // 注意纯对话任务的 testSteps 本来就是空数组（只有工作流任务才快照），所以「快照非空且与项目不一致」
+  // 那一半由 shared/test-steps.test.ts 的 currentTestSteps 用例覆盖，两边合起来才算完整。
+  await putSteps([parentStep('node -e "setTimeout(()=>{},200)"', false)])
+  const parent3 = await newParent('父对话（勾选之前创建的）')
+  const kid3 = await newKid(parent3.id, 'COMMIT BEGIN_EDIT 先改文件，合并等一会儿')
+  await dropRootOutput(kid3.id)
+  // 等它这一轮跑完再改设置：正在跑的时候插消息，fake CLI 会把合并和改设置搅在一起
+  await waitTask(kid3.id, (x) => !x.working, 30000)
+  const kidTask = await call('GET', `/tasks/${kid3.id}`)
+  assert.equal(kidTask.projectId, project.id, '子对话记住了项目 id（为空时读不到项目设置）')
+  assert.deepEqual(kidTask.testSteps, [], '纯对话任务本来没有步骤快照（只有工作流任务才快照）')
+  // 子对话已经跑过一轮，这时才勾上、并把命令换掉：项目快照里仍是旧的那份
+  await putSteps([parentStep('node -e "setTimeout(()=>{},250)"', true)])
+  const saved = (await call('GET', '/projects')).find((x) => x.id === project.id)
+  assert.equal(saved?.testSteps[0].runInParent, true, '设置已经存进项目（先排除「PUT 没生效」）')
+  await call('POST', `/tasks/${kid3.id}/messages`, { text: 'SUBMIT_MERGE 现在合并' })
+  // 这一轮的提示词按项目当前设置拼：子对话被告知这些步骤它不跑
+  await waitFor(
+    () =>
+      calls().some(
+        (c) => (c.input ?? '').includes('SUBMIT_MERGE 现在合并') && (c.input ?? '').includes('禁止子对话执行'),
+      ),
+    { timeout: 20000, label: '进行中的子对话下一轮提示词里出现「禁止子对话执行」' },
+  )
+  const live = await waitTask(kid3.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
+  const liveRuns = live.testRuns.filter((r) => r.by === 'parent')
+  assert.equal(
+    liveRuns.length,
+    1,
+    `项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照（wrapRequest=${JSON.stringify(live.wrapRequest)}，testRuns=${JSON.stringify(live.testRuns)}）`,
+  )
+  assert.equal(liveRuns[0].stepName, '端到端测试')
+  assert.ok(liveRuns[0].ok, '父对话真的跑通了这条步骤')
+  // 内容也现读：子对话这一轮的提示词里是改过的命令，不是旧快照那条
+  assert.ok(
+    calls().some((c) => (c.input ?? '').includes('setTimeout(()=>{},250)')),
+    '进行中的对话下一轮按项目最新的命令拼提示词',
+  )
+  step('改项目设置立即生效：快照里没勾，合并时按项目当前设置转给父对话')
 
   // ---- 失败：报错写明来自哪个子对话，不标完成、分支保留，再合并时重跑 ----
   await putSteps([parentStep('node -e "process.exit(3)"')])
@@ -174,5 +219,5 @@ await runShard('父对话执行测试步骤', async (api) => {
   mkdirSync(nonGit, { recursive: true })
   assert.equal((await call('GET', `/fs/vcs?path=${encodeURIComponent(nonGit)}`)).vcs, 'none')
   assert.equal((await call('GET', `/fs/vcs?path=${encodeURIComponent(project.path)}`)).vcs, 'git')
-  step('非 Git 目录能被分辨出来：「在父对话中执行」只在 Git 项目里生效')
+  step('非 Git 目录能被分辨出来：「禁止子对话执行」只在 Git 项目里生效')
 })

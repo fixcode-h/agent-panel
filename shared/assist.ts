@@ -987,6 +987,8 @@ const agentExtras = (a?: Agent) => ({
   common: a?.common ?? false,
   canDelegate: a?.canDelegate ?? false,
   canPlan: a?.canPlan ?? false,
+  // 启动位置是用户的选择，AI 优化角色时不改它（新建时默认任意对话）
+  runIn: a?.runIn ?? 'any',
   capsSet: a?.capsSet ?? true,
   origin: a?.origin ?? '',
 })

@@ -100,7 +100,7 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
-import { stopHelper } from '../shared/engine.ts'
+import { stopHelper, type HelperSpec, type Orchestra } from '../shared/engine.ts'
 import { makeAlert } from '../shared/alerts.ts'
 import { dropHeld, hasHeld, holdForNextTurn, removeHeld, takeHeld } from './exec/delivery.ts'
 import {
@@ -138,6 +138,7 @@ import {
 import { createParentTests, parentTestFailText, parentTestRun } from './parent-tests.ts'
 import {
   buildSteps,
+  currentTestSteps,
   isUeBuildCommand,
   matchTestStep,
   mergeTestRun,
@@ -222,7 +223,7 @@ const HELPER_STOP_POLL_MS = 150
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
-/** 项目目录是不是 Git 仓库（ADR 0018 的「在父对话中执行」只对 Git 生效）：判定和缓存同 isP4 */
+/** 项目目录是不是 Git 仓库（ADR 0018 的「禁止子对话执行」只对 Git 生效）：判定和缓存同 isP4 */
 const gitDirs = new Map<string, Promise<boolean>>()
 const isGit = (dir: string) => {
   let got = gitDirs.get(dir)
@@ -236,13 +237,14 @@ const isGit = (dir: string) => {
 }
 
 /**
- * 「在父对话中执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 「禁止子对话执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
  * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
  * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
- * 步骤用任务里的快照（执行时面板也用同一份），没有快照的老任务退回项目现在的配置。
+ * 步骤按项目当前设置判断（用户口径：调用前现读配置）：改了项目设置，进行中的对话下一次判断就按新配置走；
+ * 项目被删、读不到时才退回任务快照。
  */
 async function parentRunRole(tk: Task, project: Project): Promise<{ parentRun?: 'child' | 'parent' }> {
-  const steps = tk.testSteps.length ? tk.testSteps : project.testSteps
+  const steps = currentTestSteps(tk.testSteps, project)
   if (!parentRunSteps(steps).length) return {}
   // 独立分支一定是 Git 仓库，不用再探；顶层对话是否 Git 要问 detectVcs（判定和开 worktree 时同一套）
   const git = isolated(tk) || (await isGit(project.path))
@@ -308,6 +310,11 @@ export function tasksApi(deps: {
     abort: AbortController
     done?: Promise<void>
     rev: number
+    /**
+     * 这一轮对话级的 Orchestra（引擎每轮构造时回调，轮结束清掉）：
+     * 子对话转交来的「禁止子对话执行」的子任务直接派到这里（见 ADR 0019）
+     */
+    orch?: Orchestra
     /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
     restart?: boolean
   }
@@ -591,7 +598,8 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 项目级测试步骤和平台：新建对话时快照进任务，测试 Agent 按它执行，之后改项目设置不影响已开始的对话。
+   * 项目级测试步骤和平台：工作流任务把它们写进节点说明的快照；对话执行时按项目当前设置现取
+   * （见 shared/test-steps.ts 的 currentTestSteps），这里快照只是任务上的备份。
    * agents 用来判断某个工作流里有没有测试 Agent（见 withTestSteps）。
    */
   const testOpts = (project: Project) => ({
@@ -995,7 +1003,7 @@ export function tasksApi(deps: {
     (job, result) => {
       void (async () => {
         await settling.get(job.id)
-        // 「在父对话中执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
+        // 「禁止子对话执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
         if (
           await parentTests.finishJob(job.id, {
             ok: job.state === 'done',
@@ -1153,7 +1161,7 @@ export function tasksApi(deps: {
   const buildFor = new Map<string, { parent: string; children: string[] }>()
 
   /**
-   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「在父对话中执行」的步骤。
+   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「禁止子对话执行」的步骤。
    * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
    * 后台命令本身还走父对话目录的独占队列，和 UE 编译这类同样吃资源的命令共用一条队。
    * 成功才让子对话收尾（标完成、删分支），失败把报错和来源交回它修。
@@ -1187,7 +1195,7 @@ export function tasksApi(deps: {
       const lines = testRunLines(tk.testRuns)
       await childMerged(
         run.childId,
-        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「在父对话中执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「禁止子对话执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
         parent ? { peer: await peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
       )
     },
@@ -1279,14 +1287,24 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 这个子对话要由父对话跑的步骤：优先用任务里的快照（执行环境、命令以它为准），
-   * 对话任务本来没有测试步骤快照（只有工作流任务才快照）时用项目现在的配置——和提示词里
-   * parentRunRole 的判断是同一份来源，不然提示词说「父对话会跑」、执行时却一条都跑不了
+   * 这个子对话要由父对话跑的步骤：以项目当前设置为准（调用前现读），任务快照只在项目被删、
+   * 读不到时兜底——和 parentRunRole 的判断、提示词里的步骤是同一份来源，不然提示词说「父对话会跑」、
+   * 执行时却一条都跑不了。
    */
   async function testStepsOf(tk: Task) {
-    if (tk.testSteps.length) return tk.testSteps
-    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
-    return project?.testSteps ?? []
+    // 读项目失败（文件被占 / 写坏 / 权限）不能默默当成「项目不存在」：那会退回旧快照、把用户刚改的设置
+    // 当成没生效，现象和这个 bug 一模一样还没痕迹。先留一条 warning 再兜底，子对话合并不因此失败
+    const project = tk.projectId
+      ? await deps.projects.get(tk.projectId).catch((e) => {
+          log.warn('task', '读项目失败，按任务快照判断测试步骤', {
+            task: tk.id,
+            project: tk.projectId,
+            error: (e as Error).message,
+          })
+          return null
+        })
+      : null
+    return currentTestSteps(tk.testSteps, project)
   }
 
   /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
@@ -1365,11 +1383,11 @@ export function tasksApi(deps: {
         ok: false,
         info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
       }
-    // 合回已完成、父对话在跑勾了「在父对话中执行」的步骤（ADR 0018）：等它跑完，不能重复请求
+    // 合回已完成、父对话在跑勾了「禁止子对话执行」的步骤（ADR 0018）：等它跑完，不能重复请求
     if (parentTesting(childId, tk))
       return {
         ok: false,
-        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「在父对话中执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
+        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「禁止子对话执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
       }
     if (tk.requests.length || tk.parentAsks?.length)
       return {
@@ -1729,7 +1747,7 @@ export function tasksApi(deps: {
     if (tk.wrapRequest?.state === 'testing')
       return {
         ok: false,
-        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「在父对话中执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
+        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「禁止子对话执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
       }
     if (tk.wrapRequest?.state !== 'requested')
       return {
@@ -1776,7 +1794,7 @@ export function tasksApi(deps: {
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
     }
-    // 勾了「在父对话中执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
+    // 勾了「禁止子对话执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
     const parentSteps = await parentStepsOf(tk)
     if (parentSteps.length) {
@@ -1785,7 +1803,7 @@ export function tasksApi(deps: {
         ok: true,
         info: [
           `已把子对话「${tk.title}」合回：${r.info}`,
-          `合回还没收尾：它勾了「在父对话中执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
+          `合回还没收尾：它勾了「禁止子对话执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
           req.build
             ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
             : '',
@@ -2449,6 +2467,131 @@ export function tasksApi(deps: {
     }
   }
 
+  /** 转交给父对话创建的一条子任务：记下是哪个子对话请求的，父对话那一侧要能看到来源 */
+  type ForwardedSpawn = { from: string; fromTitle: string; spec: HelperSpec; at: string }
+  /** 排着的转交请求，按父对话 id 分组：父对话下一轮建 Orchestra 时直接派（见 attachOrchestra） */
+  const forwards = new Map<string, ForwardedSpawn[]>()
+
+  /** 父对话里那条「子对话请求创建子任务」的说明：子任务卡片就挂在这条消息上，用户点开能看到是谁要的 */
+  function forwardMessage(held: ForwardedSpawn): TaskMessage {
+    const role = held.spec.agent?.trim() || ''
+    return {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t(
+        '子对话「{from}」请求创建子任务「{title}」{role}。这个角色禁止子对话执行，面板已经替你派出，结果会交回你，不用再调 spawn_agents。\n\n它的要求：\n{instructions}',
+        {
+          from: held.fromTitle,
+          title: held.spec.title,
+          role: role ? t('（角色：{role}）', { role }) : '',
+          instructions: held.spec.instructions || t('（没有写具体要求）'),
+        },
+      ),
+      tools: [],
+      panel: 'child',
+      at: new Date().toISOString(),
+    }
+  }
+
+  /**
+   * 子对话点名一个「禁止子对话执行」（runIn: 'parent'）的角色：不在子对话里跑，
+   * 转交父对话创建这个子任务（见 ADR 0019）。
+   * 同步返回，排进父对话的队列就算交出去了：子对话立即标完计划步骤、继续往下做，不被它卡住。
+   */
+  function forwardSpawn(child: Task, spec: HelperSpec): { ok: boolean; info: string; id?: string } {
+    const parentId = child.parentTaskId
+    if (!parentId)
+      return {
+        ok: false,
+        info: '这个对话没有父对话：这个角色禁止子对话执行，只能由父对话派它。这一件请自己做，或在结果里说明没做成',
+      }
+    const parent = live.get(parentId)?.task ?? store.known(parentId)
+    if (!parent || parent.archived) return { ok: false, info: '找不到可用的父对话，这个子任务没法转交' }
+    // 父对话自己也是被派出来的子对话：它同样不能执行这个角色，再往上转会一直套下去
+    if (parent.parentTaskId)
+      return {
+        ok: false,
+        info: `父对话「${parent.title}」自己也是被派出来的子对话，不能执行「${spec.agent ?? '这个角色'}」。这一件自己做，或者交给用户决定`,
+      }
+    const held: ForwardedSpawn = { from: child.id, fromTitle: child.title, spec, at: new Date().toISOString() }
+    const entry = live.get(parentId)
+    // 父对话的 AI 正在处理这一轮（orch 只在 runAgent 期间挂着，working 是双保险）：
+    // 直接派进去，子任务进这一轮的 st.helpers，gate 会等它、结果能交回。
+    // 其它阶段（等下一句、等子任务结果、跑计划）走排队 + 唤醒，由下一轮开始调 AI 时派
+    if (entry?.orch && entry.task.working) {
+      entry.task.messages.push(forwardMessage(held))
+      const r = entry.orch.spawn([spec], undefined, { local: true })
+      if (r.error) {
+        // 说明已经写成了「已经替你派出」：效果不符时补一条，不让它静默消失
+        entry.task.messages.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: t('上面那条没能派出：{error}。这件子任务需要另外安排', { error: r.error }),
+          tools: [],
+          panel: 'note',
+          at: new Date().toISOString(),
+        })
+        entry.rev++
+        return { ok: false, info: r.error }
+      }
+      entry.rev++
+      return { ok: true, id: r.ids[0], info: `已在父对话「${parent.title}」里创建这个子任务` }
+    }
+    // 没在跑：先排着，再叫起一轮——它的 Orchestra 一建立就由 attachOrchestra 派，不等 AI 自己想起来调 spawn_agents。
+    const queued = forwards.get(parentId) ?? []
+    queued.push(held)
+    forwards.set(parentId, queued)
+    // 唤醒只发一句短提示：请求正文由 attachOrchestra 写成正式记录，两处都发全文会让父对话里出现两条一模一样的请求
+    void wakeConv(
+      parentId,
+      t(
+        '子对话「{from}」把一件子任务交给你创建，面板已经安排派出，具体要求已经交给那个子任务，你不用再派；结果会交回你。',
+        {
+          from: held.fromTitle,
+        },
+      ),
+      { panel: 'child' },
+    ).catch((e) => {
+      log.warn('task', '转交的子任务没能交给父对话', { error: (e as Error).message })
+      alertOn(parentId, 'delivery', t('子对话转交来的子任务没能交给父对话，它下一轮会再派'))(e)
+    })
+    return { ok: true, info: `已转交父对话「${parent.title}」：它下一轮开始时创建这个子任务` }
+  }
+
+  /**
+   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine.ts 的 onOrchestra）：
+   * 开始调的时候把排着的转交请求直接派出去，调完（undefined）清掉引用——只有「AI 正在处理这一轮」时才接活。
+   * 见 ADR 0019。
+   */
+  function attachOrchestra(taskId: string, orch: Orchestra | undefined) {
+    const entry = live.get(taskId)
+    if (entry) entry.orch = orch
+    if (!orch || !entry) return
+    const queued = forwards.get(taskId)
+    if (!queued?.length) return
+    forwards.delete(taskId)
+    for (const held of queued) {
+      entry.task.messages.push(forwardMessage(held))
+      const r = orch.spawn([held.spec], undefined, { local: true })
+      if (r.error)
+        entry.task.messages.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: t('上面那条没能派出：{error}。这件子任务需要另外安排', { error: r.error }),
+          tools: [],
+          panel: 'note',
+          at: new Date().toISOString(),
+        })
+    }
+    entry.rev++
+  }
+
   /**
    * 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起。
    * 给了 msgId 只收这一张（用户在弹窗里一个个回答时，别的提问还在等）
@@ -3013,6 +3156,10 @@ export function tasksApi(deps: {
         messageParent: task.parentTaskId
           ? (text, question, options, kind) => messageParent(entry.task, text, question, options, kind)
           : undefined,
+        // 子对话点名「禁止子对话执行」的角色时，把它转交父对话创建（见 ADR 0019）
+        forwardSpawn: task.parentTaskId ? (spec) => forwardSpawn(entry.task, spec) : undefined,
+        // 父对话排着的转交请求：每轮建 Orchestra 时直接派，不依赖 AI 自己想起来调 spawn_agents
+        onOrchestra: (orch) => attachOrchestra(task.id, orch),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
@@ -3066,7 +3213,8 @@ export function tasksApi(deps: {
         verify:
           task.mode === 'chat' && found?.id
             ? {
-                steps: task.testSteps.length ? task.testSteps : found.testSteps,
+                // 按项目当前步骤拼这一轮的提示词（一次取一次，这一轮不再重读）；项目读不到才用任务快照
+                steps: currentTestSteps(task.testSteps, found),
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,

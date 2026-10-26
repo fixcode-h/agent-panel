@@ -1,47 +1,66 @@
 /**
  * 在线演示版的工作总结：不跑 CLI，过一秒按选中的项目给一份示例报告。
- * 接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），页面两边共用一套代码。
+ * 接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），页面两边共用一套代码；
+ * 报告结构也和正式版一样：三个二级节、项目三级标题、条目带序号（格式自检能直接通过）。
  */
 import { todayWindow, type SummaryJob, type SummaryRecord } from '@shared/summary'
 import { demoMs } from './demo-speed'
 
-/** 演示用的报告内容：按项目轮流取一条，看起来像真的今天做过的事 */
-const DONE = [
-  ['修好购物车数量不同步，补了商品列表的加载骨架', '把价格格式化抽成一个函数，统一页面上的显示'],
-  ['新增「工作总结」页面，能把今天执行过的对话整理成报告', '报告支持编辑、预览和一键复制'],
-  ['补了接口超时的提示，失败时不再只转圈', '把重复的请求封装成一个方法，减少了三处重复代码'],
+/** 演示用的需求条目：标题、状态、实现原理 */
+const NEEDS = [
+  { title: '购物车数量不同步', status: '已完成（4/4）', how: '数量以服务端返回为准，前端只做乐观更新' },
+  { title: '商品列表缺加载骨架', status: '已完成（3/3）', how: '首次加载时先渲染和行高等高的占位块' },
+  { title: '价格显示格式不统一', status: '进行中（2/5）', how: '把格式化收成一个函数，所有页面都调它' },
+  { title: '接口超时只转圈不提示', status: '已完成（2/2）', how: '请求失败统一走错误提示，不再静默重试' },
 ]
-const DECIDED = [
-  '数量以服务端返回为准，前端只做乐观更新',
-  '报告只存最近几份，旧的在生成时删掉',
-  '外部输入在边界校验，内部不再重复判断',
-]
+/** 演示里的 Bug：只有用户在对话里报过的问题才写进来 */
 const BUGS = [
-  '问题在 cart 模块的合并逻辑：异地加购会互相覆盖；改成按商品合并后修好',
-  '问题在设置弹窗挂载时机：打开时先出现在左上角再跳到中间；改成挂载后再定位',
-  '问题是后台命令的结果没有回传：轮询判断写反了；改正后能正常显示',
+  {
+    title: '点「全部应用」后按钮没有变化',
+    cause: '保存只更新了内存里的值，没有回写接口',
+    fix: '保存后重新拉一遍配置并刷新按钮状态',
+  },
+  {
+    title: '设置弹窗打开时先闪在左上角',
+    cause: '弹窗挂载时还没拿到定位用的锚点',
+    fix: '等挂载完成后再定位，打开即居中',
+  },
 ]
-const TODO = ['结算页的多币种还没验证', '还没加按项目筛选历史报告的入口', '手机宽度下的排版还没检查']
+/** 每个项目最多给几条需求 / 几条 Bug，够看出格式即可 */
+const NEEDS_PER_PROJECT = 2
 
 const reports = new Map<string, SummaryRecord>()
 const jobs = new Map<string, SummaryJob>()
 
-function sampleMd(names: string[]) {
-  return names
-    .map((name, i) => {
-      const done = DONE[i % DONE.length]
-      return [
-        `## ${name}`,
-        '',
-        `- **做了**：${done[0]}`,
-        `- **做了**：${done[1]}`,
-        `- **关键决策**：${DECIDED[i % DECIDED.length]}`,
-        `- **Bug**：${BUGS[i % BUGS.length]}`,
-        `- **遗留**：${TODO[i % TODO.length]}`,
-        '',
-      ].join('\n')
-    })
-    .join('\n')
+function sampleMd(day: string, names: string[]) {
+  const needs = names.map((name, i) => {
+    const picked = Array.from(
+      { length: NEEDS_PER_PROJECT },
+      (_, k) => NEEDS[(i * NEEDS_PER_PROJECT + k) % NEEDS.length],
+    )
+    return [
+      `### 1.${i + 1} ${name}`,
+      ...picked.flatMap((n, k) => [`${k + 1}. **${n.title}** ｜ ${n.status}`, `   实现：${n.how}`]),
+      '',
+    ]
+  })
+  const bugs = names.map((name, i) => {
+    const bug = BUGS[i % BUGS.length]
+    return [`### 2.${i + 1} ${name}`, `1. **${bug.title}**`, `   原因：${bug.cause}`, `   修复：${bug.fix}`, '']
+  })
+  return [
+    `# ${day} 工作总结`,
+    '',
+    '## 一、需求进度',
+    '',
+    ...needs.flat(),
+    '## 二、用户报告的 Bug',
+    '',
+    ...bugs.flat(),
+    '## 三、今日小结',
+    `今天完成了 ${names.length} 个项目的主要需求，剩下的按计划继续推进。`,
+    '',
+  ].join('\n')
 }
 
 export function demoSummary(
@@ -69,10 +88,13 @@ export function demoSummary(
   }
   // POST /summary：开始生成
   if (method === 'POST') {
-    const input = body as { projectIds?: string[] }
-    const chosen = (input.projectIds ?? [])
-      .map((pid) => projects.find((p) => p.id === pid))
-      .filter((p): p is { id: string; name: string } => !!p)
+    const input = body as { projects?: { projectId?: string; taskIds?: string[] }[] }
+    const chosen = (input.projects ?? [])
+      .map((p) => {
+        const project = projects.find((x) => x.id === p.projectId)
+        return project ? { id: project.id, name: project.name, taskIds: p.taskIds ?? [] } : null
+      })
+      .filter((p): p is { id: string; name: string; taskIds: string[] } => !!p)
     if (!chosen.length) throw new Error('项目不存在')
     const { day } = todayWindow()
     const job: SummaryJob = {
@@ -85,7 +107,7 @@ export function demoSummary(
       startedAt: Date.now(),
     }
     jobs.set(job.id, job)
-    setTimeout(() => (job.thinking = '先看今天每个项目里跑过的对话，按项目整理成几条。'), demoMs(500))
+    setTimeout(() => (job.thinking = '先看今天每个项目里跑过的对话，按项目整理成三节。'), demoMs(500))
     setTimeout(() => (job.tools = ['任务记录', '消息', '计划']), demoMs(900))
     setTimeout(() => {
       if (job.status !== 'running') return
@@ -97,14 +119,23 @@ export function demoSummary(
         day,
         projectIds: chosen.map((p) => p.id),
         projectNames: chosen.map((p) => p.name),
-        md: sampleMd(chosen.map((p) => p.name)),
+        md: sampleMd(
+          day,
+          chosen.map((p) => p.name),
+        ),
         cli: 'demo',
         model: '',
         effort: '',
-        taskCount: chosen.length * 2,
+        // 没挑对话时按项目今天两条估算，和正式版「不选就是全部」的口径一致
+        taskCount: chosen.reduce((n, p) => n + Math.max(p.taskIds.length, 2), 0),
       }
       reports.set(record.id, record)
-      Object.assign(job, { status: 'done', md: record.md, reportId: record.id })
+      Object.assign(job, {
+        status: 'done',
+        md: record.md,
+        reportId: record.id,
+        format: { ok: true, issues: [], retried: false },
+      })
     }, demoMs(1800))
     return job
   }

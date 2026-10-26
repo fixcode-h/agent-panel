@@ -98,6 +98,12 @@ export const AgentInput = z.object({
   canDelegate: z.boolean().default(false),
   /** 可以按工作流启动计划（start_plan）；关掉时只能在当前对话里直接执行 */
   canPlan: z.boolean().default(false),
+  /**
+   * 在哪类对话里能启动：any 任意对话（默认）；parent 只在父对话里执行。
+   * 子对话点名 parent 的角色时不在这里跑，而是转交父对话创建这个子任务（见 ADR 0019）。
+   * catch：旧数据没有这个字段时按 any 读，不能因为加字段读不进来。
+   */
+  runIn: z.enum(['any', 'parent']).catch('any').default('any'),
   /** 用户是否确认过能力开关：升级时为旧内置 Agent 补一次默认能力，之后不再覆盖用户的选择 */
   capsSet: z.boolean().default(false),
   /** 已经做过的一次性升级（见 shared/builtin/core.ts 的 DEFAULT_CHANGES）：做过的不再做，用户之后改回去的值不会被覆盖 */
@@ -596,7 +602,8 @@ export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), Para
 /**
  * 项目里的一条测试步骤：按顺序执行命令、检查环境。
  * 步骤属于项目而不是工作流——同一个工作流给不同项目用时，命令各不相同。
- * 新建对话时整份步骤快照进任务，之后改项目设置不影响已经开始的对话。
+ * 新建对话时也快照一份进任务，但执行时以项目当前设置为准（见 shared/test-steps.ts 的 currentTestSteps）：
+ * 改了项目设置，进行中的对话下一次判断就按新步骤走，快照只在项目被删、读不到时兜底。
  */
 export const TEST_STEP_ENVS = ['auto', 'wsl', 'powershell', 'cmd', 'bash'] as const
 
@@ -651,7 +658,7 @@ export const TestStepFields = z.object({
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
   /**
-   * 在父对话中执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
+   * 禁止子对话执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
    * 只对 Git 项目的独立分支子对话生效（其它版本控制的子对话没有分支可合，字段被忽略）；默认 false，老步骤不受影响
    */
   runInParent: z.boolean().catch(false).default(false),
@@ -1406,7 +1413,7 @@ export const TaskTestRun = z.object({
   /** 项目测试步骤的 id（任务里的快照）；按命令能认出是哪条步骤时才记 */
   stepId: z.string().default(''),
   stepName: z.string().default(''),
-  /** 谁跑的：父对话（勾了「在父对话中执行」的步骤）/ 子对话自己 */
+  /** 谁跑的：父对话（勾了「禁止子对话执行」的步骤）/ 子对话自己 */
   by: z.enum(['parent', 'self']).catch('self').default('self'),
   ok: z.boolean().default(false),
   /** 耗时（毫秒）：按后台命令的真实开始 / 结束时间算 */
@@ -1622,7 +1629,7 @@ export const TaskData = z.object({
   wrapRequest: z
     .object({
       /**
-       * testing：已经合回，父对话在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）；
+       * testing：已经合回，父对话在跑勾了「禁止子对话执行」的测试步骤（见 ADR 0018）；
        * test-failed：已经合回、父对话测试没通过，正在退回给子对话修（和「没合进去」的 failed 是两回事）
        */
       state: z.enum(['requested', 'merging', 'failed', 'testing', 'test-failed']),
@@ -1782,8 +1789,9 @@ export const TaskData = z.object({
    */
   skillSlots: z.record(z.string(), z.string()).default({}),
   /**
-   * 新建对话时项目里的测试步骤快照：测试 Agent 按它执行，并把原文交给 CLI。
-   * 之后改项目设置不影响已经开始的对话。旧任务没有时为空（Agent 自己找命令）。
+   * 工作流任务新建时、以及「继续流程」时把项目里的测试步骤写一份进任务（纯对话任务为空）。
+   * 执行时以项目当前设置为准，见 shared/test-steps.ts 的 currentTestSteps：拼提示词拿不到项目时整段验证说明
+   * 都不注入（不会退回这份快照）；只有「谁跑这些步骤 / 匹配耗时」这几条在项目读不到时用它兜底。
    */
   testSteps: z.array(TestStep).default([]),
   /** 这次任务里跑过的测试步骤耗时（见 ADR 0018）：子对话自己的后台命令和父对话跑的步骤都记在这里 */
