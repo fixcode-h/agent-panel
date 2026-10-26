@@ -302,7 +302,7 @@ function Body({
           // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
           { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' }),
   )
-  // 「在父对话中执行」只对 Git 项目生效（ADR 0018）：路径变了重新判断，判断不出来按不是 Git 处理（置灰）。
+  // 「禁止子对话执行」只对 Git 项目生效（ADR 0018）：路径变了重新判断，判断不出来按不是 Git 处理（置灰）。
   // 输入路径时每敲一个字都会变，等 300ms 再问，避免连续请求
   const [gitRepo, setGitRepo] = useState(false)
   useEffect(() => {
@@ -1447,7 +1447,7 @@ function TestStepsEditor({
 }: {
   steps: TestStep[]
   distro: string
-  /** 项目是 Git 仓库：「在父对话中执行」才生效（ADR 0018），不是时置灰并说明原因 */
+  /** 项目是 Git 仓库：「禁止子对话执行」才生效（ADR 0018），不是时置灰并说明原因 */
   gitRepo: boolean
   onChange: (v: TestStep[]) => void
   onDistro: (v: string) => void
@@ -1485,7 +1485,7 @@ function TestStepsEditor({
             '每条可以写「适用改动」（glob）：只改文档、资源这类没碰到的步骤会被跳过，并在验收结论里写清原因——同时会算上从远端拉取、合并进来的改动。',
           )}
           {t(
-            '勾了「在父对话中执行」的步骤子对话不跑：合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。',
+            '勾了「禁止子对话执行」的步骤只对子对话生效：子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话；父对话自己改代码验证时照常跑。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。',
           )}
         </span>
         <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>
@@ -1621,7 +1621,7 @@ function TestStepsEditor({
                 title={
                   gitRepo
                     ? t(
-                        '勾了以后子对话不跑这条步骤：合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。',
+                        '只对子对话生效：勾了以后子对话不跑这条步骤，合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话；父对话自己改代码验证时照常跑。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。',
                       )
                     : t(
                         '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。',
@@ -1635,7 +1635,7 @@ function TestStepsEditor({
                   disabled={!gitRepo}
                   onChange={(e) => patch(i, { runInParent: e.target.checked })}
                 />
-                {t('在父对话中执行')}
+                {t('禁止子对话执行')}
                 {!gitRepo && <span className="text-subtle">{t('（只对 Git 项目生效）')}</span>}
               </label>
             </div>

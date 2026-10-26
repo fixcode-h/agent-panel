@@ -651,7 +651,7 @@ export const TestStepFields = z.object({
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
   /**
-   * 在父对话中执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
+   * 禁止子对话执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
    * 只对 Git 项目的独立分支子对话生效（其它版本控制的子对话没有分支可合，字段被忽略）；默认 false，老步骤不受影响
    */
   runInParent: z.boolean().catch(false).default(false),
@@ -1406,7 +1406,7 @@ export const TaskTestRun = z.object({
   /** 项目测试步骤的 id（任务里的快照）；按命令能认出是哪条步骤时才记 */
   stepId: z.string().default(''),
   stepName: z.string().default(''),
-  /** 谁跑的：父对话（勾了「在父对话中执行」的步骤）/ 子对话自己 */
+  /** 谁跑的：父对话（勾了「禁止子对话执行」的步骤）/ 子对话自己 */
   by: z.enum(['parent', 'self']).catch('self').default('self'),
   ok: z.boolean().default(false),
   /** 耗时（毫秒）：按后台命令的真实开始 / 结束时间算 */
@@ -1622,7 +1622,7 @@ export const TaskData = z.object({
   wrapRequest: z
     .object({
       /**
-       * testing：已经合回，父对话在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）；
+       * testing：已经合回，父对话在跑勾了「禁止子对话执行」的测试步骤（见 ADR 0018）；
        * test-failed：已经合回、父对话测试没通过，正在退回给子对话修（和「没合进去」的 failed 是两回事）
        */
       state: z.enum(['requested', 'merging', 'failed', 'testing', 'test-failed']),

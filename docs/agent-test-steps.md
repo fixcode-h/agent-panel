@@ -58,7 +58,7 @@ type TestStep = {
   when: string // 补充说明，写给人看的，例如「仅发布前跑」；判定以 appliesTo 为准
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
-  runInParent: boolean // 在父对话中执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）
+  runInParent: boolean // 禁止子对话执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）；字段名沿用旧名，语义就是「禁止子对话执行」
   quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
   note: string // 给执行者看的说明
   enabled: boolean
@@ -109,10 +109,13 @@ type TestStep = {
 fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪批文件、含「只改了文档但合并进来 C++ 改动」）
 由 `shared/test-steps.test.ts` 用真实改动清单钉住。行为层的覆盖等判定接进执行流程后再补。
 
-### 在父对话中执行（`runInParent`）
+### 禁止子对话执行（`runInParent`）
 
 端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，几个子对话同时收尾就把机器拖住。
-勾了「在父对话中执行」的步骤**子对话不跑**：子对话照常改完、`submit_merge`，合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话。
+勾了「禁止子对话执行」的步骤**只对子对话生效**：子对话不跑（照常改完、`submit_merge`），合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话；
+父对话自己改代码验证时**照常跑它**——父对话侧的步骤清单是「全部启用的步骤」（`verifyBlock` 的 `active = steps.filter(enabled)`），
+不经过 `parentRunSteps`，所以勾了这项不会让父对话只跑这几步。
+字段名 `runInParent` 沿用旧名（避免数据迁移），界面文案 2026-10-27 起是「禁止子对话执行」。
 （[ADR 0018](./adr/0018-test-steps-run-in-parent.md)）
 
 - **只对 Git 项目的独立分支子对话生效**：子对话先要有独立分支才有「合回」这一步。P4 / SVN / 没有版本控制的子对话没有分支可合，
@@ -120,7 +123,8 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
   执行流程里也不把这些步骤拿出来。共用目录的 Git 子对话同样不生效。
 - **`merge`（合并时编译）的步骤不受影响**：那条仍按 [ADR 0004](./adr/0004-ue-build-by-parent.md) 由父对话 `request_build` 申请，
   同时勾了两项也只走编译链路，不会编译两次。
-- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令）。
+- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令），只用在「谁替子对话跑」的链路；
+  父对话自己验证取的是全部启用的步骤，不经过它（回归：`shared/test-steps.test.ts` 里「只影响子对话」那条用例）。
   提示词按角色说三种话（`parentRunRoleOf` / `verifyBlock`）：独立分支子对话是「你不用跑，跑了也不算数」；
   顶层父对话是「子对话合并后由面板在你的目录里跑、你不用转述，但你自己改代码时没人替你跑、要自己执行」；
   其它对话不传，步骤照常自己跑。角色判断：子对话要有父对话 + 独立分支，顶层对话即使自己开了独立分支也算父对话。

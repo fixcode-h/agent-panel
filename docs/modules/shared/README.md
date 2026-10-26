@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-26（本轮给共享层补「在父对话中执行」的步骤筛选和测试耗时记录；其余内容沿用 2026-10-25 的核对）
+- analyzed_at: 2026-10-26（本轮给共享层补「禁止子对话执行」的步骤筛选和测试耗时记录，2026-10-27 界面文案由「在父对话中执行」改成这个名字、语义未变；其余内容沿用 2026-10-25 的核对）
 
 ## 职责
 
@@ -59,7 +59,8 @@
   同一文件也是**附件路径安全规则的唯一出处**：`libraryEntryPath` 逐段校验相对路径（挡 `..`、`.`、空段、绝对路径、盘符、`\0` 和 Windows 非法字符，反斜杠统一当 `/`），服务端在 `server/library.ts` 的 `entryOf` 里再补一道 `realpath` 落在 Skill 目录内的校验（字符串层拦不住软链接）。上限常量 `LIBRARY_FILE_MAX_BYTES`（1 MB）、`LIBRARY_TREE_MAX_ENTRIES`（1000，目录也算）、`LIBRARY_DIR_MAX_DELETE_ENTRIES`（目录递归删除前的条目上限）也在这里，服务端和前端都从这里引用，不在别处写数值。文件树排除分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（只对目录生效）、`LIBRARY_TREE_EXCLUDE_FILES`（只对文件生效）——不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`，那份清单会把技能里真叫 `logs` / `build` 的内容目录一起抹掉。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
-  「在父对话中执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  「禁止子对话执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，勾了这项不会被跳过；
   `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
   （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
   收尾总结的「编译 / 测试耗时」要求是 `TEST_TIME_SUMMARY_RULE`，只对独立分支的子对话注入（`shared/engine.ts` 的 `verifyPart`）。

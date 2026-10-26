@@ -163,7 +163,7 @@ test('默认步骤按技术栈带上适用范围：改 Build.cs / .uproject 也�
   assert.equal(stepApplies(byId(rust, 'rust-test'), ['src/lib.rs']), true)
 })
 
-test('「在父对话中执行」的步骤：子对话跳过，合并时编译的步骤不算在内', () => {
+test('「禁止子对话执行」的步骤：子对话跳过，合并时编译的步骤不算在内', () => {
   const e2e = step([], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', runInParent: true })
   const typecheck = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck' })
   const off = step([], { id: 'off', name: '已停用', command: 'x', runInParent: true, enabled: false })
@@ -171,7 +171,7 @@ test('「在父对话中执行」的步骤：子对话跳过，合并时编译�
   assert.deepEqual(
     parentRunSteps([e2e, typecheck, off, merge]).map((s) => s.id),
     ['e2e'],
-    '只取启用的、勾了「在父对话中执行」的；合并时编译的仍走父对话 request_build，不重复跑',
+    '只取启用的、勾了「禁止子对话执行」的；合并时编译的仍走父对话 request_build，不重复跑',
   )
   // 老步骤没有这个字段：解析上来是 false，升级后行为不变
   const saved = ProjectInput.parse({
@@ -186,7 +186,7 @@ test('提示词写清谁跑这一步：子对话不跑、父对话不用自己�
   const inParent = step([], { name: '端到端测试', command: 'npm run test:e2e', runInParent: true })
   const self = step([], { name: '类型检查', command: 'npm run typecheck' })
   const child = verifyBlock([inParent, self], { platform: 'win32', scaled: true, parentRun: 'child' })
-  assert.match(child, /在父对话中执行/, '步骤行要标出来')
+  assert.match(child, /禁止子对话执行/, '步骤行要标出来')
   assert.match(child, /你不要跑它们/)
   assert.match(child, /完成条件是「改动已合回父对话所在的分支 \+ 父对话测试通过」/)
   assert.match(child, /父对话测试失败时面板会把报错原文推回来/)
@@ -194,13 +194,34 @@ test('提示词写清谁跑这一步：子对话不跑、父对话不用自己�
   assert.match(parent, /合并成功后由面板在你的目录里自动跑/)
   assert.match(parent, /你自己改代码时没人替你跑/)
   // 没勾的场合（工作流节点、共用目录的子对话）不出现这段
-  assert.doesNotMatch(verifyBlock([self], { platform: 'win32', scaled: true }), /在父对话中执行/)
+  assert.doesNotMatch(verifyBlock([self], { platform: 'win32', scaled: true }), /禁止子对话执行/)
   // 步骤行本身也带「由谁执行」，两边看到的说法一致
   assert.match(
     testStepsText([inParent], 'win32', '', 'child'),
     /由谁执行：父对话（合并后自动跑，结果回传给你；你不要跑）/,
   )
   assert.match(testStepsText([inParent], 'win32', '', 'parent'), /由谁执行：子对话合并后由面板在你的目录里自动跑/)
+})
+
+test('勾了「禁止子对话执行」只影响子对话：父对话自己验证时照常跑这些步骤', () => {
+  const inParent = step([], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', runInParent: true })
+  const self = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck' })
+  // 父对话侧取「全部启用的步骤」（只按 enabled 筛；appliesTo 是写在提示词里由 Agent 按改动清单自己判断），
+  // 不读 parentRunSteps：勾了这项只是禁止子对话跑，父对话自己改代码验证时不能因此漏掉这一步
+  for (const scaled of [true, false]) {
+    const parent = verifyBlock([inParent, self], { platform: 'win32', scaled, parentRun: 'parent' })
+    assert.match(parent, /npm run test:e2e/, `父对话自己验证时要跑这一步（scaled=${scaled}）`)
+    assert.match(parent, /npm run typecheck/, `没勾的步骤照常在（scaled=${scaled}）`)
+    assert.doesNotMatch(parent, /你不要跑它们/, '父对话侧不能出现「你不要跑」这类子对话的说法')
+  }
+  // 停用的步骤两边都不跑
+  const off = step([], { id: 'off', name: '已停用', command: 'npm run gone', runInParent: true, enabled: false })
+  assert.doesNotMatch(
+    verifyBlock([inParent, off], { platform: 'win32', scaled: true, parentRun: 'parent' }),
+    /npm run gone/,
+  )
+  // 子对话侧才跳过：这是这个参数唯一的作用范围
+  assert.match(verifyBlock([inParent, self], { platform: 'win32', scaled: true, parentRun: 'child' }), /你不要跑它们/)
 })
 
 test('后台命令能认出是哪条测试步骤：命令原文和按环境拼出来的整行都认', () => {
@@ -252,7 +273,7 @@ test('耗时统计的文字：一行一步，带执行方、结果和耗时', ()
   assert.match(TEST_TIME_SUMMARY_RULE, /不要编数字/)
 })
 
-test('「在父对话中执行」由谁跑：子对话要有独立分支，顶层对话自己改代码时自己跑', () => {
+test('「禁止子对话执行」由谁跑：子对话要有独立分支，顶层对话自己改代码时自己跑', () => {
   const steps = [step([], { runInParent: true })]
   assert.equal(parentRunRoleOf({ child: true, isolated: true, git: true, steps }), 'child')
   assert.equal(parentRunRoleOf({ child: true, isolated: false, git: true, steps }), '', '共用目录的子对话没得合回')
