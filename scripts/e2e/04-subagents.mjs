@@ -5,9 +5,10 @@
  * 互不影响。总入口 scripts/e2e.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { rmSync, existsSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 
 import path from 'node:path'
+import { cliOutputFile } from '../fake-cli/outputs.mjs'
 import { runShard } from './harness.mjs'
 
 await runShard('子对话与计划', async (api) => {
@@ -25,6 +26,8 @@ await runShard('子对话与计划', async (api) => {
     step,
     setupBase,
     agent,
+    mergeTask,
+    clearCliOutputs,
   } = api
   const { project, A, B, C } = await setupBase()
   // 按提示词找那一次调用：调用记录里这时可能已有别的调用（保活进程、父对话回报后的新一轮），
@@ -334,8 +337,12 @@ await runShard('子对话与计划', async (api) => {
     assert.match(wtPrompt, /在独立分支里验证，再合回原分支/, '提示里说明在自己的分支里编译测试、再合回去')
     assert.match(wtPrompt, /submit_merge/, '合回原分支用 submit_merge')
     assert.ok(!wtPrompt.includes('claim_files 认领'), '独立分支里不用认领文件')
-    // 假 CLI 每次都在工作目录写输出文件：项目目录里前面测试留下的那份没进版本控制，会挡住合并
-    for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    // 假 CLI 每轮都在工作目录写输出文件；项目目录里留着的那份没进版本控制，子对话分支里也有同名的，会挡住合并。
+    // 这里故意多放两份：一份对得上分支里的（codex 就是这条子对话的 CLI），一份分支里没有的（pi）。
+    // CI 上挂的是「写了没清」——旧清理只在重试循环外做一次，重试期间又被写回来；mergeTask 每次尝试前都清，
+    // 名字覆盖全部 CLI 则由 outputs.test.mjs 的断言兜住
+    const staleOutputs = [cliOutputFile('codex'), cliOutputFile('pi')]
+    for (const f of staleOutputs) writeFileSync(path.join(project.path, f), 'stale\n')
     const before = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
     assert.equal(before.length, 1, '父对话的独立分支列表带上子对话的')
     assert.ok(before[0].child && !before[0].merged && before[0].ahead + before[0].dirty > 0, '子对话的分支还没合并')
@@ -347,20 +354,9 @@ await runShard('子对话与计划', async (api) => {
     })
     assert.equal(early.status, 409, '有没合并的改动时不标记完成')
     assert.match((await early.json()).error, /先合并或删除分支/)
-    // 催合并那条消息会让子对话再跑一轮：等它这一轮结束再合，不然会撞上「对话正在执行」
-    let merged
-    await waitFor(
-      async () => {
-        try {
-          merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
-          return true
-        } catch (e) {
-          if (/正在执行/.test(String(e))) return false
-          throw e
-        }
-      },
-      { label: '子对话这一轮结束后合并' },
-    )
+    // 催合并那条消息会让子对话再跑一轮：要从它这一轮结束、合并成功才停，中途被正在执行的回合挡住就再试
+    const merged = await mergeTask(wtKid.id, { label: '子对话这一轮结束后合并' })
+    assert.ok(!existsSync(path.join(project.path, staleOutputs[1])), '合并前清掉了分支里没有的残留输出文件')
     assert.equal(merged.task.worktree.state, 'active', '合并后分支留着，对话还能接着改')
     assert.ok(
       gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
@@ -408,7 +404,7 @@ await runShard('子对话与计划', async (api) => {
     // 子对话做完（测试跑通、只剩合回）调用 submit_merge 请父对话收尾：父对话 finish_child 合回自己的分支，
     // 子对话计划收尾、标记完成，独立分支回收（ADR 0005）
     await waitDone(wtKid.id, 20000)
-    for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    clearCliOutputs(project.path)
     const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
     const doneKid = await call('POST', '/tasks', {
       projectId: project.id,
@@ -774,7 +770,7 @@ await runShard('子对话与计划', async (api) => {
     // ---- 收尾前评审：完整测试之前派「评审」，评审给 🛑 时 submit_merge 被拦下，改完复看通过才合回 ----
     {
       // 假 CLI 每次都在工作目录写输出文件：和分支里那份一样就合得回去，先清掉项目目录里遗留的那份
-      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      clearCliOutputs(project.path)
       const headBefore = gitIn(project.path, 'rev-parse', 'HEAD').toString().trim()
       const reviewKid = await call('POST', '/tasks', {
         projectId: project.id,
@@ -828,7 +824,7 @@ await runShard('子对话与计划', async (api) => {
     }
     // ---- 计划里只写了评审的标题、没标 review：submit_merge 被拒，补上之后才合回 ----
     {
-      for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+      clearCliOutputs(project.path)
       const mergesBefore = readLog(log + '.merge').length
       const kid = await call('POST', '/tasks', {
         projectId: project.id,

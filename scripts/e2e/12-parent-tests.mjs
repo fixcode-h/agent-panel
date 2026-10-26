@@ -13,13 +13,13 @@
  * 和其他分片并行跑：每个分片自己有临时数据目录、假 CLI 日志、端口和服务（见 harness.mjs）。
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 
 import { runShard } from './harness.mjs'
 
 await runShard('父对话执行测试步骤', async (api) => {
-  const { call, waitTask, waitDone, waitFor, calls, sleep, step, setupBase, tmp } = api
+  const { call, waitTask, waitDone, waitFor, calls, sleep, step, setupBase, tmp, clearCliOutputs } = api
   const { project, A, B } = await setupBase()
   const { id: _id, createdAt: _c, updatedAt: _u, ...projectInput } = project
 
@@ -58,12 +58,9 @@ await runShard('父对话执行测试步骤', async (api) => {
     call('PUT', `/projects/${project.id}`, { ...projectInput, childIsolation: 'worktree', testSteps: steps })
   const newParent = async (prompt) =>
     waitDone((await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt })).id, 20000)
-  // fake-cli 在父对话的目录里写了输出文件，是未跟踪文件：不清掉会挡住子对话分支的合并
-  const cleanOutputs = () => {
-    for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
-  }
   const newKid = (parentId, prompt) => {
-    cleanOutputs()
+    // 父对话的目录里假 CLI 写的输出文件是未跟踪的，不清掉会挡住子对话分支的合并
+    clearCliOutputs(project.path)
     return call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -73,15 +70,15 @@ await runShard('父对话执行测试步骤', async (api) => {
     })
   }
   // 子对话第一轮在项目根写完自己的输出文件（未跟踪）后，面板才在分支目录里接着做；
-  // 这个文件留在合并目标目录里会挡住 git merge。等第二轮真的在分支目录里开始（第一轮已结束）再删，
-  // 早删会被第一轮补写回来
+  // 这些文件留在合并目标目录里会挡住 git merge。等第二轮真的在分支目录里开始（第一轮已结束）再清，
+  // 早清会被第一轮补写回来
   const dropRootOutput = async (kidId) => {
     const wt = await waitTask(kidId, (x) => x.worktree?.state === 'active', 20000)
     await waitFor(() => calls().some((c) => c.cwd === wt.worktree.path), {
       timeout: 20000,
       label: '子对话第二轮在分支目录里开始',
     })
-    rmSync(path.join(project.path, 'codex-output.txt'), { force: true })
+    clearCliOutputs(project.path)
   }
 
   // ---- 通过：合并后父对话跑，子对话拿到结果和耗时才收尾 ----

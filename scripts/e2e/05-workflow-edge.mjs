@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 
 import path from 'node:path'
+import { clearCliOutputs, cliOutputFile } from '../fake-cli/outputs.mjs'
 import { runShard } from './harness.mjs'
 
 await runShard('工作流条件与失败', async (api) => {
@@ -26,6 +27,7 @@ await runShard('工作流条件与失败', async (api) => {
     waitFor,
     waitDone,
     waitTask,
+    mergeTask,
     calls,
     readLog,
     step,
@@ -1024,9 +1026,11 @@ await runShard('工作流条件与失败', async (api) => {
   )
   assert.match((await call('GET', `/tasks/${tIso.id}/diff?path=committed.txt`)).diff, /\+one/)
   writeFileSync(path.join(tIso.worktree.path, 'later.txt'), 'not committed yet\n')
-  // 项目里有个没跟踪的同名文件挡着：合并失败，项目和独立分支都保持原样
-  const blocker = path.join(projectDir, 'claude-output.txt')
-  const blockerText = readFileSync(blocker, 'utf8')
+  // 项目里有个没跟踪的同名文件挡着：合并失败，项目和独立分支都保持原样。
+  // 残留自己造，不依赖前面用例写过什么：假 CLI 的输出文件正好就是这个场景
+  const blocker = path.join(projectDir, cliOutputFile('claude'))
+  clearCliOutputs(projectDir)
+  writeFileSync(blocker, 'stale claude output\n')
   const blocked = await fetch(`${base}/tasks/${tIso.id}/worktree/merge`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -1037,7 +1041,7 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal((await call('GET', `/tasks/${tIso.id}`)).worktree.state, 'active', '合并失败时独立分支还在')
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '合并失败时项目目录没被改动')
   rmSync(blocker)
-  const merged = await call('POST', `/tasks/${tIso.id}/worktree/merge`)
+  const merged = await mergeTask(tIso.id, { label: '清掉挡着的残留后合并' })
   assert.equal(merged.task.worktree.state, 'active', '合并后分支和目录留着')
   assert.ok(existsSync(tIso.worktree.path), '合并后独立目录还在')
   const status = (await call('GET', `/tasks/${tIso.id}/worktrees`)).items[0]
@@ -1055,7 +1059,6 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '删除后任务分支没了')
   // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
   git('reset', '-q', '--keep', 'HEAD~1')
-  writeFileSync(blocker, blockerText)
   let tDrop = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -1088,10 +1091,9 @@ await runShard('工作流条件与失败', async (api) => {
   // ---- 合并审查：冲突和「git 自动合上但两边改过同一文件」都要把双方的提交记录交回，能看懂各自为什么这么改 ----
   {
     const before = git('rev-parse', 'HEAD').toString().trim()
-    // 前面的用例在项目目录里留了一个没跟踪的 claude-output.txt，独立分支里也有同名文件，会挡住合并：先挪开，测完恢复
-    const blockerPath = path.join(projectDir, 'claude-output.txt')
-    const blockerText = existsSync(blockerPath) ? readFileSync(blockerPath, 'utf8') : ''
-    rmSync(blockerPath, { force: true })
+    // 假 CLI 在前面用例里往项目目录写了输出文件（未跟踪），独立分支里也有同名的，会挡住合并：先清掉。
+    // 清完不用恢复：这些文件是测试留下的垃圾，不属于这个仓库
+    clearCliOutputs(projectDir)
     const commit = (...a) => git('-c', 'user.name=t', '-c', 'user.email=t@t', ...a)
     const commitIn = (dir, ...a) => gitIn(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a)
     // 专门的多行文件：README 只有一行，两边改动会挤进同一个 hunk，构不出「改不同位置」的场景
@@ -1122,7 +1124,7 @@ await runShard('工作流条件与失败', async (api) => {
       commitIn(tOverlap.worktree.path, 'commit', '-qam', '分支：把标题改成新写法')
       writeFileSync(notePath, '# 标题\n\n原目录改的正文\n\n结尾\n')
       commit('commit', '-qam', '原目录：正文补一段说明')
-      const merged = await call('POST', `/tasks/${tOverlap.id}/worktree/merge`)
+      const merged = await mergeTask(tOverlap.id, { label: '重叠不冲突时合并' })
       assert.deepEqual(merged.overlap, ['merge-note.md'], '两边都改过的文件要交出来：自动合上也可能互相盖掉')
       assert.ok(
         merged.sides?.into?.commits?.some((c) => c.includes('原目录：正文补一段说明')),
@@ -1162,7 +1164,6 @@ await runShard('工作流条件与失败', async (api) => {
       assert.equal(readFileSync(notePath, 'utf8'), '# 原目录版本\n\n正文\n\n结尾\n', '冲突撤回，项目目录没被改')
     } finally {
       restore()
-      if (blockerText) writeFileSync(blockerPath, blockerText)
       for (const x of [tOverlap, tConflict]) {
         if (!x) continue
         await call('POST', `/tasks/${x.id}/worktree/discard`).catch(() => {})
