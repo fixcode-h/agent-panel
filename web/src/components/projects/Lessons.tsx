@@ -21,6 +21,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/tasks'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { TagCountChip } from '@/components/tags/Tags'
 
 /** 输入框里的范围：逗号、顿号、空白都能分隔 */
 const splitPaths = (s: string) =>
@@ -144,19 +145,7 @@ export function LessonsEditor({
       {tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('按标签筛选')}>
           {tags.slice(0, TAG_CHIPS).map(([x, n]) => (
-            <button
-              key={x}
-              type="button"
-              aria-pressed={tag === x}
-              onClick={() => setTag(tag === x ? '' : x)}
-              className={cn(
-                'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
-                tag === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
-              )}
-            >
-              {x}
-              <span className="ml-1 text-subtle">{n}</span>
-            </button>
+            <TagCountChip key={x} name={x} count={n} active={tag === x} onClick={() => setTag(tag === x ? '' : x)} />
           ))}
           {tags.length > TAG_CHIPS && (
             <span className="text-[0.6875rem] text-subtle">

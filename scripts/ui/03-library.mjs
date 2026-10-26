@@ -136,20 +136,51 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('AI 分析：发了新内容后结果没有自动收起'))
   await check(p, 'AI分析-发送后收起')
   await p.goto(base + '#/agents')
-  // 必备角色自成一个分组：评审也是必备角色（子对话收尾前派它看 diff）
-  await check(p, 'Agent', ['命令预览', '必备', '评审'])
+  await check(p, 'Agent', ['命令预览', '评审'])
+  // 角色页默认按标签分组：没有标签的角色全在「默认」组，组标题是标签名 + 角色数。
+  // 用稳定的 data-group-id 定位这一组：用户能建名叫「默认」的标签，按名字找会指错组
+  const defGroup = p.locator('[data-group-id="#default"]')
+  if (!(await defGroup.count())) errors.push('角色页：没有「默认」分组')
+  else {
+    const text = (await defGroup.first().textContent()) ?? ''
+    if (!/默认（没有标签）\s*\d+/.test(text))
+      errors.push(`角色页：「默认」组的标题没有条数（读到「${text.slice(0, 20)}」）`)
+    // 内置角色定义里不带 tags：必备角色必须落在「默认」里，不能被漏掉
+    if (!text.includes('评审')) errors.push('角色页：没有标签的必备角色「评审」不在「默认」组里')
+  }
+  // 有标签的角色按标签成组；演示数据里测试工程师和代码审查都带「质量」
+  const quality = p.getByRole('group', { name: '质量', exact: true })
+  if (!(await quality.count())) errors.push('角色页：没有按标签「质量」分组')
+  else if (!/质量\s*2/.test((await quality.first().textContent()) ?? ''))
+    errors.push('角色页：「质量」组的标题没有显示条数')
+  // 搜索命中的角色仍然按分组显示，不会被拍平成一个列表
+  const search = p.getByPlaceholder('搜索名称、简介、模型或标签')
+  await search.fill('测试工程师')
+  await quality
+    .first()
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('角色页：搜索后分组不见了'))
+  if (!((await quality.first().textContent()) ?? '').includes('测试工程师'))
+    errors.push('角色页：搜索命中的角色没有按标签分组显示')
+  if (await p.locator('[data-group-id="#default"]').count())
+    errors.push('角色页：搜索命中的角色都带标签，不该还留着空的「默认」组')
+  await search.fill('')
+  // 分类视图保留：必备角色自成一个分组，评审也是必备角色（子对话收尾前派它看 diff）
+  await p.getByRole('radio', { name: '按分类' }).click()
+  await check(p, 'Agent-按分类', ['必备'])
   // 必备分组后面跟着计数（评审升进来之后是 7）：label 和计数是两个 span，只查文本查不出数字
   const coreHead = await p.evaluate(() => {
     const label = [...document.querySelectorAll('span')].find((el) => el.textContent?.trim() === '必备')
     return label?.parentElement?.textContent?.trim() ?? ''
   })
   if (!/必备\s*·\s*7/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 7（读到「${coreHead}」）`)
+  // 换回默认视图，后面的流程照原样在按标签的列表里走
+  await p.getByRole('radio', { name: '按标签' }).click()
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
   await p.keyboard.press('Escape')
   // 评审是必备角色：参数定义和角色设定由面板维护，参数页只改取值、角色设定只读
-  const search = p.getByPlaceholder('搜索名称、简介、模型或标签')
   await search.fill('评审')
   await p.getByText('评审', { exact: true }).first().click()
   await p.getByRole('tab', { name: /^参数/ }).click()

@@ -63,9 +63,21 @@ export function ListPane({
   )
 }
 
-export function ListGroup({ header, children }: { header: React.ReactNode; children?: React.ReactNode }) {
+export function ListGroup({
+  header,
+  children,
+  label,
+  id,
+}: {
+  header: React.ReactNode
+  children?: React.ReactNode
+  /** 分组的可访问名称：屏幕阅读器和界面检查靠它认出是哪一组，不传就不加 role */
+  label?: string
+  /** 稳定的分组标识（写到 data-group-id）：界面检查用它定位，不依赖会变的可见文本 */
+  id?: string
+}) {
   return (
-    <div className="group/g">
+    <div className="group/g" data-group-id={id} {...(label ? { role: 'group', 'aria-label': label } : {})}>
       {header}
       <div className="flex flex-col gap-0.5">{children}</div>
     </div>
