@@ -661,6 +661,10 @@ export const EN_TASKS: Record<string, string> = {
   导入任务: 'Import task',
   '从导出的文件导入，只能查看': 'Imported from an exported file, read-only',
   导出任务: 'Export task',
+  '导出 HTML 报告': 'Export HTML report',
+  '导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开':
+    'Exports a self-contained HTML file that opens in a browser without Agent Panel',
+  '已导出 HTML 报告，用浏览器直接打开就能看': 'HTML report exported; open it in any browser',
   '这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。':
     'This task was imported from a file (exported {at}{app}). It is read-only and cannot be continued.',
   '，面板 {v}': ', panel {v}',
@@ -1165,6 +1169,11 @@ export const EN_TASKS: Record<string, string> = {
     'API "{api}" is at its concurrency limit; this starts when a slot frees up',
   '排队等 API「{api}」': 'Waiting for API "{api}"',
   父对话测试: 'Parent test',
+  未记录: 'Not recorded',
+  测试记录: 'Test runs',
+  '合计耗时 {time}': 'Total {time}',
+  '由{by}执行': 'Run by {by}',
+  '第 {n} 次': 'Attempt {n}',
   '已合回，等父对话跑测试（面板自动执行，结果回传给它）':
     'Merged back; waiting for the parent to run its tests (the panel runs them automatically and sends the result back)',
   父对话的测试还没通过: "the parent's tests have not passed",

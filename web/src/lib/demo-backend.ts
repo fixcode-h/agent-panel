@@ -4190,6 +4190,29 @@ async function seedTasks(d: Db) {
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
     ]
+    // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
+    // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    task.testRuns = [
+      {
+        stepId: 'node-e2e',
+        stepName: '端到端测试',
+        by: 'parent',
+        ok: true,
+        durationMs: 94_000,
+        tries: 1,
+        at: testedAt,
+      },
+      {
+        stepId: 'node-typecheck',
+        stepName: '类型检查',
+        by: 'self',
+        ok: false,
+        durationMs: 1_200,
+        tries: 2,
+        at: testedAt,
+      },
+    ]
     persist()
   }
   if (shop) {

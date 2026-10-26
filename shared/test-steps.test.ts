@@ -18,8 +18,11 @@ import {
   mergeTestRun,
   parentRunSteps,
   parseGlobs,
+  pickSteps,
+  pickStepsText,
   stepApplies,
   testRunLines,
+  testRunSummary,
   testStepsBlock,
   testStepsText,
   verifyBlock,
@@ -326,7 +329,10 @@ test('scope 三档：always 不看 globs、changed 命中才跑、parent 一律�
   assert.equal(stepApplies(changed, ['docs/a.md']), false)
   assert.equal(stepApplies(changed, ['src/a.cpp']), true)
   assert.equal(stepApplies(changed, []), true, '取不到改动清单时按总是执行')
-  assert.equal(stepApplies(parent, ['docs/a.md']), true, 'parent 的步骤在父对话侧照常跑')
+  assert.equal(stepApplies(parent, ['docs/a.md']), true, 'parent 没写 globs 时照常跑')
+  // parent 写了 globs 也要按改动筛：子对话只改文档时不该让父对话跑 e2e
+  assert.equal(stepApplies(step(['**/*.ts'], { scope: 'parent' }), ['docs/a.md']), false)
+  assert.equal(stepApplies(step(['**/*.ts'], { scope: 'parent' }), ['web/src/a.ts']), true)
   assert.equal(stepApplies(step([], { scope: 'changed' }), ['docs/a.md']), true, 'changed 没写 globs 时按总是执行')
 })
 
@@ -396,4 +402,206 @@ test('子对话提示词只跑增量：不跑全量、定位命中的部分、�
   // 没有父对话代跑时不能说「合并后由父对话跑」，否则 Agent 会把没人跑的步骤跳掉
   const shared = verifyBlock([steps[2]], { platform: 'win32', scaled: true })
   assert.match(shared, /全量（当前没有父对话代跑，你自己跑）/)
+})
+
+test('pickSteps：总是执行的照跑、命中适用改动的跑、parent 也按改动筛，不命中要提示跑全部', () => {
+  const always = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always' })
+  const ui = step(['web/src/**'], { id: 'ui', name: '界面检查', command: 'node scripts/ui-check.mjs' })
+  const e2e = step(['web/src/**'], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', scope: 'parent' })
+  const off = step(['web/src/**'], { id: 'off', name: '已停用', command: 'x', enabled: false })
+  // 验收里的那条：只碰 web/src/pages 时，界面检查和端到端都命中
+  const pages = pickSteps([always, ui, e2e, off], ['web/src/pages/home.tsx'])
+  assert.deepEqual(
+    pages.run.map((s) => s.id),
+    ['tc', 'ui', 'e2e'],
+  )
+  assert.deepEqual(pages.skipped, [])
+  assert.equal(pages.nothingMatched, false)
+  // 只碰 scripts/：两条按改动筛的都不命中，总是执行和停用的处理各不相同
+  const scripts = pickSteps([always, ui, e2e, off], ['scripts/a.mjs'])
+  assert.deepEqual(
+    scripts.run.map((s) => s.id),
+    ['tc'],
+  )
+  assert.deepEqual(
+    scripts.skipped.map((s) => s.id),
+    ['ui', 'e2e'],
+  )
+  // 一条都没命中：pickSteps 自己不替调用方决定跑全部，但要标记出来让调用方明确提示
+  const none = pickSteps([ui], ['scripts/a.mjs'])
+  assert.deepEqual(none.run, [])
+  assert.equal(none.nothingMatched, true)
+  // 取不到改动清单：全部按总是执行，不能静默少跑，也不算「没命中」
+  const unknown = pickSteps([always, ui, e2e], [])
+  assert.deepEqual(
+    unknown.run.map((s) => s.id),
+    ['tc', 'ui', 'e2e'],
+  )
+  assert.equal(unknown.nothingMatched, false)
+  // parent 没写适用改动时照常跑，但不算「命中」
+  const parentNoGlobs = pickSteps([step([], { id: 'e2e', scope: 'parent' })], ['docs/a.md'])
+  assert.deepEqual(
+    parentNoGlobs.run.map((s) => s.id),
+    ['e2e'],
+  )
+  assert.equal(parentNoGlobs.nothingMatched, false)
+})
+
+test('pickStepsText：给提示词的是本轮该跑的步骤 + 具体命令，不命中时明确建议跑全部', () => {
+  const steps = [
+    step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always', quick: true }),
+    step(['web/src/**'], {
+      id: 'ui',
+      name: '界面检查',
+      command: 'npx vite build --mode demo && node scripts/ui-check.mjs',
+    }),
+    step(['web/src/**'], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', scope: 'parent' }),
+  ]
+  const text = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
+    platform: 'win32',
+    changedFiles: ['web/src/pages/home.tsx'],
+  })
+  assert.match(text, /本轮该跑的测试步骤/)
+  assert.match(text, /web\/src\/pages\/home\.tsx/)
+  assert.match(text, /npm run typecheck/)
+  assert.match(text, /node scripts\/ui-check\.mjs/, '给的是具体命令，不是让 Agent 自己判断')
+  assert.match(text, /npm run test:e2e/)
+  // wsl 步骤写成整行，Agent 直接照抄
+  const wsl = pickStepsText(
+    pickSteps([step([], { id: 'e', name: '端到端', command: 'npm run test:e2e', env: 'wsl' })], ['a.ts']),
+    { platform: 'win32', wslDistro: 'Ubuntu-24.04', changedFiles: ['a.ts'] },
+  )
+  assert.match(wsl, /wsl\.exe -d Ubuntu-24\.04 -- bash -lc "npm run test:e2e"/)
+  // 不命中：只给一个结论（跑全部），不能再同时列「跳过（不用跑）」，否则 Agent 不知道听哪句
+  const none = pickStepsText(pickSteps([steps[1]], ['scripts/a.mjs']), {
+    platform: 'win32',
+    changedFiles: ['scripts/a.mjs'],
+  })
+  assert.match(none, /改动映射不到任何步骤/)
+  assert.match(none, /跑全部启用的步骤/)
+  assert.doesNotMatch(none, /按改动跳过/, '一条都没命中时不能又说跳过又说跑全部')
+  // 命中一部分时：该跑的列出来，跳过的说清为什么
+  const some = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
+    platform: 'win32',
+    changedFiles: ['web/src/pages/home.tsx'],
+  })
+  assert.doesNotMatch(some, /改动映射不到任何步骤/)
+  // 开着「按改动大小定范围」：每条标出小改动是否也跑，注入结论和同段的小改动规则一致
+  const hinted = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
+    platform: 'win32',
+    changedFiles: ['web/src/pages/home.tsx'],
+    quickHint: true,
+  })
+  assert.match(hinted, /小改动只跑标「快速」的步骤/)
+  assert.match(hinted, /类型检查（快速）/)
+  assert.match(hinted, /界面检查（大改动才跑）/)
+  // 合并编译归父对话：子对话侧标清，不能让它看起来能直接跑
+  const mergeStep = step([], { id: 'b', name: '编译', command: 'npm run build', merge: true })
+  assert.match(
+    pickStepsText(pickSteps([mergeStep], ['web/src/a.ts']), {
+      platform: 'win32',
+      changedFiles: ['web/src/a.ts'],
+      parentRun: 'child',
+    }),
+    /编译（合并时编译，父对话跑）/,
+  )
+  // 子对话侧：范围为 parent 的步骤列出命令，但写清「父对话跑，你不要跑」，不和「你不要跑它们」打架
+  const child = pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
+    platform: 'win32',
+    changedFiles: ['web/src/pages/home.tsx'],
+    parentRun: 'child',
+  })
+  assert.match(child, /端到端测试（父对话跑，你不要跑）/)
+  // 父对话自己跑时没有这个标记
+  assert.doesNotMatch(
+    pickStepsText(pickSteps(steps, ['web/src/pages/home.tsx']), {
+      platform: 'win32',
+      changedFiles: ['web/src/pages/home.tsx'],
+      parentRun: 'parent',
+    }),
+    /父对话跑，你不要跑/,
+  )
+  // 清单取不到：写清按全部启用跑，不列一个空的「改动文件：」
+  assert.match(
+    pickStepsText(pickSteps(steps, []), { platform: 'win32', changedFiles: [] }),
+    /改动清单为空（取不到改动）：按全部启用的步骤跑/,
+  )
+})
+
+test('verifyBlock 带上改动清单时注入「本轮该跑的步骤 + 命令」', () => {
+  const steps = [
+    step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck', scope: 'always' }),
+    step(['web/src/**'], { id: 'ui', name: '界面检查', command: 'node scripts/ui-check.mjs' }),
+  ]
+  for (const scaled of [true, false]) {
+    const text = verifyBlock(steps, {
+      platform: 'win32',
+      scaled,
+      changedFiles: ['web/src/pages/home.tsx'],
+    })
+    assert.match(text, /本轮该跑的测试步骤/, `两种范围都要注入（scaled=${scaled}）`)
+    assert.match(text, /node scripts\/ui-check\.mjs/, '注入的是命令')
+  }
+  // 开着「按改动大小定范围」时，注入段自己标出小改动是否也跑（评审 R1）
+  const scaled = verifyBlock(steps, { platform: 'win32', scaled: true, changedFiles: ['web/src/pages/home.tsx'] })
+  assert.match(scaled, /小改动只跑标「快速」的步骤/)
+  assert.match(scaled, /（大改动才跑）/)
+  // 关掉时不分大小，不写这些标记（和规则段一致）
+  assert.doesNotMatch(
+    verifyBlock(steps, { platform: 'win32', scaled: false, changedFiles: ['web/src/pages/home.tsx'] }),
+    /大改动才跑/,
+  )
+  // 没传改动清单（工作流节点、没有项目）：不出现这一段，也不影响原来的完整步骤列表
+  const plain = verifyBlock(steps, { platform: 'win32', scaled: true })
+  assert.doesNotMatch(plain, /本轮该跑的测试步骤/)
+  assert.match(plain, /node scripts\/ui-check\.mjs/)
+})
+
+test('testRunSummary：一行一步，字段是界面要的那几项；没有记录时间的老数据算未记录', () => {
+  const runs: TaskTestRun[] = [
+    {
+      stepId: 'e2e',
+      stepName: '端到端测试',
+      by: 'parent',
+      ok: true,
+      durationMs: 94_000,
+      tries: 1,
+      at: '2026-01-01T00:00:00Z',
+    },
+    {
+      stepId: 'tc',
+      stepName: '类型检查',
+      by: 'self',
+      ok: false,
+      durationMs: 1_200,
+      tries: 2,
+      at: '2026-01-01T00:01:00Z',
+    },
+    // 没有记录时间：不知道是真失败还是数据没记上，不能当成失败展示
+    { stepId: 'old', stepName: '旧记录', by: 'self', ok: false, durationMs: 0, tries: 1, at: '' },
+  ]
+  const s = testRunSummary(runs)
+  assert.deepEqual(
+    s.rows.map((r) => [r.stepName, r.byText, r.resultText, r.durationText, r.tries]),
+    [
+      ['端到端测试', '父对话', '通过', '1m 34s', 1],
+      ['类型检查', '自己', '失败', '1.2s', 2],
+      ['旧记录', '自己', '未记录', '未记录', 1],
+    ],
+  )
+  assert.equal(s.passed, 1)
+  assert.equal(s.failed, 1)
+  assert.equal(s.unrecorded, 1)
+  assert.equal(s.allPassed, false)
+  // 耗时合计只算已记录且有真实耗时的行：未记录 / 0ms 的不当成 0 拉低（和行内「未记录」口径一致）
+  assert.equal(s.durationMs, 95_200)
+  const zero = testRunSummary([
+    { stepId: 'q', stepName: '很快', by: 'self', ok: true, durationMs: 0, tries: 1, at: '2026-01-01T00:00:00Z' },
+  ])
+  assert.equal(zero.rows[0].durationText, '未记录')
+  assert.equal(zero.durationMs, 0, '0ms 的通过行不计入合计，和行内文案统一')
+  // 全通过时界面能一句话说清
+  const ok = testRunSummary([runs[0]])
+  assert.equal(ok.allPassed, true)
+  assert.deepEqual(testRunSummary([]).rows, [], '没有记录时给空结果，界面不显示这一块')
 })

@@ -15,6 +15,8 @@ import { t } from './i18n.ts'
 import type { Task } from './schema.ts'
 import { dayKey } from './usage.ts'
 import { clip as clipText } from './text.ts'
+// 两份报告解析不了（用户手改过格式）时退回纯文本 diff，和「修改建议」用的是同一份按行比较
+import { lineDiff } from './task-export.ts'
 
 /** 数据目录里保留最近几份报告：生成新的时把更早的删掉 */
 export const SUMMARY_KEEP = 20
@@ -631,4 +633,229 @@ export function reportTitle(md: string, day: string) {
   const line = md.split('\n').find((l) => l.trim())
   const title = clip((line ?? '').replace(/^#+\s*/, ''), 60)
   return title || day
+}
+
+// ---- 两份报告的对比 ----
+
+/** 报告里的一个条目：标题 +（需求进度才有的）状态 + 缩进那行说明 */
+export interface SummaryItem {
+  /** 报告里写的序号（1、2…），只用于展示 */
+  no: number
+  title: string
+  /** 状态原文（「已完成（5/5）」）；「用户报告的 Bug」节没有这一项，读成空串 */
+  status: string
+  /** 缩进一行写的「实现：/原因：/修复：」，可能为空 */
+  detail: string
+}
+
+/** 一个项目小节（三级标题 `### 1.1 项目名`）下的全部条目 */
+export interface SummarySection {
+  /** 三级标题里的编号（1.1 / 2.1） */
+  no: string
+  name: string
+  items: SummaryItem[]
+}
+
+export interface ParsedSummaryReport {
+  /** 一级标题（去掉 `# `） */
+  title: string
+  /** 需求进度 / 用户报告的 Bug，按 `SUMMARY_SECTIONS` 的顺序 */
+  needs: SummarySection[]
+  bugs: SummarySection[]
+  /** 今日小结的正文 */
+  wrapUp: string
+  /** 固定的三节都找到了才算解析成功；否则页面退回纯文本 diff，不报错 */
+  ok: boolean
+}
+
+/** 三级标题：`### 1.1 项目名`（节号.项目序号，项目名允许有空格） */
+const SUMMARY_PROJECT_RE = /^###\s+(\d+\.\d+)\s+(\S.*?)\s*$/
+/** 条目：`1. **标题** ｜ 状态`（竖线也认半角，状态可空 —— 用户手改报告时常见） */
+const SUMMARY_ITEM_RE = /^(\d+)\.\s+\*\*(.+?)\*\*(?:\s*[｜|]\s*(.*?))?\s*$/
+/** 条目下面缩进的那一行：`   实现：…` / `   原因：…` / `   修复：…` */
+const SUMMARY_DETAIL_RE = /^\s+(实现|原因|修复)[：:]\s*(.*)$/
+
+/**
+ * 把一份报告解析成结构（按 `SUMMARY_SECTIONS` 定序）。
+ * 作者手改过、格式不合模板时不抛错也不编内容：`ok` 为 false，调用方退回纯文本 diff
+ */
+export function parseSummaryReport(md: string): ParsedSummaryReport {
+  const lines = md.split('\n')
+  const titleLine = lines.find((l) => l.trim().startsWith('# '))?.trim() ?? ''
+  const title = titleLine.replace(/^#\s*/, '').trim()
+  // 只收固定三节：用户自己加的其它小节（例如「备注」）不参与对比
+  const bodies = new Map<string, string[]>()
+  let cur: string | null = null
+  for (const line of lines) {
+    const t = line.trim()
+    if (t.startsWith('## ')) {
+      cur = (SUMMARY_SECTIONS as readonly string[]).includes(t) && !bodies.has(t) ? t : null
+      if (cur) bodies.set(cur, [])
+      continue
+    }
+    // 一级标题之后的内容（报告说明之类）不属于任何一节
+    if (t.startsWith('# ')) {
+      cur = null
+      continue
+    }
+    if (cur) bodies.get(cur)!.push(line)
+  }
+  const parseSection = (body: string[], withStatus: boolean): SummarySection[] => {
+    const out: SummarySection[] = []
+    for (const line of body) {
+      const t = line.trim()
+      const project = SUMMARY_PROJECT_RE.exec(t)
+      if (project) {
+        out.push({ no: project[1], name: project[2], items: [] })
+        continue
+      }
+      const item = SUMMARY_ITEM_RE.exec(t)
+      if (item) {
+        const target = out.at(-1)
+        // 条目写在项目标题之前：模板里不会出现，解析不了就不收，不凭空归到一个项目下
+        if (!target) continue
+        target.items.push({
+          no: Number(item[1]),
+          title: item[2].trim(),
+          status: withStatus ? (item[3] ?? '').trim() : '',
+          detail: '',
+        })
+        continue
+      }
+      const detail = SUMMARY_DETAIL_RE.exec(line)
+      if (!detail) continue
+      const last = out.at(-1)?.items.at(-1)
+      if (last) last.detail = last.detail ? `${last.detail}\n${t}` : t
+    }
+    return out
+  }
+  const needsBody = bodies.get(SUMMARY_SECTIONS[0]) ?? []
+  const bugsBody = bodies.get(SUMMARY_SECTIONS[1]) ?? []
+  const wrapBody = bodies.get(SUMMARY_SECTIONS[2]) ?? []
+  const needs = parseSection(needsBody, true)
+  const bugs = parseSection(bugsBody, false)
+  /**
+   * 报告里有「看起来是条目」的行（`n. …`）却没全部解析出来，说明写法偏离模板（标题里嵌了 `**`、
+   * 编号不在行首这类）。这时不能把没解析出来的条目当成「消失」，整份按解析失败处理，页面退回逐行对比
+   */
+  const itemLines = (body: string[]) => body.filter((l) => /^\s*\d+\.\s/.test(l)).length
+  const parsedItems = (sections: SummarySection[]) => sections.reduce((n, s) => n + s.items.length, 0)
+  return {
+    title,
+    needs,
+    bugs,
+    // 今日小结是一句话（可能被用户改成长一点的段落）：去掉标题和空行后原样保留
+    wrapUp: wrapBody
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join('\n'),
+    ok:
+      bodies.size === SUMMARY_SECTIONS.length &&
+      parsedItems(needs) === itemLines(needsBody) &&
+      parsedItems(bugs) === itemLines(bugsBody),
+  }
+}
+
+/** 一份变化：新增 / 消失 / 状态变化 */
+export interface SummaryChange {
+  kind: 'added' | 'removed' | 'changed'
+  project: string
+  title: string
+  /** 旧状态 / 新状态：added 只有 to，removed 只有 from，changed 两个都有 */
+  from: string
+  to: string
+  /** 报告里那行说明（展示用）：新增和变化取新报告的，消失取旧报告的 */
+  detail: string
+}
+
+export interface SummaryCompare {
+  /** 两份正文完全一样 */
+  same: boolean
+  /** 两份都解析成功：needs / bugs 才有内容，解析不了时用 lines */
+  parsed: boolean
+  needs: SummaryChange[]
+  bugs: SummaryChange[]
+  /** 今日小结并排显示 */
+  wrapUp: { before: string; after: string; changed: boolean }
+  /** 结构化对比不了（或格式对但没有条目级变化）时的行级差异 */
+  lines: { kind: 'same' | 'add' | 'del'; text: string }[]
+}
+
+/** 把各项目小节展开成「项目 + 条目」，对比按（项目名，条目标题）配对 */
+function flattenSections(sections: SummarySection[]) {
+  const out: { project: string; item: SummaryItem }[] = []
+  for (const s of sections) for (const item of s.items) out.push({ project: s.name, item })
+  return out
+}
+
+const entryKey = (project: string, title: string) => `${project}\u0000${title}`
+
+/**
+ * 条目级变化：按（项目名，标题）配对。
+ * withStatus 为真时比较状态（需求进度），Bug 节没有状态，配上就是没变化
+ */
+function entryChanges(before: ParsedSummaryReport, after: ParsedSummaryReport, withStatus: boolean) {
+  const pick = (r: ParsedSummaryReport) => flattenSections(withStatus ? r.needs : r.bugs)
+  const oldMap = new Map(pick(before).map((x) => [entryKey(x.project, x.item.title), x]))
+  const newMap = new Map(pick(after).map((x) => [entryKey(x.project, x.item.title), x]))
+  const out: SummaryChange[] = []
+  for (const [key, x] of newMap) {
+    const old = oldMap.get(key)
+    if (!old) {
+      out.push({
+        kind: 'added',
+        project: x.project,
+        title: x.item.title,
+        from: '',
+        to: x.item.status,
+        detail: x.item.detail,
+      })
+      continue
+    }
+    if (withStatus && old.item.status !== x.item.status)
+      out.push({
+        kind: 'changed',
+        project: x.project,
+        title: x.item.title,
+        from: old.item.status,
+        to: x.item.status,
+        detail: x.item.detail,
+      })
+  }
+  for (const [key, x] of oldMap) {
+    if (newMap.has(key)) continue
+    out.push({
+      kind: 'removed',
+      project: x.project,
+      title: x.item.title,
+      from: x.item.status,
+      to: '',
+      detail: x.item.detail,
+    })
+  }
+  return out
+}
+
+/**
+ * 对比两份报告（先旧的、后新的）：需求进度给出新增 / 消失 / 状态变化，Bug 给出新增 / 已修复（消失），
+ * 今日小结并排；两份都解析不了格式时退回纯文本 diff，不报错也不编内容
+ */
+export function compareSummaryReports(before: string, after: string): SummaryCompare {
+  const a = parseSummaryReport(before)
+  const b = parseSummaryReport(after)
+  const parsed = a.ok && b.ok
+  const same = before === after
+  return {
+    same,
+    parsed,
+    needs: parsed ? entryChanges(a, b, true) : [],
+    bugs: parsed ? entryChanges(a, b, false) : [],
+    wrapUp: { before: a.wrapUp, after: b.wrapUp, changed: a.wrapUp !== b.wrapUp },
+    lines: parsed || same ? [] : lineDiff(before, after),
+  }
+}
+
+/** 对比里有没有条目或小结级别的变化：页面据此说「没有差异」，和正文是否逐字相同分开 */
+export function compareHasChanges(c: SummaryCompare) {
+  return c.needs.length > 0 || c.bugs.length > 0 || c.wrapUp.changed
 }

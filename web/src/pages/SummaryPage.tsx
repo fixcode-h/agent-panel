@@ -7,16 +7,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/lib/copy-text'
-import { AlertTriangle, Copy, FileText, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
+import { AlertTriangle, Copy, FileText, GitCompareArrows, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import {
   activeInRange,
+  compareHasChanges,
+  compareSummaryReports,
   DEFAULT_SUMMARY_RANGE,
   rangeLabel,
   rangeWindow,
   reportTitle,
   reportWindowLabel,
+  type SummaryChange,
   type SummaryFormatIssue,
   type SummaryJob,
   type SummaryRange,
@@ -251,6 +254,148 @@ function ReportEditor({
   )
 }
 
+/** 退回逐行对比时最多画多少行：长报告全铺出来会卡，截断后写明还剩多少行 */
+const DIFF_LINES_MAX = 800
+
+/** 三类变化的展示（标题、颜色）：对比区遍历它，以后加一类变化只改这里 */
+const CHANGE_KINDS = [
+  { kind: 'added', tone: 'add', title: () => t('新增') },
+  { kind: 'removed', tone: 'del', title: () => t('消失') },
+  { kind: 'changed', tone: 'change', title: () => t('状态变化') },
+] as const
+const TONE_TEXT: Record<string, string> = {
+  add: 'text-success',
+  del: 'text-danger',
+  change: 'text-warning',
+}
+
+/** 对比里的一类变化（新增 / 消失 / 状态变化）：没有条目时不占位；title 可以覆盖默认标题（Bug 节的「消失」叫已修复） */
+function ChangeList({
+  kind,
+  items,
+  title,
+}: {
+  kind: (typeof CHANGE_KINDS)[number]
+  items: SummaryChange[]
+  title?: string
+}) {
+  if (!items.length) return null
+  const tone = TONE_TEXT[kind.tone]
+  return (
+    <div className="mt-3">
+      <p className={cn('text-xs font-medium', tone)}>
+        {title ?? kind.title()}（{items.length}）
+      </p>
+      <ul className="mt-1 space-y-1">
+        {items.map((x, i) => (
+          <li key={`${x.project}-${x.title}-${i}`} className="text-[0.8125rem]">
+            <span className="text-subtle">{x.project} · </span>
+            <span className={kind.kind === 'removed' ? 'line-through decoration-danger/50' : ''}>{x.title}</span>
+            {kind.kind === 'changed' && (
+              <span className="ml-2 text-xs text-subtle">
+                {x.from} → <span className={tone}>{x.to}</span>
+              </span>
+            )}
+            {kind.kind === 'added' && !!x.to && <span className={cn('ml-2 text-xs', tone)}>{x.to}</span>}
+            {!!x.detail && <p className="text-xs whitespace-pre-wrap text-subtle">{x.detail}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * 两份报告的对比：需求进度 / 用户报告的 Bug 给出新增、消失、状态变化，今日小结并排。
+ * 格式对不上模板（用户手改过）时退回逐行文本对比，不报错也不编内容
+ */
+function ReportCompare({ before, after }: { before: SummaryRecord; after: SummaryRecord }) {
+  const c = useMemo(() => compareSummaryReports(before.md, after.md), [before.md, after.md])
+  const changes = compareHasChanges(c)
+  const label = (r: SummaryRecord) => reportWindowLabel(r.from || r.day, r.to || r.day)
+  return (
+    <section className="rounded-xl border bg-panel">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+        <GitCompareArrows className="h-4 w-4 text-accent" />
+        <span className="text-[0.8125rem] font-medium">{t('两份报告的对比')}</span>
+        <span className="text-xs text-subtle">
+          {label(before)} → {label(after)}
+        </span>
+      </div>
+      <div className="px-4 py-3">
+        {c.same ? (
+          <p className="text-xs text-subtle">{t('两份报告内容相同，没有差异')}</p>
+        ) : c.parsed && !changes ? (
+          <p className="text-xs text-subtle">{t('两份报告没有条目级差异')}</p>
+        ) : (
+          <>
+            {!c.parsed && (
+              <p className="mb-3 flex gap-1.5 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {t('两份报告的格式对不上模板，下面按文本逐行对比')}
+              </p>
+            )}
+            {c.parsed ? (
+              <>
+                <h3 className="text-[0.8125rem] font-medium">{t('需求进度')}</h3>
+                {!c.needs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {CHANGE_KINDS.map((kind) => (
+                  <ChangeList key={kind.kind} kind={kind} items={c.needs.filter((x) => x.kind === kind.kind)} />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('用户报告的 Bug')}</h3>
+                {!c.bugs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {/* Bug 节没有状态：新增是这次报的，消失就是修掉了 */}
+                {CHANGE_KINDS.filter((k) => k.kind !== 'changed').map((kind) => (
+                  <ChangeList
+                    key={kind.kind}
+                    kind={kind}
+                    title={kind.kind === 'removed' ? t('已修复（消失）') : undefined}
+                    items={c.bugs.filter((x) => x.kind === kind.kind)}
+                  />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('今日小结')}</h3>
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg bg-sel px-3 py-2">
+                    <p className="text-xs text-subtle">{t('旧报告')}</p>
+                    <p className="text-[0.8125rem] whitespace-pre-wrap">{c.wrapUp.before || t('（没有小结）')}</p>
+                  </div>
+                  <div className="rounded-lg bg-accent-soft px-3 py-2">
+                    <p className="text-xs text-subtle">{t('新报告')}</p>
+                    <p className="text-[0.8125rem] whitespace-pre-wrap">{c.wrapUp.after || t('（没有小结）')}</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="font-mono text-xs leading-relaxed">
+                {c.lines.slice(0, DIFF_LINES_MAX).map((l, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'whitespace-pre-wrap',
+                      l.kind === 'add'
+                        ? 'bg-success/10 text-success'
+                        : l.kind === 'del'
+                          ? 'bg-danger/10 text-danger'
+                          : 'text-subtle',
+                    )}
+                  >
+                    {(l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : '  ') + l.text}
+                  </div>
+                ))}
+                {c.lines.length > DIFF_LINES_MAX && (
+                  <p className="mt-1 text-subtle">
+                    {t('…还有 {n} 行没有列出', { n: c.lines.length - DIFF_LINES_MAX })}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function SummaryPage() {
   const { projects, clis, settings, tasks, loading, tasksLoaded } = useData()
   // 每次渲染重算窗口：页面一直开着跨过午夜时，判断也跟着变（和改造前每帧算 todayWindow 一致）
@@ -286,6 +431,10 @@ export function SummaryPage() {
   )
   const [mode, setMode] = useState<ReportMode>(restored?.mode ?? 'preview')
   const [reports, setReports] = useState<SummaryRecord[]>([])
+  /** 对比模式：在「最近的报告」里勾两份看差异；存档里还留着上次的选择时直接进对比模式 */
+  const [compareMode, setCompareMode] = useState((restored?.compare ?? []).length > 0)
+  /** 已勾选对比的报告 id（最多两份，按选择顺序） */
+  const [compared, setCompared] = useState<string[]>(restored?.compare ?? [])
   const [error, setError] = useState('')
   /** 轮询失败次数：连续几次才判失败，见 POLL_FAIL_MAX */
   const pollFails = useRef(0)
@@ -298,6 +447,7 @@ export function SummaryPage() {
     picks: restored?.picks ?? [],
     report: restored?.report ?? null,
     mode: restored?.mode ?? 'preview',
+    compare: restored?.compare ?? [],
     jobId: restored?.jobId ?? '',
     cli: restored?.cli ?? '',
   })
@@ -351,6 +501,13 @@ export function SummaryPage() {
       .catch((e) => setError((e as Error).message))
   }, [restoredReport])
 
+  // 存档里勾选对比的报告可能已经被挤出最近 SUMMARY_KEEP 份：清掉，页面上不留点不开的对比
+  useEffect(() => {
+    if (!compared.length || !reports.length) return
+    const alive = compared.filter((id) => reports.some((r) => r.id === id))
+    if (alive.length !== compared.length) setCompared(alive)
+  }, [compared, reports])
+
   /** 编辑框里的草稿：先更新存档里的正文，停止输入后再写回本机 */
   const draft = (md: string) => {
     const report = saved.current.report
@@ -367,9 +524,9 @@ export function SummaryPage() {
   // 当前报告不在这里写：草稿已经比 current 新，写成 current 会把刚输入的内容退回去。
   // 窗口的 from / day 只在恢复和换范围时写：页面开着跨过午夜时不自动认到新的一天，免得旧报告被当成今天的
   useEffect(() => {
-    saved.current = { ...saved.current, picks, mode, jobId, cli, range }
+    saved.current = { ...saved.current, picks, mode, jobId, cli, range, compare: compared }
     saveSummaryPage(saved.current)
-  }, [picks, mode, jobId, cli, range])
+  }, [picks, mode, jobId, cli, range, compared])
 
   // 换成另一份报告（刚生成完、点开最近的一份）才写 report。
   // 同一份不再写：存档里的正文是编辑框的草稿，可能比 current.md 新（自动保存还没回写），
@@ -505,6 +662,24 @@ export function SummaryPage() {
     )
 
   /**
+   * 对比最多选两份：选第三份时替换最早选的那份（用户通常是在换掉一份，而不是想同时选三份），
+   * 点已选中的那份则取消
+   */
+  const toggleCompare = (id: string) => {
+    setCompareMode(true)
+    setCompared((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)))
+  }
+
+  /** 要对比的两份：按生成时间从早到晚（先旧后新），和列表的倒序正好相反 */
+  const comparedReports = useMemo(
+    () =>
+      reports
+        .filter((r) => compared.includes(r.id))
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0)),
+    [reports, compared],
+  )
+
+  /**
    * 换范围：用同一个 forRange 校正存档——窗口变了就只留项目，清空当前报告和生成中的 job，
    * 免得上一段的报告被当成这一段的（「最近的报告」里还能点开旧报告）。
    */
@@ -515,6 +690,10 @@ export function SummaryPage() {
     setPicks(s.picks)
     setCurrent(s.report)
     setJobId(s.jobId)
+    // 换范围时 forRange 已经把对比清空：界面 state 也跟着清，否则对比区还挂着上一段的报告，
+    // 下一个写存档的 effect 又会用旧的 compared 把选择写回去
+    setCompared(s.compare)
+    if (!s.compare.length) setCompareMode(false)
     if (!s.jobId) setJob(null)
     setError('')
     saved.current = s
@@ -770,33 +949,69 @@ export function SummaryPage() {
 
       {reports.length > 0 && (
         <section className="rounded-xl border bg-panel">
-          <div className="border-b px-4 py-2 text-[0.8125rem] font-medium">{t('最近的报告')}</div>
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+            <span className="text-[0.8125rem] font-medium">{t('最近的报告')}</span>
+            {compareMode && <span className="text-xs text-subtle">{t('勾选两份，看它们之间的变化')}</span>}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setCompared([])
+                setCompareMode((on) => !on)
+              }}
+            >
+              <GitCompareArrows className="h-3.5 w-3.5" />
+              {compareMode ? t('取消对比') : t('对比两份')}
+            </Button>
+          </div>
           <ul className="divide-y divide-line">
-            {reports.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError('')
-                    setCurrent({ id: r.id, md: r.md, from: r.from || r.day, to: r.to || r.day })
-                  }}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left hover:bg-sel',
-                    current?.id === r.id && 'bg-accent-soft',
+            {reports.map((r) => {
+              const picked = compared.includes(r.id)
+              return (
+                <li key={r.id} className="flex items-center">
+                  {compareMode && (
+                    <input
+                      type="checkbox"
+                      aria-label={t('对比这份报告')}
+                      checked={picked}
+                      onChange={() => toggleCompare(r.id)}
+                      className="ml-4 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                    />
                   )}
-                >
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                    {r.projectNames.join('、') || reportTitle(r.md, r.day)}
-                  </span>
-                  <span className="shrink-0 text-xs text-subtle">
-                    {r.from && r.to && r.from !== r.to ? t('{from} 至 {to}', { from: r.from, to: r.to }) : r.day}
-                  </span>
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 对比模式下点整行也是勾选，不会把当前报告切走
+                      if (compareMode) return toggleCompare(r.id)
+                      setError('')
+                      setCurrent({ id: r.id, md: r.md, from: r.from || r.day, to: r.to || r.day })
+                    }}
+                    className={cn(
+                      'flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left hover:bg-sel',
+                      (current?.id === r.id || picked) && 'bg-accent-soft',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                      {r.projectNames.join('、') || reportTitle(r.md, r.day)}
+                    </span>
+                    <span className="shrink-0 text-xs text-subtle">
+                      {r.from && r.to && r.from !== r.to ? t('{from} 至 {to}', { from: r.from, to: r.to }) : r.day}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
+          {compareMode && comparedReports.length < 2 && (
+            <p className="border-t px-4 py-2 text-xs text-subtle">
+              {t('再选 {n} 份报告开始对比', { n: 2 - comparedReports.length })}
+            </p>
+          )}
         </section>
       )}
+
+      {comparedReports.length === 2 && <ReportCompare before={comparedReports[0]} after={comparedReports[1]} />}
     </PageFrame>
   )
 }

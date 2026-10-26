@@ -40,6 +40,8 @@ export interface SummaryPageState {
   picks: Pick[]
   report: StoredReport | null
   mode: ReportMode
+  /** 正在对比的两份报告 id（最多两份，按选择顺序）：切页面回来仍接着看这次对比 */
+  compare: string[]
   /** 还没跑完 / 刚跑完的生成：刷新后接着轮询，不让用户以为「什么都没发生」 */
   jobId: string
   cli: string
@@ -91,6 +93,12 @@ function parseRange(v: unknown, day: string): SummaryRange {
   }
 }
 
+/** 读对比选择：只留报告 id，最多两份（多出来的、坏数据一律丢掉，页面照常打开） */
+function parseCompare(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.filter(isText).slice(0, 2)
+}
+
 /** 读存档：坏数据、旧版本缺字段都按默认值处理，页面照常打开 */
 export function parseSummaryPage(raw: string | null): SummaryPageState | null {
   if (!raw) return null
@@ -110,6 +118,7 @@ export function parseSummaryPage(raw: string | null): SummaryPageState | null {
     picks: parsePicks(v.picks),
     report: parseReport(v.report),
     mode: v.mode === 'edit' ? 'edit' : 'preview',
+    compare: parseCompare(v.compare),
     jobId: typeof v.jobId === 'string' ? v.jobId : '',
     cli: typeof v.cli === 'string' ? v.cli : '',
   }
@@ -148,6 +157,8 @@ export function forRange(s: SummaryPageState, win: { fromDay: string; toDay: str
     from: win.fromDay,
     picks: s.picks.map((x) => ({ projectId: x.projectId, taskIds: [] })),
     report: null,
+    // 上一段的报告不再是这段时间的报告，对比也跟着收起
+    compare: [],
     jobId: '',
   }
 }
