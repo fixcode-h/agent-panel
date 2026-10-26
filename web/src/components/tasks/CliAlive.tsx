@@ -14,14 +14,14 @@ export function WaitDots() {
   )
 }
 
-/** 这个对话（自己或名下的子对话）有没有活着的 CLI：标题流光用它 */
+/** 这个对话（自己或名下的子对话）有没有活着的 Agent：标题流光用它 */
 export const cliTreeAlive = (task: Pick<Task, 'cliAlive' | 'childrenCli'>) => !!task.cliAlive || !!task.childrenCli
 
-/** 标题上的悬浮说明：哪些 CLI 还开着 */
+/** 标题上的悬浮说明：哪些 Agent 还开着 */
 export function cliAliveHint(task: Pick<Task, 'cliAlive' | 'childrenCli'>) {
   const kids = task.childrenCli ?? 0
-  if (task.cliAlive && kids) return t('CLI 存活：本对话和 {n} 个子对话', { n: kids })
-  if (task.cliAlive) return t('CLI 存活')
-  if (kids) return t('CLI 存活：{n} 个子对话', { n: kids })
+  if (task.cliAlive && kids) return t('Agent 存活：本对话和 {n} 个子对话', { n: kids })
+  if (task.cliAlive) return t('Agent 存活')
+  if (kids) return t('Agent 存活：{n} 个子对话', { n: kids })
   return ''
 }
