@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
-import { isCoreAgent } from '@shared/builtin/core'
+import { isCoreAgent, isHelperAgent, listableAgents } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -50,7 +50,19 @@ export function AgentsPage() {
   const defId = settings ? defaultCli(settings) : clis.find((c) => c.isDefault)?.id
   const defStatus = clis.find((c) => c.id === defId && c.enabled)
 
-  const selected = agents.find((a) => a.id === route.id) ?? agents[0]
+  // 「子任务」是子任务机制默认用的角色，不作为可选角色展示：列表、分组、计数、标签筛选都不算它
+  const listed = listableAgents(agents)
+  const helperId = agents.find(isHelperAgent)?.id
+
+  const selected = listed.find((a) => a.id === route.id) ?? listed[0]
+  // 旧链接、浏览器历史或者 API 存的地址可能指向「子任务」：跳到第一个可编辑的角色，并说明为什么打不开
+  useEffect(() => {
+    if (loading || !helperId || route.id !== helperId) return
+    toast.info(t('「子任务」是子任务运行时的默认角色，不能修改或删除'))
+    go({ page: 'agents', id: listableAgents(agents)[0]?.id ?? '' })
+    // 只在地址指向「子任务」时跑一次；go、agents 每次渲染都是新的，不放进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, helperId, route.id])
   useEffect(() => {
     if (!loading && selected && route.id !== selected.id) go({ page: 'agents', id: selected.id })
     // 地址里的 id 不存在（例如已删除）时也要换成第一个；go 每次渲染都是新的，不放进依赖
@@ -62,20 +74,20 @@ export function AgentsPage() {
   const match = (a: Agent) =>
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
-  const coreCats = new Set(agents.filter(isCoreAgent).map((a) => a.categoryId))
+  const coreCats = new Set(listed.filter(isCoreAgent).map((a) => a.categoryId))
   // 按标签分组：没有标签的角色进「默认」组，组按角色数排、零组不出现（规则和单测在 lib/agent-groups.ts）
-  const tagGroups = groupAgentsByTag(agents.filter(match), tags)
+  const tagGroups = groupAgentsByTag(listed.filter(match), tags)
   const categoryGroups = [
     // 必备角色也单独成组：它们的分类由面板维护，放在用户的分类里反而像是能挪走
-    { category: null as Category | null, id: CORE_GROUP, items: agents.filter((a) => isCoreAgent(a) && match(a)) },
+    { category: null as Category | null, id: CORE_GROUP, items: listed.filter((a) => isCoreAgent(a) && match(a)) },
     ...[
       ...categories
-        .filter((c) => !coreCats.has(c.id) || agents.some((a) => a.categoryId === c.id && !isCoreAgent(a)))
+        .filter((c) => !coreCats.has(c.id) || listed.some((a) => a.categoryId === c.id && !isCoreAgent(a)))
         .map((c) => ({ category: c as Category | null, id: c.id })),
       { category: null, id: '' },
     ].map((g) => ({
       ...g,
-      items: agents.filter((a) => !isCoreAgent(a) && a.categoryId === g.id && match(a)),
+      items: listed.filter((a) => !isCoreAgent(a) && a.categoryId === g.id && match(a)),
     })),
   ]
     // 没有角色的分类不显示，空着只占位置
@@ -181,7 +193,7 @@ export function AgentsPage() {
     <>
       <ListPane
         title={t('角色')}
-        count={agents.length}
+        count={listed.length}
         onNew={() => create()}
         extra={
           <>
@@ -256,7 +268,7 @@ export function AgentsPage() {
             ]}
           />
         </div>
-        <TagFilter value={tag} onChange={setTag} used={[...new Set(agents.flatMap((a) => a.tags))]} />
+        <TagFilter value={tag} onChange={setTag} used={[...new Set(listed.flatMap((a) => a.tags))]} />
         {groupBy === 'tag'
           ? tagGroups.map((g) => {
               // 标签名是用户起的，不过翻译（碰上和界面文案同名的标签会被译掉）。
@@ -294,9 +306,9 @@ export function AgentsPage() {
                 {g.items.map((a) => row(a))}
               </ListGroup>
             ))}
-        {!loading && agents.length > 0 && shownGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
+        {!loading && listed.length > 0 && shownGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
-        {!loading && !query && !tag && agents.every(isCoreAgent) && (
+        {!loading && !query && !tag && listed.every(isCoreAgent) && (
           <ListEmpty>
             <p>{t('还可以添加整理好的内置角色')}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>

@@ -41,6 +41,7 @@ import {
   childWait,
   childWaitText,
   childFlowOf,
+  childHolds,
   childHoldsOf,
   childHoldText,
   childFacts,
@@ -49,6 +50,7 @@ import {
   convState,
   convStateText,
   type ConvState,
+  helperRunning,
   helpersWorking,
   closeFlow,
   delegatePrompt,
@@ -65,6 +67,7 @@ import {
   waitDuration,
   idleWaitDuration,
   newTask,
+  taskGone,
   taskSummary,
   withAttachments,
   withTaskModel,
@@ -157,6 +160,7 @@ import {
   wrapUpKind,
   openWork,
   refreshChildWait,
+  settlePlan,
   settleWait,
   syncKids,
   type PlanKid,
@@ -198,6 +202,10 @@ class TaskBusyError extends Error {}
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
+
+/** 用户点「解决」时等子任务停下来的上限和轮询间隔：停不下来就如实报错，不静默把在跑的步骤抹成完成 */
+const HELPER_STOP_TIMEOUT_MS = 15_000
+const HELPER_STOP_POLL_MS = 150
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
@@ -1662,15 +1670,79 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 用户手动点「解决」（PATCH resolved: true）时先把这一侧能停的停掉、把计划收口（见 plan.ts 的 settlePlan）：
+   * 用户的预期是「我点解决了，剩下的步骤就算做完」，不该被「计划没做完」挡住。
+   * 父对话收尾（finish_child）、一轮结束收口、后台命令结束都不走这里，仍要求计划真做完。
+   * 停不掉或不该跟着收口的（这一轮还在跑、工作流运行、待回答的提问与请求）原样交回，不硬标完成。
+   */
+  async function settleChildForUser(
+    childId: string,
+    tk: Task,
+  ): Promise<{ holds: ChildHold[]; info: string } | undefined> {
+    // 这一轮还在执行：先按原样拒，写进去就成了「已解决但还在跑」
+    if (tk.working) return { holds: ['working'], info: childHoldText(['working']) }
+    // 停不掉的（工作流运行、待回答的提问 / 请求）先判：不能先把在跑的子任务杀了再告诉他解决不了
+    const left = childHolds({
+      workflow: runRunning(tk),
+      asking: tk.parentAsks?.length ?? 0,
+      requests: tk.requests.length,
+    })
+    if (left.length) return { holds: left, info: childHoldText(left) }
+    // 派出去的子任务还在跑：用现有的 stopHelper 停掉，等它真的停下后再收口
+    const stopped = await stopChildHelpers(childId, tk)
+    if (!stopped.ok) return { holds: ['helpers'], info: stopped.info }
+    // 后台命令同理：还在跑就没法收口，也不该留个孤儿进程
+    await background.stop(childId)
+    // 停子任务 / 停后台命令都要等一会儿，期间用户可能又发消息继续（resume 会换掉 live 里那一轮的任务对象）：
+    // 拿旧快照写回去会把新一轮的消息和状态盖掉（completeChild 有同样的检查）
+    const cur = live.get(childId)
+    if (cur && cur.task !== tk) return { holds: ['working'], info: t('子对话又开始执行了，等这一轮结束再收尾') }
+    const settled = settlePlan(tk)
+    if (settled) {
+      log.info('task', '用户点「解决」：计划收口成全部完成', { task: childId, settled })
+      tk.updatedAt = new Date().toISOString()
+      if (cur) cur.rev++
+      await store.update(tk.id, tk)
+    }
+    return undefined
+  }
+
+  /**
+   * 停掉这个对话派出去、还在跑的子任务，等它们真的结束（有上限）。
+   * 和界面的「终止子任务」走同一条路（stopHelper），不碰对话本身和别的子任务。
+   */
+  async function stopChildHelpers(childId: string, tk: Task): Promise<{ ok: boolean; info: string }> {
+    // 子任务结束时引擎改的是 live 里那份任务：轮询按它判断，不要拿开头的快照一直看到 running
+    const running = () => (live.get(childId)?.task ?? tk).steps.filter(helperRunning)
+    if (!running().length) return { ok: true, info: '' }
+    for (const s of running()) stopHelper(childId, s.id, t('用户点了「解决」：先停掉还在跑的子任务再收口'))
+    const until = Date.now() + HELPER_STOP_TIMEOUT_MS
+    while (running().length) {
+      if (Date.now() >= until)
+        return {
+          ok: false,
+          info: t('这些子任务还没停下来：{list}。等它们结束再点「解决」', {
+            list: running()
+              .map((s) => `「${s.title}」`)
+              .join('、'),
+          }),
+        }
+      await new Promise((r) => setTimeout(r, HELPER_STOP_POLL_MS))
+    }
+    return { ok: true, info: '' }
+  }
+
+  /**
    * 子对话完成状态的唯一入口：按 wrapup → plan → pending → complete → report → list 走一遍（见 advanceChild）。
-   * 用户点「标记完成」、父对话收尾、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
+   * 用户点「解决」、父对话收尾、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
    * 判定和置完成仍然在子对话这一侧，父对话不直接改子对话的最终状态。
    * 还差什么就原样交回去（原因给用户看），不跳步、不重复置完成、不重复上报。
    * quiet：父对话自己发起的收尾（finish_child），结果已经在工具结果里，不再往父对话里推一条「已完成」
+   * fromUser：用户手动点「解决」发起的，先把计划收口（见 settleChildForUser）；别的入口都不传
    */
   async function advanceChildTo(
     childId: string,
-    opts: { quiet?: boolean } = {},
+    opts: { quiet?: boolean; fromUser?: boolean } = {},
   ): Promise<{ holds: ChildHold[]; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1701,6 +1773,11 @@ export function tasksApi(deps: {
             : t('查不到这个子对话独立分支的状态（git 没读出来）：先确认分支已经合并，再标记完成'),
         }
       }
+    }
+    // 用户手动点「解决」：先把能停的停掉、把计划收口（见 settleChildForUser），再走完成流转
+    if (opts.fromUser) {
+      const refused = await settleChildForUser(childId, tk)
+      if (refused) return refused
     }
     // 已经置过完成的当作已经上报过：重启后再走一趟时不重复往父对话里刷「已完成」
     const done = tk.resolved === true
@@ -3696,6 +3773,8 @@ export function tasksApi(deps: {
           analysis: liveTask.analysis,
           // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
           stopReason: idle(liveTask).stopReason ?? '',
+          // 已收起（归档 / 独立分支被用户删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉（见 taskGone）
+          gone: taskGone(liveTask),
         }
       }),
     )
@@ -4552,6 +4631,13 @@ export function tasksApi(deps: {
     }
     const cur = (await store.get(id)) ?? tk
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }
+    // 内存里那份任务副本也要一起改：current()、列表摘要（idle）和子对话栏（/children）读的都是它，
+    // 只写 store 的话接口还会按旧的 active 算（gone 一直是 false，运行区和计数继续挂着），
+    // 而且下一次 PATCH 会拿旧 worktree 把 store 里的 discarded 写回去
+    if (entry) {
+      entry.task.worktree = next
+      entry.rev++
+    }
     return c.json(await store.update(id, { ...cur, worktree: next }))
   })
 
@@ -4710,9 +4796,10 @@ export function tasksApi(deps: {
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
     // 子对话标记完成：它的独立分支跟着删掉。改动还没合回原分支时不标，免得把没合的改动一起删了
     if (p.data.resolved === true && cur.parentTaskId) {
-      // 父对话（或用户）点「标记完成」只是发起这一趟流转：判定和置完成在子对话那一侧，
-      // 还有没收口的东西就拒绝并说清卡在哪一项，不在这里直接写子对话的最终状态
-      const { holds, info } = await advanceChildTo(id)
+      // 用户点「解决」只是发起这一趟流转：判定和置完成在子对话那一侧，还有没收口的东西就拒绝并说清卡在哪一项，
+      // 不在这里直接写子对话的最终状态。fromUser 表示这一趟是用户手动点解决的：计划里没做完的步骤一并收口，
+      // 不再因为「计划没做完」返回 409（父对话收尾、一轮结束收口仍按原样拦，见 advanceChildTo）
+      const { holds, info } = await advanceChildTo(id, { fromUser: true })
       if (holds.length) return bad(c, info || childHoldText(holds), 409)
       Object.assign(cur, {
         resolved: true,

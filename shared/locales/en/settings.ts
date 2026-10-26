@@ -1306,7 +1306,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '项目设置改过之后和分析报告的推荐不一样了：可以单项应用，应用后点「确认」保存。':
     'These project settings no longer match the analysis report. Apply them one by one, then click Confirm to save.',
   '{n} 个自带技能可以更新': '{n} bundled skills can be updated',
-  '{n} 个部署的技能可以更新': '{n} deployed skills can be updated',
+  '{n} 项部署内容有更新，需要重新部署': '{n} deployed items have updates; redeploy to sync',
   去部署: 'Go to Deploy',
   '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
     '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',

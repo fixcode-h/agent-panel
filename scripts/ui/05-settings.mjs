@@ -200,6 +200,79 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
   await settle(p)
   await p.keyboard.press('Escape')
+  // 分片前面几步里 Esc 先关的是刚用过的浮层（下拉、日历），设置弹窗不一定跟着关：显式点关闭，
+  // 否则遮罩盖着侧栏，下面的点击会一直等
+  const settingsDialog = p.getByRole('dialog')
+  const closeSettings = async () => {
+    if (!(await settingsDialog.count())) return
+    await settingsDialog.getByRole('button', { name: /^关闭/ }).click()
+    await settingsDialog.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  }
+  await closeSettings()
+  // 部署提醒点：演示后端用 localStorage 的 demo-deploy-outdated 造「部署那份和自带的不同」（见 demo-deploy.ts）。
+  // 有差异时侧栏「设置」和设置里的「Agent」「部署」都要亮点，重新部署后三处一起消失。
+  // 提示数据（skill-updates）只在本窗口获得焦点时重读；不重载页面——设置弹窗的状态会被重载保留，重载后侧栏被盖住
+  const settingsRow = () => p.locator('aside[aria-label="侧栏"]').getByRole('button', { name: '设置', exact: true })
+  // 提示挂在按钮的 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找「设置」就找不到了
+  const hintOf = (loc) =>
+    loc.evaluateAll((els) => {
+      const el = els[0]
+      if (!el) return ''
+      const id = el.getAttribute('aria-describedby')
+      return id ? (document.getElementById(id)?.textContent ?? '').trim() : ''
+    })
+  const waitHint = async (loc, expected) => {
+    for (let i = 0; i < 80; i++) {
+      if ((await hintOf(loc)) === expected) return true
+      await p.waitForTimeout(100)
+    }
+    return false
+  }
+  const deployHint = '1 项部署内容有更新，需要重新部署'
+  const setOutdated = (value) =>
+    p.evaluate((v) => {
+      if (v) localStorage.setItem('demo-deploy-outdated', v)
+      else localStorage.removeItem('demo-deploy-outdated')
+      window.dispatchEvent(new Event('focus'))
+    }, value)
+  await settingsRow().waitFor({ timeout: 8000 })
+  await setOutdated('grilling')
+  // 点的提示不能把按钮的名字挤掉：按「设置」还能找到它
+  if ((await p.getByRole('button', { name: '设置', exact: true }).count()) !== 1)
+    errors.push('部署提醒点：有差异时「设置」按钮的名字变了')
+  if (!(await waitHint(settingsRow(), deployHint)))
+    errors.push(`部署提醒点：侧栏「设置」上没有提示（${await hintOf(settingsRow())}）`)
+  await settingsRow().click()
+  const agentItem = p.getByRole('button', { name: 'Agent', exact: true })
+  await agentItem.click()
+  const deployItem = p.locator('nav[aria-label="Agent"]').getByRole('button', { name: '部署', exact: true })
+  await deployItem.waitFor({ timeout: 5000 })
+  if ((await hintOf(agentItem)) !== deployHint) errors.push('部署提醒点：设置里「Agent」项上没有提示')
+  if ((await hintOf(deployItem)) !== deployHint) errors.push('部署提醒点：设置里「部署」项上没有提示')
+  // 进去能看到具体哪一项要更新
+  await deployItem.click()
+  await p
+    .getByText('和自带的不同，可更新')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('部署提醒点：部署页没有标出哪一项和自带的不同'))
+  // 重新部署后三处同时消失（数据刷新后自然消失，不是本地记住一个点）
+  await p.getByRole('switch', { name: 'grilling' }).click()
+  await p.getByRole('button', { name: '部署', exact: true }).last().click()
+  if (!(await waitHint(deployItem, ''))) errors.push('部署提醒点：重新部署后「部署」项上的提示还在')
+  await check(p, '设置-部署-重新部署后提示点消失')
+  await closeSettings()
+  await settingsRow().waitFor({ timeout: 8000 })
+  // 侧栏在设置弹窗开着时查不到（量弹窗盖住），关掉再看
+  if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：重新部署后侧栏「设置」上的提示还在')
+  // 浅色下也要能看清：同一套点样式，再造一次差异看一眼
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+  await setOutdated('grilling')
+  if (!(await waitHint(settingsRow(), deployHint))) errors.push('部署提醒点：浅色主题下侧栏「设置」上没有提示')
+  await check(p, '设置-部署-浅色提醒点')
+  // 没有差异时不能一直亮着；清掉钩子，后面的检查也不受影响
+  await setOutdated('')
+  if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：没有差异时侧栏「设置」上还有提示')
   // 英文界面的截图和以前一样放在浅色主题下看
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

@@ -4,12 +4,19 @@ import { Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { BUILTIN_AGENTS } from '@shared/builtin/agents'
+import { HELPER_KEY } from '@shared/builtin/core'
 import { api } from '@/lib/api'
 import { addBuiltinAgents, addedBuiltin } from '@/lib/builtin'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
+
+/**
+ * 这里列出的内置角色：去掉「子任务」——它是子任务机制默认用的角色，启动时自动建好，
+ * 用户不需要也不能手动添加，删了反而会让所有子任务失去默认角色。
+ */
+const LISTABLE_BUILTIN = BUILTIN_AGENTS.filter((b) => b.key !== HELPER_KEY)
 
 /**
  * 内置 Agent：按分类列出，点「添加」建出来（连同它引入的「通用约束」）。
@@ -27,11 +34,11 @@ export function BuiltinAgentsDialog({
   const { agents, categories, tags, workflows, setAgents, setCategories, setTags } = useData()
   const [busy, setBusy] = useState('')
   const [removing, setRemoving] = useState<Agent | null>(null)
-  const groups = [...new Set(BUILTIN_AGENTS.map((b) => b.category))].map((c) => ({
+  const groups = [...new Set(LISTABLE_BUILTIN.map((b) => b.category))].map((c) => ({
     name: c,
-    items: BUILTIN_AGENTS.filter((b) => b.category === c),
+    items: LISTABLE_BUILTIN.filter((b) => b.category === c),
   }))
-  const missing = BUILTIN_AGENTS.filter((b) => !addedBuiltin(agents, b.key))
+  const missing = LISTABLE_BUILTIN.filter((b) => !addedBuiltin(agents, b.key))
 
   const add = async (keys: string[], key: string) => {
     setBusy(key)
@@ -81,7 +88,11 @@ export function BuiltinAgentsDialog({
               {g.items.map((b) => {
                 const added = !!addedBuiltin(agents, b.key)
                 return (
-                  <li key={b.key} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+                  <li
+                    key={b.key}
+                    data-builtin-key={b.key}
+                    className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3"
+                  >
                     <div className="min-w-0 flex-[1_1_320px]">
                       <p className="flex items-center gap-2 text-[0.84375rem] font-medium">
                         {b.agent.name}

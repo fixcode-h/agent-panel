@@ -19,6 +19,7 @@ import { useChildList, useChildOpen, useJobOpen } from './child-open'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine } from './child-line'
 import { chatHelperIds, helperBrief, HelperWindow, StopHelper } from './HelperCards'
 import { t } from '@shared/i18n'
+import { isHelperAgent } from '@shared/builtin/core'
 
 /** 这一轮里还在跑的工具：回复说完了它们还在跑，要拿出来放在总结下面，不能跟着过程一起折叠 */
 export const runningTools = (msgs: { role: string; tools: ToolUse[] }[]) =>
@@ -187,7 +188,7 @@ function HelperRow({
 }) {
   const { agents } = useData()
   // 默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来（和子任务栏同一个口径）
-  const agent = agents.find((a) => a.id === step.agentId && a.origin !== 'builtin:helper')
+  const agent = agents.find((a) => a.id === step.agentId && !isHelperAgent(a))
   const running = helperRunning(step)
   const title = step.title || t('未命名')
   const note = helperBrief(task, step)
