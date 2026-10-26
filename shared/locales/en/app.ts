@@ -261,8 +261,29 @@ export const EN_APP: Record<string, string> = {
     'Running conversations are left alone. Archived conversations are not deleted; pick “Archived” in the filter to find them.',
   // 工作总结
   工作总结: 'Work summary',
-  '选几个项目，把今天（{day}）执行过的对话整理成一份简短的 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。':
-    'Pick a few projects and turn the conversations run today ({day}) into a short Markdown report. Edit, preview, and copy it when it is done; recent reports stay on this machine and can be reopened and edited.',
+  '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），把今天（{day}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。':
+    'Pick a project and click “Add”, then choose which conversations to analyze (none means all of today’s). It turns today’s ({day}) work into a Markdown report. Edit, preview, and copy it when it is done; recent reports stay on this machine and can be reopened and edited.',
+  选择要总结的项目: 'Project to summarize',
+  选择要分析的对话: 'Conversation to analyze',
+  增加: 'Add',
+  '还没有加入项目。选一个项目后点「增加」。': 'No projects added yet. Pick one and click “Add”.',
+  '今天 {n} 个对话': '{n} conversations today',
+  今天没有可总结的对话: 'No conversations to summarize today',
+  '只分析已选的 {n} 个对话': 'Only the {n} selected conversations are analyzed',
+  未选对话时分析该项目今天全部对话: 'All of this project’s conversations today are analyzed when none is selected',
+  '删除项目 {name}': 'Remove project {name}',
+  '删除对话 {title}': 'Remove conversation {title}',
+  未命名对话: 'Untitled conversation',
+  '正在加载…': 'Loading…',
+  '报告格式不完整（已自动重试一次）：{issues}': 'Report format is incomplete (retried once): {issues}',
+  '这些项目没有可写进报告的对话，已跳过：{names}':
+    'These projects had no conversations to include; they were skipped: {names}',
+  '一级标题不是「# <日期> 工作总结」': 'The H1 is not “# <date> 工作总结”',
+  '缺少固定的三个二级节，或顺序不对': 'The three fixed H2 sections are missing or out of order',
+  '项目标题的编号格式不对（应为「### 1.1 项目名」）': 'Project headings are not numbered like “### 1.1 Project”',
+  '条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复」':
+    'Entries are not “1. **Title** ｜ status” followed by an indented “实现 / 原因 / 修复” line',
+  '某一节没有内容时没写「暂无」': 'An empty section does not say “暂无”',
   '用哪个 Agent 生成': 'Agent to generate with',
   生成报告: 'Generate report',
   '还没有项目，先在侧栏添加一个项目。': 'No projects yet: add one from the sidebar first.',

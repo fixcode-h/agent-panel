@@ -23,15 +23,38 @@ export const SUMMARY_STEPS_MAX = 8
 export const SUMMARY_FILES_MAX = 8
 
 /**
- * 命中这些词就认为这条对话可能在修 Bug：提示词里要求写清问题在哪、怎么修的。
- * 只收明确指向问题修复的词——「错误」「异常」「失败」在日常需求里太常见（例如「接口失败要不要加重试」），
- * 会把普通对话也标成 Bug 修复。只是给 CLI 的线索，最后由它按内容判断
+ * 命中这些词就认为这条对话可能在修 Bug：提示词里给 CLI 一个线索。
+ * 只收明确指向故障的词——「错误」「异常」「失败」在日常需求里太常见（例如「接口失败要不要加重试」），
+ * 会把普通对话也标成 Bug 修复。只是线索，不是硬条件：用户原文里描述了异常现象也照写，由 CLI 按内容判断
  */
-export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '崩溃', 'fix']
+export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '崩溃', 'fix', '没反应', '不生效', '卡住', '闪退']
 
-/** 生成报告：选中的项目、用哪个 CLI / 模型 / 思考强度跑 */
+/** 报告里固定的三个二级标题：顺序也是这个，缺一节不许省 */
+export const SUMMARY_SECTIONS = ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结'] as const
+
+/**
+ * 格式自检的问题码：报告不合格时只留问题码，页面按当前语言显示文案。
+ * 定义在这里是因为提示词、服务端自检和页面提示用的是同一个口径
+ */
+export const SUMMARY_FORMAT_ISSUES = {
+  title: '一级标题不是「# <日期> 工作总结」',
+  sections: '二级标题不是固定的三节（或顺序、数量不对）',
+  project: '项目标题格式不对（应为「### 1.1 项目名」）',
+  item: '条目格式不对（应为「1. **标题** ｜ 状态」加缩进一行的「实现：/原因：/修复：」）',
+  empty: '某一节没有内容时没有写「暂无」',
+} as const
+export type SummaryFormatIssue = keyof typeof SUMMARY_FORMAT_ISSUES
+
+/** 报告里每个项目的选择：只分析这些对话，空列表表示该项目今天全部对话 */
+export const SummaryProjectPick = z.object({
+  projectId: z.string().min(1),
+  taskIds: z.array(z.string().min(1)).default([]),
+})
+export type SummaryProjectPick = z.infer<typeof SummaryProjectPick>
+
+/** 生成报告：选中的项目（含每个项目下要分析的对话）、用哪个 CLI / 模型 / 思考强度跑 */
 export const SummaryRequest = z.object({
-  projectIds: z.array(z.string().min(1)).min(1).max(50),
+  projects: z.array(SummaryProjectPick).min(1).max(50),
   cli: z.string().min(1),
   model: z.string().trim().default(''),
   effort: z.string().trim().default(''),
@@ -72,6 +95,10 @@ export interface SummaryJob {
   md: string
   /** 存下来的报告 id：生成成功才有，页面据此继续编辑 */
   reportId?: string
+  /** 生成后的格式自检：ok 为 false 表示重试一次后仍然不完整，页面要明确提示，不静默通过 */
+  format?: { ok: boolean; issues: SummaryFormatIssue[]; retried: boolean }
+  /** 用户选了、但今天没有可总结内容的项目（页面提示用，不静默从报告里删掉） */
+  skipped?: string[]
   error?: string
   thinking?: string
   tools: string[]
@@ -100,8 +127,8 @@ export interface DayTask {
   files: string[]
   /** 最近一次执行的时间（ISO） */
   at: string
-  /** 看起来在修 Bug */
-  bug: boolean
+  /** 用户自己提出过问题（只按用户的要求判断，Agent 自查修掉的不算） */
+  userBug: boolean
 }
 
 /** 一个项目今天的执行记录 */
@@ -122,6 +149,15 @@ export function isToday(iso: string, day: string) {
   if (!iso) return false
   const d = new Date(iso)
   return !Number.isNaN(d.getTime()) && dayKey(d) === day
+}
+
+/**
+ * 这个任务今天有没有执行过：只看时间字段（任务摘要里没有消息），用来先筛候选任务、页面列出今天的对话。
+ * 页面和服务端共用这一处判定，避免「页面列得出来、服务端却当作没执行」
+ */
+export function activeOnDay(task: Task, day: string) {
+  if (isToday(task.updatedAt, day) || isToday(task.turnDoneAt, day) || isToday(task.runStartedAt, day)) return true
+  return task.messages.some((m) => isToday(m.at, day))
 }
 
 /** 压成一行、按字数截断：提示词里不放长段落 */
@@ -172,7 +208,9 @@ export function dayTask(task: Task, day: string): DayTask | null {
   // 今天执行的对话至少留下一条消息或一个节点；今天只是打开了对话、没执行的不算
   if (!asks.length && !outcomes.length && !steps.length) return null
   const files = [...new Set(task.changes.map((c) => c.path))].slice(0, SUMMARY_FILES_MAX)
-  const hint = [task.title, ...asks, ...outcomes].join(' ').toLowerCase()
+  // 只看用户提的要求和对话标题：报告里的「用户报告的 Bug」只收用户自己报的问题，
+  // Agent 在结论里说的「我顺手修了一个问题」不能算
+  const hint = [task.title, ...asks].join(' ').toLowerCase()
   return {
     id: task.id,
     title: clip(task.title, 60),
@@ -182,15 +220,21 @@ export function dayTask(task: Task, day: string): DayTask | null {
     steps,
     files,
     at,
-    bug: SUMMARY_BUG_HINTS.some((w) => hint.includes(w)),
+    userBug: SUMMARY_BUG_HINTS.some((w) => hint.includes(w)),
   }
 }
 
+/** 报告要分析哪个项目的哪些对话：taskIds 为空表示这个项目今天全部对话 */
+export interface SummaryDayPick extends SummaryProjectRef {
+  taskIds?: string[]
+}
+
 /**
- * 按项目整理今天执行过的对话：只保留有活动的项目，项目顺序按传入的项目顺序。
+ * 按项目整理今天执行过的对话：只保留有活动的项目，项目顺序按传入的顺序（也就是用户加进来的顺序）。
+ * 传了 taskIds 时只留这些对话，为空表示该项目今天全部。
  * 子对话也算它自己项目里的执行记录（它们本来就在同一个项目下）
  */
-export function collectDayProjects(tasks: Task[], projects: SummaryProjectRef[], now = new Date()): DayProject[] {
+export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], now = new Date()): DayProject[] {
   const { day } = todayWindow(now)
   const byProject = new Map<string, DayTask[]>()
   for (const task of tasks) {
@@ -201,17 +245,34 @@ export function collectDayProjects(tasks: Task[], projects: SummaryProjectRef[],
     list.push(d)
     byProject.set(task.projectId, list)
   }
-  return projects
-    .filter((p) => byProject.has(p.id))
-    .map((p) => ({
-      projectId: p.id,
-      projectName: p.name,
-      // 先按最近执行排序再截断：超过上限时留下的是今天最新的对话，不是最早创建的
-      tasks: byProject
-        .get(p.id)!
-        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-        .slice(0, SUMMARY_TASKS_PER_PROJECT),
-    }))
+  return (
+    projects
+      .filter((p) => byProject.has(p.id))
+      .map((p) => {
+        const only = p.taskIds?.length ? new Set(p.taskIds) : null
+        return {
+          projectId: p.id,
+          projectName: p.name,
+          // 先按最近执行排序再截断：超过上限时留下的是今天最新的对话，不是最早创建的
+          tasks: byProject
+            .get(p.id)!
+            .filter((t) => !only || only.has(t.id))
+            .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+            .slice(0, SUMMARY_TASKS_PER_PROJECT),
+        }
+      })
+      // 选中了对话、但这些对话今天都没执行时，这个项目也就没有可写的内容
+      .filter((p) => p.tasks.length > 0)
+  )
+}
+
+/**
+ * 用户选了、但今天没有可总结内容的项目名：页面据此提示，不静默把它们从报告里删掉。
+ * 服务端算完 collectDayProjects 后调用，判断口径就是「有没有进报告」
+ */
+export function skippedProjects(picks: SummaryProjectRef[], projects: DayProject[]) {
+  const analyzed = new Set(projects.map((p) => p.projectId))
+  return picks.filter((p) => !analyzed.has(p.id)).map((p) => p.name)
 }
 
 /** 报告里交给 CLI 的「今天的执行记录」正文 */
@@ -221,7 +282,11 @@ export function summaryContext(projects: DayProject[]) {
       [
         `## ${p.projectName}`,
         ...p.tasks.map((task) => {
-          const lines = [`- 对话「${task.title || '未命名'}」（${task.status}${task.bug ? '，可能是 Bug 修复' : ''}）`]
+          const lines = [
+            `- 对话「${task.title || '未命名'}」（${task.status}）`,
+            // 只是关键词线索，不是结论：用户原文里说「点保存没反应」这种没命中关键词的也是问题，交给 CLI 判
+            `  关键词命中问题词：${task.userBug ? '是' : '否'}`,
+          ]
           if (task.asks.length) lines.push(`  用户的要求：${task.asks.join('；')}`)
           if (task.outcomes.length) lines.push(`  结论：${task.outcomes.join('；')}`)
           if (task.steps.length) lines.push(`  节点：${task.steps.map((s) => `${s.title}（${s.status}）`).join('、')}`)
@@ -234,24 +299,100 @@ export function summaryContext(projects: DayProject[]) {
 }
 
 /**
- * 交给 CLI 的提示词：只根据今天的执行记录写一份简短、分项的 Markdown 报告。
+ * 交给 CLI 的提示词：严格按固定模板写三节报告（需求进度 / 用户报告的 Bug / 今日小结）。
+ * 格式写死在这里，生成后还会用 checkSummaryFormat 再校一遍（见 server/summary.ts）。
  * 正文是中文，回复语言跟随面板设置（见 prompt-lang.ts）
  */
 export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
   return [
-    `你在帮用户整理「今天」的工作总结报告。今天是 ${input.day}。`,
+    `你在帮用户整理今天的工作总结报告。今天是 ${input.day}。`,
     promptLangRules(),
     '',
-    '要求：',
-    '- 只根据下面给出的「今天的执行记录」写，不要分析更早的历史，也不要编造记录里没有的事。',
-    '- 报告用 Markdown，每个项目一个二级标题（`## 项目名`），项目下面用 `-` 分条，每条一句话、不超过 40 字，不贴代码、不复述大段过程。',
-    '- 每个项目按这几条写（没有内容的条目整条省略）：`- **做了**：今天完成的事`、`- **关键决策**：定下的做法或取舍`、`- **Bug**：问题在哪（模块或现象），怎么修的`、`- **遗留**：还没做完或要注意的。',
-    '- 只有标了「可能是 Bug 修复」的对话才写 `Bug` 一条，要写清问题在哪个模块（或什么现象）、用什么办法修好的，同样一两句话。标了线索的记录也要按内容判断：看不出明确的问题和修法就不要写这一条。',
-    '- 今天没有执行记录的项目不要写；今天的记录里全是占位或空白时，只写一行「今天没有执行记录」。',
-    '- 直接输出报告正文：第一行就是项目标题，不要开场白、不要总结段落、不要用代码块包起来。',
+    '输出格式：必须严格照下面这个结构写，字段、顺序、编号一律不能变，不要自创小节：',
+    '',
+    `# ${input.day} 工作总结`,
+    '',
+    '## 一、需求进度',
+    '',
+    '### 1.1 <项目名>',
+    '1. **<需求标题>** ｜ 已完成（5/5）',
+    '   实现：<一两句原理，说清怎么做到的，不贴代码>',
+    '2. **<需求标题>** ｜ 进行中（3/5）',
+    '   实现：<一两句原理>',
+    '',
+    '## 二、用户报告的 Bug',
+    '',
+    '### 2.1 <项目名>',
+    '1. **<Bug 标题>**',
+    '   原因：<根因，一句话说清是什么导致的>',
+    '   修复：<怎么修的，一句话>',
+    '',
+    '## 三、今日小结',
+    '<一句话：今天整体做完了什么、还剩什么>',
+    '',
+    '硬性规则：',
+    `- 一级标题固定写成 \`# ${input.day} 工作总结\`。`,
+    '- 二级标题只允许这三个，一个不能少、顺序不能变：`## 一、需求进度`、`## 二、用户报告的 Bug`、`## 三、今日小结`。',
+    '- 三级标题是项目，写 `### 1.1 <项目名>` / `### 2.1 <项目名>`（节号.项目序号，项目序号从 1 递增）；每个节里的项目都要写三级标题。',
+    '- 条目写成 `1. **<标题>** ｜ <状态>`，下一行缩进两个空格写 `实现：` / `原因：` / `修复：`。',
+    '- 「需求进度」的状态只能是 `已完成`、`进行中（n/m）`、`暂停`、`未开始` 这四种。',
+    '- 「用户报告的 Bug」只写用户在「用户的要求」里自己提出来的问题；`关键词命中问题词：否` 只说明没命中关键词，不是没报问题——用户原文描述了异常现象（没反应、不对、坏了、不生效、卡住、闪退等）也要写。用户只是在讨论要不要处理某个问题、没有报告故障的不算报 Bug。Agent 自己写代码、自测、评审时发现并修掉的问题一律不写，这是硬约束。',
+    '- 每条最多两行（标题行 + 一行 `实现` / `原因` / `修复`），单句不超过 60 字；不贴代码、不复述执行过程、不列工具调用。',
+    '- 全文不用第一人称（不写「我今天」「我修改了」），用「已完成 …」「修复 …」这种陈述。',
+    '- 某一节没有内容时，在那一节下面写一行「暂无」，不要省略整节。',
+    '- 只写下面记录里有的项目，按记录里的顺序；不要编造记录里没有的事。',
+    '- 直接输出报告正文：第一行就是一级标题，不要开场白、不要总结段落、不要用代码块包起来。',
     '',
     '今天的执行记录：',
     summaryContext(input.projects) || '（今天没有执行记录）',
+  ].join('\n')
+}
+
+/**
+ * 生成后的格式自检：只查结构（标题、三节、编号、条目形状），不评价内容。
+ * 返回的问题码可以直接交给页面本地化（见 SUMMARY_FORMAT_ISSUES）
+ */
+export function checkSummaryFormat(md: string): { ok: boolean; issues: SummaryFormatIssue[] } {
+  const issues = new Set<SummaryFormatIssue>()
+  const lines = md.split('\n').map((l) => l.trimEnd())
+  const body = lines.filter((l) => l.trim())
+  // 一级标题：报告第一行就是它
+  if (!new RegExp(`^# \\d{4}-\\d{2}-\\d{2} 工作总结$`).test((body[0] ?? '').trim())) issues.add('title')
+  const h2 = body.filter((l) => l.startsWith('## ')).map((l) => l.trim())
+  const wanted = SUMMARY_SECTIONS.map((s) => s as string)
+  if (h2.length !== wanted.length || h2.some((l, i) => l !== wanted[i])) issues.add('sections')
+  // 三级标题：节号.项目序号，序号从 1 递增
+  const h3 = body.filter((l) => l.startsWith('### '))
+  if (h3.some((l) => !/^### \d+\.\d+ \S/.test(l))) issues.add('project')
+  // 条目：`n. **标题**` 后面可以跟 `｜ 状态`
+  for (const line of body) {
+    if (!/^\d+\. /.test(line)) continue
+    if (!/^\d+\. \*\*.+\*\*( ｜ \S.*)?$/.test(line)) issues.add('item')
+  }
+  // 节内没有内容时必须是「暂无」：前两节靠条目填内容，第三节是一句话小结
+  for (let i = 0; i < wanted.length; i++) {
+    const start = body.findIndex((l) => l.trim() === wanted[i])
+    if (start < 0) continue
+    const rest = body.slice(start + 1)
+    const nextH2 = rest.findIndex((l) => l.startsWith('## '))
+    const section = nextH2 < 0 ? rest : rest.slice(0, nextH2)
+    const last = i === wanted.length - 1
+    const filled = section.some((l) => l.trim() === '暂无' || (last ? !l.startsWith('#') : /^\d+\. /.test(l)))
+    if (!filled) issues.add('empty')
+  }
+  return { ok: issues.size === 0, issues: [...issues] }
+}
+
+/**
+ * 格式自检不合格时再跑一次 CLI 的追加提示：带上具体问题，要求整份重写。
+ * 与 summaryPrompt 共用同一份问题文案，不在服务端另写一套
+ */
+export function summaryRetryHint(issues: SummaryFormatIssue[]) {
+  return [
+    '',
+    '上一次输出没有按规定的格式写，问题：',
+    ...issues.map((i) => `- ${SUMMARY_FORMAT_ISSUES[i]}`),
+    '请严格按上面的结构把整份报告重写一遍，只输出报告正文。',
   ].join('\n')
 }
 
