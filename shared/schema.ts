@@ -1409,6 +1409,12 @@ export const PlanStep = PlanItem.extend({
    * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
    */
   review: z.boolean().optional(),
+  /**
+   * 面板按子对话自动补的步骤（见 plan.ts 的 ensureChildStep）：派子对话时计划里没有能挂的一步就补一步，
+   * 免得子对话在父对话的计划里看不见。Agent 交整份计划时没写到的自动步骤不会被当成「不做了」删掉。
+   * 旧数据没有这个字段
+   */
+  auto: z.boolean().optional(),
 })
 export type PlanStep = z.infer<typeof PlanStep>
 
@@ -1417,6 +1423,11 @@ export const TaskPlan = z.object({
   title: z.string().default(''),
   steps: z.array(PlanStep).default([]),
   createdAt: z.string(),
+  /**
+   * 面板重开这份计划的时间（见 plan.ts 的 ensureChildStep）：计划已结束后又派了子对话，就重开它。
+   * 总用时从重开时刻重新算，不把上一轮的历史时长并进这一轮（旧数据没有这个字段）
+   */
+  reopenedAt: z.string().optional(),
   /** 所有步骤都完成的时间；没完成时为空 */
   doneAt: z.string().default(''),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */

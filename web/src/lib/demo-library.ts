@@ -9,7 +9,7 @@ import type {
   McpOverview,
   McpServer,
 } from '@shared/library'
-import { frontField } from '@shared/library'
+import { frontField, treeFromPaths } from '@shared/library'
 import { ALL_AGENTS } from '@shared/commands'
 import type { SlashCommand } from '@shared/schema'
 
@@ -166,6 +166,26 @@ const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
   import: 'default',
   eager: true,
 }) as Record<string, string>
+/**
+ * 自带技能的全部文件：详情页要列出它们、点开要看内容。
+ * 不限扩展名——真后端的 treeOf 也按文件系统实际内容列，演示数据跟着同一个口径走。
+ * 注意 ?raw 会把文件按文本读进来：skills/ 下只该放文本，别放 png、字体这类二进制。
+ */
+const BUNDLED_FILES = import.meta.glob('../../../skills/*/*/**/*', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+const bundledOf = (name: string) => {
+  const hit = Object.entries(BUNDLED).find(([file]) => file.split('/skills/')[1].split('/')[1] === name)
+  if (!hit) return null
+  const prefix = hit[0].slice(0, -'SKILL.md'.length)
+  // 相对技能目录的路径 → 内容
+  const files = new Map<string, string>()
+  for (const [file, text] of Object.entries(BUNDLED_FILES))
+    if (file.startsWith(prefix)) files.set(file.slice(prefix.length), text)
+  return { category: hit[0].split('/skills/')[1].split('/')[0], files }
+}
 const installedBundled = new Map<string, BundledSkill['status'][string]>([
   // 预置两条和自带不一样的，演示版里才看得到「更新全部」的效果
   ['brainstorming', 'changed'],
@@ -176,7 +196,19 @@ function bundledList(): BundledSkill[] {
     .map(([file, text]) => {
       const [category, name] = file.split('/skills/')[1].split('/')
       const status: BundledSkill['status'] = { shared: installedBundled.get(name) ?? 'missing' }
-      return { name, category, description: frontField(text, 'description'), files: 0, status }
+      // 文件树和真接口同一份算法（shared 的 treeFromPaths），详情页不用为演示版分叉
+      const all = [...(bundledOf(name)?.files ?? new Map<string, string>())]
+        .filter(([rel]) => rel !== 'SKILL.md')
+        .map(([rel, body]) => ({ path: rel, size: new TextEncoder().encode(body).length }))
+      const tree = treeFromPaths(all)
+      return {
+        name,
+        category,
+        description: frontField(text, 'description'),
+        files: tree.entries.filter((e) => e.type === 'file').length,
+        tree,
+        status,
+      }
     })
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
 }
@@ -211,6 +243,16 @@ export function demoLibrary(
   }
   // 自带 Skill：内容取仓库 skills/ 下的 SKILL.md，装没装记在内存里
   if (id === 'bundled') {
+    // 自带 Skill 的文件内容（只读）：path 空表示 SKILL.md
+    if (seg[2] === 'entry') {
+      const name = query.get('name') ?? ''
+      const hit = bundledOf(name)
+      if (!hit) throw new Error(`没有自带的 Skill「${name}」`)
+      const rel = query.get('path') || 'SKILL.md'
+      const text = hit.files.get(rel)
+      if (text === undefined) throw new Error('没有这个文件')
+      return { path: rel, exists: true, content: text, size: new TextEncoder().encode(text).length }
+    }
     if (seg[2] === 'install') {
       const done: string[] = []
       const skipped: string[] = []

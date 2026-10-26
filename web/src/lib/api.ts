@@ -325,6 +325,9 @@ export const api = {
   library: (kind: 'skill' | 'command') =>
     request<{ clis: LibraryCli[]; items: LibraryItem[] }>(`/library?kind=${kind}`),
   bundledSkills: () => request<{ items: BundledSkill[] }>('/library/bundled'),
+  /** 自带 Skill 的文件内容（只读）：path 传空读 SKILL.md，其余读技能目录里的附加文件 */
+  bundledEntry: (name: string, path: string) =>
+    request<LibraryEntryContent>(`/library/bundled/entry?${new URLSearchParams({ name, path })}`),
   installBundled: (b: { names: string[]; clis: string[]; overwrite: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/bundled/install', json('POST', b)),
   libraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>

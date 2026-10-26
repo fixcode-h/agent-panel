@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, ListChecks } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
-import { planChildren, planProgress, planSpan, shownPlan } from '@shared/plan'
+import { planChildren, planHeadline, planProgress, planSpan, shownPlan, unfinishedSteps } from '@shared/plan'
 import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
@@ -28,10 +28,14 @@ function WaitRing({ className }: { className?: string }) {
 
 /**
  * 计划步骤的勾选圆点（清单样式）：完成是实心圆里一个勾，待做是静止的空心圆，
- * 进行中是强调色实线圆弧快转，「等待中」是 warning 色虚线圆环原地呼吸 —— 两者靠形状、动效类型分开，不只看颜色
+ * 进行中是强调色实线圆弧快转，「等待中」是 warning 色虚线圆环原地呼吸 —— 两者靠形状、动效类型分开，不只看颜色。
+ * `settled` 是「计划已经结束了」：这时还没做完的步骤不再画成等待中 / 进行中（计划都不跑了，
+ * 画成还在动和折叠头的结论打架），统一画成静止的空心圆、读作「未完成」
  */
-function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
+function PlanIcon({ status, small, settled }: { status: PlanStatus; small?: boolean; settled?: boolean }) {
   const box = cn('grid shrink-0 place-items-center rounded-full', small ? 'h-3.5 w-3.5' : 'h-[1.125rem] w-[1.125rem]')
+  if (settled && status !== 'done')
+    return <span role="img" aria-label={t('未完成')} className={cn(box, 'border-[1.5px] border-line-strong')} />
   const label = STATUS_LABEL[status]
   if (status === 'done')
     return (
@@ -145,11 +149,16 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
     return () => document.removeEventListener('mousedown', down)
   }, [open])
   const plan = shownPlan(task)
-  const finished = !!plan?.doneAt
-  // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新
+  // 计划「结束了」有两种：全部做完（说已完成）和 finish_plan 提前结束、还留着没做完的步骤。
+  // 只看 doneAt 会把后者也说成已完成，而列表里那一步还是等待中 —— 用户看到的就是这个矛盾
+  const head = plan ? planHeadline(plan) : 'open'
+  const finished = head !== 'open'
+  // 进行中“正在做的那一步”的用时跟着当前步骤的时间走，每秒刷新；结束的计划不用再每秒重算
   const now = useNow(!!plan && !finished)
   if (!plan) return null
   const p = planProgress(task, plan)
+  // 只数主步骤：和窗内进度（p.total - p.done）同一套计数，同屏两个数字不会打架
+  const left = head === 'closed' ? unfinishedSteps(plan) : 0
   const current = p.current?.child?.title ?? p.current?.step.title
   const currentMs = p.current ? itemElapsed(p.current.child ?? p.current.step, now) : undefined
   const currentTime = currentMs === undefined ? '' : fmtDuration(currentMs)
@@ -167,14 +176,26 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
           open && 'bg-sel text-fg',
         )}
       >
-        {finished ? (
+        {head === 'done' ? (
           <CircleCheck className="h-3.5 w-3.5 shrink-0 text-success" />
+        ) : head === 'closed' ? (
+          <CircleSlash className="h-3.5 w-3.5 shrink-0 text-subtle" />
         ) : (
           <ListChecks className="h-3.5 w-3.5 shrink-0 text-subtle" />
         )}
+        {/* 提前结束但还有遗留：标题和徽标都要说「已结束、还剩几步」，不能只写「计划已完成」 */}
         <span className="shrink-0 font-medium">
-          {finished ? t('计划已完成') : t('计划 {done}/{total}', { done: p.done, total: p.total })}
+          {head === 'done'
+            ? t('计划已完成')
+            : head === 'closed'
+              ? t('计划已结束')
+              : t('计划 {done}/{total}', { done: p.done, total: p.total })}
         </span>
+        {left > 0 && (
+          <span data-plan-left="" className="shrink-0 text-xs text-subtle">
+            {t('{n} 步没做完（已保留）', { n: left })}
+          </span>
+        )}
         {!finished && current && (
           <span className="flex min-w-0 items-center gap-1 text-xs text-subtle">
             <span>·</span>
@@ -207,6 +228,8 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
 function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; children?: WaitChild[] }) {
   const p = planProgress(task, plan)
   const live = !plan.doneAt
+  // 计划已经结束（全部做完或提前结束）：还没做完的步骤不再画成等待中 / 进行中
+  const settled = !live
   const tick = useNow(live)
   // 已经结束的计划把时间停在 doneAt：提前结束（finish_plan）时还有没做完的步骤，
   // 不能每次打开窗口都按当前时间重算，否则单项用时会超过总用时
@@ -242,7 +265,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ol className="flex flex-col">
           {plan.steps.map((s) => (
-            <PlanStepRow key={s.id} task={task} step={s} now={now} waitingKids={children} />
+            <PlanStepRow key={s.id} task={task} step={s} now={now} waitingKids={children} settled={settled} />
           ))}
         </ol>
         {older.length > 0 && (
@@ -276,12 +299,15 @@ function PlanStepRow({
   step,
   now,
   waitingKids,
+  settled,
 }: {
   task: Task
   step: PlanStep
   now: number
   /** 父对话页的子对话列表：等待中的子对话在这里显示它在做什么、多久没动静 */
   waitingKids?: WaitChild[]
+  /** 这份计划已经结束了：没做完的步骤画成静止的「未完成」，不再写成等待中 / 进行中 */
+  settled?: boolean
 }) {
   const kids = planChildren(task, step)
   const active = step.status === 'running' || step.status === 'waiting'
@@ -304,7 +330,7 @@ function PlanStepRow({
         )}
       >
         <span className="mt-[0.0625rem]">
-          <PlanIcon status={step.status} />
+          <PlanIcon status={step.status} settled={settled} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-baseline gap-2">
@@ -327,7 +353,10 @@ function PlanStepRow({
           {/* itemLine 已经带上备注：这里再接一次 note，同一句话会显示两遍 */}
           {meta && (
             <span
-              className={cn('line-clamp-2 text-xs', step.status === 'waiting' ? 'text-warning' : 'text-subtle')}
+              className={cn(
+                'line-clamp-2 text-xs',
+                step.status === 'waiting' && !settled ? 'text-warning' : 'text-subtle',
+              )}
               title={meta}
             >
               {meta}
@@ -347,7 +376,7 @@ function PlanStepRow({
             return (
               <li key={c.id} className="flex min-w-0 items-start gap-2.5 rounded-md py-1 pr-2">
                 <span className="mt-0.5">
-                  <PlanIcon status={c.status} small />
+                  <PlanIcon status={c.status} small settled={settled} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-baseline gap-2">
@@ -365,7 +394,7 @@ function PlanStepRow({
                     <span
                       className={cn(
                         'truncate text-[0.6875rem]',
-                        c.status === 'waiting' ? 'text-warning' : 'text-subtle',
+                        c.status === 'waiting' && !settled ? 'text-warning' : 'text-subtle',
                       )}
                     >
                       {m}
@@ -386,6 +415,7 @@ function OldPlan({ plan }: { plan: TaskPlan }) {
   const [open, setOpen] = useState(false)
   const done = plan.steps.filter((s) => s.status === 'done').length
   const at = plan.doneAt ? new Date(plan.doneAt) : null
+  const head = planHeadline(plan)
   return (
     <li>
       <button
@@ -394,7 +424,7 @@ function OldPlan({ plan }: { plan: TaskPlan }) {
         onClick={() => setOpen((v) => !v)}
         className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-sel"
       >
-        <PlanIcon status={plan.doneAt ? 'done' : 'pending'} small />
+        <PlanIcon status={head === 'done' ? 'done' : 'pending'} small />
         <span className="min-w-0 flex-1 truncate text-xs text-fg">{plan.title || t('未命名的计划')}</span>
         <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
           {t('{done}/{total} 步', { done, total: plan.steps.length })}
@@ -407,7 +437,8 @@ function OldPlan({ plan }: { plan: TaskPlan }) {
           <ol className="flex flex-col gap-0.5">
             {plan.steps.map((s) => (
               <li key={s.id} className="flex min-w-0 items-center gap-1.5 text-xs text-muted">
-                <PlanIcon status={s.status} small />
+                {/* 历史计划都是已经结束的：没做完的步骤同样画成「未完成」，不在这里画出等待中的虚线环 */}
+                <PlanIcon status={s.status} small settled />
                 <span className="truncate">{s.title}</span>
               </li>
             ))}

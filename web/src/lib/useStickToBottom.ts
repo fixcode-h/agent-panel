@@ -27,6 +27,9 @@ export function stillPinned(
   return box.scrollTop < prevTop - 1 ? false : pinned
 }
 
+/** 容器挂上时停在哪一端：底部是「看最新内容」，顶部是「先看第一块内容」 */
+export type ScrollStart = 'bottom' | 'top'
+
 /**
  * 贴底滚动：打开时就停在最新内容，之后内容变高跟着走，用户往上翻看时不打扰（滚回底部附近再接着跟）。
  *
@@ -42,8 +45,16 @@ export function stillPinned(
  * @param key 换看另一个对象（另一条子任务、另一次运行、另一个任务状态）时传不同的值：会重新贴底，不沿用上一个的「翻上去了」
  * @param active 容器当前没在显示内容（同一个容器切到流程图视图）时传 false：停止跟着内容滚，也不记位置。
  *   变回 true 时重新贴底——切回对话视图就该停在最新一行
+ * @param startAt 挂上容器时停在哪一端。默认 'bottom'（对话、日志这类看最新内容）；
+ *   'top' 是「先看第一块内容」——最上面那块本身就说明这里是什么（子任务窗口的「派给它的要求」）。
+ *   停顶部时不贴底、新输出也不把人拽走（正在读的要求会被顶掉），用户自己滚到底部附近才恢复跟随
  */
-export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHOLD, active = true) {
+export function useStickToBottom<K = unknown>(
+  key?: K,
+  threshold = STICK_THRESHOLD,
+  active = true,
+  startAt: ScrollStart = 'bottom',
+) {
   const box = useRef<HTMLElement | null>(null)
   // 节点挂上、换掉时都要重跑贴底，所以同时留一份在 state 里
   const [node, setNode] = useState<HTMLElement | null>(null)
@@ -90,8 +101,14 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
 
   useLayoutEffect(() => {
     if (!node || !active) return
-    pinned.current = true
-    markAway(false)
+    // 停在顶部时不贴底：最上面那块（子任务窗口的「派给它的要求」）才是打开时要看的内容。
+    // 新输出进来也不拽到底部，否则用户正在读的要求会被顶走；滚到底部附近由 onScroll 恢复跟随
+    pinned.current = startAt !== 'top'
+    if (startAt === 'top') {
+      node.scrollTop = 0
+      lastTop.current = 0
+    }
+    markAway(startAt === 'top' ? !nearBottom(node, threshold) : false)
     const stick = () => {
       if (!pinned.current) return
       node.scrollTop = node.scrollHeight
@@ -141,7 +158,7 @@ export function useStickToBottom<K = unknown>(key?: K, threshold = STICK_THRESHO
       ro.disconnect()
       mo.disconnect()
     }
-  }, [node, key, threshold, active, markAway])
+  }, [node, key, threshold, active, startAt, markAway])
 
   // el 给需要在容器里定位子元素（点任务进度里的某一步）的调用方用
   return { ref, el: box, onScroll, away, toBottom: pin, pin, unpin }

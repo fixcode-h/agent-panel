@@ -1,6 +1,9 @@
 # 点发送的一瞬间运行区整块消失，AI 开口才回来
 
 - 状态：已修复（回归 `web/src/lib/latest-turn.test.ts` 8 条用例全过；界面检查 `scripts/ui/02-task.mjs` 的「任务-发送消息时运行区不消失」）
+- 症状：点发送的一瞬间运行区（子对话行、后台命令行）整块消失，AI 开口才回来
+- 入口：`web/src/components/tasks/TaskView.tsx` 的 `latest`、`Messages.tsx` 的 `ChatReply`、新增 `web/src/lib/latest-turn.ts`
+- 根因类型：「最新的一轮」按最后一个 block 算，刚发出的用户消息单独成 `msg` 段把它顶掉
 - 模块：`web`（`web/src/components/tasks/TaskView.tsx` 的 `latest` 判定、`web/src/components/tasks/Messages.tsx` 的 `ChatReply` / `RunningFooter`，新增 `web/src/lib/latest-turn.ts`）
 - 关键词：运行区、子对话行、发送消息、闪没、最新一轮、`latest`、`last`、`toBlocks`、`msg` 段、`latestTurnIndex`
 

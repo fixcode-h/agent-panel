@@ -1,6 +1,9 @@
 # 子任务续接会话时没看会话属于哪个目录，Pi 停下来问分叉后按 Aborted 退出
 
 - 状态：已修复（代码和单测随同一批改动落地，`npm run typecheck`、`npm run lint`、`npm run test:unit` 均通过；`npm run test:e2e:wsl` 未跑）
+- 症状：子任务续接会话报「Session found in different project … Aborted.」，Pi 没完成这一轮就退出
+- 入口：`server/exec/runner.ts` 的 `runAgent`
+- 根因类型：会话目录判定漏掉非对话路径
 - 模块：`server-exec`（`server/exec/runner.ts`），配套 `shared/task.ts`、`shared/schema.ts`、`shared/task-export.ts`、`server/tasks.ts`
 - 关键词：Session found in different project、Fork this session into current directory、Aborted、没有完成这一轮就退出了、独立分支、worktree、`--session`、`--resume`、spawn_agents 的 resume
 

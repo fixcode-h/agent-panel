@@ -1203,6 +1203,8 @@ function ChatMessage({
       teamNames={NO_NAMES}
       author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
       last={last}
+      // 和 Chat 对话一模一样：回复完成后思考、工具调用和中间的说明收进一个折叠，只留最后的回复和「需要的图片」
+      fold
     >
       {!!msg.images?.length && (
         <span className="pl-[38px] text-[0.71875rem] text-subtle">
@@ -1233,6 +1235,8 @@ function LiveReply({ job }: { job: DesignJob }) {
           <span className="thinking-shimmer text-[0.78125rem] text-subtle">{t('正在思考…')}</span>
         </PendingAuthor>
       ) : (
+        // 不传 fold：这里 live 恒为真，FoldedRun 遇到 live 就整段平铺（流式输出本来就要边出边看）；
+        // 收尾后的折叠由上面已完成的消息（ChatMessage）负责，两处职责不重叠
         <ChatReply msgs={partsToMessages('live', parts, '')} teamNames={NO_NAMES} author={author} live />
       )}
     </div>

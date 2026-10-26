@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { Loader2, Package, Plus, Sparkles, Terminal } from 'lucide-react'
+import { Loader2, Plus, Sparkles, Terminal } from 'lucide-react'
 import type { LibraryCli, LibraryItem } from '@shared/library'
 import { libraryName } from '@shared/library'
 import { ALL_AGENTS } from '@shared/commands'
@@ -8,21 +8,34 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useNav } from '@/lib/data'
 import { useSkillUpdates } from '@/lib/skill-updates'
+import { useBundledSkills } from '@/lib/use-bundled-skills'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { Segmented } from '@/components/ui/segmented'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { LibraryDetail } from '@/components/library/LibraryDetail'
-import { BundledSkills } from '@/components/library/BundledSkills'
+import { BundledBulkBar, BundledSkills } from '@/components/library/BundledSkills'
+import { BundledDetail, BundledEmpty } from '@/components/library/BundledDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
 type Kind = 'skill' | 'command'
 /** 页面上的分页：多一个「自带 Skill」 */
 type Tab = Kind | 'bundled'
+
+/**
+ * 分页下拉的选项：有可更新的自带技能时写进选项文字。
+ * 分段按钮上的小圆点在下拉里没地方画，所以文字和下拉右边的小圆点一起提示（用户要能发现更新）。
+ */
+function tabOptions(updates: number) {
+  return [
+    { value: 'skill', label: 'Skill' },
+    { value: 'command', label: t('命令') },
+    { value: 'bundled', label: updates ? t('自带 Skill（{n} 个可更新）', { n: updates }) : t('自带 Skill') },
+  ]
+}
 
 /** 新建时的模板：命令按 CLI 的格式（md / toml）写 */
 function template(kind: Kind, name: string, format: 'md' | 'toml') {
@@ -64,6 +77,11 @@ export function LibraryPage() {
   // 自带技能有新内容：「自带 Skill」分页亮点，进去能看到在哪里更新
   const upd = useSkillUpdates()
   const updN = new Set([...upd.shared, ...upd.deployed]).size
+  // 自带技能：列表和安装动作两边都用（左栏列表、右详情、底部的批量按钮）
+  const bundled = useBundledSkills()
+  // 地址里只有名字（自带技能不分 Agent）。这里用未过滤的全量找：搜索只过滤左栏，
+  // 搜到别的名字时右边开着的那份不能跟着消失（和 Skill 分页同一个口径）
+  const bundledPicked = tab === 'bundled' ? bundled.items?.find((i) => i.name === route.id) : undefined
 
   // 切换分页前发出的读取（例如保存后刷新）晚回来时不能盖掉新分页的列表
   const current = useRef(kind)
@@ -79,12 +97,21 @@ export function LibraryPage() {
       })
       .catch((e) => current.current === k && setError((e as Error).message))
   }
+  /**
+   * 换分页：清掉地址里的选中项，再换种类。
+   * 清地址放在这个动作上（不放 effect 里）：挂载时不能清，否则刷新或从链接打开会丢掉地址里的那一项；
+   * 也不好用「effect 首次执行」判断——StrictMode 下开发模式的 effect 会跑两遍，第二遍就当成「换分页」把地址清了。
+   */
+  const pickTab = (next: Tab) => {
+    if (next === tab) return
+    // 上一页的技能名在新一页没有意义（命令页里不会有 Skill），清掉让新列表自己选第一项
+    if (route.id) go({ page: 'library' })
+    setTab(next)
+  }
   useEffect(() => {
     setData(null)
     setQuery('')
     writeTab(tab)
-    // 换分页时地址里留着上一页的技能名没有意义（命令页里不会有 Skill），清掉让新列表自己选第一项
-    if (route.id) go({ page: 'library' })
     void load()
     // load 每次渲染都是新的函数，只在切换分页时重新读（自带 Skill 装完后回到 Skill 页要看到新装的）
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -118,20 +145,32 @@ export function LibraryPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [data, hits.length, shown, route.id, tab, query])
 
+  // 自带技能也一样：进这一页、或者选中的那份没了，就打开第一项（搜索时不改，和上面同一个口径）
+  useEffect(() => {
+    if (tab !== 'bundled' || query || !bundled.items?.length || bundledPicked) return
+    go({ page: 'library', id: bundled.items[0].name })
+    // 只在地址和列表对不上时纠正一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundled.items, bundledPicked, tab, query])
+
   return (
     <>
       <ListPane
         title={t('Skills 与命令')}
-        count={data?.items.length ?? 0}
+        // 自带技能的点数来自它自己的列表（Skill 分页里没有读那份数据）
+        count={tab === 'bundled' ? (bundled.items?.length ?? 0) : (data?.items.length ?? 0)}
         onNew={() => setCreating(true)}
         hideNew={tab === 'bundled'}
+        // 头部有「AI 创建」+「新建」两个按钮：窄栏里都收成图标，标题才有地方放下
+        compactNew
         extra={
           tab !== 'bundled' && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="secondary"
               onClick={() => setAi(true)}
               disabled={!data}
+              aria-label={kind === 'command' ? t('AI 创建命令') : t('AI 创建 Skill')}
               title={
                 kind === 'command'
                   ? t('描述需求，让本机 Agent 写命令，所有 Agent 都能用')
@@ -139,7 +178,6 @@ export function LibraryPage() {
               }
             >
               <Sparkles className="h-4 w-4 text-accent" />
-              {t('AI 创建')}
             </Button>
           )
         }
@@ -147,29 +185,42 @@ export function LibraryPage() {
         onQuery={setQuery}
         placeholder={t('搜索名字和说明')}
         tabs={
-          <Segmented
-            label={t('种类')}
-            value={tab}
-            onChange={setTab}
-            options={[
-              { id: 'skill', label: 'Skill' },
-              { id: 'command', label: t('命令') },
-              {
-                id: 'bundled',
-                label: t('自带 Skill'),
-                dot: updN ? t('{n} 个自带技能可以更新', { n: updN }) : undefined,
-              },
-            ]}
-          />
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label={t('种类')}
+              className="min-w-0 flex-1"
+              value={tab}
+              onChange={(e) => pickTab(e.target.value as Tab)}
+              options={tabOptions(updN)}
+            />
+            {/* 有可更新的自带技能时标出来：展开下拉才看到文字的话，不少人根本不会去展开 */}
+            {updN > 0 && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                aria-label={t('{n} 个自带技能可以更新', { n: updN })}
+                title={t('{n} 个自带技能可以更新', { n: updN })}
+              />
+            )}
+          </div>
         }
         footer={
-          <p className="text-[0.75rem] leading-relaxed text-subtle">
-            {t('放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。')}
-          </p>
+          tab === 'bundled' ? (
+            <BundledBulkBar items={bundled.items} busy={bundled.busy} onInstall={bundled.install} />
+          ) : (
+            <p className="text-[0.75rem] leading-relaxed text-subtle">
+              {t('放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。')}
+            </p>
+          )
         }
       >
         {tab === 'bundled' ? (
-          <BundledSkills query={query} />
+          <BundledSkills
+            query={query}
+            items={bundled.items}
+            error={bundled.error}
+            picked={route.id}
+            onPick={(name) => go({ page: 'library', id: name })}
+          />
         ) : error ? (
           <p className="px-2 py-6 text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
         ) : !data ? (
@@ -178,7 +229,7 @@ export function LibraryPage() {
           <ListEmpty>
             {query
               ? t('没有符合的{kind}。', { kind: kind === 'skill' ? 'Skill' : t('命令') })
-              : t('还没有，点右上角「新建」。')}
+              : t('还没有，点右上角的 ＋ 新建。')}
           </ListEmpty>
         ) : (
           // 按 Agent 分组：一眼看出哪些装在哪个 CLI 里（同名会同时出现在几组）
@@ -220,13 +271,16 @@ export function LibraryPage() {
       </ListPane>
 
       {tab === 'bundled' ? (
-        <DetailEmpty icon={<Package className="h-6 w-6" />} title={t('自带 Skill')}>
-          <p>
-            {t(
-              '这些是面板自带的技能，统一装在 ~/.agents/skills，所有 Agent 共用。在左边的列表里安装、更新，或换回自带版本。',
-            )}
-          </p>
-        </DetailEmpty>
+        bundledPicked ? (
+          <BundledDetail
+            key={bundledPicked.name}
+            item={bundledPicked}
+            busy={bundled.busy}
+            onInstall={bundled.install}
+          />
+        ) : (
+          <BundledEmpty />
+        )
       ) : shown ? (
         <LibraryDetail
           key={`${kind}:${shown.name}:${shown.cli}`}

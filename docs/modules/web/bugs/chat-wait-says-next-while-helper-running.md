@@ -1,6 +1,9 @@
 # 子任务还在跑，状态行却说「等待你的下一条消息」+「空闲」
 
 - 状态：已修复（界面检查 `scripts/ui/02-task.mjs` 的「任务-等子任务时状态行 / 任务-等下一句时状态行」；纯逻辑回归 `shared/task-stage.test.ts` 的「childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句」）
+- 症状：对话派出的子任务还在跑命令，状态行却写「等待你的下一条消息」+「空闲」
+- 入口：`web/src/components/tasks/TaskView.tsx` 的 `ChatWaitLine`、`web/src/components/tasks/LiveStats.tsx`
+- 根因类型：显示条件只判 `awaitingUser` + `cliAlive`，没复用 `childWait` 判「有没有子任务 / 后台命令 / 工作流在跑」
 - 模块：`web`（`web/src/components/tasks/TaskView.tsx` 的状态行、`web/src/components/tasks/LiveStats.tsx`）
 - 关键词：状态行、等待你的下一条消息、空闲、子任务在跑、`awaitingUser`、`childWait`、`cliAlive`、`LiveStats`、`data-chat-wait`
 
