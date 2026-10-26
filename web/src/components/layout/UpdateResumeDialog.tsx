@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { InterruptedTask } from '@shared/version'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'

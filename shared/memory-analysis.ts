@@ -9,7 +9,8 @@ import { fmtDuration } from './duration.ts'
  * 都从同一份采样和同一份进程表算出来，免得图和结论对不上。
  *
  * 和「设置 → 数据」那套面板内存体检（`shared/memory.ts`）的区别：
- * 那边看的是面板 server 进程自己（所有对话共用），这边看的是**一个会话**：面板 + 这个会话树上的 CLI 进程。
+ * 那边看的是面板 server 进程自己（所有对话共用），这边看的是**一个会话**：
+ * 这个对话及它的附属任务起的 CLI 进程；面板自己的内存只单独展示，不计入会话合计。
  * 所以 topic、报告正文和归属规则都单独一份，不复用 MEMORY_TOPIC（否则 AI 会把两套数据混着讲）。
  */
 
@@ -23,11 +24,11 @@ export type MemoryTrendKind = 'up' | 'down' | 'flat'
 
 export interface TaskMemoryTrend {
   trend: MemoryTrendKind
-  /** 窗口内合计内存（面板 + CLI）的变化，正数是涨 */
+  /** 窗口内合计内存（这个对话及附属的 CLI）的变化，正数是涨 */
   delta: number
   /** 窗口内 CLI 进程那一路的变化；两端有一头没采集到就是 0（不猜） */
   cliDelta: number
-  /** 窗口内面板那一路的变化 */
+  /** 窗口内面板那一路的变化（面板内存不计入合计，只单独看） */
   serverDelta: number
   /** 序列覆盖的时长（毫秒） */
   spanMs: number
@@ -42,7 +43,7 @@ export interface TaskMemoryTrend {
 
 /**
  * 这个会话的内存是涨还是平：只看最近一段（默认 30 分钟、至少 5 分钟），
- * 用「合计」（面板 + CLI）判断，并单独给出两路的变化，方便看出问题在面板还是在 CLI 侧。
+ * 用「合计」（这个对话及附属的 CLI 进程）判断，面板那一路单独给出，方便看出问题在哪边。
  * 合计读不到的点（cli 未采集）跳过，不按 0 算。
  */
 export function taskMemoryTrend(
@@ -182,7 +183,7 @@ export interface TaskMemoryReportInput {
   project: { name: string; path: string } | null
   points: MemoryPoint[]
   intervalMs: number
-  /** 进程面板的两路占用：面板 server 自己，和这个会话树上的 CLI 进程 */
+  /** 进程面板的两路占用：这个对话及附属的 CLI 进程，和面板 server 自己（不计入会话合计） */
   panel: { cliMemory: number | null; serverMemory: number; unavailable: string }
   owners: OwnerGroup[]
   tree: TaskTreeScale
@@ -215,12 +216,11 @@ export function taskMemoryReport(u: TaskMemoryReportInput) {
     }。`,
   )
   if (last) {
-    const panel = `面板进程 ${formatBytes(last.server)}`
-    const cli =
-      u.panel.cliMemory === null
-        ? u.panel.unavailable || 'CLI 进程内存未采集'
-        : `这个会话的 CLI 进程树 ${formatBytes(u.panel.cliMemory)}`
-    lines.push(`最近一点（${sampleTime(last.t)}）：合计 ${formatBytes(last.total ?? 0)} = ${panel} + ${cli}。`)
+    const cliNote =
+      u.panel.cliMemory === null ? (u.panel.unavailable ? `（${u.panel.unavailable}）` : '（进程内存未采集）') : ''
+    lines.push(
+      `最近一点（${sampleTime(last.t)}）：会话合计 ${formatBytes(last.total ?? 0)}${cliNote}；面板进程 ${formatBytes(last.server)}（不计入会话合计）。`,
+    )
   } else {
     lines.push('现在还没有读到内存采样：先让面板跑一会儿（30 秒一点）再分析。')
   }
@@ -233,7 +233,7 @@ export function taskMemoryReport(u: TaskMemoryReportInput) {
           ? `在回落，降了 ${formatBytes(-tr.delta)}`
           : `基本平稳（变化 ${formatBytes(tr.delta)}）`
     lines.push(
-      `趋势（最近 ${spanText(tr.spanMs)}、${tr.samples} 个点）：${what}；其中面板 ${signed(tr.serverDelta)}，CLI 进程树 ${signed(tr.cliDelta)}。最高一次 ${formatBytes(tr.peak.total)}（${sampleTime(tr.peak.t)}）。`,
+      `趋势（最近 ${spanText(tr.spanMs)}、${tr.samples} 个点）：${what}；面板 ${signed(tr.serverDelta)}（不计入会话合计）。最高一次 ${formatBytes(tr.peak.total)}（${sampleTime(tr.peak.t)}）。`,
     )
   } else {
     lines.push('趋势：采样点太少，还判断不出是涨还是平。')
@@ -294,10 +294,10 @@ const signed = (n: number) => `${n >= 0 ? '+' : '-'}${formatBytes(Math.abs(n))}`
 export function taskMemoryBrief() {
   return [
     '这次是主动的会话内存体检，不是报错排查：面板本身没有出错，用户想知道这个会话的内存占用有没有问题、怎么优化。',
-    '面板是怎么跑的：一个本机 Node 服务进程（server/，Hono，只监听 127.0.0.1）调度本机的编码 CLI（Claude Code、Codex、Pi 等）。每个对话由面板启动一个 CLI 子进程，CLI 还会起 MCP 服务等子进程；面板自己的内存不包括这些子进程，所以上面分成「面板」和「CLI 进程树」两路。',
+    '面板是怎么跑的：一个本机 Node 服务进程（server/，Hono，只监听 127.0.0.1）调度本机的编码 CLI（Claude Code、Codex、Pi 等）。每个对话由面板启动一个 CLI 子进程，CLI 还会起 MCP 服务等子进程。面板自己的内存不属于任何一个对话，只单独给出、不计入会话合计；会话合计只算这个对话及它的附属任务（子对话、子任务）起的 CLI 进程树。',
     '上面的数字从哪来（需要时可以按这些路径去看代码和日志）：',
-    '- server/tasks.ts 的 processPanel：按 rootTaskId 汇总一个会话树上的进程，每个进程带 ownerTaskId / ownerTitle（归属哪个对话）。',
-    '- server/exec/proc-stats.ts：系统进程表快照、进程树、按对话汇总、30 秒一次的内存历史（server/exec/proc-stats.ts 的 summarize）。',
+    '- server/tasks.ts 的 processPanel：按「当前任务 + 它的全部后代」（shared/run-usage.ts 的 subtreeTaskIds）汇总这个对话及附属任务的进程，每个进程带 ownerTaskId / ownerTitle（归属哪个对话）。',
+    '- server/exec/proc-stats.ts：系统进程表快照、进程树、按任务汇总（aggregateByTask）、30 秒一次的内存历史（summarize 接受一组任务 id，只加这些任务的 CLI）。',
     '- web/src/components/tasks/MemoryChart.tsx（会话内存曲线）、ProcessPanel.tsx（进程面板）：界面上的趋势和归属口径。',
     '- 子对话是独立的 Task（shared/schema.ts），各自起 CLI 进程；子对话多、上下文长时，CLI 那一路的内存会明显上涨。',
     '对话的上下文占用记在 Task.usage.agents 里（context / window），上下文越长，CLI 进程的常驻内存通常越高。',

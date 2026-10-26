@@ -2,7 +2,7 @@
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Quote } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'

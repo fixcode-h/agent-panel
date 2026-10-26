@@ -13,7 +13,7 @@ import { taskSnapshot } from '../shared/builtin/default.ts'
 import { defaultTestSteps, isTestAgent, stepCommand, testStepsBlock, testStepIssues } from '../shared/test-steps.ts'
 import { buildAssistPrompt, resolveParamValues, resolveTestSteps } from '../shared/assist.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
-import { BUILTIN_WORKFLOWS, builtinAgentKeys } from '../shared/builtin/workflows.ts'
+import { BUILTIN_WORKFLOWS, builtinAgentKeys, RETIRED_WORKFLOWS } from '../shared/builtin/workflows.ts'
 import { MERGED_AGENTS } from '../shared/builtin/legacy.ts'
 import { redirectMergedWorkflows } from '../shared/builtin/install.ts'
 
@@ -230,6 +230,28 @@ test('没用测试 Agent 的工作流不注入测试步骤，免得评审、建�
   assert.doesNotMatch(snap[0].document, /## 项目测试步骤/)
 })
 
+test('改代码的工作流没有测试 Agent 也注入测试步骤：开发、执行这类角色按 project-testing 自己跑快速检查', () => {
+  const coder = agent('coder', [], { skills: ['project-testing'] })
+  const w = Workflow.parse({
+    ...workflow(),
+    mainAgentId: 'coder',
+    flows: [
+      {
+        id: 'main',
+        nodes: [{ id: 'n1', title: '实现', agentId: 'coder', params: {} }],
+        edges: [{ id: 'e1', from: 'start', to: 'n1' }],
+      },
+    ],
+  })
+  const snap = taskSnapshot(
+    w,
+    [w],
+    {},
+    { agents: [coder], testSteps: defaultTestSteps('node', { windows: true }), platform: 'win32' },
+  )
+  assert.match(snap[0].document, /## 项目测试步骤/)
+})
+
 test('重复生成快照不会叠加测试步骤那一段', () => {
   const w = workflow()
   const opts = {
@@ -358,17 +380,19 @@ test('能力块不重复：通用 Agent 里只有一个负责跑测试，已合�
   assert.equal(new Set(BUILTIN_AGENTS.map((b) => b.key)).size, BUILTIN_AGENTS.length)
 })
 
-test('内置工作流不引用不存在的 Agent；新增的四个工作流都在，且职责互不重复', () => {
+test('内置工作流不引用不存在的 Agent；合并掉的不再出现，补环节的三个都在', () => {
   const keys = new Set(BUILTIN_AGENTS.map((b) => b.key))
   for (const w of BUILTIN_WORKFLOWS)
     for (const k of builtinAgentKeys(w)) assert.ok(keys.has(k), `${w.name} 引用了不存在的 Agent「${k}」`)
   const names = BUILTIN_WORKFLOWS.map((w) => w.name)
   assert.equal(new Set(names).size, names.length, '工作流重名')
-  for (const k of ['bootstrap', 'deps', 'migration', 'release'])
+  for (const k of ['deps', 'migration', 'release'])
     assert.ok(
       BUILTIN_WORKFLOWS.some((w) => w.key === k),
       `缺少工作流 ${k}`,
     )
+  // 合并掉的 key 不能再出现，否则启动时又会装一份出来
+  for (const k of Object.keys(RETIRED_WORKFLOWS)) assert.ok(!BUILTIN_WORKFLOWS.some((w) => w.key === k), k)
   // 依赖与安全有自己的 Agent，不是评价流程顺手做的
   assert.ok(BUILTIN_AGENTS.some((b) => b.key === 'deps'))
 })

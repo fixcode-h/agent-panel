@@ -48,16 +48,25 @@ const KIND_HINT: Record<AnnotationKind, string> = {
   keep: t('这部分别动，可以当参考'),
 }
 
-const TOOLS: { id: Tool; icon: LucideIcon; label: string; key: string }[] = [
+const TOOLS: { id: Tool; icon: LucideIcon; label: string; key: string; text?: string }[] = [
   { id: 'select', icon: MousePointer2, label: t('选择'), key: 'V' },
   { id: 'hand', icon: Hand, label: t('拖动画布'), key: 'H' },
   { id: 'play', icon: Play, label: t('运行模式：像游戏里一样点按钮看效果'), key: 'G' },
-  { id: 'rect', icon: Square, label: t('框选标注'), key: 'R' },
-  { id: 'arrow', icon: MoveUpRight, label: t('箭头标注'), key: 'A' },
-  { id: 'pen', icon: PenLine, label: t('画笔标注'), key: 'P' },
-  { id: 'pin', icon: MapPin, label: t('打点标注'), key: 'T' },
-  { id: 'mask', icon: Paintbrush, label: t('蒙版涂抹：涂出要重绘的区域'), key: 'M' },
+  // text 是工具栏上图标下面那行字：只有图标的工具认不出是能标注的，写清楚是哪种标注
+  { id: 'rect', icon: Square, label: t('框选标注'), text: t('框选'), key: 'R' },
+  { id: 'arrow', icon: MoveUpRight, label: t('箭头标注'), text: t('箭头'), key: 'A' },
+  { id: 'pen', icon: PenLine, label: t('画笔标注'), text: t('画笔'), key: 'P' },
+  { id: 'pin', icon: MapPin, label: t('打点标注'), text: t('打点'), key: 'T' },
+  { id: 'mask', icon: Paintbrush, label: t('蒙版涂抹：涂出要重绘的区域'), text: t('蒙版'), key: 'M' },
 ]
+
+/** 当前工具怎么用：工具栏下面那行常显的说明，不用悬停就知道下一步点哪里拖 */
+const TOOL_HINTS: Partial<Record<Tool, string>> = {
+  rect: t('在图上拖出一个框，标出要改的区域'),
+  arrow: t('从起点拖到终点，用箭头指向要改的地方'),
+  pen: t('按住拖动，把要改的地方圈出来'),
+  pin: t('点一下要改的位置，打一个点'),
+}
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((x) => [x.key.toLowerCase(), x.id]))
 export const isMarkTool = (tool: Tool) => tool !== 'select' && tool !== 'hand' && tool !== 'play'
 
@@ -72,6 +81,11 @@ export function AnnotationToolbar({
   onToggleVisible,
   onClear,
   tools,
+  /**
+   * 在图标下写出每种标注是哪种、并给一行用法说明。
+   * 只给原画阶段用：那里是用户第一次碰到标注、光看图标认不出；画布和切图预览上方已有其他控件，放不下两行。
+   */
+  labels,
   mask,
 }: {
   /** 只列出这些工具（看大图时只要标注工具和选择） */
@@ -84,6 +98,8 @@ export function AnnotationToolbar({
   visible: boolean
   onToggleVisible: () => void
   onClear: () => void
+  /** 在图标下写文字标签和用法说明（原画阶段用） */
+  labels?: boolean
   /** 蒙版工具的参数：笔刷大小、橡皮擦、撤销上一笔 */
   mask?: {
     size: number
@@ -94,80 +110,103 @@ export function AnnotationToolbar({
     onUndo: () => void
   }
 }) {
+  // 已经标了几处时，用户最需要知道的是「怎么发出去」，这句优先；还没标的时候教当前工具怎么画。
+  // 蒙版交给原画面板底部那句（还要勾「只重绘蒙版区域」）：这里再说一遍会和它说法不一致。
+  const hint =
+    tool === 'mask'
+      ? ''
+      : count
+        ? t('已经有 {n} 处标注，点「发送标注给 AI」就按标注改这张原画', { n: count })
+        : (TOOL_HINTS[tool] ?? t('选一种标注工具，在图上标出要改的地方'))
   return (
-    <div
-      role="toolbar"
-      aria-label={t('标注工具')}
-      className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop backdrop-blur"
-    >
-      {TOOLS.filter((x) => !tools || tools.includes(x.id)).map((x, i, list) => (
-        <span key={x.id} className="flex items-center">
-          {i > 0 && isMarkTool(x.id) && !isMarkTool(list[i - 1].id) && <Sep />}
-          <ToolButton label={`${x.label} (${x.key})`} on={tool === x.id} onClick={() => onTool(x.id)}>
-            <x.icon className="h-4 w-4" strokeWidth={1.8} />
-          </ToolButton>
-        </span>
-      ))}
-      {mask && tool === 'mask' && (
-        <>
-          <Sep />
-          <div className="flex items-center gap-1 px-0.5">
-            <input
-              type="range"
-              min={8}
-              max={160}
-              step={4}
-              value={mask.size}
-              onChange={(e) => mask.onSize(Number(e.target.value))}
-              aria-label={t('蒙版笔刷大小')}
-              title={t('笔刷大小：{n} 像素', { n: mask.size })}
-              className="h-1 w-16 cursor-pointer accent-[#22d3ee]"
-            />
-            <span className="w-7 text-center font-mono text-[0.6875rem] text-white/60">{mask.size}</span>
-            <ToolButton label={t('橡皮擦')} on={mask.erase} onClick={() => mask.onErase(!mask.erase)}>
-              <Eraser className="h-4 w-4" strokeWidth={1.8} />
+    // 外层 pointer-events-none：这个容器在画布上盖满一条，不能拦住下面的点击；只有工具栏本身吃指针
+    <div className="pointer-events-none flex w-full min-w-0 flex-col items-center gap-1">
+      <div
+        role="toolbar"
+        aria-label={t('标注工具')}
+        className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop backdrop-blur"
+      >
+        {TOOLS.filter((x) => !tools || tools.includes(x.id)).map((x, i, list) => (
+          <span key={x.id} className="flex items-center">
+            {i > 0 && isMarkTool(x.id) && !isMarkTool(list[i - 1].id) && <Sep />}
+            <ToolButton
+              label={`${x.label} (${x.key})`}
+              on={tool === x.id}
+              onClick={() => onTool(x.id)}
+              text={labels ? x.text : undefined}
+              tall={labels}
+            >
+              <x.icon className="h-4 w-4" strokeWidth={1.8} />
             </ToolButton>
-            <ToolButton label={t('撤销上一笔')} onClick={mask.onUndo} disabled={!mask.canUndo}>
-              <Undo2 className="h-4 w-4" strokeWidth={1.8} />
+          </span>
+        ))}
+        {mask && tool === 'mask' && (
+          <>
+            <Sep />
+            <div className="flex items-center gap-1 px-0.5">
+              <input
+                type="range"
+                min={8}
+                max={160}
+                step={4}
+                value={mask.size}
+                onChange={(e) => mask.onSize(Number(e.target.value))}
+                aria-label={t('蒙版笔刷大小')}
+                title={t('笔刷大小：{n} 像素', { n: mask.size })}
+                className="h-1 w-16 cursor-pointer accent-[#22d3ee]"
+              />
+              <span className="w-7 text-center font-mono text-[0.6875rem] text-white/60">{mask.size}</span>
+              <ToolButton label={t('橡皮擦')} on={mask.erase} onClick={() => mask.onErase(!mask.erase)}>
+                <Eraser className="h-4 w-4" strokeWidth={1.8} />
+              </ToolButton>
+              <ToolButton label={t('撤销上一笔')} onClick={mask.onUndo} disabled={!mask.canUndo}>
+                <Undo2 className="h-4 w-4" strokeWidth={1.8} />
+              </ToolButton>
+            </div>
+          </>
+        )}
+        {tool === 'mask' ? null : (
+          <>
+            <Sep />
+            <div role="radiogroup" aria-label={t('标注的意思')} className="flex items-center gap-0.5 px-0.5">
+              {ANNOTATION_KINDS.map((k) => (
+                <button
+                  key={k}
+                  role="radio"
+                  aria-checked={kind === k}
+                  aria-label={kindLabel(k)}
+                  onClick={() => onKind(k)}
+                  title={`${kindLabel(k)}：${KIND_HINT[k]}`}
+                  className={cn(
+                    'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
+                    kind === k && 'bg-white/10 text-white',
+                  )}
+                >
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} />
+                  {/* 只给选中的写字，工具栏在窄的效果区里也放得下 */}
+                  {kind === k && <span className="whitespace-nowrap">{kindLabel(k)}</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {count > 0 && (
+          <>
+            <Sep />
+            <ToolButton label={visible ? t('隐藏标注') : t('显示标注')} onClick={onToggleVisible}>
+              {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </ToolButton>
-          </div>
-        </>
-      )}
-      {tool === 'mask' ? null : (
-        <>
-          <Sep />
-          <div role="radiogroup" aria-label={t('标注的意思')} className="flex items-center gap-0.5 px-0.5">
-            {ANNOTATION_KINDS.map((k) => (
-              <button
-                key={k}
-                role="radio"
-                aria-checked={kind === k}
-                aria-label={kindLabel(k)}
-                onClick={() => onKind(k)}
-                title={`${kindLabel(k)}：${KIND_HINT[k]}`}
-                className={cn(
-                  'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
-                  kind === k && 'bg-white/10 text-white',
-                )}
-              >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} />
-                {/* 只给选中的写字，工具栏在窄的效果区里也放得下 */}
-                {kind === k && <span className="whitespace-nowrap">{kindLabel(k)}</span>}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      {count > 0 && (
-        <>
-          <Sep />
-          <ToolButton label={visible ? t('隐藏标注') : t('显示标注')} onClick={onToggleVisible}>
-            {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-          </ToolButton>
-          <ToolButton label={t('清除所有标注')} onClick={onClear}>
-            <Trash2 className="h-4 w-4" />
-          </ToolButton>
-        </>
+            <ToolButton label={t('清除所有标注')} onClick={onClear}>
+              <Trash2 className="h-4 w-4" />
+            </ToolButton>
+          </>
+        )}
+      </div>
+      {/* 常显的用法说明：只给图标时用户不知道这是标注工具，也不知道该点哪里拖 */}
+      {labels && hint && (
+        <p className="max-w-[460px] rounded-md bg-black/55 px-2 py-0.5 text-center text-[0.6875rem] leading-relaxed text-white/75 backdrop-blur">
+          {hint}
+        </p>
       )}
     </div>
   )
@@ -180,12 +219,18 @@ function ToolButton({
   on,
   onClick,
   disabled,
+  text,
+  tall,
   children,
 }: {
   label: string
   on?: boolean
   onClick: () => void
   disabled?: boolean
+  /** 图标下面那行字：标注工具写出来是哪一种，只有图标认不出 */
+  text?: string
+  /** 这一行有带文字的按钮：只带图标的也撑到一样高，不然同一行上下错位 */
+  tall?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -196,12 +241,15 @@ function ToolButton({
       aria-pressed={on}
       title={label}
       className={cn(
-        'grid h-7 w-7 cursor-pointer place-items-center rounded-lg transition-colors hover:bg-white/8 hover:text-white',
+        'flex cursor-pointer flex-col items-center justify-center rounded-lg transition-colors hover:bg-white/8 hover:text-white',
+        // 同一行里的按钮一样高（有文字的和只有图标的对齐）；原画阶段要放下文字，画布上用原来的紧凑高度
+        text ? 'h-10 w-11 gap-0.5' : tall ? 'h-10 w-7' : 'h-7 w-7',
         on && 'bg-[#4c9bff]/20 text-[#7cb6ff]',
         disabled && 'cursor-default opacity-30 hover:bg-transparent hover:text-white/70',
       )}
     >
       {children}
+      {text && <span className="text-[0.625rem] leading-none">{text}</span>}
     </button>
   )
 }

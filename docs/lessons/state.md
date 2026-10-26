@@ -6,10 +6,10 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 
 ## 父子对话之间的交付：消息走 deliver，收口按面板的完成条件判断
 
-- 规则：让父对话处理一件事（子对话的提问交给它决定之类）时不能按 `working` 判断它空闲：停在等下一句、收尾中、预热时 `working` 都是 false，但执行位还占着，直接 `followUp` 会抛 `TaskBusyError`。用 `deliver`（能续就续、能插话就插话、收不下记到这一轮结束后处理），只有 `live` 里没有进程时才 `followUp`；问题全文和选项一起交过去。叫不起来时把原因返回接口，界面显示原因并给重试；卡片状态字段（如 `delegated`）必须进 `messageStamp`，否则服务端改了也不推送。
+- 规则：给对话交消息（子对话提问、计划在等的结果、后台命令结果、编译申请）不能按 `working` 判空闲：等下一句、收尾、预热时它是 false 但执行位还占着，`followUp` 会抛 `TaskBusyError`。「是否正在运行」只用 `server/tasks.ts` 的 `runningConv`，交消息只走 `wakeConv`，不手写 `deliver`/`followUp` 分支；`working` 只用于插话、归档 / 合并 / 更新拦截、列表 busy。问题全文和选项一起交过去。
 - 规则：子对话回合结束时收口父对话计划只用 `shared/task.ts` 的 `childReport`（状态来自 `convState`，见 ADR 0005），出口只有 `server/tasks.ts` 的 `reportChild`。要看的事实：没做完的计划步骤、正在跑或排队的后台命令（`background.list` 的 `queued`/`running`）、这一轮之后要不要接着做（`hasHeld`、`startQueue`）、提问、工作流、派出的子任务。没收口时那一步继续等、note 写清在等什么。计划做完会收起（`activePlan` 是 undefined），判据里不要写计时。
-- 起因：点「交给父对话决定」好几次父对话都没动，`followUp` 撞上执行位后只留一条 `log.warn`；子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图「计划 6/8」与实际不符）。
-- 防线：`shared/task-stamp.test.ts`、`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例；`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」。
+- 起因：点「交给父对话决定」好几次父对话都没动，`followUp` 撞上执行位后只留一条 `log.warn`；2026-10-25 父对话等下一句时自动交出的提问报「任务正在执行」；子对话跑完一轮停在等下一句时，父计划里等它的步骤被标成完成（截图「计划 6/8」与实际不符）。
+- 防线：`shared/task-stamp.test.ts`、`shared/plan.test.ts` 的「子对话这一轮结束」「三个子对话都在跑」用例；`scripts/e2e.mjs` 的「父对话停在等下一句时点交给父对话决定」、04-subagents 的同名提问用例。
 
 ## 对话状态只在 convState 判，上报只有一个出口，彻底完成不是中断
 
@@ -32,11 +32,11 @@ paths: shared/task.ts, shared/plan.ts, shared/engine.ts, server/tasks.ts, server
 
 ## 等子对话的步骤只由面板标完成；子对话收尾只走 submit_merge
 
-- 规则：计划里挂着等待（子对话、后台命令）的步骤，Agent 自己标完成不算，面板在结果推回时标；父对话开子对话、交消息没写 step 时挂在正在做（或在等）的那一步。独立分支里的子对话不派「版本控制」收尾（`spawn` 直接拒），自己或子任务 `git merge` 过去后计划停在「合回」时也要提醒它 submit_merge。
-- 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话卡在收尾 13 分钟，直到用户追问才调用 submit_merge。
-- 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
+- 规则：计划里挂着等待（子对话、后台命令）的步骤，Agent 自己标完成不算，面板在结果推回时标；父对话开子对话、交消息没写 step 时挂在正在做（或在等）的那一步。独立分支里的子对话不派「版本控制」收尾（`spawn` 直接拒），自己或子任务 `git merge` 过去后计划停在「合回」时也要提醒它 submit_merge。finish_child 每条出口都由 syncParentPlan 刷新父计划。
+- 起因：2026-10-24 父对话把子对话的计划抄进自己的计划一口气标完成，界面显示「计划已完成」；子对话的工具搜索没找到 submit_merge，派「版本控制」直接合进 dev，分支已合进去所以面板不提醒，子对话在收尾卡了 13 分钟。
+- 防线：`shared/plan.test.ts` 的「还在等子对话的步骤」「刷新计划」；`scripts/real-cli/pi-handoff.mjs`（真实 Pi + 模拟模型，不进 CI）。
 
 ## 「在运行」只看 convActive，在运行的不失活
 
-- 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0010。
+- 规则：在不在运行只用 `convActive`（`taskActive` / `childActive` / `keepAliveBusy`）；回收前先问它，子对话只随用户停止、归档、删除结束。见 ADR 0012。
 - 防线：`shared/task-stage.test.ts`「对外状态统一」；e2e `04-subagents`「父对话切走」。

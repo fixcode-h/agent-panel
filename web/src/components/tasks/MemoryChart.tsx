@@ -181,7 +181,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
     setAnalyzing(true)
     setAiError('')
     try {
-      const d = await api.taskMemoryAnalysis(taskId)
+      const [d, task] = await Promise.all([api.taskMemoryAnalysis(taskId), api.task(taskId)])
       const last = { at: d.sampledAt, trendText: d.trendText }
       try {
         localStorage.setItem(analysisKey(taskId), JSON.stringify(last))
@@ -196,6 +196,8 @@ export function MemoryChart({ taskId }: { taskId: string }) {
         context: d.report,
         // 相关目录给项目路径：AI 要能按路径去看源码给方案
         cwd: d.cwd,
+        // 会话的内存分析属于这个对话：开在它的父对话下
+        home: { kind: 'task', task },
       })
     } catch (e) {
       setAiError((e as Error).message)
@@ -208,11 +210,11 @@ export function MemoryChart({ taskId }: { taskId: string }) {
     <div className="px-3 py-2" ref={box}>
       <div className="flex items-baseline justify-between gap-2 text-[0.75rem]">
         <span className="text-muted">{t('内存合计')}</span>
-        <span className="font-medium tabular-nums">{fmtMem(shown?.total ?? null)}</span>
+        <span className="font-medium tabular-nums">{fmtMem(shown?.cli ?? null)}</span>
       </div>
       <p className="mt-0.5 flex flex-wrap gap-x-2 text-[0.6875rem] text-subtle">
-        <span>{t('面板 {v}', { v: fmtMem(shown?.server ?? null) })}</span>
         <span>{t('进程 {v}', { v: fmtMem(shown?.cli ?? null) })}</span>
+        <span>{t('面板 {v}（不计入）', { v: fmtMem(shown?.server ?? null) })}</span>
         {shown && <span className="tabular-nums">{timeLabel(shown.t)}</span>}
       </p>
 

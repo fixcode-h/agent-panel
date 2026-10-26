@@ -37,8 +37,7 @@
 以前的 `verifier`（验收员）、`projecttest`（测试验证）、`ueintegrator`（UE 集成员）职责和 `tester` 重叠，已经并入；
 `docs`（文档维护）并入 `docsync`，`deliver`（交付）并入 `vcs`。完整清单见 [agent-catalog.md](./agent-catalog.md)。
 
-- 没改过的旧副本会自动升级成新定义（`shared/builtin/legacy.ts` 里的 `LEGACY_AGENT_FIELDS`）：
-  `tester`、`docsync`、`vcs`、`debugger` 这次都加了参数，没动过的跟着换。
+- 内置角色的副本每次启动都按当前定义同步（[ADR 0015](adr/0015-builtin-roles-follow-definition.md)），参数取值保留。
 - 本机如果还有被合并 Agent 的副本，**不删除**（旧工作流可能还在引用），只在简介后面补一句「已合并到…」，见 `MERGED_AGENTS`。
 - 用户改过、没被自动升级的工作流，`redirectMergedWorkflows` 会把指向被合并 Agent 的节点改成指向合并目标，
   节点说明和参数原样保留，保证还能跑；重复启动不会重复改。
@@ -226,22 +225,23 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 内置 Agent 和工作流只在添加时创建，所以要处理老机器上的旧副本（`shared/builtin/install.ts`）：
 
-- `upgradeBuiltinWorkflows`：按 `origin` + 语义比较（节点、连线、说明，忽略坐标），和 `LEGACY_WORKFLOWS` 里的旧定义一致才升级；
+- `upgradeBuiltinWorkflows`：副本记了指纹（`builtinHash`）的，内容还是那个指纹就升级；没记过的按 `origin` + 语义比较
+  （节点、连线、说明，忽略坐标），和 `LEGACY_WORKFLOWS` 里的旧定义一致才升级，和当前定义一致的补记指纹。
   保留 id、名称、分类、标签和节点坐标。用户改过的不覆盖。
-- `upgradeBuiltinAgents`：Agent 的 name / description / instructions 和 `LEGACY_AGENT_FIELDS` 完全一致才升级到新定义。
+- `upgradeBuiltinAgents`：内置角色无条件按当前定义同步（ADR 0015），覆盖了用户改过的副本时交给调用方备份。
 - `annotateMergedAgents`：已合并的 Agent 在本机还有副本时补一句说明，幂等。
 - `redirectMergedWorkflows`：用户改过、没被整体升级的工作流，把指向被合并 Agent 的节点换成合并目标，幂等。
 - 升级后结构不再匹配旧定义，**重复启动不会重复改**。
 
-用户改过的副本不会被覆盖，旧工作流引用已合并的 Agent 时仍然能运行（Agent 还在，只是不再出现在「内置」里）。
+用户改过的工作流副本不会被覆盖，旧工作流引用已合并的 Agent 时仍然能运行（Agent 还在，只是不再出现在「内置」里）。
 建议重新添加工作流或手动同步节点引用。
 
 ## 5. 加新的升级时
 
-1. 把即将被替换掉的旧流程 / 旧 Agent 字段原样追加到 `shared/builtin/legacy.ts`
-   （`LEGACY_WORKFLOWS[key]` 数组的**最后**；Agent 的旧字段进 `LEGACY_AGENT_FIELDS`）。
+1. 改内置角色不用登记旧版本（每次启动直接同步）。改内置工作流时，已经记了指纹的副本自动升级；
+   为了还没记过指纹的老副本，仍把即将被替换掉的旧流程原样追加到 `LEGACY_WORKFLOWS[key]` 数组的**最后**。
 2. 被合并掉的 Agent 记进 `MERGED_AGENTS`：老机器上的副本会补说明，用户改过的工作流会被重定向到合并目标。
-3. 确认 `server/builtin.test.ts` 里的升级测试覆盖「没改过的会升级、改过的不动、重复启动不再改」。
+3. 确认 `server/builtin.test.ts` 里的升级测试覆盖「没改过的会升级、改过的不动（工作流）、重复启动不再改」。
 4. 新增 Agent 或工作流前，先对照 [agent-catalog.md](./agent-catalog.md) 的判定标准和职责清单，
    确认现有 Agent 确实做不了，并在清单里补一行。
 
@@ -289,8 +289,9 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 ### 子对话收尾：评审是计划里的独立步骤
 
-有独立分支的子对话按这个顺序收尾：改完 → 跑快速检查（项目测试步骤里标「快速」的）→ **评审（计划里单独一条主步骤，标 `review: true`）** → 按 🛑 改完（同样单列一步）→ 复看（新的独立评审步骤）→ 完整测试/编译 → `submit_merge`。
+有独立分支的子对话按这个顺序收尾：改完 → 跑快速检查（项目测试步骤里标「快速」的）→ **评审（计划里单独一条主步骤，标 `review: true`）** → 逐条核实高级、中级意见并处置（要改的同样单列一步）→ 必要时复看（新的独立评审步骤，接着上次评审的会话）→ 完整测试/编译 → `submit_merge`（带 `review_triage`）。
 
 - 评审步骤要有状态：派「评审」（`spawn_agents` 的 agent 写「评审」）时标等待中，拿回结论后标完成。
-- `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审的结论是不是「验收结论：通过」（`shared/review-gate.ts`）；缺任何一项都会被拒绝并在交回说明里写清原因。
-- 评审只读：它不改文件、不跑会写工作区的命令。
+- `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审写没写结论，以及它列的高级、中级是否每条都有处置（`shared/review-gate.ts`，[ADR 0009](adr/0009-review-findings-triaged.md)）；缺任何一项都会被拒绝并在交回说明里写清原因。
+- 评审只做代码层面的审查：不改文件、不跑测试和构建、不搭测试环境、不写测试脚本；git 仓库里面板把改动（文件列表 + 每处改动前后几行的差异，只取这个对话改过的文件）一次附进它的提示词，复看只附增量（[ADR 0010](adr/0010-review-code-only.md)）。派评审要带交接单 `review`（第一次 `goal`、`checks` 必填），评审只评差异里改动的行，不读模块文档、不搜项目，读代码最多 3 次，跑到 6 分钟面板提醒它交卷（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）。
+- 意见分四级：🔴 高级（必须改，判不通过）、🟠 中级（应该改，要处置）、🟡 低级（可以改）、💡 建议（这一轮不做）。

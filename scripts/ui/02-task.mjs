@@ -6,10 +6,58 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+/** 判定「窗口停在顶部」的 scrollTop 容差：滚动条贴顶时就是 0，留一点给像素取整 */
+const SCROLL_TOP_EPS = 2
+
+/**
+ * 判「卡片已经滚出视野」时要求可滚量比卡片高出的余量：
+ * 刚好等于卡片高时卡片下边缘正好贴着容器顶，属于临界值，多留几像素才算真的滚出去
+ */
+const SCROLL_OUT_EPS = 2
+
+/**
+ * 造「内容超过一屏」用的视口高度档位（从大到小试，够了就停）。
+ * 子任务窗口高度是 `min(820px, 100dvh-2rem)`，视口越矮内容区越小；演示数据的对话流长度不一，
+ * 固定一档可能仍不足一屏，那样「滚到底卡片该滚出视野」的断言会空转
+ */
+const VIEWPORT_SHRINK_STEPS = [480, 400, 340, 280, 240]
+
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
+  /** 宽屏标题栏的文件按钮：文件面板默认收起，后面的用例要自己先把它点开 */
+  const openFiles = async () => {
+    const open = p.getByRole('button', { name: '显示文件', exact: true })
+    if (await open.count()) {
+      await open.click()
+      await settle(p)
+    }
+  }
+  /**
+   * 等页面上的提示（toast）全部退场再点标题栏的按钮。
+   * 两件事一起做，缺一不可：
+   * - 提示在右上角，和「任务进度」这类标题栏按钮抢同一个位置，还挂着时会拦掉点击
+   *   （CI 的 30 秒超时就是这条：locator resolved 到了按钮，但点击被 [data-sonner-toast] 截走）
+   * - sonner 在鼠标悬停在提示上时会把自动关闭的计时冻住（expanded），只等不动手就永远等不到，
+   *   所以先把指针挪回左上角再等
+   */
+  const waitToastsGone = async () => {
+    await p.mouse.move(0, 0)
+    await p
+      .waitForFunction(() => document.querySelectorAll('[data-sonner-toast]').length === 0, undefined, {
+        timeout: 15000,
+      })
+      .catch(() => errors.push('提示：15 秒内没有全部退场（会挡住后面的点击）'))
+  }
+  // 宽屏右栏默认收起，不占掉一半宽度（用户提的「分析弹窗一打开就占一半」）；按钮在标题栏，点一下展开
+  await check(p, '任务-文件面板默认收起')
+  const filesPanel = p.locator('[data-task-panel]').first()
+  if (await filesPanel.isVisible()) errors.push('任务：文件面板默认就展开了，挡住了对话')
+  if ((await p.getByRole('button', { name: '显示文件', exact: true }).getAttribute('aria-expanded')) !== 'false')
+    errors.push('任务：文件面板收起时按钮没标成未展开')
+  await openFiles()
+  if (!(await filesPanel.isVisible())) errors.push('任务：点「显示文件」后文件面板没展开')
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
   /** 刷新后回到购物车那个任务页：当前路由就是任务页，等它画出来；没回到任务页时从列表点进去 */
@@ -20,10 +68,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         () => true,
         () => false,
       )
-    )
+    ) {
+      await openFiles()
       return
+    }
     await p.getByText('购物车右上角', { exact: false }).first().click()
     await token.waitFor({ timeout: 5000 }).catch(() => {})
+    await openFiles()
   }
   /** Esc 关掉弹层之后等它真的卸载，再点下面的东西 */
   const closed = () =>
@@ -32,6 +83,332 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
+  // 环境弹窗里的「独立分支」：父对话在最前、其余按创建时间从早到晚（演示数据的创建顺序和时间故意不一致）；
+  // 点中间那行在右栏打开对应子对话，合并/删除按钮各管各的，父对话自己那行点不了
+  {
+    const env = p.locator('button[aria-label="环境"]').first()
+    /** 右栏是不是子对话面板：aside 的 aria-label 在「文件 / 子对话 / 运行 n」之间切换 */
+    const paneOpen = () => p.getByRole('complementary', { name: '子对话' }).count()
+    const openEnv = async () => {
+      const shown = p.getByText('独立分支', { exact: true }).first()
+      // 取消删除确认后弹层可能还开着，再点一次会把它收起来
+      if (!(await shown.isVisible().catch(() => false))) await env.click()
+      await shown.waitFor({ timeout: 5000 })
+    }
+    const closeEnv = async () => {
+      await p.keyboard.press('Escape')
+      await p
+        .getByText('独立分支', { exact: true })
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    /** 某一组里各行的文字、能不能点、鼠标形状（分组见 data-worktree-group） */
+    const rowsIn = (group) =>
+      p.evaluate(
+        (g) =>
+          [...document.querySelectorAll(`[data-worktree-group="${g}"] [data-worktree-row]`)].map((el) => {
+            const open = el.querySelector('button[aria-label^="在右侧打开子对话"]')
+            return {
+              text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
+              clickable: !!open,
+              cursor: open ? getComputedStyle(open).cursor : getComputedStyle(el).cursor,
+            }
+          }),
+        group,
+      )
+    // 按删除与否分两组：未删除（父对话 + 两个还在的，创建时间从早到晚是 ESLint → Git+worktree）、
+    // 已删除（已合回 main 的那条）
+    const liveKids = ['整理 ESLint 规则', 'Git+worktree 不再提示文件撞车']
+    const removedKids = ['修侧栏时间显示']
+    const checkOrder = async (where) => {
+      const live = await rowsIn('live')
+      if (live.length !== liveKids.length + 1) {
+        errors.push(`独立分支（${where}）：未删除组列出 ${live.length} 行，应该有父对话 + ${liveKids.length} 个`)
+      } else {
+        if (!live[0].text.includes('agent-panel/cart-badge') || live[0].clickable)
+          errors.push(`独立分支（${where}）：未删除组第一行不是父对话自己（${JSON.stringify(live[0])}）`)
+        if (live.slice(1).some((x) => !x.clickable)) errors.push(`独立分支（${where}）：子对话行不是可点按钮`)
+        if (live.slice(1).some((x) => x.cursor !== 'pointer'))
+          errors.push(`独立分支（${where}）：子对话行的鼠标不是手型`)
+        const got = liveKids.map((title) => live.slice(1).findIndex((x) => x.text.includes(title)))
+        if (got.some((i) => i < 0) || got.join(',') !== '0,1')
+          errors.push(`独立分支（${where}）：未删除组没有按创建时间升序（${got.join(',')}）`)
+      }
+      const removed = await rowsIn('removed')
+      if (removed.length !== removedKids.length)
+        errors.push(`独立分支（${where}）：已删除组列出 ${removed.length} 行，应该有 ${removedKids.length} 个`)
+      else if (!removed[0].text.includes(removedKids[0]))
+        errors.push(`独立分支（${where}）：已删除组里没有已合并的那条（${JSON.stringify(removed[0])}）`)
+    }
+    await openEnv()
+    await check(p, '独立分支-计数', ['3 个没合并'])
+    await checkOrder('排序')
+    await check(p, '独立分支-顺序')
+    // 右键菜单：行里右键能开菜单，菜单里有打开对话 / 合并 / AI 合并 / 复制 / 删除；
+    // 正在执行、已经删掉的项合并和删除都不能用，而且要把原因真的送到用户眼前（title + 点了 toast）
+    const menuOf = async (title, group = 'live') => {
+      await p
+        .locator(`[data-worktree-group="${group}"] [data-worktree-row]`)
+        .filter({ hasText: title })
+        .click({ button: 'right' })
+      const menu = p.locator('[data-radix-menu-content], [role="menu"]').first()
+      const shown = await menu.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!shown) errors.push(`独立分支：在「${title}」那行右键没有弹出菜单`)
+      return menu
+    }
+    const closeMenu = async () => {
+      // 点过菜单项之后 Radix 已经自己收起来了，这时再按 Esc 会落到下面的环境弹窗上把它关掉，
+      // 后面的用例就找不到行了；所以先看菜单还在不在，开着才按 Esc
+      const menu = p.locator('[data-radix-menu-content], [role="menu"]').first()
+      if (!(await menu.isVisible().catch(() => false))) return
+      await p.keyboard.press('Escape')
+      await menu.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    // 不能用时用 aria-disabled 而不是真 disabled：真 disabled 会被 pointer-events-none 挡掉，
+    // 鼠标悬不上去、title 的原因根本看不到（评审 R2）。这里断言的就是「悬得到 + 有原因 + 真的置灰了」
+    const unavailable = async (item) =>
+      (await item.getAttribute('aria-disabled')) === 'true' &&
+      (await item.getAttribute('title'))?.length > 0 &&
+      (await item.evaluate(
+        (el) => getComputedStyle(el).pointerEvents !== 'none' && Number(getComputedStyle(el).opacity) < 1,
+      ))
+    {
+      // 这一条还在执行（working）：菜单项要列全，合并和删除不能用并写原因
+      const menu = await menuOf('Git+worktree 不再提示文件撞车')
+      const names = ['打开对话', '合并到原分支', '用 AI 合并', '复制分支名', '复制路径', '删除独立分支']
+      for (const name of names)
+        if (!(await menu.getByRole('menuitem', { name, exact: true }).count()))
+          errors.push(`独立分支：右键菜单里没有「${name}」`)
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      const merge = menu.getByRole('menuitem', { name: '合并到原分支', exact: true })
+      if (!(await unavailable(del))) errors.push('独立分支：正在执行的项在右键菜单里能删除（或缺原因 / 悬不上）')
+      if (!(await unavailable(merge))) errors.push('独立分支：正在执行的项在右键菜单里能合并（或缺原因 / 悬不上）')
+      // 菜单还开着时截图：人工核对菜单项、图标和置灰效果
+      await check(p, '独立分支-右键菜单')
+      await closeMenu()
+    }
+    // 已删除的项：后端 discard 只认 active（server/tasks.ts 的 isolated），点了必被拒，
+    // 所以菜单里的删除必须也是不可用（评审 R1：行内按钮早就隐藏，菜单却可点就两边不一致了）
+    {
+      const menu = await menuOf('修侧栏时间显示', 'removed')
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      const merge = menu.getByRole('menuitem', { name: '合并到原分支', exact: true })
+      if (!(await unavailable(del))) errors.push('独立分支：已删除的项在右键菜单里还能删除（后端会拒）')
+      if (!(await unavailable(merge))) errors.push('独立分支：已删除的项在右键菜单里还能合并')
+      // 点了要把原因 toast 出来，而不是静默无反应。
+      // force: true —— Playwright 的 actionability 检查会把 aria-disabled 当成不可点，
+      // 而真实鼠标是可以点到的（上面已经断言 pointer-events 不是 none），这里要的正是那个点击
+      await del.click({ force: true })
+      const told = await p
+        .getByText('这个分支已经删除了')
+        .first()
+        .waitFor({ timeout: 3000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!told) errors.push('独立分支：点不可用的删除菜单项没有提示原因')
+      await closeMenu()
+    }
+    await check(p, '独立分支-已删除不可操作')
+    // 右键菜单里的合并、删除和行内按钮走同一套逻辑：点删除就弹删除确认（不连带开对话）
+    {
+      const menu = await menuOf('整理 ESLint 规则')
+      const del = menu.getByRole('menuitem', { name: '删除独立分支', exact: true })
+      if ((await del.getAttribute('aria-disabled')) === 'true')
+        errors.push('独立分支：没在执行、没合并的项在右键菜单里不能删除')
+      else {
+        await del.click()
+        const ok = await p
+          .getByText('删除独立分支 agent-panel/eslint-rules？')
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!ok) errors.push('独立分支：从右键菜单点删除没有弹出确认框')
+        else {
+          if (await paneOpen()) errors.push('独立分支：从右键菜单点删除把对话也打开了')
+          await p.getByRole('button', { name: '取消' }).last().click()
+          await p
+            .getByText('删除独立分支 agent-panel/eslint-rules？')
+            .waitFor({ state: 'detached', timeout: 3000 })
+            .catch(() => {})
+        }
+      }
+    }
+    await check(p, '独立分支-右键删除确认')
+    // 父对话自己那行点了不打开任何对话
+    await p.locator('[data-worktree-row]').first().click()
+    if (await paneOpen()) errors.push('独立分支：点父对话自己那行打开了对话面板')
+    // 点删除按钮不会连带打开对话：弹的是删除确认，右栏保持原样
+    const row = p.locator('[data-worktree-row]').filter({ hasText: '整理 ESLint 规则' })
+    await row.getByRole('button', { name: '删除独立分支' }).click()
+    const asked = p
+      .getByText('删除独立分支 agent-panel/eslint-rules？')
+      .waitFor({ timeout: 5000 })
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!(await asked)) errors.push('独立分支：点删除按钮没有弹出确认框')
+    else {
+      if (await paneOpen()) errors.push('独立分支：点删除按钮把对话也打开了')
+      await p.getByRole('button', { name: '取消' }).last().click()
+      await p
+        .getByText('删除独立分支 agent-panel/eslint-rules？')
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    // 键盘可达：聚焦子对话行按 Enter，就在右栏打开对应子对话。
+    // 取消删除确认后弹层可能还在收起，先等它关掉再重新打开，别聚焦到正在卸载的节点上
+    await closeEnv()
+    await openEnv()
+    // 子对话栏、运行区里也有同名按钮：限定在独立分支这一行里
+    const target = p
+      .locator('[data-worktree-row]')
+      .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+    await target.focus()
+    await p.keyboard.press('Enter')
+    // 子对话面板标题栏右边那个 ✕ 的 aria-label 是「关闭子对话」（运行视图里叫「关闭子对话面板」）；
+    // 子对话栏的卡片里也有同名按钮，限定在右栏 aside 里，别点错
+    const closePane = p
+      .getByRole('complementary', { name: '子对话' })
+      .getByRole('button', { name: '关闭子对话', exact: true })
+    const pane = await closePane.waitFor({ timeout: 5000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!pane) errors.push('独立分支：用键盘在行上按 Enter 没有打开子对话')
+    else {
+      // 面板先出来、子对话内容后加载：等标题真的画出来再判断打开的是哪一个
+      const rightTitle = await p
+        .locator('[data-task-panel]')
+        .getByText('Git+worktree 不再提示文件撞车')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!rightTitle) errors.push('独立分支：右栏打开的不是对应的子对话')
+      await closePane.click()
+      await closePane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    await check(p, '独立分支-打开子对话')
+    // 刷新后顺序、计数都不变
+    await p.reload()
+    await backToTask()
+    await openEnv()
+    await check(p, '独立分支-刷新后计数', ['3 个没合并'])
+    await checkOrder('刷新后')
+    await check(p, '独立分支-刷新后顺序')
+    await closeEnv()
+  }
+  // 抓取元素：从哪个输入框的按钮进入，抓到的引用就填回哪个输入框（父对话 + 右栏子对话同时在场时也不能插错）。
+  // 以前按焦点 / 最近聚焦猜，两个输入框都在时容易把引用插到另一个对话。
+  // 用独立页面跑：这条用例会往两个输入框里塞引用卡片、开关设置弹窗，放在主页面会把后面的焦点用例带脏
+  {
+    const d = await page({ width: 1440, height: 900 })
+    // 新上下文自己生成一份演示数据：从首页进入、点列表里的那条对话，和本分片开头一致
+    await d.goto(base)
+    const conv = d.getByText('购物车右上角', { exact: false }).first()
+    await conv
+      .waitFor({ timeout: 15000 })
+      .catch(() => errors.push('抓取投递：新页面的演示数据没生成出来（找不到对话列表项）'))
+    await conv.click()
+    await d.locator('#follow-up').waitFor({ timeout: 10000 })
+    await d.getByRole('button', { name: '设置' }).first().click()
+    await d.getByRole('switch', { name: '开发者模式' }).click()
+    await d.keyboard.press('Escape')
+    await d
+      .getByText('开发者模式')
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    // 右栏打开一个子对话：页面上同时有父对话和子对话两个输入框
+    const env = d.locator('button[aria-label="环境"]').first()
+    await env.click()
+    await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
+    await d
+      .locator('[data-worktree-row]')
+      .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+      .click()
+    const childPane = d.getByRole('complementary', { name: '子对话' })
+    await childPane
+      .locator('#follow-up')
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('抓取投递：右栏子对话的输入框没出来'))
+    // 两个输入框的 id 都是 #follow-up（同一个组件），按所在栏区分：子对话在右栏 aside 里
+    const childBox = childPane.locator('#follow-up')
+    const parentBox = d.locator('#follow-up').first()
+    if ((await d.locator('#follow-up').count()) !== 2)
+      errors.push(`抓取投递：页面上应该有父对话和子对话两个输入框（实际 ${await d.locator('#follow-up').count()} 个）`)
+    // 抓取按钮和输入框不在同一个元素里（按钮在 composer 根上、输入框是它的子节点），所以不能靠容器定位；
+    // 按 DOM 顺序取两个按钮，并显式校验归属：第一个在右栏外面（父对话），第二个在右栏 aside 里（子对话）
+    const pickBtns = d.getByLabel('抓取界面元素', { exact: true })
+    const inPane = (i) => pickBtns.nth(i).evaluate((el) => !!el.closest('aside'))
+    if ((await pickBtns.count()) !== 2) errors.push('抓取投递：两个输入框旁边应该各有一个抓取按钮')
+    if (await inPane(0)) errors.push('抓取投递：第一个抓取按钮居然在右栏里，用例的定位假设不成立')
+    if (!(await inPane(1))) errors.push('抓取投递：第二个抓取按钮不在右栏子对话里，用例的定位假设不成立')
+    /** 在指定输入框里抓一个元素：点它的按钮 → 中键点页面上的元素 → 等抓取退出 */
+    const pickInto = async (which, where) => {
+      const overlay = d.locator('[data-element-picker]')
+      await pickBtns.nth(which).click()
+      const on = await overlay.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!on) return errors.push(`抓取投递：点${where}的抓取按钮没有进入抓取模式`)
+      // 先把焦点挪到页面空白处：这条用例验的是「按点的是哪个按钮」判定，
+      // 不能让焦点 / 最近聚焦恰好猜对，否则测不出改动的行为
+      await d.locator('body').click({ position: { x: 5, y: 5 } })
+      // 抓 page 上的一个具体元素（横向导航栏的「任务」）：抓什么不重要，重要的是它落在哪个输入框
+      const nav = await d.getByRole('navigation', { name: '主导航' }).boundingBox()
+      if (!nav) return errors.push('抓取投递：找不到侧边导航，没地方中键抓取')
+      await d.mouse.move(nav.x + nav.width / 2, nav.y + 40)
+      await d.mouse.click(nav.x + nav.width / 2, nav.y + 40, { button: 'middle' })
+      await overlay
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push(`抓取投递：在${where}抓完没有退出抓取`))
+    }
+    /** 卡片张数：隔一会儿再读不算验证，直接等它变多 / 保持不变 */
+    const chipCount = (scope) => scope.locator('[data-chip="quote"]').count()
+    const beforeChild = await chipCount(childBox)
+    const beforeParent = await chipCount(parentBox)
+    await pickInto(1, '子对话输入框')
+    // 等待条件必须和断言同作用域（都是子对话输入框内部）：[data-task-panel] 是整个右栏 aside，
+    // 消息流里的引用卡片也用 data-chip 标记，拿整栏计数当同步点会被旧卡片提前满足
+    const childGot = await d
+      .waitForFunction(
+        (n) => document.querySelectorAll('[data-task-panel] #follow-up [data-chip="quote"]').length > n,
+        beforeChild,
+        { timeout: 5000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!childGot) errors.push('抓取投递：从子对话的按钮进入抓取，引用没有填回子对话输入框')
+    if ((await chipCount(parentBox)) !== beforeParent)
+      errors.push('抓取投递：从子对话的按钮进入抓取，引用却填进了父对话输入框')
+    if ((await chipCount(childBox)) <= beforeChild) errors.push('抓取投递：子对话输入框里没有多出引用卡片')
+    await check(d, '元素抓取-投给点按钮的那个输入框')
+    // 反过来：从父对话的按钮进入，要填回父对话
+    await pickInto(0, '父对话输入框')
+    if ((await chipCount(parentBox)) <= beforeParent)
+      errors.push('抓取投递：从父对话的按钮进入抓取，引用没有填回父对话输入框')
+    if ((await chipCount(childBox)) !== beforeChild + 1)
+      errors.push('抓取投递：从父对话的按钮进入抓取，子对话输入框多出了引用卡片')
+    await check(d, '元素抓取-父对话按钮投父对话')
+    await d.close()
+  }
   // 子对话栏的计数：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），分母是进程还活着的 5 个。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
   {
@@ -39,6 +416,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const bar = p.getByRole('button', { name: /个进行中，共 \d+ 个/ })
     if (!(await bar.count())) errors.push('子对话栏：输入框上方没有子对话入口')
     else {
+      // 分子 5 = 在转圈的；分母是进程还活着的（演示里「整理 ESLint 规则」在等后台命令、CLI 已回收，不算进去），
+      // 分母比分子少时兜底取分子，所以仍是 5/5（见 shared/task.ts 的 childCounts）
       await check(p, '子对话-五个在跑', ['子对话', '5/5'])
       await bar.first().click()
       // 消息流里的运行区和弹层「运行中」是同一批条目（见 shared/task.ts 的 visibleChildren）：
@@ -77,7 +456,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
           .map((row) => {
             // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
             const title = [...row.querySelectorAll('button')].find((b) =>
-              (b.getAttribute('title') || '').includes('子对话'),
+              (b.getAttribute('title') || '').includes('打开子对话'),
             )
             // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
             const tags = [...row.querySelectorAll('span')]
@@ -96,7 +475,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
               gap: Math.round(tag.getBoundingClientRect().left - title.getBoundingClientRect().right),
               // 分隔线不只看类名：类还在但样式被覆盖时也要能发现
               sep: !!sepBox && parseFloat(getComputedStyle(sepBox).borderLeftWidth) >= 1,
-              // 状态和活动文字不能是另一个点击目标：不在按钮里、鼠标不是手型
+              // 状态和活动文字跟着整行可点：不套进按钮（不出现嵌套按钮），鼠标是手型
               inButton: !!tag.closest('button'),
               cursor: getComputedStyle(tag).cursor,
               tags: tags.length,
@@ -117,6 +496,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       }
       if (boxes.runs.some((x) => x.includes('已解决')))
         errors.push('运行区：已标记解决但还在跑的那条被写成了「已解决」')
+      // 「已关闭」（CLI 进程回收）不能和「还在跑」的状态同屏：等后台命令的子对话在演示里进程早退了，
+      // 行上如果又写「已关闭」又写「计划 / 等结果」，用户会以为它被关掉了（用户报的问题）
+      for (const [where, list] of [
+        ['运行区', boxes.runs],
+        ['弹层', boxes.items],
+      ]) {
+        const closed = list.filter((x) => x.includes('已关闭'))
+        if (closed.length) errors.push(`${where}：还在跑的对话被写成了「已关闭」：${closed.join(' | ')}`)
+      }
       // 顺序也一致：正在跑的在前，同一类里按本次开启的时间倒序（两处读同一个 sortChildren）
       const titles = [
         'Git+worktree 不再提示文件撞车',
@@ -133,7 +521,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (order(boxes.runs) !== order(boxes.items))
         errors.push(`运行区和弹层的顺序不一致：运行区 ${order(boxes.runs)}、弹层 ${order(boxes.items)}`)
       // 左对齐：状态标签只隔一个分隔间距跟在标题后面，两段文字之间有分隔线，
-      // 状态/活动文字不是可点目标，耗时仍在行尾。
+      // 状态/活动文字跟着整行可点（不套按钮），耗时仍在行尾。
       // 不按「行宽比例」判：标题按内容宽度、上限 25%（见 RowShell），
       // 长标题的行比例本来就会偏右，拿比例当阈值会把合法布局判红
       if (!boxes.align.length) errors.push('运行区：子对话行里没找到可以核对对齐的状态标签')
@@ -145,8 +533,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       for (const a of boxes.align) {
         if (a.gap < 12 || a.gap > 24) errors.push(`运行区子对话行：状态标签距标题 ${a.gap}px，没有紧跟标题左对齐`)
         if (!a.sep) errors.push('运行区子对话行：标题和状态之间没有分隔线，两段文字连成一片')
-        if (a.inButton || a.cursor === 'pointer')
-          errors.push(`运行区子对话行：状态/活动文字也是可点目标（inButton ${a.inButton}、cursor ${a.cursor}）`)
+        if (a.inButton)
+          errors.push(`运行区子对话行：状态/活动文字被套进了按钮（inButton ${a.inButton}），整行点击不该嵌套按钮`)
+        if (a.cursor !== 'pointer')
+          errors.push(`运行区子对话行：状态/活动文字不可点（cursor ${a.cursor}），整段文本都应该能打开子对话`)
         if (a.clipped) errors.push('运行区子对话行：状态标签被详情容器裁掉了')
         // 行内边距 px-2.5 = 10px：耗时要贴住行右边，不能被详情挤出容器
         if (a.msGap === null || a.msGap > 16) errors.push(`运行区子对话行：耗时没贴住行尾（右端距行右缘 ${a.msGap}px）`)
@@ -157,6 +547,247 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()
+      // 整段文本可点：点状态标签（不只是标题）也能在右栏打开这个子对话
+      {
+        const clicked = await p.evaluate(() => {
+          const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+          const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+            [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
+          )
+          const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
+          // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
+          const tag = row
+            ? [...row.querySelectorAll('span')].find(
+                (s) => (s.className || '').includes('text-[0.6875rem]') && s.getBoundingClientRect().width > 0,
+              )
+            : null
+          if (!tag) return ''
+          const title = norm(row.querySelector('button[title*="打开子对话"]')?.innerText || '')
+          tag.click()
+          return title
+        })
+        if (!clicked) errors.push('运行区：没有找到状态标签，核对不了整段文本可点')
+        else {
+          const opened = await p
+            .waitForFunction(
+              (title) => !!document.querySelector('aside[aria-label="子对话"]')?.innerText.includes(title),
+              clicked,
+              { timeout: 3000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+          if (!opened) errors.push(`运行区：点状态标签后右栏没有打开「${clicked}」`)
+          await check(p, '子对话-整段文本可点')
+        }
+      }
+      // 运行区：有几个子对话就列几行，行前不再放切换下拉（右栏标题旁的切换下拉照旧）
+      {
+        if (await p.locator('[aria-label="运行中"] button[aria-label="切换子对话"]').count())
+          errors.push('运行区：子对话行前面不该再有切换子对话的下拉')
+        const kidRows = await p.evaluate(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((b) =>
+              [...b.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+            ).length,
+        )
+        if (kidRows < 2) errors.push(`运行区：在跑的子对话应该一个一行，现在只有 ${kidRows} 行`)
+      }
+      // 右栏子对话标题行左侧的切换下拉：和运行区那处一致，Esc 关、鼠标和键盘都要真的切过去
+      {
+        /** 右栏标题（h2）现在的文字：切换是否生效看它 */
+        const paneTitle = () =>
+          p.evaluate(() => (document.querySelector('aside[aria-label="子对话"] h2')?.textContent || '').trim())
+        /** 菜单里的条目：标题、选中标记、键盘高亮 */
+        const menuItems = () =>
+          p.evaluate(() =>
+            [...document.querySelectorAll('[role="menu"] [data-child-item]')].map((e) => ({
+              title: (e.querySelector('span.truncate')?.textContent || '').trim(),
+              current: e.hasAttribute('data-current'),
+              highlighted: e.hasAttribute('data-highlighted'),
+            })),
+          )
+        /** 等右栏标题真的变成目标子对话 */
+        const switchedTo = (title) =>
+          p
+            .waitForFunction(
+              (name) => (document.querySelector('aside[aria-label="子对话"] h2')?.textContent || '').trim() === name,
+              title,
+              { timeout: 3000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+        const trigger = p.locator('aside[aria-label="子对话"] button[aria-label="切换子对话"]').first()
+        const openMenu = async () => {
+          await trigger.click()
+          await p
+            .locator('[role="menu"] [data-child-item]')
+            .first()
+            .waitFor({ timeout: 3000 })
+            .catch(() => {})
+          return menuItems()
+        }
+        if (!(await trigger.count())) errors.push('右栏子对话标题左边没有切换子对话的按钮')
+        else {
+          const currentTitle = await paneTitle()
+          const items = await openMenu()
+          const marked = items.find((x) => x.current)
+          if (!items.length) errors.push('右栏切换下拉：没有列出子对话')
+          if (!marked) errors.push('右栏切换下拉：没有标出当前打开的那一项')
+          else if (currentTitle && marked.title !== currentTitle)
+            errors.push(`右栏切换下拉：选中标记在「${marked.title}」，右栏打开的是「${currentTitle}」`)
+          await check(p, '子对话-右栏切换下拉')
+          // 鼠标点一个不是当前项的条目：右栏要真的切过去、菜单关闭，而不只是菜单关掉
+          const target = items.find((x) => !x.current)
+          if (!target) errors.push('右栏切换下拉：没有可以切换的另一项，核对不了切换')
+          else {
+            await p.locator('[role="menu"] [data-child-item]:not([data-current])').first().click()
+            if (!(await switchedTo(target.title))) errors.push(`右栏切换下拉：点了「${target.title}」后右栏没有切过去`)
+            if (await p.locator('[role="menu"]').count()) errors.push('右栏切换下拉：点了条目后菜单还开着')
+            await check(p, '子对话-右栏切换下拉-点选')
+          }
+          // Esc 关
+          await openMenu()
+          await p.keyboard.press('Escape')
+          if (
+            !(await p
+              .waitForFunction(() => !document.querySelector('[role="menu"]'), { timeout: 3000 })
+              .then(
+                () => true,
+                () => false,
+              ))
+          )
+            errors.push('右栏切换下拉：按 Escape 没有关闭')
+          // 键盘：方向键走到一个不是当前项的条目，回车切换
+          const nowTitle = await paneTitle()
+          await openMenu()
+          // 焦点落进菜单再按键：菜单刚挂上时焦点还在按钮上，按下去的方向键被吞掉（CI 上偶发）
+          await p
+            .waitForFunction(() => !!document.activeElement?.closest('[role="menu"]'), null, { timeout: 3000 })
+            .catch(() => {})
+          let picked = ''
+          for (let i = 0; i < 12 && !picked; i++) {
+            await p.keyboard.press('ArrowDown')
+            // 高亮是按键后下一帧才标上的：等到有一项高亮再读，不然读到的还是按键前的状态
+            await p
+              .waitForFunction(
+                () => !!document.querySelector('[role="menu"] [data-child-item][data-highlighted]'),
+                null,
+                {
+                  timeout: 1000,
+                },
+              )
+              .catch(() => {})
+            const hi = (await menuItems()).find((x) => x.highlighted)
+            if (hi && hi.title !== nowTitle) picked = hi.title
+          }
+          if (!picked) errors.push('右栏切换下拉：方向键没有走到别的子对话')
+          else {
+            await p.keyboard.press('Enter')
+            if (!(await switchedTo(picked))) errors.push(`右栏切换下拉：方向键 + 回车没有切到「${picked}」`)
+            await check(p, '子对话-右栏切换下拉-键盘')
+          }
+        }
+      }
+      // 整段文本的其它区域也能点：耗时文字、动作名；键盘 Enter 也能打开（不只是状态标签）
+      {
+        /** 右栏开着就先关掉，等它卸载 */
+        const closePane = async () => {
+          if (!(await p.locator('aside[aria-label="子对话"]').count())) return
+          await p
+            .getByRole('button', { name: '关闭子对话', exact: true })
+            .first()
+            .click()
+            .catch(() => errors.push('子对话：没有找到关闭按钮，后面的整段可点核对不成立'))
+          // 关不掉时右栏本来就开着，后面的「打开了吗」会假通过，必须报出来
+          if (
+            !(await p
+              .waitForFunction(() => !document.querySelector('aside[aria-label="子对话"]'), { timeout: 3000 })
+              .then(
+                () => true,
+                () => false,
+              ))
+          )
+            errors.push('子对话：点了关闭后右栏还开着，后面的整段可点核对不成立')
+        }
+        const rowInfo = () =>
+          p.evaluate(() => {
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+            const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+              [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
+            )
+            const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
+            return { title: norm(row?.querySelector('button[title*="打开子对话"]')?.innerText || ''), hasRow: !!row }
+          })
+        const openedFor = (title) =>
+          p
+            .waitForFunction(
+              (name) => !!document.querySelector('aside[aria-label="子对话"]')?.innerText.includes(name),
+              title,
+              { timeout: 3000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+        const info = await rowInfo()
+        if (!info.hasRow || !info.title) errors.push('运行区：没有找到子对话行，核对不了整段文本可点')
+        else {
+          await closePane()
+          await p.evaluate(() => {
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+            const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+              [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
+            )
+            const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
+            // 耗时是行尾那个等宽数字（tabular-nums）
+            const ms = [...(row?.querySelectorAll('span') || [])].find((s) =>
+              (s.className || '').includes('tabular-nums'),
+            )
+            ms?.click()
+          })
+          if (!(await openedFor(info.title))) errors.push('运行区：点耗时文字没有打开子对话')
+          await check(p, '子对话-整段文本可点-耗时')
+          await closePane()
+          await p.evaluate(() => {
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+            const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+              [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
+            )
+            const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
+            // 动作名按钮带 aria-label、没有 title；标题按钮两个都有
+            row?.querySelector('button[aria-label*="打开子对话"]:not([title])')?.click()
+          })
+          if (!(await openedFor(info.title))) errors.push('运行区：点动作名没有打开子对话')
+          await check(p, '子对话-整段文本可点-动作名')
+          await closePane()
+          await p.evaluate(() => {
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+            const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+              [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
+            )
+            const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
+            row?.querySelector('button[title*="打开子对话"]')?.focus()
+          })
+          await p.keyboard.press('Enter')
+          if (!(await openedFor(info.title))) errors.push('运行区：焦点在标题上按 Enter 没有打开子对话')
+          await check(p, '子对话-整段文本可点-键盘')
+        }
+      }
+      // 收掉右栏：后面窄窗口那几段用 reload 测行宽，右栏开着会盖住整个窄屏
+      if (await p.locator('aside[aria-label="子对话"]').count()) {
+        await p
+          .getByRole('button', { name: '关闭子对话', exact: true })
+          .first()
+          .click()
+          .catch(() => errors.push('子对话：没有找到关闭按钮'))
+        await p
+          .waitForFunction(() => !document.querySelector('aside[aria-label="子对话"]'), { timeout: 3000 })
+          .catch(() => errors.push('子对话：点了关闭后右栏还开着'))
+      }
     }
   }
   // 窄窗口：子对话行的状态标签不能被裁，「计划 1/2」不能变成「计划 1」；
@@ -171,7 +802,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitForFunction(
           () =>
             [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
-              [...box.children].some((r) => !!r.querySelector('button[title*="子对话"]')),
+              [...box.children].some((r) => !!r.querySelector('button[title*="打开子对话"]')),
             ),
           { timeout: 10000 },
         )
@@ -181,11 +812,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
         const rows = [...document.querySelectorAll('[aria-label="运行中"]')]
           .flatMap((b) => [...b.children])
-          .filter((r) => !!r.querySelector('button[title*="子对话"]'))
+          .filter((r) => !!r.querySelector('button[title*="打开子对话"]'))
         return {
           rows: rows.length,
-          // 行宽：1280 那段靠它确认真的复现出了「开着右栏再缩窗」的窄行，
-          // 默认右栏改成关闭时这里会变宽，断言就不会再静默通过
+          // 行宽：只用来在报错里写清楚当时的实际值，不作阈值判。
+          // 行宽会随外面套几层缩进变化（运行区从回复内容里挑出来单独成块时少一层），
+          // 写死像素的阈值一改布局就变成假报错
           rowWidth: rows[0] ? Math.round(rows[0].getBoundingClientRect().width) : 0,
           items: rows
             .map((row) => {
@@ -235,11 +867,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await check(p, '子对话-运行区窄窗口')
       }
     }
+    // 1024：右栏收着，这一行有 700 多像素宽，活动文字不能跟着窄屏一起藏起来。
+    // 显隐按这一行自己的宽度（容器查询），不是按视口断点
+    await p.setViewportSize({ width: 1024, height: 900 })
+    await p.reload()
+    await backToTask()
+    await waitRows()
+    const midWide = await measureNarrow()
+    if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
+    else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
+    await check(p, '子对话-运行区1024')
     await p.setViewportSize({ width: 1440, height: 900 })
     await p.reload()
     await backToTask()
     // 1280 这一格：宽窗口开着右栏再缩下来，运行区一行只剩 300 多像素；
-    // 这里不在窄屏断点内（活动文字还在），状态标签照样不能被裁
+    // 这一行窄到放不下活动文字时，状态标签也不能被裁
     await p.setViewportSize({ width: 1280, height: 900 })
     await settle(p)
     const mid = await measureNarrow()
@@ -247,9 +889,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else if (mid.items.length !== mid.rows)
       errors.push(`运行区（1280px）：${mid.rows} 条子对话行里只有 ${mid.items.length} 条能测到状态标签`)
     for (const n of mid.items) if (n.clipped) errors.push(`运行区（1280px）：状态标签「${n.text}」被裁掉了`)
-    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来
-    if (mid.rowWidth > 340)
-      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，没复现出右栏占宽后的窄行（应该 <340）`)
+    // 没复现出窄行（右栏没占宽、改成单栏）时这一段等于没测到，直接报出来。
+    // 按行自己的行为判，不写死像素：这一行窄于容器查询的 380px 阈值时活动文字必须隐藏，
+    // 和上面 1024px 那段（行够宽、活动文字必须显示）正好是同一套判定的两边，
+    // 两边都成立才说明真的复现了「放不下活动文字」的窄行；行宽写进报错方便排查
+    if (mid.rows && mid.items.some((n) => n.noteShown))
+      errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，活动文字还占着宽度，没复现出右栏占宽后的窄行`)
     // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
     await p
       .locator('[aria-label="运行中"]')
@@ -267,11 +912,148 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else {
       await row.scrollIntoViewIfNeeded()
       await check(p, '接收消息-子对话上报', ['接收消息', '汇报', '已完成：合回原分支'])
+      // 来源带子对话标题：几个子对话的角色名相同时（都是「前端开发」），靠标题区分
+      for (const title of ['压测导入大文件', '核对通知时序']) {
+        const n = await p.getByText(`来自 前端开发（${title}）`, { exact: false }).count()
+        if (!n) errors.push(`接收消息行没显示子对话标题「${title}」`)
+      }
+      // 同一子对话的同一份汇报在旧数据里写了两遍（演示数据里留了一条这样的样本）：界面上只显示一行，
+      // 不同来源的汇报仍然各占一行
+      const dup = await p.getByText('来自 前端开发（核对通知时序）', { exact: false }).count()
+      if (dup !== 1) errors.push(`同一子对话的重复汇报应该只显示一行，实际 ${dup} 行`)
       await p.getByRole('button', { name: '已完成：合回原分支、标记完成' }).first().click()
       await check(p, '接收消息-弹窗', ['已收到', '打开子对话'])
       await p.keyboard.press('Escape')
       await closed()
     }
+  }
+  // 面板的 run_background：解析层对带 command 的输入存的是命令原文（不是 JSON），
+  // 折叠行要靠它兜底显示命令，不能只剩「后台命令」和耗时
+  {
+    /**
+     * 往「购物车右上角」那条父对话里注入一条运行中的后台命令（用完清掉）。
+     * 不写进演示数据里：这条对话没在跑，后面的「转成弹窗」用例靠它验证浮条写「已完成」，
+     * 常驻一条在跑的命令会让那条变成「执行中」
+     */
+    const KEY = 'agent-panel-demo-v3'
+    const patchJobs = async (jobs) => {
+      await p.evaluate(
+        ([k, list]) => {
+          const db = JSON.parse(localStorage.getItem(k))
+          const parent = db.tasks.find((x) => x.title.includes('购物车'))
+          // 总是写数组（没有就空数组）：删字段会被 keepLiveFields 当成「没带运行时字段」而沿用旧的
+          parent.jobs = list ?? []
+          localStorage.setItem(k, JSON.stringify(db))
+        },
+        [KEY, jobs],
+      )
+      await p.reload()
+      await backToTask()
+    }
+    const command = 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log'
+    await patchJobs([
+      {
+        // 编号和上面那个 run_background 工具行里的编号一致：两个入口（工具行、运行区的后台命令行）
+        // 指的是同一条命令，真实后端里就是这么对应的
+        id: '3f2a91cd',
+        name: '安装依赖',
+        command,
+        state: 'running',
+        startedAt: new Date(Date.now() - 69_500).toISOString(),
+      },
+    ])
+    const title = p.locator('[aria-label="运行中"] button[title*="npm ci > /tmp/npmci.log"]').first()
+    if (
+      !(await title.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('后台命令折叠行：没有显示命令，只剩「后台命令」')
+    else {
+      await title.scrollIntoViewIfNeeded()
+      const tip = await title.getAttribute('title')
+      if (!tip?.includes('tail -20 /tmp/npmci.log')) errors.push(`后台命令折叠行：悬停提示不是完整命令（${tip}）`)
+      await check(p, '后台命令-折叠行显示命令', ['后台命令', 'npm ci > /tmp/npmci.log 2>&1'])
+      // 用户提的：点标题应该打开窗口看实时输出，不是只展开命令原文。
+      // 工具行就是这个交互（整行点击 = 展开、点标题 = 开窗口），后台命令跟它一致
+      await title.click()
+      const dialog = p.getByRole('dialog').first()
+      const opened = await dialog.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!opened) errors.push('后台命令：点标题没有打开命令行窗口')
+      else {
+        // 窗口里是实时输出，不是命令原文：等第一段输出拉回来（演示后端给的假输出里有这一行）
+        const printed = await p
+          .waitForFunction(
+            () => {
+              const d = document.querySelector('[role="dialog"]')
+              return !!d && /transforming|modules transformed|agent-panel@/.test(d.innerText || '')
+            },
+            { timeout: 10000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!printed) errors.push('后台命令窗口：没有显示命令的输出')
+        // 窗口标题是命令本身，带「执行中」阶段（命令还在跑，不能显示成完成）
+        const head = await dialog.innerText()
+        for (const text of ['npm ci > /tmp/npmci.log', '执行中'])
+          if (!head.includes(text)) errors.push(`后台命令窗口：没有显示「${text}」`)
+        await check(p, '后台命令-点标题开窗口看输出')
+        // 窗口和行的关系（命令结束后行消失、窗口不能跟着关）不在这条用例里验：
+        // 演示后端的任务数据在内存里缓存（demo-backend 的 load），改 localStorage 不会生效，造不出
+        // 「这条 job 从 task.jobs 里消失」的推送；而在 DOM 上直接删掉那一行也证明不了什么——
+        // React 不会因为 DOM 被外部改了就卸载组件。这条防线靠结构：窗口挂在 TaskView 的 jobTarget 上
+        // （见 docs/modules/web/README.md），不挂在运行区那一行里
+        await p.keyboard.press('Escape')
+        await closed()
+      }
+      // 事后再想回看这条命令：运行区那一行跑完就没了，只能靠对话里那条 run_background 工具行——
+      // 它的标题也要能打开同一个后台命令窗口（输出、退出码都在里面）
+      await patchJobs(null)
+      // 运行区那一行没了之后，只剩对话里那条 run_background 工具行的标题
+      const pick = p.locator('button[title*="npm ci > /tmp/npmci.log"]').last()
+      if (!(await pick.count())) errors.push('后台命令工具行：找不到那条 run_background 的标题')
+      else {
+        await pick.scrollIntoViewIfNeeded()
+        await pick.click()
+        const again = await p
+          .getByRole('dialog')
+          .first()
+          .waitFor({ timeout: 5000 })
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!again) errors.push('后台命令工具行：点标题没打开命令行窗口（命令结束后就没地方回看了）')
+        else {
+          // 探针：看窗口拿到的是哪种状态（拉到没拉到、是不是报错）
+          // 等输出拉回来（演示后端记得这条命令，行不在了也读得到）
+          await p
+            .waitForFunction(
+              () => {
+                const d = document.querySelector('[role="dialog"]')
+                return !!d && /agent-panel@|transforming|EXIT=0/.test(d.innerText || '')
+              },
+              { timeout: 10000 },
+            )
+            .catch(() => {})
+          // 演示后端记得这条命令，行不在了也读得到；结束的给最终输出和退出码
+          const text = await p.getByRole('dialog').first().innerText()
+          if (!/npm ci > \/tmp\/npmci\.log/.test(text)) errors.push('后台命令工具行窗口：没显示命令原文')
+          if (!/transforming|modules transformed|agent-panel@|EXIT=0/.test(text))
+            errors.push(`后台命令工具行窗口：没有显示命令输出（当前内容：${text.replace(/\s+/g, ' ').slice(0, 200)}）`)
+          await check(p, '后台命令-工具行也能回看输出')
+          await p.keyboard.press('Escape')
+          await closed()
+        }
+      }
+    }
+    await patchJobs(null)
   }
   // 发出去的消息也是工具行：父对话里画成「发送消息 · 传话」，不把正文铺成居中的系统块
   {
@@ -282,7 +1064,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await check(p, '发送消息-传话', ['发送消息', '传话', '核对通知时序'])
     }
   }
-  // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
+  // 同一段话逐个交给几个子对话的旧记录：合成一行「发给 3 个」，展开列出每个收件人
+  {
+    const row = p.getByText('发给 3 个：', { exact: false }).first()
+    if (!(await row.count())) errors.push('同一段话交给几个子对话：没有合成一行「发给 3 个」')
+    else {
+      await row.scrollIntoViewIfNeeded()
+      if ((await p.getByText('截图失败就不下视觉结论', { exact: false }).count()) !== 1)
+        errors.push('同一段话交给几个子对话：还是画成了好几行')
+      await row.click()
+      await check(p, '发送消息-同一段话合成一行', ['发送消息', '交代任务', '发给 3 个子对话的同一条消息'])
+      await row.click()
+    }
+  }
+  // 派出的子任务不再铺在消息流里：入口在输入框上方单独一行（状态栏三行），点开是列表和只读窗口
   {
     const openTask = () => backToTask()
     // 折叠行「派出 3 个子任务」也是一个按钮；入口按钮的 aria-label 就是「子任务」。
@@ -296,23 +1091,412 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (!/^子任务 \d+$/.test(doneLabel)) errors.push(`子任务栏：没在跑时应该只写总数，现在是「${doneLabel}」`)
       if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
         errors.push('子任务栏：消息流里还画着子任务卡片')
-      // 状态栏顺序：计划单独占一行在最上面，这一行里子任务在子对话前面
-      const order = await p.evaluate(() => {
-        const btns = [...document.querySelectorAll('button')]
-        const sub = btns.find((b) => b.getAttribute('aria-label') === '子任务')
-        const child = btns.find((b) => (b.getAttribute('aria-label') || '').startsWith('子对话'))
-        if (!sub || !child) return null
-        const at = (b) => b.getBoundingClientRect()
-        return { sub: at(sub).left, subTop: at(sub).top, child: at(child).left, childTop: at(child).top }
-      })
-      if (!order) errors.push('状态栏：找不到「子任务」或「子对话」入口，核对不了顺序')
-      else if (order.sub > order.child && Math.abs(order.subTop - order.childTop) < 4)
-        errors.push('状态栏顺序：子任务应该排在子对话前面')
+      // 状态栏固定三行：计划在上、子任务中间、子对话在下；每行只占一行、不换行，
+      // 子对话小块放不下时收成「+N」，不折到下一行去挤别的行
+      const measureBars = () =>
+        p.evaluate(() => {
+          const row = (name) => {
+            const el = document.querySelector(`[data-status-row="${name}"]`)
+            if (!el) return null
+            const r = el.getBoundingClientRect()
+            const kids = [...el.children].map((c) => c.getBoundingClientRect())
+            // 行内元素按 items-center 对齐，高度不同时 top 本来就会差一两像素：
+            // 比竖直中心，换行时掉下去的那一块中心和第一块差一行高
+            const mid = (k) => k.top + k.height / 2
+            return {
+              top: Math.round(r.top),
+              bottom: Math.round(r.bottom),
+              height: Math.round(r.height),
+              sameTop: kids.every((k) => Math.abs(mid(k) - mid(kids[0])) < 4),
+            }
+          }
+          const children = document.querySelector('[data-status-row="children"]')
+          const cards = children
+            ? [...children.querySelectorAll('[data-child-card]')].map((c) => c.getBoundingClientRect())
+            : []
+          const more = children?.querySelector('[data-child-more]')
+          const room = children?.querySelector('[data-child-cards]')?.getBoundingClientRect()
+          const moreBox = more?.getBoundingClientRect()
+          return {
+            plan: row('plan'),
+            children: row('children'),
+            helpers: row('helpers'),
+            cards: cards.length,
+            cardW: cards.length ? Math.round(cards[0].width) : 0,
+            hidden: more ? Number((more.textContent || '').replace(/[^\d]/g, '')) : 0,
+            cardRight: cards.length ? Math.round(Math.max(...cards.map((c) => c.right))) : 0,
+            roomW: room ? Math.round(room.width) : 0,
+            roomLeft: room ? Math.round(room.left) : 0,
+            roomRight: room ? Math.round(room.right) : 0,
+            moreW: moreBox ? Math.round(moreBox.width) : 0,
+            moreLeft: moreBox ? Math.round(moreBox.left) : 0,
+            moreRight: moreBox ? Math.round(moreBox.right) : 0,
+          }
+        })
+      /** 三行的顺序、单行不换行、小块 + 隐藏数 = 在跑的子对话数 */
+      const checkBars = async (where, busy) => {
+        const b = await measureBars()
+        if (!b.plan || !b.children || !b.helpers) {
+          errors.push(`状态栏（${where}）：没有同时出现计划、子对话、子任务三行`)
+          return b
+        }
+        // 顺序：计划 → 子任务 → 子对话
+        if (b.plan.bottom > b.helpers.top + 1 || b.helpers.bottom > b.children.top + 1)
+          errors.push(
+            `状态栏（${where}）：三行顺序不对，应该是计划 → 子任务 → 子对话（计划 ${b.plan.top}-${b.plan.bottom}、子任务 ${b.helpers.top}-${b.helpers.bottom}、子对话 ${b.children.top}-${b.children.bottom}）`,
+          )
+        for (const [name, r] of [
+          ['计划', b.plan],
+          ['子任务', b.helpers],
+          ['子对话', b.children],
+        ]) {
+          if (!r.sameTop) errors.push(`状态栏（${where}）：「${name}」这一行换行了`)
+          if (r.height > 40) errors.push(`状态栏（${where}）：「${name}」这一行占了 ${r.height}px，不是单行`)
+        }
+        if (b.cards + b.hidden !== busy)
+          errors.push(`状态栏（${where}）：子对话小块 ${b.cards} 个 + 隐藏 ${b.hidden} 个，应该等于在跑的 ${busy} 个`)
+        if (b.cards && b.cardW < 200) errors.push(`状态栏（${where}）：子对话小块被压到 ${b.cardW}px，不是固定宽度`)
+        if (b.hidden > 0) {
+          // 数字必须真的看得见：容器被挤成 0 宽时，overflow-hidden 会把「+N」整个裁掉
+          if (b.roomW < 1) errors.push(`状态栏（${where}）：卡片容器宽 0，「+N」没有位置，用户看不到隐藏数`)
+          else if (b.moreLeft < b.roomLeft - 1 || b.moreRight > b.roomRight + 1)
+            errors.push(
+              `状态栏（${where}）：「+N」超出卡片容器被裁掉（容器 ${b.roomLeft}-${b.roomRight}、+N ${b.moreLeft}-${b.moreRight}）`,
+            )
+          if (b.cards && b.cardRight > b.moreLeft) errors.push(`状态栏（${where}）：小块压到「+N」上`)
+        }
+        return b
+      }
+      // 在跑的子对话数从入口按钮的 aria-label 读，跟着演示数据走，不写死 5
+      const childLabel =
+        (await p.locator('button[aria-expanded][aria-label^="子对话"]').first().getAttribute('aria-label')) ?? ''
+      const busy = Number(childLabel.match(/(\d+) 个进行中/)?.[1] ?? 0)
+      if (!busy) errors.push(`状态栏：子对话入口没写「n 个进行中」（现在是「${childLabel}」），核对不了小块个数`)
+      // 先量宽窗口：左右两栏都在，1920 时中间还有位置放小块
+      await p.setViewportSize({ width: 1920, height: 900 })
+      await settle(p)
+      const wide = await checkBars('1920', busy)
+      if (wide && busy && !wide.cards) errors.push('状态栏（1920）：宽窗口里一个小块都没显示，+N 没有按可用宽度让位')
+      await check(p, '状态栏-三行')
+      // 验收标准 2 的后半句：点「+N」还是能看到全部，不只是个数字
+      if (wide && wide.hidden > 0) {
+        await p.locator('[data-child-more]').click()
+        const listed = await p.evaluate(
+          () => document.querySelectorAll('div.absolute.bottom-full [data-child-item]').length,
+        )
+        if (listed !== busy)
+          errors.push(`状态栏（1920）：点「+${wide.hidden}」后浮层里列了 ${listed} 个子对话，应该是在跑的 ${busy} 个`)
+        await check(p, '状态栏-三行-展开全部')
+        await p.keyboard.press('Escape')
+        await p
+          .waitForFunction(() => !document.querySelector('div.absolute.bottom-full'), { timeout: 3000 })
+          .catch(() => {})
+      }
+      // 缩窄窗口：「+N」跟着变大、小块变少，三行仍然各自一行（不重新加载，量的是同一条状态栏）
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await settle(p)
+      const mid = await checkBars('1440', busy)
+      if (mid && wide && wide.hidden > 0 && !(mid.hidden > wide.hidden))
+        errors.push(`状态栏（1440）：窗口变窄后隐藏数没变多（1920 是 ${wide.hidden} 个、1440 是 ${mid.hidden} 个）`)
+      await check(p, '状态栏-三行-1440')
+      await p.setViewportSize({ width: 375, height: 820 })
+      await settle(p)
+      const narrow = await checkBars('375', busy)
+      if (narrow && mid && !(narrow.hidden >= mid.hidden))
+        errors.push(`状态栏（375）：窗口变窄后隐藏数反而变少（1440 是 ${mid.hidden} 个、375 是 ${narrow.hidden} 个）`)
+      await check(p, '状态栏-三行-375')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.reload()
+      await openTask()
       await bar.first().click()
       // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
       await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.6s'])
+      // 列表里最新的在最上面（用户报的：派出的最后一个排在最下面）：演示数据里「核对角标的订阅时机」是最后派出的，
+      // 按开始时间应该排在「已完成」组的第一行。读的是这一行的实际顺序，不是按标题挑元素
+      const helperOrder = await p.evaluate(() => {
+        const tray = [...document.querySelectorAll('div.absolute.bottom-full')].find((d) =>
+          (d.innerText || '').includes('已完成'),
+        )
+        if (!tray) return null
+        return [...tray.querySelectorAll('button')]
+          .map((b) => (b.innerText || '').replace(/\s+/g, ' ').trim())
+          .filter((x) => x && !x.startsWith('终止'))
+      })
+      if (!helperOrder) errors.push('子任务-列表：找不到子任务浮层')
+      else {
+        const at = helperOrder.findIndex((x) => x.includes('核对角标的订阅时机'))
+        const first = helperOrder.findIndex((x) => x.includes('复现问题') || x.includes('查找相关代码'))
+        if (at < 0) errors.push('子任务-列表：列表里没有「核对角标的订阅时机」')
+        else if (first >= 0 && at > first)
+          errors.push(`子任务-列表：最新派出的「核对角标的订阅时机」没排在最上面（顺序：${helperOrder.join(' | ')}）`)
+      }
+      await check(p, '子任务-列表-最新在上')
       await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
       await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      // 窗口最上面那块「派给它的要求」：派发时交给它的原文，按 `##` 小节排开（要做的事在前、验收标准在后）。
+      // 它是滚动区里的第一块普通内容、不吸顶（用户报的「不要悬浮在那」），打开时能看到它靠的是
+      // 窗口在有要求时按 startAt: 'top' 打开停在顶部，不是靠 sticky
+      {
+        const w = p.getByRole('dialog').last()
+        const card = w.getByRole('region', { name: '派给它的要求' })
+        if (!(await card.count())) errors.push('子任务-窗口：最上面没有「派给它的要求」')
+        else {
+          // 收起态：只剩摘要一句，正文收着
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：有对话流时初始要求没收成摘要一句')
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：有对话流时初始要求默认没收起')
+          /** 卡片和它所在滚动容器的位置关系：窗口打开就该停在顶部，卡片完整落在容器里 */
+          const place = () =>
+            card.evaluate((el) => {
+              const sc = el.closest('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement) || !(el instanceof HTMLElement)) return null
+              const a = sc.getBoundingClientRect()
+              const b = el.getBoundingClientRect()
+              // 卡片下面紧接着的那块（对话流）是不是被卡片盖住：两者矩形相交就说明卡片浮在上面
+              const next = el.nextElementSibling
+              const cover = next instanceof HTMLElement ? Math.round(b.bottom - next.getBoundingClientRect().top) : 0
+              return {
+                inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1,
+                gap: Math.round(b.top - a.top),
+                top: Math.round(sc.scrollTop),
+                cover,
+              }
+            })
+          // 打开时停在顶部：卡片在视野内、贴着容器顶，滚动位置在 0 附近（贴底的话卡片会被推到视野之上）
+          const atTop = await place()
+          if (!atTop) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
+          else {
+            if (!atTop.inView) errors.push(`子任务-窗口：打开时初始要求不在视野内（距容器顶 ${atTop.gap}px）`)
+            if (atTop.top > SCROLL_TOP_EPS)
+              errors.push(`子任务-窗口：打开时没停在顶部，初始要求被顶上去（scrollTop ${atTop.top}px）`)
+            if (atTop.cover > 1) errors.push(`子任务-窗口：初始要求盖住了下面的对话流（压住 ${atTop.cover}px）`)
+          }
+          await check(p, '子任务-窗口-初始要求', ['派给它的要求', '查清购物车角标'])
+          // 展开：按小节排开，要做的事在前、验收标准在后，两节正文都显示
+          const toggle = card.getByRole('button', { name: /派给它的要求/ }).first()
+          await toggle.click()
+          await settle(p)
+          await check(p, '子任务-窗口-初始要求-展开', ['要做的事', '验收标准'])
+          // 关键：展开后卡片必须在视野内。只断言文本存在拦不住：Playwright 的 visible 不判视口，
+          // 正文被跟随底部顶到视野之上时照样算 visible（旧写法就是这么漏的）
+          const opened = await place()
+          if (!opened) errors.push('子任务-窗口：展开后没找到初始要求所在的滚动容器')
+          else if (!opened.inView)
+            errors.push(`子任务-窗口：展开后初始要求被滚出视野（卡片顶距容器顶 ${opened.gap}px）`)
+          else if (opened.cover > 1)
+            errors.push(`子任务-窗口：展开后初始要求盖住了下面的对话流（压住 ${opened.cover}px）`)
+          const heads = await card.evaluate((el) =>
+            [...el.querySelectorAll(':scope > div > section > p')].map((x) => x.textContent?.trim() ?? ''),
+          )
+          if (heads.indexOf('要做的事') < 0 || heads.indexOf('验收标准') < 0)
+            errors.push(`子任务-窗口：初始要求没按小节显示（当前小节：${heads.join(' / ') || '无'}）`)
+          else if (heads.indexOf('要做的事') > heads.indexOf('验收标准'))
+            errors.push(`子任务-窗口：小节顺序不对，要做的事应该在验收标准前面（当前：${heads.join(' / ')}）`)
+          if (!(await card.getByText('只读不改代码', { exact: false }).count()))
+            errors.push('子任务-窗口：初始要求没有显示验收标准的内容')
+          // 再收起：正文收回去，摘要回来
+          await toggle.click()
+          await settle(p)
+          if (await card.getByText('只读不改代码', { exact: false }).count())
+            errors.push('子任务-窗口：再收起初始要求后正文还显示着')
+          if (!(await card.getByText('查清购物车角标', { exact: false }).count()))
+            errors.push('子任务-窗口：再收起初始要求后没有留下摘要一句')
+          // 滚到底部附近之后恢复跟随：新内容进来窗口仍停在最新输出（停在顶部不能变成「再也不跟」）
+          await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            if (sc instanceof HTMLElement) sc.scrollTop = sc.scrollHeight
+          })
+          await settle(p)
+          const followed = await w.evaluate((el) => {
+            const sc = el.querySelector('.overflow-y-auto')
+            return sc ? sc.scrollHeight - sc.scrollTop - sc.clientHeight : null
+          })
+          if (followed !== null && followed > 40)
+            errors.push(`子任务-窗口：滚到底部后没接着跟最新输出（离底部 ${Math.round(followed)}px）`)
+          // 不吸顶：卡片是滚动区里的普通一块，滚到底部就该跟着滚出视野。
+          // 上面几条在「内容不足一屏」时区分不出 sticky 和普通块（scrollTop 恒为 0，两种写法都过），
+          // 所以要先造出可滚动：窗口高度是 min(820px, 100dvh-2rem)，矮视口能让内容区小于内容。
+          // 演示数据的对话流长度不等，固定一个高度不一定够，所以逐档压矮到能滚出比卡片还高的一段为止
+          const cardH = await card.evaluate((el) => Math.round(el.getBoundingClientRect().height))
+          let scrolled = null
+          for (const height of VIEWPORT_SHRINK_STEPS) {
+            await p.setViewportSize({ width: 1440, height })
+            await settle(p)
+            scrolled = await w.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement)) return null
+              return { scrollable: Math.round(sc.scrollHeight - sc.clientHeight) }
+            })
+            if (scrolled && scrolled.scrollable >= cardH + SCROLL_OUT_EPS) break
+          }
+          if (!scrolled) errors.push('子任务-窗口：没找到初始要求所在的滚动容器')
+          else if (scrolled.scrollable < cardH + SCROLL_OUT_EPS)
+            // 内容没超过一屏就没有「滚出视野」可言，这条断言会假绿，所以前置条件不满足时直接报出来
+            errors.push(
+              `子任务-窗口：压矮到 ${VIEWPORT_SHRINK_STEPS.at(-1)}px 后仍滚不满一张卡片，验证不了不吸顶` +
+                `（可滚 ${scrolled.scrollable}px，卡片高 ${cardH}px）`,
+            )
+          else {
+            await w.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (sc instanceof HTMLElement) sc.scrollTop = sc.scrollHeight
+            })
+            await settle(p)
+            const scrolledOut = await place()
+            if (!scrolledOut) errors.push('子任务-窗口：滚到底后没找到初始要求所在的滚动容器')
+            else if (scrolledOut.inView)
+              errors.push(`子任务-窗口：滚到底后初始要求还浮在容器顶部（距容器顶 ${scrolledOut.gap}px），卡片不该吸顶`)
+          }
+          await p.setViewportSize({ width: 1440, height: 900 })
+          await settle(p)
+          // 截图留在正常尺寸上：截图档案是给人看的，矮窗口里看不出卡片有没有被下面的内容压住
+          await check(p, '子任务-窗口-初始要求-不吸顶')
+          // 没有要求（旧记录：schema 加 brief 之前落盘的 step）时卡片整块不渲染，
+          // 滚动区第一块就是对话流，这时窗口照旧贴底看最新输出——停在顶部会让最新的结果要自己滚下去才看得到
+          // 先记下窗口本身，跑完要把它关掉再重新打开，不然后面的「AI 分析」用例找不到还开着的窗口
+          await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+          await settle(p)
+          // 原值要带回 Node 侧：页面里的 window 属性活不过 p.reload()，挂在那里写回时已经丢了
+          const savedBrief = await p.evaluate((k) => {
+            const db = JSON.parse(localStorage.getItem(k))
+            const parent = db.tasks.find((x) => x.title.includes('购物车'))
+            const sub = parent.steps.find((x) => x.slot === 'sub' && x.title === '核对角标的订阅时机')
+            if (!sub) throw new Error('演示数据里找不到「核对角标的订阅时机」这个子任务')
+            const before = sub.brief
+            sub.brief = ''
+            localStorage.setItem(k, JSON.stringify(db))
+            // 不写死一份 brief：演示数据改了这条用例不用跟
+            return before
+          }, 'agent-panel-demo-v3')
+          await p.reload()
+          await openTask()
+          await bar.first().click()
+          await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+          await settle(p)
+          const noBrief = p.getByRole('dialog').last()
+          if (await noBrief.getByRole('region', { name: '派给它的要求' }).count())
+            errors.push('子任务-窗口：没有 brief 的旧记录不该画出「派给它的要求」')
+          // 造出可滚动再量：内容不足一屏时 gap 恒为 0，这条断言会空转（和上面「不吸顶」同一个道理）
+          let noBriefPos = null
+          for (const height of VIEWPORT_SHRINK_STEPS) {
+            await p.setViewportSize({ width: 1440, height })
+            await settle(p)
+            noBriefPos = await noBrief.evaluate((el) => {
+              const sc = el.querySelector('.overflow-y-auto')
+              if (!(sc instanceof HTMLElement)) return null
+              return {
+                over: Math.round(sc.scrollHeight - sc.clientHeight),
+                gap: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight),
+              }
+            })
+            if (noBriefPos && noBriefPos.over > SCROLL_TOP_EPS) break
+          }
+          await p.setViewportSize({ width: 1440, height: 900 })
+          await settle(p)
+          // 截图留在正常尺寸上：矮窗口里看不出窗口真实形态（断言用的 noBriefPos 上面已量完）
+          await check(p, '子任务-窗口-无要求仍贴底')
+          if (!noBriefPos) errors.push('子任务-窗口：没有 brief 的旧记录找不到滚动容器')
+          else if (noBriefPos.over <= SCROLL_TOP_EPS)
+            errors.push(
+              `子任务-窗口：压矮到 ${VIEWPORT_SHRINK_STEPS.at(-1)}px 后没有 brief 的旧记录仍不足一屏，验证不了贴底性`,
+            )
+          else if (noBriefPos.gap > SCROLL_TOP_EPS)
+            errors.push(
+              `子任务-窗口：没有 brief 的旧记录打开没贴在最新输出（离底部 ${noBriefPos.gap}px，可滚 ${noBriefPos.over}px）`,
+            )
+          // 恢复现场：把 brief 写回去、重新打开那个子任务窗口，后面的「AI 分析」接着用它
+          await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+          await settle(p)
+          await p.evaluate(
+            ([k, v]) => {
+              const db = JSON.parse(localStorage.getItem(k))
+              const parent = db.tasks.find((x) => x.title.includes('购物车'))
+              const sub = parent.steps.find((x) => x.slot === 'sub' && x.title === '核对角标的订阅时机')
+              // 原值是 undefined（旧记录本来就没这个字段）时也原样写回，不要变成空字符串
+              if (sub) sub.brief = v
+              localStorage.setItem(k, JSON.stringify(db))
+            },
+            ['agent-panel-demo-v3', savedBrief],
+          )
+          await p.reload()
+          await openTask()
+          await bar.first().click()
+          await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+          await settle(p)
+          // 复原真的生效了吗：卡片回来了才算恢复现场（这段写回之前是死代码，重载后丢失，这里就是拦它的）
+          if (!(await p.getByRole('dialog').last().getByRole('region', { name: '派给它的要求' }).count()))
+            errors.push('子任务-窗口：清空 brief 的用例跑完后没把要求写回去（后面的用例会看不到要求）')
+          await settle(p)
+        }
+      }
+      // 子任务窗口头部的「AI 分析」：弹的是执行记录那一套弹窗（同样的 focus 输入和「开始分析」），
+      // 只把范围收窄到这一步。按弹窗作用域找，页面上别处（内存曲线那边）也有「AI 分析」
+      const win = p.getByRole('dialog').last()
+      const analyzeBtn = win.getByRole('button', { name: 'AI 分析', exact: true })
+      if (!(await analyzeBtn.count())) errors.push('子任务-窗口：头部没有「AI 分析」按钮')
+      else {
+        await analyzeBtn.first().click()
+        const dlg = p.getByRole('dialog').last()
+        await dlg
+          .getByRole('button', { name: '开始分析' })
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('子任务-窗口：点 AI 分析没有弹出分析弹窗'))
+        const dialogText = (await dlg.textContent().catch(() => '')) ?? ''
+        if (!dialogText.includes('AI 分析这个子任务'))
+          errors.push(`子任务-窗口：弹窗标题不是「AI 分析这个子任务」（当前：${dialogText.slice(0, 60)}）`)
+        if (!dialogText.includes('只读这一个子任务')) errors.push('子任务-窗口：弹窗里没有说明只分析这一步')
+        await check(p, '子任务-窗口-分析弹窗')
+        const before = p.url()
+        const known = await p.evaluate(
+          (k) => (JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []).map((x) => x.id),
+          'agent-panel-demo-v3',
+        )
+        await dlg.getByRole('button', { name: '开始分析' }).click()
+        await p
+          .getByText('优化空间', { exact: false })
+          .first()
+          .waitFor({ timeout: 20000 })
+          .catch(() => errors.push('子任务-窗口：开始分析后没有新建分析对话'))
+        await check(p, '子任务-窗口-分析结果', ['耗时', '是否符合角色', '优化空间'])
+        // 分析对话按归属开在父对话下，显示在统一的 AI 分析窗口里，页面不跳走
+        if (p.url() !== before) errors.push(`子任务-窗口：分析不该跳走页面（URL 变成了 ${p.url()}）`)
+        if (!(await p.getByRole('button', { name: '在父对话里打开' }).count()))
+          errors.push('子任务-窗口：分析窗口没有「在父对话里打开」（分析对话没开在父对话下）')
+        // 回到购物车那个任务页接着核对后面的项：分析对话同样有「Token 用量」，backToTask() 会以为已经在任务页。
+        // 先把刚建的分析对话从演示数据里去掉，免得后面按文字找元素时命中它的内容。
+        // 要等它真的跑完再改：演示版模块级的 db 还是旧对象，它每 800ms 的 changed 和 finally 里的 persist()
+        // 会把含分析对话的 db 写回 localStorage，改早了会被覆盖
+        await p
+          .waitForFunction(
+            ([k, ids]) => {
+              const db = JSON.parse(localStorage.getItem(k) ?? '{"tasks":[]}')
+              // 只等新出现的任务（分析对话）：known 里的演示数据本身就有故意停在 running 的对话
+              // （状态行的正例 / 反例，见 seedTasks），算进去会一直等不到
+              return !(db.tasks ?? []).some((x) => !ids.includes(x.id) && x.status === 'running')
+            },
+            ['agent-panel-demo-v3', known],
+            { timeout: 30000 },
+          )
+          .catch(() => errors.push('子任务-窗口：分析对话一直没跑完，后面的核对会受它干扰'))
+        // 分析跑完了：关掉 AI 分析窗口再清数据
+        await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+        await p.evaluate(
+          ([k, ids]) => {
+            const db = JSON.parse(localStorage.getItem(k))
+            db.tasks = db.tasks.filter((x) => ids.includes(x.id))
+            localStorage.setItem(k, JSON.stringify(db))
+          },
+          ['agent-panel-demo-v3', known],
+        )
+        await p.goto(base)
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p
+          .getByTitle('Token 用量')
+          .first()
+          .waitFor({ timeout: 10000 })
+          .catch(() => {})
+      }
       await p.keyboard.press('Escape')
       await closed()
       // 执行中的子任务只在按钮上标 x/y，不再在旁边排成「标题 + 耗时」的运行卡片（那种卡片只给子对话）
@@ -380,8 +1564,112 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         errors.push(`运行区：子任务起的后台命令没有按「子任务 + 标题」列出来（当前行：${drawn.join(' | ') || '无'}）`)
       } else {
         if (!subJobRow.includes('单测')) errors.push(`运行区：子任务的后台命令没显示命令名，现在是「${subJobRow}」`)
-        if (!/(\d+m )?\d+(\.\d+)?s/.test(subJobRow))
+        // 计时是子任务从开始到现在（演示数据里开始得早，会是「3h 0m」这种写法）
+        if (!/\d+(\.\d+)?[hms]\b/.test(subJobRow))
           errors.push(`运行区：子任务的后台命令行没有计时，现在是「${subJobRow}」`)
+        // 子任务和子对话同一个样式的一行：带状态标签，最后是终止按钮；后台命令并在这一行里，不再另起一行
+        if (!subJobRow.includes('执行中')) errors.push(`运行区：子任务行没有「执行中」状态，现在是「${subJobRow}」`)
+        const stopInRow = await p.evaluate(() =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((b) =>
+            [...b.children].some(
+              (r) =>
+                (r.innerText || '').includes('核对角标的订阅时机') &&
+                !!r.querySelector('button[aria-label="终止子任务"]'),
+            ),
+          ),
+        )
+        if (!stopInRow) errors.push('运行区：子任务行没有终止按钮')
+        await p.locator('[aria-label="运行中"]', { hasText: '核对角标的订阅时机' }).first().scrollIntoViewIfNeeded()
+        await check(p, '子任务-运行区一行')
+        // 整行都是打开入口（用户要求：和子对话行一样，动作名、标题、状态标签、耗时点了都开只读窗口）。
+        // 以前只有标题按钮能点，详情区还 stopPropagation 拦着，点「执行中」没反应
+        const rowInfo = await p.evaluate(() => {
+          const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+          const box = [...document.querySelectorAll('[aria-label="运行中"]')].find((b) =>
+            [...b.children].some((r) => norm(r.innerText).includes('核对角标的订阅时机')),
+          )
+          const row = box ? [...box.children].find((r) => norm(r.innerText).includes('核对角标的订阅时机')) : null
+          // 详情区的状态标签：按文案取（角色名「前端开发」、后台命令名也带同一个类），原来它拦截点击
+          const tag = row
+            ? [...row.querySelectorAll('span')].find(
+                (s) =>
+                  (s.className || '').includes('text-[0.6875rem]') &&
+                  s.getBoundingClientRect().width > 0 &&
+                  /^(执行中|排队中|排队等 API)/.test(norm(s.innerText)),
+              )
+            : null
+          if (!tag) return null
+          const ms = [...row.querySelectorAll('span')].find((s) => (s.className || '').includes('tabular-nums'))
+          return {
+            title: norm(row.querySelector('button[title*="打开子任务"]')?.innerText || ''),
+            tagText: norm(tag.innerText),
+            // 状态标签和耗时都要跟着整行可点：手型、且不套进按钮（不出现嵌套按钮）
+            tagCursor: getComputedStyle(tag).cursor,
+            tagInButton: !!tag.closest('button'),
+            msCursor: ms ? getComputedStyle(ms).cursor : '',
+          }
+        })
+        if (!rowInfo) errors.push('运行区：子任务行里没找到详情区的状态标签，核对不了整行可点')
+        else {
+          if (rowInfo.tagCursor !== 'pointer')
+            errors.push(`运行区子任务行：详情区不可点（cursor ${rowInfo.tagCursor}），整行都应该能打开子任务窗口`)
+          if (rowInfo.tagInButton) errors.push('运行区子任务行：状态标签被套进了按钮，整行点击不该嵌套按钮')
+          if (rowInfo.msCursor !== 'pointer')
+            errors.push(`运行区子任务行：耗时不可点（cursor ${rowInfo.msCursor}），整行都应该能打开子任务窗口`)
+          // 用 Playwright 的真实点击，不用 evaluate 里的 tag.click()：后者是合成事件，绕过命中测试，
+          // 详情区被挡住、pointer-events-none、滚出视口这些回归它都拦不到
+          const helperRow = p.locator('[aria-label="运行中"] > div').filter({ hasText: '核对角标的订阅时机' }).first()
+          await helperRow
+            .getByText(/^(执行中|排队中|排队等 API)/)
+            .first()
+            .click({ timeout: 5000 })
+            .catch((e) => errors.push(`运行区：点不到子任务行的详情区（${e.message.split('\n')[0]}）`))
+          // 窗口开没开看标题：这个子任务还在跑，窗口里不会有「这里只能查看」那句
+          //（那句只在结束 / 失败 / 终止时才出现）
+          const opened = await p
+            .waitForFunction(
+              (title) =>
+                !!title &&
+                [...document.querySelectorAll('[role="dialog"]')].some((d) => (d.innerText || '').includes(title)),
+              rowInfo.title,
+              { timeout: 3000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+          if (!opened) errors.push(`运行区：点详情区「${rowInfo.tagText}」后没打开子任务「${rowInfo.title}」的窗口`)
+          await check(p, '子任务-整行可点')
+          await p.keyboard.press('Escape')
+          await closed()
+        }
+        // 行尾的终止按钮只终止，不连带打开窗口（RowShell 的 action 自己 stopPropagation，要保住）。
+        // 注意：演示数据里这个子任务没有真在跑的进程，demo-backend 的 stopHelper 会返回 false 并报错，
+        // 所以这一步只验证「点终止不打开窗口」，不验证终止真的生效；行还在，下面「1/3」的计数才成立
+        {
+          const stopBtn = p
+            .locator('[aria-label="运行中"] > div')
+            .filter({ hasText: '核对角标的订阅时机' })
+            .first()
+            .locator('button[aria-label="终止子任务"]')
+          const stopClicked = await stopBtn.click({ timeout: 5000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!stopClicked) errors.push('运行区：子任务行里找不到终止按钮')
+          else {
+            await settle(p)
+            if (await p.getByRole('dialog').count()) errors.push('运行区：点终止按钮把子任务窗口也打开了')
+            await check(p, '子任务-终止按钮不打开窗口')
+            // 演示里的子任务没有真的在跑的进程，终止会弹一句报错 toast；等它自己消失，
+            // 不要留给后面的用例（它会盖住右下角的浮条、截图里也多余）
+            await p
+              .locator('[data-sonner-toast]')
+              .first()
+              .waitFor({ state: 'detached', timeout: 8000 })
+              .catch(() => {})
+          }
+        }
       }
       // 在跑时按钮上是「运行中/总数」，和子对话那一栏同一个写法（按 aria-label 定位输入框上方的入口）
       const runLabel = (await subBar().first().innerText()).replace(/\s+/g, ' ').trim()
@@ -397,7 +1685,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
       await p.reload()
       await openTask()
-      // 窄窗口：入口和输入框上方那一行不能被挤坏；两个计数入口都保留，只是换行
+      // 窄窗口：两个计数入口各自占一行、都要保留，不能被挤没
       await p.setViewportSize({ width: 900, height: 800 })
       await p.reload()
       await openTask()
@@ -625,7 +1913,294 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
-  await p.keyboard.press('Escape')
+  // 每个计划项右侧带耗时、顶部带总用时：进行中的在涨、完成的固定、待做的不显示；
+  // 用时从标题下方的小字里搬走了，等待中的那一项只剩「等：…」
+  {
+    const readPlan = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        // 按标题那一格定位到它自己的行，子步骤的用时不会被当成主步骤的
+        const titleSpan = (title) => [...dlg.querySelectorAll('span')].find((s) => norm(s.textContent) === title)
+        const timeOf = (title) => norm(titleSpan(title)?.parentElement?.querySelector('[data-plan-time]')?.textContent)
+        const metaOf = (title) =>
+          norm(titleSpan(title)?.parentElement?.parentElement?.querySelector('span.line-clamp-2')?.textContent)
+        const total = dlg.querySelector('[data-plan-total]')
+        const cur = document.querySelector('[data-plan-current-time]')
+        return {
+          total: norm(total?.textContent),
+          totalLabel: total?.getAttribute('aria-label') || '',
+          items: [...dlg.querySelectorAll('[data-plan-time]')].map((e) => ({
+            text: norm(e.textContent),
+            label: e.getAttribute('aria-label') || '',
+          })),
+          current: { text: norm(cur?.textContent), label: cur?.getAttribute('aria-label') || '' },
+          done: timeOf('角标订阅购物车变化'),
+          running: timeOf('覆盖删除商品后角标归零'),
+          waitingMeta: metaOf('跑端到端测试'),
+          doneMeta: metaOf('角标订阅购物车变化'),
+        }
+      })
+    const a = await readPlan()
+    if (!a) errors.push('执行计划：没找到计划窗口')
+    else {
+      // fmtDuration 的几种写法：秒、分+秒、时+分、天+时、毫秒级
+      const duration = (text) => /^(<0\.1s|(\d+d )?\d+h \d+m|\d+d \d+h|(\d+m )?\d+(\.\d+)?s)$/.test(text)
+      if (!duration(a.total)) errors.push(`执行计划：顶部没有显示总用时（「${a.total}」）`)
+      if (!a.totalLabel.startsWith('总用时 '))
+        errors.push(`执行计划：总用时缺少「总用时」说明（aria-label「${a.totalLabel}」）`)
+      // 完成 1 项 + 等待 1 项 + 进行中 1 项 + 子步骤完成/进行中各 1 项；待做的两项没有耗时
+      if (a.items.length !== 5) errors.push(`执行计划：${a.items.length} 项有耗时，应该是 5 项（待做的两项不显示）`)
+      for (const x of a.items) {
+        if (!duration(x.text)) errors.push(`执行计划：耗时「${x.text}」不是时长格式`)
+        if (!x.label.startsWith('用时 ')) errors.push(`执行计划：耗时缺少「用时」说明（aria-label「${x.label}」）`)
+      }
+      if (!a.current.text || !a.current.label.startsWith('用时 '))
+        errors.push(`执行计划：计划按钮上正在做的那一步没有带耗时（「${a.current.text}」/「${a.current.label}」）`)
+      if (!duration(a.done) || !duration(a.running))
+        errors.push(`执行计划：完成/进行中的步骤没有耗时（完成「${a.done}」、进行中「${a.running}」）`)
+      if (a.waitingMeta !== '等：端到端测试')
+        errors.push(`执行计划：等待中的说明不对（「${a.waitingMeta}」，应该只有「等：端到端测试」）`)
+      if (a.doneMeta) errors.push(`执行计划：完成的步骤下面还重复显示用时（「${a.doneMeta}」）`)
+      // 进行中每秒在涨；完成的用 endedAt 固定住
+      await p.waitForTimeout(1600)
+      const b = await readPlan()
+      if (!b) errors.push('执行计划：等了一秒后计划窗口不见了')
+      else {
+        if (b.total === a.total) errors.push(`执行计划：进行中总用时没有走（一直是 ${a.total}）`)
+        if (b.running === a.running) errors.push(`执行计划：进行中的步骤耗时没有走（一直是 ${a.running}）`)
+        if (b.done !== a.done) errors.push(`执行计划：完成的步骤耗时还在变（${a.done} → ${b.done}）`)
+      }
+    }
+    await p.keyboard.press('Escape')
+  }
+  // 计划项的状态图标：进行中和等待中不能长得一样（以前一个转、一个沙漏）。
+  // 读计算样式断言：形状（border-style）、动效类型和节奏（animationName + duration）、颜色、透明度、
+  // 尺寸档位、有没有残留 SVG。只断言「有图标」拦不住两个状态被改成一样
+  {
+    await p.getByRole('button', { name: '执行计划' }).click()
+    const readIcons = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+        const iconOf = (label) => {
+          const icon = [...dlg.querySelectorAll('[role="img"]')].find((e) => e.getAttribute('aria-label') === label)
+          if (!icon) return null
+          const cs = getComputedStyle(icon)
+          // 尺寸读布局值（offsetWidth/Height），不用 getBoundingClientRect：后者返回旋转后的包围盒，
+          // 「进行中」在 animate-spin 转着，斜到 45° 时 18px 的正方形包围盒会胀成 ~25px，会让断言忽大忽小
+          return {
+            style: cs.borderStyle,
+            color: cs.borderTopColor,
+            // 等待中是 opacity 0.9→0.5 的呼吸，淡相也不能淡到看不见
+            opacity: Number(cs.opacity),
+            transform: norm(cs.transform),
+            // 动画一栏：等待中是 1.6s 原地呼吸，进行中是 1s 旋转，名字和时长都不同
+            spin: norm(cs.animationName) + ' ' + norm(cs.animationDuration),
+            size: icon.offsetWidth + 'x' + icon.offsetHeight,
+            // 图标自己不能带文字（沙漏那种内联 SVG 已经删掉，这里留一条防线）
+            svg: icon.querySelectorAll('svg').length,
+          }
+        }
+        return { running: iconOf('进行中'), waiting: iconOf('等待中'), pending: iconOf('待做'), done: iconOf('完成') }
+      })
+    const icons = await readIcons()
+    if (!icons) errors.push('执行计划：没找到计划窗口，核对不到状态图标')
+    else if (!icons.running || !icons.waiting || !icons.pending || !icons.done)
+      errors.push(
+        `执行计划：状态图标不全（进行中 ${!!icons.running}、等待中 ${!!icons.waiting}、待做 ${!!icons.pending}、完成 ${!!icons.done}）`,
+      )
+    else {
+      // 1. 形状不同：等待中是虚线环，进行中是实线（一圈只有一道弧）
+      if (icons.waiting.style === icons.running.style)
+        errors.push(`执行计划：等待中和进行中的边框样式一样（都是 ${icons.waiting.style}），静态下分不开`)
+      if (icons.waiting.style !== 'dashed')
+        errors.push(`执行计划：等待中不是虚线环（border-style=${icons.waiting.style}）`)
+      if (icons.running.style !== 'solid')
+        errors.push(`执行计划：进行中不是实线弧（border-style=${icons.running.style}）`)
+      // 2. 动效不能用同一套：等待中是原地呼吸（改 opacity），进行中是旋转（改 transform）
+      if (icons.waiting.spin === icons.running.spin)
+        errors.push(`执行计划：等待中和进行中的动效完全一样（${icons.waiting.spin}），只有颜色不同不够分`)
+      if (/none/.test(icons.waiting.spin) || /none/.test(icons.running.spin))
+        errors.push(`执行计划：状态图标没在动（进行中 ${icons.running.spin}、等待中 ${icons.waiting.spin}）`)
+      if (icons.waiting.spin === icons.pending.spin)
+        errors.push(`执行计划：等待中和待做的动效一样（${icons.waiting.spin}），等待中该在动、待做该静止`)
+      // 进行中是旋转（Tailwind 的 spin 关键帧）、等待中是呼吸：同一个关键帧就分不出「在做」和「在等」
+      if (!/^spin /.test(icons.running.spin)) errors.push(`执行计划：进行中不再是旋转（${icons.running.spin}）`)
+      if (icons.waiting.spin.split(' ')[0] === icons.running.spin.split(' ')[0])
+        errors.push(`执行计划：等待中和进行中用的是同一组关键帧（${icons.waiting.spin.split(' ')[0]}）`)
+      // 等距虚线绕圆心转一圈和自身重合，看起来像没在动：呼吸用的关键帧不能让圆环转起来
+      if (icons.waiting.transform && icons.waiting.transform !== 'none')
+        errors.push(`执行计划：等待中的圆环带了 transform（${icons.waiting.transform}），呼吸不该带位移/旋转`)
+      // 3. 颜色只作辅助，但也不能是同一个
+      if (icons.waiting.color === icons.running.color)
+        errors.push(`执行计划：等待中和进行中同色（${icons.waiting.color}）`)
+      // 等待中靠透明度呼吸：整体不能是不透明的，淡相也不能淡到看不见（否则跟待做的静止空心圆混）
+      if (icons.waiting.opacity >= 1)
+        errors.push(`执行计划：等待中的圆环不透明（${icons.waiting.opacity}），呼吸靠的是 opacity`)
+      const PULSE_FLOOR = 0.4
+      if (icons.waiting.opacity < PULSE_FLOOR)
+        errors.push(`执行计划：等待中最淡的一相只有 ${icons.waiting.opacity}，会淡到看不见`)
+      if (icons.pending.opacity !== 1) errors.push(`执行计划：待做不该是半透明的（${icons.pending.opacity}）`)
+      // 待做是静止的空心圆：和等待中靠「有没有动」分开
+      if (!/none/.test(icons.pending.spin)) errors.push(`执行计划：待做的图标在动（${icons.pending.spin}）`)
+      if (icons.pending.style === icons.waiting.style)
+        errors.push('执行计划：待做和等待中的边框样式一样，一个是空心圆一个是虚线环才对')
+      // 换图标不能把计划行搞乱：图标盒子只有两种合法尺寸，不同层级本来就不同大小（主步骤 18px、子步骤 14px），
+      // 不跨层级比；要防的是换了图标后盒子缩了/胀了，所以只看每个状态落在不落在合法档位里
+      const LEGAL_SIZES = ['14x14', '18x18']
+      for (const [name, icon] of [
+        ['进行中', icons.running],
+        ['等待中', icons.waiting],
+        ['待做', icons.pending],
+        ['完成', icons.done],
+      ])
+        if (!LEGAL_SIZES.includes(icon.size))
+          errors.push(`执行计划：「${name}」的图标尺寸是 ${icon.size}，只允许 ${LEGAL_SIZES.join(' / ')}`)
+      if (icons.waiting.svg) errors.push(`执行计划：等待中的图标里还嵌着 ${icons.waiting.svg} 个 SVG（沙漏应已删掉）`)
+      // 折叠头「n 个在等待」前面的小环和计划项里的等待环是同一套样式。
+      // 注意：不能从 [data-plan-total] 往上找 button —— 它渲染在对话框 header 的 span 里，祖先链上没有 button，
+      // 那样取会永远是空、这条断言静默空转。改成按文字找那个折叠按钮，找不到也算失败
+      const headRing = await p.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find((b) => /个在等待/.test(b.textContent || ''))
+        const ring = btn?.querySelector('.plan-wait-ring')
+        return ring ? getComputedStyle(ring).borderStyle : ''
+      })
+      if (!headRing) errors.push('执行计划：折叠头「n 个在等待」前面没找到等待环')
+      else if (headRing !== 'dashed') errors.push(`执行计划：折叠头的小环不是虚线（border-style=${headRing}）`)
+      // 截一张同时含「进行中」和「等待中」的计划图：形状能不能一眼分开得看图确认，光断言样式不够
+      await check(p, '执行计划-状态图标形状对比')
+    }
+    await p.keyboard.press('Escape')
+  }
+  // 全部完成后总用时停在最晚一项的结束时间，不再每秒增长
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      const plan = task.plans.at(-1)
+      const iso = (ms) => new Date(ms).toISOString()
+      const end = Date.now() - 60_000
+      plan.steps.forEach((s, i) => {
+        const start = end - 240_000 + i * 40_000
+        s.status = 'done'
+        s.startedAt = iso(start)
+        s.endedAt = iso(start + 30_000)
+        s.waits = []
+        for (const [j, c] of (s.children ?? []).entries()) {
+          c.status = 'done'
+          c.startedAt = iso(start + j * 5_000)
+          c.endedAt = iso(start + (j + 1) * 5_000)
+        }
+      })
+      plan.doneAt = iso(end)
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.reload()
+    await backToTask()
+    await p.getByRole('button', { name: '执行计划' }).click()
+    const total = () =>
+      p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        return (dlg?.querySelector('[data-plan-total]')?.textContent ?? '').replace(/\s+/g, ' ').trim()
+      })
+    const first = await total()
+    await p.waitForTimeout(1800)
+    const second = await total()
+    if (!first) errors.push('执行计划：全部完成后不显示总用时')
+    else if (second !== first) errors.push(`执行计划：全部完成后总用时还在涨（${first} → ${second}）`)
+    await check(p, '执行计划-完成后停住')
+    await p.keyboard.press('Escape')
+    // 提前结束（finish_plan）但还有没做完的步骤：折叠头不能说「计划已完成」，也不能和列表里的「等待中」同屏打架。
+    // 用户报过这条：面板写着「✓ 计划已完成」，展开后最后一步还是橙色虚线环的等待中
+    {
+      const key2 = 'agent-panel-demo-v3'
+      await p.evaluate((k) => {
+        const db = JSON.parse(localStorage.getItem(k))
+        const task = db.tasks.find((x) => x.title.includes('购物车'))
+        const plan = task.plans.at(-1)
+        // 前面几步做完，最后一步停在等待中没结算，计划却已经结束
+        plan.steps.forEach((s, i) => {
+          const last = i === plan.steps.length - 1
+          s.status = last ? 'waiting' : 'done'
+          s.waits = last ? [{ kind: 'background', ref: 'lint01', label: 'lint + 单测', state: 'waiting' }] : []
+          // 最后一步自带子步骤（截图里那一步也拆成两件事）：这样「数条目」和「数主步骤」两种口径会分叉，
+          // 下面那条数字断言才拦得住——两边都只有一步时，两种算法得出的数一样，断言是空的
+          const kid = (id, title, status) => ({
+            id,
+            title,
+            status,
+            note: '',
+            waits: [],
+            startedAt: '',
+            endedAt: '',
+          })
+          s.children = last
+            ? [kid('9.1', '跑 lint', 'done'), kid('9.2', '跑单元测试', 'running'), kid('9.3', '看失败用例', 'pending')]
+            : (s.children || []).map((c) => ({ ...c, status: 'done', waits: [] }))
+        })
+        plan.doneAt = new Date().toISOString()
+        localStorage.setItem(k, JSON.stringify(db))
+      }, key2)
+      await p.reload()
+      await backToTask()
+      const head = await p.evaluate(() => {
+        const btn = document.querySelector('button[aria-label="执行计划"]')
+        return (btn?.textContent || '').replace(/\s+/g, ' ').trim()
+      })
+      if (/计划已完成/.test(head))
+        errors.push(`执行计划-提前结束：还有没做完的步骤却写着「计划已完成」（折叠头「${head}」）`)
+      if (!/计划已结束/.test(head)) errors.push(`执行计划-提前结束：折叠头没写「计划已结束」（「${head}」）`)
+      if (!/没做完/.test(head)) errors.push(`执行计划-提前结束：没说还有几步没做完（「${head}」）`)
+      await p.getByRole('button', { name: '执行计划' }).click()
+      // 计划已经结束：里面没做完的步骤不能再画成等待中（橙色虚线环呼吸），读作「未完成」
+      const inside = await p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const labels = [...dlg.querySelectorAll('[role="img"]')].map((e) => e.getAttribute('aria-label'))
+        return { labels, expired: !!dlg.querySelector('.plan-wait-ring') }
+      })
+      if (!inside) errors.push('执行计划-提前结束：没找到计划窗口')
+      else {
+        if (inside.labels.includes('等待中'))
+          errors.push('执行计划-提前结束：计划已结束，里面还有读作「等待中」的步骤（应显示为「未完成」）')
+        if (inside.expired) errors.push('执行计划-提前结束：计划已结束，里面还画着等待中的虚线环')
+        if (!inside.labels.includes('未完成')) errors.push('执行计划-提前结束：没做完的步骤没有标成「未完成」')
+        const same = await p.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="执行计划"]')
+          const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+          return /计划已完成/.test(btn?.textContent || '') && !!(dlg && dlg.querySelector('.plan-wait-ring'))
+        })
+        if (same) errors.push('执行计划-提前结束：「计划已完成」和等待中的步骤同时出现在一屏')
+        // 折叠头的「n 步没做完」和窗内的进度必须是同一套计数标准（以前 leftSteps 数条目、进度数主步骤，
+        // 带子步骤的计划会同时出现「3 步没做完」和「3/4」，用户看不出到底还剩几步）
+        const nums = await p.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="执行计划"]')
+          const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+          const left = /(\d+) 步没做完/.exec(btn?.textContent || '')?.[1] ?? ''
+          const foot = [...(dlg?.querySelectorAll('span') ?? [])]
+            .map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim())
+            .find((x) => /^\d+\/\d+$/.test(x))
+          return { left, foot }
+        })
+        if (nums.left && nums.foot) {
+          const [done, total] = nums.foot.split('/').map(Number)
+          if (Number(nums.left) !== total - done)
+            errors.push(`执行计划-提前结束：折叠头说「${nums.left} 步没做完」，窗内进度是 ${nums.foot}，两处对不上`)
+        }
+      }
+      await check(p, '执行计划-提前结束')
+      await p.keyboard.press('Escape')
+      // 演示数据不在这里恢复：下面接着把整份原始数据写回去再刷新
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
+  }
   // 子对话里点「启动工作流」：在子对话这块面板内换成那次运行的视图，标题栏左边能返回子对话，
   // 右边是 ⋯ 和 ✕（✕ 关掉子对话面板本身，和返回不一样），返回后子对话原样回来
   {
@@ -684,8 +2259,218 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         .waitFor({ timeout: 5000 })
         .catch(() => {})
     }
+    // 验收 5：子对话没打开时，宽屏文件按钮的四种 openChild ? 分支不变（写反会在这里撞红）。
+    // 文件面板现在默认收起（见「任务-文件面板默认收起」），这里验的是从收起到展开、再收回去这条路
+    {
+      // 前面的用例展开过文件面板，本地记着「展开」：清掉记录、直接重新加载，
+      // 不走 gotoTask / backToTask（它们会顺手点开面板），验的才是真默认状态
+      await p.evaluate(() => {
+        for (const k of Object.keys(localStorage)) if (k.startsWith('task-files:')) localStorage.removeItem(k)
+      })
+      await p.reload()
+      const token = p.getByTitle('Token 用量').first()
+      if (
+        !(await token.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+      await token.waitFor({ timeout: 5000 }).catch(() => {})
+      await settle(p)
+      const aside = p.locator('[data-task-panel]')
+      const open = p.getByRole('button', { name: '显示文件', exact: true })
+      const fold = p.getByRole('button', { name: '收起文件面板', exact: true })
+      if (!(await open.count())) errors.push('文件面板-原行为：子对话未打开时没有「显示文件」')
+      else if ((await open.getAttribute('aria-expanded')) !== 'false')
+        errors.push('文件面板-原行为：默认收起时按钮没标成未展开')
+      else if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：默认就展开了文件面板')
+      else {
+        await open.click()
+        await settle(p)
+        if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：点「显示文件」后右栏没出来')
+        await check(p, '文件面板-原行为-展开', ['src'])
+        if (!(await fold.count())) errors.push('文件面板-原行为：展开后没有「收起文件面板」')
+        else if ((await fold.getAttribute('aria-expanded')) !== 'true')
+          errors.push('文件面板-原行为：面板展着时按钮没标成已展开')
+        else {
+          await fold.click()
+          await settle(p)
+          // 收起后整栏看不见（xl:hidden），按钮换成「显示文件」、标成未展开
+          if (await aside.isVisible().catch(() => false)) errors.push('文件面板-原行为：点收起后右栏还占着位置')
+          if ((await open.getAttribute('aria-expanded')) !== 'false')
+            errors.push('文件面板-原行为：收起后按钮没标成未展开')
+          await check(p, '文件面板-原行为-收起')
+          await open.click()
+          await settle(p)
+          if (!(await aside.isVisible().catch(() => false))) errors.push('文件面板-原行为：再点一次文件面板没回来')
+        }
+      }
+    }
     await openChild()
     await check(p, '子对话-面板', ['子对话：到货提醒'])
+    // 子对话开着时标题栏的文件按钮还在：点了把文件面板盖在子对话上展开，子对话不关；再点（或「回到子对话」、Esc）回来
+    {
+      const aside = p.locator('[data-task-panel]')
+      const fileBtn = p.getByRole('button', { name: '覆盖显示文件', exact: true })
+      const back = p.getByRole('button', { name: '回到子对话', exact: true })
+      /** 等覆盖层真的关上：只看 count 会漏掉正在卸载的那一瞬 */
+      const gone = () =>
+        back.waitFor({ state: 'detached', timeout: 3000 }).then(
+          () => true,
+          () => false,
+        )
+      /**
+       * 等焦点真的回到标题栏文件按钮上。
+       * 收起时焦点是在面板卸载后的下一帧（requestAnimationFrame）才还回去的（见 TaskView 的 closeChildFiles），
+       * 所以 gone() 返回时读 activeElement 会读到回收之前的那一刻，并行跑时那一帧被拉长就掉到 body；
+       * 这里等的是可观测结果（活动元素的 aria-label），不是等固定时长。
+       * 返回 { ok } 表示等到没等到，没等到时带上实际落点给报错用。
+       */
+      const focusBack = (visible = false) =>
+        p
+          .waitForFunction(
+            (needVisible) => {
+              const el = document.activeElement
+              if (el?.getAttribute('aria-label') !== '覆盖显示文件') return false
+              return !needVisible || el.offsetParent !== null
+            },
+            visible,
+            { timeout: 3000 },
+          )
+          .then(
+            () => ({ ok: true, label: '覆盖显示文件' }),
+            () =>
+              p.evaluate(() => ({
+                ok: false,
+                label: document.activeElement?.getAttribute('aria-label') ?? null,
+                visible: document.activeElement?.offsetParent !== null,
+              })),
+          )
+      if (!(await fileBtn.count())) errors.push('子对话+文件面板：子对话开着时标题栏没有文件按钮')
+      else if (!(await fileBtn.isVisible())) errors.push('子对话+文件面板：子对话开着时文件按钮不可见')
+      else {
+        // 子对话自己的标题栏（pane 里的 TaskView）不能再出现一个文件按钮
+        for (const label of ['覆盖显示文件', '收起文件面板'])
+          if (await aside.locator(`button[aria-label="${label}"]`).count())
+            errors.push(`子对话+文件面板：子对话自己的标题栏里也有「${label}」按钮`)
+        const before = await aside.boundingBox()
+        await fileBtn.click()
+        const shown = await back.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        )
+        if (!shown) errors.push('子对话+文件面板：点了文件按钮没有出现文件面板')
+        else {
+          // 盖在子对话上：占的是子对话那一栏的位置和宽度，不是另起一栏把两边挤窄
+          const after = await aside.boundingBox()
+          if (!before || !after) errors.push('子对话+文件面板：量不到右栏的位置')
+          else if (Math.abs(after.x - before.x) > 1 || Math.abs(after.width - before.width) > 1)
+            errors.push(`子对话+文件面板：文件面板把右栏挤变了（${JSON.stringify(before)} → ${JSON.stringify(after)}）`)
+          // 子对话没被关掉，文件面板真的在它上面（子对话的标题就在下面，看不见但还在）
+          const under = await p.evaluate(() => {
+            const box = document.querySelector('[data-task-panel]')
+            const title = [...(box?.querySelectorAll('*') ?? [])].find(
+              (el) => el.textContent?.trim() === '子对话：到货提醒' && el.children.length === 0,
+            )
+            if (!title) return null
+            const r = title.getBoundingClientRect()
+            return { covered: r.width > 0, box: { x: r.x, y: r.y } }
+          })
+          if (!under?.covered) errors.push('子对话+文件面板：盖文件的时候子对话被卸载了，收起后状态就丢了')
+          await check(p, '子对话-文件覆盖', ['src'])
+          if ((await fileBtn.getAttribute('aria-expanded')) !== 'true')
+            errors.push('子对话+文件面板：文件开着时按钮没标成展开')
+          // 「回到子对话」收起：焦点回标题栏那个按钮，键盘用户不会被丢回页面开头
+          await back.click()
+          if (!(await gone())) errors.push('子对话+文件面板：点「回到子对话」没有收起文件面板')
+          const focus = await focusBack()
+          if (!focus.ok) errors.push(`子对话+文件面板：收起后焦点没有回到文件按钮（现在在 ${focus.label ?? 'body'}）`)
+          if (!(await p.getByText('子对话：到货提醒').first().count()))
+            errors.push('子对话+文件面板：点了「回到子对话」后子对话没回来')
+          await check(p, '子对话-文件覆盖-返回', ['子对话：到货提醒'])
+          // 再用标题栏那个按钮自己开、自己关：只能开不能关的写法必须在这里撞红
+          await fileBtn.click()
+          if (
+            !(await back.waitFor({ timeout: 5000 }).then(
+              () => true,
+              () => false,
+            ))
+          )
+            errors.push('子对话+文件面板：第二次点文件按钮没有重新盖开')
+          await fileBtn.click()
+          if (!(await gone())) errors.push('子对话+文件面板：再点标题栏文件按钮没有收起文件面板')
+          await check(p, '子对话-文件覆盖-按钮收起')
+          // 子对话里开着运行视图（它自己也听 Esc）时，Esc 只收文件面板，不能把运行视图一起关掉
+          await p.locator('button[title="打开这次运行的对话"]').first().click()
+          await check(p, '子对话-运行视图-打开', ['第 1 次运行'])
+          await fileBtn.click()
+          await back.waitFor({ timeout: 5000 }).catch(() => errors.push('子对话+文件面板：运行视图上盖不开文件面板'))
+          await p.keyboard.press('Escape')
+          if (!(await gone())) errors.push('子对话+文件面板：按 Esc 没有收起文件面板')
+          if (!(await p.getByRole('button', { name: '返回子对话', exact: true }).count()))
+            errors.push('子对话+文件面板：按 Esc 收起文件时把子对话里的运行视图也关了')
+          await check(p, '子对话-文件覆盖-Esc', ['第 1 次运行'])
+          await p.getByRole('button', { name: '返回子对话', exact: true }).click()
+          await p
+            .getByRole('button', { name: '返回子对话', exact: true })
+            .waitFor({ state: 'detached', timeout: 3000 })
+            .catch(() => {})
+        }
+        // 窄屏（xl 断点以下）：子对话本身就是 fixed z-40 盖着右半屏，父对话标题栏右端那个按钮
+        // 鼠标点不到（被子对话抽屉盖住，改动前就这样）；但按钮仍在无障碍树里、键盘能专注，用键盘走这条路径
+        await p.setViewportSize({ width: 1024, height: 900 })
+        await settle(p)
+        const narrow = p.getByRole('button', { name: '覆盖显示文件', exact: true })
+        if (!(await narrow.count())) errors.push('子对话+文件面板（窄屏）：标题栏没有文件按钮')
+        else {
+          await narrow.focus()
+          await p.keyboard.press('Enter')
+          const ok = await back.waitFor({ timeout: 5000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!ok) errors.push('子对话+文件面板（窄屏）：用键盘按文件按钮没有出现文件面板')
+          else {
+            // 窄屏子对话只占半边、文件树放不下：盖上去时铺满整个屏
+            const cover = p.locator('[data-cover-panel]')
+            const box = await cover.boundingBox()
+            if (!box || box.width < 1000)
+              errors.push(`子对话+文件面板（窄屏）：文件面板没有铺满整个屏（${JSON.stringify(box)}）`)
+            await check(p, '子对话-文件覆盖-窄屏')
+            await back.click()
+            if (!(await gone())) errors.push('子对话+文件面板（窄屏）：点「回到子对话」没有收起文件面板')
+            // 窄屏收焦点收到的是窄屏那个按钮：宽屏按钮在 <1280 是 display:none，focus 不生效
+            const focus = await focusBack(true)
+            if (!focus.ok)
+              // 焦点可能落在那个 display:none 的宽屏按钮上：它的 aria-label 也是同一个，只打 label 会变成
+              // 「没有回到可见的文件按钮（现在在 覆盖显示文件）」这种自相矛盾的报错，把可见性一起带上
+              errors.push(
+                `子对话+文件面板（窄屏）：收起后焦点没有回到可见的文件按钮（现在在 ${focus.label ?? 'body'}${focus.visible === false ? '，但它不可见' : ''}）`,
+              )
+          }
+        }
+        await p.setViewportSize({ width: 1440, height: 900 })
+        await settle(p)
+      }
+    }
+    // 子对话的进程面板只算它自己：父对话和兄弟的进程都不能出现
+    {
+      const btn = p.getByRole('button', { name: '对话进程' }).last()
+      await btn.click()
+      const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
+      await panel
+        .getByText('本对话', { exact: true })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => {})
+      const text = (await panel.textContent().catch(() => '')) ?? ''
+      if (!text.includes('本对话')) errors.push('对话进程-子对话：没有「本对话」分组')
+      if (text.includes('购物车右上角的数量角标')) errors.push('对话进程-子对话：显示了父对话的进程')
+      if (text.includes('内存面板增加 AI 分析')) errors.push('对话进程-子对话：显示了兄弟子对话的进程')
+      await check(p, '子对话-对话进程-子树')
+      await p.keyboard.press('Escape')
+    }
     const runTitle = p.locator('button[title="打开这次运行的对话"]')
     if (!(await runTitle.count())) errors.push('子对话：工作流那几行没有「打开这次运行的对话」的入口')
     // 点「启动工作流」这一行：面板内换成这次运行的视图，不是把内容铺在子对话里
@@ -783,7 +2568,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 演示内容不够长，先把这一轮撑高，再滚到中部看署名行的位置
   {
     const stuck = await p.evaluate(async () => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       const row = [...document.querySelectorAll('*')].find((el) => getComputedStyle(el).position === 'sticky')
       if (!sc || !row) return 'no-sticky'
       const col = row.parentElement
@@ -802,9 +2587,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     else if (stuck.top !== 0 || stuck.top2 !== 0)
       errors.push(`署名吸顶：滚到回复中部时署名行没固定在顶部（top=${stuck.top}/${stuck.top2}）`)
     await p.evaluate(() => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       sc.scrollTop = 0
     })
+    // 回到底部只浮在消息区里：滚上去后按钮不能跑到消息区外面压住输入框和信息条
+    await p.waitForTimeout(150)
+    const back = p.getByRole('button', { name: '回到底部' })
+    if (!(await back.count())) errors.push('任务-回到底部：往上滚之后没有出现按钮')
+    else {
+      const b = await back.boundingBox()
+      const sc = await p.locator('[data-conversation-scroll="messages"]').boundingBox()
+      if (!b || !sc) errors.push('任务-回到底部：拿不到按钮或消息区的位置')
+      else if (b.y + b.height > sc.y + sc.height + 1)
+        errors.push(
+          `任务-回到底部：按钮落在消息区外面（按钮底 ${Math.round(b.y + b.height)}，消息区底 ${Math.round(sc.y + sc.height)}）`,
+        )
+    }
+    await check(p, '任务-回到底部')
     await check(p, '任务-署名吸顶')
   }
   // 启动命令只留图标，点开才显示完整命令
@@ -872,7 +2671,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 只拖文字时不拦截浏览器默认行为
   {
     const dropped = await p.evaluate(async () => {
-      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const sc = document.querySelector('[data-conversation-scroll="messages"]')
       if (!sc) return { error: '没有消息区' }
       const box = sc.getBoundingClientRect()
       const at = (dt, x, y) => ({ bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y })
@@ -921,6 +2720,30 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .press('Backspace')
       .catch(() => {})
   }
+  // 进程面板只算当前对话及其附属：购物车这个对话有在跑的子对话，面板里要同时出现
+  // 「本对话」和「子对话」两组，而且子对话的标题就在面板里（不是页面上别处的同名文字）
+  {
+    const btn = p.getByRole('button', { name: '对话进程' }).first()
+    await btn.click()
+    const panel = p.locator('[data-radix-popper-content-wrapper]').filter({ hasText: '内存合计' }).last()
+    await panel
+      .getByText('内存合计')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('对话进程-子树：面板没有打开'))
+    // 进程列表是打开后才异步拉的：等分组头出来再读，别把「正在读取进程…」当成结果
+    await panel
+      .getByText('本对话', { exact: true })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {})
+    const text = (await panel.textContent().catch(() => '')) ?? ''
+    if (!text.includes('本对话')) errors.push('对话进程-子树：没有「本对话」分组')
+    if (!text.includes('子对话')) errors.push('对话进程-子树：父对话没有列出附属子对话的进程')
+    if (!text.includes('内存面板增加 AI 分析')) errors.push('对话进程-子树：面板里找不到子对话的进程归属标题')
+    await check(p, '任务-对话进程-子树')
+    await btn.click()
+    await panel.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+  }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
   // 对话进程下拉：收起时不挂载面板内容（DOM 里没有节点、也不轮询），展开后才渲染进程列表和内存合计
@@ -932,8 +2755,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     '内存合计',
     '清理无效进程',
     '已结束的子任务',
-    // 合计行要说明是哪些加起来：这个会话树上全部进程（含子对话）
-    '这个会话树上全部进程的合计，含子对话',
+    // 合计行要说明是哪些加起来：这个对话和它的附属（子对话、子任务）
+    '这个对话及附属（子对话、子任务）的进程合计',
     '下面按归属分组',
   ])
   // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集
@@ -992,6 +2815,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .last()
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
+  // 关窗口会弹「AI 排查继续在后台进行」：提示在右上角，正盖着「任务进度」，等它退场再点
+  await waitToastsGone()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p
@@ -1186,6 +3011,419 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         if (await p.getByRole('button', { name: '去选择' }).count())
           errors.push('子对话提问：关闭后父对话里还有「去选择」')
       }
+    }
+  }
+  // 标题栏左上角的项目名：点开是项目下的对话，点一项就地打开，Esc 关闭，「打开项目」还在
+  {
+    const projBtn = p.locator('header').getByRole('button', { name: '商城前台', exact: true })
+    if (
+      !(await projBtn
+        .first()
+        .waitFor({ timeout: 10000 })
+        .then(
+          () => true,
+          () => false,
+        ))
+    )
+      errors.push('标题栏：左上角没有项目名入口')
+    else {
+      // 页面上可能还留着别的弹层：按浮层独有的「打开项目」认这一个
+      const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
+      const title = () => p.locator('header nav h2').first().innerText()
+      await projBtn.first().click()
+      // 上一步的 reload / 导航会让标题栏重渲染，紧接着那一下点击可能落在正在换掉的节点上而不展开。
+      // 没展开就补点一次（和本文件最后截图那段同一个做法），避免反而关掉已打开的浮层。
+      // 判据看触发按钮自己的展开状态（ProjectSwitch 的 PopoverTrigger 带 data-state），
+      // 不看浮层内容可见：打开后拉列表是 effect，内容晚一帧才齐，拿内容判会误把「已打开」当成「没打开」再点一下关掉
+      const expanded = () =>
+        projBtn
+          .first()
+          .getAttribute('data-state')
+          .then((s) => s === 'open')
+          .catch(() => false)
+      if (!(await expanded())) {
+        await p.waitForTimeout(300)
+        if (!(await expanded())) await projBtn.first().click()
+      }
+      if (
+        !(await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
+          () => true,
+          () => false,
+        ))
+      )
+        errors.push('标题栏：点项目名没有弹出对话列表')
+      else {
+        const text = (await pop.innerText()).replace(/\s+/g, ' ')
+        if (!text.includes('购物车右上角')) errors.push(`标题栏浮层：没有列出当前对话（${text}）`)
+        if (!text.includes('商品详情页')) errors.push(`标题栏浮层：没有列出项目下的其他对话（${text}）`)
+        if (!text.includes('打开项目')) errors.push('标题栏浮层：没有「打开项目」入口')
+        if (!(await pop.locator('[aria-current="true"]').count())) errors.push('标题栏浮层：当前对话没有高亮')
+
+        // 重新点开浮层；没打开就记错误，后面的断言照常跑。
+        // 先等页面稳定：上一步的导航会让标题栏重渲染，紧接着点击可能落在正在换掉的节点上
+        const reopen = async (what) => {
+          await p.waitForTimeout(200)
+          if (await pop.isVisible().catch(() => false)) {
+            await p.keyboard.press('Escape')
+            await pop.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+          }
+          await projBtn.first().click()
+          const ok = await pop.waitFor({ state: 'visible', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!ok) errors.push(`标题栏浮层：${what}时浮层没有重新打开`)
+          // 方向键的监听挂在浮层里那层 tabIndex=-1 的容器上，Radix 打开时先聚焦 Content，
+          // 下一帧才轮到它。Visible 之后立刻按键会落在 Content 上，方向键不动（真人不会在 16ms 内按）
+          if (ok)
+            await p
+              .waitForFunction(
+                () => {
+                  const a = document.activeElement
+                  return !!a && a.classList.contains('outline-none') && !!a.closest('[role="dialog"]')
+                },
+                { timeout: 1000 },
+              )
+              .catch(() => errors.push(`标题栏浮层：${what}时焦点没有落到列表上`))
+          return ok
+        }
+
+        // 鼠标点另一条：就地打开，浮层收起
+        await pop
+          .getByRole('button', { name: /商品详情页/ })
+          .first()
+          .click({ timeout: 10000 })
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：点一条对话后没有关闭')
+        const opened = await title().catch(() => '')
+        if (!opened.includes('商品详情页'))
+          errors.push(`标题栏浮层：点「商品详情页…」后没有打开那个对话（标题是「${opened}」）`)
+        await check(p, '任务-项目对话浮层-打开另一条')
+
+        // 键盘：上下选择 + Enter 回到购物车那条。中间等一轮摘要刷新（2.5s），
+        // 打开期间任务列表换新数组时不能把用户选中的位置拨回当前对话。
+        // Radix 打开后要等下一帧才把焦点移到监听方向键的那层，浮层刚可见时按键会丢，先等焦点到位
+        await reopen('键盘测试')
+        const focused = await p
+          .waitForFunction(
+            () => {
+              const el = document.activeElement
+              const dialog = el?.closest('[role="dialog"]')
+              // Radix 的 Content 自己也是 role=dialog、tabIndex=-1：要的是它里面监听方向键的那层
+              return !!el && el.getAttribute('tabindex') === '-1' && !!dialog && el !== dialog
+            },
+            { timeout: 3000 },
+          )
+          .then(
+            () => true,
+            () => false,
+          )
+        if (!focused) errors.push('标题栏浮层：打开后键盘焦点没有落到列表上')
+        await p.keyboard.press('ArrowDown')
+        await p.waitForTimeout(3000)
+        await p.keyboard.press('Enter')
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：键盘 Enter 后没有关闭')
+        const back = await title().catch(() => '')
+        if (!back.includes('购物车右上角'))
+          errors.push(`标题栏浮层：键盘上下选择后没有回到购物车那条（标题是「${back}」）`)
+
+        // Esc 关闭
+        await reopen('Esc 测试')
+        await p.keyboard.press('Escape')
+        if (
+          !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
+            () => true,
+            () => false,
+          ))
+        )
+          errors.push('标题栏浮层：按 Esc 没有关闭')
+        else await check(p, '任务-项目对话浮层-Esc关闭')
+
+        // 原来的「打开项目」入口还在：底部的这一项进项目页
+        await reopen('「打开项目」测试')
+        await pop.getByRole('button', { name: '打开项目', exact: true }).click({ timeout: 10000 })
+        if (
+          !(await p
+            .waitForFunction(() => /^#\/projects\/[^/]+$/.test(location.hash), { timeout: 5000 })
+            .then(
+              () => true,
+              () => false,
+            ))
+        )
+          errors.push('标题栏浮层：点「打开项目」没有回到项目页')
+        else await check(p, '任务-项目对话浮层-打开项目')
+      }
+    }
+  }
+  // 「转成弹窗」：标题栏把当前对话收成右下角的浮条，页面回到上一级；浮条能展开回那个对话。
+  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里两个项目对话都不在跑，浮条写「已完成」
+  {
+    // 两个对话的真实标题（taskTitle 取要求的第一行、超过 32 字截断）
+    const CART = '购物车右上角的数量角标偶尔不刷新，帮我看看原因'
+    const RESTOCK = '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手…'
+    const dockOf = (title) => p.getByRole('group', { name: `对话：${title}`, exact: true })
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByRole('heading', { name: CART, exact: true }).waitFor({ timeout: 8000 })
+    const toDock = p.getByRole('button', { name: '转成弹窗', exact: true })
+    if (!(await toDock.count())) errors.push('转成弹窗：对话页标题栏没有这个按钮')
+    else {
+      await toDock.click()
+      const first = dockOf(CART)
+      await first.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：没出现对话浮条'))
+      // 收起后回到项目页：对话页不能和浮条同时显示同一个对话
+      const hash = await p.evaluate(() => location.hash)
+      if (!/^#\/projects\/[^/]+$/.test(hash)) errors.push(`转成弹窗：收起后应回到项目页，实际停在 ${hash}`)
+      if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
+        errors.push('转成弹窗：收起后对话页还开着')
+      await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      // 浮条上的关闭按钮只在悬停时出现、位置在右上角；浮条上不能挂原生 title
+      // （那个「展开」提示一悬停就弹灰框，用户嫌烦）。opacity-0 仍算 visible，所以看 opacity
+      const dockClose = first.locator('[data-dock="close"]')
+      const dockOpacity = () => dockClose.evaluate((el) => Number(getComputedStyle(el).opacity))
+      // 浮条特写当截图证据：全页截图里浮条只在右下角一小块，看不出按钮在不在（shotOf 负责把 clip 夹进视口）
+      await p.mouse.move(5, 5)
+      await settle(p)
+      if ((await dockOpacity()) !== 0) errors.push('转成弹窗：没悬停时浮条的关闭按钮也显示（应为 opacity 0）')
+      await shotOf(p, first, '任务-转成弹窗-浮条-不悬停')
+      await first.hover()
+      await settle(p)
+      if ((await dockOpacity()) !== 1) errors.push('转成弹窗：鼠标放到浮条上关闭按钮没出现')
+      await shotOf(p, first, '任务-转成弹窗-浮条-悬停')
+      const dockTitles = await first.locator('[title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+      if (dockTitles.length) errors.push(`转成弹窗：浮条上还有原生 title 提示：${dockTitles.join('、')}`)
+      // 关闭按钮在浮条右上角：量那个看得见的小圆（光看热区矩形不够，它永远贴 top-0 right-0）
+      const barRect = await first.boundingBox()
+      const dotRect = await dockClose.locator('span').first().boundingBox()
+      if (!barRect || !dotRect) errors.push('转成弹窗：量不到浮条关闭按钮小圆的位置')
+      else {
+        const cx = dotRect.x + dotRect.width / 2 - barRect.x
+        const cy = dotRect.y + dotRect.height / 2 - barRect.y
+        if (cx < barRect.width / 2 || cy > barRect.height / 2)
+          errors.push(
+            `转成弹窗：关闭按钮不在浮条右上角（小圆中心 ${Math.round(cx)},${Math.round(cy)}；浮条 ${Math.round(barRect.width)}×${Math.round(barRect.height)}）`,
+          )
+      }
+      // 点关闭仍能关掉浮条（data-dock 判定没坏），由 06 分片末尾的「AI处理-浮条让位后回来」前面那几步覆盖（那里才是点关闭就真关）
+      await check(p, '任务-转成弹窗-悬停显示关闭')
+      // 点关闭仍能关掉这条浮条（data-dock="close" 判定没坏）：
+      // 06 分片的同类用例在 06:113 之后，那条既有超时会让它跑不到，所以这里也补一份
+      await dockOf(CART).getByRole('button', { name: '关闭', exact: true }).click()
+      await dockOf(CART)
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('转成弹窗：点关闭后对话浮条还在（关闭被当成展开了）'))
+      await check(p, '任务-转成弹窗-点关闭')
+      // 再收起另一个对话：只留一个，前一条被换掉
+      await p.getByText('商品详情页增加', { exact: false }).first().click()
+      // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
+      await p
+        .getByRole('heading', { name: RESTOCK, exact: true })
+        .waitFor({ timeout: 8000 })
+        .catch(() => errors.push('转成弹窗：没打开第二个对话'))
+      const second = p.getByRole('button', { name: '转成弹窗', exact: true })
+      await second.waitFor({ timeout: 5000 }).catch(() => errors.push('转成弹窗：第二个对话页没有这个按钮'))
+      if ((await second.count()) > 0) {
+        await second.click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：第二个对话收起后没有浮条'))
+        if (await dockOf(CART).count()) errors.push('转成弹窗：同时出现了两个对话浮条（前一条没被换掉）')
+        // 点浮条展开：回到那个对话页，浮条自己收起来
+        const dock = dockOf(RESTOCK)
+        await dock.getByRole('button', { name: '展开', exact: true }).click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：点浮条没回到那个对话'))
+        await dock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('转成弹窗：展开后浮条还在'))
+        await check(p, '任务-转成弹窗只留一个并展开')
+        // 从列表把同一个对话再打开：浮条必须消失（页面和浮条不能同时显示同一个对话）
+        await p.getByRole('button', { name: '转成弹窗', exact: true }).click()
+        await dockOf(RESTOCK)
+          .waitFor({ timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：再次收起后没有浮条'))
+        const wasHash = await p.evaluate(() => location.hash)
+        if (!/^#\/projects\/[^/]+$/.test(wasHash)) errors.push(`转成弹窗：再次收起后应回到项目页，实际停在 ${wasHash}`)
+        // 从项目页列表里点回同一个对话（RESTOCK），浮条应该自动让位
+        await p.getByText('商品详情页增加', { exact: false }).first().click()
+        await p
+          .getByRole('heading', { name: RESTOCK, exact: true })
+          .waitFor({ timeout: 8000 })
+          .catch(() => errors.push('转成弹窗：没从列表打开被收起的那个对话'))
+        await dockOf(RESTOCK)
+          .waitFor({ state: 'detached', timeout: 5000 })
+          .catch(() => errors.push('转成弹窗：从列表打开对话后浮条还在（页面和浮条同时显示同一个对话）'))
+        await check(p, '任务-转成弹窗-从列表打开后浮条消失')
+      }
+    }
+  }
+  // 状态行：子任务还在跑时不能说「在等你」+「空闲」（用户报的问题：对话派出的子任务在跑命令，
+  // 状态行却说「等待你的下一条消息」+「空闲」）。演示数据里「后台命令弹窗实时看输出」就是那个场景：
+  // 这一轮已回完、awaitingUser 和 cliAlive 都是 true，但它派出的子任务还在执行。
+  // 按标题在演示数据里查 id 再拼 hash 打开：侧栏的对话列表跟着筛选和滚动，按 title 定位不稳
+  {
+    const openByTitle = async (title) => {
+      await p.goto(base)
+      const id = await p.evaluate(
+        ([k, want]) => (JSON.parse(localStorage.getItem(k) ?? '{}').tasks ?? []).find((x) => x.title === want)?.id,
+        ['agent-panel-demo-v3', title],
+      )
+      if (!id) return false
+      await p.goto(`${base}#/chat/${encodeURIComponent(id)}`)
+      await p
+        .getByTitle('Token 用量')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .catch(() => {})
+      return true
+    }
+    const opened = await openByTitle('后台命令弹窗实时看输出')
+    if (!opened) errors.push('状态行：演示数据里找不到「后台命令弹窗实时看输出」这个对话')
+    else {
+      // 等状态行按 childWait 算出来（子任务在跑 → helpers），不是等固定时长
+      const line = p.locator('[data-chat-wait]').first()
+      await line.waitFor({ timeout: 10000 }).catch(() => errors.push('状态行：子任务在跑时没有显示等待行'))
+      const kind = await line.getAttribute('data-chat-wait').catch(() => null)
+      if (kind !== 'helpers') errors.push(`状态行：子任务在跑时等待行算成了「${kind}」，应该是 helpers`)
+      const text = ((await line.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
+      if (!text.includes('等待 1 个子任务完成'))
+        errors.push(`状态行：子任务在跑时没写「等待 1 个子任务完成」，写的是「${text}」`)
+      if (text.includes('等待你的下一条消息')) errors.push(`状态行：子任务还在跑却说「等待你的下一条消息」（${text}）`)
+      // 「空闲」也不能出现：父对话没在输出，但它在等子任务，不是没事做
+      if (text.includes('空闲')) errors.push(`状态行：子任务还在跑时速度位写了「空闲」（${text}）`)
+      if (!text.includes('等待中')) errors.push(`状态行：子任务还在跑时速度位该写「等待中」，写的是「${text}」`)
+      await check(p, '任务-等子任务时状态行')
+      // 反例：真的停在等下一句（没有子任务、没有后台命令）时照旧写「等待你的下一条消息」
+      const controlOpened = await openByTitle('整理一份 Claude Code 和 Codex 的能力对照')
+      if (!controlOpened)
+        errors.push('状态行：演示数据里找不到「整理一份 Claude Code 和 Codex 的能力对照」这个对照对话')
+      else {
+        const idle = p.locator('[data-chat-wait="next"]').first()
+        await idle.waitFor({ timeout: 10000 }).catch(() => errors.push('状态行：真的停在等下一句时没有显示等待行'))
+        const idleText = ((await idle.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
+        if (!idleText.includes('等待你的下一条消息'))
+          errors.push(`状态行：真的停在等下一句时没写「等待你的下一条消息」，写的是「${idleText}」`)
+        await check(p, '任务-等下一句时状态行')
+      }
+    }
+  }
+  // 浮层的截图放在所有交互之后：重新进任务页、打开浮层再截图。
+  // 截图前的等待（布局、动画）不依赖后面还有交互，避免偶发的焦点变化把截图和断言搅在一起
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p
+      .getByTitle('Token 用量')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    const projBtn = p.locator('header').getByRole('button', { name: '商城前台', exact: true })
+    await projBtn.first().click()
+    await p.waitForTimeout(200)
+    // 页面刚导航完时偶尔第一次点击没展开：没开时补点一次，已打开的不再点（避免反而关掉）
+    const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
+    if (!(await pop.isVisible().catch(() => false))) await projBtn.first().click()
+    await pop.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {})
+    await check(p, '任务-项目对话浮层', ['商城前台', '购物车右上角', '商品详情页', '打开项目'])
+  }
+  // 发送消息的一瞬间运行区不能闪没：刚发出的用户消息会自己成一段（见 TaskView 的 toBlocks），
+  // 以前「最新的一轮」按最后一段算，那一轮回复就不再是最新，运行区（子对话行、后台命令行）整块消失，
+  // 等 AI 开口又回来。这里用 MutationObserver 记录整个发送过程里运行区最少的子对话行数，
+  // 不靠等待时序赌那一帧（等待条件用「消息出现在消息区里」这个可观测状态）。
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p
+      .getByTitle('Token 用量')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => {})
+    // 前面的用例可能把右栏子对话留着（那样页面上有两个 #follow-up）：先关掉，输入框只留父对话那个
+    const pane = p.locator('aside[aria-label="子对话"]')
+    if (await pane.count()) {
+      await p
+        .getByRole('button', { name: '关闭子对话', exact: true })
+        .first()
+        .click()
+        .catch(() => {})
+      await pane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
+    /** 运行区里现在有几行子对话（和弹层「运行中」是同一批，见 shared/task.ts 的 visibleChildren） */
+    const childRows = () =>
+      p.evaluate(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length,
+      )
+    const listed = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ),
+        { timeout: 10000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    const before = await childRows()
+    if (!listed || before < 2) errors.push(`发送时运行区：进入对话后运行区里只有 ${before} 行子对话，用例前提不成立`)
+    else {
+      // 采样器装在发送之前：从点发送到这条消息画出来，记下运行区最少的子对话行数
+      await p.evaluate(() => {
+        const count = () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length
+        const w = window
+        w.__runningMin = Infinity
+        const sample = () => {
+          const n = count()
+          if (n < w.__runningMin) w.__runningMin = n
+        }
+        sample()
+        w.__runningObs?.disconnect()
+        w.__runningObs = new MutationObserver(sample)
+        w.__runningObs.observe(document.body, { childList: true, subtree: true, characterData: true })
+      })
+      const text = '发送时运行区别闪没'
+      // 父对话那个输入框（右栏若还开着，同一个 id 有两个，取第一个）
+      const box = p.locator('#follow-up').first()
+      await box.fill(text)
+      await box.press('Enter')
+      // 消息区里真的画出了这条消息：输入框在消息区外面，里面的同名文字不会让它提前满足
+      await p
+        .waitForFunction(
+          (want) => !!document.querySelector('[data-conversation-scroll="messages"]')?.innerText.includes(want),
+          text,
+          { timeout: 10000 },
+        )
+        .catch(() => errors.push('发送时运行区：消息没有出现在对话里'))
+      const min = await p.evaluate(() => {
+        window.__runningObs?.disconnect()
+        return window.__runningMin
+      })
+      const after = await childRows()
+      // 采样器一次也没跑到（Infinity）：说明发送没有触发任何 DOM 变化，用例没测到东西，不能当通过
+      if (!Number.isFinite(min)) errors.push('发送时运行区：采样器没有采到任何变化，用例没测到东西')
+      else if (min < before)
+        errors.push(`发送时运行区：发送消息的过程中子对话行从 ${before} 行掉到 ${min} 行（发出去的一瞬间运行区闪没了）`)
+      if (after < before)
+        errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
+      await check(p, '任务-发送消息时运行区不消失', ['子对话'])
     }
   }
 })

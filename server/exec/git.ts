@@ -1,4 +1,5 @@
-import { readFile, stat, unlink } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
 import { capture } from './process.ts'
@@ -62,6 +63,12 @@ export async function gitChanges(
       const [add, del] = v.split('/').map(Number)
       return { path: p, add, del }
     })
+}
+
+/** 配了远端没有（没有远端的仓库推不了，父对话的推送收尾也就没有意义） */
+export async function gitHasRemote(cwd: string): Promise<boolean> {
+  const r = await git(cwd, 'remote')
+  return r.code === 0 && r.stdout.trim() !== ''
 }
 
 /** 本地分支，最近提交的排在前面；current 是当前所在的分支（分离 HEAD 时为空） */
@@ -137,4 +144,76 @@ export async function branchCommits(cwd: string, ref: string, max = 20): Promise
   if (!ref) return []
   const r = await git(cwd, 'log', '--oneline', '--no-decorate', `-${max}`, `${ref}..HEAD`)
   return r.code === 0 ? r.stdout.split('\n').filter(Boolean) : []
+}
+
+/**
+ * 工作区现在的样子写成一棵树（含没跟踪的新文件），用一个临时暂存区，不碰真正的暂存区和提交。
+ * 评审要「上一轮评审之后改了什么」：记下这棵树，下一轮和它比就是增量。读不出来返回空
+ */
+export async function gitSnapshot(cwd: string): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'ap-snap-'))
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') }
+  const run = (...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd, env, 30_000)
+  try {
+    const head = (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0
+    if (head && (await run('read-tree', 'HEAD')).code !== 0) return ''
+    // 面板放进来的附件不是改动（见 PANEL_DIR）
+    if ((await run('add', '-A', '--', '.', ':(exclude)attachments')).code !== 0) return ''
+    const tree = await run('write-tree')
+    return tree.code === 0 ? tree.stdout.trim() : ''
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+/** 一次交给评审的差异上限（字）：再长就只附文件列表，完整差异另存文件 */
+const REVIEW_DIFF_MAX = 60_000
+/** 每处改动前后带几行没改的代码：够看懂改动在哪、接着什么，又不至于把整个函数（几千行的组件）都带进来 */
+const REVIEW_CONTEXT = 10
+/** 太长时退回的上下文行数 */
+const REVIEW_CONTEXT_SHORT = 3
+/**
+ * 只列进文件清单、不放进差异正文的文件：锁文件、压缩产物、快照这类机器生成的内容，
+ * 评审看不出对错，却能把一份差异撑过上限（一次依赖升级的 package-lock.json 就有上万行）
+ */
+export const REVIEW_SKIP = [
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lockb',
+  'Cargo.lock',
+  'go.sum',
+  'poetry.lock',
+  'composer.lock',
+  '*.min.js',
+  '*.min.css',
+  '*.map',
+  '*.snap',
+]
+const skipSpecs = REVIEW_SKIP.map((p) => `:(exclude,glob)**/${p}`)
+
+/**
+ * 交给评审的改动（ADR 0010、0013）：since 给了就是上一轮评审之后的增量，否则是任务开始以来的全部改动。
+ * files 给了就只取这些文件（空数组就是没有改动）：对话开得久时任务基线早，基线之后合进来的子对话、别人的提交都会算进「全部改动」，
+ * 评审只该看这一次要它评的那几个文件。
+ * 每处改动只带前后几行（不用 -W 带整个函数）：评审只评改动的行，几千行的组件整个函数塞进去既撑大提示词，
+ * 又引着它去评没改的代码。太长时退回更少的上下文，仍太长由调用方存文件
+ */
+export async function reviewDiff(cwd: string, ref: string, since = '', files?: string[]) {
+  const snapshot = await gitSnapshot(cwd)
+  if (!snapshot) return null
+  const from = since || (await baseOf(cwd, ref))
+  if (!from) return null
+  // 点名了文件却一个都没有：这个对话没改过文件
+  if (files && !files.length) return { snapshot, from, stat: '', diff: '', full: '' }
+  const scope = files ? ['--', ...files] : ['--', '.']
+  const stat = (await git(cwd, 'diff', '--stat=120', from, snapshot, ...scope)).stdout.trim()
+  if (!stat) return { snapshot, from, stat: '', diff: '', full: '' }
+  const body = [...scope, ...skipSpecs]
+  const full = (await git(cwd, 'diff', '--no-color', `-U${REVIEW_CONTEXT}`, from, snapshot, ...body)).stdout
+  const diff =
+    full.length <= REVIEW_DIFF_MAX
+      ? full
+      : (await git(cwd, 'diff', '--no-color', `-U${REVIEW_CONTEXT_SHORT}`, from, snapshot, ...body)).stdout
+  return { snapshot, from, stat, diff: diff.length <= REVIEW_DIFF_MAX ? diff : '', full }
 }

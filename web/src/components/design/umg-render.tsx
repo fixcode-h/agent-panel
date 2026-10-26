@@ -5,6 +5,7 @@ import {
   entryCount,
   fontPx,
   gridCell,
+  imageFitStyle,
   isWebType,
   parseColor,
   type Brush,
@@ -115,12 +116,15 @@ export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string):
     }
   }
   const tile = b.Tiling && b.Tiling !== 'NoTile'
-  const size = tile ? `${b.ImageSize?.X ?? img.width}px ${b.ImageSize?.Y ?? img.height}px` : '100% 100%'
+  const fit = tile
+    ? { size: `${b.ImageSize?.X ?? img.width}px ${b.ImageSize?.Y ?? img.height}px`, position: '0 0' }
+    : imageFitStyle(b.ImageFit, img)
   const repeat = { Horizontal: 'repeat-x', Vertical: 'repeat-y', Both: 'repeat' }[b.Tiling as string] ?? 'no-repeat'
   if (isWhite(b.TintColor ?? '#FFFFFFFF') && (!tint || isWhite(tint)))
     return {
       backgroundImage: url,
-      backgroundSize: size,
+      backgroundSize: fit.size,
+      backgroundPosition: fit.position,
       backgroundRepeat: repeat,
       opacity: alpha < 1 ? alpha : undefined,
     }
@@ -129,13 +133,16 @@ export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string):
     backgroundImage: url,
     backgroundColor: color,
     backgroundBlendMode: 'multiply',
-    backgroundSize: size,
+    backgroundSize: fit.size,
+    backgroundPosition: fit.position,
     backgroundRepeat: repeat,
     maskImage: url,
-    maskSize: size,
+    maskSize: fit.size,
+    maskPosition: fit.position,
     maskRepeat: repeat,
     WebkitMaskImage: url,
-    WebkitMaskSize: size,
+    WebkitMaskSize: fit.size,
+    WebkitMaskPosition: fit.position,
   }
 }
 
@@ -242,9 +249,12 @@ export function UmgNode({
   if (isWebType(ww.Type) || slotType === 'FlexSlot') return <WebNode w={ww} parent={parent} ctx={ctx} />
   if (ww.Properties?.Visibility === 'Collapsed') return null
   const s = slotStyle(slotType, w.Slot, parent)
+  // 只有固定尺寸（没开 Size To Content）的 CanvasPanel 控件才裁剪文字：
+  // 由内容撑开的文字宽高就是内容本身，裁掉会削掉字形下缘和描边
+  const clip = slotType === 'CanvasPanelSlot' && !w.Slot?.bAutoSize
   return (
     <div style={s.style} data-slot={ctx.interactive ? w.id : undefined}>
-      <UmgBody w={ww} ctx={ctx} fillX={s.fillX} fillY={s.fillY} />
+      <UmgBody w={ww} ctx={ctx} fillX={s.fillX} fillY={s.fillY} clip={clip} />
     </div>
   )
 }
@@ -260,7 +270,20 @@ function Children({ w, ctx }: { w: Widget; ctx: RenderCtx }) {
   )
 }
 
-function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: boolean; fillY: boolean }) {
+function UmgBody({
+  w,
+  ctx,
+  fillX,
+  fillY,
+  clip,
+}: {
+  w: Widget
+  ctx: RenderCtx
+  fillX: boolean
+  fillY: boolean
+  /** 控件在固定尺寸的 CanvasPanelSlot 里：文字超出范围时裁掉 */
+  clip?: boolean
+}) {
   const p = w.Properties ?? {}
   const [hover, setHover] = useState(false)
   const [press, setPress] = useState(false)
@@ -498,6 +521,9 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           letterSpacing: f.LetterSpacing ? `${f.LetterSpacing / 1000}em` : undefined,
           textAlign: ({ Left: 'left', Center: 'center', Right: 'right' } as const)[p.Justification as 'Left'] ?? 'left',
           whiteSpace: p.AutoWrapText ? 'pre-wrap' : 'pre',
+          // 固定尺寸时裁掉超出控件范围的文字，不再压到父控件的背景装饰上；长串（没有空格）也按控件宽度断行
+          overflow: clip ? 'hidden' : undefined,
+          overflowWrap: p.AutoWrapText ? 'anywhere' : undefined,
           lineHeight: 1.2,
           fontFamily: '"Roboto", "Noto Sans SC", system-ui, sans-serif',
           WebkitTextStroke: ol ? `${ol}px ${cssColor(f.OutlineSettings.OutlineColor)}` : undefined,

@@ -3,6 +3,7 @@ import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost, type Orchestra } from '../shared/engine.ts'
+import { activePlan, applyPlan } from '../shared/plan.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'
 
@@ -93,6 +94,109 @@ function host(task: Task, log: AgentCall[]): EngineHost {
     },
   }
 }
+
+/**
+ * spawn_agents 的 step：这一批子任务全部结束、结果交回时，把计划里那一步收口。
+ * 以前没有这个参数，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在计划里，
+ * 用户看到的就是「做完了还是进行中 / 一直等待中」。
+ *
+ * takeAway：子任务先做完、模型用 wait_agents 把结果取走再收轮（只能手动等的模式里就是这样）。
+ * 这时收轮时已经没有「没取回的结果」，收口不能只看这一批（以前只看 late，这一步就永远停在等待中）。
+ */
+async function spawnWithStep(helperOk: boolean, takeAway = false, mixed = false) {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '收尾' } as never, undefined, '', 't5'),
+    id: 't5',
+  } as Task
+  applyPlan(task, { steps: [{ title: '派版本控制收尾', status: 'running' }, { title: '汇总' }] })
+  const plan = activePlan(task)!
+  let orch: AgentCall['orch']
+  let turn = 0
+  // 子任务跑完的信号：等它完成后才调 wait_agents，才能把结果真正取走
+  let finished = () => {}
+  const done = new Promise<void>((r) => (finished = r))
+  const h: EngineHost = {
+    task,
+    agents,
+    workflows: [],
+    prompt: '收尾',
+    changed: () => {},
+    newId: () => `id${task.messages.length}`,
+    runAgent: async (call) => {
+      if (call.step?.slot === 'sub') {
+        finished()
+        // mixed：同一批里一只成功一只失败，最后必须退成进行中（不能因为有一只成功就标完成）
+        const ok = mixed ? call.step.title === '甲' : helperOk
+        return ok ? { ok: true, text: '合回去了' } : { ok: false, error: '推送被拦' }
+      }
+      orch = call.orch
+      if (turn++ === 0) {
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          step: plan.steps[0].id,
+          tasks: [{ title: '版本控制', instructions: '合并并推送' }],
+        })
+        assert.match(text(r), /已标成等待中/, '点名了步骤就在回复里说清挂上了')
+        // 先等它做完、把结果取走，再派出第二只（不然 takeAway 场景没构造出来）。
+        // takeAway 时不再派第二批：第二批没被取走，收轮时 late 非空，就分不出「收口只看这一批」的旧行为了
+        if (takeAway) {
+          await done
+          assert.match(text(await callOrchTool(call.orch!, 'wait_agents', { seconds: 1 })), /版本控制（完成）/)
+          return { ok: true, text: '好了' }
+        }
+        // 多个子任务时只重复一行说明，不刷 N 行一样的话
+        const r2 = await callOrchTool(call.orch!, 'spawn_agents', {
+          step: plan.steps[1].id,
+          tasks: [
+            { title: '甲', instructions: '查甲' },
+            { title: '乙', instructions: '查乙' },
+          ],
+        })
+        assert.equal((text(r2).match(/已标成等待中/g) ?? []).length, 1, '两个子任务共用一句说明')
+      }
+      return { ok: true, text: '好了' }
+    },
+  }
+  await runEngineTurn(h)
+  return { task, plan, orch: orch! }
+}
+
+test('spawn_agents 带 step：子任务全部成功后，计划里那一步标完成', async () => {
+  const { plan } = await spawnWithStep(true)
+  assert.equal(plan.steps[0].status, 'done', '子任务做完了，这一步跟着完成')
+  assert.equal(plan.steps[0].waits[0]?.kind, 'helper')
+  assert.equal(plan.steps[1].status, 'done', '第二个步骤的两个子任务也做完了，同样收口')
+})
+
+test('spawn_agents 带 step：子任务失败或没跑起来，这一步退回进行中并写清原因', async () => {
+  const { plan } = await spawnWithStep(false)
+  assert.notEqual(plan.steps[0].status, 'done', '子任务没成功，不能盲目标完成')
+  assert.equal(plan.steps[0].status, 'running')
+  assert.match(plan.steps[0].note, /没成功/)
+})
+
+test('spawn_agents 带 step：同一批一成败，这一步退回进行中而不是完成', async () => {
+  // 这组「甲成功、乙失败」挂在第 2 步上：只要还有一只没成功，整步就不能算完成
+  const { plan } = await spawnWithStep(false, false, true)
+  assert.equal(plan.steps[1].status, 'running', '一只成功一只失败：退回进行中')
+  assert.match(plan.steps[1].note, /没成功/)
+})
+
+test('spawn_agents 带 step：结果已经被 wait_agents 取走，这一步照样收口', async () => {
+  // 收轮时已经没有「没取回的结果」了：收口只看这一批（late）就会漏掉，步骤永远停在等待中。
+  // 这里只派一只并把它取走，第二批不派——否则 late 非空，旧行为也会跟着走到收口
+  const { plan } = await spawnWithStep(true, true)
+  assert.equal(plan.steps[0].status, 'done', '结果被取走过，这一步也要跟着完成')
+  assert.equal(plan.steps[1].status, 'pending', '没有子任务的步骤不动')
+})
+
+test('spawn_agents 的 step 只在有执行计划的对话里出现', () => {
+  const base = { self: 'n1', common: [], hasMain: false } as unknown as Parameters<typeof orchTools>[0]
+  const props = (o: Parameters<typeof orchTools>[0]) =>
+    (orchTools(o).find((x) => x.name === 'spawn_agents')!.inputSchema as { properties: Record<string, unknown> })
+      .properties
+  assert.equal(props({ ...base, plans: true, helper: false }).step !== undefined, true)
+  assert.equal(props({ ...base, plans: false, helper: false }).step, undefined)
+})
 
 test('编排工具：派子 Agent 并行、读写共享状态、传话，节点不再经过主 Agent', async () => {
   const w = workflow()
@@ -335,4 +439,20 @@ test('收尾建议：推送 / PR / submit / 合并主干这类建议被挡下来
     remote: 'none',
   })
   assert.equal(calls.length, 1)
+})
+
+test('后台命令没给名字时取命令第一行：推回结果的标题不会被换行截断', async () => {
+  const names: string[] = []
+  const o = {
+    runBackground: async (input: { name: string }) => {
+      names.push(input.name)
+      return { ok: true, id: 'abc12345', info: '已放到后台（编号 abc12345）。' }
+    },
+  } as unknown as Orchestra
+  const r = await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build' })
+  assert.match(text(r), /已放到后台/)
+  assert.equal(names[0], 'npm ci', '名字带换行会把推回结果的「成功 / 失败」截掉')
+  // 给了名字就照用
+  await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build', name: '装依赖' })
+  assert.equal(names[1], '装依赖')
 })

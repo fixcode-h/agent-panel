@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { TaskMessage } from './schema.ts'
-import { peerOfMessage, subjectLine } from './peer-message.ts'
+import { peerOfMessage, sentToOther, subjectLine } from './peer-message.ts'
 
 const msg = (over: Partial<TaskMessage>): TaskMessage => ({
   id: 'm1',
@@ -38,4 +38,20 @@ test('peerOfMessage：新数据直接用 peer；旧数据的子对话上报、�
   // 认不出是谁发的（面板替用户说的话、后台命令结果）不算对话之间的消息
   assert.equal(peerOfMessage(msg({ panel: 'child', text: '用户已经直接回答了' })), undefined)
   assert.equal(peerOfMessage(msg({ panel: 'background', text: '后台命令跑完了' })), undefined)
+})
+
+test('sentToOther：同一段话已经交给了别的子对话时返回它；同一个子对话、失败的那次、别的话都不算', () => {
+  const send = (id: string, message: string, failed = false) => ({
+    kind: 'other' as const,
+    name: 'MCP',
+    label: 'panel · send_to_conversation',
+    detail: '',
+    input: JSON.stringify({ id, message }),
+    ...(failed && { failed: true }),
+  })
+  const task = { messages: [msg({ role: 'agent', tools: [send('c1', '硬规则 A'), send('c3', '硬规则 B', true)] })] }
+  assert.equal(sentToOther(task, 'c2', ' 硬规则 A '), 'c1')
+  assert.equal(sentToOther(task, 'c1', '硬规则 A'), undefined)
+  assert.equal(sentToOther(task, 'c2', '硬规则 B'), undefined)
+  assert.equal(sentToOther(task, 'c2', '别的事'), undefined)
 })

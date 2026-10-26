@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Layers, Plus, Trash2 } from 'lucide-react'
 import type { ProjectCategory, ProjectCategoryInput } from '@shared/schema'
 import { isBuiltinProjectCategory } from '@shared/builtin/project-categories'

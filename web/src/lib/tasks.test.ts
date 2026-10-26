@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { startedRun, tokenGroups, toolView } from './tasks.ts'
+import { apiQueueWait, groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -119,6 +119,63 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(old?.job, '6a369828')
   assert.equal(old?.tool.name, '后台命令')
   assert.equal(old?.tool.label, 'npx playwright install')
+  // CLI 在结果前面插了自己的说明（Command Code 的 repair_note）：照样认出编号，没拿到结果前算在等
+  const noted = toolView(
+    tool('mcp__panel__run_background', '', {
+      input: '{"command":"node scripts/ui-check.mjs 02"}',
+      output: '<repair_note>Coerced string `exclusive` to a boolean.</repair_note>\n已放到后台（编号 fb0d6fa4）。',
+    }),
+  )
+  assert.equal(noted?.job, 'fb0d6fa4')
+  assert.equal(noted?.waiting, true)
+  const done = toolView(
+    tool('mcp__panel__run_background', '', {
+      output: '已放到后台（编号 fb0d6fa4）。\n\n【后台命令 fb0d6fa4 已结束】后台命令「检查」跑完了：成功',
+    }),
+  )
+  assert.equal(done?.waiting, undefined, '结果接上了就不再等')
+})
+
+test('后台命令：命令在 input 原文里时，折叠行显示命令，不再只剩「后台命令」', () => {
+  // 解析层对带 command 的输入直接存命令原文（不是 JSON），参数解析拿不到 name / command
+  const command = 'npm ci > /tmp/npmci.log 2>&1; echo "EXIT=$?"; tail -20 /tmp/npmci.log'
+  const plain = tool('mcp__panel__run_background', '', {
+    input: command,
+    output: '已放到后台（编号 1a2b3c4d）。跑完结果会自动推回给你，先去做不依赖它的事。',
+  })
+  const view = toolView(plain)
+  assert.equal(view?.tool.name, '后台命令')
+  assert.equal(view?.tool.label, command)
+  // 展开的 IN 还是完整命令
+  assert.equal(view?.tool.input, command)
+  assert.equal(view?.job, '1a2b3c4d')
+
+  // 多行命令只取第一行：折叠行不换行、不撑破
+  const multi = toolView(tool('mcp__panel__run_background', '', { input: 'npm run build\nls -la\n' }))
+  assert.equal(multi?.tool.label, 'npm run build')
+  assert.equal(multi?.tool.input, 'npm run build\nls -la')
+
+  // 给的 JSON 参数里没有 name：标题用命令
+  const unnamed = toolView(tool('mcp__panel__run_background', '', { input: '{"command":"npm test"}' }))
+  assert.equal(unnamed?.tool.label, 'npm test')
+
+  // 命令本身是合法的 JSON 字面量（true、false 是真实存在的 shell 命令）：同样要当成命令原文
+  for (const literal of ['true', 'false']) {
+    const v = toolView(tool('mcp__panel__run_background', '', { input: literal }))
+    assert.equal(v?.tool.label, literal)
+    assert.equal(v?.tool.input, literal)
+  }
+
+  // 有 name 时优先用名字
+  const named = toolView(tool('mcp__panel__run_background', '', { input: '{"command":"npm test","name":"单元测试"}' }))
+  assert.equal(named?.tool.label, '单元测试')
+})
+
+test('运行区的后台命令名：没有名字时用命令第一行', () => {
+  assert.equal(jobLabel({ name: '端到端测试', command: 'npm run test:e2e' }), '端到端测试')
+  assert.equal(jobLabel({ name: '', command: 'npm run build\nls -la' }), 'npm run build')
+  // 名字和命令都没有时才退回动作名，不能是空串
+  assert.equal(jobLabel({ name: '', command: '' }), '后台命令')
 })
 
 test('「启动工作流」一行认回启动的是第几次运行', () => {
@@ -182,4 +239,53 @@ test('toolView：给别的对话发消息的几个工具画成「发送消息」
   assert.deepEqual(chat?.send, { kind: 'chat', to: '测试', body: '接口改名了' })
   // 别的面板工具不是发消息
   assert.equal(toolView(tool('mcp__panel__get_status', ''))?.send, undefined)
+})
+
+test('groupTools：相邻几次把同一段话交给不同子对话合成一行，别的工具和不同的话各占一行', () => {
+  const send = (id: string, message: string) =>
+    tool('MCP', 'panel · send_to_conversation', {
+      input: JSON.stringify({ id, message }),
+      output: `已交给子对话「${id}」`,
+    })
+  const read = tool('读取', 'a.ts', { kind: 'read' })
+  const groups = groupTools([
+    send('c1', '规则'),
+    send('c2', '规则'),
+    send('c3', '规则'),
+    send('c1', '别的'),
+    read,
+    send('c2', '别的'),
+  ])
+  assert.deepEqual(
+    groups.map((g) => g.length),
+    [3, 1, 1, 1],
+  )
+})
+
+/**
+ * 截图上那个矛盾：左边写着「排队等 API 名额 · 下一个就是这里」，右边同一行显示 188.7 token/s。
+ * 这一轮其实在输出，只是等完子任务拿回名额时排上了队 —— 不能显示成「还没开始」。
+ */
+test('状态行：让出名额后拿回的排队不显示成「排队等名额」', () => {
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'yield' } }, false), undefined)
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 3, reason: 'yield' } }, false), undefined)
+})
+
+test('状态行：开跑前真的在排队时照常显示', () => {
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 2, reason: 'start' } }, false)?.ahead, 2)
+  assert.deepEqual(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, false), {
+    api: 'OpenDesign',
+    ahead: 0,
+    reason: 'start',
+  })
+})
+
+test('状态行：已经在出 token 时不当成在排队', () => {
+  // 实时速度大于 0 就是真的在输出，两个信息同时出现时以「在输出」为准
+  assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, true), undefined)
+})
+
+test('状态行：没有标记时什么都不显示', () => {
+  assert.equal(apiQueueWait({}, false), undefined)
+  assert.equal(apiQueueWait({}, true), undefined)
 })

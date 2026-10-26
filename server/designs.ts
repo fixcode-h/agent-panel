@@ -13,7 +13,9 @@ import { getCli } from '../shared/clis.ts'
 import {
   Design,
   addToParts,
+  annotationText,
   type ReplyPart,
+  widgetCitationText,
   DesignChatInput,
   DesignProject,
   DesignProjectInput,
@@ -31,10 +33,12 @@ import {
   buildPromptAiPrompt,
   buildDesignPrompt,
   conceptPrompt,
+  conceptTarget,
   emptyConcept,
   emptyRoot,
   hasMask,
   imagePrompt,
+  imageRevisionText,
   type DesignKind,
   localPrompts,
   type ConceptImage,
@@ -75,6 +79,7 @@ import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { localGenerate } from './comfy.ts'
 import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
+import { designLayoutItems, type MossLayoutItem } from '../shared/moss.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
 import { encodePng, maskImage, normalizeGenerated, sliceSheet } from './image.ts'
@@ -166,6 +171,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   let loaded = false
   const writing = new Map<string, Promise<void>>()
   const jobs = new Map<string, Job>()
+  /**
+   * 正在准备新一轮（写文件、存版本）的设计：这段时间 jobs 里还是上一轮，
+   * 不挡住的话新消息会再开一轮，两个 CLI 同时改同一份设计
+   */
+  const starting = new Set<string>()
+  /** 准备新一轮期间用户点了停止：beginChat 看到后不再启动这一轮 */
+  const cancelled = new Set<string>()
+  /** 这一轮结束后要接着处理的要求：运行中收不下的消息，按顺序各开一轮；带上对话里那条消息的 id */
+  const pendingTurns = new Map<string, { id: string; input: z.infer<typeof DesignChatInput> }[]>()
   const captures = new DesignCaptures()
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
@@ -230,6 +244,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     jobs.get(d.id)?.abort.abort()
     jobs.delete(d.id)
     cache.delete(d.id)
+    starting.delete(d.id)
+    cancelled.delete(d.id)
+    pendingTurns.delete(d.id)
     await writing.get(d.id)?.catch(() => {})
     await rm(fileOf(d.id), { force: true })
     await rm(path.join(DIR, d.id), { recursive: true, force: true })
@@ -485,6 +502,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     kind: DesignKind,
     /** 局部重绘的原图和蒙版图 */
     inpaint?: { image: Buffer; mask: Buffer },
+    /** 画布上量出来的布局；没有、或工作流不吃 {{layout}} 时自动退化成普通文生图 */
+    layout?: { size: { width: number; height: number }; items: MossLayoutItem[] },
   ): Promise<Buffer[]> {
     await localGenerate(
       {
@@ -496,6 +515,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
         width: size.width,
         height: size.height,
         count,
+        ...(layout ? { layout } : {}),
         ...(inpaint ? { inpaint } : {}),
         onImage,
         onProgress,
@@ -821,7 +841,7 @@ ${prompt}`,
       },
       {
         conceptOnly: mode === 'concept',
-        conceptCount: mode === 'concept' ? input.count : undefined,
+        conceptCount: mode === 'concept' ? input.conceptCount : undefined,
         // 分析只读：工具的修改、出原画和提问都会被挡掉
         readOnly: input.mode === 'analyze',
       },
@@ -885,7 +905,8 @@ ${prompt}`,
                   project,
                   // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
                   [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
-                  mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
+                  // 提示词里的原画张数要和 MCP 实际出图用的 conceptCount 一致（count 只是每张图几版）
+                  mode ? { mode, state: concept, marks: conceptMarks, count: input.conceptCount } : undefined,
                 ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
@@ -1080,6 +1101,157 @@ ${prompt}`,
     return { ids: [] as string[], concepts: [] as ConceptRequest[] }
   }
 
+  /** 插话的内容：文字、附件、标注、引用的控件和这次选的风格一起交给正在跑的这一轮 */
+  function steerText(d: Design, input: z.infer<typeof DesignChatInput>) {
+    // 原画和效果图上的标注按图片宽高的百分比描述（和 /chat 的 conceptSection、重新生成图片时同一口径），
+    // 普通画布标注才是设计稿像素：不能把 img:/concept: 当成子控件名，坐标也不能按设计稿算
+    const targets = (prefix: string) => [
+      ...new Set(
+        input.annotations.filter((a) => a.target.startsWith(prefix)).map((a) => a.target.slice(prefix.length)),
+      ),
+    ]
+    const marksOf = (target: string) => input.annotations.filter((a) => a.target === target)
+    const conceptNotes = targets('concept:').flatMap((id) => {
+      const img = conceptOf(d).images.find((i) => i.id === id)
+      if (!img) return []
+      const size = { X: img.width || d.designSize.X, Y: img.height || d.designSize.Y }
+      return [
+        `用户在原画 ${id} 上的标注（位置是图片宽高的百分比）：\n${imageRevisionText('', marksOf(conceptTarget(id)), size)}`,
+      ]
+    })
+    const imageNotes = targets('img:').flatMap((id) => {
+      const img = d.images.find((i) => i.id === id)
+      if (!img) return []
+      const v = img.variants[img.selected] ?? img.variants.at(-1)
+      const size = { X: v?.width || img.width, Y: v?.height || img.height }
+      return [
+        `用户在效果图 ${id} 上的标注（这一轮暂时不能重新生成图片，请按这些意见调整这张图；位置是图片宽高的百分比）：\n${imageRevisionText('', marksOf(`img:${id}`), size)}`,
+      ]
+    })
+    const plain = input.annotations.filter((a) => !a.target.startsWith('concept:') && !a.target.startsWith('img:'))
+    return [
+      withAttachments(input.text, input.attachments),
+      plain.length ? annotationText(plain, d.designSize) : '',
+      ...conceptNotes,
+      ...imageNotes,
+      input.refs.length ? widgetCitationText(input.refs, d) : '',
+      input.style
+        ? `用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮剩下的设计、原画和图片都按它来：${input.style}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+
+  /** 把用户的要求记进对话：文字、标注、附件、引用、回答和选的风格；返回这条消息的 id */
+  function recordMessage(
+    d: Design,
+    input: z.infer<typeof DesignChatInput>,
+    delivery?: 'steer' | 'held' | 'next' | 'lost',
+  ) {
+    if (input.style) d.style = input.style
+    const id = randomUUID()
+    d.messages.push({
+      id,
+      role: 'user',
+      text: input.text,
+      at: now(),
+      ...(input.annotations.length ? { annotations: input.annotations } : {}),
+      ...(input.attachments.length ? { attachments: input.attachments } : {}),
+      ...(input.refs.length ? { refs: input.refs } : {}),
+      ...(input.answers?.length ? { answers: input.answers } : {}),
+      ...(input.style && input.styleName ? { style: input.styleName } : {}),
+      ...(delivery ? { delivery: { how: delivery, at: now() } } : {}),
+    })
+    return id
+  }
+
+  /** 把一条消息的交付结果改成实际的去向（见 DesignMessage.delivery） */
+  function setDelivery(d: Design, id: string | undefined, how: 'steer' | 'held' | 'next' | 'lost') {
+    if (!id) return
+    d.messages = d.messages.map((m) => (m.id === id ? { ...m, delivery: { how, at: now() } } : m))
+  }
+
+  /** 开始一轮对话：记进对话（已经记过的就不再记）、存版本、交给 CLI */
+  async function beginChat(
+    d: Design,
+    input: z.infer<typeof DesignChatInput>,
+    recorded = false,
+    /** 排队时已经记进对话的那条消息（recorded 时必须给，停在这一轮准备期间要把它标成没送出去） */
+    msgId?: string,
+  ) {
+    // 从进入 await 之前就占住：写完文件和版本、startJob 之前这段空档里不能再开第二轮
+    if (starting.has(d.id) || jobs.get(d.id)?.status === 'running')
+      throw new Error(t('正在处理上一个请求，等它完成或先停止'))
+    starting.add(d.id)
+    // 准备期间页面也要看到「在跑」：否则拿到的还是上一轮的 done，轮询会停下来。
+    // 这一轮真开始时 startJob 会覆盖它；取消或出错时下面删掉
+    const placeholder: Job = {
+      status: 'running',
+      phase: 'design',
+      text: '',
+      outChars: 0,
+      attempt: 1,
+      startedAt: Date.now(),
+      abort: new AbortController(),
+      scope: `design:${d.id}`,
+    }
+    jobs.set(d.id, placeholder)
+    // 消息在 await 之前就记下（拿到 id），准备期间被停止时能标出来
+    const id = recorded ? msgId : recordMessage(d, input)
+    try {
+      await save(d)
+      // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
+      if (input.mode !== 'analyze') await addVersion(d, t('AI 修改前：{text}', { text: input.text.slice(0, 24) }), true)
+      // 准备期间用户点了停止：这一轮不启动，消息标明没送出去
+      if (cancelled.has(d.id)) {
+        setDelivery(d, id, 'lost')
+        await save(d)
+        return d
+      }
+      startJob(d, async (job) => {
+        const { ids, concepts } = await chat(d, input, job)
+        // 分析只出结论，不出原画和切图
+        if (input.mode === 'analyze') return
+        if (concepts.length) {
+          if (input.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
+          await generateConcepts(d, concepts, input.source, job)
+        }
+        if (!ids.length || input.source.kind === 'none') return
+        const failed = await generateImages(d, ids, input.source, input.count, job)
+        if (failed.length)
+          throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
+      })
+    } finally {
+      // 没开始这一轮（取消或出错）：把占位和停止标记清掉，不能留给下一条消息
+      if (jobs.get(d.id) === placeholder) jobs.delete(d.id)
+      starting.delete(d.id)
+      cancelled.delete(d.id)
+      // 准备期间用户发的消息挂在 pendingTurns 里，而取消/失败都没有结束回调：这里接上
+      drainTurns(d)
+    }
+    return d
+  }
+
+  /** 这一轮结束了：有排队的要求就接着开下一轮（消息已经记进对话了） */
+  function drainTurns(d: Design) {
+    // 已经有一轮在跑或在准备：等它结束时再接着处理
+    if (jobs.get(d.id)?.status === 'running' || starting.has(d.id)) return
+    const rest = pendingTurns.get(d.id)
+    const next = rest?.shift()
+    if (!next) return
+    if (!rest?.length) pendingTurns.delete(d.id)
+    const cur = cache.get(d.id) ?? d
+    // 这条消息真的开始处理了：从「这一轮结束后自动处理」改成「按新的一轮处理」
+    setDelivery(cur, next.id, 'next')
+    void beginChat(cur, next.input, true, next.id).catch((e) => {
+      // 没能开始（刚好又有别的请求占了位）：放回队首，交付状态改回去，等这一轮结束时再接着处理
+      pendingTurns.set(d.id, [next, ...(pendingTurns.get(d.id) ?? [])])
+      setDelivery(cur, next.id, 'held')
+      log.warn('designs', '接着处理这一轮收不下的消息失败', { id: d.id, error: (e as Error).message })
+    })
+  }
+
   /**
    * 出原画：每个请求出 count 张整屏效果图，存进设计的候选里；第一张到了就选中它。
    * 在某张的基础上改（base）时，用图片 CLI 把那张一起交给模型参考
@@ -1101,6 +1273,10 @@ ${prompt}`,
       const round = Math.max(0, ...conceptOf(cur).images.map((i) => i.round)) + 1
       const ref = req.base && source.kind === 'cli' ? conceptFile(cur, req.base) : undefined
       const prompt = conceptPrompt(req, cur.designSize, cur.style, style, cur.kind, !!ref)
+      // 画布上已经有文字 / 带描述的图片时，把它们的位置一起交给布局工作流；
+      // 还没搭控件树、或者控件不在 CanvasPanel 里量不出位置时为空，自动退化成普通文生图
+      const items = designLayoutItems(cur.root, cur.images, cur.designSize)
+      const layout = items.length ? { size: { width: cur.designSize.X, height: cur.designSize.Y }, items } : undefined
       // 存图串行：同一轮的几张按到达的顺序编号
       let chain = Promise.resolve()
       // 每个请求最多收它要的张数：多出来的不存，进度也不会超过总数
@@ -1150,6 +1326,8 @@ ${prompt}`,
                 (text) => (progress.text = text),
                 'concept',
                 cur.kind,
+                undefined,
+                layout,
               )
             : source.kind === 'browser'
               ? await browserGenerate(
@@ -1300,9 +1478,14 @@ ${prompt}`,
       scope: `design:${d.id}`,
     }
     jobs.set(d.id, job)
+    // 这一轮结束后：有排队的要求就接着开下一轮。用户点停止时排队的要求已经清掉，不会再自动跑
+    const finish = () => {
+      if (jobs.get(d.id) === job) drainTurns(d)
+    }
     fn(job)
       .then(() => {
         job.status = 'done'
+        finish()
       })
       .catch(async (e) => {
         job.status = 'failed'
@@ -1318,6 +1501,7 @@ ${prompt}`,
           )
           await save(cur)
         }
+        finish()
       })
     return job
   }
@@ -1914,57 +2098,63 @@ ${prompt}`,
     .post('/:id/chat', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
       const p = DesignChatInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const settings = await getSettings()
       const cli = chatRun(settings, p.data.run).cli
       if (!cliSettings(settings, cli).enabled) return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(cli)!.name }))
-      // 在风格提问里选了整体风格：先定下来，这一轮按它做
-      if (p.data.style) d.style = p.data.style
-      d.messages.push({
-        id: randomUUID(),
-        role: 'user',
-        text: p.data.text,
-        at: now(),
-        ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
-        ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
-        ...(p.data.refs.length ? { refs: p.data.refs } : {}),
-        ...(p.data.answers?.length ? { answers: p.data.answers } : {}),
-        ...(p.data.style && p.data.styleName ? { style: p.data.styleName } : {}),
-      })
-      await save(d)
-      // AI 改之前自动存一个版本，改坏了可以回去；分析不改设计，不用存版本
-      if (p.data.mode !== 'analyze')
-        await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
-      startJob(d, async (job) => {
-        const { ids, concepts } = await chat(d, p.data, job)
-        // 分析只出结论，不出原画和切图
-        if (p.data.mode === 'analyze') return
-        if (concepts.length) {
-          if (p.data.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
-          await generateConcepts(d, concepts, p.data.source, job)
-        }
-        if (!ids.length || p.data.source.kind === 'none') return
-        const failed = await generateImages(d, ids, p.data.source, p.data.count, job)
-        if (failed.length)
-          throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
-      })
+      // 刚好有一轮在准备（还没真正开始，jobs 里是占位）：不丢消息，记进对话，等这一轮结束自动接着处理
+      if (starting.has(d.id)) {
+        const id = recordMessage(d, p.data, 'held')
+        pendingTurns.set(d.id, [...(pendingTurns.get(d.id) ?? []), { id, input: p.data }])
+        await save(d)
+        drainTurns(d)
+        return c.json({ ...d, job: view(jobs.get(d.id)), steered: false, queued: true })
+      }
+      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      try {
+        await beginChat(d, p.data)
+      } catch (e) {
+        return bad(c, (e as Error).message, 409)
+      }
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
-    // AI 正在改设计时用户又说了话：补充给正在进行的这一轮；CLI 不支持插话或这一轮已经结束时告诉页面改成排队
+    // AI 正在跑的时候用户又说了话：整条消息（文字、附件、引用、标注、风格）补充给正在进行的这一轮；
+    // 收不下（CLI 不支持插话、这一轮刚结束、正在出图）就记进对话，这一轮结束后自动接着处理
     .post('/:id/steer', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      const { text = '' } = (await c.req.json().catch(() => ({}))) as { text?: string }
-      const v = String(text).trim().slice(0, 20000)
-      if (!v) return bad(c, t('内容不能为空'))
+      const p = DesignChatInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const input = p.data
       const job = jobs.get(d.id)
-      const ok = job?.status === 'running' && job.phase === 'design' && !!job.control && (await job.control.steer(v))
-      if (!ok) return c.json({ steered: false })
-      d.messages.push({ id: randomUUID(), role: 'user', text: v, at: now() })
-      await save(d)
-      return c.json({ steered: true })
+      // 正在准备新一轮（jobs 里还是上一轮）也算在跑：这一条排到这一轮结束后处理，不能再开一轮
+      const running = job?.status === 'running' || starting.has(d.id)
+      if (job && running && job.phase === 'design' && job.control && (await job.control.steer(steerText(d, input)))) {
+        recordMessage(d, input, 'steer')
+        await save(d)
+        return c.json({ ...d, job: view(jobs.get(d.id)), steered: true })
+      }
+      if (running) {
+        // 这一轮收不下：消息马上进对话，界面显示「这一轮结束后自动处理」，这一轮结束后自动开始下一轮
+        const id = recordMessage(d, input, 'held')
+        pendingTurns.set(d.id, [...(pendingTurns.get(d.id) ?? []), { id, input }])
+        await save(d)
+        // 登记之前这一轮刚好结束（没等到结束时的那次接续）：这里补一次
+        drainTurns(d)
+        return c.json({ ...d, job: view(jobs.get(d.id)), steered: false, queued: true })
+      }
+      // 这一轮刚好结束了：直接开始新的一轮，不用再等
+      const settings = await getSettings()
+      const cli = chatRun(settings, input.run).cli
+      if (!cliSettings(settings, cli).enabled) return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(cli)!.name }))
+      try {
+        await beginChat(d, input)
+      } catch (e) {
+        // 这一瞬间另一条请求刚开始新一轮：转回排队，不报 500
+        return bad(c, (e as Error).message, 409)
+      }
+      return c.json({ ...d, job: view(jobs.get(d.id)), steered: false, queued: false })
     })
     // 让 CLI 总结这个设计的整体风格；页面上确认、改名后再存进风格库
     .post('/:id/extract-style', async (c) => {
@@ -2015,7 +2205,20 @@ ${prompt}`,
     })
     .get('/:id/job', async (c) => c.json(view(jobs.get(c.req.param('id')))))
     .post('/:id/stop', async (c) => {
-      const j = jobs.get(c.req.param('id'))
+      const id = c.req.param('id')
+      const j = jobs.get(id)
+      // 正在准备新一轮（还没 startJob）：记下来，beginChat 看到后不启动，并把那条消息标成没送出去
+      if (starting.has(id)) cancelled.add(id)
+      // 用户点了停止：排着的消息不再自动处理。对话里那些消息标明没送出去，让人知道要重新发一次
+      const dropped = new Set((pendingTurns.get(id) ?? []).map((x) => x.id))
+      pendingTurns.delete(id)
+      if (dropped.size) {
+        const d = cache.get(id)
+        if (d) {
+          for (const msgId of dropped) setDelivery(d, msgId, 'lost')
+          await save(d)
+        }
+      }
       j?.abort.abort()
       return c.json(view(j))
     })

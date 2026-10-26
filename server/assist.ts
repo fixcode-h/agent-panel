@@ -29,6 +29,9 @@ import { readGlobalLessons } from './lessons.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
+/** 在对话里做的生成不经过这里的 CLI 调用：CLI 跟着对话的角色走，不用传 */
+const ConvAssistInput = AssistInput.extend({ cli: z.string().default('') })
+
 /** 设置里的额外参数可能放宽权限（跳过确认、换沙箱），生成配置时去掉，保证只读 */
 export function safeArgs(args: string[]) {
   const out: string[] = []
@@ -263,92 +266,119 @@ export function assistApi(deps: {
     }
   }
 
+  /** 生成要用的上下文（现有的角色、工作流、项目、要配的工作流参数）：后台生成和「在对话里做」共用这一份 */
+  async function contextFor(
+    input: AssistInput,
+  ): Promise<{ ctx: AssistContext } | { error: string; status: 400 | 404 }> {
+    const fail400 = (error: string, status: 400 | 404 = 400) => ({ error, status })
+    const target = input.targetId
+      ? input.kind === 'agent'
+        ? await deps.agents.get(input.targetId)
+        : await deps.workflows.get(input.targetId)
+      : undefined
+    if (input.targetId && !target)
+      return fail400(input.kind === 'agent' ? t('要优化的角色不存在') : t('要优化的工作流不存在'), 404)
+    const settings = await getSettings()
+    const agents = await deps.agents.list()
+    const workflows = await deps.workflows.list()
+    // params / teststeps：只读分析一个项目。targetId 是要配的工作流，subject.agentId 是只配一个 Agent 分组
+    const analyzeProject = input.kind === 'params' || input.kind === 'teststeps' || input.kind === 'project'
+    if (input.kind === 'project' && !input.projectId && !input.subject.path?.trim()) return fail400(t('先选好项目目录'))
+    // lessons：只看项目的教训，不进项目目录
+    const project =
+      (analyzeProject || input.kind === 'lessons') && input.projectId ? await deps.projects.get(input.projectId) : null
+    if ((analyzeProject || input.kind === 'lessons') && input.projectId && !project)
+      return fail400(t('项目不存在'), 404)
+    const wf = input.kind === 'params' && input.targetId ? workflows.find((w) => w.id === input.targetId) : undefined
+    const ctx: AssistContext = {
+      agents,
+      categories: (await deps.categories.list()).filter((c) => c.scope !== 'workflow'),
+      workflows,
+      rules:
+        input.kind === 'agent'
+          ? settings.assist.agentRules
+          : input.kind === 'workflow'
+            ? settings.assist.workflowRules
+            : '',
+      subject: input.subject,
+      target: target ?? undefined,
+      defaultCli: defaultCli(settings),
+      ...(project && analyzeProject ? { projectPath: project.path, projectName: project.name } : {}),
+      ...(input.kind === 'project' && input.subject.path?.trim() ? { projectPath: input.subject.path.trim() } : {}),
+      ...(input.kind === 'project' ? { defaultWorkflowIds: await projectWorkflowIds(deps.categories, workflows) } : {}),
+      ...(project && input.kind === 'lessons'
+        ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
+        : {}),
+      ...(wf ? { paramSpec: derivedParams(wf, agents), target: wf } : {}),
+      ...(input.subject.agentId ? { paramAgentId: input.subject.agentId } : {}),
+      platform: process.platform,
+    }
+    return { ctx }
+  }
+
   function fail(job: AssistJob, error: string) {
     job.status = 'failed'
     job.error = error
   }
 
-  return new Hono()
-    .post('/', async (c) => {
-      const p = AssistInput.safeParse(await c.req.json())
-      if (!p.success) return bad(c, z.prettifyError(p.error))
-      const input = p.data
-      if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
-      if (!cliSettings(await getSettings(), input.cli).enabled)
-        return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
-      const target = input.targetId
-        ? input.kind === 'agent'
-          ? await deps.agents.get(input.targetId)
-          : await deps.workflows.get(input.targetId)
-        : undefined
-      if (input.targetId && !target)
-        return bad(c, input.kind === 'agent' ? t('要优化的角色不存在') : t('要优化的工作流不存在'), 404)
-      const settings = await getSettings()
-      const agents = await deps.agents.list()
-      const workflows = await deps.workflows.list()
-      // params / teststeps：只读分析一个项目。targetId 是要配的工作流，subject.agentId 是只配一个 Agent 分组
-      const analyzeProject = input.kind === 'params' || input.kind === 'teststeps' || input.kind === 'project'
-      if (input.kind === 'project' && !input.projectId && !input.subject.path?.trim())
-        return bad(c, t('先选好项目目录'))
-      // lessons：只看项目的教训，不进项目目录
-      const project =
-        (analyzeProject || input.kind === 'lessons') && input.projectId
-          ? await deps.projects.get(input.projectId)
-          : null
-      if ((analyzeProject || input.kind === 'lessons') && input.projectId && !project)
-        return bad(c, t('项目不存在'), 404)
-      const wf = input.kind === 'params' && input.targetId ? workflows.find((w) => w.id === input.targetId) : undefined
-      const ctx: AssistContext = {
-        agents,
-        categories: (await deps.categories.list()).filter((c) => c.scope !== 'workflow'),
-        workflows,
-        rules:
-          input.kind === 'agent'
-            ? settings.assist.agentRules
-            : input.kind === 'workflow'
-              ? settings.assist.workflowRules
-              : '',
-        subject: input.subject,
-        target: target ?? undefined,
-        defaultCli: defaultCli(settings),
-        ...(project && analyzeProject ? { projectPath: project.path, projectName: project.name } : {}),
-        ...(input.kind === 'project' && input.subject.path?.trim() ? { projectPath: input.subject.path.trim() } : {}),
-        ...(input.kind === 'project'
-          ? { defaultWorkflowIds: await projectWorkflowIds(deps.categories, workflows) }
-          : {}),
-        ...(project && input.kind === 'lessons'
-          ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
-          : {}),
-        ...(wf ? { paramSpec: derivedParams(wf, agents), target: wf } : {}),
-        ...(input.subject.agentId ? { paramAgentId: input.subject.agentId } : {}),
-        platform: process.platform,
-      }
-      const job = {
-        id: randomUUID(),
-        kind: input.kind,
-        targetId: input.targetId,
-        status: 'running' as const,
-        text: '',
-        attempt: 1,
-        startedAt: Date.now(),
-        abort: new AbortController(),
-        at: Date.now(),
-      }
-      jobs.set(job.id, job)
-      setAskUser(`assist:${job.id}`, input.askUser)
-      run(job, input, ctx)
-        .catch((e) => fail(job, (e as Error).message))
-        .finally(() => (job.at = Date.now()))
-      return c.json(view(job), 201)
-    })
-    .get('/:id', (c) => {
-      const j = jobs.get(c.req.param('id'))
-      return j ? c.json(view(j)) : bad(c, t('找不到这次生成，可能已过期'), 404)
-    })
-    .post('/:id/stop', (c) => {
-      const j = jobs.get(c.req.param('id'))
-      if (!j) return bad(c, t('找不到这次生成'), 404)
-      j.abort.abort()
-      return c.json(view(j))
-    })
+  return (
+    new Hono()
+      .post('/', async (c) => {
+        const p = AssistInput.safeParse(await c.req.json())
+        if (!p.success) return bad(c, z.prettifyError(p.error))
+        const input = p.data
+        if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
+        if (!cliSettings(await getSettings(), input.cli).enabled)
+          return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
+        const prepared = await contextFor(input)
+        if ('error' in prepared) return bad(c, prepared.error, prepared.status)
+        const { ctx } = prepared
+        const job = {
+          id: randomUUID(),
+          kind: input.kind,
+          targetId: input.targetId,
+          status: 'running' as const,
+          text: '',
+          attempt: 1,
+          startedAt: Date.now(),
+          abort: new AbortController(),
+          at: Date.now(),
+        }
+        jobs.set(job.id, job)
+        setAskUser(`assist:${job.id}`, input.askUser)
+        run(job, input, ctx)
+          .catch((e) => fail(job, (e as Error).message))
+          .finally(() => (job.at = Date.now()))
+        return c.json(view(job), 201)
+      })
+      // 在对话里做（项目已经存在时的 AI 初始化、AI 配置参数和测试步骤）：面板只给第一句话，
+      // 对话按归属开在项目里（见 shared/analysis-home.ts），做完把最后一条回复交回来解析成推荐
+      .post('/prompt', async (c) => {
+        const p = ConvAssistInput.safeParse(await c.req.json())
+        if (!p.success) return bad(c, z.prettifyError(p.error))
+        const prepared = await contextFor(p.data)
+        if ('error' in prepared) return bad(c, prepared.error, prepared.status)
+        const installed = (await detectClis()).filter((x) => x.installed && x.enabled).map((x) => x.id)
+        return c.json({ prompt: buildAssistPrompt(p.data.kind, prepared.ctx, p.data.messages, installed) })
+      })
+      .post('/resolve', async (c) => {
+        const p = ConvAssistInput.extend({ text: z.string().max(400_000) }).safeParse(await c.req.json())
+        if (!p.success) return bad(c, z.prettifyError(p.error))
+        const prepared = await contextFor(p.data)
+        if ('error' in prepared) return bad(c, prepared.error, prepared.status)
+        const ex = extractJson(p.data.text)
+        const res = ex.error ? { error: ex.error } : resolveProposal(p.data.kind, ex.json, prepared.ctx)
+        return c.json(res.proposal ? { proposal: res.proposal } : { error: res.error ?? t('没有找到结果') })
+      })
+      .get('/:id', (c) => {
+        const j = jobs.get(c.req.param('id'))
+        return j ? c.json(view(j)) : bad(c, t('找不到这次生成，可能已过期'), 404)
+      })
+      .post('/:id/stop', (c) => {
+        const j = jobs.get(c.req.param('id'))
+        if (!j) return bad(c, t('找不到这次生成'), 404)
+        j.abort.abort()
+        return c.json(view(j))
+      })
+  )
 }

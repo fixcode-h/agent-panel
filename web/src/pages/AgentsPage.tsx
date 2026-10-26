@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { isCoreAgent } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category } from '@shared/schema'
@@ -295,7 +295,7 @@ export function AgentsPage() {
               </ListGroup>
             ))}
         {!loading && agents.length > 0 && shownGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
-        {/* 只有必备角色时提示可以添加内置的：其他内置角色不会自动装 */}
+        {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
         {!loading && !query && !tag && agents.every(isCoreAgent) && (
           <ListEmpty>
             <p>{t('还可以添加整理好的内置角色')}</p>

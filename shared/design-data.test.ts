@@ -4,19 +4,26 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { setLang } from './i18n.ts'
 import {
   DATA_PROPS,
+  bindDataSet,
   dataRows,
   dataUsage,
   checkData,
   emptyData,
+  findDataSet,
+  listWidgets,
   normalizeData,
   propsForRow,
   withRow,
   type DesignData,
 } from './design-data.ts'
-import { exportDesign, newWidget, type Widget } from './umg.ts'
+import { exportDesign, findWidget, newWidget, type Widget } from './umg.ts'
 import { webExport } from './web.ts'
+
+// checkData 的报错走 t()，断言中文前固定语言，不受运行环境的 LANG 影响
+setLang('zh')
 
 const data: DesignData = {
   sets: [
@@ -101,6 +108,88 @@ test('dataUsage：列出每个集合用在哪些控件上', () => {
   const root = { ...newWidget('CanvasPanel', 'Root'), Children: [grid] }
   const usage = dataUsage(root, [], data)
   assert.deepEqual(usage.get('items'), ['Grid'])
+})
+
+test('多个集合分别绑定：每个列表按自己的集合取行，不同控件不共用第一个集合', () => {
+  const multi: DesignData = {
+    sets: [
+      data.sets[0],
+      {
+        id: 'quests',
+        name: 'Quests',
+        label: '任务',
+        fields: [{ key: 'title', label: '', type: 'string', widget: '', note: '' }],
+        rows: [{ title: '主线' }, { title: '支线' }, { title: '日常' }],
+      },
+    ],
+  }
+  const grid = withProps(newWidget('UniformGridPanel', 'Grid'), { DataSet: 'Items' })
+  const list = withProps(newWidget('ListView', 'QuestList'), { DataSet: 'Quests' })
+  const root = { ...newWidget('CanvasPanel', 'Root'), Children: [grid] }
+  const components = [
+    {
+      Name: 'QuestRow',
+      DesignSize: { X: 200, Y: 60 },
+      Root: { ...newWidget('Overlay', 'QuestRoot'), Children: [list] },
+    },
+  ]
+  assert.equal(dataRows(multi, grid)?.length, 2, 'Grid 用 Items 的 2 行')
+  assert.equal(dataRows(multi, list)?.length, 3, 'QuestList 用 Quests 的 3 行')
+  const usage = dataUsage(root, components, multi)
+  assert.deepEqual(usage.get('items'), ['Grid'])
+  assert.deepEqual(usage.get('quests'), ['QuestRow / QuestList'])
+  assert.deepEqual(
+    listWidgets(root, components).map((w) => [w.label, w.set]),
+    [
+      ['Grid', 'Items'],
+      ['QuestRow / QuestList', 'Quests'],
+    ],
+  )
+  // 绑定的集合不存在时按名字找不到
+  assert.equal(dataRows(multi, withProps(list, { DataSet: 'nope' })), undefined)
+  assert.equal(findDataSet(multi, 'Quests')?.id, 'quests')
+})
+
+test('bindDataSet：换绑到另一个集合只改目标控件，不动原来的树', () => {
+  const grid = withProps(newWidget('UniformGridPanel', 'Grid'), { DataSet: 'Items' })
+  const list = withProps(newWidget('ListView', 'QuestList'), { DataSet: 'Quests' })
+  const root = { ...newWidget('CanvasPanel', 'Root'), Children: [grid] }
+  const components = [
+    {
+      Name: 'QuestRow',
+      DesignSize: { X: 200, Y: 60 },
+      Root: { ...newWidget('Overlay', 'QuestRoot'), Children: [list] },
+    },
+  ]
+  const after = bindDataSet(root, components, { tree: 'QuestRow', id: list.id }, 'items')
+  assert.equal(findWidget(after.components[0].Root, list.id)?.Properties?.DataSet, 'items')
+  assert.equal(list.Properties.DataSet, 'Quests', '原来的树不变')
+  assert.equal(after.root, root)
+  const main = bindDataSet(root, components, { tree: '', id: grid.id }, '')
+  assert.equal(findWidget(main.root, grid.id)?.Properties?.DataSet, '', '空字符串是解绑')
+  assert.equal(main.components, components)
+})
+
+test('checkData：子控件里的列表绑定了不存在的集合也会报出来', () => {
+  const bad = withProps(newWidget('ListView', 'BadList'), { DataSet: 'nope' })
+  const components = [
+    {
+      Name: 'BadRow',
+      DesignSize: { X: 200, Y: 60 },
+      Root: { ...newWidget('Overlay', 'BadRoot'), Children: [bad] },
+    },
+  ]
+  const errors = checkData(data, { root: newWidget('CanvasPanel', 'Root'), components })
+  assert.ok(errors.some((e) => e.includes('BadRow / BadList') && e.includes('不存在的集合 nope')))
+})
+
+test('checkData：一个集合都没有时，列表控件上的悬空 DataSet 也要报出来', () => {
+  const grid = withProps(newWidget('UniformGridPanel', 'Grid'), { DataSet: 'Items' })
+  const root = { ...newWidget('CanvasPanel', 'Root'), Children: [grid] }
+  const errors = checkData({ sets: [] }, { root, components: [] })
+  assert.ok(errors.some((e) => e.includes('Grid') && e.includes('不存在的集合 Items')))
+  // 没有数据类型、也没有控件绑定时不报
+  assert.deepEqual(checkData(undefined, { root: newWidget('CanvasPanel', 'Root'), components: [] }), [])
 })
 
 test('checkData：集合绑定不存在、图片引用不存在、字段重复', () => {

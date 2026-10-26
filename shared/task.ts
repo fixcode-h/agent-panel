@@ -88,7 +88,6 @@ export function newTask(
     summary: '',
     rules: [],
     goal: '',
-    childLimit: 0,
     wantsWorktree: false,
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
@@ -98,6 +97,7 @@ export function newTask(
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
+    ...(input.analysis && { analysis: input.analysis }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -123,6 +123,7 @@ export function newTask(
     changes: [],
     simulated: false,
     sessions: {},
+    sessionDirs: {},
     command: [],
     usage: { agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
     todos: [],
@@ -386,6 +387,34 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
 }
 
 /**
+ * 两个目录是不是同一个（Windows 路径大小写、分隔符、末尾斜杠不敏感）。
+ * 用来判断「会话开在哪个目录」与这一轮的目录是否一致。
+ */
+export function sameDir(a: string, b: string) {
+  const norm = (s: string) =>
+    s
+      .replace(/[\\/]+/g, '\\')
+      .replace(/\\+$/, '')
+      .toLowerCase()
+  return !!a && !!b && norm(a) === norm(b)
+}
+
+/**
+ * 会话是不是在别处开的：CLI 的会话按目录存，换了目录续接就找不到。
+ * 先看这个会话自己记的目录（sessionDirs），旧任务只有对话共用的 sessionDir。
+ */
+export function sessionMoved(
+  task: Pick<Task, 'sessionDirs' | 'sessionDir'>,
+  sessionKey: string,
+  cwd: string,
+  /** 对话以外的节点没有 sessionDir 可用 */
+  chat = false,
+) {
+  const at = task.sessionDirs?.[sessionKey] || (chat ? (task.sessionDir ?? '') : '')
+  return !!at && !sameDir(at, cwd)
+}
+
+/**
  * 对话中途换了 CLI、模型（会话里能换模型的 CLI 除外）或（不支持中途换强度的 CLI 换了）思考强度：
  * 原来的会话接不上，要开新会话把之前的对话带过去。
  */
@@ -485,7 +514,7 @@ export function convState(x: ConvFacts): ConvState {
 /**
  * 这个对话还在运行：执行中、等结果（子对话、子任务、后台命令、工作流还没完）、等你处理（提问、请求没回复）。
  * 「在运行的对话不能杀」只认这一个判定：没人在看、不是当前选中的、保活超上限、父对话的 CLI 结束，
- * 都不能把还在运行的对话或它的子对话停掉（见 ADR 0010）。只有用户自己停止、归档、删除才停
+ * 都不能把还在运行的对话或它的子对话停掉（见 ADR 0012）。只有用户自己停止、归档、删除才停
  */
 export const convActive = (s: ConvState) => s === 'running' || s === 'waiting' || s === 'needs'
 
@@ -932,6 +961,8 @@ export interface ChildEntry {
   asking?: number
   /** 用户标记的「解决」：算已完成 */
   resolved?: boolean
+  /** AI 分析开出的子对话（见 Task.analysis）：列表里标题和别的子对话区分开 */
+  analysis?: Task['analysis']
   /** 还没做完的计划：「计划 7/8」，有它就不算已完成；正在做的那一步也带上 */
   plan?: { done: number; total: number; step?: string; child?: string }
   background?: number
@@ -951,6 +982,8 @@ export interface ChildEntry {
   stopReason?: StopReason
   /** 最后有动静的时间（见 childLastActivity）：超时没新输出时标黄 / 标红 */
   lastActivityAt?: string
+  /** 面板以父对话的名义自动问过它状态、在等回复（见 childIdleAsk / childAutoAskWaiting） */
+  autoAsk?: { at: string; count: number; held?: boolean }
   /** 这会儿在等什么（见 childWait）：不是在跑也不是卡住 */
   waiting?: ChildWait
 }
@@ -1126,6 +1159,69 @@ export function childStale(
   return ''
 }
 
+/**
+ * 子对话多久没有输出就自动问它状态：阈值、上限和判定都写在这里，定时器只拿结论执行。
+ * 只问还在执行的子对话；等用户、等后台命令、等工作流、等子任务这类能解释的等待不问
+ * （那时候没输出是正常的）。上一次询问本身会刷新子对话的最后活动时间，所以从询问时间往后算静默；
+ * 子对话回了话（lastActivityAt 晚于上一次询问）时次数清零，重新从阈值开始。
+ */
+export const CHILD_IDLE_ASK_MAX = 3
+
+export interface ChildIdleAskDecision {
+  ask: boolean
+  /** 不问的原因：off 关闭、not-running 没在执行、waiting 在等能解释的东西、too-soon 没到阈值、limit 问够了 */
+  reason?: 'off' | 'not-running' | 'waiting' | 'too-soon' | 'limit'
+  /** 已经静默了多久（毫秒） */
+  idleMs: number
+  /** 这一次问过之后是这一轮静默里的第几次；不问时是现在的次数 */
+  count: number
+}
+
+export function childIdleAsk(
+  x: {
+    /** 设置里的分钟数，0 关闭 */
+    minutes: number
+    working?: boolean
+    lastActivityAt?: string
+    /** 能解释的等待（见 childWait）：等用户、等后台命令、等工作流、等子任务时不问 */
+    wait?: ChildWait
+    /** 上一次自动询问的记录 */
+    autoAsk?: { at: string; count: number }
+    /** 一分钟多少毫秒：测试里缩短时间用，默认 60 秒 */
+    unitMs?: number
+  },
+  now = Date.now(),
+): ChildIdleAskDecision {
+  if (x.minutes <= 0) return { ask: false, reason: 'off', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (!x.working) return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (x.wait && x.wait.kind !== 'next')
+    return { ask: false, reason: 'waiting', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
+  if (!Number.isFinite(last)) return { ask: false, reason: 'too-soon', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  const asked = x.autoAsk ? Date.parse(x.autoAsk.at) : NaN
+  // 询问自己的那条消息也在 messages 里：从它之后继续算静默，否则每次问完都会重新等满一轮
+  const since = Number.isFinite(asked) ? Math.max(last, asked) : last
+  const idleMs = Math.max(0, now - since)
+  // 问过之后子对话有了新的输出：重新从 0 次算
+  const count = Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
+  if (idleMs < x.minutes * (x.unitMs ?? 60_000)) return { ask: false, reason: 'too-soon', idleMs, count }
+  if (count >= CHILD_IDLE_ASK_MAX) return { ask: false, reason: 'limit', idleMs, count }
+  return { ask: true, idleMs, count: count + 1 }
+}
+
+/** 自动问过状态、之后还没有新的输出：子对话栏写「已自动询问，等回复」，父对话不用再问一遍 */
+export function childAutoAskWaiting(x: {
+  autoAsk?: { at: string; count: number; held?: boolean }
+  lastActivityAt?: string
+}) {
+  // 没交出去的那次已经从队列里撤掉了，不在等回复
+  if (!x.autoAsk?.at || x.autoAsk.held) return false
+  const asked = Date.parse(x.autoAsk.at)
+  if (!Number.isFinite(asked)) return false
+  const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
+  return !Number.isFinite(last) || last <= asked
+}
+
 /** 子对话列表里状态分类的先后：要你处理的在最上面，然后执行中、未完成、做完的、停下的 */
 const stageRank: TaskStage[] = ['you', 'running', 'unfinished', 'done', 'stopped']
 
@@ -1264,20 +1360,36 @@ export function spinningChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.filter(childSpinning)
 }
 
+/** 按开始时间倒序：越晚开始的越靠上。旧记录没有开始时间时算最早，交给调用方用 id 兜底 */
+function byStartedDesc(a: { startedAt?: string }, b: { startedAt?: string }) {
+  return (b.startedAt || '').localeCompare(a.startedAt || '')
+}
+
+/**
+ * 列表里「新的在前」：按开始时间倒序，越晚开始的越靠上；时间一样、或者旧记录 / 演示数据没有开始时间时，
+ * 用 id 的序号兜底（`@chat/sub/h10` 比 `h2` 新），保证每次渲染顺序一致不抖动。
+ * 兜底依赖编号随派出递增（engine 的 spawn 用「现存子任务数 + 1」，见 shared/engine.ts 的 n = have + i + 1），
+ * 而删除都是整批的（dropRerun 删父亲下全部 sub、dropNodeSteps 删整棵子树），不会出现「删了 h1、留着 h3」
+ * 再派回一个重复编号，所以这个方向成立。
+ * 子任务列表（sortHelpers）和运行区的子任务行用它；子对话栏（sortChildren）的时间倒序也走 byStartedDesc，
+ * 只是它同一时间按 id 升序兜底（改它会动到子对话列表的既有顺序），别再各处写一遍时间倒序。
+ */
+export function newestFirst(a: { id: string; startedAt?: string }, b: { id: string; startedAt?: string }) {
+  return byStartedDesc(a, b) || b.id.localeCompare(a.id, undefined, { numeric: true })
+}
+
 /**
  * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
- * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
+ * 同一类里按本次开启的时间倒序（见 childStartedAt 和 byStartedDesc），时间一样按 id 升序兜底免得每次渲染抖动。
  * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
- * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 TaskView 的 childGroups，
+ * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 ChildSwitcher 的 childGroups，
  * 它按 list 的先后往各组里放，所以两边顺序一致。
  */
 export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.slice().sort((a, b) => {
     const byStage = stageRank.indexOf(childStage(a)) - stageRank.indexOf(childStage(b))
     if (byStage) return byStage
-    const byStart = (b.startedAt || '').localeCompare(a.startedAt || '')
-    if (byStart) return byStart
-    return a.id.localeCompare(b.id)
+    return byStartedDesc(a, b) || a.id.localeCompare(b.id)
   })
 }
 
@@ -1371,6 +1483,31 @@ export function helperRunning(s: Pick<TaskStep, 'status' | 'slot'>) {
 }
 
 /**
+ * 子任务在列表里的档位：正在跑的、排队的、没做完的、做完的、终止的。
+ * 组与组的顺序由它决定（分组见 HelperCards 的 helperGroups），组内再按 newestFirst 让最新的排在前面。
+ */
+export function helperRank(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return helperRunning(s) ? 0 : s.status === 'pending' ? 1 : s.status === 'failed' ? 2 : s.status === 'done' ? 3 : 4
+}
+
+/**
+ * 子任务列表的顺序：先按档位分（执行中 → 排队中 → 未完成 → 已完成 → 已终止），
+ * 同一档里最新的在最上面（见 newestFirst）：用户最后派出的那个就在最上面，不用往下翻。
+ * 输入框上方的「子任务」列表和消息流里运行区的子任务行都读这一个函数，别各处再写一份排序。
+ */
+export function sortHelpers<T extends Pick<TaskStep, 'id' | 'status' | 'slot' | 'startedAt'>>(list: T[]): T[] {
+  return list.slice().sort((a, b) => helperRank(a) - helperRank(b) || newestFirst(a, b))
+}
+
+/**
+ * 子任务还没结束（在跑或在排队）：对话页运行区按这个列子任务行、终止按钮也只在这时出现。
+ * 和子对话的 convActive 一个意思——没做完就算在运行，不因为没选中、在后台就不列
+ */
+export function helperActive(s: Pick<TaskStep, 'status' | 'slot'>) {
+  return s.slot === 'sub' && (s.status === 'running' || s.status === 'pending')
+}
+
+/**
  * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
  * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
  */
@@ -1438,7 +1575,7 @@ export function taskBusyCount(list: Parameters<typeof taskBusy>[0][]): number {
 }
 
 /**
- * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0010）。
+ * 保活回收判定：这个对话还在运行吗？在运行的不按两段时间回收、也不参与上限淘汰（ADR 0012）。
  * 状态部分就是 convActive（taskFacts）：在跑、在等子任务 / 子对话 / 后台命令 / 工作流、有没回复的提问和请求；
  * 另外这一轮没收尾、在预热也算。后台命令数和名下还在运行的子对话数不在任务数据里，由调用方按运行时情况传。
  */
@@ -1487,11 +1624,13 @@ export function taskSummary(t: Task): Task {
     ...t,
     askedAt: askedAt(t),
     messages: first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : [],
-    steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], changes: [] })),
+    // brief 是父对话给的要求原文（可能上千字），列表和侧栏都读不到，跟着 output / command 一起清掉
+    steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], brief: '', changes: [] })),
     todos: [],
     plans: [],
     baseline: {},
     sessions: {},
+    sessionDirs: {},
     command: [],
     workflows: [],
     // 运行记录里有共享状态和节点消息，列表用不到；但 runRunning 判定「还在跑」要看最后一条的 status / endedAt，

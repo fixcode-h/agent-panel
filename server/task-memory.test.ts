@@ -48,7 +48,7 @@ const panel = (processes: TaskProcess[]): TaskProcesses => ({
   processes,
   cliMemory: processes.reduce((n, p) => n + (p.rss ?? 0), 0),
   serverMemory: 200 * MB,
-  totalMemory: 200 * MB + processes.reduce((n, p) => n + (p.rss ?? 0), 0),
+  totalMemory: processes.reduce((n, p) => n + (p.rss ?? 0), 0),
   unavailable: '',
 })
 
@@ -65,6 +65,7 @@ const app = (
   all: Task[],
   panelOf: (id: string) => TaskProcesses | null,
   project: { name: string; path: string } | null = null,
+  hist: () => StoredSample[] = history,
 ) =>
   new Hono().route(
     '/tasks',
@@ -76,7 +77,7 @@ const app = (
       },
       panel: async (id) => panelOf(id),
       projects: { get: async () => project },
-      history,
+      history: hist,
     }).routes,
   )
 
@@ -130,6 +131,32 @@ test('会话内存分析接口：报告带采样、归属和任务树，子对�
   assert.match(body.report, /任务树：本对话 \+ 1 个子对话，共 2 个任务/)
   assert.match(body.report, /子对话合计 62\.0k tokens/)
   assert.match(body.ask, /这个会话的内存/)
+})
+
+test('会话内存分析接口：子对话的采样只加自己这一支，不算父对话和兄弟', async () => {
+  const all = [task('p1', ''), task('c1', 'p1'), task('c2', 'p1')]
+  const tasksOnly = (): StoredSample[] => [
+    {
+      t: T0,
+      server: 200 * MB,
+      roots: [],
+      unavailable: false,
+      tasks: [
+        { taskId: 'p1', rss: 100 * MB, pids: 1 },
+        { taskId: 'c1', rss: 80 * MB, pids: 1 },
+        { taskId: 'c2', rss: 60 * MB, pids: 1 },
+      ],
+    },
+  ]
+  const res = await app(all, () => null, null, tasksOnly).request('/tasks/c1/memory-analysis')
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as { report: string; tree: { tasks: number; children: number } }
+  // 80 = 只有 c1；父对话 100、兄弟 60 都不能加进来
+  assert.match(body.report, /会话合计 80\.0 MB/)
+  assert.doesNotMatch(body.report, /会话合计 180\.0 MB/)
+  assert.doesNotMatch(body.report, /会话合计 240\.0 MB/)
+  assert.equal(body.tree.tasks, 1)
+  assert.equal(body.tree.children, 0)
 })
 
 test('会话内存分析接口：任务不存在时报错，进程面板取不到也不炸', async () => {

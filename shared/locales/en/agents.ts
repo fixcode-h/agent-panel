@@ -248,7 +248,6 @@ export const EN_AGENTS: Record<string, string> = {
   复制错误信息: 'Copy error details',
   '生成中…': 'Generating…',
   已停止生成: 'Generation stopped',
-  拖动可以移动位置: 'Drag to move',
   最小化: 'Minimize',
   关闭并终止生成: 'Close and stop generating',
   必备: 'Core',
@@ -258,6 +257,12 @@ export const EN_AGENTS: Record<string, string> = {
   '这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。':
     "These are the defaults for all projects. To use different values in one project, change them under Core roles in that project's settings.",
   '由面板维护，只读。Skill：{list}': 'Maintained by the panel, read-only. Skills: {list}',
+  '内置角色 · 随版本更新': 'Built-in role · updated with each release',
+  '名称、角色设定、能力和 Skill 由面板维护，每次更新都换成最新版本，用到它的对话下一轮就用新版。你可以改参数、运行环境、分类和标签；想改设定就「复制一份」，改复制出来的角色。':
+    'Its name, instructions, abilities and skills are maintained by the panel and replaced with the latest version on every update; conversations using it pick up the new version on their next turn. You can change the parameters, runtime, category and tags. To change the instructions, duplicate it and edit the copy.',
+  分类与标签: 'Category and tags',
+  '这里改的是默认取值，工作流节点上还能单独改；参数本身随内置定义更新。':
+    'These are the default values; workflow nodes can still override them. The parameters themselves follow the built-in definition.',
   项目对话默认使用: 'Default for project conversations',
   子对话默认使用: 'Default for sub-conversations',
   所有项目文档按规则落盘: 'Writes every project document by the rules',

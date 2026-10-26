@@ -5,13 +5,17 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
+// 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
+// 9. 共享仓库的 config 里不能有 core.worktree
+// 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { globToRegExp, readShards } from './lessons.mjs'
 import { checkModuleDocsInRoot } from './lib/doc-modules.mjs'
+import { checkBugIndexesInRoot } from './lib/doc-bugs.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
@@ -141,6 +145,143 @@ for (const f of files) {
 
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
+
+// 7b. Bug 索引是生成物：只写 docs/modules/<模块>/bugs/<bug-id>.md，bugs.md 由 node scripts/doc-bugs.mjs 生成
+// （见 skills/docs/project-documentation「模块文档」）。多个子对话并行收尾时各自新增详情文件，就不会都改同一张表
+// 末尾而反复冲突；手改索引或改完详情没重生成都在这里拦下
+errors.push(...checkBugIndexesInRoot(root))
+
+// 8. 一轮结束只发一次回调：runner 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出。
+// 两处各发一次时同一轮会被上报两遍（CLI 的 result 和「回复完停在等下一句」相隔几百毫秒，
+// reportKey 按 turnDoneAt 去重挡不住），见 docs/lessons/execution.md「一轮结束只发一次回调」
+{
+  const f = 'server/exec/runner.ts'
+  if (existsSync(path.join(root, f))) {
+    // 按调用次数算，不按行：两个调用写在同一行也是守着「只从 endTurn 发出」；注释里提到不算
+    const code = read(f)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '')
+    const calls = code.match(/\bmarkTurnDone\(\s*task\s*\)|ctx\.onTurnEnd\?\.\(\)/g) ?? []
+    if (calls.length !== 2)
+      errors.push(
+        `${f} 里一轮结束只能从 endTurn() 一处发出（markTurnDone + onTurnEnd 各一次），实际 ${calls.length} 处`,
+      )
+  }
+}
+
+// 9. 共享仓库的 config 里不能有 core.worktree：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时，
+// 测试里的 git init 会把它们写进共享 config（core.worktree = /mnt/...），
+// 之后主目录所有 git 命令都报 `fatal: Invalid path '/mnt'`，HEAD 也可能变成分离状态（见 docs/lessons/testing.md）
+{
+  // worktree 的 .git 文件里是 Windows 路径（E:/...），在 WSL 里要换成 /mnt/e/... 才找得到；
+  // 解析不出来时报错，不要静默跳过——WSL 正是会写坏 config 的那个环境
+  const hostPath = (p) => {
+    if (process.platform === 'win32') return p
+    const m = /^([A-Za-z]):[\\/](.*)$/.exec(p)
+    return m ? `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}` : p
+  }
+  const dotgit = path.join(root, '.git')
+  let common = dotgit
+  if (existsSync(dotgit) && !statSync(dotgit).isDirectory()) {
+    const m = readFileSync(dotgit, 'utf8').match(/^gitdir:\s*(.+?)\s*$/m)
+    if (!m) errors.push(`${dotgit} 读不出 gitdir，没法检查共享 config 里的 core.worktree`)
+    else common = path.resolve(root, hostPath(m[1]))
+  }
+  if (!existsSync(common)) errors.push(`${dotgit} 指向的 ${common} 不存在，没法检查共享 config 里的 core.worktree`)
+  else {
+    const cd = path.join(common, 'commondir')
+    if (existsSync(cd)) common = path.resolve(common, readFileSync(cd, 'utf8').trim())
+    const cfg = path.join(common, 'config')
+    if (existsSync(cfg)) {
+      let inCore = false
+      for (const line of readFileSync(cfg, 'utf8').replace(/\r\n/g, '\n').split('\n')) {
+        const s = line.trim()
+        if (/^\[/.test(s)) inCore = /^\[core\]$/i.test(s)
+        else if (inCore && /^worktree\s*=/i.test(s))
+          errors.push(
+            `${cfg} 里写了 core.worktree（${s}）：在 WSL 里带 GIT_DIR/GIT_WORK_TREE 跑 lint 或测试时 git init 会写进去，主仓库的 git 命令会全部失败。删掉这一行`,
+          )
+      }
+    }
+  }
+}
+
+// 10. 默认代理地址只有一个出处：shared/proxy.ts 的 DEFAULT_PROXY_PORT。
+// 其它地方再手写一份 127.0.0.1:<端口>，改默认值时就会漏改一处，界面示例和实际行为对不上。
+// 范围包括 CLI 定义里的 JSON 和 scripts/ 下的脚本（CLI 环境变量示例就写在 shared/clis/*.json 里），
+// 但不扫 *.test.ts：测试里大量写 127.0.0.1:7890 这类固件地址，与默认值无关。
+// 要放宽（例如真实需要写死）在那一行或上一行写 `proxy-port-ok: 原因`。
+{
+  const file = 'shared/proxy.ts'
+  if (!existsSync(path.join(root, file))) errors.push(`${file} 不存在，没法检查默认代理地址是否只有一个出处`)
+  else {
+    const src = read(file)
+    // 允许 10_808 这种带下划线的写法
+    const m = src.match(/export\s+const\s+DEFAULT_PROXY_PORT\s*=\s*(\d[\d_]*)/)
+    if (!m) errors.push(`${file} 里找不到 DEFAULT_PROXY_PORT 的定义`)
+    else {
+      const port = m[1].replace(/_/g, '')
+      const dup = new RegExp(`127\\.0\\.0\\.1:${port}\\b`)
+      for (const f of files) {
+        if (!/^(shared|server|web\/src|scripts)\/.+\.(tsx?|mjs|json)$/.test(f) || f === file) continue
+        if (/\.test\.tsx?$|\.test\.mjs$/.test(f)) continue
+        const lines = read(f).split('\n')
+        lines.forEach((l, i) => {
+          if (!dup.test(l) || /proxy-port-ok/.test(l) || /proxy-port-ok/.test(lines[i - 1] ?? '')) return
+          errors.push(
+            `${f}:${i + 1} 又写了一份默认代理地址的端口，改成从 shared/proxy.ts 的 DEFAULT_PROXY_URL 取（默认代理地址只在那里定义一次）：${l.trim()}`,
+          )
+        })
+      }
+    }
+  }
+}
+
+// 11. 界面检查用例必须写在 runShard 的回调里：runShard 在回调结束后直接 process.exit(0/1)，
+// 写在回调之后的代码永远不执行，分片却照样报「通过」，用例等于没加（见 docs/lessons/ui.md）
+for (const f of files) {
+  if (!/^scripts\/ui\/.+\.mjs$/.test(f) || f.endsWith('harness.mjs')) continue
+  const src = read(f)
+  const at = src.indexOf('await runShard(')
+  if (at < 0) continue
+  // runShard 调用本身以 `})` 结尾，之后除了注释和空行不该再有代码
+  const end = src.indexOf('\n})\n', at)
+  if (end < 0) continue
+  const rest = src
+    .slice(end + 3)
+    .split('\n')
+    .filter((l) => l.trim() && !/^\s*(\/\/|\/\*|\*)/.test(l))
+  if (rest.length)
+    errors.push(
+      `${f} 里 runShard 调用之后还有 ${rest.length} 行代码（${rest[0].trim().slice(0, 60)}）；runShard 结束后会直接退出，这些用例永远不会执行，写进 runShard 的回调里`,
+    )
+}
+
+// 12. 提示只能从 web/src/lib/toast.ts 取 toast：直接从 sonner 引会绕过排队
+// （sonner 的 visibleToasts 不是排队，见 web/src/lib/toast-queue.ts），几百处调用点各写一遍不现实，
+// 所以用一个统一入口卡住。Toaster 本体仍然从 sonner 引（只有 App.tsx 用）。
+// 确实要直接拿 sonner 的（例如在入口里实现透传）在那一行或上一行写 `sonner-toast-ok: 原因`。
+for (const f of files) {
+  if (!/^web\/src\/.+\.tsx?$/.test(f) || /^web\/src\/lib\/toast(-queue)?(\.test)?\.ts$/.test(f)) continue
+  const lines = read(f).split('\n')
+  lines.forEach((l, i) => {
+    // 只看从 sonner 引东西的行；`import type` 不算（类型不需要经过队列）
+    if (!/^import\b/.test(l) || !/['"]sonner['"]/.test(l) || /^import\s+type\b/.test(l)) return
+    // `import { toast }`、`import { toast as sonnerToast }`、`import { Toaster, toast }`、
+    // `import sonner from 'sonner'`、`import * as sonner from 'sonner'` 都算
+    const named = /\{[^}]*\}/.test(l) ? (/\{[^}]*\}/.exec(l)?.[0] ?? '') : ''
+    const namedHasToast =
+      /(?:^|[{,\s])(?:toast|sonner)\b/.test(named.replace(/\sas\s+[^,}]+/g, '')) ||
+      /\{[^}]*\b(?:toast|sonner)\s+as\b/.test(named)
+    const defaultImport = /^import\s+(?:toast|sonner)\s*(?:,|from\b)/.test(l)
+    const namespaceImport = /^import\s+\*\s+as\s+(?:toast|sonner)\b/.test(l)
+    if (!namedHasToast && !defaultImport && !namespaceImport) return
+    if (/sonner-toast-ok/.test(l) || /sonner-toast-ok/.test(lines[i - 1] ?? '')) return
+    errors.push(
+      `${f}:${i + 1} 直接从 sonner 引了 toast，提示要排队，改成 import { toast } from '@/lib/toast'：${l.trim()}`,
+    )
+  })
+}
 
 if (errors.length) {
   console.error(errors.join('\n'))

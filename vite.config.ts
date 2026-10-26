@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
 import { writeDemoBuildInfo } from './scripts/lib/demo-build-info.mjs'
+import { sourceLoc } from './scripts/lib/source-loc.mjs'
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
@@ -41,7 +42,7 @@ export default defineConfig(({ mode }) => {
   const demo = mode === 'demo'
   return {
     root: 'web',
-    plugins: [woff2Only(), react(), tailwindcss(), ...(demo ? [demoBuildInfo()] : [])],
+    plugins: [woff2Only(), sourceLoc(r('./web/src')), react(), tailwindcss(), ...(demo ? [demoBuildInfo()] : [])],
     resolve: {
       alias: { '@': r('./web/src'), '@shared': r('./shared') },
     },

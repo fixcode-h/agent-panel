@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Plus, Tag as TagIcon, X } from 'lucide-react'
 import { TAG_COLORS, type Tag } from '@shared/schema'
 import { t } from '@shared/i18n'

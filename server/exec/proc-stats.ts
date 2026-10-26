@@ -229,6 +229,41 @@ export function aggregateByRoot(
   return out
 }
 
+/**
+ * 按执行它的任务（ownerTaskId）汇总登记的进程树。历史采样按这个口径存，
+ * 读的时候把「当前任务 + 它的后代」这些 id 的 rss 加起来，子对话才只看到自己这一支。
+ * 同一个 pid 只算一次（父子任务都登记过时，和 aggregateByRoot 一样不重复计）
+ */
+export function aggregateByTask(
+  entries: TrackedCli[],
+  map: Map<number, ProcNode>,
+): Map<string, { rss: number; pids: number }> {
+  const out = new Map<string, { rss: number; pids: number }>()
+  const seen = new Set<number>()
+  for (const e of entries) {
+    const taskId = e.owner?.taskId
+    if (!taskId) continue
+    for (const pid of subtree(e.pid, map)) {
+      if (seen.has(pid)) continue
+      seen.add(pid)
+      const cur = out.get(taskId) ?? { rss: 0, pids: 0 }
+      cur.pids++
+      const rss = map.get(pid)?.rss
+      if (rss !== null && rss !== undefined) cur.rss += rss
+      out.set(taskId, cur)
+    }
+  }
+  return out
+}
+
+/**
+ * 这个对话子树登记的进程：owner.taskId 在 ids 里才算，祖先、兄弟和无归属的面板动作都不算。
+ * 进程面板、allowedPids（关闭 / 清理 / AI 建议）共用这一处，别各写一份过滤
+ */
+export function ownedEntries(entries: TrackedCli[], ids: ReadonlySet<string>): TrackedCli[] {
+  return entries.filter((e) => !!e.owner && ids.has(e.owner.taskId))
+}
+
 /** 命令行摘要：MCP 配置和面板临时目录的路径很长，界面上看不出信息，替换掉 */
 export function commandSummary(argv: string, max = 140) {
   const s = argv
@@ -266,8 +301,8 @@ export function cleanableClis(o: {
   entries: TrackedCli[]
   map: Map<number, ProcNode> | null
   aliveTask: (taskId: string) => boolean
-  /** 只清这个对话的（rootTaskId）；为空时清所有对话的残留 */
-  rootTaskId?: string
+  /** 只清这些任务（当前对话 + 它的后代）起的；不传时清所有对话的残留，传空集合一个都不清 */
+  taskIds?: ReadonlySet<string> | readonly string[]
   /** 用户确认时勾选的 pid；为空时清全部符合的 */
   only?: number[]
 }): { targets: TrackedCli[]; skipped: { pid: number; reason: string }[]; gone: number[] } {
@@ -275,8 +310,9 @@ export function cleanableClis(o: {
   const skipped: { pid: number; reason: string }[] = []
   const gone: number[] = []
   const only = o.only?.length ? new Set(o.only) : null
-  for (const e of o.entries) {
-    if (o.rootTaskId && e.owner?.rootTaskId !== o.rootTaskId) continue
+  const ids = o.taskIds ? new Set(o.taskIds) : null
+  // 和 processPanel / allowedPids 同一套归属过滤：祖先、兄弟和无归属的面板动作都不在清理范围里
+  for (const e of ids ? ownedEntries(o.entries, ids) : o.entries) {
     if (only && !only.has(e.pid)) continue
     // 进程已经不在了：登记是残留，清掉登记就行
     if (o.map && !o.map.has(e.pid)) {
@@ -304,11 +340,13 @@ export const HISTORY_FILE = path.join(DATA_DIR, 'run', 'memory-history.json')
 export const SAMPLE_INTERVAL_MS = 30_000
 export const HISTORY_CAPACITY = 2000
 
-/** 一个采样点：面板 server 自己的 RSS，以及各对话（rootTaskId）CLI 进程树的 RSS 合计 */
+/** 一个采样点：面板 server 自己的 RSS，以及各对话（rootTaskId / ownerTaskId）CLI 进程树的 RSS 合计 */
 export type StoredSample = {
   t: number
   server: number
   roots: { root: string; rss: number; pids: number }[]
+  /** 按执行它的任务分开记；新采样才有，读历史时用它算「某个任务 + 后代」的合计 */
+  tasks?: { taskId: string; rss: number; pids: number }[]
   /** 这一点的系统进程表没取到：各对话的 CLI 内存是「未知」而不是 0 */
   unavailable: boolean
 }
@@ -344,21 +382,49 @@ export function saveHistory(list: StoredSample[], file = HISTORY_FILE) {
   }
 }
 
-/** 某个对话的曲线：只取这个对话树上的 CLI 内存 + 面板 server 自己的 */
+/**
+ * 某个对话的曲线：只取这个对话及附属（taskIds 里的任务）的 CLI 内存，面板 server 单独给出。
+ * total 和 cli 相同：面板自己的内存不属于这个对话，不能混进合计（否则 0 个进程也显示几百 MB）
+ */
 export function summarize(
   list: StoredSample[],
-  rootTaskId: string,
+  /** 任务 id 集合：用 Set 或数组传，不要传单个 string（string 会被当成字符集合） */
+  taskIds: ReadonlySet<string> | readonly string[],
   opts: { from?: number; to?: number } = {},
 ): MemoryPoint[] {
+  const ids = new Set(taskIds)
   const out: MemoryPoint[] = []
   for (const s of list) {
     if (opts.from !== undefined && s.t < opts.from) continue
     if (opts.to !== undefined && s.t > opts.to) continue
-    const mine = s.roots.find((r) => r.root === rootTaskId)
-    const cli = s.unavailable ? null : (mine?.rss ?? 0)
-    out.push({ t: s.t, server: s.server, cli, total: cli === null ? null : cli + s.server })
+    const cli = s.unavailable ? null : sampleRss(s, ids)
+    out.push({ t: s.t, server: s.server, cli, total: cli })
   }
   return out
+}
+
+/**
+ * 一个采样点里这些任务的 CLI 内存合计。新采样按任务分开记，子对话只加自己这一支；
+ * 旧数据只有根任务聚合：当前是根对话时仍能还原整棵树，子对话拆不出来、返回 null（未知），
+ * 不能当成 0 —— 升级前后的点混在一起会把曲线画成 0 起步、趋势误判成持续上涨
+ */
+function sampleRss(s: StoredSample, ids: Set<string>): number | null {
+  if (Array.isArray(s.tasks)) {
+    let sum = 0
+    for (const x of s.tasks) if (ids.has(x.taskId)) sum += x.rss
+    return sum
+  }
+  const roots = s.roots ?? []
+  // 旧样本里一个进程都没有：确实没有，就是 0
+  if (!roots.length) return 0
+  let sum = 0
+  let hit = false
+  for (const r of roots) {
+    if (!ids.has(r.root)) continue
+    sum += r.rss
+    hit = true
+  }
+  return hit ? sum : null
 }
 
 /** 采一次：面板 server 自身 + 每个对话的 CLI 进程树。快照取不到时 catalog 记成未知 */
@@ -366,10 +432,12 @@ export async function takeSample(entries?: TrackedCli[], map?: Map<number, ProcN
   const list = entries ?? trackedClis()
   const snapshot = map === undefined ? await processSnapshot() : map
   const byRoot = snapshot ? aggregateByRoot(list, snapshot) : null
+  const byTask = snapshot ? aggregateByTask(list, snapshot) : null
   return {
     t: Date.now(),
     server: process.memoryUsage().rss,
     roots: byRoot ? [...byRoot].map(([root, v]) => ({ root, rss: v.rss, pids: v.pids })) : [],
+    tasks: byTask ? [...byTask].map(([taskId, v]) => ({ taskId, rss: v.rss, pids: v.pids })) : [],
     unavailable: !snapshot,
   }
 }

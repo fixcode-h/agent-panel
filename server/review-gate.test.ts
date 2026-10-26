@@ -209,3 +209,23 @@ test('评审门禁：工具参数里的处置认不出的项丢掉', () => {
   )
   assert.deepEqual(triageInput('R1'), [])
 })
+
+test('评审门禁：四级意见里高级、中级要处置，低级和建议不用', () => {
+  const output = [
+    '验收结论：通过',
+    '必须处置：R1',
+    '🟠 R1 server/a.ts:10 失败场景：传空数组时返回 undefined',
+    '🟡 命名可以更短',
+    '💡 以后可以换成 Map',
+  ].join('\n')
+  // 通过但列了中级：仍要处置
+  const r = reviewGate([sub({ output })], isReviewer, planDone)
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /R1 还没有处置/)
+  const t = [{ id: 'R1', decision: 'defer' as const, reason: '空数组只在旧导入数据里出现，这次范围外，记进遗留' }]
+  assert.equal(reviewGate([sub({ output })], isReviewer, planDone, t).ok, true)
+  // 复看正文里提到上一轮的编号不算新的意见
+  const recheck = ['验收结论：通过', '必须处置：无', '上一轮的高级 R1、中级 R2 都已改好。'].join('\n')
+  assert.equal(reviewGate([sub({ output: recheck })], isReviewer, planDone).ok, true)
+  assert.deepEqual(blockingIds('验收结论：不通过\n必须处置：R1、R2\n🔴 R1 …\n🟠 R2 …'), ['R1', 'R2'])
+})
