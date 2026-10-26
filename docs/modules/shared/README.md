@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-25（本轮新增「派子对话一定挂到计划步骤」（`ensureChildStep` / `auto` 步骤）和 `finish_plan` 的子对话提醒；合并语义和等待项种类沿用同日上一轮分析）
+- analyzed_at: 2026-10-25（本轮新增「派子对话一定挂到计划步骤」（`ensureChildStep` / `auto` 步骤）关联 `reopenedAt` 用时重算、`send_to_conversation` 带标题和复用已完成步骤；合并语义和等待项种类沿用同日上一轮分析）
 
 ## 职责
 
@@ -29,10 +29,12 @@
     - 补步骤时 `childStepId` 传 `fallback: false`：不去退回「正在做的那一步」，否则几个同时派的子对话全挤在同一格。
     - `auto` 步骤在 `applyPlan` 里受保护（照 `ensureWrapUp` 的模式）：Agent 交整份计划时不知道有这一步、不会写它，合并后没交上来的按原索引插回，也不计入 `dropped`（不提示「已从计划里去掉」）、不计入 `left`（不点名让它交）。Agent 自己写了同标题的步骤会按标题对回自动那一步，不会出现两条。
     - `auto` 步骤不参与 `childStepId` 的标题比对：它们的标题都带 `子对话：` 前缀，互相会误配成同一步。
-    - 收尾永远在最后：补的步骤插在没做完的 `wrapUp` 前面。
+    - 收尾永远在最后：补的步骤插在 `wrapUp` 那一步前面（已做完的收尾也算——它仍是这份计划的最后一步）。
     - `finish_plan`（`finishPlan`，多带一个 `kids` 参数，`shared/engine.ts` 的 `kidsOf` 取子对话列表）在还有子对话没合回时点名提醒——计划一结束它们就挂不上了。
-    - 回归：`shared/plan.test.ts`（计划结束后派子对话重开并补一步、多个子对话进同一份计划、对不上才补、能对上就不补、补的步骤在收尾前、`set_plan` 不抹掉自动步骤、同标题不重复、`finish_plan` 提醒）和 `server/orchestrator.test.ts`（结束计划后派子对话自动补一步）。
-  - 面板显示（`web/src/components/tasks/PlanPanel.tsx`）不为这件事改：`ensureChildStep` 保证有子对话就一定有进行中的计划，`shownPlan` 取最后一份计划本来就会渲染它，再加一条「没有计划但有子对话」的分支永远走不到。
+    - 回归：`shared/plan.test.ts`（计划结束后派子对话重开并补一步、**重开后总用时从重开时刻算**、多个子对话进同一份计划、对不上才补、能对上就不补、补的步骤在收尾前、`set_plan` 不抹掉自动步骤、同标题不重复、**给已做完的子对话再发消息复用原步骤**、`finish_plan` 提醒）和 `server/orchestrator.test.ts`（结束计划后派子对话自动补一步）。
+  - 面板（`web/src/components/tasks/PlanPanel.tsx`）不加分支：`ensureChildStep` 保证有子对话就一定有进行中的计划，`shownPlan` 取最后一份计划本来就会渲染它，再加一条「没有计划但有子对话」的分支永远走不到。折叠头自动跟着变：`planHeadline` 只看 `doneAt`，重开时清空它，三态就从「已结束」回到「计划 n/m」。
+    - **重开要重置总用时的起点**（`TaskPlan.reopenedAt` + `planSpan`）：只清 `doneAt` 会把上一轮的历史时长并进这一轮（计划 10:00 建、10:10 结束、11:00 重开，面板立刻显示 1 小时）。`planSpan` 的起点取 `max(原起点, reopenedAt)`。
+    - **`send_to_conversation` 补步骤时必须带子对话标题**（`kidTitleOf` 从 `listConversations` 取）：没标题时会退化成 `子对话：<id>`，用户看不出是哪个子对话。它对应的子对话原来那一步已经 `done` 时**重新打开那一步**（`setStatus(revisit, 'pending')`）而不另开一格——`childStepId` 的 `own` 判定要求 `status !== 'done'`，否则同一件事会在计划里出现两格。
   - 回归：`shared/plan.test.ts`（父对话 push 收尾加在最后、删掉 / 挪到中间都放回最后、做完后又有新步骤就重新打开、一轮改完的第二份计划照样到推送这一步、`wrapUpKind` 的授权边界含 P4 和没有远端、明确不推送后收尾连同抄写的那条一起去掉、算不出来时不删）和 `server/engine-steps.test.ts`（授权段让模型照着计划最后一步做不另写一条、父对话在独立分支里时先合回再推）。
 - 内置内容：内置角色和工作流模板在 `shared/builtin/`，界面文案的英文在 `shared/locales/en/`。
   本机副本：内置角色每次启动、每次保存都按当前定义同步（`shared/builtin/install.ts` 的 `upgradeBuiltinAgents`、`core.ts` 的 `builtinKey` / `syncCore`，[ADR 0015](../../adr/0015-builtin-roles-follow-definition.md)），用户改过的设定会被覆盖，覆盖前由 `server/index.ts` 备份。`legacy.ts` 的 `LEGACY_AGENT_FIELDS*` 现在只用来判断要不要备份和已合并角色能不能删；**指纹里不要引用会继续变的常量**（`SCENE_TEXT` 等），历史正文用 `LEGACY_SCENE_TEXT` 固定。内置工作流副本记 `builtinHash`（`workflowFingerprint`，坐标不算），内容还是那个指纹就升级，没记过的退回按 `LEGACY_WORKFLOWS` 比。
