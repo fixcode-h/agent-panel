@@ -30,7 +30,9 @@ import {
   runRunning,
   stopReasonText,
   taskBusy,
+  taskDoneDot,
   taskStage,
+  taskTurnUnread,
   type ChildEntry,
 } from './task.ts'
 
@@ -620,4 +622,44 @@ test('对外状态统一：子对话、子任务、后台命令、工作流没�
     (['running', 'waiting', 'needs', 'failed', 'stopped', 'unfinished', 'wrapup', 'done'] as const).filter(convActive),
     ['running', 'waiting', 'needs'],
   )
+})
+
+test('橙点只在停在完成态时画：未读和转圈不能同在一行（侧栏小圆点 + 转圈）', () => {
+  const turnDoneAt = '2026-10-24T01:00:00.000Z'
+  // 上一轮做完了、用户还没打开看过：未读这个历史事实本身还在
+  const unread = { turnDoneAt, turnSeenAt: '' }
+  assert.equal(taskTurnUnread(unread), true)
+  // 交出去的后台命令还没跑完、已经打开看过、没有完成记录：都不算「完成未读」
+  assert.equal(taskTurnUnread({ ...unread, jobs: [{}] as never }), false)
+  assert.equal(taskTurnUnread({ ...unread, turnSeenAt: turnDoneAt }), false)
+  assert.equal(taskTurnUnread({ turnDoneAt: '', turnSeenAt: '' }), false)
+
+  // 做完了、没看过、不是当前打开的：画橙点（CLI 还在等下一句也算完成态）
+  const done = { status: 'running' as const, steps: [], working: false, ...unread }
+  assert.equal(taskState(done), 'done')
+  assert.equal(taskDoneDot(done, true), true)
+  assert.equal(taskDoneDot(done, true, true), false)
+  assert.equal(taskDoneDot(done, false), false)
+
+  // 对话后来又跑起来：未读还在，但不能画橙点，否则和转圈 / 提问 / 失败图标撞在同一行
+  const cases: [string, Parameters<typeof taskDoneDot>[0]][] = [
+    ['这一轮在跑', { ...done, status: 'running', working: true }],
+    ['在等子对话', { ...done, status: 'running', childrenWorking: 1 }],
+    [
+      '在等子任务',
+      { ...done, status: 'running', steps: [{ id: '@chat/sub/h1', slot: 'sub', status: 'running' } as never] },
+    ],
+    ['在等后台命令', { ...done, status: 'running', jobs: [{}] as never }],
+    ['在等工作流', { ...done, status: 'running', runs: [{ status: 'running' }] as never }],
+    ['等你处理', { ...done, status: 'running', parentAsks: [{}] as never }],
+    ['等你确认请求', { ...done, status: 'running', requests: [{}] as never }],
+    ['执行失败', { ...done, status: 'failed' }],
+    ['被停止', { ...done, status: 'stopped' }],
+  ]
+  for (const [what, x] of cases) {
+    assert.equal(taskDoneDot(x, true), false, what)
+    // 画橙点的前提是完成态：这些都不是，也就不会和转圈 / 提问图标同时出现
+    assert.notEqual(taskState(x), 'done', what)
+  }
+  assert.equal(taskBusy(done), false)
 })
