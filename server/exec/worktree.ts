@@ -198,9 +198,20 @@ async function sharedDepsReady(shared: string, stamp: DepsStamp | null) {
 async function acquireDepsLock(group: string, lock: string) {
   await mkdir(group, { recursive: true })
   const st = await lstat(lock).catch(() => null)
-  // 复制方每 2 秒更新一次锁的时间：很久没更新说明它已经没了，删掉重抢
-  if (st && Date.now() - st.mtimeMs > DEPS_LOCK_DEAD_MS)
-    await rm(lock, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
+  // 复制方每 2 秒更新一次锁的时间：很久没更新说明它已经没了，把锁挪走重抢。
+  // 用 rename 接替过期的锁是原子的：不能先 rm 再 mkdir——两个调用方同时看到同一把过期锁时，
+  // 都会删掉对方刚建的那把、各自都以为拿到了锁，然后两个进程同时复制 682MB，
+  // 换装时还会互相把对方刚放好的那一份挪走。rename 失败的说明锁已经被别人接走，直接去竞争 mkdir。
+  if (st && Date.now() - st.mtimeMs > DEPS_LOCK_DEAD_MS) {
+    const stale = `${lock}.stale-${process.pid}-${Date.now()}`
+    if (
+      await rename(lock, stale).then(
+        () => true,
+        () => false,
+      )
+    )
+      await rm(stale, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 }).catch(() => {})
+  }
   return mkdir(lock).then(
     () => true,
     (e: NodeJS.ErrnoException) => {
@@ -242,7 +253,9 @@ async function renameDir(from: string, to: string) {
 /**
  * 用新复制的一份换掉旧的：先把旧的改名挪开、再把新的改名进来，最后删旧的。
  * 不能先删旧的再改名：删到一半失败（Windows 上子对话正在读里面的文件）会留下残缺的一份，
- * 同项目的所有子对话都会缺包。改名失败时把旧的放回去，任何时刻 shared 要么完整旧版、要么完整新版。
+ * 同项目的所有子对话都会缺包。换装失败会回滚（新的改名失败就把旧的放回去），
+ * 两次 rename 之间有一个很短的窗口 shared 不在，期间新起的命令会暂时找不到依赖；
+ * 成功后就是完整的新版，不会出现「半新半旧」。
  */
 async function replaceSharedDeps(shared: string, tmp: string) {
   const old = `${shared}.old-${Date.now()}`

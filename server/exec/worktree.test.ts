@@ -736,6 +736,33 @@ test('依赖共用：上次复制被中断留下的锁不会让新子对话干�
   }
 })
 
+test('依赖共用：有过期的锁时并发开子对话，共用依赖仍然完整', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const group = path.dirname(await sharedDepsDir(repo))
+  const lock = path.join(group, 'node_modules.lock')
+  mkdirSync(lock, { recursive: true })
+  const stale = new Date(Date.now() - 60_000)
+  utimesSync(lock, stale, stale)
+  // 同时开多个：接管过期锁必须只有一个进程能做到（rename 原子），否则两个都去复制、
+  // 换装时互相挪走对方刚放好的那一份，最后可能一个完整的都没有
+  const wts = await Promise.all([1, 2, 3].map((i) => createWorktree(repo, tid(), `过期锁并发${i}`)))
+  try {
+    const shared = await sharedDepsDir(repo)
+    assert.ok(existsSync(path.join(shared, 'dep', 'index.js')), '共用依赖是完整的一份')
+    assert.ok(existsSync(path.join(shared, '.agent-panel-deps.json')), '复制记录在（不是半份）')
+    for (const wt of wts) assert.deepEqual(await missingDeps(wt.path), [], '每个子对话里依赖都能解析')
+    // 接替过程不再留锁或换装用的临时目录
+    assert.deepEqual(
+      readdirSync(group).filter((n) => n.startsWith('node_modules.')),
+      [],
+      '没留下锁 / 临时目录',
+    )
+  } finally {
+    for (const wt of wts) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
 test('依赖共用：项目没忽略 node_modules 时，子对话里自己装的依赖不会进提交', async () => {
   resetSharedDeps()
   const repo = project()
