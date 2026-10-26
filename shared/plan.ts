@@ -226,6 +226,9 @@ export const HOLD_PREFIX = '还在等它：'
 /** 面板写进 note 的「等的结果没成功」前缀：重跑成功后它同样过时，和 HOLD_PREFIX 一起清掉 */
 export const FAIL_PREFIX = '等的结果没成功：'
 
+/** 工作流没跑完时写进步骤备注的前缀（见 endRun）：收口后这条和「已完成」矛盾，一起清掉 */
+export const RUN_FAIL_PREFIX = '工作流没走完：'
+
 const clean = (s: unknown, max: number) =>
   String(s ?? '')
     .replace(/\s+/g, ' ')
@@ -1128,8 +1131,57 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
   const step = plan?.steps.find((s) => s.run === run)
   if (!plan || !step) return
   if (ok) setStatus(step, 'done', now)
-  else step.note = clean(`工作流没走完：${error}`, 300)
+  else step.note = clean(`${RUN_FAIL_PREFIX}${error}`, 300)
   closeIfDone(plan, now)
+}
+
+/**
+ * 用户手动点「解决」：把最后一份计划里还没做完的步骤（含子步骤、工作流运行的节点）全部收口成完成，
+ * 计划落到 done（折叠头走 planHeadline 的 'done' 分支，进度归零）。只在这条路径上调用——父对话收尾
+ * （finish_child）、一轮结束收口、后台命令结束仍按原样要求计划真做完（见 shared/task.ts 的 advanceChild）。
+ * 还在等的结果一笔勾掉：对话已经解决了，留着「还在等它」只会和「已解决」矛盾。
+ * 返回这次收口了几项（0 表示没有要收口、调用方不用落盘）。
+ */
+export function settlePlan(task: PlanTask, now = new Date().toISOString()): number {
+  const plan = shownPlan(task)
+  if (!plan) return 0
+  let settled = 0
+  const close = (item: PlanItem) => {
+    if (item.status !== 'done') {
+      setStatus(item, 'done', now)
+      settled++
+    }
+    // 不再等结果：不记成「等成功」，也不留成「等失败」，就是不等了
+    for (const w of item.waits) if (w.state === 'waiting') w.state = 'ok'
+    // 面板写的「还在等它：…」「等的结果没成功：…」都已经过时，Agent 自己写的备注留着
+    if (item.note.startsWith(HOLD_PREFIX) || item.note.startsWith(FAIL_PREFIX)) item.note = ''
+  }
+  for (const s of plan.steps) {
+    for (const c of s.children) close(c)
+    close(s)
+    // 工作流步骤的子项是那次运行的节点（见 planChildren）：不跟着收口的话折叠头说完成、展开还挂着未完成的节点
+    if (s.run !== undefined) settled += settleRunNodes(task, s.run, now)
+    if (s.note.startsWith(RUN_FAIL_PREFIX)) s.note = ''
+  }
+  if (!settled) return 0
+  // doneAt 可能已经有（finish_plan 提前结束过）：closeIfDone 不会重复写，折叠头按 leftSteps 变 done
+  closeIfDone(plan, now)
+  return settled
+}
+
+/**
+ * 工作流那次运行里没走完的节点标成「跳过」：不谎称做完了，计划面板的 stepStatus 把它算完成。
+ * `task.runs` 不动（运行记录是真实历史），只改节点自己的 status；返回改了几个节点
+ */
+function settleRunNodes(task: PlanTask, run: number, now: string): number {
+  let n = 0
+  for (const s of topSteps(task, run)) {
+    if (s.status === 'done' || s.status === 'skipped') continue
+    s.status = 'skipped'
+    if (!s.endedAt) s.endedAt = now
+    n++
+  }
+  return n
 }
 
 /**

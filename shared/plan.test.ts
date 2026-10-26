@@ -13,6 +13,7 @@ import {
   leftSteps,
   markWrapUp,
   openPlan,
+  planChildren,
   planHeadline,
   planProgress,
   unfinishedSteps,
@@ -21,6 +22,7 @@ import {
   runningStepId,
   childStepId,
   ensureChildStep,
+  settlePlan,
   settleWait,
   syncKids,
   unsummarized,
@@ -1406,4 +1408,105 @@ test('给已做完的子对话再发消息：重新打开原来那一步，不�
   assert.equal(plan.steps.filter((s) => s.title.includes('kid-1')).length, 0, '没有出现用 id 当标题的步骤')
   assert.equal(plan.steps.filter((s) => s.auto).length, 1, '没有多出一步')
   assert.equal(plan.steps.find((s) => s.id === at)?.title, '子对话：子对话甲', '标题还是原来那个')
+})
+
+test('用户点「解决」：没做完的步骤连同子步骤一起收口成完成，计划落到 done', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'running', children: [{ title: 'B1' }, { title: 'B2', status: 'done' }] },
+      { title: 'C', status: 'waiting' },
+    ],
+  })
+  // 还在等后台命令的那一步：收口时面板写的「还在等它」说明和等待状态一起清掉
+  bindWait(task, '3', { kind: 'background', ref: 'job1', label: 'e2e' })
+  holdWait(task, 'background', 'job1', '端到端测试')
+  const plan = activePlan(task)!
+  assert.equal(settlePlan(task), 3, '收口了 B、B1、C 三项（已完成的 A、B2 不算）')
+  assert.deepEqual(
+    plan.steps.map((s) => s.status),
+    ['done', 'done', 'done'],
+    '进行中、等待中的都收口，不能留一个「执行中」挂在已解决的对话上',
+  )
+  assert.deepEqual(
+    plan.steps[1].children.map((c) => c.status),
+    ['done', 'done'],
+    '子步骤递归收口',
+  )
+  assert.equal(
+    plan.steps[2].waits.every((w) => w.state !== 'waiting'),
+    true,
+    '不再挂着等待',
+  )
+  assert.equal(plan.steps[2].note, '', '面板写的「还在等它：…」跟着清掉')
+  // 折叠头、进度、列表三处读到同一个结论：全部做完
+  assert.equal(planHeadline(plan), 'done')
+  assert.deepEqual(leftSteps(plan), [])
+  assert.equal(unfinishedSteps(plan), 0)
+  assert.equal(openPlan(task), undefined, '不再显示「计划 n/m」')
+})
+
+test('收口已经「提前结束」的计划：closed 变 done；没有计划或已经全部完成时什么都不动', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [{ title: 'A', status: 'done' }, { title: 'B' }],
+  })
+  finishPlan(task)
+  const plan = task.plans![0]
+  assert.equal(planHeadline(plan), 'closed', '前提：finish_plan 结束的计划还留着没做完的步骤')
+  assert.equal(settlePlan(task), 1, '提前结束的计划也要能收口')
+  assert.equal(planHeadline(plan), 'done')
+  assert.equal(settlePlan(task), 0, '再收一次没东西可收')
+  assert.equal(settlePlan(fresh()), 0, '没有计划时不动')
+  const done = fresh()
+  applyPlan(done, { steps: [{ title: 'A', status: 'done' }] })
+  assert.equal(settlePlan(done), 0, '已经全部做完的计划不动')
+  assert.equal(activePlan(done), undefined, '收口不会重新打开一份已经结束的计划')
+})
+
+/**
+ * 回归（评审 R1）：工作流步骤的子项不是 `children`，而是那次运行的节点（见 planChildren）。
+ * 只收口主步骤的话，折叠头说「计划已完成」，展开却还挂着失败的节点
+ */
+test('工作流没跑完的节点跟着收口成「跳过」：折叠头和展开的节点都说完成', () => {
+  const node = (id: string, title: string, status: string) => ({
+    id,
+    parentId: '',
+    slot: '',
+    kind: 'agent',
+    title,
+    status,
+    startedAt: '2026-10-24T10:00:00.000Z',
+    endedAt: status === 'done' ? '2026-10-24T10:01:00.000Z' : '',
+  })
+  const task = {
+    plans: [],
+    steps: [node('r3/n1', '分析', 'done'), node('r3/n2', '实现', 'failed'), node('r3/n3', '测试', 'pending')],
+  } as unknown as Pick<Task, 'plans' | 'steps'>
+  bindRun(task, '', 3, '工作流「开发」')
+  // 运行失败结束：主步骤还在进行中，备注写着「工作流没走完」
+  endRun(task, 3, false, '实现 失败')
+  const plan = activePlan(task)!
+  assert.match(plan.steps[0].note, /^工作流没走完：/)
+  assert.deepEqual(
+    planChildren(task, plan.steps[0]).map((c) => c.status),
+    ['done', 'pending', 'pending'],
+    '前提：失败 / 没跑的节点在计划里算未完成',
+  )
+  // 主步骤 + 两个没跑完的节点
+  assert.equal(settlePlan(task), 3)
+  assert.equal(planHeadline(plan), 'done')
+  assert.deepEqual(
+    planChildren(task, plan.steps[0]).map((c) => c.status),
+    ['done', 'done', 'done'],
+    '展开的节点也全是完成，不能头部说完成、展开还有「未完成」',
+  )
+  assert.equal(plan.steps[0].note, '', '「工作流没走完」的备注跟着清掉')
+  // 不谎称做完了：没跑完的节点标的是跳过，运行记录本身不动
+  assert.deepEqual(
+    task.steps.map((s) => s.status),
+    ['done', 'skipped', 'skipped'],
+  )
+  assert.notEqual(task.steps[2].endedAt, '', '跳过时补上结束时间')
 })

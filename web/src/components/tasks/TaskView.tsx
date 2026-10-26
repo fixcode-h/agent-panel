@@ -591,8 +591,10 @@ export function TaskView({
     setTask(next)
     pushSummary(next)
   }
-  // 子对话标记为已解决：请求走子对话一侧的完成流转（服务端判定 → 置完成 → 上报父对话），
-  // 还有没收口的东西时返回 409，把卡在哪一项弹给用户；已经解决的重复点击不再发请求
+  // 子对话标记为已解决：请求走子对话一侧的完成流转（服务端判定 → 置完成 → 上报父对话）。
+  // 用户点「解决」时计划里没做完的步骤一并收口（服务端 fromUser 这条路径，见 settleChildForUser），
+  // 其余还没收口的东西（这一轮在跑、独立分支没合回、待回答的提问）仍返回 409，把卡在哪一项弹给用户；
+  // 已经解决的重复点击不再发请求
   const resolveChild = async () => {
     if (resolving || !task || task.resolved) return
     setResolving(true)

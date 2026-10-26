@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { applyPlan, settlePlan } from './plan.ts'
 import { setLang } from './i18n.ts'
 import type { Task } from './schema.ts'
 import {
@@ -217,4 +218,23 @@ test('childFlowOf：和 childHoldsOf 用同一套判定，另外带出完成 / �
     'asking',
     'unmerged',
   ])
+})
+
+test('计划收口只发生在用户点「解决」：父对话收尾照旧被「计划没做完」拦住', async () => {
+  const child = () =>
+    ({ status: 'done', working: false, requests: [], parentAsks: [], plans: [], steps: [] }) as unknown as Task
+  const task = child()
+  applyPlan(task, {
+    steps: [{ title: 'A', status: 'done' }, { title: 'B' }],
+  })
+  // 父对话 finish_child、一轮结束自动收口都不收口计划：计划没做完就一直被拦住，不能把真没做完的工作盖掉
+  const blocked = await advanceChild(childFlowOf(task), recorder().host)
+  assert.deepEqual(blocked.holds, ['plan'])
+  assert.deepEqual(blocked.steps, [], '一步都没走')
+  // 用户点了「解决」才收口（见 server/tasks.ts 的 advanceChildTo 的 fromUser）：同一套流转接着走完
+  assert.equal(settlePlan(task), 1)
+  const { calls, host } = recorder()
+  const run = await advanceChild(childFlowOf(task), host)
+  assert.deepEqual(run.steps, ['complete', 'report', 'list'])
+  assert.deepEqual(calls, ['complete', 'report', 'list'])
 })
