@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -73,20 +74,34 @@ const git = (cwd: string, ...args: string[]) =>
 /** 独立目录按任务 id 建在共享的数据目录下：每次用新 id，避免上一次失败的残留挡住 */
 const tid = () => `test-${Math.random().toString(36).slice(2, 10)}`
 
-/** 一个 git 仓库项目，带 node_modules 和环境文件 */
+/**
+ * 模板仓库：init + add + commit 只在模块加载时做一次，每个用例 cpSync 一份（连 .git 和历史一起）。
+ * 以前每例重跑 3 次 git 进程（30 处 project() 调用合计近 90 次），占了整个单测最慢的一档
+ */
+const templateRepo = path.join(tmp, 'template')
+function buildTemplate(): void {
+  mkdirSync(templateRepo, { recursive: true })
+  writeFileSync(path.join(templateRepo, '.gitignore'), 'node_modules\n.env*\n')
+  writeFileSync(path.join(templateRepo, 'README.md'), '# demo\n')
+  mkdirSync(path.join(templateRepo, 'node_modules', 'dep'), { recursive: true })
+  writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
+  writeFileSync(path.join(templateRepo, '.env'), 'TOKEN=dev\n')
+  writeFileSync(path.join(templateRepo, '.env.local'), 'SECRET=real\n')
+  git(templateRepo, 'init', '-q')
+  // 身份写进模板仓库自己：复制出去的仓库里 worktree.ts 内部还要 commit / merge，
+  // 不能指望跑测试的机器配了全局 user.name / user.email
+  git(templateRepo, 'config', 'user.name', 't')
+  git(templateRepo, 'config', 'user.email', 't@t')
+  git(templateRepo, 'add', '.')
+  git(templateRepo, 'commit', '-qm', 'init')
+}
+buildTemplate()
+
+/** 一个 git 仓库项目，带 node_modules 和环境文件：复制模板，历史从同一个 init 提交开始 */
 function project(): string {
   const dir = path.join(tmp, `p${Math.random().toString(36).slice(2, 8)}`)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n.env*\n')
-  writeFileSync(path.join(dir, 'README.md'), '# demo\n')
-  mkdirSync(path.join(dir, 'node_modules', 'dep'), { recursive: true })
-  writeFileSync(path.join(dir, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
-  writeFileSync(path.join(dir, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
-  writeFileSync(path.join(dir, '.env'), 'TOKEN=dev\n')
-  writeFileSync(path.join(dir, '.env.local'), 'SECRET=real\n')
-  git(dir, 'init', '-q')
-  git(dir, 'add', '.')
-  git(dir, 'commit', '-qm', 'init')
+  cpSync(templateRepo, dir, { recursive: true })
   return dir
 }
 

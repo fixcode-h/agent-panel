@@ -45,6 +45,11 @@ export type OutputSpec = z.infer<typeof OutputSpec>
 export const McpSpec = z.object({
   args: z.array(z.string()).default([]),
   files: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * 扩展脚本里可以填的变量（例如 Pi 桥接的 {stepTimeout} / {attempts}）：生产值写在这里，脚本不自己写死。
+   * 测试调用 mcpConfig 时传覆盖值换成小值，不用真等到生产的秒数
+   */
+  vars: z.record(z.string(), z.union([z.string(), z.number()])).default({}),
 })
 export type McpSpec = z.infer<typeof McpSpec>
 
@@ -222,8 +227,26 @@ export type RpcSpecInput = z.input<typeof RpcSpec>
  * 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件。
  * dir 是面板这一轮自己的临时目录（绝对路径），配置里写 {dir} 的文件放这里，不进用户的项目
  */
-export function mcpConfig(spec: McpSpec, name: string, url: string, dir = '') {
-  const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url).replaceAll('{dir}', dir)
+export function mcpConfig(
+  spec: McpSpec,
+  name: string,
+  url: string,
+  dir = '',
+  override: Record<string, string | number> = {},
+) {
+  const vars = { ...spec.vars, ...override }
+  // {name} / {url} / {dir} 是每次调用都不同的地址，先换掉，不让 vars 覆盖。
+  // 所有占位符（包括内建三个）都跳过 `${...}` 这类 TS 插值：模板里有 `${what}等了…`、
+  // `${name}` 这类写法，不能被当成占位符改掉。
+  // vars 只认自己有的键（不用 in，免得命中原型链上的 constructor / toString）
+  const fillStr = (s: string) =>
+    s
+      .replace(/(?<!\$)\{name\}/g, () => name)
+      .replace(/(?<!\$)\{url\}/g, () => url)
+      .replace(/(?<!\$)\{dir\}/g, () => dir)
+      .replace(/(?<!\$)\{([A-Za-z][A-Za-z0-9]*)\}/g, (whole, key: string) =>
+        Object.hasOwn(vars, key) ? String(vars[key]) : whole,
+      )
   const fillAny = (v: unknown): unknown =>
     typeof v === 'string'
       ? fillStr(v)

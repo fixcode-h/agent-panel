@@ -319,7 +319,12 @@ export function runProcess(o: {
     // 进程已经退出，但输出流还被别人（孙进程继承了 stdout）握着时，close 可能永远不来：
     // 已经读不到更多输出了，等 3 秒给它收尾，别让等结果的调用方（后台命令、任务）挂死
     child.on('exit', (code) => {
-      if (settled || exitTimer) return
+      if (settled) return
+      // 进程已经退出，先撤掉「还活着」的登记（taskCliAlive、live 表、遗留进程清单）：
+      // 下面只是等输出流收尾，等 close 不来也会走 3 秒兜底；不在 exit 时撤的话，
+      // 兜底路径上登记会一直留着，进程退出后 taskCliAlive 仍报活着
+      forget()
+      if (exitTimer) return
       exitTimer = setTimeout(() => {
         if (settled) return
         log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code })

@@ -19,6 +19,7 @@
 
 ## 入口
 
+- `npm run test:unit`：单测，按 `scripts/unit-tests.mjs` 分两批顺序跑：计时文件（真实时钟断言，清单在脚本顶部）串行（`--test-concurrency=1`），其余文件默认并发；`npm run test:unit:timing` / `npm run test:unit:rest` 单独跑某一批。计时文件新增或改名时同步脚本里的清单，路径对不上会直接失败。
 - `npm run test:e2e`：端到端；只跑某几个分片 `npm run test:e2e -- 03 07`。
 - `npx vite build --mode demo && node scripts/ui-check.mjs`：界面检查（必须先构建，产物旧了会失败）；只跑部分分片加筛选参数，例如 `node scripts/ui-check.mjs 09-summary`。
 - `node scripts/changed-tests.mjs --since <任务基线>`：改动 → 要跑的单测文件和界面检查分片（子对话只跑增量，全量交给父对话；定位规则在 `scripts/lib/changed-tests.mjs` 并有单测，见 [ADR 0020](../../adr/0020-test-scope-and-incremental-tests.md)）。
