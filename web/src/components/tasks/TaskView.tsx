@@ -2201,8 +2201,9 @@ function ChildrenBar({
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
-  const asking = children.filter((c) => c.asking && !c.resolved)
+  // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决、已经收起（归档 / 独立分支被删掉）的
+  // 不再算你要处理的事——用户已经把它删了，不能还在状态栏上催他回答
+  const asking = children.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
   const busy = visibleChildren(children)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍

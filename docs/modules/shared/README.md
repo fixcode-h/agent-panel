@@ -14,6 +14,12 @@
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
 - 定时计划（`shared/schedule.ts`）：`Schedule` / `ScheduleInput` 的 schema（名称、提示词、项目、角色、`once` / `daily` 重复规则、下次执行时间、启用开关、状态和上次结果），以及到点判定的纯函数——`pickDue` 分出该执行的和错过的（超过 `SCHEDULE_MISS_MS` 的算错过），`afterRun` / `afterMiss` / `afterFail` 给出执行后、错过、失败后的字段变化，`nextDailyAt` 按本地日历推到下一次，`workdayTemplate` 是「今日工作」模板（每天 19:00）。前后端共用同一份规则：服务端按它轮询启动对话，界面按它显示下次执行时间；`sameMinute` 是「排期有没有被改过」的比较口径（界面上的时间只到分钟）。单测在 `shared/schedule.test.ts`（注入固定时钟，覆盖到点触发一次、每天重算、错过不补跑、模板时间和 `datetime-local` 互转）。和任务里的执行计划（`shared/plan.ts` 的 `task.plans`）不是一回事。
+- 任务和子对话的「算不算在跑」（`shared/task.ts`）：图标、分组、计数、徽标、运行区都从 `convState` → `childIcon` 一处来（项目教训 `lmvkmb75vog8n`），不要在界面上再叠一套。2026-10-26 起「已收起」也进这一处判定（用户报「被删除的任务还挂在运行区」）：
+  - `taskGone(t)`：`t.archived === true || t.worktree?.state === 'discarded'`——归档，或独立分支被用户删掉（环境弹窗「独立分支」里归「已删除」那一组，见 `web/src/lib/worktrees.ts` 的 `groupWorktrees`）；合回分支（`merged`）不算收起，改动已经进主线、任务本身照常可见。收起的任务记录还在 store 里，`status` / `working` 也可能还写着在跑（进程是异步收尾的），所以「算不算在跑」的第一处就把它排掉。
+  - `ConvFacts` 多一个可选 `gone`，由 `childFacts()` / `taskFacts()` 从任务记录算出；`ChildEntry` 也多一个可选 `gone`，由 `GET /tasks/:id/children` 的摘要直接给（见 [server 模块 README](../server/README.md)）。
+  - `convState()` 里 **`gone` 不能盖住还在跑**：只有 `gone && !working && !pending`（`pending` = 后台命令 / 工作流 / 派出的子任务 / 名下子对话）时才归 `done`，在跑或在等结果的照旧 running / waiting。删了独立分支后回到原目录接着做（`isolated()` 的注释：`discarded` 回到共用目录、worktree 不会被清）不会被误画成已完成，保活回收（`convActive`）、侧栏「N 个执行中」、标题 (n) 都不会少算。
+  - 派生全部跟着这一处变：`childIcon` / `spinningChildren` / `visibleChildren`（= `sortChildren(spinningChildren(...))`）/ `childCounts`（分子取转圈那批，分母带 `!gone`）/ `runningChildren`（额外带 `!gone`）/ `taskBusy` / `taskBusyCount`。运行区不要另加 if：`runningRows().empty` 和分隔线读的是同一个值，两处判定分叉就会留一根空横线（见 `Messages.tsx` 的 `RunningFooter`）。
+  - 回归：`server/task-children.test.ts`（已收起且没在动的不进 `visibleChildren`、不计执行中、归已完成；已收起不盖住还在跑 / 在等后台命令的；`taskGone` 只看 `archived` 与 `discarded`，`merged` 和 `active` 都算没收起）。
 - 对话的执行计划（`shared/plan.ts`）：Agent 用 `set_plan` 交步骤，这里把交上来的列表和面板自己的状态对齐，界面画计划弹窗、服务端改状态都用它。规则逐条写在文件头注释里：最多两层（主步骤和子步骤）；整份列表和只交变更（`partial`）两种提交方式；完成的步骤锁死，改它删它都无效；全部完成就收起计划（`doneAt`）；等待中的步骤由 `settleWait` 按 `kind` + `ref` 收口；收尾（`wrapUp`）由面板加在最后，Agent 漏写、删掉、挪到中间都会被放回。
   2026-10-25 修掉的合并语义、新加的等待项种类，以及对应的回归，之后改这个文件要守住：
   - 合并一层列表时，`partial: true` 下**位置由计划原有顺序决定，交上来的顺序只决定谁被更新**，这次新加的步骤追加到最后。以前漏写项按旧下标 `splice` 回去，模型把新步骤写在前面时两条会互换位置（id 顺序和数组顺序不一致），界面上的计数跟着来回变。

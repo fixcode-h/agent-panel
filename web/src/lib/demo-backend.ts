@@ -118,6 +118,7 @@ import {
   newTask,
   questionAnswers,
   runRunning,
+  taskGone,
   taskSummary,
   trackWait,
   withAttachments,
@@ -3043,6 +3044,8 @@ function tasksRoute(
           waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
           resolved: x.resolved === true,
           analysis: x.analysis,
+          // 和正式后端对齐：归档 / 独立分支被删掉的条目不再算在跑（见 shared/task.ts 的 taskGone）
+          gone: taskGone(x),
         }
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做

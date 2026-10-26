@@ -67,6 +67,7 @@ import {
   waitDuration,
   idleWaitDuration,
   newTask,
+  taskGone,
   taskSummary,
   withAttachments,
   withTaskModel,
@@ -3720,6 +3721,8 @@ export function tasksApi(deps: {
           analysis: liveTask.analysis,
           // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
           stopReason: idle(liveTask).stopReason ?? '',
+          // 已收起（归档 / 独立分支被用户删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉（见 taskGone）
+          gone: taskGone(liveTask),
         }
       }),
     )
@@ -4572,6 +4575,13 @@ export function tasksApi(deps: {
     }
     const cur = (await store.get(id)) ?? tk
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }
+    // 内存里那份任务副本也要一起改：current()、列表摘要（idle）和子对话栏（/children）读的都是它，
+    // 只写 store 的话接口还会按旧的 active 算（gone 一直是 false，运行区和计数继续挂着），
+    // 而且下一次 PATCH 会拿旧 worktree 把 store 里的 discarded 写回去
+    if (entry) {
+      entry.task.worktree = next
+      entry.rev++
+    }
     return c.json(await store.update(id, { ...cur, worktree: next }))
   })
 

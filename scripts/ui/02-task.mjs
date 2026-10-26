@@ -800,6 +800,107 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       }
     }
   }
+  // 已归档（用户从菜单里收起 / 删掉）的子对话：任务记录还在、status 还可能写着 running、计划也没做完，
+  // 但不能再列进运行区，也不能算进「执行中」（用户报的现象：删掉的任务还挂在运行区，计划 8/10 · 等结果一直不消失）。
+  // 用独立页面跑：这条要改 localStorage 造出「已归档」的条目（改完必须整页导航，行上才读得到新数据）。
+  // 造的是归档后的落盘状态：这一轮已经停掉（working=false）、计划和 status 还停在原样——正是截图里那行的样子
+  {
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base)
+    await d.getByText('购物车右上角', { exact: false }).first().click()
+    await d.locator('#follow-up').waitFor({ timeout: 10000 })
+    const hidden = '内存面板增加 AI 分析'
+    /** 运行区里列出来的子对话标题（每行标题按钮的 openTip 里带着名字） */
+    const runTitles = () =>
+      d.evaluate(() =>
+        [...document.querySelectorAll('[aria-label="运行中"]')]
+          .flatMap((b) => [...b.children])
+          .map((r) => (r.querySelector('button[title*="打开子对话"]')?.innerText || '').trim())
+          .filter(Boolean),
+      )
+    /** 打开子对话弹层切到「全部」，读各分组标题上的条数（「执行中 · 5」「已完成 · 3」） */
+    const groupCounts = async () => {
+      await d
+        .getByRole('button', { name: /个进行中，共 \d+ 个/ })
+        .first()
+        .click()
+      await d.getByRole('button', { name: '全部' }).first().click()
+      await settle(d)
+      const groups = await d.evaluate(() => {
+        // 弹层就是底部那个浮层：里面有整行宽、左对齐的条目按钮
+        const tray = [...document.querySelectorAll('div.absolute.bottom-full')].find((el) =>
+          [...el.querySelectorAll('button')].some((b) => (b.className || '').includes('text-left')),
+        )
+        return tray
+          ? [...tray.querySelectorAll('p')]
+              .map((e) => (e.innerText || '').replace(/\s+/g, ' ').trim())
+              .filter((x) => / · \d+$/.test(x))
+          : []
+      })
+      await d.keyboard.press('Escape')
+      await d
+        .locator('div.absolute.bottom-full')
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('已归档：弹层没有收起来'))
+      return groups
+    }
+    const amount = (list, name) => {
+      const hit = list.find((x) => x.startsWith(`${name} · `))
+      return hit ? Number(hit.split(' · ')[1]) : 0
+    }
+    /** 运行区是异步取子对话摘要后才画出来的：等它真的列出子对话行，别在空数组上断言 */
+    const waitRunRows = () =>
+      d
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+              [...box.children].some((r) => !!r.querySelector('button[title*="打开子对话"]')),
+            ),
+          { timeout: 10000 },
+        )
+        .catch(() => errors.push('已归档：运行区没有列出子对话'))
+    await waitRunRows()
+    if (!(await runTitles()).includes(hidden)) errors.push(`已归档：运行区一开始没有「${hidden}」，后面的核对没有意义`)
+    const before = await groupCounts()
+    if (amount(before, '执行中') < 1) errors.push('已归档：弹层「全部」里一开始就没有「执行中」分组')
+    // 归档它：working 按归档后的样子落成 false，没做完的计划和 status 都留着——
+    // 旧实现只看计划没做完，就继续把它画成在跑
+    const hit = await d.evaluate((title) => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith('agent-panel-demo-'))
+      if (!key) return ''
+      const db = JSON.parse(localStorage.getItem(key))
+      const task = (db.tasks || []).find((x) => x.title === title)
+      if (!task) return ''
+      task.archived = true
+      task.working = false
+      localStorage.setItem(key, JSON.stringify(db))
+      return task.id
+    }, hidden)
+    if (!hit) errors.push(`已归档：演示数据里没有「${hidden}」，造不出这个场景`)
+    await d.reload()
+    const token = d.getByTitle('Token 用量').first()
+    if (
+      !(await token.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      ))
+    ) {
+      await d.getByText('购物车右上角', { exact: false }).first().click()
+      await token.waitFor({ timeout: 10000 }).catch(() => errors.push('已归档：刷新后没回到任务页'))
+    }
+    await settle(d)
+    await waitRunRows()
+    const after = await runTitles()
+    if (after.includes(hidden)) errors.push(`运行区：已归档的子对话还列在这里（${after.join(' | ')}）`)
+    const next = await groupCounts()
+    if (amount(next, '执行中') !== amount(before, '执行中') - 1)
+      errors.push(`已归档：执行中分组没有少一个（改前 ${amount(before, '执行中')}、改后 ${amount(next, '执行中')}）`)
+    if (amount(next, '已完成') !== amount(before, '已完成') + 1)
+      errors.push(
+        `已归档：已归档的条目没有归到「已完成」（改前 ${amount(before, '已完成')}、改后 ${amount(next, '已完成')}）`,
+      )
+    await check(d, '子对话-已收起不再列运行区')
+  }
   // 窄窗口：子对话行的状态标签不能被裁，「计划 1/2」不能变成「计划 1」；
   // 活动文字是补充信息，窄屏藏起来，宽度留给标签和耗时
   {
