@@ -1366,12 +1366,12 @@ export const EN_SETTINGS: Record<string, string> = {
   并发上限: 'Concurrency limit',
   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
     'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
-  在父对话中执行: 'Run in parent',
+  禁止子对话执行: "Don't run in child conversations",
   '（只对 Git 项目生效）': ' (Git projects only)',
-  '勾了「在父对话中执行」的步骤子对话不跑：合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。':
-    'Steps marked "Run in parent" are not run by the child conversation: after its branch is merged back, the parent runs them (one at a time) and sends the results and durations back. Only applies to Git projects; best for heavy steps such as end-to-end tests.',
-  '勾了以后子对话不跑这条步骤：合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。':
-    'The child conversation skips this step: after its branch is merged back, the parent runs it in its own folder and sends the results and durations back. Best for heavy steps such as end-to-end tests. Steps marked "builds on merge" are still built by the parent through its build request and are not affected.',
+  '勾了「禁止子对话执行」的步骤只对子对话生效：子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话；父对话自己改代码验证时照常跑。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。':
+    'Steps marked "Don\'t run in child conversations" only affect child conversations: the child skips them, and after its branch is merged back the parent runs them (one at a time) and sends the results and durations back; the parent itself still runs them when it verifies its own changes. Only applies to Git projects; best for heavy steps such as end-to-end tests.',
+  '只对子对话生效：勾了以后子对话不跑这条步骤，合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话；父对话自己改代码验证时照常跑。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。':
+    "Only affects child conversations: the child skips this step, and after its branch is merged back the parent runs it in its own folder and sends the results and durations back; the parent itself still runs it when it verifies its own changes. Best for heavy steps such as end-to-end tests. Steps marked 'builds on merge' are still built by the parent through its build request and are not affected.",
   '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。':
     'Only applies to Git projects: child conversations on other version control systems have no branch to merge back, so this option would never run; it cannot be selected here.',
 }

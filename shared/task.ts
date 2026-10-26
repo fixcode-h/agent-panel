@@ -649,7 +649,7 @@ export function childReport(
           })
         return t('只剩合回父对话的分支，还没请你收尾')
       case 'wrapup':
-        // 合回已经做完、面板正在父对话目录里跑勾了「在父对话中执行」的步骤（见 ADR 0018）：
+        // 合回已经做完、面板正在父对话目录里跑勾了「禁止子对话执行」的步骤（见 ADR 0018）：
         // 这时收尾还早，说法不能再是「用 finish_child 合并」
         return task.wrapRequest?.state === 'testing'
           ? t('已合回，等父对话跑测试（面板自动执行，结果回传给它）')
@@ -723,7 +723,7 @@ export function askOptions(options: string[] | undefined, kind: AskKind = 'quest
  * - asking：还有待用户回答的提问
  * - requests：还有待用户确认的请求
  * - unmerged：独立分支还有没合回父对话分支的改动
- * - parentTest：合回了，父对话还在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）
+ * - parentTest：合回了，父对话还在跑勾了「禁止子对话执行」的测试步骤（见 ADR 0018）
  *
  * 合并成功、一轮结束、标记完成、回收独立分支、面板阶段显示都读这一份：
  * 以前合并成功就当场标完成、删 worktree，计划、提问、后台命令全都没查，

@@ -1,5 +1,5 @@
 /**
- * 端到端分片：勾了「在父对话中执行」的测试步骤由父对话在合并后跑（ADR 0018）
+ * 端到端分片：勾了「禁止子对话执行」的测试步骤由父对话在合并后跑（ADR 0018）
  *
  * 覆盖的是整条链路，不是提示词：
  * - 子对话合并前不跑这条步骤；合并成功后父对话在自己的目录里真跑它（后台命令），
@@ -174,5 +174,5 @@ await runShard('父对话执行测试步骤', async (api) => {
   mkdirSync(nonGit, { recursive: true })
   assert.equal((await call('GET', `/fs/vcs?path=${encodeURIComponent(nonGit)}`)).vcs, 'none')
   assert.equal((await call('GET', `/fs/vcs?path=${encodeURIComponent(project.path)}`)).vcs, 'git')
-  step('非 Git 目录能被分辨出来：「在父对话中执行」只在 Git 项目里生效')
+  step('非 Git 目录能被分辨出来：「禁止子对话执行」只在 Git 项目里生效')
 })
