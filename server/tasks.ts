@@ -57,6 +57,7 @@ import {
   keepAliveVictims,
   messageStamp,
   pauseStep,
+  restartInterrupted,
   runRunning,
   trackWait,
   waitDuration,
@@ -336,7 +337,10 @@ export function tasksApi(deps: {
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
   const ready = store.list().then(async (all) => {
-    for (const meta of all.filter((x) => x.status === 'running')) {
+    // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
+    // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
+    // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
+    for (const meta of all.filter((x) => x.status === 'running' || restartInterrupted(x))) {
       // 列表里只有用户消息，改之前取完整的
       const task = await store.get(meta.id)
       if (!task) continue
@@ -376,9 +380,12 @@ export function tasksApi(deps: {
             role: 'system',
             agentId: '',
             step: '',
-            text: t(
-              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
-            ),
+            text:
+              task.status === 'running'
+                ? t(
+                    '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
+                  )
+                : t('面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。'),
             tools: [],
             transient: true,
             at: new Date().toISOString(),
