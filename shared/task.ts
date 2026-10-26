@@ -1242,7 +1242,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'parent':
       return t('父对话结束时一起结束')
     case 'switch':
-      return t('换 CLI / 模型时中断')
+      return t('换 Agent / 模型时中断')
     case 'archive':
       return t('归档时结束')
     case 'restart':
@@ -1256,7 +1256,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'finish':
       return t('做完后收尾')
     case 'stalled':
-      return t('CLI 没有响应，面板重启了它')
+      return t('Agent 没有响应，面板重启了它')
     default:
       return t('已暂停')
   }
@@ -1269,11 +1269,11 @@ export function stopReasonText(reason: StopReason | undefined): string {
 export function deliveryText(how: DeliveryHow | undefined): string {
   switch (how) {
     case 'wait':
-      return t('已交给 CLI，这一轮接着处理')
+      return t('已交给 Agent，这一轮接着处理')
     case 'steer':
       return t('已插进当前这一轮')
     case 'notes':
-      return t('已交给正在执行的 CLI，它会在这一轮里读取')
+      return t('已交给正在执行的 Agent，它会在这一轮里读取')
     case 'next-node':
       return t('已交给工作流里下一个开始的节点')
     case 'held':
@@ -1283,7 +1283,10 @@ export function deliveryText(how: DeliveryHow | undefined): string {
     case 'next':
       return t('这一轮已结束，按新的一轮处理')
     case 'restart':
-      return t('CLI 没有响应，已重启并按新的一轮处理')
+      return t('Agent 没有响应，已重启并按新的一轮处理')
+    // 页面本地状态：面板还没接收、Agent 也还没认领（见 DeliveryHow 的 pending）
+    case 'pending':
+      return t('待认领')
     default:
       return ''
   }
@@ -1319,6 +1322,39 @@ export function childIcon(x: ChildEntry): TaskIcon {
 
 /** 行首要不要转圈：就是图标是 running，见 childIcon */
 export const childSpinning = (x: ChildEntry) => childIcon(x) === 'running'
+
+/**
+ * 面板重启 / 崩溃后，这条落盘里的任务还会不会被画成在跑（childIcon 是 running）。
+ * 重启后 CLI 进程已经回收，后台命令、工作流、派出的子任务的内存记录也一起没了，凡是「还有人在做」的显示都不成立；
+ * 启动迁移按它把任务落成已停止（stopReason: restart），行首图标、列表分组、「N 个执行中」的计数和
+ * 「CLI 进程已回收」那句提示才会一起变静止（用户报的现象：重启后子对话还挂在执行中一直转圈）。
+ * 判定走 childState / childIcon，和图标、分组、计数是同一处，不另写一套「算不算在跑」。
+ * 例外是「待收尾」：它等的是父对话合并，不靠 CLI 进程，重启后照样能收，不落静止。
+ */
+export function restartInterrupted(
+  task: Parameters<typeof childFacts>[0] & Pick<Task, 'id' | 'title' | 'createdAt' | 'worktree'>,
+): boolean {
+  const entry: ChildEntry = {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    working: !!task.working,
+    // 重启后没有进程活着；这一项只影响「已关闭」标签，不参与图标判定
+    cliAlive: false,
+    startedAt: task.createdAt,
+    requests: task.requests.length,
+    asking: task.parentAsks?.length ?? 0,
+    resolved: task.resolved === true,
+    plan: openPlan(task),
+    workflow: runRunning(task),
+    helpers: helpersWorking(task),
+    // 独立分支还活着（state 是 active）就是还没收口：合了或丢掉后 state 会跟着改
+    unmerged: task.worktree?.state === 'active',
+    wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
+    stopReason: task.stopReason,
+  }
+  return childSpinning(entry) && childState(entry) !== 'wrapup'
+}
 
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
 export const childWaiting = (x: ChildEntry) => childIcon(x) === 'waiting'
@@ -1543,6 +1579,24 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
 
 /** 任务对外的状态：见 convState */
 export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
+
+/**
+ * 这一轮做完了、用户还没打开看过：侧栏橙点、项目首页「需要你处理」都读它。
+ * 交出去的后台命令还没跑完时不算：这一轮说完了但对话还在等结果。
+ * 只是「未读」这个历史事实，能不能画橙点还要看下面的 taskDoneDot。
+ */
+export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jobs?: Task['jobs'] }) =>
+  !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length
+
+/**
+ * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
+ * 未读是上一轮完成时留下的历史事实，对话后来又跑起来（转圈、等你处理、失败、被停）时它还在，
+ * 两个一起画就成了「既完成未看、又还在跑」。当前打开的那个对话也不画。
+ */
+export function taskDoneDot(x: TaskFactsInput, unread: boolean, viewing = false) {
+  if (!unread || viewing) return false
+  return taskState(x) === 'done'
+}
 
 /** 任务还在运行（不能被回收、失活）：见 convActive */
 export const taskActive = (x: TaskFactsInput) => convActive(taskState(x))

@@ -2850,6 +2850,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .first()
       .waitFor({ timeout: 10000 })
       .catch(() => errors.push('执行中发消息：消息没有立刻出现在对话里'))
+    // 消息出现时输入框就该空了：清空不等接口返回（以前要等 POST 返回），否则服务端慢的时候
+    // 就是「气泡已经标了已交给 CLI、输入框还满着」
+    const leftInBox = (await p.locator('#follow-up').textContent()) ?? ''
+    if (leftInBox.includes('顺手看看测试配置')) errors.push('执行中发消息：消息已经在对话里了，输入框里的字还在')
     if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
     if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
     // 交付方式要回传给用户看：演示里这一轮收不下，消息上要写明「结束后自动处理」，不是只存个内部枚举
@@ -2864,6 +2868,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await p.locator('#follow-up').fill(text)
     await p.locator('#follow-up').press('Enter')
     await p.locator('#follow-up').press('Enter')
+    // 发出去的那一刻就清空输入框、消息插进对话：不等接口返回。这里演示版把发消息拖慢成几秒（上面设的），
+    // 旧实现这会儿输入框里还满是字
+    const leftover = (await p.locator('#follow-up').textContent()) ?? ''
+    if (leftover.includes(text)) errors.push('输入框-连按两次回车：消息已经发出了，输入框里的字还在')
+    // 面板接收之前那条消息标「待认领」，服务端记下后换成实际的交付方式（下面断言）
+    await p
+      .getByText('待认领', { exact: true })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('发送时序：接口返回前那条消息没有标成「待认领」'))
     const hint = await p
       .getByText('上一条还在发送，稍等一下')
       .first()
@@ -2887,6 +2901,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       .catch(() => {})
     const n = await p.locator('.ml-auto', { hasText: text }).count()
     if (n !== 1) errors.push(`连按两次回车：发出了 ${n} 条（应该只有 1 条）`)
+    // 等这一条真的交出去（本地那条「待认领」被服务端那份替掉）再往下走：sending 要等接口返回才放开，
+    // 急着进下一条用例（输入法回车）会被「上一条还在发送」拦住
+    await p
+      .waitForFunction(() => !document.body.innerText.includes('待认领'), undefined, { timeout: 15000 })
+      .catch(() => errors.push('发送时序：消息一直停在「待认领」'))
     await p.evaluate(() => localStorage.removeItem('demo-slow-messages'))
     await check(p, '输入框-连按两次回车')
   }

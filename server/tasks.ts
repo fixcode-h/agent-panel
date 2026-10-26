@@ -57,6 +57,7 @@ import {
   keepAliveVictims,
   messageStamp,
   pauseStep,
+  restartInterrupted,
   runRunning,
   trackWait,
   waitDuration,
@@ -103,6 +104,7 @@ import {
   setPresenceUnreadKeeper,
   setViewer,
 } from './presence.ts'
+import { settleReclaimed } from './exec/reclaim.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
@@ -309,7 +311,21 @@ export function tasksApi(deps: {
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
   // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0012）
-  setPresenceIdleHandler((id) => cancelWait(id))
+  setPresenceIdleHandler((id) => {
+    // 回收：先结束还在等下一句的 CLI，再把「界面还会画成在跑」的任务收口成已停止（见 settleReclaimed）。
+    // 只结束进程不落状态的话，任务会一直写着 running / 或做完但计划没做完，列表一直转圈，
+    // 而「继续执行」只在 stopped 时出现——用户看到「继续会重新拉起」却没有入口（用户报的现象）。
+    // 引擎收尾可能把状态改回 done（这一轮做完了），所以有执行位时要等它收完再看一眼
+    cancelWait(id)
+    const entry = live.get(id)
+    // 有执行位的一律等它收尾完再看：刚 reserve、还在启动（done 还没赋值）的窗口里拿旧快照写回，
+    // 会把正在启动的一轮覆盖成已停止；收尾完再判一次，计划没做完的才落静止
+    if (entry) {
+      if (entry.done) void entry.done.then(() => settleReclaimed(store, id, 'presence')).catch(() => {})
+      return
+    }
+    void settleReclaimed(store, id, 'presence')
+  })
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
     const tk = live.get(id)?.task
@@ -336,7 +352,10 @@ export function tasksApi(deps: {
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
   const ready = store.list().then(async (all) => {
-    for (const meta of all.filter((x) => x.status === 'running')) {
+    // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
+    // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
+    // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
+    for (const meta of all.filter((x) => x.status === 'running' || restartInterrupted(x))) {
       // 列表里只有用户消息，改之前取完整的
       const task = await store.get(meta.id)
       if (!task) continue
@@ -376,9 +395,12 @@ export function tasksApi(deps: {
             role: 'system',
             agentId: '',
             step: '',
-            text: t(
-              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
-            ),
+            text:
+              task.status === 'running'
+                ? t(
+                    '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
+                  )
+                : t('面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。'),
             tools: [],
             transient: true,
             at: new Date().toISOString(),
@@ -995,7 +1017,7 @@ export function tasksApi(deps: {
               role: 'system',
               agentId: '',
               step: '',
-              text: t('后台命令的结果两次都没能交给 CLI，已经记在对话里，下一轮会处理'),
+              text: t('后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理'),
               tools: [],
               alert: makeAlert('warn', (err as Error).message, 'delivery'),
               at: new Date().toISOString(),
@@ -2937,6 +2959,11 @@ export function tasksApi(deps: {
       prompt?: string
       /** 这条消息是怎么交给 CLI 的：新记一条时直接写上去，界面据此说「排到下一轮」这类事实（见 DeliveryHow） */
       delivery?: DeliveryHow
+      /**
+       * 页面生成的 id：点发送时它已经在本地按这个 id 插了一条「待认领」的消息，
+       * 这里沿用它，推送和响应到达时按 id 换成真实的一份，不会出现两条
+       */
+      messageId?: string
       /** 停下时独立分支里还有没提交的改动（见 stopWorktreeNote）：父对话里那一行直接写几个文件、目录在哪 */
       worktree?: TaskMessage['worktree']
     },
@@ -2988,32 +3015,36 @@ export function tasksApi(deps: {
       next.wrapRequest = undefined
       reportedState.delete(id)
     }
-    // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」
+    // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」。
+    // 页面上发的消息（带 messageId）排到这里就是马上交给 CLI（start 在后面），先记成 wait，
+    // 界面从「待认领」改成「已交给 CLI」；启动失败时再改成 lost（见下面的 catch）。
+    // 面板推给对话的消息（panel / child / peer、内部补发的）不画在用户气泡上，不记交付方式
+    const how = m.delivery ?? (m.messageId ? 'wait' : undefined)
     const stamp = {
-      ...(m.delivery ? { delivery: { how: m.delivery, at: new Date().toISOString() } } : {}),
+      ...(how ? { delivery: { how, at: new Date().toISOString() } } : {}),
       ...(m.worktree ? { worktree: m.worktree } : {}),
     }
+    const newMessage = () => ({
+      id: m.messageId ?? randomUUID(),
+      role: m.panel ? ('system' as const) : ('user' as const),
+      agentId: '',
+      step: '',
+      text: m.text,
+      ...(m.panel ? { panel: m.panel } : {}),
+      ...(m.child ? { child: m.child } : {}),
+      ...(m.peer ? { peer: m.peer } : {}),
+      ...(expanded ? { prompt: expanded } : {}),
+      tools: [],
+      ...(m.attachments.length ? { attachments: m.attachments } : {}),
+      ...stamp,
+      at: new Date().toISOString(),
+    })
     // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录
     const project = next.projectId ? await deps.projects.get(next.projectId) : null
     const restoreErr = project ? await restoreWorktree(next, project) : ''
     if (restoreErr) {
-      if (!m.recorded) {
-        next.messages.push({
-          id: randomUUID(),
-          role: m.panel ? 'system' : 'user',
-          agentId: '',
-          step: '',
-          text: m.text,
-          ...(m.panel ? { panel: m.panel } : {}),
-          ...(m.child ? { child: m.child } : {}),
-          ...(m.peer ? { peer: m.peer } : {}),
-          ...(expanded ? { prompt: expanded } : {}),
-          tools: [],
-          ...(m.attachments.length ? { attachments: m.attachments } : {}),
-          ...stamp,
-          at: new Date().toISOString(),
-        })
-      }
+      // 独立分支没建起来，这一轮没跑：这条消息没能交给 CLI，不能标成「已交给 CLI」
+      if (!m.recorded) next.messages.push({ ...newMessage(), delivery: { how: 'lost', at: new Date().toISOString() } })
       recordWorktreeError(next, restoreErr)
       await store.update(id, next)
       release(entry)
@@ -3021,22 +3052,18 @@ export function tasksApi(deps: {
     }
     // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await placeInTask(next, m.attachments))
-    if (!m.recorded) {
-      next.messages.push({
-        id: randomUUID(),
-        role: m.panel ? 'system' : 'user',
-        agentId: '',
-        step: '',
-        text: m.text,
-        ...(m.panel ? { panel: m.panel } : {}),
-        ...(m.child ? { child: m.child } : {}),
-        ...(m.peer ? { peer: m.peer } : {}),
-        ...(expanded ? { prompt: expanded } : {}),
-        tools: [],
-        ...(m.attachments.length ? { attachments: m.attachments } : {}),
-        ...stamp,
-        at: new Date().toISOString(),
-      })
+    if (!m.recorded) next.messages.push(newMessage())
+    // start 一进去就把任务标成执行中（status / working / 速度 / runStartedAt，见它的开头）。
+    // 失败时执行位已经释放，落盘前要把这些恢复回去，不然任务会停在「执行中」却没有进程在跑
+    const usage = next.usage.agents[next.agentId]
+    const beforeRun = {
+      status: next.status,
+      working: next.working,
+      awaitingUser: next.awaitingUser,
+      prewarming: next.prewarming,
+      runStartedAt: next.runStartedAt,
+      tps: usage?.tps,
+      lastTps: usage?.lastTps,
     }
     try {
       return await start(
@@ -3046,6 +3073,23 @@ export function tasksApi(deps: {
         await deps.agents.list(),
       )
     } catch (e) {
+      // 启动失败：这条消息没交给 CLI，别让对话里一直写着「已交给 CLI」；
+      // 同时把 start 标上的执行中状态恢复过来（执行位已经释放，留着它就自相矛盾）
+      next.status = beforeRun.status
+      next.working = beforeRun.working
+      next.awaitingUser = beforeRun.awaitingUser
+      next.prewarming = beforeRun.prewarming
+      next.runStartedAt = beforeRun.runStartedAt
+      const active = next.usage.agents[next.agentId]
+      if (active && beforeRun.tps !== undefined && beforeRun.lastTps !== undefined) {
+        active.tps = beforeRun.tps
+        active.lastTps = beforeRun.lastTps
+      }
+      const mine = next.messages.find((x) => x.id === (m.messageId ?? '') && x.delivery)
+      if (mine) {
+        mine.delivery = { how: 'lost', at: new Date().toISOString() }
+        await store.update(id, next).catch(() => {})
+      }
       release(entry)
       throw e
     }
@@ -3098,6 +3142,8 @@ export function tasksApi(deps: {
           text,
           attachments: msg.attachments ?? [],
           placed,
+          // 沿用页面本地那条待认领消息的 id：推送到达时按 id 换成这一份
+          messageId: msg.id,
           delivery: 'next',
           ...(msg.panel ? { panel: msg.panel } : {}),
           ...(msg.child ? { child: msg.child } : {}),
@@ -3120,7 +3166,7 @@ export function tasksApi(deps: {
     // 「没有响应」那一行记下结果：停下的说明是临时的，开新一轮时会被去掉
     for (const m of entry.task.messages)
       if (m.alert?.kind === 'no_response' && !m.alert.resolved)
-        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 CLI，接回会话重新开始') }
+        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 Agent，接回会话重新开始') }
     stopTask(id, 'stalled')
     if (entry.done) await entry.done
     // 停下的这段时间里别的消息已经开了新的一轮：交给那一轮
@@ -3133,6 +3179,8 @@ export function tasksApi(deps: {
       text: msg.text,
       attachments: msg.attachments ?? [],
       placed,
+      // 沿用页面本地那条待认领消息的 id（和其余交付路径一样）
+      messageId: msg.id,
       ...(msg.panel ? { panel: msg.panel } : {}),
       ...(msg.child ? { child: msg.child } : {}),
       ...(msg.peer ? { peer: msg.peer } : {}),
@@ -3733,7 +3781,7 @@ export function tasksApi(deps: {
     const settings = await getSettings()
     const cliId = defaultCli(settings)
     const def = getCli(cliId)
-    if (!def) return bad(c, t('没有可用的 CLI'))
+    if (!def) return bad(c, t('没有可用的 Agent'))
     const cs = cliSettings(settings, cliId)
     const run = agentRun({ cli: cliId, model: '', effort: '' }, settings)
     const cwd = path.join(tmpdir(), 'agent-panel-process-review')
@@ -3958,23 +4006,27 @@ export function tasksApi(deps: {
     return c.json(saved, 201)
   })
 
-  routes.post('/', async (c) => {
-    const body = await c.req.json().catch(() => null)
-    const p = NewTaskInput.safeParse(body)
-    if (!p.success) return bad(c, z.prettifyError(p.error))
-    const input = p.data
+  /**
+   * 建一个顶层对话并开始执行。界面上的 POST /tasks 和面板自己发起的（定时计划）共用这一条链路：
+   * 校验项目和角色、按项目建独立分支、拷附件、启动执行。
+   * 失败时返回原因和状态码，不抛错：定时器要把原因记到计划里给用户看。
+   */
+  async function createTask(
+    input: NewTaskInput,
+    raw: unknown,
+  ): Promise<{ task: Task } | { error: string; status: 400 | 404 | 409 }> {
     // 没有项目的是 Chat 模式的聊天，只能直接对话
-    if (!input.projectId && input.mode !== 'chat') return bad(c, t('缺少项目'))
+    if (!input.projectId && input.mode !== 'chat') return { error: t('缺少项目'), status: 400 }
     const project = input.projectId ? await deps.projects.get(input.projectId) : chatProject('')
-    if (!project) return bad(c, t('项目不存在'), 404)
+    if (!project) return { error: t('项目不存在'), status: 404 }
     const agents = await deps.agents.list()
     // 子对话：挂在父对话下，固定用任务 Agent，不能再建下一层
     let parent: Task | undefined
     if (input.parentTaskId) {
       parent = (await store.get(input.parentTaskId)) ?? undefined
-      if (!parent) return bad(c, t('父对话不存在'), 404)
-      if (parent.parentTaskId) return bad(c, t('子对话不能再创建子对话'))
-      if (parent.projectId !== input.projectId) return bad(c, t('子对话必须和父对话在同一个项目'))
+      if (!parent) return { error: t('父对话不存在'), status: 404 }
+      if (parent.parentTaskId) return { error: t('子对话不能再创建子对话'), status: 400 }
+      if (parent.projectId !== input.projectId) return { error: t('子对话必须和父对话在同一个项目'), status: 400 }
       input.mode = 'chat'
       input.rootTaskId = parent.rootTaskId || parent.id
     }
@@ -3983,15 +4035,16 @@ export function tasksApi(deps: {
       workflow = input.workflowId
         ? ((await deps.workflows.get(input.workflowId)) ?? undefined)
         : await projectWorkflow(project)
-      if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
+      if (!workflow) return { error: t('项目还没有指定工作流，请选择一个工作流或改用直接对话'), status: 400 }
     } else {
       // 旧界面不传 agentId 时跟着项目的默认对话 Agent；传了空字符串表示不用 Agent 角色
-      if (!(body && typeof body === 'object' && 'agentId' in body) && project.defaultAgentId)
+      if (!(raw && typeof raw === 'object' && 'agentId' in raw) && project.defaultAgentId)
         input.agentId = project.defaultAgentId
-      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的角色'))
+      if (input.agentId && !agents.some((a) => a.id === input.agentId))
+        return { error: t('请选择对话的角色'), status: 400 }
     }
     const lack = chatMissingParams(input, agents)
-    if (lack) return bad(c, lack)
+    if (lack) return { error: lack, status: 400 }
     const params = workflow ? paramsOf(project, workflow.id) : {}
     await refreshAgents()
     const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params, testOpts(project)) : []
@@ -4014,7 +4067,7 @@ export function tasksApi(deps: {
       try {
         draft.worktree = await createWorktree(project.path, draft.id, draft.title)
       } catch (e) {
-        return bad(c, (e as Error).message)
+        return { error: (e as Error).message, status: 400 }
       }
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
@@ -4024,17 +4077,25 @@ export function tasksApi(deps: {
     // 对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await placeInTask(draft, input.attachments ?? [])
     const task = await store.create(draft)
-    return c.json(
-      await start(reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
-      201,
-    )
+    return {
+      task: await start(reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
+    }
+  }
+
+  routes.post('/', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const p = NewTaskInput.safeParse(body)
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    const res = await createTask(p.data, body)
+    if ('error' in res) return bad(c, res.error, res.status)
+    return c.json(res.task, 201)
   })
 
   routes.post('/:id/messages', async (c) => {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt } = p.data
+    const { text, attachments, interrupt, messageId } = p.data
     if ((await current(id))?.imported) return bad(c, READONLY, 409)
     // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
     if (RULE_CMD.test(text.trim())) {
@@ -4054,7 +4115,8 @@ export function tasksApi(deps: {
         // 附件先拷进任务的执行目录，交给 CLI 的是那一份
         const placed = await placeInTask(prev.task, attachments)
         const msg: TaskMessage = {
-          id: randomUUID(),
+          // 页面先在本地插了一条「待认领」的：沿用它的 id，推送到达时按 id 换成这一份，不会出现两条
+          id: messageId ?? randomUUID(),
           role: 'user' as const,
           agentId: '',
           step: '',
@@ -4074,7 +4136,7 @@ export function tasksApi(deps: {
     if (prev) await prev.done
     if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     try {
-      return c.json(await followUp(id, { text, attachments }))
+      return c.json(await followUp(id, { text, attachments, messageId }))
     } catch (e) {
       // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500
       if (e instanceof TaskBusyError) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
@@ -4150,7 +4212,7 @@ export function tasksApi(deps: {
     } catch (e) {
       if (entry) release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
-      alertOn(task.id, 'cli_exit', t('提前启动 CLI 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
+      alertOn(task.id, 'cli_exit', t('提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
       return task
     }
   }
@@ -4957,6 +5019,15 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /**
+     * 面板自己新建一个顶层对话（定时计划用）：和 POST /tasks 完全同一条链路，
+     * 失败时抛出原因，由调用方记到计划里。
+     */
+    async startChat(input: NewTaskInput) {
+      const res = await createTask(NewTaskInput.parse(input), input)
+      if ('error' in res) throw new Error(res.error)
+      return res.task
+    },
     /**
      * 子对话给父对话发提问 / 收尾建议：引擎里的 message_parent、suggest_next_step 都走它；
      * 「提问」关着时在这里自动交给父对话决定

@@ -359,7 +359,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^项目教训/ })
       .first()
       .click()
-    await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    // 默认选中「默认」页签：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的页签里
+    await check(p, '项目设置-项目教训', ['购物车相关改动同时改 legacy-cart', '默认', '加一条'])
+    const defaultTab = dlg.getByRole('tab', { name: /^默认/ })
+    await defaultTab.click()
+    assert.equal(await defaultTab.getAttribute('aria-selected'), 'true', '再点一次选中的页签不能取消选中')
+    await dlg.getByRole('tab', { name: /^支付/ }).click()
+    await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
+    assert.equal(
+      await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),
+      0,
+      '「支付」页签里不该有不带标签的教训',
+    )
     await footSpace('项目教训')
     // 项目说明和各个 CLI 的说明文件共用同一个滚动区分支（section === 'doc' || cli:），单独确认一次
     await dlg.getByRole('button', { name: /^项目说明/ }).click()
@@ -376,7 +387,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
     await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
+    // 重新初始化后报告面板和「写入的文件」是异步算出来的，10 个分片并行时页面更慢、会超过 check 默认的 5 秒：
+    // 把这条断言要的每一项都先等到再断言，免得界面还没渲染完就被当成没显示（见 docs/lessons/ui.md 异步加载先 waitFor）
+    for (const text of ['写入的文件', 'AGENTS.md'])
+      await p
+        .getByText(text, { exact: false })
+        .first()
+        .waitFor({ timeout: 20000 })
+        .catch(() => {})
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
+    // 推荐面板要等对话跑完、结果解析完才出现（演示里实测 5~6 秒），先等面板再断言：
+    // 不能指望 check 默认的 5 秒（见 docs/lessons/ui.md 那条「异步加载的入口先 waitFor 再断言」）
+    await p
+      .locator('[data-analysis-panel="init"]')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI初始化-对话：推荐面板一直没有出现'))
     await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
     // 结果直接画在对话右侧的报告面板（下面的检查兜住它一定出现）；旧路径里的「查看推荐并应用」有就点一下
     if (await reviewInit.count()) await reviewInit.click({ timeout: 10000 }).catch(() => {})

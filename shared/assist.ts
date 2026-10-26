@@ -69,7 +69,7 @@ export const AssistInput = z.object({
   /** 优化已有的 Agent / 工作流时传它的 id；为空表示新建 */
   targetId: z.string().default(''),
   /** 用哪个 CLI 生成 */
-  cli: z.string().min(1, '请选择 CLI'),
+  cli: z.string().min(1, '请选择 Agent'),
   /** 为空时用设置里这个 CLI 的默认模型 */
   model: z.string().trim().default(''),
   /** 为空时跟着模型档位或这个 CLI 的默认思考强度 */
@@ -997,7 +997,8 @@ function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; 
   const tier = d.model.replace(/^@/, '').toLowerCase()
   // Agent 的模型只能是档位；写了具体模型名的按中档处理
   const model = ['high', 'medium', 'low'].includes(tier) ? `@${tier}` : '@medium'
-  if (!cli) return { newCategory: '', error: `cli「${d.cli}」不存在，只能是 ${CLIS.map((c) => c.id).join(' / ')}` }
+  if (!cli)
+    return { newCategory: '', error: `运行用的 Agent「${d.cli}」不存在，只能是 ${CLIS.map((c) => c.id).join(' / ')}` }
   const icon = AGENT_ICON_IDS.some(([id]) => id === d.icon) ? d.icon : 'bot'
   const cat = d.category ? ctx.categories.find((c) => c.name === d.category) : undefined
   return {

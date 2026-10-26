@@ -47,6 +47,7 @@ import type {
   TaskJobView,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
+import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
@@ -77,6 +78,7 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
+import type { SummaryJob, SummaryRecord, SummaryRequest } from '@shared/summary'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type { ProjectProposal } from '@shared/project-init'
 import type {
@@ -542,14 +544,29 @@ export const api = {
   /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */
   stopSubtask: (id: string, step: string) => request<Task>(`/tasks/${id}/subtasks/stop`, json('POST', { step })),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
+  /** 定时计划：到点由面板自己新建对话，存到数据目录的 config/schedules.json */
+  schedules: () => request<Schedule[]>('/schedules'),
+  createSchedule: (input: ScheduleInput) => request<Schedule>('/schedules', json('POST', input)),
+  updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>(`/schedules/${id}`, json('PUT', input)),
+  deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: 'DELETE' }),
+  /** 立即执行一条计划（不改排期）：返回更新后的计划和启动的对话 */
+  runSchedule: (id: string) =>
+    request<{ schedule: Schedule; taskId: string }>(`/schedules/${id}/run`, { method: 'POST' }),
   /** 导入别人导出的任务（连同包里的子对话），只读；projectId 为空放进聊天。返回父任务在前 */
   importTask: (projectId: string, bundle: unknown) =>
     request<Task[]>('/tasks/import', json('POST', { projectId, bundle })),
   /** 导出任务连同它分出的子对话：服务端整理成一个包，超过体积上限时直接报错 */
   taskExport: (id: string, app = '') =>
     request<{ bundle: TaskExport; bytes: number }>(`/tasks/${id}/export?app=${encodeURIComponent(app)}`),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
+  /**
+   * 发一条消息。messageId：页面已经按这个 id 在本地插进对话了（待认领），服务端沿用它，
+   * 推送和响应到达时按 id 换成真实的一份，不会出现两条
+   */
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, messageId = '') =>
+    request<Task>(
+      `/tasks/${id}/messages`,
+      json('POST', { text, attachments, interrupt, ...(messageId ? { messageId } : {}) }),
+    ),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
@@ -822,4 +839,10 @@ export const api = {
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) =>
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
+  // ---- 工作总结：选项目生成今天的报告，存最近几份 ----
+  summary: () => request<{ reports: SummaryRecord[] }>('/summary'),
+  generateSummary: (input: SummaryRequest) => request<SummaryJob>('/summary', json('POST', input)),
+  summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
+  stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
+  saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),
 }

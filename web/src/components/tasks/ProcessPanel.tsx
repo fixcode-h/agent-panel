@@ -333,7 +333,7 @@ function ProcessRow({ proc, disabled, onKill }: { proc: TaskProcess; disabled: b
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6875rem] text-subtle">
           {/* 归属已经在分组头上写了，这一行只说进程自己的事 */}
-          <span>{proc.kind === 'child' ? t('子进程') : t('CLI')}</span>
+          <span>{proc.kind === 'child' ? t('子进程') : t('Agent')}</span>
           <span>·</span>
           <span className="tabular-nums">{proc.durationMs === null ? t('未知') : fmtDuration(proc.durationMs)}</span>
           <span>·</span>

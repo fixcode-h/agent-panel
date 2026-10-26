@@ -53,7 +53,15 @@ import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
 import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
-import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
+import {
+  type Attachment,
+  type Project,
+  type StopReason,
+  type Task,
+  type TaskMessage,
+  type TaskStep,
+  type ToolUse,
+} from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
@@ -77,7 +85,7 @@ import { useTaskStream } from '@/lib/task-stream'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
+import { apiQueueWait, deliveredToCli, fmtDuration, messageRecorded, startedRun, tpsNow } from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
@@ -387,6 +395,13 @@ export function TaskView({
   const files = useAttachments(`task:${taskId}`)
   const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
+  // 输入框里此刻的附件（渲染时同步）：发送时立刻清空，失败要把这次发的那几个放回去，
+  // 不能读闭包里的旧列表——那会把刚清空的当成还在，反倒让附件丢了（见 restoreDraft）
+  const attachmentsNow = useRef<Attachment[]>([])
+  attachmentsNow.current = files.attachments
+  // 点发送后先本地插进对话的那几条（待认领）：清空输入框、消息出现都不等接口返回。
+  // 单独存、不塞进 task.messages：SSE 推来的整份任务会把它抹掉（见下面画对话时合的 shownTask）
+  const [pendingMsgs, setPendingMsgs] = useState<TaskMessage[]>([])
   const [panel, setPanel] = useState(false)
   // 父对话里的子对话：点开在右栏看，右栏同一时间只显示一个。
   // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
@@ -595,6 +610,17 @@ export function TaskView({
     },
     [],
   )
+
+  // 服务端已经把这条记进对话了（推送或响应到达）：本地那条待认领的退场，显示服务端那一份
+  // （两边同一个 id：发送时页面生成、接口传过去，见 api.sendMessage 的 messageId）
+  useEffect(() => {
+    if (!pendingMsgs.length || !task) return
+    const ids = new Set(task.messages.map((m) => m.id))
+    const rest = pendingMsgs.filter((m) => !ids.has(m.id))
+    if (rest.length !== pendingMsgs.length) setPendingMsgs(rest)
+    // 只跟着任务变：pendingMsgs 自己变了不用再筛一遍
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task])
 
   useEffect(() => {
     api
@@ -839,8 +865,15 @@ export function TaskView({
   }, [reportId])
   useEscape(reportCover, () => setReportCover(false), true)
 
+  // 对话里要画的消息：服务端那份加上还没被服务端接收的（待认领）。其余地方读的还是服务端的 task
+  const shownTask = useMemo(() => {
+    if (!task || !pendingMsgs.length) return task
+    const ids = new Set(task.messages.map((m) => m.id))
+    const fresh = pendingMsgs.filter((m) => !ids.has(m.id))
+    return fresh.length ? { ...task, messages: [...task.messages, ...fresh] } : task
+  }, [task, pendingMsgs])
   // 分段只在任务内容变了时重算：打字、开关面板不再把上千条消息重新归一遍
-  const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
+  const blocks = useMemo(() => (shownTask ? toBlocks(shownTask) : []), [shownTask])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
   // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
@@ -891,13 +924,36 @@ export function TaskView({
     }
     const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
-    setSending(true)
+    // 发出去的这一刻就清空输入框、把消息插进对话。清空不能等接口返回：服务端这条的响应要等
+    // settings、项目、git/p4 探测、CLI 拉起这一串（消息本身早已经 SSE 到界面），
+    // 以前就是在这里 await 完才清空，于是出现「气泡已经标了已交给 Agent、输入框还满着」
+    const attachments = files.attachments
+    const messageId = crypto.randomUUID()
+    const pending: TaskMessage = {
+      id: messageId,
+      role: 'user',
+      agentId: '',
+      step: '',
+      text: content,
+      tools: [],
+      ...(attachments.length ? { attachments } : {}),
+      // 面板还没接收、Agent 还没认领；服务端记下这条后换成「已交给 Agent，这一轮接着处理」
+      delivery: { how: 'pending', at: new Date().toISOString() },
+      at: new Date().toISOString(),
+    }
+    setPendingMsgs((xs) => [...xs, pending])
+    followTa.current?.setText('')
+    files.clear()
+    // 这次发的已经清掉了：失败时只把这几个放回去，用户在这几秒里新加的不用跟着猜
+    attachmentsNow.current = []
     stickToBottom()
+    setSending(true)
     try {
-      const r = await api.sendMessage(task.id, content, files.attachments, false)
-      apply(r)
-      followTa.current?.setText('')
-      files.clear()
+      const sent = await api.sendMessage(task.id, content, attachments, false, messageId)
+      apply(sent)
+      // 面板自己处理的命令（例如 /rule 发布全局规则）不把这条记进对话：服务端返回的对话里没有这个 id，
+      // 本地那条「待认领」要撤掉，否则会一直挂在对话里（只有切走或刷新才消失）
+      if (!messageRecorded(sent.messages, messageId)) setPendingMsgs((xs) => xs.filter((m) => m.id !== messageId))
       setTimeout(
         () =>
           api
@@ -907,10 +963,47 @@ export function TaskView({
         200,
       )
     } catch (e) {
+      // 请求失败不等于没发出去：服务端可能已经收下并推到了界面（消息上已经写着「已交给 Agent」），
+      // 只是响应因连接中断没回来。先确认这条有没有被服务端记下，记下了就别把原文又放回输入框
+      // （那正是用户报的「消息发出去了、输入框里字还在」，用户再回车会再发一条一样的）
+      const landed = await landedMessage(task.id, messageId)
+      if (deliveredToCli(landed)) {
+        toast.error((e as Error).message)
+        return
+      }
+      // 没发出去（或服务端自己标了「没送出去」）：本地那条撤回，原文和附件放回输入框，
+      // 不能既没发出又把用户写的字弄丢
+      setPendingMsgs((xs) => xs.filter((m) => m.id !== messageId))
+      restoreDraft(text, attachments)
       toast.error((e as Error).message)
     } finally {
       setSending(false)
     }
+  }
+  /**
+   * 这条消息服务端记下来没有：先看本地（SSE 可能已经推到了），再问一次服务端。
+   * 请求报错时用它决定是把原文放回输入框还是只提醒一次
+   */
+  async function landedMessage(id: string, messageId: string) {
+    const local = lastTask.current?.messages.find((m) => m.id === messageId)
+    if (local) return local
+    return api
+      .task(id)
+      .then((t) => t.messages.find((m) => m.id === messageId))
+      .catch(() => undefined)
+  }
+  // 发送失败时把原文、附件放回输入框：输入框已经空了就原样放回，用户已经接着写了就接在他写的内容后面，
+  // 两种情况都不能让他刚写的东西丢掉。用函数声明：send 在上面引用它，事件触发时它已经定义
+  function restoreDraft(text: string, attachments: Attachment[]) {
+    const ed = followTa.current
+    const cur = ed?.text() ?? ''
+    ed?.setText(cur.trim() ? `${cur}\n\n${text}` : text)
+    if (attachments.length) {
+      // 这次发的和用户刚加的可能有重叠（同一个文件重新加过）：按路径去重，不重复摆两张卡片
+      const extra = attachmentsNow.current.filter((a) => !attachments.some((x) => x.path === a.path))
+      files.replace([...extra, ...attachments])
+    }
+    ed?.focus()
   }
   const firstUser = task.messages.find((m) => m.role === 'user')?.id
   const fork = async (messageId: string) => {
@@ -933,7 +1026,7 @@ export function TaskView({
   const forceStop = async () => {
     try {
       apply(await api.stopTask(task.id, true))
-      toast.success(t('已强制停止，CLI 进程已结束'))
+      toast.success(t('已强制停止，Agent 进程已结束'))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -1904,7 +1997,7 @@ export function TaskView({
               onOpenChange={setForceAsk}
               title={t('强制停止这个对话？')}
               description={t(
-                '正在执行的这一轮会被停下，CLI 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。',
+                '正在执行的这一轮会被停下，Agent 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。',
               )}
               confirmText={t('强制停止')}
               onConfirm={async () => {
@@ -2154,7 +2247,7 @@ function ChildrenBar({
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
-              title={cliKids ? t('CLI 存活：{n} 个子对话', { n: cliKids }) : undefined}
+              title={cliKids ? t('Agent 存活：{n} 个子对话', { n: cliKids }) : undefined}
               className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />

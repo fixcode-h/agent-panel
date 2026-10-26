@@ -3,13 +3,15 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-25（本轮核对 `server/store.ts` 的写入/读取路径和 `server/task-store.ts` 的 `load()`，其余内容沿用 2026-10-24 的分析）
+- analyzed_at: 2026-10-26（本轮把「状态回收」一节补到包含页面宽限回收路径，其余内容沿用 2026-10-25 的核对）
 
 ## 职责
 
 - 本机 HTTP API：Hono + `@hono/node-server`，只监听 `127.0.0.1`（因为会启动本机 CLI、读写项目目录），同时提供前端静态文件。
 - 数据存储：用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件，读写集中在 `server/store.ts`，任务单独存在 `server/task-store.ts`。
 - 项目与任务：项目扫描和分类（配合 `shared/project-scan.ts`）、任务创建、排队、停止、续跑、任务快照（`server/tasks.ts`、`server/task-store.ts`）。
+- 定时计划（左侧导航「计划」）：排期存在数据目录的 `config/schedules.json`（`server/schedules.ts` 用 `createCollection`，登记在 `server/store.ts` 的 `DATA_FILES` 里），随「数据」页的「配置」类一起统计占用、导出和导入（这一类按 `shared/data.ts` 不可清理）。面板进程在跑时按 `SCHEDULE_TICK_MS`（30 秒）轮询，到点用 `server/tasks.ts` 导出的 `startChat` 新建对话，和页面上 `POST /tasks` 走同一个 `createTask`（校验项目 / 角色、建独立分支、拷附件、启动执行），不另造执行链路。进程不在时到点的计划不补跑：超过 `SCHEDULE_MISS_MS`（60 秒）才算错过，只把时间往后推并记下 `missedAt`。写回运行状态前会重读一次，用户在这期间改过的排期不会被快照覆盖。
+- 定时计划的接口：`GET/POST /schedules`、`PUT/DELETE /schedules/:id`、`POST /schedules/:id/run`（立即执行，不改排期）；`server/index.ts` 启动时 `schedules.start()` 开始轮询，退出时 `stopSchedules()` 停掉定时器。
 - 子对话分派（`server/tasks.ts` 的 `startChild`）：父对话通过 `create_conversation` 派出的子对话立即开始执行，没有子对话并发上限和排队；`startQueue` 只留作短暂的「启动中」标记。工作流节点、合并编译、后台命令等其他占位/排队不变。
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
 - 读一条后台命令的当前样子（`GET /tasks/:id/jobs/:jobId` → `server/background.ts` 的 `view(taskId, id)`，响应体是 `shared/schema.ts` 的 `TaskJobView`）：界面上点后台命令行标题打开的终端窗口按它轮询，命令的输出只在服务端内存的 `BgJob.lines`（`KEEP_LINES` 保留结尾 300 行），不进对话记录，所以必须单独有个读接口。返回 `state` / `code` / `output` / `createdAt` / `startedAt` / `endedAt` / `lastOutputAt`；`output` 是 `lines.join('\n')` 原文，不掺「跑完了」「退出码」这些面板的话（那是推回对话的 `jobOutput` / `resultText` 的事）。排队中、结束后都读得到（用户可能过一阵才点开，结束后要给最终输出和退出码）；归属按 `BgJob.taskId` 校验，跨对话读别人的编号一律当不存在返回 404，和 `/tasks/:id/processes` 只作用于自己子树是同一个口径。回归：`server/background.test.ts`（跑着能读到已输出内容、跑完读得到最终输出和退出码、跨 `taskId` 和不存在的编号读不到）、`server/task-job-view.test.ts`（路由层 404）。
@@ -17,6 +19,7 @@
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
+- 工作总结（`server/summary.ts`）：把选中项目今天的任务记录整理成提示词（`shared/summary.ts`），在项目目录里只读跑本机 CLI 生成 Markdown 报告；接口 `/summary`，报告存在 `tasks/summaries.json`（跟任务记录一起清理），保留最近 `SUMMARY_KEEP` 份，用户编辑后的正文走 `PUT /summary/:id`。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见下面的「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见下面的「GitHub 出网与代理回退」。
 - 项目更新时的字段保留与校验（`server/index.ts` 的 `parseProject`、`PUT /projects/:id`）：请求没带 `initResult` 时保留旧值（和 `lessons`、`initializedAt` 同一套做法），带上的用 `ProjectProposalSchema` 严格校验，不合法直接拒绝；初始化推荐因此随项目持久化，重开设置还能应用。初始化对话跑完交回结果走单独的 `PUT /projects/:id/init-result`（同文件）：服务端自己读最新项目，再用 `shared/project-init.ts` 的 `withInitResult` 只合并 `initResult` / `initializedAt`（时间取本次完成），不碰别的字段；结果要等对话跑几分钟才回来，整份 PUT 会把客户端手里过期的快照（用户这期间应用的推荐、改过的设置）写回旧值，见 [web 的 Bug 记录](../web/bugs/init-apply-overwritten-by-snapshot.md)。
@@ -29,7 +32,7 @@
 
 ## 依赖
 
-`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。
+`shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
 ## 数据落盘与损坏恢复
 
@@ -63,6 +66,24 @@
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
 
+## 状态回收：面板重启后与页面宽限到期后
+
+服务启动时 `server/tasks.ts` 的 `ready` 会把「重启后已经没人接着做、界面却还会画成在跑」的任务落成 `status: 'stopped'` + `stopReason: 'restart'`：
+
+- 这一轮还在跑的（`status === 'running'`）：正在跑的节点标成被打断（`interrupted: true`），并写一条 transient 系统消息说明继续执行会续接那个节点的会话；
+- 这一轮已经说完、但计划没做完（`openPlan`）或独立分支还没合回（`worktree.state === 'active'`）的：CLI 进程已经在重启时回收，不落静止的话行首会一直转圈、还算进分组和侧栏的「N 个执行中」，同时又显示「Agent 进程已回收，继续会重新拉起」（用户报的现象）。这两种落成已停止，消息里说清「还没收尾、接着做就发消息」；
+- 判据是 `shared/task.ts` 的 `restartInterrupted`，走 `childSpinning` / `childState`，和图标、分组、计数是同一处，不另写一套「算不算在跑」；
+- 「待收尾」（`wrapRequest.state` 不是 `failed`，即 `requested` / `merging`）不落静止：它等的是父对话合并，不靠 CLI 进程，重启后照样能收。
+
+落成已停止后 `convState` 返回 `stopped`（`convStateText` 是「已中断」），`stopReason` 是 `restart` 不是 `user`，图标是 `idle`，行上写 `stopReasonText`（「面板重启时中断」）而不是「已暂停」；发消息才会回到 running。回归：`server/task-restart.test.ts`（计划没做完、独立分支没合回两条要在旧实现上先确认失败）。起因和完整排查见 [bugs/restart-child-still-running.md](bugs/restart-child-still-running.md)。
+
+**页面宽限回收也走同一套收口（运行期的同一条路径）**：`server/presence.ts` 的 `evict` 到点回收时调 `setPresenceIdleHandler`，旧实现只有 `cancelWait(id)`——只结束还在等下一句的 CLI，一个字段都不写回任务记录，于是任务永远停在 `status: 'running'`、`working: false`：界面继续转圈并计入「N 个执行中」，而「继续」按钮只对 `shared/task.ts` 的 `resumable(status)`（`stopped` / `failed`）显示，在 `running` 下根本不渲染，用户看到一个在跑的任务却没有能拉起的入口（用户报的「很多子对话没有拉起」）。现在回调里先 `cancelWait(id)`，再分两种：
+
+- 内存里有 live 记录且没在跑（`!entry.task.working`）→ `stopTask(id, 'presence')`，走引擎的正常停止流程收尾；
+- 没有 live 记录（进程已经回收）→ `settleReclaimed(store, id, 'presence')`（`server/exec/reclaim.ts`）直接改落盘：`status: 'stopped'` + `stopReason: 'presence'`，清 `working` / `awaitingUser` / `prewarming`。
+
+`settleReclaimed` 只改「`running` 且 `working === false`」的任务：**正在产出的（`working === true`）不碰**（不能把真在产出的任务写成已停止），**已经停下的不碰**（用户暂停、父对话结束这类原因不能被覆盖，和 `stopTask` 的原因语义一致）。界面侧 `web/src/components/tasks/child-line.ts` 的 `convGone` 对 `idle` 的行也返回 `'hint'`，所以停下来的行上依然写「Agent 进程已回收，继续会重新拉起」（计划没做完的行还会由 `childLabels` 追加一条同样的标签，不只在悬停里）；用户按的暂停（`stopReason: 'user'`）不显示这句。回归：`server/reclaim.test.ts` 5 条、`child-line.test.ts` 的「页面宽限回收后的静止行」。这条路径的完整排查也在同一份 Bug 记录里。
+
 ## 技能库的多文件管理
 
 `server/library.ts` 除主文件（Skill 的 `SKILL.md`、命令的 `.md` / `.toml`）外，还能单独读写一个 Skill 目录里的附带文件。前端的文件树、编辑、改名、删除都走这里，契约在 `shared/library.ts`。
@@ -71,13 +92,13 @@
 
 **接口**（都在 `libraryApi()` 里，错误统一 `400` + `{ error }` 文案）：
 
-| 方法 | 路径 | 参数 | 返回 |
-| --- | --- | --- | --- |
-| GET | `/library/file` | `cli` / `kind` / `name` | `LibraryFile` |
-| GET | `/library/entry` | `cli` / `kind` / `name` / `path` | `{ path, exists, binary?, content, size, mtime? }` |
-| PUT | `/library/entry` | body：`cli` / `kind` / `name` / `path` / `content` | `{ path, bytes }` |
-| DELETE | `/library/entry` | `cli` / `kind` / `name` / `path` | `{ path, deleted }` |
-| POST | `/library/entry/rename` | body：`cli` / `kind` / `name` / `from` / `to` / `overwrite?` | `{ from, to }` |
+| 方法   | 路径                    | 参数                                                         | 返回                                               |
+| ------ | ----------------------- | ------------------------------------------------------------ | -------------------------------------------------- |
+| GET    | `/library/file`         | `cli` / `kind` / `name`                                      | `LibraryFile`                                      |
+| GET    | `/library/entry`        | `cli` / `kind` / `name` / `path`                             | `{ path, exists, binary?, content, size, mtime? }` |
+| PUT    | `/library/entry`        | body：`cli` / `kind` / `name` / `path` / `content`           | `{ path, bytes }`                                  |
+| DELETE | `/library/entry`        | `cli` / `kind` / `name` / `path`                             | `{ path, deleted }`                                |
+| POST   | `/library/entry/rename` | body：`cli` / `kind` / `name` / `from` / `to` / `overwrite?` | `{ from, to }`                                     |
 
 路径都放在 query 和 body 里、不拼进 URL，所以 `..` 不会在路由层被 normalize 掉，全交给下面那道校验判断。读一个还不存在的文件不报错，返回 `exists: false`（新建前先看一眼很方便）。
 
@@ -158,8 +179,11 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 
 - `npm run typecheck`
 - `npm run test:unit`（`server/**/*.test.ts`，每个模块基本都有同名测试）
+- 动了定时计划：`server/schedules.test.ts`（到点启动一次、单次执行后不再触发、错过不补跑、立即执行不改排期、启动失败只记原因不重试、删除后不再触发、启动期间用户改排期不会被写回覆盖、同一分钟改名字不重置状态，时钟由测试注入）
 - `server/settings-migrate.test.ts`：旧默认值 16 迁移成 64 并写回、已删掉的 `childConcurrency` 被忽略
 - 动了存储和落盘：`server/store.test.ts`（`writeJsonAtomic` 写成功后 `readJson` 能读回、覆盖写读到新内容、tmp 不残留；`readJson` 对不存在的文件报 `missing`；坏 JSON 被留档且调用方拿到「存在但坏了」和原路径、字节数，旁边有 `.broken.json` 说明；全 0 的空洞文件判成损坏并记下真实字节数）、`server/task-store.test.ts`（只有 `.messages.json` 时重建任务、记录全 0 时空洞文件留档后重建、对话文件全 0 时不重建不伪造且第二次启动不重复归档、对话内容不是消息数组时不重建只留档、已有记录不被重建覆盖）、`server/store-concurrency.test.ts`（集合的「读快照 → 改 → 写盘」整体串行）
+- 动了任务重启迁移：`server/task-restart.test.ts`（这一轮还在跑的任务落成已停止并标出被打断的节点；计划没做完、独立分支没合回的子对话重启后不再画成在跑；彻底做完的不动；待收尾的保留收尾请求）
+- 动了页面宽限回收 / presence：`server/reclaim.test.ts`（进程已回收、状态还写着 `running` 的等下一句任务被收口成 `stopped` + `stopReason: 'presence'`，`childSpinning` 转假、图标 `idle`；`working` 的真在跑任务不碰；已停下的不覆盖 `stopReason: 'user'`）
 - 动了任务执行、项目、设置等跨界面流程时跑 `npm run test:e2e`（Windows 上在 WSL 里）
 - 动了账号与登录：`server/accounts.test.ts`（`loginOutcome` 的各种结局、`loginFailure` 的文案分支、Command Code 的 `loginAlreadyLoggedIn`）、`shared/ansi.test.ts`（SGR 颜色、加粗 / 暗色开关、8 位 CSI、普通方括号文本不被改），以及 `npm run test:e2e` 里「已登录再登录」和「退 0 但没凭据」两条用例（模拟 CLI 用 `scripts/fake-cli/fake-cli.mjs` 的 `FAKE_AUTH_ALREADY` / `FAKE_AUTH_NO_CREDENTIALS`）
 - 动了出网 / 代理：`server/net.test.ts` 覆盖系统代理解析（Windows 注册表输出、macOS `scutil --proxy`）、候选列表与 `pickLocalProxies` 的挑选顺序（默认端口在尝试范围内、只开默认端口也能被选中）、`planFor` 的优先级 / 无协议补全 / `NO_PROXY`、缓存失效（`markProxyBad`）、本机地址识别、直连失败换代理、配置代理失败后回退、全部失败时的文案、本机地址不探测、用户取消或总预算用完时停止、超时后重试、代理握手探测（起真实只处理 CONNECT 的本地服务）。`netFetch` 的回退路径通过 `netFetchWith` 注入 `NetDeps`（`plan` / `direct` / `viaProxy` / `discover` / `proxyFailed`）来测，不用真的连代理。`server/download.test.ts` 通过 `DownloadOptions.fetch` 断言探测、单连接下载和每个分片都经过统一入口、都带 20 秒响应头超时，并带 `onAttempt` 供回退时重置空闲计时；`net.test.ts` 另有用例确认每次尝试前会调用它。

@@ -218,6 +218,8 @@ export const EN_SERVER: Record<string, string> = {
   // 任务
   '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。':
     'The task was interrupted because the panel closed or restarted while it was running. Click “Resume” to pick up from the interrupted step (its agent session will be resumed).',
+  '面板重启时这件事还没收尾，已经不在执行。接着做就发消息，会重新拉起 CLI 接着做。':
+    'This work was not finished before the panel restarted and is no longer running. Send a message to continue; the CLI will be started again.',
   聊天: 'Chat',
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',
@@ -487,17 +489,21 @@ export const EN_SERVER: Record<string, string> = {
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
-  '面板的工具没接上（{error}）：这一轮不能派子任务、新建子对话，也不能向你提问':
-    "Panel tools didn't connect ({error}). This turn can't spawn sub-tasks, create sub-conversations or ask you questions",
+  '面板的工具没接上（{error}）：这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问），只能直接改文件、用普通命令跑；要这些工具就重开一轮':
+    "Panel tools didn't connect ({error}). No panel tool is available this turn (plans, background commands, messaging, submit, asking you questions); edit files and run plain commands only, or start a new turn to get them back",
   原因未知: 'unknown reason',
   提示: 'Notice',
-  '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
+  '这个 Agent 不支持扩展包': "This agent doesn't support packages",
   不支持这个操作: 'Unsupported action',
   先填包的来源: 'Enter a package source first',
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
   '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
   '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
   '为了马上处理新消息，停下了正在执行的命令': 'Stopped the running command to handle the new message right away',
+  // 工作总结
+  '{cli} 没有给出报告内容，可以再试一次': '{cli} returned no report. Try again.',
+  '报告没能保存：{error}': 'Could not save the report: {error}',
+  找不到这份报告: 'Report not found',
   直连: 'Direct connection',
   '代理 {proxy}': 'Proxy {proxy}',
   '本机代理 {proxy}': 'Local proxy {proxy}',
