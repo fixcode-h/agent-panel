@@ -9,8 +9,8 @@ import { z } from 'zod'
 import { getLang, t } from './i18n.ts'
 import { hhmm, ymd } from './datetime.ts'
 
-/** 重复规则：只执行一次 / 每天同一时刻执行 */
-export const ScheduleRepeat = z.enum(['once', 'daily'])
+/** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
+export const ScheduleRepeat = z.enum(['once', 'daily', 'weekly', 'workdays'])
 export type ScheduleRepeat = z.infer<typeof ScheduleRepeat>
 
 /** 待执行 / 已执行 / 已跳过（错过没跑，或者启动失败） */
@@ -26,7 +26,9 @@ export const ScheduleInput = z.object({
   /** 用哪个角色；为空表示不用 Agent 角色，直接跟随默认 CLI */
   agentId: z.string().default(''),
   repeat: ScheduleRepeat.default('once'),
-  /** 下次执行时间；daily 时它是「每天这个时刻」的基准，每次执行后按它往后推一天 */
+  /** weekly 时选哪几天执行（1 = 周一 … 7 = 周日，多选）；为空时按 at 那天的星期。其他重复规则忽略 */
+  weekdays: z.array(z.number().int().min(1).max(7)).max(7).default([]),
+  /** 下次执行时间；不是单次时它是「每个周期的这个时刻」的基准，每次执行后按规则往后推 */
   at: z.string().refine((v) => Number.isFinite(Date.parse(v)), t('请选择执行时间')),
   enabled: z.boolean().default(true),
 })
@@ -60,15 +62,99 @@ export const SCHEDULE_TICK_MS = 30_000
 /** 每天往后推时的循环上限：时间填得再久远也不会卡住 */
 const MAX_DAYS = 4000
 
-/** 每天同一时刻的下一次：按本地日历逐天推，跨夏令时也还是同一个时分，不会偏一小时 */
-export function nextDailyAt(at: string, now: number): string {
+/** 每周的星期选项（1 = 周一 … 7 = 周日）：编辑弹窗和文案共用这一张表 */
+export const SCHEDULE_WEEKDAYS = [
+  { id: 1, label: t('周一') },
+  { id: 2, label: t('周二') },
+  { id: 3, label: t('周三') },
+  { id: 4, label: t('周四') },
+  { id: 5, label: t('周五') },
+  { id: 6, label: t('周六') },
+  { id: 7, label: t('周日') },
+] as const
+
+/** ISO 星期：周一 1 … 周日 7（JS 的 getDay 是周日 0，换过来才和 weekdays 对得上） */
+export function isoWeekday(d: Date) {
+  return ((d.getDay() + 6) % 7) + 1
+}
+
+/**
+ * 一条计划一周里哪几天执行：null 表示每天；集合为空表示不会再自动执行（只有单次）。
+ * weekly 没选星期时按 at 那天的星期：weekly 的默认语义就是「每周同一天」。
+ */
+function repeatDays(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>): Set<number> | null {
+  switch (s.repeat) {
+    case 'daily':
+      return null
+    case 'workdays':
+      return new Set([1, 2, 3, 4, 5])
+    case 'weekly': {
+      const picked = new Set((s.weekdays ?? []).filter((d) => d >= 1 && d <= 7))
+      if (!picked.size) {
+        const at = new Date(s.at)
+        if (Number.isFinite(at.getTime())) picked.add(isoWeekday(at))
+      }
+      // 认不出 at 时给周一，至少不会算出「没有下一次」
+      return picked.size ? picked : new Set([1])
+    }
+    default:
+      return new Set()
+  }
+}
+
+/**
+ * 把执行时间对齐到规则允许的最近时刻：weekly / workdays 的首次执行也必须落在符合规则的星期。
+ * 保存前调用（服务端 / 演示后端），这样存下来的 at 和徽标、到点判定一致；已经符合规则时原样返回。
+ */
+export function alignScheduleAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>): string {
+  const at = new Date(s.at)
+  if (!Number.isFinite(at.getTime())) return s.at
+  // 单次和每天都合法，原样返回
+  if (s.repeat === 'once' || s.repeat === 'daily') return s.at
+  const days = repeatDays(s)
+  // once 已经提前返回，这里不会是 null；留个兜底免得类型和运行时分叉
+  if (!days) return s.at
   const d = new Date(at)
-  if (!Number.isFinite(d.getTime())) return at
-  if (d.getTime() > now) return d.toISOString()
-  // 先按整天数跳过去（at 可能是很久以前），剩下的零头再逐天补
+  for (let i = 0; i < MAX_DAYS; i++) {
+    if (days.has(isoWeekday(d))) return d.toISOString()
+    d.setDate(d.getDate() + 1)
+  }
+  return s.at
+}
+
+/**
+ * 下一次执行时间（严格晚于 now）。
+ * 按本地日历逐天推进：跨周、跨月、跨年、夏令时都还是同一个时分，不会偏一小时。
+ * 单次直接返回 at（由调用方决定不再执行）；weekly / workdays 即使首次执行时间还没到，
+ * 也只返回符合星期的日子（保存时已用 `alignScheduleAt` 对齐，这里再兵一道）。
+ */
+export function nextRunAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>, now: number): string {
+  const at = new Date(s.at)
+  if (!Number.isFinite(at.getTime())) return s.at
+  if (s.repeat === 'once') return at.toISOString()
+  const days = repeatDays(s)
+  const d = new Date(at)
+  if (days) {
+    // 每周 / 工作日：先按整天数快进到 now 附近（at 可能很多年以前），再逐天找符合星期的。
+    // at 在未到且符合星期时不会跳（jump 为负），直接返回 at；不符合时从 at 往后数几天
+    const jump = Math.floor((now - at.getTime()) / DAY_MS) - 1
+    if (jump > 0) d.setDate(d.getDate() + Math.min(jump, MAX_DAYS))
+    for (let i = 0; i < MAX_DAYS; i++) {
+      if (d.getTime() > now && days.has(isoWeekday(d))) return d.toISOString()
+      d.setDate(d.getDate() + 1)
+    }
+    return at.toISOString()
+  }
+  // 每天：还没到就直接返回，到了先按整天数跳（at 可能是很久以前），剩下的零头再逐天补
+  if (at.getTime() > now) return at.toISOString()
   d.setDate(d.getDate() + Math.min(Math.floor((now - d.getTime()) / DAY_MS), MAX_DAYS))
   for (let i = 0; d.getTime() <= now && i < MAX_DAYS; i++) d.setDate(d.getDate() + 1)
   return d.toISOString()
+}
+
+/** 每天同一时刻的下一次（保留的旧接口，内部走 nextRunAt） */
+export function nextDailyAt(at: string, now: number): string {
+  return nextRunAt({ repeat: 'daily', at, weekdays: [] }, now)
 }
 
 export interface ScheduleDue {
@@ -95,12 +181,10 @@ export function pickDue(list: Schedule[], now: number): ScheduleDue {
   return { run, missed }
 }
 
-/** 启动成功之后：单次标成已执行，每天把时间推到下一次，并记下这次启动的对话 */
+/** 启动成功之后：单次标成已执行，其余按重复规则把时间推到下一次，并记下这次启动的对话 */
 export function afterRun(s: Schedule, now: number, taskId: string): Partial<Schedule> {
   return {
-    ...(s.repeat === 'daily'
-      ? { at: nextDailyAt(s.at, now), status: 'pending' as const }
-      : { status: 'done' as const }),
+    ...(s.repeat === 'once' ? { status: 'done' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
     lastRunAt: new Date(now).toISOString(),
     lastTaskId: taskId,
     lastError: '',
@@ -108,14 +192,12 @@ export function afterRun(s: Schedule, now: number, taskId: string): Partial<Sche
 }
 
 /**
- * 错过之后：单次标成已跳过，每天推到下一次，并记下错过的是哪一次。
+ * 错过之后：单次标成已跳过，其余按重复规则推到下一次，并记下错过的是哪一次。
  * 不补跑——用户打开面板时看到的是「错过了一次」，而不是过一会儿突然冒出一堆对话。
  */
 export function afterMiss(s: Schedule, now: number): Partial<Schedule> {
   return {
-    ...(s.repeat === 'daily'
-      ? { at: nextDailyAt(s.at, now), status: 'pending' as const }
-      : { status: 'skipped' as const }),
+    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
     missedAt: s.at,
   }
 }
@@ -126,11 +208,19 @@ export function afterMiss(s: Schedule, now: number): Partial<Schedule> {
  */
 export function afterFail(s: Schedule, now: number, error: string): Partial<Schedule> {
   return {
-    ...(s.repeat === 'daily'
-      ? { at: nextDailyAt(s.at, now), status: 'pending' as const }
-      : { status: 'skipped' as const }),
+    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
     lastError: error,
   }
+}
+
+/** 重复规则的短标签（卡片徽标、编辑弹窗共用）：具体星期由下次执行时间体现 */
+export function repeatLabel(repeat: ScheduleRepeat): string {
+  return {
+    once: t('单次'),
+    daily: t('每天'),
+    weekly: t('每周'),
+    workdays: t('工作日'),
+  }[repeat]
 }
 
 /** 「今日工作」模板：每天 19:00 总结当天的工作 */

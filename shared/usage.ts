@@ -22,6 +22,18 @@ export const USAGE_GRAINS = [
 ] as const
 export type UsageGrain = (typeof USAGE_GRAINS)[number]['id']
 
+/**
+ * 分组方式：按时间（天 / 周 / 月）/ 按项目 / 按对话。
+ * 三种分组用同一个时间窗口和同一份样本，token 与费用的合计一致；只有桶的 key 不同。
+ * 「按时间」里再按粒度切；另外两种不看粒度，按整段窗口汇总（页面固定取近一年）。
+ */
+export const USAGE_GROUPS = [
+  { id: 'time', label: t('按时间') },
+  { id: 'project', label: t('按项目') },
+  { id: 'task', label: t('按对话') },
+] as const
+export type UsageGroup = (typeof USAGE_GROUPS)[number]['id']
+
 /** 一个粒度的默认桶数 */
 export function usageCount(grain: UsageGrain) {
   return USAGE_GRAINS.find((g) => g.id === grain)?.count ?? 14
@@ -33,9 +45,10 @@ export function usageCount(grain: UsageGrain) {
  */
 export const USAGE_LOOKBACK_DAYS = 366
 
-/** 一次查询：哪个粒度、看多少个桶（含当前这个桶，往前数）；参数来自 URL，认不出来时用默认值 */
+/** 一次查询：哪个粒度、看多少个桶（含当前这个桶，往前数）、按什么分组；参数来自 URL，认不出来时用默认值 */
 export const UsageQuery = {
   grain: (g: unknown): UsageGrain => (USAGE_GRAINS.some((x) => x.id === g) ? (g as UsageGrain) : 'day'),
+  group: (g: unknown): UsageGroup => (USAGE_GROUPS.some((x) => x.id === g) ? (g as UsageGroup) : 'time'),
   count: (n: unknown, grain: UsageGrain): number => {
     const v = Math.floor(Number(n))
     return Number.isFinite(v) && v > 0 ? Math.min(v, 366) : usageCount(grain)
@@ -45,6 +58,10 @@ export const UsageQuery = {
 /** 一条按时间归桶的用量：一轮执行分摊后的数字 */
 export type UsageSample = {
   taskId: string
+  /** 对话所属项目（按项目分组用）；空串表示不属于项目 */
+  projectId?: string
+  /** 对话标题（按对话分组时做标签） */
+  title?: string
   /** 这一轮的开始时间（ISO），按它的本地日期归桶 */
   at: string
   inputTokens: number
@@ -98,12 +115,14 @@ export const DEEPSEEK_PEAK_WINDOW: PeakWindow = {
   weekdays: [1, 2, 3, 4, 5],
 }
 
-/** 一个桶（一天 / 一周 / 一个月） */
+/** 一个桶（一天 / 一周 / 一个月；分组时是一个项目 / 一条对话） */
 export type UsageBucket = TokenTotals & {
-  /** 桶的标识：天和周是桶第一天的日期 2026-10-20，月是 2026-10 */
+  /** 桶的标识：时间和周是桶第一天的日期 2026-10-20，月是 2026-10；分组时是项目 id / 对话 id */
   key: string
-  /** 桶的第一天（本地时间的零点，ISO）；前端用它格式化标签 */
+  /** 桶的第一天（本地时间的零点，ISO）；前端用它格式化标签。分组时为空串（没有时间含义） */
   start: string
+  /** 分组时显示的名字（对话标题）；时间分组没有 */
+  label?: string
   costUsd: number
   /** 这一桶里有几轮执行 */
   turns: number
@@ -119,10 +138,12 @@ export type UsageTotal = Omit<UsageBucket, 'key' | 'start'>
 
 export type UsageReport = {
   grain: UsageGrain
+  /** 按什么分组：time / project / task */
+  groupBy: UsageGroup
   /** 统计范围的第一天（含）和最后一天的次日（不含），本地时间 */
   from: string
   to: string
-  /** 从新到旧：第一个是当前这个桶 */
+  /** 从新到旧（时间分组）；分组时按 token 总量从多到少 */
   buckets: UsageBucket[]
   /** 所有桶的和（逐桶累加得到，一定等于各桶之和） */
   total: UsageTotal
@@ -244,8 +265,11 @@ export function usageLabel(bucket: Pick<UsageBucket, 'start'>, grain: UsageGrain
 /**
  * 一个任务拆成按时间归桶的样本：每轮一条。
  * 旧任务没有 turns 时返回空（对不上时间，整条不计入）；轮次里 token 为 0 的照样算一轮。
+ * projectId / title 只有分组时才用，取不到时按空值处理（旧数据、测试里的精简任务）。
  */
-export function usageSamples(task: Pick<Task, 'id' | 'turns' | 'usage'>): UsageSample[] {
+export function usageSamples(
+  task: Pick<Task, 'id' | 'turns' | 'usage'> & Partial<Pick<Task, 'projectId' | 'title'>>,
+): UsageSample[] {
   const turns = (task.turns ?? []).filter((x) => x.startedAt && !Number.isNaN(Date.parse(x.startedAt)))
   if (!turns.length) return []
   const weights = turns.map((x) => num(x.inputTokens) + num(x.outputTokens))
@@ -268,6 +292,9 @@ export function usageSamples(task: Pick<Task, 'id' | 'turns' | 'usage'>): UsageS
     spentCost += cost
     return {
       taskId: task.id,
+      // 分组用：项目 id（可能为空，聊天模式的对话不属于项目）和标题
+      projectId: task.projectId ?? '',
+      title: task.title?.trim() || '',
       at: x.startedAt,
       inputTokens: num(x.inputTokens),
       outputTokens: num(x.outputTokens),
@@ -341,14 +368,19 @@ export function inPeak(at: string | Date, window: PeakWindow = DEEPSEEK_PEAK_WIN
  */
 export function aggregateUsage(
   samples: UsageSample[],
-  query: { grain: UsageGrain; count: number },
+  query: { grain: UsageGrain; count: number; groupBy?: UsageGroup },
   now: Date = new Date(),
   /** 判定峰谷用的时段定义；接口固定用官方那一套 */
   peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
 ): UsageReport {
   const grain = UsageQuery.grain(query.grain)
   const count = UsageQuery.count(query.count, grain)
+  const groupBy = UsageQuery.group(query.groupBy)
   const latest = periodStart(grain, now)
+  const from = shiftPeriod(grain, latest, -(count - 1))
+  const to = shiftPeriod(grain, latest, 1)
+  // 按项目 / 对话分组：同样的窗口和样本，只换桶的归属；合计与按时间分组一致
+  if (groupBy !== 'time') return aggregateGroups(samples, { grain, groupBy, from, to }, peakWindow)
   const buckets: UsageBucket[] = []
   const index = new Map<string, UsageBucket>()
   for (let i = 0; i < count; i++) {
@@ -381,8 +413,71 @@ export function aggregateUsage(
   for (const [b, ids] of seen) b.tasks = ids.size
   return {
     grain,
-    from: shiftPeriod(grain, latest, -(count - 1)).toISOString(),
-    to: shiftPeriod(grain, latest, 1).toISOString(),
+    groupBy: 'time',
+    from: from.toISOString(),
+    to: to.toISOString(),
+    buckets,
+    total: sumBuckets(buckets),
+  }
+}
+
+/**
+ * 按项目 / 对话汇总：桶的 key 是项目 id（空串表示不属于项目）或对话 id，按 token 总量从多到少排。
+ * 窗口和按时间分组用同一段（同一个 from / to），所以四项 token、费用、轮数的合计完全一致；
+ * 同一个对话只落在一个桶里，任务数也等于去重后的对话数。
+ */
+function aggregateGroups(
+  samples: UsageSample[],
+  q: { grain: UsageGrain; groupBy: Exclude<UsageGroup, 'time'>; from: Date; to: Date },
+  peakWindow: PeakWindow,
+): UsageReport {
+  const fromMs = q.from.getTime()
+  const toMs = q.to.getTime()
+  const buckets: UsageBucket[] = []
+  const index = new Map<string, UsageBucket>()
+  const seen = new Map<UsageBucket, Set<string>>()
+  for (const s of samples) {
+    const at = new Date(s.at)
+    if (Number.isNaN(at.getTime()) || at.getTime() < fromMs || at.getTime() >= toMs) continue
+    const key = q.groupBy === 'project' ? (s.projectId ?? '') : s.taskId
+    if (q.groupBy === 'task' && !key) continue
+    let b = index.get(key)
+    if (!b) {
+      b = {
+        ...emptyBucket(q.grain, q.from),
+        key,
+        // 分组桶没有时间含义：前端按分组渲染，不拿 start 格式化日期
+        start: '',
+        label: q.groupBy === 'task' ? (s.title ?? '') : undefined,
+      }
+      index.set(key, b)
+      buckets.push(b)
+    }
+    b.inputTokens += num(s.inputTokens)
+    b.outputTokens += num(s.outputTokens)
+    b.cacheReadTokens += num(s.cacheReadTokens)
+    b.cacheWriteTokens += num(s.cacheWriteTokens)
+    b.costUsd += num(s.costUsd)
+    b.turns += 1
+    const tier = inPeak(at, peakWindow) ? b.peak : b.offPeak
+    tier.inputTokens += num(s.inputTokens)
+    tier.outputTokens += num(s.outputTokens)
+    tier.cacheReadTokens += num(s.cacheReadTokens)
+    tier.cacheWriteTokens += num(s.cacheWriteTokens)
+    let ids = seen.get(b)
+    if (!ids) seen.set(b, (ids = new Set()))
+    ids.add(s.taskId)
+  }
+  for (const [b, ids] of seen) b.tasks = ids.size
+  // 用量多的在前；一样多时按 key 排，两次请求的顺序稳定
+  buckets.sort(
+    (a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) || a.key.localeCompare(b.key),
+  )
+  return {
+    grain: q.grain,
+    groupBy: q.groupBy,
+    from: q.from.toISOString(),
+    to: q.to.toISOString(),
     buckets,
     total: sumBuckets(buckets),
   }
@@ -425,7 +520,7 @@ export function sumBuckets(buckets: UsageBucket[]): UsageTotal {
 /** 任务列表 → 样本 → 报表，服务端一次调用就够 */
 export function usageReport(
   tasks: Task[],
-  query: { grain: UsageGrain; count: number },
+  query: { grain: UsageGrain; count: number; groupBy?: UsageGroup },
   now: Date = new Date(),
   peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
 ) {

@@ -60,7 +60,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
-import { afterRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -1849,6 +1849,8 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
       const now = new Date().toISOString()
       const item = Schedule.parse({
         ...input,
+        // 和正式后端一样：每周 / 工作日的首次执行落在选中的星期上
+        at: alignScheduleAt(input),
         status: 'pending',
         lastRunAt: '',
         lastTaskId: '',
@@ -1871,7 +1873,8 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     return undefined
   }
   if (method === 'PUT') {
-    const input = ScheduleInput.parse(body)
+    const parsed = ScheduleInput.parse(body)
+    const input = { ...parsed, at: alignScheduleAt(parsed) }
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
@@ -2395,7 +2398,11 @@ function route(method: string, url: string, body: unknown): unknown {
 /** 演示里的用量统计：按浏览器里存的演示任务算，和正式版用同一个聚合函数 */
 function demoUsage(d: Db, query: URLSearchParams) {
   const grain = UsageQuery.grain(query.get('grain'))
-  return usageReport(d.tasks ?? [], { grain, count: UsageQuery.count(query.get('count'), grain) })
+  return usageReport(d.tasks ?? [], {
+    grain,
+    count: UsageQuery.count(query.get('count'), grain),
+    groupBy: UsageQuery.group(query.get('groupBy')),
+  })
 }
 
 /** 演示里每个请求统一等这么一会儿，模拟真实请求，让「保存中」等状态能被看到 */

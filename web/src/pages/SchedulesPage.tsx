@@ -5,12 +5,15 @@ import {
   fromLocalInput,
   groupLabel,
   groupSchedules,
+  isoWeekday,
   nextRunLabel,
   outcomeLabel,
   outcomeOf,
   outcomeTitle,
+  repeatLabel,
   sameMinute,
   SCHEDULE_TICK_MS,
+  SCHEDULE_WEEKDAYS,
   toLocalInput,
   WORKDAY_PLAN,
   workdayTemplate,
@@ -30,7 +33,6 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { Segmented } from '@/components/ui/segmented'
 import { PageFrame } from '@/components/library/parts'
 
 const DEMO = !!import.meta.env.VITE_DEMO
@@ -45,6 +47,7 @@ const toInput = (s: Schedule): ScheduleInput => ({
   projectId: s.projectId,
   agentId: s.agentId,
   repeat: s.repeat,
+  weekdays: s.weekdays,
   at: s.at,
   enabled: s.enabled,
 })
@@ -140,7 +143,7 @@ function ScheduleCard({
         ) : (
           <span className="text-[0.9375rem] font-medium text-subtle">{t('不会再次执行')}</span>
         )}
-        <Badge>{s.repeat === 'daily' ? t('每天') : t('单次')}</Badge>
+        <Badge>{repeatLabel(s.repeat)}</Badge>
       </div>
 
       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -198,6 +201,8 @@ interface Form {
   projectId: string
   agentId: string
   repeat: ScheduleRepeat
+  /** weekly 时选中的星期（1 = 周一 … 7 = 周日） */
+  weekdays: number[]
   atLocal: string
 }
 
@@ -208,6 +213,7 @@ const newForm = (): Form => {
     name: tpl.name,
     prompt: tpl.prompt,
     repeat: tpl.repeat,
+    weekdays: [],
     projectId: '',
     agentId: '',
     atLocal: toLocalInput(tpl.at),
@@ -220,6 +226,7 @@ const formOf = (s: Schedule): Form => ({
   projectId: s.projectId,
   agentId: s.agentId,
   repeat: s.repeat,
+  weekdays: s.weekdays,
   atLocal: toLocalInput(s.at),
 })
 
@@ -237,10 +244,51 @@ function ScheduleDialog({
   const [form, setForm] = useState<Form>(() => (schedule ? formOf(schedule) : newForm()))
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
+  /**
+   * 切重复规则：切到「每周」时先把执行时间那天的星期选上，用户能直接看到以后哪天执行；
+   * 切到别的规则时清掉残留的星期，下次回到「每周」不会被上一次的选择干扰。
+   */
+  const setRepeat = (repeat: ScheduleRepeat) => {
+    setForm((f) => {
+      const at = fromLocalInput(f.atLocal)
+      return {
+        ...f,
+        repeat,
+        weekdays: repeat === 'weekly' ? (f.weekdays.length ? f.weekdays : at ? [isoWeekday(new Date(at))] : []) : [],
+      }
+    })
+  }
+  /**
+   * 改执行时间：weekly 只勾了一个星期时把星期跟着换成新日期那天，
+   * 否则两个字段长期不一致（用户把「每周一」的日期改到周三，保存后会被服务端拉回下周一）。
+   * 勾了多个星期时不动——用户很可能是想保留那几天、只换时分。
+   */
+  const setAtLocal = (value: string) => {
+    setForm((f) => {
+      const at = fromLocalInput(value)
+      const weekdays = f.repeat === 'weekly' && f.weekdays.length === 1 && at ? [isoWeekday(new Date(at))] : f.weekdays
+      return { ...f, atLocal: value, weekdays }
+    })
+  }
+  /** 勾选 / 取消一个星期（多选） */
+  const toggleWeekday = (day: number) =>
+    setForm((f) => ({
+      ...f,
+      weekdays: f.weekdays.includes(day)
+        ? f.weekdays.filter((x) => x !== day)
+        : [...f.weekdays, day].sort((a, b) => a - b),
+    }))
   /** 一键填入「今日工作」：只改名称、提示词和每天 19:00，用户选的项目和角色保留 */
   const applyTemplate = () => {
     const tpl = workdayTemplate(Date.now())
-    setForm((f) => ({ ...f, name: tpl.name, prompt: tpl.prompt, repeat: tpl.repeat, atLocal: toLocalInput(tpl.at) }))
+    setForm((f) => ({
+      ...f,
+      name: tpl.name,
+      prompt: tpl.prompt,
+      repeat: tpl.repeat,
+      weekdays: [],
+      atLocal: toLocalInput(tpl.at),
+    }))
   }
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
   // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
@@ -260,6 +308,8 @@ function ScheduleDialog({
       projectId: form.projectId,
       agentId: form.agentId,
       repeat: form.repeat,
+      // 每周没勾星期时按执行时间那天的星期；服务端还会用 alignScheduleAt 把首次执行对齐到选中的星期
+      weekdays: form.repeat === 'weekly' && !form.weekdays.length ? [isoWeekday(new Date(at))] : form.weekdays,
       at,
       enabled: schedule?.enabled ?? true,
     }
@@ -331,22 +381,49 @@ function ScheduleDialog({
             type="datetime-local"
             className="h-10 dark:[color-scheme:dark]"
             value={form.atLocal}
-            onChange={(e) => set('atLocal', e.target.value)}
+            onChange={(e) => setAtLocal(e.target.value)}
           />
         </label>
         <div className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] font-medium">{t('重复')}</span>
-          <Segmented
-            label={t('重复')}
+          <Select
+            aria-label={t('重复')}
             value={form.repeat}
-            onChange={(v) => set('repeat', v)}
+            className="h-10 w-[140px]"
+            onChange={(e) => setRepeat(e.target.value as ScheduleRepeat)}
             options={[
-              { id: 'once', label: t('只执行一次') },
-              { id: 'daily', label: t('每天') },
+              { value: 'once', label: t('单次') },
+              { value: 'daily', label: t('每天') },
+              { value: 'weekly', label: t('每周') },
+              { value: 'workdays', label: t('工作日') },
             ]}
           />
         </div>
       </div>
+      {form.repeat === 'weekly' && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[0.8125rem] font-medium">{t('每周哪几天')}</span>
+          <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1">
+            {SCHEDULE_WEEKDAYS.map((d) => {
+              const on = form.weekdays.includes(d.id)
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleWeekday(d.id)}
+                  className={cn(
+                    'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
+                    on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
+                  )}
+                >
+                  {d.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] font-medium">{t('用哪个角色')}</span>
@@ -389,7 +466,7 @@ function ScheduleDialog({
         />
       </label>
       <p className="text-xs text-subtle">
-        {t('时间按本机时区。每天的计划每次执行完自动推到第二天，只执行一次的执行完就停下。')}
+        {t('时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。')}
       </p>
     </Modal>
   )

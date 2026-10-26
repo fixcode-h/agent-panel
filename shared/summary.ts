@@ -1,11 +1,17 @@
 /**
- * 工作总结：选几个项目，把「今天」（本机时区的自然日）执行过的对话整理成一份 Markdown 报告。
+ * 工作总结：选几个项目，把一段时间（本机时区）里执行过的对话整理成一份 Markdown 报告。
  *
- * 这里只有纯逻辑：时间窗口、从任务里提炼今天的活动、交给 CLI 的提示词、从回答里取出报告。
+ * 范围口径（`SummaryRange` + `rangeWindow`）：默认「今天」，也可以看昨天、最近 7 天、自选起止日期。
+ * 窗口都是左闭右开：today / last7 的结束时间是「现在」（不包含未来），yesterday / custom 的结束时间是
+ * 结束日期的次日 0 点（包含结束那一天）。所有判定（服务端筛任务、页面列出对话）都只用 `rangeWindow`，
+ * 不再各自按自然日算；老数据只有单日 `day` 时按「那一天」处理（`dayTask` / `collectDayProjects`）。
+ *
+ * 这里只有纯逻辑：时间窗口、从任务里提炼范围内的活动、交给 CLI 的提示词、从回答里取出报告。
  * 跑 CLI 和存报告在 server/summary.ts；页面在 web/src/pages/SummaryPage.tsx
  */
 import { z } from 'zod'
 import { promptLangRules } from './prompt-lang.ts'
+import { t } from './i18n.ts'
 import type { Task } from './schema.ts'
 import { dayKey } from './usage.ts'
 import { clip as clipText } from './text.ts'
@@ -30,8 +36,29 @@ export const SUMMARY_FILES_MAX = 8
  */
 export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '崩溃', 'fix', '没反应', '不生效', '卡住', '闪退']
 
+/** 报告的时间范围：今天 / 昨天 / 最近 7 天 / 自选起止日期 */
+export const SUMMARY_RANGES = ['today', 'yesterday', 'last7', 'custom'] as const
+export type SummaryRangeId = (typeof SUMMARY_RANGES)[number]
+
+/** 近 7 天包含今天：从今天往前数 6 天到今天 */
+export const SUMMARY_LAST7_DAYS = 7
+
+/** 选中的范围；custom 的两个日期是 YYYY-MM-DD（本机时区），其它范围忽略它们 */
+export const SummaryRange = z.object({
+  id: z.enum(SUMMARY_RANGES).default('today'),
+  from: z.string().default(''),
+  to: z.string().default(''),
+})
+export type SummaryRange = z.infer<typeof SummaryRange>
+
+/** 页面默认选的范围，也是接口不带 range 时的默认值：行为和改造前一样，只看今天 */
+export const DEFAULT_SUMMARY_RANGE: SummaryRange = { id: 'today', from: '', to: '' }
+
 /** 报告里固定的三个二级标题：顺序也是这个，缺一节不许省 */
 export const SUMMARY_SECTIONS = ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结'] as const
+
+/** 日期格式（YYYY-MM-DD）：报告一级标题里的日期，单日或多日区间 */
+const DAY_KEY_PATTERN = '\\d{4}-\\d{2}-\\d{2}'
 
 /**
  * 格式自检的问题码：报告不合格时只留问题码，页面按当前语言显示文案。
@@ -59,13 +86,18 @@ export const SummaryRequest = z.object({
   cli: z.string().min(1),
   model: z.string().trim().default(''),
   effort: z.string().trim().default(''),
+  /** 总结哪段时间；不传就是今天（老页面 / 老调用方照常工作） */
+  range: SummaryRange.default(DEFAULT_SUMMARY_RANGE),
 })
 export type SummaryRequest = z.infer<typeof SummaryRequest>
 
 /** 存下来的一份报告：正文可以再编辑（PUT /summary/:id） */
 export const SummaryReport = z.object({
-  /** 覆盖的本地自然日，格式 2026-10-23 */
+  /** 覆盖范围内最后一天的本地日期，格式 2026-10-23；老报告只有这一个日期 */
   day: z.string(),
+  /** 覆盖范围的第一天（含）/ 最后一天（含）；老报告没有这两个字段，按 day 单日处理 */
+  from: z.string().default(''),
+  to: z.string().default(''),
   /** 生成时选中的项目（顺序就是报告里的顺序） */
   projectIds: z.array(z.string()).default([]),
   projectNames: z.array(z.string()).default([]),
@@ -96,6 +128,9 @@ export interface SummaryJob {
   md: string
   /** 存下来的报告 id：生成成功才有，页面据此继续编辑 */
   reportId?: string
+  /** 这次生成覆盖的日期（YYYY-MM-DD）：页面切回来 / 生成完成时按它显示报告标题 */
+  from?: string
+  to?: string
   /** 生成后的格式自检：ok 为 false 表示重试一次后仍然不完整，页面要明确提示，不静默通过 */
   format?: { ok: boolean; issues: SummaryFormatIssue[]; retried: boolean }
   /** 用户选了、但今天没有可总结内容的项目（页面提示用，不静默从报告里删掉） */
@@ -139,10 +174,101 @@ export interface DayProject {
   tasks: DayTask[]
 }
 
-/** 本机时区的今天 00:00 到现在的窗口 */
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+const midnightOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+
+/** YYYY-MM-DD → 本机时区当天 0 点；格式不对或日期不存在（2026-02-30）时返回 null */
+function dayStart(day: string): Date | null {
+  if (!DAY_RE.test(day)) return null
+  const [y, m, d] = day.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  // Date 会把 2026-02-30 进位到 3 月：回读一遍确认确实是这一天
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null
+}
+
+/** 从 start 到 end（含 end 那一天，都是本地零点）的每一天 */
+function daysBetween(start: Date, end: Date): string[] {
+  const days: string[] = []
+  for (let d = midnightOf(start); d <= end; d = addDays(d, 1)) days.push(dayKey(d))
+  return days
+}
+
+/** 一段范围算好的时间窗口：判定只用 start / end，标题和存档用 fromDay / toDay */
+export interface SummaryWindow {
+  id: SummaryRangeId
+  /** 范围内最早的时间（含，毫秒） */
+  start: number
+  /** 范围的结束时间（不含，毫秒）：today / last7 是现在，其余是结束日期的次日 0 点 */
+  end: number
+  /** 范围第一天 / 最后一天的本地日期（YYYY-MM-DD，含这一天） */
+  fromDay: string
+  toDay: string
+  /** 范围里的每一天（从早到晚）：只有 last7 用它数天数，custom 可能跨很多年所以不逐天生成 */
+  days: string[]
+}
+
+/**
+ * 把选中的范围换算成时间窗口。
+ * custom 的起止写反、格式不对时按「用户想要的那几天」处理：只交换起止，不报错也不返回空范围。
+ */
+export function rangeWindow(range: SummaryRange = DEFAULT_SUMMARY_RANGE, now = new Date()): SummaryWindow {
+  const today = midnightOf(now)
+  const todayKey = dayKey(today)
+  switch (range.id) {
+    case 'yesterday': {
+      const start = addDays(today, -1)
+      return {
+        id: range.id,
+        start: start.getTime(),
+        end: today.getTime(),
+        fromDay: dayKey(start),
+        toDay: dayKey(start),
+        days: [dayKey(start)],
+      }
+    }
+    case 'last7': {
+      const start = addDays(today, -(SUMMARY_LAST7_DAYS - 1))
+      return {
+        id: range.id,
+        start: start.getTime(),
+        end: now.getTime(),
+        fromDay: dayKey(start),
+        toDay: todayKey,
+        days: daysBetween(start, today),
+      }
+    }
+    case 'custom': {
+      const a = dayStart(range.from) ?? today
+      const b = dayStart(range.to) ?? a
+      const [start, endDay] = a.getTime() <= b.getTime() ? [a, b] : [b, a]
+      return {
+        id: range.id,
+        start: start.getTime(),
+        end: addDays(endDay, 1).getTime(),
+        fromDay: dayKey(start),
+        toDay: dayKey(endDay),
+        // 自选范围可能跨很多年，不逐天生成（只有 last7 / today 需要 days）
+        days: [],
+      }
+    }
+    default:
+      return {
+        id: 'today',
+        start: today.getTime(),
+        // 正好在 0 点加载时 start 和 now 相等，加 1ms 以免窗口是空的（下一毫秒就恢复正常）
+        end: Math.max(now.getTime(), today.getTime() + 1),
+        fromDay: todayKey,
+        toDay: todayKey,
+        days: [todayKey],
+      }
+  }
+}
+
+/** 本机时区的今天 00:00 到现在的窗口（和改造前一样，内部走 rangeWindow） */
 export function todayWindow(now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return { day: dayKey(now), start: start.getTime(), end: now.getTime() }
+  const w = rangeWindow(DEFAULT_SUMMARY_RANGE, now)
+  return { day: w.toDay, start: w.start, end: w.end }
 }
 
 /** 时间戳是不是落在今天（本机时区） */
@@ -152,13 +278,66 @@ export function isToday(iso: string, day: string) {
   return !Number.isNaN(d.getTime()) && dayKey(d) === day
 }
 
+/** 时间戳是不是落在范围内（左闭右开，和 rangeWindow 同一口径） */
+export function inRange(iso: string, win: SummaryWindow) {
+  if (!iso) return false
+  const at = Date.parse(iso)
+  return Number.isFinite(at) && at >= win.start && at < win.end
+}
+
 /**
- * 这个任务今天有没有执行过：只看时间字段（任务摘要里没有消息），用来先筛候选任务、页面列出今天的对话。
+ * 这个任务在范围内有没有执行过：只看时间字段（任务摘要里没有消息），用来先筛候选任务、页面列出范围内的对话。
  * 页面和服务端共用这一处判定，避免「页面列得出来、服务端却当作没执行」
  */
+export function activeInRange(task: Task, win: SummaryWindow) {
+  if (inRange(task.updatedAt, win) || inRange(task.turnDoneAt, win) || inRange(task.runStartedAt, win)) return true
+  return task.messages.some((m) => inRange(m.at, win))
+}
+
+/** 单个自然日的窗口：给老接口 `activeOnDay` / `dayTask` 用，判定口径和改造前一样 */
+function dayWindow(day: string): SummaryWindow {
+  const start = dayStart(day) ?? midnightOf(new Date())
+  const key = dayKey(start)
+  return {
+    id: 'today',
+    start: start.getTime(),
+    end: addDays(start, 1).getTime(),
+    fromDay: key,
+    toDay: key,
+    days: [key],
+  }
+}
+
+/** 这个任务今天有没有执行过（保留的老接口，内部按单日窗口判定） */
 export function activeOnDay(task: Task, day: string) {
-  if (isToday(task.updatedAt, day) || isToday(task.turnDoneAt, day) || isToday(task.runStartedAt, day)) return true
-  return task.messages.some((m) => isToday(m.at, day))
+  return activeInRange(task, dayWindow(day))
+}
+
+/** 范围在界面上的名字：今天 / 昨天 / 近 7 天 / 2026-10-01 至 2026-10-05 */
+export function rangeLabel(win: SummaryWindow): string {
+  if (win.id === 'today') return t('今天')
+  if (win.id === 'yesterday') return t('昨天')
+  if (win.id === 'last7') return t('近 {n} 天', { n: win.days.length })
+  return win.fromDay === win.toDay ? win.fromDay : t('{from} 至 {to}', { from: win.fromDay, to: win.toDay })
+}
+
+/**
+ * 报告标题：按覆盖的日期推断「今天的报告 / 昨天的报告 / 近 7 天的报告」。
+ * 老报告只有 day 时按单日处理；日期对不上时直接写日期区间，不编一个相对说法。
+ */
+export function reportWindowLabel(fromDay: string, toDay: string, now = new Date()): string {
+  const today = midnightOf(now)
+  const todayKey = dayKey(today)
+  const from = fromDay || toDay
+  if (!from) return t('报告')
+  if (from === toDay) {
+    if (toDay === todayKey) return t('今天的报告')
+    if (toDay === dayKey(addDays(today, -1))) return t('昨天的报告')
+    return t('{day} 的报告', { day: toDay })
+  }
+  if (toDay === todayKey && from === dayKey(addDays(today, -(SUMMARY_LAST7_DAYS - 1))))
+    return t('近 {n} 天的报告', { n: SUMMARY_LAST7_DAYS })
+  return t('{from} 至 {to} 的报告', { from, to: toDay })
 }
 
 /** 压成一行、按字数截断：提示词里不放长段落 */
@@ -178,39 +357,45 @@ function firstLine(text: string) {
 /** 这条消息要不要丢：面板自己推的消息（后台结果、子对话回报、提问卡片）不是 Agent 写的工作内容 */
 const isPanelNote = (m: Task['messages'][number]) => !!m.panel || !!m.ask || !!m.peer
 
-/** 一个任务今天的活动；今天没执行过（没有今天的消息和节点）时返回 null */
-export function dayTask(task: Task, day: string): DayTask | null {
-  const asks: string[] = []
+/** 一个任务在范围内的活动；范围里没执行过（没有消息和节点）时返回 null */
+export function rangeTask(task: Task, win: SummaryWindow): DayTask | null {
+  /** 窗口里的全部用户要求：Bug 判定要扫全量，不能只看截给提示词的那几条 */
+  const userTexts: string[] = []
   const outcomes: string[] = []
   let at = ''
   const touch = (iso: string) => {
-    if (isToday(iso, day) && iso > at) at = iso
+    if (inRange(iso, win) && iso > at) at = iso
   }
   for (const m of task.messages) {
-    if (!isToday(m.at, day)) continue
+    if (!inRange(m.at, win)) continue
     touch(m.at)
     if (isPanelNote(m)) continue
     if (m.role === 'user' && m.text.trim()) {
-      if (asks.length < SUMMARY_ASKS_MAX) asks.push(clip(m.text))
+      userTexts.push(clip(m.text))
     } else if (m.role === 'agent') {
       const one = firstLine(m.text)
       // 只留最后几条：结论在后面的回复里
       if (one) outcomes.push(one)
     }
   }
+  // 提示词里只放开头一条和最近几条：开头常是用户报的问题，最近几条是这次总结的重点。
+  // 全部只取末尾会把开头报的 Bug 挤掉，所以 userBug（下面）用完整的 userTexts 判定
+  const asks =
+    userTexts.length <= SUMMARY_ASKS_MAX ? userTexts : [userTexts[0], ...userTexts.slice(-(SUMMARY_ASKS_MAX - 1))]
   const steps = task.steps
-    .filter((s) => isToday(s.startedAt, day) || isToday(s.endedAt, day))
+    .filter((s) => inRange(s.startedAt, win) || inRange(s.endedAt, win))
     // 和 outcomes 一样只留最后几个：报告要说的是最近做完的节点
     .slice(-SUMMARY_STEPS_MAX)
     .map((s) => ({ title: clip(s.title, 40), status: s.status }))
   for (const s of task.steps) touch(s.endedAt || s.startedAt)
   for (const turn of task.turns) touch(turn.endedAt || turn.startedAt)
-  // 今天执行的对话至少留下一条消息或一个节点；今天只是打开了对话、没执行的不算
-  if (!asks.length && !outcomes.length && !steps.length) return null
+  // 范围里执行过的对话至少留下一条消息或一个节点；只是打开了对话、没执行的不算
+  if (!userTexts.length && !outcomes.length && !steps.length) return null
   const files = [...new Set(task.changes.map((c) => c.path))].slice(0, SUMMARY_FILES_MAX)
   // 只看用户提的要求和对话标题：报告里的「用户报告的 Bug」只收用户自己报的问题，
-  // Agent 在结论里说的「我顺手修了一个问题」不能算
-  const hint = [task.title, ...asks].join(' ').toLowerCase()
+  // Agent 在结论里说的「我顺手修了一个问题」不能算。扫窗口里的全部用户消息（不只是 asks），
+  // 否则用户报的问题写在开头、被条数上限截掉后就漏了
+  const hint = [task.title, ...userTexts].join(' ').toLowerCase()
   return {
     id: task.id,
     title: clip(task.title, 60),
@@ -224,22 +409,32 @@ export function dayTask(task: Task, day: string): DayTask | null {
   }
 }
 
-/** 报告要分析哪个项目的哪些对话：taskIds 为空表示这个项目今天全部对话 */
+/** 一个任务今天的活动（保留的老接口，按单日窗口判定） */
+export function dayTask(task: Task, day: string): DayTask | null {
+  return rangeTask(task, dayWindow(day))
+}
+
+/** 报告要分析哪个项目的哪些对话：taskIds 为空表示这个项目范围内全部对话 */
 export interface SummaryDayPick extends SummaryProjectRef {
   taskIds?: string[]
 }
 
 /**
- * 按项目整理今天执行过的对话：只保留有活动的项目，项目顺序按传入的顺序（也就是用户加进来的顺序）。
- * 传了 taskIds 时只留这些对话，为空表示该项目今天全部。
+ * 按项目整理范围内执行过的对话：只保留有活动的项目，项目顺序按传入的顺序（也就是用户加进来的顺序）。
+ * 传了 taskIds 时只留这些对话，为空表示该项目全部。
  * 子对话也算它自己项目里的执行记录（它们本来就在同一个项目下）
  */
-export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], now = new Date()): DayProject[] {
-  const { day } = todayWindow(now)
+export function collectRangeProjects(
+  tasks: Task[],
+  projects: SummaryDayPick[],
+  range: SummaryRange = DEFAULT_SUMMARY_RANGE,
+  now = new Date(),
+): DayProject[] {
+  const win = rangeWindow(range, now)
   const byProject = new Map<string, DayTask[]>()
   for (const task of tasks) {
     if (!task.projectId) continue
-    const d = dayTask(task, day)
+    const d = rangeTask(task, win)
     if (!d) continue
     const list = byProject.get(task.projectId) ?? []
     list.push(d)
@@ -253,7 +448,7 @@ export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], no
         return {
           projectId: p.id,
           projectName: p.name,
-          // 先按最近执行排序再截断：超过上限时留下的是今天最新的对话，不是最早创建的
+          // 先按最近执行排序再截断：超过上限时留下的是范围内最新的对话，不是最早创建的
           tasks: byProject
             .get(p.id)!
             .filter((t) => !only || only.has(t.id))
@@ -261,21 +456,26 @@ export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], no
             .slice(0, SUMMARY_TASKS_PER_PROJECT),
         }
       })
-      // 选中了对话、但这些对话今天都没执行时，这个项目也就没有可写的内容
+      // 选中了对话、但这些对话在范围里都没执行时，这个项目也就没有可写的内容
       .filter((p) => p.tasks.length > 0)
   )
 }
 
+/** 按项目整理今天执行过的对话（保留的老接口，内部走「今天」范围） */
+export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], now = new Date()): DayProject[] {
+  return collectRangeProjects(tasks, projects, DEFAULT_SUMMARY_RANGE, now)
+}
+
 /**
- * 用户选了、但今天没有可总结内容的项目名：页面据此提示，不静默把它们从报告里删掉。
- * 服务端算完 collectDayProjects 后调用，判断口径就是「有没有进报告」
+ * 用户选了、但这段范围里没有可总结内容的项目名：页面据此提示，不静默把它们从报告里删掉。
+ * 服务端算完 collectRangeProjects 后调用，判断口径就是「有没有进报告」
  */
 export function skippedProjects(picks: SummaryProjectRef[], projects: DayProject[]) {
   const analyzed = new Set(projects.map((p) => p.projectId))
   return picks.filter((p) => !analyzed.has(p.id)).map((p) => p.name)
 }
 
-/** 报告里交给 CLI 的「今天的执行记录」正文 */
+/** 报告里交给 CLI 的「这段时间的执行记录」正文 */
 export function summaryContext(projects: DayProject[]) {
   return projects
     .map((p) =>
@@ -303,14 +503,28 @@ export function summaryContext(projects: DayProject[]) {
  * 格式写死在这里，生成后还会用 checkSummaryFormat 再校一遍（见 server/summary.ts）。
  * 正文是中文，回复语言跟随面板设置（见 prompt-lang.ts）
  */
-export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
+export function summaryPrompt(input: { day: string; projects: DayProject[]; range?: SummaryWindow }) {
+  const win = input.range ?? dayWindow(input.day)
+  // 一级标题：单日就是「# 2026-10-23 工作总结」，多天用「# 2026-10-17 - 2026-10-23 工作总结」
+  const title = win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} - ${win.toDay}`
+  // 第一行说清范围：今天是哪一天、这次总结覆盖哪几天
+  const scope =
+    win.id === 'today'
+      ? `今天（${win.fromDay}）`
+      : win.id === 'yesterday'
+        ? `昨天（${win.fromDay}）`
+        : win.id === 'last7'
+          ? `近 ${win.days.length} 天（${win.fromDay} 至 ${win.toDay}）`
+          : win.fromDay === win.toDay
+            ? `${win.fromDay}`
+            : `${win.fromDay} 至 ${win.toDay}`
   return [
-    `你在帮用户整理今天的工作总结报告。今天是 ${input.day}。`,
+    `你在帮用户整理${scope}的工作总结报告。`,
     promptLangRules(),
     '',
     '输出格式：必须严格照下面这个结构写，字段、顺序、编号一律不能变，不要自创小节：',
     '',
-    `# ${input.day} 工作总结`,
+    `# ${title} 工作总结`,
     '',
     '## 一、需求进度',
     '',
@@ -328,10 +542,10 @@ export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
     '   修复：<怎么修的，一句话>',
     '',
     '## 三、今日小结',
-    '<一句话：今天整体做完了什么、还剩什么>',
+    '<一句话：这段时间整体做完了什么、还剩什么>',
     '',
     '硬性规则：',
-    `- 一级标题固定写成 \`# ${input.day} 工作总结\`。`,
+    `- 一级标题固定写成 \`# ${title} 工作总结\`。`,
     '- 二级标题只允许这三个，一个不能少、顺序不能变：`## 一、需求进度`、`## 二、用户报告的 Bug`、`## 三、今日小结`。',
     '- 三级标题是项目，写 `### 1.1 <项目名>` / `### 2.1 <项目名>`（节号.项目序号，项目序号从 1 递增）；每个节里的项目都要写三级标题。',
     '- 条目写成 `1. **<标题>** ｜ <状态>`，下一行缩进两个空格写 `实现：` / `原因：` / `修复：`。',
@@ -343,8 +557,8 @@ export function summaryPrompt(input: { day: string; projects: DayProject[] }) {
     '- 只写下面记录里有的项目，按记录里的顺序；不要编造记录里没有的事。',
     '- 直接输出报告正文：第一行就是一级标题，不要开场白、不要总结段落、不要用代码块包起来。',
     '',
-    '今天的执行记录：',
-    summaryContext(input.projects) || '（今天没有执行记录）',
+    '这段时间的执行记录：',
+    summaryContext(input.projects) || '（这段时间没有执行记录）',
   ].join('\n')
 }
 
@@ -356,8 +570,9 @@ export function checkSummaryFormat(md: string): { ok: boolean; issues: SummaryFo
   const issues = new Set<SummaryFormatIssue>()
   const lines = md.split('\n').map((l) => l.trimEnd())
   const body = lines.filter((l) => l.trim())
-  // 一级标题：报告第一行就是它
-  if (!new RegExp(`^# \\d{4}-\\d{2}-\\d{2} 工作总结$`).test((body[0] ?? '').trim())) issues.add('title')
+  // 一级标题：报告第一行就是它，日期可以是单日或多日区间
+  if (!new RegExp(`^# ${DAY_KEY_PATTERN}(?: - ${DAY_KEY_PATTERN})? 工作总结$`).test((body[0] ?? '').trim()))
+    issues.add('title')
   const h2 = body.filter((l) => l.startsWith('## ')).map((l) => l.trim())
   const wanted = SUMMARY_SECTIONS.map((s) => s as string)
   if (h2.length !== wanted.length || h2.some((l, i) => l !== wanted[i])) issues.add('sections')
