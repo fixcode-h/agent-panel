@@ -934,6 +934,8 @@ export const EN_TASKS: Record<string, string> = {
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
   '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
+  '父对话正在合并这个子对话，等结果出来再删除独立分支':
+    'The parent conversation is merging this chat. Delete the separate branch after the merge finishes',
   '、': ', ',
   '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
