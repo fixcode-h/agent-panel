@@ -344,6 +344,8 @@ export const EN_TASKS: Record<string, string> = {
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',
   '显示更早的 {n} 段': 'Show {n} earlier sections',
+  显示更早的消息: 'Show earlier messages',
+  '对话已经变化，已重新加载': 'The conversation changed and was reloaded',
   这一步还没有输出: 'This step has no output yet',
   '这个节点没有改动文件。': 'This node changed no files.',
   环境: 'Environment',

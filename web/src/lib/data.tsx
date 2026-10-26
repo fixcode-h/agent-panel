@@ -203,7 +203,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const reloadTasks = useCallback(async () => {
     try {
       const next = await api.allTasks()
-      setTasks((cur) => mergeTasks(cur, next))
+      // 304（null）：数据没变，不动 state，侧栏不用重算
+      if (next) setTasks((cur) => mergeTasks(cur, next))
     } catch {
       // 后端暂时连不上时保留现有列表，下次刷新再试
     } finally {
