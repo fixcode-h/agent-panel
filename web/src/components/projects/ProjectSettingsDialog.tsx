@@ -1485,7 +1485,7 @@ function TestStepsEditor({
             '每条可以写「适用改动」（glob）：只改文档、资源这类没碰到的步骤会被跳过，并在验收结论里写清原因——同时会算上从远端拉取、合并进来的改动。',
           )}
           {t(
-            '勾了「禁止子对话执行」的步骤只对子对话生效：子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话；父对话自己改代码验证时照常跑。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。',
+            '每条步骤选一个范围：「总是跑」每次改动都跑（类型检查、lint 这类几十秒的）；「命中适用改动才跑」只在改动命中了下面的 glob 时跑，子对话只跑命中的单测文件 / 界面分片；「全量，合并后由父对话跑」子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话，适合全量单测、全量界面检查、端到端测试。最后的范围只对 Git 项目的独立分支子对话生效，其他情况步骤照常由执行者自己跑。',
           )}
         </span>
         <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>
@@ -1568,6 +1568,11 @@ function TestStepsEditor({
               }}
               onBlur={() => dropDraft(s.id)}
             />
+            {s.scope === 'always' && (
+              <span className="text-xs text-subtle">
+                {t('范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛')}
+              </span>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="h-8 flex-[1_1_120px] font-mono text-xs"
@@ -1614,29 +1619,26 @@ function TestStepsEditor({
                 {t('小改动也跑')}
               </label>
               <label
-                className={cn(
-                  'flex items-center gap-1.5 text-xs',
-                  gitRepo ? 'cursor-pointer text-muted' : 'cursor-not-allowed text-subtle',
+                className="flex items-center gap-1.5 text-xs text-muted"
+                title={t(
+                  '子对话只跑「总是跑」和命中了「适用改动」的步骤；选「全量，合并后由父对话跑」的步骤子对话不跑，合并后由父对话在全量里跑。',
                 )}
-                title={
-                  gitRepo
-                    ? t(
-                        '只对子对话生效：勾了以后子对话不跑这条步骤，合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话；父对话自己改代码验证时照常跑。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。',
-                      )
-                    : t(
-                        '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。',
-                      )
-                }
               >
-                <input
-                  type="checkbox"
-                  className="accent-accent"
-                  checked={s.runInParent}
-                  disabled={!gitRepo}
-                  onChange={(e) => patch(i, { runInParent: e.target.checked })}
+                {t('范围')}
+                <Select
+                  className="h-8 w-[12.5rem] text-xs"
+                  aria-label={t('范围')}
+                  value={s.scope}
+                  onChange={(e) => patch(i, { scope: e.target.value as TestStep['scope'] })}
+                  options={[
+                    { value: 'always', label: t('总是跑') },
+                    { value: 'changed', label: t('命中适用改动才跑') },
+                    {
+                      value: 'parent',
+                      label: gitRepo ? t('全量，合并后由父对话跑') : t('全量（非 Git 项目自己跑）'),
+                    },
+                  ]}
                 />
-                {t('禁止子对话执行')}
-                {!gitRepo && <span className="text-subtle">{t('（只对 Git 项目生效）')}</span>}
               </label>
             </div>
             {s.note && <span className="text-xs text-subtle">{s.note}</span>}
@@ -1662,7 +1664,7 @@ function TestStepsEditor({
                 note: '',
                 enabled: true,
                 merge: false,
-                runInParent: false,
+                scope: 'always' as const,
                 quick: false,
               },
             ])

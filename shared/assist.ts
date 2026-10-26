@@ -28,7 +28,8 @@ import {
   END,
   START,
   TEST_STEP_ENVS,
-  TestStepFields,
+  TestStepShape,
+  migrateTestStep,
   type Agent,
   type AgentInput,
   type Category,
@@ -748,8 +749,14 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - command：要执行的命令原文，必须是项目里真实存在的命令
 - env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断（Windows 上默认 Git Bash）；只有确实必须在 WSL 里跑的（例如 agent-panel 的 e2e）才标 wsl
 - cwd：相对项目根的工作目录，没有就留空
+- scope：跑多大范围，三选一——
+  always：每次改动都跑，几十秒内能跑完的快速检查（类型检查、lint、语法检查）；
+  changed：改动命中 appliesTo 才跑（相关单测、编译、构建），子对话只跑命中的那部分；
+  parent：跑全量、很慢的步骤（全量单测、全量界面检查、端到端测试），子对话不跑，合并后由父对话跑。
+  新写的一律要填；拿不准按 changed。
 - appliesTo：适用改动，相对项目根的 glob 数组，例如 ["**/*.cpp", "**/*.h", "**/*.cs", "**/*.uproject"]。
-  改动清单里一个都不匹配时这一步会被跳过，所以按「改了哪些文件才真的需要跑」来填；拿不准就写空数组（空表示总是执行）
+  改动清单里一个都不匹配时这一步会被跳过，所以按「改了哪些文件才真的需要跑」来填；拿不准就写空数组（空表示总是执行）。
+  scope 是 always 的步骤不填 appliesTo（它本来就每次跑，两处规则会打架）
 - when：写给人看的补充说明，例如「仅发布前跑」，没有就留空；判定只看 appliesTo
 - timeoutSec：超时秒数，0 表示不限
 - note：给执行者看的说明，例如「同一时间只编译一次」
@@ -761,13 +768,15 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - UE 项目给编译（\`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`）、Lua 语法检查、可选的 AutomationTest；需要 Editor 的标成 enabled: false 并在 note 里说明。
 - 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。
 - 编译和构建类步骤要填 appliesTo：改到源码或构建清单（Build.cs、Cargo.toml、.uproject 等）才跑；只改文档、资源、配置时不跑。
-  测试类步骤同样按时它真正覆盖的源码来填。`,
+  测试类步骤同样按时它真正覆盖的源码来填。
+- 全量命令（\`npm run test:unit\`、界面检查、e2e 这类一跑几分钟、子对话每个都要跑一遍的）标 scope: parent；
+  几十秒的快速检查标 always；其余按改动才能确定要不要跑的标 changed。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
 先用两三句${promptLangWord()}说明你看到了什么、为什么这样排${ctx.projectPath ? '' : '，以及哪些命令要用户按项目实际情况改'}。
 然后输出且只输出一个 \`\`\`json 代码块：
 \`\`\`json
-{ "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "appliesTo": ["**/*.ts", "**/*.tsx", "**/tsconfig*.json"], "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
+{ "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "scope": "always", "appliesTo": [], "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
 \`\`\`
 字段名不能改；没有的字段可以不写（会按默认值补）。`,
     `## 对话\n${convo}`,
@@ -878,18 +887,21 @@ function paramSpecFor(ctx: AssistContext) {
  * AI 给出的测试步骤：字段和项目里保存的那份是同一个定义（shared/schema.ts 的 TestStepFields），
  * 新加字段不会只在一边生效；AI 只是可以不给 id，由这里补。
  */
-const TEST_STEP_SHAPE = TestStepFields.extend({
-  id: z.string().trim().max(40).optional(),
-  // AI 的输出严格校验：环境、超时写错就让它改，不悄悄回退。尤其 timeoutSec——schema 里的 catch(0)
-  // 会把非法值变成 0，而 0 是不限时，等于把写错的超时静默当成永不超时。只有保存下来的老数据才按 catch 回退
-  env: z.enum(TEST_STEP_ENVS).default('auto'),
-  timeoutSec: z
-    .number()
-    .int()
-    .min(0)
-    .max(24 * 3600)
-    .default(0),
-})
+const TEST_STEP_SHAPE = z.preprocess(
+  migrateTestStep,
+  TestStepShape.extend({
+    id: z.string().trim().max(40).optional(),
+    // AI 的输出严格校验：环境、超时写错就让它改，不悄悄回退。尤其 timeoutSec——schema 里的 catch(0)
+    // 会把非法值变成 0，而 0 是不限时，等于把写错的超时静默当成永不超时。只有保存下来的老数据才按 catch 回退
+    env: z.enum(TEST_STEP_ENVS).default('auto'),
+    timeoutSec: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 3600)
+      .default(0),
+  }),
+)
 
 /**
  * 校验 AI 给出的参数值：key 必须是派生出来的参数，值按类型校验。

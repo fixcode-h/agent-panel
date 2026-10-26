@@ -65,8 +65,12 @@
   项目里把步骤清空就是不跑，不退回快照。服务端在每个判断点（`parentRunRole`、`testStepsOf`、engine host 的 `verify.steps`）
   现取一次，不在保存设置时去改写跑着的对话（口径是「调用前先读配置」，见 [docs/agent-test-steps.md](../../agent-test-steps.md)）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
-  「禁止子对话执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
-  但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，勾了这项不会被跳过；
+  「范围」三档也在这里定（`TestStepFields.scope`：`always` 每次跑、`changed` 命中 `appliesTo` 才跑、`parent` 全量合并后由父对话跑；
+  合并了原来的 `runInParent`，老数据由 `shared/schema.ts` 的 `migrateTestStep` 换算，见 [ADR 0020](../../adr/0020-test-scope-and-incremental-tests.md)）：
+  `parentRunSteps` 是「`parent` 由谁跑」的唯一筛选（启用、`scope === 'parent'`、不是 `merge`、有命令），
+  但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，标了 `parent` 也不会被跳过；
+  子对话的提示词由 `CHILD_INCREMENTAL_RULE` 写死「只跑 `always` + 命中的 `changed`、不跑全量」，`FLAKY_TEST_RULE` 写死
+  「计时类用例偶发失败只单跑那个文件最多 3 次」；
   `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
   （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
   收尾总结的「编译 / 测试耗时」要求是 `TEST_TIME_SUMMARY_RULE`，只对独立分支的子对话注入（`shared/engine.ts` 的 `verifyPart`）。

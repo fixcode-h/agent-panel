@@ -32,7 +32,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const { id: _id, createdAt: _c, updatedAt: _u, ...projectInput } = project
 
   // 一条要父对话跑的步骤 + 一条子对话自己跑的步骤：命令都真跑，耗时是后台命令的真实起止时间
-  const parentStep = (command, runInParent = true) => ({
+  const parentStep = (command, scope = 'parent') => ({
     id: 'e2e-parent',
     name: '端到端测试',
     command,
@@ -44,7 +44,7 @@ await runShard('父对话执行测试步骤', async (api) => {
     note: '',
     enabled: true,
     merge: false,
-    runInParent,
+    scope,
     quick: false,
   })
   const selfStep = {
@@ -59,7 +59,7 @@ await runShard('父对话执行测试步骤', async (api) => {
     note: '',
     enabled: true,
     merge: false,
-    runInParent: false,
+    scope: 'always',
     quick: false,
   }
   const putSteps = (steps) =>
@@ -133,7 +133,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   // 这里钉的是用户可观测的那一段：改完设置，进行中的子对话下一轮提示词、下一次合并都按新设置走。
   // 注意纯对话任务的 testSteps 本来就是空数组（只有工作流任务才快照），所以「快照非空且与项目不一致」
   // 那一半由 shared/test-steps.test.ts 的 currentTestSteps 用例覆盖，两边合起来才算完整。
-  await putSteps([parentStep('node -e "setTimeout(()=>{},200)"', false)])
+  await putSteps([parentStep('node -e "setTimeout(()=>{},200)"', 'always')])
   const parent3 = await newParent('父对话（勾选之前创建的）')
   const kid3 = await newKid(parent3.id, 'COMMIT BEGIN_EDIT 先改文件，合并等一会儿')
   await dropRootOutput(kid3.id)
@@ -143,9 +143,9 @@ await runShard('父对话执行测试步骤', async (api) => {
   assert.equal(kidTask.projectId, project.id, '子对话记住了项目 id（为空时读不到项目设置）')
   assert.deepEqual(kidTask.testSteps, [], '纯对话任务本来没有步骤快照（只有工作流任务才快照）')
   // 子对话已经跑过一轮，这时才勾上、并把命令换掉：项目快照里仍是旧的那份
-  await putSteps([parentStep('node -e "setTimeout(()=>{},250)"', true)])
+  await putSteps([parentStep('node -e "setTimeout(()=>{},250)"', 'parent')])
   const saved = (await call('GET', '/projects')).find((x) => x.id === project.id)
-  assert.equal(saved?.testSteps[0].runInParent, true, '设置已经存进项目（先排除「PUT 没生效」）')
+  assert.equal(saved?.testSteps[0].scope, 'parent', '设置已经存进项目（先排除「PUT 没生效」）')
   await call('POST', `/tasks/${kid3.id}/messages`, { text: 'SUBMIT_MERGE 现在合并' })
   // 这一轮的提示词按项目当前设置拼：子对话被告知这些步骤它不跑
   await waitFor(

@@ -602,8 +602,8 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
-              // 演示里不勾：这条是合并时编译，仍由父对话申请编译
-              runInParent: false,
+              // 演示里标「总是跑」：类型检查几十秒，每次都跑
+              scope: 'always',
               quick: true,
             },
             {
@@ -618,8 +618,8 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
-              // 演示里勾上「禁止子对话执行」：合并后由父对话在它的目录里跑，结果回传给子对话
-              runInParent: true,
+              // 演示里标「全量，合并后由父对话跑」：子对话不跑 e2e，合并后由父对话在它的目录里跑
+              scope: 'parent',
               quick: false,
             },
           ],
