@@ -174,13 +174,56 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '从对话里去掉' }).waitFor({ state: 'detached' })
   await cite.waitFor()
   await check(p, 'UI设计-引用消息', ['StartGroup'])
-  // 思考、调设计工具、说明按顺序边出边显示
-  await p.getByText('check', { exact: true }).first().waitFor({ timeout: 15000 })
-  // 生成图片只有几秒：一出现就先截「生成中」，再截写入的工具调用（机器慢时先截写入会错过生成中）
+  // 生成图片只有几秒：先等它出现（收尾前就看得到，不依赖消息入库和折叠）
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
+  // 和 Chat 对话一模一样：这一轮结束后，思考和工具调用收进一个折叠，只留折叠行和最后的回复
+  // 折叠行按可访问名定位（「其他操作 N 次 · 思考 N 次」），和 02-task.mjs 的折叠行用同一套口径；
+  // 底下那个「思考过程」行虽然也是 button，但名字里没有次数，不会互相抢
+  const foldRow = p.getByRole('button', { name: /(其他操作|思考) \d+ 次/ }).last()
+  await foldRow.waitFor({ timeout: 20000 }).catch(() => errors.push('UI设计：回复完成后没有收起过程的折叠行'))
+  // 展开后截「生成中」和写入的工具调用（收起时它们只在折叠行的「其他操作 N 次」里）
+  await foldRow.click().catch(() => errors.push('UI设计：点不开过程的折叠行'))
+  await p
+    .getByText('思考过程', { exact: true })
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('UI设计：展开折叠后看不到思考过程'))
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await check(p, 'UI设计-写入', ['replace_widget'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
+  // 收起后过程不铺在屏幕上：思考块整个不渲染，不是一个还占着位置的隐藏块
+  {
+    await foldRow.click().catch(() => errors.push('UI设计：再点一次没有收起过程'))
+    await p
+      .getByText('思考过程', { exact: true })
+      .first()
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('UI设计：收起后思考过程还铺在对话里'))
+    // 设计页特有的东西不能跟着折叠一起没掉
+    await p
+      .getByText(/需要的图片：\d+ 张/)
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('UI设计：折叠把「需要的图片」一起收没了'))
+    const brief = await foldRow.innerText().catch(() => '')
+    if (!/其他操作 \d+ 次/.test(brief) || !/思考 \d+ 次/.test(brief))
+      errors.push(`UI设计：折叠行没有写这段做了什么（读到「${brief}」）`)
+    await check(p, 'UI设计-过程折叠')
+    // 再点开能看到过程，再点一次又收起（展开 / 收起的状态按这一段记）
+    await foldRow.click()
+    await p
+      .getByText('思考过程', { exact: true })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('UI设计：再展开看不到思考过程'))
+    await check(p, 'UI设计-展开过程', ['思考过程'])
+    await foldRow.click()
+    await p
+      .getByText('思考过程', { exact: true })
+      .first()
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('UI设计：展开后再点一次没有收起'))
+  }
   // AI 分析：只读检查对话和生成的 UI，结果回到对话里，分三段并带「按建议修改」
   await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
   await p

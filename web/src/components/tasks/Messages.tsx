@@ -975,7 +975,7 @@ export function FoldedRun({
 
 /**
  * 通用对话里的一轮回复（工作流以外的 AI 对话都用它）：思考、工具调用和说明按发生的顺序流式显示，
- * 项目对话里回复完成后收进一个折叠；完成后下面是时间、复制和各个对话自己的操作
+ * 传了 fold 时回复完成后收进一个折叠（项目对话、UI 设计的 AI 对话都传）；完成后下面是时间、复制和各个对话自己的操作
  */
 export function ChatReply({
   msgs,
@@ -994,7 +994,10 @@ export function ChatReply({
   task?: Task
   teamNames: Set<string>
   live?: boolean
-  /** 回复完成后思考、工具调用和中间的说明收进一个折叠（项目对话）；UI 设计等对话照常全部显示 */
+  /**
+   * 回复完成后思考、工具调用和中间的说明收进一个折叠，和 Claude Code 一样（项目对话、UI 设计的 AI 对话都用）。
+   * 不传时整轮过程一路平铺，只给不想折叠的调用方用
+   */
   fold?: boolean
   author?: Author
   /** 启动这一轮的命令：按 Agent 显示的对话没有 author，用这个显示在名字那行最右边 */
