@@ -3,6 +3,7 @@ import { toast } from '@/lib/toast'
 import { CalendarClock, ExternalLink, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import {
   fromLocalInput,
+  sameMinute,
   SCHEDULE_TICK_MS,
   toLocalInput,
   workdayTemplate,
@@ -137,7 +138,8 @@ function ScheduleDialog({
         // 保存前确认它还是打开时的排期，不是就让用户重新打开再改
         const latest = (await api.schedules()).find((x) => x.id === schedule.id)
         if (!latest) throw new Error(t('计划不存在'))
-        if (latest.at !== schedule.at) {
+        // 和 PUT 同一个口径（按分钟）：同一分钟内别处改过时间不算排期变了
+        if (!sameMinute(latest.at, schedule.at)) {
           onSaved(latest)
           toast.error(t('这条计划刚执行过或已被改过，请重新打开再编辑'))
           return

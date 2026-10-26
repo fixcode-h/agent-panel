@@ -204,3 +204,42 @@ test('只改名字、时间还是同一分钟：状态保持已执行，不会�
   assert.equal(after.status, 'done')
   assert.equal(after.at, sameMinuteAt)
 })
+
+test('到点启动期间用户只改名字、时间被截成整分：单次计划仍算已执行，不会重复启动', async () => {
+  // at 带 30 秒，界面上的时间只到分钟：用户保存时会被截成同一分钟的整分
+  const atMs = Math.floor(Date.now() / MINUTE) * MINUTE + 30_000
+  const tickAt = atMs + 1000
+  const name = unique()
+  const calls: NewTaskInput[] = []
+  let target: Schedule | undefined
+  let api!: ReturnType<typeof schedulesApi>
+  api = schedulesApi({
+    startChat: async (input) => {
+      calls.push(input)
+      if (target) {
+        const minute = new Date(Math.floor(Date.parse(target.at) / MINUTE) * MINUTE).toISOString()
+        await api.routes.request(`/${target.id}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(plan(`${name}-改名`, { at: minute })),
+        })
+      }
+      return { id: `task:${input.prompt}` } as Task
+    },
+  })
+  const res = await api.routes.request('/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(plan(name, { at: at(atMs) })),
+  })
+  target = (await res.json()) as Schedule
+
+  await api.tick(tickAt)
+  const list = (await (await api.routes.request('/')).json()) as Schedule[]
+  const saved = list.find((x) => x.id === target!.id)!
+  assert.equal(saved.status, 'done', '启动完成后单次计划要标成已执行')
+  assert.equal(saved.at, new Date(Math.floor(atMs / MINUTE) * MINUTE).toISOString(), '用户截断后的时间保留')
+  // 下一轮轮询：at 还在宽限时间内，但已经执行过，不能再启动一次
+  await api.tick(tickAt + 30_000)
+  assert.equal(calls.length, 1)
+})

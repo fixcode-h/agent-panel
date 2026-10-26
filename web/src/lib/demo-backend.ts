@@ -60,7 +60,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
-import { Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -748,7 +748,8 @@ function load(): Db {
   db.globalLessons ??= DEMO_GLOBAL_LESSONS
   // 旧演示数据里没有计划：补出来的种子计划要马上落盘，否则每次 load 都重新生成一个 id，
   // 页面上的编辑 / 删除 / 立即执行会找不到这条计划（它已经变成另一条了）
-  const seededSchedules = db.schedules === undefined
+  // 用 == null：旧演示数据里可能写成 schedules: null，也要当成没有、补完就落盘
+  const seededSchedules = db.schedules == null
   db.schedules ??= demoSchedulesSeed()
   db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
@@ -1865,7 +1866,8 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     const next = {
       ...cur,
       ...input,
-      ...(input.at !== cur.at ? { status: 'pending' as const, missedAt: '', lastError: '' } : {}),
+      // 和正式后端同一个口径：只改名字、时间还在同一分钟时不算换了排期
+      ...(!sameMinute(input.at, cur.at) ? { status: 'pending' as const, missedAt: '', lastError: '' } : {}),
       updatedAt: new Date().toISOString(),
     }
     d.schedules = list.map((s) => (s.id === id ? next : s))

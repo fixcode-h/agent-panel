@@ -39,13 +39,17 @@ export function schedulesApi(deps: {
 
   /**
    * 写回运行状态。写之前重新读一次：tick 开头拿到的是快照，启动对话期间用户可能改过排期，
-   * 用快照算出来的 at 写回去会把用户刚改的时间静默覆盖掉。at 只在没被改过时写，其它字段照常写。
+   * 用快照算出来的 at / missedAt 写回去会跟用户的新排期打架。
+   * 「改没改排期」和 PUT 用同一个口径（sameMinute）：界面上的时间只到分钟，
+   * 用户只改名字、带秒的时间被截成整分时，不能当成换了排期（否则单次的 done 会被丢掉、下一轮又启动一次）。
    */
   async function writeBack(id: string, snapshotAt: string, patch: Partial<Schedule>) {
     const latest = await store.get(id)
     if (!latest) return null
-    const { at, ...rest } = patch
-    return store.update(id, latest.at === snapshotAt ? patch : rest)
+    if (sameMinute(latest.at, snapshotAt)) return store.update(id, patch)
+    // 排期被改过：at 和这次错过记录都归用户的新排期管，不能把快照算出来的值写回
+    const { at, missedAt, ...rest } = patch
+    return store.update(id, rest)
   }
 
   /** 到点启动对话；失败的原因记进计划，用户下次打开列表就能看到 */
