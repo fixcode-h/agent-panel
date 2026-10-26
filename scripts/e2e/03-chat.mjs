@@ -491,8 +491,15 @@ await runShard('对话与续接', async (api) => {
     400,
     '工作流必须选项目',
   )
+  // 删除先进回收站：聊天的工作目录留着（7 天内还能恢复）；永久删除时才一起删掉
+  const freeDir = path.join(dataDir, 'chats', free.id)
   await fetch(`${base}/tasks/${free.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' } })
-  assert.ok(!existsSync(path.join(dataDir, 'chats', free.id)), '删除聊天时工作目录一起删掉')
+  assert.ok(existsSync(freeDir), '进回收站时聊天工作目录还留着')
+  await fetch(`${base}/tasks/${free.id}/permanent`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.ok(!existsSync(freeDir), '永久删除时聊天工作目录一起删掉')
   step(
     '不用角色：直接用默认 CLI，对话时可以临时换模型和思考强度，旧的默认 Agent id 当成不用角色；任务记录执行时间；Chat 模式的聊天不属于项目',
   )
