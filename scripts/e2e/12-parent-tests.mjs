@@ -18,6 +18,14 @@ import path from 'node:path'
 
 import { runShard } from './harness.mjs'
 
+// 等 CLI 起一轮、等独立分支建好、等合并回传这类跨轮次等待的上限。
+// CI 机器明显比本机慢（同一个分片本机全量 59 秒、CI 上单独跑就要 38.8 秒），20~30 秒等不到
+// 「第一轮结束 + 第二轮在分支目录里开始」。本文件里所有跸轮次等待（waitFor / waitTask / waitDone
+// 的 timeout，以及下面重试循环的截止时间）都引用这一个值，不再散落数字。
+const WAIT_CLI_ROUND_MS = 60000
+// 本地重试（等它停下来再丢分支 / 再标完成）的轮询间隔：这几步几乎瞬时，只要别狂刷接口
+const RETRY_INTERVAL_MS = 300
+
 await runShard('父对话执行测试步骤', async (api) => {
   const { call, waitTask, waitDone, waitFor, calls, sleep, step, setupBase, tmp, clearCliOutputs } = api
   const { project, A, B } = await setupBase()
@@ -57,7 +65,10 @@ await runShard('父对话执行测试步骤', async (api) => {
   const putSteps = (steps) =>
     call('PUT', `/projects/${project.id}`, { ...projectInput, childIsolation: 'worktree', testSteps: steps })
   const newParent = async (prompt) =>
-    waitDone((await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt })).id, 20000)
+    waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt })).id,
+      WAIT_CLI_ROUND_MS,
+    )
   const newKid = (parentId, prompt) => {
     // 父对话的目录里假 CLI 写的输出文件是未跟踪的，不清掉会挡住子对话分支的合并
     clearCliOutputs(project.path)
@@ -73,10 +84,24 @@ await runShard('父对话执行测试步骤', async (api) => {
   // 这些文件留在合并目标目录里会挡住 git merge。等第二轮真的在分支目录里开始（第一轮已结束）再清，
   // 早清会被第一轮补写回来
   const dropRootOutput = async (kidId) => {
-    const wt = await waitTask(kidId, (x) => x.worktree?.state === 'active', 20000)
+    const wt = await waitTask(kidId, (x) => x.worktree?.state === 'active', WAIT_CLI_ROUND_MS)
     await waitFor(() => calls().some((c) => c.cwd === wt.worktree.path), {
-      timeout: 20000,
+      timeout: WAIT_CLI_ROUND_MS,
       label: '子对话第二轮在分支目录里开始',
+      // 超时时把现场一起打出来：CI 上重跑要几十秒，看日志就能判断是卡在第一轮没结束还是目录不对
+      describe: async () => {
+        const task = await call('GET', `/tasks/${kidId}`)
+        return {
+          expectedCwd: wt.worktree.path,
+          // 最近几次 CLI 调用实际在哪个目录，看它是不是还停在项目根
+          cwds: calls()
+            .slice(-5)
+            .map((c) => c.cwd),
+          status: task.status,
+          worktree: task.worktree?.state,
+          messages: (task.messages ?? []).slice(-2).map((m) => [m.role, (m.text ?? '').slice(0, 60)]),
+        }
+      },
     })
     clearCliOutputs(project.path)
   }
@@ -86,7 +111,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const parent = await newParent('父对话')
   const kid = await newKid(parent.id, 'COMMIT BEGIN_EDIT BG_TESTSTEP SUBMIT_MERGE 子对话的改动')
   await dropRootOutput(kid.id)
-  const merged = await waitTask(kid.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
+  const merged = await waitTask(kid.id, (x) => x.resolved && x.worktree?.state === 'merged', WAIT_CLI_ROUND_MS)
   const parentRuns = merged.testRuns.filter((r) => r.by === 'parent')
   assert.equal(parentRuns.length, 1, '父对话跑过的那条步骤记在子对话的任务上')
   assert.equal(parentRuns[0].stepName, '端到端测试')
@@ -113,7 +138,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const kid3 = await newKid(parent3.id, 'COMMIT BEGIN_EDIT 先改文件，合并等一会儿')
   await dropRootOutput(kid3.id)
   // 等它这一轮跑完再改设置：正在跑的时候插消息，fake CLI 会把合并和改设置搅在一起
-  await waitTask(kid3.id, (x) => !x.working, 30000)
+  await waitTask(kid3.id, (x) => !x.working, WAIT_CLI_ROUND_MS)
   const kidTask = await call('GET', `/tasks/${kid3.id}`)
   assert.equal(kidTask.projectId, project.id, '子对话记住了项目 id（为空时读不到项目设置）')
   assert.deepEqual(kidTask.testSteps, [], '纯对话任务本来没有步骤快照（只有工作流任务才快照）')
@@ -128,9 +153,23 @@ await runShard('父对话执行测试步骤', async (api) => {
       calls().some(
         (c) => (c.input ?? '').includes('SUBMIT_MERGE 现在合并') && (c.input ?? '').includes('禁止子对话执行'),
       ),
-    { timeout: 20000, label: '进行中的子对话下一轮提示词里出现「禁止子对话执行」' },
+    {
+      timeout: WAIT_CLI_ROUND_MS,
+      label: '进行中的子对话下一轮提示词里出现「禁止子对话执行」',
+      // 这一轮的提示词是按项目最新设置拼的：超时时把任务状态和最近几轮实际输入打出来
+      describe: async () => {
+        const task = await call('GET', `/tasks/${kid3.id}`)
+        return {
+          status: task.status,
+          worktree: task.worktree?.state,
+          inputs: calls()
+            .slice(-3)
+            .map((c) => (c.input ?? '').slice(0, 200)),
+        }
+      },
+    },
   )
-  const live = await waitTask(kid3.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
+  const live = await waitTask(kid3.id, (x) => x.resolved && x.worktree?.state === 'merged', WAIT_CLI_ROUND_MS)
   const liveRuns = live.testRuns.filter((r) => r.by === 'parent')
   assert.equal(
     liveRuns.length,
@@ -154,7 +193,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const failed = await waitTask(
     kid2.id,
     (x) => x.messages.some((m) => (m.text ?? '').includes('父对话测试未通过')),
-    60000,
+    WAIT_CLI_ROUND_MS,
   )
   assert.ok(!failed.resolved, '父对话测试没过不能标完成')
   assert.equal(failed.worktree?.state, 'active', '独立分支保留，子对话还能接着修')
@@ -169,7 +208,7 @@ await runShard('父对话执行测试步骤', async (api) => {
   const again = await waitTask(
     kid2.id,
     (x) => x.messages.filter((m) => (m.text ?? '').includes('父对话测试未通过')).length >= 2,
-    60000,
+    WAIT_CLI_ROUND_MS,
   )
   const run2 = again.testRuns.find((r) => r.by === 'parent')
   // fake-cli 的一轮里可能再请一次收尾，跑几次不是断言重点：tries 至少 2 就说明没有「跑过一次就跳过」
@@ -178,15 +217,18 @@ await runShard('父对话执行测试步骤', async (api) => {
   step('失败后重新合并：父对话再跑一遍这些步骤，tries 累加')
 
   // ---- 丢弃独立分支：父对话测试的批次取消、状态清掉，不再拦住标记完成（评审 R4 / R2）----
-  // 失败消息会叫醒它跑一轮；等它停下来再丢弃（执行中不允许丢分支）
-  await waitTask(kid2.id, (x) => !x.working, 30000)
+  // 失败消息会叫醒它跑一轮；等它停下来再丢弃（执行中不允许丢分支）。
+  // 这一轮还可能被新的失败消息叫起，所以还要重试：截止时间用同一份上限，
+  // 原来的「20 次 × 300ms」只有 6 秒，CI 慢时比等一轮还短
+  await waitTask(kid2.id, (x) => !x.working, WAIT_CLI_ROUND_MS)
   let dropped
-  for (let i = 0; i < 20 && !dropped; i++) {
+  const discardUntil = Date.now() + WAIT_CLI_ROUND_MS
+  while (!dropped && Date.now() < discardUntil) {
     try {
       dropped = await call('POST', `/tasks/${kid2.id}/worktree/discard`)
     } catch (e) {
       if (!/执行|合并/.test(e?.message ?? String(e))) throw e
-      await sleep(300)
+      await sleep(RETRY_INTERVAL_MS)
     }
   }
   assert.ok(dropped, '等它停下来后可以丢弃独立分支')
@@ -198,14 +240,15 @@ await runShard('父对话执行测试步骤', async (api) => {
     '计划里的合回收尾步骤一并收口，不再拦住完成',
   )
   // 丢弃后可能还有失败消息在送达、叫醒它跑一轮：等它停下来再标记完成（并行跑分片时更明显）
-  await waitTask(kid2.id, (x) => !x.working, 30000)
+  await waitTask(kid2.id, (x) => !x.working, WAIT_CLI_ROUND_MS)
   let completed
-  for (let i = 0; i < 20 && !completed?.resolved; i++) {
+  const completeUntil = Date.now() + WAIT_CLI_ROUND_MS
+  while (!completed?.resolved && Date.now() < completeUntil) {
     try {
       completed = await call('PATCH', `/tasks/${kid2.id}`, { resolved: true })
     } catch (e) {
       if (!/执行|计划|父对话的测试/.test(e?.message ?? '')) throw e
-      await sleep(300)
+      await sleep(RETRY_INTERVAL_MS)
     }
   }
   assert.ok(completed?.resolved, `丢弃分支后可以标记完成，不再被父对话测试拦住（${completed?.resolved}）`)
