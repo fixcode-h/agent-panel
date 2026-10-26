@@ -1,15 +1,18 @@
 /**
  * 工作总结页的页面状态存档：切到别的页面再回来（甚至刷新）时，已选的项目 / 对话、
- * 正在看的报告（含还没保存的编辑）、预览与编辑 tab、正在生成的 job 都还在。
+ * 正在看的报告（含还没保存的编辑）、预览与编辑 tab、正在生成的 job、选的时间范围都还在。
  *
  * 整页只存一个键：报告本体在服务端（server/summary.ts 保留最近 SUMMARY_KEEP 份），
  * 这里只记「看的是哪一份」和正文草稿，最近报告列表仍以服务端为准。
  * 写不进 localStorage（无痕模式、存储被禁用）时退回内存：同一次打开里切页面仍然保留。
+ *
+ * 范围也会存：恢复时用 `forRange` 按时间窗口校正，范围 / 日期变了的旧报告、旧对话选择不能串到新范围上。
  */
+import { DEFAULT_SUMMARY_RANGE, SUMMARY_RANGES, type SummaryRange } from '@shared/summary'
 
 export const SUMMARY_PAGE_KEY = 'summary-page:v1'
 
-/** 报告要分析的一项：项目 + 该项目里选中的对话（空数组表示今天全部对话） */
+/** 报告要分析的一项：项目 + 该项目里选中的对话（空数组表示这段范围全部对话） */
 export interface Pick {
   projectId: string
   taskIds: string[]
@@ -19,13 +22,20 @@ export interface Pick {
 export interface StoredReport {
   id: string
   md: string
+  /** 报告覆盖的日期（YYYY-MM-DD）：标题按它显示；老存档没有这两个字段时为空 */
+  from: string
+  to: string
 }
 
 export type ReportMode = 'preview' | 'edit'
 
 export interface SummaryPageState {
-  /** 存这份状态时「今天」是哪天（本机自然日，2026-10-23）：跨天了报告的口径就变了 */
+  /** 存这份状态时窗口的最后一天（本机自然日，2026-10-23）：日期变了报告的口径就变了 */
   day: string
+  /** 存这份状态时窗口的第一天：和 day 一起判断「还是不是同一段范围」 */
+  from: string
+  /** 用户选的范围；custom 的两个日期原样存 */
+  range: SummaryRange
   /** 已加入的项目，顺序就是报告里分节的顺序 */
   picks: Pick[]
   report: StoredReport | null
@@ -57,10 +67,28 @@ function parsePicks(v: unknown): Pick[] {
 }
 
 function parseReport(v: unknown): StoredReport | null {
-  const o = v as { id?: unknown; md?: unknown } | null
+  const o = v as { id?: unknown; md?: unknown; from?: unknown; to?: unknown } | null
   // 没有 id 就存不回去，当作没打开报告
   if (!o || !isText(o.id)) return null
-  return { id: o.id, md: typeof o.md === 'string' ? o.md : '' }
+  return {
+    id: o.id,
+    md: typeof o.md === 'string' ? o.md : '',
+    from: typeof o.from === 'string' ? o.from : '',
+    to: typeof o.to === 'string' ? o.to : '',
+  }
+}
+
+/** 读范围：不认识的 id、坏日期都回落到今天；老存档（没有 range）按 day 当单日 */
+function parseRange(v: unknown, day: string): SummaryRange {
+  const o = v as { id?: unknown; from?: unknown; to?: unknown } | null
+  if (!o || typeof o !== 'object' || !(SUMMARY_RANGES as readonly string[]).includes(o.id as string)) {
+    return { ...DEFAULT_SUMMARY_RANGE, from: day, to: day }
+  }
+  return {
+    id: o.id as SummaryRange['id'],
+    from: typeof o.from === 'string' ? o.from : '',
+    to: typeof o.to === 'string' ? o.to : '',
+  }
 }
 
 /** 读存档：坏数据、旧版本缺字段都按默认值处理，页面照常打开 */
@@ -73,8 +101,12 @@ export function parseSummaryPage(raw: string | null): SummaryPageState | null {
     return null
   }
   if (!v || typeof v !== 'object') return null
+  const day = typeof v.day === 'string' ? v.day : ''
   return {
-    day: typeof v.day === 'string' ? v.day : '',
+    day,
+    // 老存档只有 day：把它当范围的唯一一天，同一天恢复时还能原样接上
+    from: typeof v.from === 'string' ? v.from : day,
+    range: parseRange(v.range, day),
     picks: parsePicks(v.picks),
     report: parseReport(v.report),
     mode: v.mode === 'edit' ? 'edit' : 'preview',
@@ -103,19 +135,20 @@ export function saveSummaryPage(state: SummaryPageState | null) {
 }
 
 /**
- * 恢复时先按「今天」校正口径：同一天原样恢复；跨天了只留项目（顺序不变、对话清空），
- * 上一天的报告不再是「今天的报告」（「最近的报告」里还能点开），job 也不会跨天还在跑。
- * 今天要分析哪些对话由用户重新挑，避免拿昨天的选择生成一份日期不对的报告。
+ * 恢复时按时间窗口校正口径：窗口没变（同一天 / 同一段自选日期）原样恢复；
+ * 变了（跨天、换了范围）只留项目（顺序不变、对话清空），上一段的报告不再是这段时间的报告
+ * （「最近的报告」里还能点开），job 也不会跨范围还在跑。
+ * 这段时间要分析哪些对话由用户重新挑，避免拿上一段的选择生成一份日期不对的报告。
  */
-export function forDay(s: SummaryPageState, day: string): SummaryPageState {
-  if (s.day === day) return s
+export function forRange(s: SummaryPageState, win: { fromDay: string; toDay: string }): SummaryPageState {
+  if (s.from === win.fromDay && s.day === win.toDay) return s
   return {
-    day,
+    ...s,
+    day: win.toDay,
+    from: win.fromDay,
     picks: s.picks.map((x) => ({ projectId: x.projectId, taskIds: [] })),
     report: null,
-    mode: s.mode,
     jobId: '',
-    cli: s.cli,
   }
 }
 

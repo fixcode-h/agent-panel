@@ -1,6 +1,7 @@
 /**
- * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），
- * 把「今天」（本机时区的自然日）执行过的对话交给本机 CLI，生成一份固定三节格式的 Markdown 报告。
+ * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是这段时间全部），
+ * 把选中的时间范围（今天 / 昨天 / 近 7 天 / 自选日期，默认今天）里执行过的对话交给本机 CLI，
+ * 生成一份固定三节格式的 Markdown 报告。
  * 报告能编辑（自动保存）、预览、一键复制；最近几份存在数据目录里（见 server/summary.ts），点开能回看。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -9,11 +10,16 @@ import { AlertTriangle, Copy, FileText, Loader2, Plus, Sparkles, Square, X } fro
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import {
-  activeOnDay,
+  activeInRange,
+  DEFAULT_SUMMARY_RANGE,
+  rangeLabel,
+  rangeWindow,
   reportTitle,
-  todayWindow,
+  reportWindowLabel,
   type SummaryFormatIssue,
   type SummaryJob,
+  type SummaryRange,
+  type SummaryRangeId,
   type SummaryRecord,
 } from '@shared/summary'
 import { t } from '@shared/i18n'
@@ -22,12 +28,12 @@ import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Select, Textarea } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
 import { PageFrame } from '@/components/library/parts'
 import {
-  forDay,
+  forRange,
   loadSummaryPage,
   prunePicks,
   saveSummaryPage,
@@ -63,9 +69,10 @@ function issueText(issue: SummaryFormatIssue) {
   }
 }
 
-/** 已加入的一个项目：项目名 + 该项目今天有执行的对话 + 对话选择（下拉增加、可删） */
+/** 已加入的一个项目：项目名 + 该项目范围内有执行的对话 + 对话选择（下拉增加、可删） */
 function ProjectPickRow({
   name,
+  scope,
   tasks,
   picked,
   disabled,
@@ -74,7 +81,9 @@ function ProjectPickRow({
   onRemove,
 }: {
   name: string
-  /** 该项目今天有执行的对话；列表里只留标题，拿到的是任务摘要 */
+  /** 范围在界面上的名字（今天 / 近 7 天 / 日期区间）：提示文案里用它 */
+  scope: string
+  /** 该项目范围内有执行的对话；列表里只留标题，拿到的是任务摘要 */
   tasks: { id: string; title: string }[]
   /** 已加入要分析的对话 id */
   picked: string[]
@@ -94,7 +103,9 @@ function ProjectPickRow({
     <li className="px-4 py-3">
       <div className="flex items-center gap-2">
         <span className="text-[0.8125rem] font-medium">{name}</span>
-        {!!tasks.length && <span className="text-xs text-subtle">{t('今天 {n} 个对话', { n: tasks.length })}</span>}
+        {!!tasks.length && (
+          <span className="text-xs text-subtle">{t('{scope} {n} 个对话', { scope, n: tasks.length })}</span>
+        )}
         <button
           type="button"
           aria-label={t('删除项目 {name}', { name })}
@@ -106,7 +117,7 @@ function ProjectPickRow({
         </button>
       </div>
       {!tasks.length ? (
-        <p className="mt-1 text-xs text-subtle">{t('今天没有可总结的对话')}</p>
+        <p className="mt-1 text-xs text-subtle">{t('{scope}没有可总结的对话', { scope })}</p>
       ) : (
         <>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -125,7 +136,7 @@ function ProjectPickRow({
             <span className="text-xs text-subtle">
               {picked.length
                 ? t('只分析已选的 {n} 个对话', { n: picked.length })
-                : t('未选对话时分析该项目今天全部对话')}
+                : t('未选对话时分析该项目{scope}全部对话', { scope })}
             </span>
           </div>
           {!!picked.length && (
@@ -159,6 +170,7 @@ function ProjectPickRow({
 function ReportEditor({
   id,
   md: initial,
+  title,
   mode,
   onMode,
   onCopy,
@@ -167,6 +179,8 @@ function ReportEditor({
 }: {
   id: string
   md: string
+  /** 报告标题：「今天的报告 / 昨天的报告 / 近 7 天的报告 / 日期区间的报告」 */
+  title: string
   /** 预览 / 编辑由页面记着：切页面回来后还是走之前的那个 tab */
   mode: ReportMode
   onMode: (mode: ReportMode) => void
@@ -199,7 +213,7 @@ function ReportEditor({
     <section className="rounded-xl border bg-panel">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
         <FileText className="h-4 w-4 text-accent" />
-        <span className="text-[0.8125rem] font-medium">{t('今天的报告')}</span>
+        <span className="text-[0.8125rem] font-medium">{title}</span>
         <Segmented
           label={t('报告视图')}
           value={mode}
@@ -238,12 +252,18 @@ function ReportEditor({
 
 export function SummaryPage() {
   const { projects, clis, settings, tasks, loading, tasksLoaded } = useData()
-  const { day } = todayWindow()
-  // 切走再回来（甚至刷新）接着用上次的页面状态：先按今天校正口径，项目和任务加载完再剪掉已删的
+  // 每次渲染重算窗口：页面一直开着跨过午夜时，判断也跟着变（和改造前每帧算 todayWindow 一致）
+  const now = new Date()
+  // 切走再回来（甚至刷新）接着用上次的页面状态：先按存档里的范围校正口径，项目和任务加载完再剪掉已删的
   const [restored] = useState(() => {
     const s = loadSummaryPage()
-    return s ? forDay(s, day) : null
+    return s ? forRange(s, rangeWindow(s.range, new Date())) : null
   })
+  /** 总结的时间范围：默认今天（不存过存档时和改造前一样） */
+  const [range, setRange] = useState<SummaryRange>(restored?.range ?? DEFAULT_SUMMARY_RANGE)
+  const win = rangeWindow(range, now)
+  /** 范围在界面上的名字（今天 / 昨天 / 近 7 天 / 日期区间） */
+  const scope = rangeLabel(win)
   const usable = useMemo(
     () =>
       orderClis(CLIS, settings?.cliOrder ?? []).filter((c) =>
@@ -259,8 +279,10 @@ export function SummaryPage() {
   const [job, setJob] = useState<SummaryJob | null>(null)
   /** 生成中 / 刚生成完的 job id：存到本机，刷新后还能接着看进度或结果 */
   const [jobId, setJobId] = useState(restored?.jobId ?? '')
-  /** 当前打开的这份报告：id 用来保存，md 是它的内容 */
-  const [current, setCurrent] = useState<{ id: string; md: string } | null>(restored?.report ?? null)
+  /** 当前打开的这份报告：id 用来保存，md 是它的内容，from / to 是它覆盖的日期（标题用） */
+  const [current, setCurrent] = useState<{ id: string; md: string; from: string; to: string } | null>(
+    restored?.report ?? null,
+  )
   const [mode, setMode] = useState<ReportMode>(restored?.mode ?? 'preview')
   const [reports, setReports] = useState<SummaryRecord[]>([])
   const [error, setError] = useState('')
@@ -269,7 +291,9 @@ export function SummaryPage() {
   const [pollTick, setPollTick] = useState(0)
   /** 存档里那份：几个 effect 各自只改自己负责的字段，报告正文可能是还没保存的草稿 */
   const saved = useRef<SummaryPageState>({
-    day,
+    day: win.toDay,
+    from: win.fromDay,
+    range,
     picks: restored?.picks ?? [],
     report: restored?.report ?? null,
     mode: restored?.mode ?? 'preview',
@@ -305,10 +329,10 @@ export function SummaryPage() {
     setProjectDraft(projectOptions[0]?.value ?? '')
   }, [projectOptions, projectDraft])
 
-  /** 该项目今天有执行的对话（和生成时服务端筛的是同一个判定） */
-  const todayTasks = (projectId: string) =>
+  /** 该项目范围内有执行的对话（和生成时服务端筛的是同一个判定） */
+  const rangeTasks = (projectId: string) =>
     tasks
-      .filter((x) => x.projectId === projectId && activeOnDay(x, day))
+      .filter((x) => x.projectId === projectId && activeInRange(x, win))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
       .map((x) => ({ id: x.id, title: x.title || t('未命名对话') }))
 
@@ -330,7 +354,7 @@ export function SummaryPage() {
   const draft = (md: string) => {
     const report = saved.current.report
     if (!report) return
-    saved.current = { ...saved.current, report: { id: report.id, md } }
+    saved.current = { ...saved.current, report: { ...report, md } }
     if (draftTimer.current) clearTimeout(draftTimer.current)
     draftTimer.current = setTimeout(() => {
       draftTimer.current = null
@@ -339,11 +363,12 @@ export function SummaryPage() {
   }
 
   // 选择、tab、CLI、生成中的 job 变了就写回：切页面 / 刷新后按这份恢复。
-  // 当前报告不在这里写：草稿已经比 current 新，写成 current 会把刚输入的内容退回去
+  // 当前报告不在这里写：草稿已经比 current 新，写成 current 会把刚输入的内容退回去。
+  // 窗口的 from / day 只在恢复和换范围时写：页面开着跨过午夜时不自动认到新的一天，免得旧报告被当成今天的
   useEffect(() => {
-    saved.current = { ...saved.current, picks, mode, jobId, cli }
+    saved.current = { ...saved.current, picks, mode, jobId, cli, range }
     saveSummaryPage(saved.current)
-  }, [picks, mode, jobId, cli])
+  }, [picks, mode, jobId, cli, range])
 
   // 换成另一份报告（刚生成完、点开最近的一份）才写 report。
   // 同一份不再写：存档里的正文是编辑框的草稿，可能比 current.md 新（自动保存还没回写），
@@ -405,7 +430,7 @@ export function SummaryPage() {
           .then((r) => {
             setReports(r.reports)
             const rec = r.reports.find((x) => x.id === j.reportId)
-            if (rec) setCurrent({ id: rec.id, md: rec.md })
+            if (rec) setCurrent({ id: rec.id, md: rec.md, from: rec.from || rec.day, to: rec.to || rec.day })
           })
           .catch(() => {})
       })
@@ -437,7 +462,8 @@ export function SummaryPage() {
         pollFails.current = 0
         setJob(next)
         if (next.status === 'done' && next.reportId) {
-          setCurrent({ id: next.reportId, md: next.md })
+          // job 上带着开始时的范围：生成期间页面换了范围，报告标题也按它自己那一段显示
+          setCurrent({ id: next.reportId, md: next.md, from: next.from ?? '', to: next.to ?? '' })
           setError('')
           void api
             .summary()
@@ -477,6 +503,45 @@ export function SummaryPage() {
       prev.map((x) => (x.projectId === projectId ? { ...x, taskIds: x.taskIds.filter((id) => id !== taskId) } : x)),
     )
 
+  /**
+   * 换范围：用同一个 forRange 校正存档——窗口变了就只留项目，清空当前报告和生成中的 job，
+   * 免得上一段的报告被当成这一段的（「最近的报告」里还能点开旧报告）。
+   */
+  const applyRange = (next: SummaryRange) => {
+    const nextWin = rangeWindow(next, new Date())
+    const s = forRange({ ...saved.current, range: next }, nextWin)
+    setRange(next)
+    setPicks(s.picks)
+    setCurrent(s.report)
+    setJobId(s.jobId)
+    if (!s.jobId) setJob(null)
+    setError('')
+    saved.current = s
+    saveSummaryPage(s)
+  }
+
+  const pickRange = (id: SummaryRangeId) => {
+    // 自选范围第一次打开时预填最近 7 天，用户直接改日期就行
+    const last7 = rangeWindow({ id: 'last7', from: '', to: '' }, new Date())
+    applyRange(
+      id === 'custom'
+        ? { id, from: range.from || last7.fromDay, to: range.to || last7.toDay }
+        : { id, from: '', to: '' },
+    )
+  }
+
+  const setCustomDay = (key: 'from' | 'to', value: string) => {
+    const next = { ...range, [key]: value }
+    // 起止没填全时保持旧窗口（不把范围改成今天），填全了再应用
+    if (!next.from || !next.to) {
+      setRange(next)
+      return
+    }
+    // 起止写反时先换回来：输入框、旁边显示的区间和实际统计的范围保持一致
+    const [from, to] = next.from <= next.to ? [next.from, next.to] : [next.to, next.from]
+    applyRange({ ...next, from, to })
+  }
+
   const start = async () => {
     if (!picks.length || !cli) return
     setError('')
@@ -490,6 +555,7 @@ export function SummaryPage() {
         cli,
         model: '',
         effort: '',
+        range,
       })
       setJob(next)
       setJobId(next.id)
@@ -515,16 +581,55 @@ export function SummaryPage() {
   }
 
   const lastThought = job?.thinking?.trim().split('\n').filter(Boolean).at(-1)
+  /** 窗口的具体日期：单日就写一天，多天写起止 */
+  const scopeDays = win.fromDay === win.toDay ? win.fromDay : t('{from} 至 {to}', { from: win.fromDay, to: win.toDay })
 
   return (
     <PageFrame
       title={t('工作总结')}
       intro={t(
-        '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），把今天（{day}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
-        { day },
+        '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是{scope}全部），把{scope}（{days}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
+        { scope, days: scopeDays },
       )}
     >
       <section className="rounded-xl border bg-panel">
+        {/* 时间范围：默认今天，和改造前一样；换范围会按新窗口重新挑对话（旧报告和生成不会串过来） */}
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+          <span className="text-[0.8125rem] font-medium">{t('范围')}</span>
+          <Segmented
+            label={t('总结范围')}
+            value={range.id}
+            onChange={pickRange}
+            options={[
+              { id: 'today', label: t('今天') },
+              { id: 'yesterday', label: t('昨天') },
+              { id: 'last7', label: t('近 7 天') },
+              { id: 'custom', label: t('自定义') },
+            ]}
+          />
+          {range.id === 'custom' && (
+            <>
+              <Input
+                type="date"
+                aria-label={t('开始日期')}
+                value={range.from}
+                max={range.to || undefined}
+                onChange={(e) => setCustomDay('from', e.target.value)}
+                className="h-8 w-[150px]"
+              />
+              <span className="text-xs text-subtle">{t('至')}</span>
+              <Input
+                type="date"
+                aria-label={t('结束日期')}
+                value={range.to}
+                min={range.from || undefined}
+                onChange={(e) => setCustomDay('to', e.target.value)}
+                className="h-8 w-[150px]"
+              />
+            </>
+          )}
+          <span className="text-xs text-subtle">{scopeDays}</span>
+        </div>
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
           <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
           <Select
@@ -581,7 +686,8 @@ export function SummaryPage() {
                 <ProjectPickRow
                   key={pick.projectId}
                   name={project.name}
-                  tasks={todayTasks(pick.projectId)}
+                  scope={scope}
+                  tasks={rangeTasks(pick.projectId)}
                   picked={pick.taskIds}
                   disabled={running}
                   onAddTask={(id) => addTask(pick.projectId, id)}
@@ -602,7 +708,7 @@ export function SummaryPage() {
               ? t('正在思考：{text}', { text: lastThought })
               : job.tools.length
                 ? t('正在查看：{files}', { files: job.tools.join('、') })
-                : t('正在分析今天执行过的对话…')}
+                : t('正在分析{scope}执行过的对话…', { scope })}
           </span>
           {job.outChars > 0 && <span className="shrink-0">{t('已写 {n} 字', { n: job.outChars })}</span>}
         </div>
@@ -617,7 +723,7 @@ export function SummaryPage() {
 
       {stopped && <p className="rounded-xl border bg-panel px-4 py-3 text-xs text-subtle">{t('已停止生成')}</p>}
 
-      {/* 用户选了、但今天没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
+      {/* 用户选了、但这段范围里没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
       {job?.status === 'done' && !!job.skipped?.length && (
         <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -657,6 +763,7 @@ export function SummaryPage() {
           key={current.id}
           id={current.id}
           md={current.md}
+          title={reportWindowLabel(current.from, current.to, now)}
           mode={mode}
           onMode={setMode}
           onCopy={copy}
@@ -675,7 +782,7 @@ export function SummaryPage() {
                   type="button"
                   onClick={() => {
                     setError('')
-                    setCurrent({ id: r.id, md: r.md })
+                    setCurrent({ id: r.id, md: r.md, from: r.from || r.day, to: r.to || r.day })
                   }}
                   className={cn(
                     'flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left hover:bg-sel',
@@ -685,7 +792,9 @@ export function SummaryPage() {
                   <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
                     {r.projectNames.join('、') || reportTitle(r.md, r.day)}
                   </span>
-                  <span className="shrink-0 text-xs text-subtle">{r.day}</span>
+                  <span className="shrink-0 text-xs text-subtle">
+                    {r.from && r.to && r.from !== r.to ? t('{from} 至 {to}', { from: r.from, to: r.to }) : r.day}
+                  </span>
                 </button>
               </li>
             ))}
