@@ -75,8 +75,9 @@ type TestStep = {
 
 - **匹配算法只有一份**：`shared/test-steps.ts` 的 `matchesGlob` / `stepApplies(step, changedFiles)`。
   界面的输入解析（`parseGlobs`）、交给 Agent 的提示词（`appliesToText`）、单测都读它，不在前端或别的地方再写一套 glob 判断。
-  按清单筛哪些步骤要跑仍由 Agent 执行（执行流程里没有自动跳过的地方），但「要跑哪几个单测文件 / 界面分片」
-  由 `scripts/changed-tests.mjs` 定位（见下面「改动 → 增量测试」），子对话不用整套照搬。
+  真正要跑哪几条现在由服务端算好：`pickSteps(steps, changedFiles)`（提示词用 `pickStepsText` 注入「本轮该跑的步骤 + 命令」，
+  父对话测试队列也按子对话的改动筛）。「要跑哪几个单测文件 / 界面分片」仍由 `scripts/changed-tests.mjs` 定位
+  （见下面「改动 → 增量测试」），两者各管一层、互不调用。
 - **glob 语法**：相对项目根的路径，支持 `**`（跨目录）、`*`、`?`；`**/*.cpp` 也认仓库根下的 `a.cpp`；
   没写通配符的写法按「精确命中或目录前缀」算（`web/src` 和 `web/` 都等价于 `web/src/**`、`web/**`）——
   项目教训里习惯写 `src/payment/**` / `web/src` 这种，照抄进来不会变成永远匹配不上的规则。
@@ -118,7 +119,7 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 | --------- | ---------------------------------------------------------- | ---------------------------------- |
 | `always`  | 每次改动都跑，不看 `appliesTo`                             | 类型检查、lint、语法检查           |
 | `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 表示总是跑 | 相关单测、编译、构建、界面检查分片 |
-| `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话在全量里跑     | 全量单测、全量界面检查、端到端测试 |
+| `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就跑全部） | 全量单测、全量界面检查、端到端测试 |
 
 **和原来的 `runInParent` 合并了**：勾「禁止子对话执行」就是 `scope: 'parent'`，不再保留两个字段。老数据解析时
 `migrateTestStep` 按原语义换算：`runInParent: true` → `parent`；命令明显是跑全量的（`test:unit`、`test:e2e`、`ui-check`、playwright 这类）→ `parent`，
@@ -168,6 +169,15 @@ appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会�
   随任务持久化，重启后收尾总结还能用。耗时只从后台命令的真实起止时间取，不靠 Agent 自报：父对话跑的记 `by: 'parent'`；
   子对话自己跑的按命令匹配步骤（`matchTestStep`，命令原文或按环境拼出的整行都认），匹配不上就不记。
   同一步骤 + 同一执行方只留最后一次（`mergeTestRun`），`tries` 记跑了几次——收尾总结按「最后一次」算，不把每次失败都列一行。
+  对话页读同一份数据（`web/src/components/tasks/TestRuns.tsx` 挂在输入框下的信息条，纯逻辑是 `testRunSummary`）：
+  一行一条，显示步骤名、谁跑的、结果（通过 / 失败 / 未记录）、真实耗时、第几次尝试；没有 `at` 的旧数据写「未记录」，
+  不当成失败。只展示已有数据，不在界面里另做采集或推算。
+- **按改动筛**：合回后先用子对话实际改的文件跑 `pickSteps`，只把命中的 `parent` 步骤排进队列；
+  一条都没命中（改动映射不到任何步骤）时照旧跑全部启用的 `parent` 步骤，并在日志里留一条——
+  静默少跑比多跑危险，和提示词里「映射不出来跑全部」同一个口径。
+- **提示词里直接给结论**：对话的验证段（`verifyBlock`）在拿到 `EngineHost.verify.changedFiles`（任务的实际改动）时，
+  附上 `pickStepsText` 的「本轮该跑的测试步骤」：改动文件、每条要跑的步骤和按环境拼好的命令行、按改动跳过的步骤。
+  不再是只写一条规则让 Agent 自己判断；父对话的 `parent` 步骤在子对话侧仍标「父对话跑，你不要跑」。
   回传消息和收尾总结的写法是 `testRunLines` / `TEST_TIME_SUMMARY_RULE`：步骤名、谁跑的、结果、耗时，一行一步，没记录的写「未记录」。
 - **重启后重新排队**：批次记在任务上（`wrapRequest.state = 'testing'`），内存队列随进程消失；面板启动时 `recoverParentTests`
   把它们重新排队、从第一步重跑（比丢掉安全，测试本身可重复）。步骤已经被删掉时直接收尾。
@@ -253,6 +263,8 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 - 大改动跑完整步骤，或者走带测试验收的工作流。工作流里的测试验收节点不受这个开关影响。
 - 两种大小都先按 `appliesTo` 筛掉不适用的步骤（「先看改动再决定跑哪些」）：小改动是「在适用的步骤里只跑 `quick` 的」，
   不是「直接跳过编译类步骤」；跳过的都要写清原因。
+- 服务端拿到任务的实际改动时，会把「本轮该跑的步骤 + 命令」直接注入提示词（`pickSteps` / `pickStepsText`，
+  数据来自 `EngineHost.verify.changedFiles`）；规则段保留是为了说明为什么这么筛、跳过的怎么写，不是让 Agent 再筛一遍。
 - 独立分支的子对话调用 `submit_build` 时传 `small: true`，合并编译只跑同时标了 `merge` 和 `quick` 的步骤
   （`mergeStepsFor`）；一条都没有时照常跑全部合并步骤，不会因为没配过而少编译。结果里写明跳过了哪些。
 - 关掉开关时提示改成「每次都跑完整步骤」，`small` 也不再生效。
@@ -379,7 +391,7 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 | `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                        |
 | `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                        |
 | `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                           |
-| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计 |
+| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |
 | `scripts/changed-tests.mjs`                             | 改动清单 → 要跑的单测文件和界面检查分片（CLI）                                                 |
 | `scripts/lib/changed-tests.mjs`                         | 定位规则（同名测试 / 反向 import / 同目录回退 / 分片映射），纯逻辑、有单测                     |
 | `scripts/ui/covers.mjs`                                 | 界面检查分片覆盖的源码前缀表                                                                   |

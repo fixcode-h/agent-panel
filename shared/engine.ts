@@ -631,6 +631,11 @@ export interface EngineHost {
      * 父对话是 parent（面板自动跑、结果直接回传子对话）。只有 Git 项目、这些步骤真的生效时才传
      */
     parentRun?: 'child' | 'parent'
+    /**
+     * 这次任务实际改了哪些文件（服务端从 git 改动统计来）：有它就在提示词里直接给出「本轮该跑哪几条 + 命令」，
+     * 不再只给规则让 Agent 自己筛
+     */
+    changedFiles?: string[]
   }
   /**
    * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
@@ -1230,6 +1235,7 @@ function verifyPart(host: EngineHost) {
     wslDistro: v.wslDistro,
     scaled: v.scaled,
     parentRun: v.parentRun,
+    changedFiles: v.changedFiles,
   })
   // 收尾总结里的耗时统计：只对独立分支的子对话提，它才是写收尾总结的那个。
   // 项目配了测试步骤就要求（不限于范围为 parent 的）：它自己跑的那几步也有后台命令的真实耗时
