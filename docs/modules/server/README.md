@@ -35,6 +35,17 @@
 
 `shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
+## 打开一个对话页时服务端重复付的代价（2026-10-26 实测）
+
+单次打开对话页会打到下面几组接口，它们合起来就是「打开慢」的服务端那一半（热数据、本机 loopback，均已复测）：
+
+- `current()`（`server/tasks.ts:492`）→ `store.getFull`（`server/task-store.ts:448`）每次都 `readJson` + `TaskMessage.array().safeParse` 整份 `.messages.json`。2.0MB / 611 条的那份实测 91–133ms，而 `POST /presence`（`server/tasks.ts:4311`）和 `POST /seen`（`server/tasks.ts:4321`）都走这条路径：presence 只是记内存里的 viewer，seen 只需要 `turnSeenAt`，两者都把整份对话读+校验一遍，seen 还把完整任务 2467KB 原样回给前端（前端只拿它做 apply）。
+- `GET /:id/events`（`server/tasks.ts:3914`）建连后先发一次 `full` 事件：实测 2726KB，与上面那次 `GET /:id` 是同一份数据；前端 `useTaskStream` 不信 `running`，只要打开对话页就连。
+- `GET /:id/children`（`server/tasks.ts:3662`）：每个子对话一次 `childWorktree` → `worktreeStatus`（4 条 git），首跑实测 1131ms，之后靠 `worktreeSeen` 的 10s / 60s TTL 降到 2–10ms；前端每 4 秒刷一次，所以子对话多时等于持续跑 git。
+- 静态文件走 `serveStatic`（`server/index.ts:1053`）且没有 gzip：首屏 2506KB 未压缩、`fonts.css` 448KB 未压缩。`:1055` 的 SPA fallback 会把任何找不到的 `/assets/*` 都回 `index.html`（200 + HTML），排查「资源 404」时容易看错，用 content-type 判。
+
+优化优先级（按收益/风险）：seen 只回 delta（或直接 204）→ presence 用 `getMeta` 而不是 `current` → SSE 支持「我已经有到 X 版本」直接发 patch → children 把 git 结果缓存拉长或改成按需 → 给静态资源加压缩。
+
 ## 数据落盘与损坏恢复
 
 用户数据都是数据目录下的 JSON 文件，写入集中在 `server/store.ts` 的 `writeJsonAtomic`，任务记录和对话文件在 `server/task-store.ts`。断电、强制重启后「文件长度对得上、内容全是 `0x00`」是这里必须防住的失败模式（起因见 [bugs/restart-lost-conversations.md](bugs/restart-lost-conversations.md)）。

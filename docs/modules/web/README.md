@@ -80,6 +80,18 @@
 
 React 19、Vite、Tailwind CSS v4、Radix UI、`@xyflow/react`、lucide 图标；`shared/` 通过别名 `@shared` 引用。
 
+## 打开对话页的加载链路（2026-10-26 实测）
+
+「对话页加载慢」先按下面这张表分段量，**不要先怀疑数据量或磁盘**：这台机器（i9-14900KF / 64GB / 三星 990 PRO）磁盘顺序读 3.2GB/s，最大的 `.messages.json` 1.5MB（611 条消息、517 次工具调用）读盘 9ms + `JSON.parse` 5ms，`GET /api/tasks` 79KB / 2ms。真实浏览器（headless chromium 1600×950，访问 `127.0.0.1:8787`）实测：首页 ready 350ms、资源 71 个 / 4.1MB；一条 2.0MB 的对话页 ready 1.6–2.4s、资源 114–119 个 / **总传输 9.4–10.2MB**。
+
+- 首屏 JS：`dist/index.html` 里 `modulepreload` 一共 30 个文件 2506KB（gzip 777KB），最大的是 React 那份 756KB 和入口 689KB；服务端 `serveStatic` 没有 gzip（`server/index.ts:1053`），所以本机也是按 2.5MB 明文传。不常用页面已经是 `lazy`（`web/src/App.tsx:35`），但 `ProjectsPage` / `HomePage` / `ChatPage` 仍然是同步 import，别把大库再塞进它们。
+- 字体：`fonts.css` 里 411 个 `@font-face`（Noto Sans SC 303 片、Noto Serif SC 101 片），实测一次打开对话页拉 35–50 个 woff2、1.1–1.6MB，到 2.4s 才收完。它由 `web/src/main.tsx` 动态 import，不阻塞首屏，但会和 `/children`、附件图抢连接。
+- 同一份对话在一次打开里传了三遍：`GET /api/tasks/:id` 2467KB（91ms）+ `POST /api/tasks/:id/seen` **又返回完整任务** 2467KB（133ms）+ SSE 的 `full` 事件 2726KB。`seen` 前端只用到 `turnSeenAt`（`web/src/lib/api.ts` → `TaskView.tsx` 的 apply），这三份都是同一个数组的重复序列化。
+- 最慢的单个请求是 `GET /api/tasks/:id/children`：首跑 1131ms（`server/tasks.ts:3662` 里每个子对话一次 `worktreeStatus`，4 条 git，gate 并发 4），之后按 10s / 60s 的 TTL 命中缓存降到 2–10ms；`TaskView.tsx:709` 每 4 秒刷一次这个接口。
+- 对话里的附件图（`/api/uploads/raw`）带 `cache-control: private, max-age=86400`，首次打开要下 10 张（约 500KB）、每个 ~1.1s（被 6 连接上限和上面那些请求排队），第二次打开不再重下。
+
+复核方式（只读，不落工作区）：`curl -s -o /dev/null -w '%{time_total} %{size_download}' http://127.0.0.1:8787/api/tasks/<id>` 量单个接口；用 playwright 打开 `http://127.0.0.1:8787/#/projects/<项目>/<任务>`，等 `[aria-label="AI 有问题时问我"]` 出现算 ready，再读 `performance.getEntriesByType('resource')` 分类统计（脚本写在系统临时目录，不要提交）。注意打开对话页只写内存里的 presence，不改用户数据文件。
+
 ## 回归验证
 
 - `npm run typecheck`：类型检查 + 漏翻检查（界面文案用 `t('中文原文')`，英文写进 `shared/locales/en/`）。
