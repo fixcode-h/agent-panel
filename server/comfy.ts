@@ -21,6 +21,7 @@ import {
   comfyQueueEntry,
   comfyQueueLists,
   fillWorkflow,
+  imageToImage,
   importableWorkflow,
   inpaintWorkflow,
   localFile,
@@ -43,6 +44,7 @@ import {
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { localPrompts } from '../shared/design.ts'
+import { mossLayoutJson, type MossLayoutItem, type MossLayoutSize } from '../shared/moss.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
@@ -53,6 +55,7 @@ import { registerFixTopic } from './fix.ts'
 import { appDir } from './update.ts'
 import { templateApi } from './comfy-templates.ts'
 import type { ComfyNodeInfo, TemplateAsset } from '../shared/comfy-templates.ts'
+import { ComfyChain, chainGraph, chainNeedsImage, chainPrefix, checkChain } from '../shared/comfy-chain.ts'
 
 /**
  * 本机生图：在软件目录的 comfyui/ 下装 ComfyUI（源码 + 独立的 Python 虚拟环境），按需启动，
@@ -504,6 +507,28 @@ async function saveWorkflows(fn: (list: ComfyWorkflow[]) => ComfyWorkflow[]) {
   await next
 }
 
+/** 工作流链存在数据目录；和单个工作流分开一个文件，读写互不影响 */
+const CHAINS_FILE = () => path.join(DATA_DIR, 'comfy-chains.json')
+export async function userChains(): Promise<ComfyChain[]> {
+  const raw = await readJson(CHAINS_FILE())
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((x) => {
+    const p = ComfyChain.safeParse(x)
+    return p.success ? [p.data] : []
+  })
+}
+let chainWriting: Promise<unknown> = Promise.resolve()
+async function saveChains(fn: (list: ComfyChain[]) => ComfyChain[]): Promise<ComfyChain[]> {
+  const next = chainWriting.then(async () => {
+    const list = fn(await userChains())
+    await writeJsonAtomic(CHAINS_FILE(), list)
+    return list
+  })
+  // 写入串行化：失败不能堵住后面的写
+  chainWriting = next.catch(() => {})
+  return next as Promise<ComfyChain[]>
+}
+
 /**
  * 工作流能不能跑：模板带进来的依赖文件都在，或关联的内置模型下载好了
  * （用已有的 ComfyUI 时不检查，模型由用户自己放）
@@ -536,6 +561,8 @@ export async function localGenerate(
     width: number
     height: number
     count: number
+    /** 布局：设计稿像素的项和设计稿尺寸；工作流用 {{layout}} 时按实际出图尺寸换算后注入 */
+    layout?: { size: MossLayoutSize; items: MossLayoutItem[] }
     /** 局部重绘：原图和蒙版图（都是 PNG），只重画蒙版涂过的区域 */
     inpaint?: { image: Buffer; mask: Buffer }
     onImage: (b: Buffer) => void
@@ -546,7 +573,16 @@ export async function localGenerate(
   const list = await allWorkflows()
   const ready = new Set<string>()
   for (const w of list) if (await workflowReady(w)) ready.add(w.id)
-  const wf = pickWorkflow(list, o.workflow, o.kind, o.use, (w) => ready.has(w.id))
+  // 有布局时优先用能接 {{layout}} 的工作流；没有就按用途选普通的，布局不生效也不会报错
+  const wantsLayout = !!o.layout?.items.length
+  const wf = pickWorkflow(
+    list,
+    o.workflow,
+    o.kind,
+    o.use,
+    (w) => ready.has(w.id),
+    wantsLayout ? (w) => JSON.stringify(w.graph).includes('{{layout}}') : undefined,
+  )
   if (!wf)
     throw new Error(
       o.workflow === 'auto'
@@ -564,91 +600,135 @@ export async function localGenerate(
   // 局部重绘：把原图和蒙版图传给 ComfyUI，用 SetLatentNoiseMask 只重画蒙版区域
   let graph = wf.graph
   if (o.inpaint) {
-    const upload = async (data: Buffer, name: string) => {
-      const form = new FormData()
-      const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-      form.append('image', new Blob([bytes], { type: 'image/png' }), name)
-      form.append('overwrite', 'true')
-      const r = await fetch(`${url}/upload/image`, { method: 'POST', body: form, signal })
-      const body = (await r.json().catch(() => ({}))) as { name?: string; subfolder?: string; error?: string }
-      if (!r.ok || !body.name)
-        throw new Error(t('上传局部重绘的原图失败：{error}', { error: body.error ?? String(r.status) }))
-      return body.subfolder ? `${body.subfolder}/${body.name}` : body.name
-    }
     o.onProgress?.(t('正在准备局部重绘…'))
-    const image = await upload(o.inpaint.image, `panel-inpaint-${Date.now()}.png`)
-    const mask = await upload(o.inpaint.mask, `panel-mask-${Date.now()}.png`)
+    const image = await uploadImage(url, o.inpaint.image, `panel-inpaint-${Date.now()}.png`, signal)
+    const mask = await uploadImage(url, o.inpaint.mask, `panel-mask-${Date.now()}.png`, signal)
     const ip = inpaintWorkflow(graph, { image, mask })
     if (!ip) throw new Error(t('这个工作流不支持局部重绘，请换成内置工作流或整张重画'))
     graph = ip
   }
-  const workflow = markSavePrefix(
-    fillWorkflow(graph, {
-      prompt,
-      negative: p.negative,
-      ...size,
-      count: o.inpaint ? 1 : Math.min(4, Math.max(1, o.count)),
-      seed: Math.floor(Math.random() * 2 ** 48),
-    }),
-    wf.name,
-  )
-  // extra_data 会进 ComfyUI 的队列和历史：在 ComfyUI 网页里也能看出这个任务是谁、用哪个工作流提交的
-  const extra_data = {
-    agent_panel: { source: 'design', workflowId: wf.id, name: wf.name, kind: o.kind, use: o.use },
-  }
-  const res = await fetch(`${url}/prompt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, client_id: CLIENT_ID, extra_data }),
-    signal,
+  // 工作流里有 {{layout}} 才编译布局：宽高用实际出图尺寸，位置按设计稿比例换算
+  const layout =
+    o.layout?.items.length && JSON.stringify(graph).includes('{{layout}}')
+      ? mossLayoutJson(o.layout.items, { source: o.layout.size, size, caption: prompt })
+      : undefined
+  const workflow = fillWorkflow(graph, {
+    prompt,
+    negative: p.negative,
+    ...size,
+    count: o.inpaint ? 1 : Math.min(4, Math.max(1, o.count)),
+    seed: Math.floor(Math.random() * 2 ** 48),
+    layout,
   })
-  const body = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: unknown; node_errors?: unknown }
-  if (!res.ok || !body.prompt_id)
-    throw new Error(t('ComfyUI 拒绝了这次生成：{error}', { error: JSON.stringify(body.error ?? body).slice(0, 600) }))
-  const id = body.prompt_id
-  const cancel = () => {
-    void fetch(`${url}/queue`, { method: 'POST', body: JSON.stringify({ delete: [id] }) }).catch(() => {})
-    void fetch(`${url}/interrupt`, { method: 'POST' }).catch(() => {})
-  }
-  signal.addEventListener('abort', cancel, { once: true })
-  try {
-    o.onProgress?.(t('本机生成中（{name}，{w}×{h}）…', { name: wf.name, w: size.width, h: size.height }))
-    for (;;) {
-      if (signal.aborted) throw new Error(t('已停止'))
-      await new Promise((r) => setTimeout(r, 1000))
-      const h = (await fetch(`${url}/history/${id}`, { signal })
-        .then((r) => r.json())
-        .catch(() => ({}))) as Record<string, ComfyHistory>
-      const entry = h[id]
-      if (!entry) {
-        if (!(await alive(url))) throw new Error(t('ComfyUI 意外退出了：{log}', { log: comfyLog().slice(-800) }))
-        continue
+  await submitGraph(
+    {
+      url,
+      graph: workflow,
+      name: wf.name,
+      // 进 ComfyUI 的队列和历史：网页里也能看出这个任务是谁、用哪个工作流提交的
+      meta: { source: 'design', workflowId: wf.id, name: wf.name, kind: o.kind, use: o.use },
+      size,
+      onImage: o.onImage,
+      onProgress: o.onProgress,
+    },
+    signal,
+  )
+}
+
+/**
+ * 按链执行：把各段合成一张节点图，一次提交完成（中间图不落盘）。
+ * 第一段需要原图时传一张 image，由调用方上传到 ComfyUI。
+ */
+export async function localGenerateChain(
+  o: {
+    chain: ComfyChain
+    /** 第一段需要的输入图（PNG）；链的第一段不要图时可以不传 */
+    image?: Buffer
+    /** 描述：图生图这类要提示词的段用；某段自己写了 prompt 时用它自己的 */
+    prompt: string
+    negative: string
+    width: number
+    height: number
+    count: number
+    onImage: (b: Buffer) => void
+    onProgress?: (text: string) => void
+  },
+  signal: AbortSignal,
+) {
+  const list = await allWorkflows()
+  const byId = new Map(list.map((w) => [w.id, w]))
+  const steps = o.chain.steps.map((s) => ({ step: s, workflow: byId.get(s.workflowId) }))
+  const missing = steps.find((s) => !s.workflow)
+  if (missing) throw new Error(t('链里的工作流 {id} 不存在了，请重新选一下', { id: missing.step.workflowId }))
+  const ready = new Set<string>()
+  for (const w of list) if (await workflowReady(w)) ready.add(w.id)
+  const notReady = steps.find((s) => !ready.has(s.workflow!.id))
+  if (notReady)
+    throw new Error(
+      t('{name} 还没下载完，请到设置 → 本机生图里下载', {
+        name: localModel(notReady.workflow!.model)?.name ?? notReady.workflow!.model,
+      }),
+    )
+  const real = steps.map((s) => s.workflow!)
+  const problems = checkChain(real.map((w) => ({ workflow: w })))
+  if (problems.length) throw new Error(problems.join('；'))
+  if (chainNeedsImage(real.map((w) => ({ workflow: w }))) && !o.image)
+    throw new Error(t('这条链的第一段要一张原图，请先选一张'))
+
+  o.onProgress?.(t('正在启动本机生图…'))
+  const url = await startComfy()
+  // 第一段的原图传到 ComfyUI 的 input 目录
+  const image = o.image ? await uploadImage(url, o.image, `panel-chain-${Date.now()}.png`, signal) : undefined
+  const size = localSize(o.width, o.height, localModel(real[0].model)?.base ?? 1024)
+  const graph = chainGraph(
+    steps.map(({ step, workflow }) => ({
+      workflow: workflow!,
+      // 段自己的描述 → 这次传进来的描述 → 该工作流自己的说明。链名（常常是「新链」）不当提示词用
+      prompt: step.prompt || o.prompt || workflow!.description,
+      denoise: step.denoise,
+    })),
+    { image, makeImg2Img: imageToImage },
+  )
+  // 每段的描述先填进去：同一张图里各段的正面提示词可能不一样，所以按段 id 填，不整体 fill 一遍
+  const filled = fillChainPrompts(graph, steps)
+  await submitGraph(
+    {
+      url,
+      graph: fillWorkflow(filled, {
+        prompt: o.prompt,
+        negative: o.negative,
+        ...size,
+        count: Math.min(4, Math.max(1, o.count)),
+        seed: Math.floor(Math.random() * 2 ** 48),
+      }),
+      name: o.chain.name,
+      meta: { source: 'panel', chainId: o.chain.id, name: o.chain.name, steps: o.chain.steps.length },
+      onImage: o.onImage,
+      onProgress: o.onProgress,
+    },
+    signal,
+  )
+}
+
+/**
+ * 各段的提示词分别填：图生图那一段用自己写的描述，其余段用链的描述。
+ * 先按段前缀把该段的 {{prompt}} 换掉，剩下的占位符由调用方的 fillWorkflow 统一填
+ */
+function fillChainPrompts(graph: ComfyWorkflow['graph'], steps: { step: ComfyChain['steps'][number] }[]) {
+  const out = structuredClone(graph)
+  steps.forEach(({ step }, i) => {
+    if (!step.prompt) return
+    const prefix = chainPrefix(i)
+    for (const [id, node] of Object.entries(out)) {
+      if (!id.startsWith(prefix)) continue
+      for (const [k, v] of Object.entries(node.inputs ?? {})) {
+        if (typeof v !== 'string') continue
+        // 只换这一段的提示词：整串就是 {{prompt}} 时直接换，夹在文字里的也换
+        if (v.includes('{{prompt}}')) node.inputs[k] = v.replaceAll('{{prompt}}', step.prompt)
       }
-      if (entry.status?.status_str === 'error') {
-        const err = entry.status.messages?.find((x) => x[0] === 'execution_error')?.[1] as
-          | { exception_message?: string; node_type?: string }
-          | undefined
-        throw new Error(
-          t('本机生成失败：{error}', { error: `${err?.node_type ?? ''} ${err?.exception_message ?? ''}`.trim() }),
-        )
-      }
-      if (!entry.status?.completed) continue
-      const images = Object.values(entry.outputs ?? {}).flatMap((x) => x.images ?? [])
-      for (const img of images) {
-        const q = new URLSearchParams({
-          filename: img.filename,
-          subfolder: img.subfolder ?? '',
-          type: img.type ?? 'output',
-        })
-        const r = await fetch(`${url}/view?${q}`, { signal })
-        if (r.ok) o.onImage(Buffer.from(await r.arrayBuffer()))
-      }
-      if (!images.length) throw new Error(t('本机生成没有输出图片'))
-      return
     }
-  } finally {
-    signal.removeEventListener('abort', cancel)
-  }
+  })
+  return out
 }
 
 /** 进度事件：prompt_id → 最近一次进的步数；只有面板的 WebSocket 连着时才有 */
@@ -779,6 +859,102 @@ interface ComfyHistory {
   outputs?: Record<string, { images?: { filename: string; subfolder?: string; type?: string }[] }>
 }
 
+/** 把一张图传到 ComfyUI 的 input 目录，返回 LoadImage 要写的文件名 */
+async function uploadImage(url: string, data: Buffer, name: string, signal: AbortSignal): Promise<string> {
+  const form = new FormData()
+  const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+  form.append('image', new Blob([bytes], { type: 'image/png' }), name)
+  form.append('overwrite', 'true')
+  const r = await fetch(`${url}/upload/image`, { method: 'POST', body: form, signal })
+  const body = (await r.json().catch(() => ({}))) as { name?: string; subfolder?: string; error?: string }
+  if (!r.ok || !body.name)
+    throw new Error(t('上传图片到 ComfyUI 失败：{error}', { error: body.error ?? String(r.status) }))
+  return body.subfolder ? `${body.subfolder}/${body.name}` : body.name
+}
+
+/**
+ * 把节点图提交给 ComfyUI，轮询到跑完，取回输出的图片交给 onImage。
+ * 单工作流和链都走这里：提交、取消、进度、取图的逻辑只有一份
+ */
+async function submitGraph(
+  o: {
+    url: string
+    graph: ComfyWorkflow['graph']
+    /** 队列和文件名里显示的来源（工作流名或链名） */
+    name: string
+    /** 队列里的来源信息，ComfyUI 网页里也能看出这个任务是谁提交的 */
+    meta: Record<string, unknown>
+    /** 进度文案里的尺寸 */
+    size?: { width: number; height: number }
+    onImage: (b: Buffer) => void
+    onProgress?: (text: string) => void
+  },
+  signal: AbortSignal,
+) {
+  const { url } = o
+  const res = await fetch(`${url}/prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: markSavePrefix(o.graph, o.name),
+      client_id: CLIENT_ID,
+      extra_data: { agent_panel: o.meta },
+    }),
+    signal,
+  })
+  const body = (await res.json().catch(() => ({}))) as { prompt_id?: string; error?: unknown; node_errors?: unknown }
+  if (!res.ok || !body.prompt_id)
+    throw new Error(t('ComfyUI 拒绝了这次生成：{error}', { error: JSON.stringify(body.error ?? body).slice(0, 600) }))
+  const id = body.prompt_id
+  const cancel = () => {
+    void fetch(`${url}/queue`, { method: 'POST', body: JSON.stringify({ delete: [id] }) }).catch(() => {})
+    void fetch(`${url}/interrupt`, { method: 'POST' }).catch(() => {})
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  try {
+    o.onProgress?.(
+      o.size
+        ? t('本机生成中（{name}，{w}×{h}）…', { name: o.name, w: o.size.width, h: o.size.height })
+        : t('本机生成中（{name}）…', { name: o.name }),
+    )
+    for (;;) {
+      if (signal.aborted) throw new Error(t('已停止'))
+      await new Promise((r) => setTimeout(r, 1000))
+      const h = (await fetch(`${url}/history/${id}`, { signal })
+        .then((r) => r.json())
+        .catch(() => ({}))) as Record<string, ComfyHistory>
+      const entry = h[id]
+      if (!entry) {
+        if (!(await alive(url))) throw new Error(t('ComfyUI 意外退出了：{log}', { log: comfyLog().slice(-800) }))
+        continue
+      }
+      if (entry.status?.status_str === 'error') {
+        const err = entry.status.messages?.find((x) => x[0] === 'execution_error')?.[1] as
+          | { exception_message?: string; node_type?: string }
+          | undefined
+        throw new Error(
+          t('本机生成失败：{error}', { error: `${err?.node_type ?? ''} ${err?.exception_message ?? ''}`.trim() }),
+        )
+      }
+      if (!entry.status?.completed) continue
+      const images = Object.values(entry.outputs ?? {}).flatMap((x) => x.images ?? [])
+      for (const img of images) {
+        const q = new URLSearchParams({
+          filename: img.filename,
+          subfolder: img.subfolder ?? '',
+          type: img.type ?? 'output',
+        })
+        const r = await fetch(`${url}/view?${q}`, { signal })
+        if (r.ok) o.onImage(Buffer.from(await r.arrayBuffer()))
+      }
+      if (!images.length) throw new Error(t('本机生成没有输出图片'))
+      return
+    }
+  } finally {
+    signal.removeEventListener('abort', cancel)
+  }
+}
+
 /** ComfyUI 里装了哪些节点（在跑时才拿得到），AI 写工作流和检查时用 */
 async function nodeTypes(): Promise<Map<string, unknown> | undefined> {
   const url = await baseUrl()
@@ -842,6 +1018,7 @@ ${input.instruction}
 格式要求：
 - 输出 ComfyUI 的接口格式（API format）JSON：{ "节点id": { "class_type": "...", "inputs": { ... } } }，连线写成 ["节点id", 输出序号]。
 - 参数用占位符：正向描述写 "{{prompt}}"，反向描述写 "{{negative}}"（可以在前后加固定的英文要求），宽、高、张数、随机种子分别写成 "{{width}}"、"{{height}}"、"{{count}}"、"{{seed}}"（整个值就是占位符）。
+- 要按坐标摆放文字和元素的工作流（例如 MOSS-Image）把正向描述写成 "{{layout}}"：生成时传入布局 JSON，没有布局时自动回退成描述。
 - 必须有 SaveImage 节点输出图片。
 - 只用下面列出的节点和已经下载的模型文件${info ? '' : '（ComfyUI 没在运行，拿不到完整的节点列表；只用 ComfyUI 自带的核心节点）'}。
 - 先用一两句话说明你的思路和改动，再给一个 \`\`\`json 代码块，里面是：{ "name": "工作流名称", "use": "icon|button|panel|background|concept|illustration|any 之一", "model": "用到的内置模型 id（${LOCAL_MODELS.map((m) => m.id).join('、')}，用别的模型留空）", "description": "一句话说明用在哪里", "extra": "加在描述后面的英文要求，可以为空", "graph": { ... } }
@@ -963,6 +1140,67 @@ export function comfyApi() {
   })
   // 面板 → ComfyUI：写进它的 userdata/workflows，在 ComfyUI 网页的工作流侧栏里打开
   routes.post('/workflows/:id/import', (c) => wrap(() => importWorkflowToComfy(c.req.param('id')))(c))
+
+  // 工作流链：列表、保存、删除、试跑（用一张上传的原图跑一遍，看输出）
+  routes.get('/chains', async (c) => {
+    const [chains, list] = await Promise.all([userChains(), allWorkflows()])
+    const ready: string[] = []
+    for (const w of list) if (await workflowReady(w)) ready.push(w.id)
+    return c.json({ list: chains, workflows: list, ready })
+  })
+  routes.put('/chains/:id', async (c) => {
+    const id = c.req.param('id')
+    const p = ComfyChain.safeParse({ ...(await c.req.json()), id, updatedAt: new Date().toISOString() })
+    if (!p.success)
+      return c.json({ error: p.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('；') }, 400)
+    // 保存前就检查一遍：指到不存在的工作流、接不上的段都不要存进去
+    const byId = new Map((await allWorkflows()).map((w) => [w.id, w]))
+    const steps = p.data.steps.map((s) => ({ workflow: byId.get(s.workflowId) }))
+    const missing = steps.find((s) => !s.workflow)
+    if (missing) return c.json({ error: t('链里的工作流不存在，请重新选一下') }, 400)
+    const problems = checkChain(steps.map((s) => ({ workflow: s.workflow! })))
+    if (problems.length) return c.json({ error: problems.join('；') }, 400)
+    const saved = await saveChains((l) =>
+      l.some((x) => x.id === id) ? l.map((x) => (x.id === id ? p.data : x)) : [...l, p.data],
+    )
+    return c.json({ chain: p.data, list: saved })
+  })
+  routes.delete('/chains/:id', async (c) => {
+    const list = await saveChains((l) => l.filter((x) => x.id !== c.req.param('id')))
+    return c.json({ list })
+  })
+  /** 试跑：body 里是链 + 一张原图（base64），跑完直接把图片返回给界面看 */
+  routes.post('/chains/:id/run', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      chain?: unknown
+      image?: string
+      prompt?: string
+    }
+    const p = ComfyChain.safeParse(body.chain)
+    if (!p.success)
+      return c.json({ error: t('链的内容不对：{error}', { error: p.error.issues[0]?.message ?? '' }) }, 400)
+    const image = body.image ? Buffer.from(body.image.replace(/^data:[^,]*,/, ''), 'base64') : undefined
+    const images: Buffer[] = []
+    try {
+      await localGenerateChain(
+        {
+          chain: p.data,
+          image,
+          // 没填描述时留空：各段用自己工作流的说明（见 localGenerateChain），链名不进图
+          prompt: body.prompt?.trim() ?? '',
+          negative: '',
+          width: 1024,
+          height: 1024,
+          count: 1,
+          onImage: (b) => images.push(b),
+        },
+        c.req.raw.signal,
+      )
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 400)
+    }
+    return c.json({ images: images.map((b) => `data:image/png;base64,${b.toString('base64')}`) })
+  })
   routes.post('/workflows/assist', async (c) => {
     const body = (await c.req.json()) as { kind?: string; instruction?: string; base?: unknown }
     const base = body.base ? ComfyWorkflow.safeParse(body.base) : undefined

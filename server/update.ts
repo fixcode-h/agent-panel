@@ -256,9 +256,10 @@ export function updateApi(deps: {
   async function releases(refresh: boolean): Promise<AppRelease[]> {
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
     if (!refresh && cache && Date.now() - cache.at < CHECK_EVERY) return cache.list
+    // 用 netFetch 自己的超时：它超时后要能换代理重试，AbortSignal.timeout 一旦触发就再也发不出请求
     const res = await netFetch(`${API()}?per_page=30`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' },
-      signal: AbortSignal.timeout(15_000),
+      timeoutMs: 15_000,
     })
     if (!res.ok)
       throw new Error(
@@ -320,7 +321,7 @@ export function updateApi(deps: {
       // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装。早期的包没有这个文件，跳过
       if (rel.sumsUrl) {
         job.phase = t('校验中')
-        const sums = await netFetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' } })
+        const sums = await netFetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' }, timeoutMs: 15_000 })
         if (!sums.ok) throw new Error(t('下载校验文件失败：{status}', { status: sums.status }))
         const name = decodeURIComponent(new URL(rel.tarUrl).pathname.split('/').pop() ?? '')
         const want = (await sums.text())
@@ -600,6 +601,8 @@ export function restartProcess(close: () => void) {
     cwd: process.cwd(),
     env: { ...process.env, AGENT_PANEL_RESTARTED: '1' },
     stdio: 'inherit',
+    // 面板起的进程一律不弹窗口（没有控制台时 Windows 会给新进程开一个）
+    windowsHide: true,
   })
   child.on('spawn', () => setTimeout(() => process.exit(0), 200))
   child.on('error', (e) => console.error(`重启失败：${e.message}`))

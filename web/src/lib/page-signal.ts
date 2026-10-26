@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { runUiAction } from './ui-actions'
 
 /**
  * 托盘（Windows 的 AgentPanel.exe）点图标时切到已经打开的面板，而不是每次开一个新标签页。
@@ -60,6 +61,13 @@ export function usePageSignals(onView: (view: string) => void) {
         apply()
       }, 8000)
       window.focus()
+    })
+    // 对话里的 Agent 要页面做的界面操作（见 ui-actions.ts）：不等切到前台，用户可能正看着对话
+    es.addEventListener('ui', (e) => {
+      try {
+        const s = JSON.parse((e as MessageEvent).data) as { action: string; args: Record<string, unknown> }
+        runUiAction(s.action, s.args)
+      } catch {}
     })
     window.addEventListener('focus', arrived)
     document.addEventListener('visibilitychange', arrived)

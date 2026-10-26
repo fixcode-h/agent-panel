@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Code2, Copy, ExternalLink, FolderOpen, Loader2, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { editorUrl } from '@/lib/editor-url'

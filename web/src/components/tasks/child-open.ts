@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { ToolUse } from '@shared/schema'
 import type { ChildSummary } from './child-line'
+import type { JobTarget } from './JobDialog'
 
 /**
  * 面板里的跳转，由父对话的任务页提供：
@@ -11,13 +12,19 @@ import type { ChildSummary } from './child-line'
  */
 export interface PaneNav {
   child?: (id: string) => void
+  /** 右栏当前打开的子对话：切换下拉用它标出当前项 */
+  openChild?: string
   run?: (tool: ToolUse) => void
+  /** 后台命令行的标题点了：在任务页顶层打开这条命令的窗口（命令跑完那一行会消失，窗口不能跟着没） */
+  job?: (job: JobTarget) => void
 }
 
 export const PaneNavCtx = createContext<PaneNav | null>(null)
 
 export const useChildOpen = () => useContext(PaneNavCtx)?.child ?? null
+export const useOpenChildId = () => useContext(PaneNavCtx)?.openChild ?? ''
 export const useRunOpen = () => useContext(PaneNavCtx)?.run ?? null
+export const useJobOpen = () => useContext(PaneNavCtx)?.job ?? null
 
 /**
  * 父对话的任务页提供：它名下子对话的摘要（任务页自己定时取的那份）。

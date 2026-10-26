@@ -1,6 +1,6 @@
 # ADR 0001：让 AI 对话操作面板自身功能——走 MCP 工具，CLI 只做可选薄壳
 
-- 状态：提议（已定方向，待实施；实施前不需要再改本文件）
+- 状态：被 [0011](./0011-app-actions-for-agents.md) 替代（选 MCP 的结论保留；「一个操作一个 `panel_*` 工具」改成动作注册表 + 两个固定工具）
 - 日期：2026-10-23
 - 影响范围：新增 `panel-ops.ts`（本次提议要新建的文件，现在仓库里还没有）；改动 `server/ask-mcp.ts`（注册与派发）、`server/exec/invoke.ts`（把面板组传进 bridge）、`server/exec/runner.ts`（`RealContext` 加一个可选字段）、`server/tasks.ts`（组装数据并注入）；`server/orch-mcp.ts`、`server/design-mcp.ts` 只作参照，不改；不涉及 `web/` 的界面改动（确认弹窗复用现有审批组件）
 - 相关文档：`docs/cli-config.md`（`mcp` 能力、面板工具的接入方式）、`AGENTS.md`（硬规则与安全边界）、`docs/lessons/server.md`
@@ -115,7 +115,7 @@
 | `panel_get_log`       | `id`、`limit?`（默认 40）、`after?`（消息 id）、`role?`   | 消息列表：`role`、`at`、`text`（单条截到 2000 字）、`tools`、失败标记；被截断时给「还有更多，用 after 取」               | read | 否       |
 | `panel_get_changes`   | `id`、`path?`                                             | 改动文件与增删行数、`worktree` 状态；给了 `path` 时附 diff（截到 8000 字），非 git 仓库要明说                            | read | 否       |
 | `panel_get_usage`     | `id`                                                      | `RunUsage` 原样：`total`、`own`、`sub`、`tps`、`runTps`、`children`、`helpers`                                           | read | 否       |
-| `panel_get_settings`  | 无                                                        | 白名单字段（`childLimit`、`gitPolicy`、`requireToken`、语言、上下文阈值…）；**绝不返回密钥、访问令牌、账号信息**         | read | 否       |
+| `panel_get_settings`  | 无                                                        | 白名单字段（`backgroundLimit`、`gitPolicy`、`requireToken`、语言、上下文阈值…）；**绝不返回密钥、访问令牌、账号信息**         | read | 否       |
 | `panel_list_projects` | `q?`                                                      | `id`、`name`、`path`、`branch`、worktree 数、`gitPolicy`、活动对话数                                                     | read | 否       |
 
 ### 低风险写（write，第一阶段只做前四个）
@@ -241,6 +241,6 @@ JSON Schema 手写，和 `orch-mcp.ts:68 orchTools` 一致（那边也是手写�
 
 1. **面板组要不要给子对话**？子对话用得上「看一眼别的对话在干什么」，但误操作面也跟着放大。倾向：`read` 组给所有层级，`write` 和 `confirm` 组只给父对话（`task.parentTaskId` 为空时）。定下来之前先按「只给父对话」实现，放开比收回容易。
 2. **截断字数**：`panel_get_log` 单条 2000 字、`panel_get_changes` 的 diff 8000 字，这两个数字是估的，实施时按最长 CLI 的上下文反推，别照抄。
-3. **`panel_save_settings` 的白名单字段**：至少要有 `childLimit`、`gitPolicy`、`requireToken`（`shared/schema.ts` 里这三个都在设置里），漏一个就会出现「模型说改了、实际没改」。完整名单在实施时对着设置页逐项过一遍再定。
+3. **`panel_save_settings` 的白名单字段**：至少要有 `backgroundLimit`、`gitPolicy`、`requireToken`（`shared/schema.ts` 里这三个都在设置里），漏一个就会出现「模型说改了、实际没改」。完整名单在实施时对着设置页逐项过一遍再定。
 4. **返回里要不要带版本号**：带上 `updatedAt` / `rev`（`tasksApi` 里执行中每次变化加一）能让模型判断「我看到的是不是最新的」，但要配套刷新语义；不带就靠「拿不到就重查」。
 5. **薄 CLI 的形态**：独立发布还是 `npx` 一次性入口，取决于阶段三是否真的启动。

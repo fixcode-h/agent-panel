@@ -1,10 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, rename, rmdir, unlink } from 'node:fs/promises'
+import { mkdir, readdir, rename, rmdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { Task, TaskMessage, type TaskData } from '../shared/schema.ts'
-import { messageStamp } from '../shared/task.ts'
-import { CACHE_DIR, DATA_DIR, onReset, readJson, writeJsonAtomic } from './store.ts'
+import { t } from '../shared/i18n.ts'
+import { messageStamp, taskTitle } from '../shared/task.ts'
+import {
+  CACHE_DIR,
+  DATA_DIR,
+  archiveBrokenFile,
+  onReset,
+  readJson,
+  readJsonDetailed,
+  writeJsonAtomic,
+} from './store.ts'
 
 /**
  * 任务按项目分目录存，每个任务两个文件：
@@ -226,6 +235,11 @@ export function createTaskStore() {
     const t = p.data
     if (raw && typeof raw === 'object' && !Object.prototype.hasOwnProperty.call(raw, 'turnSeenAt'))
       t.turnSeenAt = t.turnDoneAt
+    // 「在排队等名额」是内存里的临时状态（此刻真的在排队才该有），进程重启后不可能还在排。
+    // 旧版本可能在让出名额 / 保活等下一句时漏清它，快照里就带着一条陈旧标记（页面上显示成在排队）；
+    // 这里丢掉，免得重启后凭空显示排队。以后每轮跑起来写回快照时再按当时情况重新写
+    delete t.apiWait
+    for (const s of t.steps) delete s.apiWait
     return t
   }
 
@@ -264,28 +278,169 @@ export function createTaskStore() {
 
   async function load() {
     const map = new Map<string, Task>()
-    const dirs = [path.join(TASKS_ROOT, 'chats')]
+    const dirs: { dir: string; projectId: string }[] = [{ dir: path.join(TASKS_ROOT, 'chats'), projectId: '' }]
     const projectsDir = path.join(TASKS_ROOT, 'projects')
     if (existsSync(projectsDir))
       for (const d of await readdir(projectsDir, { withFileTypes: true }))
-        if (d.isDirectory()) dirs.push(path.join(projectsDir, d.name))
-    for (const dir of dirs) {
+        if (d.isDirectory()) dirs.push({ dir: path.join(projectsDir, d.name), projectId: d.name })
+    const rebuilt: string[] = []
+    /** 任务记录过不了 schema、没能留档的 id：原文件还在原位，重建时不能覆盖它 */
+    const kept = new Set<string>()
+    for (const { dir, projectId } of dirs) {
       if (!existsSync(dir)) continue
-      for (const f of await readdir(dir)) {
+      const names = await readdir(dir)
+      for (const f of names) {
         if (!f.endsWith('.json') || f.endsWith(MSG)) continue
-        const raw = await readJson(path.join(dir, f))
-        const t = parseTask(raw)
-        if (t) map.set(t.id, t)
-        else if (raw !== undefined) console.error(`任务记录格式不对，已跳过：${f}`)
+        const file = path.join(dir, f)
+        const raw = await readJsonDetailed(file)
+        // 坏了的那份已经被 readJsonDetailed 挪进缓存目录并打了日志：这里当「这个任务的记录读不出来」处理，
+        // 下面会用同目录的 `.messages.json` 把它重建回来，不能让整个对话从列表里消失
+        const task = raw.state === 'ok' ? parseTask(raw.value) : undefined
+        if (task) map.set(task.id, task)
+        else if (raw.state === 'ok' && !(await archiveBadMeta(file, f))) kept.add(f.slice(0, -'.json'.length))
+      }
+      // 只有 `.messages.json`、没有（或丢了、坏了）任务记录：从对话反推一个最小的任务记录，
+      // 让这个对话重新出现在列表里、内容能打开。同一个 load 里做，不另起一次扫描
+      for (const f of names) {
+        if (!f.endsWith(MSG)) continue
+        const id = f.slice(0, -MSG.length)
+        if (map.has(id)) continue
+        if (!safeId(id)) {
+          console.error(`任务对话文件名不是合法 id，已跳过：${f}`)
+          continue
+        }
+        if (await rebuildMeta(dir, projectId, id, map, kept.has(id))) rebuilt.push(id)
       }
     }
+    if (rebuilt.length) console.error(`这些对话的任务记录丢失，已从对话内容重建：${rebuilt.join('、')}`)
     await migrate(map)
     return map
   }
 
+  /**
+   * 能读成 JSON、但过不了任务 schema 的记录：先留档再当「读不出来」处理。
+   * 不留档的话，从对话反推的记录会直接把它盖掉：原来那份（可能手修一下还能用）就没了。
+   * 返回是否真的留档了：没留档（文件被占着）时调用方不能再往同一个路径写。
+   */
+  async function archiveBadMeta(file: string, name: string) {
+    const size = (await stat(file).catch(() => null))?.size ?? 0
+    const broken = await archiveBrokenFile(file, '任务记录格式不对', size)
+    console.error(
+      broken.archived
+        ? `任务记录格式不对，已留档为 ${broken.backup}（按对话内容重建）：${name}`
+        : `任务记录格式不对，没能挪进缓存目录：${name}`,
+    )
+    return broken.archived
+  }
+
+  /**
+   * 从 `.messages.json` 反推缺失的任务记录（meta），写盘后放进 map。
+   * 返回是否真的重建了。
+   *
+   * 宁可不重建也不写半截：对话文件本身坏了 / 不是一个消息数组时，把它当作坏文件留档、打日志，
+   * 不伪造内容；反推出的记录过不了 schema 校验时也只打日志。
+   * 坏文件被挪走后下次启动不会再在目录里看到它，所以不会反复重试。
+   *
+   * keepExisting：原来的 meta 还在原位（没能留档）时为 true，这时只让它本次可见、不写盘，
+   * 不能拿新记录覆盖原来那份可能手修还能用的。
+   */
+  async function rebuildMeta(
+    dir: string,
+    projectId: string,
+    id: string,
+    map: Map<string, Task>,
+    keepExisting = false,
+  ): Promise<boolean> {
+    const file = path.join(dir, `${id}${MSG}`)
+    let res: Awaited<ReturnType<typeof readJsonDetailed>>
+    try {
+      res = await readJsonDetailed(file)
+    } catch (err) {
+      // 文件被杀软 / 索引服务占着（EBUSY / EPERM）或权限不对：这一个任务跳过，不能让整个任务列表崩掉
+      console.error(`任务 ${id} 的对话文件读不出来，这次跳过（下次启动会再试）：${String(err)}`)
+      return false
+    }
+    // 名字是 readdir 时看到的，这中间被别的流程挪走了：没什么可重建的
+    if (res.state === 'missing') return false
+    if (res.state === 'broken') {
+      console.error(
+        res.broken.archived
+          ? `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.broken.size} 字节），无法恢复：已留档为 ${res.broken.backup}`
+          : `任务 ${id} 的任务记录已丢失，对话文件也损坏（${res.broken.size} 字节），无法恢复（也没能挪进缓存目录）`,
+      )
+      return false
+    }
+    const parsed = TaskMessage.array().safeParse(res.value)
+    if (!parsed.success) {
+      // 能读成 JSON，但内容不是对话（比如被写成了插件配置）：同样留档，免得到点又重读一遍
+      const size = (await stat(file).catch(() => null))?.size ?? 0
+      const broken = await archiveBrokenFile(file, '对话内容不是一个消息数组', size)
+      console.error(
+        broken.archived
+          ? `任务 ${id} 的任务记录已丢失，对话文件内容不是消息列表，无法恢复：已留档为 ${broken.backup}`
+          : `任务 ${id} 的任务记录已丢失，对话文件内容不是消息列表，无法恢复（也没能挪进缓存目录）`,
+      )
+      return false
+    }
+    const messages = parsed.data
+    // 空对话没有可恢复的内容：不造一个 0 条消息的空任务（断电后正好可能留下「meta 全 0 + messages 为 []」）
+    if (!messages.length) {
+      console.error(`任务 ${id} 的任务记录已丢失，对话文件是空的，没有可恢复的内容`)
+      return false
+    }
+    const mtime = new Date()
+    const users = messages.filter((m) => m.role === 'user')
+    const original = Task.safeParse({
+      id,
+      projectId,
+      // 标题用用户自己写的第一句，没有用户消息时给个能认出来的占位
+      title: (users[0] && taskTitle(users[0].text)) || t('恢复的对话'),
+      // 工作流快照、节点、运行记录都在丢掉的记录里，只能按对话恢复
+      mode: 'chat',
+      // 记录丢了就不知道它当时在干什么：启动后当作被重启打断的旧对话，让用户可以继续
+      status: 'stopped',
+      stopReason: 'restart',
+      createdAt: messages[0]?.at || mtime.toISOString(),
+      updatedAt: messages[messages.length - 1]?.at || mtime.toISOString(),
+      // 任务记录里只放用户消息，完整对话在消息文件里
+      messages: users,
+      // 这是真实数据，按演示数据画出来会误导用户
+      simulated: false,
+      // 重建出来的对话先当已看过，不要升级成一片未读红点
+      turnSeenAt: messages[messages.length - 1]?.at ?? '',
+    })
+    if (!original.success) {
+      console.error(`任务 ${id} 的任务记录已丢失，按对话反推的记录不合法，不重建：${original.error.message}`)
+      return false
+    }
+    if (keepExisting) {
+      // 原来的 meta 没能留档、还在原位：这次只让它出现在列表里，不写盘，下次启动再处理那份原文件
+      map.set(original.data.id, head(original.data))
+      console.error(`任务 ${id} 已按对话内容恢复（原记录还在原位、没能留档，本次不覆盖）`)
+      return true
+    }
+    try {
+      // 写回扫描时的那个目录：不按 projectId 重新算路径，免得目录名不规范时写错地方
+      await writeJsonAtomic(path.join(dir, `${id}.json`), head(original.data))
+    } catch (err) {
+      // 写不下去也让它本次启动可见：用户至少能把对话打开、导出，下次启动还会再试一次重建
+      console.error(`任务 ${id} 的任务记录重建后写盘失败（本次仍可使用）：${String(err)}`)
+    }
+    map.set(original.data.id, head(original.data))
+    console.error(`任务记录丢失，已从对话内容恢复：${original.data.id}（${original.data.title}）`)
+    return true
+  }
+
   async function all() {
     if (metas) return metas
-    loading ??= load().then((m) => (metas = m))
+    loading ??= load().then(
+      (m) => (metas = m),
+      (err) => {
+        // 一次瞬时读错误（文件被杀软占着之类）不能变成永久故障：清掉 loading，下一次请求重新读
+        loading = null
+        throw err
+      },
+    )
     return loading
   }
 

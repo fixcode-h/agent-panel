@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Bot, Eye, History, Loader2, RotateCcw, Save, Trash2, X } from 'lucide-react'
 import type { DesignVersion, DesignVersionMeta } from '@shared/design'
 import type { Component, Vec2, Widget } from '@shared/umg'

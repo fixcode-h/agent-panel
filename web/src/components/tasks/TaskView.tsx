@@ -1,8 +1,20 @@
-import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { t } from '@shared/i18n'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
+  ArrowLeft,
   ArrowRight,
   ChevronRight,
   CheckCircle2,
@@ -22,62 +34,69 @@ import {
   Trash2,
   X,
   ListPlus,
-  ArrowDown,
   Workflow as WorkflowIcon,
   Download,
   FileInput,
+  Files,
   Sparkles,
   Settings2,
   GraduationCap,
   CircleStop,
   MessageCircleQuestion,
   Copy,
+  ClipboardList,
+  PictureInPicture2,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
-import { HelperBar } from './HelperCards'
+import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
+import { latestTurnIndex } from '@/lib/latest-turn'
+import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import { type Project, type StopReason, type Task, type TaskMessage, type TaskStep, type ToolUse } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
-  childIcon,
-  childStage,
+  childWait,
   helperRunning,
   sortChildren,
   visibleChildren,
-  stopReasonText,
   taskActive,
   taskBusy,
   taskState,
   taskWaitText,
   taskSummary,
   withTaskModel,
-  type TaskStage,
+  type ChildWait,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
+import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { fmtDuration, startedRun } from '@/lib/tasks'
+import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
+import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
-import { downloadTask } from '@/lib/task-transfer'
+import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
-import { STICK_THRESHOLD, useStickToBottom } from '@/lib/useStickToBottom'
+import { ConversationShell, useConversationScroll } from '@/components/chat/ConversationShell'
 import { AgentMessage, ChatReply, DeliveryLine, NoteMessage, PendingAuthor } from './Messages'
 import { ReceivedRow } from './PeerMessage'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
-import { AnalyzeDialog, EvolutionCard } from './Evolution'
+import { AnalyzeDialog } from './Evolution'
+import { AnalysisPanel, reportTitle } from './AnalysisPanel'
+import { AnalysisMark } from './AnalysisMark'
+import { findReport, isAnalysisTask } from '@/lib/analysis-report'
 import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
@@ -95,8 +114,10 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
-import { childDirty, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
+import { childClosedHint, childDirty, childNote, staleLine, type ChildSummary } from './child-line'
+import { ChildRowContent, ChildSwitcher, childGroups } from './ChildSwitcher'
 import { ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -108,6 +129,8 @@ import type { RichInputHandle } from '@/components/chat/RichInput'
 import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
+import { ProjectSwitch } from './ProjectSwitch'
+import { OPEN_CHILD_EVENT, paneChildKey, paneFilesKey, paneReportKey, paneRunKey } from '@/lib/ai-window'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -239,6 +262,50 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
+const PANE_MIN = 280
+/** 右栏拖动时中间至少留下的宽度 */
+const PANE_GAP = 320
+/** 功能面板盖在对话上时（窄屏抽屉、pane 里）的宽度：覆盖态没有并排可拖，按原来的定宽铺开 */
+const REPORT_COVER_WIDTH = 440
+/** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
+const REPORT_PANE_MIN = 320
+
+/**
+ * 右栏的可拖上限：从右栏所在容器的宽度里扣掉中间至少要留的部分，不写死像素。
+ * 容器要按自己那一栏量：AI 分析窗口是 Portal 挂在 body 末尾的，背景对话页的右栏同样还挂着，
+ * 从 document 里取第一个会量到背景那一页，上限就按错的宽度算（拖动条挂到 max 时才发现拖不动）。
+ */
+function paneMax(box: HTMLElement | null, min: number) {
+  const row = box?.parentElement?.clientWidth ?? window.innerWidth
+  return Math.max(min, row - PANE_GAP)
+}
+
+/**
+ * 对半的栏宽：这台机器上拖过就用拖过的宽度（usePaneWidth 记的），没拖过就是本栏容器的一半
+ * （用户 2026-11 要求有功能面板时默认功能面板和对话面板各占一半）。
+ *
+ * 一半按本栏自己的容器量，不按窗口：AI 分析窗口是弹窗、比窗口窄，侧栏收起时还会更宽。
+ * 容器要等任务加载完、右栏真的挂上才有尺寸（见 TaskView 的 setRail），拿到之前先按窗口减掉左栏估算。
+ * `rowWidth` 每次现量、不缓存：双击拖动条恢复默认时 usePaneWidth 会重新调一次初值函数，
+ * 那时窗口可能已经改过大小，按缓存会回到旧的一半。
+ */
+function useHalfPane(key: string, min: number, max: () => number, rowWidth: () => number, rowMounted: boolean) {
+  const half = () =>
+    typeof window === 'undefined'
+      ? PANE_DEFAULT_SSR
+      : paneHalfWidth(rowWidth() || rowWidthFromWindow(window.innerWidth), min)
+  const pane = usePaneWidth(key, half, min, max)
+  useLayoutEffect(() => {
+    // 拖过的宽度原样用：用户的选择优先，量到容器也不会改回去
+    if (!pane.stored && rowMounted) pane.fit(half())
+    // 右栏挂上、能量出真实容器了才对半一次；窗口 resize 后不自动跟（和文件面板一样，栏宽算用户自己的布局）
+    // pane 每次渲染都是新对象，放进依赖会一直重跑
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowMounted])
+  return pane
+}
+
 /**
  * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
  * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
@@ -248,8 +315,6 @@ function sameJson<T>(cur: T, next: T): T {
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
-const paneChildKey = (taskId: string) => `task-child:${taskId}`
-const paneRunKey = (taskId: string) => `task-run:${taskId}`
 
 function readStored(key: string) {
   try {
@@ -270,6 +335,13 @@ function writeStored(key: string, value: string) {
 
 const readPaneChild = (taskId: string) => readStored(paneChildKey(taskId))
 const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) || 0
+/** 文件面板收没收起按对话记在本地：没记录过就收起，先给对话让出整块宽度 */
+const readFilesFolded = (taskId: string) => readStored(paneFilesKey(taskId)) !== 'open'
+const writeFilesFolded = (taskId: string, folded: boolean) => writeStored(paneFilesKey(taskId), folded ? '' : 'open')
+/** 分析对话的功能面板默认开着：用户收起过才记一笔 */
+const readReportFolded = (taskId: string) => readStored(paneReportKey(taskId)) === 'closed'
+const writeReportFolded = (taskId: string, folded: boolean) =>
+  writeStored(paneReportKey(taskId), folded ? 'closed' : '')
 function writePaneChild(taskId: string, childId: string) {
   writeStored(paneChildKey(taskId), childId)
   // 子对话和运行面板互斥：右栏同一时间只显示一个
@@ -346,19 +418,61 @@ export function TaskView({
     return list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c))
   }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
-  // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
-  const [filesFolded, setFilesFolded] = useState(false)
+  // 右栏打开的是子对话时，它在自己的 Provider 里读不到父对话的列表和跳转：
+  // 这里在组件顶层取外层的值（Provider 之外），标题旁的切换下拉用它，不另取一份数据
+  const outerChildren = useContext(ChildListCtx)
+  const outerNav = useContext(PaneNavCtx)
+  // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏。默认收起，用户展开过就按本地记着的来
+  const [filesFolded, setFilesFolded] = useState(() => readFilesFolded(taskId))
+  // AI 分析对话的功能面板（分析报告、教训评审、项目设置）：宽屏是对话右边的一栏，默认开着、收起按对话记住；
+  // 窄屏和放在父对话右栏里（pane）时没有地方并排，点标题栏的按钮盖在对话上打开
+  const [reportFolded, setReportFolded] = useState(() => readReportFolded(taskId))
+  const [reportCover, setReportCover] = useState(false)
+  // 右栏开着子对话时再看文件：文件面板盖在子对话上展开。子对话已经占了半边，
+  // 并排会把两边都挤坏，所以复用同一栏的位置覆盖，收起后子对话原样回来
+  const [childFiles, setChildFiles] = useState(false)
+  // 收起覆盖层时「回到子对话」按钮已经被卸载：不收焦点的话键盘用户会被丢回页面开头。
+  // 宽、窄屏是两个按钮（xl 断点切换），只能把焦点还给当前真的显示着的那个：
+  // 给 display:none 的元素 focus() 不生效，焦点会掉回 body
+  const fileBtn = useRef<HTMLButtonElement>(null)
+  const fileBtnNarrow = useRef<HTMLButtonElement>(null)
+  const closeChildFiles = useCallback(() => {
+    setChildFiles(false)
+    requestAnimationFrame(() => {
+      const wide = fileBtn.current
+      const target = wide && wide.offsetParent !== null ? wide : fileBtnNarrow.current
+      target?.focus()
+    })
+  }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
-  // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
-  const taskPanel = usePaneWidth(
+  // 右栏自己这一栏：量拖动上限、量对半都以它为基准，不按全局第一个右栏（见 paneMax）
+  const rail = useRef<HTMLElement>(null)
+  // 右栏挂上没有要等任务加载完才知道：aside 挂上前 ref 是 null（useEffect 里那时读到的也是 null，
+  // 量出来会是窗口估算值），所以用回调 ref 记下挂载时机，挂上之后再按真实容器对半
+  const [railMounted, setRailMounted] = useState(false)
+  const setRail = useCallback((el: HTMLElement | null) => {
+    rail.current = el
+    setRailMounted(!!el)
+  }, [])
+  // 这一行有多宽（右栏加中间的对话）：右栏默认宽度按它的一半算，每次现量（见 useHalfPane）
+  const rowWidth = useCallback(() => rail.current?.parentElement?.clientWidth ?? 0, [])
+  // 文件面板和功能面板默认都和中间对话对半（见 lib/pane-width.ts）：有面板时两边一样宽。
+  // 手动拖过之后按拖动后的宽度、双击拖动条也回到对半；上限至少留出中间 320
+  const taskPanel = useHalfPane(
     'task-panel',
-    typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
-    280,
-    () => {
-      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-      return Math.max(340, row - 320)
-    },
+    PANE_MIN,
+    () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+    rowWidth,
+    railMounted,
+  )
+  // 和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）
+  const reportPane = useHalfPane(
+    'report-panel',
+    REPORT_PANE_MIN,
+    () => paneMax(rail.current, REPORT_PANE_MIN),
+    rowWidth,
+    railMounted,
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -370,6 +484,9 @@ export function TaskView({
   useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
   useEscape(progressOpen, () => setProgressOpen(false))
+  // 盖在子对话上的文件面板：Esc 回子对话。capture 独占这次按键：子对话里开着的运行视图、
+  // 计划面板自己也听 Esc，不独占的话一次按键会把它们一起关掉
+  useEscape(childFiles, closeChildFiles, true)
   // 对话里点开的运行卡片：右边看这一次运行的实时输出
   const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
   // 子对话面板里点开的一次运行：在这块面板内换成那次运行的视图（带返回），不另开一栏。
@@ -382,7 +499,12 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
-  useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun, () => setStopAsk(true))
+  // 后台命令行的标题点了：在顶层打开这条命令的窗口。挂在页面顶层而不是运行区那一行里，
+  // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
+  const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
+  const openJob = useCallback((job: JobTarget) => setJobTarget(job), [])
+  // 盖着文件面板时 Esc 先收面板，不弹停止确认
+  useEscape(!!task?.working && !panel && !stopAsk && !openRun && !paneRun && !childFiles, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
@@ -390,15 +512,8 @@ export function TaskView({
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   // 消息区的贴底：打开就在最新内容，流式输出、工具卡片展开、Markdown 变高都跟着走；
   // 用户往上翻时不打扰，回到底部附近再接着跟。切到流程图视图时这个容器不放对话，停止跟随
-  const {
-    ref: scrollerRef,
-    el: scrollerEl,
-    onScroll: onScrollerScroll,
-    away,
-    toBottom,
-    pin: stickToBottom,
-    unpin: stayPut,
-  } = useStickToBottom(taskId, STICK_THRESHOLD, view === 'chat')
+  const scroller = useConversationScroll(taskId, view === 'chat')
+  const { el: scrollerEl, pin: stickToBottom, unpin: stayPut } = scroller
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
@@ -500,11 +615,38 @@ export function TaskView({
     }
     setOpenChild(readPaneChild(taskId))
     setOpenRun(readPaneRun(taskId))
+    setFilesFolded(readFilesFolded(taskId))
+    setReportFolded(readReportFolded(taskId))
+    setReportCover(false)
+    // 别处（AI 分析窗口「去对话里看」）要在这个对话的右栏打开某个子对话：已经开着的对话页马上切过去
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent<{ parentId: string; childId: string }>).detail
+      if (d?.parentId !== taskId) return
+      // 先刷新子对话列表：刚开的子对话还不在列表里，直接切过去会被「已经不在」那条判断清掉
+      void loadChildren(taskId)
+        .then((list) => setChildren((cur) => sameJson(cur, list)))
+        .catch(() => {})
+        .finally(() => {
+          setOpenChild(d.childId)
+          setOpenRun(0)
+        })
+    }
+    window.addEventListener(OPEN_CHILD_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_CHILD_EVENT, onOpen)
+    // 只在换了对话时重新挂：loadChildren 每次渲染都是同一份逻辑
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, pane])
 
+  // 文件面板的开合：按对话记在本地，下次打开还是用户最后一次选的那样。子对话自己的右栏（pane）不写
+  const toggleFiles = () => {
+    setFilesFolded(!filesFolded)
+    if (!pane) writeFilesFolded(taskId, !filesFolded)
+  }
   // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
   const openChildIn = (id: string) => {
     setOpenChild(id)
+    // 换了子对话、收起子对话时把文件覆盖层一起收掉，免得下次打开时对着另一个子对话开着文件
+    if (!id || id !== openChild) setChildFiles(false)
     if (id) setOpenRun(0)
     if (!pane) writePaneChild(taskId, id)
   }
@@ -641,22 +783,18 @@ export function TaskView({
   const running = task?.status === 'running'
   // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
-  useTaskStream(taskId, running, apply)
+  // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
+  // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
+  const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  useTaskStream(taskId, running || jobRunning, apply)
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
   const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  // 对话里派出的子任务：输入框上方的「子任务」栏里列出，点开看它的实时对话流。
-  // 工作流任务里节点自己派的子 Agent 显示在节点里，不进这条栏
-  const helperIds = useMemo(() => {
-    if (!task || task.mode === 'workflow' || (task.runs?.length ?? 0) > 0) return []
-    // 旧数据里可能只留下「派出了哪几个」而没有对应的 step（被清掉、导出时丢了）：
-    // 只留真的存在的，一个都不剩时不画这条栏，输入框上方不留空行
-    const known = new Set(task.steps.map((s) => s.id))
-    return [...new Set(task.messages.flatMap((m) => m.spawned ?? []))].filter((id) => known.has(id))
-  }, [task])
+  // 对话里派出的子任务：输入框上方的「子任务」栏里列出，点开看它的实时对话流；一个都没有时不画这条栏
+  const helperIds = useMemo(() => (task ? chatHelperIds(task) : []), [task])
   // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slashAgent = task?.mode === 'chat' ? agents.find((a) => a.id === task.agentId) : undefined
   const slashCli =
@@ -685,10 +823,29 @@ export function TaskView({
     },
   })
 
+  // 分析报告在哪条回复里：画在右侧的功能面板，不再铺在对话区（用户 2026-10-25 要求，ADR 0016）
+  const report = useMemo(() => (task ? findReport(task) : null), [task])
+  const reportId = report?.message.id ?? ''
+  // 出了新的报告（重新分析、接着追问后又出了一份）：收起过的面板重新打开
+  const seenReport = useRef(reportId)
+  useEffect(() => {
+    const prev = seenReport.current
+    seenReport.current = reportId
+    if (!reportId || !prev || reportId === prev) return
+    setReportFolded(false)
+    if (!pane) writeReportFolded(taskId, false)
+    // 只跟着报告换了没有走
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportId])
+  useEscape(reportCover, () => setReportCover(false), true)
+
   // 分段只在任务内容变了时重算：打字、开关面板不再把上千条消息重新归一遍
   const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
   const hidden = Math.max(0, blocks.length - limit)
+  // 运行区（子对话、后台命令）只挂在最新的一轮回复下面。不能直接认「最后一段」：
+  // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
+  const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
@@ -700,6 +857,28 @@ export function TaskView({
 
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
   const noFiles = !task.projectId
+  // 这一轮没在跑时到底在等什么：等后台命令、等子任务、等工作流，还是真停在等下一句。
+  // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
+  // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
+  const chatWait =
+    task.mode === 'chat' ? childWait(task, { background: task.jobs?.length, cliAlive: task.cliAlive }) : undefined
+  // 功能面板占右栏（宽屏）：和子对话、运行面板、文件面板同一栏，同一时间只显示一个；子对话、运行开着时让给它们
+  const reportOn = !!report && !pane && !reportFolded && !openChild && openRun === 0
+  const closeReport = () => {
+    if (reportCover) return setReportCover(false)
+    setReportFolded(true)
+    if (!pane) writeReportFolded(taskId, true)
+  }
+  const reportPanel = report && (
+    <AnalysisPanel
+      task={task}
+      project={project}
+      kind={report.kind}
+      text={report.message.text}
+      onTask={apply}
+      onClose={closeReport}
+    />
+  )
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async (input?: string) => {
@@ -983,11 +1162,73 @@ export function TaskView({
     />
   )
 
+  // 对话页的停靠区：计划和子对话贴在输入框上方、在消息流外面，不跟着滚，也不插在用户消息和回复之间。
+  // 固定三行（见 ChildrenBar）：计划在上、子任务中间、子对话在下，每行各自不换行，三行都和输入框左对齐
+  const conversationDock = (
+    <>
+      {task.plans?.length > 0 && (
+        <div className="shrink-0 px-3 md:px-6">
+          {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
+          <div className="mx-auto max-w-(--content-w)">
+            <div data-status-row="plan" className={cn(plainRow, 'mb-1 w-fit max-w-full flex-nowrap')}>
+              <PlanButton task={task} children={children} />
+            </div>
+          </div>
+        </div>
+      )}
+      {(() => {
+        // 子对话入口只在父对话里显示（右栏和子对话自己的页面不列子对话）；
+        // 子任务入口哪里都显示：它派在哪个对话里，就在哪里看
+        const showChildren = !pane && !task.parentTaskId && children.length > 0
+        const helpers = helperIds.length ? { task, ids: helperIds, teamNames } : undefined
+        if (!showChildren && !helpers) return null
+        return (
+          <ChildrenBar
+            children={showChildren ? children : []}
+            helpers={helpers}
+            openChild={openChild}
+            onOpen={openChildIn}
+            onClose={() => openChildIn('')}
+            onResume={(id) => void resumeChild(id)}
+          />
+        )
+      })()}
+      <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+        <TaskRequestCard task={task} onAnswered={apply} />
+        {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
+        <WorktreeBar task={task} />
+        {flowLeft && !task.imported && (
+          <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
+        )}
+        {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
+        {/* 点开运行面板、子对话里就地打开运行时输入框挪进去，这里先空着，避免出现两个输入框 */}
+        {!openRun && !paneRun && composer}
+        {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
+        <TaskMeta
+          task={task}
+          projectName={project?.name}
+          projectPath={project?.path}
+          workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
+          node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+          onTask={apply}
+          // 子对话自己的面板里不再套一层右栏
+          onOpenChild={pane ? undefined : openChildIn}
+        />
+      </div>
+    </>
+  )
+
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
         {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
-        <PaneNavCtx.Provider value={pane || task.parentTaskId ? { run: openPaneRun } : { child: openChildRow }}>
+        <PaneNavCtx.Provider
+          value={
+            pane || task.parentTaskId
+              ? { run: openPaneRun, openChild, job: openJob }
+              : { child: openChildRow, openChild, job: openJob }
+          }
+        >
           <ChildListCtx.Provider value={children}>
             <div
               className={cn(
@@ -1009,14 +1250,20 @@ export function TaskView({
                     {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
                     {!pane && (
                       <>
-                        <button
-                          onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
-                          className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
-                        >
-                          {project?.name ?? t('聊天')}
-                        </button>
+                        {/* 项目名点开是项目下的对话；「打开项目」在浮层底部 */}
+                        <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />
                         <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
                       </>
+                    )}
+                    {/* 右栏打开子对话：标题左边给一个下拉，和消息流里的入口一样列出父对话的全部子对话，
+                        点一项就地切换；列表中用外层（父对话）的那份数据，当前这一项带勾选 */}
+                    {pane && task.parentTaskId && outerNav?.child && (
+                      <ChildSwitcher
+                        list={outerChildren}
+                        current={task.id}
+                        onOpen={(id) => outerNav?.child?.(id)}
+                        className="ml-1"
+                      />
                     )}
                     {/* 标题前的状态和侧栏、项目首页同一个判定（taskState）：自己在跑、在等子对话 / 子任务 /
                         后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
@@ -1044,13 +1291,17 @@ export function TaskView({
                         className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
                       />
                     ) : (
-                      <h2
-                        title={t('双击重命名')}
-                        onDoubleClick={() => setRenaming(task.title)}
-                        className="min-w-0 truncate px-1 font-medium"
-                      >
-                        {task.title}
-                      </h2>
+                      <>
+                        {isAnalysisTask(task, localAgents) && <AnalysisMark kind={task.analysis} className="ml-1" />}
+                        {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光，CLI 关了就没有 */}
+                        <h2
+                          title={[cliAliveHint(task), t('双击重命名')].filter(Boolean).join(' · ')}
+                          onDoubleClick={() => setRenaming(task.title)}
+                          className={cn('min-w-0 truncate px-1 font-medium', cliTreeAlive(task) && 'cli-alive-title')}
+                        >
+                          {task.title}
+                        </h2>
+                      </>
                     )}
                     <ProcessMenu taskId={task.id} />
                     {task.simulated && (
@@ -1113,14 +1364,17 @@ export function TaskView({
                       <ListPlus className="h-4 w-4" />
                     </Button>
                   )}
+                  {/* 子对话开着时也让点：文件面板盖在子对话上展开，收起后子对话还在 */}
                   {!pane && !noFiles && (
                     <Button
+                      ref={fileBtnNarrow}
                       variant="ghost"
                       size="icon-sm"
                       className="xl:hidden"
-                      aria-label={t('显示文件')}
-                      title={t('文件')}
-                      onClick={() => setPanel(true)}
+                      aria-label={openChild ? t('覆盖显示文件') : t('显示文件')}
+                      title={openChild ? t('覆盖显示文件') : t('文件')}
+                      aria-expanded={openChild ? childFiles : undefined}
+                      onClick={() => (openChild ? setChildFiles((v) => !v) : setPanel(true))}
                     >
                       <PanelRight className="h-4 w-4" />
                     </Button>
@@ -1201,18 +1455,90 @@ export function TaskView({
                       </MenuItem>
                     </MenuContent>
                   </Menu>
-                  {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
-                  {!pane && !noFiles && openRun === 0 && !openChild && (
+                  {/* 转成弹窗：把当前对话收成右下角的浮条，页面回到上一级。
+                      只在对话页本体上给：右栏子对话（pane）、AI 窗口里嵌的（embed）不需要——
+                      右栏本来就在对话旁边、AI 窗口自己已经有最小化按钮；导入的任务只能看，不收。
+                      子对话也不给：浮条的状态和标题靠 useData().tasks 找对话，而 /tasks 列表
+                      只回顶层对话（见 server/tasks.ts），子对话收起来会一出现就写「对话已关闭」。 */}
+                  {!pane && !embed && !task.imported && !task.parentTaskId && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t('转成弹窗')}
+                      title={t('转成弹窗（对话继续在后台运行）')}
+                      onClick={() => {
+                        minimizeTask({ id: task.id, projectId: task.projectId || undefined })
+                        // 和 AI 窗口的“去对话里看”相反：收起后回上一级，不同时显示对话页和浮条
+                        go(minimizeBackRoute({ projectId: task.projectId || undefined }))
+                      }}
+                    >
+                      <PictureInPicture2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {/* AI 分析对话的功能面板：宽屏切到右栏（子对话、运行开着时先收起它们），窄屏和子对话面板里盖在对话上 */}
+                  {report && !pane && (
                     <Button
                       variant="ghost"
                       size="icon-sm"
                       className="hidden xl:inline-flex"
-                      aria-label={t('收起文件面板')}
-                      title={t('收起文件面板')}
-                      aria-expanded={!filesFolded}
-                      onClick={() => setFilesFolded((v) => !v)}
+                      aria-label={reportTitle(report.kind)}
+                      title={reportOn ? t('收起功能面板') : reportTitle(report.kind)}
+                      aria-pressed={reportOn}
+                      onClick={() => {
+                        if (reportOn) return closeReport()
+                        if (openChild) openChildIn('')
+                        if (openRun) openRunIn(0)
+                        setReportFolded(false)
+                        writeReportFolded(taskId, false)
+                      }}
                     >
-                      {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                      <ClipboardList className={cn('h-4 w-4', reportOn && 'text-accent')} />
+                    </Button>
+                  )}
+                  {report && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={pane ? undefined : 'xl:hidden'}
+                      aria-label={reportTitle(report.kind)}
+                      title={reportTitle(report.kind)}
+                      aria-pressed={reportCover}
+                      onClick={() => setReportCover((v) => !v)}
+                    >
+                      <ClipboardList className={cn('h-4 w-4', reportCover && 'text-accent')} />
+                    </Button>
+                  )}
+                  {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；
+                  右栏开着子对话时右栏不是文件面板，按钮改成在子对话上覆盖展开文件（运行面板开着时没有文件可看） */}
+                  {!pane && !noFiles && openRun === 0 && (
+                    <Button
+                      ref={openChild ? fileBtn : undefined}
+                      variant="ghost"
+                      size="icon-sm"
+                      className="hidden xl:inline-flex"
+                      // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
+                      aria-label={
+                        openChild ? t('覆盖显示文件') : filesFolded || reportOn ? t('显示文件') : t('收起文件面板')
+                      }
+                      title={openChild ? t('覆盖显示文件') : filesFolded || reportOn ? t('文件') : t('收起文件面板')}
+                      aria-expanded={openChild ? childFiles : !filesFolded && !reportOn}
+                      onClick={() => {
+                        if (openChild) return setChildFiles((v) => !v)
+                        // 功能面板占着右栏：收起它换成文件
+                        if (reportOn) {
+                          setReportFolded(true)
+                          writeReportFolded(taskId, true)
+                          if (filesFolded) toggleFiles()
+                          return
+                        }
+                        toggleFiles()
+                      }}
+                    >
+                      {(openChild ? childFiles : filesFolded || reportOn) ? (
+                        <PanelRight className="h-4 w-4" />
+                      ) : (
+                        <PanelRightClose className="h-4 w-4" />
+                      )}
                     </Button>
                   )}
                   {pane && onClose && (
@@ -1223,22 +1549,18 @@ export function TaskView({
                   {embed?.actions}
                 </header>
 
-                <div className="relative flex min-h-0 flex-1 flex-col">
-                  {progressOpen && (
-                    <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
-                      <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
-                    </div>
-                  )}
-                  <div
-                    ref={scrollerRef}
-                    onScroll={(e) => {
-                      onScrollerScroll()
-                      setScrolled(e.currentTarget.scrollTop > 4)
-                    }}
-                    // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
-                    className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
-                  >
-                    {isFlow ? (
+                <ConversationShell
+                  scroller={scroller}
+                  overlay={
+                    progressOpen && (
+                      <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
+                        <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
+                      </div>
+                    )
+                  }
+                  // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
+                  fill={
+                    isFlow ? (
                       <Suspense fallback={null}>
                         <TaskFlow
                           task={task}
@@ -1249,251 +1571,172 @@ export function TaskView({
                           }}
                         />
                       </Suspense>
-                    ) : (
-                      <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                        {hidden > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setLimit(Infinity)}
-                            className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
-                          >
-                            {t('显示更早的 {n} 段', { n: hidden })}
-                          </button>
-                        )}
-                        {shownBlocks.map((b, i) =>
-                          b.kind === 'turn' ? (
-                            <div key={b.key} className="flex flex-col gap-4">
-                              <ChatTurn
-                                msgs={b.msgs}
-                                task={task}
-                                teamNames={teamNames}
-                                live={working && i + hidden === blocks.length - 1}
-                                last={!working && i + hidden === blocks.length - 1}
-                                // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列）
-                                latest={i + hidden === blocks.length - 1}
-                                fallback={byCli ? chatRun : undefined}
-                                command={task.command}
-                              />
-                            </div>
-                          ) : b.kind === 'run' ? (
-                            task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
-                              <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
-                            ) : (
-                              <RunCard
-                                key={b.key}
-                                task={task}
-                                run={b.run}
-                                name={task.workflowName || workflow?.name}
-                                onOpen={() => openRunIn(b.run)}
-                              />
-                            )
-                          ) : b.kind === 'steps' ? (
-                            <div key={b.key} className="flex flex-col gap-7">
-                              {b.roots.map((r) => (
-                                <StepSection
-                                  key={r}
-                                  task={task}
-                                  rootId={r}
-                                  msgs={b.byRoot.get(r)!}
-                                  teamNames={teamNames}
-                                  sticky="chat"
-                                />
-                              ))}
-                            </div>
-                          ) : b.m.peer ? (
-                            <div key={b.m.id} className="flex gap-3">
-                              <span className="w-[26px] shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <ReceivedRow m={b.m} />
-                              </div>
-                            </div>
-                          ) : b.m.role === 'user' ? (
-                            <UserMessage
-                              key={b.m.id}
-                              text={b.m.text}
-                              at={b.m.at}
-                              attachments={b.m.attachments}
-                              extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
-                              actions={
-                                <>
-                                  {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
-                                  {project && !task.imported && (
-                                    <button
-                                      className={msgAction}
-                                      title={t('记成项目教训：以后这个项目里的角色都会照着做')}
-                                      aria-label={t('记成项目教训')}
-                                      onClick={() => setLessonOf(b.m.text)}
-                                    >
-                                      <GraduationCap className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                  {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
-                                  {task.mode === 'chat' && !running && !task.imported && (
-                                    <>
-                                      <button
-                                        className={msgAction}
-                                        title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                        aria-label={t('从这里分叉')}
-                                        onClick={() => fork(b.m.id)}
-                                      >
-                                        <GitFork className="h-3.5 w-3.5" />
-                                      </button>
-                                      {b.m.id !== firstUser && (
-                                        <button
-                                          className={msgAction}
-                                          title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                          aria-label={t('撤回到这里')}
-                                          onClick={() => setRewindAsk(b.m.id)}
-                                        >
-                                          <Undo2 className="h-3.5 w-3.5" />
-                                        </button>
-                                      )}
-                                    </>
-                                  )}
-                                </>
-                              }
-                            />
-                          ) : b.m.role === 'system' ? (
-                            <NoteMessage
-                              key={b.m.id}
-                              m={b.m}
-                              msgs={task.messages}
-                              task={task}
-                              className="justify-center text-center"
-                            />
-                          ) : (
-                            <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
-                          ),
-                        )}
-                        <NextWorkflows task={task} />
-                        {running &&
-                          task.mode === 'chat' &&
-                          working &&
-                          (blocks.at(-1)?.kind === 'turn' ? (
-                            <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                              <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                              <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
-                              <LiveStats task={task} agentIds={[task.agentId]} />
-                            </div>
-                          ) : (
-                            // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
-                            <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
-                              <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                                <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                                <RunPhase task={task} label={t('思考中…')} />
-                                <LiveStats task={task} agentIds={[task.agentId]} />
-                              </div>
-                            </PendingReply>
-                          ))}
-                        {running && task.mode === 'chat' && !working && task.awaitingUser && (
-                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                            <MessageSquareText className="h-4 w-4 text-subtle" />
-                            <span>{t('等待你的下一条消息')}</span>
-                            <LiveStats task={task} agentIds={[task.agentId]} />
-                          </div>
-                        )}
-                        {working && task.mode === 'workflow' && runningSteps.length === 0 && (
-                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                            <RunPhase
-                              task={task}
-                              label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })}
-                            />
-                            <LiveStats task={task} />
-                          </div>
-                        )}
-                        {/* CLI 还没取走的消息已经直接进对话，这里不用再放一份 */}
-                      </div>
-                    )}
-                  </div>
-                  {!isFlow && away && (
+                    ) : undefined
+                  }
+                  onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
+                  dock={conversationDock}
+                >
+                  {hidden > 0 && (
                     <button
                       type="button"
-                      onClick={toBottom}
-                      aria-label={t('回到底部')}
-                      title={t('回到底部')}
-                      className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+                      onClick={() => setLimit(Infinity)}
+                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
                     >
-                      <ArrowDown className="h-4 w-4" />
+                      {t('显示更早的 {n} 段', { n: hidden })}
                     </button>
                   )}
-                </div>
-
-                {/* 计划和子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间。
-                    有子对话时分成两行：计划在上、子对话在下，子对话这一行和输入框左对齐，
-                    不为了两边并排把子对话挤到右边 */}
-                <>
-                  {task.plans?.length > 0 && (
-                    <div className="shrink-0 px-3 md:px-6">
-                      {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}
-                      <div className="mx-auto max-w-(--content-w)">
-                        <div className={cn(plainRow, 'mb-1 w-fit max-w-full')}>
-                          <PlanButton task={task} children={children} />
+                  {shownBlocks.map((b, i) =>
+                    b.kind === 'turn' ? (
+                      <div key={b.key} className="flex flex-col gap-4">
+                        <ChatTurn
+                          msgs={b.msgs}
+                          task={task}
+                          teamNames={teamNames}
+                          live={working && i + hidden === blocks.length - 1}
+                          last={!working && i + hidden === blocks.length - 1}
+                          // 最新的一轮：和 last 分开，子对话列表按它列（父对话自己还在跑时也要列，
+                          // 刚发出的用户消息排在后面时也算）
+                          latest={i + hidden === latestTurn}
+                          fallback={byCli ? chatRun : undefined}
+                          command={task.command}
+                        />
+                      </div>
+                    ) : b.kind === 'run' ? (
+                      task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
+                        <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
+                      ) : (
+                        <RunCard
+                          key={b.key}
+                          task={task}
+                          run={b.run}
+                          name={task.workflowName || workflow?.name}
+                          onOpen={() => openRunIn(b.run)}
+                        />
+                      )
+                    ) : b.kind === 'steps' ? (
+                      <div key={b.key} className="flex flex-col gap-7">
+                        {b.roots.map((r) => (
+                          <StepSection
+                            key={r}
+                            task={task}
+                            rootId={r}
+                            msgs={b.byRoot.get(r)!}
+                            teamNames={teamNames}
+                            sticky="chat"
+                          />
+                        ))}
+                      </div>
+                    ) : b.m.peer ? (
+                      <div key={b.m.id} className="flex gap-3">
+                        <span className="w-[26px] shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <ReceivedRow m={b.m} />
                         </div>
                       </div>
+                    ) : b.m.role === 'user' ? (
+                      <UserMessage
+                        key={b.m.id}
+                        text={b.m.text}
+                        at={b.m.at}
+                        attachments={b.m.attachments}
+                        extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
+                        actions={
+                          <>
+                            {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
+                            {project && !task.imported && (
+                              <button
+                                className={msgAction}
+                                title={t('记成项目教训：以后这个项目里的角色都会照着做')}
+                                aria-label={t('记成项目教训')}
+                                onClick={() => setLessonOf(b.m.text)}
+                              >
+                                <GraduationCap className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
+                            {task.mode === 'chat' && !running && !task.imported && (
+                              <>
+                                <button
+                                  className={msgAction}
+                                  title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                                  aria-label={t('从这里分叉')}
+                                  onClick={() => fork(b.m.id)}
+                                >
+                                  <GitFork className="h-3.5 w-3.5" />
+                                </button>
+                                {b.m.id !== firstUser && (
+                                  <button
+                                    className={msgAction}
+                                    title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                    aria-label={t('撤回到这里')}
+                                    onClick={() => setRewindAsk(b.m.id)}
+                                  >
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </>
+                        }
+                      />
+                    ) : b.m.role === 'system' ? (
+                      <NoteMessage
+                        key={b.m.id}
+                        m={b.m}
+                        msgs={task.messages}
+                        task={task}
+                        className="justify-center text-center"
+                      />
+                    ) : (
+                      <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
+                    ),
+                  )}
+                  <NextWorkflows task={task} />
+                  {running &&
+                    task.mode === 'chat' &&
+                    working &&
+                    (blocks.at(-1)?.kind === 'turn' ? (
+                      <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                        <RunPhase
+                          task={task}
+                          label={t('{name} 正在回复', { name: chatLabel })}
+                          agentIds={[task.agentId]}
+                        />
+                        <LiveStats task={task} agentIds={[task.agentId]} />
+                      </div>
+                    ) : (
+                      // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
+                      <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      </PendingReply>
+                    ))}
+                  {/* 这一轮没在跑时先说清在等什么：等后台命令、等派出的子任务、等工作流，最后才是真的停在等下一句。
+                      以前只看 awaitingUser 就写「等待你的下一条消息」，子任务还在跑时也这么说
+                      （用户报的：子任务在跑、状态行却说在等你 + 空闲）。判定统一用 childWait，不另写一套 */}
+                  {running && task.mode === 'chat' && !working && chatWait && (
+                    <ChatWaitLine wait={chatWait} awaiting={task.awaitingUser} task={task} />
+                  )}
+                  {working && task.mode === 'workflow' && runningSteps.length === 0 && (
+                    <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                      <RunPhase task={task} label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })} />
+                      <LiveStats task={task} />
                     </div>
                   )}
-                  {(() => {
-                    // 子对话入口只在父对话里显示（右栏和子对话自己的页面不列子对话）；
-                    // 子任务入口哪里都显示：它派在哪个对话里，就在哪里看
-                    const showChildren = !pane && !task.parentTaskId && children.length > 0
-                    const helpers = helperIds.length ? { task, ids: helperIds, teamNames } : undefined
-                    if (!showChildren && !helpers) return null
-                    return (
-                      <ChildrenBar
-                        children={showChildren ? children : []}
-                        helpers={helpers}
-                        openChild={openChild}
-                        onOpen={openChildIn}
-                        onClose={() => openChildIn('')}
-                        onResume={(id) => void resumeChild(id)}
-                      />
-                    )
-                  })()}
-                </>
-
-                <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-                  {/* 「AI 分析」的结果固定在输入框上方，接着追问时也看得到；发新内容时它自己收起 */}
-                  <EvolutionCard
-                    key={task.id}
-                    task={task}
-                    project={project}
-                    kids={children}
-                    onSpawned={(id) =>
-                      void loadChildren(task.id)
-                        .then(setChildren)
-                        .catch(() => {})
-                        .finally(() => openChildIn(id))
-                    }
-                  />
-                  <TaskRequestCard task={task} onAnswered={apply} />
-                  {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
-                  <WorktreeBar task={task} />
-                  {flowLeft && !task.imported && (
-                    <FlowBar
-                      task={task}
-                      blocked={blocked}
-                      resuming={resuming}
-                      onResume={() => resume()}
-                      onChange={apply}
-                    />
-                  )}
-                  {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
-                  {/* 点开运行面板、子对话里就地打开运行时输入框挪进去，这里先空着，避免出现两个输入框 */}
-                  {!openRun && !paneRun && composer}
-                  {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
-                  <TaskMeta
-                    task={task}
-                    projectName={project?.name}
-                    projectPath={project?.path}
-                    workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
-                    node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
-                    onTask={apply}
-                  />
-                </div>
+                  {/* CLI 还没取走的消息已经直接进对话，这里不用再放一份 */}
+                </ConversationShell>
                 {/* 子对话里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。
                     返回（←）回子对话这一层，✕ 走 onClose 关掉子对话面板本身。
                     输入框跟着放在运行视图底下，和父对话右栏的运行面板一样，看着节点也能补充要求 */}
+                {/* 子对话面板里没有地方并排：功能面板盖在对话上，收起后对话原样回来 */}
+                {pane && reportCover && reportPanel && (
+                  <div className="absolute inset-0 z-30 flex flex-col">{reportPanel}</div>
+                )}
                 {paneRun && (
                   <RunView
                     task={task}
@@ -1510,32 +1753,95 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
-                  aria-label={openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
+                  ref={setRail}
+                  aria-label={
+                    openChild
+                      ? childFiles
+                        ? t('文件')
+                        : t('子对话')
+                      : openRun > 0
+                        ? t('运行 {n}', { n: openRun })
+                        : !panel && (reportOn || reportCover) && report
+                          ? reportTitle(report.kind)
+                          : t('文件')
+                  }
                   data-task-panel
-                  style={{ width: openChild ? '50%' : taskPanel.width }}
+                  style={{
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按定宽封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持），没拖过就是和对话对半
+                    width: openChild
+                      ? '50%'
+                      : !panel && openRun === 0 && reportCover
+                        ? `min(${REPORT_COVER_WIDTH}px, 100%)`
+                        : !panel && openRun === 0 && reportOn
+                          ? reportPane.width
+                          : taskPanel.width,
+                  }}
                   className={cn(
-                    'shrink-0 flex-col border-l bg-rail',
-                    panel || openRun > 0 || openChild
+                    'relative shrink-0 flex-col border-l bg-rail',
+                    panel || reportCover || openRun > 0 || openChild
                       ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
                       : 'hidden',
                     // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
                     'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-                    (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
+                    (filesFolded || noFiles) && openRun === 0 && !openChild && !reportOn && !reportCover && 'xl:hidden',
                   )}
                 >
-                  {!openChild && !panel && (
+                  {/* 功能面板占右栏（宽屏并排）时也能拖，和文件面板一样记在本机；
+                  窄屏和 pane 里是盖在对话上的抽屉（reportCover），没有并排可拖，那时不挂拖动条 */}
+                  {!panel && reportOn && !reportCover && (
+                    <ResizeHandle pane={reportPane} label={t('拖动调整功能面板的宽度')} className="hidden xl:block" />
+                  )}
+                  {!openChild && !panel && !reportOn && !reportCover && (
                     <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
                   )}
                   {openChild ? (
                     // 对话内容区统一用 bg-bg：署名行等粘贴背景的地方在父对话、右栏、弹窗里颜色都一致
-                    <div className="flex min-h-0 w-full flex-1 flex-col bg-bg">
-                      <TaskView
-                        key={openChild}
-                        taskId={openChild}
-                        project={project}
-                        pane
-                        onClose={() => openChildIn('')}
-                      />
+                    <div className="relative flex min-h-0 w-full flex-1 flex-col bg-bg">
+                      {/* 文件面板盖着时，下面的子对话不卸载但也不能被 Tab 到，否则焦点会跑到盖着看不见的输入框上 */}
+                      <div className="flex min-h-0 w-full flex-1 flex-col" inert={childFiles} aria-hidden={childFiles}>
+                        <TaskView
+                          key={openChild}
+                          taskId={openChild}
+                          project={project}
+                          pane
+                          onClose={() => openChildIn('')}
+                        />
+                      </div>
+                      {/* 文件面板盖在子对话上：子对话留在下面没卸载，收起后滚动位置、输入框里写的字都还在；
+                      覆盖层只在自己打开时才挂载，不把文件树的请求带到每次开子对话上。
+                      窄屏子对话只占半边、文件树放不下，盖上去时铺满整个屏（手机上的抽屉习惯） */}
+                      {childFiles && (
+                        // 压在子对话里的运行视图（z-30）上面：盖的是这一栏的内容，不是只盖对话列表
+                        <div
+                          data-cover-panel
+                          className="absolute inset-0 z-40 flex flex-col bg-rail max-xl:fixed max-xl:z-50 max-xl:shadow-pop"
+                        >
+                          {/* 盖在子对话上时文件面板没有自己的标题栏，这里给一个明确的回子对话入口，免得用户找不到怎么回去 */}
+                          <div className="flex shrink-0 items-center justify-between gap-2 border-b px-2 py-1.5">
+                            <span className="flex min-w-0 items-center gap-1.5 pl-1 text-[0.8125rem] font-semibold">
+                              <Files className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                              {t('文件')}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={t('回到子对话')}
+                              title={t('回到子对话')}
+                              onClick={closeChildFiles}
+                            >
+                              <ArrowLeft className="h-4 w-4" />
+                              {t('回到子对话')}
+                            </Button>
+                          </div>
+                          <TaskFiles
+                            task={task}
+                            dir={project?.path}
+                            node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                            onTask={apply}
+                          />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -1561,6 +1867,8 @@ export function TaskView({
                           onClose={() => openRunIn(0)}
                           footer={composer}
                         />
+                      ) : !panel && (reportOn || reportCover) && reportPanel ? (
+                        reportPanel
                       ) : (
                         <TaskFiles
                           task={task}
@@ -1573,10 +1881,10 @@ export function TaskView({
                   )}
                 </aside>
               )}
-              {(panel || openRun > 0) && (
+              {(panel || reportCover || openRun > 0) && (
                 <div
                   className="fixed inset-0 z-30 bg-black/40 xl:hidden"
-                  onClick={() => (openRun > 0 ? openRunIn(0) : setPanel(false))}
+                  onClick={() => (openRun > 0 ? openRunIn(0) : reportCover ? setReportCover(false) : setPanel(false))}
                 />
               )}
             </div>
@@ -1653,6 +1961,7 @@ export function TaskView({
               onConfirm={remove}
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+            <JobDialog taskId={task.id} target={jobTarget} onOpenChange={(o) => !o && setJobTarget(null)} />
             {convSettings && (
               <ConversationSettingsDialog
                 task={task}
@@ -1664,8 +1973,15 @@ export function TaskView({
             <AnalyzeDialog
               open={analyzing}
               onOpenChange={setAnalyzing}
-              tasks={async () => [await api.task(task.id)]}
-              projectId={task.projectId}
+              subject={task.title}
+              start={async (focus) =>
+                startAnalysis({
+                  tasks: [await api.task(task.id)],
+                  agents: localAgents,
+                  projectId: task.projectId,
+                  focus,
+                })
+              }
             />
           </ChildListCtx.Provider>
         </PaneNavCtx.Provider>
@@ -1759,7 +2075,7 @@ function ChildrenBar({
   onResume,
 }: {
   children: ChildSummary[]
-  /** 派出的子任务：和子对话同一行，点开看它的实时对话流 */
+  /** 派出的子任务：单独占子任务那一行，点开看它的实时对话流 */
   helpers?: { task: Task; ids: string[]; teamNames: Set<string> }
   openChild: string
   onOpen: (id: string) => void
@@ -1791,16 +2107,44 @@ function ChildrenBar({
   const shown = all ? sortChildren(children) : visibleChildren(children)
   const current = children.find((c) => c.id === openChild)
 
+  // 小块的个数按这一行实际能用的宽度算：放不下的收成「+N」，不折到下一行去挤子任务，
+  // 窗口拉宽 / 缩窄时跟着变（不再是写死的 slice(0, 3)）。
+  // 用回调 ref + ResizeObserver，节点挂上再量；卡片大小跟着根字号（设置里能改字号）走，不写死像素
+  const [cardsEl, setCardsEl] = useState<HTMLDivElement | null>(null)
+  const [box, setBox] = useState({ room: 0, card: 224, gap: 6, more: 40 })
+  useLayoutEffect(() => {
+    if (!cardsEl) return
+    const read = () => {
+      // w-56 = 14rem、gap-1.5 = 0.375rem；「+N」按钮连同间距按 2.5rem 预留
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      setBox({ room: cardsEl.clientWidth, card: rem * 14, gap: rem * 0.375, more: rem * 2.5 })
+    }
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(cardsEl)
+    return () => ro.disconnect()
+  }, [cardsEl])
+  const cardSlot = box.card + box.gap
+  const fitAll = Math.floor((box.room + box.gap) / cardSlot)
+  const shownCards =
+    fitAll >= busy.length ? busy.length : Math.max(0, Math.floor(Math.max(0, box.room - box.more) / cardSlot))
+  const hiddenCards = busy.length - shownCards
+  // CLI 还活着的子对话数：「子对话」入口流光、悬浮说明用
+  const cliKids = children.filter((c) => c.cliAlive).length
+
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
-      {/* 弹窗以这一行内容为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
+      {/* 弹窗以这两行为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
-        {/* 这一行铺满内容宽：小卡列表和右侧关闭按钮要有稳定的左右边界，换行时关闭按钮才不跑位 */}
-        <div className={cn(plainRow, 'mb-1.5 flex-wrap')}>
-          {/* 子任务排在子对话前面（计划单独在上一行）：常驻的是两个计数入口，窄屏下换行保留，不省略任何一个 */}
-          {helpers && <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />}
-          {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
-          {children.length > 0 && (
+        {/* 状态栏的后两行（计划在调用处单独一行）：子任务在上、子对话在下，各自只占一行、不换行。
+            子对话行左边是计数入口、右边是关闭按钮，中间的小块放不下就收成「+N」 */}
+        {helpers && (
+          <div data-status-row="helpers" className={cn(plainRow, 'mb-1 flex-nowrap')}>
+            <HelperBar task={helpers.task} ids={helpers.ids} teamNames={helpers.teamNames} />
+          </div>
+        )}
+        {children.length > 0 && (
+          <div data-status-row="children" className={cn(plainRow, 'mb-1 flex-nowrap')}>
             <button
               type="button"
               aria-expanded={open}
@@ -1810,10 +2154,17 @@ function ChildrenBar({
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
-              className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+              title={cliKids ? t('CLI 存活：{n} 个子对话', { n: cliKids }) : undefined}
+              className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-              <span className="shrink-0 font-medium">{t('子对话')}</span>
+              {/* 有子对话的 CLI 还活着：「子对话」三个字流光，和标题、侧栏一致 */}
+              <span
+                className={cn('shrink-0 font-medium', cliKids > 0 && 'cli-alive-title')}
+                style={cliKids > 0 ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+              >
+                {t('子对话')}
+              </span>
               {/* 进行中的在前、总数在后：转圈 3/5 读作「3 个还在进行，一共 5 个」，总数不重复说两遍 */}
               {working > 0 ? (
                 <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
@@ -1825,64 +2176,97 @@ function ChildrenBar({
                 <span className="shrink-0 text-xs text-subtle tabular-nums">{total}</span>
               )}
             </button>
-          )}
-          {asking.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpen(asking[0].id)}
-              title={asking.map((c) => c.title).join('\n')}
-              className="flex h-7 max-w-64 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
-            >
-              <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 truncate">
-                {asking.length > 1
-                  ? t('{n} 个子对话请你选择', { n: asking.length })
-                  : t('「{title}」请你选择', { title: asking[0].title })}
-              </span>
-            </button>
-          )}
-          {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
-          {busy.length > 0 && (
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              {busy.slice(0, 3).map((c) => {
-                // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
-                const stale = staleLine(c)
-                const line = childNote(c, true)
-                return (
+            {asking.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpen(asking[0].id)}
+                title={asking.map((c) => c.title).join('\n')}
+                className="flex h-7 max-w-64 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
+              >
+                <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">
+                  {asking.length > 1
+                    ? t('{n} 个子对话请你选择', { n: asking.length })
+                    : t('「{title}」请你选择', { title: asking[0].title })}
+                </span>
+              </button>
+            )}
+            {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开。
+                这一层量到的宽度就是能放小块的宽度，超出被裁掉之前已经按个数收成「+N」 */}
+            {busy.length > 0 && (
+              // 至少给「+N」留出 2.5rem：窄屏下「请你选择」占满行时，这个容器会被挤成 0 宽，
+              // 里面的数字被 overflow-hidden 整个裁掉，看着像没显示
+              <div
+                ref={setCardsEl}
+                data-child-cards
+                className="flex min-w-10 flex-1 items-center gap-1.5 overflow-hidden"
+              >
+                {busy.slice(0, shownCards).map((c) => {
+                  // 执行中很久没新输出：文字变黄 / 红，一眼看出可能是它卡住了（等待原因不在这里标）
+                  const stale = staleLine(c)
+                  const line = childNote(c, true)
+                  // 进程回收了但还在跑：卡片上不写「已关闭」，悬停补一句（和悬浮层列表同一个提示）
+                  const gone = childClosedHint(c)
+                  return (
+                    <button
+                      key={c.id}
+                      data-child-card
+                      type="button"
+                      onClick={() => onOpen(c.id)}
+                      title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}${gone ? ` · ${gone}` : ''}`}
+                      className={cn(
+                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                        c.id === openChild ? 'border-line-strong' : 'border-line',
+                      )}
+                    >
+                      {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                      <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
+                      {c.analysis && <AnalysisMark kind={c.analysis} />}
+                      <span
+                        className={cn(
+                          'max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg',
+                          c.cliAlive && 'cli-alive-title',
+                        )}
+                      >
+                        {c.title}
+                      </span>
+                      <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
+                        {stale ? stale.text : line}
+                      </span>
+                    </button>
+                  )
+                })}
+                {hiddenCards > 0 && (
+                  // 放不下的真实个数：紧跟最后一块，点开还是那个能看全部的浮层
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => onOpen(c.id)}
-                    title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}`}
-                    className={cn(
-                      'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
-                      c.id === openChild ? 'border-line-strong' : 'border-line',
-                    )}
+                    data-child-more
+                    aria-label={t('还有 {n} 个子对话', { n: hiddenCards })}
+                    title={busy
+                      .slice(shownCards)
+                      .map((c) => c.title)
+                      .join('\n')}
+                    onClick={() => setOpen((v) => !v)}
+                    className="shrink-0 cursor-pointer rounded-lg px-1.5 py-1 text-xs text-subtle tabular-nums transition-colors hover:bg-sel hover:text-fg"
                   >
-                    {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
-                    <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
-                    <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
-                    <span className={cn('min-w-0 flex-1 truncate', stale?.cls ?? 'text-subtle')}>
-                      {stale ? stale.text : line}
-                    </span>
+                    +{hiddenCards}
                   </button>
-                )
-              })}
-              {busy.length > 3 && <span className="shrink-0 text-xs text-subtle">+{busy.length - 3}</span>}
-            </div>
-          )}
-          {current && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t('关闭子对话')}
-              title={t('关闭子对话')}
-              className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+                )}
+              </div>
+            )}
+            {current && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t('关闭子对话')}
+                title={t('关闭子对话')}
+                className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
         {open && (
           <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
             <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -1918,21 +2302,13 @@ function ChildrenBar({
                     </p>
                   )}
                   {g.items.map((c) => {
-                    // 图标、行内徽标、摘要都读同一个判定（见 shared/task.ts 的 childIcon）：
-                    // 以前图标按 working/spin/waiting、徽标按 resolved/asking/plan、摘要按 childRunning 各算一套，
-                    // 于是出现「已解决」和「执行中」同屏、已完成分组里的项画成暂停
-                    const icon = childIcon(c)
-                    // 那一行下面的说明：执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
-                    const line = childNote(c, icon === 'running')
-                    const stale = staleLine(c)
-                    // 行上的状态标签和运行区、分组读同一份（见 ./child-line 的 childLabels）
-                    const labels = childLabels(c)
                     // 停下时独立分支里还有没提交的改动：在卡片上直接说出来，并给「继续」
                     const dirty = childDirty(c)
                     return (
                       <Fragment key={c.id}>
                         <button
                           type="button"
+                          data-child-item
                           onClick={() => {
                             // 点条目只切换右边要看的子对话，浮层不关；点浮层外面或按 Escape 才关
                             onOpen(c.id)
@@ -1942,39 +2318,8 @@ function ChildrenBar({
                             c.id === openChild && 'bg-sel',
                           )}
                         >
-                          <span className="mt-0.5 shrink-0">
-                            <TaskStatusIcon
-                              status={c.status}
-                              icon={icon}
-                              label={c.status === 'stopped' ? stopReasonText(c.stopReason) : undefined}
-                            />
-                          </span>
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                                {c.title}
-                              </span>
-                              {/* 状态标签：全部从 childIcon / childState 派生，同一行只说一件事，不会「已解决」和「执行中」一起出现 */}
-                              {labels.map((l) => (
-                                <span key={l.text} className={childLabelClass[l.tone]}>
-                                  {l.icon === 'check' && <CheckCircle2 className="h-3 w-3" />}
-                                  {l.text}
-                                </span>
-                              ))}
-                            </span>
-                            {(line || stale) && (
-                              <span className="flex min-w-0 items-center gap-1">
-                                {line && <span className="line-clamp-1 min-w-0 text-xs text-subtle">{line}</span>}
-                                {stale && <span className={cn('shrink-0 text-xs', stale.cls)}>· {stale.text}</span>}
-                              </span>
-                            )}
-                            {c.branch && (
-                              <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
-                                <GitBranch className="h-3 w-3 shrink-0" />
-                                <span className="truncate">{c.branch}</span>
-                              </span>
-                            )}
-                          </span>
+                          {/* 图标、状态标签、说明、分支和标题旁的下拉读同一份，两处不再各画一套 */}
+                          <ChildRowContent c={c} />
                         </button>
                         {dirty && (
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续
@@ -2015,33 +2360,13 @@ function ChildrenBar({
   )
 }
 
-/**
- * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、未完成、做完的、停下的；
- * 「运行中」只列真正在执行（working）的几个，不分组。分组用 childStage（taskStage 再加上「计划没做完」）：
- * 和状态图标、行内标签是同一套映射，排序也用这一套，组内顺序和 sortChildren 一致
- */
-function childGroups(list: ChildSummary[], grouped: boolean) {
-  if (!grouped) return [{ key: 'all', label: '', items: list }]
-  const groups: { key: TaskStage; label: string; items: ChildSummary[] }[] = [
-    { key: 'you', label: t('需要你处理'), items: [] },
-    { key: 'running', label: t('执行中'), items: [] },
-    { key: 'unfinished', label: t('未完成'), items: [] },
-    { key: 'done', label: t('已完成'), items: [] },
-    { key: 'stopped', label: t('已停止'), items: [] },
-  ]
-  for (const c of list) {
-    const g = groups.find((x) => x.key === childStage(c))
-    if (g) g.items.push(c)
-  }
-  return groups.filter((g) => g.items.length)
-}
-
 /** 输入框上面一行的提示条（没走完的流程）：本身有实质内容，保留虚线圆角的框 */
 const barRow =
   'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
 /**
- * 计划和子对话那两行：不套框，当作输入框上方的一行轻量信息。
- * 左内边距 2.5 加上行内按钮自己的 px-1.5，正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
+ * 输入框上方的状态栏（计划、子任务、子对话各一行）：不套框，当作轻量信息。
+ * 每行各自 flex-nowrap、只占一行；左内边距 2.5 加上行内按钮自己的 px-1.5，
+ * 正好和输入框文字（外层 px-3/md:px-6 + 文字 px-4）左对齐
  */
 const plainRow = 'flex min-w-0 items-center gap-2 px-2.5 text-[0.8125rem]'
 const barIcon =
@@ -2264,10 +2589,49 @@ function PendingReply({
 }
 
 /**
+ * 这一轮没在跑时状态行：先说清在等什么结果，真的停在等下一句时才说「等待你的下一条消息」。
+ * 等用户回答、等确认由对话里的提问卡片表达，这里不重复
+ */
+function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boolean; task: Task }) {
+  if (wait.kind === 'answer' || wait.kind === 'confirm') return null
+  // 等下一句要 CLI 真的停在面板工具上等（awaitingUser）：只是预热完、还在启动时不写成在等你
+  if (wait.kind === 'next' && !awaiting) return null
+  // 文案都用已有的：子任务和工作流这两句和 RunPhase 同源，没有新词
+  const text =
+    wait.kind === 'helpers'
+      ? t('等待 {n} 个子任务完成', { n: wait.list.length })
+      : wait.kind === 'background'
+        ? t('等 {n} 个后台命令', { n: wait.n })
+        : wait.kind === 'workflow'
+          ? t('等工作流跑完')
+          : t('等待你的下一条消息')
+  const next = wait.kind === 'next'
+  return (
+    <div className="flex items-center gap-2 text-[0.8125rem] text-muted" data-chat-wait={wait.kind}>
+      {/* 还在等别人的结果：转圈；等你的下一句：对话气泡 + 动态点 */}
+      {next ? (
+        <MessageSquareText className="h-4 w-4 text-subtle" />
+      ) : (
+        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+      )}
+      <span className="inline-flex items-baseline">
+        {text}
+        {next && <WaitDots />}
+      </span>
+      {/* 等下一句时确实空闲（它在等你），等别人的结果时才是「等待中」：不把在干活的对话说成没事做 */}
+      <LiveStats task={task} agentIds={[task.agentId]} waiting={!next} />
+    </div>
+  )
+}
+
+/**
  * 执行中的状态文字：最近一段时间没有任何输出、也没有工具在跑，说明在等模型的下一段。
  * 模型请求本身要几秒到几十秒（上下文越大越久），标出来，免得看起来像卡在工具上
+ *
+ * agentIds 要和同一行 LiveStats 的传法一致：判断「真的在出 token」只能看这一行显示的那几个 Agent，
+ * 看全部 Agent 会把「别人在输出、这一轮自己在排队」当成在输出，反而把真排队遮掉
  */
-function RunPhase({ task, label }: { task: Task; label: string }) {
+function RunPhase({ task, label, agentIds }: { task: Task; label: string; agentIds?: string[] }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
@@ -2276,7 +2640,21 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
     task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => helperRunning(s) && s.parentId === '@chat')
+  // 这一行确实在出 token（同一行右边显示着速度）：就不是「还没开始」，不能标成在排队
+  const streaming = tpsNow(task, agentIds?.every(Boolean) ? agentIds : undefined) > 0
+  // API 设置的并发上限满了：这一轮排着队，前面的对话或子任务释放了才开始（输入框照样是停止按钮）。
+  // 只看「开跑前就排着」的标记：让出名额后拿回的（等子任务、等下一句）这一轮已经跑起来了，
+  // 它排的是「交回结果的那一句」而不是「这一轮」，写成排队会和右边的实时速度自相矛盾
+  const wait = apiQueueWait(task, streaming)
+  if (wait)
+    return (
+      <>
+        {wait.ahead
+          ? t('排队等 API「{api}」空出并发名额 · 前面还有 {n} 个', { api: wait.api, n: wait.ahead })
+          : t('排队等 API「{api}」空出并发名额 · 下一个就是这里', { api: wait.api })}
+      </>
+    )
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   // 等模型也是一种耗时：和别处同一套写法（已 41.2s / 已 2m 5s）
-  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
+  return <>{busy || streaming || idle < 1500 ? label : t('等待模型 · 已 {wait}', { wait: fmtDuration(idle) })}</>
 }

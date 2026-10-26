@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   Bot,
   Crown,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Download, KeyRound, Loader2, LogIn, LogOut, RefreshCw, ShieldCheck, SquareTerminal } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'

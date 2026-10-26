@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   Copy,
   Download,
@@ -23,6 +23,7 @@ import {
   autoPlaceholders,
   checkWorkflow,
   localModel,
+  workflowInKind,
   type ComfyWorkflow,
 } from '@shared/local-image'
 import { t } from '@shared/i18n'
@@ -38,6 +39,7 @@ import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { useLocalImage } from '@/components/settings/LocalImageSection'
 import { ComfyGraphView } from '@/components/comfy/ComfyGraphView'
 import { ComfyQueuePanel } from '@/components/comfy/ComfyQueuePanel'
+import { ComfyChainPanel } from '@/components/comfy/ComfyChainPanel'
 import { TemplateStore } from '@/components/comfy/TemplateStore'
 
 type Kind = 'game' | 'web'
@@ -94,7 +96,8 @@ export function ComfyPage() {
     void load()
   }, [])
 
-  const mine = useMemo(() => data?.list.filter((w) => w.kind === kind) ?? [], [data, kind])
+  // kind 为 both 的处理类工作流（去背景、放大）游戏和网页两边都列出来
+  const mine = useMemo(() => data?.list.filter((w) => workflowInKind(w, kind)) ?? [], [data, kind])
   const current = mine.find((w) => w.id === sel) ?? mine[0]
   // 换了选中的工作流：编辑区换成它（新建、AI 结果还没保存时保留草稿）
   useEffect(() => {
@@ -340,6 +343,7 @@ export function ComfyPage() {
 
         <section className="min-h-0 flex-1 overflow-y-auto">
           <ComfyQueuePanel className="mx-4 mt-4 md:mx-6 md:mt-6" />
+          <ComfyChainPanel kind={kind} className="mx-4 mt-4 md:mx-6 md:mt-6" />
           {!draft ? (
             <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : (

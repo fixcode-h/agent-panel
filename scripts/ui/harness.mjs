@@ -16,6 +16,9 @@ export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const dist = path.join(root, 'dist-demo')
 const out = path.join(root, 'ui-shots')
 
+/** 局部截图往外留的空白（px）：足以带上元素边框和阴影，又不会大到跨出视口（下面会夹） */
+const CLIP_PAD = 6
+
 // 一张 1×1 的 PNG：贴图、图片气泡的检查都用它
 export const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -99,6 +102,32 @@ export async function runShard(file, fn) {
       await frame()
     })
 
+  /**
+   * 拍某个元素的特写（只截它周围的区域）：全页截图里右下角的浮条只有一小块，看不出细节。
+   * clip 必须夹进视口——元素贴着窗口边缘时（浮条夹回视口只留 EDGE=8px），
+   * 直接按「矩形 + 留白」算会跨出页面，Playwright 的 screenshot 会抛错、整个分片报废，而不是这条断言失败。
+   */
+  async function shotOf(p, loc, name) {
+    const box = await loc.boundingBox()
+    if (!box) return false
+    const view = await p.evaluate(() => ({ w: innerWidth, h: innerHeight }))
+    // 起点也夹上界：元素整个落在视口右侧/下方外时，光给宽高兜下界不够（x 已经大于视口宽，x+1 仍越界）
+    const x = Math.min(Math.max(0, box.x - CLIP_PAD), Math.max(0, view.w - 1))
+    const y = Math.min(Math.max(0, box.y - CLIP_PAD), Math.max(0, view.h - 1))
+    await p.screenshot({
+      path: path.join(out, `${prefix}-${name}.png`),
+      clip: {
+        x,
+        y,
+        // 宽高再兜一层下界：元素整个落在视口外时 `view.w - x` 会 <= 0，
+        // clip 非正会让 screenshot 报错、把整个分片搞挂（跟 clip 越界是同一类问题）
+        width: Math.max(1, Math.min(view.w - x, box.width + CLIP_PAD * 2)),
+        height: Math.max(1, Math.min(view.h - y, box.height + CLIP_PAD * 2)),
+      },
+    })
+    return true
+  }
+
   async function check(p, name, expect = []) {
     for (const text of expect)
       await p
@@ -126,7 +155,7 @@ export async function runShard(file, fn) {
 
   let failed = false
   try {
-    await fn({ base, page, check, errors, settle })
+    await fn({ base, page, check, errors, settle, shotOf })
   } catch (e) {
     failed = true
     // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败

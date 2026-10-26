@@ -813,6 +813,13 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(kf.kind, 'commandcode')
   assert.equal(kf.args[kf.args.indexOf('-m') + 1], 'fake/pro')
   assert.equal(kf.args[kf.args.indexOf('--effort') + 1], 'high', '不支持的思考强度改用档位的')
+  // Command Code 没有系统提示词参数：语言规则靠 --mod 生成的 mod 进系统提示词
+  assert.ok(kf.args.includes('--mod'), 'Command Code 用 --mod 追加回复语言规则')
+  const modFile = kf.args[kf.args.indexOf('--mod') + 1]
+  assert.match(readFileSync(modFile, 'utf8'), /## 回复语言/)
+  // 提醒在提示词后半段（invoke 还会在这之后追加 read_user_notes / wait_user_message 的用法）
+  const remindAt = kf.input.indexOf('回复正文和思考过程继续用中文；代码、命令、日志和报错原文不翻译。')
+  assert.ok(remindAt > kf.input.lastIndexOf('## 执行方式'), '提示词后半段带语言提醒')
   // 设置了具体的默认模型后，没填的档位跟随默认模型
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium', effort: '' })
   await call('PUT', '/settings', {

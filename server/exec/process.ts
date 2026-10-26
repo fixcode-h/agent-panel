@@ -46,6 +46,20 @@ const live = new Map<number, ReturnType<typeof spawn>>()
 /** 还在跑的子进程 pid：内存采样用它统计 CLI 子进程占了多少，不要另外维护一份 */
 export const activePids = () => [...live.keys()]
 
+/**
+ * 对话（含子对话、子任务、工作流；按 owner.taskId）名下还活着的 CLI 进程：pid → 任务 id。
+ * 界面上的「CLI 存活」（等下一句的提示、标题流光、侧栏提示）只认这一份：进程起来时登记、
+ * close / error 时去掉，不拿 status === 'running' 或 awaitingUser 去猜
+ */
+const owned = new Map<number, string>()
+
+/** 这个对话现在有没有活着的 CLI 进程 */
+export function taskCliAlive(taskId: string) {
+  if (!taskId) return false
+  for (const id of owned.values()) if (id === taskId) return true
+  return false
+}
+
 /** pid 还在不在（不关心它是什么进程） */
 export function isProcessAlive(pid: number) {
   try {
@@ -252,6 +266,7 @@ export function runProcess(o: {
 
     const pid = child.pid
     if (pid) live.set(pid, child)
+    if (pid && o.owner?.taskId) owned.set(pid, o.owner.taskId)
     // 面板起的 CLI（带面板的桥接参数或面板临时目录）登记下来：面板被强杀后，下次启动照着它认遗留进程；
     // 短命令（git、版本检测）不带这些痕迹，不登记也不频繁写盘
     if (pid) {
@@ -271,6 +286,7 @@ export function runProcess(o: {
     const forget = () => {
       if (!pid) return
       live.delete(pid)
+      owned.delete(pid)
       untrackCliProcess(pid)
     }
     child.on('error', (e: NodeJS.ErrnoException) => {

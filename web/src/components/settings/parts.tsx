@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { useSectionAnchor } from './section-nav'
 
 /** 设置页各栏共用的排版：一行一项、分组、只读值、可复制的文字 */
 
@@ -33,9 +34,14 @@ export function Row({
   )
 }
 
+/**
+ * 一组设置项。在设置页里且有 title 时算本节的一个小节：右侧的小节菜单会列出它（见 section-nav），
+ * 不在设置页外（没挂滚动容器）用时只是多个标题，什么都不登记。
+ */
 export function Group({ title, children }: { title?: string; children: React.ReactNode }) {
+  const anchor = useSectionAnchor(title)
   return (
-    <section className="flex flex-col">
+    <section ref={anchor.ref} id={title ? anchor.id : undefined} className="flex flex-col">
       {title && <h3 className="pt-6 pb-1 text-xs font-medium text-subtle">{title}</h3>}
       {children}
     </section>

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
 import { newTask, stopReasonText } from '../shared/task.ts'
-import { runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import { retryBase, runEngineTurn, stopHelper, type AgentCall, type EngineHost } from '../shared/engine.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -284,11 +284,17 @@ test('终止子任务：只停那一个，按「已终止」交回，别的子�
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
   /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
-  const promptsOf = async (chat: Record<string, unknown>, extra: Partial<EngineHost> = {}) => {
+  const promptsOf = async (
+    chat: Record<string, unknown>,
+    extra: Partial<EngineHost> = {},
+    /** 任务上 newTask 给不出的字段（worktree 这类运行时状态） */
+    patch: Record<string, unknown> = {},
+  ) => {
     const prompts: string[] = []
     const task = {
       ...newTask({ projectId: 'p', mode: 'chat', prompt: '把剩下的测试补完', ...chat } as never, undefined, '', 'kid'),
       id: 'kid',
+      ...patch,
     } as Task
     await runEngineTurn({
       task,
@@ -336,18 +342,64 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   const shared = await promptsOf({ parentTaskId: 'parent' })
   assert.doesNotMatch(shared[0], /## 收尾：计划的最后一步/)
   assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
-  assert.doesNotMatch(child[0], /第一次需要推送时先用提问工具问用户一次/, '子对话不再问用户要不要推送')
+  assert.doesNotMatch(child[0], /用提问工具问用户一次要不要推送/, '子对话不再问用户要不要推送')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none
   assert.match(child[0], /remote 必须写/)
 
   const main = await promptsOf({})
   assert.equal(main.length, 1)
-  assert.match(main[0], /第一次需要推送时先用提问工具问用户一次/, '父对话的授权规则保持不变')
+  assert.match(
+    main[0],
+    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，用提问工具问用户一次/,
+    '父对话的授权规则保持不变',
+  )
   // 通用约束里的「安全边界」是所有角色都有的；这里只看授权情况那一段不会被子对话的写法盖掉
   assert.doesNotMatch(
     main[0],
     /## 授权情况[\s\S]{0,10}推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内/,
   )
+
+  // 三个选项要有不同的效果：只写「可以推送」时，模型照技能里的「本地先行」只做本地提交，选什么都一样
+  const allow = await promptsOf({}, { policy: { push: 'allow', tools: [] } })
+  assert.match(
+    allow[0],
+    /允许直接推送」，这就是用户的授权，不用再问。任务做完、验证通过并在本地提交之后就把当前分支推到它跟踪的远端分支/,
+  )
+  assert.match(allow[0], /比角色设定、技能里「不推送 \/ 本地先行 \/ 推送要用户明确授权」的默认写法优先/)
+  // 有推送收尾时（父对话、Git 仓库有远端）：只让模型照着计划的最后一步做，不另写一条重复的推送步骤
+  const allowWrap = await promptsOf({}, { policy: { push: 'allow', tools: [] }, wrapUp: 'push' })
+  assert.match(
+    allowWrap[0],
+    /收尾：推送到远端已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条/,
+  )
+  assert.match(allowWrap[0], /## 收尾：计划的最后一步[\s\S]*推成功后把这步标完成/)
+  assert.match(
+    allowWrap[0],
+    /由面板加在最后，别删、别挪到前面，也不要自己再写一条重复的收尾步骤/,
+    '计划那段也要讲清收尾由面板加',
+  )
+  assert.doesNotMatch(allow[0], /收尾：推送到远端已经在计划的最后一步/, '没有推送收尾时不提这一步')
+  // 父对话在独立分支里：推送收尾和「执行目录」那段要一致（先合回原分支再推，不直接推独立分支）
+  const allowWt = await promptsOf(
+    {},
+    { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
+    { worktree: { state: 'active', branch: 'agent-panel/x', path: '/tmp/wt', baseBranch: 'dev' } },
+  )
+  assert.match(allowWt[0], /计划的最后一步是「收尾：推送到远端」：那时先把它合回原分支/)
+  assert.match(allowWt[0], /推送归计划的最后一步「收尾：推送到远端」：合回原分支之后推原分支/)
+  assert.doesNotMatch(allowWt[0], /提交留在这个分支上，由用户决定合并还是丢弃/, '和推送收尾不矛盾')
+  // 明确不推送（'none'）：计划里不提收尾这一段
+  const none = await promptsOf({}, { policy: { push: 'deny', tools: [] }, wrapUp: 'none' })
+  assert.doesNotMatch(none[0], /## 收尾：计划的最后一步/)
+  // 子对话的推送收尾不成立：子对话永远不碰远端
+  const childWrap = await promptsOf(
+    { parentTaskId: 'parent' },
+    { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
+  )
+  assert.match(childWrap[0], /由父对话决定，不在你的处理范围内/)
+  const deny = await promptsOf({}, { policy: { push: 'deny', tools: [] } })
+  assert.match(deny[0], /不推送，只做本地提交」。不 push/)
+  assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
@@ -512,6 +564,51 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
   assert.match(errors[1] ?? '', /不是你派过的子任务/)
 })
 
+test('子任务：失败后 resume 写它的 id，就在原来那个子任务里重试，不另起一个（用户 2026-10-25）', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  let tries = 0
+  let firstWait: unknown
+  const { task, log, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '查资料', instructions: '查一下' }]).ids
+      firstWait = await o.wait(first, 1000)
+      const again = o.spawn([{ title: '查资料', instructions: '再查一次', resume: first[0] }]).ids
+      assert.deepEqual(again, first, '重试返回的还是原来的 id')
+      await o.wait(again, 1000)
+      return '一步结果'
+    }
+    if (call.step?.slot === 'sub') {
+      tries++
+      if (tries === 1) return { ok: false, error: '连接断开' }
+      return '查到了'
+    }
+    return '验收结论：通过'
+  })
+  await runEngineTurn(host)
+  const subs = task.steps.filter((s) => s.slot === 'sub')
+  assert.equal(subs.length, 1, '只有一条子任务记录')
+  assert.equal(subs[0].status, 'done')
+  assert.equal(subs[0].output, '查到了')
+  assert.equal(subs[0].reruns, 1)
+  assert.match(subs[0].brief, /再查一次/)
+  const calls = log.filter((c) => c.step?.slot === 'sub')
+  assert.deepEqual(
+    calls.map((c) => c.sessionKey),
+    [subs[0].id, subs[0].id],
+    '用的是原来那个会话',
+  )
+  assert.match(calls[1].prompt, /这是重试[\s\S]*连接断开/)
+  assert.match(JSON.stringify(firstWait), /failed/)
+})
+
+test('子对话重试标记：去掉「（重试）」这类标记后和原标题一样', () => {
+  assert.equal(retryBase('子对话子任务挪到总结下面（重试）'), '子对话子任务挪到总结下面')
+  assert.equal(retryBase('修登录 (retry 2)'), '修登录')
+  assert.equal(retryBase('修登录 - 重试'), '修登录')
+  assert.equal(retryBase('修登录'), '修登录')
+})
+
 test('子任务：输出超过交接上限时完整内容存成文件，不再只截开头', async () => {
   const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
   const long = `验收结论：不通过\n${'🛑 R1 一条很长的意见。'.repeat(500)}\n🛑 R9 最后一条`
@@ -548,4 +645,57 @@ test('子任务：被停止时标成打断，不像没开始过', async () => {
   const sub = task.steps.find((s) => s.slot === 'sub')!
   assert.equal(sub.status, 'pending')
   assert.equal(sub.interrupted, true)
+})
+
+test('子任务：派「评审」时面板把改动附进提示词，复看只附上一轮之后的增量', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const since: (string | undefined)[] = []
+  const { task, log, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const bare = o.spawn([{ title: '评审', instructions: '看改动', agent: '评审' }])
+      assert.equal(bare.ids.length, 0, '第一次评审没带交接单要拒绝')
+      assert.match(bare.error!, /goal（需求和验收标准）、checks/)
+      const first = o.spawn([
+        {
+          title: '评审',
+          instructions: '看改动',
+          agent: '评审',
+          review: { goal: '按钮改成蓝色', checks: 'npm run typecheck：通过', focus: '暗色主题', files: ['a.ts'] },
+        },
+      ]).ids
+      await o.wait(first, 1000)
+      const again = o.spawn([{ title: '复看', instructions: '处置：R1 已修', resume: first[0] }]).ids
+      await o.wait(again, 1000)
+      return '一步结果'
+    }
+    return '验收结论：通过\n必须处置：无'
+  })
+  host.agents = [...agents, { ...agent('r', '评审'), origin: 'builtin:reviewer' }]
+  let n = 0
+  const scoped: (string[] | undefined)[] = []
+  host.reviewDiff = async (s, files) => {
+    since.push(s)
+    scoped.push(files)
+    n++
+    return { snapshot: `tree${n}`, stat: ' a.ts | 2 +-', diff: `@@ 第 ${n} 次的差异 @@` }
+  }
+  await runEngineTurn(host)
+  assert.deepEqual(since, [undefined, 'tree1'], '复看和上一轮的快照比')
+  assert.deepEqual(scoped, [['a.ts'], undefined], '交接单点名的文件只取它们的差异')
+  const calls = log.filter((c) => c.step?.slot === 'sub')
+  assert.match(calls[0].prompt, /这次的全部改动/)
+  // ADR 0013：对话整理的交接单写进评审的提示词；只评 + / - 的行；动手角色的段落不给评审
+  assert.match(calls[0].prompt, /## 评审交接单（派你的对话整理）/)
+  assert.match(calls[0].prompt, /### 要达成什么、验收标准\n按钮改成蓝色/)
+  assert.match(calls[0].prompt, /### 已经跑过的检查\nnpm run typecheck：通过/)
+  assert.match(calls[0].prompt, /只评以 \+ \/ - 开头的行/)
+  assert.doesNotMatch(calls[0].prompt, /## 通用要求/, '评审不带写给动手角色的通用要求')
+  assert.match(calls[0].prompt, /第 1 次的差异/)
+  assert.match(calls[1].prompt, /上一轮评审之后的增量/)
+  assert.match(calls[1].prompt, /第 2 次的差异/)
+  assert.deepEqual(
+    task.steps.filter((s) => s.slot === 'sub').map((s) => s.snapshot),
+    ['tree1', 'tree2'],
+  )
 })

@@ -12,7 +12,7 @@ import {
   templateDetail,
   type TemplateDeps,
 } from './comfy-templates.ts'
-import type { ComfyWorkflow } from '../shared/local-image.ts'
+import { LOCAL_MODELS, type ComfyWorkflow } from '../shared/local-image.ts'
 
 const empty = path.join(tmpdir(), 'agent-panel-no-such-models')
 
@@ -36,7 +36,13 @@ test('模板名和下载地址做校验：不让拼出目录外，也不下非 H
 test('模板列表：内置模板在前，官方快照离线可浏览', async () => {
   const catalog = await templateCatalog(empty)
   const builtin = catalog.templates.filter((t) => t.source === 'builtin')
-  assert.equal(builtin.length, 7)
+  assert.equal(builtin.length, LOCAL_MODELS.filter((m) => m.family !== 'birefnet').length)
+  // 每个文生图模型都要有一条自己的内置模板，不能漏掉某个模型（处理类模型不是文生图，走得是工作流和链，没有模板）
+  for (const m of LOCAL_MODELS.filter((x) => x.family !== 'birefnet'))
+    assert.ok(
+      builtin.some((t) => t.name === `builtin:${m.id}`),
+      m.id,
+    )
   assert.equal(builtin[0].ready, false, '文件不存在时标成缺模型')
   assert.ok(catalog.templates.some((t) => t.source === 'comfy' && t.category === 'Image'))
   assert.equal(catalog.cached, false)

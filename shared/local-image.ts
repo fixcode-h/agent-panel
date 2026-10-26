@@ -22,6 +22,7 @@ export type LocalDir =
   | 'controlnet'
   | 'clip_vision'
   | 'upscale_models'
+  | 'background_removal'
 
 export interface LocalFile {
   id: string
@@ -127,9 +128,58 @@ export const LOCAL_FILES: LocalFile[] = [
     url: `${HF}/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors`,
     gb: 11.3,
   },
+  // MOSS-Image 的文件名和大小取自 Comfy-Org/MOSS-Image 仓库的文件列表；
+  // flux2-vae_small 和项目已有的 flux2-vae 不是同一个文件，都要下
+  {
+    id: 'moss-unet',
+    dir: 'diffusion_models',
+    file: 'moss_image_sft_int8_convrot.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_int8_convrot.safetensors`,
+    gb: 5.4,
+  },
+  {
+    id: 'moss-te',
+    dir: 'text_encoders',
+    file: 'qwen3.5_9b_w4a8_gptq.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors`,
+    gb: 7.3,
+  },
+  {
+    id: 'moss-vae',
+    dir: 'vae',
+    file: 'flux2-vae_small.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors`,
+    gb: 0.25,
+  },
+  {
+    id: 'moss-unet-bf16',
+    dir: 'diffusion_models',
+    file: 'moss_image_sft_bf16.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors`,
+    gb: 10.2,
+  },
+  {
+    id: 'moss-te-bf16',
+    dir: 'text_encoders',
+    file: 'qwen3.5_9b_bf16.safetensors',
+    url: `${HF}/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_bf16.safetensors`,
+    gb: 19.3,
+  },
+  // 去背景用的 BiRefNet 权重：ComfyUI 原生节点 LoadBackgroundRemovalModel 只认这个目录和这个文件名，
+  // 大小取自官方模板 utility_birefnet_remove_background 的说明（423.9 MB）
+  {
+    id: 'birefnet',
+    dir: 'background_removal',
+    file: 'birefnet.safetensors',
+    url: `${HF}/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors`,
+    gb: 0.42,
+  },
 ]
 
-export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen'
+/**
+ * 处理类模型：不吃提示词，处理一张输入图（去背景、放大）。和文本生图分开列，自动选工作流时也不会被选中
+ */
+export type LocalFamily = 'zimage' | 'flux2klein' | 'flux1' | 'flux1dev' | 'sdxl' | 'qwen' | 'moss' | 'birefnet'
 
 /** 模型按用途分组展示；顺序就是设置页里从上到下的顺序 */
 export const LOCAL_MODEL_GROUPS = [
@@ -142,6 +192,11 @@ export const LOCAL_MODEL_GROUPS = [
     id: 'fast',
     title: t('加速与量化'),
     desc: t('少步数或量化版本：出图更快、占显存更少，适合批量试稿和显存紧的电脑'),
+  },
+  {
+    id: 'process',
+    title: t('图片处理'),
+    desc: t('不吃提示词，处理一张已有的图：去背景（透明底的 PNG）、放大'),
   },
   {
     id: 'light',
@@ -246,6 +301,32 @@ export const LOCAL_MODELS: LocalModel[] = [
     natural: true,
   },
   {
+    id: 'moss-image',
+    name: 'MOSS-Image（布局 JSON）',
+    family: 'moss',
+    category: 'text',
+    files: ['moss-unet', 'moss-te', 'moss-vae'],
+    vram: 16,
+    use: t(
+      '图里要文字、要精确摆放时用：中英文都写得准，还能按布局 JSON 把标题、按钮文字放到指定位置；ComfyUI 要 0.42 以上',
+    ),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
+    id: 'moss-image-bf16',
+    name: 'MOSS-Image SFT（bf16）',
+    family: 'moss',
+    category: 'text',
+    files: ['moss-unet-bf16', 'moss-te-bf16', 'moss-vae'],
+    vram: 32,
+    use: t('MOSS-Image 的 bf16 版本：文字和画质更稳，文件大一半多，32GB 以上显存时用'),
+    license: 'Apache-2.0',
+    base: 1024,
+    natural: true,
+  },
+  {
     id: 'sdxl',
     name: 'SDXL 1.0',
     family: 'sdxl',
@@ -256,6 +337,19 @@ export const LOCAL_MODELS: LocalModel[] = [
     license: 'OpenRAIL++',
     base: 1024,
     natural: false,
+  },
+  {
+    id: 'birefnet',
+    name: 'BiRefNet',
+    family: 'birefnet',
+    category: 'process',
+    files: ['birefnet'],
+    vram: 4,
+    use: t('按主体分割抠图，输出带透明通道的 PNG：图标去底、把生成的图叠到别的背景上时用'),
+    license: 'MIT',
+    /** 处理类模型不吃提示词和尺寸，base 不参与换算，写和文本模型一样的值避两套分支 */
+    base: 1024,
+    natural: true,
   },
 ]
 
@@ -438,9 +532,31 @@ export function localSize(width: number, height: number, base: number) {
 export type ComfyNode = { class_type: string; inputs: Record<string, unknown> }
 type Node = ComfyNode
 
+const P = {
+  prompt: '{{prompt}}',
+  negative: '{{negative}}',
+  width: '{{width}}',
+  height: '{{height}}',
+  count: '{{count}}',
+  seed: '{{seed}}',
+}
+
+/**
+ * 需要输入图的占位符：处理类工作流（去背景、图生图、放大）的入口。
+ * 链里被上游的输出替掉，链的第一段由外部上传的原图填。
+ */
+export const IMAGE_PLACEHOLDER = '{{image}}'
+
+/** 图生图的去噪强度：0.6 大概是「保留原图的构图和配色，换掉细节和风格」 */
+export const IMG2IMG_DENOISE = 0.6
+
+/** 插值放大的倍数：不做细节修复，只是把图放大好当底图用 */
+export const UPSCALE_FACTOR = 2
+
 /**
  * 生成 ComfyUI 的接口格式工作流（节点 id → 节点）。参数照官方模板：
- * Z-Image 8 步 res_multistep、FLUX.2 klein 4 步、Qwen-Image 加 Lightning LoRA 8 步、FLUX.1 schnell 4 步、SDXL 25 步
+ * Z-Image 8 步 res_multistep、FLUX.2 klein 4 步、Qwen-Image 加 Lightning LoRA 8 步、FLUX.1 schnell 4 步、SDXL 25 步、
+ * MOSS-Image 25 步 er_sde（加官方模板的跳过层引导）
  */
 export function localWorkflow(
   m: LocalModel,
@@ -453,6 +569,8 @@ export function localWorkflow(
     seed: number | string
     /** 覆盖默认的步数（例如原画多走几步） */
     steps?: number
+    /** 正向提示词换成 {{layout}}：生成时传布局 JSON，没有布局时回退成描述 */
+    layout?: boolean
   },
 ): Record<string, Node> {
   const f = (id: string) => localFile(id)!.file
@@ -565,8 +683,105 @@ export function localWorkflow(
         decode: n('VAEDecode', { samples: ['sample', 0], vae: ['ckpt', 2] }),
         save: save(['decode', 0]),
       }
+    case 'moss': {
+      // int8 和 bf16 用同一个节点图，文件按模型实际带的那几个取
+      const byDir = (dir: LocalDir) => m.files.map(localFile).find((x) => x?.dir === dir)?.file ?? ''
+      return {
+        unet: n('UNETLoader', { unet_name: byDir('diffusion_models'), weight_dtype: 'default' }),
+        clip: n('CLIPLoader', { clip_name: byDir('text_encoders'), type: 'moss_image', device: 'default' }),
+        vae: n('VAELoader', { vae_name: byDir('vae') }),
+        // 官方模板的跳过层引导：跳过第 22 层，前一半步数生效，细节不容易糊
+        slg: n('SkipLayerGuidanceDiTSimple', {
+          model: ['unet', 0],
+          double_layers: '',
+          single_layers: '22',
+          start_percent: 0,
+          end_percent: 0.5,
+        }),
+        pos: n('CLIPTextEncode', { text: o.layout ? '{{layout}}' : o.prompt, clip: ['clip', 0] }),
+        neg: n('CLIPTextEncode', { text: o.negative, clip: ['clip', 0] }),
+        latent: n('EmptyFlux2LatentImage', latent),
+        // 25 步、CFG 2.5、er_sde 是官方模板的快速参数；要更接近官方效果可以调到 50 步、CFG 3
+        sample: ksampler(['slg', 0], o.steps ?? 25, 2.5, 'er_sde', 'simple'),
+        decode: n('VAEDecode', { samples: ['sample', 0], vae: ['vae', 0] }),
+        save: save(['decode', 0]),
+      }
+    }
+    // 处理类模型不吃提示词和尺寸，走 removeBgGraph / upscaleGraph，不在这里生成文生图
+    case 'birefnet':
+      throw new Error(t('{name} 是图片处理模型，不能用来文生图', { name: m.name }))
   }
 }
+
+/**
+ * 去背景工作流（透明底 PNG）：节点取自本机 ComfyUI 0.42 的 /object_info，接法照官方模板
+ * utility_birefnet_remove_background（子图内部：RemoveBackground → InvertMask → JoinImageWithAlpha 的 alpha）
+ */
+export const removeBgGraph = (): ComfyWorkflow['graph'] => {
+  const n = (class_type: string, inputs: Record<string, unknown>): Node => ({ class_type, inputs })
+  return {
+    image: n('LoadImage', { image: IMAGE_PLACEHOLDER }),
+    // RemoveBackground 出的是前景 mask；JoinImageWithAlpha 内部按 1-mask 算 alpha，
+    // 所以要先 InvertMask，不然抠出来的是背景（官方模板就是这么接的）
+    model: n('LoadBackgroundRemovalModel', { bg_removal_name: localFile('birefnet')!.file }),
+    remove: n('RemoveBackground', { bg_removal_model: ['model', 0], image: ['image', 0] }),
+    invert: n('InvertMask', { mask: ['remove', 0] }),
+    alpha: n('JoinImageWithAlpha', { image: ['image', 0], alpha: ['invert', 0] }),
+    save: n('SaveImage', { images: ['alpha', 0], filename_prefix: 'agent-panel' }),
+  }
+}
+
+/** 插值放大：只是把图变大，不做细节修复（模型放大要 upscale_models 里的权重，不在预置清单里） */
+export const upscaleGraph = (): ComfyWorkflow['graph'] => {
+  const n = (class_type: string, inputs: Record<string, unknown>): Node => ({ class_type, inputs })
+  return {
+    image: n('LoadImage', { image: IMAGE_PLACEHOLDER }),
+    scale: n('ImageScaleBy', { image: ['image', 0], upscale_method: 'lanczos', scale_by: UPSCALE_FACTOR }),
+    save: n('SaveImage', { images: ['scale', 0], filename_prefix: 'agent-panel' }),
+  }
+}
+
+const vaeRef = (g: ComfyWorkflow['graph']): [string, number] | undefined => {
+  // 内置工作流的 VAE：单独加载的取 VAELoader，SDXL / FLUX.1 从 CheckpointLoaderSimple 的第三个输出取
+  const vaeNode = Object.entries(g).find(([, n]) => n.class_type === 'VAELoader')
+  const ckptNode = Object.entries(g).find(([, n]) => n.class_type === 'CheckpointLoaderSimple')
+  return vaeNode ? [vaeNode[0], 0] : ckptNode ? [ckptNode[0], 2] : undefined
+}
+
+/**
+ * 图生图：把工作流改成从原图出发——原图 VAE 编码成 latent，采样器降 denoise 只改一部分，构图和配色保留。
+ * 两种采样器分开接：KSampler 直接设 denoise；SamplerCustomAdvanced 没有 denoise，用 SplitSigmasDenoise 只走后半段。
+ * 都不匹配时返回 undefined，调用方报「这一段不能接图」，不硬编
+ */
+export function imageToImage(
+  graph: ComfyWorkflow['graph'],
+  o: { image: string; denoise?: number },
+): ComfyWorkflow['graph'] | undefined {
+  const g = structuredClone(graph)
+  const vae = vaeRef(g)
+  const denoise = o.denoise ?? IMG2IMG_DENOISE
+  const ksampler = Object.values(g).find((n) => n.class_type === 'KSampler')
+  const custom = Object.values(g).find((n) => n.class_type === 'SamplerCustomAdvanced')
+  if (!vae || (!ksampler && !custom)) return undefined
+  g[IMAGE_INPUT_NODE] = { class_type: 'LoadImage', inputs: { image: o.image } }
+  g[IMAGE_INPUT_LATENT] = { class_type: 'VAEEncode', inputs: { pixels: [IMAGE_INPUT_NODE, 0], vae } }
+  const latent: [string, number] = [IMAGE_INPUT_LATENT, 0]
+  if (ksampler) {
+    ksampler.inputs.latent_image = latent
+    ksampler.inputs.denoise = denoise
+  } else if (custom) {
+    const sigmas = custom.inputs.sigmas
+    const split = `${IMAGE_INPUT_LATENT}_split`
+    g[split] = { class_type: 'SplitSigmasDenoise', inputs: { sigmas, denoise } }
+    custom.inputs.sigmas = [split, 1]
+    custom.inputs.latent_image = latent
+  }
+  return g
+}
+
+/** 工作流里代表「输入图」的两个节点 id：链合并节点图时靠它们认锚点和接线 */
+export const IMAGE_INPUT_NODE = 'in_image'
+export const IMAGE_INPUT_LATENT = 'in_latent'
 
 /**
  * ComfyUI 工作流：接口格式的节点图（ComfyUI 里「导出（API）」得到的 JSON），参数位置写占位符，生成时换成实际的值：
@@ -588,7 +803,8 @@ export const WORKFLOW_USE_LABEL: Record<WorkflowUse, string> = {
 export const ComfyWorkflow = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(80),
-  kind: z.enum(['game', 'web']),
+  /** both：处理类工作流（去背景、放大）不分游戏和网页，两边都列出来 */
+  kind: z.enum(['game', 'web', 'both']),
   use: z.enum(WORKFLOW_USES).default('any'),
   description: z.string().max(2000).default(''),
   /** 用到的内置模型（LOCAL_MODELS 的 id），用来检查下载了没有；自己的模型留空 */
@@ -606,23 +822,23 @@ export const ComfyWorkflow = z.object({
 })
 export type ComfyWorkflow = z.infer<typeof ComfyWorkflow>
 
-const P = {
-  prompt: '{{prompt}}',
-  negative: '{{negative}}',
-  width: '{{width}}',
-  height: '{{height}}',
-  count: '{{count}}',
-  seed: '{{seed}}',
-}
+/** 工作流在游戏 / 网页这一栏里出不出来：处理类工作流两边都要能用 */
+export const workflowInKind = (w: Pick<ComfyWorkflow, 'kind'>, kind: 'game' | 'web') =>
+  w.kind === kind || w.kind === 'both'
+
+/** 工作流里有没有输入图锚点（{{image}}）：有的话它不参与自动挑选，选前得先给它一张图 */
+export const needsInputImage = (graph: ComfyWorkflow['graph']) => JSON.stringify(graph).includes(IMAGE_PLACEHOLDER)
 const builtin = (
   id: string,
-  kind: 'game' | 'web',
+  kind: ComfyWorkflow['kind'],
   use: WorkflowUse,
   model: string,
   name: string,
   description: string,
   extra: string,
   steps?: number,
+  /** 正向提示词用 {{layout}}：生成时传布局 JSON，没有布局时回退成描述 */
+  layout?: boolean,
 ): ComfyWorkflow => ({
   id,
   name,
@@ -632,10 +848,40 @@ const builtin = (
   assets: [],
   description,
   extra,
-  graph: localWorkflow(localModel(model)!, { ...P, steps }),
+  graph: localWorkflow(localModel(model)!, { ...P, steps, layout }),
   builtin: true,
   updatedAt: '',
 })
+
+/** 处理类内置工作流：不吃提示词和尺寸，只需一张输入图 */
+const processingBuiltin = (o: {
+  id: string
+  name: string
+  description: string
+  model: string
+  graph: ComfyWorkflow['graph']
+}): ComfyWorkflow => ({
+  id: o.id,
+  name: o.name,
+  // 游戏和网页都用得上：两个分类里都列出来
+  kind: 'both',
+  use: 'any',
+  model: o.model,
+  // 依赖的文件按模型清单推导，不另写一份：缺文件时工作流页会直接标出来
+  assets: modelAssets(o.model),
+  description: o.description,
+  extra: '',
+  graph: o.graph,
+  builtin: true,
+  updatedAt: '',
+})
+
+/** 模型要的文件在 ComfyUI/models 下的相对路径（“目录/文件”），和模板商店的 assets 写法一致 */
+const modelAssets = (id: string): string[] =>
+  (localModel(id)?.files ?? []).flatMap((f) => {
+    const file = localFile(f)
+    return file ? [`${file.dir}/${file.file}`] : []
+  })
 
 /** 内置工作流：按资源类型调过要求和步数；生成时按图片的用途自动选（自动模式） */
 export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
@@ -685,6 +931,17 @@ export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
     t('整屏界面效果图（原画）：按设计稿比例画出完整界面，用来定风格和布局'),
     'Complete game screen UI concept art mockup, front view, polished production quality, clear layout hierarchy, consistent art style across all elements.',
     12,
+  ),
+  builtin(
+    'game-moss-layout',
+    'game',
+    'concept',
+    'moss-image',
+    t('MOSS-Image：按 JSON 布局出图'),
+    t('整屏原画里要出现准确的中英文、还要按设计稿位置摆放时用：标题、按钮文字和主要元素的位置由布局 JSON 指定'),
+    'Precise UI layout: every text block and UI element appears exactly at its specified position, correct reading order, clean hierarchy.',
+    25,
+    true,
   ),
   builtin(
     'game-pixel',
@@ -741,19 +998,68 @@ export const BUILTIN_WORKFLOWS: ComfyWorkflow[] = [
     t('图里要写清楚的中英文字：活动横幅、海报、宣传图'),
     'Typography rendered accurately and legibly, clean layout.',
   ),
+  // 处理类：不吃提示词，只要一张输入的图；链里当中间段时输入由上游接上
+  processingBuiltin({
+    id: 'game-remove-bg',
+    name: t('去背景（透明底 PNG）'),
+    description: t(
+      '把图的主体抠出来，输出带透明通道的 PNG：图标去底、把生成的图叠到别的背景上时用；链的开头也可以先接它',
+    ),
+    model: 'birefnet',
+    graph: removeBgGraph(),
+  }),
+  processingBuiltin({
+    id: 'game-img2img',
+    name: t('图生图 · 风格复刻'),
+    description: t(
+      '在已有图的基础上重画：保留构图、布局和大体配色，按描述换掉细节和风格（去噪 {n}）；改配色、换画风、把草图做成正式稿时用',
+      { n: IMG2IMG_DENOISE },
+    ),
+    model: 'z-image-turbo',
+    // 先拿到文生图的节点图，再改成从原图出发：参数只有一套，不另写一份
+    graph: imageToImage(localWorkflow(localModel('z-image-turbo')!, { ...P }), { image: IMAGE_PLACEHOLDER })!,
+  }),
+  processingBuiltin({
+    id: 'game-upscale',
+    name: t('放大 {n} 倍', { n: UPSCALE_FACTOR }),
+    description: t('插值放大 {n} 倍，尺寸变大但细节不增强：出完的图当底图、叠到高分辨率界面里时用', {
+      n: UPSCALE_FACTOR,
+    }),
+    model: '',
+    graph: upscaleGraph(),
+  }),
 ]
 
 /** 用到的占位符都换成实际的值 */
 export function fillWorkflow(
   graph: ComfyWorkflow['graph'],
-  v: { prompt: string; negative: string; width: number; height: number; count: number; seed: number },
+  v: {
+    prompt: string
+    negative: string
+    width: number
+    height: number
+    count: number
+    seed: number
+    /** 布局 JSON（MOSS-Image）；没有时 {{layout}} 回退成描述，工作流照常能跑 */
+    layout?: string
+    /** 输入图的文件名（处理类工作流、图生图）；不传时 {{image}} 保持原样，由调用方（链）接力 */
+    image?: string
+  },
 ) {
   const nums: Record<string, number> = { width: v.width, height: v.height, count: v.count, seed: v.seed }
   const fill = (x: unknown): unknown => {
     if (typeof x === 'string') {
       const whole = /^\{\{(\w+)\}\}$/.exec(x)
       if (whole && whole[1] in nums) return nums[whole[1]]
-      return x.replace(/\{\{(prompt|negative)\}\}/g, (_, k: string) => (k === 'prompt' ? v.prompt : v.negative))
+      return x.replace(/\{\{(prompt|negative|layout|image)\}\}/g, (m, k: string) =>
+        k === 'prompt'
+          ? v.prompt
+          : k === 'negative'
+            ? v.negative
+            : k === 'layout'
+              ? v.layout || v.prompt
+              : (v.image ?? m),
+      )
     }
     if (Array.isArray(x)) return x.map(fill)
     if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, y]) => [k, fill(y)]))
@@ -774,10 +1080,7 @@ export function inpaintWorkflow(
   const g = structuredClone(graph)
   const sampler = Object.values(g).find((n) => n.class_type === 'KSampler' || n.class_type === 'SamplerCustomAdvanced')
   if (!sampler) return undefined
-  // 内置工作流的 VAE：单独加载的取 VAELoader，SDXL / FLUX.1 从 CheckpointLoaderSimple 的第三个输出取
-  const vaeNode = Object.entries(g).find(([, n]) => n.class_type === 'VAELoader')
-  const ckptNode = Object.entries(g).find(([, n]) => n.class_type === 'CheckpointLoaderSimple')
-  const vae: [string, number] | undefined = vaeNode ? [vaeNode[0], 0] : ckptNode ? [ckptNode[0], 2] : undefined
+  const vae = vaeRef(g)
   if (!vae) return undefined
   g['ip_image'] = { class_type: 'LoadImage', inputs: { image: o.image } }
   g['ip_mask'] = { class_type: 'LoadImage', inputs: { image: o.mask } }
@@ -910,10 +1213,15 @@ export function importableWorkflow(wf: ComfyWorkflow): ComfyWorkflow['graph'] {
       height: 1024,
       count: 1,
       seed: Math.floor(Math.random() * 2 ** 31),
+      // 导入到 ComfyUI 里要能直接跑：输入图先填个占位文件，用户在那里换成自己的图
+      image: IMPORT_SAMPLE_IMAGE,
     }),
     wf.name,
   )
 }
+
+/** 工作流导入到 ComfyUI 时，输入图先填这个占位文件名（用户在那里换成自己的图） */
+export const IMPORT_SAMPLE_IMAGE = 'example.png'
 
 /** 导入到 ComfyUI 的 userdata/workflows 下的文件名：名字放前面方便在侧栏认，id 保证重复导入覆盖同一个文件 */
 export function comfyImportFile(wf: Pick<ComfyWorkflow, 'id' | 'name'>): string {
@@ -926,13 +1234,18 @@ export function comfyImportFile(wf: Pick<ComfyWorkflow, 'id' | 'name'>): string 
   return `${safe || 'workflow'}-${id || 'x'}.json`
 }
 
-/** 工作流有没有问题：要有出图的节点、要用到 {{prompt}}，连线指向的节点要存在 */
+/**
+ * 工作流有没有问题：要有出图的节点、要用到 {{prompt}}（或 {{layout}}），连线指向的节点要存在。
+ * 处理类工作流（去背景、放大）只吃 {{image}}，不用提示词，那一条对它不适用
+ */
 export function checkWorkflow(graph: ComfyWorkflow['graph'], known?: Set<string>): string[] {
   const errors: string[] = []
   const ids = new Set(Object.keys(graph))
   if (!ids.size) return [t('工作流是空的')]
   const text = JSON.stringify(graph)
-  if (!text.includes('{{prompt}}')) errors.push(t('没有用到 {{prompt}}：生成时的描述放不进去'))
+  // 用布局 JSON 的工作流可以不写 {{prompt}}：没有布局时它也会回退成描述；处理类工作流不嗂提示词
+  if (!text.includes('{{prompt}}') && !text.includes('{{layout}}') && !text.includes(IMAGE_PLACEHOLDER))
+    errors.push(t('没有用到 {{prompt}}：生成时的描述放不进去'))
   if (!Object.values(graph).some((n) => n.class_type === 'SaveImage' || n.class_type === 'PreviewImage'))
     errors.push(t('没有 SaveImage 节点：拿不到生成的图片'))
   for (const [id, n] of Object.entries(graph)) {
@@ -960,7 +1273,8 @@ export function imageUse(
 
 /**
  * 选工作流：指定了就用它；自动时在这一类（游戏 / 网页）里找用途对得上、模型已经下载好的，
- * 找不到再用通用的、最后用任何一个能跑的
+ * 找不到再用通用的、最后用任何一个能跑的。
+ * 需要输入图的工作流（去背景、图生图、放大）不参与自动挑选：自动流程手里没有原图，选了也只能失败
  */
 export function pickWorkflow(
   list: ComfyWorkflow[],
@@ -968,21 +1282,25 @@ export function pickWorkflow(
   kind: 'game' | 'web',
   use: WorkflowUse,
   ready: (wf: ComfyWorkflow) => boolean,
+  /** 同一用途里优先选的（例如有布局时优先能接 {{layout}} 的工作流） */
+  prefer?: (wf: ComfyWorkflow) => boolean,
 ): ComfyWorkflow | undefined {
   if (want && want !== 'auto') return list.find((w) => w.id === want)
-  const mine = list.filter((w) => w.kind === kind && ready(w))
+  const usable = (w: ComfyWorkflow) => !needsInputImage(w.graph)
+  const mine = list.filter((w) => workflowInKind(w, kind) && ready(w) && usable(w))
   return (
+    (prefer ? mine.find((w) => w.use === use && prefer(w)) : undefined) ??
     mine.find((w) => w.use === use) ??
     (use === 'button' || use === 'panel' ? mine.find((w) => w.use === 'icon') : undefined) ??
     mine.find((w) => w.use === 'any') ??
     mine[0] ??
-    list.find(ready)
+    list.find((w) => ready(w) && usable(w))
   )
 }
 
 /**
  * 从 ComfyUI 导出的接口格式工作流自动加占位符：接到采样器 positive / negative 的文字节点换成 {{prompt}} / {{negative}}，
- * 空白画布的宽高和批量、采样器的种子换成对应的占位符。已经有占位符的不动
+ * 空白画布的宽高和批量、采样器的种子换成对应的占位符。已经有 {{prompt}} / {{negative}} / {{layout}} 的不动
  */
 export function autoPlaceholders(graph: ComfyWorkflow['graph']): ComfyWorkflow['graph'] {
   const g = structuredClone(graph)
@@ -996,7 +1314,8 @@ export function autoPlaceholders(graph: ComfyWorkflow['graph']): ComfyWorkflow['
     return textNode(n.inputs.conditioning ?? n.inputs.positive, depth + 1)
   }
   for (const n of Object.values(g)) {
-    if (!text.includes('{{prompt}}')) {
+    // 布局工作流的正向节点是 {{layout}}，不能再改成 {{prompt}}，否则导入后布局静默失效
+    if (!text.includes('{{prompt}}') && !text.includes('{{layout}}')) {
       const pos = textNode(n.inputs.positive)
       if (pos) pos.inputs.text = '{{prompt}}'
     }

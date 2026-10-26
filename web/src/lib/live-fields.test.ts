@@ -24,3 +24,13 @@ test('keepLiveFields：新的一份没带运行时字段时沿用旧的，转圈
   // 换了任务不沿用
   assert.equal(keepLiveFields(prev, { ...bare, id: 'b' }).childrenWorking, undefined)
 })
+
+test('keepLiveFields：CLI 存活没带时沿用，带了 false 就撤掉（CLI 关了绝不显示）', () => {
+  const prev = { ...base, cliAlive: true, childrenCli: 1 } as unknown as Task
+  const kept = keepLiveFields(prev, { ...base } as Task)
+  assert.equal(kept.cliAlive, true)
+  assert.equal(kept.childrenCli, 1)
+  const gone = keepLiveFields(prev, { ...base, cliAlive: false, childrenCli: 0 } as unknown as Task)
+  assert.equal(gone.cliAlive, false)
+  assert.equal(gone.childrenCli, 0)
+})

@@ -2,7 +2,7 @@ import { CliSkills } from '@/components/settings/CliSkills'
 import { ProjectMcpSection } from './ProjectMcpSection'
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import {
   ChevronDown,
   ChevronRight,
@@ -52,6 +52,7 @@ import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
 import type { ProjectProposal, Proposal } from '@shared/assist'
+import { readProjectProposal } from '@shared/project-init'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
@@ -65,6 +66,7 @@ import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
 import { ProjectSkillsSection } from './ProjectSkillsSection'
+import { runAssistInProject } from '@/lib/assist-conv'
 import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
@@ -89,12 +91,18 @@ type AiSession = {
   start?: string
   /** AI 初始化要的目录和扫描线索（Body 关掉后草稿就没了，先存下来） */
   subject?: Record<string, string>
+  /** 在新建项目里开的会话，会话没结束项目就先保存了：结果要应用到这个项目，不能再按新建项目打开 */
+  projectId?: string
 }
 
 /** 把 AI 结果填进表单：Body 挂载时注册，设置关着时先排队，重新打开后再应用 */
 type ApplyAi = (p: Proposal) => void
 
-const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
+const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => ({
+  ...rest,
+  // 数据文件是用户可改的：保存的推荐读不出来时当作没有推荐
+  initResult: readProjectProposal(rest.initResult),
+})
 const folderName = (p: string) =>
   p
     .replace(/[\\/]+$/, '')
@@ -121,6 +129,7 @@ const blank: ProjectInput = {
   searchExclude: [],
   gitPolicy: 'ask',
   initializedAt: '',
+  initResult: undefined,
 }
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
@@ -155,13 +164,22 @@ export function ProjectSettingsDialog({
   item?: string
   onOpenChange: (open: boolean) => void
 }) {
-  const { workflows, agents } = useData()
+  const { workflows, agents, projects, setProjects } = useData()
+  const { openProject } = useNav()
   // AI 会话放在外壳：关掉项目设置时 AssistDialog 不卸载，生成继续跑，最小化的浮条留在屏幕上
   const [ai, setAi] = useState<AiSession | null>(null)
   // Body 挂载时注册「把结果填进表单」；它没挂载（设置关着）时先排队，重新打开后补上
   const applyRef = useRef<ApplyAi | null>(null)
   const queued = useRef<Proposal[]>([])
+  // 新建项目还没保存就关掉了设置：草稿留到下次打开，应用结果时接着用（不然目录、名称都没了）
+  const stash = useRef<ProjectInput | null>(null)
   const apply = (p: Proposal) => {
+    // 会话期间项目已经建好：打开那个项目再应用。按新建项目打开会再建一个同名的
+    if (ai?.projectId && project?.id !== ai.projectId) {
+      queued.current.push(p)
+      openProject(ai.projectId, 'init')
+      return
+    }
     if (applyRef.current) {
       applyRef.current(p)
       return
@@ -169,13 +187,31 @@ export function ProjectSettingsDialog({
     queued.current.push(p)
     if (!open) onOpenChange(true)
   }
+  // 项目对话里做完的结果：这个项目的设置开着就直接填进草稿；关着（或开的是别的项目）就把推荐记进项目，
+  // 下次打开「AI 初始化」页能直接应用。不自动弹出设置，也不会填进别的项目
+  const deliver = (projectId: string, p: Proposal) => {
+    if (open && applyRef.current && project?.id === projectId) return applyRef.current(p)
+    if (p.kind !== 'project' || !projects.some((x) => x.id === projectId)) return
+    // 只写初始化的结果：初始化对话可能跑好几分钟，这里手里的项目还是开始那时的，
+    // 整份写回会把用户这期间应用的推荐（名称、简介、测试步骤……）覆盖回旧值
+    void api
+      .saveProjectInitResult(projectId, { initResult: p })
+      .then((saved) => setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x))))
+      .catch((e) => toast.error((e as Error).message))
+  }
   // 换了项目就不再沿用上一份会话（AssistDialog 卸载时会停掉还在跑的生成）
   const pid = useRef(project?.id)
   useEffect(() => {
     if (pid.current === project?.id) return
     pid.current = project?.id
+    // 会话里刚建好的项目接着用这份会话
+    if (project?.id && project.id === ai?.projectId) return
     setAi(null)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id])
+  useEffect(() => {
+    if (!ai) stash.current = null
+  }, [ai])
   const aiWorkflow = ai?.workflowId ? workflows.find((w) => w.id === ai.workflowId) : undefined
   return (
     <>
@@ -196,8 +232,11 @@ export function ProjectSettingsDialog({
                 item={item}
                 ai={ai}
                 onAssist={setAi}
+                deliver={deliver}
+                onCreated={(id) => setAi((s) => (s ? { ...s, projectId: id } : s))}
                 applyRef={applyRef}
                 queued={queued}
+                stash={stash}
                 onClose={() => onOpenChange(false)}
               />
             )}
@@ -230,8 +269,11 @@ function Body({
   item,
   ai,
   onAssist,
+  deliver,
+  onCreated,
   applyRef,
   queued,
+  stash,
   onClose,
 }: {
   project?: Project
@@ -240,9 +282,15 @@ function Body({
   /** 这次打开设置时的 AI 会话（外壳持有，关掉设置也不丢） */
   ai: AiSession | null
   onAssist: (s: AiSession) => void
+  /** 在项目对话里做完的结果交回来（见外壳的 deliver） */
+  deliver: (projectId: string, p: Proposal) => void
+  /** 新建的项目保存好了（会话要跟着这个项目走） */
+  onCreated: (id: string) => void
   /** 应用函数和排队的结果由外壳持有，设置重新打开后要接得上 */
   applyRef: { current: ApplyAi | null }
   queued: { current: Proposal[] }
+  /** 新建项目时会话还在跑就关掉设置，草稿暂存在这里 */
+  stash: { current: ProjectInput | null }
   onClose: () => void
 }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
@@ -250,8 +298,22 @@ function Body({
   const [draft, setDraft] = useState<ProjectInput>(() =>
     project
       ? toInput(project)
-      : // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
-        { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' },
+      : (stash.current ??
+          // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
+          { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' }),
+  )
+  // 新建项目时 AI 会话还在跑就关掉了：草稿留给下次打开
+  const draftNow = useRef(draft)
+  draftNow.current = draft
+  const created = useRef(false)
+  const keep = useRef(false)
+  keep.current = !project && !!ai && !created.current
+  useEffect(
+    () => () => {
+      if (keep.current) stash.current = draftNow.current
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [],
   )
   // 页面上的项目列表是启动时读的：对话里的角色后来用 record_lesson 记的教训不在里面。
   // 打开时重新读一次，把新记的教训补进草稿，教训页才看得到，保存时也不会把它们盖掉
@@ -402,34 +464,57 @@ function Body({
       const r = await api.analyzeProject(draft.path)
       setScan(r)
       setSignals(r.signals)
-      // 目录和扫描线索随会话一起存：关掉设置后草稿没了，这两项要交给 AI 继续用
-      onAssist({
-        kind: 'project',
-        title: t('AI 初始化项目'),
-        start: t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置'),
-        subject: { path: draft.path.trim(), scan: scanText(r) },
-      })
+      const start = t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置')
+      const subject = { path: draft.path.trim(), scan: scanText(r) }
+      // 已经建好的项目：在这个项目里开一个对话来做，过程和结果留在项目的对话列表里（AI 分析统一归属）
+      if (project?.id) {
+        runAssistInProject({
+          kind: 'project',
+          projectId: project.id,
+          title: t('AI 初始化项目：{name}', { name: project.name }),
+          start,
+          subject,
+          onProposal: (p) => deliver(project.id, p),
+        })
+        return
+      }
+      // 新建项目还没保存、没有项目可放对话：照旧在 AI 窗口里做。目录和扫描线索随会话一起存，关掉设置后草稿没了也能继续用
+      onAssist({ kind: 'project', title: t('AI 初始化项目'), start, subject })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
       setAnalyzing(false)
     }
   }
+  // 对话里的 AI 按用户要求初始化项目（动作 project.init 打开时带 item=start）：打开就开始，不用再点按钮
+  const autoInit = useRef(initialSection === 'init' && item === 'start')
+  useEffect(() => {
+    if (!autoInit.current) return
+    autoInit.current = false
+    void startInit()
+    // 只在打开时看一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // AI 没评估出默认工作流时按项目类型落到内置的「通用项目」/「UE 项目」
   const fallbackWorkflow = (type: 'general' | 'ue') => {
     const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
     return workflows.find((w) => w.origin === `builtin:project-${type}`) ?? workflows.find((w) => w.name === want)
   }
+  // 刚初始化的结果和上次保存的推荐都按项目类型找内置工作流兜底
+  const initType = init?.type ?? draft.initResult?.type
+  const initFallbackId = initType ? (fallbackWorkflow(initType)?.id ?? '') : ''
   const acceptInit = (p: ProjectProposal) => {
     // 扫描给的工作流参数（结构技能、文档目录）没被 AI 覆盖时一起推荐
     const params = scan && scan.workflow === p.type ? { ...scan.workflowParams, ...p.params } : p.params
     const def = p.workflows.find((w) => w.verdict === 'default')?.id ?? fallbackWorkflow(p.type)?.id
     const expose = workflows.find((w) => w.id === def)?.expose ?? []
-    setInit({
+    const result: ProjectProposal = {
       ...p,
       params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
-    })
-    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+    }
+    setInit(result)
+    // 推荐随项目保存：关掉设置再打开，卡片上还能直接应用（点「确认」才真正写进项目）
+    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString(), initResult: result }))
     setDirInit(false)
     setSection('init')
     // AGENTS.md 刚被改过，「项目说明」页要读新的
@@ -472,6 +557,14 @@ function Body({
     if (!valid || saving || !draft.initializedAt) return
     setSaving(true)
     try {
+      // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用服务端最新的那份。
+      // 打开设置时手里的旧推荐不能写回去：期间可能已经在别处重新初始化或应用过推荐
+      const latest = project
+        ? await api
+            .projects()
+            .then((list) => list.find((x) => x.id === project.id))
+            .catch(() => undefined)
+        : undefined
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
@@ -480,6 +573,8 @@ function Body({
         name: draft.name.trim(),
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
+        // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
+        initResult: init ?? readProjectProposal(latest?.initResult) ?? draft.initResult,
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
@@ -490,6 +585,10 @@ function Body({
       } else {
         const p = await api.createProject(input)
         setProjects((ps) => [...ps, p])
+        created.current = true
+        keep.current = false
+        stash.current = null
+        onCreated(p.id)
         go({ page: 'projects', id: p.id })
       }
       onClose()
@@ -754,7 +853,7 @@ function Body({
                 result={init}
                 workflows={workflows}
                 activeId={active?.id ?? ''}
-                fallbackId={init ? (fallbackWorkflow(init.type)?.id ?? '') : ''}
+                fallbackId={initFallbackId}
                 fromDir={dirInit}
                 globalFormat={globalFormat}
                 canStart={!!draft.path.trim()}
@@ -1116,7 +1215,9 @@ function Body({
                 <FormSection title={t('版本与推送')}>
                   <Field
                     label={t('推送到远端')}
-                    tip={t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                    tip={t(
+                      '只管 Git 推送，本地提交不受影响。允许直接推送：对话做完、本地提交后直接推到跟踪的远端分支；问一次：那时先问你；不推送：面板直接拦下 git push。创建 PR、P4 submit 仍要你在对话里要求。',
+                    )}
                   >
                     <Select
                       value={draft.gitPolicy}

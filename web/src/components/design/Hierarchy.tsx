@@ -6,6 +6,7 @@ import {
   typesFor,
   canAddChild,
   entryCount,
+  isHiddenVisibility,
   isPanel,
   pathTo,
   type Widget,
@@ -202,7 +203,7 @@ export function Hierarchy({
         const Icon = WIDGET_ICON[w.Type] ?? Square
         const hasKids = !!w.Children?.length
         const isOpen = !folded.has(w.id) || open.has(w.id)
-        const hidden = w.Properties?.Visibility === 'Collapsed' || w.Properties?.Visibility === 'Hidden'
+        const hidden = isHiddenVisibility(w.Properties?.Visibility)
         const locked = !!w.Properties?.Locked
         const on = w.id === selected
         const d = drop?.id === w.id ? drop.where : undefined

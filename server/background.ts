@@ -5,8 +5,9 @@ import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 import { log } from './log.ts'
 import { createSlotPool } from './slots.ts'
+import { bgJobIds, bgPendingIds, bgResultHead, opensWindow } from '../shared/panel-tools.ts'
 import { fmtDuration } from '../shared/duration.ts'
-import type { TaskJob } from '../shared/schema.ts'
+import type { Task, TaskJob, TaskJobView } from '../shared/schema.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -75,10 +76,10 @@ const KEEP_JOBS = 20
 const KILL_GRACE_MS = 8000
 /**
  * 整个面板同时跑的后台命令上限的默认值（设置里的 backgroundLimit）。独占命令只按目录排队，可每个子对话的
- * 独立分支是不同的目录：父对话派出十几个子对话、各自交一条完整测试或编译，CPU、内存会被吃满，
- * 面板和整台机器一起卡住。超过上限的照样马上返回、记成排队，前面的跑完一条就开始
+ * 独立分支是不同的目录，按目录排队拦不住几十条编译、测试一起跑，所以还要一个全局兜底。
+ * 超过上限的照样马上返回、记成排队，前面的跑完一条就开始
  */
-const MAX_RUNNING = 16
+const MAX_RUNNING = 64
 /**
  * 跑着的命令多久没有任何输出就提醒发起的对话：命令卡住（下载完了却不退出、等输入）时，
  * 对话不能一直以为它还在正常跑，要看一眼、必要时停掉重跑。只提醒，不替它停
@@ -110,7 +111,7 @@ function headText(j: BgJob) {
 /** 对话里发起这条命令的那一行工具调用跑完后显示什么：结果和输出结尾 */
 export function jobOutput(j: BgJob) {
   const tail = j.lines.join('\n').slice(-6000)
-  return `${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${tail ? `\n\n${tail}` : ''}`
+  return `${bgResultHead(j.id)}${headText(j)}${j.changed ? '\n注意：跑的期间工作目录里的文件被改过，结果可能已经不准。' : ''}${tail ? `\n\n${tail}` : ''}`
 }
 
 /**
@@ -378,6 +379,12 @@ export function createBackground(
     }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
+      // 后台命令在面板里静默跑、输出交回对话：新开窗口的写法（start、cmd /k、Start-Process、wt）结果拿不回来，还会弹到用户面前
+      if (opensWindow(input.command))
+        return {
+          ok: false,
+          info: '不要新开命令行窗口（start、cmd /k、Start-Process、wt 这类）：去掉开窗口的那部分，直接写要跑的命令，面板在后台静默跑并把结果推回给你。',
+        }
       const j: BgJob = {
         id: randomUUID().slice(0, 8),
         taskId: input.taskId,
@@ -432,6 +439,27 @@ export function createBackground(
         info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}${full ? `，面板同时最多跑 ${maxRunning} 条后台命令，它可能要等前面的跑完` : ''}。面板盯着它直到真正结束，结果（成功、失败、被停止、长时间没输出）都会推回给你：先去做不依赖它的事，没有别的事就结束这一轮等结果，不要用 sleep 轮询。`,
       }
     },
+    /**
+     * 按编号读一条后台命令的当前样子（界面上点命令行打开的窗口轮询它）。
+     * 只给输出正文、不做任何拼接：这一段是用户要看的命令输出，和推回对话的 jobOutput 不同，
+     * 不掺「跑完了」「退出码」这些面板的话。只认自己对话的编号，跨对话读别人的命令读不到
+     */
+    view(taskId: string, id: string): TaskJobView | null {
+      const j = jobs.get(id)
+      if (!j || j.taskId !== taskId) return null
+      return {
+        id: j.id,
+        name: j.name,
+        command: j.command,
+        state: j.state,
+        code: j.code,
+        output: j.lines.join('\n'),
+        createdAt: j.createdAt,
+        startedAt: j.startedAt,
+        endedAt: j.endedAt,
+        lastOutputAt: j.lastOutputAt,
+      }
+    },
     /** 查状态；不传编号列出这个对话的全部 */
     check(taskId: string, id: string) {
       const list = [...jobs.values()].filter((j) => j.taskId === taskId && (!id || j.id === id))
@@ -475,6 +503,10 @@ export function createBackground(
     /** 还没结束的全部后台命令（面板退出前要一条条收口） */
     active() {
       return [...jobs.values()].filter((j) => !j.endedAt)
+    },
+    /** 面板认不认识这个编号：不认识的是上次运行留下、结果已经丢了的（见 reapLostJobs） */
+    known(id: string) {
+      return jobs.has(id)
     },
     /** 这个对话还在跑的后台命令（界面上显示） */
     list(taskId: string) {
@@ -526,4 +558,54 @@ export function createBackground(
       for (const j of [...jobs.values()]) if (j.taskId === taskId && j.state !== 'running') jobs.delete(j.id)
     },
   }
+}
+
+/** 结束时那一行旁边的小字：成功不写，被停止、失败写清楚 */
+export const jobDetail = (j: BgJob) =>
+  j.state === 'done' ? '' : j.state === 'stopped' ? '已停止' : `退出码 ${j.code ?? '无'}`
+
+/**
+ * 把一条后台命令的结果接到对话里发起它的那一行（run_background、request_build）后面。
+ * 只认还在等这条结果的那一行；那一行交出去的编号全有结果了才记用时和小字，界面从这时起不再转圈。
+ * 返回有没有改到
+ */
+export function settleJobRow(task: Task, id: string, text: string, ok: boolean, ms: number, detail: string) {
+  for (let i = task.messages.length - 1; i >= 0; i--) {
+    const tool = task.messages[i].tools.find((x) => bgPendingIds(x.output ?? '').includes(id))
+    if (!tool) continue
+    tool.output = `${(tool.output ?? '').replace(/\s+$/, '')}\n\n${text}`
+    if (!ok) tool.failed = true
+    if (!bgPendingIds(tool.output).length) {
+      tool.running = undefined
+      // 一行一条命令时用时就是这条命令的；申请的编译有几条，按最后一条的算（它们按目录排队一条接一条）
+      tool.ms = bgJobIds(tool.output).length > 1 ? (tool.ms ?? 0) + ms : ms
+      tool.detail = tool.failed ? detail || tool.detail : ''
+    }
+    return true
+  }
+  return false
+}
+
+/**
+ * 对话里还在等结果、但面板已经不认识的后台命令（面板被强杀、崩溃后重启，记录只在内存里）：
+ * 收口成「结果丢失」的失败，不让那一行永远转圈，也不让它看着像做完了
+ */
+export function reapLostJobs(task: Task, known: (id: string) => boolean) {
+  let n = 0
+  for (const m of task.messages)
+    for (const tool of m.tools)
+      for (const id of bgPendingIds(tool.output ?? ''))
+        if (
+          !known(id) &&
+          settleJobRow(
+            task,
+            id,
+            `${bgResultHead(id)}面板重启前它还没跑完，结果没有拿到：需要的话重跑一次。`,
+            false,
+            0,
+            '结果丢失',
+          )
+        )
+          n++
+  return n
 }

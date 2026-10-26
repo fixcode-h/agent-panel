@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import type { TaskMessage } from '../../shared/schema.ts'
-import { describeCompaction, failureHints, looksUnfinished, settleNetNotes } from './runner.ts'
+import { claimsUnsentHandoff, describeCompaction, failureHints, looksUnfinished, settleNetNotes } from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -100,4 +100,24 @@ test('空回合：只说了一句「我先…」就收尾、或者一个字都�
   // 工具调过或文件改过就不算：那是真在做事，只是没说话
   assert.equal(looksUnfinished({ texts: [], tools: 1, changed: 0 }), false)
   assert.equal(looksUnfinished({ texts: [], tools: 0, changed: 1 }), false)
+})
+
+test('说已转给子对话却没调用发送工具：算没发出去', () => {
+  const claim = '已转给正在加 OpenDesign 的子对话：厂家地址补上 Anthropic 协议的地址，并补对应单测。'
+  assert.equal(claimsUnsentHandoff({ texts: [claim], tools: [] }), true)
+  // 调用过发送（各家 CLI 的名字写法不同）就是真的发了
+  assert.equal(
+    claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'mcp__panel__send_to_conversation', label: '' }] }),
+    false,
+  )
+  assert.equal(
+    claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'MCP', label: 'panel-1a2b · create_conversation' }] }),
+    false,
+  )
+  // 别的工具不算
+  assert.equal(claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'Read', label: 'a.ts' }] }), true)
+  // 没说子对话、没说已转交的都不管
+  assert.equal(claimsUnsentHandoff({ texts: ['已改好，单测通过。'], tools: [] }), false)
+  assert.equal(claimsUnsentHandoff({ texts: ['要不要转给子对话处理？'], tools: [] }), false)
+  assert.equal(claimsUnsentHandoff({ texts: [], tools: [] }), false)
 })

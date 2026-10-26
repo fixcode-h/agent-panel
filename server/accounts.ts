@@ -12,6 +12,7 @@ import {
   apiModelPrefix,
   apiProvider,
   apiVars,
+  type ApiProtocol,
   fillEdits,
   fillTemplate,
   nativeModelId,
@@ -36,6 +37,7 @@ import { cliSettings } from '../shared/settings.ts'
 import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
 import { apiBalanceUrl, apiBaseUrl } from '../shared/api-vendors.ts'
 import { parseApiBalance, type ApiBalance } from '../shared/api-balance.ts'
+import { stripAnsi } from '../shared/ansi.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
@@ -849,6 +851,85 @@ const findUrl = (text: string) =>
 
 const LOGIN_TIMEOUT = 5 * 60_000
 
+/** 登录进程的结局：除了「凭据变了」，还有几种不能按凭据判断的情况 */
+export type LoginOutcome =
+  /** 凭据变了（或者 CLI 说已经登录着、凭据还在）：登录成功 */
+  | 'done'
+  /** 进程没起来 */
+  | 'spawn-error'
+  /** 用户点了取消 */
+  | 'cancelled'
+  /** 正常结束但读不到凭据：还是没登录 */
+  | 'no-credential'
+  /** 正常结束、原有凭据也没变：这个 CLI 没把登录做下去 */
+  | 'unchanged'
+
+/**
+ * 进程结束后怎么算登录成功。
+ *
+ * 默认看凭据指纹变没变（`before` / `after` 是 `fingerprint` 的结果，读不到凭据时 `after` 为空）。
+ * 但有的 CLI 已经登录时再跑登录命令只会说「已登录」、退出码 0、**凭据文件一个字节都不改**
+ * （Command Code 的 `cmdc login` 输出 `Already logged in`），这种情况凭据永远不变，
+ * 只看指纹会把他本来好好的登录判成失败，所以按 CLI 定义的 `loginAlreadyLoggedIn` 单独放行：
+ * 退出码 0 且读得到凭据就算成功。点「登录其他账号」时 CLI 若同样直接说「已登录」，
+ * 结论就是「现在仍是这个账号」——保存的还是原来的凭据，不是失败。
+ *
+ * 退出码非 0、或者退出码 0 但读不到凭据，都还是失败，不能把真的失败放过去。
+ */
+export function loginOutcome(o: {
+  /** 进程退出码 */
+  code: number | null
+  /** 进程是被谁停掉的 */
+  killed: 'stopped' | 'timeout' | 'idle' | null
+  /** 启动失败的原因 */
+  spawnError?: string
+  /** 启动前读到的凭据指纹，没登录时为空字符串 */
+  before: string
+  /** 进程结束后读到的凭据指纹，读不到凭据时为空 */
+  after: string | undefined
+  /** CLI 定义里的 `auth.loginAlreadyLoggedIn` */
+  alreadyLoggedIn: boolean
+}): LoginOutcome {
+  if (o.spawnError) return 'spawn-error'
+  // 凭据真的写入就是登录成功了，用户这时点取消只是不等了：先看指纹再看 canceled，和改动前一致
+  if (o.after !== undefined && o.after !== o.before) return 'done'
+  if (o.killed === 'stopped') return 'cancelled'
+  if (o.code === 0 && o.alreadyLoggedIn && o.after !== undefined) return 'done'
+  return o.after === undefined ? 'no-credential' : 'unchanged'
+}
+
+/**
+ * 登录失败时给用户看的文案（纯函数，便于单测）。
+ *
+ * 「退出码 0 但读不到凭据」（用户关掉了浏览器里的授权页）和「有凭据但没变、CLI 也没把登录做下去」
+ * 是两种不同的失败，不能共用一句「没有完成登录（退出码 {code}）」：前者要说清是没有凭据，
+ * 后者才是这个 CLI 没响应这次登录。两种都把 CLI 最后的输出接在后面，用户和「AI 处理」能照着排查。
+ *
+ * 只有退出码 0 才换成「没有找到登录凭据」：CLI 自己报错退出（退出码非 0）时用户最需要看到的是退出码，
+ * 和改动前一致，不能因为这时也没凭据就把退出码吞掉。
+ */
+export function loginFailure(o: {
+  outcome: LoginOutcome
+  /** CLI 的名字，填进文案 */
+  cli: string
+  /** 进程退出码 */
+  code: number | null
+  /** 已经清掉 ANSI 的 CLI 输出，只用最后几行 */
+  output: string
+  /** 启动失败的原因（outcome 是 spawn-error 时用） */
+  error?: string
+}): string {
+  if (o.outcome === 'done') return ''
+  if (o.outcome === 'spawn-error') return o.error ?? ''
+  if (o.outcome === 'cancelled') return t('已取消')
+  const tail = o.output.trim() ? o.output.trim().split('\n').slice(-3).join('\n') : ''
+  const head =
+    o.outcome === 'no-credential' && o.code === 0
+      ? t('登录没有完成：没有找到登录凭据')
+      : t('{cli} 没有完成登录（退出码 {code}）', { cli: o.cli, code: String(o.code) })
+  return [head, tail].filter(Boolean).join('\n')
+}
+
 async function startLogin(def: CliDefinition): Promise<LoginJob> {
   const running = logins.get(def.id)
   if (running?.status === 'running') return view(running)
@@ -870,8 +951,9 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     abort: new AbortController(),
   }
   logins.set(def.id, job)
+  // CLI 接终端时会给输出上色，存进 job.output 之前先清掉 ANSI：界面、报错文案、「AI 处理」用的都是这一份
   const take = (text: string) => {
-    job.output = (job.output + text + '\n').slice(-4000)
+    job.output = (job.output + stripAnsi(text) + '\n').slice(-4000)
     job.url ||= findUrl(job.output)
   }
   let settled = false
@@ -919,25 +1001,32 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     onStderr: (s) => take(s.trimEnd()),
   }).then(async (r) => {
     if (settled) return
-    if (r.spawnError) return finish(false, r.spawnError)
     const now = await readLive(def, env).catch(() => undefined)
-    if (now && fingerprint(now) !== before) return finish(true)
-    finish(
-      false,
-      r.killed === 'stopped'
-        ? t('已取消')
-        : [
-            t('{cli} 没有完成登录（退出码 {code}）', { cli: def.name, code: String(r.code) }),
-            job.output.trim().split('\n').slice(-3).join('\n'),
-          ]
-            .filter(Boolean)
-            .join('\n'),
-    )
+    const outcome = loginOutcome({
+      code: r.code,
+      killed: r.killed,
+      spawnError: r.spawnError,
+      before,
+      after: now ? fingerprint(now) : undefined,
+      alreadyLoggedIn: a.loginAlreadyLoggedIn,
+    })
+    if (outcome === 'done') return finish(true)
+    finish(false, loginFailure({ outcome, cli: def.name, code: r.code, output: job.output, error: r.spawnError }))
   })
   return view(job)
 }
 
 // ---- 全局 API：读接口的模型列表 ----
+
+/** Anthropic 接口要求的版本头，列模型和发消息两处都用它 */
+const ANTHROPIC_VERSION = '2023-06-01'
+/** 探测用的提示词极短、输出只给 1 个 token：只为确认这个模型能通，不花额度 */
+const PROBE_PROMPT = 'ping'
+const PROBE_MAX_TOKENS = 1
+/** 探针比列模型慢（要等模型真的回一个 token），给宽一点但仍有限，不无限等 */
+const PROBE_TIMEOUT_MS = 60_000
+/** Gemini 协议没填地址时的官方地址（列模型、发请求都用它） */
+const GEMINI_DEFAULT_BASE = 'https://generativelanguage.googleapis.com'
 
 /**
  * 从 API 读可用的模型：按协议用对应的接口和请求头。
@@ -950,7 +1039,7 @@ export async function fetchApiModels(
   if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
   const url =
     api.protocol === 'gemini'
-      ? `${base || 'https://generativelanguage.googleapis.com'}/v1beta/models?pageSize=200`
+      ? `${base || GEMINI_DEFAULT_BASE}/v1beta/models?pageSize=200`
       : api.protocol === 'anthropic'
         ? `${base}${/\/v1$/.test(base) ? '' : '/v1'}/models?limit=1000`
         : `${base}/models`
@@ -959,7 +1048,7 @@ export async function fetchApiModels(
       ? { 'x-goog-api-key': api.apiKey }
       : api.protocol === 'anthropic'
         ? {
-            'anthropic-version': '2023-06-01',
+            'anthropic-version': ANTHROPIC_VERSION,
             ...(api.authHeader === 'bearer' ? { authorization: `Bearer ${api.apiKey}` } : { 'x-api-key': api.apiKey }),
           }
         : { authorization: `Bearer ${api.apiKey}` }
@@ -969,10 +1058,7 @@ export async function fetchApiModels(
   const body = (await res.json().catch(() => undefined)) as any
   if (!res.ok)
     throw new Error(
-      t('接口返回 {status}：{detail}', {
-        status: String(res.status),
-        detail: String(body?.error?.message ?? body?.error ?? body?.message ?? res.statusText).slice(0, 200),
-      }),
+      t('接口返回 {status}：{detail}', { status: String(res.status), detail: errorDetail(body, res.statusText) }),
     )
   const list: unknown[] = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : []
   const ids = list
@@ -999,15 +1085,141 @@ export async function fetchApiBalance(api: Pick<ApiConfig, 'name' | 'apiKey'>): 
   }).catch((e: Error) => {
     throw new Error(t('连不上接口：{error}', { error: e.message }))
   })
-  const body = (await res.json().catch(() => undefined)) as any
+  const body = await res.json().catch(() => undefined)
+  if (!res.ok)
+    throw new Error(
+      t('接口返回 {status}：{detail}', { status: String(res.status), detail: errorDetail(body, res.statusText) }),
+    )
+  return parseApiBalance(body)
+}
+
+// ---- 全局 API：用一个模型真的跑一次请求 ----
+
+/** 探针的输入：只用到列模型和发一个小请求要的字段；模型名只在报错里出现，不写日志 */
+export type ApiProbeInput = Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & {
+  name?: string
+  model: string
+}
+
+/**
+ * 用一个模型真的发一次最小的推理请求，确认这个模型是通的。
+ * 成功返回实际用到的模型名；失败把上游的真实状态码和原因原文带出来，不重试、不吞错误。
+ * 密钥只放在请求头里，错误文案只用固定文案和接口给的原因，不把密钥拼进去。
+ */
+export async function probeApiModel(api: ApiProbeInput): Promise<{ model: string }> {
+  const base = apiBaseUrl(api).replace(/\/+$/, '')
+  if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
+  const apiKey = api.apiKey.trim()
+  if (!apiKey) throw new Error(t('先填密钥'))
+  const model = api.model.trim()
+  if (!model) throw new Error(t('先选一个模型'))
+
+  const [url, body, headers] = probeRequest(api.protocol, base || GEMINI_DEFAULT_BASE, model, apiKey, api.authHeader)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+  }).catch((e: Error) => {
+    // 超时在 Node 里报 TimeoutError：换成好读的一句，别把整套堆栈丢给用户
+    if (e.name === 'TimeoutError')
+      throw new Error(t('模型 {model} 在 {seconds} 秒内没有响应', { model, seconds: String(PROBE_TIMEOUT_MS / 1000) }))
+    throw new Error(t('连不上接口：{error}', { error: e.message }))
+  })
+  const text = await res.text().catch((e: Error) => {
+    // 上游先回 200、body 迟迟不吐时，超时发生在读 body 这一步：不能吞成空正文，
+    // 否则会掉到下面的「不是模型回复」分支，把超时报成内容不对
+    if (e.name === 'TimeoutError')
+      throw new Error(t('模型 {model} 在 {seconds} 秒内没有响应', { model, seconds: String(PROBE_TIMEOUT_MS / 1000) }))
+    // 读 body 断流：交给下面的判断，正文拿不到也算不通
+    return ''
+  })
   if (!res.ok)
     throw new Error(
       t('接口返回 {status}：{detail}', {
         status: String(res.status),
-        detail: String(body?.error?.message ?? body?.error ?? body?.message ?? res.statusText).slice(0, 200),
+        detail: errorDetail(text, res.statusText),
       }),
     )
-  return parseApiBalance(body)
+  // 有的接口出错也回 200：把原因当正文回来时同样算不通
+  if (!looksLikeAnswer(api.protocol, text))
+    throw new Error(t('接口返回的内容不是模型回复：{detail}', { detail: text.slice(0, 200) }))
+  return { model }
+}
+
+/** 从接口回的错误里取一句能看的说明：兼容各家的 error.message / error / message 写法；传正文文本时先解析 */
+function errorDetail(bodyOrText: unknown, statusText: string) {
+  const body = typeof bodyOrText === 'string' ? jsonBody(bodyOrText) : (bodyOrText as any)
+  // error 是对象但没有 message 时（如 {error:{type:'invalid_request_error'}}）不能直接 String()，
+  // 那样会输出 [object Object]；退到 type / code，都没有就只用状态文本
+  const raw = body?.error?.message ?? body?.error ?? body?.message
+  const detail =
+    raw === undefined || raw === null
+      ? statusText
+      : typeof raw === 'string'
+        ? raw
+        : (raw?.message ?? raw?.type ?? raw?.code ?? statusText)
+  return String(detail ?? statusText).slice(0, 200)
+}
+
+/** 正文解成 JSON；不是 JSON 时给 undefined（有的接口出错回的是 HTML 或空正文） */
+function jsonBody(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+/** 回复里真的有一段模型输出才算通 */
+function looksLikeAnswer(protocol: ApiProtocol, text: string) {
+  const body = jsonBody(text)
+  if (protocol === 'anthropic') return Array.isArray(body?.content)
+  if (protocol === 'gemini') return Array.isArray(body?.candidates)
+  if (protocol === 'openai-responses') return !!body?.output
+  return Array.isArray(body?.choices)
+}
+
+/**
+ * 按协议构造最小的一次推理请求：地址、请求体、认证头。
+ * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions，
+ * Gemini 是 /v1beta/models/<模型>:generateContent。
+ */
+function probeRequest(
+  protocol: ApiProtocol,
+  base: string,
+  model: string,
+  apiKey: string,
+  authHeader: ApiConfig['authHeader'],
+): [string, Record<string, unknown>, Record<string, string>] {
+  const v1 = /\/v1$/.test(base) ? base : `${base}/v1`
+  if (protocol === 'anthropic')
+    return [
+      `${v1}/messages`,
+      { model, max_tokens: PROBE_MAX_TOKENS, messages: [{ role: 'user', content: PROBE_PROMPT }] },
+      {
+        'anthropic-version': ANTHROPIC_VERSION,
+        ...(authHeader === 'bearer' ? { authorization: `Bearer ${apiKey}` } : { 'x-api-key': apiKey }),
+      },
+    ]
+  if (protocol === 'gemini')
+    return [
+      // 官方列模型回的是 models/<名字> 全名，手填进去也要能测：剥掉前缀再拼（和 fetchApiModels 一致）
+      `${base}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
+      { contents: [{ parts: [{ text: PROBE_PROMPT }] }], generationConfig: { maxOutputTokens: PROBE_MAX_TOKENS } },
+      { 'x-goog-api-key': apiKey },
+    ]
+  if (protocol === 'openai-responses')
+    return [
+      `${v1}/responses`,
+      { model, input: PROBE_PROMPT, max_output_tokens: PROBE_MAX_TOKENS },
+      { authorization: `Bearer ${apiKey}` },
+    ]
+  return [
+    `${v1}/chat/completions`,
+    { model, max_tokens: PROBE_MAX_TOKENS, messages: [{ role: 'user', content: PROBE_PROMPT }] },
+    { authorization: `Bearer ${apiKey}` },
+  ]
 }
 
 export function accountsApi() {
@@ -1057,6 +1269,17 @@ export function accountsApi() {
           }).safeParse(await c.req.json())
           if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
           return c.json({ models: await fetchApiModels(p.data) })
+        }),
+      )
+      // 用一个模型真的跑一次最小请求，确认这个模型是通的（设置页「测试连接」选了模型时走这里）
+      .post(
+        '/api-probe',
+        guard(async (c) => {
+          const p = ApiConfig.pick({ name: true, protocol: true, baseUrl: true, apiKey: true, authHeader: true })
+            .extend({ model: z.string().trim().min(1) })
+            .safeParse(await c.req.json())
+          if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
+          return c.json(await probeApiModel(p.data))
         }),
       )
       // 查 API 账户余额（在服务端请求：密钥不发给页面里的第三方地址，也不受跨域限制）

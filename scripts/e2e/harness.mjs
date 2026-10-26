@@ -14,7 +14,19 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { fmtDuration } from '../lib/duration.mjs'
 import { startServer } from './spawn-server.mjs'
+import { readLog } from './read-log.mjs'
 import { fileURLToPath } from 'node:url'
+
+// 端到端测试自己建仓库、自己跑服务：不能继承外面的 git dir。
+// 在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时，下面建假项目的 `git init` 会把这两个值
+// 写进共享仓库的 .git/config（core.worktree = WSL 路径），主目录所有 git 命令都会失败；
+// 拉起的服务也会继承它们，服务里建的 worktree 同样落到主仓库上（见 docs/lessons/testing.md）。
+// GIT_CONFIG_COUNT 是面板给后台命令注入的防推送配置，测试里自己的 git 不需要它
+delete process.env.GIT_DIR
+delete process.env.GIT_WORK_TREE
+delete process.env.GIT_INDEX_FILE
+delete process.env.GIT_COMMON_DIR
+delete process.env.GIT_CONFIG_COUNT
 
 // 1×1 的透明 PNG，用来测图片文件按原图读取
 export const PNG_1PX = Buffer.from(
@@ -307,13 +319,6 @@ export async function runShard(shardName, fn) {
       await sleep(60)
     }
   }
-  const readLog = (f) =>
-    existsSync(f)
-      ? readFileSync(f, 'utf8')
-          .trim()
-          .split('\n')
-          .map((l) => JSON.parse(l))
-      : []
   const calls = () => {
     const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
     return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
@@ -361,18 +366,19 @@ export async function runShard(shardName, fn) {
     await call('PUT', '/settings', settings)
     return { cli, settings }
   }
+  /** 建一个 Agent：分片要自己造 Agent（例如能分派子对话的统筹）时也用它 */
+  const agent = (o) =>
+    call('POST', '/agents', {
+      description: '',
+      model: '',
+      icon: 'bot',
+      categoryId: '',
+      instructions: '',
+      extraArgs: [],
+      enabled: true,
+      ...o,
+    })
   const createAgents = async () => {
-    const agent = (o) =>
-      call('POST', '/agents', {
-        description: '',
-        model: '',
-        icon: 'bot',
-        categoryId: '',
-        instructions: '',
-        extraArgs: [],
-        enabled: true,
-        ...o,
-      })
     const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
     const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
     const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
@@ -471,6 +477,7 @@ export async function runShard(shardName, fn) {
     step,
     onExit,
     cli,
+    agent,
     putSettings,
     createAgents,
     createWorkflow,
