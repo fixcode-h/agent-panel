@@ -154,6 +154,7 @@ import {
   mergeTestRun,
   parentRunRoleOf,
   parentRunSteps,
+  pickSteps,
   stepCommand,
   testRunLines,
 } from '../shared/test-steps.ts'
@@ -1340,6 +1341,27 @@ export function tasksApi(deps: {
   /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
   const parentStepsOf = async (tk: Task) => parentRunSteps(await testStepsOf(tk))
 
+  /**
+   * 父对话合并后真正要排进队列的步骤：在 parentRunSteps 的基础上按子对话的实际改动筛（stepApplies）。
+   * 一条都没命中就照旧跑全部——静默少跑比多跑危险，和测试步骤规则里「映射不出来跑全部」同一个口径。
+   * 子对话的改动清单取不到（空）时 pickSteps 会返回全部，正好也是保守的那一侧
+   */
+  const parentTestStepsOf = async (tk: Task) => {
+    const steps = await parentStepsOf(tk)
+    const pick = pickSteps(
+      steps,
+      tk.changes.map((c) => c.path),
+    )
+    if (pick.nothingMatched) {
+      log.info('task', '父对话测试：改动映射不到任何适用步骤，按全部跑', {
+        task: tk.id,
+        changes: tk.changes.length,
+      })
+      return steps
+    }
+    return pick.run
+  }
+
   /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
   const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
     tk.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
@@ -1357,7 +1379,7 @@ export function tasksApi(deps: {
         await store.update(tk.id, tk)
         continue
       }
-      const steps = await parentStepsOf(tk)
+      const steps = await parentTestStepsOf(tk)
       if (!steps.length) {
         await childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。').catch((e) =>
           log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }),
@@ -1832,7 +1854,7 @@ export function tasksApi(deps: {
     }
     // 范围为 parent 的步骤（ADR 0018 / 0020）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
-    const parentSteps = await parentStepsOf(tk)
+    const parentSteps = await parentTestStepsOf(tk)
     if (parentSteps.length) {
       await startParentTests(tk, parentSteps)
       return {
@@ -3254,6 +3276,8 @@ export function tasksApi(deps: {
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
+                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛
+                changedFiles: entry.task.changes.map((c) => c.path),
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
