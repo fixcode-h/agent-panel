@@ -1198,6 +1198,17 @@ export function TaskView({
               setTask({ ...task, askUser: v })
               api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
             }}
+            // 只有父对话有「子对话也提问」：子对话页面不传回调，右键菜单不出现
+            childAskUser={task.childAskUser}
+            onChildAskUserChange={
+              task.parentTaskId
+                ? undefined
+                : (on, applyExisting) => {
+                    api
+                      .setTaskChildAskUser(task.id, on, applyExisting)
+                      .then(apply, (e) => toast.error((e as Error).message))
+                  }
+            }
           />
           {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} />}
           {task.mode === 'workflow' && (
