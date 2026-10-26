@@ -60,10 +60,11 @@
 
 ## 防复发护栏
 
-- `server/orch-mcp.test.ts`「spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写了以任务里的为准」：顶层 `resume` 落到任务上且**不补默认角色**；顶层 `agent` / `tier` 作默认值、任务里写的优先；顶层 `resume` 配多个任务被拒；顶层写错字段（`resume_id`）被拒且不派子任务。
+- `server/orch-mcp.test.ts`「spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写了以任务里的为准」：顶层 `resume` 落到任务上且**不补默认角色**；顶层 `agent` / `tier` 作默认值、任务里写的优先；顶层 `resume` 配多个任务被拒；顶层写错字段（`resume_id`）被拒且不派子任务；`tasks[0].resume` 写成数组时报「要写字符串」而不是当成没写。
 - `server/orch-mcp.test.ts`「resume：不写 agent 沿用原任务的角色，写了用写的，非 resume 不带 agent 才是默认子任务」：跑真引擎，断言 `@chat/sub/h3`（resume 不带 agent）、`@chat/sub/h4`（resume 带 `agent: '评审'`）都是评审角色并接着 `h1` 的会话，`h2`（非 resume 不带 agent）仍是「子任务」，且 `runAgent` 实际收到的 `agentId` 序列是 `['r', 'h', 'r', 'r']`（记录和执行一致）。
 - `server/orch-mcp.test.ts`「resume：原任务的角色已经不在了就报错，不悄悄退回默认子任务」：角色被删后 resume 报错、点名让调用方写 `agent`，被拒的复看不新建子任务。
-- 这三条在修复前的代码上全部失败、修复后全部通过（修之前先跑过一遍，确认能抓到这个问题）。
+- `server/orch-mcp.test.ts`「点名的角色不存在：报错，不落到默认「子任务」」：顶层写一个不存在的角色时报错、提示用 `get_status` 看现有角色，且不新建子任务（以前会静默落到默认「子任务」）。
+- 这几条在修复前的代码上全部失败、修复后全部通过（修之前先跑过一遍，确认能抓到这个问题）。
 
 ## 回归验证
 
@@ -72,11 +73,12 @@ npm run typecheck && npm run lint && npm run test:unit
 wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"
 ```
 
-- `npm run typecheck` 通过（文案 4552 条 / 英文 4552 条）。
-- `npm run lint` 全过（oxlint、Prettier、规则检查、凭据检查 909 个文件）。
-- `npm run test:unit`：tests 1615 / pass 1614 / fail 1，唯一失败是 `server/exec/process.test.ts` 的 `taskCliAlive`（13.5s，全量并发下被拖慢的时序竞态），单独重跑该文件 3/3 通过，与本次改动无关（按教训 `lmvktszgg2sbb` 先单独重跑再下结论）。
-- 写这份记录时又单独跑了一次 `npx tsx --test server/orch-mcp.test.ts`：15/15 通过，含上面三条新用例。
-- `wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"`：全部通过（退出码 0，1m 7.7s；`subagents` 分片 24 步全过）。
+- `npm run typecheck` 通过（文案 4619 条 / 英文 4619 条）。
+- `npm run lint` 全过（oxlint、Prettier、规则检查、凭据检查 935 个文件）。
+- `npm run test:unit`：tests 1687 / pass 1687 / fail 0（合入 `dev` 到 `1a3a8330` 后重跑；命令前先 `unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0` 清掉面板注入的推送拦截）。
+- `wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"`：全部通过（10 个分片全绿，`EXIT=0`）。
+- 曾遇到的偶发失败：`server/exec/process.test.ts` 的 `taskCliAlive`（全量并发下被拖到 13–14 秒，单独重跑 3/3 通过；根因在 `server/exec/process.ts` 的 `child.on('exit')` 兜底（321–329 行）：超时结束等待时调了 `done()`、没调 `forget()`，属既有缺陷，未在本修复里改）；`server/exec/worktree.test.ts` 一轮全域失败是 `git init` 起不来（`status 3221225794` = Windows 进程资源耗尽），重启后单跑 31/31、全量也全过。
+- 另单独跑过 `npx tsx --test server/orch-mcp.test.ts`：16/16 通过，含上面新增的用例。
 
 ## 排查路径（下次定位同类问题的顺序）
 
@@ -87,13 +89,13 @@ wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"
 
 ## 落地改动
 
-| 位置                                  | 改了什么                                                                                                                     |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `server/orch-mcp.ts`                  | `spawn_agents` 顶层接受 `agent` / `tier` / `resume` 作整批默认值（任务里写的优先）；顶层 `resume` 配多个任务报错；顶层不认得的字段报错（`SPAWN_TOP_FIELDS`）；字段描述补「可写在顶层」 |
-| `shared/engine.ts`                    | resume 命中但原角色已被删、又没显式点名 → 报错不退回默认「子任务」；显式点名不存在的角色报错；`agentId` 为空的老数据不算角色被删；重试分支支持换到点名的角色 |
-| `server/orch-mcp.test.ts`             | 新增 3 条用例：顶层默认值解析、resume 角色三条分支（沿用 / 点名 / 非 resume 默认）、原角色不存在时报错                      |
-| `docs/modules/shared/README.md`       | 补写 resume 的角色规则和「顶层 agent/tier/resume 是整批默认值」                                                              |
-| `docs/modules/server/README.md`       | 「面板能力给 Agent 用」一行补指针                                                                                            |
+| 位置                            | 改了什么                                                                                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/orch-mcp.ts`            | `spawn_agents` 顶层接受 `agent` / `tier` / `resume` 作整批默认值（任务里写的优先）；顶层 `resume` 配多个任务报错；顶层不认得的字段报错（`SPAWN_TOP_FIELDS`）；字段描述补「可写在顶层」 |
+| `shared/engine.ts`              | resume 命中但原角色已被删、又没显式点名 → 报错不退回默认「子任务」；显式点名不存在的角色报错；`agentId` 为空的老数据不算角色被删；重试分支支持换到点名的角色                           |
+| `server/orch-mcp.test.ts`       | 新增 4 条用例：顶层默认值解析、resume 角色三态（沿用 / 点名 / 非 resume 默认）、原角色不存在时报错、点名的角色不存在时报错                                                             |
+| `docs/modules/shared/README.md` | 补写 resume 的角色规则和「顶层 agent/tier/resume 是整批默认值」                                                                                                                        |
+| `docs/modules/server/README.md` | 「面板能力给 Agent 用」一行补指针                                                                                                                                                      |
 
 ## 待确认
 
