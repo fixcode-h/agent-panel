@@ -96,11 +96,17 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/ProjectsPage.tsx',
     'web/src/pages/HomePage.tsx',
   ],
-  '08-comfy': ['web/src/components/comfy/', 'web/src/pages/ComfyPage.tsx'],
-  '09-hint': ['web/src/components/ui/hint.tsx'],
-  // 计划面板（shared/plan.ts 那套数据的界面）
-  '09-plans': ['web/src/pages/SchedulesPage.tsx'],
-  '09-summary': ['web/src/pages/SummaryPage.tsx', 'web/src/lib/summary-page.ts'],
+  // 四个小题合成一片：各自只有 6~13 步，固定开销（静态服务 + 浏览器）占掉一半。
+  // 四个分片原来各自断言的源码都登记在它名下，改哪一个都跑这一片
+  '08-misc': [
+    'web/src/components/comfy/',
+    'web/src/pages/ComfyPage.tsx',
+    'web/src/components/ui/hint.tsx',
+    // 计划面板（shared/plan.ts 那套数据的界面）
+    'web/src/pages/SchedulesPage.tsx',
+    'web/src/pages/SummaryPage.tsx',
+    'web/src/lib/summary-page.ts',
+  ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
 }
 
