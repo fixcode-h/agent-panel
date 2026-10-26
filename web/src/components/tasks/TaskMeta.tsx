@@ -254,7 +254,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
             {u.costUsd > 0 && (
               <div className="flex items-baseline justify-between gap-2">
                 {/* 这是 CLI 自己上报的美元金额，不是按计价模型折算的费用，标签里写清楚免得和用量统计的「费用」混起来 */}
-                <dt className="text-subtle">{t('CLI 上报费用')}</dt>
+                <dt className="text-subtle">{t('Agent 上报费用')}</dt>
                 <dd className="font-mono text-muted tabular-nums">${u.costUsd.toFixed(3)}</dd>
               </div>
             )}

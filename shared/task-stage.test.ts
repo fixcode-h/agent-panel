@@ -324,7 +324,7 @@ test('stopReasonText：只有用户按的暂停说「已暂停」，其它来源
   // 旧任务没有原因：当时只有用户按暂停这一条路
   assert.equal(stopReasonText(undefined), '已暂停')
   assert.equal(stopReasonText('parent'), '父对话结束时一起结束')
-  assert.equal(stopReasonText('switch'), '换 CLI / 模型时中断')
+  assert.equal(stopReasonText('switch'), '换 Agent / 模型时中断')
   assert.equal(stopReasonText('archive'), '归档时结束')
   assert.equal(stopReasonText('restart'), '面板重启时中断')
   assert.equal(stopReasonText('presence'), '页面切走后结束')

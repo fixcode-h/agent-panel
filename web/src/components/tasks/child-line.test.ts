@@ -97,7 +97,7 @@ test('进程回收的说明挪到悬停里，不占状态标签那一行', () =>
     false,
   )
   // 标题变灰、行下写「等 1 个后台命令」已经说清了，悬停只补一句进程没了
-  assert.equal(childClosedHint(closedWaiting()), t('CLI 进程已回收，继续会重新拉起'))
+  assert.equal(childClosedHint(closedWaiting()), t('Agent 进程已回收，继续会重新拉起'))
   // 这一轮已经结束、会话真的关了：悬停不再提「继续会重新拉起」
   assert.equal(
     childClosedHint(
