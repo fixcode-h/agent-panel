@@ -256,6 +256,7 @@ await runShard(import.meta.filename, async (api) => {
       await check(p, '子对话-运行区与弹层一致')
       await check(p, '子对话-运行区左对齐')
       await p.getByRole('button', { name: '全部' }).first().click()
+      // 「已完成」里含演示数据那条「拆分规则检查脚本」（做完、没点开看过，行上带未读点，断言在 02b 分片）
       await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()

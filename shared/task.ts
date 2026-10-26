@@ -1036,6 +1036,9 @@ export interface ChildEntry {
   cliAlive: boolean
   /** 本次开启的时间，见 childStartedAt */
   startedAt: string
+  /** 这一轮做完的时间、用户看过的最近一轮完成时间：两者不同就是「做完还没看」（见 taskTurnUnread） */
+  turnDoneAt?: string
+  turnSeenAt?: string
   /** 正在等用户确认的请求数、没回答的提问数：都算「需要你处理」 */
   requests?: number
   asking?: number
@@ -1732,8 +1735,13 @@ export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
  * 交出去的后台命令还没跑完时不算：这一轮说完了但对话还在等结果。
  * 只是「未读」这个历史事实，能不能画橙点还要看下面的 taskDoneDot。
  */
-export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jobs?: Task['jobs'] }) =>
-  !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length
+export const taskTurnUnread = (x: {
+  turnDoneAt?: string
+  turnSeenAt?: string
+  jobs?: Task['jobs']
+  /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
+  background?: number
+}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length && !x.background
 
 /**
  * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
@@ -1743,6 +1751,30 @@ export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jo
 export function taskDoneDot(x: TaskFactsInput, unread: boolean, viewing = false) {
   if (!unread || viewing) return false
   return taskState(x) === 'done'
+}
+
+/**
+ * 子对话行要不要画未读点（「这一轮做完、你还没看」）：和侧栏橙点同一份口径（taskTurnUnread），
+ * 再加两条——只有真的做完才画，当前打开的那一个不画。
+ * 还在跑 / 等你处理 / 停下 / 失败都不画：它们各有自己的图标和标签，再叠一个未读点会读成「做完了没看」，
+ * 而且「没做完」不是「没读过」，是「还没有结果」。
+ */
+export function childDoneDot(x: ChildEntry, viewing = false) {
+  if (viewing) return false
+  if (!taskTurnUnread(x)) return false
+  return childIcon(x) === 'done'
+}
+
+/**
+ * 本地记下了「点开过的那一轮」，这条要不要按已读算：服务端还没记成看过（仍是 taskTurnUnread），
+ * 而且记下的就是当前这一轮（它又跑了一轮时不能算看过）。
+ * 给父对话页用：点开子对话时先本地清掉未读点，4 秒一次的 /children 轮询抢在子对话自己的 /seen 前面时，
+ * 不把点又画回来（见 web/src/components/tasks/TaskView.tsx 的 withLocalSeen）。
+ * 判定和 taskDoneDot / childDoneDot 同一处：组件里不自己比两个时间戳。
+ */
+export function childSeenLocally(x: ChildEntry, seenAt: string | undefined) {
+  if (!seenAt || seenAt !== x.turnDoneAt) return false
+  return taskTurnUnread(x)
 }
 
 /** 任务还在运行（不能被回收、失活）：见 convActive */

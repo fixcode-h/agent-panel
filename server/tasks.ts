@@ -4335,6 +4335,11 @@ export function tasksApi(deps: {
           dirty: wt?.dirty ?? 0,
           // 已经请父对话收尾、还没出结果：行上是「待收尾」
           wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',
+          // 这一轮做完的时间、用户看过的最近一轮完成时间：两处不同就是「做完了还没看」，
+          // 子对话行的未读点读它（见 shared/task.ts 的 taskTurnUnread / childDoneDot）。
+          // 只多两个时间戳，不为它读整份 .messages.json（/children 是热点，见之前那次性能优化）
+          turnDoneAt: liveTask.turnDoneAt,
+          turnSeenAt: liveTask.turnSeenAt,
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
