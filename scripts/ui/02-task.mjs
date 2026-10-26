@@ -409,6 +409,97 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await check(d, '元素抓取-父对话按钮投父对话')
     await d.close()
   }
+  // 「提问」的右键菜单：关掉父对话的提问时已创建的子对话一起关；右键勾上「子对话也提问」时
+  // 先问已有子对话要不要一起开，默认只对之后新建的生效
+  {
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base)
+    await d
+      .getByText('购物车右上角', { exact: false })
+      .first()
+      .waitFor({ timeout: 15000 })
+      .catch(() => errors.push('提问联动：新页面的演示数据没生成出来'))
+    await d.getByText('购物车右上角', { exact: false }).first().click()
+    await d.locator('#follow-up').waitFor({ timeout: 10000 })
+    const pane = () => d.getByRole('complementary', { name: '子对话' })
+    const parentAsk = d.getByRole('button', { name: 'AI 有问题时问我' }).first()
+    if (await parentAsk.evaluate((el) => !!el.closest('aside'))) errors.push('提问联动：第一个提问按钮不在父对话里')
+    const openChild = async () => {
+      await d.locator('button[aria-label="环境"]').first().click()
+      await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
+      await d
+        .locator('[data-worktree-row]')
+        .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
+        .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+        .click()
+      await pane().locator('#follow-up').waitFor({ timeout: 10000 })
+    }
+    const closeChild = async () => {
+      await pane().getByRole('button', { name: '关闭子对话', exact: true }).click()
+      await pane()
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => {})
+    }
+    // 右栏重开后重新取一次任务：演示里的联动改了记录，不保证推送到已经打开的面板
+    const childAskOn = async () => {
+      const btn = pane().getByRole('button', { name: 'AI 有问题时问我' }).first()
+      return (await btn.getAttribute('aria-pressed')) === 'true'
+    }
+    const reopenChild = async () => {
+      if (await pane().count()) await closeChild()
+      await openChild()
+    }
+
+    await openChild()
+    if (!(await childAskOn())) errors.push('提问联动：新建的子对话默认就该开着提问')
+    // 右键父对话的提问按钮：菜单里出现「子对话也提问」，默认勾着（父对话自己开着提问）
+    await parentAsk.click({ button: 'right' })
+    const item = d.getByRole('menuitemcheckbox', { name: '子对话也提问' })
+    await item
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('提问菜单：右键父对话的提问按钮没有出现「子对话也提问」'))
+    if ((await item.getAttribute('aria-checked').catch(() => null)) !== 'true')
+      errors.push('提问菜单：默认应该勾选「子对话也提问」')
+    await check(d, '任务-提问右键菜单', ['只对之后新建的子对话生效'])
+    await d.keyboard.press('Escape')
+    // 关掉父对话的提问：已创建的子对话一起关
+    await parentAsk.click()
+    await reopenChild()
+    if (await childAskOn()) errors.push('提问联动：父对话关掉提问后，已创建的子对话没有一起关')
+    // 再打开父对话的提问：只开自己，之前被关掉的子对话不该自动打开
+    await closeChild()
+    await parentAsk.click()
+    await reopenChild()
+    if (await childAskOn()) errors.push('提问联动：重新打开父对话后，已创建的子对话不该自动打开')
+    // 右键取消勾选：只影响之后新建的子对话，不弹窗
+    await closeChild()
+    await parentAsk.click({ button: 'right' })
+    const menuItem = d.getByRole('menuitemcheckbox', { name: '子对话也提问' })
+    await menuItem.waitFor({ timeout: 5000 }).catch(() => errors.push('提问菜单：第二次右键没有出现「子对话也提问」'))
+    if ((await menuItem.getAttribute('aria-checked').catch(() => null)) !== 'true')
+      errors.push('提问菜单：重新打开父对话提问后这一项应该还是勾着的')
+    await menuItem.click()
+    if (await d.getByRole('dialog').count()) errors.push('提问菜单：取消勾选不该弹选择窗口')
+    await openChild()
+    if (await childAskOn()) errors.push('提问菜单：取消勾选不该打开已创建的子对话')
+    // 再勾上：这次是从未勾选变勾选，要弹窗问已有子对话要不要一起开，默认停在「只对之后新建」
+    await closeChild()
+    await parentAsk.click({ button: 'right' })
+    await d.getByRole('menuitemcheckbox', { name: '子对话也提问' }).click()
+    const dialog = d.getByRole('dialog')
+    await dialog.waitFor({ timeout: 5000 }).catch(() => errors.push('提问菜单：勾上「子对话也提问」没有弹出选择窗口'))
+    // 弹窗没出来时后面的点击会等满超时再抛错，把整个分片打断：先判在不在
+    if (await dialog.count()) {
+      const focused = (await d.evaluate(() => document.activeElement?.textContent ?? '')).trim()
+      if (focused !== '只对之后新建的子对话')
+        errors.push(`提问菜单：选择窗口默认焦点应该在「只对之后新建的子对话」上（实际「${focused}」）`)
+      await dialog.getByRole('button', { name: '应用到已创建的子对话' }).click()
+    }
+    await openChild()
+    if (!(await childAskOn())) errors.push('提问菜单：选「应用到已创建」后子对话的提问没有打开')
+    await check(d, '任务-提问应用到已创建')
+    await d.close()
+  }
   // 父对话这一轮已经说完、名下还有子对话在跑：输入框要写清在等什么。
   // 旧实现一律写「继续输入要求」，和旁边的停止按钮凑成「子对话在跑、父对话却在等继续」（用户报的现象）。
   // 占位文字读 aria-placeholder：输入框是 contenteditable 的 RichInput，placeholder 只在值为空时画成一个 span

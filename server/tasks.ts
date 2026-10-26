@@ -78,6 +78,7 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
+import { childAskDefaultOf, childAskEffect, childAskInitial } from '../shared/child-ask.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHasRemote, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
@@ -2400,6 +2401,55 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 改一个对话的「提问」：关掉时把还没回答的问题交给 AI 自己选，执行中时把新设置插话给正在跑的 CLI。
+   * 父对话按钮、右键菜单、联动到子对话都走这里，不另写一套
+   */
+  async function applyAskUser(task: Task, on: boolean, working: boolean) {
+    if (!on) {
+      autoAnswerQuestions(task)
+      // 子对话已经问出去、还挂在父对话里的那些，也一起交给 AI：否则卡片仍停在「等你选择」
+      await handChildAsksToParent(task, working)
+    }
+    if (!working) return
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
+      tools: [],
+      // 执行中改的：画成 AI 回复里的一行，不在回复中间插一条居中提示
+      panel: 'note',
+      at: new Date().toISOString(),
+    }
+    void steerTask(
+      task,
+      on
+        ? '用户打开了「提问」：接下来有问题时用提问工具交给用户回答，不要自己替用户决定。'
+        : '用户关闭了「提问」：接下来有问题时自己选最合适的做法，不要再等用户回答。',
+      msg,
+    ).catch(() => {})
+  }
+
+  /**
+   * 父对话的「提问」/「子对话也提问」联动到名下已有的子对话：改它们各自的 askUser（引擎按它判断允不允许提问），
+   * 并马上落盘——只改界面上的勾选不够，引擎还按旧值决定让不让它问
+   */
+  async function applyChildAskUser(parent: Task, on: boolean) {
+    const kids = (await store.list()).filter((k) => k.parentTaskId === parent.id && !k.imported)
+    for (const kid of kids) {
+      const entry = live.get(kid.id)
+      const child = entry?.task ?? kid
+      if (child.askUser === on) continue
+      child.askUser = on
+      await applyAskUser(child, on, !!entry?.task.working)
+      // 执行中平时按节点落盘，这里要马上写下去，刷新或重启后引擎仍按新设置走
+      await store.update(child.id, child)
+      if (entry) entry.rev++
+    }
+  }
+
+  /**
    * 把一张提问卡片交给父对话的 AI 决定：先记 delegated 并落盘（刷新后仍是「交给父对话决定」），
    * 再用实时交付叫起父对话（等下一句、收尾中、刚预热时都要交得到），交不到时把原因写回卡片。
    * 用户点卡片上的按钮走这个函数。
@@ -2847,6 +2897,8 @@ export function tasksApi(deps: {
             rootTaskId: entry.task.rootTaskId || entry.task.id,
             agentId: worker?.id ?? project.defaultAgentId,
             prompt: message,
+            // 父对话的「子对话也提问」决定这条新子对话开不开提问
+            askUser: childAskInitial(entry.task),
           })
           const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
@@ -4110,7 +4162,11 @@ export function tasksApi(deps: {
       if (parent.projectId !== input.projectId) return { error: t('子对话必须和父对话在同一个项目'), status: 400 }
       input.mode = 'chat'
       input.rootTaskId = parent.rootTaskId || parent.id
+      // 新建子对话的「提问」初始值跟着父对话的「子对话也提问」走（父对话关掉提问只管已经建好的，不管之后的）
+      input.askUser = childAskInitial(parent)
     }
+    // 顶层对话（父对话、普通会话）：之后新建的子对话默认问不问，取设置里的全局默认（界面传了就用界面的）
+    if (!parent) input.childAskUser = input.childAskUser ?? childAskDefaultOf(await getSettings())
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
       workflow = input.workflowId
@@ -4779,8 +4835,17 @@ export function tasksApi(deps: {
       if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
     const task = cur
-    const { childRun, ...rest } = p.data
+    const { childRun, applyChildAsk, ...rest } = p.data
+    // 「提问」联动（见 shared/child-ask.ts）：按钮关父对话时已有子对话一起关，右键菜单改的是「之后新建」的默认值，
+    // 勾上时再按用户选的「应用到已创建」决定已有的要不要一起开。先算出结论，下面一起应用
+    const askEffect = childAskEffect({
+      askUser: p.data.askUser,
+      childAskUser: p.data.childAskUser,
+      applyExisting: applyChildAsk,
+    })
     Object.assign(task, rest)
+    if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
+    if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
     // null 表示改回按执行角色自己的配置
     if (childRun !== undefined) task.childRun = childRun ?? undefined
     // 用户自己起了名：之后不再自动换标题
@@ -4801,34 +4866,9 @@ export function tasksApi(deps: {
         ? { session: '', through: null, latest: false, summary: history }
         : { session: '', through: null, latest: false }
     }
-    if (p.data.askUser === false) {
-      autoAnswerQuestions(task)
-      // 子对话已经问出去、还挂在父对话里的那些，也一起交给 AI：否则卡片仍停在「等你选择」
-      await handChildAsksToParent(task, !!e?.task.working)
-    }
-    // 执行中改「提问」：直接把新设置插话给正在跑的 CLI，后续的问题按新设置处理；
-    // 关掉时还没回答的问题已经由 autoAnswerQuestions 交给 AI 自己选
-    if (p.data.askUser !== undefined && e?.task.working) {
-      const on = p.data.askUser
-      const msg: TaskMessage = {
-        id: randomUUID(),
-        role: 'system',
-        agentId: '',
-        step: '',
-        text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
-        tools: [],
-        // 执行中改的：画成 AI 回复里的一行，不在回复中间插一条居中提示
-        panel: 'note',
-        at: new Date().toISOString(),
-      }
-      void steerTask(
-        task,
-        on
-          ? '用户打开了「提问」：接下来有问题时用提问工具交给用户回答，不要自己替用户决定。'
-          : '用户关闭了「提问」：接下来有问题时自己选最合适的做法，不要再等用户回答。',
-        msg,
-      ).catch(() => {})
-    }
+    if (askEffect.askUser !== undefined) await applyAskUser(task, askEffect.askUser, !!e?.task.working)
+    // 已有的子对话跟着父对话一起开 / 关（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
+    if (askEffect.existingChildren !== undefined) await applyChildAskUser(task, askEffect.existingChildren)
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
     await store.update(id, task)
     if (!touchesRun) return c.json(task)

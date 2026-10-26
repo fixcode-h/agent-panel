@@ -705,6 +705,9 @@ export const api = {
   /** 子对话请用户决定的提问，用户点了关闭：都不回答，子对话终止 */
   closeParentAsks: (id: string) => request<Task>(`/tasks/${id}/parent-asks/close`, { method: 'POST' }),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
+  /** 父对话右键菜单的「子对话也提问」：applyExisting 表示已创建的子对话也一起打开 */
+  setTaskChildAskUser: (id: string, childAskUser: boolean, applyExisting: boolean) =>
+    request<Task>(`/tasks/${id}`, json('PATCH', { childAskUser, applyChildAsk: applyExisting })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>

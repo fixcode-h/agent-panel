@@ -97,6 +97,8 @@ export function newTask(
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
+    // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
+    childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',

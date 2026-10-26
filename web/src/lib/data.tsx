@@ -13,7 +13,7 @@ import type {
 } from '@shared/schema'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
-import { rememberAskUserDefault } from './askUserDefault'
+import { rememberAskUserDefault, rememberChildAskUserDefault } from './askUserDefault'
 import { applyAppearance } from './appearance'
 import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
@@ -139,6 +139,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (askDefault !== undefined) rememberAskUserDefault(askDefault)
   }, [askDefault])
+  // 子对话的「提问」默认值同理：新开父对话时要用它定「子对话也提问」的初始值
+  const childAskDefault = settings?.childAskUserDefault
+  useEffect(() => {
+    if (childAskDefault !== undefined) rememberChildAskUserDefault(childAskDefault)
+  }, [childAskDefault])
   // 设置里的语言和浏览器记的不一样（例如在别的浏览器里改过）：以设置为准
   useEffect(() => {
     if (settings) switchLang(settings.language)
