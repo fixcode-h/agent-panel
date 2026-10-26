@@ -3,6 +3,7 @@
  * submit_merge 时子对话按模板写关键信息，面板补上 git 事实；
  * 完成后再被叫醒、上下文又大时，开新会话只带这份摘要，不把上次的工具输出全带进去。
  */
+import { clip } from './text.ts'
 
 /** 关键信息模板：submit_merge 的 handoff 参数按它生成，拼摘要也按这个顺序 */
 export const HANDOFF_FIELDS = [
@@ -26,8 +27,6 @@ export type HandoffInput = Partial<Record<HandoffKey, string>>
  * 小于它时接回原会话更省（摘要本身也要一两千 token），还保留全部细节
  */
 export const HANDOFF_MIN_CONTEXT = 30_000
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 从工具参数里取关键信息：只认模板里的字段，字符串以外的丢掉 */
 export function handoffInput(raw: unknown): HandoffInput {

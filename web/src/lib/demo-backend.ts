@@ -60,7 +60,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
-import { afterRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -1849,6 +1849,8 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
       const now = new Date().toISOString()
       const item = Schedule.parse({
         ...input,
+        // 和正式后端一样：每周 / 工作日的首次执行落在选中的星期上
+        at: alignScheduleAt(input),
         status: 'pending',
         lastRunAt: '',
         lastTaskId: '',
@@ -1871,7 +1873,8 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     return undefined
   }
   if (method === 'PUT') {
-    const input = ScheduleInput.parse(body)
+    const parsed = ScheduleInput.parse(body)
+    const input = { ...parsed, at: alignScheduleAt(parsed) }
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
@@ -2395,7 +2398,11 @@ function route(method: string, url: string, body: unknown): unknown {
 /** 演示里的用量统计：按浏览器里存的演示任务算，和正式版用同一个聚合函数 */
 function demoUsage(d: Db, query: URLSearchParams) {
   const grain = UsageQuery.grain(query.get('grain'))
-  return usageReport(d.tasks ?? [], { grain, count: UsageQuery.count(query.get('count'), grain) })
+  return usageReport(d.tasks ?? [], {
+    grain,
+    count: UsageQuery.count(query.get('count'), grain),
+    groupBy: UsageQuery.group(query.get('groupBy')),
+  })
 }
 
 /** 演示里每个请求统一等这么一会儿，模拟真实请求，让「保存中」等状态能被看到 */
@@ -3838,6 +3845,8 @@ function demoPlans(task: Task) {
     waits: [],
     startedAt: start ? at(start) : '',
     endedAt: end ? at(end) : '',
+    // 这项最后一次变化：演示里「进行中」的那一步 12 分钟没动了，界面上的滞后标记和「N 分钟前更新」才验得到
+    updatedAt: end ? at(end) : start ? at(start) : '',
   })
   task.plans = [
     {
@@ -3857,6 +3866,8 @@ function demoPlans(task: Task) {
       id: 'p2',
       title: '修复购物车角标',
       createdAt: at(28),
+      // 计划最后变化在第 3 步开始的时候，之后 12 分钟没动过：折叠头的「N 分钟前更新」应该是警示色
+      updatedAt: at(12),
       doneAt: '',
       summary: '',
       autoSummary: false,
@@ -3875,7 +3886,8 @@ function demoPlans(task: Task) {
             item('3.3', '覆盖未登录的本地购物车', 'pending'),
           ],
         },
-        { ...item('4', '整理改动和总结', 'pending'), children: [] },
+        // 失败态：需要对话处理（重做或明确跳过），不是正在跑；没有结束时间，所以不显示用时
+        { ...item('4', '整理改动和总结', 'failed'), note: '等的结果没成功：npm run build', children: [] },
       ],
     },
   ]

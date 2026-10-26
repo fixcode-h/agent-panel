@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import { linkPaths } from '@/lib/file-path'
 import { useFileOpen } from './FileDialog'
@@ -136,7 +137,8 @@ export function Markdown({
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
     if (!btn) return
     const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
-    void navigator.clipboard?.writeText(code).then(() => {
+    void copyText(code, { fail: false }).then((ok) => {
+      if (!ok) return
       btn.textContent = t('已复制')
       setTimeout(() => (btn.textContent = t('复制')), 1500)
     })

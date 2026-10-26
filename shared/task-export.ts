@@ -18,6 +18,8 @@ import { isHelperAgent } from './builtin/core.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
 import { leadVerdict } from './verdict.ts'
+import { clip as clipText } from './text.ts'
+import { hhmm, pad2, ymd } from './datetime.ts'
 
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
@@ -897,10 +899,10 @@ const pct = (r: number) => `${Math.round(r * 100)}%`
 const localTime = (iso: string) => {
   const d = new Date(iso)
   if (!iso || !Number.isFinite(d.getTime())) return iso
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${ymd(d)} ${hhmm(d)}`
 }
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
+/** 导出报告里的长段落截断后写明还省了多少字，读者才知道内容不完整 */
+const clip = (s: string, n: number) => clipText(s, n, { mark: (omitted) => `\n…（后面省略 ${omitted} 字）` })
 
 /** 轮次结局在报告里的说法，和 schema 的 TurnEnd 一一对应 */
 const TURN_END_TEXT: Record<keyof TurnEndCounts, string> = {
@@ -1029,9 +1031,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       `- 用户发言时间：${asks
         .map((m) => {
           const d = new Date(m.at ?? '')
-          return Number.isFinite(d.getTime())
-            ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-            : '?'
+          return Number.isFinite(d.getTime()) ? hhmm(d) : '?'
         })
         .join('、')}`,
     )
@@ -1130,9 +1130,7 @@ function messageLines(
   const at = (iso: string) => {
     if (!iso) return ''
     const d = new Date(iso)
-    return Number.isFinite(d.getTime())
-      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} `
-      : ''
+    return Number.isFinite(d.getTime()) ? `${hhmm(d)}:${pad2(d.getSeconds())} ` : ''
   }
   let step = ''
   let last = ''

@@ -19,7 +19,7 @@ import {
   Scale,
   X,
 } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import type { PeerKind, TaskMessage } from '@shared/schema'
 import type { SendTarget } from '@/lib/tasks'
 import { LEAD_TAG, peerKindText, peerName, peerOfMessage, subjectLine } from '@shared/peer-message'
@@ -269,12 +269,7 @@ function PeerDialog({
               size="icon-sm"
               aria-label={t('复制')}
               title={t('复制')}
-              onClick={() =>
-                navigator.clipboard
-                  ?.writeText(text)
-                  .then(() => toast.success(t('已复制消息')))
-                  .catch(() => {})
-              }
+              onClick={() => void copyText(text, { done: t('已复制消息'), fail: false })}
             >
               <Copy className="h-4 w-4" />
             </Button>

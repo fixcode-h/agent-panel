@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { pathToFileURL } from 'node:url'
-import { RpcSpec } from '../../shared/cli-spec.ts'
+import { mcpConfig, RpcSpec } from '../../shared/cli-spec.ts'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import type { Orchestra } from '../../shared/engine.ts'
 import { t } from '../../shared/i18n.ts'
@@ -17,6 +17,17 @@ import { createRpcSession, REQUEST_TIMEOUT_MS, type RpcDiagnose } from './rpc/se
 import { createSpecAdapter } from './rpc/spec.ts'
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
+
+/** 测试注入的桥接超时和重试次数：断言按注入值算，生产的 4000 / 2 仍在 shared/clis/pi.json 的 mcp.vars */
+const FAST_TIMING = { stepTimeout: 300, attempts: 2 }
+
+/** 按生产路径（mcpConfig）生成桥接扩展文件：占位符不手工拼，用例只覆盖要改的值 */
+function bridge(dir: string, url: string, vars: Record<string, string | number> = {}) {
+  const files = mcpConfig(getCli('pi')!.mcp!, 'panel', url, dir, vars).files
+  const file = files.find((f) => f.path.endsWith('/agent-panel-panel.ts'))
+  assert.ok(file, '定义里有 Pi 的桥接扩展')
+  return { path: file.path, content: String(file.content) }
+}
 
 /** 按 shared/clis/pi.json 里的 rpc 配置建一条会话：命令、事件和结束条件都在配置里 */
 async function session(
@@ -445,15 +456,13 @@ test('Pi RPC：进程已经退出时，错误里带上 stderr 最后几行', asy
 })
 
 test('Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加载，不再把 Pi 卡在启动阶段', async () => {
-  const def = getCli('pi')!
-  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
   // 只收请求、不回应：复现面板 MCP 端点卡住
   const server = createServer(() => {})
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
   const port = (server.address() as AddressInfo).port
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
-  const file = join(dir, 'agent-panel-test.ts')
-  writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+  const { path: file, content } = bridge(dir, `http://127.0.0.1:${port}/mcp`, FAST_TIMING)
+  writeFileSync(file, content)
   const statuses: string[] = []
   let onSessionStart: ((event: unknown, ctx: any) => void) | undefined
   const pi = {
@@ -470,10 +479,10 @@ test('Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加
     rmSync(dir, { recursive: true, force: true })
   }
   const waited = Date.now() - startedAt
-  // 超时值和预算都从定义里读：改了数值不用再改断言
-  const step = Number(/const STEP_TIMEOUT_MS = ([0-9]+)/.exec(template)![1])
-  const budget = Number(/const LOAD_BUDGET_MS = ([0-9]+)/.exec(template)![1])
-  assert.ok(waited >= step * 2 - 500, `握手两次都等满超时才放行：${waited}ms`)
+  // 超时和次数用上面注入的小值算：生产值改了这里不用跟着改；总预算仍写在脚本里
+  const step = FAST_TIMING.stepTimeout
+  const budget = Number(/const LOAD_BUDGET_MS = ([0-9]+)/.exec(content)![1])
+  assert.ok(waited >= step * FAST_TIMING.attempts - 150, `握手两次都等满超时才放行：${waited}ms`)
   assert.ok(waited < budget + 1000, `不会超总预算：${waited}ms`)
   // 超时要让面板知道原因（界面显示成一行错误），而不是只剩模型说「没有面板的工具」
   onSessionStart?.({}, { ui: { setStatus: (key: string, text: string) => statuses.push(`${key}=${text}`) } })
@@ -481,8 +490,6 @@ test('Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加
 })
 
 test('Pi 桥接扩展：列工具晚回一次会重试，面板工具照样挂上', async () => {
-  const def = getCli('pi')!
-  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
   // 第一次列工具不回（复现面板忙时晚几秒才回），第二次照常回：重试之后工具还在，不该整轮退化成普通命令
   let lists = 0
   const server = createServer((req, res) => {
@@ -504,8 +511,8 @@ test('Pi 桥接扩展：列工具晚回一次会重试，面板工具照样挂�
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
   const port = (server.address() as AddressInfo).port
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
-  const file = join(dir, 'agent-panel-test.ts')
-  writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+  const { path: file, content } = bridge(dir, `http://127.0.0.1:${port}/mcp`, FAST_TIMING)
+  writeFileSync(file, content)
   const tools: string[] = []
   const pi = {
     on: () => {},
@@ -521,7 +528,7 @@ test('Pi 桥接扩展：列工具晚回一次会重试，面板工具照样挂�
     rmSync(dir, { recursive: true, force: true })
   }
   const waited = Date.now() - startedAt
-  const step = Number(/const STEP_TIMEOUT_MS = ([0-9]+)/.exec(template)![1])
+  const step = FAST_TIMING.stepTimeout
   assert.equal(lists, 2, '第一次没回应，重试了一次')
   assert.deepEqual(tools, ['set_plan'], '重试拿到工具就照常注册给 Pi')
   assert.ok(waited >= step - 100, `列工具的超时到了才重试：${waited}ms`)
@@ -533,13 +540,12 @@ test('Pi 扩展最坏的加载时长要留在 get_state 默认超时之内：面
   // 扩展加载期间 Pi 不读 stdin，面板这时只在等 get_state。最坏加载时长如果顶到它的超时，
   // 面板端点慢一点就会把「工具没挂上」换成「get_state 没有响应」，一样用不了面板工具
   const script = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
-  const constant = (name: string) => Number(new RegExp(`const ${name} = ([0-9]+)`).exec(script)![1])
   // 扩展加载的总预算：握手和列工具共用这一份，最坏就是它
-  const worst = constant('LOAD_BUDGET_MS')
-  assert.ok(
-    constant('STEP_TIMEOUT_MS') * constant('STEP_ATTEMPTS') <= worst,
-    '单步超时 × 次数不能超过总预算，不然重试会把预算吃穿',
-  )
+  const worst = Number(/const LOAD_BUDGET_MS = ([0-9]+)/.exec(script)![1])
+  // 单步超时和次数读生产值：模板里已经是占位符，实际值只存在于 mcp.vars
+  const step = Number(def.mcp!.vars.stepTimeout)
+  const attempts = Number(def.mcp!.vars.attempts)
+  assert.ok(step * attempts <= worst, '单步超时 × 次数不能超过总预算，不然重试会把预算吃穿')
   assert.ok(worst < REQUEST_TIMEOUT_MS, `扩展最坏加载 ${worst}ms 要留在 get_state 的 ${REQUEST_TIMEOUT_MS}ms 之内`)
   assert.ok(
     REQUEST_TIMEOUT_MS - worst >= 3000,
@@ -548,8 +554,6 @@ test('Pi 扩展最坏的加载时长要留在 get_state 默认超时之内：面
 })
 
 test('Pi 桥接扩展：两轮并发启动都拿到整批面板工具，不是一个两个', async () => {
-  const def = getCli('pi')!
-  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
   // 真实的子对话工具清单：从 orchTools 取。手写会漏项，也挡不住「整批被裁成一两个」的回归
   const expected = orchTools({
     self: '@chat',
@@ -589,8 +593,8 @@ test('Pi 桥接扩展：两轮并发启动都拿到整批面板工具，不是�
   const load = async (port: number) => {
     const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
     dirs.push(dir)
-    const file = join(dir, 'agent-panel-panel.ts')
-    writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+    const { path: file, content } = bridge(dir, `http://127.0.0.1:${port}/mcp`)
+    writeFileSync(file, content)
     const tools: string[] = []
     const mod = await import(pathToFileURL(file).href)
     await mod.default({ on: () => {}, registerTool: (tool: { name: string }) => tools.push(tool.name) })
@@ -614,11 +618,8 @@ test('Pi 桥接扩展：两轮并发启动都拿到整批面板工具，不是�
 test('扩展文件被清掉后，下一轮启动会重新写回', async () => {
   const def = getCli('pi')!
   const dir = mkdtempSync(join(tmpdir(), 'panel-ext-'))
-  const target = join(dir, 'agent-panel-panel.ts')
-  const files = Object.entries(def.mcp!.files).map(([p, content]) => ({
-    path: p.replace('{dir}/', '').replaceAll('{name}', 'panel'),
-    content: String(content).replaceAll('{name}', 'panel').replaceAll('{url}', 'http://127.0.0.1:1/mcp'),
-  }))
+  const files = mcpConfig(def.mcp!, 'panel', 'http://127.0.0.1:1/mcp', dir).files
+  const target = files.find((f) => f.path.endsWith('/agent-panel-panel.ts'))!.path
   let restores: (() => Promise<void>)[] = []
   try {
     // 第一轮写进面板的临时目录；先不 restore，模拟这一轮还在跑
@@ -637,8 +638,6 @@ test('扩展文件被清掉后，下一轮启动会重新写回', async () => {
 })
 
 test('Pi 桥接扩展：面板一个工具都不给时要报给面板，不能静默注册 0 个', async () => {
-  const def = getCli('pi')!
-  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
   // 列到了但 tools 是空数组：以前这里什么都不报，模型只能自己发现「工具不可见」，用户看不到原因
   const server = createServer((req, res) => {
     let body = ''
@@ -653,8 +652,8 @@ test('Pi 桥接扩展：面板一个工具都不给时要报给面板，不能�
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
   const port = (server.address() as AddressInfo).port
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
-  const file = join(dir, 'agent-panel-empty.ts')
-  writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+  const { path: file, content } = bridge(dir, `http://127.0.0.1:${port}/mcp`)
+  writeFileSync(file, content)
   const statuses: string[] = []
   const registered: string[] = []
   let onSessionStart: ((event: unknown, ctx: any) => void) | undefined
@@ -676,8 +675,6 @@ test('Pi 桥接扩展：面板一个工具都不给时要报给面板，不能�
 })
 
 test('Pi 桥接扩展：清单只给了一部分工具时也要报出来，不能只挡住空清单', async () => {
-  const def = getCli('pi')!
-  const template = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
   // 身份误判（子对话被当成子任务）时面板会回一份非空但缺核心工具的清单：模型仍然只会说「工具不可见」，
   // 用户看不到原因，所以缺身份无关的 get_status / send_message / read_messages 任何一个都要上报
   const server = createServer((req, res) => {
@@ -696,8 +693,8 @@ test('Pi 桥接扩展：清单只给了一部分工具时也要报出来，不�
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
   const port = (server.address() as AddressInfo).port
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
-  const file = join(dir, 'agent-panel-partial.ts')
-  writeFileSync(file, template.replaceAll('{name}', 'panel').replaceAll('{url}', `http://127.0.0.1:${port}/mcp`))
+  const { path: file, content } = bridge(dir, `http://127.0.0.1:${port}/mcp`)
+  writeFileSync(file, content)
   const statuses: string[] = []
   const registered: string[] = []
   let onSessionStart: ((event: unknown, ctx: any) => void) | undefined

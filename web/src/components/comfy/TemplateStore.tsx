@@ -18,6 +18,7 @@ import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { ComfyGraphView } from '@/components/comfy/ComfyGraphView'
@@ -402,9 +403,9 @@ function TemplateDetail({
             {graph ? (
               <ComfyGraphView graph={graph} readOnly onChange={() => {}} />
             ) : (
-              <p className="rounded-xl border border-dashed px-3 py-6 text-center text-[0.78125rem] text-subtle">
+              <EmptyPanel size="md" className="px-3 text-[0.78125rem]">
                 {t('这个模板没有可预览的节点图')}
-              </p>
+              </EmptyPanel>
             )}
           </section>
 

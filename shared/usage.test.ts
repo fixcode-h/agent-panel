@@ -12,6 +12,7 @@ import {
   usageLabel,
   usagePeriod,
   usageSamples,
+  UsageQuery,
   type UsageGrain,
   type UsageReport,
 } from './usage.ts'
@@ -50,6 +51,19 @@ const task = (id: string, turns: TaskTurn[], usage: Partial<Task['usage']> = {})
       ...usage,
     },
   }) as Pick<Task, 'id' | 'turns' | 'usage'>
+
+/** 带项目和标题的任务：分组测试用（按项目和对话分组读这两个字段） */
+const projectTask = (
+  id: string,
+  projectId: string,
+  title: string,
+  turns: TaskTurn[],
+  usage: Partial<Task['usage']> = {},
+) => ({
+  ...task(id, turns, usage),
+  projectId,
+  title,
+})
 
 const keys = (r: UsageReport) => r.buckets.map((b) => b.key)
 const at = (grain: UsageGrain, count: number, tasks: Pick<Task, 'id' | 'turns' | 'usage'>[] = []) =>
@@ -415,4 +429,79 @@ test('峰谷：轮次里 token 全为 0 也按开始时间归到高峰或空闲'
     sumOf(r, (b) => b.offPeak.inputTokens),
     0,
   )
+})
+
+test('按项目 / 对话分组：合计和按时间分组一致，桶按 token 总量从多到少', () => {
+  const tasks = [
+    projectTask(
+      'a',
+      'p1',
+      '改造登录',
+      [turn(new Date(2026, 9, 20, 9), 100, 20), turn(new Date(2026, 9, 19, 9), 50, 5)],
+      { costUsd: 0.2 },
+    ),
+    projectTask('b', 'p2', '写文档', [turn(new Date(2026, 9, 20, 11), 30, 3)], { costUsd: 0.1 }),
+    projectTask('c', 'p1', '修样式', [turn(new Date(2026, 9, 18, 11), 10, 1)]),
+  ]
+  const samples = tasks.flatMap(usageSamples)
+  // 同一个窗口、同一份样本，只换分组：按时间 366 天覆盖所有轮次
+  const byTime = at('day', 366, tasks)
+  const byProject = aggregateUsage(samples, { grain: 'day', count: 366, groupBy: 'project' }, now)
+  const byTask = aggregateUsage(samples, { grain: 'day', count: 366, groupBy: 'task' }, now)
+  assert.equal(byTime.groupBy, 'time')
+  assert.equal(byProject.groupBy, 'project')
+  assert.equal(byTask.groupBy, 'task')
+  for (const r of [byProject, byTask]) {
+    assert.equal(r.total.inputTokens, byTime.total.inputTokens)
+    assert.equal(r.total.outputTokens, byTime.total.outputTokens)
+    assert.equal(r.total.cacheReadTokens, byTime.total.cacheReadTokens)
+    assert.equal(r.total.cacheWriteTokens, byTime.total.cacheWriteTokens)
+    assert.equal(r.total.costUsd, byTime.total.costUsd)
+    assert.equal(r.total.turns, byTime.total.turns)
+    // 分组桶的合计就是各桶之和（同一处算法）
+    assert.deepEqual(r.total, sumBuckets(r.buckets))
+    // 分组桶没有时间含义
+    assert.ok(r.buckets.every((b) => b.start === ''))
+  }
+  // p1 = 100 + 50 + 10 = 160 输入、26 输出；p2 = 30 输入、3 输出
+  assert.deepEqual(keys(byProject), ['p1', 'p2'])
+  assert.equal(byProject.buckets[0].inputTokens, 160)
+  assert.equal(byProject.buckets[0].outputTokens, 26)
+  assert.equal(byProject.buckets[0].turns, 3)
+  assert.equal(byProject.buckets[0].tasks, 2)
+  assert.equal(byProject.buckets[1].inputTokens, 30)
+  // 按对话：a 最多、b 其次、c 最少；对话标题进 label，最近一轮的时间不再决定顺序
+  assert.deepEqual(keys(byTask), ['a', 'b', 'c'])
+  assert.deepEqual(
+    byTask.buckets.map((b) => b.label),
+    ['改造登录', '写文档', '修样式'],
+  )
+  assert.equal(byTask.buckets[0].tasks, 1)
+})
+
+test('按项目分组：不属于项目的对话归到空 key，合计不丢', () => {
+  const tasks = [projectTask('a', '', '聊天', [turn(new Date(2026, 9, 20, 9), 10, 1)])]
+  const r = at('day', 366, tasks)
+  const grouped = aggregateUsage(tasks.flatMap(usageSamples), { grain: 'day', count: 366, groupBy: 'project' }, now)
+  assert.deepEqual(keys(grouped), [''])
+  assert.equal(grouped.total.inputTokens, r.total.inputTokens)
+  assert.equal(grouped.total.turns, 1)
+})
+
+test('分组按窗口过滤：窗口外的轮次不算，和时间分组同一个范围', () => {
+  const tasks = [projectTask('a', 'p1', '早', [turn(new Date(2026, 9, 20, 9), 10, 1)])]
+  const samples = tasks.flatMap(usageSamples)
+  const outside = aggregateUsage(samples, { grain: 'day', count: 1, groupBy: 'project' }, now)
+  assert.equal(outside.total.turns, 1, '今天在 1 天窗口里')
+  const after = aggregateUsage(samples, { grain: 'day', count: 1, groupBy: 'project' }, new Date(2026, 9, 22, 10))
+  assert.equal(after.total.turns, 0, '两天前的那一轮不在 1 天窗口里')
+  assert.deepEqual(after.buckets, [])
+})
+
+test('UsageQuery.group：认不出来的分组回落到按时间', () => {
+  assert.equal(UsageQuery.group('project'), 'project')
+  assert.equal(UsageQuery.group('task'), 'task')
+  assert.equal(UsageQuery.group('time'), 'time')
+  assert.equal(UsageQuery.group('week'), 'time')
+  assert.equal(UsageQuery.group(undefined), 'time')
 })

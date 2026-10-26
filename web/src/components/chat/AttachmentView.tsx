@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, X } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -46,12 +46,7 @@ function QuoteDialog({ text, onClose }: { text: string | null; onClose: () => vo
               size="icon-sm"
               aria-label={t('复制')}
               title={t('复制')}
-              onClick={() =>
-                navigator.clipboard
-                  ?.writeText(text ?? '')
-                  .then(() => toast.success(t('已复制')))
-                  .catch(() => {})
-              }
+              onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
             >
               <Copy className="h-4 w-4" />
             </Button>

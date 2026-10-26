@@ -19,6 +19,7 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -647,13 +648,14 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
         )}
       </h2>
       {all.length === 0 ? (
-        <button
-          type="button"
+        <EmptyPanel
+          as="button"
+          size="sm"
           onClick={() => openProject(project.id, 'lessons')}
-          className="cursor-pointer rounded-xl border border-dashed px-4 py-5 text-center text-[0.8125rem] leading-relaxed text-subtle transition-colors hover:bg-field/40"
+          className="cursor-pointer leading-relaxed transition-colors hover:bg-field/40"
         >
           {t('还没有教训。角色被纠正、或发现自己走了弯路换了做法时，会自己记一条，下次就不再犯。')}
-        </button>
+        </EmptyPanel>
       ) : (
         <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
           {recent.map((l) => (

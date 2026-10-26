@@ -26,6 +26,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { groupWorktrees } from '@/lib/worktrees'
 import { t } from '@shared/i18n'
 import { childHoldText } from '@shared/task'
@@ -189,12 +190,8 @@ export function useWorktreeActions(rootId: string) {
   return { busy, merge, askRemove: setRemoving, confirm }
 }
 
-function copyText(text: string) {
-  void navigator.clipboard.writeText(text).then(
-    () => toast.success(t('已复制')),
-    () => toast.error(t('复制失败')),
-  )
-}
+/** 菜单里的复制：成功提示「已复制」，失败提示「复制失败」 */
+const copyValue = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
 /** 右键菜单里一个操作的可用性：不能点时用 reason 说明原因，不要只变灰 */
 type Availability = { ok: true } | { ok: false; reason: string }
@@ -371,11 +368,11 @@ export function WorktreeRow({
           </Unavailable>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem title={item.branch} onSelect={() => copyText(item.branch)}>
+        <ContextMenuItem title={item.branch} onSelect={() => copyValue(item.branch)}>
           <Copy className="h-3.5 w-3.5 text-subtle" />
           {t('复制分支名')}
         </ContextMenuItem>
-        <ContextMenuItem title={item.path} onSelect={() => copyText(item.path)}>
+        <ContextMenuItem title={item.path} onSelect={() => copyValue(item.path)}>
           <Copy className="h-3.5 w-3.5 text-subtle" />
           {t('复制路径')}
         </ContextMenuItem>

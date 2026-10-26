@@ -35,6 +35,9 @@ const json = (method: string, body?: unknown) => ({
 
 const sample = (): SummaryReport => ({
   day: '2026-10-23',
+  // 老报告只有 day：from / to 为空时按单日处理（和改造前一样）
+  from: '',
+  to: '',
   projectIds: ['p1'],
   projectNames: ['面板'],
   md: '# 2026-10-23 工作总结\n\n## 一、需求进度\n\n### 1.1 面板\n1. **修好登录报错** ｜ 已完成\n   实现：刷新 token 后再试\n',

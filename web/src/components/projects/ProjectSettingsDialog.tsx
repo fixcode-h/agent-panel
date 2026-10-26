@@ -1573,6 +1573,11 @@ function TestStepsEditor({
                 {t('范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛')}
               </span>
             )}
+            {s.scope === 'parent' && (
+              <span className="text-xs text-subtle">
+                {t('范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛')}
+              </span>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="h-8 flex-[1_1_120px] font-mono text-xs"

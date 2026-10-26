@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
-import { planChildren, planHeadline, planProgress, planSpan, shownPlan, unfinishedSteps } from '@shared/plan'
+import {
+  itemStale,
+  planChildren,
+  planHeadline,
+  planProgress,
+  planRebuilt,
+  planSpan,
+  planUpdatedAt,
+  shownPlan,
+  unfinishedSteps,
+} from '@shared/plan'
 import { childActivityText, childWaitText, timeAgo, type ChildActivity, type ChildWait } from '@shared/task'
 import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
@@ -14,15 +24,60 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
   running: t('进行中'),
   waiting: t('等待中'),
   done: t('完成'),
+  failed: t('失败'),
+  skipped: t('跳过'),
 }
 
-/** 折叠头上「{n} 个在等待」前面的小环：和计划项的「等待中」同一个环；旁边已有文字，不再另挂 aria-label */
+/**
+ * 折叠头上「{n} 个在等待」前面的小环：和计划项的「等待中」同一个环；旁边已有文字，不再另挂 aria-label
+ */
 function WaitRing({ className }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
       className={cn('plan-wait-ring shrink-0 rounded-full border-[1.5px] border-warning', className)}
     />
+  )
+}
+
+/**
+ * 进度条（done/total，done 含明确跳过的步骤）：折叠头和窗口头共用。
+ * 宽度用 CSS 过渡，状态推进时能看出「又走了一步」；role=progressbar 让读屏也能拿到 3/8 这件事
+ */
+function PlanBar({ done, total, className }: { done: number; total: number; className?: string }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  return (
+    <span
+      role="progressbar"
+      data-plan-bar=""
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={done}
+      aria-label={t('计划进度 {done}/{total}', { done, total })}
+      className={cn('block h-1 overflow-hidden rounded-full bg-sel', className)}
+    >
+      <span
+        className="block h-full rounded-full bg-accent transition-[width] duration-300"
+        style={{ width: `${pct}%` }}
+      />
+    </span>
+  )
+}
+
+/** 「2 分钟前更新」：计划的最后变化时间；滞后时用警示色（和步骤行的小标记同一套判定） */
+function UpdatedAt({ at, stale, className }: { at?: string; stale?: boolean; className?: string }) {
+  if (!at) return null
+  const ago = timeAgo(at)
+  if (!ago) return null
+  const text = t('{ago}更新', { ago })
+  return (
+    <span
+      data-plan-updated=""
+      title={t('计划最后更新时间：{ago}', { ago })}
+      className={cn('shrink-0 tabular-nums', stale ? 'text-warning' : 'text-subtle', className)}
+    >
+      {text}
+    </span>
   )
 }
 
@@ -55,6 +110,19 @@ function PlanIcon({ status, small, settled }: { status: PlanStatus; small?: bool
   // 都和进行中不同，关掉动效时形状也分得开；颜色和透明度只作辅助
   if (status === 'waiting')
     return <span role="img" aria-label={label} className={cn(box, 'plan-wait-ring border-[1.5px] border-warning')} />
+  // 失败：实心警示色 + 叉；跳过：静止的圈里一道减号。形状也和上面几种分得开
+  if (status === 'failed')
+    return (
+      <span role="img" aria-label={label} className={cn(box, 'bg-danger text-card')}>
+        <X className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} strokeWidth={3} />
+      </span>
+    )
+  if (status === 'skipped')
+    return (
+      <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')}>
+        <span aria-hidden="true" className="h-[1.5px] w-2 rounded-full bg-subtle" />
+      </span>
+    )
   return <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')} />
 }
 
@@ -115,6 +183,25 @@ function ItemTime({ item, now }: { item: PlanItem; now: number }) {
   )
 }
 
+/**
+ * 进行中但很久没变化的一步：旁边一个小警示图标（不新造弹窗），title 写清多久没更新。
+ * 判定和提示词里的滞后检测同一个函数（itemStale），不会出现「界面上没标、提示词里在提醒」
+ */
+function StaleMark({ ms }: { ms?: number }) {
+  if (ms === undefined) return null
+  const mins = Math.max(1, Math.round(ms / 60_000))
+  return (
+    <span
+      data-plan-stale-step=""
+      title={t('这一步 {n} 分钟没更新了：先收口这一步，再把当前这一步标成进行中', { n: mins })}
+      className="shrink-0 text-warning"
+    >
+      <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="sr-only">{t('这一步 {n} 分钟没更新了', { n: mins })}</span>
+    </span>
+  )
+}
+
 /** 步骤后面的一小段：只写等待中在等什么，用时已经挪到右侧显示，不再在这里重复 */
 function itemMeta(x: PlanItem, kids?: WaitChild[]) {
   const waits = x.waits.filter((w) => w.state === 'waiting').map((w) => waitText(w, kids))
@@ -162,6 +249,11 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
   const current = p.current?.child?.title ?? p.current?.step.title
   const currentMs = p.current ? itemElapsed(p.current.child ?? p.current.step, now) : undefined
   const currentTime = currentMs === undefined ? '' : fmtDuration(currentMs)
+  // 当前这一步进行中、又超过阈值没更新：折叠头和窗口里都用警示色
+  const stale = !finished && !!p.current && itemStale(p.current.child ?? p.current.step, now) !== undefined
+  // 旧计划没有 updatedAt：退回创建时间（planUpdatedAt 是一处判定）
+  const updatedMs = planUpdatedAt(plan)
+  const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   // 标题里已经带着同样的用时就不重复写一遍
   const withTime = currentTime !== '' && !current?.includes(currentTime)
   return (
@@ -196,6 +288,7 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
             {t('{n} 步没做完（已保留）', { n: left })}
           </span>
         )}
+        {!finished && <PlanBar done={p.done} total={p.total} className="w-10 shrink-0 sm:w-14" />}
         {!finished && current && (
           <span className="flex min-w-0 items-center gap-1 text-xs text-subtle">
             <span>·</span>
@@ -218,6 +311,8 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
             {t('{n} 个在等待', { n: p.waiting })}
           </span>
         )}
+        {/* 空间够时再显示「多久前更新」：窄窗口里前面的进度已经说明了状态 */}
+        {!finished && <UpdatedAt at={updatedAt} stale={stale} className="hidden text-xs sm:inline" />}
       </button>
       {open && <PlanWindow task={task} plan={plan} children={children} />}
     </div>
@@ -238,6 +333,10 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
   const total = planSpan(plan, now)
   const older = task.plans.slice(0, -1).reverse()
   const [history, setHistory] = useState(false)
+  // 当前步骤进行中但很久没变化：窗口头的「N 分钟前更新」和步骤行的小标记都用它
+  const stale = live && !!p.current && itemStale(p.current.child ?? p.current.step, now) !== undefined
+  const updatedMs = planUpdatedAt(plan)
+  const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   return (
     <div
       role="dialog"
@@ -261,6 +360,19 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
         <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
           {p.done}/{p.total}
         </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 px-4 pb-2">
+        <PlanBar done={p.done} total={p.total} className="min-w-0 flex-1" />
+        {planRebuilt(task) && (
+          <span
+            data-plan-rebuilt=""
+            className="shrink-0 text-[0.6875rem] text-subtle"
+            title={t('上一份计划没做完就结束了，这是新开的一份')}
+          >
+            {t('重建')}
+          </span>
+        )}
+        <UpdatedAt at={updatedAt} stale={stale} className="text-[0.6875rem]" />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ol className="flex flex-col">
@@ -317,6 +429,8 @@ function PlanStepRow({
   const open = kids.length > 0 && (manual ?? active)
   const meta = itemLine(step, waitingKids)
   const doneKids = kids.filter((c) => c.status === 'done').length
+  // 计划已经结束了就不标「卡住」：它不会再推进了，标出来只会让人以为还在等它
+  const staleMs = settled ? undefined : itemStale(step, now)
   return (
     <li>
       <button
@@ -348,6 +462,7 @@ function PlanStepRow({
                 {doneKids}/{kids.length}
               </span>
             )}
+            <StaleMark ms={staleMs} />
             <ItemTime item={step} now={now} />
           </span>
           {/* itemLine 已经带上备注：这里再接一次 note，同一句话会显示两遍 */}
@@ -388,6 +503,7 @@ function PlanStepRow({
                     >
                       {c.title}
                     </span>
+                    <StaleMark ms={settled ? undefined : itemStale(c, now)} />
                     <ItemTime item={c} now={now} />
                   </span>
                   {m && (
