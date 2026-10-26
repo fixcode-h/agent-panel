@@ -13,6 +13,8 @@ process.env.AGENT_PANEL_DATA = dir
 const { createCollection } = await import('./store.ts')
 const { summaryApi } = await import('./summary.ts')
 const { SummaryRecord } = await import('../shared/summary.ts')
+// 语言在 server/lang.ts 里按 process.env.LANG 定（CI 是英文），断言用同一个 t() 算期望值
+const { t } = await import('../shared/i18n.ts')
 
 const reports = createCollection<SummaryReport, ReportRecord>('summaries.json', SummaryRecord)
 const app = new Hono()
@@ -53,7 +55,8 @@ test('生成：项目没选、CLI 不认识都直接报错，不启动', async (
   assert.equal(empty.status, 400)
   const unknown = await app.request('/summary', json('POST', { projectIds: ['p1'], cli: '没有这个 CLI' }))
   assert.equal(unknown.status, 400)
-  assert.match(((await unknown.json()) as { error: string }).error, /不认识|未知/)
+  // 期望值用同一个 t() 生成：写死中文在本机过、英文环境挂（见 docs/lessons/testing.md）
+  assert.equal(((await unknown.json()) as { error: string }).error, t('未知的 Agent：{cli}', { cli: '没有这个 CLI' }))
 })
 
 test('查一次不存在的生成：404', async () => {
