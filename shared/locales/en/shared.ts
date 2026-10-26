@@ -170,6 +170,11 @@ export const EN_SHARED: Record<string, string> = {
   硅基流动: 'SiliconFlow',
   'Ollama（本机）': 'Ollama (local)',
   '，禁止子对话执行': ', skipped in child conversations',
+  总是跑: 'Always',
+  命中适用改动才跑: 'When changed files match',
+  '全量，合并后由父对话跑': 'Full suite, the parent runs it after merge',
+  '全量（当前没有父对话代跑，你自己跑）': 'Full suite (no parent here to run it, run it yourself)',
+  '，范围：{scope}': ', scope: {scope}',
   自己: 'self',
   '（第 {n} 次，按最后一次算）': ' (attempt {n}, last one counts)',
 }

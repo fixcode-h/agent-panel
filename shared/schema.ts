@@ -623,10 +623,59 @@ export type FileFormat = z.infer<typeof FileFormat>
 export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
 
 /**
+ * 一条测试步骤跑多大范围（决定「谁在什么时候跑它」）：
+ * - always：每次改动都跑。类型检查、lint 这类几十秒内能跑完的快速检查
+ * - changed：只有改动清单命中 appliesTo 才跑。相关单测、相关界面检查分片
+ * - parent：子对话一律不跑，合并后由父对话在全量里跑。全量单测、全量界面检查、端到端测试
+ * parent 只对 Git 项目的独立分支子对话生效（有「合回」这一步才有「父对话替你跑」）；
+ * 共用目录、P4 / SVN、没有版本控制、工作流节点里没有父对话代跑，这些步骤照常由执行者自己跑。
+ * 这个字段合并了原来的 runInParent（勾「禁止子对话执行」等于 scope = parent），不再保留两个字段。
+ */
+export const TEST_STEP_SCOPES = ['always', 'changed', 'parent'] as const
+export type TestStepScope = (typeof TEST_STEP_SCOPES)[number]
+
+/**
+ * 命令里能看出「跑的是全量、很慢」的写法：迁移老步骤和生成默认步骤时补成 parent。
+ * 只认这些明确的全量入口，宽泛的 test / build 不改判——猜错成 parent 会让子对话漏跑，比多跑一次更糟。
+ */
+const FULL_SUITE_COMMAND = /(test:?(?:unit|all|e2e)\b|\be2e\b|ui-check|playwright\s+test|cypress)/i
+
+/**
+ * 老步骤的 runInParent 迁成 scope（不保留两个字段）：
+ * 老字段 runInParent 为 true 的就是 parent；没勾的按原来的筛选语义还原——
+ * 命令明显是跑全量的（全量单测、全量界面检查、e2e）先判 parent，**不看 appliesTo**：
+ * 老默认步骤正是「全量命令 + 适用改动」，先按 appliesTo 判成 changed 会让存量项目照旧每个子对话跑一遍全量；
+ * 其余写了适用改动的是 changed；「合并时编译」的步骤本来就只在父对话侧跑，标 changed；剩下的是 always。
+ * appliesTo 为空的老步骤仍然是「总是执行」：升级不会让原来会跑的步骤变成从不跑。
+ * 全量命令判成 parent 是这次的行为变化（子对话不再自己跑全量），见 ADR 0020。
+ */
+export function legacyTestStepScope(step: {
+  runInParent?: unknown
+  appliesTo?: unknown
+  merge?: unknown
+  command?: unknown
+}): TestStepScope {
+  if (step.runInParent === true) return 'parent'
+  if (FULL_SUITE_COMMAND.test(String(step.command ?? ''))) return 'parent'
+  if (Array.isArray(step.appliesTo) && step.appliesTo.some((g) => typeof g === 'string' && g.trim())) return 'changed'
+  if (step.merge === true) return 'changed'
+  return 'always'
+}
+
+/** 整条步骤的迁移：已经写了 scope 的不动，老数据按上面的规则换算并去掉 runInParent */
+export function migrateTestStep(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const s = input as Record<string, unknown>
+  if (s.scope !== undefined) return s
+  const { runInParent: _legacy, ...rest } = s
+  return { ...rest, scope: legacyTestStepScope(s) }
+}
+
+/**
  * 测试步骤的字段（不含 id）：AI 生成 / 补全步骤时整份沿用这里校验，
  * 新增字段只改这一处，避免提示词、AI 结果和保存校验三份定义走偏。
  */
-export const TestStepFields = z.object({
+export const TestStepShape = z.object({
   /** 显示名，例如「类型检查」「编译」 */
   name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
   /** 要执行的命令原文 */
@@ -638,13 +687,16 @@ export const TestStepFields = z.object({
   /** 执行条件的补充说明，写给人看的，例如「仅在发布前跑」；判定以 appliesTo 为准 */
   when: z.string().trim().max(120).default(''),
   /**
-   * 适用范围：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
-   * 空数组表示总是执行——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑。
+   * 适用范围（scope = changed 时用）：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
+   * 空数组按总是执行处理——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑；
+   * 新加的步骤留空同样表示「改动怎么看都该跑」。
    * 匹配算法只有一份（shared/test-steps.ts 的 matchesGlob / stepApplies）：界面输入用 parseGlobs、
-   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；实际比对由 Agent 按提示词里的
-   * 改动清单做，执行流程里目前还没有按清单自动跳过的地方
+   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；按清单筛哪些步骤要跑由
+   * scripts/changed-tests.mjs 做（单测文件、界面分片的定位也在这个脚本里）
    */
   appliesTo: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
+  /** 跑多大范围，见 TEST_STEP_SCOPES；老步骤解析时按 legacyTestStepScope 换算 */
+  scope: z.enum(TEST_STEP_SCOPES).catch('always').default('always'),
   /** 超时（秒）；0 表示不限 */
   timeoutSec: z
     .number()
@@ -658,20 +710,21 @@ export const TestStepFields = z.object({
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
   /**
-   * 禁止子对话执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
-   * 只对 Git 项目的独立分支子对话生效（其它版本控制的子对话没有分支可合，字段被忽略）；默认 false，老步骤不受影响
-   */
-  runInParent: z.boolean().catch(false).default(false),
-  /**
    * 小改动也跑：Agent 判断这次是小改动时只跑标了这个的步骤（类型检查、lint 这类几秒到几十秒的），
    * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
    */
   quick: z.boolean().default(false),
 })
 
-export const TestStep = TestStepFields.extend({
-  id: z.string().trim().min(1).max(40),
-})
+export const TestStepFields = z.preprocess(migrateTestStep, TestStepShape)
+export type TestStepFields = z.infer<typeof TestStepShape>
+
+export const TestStep = z.preprocess(
+  migrateTestStep,
+  TestStepShape.extend({
+    id: z.string().trim().min(1).max(40),
+  }),
+)
 export type TestStep = z.infer<typeof TestStep>
 
 /**
@@ -1413,7 +1466,7 @@ export const TaskTestRun = z.object({
   /** 项目测试步骤的 id（任务里的快照）；按命令能认出是哪条步骤时才记 */
   stepId: z.string().default(''),
   stepName: z.string().default(''),
-  /** 谁跑的：父对话（勾了「禁止子对话执行」的步骤）/ 子对话自己 */
+  /** 谁跑的：父对话（范围为 parent 的步骤）/ 子对话自己 */
   by: z.enum(['parent', 'self']).catch('self').default('self'),
   ok: z.boolean().default(false),
   /** 耗时（毫秒）：按后台命令的真实开始 / 结束时间算 */
