@@ -115,10 +115,10 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 测试步骤按「跑多大范围」分三档（`TestStepFields.scope`，[ADR 0020](./adr/0020-test-scope-and-incremental-tests.md)）：
 
-| scope     | 什么时候跑、谁跑                                           | 典型步骤                           |
-| --------- | ---------------------------------------------------------- | ---------------------------------- |
-| `always`  | 每次改动都跑，不看 `appliesTo`                             | 类型检查、lint、语法检查           |
-| `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 表示总是跑 | 相关单测、编译、构建、界面检查分片 |
+| scope     | 什么时候跑、谁跑                                                                         | 典型步骤                           |
+| --------- | ---------------------------------------------------------------------------------------- | ---------------------------------- |
+| `always`  | 每次改动都跑，不看 `appliesTo`                                                           | 类型检查、lint、语法检查           |
+| `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 表示总是跑                               | 相关单测、编译、构建、界面检查分片 |
 | `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就跑全部） | 全量单测、全量界面检查、端到端测试 |
 
 **和原来的 `runInParent` 合并了**：勾「禁止子对话执行」就是 `scope: 'parent'`，不再保留两个字段。老数据解析时
@@ -130,13 +130,14 @@ appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会�
 
 **子对话只跑增量测试**（`CHILD_INCREMENTAL_RULE`，`verifyBlock` 在 `parentRun = 'child'` 时注入）：
 
-1. 先用改动清单定位要跑什么——项目里有 `scripts/changed-tests.mjs` 就用它（输出单测文件、界面检查分片、映射不出来的改动）；
-   没有就按同名测试 / 同目录测试 / 哪些测试 import 了它来定位，界面改动用分片编号筛选（`node scripts/ui-check.mjs 09-summary`）。
+1. 先用改动清单定位要跑什么——项目里有 `scripts/changed-tests.mjs` 就用它（按 import 依赖图算影响面，输出单测文件、界面检查分片、是否必须跑全量及理由）；
+   没有就按同名测试 / 同目录测试 / 哪些测试（间接）import 了它来定位，界面改动用完整分片名筛选（`node scripts/ui-check.mjs 09-summary`）。
 2. `always` 照常跑；`changed` 只跑命中的那部分（命中的单测文件、命中的界面分片），不跑整套。
-3. **不跑全量**：`parent` 的步骤不跑原命令，但单测和界面检查要用第 1 步定位到的增量命令覆盖命中的单测文件 / 界面分片
-   （`npx tsx --test <文件>`、`node scripts/ui-check.mjs <完整分片名>`），否则子对话会一条测试都不跑；e2e 没有增量替代，直接交给父对话。
-4. 映射不出来时明确写一行「这批改动没有对应的增量测试，交给父对话全量」，不为了保险跑全量、也不静默跳过。
-5. 单测里计时类用例偶发失败（`pi-rpc`、`process`、`task-store` 这类）时，**单跑失败的那个文件最多 3 次**确认，
+3. **不跑全量**（定位脚本明确判定「必须跑全量」时除外）：`parent` 的步骤不跑原命令，但单测和界面检查要用第 1 步定位到的增量命令覆盖命中的单测文件 / 界面分片
+   （`node scripts/unit-tests.mjs --files <文件>`、`node scripts/ui-check.mjs <完整分片名>`），否则子对话会一条测试都不跑；e2e 没有增量替代，直接交给父对话。
+4. 定位脚本说「必须跑全量」时按它跑那一项，不用管它给的是哪一类理由（高风险区、影响面接近全量、依赖图算不出来、改动含删除或改名），理由写进结果，不自己缩回增量。
+5. 映射不出来时明确写一行「这批改动没有对应的增量测试，交给父对话全量」，不为了保险跑全量、也不静默跳过（仅在没有「必须全量」结论时适用）。
+6. 单测里计时类用例偶发失败（`pi-rpc`、`process`、`task-store` 这类）时，**单跑失败的那个文件最多 3 次**确认，
    不要为此重跑整套；3 次仍失败按真失败处理。父对话侧的提示词同样写了这条。
 
 **`parent`（全量）的父子分工**：端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，
@@ -186,25 +187,57 @@ appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会�
 
 ### 改动 → 增量测试（`scripts/changed-tests.mjs`）
 
-子对话不再整套照搬，先定位这次改动到底要跑什么：
+子对话不再整套照搬，而是先算**影响面**：改一个被几十处 import 的模块（`shared/task.ts` 这种）时，
+同名测试只是很小一部分，真正可能被影响的是所有直接和**间接**依赖它的文件和测试。
 
 ```bash
 node scripts/changed-tests.mjs --since <任务基线>   # 基线到 HEAD + 工作区 + 未跟踪
-node scripts/changed-tests.mjs                      # 只看工作区
+node scripts/changed-tests.mjs                      # 只看工作区（提交后就看不到了，会提示改带基线）
+node scripts/changed-tests.mjs --run                # 按结论直接跑单测（= npm run test:affected）
 node scripts/changed-tests.mjs --json               # 给脚本用
 ```
 
-输出四类：要跑的单测文件、要跑的界面检查分片、**映射不出来的改动**（明确提示跑全量或交给父对话，不静默跳过）、
-不涉及测试的改动（文档、配置）。定位规则在 `scripts/lib/changed-tests.mjs`（纯逻辑，`scripts/lib/changed-tests.test.mjs` 覆盖）：
+`npm run test:affected` 少写参数时只看工作区；改动已经提交后要带基线：
+`npm run test:affected -- --since <任务基线>`。清单为空时脚本会明说「可能已经提交」而不是静默「没有命中的单测」。
 
-1. 同名测试：`shared/test-steps.ts` → `shared/test-steps.test.ts`（`.test.tsx` / `.test.mjs` / `.spec.ts` 都认）。
-2. 反向 import：哪个测试文件 import 了它（`@shared/`、`@/`、相对路径都解析，静态和动态 import 都认）。
-3. 同目录测试：还没命中才回退；同目录测试超过 `SAME_DIR_FALLBACK_MAX`（6）个说明是公共目录，不再冒充增量，直接报映射不出来。
-4. 界面检查分片：按 `scripts/ui/covers.mjs` 的前缀表定位（改一个组件只跑它所在的分片；一个文件可以命中多个分片）。
-   `harness.mjs` / `covers.mjs` / `ui-check.mjs` 改动 = 全部分片。通用组件、演示数据这类没有列进表里的界面改动会报「跑全量界面检查」。
+输出：单测文件（增量）、界面分片（增量）、**是否必须跑全量（单测 / 界面检查 / e2e 分开，带理由）**、
+映射不出来的改动（不静默跳过）、不涉及测试的改动（文档、配置）、**直接映射 vs 影响面分析的对比**
+（各选中几个文件 / 分片、粗估耗时）。
+
+定位规则分两层：`scripts/lib/import-graph.mjs` 建 import 依赖图并求反向闭包，`scripts/lib/changed-tests.mjs`
+把影响面映射到测试（两者都是纯逻辑，`scripts/lib/changed-tests.test.mjs` 覆盖）：
+
+1. **建依赖图**：扫 `shared/`、`server/`、`web/src/`、`scripts/` 下的 `.ts` / `.tsx` / `.mjs`，解析 `import … from`、
+   副作用 import、`export … from`、动态 `import()` / `require()`，`@shared/` 和 `@/` 别名、相对路径都解析，
+   补扩展名和目录 `/index`。只认行首的语句级 import：演示数据、提示词里的一整段示例代码不算依赖。
+2. **求反向闭包**：改动文件 D → 所有（直接或间接）依赖 D 的文件 A。改 `shared/task.ts` 时 A 有 259 个文件。
+3. **映射到测试**：A 里的测试文件 + A 里每个源文件的同名测试 + 正向依赖与 A 相交的测试（测试间接依赖也算命中）。
+4. **界面分片**：A 里的界面文件同样按 `scripts/ui/covers.mjs` 的前缀表映射——间接受影响的页面也要跑。
+   一个文件可以命中多个分片；`harness.mjs` / `covers.mjs` / `ui-check.mjs` 改动 = 全部分片。
+   通用组件、演示数据这类没有列进表里的**改动文件**报「跑全量界面检查」。
+5. **同目录回退**：某个改动文件在影响面里一个测试都没命中时才回退到同目录；同目录测试超过
+   `SAME_DIR_FALLBACK_MAX`（6）个说明是公共目录，直接报映射不出来。
+6. **高风险区强制全量**（`HIGH_RISK_AREAS`，`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、
+   `shared/engine.ts`、`shared/schema.ts`）：一改就影响所有 CLI / 工作流 / 落盘数据，增量挑不出可靠范围，
+   直接建议全量单测 + e2e。影响面宽到接近全量（`FULL_COVERAGE_RATIO` 60%，且总量超过
+   `FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS`）时也建议全量。
+7. **算不出来时保守报出来**：影响面里的非测试文件有解析不了的 import（路径不存在、非字面量的动态 import）时，
+   依赖闭包不完整，明确报理由并建议全量，不静默少跑。**删除 / 改名**的文件不在依赖图里，依赖它的文件反查不到，同样直接建议全量单测
+   （只对参与依赖图的目录 `shared/`、`server/`、`web/src/`、`scripts/`；`extension/*.js`、根目录 `vite.config.ts` 这类不参与单测，
+   归入不涉及测试的改动，不会因此强制全量）。
+   影响面挑不出可靠范围时给的是**全量命令**（`npm run test:unit` / 全量界面检查），不会再列一长串增量命令诱导人缩回增量。
 
 界面分片命令用完整分片名筛（`node scripts/ui-check.mjs 09-summary`），写 `09` 会同时跑 09-hint / 09-plans / 09-summary。
 产物必须是这次源码构建出来的（`ui-check` 会校验），所以命令里先 `npx vite build --mode demo`。
+
+**缓存**：每个文件的 import 解析结果按 mtime + size 缓存在 `node_modules/.cache/agent-panel/import-graph.json`
+（先写临时文件再改名，多个子对话同时跑不会读到半截 JSON）；没改过的文件直接复用，改过的才重新解析。
+实测 791 个源文件：首次 145ms，命中缓存后 26ms。
+
+**只跑命中的文件**：`npm run test:unit` 语义不变（全量）；`scripts/unit-tests.mjs --files a.test.ts,b.test.ts`
+只跑指定文件，仍然按 timing（串行）/ rest（并发）两批跑。`npm run test:affected` = `changed-tests --run`：
+脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
+必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
 ### 怎么交给 Agent
 
@@ -384,24 +417,25 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 
 ## 相关代码
 
-| 文件                                                    | 内容                                                                                           |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                      |
-| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                   |
-| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                        |
-| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                        |
-| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                           |
+| 文件                                                    | 内容                                                                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                                                                               |
+| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                                                                            |
+| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                                                                                 |
+| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                                                                                 |
+| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
 | `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |
-| `scripts/changed-tests.mjs`                             | 改动清单 → 要跑的单测文件和界面检查分片（CLI）                                                 |
-| `scripts/lib/changed-tests.mjs`                         | 定位规则（同名测试 / 反向 import / 同目录回退 / 分片映射），纯逻辑、有单测                     |
-| `scripts/ui/covers.mjs`                                 | 界面检查分片覆盖的源码前缀表                                                                   |
-| `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                 |
-| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole` |
-| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                        |
-| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                    |
-| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                  |
-| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                                                        |
-| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                                                  |
+| `scripts/changed-tests.mjs`                             | 改动清单 → 影响面 → 要跑的单测文件和界面检查分片（CLI，含 mtime 缓存与 `--run`）                                                                        |
+| `scripts/lib/import-graph.mjs`                          | import 依赖图：解析别名 / 扩展名、建正反向边、反向依赖闭包，纯逻辑                                                                                      |
+| `scripts/lib/changed-tests.mjs`                         | 定位规则（闭包内测试 / 同名测试 / 同目录回退 / 分片映射 / 高风险区强制全量），纯逻辑、有单测                                                            |
+| `scripts/ui/covers.mjs`                                 | 界面检查分片覆盖的源码前缀表                                                                                                                            |
+| `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                                                                          |
+| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole`                                                          |
+| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                                                                                 |
+| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                                                                             |
+| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                                                                           |
+| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                                                                                                                 |
+| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                                                                                                           |
 
 ## 子对话的隔离和合并编译
 
