@@ -112,8 +112,12 @@ test('「每日工作总结」：只输出报告不改代码，按天、按项�
   assert.ok(builtinAgentKeys(GENERAL).includes('worklog'), '挂在「通用项目」上才会在启动时建出来')
   const role = composeRole(agents.find((a) => a.id === 'worklog')!, agents)
   assert.doesNotMatch(role, /\{\{/, '模板都能展开')
-  // 输入：今天是哪天 + 要总结的项目
-  assert.match(role, /今天/)
+  // 输入：总结哪一天 + 要总结的项目
+  // 日期口径只能有一处：填了别的日期时正文也得跟它走，不能一处「今天」一处「这一天」（复看指出旧断言 /今天/ 拦不住这类回退）
+  assert.match(role, /只算这一天的/)
+  // 参数说明也跟同一个口径（它不出现在角色设定里，要单独查）
+  assert.match(b.agent.params.find((p) => p.key === 'projects')!.description, /留空总结这一天/)
+  assert.doesNotMatch(role, /只算今天的|各项目今天做完|留空总结今天/, '除「本机今天」外不再出现「今天」口径')
   assert.match(role, /本地自然日/)
   // 数据来源：读任务记录，不凭空编造
   assert.match(role, /tasks\/projects\//)
@@ -123,8 +127,15 @@ test('「每日工作总结」：只输出报告不改代码，按天、按项�
   assert.match(role, /按项目分节/)
   assert.match(role, /不超过 40 字/)
   // 真实跑一次时输出里贴了路径、函数名和接口名，这里守住「只写结果」
-  assert.match(role, /不写文件路径/)
+  assert.match(role, /不写具体文件名/)
   assert.match(role, /最多 3 条/)
+  // 评审 R1：项目多时硬行数会和「每个项目都要有一节」矛盾，改成按项目算 + 项目多时压到 1–2 条
+  assert.match(role, /多于 5 个时/)
+  // 评审 R2：day 参数填了别的日期时，正文里的日期口径要跟着它走
+  assert.match(role, /「这一天」都指上面这个日期/)
+  // 评审 R3：读历史记录要有预算，读不完不能按标题编
+  assert.match(role, /读取预算/)
+  assert.match(role, /只看了最新的几个任务/)
   // 真实跑一次时报告前后带了前言和附录，用户要能直接复制
   assert.match(role, /只输出报告本身/)
   // Bug 修复要写清问题在哪、怎么修的
