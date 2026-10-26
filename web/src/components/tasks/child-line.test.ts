@@ -125,13 +125,13 @@ test('页面宽限回收后计划没做完的静止行：行上直接写「继�
   const line = texts(reclaimed)
   assert.ok(line.includes(t('CLI 进程已回收，继续会重新拉起')), `行上要能直接看到这句：${line.join(' / ')}`)
   assert.ok(line.includes(t('页面切走后结束')), `停下原因也留着：${line.join(' / ')}`)
-  // 计划做完了的行不再补这句：它没有要继续做的事
+  // 计划做完了的行不再补这句：计划做完时 openPlan 是 undefined，行上根本没有 plan
   const finished = closedWaiting({
     status: 'stopped',
     stopReason: 'presence',
     background: 0,
     waiting: undefined,
-    plan: { done: 14, total: 14 },
+    plan: undefined,
   })
   assert.ok(!texts(finished).includes(t('CLI 进程已回收，继续会重新拉起')))
 })

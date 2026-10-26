@@ -135,8 +135,8 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
   if (icon === 'stopped' || icon === 'idle') out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
   // 进程回收了、这一轮停下但还有没做完的（计划没做完）：行上补一句继续会重新拉起。
   // 静止的行以前只有悬停里能看到这句，一排卡片只剩「页面切走后结束」，用户以为再也起不来了
-  if (icon === 'idle' && c.plan && c.plan.done < c.plan.total)
-    out.push({ text: t('CLI 进程已回收，继续会重新拉起'), tone: 'subtle' })
+  // plan 来自 openPlan：只在计划没做完时才有值（做完了是 undefined）
+  if (icon === 'idle' && c.plan) out.push({ text: t('CLI 进程已回收，继续会重新拉起'), tone: 'subtle' })
   return out
 }
 
