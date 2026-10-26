@@ -248,6 +248,17 @@ test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行
     assert.ok(list.every((s) => s.status.shared === 'missing'))
     const one = list.find((s) => s.name === 'blender')!
     assert.ok(one.files > 5, '带上了脚本和参考资料')
+    // 详情页要能列出它带哪些文件：树里不含 SKILL.md，目录排在文件前，files 和树里的文件数一致
+    assert.ok(one.tree, '自带 Skill 要带文件树')
+    assert.equal(
+      one.tree.entries.some((x) => x.path.toLowerCase() === 'skill.md'),
+      false,
+    )
+    assert.equal(one.tree.entries.filter((x) => x.type === 'file').length, one.files)
+    assert.ok(one.tree.entries.some((x) => x.path === 'scripts' && x.type === 'dir'))
+    // 父目录一定排在子项前面（前端的 toTree 依赖这个顺序）
+    const at = (p: string) => one.tree!.entries.findIndex((x) => x.path === p)
+    assert.ok(at('scripts') < at('scripts/inspect_scene.py'))
 
     const r = await installBundled(['blender'], [], false)
     assert.deepEqual(r.done, ['blender'])

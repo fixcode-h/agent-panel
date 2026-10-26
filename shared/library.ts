@@ -88,6 +88,39 @@ export const LIBRARY_TREE_EXCLUDE_DIRS = ['node_modules', '.git', '.svn', '__pyc
 /** 文件树不列的文件：系统生成的垃圾文件，不是技能内容 */
 export const LIBRARY_TREE_EXCLUDE_FILES = ['.DS_Store', 'Thumbs.db']
 
+/**
+ * 已知路径的文件树（不知道磁盘上的目录也可以调）：
+ * 按路径补出每一级父目录，同层目录排在文件前面、再按名字排，超出上限截断并标 truncated。
+ * 自带技能（文件内容在内存里）和演示数据（只在内存里）走这一份，不要各自再写一套排序。
+ */
+export function treeFromPaths(files: { path: string; size: number }[]): LibraryTree {
+  const dirs = new Set<string>()
+  for (const f of files) {
+    const parts = f.path.split('/')
+    for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join('/'))
+  }
+  const entries: LibraryEntry[] = [
+    ...[...dirs].map((path) => ({ path, type: 'dir' as const })),
+    ...files.map((f) => ({ path: f.path, type: 'file' as const, size: f.size })),
+  ]
+  // 按层级逐段比：同一层里目录排在文件前面（前端的 toTree 依赖这个顺序）
+  entries.sort((a, b) => {
+    const ap = a.path.split('/')
+    const bp = b.path.split('/')
+    for (let i = 0; i < Math.min(ap.length, bp.length); i++) {
+      if (ap[i] === bp[i]) continue
+      const aDir = i < ap.length - 1 || a.type === 'dir'
+      const bDir = i < bp.length - 1 || b.type === 'dir'
+      if (aDir !== bDir) return aDir ? -1 : 1
+      return ap[i].localeCompare(bp[i])
+    }
+    return a.path.localeCompare(b.path)
+  })
+  return entries.length > LIBRARY_TREE_MAX_ENTRIES
+    ? { entries: entries.slice(0, LIBRARY_TREE_MAX_ENTRIES), truncated: true }
+    : { entries }
+}
+
 /** Skill 文件夹名、命令名：字母数字开头，只含字母数字和 . _ -；命令的子目录用「:」分隔 */
 export const libraryName = (kind: 'skill' | 'command', name: string) => {
   const part = /^[A-Za-z0-9][\w.-]*$/
@@ -150,6 +183,11 @@ export interface BundledSkill {
   description: string
   /** SKILL.md 以外的文件数 */
   files: number
+  /**
+   * SKILL.md 以外的文件结构（和用户技能的 LibraryTree 同一形状，目录在前、按名字排）：
+   * 详情页用它画出「这个技能带哪些文件」，不自带目录时没有这一项。
+   */
+  tree?: LibraryTree
   /** 在用户共享目录里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
   status: Record<string, 'missing' | 'same' | 'changed'>
 }

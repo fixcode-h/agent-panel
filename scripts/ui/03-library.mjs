@@ -360,6 +360,27 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')
   await check(p, 'Skills与命令', ['commit-message', 'code-review', '文件结构'])
+  // 左栏头部的按钮不能顶出左栏（用户报过：「超出范围了」）：按钮右边界要落在左栏里
+  {
+    const pane = p.locator('section[aria-label="Skills 与命令列表"]')
+    const box = await pane.boundingBox()
+    if (!box) errors.push('Skills与命令-不溢出：找不到左栏')
+    else {
+      for (const name of ['新建', 'AI 创建 Skill']) {
+        const b = await p.getByRole('button', { name, exact: true }).first().boundingBox()
+        if (!b) errors.push(`Skills与命令-不溢出：找不到「${name}」按钮`)
+        else if (b.x + b.width > box.x + box.width + 1)
+          errors.push(
+            `Skills与命令-不溢出：「${name}」右边界 ${Math.round(b.x + b.width)} 超出左栏 ${Math.round(box.x + box.width)}`,
+          )
+      }
+      // 标题也要完整放下（被按钮挤出去时它会溢出左栏）
+      const h = await pane.locator('h1').first().boundingBox()
+      if (h && h.x + h.width > box.x + box.width + 1) errors.push('Skills与命令-不溢出：标题超出左栏')
+      if (!(await p.getByRole('combobox', { name: '种类' }).count())) errors.push('Skills与命令-不溢出：分页不是下拉')
+      await check(p, 'Skills与命令-不溢出')
+    }
+  }
   // 地址跟着选中项走：刷新、复制链接能回到同一项
   await p
     .getByRole('button', { name: /commit-message/ })
@@ -460,15 +481,98 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .getByRole('button', { name: '应用修改' })
     .waitFor({ state: 'detached', timeout: 10000 })
     .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
-  // 自带 Skill 分页：左边是列表，右边是引导（没有详情）
-  await p.getByRole('radio', { name: '自带 Skill' }).click()
+  // 分页是下拉（用户要求「改成下拉」）：用现成的 Select，选项文字里带「可更新」的条数
+  await p.getByRole('combobox', { name: '种类' }).click()
+  await check(p, 'Skills与命令-分页下拉', ['Skill', '命令', '自带 Skill'])
+  await p.getByRole('option', { name: /自带 Skill/ }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
   // 自带 Skill 分页没有可新建的东西：「新建」按钮不该出现（以前点了没反应）
   if (await p.getByRole('button', { name: '新建', exact: true }).count())
     errors.push('自带Skill：这一页不该有「新建」按钮')
   await check(p, '自带Skill-没有新建')
 
+  // 点卡片打开详情（用户报过：自带技能点不开）：名称、分类、安装状态、文件结构、只读说明
+  await p
+    .getByRole('button', { name: /coding-standards/ })
+    .first()
+    .click()
+  await p.waitForFunction(() => location.hash.includes('#/library/coding-standards'), { timeout: 5000 }).catch(() => {})
+  if (!(await p.evaluate(() => location.hash)).includes('#/library/coding-standards'))
+    errors.push('自带Skill-详情：点卡片后地址里没有记下选中项')
+  await check(p, '自带Skill-详情', ['编码', '文件结构', '~/.agents/skills'])
+  if (!(await p.getByText('由面板随版本提供', { exact: false }).count()))
+    errors.push('自带Skill-详情：没有说明这里不能编辑')
+  if (await p.getByLabel('内容', { exact: true }).count()) errors.push('自带Skill-详情：自带技能不该有可编辑的正文框')
+  // 文件树里能点开一个附件看内容（只读）：coding-standards 带 design-patterns.md
+  // 按 title 定位：左栏卡片的说明里也可能出现这些文件名
+  await p.locator('main button[title="design-patterns.md"]').click()
+  const bundledText = await p
+    .locator('pre')
+    .first()
+    .textContent()
+    .catch(() => '')
+  if (!bundledText?.includes('设计模式'))
+    errors.push(`自带Skill-详情：点开的文件内容不对（「${bundledText?.slice(0, 30)}」）`)
+  // 主文件也看得到
+  await p.locator('main button[title="SKILL.md"]').click()
+  const mainBundled = await p
+    .locator('pre')
+    .first()
+    .textContent()
+    .catch(() => '')
+  if (!mainBundled?.includes('coding-standards'))
+    errors.push(`自带Skill-详情：SKILL.md 没读出来（「${mainBundled?.slice(0, 30)}」）`)
+  await check(p, '自带Skill-详情-文件内容')
+
+  // 详情页里也有单项的安装 / 更新按钮
+  if (!(await p.getByRole('button', { name: /已安装|安装|更新/ }).count()))
+    errors.push('自带Skill-详情：详情页里没有安装 / 更新按钮')
+
+  // 文件树的目录能折叠：task-records 带 templates/，点一下收起里面的文件、再点展开
+  await p
+    .getByRole('button', { name: /task-records/ })
+    .first()
+    .click()
+  // 左栏卡片上的说明里也有「acceptance.md」这类文件名：定位一律带 title（文件树的行才有 title = 相对路径），
+  // 不然按名字找会命中列表里的卡片
+  const treeRow = (path) => p.locator(`main button[title="${path}"]`)
+  const folder = treeRow('templates')
+  const inner = treeRow('templates/acceptance.md')
+  await folder.waitFor({ timeout: 5000 }).catch(() => errors.push('自带Skill-目录折叠：找不到 templates 目录'))
+  if (!(await inner.count())) errors.push('自带Skill-目录折叠：目录默认没有展开')
+  // 点击后等「里面那个文件消失 / 回来」这个可观测状态，不要点完立刻查（渲染还没落地）
+  await folder.click()
+  await inner
+    .waitFor({ state: 'detached', timeout: 3000 })
+    .catch(() => errors.push('自带Skill-目录折叠：点目录没有收起里面的文件'))
+  await folder.click()
+  await inner.waitFor({ timeout: 3000 }).catch(() => errors.push('自带Skill-目录折叠：再点一下没有展开'))
+  await check(p, '自带Skill-目录折叠')
+
+  // 刷新后选中项要还在（分页种类也记在本地存储里）：以前挂载时会把地址里的 id 清掉，选中项被顶成第一项
+  await p
+    .getByRole('button', { name: /coding-standards/ })
+    .first()
+    .click()
+  await p.waitForFunction(() => location.hash.includes('#/library/coding-standards'), { timeout: 5000 }).catch(() => {})
+  await p.reload()
+  await p
+    .getByRole('combobox', { name: '种类' })
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('自带Skill-刷新：刷新后页面没起来'))
+  const afterReload = await p.evaluate(() => location.hash)
+  if (!afterReload.includes('#/library/coding-standards'))
+    errors.push(`自带Skill-刷新：刷新后地址里的选中项被改成了「${afterReload}」`)
+  // 刷新后列表要重新读一遍：等详情真的渲染出来再断言，不要 reload 完立刻查（读到的是「读取中…」）
+  await p
+    .getByText('由面板随版本提供', { exact: false })
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('自带Skill-刷新：刷新后右侧不是原来那个技能的详情'))
+  await check(p, '自带Skill-刷新后选中项还在')
+
   // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
+  await p.getByRole('combobox', { name: '种类' }).click()
+  await p.getByRole('option', { name: /自带 Skill/ }).click()
   if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
   await p.getByRole('button', { name: '更新全部' }).click()
   await p
@@ -479,7 +583,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
   await check(p, '自带Skill-一键更新', ['已安装'])
   // 命令：详情页没有文件结构（命令只有一个文件），「所有 Agent」的命令和 AI 创建都在
-  await p.getByRole('radio', { name: '命令' }).click()
+  await p.getByRole('combobox', { name: '种类' }).click()
+  await p.getByRole('option', { name: '命令', exact: true }).click()
   await check(p, '命令-所有Agent', ['/changelog', '所有 Agent'])
   await p
     .getByRole('button', { name: /changelog/ })
