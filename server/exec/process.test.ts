@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { killAllProcesses, runProcess } from './process.ts'
+import { killAllProcesses, runProcess, taskCliAlive } from './process.ts'
 
 test('统一清理还在跑的 CLI 进程，runProcess 能正常收尾', async () => {
   let spawned!: () => void
@@ -56,4 +56,25 @@ test('Windows 上参数里的换行不会让后面的参数丢掉', { skip: proc
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('taskCliAlive：只在这个对话的 CLI 进程真的活着时为真，进程退出就撤掉', async () => {
+  let spawned!: () => void
+  const ready = new Promise<void>((r) => (spawned = r))
+  const ac = new AbortController()
+  const run = runProcess({
+    command: process.execPath,
+    args: ['-e', 'setInterval(() => {}, 1000)'],
+    cwd: process.cwd(),
+    env: process.env,
+    signal: ac.signal,
+    owner: { taskId: 'cli-alive-t', rootTaskId: 'cli-alive-t', title: '' },
+    onSpawn: () => spawned(),
+  })
+  await ready
+  assert.equal(taskCliAlive('cli-alive-t'), true)
+  assert.equal(taskCliAlive('other'), false)
+  ac.abort()
+  await run
+  assert.equal(taskCliAlive('cli-alive-t'), false)
 })

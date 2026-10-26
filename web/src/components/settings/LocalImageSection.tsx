@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ArrowDown, Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import {
   INSTALL_ASK,

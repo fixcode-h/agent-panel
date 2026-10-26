@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { AlertTriangle, Copy, RotateCw } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import { Button } from './button'
 

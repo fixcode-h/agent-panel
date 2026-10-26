@@ -39,6 +39,7 @@ import type { Project, Task } from '@shared/schema'
 import { useData, useNav, type PageId, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
+import { useSkillUpdates } from '@/lib/skill-updates'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -55,7 +56,7 @@ import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/re
 import { TOGGLE_SIDEBAR } from './CommandPalette'
 import { unmergedOf } from '@/components/tasks/Worktrees'
 import { api } from '@/lib/api'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
@@ -157,6 +158,7 @@ function Row({
   collapsed,
   className,
   badge,
+  dot,
 }: {
   icon: LucideIcon
   label: string
@@ -166,12 +168,14 @@ function Row({
   className?: string
   /** 右上角的提示点，例如有新版本 */
   badge?: string
+  /** 只要一个圆点的提示（例如自带技能要更新），文字放在悬停提示里 */
+  dot?: string
 }) {
   return (
     <button
       onClick={onClick}
       aria-current={on ? 'page' : undefined}
-      title={collapsed ? label : undefined}
+      title={collapsed ? [label, dot].filter(Boolean).join(' · ') : dot}
       className={cn(
         'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] transition-colors',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
@@ -181,7 +185,7 @@ function Row({
     >
       <span className="relative shrink-0">
         <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
-        {badge && collapsed && (
+        {(badge || dot) && collapsed && (
           <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-rail" />
         )}
       </span>
@@ -190,6 +194,9 @@ function Row({
         <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
           {badge}
         </span>
+      )}
+      {dot && !badge && !collapsed && (
+        <span role="status" aria-label={dot} className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
       )}
     </button>
   )
@@ -294,6 +301,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
+  // 自带技能有新内容时在「Skills 与命令」上亮点：部署的那份在设置里更新，进去后「自带 Skill」分页会指过去
+  const skillUpd = useSkillUpdates()
+  const skillN = new Set([...skillUpd.shared, ...skillUpd.deployed]).size
+  const skillDot = skillN ? t('{n} 个自带技能可以更新', { n: skillN }) : undefined
   const [collapsed, toggleCollapsed] = useCollapsed()
   // 侧栏可以拖宽，但中间要留出内容宽度（输入框的宽度），右边有任务面板时也要算进去；除此之外不设上限
   const pane = usePaneWidth('sidebar', 264, 200, () => {
@@ -491,6 +502,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                 collapsed={narrow}
                 on={route.page === n.id}
                 onClick={() => go({ page: n.id })}
+                dot={n.id === 'library' ? skillDot : undefined}
               />
             ))}
           </>

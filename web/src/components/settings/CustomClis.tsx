@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { AlertTriangle, ExternalLink, FolderOpen, Loader2, RefreshCw } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { api, type UserClis } from '@/lib/api'

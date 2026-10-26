@@ -1,5 +1,5 @@
 ---
-paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts, shared/plan.ts
+paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/exec/parsers.ts, web/src/lib/tasks.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts, shared/plan.ts
 ---
 
 # 服务端接口和访问控制
@@ -44,3 +44,9 @@ paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.t
 
 - 规则：P4 分 changelist 这类有明确规则的收尾，由面板工具执行（`p4_split_changelists`），Agent 只给描述；只写进提示词时 Agent 会合并成「[C++/Lua] …」。
 - 防线：`server/p4-split.test.ts`。
+
+## 后台命令的名字要能显示出来
+
+- 规则：带 `command` 的输入被解析层存成命令原文（`parsers.ts` 的 `inputText`），标题要用名字或命令第一行兜底（`true` 这类 JSON 字面量也算命令）；名字不能带换行，否则推回结果行显示时会截掉「成功 / 失败」。
+- 起因：后台命令折叠行只剩动作名和耗时，用户要求显示命令。
+- 防线：`web/src/lib/tasks.test.ts`、`server/orch-mcp.test.ts`、ui-check。

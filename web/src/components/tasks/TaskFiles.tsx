@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Files, GitBranch, GitCompareArrows, List, ListTree, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
 import { t } from '@shared/i18n'

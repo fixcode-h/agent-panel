@@ -6,13 +6,22 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   MIN_WIDGET_SIZE,
+  WIDGETS,
+  applyVisibility,
   assignImage,
   brush,
+  canvasSlotRect,
   clampWidgetSize,
   defaultSlot,
+  exportWidget,
+  imageFitStyle,
+  isHiddenVisibility,
   nineSliceRatios,
+  normalizeTree,
+  rectToCanvasSlot,
   resizeCanvasSlot,
   syncBrushSlices,
+  toggledVisibility,
   type Brush,
   type Widget,
 } from './umg.ts'
@@ -150,6 +159,119 @@ test('resizeCanvasSlot：对齐点不是左上时按实际变化的宽高补偿�
   assert.equal(out.LayoutData.Offsets.Top, 50)
 })
 
+test('canvasSlotRect：非拉伸按锚点、偏移和对齐点算位置，拉伸按两个锚点算宽高', () => {
+  const slot = defaultSlot('CanvasPanelSlot', 10, 20, 100, 50)!
+  assert.deepEqual(canvasSlotRect(slot, { w: 800, h: 600 }), { x: 10, y: 20, w: 100, h: 50 })
+
+  // 对齐点 0.5：控件从锚点往左 / 上挪半个宽高
+  slot.LayoutData.Alignment = { X: 0.5, Y: 0.5 }
+  slot.LayoutData.Anchors = { Minimum: { X: 0.5, Y: 0.5 }, Maximum: { X: 0.5, Y: 0.5 } }
+  // 锚点 0.5 在父控件中间（400 / 300），再加偏移，最后按对齐点挪半个宽高
+  assert.deepEqual(canvasSlotRect(slot, { w: 800, h: 600 }), { x: 360, y: 295, w: 100, h: 50 })
+
+  // 拉伸：左右边距到父控件两边的距离
+  const stretch = defaultSlot('CanvasPanelSlot', 10, 10, 0, 0)!
+  stretch.LayoutData.Anchors = { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } }
+  stretch.LayoutData.Offsets = { Left: 10, Top: 10, Right: 10, Bottom: 10 }
+  assert.deepEqual(canvasSlotRect(stretch, { w: 800, h: 600 }), { x: 10, y: 10, w: 780, h: 580 })
+
+  // 锚点下界不是 0：宽度是两个锚点之间的跨度（半屏拉伸），不是整个父控件
+  const half = defaultSlot('CanvasPanelSlot', 0, 0, 0, 0)!
+  half.LayoutData.Anchors = { Minimum: { X: 0.5, Y: 0.5 }, Maximum: { X: 1, Y: 1 } }
+  half.LayoutData.Offsets = { Left: 0, Top: 0, Right: 0, Bottom: 0 }
+  assert.deepEqual(canvasSlotRect(half, { w: 800, h: 600 }), { x: 400, y: 300, w: 400, h: 300 })
+  half.LayoutData.Offsets = { Left: 10, Top: 20, Right: 30, Bottom: 40 }
+  assert.deepEqual(canvasSlotRect(half, { w: 800, h: 600 }), { x: 410, y: 320, w: 360, h: 240 })
+
+  // 没有 LayoutData 的插槽按左上角、最小尺寸
+  assert.deepEqual(canvasSlotRect(undefined, { w: 800, h: 600 }), {
+    x: 0,
+    y: 0,
+    w: MIN_WIDGET_SIZE,
+    h: MIN_WIDGET_SIZE,
+  })
+})
+
+test('rectToCanvasSlot：锚点归零、对齐点左上，矩形原样写回并夹到最小尺寸', () => {
+  const slot = defaultSlot('CanvasPanelSlot', 10, 20, 100, 50)!
+  slot.LayoutData.Anchors = { Minimum: { X: 0.5, Y: 0.5 }, Maximum: { X: 1, Y: 1 } }
+  slot.LayoutData.Alignment = { X: 0.5, Y: 0.5 }
+  slot.bAutoSize = true
+  const out = rectToCanvasSlot(slot, { x: 12.4, y: 30.6, w: 120, h: 40 })
+  assert.deepEqual(out.LayoutData.Anchors, { Minimum: { X: 0, Y: 0 }, Maximum: { X: 0, Y: 0 } })
+  assert.deepEqual(out.LayoutData.Alignment, { X: 0, Y: 0 })
+  assert.deepEqual(out.LayoutData.Offsets, { Left: 12, Top: 31, Right: 120, Bottom: 40 })
+  // 对齐后按矩形显示，不再由内容决定
+  assert.equal(out.bAutoSize, false)
+  assert.equal(out.ZOrder, slot.ZOrder)
+
+  // 写回后换算出来还是同一个矩形
+  assert.deepEqual(canvasSlotRect(out, { w: 800, h: 600 }), { x: 12, y: 31, w: 120, h: 40 })
+
+  const tiny = rectToCanvasSlot(slot, { x: 0, y: 0, w: 0, h: -10 })
+  assert.equal(tiny.LayoutData.Offsets.Right, MIN_WIDGET_SIZE)
+  assert.equal(tiny.LayoutData.Offsets.Bottom, MIN_WIDGET_SIZE)
+})
+
+test('imageFitStyle：Fill 和旧数据一样拉伸，Contain / Cover 保持比例，Original 用图片原尺寸', () => {
+  const img = { width: 64, height: 32 }
+  // 不写 ImageFit 的旧数据必须是 100% × 100%
+  assert.deepEqual(imageFitStyle(undefined, img), { size: '100% 100%', position: '0 0' })
+  assert.deepEqual(imageFitStyle('Fill', img), { size: '100% 100%', position: '0 0' })
+  assert.deepEqual(imageFitStyle('Contain', img), { size: 'contain', position: 'center' })
+  assert.deepEqual(imageFitStyle('Cover', img), { size: 'cover', position: 'center' })
+  assert.deepEqual(imageFitStyle('Original', img), { size: '64px 32px', position: 'left top' })
+})
+
+test('exportWidget：ImageFit 是面板内部属性，不进导出结果，画刷其他字段照常导出', () => {
+  const image: Widget = {
+    id: 'img1',
+    Type: 'Image',
+    Name: 'Icon',
+    Properties: {
+      Brush: brush({ ResourceObject: 'img:icon', ImageFit: 'Contain' }),
+      ColorAndOpacity: '#FFFFFFFF',
+      Locked: false,
+    },
+  }
+  const tex = new Map([['icon', 'T_Icon']])
+  const out = exportWidget(image, tex)
+  assert.equal(out.Properties.Brush.ResourceObject, 'T_Icon')
+  assert.equal('ImageFit' in out.Properties.Brush, false)
+  assert.equal('Locked' in out.Properties, false)
+})
+
+test('exportWidget：Button 四种状态里嵌套的画刷也去掉 ImageFit', () => {
+  const button: Widget = {
+    id: 'b1',
+    Type: 'Button',
+    Name: 'Btn',
+    Properties: {
+      WidgetStyle: {
+        Normal: brush({ ResourceObject: 'img:btn', ImageFit: 'Cover' }),
+        Hovered: brush({ ImageFit: 'Contain' }),
+      },
+    },
+  }
+  const out = exportWidget(button, new Map([['btn', 'T_Btn']]))
+  assert.equal('ImageFit' in out.Properties.WidgetStyle.Normal, false)
+  assert.equal('ImageFit' in out.Properties.WidgetStyle.Hovered, false)
+  assert.equal(out.Properties.WidgetStyle.Normal.ResourceObject, 'T_Btn')
+})
+
+test('新建控件：文字默认换行、CanvasPanelSlot 默认不按内容撑开', () => {
+  assert.equal(WIDGETS.TextBlock.defaults().AutoWrapText, true)
+  assert.equal(defaultSlot('CanvasPanelSlot')!.bAutoSize, false)
+})
+
+test('normalizeTree：存量 TextBlock 已经存下的 AutoWrapText 保持原样，不被新默认值改掉', () => {
+  const old = normalizeTree({ Type: 'TextBlock', Name: 'Old', Properties: { AutoWrapText: false } })
+  assert.equal(old.Properties.AutoWrapText, false)
+  // 新数据按默认值换行
+  const fresh = normalizeTree({ Type: 'TextBlock', Name: 'Fresh' })
+  assert.equal(fresh.Properties.AutoWrapText, true)
+})
+
 test('resizeCanvasSlot：拉伸时按父控件尺寸夹紧边距', () => {
   const slot = defaultSlot('CanvasPanelSlot', 10, 10, 80, 80)!
   slot.LayoutData.Anchors = { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } }
@@ -160,4 +282,43 @@ test('resizeCanvasSlot：拉伸时按父控件尺寸夹紧边距', () => {
   // 左、上边距不受影响
   assert.equal(out.LayoutData.Offsets.Left, 10)
   assert.equal(out.LayoutData.Offsets.Top, 10)
+})
+
+test('isHiddenVisibility：Collapsed 和 Hidden 都算看不到', () => {
+  assert.equal(isHiddenVisibility('Collapsed'), true)
+  assert.equal(isHiddenVisibility('Hidden'), true)
+  assert.equal(isHiddenVisibility('Visible'), false)
+  assert.equal(isHiddenVisibility('HitTestInvisible'), false)
+  assert.equal(isHiddenVisibility(undefined), false)
+})
+
+test('toggledVisibility：看不到的（包括 Hidden）点一次就显示，其余隐藏', () => {
+  assert.equal(toggledVisibility('Visible'), 'Collapsed')
+  assert.equal(toggledVisibility(undefined), 'Collapsed')
+  assert.equal(toggledVisibility('HitTestInvisible'), 'Collapsed')
+  // 属性面板选成 Hidden 的控件，眼睛按钮显示「显示」，点一次就要真的显示出来
+  assert.equal(toggledVisibility('Hidden'), 'Visible')
+  assert.equal(toggledVisibility('Collapsed'), 'Visible')
+})
+
+test('applyVisibility：按 id 叠到子控件上，已经不在树上的 id 跳过', () => {
+  const make = (id: string, children: Widget[] = []): Widget => ({
+    id,
+    Type: 'Overlay',
+    Name: id,
+    Properties: {},
+    ...(children.length ? { Children: children } : {}),
+  })
+  const root = make('root', [make('left'), make('right', [make('deep')])])
+  const out = applyVisibility(root, { left: 'Collapsed', deep: 'Hidden', gone: 'Visible' })
+  const [left, right] = out.Children!
+  assert.equal(left.Properties.Visibility, 'Collapsed')
+  assert.equal(right.Properties.Visibility, undefined)
+  assert.equal(right.Children![0].Properties.Visibility, 'Hidden')
+  // 原来的树不动
+  assert.equal(root.Children![0].Properties.Visibility, undefined)
+  // 没有一个 id 命中时原样返回（AI 修改结束时按整份设计补，靠这个引用相等跳过撤销记录）
+  assert.equal(applyVisibility(root, { gone: 'Visible' }), root)
+  // 没有改动时原样返回
+  assert.equal(applyVisibility(root, {}), root)
 })

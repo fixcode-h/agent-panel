@@ -36,11 +36,40 @@ import {
 // 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
 setLang('zh')
 
+// 测试进程和被测代码都不认外面的 git dir：createWorktree / mergeWorktree 这些函数内部
+// 用 process.env 跑 git，只清子进程的话，`git worktree add`、`git merge` 仍会落到共享仓库上
+// （在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时会污染主仓库，见 docs/lessons/testing.md）。
+// GIT_CONFIG_COUNT 是面板给后台命令注入的防推送配置（pushInsteadOf 指向不存在的协议），
+// 留着会让这里自己的 push / clone 失败；测试自己建仓库，不认外面的 git 配置
+delete process.env.GIT_DIR
+delete process.env.GIT_WORK_TREE
+delete process.env.GIT_INDEX_FILE
+delete process.env.GIT_COMMON_DIR
+delete process.env.GIT_CONFIG_COUNT
+
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-wt-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
 
+/**
+ * 子进程的 git 不能继承 GIT_DIR / GIT_WORK_TREE：在 WSL 里带这两个变量跑测试时，
+ * git init 会把它们写进共享仓库的 .git/config（core.worktree = WSL 路径），
+ * 之后主目录所有 git 命令都报 `fatal: Invalid path '/mnt'`。测试自己建仓库，不认外面的 git dir
+ */
+const gitEnv = () => {
+  const env = { ...process.env }
+  delete env.GIT_DIR
+  delete env.GIT_WORK_TREE
+  delete env.GIT_INDEX_FILE
+  delete env.GIT_COMMON_DIR
+  return env
+}
+
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, stdio: 'pipe' })
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+    cwd,
+    stdio: 'pipe',
+    env: gitEnv(),
+  })
 /** 独立目录按任务 id 建在共享的数据目录下：每次用新 id，避免上一次失败的残留挡住 */
 const tid = () => `test-${Math.random().toString(36).slice(2, 10)}`
 
@@ -400,7 +429,7 @@ function projectWithRemote() {
   const tag = Math.random().toString(36).slice(2, 8)
   const remote = path.join(tmp, `remote-${tag}.git`)
   mkdirSync(remote, { recursive: true })
-  execFileSync('git', ['init', '-q', '--bare', remote], { stdio: 'pipe' })
+  execFileSync('git', ['init', '-q', '--bare', remote], { stdio: 'pipe', env: gitEnv() })
   git(repo, 'remote', 'add', 'origin', remote)
   git(repo, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
   git(remote, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`)
@@ -449,7 +478,7 @@ test('远端比父分支新：同样算合回父分支，不影响完成判定',
   const tag = Math.random().toString(36).slice(2, 8)
   // 另一个 clone 往远端推一个提交：远端有父分支没有的提交，父分支也没跟上
   const other = path.join(tmp, `other-${tag}`)
-  execFileSync('git', ['clone', '-q', remote, other], { stdio: 'pipe' })
+  execFileSync('git', ['clone', '-q', remote, other], { stdio: 'pipe', env: gitEnv() })
   writeFileSync(path.join(other, 'remote.txt'), 'remote\n')
   git(other, 'add', '-A')
   git(other, 'commit', '-qm', '远端上的提交')
@@ -764,5 +793,32 @@ test('两个子对话改同一段同一行：第二个合并被撤回，冲突�
   } finally {
     await removeWorktree(repo, a, true).catch(() => {})
     await removeWorktree(repo, b, true).catch(() => {})
+  }
+})
+
+test('合并时原目录的 index.lock 正被别的 git 进程占着：等锁放开再合，不报成冲突', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'lock')
+  try {
+    writeFileSync(path.join(wt.path, 'c.txt'), 'c\n')
+    const lock = path.join(repo, '.git', 'index.lock')
+    writeFileSync(lock, '')
+    const release = setTimeout(() => rmSync(lock, { force: true }), 300)
+    try {
+      await mergeWorktree(repo, wt, '合并', repo, true)
+    } finally {
+      clearTimeout(release)
+    }
+    assert.ok(existsSync(path.join(repo, 'c.txt')), '锁放开后合进去了')
+    // 一直占着：重试几次后照样报错，不会无限等
+    writeFileSync(path.join(wt.path, 'd.txt'), 'd\n')
+    writeFileSync(lock, '')
+    try {
+      await assert.rejects(mergeWorktree(repo, wt, '合并', repo, true), /index\.lock|Unable to write index/)
+    } finally {
+      rmSync(lock, { force: true })
+    }
+  } finally {
+    await removeWorktree(repo, wt, true)
   }
 })

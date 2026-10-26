@@ -1,4 +1,5 @@
-import { type Agent, type Task } from '@shared/schema'
+import { type Agent, type Project, type Task } from '@shared/schema'
+import { lessonReviewPrompt, lessonReviewReport } from '@shared/lesson-review'
 import { t } from '@shared/i18n'
 import {
   analysisPrompt,
@@ -8,9 +9,11 @@ import {
   exportTask,
   parseTaskExport,
   withImportedAgents,
+  type HelperScope,
   type TaskExport,
 } from '@shared/task-export'
 import { api } from './api'
+import { createAnalysisTask } from './ai-window'
 
 /** 导出时记下面板版本，导入的人能看出是哪个版本导出的 */
 async function appVersion() {
@@ -63,7 +66,7 @@ export async function importTaskFile(file: File, projectId: string) {
 }
 
 /** UTF-8 文字转 base64（上传附件用）；分段转，长报告不会撑爆参数个数 */
-function toBase64(s: string) {
+export function toBase64(s: string) {
   const bytes = new TextEncoder().encode(s)
   let bin = ''
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
@@ -71,10 +74,20 @@ function toBase64(s: string) {
 }
 
 /**
- * AI 分析：把一次或几次执行整理成报告附上，新建一个用默认 Agent 的对话来分析。
- * Agent 的回复末尾带修改建议，任务页上看过差异再应用
+ * AI 分析：把一次或几次执行整理成报告附上，按归属规则新建分析对话（见 shared/analysis-home.ts）：
+ * 一个对话（含子对话、子任务）的分析开成它父对话下的子对话，几次工作流执行、导入的只读记录开在项目里。
+ * 角色用必备角色「分析」；回复末尾带修改建议，任务页上看过差异再应用。
+ * scope 有值时只分析那一个子任务（子任务窗口里的「AI 分析」），报告和提示词都只看这一步。
  */
-export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; projectId: string; focus?: string }) {
+export async function startAnalysis(opts: {
+  tasks: Task[]
+  agents: Agent[]
+  projectId: string
+  focus?: string
+  scope?: HelperScope
+  /** 子任务分析用的副标题（「子任务 <标题>」）：拼进对话标题，在列表里能认出是哪个子任务 */
+  scopeTitle?: string
+}) {
   const app = await appVersion()
   const bundles: TaskExport[] = await Promise.all(
     opts.tasks.map(async (tk) =>
@@ -83,27 +96,42 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
   )
   const first = opts.tasks[0]
   const title =
-    opts.tasks.length > 1
-      ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
-      : t('分析：{title}', { title: first.title })
+    opts.scope && opts.scopeTitle
+      ? t('分析：{title}', { title: `${first.title} → ${opts.scopeTitle}` })
+      : opts.tasks.length > 1
+        ? t('分析：{name} 最近 {n} 次执行', { name: first.workflowName || first.title, n: opts.tasks.length })
+        : t('分析：{title}', { title: first.title })
+  const reportName = opts.scope ? t('子任务记录') : t('执行记录')
   const report = await api.upload({
-    name: `${t('执行记录')}-${first.title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    name: `${reportName}-${(opts.scopeTitle || first.title).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
     mime: 'text/markdown',
-    data: toBase64(analysisReport(bundles)),
+    data: toBase64(analysisReport(bundles, undefined, opts.scope)),
   })
-  const created = await api.createTask({
-    projectId: opts.projectId,
-    mode: 'chat',
-    workflowId: '',
-    agentId: '',
-    cli: '',
-    model: '',
-    effort: '',
-    params: {},
-    prompt: analysisPrompt(bundles, opts.focus),
+  return createAnalysisTask({
+    scope: opts.tasks.length === 1 ? { kind: 'task', task: first } : { kind: 'project', projectId: opts.projectId },
+    kind: 'run',
+    title,
+    prompt: analysisPrompt(bundles, opts.focus, opts.scope),
     attachments: [report],
-    isolate: false,
-    askUser: false,
   })
-  return api.renameTask(created.id, title.slice(0, 80)).catch(() => created)
+}
+
+/**
+ * 项目教训的 AI 评审：按归属规则在这个项目里开一个分析对话（角色「分析」），教训全文作附件；
+ * 回复末尾的评审块在对话里画成卡片逐条应用
+ */
+export async function startLessonReview(opts: { project: Project; focus?: string }) {
+  const { project } = opts
+  const report = await api.upload({
+    name: `${t('项目教训')}-${project.name.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40)}.md`,
+    mime: 'text/markdown',
+    data: toBase64(lessonReviewReport(project.name, project.lessons)),
+  })
+  return createAnalysisTask({
+    scope: { kind: 'project', projectId: project.id },
+    kind: 'lessons',
+    title: t('AI 评审：项目教训'),
+    prompt: lessonReviewPrompt(project.name, project.lessons.length, opts.focus?.trim()),
+    attachments: [report],
+  })
 }

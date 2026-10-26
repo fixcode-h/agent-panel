@@ -115,6 +115,7 @@ export const EN_ALERTS: Record<string, string> = {
     'The conversation finished, but deleting its separate branch failed. The branch and folder are still there',
   '这一轮结束后整理独立分支、上报父对话时出错':
     'Error while tidying the separate branch and reporting to the parent after this turn',
+  收尾子对话后刷新计划失败: "The plan couldn't be refreshed after wrapping up the subconversation",
   这个对话的状态没能报给父对话: "This conversation's status couldn't be reported to the parent",
   '子对话等你决定，但没能开一轮来处理，问题在收件箱里':
     "A subconversation needs a decision, but a turn couldn't be started to handle it. The question is in the inbox",

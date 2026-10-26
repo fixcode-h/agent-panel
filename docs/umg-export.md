@@ -57,9 +57,10 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 
 - **颜色**：`{ "R", "G", "B", "A", "Hex" }`。R/G/B 是线性空间（`FLinearColor`），`Hex` 是界面上看到的 sRGB `#RRGGBBAA`，用 `FColor::FromHex` 也可以。
 - **图片**：画刷的 `ResourceObject` 是贴图名（`T_xxx`），空字符串表示没有图片。`DrawAs` 为 `Box` 时按贴图的 `NineSlice` 或画刷自己的 `Margin` 九宫格拉伸。
-- **CanvasPanelSlot**：`LayoutData.Offsets / Anchors / Alignment`、`bAutoSize`、`ZOrder`，和 `FAnchorData` 一致。
+- **图片适配**：设计器里的 `Brush.ImageFit`（`Fill` / `Contain` / `Cover` / `Original`）只是面板中图片怎么放进控件的显示方式，不写时按 `Fill`（拉伸填满，旧设计的行为）。它不是 UMG 属性，导出时和 `Locked` 一样去掉；要在 UE 里得到同样的效果，用图片自身的尺寸、`DrawAs` 或 SizeBox 表达。
+- **CanvasPanelSlot**：`LayoutData.Offsets / Anchors / Alignment`、`bAutoSize`、`ZOrder`，和 `FAnchorData` 一致。设计器里的「对齐到」「填满父控件」会把 `Anchors` 归零、`Alignment` 设成左上并关掉 `bAutoSize`，写入的是父控件坐标里的像素矩形。
 - **SizeBox**：除了 `WidthOverride` 等数值，还带 `bOverride_WidthOverride` 等开关（数值大于 0 时为 true）。
-- **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。
+- **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。TextBlock 默认 `AutoWrapText: true`（按控件宽度换行），设计器里关掉 Size To Content 的文字超出控件范围会被裁剪；打开 Size To Content 的仍按内容撑开。设计里已存的值原样导出。
 - 枚举写 UE 的枚举名，比如 `HAlign_Center`、`VAlign_Fill`、`Visible`、`ScaleToFit`。
 
 ## 画板运行时假数据（不导出）
@@ -105,6 +106,12 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 | `DataField` | 条目子控件里要显示数据的控件 | 值是字段 key，按控件类型显示这一行的值 |
 | `States` | 任意控件（通常写在条目子控件里） | 当前行满足条件时换一套属性，见下 |
 
+一个列表控件同一时间只绑一个集合；同一个集合可以给多个列表控件用，不同集合也能分别绑到不同的列表控件。画板按每个列表控件自己 `DataSet` 指向的集合取行（`dataRows`），不是所有列表都套第一个集合。数据面板集合卡片上「绑定到列表控件」一行是换绑入口：
+
+- 下拉框选中一个列表控件：把它的 `DataSet` 改成当前集合，原来绑的集合自动松开；还没绑定的控件也能从这里绑上。
+- 已绑在这个集合上的控件显示成标签，标签上的 × 把 `DataSet` 写成空字符串（解绑），控件回到按 `NumEntries` / `NumDesignerPreviewEntries` 预览空条目。
+- 换绑只改控件的 `DataSet` 属性（`bindDataSet`），和从控件属性里改是同一处数据，一个集合可以同时出现在多个控件的标签里。
+
 `DataField` 按控件类型换成的属性（`DATA_BINDING`）：
 
 | 控件 | 属性 | 说明 |
@@ -117,6 +124,10 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 | Input | `Value` | 转成字符串 |
 
 不在表里的控件只套用 `States`，不显示数据。
+
+列表控件指向不存在的集合时（包括把最后一个集合删掉、控件还指着它），`checkData` 报「<控件> 的 DataSet 指向不存在的集合 <key>」；数据面板顶部用红框列出这类问题，换绑，或让 AI 用 set_data 补回同名集合后消失。
+
+集合卡片可以折叠，折叠后只留卡片头（名称、id、用在哪些控件、行数、删除），字段表头和行都收起。折叠状态只影响面板显示，不进设计文档、也不导出：按设计存在浏览器 localStorage 的 `design-data-collapsed:<设计 id>`，切走或关掉面板再回来保持，不同设计各记各的，新设计默认全部展开。折叠时改名、删除集合照常可用，行数仍显示；换绑需要先展开卡片。
 
 ### 状态
 

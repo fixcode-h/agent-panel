@@ -6,12 +6,22 @@
  */
 import { runShard } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+/** 点下「下载」后多久内必须看到「进入下载中」或「已经下完」（演示里点下去立刻 busy，给的是并发下重渲染的余量） */
+const DOWNLOAD_START_MS = 3000
+/**
+ * 演示里一条下载是 8 个 tick × `demoMs(400)`；界面检查把 demo-speed 设成 4（见 scripts/ui/harness.mjs），
+ * 也就是 8 × 100ms ≈ 0.8s，再算上下载结束后的状态回查和重渲染。
+ * 10s 是并发抢 CPU 时的余量，不是用来掩盖「没开始」的：那种情况由上一步的 clickedDownload 判断单独拦住。
+ */
+const DOWNLOAD_DONE_MS = 10000
+
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByRole('button', { name: '设置' }).first().click()
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
-  await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
+  // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
+  await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
   // 三档模型的上下文、最大输出：默认按模型自动填，手动改了能恢复自动；Codex 不接受最大输出
   await p.getByRole('dialog').getByText('Claude Code', { exact: true }).first().click()
@@ -60,6 +70,51 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 最小化成浮条（和「角色」页的 AI 优化共用同一个组件）：后面的设置流程里它一直在，最后统一验拖动和关闭
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   await check(p, 'AI处理-最小化', ['AI 排查：Pi：卸载没有成功'])
+  // 右下角的「Pi 卸载失败」错误提示正好盖在浮条位置上（都是底部右侧）：
+  // 以后的截图和悬停判定都会被它挡住。sonner 默认几秒后自己消失，这里就等它走，不去点关闭
+  // （关闭按钮的显隐由 web/src/index.css 控制，只有 error 类型显示，靠点击反而会卡住）
+  await p
+    .locator('[data-sonner-toast]')
+    .first()
+    .waitFor({ state: 'detached', timeout: 15000 })
+    .catch(() => errors.push('浮条：错误提示一直不消失，会挡住浮条'))
+  // 浮条的外观与悬停行为在这里就验一次：后面还有一大段设置流程，没跑到的断言不能当通过。
+  // 关闭按钮用 opacity 隐起来，但隐藏时仍占屏幕位置、照样能点，所以用 computedStyle 的 opacity 判，
+  // 不用 isVisible（opacity-0 也算 visible）；原生 title 测不到，改为断言浮条里没有 title 属性
+  const dockCloseOf = (loc) => loc.locator('[data-dock="close"]')
+  const dockOpacityOf = (loc) => loc.evaluate((el) => Number(getComputedStyle(el).opacity))
+  /** 浮条右上角的关闭按钮：默认不可见、悬停才出现，且没把浮条撑大、没往浮条上挂原生 title */
+  const checkDockClose = async (loc, tag, shot) => {
+    await p.mouse.move(5, 5)
+    await settle(p)
+    if ((await dockOpacityOf(dockCloseOf(loc))) !== 0) errors.push(`${tag}：没悬停时关闭按钮也显示（应为 opacity 0）`)
+    if (shot) await shotOf(p, loc, `${shot}-不悬停特写`)
+    if (shot) await check(p, `${shot}-不悬停`)
+    await loc.hover()
+    await settle(p)
+    if ((await dockOpacityOf(dockCloseOf(loc))) !== 1) errors.push(`${tag}：鼠标放到浮条上关闭按钮没出现`)
+    if (shot) await shotOf(p, loc, `${shot}-悬停特写`)
+    if (shot) await check(p, `${shot}-悬停`)
+    const titles = await loc.locator('[title]').evaluateAll((els) => els.map((el) => el.getAttribute('title')))
+    if (titles.length) errors.push(`${tag}：浮条上还有原生 title 提示：${titles.join('、')}`)
+    // 那个看得见的小圆（按钮里的 span）才代表「视觉上的右上角」，光量热区矩形不够：
+    // 热区永远贴着 top-0 right-0，小圆以后改成左下对齐也照样能过
+    const bar = await loc.boundingBox()
+    const dot = await dockCloseOf(loc).locator('span').first().boundingBox()
+    if (!bar || !dot) errors.push(`${tag}：量不到关闭按钮小圆的位置`)
+    else {
+      const cx = dot.x + dot.width / 2 - bar.x
+      const cy = dot.y + dot.height / 2 - bar.y
+      // 落在浮条右上象限（右半边、上半边）：小圆被挑到右侧中部或左下都会报错。
+      // 不用更严的三分之一：小圆中心实测 cy≈15px（内缩 5 + 半径 10），浮条 44px 的三分之一才 14.7px，会误报
+      if (cx < bar.width / 2 || cy > bar.height / 2)
+        errors.push(
+          `${tag}：关闭按钮不在浮条右上角（小圆中心 ${Math.round(cx)},${Math.round(cy)}；浮条 ${Math.round(bar.width)}×${Math.round(bar.height)}）`,
+        )
+    }
+  }
+  await settle(p)
+  await checkDockClose(p.getByRole('group', { name: 'AI 排查：Pi：卸载没有成功', exact: true }), '浮条', 'AI处理-浮条')
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 Agent 的配置里识别到 2 个 API', 'Codex · openrouter'])
@@ -104,16 +159,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('部署：没有提示部署结果'))
   await check(p, '设置-部署-完成', ['已部署', '已是最新'])
   // 本机生图：一键安装 ComfyUI、下载推荐的模型（演示里是模拟的进度）
-  await p.getByRole('button', { name: '本机生图' }).click()
+  await p.getByRole('button', { name: '本机生图', exact: true }).click()
   await check(p, '设置-本机生图', ['一键安装', 'Z-Image Turbo', '建议显存'])
-  await p.getByRole('button', { name: '一键安装' }).click()
+  await p.getByRole('button', { name: '一键安装', exact: true }).click()
   await p.getByText('已安装，未启动').waitFor({ timeout: 10000 })
-  await p.getByRole('button', { name: '下载' }).first().click()
-  await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
+  // 「下载」必须精确匹配：子串匹配时第一个命中的是下面「下载和连接」那个小节的页内锚点按钮，
+  // 点它只是把内容区滚过去、模型下载根本没开始，再等「已下载」就必然超时（这条用例曾稳定失败）。
+  // 模型按 LOCAL_MODELS 的顺序分组渲染，推荐的 Z-Image Turbo 排在最前，所以取第一个「下载」。
+  const downloadBtn = p.getByRole('button', { name: '下载', exact: true }).first()
+  const removeModelBtn = p.getByRole('button', { name: '删除模型文件', exact: true })
+  await downloadBtn.click()
+  // 先确认点击真的落到了下载上：要么进入下载中（所有下载按钮 disabled），要么已经下完（这一行换成删除按钮）。
+  // 两者都不算得单独报，否则后面只看到「等不到终态」、看不出是压根没开始还是没跑完。
+  // 下载在演示里只要 ≈0.8s，所以不能只看「是否在下载中」：可能它已经跑完了
+  const clickedDownload = await p
+    .waitForFunction(
+      () => {
+        if (document.querySelector('button[aria-label="删除模型文件"]')) return true
+        const btns = [...document.querySelectorAll('button')].filter((b) => b.textContent?.trim() === '下载')
+        return btns.length > 0 && btns.every((b) => b.disabled)
+      },
+      null,
+      { timeout: DOWNLOAD_START_MS },
+    )
+    .then(
+      () => true,
+      () => false,
+    )
+  if (!clickedDownload) errors.push('本机生图：点了「下载」之后既没开始下载，也没下完（点击落到别处了？）')
+  // 终态认可观测的控件变化，不认文案：下载完成后这一行的按钮换成「删除模型文件」
+  const downloaded = await removeModelBtn
+    .first()
+    .waitFor({ timeout: DOWNLOAD_DONE_MS })
+    .then(
+      () => true,
+      () => false,
+    )
+  if (!downloaded) errors.push('本机生图：下载没有跑完（等不到「删除模型文件」按钮）')
   await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
-  // 最小化后的浮条：「AI 处理」和「AI 优化」用同一个组件——尺寸、圆角、层级、状态文字一致，
-  // 两个同时最小化时默认位置错开、不互相盖；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
+  // 最小化后的浮条：AI 处理、AI 优化和收起的对话用同一个组件——尺寸、圆角、层级、状态文字一致；
+  // 屏幕任意时刻只留一个浮条（用户要求「同时只能存在一个最小化弹窗」）：新最小化的那个把前面的顶掉，
+  // 被顶掉的只是不让位、不销毁，关掉当前这个它就自己回来；能按住拖动，松手后位置记进 localStorage，展开再最小化还在原处
   const dock = (name) => p.getByRole('group', { name, exact: true })
   const aiDock = dock('AI 排查：Pi：卸载没有成功')
   await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉设置后 AI 处理的浮条没了'))
@@ -123,6 +210,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       const s = getComputedStyle(el)
       return { h: s.height, radius: s.borderRadius, z: s.zIndex, font: s.fontSize }
     })
+  await settle(p)
+  // 互斥后两个浮条不会同时在屏：形态一致性先量这一个、后面再量另一个来比
+  const lookA = await dockLook(aiDock)
   await p
     .getByRole('radio', { name: /^Agent 模式/ })
     .first()
@@ -134,24 +224,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()
   const assistDock = dock('用 AI 优化「代码审查」')
   await assistDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：AI 优化最小化后没有浮条'))
+  // 只留一个：新最小化的把 AI 处理那个顶掉（它是「收起」不是「关掉」，之后还会回来）
+  await aiDock
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('浮条：同时出现了两个浮条（AI 处理那个没让位）'))
+  if (await dock('AI 排查：Pi：卸载没有成功').count()) errors.push('浮条：屏幕上同时有两个浮条')
   // 等 pop-in 动画跑完再量位置：动画中 rect 会缩着、往上偏 8px
   await settle(p)
-  const lookA = await dockLook(aiDock)
   const lookB = await dockLook(assistDock)
   if (lookA.h !== lookB.h || lookA.radius !== lookB.radius || lookA.z !== lookB.z || lookA.font !== lookB.font)
     errors.push(`浮条：两个窗口的最小化形态不一致（${JSON.stringify(lookA)} / ${JSON.stringify(lookB)}）`)
-  const boxA = await aiDock.boundingBox()
+  // 只剩一个浮条，不需要再错开位置：没拖过就贴右下的默认位置
   const boxB = await assistDock.boundingBox()
-  if (
-    boxA &&
-    boxB &&
-    boxA.x < boxB.x + boxB.width &&
-    boxB.x < boxA.x + boxA.width &&
-    boxA.y < boxB.y + boxB.height &&
-    boxB.y < boxA.y + boxA.height
-  )
-    errors.push('浮条：两个同时最小化的窗口叠在一起了')
-  await check(p, 'AI处理-两个浮条')
+  const viewport = await p.evaluate(() => ({ w: innerWidth, h: innerHeight }))
+  if (boxB && (viewport.w - (boxB.x + boxB.width) > 40 || viewport.h - (boxB.y + boxB.height) > 40))
+    errors.push(
+      `浮条：只剩一个时没有贴右下角（右 ${Math.round(viewport.w - (boxB.x + boxB.width))}px、下 ${Math.round(viewport.h - (boxB.y + boxB.height))}px）`,
+    )
+  await check(p, 'AI处理-浮条只留一个')
+  await checkDockClose(assistDock, '浮条')
   // 按住拖动：位置跟着指针走，拖动不会被当成点击把窗口展开
   const from = await assistDock.boundingBox()
   await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -178,6 +269,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await assistDock
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => errors.push('浮条：AI 优化点关闭后浮条还在'))
+  // 被顶掉的那条只是让位：关掉当前这个，AI 处理的浮条自己回来（互斥不是把它关掉）
+  await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉 AI 优化后，被顶掉的 AI 处理浮条没有回来'))
+  await check(p, 'AI处理-浮条让位后回来')
   // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
   await p
     .getByRole('radio', { name: /^Chat 模式/ })
@@ -194,7 +288,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('浮条：对话删掉后浮条没显示「对话已关闭」'))
   await check(p, 'AI处理-对话关了浮条还在', ['对话已关闭'])
   await aiDock.getByRole('button', { name: '展开', exact: true }).click()
-  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从聊天列表里删掉'])
+  await check(p, 'AI处理-对话已关闭', ['这个对话已经关闭了', '它已经从对话列表里删掉'])
   // 关闭按钮直接关：不再弹「关闭窗口会停止这次排查」的确认
   await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
   await p

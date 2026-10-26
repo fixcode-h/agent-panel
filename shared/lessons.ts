@@ -88,6 +88,16 @@ export function tagCounts(lessons: { tags?: string[] }[]) {
   return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 }
 
+/** 「默认」页签的键：标签不会是空串（normTags 去掉了空的），拿它当默认页签不会和真标签撞 */
+export const DEFAULT_TAB = ''
+/** 这条教训在不在这个页签里：一个标签都没有的在「默认」，带标签的在它的每个标签页签里 */
+export const inTab = (l: { tags: string[] }, tab: string) =>
+  tab === DEFAULT_TAB ? !l.tags.length : l.tags.includes(tab)
+/** 页签和各自的条数：「默认」在最前，其余按标签用得多少排（tags 是全部教训的标签，搜索时数字按 list 算） */
+export function lessonTabs(list: { tags: string[] }[], tags: [string, number][]): [string, number][] {
+  return [DEFAULT_TAB, ...tags.map(([x]) => x)].map((x) => [x, list.filter((l) => inTab(l, x)).length])
+}
+
 /** 搜索用的全文（小写）：界面搜索框和 project_lessons 的 query 用同一套 */
 export const lessonHaystack = (l: ProjectLesson | GlobalLesson) =>
   [l.id, l.title, l.rule, l.cause, ...l.paths, ...('tags' in l ? l.tags : [])].join('\n').toLowerCase()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Loader2, Plus, RefreshCw, ScanSearch } from 'lucide-react'
 import { getCli } from '@shared/clis'
 import { API_PROTOCOL_LABEL, sameApi, type ApiConfig, type DetectedApi } from '@shared/accounts'
