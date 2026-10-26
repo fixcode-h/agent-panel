@@ -46,22 +46,17 @@ jobs:
       - name: 生成更新说明
         run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} main > release/notes.md
       - name: 发布到 Releases
+        # 发布逻辑在 scripts/release-publish.mjs：对瞬时失败（HTTP 5xx / 超时 / 网络）重试，4xx 直接失败。
+        # 起因：出包 run 40292001333 在 gh release create 上撞到 GitHub API 504，一次瞬时故障就让整个出包失败。
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          tag="v${VERSION}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "版本 $tag 已经发布过，跳过"
-            exit 0
-          fi
-          gh release create "$tag" \
-            "release/agent-panel-${VERSION}.zip" \
-            "release/agent-panel-${VERSION}-mac.tar.gz" \
-            "release/agent-panel-${VERSION}-mac.zip" \
-            "release/agent-panel-${VERSION}-linux.tar.gz" \
-            "release/SHA256SUMS" \
+          node scripts/release-publish.mjs "$VERSION" \
             --target "$GITHUB_SHA" \
-            --title "$tag" \
             --notes-file release/notes.md \
-            --latest
+            --asset "release/agent-panel-${VERSION}.zip" \
+            --asset "release/agent-panel-${VERSION}-mac.tar.gz" \
+            --asset "release/agent-panel-${VERSION}-mac.zip" \
+            --asset "release/agent-panel-${VERSION}-linux.tar.gz" \
+            --asset "release/SHA256SUMS"

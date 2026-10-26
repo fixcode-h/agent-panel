@@ -169,7 +169,7 @@ export const EN_SHARED: Record<string, string> = {
   百度千帆: 'Baidu Qianfan',
   硅基流动: 'SiliconFlow',
   'Ollama（本机）': 'Ollama (local)',
-  '，在父对话中执行': ', runs in parent',
+  '，禁止子对话执行': ', skipped in child conversations',
   自己: 'self',
   '（第 {n} 次，按最后一次算）': ' (attempt {n}, last one counts)',
 }

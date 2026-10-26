@@ -618,7 +618,7 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
-              // 演示里勾上「在父对话中执行」：合并后由父对话在它的目录里跑，结果回传给子对话
+              // 演示里勾上「禁止子对话执行」：合并后由父对话在它的目录里跑，结果回传给子对话
               runInParent: true,
               quick: false,
             },
