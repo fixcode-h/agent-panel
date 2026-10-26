@@ -1,6 +1,9 @@
 # 自带 Skill 的卡片点不开，右边永远是同一段引导文字
 
-- 状态：已修复（界面检查 `scripts/ui/03-library.mjs` 的「自带Skill-详情」「自带Skill-详情-文件内容」）
+- 状态：已修复（界面检查 `scripts/ui/03-library.mjs` 的「自带Skill-详情」「自带Skill-详情-文件内容」「自带Skill-目录折叠」「自带Skill-刷新后选中项还在」）
+- 症状：「自带 Skill」分页的卡片点不开，右侧永远是同一段引导文字
+- 入口：`web/src/components/library/BundledSkills.tsx`、`web/src/components/library/BundledDetail.tsx`、`web/src/pages/LibraryPage.tsx`、`server/bundled-skills.ts` 的 `treeOf` / `readBundledEntry`、`server/library.ts` 的 `/library/bundled/entry`
+- 根因类型：该分页只渲染列表、没有选中回调和详情；后端 `BundledSkill` 也只有文件个数没有清单
 - 模块：`web` + `server`（`web/src/components/library/BundledSkills.tsx`、新增 `web/src/components/library/BundledDetail.tsx`、`web/src/pages/LibraryPage.tsx`、`server/bundled-skills.ts` 的 `treeOf` / `readBundledEntry`、`server/library.ts` 的 `/library/bundled/entry`）
 - 关键词：自带 Skill、点不开、没有详情、整行不可点、BundledSkills、空态、文件结构、只读、`~/.agents/skills`
 

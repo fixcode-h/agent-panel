@@ -1,6 +1,9 @@
 # 抓取元素时提示条挡住要点的位置
 
 - 状态：已修复
+- 症状：抓取元素时顶部提示条挡住要点的位置，鼠标移上去也不躲
+- 入口：`web/src/components/chat/ElementPicker.tsx` 的 `PickOverlay`
+- 根因类型：提示条没有躲开鼠标的行为，且它是 pointer-events-none 收不到悬停
 - 模块：`web`（`web/src/components/chat/ElementPicker.tsx` 的 `PickOverlay` / `useTipFade`），配套 `scripts/ui/01-composer.mjs`、`scripts/ui/02-task.mjs`
 - 关键词：元素抓取、提示条、浮标、挡住视野、遮挡、悬停淡出、pointer-events-none、点击穿透
 

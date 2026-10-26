@@ -5,6 +5,7 @@
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
+// 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
@@ -14,6 +15,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { globToRegExp, readShards } from './lessons.mjs'
 import { checkModuleDocsInRoot } from './lib/doc-modules.mjs'
+import { checkBugIndexesInRoot } from './lib/doc-bugs.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
@@ -143,6 +145,11 @@ for (const f of files) {
 
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
+
+// 7b. Bug 索引是生成物：只写 docs/modules/<模块>/bugs/<bug-id>.md，bugs.md 由 node scripts/doc-bugs.mjs 生成
+// （见 skills/docs/project-documentation「模块文档」）。多个子对话并行收尾时各自新增详情文件，就不会都改同一张表
+// 末尾而反复冲突；手改索引或改完详情没重生成都在这里拦下
+errors.push(...checkBugIndexesInRoot(root))
 
 // 8. 一轮结束只发一次回调：runner 里 markTurnDone 和 ctx.onTurnEnd 只能从 endTurn() 一处发出。
 // 两处各发一次时同一轮会被上报两遍（CLI 的 result 和「回复完停在等下一句」相隔几百毫秒，

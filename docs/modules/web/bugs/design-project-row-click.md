@@ -1,6 +1,9 @@
 # 点 UI 设计侧栏的项目名没有反应
 
-- 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`、WSL 里的 `npm run test:e2e`、`npx vite build --mode demo` + `node scripts/ui-check.mjs 04` 均通过）
+- 状态：已修复（`npm run typecheck`、`npm run lint`、`npm run test:unit`、`npm run build`、WSL 里的 `npm run test:e2e`、`npx vite build --mode demo` + `node scripts/ui-check.mjs 04` 均通过）；交互语义后来按用户要求改成「点项目名进主页、只有箭头折叠」，见 design-project-home
+- 症状：UI 设计侧栏点项目名「游戏」完全没反应，只有很小的折叠箭头能点
+- 入口：`web/src/components/layout/SidebarDesigns.tsx` 的 `DesignList`
+- 根因类型：行上没绑点击、可点区域只有小按钮
 - 模块：`web`（`web/src/components/layout/SidebarDesigns.tsx` 的 `DesignList`），配套 `scripts/ui/04-design.mjs`
 - 关键词：UI 项目、点项目名没反应、只有小箭头能点、折叠 / 收起、整行可点、cursor-pointer、冒泡、stopPropagation
 

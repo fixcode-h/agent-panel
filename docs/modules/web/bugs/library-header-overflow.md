@@ -1,6 +1,9 @@
 # 技能页左栏头部的按钮顶出左栏，压到右侧内容上
 
 - 状态：已修复（界面检查 `scripts/ui/03-library.mjs` 的「Skills与命令-不溢出」用 `boundingBox()` 断言按钮和标题的右边界 ≤ 左栏宽度）
+- 症状：技能页左栏头部的「AI 创建」「新建」两个按钮顶出左栏，压到右侧内容区上
+- 入口：`web/src/components/layout/ListPane.tsx` 的头部、`web/src/pages/LibraryPage.tsx` 的 `extra`
+- 根因类型：标题 `shrink-0` + `whitespace-nowrap`、按钮也 `shrink-0`，左栏固定 300/320px 时无处收缩
 - 模块：`web`（`web/src/components/layout/ListPane.tsx` 的头部、`web/src/pages/LibraryPage.tsx` 的 `extra`）
 - 关键词：左栏溢出、超出范围、标题、AI 创建、新建、按钮顶出去、`shrink-0`、`whitespace-nowrap`、`ListPane`、窄栏
 
