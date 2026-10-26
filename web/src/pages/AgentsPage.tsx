@@ -266,7 +266,7 @@ export function AgentsPage() {
               return (
                 <ListGroup
                   key={g.id}
-                  id={g.id}
+                  groupId={g.id}
                   label={name}
                   header={
                     <GroupHeader label={<TagCountChip name={name} count={g.agents.length} color={g.tag?.color} />} />

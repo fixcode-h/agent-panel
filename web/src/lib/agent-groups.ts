@@ -3,14 +3,14 @@ import type { Agent, Tag } from '@shared/schema'
 /** 「默认」分组的 id：和标签 id 不会冲突，「默认」这个名字本身对应的标签也不能把它顶掉 */
 export const DEFAULT_AGENT_GROUP = '#default'
 
-/** 「默认」分组的标题（中文原文，渲染时过 t()）；固定收 `tags` 为空的角色 */
-export const DEFAULT_AGENT_GROUP_LABEL = '默认'
+/** 「默认」分组的标题（中文原文）：只作为分组数据的标识，界面上这一组显示「默认（没有标签）」 */
+const DEFAULT_LABEL = '默认'
 
 /** 角色页按标签分组时的一组 */
 export interface AgentTagGroup {
   /** 标签 id，或 DEFAULT_AGENT_GROUP */
   id: string
-  /** 组标题：标签名（默认组是「默认」），渲染时过 t() */
+  /** 组标题：标签名（默认组是内部标识「默认」，界面显示「默认（没有标签）」） */
   label: string
   /** 标签实体：默认组没有，用来取颜色 */
   tag?: Tag
@@ -52,7 +52,7 @@ export function groupAgentsByTag(agents: Agent[], tags: Tag[]): AgentTagGroup[] 
   })
   groups.sort((a, b) => b.agents.length - a.agents.length || a.label.localeCompare(b.label, 'zh-Hans-CN'))
   if (loose.length) {
-    groups.push({ id: DEFAULT_AGENT_GROUP, label: DEFAULT_AGENT_GROUP_LABEL, agents: loose })
+    groups.push({ id: DEFAULT_AGENT_GROUP, label: DEFAULT_LABEL, agents: loose })
   }
   return groups
 }
