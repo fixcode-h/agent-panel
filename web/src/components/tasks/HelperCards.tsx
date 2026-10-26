@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { ListTree, Loader2, Sparkles, Square, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
@@ -9,6 +9,7 @@ import { currentActivity, fmtDuration, stepActivity } from '@/lib/tasks'
 import { helperRunning, sortHelpers, stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
+import { helperBriefView } from '@/lib/helper-brief'
 import { useEscape } from '@/lib/useEscape'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -264,8 +265,13 @@ export function HelperWindow({
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
   const msgs = task.messages.filter((m) => m.step === id || m.step.startsWith(`${id}/`))
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
-  // 打开就停在最新输出（首帧算不完的高度下一帧和布局稳定后再补），之后跟着新内容走；用户往上翻了就不再拽回来
-  const scroller = useStickToBottom(id)
+  // 有要求时打开先停在最上面：那块「派给它的要求」说明这个子任务要做什么，贴底会把它滚出视野，
+  // 用户滚到底部附近之后才跟着新内容走（startAt: 'top'）。
+  // 没有要求（旧记录 / 派发时只写了标题）时卡片整块不渲染，滚动区第一块就是对话流，停顶部没有意义——
+  // 这种窗口照旧贴底看最新输出，所以按有没有要求选起点
+  // 缓存：brief 动辄几千字，而跑着的子任务会因 useNow 高频重渲染，别每次都重新拆一遍
+  const hasBrief = useMemo(() => !helperBriefView(step?.brief).empty, [step?.brief])
+  const scroller = useStickToBottom(id, undefined, true, hasBrief ? 'top' : 'bottom')
   if (!step) return null
   const time = step.endedAt && !live ? fmtDuration(stepMs(step, now)) : ''
   return (
@@ -310,9 +316,9 @@ export function HelperWindow({
           <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-(--content-w) flex-col gap-4 px-4 py-5 md:px-6">
               {/* 派发时交给它的要求放在最上面：先知道这个子任务要做什么，再看它怎么做的。
-                  它自己收起吸顶（有对话流时默认收起），窗口贴底看最新输出也不影响它一直可见；
-                  没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
-                  不然贴底会把刚展开的正文顶到视野之上 */}
+                  它就是普通的第一块内容，不吸顶（吸顶会盖住下面的对话流）；窗口打开时停在顶部所以它一开始就看得见。
+                  有对话流时默认收起，没有对话流时展开，那正是窗口里要看的内容。展开时先 unpin 再滚到卡片顶部，
+                  不然跟随底部会把刚展开的正文顶到视野之上 */}
               <HelperBriefCard
                 step={step}
                 teamNames={teamNames}
