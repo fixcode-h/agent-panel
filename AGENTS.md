@@ -54,7 +54,8 @@
 npm run dev          # 前端 :5173 + 后端 :8787
 npm run typecheck    # 类型检查 + 漏翻检查
 npm run lint         # oxlint、Prettier 格式检查、规则检查（scripts/rules-check.mjs）
-npm run test:unit    # 单元测试和 CLI 输出解析测试
+npm run test:unit    # 单元测试和 CLI 输出解析测试（全量）
+npm run test:affected # 按影响面只跑受本次改动影响的单测（含间接依赖，见 docs/agent-test-steps.md）
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
 npm run test:e2e:wsl # 同上，在 WSL 里跑（Windows 开发机上用这个）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo（产物和源码对不上会直接失败），分片在 scripts/ui/ 并行跑，截图在 ui-shots/

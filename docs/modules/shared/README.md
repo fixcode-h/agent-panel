@@ -74,7 +74,7 @@
   合并了原来的 `runInParent`，老数据由 `shared/schema.ts` 的 `migrateTestStep` 换算，见 [ADR 0021](../../adr/0020-test-scope-and-incremental-tests.md)）：
   `parentRunSteps` 是「`parent` 由谁跑」的唯一筛选（启用、`scope === 'parent'`、不是 `merge`、有命令），
   但它只用在「谁替子对话跑」的链路——父对话自己验证用 `verifyBlock` 的全量启用步骤，标了 `parent` 也不会被跳过；
-  子对话的提示词由 `CHILD_INCREMENTAL_RULE` 写死「只跑 `always` + 命中的 `changed`、不跑全量」，`FLAKY_TEST_RULE` 写死
+  子对话的提示词由 `CHILD_INCREMENTAL_RULE` 写死「只跑 `always` + 命中的 `changed`、不跑全量」（定位脚本判「必须跑全量」时按它跑那一项并写理由），`FLAKY_TEST_RULE` 写死
   「计时类用例偶发失败只单跑那个文件最多 3 次」；
   `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
   （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
