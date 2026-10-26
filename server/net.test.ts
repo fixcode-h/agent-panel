@@ -31,6 +31,8 @@ setLang('zh')
 
 const RELEASE_URL = 'https://api.github.com/repos/fixcode-h/agent-panel/releases'
 const PROXY = 'http://127.0.0.1:7890'
+// stub 没有真实 I/O 时用来留住事件循环的时长：只要比用例里的 timeoutMs 长，abort 时会被清掉
+const EVENT_LOOP_KEEP_ALIVE_MS = 1000
 
 function fetchFailed(code = 'UND_ERR_CONNECT_TIMEOUT') {
   const err = new TypeError('fetch failed') as TypeError & { cause?: { code?: string } }
@@ -409,17 +411,38 @@ test('最后一条是本机代理时，错误里仍然保留设置页的提示',
 })
 
 test('每次尝试的超时单独计时：直连超时后还能用代理重试', async () => {
+  // 这个 stub 只是等 abort 的纯 Promise，没有真实 I/O：让事件循环活着的只有 net.ts 里 unref 的超时计时器
+  // （生产上真实 fetch 自己有 I/O 保活，unref 是对的）。Node 22 的 test runner 在事件循环判空而 Promise
+  // 还 pending 时报「Promise resolution is still pending」并 cancel 掉本文件剩下的用例，所以这里自己挂一个
+  // 引用了事件循环的计时器保活，abort 时清掉
+  let keepAlive: ReturnType<typeof setTimeout> | undefined
+  const stopKeepAlive = () => {
+    if (keepAlive) clearTimeout(keepAlive)
+    keepAlive = undefined
+  }
   const { deps, calls } = stub({
     plan: directPlan,
     direct: (_url, init) =>
       new Promise((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+        keepAlive = setTimeout(() => {}, EVENT_LOOP_KEEP_ALIVE_MS)
+        init.signal?.addEventListener(
+          'abort',
+          () => {
+            stopKeepAlive()
+            reject(init.signal?.reason)
+          },
+          { once: true },
+        )
       }),
     discover: async () => [PROXY],
   })
-  const res = await netFetchWith(deps, RELEASE_URL, { timeoutMs: 20 })
-  assert.equal(await res.text(), 'ok')
-  assert.deepEqual(calls, ['direct', PROXY])
+  try {
+    const res = await netFetchWith(deps, RELEASE_URL, { timeoutMs: 20 })
+    assert.equal(await res.text(), 'ok')
+    assert.deepEqual(calls, ['direct', PROXY])
+  } finally {
+    stopKeepAlive()
+  }
 })
 
 test('每次尝试前通知调用方，便于重置空闲计时', async () => {
