@@ -26,6 +26,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { groupWorktrees } from '@/lib/worktrees'
 import { t } from '@shared/i18n'
 import { childHoldText } from '@shared/task'
@@ -189,12 +190,8 @@ export function useWorktreeActions(rootId: string) {
   return { busy, merge, askRemove: setRemoving, confirm }
 }
 
-function copyText(text: string) {
-  void navigator.clipboard.writeText(text).then(
-    () => toast.success(t('已复制')),
-    () => toast.error(t('复制失败')),
-  )
-}
+/** 菜单里的复制：成功提示「已复制」，失败提示「复制失败」 */
+const copyValue = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
 /** 右键菜单里一个操作的可用性：不能点时用 reason 说明原因，不要只变灰 */
 type Availability = { ok: true } | { ok: false; reason: string }
@@ -371,11 +368,11 @@ export function WorktreeRow({
           </Unavailable>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem title={item.branch} onSelect={() => copyText(item.branch)}>
+        <ContextMenuItem title={item.branch} onSelect={() => copyValue(item.branch)}>
           <Copy className="h-3.5 w-3.5 text-subtle" />
           {t('复制分支名')}
         </ContextMenuItem>
-        <ContextMenuItem title={item.path} onSelect={() => copyText(item.path)}>
+        <ContextMenuItem title={item.path} onSelect={() => copyValue(item.path)}>
           <Copy className="h-3.5 w-3.5 text-subtle" />
           {t('复制路径')}
         </ContextMenuItem>
@@ -506,7 +503,7 @@ export function DeleteTaskDialog({
           <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
           <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
             {description}
-            {kept > 0 && !left.length && ` ${t('它的独立分支已经合并，会一起删除。')}`}
+            {kept > 0 && !left.length && ` ${t('它的独立分支已经合并，恢复后照常可用。')}`}
           </D.Description>
           {!items && (
             <p className="mt-3 flex items-center gap-2 text-[0.8125rem] text-subtle">
@@ -518,7 +515,7 @@ export function DeleteTaskDialog({
             <div className="mt-3 rounded-lg border border-warning/30 bg-warning/8 px-3 py-2.5">
               <p className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-warning">
                 <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-                {t('有 {n} 个独立分支还没合并，直接删除会丢掉这些改动', { n: left.length })}
+                {t('有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉', { n: left.length })}
               </p>
               <div className="mt-2 flex flex-col gap-1.5">
                 {left.map((x) => (
@@ -558,7 +555,7 @@ export function DeleteTaskDialog({
             )}
             <Button variant="danger" disabled={!items || !!pending} onClick={() => void run('delete')}>
               {pending === 'delete' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {left.length ? t('直接删除') : t('删除')}
+              {t('删除')}
             </Button>
           </div>
         </D.Content>

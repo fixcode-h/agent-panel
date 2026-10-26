@@ -1159,6 +1159,14 @@ export const EN_SETTINGS: Record<string, string> = {
   按天: 'Daily',
   按周: 'Weekly',
   按月: 'Monthly',
+  分组: 'Group by',
+  按时间: 'By time',
+  按项目: 'By project',
+  按对话: 'By conversation',
+  项目已删除: 'Project deleted',
+  不属于项目: 'No project',
+  '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。':
+    'Totals for {range} grouped by {group}: tokens, cost, and turns use the same window and units as the by-time view. Input includes cache hits and cache writes.',
   用量统计: 'Usage',
   统计粒度: 'Granularity',
   '共 {n} 轮': '{n} turns in total',
@@ -1377,4 +1385,20 @@ export const EN_SETTINGS: Record<string, string> = {
     'Leave this empty when the scope is "Always": the step runs on every change and is not filtered by these globs.',
   '范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛':
     'Leave this empty when the scope is "Full suite, the parent runs it after merge": the parent runs the full suite after merging and does not filter by these globs.',
+  // 设置 →「数据」→ 回收站
+  回收站: 'Trash',
+  '{n} 个对话': '{n} conversations',
+  '删除的对话先进回收站，{days} 天后自动永久删除。恢复后能接着对话；永久删除会清掉对话内容、附件和独立分支。':
+    'Deleted conversations go to the trash first and are permanently removed after {days} days. Restored conversations can be continued; deleting permanently removes the messages, attachments and the isolated branch.',
+  回收站是空的: 'The trash is empty',
+  '{time}删除': 'Deleted {time}',
+  ' · 含 {n} 个子对话': ' · includes {n} children',
+  '{n} 天后永久删除': 'Permanently deleted in {n} days',
+  即将永久删除: 'Permanently deleted soon',
+  永久删除: 'Delete permanently',
+  再点一次: 'Click again',
+  '已恢复「{title}」': 'Restored "{title}"',
+  '「{title}」的独立分支目录已经清理，恢复后需要重新执行':
+    'The isolated branch folder of "{title}" has already been cleaned up; run it again after restoring',
+  '已永久删除「{title}」': 'Permanently deleted "{title}"',
 }

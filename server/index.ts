@@ -802,6 +802,15 @@ app.delete('/projects/:id', async (c) => {
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 
 /**
+ * 每小时一次的本地清理：回收站里过期的对话物理删除，再清扫没人管的独立目录。
+ * 两件事同一节奏，不各起一个定时器
+ */
+function runCleanup() {
+  void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void sweepStaleWorktrees()
+}
+
+/**
  * 回收没人管的独立工作目录：面板重启、父对话结束、任务记录丢了之后，不再有人触发收口，
  * 已合并的目录会一直留在磁盘上（见 server/exec/worktree.ts 的 sweepWorktrees）。
  * 只清「改动都已合回原分支 + 任务已收口 / 记录已不存在」的，以及 git 注册表外的残留；
@@ -819,8 +828,14 @@ async function sweepStaleWorktrees() {
       return {
         // 显式收口，或者这一轮已经跑完 / 被停掉：剩下没人会再触发收口（面板重启、父对话结束）
         done: tk.resolved === true || tk.archived === true || tk.status === 'done' || tk.status === 'stopped',
-        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动
-        working: working.has(id) || tk.working === true || tk.awaitingUser === true || tk.prewarming === true,
+        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动。
+        // 进了回收站的对话也算在用：保留期内还要能恢复，目录得留着；到期由 tasks.cleanupTrash 连目录一起删
+        working:
+          !!tk.deletedAt ||
+          working.has(id) ||
+          tk.working === true ||
+          tk.awaitingUser === true ||
+          tk.prewarming === true,
         projectPath: p?.path ?? '',
         branch: tk.worktree?.branch ?? '',
         baseBranch: tk.worktree?.baseBranch ?? '',
@@ -1091,9 +1106,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   stopMemorySampler = startMemorySampler()
   // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）
   stopSchedules = schedules.start()
-  // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
-  setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
-  setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
+  // 回收没人管的独立目录、清掉回收站里过期的对话：启动后跑一次，之后每小时一次（进程退出不用等它）
+  setTimeout(runCleanup, 10_000).unref()
+  setInterval(runCleanup, 60 * 60_000).unref()
   // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
   void sweepProjectsPanelMcp()
   void applyRemote()

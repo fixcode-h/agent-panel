@@ -47,7 +47,8 @@ import type {
   TaskProcesses,
   TaskJobView,
 } from '@shared/schema'
-import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
+import type { ChildActivity, ChildHold, ChildWait, TrashRow } from '@shared/task'
+import type { SearchHit } from '@shared/task-search'
 import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
@@ -105,7 +106,7 @@ import type {
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
-import type { UsageGrain, UsageReport } from '@shared/usage'
+import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
 
@@ -730,6 +731,17 @@ export const api = {
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
     request<Task>(`/tasks/${id}`, json('PATCH', run)),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+  /** 回收站：进回收站还没到期的对话（删掉的对话不丢，7 天内能恢复） */
+  trash: () => request<TrashRow[]>('/tasks/trash'),
+  /** 从回收站恢复；worktreeCleared 表示独立分支目录已经没了，恢复后要重新执行 */
+  restoreTask: (id: string) => request<{ worktreeCleared: boolean }>(`/tasks/${id}/restore`, { method: 'POST' }),
+  /** 永久删除：不进回收站，内容直接清掉（界面先让用户二次确认） */
+  permanentDeleteTask: (id: string) => request<void>(`/tasks/${id}/permanent`, { method: 'DELETE' }),
+  /** 搜对话正文：只回命中片段和定位信息，不回整条消息（口径见 shared/task-search.ts） */
+  searchTasks: (q: string, limit?: number) =>
+    request<{ hits: SearchHit[]; scanned: number; more: boolean }>(
+      `/tasks/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`,
+    ),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
   assistJob: (id: string) => request<AssistJob>(`/assist/${id}`),
@@ -771,9 +783,9 @@ export const api = {
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
-  /** 设置里的用量统计：按天 / 周 / 月聚合各轮执行的 token（聚合在服务端做） */
-  tokenUsage: (q: { grain: UsageGrain; count: number }) =>
-    request<UsageReport>(`/usage?grain=${q.grain}&count=${q.count}`),
+  /** 设置里的用量统计：按天 / 周 / 月聚合各轮执行的 token（也可以按项目 / 对话分组；聚合在服务端做） */
+  tokenUsage: (q: { grain: UsageGrain; count: number; groupBy?: UsageGroup }) =>
+    request<UsageReport>(`/usage?grain=${q.grain}&count=${q.count}${q.groupBy ? `&groupBy=${q.groupBy}` : ''}`),
   designs: () => request<DesignMeta[]>('/designs'),
   designProjects: () => request<DesignProject[]>('/designs/projects'),
   createDesignProject: (input: DesignProjectInput) => request<DesignProject>('/designs/projects', json('POST', input)),

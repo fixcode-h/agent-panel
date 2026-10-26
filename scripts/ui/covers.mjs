@@ -2,7 +2,8 @@
  * 界面检查分片覆盖的源码范围：改了哪个文件就跑哪个分片（scripts/changed-tests.mjs 用它定位）。
  *
  * 每项是一组「路径前缀」：以 / 结尾表示目录（`web/src/components/tasks/` 命中它下面的所有文件），
- * 否则按完整文件路径算。一个文件可以命中多个分片（设置页同时被 05、06 覆盖），这时两个分片都要跑。
+ * 否则按完整文件路径算。一个文件可以命中多个分片（设置页同时被 05、06 覆盖；任务页拆出的
+ * 02 / 02b / 02c 三片覆盖同一批组件），这时命中的分片都要跑。
  *
  * 只写已经确认覆盖到的源码：没有列进来的 web/src 路径（通用 UI 组件、lib 里的公共逻辑、
  * 演示数据这类影响所有页面的）会被 changed-tests 标成「映射不出来」，提示跑全量的界面检查——
@@ -13,7 +14,21 @@
  */
 export const UI_SHARD_COVERS = {
   '01-composer': ['web/src/components/chat/', 'web/src/pages/ChatPage.tsx'],
+  // 任务页拆成 02 / 02b / 02c 三片：它们的场景都在同一批组件里（TaskView 的渲染树），
+  // 拆不出互不重叠的前缀，所以三片登记同一批源码——改任务页的组件时三片一起跑，宁可多跑不漏跑
   '02-task': [
+    'web/src/components/tasks/',
+    'web/src/components/files/',
+    'web/src/lib/tasks.ts',
+    'web/src/pages/ChatPage.tsx',
+  ],
+  '02b-subagent': [
+    'web/src/components/tasks/',
+    'web/src/components/files/',
+    'web/src/lib/tasks.ts',
+    'web/src/pages/ChatPage.tsx',
+  ],
+  '02c-element-pick': [
     'web/src/components/tasks/',
     'web/src/components/files/',
     'web/src/lib/tasks.ts',

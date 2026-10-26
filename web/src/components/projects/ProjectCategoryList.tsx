@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
@@ -35,11 +36,7 @@ export function ProjectCategoryList() {
       </p>
       {/* 内置分类按固定 id 认，改名不影响；说清楚为什么没有删除按钮 */}
       <p className="text-xs leading-relaxed text-subtle">{t('带「内置」标记的分类可以改名，不能删除。')}</p>
-      {projectCategories.length === 0 && (
-        <p className="rounded-xl border border-dashed p-6 text-center text-[0.8125rem] text-subtle">
-          {t('还没有项目分类。')}
-        </p>
-      )}
+      {projectCategories.length === 0 && <EmptyPanel size="square">{t('还没有项目分类。')}</EmptyPanel>}
       {projectCategories.map((c) => (
         <CategoryRow key={c.id} category={c} />
       ))}

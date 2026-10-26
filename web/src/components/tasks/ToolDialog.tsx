@@ -1,6 +1,6 @@
 import * as D from '@radix-ui/react-dialog'
 import { Copy, Loader2, Terminal, TerminalSquare, X } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { fmtDuration } from '@/lib/tasks'
@@ -21,11 +21,7 @@ const termShell =
   'fixed top-1/2 left-1/2 z-50 flex max-h-[min(900px,calc(100dvh-2rem))] min-h-[min(360px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none'
 
 /** 复制成功都说一句复制了什么：命令和输出共用一个按钮时，光说「已复制」分不清 */
-const copy = (text: string, done: string) =>
-  navigator.clipboard
-    ?.writeText(text)
-    .then(() => toast.success(done))
-    .catch(() => {})
+const copy = (text: string, done: string) => void copyText(text, { done })
 
 /** 还在跑时光标一直闪：比只有一个转圈更能看出输出还在往下走 */
 function Caret() {

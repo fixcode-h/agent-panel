@@ -260,6 +260,8 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址，`{dir}` 换成面板这一轮自己的临时目录（数据目录的 `cache/cli-run/` 下，绝对路径，用完删掉）。
 路径以 `{dir}/` 开头的文件写进这个临时目录，不进用户的项目。文件写不成时（目录只读、被占用）参数也不加，这一轮没有面板的工具，
 对话里会显示一行提示，但照常执行。
+`vars` 是模板里可以填的变量（数值或字符串，例如 Pi 桥接的 `stepTimeout` / `attempts`）：生产值写在定义里，
+脚本不自己写死；测试调 `mcpConfig` 时传覆盖值换成小值，不用真等到生产的秒数。`{name}` / `{url}` / `{dir}` 先填，不会被 `vars` 覆盖。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
@@ -279,7 +281,8 @@ http 客户端，没有这一步。
 也可以写一个扩展做桥接：`shared/clis/pi.json` 把面板的工具交给 Pi 用的是一个扩展脚本 `{dir}/agent-panel-{name}.ts`，
 启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具（直接声明给模型），调用时转发过去，用 `-e` 按绝对路径加载。
 扩展加载有一份总预算 `LOAD_BUDGET_MS = 10000`，握手 `initialize` 和列工具 `tools/list` 共用它：每一步单次最多
-`STEP_TIMEOUT_MS = 4000`、最多试 `STEP_ATTEMPTS = 2` 次（超时再试一次），但两步加起来不超这份预算。整体不能调大：
+`STEP_TIMEOUT_MS = 4000`、最多试 `STEP_ATTEMPTS = 2` 次（超时再试一次），但两步加起来不超这份预算
+（这两个值在 `shared/clis/pi.json` 的 `mcp.vars` 里，模板里是 `{stepTimeout}` / `{attempts}` 占位符，测试注入小值）。整体不能调大：
 Pi 启动时会等扩展加载完才读 stdin，拖长会让面板那边看到「`get_state` 没有响应」。面板忙时（压缩上下文、写大对话）
 `tools/list` 会晚几秒才回，一次没等到就整轮丢掉全部面板工具，模型报 `Tool set_plan not found`，只能退化成用普通命令跑验证。
 最坏 10 秒，要留在 `get_state` 的默认超时（`server/exec/rpc/session.ts` 的 `REQUEST_TIMEOUT_MS = 15000`）之内，

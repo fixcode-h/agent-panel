@@ -1387,6 +1387,7 @@ export const StopReason = z.enum([
   'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
   'switch', // 换 CLI / 模型 / 角色，这一轮重启
   'archive', // 归档
+  'delete', // 删除对话（进回收站时结束）
   'restart', // 面板重启、服务退出
   'presence', // 页面切走、宽限期到了，CLI 不再等下一句
   'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
@@ -1933,6 +1934,12 @@ export const TaskData = z.object({
   childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /**
+   * 进回收站的时刻：删除只做标记，任务记录、对话内容、独立分支、附件、对话目录都先留着，
+   * 超过保留期（见 shared/task.ts 的 TRASH_RETENTION_DAYS）才由清理任务物理删除。
+   * 列表、计数、搜索一律按 taskGone / taskDeleted 排掉它，不在各处再写一次 `!deletedAt`
+   */
+  deletedAt: z.string().optional(),
   /**
    * 子对话已经解决：只用于标记（列表归到「已完成」并显示标记），不改 status、不停 CLI，
    * 父对话的等待逻辑和 childrenWorking 聚合都不看它

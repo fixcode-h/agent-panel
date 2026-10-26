@@ -79,6 +79,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { clip } from './text.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -718,7 +719,6 @@ export interface LessonInput {
 
 const MAX_DEPTH = 6
 const MAX_OUTPUT = 4000
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 const now = () => new Date().toISOString()
 
 /** 这次运行的工作流运行记录（新架构按运行隔离共享状态和消息）；旧任务没有 */

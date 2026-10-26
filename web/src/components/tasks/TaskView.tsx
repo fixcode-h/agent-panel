@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { t } from '@shared/i18n'
+import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anchor'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from '@/lib/toast'
 import {
@@ -78,6 +79,7 @@ import {
   taskWaitText,
   taskSummary,
   withTaskModel,
+  TRASH_RETENTION_DAYS,
   type ChildWait,
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
@@ -404,6 +406,29 @@ export function TaskView({
     nav.go(r)
   }
   const [task, setTask] = useState<Task | null>(null)
+  // 从搜索结果点进来时定位到那条消息：消息是异步加载的（被折叠的过程还要先展平），多试几次再放弃。
+  // 跳转成功后地址里的 msg 还在，同一个 (对话, 消息) 只定位一次：不然每来一条新消息（条数变了）都会把视图滚回那条旧命中
+  const jumpMsg = nav.route.msg
+  const anchored = useRef('')
+  useEffect(() => {
+    if (!jumpMsg || !task) return
+    const mark = `${task.id}:${jumpMsg}`
+    if (anchored.current === mark) return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const attempt = () => {
+      if (jumpToMessage(jumpMsg)) {
+        anchored.current = mark
+        return
+      }
+      if (++tries >= ANCHOR_TRIES) return
+      timer = setTimeout(attempt, ANCHOR_RETRY_MS)
+    }
+    attempt()
+    return () => clearTimeout(timer)
+    // 依赖只看 id 和消息条数：整个 task 每个增量都是新对象，按它比会每 200ms 重新定位一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpMsg, task?.id, task?.messages.length])
   // 打开这条对话的加载日志：各步在请求真正发起 / 返回的地方记，界面按它逐行打日志
   const trace = useLoadTrace()
   // 任务数据到了以后日志盖在对话上淡出，淡完就卸载（不一直占着屏幕）
@@ -1208,7 +1233,7 @@ export function TaskView({
     try {
       await api.deleteTask(task.id)
       removeTask(task.id)
-      toast.success(t('已删除任务'))
+      toast.success(t('已移进回收站，{days} 天内可以恢复', { days: TRASH_RETENTION_DAYS }))
       go(project ? { page: 'projects', id: project.id } : { page: 'chat' })
     } catch (e) {
       toast.error((e as Error).message)
@@ -1889,6 +1914,7 @@ export function TaskView({
                     ) : b.m.role === 'user' ? (
                       <UserMessage
                         key={b.m.id}
+                        anchorId={b.m.id}
                         text={b.m.text}
                         at={b.m.at}
                         attachments={b.m.attachments}
@@ -2210,7 +2236,10 @@ export function TaskView({
               open={deleting}
               onOpenChange={setDeleting}
               title={t('删除任务「{title}」？', { title: task.title })}
-              description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
+              description={t(
+                '对话记录会移进回收站，{days} 天内可以在设置 →「数据」→ 回收站里恢复；已经改动的文件不会撤销。',
+                { days: TRASH_RETENTION_DAYS },
+              )}
               onConfirm={remove}
             />
             <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />

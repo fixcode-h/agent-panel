@@ -6,12 +6,13 @@
  * 服务端不支持 Range（不返回 206）时退回单连接流式写入，不能续传但至少能下。
  */
 import { createWriteStream, existsSync } from 'node:fs'
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { t } from '../shared/i18n.ts'
 import { netFetch, type NetInit } from './net.ts'
+import { readJson } from './store.ts'
 
 /** 和 netFetch 一样用：下载的每处请求都经过它，测试可以替换 */
 export type NetFetch = (url: string, init?: NetInit) => Promise<Response>
@@ -159,12 +160,9 @@ async function probe(url: string, headers: Record<string, string>, signal: Abort
 }
 
 async function readState(file: string) {
-  try {
-    const s = JSON.parse(await readFile(file, 'utf8')) as PartState
-    return s && typeof s.size === 'number' && Array.isArray(s.done) ? s : undefined
-  } catch {
-    return undefined
-  }
+  // 读不到、坏了、内容不对都当作没下过；坏文件由 readJson 归档到 cache/broken，下次从头下
+  const s = (await readJson(file).catch(() => undefined)) as PartState | undefined
+  return s && typeof s.size === 'number' && Array.isArray(s.done) ? s : undefined
 }
 
 async function writeState(file: string, state: PartState) {

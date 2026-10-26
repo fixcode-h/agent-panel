@@ -3,6 +3,7 @@ import { toast } from '@/lib/toast'
 import { Download, FolderOpen, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { DATA_KINDS, type DataKind, type DataUsage } from '@shared/data'
 import { MEMORY_ASK, MEMORY_TOPIC, formatBytes, formatSampleTime, formatUptime, memoryReport } from '@shared/memory'
+import { pad2 } from '@shared/datetime'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
@@ -13,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { MemoryChart } from '@/components/settings/MemoryChart'
+import { TrashSection } from '@/components/settings/TrashSection'
 import { t } from '@shared/i18n'
 
 /** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
@@ -120,7 +122,7 @@ export function DataSection() {
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
       const a = document.createElement('a')
       const d = new Date()
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+      const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`
       a.href = URL.createObjectURL(blob)
       a.download = `agent-panel-${t('数据')}-${stamp}.json`
       a.click()
@@ -281,6 +283,9 @@ export function DataSection() {
           })}
         </div>
       </section>
+
+      {/* 回收站：删掉的对话先放 7 天，这里能恢复或永久删除 */}
+      <TrashSection />
 
       {/* 内存：面板自己的进程 + 它拉起的 CLI 子进程，按采样间隔画曲线；AI 分析把这份采样交给本机 CLI 体检 */}
       <section className="flex flex-col gap-2">

@@ -47,22 +47,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   ])
   const name = await dlg.getByLabel('名称').inputValue()
   if (name !== '今日工作') errors.push(`新建计划：名称默认是「${name}」，不是「今日工作」`)
-  const daily = await dlg.getByRole('radio', { name: '每天' }).getAttribute('aria-checked')
-  if (daily !== 'true') errors.push('新建计划：重复默认不是「每天」')
+  /** 重复下拉当前显示的文案 */
+  const repeatText = async () => (await dlg.getByLabel('重复').innerText()).replace(/\s+/g, ' ').trim()
+  if (!(await repeatText()).includes('每天')) errors.push('新建计划：重复默认不是「每天」')
   const atValue = await dlg.getByLabel('执行时间').inputValue()
   if (!/^\d{4}-\d{2}-\d{2}T19:00$/.test(atValue)) errors.push(`新建计划：执行时间默认不是 19:00（${atValue}）`)
   // 改乱之后一键填回模板
   await dlg.getByLabel('名称').fill('随便写')
-  await dlg.getByRole('radio', { name: '只执行一次' }).click()
+  await dlg.getByLabel('重复').click()
+  await p.getByRole('option', { name: '单次' }).click()
   await dlg.getByRole('button', { name: '填入「今日工作」模板' }).click()
   if ((await dlg.getByLabel('名称').inputValue()) !== '今日工作') errors.push('填入模板：名称没有填回「今日工作」')
-  if ((await dlg.getByRole('radio', { name: '每天' }).getAttribute('aria-checked')) !== 'true')
-    errors.push('填入模板：重复没有填回「每天」')
+  if (!(await repeatText()).includes('每天')) errors.push('填入模板：重复没有填回「每天」')
+
+  // 每周：切到「每周」后出现星期多选，默认选上执行时间那天，可以再勾几天（多选）
+  await dlg.getByLabel('重复').click()
+  await p.getByRole('option', { name: '每周' }).click()
+  const weekdays = dlg.getByRole('group', { name: '每周哪几天' })
+  await weekdays.waitFor({ timeout: 3000 }).catch(() => errors.push('新建计划：选「每周」后没有出现星期选择'))
+  if (await weekdays.count()) {
+    const pressed = await weekdays.getByRole('button', { pressed: true }).count()
+    if (pressed !== 1) errors.push(`新建计划：每周默认应该选中执行时间那天（实际 ${pressed} 天）`)
+    for (const day of ['周一', '周三', '周五']) {
+      await weekdays
+        .getByRole('button', { name: day, exact: true })
+        .click()
+        .catch(() => errors.push(`新建计划：星期选择里没有「${day}」`))
+    }
+  }
   await dlg.getByLabel('名称').fill('下午茶提醒')
   await dlg.getByLabel('到点后执行的对话内容').fill('提醒大家喝水和起来走走')
   await dlg.getByRole('button', { name: '保存' }).click()
   await dlg.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => errors.push('新建计划：保存后弹窗没有关上'))
   await check(p, '新建后', ['下午茶提醒'])
+  // 每周计划的徽标：卡片上看得到「每周」，不再显示成「每天」或「单次」
+  const weeklyCard = p.locator('li', { hasText: '下午茶提醒' })
+  const weeklyText = await weeklyCard.innerText().catch(() => '')
+  if (!weeklyText.includes('每周')) errors.push(`新建计划：每周计划的徽标不是「每周」（${weeklyText.slice(0, 80)}）`)
+  if (weeklyText.includes('单次')) errors.push('新建计划：每周计划还显示「单次」徽标')
 
   const row = p.locator('li', { hasText: '下午茶提醒' })
   // 编辑：改完名字列表跟着变

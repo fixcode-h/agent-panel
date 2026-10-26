@@ -19,6 +19,37 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('工作总结：左侧导航里没有入口'))
   await check(p, '工作总结-列表', ['工作总结', '项目', '生成报告'])
 
+  // 时间范围：默认今天（和改造前一致），可以切昨天 / 近 7 天 / 自定义日期
+  const range = p.getByRole('radiogroup', { name: '总结范围' })
+  await range.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：没有时间范围选择'))
+  if (await range.count()) {
+    const checked = async (name) => (await range.getByRole('radio', { name }).getAttribute('aria-checked')) === 'true'
+    if (!(await checked('今天'))) errors.push('工作总结：默认范围不是「今天」')
+    await range.getByRole('radio', { name: '近 7 天' }).click()
+    await p
+      .getByText('不挑就是近 7 天全部', { exact: false })
+      .first()
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：切到「近 7 天」后说明文字没跟着变'))
+    // 自定义范围要能选起止日期
+    await range.getByRole('radio', { name: '自定义' }).click()
+    await p
+      .getByLabel('开始日期')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：选「自定义」后没有开始日期'))
+    await p
+      .getByLabel('结束日期')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：选「自定义」后没有结束日期'))
+    await range.getByRole('radio', { name: '今天' }).click()
+    await p
+      .getByText('不挑就是今天全部', { exact: false })
+      .first()
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('工作总结：切回「今天」后说明文字没恢复'))
+  }
+  await check(p, '工作总结-范围切换')
+
   // 项目选择器：下拉选一个再点「增加」，下拉本身不会直接算选中
   const picker = p.getByLabel('选择要总结的项目')
   await picker.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：没有项目下拉'))
@@ -158,6 +189,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
   if (!copied.includes('## 三、今日小结')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
   await check(p, '工作总结-复制')
+
+  // 换范围不能把上一段的报告当成这一段的：切到近 7 天后当前报告消失，旧报告还在「最近的报告」里
+  await range.getByRole('radio', { name: '近 7 天' }).click()
+  await p
+    .locator('section', { hasText: '今天的报告' })
+    .first()
+    .waitFor({ state: 'detached', timeout: 3000 })
+    .catch(() => errors.push('工作总结：切到近 7 天后仍然显示「今天的报告」'))
+  await p
+    .getByText('最近的报告')
+    .first()
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('工作总结：切范围后「最近的报告」列表没了'))
+  await range.getByRole('radio', { name: '今天' }).click()
+  await check(p, '工作总结-换范围不串报告')
 
   // 项目在别的地方被删掉：回到这一页时它从选择里消失并提示一次，不静默也不拿着错数据去生成。
   // 演示版的数据库在 localStorage 里（改完要整页导航，只改 hash 会被内存里的数据盖回去）

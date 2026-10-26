@@ -364,7 +364,7 @@ const MessageBody = memo(
   }: BodyProps) {
     const noHeader = !!compact || !!hideAuthor
     return (
-      <div className="flex gap-3">
+      <div data-msg={m.id} className="flex gap-3">
         {noHeader ? (
           <span className="w-[26px] shrink-0" />
         ) : icon ? (
@@ -822,6 +822,8 @@ export function FoldedRun({
   foldId?: string
 }) {
   const [open, setOpen] = useState(() => (foldId ? segOpenOf(foldId) : false))
+  // 折叠段的 id 列表：按内容签名缓存（见下面 toggle 的说明）
+  const foldIds = useRef({ key: '', value: '' })
   const { agents } = useData()
   const { modelOf } = useAgentView()
   const all = (
@@ -847,9 +849,15 @@ export function FoldedRun({
       </>
     )
   const before = msgs.slice(0, last)
+  // 搜索跳转要知道「目标在哪一段」（见 message-anchor）：把这一段的 id 挂在开关上。
+  // 直接每次渲染都 join 会在长对话里每 200ms 拼一次上千个 id（实测会拖慢渲染），所以按内容签名缓存：
+  // 流式输出时末尾消息还是同一条，签名不变就沿用上次的字符串（引用也不变，React 比属性时直接命中）
+  const idsKey = `${msgs.length}|${msgs[0]?.id ?? ''}|${msgs[msgs.length - 1]?.id ?? ''}`
+  if (foldIds.current.key !== idsKey) foldIds.current = { key: idsKey, value: msgs.map((m) => m.id).join(' ') }
   // 折叠开关只跟自己：它放在第一条回复的名字下面，不跟运行区一起挪（运行区已经到总结下面了）
   const toggle = (
     <button
+      data-fold-msgs={foldIds.current.value}
       onClick={() => setOpen(foldId ? toggleSegOpen(foldId) : !open)}
       aria-expanded={open}
       title={open ? t('收起过程') : t('展开过程')}

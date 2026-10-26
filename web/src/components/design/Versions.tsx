@@ -4,6 +4,7 @@ import { Bot, Eye, History, Loader2, RotateCcw, Save, Trash2, X } from 'lucide-r
 import type { DesignVersion, DesignVersionMeta } from '@shared/design'
 import type { Component, Vec2, Widget } from '@shared/umg'
 import { api, type DesignFull } from '@/lib/api'
+import { hhmm } from '@shared/datetime'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,8 +15,7 @@ import type { Device } from '@shared/web'
 
 const when = (at: string) => {
   const d = new Date(at)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getMonth() + 1}/${d.getDate()} ${hhmm(d)}`
 }
 
 /**

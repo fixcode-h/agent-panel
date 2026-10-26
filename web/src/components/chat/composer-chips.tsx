@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type RefObject } from 'react'
 import { Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import {
   chipMarker,
   chips,
@@ -129,10 +130,7 @@ export function useComposerChips({
   /** 复制文字（文件路径、引用原文） */
   const copyTextOf = useCallback((text: string, done: string) => {
     if (!text) return toast.error(t('这张卡片没有可复制的内容'))
-    void navigator.clipboard.writeText(text).then(
-      () => toast.success(done),
-      (e: Error) => toast.error(t('复制失败：{msg}', { msg: e.message })),
-    )
+    void copyText(text, { done, fail: (msg) => t('复制失败：{msg}', { msg }) })
   }, [])
   /**
    * 一张卡片复制到剪贴板时写什么：和右键菜单的两项一样——引用写带标记的原文（粘回输入框还原成同一张卡片），

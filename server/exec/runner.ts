@@ -56,6 +56,7 @@ import {
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
 import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
+import { clip } from '../../shared/text.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -470,8 +471,6 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   fn(r)
   return true
 }
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
 export function estTokens(s: string) {

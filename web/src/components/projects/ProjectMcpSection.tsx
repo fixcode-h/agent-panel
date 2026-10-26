@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import { joinArgs, splitArgs } from '@/lib/utils'
 import { openAiFix } from '@/lib/ai-fix'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Textarea } from '@/components/ui/input'
@@ -159,9 +160,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
     return (
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <Intro />
-        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
-          {t('先创建项目，再管这个项目的 MCP 配置。')}
-        </p>
+        <EmptyPanel size="xl">{t('先创建项目，再管这个项目的 MCP 配置。')}</EmptyPanel>
       </div>
     )
 
@@ -190,9 +189,9 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
       ) : (
         <>
           {!project.path ? (
-            <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
+            <EmptyPanel size="md">
               {t('这个项目还没设本地目录，所以识别不到项目里的配置。在「常规」里填好目录并保存后再回来。')}
-            </p>
+            </EmptyPanel>
           ) : (
             <section className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -294,9 +293,9 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
               </Button>
             </div>
             {!data.servers.length ? (
-              <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
+              <EmptyPanel size="xl">
                 {t('还没有面板管理的 MCP 工具：点右上角「添加」，或导入上面识别到的配置。')}
-              </p>
+              </EmptyPanel>
             ) : (
               <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
                 {data.servers.map((s) => (

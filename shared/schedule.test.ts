@@ -2,18 +2,22 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   afterFail,
+  alignScheduleAt,
   afterMiss,
   afterRun,
   fromLocalInput,
   groupLabel,
   groupOf,
   groupSchedules,
+  isoWeekday,
   nextDailyAt,
+  nextRunAt,
   nextRunLabel,
   outcomeLabel,
   outcomeOf,
   pickDue,
   relativeFuture,
+  repeatLabel,
   sameMinute,
   SCHEDULE_MISS_MS,
   toLocalInput,
@@ -33,6 +37,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   projectId: '',
   agentId: '',
   repeat: 'once',
+  weekdays: [],
   at: at(2026, 5, 1, 10),
   enabled: true,
   status: 'pending',
@@ -271,4 +276,120 @@ test('同一分钟算没改时间：带秒的老数据在弹窗里编辑不会�
   assert.equal(sameMinute(base, at(2026, 5, 1, 19, 31)), false)
   assert.equal(sameMinute(base, at(2026, 5, 2, 19, 30)), false)
   assert.equal(sameMinute('不是时间', base), false)
+})
+
+test('每周：按选中的星期跨周推，多选时找下一个符合的星期', () => {
+  // 2026-05-03 是周日，只选周日：下一次是下周日同一时刻
+  const sunday = at(2026, 5, 3, 19)
+  assert.equal(
+    nextRunAt({ repeat: 'weekly', at: sunday, weekdays: [7] }, Date.parse(sunday) + 1000),
+    at(2026, 5, 10, 19),
+  )
+  // 选周一、三、五：周五 19:00 执行完，下一次是下周一
+  const friday = at(2026, 5, 1, 19)
+  assert.equal(
+    nextRunAt({ repeat: 'weekly', at: friday, weekdays: [1, 3, 5] }, Date.parse(friday) + 1000),
+    at(2026, 5, 4, 19),
+  )
+  // 还没到第一次执行时间：直接返回 at（首次时间由用户指定）
+  assert.equal(nextRunAt({ repeat: 'weekly', at: friday, weekdays: [1, 3, 5] }, Date.parse(friday) - 1000), friday)
+  // 没选星期：按 at 那天的星期（周三 → 下周三）
+  const wednesday = at(2026, 5, 6, 19)
+  assert.equal(
+    nextRunAt({ repeat: 'weekly', at: wednesday, weekdays: [] }, Date.parse(wednesday) + 1000),
+    at(2026, 5, 13, 19),
+  )
+})
+
+test('工作日：周五晚上跳过周末到下周一，跨月也对，周末不执行', () => {
+  const friday = at(2026, 5, 29, 19)
+  assert.equal(
+    nextRunAt({ repeat: 'workdays', at: friday, weekdays: [] }, Date.parse(friday) + 1000),
+    at(2026, 6, 1, 19),
+  )
+  const monday = at(2026, 5, 4, 19)
+  assert.equal(
+    nextRunAt({ repeat: 'workdays', at: monday, weekdays: [] }, Date.parse(monday) + 1000),
+    at(2026, 5, 5, 19),
+  )
+  // 用户把时间改到周六：下一次是下周一
+  const saturday = at(2026, 5, 2, 9)
+  assert.equal(
+    nextRunAt({ repeat: 'workdays', at: saturday, weekdays: [] }, Date.parse(saturday) + 1000),
+    at(2026, 5, 4, 9),
+  )
+})
+
+test('本地时间边界：23:59 执行完推到次日 23:59，不偏一小时', () => {
+  const late = at(2026, 5, 1, 23, 59)
+  const next = nextRunAt({ repeat: 'daily', at: late, weekdays: [] }, Date.parse(late) + 30_000)
+  assert.equal(next, at(2026, 5, 2, 23, 59))
+  const d = new Date(next)
+  assert.equal(d.getDate(), 2)
+  assert.equal(d.getHours(), 23)
+  assert.equal(d.getMinutes(), 59)
+})
+
+test('每周 / 工作日：执行、错过、启动失败后都推到下一次，状态保持待执行', () => {
+  const weekly = schedule({ repeat: 'weekly', weekdays: [1], at: at(2026, 5, 4, 19) })
+  const now = Date.parse(weekly.at) + 1000
+  const ran = { ...weekly, ...afterRun(weekly, now, 'task-1') }
+  assert.equal(ran.status, 'pending')
+  assert.equal(ran.at, at(2026, 5, 11, 19))
+  const missed = { ...weekly, ...afterMiss(weekly, now) }
+  assert.equal(missed.status, 'pending')
+  assert.equal(missed.missedAt, weekly.at)
+  assert.equal(missed.at, at(2026, 5, 11, 19))
+  const failed = { ...weekly, ...afterFail(weekly, now, '项目不存在') }
+  assert.equal(failed.status, 'pending')
+  assert.equal(failed.at, at(2026, 5, 11, 19))
+
+  // 工作日：周五启动失败 → 下周一，不会每轮询一次就重试
+  const work = schedule({ repeat: 'workdays', at: at(2026, 5, 1, 19) })
+  const wnow = Date.parse(work.at) + 1000
+  assert.equal({ ...work, ...afterRun(work, wnow, 't') }.at, at(2026, 5, 4, 19))
+  assert.equal({ ...work, ...afterMiss(work, wnow) }.at, at(2026, 5, 4, 19))
+})
+
+test('重复规则的徽标和 ISO 星期', () => {
+  assert.equal(repeatLabel('once'), '单次')
+  assert.equal(repeatLabel('daily'), '每天')
+  assert.equal(repeatLabel('weekly'), '每周')
+  assert.equal(repeatLabel('workdays'), '工作日')
+  assert.equal(isoWeekday(new Date(2026, 4, 4)), 1)
+  assert.equal(isoWeekday(new Date(2026, 4, 3)), 7)
+})
+
+test('每周 / 工作日：at 是很多年以前时也快进到未来最近的一次，不返回过去', () => {
+  // 2026-10-20 是周二；2023-05-01 是周一。三年前的 weekly 现在才打开面板
+  const now = Date.parse(at(2026, 10, 20, 10))
+  const weekly = nextRunAt({ repeat: 'weekly', at: at(2023, 5, 1, 19), weekdays: [1] }, now)
+  assert.equal(weekly, at(2026, 10, 26, 19))
+  assert.ok(Date.parse(weekly) > now)
+  const work = nextRunAt({ repeat: 'workdays', at: at(2023, 5, 1, 19), weekdays: [] }, now)
+  assert.equal(work, at(2026, 10, 20, 19), '今天周二 19:00 还没到')
+  assert.ok(Date.parse(work) > now)
+})
+
+test('对齐执行时间：weekly / workdays 的首次执行也落在规则允许的星期', () => {
+  // 2026-05-02 是周六：工作日的计划对齐到下周一同一时刻
+  assert.equal(alignScheduleAt({ repeat: 'workdays', at: at(2026, 5, 2, 9), weekdays: [] }), at(2026, 5, 4, 9))
+  // 只选周一、时间填周三：对齐到下周一
+  assert.equal(alignScheduleAt({ repeat: 'weekly', at: at(2026, 5, 6, 9), weekdays: [1] }), at(2026, 5, 11, 9))
+  // 已经符合规则：原样返回（同一时刻）
+  const monday = at(2026, 5, 4, 9)
+  assert.equal(alignScheduleAt({ repeat: 'weekly', at: monday, weekdays: [1] }), monday)
+  // 单次和每天哪天都行，不动
+  assert.equal(alignScheduleAt({ repeat: 'daily', at: at(2026, 5, 2, 9), weekdays: [] }), at(2026, 5, 2, 9))
+})
+
+test('每周 / 工作日：首次执行时间没到也只返回符合星期的日子', () => {
+  const now = Date.parse(at(2026, 5, 1, 10)) // 周五
+  // 未来的周六（工作日的计划不允许）：下一次是下周一同一时刻，而不是周六
+  assert.equal(nextRunAt({ repeat: 'workdays', at: at(2026, 5, 2, 9), weekdays: [] }, now), at(2026, 5, 4, 9))
+  // 未来且符合规则：原样返回
+  const monday = at(2026, 5, 4, 9)
+  assert.equal(nextRunAt({ repeat: 'weekly', at: monday, weekdays: [1] }, now), monday)
+  // 未来的周三、只选周一：下周一
+  assert.equal(nextRunAt({ repeat: 'weekly', at: at(2026, 5, 6, 9), weekdays: [1] }, now), at(2026, 5, 11, 9))
 })
