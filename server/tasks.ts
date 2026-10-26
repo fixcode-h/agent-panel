@@ -1017,7 +1017,7 @@ export function tasksApi(deps: {
               role: 'system',
               agentId: '',
               step: '',
-              text: t('后台命令的结果两次都没能交给 CLI，已经记在对话里，下一轮会处理'),
+              text: t('后台命令的结果两次都没能交给 Agent，已经记在对话里，下一轮会处理'),
               tools: [],
               alert: makeAlert('warn', (err as Error).message, 'delivery'),
               at: new Date().toISOString(),
@@ -3142,7 +3142,7 @@ export function tasksApi(deps: {
     // 「没有响应」那一行记下结果：停下的说明是临时的，开新一轮时会被去掉
     for (const m of entry.task.messages)
       if (m.alert?.kind === 'no_response' && !m.alert.resolved)
-        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 CLI，接回会话重新开始') }
+        m.alert = { ...m.alert, resolved: t('收到新消息时停掉了卡住的 Agent，接回会话重新开始') }
     stopTask(id, 'stalled')
     if (entry.done) await entry.done
     // 停下的这段时间里别的消息已经开了新的一轮：交给那一轮
@@ -3755,7 +3755,7 @@ export function tasksApi(deps: {
     const settings = await getSettings()
     const cliId = defaultCli(settings)
     const def = getCli(cliId)
-    if (!def) return bad(c, t('没有可用的 CLI'))
+    if (!def) return bad(c, t('没有可用的 Agent'))
     const cs = cliSettings(settings, cliId)
     const run = agentRun({ cli: cliId, model: '', effort: '' }, settings)
     const cwd = path.join(tmpdir(), 'agent-panel-process-review')
@@ -4172,7 +4172,7 @@ export function tasksApi(deps: {
     } catch (e) {
       if (entry) release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
-      alertOn(task.id, 'cli_exit', t('提前启动 CLI 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
+      alertOn(task.id, 'cli_exit', t('提前启动 Agent 失败：发消息时会再启动一次，仍然失败会在这里报错'))(e)
       return task
     }
   }

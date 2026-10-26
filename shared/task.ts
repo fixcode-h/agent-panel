@@ -1242,7 +1242,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'parent':
       return t('父对话结束时一起结束')
     case 'switch':
-      return t('换 CLI / 模型时中断')
+      return t('换 Agent / 模型时中断')
     case 'archive':
       return t('归档时结束')
     case 'restart':
@@ -1256,7 +1256,7 @@ export function stopReasonText(reason: StopReason | undefined): string {
     case 'finish':
       return t('做完后收尾')
     case 'stalled':
-      return t('CLI 没有响应，面板重启了它')
+      return t('Agent 没有响应，面板重启了它')
     default:
       return t('已暂停')
   }
@@ -1269,11 +1269,11 @@ export function stopReasonText(reason: StopReason | undefined): string {
 export function deliveryText(how: DeliveryHow | undefined): string {
   switch (how) {
     case 'wait':
-      return t('已交给 CLI，这一轮接着处理')
+      return t('已交给 Agent，这一轮接着处理')
     case 'steer':
       return t('已插进当前这一轮')
     case 'notes':
-      return t('已交给正在执行的 CLI，它会在这一轮里读取')
+      return t('已交给正在执行的 Agent，它会在这一轮里读取')
     case 'next-node':
       return t('已交给工作流里下一个开始的节点')
     case 'held':
@@ -1283,7 +1283,7 @@ export function deliveryText(how: DeliveryHow | undefined): string {
     case 'next':
       return t('这一轮已结束，按新的一轮处理')
     case 'restart':
-      return t('CLI 没有响应，已重启并按新的一轮处理')
+      return t('Agent 没有响应，已重启并按新的一轮处理')
     default:
       return ''
   }
@@ -1576,6 +1576,24 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
 
 /** 任务对外的状态：见 convState */
 export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
+
+/**
+ * 这一轮做完了、用户还没打开看过：侧栏橙点、项目首页「需要你处理」都读它。
+ * 交出去的后台命令还没跑完时不算：这一轮说完了但对话还在等结果。
+ * 只是「未读」这个历史事实，能不能画橙点还要看下面的 taskDoneDot。
+ */
+export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jobs?: Task['jobs'] }) =>
+  !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length
+
+/**
+ * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
+ * 未读是上一轮完成时留下的历史事实，对话后来又跑起来（转圈、等你处理、失败、被停）时它还在，
+ * 两个一起画就成了「既完成未看、又还在跑」。当前打开的那个对话也不画。
+ */
+export function taskDoneDot(x: TaskFactsInput, unread: boolean, viewing = false) {
+  if (!unread || viewing) return false
+  return taskState(x) === 'done'
+}
 
 /** 任务还在运行（不能被回收、失活）：见 convActive */
 export const taskActive = (x: TaskFactsInput) => convActive(taskState(x))

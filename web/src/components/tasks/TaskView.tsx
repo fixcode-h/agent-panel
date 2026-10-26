@@ -933,7 +933,7 @@ export function TaskView({
   const forceStop = async () => {
     try {
       apply(await api.stopTask(task.id, true))
-      toast.success(t('已强制停止，CLI 进程已结束'))
+      toast.success(t('已强制停止，Agent 进程已结束'))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -1904,7 +1904,7 @@ export function TaskView({
               onOpenChange={setForceAsk}
               title={t('强制停止这个对话？')}
               description={t(
-                '正在执行的这一轮会被停下，CLI 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。',
+                '正在执行的这一轮会被停下，Agent 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。',
               )}
               confirmText={t('强制停止')}
               onConfirm={async () => {
@@ -2154,7 +2154,7 @@ function ChildrenBar({
                   : t('子对话 {n}', { n: total })
               }
               onClick={() => setOpen((v) => !v)}
-              title={cliKids ? t('CLI 存活：{n} 个子对话', { n: cliKids }) : undefined}
+              title={cliKids ? t('Agent 存活：{n} 个子对话', { n: cliKids }) : undefined}
               className="flex min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
             >
               <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />

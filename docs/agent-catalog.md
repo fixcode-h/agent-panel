@@ -57,6 +57,12 @@
 | `deps`         | 依赖与安全       | 依赖体检与升级             |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                  |
 | `vcs`          | 版本控制（必备） | 版本控制与交付收尾         | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
 | `blender`      | Blender 建模     | 建模、动画与质检           |      | blender                                                              | `stage`（含「质检」）                                                           |
+| `worklog`      | 每日工作总结     | 按天汇总报告（只读）       |      | general                                                              | `day` `projects`                                                                |
+
+`worklog`（每日工作总结）是唯一只输出报告的角色：`docsync` 负责写文档、`explorer` 只读调研代码、`orchestrator` 负责调度，
+没有谁会按天把各项目执行过的对话压成一份报告，所以单独新增；它不动代码（`canPlan` / `canDelegate` 都关、不引 Skill）。
+它挂进「通用项目」的 `members`：`ensureProjectAgents` 启动时按 `builtinAgentKeys(GENERAL)` 补建角色，
+挂在这里才能保证它跟着最基础的安装集合一起建出来。
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
 旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 的 `dropLegacyAgent`）。

@@ -297,8 +297,8 @@ export const EN_SETTINGS: Record<string, string> = {
   回到最新: 'Back to latest',
   面板进程和子进程的内存曲线: 'Memory of the panel process and its child processes',
   面板内存分析: 'Panel memory analysis',
-  '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 CLI（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。':
-    'Panel is the memory of the Node process running the panel itself; Processes is the combined memory of the coding CLIs it launched (running tasks). When it cannot be read it shows "not collected" instead of 0. Samples are taken at the interval above and kept for two hours; right-drag the chart to look further back, drag to the rightmost edge to return to the latest.',
+  '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 Agent（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。':
+    'Panel is the memory of the Node process running the panel itself; Processes is the combined memory of the coding agents it launched (running tasks). When it cannot be read it shows "not collected" instead of 0. Samples are taken at the interval above and kept for two hours; right-drag the chart to look further back, drag to the rightmost edge to return to the latest.',
   '{n} 个文件': '{n} files',
   清理: 'Clear',
   '已清理{name}': 'Cleared {name}',
@@ -1049,8 +1049,8 @@ export const EN_SETTINGS: Record<string, string> = {
   删除这条教训: 'Delete this lesson',
   规则: 'Rule',
   '一句话写该怎么做，不是发生了什么': 'One sentence on what to do, not what happened',
-  '例如：CLI 才有的能力写进 CLI 的配置字段，代码按字段走':
-    "e.g. CLI-specific capabilities go into the CLI's config fields; code reads the fields",
+  '例如：Agent 才有的能力写进 Agent 的配置字段，代码按字段走':
+    "e.g. agent-specific capabilities go into the agent's config fields; code reads the fields",
   '具体到文件、字段、做法和不要做的事': 'Be specific: files, fields, what to do and what not to do',
   起因: 'Cause',
   '哪次返工、怎么被纠正的': 'Which rework, and how it was corrected',
@@ -1192,8 +1192,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰、空闲两档，空闲价是高峰价的一半；北京时间周一至周五 9:00-12:00、14:00-18:00 为高峰，其余时段（含周末、法定节假日）为空闲。每一轮按它开始的时间归档。缓存写入官方没有单列，按未命中输入价计。':
     'Estimated from the official {model} API prices (per million tokens, {date}): input {input}, output {output}, cache hit {hit}, cache write {write}. The vendor has peak and off-peak tiers, with off-peak at half the peak price: peak is 9:00-12:00 and 14:00-18:00 Beijing time on weekdays, everything else (weekends and public holidays included) is off-peak. Each turn is attributed by the time it started. Cache writes are not priced separately by the vendor, so they are billed at the cache-miss input price.',
   '这个计价模型没有配置单价，费用按 0 处理。': 'This pricing model has no price configured, so cost is treated as 0.',
-  'CLI 上报的费用（{cost}）只作对照，不参与合计。':
-    'The cost reported by the CLI ({cost}) is for comparison only and is not included in the total.',
+  'Agent 上报的费用（{cost}）只作对照，不参与合计。':
+    'The cost reported by the agent ({cost}) is for comparison only and is not included in the total.',
   '按 {model} 单价估算': 'Estimated with {model} prices',
   '高峰 {tokens} · {cost}': 'Peak {tokens} · {cost}',
   '空闲 {tokens} · {cost}': 'Off-peak {tokens} · {cost}',

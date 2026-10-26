@@ -418,7 +418,7 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
   }
   jobs.set(job.id, job)
   const gen = draftFor(input, ctx, text)
-  const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
+  const full = `（在线演示：没有调用真实 Agent，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`
   // 消息流和真实 CLI 一样：一段思考 + 一次读取工具，然后是说明文字
