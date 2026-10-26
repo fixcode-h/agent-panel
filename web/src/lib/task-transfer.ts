@@ -6,8 +6,10 @@ import {
   analysisReport,
   checkExportSize,
   exportFileName,
+  exportHtmlFileName,
   exportTask,
   parseTaskExport,
+  taskHtml,
   withImportedAgents,
   type HelperScope,
   type TaskExport,
@@ -28,8 +30,8 @@ async function childrenStats(id: string) {
   return api.taskChildrenStats(id).catch(() => undefined)
 }
 
-function download(name: string, text: string) {
-  const blob = new Blob([text], { type: 'application/json' })
+function download(name: string, text: string, mime = 'application/json') {
+  const blob = new Blob([text], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -50,6 +52,15 @@ export async function downloadTask(id: string) {
   checkExportSize(bundle)
   download(exportFileName(bundle.task.title), JSON.stringify(bundle, null, 2))
   return { children: bundle.children.length }
+}
+
+/**
+ * 导出成单文件 HTML 报告：样式内联、不加载外部资源、不执行脚本，没装面板的人双击就能在浏览器里看。
+ * 用的是和 JSON 包同一份导出数据，HTML 里只报告这一次执行（子对话不进 HTML）
+ */
+export async function downloadTaskHtml(id: string) {
+  const { bundle } = await api.taskExport(id, await appVersion())
+  download(exportHtmlFileName(bundle.task.title), taskHtml(bundle), 'text/html;charset=utf-8')
 }
 
 /** 读导出的文件并导入成只读任务（连同包里的子对话），返回父任务在前的整棵树 */

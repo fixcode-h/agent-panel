@@ -37,6 +37,7 @@ import {
   ListPlus,
   Workflow as WorkflowIcon,
   Download,
+  FileCode2,
   FileInput,
   Files,
   Sparkles,
@@ -101,7 +102,7 @@ import {
 } from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
-import { downloadTask, startAnalysis } from '@/lib/task-transfer'
+import { downloadTask, downloadTaskHtml, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -1313,6 +1314,15 @@ export function TaskView({
       (e: Error) => toast.error(e.message),
     )
   /**
+   * 导出成单文件 HTML：接收方没装面板也能看，样式内联、不执行脚本（见 shared/task-export.ts 的 taskHtml）。
+   * 和 JSON 包分开两项：一个是给别人看的报告，一个是导回面板的数据
+   */
+  const exportHtml = () =>
+    downloadTaskHtml(task.id).then(
+      () => toast.success(t('已导出 HTML 报告，用浏览器直接打开就能看')),
+      (e: Error) => toast.error(e.message),
+    )
+  /**
    * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
    * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
    */
@@ -1704,6 +1714,13 @@ export function TaskView({
                       <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
                         <Download className="h-4 w-4" />
                         {t('导出任务')}
+                      </MenuItem>
+                      <MenuItem
+                        onSelect={exportHtml}
+                        title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}
+                      >
+                        <FileCode2 className="h-4 w-4" />
+                        {t('导出 HTML 报告')}
                       </MenuItem>
                       <MenuItem onSelect={copyIt}>
                         <Copy className="h-4 w-4" />
