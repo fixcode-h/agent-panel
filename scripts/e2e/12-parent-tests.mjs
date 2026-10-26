@@ -107,24 +107,42 @@ await runShard('父对话执行测试步骤', async (api) => {
 
   // ---- 改了项目设置，进行中的对话也生效：任务创建时没勾，合并之前才在设置里勾上 ----
   // 用户报的现象：项目设置里勾了「禁止子对话执行」，已经开始的子对话合并时还是自己跑 e2e
-  // （任务里是创建时的快照）。现在判断时现读项目设置，这一次合并就该转给父对话。
+  // （老版本创建的对话任务里有步骤快照，快照里没有这个字段 → 按 false 读 → 判断不到）。
+  // 这里钉的是用户可观测的那一段：改完设置，进行中的子对话下一轮提示词、下一次合并都按新设置走。
+  // 注意纯对话任务的 testSteps 本来就是空数组（只有工作流任务才快照），所以「快照非空且与项目不一致」
+  // 那一半由 shared/test-steps.test.ts 的 currentTestSteps 用例覆盖，两边合起来才算完整。
   await putSteps([parentStep('node -e "setTimeout(()=>{},200)"', false)])
   const parent3 = await newParent('父对话（勾选之前创建的）')
   const kid3 = await newKid(parent3.id, 'COMMIT BEGIN_EDIT 先改文件，合并等一会儿')
   await dropRootOutput(kid3.id)
-  // 子对话已经在跑，这时才勾上、并把命令换掉：快照里仍是创建时那份（没勾、旧命令）
+  // 等它这一轮跑完再改设置：正在跑的时候插消息，fake CLI 会把合并和改设置搅在一起
+  await waitTask(kid3.id, (x) => !x.working, 30000)
+  const kidTask = await call('GET', `/tasks/${kid3.id}`)
+  assert.equal(kidTask.projectId, project.id, '子对话记住了项目 id（为空时读不到项目设置）')
+  assert.deepEqual(kidTask.testSteps, [], '纯对话任务本来没有步骤快照（只有工作流任务才快照）')
+  // 子对话已经跑过一轮，这时才勾上、并把命令换掉：项目快照里仍是旧的那份
   await putSteps([parentStep('node -e "setTimeout(()=>{},250)"', true)])
+  const saved = (await call('GET', '/projects')).find((x) => x.id === project.id)
+  assert.equal(saved?.testSteps[0].runInParent, true, '设置已经存进项目（先排除「PUT 没生效」）')
   await call('POST', `/tasks/${kid3.id}/messages`, { text: 'SUBMIT_MERGE 现在合并' })
+  // 这一轮的提示词按项目当前设置拼：子对话被告知这些步骤它不跑
+  await waitFor(
+    () =>
+      calls().some(
+        (c) => (c.input ?? '').includes('SUBMIT_MERGE 现在合并') && (c.input ?? '').includes('禁止子对话执行'),
+      ),
+    { timeout: 20000, label: '进行中的子对话下一轮提示词里出现「禁止子对话执行」' },
+  )
   const live = await waitTask(kid3.id, (x) => x.resolved && x.worktree?.state === 'merged', 60000)
   const liveRuns = live.testRuns.filter((r) => r.by === 'parent')
   assert.equal(
     liveRuns.length,
     1,
-    '项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照',
+    `项目设置里勾上「禁止子对话执行」后，进行中的对话下一次合并就交给父对话跑，不看创建时的快照（wrapRequest=${JSON.stringify(live.wrapRequest)}，testRuns=${JSON.stringify(live.testRuns)}）`,
   )
   assert.equal(liveRuns[0].stepName, '端到端测试')
   assert.ok(liveRuns[0].ok, '父对话真的跑通了这条步骤')
-  // 内容也现读：子对话第二轮拿到的提示词里是改过的命令，不是快照里那条
+  // 内容也现读：子对话这一轮的提示词里是改过的命令，不是旧快照那条
   assert.ok(
     calls().some((c) => (c.input ?? '').includes('setTimeout(()=>{},250)')),
     '进行中的对话下一轮按项目最新的命令拼提示词',
