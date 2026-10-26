@@ -387,6 +387,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
     await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
+    // 重新初始化后报告面板和「写入的文件」是异步算出来的，慢机器上会超过 check 默认的 5 秒：
+    // 先明确等到断言里的最后一项（AGENTS.md）再断言，免得界面还没渲染就被当成没显示（见 docs/lessons/ui.md 异步加载先 waitFor）
+    await p
+      .getByText('AGENTS.md', { exact: false })
+      .first()
+      .waitFor({ timeout: 20000 })
+      .catch(() => {})
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
     // 结果直接画在对话右侧的报告面板（下面的检查兜住它一定出现）；旧路径里的「查看推荐并应用」有就点一下

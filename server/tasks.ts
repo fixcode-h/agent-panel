@@ -104,6 +104,7 @@ import {
   setPresenceUnreadKeeper,
   setViewer,
 } from './presence.ts'
+import { settleReclaimed } from './exec/reclaim.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
@@ -310,7 +311,16 @@ export function tasksApi(deps: {
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
   // 子对话不跟着父对话失活：它们有自己的进程和状态，做完会自己收尾、结果推回父对话（ADR 0012）
-  setPresenceIdleHandler((id) => cancelWait(id))
+  setPresenceIdleHandler((id) => {
+    // 回收：先结束还在等下一句的 CLI，再把「界面还会画成在跑」的任务收口成已停止（见 settleReclaimed）。
+    // 只结束进程不落状态的话，任务会一直写着 running / 或做完但计划没做完，列表一直转圈，
+    // 而「继续执行」只在 stopped 时出现——用户看到「继续会重新拉起」却没有入口（用户报的现象）。
+    // 引擎收尾可能把状态改回 done（这一轮做完了），所以有执行位时要等它收完再看一眼
+    const canceled = cancelWait(id)
+    const entry = live.get(id)
+    if (entry?.done) void entry.done.then(() => settleReclaimed(store, id, 'presence')).catch(() => {})
+    else if (!canceled) void settleReclaimed(store, id, 'presence')
+  })
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
     const tk = live.get(id)?.task

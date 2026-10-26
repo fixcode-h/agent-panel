@@ -16,7 +16,6 @@ import { childIcon, childSpinning } from '../shared/task.ts'
 // 记录写在临时数据目录，别碰本机的；必须在 import server 模块之前指过去
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-restart-'))
 process.env.AGENT_PANEL_DATA = dir
-
 const { createTaskStore } = await import('./task-store.ts')
 const { tasksApi } = await import('./tasks.ts')
 

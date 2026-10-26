@@ -110,3 +110,12 @@ test('进程回收的说明挪到悬停里，不占状态标签那一行', () =>
 test('进程还活着时悬停不说「已回收」', () => {
   assert.equal(childClosedHint(closedWaiting({ cliAlive: true })), '')
 })
+
+test('页面宽限回收后的静止行：说清继续会重新拉起，不写成「已关闭」', () => {
+  // 服务端把回收掉的任务落成 stopped（stopReason 是 presence）：行首静止、计划还挂在那里
+  const reclaimed = closedWaiting({ status: 'stopped', stopReason: 'presence', background: 0, waiting: undefined })
+  assert.equal(childClosedHint(reclaimed), t('CLI 进程已回收，继续会重新拉起'))
+  const line = texts(reclaimed)
+  assert.ok(!line.includes(t('已关闭')), `静止的行不该说「已关闭」：${line.join(' / ')}`)
+  assert.ok(line.includes(t('页面切走后结束')), `要说清为什么停下：${line.join(' / ')}`)
+})
