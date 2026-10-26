@@ -895,8 +895,22 @@ await runShard('子对话与计划', async (api) => {
         done.messages.some((m) => m.panel === 'background' && m.text.includes('计划步骤「跑测试」')),
         '推回的后台结果点名是计划里哪一步在等',
       )
-      // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结
-      await call('POST', `/tasks/${planned.id}/messages`, { text: 'PLAN_NEXT 接着做' })
+      // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
+      // 结果刚推回时这一轮还在收尾（执行位还占着），这时发消息会 409「任务正在执行」：等一下再发
+      let sent
+      let lastBusy = ''
+      for (let i = 0; i < 40 && !sent; i++) {
+        try {
+          sent = await call('POST', `/tasks/${planned.id}/messages`, { text: 'PLAN_NEXT 接着做' })
+        } catch (e) {
+          if (!String(e.message).includes('-> 409')) throw e
+          lastBusy = String(e.message)
+          // 40 × 100ms：CI 慢时 2 秒偏紧
+          await sleep(100)
+        }
+      }
+      // 等满了还是 409 时把最后一条原因带上，否则只看到「没发进去」不知道为什么
+      assert.ok(sent, `这一轮收尾之后把下一条要求发进去了（最后一次：${lastBusy}）`)
       const next = await waitTask(planned.id, (k) => k.plans.length === 2 && k.plans[1].steps.length > 0, 30000)
       assert.equal(next.plans[0].doneAt === '', false, '上一份计划已经结束')
       assert.equal(next.plans[1].steps[0].title, '继续改代码', '不需要写总结就能开新计划')
@@ -1261,5 +1275,122 @@ await runShard('子对话与计划', async (api) => {
       await call('DELETE', `/tasks/${askParent.id}`)
       step('子对话长时间没有输出：自动询问送达并被回复，用户消息不被挡')
     }
+  }
+  // 用户点「解决」时计划一并收口：走正式后端这条路径（PATCH resolved → settleChildForUser → settlePlan → 流转）。
+  // 界面检查只覆盖演示后端，这条改的是 server/tasks.ts，得在这里兜住
+  {
+    // 前提：子对话和父对话共用一个目录（不开独立分支）。有独立分支且没合回时，点解决仍会先被「分支没合回」拦住，
+    // 测不到计划收口这条路径。项目原来的隔离方式用完恢复
+    // 没有 GET /projects/:id 这个路由（只有列表和 PUT/DELETE），从列表里取这一个
+    const projBefore = (await call('GET', '/projects')).find((x) => x.id === project.id)
+    assert.ok(projBefore, '前提：测试用的项目还在')
+    const { id: _projId, createdAt: _projCreated, updatedAt: _projUpdated, ...projPayload } = projBefore
+    const isoBefore = projBefore.childIsolation
+    if (isoBefore !== 'claim') await call('PUT', `/projects/${project.id}`, { ...projPayload, childIsolation: 'claim' })
+    const solveParent = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          prompt: '解决按钮：父对话',
+        })
+      ).id,
+      20000,
+    )
+    // 计划故意留四项没做完（6 步里前 2 步 done，还带一层子步骤）
+    const solveKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: solveParent.id,
+          prompt: 'PLAN_LEFT 计划留四项没做完',
+        })
+      ).id,
+      20000,
+    )
+    assert.equal(solveKid.worktree, null, '前提：共用目录的子对话不建独立分支')
+    const planBefore = solveKid.plans.at(-1)
+    assert.ok(planBefore, '前提：子对话列了计划')
+    assert.equal(
+      planBefore.steps.filter((s) => s.status !== 'done').length,
+      4,
+      '前提：计划 6 步里 2 步做完、4 步没做完',
+    )
+    // 反向保护：同一个「计划没做完」的子对话走父对话收尾（finish_child）仍然被拦住——
+    // 这条路径不传 fromUser，不能把真没做完的工作也当成做完
+    const finishMarks = () => readLog(log + '.finish').filter((x) => x.via === 'marker' && x.id === solveKid.id)
+    await call('POST', `/tasks/${solveParent.id}/messages`, {
+      text: `FINISH_CHILD:${solveKid.id} 收尾这个子对话`,
+    })
+    const mark = await waitFor(() => finishMarks().at(-1), {
+      timeout: 20000,
+      label: '父对话调用 finish_child 的记录',
+      describe: () => {
+        const got = calls().filter((c) => (c.input ?? '').includes('FINISH_CHILD'))
+        const last = got.at(-1)
+        return last
+          ? `带标记的 input 尾段：${String(last.input).slice(-260)}`
+          : `没有任何一次调用带 FINISH_CHILD（最近一次调用 ${String(calls().at(-1)?.input ?? '').slice(-160)}）`
+      },
+    })
+    assert.equal(mark.got?.isError, true, '计划没做完时父对话收尾仍被拦')
+    // 只认「计划」这一步拦的：包装文案对任何 hold 都写「还没做完」，收窄到 childHoldText(['plan']) 那句
+    assert.match(JSON.stringify(mark.got), /计划还没做完/, '拦住的原因说清是「计划还没做完」')
+    const afterFinish = await call('GET', `/tasks/${solveKid.id}`)
+    // resolved 未设置时字段不出现在 JSON 里，按「没标完成」算
+    assert.equal(afterFinish.resolved ?? false, false, '父对话收尾被拦后子对话没有被标完成')
+    assert.equal(
+      afterFinish.plans.at(-1).steps.filter((s) => s.status !== 'done').length,
+      4,
+      '父对话收尾不会顺手把计划收口（fromUser 只走用户点解决那条路）',
+    )
+    step('计划没做完时父对话收尾仍被拦（计划不会跟着收口）')
+    // 用户点「解决」：计划一并收口，不再因为「计划没做完」返回 409。
+    // PATCH 路由自己就会写 resolved: true（见 server/tasks.ts 的 Object.assign），所以返回值证明不了「真的置完成」：
+    // 真正的证据是父对话多一条这个子对话的完成上报（上报排在置完成之后，见 reportChild）
+    const reportsOf = (x) => x.messages.filter((m) => m.peer?.kind === 'report' && m.peer.id === solveKid.id)
+    const reportsBefore = reportsOf(await call('GET', `/tasks/${solveParent.id}`)).length
+    const solved = await call('PATCH', `/tasks/${solveKid.id}`, { resolved: true })
+    assert.equal(solved.resolved, true, '点解决成功，不再 409「计划没做完」')
+    const parentAfter = await waitFor(
+      async () => {
+        const x = await call('GET', `/tasks/${solveParent.id}`)
+        return reportsOf(x).length > reportsBefore ? x : undefined
+      },
+      { timeout: 15000, label: '父对话收到这个子对话的完成上报' },
+    )
+    assert.equal(
+      reportsOf(parentAfter).length,
+      reportsBefore + 1,
+      '真的置完成为止并上报了父对话（不只是 PATCH 的返回值）',
+    )
+    const planAfter = solved.plans.at(-1)
+    const allDone = (s) => s.status === 'done' && (s.children ?? []).every(allDone)
+    assert.ok(planAfter.steps.length, '解决后计划还在（没有被清掉）')
+    assert.ok(planAfter.steps.every(allDone), '计划里所有步骤（含子步骤）都收口成完成')
+    assert.ok(
+      planAfter.steps.some((s) => (s.children ?? []).length > 0),
+      '前提：这份计划带子步骤，递归收口才算验到',
+    )
+    assert.ok(planAfter.doneAt, '计划落到完成态（折叠头走「计划已完成」）')
+    // 再点一次：已经解决的不会再上报一次父对话（幂等看报告条数，比整份消息数更准）
+    const again = await call('PATCH', `/tasks/${solveKid.id}`, { resolved: true })
+    assert.equal(again.resolved, true, '重复点解决仍然成功')
+    assert.ok(again.plans.at(-1).steps.every(allDone), '重复点不会把计划改回未完成')
+    // 幂等是服务端同步跳过的（reportedDone / reportedState 去重），「不该发生」等不到条件，只能等一会儿再看
+    await sleep(500)
+    assert.equal(
+      reportsOf(await call('GET', `/tasks/${solveParent.id}`)).length,
+      reportsBefore + 1,
+      '已经解决过的子对话不会再往父对话上报一次「已完成」',
+    )
+    if (isoBefore !== 'claim')
+      await call('PUT', `/projects/${project.id}`, { ...projPayload, childIsolation: isoBefore })
+    // 不在这里删父对话：子对话刚被置完成时 CLI 还在收尾，那一轮结束时要处理手上的消息，
+    // 这时连它一起删掉服务端会报「任务不存在」；分片结束由 harness 清理临时数据目录
+    step('用户点「解决」时计划一并收口（正式后端）：成功、幂等，父对话收尾仍被拦')
   }
 })

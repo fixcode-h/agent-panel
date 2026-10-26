@@ -278,7 +278,19 @@ export async function runShard(shardName, fn) {
       headers: { 'content-type': 'application/json' },
       body: body && JSON.stringify(body),
     })
-    const j = r.status === 204 ? null : await r.json()
+    // 响应体先读文本再解析：不是 JSON 时把请求和响应开头带进错误里——
+    // 以前直接 r.json() 只会报一个「Unexpected non-whitespace character after JSON」的栈，看不出是哪个请求
+    const text = r.status === 204 ? '' : await r.text()
+    // 204 之外的空响应也直接抛：静默返回 null 的话，调用方会在 .id 上拿一个没有上下文的 TypeError
+    if (!text && r.status !== 204) throw new Error(`${method} ${url} -> ${r.status} 响应是空的`)
+    let j = null
+    if (text) {
+      try {
+        j = JSON.parse(text)
+      } catch {
+        throw new Error(`${method} ${url} -> ${r.status} 响应不是 JSON：${text.slice(0, 200)}`)
+      }
+    }
     if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${JSON.stringify(j)}`)
     return j
   }
