@@ -19,7 +19,9 @@
     "docs:bugs:check": "node scripts/doc-bugs.mjs --check",
     "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:wsl": "wsl -e bash -lc \"npm run test:e2e\"",
-    "test:unit": "tsx --test \"server/**/*.test.ts\" \"shared/**/*.test.ts\" \"web/src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "test:unit": "node scripts/unit-tests.mjs",
+    "test:unit:timing": "node scripts/unit-tests.mjs timing",
+    "test:unit:rest": "node scripts/unit-tests.mjs rest",
     "test:coverage": "tsx --test --experimental-test-coverage \"server/**/*.test.ts\" \"shared/**/*.test.ts\" \"web/src/**/*.test.ts\"",
     "package": "node scripts/package.mjs"
   },
