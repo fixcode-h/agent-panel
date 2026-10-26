@@ -11,6 +11,7 @@ import { relativeAttachName } from './attachments.ts'
 import { resolvePath } from './fs.ts'
 import { openWithSystem, revealItem } from './open.ts'
 import { locateFiles } from './locate-file.ts'
+import { thumbnail } from './thumbnail.ts'
 import { t } from '../shared/i18n.ts'
 import { clip } from '../shared/text.ts'
 
@@ -205,6 +206,14 @@ export function uploadsRawApi() {
     const ext = path.extname(file).slice(1).toLowerCase()
     const inUploads = file.startsWith(UPLOADS_DIR + path.sep)
     if (!inUploads && !IMAGE_TYPES[ext]) return c.json({ error: t('不是图片') }, 400)
+    // w：要缩略图（消息里的卡片只占一行字的高度，没必要取原图）；生成不了时退回原图
+    const width = Number(c.req.query('w') ?? '')
+    if (width > 0) {
+      const thumb = await thumbnail(file, width)
+      // 转成 Uint8Array 再交给 c.body：Node 的 Buffer 泛型是 ArrayBufferLike，hono 只接 Uint8Array<ArrayBuffer>
+      if (thumb)
+        return c.body(new Uint8Array(thumb), 200, { 'Content-Type': 'image/png', 'Cache-Control': THUMB_CACHE })
+    }
     const buf = await readFile(file).catch(() => null)
     if (!buf) return c.json({ error: t('附件已经不在了') }, 404)
     const type = IMAGE_TYPES[ext] ?? 'application/octet-stream'
@@ -224,6 +233,9 @@ export function uploadsRawApi() {
   })
   return routes
 }
+
+/** 缩略图是生成的、文件不会原地改（同一个文件同宽度只算一次），缓存一天和原图一致 */
+const THUMB_CACHE = 'private, max-age=86400'
 
 export const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png',

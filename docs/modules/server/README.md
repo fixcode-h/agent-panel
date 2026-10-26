@@ -122,6 +122,7 @@
 - 两种形态在提示里的说明由 `shared/task.ts` 的 `withAttachments` 按实际内容写：只有相对路径时说「图片已放进对话目录」，有绝对路径时说「本机绝对路径、直接读取」，免得模型把绝对路径当相对路径去找。
 - 用绝对路径的附件在执行目录之外，要放行的目录由 `attachmentAddDirs()` 按附件实际位置算：上传的合并成 uploads 根，粘贴路径引用的文件（`ref`）各自放行它所在的目录，执行目录里的和相对路径不放行。`server/exec/runner.ts` 建 `addDirs` 时取整个对话里的附件，设计会话（`server/designs.ts`）也调它，不再固定只放行 `UPLOADS_DIR`（以前 `ref` 引用的、在 worktree 执行时项目原目录里的文件会被挡掉）。实际用到的参数只有 Claude Code 的 `--add-dir` 和 Gemini 的 `--include-directories`（`shared/clis.ts` 的 `addDirs`）；Codex 的 `--sandbox` 限制的是写和命令、读文件不受目录白名单限制，Command Code / Pi 的 CLI 定义里没有目录参数（permission 是工具批准模式），所以它们读绝对路径不需要额外参数。
 - 源文件被删掉或移走时读不到，附件只保留原路径：CLI 自己报找不到，不静默换成别的路径、也不把附件从消息里去掉——不拷贝的代价就是「源文件没了就读不到」，报错就是如实告知用户。设计会话（`designs.ts` 每轮建临时工作目录、结束后删）仍把附件复制进那个临时目录，因为设计工具按工作目录内的路径找图，和任务附件不是一回事。
+- 附件图片的缩略图（`server/thumbnail.ts`，挂在 `/api/uploads/raw` 的 `?w=` 上，`server/uploads.ts`）：消息里的卡片只有 1.25em 见方，却一直取原图（单张 100–300KB）。这里用 `server/image.ts` 已有的 PNG 解码 / 缩放 / 编码，**不引入图片库**：服务端要打成单文件（`scripts/package.mjs` 的 esbuild `bundle`），原生模块带不进去，纯 JS 的 JPEG 解码又要多一份依赖。缩略图缓存在 `<DATA_DIR>/cache/thumbs/<sha1(路径+大小+mtime+宽)>`（按文件大小和 mtime 而不是文件内容算 key，不用为了判断缓存是否新鲜先读一遍原图），同一张图的并发请求只算一次、解码缩放串行做（它是同步计算，一起来会把服务端卡住），响应带 `cache-control: private, max-age=86400`。解不开的格式（JPEG / WebP / 隔行扫描 PNG）和比目标还小的图返回 null，接口退回原图；看大图、复制图片、任务目录里的图（`/uploads/raw/file`）都不带 `w`。回归：`server/thumbnail.test.ts`。
 - 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷贝、超上限的图片不拷、重名图片加序号、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录并给 `--add-dir`；文本文件不拷、给了原绝对路径）。
 
 ## 状态回收：面板重启后与页面宽限到期后

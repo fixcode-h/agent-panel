@@ -1,6 +1,6 @@
 import { marked } from 'marked'
 import type { Agent } from '@shared/schema'
-import { t } from '@shared/i18n'
+import { getLang, t } from '@shared/i18n'
 
 type Hljs = typeof import('highlight.js/lib/common').default
 let hljs: Hljs | null = null
@@ -78,10 +78,60 @@ renderer.code = ({ text, lang }) => {
 }
 
 /**
+ * 渲染结果缓存。组件里的 useMemo 挡不住这些：切走再切回、blocks 重算、长对话滚回去重新挂载，
+ * 都是同样的输入再解析一遍（最长对话 611 条消息）。marked 的输出是纯字符串，
+ * 只要 key 把影响结果的东西都带上就能安全复用：文本、团队成员（@提及高亮）、
+ * 是否流式（决定代码块高不高亮）、高亮库是否就绪（异步加载的）、当前语言（代码栏里的「复制」）。
+ */
+const CACHE_MAX = 300
+/** 按字符数再卡一道：300 条长回复加起来也不小 */
+const CACHE_MAX_CHARS = 2_000_000
+const cache = new Map<string, string>()
+let cacheChars = 0
+
+const cacheKey = (doc: string, teamNames: Set<string>, lang: string) =>
+  `${lang}\u0000${hljs ? 1 : 0}\u0000${[...teamNames].sort().join('\u0001')}\u0000${doc}`
+
+/** 只给测试用：缓存是模块级的，用例之间要能清干净、看清有没有命中 */
+export function clearDocCache() {
+  cache.clear()
+  cacheChars = 0
+}
+
+export const docCacheSize = () => cache.size
+
+/**
  * 渲染预览。文档里的原始 HTML 一律转义显示；@提及高亮，不在团队里的标成警告色。
  * live 是流式输出中的一段：跳过代码高亮，等这段输出完再渲染一次。
  */
 export function renderDoc(doc: string, teamNames: Set<string>, live = false) {
+  // 流式输出每 200ms 换一次文字，存进缓存只会把有用的挤出去
+  const key = live ? '' : cacheKey(doc, teamNames, getLang())
+  if (key) {
+    const hit = cache.get(key)
+    if (hit !== undefined) {
+      // 命中后挪到末尾：Map 的插入顺序就是最近使用顺序
+      cache.delete(key)
+      cache.set(key, hit)
+      return hit
+    }
+  }
+  const html = renderUncached(doc, teamNames, live)
+  if (key) {
+    cache.set(key, html)
+    cacheChars += key.length + html.length
+    // 超上限时从最久没用的开始丢
+    while (cache.size > CACHE_MAX || cacheChars > CACHE_MAX_CHARS) {
+      const oldest = cache.keys().next().value
+      if (oldest === undefined) break
+      cacheChars -= oldest.length + (cache.get(oldest)?.length ?? 0)
+      cache.delete(oldest)
+    }
+  }
+  return html
+}
+
+function renderUncached(doc: string, teamNames: Set<string>, live: boolean) {
   liveRender = live
   let html: string
   try {

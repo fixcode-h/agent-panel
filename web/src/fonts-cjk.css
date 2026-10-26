@@ -1,0 +1,6 @@
+/* 思源黑体（界面里的中文）：只有在设置里把中文界面字体选成「思源黑体」时才加载
+   （依据 web/src/lib/appearance.ts 生成的字体列表，选系统字体时不加载）。
+   每档 101 个 unicode-range 分片，单独一个文件才不会参与首屏。
+   只打 400 和 600：界面里的 font-medium（500）在这种情况下用 400 显示，省下 101 个文件 */
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/600.css';
