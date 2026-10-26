@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, skillUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { rowTip } from '@/lib/sidebar-hint'
+import { useTaskSearch } from '@/lib/use-task-search'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -61,10 +62,18 @@ import { unmergedOf } from '@/components/tasks/Worktrees'
 import { api } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
-import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
+import {
+  ChatList,
+  ContentHits,
+  SIDEBAR_CONTENT_HITS,
+  TaskRow,
+  TaskSearch,
+  matchTask,
+  type TaskFilter,
+} from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
+import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -354,9 +363,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
   const filtering = !!query.trim() || filter !== 'all'
+  // 正文搜索：标题命中在 found 里（本地筛），正文命中走服务端，排在标题命中后面。
+  // Chat 模式的侧栏是 ChatList、设计模式的侧栏是 DesignList，都不显示任务命中：这里传空串（= 不搜），
+  // 免得同一次输入发两份请求或者为看不见的结果白扫一遍对话
+  const content = useTaskSearch(chatMode || designMode ? '' : query)
   // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
   const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId)
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
+  // 只留项目里的对话：侧栏这一栏不列 Chat，正文命中也不该混进来
+  const contentHits = content.hits.filter((h) => projectTasks.some((x) => x.id === h.taskId))
   // 归档的不在项目分组里显示
   const recent = projectTasks.filter((t) => !t.archived).sort(byAskedAt)
   const byProject = new Map<string, Task[]>()
@@ -557,9 +572,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             placeholder={t('搜索任务')}
           />
           <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
-            {t('找到 {n} 个', { n: found.length })}
+            {/* 计数和下面实际列出来的行一致：标题命中 + 这一侧栏能显示的正文命中（只算项目里的对话） */}
+            {t('找到 {n} 个', { n: found.length + Math.min(contentHits.length, SIDEBAR_CONTENT_HITS) })}
           </p>
-          {found.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">{t('没有符合的任务。')}</p>}
+          {found.length === 0 && !contentHits.length && (
+            <p className="px-2.5 py-1 text-xs text-subtle">{t('没有符合的任务。')}</p>
+          )}
           <div className="flex flex-col gap-px">
             {found.map((tk) => (
               <TaskRow
@@ -576,6 +594,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               />
             ))}
           </div>
+          <ContentHits
+            hits={contentHits}
+            loading={content.loading}
+            onOpen={(h) => {
+              const tk = projectTasks.find((x) => x.id === h.taskId)
+              if (tk) go({ page: 'projects', id: tk.projectId, sub: tk.id, msg: h.messageId })
+            }}
+          />
         </div>
       ) : !narrow ? (
         <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
@@ -941,7 +967,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         description={
           bulk?.action === 'delete'
             ? t(
-                '正在执行的对话、有没合并的独立分支的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。',
+                '正在执行的对话、有没合并的独立分支的对话不受影响。删除的对话会移进回收站，{days} 天内可以在设置 →「数据」→ 回收站里恢复，不会动本地目录里的文件。',
+                { days: TRASH_RETENTION_DAYS },
               )
             : t('正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。')
         }

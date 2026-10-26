@@ -70,7 +70,9 @@ import {
   waitDuration,
   idleWaitDuration,
   newTask,
+  taskDeleted,
   taskGone,
+  trashLeftDays,
   taskSummary,
   withAttachments,
   withTaskModel,
@@ -116,7 +118,15 @@ import {
 import { settleReclaimed } from './exec/reclaim.ts'
 import { placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
-import { createTaskStore } from './task-store.ts'
+import { createTaskStore, messageChars } from './task-store.ts'
+import {
+  SEARCH_CHAR_BUDGET,
+  SEARCH_HIT_LIMIT,
+  SEARCH_HITS_PER_TASK,
+  SEARCH_TASK_BUDGET,
+  messageHit,
+  type SearchHit,
+} from '../shared/task-search.ts'
 import {
   abortMerge,
   commitMerge,
@@ -220,6 +230,10 @@ const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
 /** 用户点「解决」时等子任务停下来的上限和轮询间隔：停不下来就如实报错，不静默把在跑的步骤抹成完成 */
 const HELPER_STOP_TIMEOUT_MS = 15_000
 const HELPER_STOP_POLL_MS = 150
+
+/** 对话搜索的缓存上限：留多少个对话、合计多少字符（超了按最久没用的丢，见 cachedMessages） */
+const SEARCH_CACHE_TASKS = 40
+const SEARCH_CACHE_CHARS = 8_000_000
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
@@ -413,7 +427,8 @@ export function tasksApi(deps: {
     // 除了重启前在跑的，还有「这一轮说完了但计划没做完 / 独立分支还没合回」的任务：进程已经回收，
     // 界面却还会画成转圈（childIcon 对 unfinished 也返回 running），一直算进「N 个执行中」。
     // 两种都落成已停止，重启后没人接着做的事不再显示成在执行（见 restartInterrupted）
-    for (const meta of all.filter((x) => x.status === 'running' || restartInterrupted(x))) {
+    // 进了回收站的对话不在这里处理：用户已经把它删了，恢复后不该带着一条「已中断，点继续执行」
+    for (const meta of all.filter((x) => (x.status === 'running' || restartInterrupted(x)) && !taskDeleted(x))) {
       // 列表里只有用户消息，改之前取完整的
       const task = await store.get(meta.id)
       if (!task) continue
@@ -1630,11 +1645,17 @@ export function tasksApi(deps: {
 
   /** 同一项目里的其他父对话（顶层对话），最近活动的在前 */
   async function peerList(self: Task) {
-    return (await store.list())
-      .filter((x) => x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived)
-      .map((x) => live.get(x.id)?.task ?? x)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, 20)
+    return (
+      (await store.list())
+        // 进了回收站的对话不算同项目里能互相发消息的一条（它在列表里也已经看不到了）
+        .filter(
+          (x) =>
+            x.projectId === self.projectId && !x.parentTaskId && x.id !== self.id && !x.archived && !taskDeleted(x),
+        )
+        .map((x) => live.get(x.id)?.task ?? x)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 20)
+    )
   }
 
   /**
@@ -3534,7 +3555,8 @@ export function tasksApi(deps: {
     // 上一次收尾还在删独立分支的目录：等它结束再继续，不然它会在重建之后把新目录和同名分支删掉
     await completing.get(id)?.catch(() => {})
     const task = await store.get(id)
-    if (!task) throw new Error('任务不存在')
+    // 进了回收站的对话当不存在：别的对话（message_peer）或后台结果不能再把它拉起来跑一轮
+    if (!task || taskDeleted(task)) throw new Error('任务不存在')
     const got = reserve(task)
     // 已经有了执行位：并发进来的两条消息只能有一条启动，另一条交给路由按 409 处理
     if (!got.fresh) throw new TaskBusyError('任务正在执行，请等它完成或先停止')
@@ -4075,8 +4097,9 @@ export function tasksApi(deps: {
 
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
-    // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
-    const all = (await store.list()).map((t) => idle(live.get(t.id)?.task ?? t))
+    // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢。
+    // 进了回收站的对话不在任何列表里出现（回收站自己有一个入口，见 GET /trash）
+    const all = (await store.list()).filter((t) => !taskDeleted(t)).map((t) => idle(live.get(t.id)?.task ?? t))
     // 子对话还在运行时父对话也算在运行：一次算好所有父对话名下的数量，前端不用再为每个任务发请求。
     // 口径和标题栏、能不能回收是同一个（childActive）：等结果、等回答的子对话也算，不只看 working
     const kids = new Map<string, number>()
@@ -4100,6 +4123,129 @@ export function tasksApi(deps: {
     list = parent ? list.filter((t) => t.parentTaskId === parent) : list.filter((t) => !t.parentTaskId)
     return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
   })
+
+  /**
+   * 回收站：进回收站还没到期的对话（见 Task.deletedAt），设置页的「回收站」读它。
+   * 只列顶层对话：子对话跟着父对话一起进、一起恢复，单独列出来只会让用户分不清
+   * （父对话没进回收站、只是单独删了的子对话照常列）。
+   * 返回的字段是界面要显示的那几项：标题、删除时间、还剩几天，不在前端再算一遍保留期
+   */
+  routes.get('/trash', async (c) => {
+    const now = Date.now()
+    const deleted = (await store.list()).filter((t) => taskDeleted(t))
+    const parents = new Set(deleted.filter((t) => !t.parentTaskId).map((t) => t.id))
+    const rows = deleted
+      .filter((t) => !t.parentTaskId || !parents.has(t.parentTaskId))
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        projectId: t.projectId,
+        parentTaskId: t.parentTaskId ?? '',
+        deletedAt: t.deletedAt,
+        leftDays: trashLeftDays(t.deletedAt!, now),
+        children: deleted.filter((k) => k.parentTaskId === t.id).length,
+        worktree: t.worktree?.state ?? '',
+      }))
+      // 最近删掉的排在前面：要恢复的往往是刚删错的那条
+      .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''))
+    return c.json(rows)
+  })
+
+  /**
+   * 对话内容搜索：搜消息正文，只回命中片段 + 对话 id + 命中条数，不回整份消息。
+   * 按最近活动倒序扫，三个预算任一用完就停：扫多少个对话、回多少条、读进来的字数
+   * （口径在 shared/task-search.ts）。进了回收站的对话不参与：删了就不该还能被搜出来
+   */
+  routes.get('/search', async (c) => {
+    const q = (c.req.query('q') ?? '').trim()
+    if (!q) return c.json({ hits: [], scanned: 0, more: false })
+    const asked = Number(c.req.query('limit'))
+    const limit = Number.isFinite(asked) && asked > 0 ? Math.min(SEARCH_HIT_LIMIT, asked) : SEARCH_HIT_LIMIT
+    // 最近活动过的先扫：用户要找的多半是刚聊过的那几条
+    const all = (await store.list())
+      .filter((t) => !taskDeleted(t))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+    const tasks = all.slice(0, SEARCH_TASK_BUDGET)
+    const hits: SearchHit[] = []
+    let more = all.length > tasks.length
+    let searchChars = 0
+    for (const tk of tasks) {
+      // 结果格子满了就不再读文件：边输边搜，首屏要快
+      if (hits.length >= limit) {
+        more = true
+        break
+      }
+      const messages = await cachedMessages(tk)
+      if (!messages.length) continue
+      const chars = messageChars(messages)
+      if (searchChars + chars > SEARCH_CHAR_BUDGET) {
+        more = true
+        break
+      }
+      searchChars += chars
+      let taken = 0
+      for (const m of messages) {
+        if (taken >= SEARCH_HITS_PER_TASK) {
+          more = true
+          break
+        }
+        const hit = messageHit(m.text, q)
+        if (!hit) continue
+        if (hits.length >= limit) {
+          more = true
+          break
+        }
+        hits.push({
+          taskId: tk.id,
+          title: tk.title,
+          messageId: m.id,
+          role: m.role,
+          at: m.at,
+          count: hit.count,
+          snippet: hit.snippet,
+          index: hit.index,
+          length: q.length,
+        })
+        taken++
+      }
+    }
+    return c.json({ hits, scanned: tasks.length, more })
+  })
+
+  /**
+   * 搜索用的对话缓存：任务记录没更新过（updatedAt 一样）就直接用上次读到的消息。
+   * 边输边搜时每按一个键都要扫最近几十个对话，没有这层缓存每次都得把几十个几 MB 的
+   * `.messages.json` 重新读一遍、再校验一遍。只留最近用到的几个，超出按总字数丢掉最久没用的
+   */
+  const searchCache = new Map<string, { key: string; messages: TaskMessage[]; chars: number }>()
+  let searchCacheChars = 0
+  function cacheMessages(id: string, key: string, messages: TaskMessage[]) {
+    const old = searchCache.get(id)
+    if (old) searchCacheChars -= old.chars
+    searchCache.delete(id)
+    const chars = messageChars(messages)
+    searchCache.set(id, { key, messages, chars })
+    searchCacheChars += chars
+    while (searchCache.size > 1 && (searchCacheChars > SEARCH_CACHE_CHARS || searchCache.size > SEARCH_CACHE_TASKS)) {
+      const oldest = searchCache.keys().next().value!
+      searchCacheChars -= searchCache.get(oldest)?.chars ?? 0
+      searchCache.delete(oldest)
+    }
+  }
+  async function cachedMessages(tk: Task): Promise<TaskMessage[]> {
+    // key 用消息文件自己的指纹，不用任务的 updatedAt（消息文件最多晚 400ms 落盘，见 task-store 的 messagesStamp）
+    const key = await store.messagesStamp(tk.id)
+    const hit = searchCache.get(tk.id)
+    if (hit && hit.key === key) {
+      // 挪到末尾：最近用过的留在缓存里
+      searchCache.delete(tk.id)
+      searchCache.set(tk.id, hit)
+      return hit.messages
+    }
+    const messages = (await store.readMessages(tk.id)) ?? []
+    cacheMessages(tk.id, key, messages)
+    return messages
+  }
 
   /** 子对话独立分支状态的缓存：子对话 id → 当时的子对话版本、问的时间和结果 */
   const worktreeSeen = new Map<
@@ -4150,7 +4296,7 @@ export function tasksApi(deps: {
     const parent = await current(c.req.param('id'))
     if (!parent) return bad(c, t('任务不存在'), 404)
     const project = parent.projectId ? await deps.projects.get(parent.projectId) : null
-    const kids = (await store.list()).filter((t) => t.parentTaskId === parent.id)
+    const kids = (await store.list()).filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
     const items = await Promise.all(
       kids.map(async (t) => {
         const liveTask = live.get(t.id)?.task ?? t
@@ -4489,7 +4635,10 @@ export function tasksApi(deps: {
 
   routes.get('/:id', async (c) => {
     const task = await current(c.req.param('id'))
-    return task ? c.json(await withLive(task)) : bad(c, t('任务不存在'), 404)
+    // 进了回收站的对话当不存在：列表里已经没有它了，旧链接、AI 处理的浮条轮询都该看到「已关闭」；
+    // 恢复（POST /:id/restore）之后又能读到
+    if (!task || taskDeleted(task)) return bad(c, t('任务不存在'), 404)
+    return c.json(await withLive(task))
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
@@ -4667,7 +4816,10 @@ export function tasksApi(deps: {
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt, messageId } = p.data
-    if ((await current(id))?.imported) return bad(c, READONLY, 409)
+    const cur = await current(id)
+    // 进了回收站的对话和 GET /tasks/:id 一样当不存在：不能再往它里面发消息（否则会被重新拉起来跑一轮）
+    if (cur?.deletedAt) return bad(c, t('任务不存在'), 404)
+    if (cur?.imported) return bad(c, READONLY, 409)
     // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
     if (RULE_CMD.test(text.trim())) {
       const r = await ruleCommand(id, text.trim())
@@ -5095,7 +5247,7 @@ export function tasksApi(deps: {
     return c.json(await store.update(id, { ...cur, worktree: next }))
   })
 
-  /** 删除任务时，没合并的独立分支一起清掉，免得数据目录里越积越多 */
+  /** 删除对话时，没合并的独立分支一起清掉（只在永久删除时调用，进回收站时目录还留着，见 enterTrash） */
   async function dropWorktree(tk: Task, repo?: string) {
     if (!isolated(tk)) return
     repo ??= (await deps.projects.get(tk.projectId))?.path
@@ -5566,35 +5718,90 @@ export function tasksApi(deps: {
     return c.json(await current(id))
   })
 
+  /**
+   * 彻底删掉一条对话的全部内容：任务记录和对话文件、独立分支、附件、聊天工作目录、节点交接文件。
+   * 只有「回收站过期」和「永久删除」会走到这里；删除对话本身只做标记（见 enterTrash），
+   * 用户删错了还能在保留期内恢复
+   */
+  async function purgeTask(tk: Task) {
+    await store.remove(tk.id)
+    forgetPresence(tk.id)
+    background.forget(tk.id)
+    await dropWorktree(tk)
+    await rm(path.join(HANDOFF_DIR, tk.id), { recursive: true, force: true }).catch(() => {})
+    // 聊天的工作目录、节点交接的文件跟着删掉
+    await rm(path.join(CHATS_DIR, tk.id), { recursive: true, force: true }).catch(() => {})
+  }
+
+  /** 一组对话一起物理删除（子对话由调用方收进来）；附件最后按「还有没有别的任务在用」决定 */
+  async function purgeTasks(tasks: Task[]) {
+    for (const tk of tasks) await purgeTask(tk)
+    await dropUploads(tasks)
+  }
+
+  /**
+   * 删除对话 = 进回收站：任务记录、对话内容、独立分支、附件、聊天目录都先留着，
+   * 保留期内（见 TRASH_RETENTION_DAYS）能完整恢复，过期后才物理删除（见 cleanupTrash）。
+   * 进回收站先把它这一轮停下来、后台命令停掉：删除后不该再消耗机器，恢复后发新消息照常接着聊。
+   * 已经删过的再删一次不改删除时间（保留期从第一次删开始算）
+   */
+  async function enterTrash(tk: Task, reason: StopReason = 'delete') {
+    if (taskDeleted(tk)) return
+    stopTask(tk.id, reason)
+    forgetNotes(tk.id)
+    // 等后台命令的进程真正退出：进程还占着目录时，过期清理在 Windows 上删不掉
+    await endBackground(tk.id)
+    await store.updateMeta(tk.id, { deletedAt: new Date().toISOString() })
+  }
+
+  // 删除 = 进回收站（物理删除只能从回收站里做，见 DELETE /:id/permanent）
   routes.delete('/:id', async (c) => {
     const id = c.req.param('id')
-    // 删父对话时把它的子对话一起删掉，不留孤儿
+    const task = await store.peek(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    // 删父对话时把它的子对话一起带进回收站，不留孤儿（恢复时也一起回来）
     const kids = (await store.list()).filter((x) => x.parentTaskId === id)
+    await enterTrash(task)
+    for (const k of kids) await enterTrash(k, 'parent')
+    return c.body(null, 204)
+  })
+
+  // 永久删除：不进回收站，直接物理删除（界面先让用户二次确认）
+  routes.delete('/:id/permanent', async (c) => {
+    const id = c.req.param('id')
+    // 要用完整对话收集附件目录，不能只拿任务文件里那几条用户消息
+    const task = await store.get(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
     stopTask(id, 'archive')
     forgetNotes(id)
-    // 等后台命令的进程真正退出再删目录：Windows 上进程占着目录删不掉
     await endBackground(id)
-    const task = await store.get(id)
-    if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
-    forgetPresence(id)
-    background.forget(id)
-    const dropped = [task]
-    for (const k of kids) {
-      stopTask(k.id, 'parent')
-      forgetNotes(k.id)
-      background.forget(k.id)
-      await store.remove(k.id)
-      forgetPresence(k.id)
-      dropped.push(k)
-      await dropWorktree(k)
-      await rm(path.join(HANDOFF_DIR, k.id), { recursive: true, force: true }).catch(() => {})
-    }
-    await dropUploads(dropped)
-    await dropWorktree(task)
-    // 聊天的工作目录、节点交接的文件跟着删掉
-    await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})
-    await rm(path.join(HANDOFF_DIR, id), { recursive: true, force: true }).catch(() => {})
+    const kids = await Promise.all(
+      (await store.list()).filter((x) => x.parentTaskId === id).map((x) => store.get(x.id)),
+    )
+    await purgeTasks([task, ...kids.filter((x): x is Task => !!x)])
     return c.body(null, 204)
+  })
+
+  // 从回收站恢复：清掉删除标记，对话重新回到列表，恢复后能接着聊。
+  // 独立分支所在目录已经被面板回收（sweepStaleWorktrees 或手工删了）时把 worktree 置空并把 `worktreeCleared`
+  // 交给界面提示「恢复后需要重新执行」：不能静默留一个指向不存在目录的分支。
+  // 不标成 discarded——那会被 taskGone 认成「已收起」，恢复后的对话直接显示「已完成」，和这句提示对不上
+  routes.post('/:id/restore', async (c) => {
+    const id = c.req.param('id')
+    const task = await store.peek(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (!taskDeleted(task)) return c.json({ worktreeCleared: false })
+    const cleared = task.worktree?.state === 'active' && !existsSync(task.worktree.path)
+    // 父对话恢复时，跟着它一起进回收站的子对话也一起回来
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id && taskDeleted(x))
+    await store.updateMeta(id, {
+      deletedAt: undefined,
+      // 停下来的原因留成「删除时结束」：它确实是删除时结束的，比「已暂停 / 归档时结束」准确
+      stopReason: 'delete' as const,
+      ...(cleared ? { worktree: null } : {}),
+    })
+    for (const k of kids) await store.updateMeta(k.id, { deletedAt: undefined })
+    return c.json({ worktreeCleared: cleared })
   })
 
   // 子对话静默自动询问的扫描：数据准备好之后开始，退出时在 stopAll 里清掉
@@ -5667,8 +5874,11 @@ export function tasksApi(deps: {
       // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
       // 在跑的任务用 live 那份，它比落盘的新
       const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
+      // 进了回收站的对话不能再进恢复名单：用户已经把它删了，重启后不能自己跑起来
       const want = new Set(interruptedTaskIds(all, working))
-      return all.filter((tk) => want.has(tk.id)).map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
+      return all
+        .filter((tk) => want.has(tk.id) && !taskDeleted(tk))
+        .map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
     },
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
     ready: () => ready,
@@ -5719,6 +5929,27 @@ export function tasksApi(deps: {
       await cleanupUploads(new Set(all.flatMap((t) => [...uploadDirs(t)])), {
         keepNames: new Set(all.flatMap((t) => [...uploadNames(t)])),
       })
+    },
+    /**
+     * 回收站过期清理：超过保留期的对话物理删除。挂在启动后和每小时那一次清理上
+     * （见 server/index.ts 的 sweepStaleWorktrees），不另起定时器。
+     * now 可注入，测试用它造「7 天前删的」。返回真的删掉了几条（日志和测试用）
+     */
+    async cleanupTrash(now = Date.now()) {
+      const all = await store.list()
+      const expired = all.filter((t) => !!t.deletedAt && trashLeftDays(t.deletedAt, now) === 0)
+      if (!expired.length) return 0
+      // 父对话过期的，名下子对话一起删：父对话没了，它们就成了打不开的孤儿
+      const ids = new Set(expired.map((t) => t.id))
+      const parents = new Set(expired.filter((t) => !t.parentTaskId).map((t) => t.id))
+      for (const t of all) if (t.parentTaskId && parents.has(t.parentTaskId)) ids.add(t.id)
+      // 要完整对话：附件目录从消息的附件列表里收
+      const full = (await Promise.all([...ids].map((id) => store.get(id)))).filter((t): t is Task => !!t)
+      // 已删的对话不该还有进程或后台命令；还在收尾的先停掉，不然 Windows 上目录删不掉
+      await Promise.all(full.map((tk) => endBackground(tk.id).catch(() => {})))
+      await purgeTasks(full)
+      log.info('tasks', '回收站过期清理', { removed: full.map((t) => t.id) })
+      return full.length
     },
   }
 }

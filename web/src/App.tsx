@@ -63,16 +63,16 @@ function useTheme() {
   return [dark, toggle] as const
 }
 
-/** 地址栏用 hash 记录位置（#/projects/<id>/<sub>），刷新、前进后退、复制链接都能回到同一页 */
+/** 地址栏用 hash 记录位置（#/projects/<id>/<sub>/<msg>），刷新、前进后退、复制链接都能回到同一页 */
 function parseHash(): Route {
-  const [page, id, sub] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
+  const [page, id, sub, msg] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
   return page && page in PAGES
-    ? { page: page as Route['page'], id: id || undefined, sub: sub || undefined }
+    ? { page: page as Route['page'], id: id || undefined, sub: sub || undefined, msg: msg || undefined }
     : { page: 'home' }
 }
 const toHash = (r: Route) =>
   '#/' +
-  [r.page, r.id, r.sub]
+  [r.page, r.id, r.sub, r.msg]
     .filter(Boolean)
     .map((x) => encodeURIComponent(x!))
     .join('/')

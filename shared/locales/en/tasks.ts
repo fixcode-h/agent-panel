@@ -383,6 +383,7 @@ export const EN_TASKS: Record<string, string> = {
   父对话结束时一起结束: 'Ended together with the parent chat',
   '换 Agent / 模型时中断': 'Interrupted when switching agent / model',
   归档时结束: 'Ended on archive',
+  删除时结束: 'Ended when deleted',
   面板重启时中断: 'Interrupted by panel restart',
   页面切走后结束: 'Ended after the page was left',
   闲置太久已回收: 'Recycled after being idle too long',
@@ -390,7 +391,7 @@ export const EN_TASKS: Record<string, string> = {
   做完后收尾: 'Cleanup after finishing',
 
   // 任务页
-  已删除任务: 'Task deleted',
+  '已移进回收站，{days} 天内可以恢复': 'Moved to the trash; you can restore it within {days} days',
   // 转成弹窗（收成右下角的浮条）
   转成弹窗: 'Open as popup',
   '转成弹窗（对话继续在后台运行）': 'Open as popup (the chat keeps running in the background)',
@@ -428,8 +429,8 @@ export const EN_TASKS: Record<string, string> = {
   '发送（Enter）': 'Send (Enter)',
   关闭面板: 'Close panel',
   '删除任务「{title}」？': 'Delete task "{title}"?',
-  '会删除这个任务的对话记录，不会撤销已经改动的文件。':
-    "This deletes the task's conversation history. Files that were already changed won't be reverted.",
+  '对话记录会移进回收站，{days} 天内可以在设置 →「数据」→ 回收站里恢复；已经改动的文件不会撤销。':
+    "The conversation moves to the trash and can be restored within {days} days in Settings → Data → Trash. Files that were already changed won't be reverted.",
   没有输出: 'No output',
   '正在执行…': 'Running…',
 
@@ -931,13 +932,12 @@ export const EN_TASKS: Record<string, string> = {
   '把合并要求发给这个分支的对话，由 AI 解决冲突后合回原分支':
     'Sends a merge request to the chat that owns this branch; AI resolves conflicts and merges it back',
   '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
-  '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
+  '它的独立分支已经合并，恢复后照常可用。': 'Its separate branches are merged and still work after restoring.',
   '正在检查独立分支…': 'Checking separate branches…',
-  '有 {n} 个独立分支还没合并，直接删除会丢掉这些改动':
-    '{n} separate branch(es) not merged. Deleting now loses those changes',
+  '有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉':
+    '{n} separate branch(es) not merged: they move to the trash with the conversation and are removed only on permanent deletion',
   '把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除':
     'Sends a merge request to the chat that owns the branch; AI resolves conflicts and merges it back. The chat is not deleted',
-  直接删除: 'Delete anyway',
   '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',

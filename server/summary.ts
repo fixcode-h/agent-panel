@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { getCli } from '../shared/clis.ts'
 import type { Project, Task } from '../shared/schema.ts'
+import { taskDeleted } from '../shared/task.ts'
 import {
   activeInRange,
   checkSummaryFormat,
@@ -95,7 +96,11 @@ export function summaryApi(deps: {
     // 列表里的任务只带用户消息（server/task-store.ts 的 head），Agent 的结论不在里面。
     // 先按时间字段筛出范围内有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
     const ids = new Set(chosen.map((p) => p.id))
-    const candidates = (await deps.tasks.list()).filter((t) => ids.has(t.projectId) && activeInRange(t, win))
+    // 时间范围只由 activeInRange 判（口径在 shared/summary.ts 的 rangeWindow）；
+    // 删进回收站的对话不算这次总结的工作：用户已经把它删了，报告里不该再出现
+    const candidates = (await deps.tasks.list()).filter(
+      (t) => ids.has(t.projectId) && activeInRange(t, win) && !taskDeleted(t),
+    )
     const full = await Promise.all(candidates.map((t) => deps.tasks.get(t.id)))
     // 每个项目只分析用户选的对话；taskIds 为空表示该项目范围内全部对话
     const picks = input.projects

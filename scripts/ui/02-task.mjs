@@ -1668,11 +1668,18 @@ await runShard(import.meta.filename, async (api) => {
           return ok
         }
 
-        // 鼠标点另一条：就地打开，浮层收起
-        await pop
-          .getByRole('button', { name: /商品详情页/ })
-          .first()
-          .click({ timeout: 10000 })
+        // 鼠标点另一条：就地打开，浮层收起。
+        // 浮层列表跟着任务刷新（每 4 秒）重新渲染，全量并行跑时按钮会一直「不稳定」甚至被换掉，
+        // 鼠标点会被 Playwright 的稳定性检查卡住：点不动就退回键盘聚焦 + Enter，要验的是「打开了另一条」
+        const another = pop.getByRole('button', { name: /商品详情页/ }).first()
+        const clicked = await another.click({ timeout: 4000 }).then(
+          () => true,
+          () => false,
+        )
+        if (!clicked) {
+          await another.focus({ timeout: 4000 }).catch(() => {})
+          await p.keyboard.press('Enter')
+        }
         if (
           !(await pop.waitFor({ state: 'detached', timeout: 3000 }).then(
             () => true,

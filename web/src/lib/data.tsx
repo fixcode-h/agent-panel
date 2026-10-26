@@ -371,6 +371,8 @@ export interface Route {
   id?: string
   /** 二级选择，例如项目里的任务 id、'new'（新建任务） */
   sub?: string
+  /** 对话里要定位到的消息 id：从搜索结果点进来时带上（见 web/src/lib/message-anchor.ts） */
+  msg?: string
 }
 export const NavCtx = createContext<{
   route: Route
