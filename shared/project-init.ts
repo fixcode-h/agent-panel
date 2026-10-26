@@ -128,14 +128,14 @@ export function readProjectProposal(v: unknown): ProjectProposal | undefined {
  * 只更新初始化结果的合并：其它字段一律用传进来的那份（服务端刚读到的项目）。
  * 初始化的结果回来得晚（对话可能跑好几分钟），客户端手里的项目快照那时可能已经过期；
  * 整份写回会把用户这期间应用的推荐、改过的设置覆盖回旧值，界面上又变回「N 项待应用」。
- * 已有初始化时间时保留：重跑一次初始化不该把第一次的时间改掉。
+ * 时间用这次完成的：设置页「已于 X 初始化」要反映最近一次（和设置页内重新初始化一致）。
  */
 export function withInitResult<T extends { initializedAt: string; initResult?: ProjectProposal }>(
   project: T,
   initResult: ProjectProposal,
   now = new Date().toISOString(),
 ): T {
-  return { ...project, initResult, initializedAt: project.initializedAt || now }
+  return { ...project, initResult, initializedAt: now }
 }
 
 const Reasoned = z.object({ value: z.unknown(), reason: z.string().trim().max(400).catch('').default('') })

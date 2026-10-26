@@ -573,7 +573,8 @@ function Body({
         name: draft.name.trim(),
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
-        initResult: init ?? latest?.initResult ?? draft.initResult,
+        // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
+        initResult: init ?? readProjectProposal(latest?.initResult) ?? draft.initResult,
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里

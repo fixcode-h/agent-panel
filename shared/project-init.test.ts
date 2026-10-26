@@ -137,12 +137,12 @@ test('只更新初始化结果：已经应用过的推荐和用户改过的设�
     testSteps: [{ id: 'unit', name: '单元测试', command: 'npm test' }],
     initializedAt: '2026-10-01T00:00:00Z',
   })
-  const next = withInitResult(applied, savedProposal)
+  const next = withInitResult(applied, savedProposal, '2026-10-26T00:00:00Z')
   assert.equal(next.name, '商城')
   assert.equal(next.description, '应用后的简介')
   assert.deepEqual(next.testSteps, applied.testSteps)
-  // 已经初始化过的时间不刷新，重跑一次初始化不应该改掉它
-  assert.equal(next.initializedAt, '2026-10-01T00:00:00Z')
+  // 时间跟这次初始化走：设置页「已于 X 初始化」要反映最近一次
+  assert.equal(next.initializedAt, '2026-10-26T00:00:00Z')
   assert.deepEqual(next.initResult, savedProposal)
   // 还没初始化过的项目这次补上
   const fresh = ProjectInput.parse({ name: '新项目' })
