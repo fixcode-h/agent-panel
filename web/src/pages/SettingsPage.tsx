@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from '@/lib/toast'
 import {
@@ -63,7 +63,7 @@ import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
-import { useSkillUpdates } from '@/lib/skill-updates'
+import { deployedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
 import { SectionToc, setSectionScroll } from '@/components/settings/section-nav'
 import { ShellSetting } from '@/components/settings/ShellSetting'
@@ -140,6 +140,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [childAskUserDefault, setChildAskUserDefault] = useState(initial.childAskUserDefault)
   const [developerMode, setDeveloperMode] = useState(initial.developerMode)
   const [elementPicker, setElementPicker] = useState(initial.elementPicker)
   const [shell, setShell] = useState(initial.shell)
@@ -288,6 +289,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    childAskUserDefault,
     developerMode,
     elementPicker,
     shell,
@@ -373,8 +375,11 @@ function SettingsBody({
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
-  const deployN = useSkillUpdates().deployed.length
-  const deployDot = deployN ? t('{n} 个部署的技能可以更新', { n: deployN }) : undefined
+  // 「部署」那份和这一版不同时，左栏的「Agent」和二级列表的「部署」都亮点（侧栏「设置」读同一份派生值）
+  const deployDot = deployedUpdateHint(useSkillUpdates())
+  // 提示挂在 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找这一项就找不到了
+  const agentHintId = useId()
+  const deployHintId = useId()
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
   const defDraft = drafts[defCli]
   const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
@@ -404,6 +409,7 @@ function SettingsBody({
               <button
                 onClick={() => onSection(s.id)}
                 aria-current={on ? 'page' : undefined}
+                aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
                 className={cn(
                   'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
                   on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
@@ -420,9 +426,18 @@ function SettingsBody({
                 )}
                 {/* 「部署」在 Agent 的二级列表里：自带技能要更新时先在这一项上亮点 */}
                 {s.id === 'models' && deployDot && (
-                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
+                  <span
+                    aria-hidden="true"
+                    title={deployDot}
+                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                  />
                 )}
               </button>
+              {s.id === 'models' && deployDot && (
+                <span id={agentHintId} className="sr-only">
+                  {deployDot}
+                </span>
+              )}
             </div>
           )
         })}
@@ -457,6 +472,7 @@ function SettingsBody({
                 <button
                   onClick={() => onSection(s.id)}
                   aria-current={on ? 'page' : undefined}
+                  aria-describedby={s.id === 'deploy' && deployDot ? deployHintId : undefined}
                   title={s.cli ? t('拖动调整顺序，或按 Alt + ↑ / ↓') : undefined}
                   draggable={!!s.cli}
                   onDragStart={(e) => {
@@ -490,7 +506,11 @@ function SettingsBody({
                   )}
                   <span className="truncate">{s.label}</span>
                   {s.id === 'deploy' && deployDot && (
-                    <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={deployDot} />
+                    <span
+                      aria-hidden="true"
+                      title={deployDot}
+                      className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                    />
                   )}
                   {s.cli && defCli === s.cli.id && (
                     <span className="text-[0.6875rem] font-normal text-subtle">{t('默认')}</span>
@@ -507,6 +527,11 @@ function SettingsBody({
                     />
                   )}
                 </button>
+                {s.id === 'deploy' && deployDot && (
+                  <span id={deployHintId} className="sr-only">
+                    {deployDot}
+                  </span>
+                )}
               </div>
             )
           })}
@@ -782,6 +807,18 @@ function SettingsBody({
                     aria-label={t('新会话默认开启提问')}
                     checked={askUserDefault}
                     onCheckedChange={setAskUserDefault}
+                  />
+                </Row>
+                <Row
+                  title={t('子对话默认也提问')}
+                  desc={t(
+                    '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。',
+                  )}
+                >
+                  <Switch
+                    aria-label={t('子对话默认也提问')}
+                    checked={childAskUserDefault}
+                    onCheckedChange={setChildAskUserDefault}
                   />
                 </Row>
                 <Row

@@ -5,6 +5,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 import { AgentAvatar } from './AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
+import { listableAgents } from '@shared/builtin/core'
 
 /** 从已有 Agent 中选一个，按分类分组，可搜索 */
 export function AgentPicker({
@@ -26,7 +27,9 @@ export function AgentPicker({
   const { modelOf } = useAgentView()
   const { agents, categories } = useData()
   const [q, setQ] = useState('')
-  const pool = agents.filter((a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const pool = listableAgents(agents).filter(
+    (a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()),
+  )
   const groups = [
     ...categories.filter((c) => c.scope !== 'workflow').map((c) => ({ id: c.id, name: c.name })),
     { id: '', name: t('未分类') },

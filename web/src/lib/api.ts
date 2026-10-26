@@ -36,6 +36,7 @@ import type {
   NewTaskInput,
   Task,
   TaskPatch,
+  TaskSeenResult,
   Workflow,
   WorkflowInput,
   CleanProcessesResult,
@@ -536,6 +537,8 @@ export const api = {
         waiting?: ChildWait
         /** 用户标记了「解决」：列表归到「已完成」并带标记 */
         resolved?: boolean
+        /** 已收起（归档 / 独立分支被删掉）：不再算在跑、不进运行区（见 shared/task.ts 的 taskGone） */
+        gone?: boolean
         /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */
         stopReason?: Task['stopReason'] | ''
       }[]
@@ -570,8 +573,8 @@ export const api = {
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
-  /** 用户打开了这个对话：侧栏的橙点消失，服务端可以按宽限期回收 CLI 了 */
-  markTaskSeen: (id: string) => request<Task>(`/tasks/${id}/seen`, json('POST', {})),
+  /** 用户打开了这个对话：侧栏的橙点消失，服务端可以按宽限期回收 CLI 了。只回「看到哪」，整份对话不再传回来 */
+  markTaskSeen: (id: string) => request<TaskSeenResult>(`/tasks/${id}/seen`, json('POST', {})),
   /** 打开旧对话时在后台用 --resume 启动，先停在等下一句上 */
   prewarmTask: (id: string) => request<Task>(`/tasks/${id}/prewarm`, { method: 'POST' }),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
@@ -703,6 +706,9 @@ export const api = {
   /** 子对话请用户决定的提问，用户点了关闭：都不回答，子对话终止 */
   closeParentAsks: (id: string) => request<Task>(`/tasks/${id}/parent-asks/close`, { method: 'POST' }),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
+  /** 父对话右键菜单的「子对话也提问」：applyExisting 表示已创建的子对话也一起打开 */
+  setTaskChildAskUser: (id: string, childAskUser: boolean, applyExisting: boolean) =>
+    request<Task>(`/tasks/${id}`, json('PATCH', { childAskUser, applyChildAsk: applyExisting })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>

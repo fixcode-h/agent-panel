@@ -17,6 +17,13 @@ export const statusLabel: Record<TaskStatus, string> = {
 /** 「3 分钟前」这类相对时间：实现在 shared/task（服务端给父对话的清单也用它），这里只转出去 */
 export { timeAgo } from '@shared/task'
 
+/**
+ * `POST /tasks/:id/seen` 只回「这一轮看到哪」：把它合进本地那份任务。
+ * 「未读」怎么判不在这里（只在 shared/task 的 taskTurnUnread），这里只换字段。
+ */
+export const withTurnSeenAt = (task: Task, turnSeenAt: string): Task =>
+  task.turnSeenAt === turnSeenAt ? task : { ...task, turnSeenAt }
+
 export const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
 

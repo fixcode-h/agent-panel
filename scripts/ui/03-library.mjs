@@ -332,12 +332,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const label = [...document.querySelectorAll('span')].find((el) => el.textContent?.trim() === '必备')
     return label?.parentElement?.textContent?.trim() ?? ''
   })
-  if (!/必备\s*·\s*8/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 8（读到「${coreHead}」）`)
+  if (!/必备\s*·\s*7/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 7（读到「${coreHead}」）`)
+  // 「子任务」是派子任务时的默认角色，不是用户可选的角色：角色页不展示它，也不让它单独撑出一个组
+  const rolePane = p.locator('section[aria-label="角色列表"]')
+  if (await rolePane.getByRole('button', { name: /^子任务/ }).count())
+    errors.push('角色页：列表里出现了「子任务」这个默认子任务角色')
+  await search.fill('子任务')
+  await p.waitForTimeout(300)
+  if (await rolePane.getByRole('button', { name: /^子任务/ }).count())
+    errors.push('角色页：搜索「子任务」还能搜到这个默认子任务角色')
+  await search.fill('')
   // 换回默认视图，后面的流程照原样在按标签的列表里走
   await p.getByRole('radio', { name: '按标签' }).click()
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
+  // 「子任务」是子任务机制默认用的角色，启动时自动建好：用户不需要也不能手动添加，不能列在弹窗里。
+  // 用 data-builtin-key 定位：角色名和「已添加」在同一个 <p> 里，按文字精确匹配找不到它
+  if (await p.getByRole('dialog').locator('[data-builtin-key="helper"]').count())
+    errors.push('内置Agent：弹窗里列出了「子任务」，用户不需要手动添加它')
   await p.keyboard.press('Escape')
   // 评审是必备角色：参数定义和角色设定由面板维护，参数页只改取值、角色设定只读
   await search.fill('评审')

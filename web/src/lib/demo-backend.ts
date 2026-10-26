@@ -78,6 +78,7 @@ import { orderProjects, projectOrderError, sortProjects } from '@shared/project-
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
+import { childAskEffect } from '@shared/child-ask'
 import {
   BUILTIN_WORKFLOWS,
   ComfyWorkflow,
@@ -118,11 +119,12 @@ import {
   newTask,
   questionAnswers,
   runRunning,
+  taskGone,
   taskSummary,
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { openPlan } from '@shared/plan'
+import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -2907,11 +2909,11 @@ function tasksRoute(
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
   if (sub === 'presence' || sub === 'prewarm') return task
-  // 打开看过这一轮：清掉侧栏的橙点
+  // 打开看过这一轮：清掉侧栏的橙点（正式后端也只回「看到哪」，不把整份对话传回来）
   if (sub === 'seen') {
     task.turnSeenAt = task.turnDoneAt
     persist()
-    return task
+    return { turnSeenAt: task.turnSeenAt }
   }
   if (sub === 'end-flow') {
     if (live.has(task.id)) fail('任务正在执行，请先停止')
@@ -3053,6 +3055,8 @@ function tasksRoute(
           waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
           resolved: x.resolved === true,
           analysis: x.analysis,
+          // 和正式后端对齐：归档 / 独立分支被删掉的条目不再算在跑（见 shared/task.ts 的 taskGone）
+          gone: taskGone(x),
         }
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
@@ -3278,9 +3282,24 @@ function tasksRoute(
     return task
   }
   if (method === 'PATCH') {
-    const { childRun, ...rest } = parse(TaskPatch, body)
+    const p = parse(TaskPatch, body)
+    const { childRun, applyChildAsk, ...rest } = p
+    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：父对话关掉时已有子对话一起关
+    const askEffect = childAskEffect({
+      askUser: p.askUser,
+      childAskUser: p.childAskUser,
+      applyExisting: applyChildAsk,
+    })
     Object.assign(task, rest)
+    if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
+    if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
+    // 演示里没有引擎，已创建的子对话只改记录——界面上的按钮和菜单勾选都读它
+    if (askEffect.existingChildren !== undefined)
+      for (const kid of tasks) if (kid.parentTaskId === task.id) kid.askUser = askEffect.existingChildren
     if (childRun !== undefined) task.childRun = childRun ?? undefined
+    // 和正式后端一致（见 server/tasks.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
+    // 否则演示版会停在「已解决但计划还有 n 步没做完」，界面检查就测不到真机上收口后的样子
+    if (rest.resolved === true && task.parentTaskId) settlePlan(task)
     persist()
     return task
   }
@@ -3557,7 +3576,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         model: '',
         effort: '',
         params: {},
-        askUser: false,
+        // 子对话的「提问」初始值跟着父对话的「子对话也提问」走（和正式后端一样）
+        askUser: parent.childAskUser ?? true,
       },
       true,
     )

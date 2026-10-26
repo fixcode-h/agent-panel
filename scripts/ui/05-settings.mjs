@@ -14,6 +14,59 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
   await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）', '子对话没有输出时自动询问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
+  // 「子对话默认也提问」：和「新会话默认开启提问」同一组，默认开着；改了之后新建的父对话右键菜单跟着变
+  {
+    const childAsk = p.getByRole('switch', { name: '子对话默认也提问' })
+    if (!(await childAsk.count())) errors.push('设置：没有「子对话默认也提问」这一项')
+    else if ((await childAsk.getAttribute('aria-checked')) !== 'true')
+      errors.push('设置：「子对话默认也提问」默认应该是打开的')
+    // 新开一个页面改设置再新建父对话：设置存在这个页面的演示数据里，和在另一个页面改的不通
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base)
+    await d.getByRole('button', { name: '设置' }).first().click()
+    const newAsk = d.getByRole('switch', { name: '新会话默认开启提问' })
+    await newAsk.waitFor({ timeout: 10000 }).catch(() => errors.push('设置：新页面里没有「新会话默认开启提问」'))
+    if ((await newAsk.getAttribute('aria-checked')) !== 'true') await newAsk.click()
+    const dChildAsk = d.getByRole('switch', { name: '子对话默认也提问' })
+    await dChildAsk.waitFor({ timeout: 5000 }).catch(() => errors.push('设置：新页面里没有「子对话默认也提问」'))
+    if ((await dChildAsk.getAttribute('aria-checked')) !== 'true')
+      errors.push('设置：「子对话默认也提问」默认应该是打开的')
+    await dChildAsk.click()
+    await d
+      .waitForFunction(() => localStorage.getItem('ask-user-child-default') === '0', undefined, { timeout: 5000 })
+      .catch(() => errors.push('设置：「子对话默认也提问」改了之后没有同步到新会话读的缓存'))
+    await check(d, '设置-子对话默认也提问')
+    // 设置是 dialog：hash 导航不会关掉它，留着会用自己的焦点陷阱抢走输入框焦点，Enter 发不出去
+    await d.keyboard.press('Escape')
+    await d
+      .getByRole('dialog')
+      .first()
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('设置：Esc 没有关掉设置弹窗'))
+    await d.goto(base + '#/chat')
+    await d
+      .locator('#task-prompt')
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('设置：回到新聊天页后没有输入框'))
+    await settle(d)
+    await d.locator('#task-prompt').fill('验证子对话提问的默认值')
+    await d.locator('#task-prompt').press('Enter')
+    await d
+      .locator('#task-prompt')
+      .waitFor({ state: 'detached', timeout: 20000 })
+      .catch(() => errors.push('设置：新建对话后没有打开任务页'))
+    const ask = d.getByRole('button', { name: 'AI 有问题时问我' }).first()
+    await ask.waitFor({ timeout: 10000 }).catch(() => errors.push('设置：新建的父对话里没有提问按钮'))
+    if ((await ask.getAttribute('aria-pressed')) !== 'true')
+      errors.push('设置：新会话的提问应该开着（这条用例的前提），实际没开')
+    await ask.click({ button: 'right' })
+    const item = d.getByRole('menuitemcheckbox', { name: '子对话也提问' })
+    await item.waitFor({ timeout: 5000 }).catch(() => errors.push('设置：新建的父对话右键没有「子对话也提问」'))
+    if ((await item.getAttribute('aria-checked')) !== 'false')
+      errors.push('设置：关掉「子对话默认也提问」后，新建父对话的右键菜单应该默认不勾选')
+    await check(d, '设置-新父对话的子对话默认')
+    await d.close()
+  }
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '字体', exact: true }).click()
@@ -147,6 +200,79 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
   await settle(p)
   await p.keyboard.press('Escape')
+  // 分片前面几步里 Esc 先关的是刚用过的浮层（下拉、日历），设置弹窗不一定跟着关：显式点关闭，
+  // 否则遮罩盖着侧栏，下面的点击会一直等
+  const settingsDialog = p.getByRole('dialog')
+  const closeSettings = async () => {
+    if (!(await settingsDialog.count())) return
+    await settingsDialog.getByRole('button', { name: /^关闭/ }).click()
+    await settingsDialog.waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+  }
+  await closeSettings()
+  // 部署提醒点：演示后端用 localStorage 的 demo-deploy-outdated 造「部署那份和自带的不同」（见 demo-deploy.ts）。
+  // 有差异时侧栏「设置」和设置里的「Agent」「部署」都要亮点，重新部署后三处一起消失。
+  // 提示数据（skill-updates）只在本窗口获得焦点时重读；不重载页面——设置弹窗的状态会被重载保留，重载后侧栏被盖住
+  const settingsRow = () => p.locator('aside[aria-label="侧栏"]').getByRole('button', { name: '设置', exact: true })
+  // 提示挂在按钮的 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找「设置」就找不到了
+  const hintOf = (loc) =>
+    loc.evaluateAll((els) => {
+      const el = els[0]
+      if (!el) return ''
+      const id = el.getAttribute('aria-describedby')
+      return id ? (document.getElementById(id)?.textContent ?? '').trim() : ''
+    })
+  const waitHint = async (loc, expected) => {
+    for (let i = 0; i < 80; i++) {
+      if ((await hintOf(loc)) === expected) return true
+      await p.waitForTimeout(100)
+    }
+    return false
+  }
+  const deployHint = '1 项部署内容有更新，需要重新部署'
+  const setOutdated = (value) =>
+    p.evaluate((v) => {
+      if (v) localStorage.setItem('demo-deploy-outdated', v)
+      else localStorage.removeItem('demo-deploy-outdated')
+      window.dispatchEvent(new Event('focus'))
+    }, value)
+  await settingsRow().waitFor({ timeout: 8000 })
+  await setOutdated('grilling')
+  // 点的提示不能把按钮的名字挤掉：按「设置」还能找到它
+  if ((await p.getByRole('button', { name: '设置', exact: true }).count()) !== 1)
+    errors.push('部署提醒点：有差异时「设置」按钮的名字变了')
+  if (!(await waitHint(settingsRow(), deployHint)))
+    errors.push(`部署提醒点：侧栏「设置」上没有提示（${await hintOf(settingsRow())}）`)
+  await settingsRow().click()
+  const agentItem = p.getByRole('button', { name: 'Agent', exact: true })
+  await agentItem.click()
+  const deployItem = p.locator('nav[aria-label="Agent"]').getByRole('button', { name: '部署', exact: true })
+  await deployItem.waitFor({ timeout: 5000 })
+  if ((await hintOf(agentItem)) !== deployHint) errors.push('部署提醒点：设置里「Agent」项上没有提示')
+  if ((await hintOf(deployItem)) !== deployHint) errors.push('部署提醒点：设置里「部署」项上没有提示')
+  // 进去能看到具体哪一项要更新
+  await deployItem.click()
+  await p
+    .getByText('和自带的不同，可更新')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('部署提醒点：部署页没有标出哪一项和自带的不同'))
+  // 重新部署后三处同时消失（数据刷新后自然消失，不是本地记住一个点）
+  await p.getByRole('switch', { name: 'grilling' }).click()
+  await p.getByRole('button', { name: '部署', exact: true }).last().click()
+  if (!(await waitHint(deployItem, ''))) errors.push('部署提醒点：重新部署后「部署」项上的提示还在')
+  await check(p, '设置-部署-重新部署后提示点消失')
+  await closeSettings()
+  await settingsRow().waitFor({ timeout: 8000 })
+  // 侧栏在设置弹窗开着时查不到（量弹窗盖住），关掉再看
+  if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：重新部署后侧栏「设置」上的提示还在')
+  // 浅色下也要能看清：同一套点样式，再造一次差异看一眼
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+  await setOutdated('grilling')
+  if (!(await waitHint(settingsRow(), deployHint))) errors.push('部署提醒点：浅色主题下侧栏「设置」上没有提示')
+  await check(p, '设置-部署-浅色提醒点')
+  // 没有差异时不能一直亮着；清掉钩子，后面的检查也不受影响
+  await setOutdated('')
+  if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：没有差异时侧栏「设置」上还有提示')
   // 英文界面的截图和以前一样放在浅色主题下看
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

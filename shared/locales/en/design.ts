@@ -489,6 +489,13 @@ export const EN_DESIGN: Record<string, string> = {
     'The AI asks you and waits for your answer (click to let the AI decide on its own)',
   'AI 有问题时自己选最合适的做法（点一下改成问你）':
     'The AI picks the best option on its own (click to have it ask you)',
+  子对话也提问: 'Ask in sub-chats too',
+  '只对之后新建的子对话生效，已创建的子对话保持各自的选择。':
+    'Applies to sub-chats created from now on; existing sub-chats keep their own choice.',
+  '已创建的子对话要不要也打开「提问」？之后新建的子对话都会向你提问。':
+    'Should existing sub-chats turn on Ask too? Sub-chats created from now on will always ask you.',
+  应用到已创建的子对话: 'Apply to existing sub-chats',
+  只对之后新建的子对话: 'Only for new sub-chats',
   从风格库导入: 'Import from style library',
   '风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。':
     'The style library is empty. Click "Save to style library" in a UI design\'s style settings to add one.',

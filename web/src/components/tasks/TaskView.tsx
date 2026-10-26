@@ -61,6 +61,7 @@ import {
   type TaskMessage,
   type TaskStep,
   type ToolUse,
+  type TaskSeenResult,
 } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
@@ -85,7 +86,15 @@ import { useTaskStream } from '@/lib/task-stream'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { apiQueueWait, deliveredToCli, fmtDuration, messageRecorded, startedRun, tpsNow } from '@/lib/tasks'
+import {
+  apiQueueWait,
+  deliveredToCli,
+  fmtDuration,
+  messageRecorded,
+  startedRun,
+  tpsNow,
+  withTurnSeenAt,
+} from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
@@ -375,7 +384,7 @@ export function TaskView({
   pane?: boolean
   onClose?: () => void
 }) {
-  const { agents: localAgents, workflows, settings, upsertTask, removeTask } = useData()
+  const { agents: localAgents, workflows, settings, upsertTask, removeTask, tasks } = useData()
   const nav = useNav()
   const go: typeof nav.go = (r) => {
     embed?.onLeave()
@@ -564,6 +573,8 @@ export function TaskView({
       prev.status !== next.status ||
       prev.working !== next.working ||
       prev.turnDoneAt !== next.turnDoneAt ||
+      // 未读清掉（打开对话时）也是侧栏马上要反映的变化，不能等 1 秒节流
+      prev.turnSeenAt !== next.turnSeenAt ||
       prev.childrenWorking !== next.childrenWorking ||
       (prev.jobs?.length ?? 0) !== (next.jobs?.length ?? 0) ||
       (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
@@ -591,8 +602,29 @@ export function TaskView({
     setTask(next)
     pushSummary(next)
   }
-  // 子对话标记为已解决：请求走子对话一侧的完成流转（服务端判定 → 置完成 → 上报父对话），
-  // 还有没收口的东西时返回 409，把卡在哪一项弹给用户；已经解决的重复点击不再发请求
+  // 服务端只回「这一轮看到哪」（整份对话不再传回来）：合进本地那份，侧栏橙点跟着消失，
+  // 未读判定仍在 shared/task 的 taskTurnUnread，这里不改规则
+  const applySeen = (seen: TaskSeenResult) => {
+    const cur = lastTask.current
+    if (cur) {
+      const next = withTurnSeenAt(cur, seen.turnSeenAt)
+      if (next !== cur) {
+        setTask(next)
+        pushSummary(next)
+      }
+      return
+    }
+    // 首次打开时 /seen 常常比 GET /:id 先回来（那份要序列化整份对话）：这时本地还没有任务，
+    // 只能先把全局列表里那条摘要换掉，侧栏橙点不用等整份对话到齐
+    const listed = tasks.find((x) => x.id === taskId)
+    if (!listed) return
+    const patched = withTurnSeenAt(listed, seen.turnSeenAt)
+    if (patched !== listed) upsertTask(patched)
+  }
+  // 子对话标记为已解决：请求走子对话一侧的完成流转（服务端判定 → 置完成 → 上报父对话）。
+  // 用户点「解决」时计划里没做完的步骤一并收口（服务端 fromUser 这条路径，见 settleChildForUser），
+  // 其余还没收口的东西（这一轮在跑、独立分支没合回、待回答的提问）仍返回 409，把卡在哪一项弹给用户；
+  // 已经解决的重复点击不再发请求
   const resolveChild = async () => {
     if (resolving || !task || task.resolved) return
     setResolving(true)
@@ -753,7 +785,7 @@ export function TaskView({
     marked.current = taskId
     api
       .markTaskSeen(taskId)
-      .then(apply)
+      .then(applySeen)
       .catch(() => {})
     // 只在换到新的对话时报一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -769,7 +801,7 @@ export function TaskView({
       if (document.hidden) return
       api
         .markTaskSeen(taskId)
-        .then(apply)
+        .then(applySeen)
         .catch(() => {})
     }
     mark()
@@ -1198,6 +1230,17 @@ export function TaskView({
               setTask({ ...task, askUser: v })
               api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
             }}
+            // 只有父对话有「子对话也提问」：子对话页面不传回调，右键菜单不出现
+            childAskUser={task.childAskUser}
+            onChildAskUserChange={
+              task.parentTaskId
+                ? undefined
+                : (on, applyExisting) => {
+                    api
+                      .setTaskChildAskUser(task.id, on, applyExisting)
+                      .then(apply, (e) => toast.error((e as Error).message))
+                  }
+            }
           />
           {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} />}
           {task.mode === 'workflow' && (
@@ -2199,8 +2242,9 @@ function ChildrenBar({
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
-  const asking = children.filter((c) => c.asking && !c.resolved)
+  // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决、已经收起（归档 / 独立分支被删掉）的
+  // 不再算你要处理的事——用户已经把它删了，不能还在状态栏上催他回答
+  const asking = children.filter((c) => c.asking && !c.resolved && !c.gone)
   // 转圈的那一批：和行首图标、行内徽标、悬浮层默认列表、运行区的子对话是同一套判定（见 visibleChildren）
   const busy = visibleChildren(children)
   // 分子（还在进行）和分母（进程还活着的）同一份数据算出来，不再各处各算一遍

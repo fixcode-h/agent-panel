@@ -9,6 +9,7 @@ import {
   type DeployState,
 } from '@shared/deploy'
 import { frontField } from '@shared/library'
+import { resolveSkills } from '@shared/skill-guide'
 import { startDemoGlobalDocJob } from './demo-docs'
 
 /**
@@ -32,8 +33,28 @@ const deployed = new Set<string>()
 const docs = new Map<string, string>()
 const home = (p: string) => p.replace(/\$\{\w+:-([^}]*)\}/g, '$1').replace(/^~/, '/Users/demo')
 
+/**
+ * 界面检查用：这里列出的技能当作「已部署、内容和这一版自带的不同」（重新部署一次后清掉）。
+ * 演示里没有本机目录，只能靠这个钩子造出「部署那份有差异」的场景，同 demo-slow-messages
+ */
+const OUTDATED_KEY = 'demo-deploy-outdated'
+function readOutdated(): Set<string> {
+  try {
+    return new Set((globalThis.localStorage?.getItem(OUTDATED_KEY) ?? '').split(',').filter(Boolean))
+  } catch {
+    return new Set<string>()
+  }
+}
+function writeOutdated(names: Set<string>) {
+  try {
+    if (names.size) globalThis.localStorage?.setItem(OUTDATED_KEY, [...names].join(','))
+    else globalThis.localStorage?.removeItem(OUTDATED_KEY)
+  } catch {}
+}
+
 function state(active: string[]): DeployState {
   const list = skills()
+  const stale = readOutdated()
   const content = composeAgentsMd(
     config.agentsMd,
     list.filter((s) => config.skills.includes(s.name)),
@@ -42,7 +63,10 @@ function state(active: string[]): DeployState {
     config,
     template: deployTemplate(),
     skillRoot: home(SKILL_TARGET),
-    skills: list.map((s) => ({ ...s, status: deployed.has(s.name) ? 'same' : 'missing' })),
+    skills: list.map((s) => ({
+      ...s,
+      status: stale.has(s.name) ? 'changed' : deployed.has(s.name) ? 'same' : 'missing',
+    })),
     targets: CLIS.filter((d) => d.globalDoc && active.includes(d.id)).map((d) => {
       const cur = docs.get(d.id)
       return {
@@ -56,23 +80,30 @@ function state(active: string[]): DeployState {
 }
 
 export function demoDeploy(method: string, sub: string | undefined, body: unknown, active: string[]): unknown {
-  // 演示里装的都是这一版的自带技能，没有要更新的
-  if (sub === 'updates') return { shared: [], deployed: [] }
+  // 演示里装的都是这一版的自带技能；界面检查用 localStorage 造出「和自带的不同」的情形。
+  // 不按 config.skills 再过滤：钩子本身就是「已部署的那份」，演示没有真实目录可判（正式后端按勾选过滤）
+  if (sub === 'updates') return { shared: [], deployed: [...readOutdated()] }
   if (sub === 'optimize') return startDemoGlobalDocJob(body as { content?: string; request?: string })
   if (sub === 'run') {
     const run = DeployRun.parse(body)
     config = DeployConfig.parse(run)
+    // 和正式部署一样（server/deploy.ts 的 deploy）：选了特化技能把它扩展的通用技能一起算
+    const picked = resolveSkills(run.skills)
     const out: DeployResult = { skills: [], kept: [], removed: [], docs: [] }
     for (const s of skills()) {
-      if (run.skills.includes(s.name) && !deployed.has(s.name)) {
+      if (picked.includes(s.name) && !deployed.has(s.name)) {
         deployed.add(s.name)
         out.skills.push(s.name)
-      } else if (!run.skills.includes(s.name) && deployed.delete(s.name)) out.removed.push(s.name)
+      } else if (!picked.includes(s.name) && deployed.delete(s.name)) out.removed.push(s.name)
     }
     const content = composeAgentsMd(
       run.agentsMd,
-      skills().filter((s) => run.skills.includes(s.name)),
+      skills().filter((s) => picked.includes(s.name)),
     )
+    // 部署一次就算覆盖成这一版的内容：界面检查里「重新部署后提醒点消失」靠这一句
+    const stale = readOutdated()
+    for (const name of picked) stale.delete(name)
+    writeOutdated(stale)
     for (const d of CLIS.filter((x) => x.globalDoc && run.clis.includes(x.id) && active.includes(x.id))) {
       const cur = docs.get(d.id)
       docs.set(d.id, content)

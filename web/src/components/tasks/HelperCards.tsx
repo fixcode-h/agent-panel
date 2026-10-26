@@ -20,6 +20,7 @@ import { AnalyzeDialog } from './Evolution'
 import { HelperBriefCard } from './HelperBriefCard'
 import { startAnalysis } from '@/lib/task-transfer'
 import { t } from '@shared/i18n'
+import { isHelperAgent } from '@shared/builtin/core'
 
 /** 子任务用了多久：没开始也没结束的不显示（排队中），正在跑的跟着 now 每秒变 */
 const helperTime = (step: TaskStep, now: number) =>
@@ -143,7 +144,7 @@ export function HelperBar({ task, ids, teamNames }: { task: Task; ids: string[];
   const failed = steps.filter((s) => s.status === 'failed')
   const now = useNow(running.length > 0)
   // 角色名：默认的「子任务」角色不用再写一遍，点名派给「测试验收」这类角色时才标出来
-  const who = (step: TaskStep) => agents.find((a) => a.id === step.agentId && a.origin !== 'builtin:helper')
+  const who = (step: TaskStep) => agents.find((a) => a.id === step.agentId && !isHelperAgent(a))
   if (!steps.length) return null
 
   return (
@@ -264,7 +265,7 @@ export function HelperWindow({
   const now = useNow(live)
   // 这个子任务自己的消息（旧数据里它再派出去的也在它名下）
   const msgs = task.messages.filter((m) => m.step === id || m.step.startsWith(`${id}/`))
-  const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
+  const agent = agents.find((a) => a.id === step?.agentId && !isHelperAgent(a))
   // 有要求时打开先停在最上面：那块「派给它的要求」说明这个子任务要做什么，贴底会把它滚出视野，
   // 用户滚到底部附近之后才跟着新内容走（startAt: 'top'）。
   // 没有要求（旧记录 / 派发时只写了标题）时卡片整块不渲染，滚动区第一块就是对话流，停顶部没有意义——

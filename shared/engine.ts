@@ -90,6 +90,7 @@ import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
+import { isHelperAgent } from './builtin/core.ts'
 import {
   activePlan,
   applyPlan,
@@ -3009,7 +3010,7 @@ function makeOrchestra(
         return { ids: [], error: `一个节点最多同时派 ${MAX_HELPERS_PER_STEP} 个子任务，已经派了 ${busy} 个` }
       if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
       // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
-      const helperRole = host.agents.find((a) => a.origin === 'builtin:helper' && a.enabled)
+      const helperRole = host.agents.find((a) => isHelperAgent(a) && a.enabled)
       // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
       // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
       if (host.submitMerge) {

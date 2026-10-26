@@ -915,6 +915,11 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /**
+   * 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问（见 shared/child-ask.ts）。
+   * 只在创建父对话时用，之后走 PATCH /tasks/:id 改；不传时按设置里的默认值
+   */
+  childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
 })
@@ -937,6 +942,13 @@ export const PresenceInput = z.object({
   viewerId: z.string().min(1),
   active: z.boolean(),
 })
+
+/**
+ * `POST /tasks/:id/seen` 的返回：只回「这一轮看到哪」，不再把整份对话传回去
+ * （打开一次对话页之前要多传 2.4MB，前端其实只拿它把本地那份换个 turnSeenAt）。
+ */
+export const TaskSeenResult = z.object({ turnSeenAt: z.string() })
+export type TaskSeenResult = z.infer<typeof TaskSeenResult>
 
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
@@ -966,6 +978,10 @@ export const TaskPatch = z
     effort: z.string().trim().max(40),
     // 「提问」开关：Agent 有问题时交给你回答，还是让它自己选
     askUser: z.boolean(),
+    // 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问
+    childAskUser: z.boolean(),
+    // 一次性动作：这次改 childAskUser 时，已创建的子对话要不要跟着改（不存进任务）
+    applyChildAsk: z.boolean(),
     // 对话的 Agent 参数，下一轮生效
     params: z.record(z.string(), ParamValue),
     // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
@@ -1659,6 +1675,11 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /**
+   * 「子对话也提问」：这条父对话下新建的子对话默认是否开启提问，右键菜单里改。
+   * 父对话关掉提问时已有子对话一起关，这个字段不变，所以重新打开父对话后菜单项又回到勾选
+   */
+  childAskUser: z.boolean().default(true),
   /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
   analysis: AnalysisKind.optional(),
   /** 对话时 Agent 参数的值 */
@@ -2079,6 +2100,11 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /**
+   * 新建父对话时它的「子对话也提问」初始值，只在父对话上没存过时用（见 shared/child-ask.ts）。
+   * 右键菜单改过之后以父对话上存的值为准，这里再改不回填已建的父对话
+   */
+  childAskUserDefault: z.boolean().default(true),
   /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
   developerMode: z.boolean().catch(false).default(false),
   /** 抓取元素时用的快捷键和鼠标按键（设置 →「快捷键」里改） */

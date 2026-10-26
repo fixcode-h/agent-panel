@@ -12,6 +12,7 @@ import {
   type ScheduleRepeat,
 } from '@shared/schedule'
 import { getLang, t } from '@shared/i18n'
+import { listableAgents } from '@shared/builtin/core'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -114,6 +115,11 @@ function ScheduleDialog({
   const [form, setForm] = useState<Form>(() => (schedule ? formOf(schedule) : newForm()))
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
+  // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
+  // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
+  const pickable = listableAgents(agents)
+  const unpickable =
+    form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
 
   const save = async () => {
     const at = fromLocalInput(form.atLocal)
@@ -214,10 +220,13 @@ function ScheduleDialog({
             aria-label={t('用哪个角色')}
             options={[
               { value: '', label: t('不用角色（跟随默认 CLI）') },
-              ...agents.map((a) => ({
+              ...pickable.map((a) => ({
                 value: a.id,
                 label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),
               })),
+              ...(unpickable
+                ? [{ value: unpickable.id, label: t('{name}（不可选）', { name: unpickable.name }) }]
+                : []),
             ]}
             onChange={(e) => set('agentId', e.target.value)}
           />
