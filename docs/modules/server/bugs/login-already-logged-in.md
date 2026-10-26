@@ -58,7 +58,7 @@ Command Code 没有完成登录（退出码 0）
 
 - `server/accounts.test.ts`：`loginOutcome` 的各分支（退出码 0 + 有凭据、退出码非 0、退出码 0 + 没凭据、主动停止、字段未开启的 CLI 仍按指纹判定）。
 - `shared/ansi.test.ts`：SGR 颜色、`1m`/`22m` 加粗、`2m`/`22m` 暗色、多段混排，以及含普通方括号的非 ANSI 文本（例如 `[1m] 不是转义`、`[info] 已完成`）原样保留。
-- `scripts/e2e/07-local.mjs`：用 `scripts/fake-cli` 的 `FAKE_AUTH_ALREADY` 走一遍「已登录点登录」，断言 `job.status === 'done'` 且 `job.output` 里没有 `\x1b`。
+- `scripts/e2e/14-accounts.mjs`：用 `scripts/fake-cli` 的 `FAKE_AUTH_ALREADY` 走一遍「已登录点登录」，断言 `job.status === 'done'` 且 `job.output` 里没有 `\x1b`。
 
 ## 回归验证
 
@@ -86,7 +86,7 @@ npm run test:e2e:wsl         # 涉及 CLI 参数/输出解析的改动，在 WSL
 | `server/accounts.test.ts`                 | `loginOutcome` 各分支（成功 / 退出码非 0 / 无凭据 / 主动停止 / 字段未开启）与 `loginFailure` 的文案分支 |
 | `shared/ansi.test.ts`                     | 颜色、加粗、暗色、8 位 CSI、OSC、混排、普通方括号不被改                                     |
 | `scripts/fake-cli`                        | `FAKE_AUTH_ALREADY` 模拟「已登录时 `login` 输出 `Already logged in` 并退出 0」；`FAKE_AUTH_NO_CREDENTIALS` 模拟「退出码 0 但没写凭据」 |
-| `scripts/e2e/07-local.mjs`                | 端到端走两条真实路径：已登录再登录断言 `done` 且输出无 `\x1b`；无凭据断言 `failed` 且文案是「没有找到登录凭据」 |
+| `scripts/e2e/14-accounts.mjs`              | 端到端走两条真实路径：已登录再登录断言 `done` 且输出无 `\x1b`；无凭据断言 `failed` 且文案是「没有找到登录凭据」 |
 
 ## 待确认
 

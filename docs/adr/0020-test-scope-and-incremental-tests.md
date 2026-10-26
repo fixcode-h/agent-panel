@@ -31,7 +31,7 @@ ADR 0018 把「很吃资源的步骤」（e2e）挪到了合并后由父对话�
 | `shared/test-steps.ts` `stepApplies`                        | 匹配判定的唯一实现；改成 `always` 直接为真、`changed` 才看 globs、`parent` 在父对话侧为真      |
 | `shared/test-steps.ts` `verifyBlock` / `testStepsBlock`     | 提示词的唯一出口；新增 `CHILD_INCREMENTAL_RULE` 和 `FLAKY_TEST_RULE`                           |
 | `server/parent-tests.ts` `createParentTests`                | 合并后排队跑 `parent` 步骤的队列，这次原样复用（结果和耗时回传、失败退回子对话）               |
-| `scripts/ui-check.mjs`                                      | 已经支持按分片前缀筛选（`node scripts/ui-check.mjs 09-summary`），产物过期会直接失败           |
+| `scripts/ui-check.mjs`                                      | 已经支持按分片前缀筛选（`node scripts/ui-check.mjs 08-misc`），产物过期会直接失败           |
 | `scripts/ui/` 12 个分片                                     | 每个分片覆盖一页或一类组件，但「哪个源码属于哪个分片」只写在各自文件头的注释里，没有可读的映射 |
 
 ## 决策
@@ -82,7 +82,7 @@ ADR 0018 把「很吃资源的步骤」（e2e）挪到了合并后由父对话�
   实测 791 个源文件：首次 145ms，命中缓存后 26ms。
 - **映射不出来必须说出来**：「这批改动没有对应的增量测试，跑全量或交给父对话」，不静默跳过、也不为了保险整套跑。
 - 界面检查脚本自己改动：改哪个分片跑哪个，改 `harness.mjs` / `covers.mjs` / `ui-check.mjs` 跑全部分片。
-- 分片命令用完整分片名筛选（`09-summary`），不写 `09`：后者会同时跑 09-hint / 09-plans / 09-summary。
+- 分片命令用完整分片名筛选（`02-task`），不写 `02`：后者会同时跑 02-task / 02b / 02c / 02d。
 
 ### 3. 提示词口径（关键）
 
@@ -90,7 +90,7 @@ ADR 0018 把「很吃资源的步骤」（e2e）挪到了合并后由父对话�
   **不跑全量**（定位脚本明确判「必须跑全量」时除外：高风险区、影响面接近全量、依赖图算不出来，按它跑那一项并写进结果）；
   `parent` 的步骤不跑原命令，但单测和界面检查要用定位到的增量命令覆盖命中的单测文件 / 界面分片
   （否则子对话会一条测试都不跑）、e2e 没有增量替代直接交给父对话；映射不出来就交给父对话。
-  分片示例写完整分片名（`09-summary`），写 `09` 会多跑 09-hint / 09-plans。
+  分片示例写完整分片名（`02-task`），写 `02` 会多跑 02b / 02c / 02d。
 - 所有对话：注入 `FLAKY_TEST_RULE`——计时类用例偶发失败时**单跑失败的那个文件最多 3 次**，不重跑整套。
 - 父对话：`parent` 步骤照常由它跑全量（复用 `server/parent-tests.ts` 队列）；子对话合并后由面板自动跑、结果回传。
 
