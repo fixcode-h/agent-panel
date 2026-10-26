@@ -74,9 +74,13 @@
   └─ finish_child(id)
        面板在 mergeLock 下合并：
        ├─ 成功 → childMerged：收尾步骤标完成、删 wrapRequest、advanceChildTo(quiet)
-       │         （标完成、stop 'finish'、删 worktree 和分支），父计划等它的那一步收口
-       └─ 失败 → wrapRequest = failed、收尾步骤退回 running，把失败原因交回子对话
+       │         （标完成、stop 'finish'、删 worktree 和分支）
+       ├─ 失败 → wrapRequest = failed、收尾步骤退回 running，把失败原因交回子对话
+       └─ 不论哪条路：syncParentPlan 按 childReport 刷新父计划里等它的那一步（done 才标完成，
+                 其余继续等并写清在等什么），落盘推界面，刷新后的计划附在工具结果里
 ```
+
+- 每次 `finish_child` 结束都强制刷新父对话的计划（用户 2026-10-24 定的硬要求），共用目录的子对话也一样。合进去不等于做完：子对话还没收口时父计划那一步继续等，不能先标完成。
 
 - 合并就是验收：门槛里的测试必须在合并前、在子对话自己的分支里跑通。
 - 界面上子对话行的「合并」按钮遇到 `requested` 的请求时同样走 `finishChild`。

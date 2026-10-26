@@ -9,6 +9,7 @@ import { t } from '@shared/i18n'
 import { AttachMenu, DropHint, FileRefHint, type useAttachments } from './Attachments'
 import { RichInput, type RichInputHandle } from './RichInput'
 import { useComposerChips } from './composer-chips'
+import { ElementPickButton } from './ElementPicker'
 
 const DRAFT = 'chat-draft:'
 
@@ -244,6 +245,7 @@ export function ChatComposer({
         disabled={disabled}
         preview={chips.preview}
         actions={chips.chipActions}
+        copyOf={chips.copyOfChip}
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',
@@ -263,6 +265,7 @@ export function ChatComposer({
             className={sm ? 'h-7 w-7' : undefined}
           />
         )}
+        <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} />
         {tools}
         <span className="flex-1" />
         {hint && (

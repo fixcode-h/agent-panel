@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Copy, Download, LayoutTemplate, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Category, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -236,10 +236,10 @@ export function WorkflowsPage() {
           </ListGroup>
         ))}
         {!loading && workflows.length > 0 && list.length === 0 && <ListEmpty>{t('没有匹配的工作流')}</ListEmpty>}
-        {/* 只有自带的「默认」工作流时提示可以添加内置的：内置的不会自动装，推荐下一步时也只会推荐已有的 */}
+        {/* 只剩自带的「默认」工作流时（自带工作流都被删掉了）提示可以重新添加：推荐下一步时只会推荐已有的 */}
         {!loading && !query && !tag && workflows.every((w) => isDefaultWorkflow(w.id)) && (
           <ListEmpty>
-            <p>{t('还可以添加整理好的内置工作流，「默认」工作流做完后会推荐用它们接着做')}</p>
+            <p>{t('自带的工作流都被删掉了，可以从内置工作流里重新添加，「默认」工作流做完后会推荐用它们接着做')}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>
               <LayoutTemplate className="h-4 w-4" />
               {t('添加内置工作流')}

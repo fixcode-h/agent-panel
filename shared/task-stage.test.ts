@@ -459,6 +459,32 @@ test('childWait：等用户 > 等确认 > 等后台命令 > 等子任务 > 等�
   assert.equal(childWait(kidTask({ working: false }), { cliAlive: false }), undefined)
 })
 
+test('childWait：这一轮结束、子任务还在跑时是在等子任务，不是在等下一句', () => {
+  // 用户报的问题（截图）：子任务还在跑命令，状态行却写「等待你的下一条消息」+「空闲」。
+  // 那一刻 awaitingUser 已经是 true（cliAlive 也是），只有 childWait 里的 helpers 能把「在等子任务」说对：
+  // 等下一句的判定（!working && cliAlive）排在子任务后面，不能被 awaitingUser 抢先
+  const waiting = kidTask({
+    working: false,
+    awaitingUser: true,
+    steps: [
+      { id: 'h1', title: '评审后台命令输出弹窗', status: 'running', slot: 'sub' },
+      // 同时有一个排队中的子任务：helpers 只报正在跑的（它才是「等着它完事」的那个）
+      { id: 'h2', title: '补测试', status: 'pending', slot: 'sub' },
+    ] as never,
+  })
+  // 只报正在跑的：排队的还没开始，不列进等待列表
+  assert.deepEqual(childWait(waiting, { cliAlive: true }), { kind: 'helpers', list: ['评审后台命令输出弹窗'] })
+  // 后台命令和子任务同时在等：后台命令排在前面（CLI 正在等那个结果）
+  assert.deepEqual(childWait(waiting, { background: 1, cliAlive: true }), { kind: 'background', n: 1 })
+  // 同样的任务，子任务都做完之后才轮到「等下一句」
+  const finished = kidTask({
+    working: false,
+    awaitingUser: true,
+    steps: [{ id: 'h1', title: '评审后台命令输出弹窗', status: 'done', slot: 'sub' }] as never,
+  })
+  assert.deepEqual(childWait(finished, { cliAlive: true }), { kind: 'next' })
+})
+
 test('childStale：执行中很久没新输出标黄 / 标红，能解释的等待不标', () => {
   const now = Date.parse('2026-01-01T10:10:00Z')
   const at = (iso: string) => ({ working: true, lastActivityAt: iso })
@@ -567,7 +593,7 @@ test('messageStamp：工具行收掉运行中、记上耗时也算变化（停�
   assert.notEqual(messageStamp(msg), before)
 })
 
-test('对外状态统一：子对话、子任务、后台命令、工作流没完，提问没回复，对话都还在运行（ADR 0010）', () => {
+test('对外状态统一：子对话、子任务、后台命令、工作流没完，提问没回复，对话都还在运行（ADR 0012）', () => {
   const base = { status: 'running' as const, steps: [], working: false }
   // 这一轮说完了，但名下子对话还在动：等结果，转圈，不能回收
   assert.equal(taskState({ ...base, childrenWorking: 2 }), 'waiting')

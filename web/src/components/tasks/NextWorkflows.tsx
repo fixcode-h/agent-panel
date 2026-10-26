@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { ArrowRight, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { t } from '@shared/i18n'

@@ -223,12 +223,15 @@ export const EN_SERVER: Record<string, string> = {
   '执行出错：{error}': 'Execution error: {error}',
   任务不存在: 'Task not found',
   找不到这个子任务: 'Subtask not found',
+  没有这条后台命令: 'Background command not found',
   这个子任务已经结束了: 'This subtask has already finished',
   缺少项目: 'Project is required',
   '项目还没有指定工作流，请选择一个工作流或改用直接对话':
     'This project has no workflow yet. Choose a workflow or use direct chat instead.',
   请选择对话的角色: 'Choose a role to chat with',
   '任务正在执行，请等它完成或先停止': 'The task is running. Wait for it to finish or stop it first.',
+  '这一轮没有正常结束，消息留在对话里，发一条消息或点「继续执行」会处理':
+    'This turn did not finish normally. The message is kept in the conversation and will be handled when you send a message or click Continue.',
   任务正在执行: 'The task is running',
   只有失败或停止的任务可以继续: 'Only failed or stopped tasks can be resumed',
   这个请求已经结束了: 'This request has already ended',
@@ -385,6 +388,9 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮 {cli} 没有返回任何内容，用户的要求还没处理':
     'This turn produced no output from {cli}, so the request has not been handled',
+  '回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去':
+    'The reply says it was forwarded to a child conversation, but send_to_conversation was never called this turn, so nothing was sent',
+  '{what}。正在自动接一轮，让它真的发出去…': '{what}. Starting another turn automatically so it actually sends it…',
   '这一轮只回了一句话就结束了，没有动手也没给出结论':
     'This turn ended after a single sentence: nothing was done and no conclusion was given',
   '{what}。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
@@ -403,8 +409,8 @@ export const EN_SERVER: Record<string, string> = {
   证书校验失败: 'certificate verification failed',
   '{error}。当前使用代理 {proxy}，请确认代理能访问 GitHub。':
     '{error}. Using proxy {proxy}; make sure it can reach GitHub.',
-  '{error}。访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
-    "{error}. If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  '{error}。访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。':
+    "{error}. If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
   '{cli} 没有按格式给出新的文件内容，可以再试一次':
     "{cli} didn't return the new file content in the expected format; try again",
   '找不到这次优化，可能已过期': "Can't find this optimization; it may have expired",
@@ -434,7 +440,21 @@ export const EN_SERVER: Record<string, string> = {
   '名字只能用字母、数字、. _ -': 'Names may only use letters, digits, . _ -',
   名字不对: 'Invalid name',
   没有这一项: 'No such item',
+  没有这个文件: 'No such file',
   '「{name}」已经有了': '“{name}” already exists',
+  要填文件路径: 'Enter a file path',
+  '路径只能填 Skill 目录里的相对路径': 'The path must be relative and inside the skill folder',
+  '路径里不能有 {chars}': 'The path cannot contain {chars}',
+  '只有 Skill 能带附件': 'Only skills can have extra files',
+  'SKILL.md 用主文件的内容读写': 'Use the main file content to read or write SKILL.md',
+  '文件太大，最多 {kb} KB': 'The file is too large; at most {kb} KB',
+  '这个是目录，不能当文件写': 'This is a directory, not a file',
+  '这是个链接，不能直接改内容': 'This is a symlink; edit its target file instead',
+  '改名失败，原内容留在 {name}': 'Rename failed; the original content is kept as {name}',
+  '这个目录里有 {n} 项以上，不能一次删，先清掉里面的文件':
+    'This folder has more than {n} entries; delete the files inside first',
+  '「{name}」是个目录，不能覆盖': '“{name}” is a directory and cannot be overwritten',
+  不能把目录移到它自己里面: "A folder can't be moved into itself",
   '{file} 不是有效的 JSON，没有改动': '{file} is not valid JSON; nothing was changed',
   没有回应: 'No response',
   要填启动命令: 'A start command is required',
@@ -482,4 +502,13 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 没有给出报告内容，可以再试一次': '{cli} returned no report. Try again.',
   '报告没能保存：{error}': 'Could not save the report: {error}',
   找不到这份报告: 'Report not found',
+  直连: 'Direct connection',
+  '代理 {proxy}': 'Proxy {proxy}',
+  '本机代理 {proxy}': 'Local proxy {proxy}',
+  '尝试过的路径：{paths}。': 'Paths tried: {paths}.',
+  '没有发现运行中的本机代理。': 'No running local proxy was found.',
+  '访问不了 GitHub 时，可以在「设置 · 网络与代理」里填写本机代理。':
+    "If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
+  // 任务记录丢失、从对话内容重建出来的标题
+  恢复的对话: 'Recovered conversation',
 }

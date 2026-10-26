@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { usePageSignals } from '@/lib/page-signal'
 import { Toaster } from 'sonner'
+import { TOAST_VISIBLE_LIMIT } from '@/lib/toast-queue'
 import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
 import { useTaskDoneUnread } from '@/lib/task-unread'
@@ -11,10 +12,16 @@ import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDial
 import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
+import { ElementPickHost } from '@/components/chat/ElementPicker'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { useAiFix } from '@/lib/ai-fix'
+import { GlobalHintHost } from '@/components/ui/hint'
+import { TaskDock } from '@/components/tasks/TaskDock'
+import { useAiWindow } from '@/lib/ai-window'
+import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
+import { t } from '@shared/i18n'
+import { api } from '@/lib/api'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -24,7 +31,7 @@ const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.M
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
-const AiFixDialog = lazy(() => import('@/components/ai-fix/AiFixDialog').then((m) => ({ default: m.AiFixDialog })))
+const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
@@ -99,11 +106,46 @@ function TaskWatcher() {
   return null
 }
 
+/**
+ * 对话里的 Agent 要页面做的界面操作（服务端动作表推来的 ui 事件，见 web/src/lib/ui-actions.ts）。
+ * 名字和 server/app-actions 里 pushUi / ctx.ui 用的一致；加界面操作在这里加一项
+ */
+function UiActions({ reopenProject }: { reopenProject: (id: string, section?: string, item?: string) => void }) {
+  const { go, openSettings } = useNav()
+  const { setSettings } = useData()
+  useUiActions({
+    navigate: (a) => {
+      const page = str(a.page)
+      if (page && page in PAGES) go({ page: page as Route['page'], id: str(a.id), sub: str(a.sub) })
+    },
+    open_settings: (a) => openSettings(str(a.section)),
+    open_project: (a) => {
+      const id = str(a.id)
+      if (id) reopenProject(id, str(a.section), str(a.item))
+    },
+    reload_settings: () =>
+      void api
+        .settings()
+        .then((fresh) => {
+          setSettings(fresh)
+          settingsReloaded()
+        })
+        .catch(() => {}),
+  })
+  return null
+}
+
 /** 命令面板和全局快捷键（要在导航上下文里面） */
 function Shortcuts() {
   const [open, setOpen] = useState(false)
   useShortcuts(() => setOpen((o) => !o))
-  return <CommandPalette open={open} onOpenChange={setOpen} />
+  return (
+    <>
+      <CommandPalette open={open} onOpenChange={setOpen} />
+      {/* 开发者模式的抓取：快捷键 + 覆盖层（全页只一份） */}
+      <ElementPickHost />
+    </>
+  )
 }
 
 function ProjectDialog({
@@ -136,7 +178,7 @@ function ProjectDialog({
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
-  const fix = useAiFix()
+  const aiWindow = useAiWindow()
   const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
     open: false,
   })
@@ -155,8 +197,17 @@ export function App() {
         }}
       >
         <div className="flex min-h-full flex-col md:h-full">
+          {/* 全界面的悬停提示：接住所有原生 title，换成统一样式的浮层（全页只挂这一份） */}
+          <GlobalHintHost />
           <TaskWatcher />
           <Shortcuts />
+          <UiActions
+            reopenProject={(id, section, item) => {
+              // 先关再开：弹窗已经开着时也按这次要的那一栏重新打开（例如 AI 初始化要从头开始）
+              setProject((s) => ({ ...s, open: false }))
+              setTimeout(() => setProject({ open: true, id, section, item }), 0)
+            }}
+          />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -179,16 +230,33 @@ export function App() {
             />
           </Suspense>
         )}
-        {/* 「AI 处理」的弹窗：第一次点报错旁的按钮时才加载 */}
-        {fix.issue && (
+        {/* 统一的 AI 分析窗口：第一次点「AI 处理」「AI 分析」时才加载 */}
+        {aiWindow.job && (
           <Suspense fallback={null}>
-            <AiFixDialog />
+            <AiWindow />
           </Suspense>
         )}
+        {/* 「转成弹窗」收起来的对话：和 AI 窗口同在最外层，切走页面也还在（状态在 lib/mini-task） */}
+        <TaskDock />
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
         <UpdateResumeDialog />
-        <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
+        {/* 提示统一走 web/src/lib/toast.ts（自己排队，同屏上限见 lib/toast-queue.ts 的 TOAST_VISIBLE_LIMIT）：
+            位置在右上角，最新的在最上面、依次往下。
+            `visibleToasts` 必须和队列上限是同一个数：sonner 自己还会按 `index + 1 <= visibleToasts`
+            把超出的那条设成 `data-visible="false"`（opacity 0、不吃指针），默认值是 3，
+            队列放进来的第 4 条就会被它默默藏掉；设成同一个数后两者不打架。
+            `expand` 必须有：不展开时 sonner 把非最上面那条压成一条边（内容透明），
+            和「依次展示下来」相反；展开后鼠标悬上去也不会再整体跳一下。
+            关闭按钮通过 `closeButton` 整体开启，样式在 index.css 里改成「悬停才显示」。 */}
+        <Toaster
+          theme={dark ? 'dark' : 'light'}
+          position="top-right"
+          expand
+          visibleToasts={TOAST_VISIBLE_LIMIT}
+          closeButton
+          toastOptions={{ closeButtonAriaLabel: t('关闭') }}
+        />
       </NavCtx.Provider>
     </DataProvider>
   )

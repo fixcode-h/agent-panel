@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
+import type { ProjectProposal } from './project-init.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -438,6 +439,11 @@ const WorkflowFields = z.object({
   budgetTokens: z.number().int().min(0).optional(),
   /** 从内置模板建出来的工作流记下来源（builtin:<key>），内置工作流列表里据此显示「删除」 */
   origin: z.string().max(80).optional(),
+  /**
+   * 面板最后一次写这个内置副本时内容的指纹（见 shared/builtin/install.ts 的 workflowFingerprint）：
+   * 现在的内容还是这个指纹就是没改过，启动时直接升级到新定义，不用靠历史版本表逐个比对
+   */
+  builtinHash: z.string().max(32).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>
@@ -794,6 +800,12 @@ const ProjectFields = z.object({
    */
   initializedAt: z.string().max(40).default(''),
   /**
+   * 上次「AI 初始化项目」算出的推荐（结构见 project-init.ts 的 ProjectProposal）。
+   * 存下来后重新打开设置时，卡片上还能直接应用推荐；旧项目没有这个字段，按没有推荐处理。
+   * 这里只标类型，具体校验由服务端用 ProjectProposalSchema 做（两边不能循环引用）
+   */
+  initResult: z.custom<ProjectProposal>().optional(),
+  /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
    */
@@ -839,6 +851,12 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
+/**
+ * AI 分析对话的种类（见 ADR 0014、0016）：标题在列表里和别的对话区分开，右侧功能面板按种类挑内容。
+ * run：分析执行记录（对话、子任务、几次工作流执行）；init：AI 初始化项目；lessons：教训评审；fix：AI 排查报错
+ */
+export const AnalysisKind = z.enum(['run', 'init', 'lessons', 'fix'])
+export type AnalysisKind = z.infer<typeof AnalysisKind>
 
 /** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
 export const Attachment = z.object({
@@ -892,6 +910,8 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
+  analysis: AnalysisKind.optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -940,11 +960,10 @@ export const TaskPatch = z
     params: z.record(z.string(), ParamValue),
     // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
     agentId: z.string(),
-    // 父对话的设置：目标、全局规则、子对话的执行配置和并发上限
+    // 父对话的设置：目标、全局规则、子对话的执行配置
     goal: z.string().trim().max(4000),
     rules: z.array(TaskRule).max(50),
     childRun: z.object({ cli: z.string().max(40), model: z.string().max(200), effort: z.string().max(40) }).nullable(),
-    childLimit: z.number().int().min(0).max(20),
   })
   .partial()
 export type TaskPatch = z.infer<typeof TaskPatch>
@@ -1173,6 +1192,20 @@ export const StepUsage = z.object({
 })
 export type StepUsage = z.infer<typeof StepUsage>
 
+/**
+ * 在排队等 API 的并发名额（API 设置里的并发上限满了）：api 是 API 名称，ahead 是前面还排着几个。
+ * reason 区分这次拿名额的性质：'start' 是这一轮还没开始（真的在排队等名额），
+ * 'yield' 是这一轮已经跑起来、临时让出（等子任务 / 等下一句）后拿回。两者不能显示成同一句话：
+ * 让出期间 CLI 往往还在出 token，显示「排队等名额 · 下一个就是这里」会和实时速度自相矛盾。
+ */
+export const ApiWait = z.object({
+  api: z.string(),
+  ahead: z.number().int().default(0),
+  /** 旧快照里没有这个字段，当时的标记都是开始前排队，按 'start' 算 */
+  reason: z.enum(['start', 'yield']).default('start'),
+})
+export type ApiWait = z.infer<typeof ApiWait>
+
 export const TaskStep = z.object({
   /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
@@ -1217,13 +1250,23 @@ export const TaskStep = z.object({
   branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  /** 子任务 / 节点在排队等 API 的并发名额；拿到就去掉 */
+  apiWait: ApiWait.optional(),
   /**
    * 子任务接着哪个 CLI 会话跑（task.sessions 的键）：spawn_agents 带 resume 时是被接着的那个子任务的会话，
    * 复看的评审不用把文档和代码从头再读一遍。空的就用自己的 id（旧数据和新开的子任务都是这样）
    */
   session: z.string().default(''),
+  /** 评审开始时工作区的快照（git 树）：接着这个会话复看时，只把这之后的增量交给评审（见 EngineHost.reviewDiff） */
+  snapshot: z.string().default(''),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
+  /**
+   * 派这个子任务时交给它的要求原文（spawn_agents 的 instructions）。
+   * 父对话的那条系统消息里只有标题列表，AI 分析时判断「它有没有做到派给它的要求」只能靠这段；
+   * 旧记录没有这个字段，报告里如实说明看不到
+   */
+  brief: z.string().default(''),
   /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
@@ -1324,12 +1367,17 @@ export type TaskTodo = z.infer<typeof TaskTodo>
 export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done'])
 export type PlanStatus = z.infer<typeof PlanStatus>
 
-/** 步骤在等的东西：后台命令（编号）、子对话（id）；结果回来时按它找到步骤 */
+/**
+ * 步骤在等的东西：后台命令（编号）、子对话（id）、子任务（spawn_agents 派出的步骤 id）；
+ * 结果回来时按 kind + ref 找到挂在计划里的那一步
+ */
 export const PlanWait = z.object({
-  kind: z.enum(['background', 'child']),
+  kind: z.enum(['background', 'child', 'helper']),
   ref: z.string(),
   label: z.string().default(''),
   state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
+  /** 开始等的时间（子对话是它的创建时间）：步骤用时从真正开工算起。旧数据没有 */
+  at: z.string().optional(),
 })
 export type PlanWait = z.infer<typeof PlanWait>
 
@@ -1351,15 +1399,22 @@ export const PlanStep = PlanItem.extend({
   /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
   run: z.number().int().optional(),
   /**
-   * 面板加的收尾步骤（子对话计划的最后一步）：merge 是独立分支合回父对话所在的分支，由合并结果标完成；
-   * p4 是把改动按文件类型分进各自的 pending changelist，Agent 做完自己标。旧数据没有这个字段，当普通步骤
+   * 面板加的收尾步骤，永远是计划的最后一步（见 plan.ts 的 ensureWrapUp）：merge 是子对话的独立分支合回父对话
+   * 所在的分支，由合并结果标完成；p4 是子对话把改动按文件类型分进各自的 pending changelist，Agent 做完自己标；
+   * push 是父对话把分支推到远端，Agent 推完自己标。旧数据没有这个字段，当普通步骤
    */
-  wrapUp: z.enum(['merge', 'p4']).optional(),
+  wrapUp: z.enum(['merge', 'p4', 'push']).optional(),
   /**
    * 评审本次改动的一步：子对话收尾前必须把它写进计划（标 review: true）并做完，
    * submit_merge 会校验计划里有没有这样一步（见 shared/review-gate.ts）。旧数据没有这个字段
    */
   review: z.boolean().optional(),
+  /**
+   * 面板按子对话自动补的步骤（见 plan.ts 的 ensureChildStep）：派子对话时计划里没有能挂的一步就补一步，
+   * 免得子对话在父对话的计划里看不见。Agent 交整份计划时没写到的自动步骤不会被当成「不做了」删掉。
+   * 旧数据没有这个字段
+   */
+  auto: z.boolean().optional(),
 })
 export type PlanStep = z.infer<typeof PlanStep>
 
@@ -1368,6 +1423,11 @@ export const TaskPlan = z.object({
   title: z.string().default(''),
   steps: z.array(PlanStep).default([]),
   createdAt: z.string(),
+  /**
+   * 面板重开这份计划的时间（见 plan.ts 的 ensureChildStep）：计划已结束后又派了子对话，就重开它。
+   * 总用时从重开时刻重新算，不把上一轮的历史时长并进这一轮（旧数据没有这个字段）
+   */
+  reopenedAt: z.string().optional(),
   /** 所有步骤都完成的时间；没完成时为空 */
   doneAt: z.string().default(''),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
@@ -1463,6 +1523,29 @@ export const TaskJob = z.object({
 })
 export type TaskJob = z.infer<typeof TaskJob>
 
+/**
+ * 一条后台命令的当前样子（界面上点命令行打开的窗口用它轮询）：
+ * 在跑的时候要给得出已经输出的内容，跑完了也要还能读到最终输出和退出码——用户可能过一阵才点开。
+ * 和 TaskJob 分开：TaskJob 只列还在跑的（运行区那一行），这个带输出和终态
+ */
+export const TaskJobView = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  state: z.enum(['queued', 'running', 'done', 'failed', 'stopped']),
+  /** 退出码：还在跑、排队中为空 */
+  code: z.number().nullable(),
+  /** 已经输出的内容（只留结尾，见 server/background.ts 的 KEEP_LINES） */
+  output: z.string(),
+  /** 交给面板的时间：排队也算在等结果的时间里 */
+  createdAt: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+  /** 最后一次有输出的时间：界面上「多久没动静」看它 */
+  lastOutputAt: z.string(),
+})
+export type TaskJobView = z.infer<typeof TaskJobView>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -1505,8 +1588,6 @@ export const TaskData = z.object({
   goal: z.string().max(4000).default(''),
   /** 父对话给子对话定的 CLI、模型和思考强度；空表示按执行角色自己的配置 */
   childRun: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
-  /** 这个父对话同时执行的子对话上限；0 表示跟随设置里的 childConcurrency */
-  childLimit: z.number().int().min(0).max(20).default(0),
   /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
   inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
   /**
@@ -1532,6 +1613,8 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
+  analysis: AnalysisKind.optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
@@ -1561,10 +1644,21 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /**
+   * 每个会话最后一次带上的角色设定的指纹（键同 sessions）：没有系统提示词参数的 CLI 只在第一轮带角色，
+   * 续接时角色变了就补发新版（见 server/exec/runner.ts）
+   */
+  roleHashes: z.record(z.string(), z.string()).optional(),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
   sessionDir: z.string().optional(),
+  /**
+   * 每个会话是在哪个目录里开的（键同 sessions）：CLI 的会话按目录存，在别的目录里续接时找不到。
+   * 子任务接着上一轮做时最容易撞上（父对话中途开了独立分支，子任务的会话还留在原目录）。
+   * 不先看这里，Pi 会去全局找会话，找到别的项目的后停下来问要不要分叉，非交互模式直接按 Aborted 退出
+   */
+  sessionDirs: z.record(z.string(), z.string()).default({}),
   /**
    * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
    * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
@@ -1655,11 +1749,36 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /** 对话这一轮在排队等 API 的并发名额（仍算在运行，可以停止）；拿到就去掉 */
+  apiWait: ApiWait.optional(),
+  /**
+   * 子对话这么久没有输出、面板以父对话的名义自动问过它状态（见 shared/task.ts 的 childIdleAsk）：
+   * at 是最后一次询问的时间，count 是这一轮静默里问了几次。子对话有了新的输出就重新计数（不回写清零，
+   * 判定时按 at 之后有没有输出算），这样界面能看出「问过、在等回复」
+   */
+  autoAsk: z
+    .object({
+      at: z.string(),
+      count: z.number().int().min(0).default(0),
+      /**
+       * 这条询问没交出去（CLI 这一轮收不下，已经从队列和对话里撤掉）：算一次尝试、按阈值隔开再试，
+       * 但不显示「等回复」，也不能让它在收尾时开新一轮
+       */
+      held: z.boolean().optional(),
+    })
+    .optional(),
   /**
    * 名下正在执行的子对话数：只在列表摘要里带，由服务端按子对话的 working 算好。
    * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
    */
   childrenWorking: z.number().int().min(0).optional(),
+  /**
+   * 这个对话现在有活着的 CLI 进程（服务端按真实进程登记算，不存盘）：
+   * 「等待你的下一条消息」、标题流光、侧栏提示只认它，CLI 关了就绝不显示
+   */
+  cliAlive: z.boolean().optional(),
+  /** 名下有活着的 CLI 进程的子对话数：只在列表摘要里带（父对话），不点开也能看出子对话还开着 CLI */
+  childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /**
@@ -1805,8 +1924,26 @@ export const Appearance = z.object({
 })
 export type Appearance = z.infer<typeof Appearance>
 
+/** 抓取元素用的鼠标按键。左键、右键留给页面自己的交互（点按钮、弹菜单），所以默认为中键 */
+export const PICK_BUTTONS = ['middle', 'left', 'right'] as const
+export type PickButton = (typeof PICK_BUTTONS)[number]
+export const DEFAULT_PICK_BUTTON: PickButton = 'middle'
+/** 切换抓取模式的快捷键：`·`（U+00B7），中文输入法下就是反引号那一格 */
+export const DEFAULT_PICK_HOTKEY = '·'
+
 /**
- * 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
+ * 开发者模式的「元素抓取」怎么触发：快捷键和抓取用的鼠标按键。
+ * 存成字符串 / 名字，手改设置文件也能认；写法看 web/src/lib/hotkey.ts
+ */
+export const ElementPicker = z.object({
+  /** 切换抓取模式（开启 / 退出）的快捷键；在输入框里打字时不触发 */
+  hotkey: z.string().trim().min(1).max(40).catch(DEFAULT_PICK_HOTKEY).default(DEFAULT_PICK_HOTKEY),
+  /** 抓取用的鼠标按键 */
+  button: z.enum(PICK_BUTTONS).catch(DEFAULT_PICK_BUTTON).default(DEFAULT_PICK_BUTTON),
+})
+export type ElementPicker = z.infer<typeof ElementPicker>
+
+/** 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
  * 外网的请求一律要求访问令牌，和本机访问不同。
  */
 export const RemoteAccess = z.object({
@@ -1828,6 +1965,11 @@ export const Settings = z.object({
   /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */
   idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /**
+   * 子对话这么多分钟没有任何输出时，面板以父对话的名义自动问它当前在做什么、是否卡住；0 表示不问。
+   * 和 idleTimeoutMinutes 是两个独立的档位：这里只问、不停止，问过几次仍没有输出就交给那一条提醒 / 自动停止
+   */
+  childIdleAskMinutes: z.number().int().min(0).max(1440).catch(3).default(3),
+  /**
    * 对话页切走后，CLI 还停在等下一句的工具上多久（分钟）；0 表示回复完就结束这一轮。
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多。
    * 只管空闲会话：正在执行的一轮（切到后台也一样）到点不回收，见 server/tasks.ts 的 keepAliveBusy
@@ -1847,15 +1989,11 @@ export const Settings = z.object({
    */
   keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
-   * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
-   * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
-   */
-  childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
-  /**
    * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
-   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑
+   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑。
+   * 默认 64：一般机器同时跑几十条测试、编译顶得住，只有实在忙不过来时才需要调小
    */
-  backgroundLimit: z.number().int().min(1).max(64).catch(16).default(16),
+  backgroundLimit: z.number().int().min(1).max(64).catch(64).default(64),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
   /**
@@ -1874,8 +2012,13 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
-  /** 网络代理：检查更新、下载新版本时用，例如 http://127.0.0.1:7890；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
+  /** 网络代理：检查更新、下载新版本时用。默认地址和各处的示例见 shared/proxy.ts（只支持 http 代理，SOCKS 用不了）；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
   proxy: z.string().trim().default(''),
+  /**
+   * 是否使用上面填的代理地址。默认打开：加这个开关之前填过地址的人升级后行为不变。
+   * 关掉只跳过设置里的地址，环境变量 HTTPS_PROXY 和本机代理自动探测照旧——那两条不是这里的配置
+   */
+  networkProxyEnabled: z.boolean().catch(true).default(true),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */
@@ -1888,6 +2031,10 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
+  developerMode: z.boolean().catch(false).default(false),
+  /** 抓取元素时用的快捷键和鼠标按键（设置 →「快捷键」里改） */
+  elementPicker: ElementPicker.prefault({}),
   /**
    * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
    * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来
@@ -2041,15 +2188,15 @@ export const TaskProcess = z.object({
 })
 export type TaskProcess = z.infer<typeof TaskProcess>
 
-/** 一个对话的进程与内存汇总：前端「内存合计」直接读 totalMemory */
+/** 一个对话（含附属子对话、子任务）的进程与内存汇总：前端「内存合计」读 cliMemory */
 export const TaskProcesses = z.object({
   sampledAt: z.number(),
   processes: z.array(TaskProcess).default([]),
-  /** 这个对话树上 CLI 进程的 RSS 合计；取不到系统信息时 null */
+  /** 这个对话及附属任务的 CLI 进程 RSS 合计；取不到系统信息时 null */
   cliMemory: z.number().nullable().default(null),
-  /** 面板 server 自己的 RSS */
+  /** 面板 server 自己的 RSS：不属于这个对话，界面上单独标明、不计入合计 */
   serverMemory: z.number(),
-  /** totalMemory = cliMemory + serverMemory；cliMemory 未知时 null */
+  /** totalMemory = cliMemory，不含面板自己的内存；cliMemory 未知时 null */
   totalMemory: z.number().nullable().default(null),
   /** 系统进程信息取不到的原因；取得到时为空字符串 */
   unavailable: z.string().default(''),
@@ -2059,8 +2206,11 @@ export type TaskProcesses = z.infer<typeof TaskProcesses>
 /** 内存曲线上的一个点：t 采样时刻；cli 未知时 total 也是 null（断开而不是掉到 0） */
 export const MemoryPoint = z.object({
   t: z.number(),
+  /** 面板 server 自己的 RSS，只单独展示，不计入 total */
   server: z.number(),
+  /** 这个对话及附属任务的 CLI 内存 */
   cli: z.number().nullable(),
+  /** total = cli（不含面板）；cli 未知时 null */
   total: z.number().nullable(),
 })
 export type MemoryPoint = z.infer<typeof MemoryPoint>

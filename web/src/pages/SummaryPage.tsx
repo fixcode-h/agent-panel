@@ -3,7 +3,7 @@
  * 报告能编辑（自动保存）、预览、一键复制；最近几份存在数据目录里（见 server/summary.ts），点开能回看。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { AlertTriangle, Copy, FileText, Loader2, Sparkles, Square } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'

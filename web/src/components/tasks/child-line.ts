@@ -6,6 +6,7 @@
 import { t } from '@shared/i18n'
 import {
   resumable,
+  childAutoAskWaiting,
   childIcon,
   childStale,
   childState,
@@ -43,6 +44,12 @@ export function childNote(c: ChildSummary, running: boolean) {
  */
 export function staleLine(c: ChildSummary) {
   const level = childStale({ working: c.working, wait: c.waiting, lastActivityAt: c.lastActivityAt })
+  // 面板已经自动问过、还没有回复：说清在等它回；静默太久（红色）时仍按可能卡住提醒，
+  // 不能让「等回复」把红色提示顶掉（见 shared/task.ts 的 childIdleAsk）
+  if (childAutoAskWaiting(c)) {
+    if (level === 'stale') return { text: t('已自动询问，仍没有新输出'), cls: 'text-danger' }
+    return { text: t('已自动询问，等回复'), cls: 'text-accent' }
+  }
   if (!level || !c.lastActivityAt) return undefined
   const mins = Math.max(1, Math.round((Date.now() - Date.parse(c.lastActivityAt)) / 60000))
   return { text: t('已 {n} 分钟没有新输出', { n: mins }), cls: level === 'stale' ? 'text-danger' : 'text-warning' }
@@ -72,7 +79,9 @@ export function childDirty(c: ChildSummary) {
   return { text: t('{n} 个文件未提交', { n: c.dirty }), dir: c.dir || '' }
 }
 
-/** 标签的语气：对应下面的样式表，悬浮层和运行区用同一套 */
+/**
+ * 标签的语气：对应下面的样式表，悬浮层和运行区用同一套
+ */
 export type ChildLabelTone = 'success' | 'warning' | 'accent' | 'subtle' | 'plain'
 
 export interface ChildLabel {
@@ -83,15 +92,38 @@ export interface ChildLabel {
 }
 
 /**
+ * 进程回收（cliAlive 为假）时这一行怎么说，一处定完，标签和悬停提示都读它：
+ * - closed：这一轮真的结束了（childIcon 是 done），本来就已经没事可做，说「已关闭」；
+ * - hint：对话还在跑 / 还在等你处理（running、waiting），不能说关了，只在悬停里补一句「继续会重新拉起」；
+ * - ''：停下（stopped / idle，行上已用 stopReasonText 说清）、失败（行首图标就是失败，不再提进程）
+ *   以及进程还活着。
+ * 不分开写的理由：以前「已关闭」按 cliAlive、「执行中」按 childIcon 各算一套，两套一碰就出现
+ * 「已关闭 + 计划 13/14 + 等结果」同屏（用户报的问题）。合成一次判定，以后加图标只改这一处。
+ */
+function convGone(c: ChildSummary): 'closed' | 'hint' | '' {
+  if (c.cliAlive) return ''
+  switch (childIcon(c)) {
+    case 'done':
+      return 'closed'
+    case 'running':
+    case 'waiting':
+      return 'hint'
+    default:
+      return ''
+  }
+}
+
+/**
  * 一行上的状态标签，顺序固定：已关闭 → 已解决 → 等你选择 → 计划 n/m → 执行中 / 等结果 / 待收尾 →
  * 停下的原因。同一行只说一件事，全部从 childIcon / childState 派生，
  * 所以不会出现「已解决」和「执行中」同屏（以前徽标按 resolved/asking/plan 各算一套就是这么来的）。
+ * 「已关闭」也一样只认 childIcon（见 convGone）：还在跑的对话不说它关了。
  */
 export function childLabels(c: ChildSummary): ChildLabel[] {
   const icon = childIcon(c)
   const state = childState(c)
   const out: ChildLabel[] = []
-  if (!c.cliAlive) out.push({ text: t('已关闭'), tone: 'plain' })
+  if (convGone(c) === 'closed') out.push({ text: t('已关闭'), tone: 'plain' })
   if (c.resolved && icon === 'done') out.push({ text: t('已解决'), tone: 'success', icon: 'check' })
   if (icon === 'waiting') out.push({ text: t('等你选择'), tone: 'warning' })
   if (icon === 'running' && c.plan)
@@ -100,6 +132,14 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）
   if (icon === 'stopped' || icon === 'idle') out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
   return out
+}
+
+/**
+ * 进程回收了、对话却还在跑：这一行不写「已关闭」，但要让人知道进程确实没了（发消息会重新拉起、接着做）。
+ * 只给还在跑 / 还在等你处理的（见 convGone）：停下、做完、失败的不提这句
+ */
+export function childClosedHint(c: ChildSummary) {
+  return convGone(c) === 'hint' ? t('CLI 进程已回收，继续会重新拉起') : ''
 }
 
 /** 标签样式：小胶囊带底色的是「状态」，纯文字是「说明」，和列表里的层级一致 */

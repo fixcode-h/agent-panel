@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Loader2, Pause, Play } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'

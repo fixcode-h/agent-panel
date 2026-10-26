@@ -1,5 +1,5 @@
 import { type ComponentProps, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { api } from '@/lib/api'
 import { type FileBrowser, type FileTreeOps, type LevelState, FileExplorer } from './FileTree'

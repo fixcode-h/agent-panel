@@ -17,6 +17,7 @@ const api = (protocol: ApiProtocol, baseUrl: string): ApiConfig => ({
   models: ['m'],
   modelMap: {},
   modelEfforts: {},
+  maxConcurrent: 0,
 })
 
 /** 写进 CLI 配置的接口地址：Pi 写在 models.json 的 providers.<provider>.baseUrl，其余 CLI 看对应的键 */

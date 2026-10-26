@@ -289,6 +289,12 @@ export const CliSpec = z.object({
    * Windows 上参数里的换行会让 cmd.exe 截断命令行，后面的参数（例如 Pi 的 -e 桥接扩展）会全部丢失
    */
   systemPromptFileFlag: z.string().default(''),
+  /**
+   * 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板写一个只追加「回复语言」规则的 mod，
+   * 参数里传路径（`systemPromptModPath`）。这类 CLI 没有 --append-system-prompt，角色说明只能进任务描述，
+   * 而模型的原生思考主要跟系统提示词走，语言规则放在那里才稳
+   */
+  systemPromptMod: z.boolean().default(false),
   features: z
     .object({
       /** 执行中能插话 */
@@ -410,6 +416,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.resume
     case 'systemPrompt':
       return o.systemPrompt
+    case 'systemPromptModPath':
+      return o.systemPromptModPath
     case 'maxTurns':
       return o.maxTurns
     case 'addDirs':
@@ -484,6 +492,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,
     systemPromptFlag: !!spec.systemPromptFlag,
     systemPromptFileFlag: spec.systemPromptFileFlag,
+    systemPromptMod: spec.systemPromptMod,
     buildArgs: (o) => {
       // 常驻协议和一次性执行的参数不一样（不能再带 -p / --output-format）
       const rules = spec.protocol === 'rpc' ? (spec.rpcArgs ?? spec.args) : spec.args

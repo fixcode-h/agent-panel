@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { composeAgentsMd, DeployRun } from '../shared/deploy.ts'
-import { deploy } from './deploy.ts'
+import { deploy, skillUpdates } from './deploy.ts'
 
 test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能清单写进各 CLI，原文件备份', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'deploy-'))
@@ -37,6 +37,9 @@ test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能
 
     // 改过的技能不覆盖、取消勾选也不删；没改过的取消勾选就移除
     writeFileSync(skill, '改过')
+    // 和自带的不同就提示可以更新；没勾选的不提示（部署不会动它，提示点会一直消不掉）
+    assert.deepEqual((await skillUpdates(['grilling'])).deployed, ['grilling'])
+    assert.deepEqual((await skillUpdates([])).deployed, [])
     const kept = await deploy({ ...run, skills: [] })
     assert.deepEqual(kept.kept, ['grilling'])
     assert.equal(readFileSync(skill, 'utf8'), '改过')

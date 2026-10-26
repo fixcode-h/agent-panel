@@ -11,6 +11,10 @@ import { prepareAuth } from '../accounts.ts'
 import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
+import { APP_HINT } from '../app-actions/mcp.ts'
+import { claimPanelName, sweepPanelMcp } from '../panel-mcp-files.ts'
+import { promptLangReminder } from '../../shared/prompt-lang.ts'
+import type { ActionCaller } from '../app-actions/registry.ts'
 import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
@@ -108,6 +112,8 @@ export async function invokeCli(o: {
   mcp?: { name: string; url: string }[]
   /** 编排工具：和提问、等下一句一起挂在面板的 MCP 上 */
   orch?: Orchestra
+  /** 操控软件的动作（app_actions / app_do）：对话的调用才给，值是调用者（见 ADR 0011） */
+  app?: ActionCaller
   /** 设置里手动改的上下文窗口、最大输出：CLI 定义里写了 limitFile 时，这一轮写进它的配置文件 */
   limits?: { context?: number; maxOutput?: number }
   /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
@@ -162,6 +168,7 @@ export async function invokeCli(o: {
   // 模型调用时一直等到用户回答。Claude Code、Codex 走自己的协议，不需要
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
+  let slot: ReturnType<typeof claimPanelName> | undefined
   let run = { ...o, build }
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
@@ -183,11 +190,14 @@ export async function invokeCli(o: {
       ...(own && notes ? { notes } : {}),
       ...(own && wait ? { wait } : {}),
       ...(o.orch ? { orch: o.orch } : {}),
+      ...(o.orch && o.app ? { app: o.app } : {}),
     })
-    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：子对话共用一个目录，同时在跑的几轮各用一个名字，
-    // 不然后写的会把先写的那一项冲掉。用参数传的不受影响，保持固定的名字
+    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：同一个目录里平时只有一项 agent-panel，
+    // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
-    servers.unshift({ name: fileBased ? `panel-${bridge.url.slice(-6)}` : 'panel', url: bridge.url })
+    if (fileBased) slot = claimPanelName(o.cwd, bridge.url.slice(-6))
+    servers.unshift({ name: slot?.name ?? 'panel', url: bridge.url })
+    if (o.orch && o.app) input = `${input}\n\n${APP_HINT}`
     if (own) {
       // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
       if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
@@ -197,6 +207,12 @@ export async function invokeCli(o: {
       if (wait) input = `${input}\n\n${WAIT_HINT}`
     }
   }
+  // 语言提醒由 runner 追加在提示词末尾，上面这些用法说明接在了它后面：挪回最后，
+  // 长提示词里夹在中间的规则容易被忽略（见 runner 的「末尾再提醒一次」）
+  const remind = promptLangReminder()
+  const at = input.lastIndexOf(`\n\n${remind}`)
+  if (at >= 0 && at + 2 + remind.length < input.length)
+    input = `${input.slice(0, at)}${input.slice(at + 2 + remind.length)}\n\n${remind}`
   // 配置里写 {dir} 的文件（Pi 的桥接扩展）放进面板自己的临时目录，不进用户的项目：
   // 项目只读、目录被占用时也不受影响，进程崩溃后留下的也只在面板的缓存里
   const dir = def.mcp && servers.length ? scratchDir() : ''
@@ -210,6 +226,8 @@ export async function invokeCli(o: {
         files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
       )
     try {
+      // 先清掉以前没来得及删的面板条目（面板被关掉、崩溃时留下的），项目里不会越积越多
+      if (slot) await sweepPanelMcp(o.cwd)
       restore = await applyConfigFiles(
         o.cwd,
         [...files].map(([p, content]) => ({ path: p, content })),
@@ -236,6 +254,7 @@ export async function invokeCli(o: {
     o.signal?.removeEventListener('abort', onStop)
     bridge?.close()
     await restore?.().catch(() => {})
+    slot?.release()
     await restoreLimits?.().catch(() => {})
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
     if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => {})

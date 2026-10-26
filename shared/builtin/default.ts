@@ -8,7 +8,7 @@ import { t } from '../i18n.ts'
 /**
  * 自带的「默认」工作流：什么都可以丢给它（问问题、找资料、分析项目、排查问题、小改动……），
  * 它给出结果，再从用户已有的工作流里推荐下一步，界面上点一下就执行。
- * 它是唯一不用手动添加的内置项：新建任务的默认入口，不能删除。
+ * 它是新建任务的默认入口，不能删除（其余自带工作流启动时自动加入，但可以删）。
  * 节点不用角色、直接跟随默认 CLI，角色页不会多出一个删不掉的条目。
  */
 export const DEFAULT_WORKFLOW_ID = 'default-workflow'
@@ -26,7 +26,7 @@ const DOCUMENT = `## 适用
 - 先判断用户要的是什么（回答、分析、排查、改动），按需要读项目里的文件，结论要有依据（文件路径、命令输出）。
 - 回答和分析直接给结果，不要只列计划。
 - 只做小而明确的改动；需要完整流程的大功能、跨模块重构、正式的 Bug 修复，不要自己动手，写清楚分析结论，推荐对应的工作流去做。
-- 不做不可逆的操作（删除大量文件、推送、提交到远端）。`
+- 不做不可逆的操作（删除大量文件、提交到远端）；推送按提示词里的「授权情况」（项目设置）来。`
 
 const INSTRUCTIONS = `处理用户的需求，给出结果。
 
@@ -135,13 +135,17 @@ export function taskSnapshot(
   return workflowClosure(withTests, all).map((x) => withCatalog(x, all))
 }
 
+/** 带着这个技能的角色会自己按项目测试步骤跑检查 */
+const TESTING_SKILL = 'project-testing'
+
 /** 快照里测试步骤那一段的标题，用来在重新生成时替换而不是叠加 */
 const TEST_PART = '## 项目测试步骤'
 
 /**
  * 把项目的测试步骤注入工作流说明。
- * 只注入真的用到了测试 Agent 的工作流：评审、建模这类流程看到这份步骤没有意义，还占上下文。
- * 说明里已经有这一段时替换掉，重复解析不会叠加。
+ * 只注入真的要跑测试的工作流：用到了测试 Agent，或者用到了按 project-testing 自己跑检查的角色（开发、执行、依赖）。
+ * 改代码的工作流不再带验收节点（完整测试由执行角色在评审后跑），只看测试 Agent 会把这些工作流漏掉；
+ * 评审、建模这类流程看到这份步骤没有意义，还占上下文。说明里已经有这一段时替换掉，重复解析不会叠加。
  */
 export function withTestSteps(
   w: Workflow,
@@ -151,7 +155,7 @@ export function withTestSteps(
   wslDistro = '',
 ): Workflow {
   const ids = new Set(workflowAgentIds(w))
-  const used = agents.some((a) => ids.has(a.id) && isTestAgent(a))
+  const used = agents.some((a) => ids.has(a.id) && (isTestAgent(a) || a.skills.includes(TESTING_SKILL)))
   if (!used) return w
   const base = w.document.split(TEST_PART)[0].trim()
   return { ...w, document: [base, testStepsBlock(steps, platform, wslDistro)].filter(Boolean).join('\n\n') }

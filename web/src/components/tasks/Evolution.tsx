@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { useEffect, useMemo, useState } from 'react'
+import { toast } from '@/lib/toast'
 import {
   Bot,
   Box,
   Bug,
   Check,
-  ChevronDown,
   ChevronRight,
   Code2,
   Copy,
@@ -20,7 +19,6 @@ import type { Agent, Project, Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
 import {
-  EVOLUTION_LANG,
   applyChanges,
   lineDiff,
   parseEvolution,
@@ -29,14 +27,14 @@ import {
   type ResolvedChange,
 } from '@shared/task-export'
 import { api } from '@/lib/api'
-import { useData, useNav } from '@/lib/data'
-import { startAnalysis } from '@/lib/task-transfer'
+import { useData } from '@/lib/data'
+import { openAiWindow } from '@/lib/ai-window'
+import { fixHead, fixState } from '@/lib/analysis-report'
 import { cn } from '@/lib/utils'
 import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import { useChildOpen } from './child-open'
 
 /** 一条建议改前改后的对比：按行标出删掉和加上的 */
 function DiffView({ before, after }: { before: string; after: string }) {
@@ -84,14 +82,15 @@ const resultText = (evo: { summary?: string; issues: CodeIssue[] }, rows: Resolv
     .filter(Boolean)
     .join('\n\n')
 
-/** 修复子对话的标题：同一条问题再进来时按标题认出已经开过的子对话 */
-const fixTitle = (f: CodeIssue) => `修复：${f.title || f.detail.split('\n')[0]}`.slice(0, 80)
+/** 修复的标题：发进对话的消息以它开头，之后按它认出这一项修过没有 */
+const fixTitle = (f: CodeIssue) => (f.title || f.detail.split('\n')[0]).slice(0, 80)
 const sourceTitle = (r: ResolvedChange) => `写进源代码：${r.scope} · ${r.field}`.slice(0, 80)
 
-/** 交给修复子对话的要求（发给 Agent 的，不翻译） */
+/** 用户在报告里点了「修复」：在当前分析对话里要它直接动手（发给 Agent 的，不翻译） */
 function fixPrompt(f: CodeIssue) {
   return [
-    `修复 AI 分析执行记录时发现的一个代码问题：${f.title}`,
+    `用户在分析报告里点了这一项的「修复」：请现在直接动手修好它（这是分析角色允许的例外，只修这一项，不改报告里的其他项）。`,
+    `问题：${f.title}`,
     f.detail,
     f.files.length ? `相关位置：\n${f.files.map((x) => `- ${x}`).join('\n')}` : '',
     f.scope === 'panel'
@@ -109,7 +108,7 @@ function sourcePrompt(r: ResolvedChange, agents: Agent[]) {
   const origin = c.target === 'agent' ? (agents.find((a) => a.id === c.agentId)?.origin ?? '') : ''
   const what = c.target === 'agent' ? '角色' : '工作流'
   return [
-    `AI 分析执行记录后，给${r.scope}的「${r.field}」提了一条优化。把它补充进 agent-panel 源代码里对应的内置${what}定义。`,
+    `用户在分析报告里点了「写进源代码」：请现在直接动手，把你给${r.scope}的「${r.field}」提的这条优化补充进 agent-panel 源代码里对应的内置${what}定义（只做这一件事）。`,
     c.reason ? `原因：${c.reason}` : '',
     `现在的内容：\n${r.before || '（空）'}`,
     `建议改成：\n${r.after}`,
@@ -167,72 +166,65 @@ function ItemActions({ text, stop }: { text: () => string; stop?: boolean }) {
   )
 }
 
-/** 分析对话下面开出的子对话：只要认出它和它的状态 */
-export interface EvolutionChild {
-  id: string
-  title: string
-  working: boolean
-}
-
 /**
- * 开子对话的按钮：还没开时点了新建，开过的变成「查看」，在右栏打开那个子对话。
- * 子对话列表每隔几秒才刷新一次，刚开的先按这里记下的 id 显示
+ * 报告里一项的「修复」类按钮：在当前分析对话里发一条明确要它动手的消息（用户 2026-10-25 要求，不再开子对话）。
+ * 发过的按对话里的消息认出来：正在修时转圈，修完显示「已处理」，还能再点一次重修
  */
-function ChildButton({
+function FixButton({
+  task,
   title,
   label,
   icon: Icon,
-  child,
   disabled,
   tip,
-  onStart,
+  onSend,
 }: {
+  task: Task
+  /** 这一项的标题：消息开头带上它，之后按它认出修过没有 */
   title: string
   label: string
   icon: typeof Wrench
-  child?: EvolutionChild
   disabled?: boolean
   tip: string
-  onStart: () => Promise<void>
+  onSend: () => Promise<void>
 }) {
-  const openChild = useChildOpen()
   const [busy, setBusy] = useState(false)
-  if (child)
+  const state = fixState(task, title)
+  // 对话正在回复别的：等这一轮结束再发，免得两件事搅在一起
+  const occupied = task.status === 'running' && !!task.working
+  const send = async () => {
+    setBusy(true)
+    try {
+      await onSend()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (state === 'working' || busy)
     return (
-      <Button
-        variant="ghost"
-        className={rowButton}
-        title={t('在右侧打开子对话「{title}」', { title })}
-        onClick={() => openChild?.(child.id)}
-        disabled={!openChild}
-      >
-        {child.working ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-        ) : (
-          <Check className="h-3.5 w-3.5 text-success" />
-        )}
-        {child.working ? t('处理中') : t('查看')}
-      </Button>
+      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-accent">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {t('处理中')}
+      </span>
     )
   return (
     <Button
-      variant="secondary"
+      variant={state === 'done' ? 'ghost' : 'secondary'}
       className={rowButton}
-      title={tip}
-      disabled={disabled || busy}
-      onClick={async () => {
-        setBusy(true)
-        try {
-          await onStart()
-        } catch (e) {
-          toast.error((e as Error).message)
-        } finally {
-          setBusy(false)
-        }
-      }}
+      title={
+        occupied
+          ? t('对话正在回复，这一轮结束后再点')
+          : state === 'done'
+            ? t('已经在这个对话里处理过，点了再处理一次')
+            : tip
+      }
+      disabled={disabled || occupied}
+      onClick={() => void send()}
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
-      {label}
+      {state === 'done' ? <Check className="h-3.5 w-3.5 text-success" /> : <Icon className="h-3.5 w-3.5" />}
+      {state === 'done' ? t('已处理') : label}
     </Button>
   )
 }
@@ -312,23 +304,35 @@ function ChangeRow({
   )
 }
 
-/** 结果卡片里每一段的小标题 */
+/** 报告里每一段的小标题：点一下折叠 / 展开这一段 */
 function SectionHead({
   icon: Icon,
   title,
   count,
+  open,
+  onToggle,
   children,
 }: {
   icon: typeof Sparkles
   title: string
   count?: number
+  open: boolean
+  onToggle: () => void
   children?: React.ReactNode
 }) {
   return (
-    <h4 className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs font-medium text-subtle">
-      <Icon className="h-3.5 w-3.5" />
-      <span>{title}</span>
-      {count !== undefined && <span className="tabular-nums">{count}</span>}
+    <h4 className="flex items-center gap-1 px-3 pt-3 pb-1 text-xs font-medium text-subtle">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-sel hover:text-fg"
+      >
+        <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span>{title}</span>
+        {count !== undefined && <span className="tabular-nums">{count}</span>}
+      </button>
       <span className="flex-1" />
       {children}
     </h4>
@@ -351,67 +355,55 @@ function issueGroups(list: CodeIssue[]) {
   return [...groups.values()]
 }
 
+/** 执行分析的报告：有没有内容（右侧功能面板据此决定画不画） */
+export function evolutionOf(text: string) {
+  const evo = parseEvolution(text)
+  return evo && (evo.changes.length || evo.issues.length || evo.summary) ? evo : null
+}
+
 /**
- * 「AI 分析」对话的结果下面：代码问题按模块分组，每条可以开一个子对话去修；
+ * 执行分析的报告，画在分析对话右侧的功能面板里（不再固定在输入框上方，见 ADR 0016）：
+ * 代码问题按模块分组，每段能折叠，每条能单独「修复」——在当前这个分析对话里直接修；
  * 角色和工作流的优化画成可以审阅的差异，点了才应用，不会自动改；
- * 项目是 agent-panel 自己的源代码时，优化还能开子对话补进源代码里的内置定义
+ * 项目是 agent-panel 自己的源代码时，优化还能「写进源代码」，同样在当前对话里做
  */
-export function EvolutionCard({
+export function EvolutionReport({
   task,
   project,
-  kids = [],
-  onSpawned,
+  text,
+  onTask,
 }: {
   task: Task
   project?: Project
-  /** 这个对话下的子对话：认出哪些问题已经开过修复 */
-  kids?: EvolutionChild[]
-  /** 开好子对话后：刷新子对话列表再在右栏打开（列表里还没有它时右栏会被当成已删除关掉） */
-  onSpawned?: (id: string) => void
+  /** 报告所在的那条回复 */
+  text: string
+  /** 发出修复后换上服务端返回的对话 */
+  onTask: (task: Task) => void
 }) {
   const { workflows, agents, setWorkflows, setAgents } = useData()
-  const openChild = useChildOpen()
-  const hit = useMemo(() => {
-    if (task.mode !== 'chat') return undefined
-    // 分析对话回复完 CLI 往往还连着等下一句：不在处理这一轮就画出来，不等进程结束。
-    // 正在回复时只看最后一条用户消息之前的：结果固定在输入框上方，接着追问时还留着（折叠），正在写的那条没写完不解析
-    const msgs = task.messages
-    let end = msgs.length
-    if (task.status === 'running' && task.working) while (end > 0 && msgs[end - 1].role !== 'user') end--
-    for (let i = end - 1; i >= 0; i--)
-      if (msgs[i].role === 'agent' && msgs[i].text.includes('```' + EVOLUTION_LANG)) return msgs[i]
-    return undefined
-  }, [task])
-  // 用户发了新内容就收起来，把位置让给对话；有了新的分析结果再展开。
-  // 打开对话时结果之后已经有用户消息的，一开始就是收起的
-  const userCount = task.messages.filter((m) => m.role === 'user').length
-  const hitId = hit?.id ?? ''
-  const [open, setOpen] = useState(
-    () => !hit || !task.messages.slice(task.messages.indexOf(hit) + 1).some((m) => m.role === 'user'),
-  )
-  const seen = useRef({ userCount, hitId })
-  useEffect(() => {
-    const prev = seen.current
-    seen.current = { userCount, hitId }
-    if (hitId && hitId !== prev.hitId && prev.hitId) setOpen(true)
-    else if (userCount > prev.userCount) setOpen(false)
-  }, [userCount, hitId])
-  const evo = useMemo(() => (hit ? parseEvolution(hit.text) : null), [hit])
+  const evo = useMemo(() => evolutionOf(text), [text])
   const rows = useMemo(
     () => evo?.changes.map((c) => resolveChange(c, workflows, agents)) ?? [],
     [evo, workflows, agents],
   )
   const [busy, setBusy] = useState(false)
-  // 刚开的子对话：列表还没刷新到时先按标题记着
-  const [started, setStarted] = useState<Record<string, string>>({})
-  // 能开子对话：项目里的顶层对话，不是导入的只读记录
-  const canSpawn = !!project && !!task.projectId && !task.parentTaskId && !task.imported
+  // 折起来的段：默认全展开，用户点小标题折起
+  const [folded, setFolded] = useState<Set<string>>(new Set())
+  const toggle = (id: string) =>
+    setFolded((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  // 能在这个对话里动手：项目里的对话，不是导入的只读记录
+  const canFix = !!project && !!task.projectId && !task.imported && task.mode === 'chat'
   const [panelSource, setPanelSource] = useState(false)
   const hasEvo = !!evo
   const projectId = project?.id ?? ''
   useEffect(() => {
     setPanelSource(false)
-    if (!canSpawn || !hasEvo || !projectId) return
+    if (!canFix || !hasEvo || !projectId) return
     let alive = true
     api
       .panelSource(projectId)
@@ -420,35 +412,12 @@ export function EvolutionCard({
     return () => {
       alive = false
     }
-  }, [canSpawn, hasEvo, projectId])
-  if (!evo || (!evo.changes.length && !evo.issues.length)) return null
+  }, [canFix, hasEvo, projectId])
+  if (!evo) return null
 
-  const childOf = (title: string): EvolutionChild | undefined =>
-    kids.find((k) => k.title === title) ?? (started[title] ? { id: started[title], title, working: true } : undefined)
-
-  /** 在这个分析对话下面开一个子对话，用「执行」角色去做，开好后在右栏打开 */
-  const spawn = async (title: string, prompt: string) => {
-    const worker = agents.find((a) => a.origin === 'builtin:worker')
-    const created = await api.createTask({
-      projectId: task.projectId,
-      mode: 'chat',
-      parentTaskId: task.id,
-      workflowId: '',
-      agentId: worker?.id ?? project?.defaultAgentId ?? '',
-      cli: '',
-      model: '',
-      effort: '',
-      params: {},
-      prompt,
-      attachments: [],
-      isolate: false,
-      askUser: task.askUser,
-    })
-    // 标题由这里定：之后按标题认出这条已经开过
-    await api.renameTask(created.id, title).catch(() => {})
-    setStarted((s) => ({ ...s, [title]: created.id }))
-    if (onSpawned) onSpawned(created.id)
-    else openChild?.(created.id)
+  /** 在当前分析对话里发一条要它动手的消息：开头是这一项的标题，之后按它认出修过没有 */
+  const send = async (title: string, body: string) => {
+    onTask(await api.sendMessage(task.id, `${fixHead(title)}\n\n${body}`))
   }
 
   const pending = rows.filter((r) => !r.error && r.before !== r.after)
@@ -479,18 +448,18 @@ export function EvolutionCard({
   }
 
   const sourceButton = (r: ResolvedChange) =>
-    panelSource ? (
-      <ChildButton
+    panelSource && canFix ? (
+      <FixButton
+        task={task}
         title={sourceTitle(r)}
         label={t('写进源代码')}
         icon={Code2}
-        child={childOf(sourceTitle(r))}
-        tip={t('开一个子对话，把这条优化补进 agent-panel 源代码里的内置定义')}
-        onStart={() => spawn(sourceTitle(r), sourcePrompt(r, agents))}
+        tip={t('在这个分析对话里，把这条优化补进 agent-panel 源代码里的内置定义')}
+        onSend={() => send(sourceTitle(r), sourcePrompt(r, agents))}
       />
     ) : undefined
   const changeList = (list: ResolvedChange[]) => (
-    <ul className="flex flex-col divide-y">
+    <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
       {list.map((r, i) => (
         <ChangeRow key={i} r={r} busy={busy} onApply={() => apply([r])} source={sourceButton(r)} />
       ))}
@@ -501,12 +470,7 @@ export function EvolutionCard({
   const allIssues = () => evo.issues.map(issueText).join('\n\n')
 
   const quote = (e: React.MouseEvent<HTMLElement>, text: string) => {
-    e.stopPropagation()
     if (!quoteFrom(e.currentTarget, text)) toast(t('这里没有可以引用到的输入框'))
-  }
-  const copy = (e: React.MouseEvent<HTMLElement>, text: string) => {
-    e.stopPropagation()
-    copyText(text)
   }
   const sectionActions = (text: () => string) => (
     <>
@@ -514,7 +478,7 @@ export function EvolutionCard({
         <Quote className="h-3.5 w-3.5" />
         {t('全部引用')}
       </button>
-      <button type="button" onClick={(e) => copy(e, text())} className={headButton}>
+      <button type="button" onClick={() => copyText(text())} className={headButton}>
         <Copy className="h-3.5 w-3.5" />
         {t('复制')}
       </button>
@@ -522,214 +486,208 @@ export function EvolutionCard({
   )
 
   return (
-    <section
-      aria-label={t('分析结果')}
-      className="mx-auto mb-2 flex max-h-[50vh] max-w-(--content-w) flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-card"
-    >
-      {/* 固定在输入框上方：标题行点一下展开收起；收起时只剩这一行，摘要截成一行 */}
-      <header
-        className={cn('flex shrink-0 cursor-pointer items-start gap-3 px-4', open ? 'py-3.5' : 'py-2')}
-        onClick={() => setOpen(!open)}
-      >
-        <span
-          className={cn(
-            'grid shrink-0 place-items-center rounded-lg bg-accent-soft text-accent',
-            open ? 'h-8 w-8' : 'h-6 w-6',
-          )}
-        >
-          <Sparkles className={open ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
-        </span>
-        <div className={cn('flex min-w-0 flex-1 gap-1', open ? 'flex-col' : 'items-center self-center')}>
-          <div className={cn('flex items-center gap-x-2 gap-y-1', open ? 'flex-wrap' : 'shrink-0')}>
-            <h3 className="text-[0.875rem] font-semibold">{t('分析结果')}</h3>
-            {evo.issues.length > 0 && <Badge tone="warning">{t('{n} 个代码问题', { n: evo.issues.length })}</Badge>}
-            {evo.changes.length > 0 && <Badge tone="accent">{t('{n} 项优化建议', { n: evo.changes.length })}</Badge>}
-          </div>
-          {evo.summary &&
-            (open ? (
-              <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>
-            ) : (
-              <span className="ml-1 min-w-0 truncate text-[0.8125rem] text-subtle">{evo.summary}</span>
+    <section aria-label={t('分析报告')} className="flex flex-col pb-3">
+      <div className="flex flex-col gap-2 px-4 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {evo.issues.length > 0 && <Badge tone="warning">{t('{n} 个代码问题', { n: evo.issues.length })}</Badge>}
+          {evo.changes.length > 0 && <Badge tone="accent">{t('{n} 项优化建议', { n: evo.changes.length })}</Badge>}
+          <span className="flex-1" />
+          <ItemActions text={() => resultText(evo, rows)} />
+        </div>
+        {evo.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>}
+      </div>
+      {evo.issues.length > 0 && (
+        <div className="mt-2 border-t">
+          <SectionHead
+            icon={Bug}
+            title={t('代码问题')}
+            count={evo.issues.length}
+            open={!folded.has('issues')}
+            onToggle={() => toggle('issues')}
+          >
+            {sectionActions(allIssues)}
+          </SectionHead>
+          {!folded.has('issues') &&
+            issueGroups(evo.issues).map((g) => (
+              <div key={`${g.scope}:${g.name}`} className="pb-1">
+                <div className="flex items-center gap-2 px-4 pt-2 pb-1">
+                  <span className="text-[0.78125rem] font-medium">{g.name}</span>
+                  {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
+                  <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
+                </div>
+                <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
+                  {g.items.map((f, i) => (
+                    <IssueRow
+                      key={i}
+                      f={f}
+                      action={
+                        canFix && (
+                          <FixButton
+                            task={task}
+                            title={fixTitle(f)}
+                            label={t('修复')}
+                            icon={Wrench}
+                            // 面板框架的问题只能在面板自己的源代码里修
+                            disabled={f.scope === 'panel' && !panelSource}
+                            tip={
+                              f.scope === 'panel' && !panelSource
+                                ? t('面板框架的问题要在 agent-panel 源代码项目里修')
+                                : t('在这个分析对话里直接修这个问题')
+                            }
+                            onSend={() => send(fixTitle(f), fixPrompt(f))}
+                          />
+                        )
+                      }
+                    />
+                  ))}
+                </ul>
+              </div>
             ))}
         </div>
-        <span className={cn('flex shrink-0 items-center text-xs text-subtle', open ? '' : 'self-center')}>
-          <ItemActions text={() => resultText(evo, rows)} stop />
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? t('收起分析结果') : t('展开分析结果')}
-            title={open ? t('收起分析结果') : t('展开分析结果')}
-            className={itemAction}
-            onClick={(e) => {
-              e.stopPropagation()
-              setOpen(!open)
-            }}
+      )}
+      {roleRows.length > 0 && (
+        <div className="mt-2 border-t">
+          <SectionHead
+            icon={Bot}
+            title={t('角色优化')}
+            count={roleRows.length}
+            open={!folded.has('roles')}
+            onToggle={() => toggle('roles')}
           >
-            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && 'rotate-180')} />
-          </button>
-        </span>
-      </header>
-      {open && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {evo.issues.length > 0 && (
-            <div className="border-t">
-              <SectionHead icon={Bug} title={t('代码问题')} count={evo.issues.length}>
-                {sectionActions(allIssues)}
-              </SectionHead>
-              {issueGroups(evo.issues).map((g) => (
-                <div key={`${g.scope}:${g.name}`} className="pb-1">
-                  <div className="flex items-center gap-2 px-4 pt-2 pb-1">
-                    <span className="text-[0.78125rem] font-medium">{g.name}</span>
-                    {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
-                    <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
-                  </div>
-                  <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-field/40">
-                    {g.items.map((f, i) => {
-                      // 面板框架的问题只能在面板自己的源代码里修
-                      const blocked = f.scope === 'panel' && !panelSource
-                      return (
-                        <li key={i} className="flex items-start gap-3 px-3 py-2.5">
-                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                          <div className="flex min-w-0 flex-1 flex-col gap-1">
-                            {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
-                            {f.detail && (
-                              <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">
-                                {f.detail}
-                              </span>
-                            )}
-                            {f.files.length > 0 && (
-                              <span className="mt-0.5 flex flex-wrap gap-1.5">
-                                {f.files.map((x) => (
-                                  <code
-                                    key={x}
-                                    className="rounded-md border bg-card px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle"
-                                  >
-                                    {x}
-                                  </code>
-                                ))}
-                              </span>
-                            )}
-                          </div>
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            <ItemActions text={() => issueText(f)} />
-                            {canSpawn && (
-                              <ChildButton
-                                title={fixTitle(f)}
-                                label={t('修复')}
-                                icon={Wrench}
-                                child={childOf(fixTitle(f))}
-                                disabled={blocked}
-                                tip={
-                                  blocked
-                                    ? t('面板框架的问题要在 agent-panel 源代码项目里修')
-                                    : t('开一个子对话来修这个问题')
-                                }
-                                onStart={() => spawn(fixTitle(f), fixPrompt(f))}
-                              />
-                            )}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-          {roleRows.length > 0 && (
-            <div className="border-t">
-              <SectionHead icon={Bot} title={t('角色优化')} count={roleRows.length}>
-                {sectionActions(() => roleRows.map(changeText).join('\n\n'))}
-              </SectionHead>
-              {changeList(roleRows)}
-            </div>
-          )}
-          {flowRows.length > 0 && (
-            <div className="border-t">
-              <SectionHead icon={Workflow} title={t('工作流优化')} count={flowRows.length}>
-                {sectionActions(() => flowRows.map(changeText).join('\n\n'))}
-              </SectionHead>
-              {changeList(flowRows)}
-            </div>
-          )}
-          {pending.length > 1 && (
-            <div className="flex items-center gap-3 border-t bg-field/50 px-4 py-2.5">
-              <span className="min-w-0 flex-1 text-xs text-subtle">
-                {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
-              </span>
-              <Button size="sm" disabled={busy} onClick={() => apply(pending)}>
-                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {t('全部应用（{n} 项）', { n: pending.length })}
-              </Button>
-            </div>
-          )}
+            {sectionActions(() => roleRows.map(changeText).join('\n\n'))}
+          </SectionHead>
+          {!folded.has('roles') && changeList(roleRows)}
+        </div>
+      )}
+      {flowRows.length > 0 && (
+        <div className="mt-2 border-t">
+          <SectionHead
+            icon={Workflow}
+            title={t('工作流优化')}
+            count={flowRows.length}
+            open={!folded.has('flows')}
+            onToggle={() => toggle('flows')}
+          >
+            {sectionActions(() => flowRows.map(changeText).join('\n\n'))}
+          </SectionHead>
+          {!folded.has('flows') && changeList(flowRows)}
+        </div>
+      )}
+      {pending.length > 1 && (
+        <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg border bg-field/50 px-3 py-2.5">
+          <span className="min-w-0 flex-1 text-xs text-subtle">
+            {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
+          </span>
+          <Button size="sm" disabled={busy} onClick={() => apply(pending)}>
+            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {t('全部应用（{n} 项）', { n: pending.length })}
+          </Button>
         </div>
       )}
     </section>
   )
 }
 
-/** AI 分析的弹窗：可以写想重点看什么，开始后新建一个分析对话并打开它 */
+/** 一条代码问题：标题、说明、相关位置；右边是引用、复制和「修复」 */
+function IssueRow({ f, action }: { f: CodeIssue; action?: React.ReactNode }) {
+  return (
+    <li className="flex flex-col gap-2 px-3 py-2.5">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
+          {f.detail && (
+            <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
+          )}
+          {f.files.length > 0 && (
+            <span className="mt-0.5 flex flex-wrap gap-1.5">
+              {f.files.map((x) => (
+                <code
+                  key={x}
+                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] break-all text-subtle"
+                >
+                  {x}
+                </code>
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+      <span className="flex items-center justify-end gap-1.5">
+        <ItemActions text={() => issueText(f)} />
+        {action}
+      </span>
+    </li>
+  )
+}
+
+/**
+ * AI 分析的弹窗：可以写想重点看什么，开始后按归属规则新建分析对话（见 shared/analysis-home.ts），
+ * 在统一的 AI 分析窗口里看。对话执行、子任务、几次工作流执行都用它，只是 start 不同
+ */
 export function AnalyzeDialog({
   open,
   onOpenChange,
-  tasks,
-  projectId,
+  title,
+  intro,
+  placeholder,
+  subject,
+  start,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  /** 要分析的执行（完整内容）；为空时弹窗里取 */
-  tasks: () => Promise<Task[]>
-  projectId: string
+  /** 弹窗标题，例如「AI 分析执行结果」「AI 分析子任务」 */
+  title?: string
+  /** 弹窗里说明会分析什么；不写是执行结果的那段 */
+  intro?: string
+  /** 「想重点看什么」的示例；不写是执行结果的那句 */
+  placeholder?: string
+  /** 分析对象：窗口和浮条上显示 */
+  subject: string
+  /** 带上用户写的重点，新建分析对话 */
+  start: (focus: string) => Promise<Task>
 }) {
-  const { agents, upsertTask } = useData()
-  const { go } = useNav()
+  const { upsertTask } = useData()
   const [focus, setFocus] = useState('')
-  const [busy, setBusy] = useState(false)
-  const run = async () => {
-    setBusy(true)
-    try {
-      const list = await tasks()
-      if (!list.length) throw new Error(t('还没有可以分析的执行记录'))
-      const created = await startAnalysis({ tasks: list, agents, projectId, focus })
-      upsertTask(taskSummary(created))
-      onOpenChange(false)
-      setFocus('')
-      go(
-        created.projectId
-          ? { page: 'projects', id: created.projectId, sub: created.id }
-          : { page: 'chat', id: created.id },
-      )
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+  const run = () => {
+    const f = focus
+    onOpenChange(false)
+    setFocus('')
+    openAiWindow({
+      label: t('AI 分析'),
+      title: subject,
+      create: async () => {
+        const created = await start(f)
+        upsertTask(taskSummary(created))
+        return created
+      },
+    })
   }
   return (
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      title={t('AI 分析执行结果')}
+      title={title ?? t('AI 分析执行结果')}
       footer={
         <>
           <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('用默认角色新建一个对话来分析，只分析不改文件')}
+            {t('用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下')}
           </span>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('取消')}
           </Button>
-          <Button disabled={busy} onClick={run}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          <Button onClick={run}>
+            <Sparkles className="h-4 w-4" />
             {t('开始分析')}
           </Button>
         </>
       }
     >
       <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t(
-          'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
-        )}
+        {intro ??
+          t(
+            'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
+          )}
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>
@@ -738,7 +696,7 @@ export function AnalyzeDialog({
           onChange={(e) => setFocus(e.target.value)}
           maxLength={1000}
           rows={3}
-          placeholder={t('例如：为什么验收总是不通过、哪些节点最费 token')}
+          placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
           className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
         />
       </label>

@@ -79,14 +79,16 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
+import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { TriageItem } from './review-gate.ts'
-import { beginTurn, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
+import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import {
   activePlan,
@@ -96,11 +98,38 @@ import {
   endRun,
   finishPlan,
   planText,
-  runningStepId,
+  settleWait,
+  ensureChildStep,
   WRAP_UP,
   type PlanItemInput,
+  type PlanKid,
+  type WrapUpAnswer,
   type WrapUpKind,
 } from './plan.ts'
+
+/** 每个父对话交给子对话的话 → 交给了哪个子对话（见 sendToConversation：一条消息只交给一个子对话） */
+const handedOff = new WeakMap<object, Map<string, string>>()
+
+/**
+ * 这个对话名下的子对话（计划按它对上等待、收口）：set_plan、finish_plan 都按这一份算。
+ * 取不到列表时当没有子对话（老版本宿主），不影响计划本身
+ */
+async function kidsOf(host: EngineHost): Promise<PlanKid[]> {
+  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
+  return list.map((c) => ({
+    id: c.id,
+    title: c.title,
+    createdAt: c.createdAt ?? '',
+    done: !!c.resolved,
+    endedAt: c.resolved ? c.at : '',
+  }))
+}
+
+/** 一个子对话的标题：取不到时返回空串（调用方退到用 id） */
+async function kidTitleOf(host: EngineHost, id: string) {
+  const list = host.listConversations ? await host.listConversations().catch(() => []) : []
+  return list.find((c) => c.id === id)?.title.trim() ?? ''
+}
 
 /** 内置「版本控制」角色的来源标记：独立分支里的子对话不派它收尾（见 spawn） */
 const VCS_ORIGIN = 'builtin:vcs'
@@ -154,6 +183,14 @@ export interface AgentCall {
   signal?: AbortSignal
 }
 
+/** 交给评审的改动：snapshot 是这一刻的工作区快照（下一轮复看和它比），diff 太长时 diff 为空、完整内容在 file */
+export interface ReviewDiff {
+  snapshot: string
+  stat: string
+  diff: string
+  file?: string
+}
+
 /** 派一个子 Agent 的要求 */
 export interface HelperSpec {
   title: string
@@ -164,6 +201,28 @@ export interface HelperSpec {
   tier?: string
   /** 接着之前哪个子任务（id）的会话做：复看的评审接着上一次评审，读过的文档和代码不用再读一遍 */
   resume?: string
+  /** 派「评审」时的交接单：派它的对话把评审要用的信息整理好交给它，评审不用自己去项目里找（ADR 0013） */
+  review?: ReviewBrief
+}
+
+/**
+ * 评审交接单（ADR 0013）：派评审的对话手里已经有需求、改动的来龙去脉和检查结果，
+ * 整理好一次交给评审，评审只看改动的代码，不再自己读模块文档、全仓搜索去还原这些。
+ * 第一次评审 goal、checks 必填（复看接着上一次的会话，上下文还在，不用再交）
+ */
+export interface ReviewBrief {
+  /** 这次改动要达成什么、验收标准（有口径的连口径） */
+  goal?: string
+  /** 改了什么、为什么这样改：按文件或模块一两句 */
+  changes?: string
+  /** 已经跑过的检查：命令 + 结果 */
+  checks?: string
+  /** 希望评审重点看的风险点 */
+  focus?: string
+  /** 判断要用、差异里又看不到的事实：调用方怎么用、上游保证了什么、相关的接口签名，对话从读过的代码里摘 */
+  context?: string
+  /** 要评审的文件（相对项目根）：只取这些文件的差异；不写取这个对话改过的全部文件 */
+  files?: string[]
 }
 
 /** 子 Agent 的状态（wait_agents 的结果） */
@@ -283,7 +342,11 @@ export interface Orchestra {
    */
   helperBatch(): Promise<HelperBatch> | undefined
   status(): string
-  spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
+  /**
+   * 派子任务。step：计划里哪一步在等这批子任务（步骤 id，见 set_plan 返回的计划），
+   * 全部结束、结果交回时把这一步标完成，失败或被终止退回进行中并写清原因
+   */
+  spawn(tasks: HelperSpec[], step?: string): { ids: string[]; error?: string; info?: string }
   /** 终止自己派出的子任务（不写 ids 就是全部还没结束的）；why 会写进交回的结果 */
   stopHelpers(ids: string[], why: string): { ok: boolean; info: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -301,8 +364,8 @@ export interface Orchestra {
   /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   /** partial：只交变更步骤，其余没写到的步骤留在计划里不动（步骤多时分两批交） */
-  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): { ok: boolean; info: string }
-  finishPlan(summary: string): { ok: boolean; info: string }
+  setPlan(input: { title?: string; steps?: PlanItemInput[]; partial?: boolean }): Promise<{ ok: boolean; info: string }>
+  finishPlan(summary: string): Promise<{ ok: boolean; info: string }>
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
@@ -343,7 +406,7 @@ export interface Orchestra {
     tests: string,
     build?: boolean,
     handoff?: HandoffInput,
-    /** 对最近一次评审每条 🛑 的处置（见 shared/review-gate.ts、ADR 0009） */
+    /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
     triage?: TriageItem[],
   ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
@@ -415,12 +478,23 @@ export interface EngineHost {
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
   /**
+   * 调用停在工具里等别人（wait_agents 等子任务、ask_main 等主 Agent）：宿主让出这次调用的 API 并发名额，
+   * 等完再拿回（满了要排队）。不让出的话，占着名额等子任务、子任务又排队等名额，会互相等死。
+   * stepId 是在等的那次调用（对话是 @chat）；没有时直接等
+   */
+  yieldSlot?: <T>(stepId: string, wait: () => Promise<T>) => Promise<T>
+  /**
    * 节点完成后等用户确认（节点勾了「完成后等我确认」）：返回用户的决定，停止时返回 null。
    * 没有时（例如在线演示之外的宿主不支持）不等待，直接往下走
    */
   confirm?: (step: TaskStep, text: string) => Promise<{ allow: boolean; answer?: string } | null>
   /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
   saveHandoff?: (step: TaskStep, text: string) => Promise<string>
+  /**
+   * 交给评审的改动（git 仓库才有）：since 是上一轮评审记下的快照，给了就只取那之后的增量。
+   * 派「评审」时面板一次把差异带进提示词，评审只看代码，不用自己一个回合一个回合地 git diff、读文件（ADR 0010）
+   */
+  reviewDiff?: (since?: string, files?: string[]) => Promise<ReviewDiff | null>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
@@ -474,6 +548,9 @@ export interface EngineHost {
       waiting?: string
       /** 最后有动静的时间：多久没新输出，父对话一眼能看出来 */
       lastActivityAt?: string
+      /** 创建时间、是否已经收尾完成：计划按它们对齐等待中的步骤（见 plan.ts 的 linkKids） */
+      createdAt?: string
+      resolved?: boolean
     }[]
   >
   /** 新建子对话并异步执行，返回后父对话继续；完成后由宿主把结果回报到父对话 */
@@ -493,10 +570,11 @@ export interface EngineHost {
   /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。父对话要推送时先合到这里再推；子对话的完成只管合回这里，与推送无关 */
   worktreeHome?: string
   /**
-   * 子对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
-   * merge 独立分支合回父对话所在的分支，p4 按文件类型分进各自的 pending changelist；不用收尾的不传
+   * 这个对话的收尾（面板保证它是计划的最后一步，见 plan.ts 的 ensureWrapUp）：
+   * merge 子对话的独立分支合回父对话所在的分支，p4 子对话按文件类型分进各自的 pending changelist，
+   * push 父对话把分支推到远端；不用收尾的不传，'none' 是明确不推送（去掉计划里还挂着的推送收尾）
    */
-  wrapUp?: WrapUpKind
+  wrapUp?: WrapUpAnswer
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
   submitMerge?: (
     note: string,
@@ -923,37 +1001,58 @@ function policyPart(host: EngineHost) {
   // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
   if (host.task.parentTaskId)
     return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp)}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
+  // 「需要推送」要说清是什么时候：技能和角色设定默认都是「本地先行、不主动推送」，
+  // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
+  const wt =
+    host.task.worktree?.state === 'active' ? '（在独立分支里工作时按下面「执行目录」那段：独立分支本身不推）' : ''
+  const done = '任务做完、验证通过并在本地提交之后'
+  // 推送这一步已经由面板列进计划（push 收尾，见 plan.ts 的 wrapUpKind），所以这里不写「你可以推」，
+  // 只写「按计划最后那一步做」：另写一遍时模型会自己再补一条「推送到远端」步骤，和面板的收尾撞在一起
+  const kind = wrapKind(host)
+  const planned = kind
+    ? `，会列计划的任务：${WRAP_UP[kind].title}已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条`
+    : ''
   const push =
     p.push === 'deny'
-      ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
+      ? '推送：项目设置是「不推送，只做本地提交」。不 push、不建 PR、不 P4 submit，也不问用户要不要推；用户在对话里要求推送时，告诉用户先到项目设置把「推送到远端」改掉（这个项目的 git push 已经被面板拦下）。'
       : p.answered === 'denied'
         ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推。'
         : p.answered === 'allowed' || p.push === 'allow'
-          ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
-          : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
-  return `## 授权情况\n${push}\n${tools}`
+          ? `推送：${p.answered === 'allowed' ? '这个对话里用户已经同意推送' : '项目设置是「允许直接推送」，这就是用户的授权'}，不用再问。${done}${wt}就把当前分支推到它跟踪的远端分支（没有跟踪分支时推到 origin 的同名分支并设上跟踪）${planned}，推完回读确认（git status -sb），结论里写清推到了哪个远端分支。只做普通推送：不强推，被拒（远端有新提交）就停下来报告，不自己 pull / rebase；创建 PR、P4 submit、合并到主干不在这个授权里，用户要求时才做。`
+          : `推送：项目设置是「第一次需要推送时问一次」。${done}，用提问工具问用户一次要不要推送（推荐「允许这次推送」和「只做本地提交」），按回答做${wt}；这个对话里之后都按这次的回答，不再重复问。`
+  return `## 授权情况\n${push}\n这条是用户在项目设置里定的，比角色设定、技能里「不推送 / 本地先行 / 推送要用户明确授权」的默认写法优先。\n${tools}`
 }
 
-/** 子对话的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
-function wrapDone(kind: WrapUpKind | undefined) {
+/** 这一轮的收尾种类：'none'（明确不推送）当成没有收尾，提示词里不提它 */
+function wrapKind(host: EngineHost): WrapUpKind | undefined {
+  return host.wrapUp === 'none' ? undefined : host.wrapUp
+}
+
+/** 计划的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
+function wrapDone(kind: WrapUpAnswer | undefined) {
   if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
   if (kind === 'merge') return '改动已合回父对话所在的分支（submit_merge 由面板合并）'
+  if (kind === 'push') return '改动已推到远端，结论里写清了推到哪个远端分支'
   return '改动已经在父对话所在的分支上'
 }
 
 /**
- * 子对话的收尾怎么做：面板把它加成计划的最后一步，这里讲清楚做什么、谁来标完成。
+ * 计划的收尾怎么做：面板把它加成计划的最后一步，这里讲清楚做什么、谁来标完成。
  * P4 的分桶规则写在这里，不靠 project-vcs 技能：对话里的子对话不一定派「版本控制」角色，
  * 没有这段时改动全留在 default 或塞进同一个 changelist
  */
 function wrapUpPart(host: EngineHost) {
-  const kind = host.wrapUp
+  const kind = wrapKind(host)
   if (!kind) return ''
   const head = `## 收尾：计划的最后一步
-面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面；前面的步骤做完、验证通过后再做它。`
+面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面（下一条计划里它仍在最后）；前面的步骤做完、验证通过后再做它。`
   if (kind === 'merge')
     return `${head}
 做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。`
+  // 推送归 Agent 自己做（面板拿不到 git push 的结果，不像合并那样能替它标完成）：讲清做什么、做完自己标
+  if (kind === 'push')
+    return `${head}
+做法：${WRAP_UP.push.note}。计划里的其他步骤都做完、验证通过、改动已在本地提交之后再推；这一步做完自己用 set_plan 把它标完成，面板不会替你标。在独立分支里时按上面「执行目录」那段先合回原分支，再在原目录推原分支。`
   return `${head}
 ${p4Rules(host)}做完再把这一步标完成。不 submit、不 revert、不 sync。`
 }
@@ -976,7 +1075,7 @@ function p4Rules(host: EngineHost) {
 
 /** 不是子对话收尾的场合（父对话、工作流节点）：P4 项目里也要按类型分 changelist */
 function p4Part(host: EngineHost) {
-  if (!host.p4Split || host.wrapUp === 'p4') return ''
+  if (!host.p4Split || wrapKind(host) === 'p4') return ''
   return `## P4 changelist\n${p4Rules(host)}不 submit、不 revert、不 sync。`
 }
 
@@ -1113,6 +1212,7 @@ function backgroundPart(host: EngineHost) {
 function planPart(host: EngineHost, coordinator: boolean) {
   const { task } = host
   if (!task.projectId) return ''
+  const kind = wrapKind(host)
   const cur = activePlan(task)
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   return `## 执行计划
@@ -1125,7 +1225,12 @@ ${now}
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
 - 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
-- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
+${
+  kind
+    ? `- 计划的最后一步「${WRAP_UP[kind].title}」由面板加在最后，别删、别挪到前面，也不要自己再写一条重复的收尾步骤（见下面「收尾：计划的最后一步」）。
+`
+    : ''
+}- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
     coordinator
       ? `
 - 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
@@ -1152,7 +1257,24 @@ function commonPart(host: EngineHost, w?: Workflow, chat = false) {
     fileFormatPart(host),
     `## 通用要求\n完成后用${promptLangWord()}简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
-      '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',
+      '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。\n' +
+      // 用户明确要求：所有命令静默跑。弹出来的窗口既把结果带走（对话拿不到输出），也打断用户手上的事
+      '所有命令都在当前会话里静默执行，不要新开命令行或终端窗口（start、cmd /k、Start-Process、wt、open -a Terminal 这类），除非用户明确要求打开窗口。',
+  ]
+}
+
+/**
+ * 评审代码改动的子任务用的开头（ADR 0013）：只留需求、语言、用户补充、目标和必须遵守的规则。
+ * 工作流说明、搜索排除、编译收尾、授权和文件格式都是写给动手的角色的，评审拿到只会去搜项目、跑检查
+ */
+function reviewCommonPart(host: EngineHost) {
+  const { original, extra } = userRequests(host.task)
+  return [
+    `## 用户需求\n${original}`,
+    promptLangRules(),
+    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
+    goalPart(host),
+    rulesPart(host),
   ]
 }
 
@@ -1367,7 +1489,14 @@ async function runNodeSingle(
     // 上一轮读过的代码、给过的意见都在会话里，整段历史能命中缓存；不续接的话每轮都从头读一遍
     const prev =
       round === 0 && !resumeHalf && !host.task.sessions[step.id] ? prevRoundSession(host, inv, node.kind, node.id) : ''
-    if (prev) host.task.sessions[step.id] = prev
+    if (prev) {
+      host.task.sessions[step.id] = prev
+      // 会话按目录存：借来的这条会话也要带上它原来是在哪个目录里开的，
+      // 不然换了目录续接时会在 CLI 里撞「会话在别的项目里」（见 runner.ts 的 sessionMoved）
+      const dirs = host.task.sessionDirs ?? {}
+      const at = Object.entries(dirs).find(([k]) => host.task.sessions[k] === prev)?.[1]
+      if (at) dirs[step.id] = at
+    }
     const cont =
       round === 0 && resumeHalf
         ? `上次执行到一半被中断了（停止或面板重启）。请检查已经做了哪些，从中断的地方接着完成本节点「${step.title}」的工作，完成后同样简要总结。`
@@ -2341,6 +2470,101 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
   }
 }
 
+const REVIEW_SOFT_LIMIT_MS = REVIEW_SOFT_LIMIT_MIN * 60_000
+const REVIEW_WRAP_NOTE = `【面板提醒】评审已经进行了 ${REVIEW_SOFT_LIMIT_MIN} 分钟：停止再读代码，按目前已确认的意见马上交卷（第一行验收结论、第二行必须处置）；没来得及确认的标「可能」，没看完的文件单列「没看完」。`
+
+/** 这个角色是不是在评审代码改动（必备角色「评审」、评审对象是代码改动）；评审方案或结论的不算 */
+function reviewsCode(agent: Agent | undefined) {
+  if (agent?.origin !== 'builtin:reviewer') return false
+  const target = agent.params.find((p) => p.key === 'target')?.default
+  return !target || target === '代码改动'
+}
+
+/** 派评审代码时交接单缺了必填的，返回要补什么；不缺返回空 */
+function briefMissing(spec: HelperSpec) {
+  const b = spec.review
+  const lack = [!b?.goal?.trim() && 'goal（需求和验收标准）', !b?.checks?.trim() && 'checks（跑过的检查：命令 + 结果）']
+  return lack.filter(Boolean).join('、')
+}
+
+/** 交接单写进评审的提示词：对话整理好的就是评审要用的全部背景 */
+function briefPart(b: ReviewBrief | undefined) {
+  if (!b) return ''
+  const rows = [
+    ['要达成什么、验收标准', b.goal],
+    ['改了什么、为什么', b.changes],
+    ['已经跑过的检查', b.checks],
+    ['重点看', b.focus],
+    ['差异里看不到的背景', b.context],
+  ].filter((r): r is [string, string] => !!r[1]?.trim())
+  if (!rows.length) return ''
+  return `## 评审交接单（派你的对话整理）\n这就是评审要用的背景，不用再去读模块文档、搜项目还原它们。\n\n${rows.map(([k, v]) => `### ${k}\n${v.trim()}`).join('\n\n')}`
+}
+
+/**
+ * 派的是「评审」时，面板把要评审的改动一次带进提示词（ADR 0010、0013）：接着上一轮评审的会话就只带那之后的增量；
+ * 交接单写了 files 的只取那几个文件。读不到（不是 git 仓库、git 出错）时不带，评审照它的角色设定自己取 diff
+ */
+async function reviewPart(host: EngineHost, step: TaskStep, spec: HelperSpec) {
+  const agent = host.agents.find((a) => a.id === step.agentId)
+  if (agent?.origin !== 'builtin:reviewer') return ''
+  const brief = briefPart(spec.review)
+  if (!host.reviewDiff) return brief
+  const key = step.session || ''
+  const prev = key
+    ? host.task.steps.filter((s) => s !== step && (s.session || s.id) === key && s.snapshot).at(-1)
+    : undefined
+  const files = (spec.review?.files ?? []).map((f) => f.trim()).filter(Boolean)
+  const d = await host.reviewDiff(prev?.snapshot, files.length ? files : undefined).catch(() => null)
+  if (!d) return brief
+  step.snapshot = d.snapshot
+  const what = prev ? '上一轮评审之后的增量' : '这次的全部改动（和任务开始时比）'
+  if (!d.stat) return [brief, `## 要评审的改动\n${what}：没有改动。`].filter(Boolean).join('\n\n')
+  const body = d.diff
+    ? `\`\`\`diff\n${d.diff}\n\`\`\``
+    : d.file
+      ? `差异太长，没有放进来：完整差异在文件 ${d.file}，先读它。`
+      : '差异太长，没有放进来：按上面的文件列表自己取 diff。'
+  const part = `## 要评审的改动\n面板已经取好了${what}，不用再自己 git diff。每处改动前后带几行没改的代码，只是帮你看懂改动接在哪里：**只评以 + / - 开头的行**，上下文里没改的代码不评。锁文件、压缩产物这类生成的文件只在列表里，不用评。\n\n改动文件：\n\`\`\`\n${d.stat}\n\`\`\`\n\n${body}`
+  return [brief, part].filter(Boolean).join('\n\n')
+}
+
+/** 子任务真的结束了（不是还在排队或跑着）：状态定了，或者还没开工但已经没在跑 */
+function helperOver(host: EngineHost, k: TaskStep) {
+  const st = orchState(host)
+  return k.status !== 'running' && (k.status !== 'pending' || !st.helpers.has(k.id))
+}
+
+/**
+ * 子任务都结束了：把计划里等它们的那一步收口（kind: 'helper'，见 spawn 的 step）。
+ * 成功标完成、失败或终止退回进行中并写清原因；子任务还没结束的不动它。
+ *
+ * 按「计划里还挂着的 helper 等待」遍历，不只看这一批刚交回的子任务：模型在老会话里调过 wait_agents 时，
+ * 那些子任务已经被取走（delivered 已 set），这一批就轮不到它们——点名的那一步会永远停在等待中
+ */
+export function settleHelperWaits(host: EngineHost) {
+  const { task } = host
+  // 只看在用的这份计划：settleWait 也按 activePlan 找步骤，旧计划里残留的等待项永远收不了口，
+  // 每次交回结果都把那些死项重扫一遍没意义
+  const plan = activePlan(task)
+  const waiting = new Set(
+    (plan?.steps ?? []).flatMap((s) => [s, ...s.children]).flatMap((x) => x.waits.filter((w) => w.kind === 'helper')),
+  )
+  const hit: { title: string; done: boolean }[] = []
+  // 集合已经按 kind === 'helper' 筛过，这里只看还没收口的
+  for (const w of waiting)
+    if (w.state === 'waiting') {
+      const kid = task.steps.find((s) => s.id === w.ref)
+      if (kid && helperOver(host, kid)) hit.push(...settleWait(task, 'helper', w.ref, kid.status === 'done'))
+    }
+  if (hit.length) host.changed(true)
+  return hit
+}
+
+/** 子任务没做完时交回结果里带的一句：重试要在原来的子任务里接着做，不另派一个 */
+const RETRY_HINT = (id: string) =>
+  `（要重试就调用 spawn_agents，resume 写「${id}」：在原来这个子任务里接着做，不要另派一个新的）`
+
 /** 节点结束前等它派出的子 Agent 都结束，返回它没取回的结果（并进节点的输出） */
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
@@ -2352,13 +2576,16 @@ async function settleHelpers(host: EngineHost, step: TaskStep) {
   }
   const late = kids().filter((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))
   for (const k of late) st.delivered.add(k.id)
+  // 计划里等这些子任务的步骤跟着收口：成功标完成，失败/被终止退回进行中
+  settleHelperWaits(host)
   return late
     .map((k) =>
       k.status === 'done'
         ? `### ${k.title}\n${k.output || '（没有文字输出）'}`
-        : k.status === 'skipped' && st.errors.get(k.id)
-          ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
-          : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`,
+        : (k.status === 'skipped' && st.errors.get(k.id)
+            ? `### ${k.title}\n（${clip(st.errors.get(k.id)!, 300)}）`
+            : `### ${k.title}\n（${STATUS_TEXT[k.status] ?? k.status}${st.errors.get(k.id) ? `：${clip(st.errors.get(k.id)!, 300)}` : ''}）`) +
+          `\n${RETRY_HINT(k.id)}`,
     )
     .join('\n\n')
 }
@@ -2545,15 +2772,15 @@ function makeOrchestra(
       return { ok: true, info: '这一轮结束后会同步跑完这次计划，再把结果交回对话' }
     },
     plans: !!ctx.chat && !helper && !!task.projectId,
-    setPlan(input) {
+    async setPlan(input) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = applyPlan(task, input, undefined, host.wrapUp)
+      const r = applyPlan(task, input, undefined, host.wrapUp, await kidsOf(host))
       if (r.ok) host.changed(true)
       return r
     },
-    finishPlan(summary) {
+    async finishPlan(summary) {
       if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
-      const r = finishPlan(task, summary)
+      const r = finishPlan(task, summary, undefined, await kidsOf(host))
       if (r.ok) host.changed(true)
       return r
     },
@@ -2581,10 +2808,18 @@ function makeOrchestra(
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
       if (!title.trim())
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
+      // 子对话失败、被中断后要重试：在原来那个子对话里接着做（用户 2026-10-25 定的），不另起一个「（重试）」
+      const again = await retryTarget(host, title)
+      if (again)
+        return {
+          ok: false,
+          info: `子对话「${again.title}」（id ${again.id}）${again.status}：重试不要新建子对话，用 send_to_conversation 交回给它（id ${again.id}），它在原来的会话里接着做，已经做完的不用重做。`,
+        }
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
-      // 没指定步骤就挂在正在做的那一步：不挂的话那一步一标完成，父对话的计划就「已完成」了，子对话却还没合回
-      const at = step?.trim() || runningStepId(task)
+      // 没指定步骤就挂到计划里能对上的一步；对不上（或者计划已经结束）由 ensureChildStep 自动补一步，
+      // 不然这一步一标完成，父对话的计划就「已完成」了，子对话却还没合回（用户报过：一堆子对话在跑、计划面板还停在旧状态）
+      const at = r.ok && r.id ? step?.trim() || ensureChildStep(task, r.id, title) : ''
       const wait = r.ok && r.id && at ? bindWait(task, at, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
@@ -2592,9 +2827,25 @@ function makeOrchestra(
     async sendToConversation(id, message, step) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
+      // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
+      // 父对话里刷出一排一模一样的「发送消息」，几个子对话还会各改各的同一处
+      // 并行发出的几次调用可能还没记进对话：这一轮已经交出去的也记在内存里一起查
+      const handed = handedOff.get(task) ?? new Map<string, string>()
+      handedOff.set(task, handed)
+      const prev = handed.get(message.trim())
+      const other = (prev !== id.trim() ? prev : undefined) ?? sentToOther(task, id.trim(), message)
+      if (other)
+        return {
+          ok: false,
+          info: `这段话已经交给了子对话 ${other}，一条消息只交给一个子对话：选最相关的那一个交，别的子对话不用重复发。`,
+        }
+      handed.set(message.trim(), id.trim())
       const r = await host.sendToConversation(id.trim(), message)
-      const at = step?.trim() || runningStepId(task)
-      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
+      if (!r.ok) handed.delete(message.trim())
+      // 标题从子对话列表里取：补步骤时用它当标题（只看 id 的话计划里会出现「子对话：c1」这种没信息量的标题）
+      const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
+      const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
+      const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
@@ -2714,7 +2965,7 @@ function makeOrchestra(
       : undefined,
     p4Split: host.p4Split,
     status: () => statusTree(host, self.id),
-    spawn(tasks) {
+    spawn(tasks, step) {
       if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
@@ -2752,7 +3003,8 @@ function makeOrchestra(
         const key = prev.session || prev.id
         const busyKey = mine.some(
           (s) =>
-            (s.session || s.id) === key && (s.status === 'running' || (s.status === 'pending' && st.helpers.has(s.id))),
+            (s.session || s.id) === key &&
+            (s.status === 'running' || (s.status === 'pending' && !s.interrupted && st.helpers.has(s.id))),
         )
         if (busyKey) return { ids: [], error: `「${prev.title}」的会话还在跑，等它结束再接着用` }
         if ([...resumed.values()].some((s) => (s.session || s.id) === key))
@@ -2762,9 +3014,40 @@ function makeOrchestra(
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
+      // 第一次派评审代码改动：交接单必须带需求和跑过的检查（ADR 0013）。
+      // 评审只看改动的代码，这些背景只有派它的对话有；不交，评审就会自己读文档、搜项目去还原，一次评审拖到二十多分钟
+      for (const spec of list) {
+        if (resumed.has(spec)) continue
+        const want = spec.agent?.trim()
+        const role = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+        if (!reviewsCode(role)) continue
+        const lack = briefMissing(spec)
+        if (lack)
+          return {
+            ids: [],
+            error: `派「${role!.name}」评审代码改动要带交接单 review：缺 ${lack}。把你已经知道的整理进去（goal、changes、checks 必写清楚，focus、context、files 按需），评审只看改动的代码，不再自己去项目里找这些背景。`,
+          }
+      }
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
         const prev = resumed.get(spec)
+        // 接着的是失败、被终止或中断的子任务：就在原来那个子任务里重试（同一个 id、同一条记录、同一个会话），
+        // 不另起一个新的。做完的子任务再接着做（复看的评审）才新开一条记录、借它的会话
+        if (prev && retriable(prev)) {
+          const again = st.errors.get(prev.id) || (prev.interrupted ? '上次执行到一半被中断了' : '')
+          st.errors.delete(prev.id)
+          st.delivered.delete(prev.id)
+          const more = spec.instructions.trim()
+          if (more && !prev.brief.includes(more))
+            prev.brief = [prev.brief, `## 重试时补充\n${more}`].filter(Boolean).join('\n\n')
+          prev.status = 'pending'
+          prev.interrupted = false
+          prev.output = ''
+          prev.endedAt = ''
+          prev.reruns = (prev.reruns ?? 0) + 1
+          const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
+          return { step: prev, spec, tier, again: again || '上次没有做完' }
+        }
         const agent =
           (prev && host.agents.find((a) => a.id === prev.agentId)) ||
           (want && host.agents.find((a) => a.id === want || a.name === want)) ||
@@ -2781,10 +3064,13 @@ function makeOrchestra(
           title: clip((spec.title || spec.instructions).trim().split('\n')[0], 60),
           agentId: agent?.id ?? self.agentId,
           session: prev ? prev.session || prev.id : '',
+          // 要求原文存到节点上：父对话那条系统消息里只有标题，报告和 AI 分析需要原文才能判断它有没有做到。
+          // 评审的交接单也是要求的一部分，一起存
+          brief: [spec.instructions.trim(), briefPart(spec.review)].filter(Boolean).join('\n\n'),
         })
         task.steps.push(step)
         const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
-        return { step, spec, tier }
+        return { step, spec, tier, again: '' }
       })
       for (const m of made)
         st.helpers.set(
@@ -2797,21 +3083,34 @@ function makeOrchestra(
             m.spec,
             m.tier,
             made.filter((x) => x !== m).map((x) => x.step.title),
+            m.again,
           ),
         )
+      const retried = made.filter((m) => m.again)
       system(
         host,
-        t('「{title}」派出 {n} 个子角色：{list}', {
-          title: self.title,
-          n: made.length,
-          list: made.map((m) => m.step.title).join(t('、')),
-        }),
+        retried.length === made.length
+          ? t('「{title}」在原来的子任务里重试：{list}', {
+              title: self.title,
+              list: made.map((m) => m.step.title).join(t('、')),
+            })
+          : t('「{title}」派出 {n} 个子角色：{list}', {
+              title: self.title,
+              n: made.length,
+              list: made.map((m) => m.step.title).join(t('、')),
+            }),
         where,
       )
       // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
       task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
+      // 点名的计划步骤挂上等待：全部结束、结果交回时由 settleHelpers 收口（成功标完成、失败退回进行中）。
+      // 以前 spawn_agents 没有 step，派「版本控制」跑收尾那种步骤只能靠 linkKids 按标题猜，猜不中就永远挂在那里
+      const at = !helper && ctx.chat ? step?.trim() : ''
+      // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
+      const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
+      if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
       host.changed(true)
-      return { ids: made.map((m) => m.step.id) }
+      return { ids: made.map((m) => m.step.id), ...(waits.length ? { info: waits.join('\n') } : {}) }
     },
     stopHelpers(ids, why) {
       if (helper) return { ok: false, info: '子任务不能终止别的子任务' }
@@ -2844,10 +3143,15 @@ function makeOrchestra(
         ? ids
         : task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').map((s) => s.id)
       const steps = mine.map((id) => task.steps.find((s) => s.id === id)).filter((s): s is TaskStep => !!s)
-      await Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
-      const over = (s: TaskStep) => s.status !== 'running' && (s.status !== 'pending' || !st.helpers.has(s.id))
+      const waiting = () =>
+        Promise.race([Promise.all(steps.map((s) => st.helpers.get(s.id) ?? Promise.resolve())), sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
+      const over = (s: TaskStep) => helperOver(host, s)
       const done = steps.filter(over)
       for (const s of done) st.delivered.add(s.id)
+      // 手动取走结果的路径：helperBatch 的入口只看「还没取走的子任务」，取走后就轮不到 settleHelpers，
+      // 计划里等它们的那一步会永远停在等待中。这里直接收口（成功标完成、失败退回进行中）
+      if (done.length) settleHelperWaits(host)
       return {
         done: done.map((s) => helperReport(host, s)),
         running: steps.filter((s) => !over(s)).map((s) => helperReport(host, s)),
@@ -2865,7 +3169,8 @@ function makeOrchestra(
       host.changed(true)
       let settled: AgentResult | undefined
       const p = mainTurn(host, main, 'answer', questionEvent(self.title, question)).then((r) => (settled = r))
-      await Promise.race([p, sleep(ms)])
+      const waiting = () => Promise.race([p, sleep(ms)])
+      await (host.yieldSlot ? host.yieldSlot(self.id, waiting) : waiting())
       const text = (r: AgentResult) => (r.ok ? stripDispatch(r.text).trim() : '')
       if (settled) return settled.ok ? { answer: text(settled) } : { error: `主 Agent 没能回答：${settled.error}` }
       // 主 Agent 还在忙（排队或在想）：回答到了放进提问者的收件箱，read_messages 取
@@ -2904,6 +3209,30 @@ function makeOrchestra(
   }
 }
 
+/** 去掉标题里「（重试）」「重试 2」「(retry)」这类标记，比较是不是同一件事 */
+export const retryBase = (title: string) =>
+  title
+    .replace(/[（(【[]\s*(?:第\s*\d+\s*次)?\s*(?:重试|再试|retry)\s*\d*\s*[）)】\]]/gi, '')
+    .replace(/\s*[-—:：·|｜]?\s*(?:重试|再试|retry)\s*\d*\s*$/i, '')
+    .trim()
+
+/**
+ * 新建子对话其实是在重试一个失败、中断的子对话：标题去掉重试标记后和它一样。
+ * 返回那个子对话，父对话应该用 send_to_conversation 交回给它
+ */
+async function retryTarget(host: EngineHost, title: string) {
+  if (!host.listConversations) return undefined
+  const base = retryBase(title)
+  if (!base) return undefined
+  const ended = new Set([convStateText('failed'), convStateText('stopped')])
+  const list = await host.listConversations().catch(() => [])
+  return list.find((c) => !c.resolved && !c.busy && ended.has(c.status) && retryBase(c.title) === base)
+}
+
+/** 失败、被终止、被中断的子任务：spawn_agents 的 resume 写它时在原来那条记录里重试 */
+const retriable = (s: TaskStep) =>
+  s.status === 'failed' || s.status === 'skipped' || (s.status === 'pending' && !!s.interrupted)
+
 /** 执行一个派出的子 Agent */
 async function runHelper(
   host: EngineHost,
@@ -2913,6 +3242,8 @@ async function runHelper(
   spec: HelperSpec,
   tier: NodeTier,
   siblings: string[],
+  /** 在原来的子任务里重试：上次为什么没做完（失败原因、被终止、被中断） */
+  again = '',
 ) {
   const st = orchState(host)
   const ac = new AbortController()
@@ -2955,13 +3286,22 @@ async function runHelper(
     step.status = 'running'
     step.startedAt = now()
     host.changed(true)
+    const role = host.agents.find((a) => a.id === step.agentId)
+    const reviewing = reviewsCode(role)
+    const review = await reviewPart(host, step, spec)
     const prompt = [
-      ...commonPart(host, ctx.workflow, !!ctx.chat),
+      // 评审代码只要需求和必须遵守的规则：搜索范围、编译和收尾、授权这些段落是写给要动手的角色的，
+      // 给评审只会引着它去搜项目、跑检查（ADR 0013）
+      ...(reviewing ? reviewCommonPart(host) : commonPart(host, ctx.workflow, !!ctx.chat)),
       `${NODE_PART}\n你是「${isMainStep(parent) ? '主 Agent' : parent.title}」派出的子 Agent，负责其中一部分：${step.title}`,
       step.session
         ? `## 接着上一次做\n这是你之前那个会话的延续（上一次是「${host.task.steps.find((s: TaskStep) => s.id === step.session)?.title ?? step.session}」）：之前读过的文档和代码、给过的意见都还在上下文里，不用从头再读，只看这次交给你的增量和要确认的事。`
         : '',
+      again
+        ? `## 这是重试\n这个子任务上次没有做完：${clip(again, 600)}。还在同一个会话里的话，先看看之前已经做了哪些，从中断的地方接着做，已经做完的不用重做。`
+        : '',
       spec.instructions.trim() ? `## 要做的事\n${spec.instructions.trim()}` : '',
+      review,
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
@@ -2969,23 +3309,30 @@ async function runHelper(
     ]
       .filter(Boolean)
       .join('\n\n')
-    const r = await host.runAgent({
-      step,
-      agentId: step.agentId,
-      prompt,
-      // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
-      sessionKey: step.session || step.id,
-      tier,
-      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
-      // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
-      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
-      signal: ac.signal,
-    })
+    // 评审到了软时限还没交卷：传话要它按已确认的交卷（CLI 不支持执行中补充时传不进去，不影响它继续）
+    const wrap = reviewing
+      ? setTimeout(() => void host.steer?.(step.id, REVIEW_WRAP_NOTE).catch(() => false), REVIEW_SOFT_LIMIT_MS)
+      : undefined
+    wrap?.unref?.()
+    const r = await host
+      .runAgent({
+        step,
+        agentId: step.agentId,
+        prompt,
+        // 接着之前的子任务时用它的会话（见 TaskStep.session），否则一个子任务一个会话
+        sessionKey: step.session || step.id,
+        tier,
+        // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话。
+        // chat 要透传：对话里的子任务用不上共享状态（跑过 start_plan 后 task.runs 会残留上一次运行）
+        orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true, chat: ctx.chat }, step),
+        signal: ac.signal,
+      })
+      .finally(() => clearTimeout(wrap))
     // 单独终止的：不管 CLI 怎么收的尾，都按终止交回（整个任务停止时 ac 没被触发，照旧走下面）
     if (ac.signal.aborted) return stopped()
     if (r.ok) {
       const late = await settleHelpers(host, step)
-      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的 🛑 / 💭 整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
+      // 评审、测试验收的输出常常比交接上限长：只截开头会把后面的意见整段丢掉（派它的 Agent 看不到、下一轮又被提一遍），
       // 完整内容和节点一样存成文件，交回的结果里写明去哪读
       step.output = await storeOutput(host, step, late ? `${r.text}\n\n## 子 Agent 的结果\n${late}` : r.text)
       step.status = 'done'
@@ -3200,9 +3547,11 @@ ${
     ? host.ueBuild
       ? '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。这是 UE 项目，不在这里编译，见上面的「UE 编译交给父对话申请」。'
       : '别的子对话改不到这里，你也不用认领文件，放心改；父对话用 files 划了范围就按范围改，要改范围外的文件先说一声。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
-    : '提交留在这个分支上，由用户决定合并还是丢弃。'
+    : wrapKind(host) === 'push'
+      ? `提交留在这个分支上。计划的最后一步是「${WRAP_UP.push.title}」：那时先把它合回原分支（见下面「收尾：计划的最后一步」），再在原分支上推。`
+      : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
-不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
+不要把这个独立分支推送到远端${wrapKind(host) === 'push' ? `（推送归计划的最后一步「${WRAP_UP.push.title}」：合回原分支之后推原分支）` : '，用户明确要求之前一律不推'}。用户要求推送时，先把它合回原分支${
           host.task.parentTaskId
             ? '（调用 submit_merge，合进去后改动就在原分支上了）'
             : `（在原目录里 git merge --no-ff ${wt.branch}）`
@@ -3243,13 +3592,14 @@ ${
     : `- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
 - 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。`
 }
+- 子对话报错、失败或被中断要重试：用 send_to_conversation 交回原来那个子对话，它在原来的会话里接着做，不要新建一个「（重试）」子对话。派出的子任务也一样：重试时 spawn_agents 的 resume 写原来那个子任务的 id。
 - 子对话只剩合回时会发「收尾请求」给你：看它交的验证结果，够了就调用 finish_child（合回、标完成、删它的分支，都是工具调用，不要自己跑 git）；不够就用 send_to_conversation 把要补的交回给它。合并就是验收，测试要在它合并之前做完。
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
 2. 现有子对话都不相关，要改代码、要排查问题或者要做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起；子对话会自己列计划并执行。改动再小（一行、一个文案）也交给子对话。
 3. 只是一般问题、讨论、查询：自己回答。
-一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
+一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话：用户的一条消息（连同用户定下的规则、约定）只交给关联最紧密的那一个子对话，和别的子对话手上的事无关就不转给它们；同一段话再交给别的子对话会被面板拒绝。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
 
 ## 分派前只收集到模块为止
 分派前花少量时间把方向找准就交出去，不要自己把问题分析到底：

@@ -659,9 +659,12 @@ function builtinTemplate(model: LocalModel): ComfyTemplate {
   }
 }
 
-/** 面板内置模板：每个本机模型一条，装好依赖就能直接跑，离线可用 */
+/**
+ * 面板内置模板：每个本机模型一条，装好依赖就能直接跑，离线可用。
+ * 处理类模型（去背景）不是文生图，没有模板；它在工作流和链里用
+ */
 export function builtinTemplates(models: LocalModel[]): ComfyTemplate[] {
-  return models.map(builtinTemplate)
+  return models.filter((m) => m.family !== 'birefnet').map(builtinTemplate)
 }
 
 export const builtinTemplateMeta = (list: ComfyTemplate[]): ComfyTemplateMeta[] =>

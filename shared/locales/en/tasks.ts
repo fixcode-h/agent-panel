@@ -5,8 +5,13 @@ export const EN_TASKS: Record<string, string> = {
   进行中: 'In progress',
   等待中: 'Waiting',
   '等：{what}': 'Waiting on: {what}',
+  '用时 {time}': 'Elapsed {time}',
+  '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
+  计划已结束: 'Plan ended',
+  // 不写 steps：n=1 时「1 steps」是错的，和「{n} waiting」一样回避单复数
+  '{n} 步没做完（已保留）': '{n} unfinished (kept)',
   '计划 {done}/{total}': 'Plan {done}/{total}',
   '{n} 个在等待': '{n} waiting',
   '以前的计划 · {n}': 'Earlier plans · {n}',
@@ -160,6 +165,11 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 条面板结果': 'Panel results ×{n}',
   '{n} 次失败': '{n} failed',
 
+  // 标题栏的项目名：点开是项目下的对话
+  打开项目: 'Open project',
+  打开聊天: 'Open chat',
+  这个项目还没有对话: 'No conversations in this project yet',
+
   // 项目首页
   项目设置: 'Project settings',
   还没有选择目录: 'No folder selected yet',
@@ -238,9 +248,13 @@ export const EN_TASKS: Record<string, string> = {
   子对话: 'Sub-conversation',
   '子对话，{n} 个进行中，共 {total} 个': 'Sub-conversations, {n} in progress of {total}',
   关闭子对话: 'Close sub-conversation',
+  切换子对话: 'Switch sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
+  '还有 {n} 个子对话': '{n} more sub-conversations',
   运行中: 'Running',
+  运行区: 'Running items',
   已关闭: 'Closed',
+  'CLI 进程已回收，继续会重新拉起': 'The CLI process was reclaimed; continuing will start it again',
   解决: 'Resolve',
   已解决: 'Resolved',
   还没有子对话: 'No sub-conversations yet',
@@ -295,6 +309,13 @@ export const EN_TASKS: Record<string, string> = {
   已复制输出: 'Output copied',
   '正在执行，等待输出…': 'Running — waiting for output…',
   '执行失败，没有输出': 'Failed with no output',
+  '已停止，没有输出': 'Stopped with no output',
+  '这条命令被停止之前没有输出。': 'This command produced no output before it was stopped.',
+  '排队中，还没有输出': 'Queued — no output yet',
+  '前面还有命令在跑，排到它时这里会跟着输出。':
+    'Other commands are still running; output will appear here once it is its turn.',
+  读不到这条命令的输出: 'Cannot read this command’s output',
+  '会自动重试，显示的是上一次读到的输出。': 'Retrying automatically; showing the last output read.',
   这条命令没有输出: 'This command produced no output',
   '这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。':
     'This call wrote nothing to stdout or stderr. Close the window and expand the call to see the error it returned.',
@@ -362,6 +383,10 @@ export const EN_TASKS: Record<string, string> = {
 
   // 任务页
   已删除任务: 'Task deleted',
+  // 转成弹窗（收成右下角的浮条）
+  转成弹窗: 'Open as popup',
+  '转成弹窗（对话继续在后台运行）': 'Open as popup (the chat keeps running in the background)',
+  '对话：{title}': 'Chat: {title}',
   位置: 'Breadcrumb',
   聊天: 'Chat',
   任务标题: 'Task title',
@@ -371,6 +396,8 @@ export const EN_TASKS: Record<string, string> = {
   视图: 'View',
   流程图: 'Flowchart',
   显示文件: 'Show files',
+  覆盖显示文件: 'Show files over the sub-conversation',
+  回到子对话: 'Back to sub-conversation',
   收起文件面板: 'Collapse file panel',
   更多操作: 'More actions',
   重命名: 'Rename',
@@ -442,6 +469,9 @@ export const EN_TASKS: Record<string, string> = {
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
   '执行中也可以输入，这一轮结束后接着处理': "You can type while it runs; it's handled right after this turn",
   等待你的下一条消息: 'Waiting for your next message',
+  'CLI 存活': 'CLI alive',
+  'CLI 存活：本对话和 {n} 个子对话': 'CLI alive: this conversation and {n} child conversations',
+  'CLI 存活：{n} 个子对话': 'CLI alive: {n} child conversations',
   等待执行: 'Waiting to run',
   '运行 {n}': 'Run {n}',
   '{done}/{total} 个节点': '{done}/{total} nodes',
@@ -518,14 +548,14 @@ export const EN_TASKS: Record<string, string> = {
   '你回答了：{answers}': 'You answered: {answers}',
   '你没有回答「{title}」': 'You skipped "{title}"',
   '交给正在进行的这一轮（Enter）': 'Hand to the current turn (Enter)',
-  '{n} 个附件': '{n} attachments',
   排队中: 'Queued',
   '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
   等这一轮结束再发: 'Send after this turn finishes',
   排队: 'Queue',
-  '这一轮不能补充，已改成排队': "Can't add to this turn, queued instead",
-  '排队中，这一轮结束后发送': 'Queued, sends after this turn',
-  'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
+  已补充给正在进行的这一轮: 'Added to the current turn',
+  '这一轮收不下，结束后自动接着处理': "This turn can't take it, so it runs right after",
+  'AI 正在处理：发送会补充给这一轮，收不下就在结束后自动接着处理':
+    'AI is working: sending adds to this turn, or is handled right after it',
   复制报错: 'Copy error',
   '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
     '· Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals). This is a Google server-side restriction, not a panel problem. Use an API instead: add a Gemini API key under "API settings" (get one at aistudio.google.com), then switch the sign-in method to API on the Gemini CLI page. Google Workspace or paid Code Assist accounts can still sign in with an account.',
@@ -577,19 +607,17 @@ export const EN_TASKS: Record<string, string> = {
   复制失败: 'Copy failed',
   '看过差异再应用；应用后工作流和角色马上按新的内容执行':
     'Review the diffs before applying; workflows and roles use the new content right away',
-  分析结果: 'Analysis',
-  收起分析结果: 'Collapse analysis',
-  展开分析结果: 'Expand analysis',
   '{n} 个代码问题': '{n} code issues',
   '{n} 项优化建议': '{n} suggestions',
   代码问题: 'Code issues',
   项目代码: 'Project code',
   面板框架: 'Panel framework',
   修复: 'Fix',
-  开一个子对话来修这个问题: 'Start a child conversation to fix this issue',
   '面板框架的问题要在 agent-panel 源代码项目里修':
     'Panel framework issues can only be fixed in an agent-panel source project',
   '在右侧打开子对话「{title}」': 'Open child conversation "{title}" on the right',
+  '打开子任务「{title}」': 'Open subtask "{title}"',
+  '后台命令 {name}': 'Background command {name}',
   处理中: 'Working',
   角色优化: 'Role improvements',
   工作流优化: 'Workflow improvements',
@@ -599,19 +627,13 @@ export const EN_TASKS: Record<string, string> = {
     'Update this local role; conversations and nodes using it follow the new content from now on',
   '改进本机的这个工作流，之后的执行按新的内容走': 'Update this local workflow; later runs follow the new content',
   写进源代码: 'Add to source',
-  '开一个子对话，把这条优化补进 agent-panel 源代码里的内置定义':
-    'Start a child conversation that adds this improvement to the built-in definitions in the agent-panel source',
   '全部应用（{n} 项）': 'Apply all ({n})',
   '角色「{name}」': 'Role "{name}"',
   '工作流「{name}」': 'Workflow "{name}"',
   '工作流「{name}」· 节点「{node}」': 'Workflow "{name}" · node "{node}"',
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
-  '用默认角色新建一个对话来分析，只分析不改文件':
-    'Starts a chat with the default role; it only analyzes and changes no files',
   开始分析: 'Analyze',
-  'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
-    "The AI reads the full run record (messages, each node's result, time, tokens and cache hits), judges the result quality, what in the workflow needs work and whether the panel itself has issues, and suggests changes you can apply. Nothing is applied until you review the diff.",
   '想重点看什么（可选）': 'What to focus on (optional)',
   '例如：为什么验收总是不通过、哪些节点最费 token': 'e.g. why reviews keep failing, which nodes use the most tokens',
   '已导入「{title}」': 'Imported "{title}"',
@@ -666,10 +688,6 @@ export const EN_TASKS: Record<string, string> = {
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
   '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
     "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
-  同时执行的子对话: 'Concurrent sub-conversations',
-  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
-    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
-  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
   同时运行的后台命令: 'Concurrent background commands',
   '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
     'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
@@ -754,7 +772,6 @@ export const EN_TASKS: Record<string, string> = {
   '子对话用指定的 Agent 和模型': 'Use a specific agent and model for sub-chats',
   '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
     "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
-  '{n} 个（跟随设置）': '{n} (from Settings)',
   停止全部子对话: 'Stop all sub-chats',
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',
@@ -805,6 +822,8 @@ export const EN_TASKS: Record<string, string> = {
   传话: 'Message',
   查看消息: 'Read messages',
   查看用户补充: 'Read user notes',
+  查看软件操作: 'List app actions',
+  操作软件: 'Operate the app',
   向用户提问: 'Ask user',
   等待用户消息: 'Wait for user message',
   找不到这个提问: 'Question not found',
@@ -818,6 +837,24 @@ export const EN_TASKS: Record<string, string> = {
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
     'Subtask finished; its result went back to the chat that started it. View only',
+  // 子任务窗口最上面那块「派给它的要求」（TaskStep.brief）
+  派给它的要求: 'What it was asked to do',
+  收起派给它的要求: 'Collapse the instructions it was given',
+  展开派给它的要求: 'Expand the instructions it was given',
+  '补充过 {n} 次': 'Updated {n} time(s)',
+  '派发之后又补充过 {n} 次要求': 'The instructions were extended {n} time(s) after dispatch',
+  重试时补充: 'Added on retry',
+  评审交接单: 'Review brief',
+  // 子任务的 AI 分析（复用执行记录那一套弹窗）
+  'AI 分析这个子任务': 'AI analysis of this subtask',
+  '让 AI 分析这一步的耗时、角色符合度和优化空间':
+    'Let AI analyze how long this step took, whether it fit its role and what could improve',
+  '子任务 {title}': 'subtask {title}',
+  子任务记录: 'Subtask record',
+  '例如：为什么这一步这么慢、它有没有做角色以外的事':
+    'e.g. why this step is slow, whether it did anything outside its role',
+  'AI 只读这一个子任务的记录（它的耗时、等待、token、角色设定、派它的要求、对话过程），分析它是不是太慢、有没有跑偏角色、有没有优化空间，面板本身有没有问题。只分析，不改文件。':
+    "The AI reads only this subtask's record (its time, waits, tokens, role definition, the instructions it was given and its conversation), and judges whether it is too slow, went outside its role, how it could be improved, and whether the panel itself has issues. It only analyzes and changes no files.",
   后台命令: 'Background command',
   '{n} 条后台命令': '{n} background commands',
   '这条后台命令是子任务「{title}」起的。\n': 'This background command was started by the subtask "{title}".\n',
@@ -869,6 +906,17 @@ export const EN_TASKS: Record<string, string> = {
   '改动都已经在原分支里了，删除分支和它的工作目录不会丢东西。':
     'All changes are already in the original branch, so deleting the branch and its folder loses nothing.',
   '{n} 个没合并': '{n} not merged',
+  未删除: 'Not deleted',
+  已删除: 'Deleted',
+  这个分支已经删除了: 'This branch was already deleted',
+  '正在处理这个独立分支，等它结束': 'This separate branch is being handled; wait for it to finish',
+  这个分支没有要合回原分支的改动: 'This branch has no changes to merge back',
+  这是当前对话自己的分支: 'This is the branch of the current chat',
+  打开对话: 'Open chat',
+  合并到原分支: 'Merge into the original branch',
+  复制分支名: 'Copy branch name',
+  '把合并要求发给这个分支的对话，由 AI 解决冲突后合回原分支':
+    'Sends a merge request to the chat that owns this branch; AI resolves conflicts and merges it back',
   '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
   '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
   '正在检查独立分支…': 'Checking separate branches…',
@@ -888,6 +936,8 @@ export const EN_TASKS: Record<string, string> = {
   // 子对话进度：在做什么、在等什么、多久没新输出
   '最后活动 {ago}': 'last active {ago}',
   '已 {n} 分钟没有新输出': 'No new output for {n} min',
+  '已自动询问，等回复': 'Status asked automatically; waiting for its reply',
+  '已自动询问，仍没有新输出': 'Status asked automatically; still no new output',
   '等用户回答 {n} 个提问': 'Waiting for you to answer {n} question(s)',
   '等用户确认 {n} 项': 'Waiting for you to confirm {n} item(s)',
   '等 {n} 个后台命令': 'Waiting for {n} background command(s)',
@@ -908,7 +958,8 @@ export const EN_TASKS: Record<string, string> = {
   进程: 'Processes',
   内存曲线: 'Memory chart',
   内存合计: 'Total memory',
-  '面板 {server} · 进程 {cli}': 'Panel {server} · processes {cli}',
+  '面板 {server}（不计入对话合计）': 'Panel {server} (not included in this chat’s total)',
+  '这个对话及附属（子对话、子任务）的进程合计': 'Sum of processes in this chat and its sub-conversations and subagents',
   '正在读取进程…': 'Reading processes…',
   这个对话现在没有在跑的进程: 'This chat has no running processes',
   '清理任务已经结束、进程还留着的': 'Cleans up processes left behind by finished tasks',
@@ -935,7 +986,7 @@ export const EN_TASKS: Record<string, string> = {
     'The process is still running; it may need higher permission or is busy. Try again later',
   '进程没有结束（可能权限不足）': 'The process did not stop (it may need higher permission)',
   没有结束这个进程: 'Could not stop this process',
-  '面板 {v}': 'Panel {v}',
+  '面板 {v}（不计入）': 'Panel {v} (not included)',
   '进程 {v}': 'Processes {v}',
   会话内存随时间的变化: 'Chat memory over time',
   '还没有内存采样，30 秒后开始记录': 'No memory samples yet; recording starts in 30 seconds',
@@ -948,9 +999,8 @@ export const EN_TASKS: Record<string, string> = {
   '内存分析没成功：{msg}': 'Memory analysis failed: {msg}',
   '上次分析 {time}：{trend}': 'Last analyzed at {time}: {trend}',
   重新分析并打开这次排查: 'Analyze again and open the analysis chat',
-  '这个会话树上全部进程的合计，含子对话': 'Sum of every process in this chat tree, sub-conversations included',
-  '下面按归属分组：每组只算它自己起的进程，对不上归属的显示为面板，读不到内存的显示为未采集，不平摊':
-    'Grouped by owner: each group only counts the processes it started. Processes without an owner are listed under “Panel”, unreadable memory shows “Not collected”, and nothing is spread across chats.',
+  '下面按归属分组：每组只算它自己起的进程；读不到内存的显示为未采集，不平摊':
+    'Grouped by owner: each group only counts the processes it started. Unreadable memory shows “Not collected”, and nothing is spread across chats.',
   面板自己的进程: "The panel's own processes",
   '{n} 个进程': '{n} process(es)',
   '{n} 个进程的合计': 'Sum of {n} process(es)',
@@ -989,6 +1039,12 @@ export const EN_TASKS: Record<string, string> = {
   '已收到{name}发来的消息': 'Received a message from {name}',
   '发给{name}的消息': 'Message to {name}',
   '来自 {name}': 'from {name}',
+  '发给 {n} 个子对话的同一条消息': 'The same message sent to {n} sub-conversations',
+  '发给 {n} 个：{names}': 'Sent to {n}: {names}',
+  没送到: 'Not delivered',
+  已送达: 'Delivered',
+  '来自 {name}（{title}）': 'from {name} ({title})',
+  '发给 {name}（{title}）': 'to {name} ({title})',
   在窗口里查看这条消息: 'View this message in a window',
   已复制消息: 'Message copied',
   父对话: 'Parent conversation',
@@ -1034,4 +1090,63 @@ export const EN_TASKS: Record<string, string> = {
     'The subtask was stopped; the conversation that sent it gets the reason. View only',
   后台命令执行中: 'Background command running',
   工作流执行中: 'Workflow running',
+  // AI 分析的归属与统一窗口
+  '{label}：{title}': '{label}: {title}',
+  在父对话里打开: 'Open in the parent conversation',
+  在项目对话里打开: 'Open in the project conversation',
+  '{where}（分析照常进行）': '{where} (analysis keeps running)',
+  '最小化（分析照常进行）': 'Minimize (analysis keeps running)',
+  关闭窗口: 'Close window',
+  '关闭窗口（分析继续在后台进行）': 'Close window (analysis keeps running in the background)',
+  '{label}继续在后台进行：{title}': '{label} keeps running in the background: {title}',
+  '{label}正在新建对话，关掉窗口不影响它继续建：{title}':
+    '{label} is still creating the conversation; closing the window will not interrupt it: {title}',
+  '它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
+    'It was removed from the conversation list; this window stays open. Click close in the top-right corner to dismiss it.',
+  '正在新建分析对话…': 'Creating the analysis conversation…',
+  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下':
+    'Starts a conversation with the Analysis role that only analyzes and never edits files; analyses of a conversation open under its parent conversation',
+  'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
+    "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
+  '{name} 最近 {n} 次执行': 'last {n} runs of {name}',
+  'AI 排查': 'AI troubleshooting',
+  '{label}结束：{title}': '{label} finished: {title}',
+  '上一个{label}还没结束，结束后再试': 'The previous {label} is still running; try again when it finishes',
+  '所有 AI 分析、AI 排查的对话默认使用': 'Default for every AI analysis and AI troubleshooting conversation',
+  'AI 初始化项目：{name}': 'AI project setup: {name}',
+  '「{title}」的结果已经交回项目设置，可以去应用':
+    'The result of "{title}" is back in the project settings, ready to apply',
+  '结果的格式还是不对：{error}。可以在对话里让它重新输出':
+    'The result is still malformed: {error}. Ask it to output again in the conversation',
+  没有找到结果: 'No result found',
+  '正在读取推荐的设置…': 'Reading the recommended settings…',
+  '这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。':
+    "This result is malformed and the recommended settings can't be read: {error}. Ask it to output again in the conversation.",
+  '已应用 {n} 项设置': 'Applied {n} settings',
+  '{n} 项和项目现在的设置不同，应用后直接保存进项目':
+    '{n} differ from the current project settings; applying saves them to the project',
+  全部推荐都已和项目设置一致: 'All recommendations already match the project settings',
+  排查: 'Debug',
+  评审: 'Review',
+  初始化: 'Init',
+  分析: 'Analysis',
+  'AI 分析开出的对话': 'Conversation opened by an AI analysis',
+  分析报告: 'Analysis report',
+  '逐项修复在这个对话里进行，优化看过差异再应用':
+    'Fixes run in this conversation; review the diff before applying optimizations',
+  '每条建议点「应用」才写进项目教训': 'Each suggestion is written to the project lessons only when you click Apply',
+  '推荐的设置逐项应用，直接保存进项目': 'Apply recommended settings one by one; they are saved to the project directly',
+  收起功能面板: 'Hide side panel',
+  拖动调整功能面板的宽度: 'Drag to resize the side panel',
+  '对话正在回复，这一轮结束后再点': 'The conversation is replying; click again after this turn ends',
+  '已经在这个对话里处理过，点了再处理一次': 'Already handled in this conversation; click to handle it again',
+  已处理: 'Handled',
+  '在这个分析对话里，把这条优化补进 agent-panel 源代码里的内置定义':
+    "In this analysis conversation, add this optimization to the built-in definition in agent-panel's source",
+  在这个分析对话里直接修这个问题: 'Fix this issue directly in this analysis conversation',
+  '排队等 API「{api}」空出并发名额 · 前面还有 {n} 个': 'Waiting for a free slot on API "{api}" · {n} ahead',
+  '排队等 API「{api}」空出并发名额 · 下一个就是这里': 'Waiting for a free slot on API "{api}" · next in line',
+  'API「{api}」的并发名额满了，前面的释放了再开始':
+    'API "{api}" is at its concurrency limit; this starts when a slot frees up',
+  '排队等 API「{api}」': 'Waiting for API "{api}"',
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { t } from '@shared/i18n'
 import type { RemoteAccess } from '@shared/schema'
 import type { RemoteAccessStatus } from '@shared/remote'

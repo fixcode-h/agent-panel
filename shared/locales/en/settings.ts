@@ -307,6 +307,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。':
     'Export to a file, then import it in Settings on another computer. Each kind of data in the file fully replaces what is here.',
   导出数据: 'Export data',
+  '{n} 个文件导出时正在写入或刚被删除，没放进备份：{files}':
+    '{n} files were being written or had just been deleted during export and were left out of the backup: {files}',
   导入数据: 'Import data',
   '导入数据？': 'Import data?',
   '文件不是有效的 JSON': 'The file is not valid JSON',
@@ -391,6 +393,11 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 turns it off. When an agent prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so an agent stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
+  子对话没有输出时自动询问: 'Ask a sub-conversation for its status when it goes quiet',
+  '分钟，填 0 关闭。子对话这么久没有任何输出时，面板以父对话的名义问它当前在做什么、是否卡住；收到回复就重新计时，最多问 3 次后交给上面的「没有输出时提醒」。这两个时间互不影响，自动询问只问、不停止对话。':
+    'Minutes; 0 turns it off. When a sub-conversation prints nothing for this long, the panel asks it, in the parent conversation\'s name, what it is doing and whether it is stuck. Any new output restarts the timer; after at most 3 asks it hands over to "Warn when there is no output" above. The two timers are independent, and the automatic ask only asks — it never stops the conversation.',
+  '子对话没有输出时自动询问（分钟）': 'Ask a sub-conversation for its status when it goes quiet (minutes)',
+  '填 0 到 1440 之间的整数，0 表示不问': 'Enter a whole number from 0 to 1440; 0 turns it off',
   离开对话后保留多久: 'Keep the conversation alive after you leave',
   '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。只算回复完停在等下一句的空闲对话：正在执行的对话不管页面开着还是切到后台，都不会因为这个时长被收掉。':
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process. Only idle conversations waiting for your next message count: a turn still running keeps going whether its page is open or in the background, and this window never closes it.',
@@ -419,9 +426,20 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个文件 · {size}': '{n} files · {size}',
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':
     'Errors and key events are recorded here. Each launch writes a new file, a new one starts after 5 MB, and only the latest 30 are kept. When something goes wrong, send the newest log file to find the cause.',
-  网络代理: 'Network proxy',
-  '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时用环境变量 HTTPS_PROXY。':
-    "Used to check for and download updates. If GitHub isn't reachable, enter your local proxy address; when empty, the HTTPS_PROXY environment variable is used.",
+  网络与代理: 'Network & proxy',
+  启用代理: 'Use a proxy',
+  '检查更新、下载新版本时用下面填的代理。关掉后不用这个地址，但仍会先走环境变量 HTTPS_PROXY（设了的话），没设时先直连；请求失败后再自动找本机正在运行的代理（系统代理或常见端口）。':
+    'Used for update checks and downloads. When off, this address is skipped, but HTTPS_PROXY is still used first when set; otherwise it connects directly, and on failure looks for a local proxy that is running (system proxy or common ports).',
+  代理地址: 'Proxy address',
+  '本机代理的地址，例如 {proxy}。留空时就不用这个地址，顺序和关掉开关一样（环境变量 → 直连 → 本机代理）。只支持 http 代理：v2rayN 默认的入站是 SOCKS，面板用不了，要把它改成 http / mixed 入站，或者填它的 http 入站端口。':
+    'Address of a local proxy, for example {proxy}. When empty this address is skipped, with the same order as turning the switch off (environment variable → direct → local proxy). Only HTTP proxies are supported: v2rayN default inbound is SOCKS, which the panel cannot use; change it to an http / mixed inbound or enter its HTTP inbound port.',
+  本页小节: 'Sections on this page',
+  执行与超时: 'Execution and timeouts',
+  会话保活: 'Keeping sessions alive',
+  后台命令: 'Background commands',
+  界面与启动: 'Interface and startup',
+  输入与文件: 'Input and files',
+  提示与通知: 'Alerts and notifications',
   '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
     'Skills {cli} can use in this project, including those in your user folder and in the project',
   '5 小时': '5 hours',
@@ -585,6 +603,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '接口返回 {status}：{detail}': 'The API returned {status}: {detail}',
   '接口没有返回模型列表，请自己填写': 'The API returned no model list; enter models yourself',
   先填密钥: 'Enter the API key first',
+  先选一个模型: 'Pick a model first',
+  '模型 {model} 可用': 'Model {model} works',
+  '连接可用，读到 {n} 个模型（还没有选中的模型，这次只验证了连接）':
+    'Connection works — {n} models available (no model selected, so only the connection was verified)',
+  '模型 {model} 在 {seconds} 秒内没有响应': 'Model {model} did not respond within {seconds} seconds',
+  '接口返回的内容不是模型回复：{detail}': 'The API did not return a model reply: {detail}',
+  测试连接用的模型: 'Model to test',
+  '选中哪个模型，点「测试连接」就用它真的发一次请求':
+    'The selected model is the one “Test connection” actually sends a request with',
+  '先点「从接口获取」或手动填写模型': 'Click “Fetch from API” first, or type a model name',
   这个厂家不支持余额查询: "This vendor doesn't support balance checks",
   接口没有返回余额信息: 'The API returned no balance information',
   '这个 Agent 没有账号设置': 'This agent has no account settings',
@@ -601,13 +629,12 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。放进「所有 Agent」的命令由面板展开，选哪个 Agent 都能用。项目里的 Skill 在项目设置里管。':
-    'Skills and custom commands in each agent\'s user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Commands in "All agents" are expanded by the panel and work with every agent. Project-level Skills are managed in project settings.',
   '所有 Agent': 'All agents',
   '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
     'Describe what you need and a local agent writes a command that works with every agent',
   '已创建「/{name}」，所有 Agent 都能用': 'Created "/{name}", available to every agent',
   '用 AI 创建命令': 'Create command with AI',
+  '用 AI 创建 Skill': 'Create Skill with AI',
   '本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用':
     'A local agent writes the command file and previews it on the right; once confirmed, every agent can use it',
   '描述你想要的命令：打「/名字」时要让 Agent 做什么、要不要参数。可以从下面的例子开始：':
@@ -623,10 +650,38 @@ export const EN_SETTINGS: Record<string, string> = {
   '/changelog：按最近的提交整理一段给用户看的更新说明':
     '/changelog: turn recent commits into user-facing release notes',
   '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
+  '放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。':
+    'These live in each agent\'s own user directory; entries under "All agents" are expanded by the panel and work with every agent.',
+  '在左边选一项，或新建一个：装好之后所有 Agent 都能用。':
+    'Pick one on the left, or create a new one — once installed, every agent can use it.',
+  没有说明: 'No description',
+  '还没有{kind}': 'No {kind} yet',
+  命令文件: 'Command file',
+  打开这一份: 'Open this copy',
+  文件结构: 'Files',
+  '另有 {n} 个文件': '{n} more files',
+  在这里新建文件: 'New file here',
+  在这里新建目录: 'New folder here',
+  新建目录: 'New folder',
+  删除这个文件: 'Delete this file',
+  '文件太多，只显示了前面一部分。': 'Too many files — only the first part is shown.',
+  '二进制文件（{size}），不能编辑。': 'Binary file ({size}); cannot edit.',
+  '文件超过 1 MB，保存不了，请精简后再试。': 'The file is over 1 MB and cannot be saved — trim it first.',
+  '在 {path} 里新建。': 'Create inside {path}.',
+  '放在技能文件夹的根目录下。': 'Created at the root of the skill folder.',
+  目录名: 'Folder name',
+  文件名: 'File name',
+  '会从磁盘上删掉，不能撤销。': "It is removed from disk and can't be undone.",
+  文件内容: 'File content',
+  '这是个链接，不能在这里改内容。': 'This is a link; its content cannot be edited here.',
+  '这个技能只有 SKILL.md，还没有附加文件。': 'This skill only has SKILL.md — no extra files yet.',
+  '在左边的文件树里点一个文件，就能看内容和改它。': 'Click a file in the tree on the left to view and edit it.',
+  '{n} KB': '{n} KB',
+  '{n} 字节': '{n} bytes',
+  未保存: 'Unsaved',
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
-  '还没有，点右上角「新建」。': 'Nothing yet — click “New” at the top right.',
   '新建 Skill': 'New Skill',
   新建命令: 'New command',
   '{cli} 里已经有同名的了': '{cli} already has one with this name',
@@ -639,8 +694,6 @@ export const EN_SETTINGS: Record<string, string> = {
   覆盖: 'Overwrite',
   装在: 'Installed in',
   内容: 'Content',
-  '文件夹里还有：': 'Also in the folder: ',
-  '（复制时一起带走，这里不能编辑）': ' (copied along; not editable here)',
   '复制给别的 Agent': 'Copy to other agents',
   先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':
@@ -677,7 +730,23 @@ export const EN_SETTINGS: Record<string, string> = {
   '帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期':
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
-  '用 AI 创建 Skill': 'Create Skill with AI',
+  'AI 创建 Skill': 'Create Skill with AI',
+  'AI 创建命令': 'Create command with AI',
+  '自带 Skill（{n} 个可更新）': 'Bundled skills ({n} to update)',
+  '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
+  '还没有自带 Skill。': 'No bundled skills yet.',
+  '，所有 Agent 共用': ', shared by all agents',
+  '（所有 Agent 共用）': ' (shared by all agents)',
+  '自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。':
+    'Bundled skills ship with the panel and cannot be edited here. To customize one, copy it into your own skills directory.',
+  '这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。':
+    'This skill is also deployed from Settings → Deploy; redeploy there to update that copy.',
+  '在左边的文件树里点一个文件，看它的内容。': 'Click a file in the tree to see its contents.',
+  '这个技能只有 SKILL.md，点左上的 SKILL.md 看内容。':
+    'This skill is just SKILL.md — click SKILL.md at the top of the tree to read it.',
+  '二进制文件（{bytes} 字节），不显示内容。': 'Binary file ({bytes} bytes) — contents are not shown.',
+  '在左边选一个技能，看它带哪些文件、装没装。':
+    'Pick a skill on the left to see which files it ships and whether it is installed.',
   '本机 Agent 写出 SKILL.md，在右侧预览，确认再应用':
     'The local agent writes SKILL.md; preview it on the right and apply when happy',
   '描述你想要的 Skill，越具体越好。可以从下面的例子开始：':
@@ -730,9 +799,9 @@ export const EN_SETTINGS: Record<string, string> = {
   全选: 'Select all',
   全不选: 'Select none',
   已部署: 'Deployed',
-  本机改过: 'Changed locally',
   覆盖本机改过的技能: 'Overwrite locally changed skills',
-  不勾时保留你改过的版本: 'When unchecked, your changed versions are kept',
+  '不勾时保留本机的版本；面板更新后要勾上才能换成新版本':
+    'When unchecked, the local versions are kept; check it after a panel update to switch to the new versions',
   部署: 'Deploy',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
@@ -789,19 +858,11 @@ export const EN_SETTINGS: Record<string, string> = {
   '已补全 {model} 的模型信息': 'Filled in model info for {model}',
   '查询超时，请稍后再试': 'Lookup timed out; try again later',
   在聊天里打开: 'Open in chat',
-  '在聊天里打开（排查照常进行）': 'Open in chat (troubleshooting keeps running)',
-  '最小化（排查照常进行）': 'Minimize (troubleshooting keeps running)',
-  关闭并停止排查: 'Close and stop troubleshooting',
   'AI 排查：{title}': 'AI troubleshooting: {title}',
   已结束: 'Ended',
   '进行中…': 'In progress…',
   对话已关闭: 'Chat closed',
   这个对话已经关闭了: 'This chat has been closed',
-  '它已经从聊天列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
-    'It was deleted from the chat list. This window stays open; click Close at the top right to dismiss it.',
-  '正在新建排查对话…': 'Creating the troubleshooting chat…',
-  'AI 排查结束：{title}': 'AI troubleshooting finished: {title}',
-  '上一个报错还在排查，排查完再试': 'The previous error is still being troubleshot; try again when it finishes',
   // 字体
   字体: 'Fonts',
   英文字体: 'Latin font',
@@ -940,7 +1001,38 @@ export const EN_SETTINGS: Record<string, string> = {
   '搜索规则、起因、文件或标签': 'Search rules, causes, files or tags',
   搜索教训: 'Search lessons',
   按标签筛选: 'Filter by tag',
-  '另有 {n} 个标签，用搜索找': '{n} more tags, use search',
+  按标签分页: 'Tabs by tag',
+  这个页签里没有匹配的教训: 'No matching lessons in this tab',
+  '没有不带标签的教训，带标签的在各自的页签里': 'No untagged lessons; tagged ones are in their own tabs',
+  这个页签里没有教训: 'No lessons in this tab',
+  'AI 评审': 'AI review',
+  '教训有没保存的修改，先点「确认」保存再评审':
+    'Lessons have unsaved changes. Click "Confirm" to save before reviewing',
+  '在这个项目里开一个分析对话，逐条看教训是否必须、是否合理、能否优化、是否过期，建议逐条确认后才应用':
+    'Opens an analysis conversation in this project that checks each lesson: is it needed, is it sound, can it be improved, is it outdated. Suggestions apply only after you confirm each one',
+  'AI 评审项目教训': 'AI review of project lessons',
+  'AI 会逐条看已保存的 {n} 条教训：是否必须、是否合理、能不能写得更好、提到的文件和做法是否已经过期、有没有重复。结果在对话里列成建议，每条要你点「应用」才会改，不会自动改。':
+    'AI goes through the {n} saved lessons one by one: is each needed, is it sound, can it be written better, are the files and practices it mentions outdated, are there duplicates. Results are listed as suggestions in the conversation; nothing changes until you click "Apply" on each.',
+  '例如：角色自己记的那些、和测试有关的': 'e.g. the ones roles recorded themselves, the ones about testing',
+  'AI 评审：项目教训': 'AI review: project lessons',
+  评审建议的格式不对: 'The review suggestion is malformed',
+  这条教训已经不在了: 'This lesson no longer exists',
+  不必要: 'Unnecessary',
+  不合理: 'Unsound',
+  可优化: 'Can improve',
+  已过期: 'Outdated',
+  重复: 'Duplicate',
+  '已应用 {n} 条建议': 'Applied {n} suggestions',
+  教训评审结果: 'Lesson review results',
+  教训评审: 'Lesson review',
+  '{n} 条建议待处理': '{n} suggestions pending',
+  建议都已处理: 'All suggestions handled',
+  没有要改的: 'Nothing to change',
+  '全部应用（{n}）': 'Apply all ({n})',
+  '（这条教训已经不在了）': '(This lesson no longer exists)',
+  '并入：{titles}': 'Merges in: {titles}',
+  '改成：{text}': 'Change to: {text}',
+  已不在: 'Gone',
   '再显示 {n} 条（还有 {left} 条）': 'Show {n} more ({left} left)',
   标签: 'Tags',
   '按主题归类，最多 5 个，逗号分隔；能按标签筛选，角色也能按标签查不对应具体文件的条目':
@@ -950,7 +1042,6 @@ export const EN_SETTINGS: Record<string, string> = {
   加一条: 'Add one',
   '还没有教训。对话里纠正了角色的做法时，它会自己记一条；也可以在对话里用户消息下面的「记成项目教训」，或者在这里手动加。':
     'No lessons yet. When you correct a role in a conversation it records one itself; you can also use “Save as project lesson” under a user message, or add one here.',
-  没有匹配的教训: 'No matching lessons',
   '（还没写规则）': '(No rule yet)',
   所有改动: 'All changes',
   '角色被纠正后自己记的，看一下写得对不对': 'Recorded by a role after being corrected — check that it is right',
@@ -1201,6 +1292,23 @@ export const EN_SETTINGS: Record<string, string> = {
     'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
   '{n} 项和当前设置不同，应用后点「确认」保存':
     '{n} differ from the current settings; apply them, then click Confirm to save',
+  '应用这份分析的设置（{n} 项）': 'Apply this analysis ({n})',
+  已应用这份分析的设置: 'Analysis applied',
+  当前设置已经和这份分析的推荐值一致: 'The current settings already match this analysis',
+  '分析报告只保留一份，重新初始化会替换它；已有的文档只补不覆盖。':
+    'Only one analysis report is kept; initializing again replaces it. Existing docs are only filled in, never overwritten.',
+  '这次初始化没有留下分析报告，重新初始化后可以在这里对照推荐值。':
+    'This initialization left no analysis report. Initialize again to compare against recommended values here.',
+  '和推荐值不同的设置（{n} 项）': 'Settings that differ from the recommendation ({n})',
+  '项目设置改过之后和分析报告的推荐不一样了：可以单项应用，应用后点「确认」保存。':
+    'These project settings no longer match the analysis report. Apply them one by one, then click Confirm to save.',
+  '{n} 个自带技能可以更新': '{n} bundled skills can be updated',
+  '{n} 个部署的技能可以更新': '{n} deployed skills can be updated',
+  去部署: 'Go to Deploy',
+  '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
+    '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
+  勾选覆盖: 'Check overwrite',
+  '和自带的不同，可更新': 'Differs from bundled, update available',
   '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
   没有需要调整的设置: 'No settings need changing',
   全部应用: 'Apply all',
@@ -1218,4 +1326,41 @@ export const EN_SETTINGS: Record<string, string> = {
     'Choose a local folder, then initialize the project with AI before saving.',
   '先完成「AI 初始化项目」才能保存': 'Run "AI initialize project" before saving',
   '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
+  // 开发者模式：抓取界面元素
+  开发者模式: 'Developer mode',
+  '打开后对话输入框上多一个「抓取界面元素」按钮，也可以按快捷键开启抓取：抓取期间左键、右键照常可用，用设置里的鼠标键（默认中键）点选面板界面上的元素，它的源码位置、组件、文字和样式会作为引用放进输入框，发给 AI 修改面板自己的代码。Esc 退出。':
+    'Adds a "Pick UI element" button to chat inputs, and a shortcut to start picking anywhere: while picking, the left and right buttons work as usual; press the mouse button chosen in settings (middle by default) on any element of the panel\'s UI to quote its source location, component, text and styles into the input, so AI can edit the panel\'s own code. Esc stops picking.',
+  抓取界面元素: 'Pick UI element',
+  '抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出':
+    'Pick UI element: {key} to start or stop, {button} to pick an element on the page, Esc to cancel',
+  退出抓取: 'to exit',
+  '{button}抓取元素，左键、右键照常可用': '{button} to pick an element; the left and right buttons keep working',
+  中键: 'Middle button',
+  左键: 'Left button',
+  右键: 'Right button',
+  或: 'or',
+  '已复制到剪贴板，去输入框里粘贴': 'Copied to the clipboard — paste it into the input',
+  '写不进剪贴板，请手动复制下面的引用': 'Could not write to the clipboard; copy the reference below manually',
+  // 设置 →「快捷键」
+  快捷键: 'Shortcuts',
+  抓取元素的快捷键: 'Shortcut for picking an element',
+  '抓取界面元素（开发者模式）的快捷键：按一下进入抓取，再按一下退出。在输入框里打字时不会触发，带了 Ctrl / Alt 的组合键除外。':
+    'Shortcut for picking UI elements (developer mode): press it to start picking, press again to stop. It does not trigger while you are typing in an input, unless it includes Ctrl / Alt.',
+  '默认是「{key}」。键盘上打不出这个键时，可以点右边换成别的组合（例如 Ctrl+Shift+E）。':
+    'Defaults to “{key}”. If your keyboard cannot type it, click the field on the right and press another combination (for example Ctrl+Shift+E).',
+  '按下想用的键，Esc 取消': 'Press the keys to use, Esc to cancel',
+  '这个写法认不出来，按 Backspace 恢复默认': 'This value is not recognized; press Backspace to restore the default',
+  用哪个鼠标键抓取: 'Mouse button used to pick',
+  '其他两个键在抓取期间照常可用：左键还能点按钮、右键还能弹菜单，所以抓取键一般用中键。':
+    'The other two buttons keep working while picking: the left button still clicks, the right button still opens menus, so the middle button is the usual choice.',
+  '抓取期间按 Esc 或再按一次上面的快捷键都能退出；抓到一个元素后也会自动退出。':
+    'While picking, press Esc or the shortcut above to stop; picking also stops after you pick an element.',
+  '快捷键回到「{key}」，抓取键回到中键。': 'Restore the shortcut to “{key}” and the pick button to the middle button.',
+  抓取元素的方式: 'How to pick elements',
+  '快捷键和用哪个鼠标键抓取，到「快捷键」里改。': 'Change the shortcut and the pick button under “Shortcuts”.',
+  '＋': '+',
+  去修改: 'Change',
+  并发上限: 'Concurrency limit',
+  '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
+    'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
 }

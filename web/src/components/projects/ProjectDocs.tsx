@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { AlertTriangle, Check, Eye, Loader2, PenLine, Sparkles, Square, X } from 'lucide-react'
 import type { DocFile, DocJob, ProjectDoc } from '@shared/docs'
 import { CLIS } from '@shared/clis'

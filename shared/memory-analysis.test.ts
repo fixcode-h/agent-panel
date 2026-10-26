@@ -16,11 +16,11 @@ setLang('zh')
 
 const MB = 1024 * 1024
 const T0 = Date.parse('2025-01-01T10:00:00.000Z')
-/** 一分钟一个点，值按分钟数函数给 */
+/** 一分钟一个点，值按分钟数函数给：total 只算这个对话的 CLI，面板内存不混进合计 */
 const series = (n: number, at: (minute: number) => { cli: number | null; server: number }) =>
   Array.from({ length: n }, (_, i) => {
     const { cli, server } = at(i)
-    return { t: T0 + i * 60_000, server, cli, total: cli === null ? null : cli + server }
+    return { t: T0 + i * 60_000, server, cli, total: cli }
   }) satisfies MemoryPoint[]
 
 test('趋势：持续上涨判成 up，平稳和回落分开', () => {
@@ -32,7 +32,7 @@ test('趋势：持续上涨判成 up，平稳和回落分开', () => {
   assert.equal(tr.delta, 19 * 4 * MB)
   assert.equal(tr.cliDelta, 19 * 4 * MB)
   assert.equal(tr.serverDelta, 0)
-  assert.equal(tr.peak.total, (100 + 19 * 4 + 200) * MB)
+  assert.equal(tr.peak.total, (100 + 19 * 4) * MB)
 
   const flat = series(20, () => ({ cli: 100 * MB, server: 200 * MB }))
   assert.equal(taskMemoryTrend(flat)!.trend, 'flat')
@@ -54,9 +54,9 @@ test('趋势：点不够、跨度太短、合计未采集时不乱下结论', ()
   assert.equal(taskMemoryTrend(unknown), null)
   // 只有头尾各一个能用的点也照样算，中间的缺口不影响判断
   const gaps: MemoryPoint[] = [
-    { t: T0, server: 200 * MB, cli: 100 * MB, total: 300 * MB },
+    { t: T0, server: 200 * MB, cli: 100 * MB, total: 100 * MB },
     { t: T0 + 60_000, server: 200 * MB, cli: null, total: null },
-    { t: T0 + 3600_000, server: 200 * MB, cli: 400 * MB, total: 600 * MB },
+    { t: T0 + 3600_000, server: 200 * MB, cli: 400 * MB, total: 400 * MB },
   ]
   const gt = taskMemoryTrend(gaps)!
   assert.equal(gt.trend, 'up')
@@ -144,8 +144,8 @@ test('报告：两路内存、趋势、归属、任务树和上下文都在，�
   assert.match(report, /「整理模块结构」/)
   assert.match(report, /E:\/Project\/agent-panel/)
   assert.match(report, /合计/)
-  assert.match(report, /面板进程 200\.0 MB/)
-  assert.match(report, /CLI 进程树 176\.0 MB/)
+  assert.match(report, /会话合计 176\.0 MB/)
+  assert.match(report, /面板进程 200\.0 MB（不计入会话合计）/)
   assert.match(report, /趋势/)
   assert.match(report, /持续上涨/)
   assert.match(report, /进程归属/)

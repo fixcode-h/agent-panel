@@ -4,6 +4,9 @@ import type { Task } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
+import { AnalysisMark } from '@/components/tasks/AnalysisMark'
+import { cliAliveHint, cliTreeAlive } from '@/components/tasks/CliAlive'
+import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskRenameInput, useTaskRowMenu } from '@/components/tasks/TaskMenu'
 import {
   ContextMenu,
@@ -58,15 +61,18 @@ export function TaskRow({
   className?: string
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
+  const { agents } = useData()
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
   // 状态只从 taskState 来（和标题栏、项目首页同一个判定）：自己在执行、在等子对话 / 子任务 / 后台命令 / 工作流
   // 都转圈；有没回复的提问、请求是「需要你处理」
   const state = taskState(task)
   const busy = state === 'running' || state === 'waiting'
-  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
-  const online = task.status === 'running' && !busy && state !== 'needs'
+  // 自己或名下子对话有活着的 CLI：标题流光，不点开也能看出来
+  const alive = cliTreeAlive(task)
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
+  // AI 分析开出的对话：标题前加强调色的标签，和普通对话一眼分开
+  const analysis = isAnalysisTask(task, agents)
   const attention = state === 'needs' ? 'ask' : busy ? 'running' : state === 'failed' ? 'failed' : ''
   return (
     <>
@@ -76,49 +82,62 @@ export function TaskRow({
             onClick={onOpen}
             aria-current={active || undefined}
             title={task.title}
-            data-cli-online={online || undefined}
+            data-cli-alive={alive || undefined}
             className={cn(
               'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-transparent text-left text-[0.8125rem] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-              online && 'border-dashed border-line-strong',
               className,
             )}
           >
-            {unread && (
-              <span
-                role="img"
-                aria-label={t('对话已完成，还没查看')}
-                title={t('对话已完成，还没查看')}
-                className="h-2 w-2 shrink-0 rounded-full bg-accent"
-              />
-            )}
-            <span className="flex shrink-0 items-center gap-1">
-              {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
-              {attention !== 'running' && (
-                <ModeIcon
-                  aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                  className="h-3.5 w-3.5 text-subtle"
+            {/* 内容整体右缩一点，标题文字不至于一直顶到右边的时间上。缩进不能写进行上的 pl-*：
+                行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
+                选中 / hover 的背景（画在行上）仍然铺满整行 */}
+            <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
+              {unread && (
+                <span
+                  role="img"
+                  aria-label={t('对话已完成，还没查看')}
+                  title={t('对话已完成，还没查看')}
+                  className="h-2 w-2 shrink-0 rounded-full bg-accent"
                 />
               )}
-              {attention === 'ask' ? (
-                // Agent 在等你确认操作或回答问题
-                <CircleAlert
-                  aria-label={t('需要你处理')}
-                  className="h-3.5 w-3.5 shrink-0 text-warning"
-                  strokeWidth={2.4}
-                />
-              ) : attention === 'running' || attention === 'failed' ? (
-                <TaskStatusIcon
-                  status={attention === 'running' ? 'running' : task.status}
-                  working={attention === 'running'}
-                  className="h-3.5 w-3.5"
-                />
-              ) : null}
-            </span>
-            <span className="min-w-0 flex-1 truncate">{task.title}</span>
-            {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
-            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
-              {shortTime(askedAt(task), timeOnly)}
+              <span className="flex shrink-0 items-center gap-1">
+                {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
+                {attention !== 'running' && (
+                  <ModeIcon
+                    aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                    className="h-3.5 w-3.5 text-subtle"
+                  />
+                )}
+                {attention === 'ask' ? (
+                  // Agent 在等你确认操作或回答问题
+                  <CircleAlert
+                    aria-label={t('需要你处理')}
+                    className="h-3.5 w-3.5 shrink-0 text-warning"
+                    strokeWidth={2.4}
+                  />
+                ) : attention === 'running' || attention === 'failed' ? (
+                  <TaskStatusIcon
+                    status={attention === 'running' ? 'running' : task.status}
+                    working={attention === 'running'}
+                    className="h-3.5 w-3.5"
+                  />
+                ) : null}
+              </span>
+              {analysis && <AnalysisMark kind={task.analysis} />}
+              {/* 行的 title 只放标题（别处按它找这一行）：CLI 存活的说明挂在标题文字上 */}
+              <span
+                title={alive ? `${task.title}\n${cliAliveHint(task)}` : undefined}
+                className={cn('min-w-0 flex-1 truncate', alive && 'cli-alive-title')}
+                style={alive && !active ? ({ '--cli-base': 'var(--muted)' } as React.CSSProperties) : undefined}
+              >
+                {task.title}
+              </span>
+              {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+              {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
+              <span className="shrink-0 pl-1.5 text-[0.6875rem] text-subtle tabular-nums">
+                {shortTime(askedAt(task), timeOnly)}
+              </span>
             </span>
           </button>
         </ContextMenuTrigger>

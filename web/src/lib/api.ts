@@ -1,6 +1,7 @@
 import type { ShellReport } from '@shared/shells'
 import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
+import type { ComfyChain } from '@shared/comfy-chain'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -43,13 +44,22 @@ import type {
   TaskMemoryHistory,
   TaskMemoryAnalysis,
   TaskProcesses,
+  TaskJobView,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
-import type { AssistInput, AssistJob } from '@shared/assist'
+import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
+import type { LessonReviewItem } from '@shared/lesson-review'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
-import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
+import type {
+  DeployConfig,
+  DeployResult,
+  DeployRun,
+  DeployState,
+  GlobalDocOptimize,
+  SkillUpdates,
+} from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ApiBalance } from '@shared/api-balance'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -60,6 +70,7 @@ import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project
 import type {
   BundledSkill,
   LibraryCli,
+  LibraryEntryContent,
   LibraryFile,
   LibraryItem,
   McpOverview,
@@ -68,6 +79,7 @@ import type {
 } from '@shared/library'
 import type { SummaryJob, SummaryRecord, SummaryRequest } from '@shared/summary'
 import type { ProjectSkillsView } from '@shared/project-skills'
+import type { ProjectProposal } from '@shared/project-init'
 import type {
   Annotation,
   BrowserStatus,
@@ -138,6 +150,8 @@ const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(
 export interface WorktreeItem {
   taskId: string
   title: string
+  /** 对话的创建时间：列表按它排序，父对话永远在第一位 */
+  createdAt: string
   /** 是名下的子对话的（不是对话自己的） */
   child: boolean
   /** 那个对话正在动手 */
@@ -198,6 +212,22 @@ export const api = {
     }),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
+  /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
+  comfyChains: () =>
+    request<{ list: ComfyChain[]; workflows: ComfyWorkflow[]; ready: string[] }>('/local-image/chains'),
+  saveComfyChain: (chain: ComfyChain) =>
+    request<{ chain: ComfyChain; list: ComfyChain[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}`,
+      json('PUT', chain),
+    ),
+  deleteComfyChain: (id: string) =>
+    request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
+  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+    request<{ images: string[] }>(
+      `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
+      json('POST', { chain, image, prompt }),
+    ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),
   refreshComfyTemplates: () =>
@@ -251,6 +281,9 @@ export const api = {
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
   apiModels: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
+  /** 用一个模型真的发一次最小请求，确认这个模型是通的（服务端带密钥请求，错误原文透传） */
+  probeApiModel: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { model: string }) =>
+    request<{ model: string }>('/accounts/api-probe', json('POST', a)),
   /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
   apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
@@ -294,6 +327,9 @@ export const api = {
   library: (kind: 'skill' | 'command') =>
     request<{ clis: LibraryCli[]; items: LibraryItem[] }>(`/library?kind=${kind}`),
   bundledSkills: () => request<{ items: BundledSkill[] }>('/library/bundled'),
+  /** 自带 Skill 的文件内容（只读）：path 传空读 SKILL.md，其余读技能目录里的附加文件 */
+  bundledEntry: (name: string, path: string) =>
+    request<LibraryEntryContent>(`/library/bundled/entry?${new URLSearchParams({ name, path })}`),
   installBundled: (b: { names: string[]; clis: string[]; overwrite: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/bundled/install', json('POST', b)),
   libraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>
@@ -306,6 +342,29 @@ export const api = {
     }),
   copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
     request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** Skill 文件夹里的单个附加文件（命令没有附加文件） */
+  libraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<LibraryEntryContent>(`/library/entry?${new URLSearchParams(b)}`),
+  saveLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    path: string
+    content: string
+    create?: boolean
+  }) => request<{ ok: boolean }>('/library/entry', json('PUT', b)),
+  deleteLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>(`/library/entry?${new URLSearchParams(b)}`, { method: 'DELETE' }),
+  renameLibraryEntry: (b: {
+    cli: string
+    kind: 'skill' | 'command'
+    name: string
+    from: string
+    to: string
+    overwrite?: boolean
+  }) => request<{ ok: boolean }>('/library/entry/rename', json('POST', b)),
+  mkdirLibraryEntry: (b: { cli: string; kind: 'skill' | 'command'; name: string; path: string }) =>
+    request<{ ok: boolean }>('/library/entry/mkdir', json('POST', b)),
   /** 项目设置里的 Skill 分节：项目目录下的技能 */
   projectSkills: (projectId: string) =>
     request<ProjectSkillsView>(`/project-skills?projectId=${encodeURIComponent(projectId)}`),
@@ -386,9 +445,18 @@ export const api = {
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  /**
+   * 只更新「AI 初始化」的结果：服务端自己读最新项目再合并，不会把用户这期间应用的推荐覆盖回旧值。
+   * 初始化对话跑完才交回结果，传整份项目过去时它已经过期了。
+   */
+  saveProjectInitResult: (id: string, input: { initResult: ProjectProposal }) =>
+    request<Project>(`/projects/${id}/init-result`, json('PUT', input)),
   /** 记一条项目教训（同名的会更新），返回更新后的项目 */
   addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
     request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
+  /** 应用 AI 评审的一条建议，返回更新后的项目 */
+  applyLessonReview: (id: string, item: LessonReviewItem) =>
+    request<Project>(`/projects/${id}/lessons/review`, json('POST', { item })),
   globalLessons: () => request<GlobalLesson[]>('/global-lessons'),
   /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */
   saveGlobalLessons: (lessons: GlobalLesson[]) =>
@@ -402,11 +470,17 @@ export const api = {
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
+  /**
+   * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
+   * 命令结束后也读得到最终输出（用户可能过一阵才点开）
+   */
+  taskJob: (taskId: string, jobId: string) =>
+    request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
   taskChildrenStats: (id: string) => request<StatsTotal>(`/tasks/${id}/children-stats`),
-  /** 这个对话的进程树（含子对话、子任务、工作流起的）和内存合计；下拉展开时才调 */
+  /** 这个对话及附属（子对话、子任务、工作流起的）的进程和 CLI 内存合计；面板自身内存单独给、不计入，下拉展开时才调 */
   taskProcesses: (id: string) => request<TaskProcesses>(`/tasks/${id}/processes`),
   killTaskProcess: (id: string, pid: number) =>
     request<KillProcessResult>(`/tasks/${id}/processes/${pid}/kill`, json('POST', {})),
@@ -620,8 +694,8 @@ export const api = {
   /** 提问窗口的关闭：这个问题不回答，这次会话终止 */
   closeAsk: (id: string) => request<{ ok: true }>(`/asks/${id}/close`, { method: 'POST' }),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
-  /** 父对话的设置：目标、全局规则、子对话的执行配置和并发上限 */
-  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'childLimit' | 'title'>) =>
+  /** 父对话的设置：目标、全局规则、子对话的执行配置 */
+  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'title'>) =>
     request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
@@ -633,6 +707,12 @@ export const api = {
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
   assistJob: (id: string) => request<AssistJob>(`/assist/${id}`),
+  /** 在项目对话里做的生成：第一句话由服务端按现有数据拼好 */
+  assistPrompt: (input: Omit<AssistInput, 'cli' | 'model' | 'effort' | 'askUser' | 'targetId'>) =>
+    request<{ prompt: string }>('/assist/prompt', json('POST', input)),
+  /** 把对话最后一条回复解析成推荐（格式不对时给出原因） */
+  assistResolve: (input: Omit<AssistInput, 'cli' | 'model' | 'effort' | 'askUser' | 'targetId'> & { text: string }) =>
+    request<{ proposal?: Proposal; error?: string }>('/assist/resolve', json('POST', input)),
   stopAssist: (id: string) => request<AssistJob>(`/assist/${id}/stop`, { method: 'POST' }),
   projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
   saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
@@ -640,6 +720,7 @@ export const api = {
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
   deployState: () => request<DeployState>('/deploy'),
+  skillUpdates: () => request<SkillUpdates>('/deploy/updates'),
   saveDeploy: (c: DeployConfig) => request<DeployState>('/deploy', json('PUT', c)),
   runDeploy: (r: DeployRun) => request<{ result: DeployResult; state: DeployState }>('/deploy/run', json('POST', r)),
   optimizeGlobalDoc: (input: GlobalDocOptimize) => request<DocJob>('/deploy/optimize', json('POST', input)),
@@ -697,8 +778,9 @@ export const api = {
   /** 长轮询等 AI 要的截图请求：没有请求时服务端挂起（最长 25 秒），后台标签页也能及时收到 */
   designCaptureWait: (id: string, signal: AbortSignal) =>
     request<{ capture: CaptureRequest | null }>(`/designs/${id}/capture/wait`, { signal }),
-  steerDesign: (id: string, text: string) =>
-    request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
+  /** AI 正在跑时发消息：整条消息补充给这一轮，收不下就在这一轮结束后自动接着处理 */
+  steerDesign: (id: string, input: DesignChatInput) =>
+    request<DesignFull & { steered: boolean; queued: boolean }>(`/designs/${id}/steer`, json('POST', input)),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
   uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),

@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Check, Copy, SquareTerminal } from 'lucide-react'
 import { commandText, getCli, quoteArg } from '@shared/clis'
 import type { Settings } from '@shared/schema'
