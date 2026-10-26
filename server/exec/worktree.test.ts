@@ -3,13 +3,14 @@ import { execFileSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,22 +19,6 @@ import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
 import { childHoldText, childHolds, childHoldsOf } from '../../shared/task.ts'
-import {
-  branchesOverlap,
-  createWorktree,
-  ensureWorktree,
-  isolateDeps,
-  mergeOverlap,
-  mergeSides,
-  mergeSidesText,
-  mergeWorktree,
-  missingDeps,
-  releaseWorktree,
-  removeWorktree,
-  sweepWorktrees,
-  worktreeStatus,
-} from './worktree.ts'
-
 // 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
 setLang('zh')
 
@@ -50,6 +35,27 @@ delete process.env.GIT_CONFIG_COUNT
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-wt-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
+// 独立目录和共用的依赖目录都建在 DATA_DIR 下：指到临时目录，别写进真实的数据目录
+process.env.AGENT_PANEL_DATA = path.join(tmp, 'data')
+
+// 依赖位置由 DATA_DIR 决定，必须在上面设置之后再加载
+const {
+  branchesOverlap,
+  createWorktree,
+  ensureWorktree,
+  isolateDeps,
+  mergeOverlap,
+  mergeSides,
+  mergeSidesText,
+  mergeWorktree,
+  missingDeps,
+  releaseWorktree,
+  removeWorktree,
+  sharedDepsDir,
+  sweepWorktrees,
+  worktreeStatus,
+  WORKTREES_DIR,
+} = await import('./worktree.ts')
 
 /**
  * 子进程的 git 不能继承 GIT_DIR / GIT_WORK_TREE：在 WSL 里带这两个变量跑测试时，
@@ -86,6 +92,9 @@ function buildTemplate(): void {
   mkdirSync(path.join(templateRepo, 'node_modules', 'dep'), { recursive: true })
   writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
   writeFileSync(path.join(templateRepo, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
+  // 共用依赖按 package-lock 判断要不要重新复制（见 worktree.ts 的 depsStamp）
+  writeFileSync(path.join(templateRepo, 'package.json'), '{"name":"demo","version":"1.0.0"}\n')
+  writeFileSync(path.join(templateRepo, 'package-lock.json'), '{"name":"demo","lockfileVersion":3,"packages":{}}\n')
   writeFileSync(path.join(templateRepo, '.env'), 'TOKEN=dev\n')
   writeFileSync(path.join(templateRepo, '.env.local'), 'SECRET=real\n')
   git(templateRepo, 'init', '-q')
@@ -109,8 +118,9 @@ test('独立目录接上项目的依赖和环境文件，不复制密钥', async
   const repo = project()
   const wt = await createWorktree(repo, tid(), '测试任务')
   try {
-    // 依赖各用一份独立副本（不是链接，见下面「依赖隔离」的用例）
-    assert.ok(existsSync(path.join(wt.path, 'node_modules', 'dep', 'index.js')), '依赖能读到')
+    // 独立目录里不放依赖：Node / npm 会向上找到 worktrees 下共用的那一份
+    assert.ok(!existsSync(path.join(wt.path, 'node_modules')), '独立目录里不再复制一份依赖')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用依赖准备好了')
     // .env 复制，含密钥的 .env.local 不复制
     assert.equal(readFileSync(path.join(wt.path, '.env'), 'utf8').trim(), 'TOKEN=dev', '环境文件复制过去')
     assert.ok(!existsSync(path.join(wt.path, '.env.local')), '含密钥的环境文件不复制')
@@ -554,38 +564,255 @@ test('子分支还有没合回父分支的提交：拦住，原因里不提推�
   }
 })
 
-test('依赖隔离：独立目录的依赖是各自的一份，在里面删依赖不影响项目', async () => {
+/** 共用依赖在 `<数据目录>/worktrees/<项目>-<哈希>/node_modules`；测试的数据目录是临时目录，整个根可以直接清 */
+const resetSharedDeps = () => rmSync(WORKTREES_DIR, { recursive: true, force: true })
+
+test('依赖共用：独立目录不放 node_modules，命令从上级那一份解析', async () => {
+  resetSharedDeps()
   const repo = project()
-  const wt = await createWorktree(repo, tid(), '依赖隔离')
+  const wt = await createWorktree(repo, tid(), '依赖共用')
   try {
-    const mine = path.join(wt.path, 'node_modules')
-    // 链接共用时，子对话按自己那份 package.json 修剪依赖，剪掉的正是项目里的真目录（2026-10 的事故）
-    assert.equal(lstatSync(mine).isSymbolicLink(), false, 'node_modules 不是链接')
-    assert.notEqual(realpathSync(mine), realpathSync(path.join(repo, 'node_modules')), '和项目那份是两个目录')
-    // 模拟 npm 在独立目录里修剪依赖
-    rmSync(mine, { recursive: true, force: true })
-    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份依赖还在')
+    assert.ok(!existsSync(path.join(wt.path, 'node_modules')), '独立目录里不放 node_modules')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用的一份在项目分组目录下')
+    assert.notEqual(
+      realpathSync(await sharedDepsDir(repo)),
+      realpathSync(path.join(repo, 'node_modules')),
+      '是独立的一份，不是项目那目录、也不是链接',
+    )
+    // 依赖清单按「向上能找到的那一份」核对：独立目录里没有 node_modules 也不算缺失
+    assert.deepEqual(await missingDeps(wt.path), [])
+    // 项目那份被人动过也不影响共用的一份（反过来也一样：共用那份不跟着项目目录变）
+    rmSync(path.join(repo, 'node_modules', 'dep'), { recursive: true, force: true })
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用的一份还在')
   } finally {
     await removeWorktree(repo, wt, true)
   }
 })
 
-test('依赖隔离：早先开的工作目录里依赖是链接，准备时换成独立的一份', async () => {
+test('依赖共用：只复制一次，后面开的子对话直接用', async () => {
+  resetSharedDeps()
   const repo = project()
-  const wt = await createWorktree(repo, tid(), '链接迁移')
+  const first = await createWorktree(repo, tid(), '第一次')
   try {
-    const mine = path.join(wt.path, 'node_modules')
-    // 旧版本开出来的目录长这样：node_modules 是指向项目的链接
-    rmSync(mine, { recursive: true, force: true })
-    symlinkSync(path.join(repo, 'node_modules'), mine, process.platform === 'win32' ? 'junction' : 'dir')
-    await isolateDeps(wt.path, repo)
-    assert.equal(lstatSync(mine).isSymbolicLink(), false, '链接换成了独立副本')
-    assert.ok(existsSync(path.join(mine, 'dep', 'index.js')), '依赖还在')
-    // 换完之后在副本里删东西，项目那份不动
-    rmSync(path.join(mine, 'dep'), { recursive: true, force: true })
-    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份没被删')
+    // 没改 lock 时项目里多出来的文件不该再触发一次整份复制
+    writeFileSync(path.join(repo, 'node_modules', 'dep', 'later.txt'), 'x\n')
+    const second = await createWorktree(repo, tid(), '第二次')
+    try {
+      assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用的一份还在')
+      assert.ok(!existsSync(path.join(await sharedDepsDir(repo), 'dep', 'later.txt')), '没有又复制一遍')
+      assert.ok(!existsSync(path.join(second.path, 'node_modules')), '第二个子对话也直接用上级那份')
+    } finally {
+      await removeWorktree(repo, second, true)
+    }
+  } finally {
+    await removeWorktree(repo, first, true)
+  }
+})
+
+test('依赖共用：package-lock 变了才重新复制', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const first = await createWorktree(repo, tid(), '旧依赖')
+  try {
+    writeFileSync(path.join(repo, 'node_modules', 'dep', 'added.txt'), 'x\n')
+    assert.ok(!existsSync(path.join(await sharedDepsDir(repo), 'dep', 'added.txt')), '没改 lock 前不重新复制')
+    writeFileSync(
+      path.join(repo, 'package-lock.json'),
+      '{"name":"demo","lockfileVersion":3,"packages":{"node_modules/dep":{"version":"1.0.0"}}}\n',
+    )
+    const second = await createWorktree(repo, tid(), '新依赖')
+    try {
+      assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'added.txt')), 'lock 变了重新复制一份')
+    } finally {
+      await removeWorktree(repo, second, true)
+    }
+  } finally {
+    await removeWorktree(repo, first, true)
+  }
+})
+
+test('依赖共用：同时开多个子对话只有一个在复制，不互相踩', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const wts = await Promise.all([1, 2, 3].map((i) => createWorktree(repo, tid(), `并发${i}`)))
+  try {
+    for (const wt of wts) assert.ok(!existsSync(path.join(wt.path, 'node_modules')), '每个目录里都不放依赖')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用的一份是完整的')
+    // 临时目录和锁不能留下：留着的话下一次开对话会被挡住、清扫时会被当成残留
+    assert.deepEqual(
+      readdirSync(path.dirname(await sharedDepsDir(repo))).filter((n) => n.startsWith('node_modules.')),
+      [],
+      '不留复制用的临时目录和锁',
+    )
+  } finally {
+    for (const wt of wts) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('依赖共用：不同项目各自一份，后开的项目不会覆盖前一个的依赖', async () => {
+  resetSharedDeps()
+  const repoA = project()
+  const repoB = project()
+  // 乙项目的依赖里多一个文件，用来确认两份共用副本互不影响
+  writeFileSync(path.join(repoB, 'node_modules', 'dep', 'only-b.txt'), 'b\n')
+  const a = await createWorktree(repoA, tid(), '项目甲')
+  const b = await createWorktree(repoB, tid(), '项目乙')
+  try {
+    assert.notEqual(await sharedDepsDir(repoA), await sharedDepsDir(repoB), '每个项目一份共用依赖')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repoA), 'dep', 'index.js')), '甲那份在')
+    assert.ok(!existsSync(path.join(await sharedDepsDir(repoA), 'dep', 'only-b.txt')), '甲那份没被乙覆盖')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repoB), 'dep', 'only-b.txt')), '乙那份是自己的')
+  } finally {
+    await removeWorktree(repoA, a, true)
+    await removeWorktree(repoB, b, true)
+  }
+})
+
+test('依赖共用：从父对话的独立目录里再开子对话，仍用同一份共用依赖', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const parent = await createWorktree(repo, tid(), '父对话')
+  try {
+    // worktreeHome 让子对话从父对话的独立目录里开
+    const child = await createWorktree(parent.path, tid(), '子对话')
+    try {
+      assert.ok(!existsSync(path.join(child.path, 'node_modules')), '子对话目录里也不放依赖')
+      assert.deepEqual(await missingDeps(child.path), [], '从共用那份解析得到')
+      // 分组按主仓库根算：按父对话目录算的话每层都会再复制一份 682MB
+      assert.deepEqual(
+        readdirSync(WORKTREES_DIR),
+        [path.basename(path.dirname(await sharedDepsDir(repo)))],
+        '同一个项目只有一组',
+      )
+    } finally {
+      await removeWorktree(repo, child, true)
+    }
+  } finally {
+    await removeWorktree(repo, parent, true)
+  }
+})
+
+test('依赖共用：从父对话的独立目录里再开子对话，也会按项目最新的 lock 刷新', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const parent = await createWorktree(repo, tid(), '父对话')
+  try {
+    // 项目里装了新依赖（lock 变了）：父对话目录里没有 node_modules，刷新要以项目根为准
+    writeFileSync(path.join(repo, 'node_modules', 'dep', 'after-install.txt'), 'x\n')
+    writeFileSync(
+      path.join(repo, 'package-lock.json'),
+      '{"name":"demo","lockfileVersion":3,"packages":{"node_modules/dep":{"version":"2.0.0"}}}\n',
+    )
+    const child = await createWorktree(parent.path, tid(), '子对话')
+    try {
+      assert.ok(
+        existsSync(path.join(await sharedDepsDir(repo), 'dep', 'after-install.txt')),
+        '按项目的 lock 刷新了，不是当成「项目没装依赖」跳过',
+      )
+    } finally {
+      await removeWorktree(repo, child, true)
+    }
+  } finally {
+    await removeWorktree(repo, parent, true)
+  }
+})
+
+test('依赖共用：上次复制被中断留下的锁不会让新子对话干等', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const group = path.dirname(await sharedDepsDir(repo))
+  const lock = path.join(group, 'node_modules.lock')
+  mkdirSync(lock, { recursive: true })
+  // 模拟复制方已经没了：锁很久没有心跳（正常复制每 2 秒更新一次）
+  const stale = new Date(Date.now() - 60_000)
+  utimesSync(lock, stale, stale)
+  const started = Date.now()
+  const wt = await createWorktree(repo, tid(), '锁残留')
+  try {
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '自己把依赖准备好了')
+    assert.ok(Date.now() - started < 30_000, `没有干等到等待上限（${Date.now() - started}ms）`)
   } finally {
     await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖共用：有过期的锁时并发开子对话，共用依赖仍然完整', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const group = path.dirname(await sharedDepsDir(repo))
+  const lock = path.join(group, 'node_modules.lock')
+  mkdirSync(lock, { recursive: true })
+  const stale = new Date(Date.now() - 60_000)
+  utimesSync(lock, stale, stale)
+  // 同时开多个：接管过期锁必须只有一个进程能做到（rename 原子），否则两个都去复制、
+  // 换装时互相挪走对方刚放好的那一份，最后可能一个完整的都没有
+  const wts = await Promise.all([1, 2, 3].map((i) => createWorktree(repo, tid(), `过期锁并发${i}`)))
+  try {
+    const shared = await sharedDepsDir(repo)
+    assert.ok(existsSync(path.join(shared, 'dep', 'index.js')), '共用依赖是完整的一份')
+    assert.ok(existsSync(path.join(shared, '.agent-panel-deps.json')), '复制记录在（不是半份）')
+    for (const wt of wts) assert.deepEqual(await missingDeps(wt.path), [], '每个子对话里依赖都能解析')
+    // 接替过程不再留锁或换装用的临时目录
+    assert.deepEqual(
+      readdirSync(group).filter((n) => n.startsWith('node_modules.')),
+      [],
+      '没留下锁 / 临时目录',
+    )
+  } finally {
+    for (const wt of wts) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('依赖共用：项目没忽略 node_modules 时，子对话里自己装的依赖不会进提交', async () => {
+  resetSharedDeps()
+  const repo = project()
+  // 新建项目漏写 .gitignore 的情况：prepare 要自己写进独立目录的 exclude
+  writeFileSync(path.join(repo, '.gitignore'), '.env*\n')
+  git(repo, 'commit', '-qam', '不忽略依赖')
+  const wt = await createWorktree(repo, tid(), '没忽略依赖')
+  try {
+    const rel = git(wt.path, 'rev-parse', '--git-path', 'info/exclude').toString().trim()
+    const exclude = readFileSync(path.resolve(wt.path, rel), 'utf8')
+    assert.match(exclude, /^\/node_modules$/m, 'node_modules 写进了 exclude')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖共用：早先开的工作目录里那份依赖（副本或链接）准备时清掉', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '旧布局')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    // 旧版本开出来的目录长这样：node_modules 是指向项目的链接（2026-10 事故的来源）
+    symlinkSync(path.join(repo, 'node_modules'), mine, process.platform === 'win32' ? 'junction' : 'dir')
+    await isolateDeps(wt.path, repo)
+    assert.ok(!existsSync(mine), '链接清掉了，改用上级共用的一份')
+    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目的依赖没被删')
+    // 更早的副本也一样清掉，省磁盘
+    mkdirSync(path.join(mine, 'dep'), { recursive: true })
+    writeFileSync(path.join(mine, 'dep', 'index.js'), 'module.exports = 2\n')
+    await isolateDeps(wt.path, repo)
+    assert.ok(!existsSync(mine), '旧副本也清掉')
+    assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用的一份还在，命令照常能跑')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖共用：旧布局的任务目录（不在项目分组下）保留自己那份依赖，不删成不能用', async () => {
+  resetSharedDeps()
+  const repo = project()
+  // 升级前开出来的目录：worktrees/<任务 id>，它向上（worktrees/）没有共用的一份
+  const legacy = path.join(WORKTREES_DIR, tid())
+  mkdirSync(path.join(legacy, 'node_modules', 'dep'), { recursive: true })
+  writeFileSync(path.join(legacy, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  try {
+    await isolateDeps(legacy, repo)
+    assert.ok(existsSync(path.join(legacy, 'node_modules', 'dep', 'index.js')), '旧目录自己那份依赖留着')
+  } finally {
+    rmSync(legacy, { recursive: true, force: true })
   }
 })
 
@@ -615,6 +842,16 @@ const doneInfo = (over: Partial<{ done: boolean; working: boolean; projectPath: 
   branch: '',
   baseBranch: '',
   ...over,
+})
+
+test('守护清理：共用依赖目录不会被当成残留清掉', async () => {
+  resetSharedDeps()
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '清扫共用')
+  const res = await sweepWorktrees({ minAgeMs: 0, taskInfo: async () => doneInfo() })
+  assert.ok(existsSync(path.join(await sharedDepsDir(repo), 'dep', 'index.js')), '共用依赖还在')
+  assert.ok(!res.removed.some((i) => i.taskId === 'node_modules'), '没被当成任务残留')
+  await removeWorktree(repo, wt, true).catch(() => {})
 })
 
 test('守护清理：git 注册表外的残留目录被清（面板重启、prune 之后留下的）', async () => {

@@ -6,7 +6,7 @@
  *
  * 运行：npm run test:e2e
  * 只跑某几个分片：npm run test:e2e -- 03 07（按文件名前缀匹配）
- * 限制并发：AGENT_PANEL_E2E_CONCURRENCY=3 npm run test:e2e
+ * 限制并发：AGENT_PANEL_E2E_CONCURRENCY=3 npm run test:e2e（默认最多同时跑 4 个）
  * 打印每个分片的全部步骤：npm run test:e2e -- --verbose
  */
 import { spawn } from 'node:child_process'
@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
+import { shardLimit } from './lib/shard-limit.mjs'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,7 +32,13 @@ if (!shards.length) {
   process.exit(1)
 }
 
-const limit = Math.max(1, Number(process.env.AGENT_PANEL_E2E_CONCURRENCY ?? shards.length))
+/**
+ * 默认最多同时跑几个分片：每个分片一个服务 + 一组假 CLI 进程，全并发（12 个）会把同一台机器的
+ * CPU、内存和端口抢满，偶发的时序失败大多来自这里。要比默认更快时用环境变量调大。
+ */
+const DEFAULT_CONCURRENCY = 4
+
+const limit = shardLimit(shards.length, process.env.AGENT_PANEL_E2E_CONCURRENCY, DEFAULT_CONCURRENCY)
 const timingDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-timings-'))
 const startedAt = Date.now()
 
