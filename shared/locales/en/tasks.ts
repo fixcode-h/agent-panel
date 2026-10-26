@@ -468,6 +468,7 @@ export const EN_TASKS: Record<string, string> = {
   '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
     'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
   '执行中也可以输入，这一轮结束后接着处理': "You can type while it runs; it's handled right after this turn",
+  '{what}，可以直接输入要求': '{what} — you can still type your request',
   等待你的下一条消息: 'Waiting for your next message',
   'Agent 存活': 'Agent alive',
   'Agent 存活：本对话和 {n} 个子对话': 'Agent alive: this conversation and {n} child conversations',
@@ -894,6 +895,10 @@ export const EN_TASKS: Record<string, string> = {
   独立分支还没合回原分支: 'The separate branch is not merged back yet',
   '查不到这个子对话独立分支的状态（git 没读出来）：先确认分支已经合并，再标记完成':
     'Cannot read the state of this sub-chat’s separate branch (git failed). Make sure the branch is merged, then mark it complete',
+  '用户点了「解决」：先停掉还在跑的子任务再收口':
+    'The user clicked Resolve: stopping still-running subtasks before wrapping up',
+  '这些子任务还没停下来：{list}。等它们结束再点「解决」':
+    'These subtasks have not stopped yet: {list}. Wait for them to finish, then click Resolve again',
   '{n} 个提交': '{n} commit(s)',
   '{n} 个文件未提交': '{n} uncommitted file(s)',
   '未合并到「{branch}」：{what}': 'Not merged into “{branch}”: {what}',
@@ -929,6 +934,8 @@ export const EN_TASKS: Record<string, string> = {
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
   '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
+  '父对话正在合并这个子对话，等结果出来再删除独立分支':
+    'The parent conversation is merging this chat. Delete the separate branch after the merge finishes',
   '、': ', ',
   '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
     'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
@@ -1149,4 +1156,10 @@ export const EN_TASKS: Record<string, string> = {
   'API「{api}」的并发名额满了，前面的释放了再开始':
     'API "{api}" is at its concurrency limit; this starts when a slot frees up',
   '排队等 API「{api}」': 'Waiting for API "{api}"',
+  父对话测试: 'Parent test',
+  '已合回，等父对话跑测试（面板自动执行，结果回传给它）':
+    'Merged back; waiting for the parent to run its tests (the panel runs them automatically and sends the result back)',
+  父对话的测试还没通过: "the parent's tests have not passed",
+  '已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）':
+    'Merged back; the parent tests did not pass and it was sent back to fix them (it asks for wrap-up again once fixed)',
 }

@@ -120,6 +120,9 @@ export const EN_SETTINGS: Record<string, string> = {
   新会话默认开启提问: 'Ask me by default in new chats',
   '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。':
     'Turns on the Ask button above the input in new chats: when the AI has a question it shows a card and waits for your answer. When off, the AI picks the best option itself. Existing chats keep their own choice.',
+  子对话默认也提问: 'Ask in sub-chats by default',
+  '新建的父对话里「子对话也提问」默认打开：它之后新建的子对话会向你提问，而不是自己决定。已经创建的父对话和子对话不受影响，父对话上右键提问按钮可以单独改。':
+    'Turns on "Ask in sub-chats" in new parent chats: the sub-chats they create ask you instead of deciding on their own. Existing parent chats and sub-chats are not affected; right-click the Ask button in a parent chat to change it for that chat.',
   '启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。':
     'Open http://127.0.0.1:8787 in your default browser when the panel server starts.',
   任务完成时通知我: 'Notify me when tasks finish',
@@ -1303,7 +1306,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '项目设置改过之后和分析报告的推荐不一样了：可以单项应用，应用后点「确认」保存。':
     'These project settings no longer match the analysis report. Apply them one by one, then click Confirm to save.',
   '{n} 个自带技能可以更新': '{n} bundled skills can be updated',
-  '{n} 个部署的技能可以更新': '{n} deployed skills can be updated',
+  '{n} 项部署内容有更新，需要重新部署': '{n} deployed items have updates; redeploy to sync',
   去部署: 'Go to Deploy',
   '{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。':
     '{n} skills differ from this version: {names}. Check "Overwrite locally changed skills" below, then click Deploy to update.',
@@ -1363,4 +1366,12 @@ export const EN_SETTINGS: Record<string, string> = {
   并发上限: 'Concurrency limit',
   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
     'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
+  在父对话中执行: 'Run in parent',
+  '（只对 Git 项目生效）': ' (Git projects only)',
+  '勾了「在父对话中执行」的步骤子对话不跑：合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。':
+    'Steps marked "Run in parent" are not run by the child conversation: after its branch is merged back, the parent runs them (one at a time) and sends the results and durations back. Only applies to Git projects; best for heavy steps such as end-to-end tests.',
+  '勾了以后子对话不跑这条步骤：合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。':
+    'The child conversation skips this step: after its branch is merged back, the parent runs it in its own folder and sends the results and durations back. Best for heavy steps such as end-to-end tests. Steps marked "builds on merge" are still built by the parent through its build request and are not affected.',
+  '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。':
+    'Only applies to Git projects: child conversations on other version control systems have no branch to merge back, so this option would never run; it cannot be selected here.',
 }

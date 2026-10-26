@@ -246,8 +246,8 @@ export const EN_SERVER: Record<string, string> = {
   '正在停止正在执行的任务…': 'Stopping running tasks…',
   // 强制更新后，问用户要不要继续被打断的任务
   '有 {n} 个任务被强制更新打断': '{n} tasks were interrupted by the forced update',
-  '强制更新时停掉了这些正在执行的任务。勾选的任务会从被打断的节点接着执行，没勾选的不处理。':
-    'The forced update stopped these running tasks. Checked tasks resume from the interrupted step; unchecked ones are left as they are.',
+  '强制更新停掉了这些任务正在做的事。勾选的任务会接着往下执行，没勾选的不处理。':
+    'The forced update stopped what these tasks were doing. Checked tasks continue where they left off; unchecked ones are left as they are.',
   '被打断时：{doing}': 'Interrupted at: {doing}',
   '继续执行选中的任务（{n}）': 'Resume selected tasks ({n})',
   稍后再说: 'Later',
@@ -513,4 +513,6 @@ export const EN_SERVER: Record<string, string> = {
     "If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
   // 任务记录丢失、从对话内容重建出来的标题
   恢复的对话: 'Recovered conversation',
+  '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
+  '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
 }

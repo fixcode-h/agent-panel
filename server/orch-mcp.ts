@@ -42,6 +42,32 @@ function briefOf(v: unknown): HelperSpec['review'] {
   }
 }
 
+/** 子任务的模型档位 */
+const tierField = () => ({
+  type: 'string',
+  enum: ['high', 'medium', 'low'],
+  description: '模型档位；不写跟你一样',
+})
+
+/** 接着之前哪个子任务（它的 id）的会话做 */
+const RESUME_DESC =
+  '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。失败、被终止或中断的子任务要重试也写它的 id：就在原来那个子任务里接着做（同一个 id 和会话），不要另派一个新的。那个子任务要已经结束；agent 不写或写同一个角色'
+
+/** top：写在 spawn_agents 顶层。一个会话只能接着跑一轮，所以顶层只配一个任务时才允许 */
+const resumeField = (top = false) => ({
+  type: 'string',
+  description: top ? `${RESUME_DESC}。只派一个任务时才能写在顶层，一次派多个时写进对应那一项` : RESUME_DESC,
+})
+
+/** 顶层 agent / tier 是整批的默认值：单个任务里写了以任务里的为准 */
+const BATCH_NOTE = '。也可以写在 spawn_agents 的顶层整批共用；单个任务里写了以任务里的为准'
+
+/** 给字段描述补上「可以写在顶层」的说明 */
+const batchField = <T extends { description: string }>(f: T) => ({ ...f, description: `${f.description}${BATCH_NOTE}` })
+
+/** spawn_agents 顶层认得的字段：其余字段不静默丢掉（写错名字的 resume 一丢，复看就换了角色和会话） */
+const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume']
+
 const tasksField = (o: Orchestra) => ({
   type: 'array',
   description: '每一项是一个子任务，互相之间不能有依赖',
@@ -51,12 +77,8 @@ const tasksField = (o: Orchestra) => ({
       title: { type: 'string', description: '子任务的短标题（显示在任务进度里）；不写取 instructions 的第一行' },
       instructions: { type: 'string', description: '要做什么、范围、产出；子任务只看得到这些和用户需求' },
       agent: agentField(o),
-      tier: { type: 'string', enum: ['high', 'medium', 'low'], description: '模型档位；不写跟你一样' },
-      resume: {
-        type: 'string',
-        description:
-          '接着之前哪个子任务（它的 id，例如 chat/sub/h1）的会话做：复看的评审接着上一次评审，它读过的文档、代码和给过的意见都还在，只交给它增量。失败、被终止或中断的子任务要重试也写它的 id：就在原来那个子任务里接着做（同一个 id 和会话），不要另派一个新的。那个子任务要已经结束；agent 不写或写同一个角色',
-      },
+      tier: tierField(),
+      resume: resumeField(),
       review: {
         type: 'object',
         description:
@@ -387,7 +409,7 @@ export function orchTools(o: Orchestra) {
             name: 'finish_child',
             title: '收尾子对话',
             description:
-              '子对话请你收尾（消息里写着「收尾请求」）时调用：面板把它的独立分支合回你所在的分支、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支，你计划里等它的那一步也标完成。合并就是验收：先看它交的验证结果，不够就别收，用 send_to_conversation 交回要补的。合不进去（冲突）会自动退回给它处理。',
+              '子对话请你收尾（消息里写着「收尾请求」）时调用：面板把它的独立分支合回你所在的分支、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支，你计划里等它的那一步也标完成。合并就是验收：先看它交的验证结果，不够就别收，用 send_to_conversation 交回要补的。合不进去（冲突）会自动退回给它处理。项目里有测试步骤勾了「在父对话中执行」时，合回后面板自动在你的目录里按顺序跑它们（结果和耗时直接回传子对话，你不用自己跑）：通过才结束它，失败会退回给它修。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -453,7 +475,7 @@ export function orchTools(o: Orchestra) {
                   name: 'submit_merge',
                   title: '请父对话收尾',
                   description:
-                    '只剩合回时调用：计划其余步骤都做完、后台命令都结束、没有待回答的提问、编译测试在你的独立分支里跑通。面板把你现在的改动提交到你的分支，请父对话收尾：父对话把它合回原分支（合并就是验收）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。完成只是「已合回父对话所在的分支」，不涉及推送。还有没做完的会直接拒绝并说明还差什么；合不进去（冲突）会退回给你。马上返回，调用后结束这一轮。',
+                    '只剩合回时调用：计划其余步骤都做完、后台命令都结束、没有待回答的提问、编译测试在你的独立分支里跑通。面板把你现在的改动提交到你的分支，请父对话收尾：父对话把它合回原分支（合并就是验收）、把计划最后的收尾步骤标完成、结束这个子对话并删除独立分支。项目里有勾了「在父对话中执行」的步骤时，合回后由父对话跑它们：通过才标完成、删分支，失败会把报错推回来，修好再调用一次（这些步骤会全部重跑）。完成只是「已合回父对话所在的分支」，不涉及推送。还有没做完的会直接拒绝并说明还差什么；合不进去（冲突）会退回给你。马上返回，调用后结束这一轮。',
                   inputSchema: {
                     type: 'object',
                     properties: {
@@ -693,6 +715,11 @@ export function orchTools(o: Orchestra) {
               type: 'object',
               properties: {
                 tasks: tasksField(o),
+                // 整批的默认值：只派一个任务时可以直接写在顶层。只读 tasks[i] 的话，模型把 resume 写在顶层时
+                // 会被静默丢掉，复看的评审退回默认「子任务」角色 + 新会话（提示词也跟着换了一套）
+                agent: batchField(agentField(o)),
+                tier: batchField(tierField()),
+                resume: resumeField(true),
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
@@ -971,16 +998,36 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'spawn_agents': {
-      const list: HelperSpec[] = (Array.isArray(a?.tasks) ? a.tasks : [])
-        .filter((x: unknown) => x && typeof x === 'object')
-        .map((x: any) => ({
-          title: str(x.title),
-          instructions: str(x.instructions),
-          agent: str(x.agent) || undefined,
-          tier: str(x.tier) || undefined,
-          resume: str(x.resume) || undefined,
-          review: briefOf(x.review),
-        }))
+      // 顶层写了不认得的字段就报错，不静默丢掉：调用方以为生效了，实际没派成想派的那样
+      const unknown = Object.keys(a && typeof a === 'object' ? a : {}).filter((k) => !SPAWN_TOP_FIELDS.includes(k))
+      if (unknown.length)
+        return text(
+          `spawn_agents 不认得顶层字段${unknown.map((k) => `「${k}」`).join('、')}：每个子任务写进 tasks 的每一项；整批共用的 agent、tier 可以直接写在顶层，只派一个任务时 resume 也可以`,
+          true,
+        )
+      const tasks: any[] = (Array.isArray(a?.tasks) ? a.tasks : []).filter((x: unknown) => x && typeof x === 'object')
+      // 写了但不是字符串（数字、数组、对象）不能当成「没写」：会被顶层默认值顶掉，
+      // 调用方以为写了 agent / tier / resume，实际一个都没生效
+      const notString = (v: unknown) => v !== undefined && v !== null && typeof v !== 'string'
+      const wrongType: string[] = ['agent', 'tier', 'resume'].filter((k) => notString(a?.[k])).map((k) => `顶层 ${k}`)
+      tasks.forEach((x, i) => {
+        for (const k of ['agent', 'tier', 'resume']) if (notString(x[k])) wrongType.push(`tasks[${i}].${k}`)
+      })
+      if (wrongType.length) return text(`spawn_agents 的 ${wrongType.join('、')} 要写字符串`, true)
+      // 顶层 resume 是一批共用的一份：一个会话只能接着跑一轮，配多个任务就说不清谁接它
+      const topResume = str(a?.resume) || undefined
+      if (topResume && tasks.length > 1)
+        return text('顶层 resume 只能配一个子任务：一次派多个时把 resume 写进对应那一项', true)
+      // 默认值：任务里写了以任务里的为准（没写才落到顶层），都不写交给引擎（角色沿用原任务、档位跟发起节点）
+      const batch = { agent: str(a?.agent) || undefined, tier: str(a?.tier) || undefined, resume: topResume }
+      const list: HelperSpec[] = tasks.map((x) => ({
+        title: str(x.title),
+        instructions: str(x.instructions),
+        agent: str(x.agent) || batch.agent,
+        tier: str(x.tier) || batch.tier,
+        resume: str(x.resume) || batch.resume,
+        review: briefOf(x.review),
+      }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
       const stepId = str(a?.step).trim()
       const r = o.spawn(list, stepId || undefined)

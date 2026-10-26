@@ -7,7 +7,7 @@ import { ALL_AGENTS } from '@shared/commands'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useNav } from '@/lib/data'
-import { useSkillUpdates } from '@/lib/skill-updates'
+import { skillUpdateCount, skillUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { useBundledSkills } from '@/lib/use-bundled-skills'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -76,7 +76,8 @@ export function LibraryPage() {
   const [rev, setRev] = useState(0)
   // 自带技能有新内容：「自带 Skill」分页亮点，进去能看到在哪里更新
   const upd = useSkillUpdates()
-  const updN = new Set([...upd.shared, ...upd.deployed]).size
+  const updN = skillUpdateCount(upd)
+  const updHint = skillUpdateHint(upd)
   // 自带技能：列表和安装动作两边都用（左栏列表、右详情、底部的批量按钮）
   const bundled = useBundledSkills()
   // 地址里只有名字（自带技能不分 Agent）。这里用未过滤的全量找：搜索只过滤左栏，
@@ -194,12 +195,15 @@ export function LibraryPage() {
               options={tabOptions(updN)}
             />
             {/* 有可更新的自带技能时标出来：展开下拉才看到文字的话，不少人根本不会去展开 */}
-            {updN > 0 && (
+            {updHint && (
+              // role=status 播报的是元素里的文字，光有 aria-label 有些读屏读不出来
               <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                aria-label={t('{n} 个自带技能可以更新', { n: updN })}
-                title={t('{n} 个自带技能可以更新', { n: updN })}
-              />
+                className="grid h-1.5 w-1.5 shrink-0 place-items-center rounded-full bg-accent"
+                role="status"
+                title={updHint}
+              >
+                <span className="sr-only">{updHint}</span>
+              </span>
             )}
           </div>
         }

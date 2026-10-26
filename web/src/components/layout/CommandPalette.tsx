@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { t } from '@shared/i18n'
+import { listableAgents } from '@shared/builtin/core'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
@@ -99,7 +100,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         status: <TaskStatusIcon status={x.status} working={x.working} className="h-3.5 w-3.5" />,
         run: () => go(x.projectId ? { page: 'projects', id: x.projectId, sub: x.id } : { page: 'chat', id: x.id }),
       })),
-      ...agents.map((a) => ({
+      ...listableAgents(agents).map((a) => ({
         id: `a:${a.id}`,
         group: t('角色'),
         label: a.name,

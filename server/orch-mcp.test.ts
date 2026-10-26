@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
-import { runEngineTurn, type AgentCall, type EngineHost, type Orchestra } from '../shared/engine.ts'
+import { runEngineTurn, type AgentCall, type EngineHost, type HelperSpec, type Orchestra } from '../shared/engine.ts'
 import { activePlan, applyPlan } from '../shared/plan.ts'
 import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'
@@ -455,6 +455,218 @@ test('后台命令没给名字时取命令第一行：推回结果的标题不�
   // 给了名字就照用
   await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build', name: '装依赖' })
   assert.equal(names[1], '装依赖')
+})
+
+/**
+ * spawn_agents 的顶层 agent / tier / resume：整批的默认值。
+ * 以前只读 tasks[i]，模型把 resume 写在顶层时被静默丢掉，复看的评审退回默认「子任务」角色 + 新会话，
+ * 提示词也跟着换成子任务那一套，而结果看起来和正常复看一样，看不出走错了角色。
+ */
+test('spawn_agents 顶层 agent / tier / resume：整批默认值，任务里写了以任务里的为准', async () => {
+  const lists: HelperSpec[][] = []
+  const o = {
+    self: 'a',
+    hasMain: false,
+    common: [],
+    spawn: (list: HelperSpec[], _step?: string) => {
+      lists.push(list)
+      return { ids: list.map((_, i) => `a/sub/h${i + 1}`) }
+    },
+  } as unknown as Orchestra
+  // 顶层 resume：解析出来要落到那个任务上；没写 agent 就不带，交给引擎沿用原任务的角色
+  await callOrchTool(o, 'spawn_agents', { resume: 'a/sub/h1', tasks: [{ title: '复看', instructions: '确认修复' }] })
+  assert.equal(lists[0][0].resume, 'a/sub/h1')
+  assert.equal(lists[0][0].agent, undefined, '不写 agent 时不补默认「子任务」，由引擎跟随原任务的角色')
+  // 顶层 agent / tier 也当默认值；同一批里任务自己写的优先
+  await callOrchTool(o, 'spawn_agents', {
+    agent: '评审',
+    tier: 'high',
+    tasks: [
+      { title: '甲', instructions: '看甲' },
+      { title: '乙', instructions: '看乙', agent: '测试', tier: 'low' },
+    ],
+  })
+  assert.equal(lists[1][0].agent, '评审')
+  assert.equal(lists[1][0].tier, 'high')
+  assert.equal(lists[1][1].agent, '测试')
+  assert.equal(lists[1][1].tier, 'low')
+  // 顶层 resume 只配一个任务：一个会话只能接着跑一轮，一批多个时说不清谁接它
+  const many = await callOrchTool(o, 'spawn_agents', {
+    resume: 'a/sub/h1',
+    tasks: [
+      { title: '甲', instructions: 'x' },
+      { title: '乙', instructions: 'y' },
+    ],
+  })
+  assert.match(text(many), /顶层 resume 只能配一个子任务/)
+  // 字段名写错不能静默忽略：调用方以为生效了，实际派出去的是另一回事
+  const typo = await callOrchTool(o, 'spawn_agents', {
+    resume_id: 'a/sub/h1',
+    tasks: [{ title: '复看', instructions: '确认修复' }],
+  })
+  assert.match(text(typo), /不认得顶层字段「resume_id」/)
+  // 写了但不是字符串：不能当成「没写」落到顶层默认值，调用方看不出参数没生效
+  const wrongType = await callOrchTool(o, 'spawn_agents', {
+    tasks: [{ title: '复看', instructions: '确认', resume: ['a/sub/h1'] }],
+  })
+  assert.match(text(wrongType), /tasks\[0\]\.resume 要写字符串/)
+  assert.equal(lists.length, 2, '被拒的调用不派子任务')
+})
+
+/**
+ * resume 的角色：不写沿用原任务的，写了用写的，都不是默认「子任务」。
+ * 引擎层跑真流程，顺带确认提示词 / CLI / 会话都跟着这个角色走（runHelper 按 step.agentId 取角色）。
+ */
+test('resume：不写 agent 沿用原任务的角色，写了用写的，非 resume 不带 agent 才是默认子任务', async () => {
+  const review = { ...agent('r', '评审'), origin: 'builtin:reviewer' }
+  const helper = { ...agent('h', '子任务'), origin: 'builtin:helper' }
+  const team = [agent('m', '主管'), review, helper]
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '复看' } as never, undefined, '', 't6'),
+    id: 't6',
+  } as Task
+  const calls: AgentCall[] = []
+  let round = 0
+  const h: EngineHost = {
+    task,
+    agents: team,
+    workflows: [],
+    prompt: '复看',
+    changed: () => {},
+    newId: () => `id${task.messages.length}`,
+    runAgent: async (call) => {
+      calls.push(call)
+      if (call.step?.slot === 'sub') return { ok: true, text: '做完了' }
+      round++
+      // 评审代码改动要带交接单：第一次派评审必填 goal、checks
+      const brief = { goal: '修好复看角色', checks: 'npm run test:unit 通过' }
+      if (round === 1) {
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          tasks: [{ title: '评审改动', instructions: '看代码', agent: '评审', review: brief }],
+        })
+        assert.match(text(r), /@chat\/sub\/h1/)
+      }
+      if (round === 2) {
+        // 不写 agent 的新子任务：默认「子任务」角色，不能因为要沿用别的角色就跟着变
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          tasks: [{ title: '查日志', instructions: '查一下' }],
+        })
+        assert.match(text(r), /@chat\/sub\/h2/)
+      }
+      if (round === 3) {
+        // 复看：顶层 resume、不写 agent
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          resume: '@chat/sub/h1',
+          tasks: [{ title: '复看修复', instructions: '确认这几条' }],
+        })
+        assert.match(text(r), /@chat\/sub\/h3/)
+      }
+      if (round === 4) {
+        // 复看：显式写「评审」，和没写时一致
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          resume: '@chat/sub/h1',
+          agent: '评审',
+          tasks: [{ title: '再复看', instructions: '确认增量' }],
+        })
+        assert.match(text(r), /@chat\/sub\/h4/)
+      }
+      return { ok: true, text: '好了' }
+    },
+  }
+  await runEngineTurn(h)
+  const step = (id: string) => task.steps.find((s) => s.id === id)!
+  const first = step('@chat/sub/h1')
+  assert.equal(first.agentId, 'r', '点名派给评审')
+  assert.equal(step('@chat/sub/h2').agentId, 'h', '不是 resume 又不写 agent：还是默认「子任务」')
+  // 复看两条都沿用原任务的评审角色，并接着原来的会话
+  for (const id of ['@chat/sub/h3', '@chat/sub/h4']) {
+    assert.equal(step(id).agentId, 'r', `${id}：接着评审的会话就还是评审`)
+    assert.equal(step(id).session, first.session || first.id, `${id}：接着原来的会话`)
+  }
+  const subs = calls.filter((c) => c.step?.slot === 'sub')
+  assert.deepEqual(
+    subs.map((c) => c.agentId),
+    ['r', 'h', 'r', 'r'],
+    '实际执行的角色和记录里的一致（提示词按这个角色取）',
+  )
+})
+
+test('resume：原任务的角色已经不在了就报错，不悄悄退回默认子任务', async () => {
+  const helper = { ...agent('h', '子任务'), origin: 'builtin:helper' }
+  const team = [agent('m', '主管'), agent('q', '测试'), helper]
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '复看' } as never, undefined, '', 't7'),
+    id: 't7',
+  } as Task
+  let round = 0
+  let error = ''
+  const h: EngineHost = {
+    task,
+    agents: team,
+    workflows: [],
+    prompt: '复看',
+    changed: () => {},
+    newId: () => `id${task.messages.length}`,
+    runAgent: async (call) => {
+      if (call.step?.slot === 'sub') return { ok: true, text: '查完了' }
+      round++
+      if (round === 1) {
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          tasks: [{ title: '查日志', instructions: '查一下', agent: '测试' }],
+        })
+        assert.match(text(r), /@chat\/sub\/h1/)
+        // 角色被删掉（用户删了「测试」这个角色）
+        team.splice(
+          team.findIndex((a) => a.id === 'q'),
+          1,
+        )
+      }
+      if (round === 2) {
+        const r = await callOrchTool(call.orch!, 'spawn_agents', {
+          resume: '@chat/sub/h1',
+          tasks: [{ title: '复看', instructions: '确认' }],
+        })
+        error = text(r)
+      }
+      return { ok: true, text: '好了' }
+    },
+  }
+  await runEngineTurn(h)
+  assert.match(error, /原来的角色已经找不到了/, '原角色没了要明说，不能派成「子任务」')
+  assert.match(error, /显式写 agent/)
+  assert.equal(task.steps.filter((s) => s.parentId === '@chat').length, 1, '被拒的复看不新建子任务')
+})
+
+test('点名的角色不存在：报错，不落到默认「子任务」', async () => {
+  const helper = { ...agent('h', '子任务'), origin: 'builtin:helper' }
+  const team = [agent('m', '主管'), helper]
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '复看' } as never, undefined, '', 't8'),
+    id: 't8',
+  } as Task
+  let error = ''
+  const h: EngineHost = {
+    task,
+    agents: team,
+    workflows: [],
+    prompt: '复看',
+    changed: () => {},
+    newId: () => `id${task.messages.length}`,
+    runAgent: async (call) => {
+      if (call.step?.slot === 'sub') return { ok: true, text: '查完了' }
+      // 顶层和任务级都写错：写入的角色找不到时不能悄悄派出默认「子任务」
+      const r = await callOrchTool(call.orch!, 'spawn_agents', {
+        agent: '评审',
+        tasks: [{ title: '复看', instructions: '确认' }],
+      })
+      error = text(r)
+      return { ok: true, text: '好了' }
+    },
+  }
+  await runEngineTurn(h)
+  assert.match(error, /agent 写的「评审」不是已有的角色/, '点名的角色不存在要报错')
+  assert.match(error, /get_status/, '要告诉调用方去哪看现有角色')
+  assert.equal(task.steps.filter((s) => s.parentId === '@chat').length, 0, '不是落到默认「子任务」派出去')
 })
 
 test('子对话的工具清单：计划、后台命令、收尾合并都在；子任务只有查状态、后台命令和传话', () => {

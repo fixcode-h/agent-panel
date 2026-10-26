@@ -58,6 +58,7 @@ type TestStep = {
   when: string // 补充说明，写给人看的，例如「仅发布前跑」；判定以 appliesTo 为准
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
+  runInParent: boolean // 在父对话中执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）
   quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
   note: string // 给执行者看的说明
   enabled: boolean
@@ -107,6 +108,40 @@ type TestStep = {
 端到端分片 `scripts/e2e/08-test-steps.mjs` 只保证「规则交到了角色手上」（提示词里有清单口径、合并口径、跳过要求），
 fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪批文件、含「只改了文档但合并进来 C++ 改动」）
 由 `shared/test-steps.test.ts` 用真实改动清单钉住。行为层的覆盖等判定接进执行流程后再补。
+
+### 在父对话中执行（`runInParent`）
+
+端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，几个子对话同时收尾就把机器拖住。
+勾了「在父对话中执行」的步骤**子对话不跑**：子对话照常改完、`submit_merge`，合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话。
+（[ADR 0018](./adr/0018-test-steps-run-in-parent.md)）
+
+- **只对 Git 项目的独立分支子对话生效**：子对话先要有独立分支才有「合回」这一步。P4 / SVN / 没有版本控制的子对话没有分支可合，
+  字段被忽略——设置页里项目不是 Git 时复选框置灰并说明原因（判定复用 `server/projects-analyze.ts` 的 `detectVcs`，界面走 `GET /fs/vcs`），
+  执行流程里也不把这些步骤拿出来。共用目录的 Git 子对话同样不生效。
+- **`merge`（合并时编译）的步骤不受影响**：那条仍按 [ADR 0004](./adr/0004-ue-build-by-parent.md) 由父对话 `request_build` 申请，
+  同时勾了两项也只走编译链路，不会编译两次。
+- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令）。
+  提示词按角色说三种话（`parentRunRoleOf` / `verifyBlock`）：独立分支子对话是「你不用跑，跑了也不算数」；
+  顶层父对话是「子对话合并后由面板在你的目录里跑、你不用转述，但你自己改代码时没人替你跑、要自己执行」；
+  其它对话不传，步骤照常自己跑。角色判断：子对话要有父对话 + 独立分支，顶层对话即使自己开了独立分支也算父对话。
+  子对话的完成条件因此变成「改动已合回父对话所在的分支 + 父对话测试通过」，不是「我自己跑完所有步骤」。
+- **串行排队、看得见**：全局一次只跑一批的一步，多个子对话同时合并也排成一条队；每条命令再走父对话目录的
+  独占队列（`exclusive`），和 UE 编译共用一条。后台命令名是「父对话测试：<子对话标题> · <步骤名>」、记在父对话名下，
+  所以父对话运行区里能看到谁在跑、跑到哪一步、结果如何，不另做界面。
+- **失败回传**：消息以 `【父对话测试未通过】来自子对话「<标题>」（id <子对话 id>）：` 开头（避免多个子对话排队时张冠李戴），
+  后面是失败步骤、用时、报错原文和已记录的耗时，推回**发起合并的那个子对话**。子对话的计划收尾步骤退回进行中、独立分支保留，
+  它修好再 `submit_merge`，合回时这些步骤**全部重跑**，不因为跑过一次就跳过。
+- **`submit_merge` 的完成条件**：合回已经完成、父对话测试在跑时再调用会被拒绝（提示等结果）；通过后面板才标完成、删分支。
+  合并成功到测试通过之间，任务上记的是 `wrapRequest.state = 'testing'`；测试没过退回修复时记 `test-failed`（和「没合进去」的 `failed` 分开）。两种状态下完成判定都多一项 hold `parentTest`（接在 `shared/task.ts` 的 `childStepHolds` 的 pending 分支里），标完成、删分支都会被拦住。
+- **耗时统计**：`Task.testRuns` 记这次跑过的项目测试步骤（`stepId` / `stepName` / `by: 'parent' | 'self'` / `ok` / `durationMs` / `tries` / `at`），
+  随任务持久化，重启后收尾总结还能用。耗时只从后台命令的真实起止时间取，不靠 Agent 自报：父对话跑的记 `by: 'parent'`；
+  子对话自己跑的按命令匹配步骤（`matchTestStep`，命令原文或按环境拼出的整行都认），匹配不上就不记。
+  同一步骤 + 同一执行方只留最后一次（`mergeTestRun`），`tries` 记跑了几次——收尾总结按「最后一次」算，不把每次失败都列一行。
+  回传消息和收尾总结的写法是 `testRunLines` / `TEST_TIME_SUMMARY_RULE`：步骤名、谁跑的、结果、耗时，一行一步，没记录的写「未记录」。
+- **重启后重新排队**：批次记在任务上（`wrapRequest.state = 'testing'`），内存队列随进程消失；面板启动时 `recoverParentTests`
+  把它们重新排队、从第一步重跑（比丢掉安全，测试本身可重复）。步骤已经被删掉时直接收尾。
+- **丢弃独立分支**：面板取消这一批（停掉父对话目录里那条命令、吞掉结果）、清掉 `testing` / `test-failed`，之后按普通「没有分支可合」收尾；
+  这两种状态的完成拦截只在还有独立分支时生效。
 
 ### 怎么交给 Agent
 
@@ -247,19 +282,21 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 ## 相关代码
 
-| 文件                                                    | 内容                                                         |
-| ------------------------------------------------------- | ------------------------------------------------------------ |
-| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                    |
-| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow` |
-| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                      |
-| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                      |
-| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                         |
-| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段                       |
-| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                      |
-| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                  |
-| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                |
-| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                      |
-| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                |
+| 文件                                                    | 内容                                                                                           |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                      |
+| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                   |
+| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                        |
+| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                        |
+| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                           |
+| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`parentRunSteps` / 耗时统计                            |
+| `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                 |
+| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole` |
+| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                        |
+| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                    |
+| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                  |
+| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                                                        |
+| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                                                  |
 
 ## 子对话的隔离和合并编译
 

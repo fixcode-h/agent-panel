@@ -651,6 +651,11 @@ export const TestStepFields = z.object({
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
   /**
+   * 在父对话中执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
+   * 只对 Git 项目的独立分支子对话生效（其它版本控制的子对话没有分支可合，字段被忽略）；默认 false，老步骤不受影响
+   */
+  runInParent: z.boolean().catch(false).default(false),
+  /**
    * 小改动也跑：Agent 判断这次是小改动时只跑标了这个的步骤（类型检查、lint 这类几秒到几十秒的），
    * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
    */
@@ -910,6 +915,11 @@ export const NewTaskInput = z.object({
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /**
+   * 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问（见 shared/child-ask.ts）。
+   * 只在创建父对话时用，之后走 PATCH /tasks/:id 改；不传时按设置里的默认值
+   */
+  childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
 })
@@ -932,6 +942,13 @@ export const PresenceInput = z.object({
   viewerId: z.string().min(1),
   active: z.boolean(),
 })
+
+/**
+ * `POST /tasks/:id/seen` 的返回：只回「这一轮看到哪」，不再把整份对话传回去
+ * （打开一次对话页之前要多传 2.4MB，前端其实只拿它把本地那份换个 turnSeenAt）。
+ */
+export const TaskSeenResult = z.object({ turnSeenAt: z.string() })
+export type TaskSeenResult = z.infer<typeof TaskSeenResult>
 
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
@@ -961,6 +978,10 @@ export const TaskPatch = z
     effort: z.string().trim().max(40),
     // 「提问」开关：Agent 有问题时交给你回答，还是让它自己选
     askUser: z.boolean(),
+    // 父对话的「子对话也提问」：之后新建的子对话默认是否开启提问
+    childAskUser: z.boolean(),
+    // 一次性动作：这次改 childAskUser 时，已创建的子对话要不要跟着改（不存进任务）
+    applyChildAsk: z.boolean(),
     // 对话的 Agent 参数，下一轮生效
     params: z.record(z.string(), ParamValue),
     // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
@@ -1044,7 +1065,18 @@ export type AskKind = z.infer<typeof AskKind>
  * task 交代任务、answer 回答提问、question 提问、report 汇报和状态上报、wrapup 请求收尾、
  * merge 收尾结果、build 编译（申请、占位、结果）、rule 全局规则、chat 父对话之间传话
  */
-export const PeerKind = z.enum(['task', 'answer', 'question', 'report', 'wrapup', 'merge', 'build', 'rule', 'chat'])
+export const PeerKind = z.enum([
+  'task',
+  'answer',
+  'question',
+  'report',
+  'wrapup',
+  'merge',
+  'build',
+  'test',
+  'rule',
+  'chat',
+])
 export type PeerKind = z.infer<typeof PeerKind>
 
 /** 这条消息是另一个对话发来的：谁发的（角色名、对话标题）、它和收件方是什么关系、哪一类、是不是报错 */
@@ -1366,6 +1398,26 @@ export const TaskTodo = z.object({
 export type TaskTodo = z.infer<typeof TaskTodo>
 
 /**
+ * 这次任务里跑过的项目测试步骤和它们的真实耗时（见 ADR 0018）。
+ * 数据只从后台命令取（命令开跑 / 结束的时间），不靠 Agent 自报；收尾总结里的耗时表按它算。
+ * 同一条步骤 + 同一个执行方只留最后一次：失败重跑后总结显示最后那次的耗时，tries 说跑了多少次
+ */
+export const TaskTestRun = z.object({
+  /** 项目测试步骤的 id（任务里的快照）；按命令能认出是哪条步骤时才记 */
+  stepId: z.string().default(''),
+  stepName: z.string().default(''),
+  /** 谁跑的：父对话（勾了「在父对话中执行」的步骤）/ 子对话自己 */
+  by: z.enum(['parent', 'self']).catch('self').default('self'),
+  ok: z.boolean().default(false),
+  /** 耗时（毫秒）：按后台命令的真实开始 / 结束时间算 */
+  durationMs: z.number().int().min(0).default(0),
+  /** 第几次跑这条，失败重跑会累加；记录本身只留最后一次 */
+  tries: z.number().int().min(1).default(1),
+  at: z.string().default(''),
+})
+export type TaskTestRun = z.infer<typeof TaskTestRun>
+
+/**
  * 对话的执行计划：对话分析完列出主步骤，每个主步骤最多再分一层子步骤。
  * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
  * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它
@@ -1569,7 +1621,11 @@ export const TaskData = z.object({
    */
   wrapRequest: z
     .object({
-      state: z.enum(['requested', 'merging', 'failed']),
+      /**
+       * testing：已经合回，父对话在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）；
+       * test-failed：已经合回、父对话测试没通过，正在退回给子对话修（和「没合进去」的 failed 是两回事）
+       */
+      state: z.enum(['requested', 'merging', 'failed', 'testing', 'test-failed']),
       at: z.string(),
       note: z.string().default(''),
       tests: z.string().default(''),
@@ -1619,6 +1675,11 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /**
+   * 「子对话也提问」：这条父对话下新建的子对话默认是否开启提问，右键菜单里改。
+   * 父对话关掉提问时已有子对话一起关，这个字段不变，所以重新打开父对话后菜单项又回到勾选
+   */
+  childAskUser: z.boolean().default(true),
   /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
   analysis: AnalysisKind.optional(),
   /** 对话时 Agent 参数的值 */
@@ -1725,6 +1786,8 @@ export const TaskData = z.object({
    * 之后改项目设置不影响已经开始的对话。旧任务没有时为空（Agent 自己找命令）。
    */
   testSteps: z.array(TestStep).default([]),
+  /** 这次任务里跑过的测试步骤耗时（见 ADR 0018）：子对话自己的后台命令和父对话跑的步骤都记在这里 */
+  testRuns: z.array(TaskTestRun).default([]),
   /** 新建对话时面板所在系统（windows / linux / darwin）：决定标了 wsl 的步骤怎么执行 */
   platform: z.string().default(''),
   /** 工作流的名字，列表里显示（摘要不带上面的完整工作流） */
@@ -2037,6 +2100,11 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /**
+   * 新建父对话时它的「子对话也提问」初始值，只在父对话上没存过时用（见 shared/child-ask.ts）。
+   * 右键菜单改过之后以父对话上存的值为准，这里再改不回填已建的父对话
+   */
+  childAskUserDefault: z.boolean().default(true),
   /** 开发者模式：输入框上显示「抓取界面元素」按钮，点选面板界面上的元素引用进对话，让 AI 改面板自己的代码 */
   developerMode: z.boolean().catch(false).default(false),
   /** 抓取元素时用的快捷键和鼠标按键（设置 →「快捷键」里改） */

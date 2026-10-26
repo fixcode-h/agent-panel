@@ -14,16 +14,20 @@ import {
   type Attachment,
   type DeliveryHow,
   type Project,
+  type TaskTestRun,
   type ProjectCategory,
   type PeerFrom,
   type PeerKind,
   type StopReason,
   type TaskMessage,
+  type TestStep,
   type Workflow,
   RequestAnswer,
+  type TaskSeenResult,
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
+import { restartDoing } from './interrupted.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -40,6 +44,7 @@ import {
   childWait,
   childWaitText,
   childFlowOf,
+  childHolds,
   childHoldsOf,
   childHoldText,
   childFacts,
@@ -48,6 +53,7 @@ import {
   convState,
   convStateText,
   type ConvState,
+  helperRunning,
   helpersWorking,
   closeFlow,
   delegatePrompt,
@@ -58,11 +64,13 @@ import {
   messageStamp,
   pauseStep,
   restartInterrupted,
+  interruptedTaskIds,
   runRunning,
   trackWait,
   waitDuration,
   idleWaitDuration,
   newTask,
+  taskGone,
   taskSummary,
   withAttachments,
   withTaskModel,
@@ -73,6 +81,7 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
+import { childAskDefaultOf, childAskEffect, childAskInitial } from '../shared/child-ask.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHasRemote, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
@@ -126,7 +135,17 @@ import {
   checkRepo,
   isBigProject,
 } from './exec/worktree.ts'
-import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
+import { createParentTests, parentTestFailText, parentTestRun } from './parent-tests.ts'
+import {
+  buildSteps,
+  isUeBuildCommand,
+  matchTestStep,
+  mergeTestRun,
+  parentRunRoleOf,
+  parentRunSteps,
+  stepCommand,
+  testRunLines,
+} from '../shared/test-steps.ts'
 import {
   createBackground,
   jobDetail,
@@ -154,6 +173,7 @@ import {
   wrapUpKind,
   openWork,
   refreshChildWait,
+  settlePlan,
   settleWait,
   syncKids,
   type PlanKid,
@@ -196,8 +216,39 @@ class TaskBusyError extends Error {}
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
 
+/** 用户点「解决」时等子任务停下来的上限和轮询间隔：停不下来就如实报错，不静默把在跑的步骤抹成完成 */
+const HELPER_STOP_TIMEOUT_MS = 15_000
+const HELPER_STOP_POLL_MS = 150
+
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
+/** 项目目录是不是 Git 仓库（ADR 0018 的「在父对话中执行」只对 Git 生效）：判定和缓存同 isP4 */
+const gitDirs = new Map<string, Promise<boolean>>()
+const isGit = (dir: string) => {
+  let got = gitDirs.get(dir)
+  if (!got) {
+    got = detectVcs(dir)
+      .then((v) => v.vcs === 'git')
+      .catch(() => false)
+    gitDirs.set(dir, got)
+  }
+  return got
+}
+
+/**
+ * 「在父对话中执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
+ * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
+ * 步骤用任务里的快照（执行时面板也用同一份），没有快照的老任务退回项目现在的配置。
+ */
+async function parentRunRole(tk: Task, project: Project): Promise<{ parentRun?: 'child' | 'parent' }> {
+  const steps = tk.testSteps.length ? tk.testSteps : project.testSteps
+  if (!parentRunSteps(steps).length) return {}
+  // 独立分支一定是 Git 仓库，不用再探；顶层对话是否 Git 要问 detectVcs（判定和开 worktree 时同一套）
+  const git = isolated(tk) || (await isGit(project.path))
+  const role = parentRunRoleOf({ child: !!tk.parentTaskId, isolated: isolated(tk), git, steps })
+  return role ? { parentRun: role } : {}
+}
 const isP4 = (dir: string) => {
   let got = p4Dirs.get(dir)
   if (!got) {
@@ -944,6 +995,15 @@ export function tasksApi(deps: {
     (job, result) => {
       void (async () => {
         await settling.get(job.id)
+        // 「在父对话中执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
+        if (
+          await parentTests.finishJob(job.id, {
+            ok: job.state === 'done',
+            durationMs: jobMs(job),
+            output: job.lines.join('\n').slice(-6000),
+          })
+        )
+          return
         const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
         if (!tk || tk.archived) {
           log.warn('background', '后台命令跑完了，但发起的对话已经不在或已归档，结果没有推回', {
@@ -952,6 +1012,10 @@ export function tasksApi(deps: {
           })
           return
         }
+        // 子对话自己跑的项目测试步骤：按后台命令的真实起止时间记耗时（收尾总结里的耗时表要它）
+        await recordSelfTestRun(job).catch((e) =>
+          log.warn('task', '记测试步骤耗时失败', { task: job.taskId, job: job.id, error: (e as Error).message }),
+        )
         // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
         const hit = settleWait(tk, 'background', job.id, job.state === 'done')
         // 子任务起的命令：结果照常推回这个对话，但要写清是哪个子任务起的，否则父对话看到一条命令不知道来源
@@ -1059,6 +1123,10 @@ export function tasksApi(deps: {
   // 上次退出时还没结束的后台命令记录（只在同一个进程里中断时才会留到这时）：不再算「还在跑」，
   // 否则「彻底完成」和合并门禁会一直等一个永远不会来的结束
   void ready.then(() => background.recover()).catch(() => {})
+  // 重启前面板正在跑的父对话测试（ADR 0018）：内存里的队列没了，任务上的状态还在，重新排一遍
+  void ready
+    .then(() => recoverParentTests())
+    .catch((e) => log.warn('task', '重启后恢复父对话测试失败', { error: (e as Error).message }))
 
   /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
   /**
@@ -1083,6 +1151,179 @@ export function tasksApi(deps: {
 
   /** 父对话替子对话申请的编译（后台命令编号 → 申请的子对话）：结果出来时也推给它们 */
   const buildFor = new Map<string, { parent: string; children: string[] }>()
+
+  /**
+   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「在父对话中执行」的步骤。
+   * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
+   * 后台命令本身还走父对话目录的独占队列，和 UE 编译这类同样吃资源的命令共用一条队。
+   * 成功才让子对话收尾（标完成、删分支），失败把报错和来源交回它修。
+   */
+  const parentTests = createParentTests({
+    start: async ({ run, step, name }) => {
+      const child = await current(run.childId)
+      const parent = await current(run.parentId)
+      if (!child || !parent) return { ok: false, info: '这个子对话或父对话已经不在了，这批测试没有跑。' }
+      const project = child.projectId ? await deps.projects.get(child.projectId) : null
+      const r = background.start({
+        taskId: parent.id,
+        name,
+        command: stepCommand(step, child.platform || process.platform, project?.wslDistro ?? ''),
+        cwd: step.cwd,
+        root: await taskDir(parent),
+        // 和编译共用一条独占队：同一目录同一时间只跑一条，UE 编译跑着时新测试排在后面
+        exclusive: true,
+        ...(step.timeoutSec ? { timeoutMinutes: Math.max(1, Math.ceil(step.timeoutSec / 60)) } : {}),
+      })
+      if (!r.ok) return { ok: false, info: r.info }
+      return { ok: true, id: r.id! }
+    },
+    record: async (run, step, done) => {
+      await recordTestRun(run.childId, parentTestRun(step, done, new Date().toISOString()))
+    },
+    pass: async (run) => {
+      const tk = await current(run.childId)
+      if (!tk) return
+      const parent = await current(run.parentId)
+      const lines = testRunLines(tk.testRuns)
+      await childMerged(
+        run.childId,
+        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「在父对话中执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        parent ? { peer: await peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
+      )
+    },
+    fail: async (run, failed) => {
+      const tk = await current(run.childId)
+      if (!tk?.wrapRequest) return
+      const failedText = parentTestFailText(failed)
+      // 报错原文只留前面一段：它会随任务存盘，父对话读到的也只有第一行
+      const info = failedText.length > 4000 ? `${failedText.slice(0, 4000)}…` : failedText
+      // 用单独的状态：'failed' 的语义是「没合进去」，这里分支已经合回、只是测试没过，两侧的说明完全不同（评审 R3）
+      tk.wrapRequest = { ...tk.wrapRequest, state: 'test-failed', info }
+      markWrapUp(tk, 'merge', 'running', `父对话测试没通过：第 ${failed.index + 1} 步「${failed.step.name}」`)
+      tk.updatedAt = new Date().toISOString()
+      const entry = live.get(tk.id)
+      if (entry) entry.rev++
+      await store.update(tk.id, tk)
+      // 失败要重新上报一次：状态从「待收尾」变成「未完成」，父对话计划里等它那步要跟着改说法
+      reportedState.delete(tk.id)
+      const lines = testRunLines(tk.testRuns)
+      await sendToChild(
+        run.parentId,
+        run.childId,
+        `【父对话测试未通过】来自子对话「${run.childTitle}」（id ${run.childId}）：你的分支已经合回，但父对话在它的目录里跑这条步骤时失败了，下面是它的报错。\n${failedText}\n${lines.length ? `已记录的耗时：\n${lines.join('\n')}\n` : ''}你的独立分支还在：按报错修好、在你的分支里重新跑通其它检查后调用 submit_merge；合回去时面板会把这些步骤全部重跑一遍（跑过也不跳过），通过才收尾。`,
+        'build',
+        'test',
+        true,
+      )
+    },
+    // 起命令期间这一批被取消（丢弃独立分支）：把刚起来的那条命令停掉
+    stop: (run, jobId) => {
+      background.stopOne(run.parentId, jobId)
+    },
+    onError: (where, error) => {
+      log.warn('task', '父对话测试推进失败', { where, error: error.message })
+    },
+  })
+
+  /** 记一步测试的耗时：同一条步骤 + 同一个执行方只留最后一次，tries 累加（见 mergeTestRun） */
+  async function recordTestRun(taskId: string, run: Omit<TaskTestRun, 'tries'>) {
+    const entry = live.get(taskId)
+    const tk = entry?.task ?? (await store.get(taskId))
+    if (!tk) return
+    tk.testRuns = mergeTestRun(tk.testRuns, run)
+    tk.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
+  }
+
+  /**
+   * 子对话自己跑的项目测试步骤也记耗时：收尾总结里它和父对话跑的那几行能放在同一张表里对齐。
+   * 只认能对应到项目测试步骤的后台命令（matchTestStep），Agent 自己拼的查看命令不记；
+   * 耗时用后台命令的真实起止时间，不靠 Agent 自报
+   */
+  async function recordSelfTestRun(job: BgJob) {
+    const tk = await current(job.taskId)
+    if (!tk) return
+    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
+    const step = matchTestStep(
+      await testStepsOf(tk),
+      job.command,
+      tk.platform || process.platform,
+      project?.wslDistro ?? '',
+    )
+    if (!step) return
+    await recordTestRun(tk.id, {
+      stepId: step.id,
+      stepName: step.name,
+      by: 'self',
+      ok: job.state === 'done',
+      durationMs: jobMs(job),
+      at: new Date().toISOString(),
+    })
+  }
+
+  /**
+   * 合回成功、要由父对话跑测试时：把子对话记成「等父对话测试」，再把这一批排进队列。
+   * 不调用 childMerged：那一步会把计划里的收尾标完成、清掉 wrapRequest、收口删分支——
+   * 父对话测试没通过之前，这些都不能做
+   */
+  async function startParentTests(tk: Task, steps: TestStep[]) {
+    if (!tk.parentTaskId || !tk.wrapRequest) return
+    tk.wrapRequest = { ...tk.wrapRequest, state: 'testing', info: '' }
+    markWrapUp(tk, 'merge', 'waiting', `已合回，等父对话跑测试：${steps.map((s) => s.name).join('、')}`)
+    tk.updatedAt = new Date().toISOString()
+    const entry = live.get(tk.id)
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
+    parentTests.enqueue({ parentId: tk.parentTaskId, childId: tk.id, childTitle: tk.title, steps })
+  }
+
+  /**
+   * 这个子对话要由父对话跑的步骤：优先用任务里的快照（执行环境、命令以它为准），
+   * 对话任务本来没有测试步骤快照（只有工作流任务才快照）时用项目现在的配置——和提示词里
+   * parentRunRole 的判断是同一份来源，不然提示词说「父对话会跑」、执行时却一条都跑不了
+   */
+  async function testStepsOf(tk: Task) {
+    if (tk.testSteps.length) return tk.testSteps
+    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
+    return project?.testSteps ?? []
+  }
+
+  /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
+  const parentStepsOf = async (tk: Task) => parentRunSteps(await testStepsOf(tk))
+
+  /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
+  const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
+    tk.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
+
+  /**
+   * 面板重启后把没跑完的父对话测试重新排队（ADR 0018）：批次记在任务上（wrapRequest.state = testing），
+   * 内存里的队列随进程没了。从第一步重跑一遍——比丢掉安全，测试本身可以重复跑
+   */
+  async function recoverParentTests() {
+    for (const raw of await store.list()) {
+      if (raw.archived || raw.wrapRequest?.state !== 'testing') continue
+      const tk = live.get(raw.id)?.task ?? raw
+      if (!tk.parentTaskId) {
+        tk.wrapRequest = undefined
+        await store.update(tk.id, tk)
+        continue
+      }
+      const steps = await parentStepsOf(tk)
+      if (!steps.length) {
+        await childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。').catch((e) =>
+          log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }),
+        )
+        continue
+      }
+      await startParentTests(tk, steps)
+      log.info('task', '重启后重新排队父对话测试', {
+        task: tk.id,
+        parent: tk.parentTaskId,
+        steps: steps.map((s) => s.name),
+      })
+    }
+  }
 
   /** 父对话正在合并的子对话：这一轮结束时不催它合并，父对话等它的计划步骤也留给合并结果收口 */
   const merging = new Set<string>()
@@ -1123,6 +1364,12 @@ export function tasksApi(deps: {
       return {
         ok: false,
         info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
+      }
+    // 合回已完成、父对话在跑勾了「在父对话中执行」的步骤（ADR 0018）：等它跑完，不能重复请求
+    if (parentTesting(childId, tk))
+      return {
+        ok: false,
+        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「在父对话中执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
       }
     if (tk.requests.length || tk.parentAsks?.length)
       return {
@@ -1479,10 +1726,18 @@ export function tasksApi(deps: {
         : { ok: true, info: `子对话「${tk.title}」已标完成（它和你共用目录，改动已经在原目录里，不用合并）` }
     }
     if (merging.has(childId)) return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
+    if (tk.wrapRequest?.state === 'testing')
+      return {
+        ok: false,
+        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「在父对话中执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
+      }
     if (tk.wrapRequest?.state !== 'requested')
       return {
         ok: false,
-        info: `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
+        info:
+          tk.wrapRequest?.state === 'test-failed'
+            ? `子对话「${tk.title}」的分支已经合回，但父对话测试没通过（${tk.wrapRequest.info.split('\n')[0]}），已经退回给它修。它修好会再请你收尾，等它请求，不要重复收尾。`
+            : `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
       }
     const req = tk.wrapRequest
     merging.add(childId)
@@ -1520,6 +1775,24 @@ export function tasksApi(deps: {
         true,
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
+    }
+    // 勾了「在父对话中执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
+    // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
+    const parentSteps = await parentStepsOf(tk)
+    if (parentSteps.length) {
+      await startParentTests(tk, parentSteps)
+      return {
+        ok: true,
+        info: [
+          `已把子对话「${tk.title}」合回：${r.info}`,
+          `合回还没收尾：它勾了「在父对话中执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
+          req.build
+            ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      }
     }
     const done = await childMerged(
       childId,
@@ -1659,15 +1932,79 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 用户手动点「解决」（PATCH resolved: true）时先把这一侧能停的停掉、把计划收口（见 plan.ts 的 settlePlan）：
+   * 用户的预期是「我点解决了，剩下的步骤就算做完」，不该被「计划没做完」挡住。
+   * 父对话收尾（finish_child）、一轮结束收口、后台命令结束都不走这里，仍要求计划真做完。
+   * 停不掉或不该跟着收口的（这一轮还在跑、工作流运行、待回答的提问与请求）原样交回，不硬标完成。
+   */
+  async function settleChildForUser(
+    childId: string,
+    tk: Task,
+  ): Promise<{ holds: ChildHold[]; info: string } | undefined> {
+    // 这一轮还在执行：先按原样拒，写进去就成了「已解决但还在跑」
+    if (tk.working) return { holds: ['working'], info: childHoldText(['working']) }
+    // 停不掉的（工作流运行、待回答的提问 / 请求）先判：不能先把在跑的子任务杀了再告诉他解决不了
+    const left = childHolds({
+      workflow: runRunning(tk),
+      asking: tk.parentAsks?.length ?? 0,
+      requests: tk.requests.length,
+    })
+    if (left.length) return { holds: left, info: childHoldText(left) }
+    // 派出去的子任务还在跑：用现有的 stopHelper 停掉，等它真的停下后再收口
+    const stopped = await stopChildHelpers(childId, tk)
+    if (!stopped.ok) return { holds: ['helpers'], info: stopped.info }
+    // 后台命令同理：还在跑就没法收口，也不该留个孤儿进程
+    await background.stop(childId)
+    // 停子任务 / 停后台命令都要等一会儿，期间用户可能又发消息继续（resume 会换掉 live 里那一轮的任务对象）：
+    // 拿旧快照写回去会把新一轮的消息和状态盖掉（completeChild 有同样的检查）
+    const cur = live.get(childId)
+    if (cur && cur.task !== tk) return { holds: ['working'], info: t('子对话又开始执行了，等这一轮结束再收尾') }
+    const settled = settlePlan(tk)
+    if (settled) {
+      log.info('task', '用户点「解决」：计划收口成全部完成', { task: childId, settled })
+      tk.updatedAt = new Date().toISOString()
+      if (cur) cur.rev++
+      await store.update(tk.id, tk)
+    }
+    return undefined
+  }
+
+  /**
+   * 停掉这个对话派出去、还在跑的子任务，等它们真的结束（有上限）。
+   * 和界面的「终止子任务」走同一条路（stopHelper），不碰对话本身和别的子任务。
+   */
+  async function stopChildHelpers(childId: string, tk: Task): Promise<{ ok: boolean; info: string }> {
+    // 子任务结束时引擎改的是 live 里那份任务：轮询按它判断，不要拿开头的快照一直看到 running
+    const running = () => (live.get(childId)?.task ?? tk).steps.filter(helperRunning)
+    if (!running().length) return { ok: true, info: '' }
+    for (const s of running()) stopHelper(childId, s.id, t('用户点了「解决」：先停掉还在跑的子任务再收口'))
+    const until = Date.now() + HELPER_STOP_TIMEOUT_MS
+    while (running().length) {
+      if (Date.now() >= until)
+        return {
+          ok: false,
+          info: t('这些子任务还没停下来：{list}。等它们结束再点「解决」', {
+            list: running()
+              .map((s) => `「${s.title}」`)
+              .join('、'),
+          }),
+        }
+      await new Promise((r) => setTimeout(r, HELPER_STOP_POLL_MS))
+    }
+    return { ok: true, info: '' }
+  }
+
+  /**
    * 子对话完成状态的唯一入口：按 wrapup → plan → pending → complete → report → list 走一遍（见 advanceChild）。
-   * 用户点「标记完成」、父对话收尾、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
+   * 用户点「解决」、父对话收尾、一轮结束收口、后台命令结束都走这里：父对话侧的动作只是发起这一趟流转，
    * 判定和置完成仍然在子对话这一侧，父对话不直接改子对话的最终状态。
    * 还差什么就原样交回去（原因给用户看），不跳步、不重复置完成、不重复上报。
    * quiet：父对话自己发起的收尾（finish_child），结果已经在工具结果里，不再往父对话里推一条「已完成」
+   * fromUser：用户手动点「解决」发起的，先把计划收口（见 settleChildForUser）；别的入口都不传
    */
   async function advanceChildTo(
     childId: string,
-    opts: { quiet?: boolean } = {},
+    opts: { quiet?: boolean; fromUser?: boolean } = {},
   ): Promise<{ holds: ChildHold[]; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1699,10 +2036,21 @@ export function tasksApi(deps: {
         }
       }
     }
+    // 用户手动点「解决」：先把能停的停掉、把计划收口（见 settleChildForUser），再走完成流转
+    if (opts.fromUser) {
+      const refused = await settleChildForUser(childId, tk)
+      if (refused) return refused
+    }
     // 已经置过完成的当作已经上报过：重启后再走一趟时不重复往父对话里刷「已完成」
     const done = tk.resolved === true
     const run = await advanceChild(
-      childFlowOf(tk, { background: pendingJobs(childId), reported: done || reportedDone.has(childId) }),
+      childFlowOf(tk, {
+        background: pendingJobs(childId),
+        // 合回了、父对话的测试还没跑完或没通过（已退回修复）：都不能标完成、不能删分支（ADR 0018）。
+        // 只在还有独立分支时算：分支被丢弃后没有「合回」这回事了，不能再拿它拦完成（评审 R4）
+        parentTest: isolated(tk) && (parentTesting(childId, tk) || tk.wrapRequest?.state === 'test-failed'),
+        reported: done || reportedDone.has(childId),
+      }),
       {
         complete: () => completeChildOnce(childId, tk),
         // 第 5 步：上报父对话，走统一的状态上报（见 reportChild）：说法、计划收口和别的状态变化是同一套
@@ -2321,6 +2669,55 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 改一个对话的「提问」：关掉时把还没回答的问题交给 AI 自己选，执行中时把新设置插话给正在跑的 CLI。
+   * 父对话按钮、右键菜单、联动到子对话都走这里，不另写一套
+   */
+  async function applyAskUser(task: Task, on: boolean, working: boolean) {
+    if (!on) {
+      autoAnswerQuestions(task)
+      // 子对话已经问出去、还挂在父对话里的那些，也一起交给 AI：否则卡片仍停在「等你选择」
+      await handChildAsksToParent(task, working)
+    }
+    if (!working) return
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
+      tools: [],
+      // 执行中改的：画成 AI 回复里的一行，不在回复中间插一条居中提示
+      panel: 'note',
+      at: new Date().toISOString(),
+    }
+    void steerTask(
+      task,
+      on
+        ? '用户打开了「提问」：接下来有问题时用提问工具交给用户回答，不要自己替用户决定。'
+        : '用户关闭了「提问」：接下来有问题时自己选最合适的做法，不要再等用户回答。',
+      msg,
+    ).catch(() => {})
+  }
+
+  /**
+   * 父对话的「提问」/「子对话也提问」联动到名下已有的子对话：改它们各自的 askUser（引擎按它判断允不允许提问），
+   * 并马上落盘——只改界面上的勾选不够，引擎还按旧值决定让不让它问
+   */
+  async function applyChildAskUser(parent: Task, on: boolean) {
+    const kids = (await store.list()).filter((k) => k.parentTaskId === parent.id && !k.imported)
+    for (const kid of kids) {
+      const entry = live.get(kid.id)
+      const child = entry?.task ?? kid
+      if (child.askUser === on) continue
+      child.askUser = on
+      await applyAskUser(child, on, !!entry?.task.working)
+      // 执行中平时按节点落盘，这里要马上写下去，刷新或重启后引擎仍按新设置走
+      await store.update(child.id, child)
+      if (entry) entry.rev++
+    }
+  }
+
+  /**
    * 把一张提问卡片交给父对话的 AI 决定：先记 delegated 并落盘（刷新后仍是「交给父对话决定」），
    * 再用实时交付叫起父对话（等下一句、收尾中、刚预热时都要交得到），交不到时把原因写回卡片。
    * 用户点卡片上的按钮走这个函数。
@@ -2669,10 +3066,11 @@ export function tasksApi(deps: {
         verify:
           task.mode === 'chat' && found?.id
             ? {
-                steps: found.testSteps,
+                steps: task.testSteps.length ? task.testSteps : found.testSteps,
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
+                ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
         // 父对话（统筹）不改文件、不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
@@ -2768,6 +3166,8 @@ export function tasksApi(deps: {
             rootTaskId: entry.task.rootTaskId || entry.task.id,
             agentId: worker?.id ?? project.defaultAgentId,
             prompt: message,
+            // 父对话的「子对话也提问」决定这条新子对话开不开提问
+            askUser: childAskInitial(entry.task),
           })
           const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
@@ -3642,6 +4042,8 @@ export function tasksApi(deps: {
           analysis: liveTask.analysis,
           // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
           stopReason: idle(liveTask).stopReason ?? '',
+          // 已收起（归档 / 独立分支被用户删掉）：运行区、子对话栏、执行中计数都读这一处把它排掉（见 taskGone）
+          gone: taskGone(liveTask),
         }
       }),
     )
@@ -4029,7 +4431,11 @@ export function tasksApi(deps: {
       if (parent.projectId !== input.projectId) return { error: t('子对话必须和父对话在同一个项目'), status: 400 }
       input.mode = 'chat'
       input.rootTaskId = parent.rootTaskId || parent.id
+      // 新建子对话的「提问」初始值跟着父对话的「子对话也提问」走（父对话关掉提问只管已经建好的，不管之后的）
+      input.askUser = childAskInitial(parent)
     }
+    // 顶层对话（父对话、普通会话）：之后新建的子对话默认问不问，取设置里的全局默认（界面传了就用界面的）
+    if (!parent) input.childAskUser = input.childAskUser ?? childAskDefaultOf(await getSettings())
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
       workflow = input.workflowId
@@ -4234,7 +4640,8 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const p = PresenceInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    // 只判在不在（下面只动内存里的 viewer）：用 current() 会为一次心跳把几 MB 的对话读一遍再校验
+    if (!(await getMeta(id))) return bad(c, t('任务不存在'), 404)
     setViewer(id, p.data.viewerId, p.data.active)
     return c.body(null, 204)
   })
@@ -4243,17 +4650,22 @@ export function tasksApi(deps: {
   routes.post('/:id/seen', async (c) => {
     const id = c.req.param('id')
     const entry = live.get(id)
-    const tk = entry?.task ?? (await store.get(id))
+    // 只要「这一轮看到哪」，不读整份对话：以前这里读 2MB、再把 2.4MB 的完整任务回给前端，
+    // 前端拿它只做一件事——把本地那份的 turnSeenAt 换成新的
+    const tk = entry?.task ?? (await getMeta(id))
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (tk.turnDoneAt && tk.turnSeenAt !== tk.turnDoneAt) {
-      tk.turnSeenAt = tk.turnDoneAt
+      const turnSeenAt = tk.turnDoneAt
       // 只是记「看过了」，不算任务有更新：列表顺序和更新时间都不动
-      if (!entry) await store.update(id, tk, { keepUpdatedAt: true })
-      else entry.rev++
+      if (entry) {
+        entry.task.turnSeenAt = turnSeenAt
+        entry.rev++
+      } else await store.updateMeta(id, { turnSeenAt }, { keepUpdatedAt: true })
       // 看过之后不再因为未读一直留着 CLI：如果已经没人在看，现在就开始算宽限期
       rescheduleIfUnwatched(id)
+      return c.json({ turnSeenAt } satisfies TaskSeenResult)
     }
-    return c.json(tk)
+    return c.json({ turnSeenAt: tk.turnSeenAt } satisfies TaskSeenResult)
   })
 
   // 结束工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理
@@ -4471,6 +4883,8 @@ export function tasksApi(deps: {
   routes.post('/:id/worktree/discard', async (c) => {
     const id = c.req.param('id')!
     if (busyWith(id)) return bad(c, t('对话正在执行，等这一轮结束后再删除独立分支'), 409)
+    // 父对话正在合并这个子对话：先让它合完（或失败）再丢弃，否则两边同时动分支和工作目录
+    if (merging.has(id)) return bad(c, t('父对话正在合并这个子对话，等结果出来再删除独立分支'), 409)
     const tk = await current(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
@@ -4485,6 +4899,10 @@ export function tasksApi(deps: {
       if (!cancelWait(id)) stopTask(id, 'archive')
       await entry.done?.catch(() => {})
     }
+    // 父对话测试（ADR 0018）：分支要丢了，父对话不再替它跑这些步骤——取消这一批，父对话目录里那条命令一起停掉，
+    // 否则 testing / test-failed 的 hold 会让它永远标不了完成（评审 R4）
+    const canceledTest = parentTests.cancel(id)
+    if (canceledTest && tk.parentTaskId) background.stopOne(tk.parentTaskId, canceledTest)
     // 后台命令跑在这个目录里：先停掉并等进程退出，目录删掉后它的结果也没意义了
     await background.stop(id)
     try {
@@ -4493,7 +4911,19 @@ export function tasksApi(deps: {
       return bad(c, (e as Error).message, 409)
     }
     const cur = (await store.get(id)) ?? tk
+    // 分支丢弃后没有「合回」这一步了：收尾请求和父对话测试的状态一并清掉，按普通「没有分支可合」的路径收尾。
+    // 四种状态里任何一个留着都会让后面某条收尾入口按旧状态说话（评审 R3 / R4）
+    if (cur.wrapRequest) cur.wrapRequest = undefined
+    // 计划里的收尾步骤也要收口：它停在「已合回，等父对话跑测试」，不收的话 plan hold 会一直拦住完成（评审 R2）
+    markWrapUp(cur, 'merge', 'done', '独立分支已删除，不需要合回')
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }
+    // 内存里那份任务副本也要一起改：current()、列表摘要（idle）和子对话栏（/children）读的都是它，
+    // 只写 store 的话接口还会按旧的 active 算（gone 一直是 false，运行区和计数继续挂着），
+    // 而且下一次 PATCH 会拿旧 worktree 把 store 里的 discarded 写回去
+    if (entry) {
+      entry.task.worktree = next
+      entry.rev++
+    }
     return c.json(await store.update(id, { ...cur, worktree: next }))
   })
 
@@ -4652,9 +5082,10 @@ export function tasksApi(deps: {
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
     // 子对话标记完成：它的独立分支跟着删掉。改动还没合回原分支时不标，免得把没合的改动一起删了
     if (p.data.resolved === true && cur.parentTaskId) {
-      // 父对话（或用户）点「标记完成」只是发起这一趟流转：判定和置完成在子对话那一侧，
-      // 还有没收口的东西就拒绝并说清卡在哪一项，不在这里直接写子对话的最终状态
-      const { holds, info } = await advanceChildTo(id)
+      // 用户点「解决」只是发起这一趟流转：判定和置完成在子对话那一侧，还有没收口的东西就拒绝并说清卡在哪一项，
+      // 不在这里直接写子对话的最终状态。fromUser 表示这一趟是用户手动点解决的：计划里没做完的步骤一并收口，
+      // 不再因为「计划没做完」返回 409（父对话收尾、一轮结束收口仍按原样拦，见 advanceChildTo）
+      const { holds, info } = await advanceChildTo(id, { fromUser: true })
       if (holds.length) return bad(c, info || childHoldText(holds), 409)
       Object.assign(cur, {
         resolved: true,
@@ -4690,8 +5121,17 @@ export function tasksApi(deps: {
       if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
     const task = cur
-    const { childRun, ...rest } = p.data
+    const { childRun, applyChildAsk, ...rest } = p.data
+    // 「提问」联动（见 shared/child-ask.ts）：按钮关父对话时已有子对话一起关，右键菜单改的是「之后新建」的默认值，
+    // 勾上时再按用户选的「应用到已创建」决定已有的要不要一起开。先算出结论，下面一起应用
+    const askEffect = childAskEffect({
+      askUser: p.data.askUser,
+      childAskUser: p.data.childAskUser,
+      applyExisting: applyChildAsk,
+    })
     Object.assign(task, rest)
+    if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
+    if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
     // null 表示改回按执行角色自己的配置
     if (childRun !== undefined) task.childRun = childRun ?? undefined
     // 用户自己起了名：之后不再自动换标题
@@ -4712,34 +5152,9 @@ export function tasksApi(deps: {
         ? { session: '', through: null, latest: false, summary: history }
         : { session: '', through: null, latest: false }
     }
-    if (p.data.askUser === false) {
-      autoAnswerQuestions(task)
-      // 子对话已经问出去、还挂在父对话里的那些，也一起交给 AI：否则卡片仍停在「等你选择」
-      await handChildAsksToParent(task, !!e?.task.working)
-    }
-    // 执行中改「提问」：直接把新设置插话给正在跑的 CLI，后续的问题按新设置处理；
-    // 关掉时还没回答的问题已经由 autoAnswerQuestions 交给 AI 自己选
-    if (p.data.askUser !== undefined && e?.task.working) {
-      const on = p.data.askUser
-      const msg: TaskMessage = {
-        id: randomUUID(),
-        role: 'system',
-        agentId: '',
-        step: '',
-        text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
-        tools: [],
-        // 执行中改的：画成 AI 回复里的一行，不在回复中间插一条居中提示
-        panel: 'note',
-        at: new Date().toISOString(),
-      }
-      void steerTask(
-        task,
-        on
-          ? '用户打开了「提问」：接下来有问题时用提问工具交给用户回答，不要自己替用户决定。'
-          : '用户关闭了「提问」：接下来有问题时自己选最合适的做法，不要再等用户回答。',
-        msg,
-      ).catch(() => {})
-    }
+    if (askEffect.askUser !== undefined) await applyAskUser(task, askEffect.askUser, !!e?.task.working)
+    // 已有的子对话跟着父对话一起开 / 关（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
+    if (askEffect.existingChildren !== undefined) await applyChildAskUser(task, askEffect.existingChildren)
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
     await store.update(id, task)
     if (!touchesRun) return c.json(task)
@@ -5068,6 +5483,25 @@ export function tasksApi(deps: {
               .split('\n')[0]
               .slice(0, 60),
         })),
+    /**
+     * 强制更新要记下哪些任务：正在执行的，以及被打断后还有活要自己干的（`restartUnfinished`：
+     * 这一轮被打断、计划没做完），再加上名下还有子对话在跑的父对话——子对话的结果要交回它，
+     * 它不在名单里就没人接。只按 working 记会把停在等下一句、计划 12/17 的父对话漏掉：
+     * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+     * 清扫独立目录（`sweepStaleWorktrees`）仍然只看真正在跑的，用 `workingTasks`。
+     */
+    interruptedTasks: async () => {
+      const liveTasks = new Map([...live.values()].map((e) => [e.task.id, e.task]))
+      const working = [...liveTasks.values()]
+        .filter((tk) => tk.working)
+        .map((tk) => ({ id: tk.id, parentTaskId: tk.parentTaskId }))
+      // 列表不带完整对话（`store.list()` 只保留用户消息），但 `plans` / `steps` / `stopReason` 都在，
+      // 判「计划没做完」不用再 `store.get` 逐个读完整对话文件（长对话几 MB，强制更新时会卡在磁盘上）。
+      // 在跑的任务用 live 那份，它比落盘的新
+      const all = (await store.list()).map((tk) => liveTasks.get(tk.id) ?? tk)
+      const want = new Set(interruptedTaskIds(all, working))
+      return all.filter((tk) => want.has(tk.id)).map((tk) => ({ id: tk.id, doing: restartDoing(tk) }))
+    },
     /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
     ready: () => ready,
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */

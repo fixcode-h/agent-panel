@@ -97,6 +97,8 @@ export function newTask(
     model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
+    // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
+    childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
@@ -134,6 +136,7 @@ export function newTask(
     runs: [],
     skillSlots: wf ? skillSlots : {},
     testSteps: [],
+    testRuns: [],
     platform: '',
     workflowName: wf?.name ?? '',
     runSeq: 0,
@@ -489,19 +492,39 @@ export interface ConvFacts {
   wrapup?: boolean
   /** 停下的原因：finish 是彻底完成后的收尾，不算中断 */
   stopReason?: StopReason
+  /** 已经收起（归档 / 独立分支被用户删掉）：见 taskGone；能不能归成已完成还要看它是不是没在动（见 convState） */
+  gone?: boolean
 }
 
 /**
+ * 这条对话是不是已经从用户眼前收起了：归档，或者独立分支被用户删掉（子对话列表里归「已删除」的那类，
+ * 见 web/src/lib/worktrees.ts 的分组）。
+ * 收起的对话任务记录还在 store 里，status / working 也可能还写着 running（进程是异步收尾的），
+ * 所以「算不算在跑」的第一处就把它排掉：运行区、子对话栏、侧栏「N 个执行中」、标题计数都读这一处，
+ * 不要在 RunningNow 或各处再叠一层 if，那会让运行区的判空和分隔线对不上（见 Messages.tsx 的 RunningFooter）。
+ * 合回分支（merged）不算收起：改动已经进主线，任务本身照常可见。
+ * 它只是「已经收起」这个事实，能不能归成已完成还要看它是不是没在动（见 convState）
+ */
+export const taskGone = (t: { archived?: boolean; worktree?: Pick<NonNullable<Task['worktree']>, 'state'> | null }) =>
+  t.archived === true || t.worktree?.state === 'discarded'
+
+/**
  * 对话的状态，优先级从上到下：
- * 要你处理的最先（不然会被「执行中」盖住，用户不知道在等他）→ 失败（没有还会推回来的结果时）→ 执行中 → 等结果 → 中断 →
- * 待收尾 → 未完成 → 已完成。
+ * 要你处理的最先（不然会被「执行中」盖住，用户不知道在等他）→ 失败（没有还会推回来的结果时）→ 执行中 → 等结果 →
+ * 已收起（没在动时）→ 中断 → 待收尾 → 未完成 → 已完成。
  * 「已置完成」不盖住还在跑、还在等的事实：万一标早了，界面仍然如实显示在跑。
  */
 export function convState(x: ConvFacts): ConvState {
-  if (x.requests || x.asking) return 'needs'
-  // 还有会推回来的结果（子对话、子任务、后台命令、工作流）时这一轮失败了也还在运行：结果回来会接着开一轮，
-  // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
+  // 还有会推回来的结果（子对话、子任务、后台命令、工作流）
   const pending = !!(x.background || x.workflow || x.helpers || x.children)
+  // 已收起（归档 / 删了独立分支）且真的没在动：收敛成已完成，不再显示「等你处理 / 已暂停 / 待收尾 / 未完成」。
+  // 但不能盖住还在跑：用户删了独立分支后接着在原目录做（isolated 的注释：discarded 回到共用目录，worktree 不会清），
+  // 或者在等后台命令 / 子对话的结果——这些照旧如实显示，和「已置完成」是同一条规矩。
+  // 这也是侧栏「N 个执行中」、标题 (n)、保活回收判定的入口（见 convActive）
+  if (x.gone && !x.working && !pending) return 'done'
+  if (x.requests || x.asking) return 'needs'
+  // 这一轮失败了但还有结果会推回来时不算失败：结果回来会接着开一轮，
+  // 显示成「失败」的话列表不转圈、回收也会把它当成停下了的（见 convActive）
   if (x.status === 'failed' && !pending) return 'failed'
   if (x.working) return 'running'
   if (pending) return 'waiting'
@@ -547,6 +570,8 @@ export function childFacts(
   task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps' | 'resolved' | 'stopReason'> & {
     runs?: Task['runs']
     wrapRequest?: Task['wrapRequest']
+    archived?: Task['archived']
+    worktree?: Task['worktree']
   },
   x: { background?: number; unmerged?: boolean } = {},
 ): ConvFacts {
@@ -563,6 +588,7 @@ export function childFacts(
     unmerged: x.unmerged,
     wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
     stopReason: task.stopReason,
+    gone: taskGone(task),
   }
 }
 
@@ -623,7 +649,13 @@ export function childReport(
           })
         return t('只剩合回父对话的分支，还没请你收尾')
       case 'wrapup':
-        return t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
+        // 合回已经做完、面板正在父对话目录里跑勾了「在父对话中执行」的步骤（见 ADR 0018）：
+        // 这时收尾还早，说法不能再是「用 finish_child 合并」
+        return task.wrapRequest?.state === 'testing'
+          ? t('已合回，等父对话跑测试（面板自动执行，结果回传给它）')
+          : task.wrapRequest?.state === 'test-failed'
+            ? t('已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）')
+            : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
       case 'done':
         return t('交付完了：计划、后台命令、提问都收口了')
     }
@@ -653,7 +685,16 @@ export function stageOf(s: ConvState): TaskStage {
 /**
  * 子对话离「彻底完成」还差哪几样（见 childHolds），空数组才算做完了
  */
-export type ChildHold = 'working' | 'background' | 'workflow' | 'helpers' | 'plan' | 'asking' | 'requests' | 'unmerged'
+export type ChildHold =
+  | 'working'
+  | 'background'
+  | 'workflow'
+  | 'helpers'
+  | 'plan'
+  | 'asking'
+  | 'requests'
+  | 'unmerged'
+  | 'parentTest'
 
 /**
  * 子对话的收尾建议没给可选做法时用这两个：第一个是推荐做法，最后一个是明确停下。
@@ -682,6 +723,7 @@ export function askOptions(options: string[] | undefined, kind: AskKind = 'quest
  * - asking：还有待用户回答的提问
  * - requests：还有待用户确认的请求
  * - unmerged：独立分支还有没合回父对话分支的改动
+ * - parentTest：合回了，父对话还在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）
  *
  * 合并成功、一轮结束、标记完成、回收独立分支、面板阶段显示都读这一份：
  * 以前合并成功就当场标完成、删 worktree，计划、提问、后台命令全都没查，
@@ -701,6 +743,8 @@ export function childHolds(x: {
   requests?: number
   /** 独立分支还没合回父对话的分支；没有独立分支时传 false / 不传 */
   unmerged?: boolean
+  /** 合回了，但父对话的测试还没跑完或没通过（已退回修复）：跑通才收尾（见 ADR 0018） */
+  parentTest?: boolean
 }): ChildHold[] {
   const holds: ChildHold[] = []
   if (x.working) holds.push('working')
@@ -711,6 +755,7 @@ export function childHolds(x: {
   if (x.asking) holds.push('asking')
   if (x.requests) holds.push('requests')
   if (x.unmerged) holds.push('unmerged')
+  if (x.parentTest) holds.push('parentTest')
   return holds
 }
 
@@ -736,7 +781,7 @@ export function runRunning(task: { status: Task['status']; runs?: Task['runs']; 
  */
 export function childHoldsOf(
   task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & { runs?: Task['runs'] },
-  x: { background?: number; merged?: boolean } = {},
+  x: { background?: number; merged?: boolean; parentTest?: boolean } = {},
 ): ChildHold[] {
   return childHolds(childFlowOf(task, x))
 }
@@ -778,7 +823,7 @@ export function childFlowOf(
     runs?: Task['runs']
     resolved?: boolean
   },
-  x: { background?: number; merged?: boolean; reported?: boolean } = {},
+  x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
 ): ChildFlowState {
   return {
     working: task.working,
@@ -789,6 +834,7 @@ export function childFlowOf(
     asking: task.parentAsks?.length ?? 0,
     requests: task.requests.length,
     unmerged: x.merged === false,
+    parentTest: x.parentTest,
     completed: task.resolved === true,
     reported: x.reported,
   }
@@ -806,6 +852,9 @@ export function childStepHolds(x: ChildFlowState, step: ChildFlowStep): ChildHol
       asking: x.asking,
       requests: x.requests,
       unmerged: x.unmerged,
+      // 合回了但父对话的测试还没跑完：不能标完成、不能删分支（ADR 0018）。
+      // 只加在 ChildFlowState 上而不传进来，这个 hold 永远不会生效（评审 R1）
+      parentTest: x.parentTest,
     })
   // 后三步没有额外条件：走到没走到由 completed / reported 记着，不看别的
   return []
@@ -904,6 +953,7 @@ export function childHoldText(holds: ChildHold[]) {
     asking: t('还有等你回答的提问'),
     requests: t('还有等你确认的请求'),
     unmerged: t('独立分支还没合回原分支'),
+    parentTest: t('父对话的测试还没通过'),
   }
   return holds.map((h) => what[h]).join(t('、'))
 }
@@ -965,6 +1015,8 @@ export interface ChildEntry {
   analysis?: Task['analysis']
   /** 还没做完的计划：「计划 7/8」，有它就不算已完成；正在做的那一步也带上 */
   plan?: { done: number; total: number; step?: string; child?: string }
+  /** 已经收起（归档 / 独立分支被删掉）：见 taskGone；没在动时不算执行中、也不进运行区 */
+  gone?: boolean
   background?: number
   /** 工作流运行还没跑完：转圈不能提前停（见 runRunning） */
   workflow?: boolean
@@ -1352,8 +1404,64 @@ export function restartInterrupted(
     unmerged: task.worktree?.state === 'active',
     wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
     stopReason: task.stopReason,
+    gone: taskGone(task),
   }
   return childSpinning(entry) && childState(entry) !== 'wrapup'
+}
+
+/**
+ * 面板重启 / 强制更新把 CLI 停掉之后，这条任务还有「要它自己接着干」的活没干完。
+ *
+ * 和 restartInterrupted 分开：那个回答「界面还会不会画成在跑」（含独立分支还没合回，见 childIcon），
+ * 这个回答「重启后该不该把它列进继续名单」（强制更新记录被打断的任务、新版本启动后问用户要不要继续）。
+ * 记录只按「进程还在跑」（working）挑，会把停在等下一句、计划却只做了 12/17 的父对话漏掉：
+ * 子对话进了恢复名单被继续，父对话却停在「已中断」等用户手动点（用户报的现象）。
+ *
+ * 不算的四种：
+ * - 用户手动暂停（`stopReason: 'user'`）：那是明确的「先别动」，不是一个被强制的更新打断，重启后不能默认接着跑；
+ * - 待收尾（wrapRequest 已请求）：它等的是父对话合并（面板做的），不靠 CLI 进程；
+ * - 独立分支还没合回：同上，重启后照样能收；
+ * - 后台命令：jobs 不存盘（见 schema 的 Task.jobs），重启后无从判断，名单里也就算不到它。
+ *
+ * 工作流任务流程没走完、`status` 已是 `done` 的也不算：它自己那页有「继续流程」入口（`flowLeft`），
+ * 不靠这条恢复名单。
+ */
+export function restartUnfinished(
+  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason'> & { runs?: Task['runs'] },
+): boolean {
+  // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
+  if (task.stopReason === 'user') return false
+  // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
+  // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
+  const wrap = task.wrapRequest?.state
+  if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
+  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来
+  if (task.status === 'running') return true
+  // 这一轮说完了，但计划还没做完：重启后没人接着做，它不会自己往前走
+  return !!openPlan(task)
+}
+
+/**
+ * 强制更新停 CLI 之前要记下哪些任务（见 server/tasks.ts 的 interruptedTasks）：
+ * - 现在真在跑的（working）；
+ * - 名下还有在跑的子对话的父对话：子对话的结果要交回它，它不在名单里就没人接；
+ * - 被打断后还有活要自己干的（restartUnfinished：这一轮被打断、计划没做完）。
+ * 只按 working 挑会把停在等下一句、计划 12/17 的父对话漏掉：子对话进了恢复名单被继续，
+ * 父对话却停在「已中断」等用户手动点（用户报的现象）。
+ */
+export function interruptedTaskIds(
+  tasks: (Pick<Task, 'id' | 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'imported' | 'archived'> & {
+    runs?: Task['runs']
+  })[],
+  working: { id: string; parentTaskId: string }[] = [],
+): string[] {
+  const ids = new Set<string>()
+  for (const w of working) {
+    ids.add(w.id)
+    if (w.parentTaskId) ids.add(w.parentTaskId)
+  }
+  for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
+  return [...ids]
 }
 
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
@@ -1371,9 +1479,11 @@ export const childRunning = (x: Pick<ChildEntry, 'working' | 'background' | 'wor
  * 浮层「运行中」只列真正在干活（working 或后台命令还在跑）的子对话：进程活着但在等下一句的，
  * 在它自己页面上是「等待你的下一条消息」，混进来就会被当成还在跑；
  * 反过来，已标记解决但还在跑的也要列出来——「已完成」不能盖住还在跑。
+ * 已收起（归档 / 独立分支被删掉）的一律不列：它的任务记录还在 store 里、working 也可能还写着在跑，
+ * 但用户已经把它删了（见 taskGone）
  */
 export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
-  return list.filter((x) => childRunning(x))
+  return list.filter((x) => !x.gone && childRunning(x))
 }
 
 /**
@@ -1387,7 +1497,9 @@ export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
 export function childCounts<T extends ChildEntry>(list: T[]) {
   // 分子就是转圈的那一批：不再自己 filter 一遍 childSpinning，免得两处哪天判断条件写岔
   const running = spinningChildren(list).length
-  const alive = list.filter((x) => x.cliAlive).length
+  // 分母也排掉已收起的：进程可能还在收尾（cliAlive 暂为 true），但已经不在列表里了，
+  // 否则会出现「运行区空、上面却写 0/1 个进行中」
+  const alive = list.filter((x) => x.cliAlive && !x.gone).length
   return { running, total: Math.max(alive, running) }
 }
 
@@ -1556,6 +1668,8 @@ export type TaskFactsInput = Pick<Task, 'status' | 'steps' | 'working'> &
   Partial<Pick<Task, 'childrenWorking' | 'requests' | 'parentAsks' | 'resolved' | 'stopReason' | 'plans'>> & {
     runs?: Task['runs']
     jobs?: Task['jobs']
+    archived?: Task['archived']
+    worktree?: Task['worktree']
   }
 
 /**
@@ -1574,6 +1688,7 @@ export function taskFacts(x: TaskFactsInput): ConvFacts {
     helpers: helpersWorking(x),
     children: x.childrenWorking ?? 0,
     stopReason: x.stopReason,
+    gone: taskGone(x),
   }
 }
 

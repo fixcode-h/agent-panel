@@ -5,7 +5,6 @@ import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
 import { asksApi } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
-import { serveStatic } from '@hono/node-server/serve-static'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
@@ -31,6 +30,7 @@ import { SummaryRecord, type SummaryReport } from '../shared/summary.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
+import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
@@ -100,7 +100,7 @@ import {
 } from '../shared/builtin/install.ts'
 import { loadSeededWorkflows, saveSeededWorkflows } from './builtin-seeded.ts'
 import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
-import { analyzeProject } from './projects-analyze.ts'
+import { analyzeProject, detectVcs } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
@@ -930,6 +930,10 @@ app.get('/projects/:id/files', async (c) => {
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
+// 目录的版本控制类型：项目设置里判断「在父对话中执行」能不能勾（只对 Git 项目生效，见 ADR 0018）。
+// 判定复用 detectVcs，和子对话开独立分支时的判断是同一套
+app.get('/fs/vcs', async (c) => c.json(await detectVcs(resolvePath(c.req.query('path') ?? ''))))
+
 // 本地分支：环境里点分支名展开的下拉用
 app.get('/fs/branches', async (c) => {
   try {
@@ -1012,7 +1016,7 @@ const updater = updateApi({
     await tasks.stopAll()
     killAllProcesses()
   },
-  interrupted: () => tasks.workingTasks(),
+  interrupted: () => tasks.interruptedTasks(),
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())
@@ -1051,8 +1055,10 @@ const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--p
 if (prod) {
   // 按程序所在目录找前端，不依赖从哪个目录启动
   const dist = path.join(appDir(), 'dist')
-  root.use('/*', serveStatic({ root: dist }))
-  root.get('*', serveStatic({ path: path.join(dist, 'index.html') }))
+  // 自己托管而不是 serveStatic：要 gzip 和缓存头（见 server/static.ts）。
+  // 开发模式前端由 Vite 自己服务，根本不会挂到这里
+  root.use('/*', serveDist(dist))
+  root.get('*', serveIndex(dist))
 }
 
 const port = Number(process.env.PORT ?? 8787)

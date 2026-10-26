@@ -78,6 +78,7 @@ import { orderProjects, projectOrderError, sortProjects } from '@shared/project-
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
+import { childAskEffect } from '@shared/child-ask'
 import {
   BUILTIN_WORKFLOWS,
   ComfyWorkflow,
@@ -108,18 +109,22 @@ import {
   childLastActivity,
   childStartedAt,
   childWait,
+  childFacts,
   closeFlow,
+  convActive,
+  convState,
   dropEndNotes,
   endRun,
   helpersWorking,
   newTask,
   questionAnswers,
   runRunning,
+  taskGone,
   taskSummary,
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { openPlan } from '@shared/plan'
+import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -597,6 +602,8 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
+              // 演示里不勾：这条是合并时编译，仍由父对话申请编译
+              runInParent: false,
               quick: true,
             },
             {
@@ -611,6 +618,8 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
+              // 演示里勾上「在父对话中执行」：合并后由父对话在它的目录里跑，结果回传给子对话
+              runInParent: true,
               quick: false,
             },
           ],
@@ -2118,6 +2127,12 @@ function route(method: string, url: string, body: unknown): unknown {
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'vcs') {
+    const path = normalize(query.get('path') ?? '')
+    const node = TREE[path]
+    // 演示里的目录树只标了有没有 git 分支：有就按 Git 项目算，其余按没有版本控制
+    return { vcs: node?.git ? 'git' : 'none', root: path }
+  }
   if (res === 'fs' && id === 'branches') {
     const path = normalize(query.get('path') ?? '')
     const node = TREE[path]
@@ -2703,6 +2718,19 @@ function demoLive(task: Task) {
  */
 const demoCliAlive = (task: Task) => live.has(task.id) || task.working === true || task.awaitingUser === true
 
+/**
+ * 子对话还在运行（和正式后端的 activeChildren / childActive 一个口径）：在跑、等结果、等回答都算，不只看 working。
+ * 演示里没有 startQueue 和收件箱，后台命令数按演示数据里的 jobs 算
+ */
+const demoChildActive = (x: Task) =>
+  convActive(
+    convState(
+      childFacts(x, {
+        background: (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length,
+      }),
+    ),
+  )
+
 function demoKill(task: Task, pid: number) {
   const rootId = task.rootTaskId || task.id
   const set = demoGone.get(rootId) ?? new Set<number>()
@@ -2824,12 +2852,19 @@ function tasksRoute(
   if (!id) {
     if (method === 'GET') {
       const pid = query.get('projectId')
+      // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
+      // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
+      const kids = new Map<string, number>()
+      for (const k of tasks) {
+        if (!k.parentTaskId || !demoChildActive(k)) continue
+        kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
+      }
       // 和正式版一样：子对话不进项目列表，在父对话里看
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t) }))
+          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -2874,11 +2909,11 @@ function tasksRoute(
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
   if (sub === 'presence' || sub === 'prewarm') return task
-  // 打开看过这一轮：清掉侧栏的橙点
+  // 打开看过这一轮：清掉侧栏的橙点（正式后端也只回「看到哪」，不把整份对话传回来）
   if (sub === 'seen') {
     task.turnSeenAt = task.turnDoneAt
     persist()
-    return task
+    return { turnSeenAt: task.turnSeenAt }
   }
   if (sub === 'end-flow') {
     if (live.has(task.id)) fail('任务正在执行，请先停止')
@@ -3020,6 +3055,8 @@ function tasksRoute(
           waiting: childWait(x, { background, cliAlive: demoCliAlive(x) }),
           resolved: x.resolved === true,
           analysis: x.analysis,
+          // 和正式后端对齐：归档 / 独立分支被删掉的条目不再算在跑（见 shared/task.ts 的 taskGone）
+          gone: taskGone(x),
         }
       })
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
@@ -3245,15 +3282,33 @@ function tasksRoute(
     return task
   }
   if (method === 'PATCH') {
-    const { childRun, ...rest } = parse(TaskPatch, body)
+    const p = parse(TaskPatch, body)
+    const { childRun, applyChildAsk, ...rest } = p
+    // 「提问」联动和正式后端同一份规则（shared/child-ask.ts）：父对话关掉时已有子对话一起关
+    const askEffect = childAskEffect({
+      askUser: p.askUser,
+      childAskUser: p.childAskUser,
+      applyExisting: applyChildAsk,
+    })
     Object.assign(task, rest)
+    if (askEffect.askUser !== undefined) task.askUser = askEffect.askUser
+    if (askEffect.childAskUser !== undefined) task.childAskUser = askEffect.childAskUser
+    // 演示里没有引擎，已创建的子对话只改记录——界面上的按钮和菜单勾选都读它
+    if (askEffect.existingChildren !== undefined)
+      for (const kid of tasks) if (kid.parentTaskId === task.id) kid.askUser = askEffect.existingChildren
     if (childRun !== undefined) task.childRun = childRun ?? undefined
+    // 和正式后端一致（见 server/tasks.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
+    // 否则演示版会停在「已解决但计划还有 n 步没做完」，界面检查就测不到真机上收口后的样子
+    if (rest.resolved === true && task.parentTaskId) settlePlan(task)
     persist()
     return task
   }
   // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
   // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
-  return { ...task, cliAlive: demoCliAlive(task) }
+  const withLive = { ...task, cliAlive: demoCliAlive(task) }
+  // 父对话再带上名下在跑的子对话数（和正式版一样不带给子对话，见 server/tasks.ts 的 withLive）
+  if (task.parentTaskId) return withLive
+  return { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
@@ -3521,7 +3576,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
         model: '',
         effort: '',
         params: {},
-        askUser: false,
+        // 子对话的「提问」初始值跟着父对话的「子对话也提问」走（和正式后端一样）
+        askUser: parent.childAskUser ?? true,
       },
       true,
     )

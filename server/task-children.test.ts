@@ -9,8 +9,11 @@ import { setLang } from '../shared/i18n.ts'
 import { Task } from '../shared/schema.ts'
 import {
   childCounts,
+  childFacts,
   childStage,
   childStartedAt,
+  taskGone,
+  taskState,
   runningChildren,
   sortChildren,
   splitStepJobs,
@@ -331,6 +334,85 @@ test('运行区列的子对话：后台命令、工作流、派出的子任务�
     ['background', 'helpers', 'workflow'],
     '同一类里开启时间一样时按 id 兜底排序（同 sortChildren）',
   )
+})
+
+test('已收起的子对话（归档 / 独立分支已删除）：没在跑的不进运行区，也不算执行中', () => {
+  // 用户删掉的任务还挂在运行区里（用户报的现象）：归档、删独立分支后任务记录还在 store 里，
+  // status 可能仍是 running、计划还没做完（截图那行「计划 8/10 · 等结果」），运行区就照列。
+  // 已收起的、真的没在动的不参与转圈判定，运行区和计数一起不带它。
+  const list = [
+    kid('running', { working: true, cliAlive: true }),
+    // 归档后落盘的真实样子：这一轮停了（working=false），计划和 status 还停在原样
+    kid('archived', { working: false, cliAlive: false, gone: true, plan: { done: 8, total: 10 } }),
+    kid('discarded', { working: false, cliAlive: false, gone: true, plan: { done: 8, total: 10 } }),
+  ]
+  assert.deepEqual(
+    visibleChildren(list).map((x) => x.id),
+    ['running'],
+    '归档和已删分支的都不列，哪怕计划还停在 8/10',
+  )
+  assert.deepEqual(childCounts(list), { running: 1, total: 1 }, '执行中计数跟着少，进程已经停掉的不占分母')
+  assert.equal(childStage(list[1]), 'done', '已收起的归已完成分组，不再画成在跑')
+})
+
+test('已收起不能盖住还在跑：删了分支接着在原目录做的、还在等结果的照旧列出', () => {
+  // 用户删完独立分支后回到共用目录继续做（isolated 的注释），worktree 仍是 discarded：
+  // 这时把它画成已完成会让侧栏「N 个执行中」、标题 (n) 少算，保活回收也会当它闲置
+  const list = [
+    kid('gone-running', { working: true, cliAlive: true, gone: true }),
+    kid('gone-background', { working: false, cliAlive: true, background: 1, gone: true }),
+    kid('gone-idle', { working: false, cliAlive: false, gone: true }),
+  ]
+  assert.deepEqual(
+    visibleChildren(list).map((x) => x.id),
+    ['gone-background', 'gone-running'],
+    '在跑、在等后台命令的照旧列，仅仅「已收起」不能把它们从运行区赶走',
+  )
+  assert.deepEqual(childCounts(list), { running: 2, total: 2 }, '已收起的 idle 那条不占分母')
+})
+
+test('已收起只看归档和已删的独立分支：正常在跑、已合回分支的不受影响', () => {
+  assert.equal(taskGone({}), false, '什么都没发生的不算收起')
+  assert.equal(taskGone({ archived: false, worktree: { state: 'active' } }), false)
+  assert.equal(taskGone({ archived: true }), true, '归档就是收起')
+  assert.equal(taskGone({ worktree: { state: 'discarded' } }), true, '独立分支被用户删掉（列表里的「已删除」）也算收起')
+  // 合回分支不是删除：它只是「已合回」，任务本身照常可见
+  assert.equal(taskGone({ worktree: { state: 'merged' } }), false)
+
+  const task = (over: {
+    archived?: boolean
+    worktree?: { state: 'active' | 'merged' | 'discarded' }
+    working?: boolean
+  }) =>
+    Task.parse({
+      id: 'kid',
+      projectId: '',
+      title: '子对话',
+      mode: 'chat',
+      status: 'running',
+      messages: [],
+      steps: [],
+      createdAt: '2026-10-21T00:00:00.000Z',
+      updatedAt: '2026-10-21T00:00:00.000Z',
+      working: false,
+      ...over,
+      ...(over.worktree ? { worktree: { path: '/tmp/kid', branch: 'kid', state: over.worktree.state } } : {}),
+    })
+  const facts = (over: Parameters<typeof task>[0]) => childFacts(task(over))
+  assert.equal(taskState(task({ working: true })), 'running', '正常在跑的照旧是执行中')
+  assert.equal(taskState(task({ archived: true })), 'done', '归档且没在跑：侧栏计数和标题计数一起少一个')
+  assert.equal(taskState(task({ worktree: { state: 'discarded' } })), 'done', '独立分支已删除且没在跑的不算在跑')
+  assert.equal(
+    taskState(task({ archived: true, working: true })),
+    'running',
+    '归档后接着做（删分支后回到原目录继续）照旧算执行中，不能因为收起就少算',
+  )
+  assert.equal(
+    taskState(task({ worktree: { state: 'merged' }, working: true })),
+    'running',
+    '合回分支的任务还在跑时照旧算执行中',
+  )
+  assert.equal(facts({ archived: true }).gone, true, 'childFacts 把归档转成 gone，服务端状态上报也读同一处')
 })
 
 test('运行区的后台命令按来源分：挂在子任务上的单独列，父对话自己起的照旧', () => {

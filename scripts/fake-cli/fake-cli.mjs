@@ -622,9 +622,31 @@ if (input.includes('PLAN_BG') && input.includes('set_plan')) {
   })
   await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '端到端测试', step: '2' })
 }
+// 计划故意留几项没做完（用户点「解决」时它们要一起收口）：6 步里只有前 2 步做完，还带一层子步骤。
+// 续接会话时 input 里会带「之前的对话」，那里也会出现 PLAN_LEFT，不能再交一遍计划
+if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes('之前的对话')) {
+  await panelCall('set_plan', {
+    title: '解决时一起收口',
+    steps: [
+      { title: '改界面', status: 'done', children: [{ title: '改布局', status: 'done' }] },
+      { title: '改文案', status: 'done' },
+      { title: '补测试', status: 'running' },
+      { title: '跑端到端', status: 'pending' },
+      { title: '写文档', status: 'pending', children: [{ title: '写 README' }] },
+      { title: '收尾', status: 'waiting' },
+    ],
+  })
+}
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
 if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
   await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 子对话自己跑项目测试步骤（ADR 0018）：命令和项目里一条 runInParent=false 的步骤完全一致，
+// 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
+// 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝
+if (input.includes('BG_TESTSTEP') && input.includes('run_background')) {
+  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '自测步骤' })
+  await new Promise((r) => setTimeout(r, 900))
+}
 // 后台命令要跑一会儿：这一轮说完时它还在跑，界面靠任务上的 jobs 转圈。
 // BG_SLOW 时跑得更久：测保活上限这类用例要在它跑着的时候做别的操作，命令得比整段流程长
 if (input.includes('BG_LONG') && input.includes('run_background'))
@@ -753,6 +775,18 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
       await merge()
     }
   }
+}
+// 用例指定收尾哪个子对话（子对话没请收尾、计划也没做完）：父对话这条路径应当被手口拦下，
+// 用来证明「点解决收口计划」只在用户那条路上生效，没有把父对话的收尾也一刀切。
+// 只看标记本身，不要求 input 里同时出现工具名：这一轮的用户消息里就带着它
+const forcedFinish = /FINISH_CHILD:(\S+)/.exec(input)?.[1]
+if (forcedFinish) {
+  const got = await panelCall('finish_child', { id: forcedFinish })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.finish',
+      JSON.stringify({ kind, id: forcedFinish, via: 'marker', got }) + '\n',
+    )
 }
 // 父对话收到子对话的收尾请求：像真的 Agent 一样看过验证结果后调用 finish_child 收尾。
 // 一轮里可能同时有几个子对话的收尾请求，每个都要处理（只处理第一个会让后面的子对话等到超时）

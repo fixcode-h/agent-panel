@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-25（本轮新增「派子对话一定挂到计划步骤」（`ensureChildStep` / `auto` 步骤）关联 `reopenedAt` 用时重算、`send_to_conversation` 带标题和复用已完成步骤；合并语义和等待项种类沿用同日上一轮分析）
+- analyzed_at: 2026-10-26（本轮给共享层补「在父对话中执行」的步骤筛选和测试耗时记录；其余内容沿用 2026-10-25 的核对）
 
 ## 职责
 
@@ -14,13 +14,22 @@
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
 - 定时计划（`shared/schedule.ts`）：`Schedule` / `ScheduleInput` 的 schema（名称、提示词、项目、角色、`once` / `daily` 重复规则、下次执行时间、启用开关、状态和上次结果），以及到点判定的纯函数——`pickDue` 分出该执行的和错过的（超过 `SCHEDULE_MISS_MS` 的算错过），`afterRun` / `afterMiss` / `afterFail` 给出执行后、错过、失败后的字段变化，`nextDailyAt` 按本地日历推到下一次，`workdayTemplate` 是「今日工作」模板（每天 19:00）。前后端共用同一份规则：服务端按它轮询启动对话，界面按它显示下次执行时间；`sameMinute` 是「排期有没有被改过」的比较口径（界面上的时间只到分钟）。单测在 `shared/schedule.test.ts`（注入固定时钟，覆盖到点触发一次、每天重算、错过不补跑、模板时间和 `datetime-local` 互转）。和任务里的执行计划（`shared/plan.ts` 的 `task.plans`）不是一回事。
+- 任务和子对话的「算不算在跑」（`shared/task.ts`）：图标、分组、计数、徽标、运行区都从 `convState` → `childIcon` 一处来（项目教训 `lmvkmb75vog8n`），不要在界面上再叠一套。2026-10-26 起「已收起」也进这一处判定（用户报「被删除的任务还挂在运行区」）：
+  - `taskGone(t)`：`t.archived === true || t.worktree?.state === 'discarded'`——归档，或独立分支被用户删掉（环境弹窗「独立分支」里归「已删除」那一组，见 `web/src/lib/worktrees.ts` 的 `groupWorktrees`）；合回分支（`merged`）不算收起，改动已经进主线、任务本身照常可见。收起的任务记录还在 store 里，`status` / `working` 也可能还写着在跑（进程是异步收尾的），所以「算不算在跑」的第一处就把它排掉。
+  - `ConvFacts` 多一个可选 `gone`，由 `childFacts()` / `taskFacts()` 从任务记录算出；`ChildEntry` 也多一个可选 `gone`，由 `GET /tasks/:id/children` 的摘要直接给（见 [server 模块 README](../server/README.md)）。
+  - `convState()` 里 **`gone` 不能盖住还在跑**：只有 `gone && !working && !pending`（`pending` = 后台命令 / 工作流 / 派出的子任务 / 名下子对话）时才归 `done`，在跑或在等结果的照旧 running / waiting。删了独立分支后回到原目录接着做（`isolated()` 的注释：`discarded` 回到共用目录、worktree 不会被清）不会被误画成已完成，保活回收（`convActive`）、侧栏「N 个执行中」、标题 (n) 都不会少算。
+  - 派生全部跟着这一处变：`childIcon` / `spinningChildren` / `visibleChildren`（= `sortChildren(spinningChildren(...))`）/ `childCounts`（分子取转圈那批，分母带 `!gone`）/ `runningChildren`（额外带 `!gone`）/ `taskBusy` / `taskBusyCount`。运行区不要另加 if：`runningRows().empty` 和分隔线读的是同一个值，两处判定分叉就会留一根空横线（见 `Messages.tsx` 的 `RunningFooter`）。
+  - 回归：`server/task-children.test.ts`（已收起且没在动的不进 `visibleChildren`、不计执行中、归已完成；已收起不盖住还在跑 / 在等后台命令的；`taskGone` 只看 `archived` 与 `discarded`，`merged` 和 `active` 都算没收起）。
 - 对话的执行计划（`shared/plan.ts`）：Agent 用 `set_plan` 交步骤，这里把交上来的列表和面板自己的状态对齐，界面画计划弹窗、服务端改状态都用它。规则逐条写在文件头注释里：最多两层（主步骤和子步骤）；整份列表和只交变更（`partial`）两种提交方式；完成的步骤锁死，改它删它都无效；全部完成就收起计划（`doneAt`）；等待中的步骤由 `settleWait` 按 `kind` + `ref` 收口；收尾（`wrapUp`）由面板加在最后，Agent 漏写、删掉、挪到中间都会被放回。
   2026-10-25 修掉的合并语义、新加的等待项种类，以及对应的回归，之后改这个文件要守住：
   - 合并一层列表时，`partial: true` 下**位置由计划原有顺序决定，交上来的顺序只决定谁被更新**，这次新加的步骤追加到最后。以前漏写项按旧下标 `splice` 回去，模型把新步骤写在前面时两条会互换位置（id 顺序和数组顺序不一致），界面上的计数跟着来回变。
   - 交上来的项对回已有项：先按 `id`，其次标题**完全一致**，再次归一化后一致（`normTitle`：NFKC + 去掉空白 / 标点 / 符号 + 小写）。更大幅度的标题改写**不猜**——把「修登录文案」并到「修登录超时」会把没做完的步骤标成完成，比多出一条步骤更糟；这时新加一步，并在返回给 Agent 的说明里点名那些没对上的未完成步骤「这次没交上来，还按原来的状态留在计划里」。
   - `settleWait` 成功时清掉 note 里面板写的过时说明（前缀是导出的常量 `HOLD_PREFIX`「还在等它：」），Agent 自己写的备注不动。
+  - `settlePlan` 只在用户手动点「解决」这条路径上调用（`server/tasks.ts` 的 `settleChildForUser`，见 [server 模块 README](../server/README.md)）：把最后一份计划里还没做完的步骤连同 `children` 子步骤一次性收成 `done`，还在 `waiting` 的等待项不再等（`state: 'ok'`），面板写的 `HOLD_PREFIX` / `FAIL_PREFIX` 备注清掉（Agent 自己写的备注不动）；工作流步骤（`step.run`）的子项不是 `children` 而是那次运行的节点（见 `planChildren`），所以还会把没跑完的节点标成 `skipped`——不能谎称做完了，但 `stepStatus` 把它算完成，展开计划也不会再出现「头部说完成、展开还有未完成」——并清掉 `endRun` 写的 `RUN_FAIL_PREFIX` 备注；`closeIfDone` 让计划落到 `done`，折叠头走 `planHeadline` 的 `done` 分支、「计划 n/m」不再出现。返回这次收口了几项（步骤 + 运行节点；0 表示没东西可收、调用方不用落盘），没有计划时不动，`finish_plan` 提前结束过的（`closed`）也收成 `done`，已经全部做完的不重复收。父对话收尾（`finish_child`）、一轮结束收口、后台命令结束都不走它，那些路径仍要求计划真做完。回归：`shared/plan.test.ts`（未完成步骤与子步骤递归收口、清等待说明、`closed` 收成 `done`、已完成和没有计划不动）和 `shared/child-flow.test.ts`（没收口的计划先被 `plan` 拦住，收口后走完 complete → report → list）。
   - 等待项 `PlanWait.kind` 有三种：`background`（后台命令编号）、`child`（子对话 id）、`helper`（`spawn_agents` 派出的子任务步骤 id）。`helper` 由 `shared/engine.ts` 的 `spawn` 用 `bindWait` 登记，`settleHelpers` 里的 `settleHelperWaits` 按子任务的真实结果收口：成功标完成，失败或被终止退回进行中并写清原因。
-  - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`）。
+  - `spawn_agents` 接着之前的子任务做（`resume`）时**沿用原任务的角色**（提示词、CLI、模型都跟着它）：显式写了 `agent` 就用写的，写别的角色照旧拒绝（`「…」是另一个角色跑的`），写了不存在的角色报错；原角色已被删、又没写 `agent` 时报错让调用方点名，**不退回默认「子任务」**——那等于换个角色接着跑原来的会话，交回的结果看不出走了样。`agentId` 为空是旧数据里「没有角色」，不算「角色被删」。重试分支（失败 / 被终止 / 中断的子任务在原记录上重试）里显式点名了别的角色就换过去。`tier` 仍默认跟发起节点（角色决定 CLI 和模型，`shared/settings.ts` 的 `agentRun`）。
+  - `spawn_agents` 顶层的 `agent` / `tier` / `resume` 是**整批的默认值**：单个任务里写了以任务里的为准，都没写才落到顶层。顶层 `resume` 配多个任务直接报错（一个会话只能接着跑一轮），顶层出现不认得的字段也报错（`SPAWN_TOP_FIELDS` 白名单），不静默丢掉——「schema 里声明了、代码只在嵌套层读」的字段一丢，就是换了角色、换了新会话，而结果看起来和正常复看一样。这次修的就是它（顶层 `resume` 被丢、复看退回「子任务」角色），见 [server/bugs/helper-resume-lost-role.md](../server/bugs/helper-resume-lost-role.md)。
+  - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`；顶层默认值解析；resume 不写 agent 沿用原任务角色、写 agent 用写的、非 resume 不带 agent 才是默认子任务；原角色不存在时报错）。
   - 收尾步骤的种类由 `wrapUpKind`（`shared/plan.ts`）一个纯函数判定，口径和提示词「授权情况」那段一致：子对话在独立分支里是 `merge`（合回父对话所在的分支）、P4 工作区共用目录是 `p4`（按文件类型分 changelist）；**父对话**在 Git 仓库、配了远端，并且明确授权推送（项目设置「允许直接推送」，或这个对话里用户已经同意）时是 `push`（`收尾：推送到远端`）。`deny` 和 `answered: 'denied'` 不加，「第一次问一次」还没回答时也不加（等回答完、下一轮再加）；P4 工作区、SVN、没有远端的仓库也不加——P4 建在 git 仓库目录下时也会认到 `.git`，推上去的是旧历史；没有远端的仓库这一步永远做不了。种类、标题、备注集中在 `WRAP_UP`，改文案只改这一处。
     `applyPlan` 的 `wrapUp` 参数有三种取值，别混：不传是「这个对话不用收尾」（合回、分 changelist 这类一次性收尾就不做了）、`'none'` 是「明确不推送」（只有它会把计划里还挂着的推送收尾删掉，连同 Agent 照抄的那条同标题步骤）、`undefined` 以外的空值都不算。`server/tasks.ts` 的 `planWrapUp` 只在策略是 `deny` 或用户 `denied` 时回 `'none'`；项目目录没取到时回 `undefined`，这一轮算不出来就保持收尾原样，否则会误删、还告诉模型「不用推了」。
     推送收尾不像合回那样只加一次：只要这份计划里还没有 `push` 收尾、又有步骤，就会加上——一轮就把事做完、步骤全标完成时新开的计划 `first` 必然是 false，只看 `first` 会漏，那一轮的改动就永远不推。已经有推送收尾的（做完也好、挂着也好）仍按 `todo || open.length` 决定要不要重新打开。
@@ -50,6 +59,11 @@
   同一文件也是**附件路径安全规则的唯一出处**：`libraryEntryPath` 逐段校验相对路径（挡 `..`、`.`、空段、绝对路径、盘符、`\0` 和 Windows 非法字符，反斜杠统一当 `/`），服务端在 `server/library.ts` 的 `entryOf` 里再补一道 `realpath` 落在 Skill 目录内的校验（字符串层拦不住软链接）。上限常量 `LIBRARY_FILE_MAX_BYTES`（1 MB）、`LIBRARY_TREE_MAX_ENTRIES`（1000，目录也算）、`LIBRARY_DIR_MAX_DELETE_ENTRIES`（目录递归删除前的条目上限）也在这里，服务端和前端都从这里引用，不在别处写数值。文件树排除分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（只对目录生效）、`LIBRARY_TREE_EXCLUDE_FILES`（只对文件生效）——不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`，那份清单会把技能里真叫 `logs` / `build` 的内容目录一起抹掉。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
+  「在父对话中执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
+  （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
+  收尾总结的「编译 / 测试耗时」要求是 `TEST_TIME_SUMMARY_RULE`，只对独立分支的子对话注入（`shared/engine.ts` 的 `verifyPart`）。
+  规则为什么这么定见 [ADR 0018](../../adr/0018-test-steps-run-in-parent.md)。
 - 清终端控制序列（`shared/ansi.ts` 的 `stripAnsi`）：清 CSI（SGR 颜色、加粗、清屏、光标移动，7 位 ESC 引导和 8 位 0x9B 引导两种）、OSC、两字符转义和进度条用的 `\r`；**普通方括号文本原样保留**（`[32m]`、Markdown 链接 `[文字](...)` 前面没有 ESC 就不是转义）。CLI 发现 stdout 接终端就上色，而面板把同一份输出用于界面 `<pre>`、报错文案和「AI 处理」上下文，所以在服务端写进 `job.output` 之前清一次（`server/accounts.ts` 的 `take`）。
 - 项目教训（`shared/lessons.ts`）：交给 Agent 的预算和按文件取全文；界面的页签也在这里：`DEFAULT_TAB`「默认」放一个标签都没有的教训，`inTab` / `lessonTabs` 决定每个页签有哪些、各几条，界面上总有一个页签选中（选中的标签没了回到「默认」）。
 - 项目教训的 AI 评审（`shared/lesson-review.ts`）：按 `shared/analysis-home.ts` 的归属规则在项目里开分析对话（`web/src/lib/task-transfer.ts` 的 `startLessonReview` → `createAnalysisTask`，必备角色「分析」，在统一的 AI 分析窗口里看），教训全文作附件；回复末尾的 `lesson-review` 块由 `parseLessonReview` 读出，对话里的卡片（`web/src/components/projects/LessonReview.tsx`）逐条点「应用」才写进教训（`POST /projects/:id/lessons/review` → `applyReviewItem`，和 `record_lesson` 同一个队列），改写、合并把旧版本留进改写记录；「已应用」按当前教训现算（`reviewItemState`），不另存。

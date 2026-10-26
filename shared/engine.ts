@@ -84,12 +84,13 @@ import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { searchExcludeFindPrune, searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
-import { verifyBlock } from './test-steps.ts'
+import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
 import type { TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
+import { isHelperAgent } from './builtin/core.ts'
 import {
   activePlan,
   applyPlan,
@@ -606,7 +607,17 @@ export interface EngineHost {
    * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
    * 不传时提示里不带这一段（没有项目的聊天、在线演示）
    */
-  verify?: { steps: TestStep[]; platform: string; wslDistro: string; scaled: boolean }
+  verify?: {
+    steps: TestStep[]
+    platform: string
+    wslDistro: string
+    scaled: boolean
+    /**
+     * 勾了「在父对话中执行」的步骤由谁跑（见 ADR 0018）：独立分支的子对话是 child（它不跑），
+     * 父对话是 parent（面板自动跑、结果直接回传子对话）。只有 Git 项目、这些步骤真的生效时才传
+     */
+    parentRun?: 'child' | 'parent'
+  }
   /**
    * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
    * 只有对话有（工作流在创建时就建好了）
@@ -1000,7 +1011,7 @@ function policyPart(host: EngineHost) {
     : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
   // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
   if (host.task.parentTaskId)
-    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp)}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
+    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是${wrapDone(host.wrapUp, parentRunsIn(host))}${host.wrapUp ? '：这是收尾，面板会自动列成计划的最后一步，不要自己再写一步' : ''}，不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
   // 「需要推送」要说清是什么时候：技能和角色设定默认都是「本地先行、不主动推送」，
   // 只写一句「可以推送」时模型照样只做本地提交，三个选项的效果就没有区别了
   const wt =
@@ -1028,10 +1039,17 @@ function wrapKind(host: EngineHost): WrapUpKind | undefined {
   return host.wrapUp === 'none' ? undefined : host.wrapUp
 }
 
+/** 这个对话有没有「合回后由父对话跑」的测试步骤（见 ADR 0018）：说法里要把它算进完成条件 */
+const parentRunsIn = (host: EngineHost) =>
+  host.verify?.parentRun === 'child' && parentRunSteps(host.verify.steps).length > 0
+
 /** 计划的「做完」是什么：按收尾种类说，没有收尾的（共用父对话目录的 Git 子对话）改完就在父对话的分支上 */
-function wrapDone(kind: WrapUpAnswer | undefined) {
+function wrapDone(kind: WrapUpAnswer | undefined, parentRuns = false) {
   if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
-  if (kind === 'merge') return '改动已合回父对话所在的分支（submit_merge 由面板合并）'
+  if (kind === 'merge')
+    return parentRuns
+      ? '改动已合回父对话所在的分支、父对话跑勾了「在父对话中执行」的步骤通过（submit_merge 由面板合并）'
+      : '改动已合回父对话所在的分支（submit_merge 由面板合并）'
   if (kind === 'push') return '改动已推到远端，结论里写清了推到哪个远端分支'
   return '改动已经在父对话所在的分支上'
 }
@@ -1048,7 +1066,12 @@ function wrapUpPart(host: EngineHost) {
 面板会在你的计划最后自动加上「${WRAP_UP[kind].title}」，不用自己写这一步，也别删、别挪到前面（下一条计划里它仍在最后）；前面的步骤做完、验证通过后再做它。`
   if (kind === 'merge')
     return `${head}
-做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。`
+做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。${
+      parentRunsIn(host)
+        ? `
+项目里有勾了「在父对话中执行」的步骤：它们你不用跑，合进去后由父对话在它的目录里跑，结果会回传给你。所以合进去不等于收尾：父对话的测试通过才标完成；失败时面板把报错原文推回来，按它修好再调用 submit_merge（这些步骤会全部重跑）。收尾总结里要有一份「编译 / 测试耗时」，两类执行方都写上。`
+        : ''
+    }`
   // 推送归 Agent 自己做（面板拿不到 git push 的结果，不像合并那样能替它标完成）：讲清做什么、做完自己标
   if (kind === 'push')
     return `${head}
@@ -1175,11 +1198,20 @@ ${
 function verifyPart(host: EngineHost) {
   const v = host.verify
   if (!v) return ''
-  return verifyBlock(v.steps, {
+  const block = verifyBlock(v.steps, {
     platform: v.platform,
     wslDistro: v.wslDistro,
     scaled: v.scaled,
+    parentRun: v.parentRun,
   })
+  // 收尾总结里的耗时统计：只对独立分支的子对话提，它才是写收尾总结的那个。
+  // 项目配了测试步骤就要求（不限于勾了「在父对话中执行」的）：它自己跑的那几步也有后台命令的真实耗时
+  const timed = v.parentRun === 'child' && v.steps.some((x) => x.enabled)
+  return timed
+    ? `${block}
+
+${TEST_TIME_SUMMARY_RULE}`
+    : block
 }
 
 /** 要改文件时才开独立分支：不说清楚的话模型会直接在原目录里改，隔离就落空了 */
@@ -2978,7 +3010,7 @@ function makeOrchestra(
         return { ids: [], error: `一个节点最多同时派 ${MAX_HELPERS_PER_STEP} 个子任务，已经派了 ${busy} 个` }
       if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
       // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
-      const helperRole = host.agents.find((a) => a.origin === 'builtin:helper' && a.enabled)
+      const helperRole = host.agents.find((a) => isHelperAgent(a) && a.enabled)
       // 独立分支里的子对话：提交和合回只走 submit_merge。派「版本控制」去收尾，它会照角色设定自己提交、
       // 甚至自己去合并，面板的收尾步骤一直等不到 submit_merge，子对话就卡在最后一步
       if (host.submitMerge) {
@@ -2991,6 +3023,19 @@ function makeOrchestra(
             ids: [],
             error:
               '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
+          }
+      }
+      // 点名的角色必须真的存在：找不到时不能落到默认「子任务」，那和复看降级成子任务一样——
+      // 派出去的角色和调用方以为的不一样，提示词也跟着换，而交回的结果看不出走了样
+      const available = commonAgents(host.agents)
+        .map((a) => `「${a.name}」`)
+        .join('、')
+      for (const spec of list) {
+        const want = spec.agent?.trim()
+        if (want && !host.agents.some((a) => a.id === want || a.name === want))
+          return {
+            ids: [],
+            error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
           }
       }
       // 接着之前的子任务：同一个会话同一时间只能跑一轮，还在跑的、同一批里两个都要接的都拒绝
@@ -3010,7 +3055,16 @@ function makeOrchestra(
         if ([...resumed.values()].some((s) => (s.session || s.id) === key))
           return { ids: [], error: `同一批里不能有两个子任务都接着「${prev.title}」的会话` }
         const want = spec.agent?.trim()
-        if (want && !host.agents.some((a) => a.id === prev.agentId && (a.id === want || a.name === want)))
+        // 原来是哪个角色就以哪个角色接着跑（提示词、CLI、模型都跟着它）。
+        // 角色被删掉时不能退回默认的「子任务」：那等于换了一个角色跑原来的会话，交回的结果也看不出走了样。
+        // agentId 为空是旧数据里「没有角色」（不是角色被删），照旧交给下面的默认逻辑
+        const was = prev.agentId ? host.agents.find((a) => a.id === prev.agentId) : undefined
+        if (prev.agentId && !was && !want)
+          return {
+            ids: [],
+            error: `「${prev.title}」原来的角色已经找不到了（可能被删掉或改名），不能接着它的会话：用 get_status 看现在有哪些角色，再显式写 agent 点名一个`,
+          }
+        if (want && was && was.id !== want && was.name !== want)
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
@@ -3045,6 +3099,9 @@ function makeOrchestra(
           prev.output = ''
           prev.endedAt = ''
           prev.reruns = (prev.reruns ?? 0) + 1
+          // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
+          const repl = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+          if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
           const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
           return { step: prev, spec, tier, again: again || '上次没有做完' }
         }
@@ -3594,6 +3651,7 @@ ${
 }
 - 子对话报错、失败或被中断要重试：用 send_to_conversation 交回原来那个子对话，它在原来的会话里接着做，不要新建一个「（重试）」子对话。派出的子任务也一样：重试时 spawn_agents 的 resume 写原来那个子任务的 id。
 - 子对话只剩合回时会发「收尾请求」给你：看它交的验证结果，够了就调用 finish_child（合回、标完成、删它的分支，都是工具调用，不要自己跑 git）；不够就用 send_to_conversation 把要补的交回给它。合并就是验收，测试要在它合并之前做完。
+- 项目里有测试步骤勾了「在父对话中执行」时，合回后面板自动在你的目录里按顺序跑它们（一次只跑一个，和编译共用独占队列），结果和耗时直接回传给对应的子对话；你不用自己跑，也不用转述。跑完通过才算它收尾，失败会退回给子对话修，它重新合并后这些步骤全部重跑。等它跑完期间，你计划里等这个子对话的步骤保持等待。
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
@@ -3641,7 +3699,7 @@ ${
     if (host.messageParent)
       parts.push(`## 收尾建议要交给用户选
 这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。
-建议只写你自己能做完的本地动作；完成标准是${wrapDone(host.wrapUp)}${host.wrapUp ? '——这是收尾，面板已经把它列成计划的最后一步，不要写成建议' : ''}；计划步骤和收尾里不写「等推送 / 等合入其他分支 / 同步远端」。推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
+建议只写你自己能做完的本地动作；完成标准是${wrapDone(host.wrapUp, parentRunsIn(host))}${host.wrapUp ? '——这是收尾，面板已经把它列成计划的最后一步，不要写成建议' : ''}；计划步骤和收尾里不写「等推送 / 等合入其他分支 / 同步远端」。推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles

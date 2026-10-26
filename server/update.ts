@@ -17,7 +17,7 @@ import {
   type AppUpdateJob,
 } from '../shared/version.ts'
 import { capture } from './exec/process.ts'
-import { recordInterrupted } from './interrupted.ts'
+import { recordInterrupted, type InterruptedEntry } from './interrupted.ts'
 import { netFetch } from './net.ts'
 import { downloadFile } from './download.ts'
 import { log } from './log.ts'
@@ -209,10 +209,15 @@ export function platformAsset(assets: Asset[], platform: string): { url: string;
  */
 export async function stopForUpdate(
   job: { phase: string },
-  deps: { interrupted: () => { id: string; doing: string }[]; stopAll: () => Promise<void> },
+  deps: {
+    interrupted: () => InterruptedEntry[] | Promise<InterruptedEntry[]>
+    stopAll: () => Promise<void>
+  },
 ) {
   job.phase = t('正在停止正在执行的任务…')
-  await recordInterrupted(deps.interrupted()).catch((e) => log.warn('update', '记录被打断的任务失败', e))
+  // 名单可能要从任务文件里读（见 tasksApi 的 interruptedTasks）：读不出来也照常停 CLI
+  const list = await Promise.resolve(deps.interrupted()).catch(() => [] as InterruptedEntry[])
+  await recordInterrupted(list).catch((e) => log.warn('update', '记录被打断的任务失败', e))
   await deps.stopAll()
 }
 
@@ -223,7 +228,7 @@ export function updateApi(deps: {
   /** 停掉所有正在执行的 CLI：用户点「强制更新」时用 */
   stopAll: () => Promise<void>
   /** 正在执行的任务和它正在做的节点：强制更新打断它们之前记下来 */
-  interrupted: () => { id: string; doing: string }[]
+  interrupted: () => InterruptedEntry[] | Promise<InterruptedEntry[]>
 }) {
   // 上次检查的结果存在缓存目录里，重启面板也记得，不会每次打开都去问 GitHub
   let cache: { at: number; list: AppRelease[] } | undefined = readCache()
