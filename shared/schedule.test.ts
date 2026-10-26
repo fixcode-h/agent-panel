@@ -5,11 +5,20 @@ import {
   afterMiss,
   afterRun,
   fromLocalInput,
+  groupLabel,
+  groupOf,
+  groupSchedules,
   nextDailyAt,
+  nextRunLabel,
+  outcomeLabel,
+  outcomeOf,
   pickDue,
+  relativeFuture,
   sameMinute,
   SCHEDULE_MISS_MS,
   toLocalInput,
+  whenLabel,
+  willRunAgain,
   workdayTemplate,
   type Schedule,
 } from './schedule.ts'
@@ -149,6 +158,111 @@ test('时间和 datetime-local 输入框的值互转（本机时区）', () => {
   assert.equal(fromLocalInput('2026-05-01T19:30'), iso)
   assert.equal(fromLocalInput(''), '')
   assert.equal(fromLocalInput('不是时间'), '')
+})
+
+test('最近一次结果：成功 / 错过 / 启动失败 / 没跑过', () => {
+  const base = schedule()
+  assert.equal(outcomeOf(base), 'none')
+  const ok = { ...base, lastRunAt: at(2026, 5, 1, 10), lastTaskId: 'task-1' }
+  assert.equal(outcomeOf(ok), 'success')
+  // 每天的计划成功启动后 missedAt 还留着前一次错过：比启动早，不算最近一次结果
+  assert.equal(outcomeOf({ ...ok, missedAt: at(2026, 4, 30, 10) }), 'success')
+  // 错过的那次比上次启动晚：最近一次是错过
+  assert.equal(outcomeOf({ ...ok, missedAt: at(2026, 5, 2, 10) }), 'missed')
+  // 先启动失败、之后又错过：错过更晚，最近一次是错过；lastError 仍非空，由卡片单独一段显示
+  assert.equal(outcomeOf({ ...ok, missedAt: at(2026, 5, 2, 10), lastError: '项目不存在' }), 'missed')
+  // 错过比上次启动早：最近一次不再是错过，旧的 lastError 说明最近一次已知结果是失败
+  assert.equal(outcomeOf({ ...ok, missedAt: at(2026, 4, 30, 10), lastError: '项目不存在' }), 'error')
+  // 只有错误、没有错过
+  assert.equal(outcomeOf({ ...base, lastError: '角色不存在' }), 'error')
+})
+
+test('分组：即将执行 / 出过问题 / 已停用 / 不会再执行', () => {
+  const pending = schedule()
+  assert.equal(groupOf(pending), 'upcoming')
+  assert.equal(groupOf({ ...pending, lastError: '角色不存在' }), 'problem')
+  assert.equal(groupOf({ ...pending, missedAt: at(2026, 4, 30, 10) }), 'problem')
+  // 停用优先：停用的计划即使错过过也归「已停用」，原因仍显示在卡片上
+  assert.equal(groupOf({ ...pending, enabled: false, missedAt: at(2026, 4, 30, 10) }), 'disabled')
+  // 单次执行完、单次失败都是「不会再执行」
+  assert.equal(groupOf({ ...pending, status: 'done' }), 'finished')
+  assert.equal(groupOf({ ...pending, status: 'skipped' }), 'finished')
+  assert.equal(willRunAgain({ ...pending, status: 'done' }), false)
+  assert.equal(willRunAgain(pending), true)
+})
+
+test('下次执行时间：「今晚 19:00（3 小时后）」，不会再执行时为空', () => {
+  const now = Date.parse(at(2026, 5, 1, 16))
+  const daily = schedule({ repeat: 'daily', at: at(2026, 5, 1, 19) })
+  assert.equal(nextRunLabel(daily, now), '今晚 19:00（3 小时后）')
+  // 停用、单次已执行完都没有下一次
+  assert.equal(nextRunLabel({ ...daily, enabled: false }, now), '')
+  assert.equal(nextRunLabel({ ...daily, status: 'done' }, now), '')
+  // 已经到了但还没被轮询处理：写成已到点，不显示「0 分钟后」
+  assert.equal(nextRunLabel(daily, Date.parse(at(2026, 5, 1, 19, 1))), '今晚 19:00（已到点）')
+  assert.equal(relativeFuture(at(2026, 5, 1, 16, 12), now), '12 分钟后')
+  assert.equal(relativeFuture(at(2026, 5, 3, 16), now), '2 天后')
+})
+
+test('绝对时间：今天 / 今晚 / 明天 / 后天 / 更远写日期 / 过去写昨天', () => {
+  const now = Date.parse(at(2026, 5, 1, 16))
+  assert.equal(whenLabel(at(2026, 5, 1, 14), now), '今天 14:00')
+  assert.equal(whenLabel(at(2026, 5, 1, 19), now), '今晚 19:00')
+  assert.equal(whenLabel(at(2026, 5, 2, 9), now), '明天 09:00')
+  assert.equal(whenLabel(at(2026, 5, 3, 9), now), '后天 09:00')
+  assert.equal(whenLabel(at(2026, 5, 4, 9), now), '5月4日 09:00')
+  assert.equal(whenLabel(at(2026, 4, 30, 9), now), '昨天 09:00')
+})
+
+test('列表分组：组顺序固定、空组不出现，组内按时间排', () => {
+  const soon = schedule({ id: 'soon', at: at(2026, 5, 1, 9) })
+  const later = schedule({ id: 'later', at: at(2026, 5, 1, 12) })
+  // 真实数据里 store.update 每次都会刷新 updatedAt：刚错过的 updatedAt 也最新
+  const missed = schedule({ id: 'missed', missedAt: at(2026, 4, 30, 9), updatedAt: at(2026, 4, 30, 9) })
+  const oldMissed = schedule({ id: 'old-missed', missedAt: at(2026, 4, 20, 9), updatedAt: at(2026, 4, 20, 9) })
+  const off = schedule({ id: 'off', enabled: false, updatedAt: at(2026, 5, 1, 6) })
+  // 排期在明年的停用计划：at 再远也不该压到「刚停用」的计划上面（活动时间不看 at）
+  const farOff = schedule({ id: 'far-off', enabled: false, at: at(2027, 1, 1, 9), updatedAt: at(2026, 4, 1, 9) })
+  const done = schedule({ id: 'done', status: 'done', lastRunAt: at(2026, 4, 29, 9) })
+  const buckets = groupSchedules([later, off, farOff, soon, missed, done, oldMissed])
+  assert.deepEqual(
+    buckets.map((b) => b.group),
+    ['upcoming', 'problem', 'disabled', 'finished'],
+  )
+  // 即将执行：先跑的在上
+  assert.deepEqual(
+    buckets[0].items.map((s) => s.id),
+    ['soon', 'later'],
+  )
+  // 出过问题：刚错过的在上
+  assert.deepEqual(
+    buckets[1].items.map((s) => s.id),
+    ['missed', 'old-missed'],
+  )
+  // 已停用：刚停用的在上，排期在明年的那条不会因为 at 大就排到前面
+  assert.deepEqual(
+    buckets[2].items.map((s) => s.id),
+    ['off', 'far-off'],
+  )
+  // 单条也不丢
+  assert.equal(groupSchedules([off])[0].items.length, 1)
+  assert.deepEqual(groupSchedules([]), [])
+})
+
+test('分组标题和最近一次结果的文案', () => {
+  assert.equal(groupLabel('upcoming'), '即将执行')
+  assert.equal(groupLabel('problem'), '出过问题')
+  assert.equal(groupLabel('disabled'), '已停用')
+  assert.equal(groupLabel('finished'), '不会再执行')
+  const now = Date.parse(at(2026, 5, 1, 16))
+  const s = schedule({ lastRunAt: at(2026, 5, 1, 15) })
+  assert.equal(outcomeLabel({ ...s, lastRunAt: '' }, now), '还没有执行过')
+  assert.equal(outcomeLabel(s, now), '成功启动于 今天 15:00')
+  assert.equal(
+    outcomeLabel({ ...s, lastRunAt: '', missedAt: at(2026, 4, 30, 19) }, now),
+    '错过 昨天 19:00（面板当时没在跑，不补跑）',
+  )
+  assert.equal(outcomeLabel({ ...s, lastError: '项目不存在' }, now), '启动失败')
 })
 
 test('同一分钟算没改时间：带秒的老数据在弹窗里编辑不会被当成重新排期', () => {
