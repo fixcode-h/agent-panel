@@ -142,6 +142,7 @@ export const GENERAL: BuiltinWorkflow = {
     ['analyst', '识别现场，收敛需求，出方案等你确认'],
     ['developer', '按确认的方案实现'],
     ['docsync', '同步项目文档'],
+    ['worklog', '把指定日期各项目做完的事汇总成一份简短的 Markdown 报告'],
   ],
   document: `## 适用
 项目里边界清楚的功能、调整和小重构。需要完整规范链路的大功能用「功能开发（OpenSpec）」，改数据结构用「数据与配置迁移」。
