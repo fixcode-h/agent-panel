@@ -147,6 +147,36 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
 }
 
 /**
+ * 计划里还没做完的步骤（含子步骤）：`doneAt` 有两种来路——全部做完自动收起，和 finish_plan 提前结束。
+ * 只看 `doneAt` 分不出这两种，界面要一起看它，才知道该说「计划已完成」还是「计划已结束，还有 N 步没做完」。
+ */
+export function leftSteps(plan: TaskPlan): PlanItem[] {
+  const left: PlanItem[] = []
+  for (const s of plan.steps) {
+    for (const c of s.children) if (c.status !== 'done') left.push(c)
+    if (s.status !== 'done') left.push(s)
+  }
+  return left
+}
+
+/**
+ * 还没做完的主步骤有几个：折叠头说「n 步没做完」用它，和 `planProgress` 的 `total - done` 是同一套计数
+ * （同一屏里两个数字必须对得上）。子步骤遗留算在它所属的主步骤里，不再单独计数
+ */
+export function unfinishedSteps(plan: TaskPlan): number {
+  return plan.steps.filter((s) => s.status !== 'done').length
+}
+
+/**
+ * 折叠头该说哪件事：'open' 还在做（说进度）、'done' 全部做完收起、'closed' 提前结束但还有没做完的步骤。
+ * 界面只认这一个判据——只看 `doneAt` 的话，提前结束会被说成「计划已完成」，而列表里还挂着等待中的步骤
+ */
+export function planHeadline(plan: TaskPlan): 'open' | 'closed' | 'done' {
+  if (!plan.doneAt) return 'open'
+  return leftSteps(plan).length ? 'closed' : 'done'
+}
+
+/**
  * 整份计划的用时（毫秒）：从计划创建（或更早开工的步骤）算起。
  * - 全部完成：停在最晚一项的 endedAt；
  * - 提前结束（finish_plan 写了 doneAt，但还有没做完的步骤）：停在 doneAt；
@@ -1022,7 +1052,7 @@ export function finishPlan(
 ): { ok: boolean; info: string } {
   const plan = activePlan(task)
   if (!plan) return { ok: false, info: '现在没有进行中的计划' }
-  const left = plan.steps.filter((s) => s.status !== 'done')
+  const left = leftSteps(plan)
   plan.doneAt ||= now
   return {
     ok: true,

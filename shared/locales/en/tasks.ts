@@ -9,6 +9,9 @@ export const EN_TASKS: Record<string, string> = {
   '总用时 {time}': 'Total {time}',
   执行计划: 'Plan',
   计划已完成: 'Plan complete',
+  计划已结束: 'Plan ended',
+  // 不写 steps：n=1 时「1 steps」是错的，和「{n} waiting」一样回避单复数
+  '{n} 步没做完（已保留）': '{n} unfinished (kept)',
   '计划 {done}/{total}': 'Plan {done}/{total}',
   '{n} 个在等待': '{n} waiting',
   '以前的计划 · {n}': 'Earlier plans · {n}',
