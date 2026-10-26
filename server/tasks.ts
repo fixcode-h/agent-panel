@@ -901,6 +901,21 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 记下「最近一次带新要求性质的输入」（见 ADR 0020）：下一轮提示里会要求对话先判计划要不要改。
+   * 用户消息、父对话交代的任务算；面板自己的推送（后台命令结果、子对话状态上报、催促）不算——
+   * 那些对应的步骤面板已经自动推进过了，再要求「先判计划」只会让对话每轮都被追问。
+   */
+  function notePlanInput(tk: Task, skip = false, now = new Date().toISOString()) {
+    if (skip) return false
+    const plan = activePlan(tk)
+    if (!plan) return false
+    plan.lastInputAt = now
+    // 新的输入要重新提醒一次（上一次输入已经提醒过的话）
+    plan.inputNotedAt = ''
+    return true
+  }
+
+  /**
    * 把一条消息交给子对话：它正在执行就实时送达，空闲就直接开新的一轮。
    * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
    */
@@ -3537,6 +3552,7 @@ export function tasksApi(deps: {
       const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
       if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
     }
+    notePlanInput(next, !!m.panel || !!m.child)
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -3657,6 +3673,7 @@ export function tasksApi(deps: {
     placed: Attachment[] = attachments,
   ): Promise<{ task: Task; how: DeliveryHow }> {
     const task = entry.task
+    notePlanInput(task, msg.role !== 'user' || !!msg.panel || !!msg.child, msg.at)
     // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
     const stuck = stalledTurn(task.id)
     if (stuck) return restartStalled(entry, msg, text, placed, stuck.input)

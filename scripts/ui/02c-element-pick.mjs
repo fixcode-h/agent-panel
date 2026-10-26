@@ -260,8 +260,20 @@ await runShard(import.meta.filename, async (api) => {
           norm(titleSpan(title)?.parentElement?.parentElement?.querySelector('span.line-clamp-2')?.textContent)
         const total = dlg.querySelector('[data-plan-total]')
         const cur = document.querySelector('[data-plan-current-time]')
+        const bar = dlg.querySelector('[data-plan-bar]')
+        const updated = dlg.querySelector('[data-plan-updated]')
         return {
           total: norm(total?.textContent),
+          // 进度条：1/4（演示计划：1 步完成、1 步等待、1 步进行中、1 步失败）
+          bar: bar
+            ? { now: Number(bar.getAttribute('aria-valuenow')), max: Number(bar.getAttribute('aria-valuemax')) }
+            : null,
+          // 「N 分钟前更新」：演示里进行中的那一步 12 分钟没动，应该带上警示色
+          updated: norm(updated?.textContent),
+          updatedWarning: updated ? [...updated.classList].includes('text-warning') : false,
+          // 滞后步骤旁边的小标记、失败状态的图标
+          stale: !!dlg.querySelector('[data-plan-stale-step]'),
+          failedIcon: [...dlg.querySelectorAll('[role="img"]')].some((e) => e.getAttribute('aria-label') === '失败'),
           totalLabel: total?.getAttribute('aria-label') || '',
           items: [...dlg.querySelectorAll('[data-plan-time]')].map((e) => ({
             text: norm(e.textContent),
@@ -295,6 +307,14 @@ await runShard(import.meta.filename, async (api) => {
       if (a.waitingMeta !== '等：端到端测试')
         errors.push(`执行计划：等待中的说明不对（「${a.waitingMeta}」，应该只有「等：端到端测试」）`)
       if (a.doneMeta) errors.push(`执行计划：完成的步骤下面还重复显示用时（「${a.doneMeta}」）`)
+      // ADR 0020：进度条、「N 分钟前更新」、滞后警示、失败态都要在界面上看得见
+      if (!a.bar || a.bar.now !== 1 || a.bar.max !== 4)
+        errors.push(`执行计划：进度条不对（${JSON.stringify(a.bar)}），应该是 1/4`)
+      if (!/分钟前更新|刚刚更新/.test(a.updated)) errors.push(`执行计划：没有显示「N 分钟前更新」（「${a.updated}」）`)
+      if (!a.updatedWarning)
+        errors.push(`执行计划：计划 12 分钟没更新了，「N 分钟前更新」没有用警示色（「${a.updated}」）`)
+      if (!a.stale) errors.push('执行计划：进行中的步骤 12 分钟没变化，旁边没有滞后标记')
+      if (!a.failedIcon) errors.push('执行计划：失败的步骤没有失败图标')
       // 进行中每秒在涨；完成的用 endedAt 固定住
       await p.waitForTimeout(1600)
       const b = await readPlan()
