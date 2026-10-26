@@ -13,6 +13,14 @@ export const EN_TASKS: Record<string, string> = {
   // 不写 steps：n=1 时「1 steps」是错的，和「{n} waiting」一样回避单复数
   '{n} 步没做完（已保留）': '{n} unfinished (kept)',
   '计划 {done}/{total}': 'Plan {done}/{total}',
+  '计划进度 {done}/{total}': 'Plan progress {done}/{total}',
+  '{ago}更新': 'updated {ago}',
+  '计划最后更新时间：{ago}': 'Plan last updated: {ago}',
+  '这一步 {n} 分钟没更新了：先收口这一步，再把当前这一步标成进行中':
+    'This step has not changed for {n} min: close it out first, then mark the current one in progress',
+  '这一步 {n} 分钟没更新了': 'This step has not changed for {n} min',
+  '上一份计划没做完就结束了，这是新开的一份': 'The previous plan ended unfinished; this is a new plan',
+  重建: 'Rebuilt',
   '{n} 个在等待': '{n} waiting',
   '以前的计划 · {n}': 'Earlier plans · {n}',
   未命名的计划: 'Untitled plan',

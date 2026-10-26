@@ -99,7 +99,10 @@ import {
   endRun,
   finishPlan,
   finishStepNow,
+  planNotice,
+  planNowText,
   planText,
+  runningStepId,
   settleWait,
   ensureChildStep,
   WRAP_UP,
@@ -1270,16 +1273,23 @@ function planPart(host: EngineHost, coordinator: boolean) {
   if (!task.projectId) return ''
   const kind = wrapKind(host)
   const cur = activePlan(task)
+  const nowMs = Date.now()
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
+  // ADR 0020：每轮都把「当前第几步、多久没更新、下一步」正面摆在前面；滞后 / 新输入没处理时再插一条提醒
+  const check = [planNowText(task, nowMs), planNotice(task, nowMs)].filter(Boolean).join('\n')
   return `## 执行计划
 ${now}
-
+${check ? `\n${check}\n` : ''}
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
-- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
+- **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
+- 什么算完成一步：改完代码并且跑通这一步该跑的检查（这一步涉及多项时，跑完它该跑的那几项）；只是起了个子任务、跑完一条命令、写了一段说明，都不算完成。
+- **要等结果的用「等待中」，不要用「进行中」**：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，面板会把那一步标成等待中，你立刻接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会标成「失败」并带上原因（需要你重做或明确跳过）。跑十几分钟的命令、等子对话时那一步本来就该是等待中。
+- **新输入先判计划**：这一轮的输入带了新要求（用户新消息、父对话转达、子对话 / 后台结果里带了新任务）时，第一件事是判断现有计划要不要改——要改就立刻 set_plan 再动手；不改就用一句话说明为什么不变，再继续。
+- **增量还是重开**：同一件事的细化、加一步、插一步、调顺序、改步骤名、作废某一步 → 用 set_plan 带已有步骤 id、partial: true 只交变更项（默认做法）；目标本身变了（换方向、需求被推翻、方案整体换掉）、剩下的步骤大部分作废、或者用户明确说「重新做 / 换个方案 / 别按刚才那个来」→ 先 finish_plan 结束这份计划，再用 set_plan 带新 title 开一份新的（旧计划和耗时留在「以前的计划」里）。只加内容却整份重开、或者换了方向还在旧计划上打补丁，都不行。
+- 每次 set_plan 交整份列表时，已有的步骤带上 id；步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
-- 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
-- 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
+- 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。同一件事不要另开一份计划。
 - 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
 ${
   kind
@@ -2915,8 +2925,9 @@ function makeOrchestra(
       if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
       if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
       const { step, ...job } = input
-      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id；父对话没点名不带，运行区据此区分两种来源
-      const owner = step?.trim() || (helper ? self.id : '')
+      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id（运行区据此区分两种来源）；
+      // 父对话没点名就挂到当前进行的那一步上——以前不带 step 的长命令在计划里完全看不见，计划还停在上一步
+      const owner = step?.trim() || (helper ? self.id : runningStepId(task))
       const r = await host.runBackground(owner ? { ...job, step: owner } : job)
       // 计划里的步骤挂上「等这条命令」：子任务的步骤不在计划里（它是 slot='sub' 的步骤），不挂
       const wait =

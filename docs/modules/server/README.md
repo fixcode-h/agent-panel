@@ -22,6 +22,8 @@
   都过 `shared/test-steps.ts` 的 `currentTestSteps(task.testSteps, project)`：项目存在就用 `project.testSteps`，项目被删 / 读不到才用任务快照。
   所以改了项目设置，已开始的对话下一次判断（下一轮提示词、下一次子对话合并）就按新设置跑，不需要新建对话；
   命令在 `background.start` 派发时由当时的步骤算定，一条命令不会中途换成新命令。取项目的点各自只取一次（`deps.projects.get`），不在同一次判断里重读。
+- 计划的推进与滞后检测（[ADR 0020](../../adr/0020-plan-model-lifecycle.md)）：后台命令结束仍走 `settleWait`（成功 `done`、失败 `failed`），子对话 / 子任务 / 合回 / 工作流结束照旧自动推进；`notePlanInput`（`server/tasks.ts`）在用户消息、父对话交代任务进入对话时写 `activePlan.lastInputAt`（面板推送的后台命令结果、子对话状态上报不算——对应步骤已经自动推进过），`deliver` 和 `followUp` 两个入口都打点。`server/exec/runner.ts` 的 `runRealTurn` 在调引擎前用 `planNotice` 算一次提醒并 `log.warn('plan', …)`（确认「到底提醒过没有」），这一轮结束后把 `inputNotedAt` 记成 `lastInputAt`——同一句提醒只出现一次，对话选择「不改计划、说明一句」时不会被每轮追问。未带 `step` 的后台命令由引擎挂到当前进行中的步骤（`runningStepId`），以前这种长命令在计划里完全看不见。回归：`server/orchestrator.test.ts`（未带 step 自动挂进行中的那一步并变等待中；每轮提示含「现在：第 N 步」「⚠ 计划还停在」「新输入先判计划」「增量还是重开」）。
+
 - 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
