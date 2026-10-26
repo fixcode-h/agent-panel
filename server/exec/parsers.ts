@@ -718,9 +718,12 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
                 : e.kind === 'compact_failed'
                   ? err && t('压缩上下文失败：{error}', { error: err })
                   : e.kind === 'tools_failed'
-                    ? t('面板的工具没接上（{error}）：这一轮不能派子任务、新建子对话，也不能向你提问', {
-                        error: err || t('原因未知'),
-                      })
+                    ? t(
+                        '面板的工具没接上（{error}）：这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问），只能直接改文件、用普通命令跑；要这些工具就重开一轮',
+                        {
+                          error: err || t('原因未知'),
+                        },
+                      )
                     : str(g('text'))
           if (text)
             out.push({
