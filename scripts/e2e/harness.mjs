@@ -311,7 +311,9 @@ export async function runShard(shardName, fn) {
       if (result) return result
       if (Date.now() - t0 > timeout) {
         const state = describe ? await describe().catch((e) => `（读状态失败：${e}）`) : ''
-        throw new Error(`等待超时：${label}${state ? `，当前状态：${JSON.stringify(state)}` : ''}`)
+        // 带上等了多久和上限：失败时一眼看出是「差一点」还是「早就卡住了」，不用靠重跑猜
+        const took = `等了 ${fmtDuration(Date.now() - t0)}，上限 ${fmtDuration(timeout)}`
+        throw new Error(`等待超时（${took}）：${label}${state ? `，当前状态：${JSON.stringify(state)}` : ''}`)
       }
       await sleep(interval)
     }
