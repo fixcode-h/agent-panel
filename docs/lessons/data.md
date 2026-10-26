@@ -33,11 +33,12 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 - 规则：模拟执行只在 `--mode demo` 里存在；正式代码不 import `demo-*`。
 - 防线：`scripts/package.mjs` 会检查。
 
-## 附件有两个路径：对话里存上传目录的绝对路径，拷进任务目录的那份只给 Agent
+## 附件落盘：只有图片拷进对话目录，其它文件只引用原路径
 
-- 规则：`placeAttachments()` 拷进任务执行目录后给的是相对路径 `attachments/名字`，这份只用在交给 CLI 的提示词和 `deliver()` 的 `placed` 参数里。写进 `task.messages[].attachments` 的必须是用户上传时那份绝对路径（数据目录的 `uploads/…`）：气泡缩略图、看大图、导出、复制路径都按它读。`followUp()`、`deliver()`、`deliverWait()` 和 runner 里的 waiter 传参时两者不能混用——`deliverWait(task, msg, placed)` 里的 `msg` 只用来记对话。读取侧 `/uploads/raw` 认 `attachments/名字` 是按文件名回上传目录找（只认一级文件名），那是兜旧数据，不是新数据可以存相对路径的理由。
-- 起因：6f60814 把附件改成拷进对话目录后，`deliver()` 的 `stale` 分支把 `placed` 当成用户原来的附件传给 `followUp()` 记进对话，消息里存成 `attachments/截图-071747.png`，而 raw 接口只认绝对路径 → 气泡和看大图的浮层都是破图。
-- 防线：`scripts/e2e.mjs` 的保活用例断言记进对话的是 `dataDir/uploads` 下的绝对路径；`server/uploads-raw.test.ts` 覆盖相对路径兜底和越界拒绝；`scripts/rules-check.mjs` 拦 `attachments: placed`。
+- 规则：`server/attachments.ts` 的 `placeAttachments()` 只把图片（用 `shared/composer.ts` 的 `attachChip` 判，不另写一套）拷进任务执行目录的 `attachments/`、返回相对路径；文本、代码、PDF、压缩包、音视频不拷，原样返回本机绝对路径。uploads 里的文件只有一份，不再往任务目录拷第二份；`ref` 和 `quote` 本来就不拷；超过 `MAX_ATTACHMENT_BYTES` 的图片也不拷。要放行的目录统一用 `attachmentAddDirs()` 算（uploads 合并成根、项目文件放行所在目录），runner 和设计会话都调它。
+- 写进 `task.messages[].attachments` 的必须是用户上传时那份绝对路径（气泡、看大图、导出按它读）；`deliver()` / `deliverWait()` 的 `placed` 只用在交给 CLI 的提示词里。`/uploads/raw` 认 `attachments/名字` 是兜旧数据，不是新数据存相对路径的理由。
+- 起因：6f60814 把附件都拷进任务目录后，`deliver()` 的 stale 分支曾把 `placed` 记进对话，破图。现在只有图片要这份拷贝，其余按原路径读，省空间也不会读到旧内容。
+- 防线：`server/attachments.test.ts`、`server/task-text.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 的附件段；`scripts/rules-check.mjs` 拦 `attachments: placed`。
 
 ## 清掉任务上的字段写 undefined，不用 delete
 

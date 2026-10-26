@@ -37,6 +37,7 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { attachmentAddDirs } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
@@ -1017,10 +1018,13 @@ async function runAgent(
     op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     systemPromptModPath,
-    // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
+    // 附件里只有图片拷进了任务目录；其余按原来的绝对路径交给 Agent，工作目录之外的那些要放行。
     // 节点交接的完整结果也在数据目录里
     addDirs: [
-      ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
+      ...attachmentAddDirs(
+        task.messages.flatMap((m) => m.attachments ?? []),
+        { cwd, uploadsRoot: UPLOADS_DIR },
+      ),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
     noEdit: chat && !!ctx.beginEdit,

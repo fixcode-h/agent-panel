@@ -111,6 +111,14 @@
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
 
+## 附件落盘：只有图片拷一份进对话目录，其它文件只引用原路径
+
+- 只有图片（`shared/composer.ts` 的 `attachChip` 判出的 image：mime 是 `image/` 或扩展名是 png/jpeg/gif/webp/bmp）由 `server/attachments.ts` 的 `placeAttachments()` 拷进任务执行目录的 `attachments/`，提示里给相对路径；多张图片重名时加序号（`note (2).png`），超过 `MAX_ATTACHMENT_BYTES` 的图片不拷、保留原绝对路径。**其它文件（文本、代码、PDF、压缩包、音视频）一律不拷**，直接把原来的本机绝对路径交给 Agent；上传的文件只有 `~/.agent-panel/uploads/<uuid>/<名字>` 一份，任务目录里不出现第二份。`ref`（粘贴回来的路径）和 `quote`（引用原文落成的文件）本来就不拷。没有图片要拷时连 `attachments/` 目录都不建。
+- 两种形态在提示里的说明由 `shared/task.ts` 的 `withAttachments` 按实际内容写：只有相对路径时说「图片已放进对话目录」，有绝对路径时说「本机绝对路径、直接读取」，免得模型把绝对路径当相对路径去找。
+- 用绝对路径的附件在执行目录之外，要放行的目录由 `attachmentAddDirs()` 按附件实际位置算：上传的合并成 uploads 根，粘贴路径引用的文件（`ref`）各自放行它所在的目录，执行目录里的和相对路径不放行。`server/exec/runner.ts` 建 `addDirs` 时取整个对话里的附件，设计会话（`server/designs.ts`）也调它，不再固定只放行 `UPLOADS_DIR`（以前 `ref` 引用的、在 worktree 执行时项目原目录里的文件会被挡掉）。实际用到的参数只有 Claude Code 的 `--add-dir` 和 Gemini 的 `--include-directories`（`shared/clis.ts` 的 `addDirs`）；Codex 的 `--sandbox` 限制的是写和命令、读文件不受目录白名单限制，Command Code / Pi 的 CLI 定义里没有目录参数（permission 是工具批准模式），所以它们读绝对路径不需要额外参数。
+- 源文件被删掉或移走时读不到，附件只保留原路径：CLI 自己报找不到，不静默换成别的路径、也不把附件从消息里去掉——不拷贝的代价就是「源文件没了就读不到」，报错就是如实告知用户。设计会话（`designs.ts` 每轮建临时工作目录、结束后删）仍把附件复制进那个临时目录，因为设计工具按工作目录内的路径找图，和任务附件不是一回事。
+- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷贝、超上限的图片不拷、重名图片加序号、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录并给 `--add-dir`；文本文件不拷、给了原绝对路径）。
+
 ## 状态回收：面板重启后与页面宽限到期后
 
 服务启动时 `server/tasks.ts` 的 `ready` 会把「重启后已经没人接着做、界面却还会画成在跑」的任务落成 `status: 'stopped'` + `stopReason: 'restart'`：
