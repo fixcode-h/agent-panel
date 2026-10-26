@@ -1,4 +1,4 @@
-import type { PeerKind, Task, TaskJob, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
+import type { PeerKind, Task, TaskJob, TaskMessage, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
@@ -497,6 +497,21 @@ export function verdictText(s: TaskStep) {
   if (!s.rounds || s.kind === 'main') return ''
   return s.verdict === 'fail' ? t('验收 {n} 轮 · 未通过', { n: s.rounds }) : t('验收 {n} 轮 · 通过', { n: s.rounds })
 }
+
+/**
+ * 服务端这次返回（或推送）的对话里有没有这条消息：没有的话页面要撤掉本地那条「待认领」。
+ * 面板自己处理的命令（/rule 发布全局规则）只回一条 system 提示，不把用户这条记进对话
+ */
+export const messageRecorded = (messages: Pick<TaskMessage, 'id'>[], messageId: string) =>
+  messages.some((m) => m.id === messageId)
+
+/**
+ * 请求报错时这条消息其实已经交给 CLI 了吗：服务端记下了、又不是「没送出去」，
+ * 就不能把原文再放回输入框（否则会出现「消息发出去了、输入框里字还在」）。
+ * 没记下、没有交付记录、或者还停在页面本地的 pending，都返回 false，页面才把原文放回输入框
+ */
+export const deliveredToCli = (m: Pick<TaskMessage, 'delivery'> | undefined) =>
+  !!m?.delivery && m.delivery.how !== 'lost' && m.delivery.how !== 'pending'
 
 /**
  * 执行中的状态行要不要显示「排队等 API 名额」：要显示时返回那个标记，否则 undefined。

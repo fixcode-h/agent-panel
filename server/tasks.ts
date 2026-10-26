@@ -2937,6 +2937,11 @@ export function tasksApi(deps: {
       prompt?: string
       /** 这条消息是怎么交给 CLI 的：新记一条时直接写上去，界面据此说「排到下一轮」这类事实（见 DeliveryHow） */
       delivery?: DeliveryHow
+      /**
+       * 页面生成的 id：点发送时它已经在本地按这个 id 插了一条「待认领」的消息，
+       * 这里沿用它，推送和响应到达时按 id 换成真实的一份，不会出现两条
+       */
+      messageId?: string
       /** 停下时独立分支里还有没提交的改动（见 stopWorktreeNote）：父对话里那一行直接写几个文件、目录在哪 */
       worktree?: TaskMessage['worktree']
     },
@@ -2988,32 +2993,36 @@ export function tasksApi(deps: {
       next.wrapRequest = undefined
       reportedState.delete(id)
     }
-    // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」
+    // 这条消息新记进对话时一并记下交付方式和独立分支的改动情况：界面读它就能说清「已排到下一轮」「N 个文件未提交」。
+    // 页面上发的消息（带 messageId）排到这里就是马上交给 CLI（start 在后面），先记成 wait，
+    // 界面从「待认领」改成「已交给 CLI」；启动失败时再改成 lost（见下面的 catch）。
+    // 面板推给对话的消息（panel / child / peer、内部补发的）不画在用户气泡上，不记交付方式
+    const how = m.delivery ?? (m.messageId ? 'wait' : undefined)
     const stamp = {
-      ...(m.delivery ? { delivery: { how: m.delivery, at: new Date().toISOString() } } : {}),
+      ...(how ? { delivery: { how, at: new Date().toISOString() } } : {}),
       ...(m.worktree ? { worktree: m.worktree } : {}),
     }
+    const newMessage = () => ({
+      id: m.messageId ?? randomUUID(),
+      role: m.panel ? ('system' as const) : ('user' as const),
+      agentId: '',
+      step: '',
+      text: m.text,
+      ...(m.panel ? { panel: m.panel } : {}),
+      ...(m.child ? { child: m.child } : {}),
+      ...(m.peer ? { peer: m.peer } : {}),
+      ...(expanded ? { prompt: expanded } : {}),
+      tools: [],
+      ...(m.attachments.length ? { attachments: m.attachments } : {}),
+      ...stamp,
+      at: new Date().toISOString(),
+    })
     // 独立分支的工作区被回收后又被继续：先建回来，附件落盘和这一轮执行才有目录
     const project = next.projectId ? await deps.projects.get(next.projectId) : null
     const restoreErr = project ? await restoreWorktree(next, project) : ''
     if (restoreErr) {
-      if (!m.recorded) {
-        next.messages.push({
-          id: randomUUID(),
-          role: m.panel ? 'system' : 'user',
-          agentId: '',
-          step: '',
-          text: m.text,
-          ...(m.panel ? { panel: m.panel } : {}),
-          ...(m.child ? { child: m.child } : {}),
-          ...(m.peer ? { peer: m.peer } : {}),
-          ...(expanded ? { prompt: expanded } : {}),
-          tools: [],
-          ...(m.attachments.length ? { attachments: m.attachments } : {}),
-          ...stamp,
-          at: new Date().toISOString(),
-        })
-      }
+      // 独立分支没建起来，这一轮没跑：这条消息没能交给 CLI，不能标成「已交给 CLI」
+      if (!m.recorded) next.messages.push({ ...newMessage(), delivery: { how: 'lost', at: new Date().toISOString() } })
       recordWorktreeError(next, restoreErr)
       await store.update(id, next)
       release(entry)
@@ -3021,22 +3030,18 @@ export function tasksApi(deps: {
     }
     // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
     const placed = m.placed ?? (await placeInTask(next, m.attachments))
-    if (!m.recorded) {
-      next.messages.push({
-        id: randomUUID(),
-        role: m.panel ? 'system' : 'user',
-        agentId: '',
-        step: '',
-        text: m.text,
-        ...(m.panel ? { panel: m.panel } : {}),
-        ...(m.child ? { child: m.child } : {}),
-        ...(m.peer ? { peer: m.peer } : {}),
-        ...(expanded ? { prompt: expanded } : {}),
-        tools: [],
-        ...(m.attachments.length ? { attachments: m.attachments } : {}),
-        ...stamp,
-        at: new Date().toISOString(),
-      })
+    if (!m.recorded) next.messages.push(newMessage())
+    // start 一进去就把任务标成执行中（status / working / 速度 / runStartedAt，见它的开头）。
+    // 失败时执行位已经释放，落盘前要把这些恢复回去，不然任务会停在「执行中」却没有进程在跑
+    const usage = next.usage.agents[next.agentId]
+    const beforeRun = {
+      status: next.status,
+      working: next.working,
+      awaitingUser: next.awaitingUser,
+      prewarming: next.prewarming,
+      runStartedAt: next.runStartedAt,
+      tps: usage?.tps,
+      lastTps: usage?.lastTps,
     }
     try {
       return await start(
@@ -3046,6 +3051,23 @@ export function tasksApi(deps: {
         await deps.agents.list(),
       )
     } catch (e) {
+      // 启动失败：这条消息没交给 CLI，别让对话里一直写着「已交给 CLI」；
+      // 同时把 start 标上的执行中状态恢复过来（执行位已经释放，留着它就自相矛盾）
+      next.status = beforeRun.status
+      next.working = beforeRun.working
+      next.awaitingUser = beforeRun.awaitingUser
+      next.prewarming = beforeRun.prewarming
+      next.runStartedAt = beforeRun.runStartedAt
+      const active = next.usage.agents[next.agentId]
+      if (active && beforeRun.tps !== undefined && beforeRun.lastTps !== undefined) {
+        active.tps = beforeRun.tps
+        active.lastTps = beforeRun.lastTps
+      }
+      const mine = next.messages.find((x) => x.id === (m.messageId ?? '') && x.delivery)
+      if (mine) {
+        mine.delivery = { how: 'lost', at: new Date().toISOString() }
+        await store.update(id, next).catch(() => {})
+      }
       release(entry)
       throw e
     }
@@ -3098,6 +3120,8 @@ export function tasksApi(deps: {
           text,
           attachments: msg.attachments ?? [],
           placed,
+          // 沿用页面本地那条待认领消息的 id：推送到达时按 id 换成这一份
+          messageId: msg.id,
           delivery: 'next',
           ...(msg.panel ? { panel: msg.panel } : {}),
           ...(msg.child ? { child: msg.child } : {}),
@@ -3133,6 +3157,8 @@ export function tasksApi(deps: {
       text: msg.text,
       attachments: msg.attachments ?? [],
       placed,
+      // 沿用页面本地那条待认领消息的 id（和其余交付路径一样）
+      messageId: msg.id,
       ...(msg.panel ? { panel: msg.panel } : {}),
       ...(msg.child ? { child: msg.child } : {}),
       ...(msg.peer ? { peer: msg.peer } : {}),
@@ -4034,7 +4060,7 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    const { text, attachments, interrupt } = p.data
+    const { text, attachments, interrupt, messageId } = p.data
     if ((await current(id))?.imported) return bad(c, READONLY, 409)
     // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
     if (RULE_CMD.test(text.trim())) {
@@ -4054,7 +4080,8 @@ export function tasksApi(deps: {
         // 附件先拷进任务的执行目录，交给 CLI 的是那一份
         const placed = await placeInTask(prev.task, attachments)
         const msg: TaskMessage = {
-          id: randomUUID(),
+          // 页面先在本地插了一条「待认领」的：沿用它的 id，推送到达时按 id 换成这一份，不会出现两条
+          id: messageId ?? randomUUID(),
           role: 'user' as const,
           agentId: '',
           step: '',
@@ -4074,7 +4101,7 @@ export function tasksApi(deps: {
     if (prev) await prev.done
     if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     try {
-      return c.json(await followUp(id, { text, attachments }))
+      return c.json(await followUp(id, { text, attachments, messageId }))
     } catch (e) {
       // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500
       if (e instanceof TaskBusyError) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)

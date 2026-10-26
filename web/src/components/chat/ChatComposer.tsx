@@ -163,16 +163,20 @@ export function ChatComposer({
     onSubmit(text)
   }
   // 发送被拦下时给一句话：Enter 和按钮走同一个 ready（见下面的 onKeyDown），
-  // 拦下却什么都不说，用户只会觉得回车没反应
+  // 拦下却什么都不说，用户只会觉得回车没反应。
+  // 输入框空着又上一条还在发（发出去的那一刻就清空了，见 TaskView 的 send），拦它的就是「上一条还在发送」；
+  // 还有内容时先报真正卡住发送的那一项（附件还在传 / 上一条在发）
   const blocker = disabled
     ? t('现在还不能发送')
-    : files.uploading
-      ? t('附件还在上传，稍等一下')
-      : sending
-        ? t('上一条还在发送，稍等一下')
-        : !typed
-          ? t('先写点要求再发送')
-          : ''
+    : !typed && sending
+      ? t('上一条还在发送，稍等一下')
+      : files.uploading
+        ? t('附件还在上传，稍等一下')
+        : sending
+          ? t('上一条还在发送，稍等一下')
+          : !typed
+            ? t('先写点要求再发送')
+            : ''
   useEffect(
     () => () => {
       if (hintTimer.current) clearTimeout(hintTimer.current)

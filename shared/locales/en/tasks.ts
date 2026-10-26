@@ -1070,6 +1070,7 @@ export const EN_TASKS: Record<string, string> = {
   '没送出去：这一轮停下了，重新发一次': 'Not delivered: this turn stopped, send it again',
   '这一轮已结束，按新的一轮处理': 'This turn already ended, handled as a new turn',
   'CLI 没有响应，已重启并按新的一轮处理': 'The CLI did not respond; restarted and handled as a new turn',
+  待认领: 'Waiting to be picked up',
   // 停下的子对话：独立分支里没提交的改动
   '【子对话停止】「{title}」（id {id}）已停下，独立分支「{branch}」里还有 {n} 个文件没有提交，目录：{path}。这些改动都还在：可以让它继续接着做，或者合并、删除这个独立分支。':
     '【Child stopped】"{title}" (id {id}) stopped. The isolated branch "{branch}" still has {n} uncommitted files in {path}. The changes are still there: let it keep working, or merge/delete this branch.',

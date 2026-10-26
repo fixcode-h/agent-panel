@@ -377,6 +377,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
+    // 推荐面板要等对话跑完、结果解析完才出现（演示里实测 5~6 秒），先等面板再断言：
+    // 不能指望 check 默认的 5 秒（见 docs/lessons/ui.md 那条「异步加载的入口先 waitFor 再断言」）
+    await p
+      .locator('[data-analysis-panel="init"]')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI初始化-对话：推荐面板一直没有出现'))
     await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
     // 结果直接画在对话右侧的报告面板（下面的检查兜住它一定出现）；旧路径里的「查看推荐并应用」有就点一下
     if (await reviewInit.count()) await reviewInit.click({ timeout: 10000 }).catch(() => {})
