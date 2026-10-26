@@ -2993,6 +2993,19 @@ function makeOrchestra(
               '你在独立分支里，不用派「版本控制」：提交和合回都由面板做。验证跑通后你自己调用 submit_merge（面板把改动提交到你的分支，父对话合回原分支），不要自己或让子任务 git commit / merge。只想核对改动范围就自己看 git status / git diff。',
           }
       }
+      // 点名的角色必须真的存在：找不到时不能落到默认「子任务」，那和复看降级成子任务一样——
+      // 派出去的角色和调用方以为的不一样，提示词也跟着换，而交回的结果看不出走了样
+      const available = commonAgents(host.agents)
+        .map((a) => `「${a.name}」`)
+        .join('、')
+      for (const spec of list) {
+        const want = spec.agent?.trim()
+        if (want && !host.agents.some((a) => a.id === want || a.name === want))
+          return {
+            ids: [],
+            error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
+          }
+      }
       // 接着之前的子任务：同一个会话同一时间只能跑一轮，还在跑的、同一批里两个都要接的都拒绝
       const resumed = new Map<HelperSpec, TaskStep>()
       for (const spec of list) {
@@ -3010,7 +3023,16 @@ function makeOrchestra(
         if ([...resumed.values()].some((s) => (s.session || s.id) === key))
           return { ids: [], error: `同一批里不能有两个子任务都接着「${prev.title}」的会话` }
         const want = spec.agent?.trim()
-        if (want && !host.agents.some((a) => a.id === prev.agentId && (a.id === want || a.name === want)))
+        // 原来是哪个角色就以哪个角色接着跑（提示词、CLI、模型都跟着它）。
+        // 角色被删掉时不能退回默认的「子任务」：那等于换了一个角色跑原来的会话，交回的结果也看不出走了样。
+        // agentId 为空是旧数据里「没有角色」（不是角色被删），照旧交给下面的默认逻辑
+        const was = prev.agentId ? host.agents.find((a) => a.id === prev.agentId) : undefined
+        if (prev.agentId && !was && !want)
+          return {
+            ids: [],
+            error: `「${prev.title}」原来的角色已经找不到了（可能被删掉或改名），不能接着它的会话：用 get_status 看现在有哪些角色，再显式写 agent 点名一个`,
+          }
+        if (want && was && was.id !== want && was.name !== want)
           return { ids: [], error: `「${prev.title}」是另一个角色跑的，接着它的会话时 agent 不写或写同一个角色` }
         resumed.set(spec, prev)
       }
@@ -3045,6 +3067,9 @@ function makeOrchestra(
           prev.output = ''
           prev.endedAt = ''
           prev.reruns = (prev.reruns ?? 0) + 1
+          // 原角色被删掉、这次显式点了名：换到点名那个角色上重试（它现在跑的就是这个角色）
+          const repl = want ? host.agents.find((a) => a.id === want || a.name === want) : undefined
+          if (repl && repl.id !== prev.agentId) prev.agentId = repl.id
           const tier = (['high', 'medium', 'low'].includes(spec.tier ?? '') ? spec.tier : ctx.tier) as NodeTier
           return { step: prev, spec, tier, again: again || '上次没有做完' }
         }
