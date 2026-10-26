@@ -7,9 +7,10 @@
  * 每个分片是一个独立进程：自己的静态服务、浏览器和演示数据，互不干扰（见 scripts/ui/harness.mjs）。
  *
  * 用法：npx vite build --mode demo && node scripts/ui-check.mjs
- * 只跑某几个分片：node scripts/ui-check.mjs 02 06（按文件名前缀匹配）
+ * 只跑某几个分片：node scripts/ui-check.mjs 02 06（按文件名前缀匹配；02 会跑 02、02b、02c 三片）
  * 限制并发：AGENT_PANEL_UI_CONCURRENCY=2 node scripts/ui-check.mjs
  * 打印每个分片的全部步骤：node scripts/ui-check.mjs --verbose
+ * 每步都截图（默认只拍失败步骤和分片首尾）：SHOTS=all node scripts/ui-check.mjs
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -28,8 +29,10 @@ assertDemoBuildFresh(root)
 const argv = process.argv.slice(2)
 const verbose = argv.includes('--verbose')
 const filters = argv.filter((a) => !a.startsWith('-'))
+// 分片文件名：01、02 这类两/三位编号，也可以是 02b、02c（同一个主题拆成几片）
+const SHARD_FILE = /^\d+[a-z]?-.*\.mjs$/
 const shards = readdirSync(shardDir)
-  .filter((f) => /^\d+-.*\.mjs$/.test(f))
+  .filter((f) => SHARD_FILE.test(f))
   .sort()
   .filter((f) => !filters.length || filters.some((p) => f.startsWith(p)))
 if (!shards.length) {
@@ -75,7 +78,12 @@ const runShard = (file) =>
     let pending = ''
     const child = spawn(process.execPath, [path.join(shardDir, file)], {
       cwd: root,
-      env: { ...process.env, AGENT_PANEL_UI_TIMINGS: timingFile(file) },
+      env: {
+        ...process.env,
+        AGENT_PANEL_UI_TIMINGS: timingFile(file),
+        // --verbose 看每一步的样子，等于 SHOTS=all（用户自己在环境里设的 SHOTS 不被覆盖）
+        ...(verbose ? { SHOTS: 'all' } : {}),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     const collect = (chunk) => {
@@ -119,7 +127,7 @@ const elapsed = Date.now() - startedAt
 console.log(`\n══════ 汇总（总 ${fmtDuration(elapsed)}）══════`)
 for (const r of results) {
   const timing = readTiming(r.file)
-  const count = timing ? `，${timing.steps.length} 张截图` : ''
+  const count = timing ? `，${timing.steps.length} 步` : ''
   console.log(`${r.code === 0 ? '✓' : '✗'} ${r.name.padEnd(16)} ${fmtDuration(r.ms).padStart(8)}${count}`)
   // 成功时打印最慢的 3 步（--verbose 打全部），失败时原样打印全部输出方便定位
   if (r.code === 0) {

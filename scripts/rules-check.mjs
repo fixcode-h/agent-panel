@@ -9,6 +9,7 @@
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
+// 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -296,6 +297,31 @@ for (const f of files) {
           `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task.ts 的 taskDoneDot（见 docs/lessons/ui.md）：${l.trim()}`,
         )
     })
+}
+
+// 14. 界面检查的分片文件名要和两处正则对得上：
+// scripts/ui-check.mjs 的 SHARD_FILE（认不到就不被收录，静默少跑一半检查）和
+// scripts/ui/harness.mjs 的截图 prefix（认不出字母后缀时 02b/02c 都落到 00-，截图互相覆盖）。
+// 正则直接从源码里读，不在这里再抄一份。拆片时容易只改一处（见 docs/lessons/ui-check.md）
+const uiShardRegex = (file, re) => read(file).match(re)?.[1]
+const uiShards = files.filter((f) => /^scripts\/ui\/\d[^/]*\.mjs$/.test(f))
+const shardFileSrc = uiShardRegex('scripts/ui-check.mjs', /const SHARD_FILE = \/(.+)\/\s*$/m)
+if (!shardFileSrc) errors.push('scripts/ui-check.mjs：读不到 SHARD_FILE（收录分片的正则），无法确认新分片会被跑')
+else {
+  const shardFile = new RegExp(shardFileSrc)
+  for (const f of uiShards) {
+    if (!shardFile.test(path.posix.basename(f)))
+      errors.push(`${f}：不能被 scripts/ui-check.mjs 的 SHARD_FILE 收录，这个分片会被静默跳过`)
+  }
+}
+const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)\-\/\)/)?.[1]
+if (!shotPrefixSrc) errors.push('scripts/ui/harness.mjs：读不到截图前缀正则（path.basename(file).match(...)）')
+else {
+  const shotPrefix = new RegExp(`^(${shotPrefixSrc})-`)
+  for (const f of uiShards) {
+    if (!shotPrefix.test(path.posix.basename(f)))
+      errors.push(`${f}：截图前缀正则（scripts/ui/harness.mjs）认不出这个文件名，截图会和别的分片互相覆盖`)
+  }
 }
 
 if (errors.length) {

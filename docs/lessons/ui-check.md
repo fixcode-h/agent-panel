@@ -30,3 +30,11 @@ paths: scripts/ui/**, scripts/ui-check.mjs
 - 规则：页面里用 rAF 循环等条件时要同时给脚本侧硬超时（`Promise.race` + `setTimeout`）：页面不可见 / 主线程被长任务占住时 rAF 不回调，`page.evaluate` 又会一直挂着（它不吃 `setDefaultTimeout`），到时候不是「等超时」而是整个分片挂死。
 - 起因：「提示-补位」用 `mounted` 当基准，并发时偶发失败：基准包含了正在播 200ms 退出动画的那条；换成清空重建后，又踩了「背景提示陆续到期、各自触发一次补位」而认错目标。
 - 防线：`node scripts/ui-check.mjs 10`（反向验证：去掉 `finishToast` 的补位 → 报「没有补上来」；去掉 `enqueueToast` 的名额上限 → 报「现在 5 条，排队没生效」）。
+
+## 分片按主题拆开时，收录规则和截图判定一起改
+
+- 规则：太长的一片按主题拆成 `02` / `02b` / `02c`，各片从共享开场（`scripts/ui/task-page.mjs`）重建状态、互不依赖，断言条数拆前拆后一致（`grep -c 'await check('` 三片相加）。分片名带字母后缀时，收录正则和截图前缀正则都要认后缀——`npm run lint` 会检查每个分片都能被 `SHARD_FILE` 收录、截图前缀认得出（`scripts/rules-check.mjs` 第 14 条）。
+- 规则：`p.evaluate` 的回调在页面里执行，读不到 Node 侧常量；`settle()` 的等待上限这类值当参数传，直接引用会 `ReferenceError`，而 `check()` 里的 `settle().catch()` 会把它吞成后面大面积断言失败。
+- 规则：默认只在失败步骤截图时，判定用「自上次截图以来新增的错误数」，不能只看本条 `check` 期间新增的（console 错误是异步到的，出事那一步判定时可能还没进 `errors`）。
+- 起因：`02-task.mjs` 3908 行、124 条断言，整轮 168.5s 全被这一片卡住；拆成三片后 61s，截图 399→31 张、68→1.7MB。
+- 防线：`node scripts/ui-check.mjs 02b`（单跑新分片）、`SHOTS=all node scripts/ui-check.mjs 02c`（看每一步的样子）。
