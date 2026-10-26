@@ -2511,18 +2511,28 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
 }
 
 /** recorded：消息已经在对话里（执行中收到时就记下了），不再加一条 */
-function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = [], recorded = false) {
+function followUp(
+  d: Db,
+  task: Task,
+  text: string,
+  fast = false,
+  attachments: Attachment[] = [],
+  recorded = false,
+  messageId = '',
+) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
   dropEndNotes(task)
   if (!recorded)
     task.messages.push({
-      id: `demo-${crypto.randomUUID()}`,
+      id: messageId || `demo-${crypto.randomUUID()}`,
       role: 'user',
       agentId: '',
       step: '',
       text,
       tools: [],
       ...(attachments.length ? { attachments } : {}),
+      // 和正式后端对齐：页面上发的消息（带 messageId）面板接住了并接着交给 CLI（界面从「待认领」改成这一句）
+      ...(messageId ? { delivery: { how: 'wait' as const, at: new Date().toISOString() } } : {}),
       at: new Date().toISOString(),
     })
   return startTurn(d, task, withAttachments(text, attachments), false, fast)
@@ -3027,7 +3037,8 @@ function tasksRoute(
     // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
     if (cur && !f.interrupt) {
       const msg = {
-        id: `demo-${crypto.randomUUID()}`,
+        // 和正式后端对齐：页面本地已经按这个 id 插了一条「待认领」的，沿用它
+        id: f.messageId ?? `demo-${crypto.randomUUID()}`,
         role: 'user' as const,
         agentId: '',
         step: task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : '',
@@ -3045,10 +3056,10 @@ function tasksRoute(
     }
     if (cur) {
       cur.stop = true
-      void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments))
+      void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments, false, f.messageId))
       return task
     }
-    void followUp(d, task, f.text, false, f.attachments)
+    void followUp(d, task, f.text, false, f.attachments, false, f.messageId)
     return task
   }
   // 回答子对话的提问：演示里只把卡片标成已回答 / 已交给父对话决定

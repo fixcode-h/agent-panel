@@ -1284,6 +1284,9 @@ export function deliveryText(how: DeliveryHow | undefined): string {
       return t('这一轮已结束，按新的一轮处理')
     case 'restart':
       return t('Agent 没有响应，已重启并按新的一轮处理')
+    // 页面本地状态：面板还没接收、Agent 也还没认领（见 DeliveryHow 的 pending）
+    case 'pending':
+      return t('待认领')
     default:
       return ''
   }
