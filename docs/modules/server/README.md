@@ -13,6 +13,7 @@
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
+- 工作总结（`server/summary.ts`）：把选中项目今天的任务记录整理成提示词（`shared/summary.ts`），在项目目录里只读跑本机 CLI 生成 Markdown 报告；接口 `/summary`，报告存在 `tasks/summaries.json`（跟任务记录一起清理），保留最近 `SUMMARY_KEEP` 份，用户编辑后的正文走 `PUT /summary/:id`。
 
 ## 入口
 

@@ -21,6 +21,7 @@ const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ defaul
 const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
 const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ default: m.LibraryPage })))
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
+const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiFixDialog = lazy(() => import('@/components/ai-fix/AiFixDialog').then((m) => ({ default: m.AiFixDialog })))
@@ -37,6 +38,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   comfy: () => <ComfyPage />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
+  summary: () => <SummaryPage />,
 }
 
 function useTheme() {

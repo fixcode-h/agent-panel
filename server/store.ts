@@ -35,6 +35,8 @@ export const DATA_FILES: Record<string, string> = {
   'project-categories.json': 'config/project-categories.json',
   'projects.json': 'projects/projects.json',
   'tasks.json': 'tasks/tasks.json',
+  // 工作总结报告是任务记录的派生，跟着任务记录一起清理（见 server/data.ts 的 tasks 类别）
+  'summaries.json': 'tasks/summaries.json',
 }
 export const dataPath = (name: string) => path.join(DATA_DIR, DATA_FILES[name] ?? name)
 

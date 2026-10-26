@@ -7,11 +7,12 @@
 
 ## 职责
 
-- 页面：项目、任务、工作流、Agent、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 页面：项目、任务、工作流、Agent、设置、图库、ComfyUI、MCP、工作总结（`web/src/pages/`），不常用的大页面按需加载。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。
 - 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
+- 工作总结（`web/src/pages/SummaryPage.tsx`）：选项目、生成今天的报告、编辑 / 预览 / 复制，最近的报告从 `/summary` 读回来；演示版的模拟后端在 `web/src/lib/demo-summary.ts`。
 
 ## 入口
 

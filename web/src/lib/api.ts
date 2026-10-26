@@ -66,6 +66,7 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
+import type { SummaryJob, SummaryRecord, SummaryRequest } from '@shared/summary'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type {
   Annotation,
@@ -740,4 +741,10 @@ export const api = {
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) =>
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
+  // ---- 工作总结：选项目生成今天的报告，存最近几份 ----
+  summary: () => request<{ reports: SummaryRecord[] }>('/summary'),
+  generateSummary: (input: SummaryRequest) => request<SummaryJob>('/summary', json('POST', input)),
+  summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
+  stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
+  saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),
 }
