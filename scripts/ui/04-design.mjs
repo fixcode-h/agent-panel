@@ -5,7 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -170,6 +170,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByText('暗夜远征').first().click({ button: 'right' })
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
+  // 设计项目设置弹窗和项目设置用同一份滚动区常量，底部留白也要一致
+  errors.push(...(await dialogBottomSpaceProblems(p, 'UI设计-项目提示词-底部留白')))
   await p.keyboard.press('Escape')
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')

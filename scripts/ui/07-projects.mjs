@@ -5,7 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -301,11 +301,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await settingsButton.count()) {
     await settingsButton.first().click()
     const dlg = p.getByRole('dialog')
+    // 各分页滚到底的底部留白要和 dialogScrollClass 一致，最后一块不能被操作栏压住；
+    // 测量方式和预期值都在 harness.mjs 里（预期值从 dialog.tsx 的 pb-N 读）
+    const footSpace = async (label) => {
+      errors.push(...(await dialogBottomSpaceProblems(p, `项目设置-底部留白（${label}）`)))
+    }
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
+    await footSpace('常规')
     // 项目技能：项目目录里的和用户级的都列出来，缺说明的技能给出问题提示和 AI 修复
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
+    await footSpace('Skill')
     // MCP：项目里识别到的配置（三种状态各有一条）、面板管理的工具、导入与 AI 排查入口
     await dlg.getByRole('button', { name: 'MCP', exact: true }).click()
     await check(p, '项目设置-MCP', [
@@ -315,13 +322,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '全部导入',
       '用 AI 排查整页',
     ])
+    await footSpace('MCP')
     // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill 再切回', ['新建 Skill'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
     await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '评审', '测试验收', '版本控制'])
+    await footSpace('必备角色')
     await dlg.getByRole('button', { name: '工作流', exact: true }).click()
     await check(p, '项目设置-工作流', ['AI 配置'])
+    await footSpace('工作流')
     await dlg
       .getByRole('button', { name: /^测试步骤/ })
       .first()
@@ -334,6 +344,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '按改动大小决定验证范围',
       '每条可以写「适用改动」',
     ])
+    await footSpace('测试步骤')
     // 「适用改动」能看见也能改：带出已配的 glob，而且逐字符敲第二条不会被归一化吞掉
     // （输入框保留原文、失焦才 parse；每次按键就 parse 再回显会把刚敲的逗号删掉）
     const applies = dlg.getByLabel('适用改动').first()
@@ -349,9 +360,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .first()
       .click()
     await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    await footSpace('项目教训')
+    // 项目说明和各个 CLI 的说明文件共用同一个滚动区分支（section === 'doc' || cli:），单独确认一次
+    await dlg.getByRole('button', { name: /^项目说明/ }).click()
+    // 说明文件是异步读的，编辑框出来再量，否则量到的是「正在读取…」那一行
+    await dlg
+      .locator('textarea')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('项目设置-项目说明：没有读到说明文件'))
+    await check(p, '项目设置-项目说明')
+    await footSpace('项目说明')
     // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
     await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
+    await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
     const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     await p

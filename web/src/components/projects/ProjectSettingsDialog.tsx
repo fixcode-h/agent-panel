@@ -46,7 +46,7 @@ import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { CategoryPicker } from '@/components/ui/category-picker'
-import { ConfirmDialog } from '@/components/ui/dialog'
+import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -644,7 +644,7 @@ function Body({
           ))}
         </nav>
         {section === 'mcp' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!project ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t('先创建项目，再管这个项目的 MCP 配置。')}
@@ -658,7 +658,7 @@ function Body({
             )}
           </div>
         ) : section === 'skills' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!project ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
             ) : !project.path || draft.path.trim() !== project.path ? (
@@ -670,7 +670,7 @@ function Body({
             )}
           </div>
         ) : section === 'doc' || section.startsWith('cli:') ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!docsReady || !docs ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {!project
@@ -745,7 +745,7 @@ function Body({
               e.preventDefault()
               void confirm()
             }}
-            className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
+            className={cn(dialogScrollClass, 'gap-7 md:flex-row')}
           >
             {section === 'init' ? (
               <ProjectInitPanel
