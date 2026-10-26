@@ -98,6 +98,12 @@ export const AgentInput = z.object({
   canDelegate: z.boolean().default(false),
   /** 可以按工作流启动计划（start_plan）；关掉时只能在当前对话里直接执行 */
   canPlan: z.boolean().default(false),
+  /**
+   * 在哪类对话里能启动：any 任意对话（默认）；parent 只在父对话里执行。
+   * 子对话点名 parent 的角色时不在这里跑，而是转交父对话创建这个子任务（见 ADR 0019）。
+   * catch：旧数据没有这个字段时按 any 读，不能因为加字段读不进来。
+   */
+  runIn: z.enum(['any', 'parent']).catch('any').default('any'),
   /** 用户是否确认过能力开关：升级时为旧内置 Agent 补一次默认能力，之后不再覆盖用户的选择 */
   capsSet: z.boolean().default(false),
   /** 已经做过的一次性升级（见 shared/builtin/core.ts 的 DEFAULT_CHANGES）：做过的不再做，用户之后改回去的值不会被覆盖 */

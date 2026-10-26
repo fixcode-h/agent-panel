@@ -112,6 +112,7 @@ export function AgentsPage() {
         common: false,
         canDelegate: false,
         canPlan: false,
+        runIn: 'any',
         capsSet: true,
         includes: [],
         params: [],

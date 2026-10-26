@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-26（本轮新增「子对话合回后由父对话跑测试步骤」一条，并合入同日 dev 上的「点解决收口计划」「提问父子联动」「删除独立分支同步内存」等说明）
+- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条；其余内容沿用 2026-10-26 的核对）
 
 ## 职责
 
@@ -18,6 +18,7 @@
 - 删除独立分支（`POST /tasks/:id/worktree/discard`）成功后除了写 store，必须把新的 `worktree` 也同步回内存里那份任务（`entry.task.worktree = next` + `entry.rev++`）：`current()`、`/tasks` 列表摘要（`idle`）和 `/children` 都优先读内存副本，只写 store 的话接口会继续按旧的 `active` 算（`gone` 恒为 false，运行区和计数继续挂着），而且下一次 PATCH 还会拿旧 worktree 把 `discarded` 写回 `active`。回归：`scripts/e2e/05-workflow-edge.mjs` 的「删除独立分支后列表接口读到的也是已删除」。
 - 任务「提问」开关与子对话的联动（`server/tasks.ts` 的 `PATCH /tasks/:id`，规则在 `shared/child-ask.ts`）：`askUser` 是这条对话允不允许提问（引擎按它决定让不让问），父对话把它关掉时，名下已创建的子对话一起关（`applyChildAskUser` 逐条改 `askUser` 并发消息 / 落盘，不只改界面）；`childAskUser` 是「之后新建的子对话默认开不开提问」，右键菜单在 PATCH 里带上一次性的 `applyChildAsk` 决定已创建的子对话要不要一起打开。新建子对话的初始 `askUser` 只在一处算：`createTask`（带 `parentTaskId` 时）和引擎内建的 `createConversation` 都取父对话的 `childAskUser`。界面一侧的设置项、右键菜单和三层优先级见 [web 模块 README](../web/README.md)。
 - 子对话合回后的父对话测试（`server/tasks.ts` 的 `finishChildStep` → `startParentTests`，队列在 `server/parent-tests.ts`）：子对话勾了「在父对话中执行」的步骤不在它自己的分支里跑（[ADR 0018](../../adr/0018-test-steps-run-in-parent.md)），合并成功（`integrate`）后先写 `wrapRequest.state = 'testing'`、把计划里的收尾步骤标等待，把这一批排进队列——由面板在父对话目录里一次只跑一步，后台命令按 `exclusive` 和 UE 编译共用独占队，名字是「父对话测试：<子对话标题> · <步骤名>」，所以父对话运行区看得到谁在跑。全部通过才 `childMerged`（标完成、清 `wrapRequest`、按 `childFlowOf` 收口删分支）；失败把「来自子对话「标题」（id）」+ 失败步骤 + 用时 + 输出推回该子对话，状态记 `test-failed`（与「没合进去」的 `failed` 分开），子对话重新合并时全部重跑（不跳过）。耗时记进任务的 `Task.testRuns`；重启后 `recoverParentTests` 把 `testing` 的重新排队（从第一步重跑），`advanceChildTo` 的 `parentTest` hold 保证没跑完不标完成、不删分支。UE 的 `request_build` 不受影响，仍按 ADR 0004 走。
+- 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
 - 读一条后台命令的当前样子（`GET /tasks/:id/jobs/:jobId` → `server/background.ts` 的 `view(taskId, id)`，响应体是 `shared/schema.ts` 的 `TaskJobView`）：界面上点后台命令行标题打开的终端窗口按它轮询，命令的输出只在服务端内存的 `BgJob.lines`（`KEEP_LINES` 保留结尾 300 行），不进对话记录，所以必须单独有个读接口。返回 `state` / `code` / `output` / `createdAt` / `startedAt` / `endedAt` / `lastOutputAt`；`output` 是 `lines.join('\n')` 原文，不掺「跑完了」「退出码」这些面板的话（那是推回对话的 `jobOutput` / `resultText` 的事）。排队中、结束后都读得到（用户可能过一阵才点开，结束后要给最终输出和退出码）；归属按 `BgJob.taskId` 校验，跨对话读别人的编号一律当不存在返回 404，和 `/tasks/:id/processes` 只作用于自己子树是同一个口径。回归：`server/background.test.ts`（跑着能读到已输出内容、跑完读得到最终输出和退出码、跨 `taskId` 和不存在的编号读不到）、`server/task-job-view.test.ts`（路由层 404）。

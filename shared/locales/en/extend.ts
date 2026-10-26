@@ -149,6 +149,9 @@ export const EN_EXTEND: Record<string, string> = {
   能启动计划: 'Can start plans',
   '需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。':
     'Runs a workflow plan for full processes or larger changes. When off, it only works directly in the current conversation.',
+  禁止子对话执行: 'Disallow running in sub-conversations',
+  '只对子对话生效：勾上后子对话里不能执行这个角色，点名它会自动转交父对话创建子任务，子对话的计划步骤立即标完成、不会被它卡住；父对话和工作流节点里照常可以直接派它。':
+    'Only applies to sub-conversations: when on, a sub-conversation cannot run this role — naming it there hands the subtask to the parent conversation instead, and the sub-conversation’s plan step is marked done right away so it is not blocked. Parent conversations and workflow nodes can still run it directly.',
   '拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它':
     'Drag to reorder (or press Alt + arrow keys). Earlier roles are given to it first',
   '引入关系有循环：{chain}。执行时绕回的那一环会被跳过，设定很可能不完整，请去掉其中一个引入。':
@@ -163,6 +166,7 @@ export const EN_EXTEND: Record<string, string> = {
   '绕回上层，形成循环': 'Loops back to a higher level',
   '太深，不会展开': 'Too deep, not expanded',
   选项: 'Options',
+  对话范围: 'Conversation scope',
   '已经有「{name}」了': '"{name}" already exists',
   '最多 {n} 个选项': 'Up to {n} options',
   '拖动调整顺序（也可以按 Alt + 方向键）': 'Drag to reorder (or press Alt + arrow keys)',

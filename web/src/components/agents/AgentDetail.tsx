@@ -189,6 +189,20 @@ export function AgentDetail({
       'params',
       coreDef.agent.params.map((d) => (d.key in v ? { ...d, default: v[d.key] } : d)),
     )
+  /**
+   * 「禁止子对话执行」：子对话里点名它会自动转交父对话创建子任务（见 ADR 0019）。
+   * 内置角色也能改这个开关，服务端保存时保留用户的 runIn，不跟内置定义同步。
+   */
+  const runInField = (
+    <Checkbox
+      checked={draft.runIn === 'parent'}
+      onChange={(v) => set('runIn', v ? 'parent' : 'any')}
+      label={t('禁止子对话执行')}
+      hint={t(
+        '只对子对话生效：勾上后子对话里不能执行这个角色，点名它会自动转交父对话创建子任务，子对话的计划步骤立即标完成、不会被它卡住；父对话和工作流节点里照常可以直接派它。',
+      )}
+    />
+  )
   // 模型只能选三档；以前存的具体模型名单独列一项，换成档位后就不再出现
   const tierOptions = [
     ...MODEL_TIERS.map((m) => ({
@@ -393,6 +407,7 @@ export function AgentDetail({
                 </FormSection>
               </>
             )}
+            {tab === 'basic' && locked && <FormSection title={t('对话范围')}>{runInField}</FormSection>}
             {tab === 'basic' && !locked && (
               <FormSection title={t('基本信息')}>
                 <div className="flex flex-wrap gap-4">
@@ -433,6 +448,7 @@ export function AgentDetail({
                   label={t('能启动计划')}
                   hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
                 />
+                {runInField}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted">{t('标签')}</span>
                   <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
