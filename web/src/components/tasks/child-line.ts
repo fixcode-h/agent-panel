@@ -94,9 +94,10 @@ export interface ChildLabel {
 /**
  * 进程回收（cliAlive 为假）时这一行怎么说，一处定完，标签和悬停提示都读它：
  * - closed：这一轮真的结束了（childIcon 是 done），本来就已经没事可做，说「已关闭」；
- * - hint：对话还在跑 / 还在等你处理（running、waiting），不能说关了，只在悬停里补一句「继续会重新拉起」；
- * - ''：停下（stopped / idle，行上已用 stopReasonText 说清）、失败（行首图标就是失败，不再提进程）
- *   以及进程还活着。
+ * - hint：对话还在跑 / 还在等你处理（running、waiting），或者被页面切走、闲置、重启顺带停下（idle）：
+ *   进程都没了，行上写了停下原因，这句补的是「继续还能不能接着做」——一排静止的卡片如果只剩
+ *   「页面切走后结束」，用户看不出继续能不能恢复（用户报的现象：很多子对话没有拉起）；
+ * - ''：用户自己按的暂停（stopped，说了「已暂停」）、失败（行首图标就是失败，不再提进程）以及进程还活着。
  * 不分开写的理由：以前「已关闭」按 cliAlive、「执行中」按 childIcon 各算一套，两套一碰就出现
  * 「已关闭 + 计划 13/14 + 等结果」同屏（用户报的问题）。合成一次判定，以后加图标只改这一处。
  */
@@ -107,6 +108,7 @@ function convGone(c: ChildSummary): 'closed' | 'hint' | '' {
       return 'closed'
     case 'running':
     case 'waiting':
+    case 'idle':
       return 'hint'
     default:
       return ''
@@ -131,6 +133,10 @@ export function childLabels(c: ChildSummary): ChildLabel[] {
   if (icon === 'running') out.push({ text: convStateText(state), tone: state === 'wrapup' ? 'success' : 'accent' })
   // 停下也说清是谁结束的：只有用户按的暂停才是「已暂停」（见 stopReasonText）
   if (icon === 'stopped' || icon === 'idle') out.push({ text: stopReasonText(c.stopReason), tone: 'subtle' })
+  // 进程回收了、这一轮停下但还有没做完的（计划没做完）：行上补一句继续会重新拉起。
+  // 静止的行以前只有悬停里能看到这句，一排卡片只剩「页面切走后结束」，用户以为再也起不来了
+  // plan 来自 openPlan：只在计划没做完时才有值（做完了是 undefined）
+  if (icon === 'idle' && c.plan) out.push({ text: t('Agent 进程已回收，继续会重新拉起'), tone: 'subtle' })
   return out
 }
 

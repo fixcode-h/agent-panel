@@ -1320,6 +1320,39 @@ export function childIcon(x: ChildEntry): TaskIcon {
 /** 行首要不要转圈：就是图标是 running，见 childIcon */
 export const childSpinning = (x: ChildEntry) => childIcon(x) === 'running'
 
+/**
+ * 面板重启 / 崩溃后，这条落盘里的任务还会不会被画成在跑（childIcon 是 running）。
+ * 重启后 CLI 进程已经回收，后台命令、工作流、派出的子任务的内存记录也一起没了，凡是「还有人在做」的显示都不成立；
+ * 启动迁移按它把任务落成已停止（stopReason: restart），行首图标、列表分组、「N 个执行中」的计数和
+ * 「CLI 进程已回收」那句提示才会一起变静止（用户报的现象：重启后子对话还挂在执行中一直转圈）。
+ * 判定走 childState / childIcon，和图标、分组、计数是同一处，不另写一套「算不算在跑」。
+ * 例外是「待收尾」：它等的是父对话合并，不靠 CLI 进程，重启后照样能收，不落静止。
+ */
+export function restartInterrupted(
+  task: Parameters<typeof childFacts>[0] & Pick<Task, 'id' | 'title' | 'createdAt' | 'worktree'>,
+): boolean {
+  const entry: ChildEntry = {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    working: !!task.working,
+    // 重启后没有进程活着；这一项只影响「已关闭」标签，不参与图标判定
+    cliAlive: false,
+    startedAt: task.createdAt,
+    requests: task.requests.length,
+    asking: task.parentAsks?.length ?? 0,
+    resolved: task.resolved === true,
+    plan: openPlan(task),
+    workflow: runRunning(task),
+    helpers: helpersWorking(task),
+    // 独立分支还活着（state 是 active）就是还没收口：合了或丢掉后 state 会跟着改
+    unmerged: task.worktree?.state === 'active',
+    wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
+    stopReason: task.stopReason,
+  }
+  return childSpinning(entry) && childState(entry) !== 'wrapup'
+}
+
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
 export const childWaiting = (x: ChildEntry) => childIcon(x) === 'waiting'
 
