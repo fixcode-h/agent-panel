@@ -50,7 +50,7 @@ export function useUnreadTasks() {
   return useSyncExternalStore(subscribe, () => ids)
 }
 
-/** 这一轮完成但用户还没打开看过：侧栏橙点、服务端据此保留 CLI 进程（判定在 shared/task.ts 一处） */
+/** 这一轮完成但用户还没打开看过：侧栏橙点读它（判定在 shared/task.ts 一处）。服务端 presence 另有一份等价判断（server/tasks.ts 的 setPresenceUnreadKeeper，按 turnDoneAt/turnSeenAt，不含 jobs，有后台命令时靠状态本身不算完成） */
 export const isTaskUnread = taskTurnUnread
 
 /**
