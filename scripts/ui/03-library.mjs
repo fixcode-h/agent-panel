@@ -165,7 +165,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     errors.push('AI 分析：接着追问后右侧的报告不见了')
   await check(p, 'AI分析-追问后报告还在')
   // 功能面板和中间对话的分界可以左右拖（和文件面板同一套 usePaneWidth / ResizeHandle，各自记宽度）：
-  // 拖动后宽度跟着变、刷新后还是这个宽度；覆盖态（窄屏抽屉）没有并排可拖，那时不该有拖动条
+  // 拖动后宽度跟着变、刷新后还是这个宽度；覆盖态（窄屏抽屉）没有并排可拖，那时不该有拖动条。
+  // 默认宽度和对话对半（用户 2026-11 要求），不是原来那个 440 定宽
   {
     // 拖动条挂在右栏 aside 上（不在 data-analysis-panel 里面）。宽度和位置都从拖动条自己的那一栏量：
     // 页面背后还留着项目页的右栏，按全局定位会量到别的栏（AI 分析窗口是 Portal 挂在 body 末尾的）
@@ -185,12 +186,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         return { width: r.width, left: r.x - (row?.x ?? 0), rowW: row?.width ?? 0 }
       })
     const width = async () => (await railBox())?.width ?? 0
-    const before = await width()
+    const box0 = await railBox()
+    const before = box0?.width ?? 0
+    // 首次打开（这台机器上没拖过）：右栏宽度约等于这一行容器的一半，和中间对话一样宽
+    const half = (box0?.rowW ?? 0) / 2
+    const saved0 = await p.evaluate(() => localStorage.getItem('pane:report-panel'))
     const g = await grip.boundingBox().catch(() => null)
     if (!(await grip.count())) errors.push('AI分析-功能面板宽度：宽屏时没有拖动条')
-    else if (!g) errors.push('AI分析-功能面板宽度：拖动条量不到位置')
-    else if (Math.abs(before - 440) > 2) errors.push(`AI分析-功能面板宽度：默认宽度是 ${before}，不是 440`)
-    else {
+    else if (saved0 !== null) errors.push(`AI分析-功能面板宽度：还没拖过就记着宽度 ${saved0}，验的不是默认值`)
+    else if (!half) errors.push('AI分析-功能面板宽度：量不到右栏所在的容器宽度')
+    else if (Math.abs(before - half) > 2)
+      errors.push(`AI分析-功能面板宽度：默认宽度是 ${before}，不是容器一半 ${Math.round(half)}（应该和对话对半）`)
+    // 拖动条量不到位置、或者默认宽度不对就不接着拖：后面的拖动、记忆、双击都建立在这个前提上
+    if (g && half && Math.abs(before - half) <= 2) {
       // 往左拖 120：右栏在右边，往左拖变宽
       await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
       await p.mouse.down()
@@ -250,7 +258,11 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         await p.mouse.dblclick(g2.x + g2.width / 2, g2.y + g2.height / 2)
         await settle(p)
         const reset = await width()
-        if (Math.abs(reset - 440) > 2) errors.push(`AI分析-功能面板宽度：双击后宽度是 ${reset}，没回到 440`)
+        // 双击拖动条恢复默认：和首次打开一样回到「容器一半」的对半，不是回到老的 440
+        const halfNow = ((await railBox())?.rowW ?? 0) / 2
+        if (!halfNow) errors.push('AI分析-功能面板宽度：双击后量不到右栏所在的容器宽度')
+        else if (Math.abs(reset - halfNow) > 2)
+          errors.push(`AI分析-功能面板宽度：双击后宽度是 ${reset}，没回到容器一半 ${Math.round(halfNow)}`)
         await check(p, 'AI分析-功能面板宽度-双击恢复')
         // 窄屏（xl 以下）功能面板是盖在对话上的抽屉（reportCover），没有并排可拖，那时不该有拖动条
         await p.setViewportSize({ width: 1024, height: 900 })

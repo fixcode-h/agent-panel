@@ -78,6 +78,7 @@ import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { apiQueueWait, fmtDuration, startedRun, tpsNow } from '@/lib/tasks'
+import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -265,8 +266,8 @@ const BLOCK_LIMIT = 30
 const PANE_MIN = 280
 /** 右栏拖动时中间至少留下的宽度 */
 const PANE_GAP = 320
-/** 功能面板的默认宽度（原来是 min(440px, 100%) 定宽） */
-const REPORT_PANE_DEFAULT = 440
+/** 功能面板盖在对话上时（窄屏抽屉、pane 里）的宽度：覆盖态没有并排可拖，按原来的定宽铺开 */
+const REPORT_COVER_WIDTH = 440
 /** 功能面板比文件面板窄：评审卡片里是「徽标 + 标题」一行，比文件列表的路径行更省宽度 */
 const REPORT_PANE_MIN = 320
 
@@ -278,6 +279,31 @@ const REPORT_PANE_MIN = 320
 function paneMax(box: HTMLElement | null, min: number) {
   const row = box?.parentElement?.clientWidth ?? window.innerWidth
   return Math.max(min, row - PANE_GAP)
+}
+
+/**
+ * 对半的栏宽：这台机器上拖过就用拖过的宽度（usePaneWidth 记的），没拖过就是本栏容器的一半
+ * （用户 2026-11 要求有功能面板时默认功能面板和对话面板各占一半）。
+ *
+ * 一半按本栏自己的容器量，不按窗口：AI 分析窗口是弹窗、比窗口窄，侧栏收起时还会更宽。
+ * 容器要等任务加载完、右栏真的挂上才有尺寸（见 TaskView 的 setRail），拿到之前先按窗口减掉左栏估算。
+ * `rowWidth` 每次现量、不缓存：双击拖动条恢复默认时 usePaneWidth 会重新调一次初值函数，
+ * 那时窗口可能已经改过大小，按缓存会回到旧的一半。
+ */
+function useHalfPane(key: string, min: number, max: () => number, rowWidth: () => number, rowMounted: boolean) {
+  const half = () =>
+    typeof window === 'undefined'
+      ? PANE_DEFAULT_SSR
+      : paneHalfWidth(rowWidth() || rowWidthFromWindow(window.innerWidth), min)
+  const pane = usePaneWidth(key, half, min, max)
+  useLayoutEffect(() => {
+    // 拖过的宽度原样用：用户的选择优先，量到容器也不会改回去
+    if (!pane.stored && rowMounted) pane.fit(half())
+    // 右栏挂上、能量出真实容器了才对半一次；窗口 resize 后不自动跟（和文件面板一样，栏宽算用户自己的布局）
+    // pane 每次渲染都是新对象，放进依赖会一直重跑
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowMounted])
+  return pane
 }
 
 /**
@@ -420,19 +446,33 @@ export function TaskView({
   }, [])
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
-  // 右栏自己这一栏：量拖动上限时以它为基准，不按全局第一个右栏（见 paneMax）
+  // 右栏自己这一栏：量拖动上限、量对半都以它为基准，不按全局第一个右栏（见 paneMax）
   const rail = useRef<HTMLElement>(null)
-  // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
-  const taskPanel = usePaneWidth(
+  // 右栏挂上没有要等任务加载完才知道：aside 挂上前 ref 是 null（useEffect 里那时读到的也是 null，
+  // 量出来会是窗口估算值），所以用回调 ref 记下挂载时机，挂上之后再按真实容器对半
+  const [railMounted, setRailMounted] = useState(false)
+  const setRail = useCallback((el: HTMLElement | null) => {
+    rail.current = el
+    setRailMounted(!!el)
+  }, [])
+  // 这一行有多宽（右栏加中间的对话）：右栏默认宽度按它的一半算，每次现量（见 useHalfPane）
+  const rowWidth = useCallback(() => rail.current?.parentElement?.clientWidth ?? 0, [])
+  // 文件面板和功能面板默认都和中间对话对半（见 lib/pane-width.ts）：有面板时两边一样宽。
+  // 手动拖过之后按拖动后的宽度、双击拖动条也回到对半；上限至少留出中间 320
+  const taskPanel = useHalfPane(
     'task-panel',
-    typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
     PANE_MIN,
     () => Math.max(340, paneMax(rail.current, PANE_MIN)),
+    rowWidth,
+    railMounted,
   )
-  // 功能面板和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）：
-  // 初值取原来的定宽 440；窗口比 440 + 中间留的量还窄时按上限收着，和原来的 min(440px, 100%) 一致
-  const reportPane = usePaneWidth('report-panel', REPORT_PANE_DEFAULT, REPORT_PANE_MIN, () =>
-    paneMax(rail.current, REPORT_PANE_MIN),
+  // 和文件面板并排在同一栏，但宽度偏好不同，各自记一个（共用 key 会互相改成对方拖过的宽度）
+  const reportPane = useHalfPane(
+    'report-panel',
+    REPORT_PANE_MIN,
+    () => paneMax(rail.current, REPORT_PANE_MIN),
+    rowWidth,
+    railMounted,
   )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -1713,7 +1753,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
               {!pane && (
                 <aside
-                  ref={rail}
+                  ref={setRail}
                   aria-label={
                     openChild
                       ? childFiles
@@ -1727,12 +1767,12 @@ export function TaskView({
                   }
                   data-task-panel
                   style={{
-                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按原来的默认宽度封顶在容器内；
-                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持）
+                    // 功能面板：覆盖态（窄屏从标题栏打开、pane 里）没有并排可拖，按定宽封顶在容器内；
+                    // 宽屏并排时用拖过的宽度（记在这台机器上，刷新后保持），没拖过就是和对话对半
                     width: openChild
                       ? '50%'
                       : !panel && openRun === 0 && reportCover
-                        ? `min(${REPORT_PANE_DEFAULT}px, 100%)`
+                        ? `min(${REPORT_COVER_WIDTH}px, 100%)`
                         : !panel && openRun === 0 && reportOn
                           ? reportPane.width
                           : taskPanel.width,
