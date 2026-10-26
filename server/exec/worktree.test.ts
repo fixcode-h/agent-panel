@@ -140,8 +140,6 @@ function worktreeAt(root: string, repo: string, name: string) {
   return { dir, branch }
 }
 
-const branchAlive = (repo: string, branch: string) => git(repo, 'branch', '--list', branch).toString().trim() !== ''
-
 /** 任务记录：默认已收口、没在跑，改动都已合回原分支 */
 const doneInfo = (over: Partial<{ done: boolean; working: boolean; projectPath: string; branch: string }> = {}) => ({
   done: true,
