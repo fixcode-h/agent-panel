@@ -9,6 +9,8 @@
  *   Agent 一次把几个没开始的步骤直接标完成，按顺序摊开上一次记时间到现在这段，不记成 0 秒
  * - 子对话的计划最后一步是面板加的收尾（wrapUp）：合回父对话所在的分支，或者 P4 按文件类型分 changelist。
  *   Agent 漏写、删掉、挪到中间都会被放回最后，免得做完改动就停下、收尾没人做
+ * - 派子对话一定挂到某一步（ensureChildStep）：没有能挂的一步就补一步（标 auto），上一份计划已结束就重开它。
+ *   auto 步骤 Agent 不知道、不会写进 set_plan，合并时按原索引放回，不当成「不做了」删掉
  * 前后端都用（界面画弹窗、服务端改状态），不能引 node 模块
  */
 import { topSteps } from './flow.ts'
@@ -151,6 +153,7 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
  * - 全部完成：停在最晚一项的 endedAt；
  * - 提前结束（finish_plan 写了 doneAt，但还有没做完的步骤）：停在 doneAt；
  * - 还在进行：算到调用方传入的 now（每秒更新，所以会一直涨）。
+ * - 重开过的计划（reopenedAt）：起点不早于重开时刻，上一轮的用时不并进这一轮
  * 没有 createdAt 的旧数据退到最早一项的 startedAt；一个时间都没有时返回空（不显示）。
  */
 export function planSpan(plan: TaskPlan, now: number): number | undefined {
@@ -161,7 +164,10 @@ export function planSpan(plan: TaskPlan, now: number): number | undefined {
   const starts = times((x) => x.startedAt)
   // 步骤可能比计划早开工（先派了子对话、后列的计划）：总用时从最早的那个算，不比单项用时短
   const all = Number.isFinite(created) ? [created, ...starts] : starts
-  const start = all.length ? Math.min(...all) : NaN
+  let start = all.length ? Math.min(...all) : NaN
+  // 重开的计划：计划结束后又派了子对话，重开前那段它在一边闲着，不能算进这一轮的用时
+  const reopened = Date.parse(plan.reopenedAt ?? '')
+  if (Number.isFinite(reopened)) start = Number.isFinite(start) ? Math.max(start, reopened) : reopened
   if (!Number.isFinite(start)) return undefined
   const closedAt = Date.parse(plan.doneAt)
   const ends = times((x) => x.endedAt)
@@ -526,6 +532,9 @@ export function applyPlan(
   }
   // 记下合并前还没做完的步骤（按对象）：合并后它还在计划里就算没被去掉。按标题比对会把改写过的标题误报成「去掉」
   const before = plan.steps.filter((s) => s.status !== 'done')
+  // 面板按子对话自动补的步骤（见 ensureChildStep）：Agent 交整份计划时不会写它们，不能当成「不做了」删掉。
+  // 记下它们原来在第几位，合并完没被交上来的按原位插回；Agent 自己写了同标题的步骤则照常对上它、改成它的步骤
+  const autoBefore = plan.steps.map((s, i) => ({ s, i })).filter((x) => x.s.auto)
   // 还在等子对话、后台命令的项：结果回来由面板标完成，Agent 自己标完成不算（见下面 held）。
   // 连同子步骤一起算：主步骤被标完成时会级联把子步骤也标完成（见 update 里的 want === 'done'）
   const waitingBefore = new Set(plan.steps.flatMap((s) => [s, ...s.children]).filter(waitingDeep))
@@ -567,6 +576,10 @@ export function applyPlan(
     partial,
     true,
   )
+  // 自动补的步骤没被交上来（正常，Agent 不知道有这一步）：原样放回原来的位置，不提示也不删
+  for (const { s, i } of autoBefore) {
+    if (!plan.steps.includes(s)) plan.steps.splice(Math.min(i, plan.steps.length), 0, s)
+  }
   const notes0: string[] = []
   const kind = wrapUp === 'none' ? undefined : wrapUp
   if (kind) {
@@ -581,7 +594,7 @@ export function applyPlan(
     // 推送策略改成不推了（用户拒绝过、或设置改成不推送）：还挂着的推送收尾永远做不了，删掉它计划才收得起来
     notes0.push(`推送收尾已去掉：「${WRAP_UP.push.title}」不在这次的授权里，不用做，也不用再写进计划。`)
   }
-  for (const t of before) if (!plan.steps.includes(t)) dropped.push(t.title)
+  for (const t of before) if (!plan.steps.includes(t) && !t.auto) dropped.push(t.title)
   // 只交变更步骤时漏写的未完成步骤不删也不提示：模型以为「漏写的会算删掉」，实际它一直挂在原位，
   // 界面上就出现早做完的活还写着「进行中/待做」。点名让它按真相处理（以前 13 次 set_plan 的 id 都写空、
   // 一半步骤没再出现，就是从这里开始对不上的）。
@@ -600,7 +613,8 @@ export function applyPlan(
   // 同一个回复里就出现「做完了就标完成」和「还在等结果不能自己标」两句互相矛盾的话（模型会白跑一轮改计划）
   // 判定要和 held 的 waitingBefore 完全一致（都递归算子步骤），否则子步骤在等、主步骤却被点名一模一样又白跑一轮
   // 只看还没做完的主步骤；子步骤跟着主步骤走，不单独点名
-  const left = partial ? before.filter((s) => !s.wrapUp && !waitingDeep(s) && !touched.has(s)) : []
+  // 自动补的步骤不点名让 Agent 交：它不是 Agent 写的，点名只会让它把这一步写进计划当成自己的步骤
+  const left = partial ? before.filter((s) => !s.wrapUp && !s.auto && !waitingDeep(s) && !touched.has(s)) : []
   // 子对话还没合回、后台命令还没跑完就标完成：父对话的计划会显示「已完成」，子对话却还卡着。
   // 退回等待中，等结果推回来面板再标；确实不等了用 finish_plan 结束计划
   const held: string[] = []
@@ -695,8 +709,10 @@ function overlap(a: string, b: string) {
  * - 都对不上才挂在正在做的那一步（runningStepId）
  * 以前一律挂正在做的那一步：父对话一口气按步骤开了几个子对话，全挂在第 1 步上，
  * 第 1 步的子对话合回了也一直「等待中」，后面几步谁也不等
+ * fallback：对不上时退回「正在做的那一步」。ensureChildStep 传 false——它要看清到底对没对上，
+ * 对不上就补一步（都退回正在做的那一步，几个子对话会挤在同一格里）
  */
-export function childStepId(task: Pick<Task, 'plans'>, ref: string, title = '') {
+export function childStepId(task: Pick<Task, 'plans'>, ref: string, title = '', fallback = true) {
   const plan = activePlan(task)
   if (!plan) return ''
   const items = plan.steps.flatMap((s) => [s, ...s.children])
@@ -704,13 +720,88 @@ export function childStepId(task: Pick<Task, 'plans'>, ref: string, title = '') 
   if (own) return own.id
   if (title.trim()) {
     const scored = plan.steps
-      .filter((s) => !s.wrapUp && !s.run && s.status !== 'done')
+      // 自动补的步骤不参与比对：它们的标题都带「子对话：」前缀，会互相误配成同一步（见 ensureChildStep）
+      .filter((s) => !s.wrapUp && !s.run && !s.auto && s.status !== 'done')
       .map((s) => ({ s, n: overlap(s.title, title) }))
       .sort((a, b) => b.n - a.n)
     // 至少对上两处，且比第二名多：分不出是哪一步就不猜
     if (scored[0] && scored[0].n >= 2 && scored[0].n > (scored[1]?.n ?? 0)) return scored[0].s.id
   }
-  return runningStepId(task)
+  return fallback ? runningStepId(task) : ''
+}
+
+/** 面板按子对话补的步骤的标题前缀：一眼能看出它不是 Agent 列的，也不会和 Agent 自己起的标题撞上 */
+export const AUTO_STEP_PREFIX = '子对话：'
+
+/** 新建一份空计划（和 applyPlan、bindRun 里开新计划同一套字段） */
+function newPlan(task: PlanTask, now: string): TaskPlan {
+  task.plans ??= []
+  const plan: TaskPlan = {
+    id: `p${task.plans.length + 1}`,
+    title: '',
+    steps: [],
+    createdAt: now,
+    doneAt: '',
+    summary: '',
+    autoSummary: false,
+  }
+  task.plans.push(plan)
+  return plan
+}
+
+/** 计划里新步骤的编号：接着已有的最大数字往下排 */
+function nextStepId(plan: TaskPlan) {
+  return String(Math.max(0, ...plan.steps.map((s) => Number(s.id) || 0)) + 1)
+}
+
+/**
+ * 派子对话时让它一定挂到计划里的某一步上，返回挂上去的步骤 id（挂不上时返回空串）。
+ * 没有能挂的一步就自己补一步（标 auto）：以前没点名 step、计划里也匹配不到时什么也不挂，
+ * 子对话在父对话的计划里完全看不见（用户看到「一堆子对话在跑、计划面板还停在上次已完成」）。
+ * 三种情况：
+ * - 有进行中的计划、能对上某一步：挂那一步，行为和以前一样
+ * - 有进行中的计划、对不上：补一步（不新开计划，同一份计划接着往下做）
+ * - 上一份计划已经结束：把它重新打开，补一步继续。不新开一份——用户说「更新计划列表」，
+ *   这些子对话属于同一次统筹，重开能让它们和之前的步骤在面板里连在一起看
+ * auto 步骤在 applyPlan 里受保护，Agent 下次交整份计划时不会被当成「不做了」删掉
+ */
+export function ensureChildStep(task: PlanTask, ref: string, title: string, now = new Date().toISOString()) {
+  const want = clean(title, 120) || AUTO_STEP_PREFIX + ref
+  const named = want.startsWith(AUTO_STEP_PREFIX) ? want : AUTO_STEP_PREFIX + want
+  let plan = activePlan(task)
+  if (!plan) {
+    // 上一份计划已经结束：重新打开它（doneAt 清空），这些子对话接着记在它上面。
+    // 记下重开时刻：总用时从这一刻重算，不把上一轮的历史时长并进这一轮（见 planSpan）
+    plan = task.plans?.at(-1) ?? newPlan(task, now)
+    plan.doneAt = ''
+    plan.reopenedAt = now
+  }
+  const hit = childStepId(task, ref, want, false)
+  if (hit) return hit
+  // 这个子对话原来那一步已经做完（send_to_conversation 又交给它一件新事）：不另开一步，把那一步重新打开，
+  // 否则计划里同一件事出现两格，补的这格还没标题可用（send_to_conversation 没有 title）
+  const revisit = plan.steps.find((s) => !s.wrapUp && s.waits.some((w) => w.kind === 'child' && w.ref === ref))
+  if (revisit) {
+    setStatus(revisit, 'pending', now)
+    return revisit.id
+  }
+  const seq = nextStepId(plan)
+  const step: PlanStep = {
+    id: seq,
+    title: named,
+    status: 'pending',
+    note: '',
+    waits: [],
+    startedAt: '',
+    endedAt: '',
+    children: [],
+    auto: true,
+  }
+  // 收尾永远在最后（见 ensureWrapUp）：自动补的步骤插在收尾前面（已做完的收尾也算，它仍是最后一步）
+  const wrap = plan.steps.findIndex((s) => s.wrapUp)
+  if (wrap >= 0) plan.steps.splice(wrap, 0, step)
+  else plan.steps.push(step)
+  return step.id
 }
 
 /** 找当前计划里的一项（主步骤或子步骤）；parent 是子步骤所在的主步骤 */
@@ -1014,21 +1105,32 @@ export function endRun(task: PlanTask, run: number, ok: boolean, error = '', now
 /**
  * finish_plan：结束这份计划。步骤全完成时计划本来就已经收起，这里是主动结束一份还没做完的计划。
  * 不再要求写总结，传了也不保存：计划不再有「欠一份总结」这个状态。
+ * kids（这个对话名下的子对话）还没合回时在说明里点名：计划结束后它们就挂不上步骤了，
+ * 用户看到的就是「一堆子对话在跑、计划面板写着已完成」（见 ensureChildStep）
  */
 export function finishPlan(
   task: PlanTask,
   _summary?: string,
   now = new Date().toISOString(),
+  kids: PlanKid[] = [],
 ): { ok: boolean; info: string } {
   const plan = activePlan(task)
   if (!plan) return { ok: false, info: '现在没有进行中的计划' }
   const left = plan.steps.filter((s) => s.status !== 'done')
   plan.doneAt ||= now
+  const running = kids.filter((k) => !k.done)
   return {
     ok: true,
-    info: left.length
-      ? `这份计划结束了。还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}，它们留在计划里。之后有新内容用 set_plan 开新的计划。`
-      : '这份计划结束了。之后有新内容用 set_plan 开新的计划。',
+    info: [
+      left.length
+        ? `这份计划结束了。还有没完成的步骤：${left.map((s) => `${s.id}「${s.title}」（${STATUS_TEXT[s.status]}）`).join('、')}，它们留在计划里。之后有新内容用 set_plan 开新的计划。`
+        : '这份计划结束了。之后有新内容用 set_plan 开新的计划。',
+      running.length
+        ? `这些子对话还没合回：${running.map((k) => `「${k.title}」（${k.id}）`).join('、')}。计划结束后再派子对话会自动重开这份计划并补一步，但它们的进度就不在这次的计划里了：等它们合回再结束计划。`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
   }
 }
 
