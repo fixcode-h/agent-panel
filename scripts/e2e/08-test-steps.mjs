@@ -148,7 +148,13 @@ await runShard('测试步骤筛选', async (api) => {
   assert.match(prompt, /适用改动（清单里一个都不匹配就跳过这一步）：未设置，总是执行/)
   assert.match(prompt, /同一时间仍然只编译一次/, 'merge 的编译仍然串行')
   assert.match(prompt, /名字后面标了「合并时编译」的步骤/, '步骤行会标「合并时编译」，规则不能悬空')
-  assert.match(prompt, /编译（cmd，合并时编译）/, '标了 merge 的步骤在提示词里看得出来')
+  // 这里写的是迁移后的范围：UE 编译命令不匹配 FULL_SUITE_COMMAND，步骤走 legacyTestStepScope 时落到 changed；
+  // 改了那组全量命令的模式后这条断言要跟着看
+  assert.match(
+    prompt,
+    /编译（cmd，合并时编译，范围：命中适用改动才跑）/,
+    '标了 merge 的步骤在提示词里看得出来，并带上范围',
+  )
   // 取不到改动清单（没有版本控制 / 命令失败 / 不知道基线）时按总是执行，不能静默漏跑
   assert.match(prompt, /取不到改动清单时/)
   assert.match(prompt, /清单未知不等于不相关/)

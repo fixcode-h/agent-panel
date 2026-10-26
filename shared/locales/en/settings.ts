@@ -1375,4 +1375,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '全量（非 Git 项目自己跑）': 'Full suite (the executor runs it in non-Git projects)',
   '范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛':
     'Leave this empty when the scope is "Always": the step runs on every change and is not filtered by these globs.',
+  '范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛':
+    'Leave this empty when the scope is "Full suite, the parent runs it after merge": the parent runs the full suite after merging and does not filter by these globs.',
 }
