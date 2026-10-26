@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
   Archive,
@@ -41,7 +41,8 @@ import type { Project, Task } from '@shared/schema'
 import { useData, useNav, type PageId, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
-import { useSkillUpdates } from '@/lib/skill-updates'
+import { deployedUpdateHint, skillUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
+import { rowTip } from '@/lib/sidebar-hint'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -172,37 +173,57 @@ function Row({
   className?: string
   /** 右上角的提示点，例如有新版本 */
   badge?: string
-  /** 只要一个圆点的提示（例如自带技能要更新），文字放在悬停提示里 */
+  /** 圆点的提示（例如部署内容有差异），文字放在悬停提示和无障碍标签里 */
   dot?: string
 }) {
+  // 收起时文字都不显示，悬停提示要把名字和两条提示都带上；展开时 chip 自己带文字，只把圆点的说明放进去
+  const tip = rowTip(label, dot, badge)
+  // 提示挂在按钮的 aria-describedby 上：直接放进按钮里会被算进可访问名称，按名字找「设置」的定位和读屏都受影响
+  const hintId = useId()
   return (
-    <button
-      onClick={onClick}
-      aria-current={on ? 'page' : undefined}
-      title={collapsed ? [label, dot].filter(Boolean).join(' · ') : dot}
-      className={cn(
-        'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] transition-colors',
-        on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-        collapsed && 'justify-center px-0',
-        className,
-      )}
-    >
-      <span className="relative shrink-0">
-        <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
-        {(badge || dot) && collapsed && (
-          <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-rail" />
+    <>
+      <button
+        onClick={onClick}
+        aria-current={on ? 'page' : undefined}
+        aria-describedby={dot ? hintId : undefined}
+        title={collapsed ? tip || undefined : dot}
+        className={cn(
+          'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] transition-colors',
+          on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+          collapsed && 'justify-center px-0',
+          className,
         )}
-      </span>
-      {!collapsed && <span className="truncate">{label}</span>}
-      {badge && !collapsed && (
-        <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
-          {badge}
+      >
+        <span className="relative shrink-0">
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          {(badge || dot) && collapsed && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-rail"
+            />
+          )}
+        </span>
+        {!collapsed && <span className="truncate">{label}</span>}
+        {/* 圆点和 chip 可以同时有：圆点在左、chip 在右，两条提示都不吃 */}
+        {dot && !collapsed && (
+          <span
+            aria-hidden="true"
+            title={dot}
+            className={cn('h-1.5 w-1.5 shrink-0 rounded-full bg-accent', !badge && 'ml-auto')}
+          />
+        )}
+        {badge && !collapsed && (
+          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
+            {badge}
+          </span>
+        )}
+      </button>
+      {dot && (
+        <span id={hintId} className="sr-only">
+          {dot}
         </span>
       )}
-      {dot && !badge && !collapsed && (
-        <span role="status" aria-label={dot} className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-      )}
-    </button>
+    </>
   )
 }
 
@@ -307,8 +328,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   // 自带技能有新内容时在「Skills 与命令」上亮点：部署的那份在设置里更新，进去后「自带 Skill」分页会指过去
   const skillUpd = useSkillUpdates()
-  const skillN = new Set([...skillUpd.shared, ...skillUpd.deployed]).size
-  const skillDot = skillN ? t('{n} 个自带技能可以更新', { n: skillN }) : undefined
+  const skillDot = skillUpdateHint(skillUpd)
+  // 「设置 → 部署」那份和这一版不同时，「设置」入口本身也要带点：用户在任务页看不到设置内部
+  const deployDot = deployedUpdateHint(skillUpd)
   const [collapsed, toggleCollapsed] = useCollapsed()
   // 侧栏可以拖宽，但中间要留出内容宽度（输入框的宽度），右边有任务面板时也要算进去；除此之外不设上限
   const pane = usePaneWidth('sidebar', 264, 200, () => {
@@ -831,6 +853,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           label={t('设置')}
           collapsed={narrow}
           badge={update ? t('有新版本') : undefined}
+          dot={deployDot}
           onClick={() => {
             setMobileOpen(false)
             openSettings(update ? 'update' : undefined)
