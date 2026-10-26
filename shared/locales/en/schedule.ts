@@ -30,8 +30,7 @@ export const EN_SCHEDULE: Record<string, string> = {
   计划已删除: 'Plan deleted',
   计划已保存: 'Plan saved',
   计划已创建: 'Plan created',
-  '这条计划刚执行过或已被改过，请重新打开再编辑':
-    'This plan has just run or been changed — reopen it to edit.',
+  '这条计划刚执行过或已被改过，请重新打开再编辑': 'This plan has just run or been changed — reopen it to edit.',
   '已启动对话「{name}」': 'Started a conversation for "{name}"',
   '在线演示里不会真的启动对话，正式版会新建一个对话开始执行。':
     'The online demo does not really start a conversation; the desktop app creates one and runs it.',
