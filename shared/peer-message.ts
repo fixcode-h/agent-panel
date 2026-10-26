@@ -36,6 +36,8 @@ export function peerKindText(kind: PeerKind): string {
       return t('收尾结果')
     case 'build':
       return t('编译')
+    case 'test':
+      return t('父对话测试')
     case 'rule':
       return t('全局规则')
     case 'chat':

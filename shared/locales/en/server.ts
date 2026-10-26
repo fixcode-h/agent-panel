@@ -513,4 +513,6 @@ export const EN_SERVER: Record<string, string> = {
     "If GitHub isn't reachable, set a local proxy in Settings · Network & proxy.",
   // 任务记录丢失、从对话内容重建出来的标题
   恢复的对话: 'Recovered conversation',
+  '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
+  '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
 }

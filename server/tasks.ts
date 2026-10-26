@@ -14,11 +14,13 @@ import {
   type Attachment,
   type DeliveryHow,
   type Project,
+  type TaskTestRun,
   type ProjectCategory,
   type PeerFrom,
   type PeerKind,
   type StopReason,
   type TaskMessage,
+  type TestStep,
   type Workflow,
   RequestAnswer,
   defaultAgent,
@@ -128,7 +130,17 @@ import {
   checkRepo,
   isBigProject,
 } from './exec/worktree.ts'
-import { buildSteps, isUeBuildCommand, stepCommand } from '../shared/test-steps.ts'
+import { createParentTests, parentTestFailText, parentTestRun } from './parent-tests.ts'
+import {
+  buildSteps,
+  isUeBuildCommand,
+  matchTestStep,
+  mergeTestRun,
+  parentRunRoleOf,
+  parentRunSteps,
+  stepCommand,
+  testRunLines,
+} from '../shared/test-steps.ts'
 import {
   createBackground,
   jobDetail,
@@ -200,6 +212,33 @@ const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
+/** 项目目录是不是 Git 仓库（ADR 0018 的「在父对话中执行」只对 Git 生效）：判定和缓存同 isP4 */
+const gitDirs = new Map<string, Promise<boolean>>()
+const isGit = (dir: string) => {
+  let got = gitDirs.get(dir)
+  if (!got) {
+    got = detectVcs(dir)
+      .then((v) => v.vcs === 'git')
+      .catch(() => false)
+    gitDirs.set(dir, got)
+  }
+  return got
+}
+
+/**
+ * 「在父对话中执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
+ * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
+ * 步骤用任务里的快照（执行时面板也用同一份），没有快照的老任务退回项目现在的配置。
+ */
+async function parentRunRole(tk: Task, project: Project): Promise<{ parentRun?: 'child' | 'parent' }> {
+  const steps = tk.testSteps.length ? tk.testSteps : project.testSteps
+  if (!parentRunSteps(steps).length) return {}
+  // 独立分支一定是 Git 仓库，不用再探；顶层对话是否 Git 要问 detectVcs（判定和开 worktree 时同一套）
+  const git = isolated(tk) || (await isGit(project.path))
+  const role = parentRunRoleOf({ child: !!tk.parentTaskId, isolated: isolated(tk), git, steps })
+  return role ? { parentRun: role } : {}
+}
 const isP4 = (dir: string) => {
   let got = p4Dirs.get(dir)
   if (!got) {
@@ -946,6 +985,15 @@ export function tasksApi(deps: {
     (job, result) => {
       void (async () => {
         await settling.get(job.id)
+        // 「在父对话中执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
+        if (
+          await parentTests.finishJob(job.id, {
+            ok: job.state === 'done',
+            durationMs: jobMs(job),
+            output: job.lines.join('\n').slice(-6000),
+          })
+        )
+          return
         const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
         if (!tk || tk.archived) {
           log.warn('background', '后台命令跑完了，但发起的对话已经不在或已归档，结果没有推回', {
@@ -954,6 +1002,10 @@ export function tasksApi(deps: {
           })
           return
         }
+        // 子对话自己跑的项目测试步骤：按后台命令的真实起止时间记耗时（收尾总结里的耗时表要它）
+        await recordSelfTestRun(job).catch((e) =>
+          log.warn('task', '记测试步骤耗时失败', { task: job.taskId, job: job.id, error: (e as Error).message }),
+        )
         // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
         const hit = settleWait(tk, 'background', job.id, job.state === 'done')
         // 子任务起的命令：结果照常推回这个对话，但要写清是哪个子任务起的，否则父对话看到一条命令不知道来源
@@ -1061,6 +1113,10 @@ export function tasksApi(deps: {
   // 上次退出时还没结束的后台命令记录（只在同一个进程里中断时才会留到这时）：不再算「还在跑」，
   // 否则「彻底完成」和合并门禁会一直等一个永远不会来的结束
   void ready.then(() => background.recover()).catch(() => {})
+  // 重启前面板正在跑的父对话测试（ADR 0018）：内存里的队列没了，任务上的状态还在，重新排一遍
+  void ready
+    .then(() => recoverParentTests())
+    .catch((e) => log.warn('task', '重启后恢复父对话测试失败', { error: (e as Error).message }))
 
   /** 发给界面的任务带上还在跑、排队的后台命令（不存盘：进程重启后这些命令也没了） */
   /**
@@ -1085,6 +1141,179 @@ export function tasksApi(deps: {
 
   /** 父对话替子对话申请的编译（后台命令编号 → 申请的子对话）：结果出来时也推给它们 */
   const buildFor = new Map<string, { parent: string; children: string[] }>()
+
+  /**
+   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「在父对话中执行」的步骤。
+   * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
+   * 后台命令本身还走父对话目录的独占队列，和 UE 编译这类同样吃资源的命令共用一条队。
+   * 成功才让子对话收尾（标完成、删分支），失败把报错和来源交回它修。
+   */
+  const parentTests = createParentTests({
+    start: async ({ run, step, name }) => {
+      const child = await current(run.childId)
+      const parent = await current(run.parentId)
+      if (!child || !parent) return { ok: false, info: '这个子对话或父对话已经不在了，这批测试没有跑。' }
+      const project = child.projectId ? await deps.projects.get(child.projectId) : null
+      const r = background.start({
+        taskId: parent.id,
+        name,
+        command: stepCommand(step, child.platform || process.platform, project?.wslDistro ?? ''),
+        cwd: step.cwd,
+        root: await taskDir(parent),
+        // 和编译共用一条独占队：同一目录同一时间只跑一条，UE 编译跑着时新测试排在后面
+        exclusive: true,
+        ...(step.timeoutSec ? { timeoutMinutes: Math.max(1, Math.ceil(step.timeoutSec / 60)) } : {}),
+      })
+      if (!r.ok) return { ok: false, info: r.info }
+      return { ok: true, id: r.id! }
+    },
+    record: async (run, step, done) => {
+      await recordTestRun(run.childId, parentTestRun(step, done, new Date().toISOString()))
+    },
+    pass: async (run) => {
+      const tk = await current(run.childId)
+      if (!tk) return
+      const parent = await current(run.parentId)
+      const lines = testRunLines(tk.testRuns)
+      await childMerged(
+        run.childId,
+        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「在父对话中执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        parent ? { peer: await peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
+      )
+    },
+    fail: async (run, failed) => {
+      const tk = await current(run.childId)
+      if (!tk?.wrapRequest) return
+      const failedText = parentTestFailText(failed)
+      // 报错原文只留前面一段：它会随任务存盘，父对话读到的也只有第一行
+      const info = failedText.length > 4000 ? `${failedText.slice(0, 4000)}…` : failedText
+      // 用单独的状态：'failed' 的语义是「没合进去」，这里分支已经合回、只是测试没过，两侧的说明完全不同（评审 R3）
+      tk.wrapRequest = { ...tk.wrapRequest, state: 'test-failed', info }
+      markWrapUp(tk, 'merge', 'running', `父对话测试没通过：第 ${failed.index + 1} 步「${failed.step.name}」`)
+      tk.updatedAt = new Date().toISOString()
+      const entry = live.get(tk.id)
+      if (entry) entry.rev++
+      await store.update(tk.id, tk)
+      // 失败要重新上报一次：状态从「待收尾」变成「未完成」，父对话计划里等它那步要跟着改说法
+      reportedState.delete(tk.id)
+      const lines = testRunLines(tk.testRuns)
+      await sendToChild(
+        run.parentId,
+        run.childId,
+        `【父对话测试未通过】来自子对话「${run.childTitle}」（id ${run.childId}）：你的分支已经合回，但父对话在它的目录里跑这条步骤时失败了，下面是它的报错。\n${failedText}\n${lines.length ? `已记录的耗时：\n${lines.join('\n')}\n` : ''}你的独立分支还在：按报错修好、在你的分支里重新跑通其它检查后调用 submit_merge；合回去时面板会把这些步骤全部重跑一遍（跑过也不跳过），通过才收尾。`,
+        'build',
+        'test',
+        true,
+      )
+    },
+    // 起命令期间这一批被取消（丢弃独立分支）：把刚起来的那条命令停掉
+    stop: (run, jobId) => {
+      background.stopOne(run.parentId, jobId)
+    },
+    onError: (where, error) => {
+      log.warn('task', '父对话测试推进失败', { where, error: error.message })
+    },
+  })
+
+  /** 记一步测试的耗时：同一条步骤 + 同一个执行方只留最后一次，tries 累加（见 mergeTestRun） */
+  async function recordTestRun(taskId: string, run: Omit<TaskTestRun, 'tries'>) {
+    const entry = live.get(taskId)
+    const tk = entry?.task ?? (await store.get(taskId))
+    if (!tk) return
+    tk.testRuns = mergeTestRun(tk.testRuns, run)
+    tk.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
+  }
+
+  /**
+   * 子对话自己跑的项目测试步骤也记耗时：收尾总结里它和父对话跑的那几行能放在同一张表里对齐。
+   * 只认能对应到项目测试步骤的后台命令（matchTestStep），Agent 自己拼的查看命令不记；
+   * 耗时用后台命令的真实起止时间，不靠 Agent 自报
+   */
+  async function recordSelfTestRun(job: BgJob) {
+    const tk = await current(job.taskId)
+    if (!tk) return
+    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
+    const step = matchTestStep(
+      await testStepsOf(tk),
+      job.command,
+      tk.platform || process.platform,
+      project?.wslDistro ?? '',
+    )
+    if (!step) return
+    await recordTestRun(tk.id, {
+      stepId: step.id,
+      stepName: step.name,
+      by: 'self',
+      ok: job.state === 'done',
+      durationMs: jobMs(job),
+      at: new Date().toISOString(),
+    })
+  }
+
+  /**
+   * 合回成功、要由父对话跑测试时：把子对话记成「等父对话测试」，再把这一批排进队列。
+   * 不调用 childMerged：那一步会把计划里的收尾标完成、清掉 wrapRequest、收口删分支——
+   * 父对话测试没通过之前，这些都不能做
+   */
+  async function startParentTests(tk: Task, steps: TestStep[]) {
+    if (!tk.parentTaskId || !tk.wrapRequest) return
+    tk.wrapRequest = { ...tk.wrapRequest, state: 'testing', info: '' }
+    markWrapUp(tk, 'merge', 'waiting', `已合回，等父对话跑测试：${steps.map((s) => s.name).join('、')}`)
+    tk.updatedAt = new Date().toISOString()
+    const entry = live.get(tk.id)
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
+    parentTests.enqueue({ parentId: tk.parentTaskId, childId: tk.id, childTitle: tk.title, steps })
+  }
+
+  /**
+   * 这个子对话要由父对话跑的步骤：优先用任务里的快照（执行环境、命令以它为准），
+   * 对话任务本来没有测试步骤快照（只有工作流任务才快照）时用项目现在的配置——和提示词里
+   * parentRunRole 的判断是同一份来源，不然提示词说「父对话会跑」、执行时却一条都跑不了
+   */
+  async function testStepsOf(tk: Task) {
+    if (tk.testSteps.length) return tk.testSteps
+    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
+    return project?.testSteps ?? []
+  }
+
+  /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
+  const parentStepsOf = async (tk: Task) => parentRunSteps(await testStepsOf(tk))
+
+  /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
+  const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
+    tk.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
+
+  /**
+   * 面板重启后把没跑完的父对话测试重新排队（ADR 0018）：批次记在任务上（wrapRequest.state = testing），
+   * 内存里的队列随进程没了。从第一步重跑一遍——比丢掉安全，测试本身可以重复跑
+   */
+  async function recoverParentTests() {
+    for (const raw of await store.list()) {
+      if (raw.archived || raw.wrapRequest?.state !== 'testing') continue
+      const tk = live.get(raw.id)?.task ?? raw
+      if (!tk.parentTaskId) {
+        tk.wrapRequest = undefined
+        await store.update(tk.id, tk)
+        continue
+      }
+      const steps = await parentStepsOf(tk)
+      if (!steps.length) {
+        await childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。').catch((e) =>
+          log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }),
+        )
+        continue
+      }
+      await startParentTests(tk, steps)
+      log.info('task', '重启后重新排队父对话测试', {
+        task: tk.id,
+        parent: tk.parentTaskId,
+        steps: steps.map((s) => s.name),
+      })
+    }
+  }
 
   /** 父对话正在合并的子对话：这一轮结束时不催它合并，父对话等它的计划步骤也留给合并结果收口 */
   const merging = new Set<string>()
@@ -1125,6 +1354,12 @@ export function tasksApi(deps: {
       return {
         ok: false,
         info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
+      }
+    // 合回已完成、父对话在跑勾了「在父对话中执行」的步骤（ADR 0018）：等它跑完，不能重复请求
+    if (parentTesting(childId, tk))
+      return {
+        ok: false,
+        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「在父对话中执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
       }
     if (tk.requests.length || tk.parentAsks?.length)
       return {
@@ -1481,10 +1716,18 @@ export function tasksApi(deps: {
         : { ok: true, info: `子对话「${tk.title}」已标完成（它和你共用目录，改动已经在原目录里，不用合并）` }
     }
     if (merging.has(childId)) return { ok: false, info: `子对话「${tk.title}」正在合并，结果出来会告诉你` }
+    if (tk.wrapRequest?.state === 'testing')
+      return {
+        ok: false,
+        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「在父对话中执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
+      }
     if (tk.wrapRequest?.state !== 'requested')
       return {
         ok: false,
-        info: `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
+        info:
+          tk.wrapRequest?.state === 'test-failed'
+            ? `子对话「${tk.title}」的分支已经合回，但父对话测试没通过（${tk.wrapRequest.info.split('\n')[0]}），已经退回给它修。它修好会再请你收尾，等它请求，不要重复收尾。`
+            : `子对话「${tk.title}」还没请求收尾${tk.wrapRequest?.state === 'failed' ? `（上次没合进去：${tk.wrapRequest.info.split('\n')[0]}，它处理好会再请求）` : ''}：合并就是验收，要它先在自己的分支里跑通验证、调用 submit_merge。需要催它就用 send_to_conversation。`,
       }
     const req = tk.wrapRequest
     merging.add(childId)
@@ -1522,6 +1765,24 @@ export function tasksApi(deps: {
         true,
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
+    }
+    // 勾了「在父对话中执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
+    // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
+    const parentSteps = await parentStepsOf(tk)
+    if (parentSteps.length) {
+      await startParentTests(tk, parentSteps)
+      return {
+        ok: true,
+        info: [
+          `已把子对话「${tk.title}」合回：${r.info}`,
+          `合回还没收尾：它勾了「在父对话中执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
+          req.build
+            ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      }
     }
     const done = await childMerged(
       childId,
@@ -1704,7 +1965,13 @@ export function tasksApi(deps: {
     // 已经置过完成的当作已经上报过：重启后再走一趟时不重复往父对话里刷「已完成」
     const done = tk.resolved === true
     const run = await advanceChild(
-      childFlowOf(tk, { background: pendingJobs(childId), reported: done || reportedDone.has(childId) }),
+      childFlowOf(tk, {
+        background: pendingJobs(childId),
+        // 合回了、父对话的测试还没跑完或没通过（已退回修复）：都不能标完成、不能删分支（ADR 0018）。
+        // 只在还有独立分支时算：分支被丢弃后没有「合回」这回事了，不能再拿它拦完成（评审 R4）
+        parentTest: isolated(tk) && (parentTesting(childId, tk) || tk.wrapRequest?.state === 'test-failed'),
+        reported: done || reportedDone.has(childId),
+      }),
       {
         complete: () => completeChildOnce(childId, tk),
         // 第 5 步：上报父对话，走统一的状态上报（见 reportChild）：说法、计划收口和别的状态变化是同一套
@@ -2671,10 +2938,11 @@ export function tasksApi(deps: {
         verify:
           task.mode === 'chat' && found?.id
             ? {
-                steps: found.testSteps,
+                steps: task.testSteps.length ? task.testSteps : found.testSteps,
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
+                ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
         // 父对话（统筹）不改文件、不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
@@ -4487,6 +4755,10 @@ export function tasksApi(deps: {
       if (!cancelWait(id)) stopTask(id, 'archive')
       await entry.done?.catch(() => {})
     }
+    // 父对话测试（ADR 0018）：分支要丢了，父对话不再替它跑这些步骤——取消这一批，父对话目录里那条命令一起停掉，
+    // 否则 testing / test-failed 的 hold 会让它永远标不了完成（评审 R4）
+    const canceledTest = parentTests.cancel(id)
+    if (canceledTest && tk.parentTaskId) background.stopOne(tk.parentTaskId, canceledTest)
     // 后台命令跑在这个目录里：先停掉并等进程退出，目录删掉后它的结果也没意义了
     await background.stop(id)
     try {
@@ -4495,6 +4767,10 @@ export function tasksApi(deps: {
       return bad(c, (e as Error).message, 409)
     }
     const cur = (await store.get(id)) ?? tk
+    // 分支丢弃后没有「合回」这一步了：父对话测试的状态一并清掉，按普通「没有分支可合」的路径收尾
+    if (cur.wrapRequest?.state === 'testing' || cur.wrapRequest?.state === 'test-failed') cur.wrapRequest = undefined
+    // 计划里的收尾步骤也要收口：它停在「已合回，等父对话跑测试」，不收的话 plan hold 会一直拦住完成（评审 R2）
+    markWrapUp(cur, 'merge', 'done', '独立分支已删除，不需要合回')
     const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }
     return c.json(await store.update(id, { ...cur, worktree: next }))
   })

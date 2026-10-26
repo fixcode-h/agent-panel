@@ -600,6 +600,8 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
+              // 演示里不勾：这条是合并时编译，仍由父对话申请编译
+              runInParent: false,
               quick: true,
             },
             {
@@ -614,6 +616,8 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
+              // 演示里勾上「在父对话中执行」：合并后由父对话在它的目录里跑，结果回传给子对话
+              runInParent: true,
               quick: false,
             },
           ],
@@ -2121,6 +2125,12 @@ function route(method: string, url: string, body: unknown): unknown {
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'vcs') {
+    const path = normalize(query.get('path') ?? '')
+    const node = TREE[path]
+    // 演示里的目录树只标了有没有 git 分支：有就按 Git 项目算，其余按没有版本控制
+    return { vcs: node?.git ? 'git' : 'none', root: path }
+  }
   if (res === 'fs' && id === 'branches') {
     const path = normalize(query.get('path') ?? '')
     const node = TREE[path]

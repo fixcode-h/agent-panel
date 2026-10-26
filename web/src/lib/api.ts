@@ -745,6 +745,9 @@ export const api = {
   stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
+  // 目录的版本控制类型（'git' / 'p4' / 'svn' / 'none'）：判断只在 Git 项目生效的设置项
+  dirVcs: (path: string) =>
+    request<{ vcs: 'git' | 'p4' | 'svn' | 'none'; root: string }>(`/fs/vcs?path=${encodeURIComponent(path)}`),
   dirBranches: (path: string) => request<DirBranches>(`/fs/branches?path=${encodeURIComponent(path)}`),
   checkoutBranch: (path: string, branch: string) => request<DirInfo>('/fs/checkout', json('POST', { path, branch })),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
