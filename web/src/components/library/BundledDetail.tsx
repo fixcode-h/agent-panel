@@ -10,6 +10,7 @@ import { countFiles, entryName, toTree, visibleRows } from '@/lib/library-tree'
 import { fileIcon } from '@/lib/file-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { categoryLabel } from '@/components/library/BundledSkills'
 
@@ -195,15 +196,13 @@ export function BundledDetail({
               {error ? (
                 <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
               ) : file === null ? (
-                <p className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
+                <EmptyPanel>
                   {rows.length
                     ? t('在左边的文件树里点一个文件，看它的内容。')
                     : t('这个技能只有 SKILL.md，点左上的 SKILL.md 看内容。')}
-                </p>
+                </EmptyPanel>
               ) : file.binary ? (
-                <p className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
-                  {t('二进制文件（{bytes} 字节），不显示内容。', { bytes: file.size })}
-                </p>
+                <EmptyPanel>{t('二进制文件（{bytes} 字节），不显示内容。', { bytes: file.size })}</EmptyPanel>
               ) : (
                 <>
                   <span className="truncate font-mono text-[0.75rem] text-subtle">{file.path || 'SKILL.md'}</span>

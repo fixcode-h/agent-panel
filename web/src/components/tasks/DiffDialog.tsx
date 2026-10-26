@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import type { Task } from '@shared/schema'
 import type { FileDiff } from '@shared/files'
 import { t } from '@shared/i18n'
@@ -464,11 +465,7 @@ export function ProjectDiffDialog({
   const text = data?.diff ?? ''
   const note = (data?.note ?? '').trim()
   const shown = data?.path || path || ''
-  const copyPath = () =>
-    navigator.clipboard
-      ?.writeText(shown)
-      .then(() => toast.success(t('已复制')))
-      .catch(() => {})
+  const copyPath = () => void copyText(shown, { done: t('已复制'), fail: false })
   const menu: MenuAction[] = []
   if (shown) menu.push({ label: t('复制路径'), icon: <Copy className="h-4 w-4" />, onSelect: copyPath })
   if (data?.dir && shown)
@@ -586,11 +583,7 @@ export function DiffDialog({
     }
   }
 
-  const copyPath = () =>
-    navigator.clipboard
-      ?.writeText(shown)
-      .then(() => toast.success(t('已复制')))
-      .catch(() => {})
+  const copyPath = () => void copyText(shown, { done: t('已复制'), fail: false })
   const menu: MenuAction[] = []
   if (shown) {
     menu.push({ label: t('复制路径'), icon: <Copy className="h-4 w-4" />, onSelect: copyPath })

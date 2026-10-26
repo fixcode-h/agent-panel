@@ -7,6 +7,7 @@
 import { END, START, type Agent, type Flow, type Workflow } from './schema.ts'
 import { flowLabel, nodeAgent, nodeSteps, topoOrder } from './flow.ts'
 import { t } from './i18n.ts'
+import { clip } from './text.ts'
 
 /** 主 Agent 回复里写决定的代码块语言名 */
 export const DISPATCH_LANG = 'dispatch'
@@ -80,8 +81,6 @@ export function stripDispatch(text: string) {
     .replace(new RegExp('```' + DISPATCH_LANG + '\\b[\\s\\S]*$'), '')
     .trimEnd()
 }
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 主 Agent 看到的流程概览：每个节点谁做、做什么，以及连线 */
 export function flowOverview(w: Workflow, f: Flow, agents: Agent[]) {

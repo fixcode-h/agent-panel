@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { promptLangRules } from './prompt-lang.ts'
 import type { Task } from './schema.ts'
 import { dayKey } from './usage.ts'
+import { clip as clipText } from './text.ts'
 
 /** 数据目录里保留最近几份报告：生成新的时把更早的删掉 */
 export const SUMMARY_KEEP = 20
@@ -162,8 +163,7 @@ export function activeOnDay(task: Task, day: string) {
 
 /** 压成一行、按字数截断：提示词里不放长段落 */
 export function clip(text: string, max = SUMMARY_LINE_MAX) {
-  const one = text.replace(/\s+/g, ' ').trim()
-  return one.length > max ? one.slice(0, max - 1) + '…' : one
+  return clipText(text, max, { oneLine: true, total: true })
 }
 
 /** 从 Agent 的回复里取一段能代表结论的文字：跳过空行和只有符号的行 */

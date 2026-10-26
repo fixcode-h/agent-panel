@@ -1,4 +1,5 @@
 import { t } from './i18n.ts'
+import { pad2, ymd } from './datetime.ts'
 import type { Task } from './schema.ts'
 
 /**
@@ -131,8 +132,6 @@ const num = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0)
 
 const noTokens = (): TokenTotals => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 
-const pad = (n: number) => String(n).padStart(2, '0')
-
 /** 本地时间的零点 */
 const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
 
@@ -165,9 +164,7 @@ export function shiftPeriod(grain: UsageGrain, start: Date, n: number) {
 }
 
 /** 本地日期标识：2026-10-23（和桶的 key 同格式，按天视图直接比） */
-export function dayKey(d: Date) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+export const dayKey = ymd
 
 /**
  * ISO 周号：周一开头，含 1 月 4 日的那一周是第 1 周。
@@ -229,8 +226,8 @@ export function formatTokens(n: number) {
 
 function keyOf(grain: UsageGrain, start: Date) {
   const y = start.getFullYear()
-  const m = pad(start.getMonth() + 1)
-  return grain === 'month' ? `${y}-${m}` : `${y}-${m}-${pad(start.getDate())}`
+  const m = pad2(start.getMonth() + 1)
+  return grain === 'month' ? `${y}-${m}` : `${y}-${m}-${pad2(start.getDate())}`
 }
 
 /** 桶的标签：10月20日 / 10月20日这一周 / 2026年10月 */

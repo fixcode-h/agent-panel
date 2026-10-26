@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { AlertTriangle, Copy, FileText, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
@@ -507,12 +508,7 @@ export function SummaryPage() {
     }
   }
 
-  const copy = (md: string) => {
-    void navigator.clipboard.writeText(md).then(
-      () => toast.success(t('已复制报告')),
-      () => toast.error(t('复制失败')),
-    )
-  }
+  const copy = (md: string) => void copyText(md, { done: t('已复制报告'), fail: t('复制失败') })
 
   const lastThought = job?.thinking?.trim().split('\n').filter(Boolean).at(-1)
 

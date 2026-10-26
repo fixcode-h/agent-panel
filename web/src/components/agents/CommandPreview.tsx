@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { Check, Copy, SquareTerminal } from 'lucide-react'
 import { commandText, getCli, quoteArg } from '@shared/clis'
 import type { Settings } from '@shared/schema'
@@ -55,13 +55,11 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={() =>
-        navigator.clipboard
-          ?.writeText(text)
-          .then(() => {
-            setDone(true)
-            setTimeout(() => setDone(false), 1500)
-          })
-          .catch(() => toast.error(t('复制失败，可以手动选中命令复制')))
+        void copyText(text, { fail: t('复制失败，可以手动选中命令复制') }).then((ok) => {
+          if (!ok) return
+          setDone(true)
+          setTimeout(() => setDone(false), 1500)
+        })
       }
       title={t('复制命令')}
       aria-label={t('复制命令')}

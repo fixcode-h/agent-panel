@@ -17,6 +17,7 @@ import { fileIcon } from '@/lib/file-icon'
 import { countFiles, entryName, toTree, visibleRows } from '@/lib/library-tree'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Textarea } from '@/components/ui/input'
 import {
@@ -295,11 +296,11 @@ export function SkillFiles({
         {/* 附加文件的内容：没选中时给引导，选中了才显示编辑框 */}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {file === null ? (
-            <p className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
+            <EmptyPanel>
               {!countFiles(rows)
                 ? t('这个技能只有 SKILL.md，还没有附加文件。')
                 : t('在左边的文件树里点一个文件，就能看内容和改它。')}
-            </p>
+            </EmptyPanel>
           ) : (
             <>
               <div className="flex flex-wrap items-center gap-2">
@@ -333,11 +334,11 @@ export function SkillFiles({
                 </div>
               </div>
               {!editable ? (
-                <p className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
+                <EmptyPanel>
                   {file.link
                     ? t('这是个链接，不能在这里改内容。')
                     : t('二进制文件（{size}），不能编辑。', { size: sizeText(file.size) })}
-                </p>
+                </EmptyPanel>
               ) : (
                 <Textarea
                   value={text}

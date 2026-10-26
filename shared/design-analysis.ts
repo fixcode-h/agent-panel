@@ -3,6 +3,7 @@ import { compactTree, usedImages, walk, type Widget } from './umg.ts'
 import type { ToolUse } from './schema.ts'
 import type { Design, DesignMessage, ReplyPart } from './design.ts'
 import { fmtDuration } from './duration.ts'
+import { clip } from './text.ts'
 
 /**
  * AI 分析：检查当前设计对话和生成的 UI 是否合理，以及 AI 生成能力还能加强哪里。
@@ -66,7 +67,6 @@ const PRIORITY_ALIAS: Record<string, AnalysisPriority> = {
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
-const clip = (v: string, n: number) => (v.length > n ? `${v.slice(0, n)}…` : v)
 
 /** 模型偶尔会把 area / priority 写成中文或别的写法，尽量认出来；认不出按对话过程处理 */
 function normalizeArea(v: unknown): AnalysisArea {

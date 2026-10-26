@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { extensionSelfReload, hasMask } from '@shared/design'
 import type {
   Annotation,
@@ -245,7 +246,7 @@ function BrowserHelp({
     try {
       const { dir } = await api.installExtension(browser)
       // 不想拖文件夹时，「加载已解压的扩展程序」弹出的选择窗口里可以直接粘贴路径
-      await navigator.clipboard?.writeText(dir).catch(() => {})
+      await copyText(dir, { fail: false })
       setWaiting(true)
       toast.success(t('已打开扩展页面，extension 文件夹已选中，把它拖到扩展页面上'))
     } catch (e) {
