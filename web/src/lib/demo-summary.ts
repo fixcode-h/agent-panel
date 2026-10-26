@@ -3,7 +3,13 @@
  * 接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），页面两边共用一套代码；
  * 报告结构也和正式版一样：三个二级节、项目三级标题、条目带序号（格式自检能直接通过）。
  */
-import { todayWindow, type SummaryJob, type SummaryRecord } from '@shared/summary'
+import {
+  DEFAULT_SUMMARY_RANGE,
+  rangeWindow,
+  type SummaryJob,
+  type SummaryRange,
+  type SummaryRecord,
+} from '@shared/summary'
 import { demoMs } from './demo-speed'
 
 /** 演示用的需求条目：标题、状态、实现原理 */
@@ -88,7 +94,7 @@ export function demoSummary(
   }
   // POST /summary：开始生成
   if (method === 'POST') {
-    const input = body as { projects?: { projectId?: string; taskIds?: string[] }[] }
+    const input = body as { projects?: { projectId?: string; taskIds?: string[] }[]; range?: SummaryRange }
     const chosen = (input.projects ?? [])
       .map((p) => {
         const project = projects.find((x) => x.id === p.projectId)
@@ -96,11 +102,15 @@ export function demoSummary(
       })
       .filter((p): p is { id: string; name: string; taskIds: string[] } => !!p)
     if (!chosen.length) throw new Error('项目不存在')
-    const { day } = todayWindow()
+    // 和正式后端同一个窗口函数：标题、记录里的 from / to 都按选中的范围走
+    const win = rangeWindow(input.range ?? DEFAULT_SUMMARY_RANGE)
+    const day = win.toDay
     const job: SummaryJob = {
       id: crypto.randomUUID(),
       status: 'running',
       projectIds: chosen.map((p) => p.id),
+      from: win.fromDay,
+      to: win.toDay,
       md: '',
       tools: [],
       outChars: 0,
@@ -117,10 +127,12 @@ export function demoSummary(
         createdAt: now,
         updatedAt: now,
         day,
+        from: win.fromDay,
+        to: win.toDay,
         projectIds: chosen.map((p) => p.id),
         projectNames: chosen.map((p) => p.name),
         md: sampleMd(
-          day,
+          win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} - ${win.toDay}`,
           chosen.map((p) => p.name),
         ),
         cli: 'demo',

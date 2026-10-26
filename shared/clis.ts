@@ -424,6 +424,7 @@ export const CLIS: CliDefinition[] = [
         'mcp__{name}',
       ],
       files: {},
+      vars: {},
     },
     mcpStore: {
       file: '${CLAUDE_CONFIG_DIR:-~}/.claude.json',
@@ -634,7 +635,7 @@ export const CLIS: CliDefinition[] = [
         },
       ],
     },
-    mcp: { args: ['-c', 'mcp_servers.{name}.url="{url}"'], files: {} },
+    mcp: { args: ['-c', 'mcp_servers.{name}.url="{url}"'], files: {}, vars: {} },
     mcpStore: {
       file: '${CODEX_HOME:-~/.codex}/config.toml',
       format: 'toml',

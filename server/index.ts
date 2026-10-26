@@ -945,7 +945,7 @@ app.get('/projects/:id/files', async (c) => {
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
-// 目录的版本控制类型：项目设置里判断「禁止子对话执行」能不能勾（只对 Git 项目生效，见 ADR 0018）。
+// 目录的版本控制类型：项目设置里说明 parent 范围只对 Git 项目生效（见 ADR 0018 / 0020）。
 // 判定复用 detectVcs，和子对话开独立分支时的判断是同一套
 app.get('/fs/vcs', async (c) => c.json(await detectVcs(resolvePath(c.req.query('path') ?? ''))))
 

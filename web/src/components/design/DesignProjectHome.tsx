@@ -6,6 +6,7 @@ import { useData, useNav } from '@/lib/data'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
 import { designKind, groupByKind, kindLabel, projectDesigns, projectSummary } from '@/lib/design-projects'
 import { t } from '@shared/i18n'
@@ -97,13 +98,13 @@ export function DesignProjectHome({ projectId }: { projectId: string }) {
               <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
                 <span className="flex-1">{t('界面 · {n}', { n: 0 })}</span>
               </h2>
-              <div className="rounded-xl border border-dashed px-4 py-8 text-center text-[0.8125rem] text-subtle">
+              <EmptyPanel as="div">
                 <p>{t('这个项目里还没有界面。')}</p>
                 <Button className="mt-3" size="sm" onClick={newDesign}>
                   <Plus className="h-4 w-4" />
                   {t('新建设计')}
                 </Button>
-              </div>
+              </EmptyPanel>
             </section>
           ) : (
             groups.map((g) => {

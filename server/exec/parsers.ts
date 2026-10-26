@@ -4,6 +4,7 @@ import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
 import { panelToolName } from '../../shared/panel-tools.ts'
+import { clip } from '../../shared/text.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
 export type CliEvent =
@@ -95,9 +96,7 @@ export const lines = (s: unknown) =>
 /** 工具详情最多保留的字数：命令输出可能很长，任务文件不能无限变大 */
 const MAX_DETAIL = 8000
 export const clipDetail = (s: string) =>
-  s.length > MAX_DETAIL
-    ? `${s.slice(0, MAX_DETAIL)}\n…` + t('（还有 {n} 个字符没有显示）', { n: s.length - MAX_DETAIL })
-    : s
+  clip(s, MAX_DETAIL, { mark: (omitted) => `\n…` + t('（还有 {n} 个字符没有显示）', { n: omitted }) })
 
 /** 工具输出可能是字符串，也可能是 [{type:'text', text}] 这样的内容块 */
 export function toolText(c: unknown): string {

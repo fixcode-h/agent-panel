@@ -12,6 +12,7 @@ import {
   afterFail,
   afterMiss,
   afterRun,
+  alignScheduleAt,
   pickDue,
   sameMinute,
   SCHEDULE_TICK_MS,
@@ -125,7 +126,14 @@ export function schedulesApi(deps: {
     const p = ScheduleInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const now = new Date().toISOString()
-    const item = await store.create({ ...p.data, ...EMPTY_STATE, createdAt: now, updatedAt: now })
+    // 每周 / 工作日的首次执行也要落在选中的星期：保存前对齐，到点判定（pickDue）和徽标才一致
+    const item = await store.create({
+      ...p.data,
+      at: alignScheduleAt(p.data),
+      ...EMPTY_STATE,
+      createdAt: now,
+      updatedAt: now,
+    })
     log.info('schedule', '新建计划', { schedule: item.id, name: item.name, at: item.at })
     return c.json(item, 201)
   })
@@ -136,7 +144,7 @@ export function schedulesApi(deps: {
     if (!old) return bad(c, t('计划不存在'), 404)
     const p = ScheduleInput.safeParse(await c.req.json().catch(() => null))
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    const input = p.data
+    const input = { ...p.data, at: alignScheduleAt(p.data) }
     // 时间改了就是重新排期：已执行 / 已跳过的计划回到待执行，之前错过的记录也不再算数。
     // 按分钟比较：界面上的时间只到分钟，带秒的老数据在弹窗里编辑时不该被当成改了时间
     const rescheduled = !sameMinute(input.at, old.at)

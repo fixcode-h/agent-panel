@@ -3,6 +3,7 @@ import { toast } from '@/lib/toast'
 import { Download, FolderOpen, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { DATA_KINDS, type DataKind, type DataUsage } from '@shared/data'
 import { MEMORY_ASK, MEMORY_TOPIC, formatBytes, formatSampleTime, formatUptime, memoryReport } from '@shared/memory'
+import { pad2 } from '@shared/datetime'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
@@ -121,7 +122,7 @@ export function DataSection() {
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
       const a = document.createElement('a')
       const d = new Date()
-      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+      const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`
       a.href = URL.createObjectURL(blob)
       a.download = `agent-panel-${t('数据')}-${stamp}.json`
       a.click()

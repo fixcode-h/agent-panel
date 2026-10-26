@@ -3,6 +3,7 @@ import { RefreshCw, RotateCcw } from 'lucide-react'
 import { t } from '@shared/i18n'
 import {
   USAGE_GRAINS,
+  USAGE_GROUPS,
   USAGE_LOOKBACK_DAYS,
   dayKey,
   formatTokens,
@@ -14,18 +15,34 @@ import {
   usagePeriod,
   type UsageBucket,
   type UsageGrain,
+  type UsageGroup,
   type UsageReport,
+  type UsageTotal,
 } from '@shared/usage'
-import { DEFAULT_PRICING_MODEL, PRICING_MODELS, formatMoney, pricingModel, tierCost, usageCost } from '@shared/pricing'
+import {
+  DEFAULT_PRICING_MODEL,
+  PRICING_MODELS,
+  formatMoney,
+  pricingModel,
+  tierCost,
+  usageCost,
+  type Currency,
+  type PricingModel,
+} from '@shared/pricing'
 import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { HelpTip } from '@/components/ui/help-tip'
 import { Select } from '@/components/ui/input'
+import { Segmented } from '@/components/ui/segmented'
 import { PeriodPicker } from './PeriodPicker'
 
 /** 千分位：精确原值放 title，表格里显示短格式 */
 const num = (n: number) => Math.round(n).toLocaleString()
+
+/** 还没拿到分组的报表时占位用的全 0 合计：汇总卡片和合计行都读它 */
+const EMPTY_TOTAL = sumBuckets([])
 
 const WEEKDAY = [t('周日'), t('周一'), t('周二'), t('周三'), t('周四'), t('周五'), t('周六')]
 
@@ -61,6 +78,106 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 /**
+ * 按项目 / 对话分组的明细表：第一列是名字，不带时间列（分组桶没有时间含义）。
+ * 其余列和合计与按时间视图完全一致：同一份聚合、同一个计价函数，费用不会出现第二套口径。
+ */
+function GroupedTable({
+  rows,
+  nameLabel,
+  nameOf,
+  model,
+  currency,
+  total,
+  cost,
+}: {
+  rows: UsageBucket[]
+  /** 第一列的表头：项目 / 对话 */
+  nameLabel: string
+  nameOf: (b: UsageBucket) => string
+  model: PricingModel | undefined
+  currency: Currency
+  total: UsageTotal
+  cost: number | null
+}) {
+  /** 一行的费用：和时间视图用同一个函数和同一个价格表 */
+  const money = (b: UsageBucket) => {
+    const v = usageCost(b, model, b)
+    return v === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(v, currency)
+  }
+  return (
+    <table className="w-full text-[0.78125rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+      <thead>
+        <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
+          <th className="px-2.5 py-2 font-medium">{nameLabel}</th>
+          <th className="px-2.5 py-2 text-right font-medium">{t('输入')}</th>
+          <th className="px-2.5 py-2 text-right font-medium">{t('输出')}</th>
+          <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存命中')}</th>
+          <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存写入')}</th>
+          <th className="px-2.5 py-2 text-right font-medium whitespace-nowrap">{t('费用')}</th>
+          <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell whitespace-nowrap">{t('轮数')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((b) => (
+          <tr key={b.key} className="border-b last:border-b-0 hover:bg-sel/30">
+            <td className="max-w-[280px] truncate px-2.5 py-1.5" title={nameOf(b)}>
+              {nameOf(b)}
+            </td>
+            <Tokens value={b.inputTokens} />
+            <Tokens value={b.outputTokens} />
+            <td
+              className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
+              title={num(b.cacheReadTokens)}
+            >
+              {formatTokens(b.cacheReadTokens)}
+            </td>
+            <td
+              className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
+              title={num(b.cacheWriteTokens)}
+            >
+              {formatTokens(b.cacheWriteTokens)}
+            </td>
+            <td className="px-2.5 py-1.5 text-right font-mono tabular-nums">{money(b)}</td>
+            <td className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell" title={num(b.turns)}>
+              {formatTokens(b.turns)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr className="border-t bg-field/60 font-medium">
+          <td className="px-2.5 py-2 whitespace-nowrap">{t('合计')}</td>
+          <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.inputTokens)}>
+            {formatTokens(total.inputTokens)}
+          </td>
+          <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.outputTokens)}>
+            {formatTokens(total.outputTokens)}
+          </td>
+          <td
+            className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
+            title={num(total.cacheReadTokens)}
+          >
+            {formatTokens(total.cacheReadTokens)}
+          </td>
+          <td
+            className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
+            title={num(total.cacheWriteTokens)}
+          >
+            {formatTokens(total.cacheWriteTokens)}
+          </td>
+          <td className="px-2.5 py-2 text-right font-mono tabular-nums">
+            {cost === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(cost, currency)}
+          </td>
+          <td className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell" title={num(total.turns)}>
+            {formatTokens(total.turns)}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  )
+}
+
+/**
  * 设置里的「用量统计」：按天 / 按周 / 按月只展示当前一个区间，用工具条上的选择器切区间。
  *
  * 聚合仍在服务端做（`GET /usage`），一次取近一年的按天数据；周、月的合计由按天相加，
@@ -71,6 +188,9 @@ function Stat({ label, value }: { label: string; value: number }) {
  *
  * 费用按「计价模型」的官方单价折算（`shared/pricing.ts`）；CLI 自己上报的 costUsd 只作对照，
  * 不参与合计，避免两个都叫「费用」的数字混在一起。
+ *
+ * 分组（按时间 / 按项目 / 按对话）只换桶的归属：用同一个窗口和同一份样本，
+ * token、费用、轮数的合计跟按时间视图一致；按项目 / 对话时不看时间粒度，固定汇总近一年。
  */
 export function UsageSection({
   pricingModel: pricingId,
@@ -80,6 +200,9 @@ export function UsageSection({
   pricingModel: string
   onPricingModel: (id: string) => void
 }) {
+  const { projects } = useData()
+  /** 分组方式：时间（可以再切天 / 周 / 月）/ 项目 / 对话 */
+  const [group, setGroup] = useState<UsageGroup>('time')
   const [grain, setGrain] = useState<UsageGrain>('day')
   /** 当前区间的第一天；按天是那天，按周是周一，按月是一号 */
   const [anchor, setAnchor] = useState<Date>(() => new Date())
@@ -88,6 +211,8 @@ export function UsageSection({
   /** 默认定位时因为今天 / 本周 / 本月没有用量后退了：只在这一次说清显示了哪一段 */
   const [fallback, setFallback] = useState(false)
   const [report, setReport] = useState<UsageReport>()
+  /** 按项目 / 对话分组的报表：和按时间的是两次请求，切回去不用重新取 */
+  const [grouped, setGrouped] = useState<UsageReport>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
@@ -98,14 +223,26 @@ export function UsageSection({
     setLoading(true)
     setError('')
     api
-      .tokenUsage({ grain: 'day', count: USAGE_LOOKBACK_DAYS })
-      .then((r) => !dead && setReport(r))
+      .tokenUsage(
+        group === 'time'
+          ? { grain: 'day', count: USAGE_LOOKBACK_DAYS }
+          : { grain: 'day', count: USAGE_LOOKBACK_DAYS, groupBy: group },
+      )
+      .then((r) => {
+        if (dead) return
+        // 按时间的那份是三个粒度共用的底表，切粒度不重新请求；分组的那份只对应自己的 group
+        if (group === 'time') setReport(r)
+        else setGrouped(r)
+      })
       .catch((e) => !dead && setError((e as Error).message))
       .finally(() => !dead && setLoading(false))
     return () => {
       dead = true
     }
-  }, [tick])
+  }, [tick, group])
+
+  /** 当前分组对应的报表：分组切换后在途请求回来前先当作加载中，不拿上一个分组的数据顶替 */
+  const groupReport = grouped?.groupBy === group ? grouped : undefined
 
   const byDay = useMemo(() => new Map((report?.buckets ?? []).map((b) => [b.key, b])), [report])
   const marked = useMemo(() => new Set((report?.buckets ?? []).filter((b) => b.turns > 0).map((b) => b.key)), [report])
@@ -118,7 +255,9 @@ export function UsageSection({
         .reverse(),
     [selected, byDay],
   )
-  const total = useMemo(() => sumBuckets(rows), [rows])
+  const timeTotal = useMemo(() => sumBuckets(rows), [rows])
+  /** 当前展示的合计：时间视图是选中区间的合计，分组视图是整段窗口的合计 */
+  const total: UsageTotal = group === 'time' ? timeTotal : (groupReport?.total ?? EMPTY_TOTAL)
 
   // 设置弹窗打开时焦点落在粒度选择器上，打开就能用方向键切换
   useEffect(() => {
@@ -157,7 +296,24 @@ export function UsageSection({
   const offPeakCost = tierCost(total.offPeak, model, 'offPeak')
   /** 一档的 token 量（输入 + 输出，和表格口径一致） */
   const tierTokens = (x: { inputTokens: number; outputTokens: number }) => x.inputTokens + x.outputTokens
-  const shown = periodLabel(selected)
+  /** 分组视图的范围（按项目和对话固定汇总近一年，对应 USAGE_LOOKBACK_DAYS）：取分组报表自己的 from / to */
+  const groupRange = groupReport
+    ? t('{from} 至 {to}', {
+        from: dayKey(new Date(groupReport.from)),
+        to: dayKey(new Date(Date.parse(groupReport.to) - 1)),
+      })
+    : ''
+  const shown = group === 'time' ? periodLabel(selected) : groupRange
+  const groupRows = groupReport?.buckets ?? []
+  /** 分组桶的名字：项目名（被删或不属于项目时写清） / 对话标题 */
+  const groupName = (b: UsageBucket) =>
+    group === 'project'
+      ? b.key
+        ? (projects.find((p) => p.id === b.key)?.name ?? t('项目已删除'))
+        : t('不属于项目')
+      : b.label?.trim() || t('未命名对话')
+  /** 汇总卡片里的任务数：按对话分组时每个桶就是一条对话 */
+  const taskStatLabel = group === 'task' ? t('对话') : t('任务')
   // 已经在当前区间（今天 / 本周 / 本月）时没什么可重置的，按钮不显示
   const onCurrent = isCurrentPeriod(grain, selected.start, today0)
   const fellBack = fallback && !picked && !onCurrent && rows.length > 0
@@ -185,6 +341,20 @@ export function UsageSection({
     setPicked(false)
     setFallback(false)
   }
+  /**
+   * 换分组：按项目 / 对话不看时间粒度，固定汇总近一年；切回按时间时回到当前区间。
+   * 先置 loading：新的分组报表还没回来时不能拿上一个分组的数据顶上。
+   */
+  const changeGroup = (g: UsageGroup) => {
+    if (g === group) return
+    setGroup(g)
+    setLoading(true)
+    if (g === 'time') {
+      setAnchor(periodStart(grain, new Date()))
+      setPicked(false)
+      setFallback(false)
+    }
+  }
 
   const onTabKey = (e: React.KeyboardEvent, i: number) => {
     const ids = USAGE_GRAINS.map((g) => g.id)
@@ -206,6 +376,8 @@ export function UsageSection({
     const el = e.target as HTMLElement
     if (el.closest('input, textarea, select, [contenteditable="true"], [data-radix-popper-content-wrapper]')) return
     const key = e.key.toLowerCase()
+    // 分组视图没有时间区间：[ ] T 不适用；R 刷新照常
+    if (group !== 'time' && (key === '[' || key === ']' || key === 't')) return
     if (key === '[') {
       e.preventDefault()
       step(-1)
@@ -229,49 +401,59 @@ export function UsageSection({
         : t('本月还没有用量，显示最近有数据的一个月：{shown}', { shown })
   const resetTitle = grain === 'day' ? t('重置到今天') : grain === 'week' ? t('重置到本周') : t('重置到本月')
 
-  const listEmpty = !loading && !rows.length
+  const listEmpty = !loading && (group === 'time' ? !rows.length : !groupRows.length)
 
   return (
     <section className="flex flex-col gap-3" onKeyDown={onKeyDown} aria-label={t('用量统计')}>
-      {/* 统一工具条：粒度、时间范围、计价模型、刷新排成一行，窄窗口换行不溢出 */}
+      {/* 统一工具条：分组、粒度、时间范围、计价模型、刷新排成一行，窄窗口换行不溢出 */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border p-0.5" role="tablist" aria-label={t('统计粒度')}>
-          {USAGE_GRAINS.map((g, i) => (
-            <button
-              key={g.id}
-              ref={(el) => {
-                tabRefs.current[g.id] = el
-              }}
-              type="button"
-              role="tab"
-              aria-selected={grain === g.id}
-              tabIndex={grain === g.id ? 0 : -1}
-              onClick={() => changeGrain(g.id)}
-              onKeyDown={(e) => onTabKey(e, i)}
-              className={cn(
-                'h-7 cursor-pointer rounded-md px-2.5 text-[0.78125rem] transition-colors',
-                grain === g.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
-              )}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-        <PeriodPicker
-          grain={grain}
-          start={anchor}
-          marked={marked}
-          min={min}
-          max={max}
-          onChange={select}
-          label={shown}
+        <Segmented
+          label={t('分组')}
+          value={group}
+          onChange={changeGroup}
+          options={USAGE_GROUPS.map((g) => ({ id: g.id, label: g.label }))}
         />
-        {/* 手动了区间才出现：已经在今天 / 本周 / 本月时按钮不占位置 */}
-        {!onCurrent && (
-          <Button variant="ghost" size="sm" title={resetTitle} onClick={resetToCurrent}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            {t('重置')}
-          </Button>
+        {group === 'time' && (
+          <>
+            <div className="inline-flex rounded-lg border p-0.5" role="tablist" aria-label={t('统计粒度')}>
+              {USAGE_GRAINS.map((g, i) => (
+                <button
+                  key={g.id}
+                  ref={(el) => {
+                    tabRefs.current[g.id] = el
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={grain === g.id}
+                  tabIndex={grain === g.id ? 0 : -1}
+                  onClick={() => changeGrain(g.id)}
+                  onKeyDown={(e) => onTabKey(e, i)}
+                  className={cn(
+                    'h-7 cursor-pointer rounded-md px-2.5 text-[0.78125rem] transition-colors',
+                    grain === g.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
+                  )}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            <PeriodPicker
+              grain={grain}
+              start={anchor}
+              marked={marked}
+              min={min}
+              max={max}
+              onChange={select}
+              label={shown}
+            />
+            {/* 手动了区间才出现：已经在今天 / 本周 / 本月时按钮不占位置 */}
+            {!onCurrent && (
+              <Button variant="ghost" size="sm" title={resetTitle} onClick={resetToCurrent}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t('重置')}
+              </Button>
+            )}
+          </>
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <Select
@@ -296,18 +478,30 @@ export function UsageSection({
 
       {/* 统计口径和快捷键一次说清，按钮上的 title 也带着 */}
       <p className="text-[0.8125rem] leading-relaxed text-subtle">
-        {t(
-          '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。',
-        )}
+        {group === 'time'
+          ? t(
+              '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。',
+            )
+          : t(
+              '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。',
+              {
+                group: group === 'project' ? t('项目') : t('对话'),
+                range: groupRange,
+              },
+            )}
       </p>
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-subtle">
-        <span>
-          <kbd className="rounded border px-1 font-mono">[</kbd> <kbd className="rounded border px-1 font-mono">]</kbd>{' '}
-          {t('切换区间')}
-        </span>
-        <span>
-          <kbd className="rounded border px-1 font-mono">T</kbd> {t('回到今天')}
-        </span>
+        {group === 'time' && (
+          <>
+            <span>
+              <kbd className="rounded border px-1 font-mono">[</kbd>{' '}
+              <kbd className="rounded border px-1 font-mono">]</kbd> {t('切换区间')}
+            </span>
+            <span>
+              <kbd className="rounded border px-1 font-mono">T</kbd> {t('回到今天')}
+            </span>
+          </>
+        )}
         <span>
           <kbd className="rounded border px-1 font-mono">R</kbd> {t('刷新')}
         </span>
@@ -386,7 +580,7 @@ export function UsageSection({
             <Stat label={t('输出')} value={total.outputTokens} />
             <Stat label={t('缓存命中')} value={total.cacheReadTokens} />
             <Stat label={t('缓存写入')} value={total.cacheWriteTokens} />
-            <Stat label={t('任务')} value={total.tasks} />
+            <Stat label={taskStatLabel} value={total.tasks} />
             <Stat label={t('轮数')} value={total.turns} />
           </div>
         </div>
@@ -404,7 +598,7 @@ export function UsageSection({
           <div className="px-3.5 py-8 text-center text-[0.8125rem] text-subtle">
             {loading ? '…' : t('这段时间暂无用量')}
           </div>
-        ) : (
+        ) : group === 'time' ? (
           <table className="w-full text-[0.78125rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
             <thead>
               <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
@@ -533,6 +727,16 @@ export function UsageSection({
               </tr>
             </tfoot>
           </table>
+        ) : (
+          <GroupedTable
+            rows={groupRows}
+            nameLabel={group === 'project' ? t('项目') : t('对话')}
+            nameOf={groupName}
+            model={model}
+            currency={currency}
+            total={total}
+            cost={cost}
+          />
         )}
       </div>
     </section>

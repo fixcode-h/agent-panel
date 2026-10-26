@@ -67,7 +67,8 @@ export const EN_SCHEDULE: Record<string, string> = {
   '例如：今日工作': "e.g. Today's work",
   执行时间: 'Run time',
   重复: 'Repeat',
-  只执行一次: 'Once',
+  工作日: 'Workdays',
+  每周哪几天: 'Which days of the week',
   用哪个角色: 'Agent role',
   '不用角色（跟随默认 CLI）': 'No role (follow the default CLI)',
   '{name}（已停用）': '{name} (disabled)',
@@ -76,8 +77,8 @@ export const EN_SCHEDULE: Record<string, string> = {
   到点后执行的对话内容: 'What the conversation should do',
   '交给 Agent 的一句话目标，例如：总结今天做的工作':
     'One-line goal handed to the agent, e.g. summarize what I did today',
-  '时间按本机时区。每天的计划每次执行完自动推到第二天，只执行一次的执行完就停下。':
-    'Times use the local time zone. Daily plans move to the next day after each run; one-off plans stop after running.',
+  '时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。':
+    'Times use the local time zone. Daily, weekly, and weekday plans move to their next run after each run; one-off plans stop after running.',
 
   // 校验和接口错误
   请填写计划名称: 'Enter a plan name',

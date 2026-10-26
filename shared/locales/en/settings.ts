@@ -1159,6 +1159,14 @@ export const EN_SETTINGS: Record<string, string> = {
   按天: 'Daily',
   按周: 'Weekly',
   按月: 'Monthly',
+  分组: 'Group by',
+  按时间: 'By time',
+  按项目: 'By project',
+  按对话: 'By conversation',
+  项目已删除: 'Project deleted',
+  不属于项目: 'No project',
+  '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。':
+    'Totals for {range} grouped by {group}: tokens, cost, and turns use the same window and units as the by-time view. Input includes cache hits and cache writes.',
   用量统计: 'Usage',
   统计粒度: 'Granularity',
   '共 {n} 轮': '{n} turns in total',
@@ -1367,13 +1375,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
     'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
   禁止子对话执行: "Don't run in child conversations",
-  '（只对 Git 项目生效）': ' (Git projects only)',
-  '勾了「禁止子对话执行」的步骤只对子对话生效：子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话；父对话自己改代码验证时照常跑。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。':
-    'Steps marked "Don\'t run in child conversations" only affect child conversations: the child skips them, and after its branch is merged back the parent runs them (one at a time) and sends the results and durations back; the parent itself still runs them when it verifies its own changes. Only applies to Git projects; best for heavy steps such as end-to-end tests.',
-  '只对子对话生效：勾了以后子对话不跑这条步骤，合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话；父对话自己改代码验证时照常跑。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。':
-    "Only affects child conversations: the child skips this step, and after its branch is merged back the parent runs it in its own folder and sends the results and durations back; the parent itself still runs it when it verifies its own changes. Best for heavy steps such as end-to-end tests. Steps marked 'builds on merge' are still built by the parent through its build request and are not affected.",
-  '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。':
-    'Only applies to Git projects: child conversations on other version control systems have no branch to merge back, so this option would never run; it cannot be selected here.',
+  范围: 'Scope',
+  '每条步骤选一个范围：「总是跑」每次改动都跑（类型检查、lint 这类几十秒的）；「命中适用改动才跑」只在改动命中了下面的 glob 时跑，子对话只跑命中的单测文件 / 界面分片；「全量，合并后由父对话跑」子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话，适合全量单测、全量界面检查、端到端测试。最后的范围只对 Git 项目的独立分支子对话生效，其他情况步骤照常由执行者自己跑。':
+    'Pick a scope for each step: "Always" runs on every change (type checks, lint — the ones that finish in seconds); "When changed files match" only runs when this change touches the globs below, and a child conversation runs only the matched test files / UI shards; "Full suite, the parent runs it after merge" is skipped by child conversations and run by the parent after merging the branch back (one at a time), with the results and durations sent back — best for the full unit suite, the full UI check and end-to-end tests. The last scope only applies to child conversations on their own branch in Git projects; everywhere else the executor still runs the step normally.',
+  '子对话只跑「总是跑」和命中了「适用改动」的步骤；选「全量，合并后由父对话跑」的步骤子对话不跑，合并后由父对话在全量里跑。':
+    'Child conversations only run "Always" steps and steps whose apply-to globs match; steps set to "Full suite, the parent runs it after merge" are skipped by the child and run by the parent as part of the full suite after merging.',
+  '全量（非 Git 项目自己跑）': 'Full suite (the executor runs it in non-Git projects)',
+  '范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛':
+    'Leave this empty when the scope is "Always": the step runs on every change and is not filtered by these globs.',
+  '范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛':
+    'Leave this empty when the scope is "Full suite, the parent runs it after merge": the parent runs the full suite after merging and does not filter by these globs.',
   // 设置 →「数据」→ 回收站
   回收站: 'Trash',
   '{n} 个对话': '{n} conversations',

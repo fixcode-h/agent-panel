@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { SquareDashedMousePointer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useData, useNav } from '@/lib/data'
@@ -301,21 +302,16 @@ function trackFocus() {
  */
 async function copyPick(text: string) {
   const full = wrapElementRef(text)
-  try {
-    await navigator.clipboard.writeText(full)
-    toast.success(t('已复制到剪贴板，去输入框里粘贴'))
-  } catch {
-    toast.error(t('写不进剪贴板，请手动复制下面的引用'), {
-      // 整段完整引用（带标记），点一下全选就能拷走；只给首行摘要的话粘回去认不出是引用卡片
-      description: (
-        <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.71875rem] whitespace-pre-wrap select-all">
-          {full}
-        </pre>
-      ),
-      duration: Infinity,
-    })
-    throw new Error('clipboard')
-  }
+  if (await copyText(full, { done: t('已复制到剪贴板，去输入框里粘贴'), fail: false })) return
+  toast.error(t('写不进剪贴板，请手动复制下面的引用'), {
+    // 整段完整引用（带标记），点一下全选就能拷走；只给首行摘要的话粘回去认不出是引用卡片
+    description: (
+      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.71875rem] whitespace-pre-wrap select-all">
+        {full}
+      </pre>
+    ),
+    duration: Infinity,
+  })
 }
 
 function PickOverlay({

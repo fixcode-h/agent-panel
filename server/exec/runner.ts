@@ -37,6 +37,7 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { attachmentAddDirs } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
@@ -55,6 +56,7 @@ import {
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
 import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
+import { clip } from '../../shared/text.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -469,8 +471,6 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   fn(r)
   return true
 }
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
 export function estTokens(s: string) {
@@ -2271,6 +2271,16 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
 export async function runRealTurn(ctx: RealContext) {
   ctx.task.simulated = false
+  // ADR 0020：这一轮的计划提醒（滞后 / 新输入没跟着改）由 engine 的 planPart 写进提示词；
+  // 服务端在这里留一条日志，方便事后确认「到底提醒过没有」。新输入的提醒只算一次：
+  // 这一轮结束后记下「提醒过这次输入」，同一个要求不会每轮重复追问（对话选择「不改计划、说明一句」时尤其需要）
+  const plan = activePlan(ctx.task)
+  const unhandled = plan ? inputUnhandled(plan) : undefined
+  // 本轮提醒的是「这一次输入」：轮中随时可能又来新消息（deliver 会更新 lastInputAt），
+  // 轮末不能再读 lastInputAt，否则会把没提醒过的那次也标成已提醒（评审 R2）
+  const noticedInput = unhandled !== undefined ? plan?.lastInputAt : undefined
+  const notice = planNotice(ctx.task)
+  if (notice) log.warn('plan', '计划需要对话收口，已写进这一轮的提示词', { task: ctx.task.id, notice })
   await runEngineTurn({
     task: ctx.task,
     agents: ctx.agents,
@@ -2392,6 +2402,10 @@ export async function runRealTurn(ctx: RealContext) {
       return file
     },
   })
+  if (noticedInput && plan) {
+    plan.inputNotedAt = noticedInput
+    ctx.changed()
+  }
 }
 
 const fmtTok = (n: number) =>

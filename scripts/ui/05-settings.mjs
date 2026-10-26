@@ -198,6 +198,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 换回默认模型，后面的检查不受影响
   await p.getByRole('combobox', { name: '计价模型' }).click()
   await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
+  // 分组：按项目 / 按对话，表格列跟着变、合计仍在，时间区间选择器隐藏
+  const groupSwitch = p.getByRole('radiogroup', { name: '分组' })
+  await groupSwitch.waitFor({ timeout: 3000 }).catch(() => errors.push('用量统计：没有分组切换'))
+  const usageTable = p.locator('section[aria-label="用量统计"] table')
+  const waitUsageRows = async () => {
+    for (let i = 0; i < 60 && (await usageTable.locator('tbody tr').count()) === 0; i++) await p.waitForTimeout(100)
+  }
+  if (await groupSwitch.count()) {
+    await groupSwitch.getByRole('radio', { name: '按项目' }).click()
+    await waitUsageRows()
+    if (await p.locator('[data-usage-period-trigger]').count())
+      errors.push('用量统计：按项目分组时还显示时间区间选择器')
+    const projectHead = await usageTable
+      .locator('thead')
+      .innerText()
+      .catch(() => '')
+    if (!projectHead.includes('项目')) errors.push(`用量统计：按项目分组的表头不是项目（${projectHead.slice(0, 40)}）`)
+    if (projectHead.includes('时间')) errors.push('用量统计：按项目分组时还有时间列')
+    if ((await usageTable.locator('tbody tr').count()) === 0) errors.push('用量统计：按项目分组没有行')
+    await check(p, '设置-用量统计-按项目', ['合计', '费用', '按项目'])
+
+    await groupSwitch.getByRole('radio', { name: '按对话' }).click()
+    await waitUsageRows()
+    const taskHead = await usageTable
+      .locator('thead')
+      .innerText()
+      .catch(() => '')
+    if (!taskHead.includes('对话')) errors.push(`用量统计：按对话分组的表头不是对话（${taskHead.slice(0, 40)}）`)
+    if ((await usageTable.locator('tbody tr').count()) === 0) errors.push('用量统计：按对话分组没有行')
+    await check(p, '设置-用量统计-按对话', ['合计', '费用', '按对话'])
+
+    // 切回按时间：粒度选择器和区间选择器都回来，落到当前区间
+    await groupSwitch.getByRole('radio', { name: '按时间' }).click()
+    await p
+      .getByRole('tab', { name: '按天', exact: true })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('用量统计：切回按时间后没有粒度选择器'))
+    await p
+      .locator('[data-usage-period-trigger]')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('用量统计：切回按时间后没有时间区间'))
+  }
   await settle(p)
   await p.keyboard.press('Escape')
   // 分片前面几步里 Esc 先关的是刚用过的浮层（下拉、日历），设置弹窗不一定跟着关：显式点关闭，

@@ -237,7 +237,7 @@ const SEARCH_CACHE_CHARS = 8_000_000
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
-/** 项目目录是不是 Git 仓库（ADR 0018 的「禁止子对话执行」只对 Git 生效）：判定和缓存同 isP4 */
+/** 项目目录是不是 Git 仓库（ADR 0018 / 0020 的 parent 范围只对 Git 生效）：判定和缓存同 isP4 */
 const gitDirs = new Map<string, Promise<boolean>>()
 const isGit = (dir: string) => {
   let got = gitDirs.get(dir)
@@ -251,7 +251,7 @@ const isGit = (dir: string) => {
 }
 
 /**
- * 「禁止子对话执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * 范围是 parent 的步骤在这个对话里由谁跑（ADR 0018 / 0020）：只对 Git 项目生效。
  * 独立分支的子对话是 child（它不跑，合并后父对话跑）；顶层父对话是 parent（面板自动跑、结果直接回传子对话）；
  * 共用目录的子对话、P4 / SVN / 没有版本控制时返回空，步骤照常由 Agent 自己跑。
  * 步骤按项目当前设置判断（用户口径：调用前现读配置）：改了项目设置，进行中的对话下一次判断就按新配置走；
@@ -916,6 +916,21 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 记下「最近一次带新要求性质的输入」（见 ADR 0020）：下一轮提示里会要求对话先判计划要不要改。
+   * 用户消息、父对话交代的任务算；面板自己的推送（后台命令结果、子对话状态上报、催促）不算——
+   * 那些对应的步骤面板已经自动推进过了，再要求「先判计划」只会让对话每轮都被追问。
+   */
+  function notePlanInput(tk: Task, skip = false, now = new Date().toISOString()) {
+    if (skip) return false
+    const plan = activePlan(tk)
+    if (!plan) return false
+    plan.lastInputAt = now
+    // 新的输入要重新提醒一次（上一次输入已经提醒过的话）
+    plan.inputNotedAt = ''
+    return true
+  }
+
+  /**
    * 把一条消息交给子对话：它正在执行就实时送达，空闲就直接开新的一轮。
    * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
    */
@@ -1018,7 +1033,7 @@ export function tasksApi(deps: {
     (job, result) => {
       void (async () => {
         await settling.get(job.id)
-        // 「禁止子对话执行」的测试步骤（ADR 0018）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
+        // 范围为 parent 的测试步骤（ADR 0018 / 0020）：结果直接回传给发起的子对话，不推给父对话（那是面板代它跑的）
         if (
           await parentTests.finishJob(job.id, {
             ok: job.state === 'done',
@@ -1176,7 +1191,7 @@ export function tasksApi(deps: {
   const buildFor = new Map<string, { parent: string; children: string[] }>()
 
   /**
-   * 父对话测试（ADR 0018）：子对话合回后，面板在父对话目录里按顺序跑它勾了「禁止子对话执行」的步骤。
+   * 父对话测试（ADR 0018 / 0020）：子对话合回后，面板在父对话目录里按顺序跑范围为 parent 的步骤（全量单测、全量界面检查、e2e）。
    * 一次只跑一批的一步：多个子对话同时合并时重测试（WSL e2e 这类）排成一条队，不并着抢机器；
    * 后台命令本身还走父对话目录的独占队列，和 UE 编译这类同样吃资源的命令共用一条队。
    * 成功才让子对话收尾（标完成、删分支），失败把报错和来源交回它修。
@@ -1210,7 +1225,7 @@ export function tasksApi(deps: {
       const lines = testRunLines(tk.testRuns)
       await childMerged(
         run.childId,
-        `【父对话测试通过】父对话在它自己的目录里跑完了你勾了「禁止子对话执行」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
+        `【父对话测试通过】父对话在它自己的目录里跑完了范围为「全量，合并后由父对话跑」的步骤（耗时是面板按后台命令的真实起止时间记的）：\n${lines.join('\n') || '（没有记录）'}\n已合回原分支，收尾完成。收尾总结里要有一份「编译 / 测试耗时」：照上面的行写，再加上你自己跑过的步骤（看后台命令结果里的用时）；没跑过的不写，没有记录的写「未记录」，不要编数字。`,
         parent ? { peer: await peerOf(parent, 'parent', 'test', `父对话测试通过：${run.childTitle}`) } : {},
       )
     },
@@ -1398,11 +1413,11 @@ export function tasksApi(deps: {
         ok: false,
         info: `没有请求收尾：后台还有命令没跑完（${pending.map((j) => `「${j.name}」`).join('、')}）。等结果推回来、确认通过后再调用 submit_merge。`,
       }
-    // 合回已完成、父对话在跑勾了「禁止子对话执行」的步骤（ADR 0018）：等它跑完，不能重复请求
+    // 合回已完成、父对话在跑范围为 parent 的步骤（ADR 0018 / 0020）：等它跑完，不能重复请求
     if (parentTesting(childId, tk))
       return {
         ok: false,
-        info: '没有请求收尾：你的分支已经合回，父对话正在跑那些勾了「禁止子对话执行」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
+        info: '没有请求收尾：你的分支已经合回，父对话正在跑范围为「全量，合并后由父对话跑」的步骤。结果推回来时：通过就自动标完成、删分支；失败按报错修好再调用 submit_merge。',
       }
     if (tk.requests.length || tk.parentAsks?.length)
       return {
@@ -1768,7 +1783,7 @@ export function tasksApi(deps: {
     if (tk.wrapRequest?.state === 'testing')
       return {
         ok: false,
-        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它勾了「禁止子对话执行」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
+        info: `子对话「${tk.title}」的分支已经合回，面板正在你的目录里跑它范围为「全量，合并后由父对话跑」的测试步骤。结果出来后通过就自动标完成、删分支，失败就退回给它修——等结果，不要重复收尾。`,
       }
     if (tk.wrapRequest?.state !== 'requested')
       return {
@@ -1815,7 +1830,7 @@ export function tasksApi(deps: {
       )
       return { ok: false, info: `没能合回子对话「${tk.title}」：${r.info}\n已经退回给它处理，它处理好会再请你收尾。` }
     }
-    // 勾了「禁止子对话执行」的步骤（ADR 0018）：合回后由面板在这儿跑，跑完才让子对话收尾。
+    // 范围为 parent 的步骤（ADR 0018 / 0020）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
     const parentSteps = await parentStepsOf(tk)
     if (parentSteps.length) {
@@ -1824,7 +1839,7 @@ export function tasksApi(deps: {
         ok: true,
         info: [
           `已把子对话「${tk.title}」合回：${r.info}`,
-          `合回还没收尾：它勾了「禁止子对话执行」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
+          `合回还没收尾：它范围为「全量，合并后由父对话跑」的步骤（${parentSteps.map((s) => s.name).join('、')}），面板现在在你的目录里按顺序跑，一次只跑一个（和编译共用一条队）。结果直接回传给子对话：通过才标完成、删分支；失败会退回给它修，它再合并时这些步骤会全部重跑。你不用自己跑，也不用转述结果。`,
           req.build
             ? `这是 UE 项目：编译仍按 ADR 0004 由你调用 request_build 申请（child 写 ${tk.id}），和这批测试共用独占队。`
             : '',
@@ -3559,6 +3574,7 @@ export function tasksApi(deps: {
       const was = next.messages.find((x) => x.id === q.id && x.role === 'user')
       if (was) was.delivery = { how: 'next', at: new Date().toISOString() }
     }
+    notePlanInput(next, !!m.panel || !!m.child)
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
     // 已完成的子对话又被继续：重新算进行中，这次的改动要再合一次才算完成
@@ -3679,6 +3695,7 @@ export function tasksApi(deps: {
     placed: Attachment[] = attachments,
   ): Promise<{ task: Task; how: DeliveryHow }> {
     const task = entry.task
+    notePlanInput(task, msg.role !== 'user' || !!msg.panel || !!msg.child, msg.at)
     // CLI 收到上一条后一直没有任何输出（卡住了）：再往这一轮里插话也不会有回应，停掉它、接回会话重开
     const stuck = stalledTurn(task.id)
     if (stuck) return restartStalled(entry, msg, text, placed, stuck.input)
@@ -5151,27 +5168,30 @@ export function tasksApi(deps: {
       log.info('task', '合并了独立分支', { task: id, branch: wt.branch, into, overlap })
       // 同一个文件两边都改过时，git 可能自动合上、不报冲突：在对话里留一条，用户才知道要核对内容
       if (overlap.length) {
-        const cur = (await store.get(id)) ?? tk
+        // 任务可能还在 live 里（保活等下一句）：current() 优先读内存那份，
+        // 只写 store 的话界面读不到这条提醒，引擎下一次落盘还会把它盖掉
+        const entry = live.get(id)
+        const base = entry?.task ?? (await store.get(id)) ?? tk
         const note =
           t(
             '这次合并里两边都改了这些文件：{list}。git 已经自动合并，但必须逐文件核对有没有盖掉对方的改动，把核对结论写进合并结论（对方为什么这么改见下面的提交记录）。',
             { list: overlap.join('、') },
           ) + (sides ? `\n\n${mergeSidesText(sides)}` : '')
-        await store.update(id, {
-          ...cur,
-          messages: [
-            ...cur.messages,
-            {
-              id: randomUUID(),
-              role: 'system',
-              agentId: '',
-              step: '',
-              text: note,
-              tools: [],
-              at: new Date().toISOString(),
-            },
-          ],
-        })
+        const messages = [
+          ...base.messages,
+          {
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: note,
+            tools: [],
+            at: new Date().toISOString(),
+          },
+        ] as Task['messages']
+        if (entry) entry.task.messages = messages
+        // 这条提醒是合并后马上要看的：不走 400ms 的消息写盘节流，否则紧接着的刷新（和 e2e）读不到它
+        await store.update(id, { ...base, messages }, { now: true })
       }
       return c.json({ task: await current(id), into, overlap, sides })
     } catch (e) {

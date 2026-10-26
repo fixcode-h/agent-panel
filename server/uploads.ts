@@ -12,6 +12,7 @@ import { resolvePath } from './fs.ts'
 import { openWithSystem, revealItem } from './open.ts'
 import { locateFiles } from './locate-file.ts'
 import { t } from '../shared/i18n.ts'
+import { clip } from '../shared/text.ts'
 
 /** 用户上传的附件放在数据目录里，不放进项目目录，免得算进任务的文件改动 */
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
@@ -181,9 +182,7 @@ export async function saveTextUpload(name: string, text: string): Promise<Attach
 /** 引入的会话记录最多这么多字：太长的只留开头和最近的部分 */
 const MAX_TRANSCRIPT = 120_000
 export const clipTranscript = (s: string) =>
-  s.length > MAX_TRANSCRIPT
-    ? `${s.slice(0, MAX_TRANSCRIPT * 0.3)}\n\n…（中间省略 ${s.length - MAX_TRANSCRIPT} 字）…\n\n${s.slice(-MAX_TRANSCRIPT * 0.7)}`
-    : s
+  clip(s, MAX_TRANSCRIPT, { tailRatio: 0.3, mark: (omitted) => `\n\n…（中间省略 ${omitted} 字）…\n\n` })
 
 /**
  * 给页面看附件：raw 读原图（缩略图、看大图），file 读文字内容（点文件卡片时看）。

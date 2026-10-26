@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowLeft, Copy, Loader2, MoreHorizontal, Workflow as WorkflowIcon, X } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import type { StepStatus, Task, ToolUse } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { t } from '@shared/i18n'
@@ -61,10 +61,7 @@ export function RunView({
       t('第 {n} 次运行', { n: run }),
       ...topSteps(task, run).map((s, i) => `${i + 1}. ${s.title} · ${stateText[s.status]()}`),
     ].join('\n')
-    void Promise.resolve(navigator.clipboard?.writeText(text)).then(
-      () => toast.success(t('已复制')),
-      () => toast.error(t('复制失败')),
-    )
+    void copyText(text, { done: t('已复制'), fail: t('复制失败') })
   }
 
   return (

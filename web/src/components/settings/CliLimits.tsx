@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { getCli } from '@shared/clis'
+import { hhmm } from '@shared/datetime'
 import type { CliLimits } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -81,7 +82,7 @@ function resetText(at?: number) {
   if (min < 24 * 60) return t('{n} 小时后重置', { n: Math.round(min / 60) })
   const d = new Date(at)
   return t('{date} 重置', {
-    date: `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+    date: `${d.getMonth() + 1}/${d.getDate()} ${hhmm(d)}`,
   })
 }
 
