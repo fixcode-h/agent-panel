@@ -67,6 +67,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
+  childSeenLocally,
   childWait,
   helperRunning,
   sortChildren,
@@ -333,6 +334,16 @@ function sameJson<T>(cur: T, next: T): T {
   return JSON.stringify(cur) === JSON.stringify(next) ? cur : next
 }
 
+/**
+ * 本地刚点开过的子对话按已读算：子对话页自己会发 /seen，但 4 秒一次的轮询可能抢在它前面，
+ * 把刚消失的未读点又画回来。只覆盖「点开那一刻的那一轮」：服务端换了新的完成时间（它又跑完一轮）时不按已读算，
+ * 那一轮归子对话页自己的 /seen 管，不然会和侧栏的橙点对不上
+ */
+function withLocalSeen(c: ChildSummary, viewed: Map<string, string>): ChildSummary {
+  const seenAt = viewed.get(c.id)
+  return seenAt && childSeenLocally(c, seenAt) ? { ...c, turnSeenAt: seenAt } : c
+}
+
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
 
 function readStored(key: string) {
@@ -426,11 +437,20 @@ export function TaskView({
   // 子对话的停下原因只有完整任务上有（/children 给的是摘要）：停下的各取一次，行上才能写清是谁结束的
   // （见 stopReasonText）。停下后原因不会变，取到的记在 ref 里，4 秒一次的轮询不再重复问
   const childStopReasons = useRef(new Map<string, StopReason>())
+  /** 在右栏点开过的子对话：点开时那一轮的 turnDoneAt（见 withLocalSeen） */
+  const viewedChildren = useRef(new Map<string, string>())
+  /**
+   * children 的最新一份：openChildRow 用 useCallback 固定了首次渲染的 openChildIn（消息行不跟着重画），
+   * 那里直接读 state 会永远是空数组，点开时就记不到这一轮
+   */
+  const childrenRef = useRef<ChildSummary[]>([])
+  childrenRef.current = children
   const loadChildren = useCallback(async (id: string) => {
     const raw = await api.taskChildren(id)
+    const finish = (list: ChildSummary[]) => list.map((c) => withLocalSeen(c, viewedChildren.current))
     // 服务端已经给了原因（空字符串是没记）：不用再为每个停下的子对话取一遍完整任务，几十个子对话就是几十份几 MB 的对话
     if (raw.every((c) => c.stopReason !== undefined))
-      return raw.map((c): ChildSummary => ({ ...c, stopReason: c.stopReason || undefined }))
+      return finish(raw.map((c): ChildSummary => ({ ...c, stopReason: c.stopReason || undefined })))
     const list = raw.map((c): ChildSummary => ({ ...c, stopReason: undefined }))
     // 又跑起来了就清掉旧原因：下次停下可能是另一个来源
     for (const c of list) if (c.status !== 'stopped') childStopReasons.current.delete(c.id)
@@ -447,9 +467,14 @@ export function TaskView({
             .catch(() => {}),
         ),
     )
-    return list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c))
+    return finish(
+      list.map((c) => (c.status === 'stopped' ? { ...c, stopReason: childStopReasons.current.get(c.id) } : c)),
+    )
   }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
+  /** 右栏当前打开的子对话的最新一份：openChildIn 同样被固定的闭包读，不能直接读 state */
+  const openChildRef = useRef('')
+  openChildRef.current = openChild
   // 右栏打开的是子对话时，它在自己的 Provider 里读不到父对话的列表和跳转：
   // 这里在组件顶层取外层的值（Provider 之外），标题旁的切换下拉用它，不另取一份数据
   const outerChildren = useContext(ChildListCtx)
@@ -730,6 +755,17 @@ export function TaskView({
   }
   // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
   const openChildIn = (id: string) => {
+    // 点开就算读过：只记点开这一拍的那一轮，用来挡住 4 秒轮询把刚消失的未读点画回来；
+    // 它之后又跑完的新一轮不归这里管——那一轮由子对话页自己的 /seen 记，这里跟着轮询更新的话
+    // 会和侧栏的橙点对不上（服务端还没看过，父对话列表却当成看过了）。
+    // 右栏已经开着这一个时（id 没变）也不清点：pane 不重挂载就不会再发 /seen，
+    // 本地当成看过而服务端还记着没看，刷新后点又回来
+    const viewed = id && id !== openChildRef.current ? childrenRef.current.find((c) => c.id === id) : undefined
+    if (viewed?.turnDoneAt) {
+      viewedChildren.current.set(id, viewed.turnDoneAt)
+      // 当前这份列表立刻按已读显示，不用等下一次轮询：换开别的子对话后这条不再被 viewing 挡住
+      setChildren((cur) => cur.map((c) => withLocalSeen(c, viewedChildren.current)))
+    }
     setOpenChild(id)
     // 换了子对话、收起子对话时把文件覆盖层一起收掉，免得下次打开时对着另一个子对话开着文件
     if (!id || id !== openChild) setChildFiles(false)
@@ -2537,7 +2573,7 @@ function ChildrenBar({
                           )}
                         >
                           {/* 图标、状态标签、说明、分支和标题旁的下拉读同一份，两处不再各画一套 */}
-                          <ChildRowContent c={c} />
+                          <ChildRowContent c={c} viewing={c.id === openChild} />
                         </button>
                         {dirty && (
                           // 没提交的改动还在分支目录里：写清几个文件、哪个目录，并给一键继续

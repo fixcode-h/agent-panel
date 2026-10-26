@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { askedAt, byAskedAt, groupByDay, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { UnreadDot } from '@/components/ui/badge'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -96,14 +97,7 @@ export function TaskRow({
                 行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
                 选中 / hover 的背景（画在行上）仍然铺满整行 */}
             <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
-              {unreadDot && (
-                <span
-                  role="img"
-                  aria-label={t('对话已完成，还没查看')}
-                  title={t('对话已完成，还没查看')}
-                  className="h-2 w-2 shrink-0 rounded-full bg-accent"
-                />
-              )}
+              {unreadDot && <UnreadDot />}
               <span className="flex shrink-0 items-center gap-1">
                 {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
                 {attention !== 'running' && (

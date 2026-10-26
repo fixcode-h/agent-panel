@@ -710,6 +710,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       await check(p, '子对话-运行区与弹层一致')
       await check(p, '子对话-运行区左对齐')
       await p.getByRole('button', { name: '全部' }).first().click()
+      // 「已完成」里含演示数据那条「拆分规则检查脚本」（做完、没点开看过，行上带未读点，见后面的「子对话-未读点」）
       await check(p, '子对话-五个在跑-列表', ['执行中 · 5', '已完成 · 3'])
       await p.keyboard.press('Escape')
       await closed()
@@ -3923,6 +3924,90 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [KEY, saved])
       await p.reload()
       await backToTask()
+    }
+  }
+  // 子对话的未读点：做完了、用户还没点开看过的那一条，行上有个橙点；点开就消失。
+  // 判定在 shared/task.ts 的 childDoneDot（和侧栏橙点同一份口径）；在跑的那几条不算「没读过」，它们还没有结果
+  {
+    const UNREAD = '对话已完成，还没查看'
+    const DONE_CHILD = '拆分规则检查脚本'
+    const RUNNING_CHILD = '内存面板增加 AI 分析'
+    // 上一段结束时停在别的对话页（工作流那条）：先回购物车这条，父对话才有子对话状态行
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    // 入口按状态行定位，不按文案：跑到这一拍时子对话大多不在跑，label 是「子对话 n」而不是「n 个进行中，共 n 个」
+    const bar = p.locator('[data-status-row="children"] button[aria-expanded]').first()
+    const onTask = await bar.waitFor({ timeout: 15000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!onTask) errors.push('子对话未读点：没有回到父对话页（找不到子对话入口），用例的前提不成立')
+    else {
+      // 前面几拍可能开着浮层：先按 aria-expanded 关掉，再从「运行中」重新打开
+      if ((await bar.getAttribute('aria-expanded')) === 'true') {
+        await bar.click()
+        await settle(p)
+      }
+      await bar.click()
+      const tray = p
+        .locator('div.absolute.bottom-full')
+        .filter({ has: p.getByRole('button', { name: '全部', exact: true }) })
+        .first()
+      const allTab = tray.getByRole('button', { name: '全部', exact: true })
+      const ready = await allTab.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!ready) errors.push('子对话未读点：子对话浮层没有打开（找不到「全部」）')
+      else {
+        await allTab.click()
+        await settle(p)
+        // 按标题元素的完整文本定位：说明文字里也可能带着同名子串，hasText 会命中错行，断言就等于没测
+        const row = (title) =>
+          tray
+            .locator('[data-child-item]')
+            .filter({ has: p.getByText(title, { exact: true }) })
+            .first()
+        const dot = (title) => row(title).locator(`[aria-label="${UNREAD}"]`)
+        const doneRow = row(DONE_CHILD)
+        const listed = await doneRow.waitFor({ timeout: 5000 }).then(
+          () => true,
+          () => false,
+        )
+        if (!listed) errors.push(`子对话未读点：浮层「全部」里没有「${DONE_CHILD}」，用例的前提数据没造出来`)
+        else {
+          // 做完了、没点开过：有未读点；还在跑的那条是「还没有结果」，不是「没读过」
+          if (!(await dot(DONE_CHILD).count()))
+            errors.push(`子对话未读点：做完了没看过的「${DONE_CHILD}」行上没有未读点`)
+          if (await dot(RUNNING_CHILD).count())
+            errors.push(`子对话未读点：还在跑的「${RUNNING_CHILD}」行上不该有未读点`)
+          await check(p, '子对话-未读点', [DONE_CHILD])
+          // 点开它：右栏打开这个子对话，它自己会发 /seen；当前打开的那条不画点
+          await doneRow.click()
+          const pane = p.getByRole('complementary', { name: '子对话' })
+          const opened = await pane.waitFor({ timeout: 10000 }).then(
+            () => true,
+            () => false,
+          )
+          if (!opened) errors.push('子对话未读点：点这一行没有在右栏打开子对话')
+          else {
+            const titled = await pane
+              .getByText(DONE_CHILD, { exact: false })
+              .first()
+              .waitFor({ timeout: 10000 })
+              .then(
+                () => true,
+                () => false,
+              )
+            if (!titled) errors.push(`子对话未读点：右栏打开的不是「${DONE_CHILD}」`)
+            if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：当前打开的这一条上还画着未读点')
+            // 换开另一个子对话，再等一轮 4 秒的轮询：刚看过的那条不能又被接口数据画回未读
+            await row('核对通知时序').click()
+            await p.waitForTimeout(5000)
+            if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：点开看过以后，轮询又把未读点画回来了')
+            await check(p, '子对话-未读点消失', [DONE_CHILD])
+          }
+        }
+      }
     }
   }
 })

@@ -541,6 +541,10 @@ export const api = {
         gone?: boolean
         /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */
         stopReason?: Task['stopReason'] | ''
+        /** 这一轮做完的时间：和 turnSeenAt 不同就是「做完了还没看」（见 taskTurnUnread） */
+        turnDoneAt: string
+        /** 用户看过的最近一轮完成时间 */
+        turnSeenAt: string
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),

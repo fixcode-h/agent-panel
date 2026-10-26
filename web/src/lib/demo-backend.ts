@@ -3062,6 +3062,9 @@ function tasksRoute(
           lastActivityAt: childLastActivity(x),
           // 和正式后端对齐：面板自动问过状态、还没回复时行上显示「已自动询问」
           autoAsk: x.autoAsk,
+          // 和正式后端对齐：做完没看过 → 子对话行上画未读点（见 shared/task.ts 的 childDoneDot）
+          turnDoneAt: x.turnDoneAt ?? '',
+          turnSeenAt: x.turnSeenAt ?? '',
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),
@@ -3579,6 +3582,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       subJob?: boolean
       /** 独立分支：at 是创建时间（分钟前），列表按它排序，故意和创建顺序不一致 */
       worktree?: { branch: string; state?: 'active' | 'merged' | 'discarded'; at?: number }
+      /** 这一轮做完了、用户还没点开看过：父对话里它的行上有未读点（和侧栏橙点同一份口径） */
+      unread?: boolean
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -3608,6 +3613,11 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     it.title = title
     it.working = !!how.working
     it.resolved = !!how.resolved
+    // 做完没看过：两个时间不同，和正式后端一样由 /seen 把 turnSeenAt 追平成 turnDoneAt
+    if (how.unread) {
+      it.turnDoneAt = new Date(Date.now() - 12 * 60_000).toISOString()
+      it.turnSeenAt = ''
+    }
     if (how.worktree) {
       it.createdAt = new Date(Date.now() - (how.worktree.at ?? 0) * 60_000).toISOString()
       it.worktree = {
@@ -3738,7 +3748,9 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     worktree: { branch: 'agent-panel/sidebar-time', state: 'merged', at: 50 },
   })
   await make('核对通知时序', { resolved: true })
-  await make('拆分规则检查脚本', { resolved: true })
+  // 做完了、用户还没点开看过：这条不标记「已解决」（已解决是用户点过的，那时早就看过了），
+  // 就是一条普通完成、还没打开的对话，行上带未读点，点开就消失（界面检查靠它断言）
+  await make('拆分规则检查脚本', { unread: true })
   // 请用户决定的子对话：一次问了两个问题，子对话页的输入框换成选择弹窗，父对话里是两张提问卡片
   {
     const asker = await make('购物车缓存方案')

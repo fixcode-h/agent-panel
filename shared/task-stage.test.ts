@@ -14,6 +14,8 @@ import {
   childActivity,
   childActivityText,
   childComplete,
+  childDoneDot,
+  childSeenLocally,
   childHolds,
   childHoldsOf,
   childHoldText,
@@ -662,4 +664,45 @@ test('橙点只在停在完成态时画：未读和转圈不能同在一行（�
     assert.notEqual(taskState(x), 'done', what)
   }
   assert.equal(taskBusy(done), false)
+})
+
+test('子对话的未读点：做完了没看才画，当前打开的和没做完的都不画', () => {
+  const turnDoneAt = '2026-10-24T01:00:00.000Z'
+  // 子对话做完这一轮后 status 仍是 running、working 回到 false（CLI 在等下一句），就是完成态
+  const child = (over: Partial<ChildEntry> = {}): ChildEntry => ({
+    id: '@chat/sub/h1',
+    title: '子对话',
+    status: 'running',
+    working: false,
+    cliAlive: true,
+    startedAt: '2026-10-24T00:00:00.000Z',
+    turnDoneAt,
+    turnSeenAt: '',
+    ...over,
+  })
+  assert.equal(childDoneDot(child()), true)
+  // 已经点开看过（服务端把 turnSeenAt 追平）：点消失
+  assert.equal(childDoneDot(child({ turnSeenAt: turnDoneAt })), false)
+  // 当前打开的那一个：你正在看，不另外画点（和侧栏的 viewing 同一口径）
+  assert.equal(childDoneDot(child(), true), false)
+  // 没做完的不是「没读过」，是「还没有结果」：在跑、等结果、计划没做完、停下、失败都不画
+  const undone: [string, ChildEntry][] = [
+    ['这一轮在跑', child({ working: true })],
+    ['在等后台命令', child({ background: 1 })],
+    ['计划没做完', child({ plan: { done: 2, total: 5 } })],
+    ['独立分支没合回', child({ unmerged: true })],
+    ['等你选择', child({ asking: 1 })],
+    ['被停止', child({ status: 'stopped' })],
+    ['执行失败', child({ status: 'failed' })],
+    ['没有完成记录', child({ turnDoneAt: '' })],
+  ]
+  for (const [what, x] of undone) assert.equal(childDoneDot(x), false, what)
+
+  // 点开时先本地按已读算（防 4 秒轮询把点画回来）：记的是这一轮才生效，又跑了一轮就不算看过
+  assert.equal(childSeenLocally(child(), turnDoneAt), true)
+  assert.equal(childSeenLocally(child({ turnSeenAt: turnDoneAt }), turnDoneAt), false)
+  assert.equal(childSeenLocally(child(), '2026-10-24T02:00:00.000Z'), false)
+  assert.equal(childSeenLocally(child(), undefined), false)
+  // 交出去的后台命令还没跑完时也不算看过（taskTurnUnread 的口径）
+  assert.equal(childSeenLocally(child({ background: 1 }), turnDoneAt), false)
 })
