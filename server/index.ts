@@ -27,7 +27,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
-import { ProjectProposalSchema } from '../shared/project-init.ts'
+import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
@@ -726,6 +726,21 @@ app.put('/projects/:id', async (c) => {
   if (body && typeof body === 'object' && !('initResult' in body))
     r.data!.initResult = (await projects.get(c.req.param('id')))?.initResult
   const x = await projects.update(c.req.param('id'), r.data!)
+  return x ? c.json(x) : bad(c, t('项目不存在'), 404)
+})
+
+/**
+ * 只更新「AI 初始化」的结果：初始化对话可能跑好几分钟，结果交回来时客户端手里的项目快照已经过期。
+ * 服务端自己读最新项目再合并，不把用户这期间应用的推荐（名称、简介、测试步骤、工作流……）覆盖回旧值。
+ */
+app.put('/projects/:id/init-result', async (c) => {
+  const id = c.req.param('id')
+  const cur = await projects.get(id)
+  if (!cur) return bad(c, t('项目不存在'), 404)
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+  const saved = ProjectProposalSchema.safeParse(body.initResult)
+  if (!saved.success) return bad(c, z.prettifyError(saved.error))
+  const x = await projects.update(id, withInitResult(cur, saved.data))
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
 

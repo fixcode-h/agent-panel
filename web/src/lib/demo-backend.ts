@@ -12,6 +12,7 @@ import {
   type ProjectSkill,
   type ProjectSkillsView,
 } from '@shared/project-skills'
+import { ProjectProposalSchema, withInitResult } from '@shared/project-init'
 import { z } from 'zod'
 import {
   Agent,
@@ -2230,6 +2231,14 @@ function route(method: string, url: string, body: unknown): unknown {
       d.tasks = (d.tasks ?? []).filter((t) => t.projectId !== id)
       persist()
       return undefined
+    }
+    // 只更新 AI 初始化结果：和真正的服务端一样，其它字段取演示数据里的最新值（不清掉刚应用的推荐）
+    if (method === 'PUT' && sub === 'init-result') {
+      const saved = ProjectProposalSchema.safeParse((body as { initResult?: unknown } | null)?.initResult)
+      if (!saved.success) return fail('初始化结果格式不对')
+      const cur = (d.projects ?? []).find((x) => x.id === id)
+      if (!cur) return fail('项目不存在')
+      return update('projects', id, withInitResult(cur, saved.data), '项目不存在')
     }
     const input = parse(ProjectInput, body)
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
