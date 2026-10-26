@@ -108,7 +108,10 @@ import {
   childLastActivity,
   childStartedAt,
   childWait,
+  childFacts,
   closeFlow,
+  convActive,
+  convState,
   dropEndNotes,
   endRun,
   helpersWorking,
@@ -119,7 +122,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
-import { openPlan } from '@shared/plan'
+import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -2703,6 +2706,19 @@ function demoLive(task: Task) {
  */
 const demoCliAlive = (task: Task) => live.has(task.id) || task.working === true || task.awaitingUser === true
 
+/**
+ * 子对话还在运行（和正式后端的 activeChildren / childActive 一个口径）：在跑、等结果、等回答都算，不只看 working。
+ * 演示里没有 startQueue 和收件箱，后台命令数按演示数据里的 jobs 算
+ */
+const demoChildActive = (x: Task) =>
+  convActive(
+    convState(
+      childFacts(x, {
+        background: (x.jobs ?? []).filter((j) => j.state === 'running' || j.state === 'queued').length,
+      }),
+    ),
+  )
+
 function demoKill(task: Task, pid: number) {
   const rootId = task.rootTaskId || task.id
   const set = demoGone.get(rootId) ?? new Set<number>()
@@ -2824,12 +2840,19 @@ function tasksRoute(
   if (!id) {
     if (method === 'GET') {
       const pid = query.get('projectId')
+      // 名下还有在跑的子对话：和正式版一样补 childrenWorking——侧栏、输入框靠它说清在等什么，
+      // 「继续执行」按钮也按它让位（演示版少了这个字段，这些界面分支永远走不到）
+      const kids = new Map<string, number>()
+      for (const k of tasks) {
+        if (!k.parentTaskId || !demoChildActive(k)) continue
+        kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
+      }
       // 和正式版一样：子对话不进项目列表，在父对话里看
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
           .filter((t) => !t.parentTaskId)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
-          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t) }))
+          .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
@@ -3248,12 +3271,18 @@ function tasksRoute(
     const { childRun, ...rest } = parse(TaskPatch, body)
     Object.assign(task, rest)
     if (childRun !== undefined) task.childRun = childRun ?? undefined
+    // 和正式后端一致（见 server/tasks.ts 的 settleChildForUser）：用户点「解决」时把计划里没做完的步骤一并收口，
+    // 否则演示版会停在「已解决但计划还有 n 步没做完」，界面检查就测不到真机上收口后的样子
+    if (rest.resolved === true && task.parentTaskId) settlePlan(task)
     persist()
     return task
   }
   // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
   // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
-  return { ...task, cliAlive: demoCliAlive(task) }
+  const withLive = { ...task, cliAlive: demoCliAlive(task) }
+  // 父对话再带上名下在跑的子对话数（和正式版一样不带给子对话，见 server/tasks.ts 的 withLive）
+  if (task.parentTaskId) return withLive
+  return { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */

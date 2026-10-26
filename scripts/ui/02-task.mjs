@@ -409,6 +409,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await check(d, '元素抓取-父对话按钮投父对话')
     await d.close()
   }
+  // 父对话这一轮已经说完、名下还有子对话在跑：输入框要写清在等什么。
+  // 旧实现一律写「继续输入要求」，和旁边的停止按钮凑成「子对话在跑、父对话却在等继续」（用户报的现象）。
+  // 占位文字读 aria-placeholder：输入框是 contenteditable 的 RichInput，placeholder 只在值为空时画成一个 span
+  await check(p, '输入框-等子对话')
+  {
+    const ph = (await p.locator('#follow-up').first().getAttribute('aria-placeholder')) || ''
+    if (!ph.includes('子对话执行中'))
+      errors.push(`输入框：名下还有子对话在跑时，占位文字要说明在等什么（实际「${ph}」）`)
+    if (!ph.includes('可以直接输入要求')) errors.push('输入框：等子对话时要说明还能直接输入要求')
+  }
   // 子对话栏的计数：五个在转圈（三个在跑、一个在等后台命令、一个已标记解决但还在跑），分母是进程还活着的 5 个。
   // 在跑又带着没做完计划的也算「执行中」，不能一边转圈一边归到「未完成」
   {
@@ -3186,7 +3196,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     }
   }
   // 「转成弹窗」：标题栏把当前对话收成右下角的浮条，页面回到上一级；浮条能展开回那个对话。
-  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里两个项目对话都不在跑，浮条写「已完成」
+  // 同时只能有一个对话浮条（再收另一个对话就换掉它）。演示数据里这个对话名下还有子对话在跑，
+  // 浮条写「进行中…」（和正式后端一致：父对话的子对话在跑时父对话也算在忙；以前演示版没补 childrenWorking，
+  // 这里会被前者写成「已完成」）
   {
     // 两个对话的真实标题（taskTitle 取要求的第一行、超过 32 字截断）
     const CART = '购物车右上角的数量角标偶尔不刷新，帮我看看原因'
@@ -3206,7 +3218,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       if (!/^#\/projects\/[^/]+$/.test(hash)) errors.push(`转成弹窗：收起后应回到项目页，实际停在 ${hash}`)
       if (await p.getByRole('button', { name: '转成弹窗', exact: true }).count())
         errors.push('转成弹窗：收起后对话页还开着')
-      await check(p, '任务-转成弹窗', [`对话：${CART}`, '已完成'])
+      await check(p, '任务-转成弹窗', [`对话：${CART}`])
+      // 浮条自己的状态文字（限定在浮条里找，页面上别处也有「进行中」这类词）
+      if (!(await first.getByText('进行中…', { exact: true }).count()))
+        errors.push('转成弹窗：父对话名下还有子对话在跑，浮条上应写「进行中…」')
       // 浮条上的关闭按钮只在悬停时出现、位置在右上角；浮条上不能挂原生 title
       // （那个「展开」提示一悬停就弹灰框，用户嫌烦）。opacity-0 仍算 visible，所以看 opacity
       const dockClose = first.locator('[data-dock="close"]')
@@ -3443,6 +3458,109 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
       if (after < before)
         errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
       await check(p, '任务-发送消息时运行区不消失', ['子对话'])
+    }
+  }
+  // 用户点「解决」时计划一并收口（见 server/tasks.ts 的 settleChildForUser）：
+  // 造一条「计划 2/6 没做完、这一轮没在跑、没有独立分支要合回」的子对话，点解决后折叠头要说全部完成、
+  // 「n 步没做完」的提示消失、标题栏换成「已解决」。真机上分支没合回会先被拦住，这里验的是计划收口这件事
+  {
+    const KEY = 'agent-panel-demo-v3'
+    const TITLE = '修侧栏时间显示'
+    const done = 2
+    const patched = await p.evaluate(
+      ([k, title, doneCount]) => {
+        const db = JSON.parse(localStorage.getItem(k) ?? '{}')
+        const child = (db.tasks ?? []).find((x) => x.title === title)
+        if (!child) return false
+        // 演示里这条是已解决的：改回未解决才有「解决」按钮可点；独立分支也去掉，
+        // 只留「计划没做完」这一条原因，否则验的不是计划收口
+        child.resolved = false
+        child.worktree = undefined
+        const at = new Date(Date.now() - 30 * 60_000).toISOString()
+        child.plans = [
+          {
+            id: `${child.id}-plan`,
+            title: '收口计划',
+            createdAt: at,
+            doneAt: '',
+            summary: '',
+            autoSummary: false,
+            steps: Array.from({ length: 6 }, (_, i) => ({
+              id: String(i + 1),
+              title: `第 ${i + 1} 步`,
+              status: i < doneCount ? 'done' : 'pending',
+              note: '',
+              waits: [],
+              startedAt: at,
+              endedAt: i < doneCount ? at : '',
+              children: [],
+            })),
+          },
+        ]
+        localStorage.setItem(k, JSON.stringify(db))
+        return true
+      },
+      [KEY, TITLE, done],
+    )
+    if (!patched) errors.push('点解决收口计划：演示数据里没有可用的子对话，用例前提不成立')
+    else {
+      await p.reload()
+      await backToTask()
+      // 计划没做完的算「还在进行」，运行区里要有这一行（右栏才是带「解决」按钮的那个面板）
+      const openRow = p.locator(`[aria-label="运行中"] button[title*="${TITLE}"]`).first()
+      const listed = await openRow.waitFor({ timeout: 10000 }).then(
+        () => true,
+        () => false,
+      )
+      if (!listed) errors.push(`点解决收口计划：运行区里没有「${TITLE}」这一行，用例前提不成立`)
+      else {
+        await openRow.click()
+        const pane = 'aside[aria-label="子对话"]'
+        const solve = p.locator(`${pane} button[aria-label="解决"]`).first()
+        const opened = await solve.waitFor({ timeout: 10000 }).then(
+          () => true,
+          () => false,
+        )
+        if (!opened) errors.push('点解决收口计划：右栏子对话里没有「解决」按钮，用例前提不成立')
+        else {
+          /** 右栏子对话的计划折叠头：说了什么、还挂着几步没做完、标题栏是不是已解决 */
+          const head = () =>
+            p.evaluate((sel) => {
+              const box = document.querySelector(`${sel} [data-status-row="plan"]`)
+              const btn = box?.querySelector('button[aria-label="执行计划"]')
+              return {
+                text: (btn?.textContent || '').replace(/\s+/g, ' ').trim(),
+                left: !!box?.querySelector('[data-plan-left]'),
+                solved: !!document.querySelector(`${sel} [title="已解决"]`),
+                resolveBtn: !!document.querySelector(`${sel} button[aria-label="解决"]`),
+              }
+            }, pane)
+          const before = await head()
+          if (!before.text.includes(`计划 ${done}/6`))
+            errors.push(`点解决收口计划：前提不成立，折叠头是「${before.text}」，不是「计划 ${done}/6」`)
+          await solve.click()
+          const finished = await p
+            .waitForFunction(
+              (sel) => {
+                const box = document.querySelector(`${sel} [data-status-row="plan"]`)
+                const btn = box?.querySelector('button[aria-label="执行计划"]')
+                return !!btn && (btn.textContent || '').includes('计划已完成')
+              },
+              pane,
+              { timeout: 10000 },
+            )
+            .then(
+              () => true,
+              () => false,
+            )
+          const after = await head()
+          if (!finished) errors.push(`点解决收口计划：点完「解决」折叠头还是「${after.text}」，没有变成计划已完成`)
+          if (after.left) errors.push('点解决收口计划：还挂着「n 步没做完（已保留）」的提示')
+          if (!after.solved) errors.push('点解决收口计划：点完没有换成「已解决」')
+          if (after.resolveBtn) errors.push('点解决收口计划：已解决后还留着「解决」按钮')
+          if (finished) await check(p, '子对话-点解决后计划全部完成', ['计划已完成', '已解决'])
+        }
+      }
     }
   }
 })
