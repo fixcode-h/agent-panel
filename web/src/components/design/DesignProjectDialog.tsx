@@ -14,7 +14,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
-import { ConfirmDialog } from '@/components/ui/dialog'
+import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { DialogCloseButton, NavItem } from '@/components/projects/ProjectSettingsDialog'
 import { ScopeRequests } from '@/components/chat/AskToggle'
@@ -237,7 +237,7 @@ function Body({
             {t('美术提示词')}
           </NavItem>
         </nav>
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+        <div className={dialogScrollClass}>
           {section === 'general' ? (
             <form
               className="flex flex-col gap-7"

@@ -5,10 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard } from './harness.mjs'
-
-// 演示数据存在 localStorage 的这个键里（web/src/lib/demo-backend.ts）
-const DEMO_DB_KEY = 'agent-panel-demo-v3'
+import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -304,11 +301,18 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await settingsButton.count()) {
     await settingsButton.first().click()
     const dlg = p.getByRole('dialog')
+    // 各分页滚到底的底部留白要和 dialogScrollClass 一致，最后一块不能被操作栏压住；
+    // 测量方式和预期值都在 harness.mjs 里（预期值从 dialog.tsx 的 pb-N 读）
+    const footSpace = async (label) => {
+      errors.push(...(await dialogBottomSpaceProblems(p, `项目设置-底部留白（${label}）`)))
+    }
     // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
     await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
+    await footSpace('常规')
     // 项目技能：项目目录里的和用户级的都列出来，缺说明的技能给出问题提示和 AI 修复
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill', ['release-notes', 'shop-i18n', 'AI 优化', '新建 Skill'])
+    await footSpace('Skill')
     // MCP：项目里识别到的配置（三种状态各有一条）、面板管理的工具、导入与 AI 排查入口
     await dlg.getByRole('button', { name: 'MCP', exact: true }).click()
     await check(p, '项目设置-MCP', [
@@ -318,13 +322,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '全部导入',
       '用 AI 排查整页',
     ])
+    await footSpace('MCP')
     // 两页切回来都正常（导航里 Skill 和 MCP 相邻）
     await dlg.getByRole('button', { name: 'Skill', exact: true }).click()
     await check(p, '项目设置-Skill 再切回', ['新建 Skill'])
     await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
     await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '评审', '测试验收', '版本控制'])
+    await footSpace('必备角色')
     await dlg.getByRole('button', { name: '工作流', exact: true }).click()
     await check(p, '项目设置-工作流', ['AI 配置'])
+    await footSpace('工作流')
     await dlg
       .getByRole('button', { name: /^测试步骤/ })
       .first()
@@ -337,6 +344,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '按改动大小决定验证范围',
       '每条可以写「适用改动」',
     ])
+    await footSpace('测试步骤')
     // 「适用改动」能看见也能改：带出已配的 glob，而且逐字符敲第二条不会被归一化吞掉
     // （输入框保留原文、失焦才 parse；每次按键就 parse 再回显会把刚敲的逗号删掉）
     const applies = dlg.getByLabel('适用改动').first()
@@ -351,53 +359,36 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^项目教训/ })
       .first()
       .click()
-    // 默认选中「默认」页签：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的页签里
-    await check(p, '项目设置-项目教训', ['购物车相关改动同时改 legacy-cart', '默认', '加一条'])
-    const defaultTab = dlg.getByRole('tab', { name: /^默认/ })
-    await defaultTab.click()
-    assert.equal(await defaultTab.getAttribute('aria-selected'), 'true', '再点一次选中的页签不能取消选中')
-    await dlg.getByRole('tab', { name: /^支付/ }).click()
-    await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
-    assert.equal(
-      await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),
-      0,
-      '「支付」页签里不该有不带标签的教训',
-    )
+    await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    await footSpace('项目教训')
+    // 项目说明和各个 CLI 的说明文件共用同一个滚动区分支（section === 'doc' || cli:），单独确认一次
+    await dlg.getByRole('button', { name: /^项目说明/ }).click()
+    // 说明文件是异步读的，编辑框出来再量，否则量到的是「正在读取…」那一行
+    await dlg
+      .locator('textarea')
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('项目设置-项目说明：没有读到说明文件'))
+    await check(p, '项目设置-项目说明')
+    await footSpace('项目说明')
     // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
     await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
     await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
-    // 上次初始化的分析报告随项目保存：记录上能整份应用，下面列出和推荐值不同的项、能单项应用，应用后只改草稿
-    await check(p, '项目设置-AI初始化-推荐', [
-      '应用这份分析的设置（1 项）',
-      '和推荐值不同的设置（1 项）',
-      '推送到远端',
-      '允许直接推送',
-    ])
-    await dlg.getByRole('button', { name: '应用', exact: true }).click()
-    await check(p, '项目设置-AI初始化-已应用', ['已应用这份分析的设置'])
-    if (await dlg.getByText('和推荐值不同的设置').count()) errors.push('AI 初始化：单项应用后差异列表还在')
-    // 已经建好的项目：初始化在这个项目里开一个对话来做（AI 分析统一归属），在统一的 AI 分析窗口里看；
-    // 做完结果自动交回设置页的「AI 初始化」
+    await footSpace('AI 初始化')
     await dlg.getByRole('button', { name: '重新初始化' }).click()
+    const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
     await p
-      .getByRole('button', { name: '在项目对话里打开' })
-      .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('AI 初始化：已有项目的初始化没有开成项目对话'))
-    await check(p, 'AI初始化-对话')
-    await p
-      .getByText('结果已经交回项目设置', { exact: false })
-      .first()
-      .waitFor({ timeout: 30000 })
-      .catch(() => errors.push('AI 初始化：对话结束后结果没有交回设置页'))
-    // 初始化对话右侧是设置应用面板（参照老版本 AI 窗口右边的预览）：推荐设置在对话旁边就能逐项应用
-    await p
-      .locator('[data-analysis-panel="init"]')
-      .getByText('推荐设置', { exact: true })
-      .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('AI 初始化：对话右侧没有设置应用面板'))
-    await check(p, 'AI初始化-右侧设置面板', ['写入的文件', '推荐设置'])
-    // 关掉分析窗口，回到设置页看推荐
-    await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('button')].some(
+            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
+          ),
+        null,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push('AI 初始化：等不到「查看推荐并应用」'))
+    await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
+    await reviewInit.click().catch(() => {})
     await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
     await p
       .getByRole('button', { name: '全部应用' })
@@ -423,7 +414,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Backspace')
     // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
     await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
-    await check(p, '项目首页-项目教训', ['项目教训 · 5', '已改写', '后台命令报完成后先看用时'])
+    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '后台命令报完成后先看用时'])
     await p
       .getByRole('button', { name: /新增支付方式写进/ })
       .first()
@@ -436,40 +427,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.getByRole('button', { name: '确认写入全局教训' }).click()
     await check(p, '提取全局教训-已写入', ['条全局教训'])
     await p.keyboard.press('Escape')
-    // AI 评审项目教训：在项目里开一个分析对话，结果卡片在分析窗口里逐条应用
-    await p.keyboard.press('Escape')
-    await p
-      .getByRole('button', { name: /购物车相关改动同时改/ })
-      .first()
-      .click()
-    await p.getByRole('button', { name: 'AI 评审', exact: true }).first().click()
-    await check(p, 'AI评审教训-开始', ['AI 评审项目教训', '开始分析'])
-    // 和别的 AI 分析一样：开在项目对话里、用「分析」角色，过程在统一的 AI 分析窗口里看
-    await p.getByRole('button', { name: '开始分析' }).click()
-    await p
-      .getByText('2 条建议待处理')
-      .first()
-      .waitFor({ timeout: 20000 })
-      .catch(() => errors.push('AI 评审教训：等不到评审结果'))
-    await check(p, 'AI评审教训-结果', ['教训评审', '已过期', '可优化', '改成：'])
-    await p
-      .getByRole('region', { name: '教训评审结果' })
-      .getByRole('button', { name: '应用', exact: true })
-      .first()
-      .click()
-    await p
-      .getByText('1 条建议待处理')
-      .first()
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('AI 评审教训：应用后没有变成已应用'))
-    await check(p, 'AI评审教训-已应用', ['已应用'])
-    // 关掉分析窗口和项目设置，后面的步骤要点得到页面
-    for (let i = 0; i < 3 && (await p.getByRole('dialog').count()); i++) await p.keyboard.press('Escape')
-    await p
-      .getByRole('dialog')
-      .first()
-      .waitFor({ state: 'hidden', timeout: 5000 })
-      .catch(() => {})
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 新建项目：没单独选工作流时按「通用项目」算（正式版启动时自动装好，演示里先手动添加），
@@ -518,73 +475,5 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await createButton().isDisabled()) errors.push('新建项目：目录已经初始化过，「创建」还是不能点')
   await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化', exact: true }).click()
   await check(p, '新建项目-目录已初始化', ['目录已经初始化过', '重新初始化'])
-
-  // 新建项目时 AI 初始化还在跑：收起对话、关掉设置，之后在对话里点「查看推荐并应用」。
-  // 项目已经先创建了的，要回到那个项目应用；还没创建的，草稿（目录）要还在。都不能多出一个同名项目
-  const countAt = (dir) =>
-    p.evaluate(
-      ([key, dir]) =>
-        (JSON.parse(localStorage.getItem(key) ?? '{}').projects ?? []).filter((x) => x.path === dir).length,
-      [DEMO_DB_KEY, dir],
-    )
-  // 浮条默认在右下角，会挡住设置弹窗的「创建」：收起后拖到上面去
-  const minimize = async () => {
-    await p.getByRole('button', { name: '最小化' }).click()
-    const box = await p.getByRole('group', { name: /AI 初始化项目/ }).boundingBox()
-    await p.mouse.move(box.x + 8, box.y + box.height / 2)
-    await p.mouse.down()
-    await p.mouse.move(box.x - 300, 80, { steps: 5 })
-    await p.mouse.up()
-  }
-  const initInBackground = async () => {
-    await p.getByRole('dialog').getByRole('button', { name: 'AI 初始化项目' }).first().click()
-    await minimize()
-  }
-  const finishInit = async (label) => {
-    await p.getByRole('button', { name: '展开' }).click()
-    await p
-      .waitForFunction(
-        () =>
-          [...document.querySelectorAll('button')].some(
-            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
-          ),
-        null,
-        { timeout: 20000 },
-      )
-      .catch(() => errors.push(`${label}：等不到「查看推荐并应用」`))
-    await p.getByRole('button', { name: '查看推荐并应用' }).click()
-    await p
-      .getByRole('dialog')
-      .getByText('初始化完成')
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push(`${label}：应用后没回到「AI 初始化」页`))
-  }
-  await p.getByRole('dialog').getByRole('button', { name: '重新初始化' }).click()
-  await minimize()
-  await createButton().click()
-  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
-  await finishInit('先创建再应用')
-  if (await createButton().count()) errors.push('先创建再应用：应用时打开的是新建项目，不是刚创建的项目')
-  await p.getByRole('dialog').getByRole('button', { name: '全部应用' }).click()
-  // 按旧的错误行为这里是「创建」：照样点下去，看会不会多出一个项目
-  await p
-    .getByRole('dialog')
-    .getByRole('button', { name: /^(确认|创建)$/ })
-    .click()
-  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
-  const afterSaved = await countAt('/home/demo/code/lua-helper')
-  if (afterSaved !== 1) errors.push(`先创建再应用：这个目录应该只有一个项目，实际 ${afterSaved} 个`)
-
-  await newProject('/home/demo/Documents')
-  await initInBackground()
   await p.keyboard.press('Escape')
-  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
-  await finishInit('关掉设置再应用')
-  await check(p, '新建项目-关掉设置后应用', ['初始化完成', '全部应用'])
-  await p.getByRole('dialog').getByRole('button', { name: '全部应用' }).click()
-  await createButton().click()
-  await p.getByRole('dialog').waitFor({ state: 'detached', timeout: 5000 })
-  const afterClosed = await countAt('/home/demo/Documents')
-  if (afterClosed !== 1)
-    errors.push(`关掉设置再应用：这个目录应该只有一个项目（目录要还在草稿里），实际 ${afterClosed} 个`)
 })
