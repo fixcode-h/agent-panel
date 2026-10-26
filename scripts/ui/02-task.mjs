@@ -2115,6 +2115,88 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     else if (second !== first) errors.push(`执行计划：全部完成后总用时还在涨（${first} → ${second}）`)
     await check(p, '执行计划-完成后停住')
     await p.keyboard.press('Escape')
+    // 提前结束（finish_plan）但还有没做完的步骤：折叠头不能说「计划已完成」，也不能和列表里的「等待中」同屏打架。
+    // 用户报过这条：面板写着「✓ 计划已完成」，展开后最后一步还是橙色虚线环的等待中
+    {
+      const key2 = 'agent-panel-demo-v3'
+      await p.evaluate((k) => {
+        const db = JSON.parse(localStorage.getItem(k))
+        const task = db.tasks.find((x) => x.title.includes('购物车'))
+        const plan = task.plans.at(-1)
+        // 前面几步做完，最后一步停在等待中没结算，计划却已经结束
+        plan.steps.forEach((s, i) => {
+          const last = i === plan.steps.length - 1
+          s.status = last ? 'waiting' : 'done'
+          s.waits = last ? [{ kind: 'background', ref: 'lint01', label: 'lint + 单测', state: 'waiting' }] : []
+          // 最后一步自带子步骤（截图里那一步也拆成两件事）：这样「数条目」和「数主步骤」两种口径会分叉，
+          // 下面那条数字断言才拦得住——两边都只有一步时，两种算法得出的数一样，断言是空的
+          const kid = (id, title, status) => ({
+            id,
+            title,
+            status,
+            note: '',
+            waits: [],
+            startedAt: '',
+            endedAt: '',
+          })
+          s.children = last
+            ? [kid('9.1', '跑 lint', 'done'), kid('9.2', '跑单元测试', 'running'), kid('9.3', '看失败用例', 'pending')]
+            : (s.children || []).map((c) => ({ ...c, status: 'done', waits: [] }))
+        })
+        plan.doneAt = new Date().toISOString()
+        localStorage.setItem(k, JSON.stringify(db))
+      }, key2)
+      await p.reload()
+      await backToTask()
+      const head = await p.evaluate(() => {
+        const btn = document.querySelector('button[aria-label="执行计划"]')
+        return (btn?.textContent || '').replace(/\s+/g, ' ').trim()
+      })
+      if (/计划已完成/.test(head))
+        errors.push(`执行计划-提前结束：还有没做完的步骤却写着「计划已完成」（折叠头「${head}」）`)
+      if (!/计划已结束/.test(head)) errors.push(`执行计划-提前结束：折叠头没写「计划已结束」（「${head}」）`)
+      if (!/没做完/.test(head)) errors.push(`执行计划-提前结束：没说还有几步没做完（「${head}」）`)
+      await p.getByRole('button', { name: '执行计划' }).click()
+      // 计划已经结束：里面没做完的步骤不能再画成等待中（橙色虚线环呼吸），读作「未完成」
+      const inside = await p.evaluate(() => {
+        const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+        if (!dlg) return null
+        const labels = [...dlg.querySelectorAll('[role="img"]')].map((e) => e.getAttribute('aria-label'))
+        return { labels, expired: !!dlg.querySelector('.plan-wait-ring') }
+      })
+      if (!inside) errors.push('执行计划-提前结束：没找到计划窗口')
+      else {
+        if (inside.labels.includes('等待中'))
+          errors.push('执行计划-提前结束：计划已结束，里面还有读作「等待中」的步骤（应显示为「未完成」）')
+        if (inside.expired) errors.push('执行计划-提前结束：计划已结束，里面还画着等待中的虚线环')
+        if (!inside.labels.includes('未完成')) errors.push('执行计划-提前结束：没做完的步骤没有标成「未完成」')
+        const same = await p.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="执行计划"]')
+          const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+          return /计划已完成/.test(btn?.textContent || '') && !!(dlg && dlg.querySelector('.plan-wait-ring'))
+        })
+        if (same) errors.push('执行计划-提前结束：「计划已完成」和等待中的步骤同时出现在一屏')
+        // 折叠头的「n 步没做完」和窗内的进度必须是同一套计数标准（以前 leftSteps 数条目、进度数主步骤，
+        // 带子步骤的计划会同时出现「3 步没做完」和「3/4」，用户看不出到底还剩几步）
+        const nums = await p.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="执行计划"]')
+          const dlg = document.querySelector('[role="dialog"][aria-label="执行计划"]')
+          const left = /(\d+) 步没做完/.exec(btn?.textContent || '')?.[1] ?? ''
+          const foot = [...(dlg?.querySelectorAll('span') ?? [])]
+            .map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim())
+            .find((x) => /^\d+\/\d+$/.test(x))
+          return { left, foot }
+        })
+        if (nums.left && nums.foot) {
+          const [done, total] = nums.foot.split('/').map(Number)
+          if (Number(nums.left) !== total - done)
+            errors.push(`执行计划-提前结束：折叠头说「${nums.left} 步没做完」，窗内进度是 ${nums.foot}，两处对不上`)
+        }
+      }
+      await check(p, '执行计划-提前结束')
+      await p.keyboard.press('Escape')
+      // 演示数据不在这里恢复：下面接着把整份原始数据写回去再刷新
+    }
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await p.reload()
     await backToTask()

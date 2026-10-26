@@ -8,7 +8,7 @@
 ## 职责
 
 - UI 设计：按 UI 项目组织设计，每个设计有控件树、设计尺寸、风格说明、效果图和切图，和任务分开存储（数据目录下 `designs/`，每个设计一个 JSON，图片放在同一层的设计目录里）。
-- AI 对话：用户描述要求，设计 AI 通过 MCP 工具改控件树、加图片和动画、出原画；一轮里可以同时出原画和切图。
+- AI 对话：用户描述要求，设计 AI 通过 MCP 工具改控件树、加图片和动画、出原画；一轮里可以同时出原画和切图。对话的输出样式和 Chat（任务）对话一模一样：已完成的消息（`DesignChat.tsx` 的 `ChatMessage`）同样给 `web/src/components/tasks/Messages.tsx` 的 `ChatReply` 传 `fold`，回复完成后思考、工具调用和中间的说明收进一个「查看 N 个文件 · 思考 N 次」的折叠行（`web/src/lib/fold.ts` 的 `foldStats`），点开看过程、再点收起。正在输出的 `LiveReply` 不传：它 `live` 恒为真，`FoldedRun` 遇到 `live` 就整段平铺（流式输出要边出边看），收尾后的折叠由已完成的消息负责。
 - 原画与图片生成：先出整屏效果图给用户挑、确认模板，再按模板出切图；支持本机 ComfyUI 局部重绘、上传、重试。本机出整屏原画时，已下载 MOSS-Image、工作流选 auto、画布上又已有文字和带描述的图片，就优先用 MOSS-Image 的布局工作流，位置取自画布控件。本机还支持「处理类工作流」（去背景、图生图、放大）和把多个工作流串成一条链出图，见下面「处理类工作流与工作流链」。
 - 标注：在效果图或原画上框选、画箭头、圈画、打点、涂蒙版，标出「改 / 新增 / 删除 / 保持」四种意思，随下一条消息把标注说明一起交给 AI；原画上的蒙版还能走「只重绘蒙版区域」。原画面板里的「发送标注给 AI」和对话框发送是同一条路径（见下方「原画标注的可见性与发送」）。
 - 导出：导出 ZIP、JSON、React 网页，或把切图和控件树导出到项目目录，给 UE 用的格式见 [umg-export](../../umg-export.md)。
@@ -68,6 +68,7 @@
 - 演示版 `web/src/lib/demo-design.ts` 同步：`steer` 分支、`pendingChats` 接续、`pushUser` 记 `delivery`、`flushPending()` 把排队的 `held` 改成 `next` 再开下一轮、`stop` 改 `lost`。
 - 插话时附件给的是上传目录里的绝对路径，不是这一轮工作目录里的副本；`delivery` 记的是服务端实际做成了什么，不能用界面本地队列冒充已送达。
 - 设计对话改用 Chat 模式同一套对话页壳（`web/src/components/chat/ConversationShell.tsx`）：原来 `DesignChat.tsx` 自己维护的 `useLayoutEffect` 贴底和 `<40px` 滚动判定删掉，统一用 `useStickToBottom`（只有用户真的往上滚才松开），并补上「回到底部」；消息区宽度/内边距和任务对话一致。
+- 输出样式与 Chat 对话统一（`DesignChat.tsx` 的 `ChatMessage` 传 `fold`）：以前只有任务对话传 `fold`，设计页整轮过程（思考 + 每次工具调用 + 中间的说明）一路平铺，滚动很长。`fold` 只控制过程段的折叠，设计页特有的「需要的图片：n 张」、`DesignAnalysisCard`、`CitationChips`、`StyleTag`、`DeliveryLine`、`AnswerMessage` 走 `ChatReply` 的 `children` 和用户消息分支，不进折叠；`task` / `latest` 设计页没有对应的数据（没有 `Task`、没有「尾部刚发出的用户消息」分段），不传不影响折叠（`foldStats` / `splitFolds` / `segOpen` 都不读它）。生成图片时 `genImages` / `generateImages` 一进来就把 `job.phase` 改成 `images` 并清空 `job.parts`（出原画时同理改成 `concepts`），而 `designing` 要求 `phase === 'design'`，所以 `LiveReply` 和折叠后的 `ChatMessage` 不会同时渲染同一轮。回归：`scripts/ui/04-design.mjs` 的「UI设计-过程折叠」「UI设计-展开过程」。
 
 ## 原画标注的可见性与发送
 
@@ -86,6 +87,7 @@
 - `shared/design.test.ts` 的「只重绘蒙版要求「勾了 + 生图方式支持 + 真有蒙版」三个条件同时成立」：`sendsMaskOnly` 的真值表（三个条件单独缺失各一条，外加与 `canInpaint` 口径一致）；去掉 `inpaintSupported` 判断后这条用例会失败。
 - `npm run test:e2e:wsl`（Windows 上在 WSL 里跑）；本次覆盖 `scripts/e2e/06-assist.mjs` 的「设计补充测试」（插话成功、无 job 时直接开一轮）、「设计接续测试」（CLI 没有插话通道时消息进对话并在这一轮结束后自动接着处理）和「设计停止测试」（停止时排队消息标 `lost`、停止后再发的消息能接着开始新一轮）。
 - `npx vite build --mode demo` + `node scripts/ui-check.mjs`：`scripts/ui/04-design.mjs` 开头断言设计对话用的是共用消息区（`[data-conversation-scroll="messages"]`）；「UI设计-原画张数」断言右键菜单能改一次出几张原画、选中状态跟着变。
+- 输出样式与 Chat 对话一致：`scripts/ui/04-design.mjs` 在「UI设计-引用消息」之后断言回复收尾后出现过程的折叠行，按可访问名定位（`getByRole('button', { name: /(其他操作|思考) \d+ 次/ })`，和 `02-task.mjs` 同一套口径，不依赖中文 `title`）；折叠行文字是这一段按实际做了什么拼出来的（设计工具不属于 read/edit/run/search/web，设计页常见的是「其他操作 N 次 · 思考 N 次」）。展开后看到「思考过程」，再收起后它卸载、「需要的图片：n 张」仍在（设计页特有的内容不跟着折叠没掉）；同时截图「UI设计-过程折叠」「UI设计-展开过程」。
 - 原画标注：`scripts/ui/04-design.mjs` 的「UI设计-原画标注工具」断言原画阶段工具栏上框选 / 箭头 / 画笔 / 打点 / 蒙版五个文字标签可见；「UI设计-原画标注」在图上框一块、写说明后断言底部出现「发送标注给 AI（1）」且说明显示在标注卡片上；「UI设计-原画标注发出」点这个按钮，断言标注随用户消息出现在对话里、随后出第 2 轮原画；「UI设计-原画标注-收起对话」先收起 AI 对话栏再点这个按钮，断言对话栏自动打开、消息发出；「UI设计-原画标注-不支持局部重绘」画一个蒙版 + 一个框选后勾上「只重绘蒙版区域」，断言按钮仍是「发送标注给 AI（2）」而不是「按蒙版重绘（1）」（演示环境没有本机 ComfyUI，默认生图方式不支持局部重绘）。`ConceptBoard` 的根元素带 `data-concept-board`，用例按它定位，不和画布上的同类型工具栏混。
 
 ## 处理类工作流与工作流链（2026-10-25）

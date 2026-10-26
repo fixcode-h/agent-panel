@@ -2,7 +2,16 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { frontField, type BundledSkill } from '../shared/library.ts'
+import {
+  frontField,
+  LIBRARY_FILE_MAX_BYTES,
+  LIBRARY_FILE_MAX_KIB,
+  libraryEntryPath,
+  treeFromPaths,
+  type BundledSkill,
+  type LibraryEntryContent,
+  type LibraryTree,
+} from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
@@ -155,16 +164,45 @@ export async function statusIn(e: Entry, root: string): Promise<BundledSkill['st
   return 'same'
 }
 
+/**
+ * 一个自带 Skill 的文件结构（SKILL.md 以外的文件）：详情页要能列出它带哪些文件。
+ * 条目全都来自内存里的 e.files，不读磁盘：自带技能在仓库 skills/ 下，跟用户装到 ~/.agents/skills 的那份无关。
+ */
+export function treeOf(e: Entry): LibraryTree {
+  return treeFromPaths(
+    [...e.files].filter(([rel]) => rel !== 'SKILL.md').map(([rel, buf]) => ({ path: rel, size: buf.length })),
+  )
+}
+
+/**
+ * 读自带 Skill 里的一个文件（只读）：内容来自内置的那份，不读用户目录。
+ * 详情页要看主文件和附件都走这里，和用户技能的 LibraryEntryContent 同一形状（写接口没有对应项）。
+ * path 传空表示 SKILL.md 本身。
+ */
+export async function readBundledEntry(name: string, raw: string): Promise<LibraryEntryContent> {
+  const e = (await entries()).find((x) => x.name === name)
+  if (!e) throw new Error(t('没有自带的 Skill「{name}」', { name }))
+  const rel = raw.trim() ? libraryEntryPath(raw) : 'SKILL.md'
+  const buf = e.files.get(rel)
+  if (!buf) throw new Error(t('没有这个文件'))
+  if (buf.length > LIBRARY_FILE_MAX_BYTES) throw new Error(t('文件太大，最多 {kb} KB', { kb: LIBRARY_FILE_MAX_KIB }))
+  const meta = { path: rel, exists: true, size: buf.length }
+  // 判定和用户技能一致：带 \0 字节的就是二进制，只给大小不给内容
+  return buf.includes(0) ? { ...meta, binary: true, content: '' } : { ...meta, content: buf.toString('utf8') }
+}
+
 export async function listBundled(): Promise<BundledSkill[]> {
   const root = sharedRoot()
   const out: BundledSkill[] = []
   for (const e of await entries()) {
     const text = e.files.get('SKILL.md')!.toString('utf8')
+    const tree = treeOf(e)
     out.push({
       name: e.name,
       category: e.category,
       description: frontField(text, 'description'),
-      files: e.files.size - 1,
+      files: tree.entries.filter((x) => x.type === 'file').length,
+      tree,
       status: { shared: await statusIn(e, root) },
     })
   }

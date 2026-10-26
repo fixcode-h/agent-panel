@@ -393,3 +393,51 @@ test('list_conversations：父对话能看到子对话在做什么、在等什�
   await runEngineTurn(h)
   assert.equal(log.length, 1)
 })
+
+/**
+ * 回归（用户 2026-10-25 报）：计划已经结束（finish_plan）之后又派子对话，
+ * 子对话挂不上任何步骤，计划面板停在上次「已完成」——用户看不到这些子对话属于哪一步。
+ * 现在派子对话一定要挂上一步：计划结束了就重开它、补一步，标题用子对话的标题。
+ */
+test('协调 Agent：计划已结束后派子对话，自动重开计划并补一步（不再是挂不上）', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '继续派活' } as never, undefined, '', 'p1'),
+    id: 'p1',
+  } as Task
+  const log: AgentCall[] = []
+  const h = host(task, log, async (call) => {
+    // 先列一份计划再提前结束它：模拟上一轮的「计划已完成」
+    assert.equal(
+      (
+        await call.orch!.setPlan({
+          steps: [{ title: '改界面', status: 'done' }, { title: '收尾的活' }],
+        })
+      ).ok,
+      true,
+    )
+    assert.equal((await call.orch!.finishPlan('')).ok, true)
+    assert.equal(activePlanOf(task), undefined, '计划确实结束了')
+    const r = await call.orch!.createConversation('设计页 AI 对话复用 Chat 样式', '把设计页的对话换成 Chat 样式')
+    assert.equal(r.ok, true)
+    assert.match(r.info, /等待中/, '子对话挂到了步骤上')
+    return { ok: true, text: '已交给子对话。' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => []
+  h.createConversation = async ({ title }) => ({ ok: true, id: 'c1', title, info: '已新建' })
+
+  await runEngineTurn(h)
+  const plan = task.plans.at(-1)!
+  assert.equal(plan.doneAt, '', '计划被重新打开')
+  const step = plan.steps.find((s) => s.auto)
+  assert.ok(step, '自动补了一步')
+  assert.equal(step!.title, '子对话：设计页 AI 对话复用 Chat 样式', '用子对话的标题')
+  assert.equal(step!.status, 'waiting')
+  assert.equal(step!.waits[0]?.ref, 'c1')
+})
+
+/** 拿当前进行中的计划（测试里只关心有没有、内容是什么） */
+const activePlanOf = (task: Task) => {
+  const last = task.plans.at(-1)
+  return last && !last.doneAt ? last : undefined
+}

@@ -17,12 +17,19 @@ export function ListPane({
   extra,
   tabs,
   hideNew,
+  compactNew,
 }: {
   title: string
   count: number
   onNew: () => void
   /** 这一页没有可新建的东西时隐藏「新建」（例如技能页的「自带 Skill」分页） */
   hideNew?: boolean
+  /**
+   * 窄栏里按钮很多时把「新建」收成图标（文字放进 title / aria-label）：
+   * 技能页头部有「AI 创建」+「新建」两个按钮，300px 宽时文字按钮会顶出左栏。
+   * 调用方要把自己的 extra 也换成图标按钮，整体才放得下。
+   */
+  compactNew?: boolean
   query: string
   onQuery: (q: string) => void
   placeholder: string
@@ -40,16 +47,24 @@ export function ListPane({
     >
       <div className="flex flex-col gap-3 px-4 pt-5 pb-3">
         <div className="flex items-center gap-2">
-          <h1 className="shrink-0 text-lg font-semibold whitespace-nowrap">{title}</h1>
+          {/* 标题可以被压缩：不放 min-w-0 + truncate 时它按内容宽度撑着，后面的按钮会被顶出左栏 */}
+          <h1 title={title} className="min-w-0 truncate text-lg font-semibold">
+            {title}
+          </h1>
           <span className="shrink-0 rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {extra}
-            {!hideNew && (
-              <Button size="sm" onClick={onNew}>
-                <Plus className="h-4 w-4" />
-                {t('新建')}
-              </Button>
-            )}
+            {!hideNew &&
+              (compactNew ? (
+                <Button size="icon-sm" onClick={onNew} aria-label={t('新建')} title={t('新建')}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button size="sm" onClick={onNew}>
+                  <Plus className="h-4 w-4" />
+                  {t('新建')}
+                </Button>
+              ))}
           </div>
         </div>
         <label className="relative block">

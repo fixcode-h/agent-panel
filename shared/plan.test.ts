@@ -10,13 +10,17 @@ import {
   endRun,
   finishPlan,
   holdWait,
+  leftSteps,
   markWrapUp,
   openPlan,
+  planHeadline,
   planProgress,
+  unfinishedSteps,
   planSpan,
   refreshChildWait,
   runningStepId,
   childStepId,
+  ensureChildStep,
   settleWait,
   syncKids,
   unsummarized,
@@ -152,6 +156,80 @@ test('finish_plan 主动结束计划：不写总结也能结束，传了也不�
   assert.equal(task.plans[0].doneAt === '', false)
   assert.equal(task.plans[0].summary, '', '传了总结也不落盘')
   assert.match(finishPlan(task).info, /没有进行中的计划/)
+})
+
+test('提前结束还有没做完的步骤：doneAt 写上、步骤状态原样留着，leftSteps 报得出来', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'waiting' },
+      { title: 'C', status: 'running' },
+    ],
+  })
+  finishPlan(task)
+  const plan = task.plans![0]
+  assert.notEqual(plan.doneAt, '', '计划确实结束了')
+  // 数据语义不改：那一步是真的还在等 / 在做，状态留原样，不能改写成完成或跳过
+  assert.deepEqual(
+    plan.steps.map((s) => s.status),
+    ['done', 'waiting', 'running'],
+  )
+  // 界面靠 leftSteps 区分「全部做完」和「提前结束」：只看 doneAt 会把提前结束也报成已完成
+  assert.deepEqual(
+    leftSteps(plan).map((s) => s.title),
+    ['B', 'C'],
+  )
+  assert.equal(planProgress(task, plan).done, 1)
+  assert.equal(planProgress(task, plan).total, 3)
+})
+
+test('折叠头说的「几项没做完」和进度是同一套计数：带子步骤时不打架', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'waiting', children: [{ title: 'B1' }, { title: 'B2' }] },
+    ],
+  })
+  finishPlan(task)
+  const plan = task.plans![0]
+  const { done, total } = planProgress(task, plan)
+  // 折叠头只数主步骤（和 total - done 恒等）：以前直接拿 leftSteps 的条目数套「步」字文案，
+  // 会同时出现「3 步没做完」和「1/2」，用户看不出到底还剩几步
+  assert.equal(unfinishedSteps(plan), total - done)
+  // leftSteps 仍然算上子步骤：它是「还剩哪些条目」，给列表和计划文案用
+  assert.equal(leftSteps(plan).length, 3)
+})
+
+test('全部做完收起后 leftSteps 是空的：这种情况下才该说「计划已完成」', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'done' },
+    ],
+  })
+  const plan = task.plans!.at(-1)!
+  assert.notEqual(plan.doneAt, '', '前提：全部完成时计划收起')
+  assert.deepEqual(leftSteps(plan), [])
+})
+
+test('折叠头该说哪件事：还在做 / 全部做完 / 提前结束但还有没做完的步骤', () => {
+  const task = fresh()
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'running' },
+    ],
+  })
+  assert.equal(planHeadline(task.plans![0]), 'open', '还没结束：只说进度')
+  finishPlan(task)
+  // 提前结束还有遗留：不能写「计划已完成」，界面上还有一步是等待中 / 进行中
+  assert.equal(planHeadline(task.plans![0]), 'closed')
+  const doneTask = fresh()
+  applyPlan(doneTask, { steps: [{ title: 'A', status: 'done' }] })
+  assert.equal(planHeadline(doneTask.plans![0]), 'done', '全部做完收起才说已完成')
 })
 
 test('等待：挂上后台命令，成功自动完成；失败退回进行中', () => {
@@ -1156,4 +1234,176 @@ test('等子任务的步骤：子任务成功了才标完成，失败或被终�
   bindWait(task, '1', { kind: 'helper', ref: 'chat/sub/h2', label: '版本控制' })
   settleWait(task, 'helper', 'chat/sub/h2', true)
   assert.equal(activePlan(task)!.steps[0].status, 'done')
+})
+
+/**
+ * 回归（用户 2026-10-25 报）：上一份计划已经结束，父对话接着派了 6 个子对话，
+ * 计划面板还停在上次「已完成」，子对话在父对话的计划里完全看不见。
+ * 现在派子对话一定挂上一步：计划结束了就重开它、补一步（标 auto），标题用子对话的标题。
+ */
+test('计划结束后派子对话：重开那份计划并补一步，子对话挂上去看得见', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改界面', status: 'done' }] })
+  assert.equal(activePlan(task), undefined, '计划已经结束')
+  const at = ensureChildStep(task, 'kid-1', '设计页 AI 对话复用 Chat 样式')
+  const plan = activePlan(task)!
+  assert.ok(plan, '计划被重新打开')
+  assert.equal(plan.steps.find((s) => s.id === at)?.title, '子对话：设计页 AI 对话复用 Chat 样式')
+  assert.equal(plan.steps.find((s) => s.id === at)?.auto, true, '标成面板自动加的')
+  assert.match(bindWait(task, at, { kind: 'child', ref: 'kid-1', label: '设计页 AI 对话复用 Chat 样式' }), /等待中/)
+  assert.equal(plan.steps.find((s) => s.id === at)?.status, 'waiting')
+  // 同一份计划，不新开：用户要看的是同一个对话的计划列表
+  assert.equal(task.plans.length, 1)
+})
+
+test('多个子对话同时派出去：全进同一份计划，各自一步', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改界面', status: 'done' }] })
+  const ids = ['子对话甲', '子对话乙', '子对话丙'].map((t, i) => ensureChildStep(task, `kid-${i}`, t))
+  assert.equal(task.plans.length, 1, '只重开一份计划')
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.filter((s) => s.auto).length, 3, '三个子对话各一步')
+  assert.equal(new Set(ids).size, 3, '各挂各的步骤')
+})
+
+test('有进行中的计划但对不上某一步：补一步，不另开计划', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改界面', status: 'running' }] })
+  const at = ensureChildStep(task, 'kid-1', '另外一件事')
+  assert.equal(task.plans.length, 1)
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.length, 2)
+  assert.equal(plan.steps.find((s) => s.id === at)?.auto, true)
+})
+
+test('能对上已有的那一步就不用补：标题说的是同一件事时挂到那一步', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '设计页 AI 对话复用 Chat 样式' }, { title: '功能面板默认对半' }] })
+  assert.equal(ensureChildStep(task, 'kid-1', '设计页 AI 对话复用 Chat 样式'), '1')
+  assert.equal(activePlan(task)!.steps.length, 2, '没有多出步骤')
+})
+
+test('已结束计划重开时补的步骤排在收尾前面，收尾仍在最后', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改界面' }] }, undefined, 'push')
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.at(-1)?.wrapUp, 'push')
+  finishPlan(task)
+  const at = ensureChildStep(task, 'kid-1', '收尾后又派的子对话')
+  const reopened = activePlan(task)!
+  assert.equal(reopened.steps.at(-1)?.wrapUp, 'push', '收尾还是最后一步')
+  assert.equal(reopened.steps.at(-2)?.id, at)
+})
+
+/**
+ * 自动补的步骤不能被 Agent 下一次 set_plan 抹掉：Agent 不知道有这一步，交整份计划时不会写它。
+ * 以前没写到的未完成步骤算「不做了」，自动步骤会当场被删，等于白挂。
+ */
+test('Agent 交整份计划：自动补的步骤没写也不会被删，原位保留', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }, { title: 'B' }] })
+  const at = ensureChildStep(task, 'kid-1', '子对话甲')
+  bindWait(task, at, { kind: 'child', ref: 'kid-1', label: '子对话甲' })
+  // Agent 交整份计划，只写自己那两步（不知道有自动那一步）
+  const r = applyPlan(task, {
+    steps: [
+      { id: '1', title: 'A', status: 'done' },
+      { id: '2', title: 'B' },
+    ],
+  })
+  const plan = activePlan(task)!
+  assert.ok(
+    plan.steps.some((s) => s.id === at && s.auto),
+    '自动步骤还在',
+  )
+  assert.equal(plan.steps.find((s) => s.id === at)?.status, 'waiting', '它等的东西也还在')
+  assert.doesNotMatch(r.info, /已从计划里去掉：.*子对话甲/, '不提示它被去掉')
+  // 也不点名让 Agent 交（它不是 Agent 写的）
+  const r2 = applyPlan(task, { partial: true, steps: [{ id: '1', title: 'A' }] })
+  assert.doesNotMatch(r2.info, /没交上来.*子对话甲/)
+})
+
+test('Agent 自己写了同标题的步骤：对上自动那一步，不出现两条一样的', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }] })
+  const at = ensureChildStep(task, 'kid-1', '子对话甲')
+  applyPlan(task, {
+    steps: [
+      { id: '1', title: 'A' },
+      { title: '子对话：子对话甲', status: 'done' },
+    ],
+  })
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.filter((s) => s.title === '子对话：子对话甲').length, 1, '只有一条')
+  assert.equal(plan.steps.find((s) => s.id === at)?.status, 'done', '标的是自动那一步')
+})
+
+/** finish_plan 说清在跑的子对话：计划一结束它们就挂不上了，用户看到的就是「已完成 + 一堆子对话在跑」 */
+test('finish_plan：子对话还没合回时点名提醒', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }] })
+  const kids = [
+    { id: 'kid-1', title: '修登录', createdAt: '2026-10-25T00:00:00.000Z', done: false },
+    { id: 'kid-2', title: '改样式', createdAt: '2026-10-25T00:00:00.000Z', done: true, endedAt: '' },
+  ]
+  const r = finishPlan(task, undefined, undefined, kids)
+  assert.match(r.info, /这些子对话还没合回：「修登录」/)
+  assert.doesNotMatch(r.info, /改样式/, '已经合回的不点名')
+  // 没有没合回的子对话时不多说
+  const clean = finishPlan(fresh2(), undefined, undefined, [kids[1]])
+  assert.doesNotMatch(clean.info, /还没合回/)
+})
+
+const fresh2 = () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }] })
+  return task
+}
+
+test('从来没过计划就派子对话：开一份新计划并补一步', () => {
+  const task = fresh()
+  const at = ensureChildStep(task, 'kid-1', '第一件事')
+  const plan = activePlan(task)!
+  assert.ok(plan)
+  assert.equal(plan.steps.length, 1)
+  assert.equal(plan.steps[0].id, at)
+  assert.equal(plan.steps[0].title, '子对话：第一件事')
+  assert.equal(plan.steps[0].auto, true)
+})
+
+/** 回归（评审 R1）：重开已结束的计划后，总用时不能把上一轮的历史时长并进这一轮 */
+test('重开已结束的计划：总用时从重开时刻算，不把上一轮那段并进来', () => {
+  const base = Date.parse('2026-10-25T10:00:00.000Z')
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }] }, iso(base))
+  // 10 分钟后提前结束
+  finishPlan(task, undefined, iso(base + 600_000))
+  assert.equal(planSpan(task.plans[0], base + 600_000), 600_000, '结束时是 10 分钟')
+  // 11:00 才派子对话：重开这份计划
+  const at = ensureChildStep(task, 'kid-1', '新派的事', iso(base + 3_600_000))
+  const plan = activePlan(task)!
+  assert.equal(plan.id, task.plans[0].id, '重开的是同一份')
+  assert.equal(plan.reopenedAt, iso(base + 3_600_000))
+  // 重开后刚开始：用时是 0，不是 1 小时
+  assert.equal(planSpan(plan, base + 3_600_000), 0)
+  assert.equal(planSpan(plan, base + 3_660_000), 60_000, '只算重开之后的那一分钟')
+  assert.equal(plan.steps.find((s) => s.id === at)?.auto, true)
+})
+
+/** 回归（评审 R2）：给已完成的子对话再发消息，复用原来那一步，不补一条「子对话：<id>」 */
+test('给已做完的子对话再发消息：重新打开原来那一步，不靠 id 当标题另开一格', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: 'A' }, { title: 'B' }] })
+  const at = ensureChildStep(task, 'kid-1', '子对话甲')
+  bindWait(task, at, { kind: 'child', ref: 'kid-1', label: '子对话甲' })
+  settleWait(task, 'child', 'kid-1', true)
+  assert.equal(activePlan(task)!.steps.find((s) => s.id === at)?.status, 'done')
+  // 又交给它一件新事（send_to_conversation 没有 title）
+  const again = ensureChildStep(task, 'kid-1', '')
+  assert.equal(again, at, '还是原来那一步')
+  const plan = activePlan(task)!
+  assert.equal(plan.steps.filter((s) => s.title.includes('kid-1')).length, 0, '没有出现用 id 当标题的步骤')
+  assert.equal(plan.steps.filter((s) => s.auto).length, 1, '没有多出一步')
+  assert.equal(plan.steps.find((s) => s.id === at)?.title, '子对话：子对话甲', '标题还是原来那个')
 })
