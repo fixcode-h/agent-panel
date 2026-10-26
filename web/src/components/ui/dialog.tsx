@@ -4,6 +4,13 @@ import { Loader2 } from 'lucide-react'
 import { Button } from './button'
 import { t } from '@shared/i18n'
 
+/**
+ * 弹窗里内容滚动区的类：左右和顶部按常规留白，底部多留一截（48px，pb-12）。
+ * 分页设置的滚动区下面紧贴「取消 / 确认」操作栏，不留白时最后一块看起来是压在栏上的；
+ * 所有分页共用这一份，改间距只改这里。
+ */
+export const dialogScrollClass = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pt-6 pb-12'
+
 /** 确认对话框，用于删除等不可撤销的操作 */
 export function ConfirmDialog({
   open,

@@ -278,6 +278,18 @@ http 客户端，没有这一步。
 
 也可以写一个扩展做桥接：`shared/clis/pi.json` 把面板的工具交给 Pi 用的是一个扩展脚本 `{dir}/agent-panel-{name}.ts`，
 启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具（直接声明给模型），调用时转发过去，用 `-e` 按绝对路径加载。
+扩展加载有一份总预算 `LOAD_BUDGET_MS = 10000`，握手 `initialize` 和列工具 `tools/list` 共用它：每一步单次最多
+`STEP_TIMEOUT_MS = 4000`、最多试 `STEP_ATTEMPTS = 2` 次（超时再试一次），但两步加起来不超这份预算。整体不能调大：
+Pi 启动时会等扩展加载完才读 stdin，拖长会让面板那边看到「`get_state` 没有响应」。面板忙时（压缩上下文、写大对话）
+`tools/list` 会晚几秒才回，一次没等到就整轮丢掉全部面板工具，模型报 `Tool set_plan not found`，只能退化成用普通命令跑验证。
+最坏 10 秒，要留在 `get_state` 的默认超时（`server/exec/rpc/session.ts` 的 `REQUEST_TIMEOUT_MS = 15000`）之内，
+并留 5 秒给 Pi 冷启动、读 stdin 和回包；两边顶到同一条线上，「工具没挂上」就变成「`get_state` 没有响应」，一样用不了面板工具。
+这层关系由 `server/exec/pi-rpc.test.ts` 里按定义算最坏加载时长的那条用例守着（断言 `LOAD_BUDGET_MS` 和 `STEP_TIMEOUT_MS × STEP_ATTEMPTS <= LOAD_BUDGET_MS`）。
+任一处失败时这一轮没有面板工具、照常执行：界面一行 `tools_failed` 提示 + 日志一条 warn（任务、步骤、CLI）。
+列到了但清单是空的（一个工具都没有）也算失败，走同一条提示，不静默注册 0 个工具——工具全丢时不能只让模型自己写一句「工具不可见」，用户从界面上要看得到原因。
+注册前还核对身份无关的 `get_status`、`send_message`、`read_messages`（主对话、子对话、子任务、工作流节点都有），
+缺任何一个都上报「面板的工具清单不完整，缺 …」；这项核对只对服务名是 `panel` 或以 `agent-panel` 开头的扩展做，
+UI 设计的服务名是 `design`，它的工具本来就不含这三个。
 
 Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json` 要先信任项目），用户自己的 MCP 服务器通过 `mcpStore`
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），

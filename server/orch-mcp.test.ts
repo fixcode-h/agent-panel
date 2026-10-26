@@ -456,3 +456,34 @@ test('后台命令没给名字时取命令第一行：推回结果的标题不�
   await callOrchTool(o, 'run_background', { command: 'npm ci\nnpm run build', name: '装依赖' })
   assert.equal(names[1], '装依赖')
 })
+
+test('子对话的工具清单：计划、后台命令、收尾合并都在；子任务只有查状态、后台命令和传话', () => {
+  const namesOf = (o: object) => (orchTools(o as unknown as Orchestra) as { name: string }[]).map((x) => x.name)
+  // 用户报过：子对话里 `set_plan`、`run_background`、`submit_merge` 不可见时，模型只能改用普通命令跑验证
+  const child = namesOf({
+    self: '@chat',
+    hasMain: false,
+    child: true,
+    plans: true,
+    canSubmit: true,
+    canBackground: true,
+    canBeginEdit: true,
+    common: [],
+  })
+  for (const n of [
+    'set_plan',
+    'finish_plan',
+    'run_background',
+    'submit_merge',
+    'begin_edit',
+    'message_parent',
+    'suggest_next_step',
+  ])
+    assert.ok(child.includes(n), `子对话能用 ${n}`)
+  // 子任务只做派给它的那一件事：计划、收尾合并、开分支、找父对话都不给它
+  const helper = namesOf({ self: '@chat/sub/h1', hasMain: false, helper: true, canBackground: true, common: [] })
+  for (const n of ['set_plan', 'finish_plan', 'submit_merge', 'begin_edit', 'message_parent', 'spawn_agents'])
+    assert.ok(!helper.includes(n), `子任务没有 ${n}`)
+  assert.ok(helper.includes('run_background'), '子任务也能用后台命令：结果推回派它的对话')
+  assert.ok(helper.includes('send_message'), '子任务能和其他节点传话')
+})

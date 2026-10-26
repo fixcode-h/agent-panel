@@ -84,10 +84,17 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
     if (!todo.length || busy) return
     setBusy(true)
     try {
-      const next = todo.reduce((acc, r) => r.apply(acc), draft)
+      // 面板上的项目可能是打开时读的：应用前现读一次，别把别处刚改的字段写回旧值
+      const latest = await api
+        .projects()
+        .then((list) => list.find((x) => x.id === project.id))
+        .catch(() => undefined)
+      const base = latest ? toInput(latest) : draft
+      const next = todo.reduce((acc, r) => r.apply(acc), base)
       const saved = await api.updateProject(project.id, {
         ...next,
-        initializedAt: project.initializedAt || new Date().toISOString(),
+        // 已有初始化时间时保留：这里只是应用推荐，不是重新初始化
+        initializedAt: latest?.initializedAt || project.initializedAt || new Date().toISOString(),
         initResult: p,
       })
       setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x)))

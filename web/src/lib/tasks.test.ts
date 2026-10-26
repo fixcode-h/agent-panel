@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { apiQueueWait, groupTools, jobLabel, startedRun, tokenGroups, toolView } from './tasks.ts'
+import {
+  apiQueueWait,
+  deliveredToCli,
+  groupTools,
+  jobLabel,
+  messageRecorded,
+  startedRun,
+  tokenGroups,
+  toolView,
+} from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -288,4 +297,21 @@ test('状态行：已经在出 token 时不当成在排队', () => {
 test('状态行：没有标记时什么都不显示', () => {
   assert.equal(apiQueueWait({}, false), undefined)
   assert.equal(apiQueueWait({}, true), undefined)
+})
+
+test('messageRecorded：服务端没回写这条消息（/rule 这类面板命令）时要撤掉本地待认领的那条', () => {
+  assert.equal(messageRecorded([{ id: 'm1' }, { id: 'm2' }], 'm1'), true)
+  // /rule：服务端只 push 一条 system 提示，返回的对话里没有页面传上去的 id
+  assert.equal(messageRecorded([{ id: 'm1' }], 'pending-id'), false)
+  assert.equal(messageRecorded([], 'pending-id'), false)
+})
+
+test('deliveredToCli：请求报错时服务端其实已交给 CLI 的不要恢复草稿，标了没送出去的才恢复', () => {
+  for (const how of ['wait', 'steer', 'notes', 'held', 'next'] as const)
+    assert.equal(deliveredToCli({ delivery: { how, at: '' } }), true)
+  assert.equal(deliveredToCli({ delivery: { how: 'lost', at: '' } }), false)
+  // pending 是页面本地还没交出去的状态，不能当成已交付（否则会把用户的文字丢掉）
+  assert.equal(deliveredToCli({ delivery: { how: 'pending', at: '' } }), false)
+  assert.equal(deliveredToCli({}), false)
+  assert.equal(deliveredToCli(undefined), false)
 })

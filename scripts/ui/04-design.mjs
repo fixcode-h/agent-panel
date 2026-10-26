@@ -5,7 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -265,6 +265,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByText('暗夜远征').first().click({ button: 'right' })
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
   await check(p, 'UI设计-项目提示词', ['让 AI 生成', '画风', '暗黑奇幻'])
+  // 设计项目设置弹窗和项目设置用同一份滚动区常量，底部留白也要一致
+  errors.push(...(await dialogBottomSpaceProblems(p, 'UI设计-项目提示词-底部留白')))
   await p.keyboard.press('Escape')
   // 项目行：最前面的箭头按钮才折叠，点项目名打开 UI 项目主页（用户报的「点不开主页」「点整行就折叠」）
   // 定位项目名不用最左边的「收起」按钮（未按项目限定时多个项目下顺序不可靠），

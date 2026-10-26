@@ -568,7 +568,7 @@ export async function runTurn(ctx: RunContext) {
       return a
     },
   }
-  if (ctx.first) system(host, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
+  if (ctx.first) system(host, '模拟执行：还没有真正调用 Agent，下面是示例输出，用来预览任务的执行过程。')
   ctx.task.working = true
   try {
     await runEngineTurn(host)

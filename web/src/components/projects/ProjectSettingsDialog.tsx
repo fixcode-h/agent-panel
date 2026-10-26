@@ -46,7 +46,7 @@ import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { CategoryPicker } from '@/components/ui/category-picker'
-import { ConfirmDialog } from '@/components/ui/dialog'
+import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -191,11 +191,11 @@ export function ProjectSettingsDialog({
   // 下次打开「AI 初始化」页能直接应用。不自动弹出设置，也不会填进别的项目
   const deliver = (projectId: string, p: Proposal) => {
     if (open && applyRef.current && project?.id === projectId) return applyRef.current(p)
-    const cur = projects.find((x) => x.id === projectId)
-    if (p.kind !== 'project' || !cur) return
-    const { id, createdAt: _c, updatedAt: _u, ...input } = cur
+    if (p.kind !== 'project' || !projects.some((x) => x.id === projectId)) return
+    // 只写初始化的结果：初始化对话可能跑好几分钟，这里手里的项目还是开始那时的，
+    // 整份写回会把用户这期间应用的推荐（名称、简介、测试步骤……）覆盖回旧值
     void api
-      .updateProject(id, { ...input, initializedAt: new Date().toISOString(), initResult: p })
+      .saveProjectInitResult(projectId, { initResult: p })
       .then((saved) => setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x))))
       .catch((e) => toast.error((e as Error).message))
   }
@@ -557,6 +557,14 @@ function Body({
     if (!valid || saving || !draft.initializedAt) return
     setSaving(true)
     try {
+      // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用服务端最新的那份。
+      // 打开设置时手里的旧推荐不能写回去：期间可能已经在别处重新初始化或应用过推荐
+      const latest = project
+        ? await api
+            .projects()
+            .then((list) => list.find((x) => x.id === project.id))
+            .catch(() => undefined)
+        : undefined
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
@@ -565,6 +573,8 @@ function Body({
         name: draft.name.trim(),
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
+        // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
+        initResult: init ?? readProjectProposal(latest?.initResult) ?? draft.initResult,
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
@@ -733,7 +743,7 @@ function Body({
           ))}
         </nav>
         {section === 'mcp' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!project ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t('先创建项目，再管这个项目的 MCP 配置。')}
@@ -747,7 +757,7 @@ function Body({
             )}
           </div>
         ) : section === 'skills' ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!project ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('先创建项目，再管理项目里的技能。')}</p>
             ) : !project.path || draft.path.trim() !== project.path ? (
@@ -759,7 +769,7 @@ function Body({
             )}
           </div>
         ) : section === 'doc' || section.startsWith('cli:') ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+          <div className={dialogScrollClass}>
             {!docsReady || !docs ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {!project
@@ -834,7 +844,7 @@ function Body({
               e.preventDefault()
               void confirm()
             }}
-            className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
+            className={cn(dialogScrollClass, 'gap-7 md:flex-row')}
           >
             {section === 'init' ? (
               <ProjectInitPanel

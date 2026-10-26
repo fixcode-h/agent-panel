@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildAssistPrompt, resolveProposal, type AssistContext } from './assist.ts'
 import { ProjectInput, Workflow } from './schema.ts'
-import { ProjectProposalSchema, readProjectProposal, type ProjectProposal } from './project-init.ts'
+import { ProjectProposalSchema, readProjectProposal, withInitResult, type ProjectProposal } from './project-init.ts'
 
 const wf = (id: string, name: string, expose: unknown[] = []) =>
   Workflow.parse({ id, name, createdAt: '', updatedAt: '', mainAgentId: '', expose })
@@ -128,6 +128,26 @@ const savedProposal: ProjectProposal = {
     { key: 'searchExclude', value: ['Saved'], reason: '' },
   ],
 }
+
+test('只更新初始化结果：已经应用过的推荐和用户改过的设置不会被写回旧值', () => {
+  // 应用推荐之后，项目已经是最新值；这时初始化的结果才回来（对话可能跑了几分钟）
+  const applied = ProjectInput.parse({
+    name: '商城',
+    description: '应用后的简介',
+    testSteps: [{ id: 'unit', name: '单元测试', command: 'npm test' }],
+    initializedAt: '2026-10-01T00:00:00Z',
+  })
+  const next = withInitResult(applied, savedProposal, '2026-10-26T00:00:00Z')
+  assert.equal(next.name, '商城')
+  assert.equal(next.description, '应用后的简介')
+  assert.deepEqual(next.testSteps, applied.testSteps)
+  // 时间跟这次初始化走：设置页「已于 X 初始化」要反映最近一次
+  assert.equal(next.initializedAt, '2026-10-26T00:00:00Z')
+  assert.deepEqual(next.initResult, savedProposal)
+  // 还没初始化过的项目这次补上
+  const fresh = ProjectInput.parse({ name: '新项目' })
+  assert.equal(withInitResult(fresh, savedProposal, '2026-10-26T00:00:00Z').initializedAt, '2026-10-26T00:00:00Z')
+})
 
 test('保存的初始化结果：旧项目没有这个字段时按没有推荐处理', () => {
   const p = ProjectInput.parse({ name: '旧项目' })

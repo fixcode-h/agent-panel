@@ -27,6 +27,19 @@ await runShard('子对话与计划', async (api) => {
     agent,
   } = api
   const { project, A, B, C } = await setupBase()
+  // 按提示词找那一次调用：调用记录里这时可能已有别的调用（保活进程、父对话回报后的新一轮），
+  // 也可能正写到最后半行（readLog 会丢掉半行），所以不能用 at(-1) 猜是哪一次
+  const callOf = (prompt) =>
+    waitFor(
+      () =>
+        calls()
+          .filter((c) => (c.input ?? '').includes(prompt))
+          .at(-1),
+      {
+        timeout: 15000,
+        label: `提示词「${prompt}」的调用记录`,
+      },
+    )
   // ---- 子对话的 CLI 生命周期：列表如实给 cliAlive；打开父对话不启动任何子对话；发消息才启动 ----
   {
     let parent = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })
@@ -1077,7 +1090,7 @@ await runShard('子对话与计划', async (api) => {
       20000,
     )
     assert.equal(ruleKid.worktree, null)
-    const kidLog = JSON.stringify(calls().at(-1))
+    const kidLog = JSON.stringify(await callOf('子对话看规则'))
     assert.ok(
       kidLog.includes('全局规则（父对话发布，必须遵守）') && kidLog.includes('不要改 package.json'),
       '子对话的提示里带上了父对话的全局规则',
@@ -1108,7 +1121,7 @@ await runShard('子对话与计划', async (api) => {
     assert.ok(!('childLimit' in conf), '对话设置里不再有子对话并发上限，旧字段被忽略')
     assert.equal(conf.childRun.cli, 'codex')
     await waitDone((await call('POST', `/tasks/${ruleKid.id}/messages`, { text: '按设置再做一次' })).id, 20000)
-    const confLog = calls().at(-1)
+    const confLog = await callOf('按设置再做一次')
     assert.equal(confLog.kind, 'codex', '子对话按父对话设置里的 CLI 执行')
     const confText = JSON.stringify(confLog)
     assert.ok(confText.includes('父对话的目标') && confText.includes('商品页支持到货通知'), '子对话看得到父对话的目标')
@@ -1156,7 +1169,7 @@ await runShard('子对话与计划', async (api) => {
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看教训' })).id,
       20000,
     )
-    const lessonLog = JSON.stringify(calls().at(-1))
+    const lessonLog = JSON.stringify(await callOf('看看教训'))
     assert.ok(lessonLog.includes('## 项目教训'), '新会话带上项目教训')
     assert.ok(lessonLog.includes('格式化统一走 src/utils/money.ts'), '所有改动都适用的给全文')
     assert.ok(lessonLog.includes('支付方式写进配置'), '按文件的列标题')

@@ -938,6 +938,11 @@ export const FollowUpInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
+  /**
+   * 页面生成的消息 id：点发送时本地已经按这个 id 插进对话（待认领），服务端沿用它，
+   * 推送和响应到达后按 id 替换成真实的一份，不会出现两条。必须是 uuid，避免和已有消息撞 id
+   */
+  messageId: z.uuid().optional(),
 })
 /** 父对话发布的一条全局规则 */
 export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })
@@ -1064,9 +1069,10 @@ export type PeerFrom = z.infer<typeof PeerFrom>
  * notes 交给正在跑的 CLI，它会在这一轮里自己取；next-node 交给工作流里下一个开始的节点；
  * held 这一轮收不下，结束后自动接着处理；next 这一轮已经结束，按新的一轮处理；
  * lost 这一轮没能正常结束（失败、停止），排着的消息不会再被自动处理，要用户重新发；
- * restart CLI 卡住了，停掉后接回会话重开一轮处理
+ * restart CLI 卡住了，停掉后接回会话重开一轮处理；
+ * pending 只在页面本地：点发送后已经插进对话、面板还没接收（界面立刻清空输入框，不用等接口返回）
  */
-export const DeliveryHow = z.enum(['wait', 'steer', 'notes', 'next-node', 'held', 'next', 'lost', 'restart'])
+export const DeliveryHow = z.enum(['wait', 'steer', 'notes', 'next-node', 'held', 'next', 'lost', 'restart', 'pending'])
 export type DeliveryHow = z.infer<typeof DeliveryHow>
 
 export const TaskMessage = z.object({

@@ -2,6 +2,10 @@
 export const EN_AGENTS: Record<string, string> = {
   // 通用
   默认: 'Default',
+  '默认（没有标签）': 'Default (no tags)',
+  按标签: 'By tag',
+  按分类: 'By category',
+  按什么分组: 'Group by',
   自动: 'Auto',
   未分类: 'Uncategorized',
   已停用: 'Disabled',

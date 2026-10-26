@@ -1016,7 +1016,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       : []),
     ...(cacheMismatch(st)
       ? [
-          `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 CLI 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
+          `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 Agent 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
         ]
       : []),
     `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次${reworkText}；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
@@ -1085,7 +1085,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       lines.push(
         '',
         `### ${a.name}（agent id: ${a.id}）`,
-        `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
+        `运行用的 Agent：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
       )
       if (a.description) lines.push(a.description)
       if (a.instructions.trim()) lines.push('角色设定：', clip(a.instructions.trim(), 3000))
@@ -1243,7 +1243,7 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
     lines.push(
       '',
       `## 派给它的角色：${a.name}（agent id: ${a.id}）`,
-      `CLI：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
+      `运行用的 Agent：${a.cli || '默认'}　模型：${a.model || '默认'}　思考：${a.effort || '默认'}${skillText(a, b.agents, tk.skillSlots ?? {})}`,
     )
     if (a.description) lines.push(a.description)
     // 拼好的实际生效设定（自身设定 + 引入的 Agent + 参数 + Skill）：内置角色几乎都引入「通用约束」，
@@ -1253,7 +1253,7 @@ export function helperReport(b: TaskExport, maxOutput: number, scope: HelperScop
     const role = composeRole(a, b.agents, {}, tk.skillSlots ?? {}).trim()
     lines.push(
       '角色设定（拼好的实际生效内容）：',
-      role ? clip(role, 12_000) : '（这个角色没有写角色设定，直接用默认 CLI）',
+      role ? clip(role, 12_000) : '（这个角色没有写角色设定，直接用默认 Agent）',
     )
     if (a.common || a.origin === 'builtin:helper')
       lines.push(`（这是通用角色，派它的对话点名要了「${a.name}」或者用了默认的「子任务」角色）`)

@@ -184,3 +184,53 @@ export async function runShard(file, fn) {
   if (failed || n === 0) process.exit(1)
   process.exit(0)
 }
+
+/**
+ * 预期底部留白（像素）：从 dialogScrollClass 的 pb-N 换算，不在脚本里再写一份数字。
+ * 改 web/src/components/ui/dialog.tsx 的留白时断言跟着走，失败信息也不会把人往「改断言」引。
+ */
+export function dialogBottomSpacePx() {
+  const src = readFileSync(path.join(root, 'web/src/components/ui/dialog.tsx'), 'utf8')
+  const found = src.match(/dialogScrollClass\s*=\s*'[^'\n]*?\bpb-(\d+)/)
+  if (!found) throw new Error('读不到 dialogScrollClass 的底部留白（web/src/components/ui/dialog.tsx）')
+  return Number(found[1]) * 4 // Tailwind 的 pb-12 = 12 × 0.25rem = 48px
+}
+
+/**
+ * 弹窗内容滚动区滚到底后的底部留白：返回 { pad, gap } 或 { error }。
+ * 结构是 header（shrink-0）+ 内容滚动区 + footer（shrink-0，取消 / 确认），
+ * 滚动区底边紧贴 footer 顶边，所以滚到底时 footer.top - 最后一块底边 ≈ padding-bottom。
+ */
+export async function measureDialogBottomSpace(p) {
+  return p.evaluate(() => {
+    const dialog = document.querySelector('[role="dialog"]')
+    const footer = dialog?.querySelector('footer')
+    if (!footer) return { error: '没有底部操作栏' }
+    // 滚动区：弹窗里能滚的那一块（分页设置里常规页是 form，其他页是 div），取可视高度最大的
+    const body = [...dialog.querySelectorAll('form, div')]
+      .filter((el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY) && el.clientHeight > 0)
+      .sort((a, b) => b.clientHeight - a.clientHeight)[0]
+    if (!body) return { error: '没有滚动内容区' }
+    // 先滚到底：底部留白要在内容末尾和操作栏之间量
+    body.scrollTop = body.scrollHeight
+    // 最后一块：滚动区的直接子元素（内层小滚动区里被裁掉的元素不算）
+    const blocks = [...body.children].map((el) => el.getBoundingClientRect()).filter((r) => r.height > 0)
+    if (!blocks.length) return { error: '内容区是空的' }
+    const lastBottom = Math.max(...blocks.map((r) => r.bottom))
+    return {
+      pad: parseFloat(getComputedStyle(body).paddingBottom),
+      gap: footer.getBoundingClientRect().top - lastBottom,
+    }
+  })
+}
+
+/** 弹窗滚到底的底部留白是否统一：返回问题描述，空数组表示通过 */
+export async function dialogBottomSpaceProblems(p, label) {
+  const expected = dialogBottomSpacePx()
+  const info = await measureDialogBottomSpace(p)
+  if (info.error) return [`${label}：${info.error}`]
+  const problems = []
+  if (Math.abs(info.pad - expected) > 0.5) problems.push(`${label}：底部留白 ${info.pad}px，应为 ${expected}px`)
+  if (info.gap < expected - 0.5) problems.push(`${label}：最后一块距底部操作栏 ${info.gap}px，应至少 ${expected}px`)
+  return problems
+}
