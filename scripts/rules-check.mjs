@@ -8,6 +8,7 @@
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
+// 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -281,6 +282,20 @@ for (const f of files) {
       `${f}:${i + 1} 直接从 sonner 引了 toast，提示要排队，改成 import { toast } from '@/lib/toast'：${l.trim()}`,
     )
   })
+}
+
+// 13. 「完成未看」的橙点只在 shared/task.ts 的 taskDoneDot 一处判：组件里直接比 turnDoneAt / turnSeenAt
+// 会和 taskState 各算一套，对话后来又跑起来时橙点和转圈同时出现在一行（见 docs/lessons/ui.md）
+for (const f of files) {
+  if (!/^web\/src\/components\/.+\.tsx?$/.test(f) || /\.test\.tsx?$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\bturnDoneAt\b/.test(l) && /\bturnSeenAt\b/.test(l) && /[!=]==?/.test(l) && !/dot-ok/.test(l))
+        errors.push(
+          `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task.ts 的 taskDoneDot（见 docs/lessons/ui.md）：${l.trim()}`,
+        )
+    })
 }
 
 if (errors.length) {

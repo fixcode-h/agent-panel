@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { Task } from '@shared/schema'
+import { taskTurnUnread } from '@shared/task'
 
 const KEY = 'task-unread'
 
@@ -49,10 +50,8 @@ export function useUnreadTasks() {
   return useSyncExternalStore(subscribe, () => ids)
 }
 
-/** 这一轮完成但用户还没打开看过：侧栏橙点、服务端据此保留 CLI 进程 */
-export const isTaskUnread = (task: Pick<Task, 'turnDoneAt' | 'turnSeenAt' | 'jobs'>) =>
-  // 交出去的后台命令还没跑完：这一轮说完了但对话还在等结果，不算「完成了没看」
-  !!task.turnDoneAt && task.turnDoneAt !== task.turnSeenAt && !task.jobs?.length
+/** 这一轮完成但用户还没打开看过：侧栏橙点读它（判定在 shared/task.ts 一处）。服务端 presence 另有一份等价判断（server/tasks.ts 的 setPresenceUnreadKeeper，按 turnDoneAt/turnSeenAt，不含 jobs，有后台命令时靠状态本身不算完成） */
+export const isTaskUnread = taskTurnUnread
 
 /**
  * 项目里的对话完成一轮时，用户正开着它就不提示，开着别的页面就在侧栏标一个点。

@@ -658,7 +658,7 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
   if (NOT_LOGGED_IN.test(detail))
     hints.push(
       t('· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。', {
-        cli: cli?.name ?? 'CLI',
+        cli: cli?.name ?? 'Agent',
         how: loginHow(cli?.id ?? ''),
       }),
     )

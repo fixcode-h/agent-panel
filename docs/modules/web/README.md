@@ -8,6 +8,7 @@
 ## 职责
 
 - 页面：项目、任务、工作流、Agent、计划、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 角色页（`web/src/pages/AgentsPage.tsx`）默认按标签分组：没有标签的角色全在「默认」组，组按角色数降序、零组不渲染（规则和单测在 `web/src/lib/agent-groups.ts`）；可以切到按分类分组，分类的增删改和「在这个分类里新建」在那一侧。搜索和标签筛选与分组共存，命中的角色仍按组显示。
 - 计划面板（`web/src/pages/SchedulesPage.tsx`，左侧导航「计划」）：列出计划并显示状态（待执行 / 已执行 / 已跳过 / 已停用）和下次执行时间，错过的标出 `missedAt`、启动失败的显示 `lastError`；新建和编辑用弹窗（新建默认按 `workdayTemplate()` 填好「今日工作」：每天 19:00），时间用 `datetime-local` 按本机时区编辑（`toLocalInput` / `fromLocalInput`），还有启用开关、立即执行、删除。页面按 `SCHEDULE_TICK_MS` 和服务端同一节奏重新拉取列表。演示版只在 localStorage 里读写同样的字段，定时不会真的启动对话，立即执行只给一句提示。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。

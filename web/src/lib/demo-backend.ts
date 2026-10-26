@@ -1983,7 +1983,7 @@ function route(method: string, url: string, body: unknown): unknown {
       )
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
-      const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
+      const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 Agent：${id}`)
       return {
         source: 'builtin',
         models: [
@@ -2189,7 +2189,7 @@ function route(method: string, url: string, body: unknown): unknown {
       return undefined
     }
     const input = parse(AgentInput, body)
-    if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
+    if (input.cli && !getCli(input.cli)) fail(`未知的 Agent：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
     // 内置角色只能改参数取值和运行配置（其他内置角色还能改分类、标签、启用）；复制出来的是普通角色
