@@ -671,6 +671,22 @@ if (input.includes('SPAWN_TWO_SUBS') && input.includes('spawn_agents'))
       { title: '限流子任务二', instructions: 'SLOW 限流子任务二' },
     ],
   })
+// 子对话派「禁止子对话执行」的角色（ADR 0019）：列一步计划，点名那一步派「文档」，
+// 面板要把它转交父对话创建，点名的步骤立即标完成。返回的原话记进 .forward，排查“转交没生效”时看面板给了什么
+if (input.includes('FORWARD_DOC') && input.includes('spawn_agents')) {
+  const plan = await panelCall('set_plan', { title: '补文档', steps: [{ title: '补文档', status: 'running' }] })
+  const text = plan?.content?.[0]?.text ?? ''
+  const id = /\[>\] (\S+) 补文档/.exec(text)?.[1]
+  const r = await panelCall('spawn_agents', {
+    tasks: [{ agent: '文档', title: '补文档', instructions: '把这次改动写进 docs/' }],
+    ...(id ? { step: id } : {}),
+  })
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.forward',
+      JSON.stringify({ id, text: r?.content?.[0]?.text ?? '' }) + '\n',
+    )
+}
 // 父对话一次派 6 个子对话：每个都带 SLOW，测试要在它们同时跑着的时候确认「不再排队、立即执行」
 if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation')) {
   for (let i = 1; i <= 6; i++)

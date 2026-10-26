@@ -1162,4 +1162,14 @@ export const EN_TASKS: Record<string, string> = {
   父对话的测试还没通过: "the parent's tests have not passed",
   '已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）':
     'Merged back; the parent tests did not pass and it was sent back to fix them (it asks for wrap-up again once fixed)',
+  '子对话「{from}」请求创建子任务「{title}」{role}。这个角色禁止子对话执行，面板已经替你派出，结果会交回你，不用再调 spawn_agents。\n\n它的要求：\n{instructions}':
+    'Sub-conversation "{from}" asked for the subtask "{title}"{role}. This role is disallowed in sub-conversations, so the panel already dispatched it for you; the result comes back to you, and you do not need to call spawn_agents.\n\nWhat it asked for:\n{instructions}',
+  '（角色：{role}）': ' (role: {role})',
+  '（没有写具体要求）': '(no specific instructions)',
+  '子对话转交来的子任务没能交给父对话，它下一轮会再派':
+    'A subtask handed over from a sub-conversation could not be delivered to the parent conversation; it will try again in the next turn',
+  '子对话「{from}」把一件子任务交给你创建，面板已经安排派出，具体要求已经交给那个子任务，你不用再派；结果会交回你。':
+    'Sub-conversation "{from}" handed you a subtask to create. The panel has already arranged it and the specific request went to that subtask, so you do not need to dispatch anything; the result comes back to you.',
+  '上面那条没能派出：{error}。这件子任务需要另外安排':
+    'The note above could not be dispatched: {error}. This subtask needs to be arranged another way',
 }

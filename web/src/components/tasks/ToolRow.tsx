@@ -19,7 +19,7 @@ import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { useChildOpen, useJobOpen, useRunOpen } from './child-open'
+import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -463,7 +463,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const openFile = useFileOpen()
   const openJob = useJobOpen()
   const openChild = useChildOpen()
-  const openRunPane = useRunOpen()
+  const openRunPane = useRunToolOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
   const verb = toolVerb(tool)
   // 还在等结果（任务还在跑、没有耗时）：每秒刷新已经用了多久，等子任务、长命令不再看着像卡住

@@ -27,12 +27,12 @@ import { dedupePeerReports } from '@/lib/peer-dedupe'
 import { ChildAskCard } from './ChildAskCard'
 import { ReceivedRow } from './PeerMessage'
 import { peerOfMessage } from '@shared/peer-message'
-import { useChildOpen, useChildList } from './child-open'
+import { useChildOpen, useChildList, useRunViewOpen } from './child-open'
+import { runRow, type WorkflowRun } from '@/lib/run-row'
 import { AnswerMessage, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
-import { currentRun, topSteps } from '@shared/flow'
-import { convStateText, deliveryText, runRunning } from '@shared/task'
+import { convStateText, deliveryText } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
@@ -657,77 +657,23 @@ export function Msgs({
   )
 }
 
-/**
- * 计划跑的那次运行现在的状态：还在跑、失败、被停止。
- * 完成或没有运行时返回 undefined（那一行就不出现）；节点列表按这次运行的顶层节点算
- */
-function planRunState(task: Task) {
-  // 对话里的运行只有 start_plan 起的计划；工作流任务在自己的流程图和运行卡片里看
-  if (task.mode !== 'chat') return undefined
-  const rec = task.runs?.at(-1)
-  const steps = topSteps(task, rec?.id ?? currentRun(task))
-  const failed = steps.filter((s) => s.status === 'failed')
-  // 还在跑按 shared/task.ts 的 runRunning 判：启动工作流这个工具调用一下子就会返回，
-  // 运行本身在它后面接着跑，拿工具调用来判会把还在跑的工作流当成结束了
-  const status = runRunning(task)
-    ? 'running'
-    : failed.length || rec?.status === 'failed'
-      ? 'failed'
-      : rec?.status === 'stopped'
-        ? 'stopped'
-        : undefined
-  if (!status) return undefined
-  return {
-    status,
-    name: rec?.workflowName || task.workflowName || t('工作流'),
-    done: steps.filter((s) => s.status === 'done' || s.status === 'skipped').length,
-    total: steps.length,
-    startedAt: rec?.startedAt ?? '',
-    failed,
-  }
-}
-
-/** 任务里最后一条属于对话的消息的 id（节点的输出不算）：拿来认哪一轮是最新的一轮 */
-function lastChatId(msgs: TaskMessage[]) {
-  for (let i = msgs.length - 1; i >= 0; i--) if (!msgs[i].step) return msgs[i].id
-  return ''
-}
-
 /** 还在跑的行前面的转圈图标：和后台命令、子对话用同一套外观 */
 const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
 
 /**
- * 这一次会不会画出工作流那一行：运行区要靠它决定画不画分隔线，
- * 和 PlanRunRow 自己的判断是同一套：没在跑（或没有运行）不画，不是最新的一轮也不画
- */
-export function planRunShown(task?: Task, msgs: TaskMessage[] = [], last?: boolean) {
-  if (!task || !planRunState(task)) return false
-  return !!last || msgs.some((m) => m.id === lastChatId(task.messages))
-}
-
-/**
- * 计划跑的那次工作流运行：和后台命令一样属于运行区，放在总结下面，没跑完就一直转圈，右边写做到第几个节点；
+ * 运行区里的工作流运行（计划触发的那次、工作流任务自己跑的那次都一样）：和后台命令一样放在总结下面，
+ * 没跑完就一直转圈，右边写做到第几个节点，点整行打开这次运行的视图；
  * 完成后从这行消失，失败或被停止时留一行说明和失败的节点，不悄无声息地不见了。
- * 只在最新的一轮上列，旧的一轮不重复
+ * 要不要画已经在 runRow 里判过，这里只按拿到的数据画
  */
-function PlanRunRow({
-  task,
-  msgs,
-  last,
-}: {
-  task?: Task
-  /** 这一轮的消息：工作流在跑时这一轮已经收尾（拿不到 live），按「最后一条对话消息在这一轮里」认 */
-  msgs: TaskMessage[]
-  /** 最新的一轮、对话停着 */
-  last?: boolean
-}) {
+function RunRow({ info }: { info: WorkflowRun }) {
   const [open, setOpen] = useState(false)
-  const info = task ? planRunState(task) : undefined
-  const running = info?.status === 'running'
+  const openRun = useRunViewOpen()
+  const running = info.status === 'running'
   // 跑的时候每秒刷新已经用了多久，和后台命令一样
   const now = useNow(!!running)
-  if (!task || !info) return null
-  if (!last && !msgs.some((m) => m.id === lastChatId(task.messages))) return null
+  // 整行都是打开入口：点哪里都进这次运行的视图，和运行卡片上的「打开这次运行的对话」是同一个地方
+  const openView = openRun ? () => openRun(info.run) : undefined
   const line = running ? (
     <RowShell
       glyph={spinning}
@@ -740,6 +686,9 @@ function PlanRunRow({
       }
       ms={info.startedAt ? now - Date.parse(info.startedAt) : undefined}
       open={false}
+      rowOpen={openView}
+      onOpen={openView}
+      openTip={t('打开这次运行的对话')}
     />
   ) : (
     <RowShell
@@ -753,7 +702,9 @@ function PlanRunRow({
           {info.status === 'stopped' ? t('已停止') : t('{n} 个节点失败', { n: info.failed.length })}
         </span>
       }
-      // 还没节点失败（被停止）时没有可看的，点不动
+      // 还没节点失败（被停止）时没有可看的，点不动。
+      // 这里不用 rowOpen 打开运行视图（和还在跑那一行不同）：失败 / 被停止的时候用户要看的是
+      // 哪几个节点挂了，点了先展开这些节点；运行视图本身在下面的运行卡片里也能进
       onToggle={info.failed.length ? () => setOpen(!open) : undefined}
       open={open}
       failed={info.status === 'failed'}
@@ -774,7 +725,7 @@ function PlanRunRow({
  * 总结下面那一块「还在跑的东西」：上面一条细分割线，下面列运行区（子对话、子任务、后台命令、
  * 没在跑的工具、工作流运行）。
  *
- * 分割线必须和内容在同一个判断里：两者都靠 runningRows / planRunShown 算出来的「到底有没有东西」，
+ * 分割线必须和内容在同一个判断里：两者都靠 runningRows / runRow 算出来的「到底有没有东西」，
  * 没东西时整个 footer 返回 null，不会在总结下面留一条孤零零的横线。
  */
 export function RunningFooter({
@@ -814,7 +765,8 @@ export function RunningFooter({
   // 只看 last 的话，发送的一瞬间它也会跟着消失，AI 开始输出再回来。
   // 别的调用方（辅助对话、设计对话）没有 latest，仍然只按 last 判
   const newest = !!last || !!latest
-  const run = !!isTail && planRunShown(task, msgs, newest)
+  // 工作流那一行画什么、画不画都在这一个值里（runRow 同时管运行状态和「最新的一轮」）
+  const run = isTail ? runRow(task, msgs, newest) : undefined
   // 没东西就整个不画：分割线和内容同一个判断，不会在总结下面留一条孤零零的横线
   if (rows.empty && !run) return null
   const box = (
@@ -822,7 +774,7 @@ export function RunningFooter({
     // 之前运行区插在总结上面，看不出哪段是总结、哪段是还在跑的东西
     <div className="flex flex-col gap-1.5 border-t border-line/60 pt-1.5" role="group" aria-label={t('运行区')}>
       <RunningNow task={task} tools={shownTools} jobs={jobs} kids={kids} />
-      {run && <PlanRunRow task={task} msgs={msgs} last={newest} />}
+      {run && <RunRow info={run} />}
     </div>
   )
   return (

@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-26（本轮新增「子对话合回后由父对话跑测试步骤」一条，并合入同日 dev 上的「点解决收口计划」「提问父子联动」「删除独立分支同步内存」等说明；同日追加「测试步骤以项目当前设置为准」）
+- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」）
 
 ## 职责
 
@@ -22,6 +22,7 @@
   都过 `shared/test-steps.ts` 的 `currentTestSteps(task.testSteps, project)`：项目存在就用 `project.testSteps`，项目被删 / 读不到才用任务快照。
   所以改了项目设置，已开始的对话下一次判断（下一轮提示词、下一次子对话合并）就按新设置跑，不需要新建对话；
   命令在 `background.start` 派发时由当时的步骤算定，一条命令不会中途换成新命令。取项目的点各自只取一次（`deps.projects.get`），不在同一次判断里重读。
+- 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
 - 读一条后台命令的当前样子（`GET /tasks/:id/jobs/:jobId` → `server/background.ts` 的 `view(taskId, id)`，响应体是 `shared/schema.ts` 的 `TaskJobView`）：界面上点后台命令行标题打开的终端窗口按它轮询，命令的输出只在服务端内存的 `BgJob.lines`（`KEEP_LINES` 保留结尾 300 行），不进对话记录，所以必须单独有个读接口。返回 `state` / `code` / `output` / `createdAt` / `startedAt` / `endedAt` / `lastOutputAt`；`output` 是 `lines.join('\n')` 原文，不掺「跑完了」「退出码」这些面板的话（那是推回对话的 `jobOutput` / `resultText` 的事）。排队中、结束后都读得到（用户可能过一阵才点开，结束后要给最终输出和退出码）；归属按 `BgJob.taskId` 校验，跨对话读别人的编号一律当不存在返回 404，和 `/tasks/:id/processes` 只作用于自己子树是同一个口径。回归：`server/background.test.ts`（跑着能读到已输出内容、跑完读得到最终输出和退出码、跨 `taskId` 和不存在的编号读不到）、`server/task-job-view.test.ts`（路由层 404）。

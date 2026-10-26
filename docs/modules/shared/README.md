@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-26（本轮给共享层补「禁止子对话执行」的步骤筛选和测试耗时记录，2026-10-27 界面文案由「在父对话中执行」改成这个名字、语义未变；其余内容沿用 2026-10-25 的核对）
+- analyzed_at: 2026-10-27（本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
 
 ## 职责
 
@@ -27,6 +27,8 @@
   - `settleWait` 成功时清掉 note 里面板写的过时说明（前缀是导出的常量 `HOLD_PREFIX`「还在等它：」），Agent 自己写的备注不动。
   - `settlePlan` 只在用户手动点「解决」这条路径上调用（`server/tasks.ts` 的 `settleChildForUser`，见 [server 模块 README](../server/README.md)）：把最后一份计划里还没做完的步骤连同 `children` 子步骤一次性收成 `done`，还在 `waiting` 的等待项不再等（`state: 'ok'`），面板写的 `HOLD_PREFIX` / `FAIL_PREFIX` 备注清掉（Agent 自己写的备注不动）；工作流步骤（`step.run`）的子项不是 `children` 而是那次运行的节点（见 `planChildren`），所以还会把没跑完的节点标成 `skipped`——不能谎称做完了，但 `stepStatus` 把它算完成，展开计划也不会再出现「头部说完成、展开还有未完成」——并清掉 `endRun` 写的 `RUN_FAIL_PREFIX` 备注；`closeIfDone` 让计划落到 `done`，折叠头走 `planHeadline` 的 `done` 分支、「计划 n/m」不再出现。返回这次收口了几项（步骤 + 运行节点；0 表示没东西可收、调用方不用落盘），没有计划时不动，`finish_plan` 提前结束过的（`closed`）也收成 `done`，已经全部做完的不重复收。父对话收尾（`finish_child`）、一轮结束收口、后台命令结束都不走它，那些路径仍要求计划真做完。回归：`shared/plan.test.ts`（未完成步骤与子步骤递归收口、清等待说明、`closed` 收成 `done`、已完成和没有计划不动）和 `shared/child-flow.test.ts`（没收口的计划先被 `plan` 拦住，收口后走完 complete → report → list）。
   - 等待项 `PlanWait.kind` 有三种：`background`（后台命令编号）、`child`（子对话 id）、`helper`（`spawn_agents` 派出的子任务步骤 id）。`helper` 由 `shared/engine.ts` 的 `spawn` 用 `bindWait` 登记，`settleHelpers` 里的 `settleHelperWaits` 按子任务的真实结果收口：成功标完成，失败或被终止退回进行中并写清原因。
+  - 角色可以「禁止子对话执行」（`AgentInput.runIn: 'parent'`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：`spawn` 在子对话（`task.parentTaskId` 有值）里把这些请求从本地批次摘出来、逐个交给宿主钩子 `host.forwardSpawn`（同步，排队就算交出去），不占 `MAX_HELPERS_PER_STEP` 名额；整批都转交时**不** `bindWait`，而是用 `finishStepNow` 把点名的步骤立即标完成——挂等待会让子对话收尾被一个不在自己这里跑的任务拦住。`spawn` 的 `opts.local` 是父对话派转交来的任务时用的「就本地跑、别再转发」。`runConversationTurn` 每次**开始调对话 AI 前**回调 `host.onOrchestra(orch)`、调完回调 `undefined`（等子任务结果、跑计划、执行节点这些阶段不算能接活），服务端靠它只在 AI 正在处理时直接派、在下一轮开始调 AI 时消费排队。整批里有一件没交出去（例如带 resume 被拒）时返回 `error`、不标完成，模型才知道要补做。
+  - 回归：`server/spawn-forward.test.ts`（字段默认值与旧数据、内置默认值、一次性升级与用户改回、转交而不是本地建、步骤立即完成、接不了时报错、`resume` 不许转交、混合批、`opts.local`）和端到端 `scripts/e2e/13-forward-doc.mjs`。
   - `spawn_agents` 接着之前的子任务做（`resume`）时**沿用原任务的角色**（提示词、CLI、模型都跟着它）：显式写了 `agent` 就用写的，写别的角色照旧拒绝（`「…」是另一个角色跑的`），写了不存在的角色报错；原角色已被删、又没写 `agent` 时报错让调用方点名，**不退回默认「子任务」**——那等于换个角色接着跑原来的会话，交回的结果看不出走了样。`agentId` 为空是旧数据里「没有角色」，不算「角色被删」。重试分支（失败 / 被终止 / 中断的子任务在原记录上重试）里显式点名了别的角色就换过去。`tier` 仍默认跟发起节点（角色决定 CLI 和模型，`shared/settings.ts` 的 `agentRun`）。
   - `spawn_agents` 顶层的 `agent` / `tier` / `resume` 是**整批的默认值**：单个任务里写了以任务里的为准，都没写才落到顶层。顶层 `resume` 配多个任务直接报错（一个会话只能接着跑一轮），顶层出现不认得的字段也报错（`SPAWN_TOP_FIELDS` 白名单），不静默丢掉——「schema 里声明了、代码只在嵌套层读」的字段一丢，就是换了角色、换了新会话，而结果看起来和正常复看一样。这次修的就是它（顶层 `resume` 被丢、复看退回「子任务」角色），见 [server/bugs/helper-resume-lost-role.md](../server/bugs/helper-resume-lost-role.md)。
   - 回归：`shared/plan.test.ts`（标题改写对回旧步、`id` 顺序与数组顺序不一致加 `partial`、note 清理、子任务等待）和 `server/orch-mcp.test.ts`（`spawn_agents` 的 `step`；顶层默认值解析；resume 不写 agent 沿用原任务角色、写 agent 用写的、非 resume 不带 agent 才是默认子任务；原角色不存在时报错）。

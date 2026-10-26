@@ -100,7 +100,7 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
-import { stopHelper } from '../shared/engine.ts'
+import { stopHelper, type HelperSpec, type Orchestra } from '../shared/engine.ts'
 import { makeAlert } from '../shared/alerts.ts'
 import { dropHeld, hasHeld, holdForNextTurn, removeHeld, takeHeld } from './exec/delivery.ts'
 import {
@@ -310,6 +310,11 @@ export function tasksApi(deps: {
     abort: AbortController
     done?: Promise<void>
     rev: number
+    /**
+     * 这一轮对话级的 Orchestra（引擎每轮构造时回调，轮结束清掉）：
+     * 子对话转交来的「禁止子对话执行」的子任务直接派到这里（见 ADR 0019）
+     */
+    orch?: Orchestra
     /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
     restart?: boolean
   }
@@ -2462,6 +2467,131 @@ export function tasksApi(deps: {
     }
   }
 
+  /** 转交给父对话创建的一条子任务：记下是哪个子对话请求的，父对话那一侧要能看到来源 */
+  type ForwardedSpawn = { from: string; fromTitle: string; spec: HelperSpec; at: string }
+  /** 排着的转交请求，按父对话 id 分组：父对话下一轮建 Orchestra 时直接派（见 attachOrchestra） */
+  const forwards = new Map<string, ForwardedSpawn[]>()
+
+  /** 父对话里那条「子对话请求创建子任务」的说明：子任务卡片就挂在这条消息上，用户点开能看到是谁要的 */
+  function forwardMessage(held: ForwardedSpawn): TaskMessage {
+    const role = held.spec.agent?.trim() || ''
+    return {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t(
+        '子对话「{from}」请求创建子任务「{title}」{role}。这个角色禁止子对话执行，面板已经替你派出，结果会交回你，不用再调 spawn_agents。\n\n它的要求：\n{instructions}',
+        {
+          from: held.fromTitle,
+          title: held.spec.title,
+          role: role ? t('（角色：{role}）', { role }) : '',
+          instructions: held.spec.instructions || t('（没有写具体要求）'),
+        },
+      ),
+      tools: [],
+      panel: 'child',
+      at: new Date().toISOString(),
+    }
+  }
+
+  /**
+   * 子对话点名一个「禁止子对话执行」（runIn: 'parent'）的角色：不在子对话里跑，
+   * 转交父对话创建这个子任务（见 ADR 0019）。
+   * 同步返回，排进父对话的队列就算交出去了：子对话立即标完计划步骤、继续往下做，不被它卡住。
+   */
+  function forwardSpawn(child: Task, spec: HelperSpec): { ok: boolean; info: string; id?: string } {
+    const parentId = child.parentTaskId
+    if (!parentId)
+      return {
+        ok: false,
+        info: '这个对话没有父对话：这个角色禁止子对话执行，只能由父对话派它。这一件请自己做，或在结果里说明没做成',
+      }
+    const parent = live.get(parentId)?.task ?? store.known(parentId)
+    if (!parent || parent.archived) return { ok: false, info: '找不到可用的父对话，这个子任务没法转交' }
+    // 父对话自己也是被派出来的子对话：它同样不能执行这个角色，再往上转会一直套下去
+    if (parent.parentTaskId)
+      return {
+        ok: false,
+        info: `父对话「${parent.title}」自己也是被派出来的子对话，不能执行「${spec.agent ?? '这个角色'}」。这一件自己做，或者交给用户决定`,
+      }
+    const held: ForwardedSpawn = { from: child.id, fromTitle: child.title, spec, at: new Date().toISOString() }
+    const entry = live.get(parentId)
+    // 父对话的 AI 正在处理这一轮（orch 只在 runAgent 期间挂着，working 是双保险）：
+    // 直接派进去，子任务进这一轮的 st.helpers，gate 会等它、结果能交回。
+    // 其它阶段（等下一句、等子任务结果、跑计划）走排队 + 唤醒，由下一轮开始调 AI 时派
+    if (entry?.orch && entry.task.working) {
+      entry.task.messages.push(forwardMessage(held))
+      const r = entry.orch.spawn([spec], undefined, { local: true })
+      if (r.error) {
+        // 说明已经写成了「已经替你派出」：效果不符时补一条，不让它静默消失
+        entry.task.messages.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: t('上面那条没能派出：{error}。这件子任务需要另外安排', { error: r.error }),
+          tools: [],
+          panel: 'note',
+          at: new Date().toISOString(),
+        })
+        entry.rev++
+        return { ok: false, info: r.error }
+      }
+      entry.rev++
+      return { ok: true, id: r.ids[0], info: `已在父对话「${parent.title}」里创建这个子任务` }
+    }
+    // 没在跑：先排着，再叫起一轮——它的 Orchestra 一建立就由 attachOrchestra 派，不等 AI 自己想起来调 spawn_agents。
+    const queued = forwards.get(parentId) ?? []
+    queued.push(held)
+    forwards.set(parentId, queued)
+    // 唤醒只发一句短提示：请求正文由 attachOrchestra 写成正式记录，两处都发全文会让父对话里出现两条一模一样的请求
+    void wakeConv(
+      parentId,
+      t(
+        '子对话「{from}」把一件子任务交给你创建，面板已经安排派出，具体要求已经交给那个子任务，你不用再派；结果会交回你。',
+        {
+          from: held.fromTitle,
+        },
+      ),
+      { panel: 'child' },
+    ).catch((e) => {
+      log.warn('task', '转交的子任务没能交给父对话', { error: (e as Error).message })
+      alertOn(parentId, 'delivery', t('子对话转交来的子任务没能交给父对话，它下一轮会再派'))(e)
+    })
+    return { ok: true, info: `已转交父对话「${parent.title}」：它下一轮开始时创建这个子任务` }
+  }
+
+  /**
+   * 引擎每次开始调对话 AI / 调完时回调（见 shared/engine.ts 的 onOrchestra）：
+   * 开始调的时候把排着的转交请求直接派出去，调完（undefined）清掉引用——只有「AI 正在处理这一轮」时才接活。
+   * 见 ADR 0019。
+   */
+  function attachOrchestra(taskId: string, orch: Orchestra | undefined) {
+    const entry = live.get(taskId)
+    if (entry) entry.orch = orch
+    if (!orch || !entry) return
+    const queued = forwards.get(taskId)
+    if (!queued?.length) return
+    forwards.delete(taskId)
+    for (const held of queued) {
+      entry.task.messages.push(forwardMessage(held))
+      const r = orch.spawn([held.spec], undefined, { local: true })
+      if (r.error)
+        entry.task.messages.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: t('上面那条没能派出：{error}。这件子任务需要另外安排', { error: r.error }),
+          tools: [],
+          panel: 'note',
+          at: new Date().toISOString(),
+        })
+    }
+    entry.rev++
+  }
+
   /**
    * 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起。
    * 给了 msgId 只收这一张（用户在弹窗里一个个回答时，别的提问还在等）
@@ -3026,6 +3156,10 @@ export function tasksApi(deps: {
         messageParent: task.parentTaskId
           ? (text, question, options, kind) => messageParent(entry.task, text, question, options, kind)
           : undefined,
+        // 子对话点名「禁止子对话执行」的角色时，把它转交父对话创建（见 ADR 0019）
+        forwardSpawn: task.parentTaskId ? (spec) => forwardSpawn(entry.task, spec) : undefined,
+        // 父对话排着的转交请求：每轮建 Orchestra 时直接派，不依赖 AI 自己想起来调 spawn_agents
+        onOrchestra: (orch) => attachOrchestra(task.id, orch),
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         wrapUp: await planWrapUp(entry.task, project?.path, project?.gitPolicy),
