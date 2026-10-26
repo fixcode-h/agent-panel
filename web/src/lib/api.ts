@@ -113,6 +113,20 @@ import { t } from '@shared/i18n'
 /** 设计连同正在进行的 AI 对话 / 生成图片 */
 export type DesignFull = Design & { job: DesignJob | null }
 
+/**
+ * 打开对话时只取最近一段消息（`?limit=` / 往前翻页 `?before=`）时多带的分页信息：
+ * messageTotal 是完整条数，比 messages 多就说明还有更早的要往前翻；不传 limit 时没有这两个字段。
+ * messageRev 只在整份对话都在这一份里时给（见 server/tasks.ts 的 GET /:id）：前端建 SSE 时带上它，
+ * 首包就只补发增量；截断的那段不是整份的前缀，不能当版本用
+ */
+export type TaskPage = Task & {
+  messageTotal?: number
+  messageHasMore?: boolean
+  messageRev?: string
+  /** 翻页的锚点（`before`）那条已经被删了：要重新取最后一页，不能拼一段不连续的历史 */
+  messageAnchorMissing?: boolean
+}
+
 /** 交给父对话决定时，父对话到底叫起来没有 */
 export type ChildAskNudge = { ok: true; how: string } | { ok: false; error: string }
 
@@ -122,6 +136,18 @@ export const designFileUrl = (id: string, file: string) =>
 /** 导出下载的地址；在线演示没有后端，由页面自己打包 */
 export const designExportUrl = (id: string, format: 'zip' | 'json' | 'react') =>
   `/api/designs/${id}/export?format=${format}`
+
+/** 非 2xx 的响应转成错误：响应体挂到错误上，有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息 */
+async function failure(res: Response): Promise<never> {
+  const body = await res.json().catch(() => ({}))
+  const err = new Error(body.error ?? t('请求失败（{status}）', { status: res.status })) as Error & {
+    status?: number
+    body?: unknown
+  }
+  err.status = res.status
+  err.body = body
+  throw err
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -133,18 +159,26 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    // 把响应体挂到错误上：有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息
-    const err = new Error(body.error ?? t('请求失败（{status}）', { status: res.status })) as Error & {
-      status?: number
-      body?: unknown
-    }
-    err.status = res.status
-    err.body = body
-    throw err
-  }
+  if (!res.ok) await failure(res)
   return res.status === 204 ? (undefined as T) : res.json()
+}
+
+/** 任务列表上次拿到的 ETag：数据没变时服务端回 304，列表不用重新赋值（侧栏不跟着重渲染） */
+let tasksEtag = ''
+
+/**
+ * 任务列表：有任务在跑时每 2.5 秒拉一次，带上上次的 ETag。
+ * 返回 null 表示服务端说「没变」（304），调用方保持现有列表不动
+ */
+const allTasks = async (): Promise<Task[] | null> => {
+  // 演示版没有后端，也没有 ETag，直接回全量
+  if (import.meta.env.VITE_DEMO) return request<Task[]>('/tasks')
+  const res = await fetch('/api/tasks', { headers: tasksEtag ? { 'If-None-Match': tasksEtag } : {} })
+  if (res.status === 304) return null
+  if (!res.ok) await failure(res)
+  const tag = res.headers.get('ETag')
+  if (tag) tasksEtag = tag
+  return (await res.json()) as Task[]
 }
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
@@ -470,9 +504,16 @@ export const api = {
   /** 项目是不是 agent-panel 自己的源代码（AI 分析结果里多一个「补充进源代码」） */
   panelSource: (id: string) => request<{ panelSource: boolean }>(`/projects/${id}/panel-source`),
 
-  allTasks: () => request<Task[]>('/tasks'),
+  allTasks,
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
-  task: (id: string) => request<Task>(`/tasks/${id}`),
+  task: (id: string, opts?: { limit?: number; before?: string }) => {
+    // 只拼真正给了的参数：传空对象时不能拼出一个结尾的「?」
+    const q = new URLSearchParams({
+      ...(opts?.limit ? { limit: String(opts.limit) } : {}),
+      ...(opts?.before ? { before: opts.before } : {}),
+    }).toString()
+    return request<TaskPage>(`/tasks/${id}${q ? `?${q}` : ''}`)
+  },
   /**
    * 一条后台命令的当前输出：界面上点命令行那一行标题打开的终端窗口按它轮询。
    * 命令结束后也读得到最终输出（用户可能过一阵才点开）
