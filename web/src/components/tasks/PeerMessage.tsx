@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Copy,
   ExternalLink,
+  FlaskConical,
   GitMerge,
   GitPullRequestArrow,
   Hammer,
@@ -39,6 +40,7 @@ export const PEER_ICON: Record<PeerKind, typeof Activity> = {
   wrapup: GitPullRequestArrow,
   merge: GitMerge,
   build: Hammer,
+  test: FlaskConical,
   rule: Scale,
   chat: MessagesSquare,
 }

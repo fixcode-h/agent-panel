@@ -343,6 +343,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       '小改动也跑',
       '按改动大小决定验证范围',
       '每条可以写「适用改动」',
+      // 在父对话中执行（ADR 0018）：复选框和它上面那句说明都要显示出来
+      '在父对话中执行',
+      '勾了「在父对话中执行」的步骤子对话不跑',
     ])
     await footSpace('测试步骤')
     // 「适用改动」能看见也能改：带出已配的 glob，而且逐字符敲第二条不会被归一化吞掉

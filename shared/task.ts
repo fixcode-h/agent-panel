@@ -136,6 +136,7 @@ export function newTask(
     runs: [],
     skillSlots: wf ? skillSlots : {},
     testSteps: [],
+    testRuns: [],
     platform: '',
     workflowName: wf?.name ?? '',
     runSeq: 0,
@@ -648,7 +649,13 @@ export function childReport(
           })
         return t('只剩合回父对话的分支，还没请你收尾')
       case 'wrapup':
-        return t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
+        // 合回已经做完、面板正在父对话目录里跑勾了「在父对话中执行」的步骤（见 ADR 0018）：
+        // 这时收尾还早，说法不能再是「用 finish_child 合并」
+        return task.wrapRequest?.state === 'testing'
+          ? t('已合回，等父对话跑测试（面板自动执行，结果回传给它）')
+          : task.wrapRequest?.state === 'test-failed'
+            ? t('已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）')
+            : t('只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支')
       case 'done':
         return t('交付完了：计划、后台命令、提问都收口了')
     }
@@ -678,7 +685,16 @@ export function stageOf(s: ConvState): TaskStage {
 /**
  * 子对话离「彻底完成」还差哪几样（见 childHolds），空数组才算做完了
  */
-export type ChildHold = 'working' | 'background' | 'workflow' | 'helpers' | 'plan' | 'asking' | 'requests' | 'unmerged'
+export type ChildHold =
+  | 'working'
+  | 'background'
+  | 'workflow'
+  | 'helpers'
+  | 'plan'
+  | 'asking'
+  | 'requests'
+  | 'unmerged'
+  | 'parentTest'
 
 /**
  * 子对话的收尾建议没给可选做法时用这两个：第一个是推荐做法，最后一个是明确停下。
@@ -707,6 +723,7 @@ export function askOptions(options: string[] | undefined, kind: AskKind = 'quest
  * - asking：还有待用户回答的提问
  * - requests：还有待用户确认的请求
  * - unmerged：独立分支还有没合回父对话分支的改动
+ * - parentTest：合回了，父对话还在跑勾了「在父对话中执行」的测试步骤（见 ADR 0018）
  *
  * 合并成功、一轮结束、标记完成、回收独立分支、面板阶段显示都读这一份：
  * 以前合并成功就当场标完成、删 worktree，计划、提问、后台命令全都没查，
@@ -726,6 +743,8 @@ export function childHolds(x: {
   requests?: number
   /** 独立分支还没合回父对话的分支；没有独立分支时传 false / 不传 */
   unmerged?: boolean
+  /** 合回了，但父对话的测试还没跑完或没通过（已退回修复）：跑通才收尾（见 ADR 0018） */
+  parentTest?: boolean
 }): ChildHold[] {
   const holds: ChildHold[] = []
   if (x.working) holds.push('working')
@@ -736,6 +755,7 @@ export function childHolds(x: {
   if (x.asking) holds.push('asking')
   if (x.requests) holds.push('requests')
   if (x.unmerged) holds.push('unmerged')
+  if (x.parentTest) holds.push('parentTest')
   return holds
 }
 
@@ -761,7 +781,7 @@ export function runRunning(task: { status: Task['status']; runs?: Task['runs']; 
  */
 export function childHoldsOf(
   task: Pick<Task, 'status' | 'working' | 'requests' | 'parentAsks' | 'plans' | 'steps'> & { runs?: Task['runs'] },
-  x: { background?: number; merged?: boolean } = {},
+  x: { background?: number; merged?: boolean; parentTest?: boolean } = {},
 ): ChildHold[] {
   return childHolds(childFlowOf(task, x))
 }
@@ -803,7 +823,7 @@ export function childFlowOf(
     runs?: Task['runs']
     resolved?: boolean
   },
-  x: { background?: number; merged?: boolean; reported?: boolean } = {},
+  x: { background?: number; merged?: boolean; reported?: boolean; parentTest?: boolean } = {},
 ): ChildFlowState {
   return {
     working: task.working,
@@ -814,6 +834,7 @@ export function childFlowOf(
     asking: task.parentAsks?.length ?? 0,
     requests: task.requests.length,
     unmerged: x.merged === false,
+    parentTest: x.parentTest,
     completed: task.resolved === true,
     reported: x.reported,
   }
@@ -831,6 +852,9 @@ export function childStepHolds(x: ChildFlowState, step: ChildFlowStep): ChildHol
       asking: x.asking,
       requests: x.requests,
       unmerged: x.unmerged,
+      // 合回了但父对话的测试还没跑完：不能标完成、不能删分支（ADR 0018）。
+      // 只加在 ChildFlowState 上而不传进来，这个 hold 永远不会生效（评审 R1）
+      parentTest: x.parentTest,
     })
   // 后三步没有额外条件：走到没走到由 completed / reported 记着，不看别的
   return []
@@ -929,6 +953,7 @@ export function childHoldText(holds: ChildHold[]) {
     asking: t('还有等你回答的提问'),
     requests: t('还有等你确认的请求'),
     unmerged: t('独立分支还没合回原分支'),
+    parentTest: t('父对话的测试还没通过'),
   }
   return holds.map((h) => what[h]).join(t('、'))
 }
@@ -1406,8 +1431,10 @@ export function restartUnfinished(
 ): boolean {
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
-  // 已经请求父对话收尾：剩下的事是合并，重启后进程没了也不影响
-  if (task.wrapRequest && task.wrapRequest.state !== 'failed') return false
+  // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
+  // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
+  const wrap = task.wrapRequest?.state
+  if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
   // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来
   if (task.status === 'running') return true
   // 这一轮说完了，但计划还没做完：重启后没人接着做，它不会自己往前走

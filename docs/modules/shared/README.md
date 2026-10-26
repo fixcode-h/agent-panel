@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-25（本轮新增「派子对话一定挂到计划步骤」（`ensureChildStep` / `auto` 步骤）关联 `reopenedAt` 用时重算、`send_to_conversation` 带标题和复用已完成步骤；合并语义和等待项种类沿用同日上一轮分析）
+- analyzed_at: 2026-10-26（本轮给共享层补「在父对话中执行」的步骤筛选和测试耗时记录；其余内容沿用 2026-10-25 的核对）
 
 ## 职责
 
@@ -59,6 +59,11 @@
   同一文件也是**附件路径安全规则的唯一出处**：`libraryEntryPath` 逐段校验相对路径（挡 `..`、`.`、空段、绝对路径、盘符、`\0` 和 Windows 非法字符，反斜杠统一当 `/`），服务端在 `server/library.ts` 的 `entryOf` 里再补一道 `realpath` 落在 Skill 目录内的校验（字符串层拦不住软链接）。上限常量 `LIBRARY_FILE_MAX_BYTES`（1 MB）、`LIBRARY_TREE_MAX_ENTRIES`（1000，目录也算）、`LIBRARY_DIR_MAX_DELETE_ENTRIES`（目录递归删除前的条目上限）也在这里，服务端和前端都从这里引用，不在别处写数值。文件树排除分两张表：`LIBRARY_TREE_EXCLUDE_DIRS`（只对目录生效）、`LIBRARY_TREE_EXCLUDE_FILES`（只对文件生效）——不拿搜索用的 `DEFAULT_SEARCH_EXCLUDE`，那份清单会把技能里真叫 `logs` / `build` 的内容目录一起抹掉。
 - 项目级测试步骤、搜索排除目录、子对话交接摘要等前后端共用的规则（`shared/test-steps.ts`、`shared/search-exclude.ts`、`shared/handoff.ts`）。
   搜索排除除了写进提示词，还由 `server/exec/runner.ts` 写成 ripgrep 配置、用 `RIPGREP_CONFIG_PATH` 交给 CLI，rg 和 CLI 内置搜索不靠提示词也会跳过（显式把排除目录当起点时照样能搜）。
+  「在父对话中执行」的步骤也在这里定：`parentRunSteps` 是唯一筛选（启用、勾了、不是 `merge`、有命令），
+  `matchTestStep` 按命令原文或按环境拼出的整行认出后台命令对的是哪条步骤，`mergeTestRun` / `testRunLines` 记和写耗时
+  （记录结构 `TaskTestRun` 在 `shared/schema.ts`，同一步骤 + 同一执行方只留最后一次、`tries` 累加），
+  收尾总结的「编译 / 测试耗时」要求是 `TEST_TIME_SUMMARY_RULE`，只对独立分支的子对话注入（`shared/engine.ts` 的 `verifyPart`）。
+  规则为什么这么定见 [ADR 0018](../../adr/0018-test-steps-run-in-parent.md)。
 - 清终端控制序列（`shared/ansi.ts` 的 `stripAnsi`）：清 CSI（SGR 颜色、加粗、清屏、光标移动，7 位 ESC 引导和 8 位 0x9B 引导两种）、OSC、两字符转义和进度条用的 `\r`；**普通方括号文本原样保留**（`[32m]`、Markdown 链接 `[文字](...)` 前面没有 ESC 就不是转义）。CLI 发现 stdout 接终端就上色，而面板把同一份输出用于界面 `<pre>`、报错文案和「AI 处理」上下文，所以在服务端写进 `job.output` 之前清一次（`server/accounts.ts` 的 `take`）。
 - 项目教训（`shared/lessons.ts`）：交给 Agent 的预算和按文件取全文；界面的页签也在这里：`DEFAULT_TAB`「默认」放一个标签都没有的教训，`inTab` / `lessonTabs` 决定每个页签有哪些、各几条，界面上总有一个页签选中（选中的标签没了回到「默认」）。
 - 项目教训的 AI 评审（`shared/lesson-review.ts`）：按 `shared/analysis-home.ts` 的归属规则在项目里开分析对话（`web/src/lib/task-transfer.ts` 的 `startLessonReview` → `createAnalysisTask`，必备角色「分析」，在统一的 AI 分析窗口里看），教训全文作附件；回复末尾的 `lesson-review` 块由 `parseLessonReview` 读出，对话里的卡片（`web/src/components/projects/LessonReview.tsx`）逐条点「应用」才写进教训（`POST /projects/:id/lessons/review` → `applyReviewItem`，和 `record_lesson` 同一个队列），改写、合并把旧版本留进改写记录；「已应用」按当前教训现算（`reviewItemState`），不另存。

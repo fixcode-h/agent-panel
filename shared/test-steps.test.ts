@@ -8,15 +8,22 @@ import test from 'node:test'
 
 import {
   CHANGED_FILES_RULE,
+  TEST_TIME_SUMMARY_RULE,
   appliesToText,
   defaultTestSteps,
+  matchTestStep,
   matchesGlob,
+  parentRunRoleOf,
+  mergeTestRun,
+  parentRunSteps,
   parseGlobs,
   stepApplies,
+  testRunLines,
   testStepsBlock,
+  testStepsText,
   verifyBlock,
 } from './test-steps.ts'
-import { type TestStep, ProjectInput } from './schema.ts'
+import { type TaskTestRun, type TestStep, ProjectInput } from './schema.ts'
 
 const step = (appliesTo: string[], more: Partial<TestStep> = {}) => ({
   id: 's',
@@ -30,6 +37,7 @@ const step = (appliesTo: string[], more: Partial<TestStep> = {}) => ({
   note: '',
   enabled: true,
   merge: false,
+  runInParent: false,
   quick: false,
   ...more,
 })
@@ -153,4 +161,107 @@ test('默认步骤按技术栈带上适用范围：改 Build.cs / .uproject 也�
   assert.ok(byId(rust, 'rust-test').appliesTo.includes('**/Cargo.toml'))
   assert.equal(stepApplies(byId(rust, 'rust-test'), ['README.md']), false)
   assert.equal(stepApplies(byId(rust, 'rust-test'), ['src/lib.rs']), true)
+})
+
+test('「在父对话中执行」的步骤：子对话跳过，合并时编译的步骤不算在内', () => {
+  const e2e = step([], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', runInParent: true })
+  const typecheck = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck' })
+  const off = step([], { id: 'off', name: '已停用', command: 'x', runInParent: true, enabled: false })
+  const merge = step([], { id: 'build', name: '编译', command: 'npm run build', runInParent: true, merge: true })
+  assert.deepEqual(
+    parentRunSteps([e2e, typecheck, off, merge]).map((s) => s.id),
+    ['e2e'],
+    '只取启用的、勾了「在父对话中执行」的；合并时编译的仍走父对话 request_build，不重复跑',
+  )
+  // 老步骤没有这个字段：解析上来是 false，升级后行为不变
+  const saved = ProjectInput.parse({
+    name: '项目',
+    path: '/tmp/p',
+    testSteps: [{ id: 'a', name: '类型检查', command: 'npm run typecheck' }],
+  })
+  assert.equal(saved.testSteps[0].runInParent, false)
+})
+
+test('提示词写清谁跑这一步：子对话不跑、父对话不用自己跑', () => {
+  const inParent = step([], { name: '端到端测试', command: 'npm run test:e2e', runInParent: true })
+  const self = step([], { name: '类型检查', command: 'npm run typecheck' })
+  const child = verifyBlock([inParent, self], { platform: 'win32', scaled: true, parentRun: 'child' })
+  assert.match(child, /在父对话中执行/, '步骤行要标出来')
+  assert.match(child, /你不要跑它们/)
+  assert.match(child, /完成条件是「改动已合回父对话所在的分支 \+ 父对话测试通过」/)
+  assert.match(child, /父对话测试失败时面板会把报错原文推回来/)
+  const parent = verifyBlock([inParent, self], { platform: 'win32', scaled: true, parentRun: 'parent' })
+  assert.match(parent, /合并成功后由面板在你的目录里自动跑/)
+  assert.match(parent, /你自己改代码时没人替你跑/)
+  // 没勾的场合（工作流节点、共用目录的子对话）不出现这段
+  assert.doesNotMatch(verifyBlock([self], { platform: 'win32', scaled: true }), /在父对话中执行/)
+  // 步骤行本身也带「由谁执行」，两边看到的说法一致
+  assert.match(
+    testStepsText([inParent], 'win32', '', 'child'),
+    /由谁执行：父对话（合并后自动跑，结果回传给你；你不要跑）/,
+  )
+  assert.match(testStepsText([inParent], 'win32', '', 'parent'), /由谁执行：子对话合并后由面板在你的目录里自动跑/)
+})
+
+test('后台命令能认出是哪条测试步骤：命令原文和按环境拼出来的整行都认', () => {
+  const e2e = step([], { id: 'e2e', name: '端到端测试', command: 'npm run test:e2e', env: 'wsl', runInParent: true })
+  const tc = step([], { id: 'tc', name: '类型检查', command: 'npm run typecheck' })
+  const steps = [e2e, tc]
+  assert.equal(matchTestStep(steps, 'npm run typecheck', 'win32')?.id, 'tc')
+  assert.equal(matchTestStep(steps, '  npm   run test:e2e ', 'win32')?.id, 'e2e', '空白差异不影响')
+  assert.equal(
+    matchTestStep(steps, 'wsl.exe -d Ubuntu-24.04 -- bash -lc "npm run test:e2e"', 'win32')?.id,
+    'e2e',
+    '按环境拼出来的整行也认',
+  )
+  assert.equal(matchTestStep(steps, 'git status', 'win32'), undefined, '不是测试步骤的命令不记耗时')
+  assert.equal(matchTestStep([{ ...tc, enabled: false }], 'npm run typecheck', 'win32'), undefined)
+})
+
+test('耗时只留最后一次，tries 记跑了几次；自己跑的和父对话跑的分开记', () => {
+  const base = { stepId: 'e2e', stepName: '端到端测试', durationMs: 1_000, ok: false, at: '1' }
+  let runs: TaskTestRun[] = mergeTestRun([], { ...base, by: 'parent' })
+  assert.equal(runs.length, 1)
+  assert.equal(runs[0].tries, 1)
+  // 失败后父对话重跑成功：覆盖成最后一次的耗时，tries 累加
+  runs = mergeTestRun(runs, { ...base, durationMs: 2_500, ok: true, at: '2', by: 'parent' })
+  assert.deepEqual(
+    runs.map((r) => [r.ok, r.durationMs, r.tries]),
+    [[true, 2_500, 2]],
+    '重跑成功后总结里显示最后一次的耗时',
+  )
+  // 子对话自己也跑了同一条（例如它先自己试过）：执行方不同，各留一行
+  runs = mergeTestRun(runs, { ...base, durationMs: 900, ok: true, at: '3', by: 'self' })
+  assert.equal(runs.length, 2)
+  // 两条不同的步骤：各一行
+  runs = mergeTestRun(runs, { stepId: 'tc', stepName: '类型检查', durationMs: 400, ok: true, at: '4', by: 'self' })
+  assert.equal(runs.length, 3)
+})
+
+test('耗时统计的文字：一行一步，带执行方、结果和耗时', () => {
+  const runs: TaskTestRun[] = [
+    { stepId: 'e2e', stepName: '端到端测试', by: 'parent', ok: true, durationMs: 94_000, tries: 1, at: '' },
+    { stepId: 'tc', stepName: '类型检查', by: 'self', ok: false, durationMs: 1_200, tries: 2, at: '' },
+  ]
+  const text = testRunLines(runs).join('\n')
+  assert.match(text, /- 端到端测试：父对话跑，通过，1m 34s/)
+  assert.match(text, /- 类型检查：自己跑，失败，1\.2s（第 2 次，按最后一次算）/)
+  // 收尾总结的要求本身：要写执行方和耗时，没有记录时不编数字
+  assert.match(TEST_TIME_SUMMARY_RULE, /谁跑的（父对话 \/ 自己）/)
+  assert.match(TEST_TIME_SUMMARY_RULE, /未记录/)
+  assert.match(TEST_TIME_SUMMARY_RULE, /不要编数字/)
+})
+
+test('「在父对话中执行」由谁跑：子对话要有独立分支，顶层对话自己改代码时自己跑', () => {
+  const steps = [step([], { runInParent: true })]
+  assert.equal(parentRunRoleOf({ child: true, isolated: true, git: true, steps }), 'child')
+  assert.equal(parentRunRoleOf({ child: true, isolated: false, git: true, steps }), '', '共用目录的子对话没得合回')
+  assert.equal(parentRunRoleOf({ child: false, isolated: false, git: true, steps }), 'parent')
+  // 顶层对话自己开了独立分支也没有「合回后父对话跑」这一步：仍算 parent，提示词要求它自己跑
+  assert.equal(parentRunRoleOf({ child: false, isolated: true, git: true, steps }), 'parent')
+  assert.equal(parentRunRoleOf({ child: false, isolated: false, git: false, steps }), '', '非 Git 项目不生效')
+  assert.equal(parentRunRoleOf({ child: false, isolated: false, git: true, steps: [step([])] }), '', '没勾这种步骤')
+  // 父对话的提示词要说清自己改代码时没人替它跑（评审 R2）
+  const text = verifyBlock(steps, { platform: 'win32', scaled: true, parentRun: 'parent' })
+  assert.match(text, /你自己改代码时没人替你跑/)
 })

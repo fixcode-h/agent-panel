@@ -10,6 +10,8 @@ import {
   childFlowOf,
   childFlowSteps,
   childHolds,
+  childReport,
+  restartUnfinished,
   childHoldText,
   childHoldsOf,
   childStage,
@@ -109,7 +111,17 @@ test('子分支都合进父分支就算完成：推送、远端、父分支上�
 })
 
 test('卡住的原因只说本地合并：所有文案里都没有推送、远端字样', () => {
-  const all: ChildHold[] = ['working', 'background', 'workflow', 'helpers', 'plan', 'asking', 'requests', 'unmerged']
+  const all: ChildHold[] = [
+    'working',
+    'background',
+    'workflow',
+    'helpers',
+    'plan',
+    'asking',
+    'requests',
+    'unmerged',
+    'parentTest',
+  ]
   for (const h of all) assert.doesNotMatch(childHoldText([h]), /推送|远端|push|remote|origin|其他分支/i)
   assert.match(childHoldText(['unmerged']), /独立分支还没合回原分支/)
   // 组合起来也不带：界面把整串直接显示给用户
@@ -218,6 +230,52 @@ test('childFlowOf：和 childHoldsOf 用同一套判定，另外带出完成 / �
     'asking',
     'unmerged',
   ])
+})
+
+test('合回了但父对话测试没跑完：停在 pending，不能标完成、不能回收独立分支', () => {
+  const idle = {
+    working: false,
+    background: 0,
+    asking: 0,
+    requests: 0,
+    unmerged: false,
+  }
+  // 没在等父对话测试时照旧直接走到置完成
+  assert.equal(childFlowAt(idle), 'complete')
+  const waiting = { ...idle, parentTest: true }
+  assert.deepEqual(childHolds(waiting), ['parentTest'], 'parentTest 要真的变成 hold，不能只是字段')
+  assert.equal(childComplete(waiting), false, '父对话测试没跑完不能标完成')
+  assert.equal(childFlowAt(waiting), 'pending', '流转停在 pending，不能跳到 complete')
+  // 测试通过后 childMerged 先清 wrapRequest 再走这一趟，parentTest 为 false，不会自锁
+  assert.equal(childFlowAt({ ...waiting, parentTest: false }), 'complete')
+})
+
+test('父对话测试没过、已退回修复：说法是「测试没通过」而不是「还没请收尾」，重启后照常恢复', () => {
+  const wrap = {
+    state: 'test-failed' as const,
+    at: 'x',
+    note: '',
+    tests: 't',
+    info: '第 1 步「端到端测试」失败，用时 42s',
+  }
+  const task = {
+    status: 'done' as const,
+    working: false,
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    steps: [],
+    wrapRequest: wrap,
+  }
+  const r = childReport(task)
+  assert.equal(r.state, 'wrapup', '合回了、只是测试没过：仍然是待收尾，不是「未完成 / 还没请收尾」')
+  assert.match(r.why, /父对话测试没通过/, '说法要和事实一致（评审 R3）')
+  assert.doesNotMatch(r.why, /还没请你收尾/)
+  // 已退回修复、这一轮在跑时被打断：重启后要进恢复名单（这次是它自己动手修，不是等面板动作）
+  assert.equal(restartUnfinished({ ...task, status: 'running' }), true)
+  // 在等面板 / 父对话动作的几种不进名单
+  for (const state of ['requested', 'merging', 'testing'] as const)
+    assert.equal(restartUnfinished({ ...task, status: 'running', wrapRequest: { ...wrap, state } }), false, state)
 })
 
 test('计划收口只发生在用户点「解决」：父对话收尾照旧被「计划没做完」拦住', async () => {

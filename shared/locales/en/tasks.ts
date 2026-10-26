@@ -1154,4 +1154,10 @@ export const EN_TASKS: Record<string, string> = {
   'API「{api}」的并发名额满了，前面的释放了再开始':
     'API "{api}" is at its concurrency limit; this starts when a slot frees up',
   '排队等 API「{api}」': 'Waiting for API "{api}"',
+  父对话测试: 'Parent test',
+  '已合回，等父对话跑测试（面板自动执行，结果回传给它）':
+    'Merged back; waiting for the parent to run its tests (the panel runs them automatically and sends the result back)',
+  父对话的测试还没通过: "the parent's tests have not passed",
+  '已合回，父对话测试没通过，已经退回给它修（修好再请父对话收尾）':
+    'Merged back; the parent tests did not pass and it was sent back to fix them (it asks for wrap-up again once fixed)',
 }

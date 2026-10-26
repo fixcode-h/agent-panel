@@ -1,4 +1,4 @@
-import { TEST_STEP_ENVS, type TestStep } from './schema.ts'
+import { TEST_STEP_ENVS, type TaskTestRun, type TestStep } from './schema.ts'
 import { t } from './i18n.ts'
 import { fmtDuration } from './duration.ts'
 
@@ -97,6 +97,93 @@ export function appliesToText(step: Pick<TestStep, 'appliesTo'>) {
   return globs.length ? globs.join('、') : '未设置，总是执行'
 }
 
+/**
+ * 勾了「在父对话中执行」的步骤：子对话不跑，合回父对话的分支后面板在父对话目录里跑一遍，结果回传给它（见 ADR 0018）。
+ * 只取启用的、有命令的；`merge`（合并时编译）不在里面：那条仍由父对话按 ADR 0004 向面板申请编译，
+ * 两边都跑会让 UE 编译编两次。
+ * 只对 Git 项目的独立分支子对话生效：P4 / SVN / 没有版本控制的子对话没有分支可合，勾了这个字段也不跑这些步骤
+ */
+export function parentRunSteps(steps: TestStep[]) {
+  return steps.filter((s) => s.enabled && s.runInParent && !s.merge && !!s.command.trim())
+}
+
+/**
+ * 「在父对话中执行」的步骤在这个对话里由谁跑（ADR 0018）：只对 Git 项目生效。
+ * - 有父对话 + 独立分支（真正会合回的那种子对话）→ child：它不跑，合并后由父对话跑。
+ * - 顶层父对话 → parent：子对话合并后由面板在它的目录里跑；它自己改代码时没人替它跑，要自己跑（评审 R2）。
+ * - 共用目录的子对话、P4 / SVN / 没有版本控制、没有勾这种步骤 → 空：步骤照常由 Agent 自己跑。
+ * 顶层对话即使自己开了独立分支也算 parent：它没有父对话，收尾走的是推送 / 分 changelist，没有「合回后父对话跑」这一步。
+ */
+export function parentRunRoleOf(x: {
+  /** 有没有父对话（是不是子对话） */
+  child: boolean
+  /** 有没有独立分支（还在用 worktree） */
+  isolated: boolean
+  /** 项目目录是不是 Git 仓库 */
+  git: boolean
+  steps: TestStep[]
+}): 'child' | 'parent' | '' {
+  if (!parentRunSteps(x.steps).length) return ''
+  if (x.child) return x.isolated ? 'child' : ''
+  return x.git ? 'parent' : ''
+}
+
+/** 比对命令时忽略空白差异：后台命令原文和步骤里的写法常常只差几个空格 */
+const normCommand = (s: string) => s.trim().replace(/\s+/g, ' ')
+
+/**
+ * 一条后台命令对的是项目里的哪条测试步骤：返回 None 表示不是测试步骤（Agent 自己拼的查看命令不动它）。
+ * 两种写法都认：步骤里的命令原文，以及按环境拼出来的整行（wsl / powershell 包了一层的）。
+ * 耗时记录只靠这个匹配，不靠 Agent 自报：它自己跑的和父对话跑的都从后台命令的真实起止时间算
+ */
+export function matchTestStep(steps: TestStep[], command: string, platform: string, wslDistro = '') {
+  const want = normCommand(command)
+  if (!want) return undefined
+  return steps.find(
+    (s) =>
+      s.enabled &&
+      !!s.command.trim() &&
+      (normCommand(s.command) === want || normCommand(stepCommand(s, platform, wslDistro)) === want),
+  )
+}
+
+/**
+ * 记一次测试步骤的耗时：同一条步骤 + 同一个执行方只留最后一次，tries 累加。
+ * 选择「按最后一次算」而不是分行列出每次：收尾总结只要一表一行，失败重跑的那几次只会让表变长，
+ * 而失败本身已经写在结果（ok: false）和 tries 里了
+ */
+export function mergeTestRun(runs: TaskTestRun[], next: Omit<TaskTestRun, 'tries'>): TaskTestRun[] {
+  const i = runs.findIndex((r) => r.stepId === next.stepId && r.stepName === next.stepName && r.by === next.by)
+  if (i < 0) return [...runs, { ...next, tries: 1 }]
+  return runs.map((r, j) => (j === i ? { ...next, tries: r.tries + 1 } : r))
+}
+
+/** 谁跑的：收尾总结里要能看出哪些步骤是父对话跑的 */
+export function testRunByText(by: TaskTestRun['by']) {
+  return by === 'parent' ? t('父对话') : t('自己')
+}
+
+/**
+ * 推给子对话（和写进提示词）的耗时统计：一行一步，只写步骤名、谁跑的、结果、耗时，
+ * 不贴命令原文、不复述输出。子对话收尾总结里的那张表按它写，不靠模型自己编数字
+ */
+export function testRunLines(runs: TaskTestRun[]) {
+  return runs.map(
+    (r) =>
+      `- ${r.stepName}：${testRunByText(r.by)}跑，${r.ok ? t('通过') : t('失败')}，${fmtDuration(r.durationMs)}${r.tries > 1 ? t('（第 {n} 次，按最后一次算）', { n: r.tries }) : ''}`,
+  )
+}
+
+/**
+ * 收尾总结里的「编译 / 测试耗时」要求：子对话和执行角色的提示词都用这一段，说法只留一处。
+ * 要求带执行方是这次新功能的一部分：同一条步骤可能是父对话跑的，不能让人误以为子对话自己跑过
+ */
+export const TEST_TIME_SUMMARY_RULE = `## 收尾总结里的编译 / 测试耗时
+收尾总结里必须有一份「编译 / 测试耗时」：逐行写步骤名（用项目测试步骤里的名字）、谁跑的（父对话 / 自己）、结果（通过 / 失败 / 跳过）、耗时（例如 \`1m 34s\`），几步就几行：
+- 结果里带了耗时统计（面板按后台命令的真实起止时间记的）时就照它写，不自己换算、不取整成整数。
+- 自己跑过的步骤看后台命令结果里的用时；没跑、或者结果里没有用时的写「未记录」，不要编数字，也不要按印象估。
+- 只写真正跑过的步骤，不贴命令原文、不复述输出；总共几十秒的步骤也照实写，不要省。`
+
 /** 平台判断用的关键词：任务快照里存 process.platform，界面上的判断也按它 */
 export const isWindows = (platform: string) => /^win/i.test(platform)
 
@@ -135,13 +222,28 @@ export function envNote(step: Pick<TestStep, 'env'>, platform: string) {
 }
 
 /** 交给 CLI 的测试步骤原文：名称、环境、命令、工作目录、条件和说明都写清楚 */
-export function testStepsText(steps: TestStep[], platform: string, wslDistro = '') {
+export function testStepsText(
+  steps: TestStep[],
+  platform: string,
+  wslDistro = '',
+  /** 这一份是给谁看的（见 ADR 0018）：子对话不跑标了「在父对话中执行」的步骤，父对话由面板自动跑 */
+  parentRun: 'child' | 'parent' | '' = '',
+) {
   return steps
     .map((s, i) => {
+      // 只有这类步骤真的生效的场合才标「在父对话中执行」：非 Git 项目、共用目录的子对话、工作流节点里
+      // 没人代它跑，标出来只会让 Agent 跳过没人跑的步骤
+      const inParent = !!s.runInParent && !s.merge && !!parentRun
       const lines = [
-        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.merge ? t('，合并时编译') : ''}${s.enabled ? '' : t('，已停用')}）`,
+        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.merge ? t('，合并时编译') : ''}${inParent ? t('，在父对话中执行') : ''}${s.enabled ? '' : t('，已停用')}）`,
         `   - 命令：${stepCommand(s, platform, wslDistro)}`,
       ]
+      // 由父对话跑的步骤只有这一处说清「谁跑」：两边看到的是同一份步骤，说法必须一致
+      if (inParent && parentRun === 'child') lines.push(`   - 由谁执行：父对话（合并后自动跑，结果回传给你；你不要跑）`)
+      if (inParent && parentRun === 'parent')
+        lines.push(
+          `   - 由谁执行：子对话合并后由面板在你的目录里自动跑（结果直接回传子对话）；你自己改代码时没人替你跑，要自己执行`,
+        )
       if (s.cwd) lines.push(`   - 工作目录：${s.cwd}（相对项目根）`)
       lines.push(`   - 适用改动（清单里一个都不匹配就跳过这一步）：${appliesToText(s)}`)
       if (s.when) lines.push(`   - 补充说明：${s.when}`)
@@ -194,21 +296,32 @@ export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = 
  * 对话里怎么验证：按改动大小定范围（参照 Claude Code 的做法，小改动跑完快速检查就收尾）。
  * 只给对话用，工作流里的测试验收节点照常跑完整步骤：走工作流本身就说明改动不小
  */
-export function verifyBlock(steps: TestStep[], o: { platform: string; wslDistro?: string; scaled: boolean }) {
+export function verifyBlock(
+  steps: TestStep[],
+  o: { platform: string; wslDistro?: string; scaled: boolean; parentRun?: 'child' | 'parent' },
+) {
   const active = steps.filter((s) => s.enabled)
   const quick = active.filter((s) => s.quick)
   // 关掉时不分大小，「快速」标记没有意义，不写出来免得 Agent 只跑这几条
   const shown = o.scaled ? active : active.map((s) => ({ ...s, quick: false }))
+  const inParent = parentRunSteps(active)
+  const parentNote = inParent.length
+    ? o.parentRun === 'child'
+      ? `\n这些步骤标了「在父对话中执行」：${inParent.map((s) => `「${s.name}」`).join('、')}。你不要跑它们（跑了也不算数，父对话会重新跑），也不要在结果里写跑过；合并后面板由父对话跑，结果回传给你。你的完成条件是「改动已合回父对话所在的分支 + 父对话测试通过」；父对话测试失败时面板会把报错原文推回来，按它修好再调用 submit_merge。`
+      : o.parentRun === 'parent'
+        ? `\n这些步骤标了「在父对话中执行」：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按清单执行。跑完之前，你计划里等那个子对话的步骤保持等待。`
+        : ''
+    : ''
   const list = active.length
     ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）：
-${testStepsText(shown, o.platform, o.wslDistro)}`
+${testStepsText(shown, o.platform, o.wslDistro, o.parentRun ?? '')}`
     : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
   if (!o.scaled)
     return `## 验证
 这个项目要求每次改动都跑完整的测试步骤：先按改动清单筛出适用的步骤，再按筛选后的顺序全部跑通才说完成。
 ${CHANGED_FILES_RULE}
 
-${list}`
+${list}${parentNote}`
   const fast = quick.length
     ? `只跑标「快速」的步骤（${quick.map((s) => s.name).join('、')}）`
     : '挑一个最快的检查跑（类型检查、lint 或改动文件的语法检查，几十秒内跑完的）'
@@ -220,7 +333,7 @@ ${CHANGED_FILES_RULE}
 - 其他都算大改动：按筛选后的步骤完整跑一遍（太长的放到后台），不要为了保险全部跑一遍。
 - 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
 - 回复里用一句话写明按哪种验证的、跑了什么，跳过的步骤写清原因。
-${list}`
+${list}${parentNote}`
 }
 
 /** 新建项目时的默认步骤：按技术栈给一份够用的，用户确认后保存才生效 */
@@ -241,6 +354,7 @@ export function defaultTestSteps(
     note: '',
     enabled: true,
     merge: false,
+    runInParent: false,
     quick: false,
     ...extra,
   })
