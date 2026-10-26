@@ -3693,23 +3693,27 @@ export function tasksApi(deps: {
     return c.json(saved, 201)
   })
 
-  routes.post('/', async (c) => {
-    const body = await c.req.json().catch(() => null)
-    const p = NewTaskInput.safeParse(body)
-    if (!p.success) return bad(c, z.prettifyError(p.error))
-    const input = p.data
+  /**
+   * 建一个顶层对话并开始执行。界面上的 POST /tasks 和面板自己发起的（定时计划）共用这一条链路：
+   * 校验项目和角色、按项目建独立分支、拷附件、启动执行。
+   * 失败时返回原因和状态码，不抛错：定时器要把原因记到计划里给用户看。
+   */
+  async function createTask(
+    input: NewTaskInput,
+    raw: unknown,
+  ): Promise<{ task: Task } | { error: string; status: 400 | 404 | 409 }> {
     // 没有项目的是 Chat 模式的聊天，只能直接对话
-    if (!input.projectId && input.mode !== 'chat') return bad(c, t('缺少项目'))
+    if (!input.projectId && input.mode !== 'chat') return { error: t('缺少项目'), status: 400 }
     const project = input.projectId ? await deps.projects.get(input.projectId) : chatProject('')
-    if (!project) return bad(c, t('项目不存在'), 404)
+    if (!project) return { error: t('项目不存在'), status: 404 }
     const agents = await deps.agents.list()
     // 子对话：挂在父对话下，固定用任务 Agent，不能再建下一层
     let parent: Task | undefined
     if (input.parentTaskId) {
       parent = (await store.get(input.parentTaskId)) ?? undefined
-      if (!parent) return bad(c, t('父对话不存在'), 404)
-      if (parent.parentTaskId) return bad(c, t('子对话不能再创建子对话'))
-      if (parent.projectId !== input.projectId) return bad(c, t('子对话必须和父对话在同一个项目'))
+      if (!parent) return { error: t('父对话不存在'), status: 404 }
+      if (parent.parentTaskId) return { error: t('子对话不能再创建子对话'), status: 400 }
+      if (parent.projectId !== input.projectId) return { error: t('子对话必须和父对话在同一个项目'), status: 400 }
       input.mode = 'chat'
       input.rootTaskId = parent.rootTaskId || parent.id
     }
@@ -3718,15 +3722,16 @@ export function tasksApi(deps: {
       workflow = input.workflowId
         ? ((await deps.workflows.get(input.workflowId)) ?? undefined)
         : await projectWorkflow(project)
-      if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
+      if (!workflow) return { error: t('项目还没有指定工作流，请选择一个工作流或改用直接对话'), status: 400 }
     } else {
       // 旧界面不传 agentId 时跟着项目的默认对话 Agent；传了空字符串表示不用 Agent 角色
-      if (!(body && typeof body === 'object' && 'agentId' in body) && project.defaultAgentId)
+      if (!(raw && typeof raw === 'object' && 'agentId' in raw) && project.defaultAgentId)
         input.agentId = project.defaultAgentId
-      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的角色'))
+      if (input.agentId && !agents.some((a) => a.id === input.agentId))
+        return { error: t('请选择对话的角色'), status: 400 }
     }
     const lack = chatMissingParams(input, agents)
-    if (lack) return bad(c, lack)
+    if (lack) return { error: lack, status: 400 }
     const params = workflow ? paramsOf(project, workflow.id) : {}
     await refreshAgents()
     const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params, testOpts(project)) : []
@@ -3749,7 +3754,7 @@ export function tasksApi(deps: {
       try {
         draft.worktree = await createWorktree(project.path, draft.id, draft.title)
       } catch (e) {
-        return bad(c, (e as Error).message)
+        return { error: (e as Error).message, status: 400 }
       }
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
@@ -3759,10 +3764,18 @@ export function tasksApi(deps: {
     // 对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await placeInTask(draft, input.attachments ?? [])
     const task = await store.create(draft)
-    return c.json(
-      await start(reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
-      201,
-    )
+    return {
+      task: await start(reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
+    }
+  }
+
+  routes.post('/', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const p = NewTaskInput.safeParse(body)
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    const res = await createTask(p.data, body)
+    if ('error' in res) return bad(c, res.error, res.status)
+    return c.json(res.task, 201)
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -4685,6 +4698,15 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /**
+     * 面板自己新建一个顶层对话（定时计划用）：和 POST /tasks 完全同一条链路，
+     * 失败时抛出原因，由调用方记到计划里。
+     */
+    async startChat(input: NewTaskInput) {
+      const res = await createTask(NewTaskInput.parse(input), input)
+      if ('error' in res) throw new Error(res.error)
+      return res.task
+    },
     /**
      * 子对话给父对话发提问 / 收尾建议：引擎里的 message_parent、suggest_next_step 都走它；
      * 「提问」关着时在这里自动交给父对话决定

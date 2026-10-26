@@ -57,6 +57,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
+import { Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
 import {
@@ -150,6 +151,8 @@ interface Db {
   projects: Project[]
   /** 旧版本的演示数据没有这一项，首次访问时补上示例任务 */
   tasks?: Task[]
+  /** 定时计划；旧版本的演示数据没有这一项，首次访问时补一条「今日工作」 */
+  schedules?: Schedule[]
   settings?: Settings
   /** 在线演示里模拟安装 / 卸载后的 CLI 状态 */
   installed?: Record<string, boolean>
@@ -706,6 +709,10 @@ function load(): Db {
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
   db.globalLessons ??= DEMO_GLOBAL_LESSONS
+  // 旧演示数据里没有计划：补出来的种子计划要马上落盘，否则每次 load 都重新生成一个 id，
+  // 页面上的编辑 / 删除 / 立即执行会找不到这条计划（它已经变成另一条了）
+  const seededSchedules = db.schedules === undefined
+  db.schedules ??= demoSchedulesSeed()
   db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
   // 和正式后端一样：缺哪个内置分类就补哪个（按固定 id，不动用户自建的，也不重复插入）
   const missingCats = builtinProjectCategories().filter((b) => !db!.projectCategories.some((c) => c.id === b.id))
@@ -714,6 +721,7 @@ function load(): Db {
   db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
   ensureDemoCore(db)
+  if (seededSchedules) persist()
   return db
 }
 
@@ -1729,6 +1737,80 @@ function demoProjectSkillsApi(method: string, seg: string[], query: URLSearchPar
   return view()
 }
 
+/** 演示里预置一条「今日工作」计划，打开计划页就不是空的 */
+function demoSchedulesSeed(): Schedule[] {
+  const tpl = workdayTemplate(Date.now())
+  const now = new Date().toISOString()
+  return [
+    Schedule.parse({
+      ...tpl,
+      projectId: '',
+      agentId: '',
+      enabled: true,
+      status: 'pending',
+      lastRunAt: '',
+      lastTaskId: '',
+      missedAt: '',
+      lastError: '',
+      id: `demo-plan-${crypto.randomUUID()}`,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  ]
+}
+
+/**
+ * 在线演示的计划：只在浏览器里读写，和正式后端同一套字段。
+ * 定时不会真的启动对话（演示里没有服务进程），「立即执行」返回空 taskId 让页面提示。
+ */
+function demoSchedules(method: string, seg: string[], body: unknown): unknown {
+  const d = load()
+  const list = (d.schedules ??= [])
+  const [, id, action] = seg
+  if (!id) {
+    if (method === 'POST') {
+      const input = ScheduleInput.parse(body)
+      const now = new Date().toISOString()
+      const item = Schedule.parse({
+        ...input,
+        status: 'pending',
+        lastRunAt: '',
+        lastTaskId: '',
+        missedAt: '',
+        lastError: '',
+        id: `demo-plan-${crypto.randomUUID()}`,
+        createdAt: now,
+        updatedAt: now,
+      })
+      list.push(item)
+      persist()
+      return item
+    }
+    return list
+  }
+  const cur = list.find((s) => s.id === id) ?? fail('计划不存在', 404)
+  if (method === 'DELETE') {
+    d.schedules = list.filter((s) => s.id !== id)
+    persist()
+    return undefined
+  }
+  if (method === 'PUT') {
+    const input = ScheduleInput.parse(body)
+    // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
+    const next = {
+      ...cur,
+      ...input,
+      ...(input.at !== cur.at ? { status: 'pending' as const, missedAt: '', lastError: '' } : {}),
+      updatedAt: new Date().toISOString(),
+    }
+    d.schedules = list.map((s) => (s.id === id ? next : s))
+    persist()
+    return next
+  }
+  if (method === 'POST' && action === 'run') return { schedule: cur, taskId: '' }
+  return fail('不支持的操作')
+}
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -2171,6 +2253,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return seg[2] === 'images' && (seg[4] === 'generate' || seg[4] === 'retry')
       ? demoGenerate(id, seg[3], body ?? {})
       : demoDesigns(method, id, sub, body ?? {})
+  if (res === 'schedules') return demoSchedules(method, seg, body)
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
   // 演示里的 AI 不会请求确认，也不会提问
   if (res === 'asks') return method === 'GET' ? [] : { ok: true }
@@ -2209,7 +2292,7 @@ export async function handle(method: string, url: string, body: unknown) {
 }
 
 // 让类型检查确认演示数据结构与真实 schema 一致
-export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project }
+export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project, Schedule }
 
 // ---- 任务 ----
 /** held：执行中收下、这一轮结束后接着处理的消息（消息已经记进对话） */

@@ -7,7 +7,8 @@
 
 ## 职责
 
-- 页面：项目、任务、工作流、Agent、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 页面：项目、任务、工作流、Agent、计划、设置、图库、ComfyUI、MCP（`web/src/pages/`），不常用的大页面按需加载。
+- 计划面板（`web/src/pages/SchedulesPage.tsx`，左侧导航「计划」）：列出计划并显示状态（待执行 / 已执行 / 已跳过 / 已停用）和下次执行时间，错过的标出 `missedAt`、启动失败的显示 `lastError`；新建和编辑用弹窗（新建默认按 `workdayTemplate()` 填好「今日工作」：每天 19:00），时间用 `datetime-local` 按本机时区编辑（`toLocalInput` / `fromLocalInput`），还有启用开关、立即执行、删除。页面按 `SCHEDULE_TICK_MS` 和服务端同一节奏重新拉取列表。演示版只在 localStorage 里读写同样的字段，定时不会真的启动对话，立即执行只给一句提示。
 - 流程图画布：工作流编辑和任务流程图视图（`web/src/components/flow/`，基于 `@xyflow/react`）。
 - 对话与任务：实时输出分段、步骤状态、上下文和 Token 用量、右侧文件系统面板（`web/src/components/tasks/`、`web/src/components/files/`）。
 - 数据访问和状态：`web/src/lib/data.tsx`（路由和数据上下文）、`web/src/lib/api.ts`（接口调用）。

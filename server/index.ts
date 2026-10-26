@@ -32,6 +32,7 @@ import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
+import { schedulesApi } from './schedules.ts'
 import { taskMemoryApi } from './task-memory.ts'
 import { usageApi } from './usage.ts'
 import { runUsageApi } from './run-usage.ts'
@@ -746,6 +747,9 @@ async function sweepStaleWorktrees() {
 }
 
 app.route('/tasks', tasks.routes)
+// 定时计划：到点由面板自己新建一个对话，走和页面新建任务完全一样的链路
+const schedules = schedulesApi({ startChat: (input) => tasks.startChat(input) })
+app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
 // 会话内存的 AI 分析：采样序列 + 进程面板两路 + 任务树规模，整理成交给本机 CLI 的报告
@@ -977,6 +981,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
   // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
   stopMemorySampler = startMemorySampler()
+  // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）
+  stopSchedules = schedules.start()
   // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
   setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
   setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
@@ -991,6 +997,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
 })
 /** 停掉内存采样的定时器，并把这批点写进历史 */
 let stopMemorySampler: (() => void) | undefined
+/** 停掉定时计划的轮询 */
+let stopSchedules: (() => void) | undefined
 
 /**
  * 退出前停掉正在执行的 CLI，并把任务状态落盘。macOS / Linux 上 CLI 跑在独立的进程组里，
@@ -1002,6 +1010,7 @@ async function shutdown(code = 0) {
   exiting = true
   log.info('server', '正在退出，停止正在执行的任务')
   stopMemorySampler?.()
+  stopSchedules?.()
   server.close()
   await Promise.race([stopRemote(), new Promise((r) => setTimeout(r, 5000))])
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])

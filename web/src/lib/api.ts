@@ -45,6 +45,7 @@ import type {
   TaskProcesses,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
+import type { Schedule, ScheduleInput } from '@shared/schedule'
 import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob } from '@shared/assist'
@@ -468,6 +469,14 @@ export const api = {
   /** 终止对话派出的一个子任务：还在跑的结束，排队的不再开始，按「已终止」交回给对话 */
   stopSubtask: (id: string, step: string) => request<Task>(`/tasks/${id}/subtasks/stop`, json('POST', { step })),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
+  /** 定时计划：到点由面板自己新建对话，存到数据目录的 config/schedules.json */
+  schedules: () => request<Schedule[]>('/schedules'),
+  createSchedule: (input: ScheduleInput) => request<Schedule>('/schedules', json('POST', input)),
+  updateSchedule: (id: string, input: ScheduleInput) => request<Schedule>(`/schedules/${id}`, json('PUT', input)),
+  deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: 'DELETE' }),
+  /** 立即执行一条计划（不改排期）：返回更新后的计划和启动的对话 */
+  runSchedule: (id: string) =>
+    request<{ schedule: Schedule; taskId: string }>(`/schedules/${id}/run`, { method: 'POST' }),
   /** 导入别人导出的任务（连同包里的子对话），只读；projectId 为空放进聊天。返回父任务在前 */
   importTask: (projectId: string, bundle: unknown) =>
     request<Task[]>('/tasks/import', json('POST', { projectId, bundle })),

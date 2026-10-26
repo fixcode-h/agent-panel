@@ -33,6 +33,7 @@ export const DATA_FILES: Record<string, string> = {
   'tags.json': 'config/tags.json',
   'workflows.json': 'config/workflows.json',
   'project-categories.json': 'config/project-categories.json',
+  'schedules.json': 'config/schedules.json',
   'projects.json': 'projects/projects.json',
   'tasks.json': 'tasks/tasks.json',
 }

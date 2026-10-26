@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
   Archive,
+  CalendarClock,
   CircleAlert,
   Bot,
   Code2,
@@ -87,6 +88,7 @@ export function Logo({ className }: { className?: string }) {
 }
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
+  { id: 'schedules', label: t('计划'), icon: CalendarClock },
   { id: 'agents', label: t('角色'), icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },
   { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
