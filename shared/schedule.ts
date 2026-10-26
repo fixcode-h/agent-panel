@@ -7,6 +7,7 @@
  */
 import { z } from 'zod'
 import { getLang, t } from './i18n.ts'
+import { hhmm, ymd } from './datetime.ts'
 
 /** 重复规则：只执行一次 / 每天同一时刻执行 */
 export const ScheduleRepeat = z.enum(['once', 'daily'])
@@ -156,8 +157,7 @@ export function sameMinute(a: string, b: string): boolean {
 export function toLocalInput(iso: string): string {
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${ymd(d)}T${hhmm(d)}`
 }
 
 /** datetime-local 的值 → ISO 字符串；空值或解析不了时返回空字符串 */
@@ -216,9 +216,6 @@ const EVENING_HOUR = 18
 /** 超过这个时长就不写相对时间，只留绝对时间（「28 天后」没人算得出来是哪天） */
 const RELATIVE_MAX_DAYS = 30
 
-const pad2 = (n: number) => String(n).padStart(2, '0')
-/** 时分：固定 24 小时制，不跟着系统语言变，和界面其它时间一致 */
-const clockOf = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 /** 两个时刻相差几个自然日（按本地日历算，跨夏令时也不会差一天） */
 function dayGap(target: Date, base: Date): number {
   const a = new Date(target.getFullYear(), target.getMonth(), target.getDate())
@@ -249,7 +246,7 @@ export function whenLabel(iso: string, now = Date.now()): string {
                 month: 'long',
                 day: 'numeric',
               })
-  return t('{day} {time}', { day, time: clockOf(d) })
+  return t('{day} {time}', { day, time: hhmm(d) })
 }
 
 /** 还有多久：「已到点」「12 分钟后」「3 小时后」「5 天后」；太远的不写 */

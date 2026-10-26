@@ -1,5 +1,6 @@
 import type { DataUsage, MemorySample, MemoryUsage } from './data.ts'
 import { fmtDuration } from './duration.ts'
+import { hhmm } from './datetime.ts'
 
 /**
  * 内存采样怎么显示、怎么交给 AI 分析。
@@ -25,7 +26,7 @@ export const formatUptime = fmtDuration
 export function formatSampleTime(at: string, now = new Date()) {
   const d = new Date(at)
   if (Number.isNaN(d.getTime())) return ''
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const hm = hhmm(d)
   if (d.toDateString() === now.toDateString()) return hm
   return `${d.getMonth() + 1}-${d.getDate()} ${hm}`
 }

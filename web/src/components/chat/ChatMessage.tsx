@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Quote } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { copyText as clipboardCopy } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
@@ -75,12 +76,11 @@ export function CopyButton({
       title={done ? t('已复制') : (label ?? t('复制'))}
       aria-label={label ?? t('复制')}
       onClick={() => {
-        void Promise.resolve(navigator.clipboard?.writeText(attachments ? copyText(text, attachments) : text)).then(
-          () => {
-            setDone(true)
-            setTimeout(() => setDone(false), 1500)
-          },
-        )
+        void clipboardCopy(attachments ? copyText(text, attachments) : text, { fail: false }).then((ok) => {
+          if (!ok) return
+          setDone(true)
+          setTimeout(() => setDone(false), 1500)
+        })
       }}
     >
       {done ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import type { FileContent, FileDiff } from '@shared/files'
 import { api } from '@/lib/api'
@@ -291,12 +292,7 @@ export function ProjectFileDialog({
                 size="icon-sm"
                 aria-label={t('复制路径')}
                 title={t('复制路径')}
-                onClick={() =>
-                  navigator.clipboard
-                    ?.writeText(file?.path || target?.path || '')
-                    .then(() => toast.success(t('已复制')))
-                    .catch(() => {})
-                }
+                onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
               >
                 <Copy className="h-4 w-4" />
               </Button>

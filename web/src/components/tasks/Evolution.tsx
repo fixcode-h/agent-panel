@@ -31,6 +31,7 @@ import { useData } from '@/lib/data'
 import { openAiWindow } from '@/lib/ai-window'
 import { fixHead, fixState } from '@/lib/analysis-report'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -121,12 +122,8 @@ function sourcePrompt(r: ResolvedChange, agents: Agent[]) {
     .join('\n\n')
 }
 
-function copyText(text: string) {
-  void navigator.clipboard.writeText(text).then(
-    () => toast.success(t('已复制')),
-    () => toast.error(t('复制失败')),
-  )
-}
+/** 结果卡片上的复制：成功提示「已复制」，失败提示「复制失败」 */
+const copyResult = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
 const itemAction =
   'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg'
@@ -157,7 +154,7 @@ function ItemActions({ text, stop }: { text: () => string; stop?: boolean }) {
         aria-label={t('复制')}
         onClick={(e) => {
           if (stop) e.stopPropagation()
-          copyText(text())
+          copyResult(text())
         }}
       >
         <Copy className="h-3.5 w-3.5" />
@@ -478,7 +475,7 @@ export function EvolutionReport({
         <Quote className="h-3.5 w-3.5" />
         {t('全部引用')}
       </button>
-      <button type="button" onClick={() => copyText(text())} className={headButton}>
+      <button type="button" onClick={() => copyResult(text())} className={headButton}>
         <Copy className="h-3.5 w-3.5" />
         {t('复制')}
       </button>

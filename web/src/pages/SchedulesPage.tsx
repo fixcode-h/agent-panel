@@ -19,6 +19,7 @@ import {
   type ScheduleRepeat,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
+import { pad2 } from '@shared/datetime'
 import { listableAgents } from '@shared/builtin/core'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -36,7 +37,7 @@ const DEMO = !!import.meta.env.VITE_DEMO
 /** 启动失败的原文超过这个长度才给「展开全文」：窄屏一行大约只放得下这么多字，再长会被截掉 */
 const ERROR_PREVIEW_CHARS = 30
 /** 模板时间文案：从 WORKDAY_PLAN 算，模板改成别的时刻这里跟着变 */
-const WORKDAY_TIME = `${WORKDAY_PLAN.hour}:${String(WORKDAY_PLAN.minute).padStart(2, '0')}`
+const WORKDAY_TIME = `${WORKDAY_PLAN.hour}:${pad2(WORKDAY_PLAN.minute)}`
 
 const toInput = (s: Schedule): ScheduleInput => ({
   name: s.name,

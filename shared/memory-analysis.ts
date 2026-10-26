@@ -2,6 +2,8 @@ import type { MemoryPoint, TaskProcess } from './schema.ts'
 import { t } from './i18n.ts'
 import { formatBytes, formatUptime } from './memory.ts'
 import { fmtDuration } from './duration.ts'
+import { clip as clipText } from './text.ts'
+import { hhmm } from './datetime.ts'
 
 /**
  * 会话内存的 AI 分析与进程归属：会话内存曲线（`web/src/components/tasks/MemoryChart.tsx`）和
@@ -194,7 +196,7 @@ const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(
 
 function sampleTime(t: number) {
   const d = new Date(t)
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const hm = hhmm(d)
   return d.toDateString() === new Date().toDateString() ? hm : `${d.getMonth() + 1}-${d.getDate()} ${hm}`
 }
 
@@ -316,6 +318,5 @@ export const TASK_MEMORY_ASK =
 
 /** 报告进 FixInput.context（上限 8000 字）：超了截断并说明，不整段丢掉 */
 export function clipReport(text: string, max = 7600) {
-  if (text.length <= max) return text
-  return `${text.slice(0, max)}\n…（报告太长，后面省略）`
+  return clipText(text, max, { mark: () => '\n…（报告太长，后面省略）' })
 }

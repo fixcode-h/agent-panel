@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { AlertTriangle, Copy, RotateCw } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import { Button } from './button'
 
@@ -53,12 +53,7 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; key?:
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
-              navigator.clipboard
-                ?.writeText(detail)
-                .then(() => toast.success(t('已复制错误信息')))
-                .catch(() => {})
-            }
+            onClick={() => void copyText(detail, { done: t('已复制错误信息'), fail: false })}
           >
             <Copy className="h-3.5 w-3.5" />
             {t('复制错误信息')}
