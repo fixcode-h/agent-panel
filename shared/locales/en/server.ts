@@ -241,7 +241,8 @@ export const EN_SERVER: Record<string, string> = {
   这个请求已经结束了: 'This request has already ended',
 
   // 更新面板
-  'GitHub 返回 {status}（访问太频繁，稍后再试）': 'GitHub returned {status} (rate limited, try again later)',
+  'GitHub 返回 {status}（访问太频繁，约 {minutes} 分钟后恢复）':
+    'GitHub returned {status} (rate limited; try again in about {minutes} minutes)',
   'GitHub 返回 {status}': 'GitHub returned {status}',
   下载中: 'Downloading',
   '等待任务结束（还有 {n} 个）': 'Waiting for tasks to finish ({n} still running)',

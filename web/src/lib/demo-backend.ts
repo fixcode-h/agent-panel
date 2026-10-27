@@ -82,7 +82,15 @@ import { descendantTotals } from '@shared/task-export'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { LESSON_REVIEW_LANG, applyReviewItem, parseLessonReview } from '@shared/lesson-review'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
-import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
+import {
+  REPO,
+  minutesUntil,
+  pickUpdate,
+  rateLimitUntil,
+  type AppRelease,
+  type AppReleases,
+  type InterruptedTasks,
+} from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import { childAskEffect } from '@shared/child-ask'
@@ -4489,16 +4497,31 @@ function demoAlerts(task: Task) {
   )
 }
 
+/** 演示版把上次读到的发布列表记在浏览器里：没有服务端的缓存文件，限流时靠它回退 */
+const RELEASES_CACHE_KEY = 'agent-panel-demo-releases'
+
+function demoReleasesCache(): AppRelease[] {
+  try {
+    const c = JSON.parse(localStorage.getItem(RELEASES_CACHE_KEY) ?? '')
+    return Array.isArray(c?.list) ? (c.list as AppRelease[]) : []
+  } catch {
+    return []
+  }
+}
+
 /**
  * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域），当作最新发布的版本；不能安装。
+ * 和正式后端一样，GitHub 限流时退回上次的结果并带上 limitedUntil，页面显示温和提示而不是失败。
  */
 async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
   // 演示里不会真的强制更新，也就没有被打断的任务
   if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
   let list: AppRelease[] = []
+  let limitedUntil: string | undefined
+  let res: Response | null = null
   try {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
+    res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
     if (!res.ok) throw new Error(`GitHub 返回 ${res.status}`)
     list = ((await res.json()) as any[])
       .filter((r) => !r.draft)
@@ -4518,13 +4541,35 @@ async function demoApp(url: string): Promise<unknown> {
       })
       .filter((r) => r.tarUrl)
       .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+    try {
+      localStorage.setItem(RELEASES_CACHE_KEY, JSON.stringify({ at: Date.now(), list }))
+    } catch {
+      // 存不下（隐私模式等）不影响这次显示，只是限流时没法回退
+    }
   } catch (e) {
-    return {
-      current: '',
-      packaged: false,
-      releases: [],
-      error: `检查更新失败：${(e as Error).message}`,
-    } satisfies AppReleases
+    const cached = demoReleasesCache()
+    if (res && (res.status === 403 || res.status === 429)) {
+      const until = rateLimitUntil(res)
+      if (cached.length) {
+        list = cached
+        limitedUntil = new Date(until).toISOString()
+      } else {
+        // 和正式后端一样说清大概什么时候恢复，而不是只给一个状态码
+        return {
+          current: '',
+          packaged: false,
+          releases: [],
+          error: `检查更新失败：GitHub 返回 ${res.status}（访问太频繁，约 ${minutesUntil(until)} 分钟后恢复）`,
+        } satisfies AppReleases
+      }
+    } else {
+      return {
+        current: '',
+        packaged: false,
+        releases: [],
+        error: `检查更新失败：${(e as Error).message}`,
+      } satisfies AppReleases
+    }
   }
   const current = list[0]?.version ?? ''
   if (url.startsWith('/app/version')) return { current, packaged: false }
@@ -4532,6 +4577,7 @@ async function demoApp(url: string): Promise<unknown> {
     current,
     packaged: false,
     checkedAt: new Date().toISOString(),
+    limitedUntil,
     releases: list.slice(0, 5),
     update: pickUpdate(current, list),
   } satisfies AppReleases
