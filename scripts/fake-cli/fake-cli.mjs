@@ -1582,6 +1582,10 @@ if (kind === 'claude') {
   })
   // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
   if (input.includes('ASK') && streamIn) {
+    // 照真实 CLI 的行为模拟：bypass 模式少了 --permission-prompt-tool 时不暴露 AskUserQuestion，
+    // 提问只能变成文字；跳过确认时审批也不经过面板。回归时 e2e 才能发现提问通道又丢了
+    const bypass = args.includes('--dangerously-skip-permissions')
+    const canAsk = !bypass || args.includes('--permission-prompt-tool')
     const ask = async (name, toolInput) => {
       const id = randomUUID()
       out({
@@ -1594,14 +1598,17 @@ if (kind === 'claude') {
         if (m.type === 'control_response' && m.response.request_id === id) return m.response.response
       }
     }
-    const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
-    const a2 = await ask('AskUserQuestion', {
-      questions: [
-        { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
-        { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
-      ],
-    })
-    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
+    const a1 = bypass ? null : await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
+    const a2 = canAsk
+      ? await ask('AskUserQuestion', {
+          questions: [
+            { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
+            { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
+          ],
+        })
+      : null
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2].filter(Boolean)) + '\n')
   }
   out({
     type: 'assistant',
