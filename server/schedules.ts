@@ -14,6 +14,7 @@ import {
   afterMiss,
   afterRun,
   alignScheduleAt,
+  appendRun,
   dependencyBlocker,
   orderByDependency,
   pickDue,
@@ -23,6 +24,7 @@ import {
   SCHEDULE_TICK_MS,
   Schedule,
   ScheduleInput,
+  type ScheduleRun,
 } from '../shared/schedule.ts'
 import { NewTaskInput, type Task } from '../shared/schema.ts'
 import type { ScheduleDelivery, ScheduleEvent } from '../shared/schedule.ts'
@@ -56,6 +58,7 @@ const EMPTY_STATE = {
   blockedReason: '',
   // create 不经过 schema 解析：这里显式给一份，读出来的新计划和旧计划字段一致
   lastDelivery: null,
+  runs: [] as ScheduleRun[],
 }
 
 export function schedulesApi(deps: {
@@ -96,14 +99,16 @@ export function schedulesApi(deps: {
    * 用快照算出来的 at / missedAt 写回去会跟用户的新排期打架。
    * 「改没改排期」和 PUT 用同一个口径（sameMinute）：界面上的时间只到分钟，
    * 用户只改名字、带秒的时间被截成整分时，不能当成换了排期（否则单次的 done 会被丢掉、下一轮又启动一次）。
+   * run 是这次运行的记录：它是已经发生的事实，不归排期计算管，用户改过排期也照常追加。
    */
-  async function writeBack(id: string, snapshotAt: string, patch: Partial<Schedule>) {
+  async function writeBack(id: string, snapshotAt: string, patch: Partial<Schedule>, run?: ScheduleRun) {
     const latest = await store.get(id)
     if (!latest) return null
-    if (sameMinute(latest.at, snapshotAt)) return store.update(id, patch)
+    const withRun = run ? { ...patch, runs: appendRun(latest.runs, run) } : patch
+    if (sameMinute(latest.at, snapshotAt)) return store.update(id, withRun)
     // 排期被改过：这次判定算出来的时间、状态和「谁没跑成」都归用户的新排期管，不能写回——
     // 尤其 blockedAt 存的是快照里的旧 at，single 计划还会被写成 skipped，用户新排的时间就永远不会执行
-    const { at, missedAt, blockedAt, blockedReason, status, ...rest } = patch
+    const { at, missedAt, blockedAt, blockedReason, status, ...rest } = withRun
     return store.update(id, rest)
   }
 
@@ -135,16 +140,33 @@ export function schedulesApi(deps: {
 
   /** 到点启动对话；失败的原因记进计划，用户下次打开列表就能看到 */
   async function launch(s: Schedule, now: number) {
+    const happenedAt = new Date(now).toISOString()
     try {
       const task = await deps.startChat(startInput(s))
-      const saved = (await writeBack(s.id, s.at, afterRun(s, now, task.id))) ?? s
+      const saved =
+        (await writeBack(s.id, s.at, afterRun(s, now, task.id), {
+          at: s.at,
+          happenedAt,
+          event: 'run',
+          manual: false,
+          taskId: task.id,
+          error: '',
+        })) ?? s
       log.info('schedule', '计划已启动对话', { schedule: s.id, name: s.name, task: task.id })
       notify('run', saved, s.at)
       return { schedule: saved, taskId: task.id }
     } catch (e) {
       const error = (e as Error).message
       // 启动失败也要把时间往后推，否则每次轮询都会重试、一直刷同一条错误
-      const saved = (await writeBack(s.id, s.at, afterFail(s, now, error))) ?? s
+      const saved =
+        (await writeBack(s.id, s.at, afterFail(s, now, error), {
+          at: s.at,
+          happenedAt,
+          event: 'fail',
+          manual: false,
+          taskId: '',
+          error,
+        })) ?? s
       log.warn('schedule', '计划启动对话失败', { schedule: s.id, name: s.name, error })
       notify('fail', saved, s.at)
       return { schedule: saved, taskId: '' }
@@ -166,9 +188,17 @@ export function schedulesApi(deps: {
         const i = all.findIndex((x) => x.id === saved.id)
         if (i >= 0) all[i] = saved
       }
+      const happenedAt = new Date(now).toISOString()
       for (const s of missed) {
         // 一条写失败不能中断整轮：后面到点的计划还要启动
-        const saved = await writeBack(s.id, s.at, afterMiss(s, now)).catch((e) => {
+        const saved = await writeBack(s.id, s.at, afterMiss(s, now), {
+          at: s.at,
+          happenedAt,
+          event: 'miss',
+          manual: false,
+          taskId: '',
+          error: '',
+        }).catch((e) => {
           log.warn('schedule', '记录错过时写盘失败', { schedule: s.id, error: (e as Error).message })
           return null
         })
@@ -185,7 +215,14 @@ export function schedulesApi(deps: {
         // 上游没成功就不启动，把原因写进计划给用户看，不静默跳过
         const reason = dependencyBlocker(s, all, now, started)
         if (reason) {
-          const saved = await writeBack(s.id, s.at, afterBlocked(s, now, reason)).catch((e) => {
+          const saved = await writeBack(s.id, s.at, afterBlocked(s, now, reason), {
+            at: s.at,
+            happenedAt,
+            event: 'blocked',
+            manual: false,
+            taskId: '',
+            error: reason,
+          }).catch((e) => {
             log.warn('schedule', '记录上游没成功时写盘失败', { schedule: s.id, error: (e as Error).message })
             return null
           })
@@ -213,18 +250,25 @@ export function schedulesApi(deps: {
   async function runNow(id: string, now = Date.now()) {
     const s = await store.get(id)
     if (!s) return null
+    const happenedAt = new Date(now).toISOString()
     try {
       const task = await deps.startChat(startInput(s))
+      // 启动对话期间计划可能被改过：历史追加到最新一份上，不覆盖用户这期间的改动
+      const latest = (await store.get(id)) ?? s
+      const run: ScheduleRun = { at: '', happenedAt, event: 'run', manual: true, taskId: task.id, error: '' }
       const saved = await store.update(id, {
-        lastRunAt: new Date(now).toISOString(),
+        lastRunAt: happenedAt,
         lastTaskId: task.id,
         lastError: '',
+        runs: appendRun(latest.runs, run),
       })
       log.info('schedule', '手动执行计划', { schedule: id, name: s.name, task: task.id })
       return { schedule: saved ?? s, taskId: task.id }
     } catch (e) {
       const error = (e as Error).message
-      const saved = await store.update(id, { lastError: error })
+      const latest = (await store.get(id)) ?? s
+      const run: ScheduleRun = { at: '', happenedAt, event: 'fail', manual: true, taskId: '', error }
+      const saved = await store.update(id, { lastError: error, runs: appendRun(latest.runs, run) })
       log.warn('schedule', '手动执行计划失败', { schedule: id, name: s.name, error })
       return { schedule: saved ?? s, taskId: '' }
     }

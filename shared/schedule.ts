@@ -7,7 +7,7 @@
  */
 import { z } from 'zod'
 import { getLang, t } from './i18n.ts'
-import { hhmm, ymd } from './datetime.ts'
+import { hhmm, pad2, ymd } from './datetime.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
@@ -80,6 +80,35 @@ export const ScheduleDelivery = z.object({
 })
 export type ScheduleDelivery = z.infer<typeof ScheduleDelivery>
 
+/**
+ * 每条计划保留的运行记录条数：卡片上展开「运行记录」看最近几次，更早的到对应的对话里看。
+ * 记录只是展示用的补充，分组和「最近一次结果」仍按 outcomeOf 判，不读它。
+ */
+export const SCHEDULE_RUN_HISTORY = 10
+
+/**
+ * 一次运行的结果：到点启动成功 / 启动失败 / 错过 / 上游没成功。
+ * manual 为 true 表示这次是用户点了「立即执行」，不是排期到点触发的。
+ */
+export const ScheduleRun = z.object({
+  /** 排期到点的时间；手动执行时为空（它不对应某一次排期） */
+  at: z.string().default(''),
+  /** 实际发生的时间 */
+  happenedAt: z.string(),
+  event: ScheduleEvent,
+  manual: z.boolean().default(false),
+  /** 这次启动的对话；失败 / 错过 / 上游没成功时为空 */
+  taskId: z.string().default(''),
+  /** 失败原因，或错过 / 上游没成功的原因；直接显示给用户 */
+  error: z.string().default(''),
+})
+export type ScheduleRun = z.infer<typeof ScheduleRun>
+
+/** 往运行记录里加一条：新的在前，只留最近 SCHEDULE_RUN_HISTORY 条 */
+export function appendRun(runs: ScheduleRun[] | undefined, run: ScheduleRun): ScheduleRun[] {
+  return [run, ...(runs ?? [])].slice(0, SCHEDULE_RUN_HISTORY)
+}
+
 export const Schedule = ScheduleInput.extend({
   id: z.string(),
   status: ScheduleStatus.default('pending'),
@@ -97,6 +126,8 @@ export const Schedule = ScheduleInput.extend({
   blockedReason: z.string().default(''),
   /** 最近一次 Webhook 投递的结果；没开 Webhook 或没配地址时为空 */
   lastDelivery: ScheduleDelivery.nullable().default(null),
+  /** 最近几次运行（新的在前，最多 SCHEDULE_RUN_HISTORY 条）；旧数据没有这个字段，读盘时补空数组 */
+  runs: z.array(ScheduleRun).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -413,6 +444,11 @@ export const WORKDAY_PLAN = { name: '今日工作', hour: 19, minute: 0 }
 const WORKDAY_PROMPT =
   '总结今天做的工作：查看今天在各项目里完成的任务、改动的文件和遇到的问题，整理成一份简短的工作总结。'
 
+/** 模板时刻的文案（「19:00」）：空状态和编辑弹窗共用，模板改了这里跟着变 */
+export function workdayTimeLabel(): string {
+  return `${WORKDAY_PLAN.hour}:${pad2(WORKDAY_PLAN.minute)}`
+}
+
 /** 下一个「今天 / 明天 19:00」：用户新建计划时预填的时间，过了今天 19:00 就是明天 */
 export function workdayTemplate(now: number): Pick<ScheduleInput, 'name' | 'prompt' | 'repeat' | 'at'> {
   const d = new Date(now)
@@ -477,6 +513,24 @@ export function outcomeOf(s: Schedule): ScheduleOutcome {
 /** 到点还会不会自动执行：停用、单次已执行完 / 已跳过、单次启动失败都没有下一次 */
 export function willRunAgain(s: Schedule): boolean {
   return s.enabled && s.status === 'pending'
+}
+
+/**
+ * 下一次会自动执行的计划：所有还会自动执行的计划里 at 最早的一条（出过问题但没停用的也算）。
+ * 概览的「下一次执行」和「待执行」计数要用同一个集合：只从「即将执行」组取的话，
+ * 错过过的每天计划在「出过问题」组里、今晚照样会跑，却不会成为「下一次执行」，和计数自相矛盾。
+ */
+export function nextToRun(list: Schedule[]): Schedule | undefined {
+  let best: Schedule | undefined
+  let bestAt = Infinity
+  for (const s of list) {
+    if (!willRunAgain(s)) continue
+    const at = Date.parse(s.at)
+    if (!Number.isFinite(at) || at >= bestAt) continue
+    best = s
+    bestAt = at
+  }
+  return best
 }
 
 /**
@@ -594,6 +648,16 @@ export function groupLabel(group: ScheduleGroup): string {
     disabled: t('已停用'),
     finished: t('不会再执行'),
   }[group]
+}
+
+/** 运行记录每条结果的短标签（卡片上的历史列表用）；「最近一次结果」仍用 outcomeTitle */
+export function runLabel(run: ScheduleRun): string {
+  return {
+    run: t('启动成功'),
+    fail: t('启动失败'),
+    miss: t('错过'),
+    blocked: t('未启动'),
+  }[run.event]
 }
 
 /** 最近一次结果的短标签（卡片徽标用）；详细的一句用 outcomeLabel */

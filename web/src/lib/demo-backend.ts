@@ -67,7 +67,7 @@ import {
   type DataKind,
   type MemoryUsage,
 } from '@shared/data'
-import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { alignScheduleAt, appendRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -1917,6 +1917,10 @@ function demoSchedulesSeed(): Schedule[] {
       lastTaskId: '',
       missedAt: '',
       lastError: '',
+      blockedAt: '',
+      blockedReason: '',
+      lastDelivery: null,
+      runs: [],
       id: `demo-plan-${crypto.randomUUID()}`,
       createdAt: now,
       updatedAt: now,
@@ -1948,6 +1952,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
         blockedAt: '',
         blockedReason: '',
         lastDelivery: null,
+        runs: [],
         id: `demo-plan-${crypto.randomUUID()}`,
         createdAt: now,
         updatedAt: now,
@@ -1983,8 +1988,16 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   }
   if (method === 'POST' && action === 'run') {
     // 演示里不会真的启动对话（taskId 为空，页面会提示），但字段变化和正式后端同一个口径：
-    // 走 afterRun——单次变 done、每天把 at 往后推、清掉上次的错误和旧对话入口
-    const next = { ...cur, ...afterRun(cur, Date.now(), '') }
+    // 立即执行不改排期，只记下这次启动（没有对话可开，lastTaskId 留空）
+    const happenedAt = new Date().toISOString()
+    const next = {
+      ...cur,
+      lastRunAt: happenedAt,
+      lastTaskId: '',
+      lastError: '',
+      runs: appendRun(cur.runs, { at: '', happenedAt, event: 'run', manual: true, taskId: '', error: '' }),
+      updatedAt: happenedAt,
+    }
     d.schedules = list.map((s) => (s.id === id ? next : s))
     persist()
     return { schedule: next, taskId: '' }
