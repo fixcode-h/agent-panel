@@ -17,33 +17,33 @@
 
 ## 三层边界（本模块的核心口径）
 
-| 层 | 判定 | 入口 | 预算 |
-| --- | --- | --- | --- |
-| 纯函数 | 不启动服务、不建临时目录、不跑 git、不开子进程 | `npm run test:unit` 的非集成文件 | 按用例数设上限 |
-| 集成 | 起 Hono 服务、`mkdtemp`、执行 git、`spawn` 子进程、连真实 CLI（`server/` 下 72 个测试文件含这类特征） | 同上，文件名后缀 `*.integration.test.ts` | 按用例数设上限 |
-| e2e | `scripts/e2e/` 下由总入口调度的分片，用假 CLI 跑完整面板流程 | `npm run test:e2e` | 按分片数与每片步骤数设上限 |
+| 层     | 判定                                                                                                  | 入口                                     | 预算                       |
+| ------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------- |
+| 纯函数 | 不启动服务、不建临时目录、不跑 git、不开子进程                                                        | `npm run test:unit` 的非集成文件         | 按用例数设上限             |
+| 集成   | 起 Hono 服务、`mkdtemp`、执行 git、`spawn` 子进程、连真实 CLI（`server/` 下 72 个测试文件含这类特征） | 同上，文件名后缀 `*.integration.test.ts` | 按用例数设上限             |
+| e2e    | `scripts/e2e/` 下由总入口调度的分片，用假 CLI 跑完整面板流程                                          | `npm run test:e2e`                       | 按分片数与每片步骤数设上限 |
 
-分层、预算、并发、重试的**规划**见 change `docs/openspec/changes/test-governance-budget-and-parallel-safety/`（`design.md` 的 D1–D10）。在该 change 合入前，代码里仍是现状：没有 `*.integration.test.ts` 后缀、没有预算脚本、没有自适应并发。
+分层、预算、并发、重试的**规划**见 change `docs/openspec/changes/test-governance-budget-and-parallel-safety/`（`design.md` 的 D1–D11）。在该 change 合入前，代码里仍是现状：没有 `*.integration.test.ts` 后缀、没有预算脚本、没有自适应并发。
 
 ## 分片结构
 
 - 端到端：`scripts/e2e/01-settings.mjs` 到 `scripts/e2e/14-accounts.mjs`（当前 13 个分片，编号 01–08、10–14，没有 09）；总入口按 `^\d+-.*\.mjs$` 收集，可传前缀只跑部分（`npm run test:e2e -- 03 07`）。
-- 界面检查：`scripts/ui/01-composer.mjs` 到 `10-toast`（12 个分片，任务页拆成 `02` / `02b` / `02c` / `02d`）；分片覆盖的源码前缀登记在 `scripts/ui/covers.mjs`，新加分片必须同步，否则改到对应源码时选择脚本映射不出来。
+- 界面检查：`scripts/ui/01-composer.mjs` 到 `10-toast`（12 个分片，任务页拆成 `02` / `02b` / `02c` / `02d`）；分片覆盖的源码前缀登记在 `scripts/ui/covers.mjs`。两层校验不同：分片文件能否被 `scripts/ui-check.mjs` 的 `SHARD_FILE` 收录、截图前缀能否认得出是**硬门禁**（`scripts/rules-check.mjs` 第 14 条，对不上 `npm run lint` 失败）；`covers.mjs` 的登记对不上只打一句提示、不影响本次结果（有意保留，允许加片和补映射分两次提交，代价是改到对应源码时增量选择映射不出来）。
 - 两者都是「一个分片一个进程」：自己的服务、浏览器、临时数据目录，分片之间不能有依赖。
 
 ## 怎么跑
 
-| 目的 | 命令 |
-| --- | --- |
-| 全量单测 | `npm run test:unit` |
-| 只跑指定单测文件 | `node scripts/unit-tests.mjs --files a.test.ts,b.test.ts` |
-| 只跑计时文件（串行） | `npm run test:unit:timing` |
-| 按影响面跑增量 | `npm run test:affected -- --since <任务基线>` |
-| 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04） |
-| 只跑部分端到端分片 | `npm run test:e2e -- 03 07` |
-| 全量界面检查 | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下） |
-| 只跑部分界面分片 | `node scripts/ui-check.mjs 08-misc` |
-| 改动 → 要跑什么 | `node scripts/changed-tests.mjs --since <基线>` |
+| 目的                             | 命令                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| 全量单测                         | `npm run test:unit`                                                           |
+| 只跑指定单测文件                 | `node scripts/unit-tests.mjs --files a.test.ts,b.test.ts`                     |
+| 只跑计时文件（串行）             | `npm run test:unit:timing`                                                    |
+| 按影响面跑增量                   | `npm run test:affected -- --since <任务基线>`                                 |
+| 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04）    |
+| 只跑部分端到端分片               | `npm run test:e2e -- 03 07`                                                   |
+| 全量界面检查                     | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下） |
+| 只跑部分界面分片                 | `node scripts/ui-check.mjs 08-misc`                                           |
+| 改动 → 要跑什么                  | `node scripts/changed-tests.mjs --since <基线>`                               |
 
 ## 怎么加用例
 
@@ -58,6 +58,7 @@
 
 - 单测计时类用例偶发失败时，**只重跑失败的那个文件**，最多 3 次尝试；3 次仍失败按真失败处理，把用例名和输出写进结果，不要重跑整套。
 - 反复失败且依赖真实时钟的文件进 `TIMING_FILES` 串行清单，但每个条目要有证据（断言位置 + 失败记录）；清单不是并发问题的首选修复手段。
+- **串行 ≠ 稳定**：清单只降低与其他测试文件抢 CPU 的概率，不能消除真实时钟漂移——`server/background.test.ts` 的 `Date.now()` 窗口断言曾在串行批里以 5599ms 超 4000ms 失败。这类断言要先按 change 的 `test-execution-stability` 规范改造（注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍），再谈移出清单；不要用「换个批次」收尾。
 - e2e / 界面检查失败先看分片名和它自己的数据目录，再决定重跑那一片；不要整轮重跑。
 
 ## 依赖

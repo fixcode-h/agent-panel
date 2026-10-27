@@ -4,21 +4,28 @@
 
 让测试结果不依赖运行机器的语言、平台与残留状态：默认语言固定、断言语言无关、e2e 只在 WSL 跑、演示与正式后端字段一致、继承环境先清干净。
 
+归属：`npm run test:unit`、`npm run test:e2e` 与界面检查入口的默认语言环境由父对话统一实施（`AGENT_PANEL_LANG` 一处接入，当前仓库还没有这个变量），另一条父对话不动 `scripts/unit-tests.mjs`；本 change 只负责断言侧与 CI 显式 locale，执行前先告知父对话。全局 `setLang('zh')` 无效：`server/lang.ts` 的 `applyServerLang()` 在模块加载时按 settings.language 与 `LANG` 重设语言。
+
 ## ADDED Requirements
 
 ### Requirement: Default English locale
 
-`npm run test:unit`、`npm run test:e2e` 和界面检查入口 MUST 在默认英文语言环境下运行（`LANG`、`LC_ALL` 为 `C.UTF-8` 或等价英文 locale），不得依赖宿主机设置。CI MUST 固定英文环境。显式覆盖语言时 MUST 在日志里打印实际使用的 locale。
+`npm run test:unit`、`npm run test:e2e` 和界面检查入口 MUST 默认运行在与 CI 一致的语言环境（英文 locale，`LANG`、`LC_ALL` 为 `C.UTF-8` 或等价值），不得依赖宿主机设置；CI MUST 固定同一套英文环境。需要中文的用例 MUST 显式局部覆盖（`AGENT_PANEL_LANG=zh`，或断言侧用 `t()` 现算），MUST NOT 用全局 `setLang` 切语言。入口 MUST 在日志里打印实际 locale 与来源。
 
 #### Scenario: 默认运行使用英文环境
 
 - **WHEN** 在中文 locale 的机器上直接运行 `npm run test:unit`
 - **THEN** 运行日志显示实际 locale 为英文，用例全部通过，不出现依赖中文输出的断言失败
 
-#### Scenario: 显式覆盖被记录
+#### Scenario: 需要中文的用例局部覆盖
 
-- **WHEN** 用户设置 `LANG=zh_CN.UTF-8` 运行测试
-- **THEN** 日志打印实际 locale 与覆盖来源，相关用例按中文环境执行
+- **WHEN** 某个用例必须断言中文文案
+- **THEN** 它单独设 `AGENT_PANEL_LANG=zh`，或断言侧用 `t('中文原文')` 现算，不影响其他用例的语言环境；日志打印实际 locale 与局部覆盖来源
+
+#### Scenario: 全局 setLang 被覆盖、判为无效写法
+
+- **WHEN** 用例里写 `setLang('zh')` 想切到中文
+- **THEN** 判为无效写法（`server/lang.ts` 的 `applyServerLang()` 在模块加载时会按 settings.language 与 `LANG` 重设，`setLang` 被覆盖），改用 `AGENT_PANEL_LANG=zh` 或 `t()` 现算
 
 #### Scenario: CI 固定英文
 
