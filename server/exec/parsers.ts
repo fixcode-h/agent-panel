@@ -63,7 +63,22 @@ export type CliEvent =
   | { type: 'todos'; todos: { text: string; status: 'pending' | 'running' | 'done' }[] }
   | { type: 'error'; message: string }
   /** 不影响这一轮结果、但用户应该看到的情况（CLI 自动重试、面板工具没接上）；failed 时标成失败的样子 */
-  | { type: 'notice'; text: string; failed?: boolean }
+  /**
+   * kind 只在重试类上给（retry / retry_failed）：界面靠它把「正在重试」收成已恢复、按原因给出下一步；
+   * attempt / maxAttempts / error 是重试的定位信息，写进日志供事后统计「总是失败」
+   */
+  | {
+      type: 'notice'
+      text: string
+      failed?: boolean
+      /** 只有重试类会带（parser 只会产出这两个）：面板按它给界面和日志分类 */
+      kind?: 'retry' | 'retry_failed'
+      attempt?: number
+      maxAttempts?: number
+      error?: string
+    }
+  /** CLI 自动重试成功了：只用来把前面那张「正在重试」收成已恢复，不再多提示一行 */
+  | { type: 'retry_ok'; text: string; attempt?: number }
   /** 生成了一张图片（Codex 的 image_gen）：path 是 CLI 存下的文件，data 是 base64；失败时 failed 是原因 */
   | { type: 'image'; path?: string; data?: string; failed?: string }
   | { type: 'result'; ok: boolean; error?: string }
@@ -704,12 +719,14 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         case 'notice': {
           const err = oneLine(str(g('error')), 300)
           const n = num(g('attempt')) ?? 1
+          const max = num(g('maxAttempts'))
+          const retry = e.kind === 'retry' || e.kind === 'retry_failed'
           const text =
             e.kind === 'retry'
               ? t('模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}', {
                   s: Math.max(1, Math.round((num(g('delayMs')) ?? 0) / 1000)),
                   n,
-                  max: num(g('maxAttempts')) ?? '?',
+                  max: max ?? '?',
                   error: err,
                 })
               : e.kind === 'retry_failed'
@@ -730,7 +747,22 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
               text,
               failed:
                 e.kind === 'retry_failed' || e.kind === 'compact_failed' || e.kind === 'tools_failed' || !!g('failed'),
+              // 重试类才带定位字段：别的 notice 保持原样，日志和界面都不需要
+              ...(retry
+                ? {
+                    kind: e.kind === 'retry' ? 'retry' : 'retry_failed',
+                    attempt: n,
+                    ...(max === undefined ? {} : { maxAttempts: max }),
+                    ...(err ? { error: err } : {}),
+                  }
+                : {}),
             })
+          break
+        }
+        // 自动重试成功不是提示：单独一种事件，runner 用它把前面那张「正在重试」收成已恢复
+        case 'retry_ok': {
+          const n = num(g('attempt')) ?? 1
+          out.push({ type: 'retry_ok', text: t('第 {n} 次重试成功了，接着做。', { n }), attempt: n })
           break
         }
         // 压缩前后的 token 数都没有时（例如压缩被中断）不算压缩过

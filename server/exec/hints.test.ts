@@ -16,6 +16,7 @@ import {
   looksUnfinished,
   settleContextNotes,
   settleNetNotes,
+  settleRetryNotes,
 } from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -274,4 +275,50 @@ test('上下文超长降级接上了：失败卡片收回成普通说明', () =>
   assert.doesNotMatch(msg.text, /正在丢掉旧会话/)
   assert.equal(msg.alert?.level, 'warn')
   assert.match(msg.alert?.resolved ?? '', /已裁剪对话/)
+})
+
+test('重试成功后，前面那张「正在重试」收成已恢复', () => {
+  const retryCard = (label: string): ToolUse => ({
+    kind: 'other',
+    name: '提示',
+    label,
+    detail: '',
+    alert: makeAlert('warn', '502 Bad Gateway', 'retry'),
+  })
+  const other: ToolUse = {
+    kind: 'other',
+    name: '提示',
+    label: '别的警告',
+    detail: '',
+    alert: makeAlert('warn', 'ECONNRESET', 'network'),
+  }
+  const msgs: TaskMessage[] = [
+    // 上一轮留下的卡：这一轮成功不能把它写成「这一轮第 N 次成功了」
+    { id: 'old', role: 'agent', agentId: '', step: '', text: '', tools: [retryCard('上一轮的卡')], at: '' },
+    { id: 'u', role: 'user', agentId: '', step: '', text: '接着改', tools: [], at: '' },
+    { id: 'b', role: 'agent', agentId: '', step: '', text: '', tools: [retryCard('第 1 次重试')], at: '' },
+    // 执行中用户插话：它落在同一轮里，不能把它当成新的一轮边界
+    { id: 'steer', role: 'user', agentId: '', step: '', text: '顺便看一下日志', tools: [], at: '' },
+    { id: 'c', role: 'agent', agentId: '', step: '', text: '', tools: [retryCard('第 2 次重试')], at: '' },
+    { id: 'd', role: 'agent', agentId: '', step: '', text: '', tools: [other], at: '' },
+  ]
+  // 本轮从 index 2 开始（进入 runAgent 时的长度）
+  assert.equal(settleRetryNotes(msgs, '第 2 次重试成功了，接着做。', 2), true)
+  assert.equal(msgs[4].tools[0].alert?.resolved, '第 2 次重试成功了，接着做。')
+  assert.equal(
+    msgs[2].tools[0].alert?.resolved,
+    '第 2 次重试成功了，接着做。',
+    '一轮重试了两次，中间隔着用户插话也要收',
+  )
+  assert.equal(msgs[4].tools[0].alert?.level, 'warn', '恢复了也是 warn：这一轮没失败，只是不需要再处理')
+  assert.equal(msgs[5].tools[0].alert?.resolved, undefined, '别的警告不能被顺手收掉')
+  assert.equal(msgs[0].tools[0].alert?.resolved, undefined, '上一轮留下的卡不收：写这一轮的第 N 次会张冠李戴')
+  // 已经恢复过、或者根本没有这张卡：返回 false，不再多插一行「已恢复」
+  assert.equal(settleRetryNotes(msgs, '再来一次', 2), false)
+})
+
+test('上游网关断开的失败卡也给连接中断的说明', () => {
+  const hints = failureHints('502 Bad Gateway', { id: 'pi', name: 'Pi' })
+  assert.equal(hints.length, 1)
+  assert.match(hints[0], /连接中途断开/)
 })

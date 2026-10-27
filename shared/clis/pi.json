@@ -501,6 +501,18 @@
       },
       {
         "when": {
+          "type": "auto_retry_end",
+          "success": true
+        },
+        "emit": [
+          {
+            "type": "retry_ok",
+            "attempt": "$.attempt"
+          }
+        ]
+      },
+      {
+        "when": {
           "type": "extension_ui_request",
           "method": "setStatus",
           "statusKey": "agent-panel-tools"

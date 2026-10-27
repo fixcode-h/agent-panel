@@ -31,7 +31,7 @@ export function AlertRow({
   className?: string
 }) {
   const [open, setOpen] = useState(false)
-  const info = alertInfo(alert.kind)
+  const info = alertInfo(alert.kind, alert.detail)
   const done = !!alert.resolved
   const error = !done && alert.level === 'error'
   const Icon = done ? CircleCheck : error ? CircleAlert : TriangleAlert

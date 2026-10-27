@@ -863,7 +863,11 @@ export function tasksApi(deps: {
     wake = false,
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
-    if (!parent) return
+    if (!parent) {
+      // 交回失败：父对话没了，这份上报（计划和状态）没地方记。和「子对话这一轮失败」区分开，日志上单独一条
+      log.warn('task', '子对话的上报没能交给父对话：找不到父对话', { from: from.id, parent: parentId })
+      return
+    }
     const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
     // 子对话的上报顺带把计划和名下子对话对齐：只在备注里写了「等 xxx」、没挂上等待的步骤也跟着收口
     if (child && syncKids(parent, await planKids(parent.id))) {
@@ -2481,7 +2485,35 @@ export function tasksApi(deps: {
     kind: AskKind = 'question',
   ) {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
-    if (!parent) return { ok: false, info: '找不到父对话' }
+    if (!parent) {
+      // 交回失败：父对话已经没了（被删、数据丢了），子对话的结果交不出去。
+      // 只写日志不够：界面要和「子对话自己跑挂了」分得开，所以在子对话里留一张「消息没有送到」的卡
+      log.warn('task', '子对话的汇报没能交给父对话：找不到父对话', {
+        task: child.id,
+        parent: child.parentTaskId,
+      })
+      const note: TaskMessage = {
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: t(
+          '这条汇报没能交给父对话：它已经不在了（可能被删了）。结果还在这个对话里，需要的话交给别的对话或自己处理。',
+        ),
+        tools: [],
+        alert: makeAlert('error', t('找不到父对话（id {id}）', { id: child.parentTaskId }), 'delivery'),
+        at: new Date().toISOString(),
+      }
+      const entry = live.get(child.id)
+      const target = entry?.task ?? child
+      target.messages.push(note)
+      if (entry) entry.rev++
+      else
+        await store
+          .update(child.id, target)
+          .catch((e) => log.warn('task', '记下「汇报没交出去」失败', { task: child.id, error: (e as Error).message }))
+      return { ok: false, info: '找不到父对话（它可能已经被删了），这条消息没能交回去；子对话自己的结果还在本对话里' }
+    }
     const suggestion = question && kind === 'suggestion'
     // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。
     // 这时不产生 ask 卡片：卡片和「交给父对话决定」的折叠行都是给用户准备的，用户已经不回答问题了，

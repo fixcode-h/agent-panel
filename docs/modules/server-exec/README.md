@@ -20,7 +20,7 @@
   - 拿回时是 `start` 还是 `yield` 看**让出前手里有没有名额**（`ApiSlot.holding`）：持有过 = 这一轮跑起来后临时让出（`yield`）；没持有过 = 预热（prewarm）对话等用户第一句，这一轮从没出过 token，此刻排队就是真的还没开始（`start`）。不能只看「是 `waitNext` 就写 `yield`」，否则预热首句的真排队会被静默吞成「思考中」。
   - 覆盖分工：端到端测的是「名额满了→第二个对话排队（`apiWait.reason` 为 `'start'`）→前面停了往前挪→排队时能停止」以及「对话让出名额给两个子任务、名额是 1 时子任务一个一个跑」（`scripts/e2e/07-local.mjs` 的并发上限一段）；「让出→拿回」期间两代排队交错、`drop()` 撤销排队不泄漏名额这些毫秒级时序由 `server/api-slots.test.ts` 的单测覆盖，端到端不赌这种时序。
   - 它只是内存里的临时状态：`server/task-store.ts` 的 `parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢），否则进程重启后会把一条陈旧标记显示成「在排队」。
-- 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。
+- 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。Pi 的自动重试是三种事件：`retry`（带次数、原因，画成「正在重试」）、`retry_failed`（画成失败卡片）、`retry_ok`（`auto_retry_end success: true` 的独立事件，只把前面那张「正在重试」收成「已恢复」，不额外占一行提示）；每次重试都写 agent 日志（kind、attempt、maxAttempts、error），事后能统计「总是失败」是哪一类。上游网关把连接断开的错误（502/503/504、`Connection closed`、`Response payload is not completed`）单列 `gateway` 类，判定只有 `shared/alerts.ts` 的 `isGatewayError`，runner 的网络断流和自动续接判定共用它，不和用户自己的网络错误混在一起；「正在重试」的展开说明按原因细分（网关断连 / 限流 / 上下文接近上限）。
 - 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。
 - 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。
 - 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；依赖只放一份在 `worktrees/<项目>-<哈希>/node_modules`，独立目录里不放 `node_modules`、靠 Node / npm 向上解析（`ensureSharedDeps`：lock 变了才重刷，清理时跳过这一份）；`claim` 模式的文件认领在 `server/claims.ts`。
@@ -37,6 +37,7 @@
 ## 回归验证
 
 - `npm run test:unit`（`server/exec/*.test.ts`：解析、进程、RPC、孤儿进程、worktree、停止等）
+- 重试与失败汇报：`shared/alerts.test.ts` 的「上游网关断开单列一类：502、Connection closed、响应没传完」「重试提示按原因给出不同的下一步」「重试的原因看不出时给通用说明」；`server/exec/parsers.test.ts` 的「Pi 的重试事件：带上次数和原因，重试成功后算恢复而不是失败」；`server/exec/pi-rpc.test.ts` 的「Pi RPC：自动重试显示在回复里，不当成失败」（既有约定：重试成功不能再多一行提示，`retry_ok` 只用来收卡）；`shared/plan.test.ts` 的「子对话执行失败：上报带上这次失败的原因」（重试耗尽、面板工具没接上、进程被回收都要出现在汇报里，已恢复的不算）。见 `bugs/pi-retry-upstream-diagnosis.md`。
 - 会话按目录存：`shared/task-session-dir.test.ts` 的「sameDir：Windows 路径的大小写、分隔符、末尾斜杠都不影响判定」「sessionMoved：会话在别的目录里就算搬过」「没记过目录的会话不判为搬过」「对话在没有新字段时退回共用的 sessionDir」「新字段按会话分别记，优先于对话共用的 sessionDir」。改会话续接时特别注意：`resume` 的目录判定必须对子任务也生效，不能写成 `chat &&` 短路（见 `bugs/sub-session-other-project.md`）。
 - 进程与内存口径：`server/exec/proc-stats.test.ts` 的「按任务汇总」「进程归属：只取当前子树任务的登记，祖先、兄弟和无归属的面板动作都不算」「清理白名单：只看当前对话及附属的任务登记」「内存历史：新采样按任务分开记，子对话只加自己这一支」「内存历史：旧样本只有根任务聚合时，子对话是未知而不是 0（不制造 0 起步的假曲线）」「内存历史：合计只算这个对话的 CLI，面板 server 单独给出」；`server/task-memory.test.ts` 的「会话内存分析接口：子对话的采样只加自己这一支，不算父对话和兄弟」；任务树本身在 `shared/run-usage.test.ts`（父/子/孙、兄弟、无关任务、数据里成环）。
 - 终态任务停进程：`server/exec/orphans.test.ts` 的「登记按面板实例分账：一个实例退出不清掉另一个的登记」「启动清理不碰另一个还活着的面板实例的 CLI」「兜底回收：任务已收口、CLI 还活着的收掉；还在等下一句的不碰」「收尾后按任务回收：只动这个任务名下的进程」；`server/task-restart.test.ts` 的「重启恢复名单：已收口的不再拉起，只在等下一句的不算被打断」「终态判定：已收口的任务名下不该再有 CLI 进程」。

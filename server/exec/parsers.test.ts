@@ -500,3 +500,36 @@ test('Pi：离线运行、codemode 是默认开着的开关，关掉离线就不
   assert.deepEqual(env({ offline: false }), [])
   assert.deepEqual(cliSettings(Settings.parse({}), 'pi').options, { offline: true, codemode: true })
 })
+
+test('Pi 的重试事件：带上次数和原因，重试成功后算恢复而不是失败', () => {
+  const parse = parserFor('pi', CWD)
+  // 每次重试都要能看出第几次、总共几次、因为什么失败（事后统计「总是失败」靠这几个字段）
+  assert.deepEqual(
+    parse({ type: 'auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: '502 Bad Gateway' }),
+    [
+      {
+        type: 'notice',
+        kind: 'retry',
+        attempt: 2,
+        maxAttempts: 3,
+        error: '502 Bad Gateway',
+        text: '模型请求失败，4 秒后第 2/3 次重试：502 Bad Gateway',
+        failed: false,
+      },
+    ],
+  )
+  assert.deepEqual(parse({ type: 'auto_retry_end', success: false, attempt: 3, finalError: 'Connection closed.' }), [
+    {
+      type: 'notice',
+      kind: 'retry_failed',
+      attempt: 3,
+      error: 'Connection closed.',
+      text: '自动重试 3 次后仍然失败：Connection closed.',
+      failed: true,
+    },
+  ])
+  // 重试成功是独立事件：不进提示列表，runner 用它把前面那张「正在重试」收成已恢复
+  assert.deepEqual(parse({ type: 'auto_retry_end', success: true, attempt: 1 }), [
+    { type: 'retry_ok', attempt: 1, text: '第 1 次重试成功了，接着做。' },
+  ])
+})
