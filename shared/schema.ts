@@ -2064,6 +2064,12 @@ export const TierSetting = z.preprocess(
 )
 export type TierSetting = z.infer<typeof TierSetting>
 
+/**
+ * 上下文占用到多少时自动压缩（百分比）。留 30% 给压缩本身的读写和模型输出，
+ * 比等 CLI 自己的阈值更早，长对话不容易压到一半就超窗；用户在设置里可以改回「按 Agent 自己的规则」
+ */
+export const AUTO_COMPACT_DEFAULT = 70
+
 /** 单个 CLI 的本机设置 */
 export const CliSettings = z.object({
   enabled: z.boolean().default(true),
@@ -2091,8 +2097,8 @@ export const CliSettings = z.object({
   apiId: z.string().default(''),
   /** 在任务页和设置里显示账号额度（5 小时、每周用了多少） */
   showLimits: z.boolean().default(false),
-  /** 上下文占用达到这个百分比时自动压缩；0 表示用 CLI 自己的规则 */
-  autoCompact: z.number().int().min(0).max(100).default(0),
+  /** 上下文占用达到这个百分比时自动压缩（默认 70%，见 AUTO_COMPACT_DEFAULT）；0 表示用 CLI 自己的规则 */
+  autoCompact: z.number().int().min(0).max(100).default(AUTO_COMPACT_DEFAULT),
   /** 一轮任务最多执行多少回合（模型请求次数）；0 表示用 CLI 自己的默认值（Command Code 是 1000） */
   maxTurns: z.number().int().min(0).max(1000).default(0),
   /** CLI 定义里开关（options）的状态；没改过的按定义里的默认值 */
@@ -2165,7 +2171,16 @@ export const RemoteAccess = z.object({
 })
 export type RemoteAccess = z.infer<typeof RemoteAccess>
 
+/**
+ * 设置里各项默认值的迁移版本：改过默认值的项按版本升级一次。
+ * 不用「值正好等于旧默认值」判断，是因为有的项旧默认值本身就是界面上的一个选项（例如自动压缩的 0），
+ * 用户显式选回它之后不能再被反复改掉。用户保存过一次设置就视为已迁移（见 server/settings.ts 的 saveSettings）
+ */
+export const SETTINGS_DEFAULTS_VERSION = 1
+
 export const Settings = z.object({
+  /** 见 SETTINGS_DEFAULTS_VERSION */
+  defaultsVersion: z.number().int().min(0).catch(0).default(0),
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
   /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */

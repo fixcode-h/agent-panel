@@ -106,7 +106,7 @@ import {
   type ComfyTemplateMeta,
   type TemplateAsset,
 } from '@shared/comfy-templates'
-import { defaultCli, orderClis } from '@shared/settings'
+import { defaultCli, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
@@ -1988,8 +1988,10 @@ function route(method: string, url: string, body: unknown): unknown {
 
   if (res === 'settings') {
     if (method === 'PUT') d.settings = parse(Settings, body)
+    // 和正式后端同一套迁移（见 shared/settings.ts）：浏览器里存着旧版设置时升到新默认值，例如自动压缩的旧默认值 0
+    else migrateSettingsDefaults((d.settings ??= Settings.parse({})))
     persist()
-    return Settings.parse((d.settings ??= Settings.parse({})))
+    return Settings.parse(d.settings ?? {})
   }
   if (res === 'model-catalog') {
     if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
