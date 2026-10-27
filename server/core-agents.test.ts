@@ -126,6 +126,32 @@ test('通用约束：已授权的操作照做；统筹不再另立一份授权�
   assert.doesNotMatch(orch, /推送、PR、submit 要用户明确授权/, '授权规则只在通用约束里写一份')
 })
 
+test('派单纪律：事务性动作合并派一次、纯执行给低档、标题与正文各写各的范围', () => {
+  // 一次运行里 7 个节点标题全是同一句、正文是复制粘贴的同一段：每个子任务都要从零探项目结构
+  const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
+  assert.match(orch, /## 派单纪律/)
+  assert.match(orch, /同类的事务性动作合并成一次派单/, '删临时文件、提交几个文件不需要各开一次会话')
+  assert.match(orch, /父对话不自己顺手做掉/, '父对话仍不动手')
+  assert.match(orch, /合并只限同类角色能做的动作/, '提交这一类仍交给负责版本管理的角色')
+  assert.match(orch, /改文件、删文件、提交始终由子对话做/, '父对话不能顺手删临时文件')
+  assert.match(orch, /tier: "low"/, '纯执行类子任务要显式给低档')
+  assert.match(orch, /同一批派单里不能出现两个相同的标题/)
+  assert.match(orch, /message \/ instructions 各写各的范围/)
+  assert.match(orch, /派「文档」时，message \/ instructions 里必须给出要记什么、依据在哪/)
+})
+
+test('调研、评审：可见进度压成一句话、同一批工具一起发出，不再要求过程里不吭声', () => {
+  const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
+  // 全局约束那条要留：它防的是「只回一句我先看一下就结束回合」和「一整轮只剩工具调用」
+  assert.match(role('rules'), /连续做两次以上工具操作前先用一句话说明当前目标/)
+  // 旧写法「不要在过程里逐条播报进度」和全局约束相抵，调研两头都不照做
+  assert.doesNotMatch(role('explorer'), /不要在过程里逐条播报/)
+  assert.match(role('explorer'), /可见进度压一句话、同一批工具一起发出/)
+  assert.match(role('explorer'), /不要只回一句「我先读取…」就结束回合/)
+  assert.doesNotMatch(role('reviewer'), /过程里不要逐条播报/)
+  assert.match(role('reviewer'), /不要为一句「我先读一下」单独占一轮/)
+})
+
 test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，找到就停', () => {
   const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
   // 只写「找到根因」时 Agent 会一路挖到底层：起点、往下一层的条件、停止和深度上限都要写成能照做的规则
