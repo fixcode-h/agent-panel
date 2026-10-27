@@ -579,6 +579,7 @@ function Body({
       // 期间别处重新初始化或应用过推荐，由下面保存时的乐观锁拦下（409），不拿旧值静默覆盖
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下：
       // 这类写入会推进 updatedAt，第一次保存被 409 拦下并刷新列表；再点一次时 project 已是最新，fresh 就能把它们算出来
+      // 取舍：弹窗内刚初始化过（init 非空）又遇上期间别处也写过推荐时，以本次初始化为准（用户主动操作优先），不合并别处那份
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
       const input = {
@@ -595,7 +596,7 @@ function Body({
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
         for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
-        // 带着打开时的 updatedAt 保存：期间别处改过（应用了推荐、角色记了教训）就 409，提示重新打开再存
+        // 带着当前 project.updatedAt 保存：期间别处改过（应用了推荐、角色记了教训）就 409；刷新后重试用的就是最新版本
         const saved = await api.updateProject(project.id, input, project.updatedAt)
         setProjects((ps) => ps.map((p) => (p.id === saved.id ? saved : p)))
         toast.success(t('项目设置已保存'))
@@ -617,7 +618,17 @@ function Body({
         let refreshed = true
         await api
           .projects()
-          .then(setProjects)
+          .then((list) => {
+            setProjects(list)
+            // 界面上的初始化时间和推荐也换成最新那份，让重试保存和界面显示用同一份数据
+            const cur = list.find((x) => x.id === project?.id)
+            if (cur)
+              setDraft((d) => ({
+                ...d,
+                initializedAt: cur.initializedAt || d.initializedAt,
+                initResult: readProjectProposal(cur.initResult) ?? d.initResult,
+              }))
+          })
           .catch(() => {
             refreshed = false
           })
