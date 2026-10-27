@@ -7,8 +7,8 @@ export const EN_WEB_SEARCH: Record<string, string> = {
     'Stored only in the settings file in the local data folder. Requests are sent by the panel, so extension scripts and the model never see the key.',
   搜索源的密钥: 'Search provider key',
   '留空用默认地址 {url}；也可以填自己的网关或代理。': 'Leave empty for {url}, or enter your own gateway or proxy.',
-  'SearXNG 要填自己实例的地址：公共实例一般不开放 JSON 接口。':
-    'SearXNG needs the address of your own instance: public instances usually keep the JSON API disabled.',
+  'SearXNG 要填自己实例的地址：公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。':
+    'SearXNG needs the address of your own instance: public instances usually keep the JSON API disabled. Enter the host only (for example https://searxng.example.com); the /search path is appended automatically.',
   搜索源地址: 'Search provider address',
   怎么打开: 'How to enable',
   '这一页只管搜索源和密钥。模型要真正能用 web_search / web_fetch，还要在对应 CLI 的设置里打开「联网搜索」开关（默认关闭，打开前先确认搜索源）。':

@@ -2270,6 +2270,15 @@ export const Settings = z.object({
       key: z.string().trim().max(500).default(''),
       /** 自定义地址（自建 searxng、公司网关）；留空用搜索源自己的默认地址 */
       endpoint: z.string().trim().max(500).default(''),
+      /**
+       * endpoint 属于哪个源：地址是所有源共用的一个字段，切源时留下的旧值会被当成新源的基址。
+       * 记住归属后只在它属于当前源时采信（见 shared/web-search.ts 的 resolveSearchEndpoint）；
+       * 旧设置里没有这个字段，读出来是空串，照旧采信地址
+       */
+      endpointProvider: z
+        .union([z.enum(SEARCH_PROVIDER_IDS), z.literal('')])
+        .catch('')
+        .default(''),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

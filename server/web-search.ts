@@ -28,6 +28,7 @@ import {
   normalizeFetch,
   normalizeSearch,
   pageWindow,
+  resolveSearchEndpoint,
   searchProvider,
   type FetchFormat,
   type PageWindow,
@@ -226,7 +227,8 @@ async function doSearch(input: unknown, deps: WebSearchDeps) {
   const q = normalizeSearch(input)
   const cfg = (await getSettings()).webSearch
   const provider = searchProvider(cfg.provider)
-  const endpoint = cfg.endpoint.trim() || provider.endpoint
+  // 地址是各源共用的一个字段：上一源留下的值不能当成新源的基址，否则请求会打到旧主机
+  const endpoint = resolveSearchEndpoint(cfg)
   if (!endpoint)
     throw new HttpError(
       t('搜索源 {provider} 需要填写地址，请在「设置 · 联网搜索」里补上', { provider: provider.label }),

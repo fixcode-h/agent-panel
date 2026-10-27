@@ -19,7 +19,9 @@ import {
   normalizeFetch,
   normalizeSearch,
   pageWindow,
+  resolveSearchEndpoint,
   searchProvider,
+  switchSearchProvider,
 } from './web-search.ts'
 
 test('guardUrl：正常网址原样返回，http 允许（升级在 normalizeFetch 里做）', () => {
@@ -242,4 +244,47 @@ test('设置里的联网搜索：没写过用默认源，源名写错回退默�
   const brave = Settings.parse({ webSearch: { provider: 'brave', key: '  sk-xxxx  ' } })
   assert.equal(brave.webSearch.provider, 'brave')
   assert.equal(brave.webSearch.key, 'sk-xxxx')
+})
+
+const searxValue = {
+  provider: 'searxng',
+  key: '',
+  endpoint: 'https://searx.example.com',
+  endpointProvider: 'searxng',
+}
+
+test('换搜索源：清掉上一源留下的地址，同一源内手填的地址保留', () => {
+  const moved = switchSearchProvider(searxValue, 'deepseek')
+  assert.equal(moved.provider, 'deepseek')
+  // 地址是所有源共用的一个字段：留着它就会被当成新源的基址，请求打到旧主机
+  assert.equal(moved.endpoint, '')
+  assert.equal(moved.endpointProvider, 'deepseek')
+  // 选回当前已选中的源（下拉框重渲染）不能把手填的地址清掉
+  assert.equal(switchSearchProvider(searxValue, 'searxng').endpoint, 'https://searx.example.com')
+  // 认不出的源按默认源处理，地址同样不能沿用
+  assert.equal(switchSearchProvider(searxValue, '不存在的源').endpoint, '')
+})
+
+test('地址归属和当前源不一致时忽略它，改用当前源的默认地址', () => {
+  const leftover = {
+    provider: 'deepseek',
+    key: 'sk-xxxx',
+    endpoint: 'https://searx.example.com',
+    endpointProvider: 'searxng',
+  }
+  assert.equal(resolveSearchEndpoint(leftover), searchProvider('deepseek').endpoint)
+  // 旧设置里没有归属（升级前存的）：地址可能是用户手填的代理，照旧采信
+  assert.equal(resolveSearchEndpoint({ ...leftover, endpointProvider: '' }), 'https://searx.example.com')
+  // 归属对得上：用户在当前源里填的地址照旧生效
+  assert.equal(resolveSearchEndpoint({ ...leftover, endpointProvider: 'deepseek' }), 'https://searx.example.com')
+  // 必须自填地址的源：归属不对时不借别人的地址，留空交给「需要填写地址」的报错
+  assert.equal(
+    resolveSearchEndpoint({
+      provider: 'searxng',
+      key: '',
+      endpoint: 'https://degoog.org/api/search',
+      endpointProvider: 'degoog',
+    }),
+    '',
+  )
 })

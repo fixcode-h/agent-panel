@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { t } from '../shared/i18n.ts'
 import { mcpExtras } from '../shared/cli-spec.ts'
 import { getCli } from '../shared/clis.ts'
-import { SEARCH_MIN_QUERY_CHARS } from '../shared/web-search.ts'
+import { SEARCH_MIN_QUERY_CHARS, searchProvider } from '../shared/web-search.ts'
 
 // 设置模块读数据目录，用临时的别碰本机
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-web-search-'))
@@ -32,9 +32,15 @@ function session() {
   return { token: bridge.url.split('/').pop()!, close: bridge.close }
 }
 
-async function withProvider(webSearch: { provider: string; key: string; endpoint: string }) {
+async function withProvider(webSearch: {
+  provider: string
+  key: string
+  endpoint: string
+  /** 地址属于哪个源；旧设置里没有（升级前存的） */
+  endpointProvider?: string
+}) {
   const s = await getSettings()
-  await saveSettings({ ...s, webSearch })
+  await saveSettings({ ...s, webSearch: { ...webSearch, endpointProvider: webSearch.endpointProvider ?? '' } })
 }
 
 /** 只记下请求、按脚本返回响应的桩 */
@@ -376,6 +382,23 @@ test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到�
   assert.equal(res.status, 400)
   assert.match(((await res.json()) as { error: string }).error, /needs a key|需要密钥/)
   assert.equal(stub.calls.length, 0)
+  s.close()
+})
+
+test('切过搜索源：上一源留下的地址被忽略，不把请求打到旧主机', async () => {
+  const s = session()
+  // 旧版本切源时不清地址：设置里留的是 searxng 的地址，归属还是 searxng
+  await withProvider({
+    provider: 'deepseek',
+    key: 'sk-test-deepseek',
+    endpoint: 'https://searx.example.com/',
+    endpointProvider: 'searxng',
+  })
+  const stub = stubFetch(() => json({ results: [] }))
+  const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
+  const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
+  assert.equal(res.status, 200)
+  assert.equal(stub.calls[0]!.url, `${searchProvider('deepseek').endpoint}/v1/tools/search`)
   s.close()
 })
 
