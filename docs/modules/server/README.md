@@ -165,6 +165,13 @@
 
 `settleReclaimed` 只改「`running` 且 `working === false`」的任务：**正在产出的（`working === true`）不碰**（不能把真在产出的任务写成已停止），**已经停下的不碰**（用户暂停、父对话结束这类原因不能被覆盖，和 `stopTask` 的原因语义一致）。界面侧 `web/src/components/tasks/child-line.ts` 的 `convGone` 对 `idle` 的行也返回 `'hint'`，所以停下来的行上依然写「Agent 进程已回收，继续会重新拉起」（计划没做完的行还会由 `childLabels` 追加一条同样的标签，不只在悬停里）；用户按的暂停（`stopReason: 'user'`）不显示这句。回归：`server/reclaim.test.ts` 5 条、`child-line.test.ts` 的「页面宽限回收后的静止行」。这条路径的完整排查也在同一份 Bug 记录里。
 
+**两段回收时长和保活上限只收真空闲的会话**：`server/presence.ts` 的 `evict` 和 `server/tasks.ts` 的 `enforceKeepAlive` 都先问同一个判定（`server/tasks.ts` 的 `keepAliveBusy` → `shared/task.ts` 的 `keepAliveHolding`）：
+
+- 有执行位时按任务事实判（`convActive`：在跑、等子对话 / 子任务 / 后台命令 / 工作流、有没回复的提问和请求），再加上正在启动和还有排队的消息；
+- **没有执行位时**（这一轮已经结束、进程也退了，例如没开 `features.keepAlive` 的 CLI）看名下还在跑的子对话（`childrenRunning`，和 `childActive` 同一套判定）和还没回来的后台命令：它们的结果还要交回这条对话，按「没人看就回收」收掉会把它落成「已中断」（用户报的「父对话被回收」）。
+
+子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/task-stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/task-restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/04-subagents.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
+
 ## 强制更新后：把被打断的任务列进恢复名单
 
 「强制更新」会停掉所有 CLI（`server/update.ts` 的 `stopForUpdate`）。停之前先把这一批任务记下来，新版本启动后问用户要不要接着跑：

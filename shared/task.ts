@@ -1414,6 +1414,31 @@ export function childIcon(x: ChildEntry): TaskIcon {
 export const childSpinning = (x: ChildEntry) => childIcon(x) === 'running'
 
 /**
+ * 任务 → 子对话行：判定字段全部来自 childFacts（图标、分组、计数、上报本来就是同一套事实），
+ * 只有「进程活着」「本次开启时间」「计划进度」这三项要现取。
+ * 不要在这里另列一份 status / working / requests 之类的字段：childFacts 加一项判定字段时这里要自动跟上，
+ * 手拼的话新字段永远漏（重启迁移按它落静止，漏一项就会继续画成在跑）。
+ */
+function childEntryOf(
+  task: Parameters<typeof childFacts>[0] & Pick<Task, 'id' | 'title' | 'createdAt' | 'worktree'>,
+): ChildEntry {
+  return {
+    // childFacts 里带的 unfinished 会被 childState 按 plan 进度重算，两者是同一个 openPlan
+    ...childFacts(task, { unmerged: task.worktree?.state === 'active' }),
+    id: task.id,
+    title: task.title,
+    // childFacts 里这几项是可选的（服务端补的事实可能没填），ChildEntry 要求必填
+    working: !!task.working,
+    requests: task.requests.length,
+    asking: task.parentAsks?.length ?? 0,
+    // 重启迁移走这一处：进程已经回收，这一项只影响「已关闭」标签，不参与图标判定
+    cliAlive: false,
+    startedAt: task.createdAt,
+    plan: openPlan(task),
+  }
+}
+
+/**
  * 面板重启 / 崩溃后，这条落盘里的任务还会不会被画成在跑（childIcon 是 running）。
  * 重启后 CLI 进程已经回收，后台命令、工作流、派出的子任务的内存记录也一起没了，凡是「还有人在做」的显示都不成立；
  * 启动迁移按它把任务落成已停止（stopReason: restart），行首图标、列表分组、「N 个执行中」的计数和
@@ -1424,26 +1449,7 @@ export const childSpinning = (x: ChildEntry) => childIcon(x) === 'running'
 export function restartInterrupted(
   task: Parameters<typeof childFacts>[0] & Pick<Task, 'id' | 'title' | 'createdAt' | 'worktree'>,
 ): boolean {
-  const entry: ChildEntry = {
-    id: task.id,
-    title: task.title,
-    status: task.status,
-    working: !!task.working,
-    // 重启后没有进程活着；这一项只影响「已关闭」标签，不参与图标判定
-    cliAlive: false,
-    startedAt: task.createdAt,
-    requests: task.requests.length,
-    asking: task.parentAsks?.length ?? 0,
-    resolved: task.resolved === true,
-    plan: openPlan(task),
-    workflow: runRunning(task),
-    helpers: helpersWorking(task),
-    // 独立分支还活着（state 是 active）就是还没收口：合了或丢掉后 state 会跟着改
-    unmerged: task.worktree?.state === 'active',
-    wrapup: !!task.wrapRequest && task.wrapRequest.state !== 'failed',
-    stopReason: task.stopReason,
-    gone: taskGone(task),
-  }
+  const entry = childEntryOf(task)
   return childSpinning(entry) && childState(entry) !== 'wrapup'
 }
 
@@ -1878,6 +1884,30 @@ export function keepAliveBusy(
   // 这一轮没收尾：包括在等它派出的子任务（那时 awaitingUser 仍是 false）
   if (t.status === 'running' && !t.awaitingUser) return true
   return convActive(convState({ ...taskFacts(t), background: x.background ?? 0, children: x.children ?? 0 }))
+}
+
+/**
+ * 保活回收的完整结论（见 server/tasks.ts 的 keepAliveBusy）：先分清这一轮还在不在执行位里。
+ * - 在（这一轮在跑、或者停在等下一句保活着）：看任务自己的事实，见上面的 keepAliveBusy；
+ * - 不在（这一轮结束、进程已退出，例如不支持保活的 CLI）：名下还有子对话 / 后台命令没回来时它在等结果，
+ *   不能按「没人看就不留着」回收——回收会把它落成「已中断」，子对话的结果回来时没人在等（用户报的「父对话被回收」）。
+ * 回收时长、保活上限都只问这一处，不在各触发点各写一个 if（ADR 0012）
+ */
+export function keepAliveHolding(x: {
+  /** 还在执行位里（Live 里有一条） */
+  live: boolean
+  /** 自己任务上的事实：只在执行位里时用得上 */
+  task?: Parameters<typeof keepAliveBusy>[0]
+  /** 这一轮之后还要接着做（排队的消息、正在启动） */
+  more?: boolean
+  background?: number
+  children?: number
+}) {
+  // 没有执行位就拿不到任务数据（这个判定在 presence 的计时器里同步调，读不了 store），只看名下还在跑的：
+  // 它们在等结果，不能回收
+  if (!x.live) return !!x.more || !!(x.children || x.background)
+  if (x.more) return true
+  return !!x.task && keepAliveBusy(x.task, { background: x.background, children: x.children })
 }
 
 /**

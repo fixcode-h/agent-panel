@@ -59,7 +59,7 @@ import {
   delegatePrompt,
   dropEndNotes,
   endRun,
-  keepAliveBusy as keepAliveBusyOf,
+  keepAliveHolding,
   keepAliveVictims,
   messageStamp,
   pauseStep,
@@ -389,7 +389,10 @@ export function tasksApi(deps: {
    * 合并回父对话分支时按 git merge 处理，真冲突会撤回并交回子对话，所以它只是信息、不是限制。
    */
   const scopes = new Map<string, Map<string, { title: string; files: string[] }>>()
-  /** 正在启动、还没取到执行位的子对话：父对话判断「有没有子对话在跑」时也算上 */
+  /**
+   * 正在启动、还没取到执行位的子对话：childActive 按任务记录判「在不在跑」时要算它（见 childCountsOf）。
+   * add 到 reserve 之间没有 await，外部观察不到这一段，所以「父对话名下几个子对话在跑」（childrenRunning）不单独数它
+   */
   const startQueue = new Set<string>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）。
   // 还在运行的对话 presence 先问 keepAliveBusy，不会走到这里；
@@ -1925,6 +1928,15 @@ export function tasksApi(deps: {
    */
   const childActive = (tk: Task) =>
     startQueue.has(tk.id) || hasHeld(tk.id) || convActive(convState(childFacts(tk, { background: pendingJobs(tk.id) })))
+
+  /**
+   * 名下有还在运行的子对话（见 childActive）几个：父对话的计数、保活回收都读它，不在各处再拼一遍。
+   * 只数执行位里的：闲着的子对话不用护着父对话（回收父对话不会连带停下它，结果也会走 wakeConv 交回）。
+   * startQueue 里的子对话不用单独数：startChild 的 add 到 reserve 之间没有 await，外部观察不到那一段
+   */
+  function childrenRunning(parentId: string): number {
+    return [...live.values()].filter((e) => e.task.parentTaskId === parentId && childActive(e.task)).length
+  }
 
   /**
    * 名下子对话的计数（还在跑的、CLI 还活着的）：一次 store.list() 把所有父对话的都算出来，
@@ -4025,15 +4037,18 @@ export function tasksApi(deps: {
    * 判定就是 convActive（自己在跑、在等子任务 / 子对话 / 后台命令 / 工作流，有没回复的提问和请求），
    * 再加上这一轮没收尾、在预热、还有排队的消息。只有停在等下一句、什么都没挂着的才是空闲会话。
    * 名下子对话只算还在运行的（childActive）：父对话被回收不会再连带停掉子对话，闲着的子对话不用护着它
+   * 没有执行位（这一轮结束、进程已退出）的对话也问一句：名下的子对话、后台命令还没回来时它在等结果，
+   * 不是空闲会话
    */
   function keepAliveBusy(id: string): boolean {
     const entry = live.get(id)
-    if (!entry) return false
-    if (startQueue.has(id) || hasHeld(id)) return true
-    const children = [...live.values()].filter(
-      (e) => e !== entry && e.task.parentTaskId === id && childActive(e.task),
-    ).length
-    return keepAliveBusyOf(entry.task, { background: pendingJobs(id), children })
+    return keepAliveHolding({
+      live: !!entry,
+      task: entry?.task,
+      more: startQueue.has(id) || hasHeld(id),
+      background: pendingJobs(id),
+      children: childrenRunning(id),
+    })
   }
 
   /**
