@@ -1480,6 +1480,14 @@ await runShard(import.meta.filename, async (api) => {
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await openTask()
   }
+  // 上下文胶囊：浮层里每个 Agent 一行；最近压缩过的那行写明多久前、压缩前后各多少
+  {
+    await p.getByTitle('上下文占用').first().click()
+    await check(p, '任务-上下文压缩', ['小时前压缩过', '压缩前 176.0k', '压缩后 12.0k'])
+    if (!(await shotOf(p, p.getByRole('dialog').first(), '任务-上下文压缩')))
+      errors.push('任务-上下文压缩：没有截到上下文浮层')
+    await p.keyboard.press('Escape')
+  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()
@@ -2029,5 +2037,27 @@ await runShard(import.meta.filename, async (api) => {
         errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
       await check(p, '任务-发送消息时运行区不消失', ['子对话'])
     }
+  }
+  // 没有压缩记录的对话不显示这一行：删掉演示数据里的压缩记录，整页导航后重新看
+  // （只改 hash 会被内存里的演示数据盖回去，见 docs/lessons/ui-check.md）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车右上角'))
+      for (const m of task?.messages ?? []) m.tools = (m.tools ?? []).filter((x) => x.kind !== 'compact')
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.goto(base)
+    await backToTask()
+    await p.getByTitle('上下文占用').first().click()
+    if (await p.getByText('压缩过').count()) errors.push('任务-上下文无压缩：没有压缩记录时仍显示压缩行')
+    if (!(await shotOf(p, p.getByRole('dialog').first(), '任务-上下文无压缩')))
+      errors.push('任务-上下文无压缩：没有截到上下文浮层')
+    await p.keyboard.press('Escape')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.goto(base)
+    await backToTask()
   }
 })

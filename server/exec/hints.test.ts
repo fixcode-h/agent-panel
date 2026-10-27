@@ -82,13 +82,26 @@ test('模型接口拒绝聊天记录：说明换模型后旧会话接不上', ()
 })
 
 test('压缩上下文：写明压缩了多少、现在占上下文窗口多少', () => {
-  const tool = { kind: 'compact' as const, label: '', detail: '' }
+  const tool: ToolUse = { kind: 'compact', label: '', detail: '' }
   describeCompaction(tool, 96_000, 14_000, 200_000)
   assert.equal(tool.label, '压缩了 82.0k token（96.0k → 14.0k）')
   assert.equal(tool.detail, '当前占用 7%')
+  // 前后大小同时存进结构化字段：界面按数值显示，不解析上面的中文
+  assert.equal(tool.compact?.before, 96_000)
+  assert.equal(tool.compact?.after, 14_000)
   describeCompaction(tool, 9000)
   assert.equal(tool.label, '压缩前 9.0k token')
   assert.equal(tool.detail, '')
+  assert.equal(tool.compact?.before, 9000)
+  // 没有压缩后的数值时字段缺省，界面按缺失处理
+  assert.equal(tool.compact?.after, undefined)
+  // 真实流程：先收到压缩事件（只有压缩前），之后 usage 事件才报压缩后的占用，补进同一份字段
+  const late: ToolUse = { kind: 'compact', label: '', detail: '' }
+  describeCompaction(late, 96_000, undefined, 200_000)
+  assert.equal(late.compact?.after, undefined)
+  describeCompaction(late, 96_000, 14_000, 200_000)
+  assert.equal(late.compact?.before, 96_000)
+  assert.equal(late.compact?.after, 14_000)
 })
 
 test('空回合：只说了一句「我先…」就收尾、或者一个字都没回的，都算没做完', () => {

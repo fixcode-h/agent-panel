@@ -3195,6 +3195,8 @@ function tasksRoute(
             label: `压缩了 ${k(before - after)} token（${k(before)} → ${k(after)}）`,
             detail: `当前占用 ${Math.round((after / window) * 100)}%`,
             output: `压缩前：${k(before)} token\n压缩后：${k(after)} token\n上下文窗口：${k(window)} token\n当前占用：${Math.round((after / window) * 100)}%`,
+            // 和正式后端一样存结构化前后大小：上下文卡直接读它，不解析上面的中文
+            compact: { before, after },
           },
         ],
         at,
@@ -4270,6 +4272,27 @@ async function seedTasks(d: Db) {
     ]
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，
+    // 前后大小存在结构化字段里（界面不解析 label 里的中文）。
+    // 放在 demoHelper / demoChildren 之后：那两处按消息的最晚时间摆子任务，提前插一条新时间会打乱它们
+    task.messages.push({
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'agent',
+      agentId: fe.id,
+      step: '',
+      text: '',
+      at: new Date(Date.now() - 65 * 60_000).toISOString(),
+      tools: [
+        {
+          kind: 'compact',
+          name: '压缩上下文',
+          label: '压缩了 164.0k token（176.0k → 12.0k）',
+          detail: '当前占用 6%',
+          output: '压缩前：176.0k token\n压缩后：12.0k token\n上下文窗口：200.0k token\n当前占用：6%',
+          compact: { before: 176_000, after: 12_000 },
+        },
+      ],
+    })
     const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
     task.testRuns = [
       {

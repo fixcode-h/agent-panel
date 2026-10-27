@@ -1,7 +1,7 @@
 import type { PeerKind, Task, TaskJob, TaskMessage, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
-import { stepMs } from '@shared/task'
+import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
@@ -15,7 +15,7 @@ export const statusLabel: Record<TaskStatus, string> = {
 }
 
 /** 「3 分钟前」这类相对时间：实现在 shared/task（服务端给父对话的清单也用它），这里只转出去 */
-export { timeAgo } from '@shared/task'
+export { timeAgo }
 
 /**
  * `POST /tasks/:id/seen` 只回「这一轮看到哪」：把它合进本地那份任务。
@@ -26,6 +26,48 @@ export const withTurnSeenAt = (task: Task, turnSeenAt: string): Task =>
 
 export const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
+
+/** 最近一次压缩：时间取所在消息的 at，前后大小取结构化字段（老数据没有字段时缺省） */
+export type LastCompaction = { at: string; before?: number; after?: number }
+
+/**
+ * 这一行（一个节点或一个 Agent）最近一次压缩。
+ * match 判断消息归谁：工作流看它属于哪个节点（含节点派出的子节点），对话看是哪个 Agent。
+ * 消息顺序在续接、补写时不保证按时间，按 at 取最新的一条。
+ */
+export function lastCompaction(
+  messages: TaskMessage[],
+  match: (m: TaskMessage) => boolean,
+): LastCompaction | undefined {
+  let found: LastCompaction | undefined
+  for (const m of messages) {
+    if (!m.at || !match(m)) continue
+    const tool = m.tools.find((x) => x.kind === 'compact')
+    if (!tool) continue
+    if (found && m.at <= found.at) continue
+    found = { at: m.at, before: tool.compact?.before, after: tool.compact?.after }
+  }
+  return found
+}
+
+/**
+ * 「1 小时前压缩过 · 压缩前 176.0k · 压缩后 24.0k」。
+ * 缺哪项就不写哪项：老数据没有结构化数值时只剩时间，没有时间时只剩数值；都没有时返回空字符串
+ */
+export function compactionText(c: LastCompaction): string {
+  const time = timeAgo(c.at)
+  const before = c.before === undefined ? '' : fmtTokens(c.before)
+  const after = c.after === undefined ? '' : fmtTokens(c.after)
+  const sizes =
+    before && after
+      ? t('压缩前 {before} · 压缩后 {after}', { before, after })
+      : before
+        ? t('压缩前 {before}', { before })
+        : after
+          ? t('压缩后 {after}', { after })
+          : ''
+  return [time && t('{time}压缩过', { time }), sizes].filter(Boolean).join(' · ')
+}
 
 /**
  * 实时速度：只算正在输出的 Agent 的 token/s（工作流里可能几个节点同时输出），没在输出就是 0。
