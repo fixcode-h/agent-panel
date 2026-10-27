@@ -1089,7 +1089,12 @@ export const EN_TASKS: Record<string, string> = {
   编译: 'Build',
   // 输入框：发送被拦下时的一句话，和「执行中发的消息去了哪里」
   现在还不能发送: 'Cannot send right now',
-  '附件还在上传，稍等一下': 'Attachment is still uploading, one moment',
+  '附件还在{status}，稍等一下': 'Attachment is still {status}, one moment',
+  查找中: 'Finding path',
+  拷贝中: 'Copying',
+  已拷贝: 'Copied',
+  引用路径: 'Path reference',
+  上传中: 'Uploading',
   '上一条还在发送，稍等一下': 'The previous message is still sending, one moment',
   先写点要求再发送: 'Write something before sending',
   '已交给 Agent，这一轮接着处理': 'Handed to the agent, it keeps working on this turn',

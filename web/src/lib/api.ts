@@ -653,6 +653,11 @@ export const api = {
   /** 粘贴、拖进来的大文件：按名字、大小、修改时间在本机找回原路径（index 对应传入的第几个，找不到的不在里面） */
   locateFiles: (files: { name: string; size: number; mtime?: number }[]) =>
     request<{ files: (Attachment & { index: number })[] }>('/uploads/locate', json('POST', { files })),
+  /** 小文件后台拷贝一份到数据目录：只接受 pick / resolve / locate 返回过的路径，拷不了的不在结果里 */
+  copyPaths: (paths: string[]) =>
+    request<{ files: (Attachment & { from: string })[] }>('/uploads/copy', json('POST', { paths })),
+  /** 输入框里删掉还没发出去的附件：把拷出来的副本删掉，不留孤儿 */
+  discardPaths: (paths: string[]) => request<{ ok: boolean }>('/uploads/discard', json('POST', { paths })),
   /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
   localFile: (path: string) =>
     request<{

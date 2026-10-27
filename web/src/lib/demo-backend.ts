@@ -1158,6 +1158,13 @@ function cliAction(id: string, action: CliInstallJob['action']) {
 /** 演示上传的附件内容（data URL），刷新页面后就没了 */
 export const demoUploads = new Map<string, string>()
 
+/** 演示里「找回」的本机路径：非图片文件按名字给一个假路径，copy 用它演示拷贝状态 */
+const demoLocated = new Map<string, { name: string; size: number; mime: string }>()
+/** 演示拷贝花的时间：能看见「拷贝中」，又不至于拖住界面检查 */
+const DEMO_COPY_MS = 1000
+/** 演示里模拟「文件被占用、拷不了」：名字以它开头的文件降级成引用原路径（界面检查用） */
+const DEMO_LOCKED_PREFIX = '占用'
+
 /** 演示附件的文字内容（data: 地址解出来）；不是文字或不在了给 null */
 function demoUploadText(p: string): string | null {
   const url = demoUploads.get(p)
@@ -2005,7 +2012,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   return fail('不支持的操作')
 }
 
-function route(method: string, url: string, body: unknown): unknown {
+async function route(method: string, url: string, body: unknown): Promise<unknown> {
   const d = load()
   const [path, qs] = url.split('?')
   const query = new URLSearchParams(qs)
@@ -2193,8 +2200,39 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
   if (res === 'uploads' && id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
-  // 演示没有本机磁盘，找不回大文件的原路径
-  if (res === 'uploads' && id === 'locate') return { files: [] }
+  // 演示没有本机磁盘：图片（截图、复制的图）没有原路径，照旧走上传；其它文件假装找回了原路径，
+  // 好把「后台拷贝」的状态走一遍
+  if (res === 'uploads' && id === 'locate') {
+    const wanted = (body as { files: { name: string; size: number }[] }).files
+    return {
+      files: wanted.flatMap((f, index) => {
+        if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) return []
+        const path = `/demo/local/${crypto.randomUUID()}/${f.name}`
+        demoLocated.set(path, { name: f.name, size: f.size, mime: '' })
+        return [{ index, name: f.name, path, size: f.size, mime: '', ref: true }]
+      }),
+    }
+  }
+  // 后台拷贝：延迟一下能看见「拷贝中」；名字以「占用」开头的模拟拷不了，页面降级成引用路径
+  if (res === 'uploads' && id === 'copy') {
+    const files: (Attachment & { from: string })[] = []
+    for (const from of (body as { paths: string[] }).paths) {
+      const src = demoLocated.get(from)
+      if (!src || src.name.startsWith(DEMO_LOCKED_PREFIX)) continue
+      await new Promise((r) => setTimeout(r, DEMO_COPY_MS))
+      const path = `/demo/uploads/${crypto.randomUUID()}/${src.name}`
+      demoUploads.set(path, `data:${src.mime || 'application/octet-stream'};base64,`)
+      files.push({ from, name: src.name, path, size: src.size, mime: src.mime })
+    }
+    return { files }
+  }
+  if (res === 'uploads' && id === 'discard') {
+    for (const p of (body as { paths: string[] }).paths) {
+      demoLocated.delete(p)
+      demoUploads.delete(p)
+    }
+    return { ok: true }
+  }
   if (res === 'uploads' && id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
   if (res === 'uploads' && id === 'raw' && sub === 'file') {
     const p = query.get('path') ?? ''
