@@ -10,6 +10,7 @@
 - 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。
 - 设置 schema 和默认值：后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；各 CLI 的自动压缩比例 `autoCompact` 默认 70%（`AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。旧设置里各项默认值的迁移在 `shared/settings.ts` 的 `migrateSettingsDefaults`（正式后端与演示后端共用同一份，按 `Settings.defaultsVersion` 只迁一次）。
 - 本机代理的默认值（`shared/proxy.ts`）：`DEFAULT_PROXY_PORT` / `DEFAULT_PROXY_URL` 是设置页「网络代理」的占位符和说明、CLI 环境变量示例（`PROXY_ENV_EXAMPLE`）、自动探测端口顺序（`LOCAL_PROXY_PORTS`）的唯一出处；`shared/schema.ts` 的 `proxy` 字段注释也指向它。要换默认代理端口只改这一处，别处一律 import（`npm run lint` 的 `rules-check` 会拦住 ts / tsx / mjs / json 里再写的字面量）。默认端口在 v2rayN 里默认跑 socks，mixed 在 10814，纯 socks 时 `ProxyAgent` 用不了、探测会失败。`LOCAL_PROXY_PORTS` 里除了默认端口还有 Clash 的混合端口、老版 v2rayN 的 http 入站、Clash 的 socks 口、Clash Verge Rev 的混合端口和通用的 1080；`MAX_LOCAL_PROXIES`（3）决定真正尝试几个，所以默认端口必须排在前几位。具体顺序和取值只看 `shared/proxy.ts`。
+- 联网搜索（`shared/web-search.ts`）：CLI 的 `web_search` / `web_fetch` 用的搜索源注册表 `SEARCH_PROVIDERS`（degoog 默认、免密钥；searxng 自建；brave / tavily 要密钥），新增一个源只加一条（`endpoint` / `build` / `parse` 三个字段），路由不按源名分支。参数和限制对齐 Command Code 的 Web 工具：`normalizeSearch`（`query` 至少 2 个字、`numResults` 默认 5 最多 10、`allowed_domains` / `blocked_domains` 互斥）、`normalizeFetch`（http 升级 https、`format` 默认 markdown、`timeout` 默认 60 秒最多 120）；`guardUrl` 与 `isPrivateAddress` 挡掉带凭据的地址、内网 / 回环 / 链路本地 / 保留地址和单标签主机名（域名解析后的地址由服务端再查一次）；`domainAllowed` 做域名二次过滤（含子域名）；`htmlToText` / `htmlTitle` 把网页转成 markdown / 纯文本，`pageWindow` 按 `FETCH_WINDOW_CHARS = 100000` 切片、用 `startIndex` 续读；`formatSearchResults` / `formatPage` 是给模型看的文本（直接给文本，不塞 JSON）。搜索源和密钥的设置在 `shared/schema.ts` 的 `Settings.webSearch`（密钥只在本机数据目录）。
 - CLI 注册表：内置 CLI 定义在 `shared/clis/*.json`，由 `shared/clis.ts` 加载；参数拼装、输出解析方式、支持的能力、Skill 和说明文件位置都写在定义里，面板其他地方按字段走。Agent 的回复语言跟随面板设置，完整规则（正文和思考过程）、提示词末尾的提醒句、Command Code 通过 mod 追加系统提示词时的插件源码都在 `shared/prompt-lang.ts`。
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。
 - 工作流执行引擎：按流程图调度节点，处理开始 / 验收 / 结束流程、步骤串行、续跑和主 Agent 调度（`shared/engine.ts`）；真实执行和在线演示的模拟执行共用。
@@ -102,6 +103,7 @@
 - `shared/clis.ts`：CLI 列表和能力的统一出口。
 - `shared/engine.ts`：执行引擎，被 `server/` 和在线演示的模拟实现调用。
 - `shared/ansi.ts`：`stripAnsi` 清 CLI 输出里的 ANSI 转义，目前由账号登录（`server/accounts.ts`）在存 CLI 输出前调用。
+- `shared/web-search.ts`：联网搜索的搜索源注册表、参数规范化、地址守卫、正文窗口和给模型的结果文本（纯逻辑，不联网；网络请求在 `server/web-search.ts`）。
 - `shared/local-image.ts`：本机生图的模型清单、内置工作流和占位符替换；`shared/comfy-chain.ts`：多个工作流串成一条链（合并成一张节点图）；`shared/moss.ts`：控件树到 MOSS 布局 JSON 的换算；`shared/proxy.ts`：本机代理默认值和自动探测的端口顺序；`shared/library.ts`：Skills / 命令库的结构、附件路径校验和上限常量。
 
 ## 依赖

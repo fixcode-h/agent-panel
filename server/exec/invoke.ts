@@ -9,7 +9,7 @@ import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
 import { getSettings } from '../settings.ts'
-import { mcpConfig } from '../../shared/cli-spec.ts'
+import { mcpConfig, mcpExtras } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { APP_HINT } from '../app-actions/mcp.ts'
 import { claimPanelName, sweepPanelMcp } from '../panel-mcp-files.ts'
@@ -218,9 +218,12 @@ export async function invokeCli(o: {
   const dir = def.mcp && servers.length ? scratchDir() : ''
   if (def.mcp && servers.length) {
     const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url, dir))
+    // 按设置里的开关才注入的扩展（Pi 的联网搜索）用面板自己的那一项填地址：
+    // 用户自己配的 MCP 服务器没有这个端点
+    const extras = mcpExtras(def.mcp!, servers[0]!.name, servers[0]!.url, dir, build.options)
     // 几个工具写进同一个配置文件（Gemini CLI 的 settings.json）时先合在一起，一次写进去
     const files = new Map<string, unknown>()
-    for (const f of tools.flatMap((x) => x.files))
+    for (const f of [...tools.flatMap((x) => x.files), ...extras.files])
       files.set(
         f.path,
         files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
@@ -234,7 +237,7 @@ export async function invokeCli(o: {
       )
       run = {
         ...o,
-        build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
+        build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args), ...extras.args] },
         input,
       }
     } catch (e) {

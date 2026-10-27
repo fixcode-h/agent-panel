@@ -52,9 +52,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('dialog').getByText('Pi', { exact: true }).first().click()
   await p.getByRole('button', { name: '安装', exact: true }).first().click()
   await p.getByText('安装完成').first().waitFor({ timeout: 8000 })
-  // 装好后才有的：开关（离线运行默认开着）和扩展包
+  // 装好后才有的：开关（离线运行默认开着、联网搜索默认关）和扩展包
   await p.getByRole('list', { name: '已装的扩展包' }).scrollIntoViewIfNeeded()
   await check(p, '设置-CLI-Pi扩展包', ['离线运行', '扩展包', 'npm:@example/pi-web-tools'])
+  // 新加的开关按 aria-label 找：左侧目录里也有同名的「联网搜索」分区，按文本会被它满足
+  await p
+    .getByRole('switch', { name: 'Pi 联网搜索' })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('设置-CLI-Pi开关：没有「联网搜索」开关'))
   await p.getByRole('button', { name: '卸载', exact: true }).first().click()
   await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })
