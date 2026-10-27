@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -17,6 +17,29 @@ import { clip } from '../shared/text.ts'
 
 /** 用户上传的附件放在数据目录里，不放进项目目录，免得算进任务的文件改动 */
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
+
+/**
+ * 面板确认过的本机文件路径：pick / resolve / locate 返回过的，以及 /copy 拷出来的副本。
+ * /copy 和 /discard 只认这些路径——不能凭前端传来的一段任意字符串，就让服务端去拷或删本机的文件。
+ * 只在内存里，进程重启就清空；草稿里恢复的附件已经是拷好的副本，不需要重新确认。
+ */
+const confirmed = new Map<string, number>()
+/** 确认过的路径保留多久：够用户选完文件再发送，也不会一直涨 */
+const CONFIRMED_TTL = 24 * 60 * 60 * 1000
+/** 最多记这么多条，超过时先丢最早登记的那些 */
+const CONFIRMED_MAX = 5000
+
+function confirm(files: readonly string[]) {
+  const now = Date.now()
+  for (const [p, at] of confirmed) if (now - at > CONFIRMED_TTL) confirmed.delete(p)
+  for (const f of files) confirmed.set(path.resolve(f), now)
+  for (const p of [...confirmed.keys()].slice(0, Math.max(confirmed.size - CONFIRMED_MAX, 0))) confirmed.delete(p)
+}
+
+const isConfirmed = (file: string) => {
+  const at = confirmed.get(path.resolve(file))
+  return !!at && Date.now() - at <= CONFIRMED_TTL
+}
 
 const UploadInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -65,6 +88,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
           mime: mimeOf(file),
         })
       }
+      confirm(files.map((f) => f.path))
       return c.json({ files })
     } catch (e) {
       return c.json({ error: t('打不开选择文件的窗口：{error}', { error: (e as Error).message }) }, 400)
@@ -103,6 +127,7 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
       }
       files.push({ from, name: base, path: file, size: s.size, mime: mimeOf(file), ref: true })
     }
+    confirm(files.map((f) => f.path))
     return c.json({ files })
   })
   /**
@@ -127,7 +152,57 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
       const file = found.get(w)
       return file ? [{ index, name: w.name, path: file, size: w.size, mime: mimeOf(file), ref: true }] : []
     })
+    confirm(files.map((f) => f.path))
     return c.json({ files })
+  })
+  /**
+   * 小文件后台拷一份到数据目录：浏览器只给得出内容，传大文件会卡输入框。
+   * 只接受面板确认过的本机路径（pick / resolve / locate 的返回，见 confirmed）；
+   * 拷贝失败（被占用、权限、源文件在查找之后没了）不在结果里返回，页面降级成引用原路径，不拦发送。
+   */
+  routes.post('/copy', async (c) => {
+    const p = z
+      .object({ paths: z.array(z.string().min(1).max(4096)).min(1).max(MAX_ATTACHMENTS) })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
+    const files: (Attachment & { from: string })[] = []
+    for (const from of p.data.paths) {
+      const source = path.resolve(from)
+      if (!isConfirmed(source)) continue
+      const s = await stat(source).catch(() => null)
+      if (!s?.isFile() || s.size > MAX_ATTACHMENT_BYTES) continue
+      // 和上传一样：每个文件单独一个目录，保留原文件名
+      const dir = path.join(UPLOADS_DIR, randomUUID())
+      await mkdir(dir, { recursive: true }).catch(() => {})
+      const target = path.join(dir, safeName(path.basename(source)))
+      try {
+        await copyFile(source, target)
+      } catch {
+        await rm(dir, { recursive: true, force: true }).catch(() => {})
+        continue
+      }
+      confirm([target])
+      files.push({ from, name: path.basename(source), path: target, size: s.size, mime: mimeOf(source) })
+    }
+    return c.json({ files })
+  })
+  /**
+   * 输入框里删掉还没发出去的附件：把 /copy 拷出来的副本删掉，不留孤儿。
+   * 只认已经确认过的路径，并且只删附件目录里那一个副本目录，删不到别的地方。
+   */
+  routes.post('/discard', async (c) => {
+    const p = z
+      .object({ paths: z.array(z.string().min(1).max(4096)).max(MAX_ATTACHMENTS) })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
+    for (const want of p.data.paths) {
+      const full = path.resolve(want)
+      if (!isConfirmed(full)) continue
+      const dir = uploadDirOf(full)
+      if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
+      confirmed.delete(full)
+    }
+    return c.json({ ok: true })
   })
   /** 点开附件卡片后：用系统默认程序打开，或在文件管理器里显示（可执行文件只显示，不运行） */
   routes.post('/open', async (c) => {

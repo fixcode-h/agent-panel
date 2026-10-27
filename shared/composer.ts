@@ -125,8 +125,8 @@ export function quoteBlock(text: string) {
 export const pathText = (p: string) => (/[\s'"]/.test(p) ? `"${p.replace(/"/g, '')}"` : p)
 
 /**
- * 复制一条用户消息：卡片换成它的文件路径（引用给的是存原文的那个文件），Skill / 命令写成「/名字」。
- * 文字里没有卡片的附件（旧消息）放在最前面，和对话里显示的位置一致。
+ * 复制一条用户消息：卡片换成「@路径」（和输入框里引用文件的写法一致，引用给的是存原文的那个文件），
+ * Skill / 命令写成「/名字」。文字里没有卡片的附件（旧消息）放在最前面，和对话里显示的位置一致。
  *
  * 路径和前后正文之间一定要留一个空格：不留的话复制出来是「…截图-210356.png前面是抓取的元素」，
  * 粘贴时 findPaths 会把这整段当成一个路径（路径里本来就可以有汉字），服务端 stat 不到这个「文件」，
@@ -162,10 +162,10 @@ export function copyText(value: string, attachments: readonly AttachLike[] = [])
     used.add(a)
     // 卡片前面也要隔开：路径里本来就能有汉字，和前面正文连在一起时粘贴会认错路径（见函数上方说明）
     if (out && !/\s$/.test(out)) out += ' '
-    out += pathText(a.path)
+    out += `@${pathText(a.path)}`
     afterPath = true
   }
-  const rest = attachments.filter((a) => !used.has(a)).map((a) => pathText(a.path))
+  const rest = attachments.filter((a) => !used.has(a)).map((a) => `@${pathText(a.path)}`)
   if (!rest.length) return out
   return out.trim() ? `${rest.join(' ')} ${out}` : rest.join(' ')
 }
@@ -180,25 +180,30 @@ export interface PathHit {
 const ABS = /^(?:[A-Za-z]:[\\/]|\/(?!\/))/
 /**
  * 双引号包着的路径（可以有空格），或者不带空格的绝对路径：Windows 的「C:\」「D:/」开头，其他系统「/」开头。
- * 网址里的「//」、相对路径、词中间的斜杠不算；中文的逗号、句号这些标点当作路径结束
+ * 两种都可以带一个 @ 前缀（输入框里引用文件的写法）；网址里的「//」、相对路径、词中间的斜杠不算；
+ * 中文的逗号、句号这些标点当作路径结束
  */
-const PATH_RE = /"([^"\n]+)"|(?<![\w:/\\.~-])((?:[A-Za-z]:[\\/]|\/(?!\/))[^\s"'<>|*?，。；、！？「」《》]+)/g
+const PATH_RE = /(@?)"([^"\n]+)"|(@?)(?<![\w:/\\.~-])((?:[A-Za-z]:[\\/]|\/(?!\/))[^\s"'<>|*?，。；、！？「」《》]+)/g
 /** 句尾跟着的标点不是路径的一部分 */
 const TAIL = /[，。、；：！？,.;:!?)）\]】》>'"]+$/
 
-/** 找出文字里的绝对路径：粘贴时交给服务端确认是不是真的文件，是的话换成卡片 */
+/**
+ * 找出文字里的绝对路径：粘贴时交给服务端确认是不是真的文件，是的话换成卡片。
+ * 路径前面的 @（复制附件得到的写法）算在命中范围里，换成卡片时一起去掉，卡片自己会显示 @ 路径
+ */
 export function findPaths(text: string, max = 20): PathHit[] {
   const out: PathHit[] = []
   for (const m of text.matchAll(PATH_RE)) {
     if (out.length >= max) break
     const start = m.index ?? 0
-    if (m[1] !== undefined) {
-      const p = m[1].trim()
+    if (m[2] !== undefined) {
+      const p = m[2].trim()
       if (ABS.test(p)) out.push({ start, end: start + m[0].length, path: p })
       continue
     }
-    const p = m[2].replace(TAIL, '')
-    if (p.length > 1) out.push({ start, end: start + p.length, path: p })
+    const p = m[4].replace(TAIL, '')
+    // end 按命中范围算：@ 前缀也算进去，尾部标点不算
+    if (p.length > 1) out.push({ start, end: start + (m[3] ? 1 : 0) + p.length, path: p })
   }
   return out
 }

@@ -81,15 +81,15 @@ test('附件对应哪种卡片：带原文的是引用，图片按类型或扩�
   assert.equal(attachChip({ name: 'a.pdf', mime: 'application/pdf' }), 'file')
 })
 
-test('复制用户消息：卡片换成路径，带空格的路径加引号，没写进文字的附件放在最前面', () => {
+test('复制用户消息：卡片换成 @路径，带空格的路径加引号，没写进文字的附件放在最前面', () => {
   const img = { name: '设计稿.png', path: '/data/uploads/1/设计稿.png', mime: 'image/png' }
   const doc = { name: '需求.pdf', path: 'C:\\Users\\Me Too\\需求.pdf', mime: '' }
   const quote = { name: '一段话#q1', path: '/data/uploads/2/quote-q1.md', mime: 'text/markdown', quote: '一段话' }
   assert.equal(
     copyText('按 [图片:设计稿.png] 改，参考 [文件:需求.pdf] 和 [引用:一段话#q1]', [img, doc, quote]),
-    '按 /data/uploads/1/设计稿.png 改，参考 "C:\\Users\\Me Too\\需求.pdf" 和 /data/uploads/2/quote-q1.md',
+    '按 @/data/uploads/1/设计稿.png 改，参考 @"C:\\Users\\Me Too\\需求.pdf" 和 @/data/uploads/2/quote-q1.md',
   )
-  assert.equal(copyText('修复下吧', [img]), '/data/uploads/1/设计稿.png 修复下吧')
+  assert.equal(copyText('修复下吧', [img]), '@/data/uploads/1/设计稿.png 修复下吧')
   assert.equal(copyText('/blender 做个箱子'), '/blender 做个箱子')
   // 引用卡片（附件里带 quote）复制成 quote-<编号>.md 的路径：服务端按这个文件名认回原文（server/uploads.ts）
   const elem = {
@@ -98,9 +98,13 @@ test('复制用户消息：卡片换成路径，带空格的路径加引号，�
     mime: 'text/markdown',
     quote: '原文',
   }
-  assert.equal(copyText('看 [引用:界面元素 RichInput#qabc] 这里', [elem]), '看 /data/uploads/2/quote-qabc.md 这里')
+  assert.equal(copyText('看 [引用:界面元素 RichInput#qabc] 这里', [elem]), '看 @/data/uploads/2/quote-qabc.md 这里')
   // 引用卡片没有对应附件时留着卡片标记，不凭空编一个路径出来
   assert.equal(copyText('看 [引用:一段话#qgone]', []), '看 [引用:一段话#qgone]')
+  // 只有一张卡片时输出就是那个 @路径，粘贴回来整段认成引用
+  const shot = { name: '图.png', path: '/tmp/a/图.png', mime: 'image/png' }
+  assert.equal(copyText('[图片:图.png]', [shot]), '@/tmp/a/图.png')
+  assert.equal(solePath(copyText('[图片:图.png]', [shot])), '/tmp/a/图.png')
 })
 
 test('复制用户消息：卡片换成路径后和正文用空格隔开，粘回去能按路径认回卡片', () => {
@@ -108,7 +112,7 @@ test('复制用户消息：卡片换成路径后和正文用空格隔开，粘�
   // 路径和正文粘成一截，粘贴时 findPaths 把「…截图.png前面是抓取的元素」整段当成路径，stat 不到就不换卡片了
   const shot = { name: '截图-210356.png', path: 'C:\\Users\\Me\\uploads\\1\\截图-210356.png', mime: 'image/png' }
   const copied = copyText('[图片:截图-210356.png]前面是抓取的元素，后面是复制粘贴的', [shot])
-  assert.equal(copied, 'C:\\Users\\Me\\uploads\\1\\截图-210356.png 前面是抓取的元素，后面是复制粘贴的')
+  assert.equal(copied, '@C:\\Users\\Me\\uploads\\1\\截图-210356.png 前面是抓取的元素，后面是复制粘贴的')
   // 粘贴流程靠 findPaths 拿到路径：认出来的必须是完整路径，不能把后面的中文也吃进去
   assert.deepEqual(
     findPaths(copied).map((h) => h.path),
@@ -117,27 +121,21 @@ test('复制用户消息：卡片换成路径后和正文用空格隔开，粘�
   // 卡片在末尾、后面没写东西时不留尾空格（整段就是一个路径时才认得出是文件引用）
   assert.equal(
     copyText('看这张[图片:图.png]', [{ name: '图.png', path: '/tmp/a/图.png', mime: 'image/png' }]),
-    '看这张 /tmp/a/图.png',
+    '看这张 @/tmp/a/图.png',
   )
   // 前后都紧贴正文时两边各补一个空格，不能留两个
-  assert.equal(copyText('前[文件:a.txt]后', [{ name: 'a.txt', path: '/tmp/a.txt', mime: '' }]), '前 /tmp/a.txt 后')
+  assert.equal(copyText('前[文件:a.txt]后', [{ name: 'a.txt', path: '/tmp/a.txt', mime: '' }]), '前 @/tmp/a.txt 后')
   // 同理：卡片之间的路径不行，Skill / 命令紧跟路径时也要隔开，否则粘出来是「D:\up\a.png/blender」
   // （正常发送时 Skill 总在最前面，只有手工拼出来的顺序会这样）
   assert.equal(
     copyText('[图片:a.png][技能:blender]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
-    'D:\\up\\a.png /blender',
+    '@D:\\up\\a.png /blender',
   )
   // 正常顺序（Skill 在开头、后面才是卡片）的输出不变
   assert.equal(
     copyText('[技能:blender] 看 [图片:a.png]', [{ name: 'a.png', path: 'D:\\up\\a.png', mime: 'image/png' }]),
-    '/blender 看 D:\\up\\a.png',
+    '/blender 看 @D:\\up\\a.png',
   )
-})
-
-test('复制用户消息：只有一张卡片时输出就是那个路径，粘贴回来整段认成引用', () => {
-  const shot = { name: '图.png', path: '/tmp/a/图.png', mime: 'image/png' }
-  assert.equal(copyText('[图片:图.png]', [shot]), '/tmp/a/图.png')
-  assert.equal(solePath(copyText('[图片:图.png]', [shot])), '/tmp/a/图.png')
 })
 
 test('粘贴的文字里找绝对路径：引号里的可以带空格，网址、相对路径不算，句尾标点去掉', () => {
@@ -151,12 +149,21 @@ test('粘贴的文字里找绝对路径：引号里的可以带空格，网址�
   // 位置对得上：换成卡片时按位置替换
   for (const h of hits) assert.ok(text.slice(h.start, h.end).includes(h.path))
   assert.deepEqual(findPaths('没有路径'), [])
-  // 复制出来的再粘贴回去能认全
+  // 复制出来的再粘贴回去能认全（@ 前缀算在命中范围里，换成卡片时一起去掉）
   const copied = copyText('看 [图片:a b.png]', [{ name: 'a b.png', path: '/tmp/x/a b.png', mime: 'image/png' }])
   assert.deepEqual(
     findPaths(copied).map((h) => h.path),
     ['/tmp/x/a b.png'],
   )
+  const hit = findPaths(copied)[0]
+  assert.equal(copied.slice(hit.start, hit.end), '@"/tmp/x/a b.png"')
+  // 输入框里 @ 引用文件的写法：整段认得出，@ 也算命中范围
+  assert.deepEqual(
+    findPaths('@/tmp/a.png').map((h) => [h.start, h.end, h.path]),
+    [[0, 11, '/tmp/a.png']],
+  )
+  assert.equal(solePath('@/tmp/a.png'), '/tmp/a.png')
+  assert.equal(solePath('@"C:\\Users\\Me Too\\a.png"'), 'C:\\Users\\Me Too\\a.png')
 })
 
 test('整段就是一个路径才当会话/文件引用：前后有别的文字不算，普通文本也不算', () => {

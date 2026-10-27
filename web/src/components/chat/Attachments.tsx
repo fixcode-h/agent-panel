@@ -20,6 +20,14 @@ import {
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
+import {
+  blocksSend,
+  itemStatus,
+  routeOf,
+  sendAttachments,
+  type ItemLike,
+  type ItemState,
+} from '@shared/attachment-view'
 import type { DesignKind, SavedStyle } from '@shared/design'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -39,20 +47,23 @@ export interface AttachHooks {
   failed?: (name: string) => void
 }
 
-/** 输入框里正在上传或已经上传好的一个附件 */
-interface Item {
+/**
+ * 输入框里的一个附件：加进来马上显示，路径查找、拷贝 / 上传都在后台进行。
+ * 状态和「发送时用哪一份」的判断在 shared/attachment-view.ts，界面和发送读的是同一套
+ */
+interface Item extends ItemLike {
   key: string
-  name: string
-  mime: string
-  size: number
   /** 卡片上的预览图（缩略图），不用等上传完 */
   preview?: string
   /** 看大图用的原图地址：从草稿恢复时 preview 是缩略图，浮层不能用它 */
   full?: string
-  /** 引用卡片的原文：上传完之前也能点开看 */
-  quote?: string
-  done?: Attachment
+  /** 拷贝完成后数据目录里的路径：删卡片时用它把副本清掉 */
+  copyPath?: string
 }
+
+/** 还在后台查找 / 拷贝 / 上传：删掉或换了对话后要登记取消，完成时丢掉结果、不留副本 */
+const inFlight = (x: Pick<ItemLike, 'state'>) =>
+  x.state === 'locating' || x.state === 'copying' || x.state === 'uploading'
 
 export const isImage = (mime: string, name = '') =>
   mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(name)
@@ -61,14 +72,8 @@ export const isImage = (mime: string, name = '') =>
 export const chipKind = (mime: string, name: string): ChipKind => (isImage(mime, name) ? 'image' : 'file')
 
 /** 输入框里一个附件对应的卡片类型（引用卡片看原文） */
-export const itemKind = (x: { name: string; mime: string; quote?: string; done?: Attachment }): ChipKind =>
+export const itemKind = (x: Pick<ItemLike, 'name' | 'mime' | 'quote' | 'done'>): ChipKind =>
   x.quote !== undefined || x.done?.quote !== undefined ? 'quote' : chipKind(x.mime, x.name)
-
-export function formatSize(n: number) {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
-}
 
 /** 只发了附件、没写要求时交给 Agent 的一句话：输入框里不留附件文字，发送时补上 */
 export const ATTACHMENT_PROMPT = t('请查看附件')
@@ -106,16 +111,36 @@ const readBase64 = (f: Blob) =>
 
 const ATTACH = 'chat-attach:'
 
-/** 上次没发出去的附件；只记上传好的，还在上传的切回来也续不上 */
+/** 草稿里存下来的附件：拷好 / 传好的那份，加上显示用的原路径和状态 */
+interface DraftItem {
+  key: string
+  name: string
+  mime: string
+  size: number
+  done: Attachment
+  source?: string
+  state?: ItemState
+}
+
+/** 上次没发出去的附件；只记拷好 / 传好的，路径还在找、还在拷的切回来也续不上 */
 function readAttachments(key: string): Item[] {
   try {
     const raw = localStorage.getItem(ATTACH + key)
     if (!raw) return []
-    const list = JSON.parse(raw) as { key: string; name: string; mime: string; size: number; done: Attachment }[]
+    const list = JSON.parse(raw) as DraftItem[]
     if (!Array.isArray(list)) return []
     return list
       .filter((x) => x?.done?.path)
-      .map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.size, done: x.done }))
+      .map((x) => ({
+        key: x.key,
+        name: x.name,
+        mime: x.mime,
+        size: x.size,
+        done: x.done,
+        source: x.source,
+        // 老草稿没有状态：已经存下来的都是能发送的
+        state: x.state ?? (x.done.ref ? 'ref' : 'ready'),
+      }))
   } catch {
     return []
   }
@@ -134,6 +159,10 @@ export function useAttachments(draftKey?: string) {
   // 同一次事件里连着加（粘贴好几个路径）时还没重新渲染，按这份最新的算
   const itemsRef = useRef(items)
   itemsRef.current = items
+  /** 卡片删掉后，还在进行的拷贝 / 上传完成时不再回写；已经拷出来的副本顺手清掉 */
+  const cancelled = useRef(new Set<string>())
+  /** 已经认领的原路径：同一文件重复添加时去重，items 还没重新渲染时也认得出 */
+  const claimed = useRef(new Set<string>())
   const { settings } = useData()
   const settingsRef = useRef(settings)
   settingsRef.current = settings
@@ -142,6 +171,9 @@ export function useAttachments(draftKey?: string) {
   // 同一个输入框换了对话：换成那个对话的附件
   const shown = useRef(draftKey)
   if (shown.current !== draftKey) {
+    // 旧对话里还在查找 / 拷贝 / 上传的附件不再需要：完成后丢掉，不留孤儿；已经拷好的留在草稿里
+    for (const x of itemsRef.current) if (inFlight(x)) cancelled.current.add(x.key)
+    claimed.current.clear()
     shown.current = draftKey
     setItems(draftKey ? readAttachments(draftKey) : [])
   }
@@ -152,7 +184,15 @@ export function useAttachments(draftKey?: string) {
     try {
       const done = items
         .filter((x) => x.done)
-        .map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.size, done: x.done }))
+        .map((x) => ({
+          key: x.key,
+          name: x.name,
+          mime: x.mime,
+          size: x.size,
+          done: x.done,
+          source: x.source,
+          state: x.state,
+        }))
       if (done.length) localStorage.setItem(ATTACH + draftKey, JSON.stringify(done))
       else localStorage.removeItem(ATTACH + draftKey)
     } catch {}
@@ -185,28 +225,108 @@ export function useAttachments(draftKey?: string) {
   }, [items])
 
   /**
-   * 加附件。added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：上传失败时回调
-   *
-   * 超过上限的文件不经过浏览器上传（浏览器给不出原路径，也传不动）：改成在面板所在的本机弹选择框，
-   * 拿到的就是原始路径，发给 Agent 时直接引用它。
+   * 把一个文件后台拷进数据目录。拷好之前它就能发送：发送时用原路径引用（见 shared/attachment-view.ts），
+   * 拷好之后改用副本。拷不了（被占用、权限、源文件没了）就降级成引用原路径，不弹错也不拦发送。
    */
-  const pickLarge = useCallback(async (hooks?: AttachHooks) => {
-    const room = MAX_ATTACHMENTS - count.current
-    try {
-      const { files } = await api.pickFiles()
-      if (!files.length) return
-      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-      const accepted = files.slice(0, Math.max(room, 0))
-      if (!accepted.length) return
-      setItems((xs) => [
-        ...xs,
-        ...accepted.map((a) => ({ key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a })),
-      ])
-      hooks?.added?.(accepted.map((a) => ({ name: a.name, mime: a.mime, kind: chipKind(a.mime, a.name) })))
-    } catch (e) {
-      toast.error((e as Error).message)
-    }
-  }, [])
+  const copyInto = useCallback(
+    async (key: string, source: string, meta: { name: string; mime: string; size: number }) => {
+      setItems((xs) => xs.map((i) => (i.key === key ? { ...i, source, state: 'copying' } : i)))
+      try {
+        const { files } = await api.copyPaths([source])
+        const copied = files[0]
+        if (!copied) throw new Error('copy failed')
+        if (cancelled.current.delete(key)) {
+          // 卡片已经删了：把刚拷出来的副本清掉，不留孤儿
+          void api.discardPaths([copied.path]).catch(() => {})
+          return
+        }
+        // 名字用卡片上的那个：同一个文件名重复添加时加了序号，发送时要和文字里的卡片标记对得上
+        setItems((xs) =>
+          xs.map((i) =>
+            i.key === key ? { ...i, done: { ...copied, name: meta.name }, copyPath: copied.path, state: 'copied' } : i,
+          ),
+        )
+      } catch {
+        if (cancelled.current.delete(key)) return
+        setItems((xs) =>
+          xs.map((i) =>
+            i.key === key
+              ? {
+                  ...i,
+                  state: 'ref',
+                  done: { name: meta.name, path: source, size: meta.size, mime: meta.mime, ref: true },
+                }
+              : i,
+          ),
+        )
+      }
+    },
+    [],
+  )
+
+  /** 没有原路径的附件（剪贴板截图）仍走浏览器上传：只有这一种要等它传完才能发送 */
+  const uploadOne = useCallback(
+    async (x: { key: string; name: string; mime: string; file: File }, hooks?: AttachHooks) => {
+      if (cancelled.current.has(x.key)) return
+      setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, state: 'uploading' } : i)))
+      try {
+        const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
+        if (cancelled.current.delete(x.key)) return
+        setItems((xs) =>
+          xs.map((i) => (i.key === x.key ? { ...i, done, mime: done.mime || i.mime, state: 'ready' } : i)),
+        )
+      } catch (e) {
+        cancelled.current.delete(x.key)
+        toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
+        setItems((xs) => xs.filter((i) => i.key !== x.key))
+        hooks?.failed?.(x.name)
+      }
+    },
+    [],
+  )
+
+  /**
+   * 在本机弹选择框选文件，拿到的是原始路径：小于「大文件」阈值的后台拷一份，更大的直接引用。
+   * added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）
+   */
+  const pickLarge = useCallback(
+    async (hooks?: AttachHooks) => {
+      const room = MAX_ATTACHMENTS - count.current
+      try {
+        const { files } = await api.pickFiles()
+        if (!files.length) return
+        if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+        const limit = largeBytes(settingsRef.current)
+        const taken = new Set(names.current)
+        const fresh: Item[] = []
+        for (const a of files.slice(0, Math.max(room, 0))) {
+          // 同一个文件已经附上（或者正在处理）：不重复加
+          if (claimed.current.has(a.path) || [...itemsRef.current, ...fresh].some((x) => x.source === a.path)) continue
+          claimed.current.add(a.path)
+          const name = uniqueName(a.name, taken)
+          taken.add(name)
+          const ref = routeOf(a.size, limit) === 'ref'
+          fresh.push({
+            key: crypto.randomUUID(),
+            name,
+            mime: a.mime,
+            size: a.size,
+            source: a.path,
+            done: ref ? { ...a, name, ref: true } : undefined,
+            state: ref ? 'ref' : 'copying',
+          })
+        }
+        if (!fresh.length) return
+        itemsRef.current = [...itemsRef.current, ...fresh]
+        setItems((xs) => [...xs, ...fresh])
+        hooks?.added?.(fresh.map((x) => ({ name: x.name, mime: x.mime, kind: chipKind(x.mime, x.name) })))
+        for (const x of fresh) if (x.state === 'copying' && x.source) void copyInto(x.key, x.source, x)
+      } catch (e) {
+        toast.error((e as Error).message)
+      }
+    },
+    [copyInto],
+  )
 
   /**
    * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字），
@@ -219,7 +339,7 @@ export function useAttachments(draftKey?: string) {
     let full = false
     for (const a of list) {
       if (names.has(a.path)) continue
-      const had = itemsRef.current.find((x) => x.done?.path === a.path)
+      const had = itemsRef.current.find((x) => x.done?.path === a.path || x.source === a.path)
       if (had) {
         names.set(a.path, { name: had.name, kind: itemKind(had) })
         continue
@@ -230,7 +350,15 @@ export function useAttachments(draftKey?: string) {
       }
       const name = a.quote !== undefined ? a.name : uniqueName(a.name, taken)
       taken.add(name)
-      fresh.push({ key: crypto.randomUUID(), name, mime: a.mime, size: a.size, done: { ...a, name } })
+      fresh.push({
+        key: crypto.randomUUID(),
+        name,
+        mime: a.mime,
+        size: a.size,
+        done: { ...a, name },
+        source: a.path,
+        state: 'ref',
+      })
       names.set(a.path, { name, kind: attachChip(a) })
     }
     if (full) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
@@ -240,93 +368,120 @@ export function useAttachments(draftKey?: string) {
     }
     return names
   }, [])
-  /** 上传一批文件：卡片马上放进输入框，传完换成服务端的附件 */
-  const upload = useCallback(async (files: File[], hooks?: AttachHooks) => {
-    const taken = new Set(names.current)
-    const accepted: { file: File; key: string; name: string; mime: string; preview?: string }[] = []
-    for (const f of files) {
-      // 粘贴的截图没有像样的文件名
-      const base =
-        f.name && f.name !== 'image.png'
-          ? f.name
-          : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
-      const name = uniqueName(base, taken)
-      taken.add(name)
-      accepted.push({
-        file: f,
-        key: crypto.randomUUID(),
-        name,
-        mime: f.type,
-        preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
-      })
-    }
-    if (!accepted.length) return
-    setItems((xs) => [
-      ...xs,
-      ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
-    ])
-    hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime, kind: chipKind(mime, name) })))
-    for (const x of accepted) {
-      try {
-        const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
-        setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
-      } catch (e) {
-        toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
-        setItems((xs) => xs.filter((i) => i.key !== x.key))
-        hooks?.failed?.(x.name)
-      }
-    }
-  }, [])
 
   /**
-   * 加附件（选文件、粘贴、拖进来）。added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：上传失败时回调。
+   * 加附件（选文件、粘贴、拖进来）。卡片马上放进输入框，路径查找、拷贝 / 上传都在后台：
+   * 先在本机按名字、大小、修改时间找回原路径（浏览器给不出路径），小于设置里「大文件」的拷一份到数据目录，
+   * 更大的或者拷不了的直接引用原路径。只有找不回路径的（剪贴板截图）才走浏览器上传。
    *
-   * 超过设置里「大文件」大小的不上传、不拷贝：浏览器给不出原路径，交给面板在本机按名字、大小、修改时间找回原文件，
-   * 直接引用它（卡片和普通附件一样）。找不到时，不算太大的照常上传一份；实在太大的提示用户自己选
+   * added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：这张卡片不加了
    */
   const add = useCallback(
-    async (files: File[], hooks?: AttachHooks) => {
+    async (files: File[], hooks?: AttachHooks, opts: { clipboard?: boolean } = {}) => {
       const room = MAX_ATTACHMENTS - count.current
       if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-      const limit = largeBytes(settingsRef.current)
-      const list = files.slice(0, Math.max(room, 0))
-      const small = list.filter((f) => f.size <= limit)
-      const big = list.filter((f) => f.size > limit)
-      const uploading = upload(small, hooks)
-      if (big.length) {
-        const found = await api
-          .locateFiles(big.map((f) => ({ name: f.name, size: f.size, mtime: f.lastModified || undefined })))
-          .then((r) => r.files)
-          .catch(() => [])
-        const hit = new Set(found.map((x) => x.index))
-        const refs = found.map(({ index: _, ...a }) => a)
-        if (refs.length) {
-          const names = addRefs(refs)
-          hooks?.added?.(
-            refs.flatMap((a) => {
-              const n = names.get(a.path)
-              return n ? [{ name: n.name, mime: a.mime, kind: n.kind }] : []
-            }),
-          )
+      const taken = new Set(names.current)
+      const fresh = files.slice(0, Math.max(room, 0)).map((f) => {
+        // 粘贴的截图没有像样的文件名
+        const base =
+          f.name && f.name !== 'image.png'
+            ? f.name
+            : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
+        const name = uniqueName(base, taken)
+        taken.add(name)
+        return {
+          file: f,
+          key: crypto.randomUUID(),
+          name,
+          mime: f.type,
+          preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
         }
-        const rest = big.filter((_, i) => !hit.has(i))
-        void upload(
-          rest.filter((f) => f.size <= MAX_ATTACHMENT_BYTES),
-          hooks,
+      })
+      if (!fresh.length) return
+      // 先放上卡片：路径还在找、文件还没拷，输入框里已经能看到 @路径、大小和状态，输入不受影响
+      const shown: Item[] = fresh.map((x) => ({
+        key: x.key,
+        name: x.name,
+        mime: x.mime,
+        size: x.file.size,
+        preview: x.preview,
+        state: 'locating',
+      }))
+      itemsRef.current = [...itemsRef.current, ...shown]
+      setItems((xs) => [...xs, ...shown])
+      hooks?.added?.(fresh.map((x) => ({ name: x.name, mime: x.mime, kind: chipKind(x.mime, x.name) })))
+
+      // 粘贴进来的图片是剪贴板截图，没有原路径：直接上传，省掉一次本机查找。
+      // 拖入、选择文件、粘贴的文件仍先找原路径——真实文件也可能叫 image.png，不能只看文件名
+      const direct = opts.clipboard ? fresh.filter((x) => isImage(x.mime, x.name)) : []
+      for (const x of direct) void uploadOne(x, hooks)
+      const want = fresh.filter((x) => !direct.includes(x))
+      if (!want.length) return
+
+      const found = await api
+        .locateFiles(
+          want.map((x) => ({ name: x.file.name, size: x.file.size, mtime: x.file.lastModified || undefined })),
         )
-        for (const f of rest.filter((x) => x.size > MAX_ATTACHMENT_BYTES))
-          toast.error(t('没找到「{name}」在本机的位置，可以手动选择这个文件来引用它', { name: f.name }), {
-            action: { label: t('选择文件'), onClick: () => void pickLarge(hooks) },
-          })
+        .then((r) => new Map(r.files.map((f) => [f.index, f])))
+        .catch(() => new Map<number, Attachment & { index: number }>())
+      const limit = largeBytes(settingsRef.current)
+      for (const [index, x] of want.entries()) {
+        if (cancelled.current.has(x.key)) continue
+        const hit = found.get(index)
+        if (!hit) {
+          // 找不回原路径：不太大的照旧上传一份；太大的让用户自己选文件来引用
+          if (x.file.size <= MAX_ATTACHMENT_BYTES) void uploadOne(x, hooks)
+          else {
+            cancelled.current.add(x.key)
+            setItems((xs) => xs.filter((i) => i.key !== x.key))
+            hooks?.failed?.(x.name)
+            toast.error(t('没找到「{name}」在本机的位置，可以手动选择这个文件来引用它', { name: x.name }), {
+              action: { label: t('选择文件'), onClick: () => void pickLarge(hooks) },
+            })
+          }
+          continue
+        }
+        // 同一个文件已经附过（或者同一批里前面那项刚认领）：不重复加，也不重复拷
+        if (claimed.current.has(hit.path) || itemsRef.current.some((i) => i.key !== x.key && i.source === hit.path)) {
+          cancelled.current.add(x.key)
+          setItems((xs) => xs.filter((i) => i.key !== x.key))
+          hooks?.failed?.(x.name)
+          continue
+        }
+        claimed.current.add(hit.path)
+        const ref = routeOf(hit.size, limit) === 'ref'
+        setItems((xs) =>
+          xs.map((i) =>
+            i.key === x.key
+              ? {
+                  ...i,
+                  source: hit.path,
+                  state: ref ? 'ref' : 'copying',
+                  done: ref ? { name: i.name, path: hit.path, size: hit.size, mime: hit.mime, ref: true } : undefined,
+                }
+              : i,
+          ),
+        )
+        if (!ref) void copyInto(x.key, hit.path, { name: x.name, mime: hit.mime, size: hit.size })
       }
-      await uploading
     },
-    [pickLarge, upload, addRefs],
+    [copyInto, pickLarge, uploadOne],
   )
   /** 已经在服务端生成好的附件（引入的会话记录） */
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
     if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-    setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
+    setItems((xs) => [
+      ...xs,
+      {
+        key: crypto.randomUUID(),
+        name: a.name,
+        mime: a.mime,
+        size: a.size,
+        done: a,
+        source: a.ref ? a.path : undefined,
+        state: a.ref ? 'ref' : 'ready',
+      },
+    ])
     hooks?.added?.([{ name: a.name, mime: a.mime, kind: attachChip(a) }])
   }, [])
   /**
@@ -338,12 +493,14 @@ export function useAttachments(draftKey?: string) {
     const { id, name } = quoteName(text)
     const key = crypto.randomUUID()
     const size = new Blob([text]).size
-    setItems((xs) => [...xs, { key, name, mime: 'text/markdown', size, quote: text }])
+    setItems((xs) => [...xs, { key, name, mime: 'text/markdown', size, quote: text, state: 'uploading' }])
     hooks?.added?.([{ name, mime: 'text/markdown', kind: 'quote' }])
     void readBase64(new Blob([text], { type: 'text/markdown' }))
       .then((data) => api.upload({ name: `quote-${id}.md`, mime: 'text/markdown', data }))
       .then((done) =>
-        setItems((xs) => xs.map((i) => (i.key === key ? { ...i, done: { ...done, name, quote: text } } : i))),
+        setItems((xs) =>
+          xs.map((i) => (i.key === key ? { ...i, done: { ...done, name, quote: text }, state: 'ready' } : i)),
+        ),
       )
       .catch((e) => {
         toast.error(t('引用没有加上：{error}', { error: (e as Error).message }))
@@ -353,15 +510,43 @@ export function useAttachments(draftKey?: string) {
   }, [])
   /** 换成另一组附件（撤回消息时把那条的附件放回输入框，卡片已经在文字里） */
   const replace = useCallback((list: Attachment[]) => {
-    setItems(list.map((a) => ({ key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a })))
+    setItems(
+      list.map((a) => ({
+        key: crypto.randomUUID(),
+        name: a.name,
+        mime: a.mime,
+        size: a.size,
+        done: a,
+        source: a.ref ? a.path : undefined,
+        state: a.ref ? 'ref' : 'ready',
+      })),
+    )
   }, [])
-  const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key))
+  /** 删掉一个附件：已经拷出来的副本一并清掉，正在拷的完成后丢掉（见 copyInto 的 cancelled 判断） */
+  const remove = (key: string) => {
+    const item = itemsRef.current.find((x) => x.key === key)
+    if (item?.copyPath) void api.discardPaths([item.copyPath]).catch(() => {})
+    if (item?.source) claimed.current.delete(item.source)
+    // 已经完成的不用记：没有还在跑的请求会回来找这个 key，记了只会一直攒着
+    if (item && inFlight(item)) cancelled.current.add(key)
+    setItems((xs) => xs.filter((x) => x.key !== key))
+  }
   /** 卡片从文字里没了（退格删掉、整段剪掉）：这些名字的附件不再发送 */
   const removeNames = useCallback((gone: Set<string>) => {
-    if (gone.size) setItems((xs) => xs.filter((x) => !gone.has(x.name)))
+    if (!gone.size) return
+    for (const x of itemsRef.current) {
+      if (!gone.has(x.name)) continue
+      if (x.copyPath) void api.discardPaths([x.copyPath]).catch(() => {})
+      if (x.source) claimed.current.delete(x.source)
+      if (inFlight(x)) cancelled.current.add(x.key)
+    }
+    setItems((xs) => xs.filter((x) => !gone.has(x.name)))
   }, [])
-  // 发送成功后页面可能马上切走，等不到 effect 删草稿；这里直接删，免得下次新建时附件又冒出来
+  // 发送成功后页面马上切走，等不到 effect 删草稿；这里直接删，免得下次新建时附件又冒出来
   const clear = useCallback(() => {
+    // 还在跑的：这条已经发出去了或者没人要了，完成时把拷出来的副本删掉
+    for (const x of itemsRef.current) if (inFlight(x)) cancelled.current.add(x.key)
+    claimed.current.clear()
     setItems([])
     if (!draftKey) return
     try {
@@ -371,7 +556,7 @@ export function useAttachments(draftKey?: string) {
   return {
     items,
     add,
-    /** 在面板所在的本机选文件，直接引用原路径（大文件用，也能选小文件） */
+    /** 在面板所在的本机选文件：拿到原路径后后台拷贝一份，太大的直接引用 */
     pick: pickLarge,
     addReady,
     addQuote,
@@ -380,8 +565,13 @@ export function useAttachments(draftKey?: string) {
     remove,
     removeNames,
     clear,
-    uploading: items.some((x) => !x.done),
-    attachments: items.flatMap((x) => (x.done ? [x.done] : [])),
+    /** 还没拿到路径、会拦住发送的那个附件的状态文案（没有时为空）：查找中 / 上传中 */
+    waiting: (() => {
+      const x = items.find(blocksSend)
+      return x ? itemStatus(x.state) : ''
+    })(),
+    uploading: items.some(blocksSend),
+    attachments: sendAttachments(items),
   }
 }
 
@@ -390,7 +580,7 @@ export function useAttachments(draftKey?: string) {
  * scope：拖放的接收范围（例如整个对话页）。给了就在这个元素上监听，页面任何位置都能接住文件；
  * 只带文字、链接、节点时不拦截，交给浏览器和页面上原本的拖拽逻辑。
  */
-export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | null) {
+export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | null, paste = add) {
   const [over, setOver] = useState(false)
   const depth = useRef(0)
   const hasFiles = (e: React.DragEvent | DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
@@ -468,7 +658,7 @@ export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | nul
       if (!files.length) return
       // 只粘了文件（截图）时不要把文件名当文字粘进去
       e.preventDefault()
-      add(files)
+      paste(files)
     },
   }
 }

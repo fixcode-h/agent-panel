@@ -1186,7 +1186,9 @@ export function TaskView({
     if (!text.trim() && !files.attachments.length) return
     // 输入框已经拦过一道（Enter 和按钮同一个 ready）：这里再拦一次，并说清原因，不默默丢掉用户写的字
     if (sending || files.uploading) {
-      toast.info(files.uploading ? t('附件还在上传，稍等一下') : t('上一条还在发送，稍等一下'))
+      toast.info(
+        files.uploading ? t('附件还在{status}，稍等一下', { status: files.waiting }) : t('上一条还在发送，稍等一下'),
+      )
       return
     }
     const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
