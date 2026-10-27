@@ -1471,6 +1471,23 @@ await runShard(import.meta.filename, async (api) => {
     await check(p, '任务-Token浮层', ['整个运行', '缓存命中'])
     await p.keyboard.press('Escape')
   }
+  // 测试记录：父对话跑的和自己跑的都在，执行方、结果、真实耗时、第几次尝试都照实显示
+  {
+    await p.getByTitle('测试记录').first().click()
+    await check(p, '任务-测试记录', [
+      '测试记录',
+      '端到端测试',
+      '由父对话执行',
+      '通过',
+      '1m 34s',
+      '类型检查',
+      '由自己执行',
+      '失败',
+      '1.2s',
+      '第 2 次',
+    ])
+    await p.keyboard.press('Escape')
+  }
   // 浮层里的速度只算正在输出的：造两种数据各截一张（演示数据用完改回去，不影响后面的截图）
   {
     const key = 'agent-panel-demo-v3'

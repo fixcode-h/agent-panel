@@ -116,6 +116,8 @@ import {
   dropEndNotes,
   endRun,
   helpersWorking,
+  messagePage,
+  taskMessageRev,
   newTask,
   questionAnswers,
   runRunning,
@@ -3417,9 +3419,22 @@ function tasksRoute(
   // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
   // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
   const withLive = { ...task, cliAlive: demoCliAlive(task) }
-  // 父对话再带上名下在跑的子对话数（和正式版一样不带给子对话，见 server/tasks.ts 的 withLive）
-  if (task.parentTaskId) return withLive
-  return { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  const full = task.parentTaskId
+    ? withLive
+    : { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
+  const limit = Number(query.get('limit') ?? '')
+  if (!Number.isInteger(limit) || limit <= 0) return full
+  const page = messagePage(full.messages, limit, query.get('before') ?? '')
+  return {
+    ...full,
+    messages: page.messages,
+    messageTotal: page.total,
+    messageHasMore: page.hasMore,
+    ...(page.anchorMissing ? { messageAnchorMissing: true } : {}),
+    // 和正式后端一致：整份都在这一份里时带上版本（前端拿它建 SSE，首包只补发增量）
+    ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
+  }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
@@ -4121,6 +4136,29 @@ async function seedTasks(d: Db) {
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
+    ]
+    // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
+    // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    task.testRuns = [
+      {
+        stepId: 'node-e2e',
+        stepName: '端到端测试',
+        by: 'parent',
+        ok: true,
+        durationMs: 94_000,
+        tries: 1,
+        at: testedAt,
+      },
+      {
+        stepId: 'node-typecheck',
+        stepName: '类型检查',
+        by: 'self',
+        ok: false,
+        durationMs: 1_200,
+        tries: 2,
+        at: testedAt,
+      },
     ]
     persist()
   }

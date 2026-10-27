@@ -33,6 +33,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/RunningNow.tsx',
     'web/src/components/tasks/Messages.tsx',
     'web/src/components/tasks/TaskMeta.tsx',
+    // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）
+    'web/src/components/tasks/TestRuns.tsx',
     'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',
@@ -107,7 +109,7 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/ProjectsPage.tsx',
     'web/src/pages/HomePage.tsx',
   ],
-  // 四个小题合成一片：各自只有 6~13 步，固定开销（静态服务 + 浏览器）占掉一半。
+  // 四个小题合成一片：各自只有 8~13 步，固定开销（静态服务 + 浏览器）占掉一半。
   // 四个分片原来各自断言的源码都登记在它名下，改哪一个都跑这一片
   '08-misc': [
     'web/src/components/comfy/',
@@ -117,12 +119,16 @@ export const UI_SHARD_COVERS = {
     'web/src/pages/SchedulesPage.tsx',
     'web/src/pages/SummaryPage.tsx',
     'web/src/lib/summary-page.ts',
+    // 演示版的工作总结数据（第二份报告内容不同，对比才看得出差异）
+    'web/src/lib/demo-summary.ts',
+    // 两份报告的解析与对比逻辑：页面直接调，改了它就跑这一片
+    'shared/summary.ts',
   ],
   '10-toast': ['web/src/lib/toast.ts', 'web/src/lib/toast-queue.ts'],
 }
 
 /**
  * 分片文件名（`scripts/ui/` 下）→ 界面检查的筛选参数。
- * 用完整文件名（不带 .mjs）而不是只写编号：`09` 会同时跑 09-hint / 09-plans / 09-summary 三个
+ * 用完整文件名（不带 .mjs）而不是只写编号：`02` 会同时跑 02-task / 02b / 02c / 02d 四片
  */
 export const shardFilter = (file) => String(file).replace(/\.mjs$/, '')

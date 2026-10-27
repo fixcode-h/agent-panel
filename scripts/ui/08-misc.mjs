@@ -748,6 +748,68 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
     if (!copied.includes('## 三、今日小结')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
     await check(p, '工作总结-复制')
+    // 对比两份：再生成一份（演示后端的第二份报告和第一份不同），勾选两份看新增 / 消失 / 状态变化
+    await p.getByRole('button', { name: '生成报告' }).first().click()
+    await p
+      .getByRole('button', { name: '对比两份' })
+      .first()
+      .waitFor({ timeout: 15000 })
+      .catch(() => errors.push('工作总结：没有「对比两份」入口'))
+    // 等第二份报告进列表（列表按时间倒序，新的在最前）
+    await p
+      .locator('section', { hasText: '最近的报告' })
+      .locator('li')
+      .nth(1)
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('工作总结：没有生成出第二份报告，没法对比'))
+    await p.getByRole('button', { name: '对比两份' }).first().click()
+    const boxes = p.getByLabel('对比这份报告')
+    await boxes
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('工作总结：对比模式里没有勾选框'))
+    if ((await boxes.count()) < 2) errors.push('工作总结：「最近的报告」里没有两份可以对比')
+    else {
+      await boxes.nth(0).check()
+      await boxes.nth(1).check()
+      const cmp = p.locator('section', { hasText: '两份报告的对比' }).first()
+      await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：勾选两份后没有出现对比区'))
+      for (const heading of ['需求进度', '用户报告的 Bug', '今日小结']) {
+        if (!(await cmp.getByText(heading, { exact: true }).count()))
+          errors.push(`工作总结：对比区里没有「${heading}」`)
+      }
+      // 标题实际写成「新增（1）」「已修复（消失）（1）」：按整行精确匹配，
+      // 否则「已修复（消失）」会把「消失」也命中，看不出需求进度有没有真的消失项
+      for (const [kind, re] of [
+        ['新增', /^新增（\d+）$/],
+        ['消失', /^消失（\d+）$/],
+        ['状态变化', /^状态变化（\d+）$/],
+        ['已修复（消失）', /^已修复（消失）（\d+）$/],
+      ]) {
+        if (!(await cmp.getByText(re).count())) errors.push(`工作总结：对比区里没有「${kind}」`)
+      }
+      await check(p, '工作总结-对比两份')
+      // 取消对比：对比区收起，列表回到普通模式
+      await p.getByRole('button', { name: '取消对比' }).click()
+      await p
+        .getByText('两份报告的对比')
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('工作总结：取消对比后对比区还在'))
+      // 再选一次，然后直接换范围：对比要跟着收起（不能还挂着上一段的两份报告，也不能留在对比模式）
+      await p.getByRole('button', { name: '对比两份' }).click()
+      await boxes.nth(0).check()
+      await boxes.nth(1).check()
+      await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：重新勾选两份后没有出现对比区'))
+      await range.getByRole('radio', { name: '近 7 天' }).click()
+      await p
+        .getByText('两份报告的对比')
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => errors.push('工作总结：换范围后对比区还在'))
+      if (await p.getByRole('button', { name: '取消对比' }).count()) errors.push('工作总结：换范围后还留在对比模式')
+      await range.getByRole('radio', { name: '今天' }).click()
+    }
 
     // 换范围不能把上一段的报告当成这一段的：切到近 7 天后当前报告消失，旧报告还在「最近的报告」里
     await range.getByRole('radio', { name: '近 7 天' }).click()

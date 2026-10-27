@@ -25,6 +25,7 @@ const sample = (): SummaryPageState => ({
   ],
   report: { id: 'r1', md: '# 2026-10-23 工作总结\n', from: '2026-10-23', to: '2026-10-23' },
   mode: 'edit',
+  compare: ['r1', 'r2'],
   jobId: 'j1',
   cli: 'claude',
 })
@@ -52,6 +53,7 @@ test('读回存档：坏 JSON 和缺失字段都按默认值处理，不崩', ()
     picks: [],
     report: null,
     mode: 'preview',
+    compare: [],
     jobId: '',
     cli: '',
   })
@@ -86,6 +88,7 @@ test('读回存档：坏 JSON 和缺失字段都按默认值处理，不崩', ()
     // 报告 id 为空就没法保存，当作没打开报告
     report: null,
     mode: 'edit',
+    compare: [],
     jobId: 'j1',
     cli: 'codex',
   })
@@ -117,6 +120,16 @@ test('老存档（只有 day、没有 range）按单日今天读回来，同一�
   assert.equal(forRange(old, todayWin(now)), old)
   // 老存档里打开的报告没有 from/to：按 day 单日显示
   assert.deepEqual(old.report, { id: 'r1', md: '# 2026-10-23 工作总结\n', from: '', to: '' })
+})
+
+test('对比选择：只留报告的 id、最多两份，换范围时一起清掉', () => {
+  assert.deepEqual(parseSummaryPage(JSON.stringify({ compare: ['r1', 7, '', 'r2', 'r3'] }))?.compare, ['r1', 'r2'])
+  assert.deepEqual(parseSummaryPage(JSON.stringify({ compare: 'r1' }))?.compare, [])
+  // 同一段范围刷新后退出来还在：选中的两份报告接着对比
+  const s: SummaryPageState = { ...sample(), compare: ['r2', 'r1'] }
+  assert.equal(forRange(s, todayWin(new Date(2026, 9, 23, 18))), s)
+  // 换到另一段范围：上一段的报告不再参与对比
+  assert.deepEqual(forRange(s, rangeWindow({ id: 'last7', from: '', to: '' }, new Date(2026, 9, 23, 18))).compare, [])
 })
 
 test('范围字段坏了回落到今天，不会把用户带到一个不存在的范围', () => {
@@ -164,6 +177,7 @@ test('同一天原样恢复；跨天只留项目选择，上一天的报告和�
     // 上一天的报告不再是「今天的报告」（「最近的报告」里还能点开），job 也不会跨天还在跑
     report: null,
     mode: 'edit',
+    compare: [],
     jobId: '',
     cli: 'claude',
   })

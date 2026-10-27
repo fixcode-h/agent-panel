@@ -37,6 +37,7 @@ import {
   ListPlus,
   Workflow as WorkflowIcon,
   Download,
+  FileCode2,
   FileInput,
   Files,
   Sparkles,
@@ -69,6 +70,7 @@ import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkf
 import {
   childCounts,
   childSeenLocally,
+  childSpinning,
   childWait,
   helperRunning,
   sortChildren,
@@ -84,7 +86,7 @@ import {
 } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
-import { api } from '@/lib/api'
+import { api, type TaskPage } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useLoadTrace } from '@/lib/useLoadTrace'
 import { minimizeTask, minimizeBackRoute } from '@/lib/mini-task'
@@ -101,7 +103,7 @@ import {
 } from '@/lib/tasks'
 import { paneHalfWidth, PANE_DEFAULT_SSR, rowWidthFromWindow } from '@/lib/pane-width'
 import { WithAgents, useData, useNav } from '@/lib/data'
-import { downloadTask, startAnalysis } from '@/lib/task-transfer'
+import { downloadTask, downloadTaskHtml, startAnalysis } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -279,10 +281,22 @@ function toBlocks(task: Task): Block[] {
   return blocks
 }
 
+/**
+ * 子对话列表的刷新间隔：有子对话在跑（转圈）时看勤一点，都静止时只是等它再动，没必要每 4 秒问一遍。
+ * 没有子对话时根本不轮询（见下文）
+ */
+const CHILD_POLL_ACTIVE_MS = 4000
+const CHILD_POLL_IDLE_MS = 15_000
+
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
+/**
+ * 打开对话时先取最近多少条消息：整份对话可能几 MB，首屏只要最后这一段，
+ * 更早的点和翻页一样往前取（见 loadEarlier）
+ */
+const OPEN_MESSAGE_LIMIT = 50
 
 /** 右栏拖动：再窄放不下列表里的路径和按钮，再宽中间读对话的地方就没了 */
 const PANE_MIN = 280
@@ -405,7 +419,7 @@ export function TaskView({
     embed?.onLeave()
     nav.go(r)
   }
-  const [task, setTask] = useState<Task | null>(null)
+  const [task, setTask] = useState<TaskPage | null>(null)
   // 从搜索结果点进来时定位到那条消息：消息是异步加载的（被折叠的过程还要先展平），多试几次再放弃。
   // 跳转成功后地址里的 msg 还在，同一个 (对话, 消息) 只定位一次：不然每来一条新消息（条数变了）都会把视图滚回那条旧命中
   const jumpMsg = nav.route.msg
@@ -455,10 +469,17 @@ export function TaskView({
   // 点发送后先本地插进对话的那几条（待认领）：清空输入框、消息出现都不等接口返回。
   // 单独存、不塞进 task.messages：SSE 推来的整份任务会把它抹掉（见下面画对话时合的 shownTask）
   const [pendingMsgs, setPendingMsgs] = useState<TaskMessage[]>([])
+  // 正在往前翻更早的消息（首屏只取了最近一段），按钮上有个进行中的状态
+  const [earlierLoading, setEarlierLoading] = useState(false)
+  // 打开对话时先 GET 一份（首屏只取最近一段），拿到它再建 SSE：有整份的版本时带上它，
+  // 首包就只补发增量；null 表示这一轮还没拿到第一份（GET 还没回来 / 刚换对话）
+  const [streamBoot, setStreamBoot] = useState<{ rev: string; task: TaskPage | null } | null>(null)
   const [panel, setPanel] = useState(false)
   // 父对话里的子对话：点开在右栏看，右栏同一时间只显示一个。
   // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
   const [children, setChildren] = useState<ChildSummary[]>([])
+  // 子对话列表的重新拉取：首拉、轮询和推送信号都走它（见下面子对话列表的 effect）
+  const childrenReload = useRef<(tracked?: boolean) => Promise<void>>(async () => {})
   // 子对话的停下原因只有完整任务上有（/children 给的是摘要）：停下的各取一次，行上才能写清是谁结束的
   // （见 stopReasonText）。停下后原因不会变，取到的记在 ref 里，4 秒一次的轮询不再重复问
   const childStopReasons = useRef(new Map<string, StopReason>())
@@ -619,12 +640,22 @@ export function TaskView({
   // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。
   // 状态、标题、等待确认这些侧栏马上要反映的变化仍然立即写
   const lastTask = useRef<Task | null>(null)
+  // 手上这份是不是只有最近一段（见 OPEN_MESSAGE_LIMIT）：从截断恢复到整份时摘要要立刻写
+  const truncated = useRef(false)
   const summaryAt = useRef(0)
   const summaryTimer = useRef<number | undefined>(undefined)
-  const pushSummary = (next: Task) => {
+  // 列表里的摘要只放第一条用户消息（侧栏预览、搜索都读它）：手上只有最近一段时，消息这一项
+  // 沿用列表里已有的那份，别把预览换成尾部那一条；其余字段（未读清掉、状态、子对话计数）照常写，
+  // 侧栏马上要反映的变化不能等整份到齐
+  const summaryOf = (next: TaskPage): Task =>
+    next.messageHasMore
+      ? taskSummary({ ...next, messages: tasks.find((x) => x.id === next.id)?.messages ?? [] })
+      : taskSummary(next)
+  const pushSummary = (next: TaskPage, force = false) => {
     const prev = lastTask.current
     lastTask.current = next
     const important =
+      force ||
       !prev ||
       prev.id !== next.id ||
       prev.title !== next.title ||
@@ -644,25 +675,60 @@ export function TaskView({
         summaryTimer.current = undefined
       }
       // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
-      upsertTask(taskSummary(next))
+      upsertTask(summaryOf(next))
       return
     }
     if (summaryTimer.current) return
     summaryTimer.current = window.setTimeout(() => {
       summaryTimer.current = undefined
       summaryAt.current = Date.now()
-      if (lastTask.current) upsertTask(taskSummary(lastTask.current))
+      if (lastTask.current) upsertTask(summaryOf(lastTask.current))
     }, 1000)
   }
-  const apply = (raw: Task) => {
+  const apply = (raw: TaskPage) => {
     // 数据到手，开始画：渲染这一步从这一刻算到两帧画完（含 React 把消息挂进 DOM 的时间）。
     // 两条路都会经过这里（GET 与 SSE 首包谁先到都可能），所以起始点记在这，不记在某一条请求的 then 里；
     // 已经记过完成的不再改（startStep 对非 waiting 的步骤原样返回）
     trace.start('render')
-    // 别的接口顺手返回的任务不带运行时字段：沿用上一份，标题栏和侧栏的转圈不闪（见 keepLiveFields）
-    const next = keepLiveFields(lastTask.current, raw)
+    // 别的接口顺手返回的任务不带运行时字段：沿用上一份，标题栏和侧栏的转圈不闪（见 keepLiveFields）。
+    // 分页信息（messageTotal / messageHasMore）跟着这次那份：转截断了就该能翻页，SSE 整份到了就该收起来
+    const next = keepLiveFields(lastTask.current, raw) as TaskPage
     setTask(next)
-    pushSummary(next)
+    // 从「只有一段」恢复到整份：侧栏摘要要立刻换回第一条用户消息，不等 1 秒节流
+    const wasTruncated = truncated.current
+    truncated.current = !!next.messageHasMore
+    pushSummary(next, wasTruncated)
+  }
+  // 服务端还没给的最早那段（见 OPEN_MESSAGE_LIMIT）：往前翻一页，接在现在的对话前面。
+  // 只用它自己那一页的消息，以手上那份为准拼：翻页期间 SSE 可能又推了新消息
+  const loadEarlier = async () => {
+    const cur = lastTask.current
+    const first = cur?.messages[0]?.id
+    if (!cur || !first || earlierLoading) return
+    setEarlierLoading(true)
+    try {
+      const raw = await api.task(taskId, { limit: OPEN_MESSAGE_LIMIT, before: first })
+      // 锚点那条已经不在（返工删掉了）：不拼一段不连续的历史，重新取最后一页
+      if (raw.messageAnchorMissing) {
+        apply(await api.task(taskId, { limit: OPEN_MESSAGE_LIMIT }))
+        toast(t('对话已经变化，已重新加载'))
+        return
+      }
+      const now = lastTask.current
+      if (!now || now.id !== raw.id) return
+      const ids = new Set(now.messages.map((m) => m.id))
+      const older = raw.messages.filter((m) => !ids.has(m.id))
+      // 分页信息跟着这一次的响应走：翻到最后一页时按钮要收起来
+      const next = { ...now, messageTotal: raw.messageTotal, messageHasMore: raw.messageHasMore }
+      apply(older.length ? { ...next, messages: [...older, ...now.messages] } : next)
+      // 用户点了往前走，就把本地那段限长也打开：刚翻回来的这 50 条要能立刻看到，
+      // 而不是数据接上了、屏上还只画最后 30 段
+      if (older.length) setLimit(Infinity)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setEarlierLoading(false)
+    }
   }
   // 服务端只回「这一轮看到哪」（整份对话不再传回来）：合进本地那份，侧栏橙点跟着消失，
   // 未读判定仍在 shared/task 的 taskTurnUnread，这里不改规则
@@ -721,21 +787,30 @@ export function TaskView({
     trace.reset()
     setTraceHidden(false)
     traceRenderFor.current = ''
+    // 换了对话：先不建 SSE，等这一条的 GET 回来（避免拿上一条的版本去连）
+    setStreamBoot(null)
+    truncated.current = false
     trace.start('task')
     // 演示版没有服务端推送：这一步按「不适用」处理，不假装连过
     if (import.meta.env.VITE_DEMO) trace.skip('stream', t('演示版没有实时推送'))
     else trace.start('stream')
     api
-      .task(taskId)
+      .task(taskId, { limit: OPEN_MESSAGE_LIMIT })
       .then((raw) => {
         trace.finish('task')
-        apply(raw)
+        // SSE 首包可能先到（例如重连过），它带的是整份对话：不能再用只取了最近一段的这份盖回去
+        if ((lastTask.current?.messages.length ?? 0) <= raw.messages.length) apply(raw)
+        // 拿到第一份再建 SSE：整份都在这一份里时带上版本（服务端首包只补发增量），
+        // 并把这一份作为合并增量的基线
+        setStreamBoot({ rev: raw.messageRev ?? '', task: lastTask.current ?? raw })
       })
       .catch((e) => {
         // 错误原文照给用户看；后面的步骤标成「未执行」——它们不是卡住了，是没轮到
         trace.fail('task', (e as Error).message)
         trace.abort()
         toast.error((e as Error).message)
+        // GET 失败时照旧连 SSE：没有基线也没有版本，服务端会发整份
+        setStreamBoot({ rev: '', task: null })
       })
     // 换任务时取一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
@@ -825,11 +900,13 @@ export function TaskView({
       return
     }
     let alive = true
-    // 只有第一次拉取记进加载日志：后面 4 秒一次的轮询和「打开对话」无关
+    // 只有第一次拉取记进加载日志：后面的轮询和「打开对话」无关
     const load = (tracked = false) => {
       if (tracked) trace.start('children')
       return loadChildren(task.id)
-        .then((list) => alive && setChildren((cur) => sameJson(cur, list)))
+        .then((list) => {
+          if (alive) setChildren((cur) => sameJson(cur, list))
+        })
         .catch((e) => {
           if (tracked) trace.fail('children', (e as Error).message)
         })
@@ -837,17 +914,32 @@ export function TaskView({
           if (tracked) trace.finish('children')
         })
     }
+    // 轮询和推送信号都走同一个函数（下面的 effect 拿不到这个闭包）
+    childrenReload.current = load
     void load(true)
-    const timer = setInterval(() => void load(), 4000)
     return () => {
       alive = false
-      clearInterval(timer)
+      childrenReload.current = async () => {}
     }
-    // 任务 id 变了才重新订阅；子对话的变化靠定时刷新
+    // 任务 id 变了才重新订阅；子对话的变化靠下面的轮询和推送信号
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.parentTaskId])
+  // 子对话列表的轮询间隔：没有子对话就一次也不发（子对话产生时由推送的统计数和上报信号拉回来，见下）。
+  // 有子对话时按有没有在跑分两档：都在跑 4 秒，都静止 15 秒——静态的子对话只是等它再动，
+  // 每 4 秒问一遍服务端（每个子对话还要跑一次 git）就是纯空转
+  const childrenWorking = children.some(childSpinning)
+  useEffect(() => {
+    if (!task?.id || task.parentTaskId || !children.length) return
+    const timer = setInterval(
+      () => void childrenReload.current(),
+      childrenWorking ? CHILD_POLL_ACTIVE_MS : CHILD_POLL_IDLE_MS,
+    )
+    return () => clearInterval(timer)
+  }, [task?.id, task?.parentTaskId, children.length, childrenWorking])
   // 子对话那边变了就重取子对话列表：待选择的提问变了（在子对话里选完、交给父对话决定），
   // 或者收到子对话的上报（panel === 'child'，含「子对话已完成」）。
+  // 名下子对话的计数（childrenWorking / childrenCli）变了也要重取：子对话刚开、刚跑完的时候
+  // 任务本身不一定会推新消息，靠这两个数把列表拉回来
   // 列表只读子对话自己的状态、本地不改写：子对话先置完成并上报，这里才跟着变，不抢在它前面
   const childSignal = task?.parentTaskId
     ? ''
@@ -857,18 +949,23 @@ export function TaskView({
           .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
           .map((m) => m.id),
       ].join(',')
+  const childScan = `${task?.childrenWorking ?? 0}|${task?.childrenCli ?? 0}`
+  const childSignalSeen = useRef({ taskId: '', key: '' })
   useEffect(() => {
     if (!task?.id || task.parentTaskId) return
-    let alive = true
-    loadChildren(task.id)
-      .then((list) => alive && setChildren((cur) => sameJson(cur, list)))
-      .catch(() => {})
-    return () => {
-      alive = false
+    const key = `${childSignal}|${childScan}`
+    const seen = childSignalSeen.current
+    // 换到另一条对话（或第一次）：只记下当前的信号，首拉已经在上面那次 effect 里做了
+    if (seen.taskId !== task.id) {
+      childSignalSeen.current = { taskId: task.id, key }
+      return
     }
-    // 只在子对话那边的状态有变化（上报、提问状态）时刷新
+    if (seen.key === key) return
+    childSignalSeen.current = { taskId: task.id, key }
+    void childrenReload.current()
+    // 只在子对话那边的状态有变化（上报、提问状态、子对话计数）时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [childSignal])
+  }, [childSignal, childScan, task?.id, task?.parentTaskId])
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
   useEffect(() => {
@@ -950,15 +1047,21 @@ export function TaskView({
   // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
   // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
   const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
-  useTaskStream(taskId, running || jobRunning, apply, {
-    // 首包到了：正常首包直接完成；之前失败过一次又重连上的，把那条失败收回来
-    // （否则重连成功后面板会永久停在「加载失败」，对话其实已经好了）
-    open: () => {
-      trace.recover('stream', t('重新连上了'))
-      trace.finish('stream')
+  useTaskStream(
+    taskId,
+    running || jobRunning,
+    apply,
+    {
+      // 首包到了：正常首包直接完成；之前失败过一次又重连上的，把那条失败收回来
+      // （否则重连成功后面板会永久停在「加载失败」，对话其实已经好了）
+      open: () => {
+        trace.recover('stream', t('重新连上了'))
+        trace.finish('stream')
+      },
+      fail: (error) => trace.fail('stream', error),
     },
-    fail: (error) => trace.fail('stream', error),
-  })
+    streamBoot,
+  )
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -1310,6 +1413,15 @@ export function TaskView({
         toast.success(
           children ? t('已导出任务和 {n} 个子对话，导入后父子结构能还原', { n: children }) : t('已导出任务'),
         ),
+      (e: Error) => toast.error(e.message),
+    )
+  /**
+   * 导出成单文件 HTML：接收方没装面板也能看，样式内联、不执行脚本（见 shared/task-export.ts 的 taskHtml）。
+   * 和 JSON 包分开两项：一个是给别人看的报告，一个是导回面板的数据
+   */
+  const exportHtml = () =>
+    downloadTaskHtml(task.id).then(
+      () => toast.success(t('已导出 HTML 报告，用浏览器直接打开就能看')),
       (e: Error) => toast.error(e.message),
     )
   /**
@@ -1705,6 +1817,13 @@ export function TaskView({
                         <Download className="h-4 w-4" />
                         {t('导出任务')}
                       </MenuItem>
+                      <MenuItem
+                        onSelect={exportHtml}
+                        title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}
+                      >
+                        <FileCode2 className="h-4 w-4" />
+                        {t('导出 HTML 报告')}
+                      </MenuItem>
                       <MenuItem onSelect={copyIt}>
                         <Copy className="h-4 w-4" />
                         {t('复制对话')}
@@ -1854,13 +1973,14 @@ export function TaskView({
                   onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
                   dock={conversationDock}
                 >
-                  {hidden > 0 && (
+                  {(hidden > 0 || task.messageHasMore) && (
                     <button
                       type="button"
-                      onClick={() => setLimit(Infinity)}
-                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                      disabled={earlierLoading}
+                      onClick={() => (task.messageHasMore ? void loadEarlier() : setLimit(Infinity))}
+                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60"
                     >
-                      {t('显示更早的 {n} 段', { n: hidden })}
+                      {task.messageHasMore ? t('显示更早的消息') : t('显示更早的 {n} 段', { n: hidden })}
                     </button>
                   )}
                   {shownBlocks.map((b, i) =>
