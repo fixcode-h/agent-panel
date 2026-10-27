@@ -350,8 +350,8 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
   assert.equal(main.length, 1)
   assert.match(
     main[0],
-    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，用提问工具问用户一次/,
-    '父对话的授权规则保持不变',
+    /第一次需要推送时问一次」。任务做完、验证通过并在本地提交之后，用提问工具问用户一次要不要推送并合并主干/,
+    '父对话的授权规则：问一次时把合并主干也算进这次授权',
   )
   // 通用约束里的「安全边界」是所有角色都有的；这里只看授权情况那一段不会被子对话的写法盖掉
   assert.doesNotMatch(
@@ -365,41 +365,56 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
     allow[0],
     /允许直接推送」，这就是用户的授权，不用再问。任务做完、验证通过并在本地提交之后就把当前分支推到它跟踪的远端分支/,
   )
-  assert.match(allow[0], /比角色设定、技能里「不推送 \/ 本地先行 \/ 推送要用户明确授权」的默认写法优先/)
+  assert.match(allow[0], /比角色设定、技能里「不推送 \/ 本地先行 \/ 创建 PR 和合并主干要用户明确授权」的默认写法优先/)
+  // 允许推送 = 授权里默认包含「推送成功后用 gh 普通合并到主干」，不再要求用户每次单独说「合并到主干」
+  assert.match(allow[0], /推送成功后用 GitHub CLI 把该分支普通合并到主干/)
+  assert.match(allow[0], /gh pr create --base <主干> --head <当前分支>/, '已有 PR 就复用，没有就新建')
+  assert.match(allow[0], /gh pr merge <PR> --merge/, '等检查通过后普通合并')
+  assert.match(allow[0], /不 --admin、不绕过检查/, '不强制合并')
+  assert.match(allow[0], /也不直接往主干推/, '失败就停，不直接往主干推')
+  assert.match(allow[0], /defaultBranchRef/, '主干名从仓库默认分支取，不写死 main')
+  assert.doesNotMatch(allow[0], /本仓库是 main/)
   // 有推送收尾时（父对话、Git 仓库有远端）：只让模型照着计划的最后一步做，不另写一条重复的推送步骤
   const allowWrap = await promptsOf({}, { policy: { push: 'allow', tools: [] }, wrapUp: 'push' })
   assert.match(
     allowWrap[0],
-    /收尾：推送到远端已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条/,
+    /收尾：推送到远端并合并主干已经在计划的最后一步（面板已经列好，刷新也不会变），照着它做，不要自己再写一条/,
   )
-  assert.match(allowWrap[0], /## 收尾：计划的最后一步[\s\S]*推成功后把这步标完成/)
+  assert.match(allowWrap[0], /## 收尾：计划的最后一步[\s\S]*推送并合并成功后把这步标完成/)
   assert.match(
     allowWrap[0],
     /由面板加在最后，别删、别挪到前面，也不要自己再写一条重复的收尾步骤/,
     '计划那段也要讲清收尾由面板加',
   )
-  assert.doesNotMatch(allow[0], /收尾：推送到远端已经在计划的最后一步/, '没有推送收尾时不提这一步')
-  // 父对话在独立分支里：推送收尾和「执行目录」那段要一致（先合回原分支再推，不直接推独立分支）
+  // 「定位」段只在真正的父对话（coordinator）里注入，这里构造不出来；
+  // 它和授权段读同一个 wrapKind(host)，由复看确认
+  assert.doesNotMatch(allow[0], /收尾：推送到远端并合并主干已经在计划的最后一步/, '没有推送收尾时不提这一步')
+  // 父对话在独立分支里：推送收尾和「执行目录」那段要一致（先合回原分支再推并合并，不直接推独立分支）
   const allowWt = await promptsOf(
     {},
     { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
     { worktree: { state: 'active', branch: 'agent-panel/x', path: '/tmp/wt', baseBranch: 'dev' } },
   )
-  assert.match(allowWt[0], /计划的最后一步是「收尾：推送到远端」：那时先把它合回原分支/)
-  assert.match(allowWt[0], /推送归计划的最后一步「收尾：推送到远端」：合回原分支之后推原分支/)
+  assert.match(allowWt[0], /计划的最后一步是「收尾：推送到远端并合并主干」：那时先把它合回原分支/)
+  assert.match(allowWt[0], /推送归计划的最后一步「收尾：推送到远端并合并主干」：合回原分支之后推送原分支并合并主干/)
   assert.doesNotMatch(allowWt[0], /提交留在这个分支上，由用户决定合并还是丢弃/, '和推送收尾不矛盾')
-  // 明确不推送（'none'）：计划里不提收尾这一段
+  // 明确不推送（'none'）：计划里不提收尾这一段，也不提 gh 合并
   const none = await promptsOf({}, { policy: { push: 'deny', tools: [] }, wrapUp: 'none' })
   assert.doesNotMatch(none[0], /## 收尾：计划的最后一步/)
-  // 子对话的推送收尾不成立：子对话永远不碰远端
+  assert.doesNotMatch(none[0], /gh pr create/)
+  // 子对话的推送收尾不成立：子对话永远不碰远端，提示词里不出现 gh 合并流程
   const childWrap = await promptsOf(
     { parentTaskId: 'parent' },
     { policy: { push: 'allow', tools: [] }, wrapUp: 'push' },
   )
   assert.match(childWrap[0], /由父对话决定，不在你的处理范围内/)
+  assert.doesNotMatch(childWrap[0], /gh pr create/)
+  assert.doesNotMatch(childWrap[0], /完成标准是改动已推送到远端并合并到主干/, '收尾建议段也按 wrapKind 过滤')
   const deny = await promptsOf({}, { policy: { push: 'deny', tools: [] } })
   assert.match(deny[0], /不推送，只做本地提交」。不 push/)
+  assert.match(deny[0], /不建 PR、不合并主干/)
   assert.doesNotMatch(deny[0], /用提问工具问用户一次要不要推送/)
+  assert.doesNotMatch(deny[0], /gh pr create/)
 })
 
 test('搜索排除清单：项目设置里的目录写进提示词，找 Bug 也用同一份 globs', async () => {
