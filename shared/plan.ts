@@ -84,9 +84,19 @@ export const WRAP_UP: Record<WrapUpKind, { title: string; note: string }> = {
     note: '调用 p4_split_changelists：[C++]、[XLSX]（表格）、[Lua]、[Other] 各放一个 pending，不全留在 default 或塞进同一个；每类写一句中文描述。不 submit',
   },
   push: {
-    title: '收尾：推送到远端',
-    note: '前面的步骤都做完、验证通过并在本地提交之后，把当前分支推到它跟踪的远端分支（没有跟踪分支就推到 origin 同名分支并设上跟踪）；推完回读 git status -sb 确认，结论里写清推到了哪个远端分支；只做普通推送，不强推，被拒就停下来报告。推成功后把这步标完成；这一轮确实没有任何提交、远端也已经是这个提交时，回读确认后直接标完成并说明原因',
+    title: '收尾：推送到远端并合并主干',
+    note: '前面的步骤都做完、验证通过并本地提交后：先推送当前分支（没有跟踪分支就推到 origin 同名分支并设上跟踪），回读 git status -sb 确认远端与本地一致。推送成功后用 gh 把该分支普通合并到主干：先用 gh repo view --json defaultBranchRef --jq .defaultBranchRef.name 取主干分支名，已有对应 PR 就复用，没有就 gh pr create --base <主干> --head <当前分支>；gh pr checks <PR> --watch 等检查通过后 gh pr merge <PR> --merge，回读 PR 状态确认已合并。不强推、不 --admin、不绕过检查；被拒、PR 冲突、检查失败、分支保护拦截就停下来报告，不直接往主干推。没有可用的 gh 时只推送并说明。推送并合并成功后把这步标完成；这一轮没有提交、远端已是这个提交时也要先用 gh pr view <PR> --json state 确认是 MERGED（本地的 origin/<主干> 可能是合并前的旧引用，不要只靠 git merge-base 判断），确认后才直接标完成',
   },
+}
+
+/**
+ * 收尾步骤的历史标题：改了标题之后，旧版本里 Agent 已经抄进计划的收尾还要认出来，
+ * 否则新计划里会多出一条同义的「收尾」。标题只在 WRAP_UP 里定义，这里只放历史别名
+ */
+const WRAP_UP_TITLES_LEGACY: Record<WrapUpKind, string[]> = {
+  merge: [],
+  p4: [],
+  push: ['收尾：推送到远端'],
 }
 
 /**
@@ -639,6 +649,12 @@ const wrapTitle = (title: string) => title.replace(/\s+/g, '').replace(/:/g, '�
 function looksLikeWrapUp(title: string) {
   const t = wrapTitle(title)
   if (Object.values(WRAP_UP).some((w) => wrapTitle(w.title) === t)) return true
+  if (
+    Object.values(WRAP_UP_TITLES_LEGACY)
+      .flat()
+      .some((old) => wrapTitle(old) === t)
+  )
+    return true
   return t.startsWith('收尾') && (t.includes('合回') || /changelist/i.test(t))
 }
 
@@ -701,6 +717,12 @@ function ensureWrapUp(
       children: [],
       wrapUp: kind,
     }
+  // 推送收尾以当前定义为准：升级前就挂在计划里的收尾还写着「推送到远端」，
+  // 不同步的话这次对话仍只会推送、不会合并主干。只同步 push，别覆盖合回失败时面板写进 note 的原因
+  if (keep.wrapUp === 'push') {
+    keep.title = WRAP_UP.push.title
+    keep.note = WRAP_UP.push.note
+  }
   plan.steps = [...rest.filter((s) => s !== keep), keep]
 }
 
@@ -709,9 +731,9 @@ function ensureWrapUp(
  * 用在授权变了的时候：计划里留着一步永远做不了的收尾，计划就永远算没做完
  */
 function dropWrapUp(plan: TaskPlan, kind: WrapUpKind) {
-  const title = wrapTitle(WRAP_UP[kind].title)
+  const titles = [WRAP_UP[kind].title, ...WRAP_UP_TITLES_LEGACY[kind]].map(wrapTitle)
   const list = plan.steps.filter(
-    (s) => !isSettled(s.status) && (s.wrapUp === kind || (!s.wrapUp && wrapTitle(s.title) === title)),
+    (s) => !isSettled(s.status) && (s.wrapUp === kind || (!s.wrapUp && titles.includes(wrapTitle(s.title)))),
   )
   if (!list.length) return false
   plan.steps = plan.steps.filter((s) => !list.includes(s))

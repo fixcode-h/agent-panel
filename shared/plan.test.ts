@@ -735,8 +735,26 @@ test('父对话的推送收尾：计划最后一步，删掉、挪到中间都�
       ['3', 'push'],
     ],
   )
-  assert.equal(plan.steps[2].title, '收尾：推送到远端')
-  assert.match(plan.steps[2].note, /推成功后把这步标完成/, '推送由 Agent 自己标完成，备注里要写清')
+  assert.equal(plan.steps[2].title, WRAP_UP.push.title)
+  assert.match(plan.steps[2].title, /合并主干/)
+  assert.match(plan.steps[2].note, /推送并合并成功后把这步标完成/, '推送由 Agent 自己标完成，备注里要写清')
+  assert.match(plan.steps[2].note, /推送成功后用 gh 把该分支普通合并到主干/)
+  assert.match(plan.steps[2].note, /gh pr create --base <主干> --head <当前分支>/, '已有 PR 就复用，没有就新建')
+  assert.match(
+    plan.steps[2].note,
+    /gh pr checks <PR> --watch 等检查通过后 gh pr merge <PR> --merge/,
+    '等检查通过后普通合并',
+  )
+  assert.match(plan.steps[2].note, /不 --admin、不绕过检查/, '不强制合并、不绕过检查')
+  assert.match(plan.steps[2].note, /PR 冲突、检查失败、分支保护拦截就停下来报告/, '失败停下来报告，不直接往主干推')
+  assert.match(plan.steps[2].note, /没有可用的 gh 时只推送/, '没有 gh 时退回只推送并说明')
+  assert.match(plan.steps[2].note, /defaultBranchRef/, '主干名从仓库默认分支取，不写死 main')
+  assert.doesNotMatch(plan.steps[2].note, /本仓库是 main/)
+  assert.match(
+    plan.steps[2].note,
+    /gh pr view <PR> --json state 确认是 MERGED/,
+    '没有新提交也要先确认已合进主干，且不依赖过期的本地远端引用',
+  )
   // Agent 交的列表里没写收尾：原样放回，id 不变
   applyPlan(
     task,
@@ -770,6 +788,24 @@ test('父对话的推送收尾：计划最后一步，删掉、挪到中间都�
   // 推送由 Agent 自己标完成（不像合回那样被面板退回）
   applyPlan(task, { steps: [{ id: '3', title: WRAP_UP.push.title, status: 'done' }] }, undefined, 'push')
   assert.notEqual(task.plans!.at(-1)!.doneAt, '', '推完计划结束')
+
+  // 旧标题「收尾：推送到远端」认成同一种收尾，标题和备注换成当前定义（Agent 抄旧版本的收尾不会多一条）
+  const upgrade = fresh()
+  applyPlan(upgrade, { steps: [{ title: '改代码' }, { title: '收尾：推送到远端', status: 'done' }] }, undefined, 'push')
+  let next = activePlan(upgrade)!
+  assert.equal(next.steps.filter((s) => s.wrapUp === 'push').length, 1, '旧标题认成推送收尾，只有一条')
+  assert.equal(next.steps.at(-1)!.title, WRAP_UP.push.title)
+  assert.equal(next.steps.at(-1)!.note, WRAP_UP.push.note)
+  // 升级前就挂在计划里的收尾（还是旧标题、旧备注）：下一次 set_plan 同步成当前定义，
+  // 否则这次对话仍只会推送，不会合并主干
+  const old = next.steps.at(-1)!
+  old.title = '收尾：推送到远端'
+  old.note = '推成功后把这步标完成'
+  applyPlan(upgrade, { partial: true, steps: [{ title: '补测试' }] }, undefined, 'push')
+  next = activePlan(upgrade)!
+  assert.equal(next.steps.at(-1)!.id, old.id, '还是原来那一步')
+  assert.equal(next.steps.at(-1)!.title, WRAP_UP.push.title)
+  assert.equal(next.steps.at(-1)!.note, WRAP_UP.push.note)
 })
 
 test('父对话的推送收尾做完后又有新步骤：重新打开挪到最后，不另加一条', () => {

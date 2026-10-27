@@ -708,6 +708,11 @@ test('上一版的「通用约束」「执行」「版本控制」副本升级�
   const rules = updated.find((a) => a.name === '通用约束')!
   assert.match(rules.instructions, /## 搜索范围/, '补上大工程的搜索纪律')
   assert.match(rules.instructions, /只由父对话（项目对话）决定/, '对外操作归父对话')
+  assert.match(
+    rules.instructions,
+    /授权推送时默认还包括推送成功后用 GitHub CLI 建 PR 并普通合并到主干/,
+    '允许推送时默认收尾包含合并主干，失败就停',
+  )
   const worker = updated.find((a) => a.name === '执行')!
   assert.match(worker.instructions, /推送远端、创建 PR、P4 submit、合并到主干由父对话决定/)
   const vcs = updated.find((a) => a.name === '版本控制')!
