@@ -15,10 +15,52 @@ const DOWNLOAD_START_MS = 3000
  */
 const DOWNLOAD_DONE_MS = 10000
 
+/** 切源断言里填给 SearXNG 的地址：随便一个不是新源默认值的值，能看出地址栏有没有被清掉 */
+const SEARX_ADDRESS = 'https://searx.example.com'
+
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await p.getByRole('button', { name: '设置' }).first().click()
+  // 搜索源切走后，地址栏不能留着上一源的地址：地址是所有源共用的一个字段，
+  // 留着它就会被当成新源的基址，搜索请求打到旧主机（上游 404 / 不是 JSON）。
+  // 先验这一段，后面的大段流程都从 Agent 页开始
+  await p.getByRole('button', { name: '联网搜索', exact: true }).first().click()
+  const dialog = p.getByRole('dialog')
+  const providerSelect = dialog.getByRole('combobox', { name: '搜索源', exact: true }).first()
+  const addressInput = dialog.getByLabel('搜索源地址', { exact: true }).first()
+  await providerSelect.scrollIntoViewIfNeeded()
+  await providerSelect.click()
+  await p.getByRole('option', { name: /^SearXNG/ }).click()
+  await addressInput.fill(SEARX_ADDRESS)
+  // 输入到 state 是异步的：等值真的回显出来再切源，否则切源用的是旧 state
+  for (let i = 0; i < 30 && (await addressInput.inputValue()) !== SEARX_ADDRESS; i++) await p.waitForTimeout(100)
+  await providerSelect.click()
+  await p.getByRole('option', { name: /^Degoog/ }).click()
+  // 值从 state 重新渲染：先 waitFor 等它变空再断言，不在点完立刻读地址栏
+  const waitAddressEmpty = () =>
+    p
+      .waitForFunction(
+        (label) => {
+          const el = [...document.querySelectorAll('input')].find((i) => i.getAttribute('aria-label') === label)
+          return !!el && el.value === ''
+        },
+        '搜索源地址',
+        { timeout: 5000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+  if (!(await waitAddressEmpty()))
+    errors.push(`联网搜索：切源后地址栏还是上一源的地址（${await addressInput.inputValue()}）`)
+  await check(p, '设置-联网搜索-切源后清地址', ['搜索源地址'])
+  // 再切回 SearXNG，地址栏仍然是空的：清掉的是存下来的地址，不只是显示层把旧值遮住了
+  await providerSelect.click()
+  await p.getByRole('option', { name: /^SearXNG/ }).click()
+  if (!(await waitAddressEmpty()))
+    errors.push(`联网搜索：切回原源后地址栏又出现了上回填的地址（${await addressInput.inputValue()}）`)
+  await check(p, '设置-联网搜索-切回原源仍是空地址', ['搜索源地址'])
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
   await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()

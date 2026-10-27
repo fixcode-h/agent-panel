@@ -192,6 +192,42 @@ export function searchProvider(id: string): SearchProvider {
   return SEARCH_PROVIDERS.find((p) => p.id === id) ?? Degoog
 }
 
+/**
+ * 设置里的联网搜索。地址是所有源共用的一个字段，所以要另外记住它属于哪个源。
+ * 和 schema 里的定义字段对齐（这里不 import schema：web-search 的地址守卫要给两边共用）。
+ */
+export interface SearchSettingsValue {
+  provider: string
+  key: string
+  endpoint: string
+  /** endpoint 属于哪个源；旧设置里是空串（升级前没有这个字段） */
+  endpointProvider: string
+}
+
+/**
+ * 换搜索源：留着上一源的地址，它就会被当成新源的基址，请求打到旧主机
+ * （用户只看到上游 404 / 不是 JSON，看不出是地址残留）。所以切源时清空地址，
+ * 让新源的默认地址生效；没有默认地址的源（searxng）则要求用户重新填。
+ * 选中的源没变时原样返回：同一个源内手填的地址要留住。
+ */
+export function switchSearchProvider<T extends SearchSettingsValue>(value: T, nextId: string): T {
+  const next = searchProvider(nextId)
+  if (next.id === value.provider) return value
+  return { ...value, provider: next.id, endpoint: '', endpointProvider: next.id }
+}
+
+/**
+ * 实际请求用的地址：自定义地址只在它属于当前源时生效。
+ * 归属对不上说明是上一源留下的（包括旧版本切源时没清掉的数据），用当前源的默认地址。
+ * 没有归属的旧设置照旧采信：那可能是用户手填的代理地址，不能凭空丢掉。
+ */
+export function resolveSearchEndpoint(value: SearchSettingsValue): string {
+  const provider = searchProvider(value.provider)
+  const custom = value.endpoint.trim()
+  if (custom && (!value.endpointProvider || value.endpointProvider === provider.id)) return custom
+  return provider.endpoint
+}
+
 /** 查询参数带上密钥和地址：密钥只在面板里，不传给模型 */
 export type SearchRequest = NormalizedSearch & { key: string; endpoint: string }
 
