@@ -64,22 +64,22 @@ test('保活：模型没调 wait_user_message，回复完进程也留着等下�
   assert.equal(s.rpc.waiting, false)
 })
 
-test('保活：用户离开（返回 null）就按协议结束进程', async () => {
-  const s = session({ hold: true, next: async () => null })
-  await turnDone(s)
+test('保活：用户离开（返回 null）或 CLI 不支持（hold 为假）都按协议结束进程', async () => {
+  // 用户离开：等到 null 就结束，不是一直挂着
+  const left = session({ hold: true, next: async () => null })
+  await turnDone(left)
   await tick()
   await tick()
-  assert.equal(s.ended(), true, '关掉了 stdin')
+  assert.equal(left.ended(), true, '关掉了 stdin')
   assert.ok(
-    s.sent.some((x) => x.method === 'session/exit'),
+    left.sent.some((x) => x.method === 'session/exit'),
     '按配置发 session/exit，会话记录完整',
   )
-})
 
-test('不支持保活时（hold 为假）仍是一轮一个进程', async () => {
-  const s = session({ hold: false, next: async () => '不该用到' })
-  await turnDone(s)
+  // 不支持保活：这一轮结束就退出，一轮一个进程
+  const noHold = session({ hold: false, next: async () => '不该用到' })
+  await turnDone(noHold)
   await tick()
-  assert.equal(s.ended(), true, '这一轮结束就退出')
-  assert.ok(s.sent.some((x) => x.method === 'session/exit'))
+  assert.equal(noHold.ended(), true, '这一轮结束就退出')
+  assert.ok(noHold.sent.some((x) => x.method === 'session/exit'))
 })

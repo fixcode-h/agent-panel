@@ -244,7 +244,9 @@ Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-pr
 UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计，没有提问通道的 CLI 也通过它向用户提问（`ask_user`）、
 取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）。
 对话的保活由面板自己做，不靠模型调用工具：一轮回复结束、对话页还开着时面板先不关进程，用户再发消息时
-在同一个进程里开下一轮（常驻协议用 `turn/start`，面板不用结束再 `--resume`）。
+在同一个进程里开下一轮（Claude Code 再写一条不带 `priority` 的 user 消息，Codex 在同一个 thread 再发 `turn/start`，
+面板不用结束再 `--resume`）。能不能保活只看 `features.keepAlive`（内置 CLI 是 `shared/clis.ts` 的顶层 `keepAlive`）
+和是不是对话（压缩、审查这类操作除外）；`rpc.nativeAsk` 只决定提问、审批走 CLI 自己的协议还是面板的 MCP 工具，不影响保活。
 切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；这一轮完成但还没打开看过的用「没看过的回复保留多久」，
 默认 30 分钟；环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS`、`AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS` 优先，测试用），
 过了宽限进程正常退出。这两种宽限都会排计时：橙点只有用户点开才会消，不收的话进程永远挂着。
