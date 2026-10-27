@@ -13,6 +13,10 @@
 其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Gemini CLI、Pi 的配置可以直接参考
 [`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
 
+Claude Code 的审批和提问都靠控制消息：启动参数 `--permission-prompt-tool stdio` 让 CLI 把 `control_request(can_use_tool)` 交给面板，
+转成卡片后 `AskUserQuestion` 的回答写回 `updatedInput.answers`。**跳过确认（`--dangerously-skip-permissions`）时也要带这个参数**：
+不带它 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型的提问只能变成纯文本，卡片弹不出来（参数见 [`shared/clis.ts`](../shared/clis.ts) 的 `buildArgs`，转换见 `server/exec/rpc/claude.ts`）。
+
 ## 接入检查清单
 
 接新 CLI（或给已有 CLI 加一种能力）时逐项过一遍，漏掉的项以前都返工过（见 [lessons/cli.md](./lessons/cli.md)）：

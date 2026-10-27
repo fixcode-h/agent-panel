@@ -296,6 +296,21 @@ test('Gemini CLI：按配置文件拼参数', () => {
   )
 })
 
+test('Claude Code：跳过确认时也保留提问通道', () => {
+  const def = getCli('claude')!
+  const flagAfter = (args: string[], name: string) => args.slice(args.indexOf(name), args.indexOf(name) + 2)
+  const bypass = def.buildArgs({ model: '', permission: 'bypassPermissions', extraArgs: [] })
+  // 权限确认由 --dangerously-skip-permissions 跳过，但 --permission-prompt-tool 不能省：
+  // 少了它 Claude Code 的工具列表里没有 AskUserQuestion，模型提问只能变成纯文本，卡片弹不出来
+  assert.ok(bypass.includes('--dangerously-skip-permissions'))
+  assert.deepEqual(flagAfter(bypass, '--permission-prompt-tool'), ['--permission-prompt-tool', 'stdio'])
+  // 其它权限模式不变：显式传权限模式、不带跳过确认，同样带提问通道
+  const edits = def.buildArgs({ model: '', permission: 'acceptEdits', extraArgs: [] })
+  assert.deepEqual(flagAfter(edits, '--permission-mode'), ['--permission-mode', 'acceptEdits'])
+  assert.deepEqual(flagAfter(edits, '--permission-prompt-tool'), ['--permission-prompt-tool', 'stdio'])
+  assert.ok(!edits.includes('--dangerously-skip-permissions'))
+})
+
 test('Pi：按配置文件里的事件映射解析会话事件', () => {
   const parse = parserFor('pi', CWD)
   const s = summarize(fixture('pi-json.jsonl').flatMap((o) => parse(o)))
