@@ -27,7 +27,7 @@ const WAIT_CLI_ROUND_MS = 60000
 const RETRY_INTERVAL_MS = 300
 
 await runShard('父对话执行测试步骤', async (api) => {
-  const { call, waitTask, waitDone, waitFor, calls, sleep, step, setupBase, tmp, clearCliOutputs } = api
+  const { call, waitTask, waitDone, waitFor, calls, edits, sleep, step, setupBase, tmp, clearCliOutputs } = api
   const { project, A, B } = await setupBase()
   const { id: _id, createdAt: _c, updatedAt: _u, ...projectInput } = project
 
@@ -82,27 +82,50 @@ await runShard('父对话执行测试步骤', async (api) => {
   }
   // 子对话第一轮在项目根写完自己的输出文件（未跟踪）后，面板才在分支目录里接着做；
   // 这些文件留在合并目标目录里会挡住 git merge。等第二轮真的在分支目录里开始（第一轮已结束）再清，
-  // 早清会被第一轮补写回来
+  // 早清会被第一轮补写回来。
+  // 等的两个事实都是单调的：begin_edit 成功后分支路径立刻写回任务、不会消失；CLI 调用记录只追加。
+  // 不能等 worktree.state === 'active' 且 status !== 'running'：那个组合只在「第一轮结束、第二轮还没开始」
+  // 几十毫秒的窗口里成立，60ms 轮询一旦错过就永远等不到——任务会一路跑到 done（worktree.state 已是 merged），
+  // 白等满 60 秒。实测现场：等了 1m 0.1s、任务 done、state=merged、两条 begin_edit 都成功、
+  // 第三轮 CLI 早在分支目录里跑过。所以改等「路径已写回 + 有 CLI 在这个目录里跑过」这个更早的信号
   const dropRootOutput = async (kidId) => {
-    const wt = await waitTask(kidId, (x) => x.worktree?.state === 'active', WAIT_CLI_ROUND_MS)
-    await waitFor(() => calls().some((c) => c.cwd === wt.worktree.path), {
-      timeout: WAIT_CLI_ROUND_MS,
-      label: '子对话第二轮在分支目录里开始',
-      // 超时时把现场一起打出来：CI 上重跑要几十秒，看日志就能判断是卡在第一轮没结束还是目录不对
-      describe: async () => {
+    await waitFor(
+      async () => {
         const task = await call('GET', `/tasks/${kidId}`)
-        return {
-          expectedCwd: wt.worktree.path,
-          // 最近几次 CLI 调用实际在哪个目录，看它是不是还停在项目根
-          cwds: calls()
-            .slice(-5)
-            .map((c) => c.cwd),
-          status: task.status,
-          worktree: task.worktree?.state,
-          messages: (task.messages ?? []).slice(-2).map((m) => [m.role, (m.text ?? '').slice(0, 60)]),
-        }
+        const wtPath = task.worktree?.path
+        // 路径有了、还有一轮 CLI 真的在这个目录里跑过，才算「进了分支目录」
+        return wtPath && calls().some((c) => c.cwd === wtPath) ? wtPath : null
       },
-    })
+      {
+        timeout: WAIT_CLI_ROUND_MS,
+        label: '子对话第二轮在分支目录里开始',
+        // 超时时把现场一起打出来：CI 上重跑要几十秒，看日志就能判断是没开分支、开了没进目录，还是任务已经跑完
+        describe: async () => {
+          const task = await call('GET', `/tasks/${kidId}`)
+          const wtPath = task.worktree?.path ?? null
+          return {
+            expectedCwd: wtPath,
+            // 最近几次 CLI 调用实际在哪个目录，看它是不是还停在项目根
+            cwds: calls()
+              .slice(-5)
+              .map((c) => c.cwd),
+            status: task.status,
+            // 整个对象都打出来：只报 state 看不出是 null（没开分支）还是已经 merged（等晚了）
+            worktree: task.worktree ?? null,
+            // 每轮假 CLI 最多调一次 begin_edit；为空说明这一轮没走到开分支，有记录就看 isError 和返回文本。
+            // .edit 是整个分片共享的，可能混着其它子对话的记录，用 isThisTask 标出哪条属于本任务
+            // （path 还没写回时标 null：那时本任务本来就不会有成功的开分支记录）
+            beginEdits: edits()
+              .slice(-3)
+              .map((e) => {
+                const text = e.got?.content?.[0]?.text ?? ''
+                return [e.kind, e.cwd, e.got?.isError ?? null, wtPath ? text.includes(wtPath) : null, text.slice(0, 80)]
+              }),
+            messages: (task.messages ?? []).slice(-2).map((m) => [m.role, (m.text ?? '').slice(0, 60)]),
+          }
+        },
+      },
+    )
     clearCliOutputs(project.path)
   }
 

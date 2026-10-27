@@ -368,6 +368,9 @@ export async function runShard(shardName, fn) {
     const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
     return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
   }
+  // 假 CLI 只有认了 BEGIN_EDIT 的那一轮才调面板 begin_edit，并把返回写进 .edit 记录（见 fake-cli.mjs）。
+  // 「没走到开分支」和「调用了但失败」结论正好相反：前者是用例的提示词/等待提前了，后者是产品侧
+  const edits = () => readLog(`${log}.edit`)
 
   // 看门狗：某一步卡住（等一个永远不返回的请求）时打印最后完成的步骤并失败退出，
   // 别让一整轮 e2e 把 CI 拖到 workflow 的超时。分片并行后每个分片各有一个，互不影响
@@ -519,6 +522,7 @@ export async function runShard(shardName, fn) {
     waitTask,
     mergeTask,
     calls,
+    edits,
     readLog,
     step,
     onExit,
