@@ -36,6 +36,7 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
 import { PageFrame } from '@/components/library/parts'
+import { LessonDrafts } from '@/components/summary/LessonDrafts'
 import {
   forRange,
   loadSummaryPage,
@@ -946,6 +947,8 @@ export function SummaryPage() {
           onDraft={draft}
         />
       )}
+
+      {current && <LessonDrafts reportId={current.id} day={current.to || current.from} />}
 
       {reports.length > 0 && (
         <section className="rounded-xl border bg-panel">

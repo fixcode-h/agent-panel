@@ -82,7 +82,8 @@
   **范围三档**（2026-10-28，[ADR 0021](../../adr/0020-test-scope-and-incremental-tests.md)）：测试步骤编辑器每条多一个「范围」选择器——`always` 每次改动都跑、`changed` 命中「适用改动」才跑、`parent` 全量、子对话不跑、合并后由父对话跑（合并了原来的「禁止子对话执行」复选框，非 Git 项目在选项文字里说明由执行者自己跑）。改了测试步骤和验证范围相关代码后，界面检查的 `07-projects` 分片断言头部说明和「范围 / 总是跑」；本次改动的增量定位由 `scripts/changed-tests.mjs` 算（分片覆盖表 `scripts/ui/covers.mjs`）。
   执行侧确实现读项目设置（见 server 模块 README 的 `currentTestSteps`），不再是「新建对话时快照、之后不影响」；改这句时连同 `shared/locales/en/tasks.ts` / `settings.ts` 的英文一起改。
 - 在线演示：`vite build --mode demo` 时把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
-- 工作总结（`web/src/pages/SummaryPage.tsx`）：选项目、生成今天的报告、编辑 / 预览 / 复制，最近的报告从 `/summary` 读回来；演示版的模拟后端在 `web/src/lib/demo-summary.ts`。
+- 工作总结（`web/src/pages/SummaryPage.tsx`）：选项目、生成今天的报告、编辑 / 预览 / 复制，最近的报告从 `/summary` 读回来；报告下面接草稿区（`web/src/components/summary/LessonDrafts.tsx`）：点「从这份报告提炼」把候选教训草稿写进草稿区（标题 / 规则 / 起因 / 分片都能改，能保存也能丢弃，`lessonDraftProblems` 不通过时保存按钮禁用），底部一段指引说明草稿不自动落盘、该照着 `docs/lessons/README.md` 的分片表手动写；演示版的模拟后端在 `web/src/lib/demo-summary.ts`（草稿区也用正式那份提炼函数）。
+- 角色和工作流的导出导入（`web/src/lib/transfer.ts` + `web/src/lib/useShareImport.ts` + `web/src/components/share/ImportConflictDialog.tsx`）：角色页右键「导出分享包」、工具条「导入角色文件」；工作流页右键「导出」（连同用到的角色一起打包）、菜单里「导入工作流文件」。导入先校验格式和指纹（`shared/agent-share.ts`），撞上同名时弹「覆盖本机那份 / 另存为副本」，本机那份是内置的只给「另存为副本」——内置跟着面板同步，导入不能把它绕过去。
 
 ## 入口
 

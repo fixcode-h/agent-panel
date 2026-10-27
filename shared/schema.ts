@@ -415,7 +415,7 @@ export type WorkflowExpose = z.infer<typeof WorkflowExpose>
  * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
-const WorkflowFields = z.object({
+export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
@@ -1728,6 +1728,20 @@ export const TaskData = z.object({
    * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
    */
   handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
+  /**
+   * 评审门禁的显式放行记录（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
+   * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
+   */
+  reviewOverride: z
+    .object({
+      by: z.enum(['user', 'parent']),
+      /** 面板接收 submit_merge 时记的时间，不用调用方自报的 */
+      at: z.string(),
+      reason: z.string(),
+      /** 原本拦住的那条门禁原因（一句话） */
+      blocked: z.string(),
+    })
+    .optional(),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
   /**

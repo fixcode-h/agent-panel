@@ -33,6 +33,7 @@ import { withTaskModel } from '@shared/task'
 import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
 import { META_CHIP } from './chip'
 import { TestRunsChip } from './TestRuns'
+import { ReviewOverrideChip } from './ReviewOverrideChip'
 
 type Usage = Pick<StepUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'costUsd'>
 type Live = { tps: number; lastTps?: number; outputTokens: number; genMs: number }
@@ -95,6 +96,7 @@ export function TaskMeta({
         onOpenChild={onOpenChild}
       />
       <TestRunsChip task={task} />
+      <ReviewOverrideChip task={task} />
     </div>
   )
 }

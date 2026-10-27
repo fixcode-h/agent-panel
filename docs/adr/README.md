@@ -29,6 +29,7 @@
 | [0019](./0019-agent-run-in-parent.md)                     | 角色可以禁止子对话执行，点名时转交父对话创建子任务          | 已接受 | 2026-10-27 | `AgentInput.runIn`；引擎 `spawn` 转交；子对话步骤立即完成不阻塞；「文档」默认开启                               |
 | [0020](./0020-test-scope-and-incremental-tests.md)        | 测试步骤按范围分档，子对话只跑增量，全量交给父对话合并后跑  | 已接受 | 2026-10-28 | `scope` 三档合并 `runInParent`；`scripts/changed-tests.mjs` 定位单测文件和界面分片；抖动只单跑失败文件最多 3 次 |
 | [0021](./0021-plan-model-lifecycle.md)                    | 执行计划靠面板机制推进：状态机、自动推进、滞后与新输入检测  | 已接受 | 2026-10-28 | `running` 唯一、`failed`/`skipped` 语义；事件自动推进；`planNotice` 一条注入通道；增量 vs 重开规则表           |
+| [0022](./0022-review-gate-override.md)                    | 评审门禁留显式放行出口，记录谁、什么时候、为什么            | 已接受 | 2026-10-28 | `reviewGate` 的 `override`；时间由面板记；`Task.reviewOverride` 进任务详情、收尾消息和交接摘要                  |
 
 状态只有四个词，别自己造近义词：
 

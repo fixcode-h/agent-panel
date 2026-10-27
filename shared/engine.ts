@@ -88,7 +88,7 @@ import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
-import type { TriageItem } from './review-gate.ts'
+import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { isHelperAgent } from './builtin/core.ts'
@@ -423,6 +423,8 @@ export interface Orchestra {
     handoff?: HandoffInput,
     /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
     triage?: TriageItem[],
+    /** 显式放行（用户明确要求「已知问题也合并」）：门禁真的拦下时才生效，记录写在任务上 */
+    override?: ReviewOverride,
   ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
@@ -597,6 +599,7 @@ export interface EngineHost {
     build?: boolean,
     handoff?: HandoffInput,
     triage?: TriageItem[],
+    override?: ReviewOverride,
   ) => Promise<{ ok: boolean; info: string }>
   /**
    * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
@@ -2958,9 +2961,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests, build, handoff, triage) {
+    async submitMerge(note, tests, build, handoff, triage, override) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage)
+      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage, override)
       if (r.ok) host.changed(true)
       return r
     },
