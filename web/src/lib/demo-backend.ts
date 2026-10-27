@@ -139,7 +139,15 @@ import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } fr
 import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
-import { builtinDefinition, builtinKey, CORE_AGENTS, isBuiltinAgent, isCoreAgent, syncCore } from '@shared/builtin/core'
+import {
+  builtinDefinition,
+  builtinKey,
+  builtinMounts,
+  CORE_AGENTS,
+  isBuiltinAgent,
+  isCoreAgent,
+  syncCore,
+} from '@shared/builtin/core'
 import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { builtinProjectCategories, projectCategoryDeleteError } from '@shared/builtin/project-categories'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '@shared/task-export'
@@ -818,7 +826,8 @@ function ensureDemoCore(d: Db) {
     if (!def) return a
     const includes = def.includes.map(byOrigin).filter(Boolean)
     const categoryId = isCoreAgent(a) ? cat.id : a.categoryId
-    return { ...a, ...syncCore(a, def, { categoryId, includes }), name: a.name || def.agent.name }
+    const mounts = builtinMounts(def, (k) => byOrigin(k) || undefined)
+    return { ...a, ...syncCore(a, def, { categoryId, includes, mounts }), name: a.name || def.agent.name }
   })
 }
 function persist() {
@@ -2314,7 +2323,7 @@ function route(method: string, url: string, body: unknown): unknown {
     if (builtinBefore) {
       const def = builtinDefinition(builtinKey(builtinBefore)!)!
       const categoryId = isCoreAgent(builtinBefore) ? builtinBefore.categoryId : input.categoryId
-      const next = syncCore(input, def, { categoryId, includes: builtinBefore.includes })
+      const next = syncCore(input, def, { categoryId, includes: builtinBefore.includes, mounts: builtinBefore.mounts })
       return update('agents', id, { ...next, name: builtinBefore.name, origin: builtinBefore.origin }, 'Agent 不存在')
     }
     // 和服务端一样：去掉引入自己的，会形成循环就拒绝
@@ -3850,7 +3859,7 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       it.messages[0].peer = {
         id: parent.id,
         title: parent.title,
-        name: '统筹',
+        name: '主理',
         rel: 'parent',
         kind: 'task',
         subject: title,

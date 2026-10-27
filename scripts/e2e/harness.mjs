@@ -6,6 +6,7 @@
  * 看门狗和收尾（失败时也要把服务关掉），以及各分片都要用的基础数据（设置、Agent、工作流、项目）。
  */
 import http from 'node:http'
+import { cleanTestEnv } from '../lib/test-env.mjs'
 import net from 'node:net'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -180,7 +181,8 @@ export async function runShard(shardName, fn) {
 
   // 服务的环境变量：端口不在里面，由 spawn-server.mjs 决定（PORT=0 让系统分配，服务再把实际端口报回来）
   const serverEnv = {
-    ...process.env,
+    // 去掉继承的接口变量（scripts/lib/test-env.mjs）：机器上带着 ANTHROPIC_BASE_URL 时账号断言会变
+    ...cleanTestEnv().env,
     AGENT_PANEL_DATA: dataDir,
     // 断言按空数据写的，不装内置工作流和 Agent（单元测试里单独测）
     // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex

@@ -1,9 +1,9 @@
 # testing：测试基础设施（单测 / 端到端 / 界面检查的编排）
 
 - status: analyzed
-- source_paths: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`、`scripts/lib/changed-tests.test.mjs`、`scripts/lib/test-layers.test.mjs`、`scripts/lib/test-budget.test.mjs`、`scripts/lib/`、`scripts/fake-cli/`
+- source_paths: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`、`scripts/lib/changed-tests.test.mjs`、`scripts/lib/test-layers.test.mjs`、`scripts/lib/test-budget.test.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/`、`scripts/fake-cli/`
 - entry: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`
-- analyzed_at: 2026-10-27
+- analyzed_at: 2026-10-28
 
 ## 职责
 
@@ -50,6 +50,7 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 
 并发、重试、迁移批次、验收命令的**规划**仍以 change `docs/openspec/changes/test-governance-budget-and-parallel-safety/` 为准（`design.md` 的 D4–D11）；
 分层与预算的代码已经落地（本文上面两段），迁移批次（改 `*.integration.test.ts` 后缀、拆文件、淘汰用例）还没做。
+输出、失败重跑已经落地（见下面「输出、失败重跑和预算」），自适应并发还没做。
 
 ## 分片结构
 
@@ -59,17 +60,22 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 
 ## 怎么跑
 
-| 目的                             | 命令                                                                          |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| 全量单测                         | `npm run test:unit`                                                           |
-| 只跑指定单测文件                 | `node scripts/unit-tests.mjs --files a.test.ts,b.test.ts`                     |
-| 只跑计时文件（串行）             | `npm run test:unit:timing`                                                    |
-| 按影响面跑增量                   | `npm run test:affected -- --since <任务基线>`                                 |
-| 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04）    |
-| 只跑部分端到端分片               | `npm run test:e2e -- 03 07`                                                   |
-| 全量界面检查                     | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下） |
-| 只跑部分界面分片                 | `node scripts/ui-check.mjs 08-misc`                                           |
-| 改动 → 要跑什么                  | `node scripts/changed-tests.mjs --since <基线>`                               |
+| 目的                             | 命令                                                                                   |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| 全量单测                         | `npm run test:unit`（只打结论、失败详情、抖动和最慢的文件；完整 TAP 在 `logs/tests/`） |
+| 只复测上次失败的单测文件         | `npm run test:failed`                                                                  |
+| 看完整输出                       | `npm run test:unit -- --verbose`，或读 `logs/tests/unit-*.tap`                         |
+| 失败不重跑（排查抖动）           | `npm run test:unit -- --no-retry`                                                      |
+| 只跑指定单测文件                 | `node scripts/unit-tests.mjs --files a.test.ts,b.test.ts`                              |
+| 只跑计时文件（串行）             | `npm run test:unit:timing`                                                             |
+| 按影响面跑增量                   | `npm run test:affected -- --since <任务基线>`                                          |
+| 全量端到端（Windows 必须走 WSL） | `npm run test:e2e:wsl`（走 WSL 默认发行版；默认发行版必须是 Ubuntu-24.04）             |
+| 只跑部分端到端分片               | `npm run test:e2e -- 03 07`                                                            |
+| 全量界面检查                     | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下）          |
+| 只跑部分界面分片                 | `node scripts/ui-check.mjs 08-misc`                                                    |
+| 只复测上次失败的分片             | `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed`                   |
+| 各层用例数和预算                 | `node scripts/test-layers.mjs --report`（检查随 `npm run lint` 跑）                     |
+| 改动 → 要跑什么                  | `node scripts/changed-tests.mjs --since <基线>`                                        |
 
 ## 怎么加用例
 
@@ -80,12 +86,14 @@ e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs
 5. **不涨无预算**：超预算时同一次提交合并或淘汰等量旧用例，写清覆盖关系；不能因为「跑得慢」删测试。
 6. **加 e2e 分片**：场景放 `scripts/e2e/` 下的 NN-主题.mjs，调 `runShard()`；临时目录、端口、服务、看门狗都在 `harness.mjs` 的 `setupBase()` 里，别在分片里自己起服务或写死端口。加界面分片还要登记 `scripts/ui/covers.mjs`。
 
-## 失败怎么处理
+## 输出、失败重跑和预算（[ADR 0024](../../adr/0024-test-output-retry-budget.md)）
 
-- 单测计时类用例偶发失败时，**只重跑失败的那个文件**，最多 3 次尝试；3 次仍失败按真失败处理，把用例名和输出写进结果，不要重跑整套。
-- 反复失败且依赖真实时钟的文件进 `TIMING_FILES` 串行清单，但每个条目要有证据（断言位置 + 失败记录）；清单不是并发问题的首选修复手段。
-- **串行 ≠ 稳定**：清单只降低与其他测试文件抢 CPU 的概率，不能消除真实时钟漂移——`server/background.test.ts` 的 `Date.now()` 窗口断言曾在串行批里以 5599ms 超 4000ms 失败。这类断言要先按 change 的 `test-execution-stability` 规范改造（注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍），再谈移出清单；不要用「换个批次」收尾。
-- e2e / 界面检查失败先看分片名和它自己的数据目录，再决定重跑那一片；不要整轮重跑。
+- **输出**：单测入口用自定义 reporter（`scripts/lib/test-reporter.mjs`）出结构化事件，终端只打每批结论、失败详情（每条最多 20 行）、抖动、慢用例（单条 > 2s）和最慢的 5 个文件；完整 TAP 写进 `logs/tests/unit-*.tap`。一次全量从约 50 万字节降到 3KB 左右。端到端、界面检查本来就只在失败时打全量输出。
+- **失败只重跑失败的**：单测失败的文件串行重跑，总共最多 3 次（`scripts/lib/test-results.mjs` 的 `MAX_ATTEMPTS`）；端到端、界面检查失败的分片串行再跑一次（`scripts/lib/shard-retry.mjs`）。重跑通过的记成「抖动」，醒目打出来、写进 `logs/tests/*-last.json`，退出码按最后一次算。抖动要去修（注入时钟、事件驱动、放宽到实测 p99 两倍），不能靠重跑兜着。
+- **改完只复测失败的**：还失败的记在 `logs/tests/unit-last.json` / `e2e-last.json` / `ui-last.json`，`npm run test:failed`、`--failed` 只跑它们。
+- **继承环境**：单测和端到端起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量（`scripts/lib/test-env.mjs`）。
+- **用例预算**：分层判据和各层上限见上面「分层边界与预算」；`npm run lint` 跑 `node scripts/test-budget.mjs --check`（静态、秒级），超了先合并或删掉等量旧用例（同一行为只断言一处），确实要加就在提交说明写「测试预算：为什么」。上限只降不升。
+- **串行清单**：`TIMING_FILES` 仍是最后手段，进清单要有证据；串行不等于稳定（`server/background.test.ts` 在串行批里也超过窗口）。
 
 ## 依赖
 
@@ -100,5 +108,5 @@ Node.js 20+、`tsx`（单测执行器）、Playwright chromium（界面检查）
 
 ## 待确认
 
-- 分层后缀、预算脚本、自适应并发、重试与 flaky 报告、验收入口（`verify-local` / `flaky-check` / `ci-timings`）都在 change `test-governance-budget-and-parallel-safety` 里规划，尚未实现；实现后本节和上面「三层边界」的现状描述要一起更新。
-- `AGENT_PANEL_E2E_CONCURRENCY` 默认 4 是经验值，新的内存计算落地后要重新实测每分片峰值内存并回填常量。
+- 分层后缀（`*.integration.test.ts`）、自适应并发、用例级影响面选择、验收入口（`verify-local` / `flaky-check` / `ci-timings`）仍在 change `test-governance-budget-and-parallel-safety` 里，没有实现；ADR 0024 先落地了输出、重跑和预算这三件收益最大的。
+- `AGENT_PANEL_E2E_CONCURRENCY` 默认 4 是经验值。

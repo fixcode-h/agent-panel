@@ -14,6 +14,7 @@ import { t } from '@shared/i18n'
 import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anchor'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from '@/lib/toast'
+import { RouteCard } from './RouteCard'
 import {
   ArrowLeft,
   ArrowRight,
@@ -2032,52 +2033,69 @@ export function TaskView({
                         </div>
                       </div>
                     ) : b.m.role === 'user' ? (
-                      <UserMessage
-                        key={b.m.id}
-                        anchorId={b.m.id}
-                        text={b.m.text}
-                        at={b.m.at}
-                        attachments={b.m.attachments}
-                        extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
-                        actions={
-                          <>
-                            {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
-                            {project && !task.imported && (
-                              <button
-                                className={msgAction}
-                                title={t('记成项目教训：以后这个项目里的角色都会照着做')}
-                                aria-label={t('记成项目教训')}
-                                onClick={() => setLessonOf(b.m.text)}
-                              >
-                                <GraduationCap className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
-                            {task.mode === 'chat' && !running && !task.imported && (
-                              <>
+                      <Fragment key={b.m.id}>
+                        <UserMessage
+                          anchorId={b.m.id}
+                          text={b.m.text}
+                          at={b.m.at}
+                          attachments={b.m.attachments}
+                          extra={b.m.delivery && <DeliveryLine delivery={b.m.delivery} />}
+                          actions={
+                            <>
+                              {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
+                              {project && !task.imported && (
                                 <button
                                   className={msgAction}
-                                  title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                  aria-label={t('从这里分叉')}
-                                  onClick={() => fork(b.m.id)}
+                                  title={t('记成项目教训：以后这个项目里的角色都会照着做')}
+                                  aria-label={t('记成项目教训')}
+                                  onClick={() => setLessonOf(b.m.text)}
                                 >
-                                  <GitFork className="h-3.5 w-3.5" />
+                                  <GraduationCap className="h-3.5 w-3.5" />
                                 </button>
-                                {b.m.id !== firstUser && (
+                              )}
+                              {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
+                              {task.mode === 'chat' && !running && !task.imported && (
+                                <>
                                   <button
                                     className={msgAction}
-                                    title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                    aria-label={t('撤回到这里')}
-                                    onClick={() => setRewindAsk(b.m.id)}
+                                    title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                                    aria-label={t('从这里分叉')}
+                                    onClick={() => fork(b.m.id)}
                                   >
-                                    <Undo2 className="h-3.5 w-3.5" />
+                                    <GitFork className="h-3.5 w-3.5" />
                                   </button>
-                                )}
-                              </>
-                            )}
-                          </>
-                        }
-                      />
+                                  {b.m.id !== firstUser && (
+                                    <button
+                                      className={msgAction}
+                                      title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                      aria-label={t('撤回到这里')}
+                                      onClick={() => setRewindAsk(b.m.id)}
+                                    >
+                                      <Undo2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
+                          }
+                        />
+                        {/* 主理把这条消息分到了哪里：分诊卡，不同意可以一键改派 */}
+                        <RouteCard
+                          routes={(task.routes ?? []).filter((r) => r.messageId === b.m.id)}
+                          later={task.messages.slice(task.messages.indexOf(b.m) + 1)}
+                          onReroute={
+                            task.imported
+                              ? undefined
+                              : async (text) => {
+                                  try {
+                                    apply(await api.sendMessage(task.id, text, [], false))
+                                  } catch (e) {
+                                    toast.error((e as Error).message)
+                                  }
+                                }
+                          }
+                        />
+                      </Fragment>
                     ) : b.m.role === 'system' ? (
                       <NoteMessage
                         key={b.m.id}

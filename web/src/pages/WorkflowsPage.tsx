@@ -118,6 +118,8 @@ export function WorkflowsPage() {
         title={t('工作流')}
         count={workflows.length}
         onNew={() => create()}
+        // 窄栏里按钮都收成图标，「工作流」标题才不被挤得截断
+        compactNew
         extra={
           <>
             <Menu>
@@ -144,13 +146,13 @@ export function WorkflowsPage() {
             </Menu>
             <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
             <Button
-              size="sm"
+              size="icon-sm"
               variant="secondary"
               onClick={() => setAssist(true)}
+              aria-label={t('AI 创建工作流')}
               title={t('描述需求，让本机 Agent 生成工作流')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
-              {t('AI 创建')}
             </Button>
           </>
         }

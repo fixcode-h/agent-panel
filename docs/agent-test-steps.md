@@ -239,6 +239,10 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
 必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
+**输出和重跑**（[ADR 0024](adr/0024-test-output-retry-budget.md)）：单测入口默认只打每批结论、失败详情（每条最多 20 行）、
+抖动、慢用例和最慢的文件，完整 TAP 写进 `logs/tests/`；失败只重跑失败的文件（串行，总共最多 3 次），重跑通过记成「抖动」照样报出来；
+还失败的记进 `logs/tests/unit-last.json`，`npm run test:failed` 只跑它们。端到端、界面检查同样只重跑失败分片（再跑一次），`--failed` 只跑上次失败的分片。
+
 ### 用例预算检查（`scripts/test-budget.mjs`）
 
 分层判据和各层用例上限在 `scripts/lib/test-layers.mjs` / `scripts/lib/test-budget.mjs` 一处定义（纯函数 / 集成 / e2e 分片 / e2e 步骤）；

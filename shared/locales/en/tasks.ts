@@ -727,8 +727,8 @@ export const EN_TASKS: Record<string, string> = {
   '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
     'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
   必备角色: 'Core roles',
-  '项目对话靠这几个角色运转：统筹分派、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
-    "Project conversations run on these roles: the coordinator routes, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '项目对话靠这几个角色运转：主理分诊、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these roles: the lead triages, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
   '改了 {n} 项': '{n} changed',
   去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
   角色设置: 'Role settings',
@@ -829,6 +829,9 @@ export const EN_TASKS: Record<string, string> = {
   查看节点状态: 'Check node status',
   开独立分支: 'Open separate branch',
   认领文件: 'Claim files',
+  加载能力: 'Load capability',
+  开始就地改动: 'Start in-place edit',
+  结束就地改动: 'Finish in-place edit',
   释放文件: 'Release files',
   '按类型分 changelist': 'Split changelists by type',
   查看项目教训: 'Read project lessons',
@@ -1241,4 +1244,17 @@ export const EN_TASKS: Record<string, string> = {
   什么时候: 'When',
   为什么: 'Why',
   原本拦住的是: 'What it blocked',
+  // 分诊卡（RouteCard）
+  新开子对话: 'New child conversation',
+  交回子对话: 'Back to child conversation',
+  派子任务: 'Subtask',
+  就地微改动: 'Tiny in-place edit',
+  改为就地处理: 'Handle in place',
+  改为子任务: 'Make it a subtask',
+  改为子对话: 'Give to a child conversation',
+  分诊: 'Triage',
+  已改派: 'Rerouted',
+  理解: 'Understood as',
+  理由: 'Why',
+  假设: 'Assumed',
 }

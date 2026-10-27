@@ -78,6 +78,7 @@ test('必备角色：「评审」也是必备，老项目里的普通副本升�
   const m = memory()
   // 老项目：评审是随工作流装进来的普通副本，放在「通用」分类里
   const old = await m.ops.createAgent({
+    mounts: [],
     ...coreDefinition('reviewer').agent,
     categoryId: 'c-generic',
     includes: [],
@@ -131,7 +132,9 @@ test('派单纪律：事务性动作合并派一次、纯执行给低档、标�
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.match(orch, /## 派单的粒度/)
   assert.match(orch, /事务性小动作攒到一起/, '删临时文件、提交几个文件不需要各开一次会话')
-  assert.match(orch, /父对话仍然只派单，不动手改文件、删文件或提交/, '合并派单不等于父对话自己动手')
+  // 角色分层后主理能就地做护栏内的微改动：小动作要么自己做完、要么攒成一次派单，不一个动作开一个子对话
+  assert.match(orch, /够得上就地微改动的就自己做/, '微改动就地做，不为它开子对话')
+  assert.match(orch, /Bug 不走就地微改动/, '就地改动不是父对话自己排查修 Bug 的口子')
   assert.match(orch, /合并只限同类角色能做的动作/, '提交这一类仍交给负责版本管理的角色')
   assert.match(orch, /tier: "low"/, '纯执行类子任务要显式给低档')
   assert.match(orch, /同一批派单里不能出现两个相同的标题/)
@@ -268,6 +271,7 @@ test('必备角色：停在旧指纹的旧副本升级时，也不冲掉用户�
   assert.ok(legacy, '评审有旧指纹可用')
   // 老项目：副本还是「评审员」那一版的设定，用户改过 target 的取值
   const old = await m.ops.createAgent({
+    mounts: [],
     ...coreDefinition('reviewer').agent,
     name: legacy.name,
     description: legacy.description,

@@ -16,10 +16,12 @@ import { LAYERS } from './test-layers.mjs'
  * 首次快照（同日修正一次）：第一版判据漏了 `node:fs/promises` 的异步读写，
  * server/exec/system-prompt.test.ts（5 例）被算进纯函数层；补齐判据后重跑了基线，
  * 集成层从 717 例修正为 722 例（上限 720 → 730）。这是「基线算错后的纠正」，不是放宽上限。
+ * 2026-10-27 合并 main 后重算一次：main 带来的角色分层、测试输出重跑等用例让纯函数层到 1507、
+ * 集成层到 733；这是上游合入的既有用例，不是本次新增，按合并后的实测重算基线。
  */
 export const BUDGET_BASELINE = {
-  [LAYERS.pure]: 1500, // 基线实测 1500 例（172 个文件）
-  [LAYERS.integration]: 730, // 基线实测 722 例（80 个文件）
+  [LAYERS.pure]: 1510, // 基线实测 1507 例（合并 main 后重算；原 1500）
+  [LAYERS.integration]: 740, // 基线实测 733 例（合并 main 后重算；原 730）
   e2eShards: 20, // 基线实测 13 个分片
   e2eSteps: 130, // 基线实测 122 步
 }

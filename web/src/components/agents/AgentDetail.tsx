@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
 import {
   AlertTriangle,
+  Blocks,
   Braces,
   Copy,
   GitBranch,
@@ -69,6 +70,7 @@ import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
 import { builtinDefinition, builtinKey, coreKey, coreUse, listableAgents } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
+import { CapabilityFields } from './CapabilityFields'
 
 /** 角色设定的模板 */
 const ROLE_TEMPLATE = `# 角色
@@ -85,7 +87,7 @@ const ROLE_TEMPLATE = `# 角色
 // 会改文件、执行任意命令、不用沙箱的权限，界面上标成警告色
 const DANGER_PERMS = ['bypassPermissions', 'danger-full-access', 'yolo']
 
-const ROLE_TABS = ['basic', 'role', 'params', 'extras'] as const
+const ROLE_TABS = ['basic', 'role', 'caps', 'params', 'extras'] as const
 type RoleTab = (typeof ROLE_TABS)[number]
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
@@ -350,6 +352,12 @@ export function AgentDetail({
                 extra: draft.includes.length ? <TabCount n={draft.includes.length} /> : undefined,
               },
               {
+                id: 'caps',
+                label: t('能力'),
+                icon: Blocks,
+                extra: draft.mounts.length ? <TabCount n={draft.mounts.length} /> : undefined,
+              },
+              {
                 id: 'params',
                 label: t('参数'),
                 icon: Braces,
@@ -568,6 +576,9 @@ export function AgentDetail({
               </FormSection>
             )}
 
+            {tab === 'caps' && (
+              <CapabilityFields draft={draft} self={agent} agents={agents} locked={locked} set={set} />
+            )}
             {tab === 'params' && locked && coreDef && (
               <FormSection title={t('参数')}>
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">

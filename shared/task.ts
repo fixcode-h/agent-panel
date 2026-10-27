@@ -162,6 +162,7 @@ export function newTask(
     awaitingUser: false,
     prewarming: false,
     worktree: null,
+    routes: [],
   }
 }
 

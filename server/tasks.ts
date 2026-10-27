@@ -200,7 +200,8 @@ import {
 import type { AlertKind, PlanWait, TaskProcess } from '../shared/schema.ts'
 import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
 import { runTree, subtreeTaskIds } from '../shared/run-usage.ts'
-import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
+import { childFilesInfo, collisionNotice, createClaims, normClaimPath, overlaps, scopeOverlaps } from './claims.ts'
+import { inlineEditBlocker, inlineEditOverrun, inlineEditOverrunText } from '../shared/inline-edit.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
 import { childEnv, isProcessAlive, killTree, taskCliAlive } from './exec/process.ts'
@@ -1760,6 +1761,60 @@ export function tasksApi(deps: {
    * 以前只有独立分支合进去的那条路改父计划、而且一合进去就把那一步标完成（子对话还没收口也算），
    * 共用目录的子对话收尾完父计划一直挂着等待，父对话的 Agent 也看不到计划变成什么样
    */
+  /**
+   * 父对话开始就地微改动（shared/inline-edit.ts）：子对话正在合回、要改的文件有子对话在用（共用目录的认领、
+   * 独立分支划的范围或已经改了的文件）时拒绝；能开始就记下声明的范围和工作区基线，结束时按它核对真实改动
+   */
+  async function beginInlineEdit(parent: Task, dir: string, files: string[], reason: string) {
+    const kids = (await store.list()).filter((x) => x.parentTaskId === parent.id).map((k) => live.get(k.id)?.task ?? k)
+    const merging = kids
+      .filter((k) => k.wrapRequest && (k.wrapRequest.state === 'merging' || k.wrapRequest.state === 'testing'))
+      .map((k) => k.title)
+    const want = files.map(normClaimPath).filter(Boolean)
+    const held: { path: string; by: string }[] = []
+    for (const c of claims.list(parent.id))
+      if (c.taskId !== parent.id && want.some((w) => overlaps(c.path, w))) held.push({ path: c.path, by: c.title })
+    const declared = scopes.get(parent.id)
+    for (const k of kids) {
+      if (k.resolved) continue
+      const busy = [...(declared?.get(k.id)?.files ?? []), ...k.changes.map((c) => c.path)]
+      for (const p of want) if (busy.some((b) => overlaps(b, p))) held.push({ path: p, by: k.title })
+    }
+    const why = inlineEditBlocker({ files, reason, merging, held, active: !!parent.inlineEdit })
+    if (why) return { ok: false, info: why }
+    const head = await gitHead(dir)
+    const baseline = await gitNumstat(dir, head)
+    if (!baseline) return { ok: false, info: '这个目录不是 git 仓库，没法核对就地改动：交给子对话做' }
+    parent.inlineEdit = { files, reason, startedAt: new Date().toISOString(), head, baseline }
+    return {
+      ok: true,
+      info: `可以改了：${files.join('、')}。改完跑项目测试步骤里标「快速」的检查，按版本控制的规则本地提交（只提交这几个文件），再调用 end_inline_edit。改动期间不能收尾子对话、不能派子对话。`,
+    }
+  }
+
+  /** 结束就地微改动：按真实改动核对文件数、行数和没声明的文件，越界写一条醒目警告；没提交的改动列出来 */
+  async function endInlineEdit(parent: Task, dir: string) {
+    const st = parent.inlineEdit
+    if (!st) return { ok: true, info: '没有进行中的就地改动' }
+    const changes = (await gitChanges(dir, st.baseline, st.head)) ?? []
+    // 清字段写 undefined（见 docs/lessons/data.md）
+    parent.inlineEdit = undefined
+    const r = inlineEditOverrun(st.files, changes)
+    const now = (await gitNumstat(dir)) ?? {}
+    const uncommitted = changes.map((c) => c.path).filter((p) => p in now && st.baseline[p] !== now[p])
+    if (r.over) await panelAlert(parent.id, 'panel', inlineEditOverrunText(r), r.undeclared.join('、') || '')
+    return {
+      ok: true,
+      info: [
+        `就地改动结束：改了 ${r.files} 个文件、${r.lines} 行。`,
+        uncommitted.length ? `还没提交：${uncommitted.join('、')}——按版本控制的规则提交，或者说明为什么不提交。` : '',
+        r.over ? inlineEditOverrunText(r) : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
+  }
+
   async function finishChild(parent: Task, childId: string): Promise<{ ok: boolean; info: string }> {
     const r = await finishChildStep(parent, childId)
     const plan = await syncParentPlan(parent.id, childId).catch((e) => {
@@ -3222,7 +3277,7 @@ export function tasksApi(deps: {
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
     const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
-    // 项目里用分派角色（统筹）的顶层对话就是父对话：只统筹，不改文件
+    // 项目里用分派角色（主理）的顶层对话就是父对话：分诊、派单，只做护栏内的就地微改动
     const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
     // UE 项目（目录里有 .uproject）的编译归父对话：子对话申请，父对话按申请占位编译
     const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
@@ -3379,7 +3434,15 @@ export function tasksApi(deps: {
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
-        // 父对话（统筹）不改文件、不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
+        // 父对话（主理）就地微改动：角色开了才有，护栏在 beginInlineEdit / endInlineEdit（shared/inline-edit.ts）
+        inlineEdit:
+          coordinatorRole && startAgent?.inlineEdit === 'tiny' && dir
+            ? {
+                begin: (files, reason) => beginInlineEdit(entry.task, dir, files, reason),
+                end: () => endInlineEdit(entry.task, dir),
+              }
+            : undefined,
+        // 父对话（主理）不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
         beginEdit:
           task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
             ? () => beginEdit(entry, changed)

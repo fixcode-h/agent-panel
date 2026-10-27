@@ -323,4 +323,48 @@ export const EN_AGENTS: Record<string, string> = {
   '「{name}」关闭时': '“{name}” is off',
   '「{name}」不是 {list} 时': '“{name}” is not {list}',
   '「{name}」是 {list} 时': '“{name}” is {list}',
+  // 角色分层：基本角色 / 高级角色、能力挂载（CapabilityFields）
+  能力: 'Capabilities',
+  自动判断: 'Decide automatically',
+  就地用: 'Use in place',
+  派成子任务: 'Run as subtask',
+  转交父对话: 'Hand to parent',
+  角色层: 'Role layer',
+  '基本角色专注一个能力，可以派成子任务、当工作流节点，也可以被高级角色挂载；高级角色是父对话、子对话的负责人，挂载几个基本角色，自己决定每件事就地做还是派出去。':
+    'A basic role focuses on one capability: it can run as a subtask, serve as a workflow node, or be mounted by an advanced role. An advanced role owns a parent or child conversation, mounts several basic roles, and decides for each job whether to do it in place or hand it out.',
+  高级角色: 'Advanced role',
+  基本角色: 'Basic role',
+  被使用时: 'When used',
+  什么时候用: 'When to use',
+  '一句话，会写进挂载它的高级角色的能力索引，模型按它决定用不用；不写用简介':
+    'One sentence. It goes into the capability index of advanced roles that mount it, and the model decides from it whether to use it. Falls back to the description.',
+  '例如：改完并跑过快速检查后，独立看一遍改动': 'E.g. after changes pass the quick checks, review them independently',
+  允许就地用: 'Allow in-place use',
+  '高级角色可以把它的做法加载进当前对话自己做，不用冷启动一个子任务':
+    'Advanced roles can load its method into the current conversation and do it themselves instead of cold-starting a subtask',
+  允许派成子任务: 'Allow running as a subtask',
+  必须独立执行: 'Must run independently',
+  '结论要不受执行者思路影响（例如评审）：只能派成子任务，不能就地用':
+    "Its conclusion must not be shaped by the doer's reasoning (e.g. review): it can only run as a subtask, never in place",
+  '必须独立执行：只能派成子任务，不能就地用': 'Must run independently: subtask only, never in place',
+  挂载的能力: 'Mounted capabilities',
+  '提示词里只放每个能力的一行索引，用到时再加载全文。「就地用」在当前对话里按它的做法做；「派成子任务」冷启动一个子任务；「自动判断」量小就地、量大或要独立视角就派出；「转交父对话」在子对话里点名时交给父对话创建。':
+    'The prompt only carries a one-line index per capability; the full text loads when needed. "Use in place" follows its method in the current conversation; "Run as subtask" cold-starts a subtask; "Decide automatically" keeps small jobs in place and hands out large ones or ones needing an independent view; "Hand to parent" lets the parent create it when a child conversation names it.',
+  '（角色已删除）': '(role deleted)',
+  用法: 'Usage',
+  '{label}（这个能力不支持）': "{label} (this capability doesn't support it)",
+  '规则（可选）：什么时候就地、什么时候派出': 'Rule (optional): when to do it in place and when to hand it out',
+  常驻加载: 'Always loaded',
+  '就地用时把它的做法直接放进提示词（主能力用），不用每次再加载':
+    'When used in place, put its method straight into the prompt (for the main capability) so it never has to be loaded',
+  挂载能力: 'Mount capability',
+  '挂载一个基本角色…': 'Mount a basic role…',
+  '还没有挂载能力：这个高级角色只按自己的角色设定做事':
+    'No capabilities mounted yet: this advanced role works only from its own instructions',
+  调度: 'Dispatch',
+  父对话可以就地微改动: 'Parent may make tiny in-place edits',
+  '当这个角色是项目的父对话时：改什么已经清楚、不用排查，最多 2 个文件、20 行以内（文案、配置值、一两行文档）可以自己改完提交，不开子对话。面板会拦下子对话正在合回、文件被子对话占用的情况，改完核对是否越界。':
+    'When this role runs a project parent conversation: if the change is already clear and needs no investigation, up to 2 files and 20 lines (copy, a config value, a line or two of docs), it can make and commit the change itself without opening a child conversation. The panel blocks it while a child is merging back or holds those files, and checks afterwards whether it went over the limit.',
+  'AI 创建角色': 'Create a role with AI',
+  'AI 创建工作流': 'Create a workflow with AI',
 }

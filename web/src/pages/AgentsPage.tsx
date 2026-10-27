@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { Bot, Copy, Download, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react'
 import { isCoreAgent, isHelperAgent, listableAgents } from '@shared/builtin/core'
-import { type Agent, type AgentInput, type Category } from '@shared/schema'
+import { type Agent, type AgentInput, type Category, roleLayerDefaults } from '@shared/schema'
+import { roleKind } from '@shared/agent-role'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cliColor, shortVersion } from '@/lib/cli-style'
@@ -124,6 +125,7 @@ export function AgentsPage() {
         canDelegate: false,
         canPlan: false,
         runIn: 'any',
+        ...roleLayerDefaults(),
         capsSet: true,
         includes: [],
         params: [],
@@ -175,7 +177,8 @@ export function AgentsPage() {
       onClick={() => go({ page: 'agents', id: a.id })}
       leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
       title={a.name}
-      subtitle={`${cliName(a)} · ${modelOf(a)}`}
+      // 角色层写在最前：高级角色能当父对话、子对话的负责人，基本角色是挂载、派出的能力
+      subtitle={`${roleKind(a) === 'advanced' ? t('高级角色') : t('基本角色')} · ${cliName(a)} · ${modelOf(a)}`}
       tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
       trailing={<span className="shrink-0">{status(a)}</span>}
       menu={
@@ -211,6 +214,8 @@ export function AgentsPage() {
         title={t('角色')}
         count={listed.length}
         onNew={() => create()}
+        // 头部有四个按钮（内置、导入、AI 创建、新建）：窄栏里都收成图标，「角色」标题才不被挤成半个字
+        compactNew
         extra={
           <>
             <Button
@@ -233,13 +238,13 @@ export function AgentsPage() {
             </Button>
             <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
             <Button
-              size="sm"
+              size="icon-sm"
               variant="secondary"
               onClick={() => setAssist(true)}
+              aria-label={t('AI 创建角色')}
               title={t('描述需求，让本机 Agent 生成角色')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
-              {t('AI 创建')}
             </Button>
           </>
         }

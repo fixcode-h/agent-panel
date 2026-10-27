@@ -574,6 +574,8 @@ app.put('/agents/:id', async (c) => {
       ...syncCore(r.data!, def, {
         categoryId: isCoreAgent(before) ? before.categoryId : r.data!.categoryId,
         includes: before.includes,
+        // 挂哪些能力跟着已装的定义（启动同步维护），用户只能改每个挂载的用法和参数取值
+        mounts: before.mounts,
       }),
       name: before.name,
       origin: before.origin,
