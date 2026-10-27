@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { CircleAlert, Loader2, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { fmtDuration } from '@shared/duration'
+import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { stepElapsed, traceSettled, type TraceStatus, type TraceStep, type TraceStepId } from '@/lib/load-trace'
+import {
+  backgroundSteps,
+  blockingFailed,
+  blockingSettled,
+  stepElapsed,
+  traceRunning,
+  type TraceStatus,
+  type TraceStep,
+  type TraceStepId,
+} from '@/lib/load-trace'
 import { cn } from '@/lib/utils'
 
 /**
@@ -19,6 +29,15 @@ const LABEL: Record<TraceStepId, string> = {
   children: t('读取子对话'),
   seen: t('标记已读'),
   render: t('渲染消息'),
+}
+
+/** 后台胶囊上那一句：说清这会儿卡在哪一步（按加载顺序取第一个还在跑的） */
+const RUNNING_TEXT: Record<TraceStepId, string> = {
+  task: t('正在读取对话'),
+  stream: t('正在连接实时更新'),
+  children: t('正在读取子对话'),
+  seen: t('正在标记已读'),
+  render: t('正在渲染消息'),
 }
 
 /** 状态图标：完成、进行中、等待中、失败、未执行 —— 关掉动效时靠形状也分得开 */
@@ -51,12 +70,14 @@ export function LoadTrace({
   /** 淡出结束：调用方把这块卸载掉 */
   onHidden?: () => void
 }) {
-  const settled = traceSettled(steps)
-  // 有步骤失败时面板不自动淡出：错误原文要留在屏幕上给人看（子对话列表跑 1.1 秒后才出错很常见，
-  // 按「走完就淡出」会在十几毫秒里一闪而过）；用户看清后自己关，或者把下面的对话点回去
-  const failed = steps.some((s) => s.status === 'failed')
-  // 进行中才每秒刷新：等待时长要看得见地涨，走完了就不必再重渲染
-  const now = useNow(!settled)
+  // 挡内容的步骤（读取对话、渲染消息）都结束了就能换成对话：实时更新、子对话列表、标记已读
+  // 是内容之外的增强，慢不慢都不该让面板一直盖着（用户报的就是「连接实时更新」等到 1.2 秒还挡着）
+  const blocking = blockingSettled(steps)
+  // 只有挡内容的步骤失败才停在屏幕上：错误原文要给人看，用户看清后自己关。
+  // 后台步骤失败不挡内容，改由收起后的日志胶囊显示错误原文（见 LoadTracePill）
+  const failed = blockingFailed(steps)
+  // 有步骤还在跑才每秒刷新：等待时长要看得见地涨，跑完了就不必再重渲染
+  const now = useNow(traceRunning(steps))
   const [shown, setShown] = useState(true)
   const hidden = useRef(onHidden)
   hidden.current = onHidden
@@ -69,13 +90,13 @@ export function LoadTrace({
   )
   useEffect(() => {
     // 只有盖在对话上的那一层会淡出卸载；没有任务数据时它就是页面的内容，
-    // 失败时要停在屏幕上给人看（淡成空白比转圈更糟）
-    if (!overlay || !settled || failed) return
+    // 阻塞步骤失败时要停在屏幕上给人看（淡成空白比转圈更糟）
+    if (!overlay || !blocking || failed) return
     const base = Number.isFinite(startedAt) ? startedAt : Date.now()
     const left = Math.max(0, MIN_VISIBLE_MS - (Date.now() - base))
     const timer = setTimeout(() => setShown(false), left)
     return () => clearTimeout(timer)
-  }, [overlay, settled, failed, startedAt])
+  }, [overlay, blocking, failed, startedAt])
   useEffect(() => {
     if (shown) return
     // 淡出完就交给调用方卸载。不靠 transitionend：动效被关掉、标签页在后台时它不一定来，
@@ -125,6 +146,76 @@ export function LoadTrace({
             <TraceLine key={step.id} step={step} now={now} delayMs={i * ROW_FADE_STEP_MS} />
           ))}
         </ul>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 面板收起以后还在跑的后台步骤（实时更新、子对话列表、标记已读）：在输入框上方留一个小胶囊，
+ * 失败时直接写错误原文，点开是完整日志。没有在跑 / 失败的后台步骤时什么也不画——不新增常驻噪音。
+ */
+export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
+  const pending = backgroundSteps(steps)
+  const [open, setOpen] = useState(false)
+  const now = useNow(traceRunning(pending))
+  useEscape(open, () => setOpen(false))
+  // 后台步骤都好了就把浮层收起来：不把它停在一份已经过时的日志上
+  useEffect(() => {
+    if (!pending.length) setOpen(false)
+  }, [pending.length])
+  if (!pending.length) return null
+  const failed = pending.find((s) => s.status === 'failed')
+  const running = pending.find((s) => s.status === 'running')
+  return (
+    <div className="shrink-0 px-3 pt-1 md:px-6">
+      <div className="relative mx-auto max-w-(--content-w)">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={failed ? t('后台加载失败，查看加载日志') : t('后台加载中，查看加载日志')}
+          onClick={() => setOpen((v) => !v)}
+          data-load-trace-pill=""
+          data-trace-failed={failed ? '1' : undefined}
+          className={cn(
+            'flex max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors',
+            failed ? 'text-danger hover:bg-danger/10' : 'text-subtle hover:bg-sel hover:text-fg',
+          )}
+        >
+          {failed ? (
+            <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          )}
+          {/* 失败时显示错误原文（不吞）；正常时只说正在做哪一步 */}
+          <span className="min-w-0 truncate">{failed ? failed.error : running ? RUNNING_TEXT[running.id] : ''}</span>
+        </button>
+        {open && (
+          <div
+            role="dialog"
+            aria-label={t('加载日志')}
+            className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop"
+          >
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <span className="text-[0.8125rem] font-medium">{t('加载日志')}</span>
+              <span className="text-xs text-subtle">{t('后台步骤')}</span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={t('关闭')}
+                className="ml-auto shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            {/* 五步都列出来：哪几步结束了、哪几步还在后台，一眼看全 */}
+            <ul className="flex flex-col gap-0.5 px-3 py-2 font-mono text-[0.75rem] leading-5">
+              {steps.map((step, i) => (
+                <TraceLine key={step.id} step={step} now={now} delayMs={i * ROW_FADE_STEP_MS} />
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   )
