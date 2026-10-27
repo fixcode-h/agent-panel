@@ -75,3 +75,4 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [design.md](./design.md)               | UI 设计 Agent 的截图、出图、引用和验收         |
 | [project-files.md](./project-files.md) | 面板往用户项目里临时写的配置（面板 MCP 条目）  |
 | [retry.md](./retry.md)                 | 报错后重试：在原来的子对话、子任务里接着做     |
+| [tooling.md](./tooling.md)             | AI 自己跑命令、等结果的方式                     |
