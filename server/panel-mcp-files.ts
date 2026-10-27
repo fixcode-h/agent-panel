@@ -6,7 +6,7 @@ import { isPanelMcpUrl, panelMcpToken } from '../shared/project-mcp.ts'
 import { liveAskToken, lockedFile } from './ask-mcp.ts'
 
 /**
- * 写配置文件接面板 MCP 的 CLI（Command Code 的 .mcp.json、Gemini CLI 的 .gemini/settings.json）会在用户项目里留下面板的条目。
+ * 写配置文件接面板 MCP 的 CLI（Command Code 的 .mcp.json）会在用户项目里留下面板的条目。
  * 一轮正常结束时会删掉自己那一项，但面板被关掉、崩溃、被强制结束时来不及删，老版本还用过 panel、orch、panel-xxxxxx 这些名字，
  * 时间一长 .mcp.json 里就堆了几十条指向早已失效地址的「panel-xxxx」。这里负责：
  * - 名字：同一个目录里第一轮固定叫 agent-panel，只有同时在跑的另几轮才带后缀，平时项目里最多一项

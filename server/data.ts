@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { DATA_KINDS, DataUsage, MemoryUsage, canExport, type DataKind } from '../shared/data.ts'
 import { Settings } from '../shared/schema.ts'
+import { migrateRemovedClis } from '../shared/settings.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { getSettings } from './settings.ts'
 import type { MemorySampler } from './memory.ts'
@@ -61,7 +62,10 @@ export async function readBackupFiles(rels: string[], read: (full: string) => Pr
 /** 导出时去掉隧道 token：它相当于让别人接管这条隧道，不该跟着备份文件传出去 */
 function withoutTunnelToken(b64: string) {
   try {
-    const s = Settings.parse(JSON.parse(Buffer.from(b64, 'base64').toString('utf8')))
+    const raw = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
+    // 旧设置里的 Gemini 协议先清掉，否则解析失败会跳过清理，隧道 token 跟着备份导出
+    migrateRemovedClis(raw)
+    const s = Settings.parse(raw)
     if (!s.remoteAccess.tunnelToken) return b64
     s.remoteAccess.tunnelToken = ''
     return Buffer.from(JSON.stringify(s)).toString('base64')
@@ -193,7 +197,10 @@ export function dataApi(deps: { running: () => number; memory: MemorySampler }) 
     // 导出时去掉了隧道 token：导入时沿用本机现有的，免得导入后隧道连不上
     if (fs['settings.json']) {
       try {
-        const backup = Settings.parse(JSON.parse(Buffer.from(fs['settings.json'], 'base64').toString('utf8')))
+        const raw = JSON.parse(Buffer.from(fs['settings.json'], 'base64').toString('utf8'))
+        // 旧备份里可能还有已经移除的 Gemini 协议：先清掉，导入时才能正常解析
+        migrateRemovedClis(raw)
+        const backup = Settings.parse(raw)
         const current = await getSettings()
         if (!backup.remoteAccess.tunnelToken && current.remoteAccess.tunnelToken) {
           backup.remoteAccess.tunnelToken = current.remoteAccess.tunnelToken

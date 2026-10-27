@@ -54,3 +54,5 @@ id_ed25519
 # 临时副本 / 编辑中间产物：改文档、脚本时为对比或备份落下的副本（如 .tmp-dev-readme.md
 # 就是 docs/modules/web/README.md 的旧副本），内容会过期、容易误导，一律不进版本控制
 .tmp-*
+# 临时工作目录：Agent 的临时文件统一放这里（见 AGENTS.md 硬规则）
+.tmp/

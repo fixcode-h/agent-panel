@@ -860,7 +860,22 @@ await runShard('工作流条件与失败', async (api) => {
   assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'default', '逐项确认明确传 default，不沿用 Claude 自己的设置')
   assert.ok(pk.includes('--permission-prompt-tool'), '需要确认的操作交给面板')
   pk = (await runWith(L, 'bypassPermissions')).args
-  assert.ok(pk.includes('--dangerously-skip-permissions') && !pk.includes('--permission-prompt-tool'), '跳过所有确认')
+  assert.ok(pk.includes('--dangerously-skip-permissions'), '跳过所有确认')
+  // 跳过确认不等于关掉提问：少了 --permission-prompt-tool，Claude Code 不把 AskUserQuestion 放进工具列表，
+  // 模型的提问只能变成纯文本。fake-cli 照这个行为模拟，所以下面这轮等不到卡片就说明参数又丢了
+  assert.ok(pk.includes('--permission-prompt-tool'), '跳过确认也要保留提问通道')
+  ask = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: L.id,
+    prompt: 'ASK 跳过确认也提问',
+    askUser: true,
+  })
+  const rSkip = await waitReq()
+  assert.equal(rSkip.kind, 'question', '跳过确认时提问照样弹出卡片')
+  await call('POST', `/tasks/${ask.id}/requests/${rSkip.id}`, { allow: true, answers: ['SQLite', '加'] })
+  assert.equal((await waitDone(ask.id)).status, 'done')
+  step('跳过所有确认时提问通道还在：提问照样弹出卡片')
   await call('PUT', '/agents/' + L.id, { ...L, permission: '' })
   let ck = await runWith(B, 'danger-full-access')
   assert.deepEqual([ck.approval, ck.sandbox], ['never', 'danger-full-access'], 'Codex 完全访问：不用沙箱、不确认')

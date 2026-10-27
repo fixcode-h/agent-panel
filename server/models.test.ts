@@ -30,7 +30,7 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
   const out = [
     'provider   model                 context  max-out  thinking  images',
     'anthropic  claude-sonnet-4-6     1M       64K      yes       yes   ',
-    'google     gemini-2.5-flash      1.0M     65.5K    yes       yes   ',
+    'mistral    mistral-large-3        1.0M     65.5K    yes       yes   ',
     'ollama     qwen2.5-coder:7b      128K     16.4K    no        no    ',
   ].join('\n')
   assert.deepEqual(parsePiModels(out, ['low', 'high']), [
@@ -44,9 +44,9 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       images: true,
     },
     {
-      id: 'google/gemini-2.5-flash',
-      label: 'gemini-2.5-flash',
-      group: 'google',
+      id: 'mistral/mistral-large-3',
+      label: 'mistral-large-3',
+      group: 'mistral',
       contextWindow: 1_000_000,
       maxOutput: 65_500,
       efforts: ['low', 'high'],

@@ -12,7 +12,7 @@
 
 ## 项目
 
-本机运行的网页控制台，按项目调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi），按工作流的流程图执行。
+本机运行的网页控制台，按项目调度本机的编码 CLI（Claude Code、Codex、Command Code、Pi），按工作流的流程图执行。
 
 - 全部 TypeScript，不用 Python：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），
   服务端 `server/`（Hono，只监听 127.0.0.1），前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。
@@ -28,6 +28,7 @@
 - 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
 - Agent 执行出的错误一律显示给用户，不悄悄重试。
 - **凭据不进仓库**：密码、令牌、API key 只放本机数据目录（默认 `~/.agent-panel`）或环境变量，不写进代码、测试、fixtures、文档和提交说明；示例只用 `sk-xxxx`、`your-api-key` 这类占位符。`npm run lint` 会跑 `scripts/secret-check.mjs` 扫描全仓和暂存区，发现疑似真实 key 直接失败；确实要保留的行在结尾加 `secret-check-ok` 并写明原因。
+- **临时文件只放项目根的 `.tmp/`（已在 `.gitignore` 忽略）或系统临时目录**：不要写到盘符根目录（如 `F:/tmp`）、其他项目目录或用户数据目录；用完清理，别留在仓库里。
 - **贡献流程与漏洞报告**：怎么提改动、跑哪些检查见 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题按 [SECURITY.md](SECURITY.md) 私下报告，不开公开 Issue。
 - **模块文档**：模块说明只放 `docs/modules/<模块>/README.md`（Bug 记录在同目录 `bugs/<bug-id>.md`，只记用户报的 Bug，开发和评审中自己发现的问题不写）。**`docs/modules/<模块>/bugs.md` 是生成物，不要手工编辑**：只写 `bugs/<bug-id>.md` 的元数据头（状态 / 症状 / 入口 / 根因类型 / 关键词），再跑 `npm run docs:bugs` 重写索引；这样多个子对话并行收尾时各自新增一个文件，不会都改同一张表末尾而反复冲突。调研某个模块时先查 `docs/MODULE-MAP.md` 和对应模块文档，有就先读再查；结论回写模块文档，已有就合并不覆盖，模块在代码里没了就删目录并同步 `MODULE-MAP.md` 的表格行。细则见 [skills/docs/project-documentation](skills/docs/project-documentation/SKILL.md)。
 

@@ -23,8 +23,12 @@ const makeDir = () => {
   return dir
 }
 
+// custom 是 e2e 在数据目录里注册的测试 CLI（scripts/e2e/fixtures/custom-cli.json），不在内置注册表里，
+// 但假 CLI 同样会为它写 custom-output.txt，清理列表必须带上
+const TEST_ONLY_KINDS = ['custom']
+
 test('清理列表覆盖注册的每种 CLI：新增 CLI 时漏了它，合并又会被残留文件挡住', () => {
-  assert.deepEqual([...CLI_OUTPUT_KINDS].sort(), CLIS.map((c) => c.id).sort())
+  assert.deepEqual([...CLI_OUTPUT_KINDS].sort(), [...CLIS.map((c) => c.id), ...TEST_ONLY_KINDS].sort())
 })
 
 test('每种 CLI 一个不同的输出文件名，统一以 -output.txt 结尾', () => {

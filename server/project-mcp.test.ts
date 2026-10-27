@@ -38,7 +38,7 @@ test('项目 MCP：识别常见配置文件，导入只写 CLI 的全局配置',
   // Windows 上 os.homedir() 读 USERPROFILE，两个都设才能隔离到临时目录
   process.env.HOME = home
   process.env.USERPROFILE = home
-  for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'GEMINI_CLI_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
+  for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
   try {
     // Claude Code 的 .mcp.json（mcpServers）、VS Code 的 .vscode/mcp.json（servers）、Codex 的 config.toml、读不懂的设置文件
     const mcpJson = JSON.stringify(

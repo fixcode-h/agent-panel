@@ -10,7 +10,7 @@ import { rmSync } from 'node:fs'
 import path from 'node:path'
 
 /** 假 CLI 按参数认出来的 kind：每种都会在工作目录写一个输出文件 */
-export const CLI_OUTPUT_KINDS = ['claude', 'codex', 'commandcode', 'gemini', 'pi']
+export const CLI_OUTPUT_KINDS = ['claude', 'codex', 'commandcode', 'custom', 'pi']
 
 /** 某种 CLI 在工作目录写的输出文件名 */
 export const cliOutputFile = (kind) => `${kind}-output.txt`

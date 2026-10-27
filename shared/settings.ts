@@ -13,6 +13,55 @@ import {
 
 export const defaultSettings = (): Settings => Settings.parse({})
 
+/** 已经不再支持的 CLI：旧设置里还留着它们的配置 */
+const REMOVED_CLI_IDS = new Set(['gemini'])
+
+/**
+ * 读设置文件之前清掉已经移除的 Gemini 条目：协议枚举里没有 `gemini` 了，
+ * 留着旧 API 会让 `Settings.safeParse` 整份失败，设置被当成损坏文件重置。
+ * - apis 里 `protocol: 'gemini'` 的 API 配置整个去掉
+ * - clis 里 Gemini CLI 的配置去掉；指向被去掉的 API 的「API 方式」回退到账号方式
+ * 直接改传入的原始对象，返回是否有改动（调用方据此决定要不要写回）。幂等
+ */
+export function migrateRemovedClis(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const s = raw as { apis?: unknown; clis?: Record<string, unknown> }
+  let dirty = false
+  const removedApis = new Set<string>()
+  if (Array.isArray(s.apis)) {
+    const kept = s.apis.filter((a) => {
+      const protocol = a && typeof a === 'object' ? (a as { protocol?: unknown }).protocol : undefined
+      if (protocol !== 'gemini') return true
+      const id = (a as { id?: unknown }).id
+      if (typeof id === 'string') removedApis.add(id)
+      return false
+    })
+    if (kept.length !== s.apis.length) {
+      s.apis = kept
+      dirty = true
+    }
+  }
+  if (s.clis && typeof s.clis === 'object') {
+    for (const id of REMOVED_CLI_IDS) {
+      if (id in s.clis) {
+        delete s.clis[id]
+        dirty = true
+      }
+    }
+    // 被去掉的 API 不再存在，继续用 API 方式会没有可选的接口：回退到账号方式
+    for (const cs of Object.values(s.clis)) {
+      if (!cs || typeof cs !== 'object') continue
+      const c = cs as { authMode?: unknown; apiId?: unknown }
+      if (typeof c.apiId === 'string' && removedApis.has(c.apiId)) {
+        c.apiId = ''
+        c.authMode = 'account'
+        dirty = true
+      }
+    }
+  }
+  return dirty
+}
+
 /**
  * 老设置里各项默认值的迁移：正式后端（`server/settings.ts` 的 `getSettings`）和演示后端（`web/src/lib/demo-backend.ts`）
  * 共用这一份，返回是否有改动（调用方据此决定要不要写回）。只在读设置时做，幂等
@@ -54,7 +103,6 @@ export function accountModelId(def: CliDefinition | undefined, api: ApiConfig | 
     anthropic: ['-anthropic-messages', '-anthropic'],
     'openai-responses': ['-responses'],
     'openai-chat': ['-chat', '-completions'],
-    gemini: ['-gemini'],
   }[api.protocol]
   const suffix = suffixes?.find((x) => native.endsWith(x))
   return suffix ? native.slice(0, -suffix.length) : native

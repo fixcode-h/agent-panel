@@ -2,7 +2,7 @@ import { mkdir, rename } from 'node:fs/promises'
 import path from 'node:path'
 import { CliSettings, SETTINGS_DEFAULTS_VERSION, Settings } from '../shared/schema.ts'
 import { CLIS } from '../shared/clis.ts'
-import { defaultSettings, migrateSettingsDefaults } from '../shared/settings.ts'
+import { defaultSettings, migrateRemovedClis, migrateSettingsDefaults } from '../shared/settings.ts'
 
 import { CACHE_DIR, dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 import { applyServerLang } from './lang.ts'
@@ -19,11 +19,14 @@ export async function getSettings(): Promise<Settings> {
     cache = freshSettings()
     return cache
   }
+  // 旧版本存过的 Gemini 协议 / Gemini CLI 必须在 safeParse 之前清掉：协议枚举里已经没有 gemini，
+  // 留着会让整份设置被当成损坏文件重置（迁移与演示后端共用，见 shared/settings.ts）
+  const removedDirty = migrateRemovedClis(raw)
   const parsed = Settings.safeParse(raw)
   if (parsed.success) {
     const s = parsed.data
     // 旧设置里各项旧默认值的升级（与演示后端共用同一份迁移，见 shared/settings.ts）
-    const dirty = migrateSettingsDefaults(s)
+    const dirty = migrateSettingsDefaults(s) || removedDirty
     // 写回只是把迁移落到文件，失败（只读目录、磁盘满）不能连累读取设置：内存里已经按新值用，
     // 下次启动还会再试一次，幂等
     if (dirty) {

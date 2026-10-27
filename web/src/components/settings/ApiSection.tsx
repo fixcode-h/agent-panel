@@ -46,7 +46,6 @@ import { probeTarget } from '@/lib/api-probe'
 const PRESETS: { label: string; protocol: ApiProtocol }[] = [
   { label: 'Anthropic', protocol: 'anthropic' },
   { label: 'OpenAI', protocol: 'openai-responses' },
-  { label: 'Gemini', protocol: 'gemini' },
 ]
 
 /** API 卡片展开还是收起，按 API 记在本地 */
@@ -85,7 +84,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     <Group>
       <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
@@ -160,7 +159,7 @@ function ApiCard({
   const vendor = findVendor(a.name)
   /** 厂家按当前协议给的地址：只当接口地址输入框的提示，留空时请求就用它 */
   const vendorUrl = vendor?.urls[a.protocol] ?? ''
-  const canProbe = !!apiBaseUrl(a) || a.protocol === 'gemini'
+  const canProbe = !!apiBaseUrl(a)
 
   // 连接相关的字段一改，上一次的测试结果就过期了
   useEffect(() => {

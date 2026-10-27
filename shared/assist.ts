@@ -501,7 +501,7 @@ const COMMAND_RULES = `- 命令是一个 Markdown 文件：开头是 front matte
 - description 一句话说清它做什么，显示在「/」菜单里，不超过 40 字
 - 正文里用 $ARGUMENTS 表示命令后面的全部参数，$1、$2 表示按空格分开的第 1、2 个参数；命令需要参数时写 argument-hint，例如 "<issue 编号>"、"[范围]"（尖括号必填、方括号可选）
 - 正文写给编码 Agent 看：用祈使句说清楚目标、步骤、什么情况下停下来问用户、做完怎么汇报；参数可能为空时说明为空时做什么
-- 面板会把这个命令发给任何一个 CLI（Claude Code、Codex、Gemini CLI 等），不要写某个 CLI 才有的语法（例如 !\`命令\`、@文件 引用、allowed-tools）
+- 面板会把这个命令发给任何一个 CLI（Claude Code、Codex、Command Code、Pi 等），不要写某个 CLI 才有的语法（例如 !\`命令\`、@文件 引用、allowed-tools）
 - 篇幅精炼，一般不超过 40 行；不要引用不存在的脚本和文件`
 
 const COMMAND_SHAPE = `{

@@ -66,19 +66,13 @@ test('清理项目目录：全是面板留下的文件直接删掉，混着用�
     path.join(dir, '.mcp.json'),
     JSON.stringify({ mcpServers: { mine: { command: 'x' }, panel: entry('gone') } }),
   )
-  mkdirSync(path.join(dir, '.gemini'))
-  writeFileSync(
-    path.join(dir, '.gemini', 'settings.json'),
-    JSON.stringify({ mcpServers: { 'panel-1f1d3a': { httpUrl: url('gone2') } } }),
-  )
   mkdirSync(path.join(dir, '.commandcode'))
   writeFileSync(
     path.join(dir, '.commandcode', 'settings.json'),
     JSON.stringify({ permissions: { allow: ['mcp__panel-1f1d3a__*'] } }),
   )
-  assert.equal(await sweepPanelMcp(dir), 3)
+  assert.equal(await sweepPanelMcp(dir), 2)
   assert.deepEqual(read(path.join(dir, '.mcp.json')), { mcpServers: { mine: { command: 'x' } } })
-  assert.ok(!existsSync(path.join(dir, '.gemini', 'settings.json')))
   assert.ok(!existsSync(path.join(dir, '.commandcode', 'settings.json')))
   assert.equal(await sweepPanelMcp(dir), 0, '再清一遍没有要动的')
 })
@@ -120,8 +114,8 @@ test('一轮结束只撤掉自己那一项：同时在跑的另一轮、执行�
 
   // 这一轮新建的文件：撤完只剩空壳就删掉
   const r3 = await applyConfigFiles(dir, [
-    { path: '.gemini/settings.json', content: { mcpServers: { x: { httpUrl: url('t') } } } },
+    { path: '.commandcode/settings.json', content: { mcpServers: { x: { httpUrl: url('t') } } } },
   ])
   await r3()
-  assert.ok(!existsSync(path.join(dir, '.gemini', 'settings.json')))
+  assert.ok(!existsSync(path.join(dir, '.commandcode', 'settings.json')))
 })

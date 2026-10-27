@@ -128,7 +128,7 @@ const servers: McpEntry[] = [
     env: {},
     url: '',
     headers: {},
-    clis: ['claude', 'gemini'],
+    clis: ['claude', 'pi'],
   },
 ]
 

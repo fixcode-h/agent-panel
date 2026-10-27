@@ -32,19 +32,10 @@ import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
 
-const gemini = { id: 'gemini', name: 'Gemini CLI' }
-
-test('Google 不再支持个人账号用 Gemini CLI：说明是服务端限制，指到 API 方式', () => {
-  const detail =
-    'An unexpected critical error occurred:IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals.'
-  const hints = failureHints(detail, gemini)
-  assert.equal(hints.length, 1)
-  assert.match(hints[0], /Google 服务端的限制/)
-  assert.match(hints[0], /API 配置/)
-})
+const pi = { id: 'pi', name: 'Pi' }
 
 test('普通的报错不加说明', () => {
-  assert.deepEqual(failureHints('something else went wrong', gemini), [])
+  assert.deepEqual(failureHints('something else went wrong', pi), [])
 })
 
 test('Pi 没配 API Key：提示在终端里登录', () => {

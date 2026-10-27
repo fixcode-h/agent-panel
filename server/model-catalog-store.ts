@@ -6,8 +6,8 @@
 import path from 'node:path'
 import {
   BUILTIN_MODEL_CATALOG,
-  ModelCatalogFile,
   mergeCatalog,
+  parseModelCatalog,
   type ModelCatalogEntry,
 } from '../shared/model-catalog.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
@@ -15,11 +15,12 @@ import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 export const MODEL_CONFIG_DIR = path.join(DATA_DIR, 'config')
 export const MODEL_CONFIG_FILE = path.join(MODEL_CONFIG_DIR, 'models.json')
 
-/** 读到的补充目录；文件不存在或格式不对时当作空的 */
+/**
+ * 读到的补充目录；文件不存在时当作空的。旧目录里的 Gemini 协议和单条坏记录由 parseModelCatalog 处理，
+ * 不能让它们让整份目录失效（保存时会把整份覆盖掉）
+ */
 export async function userModelCatalog(): Promise<ModelCatalogEntry[]> {
-  const raw = await readJson(MODEL_CONFIG_FILE)
-  const p = ModelCatalogFile.safeParse(raw)
-  return p.success ? p.data.models : []
+  return parseModelCatalog(await readJson(MODEL_CONFIG_FILE))
 }
 
 /** 内置目录 + 用户补充目录 */

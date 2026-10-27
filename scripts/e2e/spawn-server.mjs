@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { cleanTestEnv } from '../lib/test-env.mjs'
 
@@ -26,6 +27,18 @@ const TAIL_LINES = 40
 const MAX_LINES = 200
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * tsx 的可执行文件：子对话的 worktree 里没有自己的 node_modules（依赖按项目共用一份放在上级目录，
+ * 见 docs/lessons/worktree.md），所以沿上级目录找。找不到时返回当前目录的路径，让 spawn 报原来的错
+ */
+export function tsxBin(root) {
+  for (let dir = root; ; dir = path.dirname(dir)) {
+    const bin = path.join(dir, 'node_modules/.bin/tsx')
+    if (existsSync(bin)) return bin
+    if (path.dirname(dir) === dir) return path.join(root, 'node_modules/.bin/tsx')
+  }
+}
 
 /**
  * /health 的响应是不是本分片启动的服务回的。是就返回 null，不是就返回给人看的说明。
@@ -49,7 +62,7 @@ export function startServer({ root, shardName, env = {}, timeoutMs = 60_000, onU
   const instance = `${shardName}-${randomUUID()}`
   // 默认 0 表示让系统分配端口；测试要人为造端口冲突时可以指定一个已被占用的端口
   const requested = env.PORT === undefined ? '0' : String(env.PORT)
-  const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
+  const child = spawn(tsxBin(root), ['server/index.ts'], {
     cwd: root,
     // 继承来的接口变量（ANTHROPIC_BASE_URL 这类）会改掉 CLI 的接口和账号行为：去掉，测试要的由 env 显式传
     env: { ...cleanTestEnv().env, ...env, PORT: requested, AGENT_PANEL_INSTANCE: instance },

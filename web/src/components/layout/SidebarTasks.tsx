@@ -35,6 +35,16 @@ import { useTaskSearch } from '@/lib/use-task-search'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
+/**
+ * 侧栏一行的选中 / 悬停外观：和中间列表的选中项一致（细边框 + 微阴影）。
+ * 导航、项目分组、任务行和设计行都引用这里，选中态只定义一次；用的时候基础类里要带 `border`。
+ */
+export const SIDEBAR_ROW_ON = 'border-sel-line bg-sel text-fg shadow-card'
+export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
+
+/** 分组标题（项目 / 对话内容 / 按天）：小一号、字距略宽，和可点的行拉开层级 */
+export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] font-medium tracking-[0.04em] text-subtle'
+
 /** timeOnly：分组已经写了日期，行里只留时分 */
 export function shortTime(iso: string, timeOnly = false) {
   const d = new Date(iso)
@@ -100,8 +110,8 @@ export function TaskRow({
             title={task.title}
             data-cli-alive={alive || undefined}
             className={cn(
-              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-transparent text-left text-[0.8125rem] transition-colors',
-              active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border text-left text-[0.8125rem] transition-colors',
+              active ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
               className,
             )}
           >
@@ -115,7 +125,7 @@ export function TaskRow({
                 {attention !== 'running' && (
                   <ModeIcon
                     aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                    className="h-3.5 w-3.5 text-subtle"
+                    className={cn('h-3.5 w-3.5', active ? 'text-muted' : 'text-subtle')}
                   />
                 )}
                 {attention === 'ask' ? (
@@ -144,7 +154,12 @@ export function TaskRow({
               </span>
               {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
               {/* 时间格自己留一段左间距（在 gap-2 之外再加 6px）：标题再长，截断后和时间之间也有明显间隔 */}
-              <span className="shrink-0 pl-1.5 text-[0.6875rem] text-subtle tabular-nums">
+              <span
+                className={cn(
+                  'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+                  active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
+                )}
+              >
                 {shortTime(askedAt(task), timeOnly)}
               </span>
             </span>
@@ -193,8 +208,9 @@ export function TaskSearch({
   placeholder: string
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1">
-      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[0.8125rem] focus-within:border-focus/60 focus-within:bg-field">
+    <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1.5">
+      {/* 边框平时很淡、悬停加深、聚焦时换成焦点色并带一圈柔光，和中间列表的搜索框一致 */}
+      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-line/80 bg-field/50 px-2 text-[0.8125rem] transition-colors hover:border-line-strong/80 hover:bg-field/80 focus-within:border-focus/70 focus-within:bg-field focus-within:ring-[3px] focus-within:ring-focus-soft/60">
         <Search className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <input
           id="sidebar-search"
@@ -216,7 +232,7 @@ export function TaskSearch({
           <button
             onClick={() => onQuery('')}
             aria-label={t('清除搜索')}
-            className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
+            className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
           >
             <X className="h-3 w-3" />
           </button>
@@ -228,8 +244,10 @@ export function TaskSearch({
             aria-label={t('筛选')}
             title={filter === 'all' ? t('筛选') : FILTERS.find((f) => f.id === filter)?.label}
             className={cn(
-              'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg transition-colors',
-              filter === 'all' ? 'text-subtle hover:bg-sel hover:text-fg' : 'bg-accent-soft text-accent',
+              'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors',
+              filter === 'all'
+                ? 'border-transparent text-subtle hover:bg-sel hover:text-fg'
+                : 'border-accent/30 bg-accent-soft text-accent',
             )}
           >
             <ListFilter className="h-3.5 w-3.5" />
@@ -289,13 +307,13 @@ export function ContentHits({
   if (!hits.length) return loading ? <p className="px-2.5 py-2 text-xs text-subtle">{t('正在搜对话内容…')}</p> : null
   return (
     <div className="mt-1 flex flex-col gap-px">
-      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">{t('对话内容')}</p>
+      <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>{t('对话内容')}</p>
       {hits.slice(0, SIDEBAR_CONTENT_HITS).map((h) => (
         <button
           key={`${h.taskId}:${h.messageId}`}
           onClick={() => onOpen(h)}
           title={h.snippet}
-          className="flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
+          className="flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border border-transparent px-2.5 py-1.5 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel/60 hover:text-fg"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -321,15 +339,18 @@ export function ChatList() {
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = groupByDay(chats, askedAt)
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+    <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
-      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
+      <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
         {filtering
           ? t('找到 {n} 个', { n: chats.length + Math.min(chatHits.length, SIDEBAR_CONTENT_HITS) })
           : t('最近')}
       </p>
       {chats.length === 0 && !chatHits.length && (
-        <p className="px-2.5 py-1 text-xs text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
+        <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+          <MessagesSquare className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <p className="text-xs leading-relaxed text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
+        </div>
       )}
       {days.map((d) => {
         const open = !folded.has(d.key)
@@ -338,7 +359,10 @@ export function ChatList() {
             <button
               onClick={() => toggleDay(d.key)}
               aria-expanded={open}
-              className="flex h-7 shrink-0 cursor-pointer items-center gap-1 px-2.5 text-xs text-subtle hover:text-fg"
+              className={cn(
+                'flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 transition-colors hover:bg-sel/40 hover:text-fg',
+                SIDEBAR_GROUP_LABEL,
+              )}
             >
               <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', !open && '-rotate-90')} />
               <span className="truncate">{d.label}</span>

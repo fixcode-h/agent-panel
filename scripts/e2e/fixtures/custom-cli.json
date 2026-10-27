@@ -1,0 +1,99 @@
+{
+  "id": "custom",
+  "name": "Custom CLI",
+  "command": "__FAKE_CLI__",
+  "versionArgs": ["--version"],
+  "models": [
+    { "id": "custom-pro", "label": "Custom Pro", "isDefault": true },
+    { "id": "custom-flash", "label": "Custom Flash" }
+  ],
+  "permissions": [
+    { "id": "auto_edit", "label": "Auto edit", "hint": "" },
+    { "id": "yolo", "label": "YOLO", "hint": "" },
+    { "id": "default", "label": "Read-only", "hint": "" }
+  ],
+  "defaultPermission": "auto_edit",
+  "readOnlyPermission": "default",
+  "args": [
+    { "args": ["--output-format", "stream-json"] },
+    { "if": "model", "args": ["-m", "{model}"] },
+    { "if": "permission", "args": ["--approval-mode", "{permission}"] },
+    { "if": "resume", "args": ["--resume", "{resume}"] },
+    { "if": "addDirs", "args": ["--include-directories", "{addDirs|,}"] }
+  ],
+  "output": {
+    "format": "ndjson",
+    "events": [
+      {
+        "when": { "type": "init" },
+        "emit": [
+          { "type": "session", "id": "$.session_id" },
+          { "type": "usage", "model": "$.model" }
+        ]
+      },
+      {
+        "when": { "type": "message", "role": "user" },
+        "emit": []
+      },
+      {
+        "when": { "type": "message", "delta": true },
+        "emit": [{ "type": "text_delta", "text": "$.content" }]
+      },
+      {
+        "when": { "type": "message" },
+        "emit": [{ "type": "text", "text": "$.content" }]
+      },
+      {
+        "when": { "type": "tool_use" },
+        "emit": [{ "type": "tool", "name": "$.tool_name", "id": "$.tool_id", "input": "$.parameters" }]
+      },
+      {
+        "when": { "type": "tool_result" },
+        "emit": [
+          {
+            "type": "tool_result",
+            "id": "$.tool_id",
+            "output": "$.output",
+            "error": "$.error.message",
+            "failed": "$.status != success"
+          }
+        ]
+      },
+      {
+        "when": { "type": "error" },
+        "emit": [{ "type": "error", "message": "$.message" }]
+      },
+      {
+        "when": { "type": "result" },
+        "emit": [
+          {
+            "type": "usage",
+            "context": "$.stats.input_tokens",
+            "addInput": "$.stats.input_tokens",
+            "addOutput": "$.stats.output_tokens",
+            "addCacheRead": "$.stats.cached"
+          },
+          { "type": "result", "ok": "$.status == success", "error": "$.error.message" }
+        ]
+      }
+    ]
+  },
+  "protocol": "stdin",
+  "features": { "fork": "none", "compact": "summary", "autoCompact": "panel" },
+  "docs": ["AGENTS.md"],
+  "skills": { "user": ["~/.agents/skills"], "repo": [".agents/skills"] },
+  "commands": { "user": ["~/.custom/commands"], "repo": [".custom/commands"], "format": "toml" },
+  "mcp": {
+    "args": [],
+    "files": { ".custom/settings.json": { "mcpServers": { "{name}": { "url": "{url}" } } } },
+    "vars": {},
+    "extras": []
+  },
+  "mcpStore": {
+    "file": "~/.custom/settings.json",
+    "format": "json",
+    "key": "mcpServers",
+    "urlKey": "url",
+    "headersKey": "headers"
+  }
+}

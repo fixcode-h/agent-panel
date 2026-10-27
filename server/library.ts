@@ -430,7 +430,7 @@ export async function deleteLibrary(cli: string, kind: Kind, name: string) {
 const tomlStr = (v: string) => JSON.stringify(v)
 const tomlMulti = (v: string) => `"""\n${v.replaceAll('\\', '\\\\').replaceAll('"""', '""\\"')}\n"""`
 
-/** 命令内容在 md（Claude Code 等）和 toml（Gemini CLI）之间换格式，参数占位符也换成对方的写法 */
+/** 命令内容在 md（Claude Code 等）和 toml 之间换格式，参数占位符也换成对方的写法 */
 export async function convertCommand(from: string, fromFmt: 'md' | 'toml', toFmt: 'md' | 'toml') {
   const text = await readFile(from, 'utf8')
   if (fromFmt === toFmt) return text

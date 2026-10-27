@@ -13,11 +13,10 @@
 import { t } from './i18n.ts'
 import { CliSpec, specToDefinition, type CliSpecInput, type RpcSpecInput } from './cli-spec.ts'
 import commandcode from './clis/commandcode.json'
-import gemini from './clis/gemini.json'
 import pi from './clis/pi.json'
 
 /** 写成配置文件的内置 CLI，按这个顺序排在 Claude Code、Codex 后面 */
-const BUILTIN_SPECS = [commandcode, gemini, pi]
+const BUILTIN_SPECS = [commandcode, pi]
 export interface PermissionOption {
   id: string
   label: string
@@ -276,7 +275,10 @@ export const CLIS: CliDefinition[] = [
       // 任务描述走 stdin 上的 JSON，执行中还能插话、中断；需要审批的操作也通过 stdin / stdout 上的控制消息发给面板
       '--input-format',
       'stream-json',
-      ...(o.permission === 'bypassPermissions' ? [] : ['--permission-prompt-tool', 'stdio']),
+      // 跳过确认时也要传：不传这个参数，Claude Code 不把 AskUserQuestion 放进工具列表，模型的提问就只能变成纯文本，
+      // 提问卡片弹不出来；权限确认本身仍由下面的 --dangerously-skip-permissions 跳过
+      '--permission-prompt-tool',
+      'stdio',
       ...opt(o.model, '--model', o.model),
       ...opt(o.effort, '--effort', o.effort!),
       ...(o.permission === 'bypassPermissions'

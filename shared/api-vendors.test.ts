@@ -13,7 +13,7 @@ test('接口地址：用户填了用用户的，留空时用厂家按协议给�
   assert.equal(apiBaseUrl({ ...deepseek, baseUrl: '  https://mine.example.com/v1 ' }), 'https://mine.example.com/v1')
   assert.equal(apiBaseUrl({ ...deepseek, protocol: 'anthropic' }), 'https://api.deepseek.com/anthropic')
   // 厂家没有这个协议的地址、或者名字不是内置厂家时没有默认值
-  assert.equal(apiBaseUrl({ ...deepseek, protocol: 'gemini' }), '')
+  assert.equal(apiBaseUrl({ ...deepseek, protocol: 'openai-responses' }), '')
   assert.equal(apiBaseUrl({ ...deepseek, name: '自定义 API' }), '')
 })
 
@@ -25,14 +25,12 @@ test('写进 CLI 配置的地址也按实际要用的地址算', () => {
   assert.equal(apiVars({ ...deepseek, baseUrl: 'https://mine.example.com/v9' }).baseUrl, 'https://mine.example.com/v9')
 })
 
-test('OpenDesign 的地址：OpenAI 兼容带 /v1，Anthropic 协议不带 /v1', () => {
+test('OpenDesign 的地址与默认协议：OpenAI 兼容带 /v1，Anthropic 不带 /v1，没有的协议回退到默认', () => {
   assert.equal(apiBaseUrl(openDesign), 'https://amr-link.open-design.ai/v1')
   assert.equal(apiBaseUrl({ ...openDesign, protocol: 'anthropic' }), 'https://amr-link.open-design.ai')
   // 用户自己填了地址仍以用户填的为准
   assert.equal(apiBaseUrl({ ...openDesign, baseUrl: 'https://mine.example.com/v1' }), 'https://mine.example.com/v1')
-})
 
-test('OpenDesign 的默认协议是 openai-chat，不支持当前协议时回退到它', () => {
   // 先断言列表里有这一条：厂家改名时这里给出可读的失败信息，而不是后续的解构报错
   const vendor = findVendor('OpenDesign')
   assert.ok(vendor)
@@ -40,8 +38,8 @@ test('OpenDesign 的默认协议是 openai-chat，不支持当前协议时回退
     protocol: 'anthropic',
     baseUrl: 'https://amr-link.open-design.ai',
   })
-  // Gemini 这类它没有的协议回退到厂家默认的 openai-chat
-  assert.deepEqual(vendorEndpoint(vendor, 'gemini'), {
+  // OpenAI Responses 这类它没有的协议回退到厂家默认的 openai-chat
+  assert.deepEqual(vendorEndpoint(vendor, 'openai-responses'), {
     protocol: 'openai-chat',
     baseUrl: 'https://amr-link.open-design.ai/v1',
   })

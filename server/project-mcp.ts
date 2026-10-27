@@ -42,7 +42,6 @@ interface Source {
  * - Claude Code：项目根 .mcp.json（项目级 scope），顶层 mcpServers；设置文件里也能写 mcpServers
  * - Cursor：.cursor/mcp.json，顶层 mcpServers
  * - VS Code：工作区 .vscode/mcp.json，顶层 servers（条目的 type 是 stdio / http）
- * - Gemini CLI：.gemini/settings.json，顶层 mcpServers
  * - Codex：.codex/config.toml，[mcp_servers.名字] 表
  * 条目结构和面板的 McpServer 一致（command/args/env 或 url/headers），读取时各种别名都认（见 readServerTable）。
  */
@@ -52,7 +51,6 @@ const SOURCES: Source[] = [
   { file: '.claude/settings.local.json', store: jsonStore('mcpServers'), source: 'Claude Code 本地设置' },
   { file: '.cursor/mcp.json', store: jsonStore('mcpServers'), source: 'Cursor 项目配置' },
   { file: '.vscode/mcp.json', store: jsonStore('servers'), source: 'VS Code 工作区配置' },
-  { file: '.gemini/settings.json', store: jsonStore('mcpServers'), source: 'Gemini CLI 项目设置' },
   { file: '.codex/config.toml', store: tomlStore, source: 'Codex 项目配置' },
 ]
 

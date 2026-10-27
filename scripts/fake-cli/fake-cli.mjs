@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 测试用的假 CLI：按 Claude Code / Codex / Command Code / Gemini CLI / Pi 的非交互输出格式吐事件，
+ * 测试用的假 CLI：按 Claude Code / Codex / Command Code / 自定义 CLI / Pi 的非交互输出格式吐事件，
  * 并在当前目录写一个文件，用来在没有安装或登录真实 CLI 的环境里测通执行流程。
  *
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
@@ -16,7 +16,7 @@ import { wrapRequestIds } from './wrap-request.mjs'
 import { cliOutputFile } from './outputs.mjs'
 
 const args = process.argv.slice(2)
-// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
+// Claude Code 和自定义 CLI 都输出 stream-json，Claude Code 带 -p，自定义 CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
 const kind =
   args[0] === 'app-server'
     ? 'codex'
@@ -25,7 +25,7 @@ const kind =
       : args.includes('stream-json')
         ? args.includes('-p')
           ? 'claude'
-          : 'gemini'
+          : 'custom'
         : 'commandcode'
 // Pi 的 RPC 模式：stdin 一行一条命令，stdout 一行一条记录（和 --mode json 的会话事件同一套）
 const piRpc = kind === 'pi' && args.includes('--mode') && args[args.indexOf('--mode') + 1] === 'rpc'
@@ -73,13 +73,7 @@ if (isLogin && process.env.FAKE_AUTH) {
     const file = path.join(process.env.CLAUDE_CONFIG_DIR || home, '.claude.json')
     const cur = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
     put(file, { ...cur, oauthAccount: { emailAddress: email, organizationName: 'Org' } })
-  } else if (kind === 'gemini') {
-    const dir = path.join(process.env.GEMINI_CLI_HOME || home, '.gemini')
-    put(path.join(dir, 'oauth_creds.json'), { access_token: `tok-${n}` })
-    put(path.join(dir, 'google_accounts.json'), { active: email, old: [] })
   } else put(path.join(home, '.commandcode', 'auth.json'), { apiKey: `key-${n}` })
-  // Gemini CLI 这样登录后会接着跑那条提示，不自己退出：让面板看到凭据变了就停掉它
-  if (kind === 'gemini') await new Promise((r) => setTimeout(r, 20_000))
   process.exit(0)
 }
 if (args.includes('--version')) {
@@ -514,8 +508,6 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
   const apiEnv = {
     anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
     agentpanel: process.env.AGENT_PANEL_API_KEY,
-    gemini: [process.env.GEMINI_API_KEY, process.env.GOOGLE_GEMINI_BASE_URL],
-    trust: process.env.GEMINI_CLI_TRUST_WORKSPACE,
   }
   appendFileSync(
     log,
@@ -552,7 +544,7 @@ async function panelCall(name, params) {
       .map((a) => a.match(/^mcp_servers\.((?:agent-)?panel[\w-]*)\.url="(.*)"$/)?.[2])
       .filter(Boolean)
       .at(-1)
-  // Command Code、Gemini 把 MCP 写进工作目录的配置文件（.mcp.json / .gemini/settings.json），
+  // Command Code、自定义 CLI 把 MCP 写进工作目录的配置文件（.mcp.json / .custom/settings.json），
   // 命令行参数里没有地址：和真 CLI 一样从那里读，不然带面板工具的对话看起来像没有工具。
   // 注意这会让这些 CLI 的用例从「面板工具直接报错」变成真的调工具（测试定义跟着真实行为走）
   let fromFile
@@ -956,7 +948,7 @@ function panelExt() {
 }
 function panelMcpUrl() {
   if (kind === 'pi') return /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
-  const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
+  const cfg = JSON.parse(readFileSync(kind === 'custom' ? '.custom/settings.json' : '.mcp.json', 'utf8'))
   const keys = Object.keys(cfg.mcpServers).filter((k) => /^(agent-)?panel/.test(k))
   const hit = cfg.mcpServers[keys.at(-1)]
   return hit.httpUrl ?? hit.url
@@ -965,7 +957,7 @@ function panelMcpUrl() {
 // 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求会登记给它，模型用面板的工具取走。
 // FAKE_NOTES 时反复取（等页面把补充发过来，最多 6 秒），拿到的话写进回复和日志
 let notesGot = ''
-if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind === 'gemini' || kind === 'pi')) {
+if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind === 'custom' || kind === 'pi')) {
   const url = panelMcpUrl()
   // 像真实 CLI 一样按 SSE 读：面板的提问工具用流式响应（等用户回答期间发心跳），别的接口是普通 JSON
   const rpc = (id, method, params) =>
@@ -1277,10 +1269,10 @@ if (input.includes('HANG') && !input.includes('一直没有回应')) {
   await new Promise(() => setInterval(() => {}, 60_000))
 }
 
-// 没有提问通道的 CLI（Command Code、Gemini CLI）：面板在工作目录里写了 MCP 配置，按 FAKE_ASK:<参数 JSON> 调 ask_user，
+// 没有提问通道的 CLI（Command Code、自定义 CLI）：面板在工作目录里写了 MCP 配置，按 FAKE_ASK:<参数 JSON> 调 ask_user，
 // 等用户回答后把工具返回的话当作回复
 const askArgs = input.match(/FAKE_ASK:(.*)/)?.[1]
-if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
+if (askArgs && (kind === 'custom' || kind === 'commandcode' || kind === 'pi')) {
   const url = panelMcpUrl()
   // 像真实 CLI 一样按 SSE 读：面板的提问工具用流式响应（等用户回答期间发心跳），别的接口是普通 JSON
   const rpc = (id, method, params) =>
@@ -1314,9 +1306,9 @@ if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
       out({ type: 'agent_settled', aborted: false })
       await piRpcExit
     }
-  } else if (kind === 'gemini') {
+  } else if (kind === 'custom') {
     const at = new Date().toISOString()
-    out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
+    out({ type: 'init', timestamp: at, session_id: session, model: 'custom-fake' })
     out({ type: 'message', timestamp: at, role: 'assistant', content: text, delta: true })
     out({
       type: 'result',
@@ -1332,10 +1324,10 @@ if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
   process.exit(0)
 }
 
-// Gemini CLI 的 --output-format stream-json
-if (kind === 'gemini') {
+// 自定义 CLI 的 --output-format stream-json
+if (kind === 'custom') {
   const at = new Date().toISOString()
-  out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
+  out({ type: 'init', timestamp: at, session_id: session, model: 'custom-fake' })
   out({ type: 'message', timestamp: at, role: 'user', content: input })
   out({
     type: 'tool_use',
@@ -1582,6 +1574,10 @@ if (kind === 'claude') {
   })
   // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
   if (input.includes('ASK') && streamIn) {
+    // 照真实 CLI 的行为模拟：bypass 模式少了 --permission-prompt-tool 时不暴露 AskUserQuestion，
+    // 提问只能变成文字；跳过确认时审批也不经过面板。回归时 e2e 才能发现提问通道又丢了
+    const bypass = args.includes('--dangerously-skip-permissions')
+    const canAsk = !bypass || args.includes('--permission-prompt-tool')
     const ask = async (name, toolInput) => {
       const id = randomUUID()
       out({
@@ -1594,14 +1590,17 @@ if (kind === 'claude') {
         if (m.type === 'control_response' && m.response.request_id === id) return m.response.response
       }
     }
-    const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
-    const a2 = await ask('AskUserQuestion', {
-      questions: [
-        { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
-        { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
-      ],
-    })
-    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
+    const a1 = bypass ? null : await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
+    const a2 = canAsk
+      ? await ask('AskUserQuestion', {
+          questions: [
+            { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
+            { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
+          ],
+        })
+      : null
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2].filter(Boolean)) + '\n')
   }
   out({
     type: 'assistant',
