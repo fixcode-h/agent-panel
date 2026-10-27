@@ -443,6 +443,9 @@ test('Pi：未命中的输入比命中的多时也加上缓存，工具参数只
   assert.equal(notice.type, 'notice')
   assert.equal((notice as { failed?: boolean }).failed, true)
   assert.match((notice as { text: string }).text, /面板的工具没接上（HTTP 401: \{\}）/)
+  // 缺哪些工具只有扩展知道（它写在 error 里）：这里不确定到底丢了多少，不能统说「所有面板工具都不可用」，
+  // 压缩轮只有提问工具、缺其余编排工具时照样能提问
+  assert.doesNotMatch((notice as { text: string }).text, /所有面板工具都不可用/)
 })
 
 test('Pi：按配置文件拼参数（默认走 RPC）', () => {

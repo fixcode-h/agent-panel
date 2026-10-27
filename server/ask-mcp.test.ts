@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { askMcpApi, openAskBridge, toQuestions } from './ask-mcp.ts'
+import type { Orchestra } from '../shared/engine.ts'
 
 /** 直接调面板的 MCP 接口，返回这一条 JSON-RPC 的结果 */
 async function rpc(token: string, msg: unknown) {
@@ -145,6 +146,18 @@ test('等下一句：用户离开时返回明确的结束说明', async () => {
   })
   assert.match(await res.text(), /用户已经离开了这个对话/)
   s.close()
+})
+
+test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审查轮只挂提问工具时是 false', async () => {
+  // 扩展靠这个标志决定要不要核对核心工具：没说清楚时它只能按服务名猜，压缩轮会被报成工具清单不完整
+  const hello = (s: ReturnType<typeof openAskBridge>) =>
+    rpc(tokenOf(s.url), { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } })
+  const ask = openAskBridge({ ask: () => {} })
+  assert.equal((await hello(ask)).result.capabilities.experimental.orchestration, false)
+  ask.close()
+  const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [] } as unknown as Orchestra })
+  assert.equal((await hello(orch)).result.capabilities.experimental.orchestration, true)
+  orch.close()
 })
 
 test('执行中补充的通道：没有新补充时说清楚，通道关掉后失效', async () => {

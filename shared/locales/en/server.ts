@@ -499,8 +499,8 @@ export const EN_SERVER: Record<string, string> = {
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
-  '面板的工具没接上（{error}）：这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问），只能直接改文件、用普通命令跑；要这些工具就重开一轮':
-    "Panel tools didn't connect ({error}). No panel tool is available this turn (plans, background commands, messaging, submit, asking you questions); edit files and run plain commands only, or start a new turn to get them back",
+  '面板的工具没接上（{error}）：缺的那些这一轮用不了，只能直接改文件、用普通命令跑；要这些工具就重开一轮':
+    "Panel tools didn't connect ({error}). The missing ones aren't available this turn; edit files and run plain commands only, or start a new turn to get them back",
   原因未知: 'unknown reason',
   提示: 'Notice',
   '这个 Agent 不支持扩展包': "This agent doesn't support packages",
