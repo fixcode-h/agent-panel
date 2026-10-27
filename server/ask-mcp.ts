@@ -12,7 +12,7 @@ import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 
 /**
- * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code、Gemini CLI）一个提问工具：
+ * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code）一个提问工具：
  * 面板起一个只在这一轮有效的 MCP 服务，工具 ask_user 一直等到用户在页面上回答，再把回答交回给模型。
  * Claude Code、Codex 有自己的提问协议，不走这里。
  *

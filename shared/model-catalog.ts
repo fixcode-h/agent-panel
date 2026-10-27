@@ -3,11 +3,11 @@
  *
  * 模型名匹配规则（用户粘贴的模型常常带网关、provider、协议和速度后缀）：
  * 1. 只取最后一段（`tokenapi/deepseek/deepseek-v4-flash` → `deepseek-v4-flash`）
- * 2. 去掉协议后缀（`-responses`、`-chat`、`-anthropic`、`-gemini`）和速度 / 预览后缀（`-fast`、`-turbo`、`-preview`）
+ * 2. 去掉协议后缀（`-responses`、`-chat`、`-anthropic`）和速度 / 预览后缀（`-fast`、`-turbo`、`-preview`）
  * 3. 用 `-` 分开后的第一个词做厂商初筛（`deepseek`、`claude`、`gpt`、`qwen`……）
  * 4. 模型类型（`flash`、`pro`、`max`、`opus`……）比版本（`v4`、`5.5`……）优先：
  *    目录里只有 `deepseek-flash` 和 `deepseek-v4-pro` 时，`deepseek-v4-flash` 匹配 `deepseek-flash`
- * 5. 当前 API 的协议（OpenAI Responses / Chat、Anthropic、Gemini）优先选择支持它的模型
+ * 5. 当前 API 的协议（OpenAI Responses / Chat、Anthropic）优先选择支持它的模型
  */
 import { z } from 'zod'
 import { API_PROTOCOLS, type ApiConfig, type ApiProtocol } from './accounts.ts'
@@ -59,6 +59,64 @@ export type ModelCatalogFile = z.infer<typeof ModelCatalogFile>
 
 export const BUILTIN_MODEL_CATALOG: ModelCatalogEntry[] = ModelCatalogFile.parse(raw).models
 
+/** 已经不再支持的协议：旧版本写过 Gemini 协议，读用户目录之前要清掉 */
+const REMOVED_PROTOCOLS = new Set(['gemini'])
+
+/**
+ * 旧版本的用户补充目录里可能写着 `protocols: ["gemini"]`：协议枚举收窄后，
+ * 留着会让整份目录解析失败（读写都拿到空列表，保存时还会用空列表覆盖掉其它记录）。
+ * 读之前先清掉：只支持被移除协议的模型条目整个去掉，还有别的协议的保留并去掉那一项。
+ * 直接改传入的原始对象，返回是否有改动。幂等
+ */
+export function migrateModelCatalog(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const models = (raw as { models?: unknown }).models
+  if (!Array.isArray(models)) return false
+  let dirty = false
+  const kept: unknown[] = []
+  for (const m of models) {
+    if (!m || typeof m !== 'object') {
+      kept.push(m)
+      continue
+    }
+    const protocols = (m as { protocols?: unknown }).protocols
+    if (!Array.isArray(protocols)) {
+      kept.push(m)
+      continue
+    }
+    const list = protocols as unknown[]
+    const removed = list.filter((p) => typeof p === 'string' && REMOVED_PROTOCOLS.has(p))
+    if (!removed.length) {
+      kept.push(m)
+      continue
+    }
+    dirty = true
+    const rest = list.filter((p) => !(typeof p === 'string' && REMOVED_PROTOCOLS.has(p)))
+    if (!rest.length) continue
+    ;(m as { protocols: unknown[] }).protocols = rest
+    kept.push(m)
+  }
+  if (dirty) (raw as { models: unknown[] }).models = kept
+  return dirty
+}
+
+/**
+ * 读用户补充目录：先清掉已经移除的协议，再逐条解析。
+ * 一条手动改坏的记录不能让整份目录失效——否则所有补充模型都退回默认估算，
+ * 再保存时还会用空列表把整个文件覆盖掉
+ */
+export function parseModelCatalog(raw: unknown): ModelCatalogEntry[] {
+  migrateModelCatalog(raw)
+  const file = ModelCatalogFile.safeParse(raw)
+  if (file.success) return file.data.models
+  const models = raw && typeof raw === 'object' ? (raw as { models?: unknown }).models : undefined
+  if (!Array.isArray(models)) return []
+  return models.flatMap((m) => {
+    const p = ModelCatalogEntry.safeParse(m)
+    return p.success ? [p.data] : []
+  })
+}
+
 /** 用户补充的目录覆盖内置目录里同一个厂商的同名模型 */
 export function mergeCatalog(builtin: ModelCatalogEntry[], extra: ModelCatalogEntry[]): ModelCatalogEntry[] {
   const key = (m: ModelCatalogEntry) => `${m.vendor.toLowerCase()}:${m.id.toLowerCase()}`
@@ -73,8 +131,6 @@ const VENDORS: Record<string, string> = {
   openai: 'openai',
   gpt: 'openai',
   codex: 'openai',
-  google: 'google',
-  gemini: 'google',
   deepseek: 'deepseek',
   moonshot: 'moonshot',
   moonshotai: 'moonshot',
@@ -167,7 +223,6 @@ const PROTOCOL_SUFFIXES: [RegExp, ApiProtocol][] = [
   [/-responses$/i, 'openai-responses'],
   [/-anthropic$/i, 'anthropic'],
   [/-messages$/i, 'anthropic'],
-  [/-gemini$/i, 'gemini'],
   [/-chat$/i, 'openai-chat'],
 ]
 

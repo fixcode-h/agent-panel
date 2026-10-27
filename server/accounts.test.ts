@@ -116,7 +116,7 @@ test('凭据已经写入、用户又点了取消：算成功，不因为取消�
 
 test('Command Code 的定义开了 loginAlreadyLoggedIn，别的 CLI 没开', () => {
   assert.equal(getCli('commandcode')?.auth?.loginAlreadyLoggedIn, true)
-  for (const id of ['claude', 'codex', 'gemini', 'pi'])
+  for (const id of ['claude', 'codex', 'pi'])
     assert.equal(getCli(id)?.auth?.loginAlreadyLoggedIn, false, `${id} 不该开这个字段`)
 })
 

@@ -30,12 +30,6 @@ test('接口地址按各 CLI 自己拼版本路径的方式写', () => {
   // Anthropic SDK 自己加 /v1/messages：带 /v1 的中转地址去掉，不然请求的是 /v1/v1/messages
   assert.equal(piBaseUrl(api('anthropic', 'https://relay.example.com/v1/')), 'https://relay.example.com')
   assert.equal(piBaseUrl(api('anthropic', 'https://api.deepseek.com/anthropic')), 'https://api.deepseek.com/anthropic')
-  // Pi 的 Gemini 接口把地址当成已经带版本的
-  assert.equal(
-    piBaseUrl(api('gemini', 'https://generativelanguage.googleapis.com')),
-    'https://generativelanguage.googleapis.com/v1beta',
-  )
-  assert.equal(piBaseUrl(api('gemini', 'https://g.example.com/v1beta')), 'https://g.example.com/v1beta')
   // OpenAI 兼容的地址原样用（有的不是 /v1，例如火山的 /api/v3）
   assert.equal(piBaseUrl(api('openai-responses', 'https://relay.example.com/v1')), 'https://relay.example.com/v1')
   assert.equal(
@@ -45,8 +39,6 @@ test('接口地址按各 CLI 自己拼版本路径的方式写', () => {
 
   const claude = apiInjection(getCli('claude')!.auth!, api('anthropic', 'https://relay.example.com/v1')).edits[0]
   assert.equal(claude.set['env.ANTHROPIC_BASE_URL'], 'https://relay.example.com')
-  const gemini = apiInjection(getCli('gemini')!.auth!, api('gemini', 'https://g.example.com/v1beta')).edits[1]
-  assert.equal(gemini.set.GOOGLE_GEMINI_BASE_URL, 'https://g.example.com')
 })
 
 test('Pi 只在结束时给整段思考（有的 Responses 中转不推增量）也要显示', () => {

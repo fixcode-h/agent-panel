@@ -163,11 +163,10 @@ test('同一个 API：地址和密钥一样就算，协议和 /v1 不影响', ()
 })
 
 test('按协议过滤模型：不带后缀通用，别的协议后缀隐藏，换协议自动换后缀', () => {
-  const all = ['x', 'x-anthropic', 'x-anthropic-messages', 'x-responses', 'x-chat', 'x-gemini']
+  const all = ['x', 'x-anthropic', 'x-anthropic-messages', 'x-responses', 'x-chat']
   assert.deepEqual(modelsForProtocol(all, 'anthropic'), ['x', 'x-anthropic', 'x-anthropic-messages'])
   assert.deepEqual(modelsForProtocol(all, 'openai-responses'), ['x', 'x-responses'])
   assert.deepEqual(modelsForProtocol(all, 'openai-chat'), ['x', 'x-chat'])
-  assert.deepEqual(modelsForProtocol(all, 'gemini'), ['x', 'x-gemini'])
   const a = modelsForProtocol(all, 'anthropic')
   assert.equal(modelForProtocol('x-responses', 'anthropic', a), 'x-anthropic')
   assert.equal(modelForProtocol('x', 'anthropic', a), 'x')
@@ -517,33 +516,6 @@ test('API 探针：200 已回到、读 body 时才超时，也报超时而不是
         }),
       { message: t('模型 {model} 在 {seconds} 秒内没有响应', { model: 'slow-model', seconds: '60' }) },
     )
-  } finally {
-    globalThis.fetch = real
-  }
-})
-
-test('API 探针：Gemini 模型名带 models/ 前缀时先剔掉再拼地址', async () => {
-  const real = globalThis.fetch
-  let called = ''
-  globalThis.fetch = (async (url: string) => {
-    called = String(url)
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ text: 'pong' }] } }] }),
-    }
-  }) as unknown as typeof fetch
-  try {
-    // 官方列模型回的就是 models/<名字> 这种全名，手填进去也要能测
-    await probeApiModel({
-      protocol: 'gemini',
-      baseUrl: 'https://generativelanguage.googleapis.com',
-      apiKey: 'k',
-      authHeader: 'x-api-key',
-      model: 'models/gemini-3-pro',
-    })
-    assert.equal(called, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent')
   } finally {
     globalThis.fetch = real
   }

@@ -64,7 +64,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
   // 侧栏导航和分组标题都叫「添加其他 Agent」：定位要看正文那个标题，不看导航项
   await p.getByRole('heading', { name: '添加其他 Agent', exact: true }).first().scrollIntoViewIfNeeded()
-  await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
+  await check(p, '设置-CLI', ['添加其他 Agent', 'Pi'])
   // 三档模型的上下文、最大输出：默认按模型自动填，手动改了能恢复自动；Codex 不接受最大输出
   await p.getByRole('dialog').getByText('Claude Code', { exact: true }).first().click()
   // 上下文和最大输出默认收在折叠里，点开第一档才看得到输入框

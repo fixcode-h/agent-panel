@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync
 import http from 'node:http'
 import path from 'node:path'
 import { runShard } from './harness.mjs'
+import { tsxBin } from './spawn-server.mjs'
 
 /**
  * 列表时间（updatedAt）比较允许的抖动，单位毫秒。
@@ -28,6 +29,7 @@ await runShard('本机请求与设置', async (api) => {
   const {
     baseUrl: base,
     root,
+    fake,
     tmp,
     dataDir,
     homeDir,
@@ -48,6 +50,11 @@ await runShard('本机请求与设置', async (api) => {
     setupBase,
   } = api
   const { project, A, B, C, settings, wf } = await setupBase()
+  // 自定义 CLI：配置文件写的 stdin CLI，本分片的配置读写和 ask/MCP 用例都用它
+  const customSpec = JSON.parse(readFileSync(path.join(root, 'scripts/e2e/fixtures/custom-cli.json'), 'utf8'))
+  mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  writeFileSync(path.join(dataDir, 'config/clis/custom.json'), JSON.stringify({ ...customSpec, command: fake }))
+  await call('POST', '/clis/specs/reload', {})
   // ---- 找不到命令 / 停用 ----
   await call('PUT', '/settings', {
     ...settings,
@@ -224,7 +231,7 @@ await runShard('本机请求与设置', async (api) => {
   await call('PUT', '/settings', { ...settings, cliOrder: ['commandcode', 'claude'] })
   assert.deepEqual(
     (await call('GET', '/clis')).map((c) => c.id),
-    ['commandcode', 'claude', 'codex', 'gemini', 'pi'],
+    ['commandcode', 'claude', 'codex', 'custom', 'pi'],
   )
   await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')
@@ -425,12 +432,12 @@ await runShard('本机请求与设置', async (api) => {
   }
   step('访问令牌：打开后没带令牌的请求被拒绝，用带令牌的地址打开的浏览器拿到 Cookie')
 
-  // 没有提问通道的 CLI（Command Code、Gemini CLI）：面板临时接一个 ask_user 工具，等用户回答后交回，项目里原有的 MCP 配置用完还原
+  // 没有提问通道的 CLI（Command Code、自定义 CLI）：面板临时接一个 ask_user 工具，等用户回答后交回，项目里原有的 MCP 配置用完还原
   {
     const mcpFile = path.join(project.path, '.mcp.json')
     const original = JSON.stringify({ mcpServers: { mine: { command: 'x' } } })
     writeFileSync(mcpFile, original)
-    for (const cli of ['commandcode', 'gemini', 'pi']) {
+    for (const cli of ['commandcode', 'custom', 'pi']) {
       const before = readLog(log + '.askbridge').length
       const t = await call('POST', '/tasks', {
         projectId: project.id,
@@ -471,7 +478,7 @@ await runShard('本机请求与设置', async (api) => {
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
     }
     assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
-    assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
+    assert.ok(!existsSync(path.join(project.path, '.custom', 'settings.json')), '临时写的配置删掉了')
     assert.ok(!existsSync(path.join(project.path, '.pi')), 'Pi 的桥接扩展不写进项目')
     const piExt = calls()
       .filter((x) => x.kind === 'pi')
@@ -1033,7 +1040,7 @@ await runShard('本机请求与设置', async (api) => {
     assert.ok(existsSync(path.join(homeDir, '.codex', 'skills', 'lib-demo', 'notes.md')))
     cp = await call('POST', '/library/copy', { cli: 'claude', kind: 'skill', name: 'lib-demo', to: ['codex'] })
     assert.deepEqual(cp.skipped, ['codex'])
-    // 命令：Claude Code 是 md，Gemini CLI 是 toml
+    // 命令：Claude Code 是 md，自定义 CLI 是 toml
     await put({
       cli: 'claude',
       kind: 'command',
@@ -1041,12 +1048,12 @@ await runShard('本机请求与设置', async (api) => {
       create: true,
       content: '---\ndescription: 测试命令\n---\n做点事 $ARGUMENTS\n',
     })
-    await call('POST', '/library/copy', { cli: 'claude', kind: 'command', name: 'lib-cmd', to: ['gemini'] })
-    const toml = readFileSync(path.join(homeDir, '.gemini', 'commands', 'lib-cmd.toml'), 'utf8')
+    await call('POST', '/library/copy', { cli: 'claude', kind: 'command', name: 'lib-cmd', to: ['custom'] })
+    const toml = readFileSync(path.join(homeDir, '.custom', 'commands', 'lib-cmd.toml'), 'utf8')
     assert.match(toml, /description = "测试命令"/)
     assert.ok(toml.includes('{{args}}'))
-    assert.ok((await lib('command')).items.some((i) => i.cli === 'gemini' && i.name === 'lib-cmd'))
-    await call('DELETE', '/library/file?cli=gemini&kind=command&name=lib-cmd')
+    assert.ok((await lib('command')).items.some((i) => i.cli === 'custom' && i.name === 'lib-cmd'))
+    await call('DELETE', '/library/file?cli=custom&kind=command&name=lib-cmd')
     await call('DELETE', '/library/file?cli=claude&kind=skill&name=lib-demo')
     assert.ok(!existsSync(skillDir), '删除 Skill 连文件夹一起删')
     assert.ok(existsSync(path.join(homeDir, '.codex', 'skills', 'lib-demo')), '只删选中的 CLI 里的那一份')
@@ -1177,15 +1184,15 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       ov.servers.map((x) => [x.name, x.clis]),
       [['old', ['codex']]],
     )
-    ov = await call('PUT', '/mcp-tools/mini', { server, clis: ['claude', 'codex', 'gemini'] })
-    assert.deepEqual(ov.servers.find((x) => x.name === 'mini').clis, ['claude', 'codex', 'gemini'])
+    ov = await call('PUT', '/mcp-tools/mini', { server, clis: ['claude', 'codex', 'custom'] })
+    assert.deepEqual(ov.servers.find((x) => x.name === 'mini').clis, ['claude', 'codex', 'custom'])
     const cj = JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8'))
     assert.equal(cj.theme, 'dark', 'Claude Code 配置里别的内容保留')
     assert.deepEqual(cj.mcpServers.mini, { type: 'stdio', command: process.execPath, args: [mcpJs], env: { A: '1' } })
     const tomlText = readFileSync(codexToml, 'utf8')
     assert.ok(tomlText.includes('model = "gpt-5"') && tomlText.includes('[mcp_servers.old]'))
     assert.ok(tomlText.includes('[mcp_servers.mini.env]'))
-    // 远程地址：Gemini CLI 写 httpUrl，Claude Code 写 type: http
+    // 远程地址：自定义 CLI 按配置写 url，Claude Code 写 type: http
     const remote = {
       name: 'web',
       transport: 'http',
@@ -1195,9 +1202,9 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       url: 'https://x.example/mcp',
       headers: { A: 'b' },
     }
-    await call('PUT', '/mcp-tools/web', { server: remote, clis: ['claude', 'gemini'] })
-    const gs = JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
-    assert.equal(gs.mcpServers.web.httpUrl, 'https://x.example/mcp')
+    await call('PUT', '/mcp-tools/web', { server: remote, clis: ['claude', 'custom'] })
+    const gs = JSON.parse(readFileSync(path.join(homeDir, '.custom', 'settings.json'), 'utf8'))
+    assert.equal(gs.mcpServers.web.url, 'https://x.example/mcp')
     assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.web.type, 'http')
     // 只留 Codex：别的 CLI 里的同名工具被移除
     await call('PUT', '/mcp-tools/mini', { server, clis: ['codex'] })
@@ -1212,7 +1219,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     assert.ok(readFileSync(codexToml, 'utf8').includes('[mcp_servers.old]'))
     await assert.rejects(call('PUT', '/mcp-tools/bad name', { server: { ...server, name: 'bad name' }, clis: [] }))
   }
-  step('MCP 工具：读写 Claude Code / Codex / Gemini CLI 的配置文件，保留其他内容，测试连接能列出工具')
+  step('MCP 工具：读写 Claude Code / Codex / 自定义 CLI 的配置文件，保留其他内容，测试连接能列出工具')
 
   // 项目设置里的 MCP：识别项目目录里的配置，导入只写各 CLI 的全局配置，项目文件一字不动
   {
@@ -1319,7 +1326,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {
     const trayPort = await freePort()
-    const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts', '--prod'], {
+    const child = spawn(tsxBin(root), ['server/index.ts', '--prod'], {
       cwd: root,
       env: {
         ...process.env,

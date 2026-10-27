@@ -264,7 +264,7 @@ export interface PiBuiltinModel {
 
 /**
  * Pi 依赖的 pi-ai 自带的模型目录（dist/providers/data/*.json），键是 provider/id。
- * 面板的模型目录不认识的模型（第三方接口上的 gpt-5.4-mini、gemini-2.5-pro 这类）靠它知道能不能思考
+ * 面板的模型目录不认识的模型（第三方接口上的 gpt-5.4-mini、qwen-max 这类）靠它知道能不能思考
  */
 export async function piBuiltinModels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv) {
   const known = new Map<string, PiBuiltinModel>()

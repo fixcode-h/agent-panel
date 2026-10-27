@@ -25,7 +25,6 @@ export const API_VENDORS: ApiVendor[] = [
     provider: 'openai',
     urls: { 'openai-responses': 'https://api.openai.com/v1', 'openai-chat': 'https://api.openai.com/v1' },
   },
-  { name: 'Gemini', provider: 'gemini', urls: { gemini: 'https://generativelanguage.googleapis.com' } },
   {
     name: 'DeepSeek',
     provider: 'deepseek',

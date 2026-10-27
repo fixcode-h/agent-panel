@@ -171,45 +171,6 @@
       "defaultEffort": "low"
     },
     {
-      "vendor": "google",
-      "id": "gemini-3-ultra",
-      "label": "Gemini 3 Ultra",
-      "type": "ultra",
-      "version": "3",
-      "protocols": ["gemini"],
-      "context": 1048576,
-      "maxOutput": 65536,
-      "tier": "high",
-      "efforts": ["low", "medium", "high"],
-      "defaultEffort": "medium"
-    },
-    {
-      "vendor": "google",
-      "id": "gemini-3-pro",
-      "label": "Gemini 3 Pro",
-      "type": "pro",
-      "version": "3",
-      "protocols": ["gemini"],
-      "context": 1048576,
-      "maxOutput": 65536,
-      "tier": "high",
-      "efforts": ["low", "medium", "high"],
-      "defaultEffort": "medium"
-    },
-    {
-      "vendor": "google",
-      "id": "gemini-3-flash",
-      "label": "Gemini 3 Flash",
-      "type": "flash",
-      "version": "3",
-      "protocols": ["gemini"],
-      "context": 1048576,
-      "maxOutput": 65536,
-      "tier": "low",
-      "efforts": ["low", "medium", "high"],
-      "defaultEffort": "medium"
-    },
-    {
       "vendor": "deepseek",
       "id": "deepseek-v4-pro",
       "label": "DeepSeek V4 Pro",

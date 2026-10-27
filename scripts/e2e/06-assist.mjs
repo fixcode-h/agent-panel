@@ -5,14 +5,19 @@
  * 互不影响。总入口 scripts/e2e.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { rmSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 import { crc32, deflateSync } from 'node:zlib'
 import path from 'node:path'
 import { runShard } from './harness.mjs'
 
 await runShard('AI 创建与 UI 设计', async (api) => {
-  const { baseUrl: base, dataDir, projectDir, call, sleep, calls, step, setupBase } = api
+  const { baseUrl: base, root, fake, dataDir, projectDir, call, sleep, calls, step, setupBase } = api
   const { project, A, B, settings, node, flow } = await setupBase()
+  // 自定义 CLI：没有插话通道，用来测设计对话里「这一轮收不下、结束后自动接着处理」
+  const customSpec = JSON.parse(readFileSync(path.join(root, 'scripts/e2e/fixtures/custom-cli.json'), 'utf8'))
+  mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  writeFileSync(path.join(dataDir, 'config/clis/custom.json'), JSON.stringify({ ...customSpec, command: fake }))
+  await call('POST', '/clis/specs/reload', {})
   // AI 创建的工作流会引用一个已有的工作流「小流程」：这个分片自己建一个，
   // 不去依赖别的分片跑过什么
   const small = await call('POST', '/workflows', {
@@ -714,11 +719,11 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     await call('DELETE', `/designs/${probe.id}`)
     // 收不下的（CLI 没有插话通道）：消息进对话，这一轮结束后自动接着处理，不用用户再发一次
     const probe2 = await call('POST', '/designs', { projectId: probeProject.id, kind: 'game', title: '设计接续测试' })
-    const gemRun = { cli: 'gemini', model: '', effort: '' }
+    const customRun = { cli: 'custom', model: '', effort: '' }
     await call('POST', `/designs/${probe2.id}/chat`, {
       text: 'SLOW 先画一版',
       source: { kind: 'none' },
-      run: gemRun,
+      run: customRun,
     })
     for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('SLOW 先画一版')); i++) {
       if (i > 100) throw new Error('设计对话没有开始执行')
@@ -727,7 +732,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     const held = await call('POST', `/designs/${probe2.id}/steer`, {
       text: '接续处理这句',
       source: { kind: 'none' },
-      run: gemRun,
+      run: customRun,
     })
     assert.equal(held.steered, false, '没有插话通道时分不到这一轮')
     assert.equal(held.messages.at(-1).delivery?.how, 'held', '记成这一轮结束后自动处理')
@@ -747,7 +752,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     await call('POST', `/designs/${probe3.id}/chat`, {
       text: 'SLOW 先画一版三',
       source: { kind: 'none' },
-      run: gemRun,
+      run: customRun,
     })
     for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('SLOW 先画一版三')); i++) {
       if (i > 100) throw new Error('设计对话没有开始执行')
@@ -756,7 +761,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     const queuedBeforeStop = await call('POST', `/designs/${probe3.id}/steer`, {
       text: '停止前排队这句',
       source: { kind: 'none' },
-      run: gemRun,
+      run: customRun,
     })
     assert.equal(queuedBeforeStop.messages.at(-1).delivery?.how, 'held')
     await call('POST', `/designs/${probe3.id}/stop`)
@@ -769,7 +774,7 @@ await runShard('AI 创建与 UI 设计', async (api) => {
     await call('POST', `/designs/${probe3.id}/steer`, {
       text: '停止后再发这句',
       source: { kind: 'none' },
-      run: gemRun,
+      run: customRun,
     })
     for (let i = 0; !calls().some((c) => (c.input ?? c.stdin ?? '').includes('停止后再发这句')); i++) {
       if (i > 200) throw new Error('停止后发的消息没有被接着处理')

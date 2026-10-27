@@ -81,6 +81,6 @@ test('识别 API：值的写法和 .env', () => {
   assert.equal(resolveValue('${K}', { K: 'v' }), 'v')
   assert.equal(resolveValue('NOT_SET', {}), 'NOT_SET')
   assert.equal(resolveValue('!pass show x', {}), '')
-  assert.deepEqual(parseDotenv('# c\nGEMINI_API_KEY="abc"\nexport X=1\n'), { GEMINI_API_KEY: 'abc', X: '1' })
-  assert.equal(ApiSource.parse({ protocol: 'gemini' }).format, 'json')
+  assert.deepEqual(parseDotenv('# c\nDEEPSEEK_API_KEY="abc"\nexport X=1\n'), { DEEPSEEK_API_KEY: 'abc', X: '1' })
+  assert.equal(ApiSource.parse({ protocol: 'anthropic' }).format, 'json')
 })

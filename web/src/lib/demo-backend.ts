@@ -106,7 +106,7 @@ import {
   type ComfyTemplateMeta,
   type TemplateAsset,
 } from '@shared/comfy-templates'
-import { defaultCli, migrateSettingsDefaults, orderClis } from '@shared/settings'
+import { defaultCli, migrateRemovedClis, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
@@ -769,6 +769,9 @@ function load(): Db {
     if (raw) db = JSON.parse(raw) as Db
   } catch {}
   db ??= seed()
+  // 旧演示数据里的 Gemini 协议先清掉：load() 不校验设置，后面有多个分支直接 Settings.parse(d.settings)，
+  // 不迁移的话那些接口会抛 ZodError，要等第一次 GET /settings 才恢复
+  if (db.settings) migrateRemovedClis(db.settings)
   // 旧的演示数据、导入的数据缺新加的字段（标签、参数……）：按现在的结构补齐默认值
   db.agents = db.agents.map((a) => Agent.parse(a))
   db.workflows = db.workflows.map((w) => Workflow.parse(w))
@@ -1003,7 +1006,10 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
     const files = b.files ?? {}
     const get = (rel: string) => (files[rel] ? JSON.parse(b64ToUtf8(files[rel])) : undefined)
     if (kinds.includes('config')) {
-      d.settings = Settings.parse(get('settings.json') ?? {})
+      // 导入的旧备份里可能还有已经移除的 Gemini 协议（见 shared/settings.ts），先清掉再读
+      const rawSettings = get('settings.json') ?? {}
+      migrateRemovedClis(rawSettings)
+      d.settings = Settings.parse(rawSettings)
       d.agents = get('config/agents.json') ?? []
       d.categories = get('config/categories.json') ?? []
       d.tags = get('config/tags.json') ?? []
@@ -1058,7 +1064,6 @@ const VERSIONS: Record<string, string> = {
   claude: '2.1.300 (Claude Code)',
   codex: 'codex-cli 0.150.0',
   commandcode: 'command-code 1.8.2',
-  gemini: '0.40.0',
   pi: '1.3.0',
 }
 // npm 上的「最新版本」：Claude Code 演示有更新可装
@@ -1066,7 +1071,6 @@ const LATEST: Record<string, string> = {
   claude: '2.1.301',
   codex: '0.150.0',
   commandcode: '1.8.2',
-  gemini: '0.40.0',
   pi: '1.3.0',
 }
 
@@ -1817,7 +1821,7 @@ const demoProjectSkills: ProjectSkill[] = [
     path: '/home/demo/code/web-shop/.agents/skills/release-notes/SKILL.md',
     dir: '.agents/skills/release-notes',
     source: '.agents/skills',
-    clis: ['commandcode', 'gemini', 'pi'],
+    clis: ['commandcode', 'pi'],
     issues: [],
   },
   {
@@ -1997,8 +2001,11 @@ function route(method: string, url: string, body: unknown): unknown {
 
   if (res === 'settings') {
     if (method === 'PUT') d.settings = parse(Settings, body)
-    // 和正式后端同一套迁移（见 shared/settings.ts）：浏览器里存着旧版设置时升到新默认值，例如自动压缩的旧默认值 0
-    else migrateSettingsDefaults((d.settings ??= Settings.parse({})))
+    // 和正式后端同一套迁移（见 shared/settings.ts）：旧设置里的 Gemini 协议先清掉，再升到新默认值
+    else {
+      if (d.settings) migrateRemovedClis(d.settings)
+      migrateSettingsDefaults((d.settings ??= Settings.parse({})))
+    }
     persist()
     return Settings.parse(d.settings ?? {})
   }

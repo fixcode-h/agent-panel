@@ -34,7 +34,7 @@
 | `label`         | 显示名                                                                    |
 | `type`          | 模型类型：`flash`、`pro`、`max`、`plus`、`opus`、`reasoning`、`general`…… |
 | `version`       | 版本：`4`、`5.5`、`k3`；没有版本时留空                                    |
-| `protocols`     | 支持的协议：`anthropic`、`openai-responses`、`openai-chat`、`gemini`      |
+| `protocols`     | 支持的协议：`anthropic`、`openai-responses`、`openai-chat`                |
 | `context`       | 上下文窗口（token）                                                       |
 | `maxOutput`     | 最大输出（token）                                                         |
 | `efforts`       | 可选的思考强度，取值和 CLI 的 efforts 一致；模型不支持思考时是空数组      |
@@ -57,7 +57,7 @@ deepseek-v4-flash-fast
 
 1. **只取最后一段**，去掉 `tokenapi/deepseek/` 这类前缀。
 2. **去掉协议后缀**：`-responses` → OpenAI Responses，`-chat` / `-completions` → OpenAI Chat，
-   `-anthropic` / `-messages` → Anthropic，`-gemini` → Gemini。
+   `-anthropic` / `-messages` → Anthropic。
 3. **去掉速度、预览后缀**：`-fast`、`-turbo`、`-speed`、`-preview`、`-beta`、日期等不参与匹配。
 4. **厂商初筛**：用 `-` 分开后的第一个词判断厂商（`deepseek`、`claude`、`gpt`、`qwen`、`glm`、`kimi`……），
    也可以看 `provider/` 前缀（`moonshotai/`、`zai-org/`）。目录里没有这个厂商的模型就不匹配。
@@ -65,7 +65,7 @@ deepseek-v4-flash-fast
    - `deepseek-v4-flash` → `deepseek-flash`（`flash` 是模型类型）
    - `deepseek-v4-pro` → `deepseek-v4-pro`
    - `deepseek-v4-flash` 不会因为版本同为 `4` 而匹配 `pro`
-6. **当前 API 的协议优先**：同分时，选支持当前协议（Responses / Chat / Anthropic / Gemini）的记录。
+6. **当前 API 的协议优先**：同分时，选支持当前协议（Responses / Chat / Anthropic）的记录。
    模型名自带 `-responses` 这类后缀时按后缀算。
 
 匹配分数太低（例如只是名字里碰巧有某个词）时当作没找到。**没找到的模型统一按 1M 上下文、128K 最大输出估算**，

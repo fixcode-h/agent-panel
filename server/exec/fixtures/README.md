@@ -5,7 +5,6 @@
 - `claude-stream.jsonl`：`claude -p --output-format stream-json --verbose --include-partial-messages`
 - `codex-app.jsonl`：`codex app-server` 发给面板的 JSON-RPC 消息（响应和通知）
 - `commandcode.jsonl`：`cmdc -p --output-format json`
-- `gemini-stream.jsonl`：`gemini --output-format stream-json`（解析规则写在 `shared/clis/gemini.json` 里）
 - `pi-json.jsonl`、`pi-error.jsonl`：`pi -p --mode json`（RPC 模式的会话事件和它同一套，结束改用 `agent_settled`）；`message_update` 里每次都带的整条消息 `partial` 去掉了，
   `pi-error.jsonl` 是接口连不上、自动重试三次的输出
 

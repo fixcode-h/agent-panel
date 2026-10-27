@@ -7,14 +7,13 @@ import { apiBaseUrl } from './api-vendors.ts'
  */
 
 /** API 的协议：决定哪些 CLI 能用它 */
-export const API_PROTOCOLS = ['anthropic', 'openai-responses', 'openai-chat', 'gemini'] as const
+export const API_PROTOCOLS = ['anthropic', 'openai-responses', 'openai-chat'] as const
 export type ApiProtocol = (typeof API_PROTOCOLS)[number]
 
 export const API_PROTOCOL_LABEL: Record<ApiProtocol, string> = {
   anthropic: 'Anthropic Messages',
   'openai-responses': 'OpenAI Responses',
   'openai-chat': 'OpenAI Chat Completions',
-  gemini: 'Gemini',
 }
 
 /** 模型名里的协议后缀；不带后缀的是通用模型，所有协议都能用 */
@@ -22,7 +21,6 @@ const PROTOCOL_MODEL_SUFFIX: Record<ApiProtocol, string[]> = {
   anthropic: ['-anthropic', '-anthropic-messages'],
   'openai-responses': ['-responses'],
   'openai-chat': ['-chat', '-completions'],
-  gemini: ['-gemini'],
 }
 const MODEL_SUFFIXES = [...new Set(Object.values(PROTOCOL_MODEL_SUFFIX).flat())]
 const modelSuffix = (model: string) => {
@@ -112,7 +110,7 @@ export function apiProvider(api: Pick<ApiConfig, 'name' | 'provider'>, fallback 
 /** 改配置文件里的一些键（JSON / TOML / .env）：set 的键可以写成 a.b.c；占位见 fillTemplate */
 export const JsonEdit = z.object({
   file: z.string().min(1),
-  /** 配置文件格式：JSON、TOML（Codex）或 .env（Gemini） */
+  /** 配置文件格式：JSON、TOML（Codex）或 .env */
   format: z.enum(['json', 'toml', 'env']).default('json'),
   set: z.record(z.string(), z.unknown()).default({}),
   /** 浅合并还是直接替换；合并时对象递归合并，数组仍然替换 */
@@ -365,7 +363,7 @@ export const CliAuth = z.object({
   loginAlreadyLoggedIn: z.boolean().default(false),
   /** 登录时从 stdin 写进去的内容（例如要确认的 y） */
   loginStdin: z.string().default(''),
-  /** 登录前先改的配置（例如 Gemini CLI 要先选登录方式） */
+  /** 登录前先改的配置 */
   loginEdits: z.array(JsonEdit).default([]),
   /** 凭据所在的目录：~ 是用户目录，${ENV:-默认值} 先取环境变量 */
   home: z.string().min(1),
@@ -376,7 +374,7 @@ export const CliAuth = z.object({
   /** macOS 钥匙串里的条目名（Claude Code 在 macOS 上把凭据放在钥匙串） */
   keychain: z.string().default(''),
   /** 从凭据里认出是哪个账号（邮箱）的方式；none 表示认不出，用保存时起的名字 */
-  identity: z.enum(['claude', 'codex', 'gemini', 'none']).default('none'),
+  identity: z.enum(['claude', 'codex', 'none']).default('none'),
   /** 改用 API 时怎么交给 CLI */
   api: z
     .object({
@@ -404,7 +402,7 @@ export const CliAuth = z.object({
       /**
        * 协议 → 这个 CLI 要的接口地址写法，{baseUrl} 按它填；{root} 是去掉末尾 /v1、/v1beta 的地址。
        * 各家 SDK 自己拼版本路径的方式不同：Anthropic SDK 会再加 /v1/messages（地址带 /v1 就成了 /v1/v1），
-       * Pi 的 Gemini 接口把地址当成已经带版本的，Gemini CLI 又会自己加 /v1beta。没写的协议原样用设置里的地址
+       * Pi 的 Anthropic 接口把地址当成已经带版本的。没写的协议原样用设置里的地址
        */
       baseUrl: z.record(z.string(), z.string()).default({}),
       /**
@@ -477,7 +475,7 @@ export const CliAuth = z.object({
           /**
            * 模型目录里没有的模型，再查 CLI 安装包自带的模型数据（内置读法的名字，现在只有 pi-ai：
            * Pi 依赖的 pi-ai 的 dist/providers/data/*.json），按模型名找能不能思考和每档的取值。
-           * 不写时目录里没有的模型不动：Pi 把它当成不能思考，Responses、Anthropic、Gemini 协议下就不请求思考
+           * 不写时目录里没有的模型不动：Pi 把它当成不能思考，Responses、Anthropic 协议下就不请求思考
            */
           known: z.enum(['pi-ai']).optional(),
         })

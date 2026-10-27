@@ -190,7 +190,6 @@ export async function runShard(shardName, fn) {
     USERPROFILE: homeDir,
     CLAUDE_CONFIG_DIR: '',
     CODEX_HOME: '',
-    GEMINI_CLI_HOME: '',
     // 断言里用的是中文提示，固定用中文界面跑
     LANG: 'zh_CN.UTF-8',
     FAKE_CLI_LOG: log,
@@ -411,7 +410,7 @@ export async function runShard(shardName, fn) {
   const putSettings = async () => {
     const settings = {
       stepTimeoutMinutes: 5,
-      clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli(), pi: cli() },
+      clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), pi: cli() },
     }
     await call('PUT', '/settings', settings)
     return { cli, settings }

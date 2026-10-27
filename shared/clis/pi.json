@@ -30,14 +30,6 @@
       "label": "GPT-5.4 mini"
     },
     {
-      "id": "google/gemini-3.1-pro-preview",
-      "label": "Gemini 3.1 Pro"
-    },
-    {
-      "id": "google/gemini-2.5-flash",
-      "label": "Gemini 2.5 Flash"
-    },
-    {
       "id": "deepseek/deepseek-v4-pro",
       "label": "DeepSeek V4 Pro"
     }
@@ -777,7 +769,7 @@
     "identity": "none",
     "accountNote": "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。",
     "api": {
-      "protocols": ["anthropic", "openai-responses", "openai-chat", "gemini"],
+      "protocols": ["anthropic", "openai-responses", "openai-chat"],
       "defaultProvider": "agentpanel",
       "modelSource": "cli",
       "modelPrefix": "{provider}/",
@@ -813,14 +805,12 @@
         "withoutImage": ["text"]
       },
       "baseUrl": {
-        "anthropic": "{root}",
-        "gemini": "{root}/v1beta"
+        "anthropic": "{root}"
       },
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",
-        "openai-chat": "openai-completions",
-        "gemini": "google-generative-ai"
+        "openai-chat": "openai-completions"
       },
       "edits": [
         {

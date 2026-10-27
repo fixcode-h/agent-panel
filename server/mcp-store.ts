@@ -237,7 +237,7 @@ function fromObject(name: string, o: Record<string, any>, s: McpStore): McpServe
 
 /**
  * 从 { 名字: 配置 } 的表里读出工具。项目里各种 mcpServers / servers 写法共用这一处：
- * Claude Code、Cursor、Gemini CLI 的 mcpServers 和 VS Code 的 servers 字段名不同，但条目结构一样（见 server/project-mcp.ts）
+ * Claude Code、Cursor 的 mcpServers 和 VS Code 的 servers 字段名不同，但条目结构一样（见 server/project-mcp.ts）
  */
 export function readServerTable(table: Record<string, any>, s: McpStore): Record<string, McpServer> {
   const out: Record<string, McpServer> = {}
@@ -247,7 +247,7 @@ export function readServerTable(table: Record<string, any>, s: McpStore): Record
 }
 
 function toObject(sv: McpServer, s: McpStore, old: Record<string, any> = {}) {
-  // 保留别的字段（例如 Gemini CLI 的 trust），只换掉面板管的这几个
+  // 保留别的字段，只换掉面板管的这几个
   const o = { ...old }
   for (const k of ['type', 'command', 'args', 'env', 'url', 'httpUrl', 'headers', 'http_headers']) delete o[k]
   if (sv.transport === 'stdio') {

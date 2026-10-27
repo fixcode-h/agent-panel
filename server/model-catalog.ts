@@ -63,10 +63,9 @@ ${
 - anthropic（Anthropic Messages，也就是 Claude Code 用的协议）
 - openai-responses（OpenAI Responses）
 - openai-chat（OpenAI Chat Completions，通用的 Chat 协议）
-- gemini（Google Gemini）
 
 需要查清楚：
-1. 厂商（vendor）：anthropic、openai、google、deepseek、moonshot、zhipu、alibaba、tencent、xiaomi、bytedance、baidu、minimax、xai、mistral 等
+1. 厂商（vendor）：anthropic、openai、deepseek、moonshot、zhipu、alibaba、tencent、xiaomi、bytedance、baidu、minimax、xai、mistral 等
 2. 模型类型（type）：flash、pro、max、plus、mini、coder、reasoning、general 这类表示模型能力的词
 3. 版本（version）：例如 4、5.5、k3
 4. 上下文窗口（context）和最大输出（maxOutput），单位是 token，必须是官方公布的准确数字
@@ -107,7 +106,6 @@ const PROTOCOL_ALIASES: Record<string, string> = {
   claude: 'anthropic',
   'claude-code': 'anthropic',
   messages: 'anthropic',
-  google: 'gemini',
 }
 
 const num = (v: unknown) => {
