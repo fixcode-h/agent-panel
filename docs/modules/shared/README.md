@@ -8,7 +8,7 @@
 ## 职责
 
 - 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。
-- 设置 schema 和默认值：后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。
+- 设置 schema 和默认值：后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；各 CLI 的自动压缩比例 `autoCompact` 默认 70%（`AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。旧设置里各项默认值的迁移在 `shared/settings.ts` 的 `migrateSettingsDefaults`（正式后端与演示后端共用同一份，按 `Settings.defaultsVersion` 只迁一次）。
 - 本机代理的默认值（`shared/proxy.ts`）：`DEFAULT_PROXY_PORT` / `DEFAULT_PROXY_URL` 是设置页「网络代理」的占位符和说明、CLI 环境变量示例（`PROXY_ENV_EXAMPLE`）、自动探测端口顺序（`LOCAL_PROXY_PORTS`）的唯一出处；`shared/schema.ts` 的 `proxy` 字段注释也指向它。要换默认代理端口只改这一处，别处一律 import（`npm run lint` 的 `rules-check` 会拦住 ts / tsx / mjs / json 里再写的字面量）。默认端口在 v2rayN 里默认跑 socks，mixed 在 10814，纯 socks 时 `ProxyAgent` 用不了、探测会失败。`LOCAL_PROXY_PORTS` 里除了默认端口还有 Clash 的混合端口、老版 v2rayN 的 http 入站、Clash 的 socks 口、Clash Verge Rev 的混合端口和通用的 1080；`MAX_LOCAL_PROXIES`（3）决定真正尝试几个，所以默认端口必须排在前几位。具体顺序和取值只看 `shared/proxy.ts`。
 - CLI 注册表：内置 CLI 定义在 `shared/clis/*.json`，由 `shared/clis.ts` 加载；参数拼装、输出解析方式、支持的能力、Skill 和说明文件位置都写在定义里，面板其他地方按字段走。Agent 的回复语言跟随面板设置，完整规则（正文和思考过程）、提示词末尾的提醒句、Command Code 通过 mod 追加系统提示词时的插件源码都在 `shared/prompt-lang.ts`。
 - 流程图逻辑：节点、连线、子流程、引用解析、布局和任务规划（`shared/flow.ts`）。

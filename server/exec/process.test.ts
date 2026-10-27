@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { killAllProcesses, runProcess, taskCliAlive } from './process.ts'
 
 test('统一清理还在跑的 CLI 进程，runProcess 能正常收尾', async () => {
@@ -76,5 +77,8 @@ test('taskCliAlive：只在这个对话的 CLI 进程真的活着时为真，进
   assert.equal(taskCliAlive('other'), false)
   ac.abort()
   await run
+  // 进程树没被很快杀掉时，runProcess 会在 5 秒后先结束等待，这时进程可能真的还活着（Windows 上 taskkill 偶发慢）。
+  // 这条用例验的是「进程退出后撤掉登记」，不是「几毫秒内退出」：等它退完再断言，别把「还没退」误判成「没撤登记」
+  for (let i = 0; i < 100 && taskCliAlive('cli-alive-t'); i++) await sleep(100)
   assert.equal(taskCliAlive('cli-alive-t'), false)
 })
