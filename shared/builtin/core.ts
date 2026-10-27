@@ -2,12 +2,13 @@ import { AgentInput, type Agent, type AgentParam, type ParamValue, type ParamVal
 import { coerceValue, isEmptyValue } from '../agent-role.ts'
 import { t } from '../i18n.ts'
 import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
+import type { AgentMount } from '../schema.ts'
 
 /**
  * 必备角色：项目对话离不开的八个能力块。启动时自动装好、不能删除，也不能改成别的角色：
  * 名称、角色设定、Skill、能力开关、参数的定义都由面板维护，每次启动按内置定义同步；
  * 用户能改的只有运行配置（CLI、模型、思考强度、权限、额外参数、开场要求、标签）和参数的取值。
- * 这样「统筹把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
+ * 这样「主理把文档交给文档角色」「执行派测试验收去跑」「收尾前派评审、交付前交版本控制收尾」这类约定才靠得住，
  * 不会因为某个角色被改成别的而断掉。
  */
 export const CORE_AGENTS = [
@@ -107,6 +108,8 @@ export function keepParamValues(defs: AgentParam[], mine: AgentParam[]): AgentPa
 const DEFAULT_CHANGES: { id: string; core: CoreKey; key: string; from: ParamValue }[] = [
   // 文档角色的「写 Bug 记录」从默认关改成默认开（89dbf5a 只改了定义，已装的副本还是关的）
   { id: 'docsync.bug-on', core: 'docsync', key: 'bug', from: false },
+  // 主理的「大改动先确认」默认打开：拆三个以上子对话、跨模块的派单先给用户看方案（角色分层改造）
+  { id: 'orchestrator.confirm-on', core: 'orchestrator', key: 'confirm', from: false },
 ]
 
 /** 对已装的必备角色补做还没做过的默认值升级（幂等） */
@@ -131,12 +134,48 @@ const RUN_IN_CHANGES: { id: string; core: CoreKey; runIn: AgentInput['runIn'] }[
   { id: 'docsync.run-in-parent', core: 'docsync', runIn: 'parent' },
 ]
 
-/** 对已装的必备角色补做还没做过的启动位置升级（幂等） */
+/**
+ * 就地微改动开关的默认值升级：和 runIn 一样是用户能改的选择，旧副本没有这个字段（按 off 读），
+ * 只在启动时做一次，之后用户关掉不会被改回来
+ */
+const INLINE_EDIT_CHANGES: { id: string; core: CoreKey; inlineEdit: AgentInput['inlineEdit'] }[] = [
+  // 主理（原统筹）可以就地做护栏内的微改动：改个文案不用等一个子对话冷启动
+  { id: 'orchestrator.inline-edit', core: 'orchestrator', inlineEdit: 'tiny' },
+]
+
+/** 对已装的必备角色补做还没做过的启动位置、就地改动升级（幂等） */
 export function upgradeRunIn(a: AgentInput, key: CoreKey): AgentInput {
   const todo = RUN_IN_CHANGES.filter((c) => c.core === key && !a.upgrades?.includes(c.id))
-  if (!todo.length) return a
-  const runIn = todo[0].runIn
-  return { ...a, runIn, upgrades: [...(a.upgrades ?? []), ...todo.map((c) => c.id)] }
+  const edits = INLINE_EDIT_CHANGES.filter((c) => c.core === key && !a.upgrades?.includes(c.id))
+  if (!todo.length && !edits.length) return a
+  return {
+    ...a,
+    ...(todo.length && { runIn: todo[0].runIn }),
+    ...(edits.length && { inlineEdit: edits[0].inlineEdit }),
+    upgrades: [...(a.upgrades ?? []), ...todo.map((c) => c.id), ...edits.map((c) => c.id)],
+  }
+}
+
+/**
+ * 内置定义里的挂载换成本机的挂载：key 换成 id（本机没有的能力跳过），没写的字段补默认值。
+ * id 由调用方按 key 找（安装时找刚建好的，同步时找本机已有的）
+ */
+export function builtinMounts(def: Pick<BuiltinAgent, 'mounts'>, idOf: (key: string) => string | undefined) {
+  return def.mounts.flatMap(({ key, ...m }): AgentMount[] => {
+    const agentId = idOf(key)
+    return agentId ? [{ agentId, preload: false, rule: '', params: {}, ...m }] : []
+  })
+}
+
+/**
+ * 同步挂载：挂哪些能力、规则、预加载跟内置定义；用户在挂载上改过的用法（mode）和参数取值保留
+ * （ADR 0015 的口径：设定归面板，取值归用户）
+ */
+function syncMounts(defs: AgentMount[], mine: AgentMount[]): AgentMount[] {
+  return defs.map((d) => {
+    const m = mine.find((x) => x.agentId === d.agentId)
+    return m ? { ...d, mode: m.mode, params: { ...d.params, ...m.params } } : d
+  })
 }
 
 /**
@@ -147,11 +186,19 @@ export function upgradeRunIn(a: AgentInput, key: CoreKey): AgentInput {
 export function syncCore(
   cur: AgentInput,
   def: BuiltinAgent,
-  ids: { categoryId: string; includes: string[] },
+  /** mounts：定义里的挂载（已换成本机 id）；启动同步按内置定义算，编辑保存时传已装副本上的 */
+  ids: { categoryId: string; includes: string[]; mounts?: AgentMount[] },
 ): AgentInput {
   const a = def.agent
   return {
     ...cur,
+    kind: a.kind,
+    when: a.when,
+    modes: a.modes,
+    independent: a.independent,
+    mounts: syncMounts(ids.mounts ?? [], cur.mounts ?? []),
+    // 就地微改动和启动位置一样是用户的选择（升级见 upgradeRunIn）
+    inlineEdit: cur.inlineEdit ?? a.inlineEdit,
     name: a.name,
     description: a.description,
     icon: a.icon,
@@ -185,6 +232,12 @@ export function sameCore(a: AgentInput, b: AgentInput) {
       x.canDelegate,
       x.canPlan,
       x.runIn,
+      x.kind,
+      x.when,
+      x.modes,
+      x.independent,
+      x.mounts,
+      x.inlineEdit,
       x.capsSet,
       x.upgrades,
       x.enabled,

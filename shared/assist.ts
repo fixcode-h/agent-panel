@@ -30,6 +30,7 @@ import {
   TEST_STEP_ENVS,
   TestStepShape,
   migrateTestStep,
+  roleLayerDefaults,
   type Agent,
   type AgentInput,
   type Category,
@@ -991,6 +992,16 @@ export function extractJson(text: string): { json?: unknown; rest: string; error
 const issues = (e: z.ZodError) => e.issues.map((i) => `${i.path.join('.') || '(根)'}：${i.message}`).join('；')
 
 const agentExtras = (a?: Agent) => ({
+  ...roleLayerDefaults(),
+  // 角色分层、挂载、就地改动是用户的设计，AI 优化角色设定时原样保留
+  ...(a && {
+    kind: a.kind,
+    when: a.when,
+    modes: a.modes,
+    independent: a.independent,
+    mounts: a.mounts,
+    inlineEdit: a.inlineEdit,
+  }),
   includes: a?.includes ?? [],
   params: a?.params ?? [],
   skills: a?.skills ?? [],

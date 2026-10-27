@@ -3,7 +3,8 @@ import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
 import { overrideInput, triageInput } from '../shared/review-gate.ts'
-import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
+import type { HelperReport, HelperSpec, Orchestra, RouteInput } from '../shared/engine.ts'
+import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES } from '../shared/inline-edit.ts'
 
 /**
  * 编排工具：工作流节点和对话每次调用 CLI 时，绑定在调用它的节点上（执行引擎的 Orchestra）。
@@ -71,7 +72,30 @@ const BATCH_NOTE = '。也可以写在 spawn_agents 的顶层整批共用；单�
 const batchField = <T extends { description: string }>(f: T) => ({ ...f, description: `${f.description}${BATCH_NOTE}` })
 
 /** spawn_agents 顶层认得的字段：其余字段不静默丢掉（写错名字的 resume 一丢，复看就换了角色和会话） */
-const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume']
+const SPAWN_TOP_FIELDS = ['tasks', 'step', 'agent', 'tier', 'resume', 'route']
+
+/**
+ * 分诊记录（父对话派单时写）：面板画成分诊卡，用户不同意可以一键改派。
+ * 只给能分派子对话的父对话出这个字段，子对话、节点派子任务不用写
+ */
+const routeField = () => ({
+  type: 'object',
+  description: '分诊记录：你怎么理解这条消息、为什么这样分、替用户做了什么假设。面板画成分诊卡，用户不同意可以一键改派',
+  properties: {
+    understanding: { type: 'string', description: '一句话复述用户要什么' },
+    reason: { type: 'string', description: '为什么分到这里（而不是就地做 / 派子任务 / 交子对话）' },
+    assumptions: { type: 'string', description: '替用户做的假设；没有不写' },
+  },
+})
+
+/** 读 route 参数：只收认得的字段，全空就当没写 */
+function routeOf(v: unknown): RouteInput | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
+  const s = (k: string) => (typeof r[k] === 'string' ? (r[k] as string).trim() : '')
+  const out = { understanding: s('understanding'), reason: s('reason'), assumptions: s('assumptions') }
+  return out.understanding || out.reason || out.assumptions ? out : undefined
+}
 
 const tasksField = (o: Orchestra) => ({
   type: 'array',
@@ -351,6 +375,11 @@ export function orchTools(o: Orchestra) {
                   description:
                     '这个子对话负责的文件或目录（相对项目根）：共用目录时面板替它认领，别的子对话要等它做完；独立分支时用来核对有没有和别的子对话改到同一个文件（两边改同一文件时 git 常常自动合并、不报冲突）',
                 },
+                role: {
+                  type: 'string',
+                  description: '子对话用哪个高级角色（名字）：不写用「执行」；项目里有更合适的（例如 UE 专用的）时写它',
+                },
+                route: routeField(),
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
               required: ['title', 'message'],
@@ -366,9 +395,60 @@ export function orchTools(o: Orchestra) {
               properties: {
                 id: { type: 'string', description: '子对话 id' },
                 message: { type: 'string', description: '要交给它的消息，写清楚和原任务的关系' },
+                route: routeField(),
                 ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
               required: ['id', 'message'],
+            },
+          },
+        ]
+      : []),
+    ...(o.inlineEdit
+      ? [
+          {
+            name: 'begin_inline_edit',
+            title: '开始就地改动',
+            description: `父对话就地做一个微小改动前调用：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。面板校验子对话有没有在合回、要改的文件有没有子对话在用；通过后你改文件、跑项目的快速检查、本地提交，再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的都交给子对话，不走这里。`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                files: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: `要改的文件（相对项目根），最多 ${INLINE_EDIT_MAX_FILES} 个；同一提交该带的（例如文案的英文翻译）也列上`,
+                },
+                reason: { type: 'string', description: '改什么、为什么能就地改' },
+                route: routeField(),
+              },
+              required: ['files', 'reason'],
+            },
+          },
+          {
+            name: 'end_inline_edit',
+            title: '结束就地改动',
+            description:
+              '就地改动改完、跑过快速检查并本地提交后调用：面板按真实改动核对文件数、行数和没声明的文件，越界会提示用户；然后恢复子对话的收尾。这一轮结束时没调用也会自动收。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
+    ...(o.capabilities
+      ? [
+          {
+            name: 'use_capability',
+            title: '加载能力',
+            description:
+              '就地用你挂载的某个能力前调用：取它的完整做法、参数和要用的 Skill，再在当前对话里按它做。只能派出的能力（例如评审）会被拒绝并告诉你怎么派。能力列表见角色设定里「你挂载的能力」。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: '能力的名字，例如「测试验收」' },
+                params: {
+                  type: 'object',
+                  description: '这次用的参数取值（可选），例如 {"scope": "快速"}；不写按挂载上的取值',
+                },
+              },
+              required: ['name'],
             },
           },
         ]
@@ -758,6 +838,7 @@ export function orchTools(o: Orchestra) {
                 // 和 create_conversation / run_background 一样：这批子任务全部结束、结果交回时，
                 // 计划里这一步标完成；失败或被终止退回进行中并写清原因
                 ...(o.plans ? { step: stepField('这批子任务') } : {}),
+                ...(o.coordinator ? { route: routeField() } : {}),
               },
               required: ['tasks'],
             },
@@ -912,14 +993,17 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const message = str(a?.message).trim()
       if (!message) return text('message 不能为空：写清楚需求', true)
       const files = Array.isArray(a?.files) ? a.files.map(String).filter(Boolean) : undefined
-      const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim())
+      const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim(), {
+        role: str(a?.role).trim() || undefined,
+        route: routeOf(a?.route),
+      })
       return text(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)
     }
     case 'send_to_conversation': {
       const id = str(a?.id).trim()
       const message = str(a?.message).trim()
       if (!id || !message) return text('id 和 message 都要写', true)
-      const r = await o.sendToConversation(id, message, str(a?.step).trim())
+      const r = await o.sendToConversation(id, message, str(a?.step).trim(), routeOf(a?.route))
       return text(r.info, !r.ok)
     }
     case 'run_background': {
@@ -962,6 +1046,20 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'request_build': {
       const kids = Array.isArray(a?.children) ? a.children.map(String) : []
       const r = await o.requestBuild(str(a?.note), str(a?.step) || undefined, kids)
+      return text(r.info, !r.ok)
+    }
+    case 'begin_inline_edit': {
+      const files = Array.isArray(a?.files) ? a.files.map(String).filter((f: string) => f.trim()) : []
+      const r = await o.beginInlineEdit(files, str(a?.reason), routeOf(a?.route))
+      return text(r.info, !r.ok)
+    }
+    case 'end_inline_edit': {
+      const r = await o.endInlineEdit()
+      return text(r.info, !r.ok)
+    }
+    case 'use_capability': {
+      const params = a?.params && typeof a.params === 'object' && !Array.isArray(a.params) ? a.params : undefined
+      const r = o.loadCapability(str(a?.name), params)
       return text(r.info, !r.ok)
     }
     case 'finish_child': {
@@ -1066,7 +1164,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       }))
       // 点名的计划步骤由面板在子任务全部结束后收口（见 engine.ts 的 settleHelperWaits）
       const stepId = str(a?.step).trim()
-      const r = o.spawn(list, stepId || undefined)
+      const r = o.spawn(list, stepId || undefined, { route: routeOf(a?.route) })
       if (r.error) return text(r.error, true)
       // 整批都转交父对话了：本地一个也没派，不能写成「已派出 0 个子任务」
       if (!r.ids.length) return text(r.info || '已交给父对话创建这些子任务')

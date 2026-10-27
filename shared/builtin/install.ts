@@ -14,6 +14,7 @@ import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } f
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
 import {
   CORE_AGENTS,
+  builtinMounts,
   coreDefinition,
   isCoreAgent,
   sameCore,
@@ -74,13 +75,19 @@ export interface BuiltinState {
 const originOf = (key: string) => `builtin:${key}`
 const findBuiltin = (agents: Agent[], key: string) => agents.find((a) => a.origin === originOf(key))
 
-/** 这些内置 Agent，加上它们引入的（例如「通用约束」） */
+/** 内置角色依赖的其他内置角色：引入的（例如「通用约束」）和挂载的能力，建它之前先建好 */
+const depsOf = (b: Pick<BuiltinAgent, 'includes' | 'mounts'>) => [...b.includes, ...b.mounts.map((m) => m.key)]
+
+/** 挂载的 key 换成本机的 id；本机没有的能力跳过 */
+const mountIds = (b: BuiltinAgent, agents: Agent[]) => builtinMounts(b, (k) => findBuiltin(agents, k)?.id)
+
+/** 这些内置 Agent，加上它们引入的、挂载的 */
 function withIncludes(start: string[]): BuiltinAgent[] {
   const keys = new Set(start)
   for (let changed = true; changed; ) {
     changed = false
     for (const k of [...keys])
-      for (const inc of BUILTIN_AGENTS.find((a) => a.key === k)?.includes ?? [])
+      for (const inc of depsOf(BUILTIN_AGENTS.find((a) => a.key === k) ?? { includes: [], mounts: [] }))
         if (!keys.has(inc)) {
           keys.add(inc)
           changed = true
@@ -138,7 +145,7 @@ function context(state: BuiltinState, api: BuiltinOps) {
     // 一个个建，不并行：服务端的集合是「读出来、加一项、整个写回」，并行新建会互相覆盖
     const taken = new Set(agents.map((a) => a.name))
     while (todo.length) {
-      const ready = todo.filter((b) => b.includes.every((k) => !todo.some((x) => x.key === k)))
+      const ready = todo.filter((b) => depsOf(b).every((k) => !todo.some((x) => x.key === k)))
       if (!ready.length) throw new Error(`内置 Agent 的引入关系有循环：${todo.map((b) => b.key).join(', ')}`)
       for (const b of ready) {
         // 和你自己的 Agent 重名时加个后缀，两个都留着
@@ -151,6 +158,7 @@ function context(state: BuiltinState, api: BuiltinOps) {
           categoryId: catIds.get(b.category) ?? '',
           tags: [tagId],
           includes: b.includes.map((k) => findBuiltin(agents, k)?.id ?? '').filter(Boolean),
+          mounts: mountIds(b, agents),
           origin: originOf(b.key),
         })
         agents.push(a)
@@ -531,7 +539,7 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
- * 启动时确保八个必备角色（统筹、执行、文档、评审、测试验收、版本控制、子任务、分析）都在，并按内置定义同步一遍（见 ./core.ts）：
+ * 启动时确保八个必备角色（主理、执行、文档、评审、测试验收、版本控制、子任务、分析）都在，并按内置定义同步一遍（见 ./core.ts）：
  * 缺的建出来，已有的把名称、设定、Skill、能力、参数定义换成当前版本，保留用户填的参数值和运行配置。
  * 没有变化的不写盘，重复启动不会反复改文件。
  */
@@ -546,7 +554,8 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
       if (!cur) continue
       const def = coreDefinition(key)
       const includes = def.includes.map((k) => findBuiltin(ctx.agents, k)?.id ?? '').filter(Boolean)
-      const next = upgradeRunIn(upgradeParamDefaults(syncCore(cur, def, { categoryId, includes }), key), key)
+      const mounts = mountIds(def, ctx.agents)
+      const next = upgradeRunIn(upgradeParamDefaults(syncCore(cur, def, { categoryId, includes, mounts }), key), key)
       // 用户自己有同名的角色时保留建出来时加了后缀的名字，免得派活时按名字认错
       if (ctx.agents.some((a) => a.id !== cur.id && a.name === next.name)) next.name = cur.name
       if (sameCore(cur, next)) continue
@@ -694,7 +703,7 @@ export async function upgradeBuiltinAgents(
     const cur = findBuiltin(agents, b.key)
     if (!cur) continue
     const includes = b.includes.map((k) => findBuiltin(agents, k)?.id ?? '').filter(Boolean)
-    const next = syncCore(cur, b, { categoryId: cur.categoryId, includes })
+    const next = syncCore(cur, b, { categoryId: cur.categoryId, includes, mounts: mountIds(b, agents) })
     // 用户自己有同名的角色时保留建出来时加了后缀的名字，免得派活时按名字认错
     if (agents.some((a) => a.id !== cur.id && a.name === next.name)) next.name = cur.name
     if (sameCore(cur, next)) continue
