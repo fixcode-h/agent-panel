@@ -32,6 +32,7 @@ import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
+import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
 import { schedulesApi } from './schedules.ts'
@@ -822,30 +823,8 @@ function runCleanup() {
  */
 async function sweepStaleWorktrees() {
   if (process.env.AGENT_PANEL_KEEP_WORKTREES === '1') return
-  // 正在执行的任务从内存里拿：任务记录里的 working 可能是上一轮留下的
-  const working = new Set(tasks.workingTasks().map((w) => w.id))
-  const res = await sweepWorktrees({
-    taskInfo: async (id) => {
-      const tk = await tasks.get(id)
-      if (!tk) return null
-      const p = tk.projectId ? await projects.get(tk.projectId) : null
-      return {
-        // 显式收口，或者这一轮已经跑完 / 被停掉：剩下没人会再触发收口（面板重启、父对话结束）
-        done: tk.resolved === true || tk.archived === true || tk.status === 'done' || tk.status === 'stopped',
-        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动。
-        // 进了回收站的对话也算在用：保留期内还要能恢复，目录得留着；到期由 tasks.cleanupTrash 连目录一起删
-        working:
-          !!tk.deletedAt ||
-          working.has(id) ||
-          tk.working === true ||
-          tk.awaitingUser === true ||
-          tk.prewarming === true,
-        projectPath: p?.path ?? '',
-        branch: tk.worktree?.branch ?? '',
-        baseBranch: tk.worktree?.baseBranch ?? '',
-      }
-    },
-  }).catch((e: Error) => {
+  // 判定和「设置 → 数据」里的一键清理共用一份（见 server/cleanup.ts 的 sweepTaskInfoOf）
+  const res = await sweepWorktrees({ taskInfo: sweepTaskInfoOf(tasks, projects) }).catch((e: Error) => {
     log.error('worktree', '清扫独立目录出错', { error: e.message })
     return null
   })
@@ -1025,6 +1004,8 @@ const memory = memorySampler({
 memory.start()
 
 app.route('/data', dataApi({ running: () => tasks.running() + designs.running(), memory }))
+// 逐个目录 stat / 跑 git 的清理入口单独一块（/data/cleanup*），不和上面那套按分类扫路径的混在一起
+app.route('/data/cleanup', cleanupApi({ tasks, projects }))
 
 const updater = updateApi({
   running: () => tasks.running() + designs.running(),

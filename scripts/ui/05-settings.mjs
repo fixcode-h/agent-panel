@@ -76,6 +76,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
   await p.getByRole('button', { name: '数据', exact: true }).click()
   await check(p, '设置-数据', ['内存', 'AI 分析', '每 30 秒采样一次', '最近一次采样'])
+  // 清理：对话工作目录（回收站的那行不能清）、失效的独立分支、构建产物
+  await check(p, '设置-数据-清理', [
+    '对话工作目录',
+    '共 316.0 MB',
+    '抓网页快照',
+    '占用较大',
+    '调研过的一个旧对话',
+    '回收站',
+    // 记录已删、目录还在的孤儿目录：不列出来就永远清不掉
+    '对话记录已删除',
+    '已删除的对话',
+    '独立分支',
+    '清理失效的目录',
+    '构建产物',
+    '清理构建产物',
+  ])
+  const bigRow = p.getByText('抓网页快照').locator('xpath=..')
+  if (
+    await bigRow
+      .getByRole('button', { name: '清理' })
+      .isDisabled()
+      .catch(() => true)
+  )
+    errors.push('设置-数据-清理：正常对话的工作目录应该能清理')
+  // 回收站里的对话恢复后还要用这个目录，按钮要禁用（不只是不显示）
+  const trashRow = p.getByText('调研过的一个旧对话').locator('xpath=..')
+  if (
+    !(await trashRow
+      .getByRole('button', { name: '清理' })
+      .isDisabled()
+      .catch(() => false))
+  )
+    errors.push('设置-数据-清理：回收站里的对话不能清工作目录，按钮应该禁用')
+  // 独立分支要手动点「检查占用」才开始扫（四 GB，不跟设置页每次打开一起算）
+  if (!(await p.getByRole('button', { name: '检查占用' }).count()))
+    errors.push('设置-数据-清理：独立分支没有「检查占用」入口')
+  await p.getByRole('button', { name: '检查占用' }).click()
+  await check(p, '设置-数据-清理-检查后', ['worktrees/agent-panel/demo-1', '可释放 210.0 MB'])
   const chart = p.getByRole('img', { name: '面板进程和子进程的内存曲线' })
   await chart.scrollIntoViewIfNeeded()
   const box = await chart.boundingBox()

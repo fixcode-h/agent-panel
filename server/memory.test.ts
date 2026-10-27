@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -11,7 +11,7 @@ process.env.AGENT_PANEL_DATA = dir
 const { Hono } = await import('hono')
 const { memorySampler, childMemory } = await import('./memory.ts')
 const { dataApi, readBackupFiles } = await import('./data.ts')
-const { MemoryUsage, DataUsage } = await import('../shared/data.ts')
+const { MemoryUsage, DataUsage, DATA_KINDS } = await import('../shared/data.ts')
 
 const SAMPLE = {
   at: '2025-01-01T10:00:00.000Z',
@@ -77,7 +77,14 @@ test('数据页接口带上内存采样和各类占用', async () => {
   assert.equal(body.samples.length, 1)
   assert.equal(body.sampling.intervalMs, 30_000)
   assert.equal(body.child.bytes, 300e6)
-  assert.equal(body.kinds.length, 5)
+  // 分类由 shared/data.ts 的 DATA_KINDS 驱动：对话工作目录单独一类（和任务记录分开），
+  // 独立分支不进这份统计（四 GB、十几万个文件，只在清理面板按需算），这里钉住这两点
+  assert.ok(
+    body.kinds.some((k: { id: string }) => k.id === 'workspace'),
+    '对话工作目录要单独一类，不能算进任务记录',
+  )
+  assert.ok(!body.kinds.some((k: { id: string }) => k.id === 'worktrees'), '独立分支不在 /data 的每次扫描里')
+  assert.equal(body.kinds.length, DATA_KINDS.length)
   DataUsage.parse(body)
 })
 
@@ -109,4 +116,40 @@ test('导出时文件读的时候已经没了（任务正好在写、刚删）�
     }),
     /denied/,
   )
+})
+
+test('导入旧版本的备份：里面带 chats/ 工作目录也照样导入，不写进数据目录', async () => {
+  const body = {
+    app: 'agent-panel',
+    version: 1,
+    exportedAt: '2025-01-01T00:00:00.000Z',
+    kinds: ['tasks'],
+    files: {
+      'tasks/tasks.json': Buffer.from('[]').toString('base64'),
+      // 改动前的「任务记录」把对话工作目录也打进备份了
+      'chats/abc/snapshot.html': Buffer.from('<html></html>').toString('base64'),
+    },
+  }
+  const res = await app().request('/data/import', { method: 'POST', body: JSON.stringify(body) })
+  assert.equal(res.status, 200, '旧备份不能因为多带工作目录就整份导不进来')
+  const out = (await res.json()) as { kinds: string[]; files: number }
+  assert.deepEqual(out.kinds, ['tasks'])
+  assert.equal(out.files, 1, '工作目录那份没写进去')
+  assert.ok(!existsSync(path.join(dir, 'chats', 'abc')), '工作目录不进数据目录')
+})
+
+test('伪造「工作目录」分类的备份不会清掉 chats/', async () => {
+  const keep = path.join(dir, 'chats', 'keep')
+  mkdirSync(keep, { recursive: true })
+  writeFileSync(path.join(keep, 'a.txt'), 'keep')
+  const body = {
+    app: 'agent-panel',
+    version: 1,
+    exportedAt: '2025-01-01T00:00:00.000Z',
+    kinds: ['workspace'],
+    files: {},
+  }
+  const res = await app().request('/data/import', { method: 'POST', body: JSON.stringify(body) })
+  assert.equal(res.status, 200)
+  assert.ok(existsSync(path.join(keep, 'a.txt')), '工作目录不能通过导入被整类清掉')
 })

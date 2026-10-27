@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { Download, FolderOpen, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
-import { DATA_KINDS, type DataKind, type DataUsage } from '@shared/data'
+import { DATA_KINDS, EXPORTABLE_KINDS, type DataKind, type DataUsage } from '@shared/data'
 import { MEMORY_ASK, MEMORY_TOPIC, formatBytes, formatSampleTime, formatUptime, memoryReport } from '@shared/memory'
 import { pad2 } from '@shared/datetime'
 import { api } from '@/lib/api'
@@ -15,6 +15,7 @@ import { Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { MemoryChart } from '@/components/settings/MemoryChart'
 import { TrashSection } from '@/components/settings/TrashSection'
+import { CleanupSection } from '@/components/settings/CleanupSection'
 import { t } from '@shared/i18n'
 
 /** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
@@ -358,7 +359,7 @@ export function DataSection() {
           {t('导出成一个文件，在另一台电脑的设置里导入。导入时，文件里包含的每类数据会整体替换掉这里现有的。')}
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-2.5">
-          {DATA_KINDS.filter((k) => k.id !== 'cache').map((k) => (
+          {EXPORTABLE_KINDS.map((k) => (
             <Checkbox
               key={k.id}
               checked={picked.includes(k.id)}
@@ -388,6 +389,9 @@ export function DataSection() {
           />
         </div>
       </section>
+
+      {/* 清理：对话工作目录、失效的独立分支、构建产物（都在末尾，不挤在占用表和迁移之间） */}
+      <CleanupSection onCleared={load} />
 
       <ConfirmDialog
         open={!!clearing}
