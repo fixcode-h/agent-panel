@@ -1,5 +1,14 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SETTINGS: Record<string, string> = {
+  // Webhook 通知
+  'Webhook 通知': 'Webhook notifications',
+  '计划执行时发送 Webhook': 'Send a webhook when a plan runs',
+  '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。':
+    'When a plan starts, fails to start, is missed, or is blocked by an upstream plan, the panel POSTs a JSON payload to this URL with the plan, project, the time and result of that run. Delivery failures are recorded on the plan only, never block the plan, and are retried at most {n} times.',
+  'Webhook 地址': 'Webhook URL',
+  '填 http 或 https 开头的地址': 'Use a URL starting with http or https',
+  '启用 Webhook': 'Enable webhook',
+  '关掉时计划照常执行，只是不往外发。': 'When off, plans still run; nothing is sent out.',
   // 项目设置：测试步骤和 Agent 参数
   测试步骤: 'Test steps',
   停用: 'Disabled',

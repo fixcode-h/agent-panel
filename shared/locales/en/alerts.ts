@@ -1,5 +1,11 @@
 /** 英文词典的一部分，键是中文原文：对话里的报错和警告（shared/alerts.ts、警告行） */
 export const EN_ALERTS: Record<string, string> = {
+  // 超过自己设的执行上限（AlertKind 的 budget）
+  超过执行上限: 'Execution limit reached',
+  '这次执行用掉的 token 或时长到了计划里设的上限，面板把它停下来了。不是出错：上限是你自己设的。':
+    'The tokens or time used by this run reached the limit set on the plan, so the panel stopped it. This is not an error: the limit is yours.',
+  '已经产出的内容都保留着。需要接着做就点「继续执行」（会重新计一份额度），或者把计划里的上限调大。':
+    'Everything produced so far is kept. Click "Continue" to carry on with a fresh allowance, or raise the limit on the plan.',
   // 警告行
   '原始信息：': 'Raw details:',
   点开看原因和怎么办: 'Open to see the cause and what to do',

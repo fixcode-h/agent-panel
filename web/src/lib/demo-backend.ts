@@ -773,6 +773,9 @@ function load(): Db {
   // 用 == null：旧演示数据里可能写成 schedules: null，也要当成没有、补完就落盘
   const seededSchedules = db.schedules == null
   db.schedules ??= demoSchedulesSeed()
+  // 旧演示数据、界面检查里直接写进 localStorage 的计划缺新加的字段（依赖、执行上限、最近一次投递）：
+  // 和正式后端读盘时一样按现在的结构补齐，否则卡片读 s.budget.tokens 时会报 undefined
+  db.schedules = db.schedules.map((s) => Schedule.parse(s))
   db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
   // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
@@ -1929,6 +1932,9 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
         lastTaskId: '',
         missedAt: '',
         lastError: '',
+        blockedAt: '',
+        blockedReason: '',
+        lastDelivery: null,
         id: `demo-plan-${crypto.randomUUID()}`,
         createdAt: now,
         updatedAt: now,
@@ -1953,7 +1959,9 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
       ...cur,
       ...input,
       // 和正式后端同一个口径：只改名字、时间还在同一分钟时不算换了排期
-      ...(!sameMinute(input.at, cur.at) ? { status: 'pending' as const, missedAt: '', lastError: '' } : {}),
+      ...(!sameMinute(input.at, cur.at)
+        ? { status: 'pending' as const, missedAt: '', lastError: '', blockedAt: '', blockedReason: '' }
+        : {}),
       updatedAt: new Date().toISOString(),
     }
     d.schedules = list.map((s) => (s.id === id ? next : s))

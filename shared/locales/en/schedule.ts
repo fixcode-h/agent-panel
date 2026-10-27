@@ -80,9 +80,46 @@ export const EN_SCHEDULE: Record<string, string> = {
   '时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。':
     'Times use the local time zone. Daily, weekly, and weekday plans move to their next run after each run; one-off plans stop after running.',
 
+  // 上游依赖和 Webhook 投递
+  上游: 'Upstream',
+  '、': ', ',
+  上游计划: 'Upstream plans',
+  '这些计划这一轮成功启动之后，本计划到点才会启动；留空表示不依赖。':
+    'This plan starts only after those plans start successfully in the same round; leave empty for no dependency.',
+  '还没有别的计划可以作为上游。': 'There is no other plan to depend on yet.',
+  已删除的计划: 'Deleted plan',
+  未启动: 'Not started',
+  '上游没有成功，没有启动': "Didn't start because an upstream plan didn't succeed",
+  '因为上游计划已不存在，没有启动': "Didn't start because an upstream plan no longer exists",
+  '因为「{name}」已停用，没有启动': 'Didn\'t start because "{name}" is disabled',
+  '因为「{name}」启动失败，没有启动': 'Didn\'t start because "{name}" failed to start',
+  '因为「{name}」错过，没有启动': 'Didn\'t start because "{name}" was missed',
+  '因为「{name}」的上游没有成功，没有启动': 'Didn\'t start because an upstream plan of "{name}" did not succeed',
+  '因为「{name}」还没有执行过，没有启动': 'Didn\'t start because "{name}" has never run',
+  '因为「{name}」最近一次成功已经超过 {n} 小时，没有启动':
+    'Didn\'t start because "{name}" has not succeeded in the last {n} hours',
+  '计划不能依赖自己，请去掉这一项': 'A plan cannot depend on itself; remove that entry',
+  'Webhook 已投递于 {time}': 'Webhook delivered {time}',
+  'Webhook 投递失败：{error}': 'Webhook delivery failed: {error}',
+  'Webhook 地址无效': 'The webhook URL is not valid',
+  '地址返回 {status}': 'The endpoint returned {status}',
+  投递失败: 'Delivery failed',
+  '选中的上游计划已经不存在，请重新选择': 'The selected upstream plans no longer exist; pick them again',
+  '依赖关系成环：{path}，请去掉一个上游再保存':
+    'The dependencies form a cycle: {path}. Remove one upstream dependency and save again.',
+
   // 校验和接口错误
   请填写计划名称: 'Enter a plan name',
   请填写到点后要执行的对话内容: 'Enter what the conversation should do when the plan runs',
   请选择执行时间: 'Pick a time to run',
   计划不存在: 'Plan not found',
+  // 执行上限（token / 时长）
+  执行上限: 'Run limit',
+  '{n} token': '{n} tokens',
+  '{n} 分钟': '{n} min',
+  'token 上限': 'Token limit',
+  '0 或不填表示不限': '0 or empty means no limit',
+  '时长上限（分钟）': 'Time limit (minutes)',
+  '超过上限时面板会停下来，已经产出的内容都保留着；填 0 或不填表示不限。':
+    'The panel stops the run when a limit is reached and keeps everything produced so far. 0 or empty means no limit.',
 }
