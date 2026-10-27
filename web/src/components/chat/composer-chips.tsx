@@ -156,7 +156,12 @@ export function useComposerChips({
     () => ({
       open: (chip) => {
         const item = files.items.find((x) => x.name === chip.name)
-        const images = files.items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
+        // 卡片上显示的是缩略图（从草稿恢复时），浮层要看原图；用 || 而不是 ??：
+        // 草稿恢复存的 full 可能是空串，不能用它把有值的 preview 挡掉
+        const images = files.items.flatMap((x) => {
+          const src = x.full || x.preview
+          return src ? [{ src, name: x.name }] : []
+        })
         // 还在上传的引用也能看原文；还在上传的文件没有路径，等传完再看
         const a =
           item?.done ??

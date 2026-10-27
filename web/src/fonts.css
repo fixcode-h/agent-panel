@@ -7,8 +7,7 @@
 @import '@fontsource/ibm-plex-sans/latin-ext-400.css';
 @import '@fontsource/ibm-plex-sans/latin-ext-500.css';
 @import '@fontsource/ibm-plex-sans/latin-ext-600.css';
-@import '@fontsource/noto-sans-sc/400.css';
-@import '@fontsource/noto-sans-sc/500.css';
-@import '@fontsource/noto-sans-sc/600.css';
+/* 思源宋体只用于标题和品牌名（--font-serif），和「界面字体」选什么无关，所以一直加载 */
 @import '@fontsource/noto-serif-sc/600.css';
 @import '@fontsource-variable/jetbrains-mono';
+/* 思源黑体（中文正文）单独一个文件按需加载，见 fonts-cjk.css */

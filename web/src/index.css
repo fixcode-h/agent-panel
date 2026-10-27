@@ -18,11 +18,10 @@
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
-  /* 默认字体：内置的 Maple Mono NL（无连字）配思源黑体 */
-  --app-sans: 'Maple Mono NL', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 默认字体：内置的 Maple Mono NL（无连字）配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
+  --app-sans: 'Maple Mono NL', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --app-mono:
-    'Maple Mono NL', 'JetBrains Mono Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', ui-monospace,
-    Consolas, monospace;
+    'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
   /* 输入框、按钮获得焦点时的颜色 */

@@ -946,6 +946,12 @@ export const MAX_ATTACHMENTS = 10
  * 找不到时没超过这个上限的仍然上传一份
  */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+/**
+ * 消息里图片卡片取的图有多宽（像素）。卡片本身是 1.25em 见方（约 20px），2 倍屏上按 40px 显示，
+ * 取 160 已留 4 倍余量；同一批 48 张截图实测：原图 3501KB，640 要 2376KB，160 只要 266KB。
+ * 看大图、复制图片仍取原图，不受它影响。
+ */
+export const ATTACHMENT_THUMB_WIDTH = 160
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
@@ -2066,8 +2072,11 @@ export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple
 export const Appearance = z.object({
   /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
   uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
-  /** 中文字体：默认内置的思源黑体（Noto Sans SC），和 Maple Mono 中文版用的是同一套字形 */
-  cjkFont: z.enum(['noto', 'system']).catch('noto').default('noto'),
+  /**
+   * 中文字体：默认走系统字体（苹方 / 微软雅黑），不下载任何中文字体文件；
+   * 选内置的思源黑体时才加载它的分片（web/src/lib/appearance.ts 的 ensureCjkFont）
+   */
+  cjkFont: z.enum(['noto', 'system']).catch('system').default('system'),
   /** 代码、命令、路径用的等宽字体 */
   monoFont: z.enum(['maple', 'jetbrains']).catch('maple').default('maple'),
   /** 本机装了的字体名，填了就排在最前面，缺的字再用上面选的 */
