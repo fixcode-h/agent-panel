@@ -66,6 +66,9 @@ import {
   ChatList,
   ContentHits,
   SIDEBAR_CONTENT_HITS,
+  SIDEBAR_GROUP_LABEL,
+  SIDEBAR_ROW_OFF,
+  SIDEBAR_ROW_ON,
   TaskRow,
   TaskSearch,
   matchTask,
@@ -110,6 +113,9 @@ const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
 const PER_PROJECT = 5
+
+/** 「新建…」行前面的 + 号：强调色圆底，和普通导航图标区分开（Row 的图标包在一层 span 里） */
+const NEW_ICON = '[&>span>svg]:rounded-full [&>span>svg]:bg-accent [&>span>svg]:p-[3px] [&>span>svg]:text-white'
 
 /** 收起的项目分组记在本机浏览器里 */
 function useFolded() {
@@ -197,8 +203,9 @@ function Row({
         aria-describedby={dot ? hintId : undefined}
         title={collapsed ? tip || undefined : dot}
         className={cn(
-          'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] transition-colors',
-          on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+          'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md border px-2 text-[0.84375rem] transition-colors',
+          on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
+          on && 'font-medium',
           collapsed && 'justify-center px-0',
           className,
         )}
@@ -285,7 +292,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
             aria-label={m.label}
             title={m.label}
             className={cn(
-              'grid h-8 w-8 cursor-pointer place-items-center rounded-lg hover:bg-sel hover:text-fg',
+              'grid h-8 w-8 cursor-pointer place-items-center rounded-md transition-colors hover:bg-sel hover:text-fg',
               m.on ? 'bg-sel text-fg' : 'text-subtle',
             )}
           >
@@ -300,7 +307,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
       role="radiogroup"
       aria-label={t('模式')}
       // 只显示图标（名字在悬停提示里），以后模式再多也排得下：按数量平分宽度
-      className="mx-3 mb-2 flex shrink-0 gap-0.5 rounded-lg border bg-field/60 p-0.5"
+      className="mx-3 mb-2 flex shrink-0 gap-0.5 rounded-lg border bg-field/50 p-[3px]"
     >
       {modes.map((m) => (
         <button
@@ -312,7 +319,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
           onClick={() => !m.on && go(m.to)}
           className={cn(
             'grid h-8 min-w-0 flex-1 cursor-pointer place-items-center rounded-md transition-colors',
-            m.on ? 'bg-card text-fg shadow-card' : 'text-subtle hover:bg-sel/60 hover:text-fg',
+            m.on ? 'bg-card text-fg shadow-card' : 'text-subtle hover:bg-sel/50 hover:text-fg',
           )}
         >
           <m.icon className="h-[17px] w-[17px] shrink-0" strokeWidth={1.8} />
@@ -476,7 +483,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     <>
       <div className={cn('flex h-14 shrink-0 items-center gap-1.5 px-3', narrow && 'justify-center px-0')}>
         {!narrow && (
-          <button onClick={() => go({ page: 'home' })} className="flex min-w-0 cursor-pointer items-center gap-2.5">
+          <button
+            onClick={() => go({ page: 'home' })}
+            className="-ml-1 flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 transition-colors hover:bg-sel/50"
+          >
             <Logo />
             <span className="truncate font-serif text-[1rem] font-semibold tracking-tight">{t('Agent 面板')}</span>
           </button>
@@ -487,7 +497,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           title={narrow ? t('展开侧栏') : t('收起侧栏')}
           // 收起时和下面的图标一样居中，不能靠右
           className={cn(
-            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid',
+            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg md:grid',
             !narrow && 'ml-auto',
           )}
         >
@@ -506,7 +516,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               collapsed={narrow}
               on={route.page === 'design' && (!route.id || route.id === 'new')}
               onClick={() => go({ page: 'design' })}
-              className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+              className={cn(!narrow && NEW_ICON)}
             />
             <Row
               icon={Workflow}
@@ -523,7 +533,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             collapsed={narrow}
             on={!route.id}
             onClick={() => go({ page: 'chat' })}
-            className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+            className={cn(!narrow && NEW_ICON)}
           />
         ) : (
           <>
@@ -533,7 +543,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               collapsed={narrow}
               on={route.page === 'home'}
               onClick={() => go({ page: 'home' })}
-              className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+              className={cn(!narrow && NEW_ICON)}
             />
             {NAV.map((n) => (
               <Row
@@ -563,7 +573,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <ChatList />
         )
       ) : !narrow && filtering ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -571,12 +581,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             onFilter={setFilter}
             placeholder={t('搜索任务')}
           />
-          <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
+          <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
             {/* 计数和下面实际列出来的行一致：标题命中 + 这一侧栏能显示的正文命中（只算项目里的对话） */}
             {t('找到 {n} 个', { n: found.length + Math.min(contentHits.length, SIDEBAR_CONTENT_HITS) })}
           </p>
           {found.length === 0 && !contentHits.length && (
-            <p className="px-2.5 py-1 text-xs text-subtle">{t('没有符合的任务。')}</p>
+            <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+              <FolderSearch className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+              <p className="text-xs leading-relaxed text-subtle">{t('没有符合的任务。')}</p>
+            </div>
           )}
           <div className="flex flex-col gap-px">
             {found.map((tk) => (
@@ -604,7 +617,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           />
         </div>
       ) : !narrow ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -616,7 +629,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             <button
               onClick={() => toggleFolded(ALL)}
               aria-expanded={allOpen}
-              className="flex cursor-pointer items-center gap-1 text-xs text-subtle hover:text-fg"
+              className={cn(
+                'flex cursor-pointer items-center gap-1 transition-colors hover:text-fg',
+                SIDEBAR_GROUP_LABEL,
+              )}
             >
               {t('项目')}
               <ChevronDown className={cn('h-3 w-3 transition-transform', !allOpen && '-rotate-90')} />
@@ -660,9 +676,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             </button>
           </div>
           {allOpen && projects.length === 0 && (
-            <p className="px-2.5 pt-1 text-xs leading-relaxed text-subtle">
-              {t('还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。')}
-            </p>
+            <div className="mx-0.5 mt-1 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
+              <FolderPlus className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+              <p className="text-xs leading-relaxed text-subtle">
+                {t('还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。')}
+              </p>
+            </div>
           )}
           {allOpen &&
             groups.map(([pid, ts], gi) => {
@@ -697,8 +716,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     <ContextMenuTrigger asChild>
                       <div
                         className={cn(
-                          'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] transition-colors',
-                          onProject ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
+                          'group/proj flex h-8 items-center gap-1 rounded-md border pr-1 pl-1 text-[0.78125rem] transition-colors',
+                          onProject ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
                         )}
                       >
                         <button
@@ -707,7 +726,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           aria-label={open ? t('收起') : t('展开')}
                           disabled={!ts.length}
                           className={cn(
-                            'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg',
+                            'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel/70 hover:text-fg',
                             !ts.length && 'invisible',
                           )}
                         >
@@ -835,7 +854,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     </ContextMenuContent>
                   </ContextMenu>
                   {open && ts.length > 0 && (
-                    <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
+                    <div className="mt-0.5 ml-4 flex flex-col gap-px border-l border-line/80 pl-2">
                       {shown.map((t) => (
                         <TaskRow
                           key={t.id}
@@ -858,7 +877,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               return next
                             })
                           }
-                          className="h-7 cursor-pointer rounded-lg px-2 text-left text-xs text-subtle hover:bg-sel/70 hover:text-fg"
+                          className="h-7 cursor-pointer rounded-md px-2 text-left text-xs text-subtle transition-colors hover:bg-sel/60 hover:text-fg"
                         >
                           {more.has(pid) ? t('收起') : t('显示全部 {n} 个', { n: ts.length })}
                         </button>
@@ -890,7 +909,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           onClick={onToggleTheme}
           aria-label={dark ? t('切换到浅色') : t('切换到深色')}
           title={dark ? t('切换到浅色') : t('切换到深色')}
-          className="grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
+          className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
         >
           {dark ? (
             <Sun className="h-[18px] w-[18px]" strokeWidth={1.7} />

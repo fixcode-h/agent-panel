@@ -823,6 +823,24 @@ html [data-sonner-toast][data-styled='true'] {
 /* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
    这里不要用 !important 把它的兜底盖回来。 */
 
+/* 侧栏：滚动条比全局（10px）窄一档，平时更淡，鼠标移上去再加深。
+   侧栏本来就窄，滚动条占宽太明显；限定在 [data-sidebar] 里，不改别的面板 */
+[data-sidebar]::-webkit-scrollbar,
+[data-sidebar] *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+[data-sidebar]::-webkit-scrollbar-thumb,
+[data-sidebar] *::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+[data-sidebar]::-webkit-scrollbar-thumb:hover,
+[data-sidebar] *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
+
 /* 设置弹窗里的滚动条比全局细一号：弹窗里左栏和内容区各有一条，10px 的轨道挤占列表宽度。
    只覆盖设置弹窗（data-settings-dialog 在 SettingsPage 的 D.Content 上），不影响其他页面 */
 [data-settings-dialog] ::-webkit-scrollbar {
