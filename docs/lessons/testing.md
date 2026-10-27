@@ -6,19 +6,19 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 加测试前先查重，同一行为只断言一处
 
-- 规则：先在同名 / 相邻测试文件和 `scripts/ui/` 里搜这条断言再写。同一输入矩阵已被穷举时别再写派生值的期望，改成「输入 → 期望」表加一条恒等断言（`childSpinning(x) === (childIcon(x) === 'running')`）。
+- 规则：先在同名 / 相邻测试文件和 `scripts/ui/` 里搜这条断言再写；输入矩阵已被穷举时派生值只留一条恒等断言（`childSpinning(x) === (childIcon(x) === 'running')`）。
 - 起因：`task-stage.test.ts` 13 条 `childSpinning` 期望和 `task.ts` 一行派生重复（12c62bf0）。
 - 防线：人工（`changed-tests.mjs --files` 列出附近已有测试）。
 
 ## 删测试只有三种理由，都不能是「跑得慢」
 
-- 规则：纯重复、被更强断言完全覆盖、被测代码已删或语义被替代，满足其一才删，结论写明属于哪种和提交。提速靠合并矩阵或降级。
+- 规则：纯重复、被更强断言完全覆盖、被测代码已删，满足其一才删，结论写明属于哪种和提交。
 - 起因：18466ce8「测试精简 7 项」删的都是这三类（`worktree.test.ts` 转 `worktree-merge.test.ts`）。
 - 防线：人工。
 
 ## 慢或偶发失败的用例降级，不删
 
-- 规则：对时钟敏感、依赖并发窗口的单测文件加进 `scripts/unit-tests.mjs` 的 `TIMING_FILES`；只等外部事件、没有真实 I/O 的用例给事件循环保活（`net.test.ts` 用 `setTimeout` 补上 `unref` 留下的空转）；并行跑时分不清是哪一通调用就别取「最后一通」，按本轮提示词匹配再 `waitFor`（`03-chat.mjs`）。
+- 规则：对时钟敏感、依赖并发窗口的单测文件加进 `scripts/unit-tests.mjs` 的 `TIMING_FILES`；只等外部事件的用例给事件循环保活（`net.test.ts` 的 `setTimeout` 补 `unref` 空转）；并行跑时分不清是哪一通调用就别取「最后一通」，按本轮提示词匹配再 `waitFor`（`03-chat.mjs`）。
 - 起因：拆成计时批和并发批后 `worktree.test.ts` 201s→17s（accfdd85）；并发上限 4 下两处「取最后一通」偶发取错（f0c802d5）。
 - 防线：`test:unit`、`test:e2e`。
 
@@ -30,7 +30,7 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 测试数量和耗时要可见，涨了写清原因
 
-- 规则：看两处——`test:unit` 的分批汇总（计时批 / 并发批各自条数和耗时）、`ui-timings.json`（界面检查分片耗时的快照，不提交）；涨了写一句原因。机器防护是 `rules-check.mjs` 第 14 条（分片文件要被 `SHARD_FILE` 收录、截图前缀认得出来，见 [ui-check.md](./ui-check.md)）。
+- 规则：看两处——`test:unit` 的分批汇总（计时批 / 并发批各自条数和耗时）、`ui-timings.json`（界面检查分片耗时的快照，不提交）；涨了写一句原因。机器防护是 `rules-check.mjs` 第 14 条（分片要被 `SHARD_FILE` 收录、截图前缀认得出来，见 [ui-check.md](./ui-check.md)）和第 4b 条（文本文件不许含裸 NUL，否则 grep 跳过整份文件）——两条管的事不同，别混说。
 - 起因：分片文件、`covers.mjs` 登记和文档三处曾经对不上（2d7daabe、af32cff0）。
 - 防线：`npm run lint`。
 

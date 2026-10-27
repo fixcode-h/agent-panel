@@ -48,8 +48,10 @@
 - [ ] **界面检查高并发下的两条 flaky** — `10-toast.mjs`「关掉全部之后又冒出来 3 条」、`01-composer.mjs`「粘贴后输入框里没有出现会话卡片」；单跑均通过、默认并发全绿时偶发，属于时序断言而非功能错 — 证据：`scripts/ui/10-toast.mjs:130`、`:185`（存活 toast 计数）、`scripts/ui/01-composer.mjs:74`–`:93`（卡片 waitFor 后断言）— 建议：先查是 `waitFor` 超时偏短还是计数前未等队列 settle，再决定收紧等待还是拆步 — P2
 - [ ] **e2e `04-subagents` 拆分以真正压低 wall** — 当前 e2e wall 由最慢单片决定，`04-subagents` 约 53.6s（交接实测，本轮未重测）— 证据：`scripts/e2e/04-subagents.mjs`、`scripts/e2e.mjs` 的分片汇总 — 建议：按「子对话派发 / 插话收尾 / 残留回归」再拆一片，注意各片共用的 fake-cli 输出目录要隔离 — P2
 - [ ] **单测「Pi 初始化超时预算」余量只有 1000ms** — `server/exec/pi-rpc.test.ts:486` 断言 `waited < budget + 1000`，负载高时容易误报（该文件其余超时已按 `vars` 注入缩短）— 证据：`server/exec/pi-rpc.test.ts:486` — 建议：把余量改成按 budget 的比例（如 1.5 倍）或改用轮询到状态出现再断 — P2
-- [ ] **`scripts/rules-check.mjs` 的编码检查会主动跳过前 8KB 含 NUL 的文件** — `scripts/rules-check.mjs:106` 仍是 `if (buf.subarray(0, 8000).includes(0)) continue`，文档里的裸 NUL 因此一直没被拦住 — 证据：`scripts/rules-check.mjs:106` — 建议：二进制判定改用扩展名白名单（图片/字体/压缩包），其余文件一律按文本检查 — P2
-- [ ] **界面检查「分片与 covers 登记对不上」只打印提示、不影响退出码** — `scripts/ui-check.mjs:72`–`:81` 发现差异只 `console.log('提示：…')`；分片清单本身已对齐（当前 `scripts/ui/` 12 片，`ui-timings.json` 也是最近一次运行的 12 片快照），剩下的是校验不阻断 — 证据：`scripts/ui-check.mjs:72`、`:81`、`:163` — P2
+- [x] **`scripts/rules-check.mjs` 的编码检查会主动跳过前 8KB 含 NUL 的文件** — 第 4 条（CRLF / BOM）仍是 `if (buf.subarray(0, 8000).includes(0)) continue`，按「前 8 KB 有 0 字节就是二进制」跳过，文档里的裸 NUL 因此拦不住 — 证据：`scripts/rules-check.mjs:108` — P2
+  （2026-10-27 已完成 · 提交 `84096b45`（实际改动 `edd7298d`）：新增独立的第 4b 条，按扩展名白名单（`.ts` / `.md` / `.json` / `.yml` 等，另加 `.editorconfig` / `.gitignore` 这类无扩展名文件）扫 `files`（`git ls-files --cached --others --exclude-standard`：受版本控制的 + 未被 .gitignore 排除的新文件，刚写进工作区、还没 `git add` 的也拦），报 `路径:行号`，同一行多个 NUL 只报一次；先用原生 `indexOf` 快速跳过，只有真含 NUL 的才顺序扫一遍算行号。第 4 条没改，仍按前 8 KB 判二进制资产——两者管的事不同：4 条判换行和 BOM，4b 判裸 NUL）
+- [x] **界面检查「分片与 covers 登记对不上」只打印提示、不影响退出码** — `scripts/ui-check.mjs:80`–`:87` 发现差异只 `console.log('提示：…')`；分片清单已对齐（`scripts/ui/` 12 片、`covers.mjs` 12 项登记一致）— 证据：`scripts/ui-check.mjs:77`–`:87` — P2
+  （2026-10-27 校正口径：只提示是**有意为之**，源码注释写明「加片和补映射可以分两次提交，别为了让检查通过先凑一行假映射」，不作为缺陷修；`ui-timings.json` 只是每次运行自己的快照（`shards` 数组），不是分片清单）
 
 ## 四、体验与功能缺口
 
