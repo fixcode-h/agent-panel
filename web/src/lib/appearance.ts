@@ -51,7 +51,8 @@ export const needsCjkFont = (cjkFont: Appearance['cjkFont']) => cjkFont === 'not
  */
 export function ensureCjkFont(cjkFont: Appearance['cjkFont']) {
   if (cjkLoad || !needsCjkFont(cjkFont)) return
-  cjkLoad = import('../fonts-cjk.css')
+  // 加载失败（产物里少了这个 CSS）就退回字体列表里的系统中文，不报错：这是纯性能优化，退化只影响字形
+  cjkLoad = import('../fonts-cjk.css').catch(() => null)
 }
 
 /** 记下的中文字体选择：index.html 存的那份是 CSS 变量，取不出这个字段，单独记一个 */
