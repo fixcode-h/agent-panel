@@ -822,3 +822,13 @@ html [data-sonner-toast][data-styled='true'] {
 }
 /* 关掉动效时不动：sonner 自己的 `@media (prefers-reduced-motion)` 会把这些过渡全禁掉，
    这里不要用 !important 把它的兜底盖回来。 */
+
+/* 设置弹窗里的滚动条比全局细一号：弹窗里左栏和内容区各有一条，10px 的轨道挤占列表宽度。
+   只覆盖设置弹窗（data-settings-dialog 在 SettingsPage 的 D.Content 上），不影响其他页面 */
+[data-settings-dialog] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+[data-settings-dialog] ::-webkit-scrollbar-thumb {
+  border-width: 2px;
+}

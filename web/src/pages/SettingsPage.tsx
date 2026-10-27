@@ -404,9 +404,12 @@ function SettingsBody({
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <nav
         aria-label={t('设置分类')}
-        className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0 md:p-3"
+        className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0 md:px-2.5 md:py-3"
       >
-        <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[1.25rem] font-semibold md:block">{t('设置')}</span>
+        {/* 左栏比弹窗高时要滚动，标题常驻在顶部：滚到下面的分类（例如 Agent）时还认得出这是设置 */}
+        <span className="sticky top-0 z-10 hidden bg-rail px-2.5 pt-1 pb-4 font-serif text-[1.25rem] font-semibold tracking-tight md:block">
+          {t('设置')}
+        </span>
         {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
           const on = s.id === 'models' ? inCli : s.id === cur.id
@@ -416,7 +419,10 @@ function SettingsBody({
               {head && (
                 // 窄屏左栏是横向的一行，不显示组名
                 <span
-                  className={cn('hidden px-2.5 pb-1 text-[0.6875rem] text-subtle md:block', i > 0 ? 'pt-3' : 'pt-0')}
+                  className={cn(
+                    'hidden px-2.5 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:block',
+                    i > 0 ? 'pt-4' : 'pt-0',
+                  )}
                 >
                   {s.group}
                 </span>
@@ -426,14 +432,14 @@ function SettingsBody({
                 aria-current={on ? 'page' : undefined}
                 aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
                 className={cn(
-                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
-                  on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
+                  on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                 )}
               >
                 {s.id === 'models' ? (
-                  <SquareTerminal className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                  <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
                 ) : (
-                  s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                  s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
                 )}
                 <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
                 {s.id === 'update' && update && (
@@ -476,13 +482,15 @@ function SettingsBody({
             return (
               <div key={s.id} className="contents">
                 {firstReady && (
-                  <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">
+                  <span className="hidden items-center justify-between px-2.5 pt-4 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:flex">
                     {t('已接入')}
-                    <span className="text-[0.65625rem] text-subtle/80">{t('拖动调整顺序')}</span>
+                    <span className="font-normal tracking-normal text-subtle/70">{t('拖动调整顺序')}</span>
                   </span>
                 )}
                 {firstOff && (
-                  <span className="hidden px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">{t('未启用')}</span>
+                  <span className="hidden px-2.5 pt-4 pb-1.5 text-[0.6875rem] font-medium tracking-wide text-subtle md:flex">
+                    {t('未启用')}
+                  </span>
                 )}
                 <button
                   onClick={() => onSection(s.id)}
@@ -509,15 +517,15 @@ function SettingsBody({
                     moveCli(s.cli.id, at + (e.key === 'ArrowUp' ? -1 : 1))
                   }}
                   className={cn(
-                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
-                    on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
+                    on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                     s.cli && dragging === s.cli.id && 'opacity-50',
                   )}
                 >
                   {s.cli ? (
                     <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
                   ) : (
-                    s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
                   )}
                   <span className="truncate">{s.label}</span>
                   {s.id === 'deploy' && deployDot && (
@@ -527,8 +535,12 @@ function SettingsBody({
                       className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
                     />
                   )}
+                  {/* 选中这一行时按钮底色就是 sel，chip 不能用 sel 的透明度：会和底色合并成同色，
+                      改用卡片色 + 细边框，在 rail（未选中）和 sel（选中）上都看得出轮廓 */}
                   {s.cli && defCli === s.cli.id && (
-                    <span className="text-[0.6875rem] font-normal text-subtle">{t('默认')}</span>
+                    <span className="rounded-full border border-line bg-card px-1.5 py-px text-[0.625rem] font-normal text-subtle">
+                      {t('默认')}
+                    </span>
                   )}
                   {s.cli && (
                     <GripVertical className="ml-auto hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
@@ -554,14 +566,19 @@ function SettingsBody({
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
-          <h2 className="min-w-0 flex-1 truncate font-serif text-[1.25rem] font-semibold">{cur.label}</h2>
+        <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-4 md:px-9 md:pt-6">
+          <h2 className="min-w-0 flex-1 truncate font-serif text-[1.25rem] font-semibold tracking-tight">
+            {cur.label}
+          </h2>
           <SaveIndicator {...save} invalid={valid ? undefined : t('超时时间需要是 0 到 1440 的整数')} />
           <DialogCloseButton label={t('关闭设置')} />
         </header>
         {/* 这一节有多个小节时，标题下面多一条页内导航（见 section-nav.tsx） */}
         <SectionToc />
-        <div ref={setSectionScroll} className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
+        <div
+          ref={setSectionScroll}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-12 [scrollbar-gutter:stable] md:px-9"
+        >
           {cur.id === 'styles' && <StylesSettings />}
           {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
           {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
@@ -1257,7 +1274,8 @@ export function SettingsDialog({
           aria-describedby={undefined}
           // 点设置外面的空白处不关闭，避免改到一半误关；用右上角的关闭按钮或 Esc 关闭
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+          data-settings-dialog
+          className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <D.Title className="sr-only">{t('设置')}</D.Title>
           {settings && <SettingsBody key={rev} initial={settings} section={cur} onSection={setCur} />}
