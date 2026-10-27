@@ -36,9 +36,9 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 断言要真的打到被测逻辑，且不依赖界面语言
 
-- 规则：e2e 请求要满足全局中间件（Host / Origin、JSON 请求体，否则 415），断言具体错误，不只看状态码。断言 `t()` 文案时期望值用同一个 `t()` 生成（`summary.test.ts`），或只断言状态码、错误码；确要比中文才在文件顶部 `setLang('zh')`，别靠环境变量——后加载会盖掉它。
-- 起因：3aa0b22 越权测试被 415 拦下；3ab9a8d、ded5239c 两次英文环境单测失败。
-- 防线：`LANG=en_US.UTF-8 npm run test:unit`。
+- 规则：e2e 请求要走中间件（Host/Origin、JSON 体，否则 415）。文案断言的期望值都取 `t()`：能 `assert.equal(x, t('…', { name }))` 就别 `assert.match(x, /中文/)`；要正则就 `new RegExp(t('…'))` 并转义。或顶部 `setLang('zh')`（环境变量会被盖掉）。
+- 起因：3aa0b22 被 415 拦；3ab9a8d、ded5239c 英文环境挂；`summary.test.ts` 先例又在 `cleanup.test.ts` 4 处、`schedules.test.ts` 8 处写死中文。
+- 防线：改断言后 `LANG=en_US.UTF-8` 跑该文件；全量同前缀。
 
 ## 假 CLI 与 e2e 分片：场景写进分片，资源和合并走 harness
 
