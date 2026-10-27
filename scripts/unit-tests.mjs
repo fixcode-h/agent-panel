@@ -10,6 +10,10 @@
  *   node scripts/unit-tests.mjs          # 两批都跑（npm run test:unit）
  *   node scripts/unit-tests.mjs timing   # 只跑计时文件，串行
  *   node scripts/unit-tests.mjs rest     # 只跑其余文件，默认并发
+ *   node scripts/unit-tests.mjs --files a.test.ts,b.test.ts   # 只跑指定文件（test:affected 用）
+ *
+ * --files 的文件清单由 scripts/changed-tests.mjs 按影响面分析算出来；这里仍然按
+ * timing / rest 两批跑，所以按影响面临时选出来的计时文件也不会和别人抢 CPU。
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
@@ -67,7 +71,30 @@ function listTests(dir, suffix) {
   return out
 }
 
-const argv = process.argv.slice(2)
+/**
+ * 取出 --files（`--files a.test.ts,b.test.ts` 或 `--files=a,b`）：受影响的单测文件由
+ * scripts/changed-tests.mjs 算出来，这里只负责按 timing / rest 两批跑它们。
+ */
+function splitFilesArg(list) {
+  const files = []
+  const rest = []
+  for (let i = 0; i < list.length; i++) {
+    const arg = list[i]
+    if (arg === '--files') {
+      files.push(...String(list[++i] ?? '').split(','))
+      continue
+    }
+    if (arg.startsWith('--files=')) {
+      files.push(...arg.slice('--files='.length).split(','))
+      continue
+    }
+    rest.push(arg)
+  }
+  return { files: files.map((s) => s.trim()).filter(Boolean), rest }
+}
+
+const { files: given, rest: argvAfterFiles } = splitFilesArg(process.argv.slice(2))
+const argv = argvAfterFiles
 const which = ['timing', 'rest'].includes(argv[0]) ? argv[0] : ''
 // 第一个位置参数只能是 timing / rest；其余参数原样透传给 node --test，
 // 保持原来的用法（`npm run test:unit -- --test-name-pattern 桥接` 也不受影响）。
@@ -77,6 +104,10 @@ if (!which && argv[0] && !argv[0].startsWith('-')) {
   process.exit(1)
 }
 const extra = which ? argv.slice(1) : argv
+if (given.length && which) {
+  console.error('--files 和 timing / rest 不能同时用：指定了文件就只跑这些文件')
+  process.exit(1)
+}
 if (!existsSync(TSX_CLI)) {
   // 启动校验失败直接退出：这里没有后续内容要跑，exit() 的截断风险只影响长输出
   console.error(`找不到 tsx（${TSX_CLI}）：这个目录还没装依赖，先跑 npm ci`)
@@ -101,9 +132,22 @@ function run(files, extra = []) {
 }
 
 const batches = []
-// 计时文件先跑：整轮有失败时也能先看到最容易抖的那批结果
-if (which !== 'rest') batches.push(['计时文件（串行）', TIMING_FILES, [...extra, '--test-concurrency=1']])
-if (which !== 'timing') batches.push(['其余文件（默认并发）', rest, extra])
+if (given.length) {
+  // 指定的文件必须都是这套规则认识的文件：拼错或改了名时宁可直接失败，也不能静默少跑
+  const unknown = given.filter((file) => !all.includes(file))
+  if (unknown.length) {
+    console.error(`--files 里有不认识的测试文件：${unknown.join('、')}`)
+    process.exit(1)
+  }
+  const timing = all.filter((file) => given.includes(file) && TIMING_FILES.includes(file))
+  const others = all.filter((file) => given.includes(file) && !TIMING_FILES.includes(file))
+  batches.push(['指定的计时文件（串行）', timing, [...extra, '--test-concurrency=1']])
+  batches.push(['指定的其余文件（默认并发）', others, extra])
+} else {
+  // 计时文件先跑：整轮有失败时也能先看到最容易抖的那批结果
+  if (which !== 'rest') batches.push(['计时文件（串行）', TIMING_FILES, [...extra, '--test-concurrency=1']])
+  if (which !== 'timing') batches.push(['其余文件（默认并发）', rest, extra])
+}
 
 let exitCode = 0
 for (const [label, files, opts] of batches) {

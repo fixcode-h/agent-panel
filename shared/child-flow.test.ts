@@ -266,6 +266,8 @@ test('父对话测试没过、已退回修复：说法是「测试没通过」�
     plans: [],
     steps: [],
     wrapRequest: wrap,
+    resolved: false,
+    awaitingUser: false,
   }
   const r = childReport(task)
   assert.equal(r.state, 'wrapup', '合回了、只是测试没过：仍然是待收尾，不是「未完成 / 还没请收尾」')

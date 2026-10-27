@@ -67,17 +67,18 @@ export function stepGlobs(step: Pick<TestStep, 'appliesTo'>) {
 }
 
 /**
- * 这条步骤对这批改动适不适用（scope = changed 时用）——匹配判定的唯一实现，单测和执行流程都走它。
+ * 这条步骤对这批改动适不适用——匹配判定的唯一实现，单测和执行流程都走它。
  * 口径是「这次任务实际波及的改动」：自己改的、从远端拉取或合并进来的都算。
  * 三种范围：
  * - always：不看改动清单，每次都跑（类型检查、lint）。
  * - changed：改动命中 appliesTo 才跑；没写 appliesTo 时按总是执行——老步骤的写法不能因为升级变成从不跑。
- * - parent：父对话合并后跑全量时才用它，这里一律返回 true（子对话侧由 parentRunSteps 整条跳过，不调这个）。
+ * - parent：子对话侧由 parentRunSteps 整条跳过；父对话合并后跑它时也按子对话的改动筛（调用方传子对话的清单），
+ *   和「改动没命中的步骤不跑」同一个口径；父对话自己验证时也按自己的改动筛（见 CHANGED_FILES_RULE）。
  * 两种情况按总是执行：没写适用范围；改动清单为空——空清单意味着取不到（没有版本控制、命令失败、
  * 不知道基线），未知不等于不相关，宁可多跑不能漏跑。
  */
 export function stepApplies(step: Pick<TestStep, 'appliesTo' | 'scope'>, changedFiles: string[]) {
-  if (step.scope === 'always' || step.scope === 'parent') return true
+  if (step.scope === 'always') return true
   const globs = stepGlobs(step)
   if (!globs.length || !changedFiles.length) return true
   return changedFiles.some((f) => globs.some((g) => matchesGlob(f, g)))
@@ -134,6 +135,104 @@ export function currentTestSteps(
  */
 export function parentRunSteps(steps: TestStep[]) {
   return steps.filter((s) => s.enabled && s.scope === 'parent' && !s.merge && !!s.command.trim())
+}
+
+/** 按改动清单筛步骤的结果：提示词、父对话测试队列和界面都读这一份 */
+export interface StepPick {
+  /** 这轮该跑的步骤（保持项目里的顺序，只含启用的） */
+  run: TestStep[]
+  /** 启用了但按改动跳过、这轮不用跑的步骤 */
+  skipped: TestStep[]
+  /**
+   * 有改动清单，但一条「按改动筛」的步骤都没命中。这时不能少跑：调用方要把全部启用的步骤跑一遍
+   * （父对话测试队列就是这么做的），并在提示词里明确说出来
+   */
+  nothingMatched: boolean
+}
+
+/**
+ * 按改动清单算出这轮该跑的步骤：总是执行的照跑，其余按 appliesTo 筛。
+ * 只会返回启用的步骤；停用的既不算该跑也不算跳过。
+ * 一条都没命中时不替调用方决定跑什么，只把 `nothingMatched` 标出来——
+ * 提示词里要建议跑全部，静默少跑比多跑危险得多
+ */
+export function pickSteps(steps: TestStep[], changedFiles: string[]): StepPick {
+  const enabled = steps.filter((s) => s.enabled)
+  const run: TestStep[] = []
+  const skipped: TestStep[] = []
+  let filtered = 0
+  let hit = false
+  for (const s of enabled) {
+    if (s.scope === 'always') {
+      run.push(s)
+      continue
+    }
+    // 没写适用范围的步骤按总是执行，不参与「有没有命中」的判定
+    if (!stepGlobs(s).length) {
+      run.push(s)
+      continue
+    }
+    filtered++
+    if (stepApplies(s, changedFiles)) {
+      hit = true
+      run.push(s)
+    } else skipped.push(s)
+  }
+  return { run, skipped, nothingMatched: !!changedFiles.length && filtered > 0 && !hit }
+}
+
+/** 提示词里最多列多少个改动文件：够 Agent 判断这批改动是干什么的，又不把提示词撑大 */
+const PICK_FILES_PREVIEW = 20
+
+/**
+ * 交给 Agent 的「本轮该跑的步骤 + 命令」：服务端已经按改动清单算好，Agent 不用自己再筛。
+ * 给 Agent 的提示词不翻译，这里直接写中文（和 CHANGED_FILES_RULE 一致）
+ */
+export function pickStepsText(
+  pick: StepPick,
+  o: {
+    platform: string
+    wslDistro?: string
+    changedFiles: string[]
+    /** 子对话侧：范围为 parent 的步骤要标出「父对话跑」，免得和「你不要跑」的规则打架 */
+    parentRun?: 'child' | 'parent'
+    /** 项目开着「按改动大小定范围」：每条标出是否小改动也跑，免得注入结论和同段的「小改动只跑快速」打架 */
+    quickHint?: boolean
+  },
+) {
+  const files = o.changedFiles.slice(0, PICK_FILES_PREVIEW)
+  const more = o.changedFiles.length > files.length ? ` 等 ${o.changedFiles.length} 个` : ''
+  const lines = ['## 本轮该跑的测试步骤（服务端已按改动清单算好，照这个跑，不用自己再筛）']
+  // 这一节管「哪几条测试步骤」，定位脚本管「单测文件 / 界面分片」：两层分工要写明，且「必须全量」优先
+  lines.push(
+    '- 这一节管「项目里哪几条测试步骤要跑」；单测文件 / 界面分片跑哪些由定位脚本（changed-tests.mjs）算，两者分工不同。定位脚本判「必须全量」时按它跑那一项（优先于下面的「父对话跑」标注）。',
+  )
+  // 清单为空表示取不到改动（没有版本控制、命令失败、不知道基线）：未知不等于不相关，按全部启用的步骤跑
+  lines.push(
+    files.length ? `- 改动文件：${files.join('、')}${more}` : '- 改动清单为空（取不到改动）：按全部启用的步骤跑',
+  )
+  if (o.quickHint)
+    lines.push('- 小改动只跑标「快速」的步骤，其余步骤判定为大改动再跑（判定规则见下面「验证按改动大小定」）。')
+  if (pick.run.length) {
+    lines.push('- 本轮该跑：')
+    pick.run.forEach((s, i) => {
+      // 由父对话跑的步骤仍然列出命令，但写清「你不要跑」：两边看的是同一份清单，不能只说规则
+      const owner = s.scope === 'parent' && !s.merge && o.parentRun === 'child' ? '（父对话跑，你不要跑）' : ''
+      // 合并编译归父对话（ADR 0004），子对话侧不能让它看起来能直接跑
+      const merge = s.merge ? (o.parentRun === 'child' ? '（合并时编译，父对话跑）' : '（合并时编译）') : ''
+      const hint = o.quickHint ? (s.quick ? '（快速）' : '（大改动才跑）') : ''
+      lines.push(
+        `${i + 1}. ${s.name}${owner}${merge}${hint}（${ENV_LABEL[s.env]}）：${stepCommand(s, o.platform, o.wslDistro ?? '')}`,
+      )
+    })
+  } else lines.push('- 本轮该跑：没有')
+  // 一条都没命中时只能给一个结论：先别再列「跳过（不用跑）」，否则和「建议跑全部」互相矛盾
+  if (pick.nothingMatched) lines.push('- 改动映射不到任何步骤：照上面的完整列表跑全部启用的步骤，不要当成可以少跑。')
+  else if (pick.skipped.length)
+    lines.push(
+      `- 按改动跳过（不用跑）：${pick.skipped.map((s) => `${s.name}（不涉及 ${appliesToText(s)}）`).join('、')}`,
+    )
+  return lines.join('\n')
 }
 
 /**
@@ -201,6 +300,73 @@ export function testRunLines(runs: TaskTestRun[]) {
     (r) =>
       `- ${r.stepName}：${testRunByText(r.by)}跑，${r.ok ? t('通过') : t('失败')}，${fmtDuration(r.durationMs)}${r.tries > 1 ? t('（第 {n} 次，按最后一次算）', { n: r.tries }) : ''}`,
   )
+}
+
+/** 界面上的一条测试记录：字段只从已有数据来，缺失的写「未记录」，不猜 */
+export interface TestRunRow {
+  key: string
+  stepName: string
+  byText: string
+  state: 'passed' | 'failed' | 'unrecorded'
+  resultText: string
+  durationText: string
+  tries: number
+}
+
+/** 对话页「测试记录」那一块的全部数据：界面只负责画，不自己算口径 */
+export interface TestRunSummary {
+  rows: TestRunRow[]
+  passed: number
+  failed: number
+  unrecorded: number
+  /** 已记录行的耗时合计（未记录的不当 0 加进去） */
+  durationMs: number
+  durationText: string
+  /** 有记录、且全部通过：界面用它决定是否标绿 */
+  allPassed: boolean
+}
+
+const TEST_RUN_RESULT_TEXT = {
+  passed: () => t('通过'),
+  failed: () => t('失败'),
+  unrecorded: () => t('未记录'),
+} as const
+
+/**
+ * 测试记录怎么显示：一行一步，带执行方、结果、真实耗时和第几次尝试。
+ * 结果只认记录时间：旧数据没有 `at` 时说不清是真失败还是没记上，写「未记录」而不是当成失败；
+ * 耗时 0 同理写「未记录」，不写成「0s」让人以为真的没花时间
+ */
+export function testRunSummary(runs: TaskTestRun[]): TestRunSummary {
+  let passed = 0
+  let failed = 0
+  let unrecorded = 0
+  let durationMs = 0
+  const rows = runs.map((r, i): TestRunRow => {
+    const state: TestRunRow['state'] = !r.at ? 'unrecorded' : r.ok ? 'passed' : 'failed'
+    if (state === 'passed') passed++
+    else if (state === 'failed') failed++
+    else unrecorded++
+    if (state !== 'unrecorded' && r.durationMs > 0) durationMs += r.durationMs
+    return {
+      key: `${r.by}:${r.stepId}:${i}`,
+      stepName: r.stepName,
+      byText: testRunByText(r.by),
+      state,
+      resultText: TEST_RUN_RESULT_TEXT[state](),
+      durationText: state === 'unrecorded' || r.durationMs <= 0 ? t('未记录') : fmtDuration(r.durationMs),
+      tries: r.tries,
+    }
+  })
+  return {
+    rows,
+    passed,
+    failed,
+    unrecorded,
+    durationMs,
+    durationText: durationMs > 0 ? fmtDuration(durationMs) : t('未记录'),
+    allPassed: rows.length > 0 && failed === 0 && unrecorded === 0,
+  }
 }
 
 /**
@@ -312,12 +478,13 @@ export const FLAKY_TEST_RULE = `单测里计时类用例偶发失败（\`pi-rpc\
  */
 export const CHILD_INCREMENTAL_RULE = `## 子对话只跑增量测试
 你只跑本轮的「增量测试」，全量交给父对话合并后跑（结果会回传给你）：
-1. 先定位这轮要跑什么，别整套照搬：项目里有按改动清单定位测试的脚本就用它（例如 \`node scripts/changed-tests.mjs --since <任务基线>\`，输出要跑的单测文件、界面检查分片和映射不出来的改动）；没有这类脚本时按自己的约定找——改 \`a.ts\` 找 \`a.test.ts\`、同目录的测试，以及 import 了它的测试；改界面组件只跑对应的界面检查分片（用**完整分片名**筛，例如 \`node scripts/ui-check.mjs 09-summary\`；只写 \`09\` 会多跑 09-hint / 09-plans）。
+1. 先定位这轮要跑什么，别整套照搬：项目里有按改动清单定位测试的脚本就用它（例如 \`node scripts/changed-tests.mjs --since <任务基线>\`）。这类脚本按 import 依赖图算**影响面**：所有直接和间接依赖改动的文件、它们的同名测试、以及被测试间接依赖的文件都算命中，输出「单测文件（增量）/ 界面分片（增量）/ 是否必须跑全量（理由）」和可直接执行的命令（必须全量时给的就是全量命令）；\`npm run test:affected\`（同一个脚本加 \`--run\`）会按结论直接跑单测——改动已经提交时它看不到改动，要带基线：\`npm run test:affected -- --since <任务基线>\`。没有这类脚本时按自己的约定找——改 \`a.ts\` 找 \`a.test.ts\`、同目录的测试，以及（直接或间接）import 了它的测试；改界面组件只跑对应的界面检查分片（用**完整分片名**筛，例如 \`node scripts/ui-check.mjs 09-summary\`；只写 \`09\` 会多跑 09-hint / 09-plans）。
 2. 范围是「总是跑」的照常跑；范围是「命中适用改动才跑」的，改动命中「适用改动」才跑，而且只跑命中的那部分（命中的单测文件、命中的界面分片），不要跑整套。
-3. 范围是「全量，合并后由父对话跑」的步骤：那条全量命令本身不要跑（父对话合并后会跑全量），但**单测和界面检查要用第 1 步定位到的增量命令覆盖命中的部分**——命中几个单测文件就跑 \`npx tsx --test <这些文件>\`（或项目自己的单文件命令），命中几个界面分片就跑 \`node scripts/ui-check.mjs <完整分片名>\`。这些增量命令是不算「跑过那条全量步骤」的替代验证，收尾总结里照实写（例如「单元测试：自己跑，增量 3 个文件，通过」）。e2e 没有增量替代，直接交给父对话。
-4. **不要跑全量单测、不要跑全量界面检查、不要跑端到端测试**：跑了不算数，还拖慢收尾。
-5. 映射不出来时（这批改动没有对应的增量测试）显式写一行「这批改动没有对应的增量测试，交给父对话全量」，照常收尾；不要为了保险跑全量，也不要静默跳过。
-6. ${FLAKY_TEST_RULE}`
+3. 范围是「全量，合并后由父对话跑」的步骤：那条全量命令本身不要跑（父对话合并后会跑全量），但**单测和界面检查要用第 1 步定位到的增量命令覆盖命中的部分**——命中几个单测文件就跑定位脚本给出的单测命令（例如 \`node scripts/unit-tests.mjs --files <这些文件>\`），命中几个界面分片就跑 \`node scripts/ui-check.mjs <完整分片名>\`。这些增量命令是不算「跑过那条全量步骤」的替代验证，收尾总结里照实写（例如「单元测试：自己跑，增量 3 个文件，通过」）。e2e 没有增量替代，直接交给父对话。
+4. 定位脚本说「必须跑全量」时按它跑，不用管它给的是哪一类理由（高风险区、影响面接近全量、依赖图算不出来、改动含删除或改名，或其他理由）：那说明增量挑不出可靠范围，跑全量对应的那一项（单测或界面检查），把脚本给的理由写进结果，不要自己再缩回增量；e2e 仍然直接交给父对话。**这一条优先于下面「本轮该跑的测试步骤」里「父对话跑」的标注**：定位脚本判必须全量时，那一项由你自己跑，不要等父对话。
+5. **除第 4 条的情况外不要跑全量单测、不要跑全量界面检查、不要跑端到端测试**：跑了不算数，还拖慢收尾。
+6. 映射不出来时（这批改动没有对应的增量测试）显式写一行「这批改动没有对应的增量测试，交给父对话全量」，照常收尾；不要为了保险跑全量，也不要静默跳过——但定位脚本已经判「必须全量」时按第 4 条跑，不要用这一条缩回增量。
+7. ${FLAKY_TEST_RULE}`
 
 /**
  * 注入工作流说明后面的项目测试步骤。没有配置时给出兜底：让 Agent 自己找命令，并在结果里建议配置。
@@ -346,7 +513,14 @@ export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = 
  */
 export function verifyBlock(
   steps: TestStep[],
-  o: { platform: string; wslDistro?: string; scaled: boolean; parentRun?: 'child' | 'parent' },
+  o: {
+    platform: string
+    wslDistro?: string
+    scaled: boolean
+    parentRun?: 'child' | 'parent'
+    /** 本次实际改了什么：传了就在提示词里直接给出「本轮该跑哪几条 + 命令」，不传就只给规则 */
+    changedFiles?: string[]
+  },
 ) {
   const active = steps.filter((s) => s.enabled)
   const quick = active.filter((s) => s.quick)
@@ -357,7 +531,7 @@ export function verifyBlock(
     ? o.parentRun === 'child'
       ? `\n这些步骤的范围是「全量，合并后由父对话跑」：${inParent.map((s) => `「${s.name}」`).join('、')}。你不要跑它们的全量命令（跑了也不算数，父对话会重新跑），也不要在结果里写跑过；但单测和界面检查仍要用增量命令覆盖命中的单测文件 / 界面分片（见上面的增量规则），e2e 没有增量替代、直接交给父对话。合并后面板由父对话跑全量，结果回传给你。你的完成条件是「改动已合回父对话所在的分支 + 父对话测试通过」；父对话测试失败时面板会把报错原文推回来，按它修好再调用 submit_merge。`
       : o.parentRun === 'parent'
-        ? `\n这些步骤的范围是「全量，合并后由父对话跑」（只对子对话生效）：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按清单执行。跑完之前，你计划里等那个子对话的步骤保持等待。`
+        ? `\n这些步骤的范围是「全量，合并后由父对话跑」（只对子对话生效）：${inParent.map((s) => `「${s.name}」`).join('、')}。子对话不跑它们；子对话合并成功后由面板在你的目录里自动跑（后台命令名里带子对话的名字），结果直接回传给对应的子对话，你不用转述。但**你自己改代码时没人替你跑**（没有子对话合并这一步）：这些步骤照常由你自己按改动清单筛完执行（见上面「本轮该跑的测试步骤」，如果有的话）。跑完之前，你计划里等那个子对话的步骤保持等待。`
         : ''
     : ''
   // 子对话带完整的增量规则（含抖动怎么重跑）；其它对话只补抖动重跑那条，不改它们的全量口径
@@ -366,6 +540,17 @@ export function verifyBlock(
     ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）:
 ${testStepsText(shown, o.platform, o.wslDistro, o.parentRun ?? '')}`
     : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
+  // 按改动清单算好的结论：有了它 Agent 不用自己再筛，也不会“为了保险全跑一遍”
+  const picked = o.changedFiles
+    ? `\n\n${pickStepsText(pickSteps(active, o.changedFiles), {
+        platform: o.platform,
+        wslDistro: o.wslDistro,
+        changedFiles: o.changedFiles,
+        parentRun: o.parentRun,
+        // 开着「按改动大小定范围」时，注入段要自己标清哪条是小改动也跑的，不能和同段规则各说一套
+        quickHint: o.scaled,
+      })}`
+    : ''
   if (!o.scaled)
     return `## 验证
 ${
@@ -376,7 +561,7 @@ ${
 ${CHANGED_FILES_RULE}
 ${incremental}
 
-${list}${parentNote}`
+${list}${picked}${parentNote}`
   const fast = quick.length
     ? `只跑标「快速」的步骤（${quick.map((s) => s.name).join('、')}）`
     : '挑一个最快的检查跑（类型检查、lint 或改动文件的语法检查，几十秒内跑完的）'
@@ -389,7 +574,7 @@ ${incremental}
 - 其他都算大改动：按筛选后的步骤完整跑一遍（太长的放到后台），不要为了保险全部跑一遍。
 - 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
 - 回复里用一句话写明按哪种验证的、跑了什么，跳过的步骤写清原因。
-${list}${parentNote}`
+${list}${picked}${parentNote}`
 }
 
 /** 新建项目时的默认步骤：按技术栈给一份够用的，用户确认后保存才生效 */

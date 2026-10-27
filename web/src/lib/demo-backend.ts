@@ -59,7 +59,14 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
-import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
+import {
+  BUILD_OUTPUTS,
+  CleanupReport,
+  DATA_KINDS,
+  WorktreeCleanup,
+  type DataKind,
+  type MemoryUsage,
+} from '@shared/data'
 import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
@@ -116,6 +123,8 @@ import {
   dropEndNotes,
   endRun,
   helpersWorking,
+  messagePage,
+  taskMessageRev,
   newTask,
   questionAnswers,
   runRunning,
@@ -816,7 +825,7 @@ function persist() {
 }
 
 // ---- 设置里的「数据」：演示没有用户目录，按浏览器里存的演示数据估算占用，导入导出用同样的备份格式 ----
-const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) => Record<string, unknown>> = {
+const DEMO_DATA_FILES: Record<'config' | 'projects' | 'tasks', (d: Db) => Record<string, unknown>> = {
   config: (d) => ({
     'settings.json': d.settings ?? Settings.parse({}),
     'config/agents.json': d.agents,
@@ -880,6 +889,54 @@ function demoDataMemory(d: Db, now = Date.now()): MemoryUsage {
   }
 }
 
+/**
+ * 清理面板的演示数据：对话工作目录 + 构建产物。
+ * 字段和正式的 CleanupReport 一致，演示里看不见的那几个大小是编的
+ */
+function demoCleanup(): CleanupReport {
+  const MB = 1024 * 1024
+  return CleanupReport.parse({
+    chats: {
+      bytes: 316 * MB,
+      files: 1648,
+      top: [
+        {
+          id: 'demo-flight',
+          title: '抓网页快照',
+          bytes: 302 * MB,
+          files: 1560,
+          trashed: false,
+          running: false,
+          orphan: false,
+        },
+        {
+          id: 'demo-old',
+          title: '调研过的一个旧对话',
+          bytes: 12 * MB,
+          files: 88,
+          trashed: true,
+          running: false,
+          orphan: false,
+        },
+        // 记录已经删了、目录还在（删对话时文件被占用）：界面上要能列出来清掉
+        { id: 'demo-orphan', title: '', bytes: 2 * MB, files: 40, trashed: false, running: false, orphan: true },
+      ],
+      more: 0,
+    },
+    builds: BUILD_OUTPUTS.map((b, i) => ({ id: b.id, bytes: (i + 1) * 24 * MB, present: true })),
+  })
+}
+
+/** 独立分支这块单独一个接口（真机要跑 git 判定、递归四 GB），演示数据同样分开给 */
+function demoWorktrees(): WorktreeCleanup {
+  const MB = 1024 * 1024
+  return WorktreeCleanup.parse({
+    bytes: 3.6 * 1024 * MB,
+    stale: [{ dir: 'worktrees/agent-panel/demo-1', bytes: 210 * MB, reason: '任务已收口、改动都已合回原分支' }],
+    staleBytes: 210 * MB,
+  })
+}
+
 function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
   if (!action && method === 'GET') {
     const kinds = DATA_KINDS.map((k) => {
@@ -888,6 +945,11 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
         return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
       }
       if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      // 工作目录和下面的清理清单用同一份演示数据，两个数字对得上
+      if (k.id === 'workspace') {
+        const c = demoCleanup()
+        return { id: k.id, files: c.chats.files, bytes: c.chats.bytes }
+      }
       const files = Object.values(DEMO_DATA_FILES[k.id](d))
       return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
     })
@@ -895,6 +957,14 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
   }
   // 内存曲线按采样间隔刷新：演示版也返回同样的结构，曲线和「AI 分析」都能试
   if (action === 'memory' && method === 'GET') return demoDataMemory(d)
+  // 清理：演示数据只给一份固定的清单，点了清理不真的改（下次刷新还是这样）
+  if (action === 'cleanup' && method === 'GET') return demoCleanup()
+  if (action === 'cleanup/worktrees' && method === 'GET') return demoWorktrees()
+  if (action === 'cleanup/chat' && method === 'POST') return { ok: true, bytes: 302 * 1024 * 1024 }
+  if (action === 'cleanup/worktrees' && method === 'POST')
+    return { ok: true, removed: 1, failed: 0, bytes: 210 * 1024 * 1024 }
+  if (action === 'cleanup/builds' && method === 'POST')
+    return { ok: true, bytes: BUILD_OUTPUTS.length * 24 * 1024 * 1024 }
   if (action === 'reveal') fail('在线演示不能打开本机目录')
   if (action === 'clear') {
     const k = (body as { kind: DataKind }).kind
@@ -2104,7 +2174,7 @@ function route(method: string, url: string, body: unknown): unknown {
     demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
     return a
   }
-  if (res === 'data') return demoData(d, id, method, body, query)
+  if (res === 'data') return demoData(d, [id, sub].filter(Boolean).join('/'), method, body, query)
   if (res === 'project-docs') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     if (sub === 'optimize') return startDemoDocJob(body)
@@ -3417,9 +3487,22 @@ function tasksRoute(
   // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
   // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
   const withLive = { ...task, cliAlive: demoCliAlive(task) }
-  // 父对话再带上名下在跑的子对话数（和正式版一样不带给子对话，见 server/tasks.ts 的 withLive）
-  if (task.parentTaskId) return withLive
-  return { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  const full = task.parentTaskId
+    ? withLive
+    : { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
+  const limit = Number(query.get('limit') ?? '')
+  if (!Number.isInteger(limit) || limit <= 0) return full
+  const page = messagePage(full.messages, limit, query.get('before') ?? '')
+  return {
+    ...full,
+    messages: page.messages,
+    messageTotal: page.total,
+    messageHasMore: page.hasMore,
+    ...(page.anchorMissing ? { messageAnchorMissing: true } : {}),
+    // 和正式后端一致：整份都在这一份里时带上版本（前端拿它建 SSE，首包只补发增量）
+    ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
+  }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
@@ -4121,6 +4204,29 @@ async function seedTasks(d: Db) {
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
+    ]
+    // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
+    // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    task.testRuns = [
+      {
+        stepId: 'node-e2e',
+        stepName: '端到端测试',
+        by: 'parent',
+        ok: true,
+        durationMs: 94_000,
+        tries: 1,
+        at: testedAt,
+      },
+      {
+        stepId: 'node-typecheck',
+        stepName: '类型检查',
+        by: 'self',
+        ok: false,
+        durationMs: 1_200,
+        tries: 2,
+        at: testedAt,
+      },
     ]
     persist()
   }

@@ -1,7 +1,7 @@
 import { coreDefinition, withProjectParams } from '../shared/builtin/core.ts'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   FollowUpInput,
@@ -70,8 +70,12 @@ import {
   waitDuration,
   idleWaitDuration,
   newTask,
+  messagePage,
+  taskMessageRev,
+  taskRevOffset,
   taskDeleted,
   taskGone,
+  taskSettled,
   trashLeftDays,
   taskSummary,
   withAttachments,
@@ -154,6 +158,7 @@ import {
   mergeTestRun,
   parentRunRoleOf,
   parentRunSteps,
+  pickSteps,
   stepCommand,
   testRunLines,
 } from '../shared/test-steps.ts'
@@ -198,7 +203,7 @@ import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOver
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, releaseIfSame, reserveOnce } from './slots.ts'
 import { childEnv, isProcessAlive, killTree, taskCliAlive } from './exec/process.ts'
-import { trackedClis, untrackCliProcess } from './exec/orphans.ts'
+import { trackedClis, untrackCliProcess, killTaskClis, reapSettledTaskClis } from './exec/orphans.ts'
 import {
   HISTORY_CAPACITY,
   SAMPLE_INTERVAL_MS,
@@ -234,6 +239,12 @@ const HELPER_STOP_POLL_MS = 150
 /** 对话搜索的缓存上限：留多少个对话、合计多少字符（超了按最久没用的丢，见 cachedMessages） */
 const SEARCH_CACHE_TASKS = 40
 const SEARCH_CACHE_CHARS = 8_000_000
+
+/**
+ * 兜底回收「任务已收口、CLI 还活着」时给的缓冲：停止是异步的（3 秒后才补杀），
+ * 别把正在退出的进程当僵尸再杀一次、再写一条日志
+ */
+const REAP_GRACE_MS = 60_000
 
 /** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
 const p4Dirs = new Map<string, Promise<boolean>>()
@@ -1340,6 +1351,27 @@ export function tasksApi(deps: {
   /** 这个子对话要由父对话跑的步骤（见 parentStepsOf 的说明） */
   const parentStepsOf = async (tk: Task) => parentRunSteps(await testStepsOf(tk))
 
+  /**
+   * 父对话合并后真正要排进队列的步骤：在 parentRunSteps 的基础上按子对话的实际改动筛（stepApplies）。
+   * 一条都没命中就照旧跑全部——静默少跑比多跑危险，和测试步骤规则里「映射不出来跑全部」同一个口径。
+   * 子对话的改动清单取不到（空）时 pickSteps 会返回全部，正好也是保守的那一侧
+   */
+  const parentTestStepsOf = async (tk: Task) => {
+    const steps = await parentStepsOf(tk)
+    const pick = pickSteps(
+      steps,
+      tk.changes.map((c) => c.path),
+    )
+    if (pick.nothingMatched) {
+      log.info('task', '父对话测试：改动映射不到任何适用步骤，按全部跑', {
+        task: tk.id,
+        changes: tk.changes.length,
+      })
+      return steps
+    }
+    return pick.run
+  }
+
   /** 这个子对话是否在等父对话测试：任务上的状态（重启后还在）+ 内存里的队列 */
   const parentTesting = (childId: string, tk: Pick<Task, 'wrapRequest'>) =>
     tk.wrapRequest?.state === 'testing' || parentTests.statusOf(childId) !== ''
@@ -1357,7 +1389,7 @@ export function tasksApi(deps: {
         await store.update(tk.id, tk)
         continue
       }
-      const steps = await parentStepsOf(tk)
+      const steps = await parentTestStepsOf(tk)
       if (!steps.length) {
         await childMerged(tk.id, '【父对话测试】项目里已经没有要由父对话跑的测试步骤了，直接收尾。').catch((e) =>
           log.warn('task', '没有父对话测试步骤时收尾失败', { task: tk.id, error: (e as Error).message }),
@@ -1832,7 +1864,7 @@ export function tasksApi(deps: {
     }
     // 范围为 parent 的步骤（ADR 0018 / 0020）：合回后由面板在这儿跑，跑完才让子对话收尾。
     // 不能先 childMerged：那一步会标完成、清 wrapRequest、收口删分支，父对话测试还没跑就没得修了
-    const parentSteps = await parentStepsOf(tk)
+    const parentSteps = await parentTestStepsOf(tk)
     if (parentSteps.length) {
       await startParentTests(tk, parentSteps)
       return {
@@ -1882,19 +1914,37 @@ export function tasksApi(deps: {
   const childActive = (tk: Task) =>
     startQueue.has(tk.id) || hasHeld(tk.id) || convActive(convState(childFacts(tk, { background: pendingJobs(tk.id) })))
 
-  /** 名下还在运行的子对话数：all 是已经取好的任务列表（列表接口一次算完所有父对话） */
-  async function activeChildren(parentId: string, all?: Task[]) {
-    let n = 0
-    for (const k of all ?? (await store.list()))
-      if (k.parentTaskId === parentId && childActive(live.get(k.id)?.task ?? k)) n++
-    return n
+  /**
+   * 名下子对话的计数（还在跑的、CLI 还活着的）：一次 store.list() 把所有父对话的都算出来，
+   * 结果留 1 秒。SSE 对每个打开的对话每秒问一次、执行中的对话每 200ms 就先算一次，
+   * 不缓存的话父对话开得越多，每秒扫整份任务列表的次数越多（每个父对话 2 次）
+   */
+  const CHILD_COUNT_TTL = 1000
+  let childScan: { at: number; byParent: Map<string, { working: number; cli: number }> } | null = null
+  async function childCountsOf(parentId: string) {
+    const now = Date.now()
+    if (!childScan || now - childScan.at >= CHILD_COUNT_TTL) {
+      const byParent = new Map<string, { working: number; cli: number }>()
+      for (const k of await store.list()) {
+        if (!k.parentTaskId) continue
+        const c = byParent.get(k.parentTaskId) ?? { working: 0, cli: 0 }
+        if (taskCliAlive(k.id)) c.cli++
+        if (childActive(live.get(k.id)?.task ?? k)) c.working++
+        byParent.set(k.parentTaskId, c)
+      }
+      childScan = { at: now, byParent }
+    }
+    return childScan.byParent.get(parentId) ?? { working: 0, cli: 0 }
+  }
+
+  /** 名下还在运行的子对话数（见 childActive） */
+  async function activeChildren(parentId: string) {
+    return (await childCountsOf(parentId)).working
   }
 
   /** 名下 CLI 进程还活着的子对话数：标题流光、侧栏提示用（见 taskCliAlive） */
   async function cliChildren(parentId: string) {
-    let n = 0
-    for (const k of await store.list()) if (k.parentTaskId === parentId && taskCliAlive(k.id)) n++
-    return n
+    return (await childCountsOf(parentId)).cli
   }
 
   /** 交给界面的任务：补上后台命令和还在运行的子对话数，对外的状态（taskState）才算得全 */
@@ -1913,7 +1963,8 @@ export function tasksApi(deps: {
     const t = withJobs(task)
     if (task.parentTaskId) return t
     // 0 也写上：理由同 withJobs
-    return { ...t, childrenWorking: await activeChildren(task.id), childrenCli: await cliChildren(task.id) }
+    const kids = await childCountsOf(task.id)
+    return { ...t, childrenWorking: kids.working, childrenCli: kids.cli }
   }
 
   /**
@@ -1983,6 +2034,12 @@ export function tasksApi(deps: {
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
+    // 落到 resolved 之后再核对一次：上面只停得到本进程 live 里的那一轮，
+    // 重启前留下的、或某条路径漏停的 CLI 还挂在登记里（任务已经完成了，进程留着没人要）。
+    // 日志由 killTaskClis 写，里面带任务和 pid
+    await killTaskClis(childId, killTree).catch((err) =>
+      log.warn('task', '收尾后回收子对话的 CLI 进程失败', { task: childId, error: (err as Error).message }),
+    )
   }
 
   /**
@@ -3254,6 +3311,8 @@ export function tasksApi(deps: {
                 platform: process.platform,
                 wslDistro: found.wslDistro,
                 scaled: found.scaledVerify,
+                // 这次任务实际改了哪些文件：服务端算好「本轮该跑哪几条 + 命令」再交给模型，不靠它自己筛
+                changedFiles: entry.task.changes.map((c) => c.path),
                 ...(await parentRunRole(entry.task, found)),
               }
             : undefined,
@@ -4121,7 +4180,14 @@ export function tasksApi(deps: {
     // 子对话不进入项目列表：按 parentId 查询时才返回它们
     const parent = c.req.query('parentId')
     list = parent ? list.filter((t) => t.parentTaskId === parent) : list.filter((t) => !t.parentTaskId)
-    return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
+    const body = JSON.stringify(pid ? list.filter((t) => t.projectId === pid) : list)
+    // 列表每 2.5 秒被拉一次（有任务在跑时）：内容没变就回 304，前端不用重新序列化、侧栏不用重渲染。
+    // 指纹直接算最终响应体：摘要字段多，挑几个字段拼容易漏（改了名、换了摘要却不刷新列表）
+    const etag = `"${createHash('sha1').update(body).digest('base64url')}"`
+    c.header('ETag', etag)
+    const asked = c.req.header('If-None-Match') ?? ''
+    if (asked === etag || asked === `W/${etag}`) return c.body(null, 304)
+    return c.body(body, 200, { 'Content-Type': 'application/json' })
   })
 
   /**
@@ -4252,8 +4318,13 @@ export function tasksApi(deps: {
     string,
     { key: string; at: number; value: { merged: boolean; ahead: number; dirty: number } | null }
   >()
-  const UNMERGED_TTL = 10_000
-  /** 停下的子对话不会马上下一次：同一份状态留久一点，父对话页每 4 秒刷一次时不必一直跑 git */
+  /**
+   * 还在动的子对话：子对话列表在有子对话在跑时 4 秒刷一次、都静止时 15 秒（见 TaskView 的
+   * CHILD_POLL_ACTIVE_MS / CHILD_POLL_IDLE_MS），这里按较慢的那档留，免得每次刷新都为
+   * 每个子对话新跑几条 git
+   */
+  const UNMERGED_TTL = 15_000
+  /** 停下的子对话不会马上下一次：同一份状态留久一点，父对话页刷几遍时不必一直跑 git */
   const STOPPED_TTL = 60_000
   /** 子对话栏查 git 的并发上限：几十个子对话时别一下子起上百个 git 进程 */
   const gitGate = createGate(4)
@@ -4554,6 +4625,9 @@ export function tasksApi(deps: {
   routes.get('/:id/events', async (c) => {
     const id = c.req.param('id')
     if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    // 前端手上那份对话的版本：重连时浏览器自动带 Last-Event-ID，首次建连可以用 ?rev= 自己指定。
+    // 能对上前缀就只发增量，对不上才发整份（见 shared/task.ts 的 taskRevOffset）
+    const rev = c.req.header('Last-Event-ID') || c.req.query('rev') || ''
     // 经过 cloudflared / nginx 时不要缓冲，事件要马上到页面
     c.header('Cache-Control', 'no-cache, no-transform')
     c.header('X-Accel-Buffering', 'no')
@@ -4564,7 +4638,8 @@ export function tasksApi(deps: {
       let meta = ''
       let beat = Date.now()
       let seen = ''
-      const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
+      const send = (event: string, data: unknown, version = '') =>
+        stream.writeSSE({ event, data: JSON.stringify(data), ...(version ? { id: version } : {}) })
       const jobKey = () =>
         background
           .list(id)
@@ -4614,15 +4689,29 @@ export function tasksApi(deps: {
         const m = JSON.stringify(rest)
         // 有消息被删掉（返工时重跑的节点）就整个重发，其余情况只发新增和变化的消息
         const ids = new Set(messages.map((x) => x.id))
-        if (!meta || [...stamps.keys()].some((k) => !ids.has(k))) {
-          await send('full', t)
+        // 第一包才对一次：手动上那份对话能对上前缀时只补发后面的消息，不用整份重传
+        const offset = meta ? -1 : taskRevOffset(messages, rev)
+        // 有消息被删掉（返工时重跑的节点）就整个重发，其余情况只发新增和变化的消息
+        const removed = [...stamps.keys()].some((k) => !ids.has(k))
+        if (!meta && offset >= 0) {
+          // 从手上那条开始补（它可能还在变）；meta 整段重发，消息只发后面这段
+          await send(
+            'patch',
+            { meta: rest, messages: messages.slice(offset), total: messages.length },
+            taskMessageRev(messages),
+          )
+          stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
+          meta = m
+          beat = Date.now()
+        } else if (!meta || removed) {
+          await send('full', t, taskMessageRev(messages))
           stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
           meta = m
           beat = Date.now()
         } else {
           const changed = messages.filter((x) => stamps.get(x.id) !== messageStamp(x))
           if (changed.length || m !== meta) {
-            await send('patch', { meta: rest, messages: changed, total: messages.length })
+            await send('patch', { meta: rest, messages: changed, total: messages.length }, taskMessageRev(messages))
             for (const x of changed) stamps.set(x.id, messageStamp(x))
             meta = m
             beat = Date.now()
@@ -4643,7 +4732,23 @@ export function tasksApi(deps: {
     // 进了回收站的对话当不存在：列表里已经没有它了，旧链接、AI 处理的浮条轮询都该看到「已关闭」；
     // 恢复（POST /:id/restore）之后又能读到
     if (!task || taskDeleted(task)) return bad(c, t('任务不存在'), 404)
-    return c.json(await withLive(task))
+    const full = await withLive(task)
+    // 打开很长的对话时先只取最近一段（整份几 MB，首屏只要最后几条），往前翻页用 before。
+    // 不传 limit 就回整份：其它调用方（导出、AI 处理、老版本页面）行为不变
+    const limit = Number(c.req.query('limit') ?? '')
+    if (!Number.isInteger(limit) || limit <= 0) return c.json(full)
+    const page = messagePage(full.messages, limit, c.req.query('before') ?? '')
+    return c.json({
+      ...full,
+      messages: page.messages,
+      messageTotal: page.total,
+      messageHasMore: page.hasMore,
+      // 锚点那条已经不在（返工删掉了）：前端据此重新取最后一页，不拼一段不连续的历史
+      ...(page.anchorMissing ? { messageAnchorMissing: true } : {}),
+      // 整份都在这一份里时带上版本（见 shared/task.ts 的 taskMessageRev）：前端建 SSE 时带上它，
+      // 服务端首包就只补发最后一条，不用把同一份再传一遍。截断的那段不是整份的前缀，不能当版本用
+      ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
+    })
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
@@ -5927,6 +6032,22 @@ export function tasksApi(deps: {
         await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
       }
       await dropUploads(removed)
+    },
+    /**
+     * 兜底回收：任务已经收口（resolved / 这一轮做完 / 已停下），它登记的 CLI 进程却还活着。
+     * 挂在启动后和每小时那一次清理上（见 server/index.ts 的 runCleanup），不另起定时器。
+     * 「算不算收口」只用 shared/task.ts 的 taskSettled，进程侧由 orphans.ts 核命令行，不误杀用户自己的 CLI。
+     * 返回回收掉的进程（日志里带任务、标题和活了多久），测试用它断言
+     */
+    async reapSettledClis() {
+      const metas = new Map((await store.list()).map((tk) => [tk.id, tk]))
+      const settled = async (id: string) => {
+        // 在跑的用 live 那份，它比落盘的新（刚置 resolved / 刚停下）
+        const tk = live.get(id)?.task ?? metas.get(id)
+        // 读不到（刚建、刚删）：这一轮不动，下一轮再看
+        return !!tk && taskSettled(tk)
+      }
+      return reapSettledTaskClis({ settled, kill: killTree, graceMs: REAP_GRACE_MS })
     },
     /** 启动时清理没有任务在用的附件 */
     async cleanupUploads() {

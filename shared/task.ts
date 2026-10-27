@@ -1462,16 +1462,22 @@ export function restartInterrupted(
  * 不靠这条恢复名单。
  */
 export function restartUnfinished(
-  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason'> & { runs?: Task['runs'] },
+  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
+    runs?: Task['runs']
+  },
 ): boolean {
+  // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
+  if (task.resolved === true) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
   // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
   const wrap = task.wrapRequest?.state
   if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
-  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来
-  if (task.status === 'running') return true
+  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来。
+  // 「停在等下一句」（awaitingUser）不算被打断：它这一轮已经说完，只剩用户下一句，
+  // 还有没有活要自己干看计划（见下面一行）
+  if (task.status === 'running' && !task.awaitingUser) return true
   // 这一轮说完了，但计划还没做完：重启后没人接着做，它不会自己往前走
   return !!openPlan(task)
 }
@@ -1485,7 +1491,19 @@ export function restartUnfinished(
  * 父对话却停在「已中断」等用户手动点（用户报的现象）。
  */
 export function interruptedTaskIds(
-  tasks: (Pick<Task, 'id' | 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'imported' | 'archived'> & {
+  tasks: (Pick<
+    Task,
+    | 'id'
+    | 'status'
+    | 'steps'
+    | 'plans'
+    | 'wrapRequest'
+    | 'stopReason'
+    | 'resolved'
+    | 'awaitingUser'
+    | 'imported'
+    | 'archived'
+  > & {
     runs?: Task['runs']
   })[],
   working: { id: string; parentTaskId: string }[] = [],
@@ -1497,6 +1515,42 @@ export function interruptedTaskIds(
   }
   for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
   return [...ids]
+}
+
+/**
+ * 这条任务已经收口、名下不该再有 CLI 进程：
+ * - 完成（resolved）：子对话收尾、用户点「解决」之后就是它；
+ * - 已经停下（stopped）：用户暂停、归档、重启迁移之后；
+ * - 待收尾（已请父对话收尾 / 正在合并 / 父对话在跑测试）：这一轮已经结束，剩下的是父对话的动作；
+ * - 这一轮做完且没有挂起事项（convState 是 done）：和界面「已完成」是同一个判定。
+ *
+ * 「停在等下一句」（status 仍是 running、awaitingUser）不算：进程留着就是为了接用户下一句，那是正常保活。
+ * 兜底回收遗留进程（server/exec/orphans.ts 的 reapSettledTaskClis）只认这一处，不要在别处再拼一遍 status 组合。
+ */
+export function taskSettled(
+  tk: Pick<
+    Task,
+    | 'status'
+    | 'working'
+    | 'requests'
+    | 'parentAsks'
+    | 'plans'
+    | 'steps'
+    | 'resolved'
+    | 'stopReason'
+    | 'wrapRequest'
+    | 'archived'
+    | 'deletedAt'
+    | 'worktree'
+  > & { runs?: Task['runs'] },
+): boolean {
+  if (tk.resolved === true) return true
+  if (tk.status === 'running') return false
+  if (tk.status === 'stopped') return true
+  // failed / test-failed 不算：那两种要它自己动手修，重启后还会拉起 CLI（见 restartUnfinished）
+  const wrap = tk.wrapRequest?.state
+  if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return true
+  return convState(childFacts(tk, { unmerged: tk.worktree?.state === 'active' })) === 'done'
 }
 
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
@@ -1936,6 +1990,43 @@ export function messageStamp(m: TaskMessage, withOutput = true) {
         `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.running ? 'r' : ''}${t.ms !== undefined ? 'm' : ''}${t.input?.length ?? 0}`,
     )
     .join(',')}`
+}
+
+/**
+ * 前端手上那份对话的版本：条数 + 最后一条消息 id。
+ * 不用内容指纹：拿它对上的时候，服务端从「最后一条」开始补发，最后一条本身也重发一遍，
+ * 正在流式增长的那条不会漏。SSE 重连时前端报这个版本，服务端能对上就只发增量（见 server/tasks.ts 的 /:id/events）
+ */
+export function taskMessageRev(messages: Pick<TaskMessage, 'id'>[]): string {
+  return `${messages.length}:${messages.at(-1)?.id ?? ''}`
+}
+
+/**
+ * 手上的版本是不是当前对话的前缀：是就返回要补发的起点（含最后一条，它可能还在变），不是返回 -1。
+ * 对不上（消息被删、换了对话）时调用方发整份，不猜着拼
+ */
+export function taskRevOffset(messages: Pick<TaskMessage, 'id'>[], rev: string): number {
+  const sep = rev.indexOf(':')
+  if (sep < 0) return -1
+  const count = Number(rev.slice(0, sep))
+  if (!Number.isInteger(count) || count <= 0 || count > messages.length) return -1
+  return messages[count - 1]?.id === rev.slice(sep + 1) ? count - 1 : -1
+}
+
+/**
+ * 打开对话时先取最近 limit 条消息（不传 limit 就全量，老调用方照旧）；
+ * before 是往前翻页的锚点：取这条之前的 limit 条
+ */
+export function messagePage(messages: TaskMessage[], limit = 0, before = '') {
+  const total = messages.length
+  // limit 不是正整数时按全量（老调用方不传参数，行为不变）
+  const count = Number.isInteger(limit) && limit > 0 ? Math.min(limit, total) : total
+  const end = before ? messages.findIndex((m) => m.id === before) : total
+  // 锚点找不到（那条消息被返工删掉了）：不猜着给一页——给尾部会让「往前翻」一条都接不上，
+  // 给最早那段会让前端把中间缺失的部分拼成不连续的对话。回一个标志，由调用方重新取最后一页
+  if (end < 0) return { messages: [] as TaskMessage[], total, hasMore: true, anchorMissing: true }
+  const start = Math.max(0, end - count)
+  return { messages: messages.slice(start, end), total, hasMore: start > 0, anchorMissing: false }
 }
 
 /** 把一次调用的改动累加到列表里（同一个文件合并行数） */
