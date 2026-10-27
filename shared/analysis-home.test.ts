@@ -12,15 +12,26 @@ const conv = (o: Partial<{ id: string; projectId: string; parentTaskId: string; 
   ...o,
 })
 
-test('分析归属：顶层对话的分析开成它自己的子对话', () => {
+test('分析归属：顶层项目对话的分析在项目里另开一个顶层对话，不再挂在它自己下面', () => {
   const tk = conv()
   assert.deepEqual(analysisHome({ kind: 'task', task: tk }, tk), {
     projectId: 'proj',
-    parentTaskId: 'p',
-    place: 'child',
+    parentTaskId: '',
+    place: 'project',
   })
-  // 没传 root 时顶层对话自己就是 root
-  assert.equal(analysisHome({ kind: 'task', task: tk }).parentTaskId, 'p')
+  // 没传 root 时同样走项目层级：不能因为拿不到 root 又退回挂子对话
+  assert.equal(analysisHome({ kind: 'task', task: tk }).parentTaskId, '')
+})
+
+test('分析归属：顶层对话名下子任务的分析，按它所在的项目对话开成项目顶层对话', () => {
+  // 子任务分析（子任务窗口的「AI 分析」）传进来的 scope.task 就是子任务所在的那条对话本身，
+  // 范围收窄在 scope.stepId 里，所以这里和顶层对话的分析是同一条归属
+  const tk = conv()
+  assert.deepEqual(analysisHome({ kind: 'task', task: tk }, tk), {
+    projectId: 'proj',
+    parentTaskId: '',
+    place: 'project',
+  })
 })
 
 test('分析归属：子对话（和子对话里的子任务）的分析开在父对话下，不在子对话下再开', () => {
