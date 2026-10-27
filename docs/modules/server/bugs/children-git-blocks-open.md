@@ -1,6 +1,6 @@
 # 打开有多条子对话的对话时「读取子对话」和「连接实时更新」一起卡 20 秒以上（/children 同步等每个子对话的 git）
 
-- 状态：已修复（`server/worktree-cache.ts` 新增、`server/tasks.ts` 的 `/children` 改成不等 git；回归用例 `server/task-children-load.test.ts` 2/2、`server/worktree-cache.test.ts` 13/13 通过，`npm run typecheck`、`npm run lint`、增量单测 13 个文件通过；实测见「回归验证」）
+- 状态：已修复（`server/worktree-cache.ts` 新增、`server/tasks.ts` 的 `/children` 改成不等 git；回归用例 `server/task-children-load.test.ts` 3/3、`server/worktree-cache.test.ts` 13/13 通过，`npm run typecheck`、`npm run lint`、增量单测 13 个文件通过；实测见「回归验证」）
 - 症状：打开一条子对话很多的父对话，加载日志停在「读取子对话 进行中 · 已等 20s」和「连接实时更新 进行中 · 已等 21.2s」两行同时往上涨；「读取对话」「标记已读」「渲染消息」都已完成（1.2s / 1.2s / 45ms）。关掉再开、开第二个页面都一样。
 - 入口：`server/tasks.ts` 的 `GET /:id/children`（每个子对话 `await childWorktree()` → `server/exec/worktree.ts` 的 `worktreeStatus`，3~4 条 git）、`GET /:id/events` 首包（`liveKey()` → `childCountsOf`）、`web/src/components/tasks/TaskView.tsx` 的 `children` / `stream` 两步和 `web/src/lib/task-stream.ts` 的 `open` 回调
 - 根因类型：热点接口在请求里同步跑外部进程（git）+ 没有 in-flight 去重，慢查询被轮询反复放大；同进程的 SSE 首包被拖住，于是一个慢点表现为两条步骤一起卡
@@ -66,8 +66,17 @@ GET /api/tasks/93b08721…/events（单独打）              首包：74ms
 ### `/children` 改用 `peek`，并如实告诉界面「这次还没核对」
 
 - `childWorktree(tk, project, { wait: false })`：`/children` 传它；`childUnmerged`（完成判定）不传，仍走 `read`。
-- 每条多一个 `worktreeChecked`：false 表示 `unmerged` / `dirty` 这次是占位值、后台正在查。**不伪造进度**：没有把它写成「已核对」，也不改 `LoadTrace` 的步骤状态。
+- 每条多一个 `worktreeChecked`：false 表示「没有可用的核对结果」（还没查、正在查、或刚查失败）。**不伪造进度**：没有把它写成「已核对」，也不改 `LoadTrace` 的步骤状态。
+- `worktreeChecked: false` 时 `unmerged` / `dirty` **不给值**（不是 `false` / `0`）：接口层就把「不知道」和「干净」分开，前端 `dirty === undefined` 时不显示「N 个文件未提交」，也不会被谁当成「已经合回」。
 - 返回耗时超过 `SLOW_CHILDREN_MS`（500ms）时记一条 `warn` 日志，带上子对话数、未核对数、耗时——它已经不等 git 了，再慢就是别的地方，下次排查不必从头量。
+
+### 查不到 ≠ 干净（判定路径不拍板）
+
+`WorktreeRead.checked` 的语义是「有过一次**成功**的核对结果」（TTL 内沿用缓存的那次也算，可能已过期），不是「问过一次」：
+
+- `read` 在 git 失败时返回 `{ value: null, checked: false }` —— 不能一边说「核对过」一边给空值，那会让调用方把「不知道」当成「干净」。
+- 判定路径 `childUnmerged` 遇到 `checked: false` 时按**还没合回**处理（`return true`）：宁可晚一轮收尾，也不把「不知道」当「已经合回」放行——合没合回决定子对话能不能收尾，误判会丢改动。git 持续失败时子对话会停在「未合回」，界面上写的是这句，用户看得见、git 恢复后自己会走完。
+- 界面用的 `peek` 查失败时仍然给上一次成功的值（界面不闪），但那是「上一次的值」，不会写进缓存当新结论。
 
 ### 没动的部分
 
@@ -78,19 +87,22 @@ GET /api/tasks/93b08721…/events（单独打）              首包：74ms
 
 `server/task-children-load.test.ts`（`npm run test:unit` 会跑）：
 
-| 用例                                                             | 守着什么                                                                                                                                                       |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 子对话的独立分支状态不等 git：先回占位值，后台补完下一次轮询就有 | 第一次响应必须明显快于一次 git（注入的 git 睡 300ms，断言 <250ms）、`worktreeChecked` 为 false、占位值是 false/0；后台补完后变成 `unmerged: true` / `dirty: 2` |
-| 轮询再快也不会把 git 叠成上百条：同一个子对话同时只跑一条        | 3 个请求并发时，git 调用次数不超过子对话数（in-flight 去重），补完后仍只是每个子对话一次（TTL 内不重复）                                                       |
-| 每个子对话只查一次                                               | 补完之后再打一轮，git 调用次数不变                                                                                                                             |
+| 用例                                                             | 守着什么                                                                                                                                                                                            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 子对话的独立分支状态不等 git：先回占位值，后台补完下一次轮询就有 | 第一次响应必须明显快于一次 git（注入的 git 睡 500ms，断言 <300ms）、`worktreeChecked` 为 false、`unmerged` / `dirty` 都是 `undefined`（不是 false/0）；后台补完后变成 `unmerged: true` / `dirty: 2` |
+| 轮询再快也不会把 git 叠成上百条：同一个子对话同时只跑一条        | 3 个请求并发时，git 调用次数不超过子对话数（in-flight 去重），补完后仍只是每个子对话一次（TTL 内不重复）                                                                                            |
+| 每个子对话只查一次                                               | 补完之后再打一轮，git 调用次数不变                                                                                                                                                                  |
 
-`server/worktree-cache.test.ts` 13 条：peek 不等 git、并发只跑一条、过期的先给旧的并后台补新的、key 变了不算核对过、失败时界面保留上一次的值、`read` 等结果、`read` 查不出来回 null（判定不被过期数据拍板）、后台补走单独那道闸、key 变了也不并发第二条 git、`read` 遇到别的轮次在跑时等它结束再按当前这一轮查、两个判定同时撞上别的轮次不串整、只是问一句不丢掉在跑那条的结果、缓存不会无限长。
+`server/worktree-cache.test.ts` 13 条：peek 不等 git、并发只跑一条、过期的先给旧的并后台补新的、key 变了不算核对过、读失败时界面保留上一次的值、读失败 `read` 必须说「没查到」（`checked: false`，不能给出干净的结果）、`read` 等结果、后台补走单独那道闸、key 变了也不并发第二条 git、`read` 遇到别的轮次在跑时等它结束再按当前这一轮查、两个判定同时撞上别的轮次不串整、只是问一句不丢掉在跑那条的结果、缓存不会无限长。
+
+`server/task-children-load.test.ts` 3 条：`/children` 不等 git、并发不叠 git、**git 读失败时卡片不给「干净」的结论**（`worktreeChecked: false` 且 `unmerged` / `dirty` 都是 `undefined`，等后台失败完仍然是「没查到」）。
 
 其中 5 条是评审之后补的：
 
 - R1 那条（后台补和判定用的闸分开）在「共用一道闸」的旧行为上红；
 - R2 两条（换了 key 也只允许一条 git、旧那轮不算新的一轮）在「按 (id,key) 去重 + 无条件写缓存」的旧行为上红；
-- R3 复看时补的两条：两个判定同时撞上别的轮次时不能串整（去掉 `read` 的等待循环就红）、只是用新 key 问一句不能把在跑那条的结果丢掉（`latest` 在入口无条件更新就红）。
+- R3 复看时补的两条：两个判定同时撞上别的轮次时不能串整（去掉 `read` 的等待循环就红）、只是用新 key 问一句不能把在跑那条的结果丢掉（`latest` 在入口无条件更新就红）；
+- 父对话核代码时指出的两条：读失败时 `read` 必须 `checked: false`（改回 `checked: true` 就红）、`/children` 在没核对过时不给 `unmerged` / `dirty`（改回 `false` / `0` 就红）——这两条修的是「把不知道当成干净」，比「晚一轮显示」严重。
 
 ## 回归验证
 
@@ -99,7 +111,9 @@ GET /api/tasks/93b08721…/events（单独打）              首包：74ms
 | 实现                                                 | 结果                                                                                                                           |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 旧实现（`git checkout -- server/tasks.ts`，HEAD 版） | 两条都失败：「这次还没核对过，要如实告诉界面」断言失败；第二条卡到 `5.35s` 超时（它在同步等 git，没有 `worktreeChecked` 可等） |
-| 新实现                                               | 2/2 通过                                                                                                                       |
+| 新实现                                               | 3/3 通过                                                                                                                       |
+
+「查不到 ≠ 干净」这两条也用反向验证过（把 `read` 改回 `checked: true`、`childUnmerged` 改回 `!!value && !value.merged`、`/children` 改回 `dirty ?? 0`、`unmerged: !!value && ...`）：`worktree-cache.test.ts` 与 `task-children-load.test.ts` 合计 **4 条失败**（两条目标用例 + 两条占位值断言），改回来就全绿。
 
 ### 改前 / 改后对照（本机，同一份数据，真实 git）
 
@@ -133,14 +147,17 @@ npx tsx --test server/task-children-load.test.ts server/worktree-cache.test.ts  
 
 ## 落地改动
 
-| 位置                                | 改了什么                                                                                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/worktree-cache.ts`          | 新增：`peek`（立即返回、可能过期、后台补）/ `read`（等结果）/ in-flight 去重 / 失败保留旧值 / 条目上限                                         |
-| `server/tasks.ts`                   | `childWorktree` 加 `{ wait: false }` 走 `peek`；`/children` 用它并返回 `worktreeChecked`；`childUnmerged` 仍走 `read`；慢于 500ms 记 warn 日志 |
-| `server/task-children-load.test.ts` | 新增 3 条回归用例（见「防复发护栏」）                                                                                                          |
-| `server/worktree-cache.test.ts`     | 新增 8 条缓存用例                                                                                                                              |
+| 位置                                                | 改了什么                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/worktree-cache.ts`                          | 新增：`peek`（立即返回、可能过期、后台补）/ `read`（等结果，失败时 `checked: false`）/ 按 id 的 in-flight 去重 / `latest` 挡掉过时结果 / 失败不写缓存 / 条目上限 / 前后台两道闸                                                                                                                |
+| `server/tasks.ts`                                   | `childWorktree` 加 `{ wait: false }` 走 `peek`、返回 `{ value, checked }`；`/children` 不等 git，没核对过时 `unmerged` / `dirty` 不给值；`childUnmerged` 查不到按「还没合回」算；新增 `backgroundGitGate = createGate(2)`；慢于 500ms 记 warn 日志；`deps` 加可选 `worktreeStatus`（测试注入） |
+| `web/src/lib/demo-backend.ts`、`web/src/lib/api.ts` | 演示版后端 `/children` 返回 `worktreeChecked: true`（项目教训 `lmvknaj45x05u`：两边字段一致），前端类型补上这个可选字段                                                                                                                                                                        |
+| `server/task-children-load.test.ts`                 | 新增 3 条：`/children` 不等 git、并发不叠 git、git 读失败时不给「干净」的结论                                                                                                                                                                                                                  |
+| `server/worktree-cache.test.ts`                     | 新增 13 条（含 R1/R2/R3 与「查不到 ≠ 干净」的护栏）                                                                                                                                                                                                                                            |
+| `scripts/e2e/04-subagents.mjs`                      | 「停下的子对话」那段不再打一次 `/children` 就断言：先要求占位时 `dirty` / `unmerged` 是 `undefined`（不能是 0 / false），再 `waitFor` 到 `worktreeChecked === true` 后才断言 `dirty > 0`                                                                                                       |
 
 ## 待确认
 
-- 端到端与界面检查由父对话合并后跑（本轮只跑了 typecheck、lint 和增量单测）。
-- 前端没有显示 `worktreeChecked`：第一次打开父对话时，子对话行的「N 个文件未提交 / 未合并」要等下一次轮询（4 秒）才出现。如果用户反馈这几秒的占位不可接受，可以把「正在核对」写进子对话行（例如先不显示，而不是显示成 0）。
+- 端到端与界面检查由父对话合并后跑；本轮自己在 WSL 里跑过 `node scripts/e2e.mjs 04-subagents` 这一片（worktree 缺 `node_modules/.bin/tsx`，临时转发到上级依赖后跑的）。
+- 前端没有显示 `worktreeChecked`：第一次打开父对话时，子对话行的「N 个文件未提交」要等下一次轮询（≤4 秒）才出现。接口层给的是 `undefined`（不显示），不是 0（显示成干净）。如果用户反馈这几秒不可接受，可以给子对话行加「正在核对」占位。
+- 后台每轮仍要跑 `59 × 3~4` 条 git（只是不再阻塞请求）：评审建议的「首轮只查 `merged`/`ahead`、`dirty` 留到第二轮」没做，需要时再压。
