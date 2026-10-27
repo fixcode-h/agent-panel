@@ -29,7 +29,7 @@
 
 - 不引入新的测试框架、远程缓存或云测试平台。
 - 不改产品代码行为；只动测试、测试基础设施、CI 与文档。
-- 不在本 change 处理 `docs/.pi/` 的可复现性（见 proposal 非目标）。
+- 不在本 change 处理 `openspec init` 生成的临时指令目录（`docs/` 下、被 `.gitignore` 排除、未入库、已被清理）的可复现性（见 proposal 非目标）。
 - 不追求「单测零 flaky」：目标是可归因、可复现、有预算，flaky 用例必须被记录并进入修复队列。
 
 ## Decisions

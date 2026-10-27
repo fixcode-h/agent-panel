@@ -31,7 +31,7 @@
 
 ## Non-Goals
 
-- 不处理 `openspec init` 生成的 `docs/.pi/` 指令被 `.gitignore` 排除的可复现性问题：新环境需先在 `docs/` 下跑 `openspec init`（或 `openspec update`）。
+- 不处理 `openspec init` 生成的临时指令目录（`docs/` 下、被 `.gitignore` 排除、未入库、现已被清理）的可复现性问题：新环境需先在 `docs/` 下跑 `openspec init`（或 `openspec update`）。
 - 不改产品功能、界面行为和执行引擎语义；只治理测试基础设施与验证方式。
 - 不引入外部测试服务（远程缓存、云测试平台）或新的测试框架。
 - 不为达标删测试：减少耗时只能来自分层、并发、选择精度和淘汰规则。
