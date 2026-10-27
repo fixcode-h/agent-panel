@@ -568,6 +568,8 @@ export const api = {
         unmerged?: boolean
         /** 独立分支目录里还有几个文件没提交：停下时行上直接写出来 */
         dirty?: number
+        /** 上面两项是不是已经用 git 核对过：false 是首帧的占位值，git 结果在后台补 */
+        worktreeChecked?: boolean
         /** 独立分支目录：和上面的脏改动一起说明改动在哪 */
         dir?: string
         /** 在独立 worktree 里改时的分支 */
