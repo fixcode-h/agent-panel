@@ -6,12 +6,13 @@ import {
   CircleCheck,
   Download,
   ExternalLink,
+  Info,
   Loader2,
   RefreshCw,
   Undo2,
   Zap,
 } from 'lucide-react'
-import { compareVersions, type AppRelease } from '@shared/version'
+import { compareVersions, minutesUntil, REPO, type AppRelease } from '@shared/version'
 import { hhmm, pad2, ymd } from '@shared/datetime'
 import {
   adoptRunningJob,
@@ -29,6 +30,8 @@ import { t } from '@shared/i18n'
 import { AiFixButton } from '@/components/ui/ai-fix'
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
+/** 检查失败或限流时的手动下载入口 */
+const RELEASES_URL = `https://github.com/${REPO}/releases`
 /** 上次检查的时间：今天只写时分，别的日子带上日期 */
 const checkedTime = (iso: string) => {
   const d = new Date(iso)
@@ -255,12 +258,7 @@ export function UpdateSection() {
           <p className="text-[0.8125rem] leading-relaxed text-warning">
             {data.error}
             {t('。可以稍后再试，或到')}{' '}
-            <a
-              href="https://github.com/fixcode-h/agent-panel/releases"
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
+            <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="underline">
               GitHub Releases
             </a>{' '}
             {t('手动下载。')}
@@ -279,24 +277,41 @@ export function UpdateSection() {
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {t('正在检查…')}
           </p>
-        ) : data.update ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
-            <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
-            <span className="min-w-0 flex-1 text-[0.8125rem]">
-              {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
-              <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
-            </span>
-            {canInstall && (
-              <Button size="sm" onClick={() => setConfirm(data.update!)}>
-                {t('更新到 {tag}', { tag: data.update.tag })}
-              </Button>
-            )}
-          </div>
         ) : (
-          <p className="flex items-center gap-1.5 text-[0.8125rem] text-success">
-            <CircleCheck className="h-4 w-4" />
-            {t('已是最新版本')}
-          </p>
+          <>
+            {/* 限流时服务端回退到上次的结果：这不是检查失败，提示要温和，别用失败的颜色 */}
+            {data.limitedUntil && (
+              <p className="flex flex-wrap items-center gap-1 text-[0.8125rem] leading-relaxed text-subtle">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                {t('GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到', {
+                  minutes: minutesUntil(data.limitedUntil),
+                })}{' '}
+                <a href={RELEASES_URL} target="_blank" rel="noreferrer" className="underline">
+                  GitHub Releases
+                </a>{' '}
+                {t('手动下载。')}
+              </p>
+            )}
+            {data.update ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
+                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
+                <span className="min-w-0 flex-1 text-[0.8125rem]">
+                  {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
+                  <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
+                </span>
+                {canInstall && (
+                  <Button size="sm" onClick={() => setConfirm(data.update!)}>
+                    {t('更新到 {tag}', { tag: data.update.tag })}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <p className="flex items-center gap-1.5 text-[0.8125rem] text-success">
+                <CircleCheck className="h-4 w-4" />
+                {t('已是最新版本')}
+              </p>
+            )}
+          </>
         )}
 
         <p className="text-xs leading-relaxed text-subtle">

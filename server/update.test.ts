@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setLang } from '../shared/i18n.ts'
@@ -170,6 +170,145 @@ test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作�
     assert.ok(body === null || body.job, '要么没有正在跑的更新，要么给出它的进度')
   } finally {
     await close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
+/** 检查更新的缓存文件：每个用例自己准备，避免上一个用例留下缓存干扰 */
+const releasesCacheFile = () => path.join(dir, 'cache', 'updates', 'releases.json')
+const clearReleasesCache = () => rmSync(releasesCacheFile(), { force: true })
+const writeReleasesCache = (c: { at: number; list: unknown[]; etag?: string; limitedUntil?: number }) => {
+  mkdirSync(path.dirname(releasesCacheFile()), { recursive: true })
+  writeFileSync(releasesCacheFile(), JSON.stringify(c))
+}
+
+/** 缓存里放一个比当前版本新的发布：`/releases` 会把它当成可以更新的版本 */
+const cachedRelease = (v = '9.9.9') => ({
+  tag: `v${v}`,
+  version: v,
+  prerelease: false,
+  publishedAt: '2026-01-01T00:00:00Z',
+  notes: '',
+  url: '',
+  tarUrl: 'u/pkg.zip',
+  zipUrl: 'u/pkg.zip',
+  size: 1,
+})
+
+/**
+ * 可编程的 GitHub 桩：按请求返回不同响应，并记下每次请求的头，
+ * 用来断言 ETag、token 和有没有真的再发请求
+ */
+async function stubGithub(
+  reply: (req: { headers: Record<string, string | string[] | undefined> }) => {
+    status?: number
+    headers?: Record<string, string>
+    body?: string
+  },
+) {
+  const http = await import('node:http')
+  const hits: { headers: Record<string, string | string[] | undefined> }[] = []
+  const server = http.createServer((req, res) => {
+    hits.push({ headers: req.headers })
+    const r = reply({ headers: req.headers })
+    res.statusCode = r.status ?? 200
+    if (res.statusCode !== 304) res.setHeader('content-type', 'application/json')
+    for (const [k, v] of Object.entries(r.headers ?? {})) res.setHeader(k, v)
+    res.end(r.body ?? '')
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  process.env.AGENT_PANEL_RELEASES_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}/releases`
+  return {
+    hits,
+    close: () => new Promise<void>((r) => server.close(() => r())),
+  }
+}
+
+const makeUpdateApi = () =>
+  updateApi({ running: () => 0, restart: () => {}, stopAll: async () => {}, interrupted: () => [] })
+
+test('检查更新被限流时：没有缓存就报错，有缓存就回退并标出恢复时间，冷却期内不再请求', async () => {
+  const reset = Math.floor(Date.now() / 1000) + 10 * 60
+  // 默认按 x-ratelimit-reset 算；最后一段换成 retry-after，确认它优先
+  let retryAfter = ''
+  const gh = await stubGithub(() => {
+    const headers: Record<string, string> = retryAfter
+      ? { 'retry-after': retryAfter }
+      : { 'x-ratelimit-reset': String(reset) }
+    return { status: 403, headers }
+  })
+  try {
+    // 1. 没有缓存：只能如实报错，不能假装有结果
+    clearReleasesCache()
+    const api = makeUpdateApi().api
+    const none = await (await api.request('/releases?refresh=1')).json()
+    assert.equal(none.releases.length, 0)
+    assert.ok(none.error, '没有缓存时只能告诉用户失败了')
+    assert.equal(none.limitedUntil, undefined, '没有能显示的结果时不要标成「显示的是缓存」')
+    assert.equal(gh.hits.length, 1)
+
+    // 1b. 没有缓存也要进入冷却：再点一次不能再请求 GitHub
+    const blocked = await (await api.request('/releases?refresh=1')).json()
+    assert.ok(blocked.error, '没缓存时仍然只能是失败')
+    assert.equal(gh.hits.length, 1, '没有缓存可回退时同样要冷却，不能每次都去撞限流')
+
+    // 2. 有缓存：回退到上次的列表，并标出恢复时间
+    writeReleasesCache({ at: Date.now() - 7 * 3600_000, list: [cachedRelease()], etag: '"old"' })
+    const cached = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(cached.error, undefined, '有缓存时不算检查失败')
+    assert.equal(cached.releases[0].tag, 'v9.9.9')
+    assert.equal(cached.update?.tag, 'v9.9.9', '缓存里的新版本照常提示')
+    assert.equal(cached.limitedUntil, new Date(reset * 1000).toISOString())
+    assert.equal(gh.hits.length, 2)
+
+    // 3. 冷却期内再点「检查更新」：直接用缓存，不再撞限流
+    const cooled = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(cooled.releases[0].tag, 'v9.9.9')
+    assert.ok(cooled.limitedUntil)
+    assert.equal(gh.hits.length, 2, '冷却期内不能再去撞限流')
+
+    // 4. retry-after 优先：按它算恢复时间（约 2 分钟）
+    retryAfter = '120'
+    writeReleasesCache({ at: Date.now() - 7 * 3600_000, list: [cachedRelease()] })
+    const before = Date.now()
+    const retried = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    const until = Date.parse(retried.limitedUntil)
+    assert.ok(until >= before + 110_000 && until <= before + 130_000, '大约 2 分钟后恢复')
+  } finally {
+    await gh.close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
+test('列表没变化时带 If-None-Match 拿到 304，复用缓存并更新检查时间', async () => {
+  const oldAt = Date.now() - 7 * 3600_000
+  writeReleasesCache({ at: oldAt, list: [cachedRelease()], etag: '"v1"' })
+  const gh = await stubGithub((req) => (req.headers['if-none-match'] === '"v1"' ? { status: 304 } : { status: 500 }))
+  try {
+    const body = await (await makeUpdateApi().api.request('/releases?refresh=1')).json()
+    assert.equal(gh.hits[0].headers['if-none-match'], '"v1"', '没变化时靠 ETag 换 304，不消耗配额')
+    assert.equal(body.error, undefined)
+    assert.equal(body.releases[0].tag, 'v9.9.9', '304 时沿用缓存的列表')
+    assert.ok(Date.parse(body.checkedAt) > oldAt, '304 也表示检查成功，要刷新检查时间')
+  } finally {
+    await gh.close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
+})
+
+test('设置了 GITHUB_TOKEN 时带上 Authorization 头', async () => {
+  clearReleasesCache()
+  // 本机可能本来就有 token：用完要还原，不能把同进程后面的用例的环境改掉
+  const oldToken = process.env.GITHUB_TOKEN
+  process.env.GITHUB_TOKEN = 'test-token'
+  const gh = await stubGithub(() => ({ status: 200, body: '[]' }))
+  try {
+    await makeUpdateApi().api.request('/releases?refresh=1')
+    assert.equal(gh.hits[0].headers.authorization, 'Bearer test-token')
+  } finally {
+    await gh.close()
+    if (oldToken === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = oldToken
     delete process.env.AGENT_PANEL_RELEASES_URL
   }
 })

@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试）
+- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）
 
 ## 职责
 
@@ -269,6 +269,17 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - `server/update.ts`：检查 releases（`GET /repos/.../releases`，`timeoutMs: 15_000`）和下载 `SHA256SUMS`（同样 15 秒）。
 - `server/download.ts`：探测（`probe`）、单连接下载（`stream`）、分片下载（`fetchSpan`）都经过 `DownloadOptions.fetch`（默认就是 `netFetch`，测试可以替换），每处都带 `HEAD_TIMEOUT_MS`（20 秒）的响应头超时，这一段超时会换下一条路。下载中途「太久没收到数据」由 `watch` 计时（分片 45 秒、单连接 90 秒）；`netFetch` 每次换一条路重试前会调用 `init.onAttempt`，下载借此重置空闲计时，所以空闲预算只管单条路径，不会因为整轮回退把「body 卡住」的判定拉长。
 - `server/update.ts` 和 `server/download.ts` 不再用 `AbortSignal.timeout`（触发一次后就永久处于中止状态，没法用同一条 signal 重试），改用 `netFetch` 的 `timeoutMs`；其它调用方（例如 `server/comfy-templates.ts`、`server/remote.ts`）仍可用自己的 signal，中止后按上面的规则停止回退。
+
+## 版本更新（GitHub Releases）
+
+`server/update.ts` 的 `updateApi()` 负责设置页的「版本更新」和托盘菜单的「检查更新」，路由挂在 `/app` 下（`/releases`、`/install`、`/install/:id`、`/install/:id/force`、`/install-current`、`/rollback`）。
+
+- 检查结果缓存在数据目录的 `cache/updates/releases.json`：`{ at, list, etag?, limitedUntil? }`。`at` 是上次成功读到列表的时间；自动检查最多每 `CHECK_EVERY`（6 小时）用一次缓存，点「检查更新」带 `refresh=1` 时马上请求。
+- 减少请求：缓存里的 `etag` 下次作为 `If-None-Match` 带上，GitHub 回 304 时直接沿用缓存（conditional request 不计入配额），只把 `at` 挪到现在。环境变量 `GITHUB_TOKEN` 存在时带 `Authorization: Bearer`，配额从 60 次/小时提到 5000 次/小时；token 只从环境变量读，不落盘。
+- 限流回退：403 / 429 时按响应里的 `retry-after`、其次 `x-ratelimit-reset` 算出 `limitedUntil`（都没有时默认 15 分钟，计算在 `shared/version.ts` 的 `rateLimitUntil`）。有缓存就写进缓存并返回上次的列表，`/releases` 响应里的 `limitedUntil` 让页面显示「显示的是上次检查的结果」的温和提示；没有缓存才报错，文案里带「约 N 分钟后恢复」。冷却期内点「检查更新」也只回缓存，不再请求 GitHub。
+- 托盘 `checkAndInstall` 走同一个 `releases(true)`：限流时用缓存列表判断有没有新版本，没有缓存才报失败。
+- 在线演示（`web/src/lib/demo-backend.ts`）没有服务端缓存，用浏览器 localStorage 记上次的列表，403 / 429 时同样回退并带 `limitedUntil`。
+- 回归：`server/update.test.ts` 覆盖 403 无缓存报错、403 有缓存回退并标出恢复时间、`retry-after` 计算、冷却期不再请求、ETag 304 复用缓存、带 `GITHUB_TOKEN` 时发 `Authorization`。
 
 ## 账号与登录
 

@@ -34,6 +34,11 @@ export interface AppReleases {
   update?: AppRelease
   /** 上次从 GitHub 读到发布列表的时间 */
   checkedAt?: string
+  /**
+   * GitHub 限流到这一刻（ISO）：存在时说明 releases 是上次的结果，不是刚刚查到的。
+   * 页面据此显示温和提示，而不是当成检查失败
+   */
+  limitedUntil?: string
   error?: string
 }
 
@@ -98,6 +103,31 @@ export function compareVersions(a: string, b: string) {
   if (!x || !y) return 0
   for (let i = 0; i < 3; i++) if (x.nums[i] !== y.nums[i]) return x.nums[i] - y.nums[i]
   return Number(y.dev) - Number(x.dev)
+}
+
+/** 被 GitHub 限流后默认多久内不再请求；响应里带了 retry-after / x-ratelimit-reset 时按它算 */
+export const LIMIT_COOLDOWN_MS = 15 * 60_000
+
+/**
+ * 限流要等到什么时候：优先 retry-after（秒），其次 x-ratelimit-reset（Unix 秒），
+ * 都没有时按默认冷却时间算。这两个头只有 403 / 429 才可能带。
+ * 服务端和在线演示共用：两边的请求路径不同，限流的处理要一致。
+ */
+export function rateLimitUntil(res: Response, now = Date.now()) {
+  const retry = Number(res.headers.get('retry-after'))
+  if (Number.isFinite(retry) && retry > 0) return now + retry * 1000
+  const reset = Number(res.headers.get('x-ratelimit-reset'))
+  if (Number.isFinite(reset) && reset > 0 && reset * 1000 > now) return reset * 1000
+  return now + LIMIT_COOLDOWN_MS
+}
+
+/**
+ * 距限流恢复还有几分钟：向上取整、至少 1 分钟。
+ * 服务端报错文案和页面提示共用这一个口径，两边不会差一分钟
+ */
+export function minutesUntil(until: number | string, now = Date.now()) {
+  const at = typeof until === 'string' ? Date.parse(until) : until
+  return Number.isNaN(at) ? 1 : Math.max(1, Math.ceil((at - now) / 60_000))
 }
 
 /** 有没有可以更新到的包：正在用正式版的只提示正式版，用预览版的提示更新的任何包 */

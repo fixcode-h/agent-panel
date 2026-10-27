@@ -356,6 +356,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '已安装 v{version}，正在重启，完成后页面会自动刷新…':
     'Installed v{version}. Restarting; the page will reload when done…',
   '。可以稍后再试，或到': '. Try again later, or go to',
+  'GitHub 暂时限制了访问，这里显示的是上次检查的结果；约 {minutes} 分钟后恢复，也可以到':
+    'GitHub is temporarily rate limiting requests, so this is the result from the last check. Try again in about {minutes} minutes, or go to',
   '手动下载。': 'to download manually.',
   '正在检查…': 'Checking…',
   已是最新版本: "You're up to date",

@@ -10,7 +10,9 @@ import {
   REPO,
   STALE_UPDATE_MS,
   compareVersions,
+  minutesUntil,
   pickUpdate,
+  rateLimitUntil,
   type AppRelease,
   type AppReleases,
   type AppUpdateBusy,
@@ -61,13 +63,32 @@ const CACHE_FILE = () => path.join(CACHE_DIR, 'updates', 'releases.json')
 /** 自动检查更新的间隔 */
 const CHECK_EVERY = 6 * 3600_000
 
-function readCache(): { at: number; list: AppRelease[] } | undefined {
+interface ReleasesCache {
+  at: number
+  list: AppRelease[]
+  /** 发布列表的 ETag：下次带上 If-None-Match，没变化时 GitHub 回 304，不计入配额 */
+  etag?: string
+  /** GitHub 限流到这一刻（毫秒）：这期间点「检查更新」也只回缓存，不再撞它的限流 */
+  limitedUntil?: number
+}
+
+function readCache(): ReleasesCache | undefined {
   try {
     const c = JSON.parse(readFileSync(CACHE_FILE(), 'utf8'))
     return typeof c?.at === 'number' && Array.isArray(c.list) ? c : undefined
   } catch {
     return undefined
   }
+}
+
+/** 限流又没缓存可回退时的报错：告诉用户大概什么时候能恢复，不只说「稍后再试」 */
+function rateLimited(status: number, until: number) {
+  return new Error(
+    t('GitHub 返回 {status}（访问太频繁，约 {minutes} 分钟后恢复）', {
+      status,
+      minutes: minutesUntil(until),
+    }),
+  )
 }
 
 /** 上一个版本的版本号；没有留下时为空 */
@@ -231,7 +252,20 @@ export function updateApi(deps: {
   interrupted: () => InterruptedEntry[] | Promise<InterruptedEntry[]>
 }) {
   // 上次检查的结果存在缓存目录里，重启面板也记得，不会每次打开都去问 GitHub
-  let cache: { at: number; list: AppRelease[] } | undefined = readCache()
+  let cache: ReleasesCache | undefined = readCache()
+  /**
+   * 限流到什么时候、是哪次的状态码。独立于缓存：没有缓存可回退时也要记住，
+   * 否则用户连点「检查更新」每次都真打到 GitHub，继续 403
+   */
+  let limited: { until: number; status: number } | undefined = cache?.limitedUntil
+    ? { until: cache.limitedUntil, status: 403 }
+    : undefined
+  /** 记下检查结果；写不进去只影响下次要不要重新请求，不影响这次已经拿到的结果 */
+  async function saveCache(next: ReleasesCache) {
+    cache = next
+    await mkdir(path.dirname(CACHE_FILE()), { recursive: true })
+    await writeFile(CACHE_FILE(), JSON.stringify(next)).catch((e) => log.warn('update', '记录检查结果失败', e))
+  }
   /** force：用户点了「强制更新」，停掉正在执行的任务后不再等 */
   const jobs = new Map<string, AppUpdateJob & { force?: boolean }>()
 
@@ -259,19 +293,43 @@ export function updateApi(deps: {
     compareVersions(b.version, a.version) || b.publishedAt.localeCompare(a.publishedAt)
 
   async function releases(refresh: boolean): Promise<AppRelease[]> {
+    const now = Date.now()
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
-    if (!refresh && cache && Date.now() - cache.at < CHECK_EVERY) return cache.list
+    if (!refresh && cache && now - cache.at < CHECK_EVERY) return cache.list
+    // GitHub 说过要等到什么时候：这期间点「检查更新」也只回上次的结果，不再撞它的限流。
+    // 没有缓存可回退时同样不能请求，只报失败
+    if (limited && limited.until > now) {
+      if (cache?.list.length) return cache.list
+      throw rateLimited(limited.status, limited.until)
+    }
+    const headers: Record<string, string> = { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' }
+    // 带上上次的 ETag：列表没变化时 GitHub 回 304，conditional request 不计入配额
+    if (cache?.etag) headers['If-None-Match'] = cache.etag
+    // 有 token 就用认证请求：配额从 60 次/小时提到 5000 次/小时。只读环境变量，不落盘
+    const token = process.env.GITHUB_TOKEN
+    if (token) headers.Authorization = `Bearer ${token}`
     // 用 netFetch 自己的超时：它超时后要能换代理重试，AbortSignal.timeout 一旦触发就再也发不出请求
-    const res = await netFetch(`${API()}?per_page=30`, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' },
-      timeoutMs: 15_000,
-    })
-    if (!res.ok)
-      throw new Error(
-        res.status === 403
-          ? t('GitHub 返回 {status}（访问太频繁，稍后再试）', { status: res.status })
-          : t('GitHub 返回 {status}', { status: res.status }),
-      )
+    const res = await netFetch(`${API()}?per_page=30`, { headers, timeoutMs: 15_000 })
+    if (res.status === 304 && cache) {
+      // 没变化：沿用上次的列表，只把检查时间挪到现在（304 也算一次成功的检查）；
+      // 请求成功说明限流已经过去，把冷却和缓存里的残留一起清掉
+      limited = undefined
+      await saveCache({ ...cache, at: Date.now(), limitedUntil: undefined })
+      return cache.list
+    }
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 429) {
+        const until = rateLimitUntil(res)
+        limited = { until, status: res.status }
+        // 有上次的结果就先给用户看，并记住恢复时间；冷却期内不再请求 GitHub
+        if (cache?.list.length) {
+          await saveCache({ ...cache, limitedUntil: until })
+          return cache.list
+        }
+        throw rateLimited(res.status, until)
+      }
+      throw new Error(t('GitHub 返回 {status}', { status: res.status }))
+    }
     const data = (await res.json()) as any[]
     const list = data
       .filter((r) => !r.draft)
@@ -293,9 +351,8 @@ export function updateApi(deps: {
       })
       .filter((r) => r.tarUrl)
       .sort(newestFirst)
-    cache = { at: Date.now(), list }
-    await mkdir(path.dirname(CACHE_FILE()), { recursive: true })
-    await writeFile(CACHE_FILE(), JSON.stringify(cache)).catch((e) => log.warn('update', '记录检查结果失败', e))
+    limited = undefined
+    await saveCache({ at: Date.now(), list, etag: res.headers.get('etag') ?? undefined })
     return list
   }
 
@@ -490,9 +547,12 @@ export function updateApi(deps: {
       const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
       try {
         const list = await releases(c.req.query('refresh') === '1')
+        // 冷却期还没过：这次显示的是上次的列表，页面据此把失败提示换成温和说明
+        const limitedUntil = cache?.limitedUntil && cache.limitedUntil > Date.now() ? cache.limitedUntil : undefined
         return c.json({
           ...base,
           checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
+          limitedUntil: limitedUntil ? new Date(limitedUntil).toISOString() : undefined,
           // 缓存里可能是旧版按发布时间排的列表，这里再按版本号排一次
           releases: [...list].sort(newestFirst).slice(0, 5),
           update: pickUpdate(current, list),
