@@ -16,6 +16,12 @@ const fixedMs = (name: string) => {
 const FIXED_GRACE_MS = fixedMs('AGENT_PANEL_PRESENCE_GRACE_MS')
 const FIXED_UNREAD_GRACE_MS = fixedMs('AGENT_PANEL_PRESENCE_UNREAD_GRACE_MS')
 
+/**
+ * 这一轮还在跑、宽限到点不能回收时，隔多久再判一次（见 evict）。
+ * 不取宽限期：宽限可以设成 0，按 0ms 重排会把事件循环打成自旋。测试用环境变量缩短
+ */
+const BUSY_RECHECK_MS = fixedMs('AGENT_PANEL_PRESENCE_RECHECK_MS') ?? 60 * 60_000
+
 /** 看过之后离开的宽限：回来接着说不用重开 CLI */
 const DEFAULT_GRACE_MS = 60 * 60_000
 /** 这一轮完成但没打开看过的宽限：橙点还亮着，用户可能隔一会儿回来，给短一点的一段 */
@@ -60,8 +66,22 @@ const viewers = new Map<string, Set<string>>()
 const left = new Set<string>()
 /** 上报过在场的任务：没有页面在用（只调接口、测试）时不要替它把 CLI 留着 */
 const reported = new Set<string>()
+/** 宽限计时器：页面切走后多久回收 */
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
+/**
+ * 这一轮还在跑时的复查计时器：和宽限分开存。
+ * 共用一张表的话 scheduleIdle 的「已经在计时」会把复查当成宽限，子对话被停掉后本该按宽限（可能 1 分钟）
+ * 回收的会话要等到复查点（默认 60 分钟）才收
+ */
+const rechecks = new Map<string, ReturnType<typeof setTimeout>>()
 let onIdle: ((taskId: string) => void) | undefined
+
+/** 清掉某一个计时器（宽限或复查） */
+function clearTimer(map: Map<string, ReturnType<typeof setTimeout>>, taskId: string) {
+  const timer = map.get(taskId)
+  if (timer) clearTimeout(timer)
+  map.delete(taskId)
+}
 
 /** 宽限期到了：让还在等用户的任务结束这一轮 */
 export function setPresenceIdleHandler(fn: (taskId: string) => void) {
@@ -97,13 +117,10 @@ export function setViewer(taskId: string, viewerId: string, active: boolean) {
     set.add(viewerId)
     viewers.set(taskId, set)
     left.delete(taskId)
-    // 用户回来了：不再需要「等这一轮结束再算」的待回收标记
+    // 用户回来了：不再需要「等这一轮结束再算」的待回收标记，宽限和复查都不用排
     pending.delete(taskId)
-    const timer = timers.get(taskId)
-    if (timer) {
-      clearTimeout(timer)
-      timers.delete(taskId)
-    }
+    clearTimer(timers, taskId)
+    clearTimer(rechecks, taskId)
     return
   }
   const set = viewers.get(taskId)
@@ -136,29 +153,43 @@ function scheduleIdle(taskId: string) {
 }
 
 /**
- * 过了宽限但这一轮还在跑、暂不能回收的对话。不排计时器（宽限期可以设成 0，
- * 拿 0ms 定时器反复重排会把事件循环打成每秒近千次自旋），等这一轮结束由 resetIdleCountdown 按整段重算
+ * 过了宽限但这一轮还在跑、暂不能回收的对话。宽限期可以设成 0，拿 0ms 定时器反复重排会把事件循环打成自旋，
+ * 所以忙的时候不重排宽限，而是按复查间隔（scheduleRecheck）隔一段再判一次；
+ * 这一轮真的结束了走 resetIdleCountdown 按整段重算
  */
 const pending = new Set<string>()
 
 /**
  * 回收一个会话：没人在看，让还在等下一句的 CLI 结束这一轮（用户回来时冷启动续接）。
  * 这一轮还在跑就不回收：切到后台的长任务不能因为「离开多久」被掐掉。
- * 这里只记一个待回收标记，不重排计时器——重排会把「执行期间过掉的时间」算进去，
- * 而宽限期为 0 时还会自旋；等它真的空下来（停在等下一句）再从那一刻算满一整段
+ * 这里先记一个待回收标记，再按复查间隔看一次：重排成整段宽限会把「执行期间过掉的时间」算进去，
+ * 而宽限期为 0 时还会自旋；没执行位的父对话也不会走 resetIdleCountdown（那是这一轮结束开始保活时调的），
+ * 它名下的子对话被用户停掉、后台命令被停时不会再交回结果，只留标记就会永远挂着（永不回收）。
+ * 所以还忙时记标记 + 隔一段再判，空下来才回收
  */
 function evict(taskId: string) {
-  const timer = timers.get(taskId)
-  if (timer) {
-    clearTimeout(timer)
-    timers.delete(taskId)
-  }
+  // 用户关掉了按时间回收：已排出去的宽限 / 复查计时器到点也不能收（和 scheduleIdle 读同一个开关）
+  if (!reclaimEnabled) return
+  clearTimer(timers, taskId)
   if (busy?.(taskId)) {
     pending.add(taskId)
+    scheduleRecheck(taskId)
     return
   }
   left.add(taskId)
   onIdle?.(taskId)
+}
+
+/** 还在跑的对话：隔一段再判一次，它真的空下来了才回收（见 evict） */
+function scheduleRecheck(taskId: string) {
+  if (rechecks.has(taskId)) return
+  rechecks.set(
+    taskId,
+    setTimeout(() => {
+      rechecks.delete(taskId)
+      evict(taskId)
+    }, BUSY_RECHECK_MS),
+  )
 }
 
 /**
@@ -170,12 +201,10 @@ function evict(taskId: string) {
  */
 export function resetIdleCountdown(taskId: string) {
   const wasPending = pending.delete(taskId)
-  const timer = timers.get(taskId)
-  if (!timer && !wasPending) return
-  if (timer) {
-    clearTimeout(timer)
-    timers.delete(taskId)
-  }
+  const hadTimer = timers.has(taskId) || rechecks.has(taskId)
+  if (!hadTimer && !wasPending) return
+  clearTimer(timers, taskId)
+  clearTimer(rechecks, taskId)
   if (viewers.get(taskId)?.size) return
   scheduleIdle(taskId)
 }
@@ -217,9 +246,8 @@ export function seenWhileWatched(taskId: string) {
 
 /** 任务删除、结束后清掉记录 */
 export function forgetPresence(taskId: string) {
-  const timer = timers.get(taskId)
-  if (timer) clearTimeout(timer)
-  timers.delete(taskId)
+  clearTimer(timers, taskId)
+  clearTimer(rechecks, taskId)
   pending.delete(taskId)
   viewers.delete(taskId)
   left.delete(taskId)
