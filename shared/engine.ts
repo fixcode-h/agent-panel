@@ -2502,6 +2502,22 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
 const MAX_HELPERS_RUNNING = 6
 /** 一个节点最多派几个子 Agent */
 const MAX_HELPERS_PER_STEP = 12
+/** resume 对不上时报错里列出的最近子任务数：够模型认出正确 id，多了反而是干扰 */
+const MAX_RESUME_IDS = 8
+
+/** resume 报错里列子任务的写法：和终止子任务的列表（stop_helpers）同一写法 */
+const helperLabel = (s: TaskStep) => `${s.id}｜${s.title}`
+
+/**
+ * resume 该接着哪条子任务：先按全等找，再按 id 的路径段结尾找。
+ * 模型常把「a/step/s1/sub/h1」写成「sub/h1」，只按全等比就整批被拒、重试一次白花一轮；
+ * 结尾必须落在「/」上，「xsub/h1」也算不上；能对上多条时不猜，交给调用方报候选。
+ */
+const resumeTarget = (mine: TaskStep[], id: string) => {
+  const exact = mine.find((s) => s.id === id)
+  const picked = exact ? [exact] : mine.filter((s) => s.id.endsWith(`/${id}`))
+  return { prev: picked.length === 1 ? picked[0] : undefined, picked }
+}
 
 interface OrchState {
   /** 节点 id → 还没读的消息 */
@@ -3175,8 +3191,22 @@ function makeOrchestra(
       for (const spec of local) {
         const id = spec.resume?.trim()
         if (!id) continue
-        const prev = mine.find((s) => s.id === id)
-        if (!prev) return { ids: [], error: `resume 写的「${id}」不是你派过的子任务（用 spawn_agents 返回的 id）` }
+        const target = resumeTarget(mine, id)
+        if (!target.prev) {
+          if (target.picked.length)
+            return {
+              ids: [],
+              error: `resume 写的「${id}」能对上多个子任务，不猜，写全 id 再派：${target.picked.map(helperLabel).join('、')}`,
+            }
+          const recent = mine.slice(-MAX_RESUME_IDS)
+          const more = mine.length > recent.length ? `（共 ${mine.length} 个，只列最近 ${recent.length} 个）` : ''
+          const listed = recent.length ? `\n你派过的子任务${more}：${recent.map(helperLabel).join('、')}` : ''
+          return {
+            ids: [],
+            error: `resume 写的「${id}」不是你派过的子任务（用 spawn_agents 返回的 id）${listed}`,
+          }
+        }
+        const prev = target.prev
         const key = prev.session || prev.id
         const busyKey = mine.some(
           (s) =>

@@ -564,6 +564,98 @@ test('子任务：resume 接着之前那个子任务的会话，复看的评审�
   assert.match(errors[1] ?? '', /不是你派过的子任务/)
 })
 
+test('子任务：resume 少写了前缀时按 id 结尾唯一匹配，接着原来的会话跑', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  const { task, log, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '查资料', instructions: '查一下' }]).ids
+      await o.wait(first, 1000)
+      // 模型常把「a/step/s1/sub/h1」写成「sub/h1」：唯一命中就照常接着跑，不该整批失败
+      const again = o.spawn([{ title: '复看', instructions: '再看一次', resume: 'sub/h1' }]).ids
+      assert.equal(again.length, 1, '唯一后缀命中的那条照常派出去')
+      await o.wait(again, 1000)
+      return '一步结果'
+    }
+    return '查到了'
+  })
+  await runEngineTurn(host)
+  const subs = task.steps.filter((s) => s.slot === 'sub')
+  assert.equal(subs.length, 2)
+  assert.equal(subs[1].session, subs[0].id, '接着的是原来那条子任务的会话')
+  const calls = log.filter((c) => c.step?.slot === 'sub')
+  assert.deepEqual(
+    calls.map((c) => c.sessionKey),
+    [subs[0].id, subs[0].id],
+  )
+})
+
+test('子任务：resume 的后缀能命中多个会话时拒绝，并列出候选', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  let error = ''
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([
+        { title: '查资料', instructions: '查一下' },
+        { title: '查规范', instructions: '查规范' },
+      ]).ids
+      await o.wait(first, 1000)
+      // 两条记录的 id 都以「/sub/h1」结尾（旧数据里层级不同）：不猜，报错列出候选
+      task.steps.find((s) => s.id === first[1])!.id = 'old/a/step/s1/sub/h1'
+      error = o.spawn([{ title: '接着做', instructions: '继续', resume: 'sub/h1' }]).error ?? ''
+      return '一步结果'
+    }
+    return '查到了'
+  })
+  await runEngineTurn(host)
+  assert.match(error, /多个/)
+  assert.match(error, /a\/step\/s1\/sub\/h1/, '报错里列出第一个候选的 id')
+  assert.match(error, /old\/a\/step\/s1\/sub\/h1/, '报错里列出第二个候选的 id')
+  assert.match(error, /查资料/)
+  assert.match(error, /查规范/)
+})
+
+test('子任务：resume 的后缀不跨路径段匹配（xsub/h1 不算 sub/h1）', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  let error = ''
+  const { task, host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '查资料', instructions: '查一下' }]).ids
+      await o.wait(first, 1000)
+      // 只有段边界上的结尾才算：「a/xsub/h1」不是「sub/h1」
+      task.steps.find((s) => s.id === first[0])!.id = 'a/xsub/h1'
+      error = o.spawn([{ title: '接着做', instructions: '继续', resume: 'sub/h1' }]).error ?? ''
+      return '一步结果'
+    }
+    return '查到了'
+  })
+  await runEngineTurn(host)
+  assert.match(error, /不是你派过的子任务/)
+  assert.match(error, /a\/xsub\/h1/, '列表里给的是它真实的 id')
+})
+
+test('子任务：resume 找不到时，报错里列出你实际派过的子任务', async () => {
+  const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
+  let error = ''
+  const { host } = makeHost(w, async (call) => {
+    if (call.step?.id === 'a/step/s1') {
+      const o = call.orch!
+      const first = o.spawn([{ title: '查资料', instructions: '查一下' }]).ids
+      await o.wait(first, 1000)
+      error = o.spawn([{ title: '复看', instructions: '继续', resume: 'sub/h9' }]).error ?? ''
+      return '一步结果'
+    }
+    return '查到了'
+  })
+  await runEngineTurn(host)
+  assert.match(error, /不是你派过的子任务/)
+  assert.match(error, /用 spawn_agents 返回的 id/)
+  assert.match(error, /a\/step\/s1\/sub\/h1/, '给出实际派过的 id，模型下一轮能直接改正')
+  assert.match(error, /查资料/, '带上标题，方便对上哪一条')
+})
+
 test('子任务：失败后 resume 写它的 id，就在原来那个子任务里重试，不另起一个（用户 2026-10-25）', async () => {
   const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
   let tries = 0
