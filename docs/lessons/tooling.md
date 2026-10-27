@@ -1,8 +1,14 @@
 ---
-paths: shared/engine.ts, shared/panel-tools.ts, docs/lessons/**
+paths: shared/engine.ts, shared/panel-tools.ts, server/ask-mcp.ts, shared/clis/**, server/exec/invoke.ts, docs/lessons/**
 ---
 
-# AI 自己跑命令、等结果的方式
+# 面板工具通道（MCP）和 AI 的用法
+
+## MCP 握手的 capability 值必须是对象
+
+- 规则：`initialize` 返回的 `capabilities.experimental.orchestration` 写 `{ enabled: boolean }`，不要写布尔值。MCP 规范里 `experimental` 是 `Record<string, object>`，Claude Code 2.1.226 起按 zod 校验，写成 `true` 会让整条连接判 `failed`、所有 `mcp__panel__*` 工具一个都不注册；错误只在 CLI 自己的 debug 日志里（`Invalid input`），面板侧看不出来。
+- 起因：2026-10-27 用户反馈 Claude Code 执行工具时对话像卡住；查 init 事件是 `mcp_servers: [{name:"panel", status:"failed"}]`，根因是握手字段写成了布尔值。
+- 防线：`server/ask-mcp.test.ts` 的握手断言；改握手后用真实 CLI 连一次，看 stream-json init 里的 `mcp_servers` 是否 `connected`。
 
 ## 长命令交给后台工具，别在前台挡着对话
 

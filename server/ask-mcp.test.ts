@@ -153,10 +153,10 @@ test('握手告诉桥接扩展这一轮有没有编排工具：压缩轮、审�
   const hello = (s: ReturnType<typeof openAskBridge>) =>
     rpc(tokenOf(s.url), { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } })
   const ask = openAskBridge({ ask: () => {} })
-  assert.equal((await hello(ask)).result.capabilities.experimental.orchestration, false)
+  assert.equal((await hello(ask)).result.capabilities.experimental.orchestration.enabled, false)
   ask.close()
   const orch = openAskBridge({ orch: { self: 'a', hasMain: false, common: [] } as unknown as Orchestra })
-  assert.equal((await hello(orch)).result.capabilities.experimental.orchestration, true)
+  assert.equal((await hello(orch)).result.capabilities.experimental.orchestration.enabled, true)
   orch.close()
 })
 

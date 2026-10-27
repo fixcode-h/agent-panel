@@ -187,8 +187,10 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
         protocolVersion: msg.params?.protocolVersion ?? '2025-03-26',
         // 额外告诉桥接扩展这一轮挂没挂编排工具：它据此决定要不要核对核心工具。
         // 压缩轮、原生审查轮只挂提问工具（见 runner 里 def.mcp && !op），清单里本来就没有核心编排工具，
-        // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）
-        capabilities: { tools: {}, experimental: { orchestration: !!s.orch } },
+        // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）。
+        // 值必须是对象：MCP 的 capabilities.experimental 是 Record<string, object>，写成布尔值
+        // Claude Code（2.1.226 起按 zod 校验）会判整个握手失败、一个工具都不注册
+        capabilities: { tools: {}, experimental: { orchestration: { enabled: !!s.orch } } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':
