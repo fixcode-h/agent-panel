@@ -779,98 +779,13 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
-  // 运行区也列「正在跑的工作流」（用户要求「有运行中的工作流也展示在这」）：谁在跑工作流就显示在谁的对话页。
-  // 以前运行区那行的判定只认 mode === 'chat'，工作流任务自己跑的时候什么也不列。
-  // 这一条同时验「点它能打开这次运行的视图」和「跑完这一行消失、不留空横线」
-  {
-    const KEY = 'agent-panel-demo-v3'
-    const TITLE = '商品详情页增加'
-    const saved = await p.evaluate((k) => localStorage.getItem(k), KEY)
-    /** 把演示里已经跑完的那条工作流任务改成「正在跑」，进度造出一个确定的值 */
-    const patch = (running) =>
-      p.evaluate(
-        ([k, title, live]) => {
-          const db = JSON.parse(localStorage.getItem(k) ?? '{}')
-          const task = (db.tasks ?? []).find((x) => x.mode === 'workflow' && x.title.includes(title) && x.runs?.length)
-          if (!task) return null
-          const rec = task.runs.at(-1)
-          task.status = live ? 'running' : 'done'
-          rec.status = live ? 'running' : 'done'
-          rec.endedAt = live ? '' : new Date().toISOString()
-          rec.startedAt = new Date(Date.now() - 80_000).toISOString()
-          // 前两个节点做完、其余还没开始：进度是确定的「2/N」，不依赖演示数据跑到哪一步
-          const tops = task.steps.filter((s) => !s.parentId && !s.id.endsWith('@main'))
-          const done = Math.min(2, tops.length)
-          tops.forEach((s, i) => (s.status = live && i >= done ? 'pending' : 'done'))
-          localStorage.setItem(k, JSON.stringify(db))
-          return { id: task.id, projectId: task.projectId, total: tops.length, done, run: rec.id }
-        },
-        [KEY, TITLE, running],
-      )
-    const info = await patch(true)
-    if (!info) errors.push('运行区-工作流在跑：演示数据里没有可用的工作流任务，用例前提不成立')
-    else {
-      // 改完 localStorage 必须整页重载，只改 hash 会被内存里那份旧的演示数据覆盖回去（见演示数据说明），
-      // 再从地址栏直接进这个任务的对话页
-      await p.reload()
-      await p.goto(`${base}#/projects/${encodeURIComponent(info.projectId)}/${encodeURIComponent(info.id)}`)
-      await settle(p)
-      const box = p.locator('[aria-label="运行区"]').first()
-      const listed = await box.waitFor({ timeout: 10000 }).then(
-        () => true,
-        () => false,
-      )
-      const text = listed ? ((await box.innerText()) || '').replace(/\s+/g, ' ').trim() : ''
-      if (!listed) errors.push('运行区-工作流在跑：工作流任务在跑时运行区里什么也没有列')
-      else if (!text.includes(`${info.done}/${info.total} 个节点`))
-        errors.push(`运行区-工作流在跑：没有显示进度 ${info.done}/${info.total}，实际「${text}」`)
-      else {
-        // 耗时跟着开始时间走（造的是 80 秒前开始，读到时只会更大）
-        // fmtDuration 的秒位带一位小数（如「1m 20.5s」），只认整秒会漏
-        if (!/\d+m \d+(?:\.\d+)?s/.test(text))
-          errors.push(`运行区-工作流在跑：这一行没有显示已跑了多久（实际「${text}」）`)
-        await check(p, '运行区-工作流在跑', ['工作流'])
-        // 整行点了打开这次运行的视图：右栏标题写「运行 n」，不是另外弹一个窗口
-        const runner = box.locator('div').filter({ hasText: '个节点' }).last()
-        await runner.click()
-        const opened = await p
-          .locator(`aside[aria-label="运行 ${info.run}"]`)
-          .first()
-          .waitFor({ timeout: 10000 })
-          .then(
-            () => true,
-            () => false,
-          )
-        if (!opened) errors.push('运行区-工作流在跑：点这一行没有打开这次运行的视图')
-        else await check(p, '运行区-工作流在跑-打开运行视图', [`运行 ${info.run}`])
-        // 跑完：这一行从运行区消失，也不在总结下面留一条空横线
-        await patch(false)
-        await p.reload()
-        await settle(p)
-        // 跑完要整块不画：运行区那个 role="group" 的容器不在了，就不会在总结下面留一条空横线
-        const areas = await p.locator('[role="group"][aria-label="运行区"]').count()
-        if (areas) errors.push(`运行区-工作流在跑：跑完以后运行区还留着（${areas} 块），会多出一条空横线`)
-        const left = await p
-          .locator('[aria-label="运行区"]')
-          .first()
-          .innerText()
-          .catch(() => '')
-        if (left.includes('个节点') || left.includes('工作流'))
-          errors.push(`运行区-工作流在跑：跑完以后这一行还在（「${left.replace(/\s+/g, ' ').trim()}」）`)
-        else await check(p, '运行区-工作流跑完消失')
-      }
-      await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [KEY, saved])
-      await p.reload()
-      await backToTask()
-    }
-  }
   // 子对话的未读点：做完了、用户还没点开看过的那一条，行上有个橙点；点开就消失。
   // 判定在 shared/task.ts 的 childDoneDot（和侧栏橙点同一份口径）；在跑的那几条不算「没读过」，它们还没有结果
   {
     const UNREAD = '对话已完成，还没查看'
     const DONE_CHILD = '拆分规则检查脚本'
     const RUNNING_CHILD = '内存面板增加 AI 分析'
-    // 上一段结束时停在别的对话页（工作流那条）：先回购物车这条，父对话才有子对话状态行
+    // 前面的用例可能把右栏切到了子对话面板：先从列表点回购物车这条父对话，子对话状态行才在
     await p.getByText('购物车右上角', { exact: false }).first().click()
     // 入口按状态行定位，不按文案：跑到这一拍时子对话大多不在跑，label 是「子对话 n」而不是「n 个进行中，共 n 个」
     const bar = p.locator('[data-status-row="children"] button[aria-expanded]').first()
@@ -947,5 +862,48 @@ await runShard(import.meta.filename, async (api) => {
         }
       }
     }
+  }
+
+  // 父对话自己在跑时运行区仍然列出子对话（从 02-task 挪过来：主题属于子对话这一片）：
+  // 以前运行区绑在「最后一段」上（last 含 !working），父对话一跑整段就不渲染，子对话一条也列不出来
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      task.working = true
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.reload()
+    await backToTask()
+    // 子对话列表 4 秒一轮，先等运行区里真的出现子对话行再数
+    const seenKids = await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].some((box) =>
+            [...box.children].some((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ),
+        { timeout: 10000 },
+      )
+      .then(
+        () => true,
+        () => false,
+      )
+    if (!seenKids) errors.push('父对话在跑时运行区没有列出子对话')
+    else {
+      const n = await p.evaluate(
+        () =>
+          [...document.querySelectorAll('[aria-label="运行中"]')].flatMap((box) =>
+            [...box.children].filter((r) => (r.innerText || '').trim().startsWith('子对话')),
+          ).length,
+      )
+      if (n !== 5) errors.push(`父对话在跑时运行区列了 ${n} 个子对话，应该和弹层一样是 5 个`)
+    }
+    await check(p, '子对话-父对话在跑时仍列出')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
   }
 })

@@ -131,7 +131,7 @@ appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会�
 **子对话只跑增量测试**（`CHILD_INCREMENTAL_RULE`，`verifyBlock` 在 `parentRun = 'child'` 时注入）：
 
 1. 先用改动清单定位要跑什么——项目里有 `scripts/changed-tests.mjs` 就用它（按 import 依赖图算影响面，输出单测文件、界面检查分片、是否必须跑全量及理由）；
-   没有就按同名测试 / 同目录测试 / 哪些测试（间接）import 了它来定位，界面改动用完整分片名筛选（`node scripts/ui-check.mjs 09-summary`）。
+   没有就按同名测试 / 同目录测试 / 哪些测试（间接）import 了它来定位，界面改动用完整分片名筛选（`node scripts/ui-check.mjs 08-misc`）。
 2. `always` 照常跑；`changed` 只跑命中的那部分（命中的单测文件、命中的界面分片），不跑整套。
 3. **不跑全量**（定位脚本明确判定「必须跑全量」时除外）：`parent` 的步骤不跑原命令，但单测和界面检查要用第 1 步定位到的增量命令覆盖命中的单测文件 / 界面分片
    （`node scripts/unit-tests.mjs --files <文件>`、`node scripts/ui-check.mjs <完整分片名>`），否则子对话会一条测试都不跑；e2e 没有增量替代，直接交给父对话。
@@ -227,7 +227,7 @@ node scripts/changed-tests.mjs --json               # 给脚本用
    归入不涉及测试的改动，不会因此强制全量）。
    影响面挑不出可靠范围时给的是**全量命令**（`npm run test:unit` / 全量界面检查），不会再列一长串增量命令诱导人缩回增量。
 
-界面分片命令用完整分片名筛（`node scripts/ui-check.mjs 09-summary`），写 `09` 会同时跑 09-hint / 09-plans / 09-summary。
+界面分片命令用完整分片名筛（`node scripts/ui-check.mjs 02-task`），写 `02` 会同时跑 02-task / 02b / 02c / 02d。
 产物必须是这次源码构建出来的（`ui-check` 会校验），所以命令里先 `npx vite build --mode demo`。
 
 **缓存**：每个文件的 import 解析结果按 mtime + size 缓存在 `node_modules/.cache/agent-panel/import-graph.json`

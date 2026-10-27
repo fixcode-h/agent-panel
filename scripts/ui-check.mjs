@@ -17,6 +17,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { availableParallelism, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
+import { UI_SHARD_COVERS } from './ui/covers.mjs'
 import { assertDemoBuildFresh } from './lib/demo-build-info.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -31,10 +32,10 @@ const verbose = argv.includes('--verbose')
 const filters = argv.filter((a) => !a.startsWith('-'))
 // 分片文件名：01、02 这类两/三位编号，也可以是 02b、02c（同一个主题拆成几片）
 const SHARD_FILE = /^\d+[a-z]?-.*\.mjs$/
-const shards = readdirSync(shardDir)
+const allShards = readdirSync(shardDir)
   .filter((f) => SHARD_FILE.test(f))
   .sort()
-  .filter((f) => !filters.length || filters.some((p) => f.startsWith(p)))
+const shards = allShards.filter((f) => !filters.length || filters.some((p) => f.startsWith(p)))
 if (!shards.length) {
   console.error('没有匹配的界面检查分片：', filters.join(' '))
   process.exit(1)
@@ -65,6 +66,23 @@ const readTiming = (file) => {
   } catch {
     return null
   }
+}
+
+/**
+ * scripts/ui/covers.mjs 登记的分片要和真实分片文件对上：
+ * 新加一片忘了登记，改了它断言的源码时 changed-tests 映射不到，会被当成「没覆盖」而漏跑；
+ * 改名后旧登记残留，它以为那一页还有检查。
+ * 只提示不失败：加片和补映射可以分两次提交，别为了让检查通过先凑一行假映射。
+ */
+const registered = new Set(Object.keys(UI_SHARD_COVERS))
+const unregistered = allShards.map((f) => f.replace(/\.mjs$/, '')).filter((name) => !registered.has(name))
+const stale = [...registered].filter((name) => !allShards.includes(`${name}.mjs`))
+if (unregistered.length || stale.length) {
+  console.log('提示：界面检查分片和 scripts/ui/covers.mjs 的登记对不上（不影响本次结果）')
+  if (unregistered.length)
+    console.log(`  没登记：${unregistered.join('、')}（改到它们的源码时映射不出来，会漏跑这一片）`)
+  if (stale.length) console.log(`  登记了但已经没有这个文件：${stale.join('、')}`)
+  console.log('')
 }
 
 console.log(`界面检查：${shards.length} 个分片，最多同时跑 ${limit} 个\n`)
@@ -141,7 +159,8 @@ for (const r of results) {
   }
 }
 
-// 各分片每一步的耗时合成一份文件，方便和上一次运行对比（已在 .gitignore 里）
+// 各分片每一步的耗时合成一份文件，方便和上一次运行对比（已在 .gitignore 里）。
+// 这是每次运行自己的快照，不是分片清单也不是基线：分片有哪些以 scripts/ui/ 下的文件和 covers.mjs 的登记为准
 try {
   writeFileSync(
     path.join(root, 'ui-timings.json'),
