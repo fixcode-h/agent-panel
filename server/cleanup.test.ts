@@ -8,10 +8,9 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { setLang } from '../shared/i18n.ts'
+import { t } from '../shared/i18n.ts'
 import { Task } from '../shared/schema.ts'
 
-setLang('zh')
 // 测试自己建仓库，不认外面的 git dir / 面板注入的防推送配置（见 server/exec/worktree.test.ts）
 delete process.env.GIT_DIR
 delete process.env.GIT_WORK_TREE
@@ -165,12 +164,13 @@ test('清理工作目录：回收站、在跑的对话要拒绝，并说明原�
 
   const trashed = await post('gone')
   assert.equal(trashed.status, 409)
-  assert.match(((await trashed.json()) as { error: string }).error, /回收站/)
+  // 期望值用同一个 t() 生成：CI 是英文环境（server/lang.ts 按 settings/LANG 定语言），写死中文会在那边挂
+  assert.equal(((await trashed.json()) as { error: string }).error, t('回收站里的对话不能清工作目录：恢复后还要用它'))
   assert.ok(existsSync(path.join(CHATS_DIR, 'gone')), '回收站里的目录没被删')
 
   const running = await post('run')
   assert.equal(running.status, 409)
-  assert.match(((await running.json()) as { error: string }).error, /正在执行/)
+  assert.equal(((await running.json()) as { error: string }).error, t('对话正在执行，等它结束后再清'))
   assert.ok(existsSync(path.join(CHATS_DIR, 'run')), '在跑的目录没被删')
 
   // 没有这个目录时给出明确原因，不能悄悄返回成功
@@ -215,8 +215,11 @@ test('清理接口只认 chats/ 下的目录名：../tasks 这种拼路径的请
 test('chatWorkspaceBlock：孤儿放行，回收站和在跑各有原因', () => {
   assert.equal(chatWorkspaceBlock(null, false), '', '记录不在了的孤儿目录可以直接清')
   assert.equal(chatWorkspaceBlock(task('a'), false), '')
-  assert.match(chatWorkspaceBlock(task('a', { deletedAt: DAY }), false), /回收站/)
-  assert.match(chatWorkspaceBlock(task('a'), true), /正在执行/)
+  assert.equal(
+    chatWorkspaceBlock(task('a', { deletedAt: DAY }), false),
+    t('回收站里的对话不能清工作目录：恢复后还要用它'),
+  )
+  assert.equal(chatWorkspaceBlock(task('a'), true), t('对话正在执行，等它结束后再清'))
 })
 
 test('sweepTaskInfoOf 每次都重新读在跑的任务：面板启动时为空也不会让保护一直失效', async () => {

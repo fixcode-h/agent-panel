@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import type { NewTaskInput, Task } from '../shared/schema.ts'
-import { afterBlocked, type Schedule, type ScheduleDelivery, type ScheduleEvent } from '../shared/schedule.ts'
+import { t } from '../shared/i18n.ts'
+import {
+  afterBlocked,
+  scheduleCycleLabel,
+  type Schedule,
+  type ScheduleDelivery,
+  type ScheduleEvent,
+} from '../shared/schedule.ts'
 
 // 数据目录换成临时的，别动本机的计划和配置
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-schedules-'))
@@ -286,7 +293,7 @@ test('依赖：上游启动失败时下游不启动，原因写进计划给用�
   assert.equal(fired(downName), 0, '上游失败，下游不启动')
   const blocked = await find(down.id)
   assert.equal(blocked.blockedAt, at(now - 1000))
-  assert.equal(blocked.blockedReason, `因为「${upName}」启动失败，没有启动`)
+  assert.equal(blocked.blockedReason, t('因为「{name}」启动失败，没有启动', { name: upName }))
   assert.equal(blocked.status, 'pending')
   assert.ok(Date.parse(blocked.at) > now, '按重复规则推到下一次，不会每轮询一次就重试')
 
@@ -314,7 +321,7 @@ test('依赖：上游停用 / 从没跑过 / 被删掉都拦住下游', async ()
     assert.equal((await put(api, up.id, plan(upName, { repeat: 'daily', at: up.at, enabled: false }))).status, 200)
     await api.tick(now)
     assert.equal(fired(downName), 0)
-    assert.equal((await find(down.id)).blockedReason, `因为「${upName}」已停用，没有启动`)
+    assert.equal((await find(down.id)).blockedReason, t('因为「{name}」已停用，没有启动', { name: upName }))
   }
 
   // 从没跑过：下游到点时上游还没到（或者被停着），原因写清是「还没有执行过」
@@ -326,7 +333,7 @@ test('依赖：上游停用 / 从没跑过 / 被删掉都拦住下游', async ()
     const down = await create(plan(downName, { repeat: 'daily', at: at(now - 1000), dependsOn: [up.id] }))
     await api.tick(now)
     assert.equal(fired(downName), 0)
-    assert.equal((await find(down.id)).blockedReason, `因为「${upName}」还没有执行过，没有启动`)
+    assert.equal((await find(down.id)).blockedReason, t('因为「{name}」还没有执行过，没有启动', { name: upName }))
   }
 
   // 上游被删掉：拦住，并说清是上游已经不存在
@@ -338,7 +345,7 @@ test('依赖：上游停用 / 从没跑过 / 被删掉都拦住下游', async ()
     const down = await create(plan(downName, { repeat: 'daily', at: at(now - 1000), dependsOn: [up.id] }))
     await api.routes.request(`/${up.id}`, { method: 'DELETE' })
     await api.tick(now)
-    assert.equal((await find(down.id)).blockedReason, '因为上游计划已不存在，没有启动')
+    assert.equal((await find(down.id)).blockedReason, t('因为上游计划已不存在，没有启动'))
   }
 })
 
@@ -362,17 +369,22 @@ test('依赖：保存时拒绝不存在的上游、依赖自己和成环', async
     body: JSON.stringify(plan(unique(), { at: at(now + HOUR), dependsOn: ['not-exist'] })),
   })
   assert.equal(missing.status, 400)
-  assert.match(((await missing.json()) as { error: string }).error, /上游计划已经不存在/)
+  assert.equal(((await missing.json()) as { error: string }).error, t('选中的上游计划已经不存在，请重新选择'))
 
   // 依赖自己
   const self = await put(a.id, plan(a.name, { at: a.at, dependsOn: [a.id] }))
   assert.equal(self.status, 400)
-  assert.match(((await self.json()) as { error: string }).error, /不能依赖自己/)
+  assert.equal(((await self.json()) as { error: string }).error, t('计划不能依赖自己，请去掉这一项'))
 
   // 成环：a 依赖 b，而 b 本来就依赖 a
   const cycle = await put(a.id, plan(a.name, { at: a.at, dependsOn: [b.id] }))
   assert.equal(cycle.status, 400)
-  assert.match(((await cycle.json()) as { error: string }).error, /依赖关系成环/)
+  assert.equal(
+    ((await cycle.json()) as { error: string }).error,
+    t('依赖关系成环：{path}，请去掉一个上游再保存', {
+      path: scheduleCycleLabel([a.id, b.id, a.id], [a, b]),
+    }),
+  )
 })
 
 test('Webhook：成功启动 / 启动失败 / 错过 / 上游没成功各投递一次，结果记进计划', async () => {
@@ -478,7 +490,7 @@ test('依赖：同批里上游被拦住时下游读的是这一轮的结果，�
   assert.equal(fired(bName), 1, 'B 被上游拦住，这一次没有启动')
   assert.equal(fired(cName), 0, 'B 这一轮没跑成，C 不能靠 B 昨天的成功启动')
   const savedC = await find(c.id)
-  assert.equal(savedC.blockedReason, `因为「${bName}」的上游没有成功，没有启动`)
+  assert.equal(savedC.blockedReason, t('因为「{name}」的上游没有成功，没有启动', { name: bName }))
 })
 
 test('被上游拦住时用户改了排期：不把旧到点时间和跳过状态写回', async () => {
