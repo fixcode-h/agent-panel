@@ -50,7 +50,8 @@ function briefOf(v: unknown): HelperSpec['review'] {
 const tierField = () => ({
   type: 'string',
   enum: ['high', 'medium', 'low'],
-  description: '模型档位；不写跟你一样',
+  description:
+    '模型档位：要读代码、做判断的用默认档；删文件、跑命令、提交、勾选清单这类纯执行动作写 low，不要按父对话的档位跑',
 })
 
 /** 接着之前哪个子任务（它的 id）的会话做 */
@@ -78,8 +79,16 @@ const tasksField = (o: Orchestra) => ({
   items: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: '子任务的短标题（显示在任务进度里）；不写取 instructions 的第一行' },
-      instructions: { type: 'string', description: '要做什么、范围、产出；子任务只看得到这些和用户需求' },
+      title: {
+        type: 'string',
+        description:
+          '子任务的短标题（显示在任务进度里），10–20 字，点明这次的具体对象或范围；同一批不能有两个相同的标题。不写取 instructions 的第一行（都这样省事就会一批同一个标题）',
+      },
+      instructions: {
+        type: 'string',
+        description:
+          '要做什么、范围、产出：写清各自的模块或目录、要交付什么、验收标准；派「文档」时给出要记什么和依据在哪（提交号、文件路径、命令输出、关键结论）；子任务只看得到这些和用户需求，不要把同一段话发给多个任务',
+      },
       agent: agentField(o),
       tier: tierField(),
       resume: resumeField(),
@@ -331,7 +340,11 @@ export function orchTools(o: Orchestra) {
                   type: 'string',
                   description: '你分析后起的短标题（10–20 字），点明要做的功能或问题，能和其他子对话区分开',
                 },
-                message: { type: 'string', description: '完整的需求和背景，子对话只看得到这些' },
+                message: {
+                  type: 'string',
+                  description:
+                    '完整的需求和背景，子对话只看得到这些：写清涉及的模块或目录、要交付什么、验收标准是什么；派「文档」时给出要记什么和依据在哪（提交号、文件路径、命令输出、关键结论）',
+                },
                 files: {
                   type: 'array',
                   items: { type: 'string' },
