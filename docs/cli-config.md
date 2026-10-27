@@ -267,6 +267,10 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
   `vars` 是模板里可以填的变量（数值或字符串，例如 Pi 桥接的 `stepTimeout` / `attempts`）：生产值写在定义里，
   脚本不自己写死；测试调 `mcpConfig` 时传覆盖值换成小值，不用真等到生产的秒数。`{name}` / `{url}` / `{dir}` 先填，不会被 `vars` 覆盖。
 
+`extras` 是按设置开关注入的额外扩展：每一项写 `option`（设置里那个开关的 id，条件是 `opt.<id>`）、`args` 和 `files`，
+只有开关打开时才写文件、加参数；关着时文件根本不写，CLI 里也就不会注册这些工具。
+不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。Pi 的联网搜索就是这样接的（见下面「联网搜索」）。
+
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
 
@@ -301,6 +305,23 @@ UI 设计的服务名是 `design`，它的工具本来就不含这三个。
 Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json` 要先信任项目），用户自己的 MCP 服务器通过 `mcpStore`
 出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
 而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
+
+### 联网搜索 `web_search` / `web_fetch`
+
+Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 `webSearch`，默认关闭）打开后，这一轮的临时目录里多写一个
+扩展 `{dir}/agent-panel-{name}-websearch.ts` 并用 `-e` 加载，注册 `web_search` / `web_fetch` 两个工具；关着时这两步都不做。
+扩展本身不含密钥：请求打到面板的 `/api/web-search/<这一轮的随机地址>/search` 和 `/fetch`（和提问桥接共用同一个随机地址），
+面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发。地址里的随机地址在路由里核对（`server/ask-mcp.ts` 的 `hasAskSession`），
+访问令牌打开时也能用，别的程序猜不到。地址守卫、参数规范化、各搜索源的请求和解析在 `shared/web-search.ts`
+（注册表 `SEARCH_PROVIDERS`：degoog 默认、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
+
+参数和限制对齐 Command Code 的 Web 工具：`query`（至少 2 个字）/ `numResults`（默认 5、最多 10）/ `allowed_domains` / `blocked_domains`
+（两者互斥，过滤在面板这一侧做，不受各搜索源支持与否影响），`url` / `format`（markdown 默认、text、html）/ `startIndex` /
+`timeout`（默认 60 秒、最多 120）。抓取前挡掉带用户名密码的地址、内网 / 回环 / 链路本地地址和单标签主机名，
+域名解析出来的地址再查一次；重定向手动跟着走（最多 5 跳），每一跳都重新过一遍守卫，跳转过程里写在结果里。
+正文一次返回 100000 字符，用返回里的 `startIndex` 续读；同一地址 15 分钟内的抓取直接用缓存。
+缺密钥、搜索源返回非 2xx、返回的不是 JSON 时，错误原文原样交给模型和用户，不换成一句「搜索失败」。
+单测：`shared/web-search.test.ts`（守卫、解析、窗口）、`server/web-search.test.ts`（路由和扩展注册，网络和 DNS 都是桩）。
 
 ## 能力 `features`
 

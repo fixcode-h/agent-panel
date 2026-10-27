@@ -24,6 +24,7 @@ import {
   GraduationCap,
   Gauge,
   Keyboard,
+  Search,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -57,6 +58,7 @@ import { TagsSection } from '@/components/settings/TagsSection'
 import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { RemoteSection } from '@/components/settings/RemoteSection'
 import { NetworkSection } from '@/components/settings/NetworkSection'
+import { WebSearchSection } from '@/components/settings/WebSearchSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
@@ -109,6 +111,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
   { id: 'network', label: t('网络与代理'), icon: Network, group: t('连接') },
+  { id: 'web-search', label: t('联网搜索'), icon: Search, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
@@ -149,6 +152,7 @@ function SettingsBody({
   const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
+  const [webSearch, setWebSearch] = useState(initial.webSearch)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
@@ -312,6 +316,8 @@ function SettingsBody({
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
     // 只存设置，地址属外部配置：没填就存空字符串，不发请求；投递规则见 server/webhook.ts
     webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
+    // 联网搜索：搜索源和密钥（开关在 CLI 自己的设置里，不在这份全局设置里）
+    webSearch,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -571,6 +577,7 @@ function SettingsBody({
             />
           )}
           {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
+          {cur.id === 'web-search' && <WebSearchSection value={webSearch} onChange={setWebSearch} />}
           {cur.id === 'integrations' && <IntegrationsSection />}
           {cur.id === 'general' && (
             <>

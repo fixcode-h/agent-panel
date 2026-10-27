@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { McpSpec, mcpConfig } from './cli-spec.ts'
+import { McpSpec, mcpConfig, mcpExtras } from './cli-spec.ts'
 
 const spec = McpSpec.parse({
   args: ['-e', '{dir}/agent-panel-{name}.ts'],
@@ -46,4 +46,23 @@ test('mcpConfig：内建占位符不会被 vars 顶掉', () => {
 test('mcpConfig：${} 里的内建占位符也不替换（模板里是 TS 插值）', () => {
   const s = McpSpec.parse({ files: { 'a.ts': '`${name}`{name}`${dir}`' } })
   assert.equal(mcpConfig(s, 'panel', 'http://u', '/d').files[0].content, '`${name}`panel`${dir}`')
+})
+
+test('mcpExtras：开关打开时才注入额外的扩展文件和参数，关着时一个都不写', () => {
+  const s = McpSpec.parse({
+    extras: [
+      {
+        option: 'webSearch',
+        args: ['-e', '{dir}/extra-{name}.ts'],
+        files: { '{dir}/extra-{name}.ts': 'const base = {url}' },
+      },
+    ],
+  })
+  // 没传 options（例如 UI 设计那一轮）当关着：不加参数，也不写文件
+  assert.deepEqual(mcpExtras(s, 'panel', 'http://u/mcp', '/d'), { args: [], files: [] })
+  assert.deepEqual(mcpExtras(s, 'panel', 'http://u/mcp', '/d', { webSearch: false }), { args: [], files: [] })
+  assert.deepEqual(mcpExtras(s, 'panel', 'http://u/mcp', '/d', { webSearch: true }), {
+    args: ['-e', '/d/extra-panel.ts'],
+    files: [{ path: '/d/extra-panel.ts', content: 'const base = http://u/mcp' }],
+  })
 })
