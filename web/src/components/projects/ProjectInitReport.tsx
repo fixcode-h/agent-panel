@@ -84,19 +84,19 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
     if (!todo.length || busy) return
     setBusy(true)
     try {
-      // 面板上的项目可能是打开时读的：应用前现读一次，别把别处刚改的字段写回旧值
-      const latest = await api
-        .projects()
-        .then((list) => list.find((x) => x.id === project.id))
-        .catch(() => undefined)
-      const base = latest ? toInput(latest) : draft
-      const next = todo.reduce((acc, r) => r.apply(acc), base)
-      const saved = await api.updateProject(project.id, {
-        ...next,
-        // 已有初始化时间时保留：这里只是应用推荐，不是重新初始化
-        initializedAt: latest?.initializedAt || project.initializedAt || new Date().toISOString(),
-        initResult: p,
-      })
+      // 面板上的项目是打开时读的：带上它的 updatedAt 保存，期间别处改过就由服务端拒绝（409），
+      // 不再「先 GET 一次再整份 PUT」——GET 失败回落到旧草稿时，旧快照照样会覆盖刚保存的改动
+      const next = todo.reduce((acc, r) => r.apply(acc), draft)
+      const saved = await api.updateProject(
+        project.id,
+        {
+          ...next,
+          // 已有初始化时间时保留：这里只是应用推荐，不是重新初始化
+          initializedAt: project.initializedAt || new Date().toISOString(),
+          initResult: p,
+        },
+        project.updatedAt,
+      )
       setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x)))
       setApplied((s) => new Set([...s, ...todo.map((r) => r.id)]))
       toast.success(t('已应用 {n} 项设置', { n: todo.length }))

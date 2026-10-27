@@ -2433,6 +2433,12 @@ function route(method: string, url: string, body: unknown): unknown {
       if (!cur) return fail('项目不存在')
       return update('projects', id, withInitResult(cur, saved.data), '项目不存在')
     }
+    // 和真正的服务端一样：带版本保存时，期间被别处改过就拒绝，不拿旧快照覆盖（见 project-lock.ts）
+    const expected = (body as { expectedUpdatedAt?: unknown } | null)?.expectedUpdatedAt
+    if (method === 'PUT' && typeof expected === 'string' && expected) {
+      const cur = (d.projects ?? []).find((x) => x.id === id)
+      if (cur && cur.updatedAt !== expected) fail('项目在别处被修改过，请关闭设置重新打开后再保存', 409)
+    }
     const input = parse(ProjectInput, body)
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
     if (input.workflowId && !d.workflows.some((w) => w.id === input.workflowId)) fail('工作流不存在')

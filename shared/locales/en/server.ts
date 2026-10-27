@@ -170,6 +170,8 @@ export const EN_SERVER: Record<string, string> = {
   '构建命令：{cmd}': 'Build command: {cmd}',
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
+  '项目在别处被修改过，请关闭设置重新打开后再保存':
+    'This project was changed elsewhere. Close and reopen the settings, then save again.',
   项目顺序格式不对: 'Invalid project order',
   '项目顺序里有不存在的项目：{id}': 'Project order contains an unknown project: {id}',
   '项目顺序里有重复的项目：{id}': 'Project order contains a duplicate project: {id}',

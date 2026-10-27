@@ -33,7 +33,7 @@
 
 - 新增 `PUT /projects/:id/init-result`（`server/index.ts`）：服务端自己 `projects.get(id)` 读最新项目，再用 `shared/project-init.ts` 的 `withInitResult(cur, saved.data)` 只合并 `initResult` / `initializedAt`（时间取本次完成时间），其它字段一律用刚读到的那份。请求体只带 `{ initResult }`，用 `ProjectProposalSchema` 校验，不合法返回 400（`z.prettifyError`），项目不存在 404。
 - `ProjectSettingsDialog.tsx` 的 `deliver` 改调 `api.saveProjectInitResult`（`web/src/lib/api.ts`），不再把整份项目发回去；演示版后端 `web/src/lib/demo-backend.ts` 同步实现了同一个路由（`withInitResult`，返回字段和正式后端一致）。
-- `ProjectInitReport.tsx` 的 `apply` 在应用前按服务端最新项目取一次基线（`api.projects()` 找本项目，取不到才回落到面板上的草稿），在这个基线上逐个 `r.apply` 后再保存，避开「面板打开后别处改过」的同类覆盖。
+- `ProjectInitReport.tsx` 的 `apply` 与 `ProjectSettingsDialog.tsx` 的「确认」改为带版本的保存：请求体带 `expectedUpdatedAt`（打开时读到的 `updatedAt`），服务端 `PUT /projects/:id` 用 `staleProjectWrite`（`server/project-lock.ts`）比对刚读到的最新值，不一致返回 409 并提示「项目在别处被修改过，请关闭设置重新打开后再保存」；不再「先 GET 一次再整份 PUT」，也不再在 GET 失败时回落到面板上的旧草稿。演示后端 `web/src/lib/demo-backend.ts` 同步这条校验（409 文案一致）。
 - 界面检查补了「应用后状态」断言（见下），把「应用了又变回去」变成能拦住的回归。
 
 ## 验证
@@ -44,15 +44,16 @@
 - 界面检查（`npx vite build --mode demo` + `node scripts/ui-check.mjs`）：10 个分片全过；projects 分片 39 张截图，包含新增的「AI初始化-全部应用后状态」。
 - `scripts/ui/07-projects.mjs` 的新断言：点「全部应用」后等报告面板 `[data-analysis-panel="init"]` 出现「全部推荐都已和项目设置一致」，并且面板里不能再有「项待应用」，「全部应用」按钮变成不可点。
 - 真实数据脚本对照（本机数据目录的副本）：修复前同样的保存会让「0 项待应用」变回 8 项、项目名被回滚；修复后保持 0 项、名称不回滚；坏 `initResult` 返回 400。
+- 乐观锁补修（`server/project-lock.ts`、`server/project-lock.test.ts`、`PUT /projects/:id`、报告面板与设置页的保存调用）：`npm run typecheck`、`npm run lint` 通过；`node --test server/project-lock.test.ts` 4 个用例通过（未带版本不校验、一致放行、不一致冲突、项目已删不算冲突）。
 
 ## 已知限制
 
-以下两点写在这里是**没修**的，别当成已解决：
+以下这一点写在这里是**没修**的，别当成已解决：
 
-- **报告面板的 `todo` 和基线可能不同步**：`apply` 的 `todo` 来自渲染时的草稿 `same` 判定，基线换成服务端最新项目后，两者在特定时序（面板渲染后、点应用前项目又被别处改过）下已经不是同一份数据，可能漏应用几项或应用出预期外的值。彻底做法是应用时按最新项目重算一遍 `buildGroups` 的 `same`。
-- **GET → 整份 PUT 的竞态还在**：设置页「确认」和报告面板仍然先 GET 再整份 PUT，`api.projects()` 失败时还会回落到面板上的旧草稿。彻底做法是服务端在保存时自己读最新再按字段合并（像 `PUT /projects/:id/init-result` 这样），或者 PUT 带上 `updatedAt` 做乐观锁、版本不一致直接拒绝。
+- **报告面板的 `todo` 和基线可能不同步**：`apply` 的 `todo` 来自渲染时的草稿 `same` 判定；现在的保存带 `expectedUpdatedAt`，期间项目被别处改过会直接 409、不再静默写回旧值，但用户重试前面板上的 `same` 判定仍是旧快照算的，可能漏应用几项。彻底做法是应用时按最新项目重算一遍 `buildGroups` 的 `same`。
 
 ## 防复发
 
 - **「只改一项」的写入不要整份 PUT 回去**：客户端手里的快照只适合渲染，提交时让服务端读最新再按字段合并（这次这类字段就是 `initResult` / `initializedAt`，`PUT /projects/:id/lessons` 早就是这么做的）。
+- **整份覆盖的写路径要带版本**：确实要整份保存时（项目设置页），请求体带上打开时读到的 `expectedUpdatedAt`，让服务端比对最新值后 409；不要用「保存前先 GET 一次」当保护——GET 和 PUT 之间仍有窗口，GET 失败回落到旧快照时窗口更大。
 - 给初始化推荐加界面断言时要断言**写完之后的显示状态**（计数清零、按钮不可点），只断言「出现了『已应用』的 toast」拦不住旧快照覆盖——这次是先有 toast 断言、问题照样过。

@@ -113,6 +113,7 @@ import { sweepPanelMcp } from './panel-mcp-files.ts'
 import { existsSync } from 'node:fs'
 import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
+import { staleProjectWrite } from './project-lock.ts'
 import { LESSON_REVIEW_LANG, parseLessonReview } from '../shared/lesson-review.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -724,6 +725,17 @@ app.put('/projects/order', async (c) => {
 
 app.put('/projects/:id', async (c) => {
   const body = await c.req.json()
+  const id = c.req.param('id')
+  // 客户端带着读取时的版本保存：期间被别处改过就拒绝，不拿旧快照整份覆盖刚应用的推荐
+  // （见 docs/modules/web/bugs/init-apply-overwritten-by-snapshot.md 的「GET → 整份 PUT 的竞态」）
+  const expected =
+    body && typeof body === 'object' ? (body as { expectedUpdatedAt?: unknown }).expectedUpdatedAt : undefined
+  if (typeof expected === 'string' && expected) {
+    const cur = await projects.get(id)
+    if (staleProjectWrite(cur?.updatedAt, expected))
+      return bad(c, t('项目在别处被修改过，请关闭设置重新打开后再保存'), 409)
+    delete (body as Record<string, unknown>).expectedUpdatedAt
+  }
   const r = await parseProject(body)
   if (r.error) return bad(c, r.error)
   // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的

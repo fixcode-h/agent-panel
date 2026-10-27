@@ -575,14 +575,8 @@ function Body({
     if (!valid || saving || !draft.initializedAt) return
     setSaving(true)
     try {
-      // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用服务端最新的那份。
-      // 打开设置时手里的旧推荐不能写回去：期间可能已经在别处重新初始化或应用过推荐
-      const latest = project
-        ? await api
-            .projects()
-            .then((list) => list.find((x) => x.id === project.id))
-            .catch(() => undefined)
-        : undefined
+      // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用打开时读到的那份。
+      // 期间别处重新初始化或应用过推荐，由下面保存时的乐观锁拦下（409），不拿旧值静默覆盖
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
@@ -592,12 +586,13 @@ function Body({
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
         // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
-        initResult: init ?? readProjectProposal(latest?.initResult) ?? draft.initResult,
+        initResult: init ?? readProjectProposal(draft.initResult),
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
         for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
-        const saved = await api.updateProject(project.id, input)
+        // 带着打开时的 updatedAt 保存：期间别处改过（应用了推荐、角色记了教训）就 409，提示重新打开再存
+        const saved = await api.updateProject(project.id, input, project.updatedAt)
         setProjects((ps) => ps.map((p) => (p.id === saved.id ? saved : p)))
         toast.success(t('项目设置已保存'))
       } else {
