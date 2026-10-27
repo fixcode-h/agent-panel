@@ -12,6 +12,7 @@
 | design      | `server/designs.ts`、`server/design-mcp.ts`、`server/design-capture.ts`、`shared/design.ts`、`web/src/components/design/`、`web/src/pages/DesignPage.tsx` | UI 设计：设计数据、AI 对话（设计工具 MCP）、原画与图片生成、导出                             | `server/designs.ts`                      | [modules/design](modules/design/README.md)           | verified |
 | web         | `web/`                                                                                                                                                    | React 前端：项目、任务、工作流、Agent、计划、设置页面，流程图画布和对话输出                  | `web/src/App.tsx`                        | [modules/web](modules/web/README.md)                 | inferred |
 | scripts     | `scripts/`                                                                                                                                                | 端到端测试、界面检查、出包、规则检查和漏翻检查、教训检索、Windows 托盘                       | `scripts/e2e.mjs`、`scripts/package.mjs` | [modules/scripts](modules/scripts/README.md)         | inferred |
+| testing     | `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/lib/` | 单测 / 端到端 / 界面检查的编排：分层与预算、并发、失败隔离、环境默认化、改动 → 测试选择 | `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs` | [modules/testing](modules/testing/README.md) | analyzed |
 | skills      | `skills/`                                                                                                                                                 | 随面板发布的内置 Skill，安装时平铺到用户目录                                                 | `skills/README.md`                       | [modules/skills](modules/skills/README.md)           | inferred |
 | extension   | `extension/`                                                                                                                                              | Chrome MV3 扩展：用本机已登录的 Gemini / ChatGPT 网页生图                                    | `extension/manifest.json`                | [modules/extension](modules/extension/README.md)     | inferred |
 
@@ -20,6 +21,7 @@
 - `web` 和 `server` 都依赖 `shared`；`shared` 不反过来引用它们（前端通过 Vite 别名 `@shared` 引用）。
 - `server` 通过 `server/exec/` 调用真实 CLI；`server/exec/` 只按 `shared/clis` 里的定义执行，不按 CLI 名字分支。
 - `scripts` 启动 `server` 和构建 `web` 做端到端与界面检查，是唯一会从外部跑整个应用的地方。
+- `testing` 覆盖 `scripts/` 里测试编排相关的那部分（单测 / e2e / 界面检查入口、选择规则、`scripts/lib/`），出包、发布、检查脚本仍归 `scripts`。
 - `skills` 和 `extension` 不参与应用编译，分别由 Agent CLI 和浏览器加载。
 
 ## 不容易发现位置的改动
@@ -32,6 +34,7 @@
 | 改流程图布局、连线规则                                      | `shared/flow.ts`；画布交互在 `web/src/components/flow/`                                                                                                                                                                  |
 | 改界面文案                                                  | `web/src` 里的 `t('中文')` + `shared/locales/en/`                                                                                                                                                                        |
 | 让 Agent 能操作软件的某个功能（停止、删除、改设置、开页面） | `server/app-actions/<组>.ts` 加一项 `defineAction`；界面操作再在 `web/src/App.tsx` 的 `UiActions` 加处理函数，见 [ADR 0011](adr/0011-app-actions-for-agents.md)                                                          |
+| 改测试怎么跑、分片、并发、预算、失败重试 | `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/lib/`（并发 / 重试 / 分层 / 预算）；选择规则在 `scripts/changed-tests.mjs` + `scripts/lib/changed-tests.mjs`；见 [modules/testing](modules/testing/README.md) |
 | 改端到端覆盖                                                | `scripts/e2e/` 下按主题分片，模拟 CLI 在 `scripts/fake-cli/`                                                                                                                                                             |
 | 改附件图片缩略图的宽度、中文字体的加载方式                  | `shared/schema.ts` 的 `ATTACHMENT_THUMB_WIDTH` + `server/thumbnail.ts`（接口在 `server/uploads.ts` 的 `/uploads/raw?w=`）；字体在 `web/src/fonts.css` / `fonts-cjk.css` + `web/src/lib/appearance.ts` 的 `ensureCjkFont` |
 | 改内置角色、工作流模板                                      | `shared/builtin/`，判定标准见 [agent-catalog.md](agent-catalog.md)                                                                                                                                                       |
