@@ -24,6 +24,12 @@ export const SEARCH_SNIPPET_CHARS = 500
 /** 搜索请求最多等多久：degoog 这类聚合服务要把查询转给几个引擎，给得比普通接口宽一些 */
 export const SEARCH_TIMEOUT_MS = 20_000
 
+/** DeepSeek 官方搜索的端点路径：官方文档给的固定路径；设置里的地址可以带自己的前缀路径（例如自建代理），这里只往后追加 */
+const DEEPSEEK_SEARCH_PATH = '/v1/tools/search'
+/** DeepSeek 一次只接受 1–50 条，超出范围上游直接报错 */
+const DEEPSEEK_SEARCH_MIN_COUNT = 1
+const DEEPSEEK_SEARCH_MAX_COUNT = 50
+
 /** 抓取正文的默认超时（秒）；Command Code 是 60 秒 */
 export const FETCH_DEFAULT_TIMEOUT_SECONDS = 60
 /** 抓取正文最多等多久（秒） */
@@ -151,8 +157,32 @@ const Tavily: SearchProvider = {
   parse: (body) => pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: 'content' }),
 }
 
+/**
+ * DeepSeek 官方搜索：面板显式调它的搜索端点（不是模型侧联网，/chat/completions 也没有联网参数），
+ * 用的是 DeepSeek 自己的 API 密钥，不是 litellm 中转的密钥；按量计费，所以不设成默认。
+ */
+const Deepseek: SearchProvider = {
+  id: 'deepseek',
+  label: t('DeepSeek 官方搜索（需要密钥）'),
+  needsKey: true,
+  // 地址可覆盖（可带自建代理的前缀路径），末尾统一追加官方端点；注意设置里那个地址是所有源共用的一个字段
+  endpoint: 'https://api.deepseek.com',
+  build: ({ query, count, key, endpoint }) => ({
+    url: `${endpoint.replace(/\/+$/, '')}${DEEPSEEK_SEARCH_PATH}`,
+    init: {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        query,
+        count: Math.min(DEEPSEEK_SEARCH_MAX_COUNT, Math.max(DEEPSEEK_SEARCH_MIN_COUNT, count)),
+      }),
+    },
+  }),
+  parse: (body) => pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: 'snippet' }),
+}
+
 /** 可选的搜索源：设置界面按这个列表显示，第一个是默认 */
-export const SEARCH_PROVIDERS: SearchProvider[] = [Degoog, Searxng, Brave, Tavily]
+export const SEARCH_PROVIDERS: SearchProvider[] = [Degoog, Searxng, Brave, Tavily, Deepseek]
 export const DEFAULT_SEARCH_PROVIDER = Degoog.id
 
 /** 可选的搜索源 id：设置文件里写成别的值时由 schema 回退到默认源 */

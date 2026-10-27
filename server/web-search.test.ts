@@ -316,3 +316,80 @@ test('Pi 扩展：注册 web_search / web_fetch，参数交给面板校验，错
     s.close()
   }
 })
+
+// ── DeepSeek 官方搜索 ──────────────────────────────────────
+// 面板显式调官方搜索端点（不是模型侧联网）：断请求形状、结果映射、缺密钥报错和地址覆盖。
+
+test('deepseek：POST 到 /v1/tools/search，带 Bearer 和 count', async () => {
+  const s = session()
+  await withProvider({ provider: 'deepseek', key: 'sk-test-deepseek', endpoint: '' })
+  const stub = stubFetch(() => json({ results: [] }))
+  const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
+  const res = await api.request(`/${s.token}/search`, {
+    method: 'POST',
+    body: JSON.stringify({ query: 'deepseek search', numResults: 3 }),
+  })
+  assert.equal(res.status, 200)
+  assert.equal(((await res.json()) as { provider: string }).provider, 'deepseek')
+  // 默认地址 + 官方固定路径，查询串里不带别的参数
+  assert.equal(stub.calls[0]!.url, 'https://api.deepseek.com/v1/tools/search')
+  assert.equal(stub.calls[0]!.init.method, 'POST')
+  assert.equal((stub.calls[0]!.init.headers as Record<string, string>).authorization, 'Bearer sk-test-deepseek')
+  // 字段名按官方文档；numResults=3 时要 6 条，供域名过滤之后还能剩够数
+  assert.deepEqual(JSON.parse(String(stub.calls[0]!.init.body)), { query: 'deepseek search', count: 6 })
+  s.close()
+})
+
+test('deepseek：结果按 title / url / snippet 映射，摘要文本带上来源', async () => {
+  const s = session()
+  await withProvider({ provider: 'deepseek', key: 'sk-test-deepseek', endpoint: '' })
+  const stub = stubFetch(() =>
+    json({
+      results: [
+        { title: '官方文档', url: 'https://api-docs.deepseek.com/guides/search', snippet: '搜索接口说明' },
+        { title: '第二条', url: 'https://example.com/b', snippet: 'sb' },
+      ],
+    }),
+  )
+  const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
+  const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'deepseek' }) })
+  assert.equal(res.status, 200)
+  const body = (await res.json()) as {
+    results: { title: string; url: string; snippet: string }[]
+    text: string
+  }
+  assert.deepEqual(body.results, [
+    { title: '官方文档', url: 'https://api-docs.deepseek.com/guides/search', snippet: '搜索接口说明' },
+    { title: '第二条', url: 'https://example.com/b', snippet: 'sb' },
+  ])
+  assert.match(body.text, /https:\/\/api-docs\.deepseek\.com\/guides\/search/)
+  assert.match(body.text, /搜索接口说明/)
+  s.close()
+})
+
+test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到默认源', async () => {
+  const s = session()
+  await withProvider({ provider: 'deepseek', key: '   ', endpoint: '' })
+  const stub = stubFetch(() => json({ results: [] }))
+  const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
+  const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
+  assert.equal(res.status, 400)
+  assert.match(((await res.json()) as { error: string }).error, /needs a key|需要密钥/)
+  assert.equal(stub.calls.length, 0)
+  s.close()
+})
+
+test('deepseek：地址可覆盖，请求打到自定义地址下的 /v1/tools/search', async () => {
+  const s = session()
+  await withProvider({
+    provider: 'deepseek',
+    key: 'sk-test-deepseek',
+    endpoint: 'https://search-proxy.example.com/deepseek/',
+  })
+  const stub = stubFetch(() => json({ results: [] }))
+  const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
+  const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
+  assert.equal(res.status, 200)
+  assert.equal(stub.calls[0]!.url, 'https://search-proxy.example.com/deepseek/v1/tools/search')
+  s.close()
+})

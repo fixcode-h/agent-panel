@@ -18,6 +18,7 @@ export const EN_WEB_SEARCH: Record<string, string> = {
   'SearXNG（自建实例）': 'SearXNG (self-hosted)',
   'Brave Search API（需要密钥）': 'Brave Search API (key required)',
   'Tavily（需要密钥）': 'Tavily (key required)',
+  'DeepSeek 官方搜索（需要密钥）': 'DeepSeek official search (key required)',
   '{field} 里只能写域名，例如 example.com，不要带协议、端口或路径：{value}':
     '{field} only accepts domains such as example.com, without a scheme, port or path: {value}',
   'query 至少要有 {n} 个字': 'query must be at least {n} characters',
