@@ -14,6 +14,7 @@ import { parserFor, type CliEvent } from './parsers.ts'
 import { orchTools } from '../orch-mcp.ts'
 import { applyConfigFiles, askMcpApi, openAskBridge } from '../ask-mcp.ts'
 import { createRpcSession, REQUEST_TIMEOUT_MS, type RpcDiagnose } from './rpc/session.ts'
+import type { RpcAdapter } from './rpc/types.ts'
 import { createSpecAdapter } from './rpc/spec.ts'
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -468,6 +469,94 @@ test('Pi RPC：请求超时时，错误里带等待秒数、进程状态和 stde
   assert.ok(message.includes('Error: 接口 502'), message)
 })
 
+test('Pi RPC：进程活着但没有输出就超时，结果事件标成环境性卡住（runner 据此重试一次）', async () => {
+  const { events } = await session(
+    '慢',
+    undefined,
+    {},
+    {
+      requestTimeoutMs: 150,
+      // 高负载时 Pi 冷启动 + 桥接扩展加载会顶到请求超时：进程在、stderr 干干净净
+      diagnose: { alive: () => true, stderr: () => '  \n' },
+    },
+  )
+  await waitMs(500)
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }>
+  assert.equal(result.ok, false)
+  assert.equal(result.envStall, true, '进程活着、没有任何输出：这一轮要能自动重试')
+})
+
+test('RPC：这一轮已经有过响应，收尾请求超时不算环境性卡住（内容性失败不能整轮重跑）', async () => {
+  // 复现评审 R1：模型先回了内容（甚至报了错），收尾请求（Pi 的 get_session_stats / 退出请求）再超时，
+  // 进程同样活着、stderr 同样空，但这一轮已经有响应，不能当成冷启动没起来去重跑——会重做已完成的部分
+  const events: CliEvent[] = []
+  const adapter: RpcAdapter = {
+    async start(ctx) {
+      ctx.emit({ type: 'text', text: '这一轮模型报错了' })
+      await ctx.request({ method: 'get_session_stats' }, { timeoutMs: 120 })
+      ctx.finish(false, '模型报错')
+    },
+    message: () => {},
+    steer: async () => false,
+    interrupt: () => true,
+  }
+  const rpc = createRpcSession({
+    adapter,
+    cwd: process.cwd(),
+    input: '干活',
+    onEvent: (e) => events.push(e),
+    diagnose: { alive: () => true, stderr: () => '' },
+  })
+  rpc.start({ write: () => {}, end: () => {} })
+  await waitMs(400)
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }>
+  assert.equal(result.ok, false)
+  assert.equal(result.envStall, undefined, '已经有响应了：这是内容性失败，重跑会重做已完成的部分')
+})
+
+test('Pi RPC：stderr 里已经有报错时，超时不算环境性卡住', async () => {
+  const { events } = await session(
+    '慢',
+    undefined,
+    {},
+    {
+      requestTimeoutMs: 150,
+      diagnose: { alive: () => true, stderr: () => 'Error: 接口 502' },
+    },
+  )
+  await waitMs(500)
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }>
+  assert.equal(result.ok, false)
+  assert.equal(result.envStall, undefined, 'stderr 里已经有原因：这不是面板没等够，重试也一样')
+})
+
+test('Pi RPC：进程已经退出时，超时不算环境性卡住（重试也白搭）', async () => {
+  const { events } = await session(
+    '崩了',
+    undefined,
+    {},
+    {
+      requestTimeoutMs: 150,
+      diagnose: { alive: () => false, stderr: () => '' },
+    },
+  )
+  await waitMs(500)
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }>
+  assert.equal(result.ok, false)
+  assert.equal(result.envStall, undefined)
+})
+
+test('Pi RPC：正常结束的一轮不带环境性标记', async () => {
+  const { rpc, events, sent } = await session('干活')
+  rpc.handle(reply(sent, 'get_state', { sessionId: 'pi-ok' }))
+  rpc.handle(lastReply(sent, 'prompt', { disposition: 'started' }))
+  rpc.handle({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } })
+  await settle(rpc, sent)
+  const result = events.find((e) => e.type === 'result') as Extract<CliEvent, { type: 'result' }>
+  assert.equal(result.ok, true)
+  assert.equal(result.envStall, undefined)
+})
+
 test('Pi RPC：进程已经退出时，错误里带上 stderr 最后几行', async () => {
   const { events } = await session(
     '崩了',
@@ -569,9 +658,9 @@ test('Pi 扩展最坏的加载时长要留在 get_state 默认超时之内：面
   const def = getCli('pi')!
   // 扩展加载期间 Pi 不读 stdin，面板这时只在等 get_state。最坏加载时长如果顶到它的超时，
   // 面板端点慢一点就会把「工具没挂上」换成「get_state 没有响应」，一样用不了面板工具
-  const script = String(def.mcp!.files['{dir}/agent-panel-{name}.ts'])
-  // 扩展加载的总预算：握手和列工具共用这一份，最坏就是它
-  const worst = Number(/const LOAD_BUDGET_MS = ([0-9]+)/.exec(script)![1])
+  // 扩展加载的总预算：握手和列工具共用这一份，最坏就是它；生产值只写在 mcp.vars，模板里是占位符
+  const worst = Number(def.mcp!.vars.loadBudget)
+  assert.ok(Number.isFinite(worst) && worst > 0, `定义里要有加载预算：${worst}`)
   // 单步超时和次数读生产值：模板里已经是占位符，实际值只存在于 mcp.vars
   const step = Number(def.mcp!.vars.stepTimeout)
   const attempts = Number(def.mcp!.vars.attempts)

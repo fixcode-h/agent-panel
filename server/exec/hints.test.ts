@@ -1,9 +1,12 @@
 /**
  * CLI 报错的说明：常见的报错换成能照着做的话。运行：npm run test:unit
  */
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { setLang } from '../../shared/i18n.ts'
+import { setLang, t } from '../../shared/i18n.ts'
+import { getCli } from '../../shared/clis.ts'
+import { fmtDuration } from '../../shared/duration.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import {
@@ -11,13 +14,20 @@ import {
   clippedTranscript,
   contextFallbackKind,
   describeCompaction,
+  envStallBudget,
+  envStallFailure,
+  envStallNote,
+  envStallTimeout,
   estTokens,
   failureHints,
   looksUnfinished,
   settleContextNotes,
+  settleEnvStallNotes,
   settleNetNotes,
   settleRetryNotes,
+  shouldRetryEnvStall,
 } from './runner.ts'
+import { REQUEST_TIMEOUT_MS } from './rpc/session.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -321,4 +331,100 @@ test('上游网关断开的失败卡也给连接中断的说明', () => {
   const hints = failureHints('502 Bad Gateway', { id: 'pi', name: 'Pi' })
   assert.equal(hints.length, 1)
   assert.match(hints[0], /连接中途断开/)
+})
+
+test('环境性失败（进程活着、没有任何输出的超时）自动重试一次', () => {
+  // 第一次超时：放宽等待再跑一次
+  assert.equal(shouldRetryEnvStall({ stall: true, retries: 0, aborted: false, prewarm: false, budget: 10_000 }), true)
+})
+
+test('环境性失败只重试一次：重试也超时就不再重试，失败卡片写明已重试过', () => {
+  assert.equal(
+    shouldRetryEnvStall({ stall: true, retries: 1, aborted: false, prewarm: false, budget: 10_000 }),
+    false,
+    '重试过就不再重试，不能循环',
+  )
+  assert.equal(shouldRetryEnvStall({ stall: true, retries: 5, aborted: false, prewarm: false, budget: 10_000 }), false)
+  // 两次都没等到响应：失败卡上要写明面板已经重试过，用户看得出不是第一次就失败
+  assert.equal(envStallFailure(1), t('已自动重试 {n} 次，仍然没有响应。', { n: 1 }))
+})
+
+test('内容性失败不重试：模型明确报错、用户停止、预热轮都没有环境性标记', () => {
+  const ok = { retries: 0, aborted: false, prewarm: false, budget: 10_000 }
+  // 模型报错、工具失败这类是任务内容的问题，多等一会儿也一样，重试只会白跑一轮
+  assert.equal(shouldRetryEnvStall({ stall: false, ...ok }), false)
+  assert.equal(shouldRetryEnvStall({ stall: true, ...ok, aborted: true }), false)
+  assert.equal(shouldRetryEnvStall({ stall: true, ...ok, prewarm: true }), false)
+})
+
+test('没有加载预算的 CLI 不重试：放宽不了等待，原样重跑既没用、文案也会说谎', () => {
+  assert.equal(envStallBudget('commandcode'), 0, 'Command Code 没有启动期要加载的桥接扩展')
+  assert.equal(shouldRetryEnvStall({ stall: true, retries: 0, aborted: false, prewarm: false, budget: 0 }), false)
+  assert.equal(envStallTimeout('commandcode'), REQUEST_TIMEOUT_MS, '没有预算时就用默认超时')
+})
+
+test('重试轮的超时按扩展加载预算推导，说明里写清没有响应、已重试 1 次', () => {
+  const def = getCli('pi')!
+  const loadBudget = Number(def.mcp!.vars.loadBudget)
+  const timeout = envStallTimeout('pi')
+  assert.equal(envStallBudget('pi'), loadBudget)
+  // 默认 15 秒 = 加载预算 10 秒 + 5 秒余量；重试轮再留一整份加载预算，不是随手写个 60 秒
+  assert.equal(timeout, REQUEST_TIMEOUT_MS + loadBudget)
+  assert.ok(timeout > REQUEST_TIMEOUT_MS, `重试轮要真的放宽：${timeout}ms`)
+  assert.ok(timeout < 60_000, `不要把用户晾到一分钟：${timeout}ms`)
+  const note = envStallNote(timeout)
+  assert.equal(note, t('这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…', { n: 1, wait: fmtDuration(timeout) }))
+})
+
+test('环境性失败重试成功：那张「没有响应」的卡收成普通说明', () => {
+  const base = 'Pi 执行失败：\nget_state 没有响应（已等 15s）\n进程还在运行\nstderr 没有输出'
+  const msg: TaskMessage = {
+    id: 's1',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: [base, '', envStallNote(25_000)].join('\n'),
+    tools: [],
+    at: '',
+    error: true,
+    alert: makeAlert('warn', base, 'no_response'),
+  }
+  settleEnvStallNotes([{ msg, base }])
+  assert.equal(msg.error, undefined, '这一轮最终做成了，不能一直挂着红色失败卡片')
+  assert.equal(msg.transient, true, '继续执行时要能去掉')
+  assert.match(msg.text, /get_state 没有响应/, '没响应的原因留着，方便查')
+  assert.ok(msg.text.includes(t('已自动重试 {n} 次，这一轮继续做完了。', { n: 1 })))
+  assert.equal(msg.alert?.level, 'warn')
+  assert.equal(msg.alert?.resolved, t('已自动重试，继续做完了'))
+})
+
+/**
+ * 源码里每个 `runAgent(...)` 调用的实参文本：按括号配对取。
+ * 用正则跨行匹配会连到下一个函数的右括号上，把无关代码也算进去；函数定义本身用 lookbehind 排除
+ */
+function runAgentCalls(src: string) {
+  const out: string[] = []
+  for (const m of src.matchAll(/(?<!function )runAgent\(/g)) {
+    let depth = 0
+    let i = m.index! + m[0].length - 1
+    for (; i < src.length; i++) {
+      if (src[i] === '(') depth++
+      else if (src[i] === ')' && --depth === 0) break
+    }
+    out.push(src.slice(m.index!, i + 1))
+  }
+  return out
+}
+
+test('环境性重试的计数和留痕要在每个 runAgent 调用点上都带上（漏传会清零、红卡收不掉）', () => {
+  const src = readFileSync(new URL('./runner.ts', import.meta.url), 'utf8')
+  // 除首次进入这一轮的 `runAgent(ctx, call)` 外，其余每个调用都是重跑或又一次完整调用：
+  // 缺 envStalls 会让「只重试一次」失效，缺 envStallNotes 会让重试成功后那张红卡收不掉（评审 R2 就是这么漏的）。
+  // 压缩轮那种 `await runAgent(...)` 也算在内——它同样会走到环境性失败的重试分支
+  const calls = runAgentCalls(src).filter((call) => !/^runAgent\(ctx, call\)$/.test(call.replace(/\s+/g, ' ')))
+  assert.ok(calls.length >= 6, `至少有几处重跑：${calls.length}`)
+  for (const call of calls) {
+    assert.match(call, /envStalls/, `这处调用没传 envStalls：${call.replace(/\s+/g, ' ').slice(0, 120)}`)
+    assert.match(call, /envStallNotes/, `这处调用没传 envStallNotes：${call.replace(/\s+/g, ' ').slice(0, 160)}`)
+  }
 })

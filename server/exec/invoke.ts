@@ -76,6 +76,11 @@ export async function invokeCli(o: {
   input: string
   signal?: AbortSignal
   timeoutMs: number
+  /**
+   * 等协议请求回复的超时（RPC 类 CLI 的握手 / 开一轮 / 插话）。不写用 session 层的默认值；
+   * 环境性失败重试那一轮由 runner 放宽（按桥接扩展加载预算推导）
+   */
+  requestTimeoutMs?: number
   idle?: Parameters<typeof runProcess>[0]['idle']
   onEvent: (ev: CliEvent) => void
   /**
@@ -337,6 +342,7 @@ async function invoke(
         signal.aborted || o.signal?.aborted ? Promise.resolve(null) : (o.keepAlive?.() ?? Promise.resolve(null)),
       waited: o.waited,
       diagnose: { alive: () => !exited, stderr: () => stderrTail },
+      requestTimeoutMs: o.requestTimeoutMs,
     })
     setControl({
       steer: (text) => session.steer(text),
