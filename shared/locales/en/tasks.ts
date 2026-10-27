@@ -525,6 +525,10 @@ export const EN_TASKS: Record<string, string> = {
   '让 Agent 把之前的对话压缩成摘要，腾出上下文':
     'Have the agent compress the conversation so far into a summary to free up context',
   压缩上下文: 'Compact context',
+  '{time}压缩过': 'Compacted {time}',
+  '压缩前 {before} · 压缩后 {after}': 'Before {before} · after {after}',
+  '压缩前 {before}': 'Before {before}',
+  '压缩后 {after}': 'After {after}',
   '让 Agent 审查还没提交的改动，只列问题，不改文件':
     'Have the agent review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',
@@ -1232,9 +1236,20 @@ export const EN_TASKS: Record<string, string> = {
   未执行: 'Not run',
   '已等 {time}': 'Waiting {time}',
   '{n} 条消息': '{n} messages',
-  演示版没有实时推送: 'The demo has no live updates',
   这个对话没有子对话: 'This conversation has no sub-conversations',
+  这条对话没有实时更新: 'This conversation has no live updates',
+  实时更新已停止: 'Live updates stopped',
   '实时更新连接失败，正在重连': 'Live updates failed to connect; reconnecting',
+  // 面板收起后还在跑的后台步骤：输入框上方的小胶囊和它点开的日志
+  正在读取对话: 'Reading conversation',
+  正在连接实时更新: 'Connecting live updates',
+  正在读取子对话: 'Reading sub-conversations',
+  正在标记已读: 'Marking as read',
+  正在渲染消息: 'Rendering messages',
+  '后台加载失败，查看加载日志': 'Background loading failed; view load log',
+  '后台加载中，查看加载日志': 'Loading in background; view load log',
+  加载日志: 'Load log',
+  后台步骤: 'Background steps',
   // 评审已放行（收尾时绕过评审门禁的记录）
   评审已放行: 'Review gate bypassed',
   合并前评审门禁被绕过: 'The review gate was bypassed before merging',

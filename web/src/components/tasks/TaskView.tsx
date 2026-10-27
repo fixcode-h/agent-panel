@@ -122,7 +122,7 @@ import { AnalysisPanel, reportTitle } from './AnalysisPanel'
 import { AnalysisMark } from './AnalysisMark'
 import { findReport, isAnalysisTask } from '@/lib/analysis-report'
 import { StepSection } from './StepSection'
-import { LoadTrace } from './LoadTrace'
+import { LoadTrace, LoadTracePill } from './LoadTrace'
 import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
@@ -792,9 +792,8 @@ export function TaskView({
     setStreamBoot(null)
     truncated.current = false
     trace.start('task')
-    // 演示版没有服务端推送：这一步按「不适用」处理，不假装连过
-    if (import.meta.env.VITE_DEMO) trace.skip('stream', t('演示版没有实时推送'))
-    else trace.start('stream')
+    // 演示版没有服务端推送，改用轮询：等任务数据到了再按「有没有在跑」判定这一步（见下面的演示版分支）
+    if (!import.meta.env.VITE_DEMO) trace.start('stream')
     api
       .task(taskId, { limit: OPEN_MESSAGE_LIMIT })
       .then((raw) => {
@@ -1048,11 +1047,27 @@ export function TaskView({
   // 还列着后台命令（等结果）时也要跟数据：命令跑完那一刻它从 jobs 里消失，
   // 不刷新的话界面上那一行会一直挂着「执行中」。正式版靠 SSE 推送，这里主要是演示版的轮询口径
   const jobRunning = (task?.jobs ?? []).some((j) => j.state === 'queued' || j.state === 'running')
+  // 演示版把轮询当作实时更新来记：按「打开那一刻有没有在跑」判定一次，之后任务再开始 / 停下不重记
+  // （加载日志记的是这次打开；startStep / skipStep 都只对 waiting 生效，跟着 running 反复切换会卡在旧状态）。
+  // 轮询自己的起停由 useTaskStream 的 start / stop 包住：打开时在跑、首轮回来前就停了，也会被收回来
+  const demoTraceStream = useRef('')
+  useEffect(() => {
+    if (!import.meta.env.VITE_DEMO || !task) return
+    if (demoTraceStream.current === task.id) return
+    demoTraceStream.current = task.id
+    if (running || jobRunning) trace.start('stream')
+    else trace.skip('stream', t('这条对话没有实时更新'))
+    // 只在任务到的第一刻判一次；trace 的函数是稳定的
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id, running, jobRunning])
   useTaskStream(
     taskId,
     running || jobRunning,
     apply,
     {
+      // 演示版把轮询当作实时更新：轮询在跑才算这一步开始，停下时收回来（正式版走 SSE，不调这两个）
+      start: () => trace.start('stream'),
+      stop: () => trace.finish('stream', t('实时更新已停止')),
       // 首包到了：正常首包直接完成；之前失败过一次又重连上的，把那条失败收回来
       // （否则重连成功后面板会永久停在「加载失败」，对话其实已经好了）
       open: () => {
@@ -1555,6 +1570,8 @@ export function TaskView({
   // 固定三行（见 ChildrenBar）：计划在上、子任务中间、子对话在下，每行各自不换行，三行都和输入框左对齐
   const conversationDock = (
     <>
+      {/* 面板收起后还在跑的后台步骤（实时更新、子对话列表）：留一个小胶囊，失败时写错误原文 */}
+      {traceHidden && <LoadTracePill steps={trace.steps} />}
       {task.plans?.length > 0 && (
         <div className="shrink-0 px-3 md:px-6">
           {/* 宽度跟着内容走：计划这一行通常就一小段字，撑满会在右边留下一片空框 */}

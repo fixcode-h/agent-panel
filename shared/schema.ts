@@ -1206,6 +1206,18 @@ export const ToolUse = z.object({
   ms: z.number().optional(),
   /** 还在等结果的调用从什么时候开始（毫秒时间戳）：界面边跑边显示已经用了多久，跑完换成 ms */
   startedAt: z.number().optional(),
+  /**
+   * 压缩上下文的这次调用的前后大小（token）：界面直接读数值，不解析 label 里的中文。
+   * 旧数据没有这个字段，CLI 没报数值时字段缺省，界面按缺失处理
+   */
+  compact: z
+    .object({
+      /** 压缩前上下文的大小 */
+      before: z.number().optional(),
+      /** 压缩后上下文的大小 */
+      after: z.number().optional(),
+    })
+    .optional(),
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
   alert: Alert.optional(),
 })

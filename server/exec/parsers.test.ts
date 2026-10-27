@@ -94,6 +94,24 @@ test('Claude Code：stream-json 的文字、思考、工具、待办和用量', 
   assert.equal(s.usage.context, 16208, '上下文是最后一次请求的输入')
   assert.equal(s.usage.model, 'claude-sonnet-4-5')
   assert.deepEqual(s.results, [{ ok: true, error: undefined }])
+
+  // 保活：同一个进程接着跑下一轮。stream-json 常驻时 total_cost_usd 是会话累计值，
+  // 只记比上一轮多出来的部分；usage 是本轮的，流式累计要按轮清零，第二轮没推流式事件时由 result 补上
+  const second = summarize(
+    parse({
+      type: 'result',
+      subtype: 'success',
+      session_id: 'sess-claude-1',
+      total_cost_usd: 0.0612,
+      usage: { input_tokens: 30, cache_read_input_tokens: 2000, output_tokens: 10 },
+    }),
+  )
+  assert.ok(Math.abs(second.usage.cost - 0.02) < 1e-9, '费用按会话累计做差，不重复累加')
+  assert.deepEqual(
+    { input: second.usage.input, output: second.usage.output, read: second.usage.read, write: second.usage.write },
+    { input: 2030, output: 10, read: 2000, write: 0 },
+    '第二轮没推流式事件时由 result 补上本轮用量',
+  )
 })
 
 test('Claude Code：出错的结果', () => {

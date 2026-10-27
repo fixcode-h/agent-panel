@@ -669,6 +669,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('工作总结：左侧导航里没有入口'))
     await check(p, '工作总结-列表', ['工作总结', '项目', '生成报告'])
 
+    // 左对齐：页头、选择区和报告共用同一条左边缘，整页内容靠左而不是居中。
+    // 坐标是相对主区算的（左边还有侧栏），不能拿视口绝对坐标判断
+    const mainBox = await p.locator('main').first().boundingBox()
+    const h1Box = await p.getByRole('heading', { name: '工作总结', level: 1 }).first().boundingBox()
+    const firstSection = await p.locator('main section').first().boundingBox()
+    if (!mainBox || !h1Box || !firstSection) errors.push('工作总结：取不到主区、页头或内容的位置')
+    else {
+      if (Math.abs(h1Box.x - firstSection.x) > 2)
+        errors.push(`工作总结：页头与内容没有左对齐（${h1Box.x} vs ${firstSection.x}）`)
+      // 靠左时内容左边距只该是容器内边距（md 下 32px）；居中时会被推到主区中间
+      const inset = firstSection.x - mainBox.x
+      if (inset > 80) errors.push(`工作总结：整页内容没有靠左（相对主区左边距 ${inset}）`)
+    }
+    await check(p, '工作总结-左对齐')
+
     // 时间范围：默认今天（和改造前一致），可以切昨天 / 近 7 天 / 自定义日期
     const range = p.getByRole('radiogroup', { name: '总结范围' })
     await range.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：没有时间范围选择'))
@@ -801,12 +816,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 15000 })
       .catch(() => errors.push('工作总结：生成后没有出现报告（看不到复制按钮）'))
     await check(p, '工作总结-报告', ['今天的报告', '最近的报告'])
-    // 报告固定三节：节名按 Markdown 标题渲染出来
+    // 报告固定四节：节名按 Markdown 标题渲染出来
     const preview = p.locator('section', { hasText: '今天的报告' }).first()
-    for (const heading of ['一、需求进度', '二、用户报告的 Bug', '三、今日小结']) {
+    for (const heading of ['一、概览', '二、需求进度', '三、问题与修复', '四、下一步']) {
       if (!(await preview.getByText(heading, { exact: false }).count()))
         errors.push(`工作总结：报告里没有固定的二级节「${heading}」`)
     }
+    // 报告头部显示这份报告的元数据：项目、对话数、字数、耗时。
+    // 限定在报告卡片里找：整页找的话「最近的报告」列表行也有这些字样，元数据没渲染时也会通过
+    for (const text of ['个对话', '字', '耗时'])
+      await preview
+        .getByText(text, { exact: false })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push(`工作总结-报告元数据：报告头没有显示「${text}」`))
+    await check(p, '工作总结-报告元数据')
 
     // 编辑：切到编辑是 textarea，内容是 Markdown，第一行是一级标题
     await p.getByRole('radio', { name: '编辑' }).click()
@@ -814,13 +838,35 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await area.waitFor({ timeout: 3000 }).catch(() => errors.push('工作总结：切到编辑后没有出现文本框'))
     const text = await area.inputValue().catch(() => '')
     if (!text.startsWith('# ')) errors.push(`工作总结：编辑框里不是 Markdown 报告（${text.slice(0, 30)}）`)
-    for (const heading of ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结']) {
+    for (const heading of ['## 一、概览', '## 二、需求进度', '## 三、问题与修复', '## 四、下一步']) {
       if (!text.includes(heading)) errors.push(`工作总结：生成的报告缺少「${heading}」`)
     }
     await check(p, '工作总结-编辑')
 
-    // 改几个字但不点保存：切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
+    // 改几个字但不点保存：报告头的字数要跟着编辑框里的正文变，不能等保存后才更新
+    // （同一屏的「最近的报告」也显示字数，两处必须对得上）
+    const charsOf = async () => {
+      const raw = await preview
+        .getByText(/^\d+ 字$/)
+        .first()
+        .textContent()
+        .catch(() => '')
+      return Number((raw ?? '').replace(/\D/g, '')) || 0
+    }
+    const beforeChars = await charsOf()
     await area.fill(text + '\n\n（还没保存的草稿）')
+    await p
+      .waitForFunction(
+        (prev) => {
+          const card = [...document.querySelectorAll('section')].find((s) => s.textContent?.includes('今天的报告'))
+          const m = card?.textContent?.match(/(\d+)\s*字/)
+          return !!m && Number(m[1]) > prev
+        },
+        beforeChars,
+        { timeout: 3000 },
+      )
+      .catch(() => errors.push('工作总结：编辑正文后报告头的字数没有跟着变'))
+    // 切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
     await p.getByRole('button', { name: '计划', exact: true }).first().click()
     await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
     const areaBack = p.getByLabel('报告内容')
@@ -838,7 +884,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('工作总结：复制后没有成功提示'))
     const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
-    if (!copied.includes('## 三、今日小结')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
+    if (!copied.includes('## 四、下一步')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
     await check(p, '工作总结-复制')
     // 对比两份：再生成一份（演示后端的第二份报告和第一份不同），勾选两份看新增 / 消失 / 状态变化
     await p.getByRole('button', { name: '生成报告' }).first().click()
@@ -866,7 +912,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await boxes.nth(1).check()
       const cmp = p.locator('section', { hasText: '两份报告的对比' }).first()
       await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：勾选两份后没有出现对比区'))
-      for (const heading of ['需求进度', '用户报告的 Bug', '今日小结']) {
+      for (const heading of ['需求进度', '问题与修复', '下一步']) {
         if (!(await cmp.getByText(heading, { exact: true }).count()))
           errors.push(`工作总结：对比区里没有「${heading}」`)
       }

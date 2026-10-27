@@ -17,7 +17,15 @@ import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import type { StepUsage, Task, TaskStep } from '@shared/schema'
 import { topSteps } from '@shared/flow'
-import { fmtTokens, stepLabel, tokenGroups, tpsNow } from '@/lib/tasks'
+import {
+  compactionText,
+  fmtTokens,
+  lastCompaction,
+  stepLabel,
+  tokenGroups,
+  tpsNow,
+  type LastCompaction,
+} from '@/lib/tasks'
 import { useRunUsage } from '@/lib/useRunUsage'
 import { cacheHitRate } from '@shared/task-export'
 import { useData } from '@/lib/data'
@@ -46,6 +54,8 @@ type ContextLine = {
   cli?: string
   u: { context: number; window: number; model: string }
   live?: Live
+  /** 这一行最近一次压缩：没有压缩过时不显示这一行 */
+  compact?: LastCompaction
 }
 
 function sumUsage(steps: TaskStep[]): Usage {
@@ -111,6 +121,8 @@ function contextLines(
   byId: Map<string, { name: string; icon: string; cli: string }>,
 ): ContextLine[] {
   const live = (id: string): Live | undefined => task.usage.agents[id]
+  /** workflow 一行代表整个顶层节点（子节点没有独立行）：聚合节点自己和它派出的子节点里最近的压缩 */
+  const compactOf = (id: string) => lastCompaction(task.messages, (m) => m.step === id || m.step.startsWith(id + '/'))
   if (scope)
     return scope
       .filter((s) => s.usage?.window)
@@ -123,6 +135,8 @@ function contextLines(
           cli: a?.cli,
           u: s.usage!,
           live: live(s.agentId),
+          // scope 里子步骤已经单列成行：只算这个 step 自己的压缩，否则同一条压缩会显示两遍
+          compact: lastCompaction(task.messages, (m) => m.step === s.id),
         }
       })
   if (task.mode === 'workflow') {
@@ -136,13 +150,30 @@ function contextLines(
       const src = own ?? sub
       if (!src) continue
       const a = byId.get(src.agentId)
-      rows.push({ key: st.id, name: st.title, icon: a?.icon, cli: a?.cli, u: src.usage!, live: live(src.agentId) })
+      rows.push({
+        key: st.id,
+        name: st.title,
+        icon: a?.icon,
+        cli: a?.cli,
+        u: src.usage!,
+        live: live(src.agentId),
+        compact: compactOf(st.id),
+      })
     }
     return rows
   }
   return Object.entries(task.usage.agents).map(([id, u]) => {
     const a = byId.get(id)
-    return { key: id, name: a?.name ?? t('已删除的角色'), icon: a?.icon, cli: a?.cli, u, live: u }
+    return {
+      key: id,
+      name: a?.name ?? t('已删除的角色'),
+      icon: a?.icon,
+      cli: a?.cli,
+      u,
+      live: u,
+      // 对话按消息的 Agent 归属：一个对话里换过 Agent 时，各自只看自己的压缩
+      compact: lastCompaction(task.messages, (m) => m.agentId === id),
+    }
   })
 }
 
@@ -180,6 +211,7 @@ function ContextRow({ line }: { line: ContextLine }) {
   const { name, icon, cli, u, live } = line
   const p = Math.min(100, (u.context / u.window) * 100)
   const tps = live?.tps ?? 0
+  const compact = line.compact ? compactionText(line.compact) : ''
   return (
     <li className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 text-xs">
@@ -207,6 +239,12 @@ function ContextRow({ line }: { line: ContextLine }) {
           </span>
         )}
       </span>
+      {/* 没有压缩过就不显示这一行；窄卡片里放不下时截断，悬停看全文 */}
+      {compact && (
+        <span className="truncate font-mono text-[0.6875rem] text-subtle" title={compact}>
+          {compact}
+        </span>
+      )}
     </li>
   )
 }

@@ -28,12 +28,15 @@ export function mergePatch(task: Task, p: Patch): Task {
  * 它同时是合并增量时的基线（patch 只带变化的消息）。
  *
  * hook：打开对话时的加载日志用（只有 TaskView 传）——首份完整任务到了 / 首包之前就连不上。
+ * 演示版的轮询没有 SSE 的首包语义，改用 start / stop 包住轮询的生命周期：
+ * 轮询在跑才算「在连实时更新」，停下来就把这一步收回来。打开时要不要记这一步由 TaskView
+ * 按当时跑没跑判定一次（加载日志记的是这次打开），这里只管轮询自己的起停。
  */
 export function useTaskStream(
   taskId: string,
   running: boolean,
   onTask: (t: Task) => void,
-  hook?: { open: () => void; fail: (error: string) => void },
+  hook?: { start?: () => void; open: () => void; fail: (error: string) => void; stop?: () => void },
   boot?: { rev: string; task: Task | null } | null,
 ) {
   const cb = useRef(onTask)
@@ -51,15 +54,26 @@ export function useTaskStream(
   useEffect(() => {
     if (!import.meta.env.VITE_DEMO) return
     if (!running) return
+    // 有轮询才算「在连实时更新」：从这里开始记，轮询停下时把这一步收回来（否则会一直显示「正在连接」）
+    hk.current?.start?.()
     const t = setInterval(
       () =>
         api
           .task(taskId)
-          .then((x) => cb.current(x))
-          .catch(() => {}),
+          .then((x) => {
+            cb.current(x)
+            // 演示版把轮询当作实时更新：第一份拉回来就算「连上了」，加载日志的这一步跟着完成；
+            // 之后每次成功都走一遍（已完成的步骤不受影响），断过一次也能恢复
+            hk.current?.open()
+          })
+          // 连不上就留下错误原文（收起后的加载日志胶囊会显示它），下一轮成功再恢复
+          .catch((e) => hk.current?.fail((e as Error).message)),
       700,
     )
-    return () => clearInterval(t)
+    return () => {
+      clearInterval(t)
+      hk.current?.stop?.()
+    }
   }, [running, taskId])
 
   useEffect(() => {

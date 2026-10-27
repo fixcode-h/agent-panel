@@ -2,15 +2,18 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   apiQueueWait,
+  compactionText,
   deliveredToCli,
   groupTools,
   jobLabel,
+  lastCompaction,
   messageRecorded,
   startedRun,
   tokenGroups,
   toolView,
   withTurnSeenAt,
 } from './tasks.ts'
+import type { TaskMessage, ToolUse } from '../../../shared/schema.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -281,23 +284,20 @@ test('状态行：让出名额后拿回的排队不显示成「排队等名额�
   assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 3, reason: 'yield' } }, false), undefined)
 })
 
-test('状态行：开跑前真的在排队时照常显示', () => {
+test('状态行：开跑前真的在排队时照常显示，没有标记时什么都不显示', () => {
   assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 2, reason: 'start' } }, false)?.ahead, 2)
   assert.deepEqual(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, false), {
     api: 'OpenDesign',
     ahead: 0,
     reason: 'start',
   })
+  assert.equal(apiQueueWait({}, false), undefined)
+  assert.equal(apiQueueWait({}, true), undefined)
 })
 
 test('状态行：已经在出 token 时不当成在排队', () => {
   // 实时速度大于 0 就是真的在输出，两个信息同时出现时以「在输出」为准
   assert.equal(apiQueueWait({ apiWait: { api: 'OpenDesign', ahead: 0, reason: 'start' } }, true), undefined)
-})
-
-test('状态行：没有标记时什么都不显示', () => {
-  assert.equal(apiQueueWait({}, false), undefined)
-  assert.equal(apiQueueWait({}, true), undefined)
 })
 
 test('messageRecorded：服务端没回写这条消息（/rule 这类面板命令）时要撤掉本地待认领的那条', () => {
@@ -329,4 +329,89 @@ test('withTurnSeenAt：/seen 只回来的「看到哪」合进本地那份，对
   assert.equal(next.messages, base.messages, '消息数组原样带过去，不从接口整份换回来')
   // 已经一样就不换对象：侧栏和对话页不用为一次心跳重渲染
   assert.equal(withTurnSeenAt(next, base.turnDoneAt), next)
+})
+
+/** 一次压缩工具调用：只写有值的数值，和真实数据里缺 before / after 的样子一致 */
+const compactTool = (before?: number, after?: number): ToolUse => {
+  const values = { ...(before !== undefined ? { before } : {}), ...(after !== undefined ? { after } : {}) }
+  return { kind: 'compact', label: '', detail: '', ...(Object.keys(values).length ? { compact: values } : {}) }
+}
+
+const chatMessage = (over: Partial<TaskMessage>): TaskMessage =>
+  ({
+    id: 'm',
+    role: 'agent',
+    agentId: '',
+    step: '',
+    text: '',
+    tools: [],
+    at: '2026-10-27T10:00:00.000Z',
+    ...over,
+  }) as TaskMessage
+
+test('压缩记录：按节点 / Agent 取最近一次，缺时间、缺数值时降级显示', () => {
+  const messages = [
+    chatMessage({ id: 'a', step: 'n1', at: '2026-10-27T10:00:00.000Z', tools: [compactTool(90_000, 20_000)] }),
+    chatMessage({
+      id: 'b',
+      step: 'n1/review.1',
+      at: '2026-10-27T11:00:00.000Z',
+      tools: [compactTool(80_000, 18_000)],
+    }),
+    chatMessage({ id: 'c', agentId: 'a2', at: '2026-10-27T12:00:00.000Z', tools: [compactTool(70_000, 15_000)] }),
+    // 续接、补写时消息顺序不保证按时间：更早的那条排在后面
+    chatMessage({ id: 'd', step: 'n1', at: '2026-10-27T09:00:00.000Z', tools: [compactTool(100_000, 30_000)] }),
+  ]
+  // 节点自己和它派出的子节点（step 带前缀）都算这个节点的压缩（workflow 一行代表整个顶层节点）
+  assert.deepEqual(
+    lastCompaction(messages, (m) => m.step === 'n1' || m.step.startsWith('n1/')),
+    { at: '2026-10-27T11:00:00.000Z', before: 80_000, after: 18_000 },
+  )
+  // scope 里子步骤已经单列成行：精确匹配只算这个节点自己的压缩，不把子节点的算进来
+  assert.deepEqual(
+    lastCompaction(messages, (m) => m.step === 'n1'),
+    {
+      at: '2026-10-27T10:00:00.000Z',
+      before: 90_000,
+      after: 20_000,
+    },
+  )
+  assert.deepEqual(
+    lastCompaction(messages, (m) => m.agentId === 'a2'),
+    {
+      at: '2026-10-27T12:00:00.000Z',
+      before: 70_000,
+      after: 15_000,
+    },
+  )
+  // 没有压缩记录的行返回 undefined，界面据此不显示这一行
+  assert.equal(
+    lastCompaction(messages, (m) => m.step === 'n2'),
+    undefined,
+  )
+  // 老数据没有结构化数值时只保留时间；只有压缩前、只有压缩后的数值也都保留
+  const legacy = lastCompaction([chatMessage({ tools: [{ kind: 'compact', label: '', detail: '' }] })], () => true)
+  assert.equal(legacy?.at, '2026-10-27T10:00:00.000Z')
+  assert.equal(legacy?.before, undefined)
+  assert.equal(legacy?.after, undefined)
+  const beforeOnly = lastCompaction([chatMessage({ tools: [compactTool(90_000)] })], () => true)
+  assert.equal(beforeOnly?.before, 90_000)
+  assert.equal(beforeOnly?.after, undefined)
+
+  // 文案：时间 + 前后大小，缺哪项就不写哪项；断言用英文，不受本机语言影响
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000).toISOString()
+  setLang('en')
+  try {
+    assert.equal(
+      compactionText({ at: fiveMinutesAgo, before: 176_000, after: 24_000 }),
+      'Compacted 5m ago · Before 176.0k · after 24.0k',
+    )
+    assert.equal(compactionText({ at: fiveMinutesAgo, before: 176_000 }), 'Compacted 5m ago · Before 176.0k')
+    assert.equal(compactionText({ at: fiveMinutesAgo, after: 24_000 }), 'Compacted 5m ago · After 24.0k')
+    // 没有时间（老数据）时只剩数值；什么都没有时返回空字符串，不画这一行
+    assert.equal(compactionText({ at: '', before: 176_000 }), 'Before 176.0k')
+    assert.equal(compactionText({ at: '' }), '')
+  } finally {
+    setLang('zh')
+  }
 })

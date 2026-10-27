@@ -275,9 +275,13 @@ export function claudeParser(cwd: string): Parser {
   let msgId = ''
   const streamed = new Set<string>()
   let textInMsg = false
-  // 流式过程中已经计入的用量；最后的 result 给的是总数，只补上差额
+  // 流式过程中已经计入的用量；最后的 result 给的是本轮的总数，只补上差额。
+  // 保活时同一进程连着跑多轮，每轮的 result 都要从零做差（见 result 分支）
   const live = { input: 0, output: 0, read: 0, write: 0 }
   let msgOut = 0
+  // result 的 total_cost_usd：stream-json 常驻多轮时是会话累计值（每轮重述 running total），
+  // 和 usage 的「本轮」口径不同，要按差值记，不能每轮直接累加
+  let costTotal = 0
   return (o) => {
     const out: CliEvent[] = []
     if (o.type === 'system' && o.subtype === 'init' && o.session_id) {
@@ -365,17 +369,26 @@ export function claudeParser(cwd: string): Parser {
     } else if (o.type === 'result' || (o.total_cost_usd !== undefined && o.usage)) {
       const c = claudeInput(o.usage ?? {})
       const gap = (total: number, seen: number) => Math.max(0, total - seen)
+      // 费用是会话累计：这一轮只记比上次多了多少（第一次就是总数）；没报这个字段时按不变算
+      const totalCost = o.total_cost_usd ?? costTotal
+      const addCost = Math.max(0, totalCost - costTotal)
+      costTotal = totalCost
       out.push({
         type: 'usage',
         addInput: gap(c.input, live.input),
         addCacheRead: gap(c.read, live.read),
         addCacheWrite: gap(c.write, live.write),
         addOutput: gap(o.usage?.output_tokens ?? 0, live.output),
-        addCost: o.total_cost_usd ?? 0,
+        addCost,
         // modelUsage 里每个用到的模型都有 contextWindow；子 Agent 可能用了别的小模型，取最大的那个
         window:
           Math.max(0, ...Object.values(o.modelUsage ?? {}).map((m: any) => Number(m?.contextWindow) || 0)) || undefined,
       })
+      // 这一轮的总量已经上报：流式累计清零，下一轮（保活时同一进程）从零重新做差
+      live.input = 0
+      live.read = 0
+      live.write = 0
+      live.output = 0
       if (o.session_id) out.push({ type: 'session', id: o.session_id })
       const ok = !o.is_error && (o.subtype === undefined || o.subtype === 'success')
       out.push({

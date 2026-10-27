@@ -1438,6 +1438,69 @@ await runShard(import.meta.filename, async (api) => {
     }
   }
 
+  // 实时更新慢不再挡内容（用户报的：任务数据和消息都画好了，加载面板还盖着等「连接实时更新」）。
+  // 演示版把轮询当作实时更新：执行中的对话第一轮轮询在 700ms 后才发出，内容早就画完了，
+  // 这时面板必须已经收起、对话看得见，实时更新只留在输入框上方的小胶囊里继续连。
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    // 整页导航：只改 hash 会被内存里的演示数据盖回去（见 docs/lessons/ui-check.md）
+    await p.goto(base)
+    const conv = p.getByText('购物车右上角', { exact: false }).first()
+    if (
+      !(await conv.waitFor({ timeout: 15000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      errors.push('任务-实时更新不挡内容：演示数据没生成出来（找不到对话列表项）')
+    else {
+      await conv.click()
+      const pill = p.locator('[data-load-trace-pill]')
+      // 胶囊只在面板收起后、后台步骤还在跑的那一小段里画出来（演示版首轮轮询约 800ms 就回来了）。
+      // 所以在等到它出现的那一刻就把文案抓进页面变量：之后再单独读 DOM，可能落在它已经卸载之后
+      const pillShown = await p
+        .waitForFunction(
+          () => {
+            const el = document.querySelector('[data-load-trace-pill]')
+            if (!el) return false
+            window.__loadTracePill = (el.textContent || '').replace(/\s+/g, ' ').trim()
+            return true
+          },
+          undefined,
+          { timeout: 5000, polling: 'raf' },
+        )
+        .then(
+          () => true,
+          () => false,
+        )
+      const pillText = pillShown ? await p.evaluate(() => window.__loadTracePill ?? '') : ''
+      // 胶囊出现要求面板已经收起；这里再单独确认一次，面板因为其它原因停在屏幕上时也要报出来
+      if (await p.locator('[data-load-trace]').count())
+        errors.push('任务-实时更新不挡内容：实时更新还没回来，加载面板就一直盖着')
+      if (!pillShown) errors.push('任务-实时更新不挡内容：面板收起后，后台还在连的实时更新没有留下任何入口')
+      // 胶囊写清在等哪一步，不是一句空状态
+      if (pillShown && !pillText.includes('正在连接实时更新'))
+        errors.push(`任务-实时更新不挡内容：胶囊没写清在等实时更新（现在是「${pillText}」）`)
+      // 内容已经能用：输入框画出来了
+      if (!(await p.locator('#follow-up').count()))
+        errors.push('任务-实时更新不挡内容：面板收起了，但对话输入框还没出现')
+      // 胶囊可能已经卸载，截不到图不算失败；这条用例的截图由下面的 check 兜底（对话内容照常显示）
+      if (pillShown) await shotOf(p, pill, '任务-实时更新胶囊')
+      await check(p, '任务-实时更新不挡内容')
+    }
+    // 改回现场：后面的用例按原本那条已完成的对话跑
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.reload()
+    await backToTask()
+  }
+
   // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
   // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
   {
@@ -1479,6 +1542,14 @@ await runShard(import.meta.filename, async (api) => {
     }
     await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
     await openTask()
+  }
+  // 上下文胶囊：浮层里每个 Agent 一行；最近压缩过的那行写明多久前、压缩前后各多少
+  {
+    await p.getByTitle('上下文占用').first().click()
+    await check(p, '任务-上下文压缩', ['小时前压缩过', '压缩前 176.0k', '压缩后 12.0k'])
+    if (!(await shotOf(p, p.getByRole('dialog').first(), '任务-上下文压缩')))
+      errors.push('任务-上下文压缩：没有截到上下文浮层')
+    await p.keyboard.press('Escape')
   }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
@@ -2029,5 +2100,27 @@ await runShard(import.meta.filename, async (api) => {
         errors.push(`发送时运行区：发送之后运行区只剩 ${after} 行子对话（原来 ${before} 行，应该一直保持显示）`)
       await check(p, '任务-发送消息时运行区不消失', ['子对话'])
     }
+  }
+  // 没有压缩记录的对话不显示这一行：删掉演示数据里的压缩记录，整页导航后重新看
+  // （只改 hash 会被内存里的演示数据盖回去，见 docs/lessons/ui-check.md）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车右上角'))
+      for (const m of task?.messages ?? []) m.tools = (m.tools ?? []).filter((x) => x.kind !== 'compact')
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await p.goto(base)
+    await backToTask()
+    await p.getByTitle('上下文占用').first().click()
+    if (await p.getByText('压缩过').count()) errors.push('任务-上下文无压缩：没有压缩记录时仍显示压缩行')
+    if (!(await shotOf(p, p.getByRole('dialog').first(), '任务-上下文无压缩')))
+      errors.push('任务-上下文无压缩：没有截到上下文浮层')
+    await p.keyboard.press('Escape')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await p.goto(base)
+    await backToTask()
   }
 })
