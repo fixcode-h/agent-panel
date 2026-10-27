@@ -21,6 +21,7 @@ import {
   END,
   START,
   type Agent,
+  type AlertKind,
   type AskKind,
   type Flow,
   type FlowNode,
@@ -158,7 +159,8 @@ export type AgentResult =
   | { ok: true; text: string }
   /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
   | { ok: false; stopped?: boolean; halted?: boolean; error: string; reported?: boolean; budget?: boolean }
-type Fail = Extract<AgentResult, { ok: false }>
+/** 一轮执行的结果里「没成功」的那几种；导出给单测构造 finish 的入参 */
+export type Fail = Extract<AgentResult, { ok: false }>
 
 export interface AgentCall {
   /** 所属节点；追加要求和对话没有节点 */
@@ -850,7 +852,7 @@ type FlowResult = { ok: true; output: string } | Fail
 
 export { parseVerdict }
 
-export function system(host: EngineHost, text: string, step = '', error = false, transient = false) {
+export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {
   host.task.messages.push({
     id: host.newId(),
     role: 'system',
@@ -859,6 +861,8 @@ export function system(host: EngineHost, text: string, step = '', error = false,
     text,
     tools: [],
     ...(error && { error, alert: makeAlert('error', text) }),
+    // 不是错误但要提醒的（例如超过自己设的预算上限）：按传入的类别画成一条警告
+    ...(!error && kind && { alert: makeAlert('warn', text, kind) }),
     ...(transient && { transient }),
     at: now(),
   })
@@ -878,10 +882,31 @@ function planStarted(host: EngineHost, text: string, step = '') {
   })
 }
 
-/** 这一轮用掉的花费和 token 超过工作流的上限时，返回暂停的说明 */
-function overBudget(host: EngineHost): string {
-  const w = host.workflow
-  const { usage, budgetFrom } = host.task
+/**
+ * 两个上限（工作流设的、计划设的）取更小的非零值：都设了时谁先到都算超。
+ * 返回上限值和它是谁设的，文案要说清是哪个上限到了，用户才知道该去哪里改。
+ */
+export function budgetLimit(
+  workflow: number | undefined,
+  plan: number,
+): { value: number; by: 'workflow' | 'plan' } | null {
+  const w = workflow && workflow > 0 ? workflow : 0
+  const p = plan && plan > 0 ? plan : 0
+  if (!w && !p) return null
+  if (!p) return { value: w, by: 'workflow' }
+  if (!w) return { value: p, by: 'plan' }
+  return w <= p ? { value: w, by: 'workflow' } : { value: p, by: 'plan' }
+}
+
+/**
+ * 这一轮用掉的花费 / token / 时长超过上限时，返回暂停的说明（导出给单测验证聊天模式也走这套判定）。
+ * includeWorkflow：要把工作流设的上限也算进来吗。节点执行路径传 true；
+ * chat 路径传 false——工作流预算管的是「这次工作流执行」，对话里跑过一次 start_plan 之后，
+ * 任务会一直带着工作流快照（host.workflow 非空），不能让那个上限转头把普通的聊天轮次也停掉。
+ */
+export function overBudget(host: EngineHost, includeWorkflow = true): string {
+  const w = includeWorkflow ? host.workflow : undefined
+  const { usage, budgetFrom, budgetTokens, budgetMinutes } = host.task
   const usd = usage.costUsd - (budgetFrom?.usd ?? 0)
   const tokens = usage.inputTokens + usage.outputTokens - (budgetFrom?.tokens ?? 0)
   if (w?.budgetUsd && usd >= w.budgetUsd)
@@ -889,14 +914,28 @@ function overBudget(host: EngineHost): string {
       used: usd.toFixed(2),
       limit: w.budgetUsd.toFixed(2),
     })
-  if (w?.budgetTokens && tokens >= w.budgetTokens)
-    return t(
-      '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。',
-      {
-        used: Math.round(tokens).toLocaleString(),
-        limit: w.budgetTokens.toLocaleString(),
-      },
-    )
+  // token：工作流和计划都设了上限时取小的那个
+  const tokenLimit = budgetLimit(w?.budgetTokens, budgetTokens ?? 0)
+  if (tokenLimit && tokens >= tokenLimit.value)
+    return tokenLimit.by === 'workflow'
+      ? t('这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。', {
+          used: Math.round(tokens).toLocaleString(),
+          limit: tokenLimit.value.toLocaleString(),
+        })
+      : t(
+          '这次执行已经用了 {used} token，达到计划设定的上限 {limit}，已暂停。已经产出的内容都保留着，点「继续执行」会重新计。',
+          { used: Math.round(tokens).toLocaleString(), limit: tokenLimit.value.toLocaleString() },
+        )
+  // 时长：从这一轮开始算，旧任务没有开始时刻（at）时按不限处理
+  const startedAt = budgetFrom?.at
+  if (budgetMinutes && startedAt) {
+    const usedMinutes = (Date.now() - startedAt) / 60_000
+    if (usedMinutes >= budgetMinutes)
+      return t(
+        '这次执行已经用了 {used} 分钟，达到计划设定的上限 {limit} 分钟，已暂停。已经产出的内容都保留着，点「继续执行」会重新计时。',
+        { used: Math.round(usedMinutes), limit: budgetMinutes },
+      )
+  }
   return ''
 }
 
@@ -3829,8 +3868,11 @@ ${
   return parts.filter(Boolean).join('\n\n')
 }
 
-/** 一轮对话：调用对话 Agent；它启动的计划在这一轮里同步跑完，再交回结果继续对话 */
-async function runConversationTurn(host: EngineHost, who: string) {
+/**
+ * 一轮对话：调用对话 Agent；它启动的计划在这一轮里同步跑完，再交回结果继续对话。
+ * 导出给单测验证「计划设的预算在 chat 路径也生效」。
+ */
+export async function runConversationTurn(host: EngineHost, who: string) {
   const { task } = host
   const kind = task.parentTaskId ? 'sub' : 'top'
   // 能不能分派子对话由 Agent 自己的能力开关决定；子对话本身永远不能再分派
@@ -3850,6 +3892,14 @@ async function runConversationTurn(host: EngineHost, who: string) {
     )
     // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
     for (let i = 0; i < 30; i++) {
+      // 计划带的执行上限：和工作流节点同一套口径，每圈开始前先看一次。
+      // 计划启动的是 chat 模式，不走 runNodeSteps，这里不查的话 token / 时长上限就完全不生效。
+      // includeWorkflow=false：对话里跑过 start_plan 之后任务也带着工作流快照，工作流那份额度不该管聊天轮次
+      const over = overBudget(host, false)
+      if (over) {
+        if (turn) endTurn(task, turn, 'stopped', Date.now(), host.stopReason?.())
+        return finish(host, { ok: false, stopped: true, budget: true, error: over })
+      }
       orch = makeOrchestra(
         host,
         { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
@@ -3972,7 +4022,8 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
     .join('\n\n')
 }
 
-function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
+/** 收尾：把这一轮的结果写进任务（导出给单测验证「超预算停下时不丢已有输出」） */
+export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
   // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
   // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
   const answered = !!r.stopped && (!!opts?.answered || finishedStop(host))
@@ -3983,7 +4034,7 @@ function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
       if (r.stopped && !answered) pauseStep(s)
       s.endedAt = now()
     }
-  if (r.budget) system(host, r.error, '', false, true)
+  if (r.budget) system(host, r.error, '', false, true, 'budget')
   else if (r.stopped && !answered) {
     // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
     // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
@@ -4035,8 +4086,12 @@ export async function runEngineTurn(host: EngineHost) {
   task.status = 'running'
   // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
   task.stopReason = undefined
-  // 预算按每次执行算：从这一轮开始时的用量起算
-  task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
+  // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
+  task.budgetFrom = {
+    usd: task.usage.costUsd,
+    tokens: task.usage.inputTokens + task.usage.outputTokens,
+    at: Date.now(),
+  }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
   for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
   host.changed(true)

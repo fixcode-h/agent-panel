@@ -846,7 +846,11 @@ app.route('/tasks', tasks.routes)
 app.route('/summary', summaryApi({ tasks, projects, reports: summaries }).routes)
 app.route('/lesson-drafts', lessonDraftsApi({ drafts: lessonDrafts, reports: summaries }).routes)
 // 定时计划：到点由面板自己新建一个对话，走和页面新建任务完全一样的链路
-const schedules = schedulesApi({ startChat: (input) => tasks.startChat(input) })
+const schedules = schedulesApi({
+  startChat: (input) => tasks.startChat(input),
+  // Webhook 载荷里带项目名：接的一方不用再去查项目 id
+  projectName: async (id) => (await projects.get(id))?.name ?? '',
+})
 app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)

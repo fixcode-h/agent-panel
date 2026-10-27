@@ -1,10 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  afterBlocked,
   afterFail,
   alignScheduleAt,
   afterMiss,
   afterRun,
+  dependencyBlocker,
+  effectiveTimeoutMinutes,
   fromLocalInput,
   groupLabel,
   groupOf,
@@ -13,19 +16,26 @@ import {
   nextDailyAt,
   nextRunAt,
   nextRunLabel,
+  orderByDependency,
   outcomeLabel,
   outcomeOf,
+  outcomeTitle,
   pickDue,
   relativeFuture,
   repeatLabel,
   sameMinute,
+  scheduleCycle,
+  ScheduleInput,
+  scheduleCycleLabel,
+  SCHEDULE_DEPENDENCY_FRESH_HOURS,
   SCHEDULE_MISS_MS,
   toLocalInput,
   whenLabel,
   willRunAgain,
   workdayTemplate,
-  type Schedule,
+  Schedule,
 } from './schedule.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
 /** 本机时区的某个时刻，测试里不直接写 ISO，避免跟着机器时区变 */
 const at = (y: number, mo: number, d: number, h: number, mi = 0) => new Date(y, mo - 1, d, h, mi, 0, 0).toISOString()
@@ -40,11 +50,16 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   weekdays: [],
   at: at(2026, 5, 1, 10),
   enabled: true,
+  dependsOn: [],
+  budget: { tokens: 0, minutes: 0 },
   status: 'pending',
   lastRunAt: '',
   lastTaskId: '',
   missedAt: '',
   lastError: '',
+  blockedAt: '',
+  blockedReason: '',
+  lastDelivery: null,
   createdAt: at(2026, 5, 1, 9),
   updatedAt: at(2026, 5, 1, 9),
   ...over,
@@ -392,4 +407,163 @@ test('每周 / 工作日：首次执行时间没到也只返回符合星期的�
   assert.equal(nextRunAt({ repeat: 'weekly', at: monday, weekdays: [1] }, now), monday)
   // 未来的周三、只选周一：下周一
   assert.equal(nextRunAt({ repeat: 'weekly', at: at(2026, 5, 6, 9), weekdays: [1] }, now), at(2026, 5, 11, 9))
+})
+
+test('依赖：上游这一轮成功才放行，失败 / 错过 / 停用 / 没跑过 / 太旧都写清原因', () => {
+  const now = Date.parse(at(2026, 5, 1, 19))
+  const down = schedule({ id: 'down', name: '发布', dependsOn: ['up'], at: at(2026, 5, 1, 19) })
+  const up = (over: Partial<Schedule> = {}) => schedule({ id: 'up', name: '构建', ...over })
+
+  // 刚成功启动过：放行
+  assert.equal(dependencyBlocker(down, [down, up({ lastRunAt: at(2026, 5, 1, 18), lastTaskId: 't1' })], now), '')
+  // 本轮同一批刚启动的上游：记录还没写回也算成功
+  assert.equal(
+    dependencyBlocker(down, [down, up({ lastRunAt: at(2026, 5, 1, 18), lastTaskId: 't1' })], now, new Set(['up'])),
+    '',
+  )
+  // 启动失败 / 错过 / 停用 / 从来没跑过：各说清是谁、什么结果
+  assert.equal(dependencyBlocker(down, [down, up({ lastError: '项目不存在' })], now), '因为「构建」启动失败，没有启动')
+  assert.equal(dependencyBlocker(down, [down, up({ missedAt: at(2026, 5, 1, 18) })], now), '因为「构建」错过，没有启动')
+  assert.equal(
+    dependencyBlocker(down, [down, up({ enabled: false, lastRunAt: at(2026, 5, 1, 18) })], now),
+    '因为「构建」已停用，没有启动',
+  )
+  assert.equal(dependencyBlocker(down, [down, up()], now), '因为「构建」还没有执行过，没有启动')
+  // 上游自己被上游拦住：说清楚是上游没成功，不说成启动失败
+  assert.equal(
+    dependencyBlocker(
+      down,
+      [down, up({ blockedAt: at(2026, 5, 1, 18), blockedReason: '因为「构建」启动失败，没有启动' })],
+      now,
+    ),
+    '因为「构建」的上游没有成功，没有启动',
+  )
+  // 上次成功太久以前：上游已经停摆，不拿旧的成功放行
+  const stale = at(2026, 5, 1, 19 - SCHEDULE_DEPENDENCY_FRESH_HOURS - 1)
+  assert.equal(
+    dependencyBlocker(down, [down, up({ lastRunAt: stale, lastTaskId: 't1' })], now),
+    `因为「构建」最近一次成功已经超过 ${SCHEDULE_DEPENDENCY_FRESH_HOURS} 小时，没有启动`,
+  )
+  // 上游被删掉：也拦住，不能静默启动
+  assert.equal(dependencyBlocker(down, [down], now), '因为上游计划已不存在，没有启动')
+  // 没有依赖的计划永远放行
+  assert.equal(dependencyBlocker(schedule({ dependsOn: [] }), [], now), '')
+})
+
+test('上游没成功：记下到点时间和原因，单次标成已跳过、重复的推到下一次', () => {
+  const once = schedule({ blockedAt: '', blockedReason: '' })
+  const reason = '因为「构建」启动失败，没有启动'
+  const blocked = { ...once, ...afterBlocked(once, Date.parse(once.at) + 1000, reason) }
+  assert.equal(blocked.status, 'skipped')
+  assert.equal(blocked.blockedAt, once.at)
+  assert.equal(blocked.blockedReason, reason)
+  // 不会再被轮询触发，用户改好上游后可以手动执行
+  assert.equal(pickDue([blocked], Date.parse(once.at) + 60_000).run.length, 0)
+
+  const daily = schedule({ repeat: 'daily' })
+  const moved = { ...daily, ...afterBlocked(daily, Date.parse(daily.at) + 1000, reason) }
+  assert.equal(moved.status, 'pending')
+  assert.equal(moved.at, at(2026, 5, 2, 10))
+  assert.equal(moved.blockedReason, reason)
+
+  // 启动成功之后，之前「上游没成功」的记录不再算数
+  const ok = { ...moved, ...afterRun(moved, Date.parse(moved.at) + 1000, 't1') }
+  assert.equal(ok.blockedAt, '')
+  assert.equal(ok.blockedReason, '')
+  assert.equal(outcomeOf(ok), 'success')
+})
+
+test('最近一次结果：「上游没成功」和错过各算一次，取更晚的', () => {
+  const base = schedule()
+  const blocked = { ...base, blockedAt: at(2026, 5, 1, 10), blockedReason: '因为「构建」启动失败，没有启动' }
+  assert.equal(outcomeOf(blocked), 'blocked')
+  assert.equal(outcomeTitle(blocked), '未启动')
+  // 原因照原样显示，用户能看出该去修哪个上游
+  assert.equal(outcomeLabel(blocked, Date.parse(at(2026, 5, 1, 19))), '因为「构建」启动失败，没有启动')
+  // 分组归到「出过问题」
+  assert.equal(groupOf(blocked), 'problem')
+  // 错过比没启动晚：最近一次是错过
+  assert.equal(outcomeOf({ ...blocked, missedAt: at(2026, 5, 2, 10) }), 'missed')
+  // 没启动比错过晚：最近一次是没启动
+  assert.equal(outcomeOf({ ...blocked, missedAt: at(2026, 4, 30, 10) }), 'blocked')
+  // 之后成功启动过：旧记录不算数
+  assert.equal(outcomeOf({ ...blocked, lastRunAt: at(2026, 5, 2, 10) }), 'success')
+  // 原因缺失时不显示空行
+  assert.equal(
+    outcomeLabel({ ...base, blockedAt: at(2026, 5, 1, 10) }, Date.parse(at(2026, 5, 1, 19))),
+    '上游没有成功，没有启动',
+  )
+})
+
+test('依赖成环：保存时能查出来并写成「A → B → A」，没环放行', () => {
+  const a = schedule({ id: 'a', name: '构建' })
+  const b = schedule({ id: 'b', name: '发布', dependsOn: ['a'] })
+  const c = schedule({ id: 'c', name: '通知', dependsOn: ['b'] })
+  // 让 a 依赖 c：a → c → b → a 成环
+  const cycle = scheduleCycle([a, b, c], 'a', ['c'])
+  assert.deepEqual(cycle, ['a', 'c', 'b', 'a'])
+  assert.equal(scheduleCycleLabel(cycle, [a, b, c]), '「构建」 → 「通知」 → 「发布」 → 「构建」')
+  // 指向自己也是环
+  assert.deepEqual(scheduleCycle([a, b], 'a', ['a']), ['a', 'a'])
+  // 没环：a 不依赖任何人
+  assert.deepEqual(scheduleCycle([a, b, c], 'a', []), [])
+  // 新建的计划还没有 id，别的计划依赖不了它，永远不会成环
+  assert.deepEqual(scheduleCycle([a, b], '', ['a']), [])
+  // 环上的计划被删掉后名称按 id 显示，不吞成空字符串
+  assert.equal(scheduleCycleLabel(['a', 'gone', 'a'], [a]), '「构建」 → 「gone」 → 「构建」')
+})
+
+test('按依赖顺序排：上游排在下游前面，成环的数据不死循环', () => {
+  const a = schedule({ id: 'a', name: '构建' })
+  const b = schedule({ id: 'b', name: '发布', dependsOn: ['a'] })
+  const c = schedule({ id: 'c', name: '通知', dependsOn: ['b'] })
+  assert.deepEqual(
+    orderByDependency([c, b, a]).map((s) => s.id),
+    ['a', 'b', 'c'],
+  )
+  // 上游不在这一批里（b 没到点）：它和这一批的先后没法排，按原顺序
+  assert.deepEqual(
+    orderByDependency([c, a]).map((s) => s.id),
+    ['c', 'a'],
+  )
+  // 成环（不该存进来，但老数据可能）也要终止
+  const loopA = schedule({ id: 'la', dependsOn: ['lb'] })
+  const loopB = schedule({ id: 'lb', dependsOn: ['la'] })
+  assert.equal(orderByDependency([loopA, loopB]).length, 2)
+})
+
+test('执行上限：时长上限和设置里的单步时限取小的那个，0 表示不限', () => {
+  assert.deepEqual(effectiveTimeoutMinutes(0, 0), { minutes: 0, by: '' })
+  assert.deepEqual(effectiveTimeoutMinutes(30, 0), { minutes: 30, by: 'step' })
+  assert.deepEqual(effectiveTimeoutMinutes(0, 45), { minutes: 45, by: 'budget' })
+  // 两个都设了：谁小谁先到，停的时候按它解释（提示文案和界面说明跟着 by 走）
+  assert.deepEqual(effectiveTimeoutMinutes(30, 10), { minutes: 10, by: 'budget' })
+  assert.deepEqual(effectiveTimeoutMinutes(10, 30), { minutes: 10, by: 'step' })
+  // 相等时按单步时限：那条提示更通用，不会让人以为是计划设的
+  assert.deepEqual(effectiveTimeoutMinutes(20, 20), { minutes: 20, by: 'step' })
+})
+
+test('计划的执行上限：默认不限，超范围的值被拒，旧数据补成不限', () => {
+  const base = { name: '构建', prompt: '跑一遍', at: at(2026, 5, 1, 9) }
+  assert.deepEqual(ScheduleInput.parse(base).budget, { tokens: 0, minutes: 0 })
+  assert.equal(ScheduleInput.safeParse({ ...base, budget: { tokens: -1 } }).success, false)
+  assert.equal(ScheduleInput.safeParse({ ...base, budget: { minutes: MAX_TASK_BUDGET_MINUTES + 1 } }).success, false)
+  assert.equal(ScheduleInput.safeParse({ ...base, budget: { tokens: MAX_TASK_BUDGET_TOKENS + 1 } }).success, false)
+  // 加这个字段之前存的数据没有 budget：解析后要能正常用
+  const old = {
+    ...base,
+    id: 's-old',
+    dependsOn: [],
+    status: 'pending',
+    lastRunAt: '',
+    lastTaskId: '',
+    missedAt: '',
+    lastError: '',
+    blockedAt: '',
+    blockedReason: '',
+    lastDelivery: null,
+    createdAt: at(2026, 5, 1, 9),
+    updatedAt: at(2026, 5, 1, 9),
+  }
+  assert.deepEqual(Schedule.parse(old).budget, { tokens: 0, minutes: 0 })
 })
