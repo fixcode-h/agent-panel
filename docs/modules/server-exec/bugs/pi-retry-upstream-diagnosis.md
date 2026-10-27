@@ -56,6 +56,6 @@
 - `server/exec/pi-rpc.test.ts` 的既有用例「Pi RPC：自动重试显示在回复里，不当成失败」保持通过：`retry_ok` 不能多出一行提示，只用来收掉前面那张卡。
 - `shared/plan.test.ts`：「子对话执行失败：上报带上这次失败的原因」——重试耗尽、面板工具没接上、进程被回收三种根因都会出现在汇报里；已恢复的报错不算。
 
-## 顺带发现（不是本次根因，未改）
+## 顺带发现（已修复）
 
-派「文档」子任务时撞到一次「get_state 没有响应（已等 15s）· 进程还在运行 · stderr 没有输出」。这是面板向 Pi 发 `get_state` 的 RPC 超时（`server/exec/rpc/session.ts` 的 `REQUEST_TIMEOUT_MS = 15000`），当时本机正在跑全量单测（高负载），Pi 冷启动加扩展加载超过了 15 秒的预算；和 500 断连不是同一类：500 是 Pi 已经开始请求模型后上游断连，会走 `auto_retry`；这里是 Pi 还没回 RPC。单独记为已知问题，不在这次修复范围。
+派「文档」子任务时撞到一次「get_state 没有响应（已等 15s）· 进程还在运行 · stderr 没有输出」。这是面板向 Pi 发 `get_state` 的 RPC 超时（`server/exec/rpc/session.ts` 的 `REQUEST_TIMEOUT_MS = 15000`），当时本机正在跑全量单测（高负载），Pi 冷启动加扩展加载超过了 15 秒的预算；和 500 断连不是同一类：500 是 Pi 已经开始请求模型后上游断连，会走 `auto_retry`；这里是 Pi 还没回 RPC。当时留作已知问题，后来单独修了：进程还活着、stderr 一个字都没有的超时现在带上 `envStall` 标记，runner 据此放宽等待（默认 15s → 25s）自动重试一次，仍然失败才报错——见 [pi-rpc-env-stall-retry.md](pi-rpc-env-stall-retry.md)。

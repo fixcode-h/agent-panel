@@ -69,7 +69,7 @@
 
 - `server/exec/pi-rpc.test.ts`：「Pi 桥接扩展：列工具晚回一次会重试，面板工具照样挂上」（第一次 `tools/list` 不回，重试后照常注册）、
   「Pi 桥接扩展：面板 MCP 端点不回时，初始化超时后照常加载，不再把 Pi 卡在启动阶段」（握手超时要放行，并把原因报给面板）。
-- `server/exec/pi-rpc.test.ts`：「Pi 扩展最坏的加载时长要留在 get_state 默认超时之内：面板端点慢时不能判成「Pi 没有响应」」（从定义里读 `LOAD_BUDGET_MS`，`STEP_TIMEOUT_MS` / `STEP_ATTEMPTS` 读 `mcp.vars`，断言 `STEP_TIMEOUT_MS × STEP_ATTEMPTS <= LOAD_BUDGET_MS`，且最坏时长小于 `REQUEST_TIMEOUT_MS`——这个常量从 `server/exec/rpc/session.ts` 导入，并断言至少留 3000ms 余量给 Pi 冷启动、读 stdin 和回包（实际总预算 10 秒、默认 15 秒，余量 5000ms）；调大这几个常量会吃掉余量，超过阈值用例就失败）。
+- `server/exec/pi-rpc.test.ts`：「Pi 扩展最坏的加载时长要留在 get_state 默认超时之内：面板端点慢时不能判成「Pi 没有响应」」（预算和单步超时、次数都读 `mcp.vars` 的 `loadBudget` / `stepTimeout` / `attempts`，模板里只有占位符；断言 `stepTimeout × attempts <= loadBudget`，且最坏时长小于 `REQUEST_TIMEOUT_MS`——这个常量从 `server/exec/rpc/session.ts` 导入，并断言至少留 3000ms 余量给 Pi 冷启动、读 stdin 和回包（实际总预算 10 秒、默认 15 秒，余量 5000ms）；调大这几个常量会吃掉余量，超过阈值用例就失败）。
 - `server/exec/pi-rpc.test.ts`：「Pi 桥接扩展：清单只给了一部分工具时也要报出来，不能只挡住空清单」（核心工具缺任何一个都上报，不是只挡空清单）。
 - `server/orch-mcp.test.ts`：「子对话的工具清单：计划、后台命令、收尾合并都在；子任务只有查状态、后台命令和传话」（按身份裁剪工具清单是设计行为，改这里会立刻暴露）。
 - 新增文案改的是提示原文，`npm run typecheck` 的漏翻检查会拦住只改中文不改英文的情况。

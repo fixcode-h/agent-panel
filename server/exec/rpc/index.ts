@@ -20,6 +20,8 @@ export interface RpcRunOptions {
   waited?: () => boolean
   /** 超时或进程提前退出时用来补充原因 */
   diagnose?: RpcDiagnose
+  /** 等请求回复的超时（默认 REQUEST_TIMEOUT_MS）：环境性失败重试那一轮会放宽 */
+  requestTimeoutMs?: number
 }
 
 /** 按 CLI 定义里的 rpc 配置选适配器；传输、请求配对和收尾由同一个会话引擎负责 */
@@ -55,5 +57,6 @@ export function rpcSessionFor(def: CliDefinition, o: RpcRunOptions): RpcSession 
     next: o.next,
     waited: o.waited,
     diagnose: o.diagnose,
+    requestTimeoutMs: o.requestTimeoutMs,
   })
 }

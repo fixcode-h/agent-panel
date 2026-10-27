@@ -1,5 +1,5 @@
 import { t } from '@shared/i18n'
-import { SEARCH_PROVIDERS, searchProvider } from '@shared/web-search'
+import { SEARCH_PROVIDERS, searchProvider, switchSearchProvider } from '@shared/web-search'
 import type { Settings } from '@shared/schema'
 import { Input, Select } from '@/components/ui/input'
 import { Group, Row } from './parts'
@@ -17,6 +17,9 @@ export function WebSearchSection({
   onChange: (v: Settings['webSearch']) => void
 }) {
   const provider = searchProvider(value.provider)
+  // 地址是所有源共用的一个字段：归属对不上就说明它是上一源留下的，服务端会忽略它（见 resolveSearchEndpoint），
+  // 输入框也按实际生效的情况显示成空，不然用户会以为这个地址还在用
+  const endpointShown = value.endpointProvider && value.endpointProvider !== provider.id ? '' : value.endpoint
   return (
     <>
       <Group>
@@ -29,7 +32,7 @@ export function WebSearchSection({
           <Select
             aria-label={t('搜索源')}
             value={provider.id}
-            onChange={(e) => onChange({ ...value, provider: e.target.value })}
+            onChange={(e) => onChange(switchSearchProvider(value, e.target.value))}
             options={SEARCH_PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
           />
         </Row>
@@ -55,13 +58,15 @@ export function WebSearchSection({
           desc={
             provider.endpoint
               ? t('留空用默认地址 {url}；也可以填自己的网关或代理。', { url: provider.endpoint })
-              : t('SearXNG 要填自己实例的地址：公共实例一般不开放 JSON 接口。')
+              : t(
+                  'SearXNG 要填自己实例的地址：公共实例一般不开放 JSON 接口。只填主机就行（例如 https://searxng.example.com），/search 路径会自动补上。',
+                )
           }
         >
           <Input
             aria-label={t('搜索源地址')}
-            value={value.endpoint}
-            onChange={(e) => onChange({ ...value, endpoint: e.target.value })}
+            value={endpointShown}
+            onChange={(e) => onChange({ ...value, endpoint: e.target.value, endpointProvider: provider.id })}
             placeholder={provider.endpoint || 'https://searxng.example.com'}
             spellCheck={false}
             className="font-mono text-[0.8125rem]"

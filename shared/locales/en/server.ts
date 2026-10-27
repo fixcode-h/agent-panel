@@ -390,6 +390,10 @@ export const EN_SERVER: Record<string, string> = {
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
   '已自动接一轮，这一轮继续做完了。': 'Continued automatically and finished the work in this turn.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
+  '这一轮没有响应，已自动重试 {n} 次（等待放宽到 {wait}）…':
+    'This turn got no response. Retried {n} time(s) automatically (waiting up to {wait})…',
+  '已自动重试 {n} 次，仍然没有响应。': 'Still no response after {n} automatic retries.',
+  '已自动重试 {n} 次，这一轮继续做完了。': 'Retried {n} time(s) automatically and finished the work in this turn.',
   '这一轮 {cli} 没有返回任何内容，用户的要求还没处理':
     'This turn produced no output from {cli}, so the request has not been handled',
   '回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去':

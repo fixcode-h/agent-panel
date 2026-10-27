@@ -81,7 +81,11 @@ export type CliEvent =
   | { type: 'retry_ok'; text: string; attempt?: number }
   /** 生成了一张图片（Codex 的 image_gen）：path 是 CLI 存下的文件，data 是 base64；失败时 failed 是原因 */
   | { type: 'image'; path?: string; data?: string; failed?: string }
-  | { type: 'result'; ok: boolean; error?: string }
+  /**
+   * 环境性卡住：等请求回复超时了，但进程还活着、stderr 一个字都没有（多半是 CLI 启动 / 扩展加载慢）。
+   * runner 只对这一类失败自动重试一次；模型明确报错、工具失败这些内容性失败不带它
+   */
+  | { type: 'result'; ok: boolean; error?: string; envStall?: boolean }
   /** CLI 要用户确认（权限不够的命令、改文件）或回答问题；reply 把用户的选择交回给 CLI */
   | {
       type: 'ask'
