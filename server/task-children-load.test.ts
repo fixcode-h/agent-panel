@@ -88,7 +88,7 @@ for (let i = 0; i < CHILD_COUNT; i++) {
   })
 }
 
-type ChildLine = { id: string; unmerged: boolean; dirty: number; worktreeChecked: boolean }
+type ChildLine = { id: string; unmerged?: boolean; dirty?: number; worktreeChecked: boolean }
 
 /** 先打一个不存在的对话，把任务列表读进内存：第一次请求的冷启动不能算进「等 git」的计时里 */
 const warm = async (app: ReturnType<typeof makeApp>) => {
@@ -128,8 +128,8 @@ test('子对话的独立分支状态不等 git：先回占位值，后台补完�
     '这次还没核对过，要如实告诉界面',
   )
   assert.ok(
-    first.every((c) => c.unmerged === false && c.dirty === 0),
-    '没核对过时先回占位值',
+    first.every((c) => c.unmerged === undefined && c.dirty === undefined),
+    '没核对过时不给结论（不是「已合回 / 0 个文件」）',
   )
   assert.ok(gitCalls > before, '要顺手在后台补，下一次轮询才有值')
 
@@ -163,4 +163,41 @@ test('轮询再快也不会把 git 叠成上百条：同一个子对话同时只
   const later = await settle(app)
   assert.ok(later.every((c) => c.worktreeChecked && c.unmerged && c.dirty === 2))
   assert.equal(gitCalls - before, CHILD_COUNT, '三个请求并发也只查了每个子对话一次')
+})
+
+test('git 读失败：卡片不给「干净」的结论，判定也不会把它当成已合回', async () => {
+  const app = tasksApi({
+    agents: empty,
+    workflows: empty,
+    projects,
+    projectCategories: empty,
+    // 仓库锁、worktree 被清掉一半这类失败：git 报错，拿不到状态
+    worktreeStatus: async () => {
+      throw new Error('fatal: not a git repository (or any of the parent directories): .git')
+    },
+  } as never)
+  await warm(app)
+
+  // 第一次：谁都没核对过，先回占位值
+  const first = await children(app)
+  assert.ok(
+    first.every((c) => c.worktreeChecked === false),
+    '读失败时不能说自己核对过',
+  )
+  assert.ok(
+    first.every((c) => c.unmerged === undefined && c.dirty === undefined),
+    '没拿到结果时不能给「已合回 / 0 个文件」这种结论',
+  )
+
+  // 等后台那几次都失败完：仍然只能是「不知道」，不能变成「干净」
+  await sleep(300)
+  const later = await children(app)
+  assert.ok(
+    later.every((c) => c.worktreeChecked === false),
+    '失败不入缓存，下一次还是「没查到」',
+  )
+  assert.ok(
+    later.every((c) => c.unmerged === undefined && c.dirty === undefined),
+    '失败不能被当成「没有未提交文件」显示给用户',
+  )
 })

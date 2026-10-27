@@ -4387,9 +4387,14 @@ export function tasksApi(deps: {
     return worktreeCache.read(tk.id, key, ttl, load)
   }
 
-  /** 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged） */
+  /**
+   * 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged）。
+   * 没查到（git 失败、还在核对）时按「还没合回」算：宁可晚一轮收尾，也不能把「不知道」当成
+   * 「已经合回」放行——合没合回决定子对话能不能收尾，误判会丢改动（见 skill 的 childHolds 约定）
+   */
   async function childUnmerged(tk: Task, project: Project | null) {
     const st = await childWorktree(tk, project)
+    if (!st.checked) return true
     return !!st.value && !st.value.merged
   }
 
@@ -4437,11 +4442,12 @@ export function tasksApi(deps: {
           helpers: helpersWorking(liveTask),
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
-          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childWorktree）
-          unmerged: !!wt.value && !wt.value.merged,
+          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childWorktree）。
+          // 没有核对结果时两个字段都不给（不是 0 / false）：界面不能把「不知道」显示成「干净」或「已合回」
+          unmerged: wt.checked ? !!wt.value && !wt.value.merged : undefined,
           // 分支目录里还有几个文件没提交：停下时行上直接写出来，并且给「继续」接着做
-          dirty: wt.value?.dirty ?? 0,
-          // 上面两项是不是已经用 git 核对过：false 表示这次先回占位值、后台正在查
+          dirty: wt.checked ? (wt.value?.dirty ?? 0) : undefined,
+          // 上面两项是不是已经用 git 核对过：false 表示这次先回占位值、后台正在查（或刚查失败）
           worktreeChecked: wt.checked,
           // 已经请父对话收尾、还没出结果：行上是「待收尾」
           wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',

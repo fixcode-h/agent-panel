@@ -11,15 +11,18 @@
  * - 同一个子对话同一时刻只有一条 git 在跑（按 id 去重，不看 key）：轮询再快、子对话改得再勤，
  *   也不会叠加成上百个 git 进程；过时那条的结果不会盖掉新的一轮（见 `latest`）；
  * - 后台补走单独一道闸：它再慢也只排在自己那条队里，不占 `read` 和 `/worktrees` 用的那道；
- * - git 读不出来时保留上一次的值，不把「没查到」写成「已经合回」（见 tasks.ts 的 childWorktree）。
+ * - git 读不出来时保留上一次的值给界面（不闪），但**不把它算成一次核对**：`checked` 为 false，
+ *   判定路径据此「不拍板」，绝不把「没查到」当成「已经合回、没有未提交文件」。
  */
 
 export type WorktreeRead<T> = {
-  /** 查到（或上次查到）的状态；从没查到过是 null */
+  /** 这个子对话的独立分支状态；null 表示没有独立分支，或还没有可用的核对结果（看 `checked`） */
   value: T | null
   /**
-   * true：有过一次和当前 key 对应的核对结果，**但可能已经过期**（TTL 内沿用缓存的那一条也是 true）。
-   * false：还没核对过、或子对话已经变了新的一轮 —— 这时 value 是空的，不能当成「已经合回」
+   * 有没有**成功核对过**（TTL 内沿用缓存的那一次也算，可能已经过期）。
+   * - true：`value` 是一次真的 git 结果。`value === null` 表示「这个子对话没有独立分支」。
+   * - false：没有可用的核对结果——从没查过、git 读失败、或子对话已经换了新的一轮。
+   *   这时 `value` 一律是 null，**不能当成「已经合回」或「没有未提交文件」**，判定路径不许拍板。
    */
   checked: boolean
 }
@@ -41,7 +44,7 @@ export function createWorktreeCache<T>(opts: {
   const now = opts.now ?? Date.now
   const keep = opts.keep ?? 200
   const seen = new Map<string, { key: string; at: number; value: T | null }>()
-  const inflight = new Map<string, { key: string; run: Promise<T | null> }>()
+  const inflight = new Map<string, { key: string; run: Promise<{ value: T | null; ok: boolean }> }>()
   /** 每个子对话最近一次**起的**是哪一轮：过时那条 git 回来时据此丢掉结果 */
   const latest = new Map<string, string>()
   /** `read` 遇到别人在跑别的轮次时最多让几次：一直有人在起新轮次就这次不拍板，交给下一次 */
@@ -69,9 +72,10 @@ export function createWorktreeCache<T>(opts: {
               latest.delete(k)
             }
         }
-        return value
+        return { value, ok: true }
       })
-      .catch(() => null)
+      // 读失败不写缓存：一次 git 报错（目录刚建好、仓库锁、报 128）不能被记成「没有未提交文件」
+      .catch(() => ({ value: null, ok: false }))
       .finally(() => {
         if (inflight.get(id)?.run === run) inflight.delete(id)
       })
@@ -91,7 +95,10 @@ export function createWorktreeCache<T>(opts: {
       if (!fresh) void refresh(id, key, load, opts.background)
       return usable ? { value: usable.value, checked: true } : { value: null, checked: false }
     },
-    /** 判定用：TTL 内沿用缓存，否则等这次的 git 结果；查不出来就是 null（拿不到结果时不可以拿过期数据拍板完成） */
+    /**
+     * 判定用：TTL 内沿用缓存，否则等这次的 git 结果。
+     * 查不出来时 `checked` 是 false（不是「干净」）：调用方必须按「没查到」处理，不能当结论。
+     */
     async read(id: string, key: string, ttl: number, load: Load<T>): Promise<WorktreeRead<T>> {
       const hit = seen.get(id)
       if (hit && hit.key === key && now() - hit.at < ttl) return { value: hit.value, checked: true }
@@ -105,7 +112,8 @@ export function createWorktreeCache<T>(opts: {
       // 等完仍然有别的轮次在跑（期间又有新的一轮进来）：这次不拍板，交给下一次
       const stale = inflight.get(id)
       if (stale && stale.key !== key) return { value: null, checked: false }
-      return { value: await refresh(id, key, load, opts.gate), checked: true }
+      const got = await refresh(id, key, load, opts.gate)
+      return { value: got.value, checked: got.ok }
     },
   }
 }

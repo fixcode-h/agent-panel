@@ -599,8 +599,23 @@ await runShard('子对话与计划', async (api) => {
       await waitFor(async () => (await call('GET', `/tasks/${stopKid.id}`)).status === 'stopped', {
         label: '子对话停下',
       })
-      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪
-      const row = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪。
+      // /children 不等独立分支的 git（几十个子对话时不把消息和 SSE 首包拖住，见
+      // docs/modules/server/bugs/children-git-blocks-open.md）：第一次可能是 worktreeChecked=false 的占位值，
+      // git 结果在下一次轮询到位，所以这里等到真的核对过再看 dirty
+      // 占位时不能给「0 个文件」：那会被界面显示成「干净」，比晚一轮更糟
+      const pending = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      if (pending && !pending.worktreeChecked) {
+        assert.equal(pending.dirty, undefined, '没核对过时不能把 dirty 说成 0')
+        assert.equal(pending.unmerged, undefined, '没核对过时不能把 unmerged 说成 false（已合回）')
+      }
+      const row = await waitFor(
+        async () => {
+          const hit = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+          return hit?.worktreeChecked ? hit : undefined
+        },
+        { timeout: 20000, label: '子对话卡片核对完独立分支状态' },
+      )
       // 停止时计划还没做完（用户最常遇到的停止情形，见上面的 PLAN_NEXT），
       // 这时也要照样报出没提交的文件，不能因为「还有 holds」就当成不需要判完成而什么都不给
       const kidDone = await call('GET', `/tasks/${stopKid.id}`)

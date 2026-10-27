@@ -67,7 +67,7 @@ test('key 变了就不算核对过：上一轮的状态不能拿来显示这一�
   assert.deepEqual(cache.peek('a', 'k2', 15_000, load), { value: null, checked: false })
 })
 
-test('git 读不出来时保留上一次的值，不写成「已经合回」', async () => {
+test('git 读不出来：界面留上一次的值，但不写成「已经合回」', async () => {
   let now = 0
   let fail = false
   const cache = createWorktreeCache<St>({ gate: open, background: open, now: () => now })
@@ -83,6 +83,23 @@ test('git 读不出来时保留上一次的值，不写成「已经合回」', a
   assert.deepEqual(cache.peek('a', 'k', 100, load), { value: { merged: false }, checked: true }, '失败不动缓存')
 })
 
+test('读失败不算核对过：read 必须说「没查到」，不能给出干净的结果', async () => {
+  let now = 0
+  let fail = false
+  const cache = createWorktreeCache<St>({ gate: open, background: open, now: () => now })
+  const load = async () => {
+    if (fail) throw new Error('fatal: bad object')
+    return { merged: false }
+  }
+  await cache.read('a', 'k', 100, load)
+  fail = true
+  now = 20_000
+  // 判定用：等了一次、失败了 → checked 是 false，调用方据此「不拍板」（不能当「已合回 / 没有未提交」）
+  assert.deepEqual(await cache.read('a', 'k', 100, load), { value: null, checked: false })
+  // 界面用：还留着上一次成功的值，不会因为一次失败闪成「已合回」
+  assert.deepEqual(cache.peek('a', 'k', 100, load), { value: { merged: false }, checked: true })
+})
+
 test('read 等这次的结果（判定完成用）', async () => {
   const cache = createWorktreeCache<St>({ gate: open, background: open })
   const load = async () => {
@@ -92,25 +109,6 @@ test('read 等这次的结果（判定完成用）', async () => {
   const began = Date.now()
   assert.deepEqual(await cache.read('b', 'k', 0, load), { value: { merged: true }, checked: true })
   assert.ok(Date.now() - began >= 50, 'read 不能不等')
-})
-
-test('read 查不出来就回 null：判定完成不能拿过期数据拍板', async () => {
-  let now = 0
-  let fail = false
-  const cache = createWorktreeCache<St>({ gate: open, background: open, now: () => now })
-  const load = async () => {
-    if (fail) throw new Error('fatal: not a git repository')
-    return { merged: false }
-  }
-  await cache.read('a', 'k', 100, load)
-  fail = true
-  now = 20_000
-  assert.deepEqual(await cache.read('a', 'k', 100, load), { value: null, checked: true }, '拿不到结果时不阻塞判定')
-  assert.deepEqual(
-    cache.peek('a', 'k', 100, load),
-    { value: { merged: false }, checked: true },
-    '但界面那份还留着上一次的值，不会因为一次失败闪成「已合回」',
-  )
 })
 
 test('后台补走单独那道闸：不和等结果的判定抢', async () => {
