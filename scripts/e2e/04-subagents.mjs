@@ -599,8 +599,16 @@ await runShard('子对话与计划', async (api) => {
       await waitFor(async () => (await call('GET', `/tasks/${stopKid.id}`)).status === 'stopped', {
         label: '子对话停下',
       })
-      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪
-      const row = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪。
+      // /children 不再同步等 git（几十个子对话时会把消息和 SSE 首包一起拖住）：先回占位值，
+      // 后台核对完下一次轮询才带上，所以等 worktreeChecked 再断言，不能「请求一次就到位」
+      const row = await waitFor(
+        async () => {
+          const hit = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+          return hit?.worktreeChecked ? hit : undefined
+        },
+        { timeout: 20000, label: '子对话卡片的独立分支状态核对完' },
+      )
       // 停止时计划还没做完（用户最常遇到的停止情形，见上面的 PLAN_NEXT），
       // 这时也要照样报出没提交的文件，不能因为「还有 holds」就当成不需要判完成而什么都不给
       const kidDone = await call('GET', `/tasks/${stopKid.id}`)
