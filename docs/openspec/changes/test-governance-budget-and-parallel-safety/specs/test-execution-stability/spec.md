@@ -27,7 +27,7 @@
 
 ### Requirement: Timing serial list justification
 
-计时文件串行清单（`TIMING_FILES`）的每个条目 MUST 有证据：该文件包含真实时钟断言或依赖并发窗口。新增条目 MUST 附上可复现的失败记录；移除条目 MUST 先证明该文件在**目标并发配置下连续 3 次全量运行**通过（并发上限已按 Adaptive parallelism 需求生效，不是只跑该文件），并记录并发值、机器配置和移除日期。串行清单 MUST NOT 作为并发问题的首选修复手段。
+计时文件串行清单（`TIMING_FILES`）的每个条目 MUST 有证据：该文件包含真实时钟断言或依赖并发窗口。新增条目 MUST 附上可复现的失败记录；未改造的条目暂时留在清单里时 MUST 登记打算用哪一条改造（见 Timing assertions are decoupled from real clock）；移除条目 MUST 先满足该需求的三条出路之一，再证明该文件在**目标并发配置下连续 3 次全量运行**通过（并发上限已按 Adaptive parallelism 需求生效，不是只跑该文件），并记录并发值、机器配置和移除日期。串行清单 MUST NOT 作为并发问题的首选修复手段。
 
 #### Scenario: 无证据新增被拒绝
 
@@ -36,13 +36,43 @@
 
 #### Scenario: 移出清单前连续三次全量通过
 
-- **WHEN** 在目标并发配置下（D6 的上限已生效）连续 3 次全量运行都通过
+- **WHEN** 文件已按 Timing assertions are decoupled from real clock 改造过，且在目标并发配置下（D6 的上限已生效）连续 3 次全量运行都通过
 - **THEN** 允许从清单移除，报告记录 3 次全量运行的结果、并发值、机器配置和移除日期
+
+#### Scenario: 只靠串行不算稳定
+
+- **WHEN** 某文件只在串行清单里有条目，断言仍是固定窗口的真实时钟比较，没有做任何断言侧改造
+- **THEN** 不判为稳定用例，也不允许以「已经在串行批里」为理由把该失败关掉或只调批次
 
 #### Scenario: 移出后再次失败则带回证据加回
 
 - **WHEN** 文件移出清单后在全量运行中失败
 - **THEN** 加回清单，并附上这次失败的输出作为证据
+
+### Requirement: Timing assertions are decoupled from real clock
+
+测试里出现真实时钟断言（`Date.now()` 差值、用 `setTimeout` 轮询等信号、落盘/退出窗口这类依赖墙钟的等待）时 MUST 满足下列三条之一，否则 MUST NOT 被判为稳定用例：
+
+1. 用可注入时钟 / 假时钟（`node:test` 的 `mock.timers`，或把 `now()` / `sleep()` 作为依赖传入）；
+2. 改成事件驱动：等信号（子进程退出事件、Promise、带上限的条件轮询）而不是固定 sleep 轮询；
+3. 保留真实时钟，但窗口 MUST ≥ 实测 p99 的 2 倍，并在断言处用注释写明实测依据（样本数、机器配置、日期、p99 值）。
+
+串行清单只降低与其他测试文件抢 CPU 的概率，**不能**消除真实时钟漂移：同一个断言在串行批里同样会超窗。因此计时类失败 MUST NOT 以调批次 / 把文件加进串行清单作为首选修复手段。
+
+#### Scenario: 串行批里仍然超窗时判为时钟漂移
+
+- **WHEN** `server/background.test.ts` 的 `assert.ok(Date.now() - t0 < 4000)` 在 `TIMING_FILES` 串行批里实跑 5599ms 失败
+- **THEN** 归因为「靠真实时钟轮询」，按本需求选一条出路改造（注入时钟 / 事件驱动 / 窗口 ≥ 2× p99），不得以再加一个串行条目或调整批次收尾
+
+#### Scenario: 放宽窗口要留实测依据
+
+- **WHEN** 选择保留真实时钟
+- **THEN** 窗口按实测 p99 的 2 倍取值（`server/background.test.ts` 实测 p99 ≥ 5599ms，所以窗口至少 11198ms：现有 4000ms 不满足 2 倍 p99，必须上调），断言旁的注释写明 p99 的实测样本、机器配置与日期；写不出实测依据时改用前两条
+
+#### Scenario: 轮询等待改成等信号
+
+- **WHEN** 用例用 300ms 一次的 `setTimeout` 轮询等后台命令排队 / 启动
+- **THEN** 改成等事件信号（子进程事件、状态变更回调、带上限的条件轮询），断言里不再出现固定睡眠时长作为等待手段
 
 ### Requirement: Adaptive parallelism
 

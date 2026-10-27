@@ -2,6 +2,7 @@
 
 > 勾选含义：验证已通过，不是代码写完。每条任务的验证命令按顺序跑，结果回填 `acceptance.md`。
 > 阶段 3 由父对话另行通知后执行；本文件先固定分组、验证方式和对应的 spec 需求。
+> 执行前提：动 `scripts/unit-tests.mjs`、`scripts/ui-check.mjs`、`scripts/ui/` 下的分片（含 `scripts/ui/harness.mjs`、`scripts/ui/covers.mjs`）、`scripts/rules-check.mjs`、`shared/clis/pi.json`、`server/exec/worktree.test.ts`、`server/exec/worktree-merge.test.ts` 之前，先由父对话协调另一条父对话让路（见 design 的「阶段 3 的协调前提」）；同一文件同一时间只一条任务改。
 
 ## 1. 分层判定与用例预算（spec: test-layering-and-budget）
 
@@ -15,8 +16,8 @@
 ## 2. 归层迁移与覆盖不减少（spec: test-layering-and-budget / Migration preserves coverage）
 
 - [ ] 2.1 新增 scripts/lib/test-inventory.mjs：解析 tap 输出的用例名集合，迁移前把基线写到 change 目录的 `evidence/test-inventory.baseline.json`；含单测。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-inventory.test.mjs`，并核对基线文件里的用例数等于 2119。
-- [ ] 2.2 批 1：把批 0 判为集成的文件改成 `*.integration.test.ts`，目录不变；同一提交把 `scripts/unit-tests.mjs` 的枚举改成「目录 + 判定函数」（pure 排除 `.integration.test.ts`，integration 只收它）、同步 `TIMING_FILES` 的显式路径和 `scripts/lib/changed-tests.mjs` 的测试文件识别正则；`covers.mjs`（界面分片 → 源码前缀）与按目录的高风险区不受改名影响，不动。验证：`npm run test:unit` 通过、`node scripts/test-inventory.mjs --diff` 的 removed 为空、`node scripts/test-budget.mjs --check` 通过。
-- [ ] 2.3 批 2：拆分「一个文件覆盖多个互不相关源模块」的测试，每个文件顶部加 `// @covers <源文件>`；`scripts/rules-check.mjs` 增加「单测试文件 ≤ 300 行、@covers 指向同一模块」规则。验证：每拆一个文件跑 `node scripts/unit-tests.mjs --files <文件>` 与 `node scripts/changed-tests.mjs --files <源文件>`，命中集合与拆分前一致；`npm run lint` 通过。
+- [ ] 2.2 批 1：把批 0 判为集成的文件改成 `*.integration.test.ts`，目录不变；同一提交把 `scripts/unit-tests.mjs` 的枚举改成「目录 + 判定函数」（pure 排除 `.integration.test.ts`，integration 只收它）、同步 `TIMING_FILES` 的显式路径和 `scripts/lib/changed-tests.mjs` 的测试文件识别正则；`TIMING_FILES` 现有 5 条（`worktree.test.ts` / `pi-rpc.test.ts` / `task-store.test.ts` / `process.test.ts` / `background.test.ts`），其中 `server/exec/worktree.test.ts` 是 13 例那个，改名时同步它在清单里的路径；`server/exec/worktree-merge.test.ts`（29 例）不在清单里，但它和 worktree.test.ts 是两个独立文件，按批 0 判定分别处理，不要当成一个 42 例的文件；`covers.mjs`（界面分片 → 源码前缀）与按目录的高风险区不受改名影响，不动。验证：`npm run test:unit` 通过、`node scripts/test-inventory.mjs --diff` 的 removed 为空、`node scripts/test-budget.mjs --check` 通过。
+- [ ] 2.3 批 2：拆分「一个文件覆盖多个互不相关源模块」的测试，每个文件顶部加 `// @covers <源文件>`；worktree 的拆分已完成（`server/exec/worktree.test.ts` 13 例 + `server/exec/worktree-merge.test.ts` 29 例），不在待拆清单里，只保持两个文件的职责边界；`scripts/rules-check.mjs` 增加「单测试文件 ≤ 300 行、@covers 指向同一模块」规则（规则只加在 `rules-check.mjs` 侧，不把 `covers.mjs` 的提示改成失败，见 design D11）。验证：每拆一个文件跑 `node scripts/unit-tests.mjs --files <文件>` 与 `node scripts/changed-tests.mjs --files <源文件>`，命中集合与拆分前一致；`npm run lint` 通过。
 - [ ] 2.4 批 3：按三类理由淘汰用例，逐条登记到 docs/openspec/changes/test-governance-budget-and-parallel-safety/migration.md（旧文件 / 用例名 / 新位置 / 理由类别 / 替代覆盖 / 验证命令），理由必须是固定枚举。验证：`node scripts/test-inventory.mjs --check-retire` 通过（理由在枚举内、removed 与登记一一对应、用 bugs 记录的「入口/症状/关键词」与待删用例名和 `@covers` 源文件做关键词交叉匹配并打印命中或已比对条数）；`node scripts/test-inventory.mjs --diff` 的 removed 只包含登记项；`node scripts/test-budget.mjs --check` 通过。反向验证：把一条理由改成「跑得慢」后期望检查失败；删一条命中 Bug 关键词的用例且不填替代时也期望失败。
 - [ ] 2.5 文档：`migration.md` 填完整；`docs/modules/testing/README.md` 写「用例名基线怎么维护、淘汰怎么登记」。验证：`npm run lint`。
 
@@ -25,7 +26,7 @@
 - [ ] 3.1 新增 scripts/lib/retry.mjs：`MAX_ATTEMPTS = 3`、`classifyAttempts(results)`（全通过 / flaky / 真失败）、`failedUnitsFromTap(tap)`；含单测覆盖三种判定和重试上限。验证：`node scripts/unit-tests.mjs --files scripts/lib/retry.test.mjs`。
 - [ ] 3.2 单测 runner 接入：失败后只重跑失败文件，总尝试 ≤ 3 次；写 `flaky-report.json`（单元、尝试次数、首次报错、最终状态、flaky 率）并打印。验证：注入一个必失败文件跑一次，确认尝试 3 次后真失败；注入一次失败后通过的文件，确认 flaky 报告并最终退出 0。
 - [ ] 3.3 e2e 与界面检查 runner 接入：只重跑失败分片，上限 3 次尝试，分片结果并入同一份 flaky 报告。验证：`node scripts/e2e.mjs 07` 正常通过；用 `FAKE_*` 触发一次分片失败后确认重跑范围只有该分片。
-- [ ] 3.4 `TIMING_FILES` 每条补证据注释（断言位置 + 最近失败记录）；先落地第 4 组并发上限，再逐条移出：移出前隔离连续 3 次全量通过、记录日期与机器配置，失败即加回并附输出；目标 ≤ 2 条。验证：每次移出跑 3 次 `npm run test:unit` + `npm run test:e2e` 并记录；`node scripts/unit-tests.mjs timing` 对剩余条目通过。
+- [ ] 3.4 `TIMING_FILES` 每条补证据注释（断言位置 + 最近失败记录）；先落地第 4 组并发上限，再逐条移出：移出前 MUST 已经改成注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍三者之一（串行不等于稳定：`server/background.test.ts` 曾在串行批里以 5599ms 超 4000ms 窗口失败，见 design D5），未改造的条目不得移出；改造后在隔离条件下连续 3 次全量通过、记录日期与机器配置，失败即加回并附输出；目标 ≤ 2 条。验证：先跑 `node scripts/unit-tests.mjs --files server/background.test.ts` 连跑 3 次确认不再超窗，并记录改造前后实测 p99 与窗口倍数；每次移出跑 3 次 `npm run test:unit` + `npm run test:e2e` 并记录；`node scripts/unit-tests.mjs timing` 对剩余条目通过。
 - [ ] 3.5 文档：`docs/modules/testing/README.md` 写「失败隔离、重试上限、串行清单依据」；`docs/lessons/testing.md` 补「重试语义」与「串行清单不是首选修复」两条。验证：`npm run lint`。
 
 ## 4. 并行度自适应与分片隔离（spec: test-execution-stability）
@@ -46,7 +47,7 @@
 
 ## 6. 环境默认化、验收命令与 CI 门禁（spec: test-environment-defaults / test-layering-and-budget）
 
-- [ ] 6.1 默认英文环境：动手前检查 `scripts/unit-tests.mjs` 与 `package.json` 是否已有另一条父对话的 locale 实现，有则复用；没有则新增 scripts/lib/test-locale.mjs 的 `testLocaleEnv()` 并在单测 / e2e / 界面检查入口设置 `LANG` / `LC_ALL`；日志打印实际 locale 与来源。验证：`LANG=zh_CN.UTF-8 npm run test:unit` 日志显示英文生效；显式 `AGENT_PANEL_TEST_LOCALE=zh` 时日志显示覆盖来源。
+- [ ] 6.1 默认英文环境（归属父对话，**执行前告知父对话**）：这条由父对话统一实施——`npm run test:unit` 默认英文环境（改 `scripts/unit-tests.mjs` 并修受影响断言、接入 `AGENT_PANEL_LANG`）归父对话，另一条父对话不动 `scripts/unit-tests.mjs`；本 change 只做断言侧与 CI 显式 locale；`npm run test:e2e` 与界面检查入口的默认 locale 同样由父对话统一接入（`AGENT_PANEL_LANG` 一处接入），本 change 只核对并回填证据。动手前先检查父对话是否已落地：已落地则复用；未落地则本 change 不改 runner，`acceptance.md` 对应项标「依赖中」，等父对话合入后再回填证据。需要中文的用例只能局部设 `AGENT_PANEL_LANG=zh`（当前仓库还没有这个变量，由父对话接入）或用 `t()` 现算，不得用 `setLang('zh')`（会被 `server/lang.ts` 覆盖）。验证：父对话合入后跑 `LANG=zh_CN.UTF-8 npm run test:unit`、`LANG=zh_CN.UTF-8 npm run test:e2e -- 03`（WSL 里）与 `LANG=zh_CN.UTF-8 node scripts/ui-check.mjs 08-misc`（先 `npx vite build --mode demo`），三个入口日志都显示英文生效；单个用例设 `AGENT_PANEL_LANG=zh` 时日志显示局部覆盖来源。
 - [ ] 6.2 新增 scripts/test-locale-check.mjs：扫描测试文件里的中文硬编码断言，支持 `// i18n-ok: <原因>` 例外；接进 `npm run lint`。验证：`npm run lint` 通过；临时加一条中文断言后 `npm run lint` 非零退出并指出文件行号。
 - [ ] 6.3 CI 的 `test` job 显式设 `LANG` / `LC_ALL` 为 `C.UTF-8`；e2e / ui job 同样固定。验证：读 job 配置核对；CI 跑一轮确认英文环境通过。
 - [ ] 6.4 新增 scripts/verify-local.mjs：按**分组并行**编排跑六步（测试组：test:unit / e2e / 界面检查同时启动；静态组：typecheck / lint / build 同时启动；Windows 上 e2e 自动包 WSL，界面检查先 `vite build --mode demo`），并行前先算全局预算（可用内存 70% 按 120:600:500 权重分给三个入口）并通过 `AGENT_PANEL_*_CONCURRENCY` 透传，子入口不再重复按内存自算；输出每步耗时与并行后的总墙钟（不是分项相加）；`--runs 3` 取总墙钟中位数；任一分项或总墙钟超预算非零退出并打印超标步骤命令。验证：`node scripts/verify-local.mjs --runs 1` 输出六步耗时与总墙钟；人为把单测预算改成 1 秒时非零退出；确认三个入口日志的并发值之和不超过全局预算，且判定用的是并行墙钟而不是分项求和。
@@ -60,30 +61,31 @@
 
 ## 需求覆盖核对（阶段 2 出口门禁）
 
-| spec 需求 | 覆盖它的 task |
-| --- | --- |
-| test-layering-and-budget / Test layer classification | 1.1、1.2 |
-| test-layering-and-budget / Per-layer test budget | 1.3、1.4、1.5 |
-| test-layering-and-budget / Test retirement criteria | 2.4 |
-| test-layering-and-budget / Verification time budget | 6.4 |
-| test-layering-and-budget / Flakiness-free acceptance | 6.5 |
-| test-layering-and-budget / CI test job budget | 6.6 |
-| test-layering-and-budget / Migration preserves coverage | 2.1、2.2、2.4 |
-| test-execution-stability / Bounded failure retry | 3.1、3.2、3.3、6.11 |
-| test-execution-stability / Timing serial list justification | 3.4 |
-| test-execution-stability / Adaptive parallelism | 4.1、4.2、4.3 |
-| test-execution-stability / Shard resource isolation | 4.4 |
-| test-execution-stability / Environment inheritance is cleared | 4.4、6.10 |
-| test-impact-selection / Selection reports hit basis | 5.2 |
-| test-impact-selection / Case-level selection granularity | 5.2 |
-| test-impact-selection / Justified full-run triggers | 5.3 |
-| test-impact-selection / Reproducible selection | 5.4 |
-| test-impact-selection / Empty selection is reported | 5.4 |
-| test-environment-defaults / Default English locale | 6.1、6.3 |
-| test-environment-defaults / Language-independent assertions | 6.2 |
-| test-environment-defaults / WSL-only e2e | 6.8 |
-| test-environment-defaults / Demo-backend parity | 6.9 |
-| test-environment-defaults / Clean inherited environment | 6.10 |
+| spec 需求                                                                  | 覆盖它的 task       |
+| -------------------------------------------------------------------------- | ------------------- |
+| test-layering-and-budget / Test layer classification                       | 1.1、1.2            |
+| test-layering-and-budget / Per-layer test budget                           | 1.3、1.4、1.5       |
+| test-layering-and-budget / Test retirement criteria                        | 2.4                 |
+| test-layering-and-budget / Verification time budget                        | 6.4                 |
+| test-layering-and-budget / Flakiness-free acceptance                       | 6.5                 |
+| test-layering-and-budget / CI test job budget                              | 6.6                 |
+| test-layering-and-budget / Migration preserves coverage                    | 2.1、2.2、2.4       |
+| test-execution-stability / Bounded failure retry                           | 3.1、3.2、3.3、6.11 |
+| test-execution-stability / Timing serial list justification                | 3.4                 |
+| test-execution-stability / Timing assertions are decoupled from real clock | 3.4                 |
+| test-execution-stability / Adaptive parallelism                            | 4.1、4.2、4.3       |
+| test-execution-stability / Shard resource isolation                        | 4.4                 |
+| test-execution-stability / Environment inheritance is cleared              | 4.4、6.10           |
+| test-impact-selection / Selection reports hit basis                        | 5.2                 |
+| test-impact-selection / Case-level selection granularity                   | 5.2                 |
+| test-impact-selection / Justified full-run triggers                        | 5.3                 |
+| test-impact-selection / Reproducible selection                             | 5.4                 |
+| test-impact-selection / Empty selection is reported                        | 5.4                 |
+| test-environment-defaults / Default English locale                         | 6.1、6.3            |
+| test-environment-defaults / Language-independent assertions                | 6.2                 |
+| test-environment-defaults / WSL-only e2e                                   | 6.8                 |
+| test-environment-defaults / Demo-backend parity                            | 6.9                 |
+| test-environment-defaults / Clean inherited environment                    | 6.10                |
 
 ## Workflow follow-up
 
