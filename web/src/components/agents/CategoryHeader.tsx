@@ -17,12 +17,17 @@ export function CategoryHeader({
   count,
   onAdd,
   compact,
+  collapsed,
+  onToggle,
 }: {
   category: Category
   count: number
   onAdd: () => void
   /** 紧凑列表里标题也跟着收窄（和 GroupHeader 的紧凑档一致） */
   compact?: boolean
+  /** 收起状态和开关：角色页的分类组可折叠，工作流页不传就不折 */
+  collapsed?: boolean
+  onToggle?: () => void
 }) {
   const { setCategories, setAgents, setWorkflows } = useData()
   const isWf = category.scope === 'workflow'
@@ -83,6 +88,8 @@ export function CategoryHeader({
         label={category.name}
         count={count}
         compact={compact}
+        collapsed={collapsed}
+        onToggle={onToggle}
         actions={
           <>
             <Button

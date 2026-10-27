@@ -1,5 +1,5 @@
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
-import { Plus, Search } from 'lucide-react'
+import { ChevronRight, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
@@ -106,6 +106,7 @@ export function ListGroup({
   children,
   label,
   groupId,
+  collapsed,
 }: {
   header: React.ReactNode
   children?: React.ReactNode
@@ -113,11 +114,18 @@ export function ListGroup({
   label?: string
   /** 稳定的分组标识（渲染成 data-group-id，只给自动化定位用，不写 DOM 的 id） */
   groupId?: string
+  /** 收起时不渲染子项；组头照常显示（「新建」「分类操作」还在），不传表示这一组不能收起 */
+  collapsed?: boolean
 }) {
   return (
-    <div className="group/g" data-group-id={groupId} {...(label ? { role: 'group', 'aria-label': label } : {})}>
+    <div
+      className="group/g"
+      data-group-id={groupId}
+      data-collapsed={collapsed ? '' : undefined}
+      {...(label ? { role: 'group', 'aria-label': label } : {})}
+    >
       {header}
-      <div className="flex flex-col gap-0.5">{children}</div>
+      {!collapsed && <div className="flex flex-col gap-0.5">{children}</div>}
     </div>
   )
 }
@@ -127,12 +135,27 @@ export function GroupHeader({
   count,
   actions,
   compact,
+  collapsed,
+  onToggle,
 }: {
   label: React.ReactNode
   count?: number
   actions?: React.ReactNode
   compact?: boolean
+  /** 收起状态：箭头指右，展开时指下 */
+  collapsed?: boolean
+  /** 传了才能点组头展开 / 收起（角色页的分类组）；不传时组头只是标题 */
+  onToggle?: () => void
 }) {
+  const head = (
+    <>
+      {onToggle && (
+        <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', !collapsed && 'rotate-90')} aria-hidden />
+      )}
+      <span className="truncate">{label}</span>
+      {count !== undefined && <span className="shrink-0">· {count}</span>}
+    </>
+  )
   return (
     <div
       className={cn(
@@ -141,8 +164,19 @@ export function GroupHeader({
         compact ? 'h-8 pt-1 text-[0.6875rem]' : 'h-9 pt-2 text-xs',
       )}
     >
-      <span className="truncate">{label}</span>
-      {count !== undefined && <span className="shrink-0">· {count}</span>}
+      {onToggle ? (
+        // 整条组头（标题 + 条数）都是折叠开关：只点箭头太小，点名字也是自然操作
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          className="-mx-1 flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded px-1 text-left hover:text-fg"
+        >
+          {head}
+        </button>
+      ) : (
+        <span className="flex min-w-0 items-center gap-1.5">{head}</span>
+      )}
       {actions && (
         <span className="ml-auto flex items-center opacity-0 transition-opacity [@media(hover:none)]:opacity-100 group-hover/g:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}

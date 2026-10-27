@@ -16,9 +16,7 @@ import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { CategoryHeader } from '@/components/agents/CategoryHeader'
-import { TagCountChip, TagFilter, TagList } from '@/components/tags/Tags'
-import { Segmented } from '@/components/ui/segmented'
-import { groupAgentsByTag } from '@/lib/agent-groups'
+import { TagFilter, TagList } from '@/components/tags/Tags'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { exportAgent } from '@/lib/transfer'
 import { useShareImport } from '@/lib/useShareImport'
@@ -31,17 +29,26 @@ import { t } from '@shared/i18n'
 
 /** 「必备」分组的 id，和用户分类的 id 不会冲突 */
 const CORE_GROUP = '#core'
+/** 「未分类」分组的 id：列表里这一组的分类 id 是空串，折叠状态要一个稳定的名字 */
+const UNCATEGORIZED_GROUP = '#uncategorized'
 
-/** 列表的分组方式：默认按标签（整理角色靠它），分类视图保留分类的增删改和「在这个分类里新建」 */
-type GroupBy = 'tag' | 'category'
-const GROUP_BY_DEFAULT: GroupBy = 'tag'
+/** 收起的分组记在本机：切走页面再回来还是收着的那些，默认全部展开 */
+const COLLAPSED_KEY = 'agents.collapsed'
+function readCollapsed(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
 
 export function AgentsPage() {
   const { cliName, cliOf, modelOf } = useAgentView()
   const { loading, agents, categories: allCategories, tags, clis, settings, setAgents, refreshClis } = useData()
   const categories = allCategories.filter((c) => c.scope !== 'workflow')
   const [tag, setTag] = useState('')
-  const [groupBy, setGroupBy] = useState<GroupBy>(GROUP_BY_DEFAULT)
+  const [collapsed, setCollapsed] = useState<string[]>(readCollapsed)
   const { route, go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
@@ -87,8 +94,7 @@ export function AgentsPage() {
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
   const coreCats = new Set(listed.filter(isCoreAgent).map((a) => a.categoryId))
-  // 按标签分组：没有标签的角色进「默认」组，组按角色数排、零组不出现（规则和单测在 lib/agent-groups.ts）
-  const tagGroups = groupAgentsByTag(listed.filter(match), tags)
+  // 分类分组：必备角色单独一组，然后是用户的分类和未分类
   const categoryGroups = [
     // 必备角色也单独成组：它们的分类由面板维护，放在用户的分类里反而像是能挪走
     { category: null as Category | null, id: CORE_GROUP, items: listed.filter((a) => isCoreAgent(a) && match(a)) },
@@ -104,8 +110,21 @@ export function AgentsPage() {
   ]
     // 没有角色的分类不显示，空着只占位置
     .filter((g) => g.items.length)
-  // 当前视图下的分组只有长度有用（空状态），两种分组的结构不同，不混成一个变量
-  const shownGroups = groupBy === 'tag' ? tagGroups : categoryGroups
+
+  // 搜索或标签筛选时一律展开：命中的角色藏在收起的组里等于没搜到
+  const filtering = !!q || !!tag
+  const groupKey = (id: string) => id || UNCATEGORIZED_GROUP
+  const isCollapsed = (key: string) => !filtering && collapsed.includes(key)
+  const toggleGroup = (key: string) =>
+    setCollapsed((ids) => (ids.includes(key) ? ids.filter((x) => x !== key) : [...ids, key]))
+  const expandGroup = (key: string) => setCollapsed((ids) => ids.filter((x) => x !== key))
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed))
+    } catch {
+      // 隐私模式禁用本地存储时只是不记住，不影响折叠
+    }
+  }, [collapsed])
 
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
@@ -169,7 +188,7 @@ export function AgentsPage() {
     )
   }
 
-  // 两种分组共用的一行：分组只决定它在哪几节里出现
+  // 列表的一行：分组只决定它在哪一节里出现
   const row = (a: Agent) => (
     <ListItem
       key={a.id}
@@ -292,60 +311,48 @@ export function AgentsPage() {
           </div>
         }
       >
-        <div className="px-1 pb-2">
-          <Segmented
-            label={t('按什么分组')}
-            value={groupBy}
-            onChange={setGroupBy}
-            options={[
-              { id: 'tag', label: t('按标签') },
-              { id: 'category', label: t('按分类') },
-            ]}
-          />
-        </div>
         <TagFilter value={tag} onChange={setTag} used={[...new Set(listed.flatMap((a) => a.tags))]} />
-        {groupBy === 'tag'
-          ? tagGroups.map((g) => {
-              // 标签名是用户起的，不过翻译（碰上和界面文案同名的标签会被译掉）。
-              // 内置的「无标签」组固定加一句说明：用户也能建一个名叫「默认」的标签，
-              // 两组都叫「默认」就分不清哪一组是没打标签的角色。
-              const name = g.tag ? g.label : t('默认（没有标签）')
-              return (
-                <ListGroup
-                  key={g.id}
-                  groupId={g.id}
-                  label={name}
-                  header={
-                    <GroupHeader
-                      compact
-                      label={<TagCountChip name={name} count={g.agents.length} color={g.tag?.color} />}
-                    />
-                  }
-                >
-                  {g.agents.map((a) => row(a))}
-                </ListGroup>
-              )
-            })
-          : categoryGroups.map((g) => (
-              <ListGroup
-                key={g.id || 'none'}
-                header={
-                  g.category ? (
-                    <CategoryHeader
-                      compact
-                      category={g.category}
-                      count={g.items.length}
-                      onAdd={() => create({ categoryId: g.id })}
-                    />
-                  ) : (
-                    <GroupHeader compact label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
-                  )
-                }
-              >
-                {g.items.map((a) => row(a))}
-              </ListGroup>
-            ))}
-        {!loading && listed.length > 0 && shownGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
+        {categoryGroups.map((g) => {
+          const key = groupKey(g.id)
+          const name = g.category ? g.category.name : g.id === CORE_GROUP ? t('必备') : t('未分类')
+          return (
+            <ListGroup
+              key={g.id || 'none'}
+              groupId={key}
+              label={name}
+              collapsed={isCollapsed(key)}
+              header={
+                g.category ? (
+                  <CategoryHeader
+                    compact
+                    category={g.category}
+                    count={g.items.length}
+                    collapsed={isCollapsed(key)}
+                    // 筛选时组头退回纯标题：这时它恒为展开，点了没有可见效果，却会改掉持久化的折叠状态
+                    onToggle={filtering ? undefined : () => toggleGroup(key)}
+                    onAdd={() => {
+                      // 在这个分类里新建：先展开，不然新建完角色藏在收起的组里看不见
+                      expandGroup(key)
+                      create({ categoryId: g.id })
+                    }}
+                  />
+                ) : (
+                  <GroupHeader
+                    compact
+                    label={name}
+                    count={g.items.length}
+                    collapsed={isCollapsed(key)}
+                    // 筛选时同样退回纯标题，避免点了没反应却改掉持久化的折叠状态
+                    onToggle={filtering ? undefined : () => toggleGroup(key)}
+                  />
+                )
+              }
+            >
+              {g.items.map((a) => row(a))}
+            </ListGroup>
+          )
+        })}
+        {!loading && listed.length > 0 && categoryGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
         {!loading && !query && !tag && listed.every(isCoreAgent) && (
           <ListEmpty>
