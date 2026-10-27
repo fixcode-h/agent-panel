@@ -636,6 +636,29 @@ export interface ChildReport {
   notify: boolean
 }
 
+/** 失败信息最多展示这么多字：只留能定位的那一句，完整原文在子对话里 */
+const FAILURE_NOTE_MAX = 160
+
+/**
+ * 子对话这次失败的根因：最后一条还没恢复的报错（CLI 重试耗尽的上游报错、面板工具没接上、
+ * 进程被回收、面板出错）。取第一行并截断：父对话收到的汇报靠它定位，不用再翻子对话。
+ */
+export function lastFailureNote(messages: TaskMessage[] = []): string {
+  const brief = (text: string) => {
+    const line = text.replace(/\s+/g, ' ').trim()
+    return line.length > FAILURE_NOTE_MAX ? `${line.slice(0, FAILURE_NOTE_MAX)}…` : line
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    // 工具行里是 CLI 自己报的（重试耗尽、工具没接上），消息行上是面板写的（进程被回收、面板出错）
+    for (const tool of [...(m.tools ?? [])].reverse())
+      if (tool.alert?.level === 'error' && !tool.alert.resolved) return brief(tool.alert.detail || tool.label)
+    if (m.alert?.level === 'error' && !m.alert.resolved) return brief(m.alert.detail || m.text)
+    if (m.error && !m.alert?.resolved && m.text.trim()) return brief(m.text)
+  }
+  return ''
+}
+
 /**
  * 子对话一轮结束（或者合并、置完成、收尾请求这些状态变化）时，交给父对话的是什么：
  * 状态只从 convState 来，父对话的计划、上报的说法、子对话栏用的是同一个结论。
@@ -644,7 +667,7 @@ export interface ChildReport {
  * more：这一轮结束后还要接着处理排队的消息（面板交过来的、执行中收到的），也算还在执行
  */
 export function childReport(
-  task: Parameters<typeof childFacts>[0],
+  task: Parameters<typeof childFacts>[0] & { messages?: TaskMessage[] },
   x: { background?: string[]; more?: boolean; unmerged?: boolean } = {},
 ): ChildReport {
   const facts = childFacts(task, { background: x.background?.length, unmerged: x.unmerged })
@@ -671,8 +694,11 @@ export function childReport(
         return facts.workflow ? t('工作流还没跑完') : t('派出的子任务还没跑完')
       case 'needs':
         return t('有没答的提问，在等用户回答')
-      case 'failed':
-        return t('执行失败了')
+      case 'failed': {
+        // 只说「执行失败了」时用户/父对话都看不出是重试耗尽、工具没接上还是进程被回收，把根因带上
+        const note = lastFailureNote(task.messages)
+        return note ? t('执行失败了（{note}）', { note }) : t('执行失败了')
+      }
       case 'stopped':
         return stopReasonText(task.stopReason)
       case 'unfinished':

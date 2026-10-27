@@ -1046,6 +1046,11 @@ export const EN_TASKS: Record<string, string> = {
   '后台命令还在跑：{list}': 'Background commands still running: {list}',
   '有没答的提问，在等用户回答': 'Unanswered questions are waiting for the user',
   执行失败了: 'Run failed',
+  '执行失败了（{note}）': 'Run failed ({note})',
+  '这条汇报没能交给父对话：它已经不在了（可能被删了）。结果还在这个对话里，需要的话交给别的对话或自己处理。':
+    'This report could not be handed to the parent conversation: it no longer exists (it may have been deleted). The result is still in this conversation; hand it to another conversation or handle it yourself if needed.',
+  '找不到父对话（id {id}）': 'Parent conversation not found (id {id})',
+  子对话自己这一轮失败: 'The subconversation itself failed this turn',
   '计划还没做完：{list}': 'Plan not finished: {list}',
   '只剩合回父对话的分支，还没请你收尾': 'Only the merge back is left, but it has not asked you to wrap up',
   '只剩合回，已请你收尾：用 finish_child 合并、标完成、删独立分支':

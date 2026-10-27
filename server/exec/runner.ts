@@ -20,7 +20,7 @@ import {
   type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { classifyError, makeAlert } from '../../shared/alerts.ts'
+import { classifyError, isGatewayError, makeAlert } from '../../shared/alerts.ts'
 import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
@@ -788,8 +788,31 @@ export function settleContextNotes(notes: ContextNote[]) {
     if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已裁剪对话，新会话接上了') }
   }
 }
+
+/**
+ * 重试成功了：把本轮那张（或几张）「正在重试」收成已恢复（界面上变灰，不用再处理）。
+ * from 是本轮在 messages 里的起点（runAgent 进来时的长度）：轮次由索引定，不按「最后一条用户消息」猜——
+ * 执行中用户插话会往同一轮里再 push 一条 user，按 role 找边界会把它误当成新的一轮，卡就永远收不掉。
+ * 返回是否真收到了一张：没有就不再多插一行「重试成功」。
+ */
+export function settleRetryNotes(messages: TaskMessage[], note: string, from = 0): boolean {
+  let settled = false
+  for (let i = messages.length - 1; i >= from; i--) {
+    const tools = messages[i].tools
+    for (let j = tools.length - 1; j >= 0; j--) {
+      const alert = tools[j].alert
+      if (alert?.kind !== 'retry' || alert.resolved) continue
+      tools[j] = { ...tools[j], alert: { ...alert, resolved: note } }
+      settled = true
+    }
+  }
+  return settled
+}
 const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+
+/** 断流和上游网关断开算同一种网络问题：给连接中断的说明，有会话时自动续接 */
+const isNetError = (detail: string) => NETWORK_ERROR.test(detail) || isGatewayError(detail)
 
 /**
  * 会话在别的项目目录里，CLI 要求交互确认才继续（Pi 的「Session found in different project ... Fork this session into current directory?」）。
@@ -843,7 +866,7 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
         '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。',
       ),
     )
-  if (NETWORK_ERROR.test(detail))
+  if (isNetError(detail))
     hints.push(
       t(
         '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让角色分几次写。',
@@ -981,6 +1004,8 @@ async function runAgent(
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
+  // 本轮开始的索引：重试成功时只收这一轮以后的卡（用户插话会往同一轮里再 push user，不能按 role 猜边界）
+  const turnStart = task.messages.length
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
   // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
   const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
@@ -1617,12 +1642,22 @@ async function runAgent(
         errors.push(ev.message)
         break
       case 'notice': {
-        // 失败提示（面板工具没接上、重试失败、压缩失败）也写进日志：界面上只留一行，事后排查要能查到
-        if (ev.failed) log.warn('agent', ev.text, { task: task.id, step, cli: def.name })
+        // 重试、失败、面板工具没接上都要写进日志：界面上只留一行，事后统计「总是失败」要能查到是哪一类、第几次、恢复没有
+        const sec = {
+          task: task.id,
+          step,
+          cli: def.name,
+          kind: ev.kind,
+          attempt: ev.attempt,
+          maxAttempts: ev.maxAttempts,
+          error: ev.error,
+        }
+        if (ev.failed) log.warn('agent', ev.text, sec)
+        else if (ev.kind) log.info('agent', ev.text, sec)
         // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
         const m = !cur || cur.text.trim() ? newMsg() : cur
         // CLI 自己报的重试、失败：画成警告行，点开看是哪一类、怎么办
-        const kind = /重试|retry/i.test(ev.text) && !ev.failed ? 'retry' : undefined
+        const kind = !ev.failed && (ev.kind === 'retry' || /重试|retry/i.test(ev.text)) ? 'retry' : undefined
         m.tools.push({
           kind: 'other',
           name: t('提示'),
@@ -1631,6 +1666,12 @@ async function runAgent(
           ...(ev.failed ? { failed: true } : {}),
           ...(ev.failed || kind ? { alert: makeAlert(ev.failed ? 'error' : 'warn', ev.text, kind) } : {}),
         })
+        break
+      }
+      case 'retry_ok': {
+        // 重试成功不是提示：把前面那张「正在重试」收成已恢复，不再多插一行（没有卡片时什么都不加）
+        log.info('agent', ev.text, { task: task.id, step, cli: def.name, kind: 'retry_ok', attempt: ev.attempt })
+        settleRetryNotes(task.messages, ev.text, turnStart)
         break
       }
       case 'result':
@@ -2168,7 +2209,7 @@ async function runAgent(
     // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
     // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
     const session = task.sessions[sessionKey]
-    if (NETWORK_ERROR.test(detail) && session && !prewarm && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
+    if (isNetError(detail) && session && !prewarm && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
       const note: TaskMessage = {
         id: ctx.newId(),
         role: 'system',

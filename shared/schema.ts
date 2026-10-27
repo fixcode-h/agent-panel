@@ -1079,6 +1079,7 @@ export type TaskPatch = z.infer<typeof TaskPatch>
  */
 export const AlertKind = z.enum([
   'network', // 连不上模型服务、连接中断
+  'gateway', // 上游网关 / 中转服务把连接断开了（502、Connection closed）
   'rate_limit', // 被限流、服务过载
   'auth', // 登录过期、密钥无效
   'quota', // 余额或额度用完

@@ -50,7 +50,7 @@
 | `output`                          | 输出解析，见下面                                                                                                                                        |
 | `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                         |
 | `systemPromptFileFlag`            | 系统提示词能传文件时用的参数（值写成文件路径，例如 Pi 的 `--append-system-prompt`）：填了就把角色说明写进临时目录传路径，参数里不带换行                 |
-| `systemPromptMod`                 | 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板生成一个只追加「回复语言」规则的 mod，参数里传路径（`{systemPromptModPath}`）             |
+| `systemPromptMod`                 | 系统提示词只能靠 mod / 插件追加（Command Code 的 `--mod`）：面板生成一个只追加「回复语言」规则的 mod，参数里传路径（`{systemPromptModPath}`）           |
 | `features`                        | 能力，见下面                                                                                                                                            |
 | `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                                                                |
 | `docsNote`                        | 项目设置里说明文件那一页的说明                                                                                                                          |
@@ -98,6 +98,7 @@
 3. Gemini 等其余 CLI（没有系统提示词参数，也没有 mod 通道）：规则写在任务描述里，并在末尾再提醒一次。
 
 **能力边界**：
+
 - 模型的原生 reasoning 由它自己的系统提示词和训练决定，提示词只能影响、不能强制。实测 Command Code + DeepSeek 会把任务描述里的中文规则忽略掉（思考输出英文），追加到系统提示词后才稳定；Gemini 这类只有任务描述通道的 CLI 仍可能不遵守。
 - 设置是 `auto` 时，界面语言按浏览器的 `navigator.language` 解析，服务端（`server/lang.ts`）按 `process.env.LANG` / 系统 locale 解析，两边可能不一致（浏览器中文、系统英文）：这时界面是中文，提示词却会按服务端解析出的英文写。要让两边一致，把设置改成固定语言，不要用 `auto`。
 - 不要为了让思考语言变过来去改用户的全局配置。
@@ -129,29 +130,29 @@
 }
 ```
 
-| 字段                                           | 说明                                                                                                                                                                                                                                                                                |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                                                                                                                                                                                           |
-| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                                                                                                                                                                                                     |
-| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                                                                                                                                                                                                        |
-| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                                                                                                                                                                                                |
-| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                                                                                                                                                                                                    |
-| `compact`                                      | 压缩上下文（`features.compact` 为 `native`）：续接会话后按顺序发，最后一个回复成功就算压缩完了，不发 `start`                                                                                                                                                                        |
-| `after`                                        | 这一轮结束、交结果之前再发的请求，例如 Pi 的 `get_session_stats` 查准确的上下文占用；一般配 `optional`、`parse`                                                                                                                                                                     |
-| `asks`                                         | CLI 发来的、要用户回答的请求（Pi 扩展的确认框、选择框），见下面「要用户回答的请求」                                                                                                                                                                                                 |
-| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`；路径里的 `{路径}` 先换成存下的值，例如 Pi 的 `post.data.messages.{pre.data.messages.length}.entryId`（这一轮开始前有几条用户消息，结束后列表里那个位置就是这一轮自己的）                              |
-| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                                                                                                                                                                                                         |
-| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                                                                                                                                                                                                  |
-| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录                                                                                                                                                                            |
-| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                                                                                                                                                                                                  |
-| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                                                                                                                                                                                              |
-| `turnLimit`                                    | CLI 没有回合上限参数时由面板数：`{ "when": { "type": "turn_start" } }`，一次模型请求一条，超过设置里的回合上限就按 `interrupt` 停下，这一轮算失败并显示原因                                                                                                                         |
-| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                                                                                                                                                                                             |
+| 字段                                           | 说明                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                                                                                                                                                                                                                                                                                                       |
+| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                                                                                                                                                                                                                                                                                                                 |
+| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                                                                                                                                                                                                                                                                                                                    |
+| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                                                                                                                                                                                                                                                                                                            |
+| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                                                                                                                                                                                                                                                                                                                |
+| `compact`                                      | 压缩上下文（`features.compact` 为 `native`）：续接会话后按顺序发，最后一个回复成功就算压缩完了，不发 `start`                                                                                                                                                                                                                                                                                    |
+| `after`                                        | 这一轮结束、交结果之前再发的请求，例如 Pi 的 `get_session_stats` 查准确的上下文占用；一般配 `optional`、`parse`                                                                                                                                                                                                                                                                                 |
+| `asks`                                         | CLI 发来的、要用户回答的请求（Pi 扩展的确认框、选择框），见下面「要用户回答的请求」                                                                                                                                                                                                                                                                                                             |
+| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`；路径里的 `{路径}` 先换成存下的值，例如 Pi 的 `post.data.messages.{pre.data.messages.length}.entryId`（这一轮开始前有几条用户消息，结束后列表里那个位置就是这一轮自己的）                                                                                                                                          |
+| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                                                                                                                                                                                                                                                                                                                     |
+| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                                                                                                                                                                                                                                                                                                              |
+| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录                                                                                                                                                                                                                                                                                        |
+| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                                                                                                                                                                                                                                                                                                              |
+| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                                                                                                                                                                                                                                                                                                          |
+| `turnLimit`                                    | CLI 没有回合上限参数时由面板数：`{ "when": { "type": "turn_start" } }`，一次模型请求一条，超过设置里的回合上限就按 `interrupt` 停下，这一轮算失败并显示原因                                                                                                                                                                                                                                     |
+| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                                                                                                                                                                                                                                                                                                         |
 | `redirect`                                     | 插话被正在执行的命令挡着（Pi 要等这批工具跑完才取）时怎么让它马上处理：`take` 收回排着的插话（`texts` 是回复里原文列表的路径，空的说明已被取走，不打断），`stop` 停下这一轮（期间的结束记录不算结束），`then` 把插话作为新的一句交给它（`{text}`）。面板在会写东西的命令跑了 8 秒还没完时触发；只读命令（`ls`、`rg`、`git log`）等它自己跑完，卡住了才在 40 秒时停（`server/exec/redirect.ts`） |
-| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                                                                                                                                                                                     |
-| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                                                                                                                                                                                        |
-| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`                                                                                                                                                                                   |
-| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                                                                                                                                                                                              |
+| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                                                                                                                                                                                                                                                                                                 |
+| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                                                                                                                                                                                                                                                                                                    |
+| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`                                                                                                                                                                                                                                                                                               |
+| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                                                                                                                                                                                                                                                                                                          |
 
 一条消息的写法：
 
@@ -217,21 +218,22 @@
 同一轮里出现多个 `result` 时以最后一个为准。常驻 RPC 的结束条件写在 `rpc.done`，不靠 `result`：例如 Pi 以 `agent_settled` 结束，
 `agent_end` 只是一个底层 agent 跑完了（后面可能还有自动重试、压缩、插话），配置里不映射它。面板认识的事件：
 
-| 事件                  | 字段                                                                                                                                                                                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `session`             | `id`：会话 id，继续对话时作为 `{resume}`                                                                                                                                                                                                               |
-| `text_delta` / `text` | `text`：回复的一段（流式）/ 一整段                                                                                                                                                                                                                     |
-| `gen`                 | `text`：模型在生成、但不显示的输出（流式的工具参数），只算进实时速度                                                                                                                                                                                   |
-| `thinking`            | `text`、`delta`；`final: true` 表示这段思考结束时的整段：推过增量就不再发，没推过（有的 Responses 中转只在结束时给）才用它                                                                                                                             |
-| `tool`                | `name`、`id`、`input`：按工具名认出读文件、改文件、跑命令、搜索、网页等，`input` 里的 `command`、`file_path`、`content`、`old_string`/`new_string` 会显示出来                                                                                          |
-| `tool_result`         | `id`、`output`、`error`、`failed`、`exitCode`：命令的退出码（CLI 报得出时给，例如 Pi 的 `$.result.structuredContent.exit_code`），排查失败时要看它，不要凭空补 0                                                                                                             |
-| `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`；`addInput` 不含缓存（只算未命中的）时写 `inputExcludesCache: true`，面板加上缓存再记                                                                |
-| `error`               | `message`：只记下来，这一轮失败时一起显示                                                                                                                                                                                                              |
-| `notice`              | 不影响结果、但用户应该看到的情况，显示成回复里的一行：`text`、`failed`；或者给 `kind` 由面板按界面语言拼文字：`retry`（`attempt`、`maxAttempts`、`delayMs`、`error`）、`retry_failed`（`attempt`、`error`）、`compact_failed`（`error`，为空时不显示） |
-| `compacted`           | 压缩了上下文：`before`、`context` 是压缩前后的 token 数，两个都没有时不算压缩过（例如压缩失败）                                                                                                                                                        |
-| `request_start`       | 开始一次模型请求：CLI 没有插话协议时，登记给 `read_user_notes` 的补充在它真正被读到时把输出另起一条（Command Code 用 `model_request_start`，Pi 用 `turn_start`）                                                                                       |
-| `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                                                                                                                      |
-| `result`              | `ok`、`error`：这一轮结束                                                                                                                                                                                                                              |
+| 事件                  | 字段                                                                                                                                                                                                                                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`             | `id`：会话 id，继续对话时作为 `{resume}`                                                                                                                                                                                                                                                          |
+| `text_delta` / `text` | `text`：回复的一段（流式）/ 一整段                                                                                                                                                                                                                                                                |
+| `gen`                 | `text`：模型在生成、但不显示的输出（流式的工具参数），只算进实时速度                                                                                                                                                                                                                              |
+| `thinking`            | `text`、`delta`；`final: true` 表示这段思考结束时的整段：推过增量就不再发，没推过（有的 Responses 中转只在结束时给）才用它                                                                                                                                                                        |
+| `tool`                | `name`、`id`、`input`：按工具名认出读文件、改文件、跑命令、搜索、网页等，`input` 里的 `command`、`file_path`、`content`、`old_string`/`new_string` 会显示出来                                                                                                                                     |
+| `tool_result`         | `id`、`output`、`error`、`failed`、`exitCode`：命令的退出码（CLI 报得出时给，例如 Pi 的 `$.result.structuredContent.exit_code`），排查失败时要看它，不要凭空补 0                                                                                                                                  |
+| `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`；`addInput` 不含缓存（只算未命中的）时写 `inputExcludesCache: true`，面板加上缓存再记                                                                                                           |
+| `error`               | `message`：只记下来，这一轮失败时一起显示                                                                                                                                                                                                                                                         |
+| `notice`              | 不影响结果、但用户应该看到的情况，显示成回复里的一行：`text`、`failed`；或者给 `kind` 由面板按界面语言拼文字：`retry`（`attempt`、`maxAttempts`、`delayMs`、`error`）、`retry_failed`（`attempt`、`error`）、`compact_failed`（`error`，为空时不显示）、`tools_failed`（`error`，面板工具没接上） |
+| `retry_ok`            | 自动重试成功（`attempt`）：只用来把前面那张「正在重试」收成「已恢复」，不额外占一行提示                                                                                                                                                                                                           |
+| `compacted`           | 压缩了上下文：`before`、`context` 是压缩前后的 token 数，两个都没有时不算压缩过（例如压缩失败）                                                                                                                                                                                                   |
+| `request_start`       | 开始一次模型请求：CLI 没有插话协议时，登记给 `read_user_notes` 的补充在它真正被读到时把输出另起一条（Command Code 用 `model_request_start`，Pi 用 `turn_start`）                                                                                                                                  |
+| `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                                                                                                                                                                 |
+| `result`              | `ok`、`error`：这一轮结束                                                                                                                                                                                                                                                                         |
 
 ## 面板的工具 `mcp`
 
@@ -246,23 +248,24 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 保活会话的总数上限由「同时保活的会话上限」（`keepAliveLimit`，默认 4，填 0 不限制）管，实现在 `server/tasks.ts` 的 `enforceKeepAlive`：
 超了先结束最久没用、又没人在看的那个（「在看」只算前台开着的页面，切走后宽限期里的也算进上限；名下有子对话在跑的不动，那是真误杀；有后台命令在跑的不算空闲，也不动）。
 已知限制（都不影响主行为，改这块时留意）：
+
 - 待回收标记只在「这一轮结束」（`onKeepAlive`）时补排。若父对话是因为名下有子对话在跑被叫停、而子对话结束时没有东西唤醒它（父计划里没等这一步），这个空闲会话的两段时长会失效，要等用户再点开或被上限淘汰才收。兜底可在子对话 live 记录消失时给父对话补一次 `rescheduleIfUnwatched`。
 - 「名下有子对话」按 `live` 里所有子对话算，不区分子对话本身就是停在等下一句的空闲（保护来自 `stopTask → closeChildren`，否则会连带停掉子对话）。
-设置里的「自动回收闲置 Agent」（`reclaimIdleCli`）关掉后只是不再按上面两段时间计时回收，数量上限照旧。
-回收后用户再打开会冷启动一次，会话靠 `--resume` 续接，代价是几秒钟。
-面板被强杀（`taskkill /F`、崩溃）时来不及停的 CLI 记在数据目录的 `run/cli-pids/<面板 pid>.json`（每个面板实例一份，退出时只删自己那份），下次启动只清理命令行里认得出是面板起的
-（面板自己的 `cache/cli-run/` 临时目录、MCP 桥接参数），用户自己跑的 `pi`、`codex` 命令行没有这些痕迹，不会被碰。
-任务已经收口（完成 / 已停下）却还留着的 CLI 由启动后的兜底回收清掉（`server/exec/orphans.ts` 的 `reapSettledTaskClis`，之后每小时一次）。
-`wait_user_message` 工具仍然提供，模型主动调用时这一轮不结束、等用户下一句；
-但正常轮次不需要它，模型没调用也能保活。`tools/list` 里多了这个工具，不算插话协议。
-打开一个已有会话的对话页不会启动 CLI：只有真正发消息时才按当前选择启动这一轮。
-代价是第一条消息要等 CLI 启动和会话加载，换来的是「只是看一眼」不会在后台起一堆进程。
-`args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容，用完还原）；内容是字符串时原样写成文本文件。
-里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址，`{dir}` 换成面板这一轮自己的临时目录（数据目录的 `cache/cli-run/` 下，绝对路径，用完删掉）。
-路径以 `{dir}/` 开头的文件写进这个临时目录，不进用户的项目。文件写不成时（目录只读、被占用）参数也不加，这一轮没有面板的工具，
-对话里会显示一行提示，但照常执行。
-`vars` 是模板里可以填的变量（数值或字符串，例如 Pi 桥接的 `stepTimeout` / `attempts`）：生产值写在定义里，
-脚本不自己写死；测试调 `mcpConfig` 时传覆盖值换成小值，不用真等到生产的秒数。`{name}` / `{url}` / `{dir}` 先填，不会被 `vars` 覆盖。
+  设置里的「自动回收闲置 Agent」（`reclaimIdleCli`）关掉后只是不再按上面两段时间计时回收，数量上限照旧。
+  回收后用户再打开会冷启动一次，会话靠 `--resume` 续接，代价是几秒钟。
+  面板被强杀（`taskkill /F`、崩溃）时来不及停的 CLI 记在数据目录的 `run/cli-pids/<面板 pid>.json`（每个面板实例一份，退出时只删自己那份），下次启动只清理命令行里认得出是面板起的
+  （面板自己的 `cache/cli-run/` 临时目录、MCP 桥接参数），用户自己跑的 `pi`、`codex` 命令行没有这些痕迹，不会被碰。
+  任务已经收口（完成 / 已停下）却还留着的 CLI 由启动后的兜底回收清掉（`server/exec/orphans.ts` 的 `reapSettledTaskClis`，之后每小时一次）。
+  `wait_user_message` 工具仍然提供，模型主动调用时这一轮不结束、等用户下一句；
+  但正常轮次不需要它，模型没调用也能保活。`tools/list` 里多了这个工具，不算插话协议。
+  打开一个已有会话的对话页不会启动 CLI：只有真正发消息时才按当前选择启动这一轮。
+  代价是第一条消息要等 CLI 启动和会话加载，换来的是「只是看一眼」不会在后台起一堆进程。
+  `args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容，用完还原）；内容是字符串时原样写成文本文件。
+  里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址，`{dir}` 换成面板这一轮自己的临时目录（数据目录的 `cache/cli-run/` 下，绝对路径，用完删掉）。
+  路径以 `{dir}/` 开头的文件写进这个临时目录，不进用户的项目。文件写不成时（目录只读、被占用）参数也不加，这一轮没有面板的工具，
+  对话里会显示一行提示，但照常执行。
+  `vars` 是模板里可以填的变量（数值或字符串，例如 Pi 桥接的 `stepTimeout` / `attempts`）：生产值写在定义里，
+  脚本不自己写死；测试调 `mcpConfig` 时传覆盖值换成小值，不用真等到生产的秒数。`{name}` / `{url}` / `{dir}` 先填，不会被 `vars` 覆盖。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
@@ -341,17 +344,17 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；Gemini CLI 这类登录后不自己退出的也能判对），
 进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
 
-| 字段                   | 说明                                                                                                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `login`                | 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录                                                                                                                                        |
+| 字段                   | 说明                                                                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `login`                | 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录                                                                                                                                      |
 | `loginAlreadyLoggedIn` | 已经登录着时再跑登录命令会直接说「已登录」、以退出码 0 退出、**不改凭据文件**的 CLI（Command Code 的 `cmdc login` 输出 `Already logged in`）写 `true`：这时退出码 0 且读得到凭据就算成功，不看凭据变没变 |
-| `loginStdin`           | 登录时从 stdin 写进去的内容（要确认的 `y` 之类）                                                                                                                                                           |
-| `loginEdits`           | 登录前先改的配置（例如 Gemini CLI 先选登录方式），登录完不还原                                                                                                                                             |
-| `home` / `files`       | 凭据目录（`~` 是用户目录，`${ENV:-默认值}` 先取环境变量）和里面的凭据文件                                                                                                                                  |
-| `fields`               | 其他 JSON 文件里属于账号的键（例如 Claude Code 在 `.claude.json` 里记着账号）                                                                                                                              |
-| `keychain`             | macOS 钥匙串里的条目名                                                                                                                                                                                     |
-| `identity`             | 从凭据里认出是哪个账号（邮箱）的方式；`none` 表示认不出，用保存时起的名字                                                                                                                                  |
-| `accountNote`          | 账号区顶部的提醒（例如这个 CLI 对账号类型的限制），界面文案的英文写 `i18n.en`                                                                                                                              |
+| `loginStdin`           | 登录时从 stdin 写进去的内容（要确认的 `y` 之类）                                                                                                                                                         |
+| `loginEdits`           | 登录前先改的配置（例如 Gemini CLI 先选登录方式），登录完不还原                                                                                                                                           |
+| `home` / `files`       | 凭据目录（`~` 是用户目录，`${ENV:-默认值}` 先取环境变量）和里面的凭据文件                                                                                                                                |
+| `fields`               | 其他 JSON 文件里属于账号的键（例如 Claude Code 在 `.claude.json` 里记着账号）                                                                                                                            |
+| `keychain`             | macOS 钥匙串里的条目名                                                                                                                                                                                   |
+| `identity`             | 从凭据里认出是哪个账号（邮箱）的方式；`none` 表示认不出，用保存时起的名字                                                                                                                                |
+| `accountNote`          | 账号区顶部的提醒（例如这个 CLI 对账号类型的限制），界面文案的英文写 `i18n.en`                                                                                                                            |
 
 CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.ts` 的 `stripAnsi`）：CLI 发现标准输出接的是终端就上色，
 网页里 ESC 被吞掉会只剩 `[32m` 这种残码，而同一份文本还要进报错文案、交给「AI 处理」排查。

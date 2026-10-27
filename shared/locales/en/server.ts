@@ -500,6 +500,7 @@ export const EN_SERVER: Record<string, string> = {
     "Couldn't attach the panel's tools ({error}), so this turn can't ask you questions or receive notes you add while it runs",
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
+  '第 {n} 次重试成功了，接着做。': 'Retry {n} succeeded, carrying on.',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
   '面板的工具没接上（{error}）：缺的那些这一轮用不了，只能直接改文件、用普通命令跑；要这些工具就重开一轮':
     "Panel tools didn't connect ({error}). The missing ones aren't available this turn; edit files and run plain commands only, or start a new turn to get them back",

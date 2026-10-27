@@ -12,12 +12,21 @@ export interface AlertInfo {
   fix: string
 }
 
-const INFO: Record<AlertKind, () => AlertInfo> = {
+const INFO: Record<AlertKind, (detail?: string) => AlertInfo> = {
   network: () => ({
     title: t('网络错误'),
     what: t('连不上模型服务，或者连接中途断开了（超时、被代理或服务端断开）。'),
     fix: t(
       '检查网络和代理（Agent 设置里的环境变量，例如 HTTPS_PROXY）；面板会自动续接重试，仍然失败就点「继续执行」，或者换一个接口。',
+    ),
+  }),
+  gateway: () => ({
+    title: t('上游连接断开'),
+    what: t(
+      '上游网关或中转服务把连接断开了：返回 502/503/504，或者「Connection closed」「Response payload is not completed」。可能是中转服务到模型源不稳定、这次请求太久，也可能是请求接近上游上限被直接断开（同一个中转对超限也可能只回这个，不回「上下文超长」）；本地代理或网络中断也会有同样的报错。',
+    ),
+    fix: t(
+      '反复出现先看这条前一步的上下文占用（接近模型窗口上限时把「自动压缩上下文」调到 70%，或者新开对话只带必要的内容）；再确认代理和中转服务的状态，最后才是换接口或模型、减少同时执行的任务。',
     ),
   }),
   rate_limit: () => ({
@@ -81,11 +90,7 @@ const INFO: Record<AlertKind, () => AlertInfo> = {
     what: t('模型这一轮没有返回内容，或者只说了一句「我先…」就结束了，没有动手也没有结论。'),
     fix: t('面板会自动再推一次；仍然没有产出就换一个模型，或者把要求写得更具体。'),
   }),
-  retry: () => ({
-    title: t('正在重试'),
-    what: t('Agent 向模型发的请求失败了，它正在自动重试。'),
-    fix: t('一般会自己恢复，不用处理；反复重试失败时看原始信息里的原因。'),
-  }),
+  retry: (detail) => retryInfo(detail ?? ''),
   delivery: () => ({
     title: t('消息没有送到'),
     what: t('面板没能把一条消息（后台命令的结果、子对话的上报、提问的回答）交给这个对话的 Agent。'),
@@ -108,7 +113,53 @@ const INFO: Record<AlertKind, () => AlertInfo> = {
   }),
 }
 
-export const alertInfo = (kind: AlertKind): AlertInfo => INFO[kind]()
+export const alertInfo = (kind: AlertKind, detail = ''): AlertInfo => INFO[kind](detail)
+
+/**
+ * 重试还在进行时的说明：从原始报错里能看出原因就给那一条的具体下一步，看不出时给通用那句。
+ * 只挑用户此刻能动手的几类（网关断开、限流、上下文接近上限）；认证、额度这些重试也解决不了，留给重试失败后的卡片
+ */
+function retryInfo(detail: string): AlertInfo {
+  const cause = classifyError(detail)
+  if (cause === 'gateway')
+    return {
+      title: t('正在重试'),
+      what: t(
+        '上游网关或中转服务把连接断开了（502/503/504、Connection closed）：可能是中转服务到模型源不稳定、这次请求太久，也可能是请求接近上游上限被直接断开；本地代理或网络中断也会有同样的报错。',
+      ),
+      fix: t(
+        '先等它自己重试完；一直失败就看前一步的上下文占用（接近窗口上限时把「自动压缩上下文」调到 70%）、确认代理和中转状态；仍然失败再换接口或模型、减少同时执行的任务。',
+      ),
+    }
+  if (cause === 'rate_limit')
+    return {
+      title: t('正在重试'),
+      what: t('模型服务在限流或过载（429、529、overloaded），这一轮的请求被拒绝或在排队重试。'),
+      fix: t('它会按间隔自动重试；频繁出现就换一个模型或接口，或者减少同时执行的子对话。'),
+    }
+  if (cause === 'context')
+    return {
+      title: t('正在重试'),
+      what: t('这次请求的内容接近模型的上下文上限，模型或中转服务断开了它。'),
+      fix: t('把设置里的「自动压缩上下文」调到 70%，或者新开一个对话只带必要的内容；一直重试多半恢复不了。'),
+    }
+  if (cause === 'network') return { ...INFO.network(), title: t('正在重试') }
+  return {
+    title: t('正在重试'),
+    what: t('Agent 向模型发的请求失败了，它正在自动重试。'),
+    fix: t('一般会自己恢复，不用处理；反复重试失败时看原始信息里的原因。'),
+  }
+}
+
+/**
+ * 上游网关 / 中转服务把连接断开的样本：502/503/504、Connection closed、响应没传完。
+ * 失败卡的说明和「自动续接」都按这一个口径判断（runner.ts 的网络断流判定也用它）
+ */
+const GATEWAY_ERROR =
+  /\b50[234]\b|bad gateway|service unavailable|gateway time-?out|connection closed|response payload is not completed|upstream (?:connect )?(?:error|timeout|reset)|connection reset by peer/i
+
+/** 是不是上游网关 / 中转把连接断了（区别于用户自己的网络或代理） */
+export const isGatewayError = (text: string) => GATEWAY_ERROR.test(text)
 
 /** 按报错的文字归类：CLI 报的错五花八门，按关键字认出最常见的几类 */
 export function classifyError(text: string): AlertKind {
@@ -125,6 +176,7 @@ export function classifyError(text: string): AlertKind {
     /context[_ ]length|context window|prompt is too long|maximum context|too many tokens|上下文.{0,6}(超|上限)/i.test(s)
   )
     return 'context'
+  if (isGatewayError(s)) return 'gateway'
   if (
     /Connection error|APIConnectionError|Unable to connect|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network|fetch failed|timed? ?out|网络|连接(中断|失败|断开)/i.test(
       s,
