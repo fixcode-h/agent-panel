@@ -1503,6 +1503,23 @@ await runShard(import.meta.filename, async (api) => {
     ])
     await p.keyboard.press('Escape')
   }
+  // 工具与返工：任务级的调用数、失败数、探路失败分类和返工原因都在浮层里，
+  // 和导出报告用同一个计数函数（shared/tool-failures.ts），不在界面上另算一套
+  {
+    await p.getByTitle('工具与返工').first().click()
+    await check(p, '任务-工具与返工', [
+      '工具与返工',
+      '工具调用',
+      '其中探路失败',
+      '路径不存在',
+      '命令不存在',
+      '返工',
+      '同一节点重跑',
+      '按节点',
+      '追加要求/对话',
+    ])
+    await p.keyboard.press('Escape')
+  }
   // 浮层里的速度只算正在输出的：造两种数据各截一张（演示数据用完改回去，不影响后面的截图）
   {
     const key = 'agent-panel-demo-v3'

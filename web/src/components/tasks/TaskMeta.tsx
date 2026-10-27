@@ -33,9 +33,10 @@ import { withTaskModel } from '@shared/task'
 import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
 import { META_CHIP } from './chip'
 import { TestRunsChip } from './TestRuns'
+import { ToolFailuresChip } from './ToolFailuresChip'
 import { ReviewOverrideChip } from './ReviewOverrideChip'
 
-type Usage = Pick<StepUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'costUsd'>
+type Usage = Pick<StepUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens' | 'costUsd'>
 type Live = { tps: number; lastTps?: number; outputTokens: number; genMs: number }
 /** 一行上下文：谁、用的是哪个模型、占了多少 */
 type ContextLine = {
@@ -48,7 +49,7 @@ type ContextLine = {
 }
 
 function sumUsage(steps: TaskStep[]): Usage {
-  const u: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 }
+  const u: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }
   for (const s of steps) if (s.usage) for (const k of Object.keys(u) as (keyof Usage)[]) u[k] += s.usage[k] ?? 0
   return u
 }
@@ -96,6 +97,7 @@ export function TaskMeta({
         onOpenChild={onOpenChild}
       />
       <TestRunsChip task={task} />
+      <ToolFailuresChip task={task} />
       <ReviewOverrideChip task={task} />
     </div>
   )
@@ -223,7 +225,10 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
   const rows: [string, string][] = [
     [t('输入'), fmtTokens(u.inputTokens)],
     [t('输出'), fmtTokens(u.outputTokens)],
-    [t('缓存命中'), fmtTokens(u.cacheReadTokens ?? 0)],
+    // 命中与写入都是「输入」的子集（input 含缓存），标签里写明，免得读者把三项相加（复盘时会高估）
+    [t('其中缓存命中'), fmtTokens(u.cacheReadTokens ?? 0)],
+    // 写进缓存的 token：节点级和导出报告都算这个数，界面也在这里看，不另开一个 Token 指标
+    ...(u.cacheWriteTokens ? [[t('其中缓存写入'), fmtTokens(u.cacheWriteTokens)] as [string, string]] : []),
   ]
   const label = scope ? t('累计 token') : t('整个运行')
   const groupLabel = { own: t('本对话'), sub: t('子任务与子对话') }
