@@ -291,6 +291,7 @@ function SettingsBody({
   const webhookValid = !webhookUrlTrimmed || /^https?:\/\//.test(webhookUrlTrimmed)
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
+    defaultsVersion: initial.defaultsVersion,
     openBrowser,
     requireToken,
     remoteAccess,
