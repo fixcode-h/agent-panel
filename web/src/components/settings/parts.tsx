@@ -22,11 +22,11 @@ export function Row({
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 border-b py-4 last:border-b-0',
+        'flex flex-col gap-3 border-b border-line/80 py-4 last:border-b-0',
         !stack && 'sm:flex-row sm:items-center sm:justify-between sm:gap-8',
       )}
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-col gap-1">
         <span className="text-[0.875rem] font-medium">{title}</span>
         {desc && <span className="text-[0.8125rem] leading-relaxed text-subtle">{desc}</span>}
       </div>
@@ -43,7 +43,7 @@ export function Group({ title, children }: { title?: string; children: React.Rea
   const anchor = useSectionAnchor(title)
   return (
     <section ref={anchor.ref} id={title ? anchor.id : undefined} className="flex flex-col">
-      {title && <h3 className="pt-6 pb-1 text-xs font-medium text-subtle">{title}</h3>}
+      {title && <h3 className="pt-6 pb-1.5 text-[0.75rem] font-semibold tracking-wide text-muted">{title}</h3>}
       {children}
     </section>
   )
