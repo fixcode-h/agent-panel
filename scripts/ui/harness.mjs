@@ -18,6 +18,11 @@ const out = path.join(root, 'ui-shots')
 
 /** 局部截图往外留的空白（px）：足以带上元素边框和阴影，又不会大到跨出视口（下面会夹） */
 const CLIP_PAD = 6
+/**
+ * 截图前等元素出现的上限：元素已经卸载时别用 Playwright 的 30 秒默认超时，
+ * 那样整片分片会以 TimeoutError 报废，而这里要的只是「没截到图」
+ */
+const SHOT_BOX_TIMEOUT_MS = 5000
 
 /** 截图格式和质量：失败诊断看排版和颜色就够了，jpeg 比 png 小一个数量级 */
 const SHOT_TYPE = 'jpeg'
@@ -134,7 +139,9 @@ export async function runShard(file, fn) {
    * 直接按「矩形 + 留白」算会跨出页面，Playwright 的 screenshot 会抛错、整个分片报废，而不是这条断言失败。
    */
   async function shotOf(p, loc, name) {
-    const box = await loc.boundingBox()
+    // 元素已经不在了（例如过渡面板已淡出卸载）时 boundingBox 会等默认 30 秒再抛错，整个分片报废；
+    // 这里只当「没截到图」返回 false，交给调用方报一条具体断言，别把分片拖进 TimeoutError
+    const box = await loc.boundingBox({ timeout: SHOT_BOX_TIMEOUT_MS }).catch(() => null)
     if (!box) return false
     const view = await p.evaluate(() => ({ w: innerWidth, h: innerHeight }))
     // 起点也夹上界：元素整个落在视口右侧/下方外时，光给宽高兜下界不够（x 已经大于视口宽，x+1 仍越界）
