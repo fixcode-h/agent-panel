@@ -105,7 +105,7 @@ import type {
   CaptureRequest,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
-import type { DataKind, DataUsage, MemoryUsage } from '@shared/data'
+import type { CleanupReport, DataKind, DataUsage, MemoryUsage, WorktreeCleanup } from '@shared/data'
 import type { UsageGrain, UsageGroup, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
@@ -821,6 +821,19 @@ export const api = {
   revealData: () => request<{ ok: boolean; dir: string }>('/data/reveal', json('POST', {})),
   revealLogs: () => request<{ ok: boolean; dir: string }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
+  /** 清理面板：对话工作目录 Top N + 构建产物（逐个目录 stat，比 /data 重，但不扫独立分支） */
+  cleanupReport: () => request<CleanupReport>('/data/cleanup'),
+  /** 独立分支的占用和可清清单：要跑 git 判定、递归四 GB，只在用户点「检查」时取 */
+  worktreeCleanup: () => request<WorktreeCleanup>('/data/cleanup/worktrees'),
+  /** 清一个对话的工作目录：只删目录内容，对话记录还在，下次执行时重建 */
+  clearChatWorkspace: (id: string) =>
+    request<{ ok: boolean; bytes: number }>('/data/cleanup/chat', json('POST', { id })),
+  clearStaleWorktrees: () =>
+    request<{ ok: boolean; removed: number; failed: number; bytes: number }>(
+      '/data/cleanup/worktrees',
+      json('POST', {}),
+    ),
+  clearBuildOutputs: () => request<{ ok: boolean; bytes: number }>('/data/cleanup/builds', json('POST', {})),
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),

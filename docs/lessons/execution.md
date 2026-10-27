@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, web/src/lib/peer-dedupe.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/tasks.ts, server/exec/orphans.ts, server/exec/process.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, web/src/lib/peer-dedupe.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -19,13 +19,14 @@ paths: server/exec/runner.ts, server/tasks.ts, shared/task.ts, shared/plan.ts, s
 - 起因：Pi 的 `tool_execution_start` 带 `running: true`，c5e408d 只改了 runner，AI 分析一直转圈；任务页被打断时 `endTool` 没清 `running`。
 - 防线：`scripts/e2e.mjs` 的「工具结束后不再显示运行中」。
 
-## 停下要有原因，保活有上限，彻底完成就结束进程
+## 停下要有原因，保活有上限，收口后不留进程
 
-- 规则：`stopTask(id, reason)` 的 `reason` 必填 `StopReason`，只有用户点 `/stop` 传 `'user'`；父对话收尾、换 CLI、归档、删除、重启、页面切走、新消息打断各传对应值，经 `Task.stopReason` 和 `stopReasonText` 显示，只有 `'user'` 画暂停；异常退出（`spawnError`、非 0 码）走失败并显示原因，不归成停止。
-- 规则：会话「彻底完成」（`resolved` 且无 `childHolds`）时不分独立分支都 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收只在 `isolated` 做；`awaitingUser` 超过 `Settings.keepAliveLimit` 时 `keepAliveVictims()` 停最久没用的（`stopTask(id, 'idle')`），排除正在看的、刚保活的自己、有子对话在跑的父对话；「正在看」只认前台开着的页面（`presence.ts` 的 `isViewing`）而不是 `hasViewer`（切走后宽限期里也算有人），只决定回复完留不留进程。
-- 起因：真实 Pi 下 12 个对话各发一句，12 个进程（约 1.5 GB）一直留着，`keepAliveLimit` 4 没生效；改用 `isViewing` 后留 4 个，靠 `--resume` 续接。
-- 起因：`node_modules` 被清空时父对话收尾 abort 子对话，`ctx.signal.aborted && !r.killed` 全判成 `stopped`，用户没点暂停却看到「已暂停」；12 个进程只有 7 个对得上，共用目录的子对话 `resolved` 后 CLI 一直留着。
-- 防线：`shared/task-stage.test.ts` 的 `stopReasonText`、`keepAliveVictims` 用例；`server/presence.test.ts` 的「保活上限只放过前台开着的页面」；`stopTask` 第二参数必填由 typecheck 拦住。
+- 规则：`stopTask(id, reason)` 的 `reason` 必填，只有用户点 `/stop` 传 `'user'`，其余按原因传（收尾、换 CLI、归档、删除、重启、页面切走、打断）；异常退出走失败，不归成停止。
+- 规则：会话「彻底完成」时不分独立分支都 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收只在 `isolated` 做；`awaitingUser` 超过 `keepAliveLimit` 时 `keepAliveVictims()` 停最久没用的，「正在看」只认前台开着的页面（`isViewing`，不是 `hasViewer`）。
+- 规则：任务收口后不能拿「进程还活着」当理由留着它：收尾落 `resolved` 后按 owner 再核对一次，另有启动 + 每小时的兜底回收（判定只用 `taskSettled`）；发出停止后确认退出才丢登记（杀不掉就写回）。
+- 规则：面板起的 CLI 记在 `run/cli-pids/<面板 pid>.json`，每个实例只写、只删自己那份（共用一份再读盘合并会被别的实例退出清空、并发登记覆盖）；清理只写已退出实例的文件，「面板还活着」要 pid 在**且**命令行像 `server.mjs` / `server/index.ts`（认 `./` 和引号路径，宁多认）。
+- 起因：12 个对话各留一个进程没被保活上限收住；共用目录的子对话 `resolved` 后 CLI 一直留着，用户报「4 小时前启动的进程没退」。
+- 防线：`server/presence.test.ts`、`shared/task-stage.test.ts` 的保活用例；`server/exec/orphans.test.ts` 的登记分账、启动清理、兜底回收、写回登记；`server/task-restart.test.ts` 的「已收口的不再拉起」。
 
 ## 后台命令交出去不等于做完：没结果就一直转圈
 
