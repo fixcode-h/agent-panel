@@ -88,10 +88,13 @@ const SECTION_HEAD = /^##\s/
 /** 三级标题是报告里的项目分组（`### 1.2 项目名`）：它结束上一条目，不是上一条的正文 */
 const PROJECT_HEAD = /^###\s/
 
-/** 取某一节（到下一个二级标题为止）的行；找不到返回空数组 */
-function sectionLines(md: string, head: string): string[] {
+/**
+ * 取某一节（到下一个二级标题为止）的行；找不到返回空数组。
+ * 传一组候选标题：新四节优先，找不到再用老报告的三节名，老报告的草稿不用重做
+ */
+function sectionLines(md: string, heads: readonly string[]): string[] {
   const lines = md.split('\n')
-  const start = lines.findIndex((l) => l.trim().startsWith(head))
+  const start = lines.findIndex((l) => heads.some((h) => l.trim().startsWith(h)))
   if (start < 0) return []
   const rest = lines.slice(start + 1)
   const end = rest.findIndex((l) => SECTION_HEAD.test(l))
@@ -120,8 +123,8 @@ function sectionItems(lines: string[]): ReportItem[] {
   return out
 }
 
-/** 正文里「实现：/修复：/原因：」这类行拼成规则草稿，去掉前缀后保留后面的话 */
-const BODY_PREFIX = /^(实现|修复|原因|处理|做法|结论|改动)[：:]\s*/
+/** 正文里「实现：/验证：/修复：/原因：」这类行拼成规则草稿，去掉前缀后保留后面的话 */
+const BODY_PREFIX = /^(实现|验证|修复|原因|处理|做法|结论|改动)[：:]\s*/
 
 function ruleFromBody(body: string) {
   const rows = body
@@ -133,8 +136,9 @@ function ruleFromBody(body: string) {
 
 /**
  * 从一份报告提炼候选草稿：
- * - 「## 二、用户报告的 Bug」里的每条都算（这一节本身就是用户报的、已经修过的返工）；
- * - 「## 一、需求进度」里正文写了返工 / 被纠正 / 改回的条目也算；
+ * - 「## 三、问题与修复」里的每条都算（这一节本身就是用户报的、已经修过的返工）；
+ * - 「## 二、需求进度」里正文写了返工 / 被纠正 / 改回的条目也算；
+ * - 老报告的三节名（「用户报告的 Bug」「需求进度」）也认，已经提炼过的老报告不用重做；
  * - 没有「怎么修的」正文的不算（没有痕迹就不是教训），同一标题只留一条，最多 MAX_DRAFTS_PER_REPORT 条。
  */
 export function lessonDraftsFromReport(report: {
@@ -143,10 +147,10 @@ export function lessonDraftsFromReport(report: {
   md: string
   projectNames?: string[]
 }): LessonDraftInput[] {
-  const bugs = sectionItems(sectionLines(report.md, '## 二、用户报告的 Bug'))
-  const progress = sectionItems(sectionLines(report.md, '## 一、需求进度'))
+  const bugs = sectionItems(sectionLines(report.md, ['## 三、问题与修复', '## 二、用户报告的 Bug']))
+  const progress = sectionItems(sectionLines(report.md, ['## 二、需求进度', '## 一、需求进度']))
   const picked: { item: ReportItem; why: string }[] = [
-    ...bugs.map((x) => ({ item: x, why: t('用户报告的 Bug') })),
+    ...bugs.map((x) => ({ item: x, why: t('问题与修复') })),
     ...progress
       .filter((x) => REWORK_HINTS.some((w) => x.body.includes(w) || x.title.includes(w) || x.status.includes(w)))
       .map((x) => ({ item: x, why: t('需求进度里的返工') })),

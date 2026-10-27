@@ -727,6 +727,15 @@ export function envStallFailure(n: number) {
 const MAX_EMPTY_RETRIES = 1
 
 /**
+ * 这一轮结束后要不要留着进程等用户下一句（面板保活）：对话模式、不是压缩/审查这类操作、CLI 定义开了 keepAlive。
+ * 和 rpc.nativeAsk 无关：那只决定提问和审批走 CLI 自己的协议还是面板的 MCP 工具（见 invoke.ts 的 canTake），
+ * 进程能不能留着开下一轮是另一件事；两者混在一起会让原生提问的常驻协议白白每轮重启。
+ */
+export function canKeepAlive(o: { chat: boolean; op: boolean; cliKeepAlive: boolean }) {
+  return o.chat && !o.op && o.cliKeepAlive
+}
+
+/**
  * 只有「先说说要做什么」的准备语：模型在这一轮里什么都没动就收尾了。
  * 命中时说明它是在计划而不是在交付，需要接着推一轮。
  */
@@ -1842,7 +1851,7 @@ async function runAgent(
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
   // 对话的进程能不能留着等下一句（保活）：看 CLI 定义的 keepAlive 字段，不再借用 notes。
   // notes 只管「没有插话协议时怎么取补充」，两者混用会让 Pi 这种常驻协议的白白每轮重启
-  const canWait = chat && !op && def.keepAlive && !def.rpc?.nativeAsk
+  const canWait = canKeepAlive({ chat, op: !!op, cliKeepAlive: def.keepAlive })
   // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
   const canTake = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
   let taker: NoteTaker | undefined
@@ -2907,6 +2916,8 @@ const fmtTok = (n: number) =>
 
 /** 压缩上下文的工具调用：一行写压缩了多少，右边写现在占上下文窗口多少，点开看明细 */
 export function describeCompaction(tool: ToolUse, before?: number, after?: number, window?: number) {
+  // 前后大小单独存一份结构化字段：界面要显示「压缩前 / 压缩后」，不解析下面的中文 label
+  if (before !== undefined || after !== undefined) tool.compact = { before, after }
   const pct = after !== undefined && window ? Math.round((after / window) * 100) : undefined
   tool.label =
     before !== undefined && after !== undefined

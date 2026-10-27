@@ -355,7 +355,20 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   {
     const p = await page({ width: 1440, height: 900 })
     await p.goto(base + '#/schedules')
-    await check(p, '计划列表', ['计划', '今日工作', '新建计划', '即将执行', '下次执行', '每天'])
+    // 页头一条概览（下一次是谁、什么时候，待执行 / 出过问题计数），下面按四组列卡片
+    await check(p, '计划列表', [
+      '计划',
+      '今日工作',
+      '新建计划',
+      '下一次执行',
+      '待执行',
+      '出过问题',
+      '即将执行',
+      '下次执行',
+      '每天',
+    ])
+    // 概览用 aria-label 标识区域，不是可见文字
+    if (!(await p.getByRole('region', { name: '计划概览' }).count())) errors.push('计划列表：没有「计划概览」区域')
 
     /** 分组标题（h2 的文字里带着数量） */
     const groupHeading = (name) => p.getByRole('heading', { name: new RegExp(`^${name}`) })
@@ -378,7 +391,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!/（[^）]*(后|到点)[^）]*）/.test(upcoming))
       errors.push(`计划列表：下次执行没有相对时间：${upcoming.slice(0, 80)}`)
 
-    // 新建：弹窗里时间与重复在前、角色与项目其次、提示词最后；默认已按「今日工作」填好
+    // 新建：弹窗分「什么时候跑 / 跑什么 / 在哪跑 / 更多设置」四段；默认已按「今日工作」填好
     await p.getByRole('button', { name: '新建计划' }).click()
     const dlg = p.getByRole('dialog')
     await check(p, '新建计划', [
@@ -391,22 +404,34 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     ])
     const name = await dlg.getByLabel('名称').inputValue()
     if (name !== '今日工作') errors.push(`新建计划：名称默认是「${name}」，不是「今日工作」`)
-    /** 重复下拉当前显示的文案 */
-    const repeatText = async () => (await dlg.getByLabel('重复').innerText()).replace(/\s+/g, ' ').trim()
-    if (!(await repeatText()).includes('每天')) errors.push('新建计划：重复默认不是「每天」')
+    /** 重复规则是分段单选：当前选中的那一项 */
+    const repeatGroup = dlg.getByRole('radiogroup', { name: '重复' })
+    const checkedRepeat = async () => (await repeatGroup.getByRole('radio', { checked: true }).innerText()).trim()
+    if ((await checkedRepeat()) !== '每天') errors.push(`新建计划：重复默认不是「每天」（${await checkedRepeat()}）`)
     const atValue = await dlg.getByLabel('执行时间').inputValue()
     if (!/^\d{4}-\d{2}-\d{2}T19:00$/.test(atValue)) errors.push(`新建计划：执行时间默认不是 19:00（${atValue}）`)
-    // 改乱之后一键填回模板
+    // 实时预览：保存后会什么时候、在哪个项目新建对话
+    if (!(await dlg.getByText(/保存后：.+新建一个对话/).count()))
+      errors.push('新建计划：没有显示「保存后会在哪里新建对话」的预览')
+    // 执行时间改到过去：预览要说明保存后会记为错过，不能承诺新建对话（和服务端 pickDue 同一口径）
+    const past = new Date(Date.now() - 2 * 86_400_000)
+    const pad = (n) => String(n).padStart(2, '0')
+    await dlg
+      .getByLabel('执行时间')
+      .fill(`${past.getFullYear()}-${pad(past.getMonth() + 1)}-${pad(past.getDate())}T09:00`)
+    await dlg
+      .getByText(/这个时间已经过去/)
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('新建计划：执行时间改到过去后，预览没有提示会记为错过'))
+    // 改乱之后一键填回模板（同时把上面改过去的执行时间填回 19:00）
     await dlg.getByLabel('名称').fill('随便写')
-    await dlg.getByLabel('重复').click()
-    await p.getByRole('option', { name: '单次' }).click()
+    await repeatGroup.getByRole('radio', { name: '单次' }).click()
     await dlg.getByRole('button', { name: '填入「今日工作」模板' }).click()
     if ((await dlg.getByLabel('名称').inputValue()) !== '今日工作') errors.push('填入模板：名称没有填回「今日工作」')
-    if (!(await repeatText()).includes('每天')) errors.push('填入模板：重复没有填回「每天」')
+    if ((await checkedRepeat()) !== '每天') errors.push('填入模板：重复没有填回「每天」')
 
     // 每周：切到「每周」后出现星期多选，默认选上执行时间那天，可以再勾几天（多选）
-    await dlg.getByLabel('重复').click()
-    await p.getByRole('option', { name: '每周' }).click()
+    await repeatGroup.getByRole('radio', { name: '每周' }).click()
     const weekdays = dlg.getByRole('group', { name: '每周哪几天' })
     await weekdays.waitFor({ timeout: 3000 }).catch(() => errors.push('新建计划：选「每周」后没有出现星期选择'))
     if (await weekdays.count()) {
@@ -431,8 +456,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (weeklyText.includes('单次')) errors.push('新建计划：每周计划还显示「单次」徽标')
 
     const row = p.locator('li', { hasText: '下午茶提醒' })
-    // 编辑：改完名字列表跟着变
-    await row.getByRole('button', { name: '编辑' }).click()
+    // 编辑收在「计划操作」菜单里：改完名字列表跟着变
+    await row.getByRole('button', { name: '计划操作' }).click()
+    await p.getByRole('menuitem', { name: '编辑' }).click()
     await p.getByRole('dialog').getByLabel('名称').fill('下午茶时间')
     await p.getByRole('dialog').getByRole('button', { name: '保存' }).click()
     await p
@@ -451,8 +477,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('立即执行后：最近一次结果没有显示「已启动」'))
 
-    // 停用：卡片移到「已停用」组，下次执行显示「不会再次执行」
-    await fresh.getByRole('button', { name: '停用' }).click()
+    // 停用：开关关掉后卡片移到「已停用」组，下次执行显示「不会再次执行」
+    await fresh.getByRole('switch', { name: '停用' }).click()
     await groupHeading('已停用')
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('停用后：没有出现「已停用」分组'))
@@ -460,8 +486,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (!(await fresh.innerText()).includes('不会再次执行')) errors.push('停用后：没有显示「不会再次执行」')
     if ((await fresh.innerText()).includes('下次执行')) errors.push('停用后：还显示「下次执行」')
 
-    // 删除：先确认再删，确认前列表里还有
-    await fresh.getByRole('button', { name: '删除' }).click()
+    // 删除也收在「计划操作」菜单里：先确认再删，确认前列表里还有
+    await fresh.getByRole('button', { name: '计划操作' }).click()
+    await p.getByRole('menuitem', { name: '删除' }).click()
     await check(p, '删除确认', ['删除计划「下午茶时间」？', '删除后不会再执行'])
     if (!(await p.getByText('下午茶时间', { exact: true }).count())) errors.push('删除确认：还没确认就把计划删掉了')
     await p.getByRole('dialog').getByRole('button', { name: '删除' }).click()
@@ -493,18 +520,43 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         lastTaskId: '',
         missedAt: '',
         lastError: '',
+        runs: [],
         createdAt: iso(now),
         updatedAt: iso(now),
       }
+      // 预置的今日工作推到 3 天后：让「每日站会」成为更早的那条，验证概览的「下一次执行」
+      // 是从所有还会跑的计划里取最早的，而不是只从「即将执行」组取
+      const daily = db.schedules.find((s) => s.name === '今日工作')
+      if (daily) daily.at = iso(now + 3 * day)
       db.schedules.push(
-        // 错过：下次执行还在，最近一次结果是昨天那次没跑；带一条旧错误，验证「上次启动失败：」前缀后仍能展开
+        // 错过：下次执行还在（一小时后），最近一次结果是昨天那次没跑；带一条旧错误，
+        // 验证「上次启动失败：」前缀后仍能展开。
+        // runs 里放两条历史：一次启动成功、一次错过，验证「运行记录」能展开看到
         {
           ...base,
           id: 'ui-missed',
           name: '每日站会',
-          at: at19(now + day),
+          at: iso(now + 3_600_000),
           missedAt: at19(now - day),
           lastError: '项目「老项目」已经不存在，到点启动会失败，请重新选择',
+          runs: [
+            {
+              at: at19(now - day),
+              happenedAt: iso(now - day + 60_000),
+              event: 'miss',
+              manual: false,
+              taskId: '',
+              error: '',
+            },
+            {
+              at: at19(now - 2 * day),
+              happenedAt: iso(now - 2 * day + 1_000),
+              event: 'run',
+              manual: false,
+              taskId: '',
+              error: '',
+            },
+          ],
         },
         // 启动失败：单次已经跳过，错误原文比一行长，能展开
         {
@@ -524,6 +576,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.reload()
 
     await check(p, '出过问题', ['出过问题', '错过', '面板当时没在跑', '启动失败', '项目「老项目」已经不存在'])
+    // 概览的「待执行」是会再自动执行的计划数：出过问题但没停用的也算，允许和「出过问题」重叠
+    const overviewText = (await p.getByRole('region', { name: '计划概览' }).innerText()).replace(/\s+/g, ' ')
+    if (!overviewText.includes('待执行 2')) errors.push(`计划概览：待执行计数不是 2（${overviewText}）`)
+    // 「下一次执行」和计数读同一个集合：出过问题但还会跑的「每日站会」一小时后跑，
+    // 比推到 3 天后的今日工作早，必须成为下一次；不能只从「即将执行」组取
+    if (!overviewText.includes('每日站会'))
+      errors.push(`计划概览：下一次执行不是更早到点的「每日站会」（${overviewText}）`)
+    if (overviewText.includes('没有待执行的计划')) errors.push('计划概览：还有会跑的计划时仍写「没有待执行的计划」')
     if ((await groupCount('出过问题')) !== 2)
       errors.push(`出过问题：分组数量不是 2（实际 ${await groupCount('出过问题')}）`)
     if ((await groupCount('已停用')) !== 1) errors.push('已停用：分组数量不是 1（旧提醒应该在停用组）')
@@ -535,6 +595,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: '展开全文', exact: true })
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('错过 + 旧错误：前缀加进去后被截断却没有「展开全文」'))
+    // 运行记录：默认收起，展开后能看到每次的结果（成功 / 错过各一条）
+    await missed.getByRole('button', { name: /运行记录/ }).click()
+    const history = missed.locator('ul')
+    await history
+      .getByText('启动成功', { exact: true })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('运行记录：展开后没有「启动成功」这条历史'))
+    await history
+      .getByText('错过', { exact: true })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('运行记录：展开后没有「错过」这条历史'))
+    // 错过没有存下来的原因：界面要补一句「面板当时没在跑，不补跑」，否则只剩一个时间
+    await history
+      .getByText('面板当时没在跑，不补跑')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('运行记录：错过的那条没有说明为什么没跑'))
     // 「收起」这类词页面上别处也有（name 默认是子串匹配），限定到这张卡片里并精确匹配
     const failedCard = p.locator('li', { hasText: '周报提醒' })
     await failedCard
@@ -546,7 +622,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('启动失败：展开后没有「收起」'))
 
-    // 演示版的「立即执行」和正式后端走同一个 afterRun：单次计划跑完变 done、清掉上次错误
+    // 演示版的「立即执行」和正式后端同一个口径：不改排期，只记下这次启动并清掉上次错误
     await failedCard.getByRole('button', { name: '立即执行' }).click()
     await failedCard
       .getByText('已启动', { exact: true })
@@ -562,6 +638,22 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await p.reload()
       await check(p, `计划-${width} 宽度`, ['出过问题', '错过', '新建计划'])
     }
+
+    // 空状态：清掉计划后给出「到点 → 新建对话 → 在项目里执行」三步和两个入口
+    await p.setViewportSize({ width: 1440, height: 900 })
+    await p.evaluate((key) => {
+      const db = JSON.parse(localStorage.getItem(key))
+      db.schedules = []
+      localStorage.setItem(key, JSON.stringify(db))
+    }, KEY)
+    await p.reload()
+    await check(p, '计划空状态', ['还没有计划', '到点', '新建对话', '在项目里执行', '新建今日工作', '新建空白计划'])
+    // 空白计划：名称不预填模板，用户自己写
+    await p.getByRole('button', { name: '新建空白计划' }).click()
+    const blankDlg = p.getByRole('dialog')
+    const blankName = await blankDlg.getByLabel('名称').inputValue()
+    if (blankName !== '') errors.push(`新建空白计划：名称不是空的（${blankName}）`)
+    await blankDlg.getByRole('button', { name: '取消' }).click()
   }
 
   // ---- 工作总结 ----
@@ -576,6 +668,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('工作总结：左侧导航里没有入口'))
     await check(p, '工作总结-列表', ['工作总结', '项目', '生成报告'])
+
+    // 左对齐：页头、选择区和报告共用同一条左边缘，整页内容靠左而不是居中。
+    // 坐标是相对主区算的（左边还有侧栏），不能拿视口绝对坐标判断
+    const mainBox = await p.locator('main').first().boundingBox()
+    const h1Box = await p.getByRole('heading', { name: '工作总结', level: 1 }).first().boundingBox()
+    const firstSection = await p.locator('main section').first().boundingBox()
+    if (!mainBox || !h1Box || !firstSection) errors.push('工作总结：取不到主区、页头或内容的位置')
+    else {
+      if (Math.abs(h1Box.x - firstSection.x) > 2)
+        errors.push(`工作总结：页头与内容没有左对齐（${h1Box.x} vs ${firstSection.x}）`)
+      // 靠左时内容左边距只该是容器内边距（md 下 32px）；居中时会被推到主区中间
+      const inset = firstSection.x - mainBox.x
+      if (inset > 80) errors.push(`工作总结：整页内容没有靠左（相对主区左边距 ${inset}）`)
+    }
+    await check(p, '工作总结-左对齐')
 
     // 时间范围：默认今天（和改造前一致），可以切昨天 / 近 7 天 / 自定义日期
     const range = p.getByRole('radiogroup', { name: '总结范围' })
@@ -709,12 +816,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 15000 })
       .catch(() => errors.push('工作总结：生成后没有出现报告（看不到复制按钮）'))
     await check(p, '工作总结-报告', ['今天的报告', '最近的报告'])
-    // 报告固定三节：节名按 Markdown 标题渲染出来
+    // 报告固定四节：节名按 Markdown 标题渲染出来
     const preview = p.locator('section', { hasText: '今天的报告' }).first()
-    for (const heading of ['一、需求进度', '二、用户报告的 Bug', '三、今日小结']) {
+    for (const heading of ['一、概览', '二、需求进度', '三、问题与修复', '四、下一步']) {
       if (!(await preview.getByText(heading, { exact: false }).count()))
         errors.push(`工作总结：报告里没有固定的二级节「${heading}」`)
     }
+    // 报告头部显示这份报告的元数据：项目、对话数、字数、耗时。
+    // 限定在报告卡片里找：整页找的话「最近的报告」列表行也有这些字样，元数据没渲染时也会通过
+    for (const text of ['个对话', '字', '耗时'])
+      await preview
+        .getByText(text, { exact: false })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push(`工作总结-报告元数据：报告头没有显示「${text}」`))
+    await check(p, '工作总结-报告元数据')
 
     // 编辑：切到编辑是 textarea，内容是 Markdown，第一行是一级标题
     await p.getByRole('radio', { name: '编辑' }).click()
@@ -722,13 +838,35 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await area.waitFor({ timeout: 3000 }).catch(() => errors.push('工作总结：切到编辑后没有出现文本框'))
     const text = await area.inputValue().catch(() => '')
     if (!text.startsWith('# ')) errors.push(`工作总结：编辑框里不是 Markdown 报告（${text.slice(0, 30)}）`)
-    for (const heading of ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结']) {
+    for (const heading of ['## 一、概览', '## 二、需求进度', '## 三、问题与修复', '## 四、下一步']) {
       if (!text.includes(heading)) errors.push(`工作总结：生成的报告缺少「${heading}」`)
     }
     await check(p, '工作总结-编辑')
 
-    // 改几个字但不点保存：切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
+    // 改几个字但不点保存：报告头的字数要跟着编辑框里的正文变，不能等保存后才更新
+    // （同一屏的「最近的报告」也显示字数，两处必须对得上）
+    const charsOf = async () => {
+      const raw = await preview
+        .getByText(/^\d+ 字$/)
+        .first()
+        .textContent()
+        .catch(() => '')
+      return Number((raw ?? '').replace(/\D/g, '')) || 0
+    }
+    const beforeChars = await charsOf()
     await area.fill(text + '\n\n（还没保存的草稿）')
+    await p
+      .waitForFunction(
+        (prev) => {
+          const card = [...document.querySelectorAll('section')].find((s) => s.textContent?.includes('今天的报告'))
+          const m = card?.textContent?.match(/(\d+)\s*字/)
+          return !!m && Number(m[1]) > prev
+        },
+        beforeChars,
+        { timeout: 3000 },
+      )
+      .catch(() => errors.push('工作总结：编辑正文后报告头的字数没有跟着变'))
+    // 切到别的页面再回来，编辑 tab 和还没保存的改动都要还在
     await p.getByRole('button', { name: '计划', exact: true }).first().click()
     await p.getByRole('button', { name: '工作总结', exact: true }).first().click()
     const areaBack = p.getByLabel('报告内容')
@@ -746,7 +884,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .waitFor({ timeout: 3000 })
       .catch(() => errors.push('工作总结：复制后没有成功提示'))
     const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
-    if (!copied.includes('## 三、今日小结')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
+    if (!copied.includes('## 四、下一步')) errors.push(`工作总结：剪贴板里不是报告正文（${copied.slice(0, 40)}）`)
     await check(p, '工作总结-复制')
     // 对比两份：再生成一份（演示后端的第二份报告和第一份不同），勾选两份看新增 / 消失 / 状态变化
     await p.getByRole('button', { name: '生成报告' }).first().click()
@@ -774,7 +912,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await boxes.nth(1).check()
       const cmp = p.locator('section', { hasText: '两份报告的对比' }).first()
       await cmp.waitFor({ timeout: 5000 }).catch(() => errors.push('工作总结：勾选两份后没有出现对比区'))
-      for (const heading of ['需求进度', '用户报告的 Bug', '今日小结']) {
+      for (const heading of ['需求进度', '问题与修复', '下一步']) {
         if (!(await cmp.getByText(heading, { exact: true }).count()))
           errors.push(`工作总结：对比区里没有「${heading}」`)
       }

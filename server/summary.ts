@@ -246,6 +246,8 @@ export function summaryApi(deps: {
         model: r0.model,
         effort: r0.effort,
         taskCount,
+        // 从点「生成」到存下报告的总耗时（含格式不合格重试的那一次）：页面上给用户一个时间成本参考
+        durationMs: Date.now() - job.startedAt,
       })
     } catch (e) {
       return failed(t('报告没能保存：{error}', { error: (e as Error).message }))

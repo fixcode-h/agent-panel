@@ -67,7 +67,7 @@ import {
   type DataKind,
   type MemoryUsage,
 } from '@shared/data'
-import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import { alignScheduleAt, appendRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -1158,6 +1158,13 @@ function cliAction(id: string, action: CliInstallJob['action']) {
 /** 演示上传的附件内容（data URL），刷新页面后就没了 */
 export const demoUploads = new Map<string, string>()
 
+/** 演示里「找回」的本机路径：非图片文件按名字给一个假路径，copy 用它演示拷贝状态 */
+const demoLocated = new Map<string, { name: string; size: number; mime: string }>()
+/** 演示拷贝花的时间：能看见「拷贝中」，又不至于拖住界面检查 */
+const DEMO_COPY_MS = 1000
+/** 演示里模拟「文件被占用、拷不了」：名字以它开头的文件降级成引用原路径（界面检查用） */
+const DEMO_LOCKED_PREFIX = '占用'
+
 /** 演示附件的文字内容（data: 地址解出来）；不是文字或不在了给 null */
 function demoUploadText(p: string): string | null {
   const url = demoUploads.get(p)
@@ -1917,6 +1924,10 @@ function demoSchedulesSeed(): Schedule[] {
       lastTaskId: '',
       missedAt: '',
       lastError: '',
+      blockedAt: '',
+      blockedReason: '',
+      lastDelivery: null,
+      runs: [],
       id: `demo-plan-${crypto.randomUUID()}`,
       createdAt: now,
       updatedAt: now,
@@ -1948,6 +1959,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
         blockedAt: '',
         blockedReason: '',
         lastDelivery: null,
+        runs: [],
         id: `demo-plan-${crypto.randomUUID()}`,
         createdAt: now,
         updatedAt: now,
@@ -1983,8 +1995,16 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   }
   if (method === 'POST' && action === 'run') {
     // 演示里不会真的启动对话（taskId 为空，页面会提示），但字段变化和正式后端同一个口径：
-    // 走 afterRun——单次变 done、每天把 at 往后推、清掉上次的错误和旧对话入口
-    const next = { ...cur, ...afterRun(cur, Date.now(), '') }
+    // 立即执行不改排期，只记下这次启动（没有对话可开，lastTaskId 留空）
+    const happenedAt = new Date().toISOString()
+    const next = {
+      ...cur,
+      lastRunAt: happenedAt,
+      lastTaskId: '',
+      lastError: '',
+      runs: appendRun(cur.runs, { at: '', happenedAt, event: 'run', manual: true, taskId: '', error: '' }),
+      updatedAt: happenedAt,
+    }
     d.schedules = list.map((s) => (s.id === id ? next : s))
     persist()
     return { schedule: next, taskId: '' }
@@ -1992,7 +2012,7 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   return fail('不支持的操作')
 }
 
-function route(method: string, url: string, body: unknown): unknown {
+async function route(method: string, url: string, body: unknown): Promise<unknown> {
   const d = load()
   const [path, qs] = url.split('?')
   const query = new URLSearchParams(qs)
@@ -2180,8 +2200,39 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
   if (res === 'uploads' && id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
-  // 演示没有本机磁盘，找不回大文件的原路径
-  if (res === 'uploads' && id === 'locate') return { files: [] }
+  // 演示没有本机磁盘：图片（截图、复制的图）没有原路径，照旧走上传；其它文件假装找回了原路径，
+  // 好把「后台拷贝」的状态走一遍
+  if (res === 'uploads' && id === 'locate') {
+    const wanted = (body as { files: { name: string; size: number }[] }).files
+    return {
+      files: wanted.flatMap((f, index) => {
+        if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) return []
+        const path = `/demo/local/${crypto.randomUUID()}/${f.name}`
+        demoLocated.set(path, { name: f.name, size: f.size, mime: '' })
+        return [{ index, name: f.name, path, size: f.size, mime: '', ref: true }]
+      }),
+    }
+  }
+  // 后台拷贝：延迟一下能看见「拷贝中」；名字以「占用」开头的模拟拷不了，页面降级成引用路径
+  if (res === 'uploads' && id === 'copy') {
+    const files: (Attachment & { from: string })[] = []
+    for (const from of (body as { paths: string[] }).paths) {
+      const src = demoLocated.get(from)
+      if (!src || src.name.startsWith(DEMO_LOCKED_PREFIX)) continue
+      await new Promise((r) => setTimeout(r, DEMO_COPY_MS))
+      const path = `/demo/uploads/${crypto.randomUUID()}/${src.name}`
+      demoUploads.set(path, `data:${src.mime || 'application/octet-stream'};base64,`)
+      files.push({ from, name: src.name, path, size: src.size, mime: src.mime })
+    }
+    return { files }
+  }
+  if (res === 'uploads' && id === 'discard') {
+    for (const p of (body as { paths: string[] }).paths) {
+      demoLocated.delete(p)
+      demoUploads.delete(p)
+    }
+    return { ok: true }
+  }
   if (res === 'uploads' && id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
   if (res === 'uploads' && id === 'raw' && sub === 'file') {
     const p = query.get('path') ?? ''
@@ -3195,6 +3246,8 @@ function tasksRoute(
             label: `压缩了 ${k(before - after)} token（${k(before)} → ${k(after)}）`,
             detail: `当前占用 ${Math.round((after / window) * 100)}%`,
             output: `压缩前：${k(before)} token\n压缩后：${k(after)} token\n上下文窗口：${k(window)} token\n当前占用：${Math.round((after / window) * 100)}%`,
+            // 和正式后端一样存结构化前后大小：上下文卡直接读它，不解析上面的中文
+            compact: { before, after },
           },
         ],
         at,
@@ -4270,6 +4323,27 @@ async function seedTasks(d: Db) {
     ]
     // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
     // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    // 上下文浮层里的「上一次压缩」：和真实执行一样是回复里的一次工具调用，
+    // 前后大小存在结构化字段里（界面不解析 label 里的中文）。
+    // 放在 demoHelper / demoChildren 之后：那两处按消息的最晚时间摆子任务，提前插一条新时间会打乱它们
+    task.messages.push({
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'agent',
+      agentId: fe.id,
+      step: '',
+      text: '',
+      at: new Date(Date.now() - 65 * 60_000).toISOString(),
+      tools: [
+        {
+          kind: 'compact',
+          name: '压缩上下文',
+          label: '压缩了 164.0k token（176.0k → 12.0k）',
+          detail: '当前占用 6%',
+          output: '压缩前：176.0k token\n压缩后：12.0k token\n上下文窗口：200.0k token\n当前占用：6%',
+          compact: { before: 176_000, after: 12_000 },
+        },
+      ],
+    })
     const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
     task.testRuns = [
       {

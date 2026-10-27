@@ -171,7 +171,7 @@ export function ChatComposer({
     : !typed && sending
       ? t('上一条还在发送，稍等一下')
       : files.uploading
-        ? t('附件还在上传，稍等一下')
+        ? t('附件还在{status}，稍等一下', { status: files.waiting })
         : sending
           ? t('上一条还在发送，稍等一下')
           : !typed
@@ -250,6 +250,7 @@ export function ChatComposer({
         preview={chips.preview}
         actions={chips.chipActions}
         copyOf={chips.copyOfChip}
+        info={chips.chipInfo}
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',

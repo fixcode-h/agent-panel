@@ -3,7 +3,7 @@
 - status: inferred
 - source_paths: `server/exec/`
 - entry: `server/exec/runner.ts`
-- analyzed_at: 2026-10-24
+- analyzed_at: 2026-10-24（2026-10-27 补「压缩上下文的记录」一条，核对自 `server/exec/runner.ts` 的 `describeCompaction` 和 `server/exec/hints.test.ts`）
 
 ## 职责
 
@@ -21,7 +21,8 @@
   - 覆盖分工：端到端测的是「名额满了→第二个对话排队（`apiWait.reason` 为 `'start'`）→前面停了往前挪→排队时能停止」以及「对话让出名额给两个子任务、名额是 1 时子任务一个一个跑」（`scripts/e2e/07-local.mjs` 的并发上限一段）；「让出→拿回」期间两代排队交错、`drop()` 撤销排队不泄漏名额这些毫秒级时序由 `server/api-slots.test.ts` 的单测覆盖，端到端不赌这种时序。
   - 它只是内存里的临时状态：`server/task-store.ts` 的 `parseTask` 读快照时丢掉 `apiWait`（任务和步骤都丢），否则进程重启后会把一条陈旧标记显示成「在排队」。
 - 输出解析：各 CLI 的结构化输出转成面板的流式事件（`server/exec/parsers.ts`）。Pi 的自动重试是三种事件：`retry`（带次数、原因，画成「正在重试」）、`retry_failed`（画成失败卡片）、`retry_ok`（`auto_retry_end success: true` 的独立事件，只把前面那张「正在重试」收成「已恢复」，不额外占一行提示）；每次重试都写 agent 日志（kind、attempt、maxAttempts、error），事后能统计「总是失败」是哪一类。上游网关把连接断开的错误（502/503/504、`Connection closed`、`Response payload is not completed`）单列 `gateway` 类，判定只有 `shared/alerts.ts` 的 `isGatewayError`，runner 的网络断流和自动续接判定共用它，不和用户自己的网络错误混在一起；「正在重试」的展开说明按原因细分（网关断连 / 限流 / 上下文接近上限）。
-- 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。请求超时时只有这一层同时看得见进程状态和 stderr：进程还活着、stderr 一个字都没有、**并且这一轮还没有过任何响应**（收尾请求 `after` / `exit` 超时不算）的环境性超时（高负载时 Pi 冷启动 + 桥接扩展加载会顶到 15 秒）会在结果事件上带 `envStall`，runner 据此把请求超时放宽到 `REQUEST_TIMEOUT_MS + mcp.vars.loadBudget`（Pi 是 25 秒，没有加载预算的 CLI 不重试）自动重试一次，两次都没有响应才报失败，对话里留一条说明（重试成功收成普通提示）。所有递归重跑都要接着传 `envStalls` / `envStallNotes`，漏传由 `hints.test.ts` 的源码断言守着。见 `bugs/pi-rpc-env-stall-retry.md`。
+- 压缩上下文的记录（`server/exec/runner.ts` 的 `describeCompaction`）：CLI 报压缩事件时建一条 `kind: 'compact'` 的工具调用，除了写用户看的 `label` / `detail` / `output`，还把前后大小写进 `ToolUse.compact`（`shared/schema.ts`），界面按数值显示「压缩前 / 压缩后」，不去解析中文 label。事件先后不固定：先收到压缩事件时只有 `before`，之后 usage 事件报出上下文占用时，用同一份字段补上 `after`（压缩调用先挂在 `compaction` 变量上，那个 usage 事件再调一次 `describeCompaction`）；CLI 两个数值都没报时字段缺省。回归：`server/exec/hints.test.ts` 的「压缩上下文：写明压缩了多少、现在占上下文窗口多少」（含先压缩后补 `after` 的流程）。
+- 常驻双向协议：Claude Code、Codex 的专用适配器和统一的 RPC 会话引擎（`server/exec/rpc/`），插话、中断、结束判断都在这里。一轮结束后能保活的适配器还要实现 `next`（同一个进程里开下一轮）：Claude Code 再写一条不带 `priority` 的 user 消息，Codex 在同一个 thread 再发 `turn/start`；没实现的 CLI 一轮一个进程（见 `rpc/types.ts` 的 `next`）。`rpc.nativeAsk` 只管提问和审批走哪条通道，不影响保活。请求超时时只有这一层同时看得见进程状态和 stderr：进程还活着、stderr 一个字都没有、**并且这一轮还没有过任何响应**（收尾请求 `after` / `exit` 超时不算）的环境性超时（高负载时 Pi 冷启动 + 桥接扩展加载会顶到 15 秒）会在结果事件上带 `envStall`，runner 据此把请求超时放宽到 `REQUEST_TIMEOUT_MS + mcp.vars.loadBudget`（Pi 是 25 秒，没有加载预算的 CLI 不重试）自动重试一次，两次都没有响应才报失败，对话里留一条说明（重试成功收成普通提示）。所有递归重跑都要接着传 `envStalls` / `envStallNotes`，漏传由 `hints.test.ts` 的源码断言守着。见 `bugs/pi-rpc-env-stall-retry.md`。
 - Claude Code 的提问通道：审批和提问都是 CLI 发来的 `control_request(can_use_tool)`，`server/exec/rpc/claude.ts` 把它转成卡片，`AskUserQuestion` 的回答写回 `updatedInput.answers`。它依赖启动参数 `--permission-prompt-tool stdio`，`bypassPermissions`（`--dangerously-skip-permissions`）时也必须带：不带时 Claude Code 不把 `AskUserQuestion` 放进工具列表，模型只能把问题写成纯文本。参数在 `shared/clis.ts` 的 `buildArgs`，回归用例见 `server/exec/rpc/claude.test.ts`、`server/exec/parsers.test.ts` 的「Claude Code：跳过确认时也保留提问通道」和 `scripts/e2e/05-workflow-edge.mjs`（fake-cli 按启动参数模拟真实工具列表）。
 - 改动统计：对比任务开始时的 `git diff --numstat` 快照算出改动文件（`server/exec/git.ts`）。
 - 子对话隔离：`childIsolation = worktree` 时在独立 worktree 里执行并按 git merge 合回（`server/exec/worktree.ts`）；依赖只放一份在 `worktrees/<项目>-<哈希>/node_modules`，独立目录里不放 `node_modules`、靠 Node / npm 向上解析（`ensureSharedDeps`：lock 变了才重刷，清理时跳过这一份）；`claim` 模式的文件认领在 `server/claims.ts`。

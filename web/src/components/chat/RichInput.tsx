@@ -39,6 +39,16 @@ export interface RichInputHandle {
 /** 图片卡片要显示缩略图：按附件名字取本地预览地址 */
 type Preview = (name: string) => string | undefined
 
+/** 附件卡片上显示的内容：@路径、大小和状态（见 shared/attachment-view.ts 的 chipTextOf） */
+export interface ChipInfo {
+  label: string
+  /** 卡片末尾的状态（拷贝中、上传中…）；空表示已经就绪 */
+  status?: string
+  /** 鼠标停上去的提示；不写时用默认的「点击查看，按退格键删除」 */
+  title?: string
+}
+type Info = (chip: Chip) => ChipInfo | undefined
+
 /** 卡片上的操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除、右键弹菜单 */
 export interface ChipActions {
   open?: (chip: Chip) => void
@@ -117,7 +127,7 @@ function closeNode(onClick: () => void): HTMLElement {
 }
 
 /** 一张卡片在输入框里的样子 */
-function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | undefined): HTMLElement {
+function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | undefined, info?: Info): HTMLElement {
   const el = document.createElement('span')
   el.contentEditable = 'false'
   el.dataset.chip = chip.kind
@@ -125,6 +135,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   // 图片卡片：缩略图和文件名排在一行，和文字卡片一样高；删除按钮叠在右上角，位置靠外层定位
   const style = CHIP_STYLE[chip.kind]
   const attach = isAttachChip(chip.kind)
+  const shown = info?.(chip)
   // 样子和消息里的卡片一样（AttachmentView.tsx 的 CHIP_CLASS），发出去前后看起来是同一张
   el.className = cn(
     'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
@@ -134,11 +145,12 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   // 引用卡片只显示开头一小段，鼠标停上去看完整原文
   el.title =
-    chip.kind === 'quote'
+    shown?.title ??
+    (chip.kind === 'quote'
       ? quoteText(chip.name) || t('点击查看，按退格键删除')
       : attach
         ? t('点击查看，按退格键删除')
-        : t('按退格键删除')
+        : t('按退格键删除'))
   if (attach) {
     // 点卡片打开查看；按下时不把光标挪进卡片
     el.addEventListener('mousedown', (e) => e.preventDefault())
@@ -170,10 +182,26 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
     img.className = 'h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover'
     el.append(img)
   }
-  const label = document.createElement('span')
-  label.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
-  label.textContent = `${style.prefix ?? ''}${chip.kind === 'quote' ? quoteLabel(chip.name) : chip.name}`
-  el.append(label)
+  // 文字节点始终叫 data-chip-main：卡片刚插进来时 items 还没渲染，info 拿不到，
+  // 先放文件名占位，随后 updateChipInfo 改成 @路径 + 大小（不改的话第一次插入永远只有文件名）
+  const main = document.createElement('span')
+  main.dataset.chipMain = ''
+  if (shown) {
+    main.className = 'min-w-0 truncate'
+    main.textContent = shown.label
+  } else {
+    main.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
+    main.textContent = `${style.prefix ?? ''}${chip.kind === 'quote' ? quoteLabel(chip.name) : chip.name}`
+  }
+  el.append(main)
+  if (attach) {
+    // 状态固定在末尾：路径太长时只截断路径，状态还看得见；没有状态时是空的
+    const status = document.createElement('span')
+    status.dataset.chipStatus = ''
+    status.className = 'shrink-0 text-[0.6875rem] text-subtle'
+    status.textContent = shown?.status ?? ''
+    el.append(status)
+  }
   // 每张卡片都能点右上角删除：附件交给页面去掉（连同上传的文件），其他的直接从输入框里拿掉
   el.append(
     closeNode(() => {
@@ -189,15 +217,42 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
 }
 
 /** 一段带标记的文字对应的 DOM 节点：标记变成真卡片 */
-function nodesOf(value: string, preview?: Preview, actions?: () => ChipActions | undefined): Node[] {
+function nodesOf(value: string, preview?: Preview, actions?: () => ChipActions | undefined, info?: Info): Node[] {
   return segments(value).map((s) =>
-    'text' in s ? document.createTextNode(s.text) : chipNode(s.chip, preview, actions),
+    'text' in s ? document.createTextNode(s.text) : chipNode(s.chip, preview, actions, info),
   )
 }
 
 /** 按文字重新画一遍输入框 */
-function paint(root: HTMLElement, value: string, preview?: Preview, actions?: () => ChipActions | undefined) {
-  root.replaceChildren(...nodesOf(value, preview, actions))
+function paint(
+  root: HTMLElement,
+  value: string,
+  preview?: Preview,
+  actions?: () => ChipActions | undefined,
+  info?: Info,
+) {
+  root.replaceChildren(...nodesOf(value, preview, actions, info))
+}
+
+/**
+ * 附件状态变了（查找中 → 拷贝中 → 已拷贝或引用路径）：只改卡片上的文字，不重画整棵。
+ * 重画会把所有卡片和文字换成新节点，打断输入法，光标还得靠重设选区恢复
+ */
+function updateChipInfo(root: HTMLElement, info?: Info) {
+  if (!info) return
+  for (const chip of root.querySelectorAll<HTMLElement>('[data-chip]')) {
+    const shown = info({ kind: chip.dataset.chip as ChipKind, name: chip.dataset.name ?? '' })
+    if (!shown) continue
+    if (shown.title && chip.title !== shown.title) chip.title = shown.title
+    const main = chip.querySelector<HTMLElement>('[data-chip-main]')
+    if (main) {
+      // 首次插入时 main 里是文件名占位：换成 @路径 + 大小
+      main.className = 'min-w-0 truncate'
+      if (main.textContent !== shown.label) main.textContent = shown.label
+    }
+    const status = chip.querySelector<HTMLElement>('[data-chip-status]')
+    if (status && status.textContent !== (shown.status ?? '')) status.textContent = shown.status ?? ''
+  }
 }
 
 /**
@@ -275,6 +330,7 @@ export function RichInput({
   preview,
   actions,
   copyOf,
+  info,
 }: {
   value: string
   onChange: (v: string) => void
@@ -302,16 +358,18 @@ export function RichInput({
    * 不能靠浏览器原生复制：那样带出去的是摘要，原文和标记都丢了
    */
   copyOf?: (chip: Chip) => string | undefined
+  /** 附件卡片上的 @路径、大小和状态；不传时按卡片名显示 */
+  info?: Info
 }) {
   const el = useRef<HTMLDivElement>(null)
   // 最后一次画进 DOM 的内容：自己输入引起的变化不再画一遍，否则光标会跳。
-  // 预览地址也要记：上传完成时只换缩略图，不重画整棵（见 updatePreviews）
-  const painted = useRef<{ value: string; preview?: Preview } | null>(null)
+  // 预览地址、卡片信息也要记：上传完成、拷贝状态变了时只换那一处，不重画整棵（见 updatePreviews / updateChipInfo）
+  const painted = useRef<{ value: string; preview?: Preview; info?: Info } | null>(null)
   /** 输入法组合中：这时候不重画（会打断输入法），组合结束再补 */
   const composing = useRef(false)
   const [composeEnd, setComposeEnd] = useState(0)
-  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf })
-  cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf }
+  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf, info })
+  cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions, copyOf, info }
 
   /**
    * 选中卡片复制 / 剪切时按卡片的真实内容写剪贴板：浏览器原生复制拿到的是卡片上截断过的摘要
@@ -343,7 +401,7 @@ export function RichInput({
     // 留着会读成「\n」，草稿不算空，拖进来的引用也会落到第二行
     if (node.childNodes.length === 1 && node.firstChild?.nodeName === 'BR') node.replaceChildren()
     const next = serialize(node)
-    painted.current = { value: next, preview: cb.current.preview }
+    painted.current = { value: next, preview: cb.current.preview, info: cb.current.info }
     cb.current.onChange(next)
     cb.current.onSync?.()
   }, [])
@@ -411,7 +469,7 @@ export function RichInput({
       text: () => serialize(el.current ?? document.createElement('div')),
       caret: () => caretNow(),
       setCaret: (pos) => place(pos),
-      insert: (text) => put(nodesOf(text, cb.current.preview, () => cb.current.actions)),
+      insert: (text) => put(nodesOf(text, cb.current.preview, () => cb.current.actions, cb.current.info)),
       insertChip: (chip) => {
         const node = el.current
         if (!node) return
@@ -424,7 +482,7 @@ export function RichInput({
         after.setStart(r.endContainer, r.endOffset)
         const left = serialize(before.cloneContents())
         const right = serialize(after.cloneContents())
-        const chipEl = chipNode(chip, cb.current.preview, () => cb.current.actions)
+        const chipEl = chipNode(chip, cb.current.preview, () => cb.current.actions, cb.current.info)
         const nodes: Node[] = []
         if (left && !/\s$/.test(left)) nodes.push(document.createTextNode(' '))
         nodes.push(chipEl)
@@ -457,7 +515,7 @@ export function RichInput({
         r.deleteContents()
         if (text) {
           const frag = document.createDocumentFragment()
-          nodesOf(text, cb.current.preview, () => cb.current.actions).forEach((n) => frag.append(n))
+          nodesOf(text, cb.current.preview, () => cb.current.actions, cb.current.info).forEach((n) => frag.append(n))
           const last = frag.lastChild
           r.insertNode(frag)
           const sel = window.getSelection()
@@ -475,8 +533,8 @@ export function RichInput({
       setText: (text) => {
         const node = el.current
         if (!node) return
-        paint(node, text, cb.current.preview, () => cb.current.actions)
-        painted.current = { value: text, preview: cb.current.preview }
+        paint(node, text, cb.current.preview, () => cb.current.actions, cb.current.info)
+        painted.current = { value: text, preview: cb.current.preview, info: cb.current.info }
         cb.current.onChange(text)
         cb.current.onSync?.()
         place(Number.MAX_SAFE_INTEGER)
@@ -496,8 +554,8 @@ export function RichInput({
         kind: chipEl.dataset.chip as ChipKind,
         name: chipEl.dataset.name ?? '',
       })
-      paint(node, next, cb.current.preview, () => cb.current.actions)
-      painted.current = { value: next, preview: cb.current.preview }
+      paint(node, next, cb.current.preview, () => cb.current.actions, cb.current.info)
+      painted.current = { value: next, preview: cb.current.preview, info: cb.current.info }
       cb.current.onChange(next)
       cb.current.onSync?.()
       place(at)
@@ -557,14 +615,18 @@ export function RichInput({
     if (handle) handle.current = api
   }, [handle, api])
 
-  // 内容或预览变了就重画：自己输入引起的那次已经和 DOM 一致，跳过（光标不跳）
+  // 内容、预览或卡片信息变了就重画：自己输入引起的那次已经和 DOM 一致，跳过（光标不跳）
   useLayoutEffect(() => {
     const node = el.current
     if (!node) return
     if (painted.current?.value === value) {
-      // 文字没变：只可能是上传完成有了缩略图，换图就够了，不重画整棵
+      // 文字没变：只可能是上传完成有了缩略图、附件状态变了，换那一处就够了，不重画整棵
+      if (painted.current.info !== info) {
+        painted.current = { ...painted.current, info }
+        updateChipInfo(node, info)
+      }
       if (painted.current.preview !== preview) {
-        painted.current = { value, preview }
+        painted.current = { ...painted.current, preview }
         updatePreviews(node, preview)
       }
       return
@@ -573,10 +635,10 @@ export function RichInput({
     if (composing.current) return
     const focused = document.activeElement === node
     const at = focused ? caretNow() : -1
-    paint(node, value, preview, () => cb.current.actions)
-    painted.current = { value, preview }
+    paint(node, value, preview, () => cb.current.actions, info)
+    painted.current = { value, preview, info }
     if (at >= 0) place(Math.min(at, serialize(node).length))
-  }, [value, preview, caretNow, place, composeEnd])
+  }, [value, preview, info, caretNow, place, composeEnd])
 
   // 光标动了（点、选、方向键）也要让「/」「@」列表跟着变
   useEffect(() => {

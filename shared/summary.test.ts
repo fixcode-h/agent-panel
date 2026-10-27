@@ -281,7 +281,7 @@ test('summaryContext：按项目分节，带上要求、结论、节点和改动
   assert.match(text, /改动的文件：server\/auth\.ts/)
 })
 
-test('summaryPrompt：按固定模板写三节，写明只收用户报的 Bug', () => {
+test('summaryPrompt：按固定模板写四节，写明只收用户报的问题', () => {
   const p = summaryPrompt({
     day: '2026-10-23',
     projects: [
@@ -305,15 +305,20 @@ test('summaryPrompt：按固定模板写三节，写明只收用户报的 Bug', 
     ],
   })
   assert.match(p, /今天（2026-10-23）的工作总结报告/)
-  // 模板里的固定结构：一级标题、三个二级标题、三级项目标题、条目形状
+  // 模板里的固定结构：一级标题、四个二级标题、三级项目标题、条目形状
   assert.match(p, /# 2026-10-23 工作总结/)
-  assert.match(p, /## 一、需求进度/)
-  assert.match(p, /## 二、用户报告的 Bug/)
-  assert.match(p, /## 三、今日小结/)
-  assert.match(p, /### 1\.1 <项目名>/)
+  assert.match(p, /## 一、概览/)
+  assert.match(p, /## 二、需求进度/)
+  assert.match(p, /## 三、问题与修复/)
+  assert.match(p, /## 四、下一步/)
+  assert.match(p, /### 2\.1 <项目名>/)
+  assert.match(p, /### 3\.1 <项目名>/)
+  assert.match(p, /### 4\.1 <项目名>/)
   assert.match(p, /1\. \*\*<需求标题>\*\* ｜ 已完成/)
   assert.match(p, /实现：<一两句原理/)
+  assert.match(p, /验证：<一句话/)
   assert.match(p, /原因：<根因/)
+  assert.match(p, /说明：<具体要做什么/)
   // 「只写用户报的 Bug」是硬约束，Agent 自查的不算
   assert.match(p, /Agent 自己写代码、自测、评审时发现并修掉的问题一律不写/)
   assert.match(p, /关键词命中问题词：是/)
@@ -332,23 +337,30 @@ test('summaryPrompt：按固定模板写三节，写明只收用户报的 Bug', 
 const GOOD_REPORT = [
   '# 2026-10-23 工作总结',
   '',
-  '## 一、需求进度',
+  '## 一、概览',
+  '今天做完了工作总结的选择器和统一格式，还剩端到端测试没跑。',
   '',
-  '### 1.1 面板',
+  '## 二、需求进度',
+  '',
+  '### 2.1 面板',
   '1. **改造工作总结的格式** ｜ 已完成（3/3）',
-  '   实现：把提示词换成固定三节模板，生成后再校一遍结构',
+  '   实现：把提示词换成固定四节模板，生成后再校一遍结构',
+  '   验证：单测和界面检查都通过',
   '2. **选择器改成下拉增加** ｜ 进行中（2/4）',
   '   实现：项目先选再加入，每个项目下再挑对话',
   '',
-  '## 二、用户报告的 Bug',
+  '## 三、问题与修复',
   '',
-  '### 2.1 面板',
-  '1. **点「全部应用」后按钮没有变化**',
+  '### 3.1 面板',
+  '1. **点「全部应用」后按钮没有变化** ｜ 已修复',
   '   原因：保存时只更新了内存里的值，没有回写接口',
   '   修复：保存后重新拉一遍配置',
   '',
-  '## 三、今日小结',
-  '今天做完了工作总结的选择器和统一格式，还剩端到端测试没跑。',
+  '## 四、下一步',
+  '',
+  '### 4.1 面板',
+  '1. **补端到端测试**',
+  '   说明：覆盖生成、编辑、对比三条路径',
   '',
 ].join('\n')
 
@@ -360,28 +372,37 @@ test('checkSummaryFormat：缺节、错标题、错条目、空节不给「暂�
   const bad = [
     '# 工作总结',
     '',
-    '## 一、需求进度',
+    '## 一、概览',
+    '完成了。',
+    '',
+    '## 二、需求进度',
     '',
     '1. 改了工作总结',
     '',
-    '## 二、用户报告的 Bug',
+    '## 三、问题与修复',
     '',
-    '## 三、今日小结',
-    '完成了。',
+    '## 四、下一步',
+    '',
   ].join('\n')
   const { ok, issues } = checkSummaryFormat(bad)
   assert.equal(ok, false)
   assert.ok(issues.includes('title'), '一级标题缺日期')
   assert.ok(issues.includes('item'), '条目没写成 1. **标题**')
-  assert.ok(issues.includes('empty'), 'Bug 一节空着没写「暂无」')
-  // 三个二级标题齐全且顺序对时不再报 sections
+  assert.ok(issues.includes('empty'), '问题与修复一节空着没写「暂无」')
+  // 四个二级标题齐全且顺序对时不再报 sections
   assert.ok(!issues.includes('sections'))
-  // 少了第三节
-  assert.ok(checkSummaryFormat(bad.replace('## 三、今日小结\n完成了。', '')).issues.includes('sections'))
+  // 少了第四节
+  assert.ok(checkSummaryFormat(bad.replace('## 四、下一步\n', '')).issues.includes('sections'))
   // 自己加了一节
-  assert.ok(checkSummaryFormat(GOOD_REPORT + '## 四、其它\n暂无\n').issues.includes('sections'))
+  assert.ok(checkSummaryFormat(GOOD_REPORT + '## 五、其它\n暂无\n').issues.includes('sections'))
   // 项目标题缺编号
-  assert.ok(checkSummaryFormat(GOOD_REPORT.replace('### 1.1 面板', '### 面板')).issues.includes('project'))
+  assert.ok(checkSummaryFormat(GOOD_REPORT.replace('### 2.1 面板', '### 面板')).issues.includes('project'))
+  // 下一步空着没写「暂无」也算不合格
+  assert.ok(
+    checkSummaryFormat(
+      GOOD_REPORT.replace('1. **补端到端测试**\n   说明：覆盖生成、编辑、对比三条路径', ''),
+    ).issues.includes('empty'),
+  )
 })
 
 test('extractSummary：去掉包着报告的代码块和 CLI 的说明', () => {
@@ -502,15 +523,16 @@ test('collectRangeProjects：昨天 / 近 7 天按各自范围收对话', () => 
   )
 })
 
-test('summaryPrompt：范围写进第一行和一级标题，三节结构不变', () => {
+test('summaryPrompt：范围写进第一行和一级标题，四节结构不变', () => {
   const now = local(2026, 10, 23, 18)
   const win7 = rangeWindow({ id: 'last7', from: '', to: '' }, now)
   const p = summaryPrompt({ day: win7.toDay, projects: [], range: win7 })
   assert.match(p, /近 7 天（2026-10-17 至 2026-10-23）/)
   assert.match(p, /# 2026-10-17 - 2026-10-23 工作总结/)
-  assert.match(p, /## 一、需求进度/)
-  assert.match(p, /## 二、用户报告的 Bug/)
-  assert.match(p, /## 三、今日小结/)
+  assert.match(p, /## 一、概览/)
+  assert.match(p, /## 二、需求进度/)
+  assert.match(p, /## 三、问题与修复/)
+  assert.match(p, /## 四、下一步/)
 
   // 昨天：标题是那一天的日期，仍然是单日格式
   const winYesterday = rangeWindow({ id: 'yesterday', from: '', to: '' }, now)

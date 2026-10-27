@@ -45,6 +45,7 @@ const sample = (): SummaryReport => ({
   model: '',
   effort: '',
   taskCount: 1,
+  durationMs: 0,
 })
 
 test('列表：没有报告时是空数组', async () => {
@@ -88,4 +89,15 @@ test('编辑：保存改过的 Markdown，列表里能读回来', async () => {
 test('编辑：报告不存在时 404', async () => {
   const res = await app.request('/summary/nope', json('PUT', { md: 'x' }))
   assert.equal(res.status, 404)
+})
+
+test('报告记录：耗时按数值保存，老报告没有这个字段时按 0 处理', async () => {
+  // 老报告（没有 durationMs 字段）读进 schema 时补 0，页面据此不显示耗时
+  const legacy: Record<string, unknown> = { ...sample(), id: 'old', createdAt: '', updatedAt: '' }
+  delete legacy.durationMs
+  assert.equal(SummaryRecord.parse(legacy).durationMs, 0)
+  const timed = await reports.create({ ...sample(), durationMs: 12_500 })
+  // 新字段读回来还在
+  const list = (await (await app.request('/summary')).json()) as { reports: (SummaryReport & { id: string })[] }
+  assert.equal(list.reports.find((r) => r.id === timed.id)?.durationMs, 12_500)
 })

@@ -6,11 +6,13 @@ export const EN_SCHEDULE: Record<string, string> = {
   编辑计划: 'Edit plan',
   '到点自动新建一个对话去执行。面板进程在跑时才会触发；面板关着期间错过的计划不会补跑，会在列表里标出来。':
     'Starts a new conversation at the scheduled time. Plans only run while the panel process is running; anything missed while it was off is not caught up and is grouped under "Needs attention".',
-  '还没有计划。新建一条「今日工作」，每天 {time} 自动总结当天的工作。':
-    'No plans yet. Create a "Today\'s work" plan to summarize the day automatically at {time} every day.',
   新建今日工作: "New today's work plan",
 
-  // 分组和卡片
+  // 概览、分组和卡片
+  计划概览: 'Plan overview',
+  下一次执行: 'Next run',
+  待执行: 'To run',
+  没有待执行的计划: 'Nothing scheduled',
   即将执行: 'Upcoming',
   出过问题: 'Needs attention',
   不会再执行: 'Finished',
@@ -21,6 +23,19 @@ export const EN_SCHEDULE: Record<string, string> = {
   '跟随默认 CLI': 'Follow the default CLI',
   立即执行: 'Run now',
   打开这次执行: 'Open that run',
+  计划操作: 'Plan actions',
+
+  // 空状态
+  还没有计划: 'No plans yet',
+  '计划到点会自动新建一个对话去执行，过程和结果都留在对话里。':
+    'A plan starts a new conversation when it is due; the work and its results stay in that conversation.',
+  到点: 'When due',
+  '按排期自动触发，不用手动开对话': 'Runs on its schedule — no need to start a chat yourself',
+  带着你写的提示词和选定的角色: 'Carries your prompt and the agent role you chose',
+  在项目里执行: 'Runs in a project',
+  '产出留在对话里，随时打开继续': 'Everything stays in the conversation — reopen it anytime',
+  '每天 {time} 总结当天的工作': 'Summarize the day at {time} every day',
+  新建空白计划: 'New blank plan',
 
   // 下次执行时间的文案（shared/schedule.ts）
   今晚: 'tonight',
@@ -36,11 +51,15 @@ export const EN_SCHEDULE: Record<string, string> = {
   '{n} 天后': 'in {n} days',
   '{when}（{rel}）': '{when} ({rel})',
 
-  // 最近一次结果
+  // 最近一次结果和运行记录
   启动失败: 'Failed to start',
+  启动成功: 'Launched',
+  手动执行: 'Run manually',
   错过: 'Missed',
   已启动: 'Started',
   还没执行: 'Not run yet',
+  运行记录: 'Run history',
+  '面板当时没在跑，不补跑': 'The panel was not running; not caught up',
   '错过 {time}（面板当时没在跑，不补跑）': 'Missed {time} (the panel was not running; not caught up)',
   '成功启动于 {time}': 'Started at {time}',
   '上次启动失败：{error}': 'Last run failed: {error}',
@@ -62,6 +81,14 @@ export const EN_SCHEDULE: Record<string, string> = {
   '已按「今日工作」填好：每天 {time} 总结当天的工作，可以直接改。':
     'Prefilled with "Today\'s work": a daily summary at {time}. Change anything you like.',
   '改完保存，计划按新的设置执行。': 'Save to apply the new settings from the next run.',
+  '填好名称、时间和要交给 Agent 的内容即可。': 'Fill in a name, a time, and what the agent should do.',
+  什么时候跑: 'When to run',
+  跑什么: 'What to run',
+  在哪跑: 'Where to run',
+  更多设置: 'More settings',
+  '保存后：{time} 会在「{target}」新建一个对话': 'After saving: a new conversation starts in "{target}" {time}',
+  '这个时间已经过去，保存后会记为错过（这次不会新建对话）':
+    'This time is in the past — it will be recorded as missed (no conversation starts this time)',
   '填入「今日工作」模板': 'Fill in the "Today\'s work" template',
   名称: 'Name',
   '例如：今日工作': "e.g. Today's work",
@@ -114,7 +141,6 @@ export const EN_SCHEDULE: Record<string, string> = {
   请选择执行时间: 'Pick a time to run',
   计划不存在: 'Plan not found',
   // 执行上限（token / 时长）
-  执行上限: 'Run limit',
   '{n} token': '{n} tokens',
   '{n} 分钟': '{n} min',
   'token 上限': 'Token limit',

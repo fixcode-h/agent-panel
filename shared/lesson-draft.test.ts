@@ -19,6 +19,34 @@ const report = (md: string, over: Partial<{ id: string; day: string; projectName
 const BUG_MD = [
   '# 2026-10-23 工作总结',
   '',
+  '## 一、概览',
+  '这一天都在做分享包。',
+  '',
+  '## 二、需求进度',
+  '',
+  '### 2.1 Agent 面板',
+  '1. **角色分享包导入** ｜ 已完成',
+  '   实现：新增分享包格式与指纹校验',
+  '',
+  '## 三、问题与修复',
+  '',
+  '### 3.1 Agent 面板',
+  '1. **导入后角色名重复** ｜ 已修复',
+  '   修复：导入时按名字复用，重名加「（副本）」',
+  '2. **弹窗先出现在左上角** ｜ 已修复',
+  '   修复：打开时按最终位置渲染',
+  '',
+  '## 四、下一步',
+  '',
+  '### 4.1 Agent 面板',
+  '1. **补分享包导入的回归测试**',
+  '   说明：覆盖重名和指纹不一致两种情况',
+].join('\n')
+
+/** 老报告的三节写法：升级后仍要能提炼出同样的草稿 */
+const LEGACY_BUG_MD = [
+  '# 2026-10-23 工作总结',
+  '',
   '## 一、需求进度',
   '',
   '### 1.1 Agent 面板',
@@ -29,15 +57,12 @@ const BUG_MD = [
   '',
   '1. **导入后角色名重复** ｜ 已修复',
   '   修复：导入时按名字复用，重名加「（副本）」',
-  '2. **弹窗先出现在左上角** ｜ 已修复',
-  '   修复：打开时按最终位置渲染',
   '',
   '## 三、今日小结',
-  '',
   '这一天都在做分享包。',
 ].join('\n')
 
-test('教训草稿：用户报告的 Bug 每条都提炼，正文里「修复：」写成规则', () => {
+test('教训草稿：问题与修复里每条都提炼，正文里「修复：」写成规则', () => {
   const drafts = lessonDraftsFromReport(report(BUG_MD))
   assert.equal(drafts.length, 2)
   assert.deepEqual(
@@ -48,6 +73,13 @@ test('教训草稿：用户报告的 Bug 每条都提炼，正文里「修复：
   assert.match(drafts[0].cause, /2026-10-23 的工作总结/)
   assert.equal(drafts[0].reportId, 'r1')
   assert.deepEqual(drafts[0].projectNames, ['Agent 面板'])
+  // 老报告的三节写法也认：升级后老报告不用重新提炼，「用户报告的 Bug」里的条目照样出草稿
+  const legacy = lessonDraftsFromReport(report(LEGACY_BUG_MD))
+  assert.deepEqual(
+    legacy.map((d) => d.title),
+    ['导入后角色名重复'],
+  )
+  assert.equal(legacy[0].rule, '导入时按名字复用，重名加「（副本）」')
 })
 
 test('教训草稿：只写了标题、没有「怎么修的」不生成（没痕迹就不是教训）', () => {

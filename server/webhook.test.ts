@@ -25,6 +25,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   blockedAt: '',
   blockedReason: '',
   lastDelivery: null,
+  runs: [],
   createdAt: at(2026, 4, 30, 9),
   updatedAt: at(2026, 4, 30, 9),
   ...over,

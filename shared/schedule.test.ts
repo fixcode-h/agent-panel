@@ -6,6 +6,7 @@ import {
   alignScheduleAt,
   afterMiss,
   afterRun,
+  appendRun,
   dependencyBlocker,
   effectiveTimeoutMinutes,
   fromLocalInput,
@@ -16,6 +17,7 @@ import {
   nextDailyAt,
   nextRunAt,
   nextRunLabel,
+  nextToRun,
   orderByDependency,
   outcomeLabel,
   outcomeOf,
@@ -23,12 +25,15 @@ import {
   pickDue,
   relativeFuture,
   repeatLabel,
+  runLabel,
   sameMinute,
   scheduleCycle,
   ScheduleInput,
   scheduleCycleLabel,
   SCHEDULE_DEPENDENCY_FRESH_HOURS,
   SCHEDULE_MISS_MS,
+  SCHEDULE_RUN_HISTORY,
+  type ScheduleRun,
   toLocalInput,
   whenLabel,
   willRunAgain,
@@ -60,6 +65,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   blockedAt: '',
   blockedReason: '',
   lastDelivery: null,
+  runs: [],
   createdAt: at(2026, 5, 1, 9),
   updatedAt: at(2026, 5, 1, 9),
   ...over,
@@ -80,6 +86,24 @@ test('到点触发一次，执行完不再重复触发', () => {
   assert.equal(done.lastTaskId, 'task-1')
   assert.equal(done.lastRunAt, new Date(now).toISOString())
   assert.equal(pickDue([done], now + 60_000).run.length, 0)
+
+  // 运行记录：每次运行追加一条、新的在前，只留最近 SCHEDULE_RUN_HISTORY 条（最旧的被挤掉）
+  const run = (happenedAt: number): ScheduleRun => ({
+    at: '',
+    happenedAt: new Date(happenedAt).toISOString(),
+    event: 'run',
+    manual: false,
+    taskId: '',
+    error: '',
+  })
+  let runs: ScheduleRun[] = []
+  for (let i = 0; i < SCHEDULE_RUN_HISTORY + 2; i++) runs = appendRun(runs, run(now + i * 60_000))
+  assert.equal(runs.length, SCHEDULE_RUN_HISTORY)
+  assert.equal(Date.parse(runs[0].happenedAt) > Date.parse(runs[1].happenedAt), true)
+  assert.equal(
+    runs.some((r) => Date.parse(r.happenedAt) === now),
+    false,
+  )
 })
 
 test('没到点、已停用、已执行过的都不触发', () => {
@@ -209,6 +233,19 @@ test('分组：即将执行 / 出过问题 / 已停用 / 不会再执行', () =>
   assert.equal(groupOf({ ...pending, status: 'skipped' }), 'finished')
   assert.equal(willRunAgain({ ...pending, status: 'done' }), false)
   assert.equal(willRunAgain(pending), true)
+
+  // 下一次会自动执行：所有还会跑的计划里 at 最早的一条，出过问题但没停用的也算
+  // （它归「出过问题」组，却可能比「即将执行」组里任何一条都先到点）
+  const morning = { ...pending, id: 'morning', at: at(2026, 5, 1, 9) }
+  const problemNoon = { ...pending, id: 'problem-noon', at: at(2026, 5, 1, 12), lastError: '角色不存在' }
+  const evening = { ...pending, id: 'evening', at: at(2026, 5, 1, 20) }
+  assert.equal(groupOf(problemNoon), 'problem')
+  assert.equal(nextToRun([evening, problemNoon, morning])?.id, 'morning')
+  assert.equal(nextToRun([evening, problemNoon])?.id, 'problem-noon')
+  // 停用、单次已执行完的没有下一次
+  assert.equal(nextToRun([{ ...problemNoon, enabled: false }]), undefined)
+  assert.equal(nextToRun([{ ...morning, status: 'done' }]), undefined)
+  assert.equal(nextToRun([]), undefined)
 })
 
 test('下次执行时间：「今晚 19:00（3 小时后）」，不会再执行时为空', () => {
@@ -566,4 +603,27 @@ test('计划的执行上限：默认不限，超范围的值被拒，旧数据�
     updatedAt: at(2026, 5, 1, 9),
   }
   assert.deepEqual(Schedule.parse(old).budget, { tokens: 0, minutes: 0 })
+  // 运行记录也是后加的字段：旧数据补空数组，老版本写下的记录缺可选字段时补默认值
+  assert.deepEqual(Schedule.parse(old).runs, [])
+  const legacyRun = Schedule.parse({ ...old, runs: [{ happenedAt: at(2026, 5, 1, 10), event: 'miss' }] })
+  assert.deepEqual(legacyRun.runs[0], {
+    at: '',
+    happenedAt: at(2026, 5, 1, 10),
+    event: 'miss',
+    manual: false,
+    taskId: '',
+    error: '',
+  })
+  // 四种结果的短标签各不相同：历史里能区分成功 / 失败 / 错过 / 未启动
+  const labels = ['run', 'fail', 'miss', 'blocked'].map((event) =>
+    runLabel({
+      at: '',
+      happenedAt: at(2026, 5, 1, 10),
+      event: event as ScheduleRun['event'],
+      manual: false,
+      taskId: '',
+      error: '',
+    }),
+  )
+  assert.equal(new Set(labels).size, 4)
 })

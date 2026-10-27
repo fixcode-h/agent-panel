@@ -310,44 +310,78 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     if (cut) errors.push(`${pane}：标题被头部按钮挤得截断了`)
   }
   await p.goto(base + '#/agents')
-  // 角色页默认按标签分组：没有标签的角色全在「默认」组，组标题是标签名 + 角色数。
-  // 用稳定的 data-group-id 定位这一组：用户能建名叫「默认」的标签，按名字找会指错组
-  const defGroup = p.locator('[data-group-id="#default"]')
-  if (!(await defGroup.count())) errors.push('角色页：没有「默认」分组')
+  // 角色页固定按分类分组：必备角色单独一组，然后是演示数据里的「规划 / 开发 / 质量」和未分类。
+  // 原来的「按标签 / 按分类」切换已经去掉，列表上方不再有分组方式可选
+  const rolePane = p.locator('section[aria-label="角色列表"]')
+  if (await rolePane.getByRole('radio', { name: '按分类' }).count()) errors.push('角色页：还留着「按分类」的分组切换')
+  // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
+  const core = p.locator('[data-group-id="#core"]')
+  if (!(await core.count())) errors.push('角色页：没有「必备」分组')
   else {
-    const text = (await defGroup.first().textContent()) ?? ''
-    if (!/默认（没有标签）\s*\d+/.test(text))
-      errors.push(`角色页：「默认」组的标题没有条数（读到「${text.slice(0, 20)}」）`)
-    // 内置角色定义里不带 tags：必备角色必须落在「默认」里，不能被漏掉
-    if (!text.includes('评审')) errors.push('角色页：没有标签的必备角色「评审」不在「默认」组里')
+    const text = (await core.first().textContent()) ?? ''
+    if (!/必备\s*·\s*7/.test(text)) errors.push(`Agent：必备分组的计数不是 7（读到「${text.slice(0, 20)}」）`)
+    // 默认全部展开：必备组里的角色直接可见（评审也是必备角色，子对话收尾前派它看 diff）
+    if (!(await core.getByRole('button', { name: /^评审/ }).count())) errors.push('角色页：必备分组默认没有展开')
   }
-  // 有标签的角色按标签成组；演示数据里测试工程师和代码审查都带「质量」
-  const quality = p.getByRole('group', { name: '质量', exact: true })
-  if (!(await quality.count())) errors.push('角色页：没有按标签「质量」分组')
-  else if (!/质量\s*2/.test((await quality.first().textContent()) ?? ''))
-    errors.push('角色页：「质量」组的标题没有显示条数')
-  // 搜索命中的角色仍然按分组显示，不会被拍平成一个列表
+  // 分类组按演示数据的分类显示：测试工程师和代码审查在「质量」分类里
+  const quality = rolePane.getByRole('group', { name: '质量', exact: true })
+  if (!(await quality.count())) errors.push('角色页：没有「质量」分类分组')
+  else {
+    if (!/质量\s*·\s*2/.test((await quality.first().textContent()) ?? ''))
+      errors.push('角色页：「质量」分组的标题没有显示条数')
+    if (!(await quality.getByRole('button', { name: /^测试工程师/ }).count()))
+      errors.push('角色页：「质量」分类默认没有展开')
+  }
+  await check(p, 'Agent-按分类', ['必备', '质量'])
+
+  // 分类可以折叠：点组头收起，角色行不再渲染；再点一下展开回来
+  const qualityToggle = quality.getByRole('button', { name: /^质量/ }).first()
+  if (!(await qualityToggle.count())) errors.push('角色页：「质量」组头不能折叠')
+  else {
+    await qualityToggle.click()
+    if ((await qualityToggle.getAttribute('aria-expanded')) !== 'false')
+      errors.push('角色页：收起「质量」后组头的 aria-expanded 不是 false')
+    if (await quality.getByRole('button', { name: /^测试工程师/ }).count())
+      errors.push('角色页：收起「质量」后角色还在列表里')
+    // data-collapsed 在组节点自己身上：locator('[data-collapsed]') 查的是后代，取不到
+    if ((await quality.first().getAttribute('data-collapsed')) === null)
+      errors.push('角色页：收起「质量」后没有标记 data-collapsed')
+    await check(p, 'Agent-分类收起', ['质量'])
+    await qualityToggle.click()
+    if ((await qualityToggle.getAttribute('aria-expanded')) !== 'true')
+      errors.push('角色页：展开「质量」后组头的 aria-expanded 不是 true')
+    if (!(await quality.getByRole('button', { name: /^测试工程师/ }).count()))
+      errors.push('角色页：展开「质量」后角色没有回来')
+  }
+
+  // 搜索时强制展开：命中的角色不能藏在收起的组里；清空后恢复原来的收起状态
   const search = p.getByPlaceholder('搜索名称、简介、模型或标签')
+  await qualityToggle.click()
   await search.fill('测试工程师')
   await quality
-    .first()
-    .waitFor({ timeout: 3000 })
-    .catch(() => errors.push('角色页：搜索后分组不见了'))
-  if (!((await quality.first().textContent()) ?? '').includes('测试工程师'))
-    errors.push('角色页：搜索命中的角色没有按标签分组显示')
-  if (await p.locator('[data-group-id="#default"]').count())
-    errors.push('角色页：搜索命中的角色都带标签，不该还留着空的「默认」组')
+    .getByRole('button', { name: /^测试工程师/ })
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('角色页：搜索时收起的「质量」组没有自动展开'))
+  // 筛选期间组头退回纯标题：点了没有可见效果却会改掉持久化的折叠状态，这时不该是可点的开关
+  if (await quality.getByRole('button', { name: /^质量/ }).count())
+    errors.push('角色页：搜索时「质量」组头还是可点的折叠开关')
   await search.fill('')
-  // 分类视图保留：必备角色自成一个分组，评审也是必备角色（子对话收尾前派它看 diff）
-  await p.getByRole('radio', { name: '按分类' }).click()
-  await check(p, 'Agent-按分类', ['必备'])
-  const coreHead = await p.evaluate(() => {
-    const label = [...document.querySelectorAll('span')].find((el) => el.textContent?.trim() === '必备')
-    return label?.parentElement?.textContent?.trim() ?? ''
-  })
-  if (!/必备\s*·\s*7/.test(coreHead)) errors.push(`Agent：必备分组的计数不是 7（读到「${coreHead}」）`)
+  await p.waitForTimeout(100)
+  if (await quality.getByRole('button', { name: /^测试工程师/ }).count())
+    errors.push('角色页：清空搜索后「质量」没有回到收起状态')
+
+  // 折叠状态记在本机：刷新后仍然是收起的；再点开，后面的用例在全部展开的列表里走
+  await p.reload()
+  await quality
+    .getByRole('button', { name: /^质量/ })
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('角色页：刷新后没有「质量」分组'))
+  if ((await quality.getByRole('button', { name: /^质量/ }).first().getAttribute('aria-expanded')) !== 'false')
+    errors.push('角色页：刷新后「质量」的折叠状态没有保留')
+  await quality.getByRole('button', { name: /^质量/ }).first().click()
+
   // 「子任务」是派子任务时的默认角色，不是用户可选的角色：角色页不展示它，也不让它单独撑出一个组
-  const rolePane = p.locator('section[aria-label="角色列表"]')
   if (await rolePane.getByRole('button', { name: /^子任务/ }).count())
     errors.push('角色页：列表里出现了「子任务」这个默认子任务角色')
   await search.fill('子任务')
@@ -355,8 +389,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (await rolePane.getByRole('button', { name: /^子任务/ }).count())
     errors.push('角色页：搜索「子任务」还能搜到这个默认子任务角色')
   await search.fill('')
-  // 换回默认视图，后面的流程照原样在按标签的列表里走
-  await p.getByRole('radio', { name: '按标签' }).click()
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])

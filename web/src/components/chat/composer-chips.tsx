@@ -10,11 +10,13 @@ import {
   dropChip,
   findPaths,
   isAttachChip,
+  pathText,
   solePath,
   type Chip,
   type ChipKind,
 } from '@shared/composer'
 import { MAX_ATTACHMENTS, type Attachment } from '@shared/schema'
+import { chipTextOf, itemPath } from '@shared/attachment-view'
 import { api } from '@/lib/api'
 import { attachmentUrl } from './Attachments'
 import { copyImage, imageCopyBlocked } from '@/lib/clipboard-image'
@@ -58,6 +60,8 @@ export function useComposerChips({
     [insert, change, editor],
   )
   const addFiles = useCallback((list: File[]) => void files.add(list, hooks), [files, hooks])
+  /** 粘贴进来的文件：图片是剪贴板截图，没有原路径，直接上传（见 useAttachments 的 add） */
+  const addPasted = useCallback((list: File[]) => void files.add(list, hooks, { clipboard: true }), [files, hooks])
   const addReady = useCallback((a: Attachment) => files.addReady(a, hooks), [files, hooks])
   /** 引用一段内容：放到输入框末尾 */
   const addQuote = useCallback(
@@ -89,6 +93,16 @@ export function useComposerChips({
 
   /** 图片卡片显示图片本身 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
+  /** 附件卡片上的文字：@路径 + 大小 + 状态；引用卡片仍显示原文摘要 */
+  const chipInfo = useCallback(
+    (chip: Chip) => {
+      // 只换附件卡片：技能 / 命令卡片可能和附件重名（输入框里的 /blender 和叫 blender 的文件），不能改成 @路径
+      if (!isAttachChip(chip.kind)) return undefined
+      const item = files.items.find((x) => x.name === chip.name)
+      return item ? chipTextOf(item) : undefined
+    },
+    [files.items],
+  )
   const [view, setView] = useState<ViewTarget | null>(null)
   // 右键卡片弹出的菜单：位置是鼠标坐标；关闭时把焦点交回输入框
   const [menu, setMenu] = useState<{ chip: Chip; at: { x: number; y: number } } | null>(null)
@@ -134,7 +148,7 @@ export function useComposerChips({
   }, [])
   /**
    * 一张卡片复制到剪贴板时写什么：和右键菜单的两项一样——引用写带标记的原文（粘回输入框还原成同一张卡片），
-   * 其他附件写它的本机路径（粘回输入框按路径认回卡片，见 lib/element-ref.ts、onPaste）
+   * 其他附件写「@路径」（和输入框里引用文件的写法一致，粘回输入框按路径认回卡片，见 lib/element-ref.ts、onPaste）
    */
   const copyOfChip = useCallback(
     (chip: Chip): string | undefined => {
@@ -146,7 +160,11 @@ export function useComposerChips({
         if (!text) return undefined
         return isElementRefText(text) ? wrapElementRef(text) : text
       }
-      if (isAttachChip(chip.kind)) return done?.path || undefined
+      // 和卡片上显示的是同一个路径（引入时的原路径优先）；发送时另用拷好的副本，见 sendAttachmentOf
+      if (isAttachChip(chip.kind)) {
+        const path = item ? itemPath(item) : undefined
+        return path ? `@${pathText(path)}` : undefined
+      }
       // Skill / 命令没有背后文件：写成「/名字」，粘回去当普通文字
       return `/${chip.name}`
     },
@@ -228,7 +246,7 @@ export function useComposerChips({
     </PointMenu>
   ) : null
 
-  const drop = useDropPaste(addFiles, dropScope)
+  const drop = useDropPaste(addFiles, dropScope, addPasted)
   // 文件树里右键拖过来的文件 / 文件夹：松手时在光标处插入 @路径，不当附件上传
   const dropRef = useRef<HTMLDivElement>(null)
   const refOver = useFileRefDrop(dropRef, (item) => {
@@ -330,6 +348,7 @@ export function useComposerChips({
     onChange,
     onPaste,
     preview,
+    chipInfo,
     chipActions,
     copyOfChip,
     drop,

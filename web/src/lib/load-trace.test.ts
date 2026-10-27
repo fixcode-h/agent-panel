@@ -5,21 +5,27 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  BLOCKING_STEPS,
   LOAD_STEPS,
   abortWaiting,
+  backgroundSteps,
+  blockingFailed,
+  blockingSettled,
   createTrace,
   failStep,
   finishStep,
+  isBlockingStep,
   recoverStep,
   skipStep,
   startStep,
   stepElapsed,
+  traceRunning,
   traceSettled,
 } from '@/lib/load-trace'
 
 const find = (steps: ReturnType<typeof createTrace>, id: (typeof LOAD_STEPS)[number]) => steps.find((s) => s.id === id)!
 
-test('一开始每一步都是等待中，没有起点和耗时', () => {
+test('一开始每一步都是等待中；只有读取对话和渲染消息挡内容', () => {
   const steps = createTrace()
   assert.deepEqual(
     steps.map((s) => s.id),
@@ -28,6 +34,11 @@ test('一开始每一步都是等待中，没有起点和耗时', () => {
   assert.ok(steps.every((s) => s.status === 'waiting'))
   assert.equal(stepElapsed(find(steps, 'task'), 1_000), undefined)
   assert.equal(traceSettled(steps), false)
+  // 用户报的现象：任务数据和消息都画好了，面板还盖着等「连接实时更新」1.2 秒。
+  // 挡内容的只有「读取对话」「渲染消息」，其余三步是内容之外的增强，慢或失败都不该挡住对话
+  assert.deepEqual([...BLOCKING_STEPS], ['task', 'render'])
+  for (const id of LOAD_STEPS)
+    assert.equal(isBlockingStep(id), id === 'task' || id === 'render', `${id} 的阻塞判定不对`)
 })
 
 test('发起后是进行中，已等待时长按时钟现算', () => {
@@ -115,10 +126,51 @@ test('某一步失败后，还没开始的步骤标成未执行，正在跑的�
   assert.equal(find(steps, 'render').status, 'skipped')
 })
 
-test('全部结束才算走完；跳过也算走完', () => {
+test('全部结束才算走完；后台步骤慢或失败都不挡内容，收起后交给日志胶囊', () => {
   let steps = createTrace(['task', 'stream'])
   steps = finishStep(startStep(steps, 'task', 1_000), 'task', 1_100)
   assert.equal(traceSettled(steps), false)
   steps = skipStep(steps, 'stream', '演示版没有实时推送')
   assert.equal(traceSettled(steps), true)
+
+  // 后台步骤还在跑（用户报的场景：实时更新等 1.2 秒）：阻塞步骤都结束了就能换成对话
+  let live = createTrace(['task', 'stream', 'children', 'seen', 'render'])
+  live = finishStep(startStep(live, 'task', 1_000), 'task', 1_050)
+  live = finishStep(startStep(live, 'render', 1_050), 'render', 1_200)
+  live = startStep(live, 'stream', 1_000)
+  live = startStep(live, 'children', 1_060)
+  live = startStep(live, 'seen', 1_000)
+  assert.equal(blockingSettled(live), true)
+  assert.equal(traceSettled(live), false)
+  // 有步骤在跑才需要每秒重算耗时
+  assert.equal(traceRunning(live), true)
+  assert.equal(traceRunning(createTrace()), false)
+  // 反过来：阻塞步骤没结束就不能收起，后台步骤跑完了也不行
+  const waitingRender = live.map((s) => (s.id === 'render' ? { ...s, status: 'waiting' as const } : s))
+  assert.equal(blockingSettled(waitingRender), false)
+
+  // 胶囊只列还在跑 / 失败的后台步骤：完成的和跳过的不列（不新增常驻噪音）
+  assert.deepEqual(
+    backgroundSteps(live).map((s) => s.id),
+    ['stream', 'children', 'seen'],
+  )
+
+  // 后台步骤失败：不挡内容，但错误原文要留下（浮在输入框上方的胶囊显示它）
+  const streamFailed = failStep(live, 'stream', '实时更新连接失败，正在重连', 1_300)
+  assert.equal(blockingFailed(streamFailed), false)
+  assert.equal(backgroundSteps(streamFailed).find((s) => s.id === 'stream')?.error, '实时更新连接失败，正在重连')
+  // 实时更新重连上、其余后台步骤也回来了：胶囊不画了
+  let allBack = finishStep(finishStep(streamFailed, 'children', 1_400), 'seen', 1_500)
+  allBack = recoverStep(allBack, 'stream', '重新连上了', 1_600)
+  assert.deepEqual(backgroundSteps(allBack), [])
+  assert.equal(traceRunning(allBack), false)
+
+  // 挡内容的步骤失败才是真的加载失败：面板停在屏幕上给错误原文
+  const taskFailed = failStep(
+    startStep(createTrace(['task', 'render']), 'task', 1_000),
+    'task',
+    'Failed to fetch',
+    1_400,
+  )
+  assert.equal(blockingFailed(taskFailed), true)
 })

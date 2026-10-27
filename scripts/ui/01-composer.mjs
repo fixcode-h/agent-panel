@@ -6,7 +6,7 @@
  */
 import { runShard, TINY_PNG } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await check(p, '首页', ['新建任务', '工作流'])
@@ -91,6 +91,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const imageChip = p.locator('#task-prompt [data-chip="image"]')
   await imageChip.waitFor({ timeout: 10000 }).catch(() => errors.push('行内图片卡片：附上图片后没有出现在文字里'))
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
+  // 图片和文件一样显示 @路径 + 大小（缩略图只做视觉辅助）。
+  // 卡片插进来时 items 还没渲染，先显示文件名占位，下一帧才换成 @路径：这里等它换过来再断言
+  await p
+    .waitForFunction(
+      () => (document.querySelector('#task-prompt [data-chip="image"]')?.textContent ?? '').startsWith('@'),
+      undefined,
+      { timeout: 5000 },
+    )
+    .catch(() => errors.push('行内图片卡片：没有显示 @路径'))
+  const imageChipText = await imageChip.textContent().catch(() => '')
+  if (!/\d+(\.\d+)? (B|KB|MB)/.test(imageChipText ?? '')) errors.push('行内图片卡片：没有显示文件大小')
   // 输入框上方不再有附件条
   if (await p.getByRole('button', { name: '移除 截图.png' }).count()) errors.push('输入框上方还有附件条')
   // 右键卡片弹出面板自己的菜单（不是浏览器原生菜单），点「复制图片」真的写进系统剪贴板
@@ -199,12 +210,15 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await p.keyboard.press('Control+V')
     const convChip = p.locator('#follow-up [data-chip="file"]')
     await convChip.waitFor({ timeout: 5000 }).catch(() => errors.push('复制对话：粘贴后输入框里没有出现会话卡片'))
-    // 卡片背后要有附件（才能发给 Agent），输入框里不能留着那段路径文字
-    const draftText = await p
-      .locator('#follow-up')
-      .innerText()
-      .catch(() => '')
-    if (copied.trim() && draftText.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
+    // 卡片背后要有附件（才能发给 Agent），卡片上显示 @路径；输入框里不能再留着那段路径的纯文字
+    const convText = await convChip.textContent().catch(() => '')
+    if (!convText?.startsWith('@')) errors.push(`复制对话：会话卡片没有显示 @路径（${convText}）`)
+    const stray = await p.locator('#follow-up').evaluate((el) => {
+      let text = ''
+      for (const n of el.childNodes) if (n.nodeType === Node.TEXT_NODE) text += n.nodeValue ?? ''
+      return text
+    })
+    if (copied.trim() && stray.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
     await check(p, '复制对话-粘贴成卡片')
     // 已发送消息里带附件卡片的：点消息下面的复制按钮，粘回来要变回卡片，路径不能和正文粘在一起。
     // 用户报的两个现象都在这里：卡片紧跟着正文时复制出去是「…png前面是…」，findPaths 把后面的中文
@@ -283,13 +297,25 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('消息复制-粘贴成卡片：粘回来没有变回图片卡片'))
     if (await p.locator('#follow-up [data-chip="file"]').count())
       errors.push('消息复制-粘贴成卡片：附件粘成了文件卡片，不是图片卡片')
+    // 卡片上显示 @路径；输入框的纯文字里不能再留着盘符或 uploads 目录
+    const repastedChipText = await p
+      .locator('#follow-up [data-chip="image"][data-name="截图-粘贴.png"]')
+      .first()
+      .textContent()
+      .catch(() => '')
+    if (!repastedChipText?.startsWith('@'))
+      errors.push(`消息复制-粘贴成卡片：卡片没有显示 @路径（${repastedChipText}）`)
+    const repastedStray = await p.locator('#follow-up').evaluate((el) => {
+      let text = ''
+      for (const n of el.childNodes) if (n.nodeType === Node.TEXT_NODE) text += n.nodeValue ?? ''
+      return text
+    })
+    if (/[A-Za-z]:\\|uploads[\\/]/.test(repastedStray))
+      errors.push(`消息复制-粘贴成卡片：粘贴后还留着路径文字（${repastedStray.slice(0, 60)}）`)
     const repasted = await p
       .locator('#follow-up')
       .innerText()
       .catch(() => '')
-    // 卡片自己显示文件名，所以不能按「有没有文件名」判断；要看路径文字（盘符或 uploads 目录）还在不在
-    if (/[A-Za-z]:\\|uploads[\\/]/.test(repasted))
-      errors.push(`消息复制-粘贴成卡片：粘贴后还留着路径文字（${repasted.slice(0, 60)}）`)
     if (!repasted.includes('前面是抓取的元素')) errors.push('消息复制-粘贴成卡片：粘贴后正文丢了')
     await check(p, '消息复制-粘贴成卡片')
     // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
@@ -307,6 +333,75 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(p, '对话-图片大图')
     await p.keyboard.press('Escape')
     await p.close()
+  }
+
+  // 附件加进来就显示 @路径 + 大小 + 状态；拷贝中也能发送；拷不了降级成引用路径
+  {
+    const q = await page({ width: 1440, height: 900 })
+    await q.goto(base + '#/chat')
+    await q.locator('#task-prompt').waitFor({ timeout: 10000 })
+    await settle(q)
+    // 小文件：服务端按名字找回原路径后在后台拷贝，卡片上先显示 @路径、大小和「拷贝中」
+    await q
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: '拷贝中.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') })
+    const copying = q.locator('#task-prompt [data-chip="file"][data-name="拷贝中.pdf"]')
+    await copying.waitFor({ timeout: 10000 }).catch(() => errors.push('后台拷贝：附上文件后输入框里没有卡片'))
+    await q
+      .waitForFunction(
+        () => (document.querySelector('#task-prompt')?.textContent ?? '').includes('拷贝中'),
+        undefined,
+        {
+          timeout: 5000,
+        },
+      )
+      .catch(() => errors.push('后台拷贝：卡片没有显示「拷贝中」状态'))
+    const shown = await copying.textContent().catch(() => '')
+    if (!shown?.startsWith('@')) errors.push(`后台拷贝：卡片没有显示 @路径（${shown}）`)
+    if (!/\d+(\.\d+)? (B|KB|MB)/.test(shown ?? '')) errors.push(`后台拷贝：卡片没有显示文件大小（${shown}）`)
+    // 留一张截图：卡片上是 @路径 + 大小 + 拷贝中
+    if (!(await shotOf(q, q.locator('#task-prompt'), '附件-拷贝中也能发送')))
+      errors.push('后台拷贝：没有截到拷贝中的输入框')
+    // 拷贝还没完成时也能发送：这条按原路径发给 Agent
+    await q.locator('#task-prompt').press('Enter')
+    await q
+      .locator('#task-prompt')
+      .waitFor({ state: 'detached', timeout: 20000 })
+      .catch(() => errors.push('后台拷贝：拷贝中按回车没有发出去'))
+    await q
+      .locator('[data-chip="file"][data-name="拷贝中.pdf"]')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('后台拷贝：发出去以后消息里没有附件卡片'))
+    await check(q, '附件-拷贝中也能发送')
+
+    // 拷不了（演示里名字以「占用」开头的文件模拟被占用）：降级成引用原路径，不弹错、不拦发送
+    await q
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: '占用.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') })
+    const refChip = q.locator('#follow-up [data-chip="file"][data-name="占用.pdf"]')
+    await refChip.waitFor({ timeout: 10000 }).catch(() => errors.push('拷贝失败：附上文件后输入框里没有卡片'))
+    await q
+      .waitForFunction(
+        () => (document.querySelector('#follow-up')?.textContent ?? '').includes('引用路径'),
+        undefined,
+        { timeout: 10000 },
+      )
+      .catch(() => errors.push('拷贝失败：卡片没有降级成「引用路径」'))
+    const refShown = await refChip.textContent().catch(() => '')
+    if (!refShown?.startsWith('@')) errors.push(`拷贝失败：卡片没有显示 @路径（${refShown}）`)
+    // 留一张截图：卡片上是 @路径 + 大小 + 引用路径
+    if (!(await shotOf(q, q.locator('#follow-up'), '附件-拷贝失败改引用')))
+      errors.push('拷贝失败：没有截到引用路径的输入框')
+    await q.locator('#follow-up').press('Enter')
+    await q
+      .locator('[data-chip="file"][data-name="占用.pdf"]')
+      .last()
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('拷贝失败：降级成引用路径后发不出去'))
+    await check(q, '附件-拷贝失败改引用')
+    await q.close()
   }
 
   // 对话里的图片 / 文件路径：点开直接看大图或文件内容；不像路径的行内代码保持原样
