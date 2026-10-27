@@ -265,7 +265,13 @@ function panelAlive(all: Map<number, string>, pid: number) {
 
 /** 杀完之后等一小会儿再确认：进程还在就把登记留着，下一轮兜底回收还能看到它。killTree 3 秒后补杀，这里对齐 */
 const KILL_SETTLE_MS = 3500
-const waitKillSettled = () => new Promise((r) => setTimeout(r, KILL_SETTLE_MS))
+/** 等的时候多久看一次：都退了就不必把 3.5 秒等满（大多数进程收到信号立刻就退） */
+const KILL_POLL_MS = 100
+/** 等这些进程退出，最多等 KILL_SETTLE_MS；以前固定等满，每次清理、每条相关用例都白等 3.5 秒 */
+async function waitKillSettled(pids: number[]) {
+  const until = Date.now() + KILL_SETTLE_MS
+  while (Date.now() < until && pids.some(stillAlive)) await new Promise((r) => setTimeout(r, KILL_POLL_MS))
+}
 
 /** 进程还在不在；ESRCH 才是真的没了，权限不足（EPERM）说明它还在，不能当已退出去清登记 */
 function stillAlive(pid: number) {
@@ -333,7 +339,7 @@ export async function cleanStaleCliProcesses(kill: (pid: number) => void): Promi
   // kill 是让它自己慢慢退的（POSIX 3 秒后才补杀）：杀不掉的条目要写回去，
   // 否则这一轮就成了永久僵尸——登记没了，下次启动再也找不到它
   if (toCheck.length) {
-    await waitKillSettled()
+    await waitKillSettled(toCheck.map((x) => x.entry.pid))
     for (const { file, entry } of toCheck) {
       if (!stillAlive(entry.pid)) {
         confirmed++
@@ -406,7 +412,7 @@ async function killTracked(
   }
   for (const e of targets) kill(e.pid)
   if (!targets.length) return []
-  await waitKillSettled()
+  await waitKillSettled(targets.map((e) => e.pid))
   const killed: number[] = []
   for (const e of targets) {
     if (stillAlive(e.pid)) {

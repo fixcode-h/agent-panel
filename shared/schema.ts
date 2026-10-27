@@ -60,6 +60,24 @@ export const AgentParam = z.object({
 export type AgentParam = z.infer<typeof AgentParam>
 
 /**
+ * 高级角色挂载的一个能力（基本角色）。mode 是这个能力在这个高级角色里怎么用：
+ * auto 由高级角色按 rule 和通用判据自己选；inline 就地（use_capability 加载说明自己做）；
+ * subtask 派成子任务；parent 子对话里点名时转交父对话创建（同 runIn: parent）。
+ * mode 不能超出基本角色自己允许的用法（modes / independent），超出时按 mountMode 收紧。
+ */
+export const AgentMount = z.object({
+  agentId: z.string().min(1),
+  mode: z.enum(['auto', 'inline', 'subtask', 'parent']).catch('auto').default('auto'),
+  /** 就地用时把全文直接放进提示词（常用的主能力），免得每次都要 use_capability */
+  preload: z.boolean().default(false),
+  /** auto 时补一句「什么时候就地、什么时候派出」，进能力索引 */
+  rule: z.string().trim().max(300).default(''),
+  /** 挂载时给这个能力定的参数取值（对话、节点上选的和项目里的取值仍然优先） */
+  params: z.record(z.string(), ParamValue).default({}),
+})
+export type AgentMount = z.infer<typeof AgentMount>
+
+/**
  * Agent：一个可复用的「CLI + 模型 + 角色设定」组合。
  * 主 / 子 Agent 不在这里区分，而是在工作流里指定。
  */
@@ -105,6 +123,29 @@ export const AgentInput = z.object({
    * catch：旧数据没有这个字段时按 any 读，不能因为加字段读不进来。
    */
   runIn: z.enum(['any', 'parent']).catch('any').default('any'),
+  /**
+   * 角色的层：basic 基本角色（专注一个能力，派成子任务、当工作流节点、被高级角色挂载）；
+   * advanced 高级角色（父对话、子对话的负责人：挂载若干基本角色，自己决定就地做还是派出）。
+   * 旧数据没有这个字段：按 roleKind（shared/agent-role.ts）从能力开关和挂载推导，不迁移
+   */
+  kind: z.enum(['basic', 'advanced']).optional().catch(undefined),
+  /** 基本角色：一句话说明什么时候该用它（进高级角色的能力索引，模型据此决定调不调） */
+  when: z.string().trim().max(200).default(''),
+  /** 基本角色允许的用法：inline 就地（use_capability 加载进当前对话）、subtask 派成子任务 */
+  modes: z
+    .array(z.enum(['inline', 'subtask']))
+    .max(2)
+    .catch(['inline', 'subtask'])
+    .default(['inline', 'subtask']),
+  /** 必须在独立上下文里做（评审）：不能就地用，只能派出 */
+  independent: z.boolean().default(false),
+  /** 高级角色挂载的基本角色（见 AgentMount），按顺序列进能力索引 */
+  mounts: z.array(AgentMount).max(16).default([]),
+  /**
+   * 父对话就地微改动：off 不改文件（只分诊、派单）；tiny 允许过了 begin_inline_edit 护栏的微小改动。
+   * 只对项目里的顶层对话生效（见 shared/inline-edit.ts）
+   */
+  inlineEdit: z.enum(['off', 'tiny']).catch('off').default('off'),
   /** 用户是否确认过能力开关：升级时为旧内置 Agent 补一次默认能力，之后不再覆盖用户的选择 */
   capsSet: z.boolean().default(false),
   /** 已经做过的一次性升级（见 shared/builtin/core.ts 的 DEFAULT_CHANGES）：做过的不再做，用户之后改回去的值不会被覆盖 */
@@ -113,6 +154,15 @@ export const AgentInput = z.object({
   origin: z.string().max(80).default(''),
 })
 export type AgentInput = z.infer<typeof AgentInput>
+
+/** 角色分层字段的默认值：新建角色、AI 起草角色、复制内置角色时补齐（kind 不写，按 roleKind 推导） */
+export const roleLayerDefaults = (): Pick<AgentInput, 'when' | 'modes' | 'independent' | 'mounts' | 'inlineEdit'> => ({
+  when: '',
+  modes: ['inline', 'subtask'],
+  independent: false,
+  mounts: [],
+  inlineEdit: 'off',
+})
 
 const Meta = z.object({ id: z.string(), createdAt: z.string(), updatedAt: z.string() })
 
@@ -1006,6 +1056,29 @@ export const NewTaskInput = z.object({
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
 /** 任务的独立分支：Agent 在这个目录里改，做完后合并回项目或丢弃 */
+/**
+ * 一条分诊记录：主理（父对话）把一条消息分到哪里、为什么、替用户做了什么假设。
+ * 由派单工具的 route 参数生成，界面画成分诊卡，用户可以一键改派（见 docs/openspec/changes/role-composition-and-dispatch）
+ */
+export const TaskRoute = z.object({
+  id: z.string(),
+  /** 去向：子对话（新开 / 交回）、子任务、就地微改动 */
+  target: z.enum(['child', 'resend', 'subtask', 'inline-edit']),
+  /** 去向的对象：子对话 id、子任务 id；就地改动是声明的文件 */
+  refs: z.array(z.string().max(300)).max(20).default([]),
+  /** 去向的标题：子对话标题、子任务标题 */
+  label: z.string().max(200).default(''),
+  understanding: z.string().max(500).default(''),
+  reason: z.string().max(500).default(''),
+  assumptions: z.string().max(500).default(''),
+  /** 这条分诊出自哪条消息（用户消息的 id；找不到时为空） */
+  messageId: z.string().default(''),
+  at: z.string(),
+  /** 用户点了「改派」的时间 */
+  overriddenAt: z.string().optional(),
+})
+export type TaskRoute = z.infer<typeof TaskRoute>
+
 export const TaskWorktree = z.object({
   path: z.string(),
   branch: z.string(),
@@ -1918,6 +1991,21 @@ export const TaskData = z.object({
   requests: z.array(TaskRequest).default([]),
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
+  /**
+   * 父对话进行中的就地微改动（shared/inline-edit.ts）：声明的文件、理由和开始时的工作区基线。
+   * 结束时清掉（写 undefined）；进行中父对话不能收尾子对话
+   */
+  inlineEdit: z
+    .object({
+      files: z.array(z.string()).max(20),
+      reason: z.string().max(500),
+      startedAt: z.string(),
+      head: z.string().default(''),
+      baseline: z.record(z.string(), z.string()).default({}),
+    })
+    .optional(),
+  /** 父对话的分诊记录：每次派单 / 交回 / 派子任务 / 就地改动时的理解、理由和假设，界面画成分诊卡 */
+  routes: z.array(TaskRoute).max(500).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z
     .object({

@@ -297,6 +297,19 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => {})
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览', '评审'])
+  // 列表栏标题不能被头部按钮挤得截断（用户报过：「角色」被压成半个字）：工作流页同一个列表栏，一起查
+  for (const [hash, pane] of [
+    ['#/agents', '角色列表'],
+    ['#/workflows', '工作流列表'],
+    ['#/library', 'Skills 与命令列表'],
+  ]) {
+    if (hash !== '#/agents') await p.goto(base + hash)
+    const h1 = p.locator(`section[aria-label="${pane}"] h1`).first()
+    await h1.waitFor({ timeout: 5000 }).catch(() => {})
+    const cut = await h1.evaluate((el) => el.scrollWidth > el.clientWidth + 1).catch(() => true)
+    if (cut) errors.push(`${pane}：标题被头部按钮挤得截断了`)
+  }
+  await p.goto(base + '#/agents')
   // 角色页默认按标签分组：没有标签的角色全在「默认」组，组标题是标签名 + 角色数。
   // 用稳定的 data-group-id 定位这一组：用户能建名叫「默认」的标签，按名字找会指错组
   const defGroup = p.locator('[data-group-id="#default"]')
@@ -412,6 +425,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(p, 'Agent-参数说明')
   await p.getByRole('tab', { name: /^概览/ }).click()
   await check(p, '角色-概览', ['能开启子对话', '能启动计划', '运行环境'])
+  // 角色分层：必备的「主理」是高级角色，「能力」页列出挂载的基本角色和各自的用法，评审只能派出
+  await search.fill('主理')
+  await p.getByText('主理', { exact: true }).first().click()
+  await p.getByRole('tab', { name: /^能力/ }).click()
+  await check(p, '角色-能力挂载', ['高级角色', '挂载的能力', '评审', '派成子任务', '父对话可以就地微改动'])
+  await search.fill('')
   // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')
   await check(p, 'Skills与命令', ['commit-message', 'code-review', '文件结构'])

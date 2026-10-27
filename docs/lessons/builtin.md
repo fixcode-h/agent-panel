@@ -52,11 +52,11 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 起因：c3678e9 的参数提示词只列标签，还要求写「哪些参数需要用户确认」；用户在「通用项目」上看到 AI 把 TDD / 任务记录 / 先识别现场 / 串行全部问回来。
 - 防线：`server/agent-params.test.ts`（提示词带取值差异和节点预设）。
 
-## 父对话只统筹，改文件、编译、计划步骤都在子对话里
+## 父对话只分诊派单，改文件、编译都在子对话里
 
-- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试，跑通后 `submit_merge`（带 `tests`）就是完成标记，面板合回父对话分支并标记完成（见 [ADR 0002](../adr/0002-child-merge-on-done.md)）。父对话不改文件靠角色说明约束，不要给父对话关掉 CLI 的写文件工具（用户纠正，093a41e 之后撤回）。UE 项目（有 `.uproject`）例外：子对话不编译，向父对话申请，父对话按申请 `request_build` 占位编译（[ADR 0004](../adr/0004-ue-build-by-parent.md)）。
+- 规则：父对话（主理）只收集到模块为止就分派，不开 worktree；唯一能改文件的是护栏内的就地微改动（不用排查、≤ 2 文件 ≤ 20 行，`begin_inline_edit` / `end_inline_edit`，[ADR 0023](../adr/0023-role-layers-and-triage.md)），护栏写在 `shared/inline-edit.ts`，不要只靠提示词放宽，也不要关掉 CLI 的写文件工具（093a41e 之后撤回）。子对话在独立分支里编译测试，`submit_merge` 带 `tests` 请父对话合回（[ADR 0002](../adr/0002-child-merge-on-done.md)）；UE 项目由父对话按申请 `request_build`（[ADR 0004](../adr/0004-ue-build-by-parent.md)）。
 - 起因：父对话先把问题查到底、自己动手改，还开 worktree；编译又要合并到父对话那边才跑。
-- 防线：`server/orchestrator.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。
+- 防线：`server/orchestrator.test.ts`、`server/role-layers.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。
 
 ## 改参数默认值要升级已装的副本
 

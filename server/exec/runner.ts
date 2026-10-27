@@ -153,6 +153,7 @@ export interface RealContext {
   messagePeer?: EngineHost['messagePeer']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
+  inlineEdit?: EngineHost['inlineEdit']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
   stopBackground?: EngineHost['stopBackground']
@@ -2821,6 +2822,7 @@ export async function runRealTurn(ctx: RealContext) {
     messagePeer: ctx.messagePeer,
     verify: ctx.verify,
     beginEdit: ctx.beginEdit,
+    inlineEdit: ctx.inlineEdit,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
     stopBackground: ctx.stopBackground,

@@ -16,7 +16,8 @@
  */
 import type { HandoffInput } from './handoff.ts'
 import type { ReviewTarget } from './clis.ts'
-import { commonAgents, includedAgents } from './agent-role.ts'
+import { commonAgents, includedAgents, mountedAgents, roleKind, loadCapability } from './agent-role.ts'
+import { INLINE_EDIT_MAX_FILES, INLINE_EDIT_MAX_LINES, normInlinePaths } from './inline-edit.ts'
 import {
   END,
   START,
@@ -36,6 +37,7 @@ import {
   type RunStateEntry,
   type StopReason,
   type Task,
+  type TaskRoute,
   type TaskRun,
   type TaskStep,
   type TestStep,
@@ -199,6 +201,43 @@ export interface ReviewDiff {
   file?: string
 }
 
+/** 分诊记录的输入：派单工具的 route 参数（主理写的理解、理由、假设） */
+export interface RouteInput {
+  understanding?: string
+  reason?: string
+  assumptions?: string
+}
+
+/**
+ * 记一条分诊：只记父对话（能分派子对话的顶层对话）的，界面画成分诊卡。
+ * 出自哪条消息按最后一条用户消息算（这一轮就是在回应它）
+ */
+function recordRoute(
+  host: EngineHost,
+  target: TaskRoute['target'],
+  refs: string[],
+  label: string,
+  route: RouteInput | undefined,
+) {
+  const { task } = host
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 500) : '')
+  const ask = [...task.messages].reverse().find((m) => m.role === 'user' && !m.peer)
+  task.routes = [
+    ...(task.routes ?? []).slice(-499),
+    {
+      id: host.newId(),
+      target,
+      refs: refs.slice(0, 20),
+      label: label.slice(0, 200),
+      understanding: str(route?.understanding),
+      reason: str(route?.reason),
+      assumptions: str(route?.assumptions),
+      messageId: ask?.id ?? '',
+      at: now(),
+    },
+  ]
+}
+
 /** 派一个子 Agent 的要求 */
 export interface HelperSpec {
   title: string
@@ -358,7 +397,7 @@ export interface Orchestra {
   spawn(
     tasks: HelperSpec[],
     step?: string,
-    opts?: { local?: boolean },
+    opts?: { local?: boolean; route?: RouteInput },
   ): {
     ids: string[]
     error?: string
@@ -386,14 +425,30 @@ export interface Orchestra {
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
-  /** step：计划里哪一步在等这个子对话，开出去以后它挂成等待中 */
+  /**
+   * step：计划里哪一步在等这个子对话，开出去以后它挂成等待中。
+   * role：子对话用哪个高级角色（名字），不写用「执行」；route：分诊记录（理解、理由、假设），画成分诊卡
+   */
   createConversation(
     title: string,
     message: string,
     files?: string[],
     step?: string,
+    extra?: { role?: string; route?: RouteInput },
   ): Promise<{ ok: boolean; id?: string; info: string }>
-  sendToConversation(id: string, message: string, step?: string): Promise<{ ok: boolean; info: string }>
+  sendToConversation(
+    id: string,
+    message: string,
+    step?: string,
+    route?: RouteInput,
+  ): Promise<{ ok: boolean; info: string }>
+  /** 调用者的角色挂了能力：可以 use_capability 就地加载它们的做法 */
+  capabilities: boolean
+  loadCapability(name: string, params?: ParamValues): { ok: boolean; info: string }
+  /** 父对话可以就地做微小改动（shared/inline-edit.ts） */
+  inlineEdit: boolean
+  beginInlineEdit(files: string[], reason: string, route?: RouteInput): Promise<{ ok: boolean; info: string }>
+  endInlineEdit(): Promise<{ ok: boolean; info: string }>
   /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
   child: boolean
   /** 子对话和兄弟共用目录、需要认领文件（独立分支里的不用） */
@@ -582,6 +637,14 @@ export interface EngineHost {
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 父对话的就地微改动（只有项目顶层对话、角色开了 inlineEdit 时有）：begin 校验护栏并记下基线，
+   * end 按真实改动核对、越界时写提示（见 shared/inline-edit.ts）
+   */
+  inlineEdit?: {
+    begin(files: string[], reason: string): Promise<{ ok: boolean; info: string }>
+    end(): Promise<{ ok: boolean; info: string }>
+  }
   /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、在里面验证完合回原分支，claim 共用目录认领文件 */
   childIsolation?: 'claim' | 'worktree'
   /** 父对话所在目录现在的分支：父对话不开独立分支，子对话从这里开、合回这里 */
@@ -2549,6 +2612,9 @@ export function stopHelper(taskId: string, stepId: string, why: string) {
   ac.abort(why)
   return true
 }
+/** 这个对话已经 use_capability 加载过的能力（按调用者 + 能力 + 参数）：重复加载只回一句，不再整段返回 */
+const loadedCaps = new WeakMap<EngineHost, Set<string>>()
+
 function orchState(host: EngineHost): OrchState {
   let st = orchStates.get(host)
   if (!st) {
@@ -2801,6 +2867,8 @@ function makeOrchestra(
   const st = orchState(host)
   const { task } = host
   const helper = !!ctx.helper
+  // 调用者自己的角色：挂了哪些能力、能不能就地改动都看它（节点、子任务用的是基本角色，没有挂载）
+  const selfAgent = self.agentId ? host.agents.find((a) => a.id === self.agentId) : undefined
   // 能力由 Agent 配置决定：canPlan 才能启动计划，canDelegate 才能分派子对话。
   // 旧的常驻编排器（@main）还能看到，但它们不会出现在新对话里。子任务一样都没有
   const planner = !helper && (!!ctx.planning || (isMainStep(self) && !self.parentId))
@@ -2932,8 +3000,10 @@ function makeOrchestra(
         )
         .join('\n')
     },
-    async createConversation(title, message, files, step) {
+    async createConversation(title, message, files, step, extra) {
       if (!coordinator || !host.createConversation) return { ok: false, info: '这个对话不能创建子对话' }
+      if (task.inlineEdit)
+        return { ok: false, info: '就地改动还没结束：先改完、提交，调用 end_inline_edit 收尾，再派子对话' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
       if (!title.trim())
@@ -2945,7 +3015,28 @@ function makeOrchestra(
           ok: false,
           info: `子对话「${again.title}」（id ${again.id}）${again.status}：重试不要新建子对话，用 send_to_conversation 交回给它（id ${again.id}），它在原来的会话里接着做，已经做完的不用重做。`,
         }
-      const r = await host.createConversation({ title: title.trim(), message, files })
+      // 子对话的角色：点名的必须是启用的高级角色（子对话是负责人，要能调度能力），不写由宿主用「执行」
+      const roleName = extra?.role?.trim()
+      const role = roleName
+        ? host.agents.find((a) => a.enabled && (a.name === roleName || a.id === roleName))
+        : undefined
+      if (roleName && (!role || roleKind(role) !== 'advanced')) {
+        const names = host.agents
+          .filter((a) => a.enabled && roleKind(a) === 'advanced' && !a.canDelegate)
+          .map((a) => `「${a.name}」`)
+          .join('、')
+        return {
+          ok: false,
+          info: `role 写的「${roleName}」不是可用的高级角色${names ? `：可以写 ${names}` : ''}；不写就用「执行」`,
+        }
+      }
+      const r = await host.createConversation({
+        title: title.trim(),
+        message,
+        files,
+        ...(role && { agentId: role.id }),
+      })
+      if (r.ok && r.id) recordRoute(host, 'child', [r.id], title.trim(), extra?.route)
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
       // 没指定步骤就挂到计划里能对上的一步；对不上（或者计划已经结束）由 ensureChildStep 自动补一步，
       // 不然这一步一标完成，父对话的计划就「已完成」了，子对话却还没合回（用户报过：一堆子对话在跑、计划面板还停在旧状态）
@@ -2954,7 +3045,7 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
     },
-    async sendToConversation(id, message, step) {
+    async sendToConversation(id, message, step, route) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 一条消息只交给一个子对话（用户 2026-10-24 定的）：同一段话逐个转给几个子对话，
@@ -2976,8 +3067,39 @@ function makeOrchestra(
       const kidTitle = r.ok ? await kidTitleOf(host, id.trim()) : ''
       const at = r.ok ? step?.trim() || ensureChildStep(task, id.trim(), kidTitle) : ''
       const wait = r.ok && at ? bindWait(task, at, { kind: 'child', ref: id.trim(), label: kidTitle || id.trim() }) : ''
+      if (r.ok) recordRoute(host, 'resend', [id.trim()], kidTitle || id.trim(), route)
       if (r.ok) host.changed(true)
       return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
+    },
+    // 挂了能力的高级角色就地用能力：取能力的完整做法（子任务只做派给它的那件事，不加载别的能力）
+    capabilities: !helper && !!selfAgent && mountedAgents(selfAgent, host.agents).length > 0,
+    loadCapability(name, params) {
+      if (helper || !selfAgent) return { ok: false, info: '这里没有挂载的能力' }
+      if (!name.trim()) return { ok: false, info: 'name 不能为空：写能力的名字（见角色设定里「你挂载的能力」）' }
+      const r = loadCapability(selfAgent, host.agents, name, task.params ?? {}, task.skillSlots ?? {}, params ?? {})
+      if (!r.ok) return { ok: false, info: r.text }
+      // 同一个会话里已经加载过、参数也没变的不再整段返回：上下文里已经有了，重复贴只占地方
+      const key = `${self.id}\u0000${name.trim()}\u0000${JSON.stringify(params ?? {})}`
+      const seen = loadedCaps.get(host) ?? new Set<string>()
+      loadedCaps.set(host, seen)
+      if (seen.has(key)) return { ok: true, info: `「${name.trim()}」这一轮已经加载过，做法见上文` }
+      seen.add(key)
+      return { ok: true, info: r.text }
+    },
+    inlineEdit: coordinator && !!host.inlineEdit && selfAgent?.inlineEdit === 'tiny',
+    async beginInlineEdit(files, reason, route) {
+      if (!coordinator || !host.inlineEdit || selfAgent?.inlineEdit !== 'tiny')
+        return { ok: false, info: '这个对话不能就地改文件：把改动交给子对话（create_conversation）' }
+      const r = await host.inlineEdit.begin(normInlinePaths(files), reason.trim())
+      if (r.ok) recordRoute(host, 'inline-edit', normInlinePaths(files), reason.trim(), route)
+      host.changed(true)
+      return r
+    },
+    async endInlineEdit() {
+      if (!host.inlineEdit) return { ok: false, info: '这个对话没有就地改动' }
+      const r = await host.inlineEdit.end()
+      host.changed(true)
+      return r
     },
     // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件（推回的结果由同一个对话处理）
     child: !helper && !!task.parentTaskId && !!host.messageParent,
@@ -3034,6 +3156,9 @@ function makeOrchestra(
     parentOf: !helper && !!ctx.chat && !!host.finishChild,
     async finishChild(id) {
       if (helper || !ctx.chat || !host.finishChild) return { ok: false, info: '这个对话没有子对话可以收尾' }
+      // 就地改动期间不合回子对话：合并和就地改动搅在同一个工作区里，改动算不清、也可能互相覆盖
+      if (task.inlineEdit)
+        return { ok: false, info: '你在就地改动：先改完、提交，调用 end_inline_edit 收尾，再收尾子对话' }
       if (!id) return { ok: false, info: 'id 是空的：写子对话的 id（收尾请求里有）' }
       const r = await host.finishChild(id)
       host.changed(true)
@@ -3132,11 +3257,25 @@ function makeOrchestra(
             error: `agent 写的「${want}」不是已有的角色${available ? `：可以点名 ${available}` : ''}。角色名写错了、或者它已经被删掉或改名：用 get_status 看现在有哪些角色，确认后重新派`,
           }
       }
-      // 只在父对话执行的角色（runIn: 'parent'）：子对话里点名它时不在这里建，转交父对话创建（见 ADR 0019）。
-      // 判定放引擎里：对话、工作流节点、start_plan、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
+      // 调用者是挂了能力的高级角色：挂载上定的用法管住怎么用它们（角色分层，见 shared/agent-role.ts 的 mountMode）。
+      // 设成「就地用」的不派出：派出去是另一套冷启动的上下文，等于绕开了挂载的约定，也白花一次注入
+      const mounts = selfAgent ? mountedAgents(selfAgent, host.agents) : []
+      const mountOf = (want: string | undefined) =>
+        want ? mounts.find((m) => m.agent.id === want || m.agent.name === want) : undefined
+      for (const spec of list) {
+        const m = mountOf(spec.agent?.trim())
+        if (m?.mode === 'inline' && !spec.resume?.trim())
+          return {
+            ids: [],
+            error: `「${m.agent.name}」在你这里挂成了就地用：调用 use_capability（name 写「${m.agent.name}」）取它的做法，在当前对话里自己做，不派子任务`,
+          }
+      }
+      // 只在父对话执行的角色（runIn: 'parent'，或挂载上定成「转交父对话」）：子对话里点名它时不在这里建，
+      // 转交父对话创建（见 ADR 0019）。判定放引擎里：对话、工作流节点、start_plan、计划面板定时任务的 spawn 都走这里，放 orch-mcp 会漏
       const local = list.filter((spec) => {
         if (opts?.local || !host.task.parentTaskId) return true
         const want = spec.agent?.trim()
+        if (mountOf(want)?.mode === 'parent') return false
         return !want || host.agents.find((a) => a.id === want || a.name === want)?.runIn !== 'parent'
       })
       // 转交出去的不占这个节点的名额，也不给这个对话的收尾添等待：结果在父对话那边
@@ -3344,6 +3483,15 @@ function makeOrchestra(
       // 同一批子任务挂在同一步骤上：说明只回一句，否则 N 个子任务会在工具结果里刷 N 行一样的话
       const waits = at ? [bindWait(task, at, { kind: 'helper', ref: made[0].step.id, label: made[0].step.title })] : []
       if (at) for (const m of made.slice(1)) bindWait(task, at, { kind: 'helper', ref: m.step.id, label: m.step.title })
+      // 父对话派的子任务记一条分诊（画成分诊卡）；子对话、节点派的是它们自己的事，不进分诊
+      if (coordinator)
+        recordRoute(
+          host,
+          'subtask',
+          made.map((m) => m.step.id),
+          made.map((m) => m.step.title).join(t('、')),
+          opts?.route,
+        )
       host.changed(true)
       return {
         ids: made.map((m) => m.step.id),
@@ -3750,8 +3898,10 @@ async function conversationPrompt(
   kind: 'top' | 'sub',
   planning: boolean,
   coordinator: boolean,
-  /** 角色本身是做分派的（例如「统筹」），这次却不能分派：要明说角色设定里的分派规则不适用 */
+  /** 角色本身是做分派的（例如「主理」），这次却不能分派：要明说角色设定里的分派规则不适用 */
   delegates = false,
+  /** 父对话能就地做微小改动（角色开了 inlineEdit、宿主给了护栏） */
+  inline = false,
 ) {
   // 角色设定写着「用 create_conversation 分派」，执行方式又说没有这个能力：两条直接冲突，
   // Agent 要么空等分派、要么自己干又觉得违规。明确以执行方式为准
@@ -3820,9 +3970,16 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
               .join('\n')
           : '（还没有子对话）'
       }`,
-      `## 你的定位：父对话只统筹，不动手
+      `${
+        inline
+          ? `## 你的定位：父对话先分析再分派，只就地做微小改动
+你是项目的父对话，负责理解用户的意思、需要时向用户问清楚、决定怎么处理、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
+- 唯一能自己改文件的情况是「就地微改动」：改什么、改成什么已经清楚、不用排查，最多 ${INLINE_EDIT_MAX_FILES} 个文件、${INLINE_EDIT_MAX_LINES} 行以内（文案、配置值、一两行文档）。先调用 begin_inline_edit 声明文件和理由，面板放行后再改；改完跑项目测试步骤里标「快速」的检查，本地提交这几个文件，再调用 end_inline_edit。Bug、要排查的、改公共接口或数据格式的、超出上限的，一律交给子对话。
+- 除此之外不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+          : `## 你的定位：父对话只统筹，不动手
 你是项目的父对话，负责理解用户的意思、收集上下文、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
-- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。
+- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。`
+      }
 ${
   wt
     ? `- 你在这个对话的独立分支 ${wt.branch} 上（创建对话时开好的），不要再开别的分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
@@ -3836,7 +3993,7 @@ ${
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
-2. 现有子对话都不相关，要改代码、要排查问题或者要做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起；子对话会自己列计划并执行。改动再小（一行、一个文案）也交给子对话。
+2. 现有子对话都不相关，要改代码、要排查问题或者要做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起；子对话会自己列计划并执行。${inline ? '够得上就地微改动的（见上面）自己改，不开子对话；其余改动再小也交给子对话。' : '改动再小（一行、一个文案）也交给子对话。'}
 3. 只是一般问题、讨论、查询：自己回答。
 一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话：用户的一条消息（连同用户定下的规则、约定）只交给关联最紧密的那一个子对话，和别的子对话手上的事无关就不转给它们；同一段话再交给别的子对话会被面板拒绝。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
 
@@ -3913,7 +4070,15 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
   if (turn) host.changed(true)
   try {
-    let prompt = await conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent))
+    const inline = coordinator && !!host.inlineEdit && agent?.inlineEdit === 'tiny'
+    let prompt = await conversationPrompt(
+      host,
+      kind,
+      planning,
+      coordinator,
+      !coordinator && delegatesRole(host, agent),
+      inline,
+    )
     let orch: Orchestra | undefined
     // 回复完 CLI 就退出的（Claude Code、Codex）在这里等子任务；停在等待工具上的 CLI 在 runner 里自己等
     const gate = helperGate(
@@ -4000,6 +4165,12 @@ export async function runConversationTurn(host: EngineHost, who: string) {
   } finally {
     // 这一轮结束了：宿主不再拿它派转交来的子任务
     host.onOrchestra?.(undefined)
+    // 就地改动这一轮没收：自动收尾核对（越界会写警告），免得下一轮一直拦着收尾子对话
+    if (task.inlineEdit && host.inlineEdit)
+      await host.inlineEdit.end().then(
+        () => host.changed(true),
+        () => undefined,
+      )
   }
 }
 

@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fmtDuration } from './lib/duration.mjs'
+import { lastFailedShards, retryShards, saveShardResults } from './lib/shard-retry.mjs'
 import { shardLimit } from './lib/shard-limit.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -23,10 +24,19 @@ const shardDir = path.join(root, 'scripts/e2e')
 const argv = process.argv.slice(2)
 const verbose = argv.includes('--verbose')
 const filters = argv.filter((a) => !a.startsWith('-'))
+// --failed：只跑上一次还失败的分片（改完复测用）；--no-retry：失败不重跑
+const onlyFailed = argv.includes('--failed')
+const retry = !argv.includes('--no-retry')
+const last = onlyFailed ? lastFailedShards(root, 'e2e') : null
+if (onlyFailed && !last?.length) {
+  console.log(last ? '上一次没有失败的端到端分片，不用重跑' : '没有上一次的端到端结果，先跑一次全量')
+  process.exit(0)
+}
 const shards = readdirSync(shardDir)
   .filter((f) => /^\d+-.*\.mjs$/.test(f))
   .sort()
   .filter((f) => !filters.length || filters.some((p) => f.startsWith(p)))
+  .filter((f) => !last || last.includes(f))
 if (!shards.length) {
   console.error('没有匹配的端到端分片：', filters.join(' '))
   process.exit(1)
@@ -95,7 +105,20 @@ const worker = async () => {
   }
 }
 await Promise.all(Array.from({ length: Math.min(limit, shards.length) }, worker))
+// 失败的分片串行再跑一次（scripts/lib/shard-retry.mjs）：只重跑失败的，不整轮重来
+const retried = retry ? await retryShards(results, runShard) : { results, flaky: [] }
+results.splice(0, results.length, ...retried.results)
 results.sort((a, b) => a.file.localeCompare(b.file))
+saveShardResults(
+  root,
+  'e2e',
+  results.filter((r) => r.code !== 0).map((r) => r.file),
+  retried.flaky,
+)
+if (retried.flaky.length)
+  console.log(
+    `\n⚠ 抖动（第一次失败、重跑通过）：${retried.flaky.join('、')}。要找出时序或共享状态的原因，不要靠重跑兜着`,
+  )
 
 const elapsed = Date.now() - startedAt
 console.log(`\n══════ 汇总（总 ${fmtDuration(elapsed)}）══════`)
@@ -146,6 +169,7 @@ try {
 const failed = results.filter((r) => r.code !== 0)
 if (failed.length) {
   console.error(`\n${failed.length} 个分片失败：${failed.map((r) => r.name).join('、')}`)
+  console.error(`改完后只复测失败的分片：npm run test:e2e -- --failed`)
   process.exit(1)
 }
 console.log('\n全部通过')

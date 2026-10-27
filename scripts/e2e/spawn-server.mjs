@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { cleanTestEnv } from '../lib/test-env.mjs'
 
 // 服务在 PORT=0 时打印的一行：实测端口
 const PORT_LINE = /^AGENT_PANEL_PORT (\d+)$/
@@ -50,7 +51,8 @@ export function startServer({ root, shardName, env = {}, timeoutMs = 60_000, onU
   const requested = env.PORT === undefined ? '0' : String(env.PORT)
   const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
     cwd: root,
-    env: { ...process.env, ...env, PORT: requested, AGENT_PANEL_INSTANCE: instance },
+    // 继承来的接口变量（ANTHROPIC_BASE_URL 这类）会改掉 CLI 的接口和账号行为：去掉，测试要的由 env 显式传
+    env: { ...cleanTestEnv().env, ...env, PORT: requested, AGENT_PANEL_INSTANCE: instance },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 

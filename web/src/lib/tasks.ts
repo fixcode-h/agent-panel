@@ -375,6 +375,13 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       const branch = /独立分支 (\S+?)(?:（| 里|$)/.exec(tool.output ?? '')?.[1] ?? ''
       return as(t('开独立分支'), branch)
     }
+    // 角色分层：就地加载挂载的能力、父对话就地微改动（见 shared/inline-edit.ts）
+    case 'use_capability':
+      return as(t('加载能力'), firstLine(a.name), 'read', '')
+    case 'begin_inline_edit':
+      return as(t('开始就地改动'), list(a.files), 'other', text(a.reason))
+    case 'end_inline_edit':
+      return as(t('结束就地改动'), '', 'other', tool.output || undefined)
     case 'claim_files':
       return as(t('认领文件'), list(a.paths))
     case 'release_files':

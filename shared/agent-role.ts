@@ -1,5 +1,6 @@
 import {
   type Agent,
+  type AgentMount,
   type AgentParam,
   type NodeTier,
   type ParamCond,
@@ -341,6 +342,126 @@ export const cycleText = (chain: string[], agents: Agent[]) =>
 /** 通用 Agent：工作流里任何 Agent 都可以把子任务派给它们（停用的不算） */
 export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common && a.enabled)
 
+/**
+ * 角色的层：写了 kind 的按它；旧数据和没写的按能力推导——能开子对话、能启动工作流、挂了能力的是高级角色
+ * （它们在对话里当负责人），其余是基本角色。见 docs/openspec/changes/role-composition-and-dispatch
+ */
+export function roleKind(a: Pick<Agent, 'kind' | 'canDelegate' | 'canPlan' | 'mounts'>): 'basic' | 'advanced' {
+  return a.kind ?? (a.canDelegate || a.canPlan || a.mounts?.length ? 'advanced' : 'basic')
+}
+
+/** 这个能力能不能就地用：允许 inline 且不要求独立上下文（评审这类必须派出） */
+export const canInline = (cap: Pick<Agent, 'modes' | 'independent'>) =>
+  !cap.independent && (!cap.modes?.length || cap.modes.includes('inline'))
+
+/** 这个能力能不能派成子任务 */
+export const canSubtask = (cap: Pick<Agent, 'modes'>) => !cap.modes?.length || cap.modes.includes('subtask')
+
+export type MountMode = AgentMount['mode']
+
+/**
+ * 挂载实际的用法：挂载上选的用法不能超出能力自己允许的（评审只能派出、只允许就地的不能派），
+ * 超出时收紧到能用的那一种；两种都能用时照挂载上选的
+ */
+export function mountMode(mode: MountMode, cap: Pick<Agent, 'modes' | 'independent'>): MountMode {
+  const inline = canInline(cap)
+  const sub = canSubtask(cap)
+  if (!inline && (mode === 'inline' || mode === 'auto')) return 'subtask'
+  if (!sub && (mode === 'subtask' || mode === 'parent' || mode === 'auto')) return 'inline'
+  return mode
+}
+
+/** 挂载展开后的一项：能力本身、实际用法、挂载上的设置 */
+export interface MountedCap {
+  agent: Agent
+  mode: MountMode
+  preload: boolean
+  rule: string
+  params: ParamValues
+}
+
+/** 高级角色挂载的能力，按顺序展开（找不到、停用的、挂了自己的跳过，同一个能力只算一次） */
+export function mountedAgents(agent: Pick<Agent, 'id' | 'mounts'>, agents: Agent[]): MountedCap[] {
+  const seen = new Set([agent.id])
+  return (agent.mounts ?? []).flatMap((m) => {
+    const cap = agents.find((a) => a.id === m.agentId)
+    if (!cap || !cap.enabled || seen.has(cap.id)) return []
+    seen.add(cap.id)
+    return [{ agent: cap, mode: mountMode(m.mode, cap), preload: m.preload, rule: m.rule, params: m.params ?? {} }]
+  })
+}
+
+/** 用法写成给模型看的一句话 */
+function mountUsage(m: MountedCap) {
+  const name = m.agent.name
+  switch (m.mode) {
+    case 'inline':
+      return m.preload
+        ? `就地用：做法已在上面「能力：${name}」里，直接按它做`
+        : `就地用：先调用 use_capability（name 写「${name}」）取它的做法，再在当前对话里按它做`
+    case 'subtask':
+      return `派出：spawn_agents 的 agent 写「${name}」，交接写清范围和依据`
+    case 'parent':
+      return `转交父对话：spawn_agents 的 agent 写「${name}」，在子对话里面板会转交父对话创建，不用等它的结果`
+    default:
+      return `自己判断：量小、要用当前对话里已经读过的内容就就地用（${m.preload ? '做法已在上面' : `use_capability 取「${name}」的做法`}）；要独立视角、量大（超过一个模块或要几分钟以上）、能和别的事并行的派出（spawn_agents 的 agent 写「${name}」）`
+  }
+}
+
+/** 高级角色的能力索引：每个挂载一行，模型据此决定用不用、怎么用；全文用到时再取 */
+export function capabilityIndex(mounted: MountedCap[]) {
+  const lines = mounted.map((m) => {
+    const when = m.agent.when || m.agent.description
+    return `- **${m.agent.name}**${when ? `：${when}` : ''}\n  用法：${mountUsage(m)}${m.rule ? `\n  规则：${m.rule}` : ''}`
+  })
+  return `## 你挂载的能力
+下面这些能力归你调度：每件事先想清楚是自己就地做，还是派出去。判断顺序：能力要求独立视角的一律派出；要用到当前对话里大量已读内容、派出去要重新交代一遍的就地；读写超过一个模块、预计几分钟以上或能和别的事并行的派出；拿不准就就地先做第一步，发现量大再派（派单里写清已做到哪）。就地用某个能力前，按它的做法来，不要凭印象做。
+${lines.join('\n')}`
+}
+
+/** 一个能力的完整做法：按挂载上的取值、上层传下来的同名取值渲染（挂载上写的优先） */
+function capabilityBlock(m: MountedCap, passed: ParamValues, preloaded: boolean, override: ParamValues = {}) {
+  const { values, hidden } = resolveParams(m.agent.params, { ...passed, ...m.params, ...override })
+  const body = renderTemplate(m.agent.instructions, values).trim()
+  const shown = m.agent.params.filter((p) => !hidden.includes(p.key))
+  const params = shown.length
+    ? `\n\n参数：${shown.map((p) => `${paramLabel(p)}=${valueText(values[p.key]) || '（空）'}`).join('；')}`
+    : ''
+  return `## 能力：${m.agent.name}${preloaded ? '（已加载）' : ''}\n${body}${params}`
+}
+
+/**
+ * use_capability 的结果：高级角色就地用某个挂载能力时取它的完整做法和要用的 Skill。
+ * 只认挂载了的、能就地用的能力；不能就地的说清楚该怎么派
+ */
+export function loadCapability(
+  agent: Agent,
+  agents: Agent[],
+  name: string,
+  given: ParamValues = {},
+  slots: Record<string, string> = {},
+  /** 这次调用给能力指定的参数取值：比挂载上的、上层传下来的都优先 */
+  override: ParamValues = {},
+): { ok: boolean; text: string } {
+  const want = name.trim()
+  const mounted = mountedAgents(agent, agents)
+  const m = mounted.find((x) => x.agent.name === want || x.agent.id === want)
+  if (!m) {
+    const names = mounted.map((x) => `「${x.agent.name}」`).join('、')
+    return { ok: false, text: `「${want}」不是你挂载的能力${names ? `：能用的有 ${names}` : '：你没有挂载能力'}` }
+  }
+  if (m.mode === 'subtask' || m.mode === 'parent')
+    return {
+      ok: false,
+      text: `「${m.agent.name}」${m.agent.independent ? '要独立视角，' : ''}只能派出：用 spawn_agents，agent 写「${m.agent.name}」`,
+    }
+  const { values, hidden } = resolveParams(agent.params, given)
+  const passed = Object.fromEntries(Object.entries(values).filter(([k]) => !hidden.includes(k)))
+  const skills = [...new Set(fillSkills(m.agent.skills, slots))]
+  const skillText = skills.length ? `\n\n要用的 Skill：\n${skills.map(skillLine).join('\n')}` : ''
+  return { ok: true, text: `${capabilityBlock(m, passed, false, override)}${skillText}` }
+}
+
 /** 默认对话没有 Agent 角色设定，补一条可见进度规则，避免整轮只剩工具调用。 */
 export const DEFAULT_CHAT_PROGRESS =
   '## 可见进度\n连续做两次以上工具操作前先用一句话说明当前目标，完成一组工具后先用一句话报告阶段结果再继续；不要让一整轮只剩工具调用。模型没有返回思考内容时不要编造内部思考，至少给出简短的可见进度。'
@@ -372,12 +493,25 @@ export function composeRole(
     const text = renderTemplate(s.instructions, sv).trim()
     if (text) parts.push(`## 引入的 Agent：${s.name}\n${s.description ? `${s.description}\n\n` : ''}${text}`)
   }
+  // 被联动隐藏的参数不往下传：挂载的能力按挂载上的取值和它自己的默认值走
+  const passed = Object.fromEntries(Object.entries(values).filter(([k]) => !hidden.includes(k)))
+  const mounted = mountedAgents(agent, agents)
+  const loaded = mounted.filter((m) => m.preload && m.mode !== 'subtask' && m.mode !== 'parent')
+  for (const m of loaded) parts.push(capabilityBlock(m, passed, true))
+  if (mounted.length) parts.push(capabilityIndex(mounted))
   const shown = agent.params.filter((p) => !hidden.includes(p.key))
   if (shown.length) {
     const lines = shown.map((p) => `- ${paramLabel(p)}（${p.key}）：${valueText(values[p.key]) || '（空）'}`)
     parts.push(`## 本次的参数\n按这些参数决定做法：\n${lines.join('\n')}`)
   }
-  const skills = [...new Set(fillSkills([...agent.skills, ...subs.flatMap((s) => s.agent.skills)], slots))]
+  const skills = [
+    ...new Set(
+      fillSkills(
+        [...agent.skills, ...subs.flatMap((s) => s.agent.skills), ...loaded.flatMap((m) => m.agent.skills)],
+        slots,
+      ),
+    ),
+  ]
   if (skills.length)
     parts.push(
       `## 要用的 Skill\n遇到下面的情况时先读对应的 SKILL.md，按里面的规则做（找不到就按自己的方式做）：\n${skills.map(skillLine).join('\n')}`,
