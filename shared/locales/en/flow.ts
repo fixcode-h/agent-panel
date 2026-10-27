@@ -222,13 +222,25 @@ export const EN_FLOW: Record<string, string> = {
     'A workflow organizes roles into a team: pick a main role to drive the work, add a few sub-roles, then arrange the execution order in the flowchart.',
   新建工作流: 'New workflow',
 
-  // 导入导出
+  // 导入导出（分享包，见 shared/agent-share.ts）
   '不是有效的 JSON 文件': 'Not a valid JSON file',
-  '这不是 Agent 面板导出的工作流文件': 'This isn’t a workflow file exported from Agent Panel',
-  '文件里的角色「{name}」格式不对': 'Role “{name}” in the file is invalid',
-  文件里的工作流格式不对: 'The workflow in the file is invalid',
-  '{name}（导入 {n}）': '{name} (imported {n})',
-  '{name}（导入）': '{name} (imported)',
+  '这不是角色或工作流的分享包：{error}': 'This isn’t a role or workflow share package: {error}',
+  '旧版导出的工作流文件格式不对：{error}': 'The old-format workflow file is invalid: {error}',
+  '角色包里不该带其它角色（那是工作流包的字段）：文件结构被改过，不导入':
+    'A role package must not carry other roles (that field belongs to workflow packages): the file structure was edited, so it is not imported',
+  '分享包的格式版本是 {v}，这个面板只认 {mine}：换一个版本的包，或者用导出方升级后的面板':
+    'This package is format version {v}; this panel only reads {mine}. Use a package from a matching version, or the exporter’s upgraded panel.',
+  '指纹和内容对不上（包里写的是 {fp}，按内容算是 {actual}）：文件被手改过，不导入':
+    'The fingerprint does not match the content (package says {fp}, content hashes to {actual}): the file was edited by hand, so it is not imported',
+  '这是工作流的分享包：换到工作流页去导入': 'This is a workflow share package; import it from the Workflows page',
+  '这是角色的分享包：换到角色页去导入': 'This is a role share package; import it from the Roles page',
+  '{what}同名了': '{what} already exists',
+  '本机已经有同名的{what}「{name}」：覆盖它还是另存为副本？':
+    'A {what} named “{name}” already exists here: overwrite it or save a copy?',
+  '本机已经有同名的内置{what}「{name}」：内置那份跟着面板同步，不能被导入覆盖，只能另存为副本':
+    'A built-in {what} named “{name}” already exists here: the built-in copy follows the panel’s updates and cannot be overwritten by an import — save a copy instead',
+  另存为副本: 'Save as a copy',
+  覆盖本机那份: 'Overwrite the local one',
   等我确认: 'Needs my OK',
   完成后等我确认: 'Wait for my OK when done',
   '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。':

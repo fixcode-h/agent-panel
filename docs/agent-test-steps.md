@@ -469,5 +469,6 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 
 - 评审步骤要有状态：派「评审」（`spawn_agents` 的 agent 写「评审」）时标等待中，拿回结论后标完成。
 - `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审写没写结论，以及它列的高级、中级是否每条都有处置（`shared/review-gate.ts`，[ADR 0009](adr/0009-review-findings-triaged.md)）；缺任何一项都会被拒绝并在交回说明里写清原因。
+- 用户明确要求「已知问题也合并」时走显式放行：`submit_merge` 传 `review_override: { by: user | parent, reason }`（理由至少 12 字），门禁放行并把谁、什么时候（面板记）、为什么、原本拦住什么写进 `Task.reviewOverride`，收尾消息和交接摘要一起带给父对话（[ADR 0022](adr/0022-review-gate-override.md)）。执行角色自己判断「问题不大」不是放行理由。
 - 评审只做代码层面的审查：不改文件、不跑测试和构建、不搭测试环境、不写测试脚本；git 仓库里面板把改动（文件列表 + 每处改动前后几行的差异，只取这个对话改过的文件）一次附进它的提示词，复看只附增量（[ADR 0010](adr/0010-review-code-only.md)）。派评审要带交接单 `review`（第一次 `goal`、`checks` 必填），评审只评差异里改动的行，不读模块文档、不搜项目，读代码最多 3 次，跑到 6 分钟面板提醒它交卷（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）。
 - 意见分四级：🔴 高级（必须改，判不通过）、🟠 中级（应该改，要处置）、🟡 低级（可以改）、💡 建议（这一轮不做）。

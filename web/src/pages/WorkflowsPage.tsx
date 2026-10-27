@@ -6,7 +6,9 @@ import { t } from '@shared/i18n'
 import { newFlow, subAgentIds } from '@shared/flow'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { api } from '@/lib/api'
-import { exportWorkflow, importWorkflow } from '@/lib/transfer'
+import { exportWorkflow } from '@/lib/transfer'
+import { useShareImport } from '@/lib/useShareImport'
+import { ImportConflictDialog } from '@/components/share/ImportConflictDialog'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
@@ -85,28 +87,21 @@ export function WorkflowsPage() {
   }
 
   const file = useRef<HTMLInputElement>(null)
-  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ''
-    if (!f) return
-    try {
-      const { workflow, created } = await importWorkflow(await f.text(), agents, workflows)
-      if (created.length) setAgents((as) => [...as, ...created])
-      setWorkflows((ws) => [...ws, workflow])
-      go({ page: 'workflows', id: workflow.id })
-      toast.success(
-        created.length
-          ? t('已导入「{name}」，新建了 {n} 个角色：{list}', {
-              name: workflow.name,
-              n: created.length,
-              list: created.map((a) => a.name).join(t('、')),
-            })
-          : t('已导入「{name}」', { name: workflow.name }),
-      )
-    } catch (err) {
-      toast.error((err as Error).message)
-    }
-  }
+  // 导入：格式和指纹在 importShare 里校验，同名时弹「覆盖 / 另存为副本」
+  const share = useShareImport('workflow', (r) => {
+    void api.workflows().then(setWorkflows)
+    if (r.created.length) setAgents((as) => [...as, ...r.created])
+    go({ page: 'workflows', id: r.id })
+    toast.success(
+      r.created.length
+        ? t('已导入「{name}」，新建了 {n} 个角色：{list}', {
+            name: r.name,
+            n: r.created.length,
+            list: r.created.map((a) => a.name).join(t('、')),
+          })
+        : t('已导入「{name}」', { name: r.name }),
+    )
+  })
 
   // 列表右键「删除」：先选中那个工作流，再让详情页弹出删除确认（被项目使用时不能删的检查在详情页里）
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
@@ -147,7 +142,7 @@ export function WorkflowsPage() {
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
+            <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
             <Button
               size="sm"
               variant="secondary"
@@ -293,6 +288,7 @@ export function WorkflowsPage() {
           if (workflow) go({ page: 'workflows', id: workflow.id })
         }}
       />
+      <ImportConflictDialog conflict={share.conflict} onPick={share.pick} onClose={share.close} />
     </>
   )
 }

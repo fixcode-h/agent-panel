@@ -10,6 +10,7 @@ import {
   type SummaryRange,
   type SummaryRecord,
 } from '@shared/summary'
+import { LessonDraftInput, LessonDraftRecord, lessonDraftsFromReport, missingDrafts } from '@shared/lesson-draft'
 import { demoMs } from './demo-speed'
 
 /** 演示用的需求条目：标题、状态、实现原理 */
@@ -55,6 +56,61 @@ const BUGS_NEXT = [
 
 const reports = new Map<string, SummaryRecord>()
 const jobs = new Map<string, SummaryJob>()
+/** 候选教训草稿：和正式后端同一套提炼（shared/lesson-draft.ts），字段也一致 */
+const drafts = new Map<string, LessonDraftRecord>()
+
+const draftList = () => [...drafts.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+/**
+ * 演示版的候选教训草稿区：接口字段和正式后端一致。
+ * 提炼走的是正式那份纯函数，所以演示里看到的就是真实规则的结果（有 Bug 条目就会出草稿）。
+ */
+export function demoLessonDrafts(method: string, id: string | undefined, body: unknown): unknown {
+  if (method === 'GET' && !id) return { drafts: draftList() }
+  if (method === 'POST' && !id) {
+    const reportId = String((body as { reportId?: string }).reportId ?? '')
+    const report = reports.get(reportId)
+    if (!report) throw new Error('找不到这份报告')
+    // 和正式后端同一套：只补草稿区还没有的条目，丢掉一条后能再找回来
+    const found = lessonDraftsFromReport(report)
+    const missing = missingDrafts(
+      found,
+      draftList().filter((d) => d.reportId === reportId),
+    )
+    const now = new Date().toISOString()
+    for (const x of missing) {
+      const rec: LessonDraftRecord = { ...x, id: crypto.randomUUID(), createdAt: now, updatedAt: now }
+      drafts.set(rec.id, rec)
+    }
+    return {
+      drafts: draftList(),
+      created: missing.length,
+      info: missing.length
+        ? ''
+        : found.length
+          ? '这份报告的候选教训都已经在草稿区了'
+          : '这份报告里没有可提炼的返工，不硬造条目',
+    }
+  }
+  if (method === 'PUT' && id) {
+    const cur = drafts.get(id)
+    if (!cur) throw new Error('找不到这条草稿')
+    const next: LessonDraftRecord = {
+      ...cur,
+      ...LessonDraftInput.parse(body),
+      id: cur.id,
+      createdAt: cur.createdAt,
+      updatedAt: new Date().toISOString(),
+    }
+    drafts.set(id, next)
+    return next
+  }
+  if (method === 'DELETE' && id) {
+    if (!drafts.delete(id)) throw new Error('找不到这条草稿')
+    return undefined
+  }
+  throw new Error('演示版不支持这个操作')
+}
 
 /** round > 0（第二份及以后）时换成推进过的条目：演示里两份报告对比能看到差异 */
 function sampleMd(day: string, names: string[], round: number) {

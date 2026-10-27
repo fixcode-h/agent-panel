@@ -92,7 +92,7 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { branchCommits, gitChanges, gitFileDiff, gitHasRemote, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { type HandoffInput, handoffMissing, handoffTemplate, handoffText, wantsHandoff } from '../shared/handoff.ts'
-import { reviewGate, triageText, type TriageItem } from '../shared/review-gate.ts'
+import { overrideText, reviewGate, triageText, type ReviewOverride, type TriageItem } from '../shared/review-gate.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -1427,6 +1427,11 @@ export function tasksApi(deps: {
     handoff: HandoffInput = {},
     /** 对最近一次评审每条高级、中级意见的处置（见 ADR 0009）：门禁按它放行，原样交给父对话验收 */
     triage: TriageItem[] = [],
+    /**
+     * 显式放行（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时带上。
+     * 只有门禁真的拦下时它才生效；生效后记录会写在任务上、并随收尾消息交给父对话
+     */
+    override?: ReviewOverride,
   ): Promise<{ ok: boolean; info: string }> {
     const entry = live.get(childId)
     const tk = entry?.task ?? (await store.get(childId))
@@ -1477,8 +1482,12 @@ export function tasksApi(deps: {
       (id) => known.some((a) => a.id === id && (a.origin === 'builtin:reviewer' || a.name === reviewerName)),
       activePlan(tk)?.steps ?? [],
       triage,
+      override,
     )
     if (!review.ok) return review
+    // 放行记录的时间由面板记：调用方自报的时间挡不住「先传一个过去的时间」。
+    // 这里只算出来、先不写回任务：后面还有几步校验，被拒时不留下一条没发起过收尾的「已放行」
+    const bypass = review.bypass && { ...review.bypass, at: new Date().toISOString() }
     // 只认内存里的 merging：记录上的 merging 可能是合并途中面板重启、或旧版本没清掉留下的
     if (merging.has(childId)) return { ok: false, info: '父对话正在合并你的分支，等结果推回来。' }
     // 交接要点放在最后查：前面几样没满足时先修那些，别让它为了写摘要白跑一趟
@@ -1515,11 +1524,14 @@ export function tasksApi(deps: {
         commits,
         changed: changed ?? {},
         triage: triageText(triage),
+        override: bypass ? overrideText(bypass) : '',
       }),
       files: handoff.files ?? '',
       at,
     }
     tk.wrapRequest = { state: 'requested', at, note, tests, ...(build && { build }), info: '' }
+    // 校验都过了才记放行；这次没绕过门禁就清掉旧的，留着的只能是当前这次收尾的放行
+    tk.reviewOverride = bypass
     markWrapUp(tk, 'merge', 'waiting', '已请父对话收尾，等父对话合并')
     tk.updatedAt = at
     if (entry) entry.rev++
@@ -1531,7 +1543,7 @@ export function tasksApi(deps: {
       parentId,
       tk,
       `【收尾请求】子对话「${tk.title}」（id ${tk.id}）只剩合回了：计划其余步骤都做完、后台命令都结束、没有待回答的提问。
-它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}
+它在独立分支 ${wt.branch} 里的验证：${tests.slice(0, 600)}${note ? `\n它的说明：${note.slice(0, 300)}` : ''}${triage.length ? `\n它对评审意见的处置（评审只出意见，采不采纳是它核实后定的；驳回或留作已知问题的理由站不住时打回给它）：\n${triageText(triage).slice(0, 1500)}` : ''}${bypass ? `\n⚠️ 它这次的收尾用了**显式放行**：评审门禁被绕过，记录如下（谁、什么时候、为什么、原本拦住什么）——用户要求带着这个问题先合并，你如果觉得理由站不住，打回给它或者直接问用户：\n${overrideText(bypass)}` : ''}
 请你收尾：调用 finish_child（id ${tk.id}），面板把它的分支合回「${wt.baseBranch || '你所在的分支'}」、把它计划里的收尾步骤标完成、结束它并删除独立分支和分支。验证不够、你看出问题时不要收，用 send_to_conversation 把要补的交回给它。`,
       { panel: 'wrapup', child, peer: await peerOf(tk, 'child', 'wrapup', note || '只剩合回，请收尾') },
     )
@@ -3263,8 +3275,8 @@ export function tasksApi(deps: {
             : undefined,
         submitMerge:
           task.parentTaskId && isolated(entry.task)
-            ? (note, tests, build, handoff, triage) =>
-                submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff, triage)
+            ? (note, tests, build, handoff, triage, override) =>
+                submitMerge(task.id, note, tests, ueRole === 'child' && build !== false, handoff, triage, override)
             : undefined,
         ueBuild:
           ueRole === 'child'

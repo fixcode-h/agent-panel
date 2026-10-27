@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PlanStep, TaskStep } from '../shared/schema.ts'
 import { applyPlan } from '../shared/plan.ts'
-import { blockingIds, reviewGate, triageInput } from '../shared/review-gate.ts'
+import { blockingIds, overrideInput, reviewGate, triageInput } from '../shared/review-gate.ts'
 
 const REVIEWER = 'a-reviewer'
 const isReviewer = (id: string) => id === REVIEWER
@@ -228,4 +228,50 @@ test('评审门禁：四级意见里高级、中级要处置，低级和建议�
   const recheck = ['验收结论：通过', '必须处置：无', '上一轮的高级 R1、中级 R2 都已改好。'].join('\n')
   assert.equal(reviewGate([sub({ output: recheck })], isReviewer, planDone).ok, true)
   assert.deepEqual(blockingIds('验收结论：不通过\n必须处置：R1、R2\n🔴 R1 …\n🟠 R2 …'), ['R1', 'R2'])
+})
+
+test('评审门禁：拦下时一并给出显式放行通道，但不能自己判「问题不大」', () => {
+  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone)
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /review_override/)
+  assert.match(r.ok === false ? r.info : '', /已知问题也合并/)
+})
+
+test('评审门禁：用户明确放行时通过，并带回「原本拦住什么」留给任务记录', () => {
+  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone, [], {
+    by: 'user',
+    reason: '用户要求先合并这一版，少判空的空数组问题下一版补',
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.ok === true ? r.bypass?.by : '', 'user')
+  assert.match(r.ok === true ? (r.bypass?.blocked ?? '') : '', /R1|处置|不通过/)
+})
+
+test('评审门禁：放行理由太短不算说明，照旧拦下并说清差多少字', () => {
+  const r = reviewGate([sub({ output: blocked })], isReviewer, planDone, [], { by: 'user', reason: '先合' })
+  assert.equal(r.ok, false)
+  assert.match(r.ok === false ? r.info : '', /理由太短/)
+})
+
+test('评审门禁：本来就能过时不记放行（记录只对应真绕过门禁的那次）', () => {
+  const r = reviewGate([sub({ output: passed })], isReviewer, planDone, [], {
+    by: 'user',
+    reason: '用户要求先合并这一版，少判空的空数组问题下一版补',
+  })
+  assert.equal(r.ok, true)
+  assert.equal(r.ok === true ? r.bypass : undefined, undefined)
+})
+
+test('评审门禁：放行来源认不出、没写理由时当没传，仍按门禁拦下', () => {
+  assert.equal(overrideInput({ by: '自己', reason: '这条理由够长但其实来源不合法' }), undefined)
+  assert.equal(overrideInput({ by: 'user', reason: '' }), undefined)
+  assert.deepEqual(overrideInput({ by: 'parent', reason: '父对话决定带着这个问题先合并' }), {
+    by: 'parent',
+    reason: '父对话决定带着这个问题先合并',
+  })
+})
+
+test('评审门禁：放行来源走原型链的名字不算（hasOwn，不认 toString）', () => {
+  assert.equal(overrideInput({ by: 'toString', reason: '这条理由长度够了但不是合法来源' }), undefined)
+  assert.equal(overrideInput({ by: 'constructor', reason: '这条理由长度够了但不是合法来源' }), undefined)
 })

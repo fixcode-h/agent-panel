@@ -64,6 +64,8 @@ export function handoffText(
     changed: Record<string, string>
     /** 评审意见的处置（triageText 写好的几行）：哪些采纳、哪些驳回、哪些留作已知问题 */
     triage?: string
+    /** 显式放行记录（overrideText 写好的几行）：谁、什么时候、为什么、原本拦住什么 */
+    override?: string
   },
 ): string {
   const files = Object.entries(facts.changed)
@@ -75,6 +77,7 @@ export function handoffText(
     facts.note ? `## 这次改了什么\n${clip(facts.note, 600)}` : '',
     facts.tests ? `## 当时的验证\n${clip(facts.tests, 1200)}` : '',
     facts.triage ? `## 评审意见的处置\n${clip(facts.triage, 2000)}` : '',
+    facts.override ? `## 评审门禁的显式放行\n${clip(facts.override, 800)}` : '',
     facts.commits.length || files.length
       ? [
           `## 合回的改动（分支 ${facts.branch}）`,

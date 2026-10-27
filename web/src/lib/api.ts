@@ -54,6 +54,7 @@ import type { RunUsage } from '@shared/run-usage'
 import type { StatsTotal } from '@shared/task-export'
 import type { AssistInput, AssistJob, Proposal } from '@shared/assist'
 import type { LessonReviewItem } from '@shared/lesson-review'
+import type { LessonDraftInput, LessonDraftRecord } from '@shared/lesson-draft'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type {
   DeployConfig,
@@ -924,4 +925,16 @@ export const api = {
   summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
   stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
   saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),
+
+  /** 候选教训草稿：从工作总结提炼的半成品，看过后手动写进 docs/lessons/（不会自动落盘） */
+  lessonDrafts: () => request<{ drafts: LessonDraftRecord[] }>('/lesson-drafts'),
+  /** 从一份报告提炼；同一份报告只提炼一次 */
+  extractLessonDrafts: (reportId: string) =>
+    request<{ drafts: LessonDraftRecord[]; created: number; info: string }>(
+      '/lesson-drafts',
+      json('POST', { reportId }),
+    ),
+  saveLessonDraft: (id: string, input: LessonDraftInput) =>
+    request<LessonDraftRecord>(`/lesson-drafts/${id}`, json('PUT', input)),
+  deleteLessonDraft: (id: string) => request<void>(`/lesson-drafts/${id}`, { method: 'DELETE' }),
 }

@@ -338,6 +338,47 @@ export const EN_APP: Record<string, string> = {
   报告视图: 'Report view',
   报告内容: 'Report content',
   已复制报告: 'Report copied',
+  // 候选教训草稿（从工作总结提炼，见 shared/lesson-draft.ts）
+  '提炼了 {n} 条候选教训，改好再手动写进 docs/lessons/':
+    'Drafted {n} candidate lesson(s); refine them and add them to docs/lessons/ yourself',
+  候选教训草稿: 'Candidate lesson drafts',
+  '只生成草稿，确认后自己写进 docs/lessons/': 'Drafts only — you add them to docs/lessons/ after reviewing',
+  '从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）':
+    'Find reworked spots in this report and draft candidates (each report is drafted once)',
+  从这份报告提炼: 'Draft lessons from this report',
+  '还没有草稿。报告里有用户报的 Bug 或返工过的条目时，点「从这份报告提炼」；没有就不生成，不硬造条目。':
+    'No drafts yet. If the report has user-reported bugs or reworked items, click "Draft lessons from this report"; if there are none, nothing is generated.',
+  '草稿不会自动写进 docs/lessons/：先看 docs/lessons/README.md 的分片表挑一个分片，把这条改成「下次能直接照做的通用规则」再手动写进去。标题一句话写「该怎么做」、规则写做什么不做什么（具体到文件或字段）、起因写哪次返工；每条不超过 6 行，单个分片不超过 6KB（scripts/rules-check.mjs 会检查）。能写成检查的，加进测试或 scripts/rules-check.mjs，分片里只留一行指针。':
+    'Drafts are never written to docs/lessons/ automatically. Pick a shard from the table in docs/lessons/README.md, turn the draft into a rule the next agent can follow directly, then add it by hand. One-sentence title saying what to do, a rule saying what to do and what not to do (down to files or fields), and the cause (which rework). Keep each entry within 6 lines and each shard within 6 KB (scripts/rules-check.mjs enforces it). If it can become a check, add it to a test or scripts/rules-check.mjs and leave a one-line pointer in the shard.',
+  '来自 {day} 的报告': 'From the {day} report',
+  草稿已保存: 'Draft saved',
+  '标题（一句话写该怎么做）': 'Title (one sentence: what to do)',
+  草稿标题: 'Draft title',
+  '规则（做什么、不做什么，具体到文件或字段）': 'Rule (what to do and not do, down to files or fields)',
+  草稿规则: 'Draft rule',
+  '起因（哪次返工）': 'Cause (which rework)',
+  草稿起因: 'Draft cause',
+  '写进哪个分片（docs/lessons/ 下的文件名，留空表示还没定）':
+    'Which shard (file name under docs/lessons/; leave empty if undecided)',
+  草稿分片: 'Draft shard',
+  '例如 testing.md': 'e.g. testing.md',
+  '提炼依据（报告里的原文）': 'Source (the report’s own text)',
+  保存草稿: 'Save draft',
+  '丢弃这条草稿？': 'Discard this draft?',
+  丢弃: 'Discard',
+  '丢弃后这条草稿就没了；同一份报告不会自动再提炼，需要时得重新点一次提炼。':
+    'The draft is gone once discarded; a report is not drafted again automatically, so click draft again if you need it back.',
+  已丢弃这条草稿: 'Draft discarded',
+  '规则还没写：写清做什么、不做什么': 'The rule is empty: say what to do and what not to do',
+  '规则超过 {n} 行：一条教训最多 {n} 行，把同类的要求合起来写':
+    'The rule is over {n} lines: one lesson allows at most {n} lines, so merge similar requirements',
+  '规则超过 {n} 字': 'The rule is over {n} characters',
+  '起因还没写：哪次返工（提交号 + 一句话）': 'The cause is empty: which rework (commit + one sentence)',
+  需求进度里的返工: 'rework in the progress section',
+  '{day} 的工作总结（{why}）：{title}': 'Work summary for {day} ({why}): {title}',
+  这份报告的候选教训都已经在草稿区了: 'Every candidate lesson from this report is already in the draft area',
+  '这份报告里没有可提炼的返工，不硬造条目': 'No rework in this report to draft lessons from, so none were invented',
+  找不到这条草稿: 'Draft not found',
   已停止生成: 'Generation stopped',
   '生成中断，这是已经写出的部分': 'Generation was interrupted; this is what was written',
   '保存中…': 'Saving…',

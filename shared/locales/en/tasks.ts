@@ -1206,4 +1206,11 @@ export const EN_TASKS: Record<string, string> = {
   演示版没有实时推送: 'The demo has no live updates',
   这个对话没有子对话: 'This conversation has no sub-conversations',
   '实时更新连接失败，正在重连': 'Live updates failed to connect; reconnecting',
+  // 评审已放行（收尾时绕过评审门禁的记录）
+  评审已放行: 'Review gate bypassed',
+  合并前评审门禁被绕过: 'The review gate was bypassed before merging',
+  谁放行: 'Bypassed by',
+  什么时候: 'When',
+  为什么: 'Why',
+  原本拦住的是: 'What it blocked',
 }

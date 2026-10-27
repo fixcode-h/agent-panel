@@ -2,7 +2,7 @@ import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
 import { askOptions } from '../shared/task.ts'
 import { HANDOFF_FIELDS, handoffInput } from '../shared/handoff.ts'
-import { triageInput } from '../shared/review-gate.ts'
+import { overrideInput, triageInput } from '../shared/review-gate.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -535,6 +535,24 @@ export function orchTools(o: Orchestra) {
                           required: ['id', 'decision', 'reason'],
                         },
                       },
+                      review_override: {
+                        type: 'object',
+                        description:
+                          '显式放行：评审没过（没派过、没写结论、列了必须处置项）而用户明确要求「已知问题也合并」时才传。它是门禁的出口，不是提醒——面板把谁、什么时候、为什么、原本拦住什么记在任务上，收尾消息里带给父对话。不要自己判断「问题不大」就放行',
+                        properties: {
+                          by: {
+                            type: 'string',
+                            enum: ['user', 'parent'],
+                            description: '谁放行的：用户本人要求写 user；父对话决定写 parent。执行角色自己不能放行',
+                          },
+                          reason: {
+                            type: 'string',
+                            description:
+                              '为什么带着这个问题合并（至少 12 字）：问题的内容、用户为什么要求先合、后续什么时候补',
+                          },
+                        },
+                        required: ['by', 'reason'],
+                      },
                     },
                     required: ['tests', 'handoff'],
                   },
@@ -924,6 +942,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         o.ueBuild === 'child' ? a?.build !== false : undefined,
         handoffInput(a?.handoff),
         triageInput(a?.review_triage),
+        overrideInput(a?.review_override),
       )
       return text(r.info, !r.ok)
     }
