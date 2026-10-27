@@ -12,6 +12,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { compareVersions, type AppRelease } from '@shared/version'
+import { hhmm, pad2, ymd } from '@shared/datetime'
 import {
   adoptRunningJob,
   forceInstallRelease,
@@ -32,21 +33,18 @@ const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
 const checkedTime = (iso: string) => {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const hm = hhmm(d)
   return d.toDateString() === new Date().toDateString() ? hm : `${day(iso)} ${hm}`
 }
 const day = (iso: string) => {
   const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? ''
-    : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return Number.isNaN(d.getTime()) ? '' : ymd(d)
 }
 /** 发布这些包的时间：日期后面带上时分秒 */
 const dateTime = (iso: string) => {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  const two = (n: number) => String(n).padStart(2, '0')
-  return `${day(iso)} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`
+  return `${day(iso)} ${hhmm(d)}:${pad2(d.getSeconds())}`
 }
 
 function Channel({ pre }: { pre: boolean }) {

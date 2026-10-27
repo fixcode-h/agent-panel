@@ -18,6 +18,8 @@ import { isHelperAgent } from './builtin/core.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
 import { leadVerdict } from './verdict.ts'
+import { clip as clipText } from './text.ts'
+import { hhmm, pad2, ymd } from './datetime.ts'
 
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
 
@@ -764,8 +766,13 @@ export function exportTaskTree(root: Task, all: Task[], agents: Agent[], app = '
   return redactDeep(bundle)
 }
 
-export const exportFileName = (title: string) =>
-  `${title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60) || 'task'}.task.json`
+/** 文件名里不能出现的字符（Windows 的 \\ / : * ? " < > | 加上空白）：导出前统一换成下划线 */
+const fileSafe = (title: string, fallback: string) => title.replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 60) || fallback
+
+export const exportFileName = (title: string) => `${fileSafe(title, 'task')}.task.json`
+
+/** 单文件 HTML 报告的文件名：和 JSON 包共用同一套清洗规则，只换扩展名 */
+export const exportHtmlFileName = (title: string) => `${fileSafe(title, 'task')}.html`
 
 /** 读导出文件：格式不对时给出能看懂的原因 */
 export function parseTaskExport(raw: unknown): TaskExport {
@@ -897,10 +904,10 @@ const pct = (r: number) => `${Math.round(r * 100)}%`
 const localTime = (iso: string) => {
   const d = new Date(iso)
   if (!iso || !Number.isFinite(d.getTime())) return iso
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return `${ymd(d)} ${hhmm(d)}`
 }
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
+/** 导出报告里的长段落截断后写明还省了多少字，读者才知道内容不完整 */
+const clip = (s: string, n: number) => clipText(s, n, { mark: (omitted) => `\n…（后面省略 ${omitted} 字）` })
 
 /** 轮次结局在报告里的说法，和 schema 的 TurnEnd 一一对应 */
 const TURN_END_TEXT: Record<keyof TurnEndCounts, string> = {
@@ -937,14 +944,14 @@ function skillText(a: Agent, all: Agent[], slots: Record<string, string>) {
   return parts.length ? `　Skill：${parts.join('、')}` : ''
 }
 
-/** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
-export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope) {
-  if (scope) return helperReport(b, maxOutput, scope)
-  const tk = b.task
-  // 旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告
-  const computed = taskStats({ ...tk, id: '', projectId: '' } as unknown as Task)
+/**
+ * 报告里的统计：旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告。
+ * Markdown 报告和 HTML 报告共用这一处，两边的数字不会打架
+ */
+function resolvedStats(b: TaskExport): TaskStats {
+  const computed = taskStats({ ...b.task, id: '', projectId: '' } as unknown as Task)
   const raw = (b.stats ?? {}) as Partial<TaskStats>
-  const st: TaskStats = {
+  return {
     ...computed,
     ...raw,
     spanMs: raw.spanMs ?? computed.spanMs,
@@ -953,6 +960,13 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
     children: raw.children ?? computed.children,
     combined: raw.combined ?? computed.combined,
   }
+}
+
+/** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
+export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope) {
+  if (scope) return helperReport(b, maxOutput, scope)
+  const tk = b.task
+  const st = resolvedStats(b)
   const own = ownTotals(st)
   const kids = st.children?.tasks ? st.children : NO_TOTALS
   const all = st.combined?.tasks ? st.combined : addTotals(own, kids)
@@ -1029,9 +1043,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       `- 用户发言时间：${asks
         .map((m) => {
           const d = new Date(m.at ?? '')
-          return Number.isFinite(d.getTime())
-            ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-            : '?'
+          return Number.isFinite(d.getTime()) ? hhmm(d) : '?'
         })
         .join('、')}`,
     )
@@ -1130,9 +1142,7 @@ function messageLines(
   const at = (iso: string) => {
     if (!iso) return ''
     const d = new Date(iso)
-    return Number.isFinite(d.getTime())
-      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} `
-      : ''
+    return Number.isFinite(d.getTime()) ? `${hhmm(d)}:${pad2(d.getSeconds())} ` : ''
   }
   let step = ''
   let last = ''
@@ -1621,6 +1631,267 @@ export function applyChanges(changes: EvolutionChange[], workflows: Workflow[], 
     ws.set(w.id, w)
   }
   return { workflows: [...ws.values()], agents: [...as.values()] }
+}
+
+// ---- 单文件 HTML 报告 ----
+
+/**
+ * HTML 报告正文的字符上限：长对话的正文可能有几十万字，一次画出来浏览器会卡住。
+ * 超过后不再追加消息，末尾写明省略了多少条；改动文件、测试记录另有条数上限
+ */
+export const TASK_HTML_MAX_CHARS = 3 * 1024 * 1024
+/** HTML 里单条消息最多多少字：Markdown 报告按 maxOutput 截，浏览器里一次画几万字同样会卡 */
+export const TASK_HTML_MSG_MAX = 8000
+/** HTML 里每条消息最多列几个工具调用 */
+export const TASK_HTML_TOOLS_MAX = 30
+/** HTML 里最多列几个改动文件 */
+export const TASK_HTML_FILES_MAX = 200
+
+/** 消息正文、标题、文件名都是外部内容，拼进 HTML 前一律转义（报告不执行任何脚本） */
+const escHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) =>
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;',
+  )
+
+/** 报告样式：内联在文件里（离线、无网络也能看），深色跟随系统；增删用颜色区分 */
+const TASK_HTML_STYLE = `
+:root{--bg:#fbfbfa;--fg:#1f2328;--muted:#656d76;--line:#d8dee4;--panel:#fff;--accent:#0a66c2;--add:#1a7f37;--del:#cf222e;--code:#f6f8fa}
+@media (prefers-color-scheme: dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#8d96a0;--line:#30363d;--panel:#161b22;--accent:#58a6ff;--add:#3fb950;--del:#f85149;--code:#0f141a}}
+*{box-sizing:border-box}
+body{margin:0;padding:24px;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+main{max-width:960px;margin:0 auto}
+h1{font-size:22px;margin:0 0 10px}
+h2{font-size:17px;margin:32px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:15px;margin:24px 0 8px}
+.meta{color:var(--muted);font-size:12px;margin:0 0 4px;word-break:break-all}
+ul.stats{margin:0;padding-left:20px;color:var(--muted)}
+.msg{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
+.msg .who{font-size:12px;color:var(--muted);margin-bottom:6px}
+.msg.user .who{color:var(--accent)}
+.msg.error{border-color:var(--del)}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+pre.body{font-family:inherit;font-size:14px}
+pre.code{background:var(--code);border-radius:6px;padding:8px 10px;margin:8px 0;overflow-x:auto}
+pre.out{background:var(--code);border-radius:6px;padding:6px 8px;margin:6px 0;max-height:320px;overflow:auto}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--muted);font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:500}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.add{color:var(--add)}
+.del{color:var(--del)}
+.gap{color:var(--muted);font-size:12px;margin:8px 0}
+footer{margin-top:40px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:12px}
+`.trim()
+
+/**
+ * 正文：``` 围栏切出来做成代码块，其余按原样保留空白。
+ * 不解析 Markdown：导出文件要自包含、无依赖，另写一套 Markdown 规则会和页面里的渲染分叉
+ */
+function htmlText(text: string) {
+  const out: string[] = []
+  let plain: string[] = []
+  let code: string[] | null = null
+  const flushPlain = () => {
+    if (!plain.length) return
+    out.push(`<pre class="body">${escHtml(plain.join('\n'))}</pre>`)
+    plain = []
+  }
+  const flushCode = () => {
+    if (!code) return
+    out.push(`<pre class="code"><code>${escHtml(code.join('\n'))}</code></pre>`)
+    code = null
+  }
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      if (code) flushCode()
+      else {
+        flushPlain()
+        code = []
+      }
+      continue
+    }
+    if (code) code.push(line)
+    else plain.push(line)
+  }
+  // 围栏没闭合的旧记录也按代码块画完，不丢最后那几行
+  flushCode()
+  flushPlain()
+  return out.join('\n')
+}
+
+/** 一条消息里的工具调用：默认折起来，失败的调用带上完整命令和输出尾部（和 Markdown 报告同一口径） */
+function htmlTools(m: ExportedTask['messages'][number]) {
+  if (!m.tools.length) return ''
+  const failed = m.tools.filter((x) => x.failed).length
+  const items = m.tools.slice(0, TASK_HTML_TOOLS_MAX).map((x) => {
+    const name = x.name || x.kind
+    const what = x.kind === 'run' && x.input ? x.input : x.label
+    const code = x.exitCode === undefined ? '' : `，退出码 ${x.exitCode}`
+    // label 是截断过的一行，命令后半段（往往正是出错的那段）只能在 input / output 里看到
+    const out = x.failed ? clip((x.output || x.detail || '').trim(), 2000) : ''
+    const head = `${name} ${clip(what, 600)}${x.failed ? `（失败${code}）` : ''}`
+    return `<li>${escHtml(head)}${out ? `<pre class="out">${escHtml(out)}</pre>` : ''}</li>`
+  })
+  const more =
+    m.tools.length > TASK_HTML_TOOLS_MAX
+      ? `<p class="meta">…共 ${m.tools.length} 个工具调用，这里只列前 ${TASK_HTML_TOOLS_MAX} 个</p>`
+      : ''
+  return `<details><summary>工具调用 ${m.tools.length} 个${failed ? `（其中失败 ${failed} 个）` : ''}</summary><ul>${items.join('')}</ul>${more}</details>`
+}
+
+/**
+ * 执行过程：按节点分组，每条消息一张卡片；和 Markdown 报告的 messageLines 同一套口径
+ * （谁说的、时间、间隔超过 1 分钟单独提示），只是输出成 HTML。超出字符预算后不再追加，并写明省略了多少条
+ */
+function htmlMessages(tk: ExportedTask, agentName: (id: string) => string) {
+  const out: string[] = []
+  let spent = 0
+  let omitted = 0
+  let cut = false
+  let step = ''
+  let last = ''
+  const time = (iso: string) => {
+    const d = new Date(iso)
+    return iso && Number.isFinite(d.getTime()) ? `${localTime(iso)}:${pad2(d.getSeconds())}` : ''
+  }
+  for (const m of tk.messages) {
+    // 面板自己推的提示消息不是执行过程；报错和用户回答要留
+    if (m.role === 'system' && !m.error && !m.answers) continue
+    // 已经超出预算：后面的不再渲染，只数条数（不先 clip 再丢，长对话不会因为被截掉的那部分又慢一遍）
+    if (cut) {
+      omitted += 1
+      continue
+    }
+    if (m.step !== step) {
+      step = m.step
+      const s = tk.steps.find((x) => x.id === step)
+      out.push(s ? `<h3>节点：${escHtml(s.title)}（${escHtml(s.id)}，${escHtml(s.status)}）</h3>` : '<h3>节点之外</h3>')
+    }
+    const who = m.peer
+      ? `${PEER_REL[m.peer.rel] ?? '别的对话'}（${m.peer.name || m.peer.title || m.peer.id}）发来`
+      : m.role === 'user'
+        ? '用户'
+        : m.role === 'system'
+          ? m.error
+            ? '报错'
+            : '用户回答'
+          : `AI（${agentName(m.agentId)}）`
+    const body = m.answers
+      ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n')
+      : (m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text).trim()
+    const stamp = time(m.at ?? '')
+    // 和上一条同一秒的合并显示；间隔超过 1 分钟单独提示，看出等待在哪
+    const gap = m.at && last ? Date.parse(m.at) - Date.parse(last) : 0
+    if (stamp) last = m.at ?? ''
+    const gapHtml = gap > 60_000 ? `<p class="gap">距上一条 ${escHtml(fmtDuration(gap))}</p>` : ''
+    // 用户的要求也截断：HTML 要能发给别人，几万字的要求会把文件撑爆（截断处写明了省多少字）
+    const piece = `<article class="msg ${m.error ? 'error' : m.role}"><div class="who">${escHtml(who)}${stamp ? ` · ${escHtml(stamp)}` : ''}</div>${htmlText(clip(body, TASK_HTML_MSG_MAX))}${htmlTools(m)}</article>`
+    if (spent + piece.length > TASK_HTML_MAX_CHARS) {
+      cut = true
+      omitted += 1
+      continue
+    }
+    spent += piece.length
+    out.push(gapHtml, piece)
+  }
+  if (omitted)
+    out.push(`<p class="meta">…后面还有 ${omitted} 条消息没有列出（超过体积上限 ${fmtBytes(TASK_HTML_MAX_CHARS)}）</p>`)
+  return out.join('\n')
+}
+
+/** 改动文件表：+n 绿、-m 红（导出包里没有补丁正文，只能给出计数和文件） */
+function htmlFiles(tk: ExportedTask) {
+  const byNode = tk.steps.filter((s) => s.changes.length)
+  const rows = byNode.length
+    ? byNode.flatMap((s) => s.changes.map((c) => ({ node: s.title, ...c })))
+    : tk.changes.map((c) => ({ node: '', ...c }))
+  if (!rows.length) return ''
+  const shown = rows.slice(0, TASK_HTML_FILES_MAX)
+  const body = shown
+    .map(
+      (c) =>
+        `<tr><td>${escHtml(c.path)}</td><td class="num add">+${c.add}</td><td class="num del">-${c.del}</td><td>${escHtml(c.node)}</td></tr>`,
+    )
+    .join('')
+  const more =
+    rows.length > shown.length ? `<p class="meta">…共 ${rows.length} 个文件，这里只列前 ${shown.length} 个</p>` : ''
+  const note = byNode.length
+    ? '只列 CLI 亲自报告的文件改动（Write、Edit 类工具），不是工作区的全部变化'
+    : '任务级统计：项目目录相对任务开始时发生变化的文件'
+  return `<section id="files"><h2>改动的文件</h2><p class="meta">${escHtml(note)}</p><table><thead><tr><th>文件</th><th>新增</th><th>删除</th><th>节点</th></tr></thead><tbody>${body}</tbody></table>${more}</section>`
+}
+
+/** 测试记录：项目测试步骤在这条任务里跑过哪几条、谁跑的、结果和耗时 */
+function htmlTests(tk: ExportedTask) {
+  if (!tk.testRuns.length) return ''
+  const body = tk.testRuns
+    .map(
+      (r) =>
+        `<tr><td>${escHtml(r.stepName || r.stepId || '（未记录步骤名）')}</td><td>${r.by === 'parent' ? '父对话' : '自己'}</td><td class="${r.ok ? 'add' : 'del'}">${r.ok ? '通过' : '失败'}</td><td class="num">${escHtml(fmtDuration(r.durationMs))}</td><td class="num">${r.tries}</td><td class="num">${escHtml(localTime(r.at))}</td></tr>`,
+    )
+    .join('')
+  return `<section id="tests"><h2>测试记录</h2><table><thead><tr><th>步骤</th><th>谁跑的</th><th>结果</th><th>耗时</th><th>第几次</th><th>时间</th></tr></thead><tbody>${body}</tbody></table></section>`
+}
+
+/**
+ * 一次执行整理成自包含的单文件 HTML：内联样式、不加载任何外部资源、不执行脚本，
+ * 没装面板的人双击就能在浏览器里看。内容和 Markdown 报告同一套口径（统计、按节点的消息、改动文件、测试记录）
+ */
+export function taskHtml(b: TaskExport): string {
+  const tk = b.task
+  const st = resolvedStats(b)
+  const kids = st.children?.tasks ? st.children : NO_TOTALS
+  const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
+  const meta = [
+    `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}${tk.exportedWhileRunning ? '（导出时任务还在跑，统计到导出那一刻）' : ''}`,
+    `开始：${localTime(tk.createdAt)}　导出：${localTime(b.exportedAt)}${b.app ? `　面板 ${b.app}` : ''}`,
+  ]
+  const stats = [
+    // 和 Markdown 报告同一个口径：执行 + 子对话占用 + 空闲 = 跨度，括号里的是子集
+    `跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}（等你确认/提问 ${fmtDuration(st.waitMs)} 已含在其中），${st.childBusyMs ? `子对话占用 ${fmtDuration(st.childBusyMs)}，` : ''}空闲 ${fmtDuration(st.idleMs)}${st.idleWaitMs ? `（其中等你回下一句 ${fmtDuration(Math.min(st.idleWaitMs, st.idleMs))}）` : ''}`,
+    `轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行`,
+    `Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
+    `节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条`,
+  ]
+  if (kids.tasks)
+    stats.push(
+      `子对话 ${kids.tasks} 个（上面的节点和 Token 只算自身）：执行 ${fmtDuration(kids.durationMs)}，Token 输入 ${fmtK(kids.inputTokens)}，输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
+    )
+  if (cacheMismatch(st))
+    stats.push(
+      `注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 Agent 的 input 不含缓存或没换算），命中率已封顶到 100%`,
+    )
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(`执行记录：${tk.title}`)}</title>
+<style>${TASK_HTML_STYLE}</style>
+</head>
+<body>
+<main>
+<header>
+<h1>执行记录：${escHtml(tk.title)}</h1>
+${meta.map((x) => `<p class="meta">${escHtml(x)}</p>`).join('\n')}
+</header>
+<section id="stats">
+<h2>统计</h2>
+<ul class="stats">${stats.map((x) => `<li>${escHtml(x)}</li>`).join('')}</ul>
+</section>
+<section id="messages">
+<h2>执行过程</h2>
+${htmlMessages(tk, agentName)}
+</section>
+${htmlFiles(tk)}
+${htmlTests(tk)}
+<footer>由 Agent 面板导出${b.app ? `（${escHtml(b.app)}）` : ''}。这是一个自包含的离线文件：不加载外部资源，也不执行任何脚本。</footer>
+</main>
+</body>
+</html>
+`
 }
 
 /** 按行比较两段文字（最长公共子序列），给建议的差异视图用；太长时退化成整段替换 */

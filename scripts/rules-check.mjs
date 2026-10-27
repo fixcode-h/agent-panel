@@ -3,12 +3,14 @@
 // 2. 文档里写的仓库路径必须存在，避免改名、删文件后文档还指着旧路径
 // 3. 教训分片的格式和大小：有 paths、每条有「规则」、单个分片不超过 6 KB、paths 至少命中一个文件
 // 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
+// 4b. 文本文件里不能有裸 NUL 字节：写成 `` `\0` `` 的文本被误存成 0x00 时 grep / rg 会整份跳过、搜不到
 // 5. 附件的原路径和 placed；6. 清掉任务字段写 undefined，不用 delete
 // 7. 模块文档和 MODULE-MAP 的模块表双向对得上：缺文档、模块删了文档目录还留着
 // 7b. `docs/modules/<模块>/bugs.md` 由 `bugs/<bug-id>.md` 生成：手改索引、改了详情忘了重生成都会被拦下
 // 9. 共享仓库的 config 里不能有 core.worktree
 // 10. 默认代理端口只在 shared/proxy.ts 定义一处，别处写同样的 127.0.0.1:<端口> 字面量会被拦下
 // 13. 「完成未看」的橙点只读 taskDoneDot：组件里不自己比 turnDoneAt / turnSeenAt
+// 14. `scripts/ui/` 下的分片必须能被总入口收录、截图前缀认得出（新分片否则静默不跑）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -102,6 +104,7 @@ for (const f of tracked) {
   if (attrBinary.some((re) => re.test(f))) continue
   const buf = readFileSync(path.join(root, f))
   // 和 git 一样：前 8 KB 里有 0 字节就当二进制，不检查换行和 BOM
+  // （真混进 NUL 的情况由下面的 4b 单独查，这里跳过只是为了不把二进制资产当文本判 CRLF）
   if (buf.subarray(0, 8000).includes(0)) continue
   if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) bom.push(f)
   if (buf.includes('\r\n')) crlf.push(f)
@@ -121,6 +124,60 @@ if (bom.length)
       `${bom.length} 个已跟踪的文件带 UTF-8 BOM，仓库统一用无 BOM：`,
       ...list(bom),
       '修复：把文件另存为 UTF-8 无 BOM（PowerShell 5.1 的 -Encoding UTF8 会写 BOM，改用 [System.IO.File]::WriteAllText）',
+    ].join('\n'),
+  )
+
+// 4b. 文本文件里不能有裸 NUL 字节（0x00）：文档里写 `` `\0` `` 时被编辑成真正的 0 字节，
+// 文件仍是 UTF-8 文本（file 认得出），grep 却报 `Binary file ... matches`、rg 默认直接跳过，
+// 整份模块文档等于从所有人的搜索结果里消失。上面第 4 条碰到前 8 KB 含 NUL 的文件会按二进制跳过，
+// 挡不住这种写法，所以单独查一遍。
+// 只读白名单里的文本类型：图片、字体、压缩包这类资产别整个读进来。
+// 扫 `files` 而不是 `tracked`：刚写进工作区、还没 git add 的文件也要拦住，否则要等下一次提交才发现。
+const textExts = new Set([
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.mjs',
+  '.cjs',
+  '.jsx',
+  '.js',
+  '.json',
+  '.jsonl',
+  '.md',
+  '.txt',
+  '.yml',
+  '.yaml',
+  '.css',
+  '.html',
+  '.sh',
+  '.py',
+  '.cs',
+])
+// 没有扩展名的文本文件按文件名认（.editorconfig 这类点开头的 extname 为空）
+const textNames = new Set(['.editorconfig', '.gitattributes', '.gitignore', 'LICENSE', 'NOTICE'])
+const isTextFile = (f) => textExts.has(path.extname(f).toLowerCase()) || textNames.has(path.posix.basename(f))
+const nulFiles = []
+for (const f of files) {
+  if (!isTextFile(f) || attrBinary.some((re) => re.test(f))) continue
+  const buf = readFileSync(path.join(root, f))
+  // 绝大多数文件没有 NUL：先用原生 indexOf 快速跳过，只有真含 NUL 的才逐字节算行号
+  if (buf.indexOf(0) < 0) continue
+  // 一次顺序扫描就算出行号：按每个命中都从文件头数一遍换行是「命中数 × 文件长度」，
+  // 一个几 MB、命中十万个的 NUL 文件要跑几十秒才报错；行号按行去重，同一行多个 NUL 只报一次
+  const hitLines = new Set()
+  let line = 1
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] === 0x0a) line++
+    else if (buf[i] === 0) hitLines.add(line)
+  }
+  for (const n of hitLines) nulFiles.push(`${f}:${n}`)
+}
+if (nulFiles.length)
+  errors.push(
+    [
+      `${nulFiles.length} 处文本文件（受版本控制的或尚未提交的新文件）里含裸 NUL 字节（0x00），grep 会当成二进制、rg 会整份跳过：`,
+      ...list(nulFiles),
+      "修复：改成文本写法 `\\0`（反斜杠加 0，放在行内代码里），源码里要真的 NUL 用转义写法 '\\0' 或 String.fromCharCode(0)，不要留裸字节",
     ].join('\n'),
   )
 
@@ -296,6 +353,31 @@ for (const f of files) {
           `${f}:${i + 1} 组件里直接比较 turnDoneAt / turnSeenAt 判「完成未看」，改读 shared/task.ts 的 taskDoneDot（见 docs/lessons/ui.md）：${l.trim()}`,
         )
     })
+}
+
+// 14. 界面检查的分片文件名要和两处正则对得上：
+// scripts/ui-check.mjs 的 SHARD_FILE（认不到就不被收录，静默少跑一半检查）和
+// scripts/ui/harness.mjs 的截图 prefix（认不出字母后缀时 02b/02c 都落到 00-，截图互相覆盖）。
+// 正则直接从源码里读，不在这里再抄一份。拆片时容易只改一处（见 docs/lessons/ui-check.md）
+const uiShardRegex = (file, re) => read(file).match(re)?.[1]
+const uiShards = files.filter((f) => /^scripts\/ui\/\d[^/]*\.mjs$/.test(f))
+const shardFileSrc = uiShardRegex('scripts/ui-check.mjs', /const SHARD_FILE = \/(.+)\/\s*$/m)
+if (!shardFileSrc) errors.push('scripts/ui-check.mjs：读不到 SHARD_FILE（收录分片的正则），无法确认新分片会被跑')
+else {
+  const shardFile = new RegExp(shardFileSrc)
+  for (const f of uiShards) {
+    if (!shardFile.test(path.posix.basename(f)))
+      errors.push(`${f}：不能被 scripts/ui-check.mjs 的 SHARD_FILE 收录，这个分片会被静默跳过`)
+  }
+}
+const shotPrefixSrc = read('scripts/ui/harness.mjs').match(/path\.basename\(file\)\.match\(\/\^\((.+?)\)\-\/\)/)?.[1]
+if (!shotPrefixSrc) errors.push('scripts/ui/harness.mjs：读不到截图前缀正则（path.basename(file).match(...)）')
+else {
+  const shotPrefix = new RegExp(`^(${shotPrefixSrc})-`)
+  for (const f of uiShards) {
+    if (!shotPrefix.test(path.posix.basename(f)))
+      errors.push(`${f}：截图前缀正则（scripts/ui/harness.mjs）认不出这个文件名，截图会和别的分片互相覆盖`)
+  }
 }
 
 if (errors.length) {

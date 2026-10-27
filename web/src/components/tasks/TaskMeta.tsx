@@ -31,10 +31,9 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
 import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
-
-/** 输入框下面那几个小块的共同样式 */
-const chip =
-  'flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[0.6875rem] leading-none text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-subtle'
+import { META_CHIP } from './chip'
+import { TestRunsChip } from './TestRuns'
+import { ReviewOverrideChip } from './ReviewOverrideChip'
 
 type Usage = Pick<StepUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'costUsd'>
 type Live = { tps: number; lastTps?: number; outputTokens: number; genMs: number }
@@ -96,6 +95,8 @@ export function TaskMeta({
         onTask={onTask}
         onOpenChild={onOpenChild}
       />
+      <TestRunsChip task={task} />
+      <ReviewOverrideChip task={task} />
     </div>
   )
 }
@@ -149,7 +150,7 @@ function ContextChip({ lines }: { lines: ContextLine[] }) {
   const p = Math.min(100, (top.u.context / top.u.window) * 100)
   return (
     <Popover>
-      <PopoverTrigger className={chip} title={t('上下文占用')} aria-label={t('上下文')}>
+      <PopoverTrigger className={META_CHIP} title={t('上下文占用')} aria-label={t('上下文')}>
         <Gauge className="h-3.5 w-3.5" />
         <span className="font-mono">
           {fmtTokens(top.u.context)} / {fmtTokens(top.u.window)}
@@ -228,7 +229,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
   const groupLabel = { own: t('本对话'), sub: t('子任务与子对话') }
   return (
     <Popover>
-      <PopoverTrigger className={chip} title={t('Token 用量')}>
+      <PopoverTrigger className={META_CHIP} title={t('Token 用量')}>
         <Coins className="h-3.5 w-3.5" />
         <span className="font-mono">{fmtTokens(total)}</span>
         {tps > 0 && <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span>}
@@ -329,7 +330,7 @@ function EnvChip({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className={cn(chip, 'min-w-0 max-w-[min(480px,70vw)]')}
+        className={cn(META_CHIP, 'min-w-0 max-w-[min(480px,70vw)]')}
         title={projectPath || t('环境')}
         aria-label={t('环境')}
       >

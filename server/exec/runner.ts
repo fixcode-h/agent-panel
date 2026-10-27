@@ -20,7 +20,7 @@ import {
   type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { makeAlert } from '../../shared/alerts.ts'
+import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
 import { clearApiWait, markApiWait } from './api-wait.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
@@ -37,6 +37,9 @@ import {
   withAttachments,
   withTaskModel,
 } from '../../shared/task.ts'
+import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
+import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
+import { attachmentAddDirs } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
@@ -54,6 +57,7 @@ import {
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
 import { searchExcludeOf, searchExcludeRgConfig } from '../../shared/search-exclude.ts'
+import { clip } from '../../shared/text.ts'
 import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -365,6 +369,142 @@ function transcript(task: Task, upto: number) {
   return lines.join('\n\n')
 }
 
+/** 上下文超长降级时带给新会话的对话最多占模型窗口的多少：剩下的留给角色设定、提示词和这一轮的要求 */
+const CONTEXT_CARRY_SHARE = 0.4
+/**
+ * 正文至少要有这么多 token 才值得截断保留，不够就换成一行「正文太长，这里省略」：
+ * 再短的话截出来的头尾只剩几个字，不如把预算留给工具行和更近的消息
+ */
+const MIN_CLIP_TOKENS = 200
+
+/**
+ * 一轮以「上下文超长」失败时怎么自救：
+ * - `compact`：这一次是压缩请求。压缩本身要把历史整段重发，模型照样会拒，改用面板裁剪的记录当摘要，按压缩成功返回
+ * - `restart`：普通一轮。丢掉旧会话、把对话裁剪到预算内换成新会话接着做
+ * - `null`：不自救，照原来的失败处理。已经降过一次（`retried`）就如实报错，不能无限重开；
+ *   预热请求不碰对话记录；用户已经停了；这一轮本来没有可裁剪的历史
+ *
+ * 只认「上下文超长」这一种报错：别的 400 和网络错误各有自己的处理路径，不能被这里顺手改写
+ */
+export function contextFallbackKind(input: {
+  detail: string
+  retried: boolean
+  prewarm: boolean
+  aborted: boolean
+  compact: boolean
+  /** 这一轮是带历史的对话续接：只有这样的轮次才有旧会话可丢、有记录可裁剪 */
+  chatResume: boolean
+}): 'compact' | 'restart' | null {
+  if (input.retried || input.prewarm || input.aborted) return null
+  if (classifyError(input.detail) !== 'context') return null
+  if (input.compact) return 'compact'
+  return input.chatResume ? 'restart' : null
+}
+
+/** 按估算的 token 数截断一段文字：留开头和结尾，中间省略（结论通常在这两处） */
+function clipTokens(s: string, budget: number) {
+  const est = estTokens(s)
+  if (est <= budget) return s
+  // estTokens 对中日韩按字数、其余按四分之一字数估算，按比例折成字符数足够近似
+  const keep = Math.max(80, Math.floor((s.length * budget) / est))
+  const head = Math.floor(keep * 0.6)
+  return `${s.slice(0, head)}\n\n…（中间省略 ${s.length - keep} 个字）…\n\n${s.slice(-(keep - head))}`
+}
+
+const TOOL_WORD: Record<ToolUse['kind'], string> = {
+  read: '读取',
+  edit: '修改',
+  run: '运行',
+  search: '搜索',
+  web: '联网',
+  skill: '技能',
+  agent: '子对话',
+  compact: '压缩',
+  other: '工具',
+}
+/** 最近几条消息的工具调用保留完整；更早的只按类别计数（走时间越久越简，不然旧细节占掉大半预算） */
+const RECENT_CLIP_ITEMS = 4
+/** 一条消息最多列几项工具调用：再多就折成「等 N 项」，否则工具行自己会把预算吃光 */
+const MAX_CLIP_TOOLS = 8
+/** 工具标签（文件名、命令原文）最多留这么多字：够认出来做了什么，又不会一个标签就吃光一条消息的预算 */
+const MAX_CLIP_TOOL_LABEL = 120
+
+/** 一条消息里的工具调用（包括面板 MCP 工具：派子对话、后台命令、计划、传话）压成一行。 */
+function toolLine(tools: ToolUse[]) {
+  const seen = new Set<string>()
+  const items: string[] = []
+  for (const [i, t] of tools.entries()) {
+    const name = t.name?.trim() || TOOL_WORD[t.kind]
+    const label = clip(t.label.trim(), MAX_CLIP_TOOL_LABEL)
+    const one = label ? `${name} ${label}` : name
+    if (seen.has(one)) continue
+    seen.add(one)
+    items.push(t.failed ? `${one}（失败）` : one)
+    if (items.length >= MAX_CLIP_TOOLS) {
+      const rest = tools.length - i - 1
+      if (rest > 0) items.push(`等 ${rest} 项`)
+      break
+    }
+  }
+  return items.length ? `（工具：${items.join('；')}）` : ''
+}
+
+/** 很久以前那几条消息的工具调用：只按类别计数（读过哪些文件已经不重要，做过哪类事还在） */
+function briefToolLine(tools: ToolUse[]) {
+  const counts = new Map<string, number>()
+  for (const t of tools) {
+    const word = TOOL_WORD[t.kind]
+    const key = t.failed ? `${word}（失败）` : word
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const items = [...counts].map(([word, n]) => `${word}×${n}`)
+  return items.length ? `（早先的工具：${items.join('；')}）` : ''
+}
+
+/**
+ * 上下文已经超过模型上限时的续接内容：把对话裁剪到 token 预算之内。
+ * 原来的历史已经证明发不出去（请求被 400 拒绝），带给新会话的文字必须自己受预算约束：
+ * 从最新的消息往前留，更早的折成一行说明，单条过长的正文截断成头尾两段。
+ * 工具调用行优先占预算：正文放不下时让位给工具，工具本身也放不下才整条省略；
+ * 工具本身按时间分层：最近几条保留完整（文件名、命令原文），更早的只压成类别计数。
+ * 面板 MCP 工具清单本身不靠这段文字：开新会话时 orchHint 会重新注入，这里只保留调用记录
+ */
+export function clippedTranscript(task: Task, upto: number, budget: number) {
+  const items: { who: string; text: string; tools: string }[] = []
+  const all = task.messages.slice(0, upto).filter((m) => !m.step && m.role !== 'system' && m.text.trim())
+  for (const [i, m] of all.entries()) {
+    const text = m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text
+    const who = m.role === 'user' ? (m.peer ? `父对话「${m.peer.title || m.peer.name}」` : '用户') : '你'
+    // 最近几条看得见细节，更早的按「做过哪类事」计数就够
+    const brief = i < all.length - RECENT_CLIP_ITEMS
+    items.push({ who, text: text.trim(), tools: brief ? briefToolLine(m.tools) : toolLine(m.tools) })
+  }
+  const kept: string[] = []
+  let used = 0
+  let omitted = 0
+  for (let i = items.length - 1; i >= 0; i--) {
+    const { who, text, tools } = items[i]
+    const toolCost = tools ? estTokens(tools) : 0
+    const left = budget - used
+    // 连工具行都放不下：这一条和更早的消息一起省略（不能只留正文丢工具）
+    if (toolCost > left) {
+      omitted = i + 1
+      break
+    }
+    const room = left - toolCost
+    const line = `${who}：${text}`
+    let body: string
+    if (estTokens(line) <= room) body = line
+    else if (room >= MIN_CLIP_TOKENS) body = `${who}：${clipTokens(text, room)}`
+    // 正文挤不下就让它让位：工具调用照留，新会话至少知道这一轮做了什么
+    else body = `${who}：（正文太长，这里省略，这一轮做了什么见下面的工具）`
+    kept.unshift(tools ? `${body}\n${tools}` : body)
+    used += estTokens(body) + toolCost
+  }
+  const head = omitted > 0 ? t('（更早的 {n} 条消息因为太长省略了）', { n: omitted }) : ''
+  return [head, ...kept].filter(Boolean).join('\n\n')
+}
+
 /** 新会话接手旧对话：先压缩上下文，再继续；已经做完的不要重做 */
 function carryPrompt(task: Task, upto: number) {
   return [
@@ -468,8 +608,6 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   fn(r)
   return true
 }
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
 export function estTokens(s: string) {
@@ -629,6 +767,25 @@ export function settleEmptyNotes(notes: EmptyNote[]) {
     msg.transient = true
     msg.text = [base, '', t('已自动接一轮，这一轮继续做完了。')].join('\n')
     if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动接一轮，继续做完了') }
+  }
+}
+
+/** 上下文超长、丢掉旧会话换成裁剪后的新会话时写进对话的提示：接上了要收回成普通说明 */
+export interface ContextNote {
+  msg: TaskMessage
+  base: string
+}
+
+/**
+ * 裁剪后的新会话接上了：那张「执行失败」卡片要收成普通说明。
+ * 不收的话后面每一轮都看着像失败了，而这轮其实已经继续做下去了。
+ */
+export function settleContextNotes(notes: ContextNote[]) {
+  for (const { msg, base } of notes) {
+    msg.error = undefined
+    msg.transient = true
+    msg.text = [base, '', t('已丢掉旧会话，把对话裁剪后开新会话接着做了。')].join('\n')
+    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已裁剪对话，新会话接上了') }
   }
 }
 const NETWORK_ERROR =
@@ -816,6 +973,8 @@ async function runAgent(
   emptyRetries = 0,
   /** 空回合续一轮时写进对话的提示：续上了要收回成普通说明 */
   emptyNotes: EmptyNote[] = [],
+  /** 上下文超长降级时写进对话的提示：新会话接上了要收回成普通说明 */
+  contextNotes: ContextNote[] = [],
 ): Promise<AgentResult> {
   // 单独终止这一次调用（界面上终止一个子任务）：和整个任务的停止信号合在一起，后面统一看 ctx.signal
   if (call.signal && !retried) ctx = { ...ctx, signal: anySignal(ctx.signal, call.signal) }
@@ -947,6 +1106,8 @@ async function runAgent(
     )
   }
   const role = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
+  /** 上下文超长降级时留给旧对话的 token 预算：剩下的给角色设定、提示词和这一轮的要求 */
+  const carryBudget = () => Math.max(MIN_CLIP_TOKENS * 2, Math.floor(windowFor(model) * CONTEXT_CARRY_SHARE))
   // 支持系统提示词的 CLI：语言规则跟角色设定一起放系统提示词。模型的原生思考主要跟系统提示词走，
   // 只写在任务描述里时不一定遵守（实测 Command Code + DeepSeek 仍按英文系统提示词思考）
   const instructions = def.systemPromptFlag ? [role, promptLangRules()].filter(Boolean).join('\n\n') : role
@@ -1017,10 +1178,13 @@ async function runAgent(
     op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     systemPromptModPath,
-    // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
+    // 附件里只有图片拷进了任务目录；其余按原来的绝对路径交给 Agent，工作目录之外的那些要放行。
     // 节点交接的完整结果也在数据目录里
     addDirs: [
-      ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
+      ...attachmentAddDirs(
+        task.messages.flatMap((m) => m.attachments ?? []),
+        { cwd, uploadsRoot: UPLOADS_DIR },
+      ),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
     noEdit: chat && !!ctx.beginEdit,
@@ -1759,6 +1923,9 @@ async function runAgent(
     : undefined
 
   if (!prewarmMode) arm()
+  // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
+  // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
+  const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
   const r = await invokeCli({
     cliId,
     command: cs.command,
@@ -1770,7 +1937,7 @@ async function runAgent(
     owner: { taskId: task.id, rootTaskId: task.rootTaskId || task.id, title: task.title },
     signal: ctx.signal,
     // 0 表示不限制
-    timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
+    timeoutMs: cap.minutes ? cap.minutes * 60_000 : 0,
     idle: idleMs
       ? {
           ms: idleMs,
@@ -1907,7 +2074,16 @@ async function runAgent(
   if (r.killed === 'stopped' || (ctx.signal.aborted && !r.killed))
     return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
-    return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
+    return cap.by === 'budget'
+      ? {
+          ok: false,
+          stopped: true,
+          budget: true,
+          error: t('这次执行超过计划设定的 {n} 分钟上限，已停止。已经产出的内容都保留着，点「继续执行」会重新计时。', {
+            n: cap.minutes,
+          }),
+        }
+      : { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: cap.minutes }) }
   if (r.killed === 'idle') {
     const detail = [...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
     return {
@@ -2026,6 +2202,78 @@ async function runAgent(
         netNotes,
       )
     }
+    // 上下文已经超过模型上限：同一段历史再发一次只会一样被拒，压缩也一样（它要把历史整段重发）。
+    // 唯一能做的自救是丢掉会话、把对话裁剪到预算内换成新会话接着做；只降一次（retried）
+    const fallback = contextFallbackKind({
+      detail,
+      retried,
+      prewarm,
+      aborted: ctx.signal.aborted,
+      compact: op?.kind === 'compact',
+      chatResume: Boolean(chat && resume),
+    })
+    if (fallback) {
+      // 压缩：不再请求模型（它照样会拒），把裁剪后的记录当作摘要写进 rewind，按压缩成功返回，下一轮开新会话带上
+      if (fallback === 'compact') {
+        const summary = [
+          t('（原始对话已经超过模型上限，连压缩请求也被拒绝，以下是面板裁剪后保留的记录）'),
+          clippedTranscript(task, task.messages.length, carryBudget()),
+        ].join('\n\n')
+        task.rewind = { session: '', through: null, latest: false, summary }
+        delete task.sessions[sessionKey]
+        delete task.sessionDirs[sessionKey]
+        au().context = 0
+        task.messages.push({
+          id: ctx.newId(),
+          role: 'system',
+          agentId,
+          step,
+          text: t('已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）'),
+          tools: [],
+          at: new Date().toISOString(),
+        })
+        ctx.changed(true)
+        log.warn('agent', `${def.name} 压缩上下文时仍然超过上限，改用裁剪后的记录开新会话`, {
+          task: task.id,
+          step,
+          detail: detail.slice(0, 500),
+        })
+        return { ok: true, text: summary }
+      }
+      // 普通一轮：丢掉会话，把对话裁剪后交给新会话（复用 retryCarry 的续接路径）
+      if (fallback === 'restart') {
+        delete task.sessions[sessionKey]
+        delete task.sessionDirs[sessionKey]
+        const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+        const carry = `## 之前的对话（已按长度裁剪）\n${clippedTranscript(task, upto, carryBudget())}`
+        const note: TaskMessage = {
+          id: ctx.newId(),
+          role: 'system',
+          agentId,
+          step,
+          text: [
+            message,
+            '',
+            t('这次请求的上下文已经超过 {cli} 的上限。正在丢掉旧会话，把对话裁剪后开新会话接着做…', { cli: def.name }),
+          ].join('\n'),
+          tools: [],
+          error: true,
+          alert: makeAlert('warn', raw, 'context'),
+          at: new Date().toISOString(),
+        }
+        task.messages.push(note)
+        log.warn('agent', `${def.name} 的上下文超过上限，丢掉旧会话并裁剪后重开`, {
+          task: task.id,
+          step,
+          detail: detail.slice(0, 500),
+        })
+        ctx.changed(true)
+        return runAgent(ctx, call, true, netRetries, carry, netNotes, emptyRetries, emptyNotes, [
+          ...contextNotes,
+          { msg: note, base: message },
+        ])
+      }
+    }
     log.error('agent', `${def.name} 执行失败`, { task: task.id, step, code: r.code, detail })
     return {
       ok: false,
@@ -2086,6 +2334,8 @@ async function runAgent(
         netNotes,
         emptyRetries + 1,
         [...emptyNotes, { msg: pushed, base: note }],
+        // 降级那一轮的失败卡片还在：续接成功后要能一并收掉
+        contextNotes,
       )
     }
     const note = t(
@@ -2147,6 +2397,7 @@ async function runAgent(
       netNotes,
       emptyRetries + 1,
       [...emptyNotes, { msg: pushed, base: note }],
+      contextNotes,
     )
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
@@ -2154,7 +2405,9 @@ async function runAgent(
   settleNetNotes(netNotes)
   // 空回合的提示同理：已经接一轮做完了，那张红卡不能挂着让人以为这一轮失败了
   settleEmptyNotes(emptyNotes)
-  if (netNotes.length || emptyNotes.length) ctx.changed(true)
+  // 上下文超长降级：裁剪后的新会话接上了，那张失败卡片同样要收掉
+  settleContextNotes(contextNotes)
+  if (netNotes.length || emptyNotes.length || contextNotes.length) ctx.changed(true)
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined
@@ -2267,6 +2520,16 @@ async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
 export async function runRealTurn(ctx: RealContext) {
   ctx.task.simulated = false
+  // ADR 0020：这一轮的计划提醒（滞后 / 新输入没跟着改）由 engine 的 planPart 写进提示词；
+  // 服务端在这里留一条日志，方便事后确认「到底提醒过没有」。新输入的提醒只算一次：
+  // 这一轮结束后记下「提醒过这次输入」，同一个要求不会每轮重复追问（对话选择「不改计划、说明一句」时尤其需要）
+  const plan = activePlan(ctx.task)
+  const unhandled = plan ? inputUnhandled(plan) : undefined
+  // 本轮提醒的是「这一次输入」：轮中随时可能又来新消息（deliver 会更新 lastInputAt），
+  // 轮末不能再读 lastInputAt，否则会把没提醒过的那次也标成已提醒（评审 R2）
+  const noticedInput = unhandled !== undefined ? plan?.lastInputAt : undefined
+  const notice = planNotice(ctx.task)
+  if (notice) log.warn('plan', '计划需要对话收口，已写进这一轮的提示词', { task: ctx.task.id, notice })
   await runEngineTurn({
     task: ctx.task,
     agents: ctx.agents,
@@ -2388,6 +2651,10 @@ export async function runRealTurn(ctx: RealContext) {
       return file
     },
   })
+  if (noticedInput && plan) {
+    plan.inputNotedAt = noticedInput
+    ctx.changed()
+  }
 }
 
 const fmtTok = (n: number) =>

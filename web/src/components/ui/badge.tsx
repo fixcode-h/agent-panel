@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from 'react'
+import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
 const tones = {
@@ -37,5 +38,21 @@ export function StatusDot({ tone, label }: { tone: 'success' | 'warning' | 'mute
       <span className={cn('h-1.5 w-1.5 rounded-full', color.split(' ')[0])} />
       {label}
     </span>
+  )
+}
+
+/**
+ * 「这一轮做完了、你还没看过」的小圆点：侧栏的对话行、父对话里的子对话行画同一个。
+ * 要不要画由 shared/task.ts 的 taskDoneDot / childDoneDot 判，这里只管样式和读屏文案
+ */
+export function UnreadDot({ className }: { className?: string }) {
+  const label = t('对话已完成，还没查看')
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn('h-2 w-2 shrink-0 rounded-full bg-accent', className)}
+    />
   )
 }

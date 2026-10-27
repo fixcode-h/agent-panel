@@ -258,6 +258,22 @@ await runShard('对话与续接', async (api) => {
   }
 
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
+  // 并行跑全量时同一时刻可能还有别的 Pi 调用（保活、前面用例的自动续轮）：按这一轮的提示词找，
+  // 不能取「最后一通」——那样会拿到别的一通，断言看到的参数跟这一轮无关
+  const piCall = (prompt) =>
+    waitFor(
+      () =>
+        calls()
+          .filter(
+            (x) =>
+              x.kind === 'pi' &&
+              (x.input ?? '').startsWith(`## 用户这次的消息
+${prompt}
+`),
+          )
+          .at(-1),
+      { label: `「${prompt}」那一轮 Pi 调用` },
+    )
   let pm = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -267,7 +283,7 @@ await runShard('对话与续接', async (api) => {
   })
   pm = await waitDone(pm.id)
   assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
-  c = calls().at(-1)
+  c = await piCall('用 Pi')
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
   assert.equal(
@@ -287,7 +303,7 @@ await runShard('对话与续接', async (api) => {
   assert.equal(pm.usage.inputTokens, 4000, JSON.stringify(pm.usage))
   await call('POST', `/tasks/${pm.id}/messages`, { text: '继续' })
   await waitDone(pm.id)
-  c = calls().at(-1)
+  c = await piCall('继续')
   assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
   pm = await call('GET', `/tasks/${pm.id}`)
   assert.equal(pm.usage.agents[pm.agentId].context, 4321, '上下文占用以 get_session_stats 为准')
@@ -295,14 +311,21 @@ await runShard('对话与续接', async (api) => {
   const piSession = pm.sessions[pm.agentId]
   await call('POST', `/tasks/${pm.id}/compact`)
   pm = await waitDone(pm.id)
-  c = calls().at(-1)
+  // 压缩按操作类型找，同样不取「最后一通」
+  c = await waitFor(
+    () =>
+      calls()
+        .filter((x) => x.op === 'compact')
+        .at(-1),
+    { label: '那一次 compact 调用' },
+  )
   assert.equal(c.op, 'compact', 'Pi 用 RPC 的 compact')
   assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩的是当前会话')
   const piCompact = pm.messages.flatMap((m) => (m.role === 'agent' ? m.tools : [])).find((x) => x.kind === 'compact')
   assert.ok(piCompact, '压缩显示成回复里的一次工具调用（来自 compaction_end）')
   await call('POST', `/tasks/${pm.id}/messages`, { text: '压缩后继续' })
   pm = await waitDone(pm.id)
-  c = calls().at(-1)
+  c = await piCall('压缩后继续')
   assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩后仍然续接原来的会话')
   assert.ok(!c.input.includes('之前对话的摘要'), '不用带摘要')
   // 撤回到某条消息：Pi 用 RPC 的 fork 截到那条消息之前，不用带上之前的对话开新会话
@@ -315,7 +338,7 @@ await runShard('对话与续接', async (api) => {
   await call('POST', `/tasks/${pm.id}/messages`, { text: '换个做法' })
   pm = await waitDone(pm.id)
   assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
-  c = calls().at(-1)
+  c = await piCall('换个做法')
   assert.equal(c.forkAt, piCut.turn.id, '分叉到撤回的那条消息之前')
   assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '先打开原来的会话再分叉')
   assert.ok(!c.args.includes('--fork'))
@@ -491,8 +514,15 @@ await runShard('对话与续接', async (api) => {
     400,
     '工作流必须选项目',
   )
+  // 删除先进回收站：聊天的工作目录留着（7 天内还能恢复）；永久删除时才一起删掉
+  const freeDir = path.join(dataDir, 'chats', free.id)
   await fetch(`${base}/tasks/${free.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' } })
-  assert.ok(!existsSync(path.join(dataDir, 'chats', free.id)), '删除聊天时工作目录一起删掉')
+  assert.ok(existsSync(freeDir), '进回收站时聊天工作目录还留着')
+  await fetch(`${base}/tasks/${free.id}/permanent`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.ok(!existsSync(freeDir), '永久删除时聊天工作目录一起删掉')
   step(
     '不用角色：直接用默认 CLI，对话时可以临时换模型和思考强度，旧的默认 Agent id 当成不用角色；任务记录执行时间；Chat 模式的聊天不属于项目',
   )

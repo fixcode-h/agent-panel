@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { useSectionAnchor } from './section-nav'
 
 /** 设置页各栏共用的排版：一行一项、分组、只读值、可复制的文字 */
@@ -54,13 +55,11 @@ export function CopyText({ text, title = t('复制安装命令') }: { text: stri
     <button
       type="button"
       onClick={() =>
-        navigator.clipboard
-          .writeText(text)
-          .then(() => {
-            setDone(true)
-            setTimeout(() => setDone(false), 1500)
-          })
-          .catch(() => {})
+        void copyText(text, { fail: false }).then((ok) => {
+          if (!ok) return
+          setDone(true)
+          setTimeout(() => setDone(false), 1500)
+        })
       }
       className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border bg-field px-2 py-1 font-mono text-xs text-muted hover:text-fg"
       title={title}

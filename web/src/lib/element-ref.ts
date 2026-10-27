@@ -6,6 +6,7 @@
  * 读 DOM 的部分在 components/chat/ElementPicker.tsx
  */
 import { chipMarker } from '@shared/composer'
+import { clip } from '@shared/text'
 
 /** data-src 里的一处位置 */
 export interface SourceLoc {
@@ -64,7 +65,6 @@ export function componentChain(locs: readonly SourceLoc[], max = 6): SourceLoc[]
 }
 
 const at = (l: SourceLoc) => `${l.file}:${l.line}`
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim()
 
 /** 卡片摘要用的一句话：标签、文字、组件 */

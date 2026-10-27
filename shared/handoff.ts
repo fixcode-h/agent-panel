@@ -3,6 +3,7 @@
  * submit_merge 时子对话按模板写关键信息，面板补上 git 事实；
  * 完成后再被叫醒、上下文又大时，开新会话只带这份摘要，不把上次的工具输出全带进去。
  */
+import { clip } from './text.ts'
 
 /** 关键信息模板：submit_merge 的 handoff 参数按它生成，拼摘要也按这个顺序 */
 export const HANDOFF_FIELDS = [
@@ -26,8 +27,6 @@ export type HandoffInput = Partial<Record<HandoffKey, string>>
  * 小于它时接回原会话更省（摘要本身也要一两千 token），还保留全部细节
  */
 export const HANDOFF_MIN_CONTEXT = 30_000
-
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
 /** 从工具参数里取关键信息：只认模板里的字段，字符串以外的丢掉 */
 export function handoffInput(raw: unknown): HandoffInput {
@@ -65,6 +64,8 @@ export function handoffText(
     changed: Record<string, string>
     /** 评审意见的处置（triageText 写好的几行）：哪些采纳、哪些驳回、哪些留作已知问题 */
     triage?: string
+    /** 显式放行记录（overrideText 写好的几行）：谁、什么时候、为什么、原本拦住什么 */
+    override?: string
   },
 ): string {
   const files = Object.entries(facts.changed)
@@ -76,6 +77,7 @@ export function handoffText(
     facts.note ? `## 这次改了什么\n${clip(facts.note, 600)}` : '',
     facts.tests ? `## 当时的验证\n${clip(facts.tests, 1200)}` : '',
     facts.triage ? `## 评审意见的处置\n${clip(facts.triage, 2000)}` : '',
+    facts.override ? `## 评审门禁的显式放行\n${clip(facts.override, 800)}` : '',
     facts.commits.length || files.length
       ? [
           `## 合回的改动（分支 ${facts.branch}）`,

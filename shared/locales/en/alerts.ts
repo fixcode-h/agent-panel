@@ -1,5 +1,11 @@
 /** 英文词典的一部分，键是中文原文：对话里的报错和警告（shared/alerts.ts、警告行） */
 export const EN_ALERTS: Record<string, string> = {
+  // 超过自己设的执行上限（AlertKind 的 budget）
+  超过执行上限: 'Execution limit reached',
+  '这次执行用掉的 token 或时长到了计划里设的上限，面板把它停下来了。不是出错：上限是你自己设的。':
+    'The tokens or time used by this run reached the limit set on the plan, so the panel stopped it. This is not an error: the limit is yours.',
+  '已经产出的内容都保留着。需要接着做就点「继续执行」（会重新计一份额度），或者把计划里的上限调大。':
+    'Everything produced so far is kept. Click "Continue" to carry on with a fresh allowance, or raise the limit on the plan.',
   // 警告行
   '原始信息：': 'Raw details:',
   点开看原因和怎么办: 'Open to see the cause and what to do',
@@ -31,8 +37,8 @@ export const EN_ALERTS: Record<string, string> = {
   上下文超长: 'Context too long',
   '这次请求的内容超过了模型的上下文上限，模型拒绝处理。':
     "This request exceeded the model's context limit, so the model refused it.",
-  '点「压缩上下文」后继续，或者新开一个对话只带必要的内容。':
-    'Click Compact context and continue, or start a new conversation with only what is needed.',
+  '面板会丢掉旧会话、把对话裁剪后开新会话接着做（压缩请求本身也超长时走同一条路）；也可以新开一个对话只带必要的内容。':
+    'The panel drops the old session and continues in a new one with the conversation trimmed down (a compact request that is itself too long takes the same path). You can also start a new conversation with only what is needed.',
   模型请求被拒绝: 'Model request rejected',
   '模型服务拒绝了这次请求：模型名不对、不支持这个参数，或者请求内容不合格式（400、404）。':
     'The model service rejected the request: wrong model name, an unsupported parameter, or a malformed request (400, 404).',

@@ -16,8 +16,9 @@ export function usageApi(deps: {
   routes.get('/', async (c) => {
     const grain = UsageQuery.grain(c.req.query('grain'))
     const count = UsageQuery.count(c.req.query('count'), grain)
+    const groupBy = UsageQuery.group(c.req.query('groupBy'))
     try {
-      return c.json(usageReport(await deps.tasks.list(), { grain, count }))
+      return c.json(usageReport(await deps.tasks.list(), { grain, count, groupBy }))
     } catch (e) {
       return bad(c, (e as Error).message)
     }

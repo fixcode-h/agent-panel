@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Copy, File as FileIcon, Image as ImageIcon, ImageOff, TextQuote, X } from 'lucide-react'
-import { toast } from '@/lib/toast'
+import { copyText } from '@/lib/copy-text'
 import { attachOf, segments, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -46,12 +46,7 @@ function QuoteDialog({ text, onClose }: { text: string | null; onClose: () => vo
               size="icon-sm"
               aria-label={t('复制')}
               title={t('复制')}
-              onClick={() =>
-                navigator.clipboard
-                  ?.writeText(text ?? '')
-                  .then(() => toast.success(t('已复制')))
-                  .catch(() => {})
-              }
+              onClick={() => void copyText(text ?? '', { done: t('已复制'), fail: false })}
             >
               <Copy className="h-4 w-4" />
             </Button>
@@ -97,14 +92,15 @@ function canShow(url: string) {
 }
 
 /**
- * 一组附件的图片地址：缩略图、看大图都用它。
+ * 一组附件的图片地址：卡片用缩略图，看大图用原图。
  * 加载不出来的不留下地址（气泡显示图标和「附件已经不在了」），浮层也不会打开一张破图
  */
 export function useAttachmentUrls(items: readonly Attachment[]) {
-  const [state, setState] = useState<{ urls: Record<string, string>; missing: Record<string, true> }>({
-    urls: {},
-    missing: {},
-  })
+  const [state, setState] = useState<{
+    urls: Record<string, string>
+    fulls: Record<string, string>
+    missing: Record<string, true>
+  }>({ urls: {}, fulls: {}, missing: {} })
   const key = items.map((a) => a.path).join('\n')
   useEffect(() => {
     let alive = true
@@ -112,8 +108,11 @@ export function useAttachmentUrls(items: readonly Attachment[]) {
       items
         .filter((a) => isImage(a.mime, a.name))
         .map(async (a) => {
-          const url = (await attachmentUrl(a)) ?? ''
-          return [a.path, url, !!url && (await canShow(url))] as const
+          const [thumb, full] = await Promise.all([attachmentUrl(a, { thumb: true }), attachmentUrl(a)])
+          if (thumb && (await canShow(thumb))) return [a.path, thumb, full || thumb, true] as const
+          // 缩略图这一层坏了（生成失败、缓存读到半张）不能让好好的附件显示成「已经不在了」：退回原图
+          const [url, ok] = full && (await canShow(full)) ? [full, true] : ['', false]
+          return [a.path, url, full || '', ok] as const
         }),
     ).then((list) => alive && setState(shownImages(list)))
     return () => {
@@ -184,7 +183,14 @@ export function MessageChip({
       )}
     >
       {src ? (
-        <img src={src} alt="" className="h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover" />
+        // 一屏之外的消息图片推到滚到时再取（首屏不再一次拉十几张）
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover"
+        />
       ) : (
         <Icon className="h-[1.05em] w-[1.05em] shrink-0 opacity-70" strokeWidth={2} />
       )}
@@ -198,10 +204,10 @@ export function MessageChip({
  * 文字里没有卡片的附件（旧消息只把附件放在上面）排在最前面，同在一个气泡里
  */
 export function MessageBody({ text, attachments = [] }: { text: string; attachments?: Attachment[] }) {
-  const { urls, missing } = useAttachmentUrls(attachments)
+  const { urls, fulls, missing } = useAttachmentUrls(attachments)
   const images = useMemo(
-    () => attachments.filter((a) => urls[a.path]).map((a) => ({ src: urls[a.path], name: a.name })),
-    [attachments, urls],
+    () => attachments.filter((a) => urls[a.path]).map((a) => ({ src: fulls[a.path] ?? urls[a.path], name: a.name })),
+    [attachments, urls, fulls],
   )
   const [view, setView] = useState<ViewTarget | null>(null)
   const open = useCallback(

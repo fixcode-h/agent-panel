@@ -110,10 +110,11 @@ await runShard('子对话与计划', async (api) => {
     await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话切走后照样跑完')), {
       label: '子对话开始执行',
     })
-    assert.ok(
-      ((await call('GET', `/tasks/${parent.id}`)).childrenWorking ?? 0) >= 1,
-      '父对话详情也带上还在运行的子对话数：标题栏据此转圈',
-    )
+    // 子对话刚起来那一刻可能还没算进父对话的计数（并行跑全量时 CPU 被抢，窗口更宽）：等它出现，
+    // 不要用一次断言把「晚几十毫秒」判成失败。真的不出现时 waitFor 会带着等了多久超时
+    await waitFor(async () => ((await call('GET', `/tasks/${parent.id}`)).childrenWorking ?? 0) >= 1, {
+      label: '父对话详情也带上还在运行的子对话数：标题栏据此转圈',
+    })
     await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: false })
     away = await waitDone(away.id, 20000)
     assert.equal(away.status, 'done', `父对话没人看、宽限到了，子对话照样跑完（${away.status} / ${away.stopReason}）`)

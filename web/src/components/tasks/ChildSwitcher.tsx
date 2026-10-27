@@ -2,9 +2,10 @@ import { Fragment } from 'react'
 import * as M from '@radix-ui/react-dropdown-menu'
 import { Check, CheckCircle2, GitBranch, ListTree } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { childIcon, childStage, sortChildren, stopReasonText, type TaskStage } from '@shared/task'
+import { childDoneDot, childIcon, childStage, sortChildren, stopReasonText, type TaskStage } from '@shared/task'
 import { cn } from '@/lib/utils'
 import { popoverPanel } from '@/components/ui/menu'
+import { UnreadDot } from '@/components/ui/badge'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { AnalysisMark } from './AnalysisMark'
 import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, type ChildSummary } from './child-line'
@@ -13,12 +14,14 @@ import { childClosedHint, childLabelClass, childLabels, childNote, staleLine, ty
  * 子对话列表的一行内容：图标、标题、状态标签、正在做什么 / 在等什么、独立分支。
  * 悬浮层列表和标题旁的下拉读同一份，两处不再各画一套
  */
-export function ChildRowContent({ c }: { c: ChildSummary }) {
+export function ChildRowContent({ c, viewing = false }: { c: ChildSummary; viewing?: boolean }) {
   const icon = childIcon(c)
   // 执行中写正在做什么，其余写在等什么或最近结果；很久没新输出时标色
   const line = childNote(c, icon === 'running')
   const stale = staleLine(c)
   const labels = childLabels(c)
+  // 做完、没看过、而且不是当前打开的那一个：画未读点（和侧栏橙点同一份口径，见 childDoneDot）
+  const unread = childDoneDot(c, viewing)
   return (
     <>
       <span className="mt-0.5 shrink-0">
@@ -30,6 +33,7 @@ export function ChildRowContent({ c }: { c: ChildSummary }) {
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
+          {unread && <UnreadDot />}
           {c.analysis && <AnalysisMark kind={c.analysis} />}
           {/* CLI 还活着：标题流光（和侧栏、标题栏同一个效果）；关了变灰。
               进程回收了但对话还在跑：行上不写「已关闭」，悬停说清进程没了、继续会重新拉起 */}
@@ -150,7 +154,7 @@ export function ChildSwitcher({
                     c.id === current && 'bg-sel',
                   )}
                 >
-                  <ChildRowContent c={c} />
+                  <ChildRowContent c={c} viewing={c.id === current} />
                   {c.id === current && <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />}
                 </M.Item>
               ))}

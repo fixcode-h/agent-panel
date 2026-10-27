@@ -58,7 +58,7 @@ type TestStep = {
   when: string // 补充说明，写给人看的，例如「仅发布前跑」；判定以 appliesTo 为准
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
-  runInParent: boolean // 禁止子对话执行：子对话不跑，合回后面板在父对话目录里跑，结果和耗时回传（只对 Git 项目，见 ADR 0018）；字段名沿用旧名，语义就是「禁止子对话执行」
+  scope: 'always' | 'changed' | 'parent' // 跑多大范围：总是跑 / 命中适用改动才跑 / 全量、合并后由父对话跑（合并了原来的 runInParent，见 ADR 0020）
   quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
   note: string // 给执行者看的说明
   enabled: boolean
@@ -75,7 +75,9 @@ type TestStep = {
 
 - **匹配算法只有一份**：`shared/test-steps.ts` 的 `matchesGlob` / `stepApplies(step, changedFiles)`。
   界面的输入解析（`parseGlobs`）、交给 Agent 的提示词（`appliesToText`）、单测都读它，不在前端或别的地方再写一套 glob 判断。
-  真正的比对由 Agent 按提示词里的改动清单做（执行流程里目前还没有按清单自动跳过的地方）。
+  真正要跑哪几条现在由服务端算好：`pickSteps(steps, changedFiles)`（提示词用 `pickStepsText` 注入「本轮该跑的步骤 + 命令」，
+  父对话测试队列也按子对话的改动筛）。「要跑哪几个单测文件 / 界面分片」仍由 `scripts/changed-tests.mjs` 定位
+  （见下面「改动 → 增量测试」），两者各管一层、互不调用。
 - **glob 语法**：相对项目根的路径，支持 `**`（跨目录）、`*`、`?`；`**/*.cpp` 也认仓库根下的 `a.cpp`；
   没写通配符的写法按「精确命中或目录前缀」算（`web/src` 和 `web/` 都等价于 `web/src/**`、`web/**`）——
   项目教训里习惯写 `src/payment/**` / `web/src` 这种，照抄进来不会变成永远匹配不上的规则。
@@ -109,25 +111,52 @@ type TestStep = {
 fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪批文件、含「只改了文档但合并进来 C++ 改动」）
 由 `shared/test-steps.test.ts` 用真实改动清单钉住。行为层的覆盖等判定接进执行流程后再补。
 
-### 禁止子对话执行（`runInParent`）
+### 按范围分档（`scope`）：总是跑 / 命中改动才跑 / 全量交给父对话
 
-端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，几个子对话同时收尾就把机器拖住。
-勾了「禁止子对话执行」的步骤**只对子对话生效**：子对话不跑（照常改完、`submit_merge`），合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话；
-父对话自己改代码验证时**照常跑它**——父对话侧的步骤清单是「全部启用的步骤」（`verifyBlock` 的 `active = steps.filter(enabled)`），
-不经过 `parentRunSteps`，所以勾了这项不会让父对话只跑这几步。
-字段名 `runInParent` 沿用旧名（避免数据迁移），界面文案 2026-10-27 起是「禁止子对话执行」。
-（[ADR 0018](./adr/0018-test-steps-run-in-parent.md)）
+测试步骤按「跑多大范围」分三档（`TestStepFields.scope`，[ADR 0020](./adr/0020-test-scope-and-incremental-tests.md)）：
+
+| scope     | 什么时候跑、谁跑                                                                         | 典型步骤                           |
+| --------- | ---------------------------------------------------------------------------------------- | ---------------------------------- |
+| `always`  | 每次改动都跑，不看 `appliesTo`                                                           | 类型检查、lint、语法检查           |
+| `changed` | 改动清单命中 `appliesTo` 才跑；没有 `appliesTo` 表示总是跑                               | 相关单测、编译、构建、界面检查分片 |
+| `parent`  | 子对话一律不跑；合并回父对话的分支后由父对话按改动筛出的那几条跑（一条都没命中就跑全部） | 全量单测、全量界面检查、端到端测试 |
+
+**和原来的 `runInParent` 合并了**：勾「禁止子对话执行」就是 `scope: 'parent'`，不再保留两个字段。老数据解析时
+`migrateTestStep` 按原语义换算：`runInParent: true` → `parent`；命令明显是跑全量的（`test:unit`、`test:e2e`、`ui-check`、playwright 这类）→ `parent`，
+**这条优先于 `appliesTo`**——老默认步骤是「全量命令 + 适用改动」，先按 globs 判成 `changed` 会让存量项目照旧每个子对话跑全量；
+其余写了 `appliesTo` 的 → `changed`；`merge`（合并时编译）的步骤 → `changed`；剩下的是 `always`。
+appliesTo 为空的老步骤仍然是「总是跑」，升级不会让原来会跑的步骤变成从不跑。
+存量项目的全量单测 / 全量界面检查 / e2e 升级后会由父对话合并后跑（设置页里可以改回「命中适用改动才跑」）。
+
+**子对话只跑增量测试**（`CHILD_INCREMENTAL_RULE`，`verifyBlock` 在 `parentRun = 'child'` 时注入）：
+
+1. 先用改动清单定位要跑什么——项目里有 `scripts/changed-tests.mjs` 就用它（按 import 依赖图算影响面，输出单测文件、界面检查分片、是否必须跑全量及理由）；
+   没有就按同名测试 / 同目录测试 / 哪些测试（间接）import 了它来定位，界面改动用完整分片名筛选（`node scripts/ui-check.mjs 08-misc`）。
+2. `always` 照常跑；`changed` 只跑命中的那部分（命中的单测文件、命中的界面分片），不跑整套。
+3. **不跑全量**（定位脚本明确判定「必须跑全量」时除外）：`parent` 的步骤不跑原命令，但单测和界面检查要用第 1 步定位到的增量命令覆盖命中的单测文件 / 界面分片
+   （`node scripts/unit-tests.mjs --files <文件>`、`node scripts/ui-check.mjs <完整分片名>`），否则子对话会一条测试都不跑；e2e 没有增量替代，直接交给父对话。
+4. 定位脚本说「必须跑全量」时按它跑那一项，不用管它给的是哪一类理由（高风险区、影响面接近全量、依赖图算不出来、改动含删除或改名），理由写进结果，不自己缩回增量。
+5. 映射不出来时明确写一行「这批改动没有对应的增量测试，交给父对话全量」，不为了保险跑全量、也不静默跳过（仅在没有「必须全量」结论时适用）。
+6. 单测里计时类用例偶发失败（`pi-rpc`、`process`、`task-store` 这类）时，**单跑失败的那个文件最多 3 次**确认，
+   不要为此重跑整套；3 次仍失败按真失败处理。父对话侧的提示词同样写了这条。
+
+**`parent`（全量）的父子分工**：端到端测试这类步骤很吃资源：本机的 `npm run test:e2e` 要进 WSL 跑几分钟，每个子对话都跑一遍，
+几个子对话同时收尾就把机器拖住。`parent` 的步骤**只对子对话生效**：子对话不跑（照常改完、`submit_merge`），
+合回后由面板在父对话目录里跑，结果回传给发起合并的那个子对话；父对话自己改代码验证时**照常跑它**——
+父对话侧的步骤清单是「全部启用的步骤」（`verifyBlock` 的 `active = steps.filter(enabled)`），不经过 `parentRunSteps`，
+所以不会因为标了 `parent` 就让父对话只跑这几步。（[ADR 0018](./adr/0018-test-steps-run-in-parent.md) 定的是这条链路，
+本次只是把「谁来跑」和「跑多大范围」合成一个字段。）
 
 - **只对 Git 项目的独立分支子对话生效**：子对话先要有独立分支才有「合回」这一步。P4 / SVN / 没有版本控制的子对话没有分支可合，
-  字段被忽略——设置页里项目不是 Git 时复选框置灰并说明原因（判定复用 `server/projects-analyze.ts` 的 `detectVcs`，界面走 `GET /fs/vcs`），
-  执行流程里也不把这些步骤拿出来。共用目录的 Git 子对话同样不生效。
+  `parent` 被忽略——提示词里写「全量（当前没有父对话代跑，你自己跑）」，执行流程里也不把这些步骤拿出来。
+  共用目录的 Git 子对话同样不生效。
 - **`merge`（合并时编译）的步骤不受影响**：那条仍按 [ADR 0004](./adr/0004-ue-build-by-parent.md) 由父对话 `request_build` 申请，
-  同时勾了两项也只走编译链路，不会编译两次。
-- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、勾了、不是 `merge`、有命令），只用在「谁替子对话跑」的链路；
-  父对话自己验证取的是全部启用的步骤，不经过它（回归：`shared/test-steps.test.ts` 里「只影响子对话」那条用例）。
+  同时是 `parent` 也只走编译链路，不会编译两次。
+- **父子分工**：筛选只有一处（`shared/test-steps.ts` 的 `parentRunSteps`：启用、`scope === 'parent'`、不是 `merge`、有命令），
+  只用在「谁替子对话跑」的链路；父对话自己验证取的是全部启用的步骤，不经过它（回归：`shared/test-steps.test.ts` 里「只影响子对话」那条用例）。
   提示词按角色说三种话（`parentRunRoleOf` / `verifyBlock`）：独立分支子对话是「你不用跑，跑了也不算数」；
   顶层父对话是「子对话合并后由面板在你的目录里跑、你不用转述，但你自己改代码时没人替你跑、要自己执行」；
-  其它对话不传，步骤照常自己跑。角色判断：子对话要有父对话 + 独立分支，顶层对话即使自己开了独立分支也算父对话。
+  其它对话不传，`parent` 的步骤照常由执行者自己跑。角色判断：子对话要有父对话 + 独立分支，顶层对话即使自己开了独立分支也算父对话。
   子对话的完成条件因此变成「改动已合回父对话所在的分支 + 父对话测试通过」，不是「我自己跑完所有步骤」。
 - **串行排队、看得见**：全局一次只跑一批的一步，多个子对话同时合并也排成一条队；每条命令再走父对话目录的
   独占队列（`exclusive`），和 UE 编译共用一条。后台命令名是「父对话测试：<子对话标题> · <步骤名>」、记在父对话名下，
@@ -141,11 +170,74 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
   随任务持久化，重启后收尾总结还能用。耗时只从后台命令的真实起止时间取，不靠 Agent 自报：父对话跑的记 `by: 'parent'`；
   子对话自己跑的按命令匹配步骤（`matchTestStep`，命令原文或按环境拼出的整行都认），匹配不上就不记。
   同一步骤 + 同一执行方只留最后一次（`mergeTestRun`），`tries` 记跑了几次——收尾总结按「最后一次」算，不把每次失败都列一行。
+  对话页读同一份数据（`web/src/components/tasks/TestRuns.tsx` 挂在输入框下的信息条，纯逻辑是 `testRunSummary`）：
+  一行一条，显示步骤名、谁跑的、结果（通过 / 失败 / 未记录）、真实耗时、第几次尝试；没有 `at` 的旧数据写「未记录」，
+  不当成失败。只展示已有数据，不在界面里另做采集或推算。
+- **按改动筛**：合回后先用子对话实际改的文件跑 `pickSteps`，只把命中的 `parent` 步骤排进队列；
+  一条都没命中（改动映射不到任何步骤）时照旧跑全部启用的 `parent` 步骤，并在日志里留一条——
+  静默少跑比多跑危险，和提示词里「映射不出来跑全部」同一个口径。
+- **提示词里直接给结论**：对话的验证段（`verifyBlock`）在拿到 `EngineHost.verify.changedFiles`（任务的实际改动）时，
+  附上 `pickStepsText` 的「本轮该跑的测试步骤」：改动文件、每条要跑的步骤和按环境拼好的命令行、按改动跳过的步骤。
+  不再是只写一条规则让 Agent 自己判断；父对话的 `parent` 步骤在子对话侧仍标「父对话跑，你不要跑」。
   回传消息和收尾总结的写法是 `testRunLines` / `TEST_TIME_SUMMARY_RULE`：步骤名、谁跑的、结果、耗时，一行一步，没记录的写「未记录」。
 - **重启后重新排队**：批次记在任务上（`wrapRequest.state = 'testing'`），内存队列随进程消失；面板启动时 `recoverParentTests`
   把它们重新排队、从第一步重跑（比丢掉安全，测试本身可重复）。步骤已经被删掉时直接收尾。
 - **丢弃独立分支**：面板取消这一批（停掉父对话目录里那条命令、吞掉结果）、清掉 `testing` / `test-failed`，之后按普通「没有分支可合」收尾；
-  这两种状态的完成拦截只在还有独立分支时生效。
+  这两种状态的完成判定只在还有独立分支时生效。
+
+### 改动 → 增量测试（`scripts/changed-tests.mjs`）
+
+子对话不再整套照搬，而是先算**影响面**：改一个被几十处 import 的模块（`shared/task.ts` 这种）时，
+同名测试只是很小一部分，真正可能被影响的是所有直接和**间接**依赖它的文件和测试。
+
+```bash
+node scripts/changed-tests.mjs --since <任务基线>   # 基线到 HEAD + 工作区 + 未跟踪
+node scripts/changed-tests.mjs                      # 只看工作区（提交后就看不到了，会提示改带基线）
+node scripts/changed-tests.mjs --run                # 按结论直接跑单测（= npm run test:affected）
+node scripts/changed-tests.mjs --json               # 给脚本用
+```
+
+`npm run test:affected` 少写参数时只看工作区；改动已经提交后要带基线：
+`npm run test:affected -- --since <任务基线>`。清单为空时脚本会明说「可能已经提交」而不是静默「没有命中的单测」。
+
+输出：单测文件（增量）、界面分片（增量）、**是否必须跑全量（单测 / 界面检查 / e2e 分开，带理由）**、
+映射不出来的改动（不静默跳过）、不涉及测试的改动（文档、配置）、**直接映射 vs 影响面分析的对比**
+（各选中几个文件 / 分片、粗估耗时）。
+
+定位规则分两层：`scripts/lib/import-graph.mjs` 建 import 依赖图并求反向闭包，`scripts/lib/changed-tests.mjs`
+把影响面映射到测试（两者都是纯逻辑，`scripts/lib/changed-tests.test.mjs` 覆盖）：
+
+1. **建依赖图**：扫 `shared/`、`server/`、`web/src/`、`scripts/` 下的 `.ts` / `.tsx` / `.mjs`，解析 `import … from`、
+   副作用 import、`export … from`、动态 `import()` / `require()`，`@shared/` 和 `@/` 别名、相对路径都解析，
+   补扩展名和目录 `/index`。只认行首的语句级 import：演示数据、提示词里的一整段示例代码不算依赖。
+2. **求反向闭包**：改动文件 D → 所有（直接或间接）依赖 D 的文件 A。改 `shared/task.ts` 时 A 有 259 个文件。
+3. **映射到测试**：A 里的测试文件 + A 里每个源文件的同名测试 + 正向依赖与 A 相交的测试（测试间接依赖也算命中）。
+4. **界面分片**：A 里的界面文件同样按 `scripts/ui/covers.mjs` 的前缀表映射——间接受影响的页面也要跑。
+   一个文件可以命中多个分片；`harness.mjs` / `covers.mjs` / `ui-check.mjs` 改动 = 全部分片。
+   通用组件、演示数据这类没有列进表里的**改动文件**报「跑全量界面检查」。
+5. **同目录回退**：某个改动文件在影响面里一个测试都没命中时才回退到同目录；同目录测试超过
+   `SAME_DIR_FALLBACK_MAX`（6）个说明是公共目录，直接报映射不出来。
+6. **高风险区强制全量**（`HIGH_RISK_AREAS`，`server/exec/**`、`shared/clis/**`、`shared/builtin/**`、
+   `shared/engine.ts`、`shared/schema.ts`）：一改就影响所有 CLI / 工作流 / 落盘数据，增量挑不出可靠范围，
+   直接建议全量单测 + e2e。影响面宽到接近全量（`FULL_COVERAGE_RATIO` 60%，且总量超过
+   `FULL_COVERAGE_MIN_TESTS` / `FULL_COVERAGE_MIN_SHARDS`）时也建议全量。
+7. **算不出来时保守报出来**：影响面里的非测试文件有解析不了的 import（路径不存在、非字面量的动态 import）时，
+   依赖闭包不完整，明确报理由并建议全量，不静默少跑。**删除 / 改名**的文件不在依赖图里，依赖它的文件反查不到，同样直接建议全量单测
+   （只对参与依赖图的目录 `shared/`、`server/`、`web/src/`、`scripts/`；`extension/*.js`、根目录 `vite.config.ts` 这类不参与单测，
+   归入不涉及测试的改动，不会因此强制全量）。
+   影响面挑不出可靠范围时给的是**全量命令**（`npm run test:unit` / 全量界面检查），不会再列一长串增量命令诱导人缩回增量。
+
+界面分片命令用完整分片名筛（`node scripts/ui-check.mjs 02-task`），写 `02` 会同时跑 02-task / 02b / 02c / 02d。
+产物必须是这次源码构建出来的（`ui-check` 会校验），所以命令里先 `npx vite build --mode demo`。
+
+**缓存**：每个文件的 import 解析结果按 mtime + size 缓存在 `node_modules/.cache/agent-panel/import-graph.json`
+（先写临时文件再改名，多个子对话同时跑不会读到半截 JSON）；没改过的文件直接复用，改过的才重新解析。
+实测 791 个源文件：首次 145ms，命中缓存后 26ms。
+
+**只跑命中的文件**：`npm run test:unit` 语义不变（全量）；`scripts/unit-tests.mjs --files a.test.ts,b.test.ts`
+只跑指定文件，仍然按 timing（串行）/ rest（并发）两批跑。`npm run test:affected` = `changed-tests --run`：
+脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
+必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
 ### 怎么交给 Agent
 
@@ -204,6 +296,8 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 - 大改动跑完整步骤，或者走带测试验收的工作流。工作流里的测试验收节点不受这个开关影响。
 - 两种大小都先按 `appliesTo` 筛掉不适用的步骤（「先看改动再决定跑哪些」）：小改动是「在适用的步骤里只跑 `quick` 的」，
   不是「直接跳过编译类步骤」；跳过的都要写清原因。
+- 服务端拿到任务的实际改动时，会把「本轮该跑的步骤 + 命令」直接注入提示词（`pickSteps` / `pickStepsText`，
+  数据来自 `EngineHost.verify.changedFiles`）；规则段保留是为了说明为什么这么筛、跳过的怎么写，不是让 Agent 再筛一遍。
 - 独立分支的子对话调用 `submit_build` 时传 `small: true`，合并编译只跑同时标了 `merge` 和 `quick` 的步骤
   （`mergeStepsFor`）；一条都没有时照常跑全部合并步骤，不会因为没配过而少编译。结果里写明跳过了哪些。
 - 关掉开关时提示改成「每次都跑完整步骤」，`small` 也不再生效。
@@ -323,21 +417,25 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 ## 相关代码
 
-| 文件                                                    | 内容                                                                                           |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                      |
-| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                   |
-| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                        |
-| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                        |
-| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                           |
-| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`parentRunSteps` / 耗时统计                            |
-| `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                 |
-| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole` |
-| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                        |
-| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                    |
-| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                  |
-| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                                                        |
-| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                                                  |
+| 文件                                                    | 内容                                                                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/builtin/agents.ts`                              | 内置 Agent 定义（能力块）                                                                                                                               |
+| `shared/builtin/workflows.ts`                           | 内置工作流；`EXTRA_WORKFLOWS`、`buildFlow` / `buildWorkflow`                                                                                            |
+| `shared/builtin/legacy.ts`                              | 旧定义（升级判断）、已合并的 Agent 说明                                                                                                                 |
+| `shared/builtin/install.ts`                             | 安装、升级、迁移、已合并 Agent 的重定向                                                                                                                 |
+| `shared/agent-params.ts`                                | 按工作流派生 Agent 参数、同 key 合并                                                                                                                    |
+| `shared/test-steps.ts`                                  | 测试步骤默认值、命令行写法、提示词片段、`stepApplies` / `pickSteps` / `parentRunSteps` / `CHILD_INCREMENTAL_RULE` / 耗时统计（`testRunSummary` 给界面） |
+| `scripts/changed-tests.mjs`                             | 改动清单 → 影响面 → 要跑的单测文件和界面检查分片（CLI，含 mtime 缓存与 `--run`）                                                                        |
+| `scripts/lib/import-graph.mjs`                          | import 依赖图：解析别名 / 扩展名、建正反向边、反向依赖闭包，纯逻辑                                                                                      |
+| `scripts/lib/changed-tests.mjs`                         | 定位规则（闭包内测试 / 同名测试 / 同目录回退 / 分片映射 / 高风险区强制全量），纯逻辑、有单测                                                            |
+| `scripts/ui/covers.mjs`                                 | 界面检查分片覆盖的源码前缀表                                                                                                                            |
+| `server/parent-tests.ts`                                | 父对话测试队列：一次一步、结果和耗时交给调用方                                                                                                          |
+| `server/tasks.ts`                                       | 父对话测试的接入：`finishChildStep`、`startParentTests`、`recoverParentTests`、`parentRunRole`                                                          |
+| `shared/expose.ts`                                      | `applyExpose`：项目值 → 节点参数 → 快照                                                                                                                 |
+| `shared/assist.ts`                                      | AI 配置的提示词和校验（params / teststeps）                                                                                                             |
+| `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                                                                                                           |
+| `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                                                                                                                 |
+| `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                                                                                                           |
 
 ## 子对话的隔离和合并编译
 
@@ -371,5 +469,6 @@ fake-cli 不会真的算 diff、跑命令；判定本身（哪条步骤匹配哪
 
 - 评审步骤要有状态：派「评审」（`spawn_agents` 的 agent 写「评审」）时标等待中，拿回结论后标完成。
 - `submit_merge` 前校验计划里有没有标 `review` 的步骤、那一步是否完成、最近一次评审写没写结论，以及它列的高级、中级是否每条都有处置（`shared/review-gate.ts`，[ADR 0009](adr/0009-review-findings-triaged.md)）；缺任何一项都会被拒绝并在交回说明里写清原因。
+- 用户明确要求「已知问题也合并」时走显式放行：`submit_merge` 传 `review_override: { by: user | parent, reason }`（理由至少 12 字），门禁放行并把谁、什么时候（面板记）、为什么、原本拦住什么写进 `Task.reviewOverride`，收尾消息和交接摘要一起带给父对话（[ADR 0022](adr/0022-review-gate-override.md)）。执行角色自己判断「问题不大」不是放行理由。
 - 评审只做代码层面的审查：不改文件、不跑测试和构建、不搭测试环境、不写测试脚本；git 仓库里面板把改动（文件列表 + 每处改动前后几行的差异，只取这个对话改过的文件）一次附进它的提示词，复看只附增量（[ADR 0010](adr/0010-review-code-only.md)）。派评审要带交接单 `review`（第一次 `goal`、`checks` 必填），评审只评差异里改动的行，不读模块文档、不搜项目，读代码最多 3 次，跑到 6 分钟面板提醒它交卷（[ADR 0013](adr/0013-review-diff-only-with-brief.md)）。
 - 意见分四级：🔴 高级（必须改，判不通过）、🟠 中级（应该改，要处置）、🟡 低级（可以改）、💡 建议（这一轮不做）。

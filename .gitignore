@@ -50,3 +50,7 @@ id_ed25519
 # e2e 跑完写出的计时报告（scripts/e2e.mjs）
 /e2e-timings.json
 /ui-timings.json
+
+# 临时副本 / 编辑中间产物：改文档、脚本时为对比或备份落下的副本（如 .tmp-dev-readme.md
+# 就是 docs/modules/web/README.md 的旧副本），内容会过期、容易误导，一律不进版本控制
+.tmp-*

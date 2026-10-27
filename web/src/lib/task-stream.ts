@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Task, TaskMessage } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { api } from './api'
 
 type Patch = { meta: Omit<Task, 'messages'>; messages: TaskMessage[]; total: number }
@@ -21,11 +22,31 @@ export function mergePatch(task: Task, p: Patch): Task {
 /**
  * 跟着任务的实时变化：服务端用 SSE 推送增量（见 server/tasks.ts 的 /tasks/:id/events），
  * 合并后交给 onTask。在线演示没有服务端，执行中时定时拉一次。
+ *
+ * boot：打开对话时先拿到的那一份（GET 的结果）和它的版本（整份都在它里面时才有）。
+ * 有了它才建 SSE：带 rev 时服务端首包只补发最后一条，不用整份再传一遍；
+ * 它同时是合并增量时的基线（patch 只带变化的消息）。
+ *
+ * hook：打开对话时的加载日志用（只有 TaskView 传）——首份完整任务到了 / 首包之前就连不上。
  */
-export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task) => void) {
+export function useTaskStream(
+  taskId: string,
+  running: boolean,
+  onTask: (t: Task) => void,
+  hook?: { open: () => void; fail: (error: string) => void },
+  boot?: { rev: string; task: Task | null } | null,
+) {
   const cb = useRef(onTask)
   cb.current = onTask
   const last = useRef<Task | null>(null)
+  // 回调每次渲染都是新的，只存 ref，不进 effect 依赖（不然每次渲染都重连一遍 SSE）
+  const hk = useRef(hook)
+  hk.current = hook
+  // 首包还没到时 EventSource 会反复报 error（它在自己重连），只记第一次
+  const failed = useRef(false)
+  // 已经收到过服务端的第一条事件（full 或 patch）：之后再断开是「重连中」，不算这次加载失败。
+  // 不能拿 last.current 判：带上 boot 时它一开始就有基线，会把「首包前就连不上」盖掉
+  const firstEvent = useRef(false)
 
   useEffect(() => {
     if (!import.meta.env.VITE_DEMO) return
@@ -43,13 +64,28 @@ export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task
 
   useEffect(() => {
     if (import.meta.env.VITE_DEMO) return
-    last.current = null
-    const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events`)
+    // 第一份还没拿到（GET 还没回来）先不建连：没有基线，服务端发的增量合并不了
+    if (!boot) return
+    last.current = boot.task
+    // 上一条对话首包前失败过时，这条对话的首次连接错误也要能报出来
+    failed.current = false
+    firstEvent.current = false
+    // 手上有整份时带上版本：服务端能对上前缀就只补发增量（见 shared/task.ts 的 taskRevOffset）
+    const rev = boot.rev ? `?rev=${encodeURIComponent(boot.rev)}` : ''
+    const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events${rev}`)
     const emit = (t: Task) => {
+      // 首包可能是 full 也可能是 patch（带 rev 建连时服务端只补发增量）：两种都算连上了
+      if (!firstEvent.current) {
+        firstEvent.current = true
+        failed.current = false
+        hk.current?.open()
+      }
       last.current = t
       cb.current(t)
     }
-    es.addEventListener('full', (e) => emit(JSON.parse((e as MessageEvent).data)))
+    es.addEventListener('full', (e) => {
+      emit(JSON.parse((e as MessageEvent).data))
+    })
     es.addEventListener('patch', (e) => {
       const p = JSON.parse((e as MessageEvent).data) as Patch
       if (!last.current || last.current.id !== taskId) return
@@ -65,7 +101,13 @@ export function useTaskStream(taskId: string, running: boolean, onTask: (t: Task
       emit(t)
     })
     es.addEventListener('gone', () => es.close())
-    // 断开后 EventSource 会自己重连，重连后服务端先发完整任务
+    // 首包之前连不上才算这次加载失败（之后断开 EventSource 会自己重连，对话已经能看了）
+    es.addEventListener('error', () => {
+      if (firstEvent.current || failed.current) return
+      failed.current = true
+      hk.current?.fail(t('实时更新连接失败，正在重连'))
+    })
+    // 断开后 EventSource 会自己重连，重连时带上最后收到的事件 id，服务端只补发之后的变化
     return () => es.close()
-  }, [taskId])
+  }, [taskId, boot])
 }

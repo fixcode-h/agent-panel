@@ -203,7 +203,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const reloadTasks = useCallback(async () => {
     try {
       const next = await api.allTasks()
-      setTasks((cur) => mergeTasks(cur, next))
+      // 304（null）：数据没变，不动 state，侧栏不用重算
+      if (next) setTasks((cur) => mergeTasks(cur, next))
     } catch {
       // 后端暂时连不上时保留现有列表，下次刷新再试
     } finally {
@@ -371,6 +372,8 @@ export interface Route {
   id?: string
   /** 二级选择，例如项目里的任务 id、'new'（新建任务） */
   sub?: string
+  /** 对话里要定位到的消息 id：从搜索结果点进来时带上（见 web/src/lib/message-anchor.ts） */
+  msg?: string
 }
 export const NavCtx = createContext<{
   route: Route

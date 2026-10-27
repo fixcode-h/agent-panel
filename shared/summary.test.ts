@@ -2,15 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Task } from './schema.ts'
 import {
+  activeInRange,
   activeOnDay,
   checkSummaryFormat,
   clip,
   collectDayProjects,
+  collectRangeProjects,
   dayTask,
   extractSummary,
+  inRange,
   isToday,
+  rangeLabel,
+  rangeTask,
+  rangeWindow,
   reportTitle,
+  reportWindowLabel,
   skippedProjects,
+  SUMMARY_ASKS_MAX,
   SUMMARY_LINE_MAX,
   SUMMARY_STEPS_MAX,
   SUMMARY_TASKS_PER_PROJECT,
@@ -296,7 +304,7 @@ test('summaryPrompt：按固定模板写三节，写明只收用户报的 Bug', 
       },
     ],
   })
-  assert.match(p, /今天是 2026-10-23/)
+  assert.match(p, /今天（2026-10-23）的工作总结报告/)
   // 模板里的固定结构：一级标题、三个二级标题、三级项目标题、条目形状
   assert.match(p, /# 2026-10-23 工作总结/)
   assert.match(p, /## 一、需求进度/)
@@ -317,7 +325,7 @@ test('summaryPrompt：按固定模板写三节，写明只收用户报的 Bug', 
   assert.match(p, /## 面板/)
   assert.match(p, /修一下登录报错/)
   // 今天没有记录时也照样能跑，提示词里写清楚
-  assert.match(summaryPrompt({ day: '2026-10-23', projects: [] }), /今天没有执行记录/)
+  assert.match(summaryPrompt({ day: '2026-10-23', projects: [] }), /这段时间没有执行记录/)
 })
 
 /** 一份合格式的报告：合格 / 不合格的用例都拿它做基底，只改一处 */
@@ -401,4 +409,154 @@ test('reportTitle：取第一行标题，没有标题时用日期', () => {
   assert.equal(reportTitle('## 面板\n- 做了什么', '2026-10-23'), '面板')
   assert.equal(reportTitle('今天没有执行记录', '2026-10-23'), '今天没有执行记录')
   assert.equal(reportTitle('', '2026-10-23'), '2026-10-23')
+})
+
+test('rangeWindow：今天 / 昨天 / 近 7 天都按本机时区的自然日算，今天的行为和改造前一样', () => {
+  const now = local(2026, 10, 23, 18)
+  const winToday = rangeWindow({ id: 'today', from: '', to: '' }, now)
+  assert.equal(winToday.fromDay, '2026-10-23')
+  assert.equal(winToday.toDay, '2026-10-23')
+  assert.deepEqual(winToday.days, ['2026-10-23'])
+  assert.equal(new Date(winToday.start).getHours(), 0)
+  assert.equal(winToday.end, now.getTime(), '今天到「现在」为止，和一次完整快照一致')
+
+  const winYesterday = rangeWindow({ id: 'yesterday', from: '', to: '' }, now)
+  assert.equal(winYesterday.fromDay, '2026-10-22')
+  assert.equal(winYesterday.toDay, '2026-10-22')
+  assert.deepEqual(winYesterday.days, ['2026-10-22'])
+  // 结束时间是今天 0 点（不含）：23:59 还算昨天，0:00 已经是今天
+  assert.equal(new Date(winYesterday.end).getDate(), 23)
+  assert.equal(new Date(winYesterday.end).getHours(), 0)
+  assert.equal(inRange(local(2026, 10, 22, 23, 59).toISOString(), winYesterday), true)
+  assert.equal(inRange(local(2026, 10, 23, 0, 0).toISOString(), winYesterday), false)
+
+  const win7 = rangeWindow({ id: 'last7', from: '', to: '' }, now)
+  assert.equal(win7.fromDay, '2026-10-17')
+  assert.equal(win7.toDay, '2026-10-23')
+  assert.equal(win7.days.length, 7)
+  assert.equal(win7.days[0], '2026-10-17')
+  assert.equal(win7.days.at(-1), '2026-10-23')
+})
+
+test('rangeWindow：自选日期跨月，起止写反时按用户想要的那几天算', () => {
+  const now = local(2026, 10, 23, 18)
+  const custom = rangeWindow({ id: 'custom', from: '2026-09-28', to: '2026-10-02' }, now)
+  assert.equal(custom.fromDay, '2026-09-28')
+  assert.equal(custom.toDay, '2026-10-02')
+  // 自选范围可能跨很多年，不逐天生成 days（只有 last7 用它数天数）
+  assert.deepEqual(custom.days, [])
+  // 结束那天 23:59 还在范围里，次日 0 点不在
+  assert.equal(inRange(local(2026, 10, 2, 23, 59).toISOString(), custom), true)
+  assert.equal(inRange(local(2026, 10, 3, 0, 0).toISOString(), custom), false)
+
+  const swapped = rangeWindow({ id: 'custom', from: '2026-10-05', to: '2026-10-01' }, now)
+  assert.equal(swapped.fromDay, '2026-10-01')
+  assert.equal(swapped.toDay, '2026-10-05')
+
+  // 格式不对 / 日期不存在时回落到今天，不返回空范围
+  assert.equal(rangeWindow({ id: 'custom', from: '不是日期', to: '' }, now).fromDay, '2026-10-23')
+  assert.equal(rangeWindow({ id: 'custom', from: '2026-02-30', to: '' }, now).fromDay, '2026-10-23')
+})
+
+test('activeInRange：按范围筛任务，页面和服务端同一个判定', () => {
+  const now = local(2026, 10, 23, 18)
+  const task = makeTask({ updatedAt: yesterday, messages: [] })
+  assert.equal(activeInRange(task, rangeWindow({ id: 'today', from: '', to: '' }, now)), false)
+  assert.equal(activeInRange(task, rangeWindow({ id: 'yesterday', from: '', to: '' }, now)), true)
+  assert.equal(activeInRange(task, rangeWindow({ id: 'last7', from: '', to: '' }, now)), true)
+  // 范围外的消息不算
+  const only = makeTask({ updatedAt: yesterday, messages: [msg('user', 'x', today(9))] })
+  assert.equal(activeInRange(only, rangeWindow({ id: 'yesterday', from: '', to: '' }, now)), true, 'updatedAt 在昨天')
+})
+
+test('rangeTask：只取范围内的消息和节点，跨天时用户要求留最近几条', () => {
+  const now = local(2026, 10, 23, 18)
+  const win7 = rangeWindow({ id: 'last7', from: '', to: '' }, now)
+  const many = Array.from({ length: SUMMARY_ASKS_MAX + 2 }, (_, i) => msg('user', `第${i}条`, today(9, i)))
+  const d = rangeTask(makeTask({ messages: many }), win7)
+  assert.ok(d)
+  assert.equal(d.asks.length, SUMMARY_ASKS_MAX)
+  assert.deepEqual(d.asks, ['第0条', '第3条', '第4条', '第5条'], '开头一条（常是报的问题）+ 最近三条')
+  // 范围内没有活动时返回 null
+  assert.equal(rangeTask(makeTask({ messages: [], steps: [] }), win7), null)
+})
+
+test('collectRangeProjects：昨天 / 近 7 天按各自范围收对话', () => {
+  const now = local(2026, 10, 23, 18)
+  const tasks = [
+    makeTask({ id: 't1', projectId: 'p1', messages: [msg('user', '昨天的事', yesterday)] }),
+    makeTask({ id: 't2', projectId: 'p1', messages: [msg('user', '今天的事', today(9))] }),
+  ]
+  const picks = [{ id: 'p1', name: '面板' }]
+  assert.deepEqual(
+    collectRangeProjects(tasks, picks, { id: 'yesterday', from: '', to: '' }, now)[0].tasks.map((t) => t.id),
+    ['t1'],
+  )
+  assert.deepEqual(
+    collectRangeProjects(tasks, picks, { id: 'last7', from: '', to: '' }, now)[0].tasks.map((t) => t.id),
+    ['t2', 't1'],
+  )
+  assert.deepEqual(
+    collectRangeProjects(tasks, picks, { id: 'today', from: '', to: '' }, now)[0].tasks.map((t) => t.id),
+    ['t2'],
+  )
+})
+
+test('summaryPrompt：范围写进第一行和一级标题，三节结构不变', () => {
+  const now = local(2026, 10, 23, 18)
+  const win7 = rangeWindow({ id: 'last7', from: '', to: '' }, now)
+  const p = summaryPrompt({ day: win7.toDay, projects: [], range: win7 })
+  assert.match(p, /近 7 天（2026-10-17 至 2026-10-23）/)
+  assert.match(p, /# 2026-10-17 - 2026-10-23 工作总结/)
+  assert.match(p, /## 一、需求进度/)
+  assert.match(p, /## 二、用户报告的 Bug/)
+  assert.match(p, /## 三、今日小结/)
+
+  // 昨天：标题是那一天的日期，仍然是单日格式
+  const winYesterday = rangeWindow({ id: 'yesterday', from: '', to: '' }, now)
+  const y = summaryPrompt({ day: winYesterday.toDay, projects: [], range: winYesterday })
+  assert.match(y, /昨天（2026-10-22）/)
+  assert.match(y, /# 2026-10-22 工作总结/)
+})
+
+test('checkSummaryFormat：多天的区间标题也算合格', () => {
+  const report = GOOD_REPORT.replace('# 2026-10-23 工作总结', '# 2026-10-17 - 2026-10-23 工作总结')
+  assert.deepEqual(checkSummaryFormat(report), { ok: true, issues: [] })
+})
+
+test('rangeLabel / reportWindowLabel：范围在界面上的名字，老报告只有单日也能显示', () => {
+  const now = local(2026, 10, 23, 18)
+  assert.equal(rangeLabel(rangeWindow({ id: 'today', from: '', to: '' }, now)), '今天')
+  assert.equal(rangeLabel(rangeWindow({ id: 'last7', from: '', to: '' }, now)), '近 7 天')
+  assert.equal(
+    rangeLabel(rangeWindow({ id: 'custom', from: '2026-10-01', to: '2026-10-05' }, now)),
+    '2026-10-01 至 2026-10-05',
+  )
+  assert.equal(reportWindowLabel('2026-10-23', '2026-10-23', now), '今天的报告')
+  assert.equal(reportWindowLabel('2026-10-22', '2026-10-22', now), '昨天的报告')
+  assert.equal(reportWindowLabel('2026-10-17', '2026-10-23', now), '近 7 天的报告')
+  assert.equal(reportWindowLabel('2026-10-01', '2026-10-02', now), '2026-10-01 至 2026-10-02 的报告')
+  // 老报告只有 day：页面会传 (day, day)，按单日显示；完全没日期时给一个中性标题
+  assert.equal(reportWindowLabel('2026-10-20', '2026-10-20', now), '2026-10-20 的报告')
+  assert.equal(reportWindowLabel('', '', now), '报告')
+})
+
+test('rangeTask：开头报的 Bug 不会被条数上限挤掉', () => {
+  const now = local(2026, 10, 23, 18)
+  const win7 = rangeWindow({ id: 'last7', from: '', to: '' }, now)
+  const messages = [
+    msg('user', '登录报错，点了没反应', today(9, 0)),
+    ...Array.from({ length: SUMMARY_ASKS_MAX }, (_, i) => msg('user', `再改个样式 ${i}`, today(9, i + 1))),
+  ]
+  const d = rangeTask(makeTask({ title: '改造登录', messages }), win7)
+  assert.ok(d)
+  // asks 只留 4 条，但 Bug 判定扫窗口里的全部用户消息：开头那条「报错」不能被截掉
+  assert.equal(d.asks.length, SUMMARY_ASKS_MAX)
+  assert.equal(d.asks[0], '登录报错，点了没反应')
+  assert.equal(d.userBug, true)
+  // 提示词里也带着开头那条，CLI 能把它写进「二、用户报告的 Bug」
+  assert.match(
+    summaryContext([{ projectId: 'p1', projectName: '面板', tasks: [d] }]),
+    /用户的要求：登录报错，点了没反应/,
+  )
 })

@@ -1,5 +1,15 @@
 import { useState } from 'react'
-import { Check, ChevronDown, CircleAlert, ListFilter, MessageSquare, Search, Workflow, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  ListFilter,
+  MessageSquare,
+  MessagesSquare,
+  Search,
+  Workflow,
+  X,
+} from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -19,6 +29,9 @@ import {
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import { askedAt, byAskedAt, groupByDay, taskBusy, taskDoneDot, taskState } from '@shared/task'
+import { UnreadDot } from '@/components/ui/badge'
+import type { SearchHit } from '@shared/task-search'
+import { useTaskSearch } from '@/lib/use-task-search'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -96,14 +109,7 @@ export function TaskRow({
                 行样式后跟调用方传的 px-*，cn 走 twMerge 会把它覆盖掉。放在行内这一层，
                 选中 / hover 的背景（画在行上）仍然铺满整行 */}
             <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
-              {unreadDot && (
-                <span
-                  role="img"
-                  aria-label={t('对话已完成，还没查看')}
-                  title={t('对话已完成，还没查看')}
-                  className="h-2 w-2 shrink-0 rounded-full bg-accent"
-                />
-              )}
+              {unreadDot && <UnreadDot />}
               <span className="flex shrink-0 items-center gap-1">
                 {/* 转圈时只留转圈：对话 / 工作流的图标停了再显示（用户 2026-10-24 要求） */}
                 {attention !== 'running' && (
@@ -264,22 +270,65 @@ function useFoldedDays() {
 }
 
 /** Chat 模式的侧栏：聊天按天分组，组可以收起；右键可以重命名、归档、删除 */
+/** 侧栏最多显示几条正文命中：再多就把下面的列表挤不见了 */
+export const SIDEBAR_CONTENT_HITS = 6
+
+/**
+ * 对话正文里的命中（走服务端 GET /tasks/search）：标题 + 命中片段，点开跳到那条消息。
+ * 标题命中由外围的 TaskRow 排在前面，这里只接后面的那一段；项目列表和聊天列表共用
+ */
+export function ContentHits({
+  hits,
+  loading,
+  onOpen,
+}: {
+  hits: SearchHit[]
+  loading: boolean
+  onOpen: (h: SearchHit) => void
+}) {
+  if (!hits.length) return loading ? <p className="px-2.5 py-2 text-xs text-subtle">{t('正在搜对话内容…')}</p> : null
+  return (
+    <div className="mt-1 flex flex-col gap-px">
+      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">{t('对话内容')}</p>
+      {hits.slice(0, SIDEBAR_CONTENT_HITS).map((h) => (
+        <button
+          key={`${h.taskId}:${h.messageId}`}
+          onClick={() => onOpen(h)}
+          title={h.snippet}
+          className="flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <MessagesSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <span className="truncate">{h.title}</span>
+          </span>
+          <span className="min-w-0 truncate pl-5 text-xs text-subtle">{h.snippet}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function ChatList() {
   const { route, go } = useNav()
   const { tasks } = useData()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [folded, toggleDay] = useFoldedDays()
+  // 正文命中：和项目列表那份是同一个接口、同一个 hook，标题命中仍在前
+  const content = useTaskSearch(query)
   const chats = tasks.filter((x) => !x.projectId && matchTask(x, query, filter)).sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
+  const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = groupByDay(chats, askedAt)
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
       <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
-        {filtering ? t('找到 {n} 个', { n: chats.length }) : t('最近')}
+        {filtering
+          ? t('找到 {n} 个', { n: chats.length + Math.min(chatHits.length, SIDEBAR_CONTENT_HITS) })
+          : t('最近')}
       </p>
-      {chats.length === 0 && (
+      {chats.length === 0 && !chatHits.length && (
         <p className="px-2.5 py-1 text-xs text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
       )}
       {days.map((d) => {
@@ -310,6 +359,11 @@ export function ChatList() {
           </div>
         )
       })}
+      <ContentHits
+        hits={chatHits}
+        loading={content.loading}
+        onOpen={(h) => go({ page: 'chat', id: h.taskId, msg: h.messageId })}
+      />
     </div>
   )
 }

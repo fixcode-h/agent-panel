@@ -10,11 +10,13 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { getCli } from '../shared/clis.ts'
 import type { Project, Task } from '../shared/schema.ts'
+import { taskDeleted } from '../shared/task.ts'
 import {
-  activeOnDay,
+  activeInRange,
   checkSummaryFormat,
-  collectDayProjects,
+  collectRangeProjects,
   extractSummary,
+  rangeWindow,
   SUMMARY_KEEP,
   SummaryRecord,
   SummaryRequest,
@@ -22,7 +24,6 @@ import {
   skippedProjects,
   summaryPrompt,
   summaryRetryHint,
-  todayWindow,
   type SummaryJob,
 } from '../shared/summary.ts'
 import { agentRun, cliSettings } from '../shared/settings.ts'
@@ -89,19 +90,26 @@ export function summaryApi(deps: {
     const chosen = input.projects.map((p) => all.find((x) => x.id === p.projectId)).filter((p): p is Project => !!p)
     if (!chosen.length) return failed(t('项目不存在'))
     const now = new Date()
-    const { day } = todayWindow(now)
+    // 时间窗口和页面、存档用同一个函数（shared/summary.ts 的 rangeWindow）：范围口径只有一处
+    const win = rangeWindow(input.range, now)
+    const day = win.toDay
     // 列表里的任务只带用户消息（server/task-store.ts 的 head），Agent 的结论不在里面。
-    // 先按时间字段筛出今天有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
+    // 先按时间字段筛出范围内有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
     const ids = new Set(chosen.map((p) => p.id))
-    const candidates = (await deps.tasks.list()).filter((t) => ids.has(t.projectId) && activeOnDay(t, day))
+    // 时间范围只由 activeInRange 判（口径在 shared/summary.ts 的 rangeWindow）；
+    // 删进回收站的对话不算这次总结的工作：用户已经把它删了，报告里不该再出现
+    const candidates = (await deps.tasks.list()).filter(
+      (t) => ids.has(t.projectId) && activeInRange(t, win) && !taskDeleted(t),
+    )
     const full = await Promise.all(candidates.map((t) => deps.tasks.get(t.id)))
-    // 每个项目只分析用户选的对话；taskIds 为空表示该项目今天全部对话
+    // 每个项目只分析用户选的对话；taskIds 为空表示该项目范围内全部对话
     const picks = input.projects
       .filter((p) => ids.has(p.projectId))
       .map((p) => ({ id: p.projectId, name: chosen.find((x) => x.id === p.projectId)!.name, taskIds: p.taskIds }))
-    const projects = collectDayProjects(
+    const projects = collectRangeProjects(
       full.filter((t): t is Task => !!t),
       picks,
+      input.range,
       now,
     )
     // 用户选了但今天没有可总结内容的项目（只改了状态/归档、没有今天的对话）：记下来给页面提示，不悄悄从报告里删掉
@@ -113,6 +121,7 @@ export function summaryApi(deps: {
     const taskCount = projects.reduce((n, p) => n + p.tasks.length, 0)
     log.info('summary', `用 ${def.name} 生成工作总结`, {
       day,
+      from: win.fromDay,
       projects: chosen.length,
       tasks: taskCount,
       picks: picks.map((p) => p.taskIds.length),
@@ -186,7 +195,7 @@ export function summaryApi(deps: {
 
     let md = ''
     try {
-      const first = await generate(summaryPrompt({ day, projects }))
+      const first = await generate(summaryPrompt({ day, projects, range: win }))
       const why = failure(first)
       if (why === 'stopped') {
         job.status = 'stopped'
@@ -206,7 +215,7 @@ export function summaryApi(deps: {
       if (!check.ok) {
         retried = true
         log.warn('summary', '工作总结格式不完整，重试一次', { issues: check.issues })
-        const again = await generate(summaryPrompt({ day, projects }) + summaryRetryHint(check.issues))
+        const again = await generate(summaryPrompt({ day, projects, range: win }) + summaryRetryHint(check.issues))
         if (again.killed === 'stopped') {
           job.status = 'stopped'
           job.md = md
@@ -227,6 +236,8 @@ export function summaryApi(deps: {
     try {
       await save(job, {
         day,
+        from: win.fromDay,
+        to: win.toDay,
         // 存实际写进报告的项目（被跳过的项目不进元数据，和正文保持一致）
         projectIds: projects.map((p) => p.projectId),
         projectNames: projects.map((p) => p.projectName),
@@ -247,10 +258,14 @@ export function summaryApi(deps: {
     if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
     if (!cliSettings(await getSettings(), input.cli).enabled)
       return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
+    const started = rangeWindow(input.range)
     const job: SummaryJob & { abort: AbortController; at: number } = {
       id: randomUUID(),
       status: 'running',
       projectIds: input.projects.map((p) => p.projectId),
+      // 范围在开始时就定下来：生成过程中页面换了范围，这份结果仍然属于开始时那一段
+      from: started.fromDay,
+      to: started.toDay,
       md: '',
       tools: [],
       outChars: 0,

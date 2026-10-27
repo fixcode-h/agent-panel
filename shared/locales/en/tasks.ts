@@ -13,6 +13,14 @@ export const EN_TASKS: Record<string, string> = {
   // 不写 steps：n=1 时「1 steps」是错的，和「{n} waiting」一样回避单复数
   '{n} 步没做完（已保留）': '{n} unfinished (kept)',
   '计划 {done}/{total}': 'Plan {done}/{total}',
+  '计划进度 {done}/{total}': 'Plan progress {done}/{total}',
+  '{ago}更新': 'updated {ago}',
+  '计划最后更新时间：{ago}': 'Plan last updated: {ago}',
+  '这一步 {n} 分钟没更新了：先收口这一步，再把当前这一步标成进行中':
+    'This step has not changed for {n} min: close it out first, then mark the current one in progress',
+  '这一步 {n} 分钟没更新了': 'This step has not changed for {n} min',
+  '上一份计划没做完就结束了，这是新开的一份': 'The previous plan ended unfinished; this is a new plan',
+  重建: 'Rebuilt',
   '{n} 个在等待': '{n} waiting',
   '以前的计划 · {n}': 'Earlier plans · {n}',
   未命名的计划: 'Untitled plan',
@@ -336,6 +344,8 @@ export const EN_TASKS: Record<string, string> = {
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',
   '显示更早的 {n} 段': 'Show {n} earlier sections',
+  显示更早的消息: 'Show earlier messages',
+  '对话已经变化，已重新加载': 'The conversation changed and was reloaded',
   这一步还没有输出: 'This step has no output yet',
   '这个节点没有改动文件。': 'This node changed no files.',
   环境: 'Environment',
@@ -375,6 +385,7 @@ export const EN_TASKS: Record<string, string> = {
   父对话结束时一起结束: 'Ended together with the parent chat',
   '换 Agent / 模型时中断': 'Interrupted when switching agent / model',
   归档时结束: 'Ended on archive',
+  删除时结束: 'Ended when deleted',
   面板重启时中断: 'Interrupted by panel restart',
   页面切走后结束: 'Ended after the page was left',
   闲置太久已回收: 'Recycled after being idle too long',
@@ -382,7 +393,7 @@ export const EN_TASKS: Record<string, string> = {
   做完后收尾: 'Cleanup after finishing',
 
   // 任务页
-  已删除任务: 'Task deleted',
+  '已移进回收站，{days} 天内可以恢复': 'Moved to the trash; you can restore it within {days} days',
   // 转成弹窗（收成右下角的浮条）
   转成弹窗: 'Open as popup',
   '转成弹窗（对话继续在后台运行）': 'Open as popup (the chat keeps running in the background)',
@@ -420,8 +431,8 @@ export const EN_TASKS: Record<string, string> = {
   '发送（Enter）': 'Send (Enter)',
   关闭面板: 'Close panel',
   '删除任务「{title}」？': 'Delete task "{title}"?',
-  '会删除这个任务的对话记录，不会撤销已经改动的文件。':
-    "This deletes the task's conversation history. Files that were already changed won't be reverted.",
+  '对话记录会移进回收站，{days} 天内可以在设置 →「数据」→ 回收站里恢复；已经改动的文件不会撤销。':
+    "The conversation moves to the trash and can be restored within {days} days in Settings → Data → Trash. Files that were already changed won't be reverted.",
   没有输出: 'No output',
   '正在执行…': 'Running…',
 
@@ -652,6 +663,10 @@ export const EN_TASKS: Record<string, string> = {
   导入任务: 'Import task',
   '从导出的文件导入，只能查看': 'Imported from an exported file, read-only',
   导出任务: 'Export task',
+  '导出 HTML 报告': 'Export HTML report',
+  '导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开':
+    'Exports a self-contained HTML file that opens in a browser without Agent Panel',
+  '已导出 HTML 报告，用浏览器直接打开就能看': 'HTML report exported; open it in any browser',
   '这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。':
     'This task was imported from a file (exported {at}{app}). It is read-only and cannot be continued.',
   '，面板 {v}': ', panel {v}',
@@ -923,13 +938,12 @@ export const EN_TASKS: Record<string, string> = {
   '把合并要求发给这个分支的对话，由 AI 解决冲突后合回原分支':
     'Sends a merge request to the chat that owns this branch; AI resolves conflicts and merges it back',
   '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
-  '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
+  '它的独立分支已经合并，恢复后照常可用。': 'Its separate branches are merged and still work after restoring.',
   '正在检查独立分支…': 'Checking separate branches…',
-  '有 {n} 个独立分支还没合并，直接删除会丢掉这些改动':
-    '{n} separate branch(es) not merged. Deleting now loses those changes',
+  '有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉':
+    '{n} separate branch(es) not merged: they move to the trash with the conversation and are removed only on permanent deletion',
   '把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除':
     'Sends a merge request to the chat that owns the branch; AI resolves conflicts and merges it back. The chat is not deleted',
-  直接删除: 'Delete anyway',
   '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
     'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
   '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
@@ -1157,6 +1171,11 @@ export const EN_TASKS: Record<string, string> = {
     'API "{api}" is at its concurrency limit; this starts when a slot frees up',
   '排队等 API「{api}」': 'Waiting for API "{api}"',
   父对话测试: 'Parent test',
+  未记录: 'Not recorded',
+  测试记录: 'Test runs',
+  '合计耗时 {time}': 'Total {time}',
+  '由{by}执行': 'Run by {by}',
+  '第 {n} 次': 'Attempt {n}',
   '已合回，等父对话跑测试（面板自动执行，结果回传给它）':
     'Merged back; waiting for the parent to run its tests (the panel runs them automatically and sends the result back)',
   父对话的测试还没通过: "the parent's tests have not passed",
@@ -1172,4 +1191,26 @@ export const EN_TASKS: Record<string, string> = {
     'Sub-conversation "{from}" handed you a subtask to create. The panel has already arranged it and the specific request went to that subtask, so you do not need to dispatch anything; the result comes back to you.',
   '上面那条没能派出：{error}。这件子任务需要另外安排':
     'The note above could not be dispatched: {error}. This subtask needs to be arranged another way',
+  // 打开对话时的加载日志（web/src/components/tasks/LoadTrace.tsx）
+  加载对话: 'Loading conversation',
+  加载失败: 'Loading failed',
+  重新连上了: 'Reconnected',
+  读取对话: 'Reading conversation',
+  连接实时更新: 'Connecting live updates',
+  读取子对话: 'Reading sub-conversations',
+  标记已读: 'Marking as read',
+  渲染消息: 'Rendering messages',
+  未执行: 'Not run',
+  '已等 {time}': 'Waiting {time}',
+  '{n} 条消息': '{n} messages',
+  演示版没有实时推送: 'The demo has no live updates',
+  这个对话没有子对话: 'This conversation has no sub-conversations',
+  '实时更新连接失败，正在重连': 'Live updates failed to connect; reconnecting',
+  // 评审已放行（收尾时绕过评审门禁的记录）
+  评审已放行: 'Review gate bypassed',
+  合并前评审门禁被绕过: 'The review gate was bypassed before merging',
+  谁放行: 'Bypassed by',
+  什么时候: 'When',
+  为什么: 'Why',
+  原本拦住的是: 'What it blocked',
 }

@@ -27,11 +27,13 @@ import {
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
 import { SummaryRecord, type SummaryReport } from '../shared/summary.ts'
+import { LessonDraftRecord, LessonDraftInput } from '../shared/lesson-draft.ts'
 import { ProjectProposalSchema, withInitResult } from '../shared/project-init.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { serveDist, serveIndex } from './static.ts'
 import { dataApi } from './data.ts'
+import { cleanupApi, sweepTaskInfoOf } from './cleanup.ts'
 import { memorySampler } from './memory.ts'
 import { tasksApi } from './tasks.ts'
 import { schedulesApi } from './schedules.ts'
@@ -45,6 +47,7 @@ import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { summaryApi } from './summary.ts'
+import { lessonDraftsApi } from './lesson-drafts.ts'
 import { fixApi } from './fix.ts'
 import { projectSkillsApi } from './project-skills.ts'
 import { isPanelSource } from './panel-source.ts'
@@ -141,6 +144,8 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 /** 工作总结报告：存最近几份，用户编辑后也写这里（保留份数见 shared/summary.ts 的 SUMMARY_KEEP） */
 const summaries = createCollection<SummaryReport, SummaryRecord>('summaries.json', SummaryRecord)
+// 候选教训草稿：从工作总结提炼的半成品，用户看过后手动写进 docs/lessons/（不会自动落盘）
+const lessonDrafts = createCollection<LessonDraftInput, LessonDraftRecord>('lesson-drafts.json', LessonDraftRecord)
 
 /** 各项目目录里面板没来得及删的 MCP 条目（关掉、崩溃时留下的）：启动时还没有在跑的对话，凡是指向本面板的都已失效 */
 async function sweepProjectsPanelMcp() {
@@ -802,6 +807,19 @@ app.delete('/projects/:id', async (c) => {
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 
 /**
+ * 每小时一次的本地清理：回收站里过期的对话物理删除，清扫没人管的独立目录，
+ * 再兜底回收「任务已经收口、CLI 还活着」的进程（漏停的、重启前留下的）。
+ * 几件事同一节奏，不各起一个定时器
+ */
+function runCleanup() {
+  void tasks.cleanupTrash().catch((e: Error) => log.error('tasks', '回收站清理出错', { error: e.message }))
+  void tasks
+    .reapSettledClis()
+    .catch((e: Error) => log.warn('exec', '兜底回收已收口任务的 CLI 出错', { error: e.message }))
+  void sweepStaleWorktrees()
+}
+
+/**
  * 回收没人管的独立工作目录：面板重启、父对话结束、任务记录丢了之后，不再有人触发收口，
  * 已合并的目录会一直留在磁盘上（见 server/exec/worktree.ts 的 sweepWorktrees）。
  * 只清「改动都已合回原分支 + 任务已收口 / 记录已不存在」的，以及 git 注册表外的残留；
@@ -809,24 +827,8 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordL
  */
 async function sweepStaleWorktrees() {
   if (process.env.AGENT_PANEL_KEEP_WORKTREES === '1') return
-  // 正在执行的任务从内存里拿：任务记录里的 working 可能是上一轮留下的
-  const working = new Set(tasks.workingTasks().map((w) => w.id))
-  const res = await sweepWorktrees({
-    taskInfo: async (id) => {
-      const tk = await tasks.get(id)
-      if (!tk) return null
-      const p = tk.projectId ? await projects.get(tk.projectId) : null
-      return {
-        // 显式收口，或者这一轮已经跑完 / 被停掉：剩下没人会再触发收口（面板重启、父对话结束）
-        done: tk.resolved === true || tk.archived === true || tk.status === 'done' || tk.status === 'stopped',
-        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动
-        working: working.has(id) || tk.working === true || tk.awaitingUser === true || tk.prewarming === true,
-        projectPath: p?.path ?? '',
-        branch: tk.worktree?.branch ?? '',
-        baseBranch: tk.worktree?.baseBranch ?? '',
-      }
-    },
-  }).catch((e: Error) => {
+  // 判定和「设置 → 数据」里的一键清理共用一份（见 server/cleanup.ts 的 sweepTaskInfoOf）
+  const res = await sweepWorktrees({ taskInfo: sweepTaskInfoOf(tasks, projects) }).catch((e: Error) => {
     log.error('worktree', '清扫独立目录出错', { error: e.message })
     return null
   })
@@ -842,8 +844,13 @@ async function sweepStaleWorktrees() {
 app.route('/tasks', tasks.routes)
 // 工作总结：选项目生成今天的报告（只读任务记录，不改项目文件）
 app.route('/summary', summaryApi({ tasks, projects, reports: summaries }).routes)
+app.route('/lesson-drafts', lessonDraftsApi({ drafts: lessonDrafts, reports: summaries }).routes)
 // 定时计划：到点由面板自己新建一个对话，走和页面新建任务完全一样的链路
-const schedules = schedulesApi({ startChat: (input) => tasks.startChat(input) })
+const schedules = schedulesApi({
+  startChat: (input) => tasks.startChat(input),
+  // Webhook 载荷里带项目名：接的一方不用再去查项目 id
+  projectName: async (id) => (await projects.get(id))?.name ?? '',
+})
 app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
@@ -930,7 +937,7 @@ app.get('/projects/:id/files', async (c) => {
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
-// 目录的版本控制类型：项目设置里判断「禁止子对话执行」能不能勾（只对 Git 项目生效，见 ADR 0018）。
+// 目录的版本控制类型：项目设置里说明 parent 范围只对 Git 项目生效（见 ADR 0018 / 0020）。
 // 判定复用 detectVcs，和子对话开独立分支时的判断是同一套
 app.get('/fs/vcs', async (c) => c.json(await detectVcs(resolvePath(c.req.query('path') ?? ''))))
 
@@ -1006,6 +1013,8 @@ const memory = memorySampler({
 memory.start()
 
 app.route('/data', dataApi({ running: () => tasks.running() + designs.running(), memory }))
+// 逐个目录 stat / 跑 git 的清理入口单独一块（/data/cleanup*），不和上面那套按分类扫路径的混在一起
+app.route('/data/cleanup', cleanupApi({ tasks, projects }))
 
 const updater = updateApi({
   running: () => tasks.running() + designs.running(),
@@ -1091,9 +1100,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   stopMemorySampler = startMemorySampler()
   // 定时计划：面板进程在跑时才有定时，错过的计划不补跑（见 shared/schedule.ts）
   stopSchedules = schedules.start()
-  // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
-  setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
-  setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
+  // 回收没人管的独立目录、清掉回收站里过期的对话：启动后跑一次，之后每小时一次（进程退出不用等它）
+  setTimeout(runCleanup, 10_000).unref()
+  setInterval(runCleanup, 60 * 60_000).unref()
   // 上次关掉、崩溃时没来得及删的面板 MCP 条目（项目 .mcp.json 里的 agent-panel、panel-xxxx）：启动时清一遍
   void sweepProjectsPanelMcp()
   void applyRemote()

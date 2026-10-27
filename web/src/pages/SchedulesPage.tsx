@@ -5,20 +5,27 @@ import {
   fromLocalInput,
   groupLabel,
   groupSchedules,
+  isoWeekday,
   nextRunLabel,
   outcomeLabel,
   outcomeOf,
   outcomeTitle,
+  repeatLabel,
   sameMinute,
+  scheduleCycle,
+  scheduleCycleLabel,
   SCHEDULE_TICK_MS,
+  SCHEDULE_WEEKDAYS,
   toLocalInput,
   WORKDAY_PLAN,
   workdayTemplate,
+  whenLabel,
   type Schedule,
   type ScheduleInput,
   type ScheduleRepeat,
 } from '@shared/schedule'
 import { t } from '@shared/i18n'
+import { pad2 } from '@shared/datetime'
 import { listableAgents } from '@shared/builtin/core'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -29,14 +36,13 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { Segmented } from '@/components/ui/segmented'
 import { PageFrame } from '@/components/library/parts'
 
 const DEMO = !!import.meta.env.VITE_DEMO
 /** 启动失败的原文超过这个长度才给「展开全文」：窄屏一行大约只放得下这么多字，再长会被截掉 */
 const ERROR_PREVIEW_CHARS = 30
 /** 模板时间文案：从 WORKDAY_PLAN 算，模板改成别的时刻这里跟着变 */
-const WORKDAY_TIME = `${WORKDAY_PLAN.hour}:${String(WORKDAY_PLAN.minute).padStart(2, '0')}`
+const WORKDAY_TIME = `${WORKDAY_PLAN.hour}:${pad2(WORKDAY_PLAN.minute)}`
 
 const toInput = (s: Schedule): ScheduleInput => ({
   name: s.name,
@@ -44,12 +50,21 @@ const toInput = (s: Schedule): ScheduleInput => ({
   projectId: s.projectId,
   agentId: s.agentId,
   repeat: s.repeat,
+  weekdays: s.weekdays,
   at: s.at,
   enabled: s.enabled,
+  dependsOn: s.dependsOn,
+  budget: s.budget,
 })
 
 /** 最近一次结果的色调：问题和错过都要能一眼看见，成功不抢眼 */
-const outcomeTone = { error: 'warning', missed: 'warning', success: 'success', none: 'neutral' } as const
+const outcomeTone = {
+  error: 'warning',
+  missed: 'warning',
+  blocked: 'warning',
+  success: 'success',
+  none: 'neutral',
+} as const
 
 /** 分组标题：组名 + 数量 */
 function GroupHeading({ group, count }: { group: string; count: number }) {
@@ -69,6 +84,7 @@ function ScheduleCard({
   now,
   projectName,
   agentName,
+  upstreams,
   busy,
   onEdit,
   onRun,
@@ -80,6 +96,8 @@ function ScheduleCard({
   now: number
   projectName: string
   agentName: string
+  /** 上游计划的名字；找不到的是已经被删掉的，用占位名字 */
+  upstreams: string[]
   busy: boolean
   onEdit: () => void
   onRun: () => void
@@ -139,7 +157,7 @@ function ScheduleCard({
         ) : (
           <span className="text-[0.9375rem] font-medium text-subtle">{t('不会再次执行')}</span>
         )}
-        <Badge>{s.repeat === 'daily' ? t('每天') : t('单次')}</Badge>
+        <Badge>{repeatLabel(s.repeat)}</Badge>
       </div>
 
       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -148,12 +166,37 @@ function ScheduleCard({
         <span>{agentName || t('跟随默认 CLI')}</span>
       </p>
 
-      {/* 最近一次结果：成功 / 错过 / 启动失败各说清发生了什么，失败原文不吞 */}
+      {/* 上游依赖：这几条计划这一轮成功启动之后本计划才会启动；名字都找不到说明上游被删了 */}
+      {!!upstreams.length && (
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span className="text-subtle">{t('上游')}</span>
+          <span>{upstreams.join(t('、'))}</span>
+        </p>
+      )}
+
+      {/* 执行上限：只写设了的项，没设的一项不占位置 */}
+      {(s.budget.tokens > 0 || s.budget.minutes > 0) && (
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+          <span className="text-subtle">{t('执行上限')}</span>
+          <span>
+            {[
+              s.budget.tokens > 0 ? t('{n} token', { n: s.budget.tokens.toLocaleString() }) : '',
+              s.budget.minutes > 0 ? t('{n} 分钟', { n: s.budget.minutes }) : '',
+            ]
+              .filter(Boolean)
+              .join(t('、'))}
+          </span>
+        </p>
+      )}
+
+      {/* 最近一次结果：成功 / 错过 / 未启动 / 启动失败各说清发生了什么，原因不吞 */}
       <div className="mt-2.5 flex flex-col gap-1.5 border-t pt-2.5 text-xs">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Badge tone={outcomeTone[outcome]}>{outcomeTitle(s)}</Badge>
-          {/* 徽标已经说了结果，正文只补细节；还没执行过时不再重复同一句话 */}
-          {outcome !== 'error' && outcome !== 'none' && <span className="text-muted">{outcomeLabel(s, now)}</span>}
+          {/* 徽标已经说了结果，正文只补细节；原因类型的在下面单独一段用警告色显示 */}
+          {(outcome === 'missed' || outcome === 'success') && (
+            <span className="text-muted">{outcomeLabel(s, now)}</span>
+          )}
           {outcome === 'success' && <span className="text-subtle">{timeAgo(s.lastRunAt, now)}</span>}
           {!!s.lastTaskId && (
             <button
@@ -185,6 +228,20 @@ function ScheduleCard({
             )}
           </div>
         )}
+        {/* 上游没成功：写清是哪个上游、什么结果，不静默跳过 */}
+        {outcome === 'blocked' && (
+          <p className="break-words whitespace-pre-wrap text-warning">
+            {s.blockedReason || t('上游没有成功，没有启动')}
+          </p>
+        )}
+        {/* 最近一次 Webhook 投递：没开 Webhook 时没有这条记录，不占位置 */}
+        {!!s.lastDelivery && (
+          <p className={cn('break-words', s.lastDelivery.ok ? 'text-subtle' : 'text-warning')}>
+            {s.lastDelivery.ok
+              ? t('Webhook 已投递于 {time}', { time: whenLabel(s.lastDelivery.at, now) })
+              : t('Webhook 投递失败：{error}', { error: s.lastDelivery.error })}
+          </p>
+        )}
       </div>
     </li>
   )
@@ -197,7 +254,15 @@ interface Form {
   projectId: string
   agentId: string
   repeat: ScheduleRepeat
+  /** weekly 时选中的星期（1 = 周一 … 7 = 周日） */
+  weekdays: number[]
   atLocal: string
+  /** 上游计划 id：这些计划这一轮成功启动之后，本计划到点才会启动 */
+  dependsOn: string[]
+  /** token 上限（输入框里的原文）；空或 0 表示不限 */
+  budgetTokens: string
+  /** 时长上限（分钟，输入框里的原文）；空或 0 表示不限 */
+  budgetMinutes: string
 }
 
 const newForm = (): Form => {
@@ -207,9 +272,13 @@ const newForm = (): Form => {
     name: tpl.name,
     prompt: tpl.prompt,
     repeat: tpl.repeat,
+    weekdays: [],
     projectId: '',
     agentId: '',
     atLocal: toLocalInput(tpl.at),
+    dependsOn: [],
+    budgetTokens: '',
+    budgetMinutes: '',
   }
 }
 
@@ -219,16 +288,24 @@ const formOf = (s: Schedule): Form => ({
   projectId: s.projectId,
   agentId: s.agentId,
   repeat: s.repeat,
+  weekdays: s.weekdays,
   atLocal: toLocalInput(s.at),
+  dependsOn: s.dependsOn,
+  // 0 在界面上显示成空：不限制就别占着输入框写一个 0
+  budgetTokens: s.budget.tokens ? String(s.budget.tokens) : '',
+  budgetMinutes: s.budget.minutes ? String(s.budget.minutes) : '',
 })
 
 function ScheduleDialog({
   schedule,
+  schedules,
   onClose,
   onSaved,
 }: {
   /** 不传是新建 */
   schedule?: Schedule
+  /** 全部计划：选上游时列出来，排除自己 */
+  schedules: Schedule[]
   onClose: () => void
   onSaved: (s: Schedule) => void
 }) {
@@ -236,10 +313,59 @@ function ScheduleDialog({
   const [form, setForm] = useState<Form>(() => (schedule ? formOf(schedule) : newForm()))
   const [saving, setSaving] = useState(false)
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
+  /**
+   * 切重复规则：切到「每周」时先把执行时间那天的星期选上，用户能直接看到以后哪天执行；
+   * 切到别的规则时清掉残留的星期，下次回到「每周」不会被上一次的选择干扰。
+   */
+  const setRepeat = (repeat: ScheduleRepeat) => {
+    setForm((f) => {
+      const at = fromLocalInput(f.atLocal)
+      return {
+        ...f,
+        repeat,
+        weekdays: repeat === 'weekly' ? (f.weekdays.length ? f.weekdays : at ? [isoWeekday(new Date(at))] : []) : [],
+      }
+    })
+  }
+  /**
+   * 改执行时间：weekly 只勾了一个星期时把星期跟着换成新日期那天，
+   * 否则两个字段长期不一致（用户把「每周一」的日期改到周三，保存后会被服务端拉回下周一）。
+   * 勾了多个星期时不动——用户很可能是想保留那几天、只换时分。
+   */
+  const setAtLocal = (value: string) => {
+    setForm((f) => {
+      const at = fromLocalInput(value)
+      const weekdays = f.repeat === 'weekly' && f.weekdays.length === 1 && at ? [isoWeekday(new Date(at))] : f.weekdays
+      return { ...f, atLocal: value, weekdays }
+    })
+  }
+  /** 勾选 / 取消一个星期（多选） */
+  const toggleWeekday = (day: number) =>
+    setForm((f) => ({
+      ...f,
+      weekdays: f.weekdays.includes(day)
+        ? f.weekdays.filter((x) => x !== day)
+        : [...f.weekdays, day].sort((a, b) => a - b),
+    }))
+  /** 可选的上游：排除自己，否则一保存就成环 */
+  const others = schedules.filter((x) => x.id !== schedule?.id)
+  /** 勾选 / 取消一个上游（多选） */
+  const toggleUpstream = (id: string) =>
+    setForm((f) => ({
+      ...f,
+      dependsOn: f.dependsOn.includes(id) ? f.dependsOn.filter((x) => x !== id) : [...f.dependsOn, id],
+    }))
   /** 一键填入「今日工作」：只改名称、提示词和每天 19:00，用户选的项目和角色保留 */
   const applyTemplate = () => {
     const tpl = workdayTemplate(Date.now())
-    setForm((f) => ({ ...f, name: tpl.name, prompt: tpl.prompt, repeat: tpl.repeat, atLocal: toLocalInput(tpl.at) }))
+    setForm((f) => ({
+      ...f,
+      name: tpl.name,
+      prompt: tpl.prompt,
+      repeat: tpl.repeat,
+      weekdays: [],
+      atLocal: toLocalInput(tpl.at),
+    }))
   }
   // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字，
   // 不然 Select 找不到当前项时会把角色 id 直接显示出来，看着像坏数据。保存仍按原值走，用户主动改了才换
@@ -253,14 +379,25 @@ function ScheduleDialog({
       toast.error(t('请选择执行时间'))
       return
     }
+    // 成环的依赖存不进去：先在本机拦一下，提示比等接口报错快
+    const cycle = scheduleCycle(schedules, schedule?.id ?? '', form.dependsOn)
+    if (cycle.length) {
+      toast.error(t('依赖关系成环：{path}，请去掉一个上游再保存', { path: scheduleCycleLabel(cycle, schedules) }))
+      return
+    }
     const input: ScheduleInput = {
       name: form.name,
       prompt: form.prompt,
       projectId: form.projectId,
       agentId: form.agentId,
       repeat: form.repeat,
+      // 每周没勾星期时按执行时间那天的星期；服务端还会用 alignScheduleAt 把首次执行对齐到选中的星期
+      weekdays: form.repeat === 'weekly' && !form.weekdays.length ? [isoWeekday(new Date(at))] : form.weekdays,
       at,
       enabled: schedule?.enabled ?? true,
+      dependsOn: form.dependsOn,
+      // 输入框只让填数字；空着按 0（不限）
+      budget: { tokens: Number(form.budgetTokens) || 0, minutes: Number(form.budgetMinutes) || 0 },
     }
     setSaving(true)
     try {
@@ -330,23 +467,84 @@ function ScheduleDialog({
             type="datetime-local"
             className="h-10 dark:[color-scheme:dark]"
             value={form.atLocal}
-            onChange={(e) => set('atLocal', e.target.value)}
+            onChange={(e) => setAtLocal(e.target.value)}
           />
         </label>
         <div className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] font-medium">{t('重复')}</span>
-          <Segmented
-            label={t('重复')}
+          <Select
+            aria-label={t('重复')}
             value={form.repeat}
-            onChange={(v) => set('repeat', v)}
+            className="h-10 w-[140px]"
+            onChange={(e) => setRepeat(e.target.value as ScheduleRepeat)}
             options={[
-              { id: 'once', label: t('只执行一次') },
-              { id: 'daily', label: t('每天') },
+              { value: 'once', label: t('单次') },
+              { value: 'daily', label: t('每天') },
+              { value: 'weekly', label: t('每周') },
+              { value: 'workdays', label: t('工作日') },
             ]}
           />
         </div>
       </div>
+      {form.repeat === 'weekly' && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[0.8125rem] font-medium">{t('每周哪几天')}</span>
+          <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1">
+            {SCHEDULE_WEEKDAYS.map((d) => {
+              const on = form.weekdays.includes(d.id)
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleWeekday(d.id)}
+                  className={cn(
+                    'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
+                    on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
+                  )}
+                >
+                  {d.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[0.8125rem] font-medium">{t('上游计划')}</span>
+        <span className="text-xs text-subtle">
+          {t('这些计划这一轮成功启动之后，本计划到点才会启动；留空表示不依赖。')}
+        </span>
+        {others.length ? (
+          <div
+            role="group"
+            aria-label={t('上游计划')}
+            className="flex max-h-32 flex-wrap gap-1 overflow-y-auto rounded-lg border p-1.5"
+          >
+            {others.map((x) => {
+              const on = form.dependsOn.includes(x.id)
+              return (
+                <button
+                  key={x.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleUpstream(x.id)}
+                  className={cn(
+                    'h-8 cursor-pointer rounded-lg border px-2.5 text-[0.8125rem] transition-colors',
+                    on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:bg-sel',
+                  )}
+                >
+                  {x.name}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <span className="text-xs text-subtle">{t('还没有别的计划可以作为上游。')}</span>
+        )}
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
+        {' '}
         <label className="flex flex-col gap-1.5">
           <span className="text-[0.8125rem] font-medium">{t('用哪个角色')}</span>
           <Select
@@ -387,8 +585,34 @@ function ScheduleDialog({
           onChange={(e) => set('prompt', e.target.value)}
         />
       </label>
+      {/* 执行上限：超了就停，已经产出的内容留着；空着表示不限 */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[0.8125rem] font-medium">{t('token 上限')}</span>
+          <Input
+            inputMode="numeric"
+            value={form.budgetTokens}
+            placeholder={t('0 或不填表示不限')}
+            aria-label={t('token 上限')}
+            onChange={(e) => set('budgetTokens', e.target.value.replace(/[^\d]/g, ''))}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[0.8125rem] font-medium">{t('时长上限（分钟）')}</span>
+          <Input
+            inputMode="numeric"
+            value={form.budgetMinutes}
+            placeholder={t('0 或不填表示不限')}
+            aria-label={t('时长上限（分钟）')}
+            onChange={(e) => set('budgetMinutes', e.target.value.replace(/[^\d]/g, ''))}
+          />
+        </label>
+      </div>
       <p className="text-xs text-subtle">
-        {t('时间按本机时区。每天的计划每次执行完自动推到第二天，只执行一次的执行完就停下。')}
+        {t('超过上限时面板会停下来，已经产出的内容都保留着；填 0 或不填表示不限。')}
+      </p>
+      <p className="text-xs text-subtle">
+        {t('时间按本机时区。每天 / 每周 / 工作日的计划每次执行完自动推到下一次，只执行一次的执行完就停下。')}
       </p>
     </Modal>
   )
@@ -467,6 +691,10 @@ export function SchedulesPage() {
     go(s.projectId ? { page: 'projects', id: s.projectId, sub: s.lastTaskId } : { page: 'chat', id: s.lastTaskId })
   }
 
+  /** 上游的名字：找不到的是已经被删掉的，用占位名字，不显示一串 id */
+  const upstreamNames = (s: Schedule) =>
+    s.dependsOn.map((id) => list?.find((x) => x.id === id)?.name ?? t('已删除的计划'))
+
   return (
     <PageFrame
       title={t('计划')}
@@ -509,6 +737,7 @@ export function SchedulesPage() {
                     now={now}
                     projectName={project?.name ?? ''}
                     agentName={agent?.name ?? ''}
+                    upstreams={upstreamNames(s)}
                     busy={busy === s.id}
                     onEdit={() => setEdit(s)}
                     onRun={() => void runNow(s)}
@@ -527,6 +756,7 @@ export function SchedulesPage() {
         <ScheduleDialog
           key={edit === 'new' ? 'new' : edit.id}
           schedule={edit === 'new' ? undefined : edit}
+          schedules={list ?? []}
           onClose={() => setEdit(null)}
           onSaved={saved}
         />

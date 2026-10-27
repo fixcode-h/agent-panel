@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Copy, Download, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react'
 import { isCoreAgent, isHelperAgent, listableAgents } from '@shared/builtin/core'
 import { type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
@@ -19,6 +19,9 @@ import { TagCountChip, TagFilter, TagList } from '@/components/tags/Tags'
 import { Segmented } from '@/components/ui/segmented'
 import { groupAgentsByTag } from '@/lib/agent-groups'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { exportAgent } from '@/lib/transfer'
+import { useShareImport } from '@/lib/useShareImport'
+import { ImportConflictDialog } from '@/components/share/ImportConflictDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
 import { defaultCli } from '@shared/settings'
@@ -46,6 +49,14 @@ export function AgentsPage() {
   const [rev, setRev] = useState(0)
   // 列表右键「删除」：先选中那个 Agent，再让详情页弹出删除确认（确认框和被引用的检查都在详情页里）
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
+  // 导入角色分享包：格式和指纹在 importShare 里校验，同名时弹「覆盖 / 另存为副本」
+  const file = useRef<HTMLInputElement>(null)
+  const share = useShareImport('agent', (r) => {
+    void api.agents().then(setAgents)
+    setQuery('')
+    go({ page: 'agents', id: r.id })
+    toast.success(t('已导入角色「{name}」', { name: r.name }))
+  })
 
   const defId = settings ? defaultCli(settings) : clis.find((c) => c.isDefault)?.id
   const defStatus = clis.find((c) => c.id === defId && c.enabled)
@@ -173,6 +184,10 @@ export function AgentsPage() {
             <Copy className="h-4 w-4" />
             {t('复制一份')}
           </ContextMenuItem>
+          <ContextMenuItem onSelect={() => exportAgent(a)}>
+            <Download className="h-4 w-4" />
+            {t('导出分享包')}
+          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem
             danger
@@ -207,6 +222,16 @@ export function AgentsPage() {
             >
               <LayoutTemplate className="h-4 w-4" />
             </Button>
+            <Button
+              size="icon-sm"
+              variant="secondary"
+              aria-label={t('导入角色文件')}
+              title={t('导入角色文件（分享包）')}
+              onClick={() => file.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
+            <input ref={file} type="file" accept=".json,application/json" hidden onChange={share.onFile} />
             <Button
               size="sm"
               variant="secondary"
@@ -350,6 +375,7 @@ export function AgentsPage() {
           if (agent) go({ page: 'agents', id: agent.id })
         }}
       />
+      <ImportConflictDialog conflict={share.conflict} onPick={share.pick} onClose={share.close} />
     </>
   )
 }

@@ -415,7 +415,7 @@ export type WorkflowExpose = z.infer<typeof WorkflowExpose>
  * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
-const WorkflowFields = z.object({
+export const WorkflowFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
@@ -623,10 +623,59 @@ export type FileFormat = z.infer<typeof FileFormat>
 export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
 
 /**
+ * 一条测试步骤跑多大范围（决定「谁在什么时候跑它」）：
+ * - always：每次改动都跑。类型检查、lint 这类几十秒内能跑完的快速检查
+ * - changed：只有改动清单命中 appliesTo 才跑。相关单测、相关界面检查分片
+ * - parent：子对话一律不跑，合并后由父对话在全量里跑。全量单测、全量界面检查、端到端测试
+ * parent 只对 Git 项目的独立分支子对话生效（有「合回」这一步才有「父对话替你跑」）；
+ * 共用目录、P4 / SVN、没有版本控制、工作流节点里没有父对话代跑，这些步骤照常由执行者自己跑。
+ * 这个字段合并了原来的 runInParent（勾「禁止子对话执行」等于 scope = parent），不再保留两个字段。
+ */
+export const TEST_STEP_SCOPES = ['always', 'changed', 'parent'] as const
+export type TestStepScope = (typeof TEST_STEP_SCOPES)[number]
+
+/**
+ * 命令里能看出「跑的是全量、很慢」的写法：迁移老步骤和生成默认步骤时补成 parent。
+ * 只认这些明确的全量入口，宽泛的 test / build 不改判——猜错成 parent 会让子对话漏跑，比多跑一次更糟。
+ */
+const FULL_SUITE_COMMAND = /(test:?(?:unit|all|e2e)\b|\be2e\b|ui-check|playwright\s+test|cypress)/i
+
+/**
+ * 老步骤的 runInParent 迁成 scope（不保留两个字段）：
+ * 老字段 runInParent 为 true 的就是 parent；没勾的按原来的筛选语义还原——
+ * 命令明显是跑全量的（全量单测、全量界面检查、e2e）先判 parent，**不看 appliesTo**：
+ * 老默认步骤正是「全量命令 + 适用改动」，先按 appliesTo 判成 changed 会让存量项目照旧每个子对话跑一遍全量；
+ * 其余写了适用改动的是 changed；「合并时编译」的步骤本来就只在父对话侧跑，标 changed；剩下的是 always。
+ * appliesTo 为空的老步骤仍然是「总是执行」：升级不会让原来会跑的步骤变成从不跑。
+ * 全量命令判成 parent 是这次的行为变化（子对话不再自己跑全量），见 ADR 0020。
+ */
+export function legacyTestStepScope(step: {
+  runInParent?: unknown
+  appliesTo?: unknown
+  merge?: unknown
+  command?: unknown
+}): TestStepScope {
+  if (step.runInParent === true) return 'parent'
+  if (FULL_SUITE_COMMAND.test(String(step.command ?? ''))) return 'parent'
+  if (Array.isArray(step.appliesTo) && step.appliesTo.some((g) => typeof g === 'string' && g.trim())) return 'changed'
+  if (step.merge === true) return 'changed'
+  return 'always'
+}
+
+/** 整条步骤的迁移：已经写了 scope 的不动，老数据按上面的规则换算并去掉 runInParent */
+export function migrateTestStep(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input
+  const s = input as Record<string, unknown>
+  if (s.scope !== undefined) return s
+  const { runInParent: _legacy, ...rest } = s
+  return { ...rest, scope: legacyTestStepScope(s) }
+}
+
+/**
  * 测试步骤的字段（不含 id）：AI 生成 / 补全步骤时整份沿用这里校验，
  * 新增字段只改这一处，避免提示词、AI 结果和保存校验三份定义走偏。
  */
-export const TestStepFields = z.object({
+export const TestStepShape = z.object({
   /** 显示名，例如「类型检查」「编译」 */
   name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
   /** 要执行的命令原文 */
@@ -638,13 +687,16 @@ export const TestStepFields = z.object({
   /** 执行条件的补充说明，写给人看的，例如「仅在发布前跑」；判定以 appliesTo 为准 */
   when: z.string().trim().max(120).default(''),
   /**
-   * 适用范围：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
-   * 空数组表示总是执行——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑。
+   * 适用范围（scope = changed 时用）：本次改动的文件里至少要有一个匹配这些 glob，才跑这条步骤。
+   * 空数组按总是执行处理——老项目的步骤没有这个字段，解析上来是空数组，不会因为升级就漏跑；
+   * 新加的步骤留空同样表示「改动怎么看都该跑」。
    * 匹配算法只有一份（shared/test-steps.ts 的 matchesGlob / stepApplies）：界面输入用 parseGlobs、
-   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；实际比对由 Agent 按提示词里的
-   * 改动清单做，执行流程里目前还没有按清单自动跳过的地方
+   * 交给 Agent 的提示词用 appliesToText，单测钉住 stepApplies；按清单筛哪些步骤要跑由
+   * scripts/changed-tests.mjs 做（单测文件、界面分片的定位也在这个脚本里）
    */
   appliesTo: z.array(z.string().trim().min(1).max(120)).max(30).default([]),
+  /** 跑多大范围，见 TEST_STEP_SCOPES；老步骤解析时按 legacyTestStepScope 换算 */
+  scope: z.enum(TEST_STEP_SCOPES).catch('always').default('always'),
   /** 超时（秒）；0 表示不限 */
   timeoutSec: z
     .number()
@@ -658,20 +710,21 @@ export const TestStepFields = z.object({
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
   /**
-   * 禁止子对话执行：勾了的步骤子对话不跑，合并回父对话的分支后面板在父对话目录里跑，结果回传给子对话（见 ADR 0018）。
-   * 只对 Git 项目的独立分支子对话生效（其它版本控制的子对话没有分支可合，字段被忽略）；默认 false，老步骤不受影响
-   */
-  runInParent: z.boolean().catch(false).default(false),
-  /**
    * 小改动也跑：Agent 判断这次是小改动时只跑标了这个的步骤（类型检查、lint 这类几秒到几十秒的），
    * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
    */
   quick: z.boolean().default(false),
 })
 
-export const TestStep = TestStepFields.extend({
-  id: z.string().trim().min(1).max(40),
-})
+export const TestStepFields = z.preprocess(migrateTestStep, TestStepShape)
+export type TestStepFields = z.infer<typeof TestStepShape>
+
+export const TestStep = z.preprocess(
+  migrateTestStep,
+  TestStepShape.extend({
+    id: z.string().trim().min(1).max(40),
+  }),
+)
 export type TestStep = z.infer<typeof TestStep>
 
 /**
@@ -893,6 +946,19 @@ export const MAX_ATTACHMENTS = 10
  * 找不到时没超过这个上限的仍然上传一份
  */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+/**
+ * 一个对话最多能设多少 token 的执行上限：一亿 token 已经远超一次对话，
+ * 再大一定是填错了；太小会挡住正常的长时间任务，所以不收更小的人工上限
+ */
+export const MAX_TASK_BUDGET_TOKENS = 100_000_000
+/** 一个对话的时长上限最多几天（分钟）：和设置里的单步时限同一个上限，超过一天的任务该拆成多个 */
+export const MAX_TASK_BUDGET_MINUTES = 1440
+/**
+ * 消息里图片卡片取的图有多宽（像素）。卡片本身是 1.25em 见方（约 20px），2 倍屏上按 40px 显示，
+ * 取 160 已留 4 倍余量；同一批 48 张截图实测：原图 3501KB，640 要 2376KB，160 只要 266KB。
+ * 看大图、复制图片仍取原图，不受它影响。
+ */
+export const ATTACHMENT_THUMB_WIDTH = 160
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
@@ -929,6 +995,12 @@ export const NewTaskInput = z.object({
   childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
+  /**
+   * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
+   * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
+   */
+  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).optional(),
+  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -1021,6 +1093,7 @@ export const AlertKind = z.enum([
   'retry', // CLI 自己在重试
   'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
   'worktree', // 独立分支建不起来、删不掉
+  'budget', // 用户给这个计划 / 任务设的 token 或时长上限到了
   'panel', // 面板自己出错
 ])
 export type AlertKind = z.infer<typeof AlertKind>
@@ -1334,6 +1407,7 @@ export const StopReason = z.enum([
   'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
   'switch', // 换 CLI / 模型 / 角色，这一轮重启
   'archive', // 归档
+  'delete', // 删除对话（进回收站时结束）
   'restart', // 面板重启、服务退出
   'presence', // 页面切走、宽限期到了，CLI 不再等下一句
   'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
@@ -1413,7 +1487,7 @@ export const TaskTestRun = z.object({
   /** 项目测试步骤的 id（任务里的快照）；按命令能认出是哪条步骤时才记 */
   stepId: z.string().default(''),
   stepName: z.string().default(''),
-  /** 谁跑的：父对话（勾了「禁止子对话执行」的步骤）/ 子对话自己 */
+  /** 谁跑的：父对话（范围为 parent 的步骤）/ 子对话自己 */
   by: z.enum(['parent', 'self']).catch('self').default('self'),
   ok: z.boolean().default(false),
   /** 耗时（毫秒）：按后台命令的真实开始 / 结束时间算 */
@@ -1427,9 +1501,11 @@ export type TaskTestRun = z.infer<typeof TaskTestRun>
 /**
  * 对话的执行计划：对话分析完列出主步骤，每个主步骤最多再分一层子步骤。
  * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
- * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它
+ * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它。
+ * running 与 waiting 分开：running 是「对话现在在动手」（一份计划里最多一个），waiting 是「在等外部结果」（必须挂着 waits）。
+ * failed：这一步没做成、需要处理（重做或明确跳过），不是终态；skipped：明确不做，终态（见 ADR 0020）
  */
-export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done'])
+export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done', 'failed', 'skipped'])
 export type PlanStatus = z.infer<typeof PlanStatus>
 
 /**
@@ -1455,6 +1531,11 @@ export const PlanItem = z.object({
   waits: z.array(PlanWait).default([]),
   startedAt: z.string().default(''),
   endedAt: z.string().default(''),
+  /**
+   * 这一项最后一次真正变化（状态、标题、备注、等待项）的时间：滞后检测和界面的「N 分钟前更新」读它。
+   * 旧数据没有这个字段，读时退回 startedAt（见 shared/plan.ts 的 itemUpdatedAt）
+   */
+  updatedAt: z.string().optional(),
 })
 export type PlanItem = z.infer<typeof PlanItem>
 
@@ -1495,6 +1576,21 @@ export const TaskPlan = z.object({
   reopenedAt: z.string().optional(),
   /** 所有步骤都完成的时间；没完成时为空 */
   doneAt: z.string().default(''),
+  /**
+   * 这份计划最后一次变化（任何一步的状态、标题、备注，或计划的标题）的时间：
+   * 界面的「N 分钟前更新」和「新输入之后计划有没有动过」都读它。旧数据没有，退回 createdAt
+   */
+  updatedAt: z.string().optional(),
+  /**
+   * 最近一次「带新要求性质」的输入到达时间（用户消息、父对话转达、子对话 / 后台结果里带了新任务）。
+   * 只用来判断「新输入之后计划有没有动过」，不参与状态推进（见 ADR 0020）
+   */
+  lastInputAt: z.string().optional(),
+  /**
+   * 已经为哪一次输入提醒过「计划没跟着改」（对应 lastInputAt 的值）：只提醒一次，
+   * 否则对话选了「不改计划、说明一句」时会被每轮重复追问（见 shared/plan.ts 的 inputUnhandled）
+   */
+  inputNotedAt: z.string().optional(),
   /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
   summary: z.string().default(''),
   autoSummary: z.boolean().default(false),
@@ -1646,6 +1742,20 @@ export const TaskData = z.object({
    * 完成后再被叫醒、上下文又大时，开新会话只带它，不把上次的工具输出全带进去
    */
   handoff: z.object({ text: z.string(), files: z.string().default(''), at: z.string() }).optional(),
+  /**
+   * 评审门禁的显式放行记录（见 shared/review-gate.ts）：评审没过而用户明确要求「已知问题也合并」时，
+   * 面板记下谁、什么时候、为什么、原本拦住什么。收尾消息和交接摘要里一并带给父对话，任务详情里也能看到
+   */
+  reviewOverride: z
+    .object({
+      by: z.enum(['user', 'parent']),
+      /** 面板接收 submit_merge 时记的时间，不用调用方自报的 */
+      at: z.string(),
+      reason: z.string(),
+      /** 原本拦住的那条门禁原因（一句话） */
+      blocked: z.string(),
+    })
+    .optional(),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
   /**
@@ -1807,7 +1917,17 @@ export const TaskData = z.object({
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
-  budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  budgetFrom: z
+    .object({
+      usd: z.number(),
+      tokens: z.number(),
+      /** 这一轮开始的时刻（epoch ms）：时长上限从它算起；旧记录没有，时长上限按不限处理 */
+      at: z.number().optional(),
+    })
+    .optional(),
+  /** 执行上限（定时计划带的）：token 上限和时长上限（分钟），0 表示不限 */
+  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).default(0),
+  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
   /**
@@ -1858,6 +1978,12 @@ export const TaskData = z.object({
   childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /**
+   * 进回收站的时刻：删除只做标记，任务记录、对话内容、独立分支、附件、对话目录都先留着，
+   * 超过保留期（见 shared/task.ts 的 TRASH_RETENTION_DAYS）才由清理任务物理删除。
+   * 列表、计数、搜索一律按 taskGone / taskDeleted 排掉它，不在各处再写一次 `!deletedAt`
+   */
+  deletedAt: z.string().optional(),
   /**
    * 子对话已经解决：只用于标记（列表归到「已完成」并显示标记），不改 status、不停 CLI，
    * 父对话的等待逻辑和 childrenWorking 聚合都不看它
@@ -1984,8 +2110,11 @@ export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple
 export const Appearance = z.object({
   /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
   uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
-  /** 中文字体：默认内置的思源黑体（Noto Sans SC），和 Maple Mono 中文版用的是同一套字形 */
-  cjkFont: z.enum(['noto', 'system']).catch('noto').default('noto'),
+  /**
+   * 中文字体：默认走系统字体（苹方 / 微软雅黑），不下载任何中文字体文件；
+   * 选内置的思源黑体时才加载它的分片（web/src/lib/appearance.ts 的 ensureCjkFont）
+   */
+  cjkFont: z.enum(['noto', 'system']).catch('system').default('system'),
   /** 代码、命令、路径用的等宽字体 */
   monoFont: z.enum(['maple', 'jetbrains']).catch('maple').default('maple'),
   /** 本机装了的字体名，填了就排在最前面，缺的字再用上面选的 */
@@ -2100,6 +2229,17 @@ export const Settings = z.object({
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */
   remoteAccess: RemoteAccess.prefault({}),
+  /**
+   * 计划的 Webhook 出站：计划跑到终态（成功启动 / 启动失败 / 错过 / 上游没成功）时 POST 一份 JSON。
+   * 地址属于外部配置，只存在数据目录的设置里，不写进代码和测试数据；为空时即使打开也不投递
+   */
+  webhook: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** 接收地址（http / https）：投递规则见 server/webhook.ts */
+      url: z.string().trim().default(''),
+    })
+    .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
   /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
   contentWidth: z

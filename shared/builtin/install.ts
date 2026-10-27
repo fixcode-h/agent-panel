@@ -9,6 +9,7 @@ import {
   type TagInput,
   type Workflow,
 } from '../schema.ts'
+import { contentHash } from '../hash.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
 import {
@@ -275,51 +276,23 @@ function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: str
   return true
 }
 
-/** 稳定的 JSON：键按字母排，同样的内容不管字段写入顺序都得到同一串 */
-function stableJson(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`
-  if (v && typeof v === 'object')
-    return `{${Object.keys(v)
-      .filter((k) => (v as Record<string, unknown>)[k] !== undefined)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stableJson((v as Record<string, unknown>)[k])}`)
-      .join(',')}}`
-  return JSON.stringify(v) ?? 'null'
-}
-
-/** 53 位的字符串哈希（cyrb53）：前后端都能同步算，不依赖 node:crypto */
-function hash53(s: string) {
-  let h1 = 0xdeadbeef
-  let h2 = 0x41c6ce57
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i)
-    h1 = Math.imul(h1 ^ c, 2654435761)
-    h2 = Math.imul(h2 ^ c, 1597334677)
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
-}
-
 /**
  * 内置工作流副本的内容指纹：只算升级会换掉的部分（说明、主 Agent、入口、文档、暴露项、流程），
  * 先按 schema 解析补齐默认值，坐标不算（用户拖动节点不算改过）。
  */
 export function workflowFingerprint(w: WorkflowInput) {
   const x = WorkflowInput.parse(w)
-  return hash53(
-    stableJson({
-      description: x.description,
-      mainAgentId: x.mainAgentId,
-      entryFlowId: x.entryFlowId,
-      document: x.document.trim(),
-      expose: x.expose,
-      flows: x.flows.map(({ startPos: _s, endPos: _e, ...f }) => ({
-        ...f,
-        nodes: f.nodes.map(({ x: _x, y: _y, ...n }) => n),
-      })),
-    }),
-  )
+  return contentHash({
+    description: x.description,
+    mainAgentId: x.mainAgentId,
+    entryFlowId: x.entryFlowId,
+    document: x.document.trim(),
+    expose: x.expose,
+    flows: x.flows.map(({ startPos: _s, endPos: _e, ...f }) => ({
+      ...f,
+      nodes: f.nodes.map(({ x: _x, y: _y, ...n }) => n),
+    })),
+  })
 }
 
 /** 本机已合并 Agent 的副本 id → 合并目标的 id 和换算规则（两边都在本机才算） */

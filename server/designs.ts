@@ -88,6 +88,7 @@ import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { attachmentAddDirs } from './attachments.ts'
 import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
 import { stripToolMarkup, withAttachments } from '../shared/task.ts'
@@ -882,8 +883,8 @@ ${prompt}`,
             effort: run.effort,
             permission: cs.permission,
             extraArgs: [...cs.extraArgs, ...tools.args],
-            // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
-            addDirs: attachments.some((a) => !a.path.startsWith(cwd)) ? [UPLOADS_DIR] : undefined,
+            // 附件已经拷进这个临时工作目录；拷失败的那份还在原位置（数据目录或项目里），要放行它所在的目录
+            addDirs: attachmentAddDirs(attachments, { cwd, uploadsRoot: UPLOADS_DIR }),
           },
           cwd,
           env: childEnv(cs.env),

@@ -1,5 +1,14 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SETTINGS: Record<string, string> = {
+  // Webhook 通知
+  'Webhook 通知': 'Webhook notifications',
+  '计划执行时发送 Webhook': 'Send a webhook when a plan runs',
+  '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。':
+    'When a plan starts, fails to start, is missed, or is blocked by an upstream plan, the panel POSTs a JSON payload to this URL with the plan, project, the time and result of that run. Delivery failures are recorded on the plan only, never block the plan, and are retried at most {n} times.',
+  'Webhook 地址': 'Webhook URL',
+  '填 http 或 https 开头的地址': 'Use a URL starting with http or https',
+  '启用 Webhook': 'Enable webhook',
+  '关掉时计划照常执行，只是不往外发。': 'When off, plans still run; nothing is sent out.',
   // 项目设置：测试步骤和 Agent 参数
   测试步骤: 'Test steps',
   停用: 'Disabled',
@@ -1159,6 +1168,14 @@ export const EN_SETTINGS: Record<string, string> = {
   按天: 'Daily',
   按周: 'Weekly',
   按月: 'Monthly',
+  分组: 'Group by',
+  按时间: 'By time',
+  按项目: 'By project',
+  按对话: 'By conversation',
+  项目已删除: 'Project deleted',
+  不属于项目: 'No project',
+  '按{group}汇总{range}的用量：token、费用和轮数的口径与按时间视图一致，都按同一段窗口统计。输入含缓存命中和缓存写入的部分。':
+    'Totals for {range} grouped by {group}: tokens, cost, and turns use the same window and units as the by-time view. Input includes cache hits and cache writes.',
   用量统计: 'Usage',
   统计粒度: 'Granularity',
   '共 {n} 轮': '{n} turns in total',
@@ -1367,11 +1384,87 @@ export const EN_SETTINGS: Record<string, string> = {
   '用这个 API 同时在请求模型的对话、子对话和子任务最多几个，超过的排队，等前面的释放再开始；0 表示不限制。按 API 分别计算，停在等下一句、等子任务时不占名额。':
     'How many conversations, child conversations and subtasks can call this API at once. Extra ones queue until a slot frees up; 0 means no limit. Counted per API; waiting for the next message or for subtasks does not hold a slot.',
   禁止子对话执行: "Don't run in child conversations",
-  '（只对 Git 项目生效）': ' (Git projects only)',
-  '勾了「禁止子对话执行」的步骤只对子对话生效：子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话；父对话自己改代码验证时照常跑。只对 Git 项目生效，适合端到端测试这类很吃资源的步骤。':
-    'Steps marked "Don\'t run in child conversations" only affect child conversations: the child skips them, and after its branch is merged back the parent runs them (one at a time) and sends the results and durations back; the parent itself still runs them when it verifies its own changes. Only applies to Git projects; best for heavy steps such as end-to-end tests.',
-  '只对子对话生效：勾了以后子对话不跑这条步骤，合并回父对话的分支后由父对话在它的目录里跑，结果和耗时回传给子对话；父对话自己改代码验证时照常跑。适合端到端测试这类很吃资源的步骤。标了「合并时编译」的步骤仍由父对话申请编译，不受这项影响。':
-    "Only affects child conversations: the child skips this step, and after its branch is merged back the parent runs it in its own folder and sends the results and durations back; the parent itself still runs it when it verifies its own changes. Best for heavy steps such as end-to-end tests. Steps marked 'builds on merge' are still built by the parent through its build request and are not affected.",
-  '只对 Git 项目生效：其它版本控制的子对话没有独立分支可合，勾了也不会由父对话跑，所以这里不能选。':
-    'Only applies to Git projects: child conversations on other version control systems have no branch to merge back, so this option would never run; it cannot be selected here.',
+  范围: 'Scope',
+  '每条步骤选一个范围：「总是跑」每次改动都跑（类型检查、lint 这类几十秒的）；「命中适用改动才跑」只在改动命中了下面的 glob 时跑，子对话只跑命中的单测文件 / 界面分片；「全量，合并后由父对话跑」子对话不跑，合并回父对话的分支后由父对话跑（一次只跑一个），结果和耗时回传给子对话，适合全量单测、全量界面检查、端到端测试。最后的范围只对 Git 项目的独立分支子对话生效，其他情况步骤照常由执行者自己跑。':
+    'Pick a scope for each step: "Always" runs on every change (type checks, lint — the ones that finish in seconds); "When changed files match" only runs when this change touches the globs below, and a child conversation runs only the matched test files / UI shards; "Full suite, the parent runs it after merge" is skipped by child conversations and run by the parent after merging the branch back (one at a time), with the results and durations sent back — best for the full unit suite, the full UI check and end-to-end tests. The last scope only applies to child conversations on their own branch in Git projects; everywhere else the executor still runs the step normally.',
+  '子对话只跑「总是跑」和命中了「适用改动」的步骤；选「全量，合并后由父对话跑」的步骤子对话不跑，合并后由父对话在全量里跑。':
+    'Child conversations only run "Always" steps and steps whose apply-to globs match; steps set to "Full suite, the parent runs it after merge" are skipped by the child and run by the parent as part of the full suite after merging.',
+  '全量（非 Git 项目自己跑）': 'Full suite (the executor runs it in non-Git projects)',
+  '范围是「总是跑」时不用填这里：这条每次都跑，不按 glob 筛':
+    'Leave this empty when the scope is "Always": the step runs on every change and is not filtered by these globs.',
+  '范围是「全量，合并后由父对话跑」时不用填这里：合并后由父对话跑全量，不按 glob 筛':
+    'Leave this empty when the scope is "Full suite, the parent runs it after merge": the parent runs the full suite after merging and does not filter by these globs.',
+  // 设置 →「数据」→ 回收站
+  回收站: 'Trash',
+  '{n} 个对话': '{n} conversations',
+  '删除的对话先进回收站，{days} 天后自动永久删除。恢复后能接着对话；永久删除会清掉对话内容、附件和独立分支。':
+    'Deleted conversations go to the trash first and are permanently removed after {days} days. Restored conversations can be continued; deleting permanently removes the messages, attachments and the isolated branch.',
+  回收站是空的: 'The trash is empty',
+  '{time}删除': 'Deleted {time}',
+  ' · 含 {n} 个子对话': ' · includes {n} children',
+  '{n} 天后永久删除': 'Permanently deleted in {n} days',
+  即将永久删除: 'Permanently deleted soon',
+  永久删除: 'Delete permanently',
+  再点一次: 'Click again',
+  '已恢复「{title}」': 'Restored "{title}"',
+  '「{title}」的独立分支目录已经清理，恢复后需要重新执行':
+    'The isolated branch folder of "{title}" has already been cleaned up; run it again after restoring',
+  '已永久删除「{title}」': 'Permanently deleted "{title}"',
+  '已清理「{title}」的工作目录，释放 {size}': 'Cleared the working folder of "{title}", freed {size}',
+  '清理了 {n} 个，释放 {size}；还有 {failed} 个删不掉，下次启动会再试':
+    'Cleared {n}, freed {size}; {failed} could not be deleted and will be retried on next start',
+  '清理了 {n} 个失效目录，释放 {size}': 'Cleared {n} stale folders, freed {size}',
+  没有可清理的失效目录: 'No stale folders to clean up',
+  '已清理构建产物，释放 {size}': 'Cleared build outputs, freed {size}',
+  对话工作目录: 'Chat working folders',
+  刷新清理清单: 'Refresh cleanup list',
+  '每个对话有一个自己的工作目录，Agent 在里面写文件、下载网页。清理只删目录内容，对话记录和消息都还在，下次执行时面板会重新建这个目录。回收站里的对话和正在执行的不能清。':
+    'Each chat has its own working folder where the agent writes files and downloads web pages. Cleaning deletes only the folder contents; the chat record and messages stay, and the folder is recreated the next time it runs. Chats in the trash and chats that are running cannot be cleaned.',
+  正在执行: 'Running',
+  占用较大: 'Large',
+  没有存了文件的工作目录: 'No working folder contains files',
+  '正在统计…': 'Measuring…',
+  '另外 {n} 个工作目录较小，没有列出（只列占用最大的 {top} 个），都算在上面的合计里。':
+    '{n} more working folders are smaller and not listed (only the largest {top} are shown); they are included in the total above.',
+  '共 {total} · 可清 {stale}': '{total} total · {stale} cleanable',
+  '子对话的独立工作目录。改动已经合回原分支、任务也收口的可以清；正在执行、回收站里的、还有没合回的提交或有没提交的改动的都不会动。没有目标的链接也一起清掉。':
+    'Isolated working folders of child chats. Those whose changes are merged back and whose task is finished can be cleaned; running chats, chats in the trash, and folders with unmerged commits or uncommitted changes are left alone. Links pointing nowhere are removed too.',
+  '还有 {n} 个没列出': '{n} more not listed',
+  没有失效的独立分支目录: 'No stale isolated branch folders',
+  清理失效的目录: 'Clean up stale folders',
+  '可释放 {size}': 'Frees {size}',
+  构建产物: 'Build outputs',
+  '面板前端、演示版、打出来的安装包和界面检查截图，都由 npm run 重新生成，占地方时可以清掉。清理后刷新页面会打不开，重新构建一次就恢复。':
+    'The panel frontend, the demo build, generated packages and UI check screenshots are all recreated by npm run and can be deleted to save space. After cleaning, refreshing the page will not work until it is rebuilt.',
+  不在: 'Not present',
+  清理构建产物: 'Clean up build outputs',
+  '清理「{title}」的工作目录？': 'Clean the working folder of "{title}"?',
+  '只删这个目录里的文件（{size}），对话记录和消息都还在，下次执行时面板会重新建一个空目录。删掉的文件不能恢复。':
+    'Only the files in this folder ({size}) are deleted; the chat record and messages stay, and an empty folder is recreated the next time it runs. Deleted files cannot be recovered.',
+  '清理构建产物？': 'Clean up build outputs?',
+  '会删掉前端构建产物、演示版、历史安装包和界面检查截图。需要时重新 npm run build / package 生成，当前页面刷新后会打不开。':
+    'This deletes the frontend build, the demo build, old packages and UI check screenshots. Regenerate them with npm run build / package when needed; refreshing the current page will stop working.',
+  '每个对话自己的目录，Agent 在里面写文件、下载网页；清理只删目录内容，对话记录还在':
+    'Each chat has its own folder where the agent writes files and downloads web pages; cleaning deletes only its contents, the chat record stays',
+  正式版前端: 'Release frontend',
+  'npm run build 生成，清掉后重新构建就有了': 'Generated by npm run build; rebuild to restore',
+  演示版前端: 'Demo frontend',
+  'vite build --mode demo 生成，界面检查用': 'Generated by vite build --mode demo, used by the UI check',
+  历史安装包: 'Old release packages',
+  'npm run package 生成，旧版本的包可以清': 'Generated by npm run package; packages of old versions can be deleted',
+  界面检查截图: 'UI check screenshots',
+  'node scripts/ui-check.mjs 生成，可以清': 'Generated by node scripts/ui-check.mjs; safe to delete',
+  链接指向的目录已经不在了: 'The folder this link points to no longer exists',
+  '回收站里的对话不能清工作目录：恢复后还要用它':
+    'Cannot clean the folder of a chat in the trash: it is needed after restoring',
+  '对话正在执行，等它结束后再清': 'The chat is running; clean it after it finishes',
+  请选择要清理的对话: 'Choose a chat to clean',
+  不认识的构建产物: 'Unknown build output',
+  '还没检查（要跑 git 判定，比较慢）': 'Not checked yet (runs git checks, takes a while)',
+  检查占用: 'Check usage',
+  '点「检查占用」看看有多少能清': 'Click "Check usage" to see how much can be cleaned',
+  不认识的对话目录: 'Unknown chat folder',
+  这个对话没有工作目录: 'This chat has no working folder',
+  已删除的对话: 'Deleted chat',
+  对话记录已删除: 'Chat record deleted',
 }

@@ -8,8 +8,8 @@ const secText = (tenths) => (tenths % 10 ? (tenths / 10).toFixed(1) : String(ten
 
 export function fmtDuration(ms) {
   const total = Number.isFinite(ms) ? Math.max(0, ms) : 0
-  if (!total) return '0s'
-  if (total < 100) return '<0.1s'
+  if (total < 0.5) return '0s'
+  if (total < 999.5) return `${Math.round(total)}ms`
   const ds = Math.round(total / 100)
   if (ds < 36_000) {
     const m = Math.floor(ds / 600)

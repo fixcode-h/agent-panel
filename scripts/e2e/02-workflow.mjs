@@ -278,8 +278,11 @@ await runShard('工作流任务', async (api) => {
     .slice(nLong)
     .find((x) => x.kind === 'claude' && x.input.includes('上游节点的结果'))
   assert.ok(cLong.args.includes(path.dirname(handoff)), 'Claude Code 能读交接文件的目录')
+  // 删除只是进回收站：交接文件先留着（7 天内能恢复），永久删除时才真正清掉
   await call('DELETE', `/tasks/${tLong.id}`)
-  assert.ok(!existsSync(path.dirname(handoff)), '删除任务时删掉交接文件')
+  assert.ok(existsSync(path.dirname(handoff)), '进回收站时交接文件还留着')
+  await call('DELETE', `/tasks/${tLong.id}/permanent`)
+  assert.ok(!existsSync(path.dirname(handoff)), '永久删除时删掉交接文件')
   step('节点交接：上游结果太长时完整内容存成文件，下游按路径去读')
 
   // ---- 追加要求：主 Agent 续接会话 ----

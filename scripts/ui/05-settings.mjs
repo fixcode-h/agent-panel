@@ -76,6 +76,44 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
   await p.getByRole('button', { name: '数据', exact: true }).click()
   await check(p, '设置-数据', ['内存', 'AI 分析', '每 30 秒采样一次', '最近一次采样'])
+  // 清理：对话工作目录（回收站的那行不能清）、失效的独立分支、构建产物
+  await check(p, '设置-数据-清理', [
+    '对话工作目录',
+    '共 316.0 MB',
+    '抓网页快照',
+    '占用较大',
+    '调研过的一个旧对话',
+    '回收站',
+    // 记录已删、目录还在的孤儿目录：不列出来就永远清不掉
+    '对话记录已删除',
+    '已删除的对话',
+    '独立分支',
+    '清理失效的目录',
+    '构建产物',
+    '清理构建产物',
+  ])
+  const bigRow = p.getByText('抓网页快照').locator('xpath=..')
+  if (
+    await bigRow
+      .getByRole('button', { name: '清理' })
+      .isDisabled()
+      .catch(() => true)
+  )
+    errors.push('设置-数据-清理：正常对话的工作目录应该能清理')
+  // 回收站里的对话恢复后还要用这个目录，按钮要禁用（不只是不显示）
+  const trashRow = p.getByText('调研过的一个旧对话').locator('xpath=..')
+  if (
+    !(await trashRow
+      .getByRole('button', { name: '清理' })
+      .isDisabled()
+      .catch(() => false))
+  )
+    errors.push('设置-数据-清理：回收站里的对话不能清工作目录，按钮应该禁用')
+  // 独立分支要手动点「检查占用」才开始扫（四 GB，不跟设置页每次打开一起算）
+  if (!(await p.getByRole('button', { name: '检查占用' }).count()))
+    errors.push('设置-数据-清理：独立分支没有「检查占用」入口')
+  await p.getByRole('button', { name: '检查占用' }).click()
+  await check(p, '设置-数据-清理-检查后', ['worktrees/agent-panel/demo-1', '可释放 210.0 MB'])
   const chart = p.getByRole('img', { name: '面板进程和子进程的内存曲线' })
   await chart.scrollIntoViewIfNeeded()
   const box = await chart.boundingBox()
@@ -198,6 +236,48 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 换回默认模型，后面的检查不受影响
   await p.getByRole('combobox', { name: '计价模型' }).click()
   await p.getByRole('option', { name: 'DeepSeek Flash' }).click()
+  // 分组：按项目 / 按对话，表格列跟着变、合计仍在，时间区间选择器隐藏
+  const groupSwitch = p.getByRole('radiogroup', { name: '分组' })
+  await groupSwitch.waitFor({ timeout: 3000 }).catch(() => errors.push('用量统计：没有分组切换'))
+  const usageTable = p.locator('section[aria-label="用量统计"] table')
+  const waitUsageRows = async () => {
+    for (let i = 0; i < 60 && (await usageTable.locator('tbody tr').count()) === 0; i++) await p.waitForTimeout(100)
+  }
+  if (await groupSwitch.count()) {
+    await groupSwitch.getByRole('radio', { name: '按项目' }).click()
+    await waitUsageRows()
+    if (await p.locator('[data-usage-period-trigger]').count())
+      errors.push('用量统计：按项目分组时还显示时间区间选择器')
+    const projectHead = await usageTable
+      .locator('thead')
+      .innerText()
+      .catch(() => '')
+    if (!projectHead.includes('项目')) errors.push(`用量统计：按项目分组的表头不是项目（${projectHead.slice(0, 40)}）`)
+    if (projectHead.includes('时间')) errors.push('用量统计：按项目分组时还有时间列')
+    if ((await usageTable.locator('tbody tr').count()) === 0) errors.push('用量统计：按项目分组没有行')
+    await check(p, '设置-用量统计-按项目', ['合计', '费用', '按项目'])
+
+    await groupSwitch.getByRole('radio', { name: '按对话' }).click()
+    await waitUsageRows()
+    const taskHead = await usageTable
+      .locator('thead')
+      .innerText()
+      .catch(() => '')
+    if (!taskHead.includes('对话')) errors.push(`用量统计：按对话分组的表头不是对话（${taskHead.slice(0, 40)}）`)
+    if ((await usageTable.locator('tbody tr').count()) === 0) errors.push('用量统计：按对话分组没有行')
+    await check(p, '设置-用量统计-按对话', ['合计', '费用', '按对话'])
+
+    // 切回按时间：粒度选择器和区间选择器都回来，落到当前区间
+    await groupSwitch.getByRole('radio', { name: '按时间' }).click()
+    await p
+      .getByRole('tab', { name: '按天', exact: true })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('用量统计：切回按时间后没有粒度选择器'))
+    await p
+      .locator('[data-usage-period-trigger]')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('用量统计：切回按时间后没有时间区间'))
+  }
   await settle(p)
   await p.keyboard.press('Escape')
   // 分片前面几步里 Esc 先关的是刚用过的浮层（下拉、日历），设置弹窗不一定跟着关：显式点关闭，
@@ -273,6 +353,65 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 没有差异时不能一直亮着；清掉钩子，后面的检查也不受影响
   await setOutdated('')
   if (!(await waitHint(settingsRow(), ''))) errors.push('部署提醒点：没有差异时侧栏「设置」上还有提示')
+  // 回收站与对话内容搜索：删掉的对话先进回收站、能恢复；正文里搜到的对话点开能定位到那条消息。
+  // 用新页面跑：这里要往对话里发消息、删对话，别把上面设置检查的数据带脏
+  {
+    const d = await page({ width: 1440, height: 900 })
+    await d.goto(base)
+    await d.getByText('购物车右上角', { exact: false }).first().click()
+    const input = d.locator('#follow-up')
+    const hasInput = await input.waitFor({ timeout: 10000 }).then(
+      () => true,
+      () => false,
+    )
+    if (!hasInput) errors.push('对话搜索：对话页的输入框没出来')
+    else {
+      // 只在正文里出现的词：标题里没有它，命令面板和侧栏都得靠搜对话内容才找得到
+      await input.fill('界面检查用的独占词：紫藤花架')
+      await d.keyboard.press('Enter')
+      await d
+        .getByText('紫藤花架')
+        .first()
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('对话搜索：消息没有出现在对话里'))
+      // 命令面板：命中显示成「对话标题 + 命中片段」，点它跳到那条消息
+      await d.keyboard.press('Control+k')
+      const search = d.getByRole('combobox').first()
+      await search.fill('紫藤花架')
+      await check(d, '对话搜索-命令面板命中正文', ['对话内容', '紫藤花架'])
+      await d.getByRole('option').filter({ hasText: '购物车右上角' }).first().click()
+      const jumped = await d
+        .waitForFunction(() => /^#\/projects\/[^/]+\/[^/]+\/[^/]+$/.test(location.hash), undefined, { timeout: 5000 })
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!jumped) errors.push('对话搜索：点正文命中后地址里没有消息 id（没有定位到那条消息）')
+      await check(d, '对话搜索-跳到那条消息')
+      // 侧栏搜索框走同一份结果：正文命中列在「对话内容」分组里
+      await d.locator('#sidebar-search').fill('紫藤花架')
+      await check(d, '对话搜索-侧栏命中正文', ['对话内容'])
+      // 回收站：删掉的对话从列表里消失，但能在设置里找到并恢复
+      await d.locator('#sidebar-search').fill('购物车右上角')
+      const sideRow = d.locator('aside').getByText('购物车右上角', { exact: false }).first()
+      await sideRow.click({ button: 'right' })
+      await d.getByRole('menuitem', { name: '删除', exact: true }).click()
+      await d.getByRole('button', { name: '删除', exact: true }).last().click()
+      // 侧栏右键删除没有 toast（只有任务页那个删除按钮才有），这里断言它真的从侧栏结果里消失
+      await d
+        .locator('aside')
+        .getByText('购物车右上角', { exact: false })
+        .first()
+        .waitFor({ state: 'detached', timeout: 5000 })
+        .catch(() => errors.push('回收站：删除后侧栏里还有这个对话'))
+      await d.getByRole('button', { name: '设置', exact: true }).first().click()
+      await d.getByRole('button', { name: '数据', exact: true }).click()
+      await check(d, '回收站-列出已删除的对话', ['回收站', '购物车右上角', '恢复', '永久删除'])
+      await d.getByRole('button', { name: '恢复', exact: true }).first().click()
+      await check(d, '回收站-恢复后', ['回收站是空的'])
+    }
+  }
+
   // 英文界面的截图和以前一样放在浅色主题下看
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

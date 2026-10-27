@@ -21,6 +21,7 @@ import {
   END,
   START,
   type Agent,
+  type AlertKind,
   type AskKind,
   type Flow,
   type FlowNode,
@@ -79,6 +80,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { clip } from './text.ts'
 import { sentToOther } from './peer-message.ts'
 import { makeAlert } from './alerts.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
@@ -87,7 +89,7 @@ import { findLessons, type LessonQuery } from './lessons.ts'
 import { TEST_TIME_SUMMARY_RULE, parentRunSteps, verifyBlock } from './test-steps.ts'
 import { parseVerdict } from './verdict.ts'
 import { REVIEW_SOFT_LIMIT_MIN } from './review-limits.ts'
-import type { TriageItem } from './review-gate.ts'
+import type { ReviewOverride, TriageItem } from './review-gate.ts'
 import { beginTurn, convStateText, endTurn, pauseStep, stopReasonText, timeAgo, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 import { isHelperAgent } from './builtin/core.ts'
@@ -99,7 +101,10 @@ import {
   endRun,
   finishPlan,
   finishStepNow,
+  planNotice,
+  planNowText,
   planText,
+  runningStepId,
   settleWait,
   ensureChildStep,
   WRAP_UP,
@@ -154,7 +159,8 @@ export type AgentResult =
   | { ok: true; text: string }
   /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
   | { ok: false; stopped?: boolean; halted?: boolean; error: string; reported?: boolean; budget?: boolean }
-type Fail = Extract<AgentResult, { ok: false }>
+/** 一轮执行的结果里「没成功」的那几种；导出给单测构造 finish 的入参 */
+export type Fail = Extract<AgentResult, { ok: false }>
 
 export interface AgentCall {
   /** 所属节点；追加要求和对话没有节点 */
@@ -419,6 +425,8 @@ export interface Orchestra {
     handoff?: HandoffInput,
     /** 对最近一次评审每条高级、中级意见的处置（见 shared/review-gate.ts、ADR 0009） */
     triage?: TriageItem[],
+    /** 显式放行（用户明确要求「已知问题也合并」）：门禁真的拦下时才生效，记录写在任务上 */
+    override?: ReviewOverride,
   ): Promise<{ ok: boolean; info: string }>
   /** UE 项目：子对话向父对话申请编译、父对话向面板占位编译；不是 UE 项目时为空 */
   ueBuild: '' | 'child' | 'parent'
@@ -593,6 +601,7 @@ export interface EngineHost {
     build?: boolean,
     handoff?: HandoffInput,
     triage?: TriageItem[],
+    override?: ReviewOverride,
   ) => Promise<{ ok: boolean; info: string }>
   /**
    * UE 项目的编译归父对话（项目目录里有 .uproject 时才有）。
@@ -623,10 +632,15 @@ export interface EngineHost {
     wslDistro: string
     scaled: boolean
     /**
-     * 勾了「禁止子对话执行」的步骤由谁跑（见 ADR 0018）：独立分支的子对话是 child（它不跑），
+     * 范围为 parent（全量、合并后由父对话跑）的步骤由谁跑（见 ADR 0018 / 0020）：独立分支的子对话是 child（它不跑），
      * 父对话是 parent（面板自动跑、结果直接回传子对话）。只有 Git 项目、这些步骤真的生效时才传
      */
     parentRun?: 'child' | 'parent'
+    /**
+     * 这次任务实际改了哪些文件（服务端从 git 改动统计来）：有它就在提示词里直接给出「本轮该跑哪几条 + 命令」，
+     * 不再只给规则让 Agent 自己筛
+     */
+    changedFiles?: string[]
   }
   /**
    * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
@@ -715,7 +729,6 @@ export interface LessonInput {
 
 const MAX_DEPTH = 6
 const MAX_OUTPUT = 4000
-const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 const now = () => new Date().toISOString()
 
 /** 这次运行的工作流运行记录（新架构按运行隔离共享状态和消息）；旧任务没有 */
@@ -839,7 +852,7 @@ type FlowResult = { ok: true; output: string } | Fail
 
 export { parseVerdict }
 
-export function system(host: EngineHost, text: string, step = '', error = false, transient = false) {
+export function system(host: EngineHost, text: string, step = '', error = false, transient = false, kind?: AlertKind) {
   host.task.messages.push({
     id: host.newId(),
     role: 'system',
@@ -848,6 +861,8 @@ export function system(host: EngineHost, text: string, step = '', error = false,
     text,
     tools: [],
     ...(error && { error, alert: makeAlert('error', text) }),
+    // 不是错误但要提醒的（例如超过自己设的预算上限）：按传入的类别画成一条警告
+    ...(!error && kind && { alert: makeAlert('warn', text, kind) }),
     ...(transient && { transient }),
     at: now(),
   })
@@ -867,10 +882,31 @@ function planStarted(host: EngineHost, text: string, step = '') {
   })
 }
 
-/** 这一轮用掉的花费和 token 超过工作流的上限时，返回暂停的说明 */
-function overBudget(host: EngineHost): string {
-  const w = host.workflow
-  const { usage, budgetFrom } = host.task
+/**
+ * 两个上限（工作流设的、计划设的）取更小的非零值：都设了时谁先到都算超。
+ * 返回上限值和它是谁设的，文案要说清是哪个上限到了，用户才知道该去哪里改。
+ */
+export function budgetLimit(
+  workflow: number | undefined,
+  plan: number,
+): { value: number; by: 'workflow' | 'plan' } | null {
+  const w = workflow && workflow > 0 ? workflow : 0
+  const p = plan && plan > 0 ? plan : 0
+  if (!w && !p) return null
+  if (!p) return { value: w, by: 'workflow' }
+  if (!w) return { value: p, by: 'plan' }
+  return w <= p ? { value: w, by: 'workflow' } : { value: p, by: 'plan' }
+}
+
+/**
+ * 这一轮用掉的花费 / token / 时长超过上限时，返回暂停的说明（导出给单测验证聊天模式也走这套判定）。
+ * includeWorkflow：要把工作流设的上限也算进来吗。节点执行路径传 true；
+ * chat 路径传 false——工作流预算管的是「这次工作流执行」，对话里跑过一次 start_plan 之后，
+ * 任务会一直带着工作流快照（host.workflow 非空），不能让那个上限转头把普通的聊天轮次也停掉。
+ */
+export function overBudget(host: EngineHost, includeWorkflow = true): string {
+  const w = includeWorkflow ? host.workflow : undefined
+  const { usage, budgetFrom, budgetTokens, budgetMinutes } = host.task
   const usd = usage.costUsd - (budgetFrom?.usd ?? 0)
   const tokens = usage.inputTokens + usage.outputTokens - (budgetFrom?.tokens ?? 0)
   if (w?.budgetUsd && usd >= w.budgetUsd)
@@ -878,14 +914,28 @@ function overBudget(host: EngineHost): string {
       used: usd.toFixed(2),
       limit: w.budgetUsd.toFixed(2),
     })
-  if (w?.budgetTokens && tokens >= w.budgetTokens)
-    return t(
-      '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。',
-      {
-        used: Math.round(tokens).toLocaleString(),
-        limit: w.budgetTokens.toLocaleString(),
-      },
-    )
+  // token：工作流和计划都设了上限时取小的那个
+  const tokenLimit = budgetLimit(w?.budgetTokens, budgetTokens ?? 0)
+  if (tokenLimit && tokens >= tokenLimit.value)
+    return tokenLimit.by === 'workflow'
+      ? t('这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。', {
+          used: Math.round(tokens).toLocaleString(),
+          limit: tokenLimit.value.toLocaleString(),
+        })
+      : t(
+          '这次执行已经用了 {used} token，达到计划设定的上限 {limit}，已暂停。已经产出的内容都保留着，点「继续执行」会重新计。',
+          { used: Math.round(tokens).toLocaleString(), limit: tokenLimit.value.toLocaleString() },
+        )
+  // 时长：从这一轮开始算，旧任务没有开始时刻（at）时按不限处理
+  const startedAt = budgetFrom?.at
+  if (budgetMinutes && startedAt) {
+    const usedMinutes = (Date.now() - startedAt) / 60_000
+    if (usedMinutes >= budgetMinutes)
+      return t(
+        '这次执行已经用了 {used} 分钟，达到计划设定的上限 {limit} 分钟，已暂停。已经产出的内容都保留着，点「继续执行」会重新计时。',
+        { used: Math.round(usedMinutes), limit: budgetMinutes },
+      )
+  }
   return ''
 }
 
@@ -1072,7 +1122,7 @@ function wrapDone(kind: WrapUpAnswer | undefined, parentRuns = false) {
   if (kind === 'p4') return '改动已按文件类型分进各自的 pending changelist'
   if (kind === 'merge')
     return parentRuns
-      ? '改动已合回父对话所在的分支、父对话跑勾了「禁止子对话执行」的步骤通过（submit_merge 由面板合并）'
+      ? '改动已合回父对话所在的分支、父对话跑范围为「全量，合并后由父对话跑」的步骤通过（submit_merge 由面板合并）'
       : '改动已合回父对话所在的分支（submit_merge 由面板合并）'
   if (kind === 'push') return '改动已推到远端，结论里写清了推到哪个远端分支'
   return '改动已经在父对话所在的分支上'
@@ -1093,7 +1143,7 @@ function wrapUpPart(host: EngineHost) {
 做法：调用 submit_merge（tests 写上跑过的编译和测试）。合进去后面板把这一步标完成，你不要自己标；有冲突会推回给你，处理好重新验证后再调用。${
       parentRunsIn(host)
         ? `
-项目里有勾了「禁止子对话执行」的步骤：它们你不用跑，合进去后由父对话在它的目录里跑，结果会回传给你。所以合进去不等于收尾：父对话的测试通过才标完成；失败时面板把报错原文推回来，按它修好再调用 submit_merge（这些步骤会全部重跑）。收尾总结里要有一份「编译 / 测试耗时」，两类执行方都写上。`
+项目里有范围为「全量，合并后由父对话跑」的步骤：它们你不用跑，合进去后由父对话在它的目录里跑，结果会回传给你。所以合进去不等于收尾：父对话的测试通过才标完成；失败时面板把报错原文推回来，按它修好再调用 submit_merge（这些步骤会全部重跑）。收尾总结里要有一份「编译 / 测试耗时」，两类执行方都写上。`
         : ''
     }`
   // 推送归 Agent 自己做（面板拿不到 git push 的结果，不像合并那样能替它标完成）：讲清做什么、做完自己标
@@ -1227,9 +1277,10 @@ function verifyPart(host: EngineHost) {
     wslDistro: v.wslDistro,
     scaled: v.scaled,
     parentRun: v.parentRun,
+    changedFiles: v.changedFiles,
   })
   // 收尾总结里的耗时统计：只对独立分支的子对话提，它才是写收尾总结的那个。
-  // 项目配了测试步骤就要求（不限于勾了「禁止子对话执行」的）：它自己跑的那几步也有后台命令的真实耗时
+  // 项目配了测试步骤就要求（不限于范围为 parent 的）：它自己跑的那几步也有后台命令的真实耗时
   const timed = v.parentRun === 'child' && v.steps.some((x) => x.enabled)
   return timed
     ? `${block}
@@ -1270,16 +1321,23 @@ function planPart(host: EngineHost, coordinator: boolean) {
   if (!task.projectId) return ''
   const kind = wrapKind(host)
   const cur = activePlan(task)
+  const nowMs = Date.now()
   const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
+  // ADR 0020：每轮都把「当前第几步、多久没更新、下一步」正面摆在前面；滞后 / 新输入没处理时再插一条提醒
+  const check = [planNowText(task, nowMs), planNotice(task, nowMs)].filter(Boolean).join('\n')
   return `## 执行计划
 ${now}
-
+${check ? `\n${check}\n` : ''}
 - 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
 - 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
-- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
+- **动手前先把这一步标成「进行中」**（set_plan 带它的 id + status），一份计划里同时只能有一个进行中；**做完立刻**在同一批动作里把它标完成、再把下一步标进行中。不要连着做完几步再一起更新，也不要在计划里还有进行中的步骤时去做别的步骤的事。
+- 什么算完成一步：改完代码并且跑通这一步该跑的检查（这一步涉及多项时，跑完它该跑的那几项）；只是起了个子任务、跑完一条命令、写了一段说明，都不算完成。
+- **要等结果的用「等待中」，不要用「进行中」**：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，面板会把那一步标成等待中，你立刻接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会标成「失败」并带上原因（需要你重做或明确跳过）。跑十几分钟的命令、等子对话时那一步本来就该是等待中。
+- **新输入先判计划**：这一轮的输入带了新要求（用户新消息、父对话转达、子对话 / 后台结果里带了新任务）时，第一件事是判断现有计划要不要改——要改就立刻 set_plan 再动手；不改就用一句话说明为什么不变，再继续。
+- **增量还是重开**：同一件事的细化、加一步、插一步、调顺序、改步骤名、作废某一步 → 用 set_plan 带已有步骤 id、partial: true 只交变更项（默认做法）；目标本身变了（换方向、需求被推翻、方案整体换掉）、剩下的步骤大部分作废、或者用户明确说「重新做 / 换个方案 / 别按刚才那个来」→ 先 finish_plan 结束这份计划，再用 set_plan 带新 title 开一份新的（旧计划和耗时留在「以前的计划」里）。只加内容却整份重开、或者换了方向还在旧计划上打补丁，都不行。
+- 每次 set_plan 交整份列表时，已有的步骤带上 id；步骤一多（10 条以上）就分两批交：一批带上 partial 为 true 只写要变的步骤（带 id），其余没写到的步骤留在计划里不动，免得一次拼一大段 JSON 拼错。
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
-- 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
-- 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
+- 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。同一件事不要另开一份计划。
 - 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
 ${
   kind
@@ -2915,8 +2973,9 @@ function makeOrchestra(
       if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
       if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
       const { step, ...job } = input
-      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id；父对话没点名不带，运行区据此区分两种来源
-      const owner = step?.trim() || (helper ? self.id : '')
+      // 归属：调用时点名的步骤优先；子任务没点名就记它自己的步骤 id（运行区据此区分两种来源）；
+      // 父对话没点名就挂到当前进行的那一步上——以前不带 step 的长命令在计划里完全看不见，计划还停在上一步
+      const owner = step?.trim() || (helper ? self.id : runningStepId(task))
       const r = await host.runBackground(owner ? { ...job, step: owner } : job)
       // 计划里的步骤挂上「等这条命令」：子任务的步骤不在计划里（它是 slot='sub' 的步骤），不挂
       const wait =
@@ -2941,9 +3000,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitMerge(note, tests, build, handoff, triage) {
+    async submitMerge(note, tests, build, handoff, triage, override) {
       if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
-      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage)
+      const r = await host.submitMerge(note.trim(), tests.trim(), build, handoff, triage, override)
       if (r.ok) host.changed(true)
       return r
     },
@@ -3743,7 +3802,7 @@ ${
 }
 - 子对话报错、失败或被中断要重试：用 send_to_conversation 交回原来那个子对话，它在原来的会话里接着做，不要新建一个「（重试）」子对话。派出的子任务也一样：重试时 spawn_agents 的 resume 写原来那个子任务的 id。
 - 子对话只剩合回时会发「收尾请求」给你：看它交的验证结果，够了就调用 finish_child（合回、标完成、删它的分支，都是工具调用，不要自己跑 git）；不够就用 send_to_conversation 把要补的交回给它。合并就是验收，测试要在它合并之前做完。
-- 项目里有测试步骤勾了「禁止子对话执行」时，合回后面板自动在你的目录里按顺序跑它们（一次只跑一个，和编译共用独占队列），结果和耗时直接回传给对应的子对话；你不用自己跑，也不用转述。跑完通过才算它收尾，失败会退回给子对话修，它重新合并后这些步骤全部重跑。等它跑完期间，你计划里等这个子对话的步骤保持等待。
+- 项目里有范围为「全量，合并后由父对话跑」的测试步骤时，合回后面板自动在你的目录里按顺序跑它们（一次只跑一个，和编译共用独占队列），结果和耗时直接回传给对应的子对话；你不用自己跑，也不用转述。跑完通过才算它收尾，失败会退回给子对话修，它重新合并后这些步骤全部重跑。等它跑完期间，你计划里等这个子对话的步骤保持等待。
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
@@ -3809,8 +3868,11 @@ ${
   return parts.filter(Boolean).join('\n\n')
 }
 
-/** 一轮对话：调用对话 Agent；它启动的计划在这一轮里同步跑完，再交回结果继续对话 */
-async function runConversationTurn(host: EngineHost, who: string) {
+/**
+ * 一轮对话：调用对话 Agent；它启动的计划在这一轮里同步跑完，再交回结果继续对话。
+ * 导出给单测验证「计划设的预算在 chat 路径也生效」。
+ */
+export async function runConversationTurn(host: EngineHost, who: string) {
   const { task } = host
   const kind = task.parentTaskId ? 'sub' : 'top'
   // 能不能分派子对话由 Agent 自己的能力开关决定；子对话本身永远不能再分派
@@ -3830,6 +3892,14 @@ async function runConversationTurn(host: EngineHost, who: string) {
     )
     // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
     for (let i = 0; i < 30; i++) {
+      // 计划带的执行上限：和工作流节点同一套口径，每圈开始前先看一次。
+      // 计划启动的是 chat 模式，不走 runNodeSteps，这里不查的话 token / 时长上限就完全不生效。
+      // includeWorkflow=false：对话里跑过 start_plan 之后任务也带着工作流快照，工作流那份额度不该管聊天轮次
+      const over = overBudget(host, false)
+      if (over) {
+        if (turn) endTurn(task, turn, 'stopped', Date.now(), host.stopReason?.())
+        return finish(host, { ok: false, stopped: true, budget: true, error: over })
+      }
       orch = makeOrchestra(
         host,
         { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
@@ -3952,7 +4022,8 @@ function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
     .join('\n\n')
 }
 
-function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
+/** 收尾：把这一轮的结果写进任务（导出给单测验证「超预算停下时不丢已有输出」） */
+export function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
   // 这一轮其实已经答完了（见 answeredAll）：CLI 报过完成、只是停在等下一句之后才被收掉，不算被打断——
   // 不写「这一轮被中断」、不记 stopReason，状态照常是 done。真停止（用户暂停、面板重启、CLI 崩溃）照旧
   const answered = !!r.stopped && (!!opts?.answered || finishedStop(host))
@@ -3963,7 +4034,7 @@ function finish(host: EngineHost, r: Fail, opts?: { answered?: boolean }) {
       if (r.stopped && !answered) pauseStep(s)
       s.endedAt = now()
     }
-  if (r.budget) system(host, r.error, '', false, true)
+  if (r.budget) system(host, r.error, '', false, true, 'budget')
   else if (r.stopped && !answered) {
     // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
     // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
@@ -4015,8 +4086,12 @@ export async function runEngineTurn(host: EngineHost) {
   task.status = 'running'
   // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
   task.stopReason = undefined
-  // 预算按每次执行算：从这一轮开始时的用量起算
-  task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
+  // 预算按每次执行算：从这一轮开始时的用量起算（时长也从这里开始）
+  task.budgetFrom = {
+    usd: task.usage.costUsd,
+    tokens: task.usage.inputTokens + task.usage.outputTokens,
+    at: Date.now(),
+  }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
   for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
   host.changed(true)

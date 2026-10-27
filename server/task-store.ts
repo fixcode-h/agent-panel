@@ -497,6 +497,28 @@ export function createTaskStore() {
     },
     get: getFull,
     /**
+     * 只读对话消息，不进 full 缓存：对话搜索一次要扫几十个对话，
+     * 走 get 会把用户正在看的那份挤出缓存（下次打开又要重读几 MB）
+     */
+    /**
+     * 消息文件现在的指纹（mtime + 大小）：调用方按它判断要不要重读。
+     * 搜索缓存不能用任务的 updatedAt 当 key——消息文件有 400ms 合并写窗口，任务文件先更新，
+     * 按 updatedAt 缓存会把「少一条消息」的盘面留到这些消息真的落盘之后
+     */
+    async messagesStamp(id: string): Promise<string> {
+      const meta = (await all()).get(id)
+      if (!meta) return ''
+      const st = await stat(msgFileOf(meta)).catch(() => null)
+      return st ? `${st.mtimeMs}:${st.size}` : ''
+    },
+    async readMessages(id: string): Promise<TaskMessage[] | null> {
+      const meta = (await all()).get(id)
+      if (!meta) return null
+      const raw = await readJson(msgFileOf(meta))
+      const p = TaskMessage.array().safeParse(raw)
+      return p.success ? p.data : null
+    },
+    /**
      * 任务本身（用量、节点、状态、标题…），不读 `.messages.json`：
      * 返回的 messages 只有任务文件里的那几条用户消息。
      * 每秒都在刷的用量统计用它——用 getFull 会把整棵树每个任务的对话都读进内存，还会把打开过的任务挤出 full 缓存

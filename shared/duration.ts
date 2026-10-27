@@ -3,7 +3,7 @@
  *
  * 一档一个单位，越往上越粗；小数只在最小的那一档出现，避免「4m 3.60s」这种噪声：
  *   0            → 0s
- *   0 < ms < 100 → <0.1s（精度就是 0.1 秒；写 0s 会被当成没花时间）
+ *   0 < ms < 1 秒 → 38ms（整数毫秒：打开对话那几步就在这个量级，写成 <0.1s 分不出谁慢）
  *   < 60 秒      → 41.2s / 20s（秒，最多一位小数，整数不带 .0）
  *   < 60 分      → 4m 3.6s
  *   < 24 小时    → 2h 5m
@@ -17,8 +17,11 @@ const secText = (tenths: number) => (tenths % 10 ? (tenths / 10).toFixed(1) : St
 
 export function fmtDuration(ms: number) {
   const total = Number.isFinite(ms) ? Math.max(0, ms) : 0
-  if (!total) return '0s'
-  if (total < 100) return '<0.1s'
+  // 一秒以内按毫秒写：0.1 秒的精度对加载日志来说太粗，38ms / 900ms 这样的差别要看得出。
+  // 0 和 0.5 毫秒以内的零头都写 0s：四舍五入会得到「0ms」，看起来像没花时间又不像
+  if (total < 0.5) return '0s'
+  // 阈值取 999.5：四舍五入到 1000ms 的按 1s 写，不出现「1000ms」
+  if (total < 999.5) return `${Math.round(total)}ms`
   // 用 0.1 秒的整数量算，避免浮点误差把 59.9 抬成 60.0
   const ds = Math.round(total / 100)
   // 秒和分都保留 0.1 秒的精度：分档的秒位要能写 4m 3.6s

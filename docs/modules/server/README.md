@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」）
+- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试）
 
 ## 职责
 
@@ -15,13 +15,16 @@
 - 子对话分派（`server/tasks.ts` 的 `startChild`）：父对话通过 `create_conversation` 派出的子对话立即开始执行，没有子对话并发上限和排队；`startQueue` 只留作短暂的「启动中」标记。工作流节点、合并编译、后台命令等其他占位/排队不变。
 - 子对话的完成流转只有一个入口（`server/tasks.ts` 的 `advanceChildTo` → `shared/task.ts` 的 `advanceChild`，按 `wrapup → plan → pending → complete → report → list` 走），但两个发起方的行为不同：**用户手动点「解决」**（`PATCH /tasks/:id` 的 `resolved: true`，也就是子对话面板标题栏那个按钮）传 `fromUser: true`，先进 `settleChildForUser`——**先**判停不掉的（这一轮在跑 `working`、工作流运行、待回答的提问 / 待确认的请求），不能先把在跑的子任务杀了再告诉用户解决不了；过了才用现成的 `stopHelper` 停掉 `slot === 'sub'` 还在跑的子任务并轮询等它们真的结束（上限 `HELPER_STOP_TIMEOUT_MS` 15 秒，停不下来返回 `helpers` 和是哪几项，不静默抹成完成），`background.stop` 停掉后台命令，写盘前再核对一次 `live` 里还是不是这一份任务（等待期间用户又发消息继续时 resume 会换成新对象，旧快照写回去会盖掉新一轮的消息和状态，和 `completeChild` 同一套检查），最后用 `shared/plan.ts` 的 `settlePlan` 把计划里没做完的步骤（含 `children` 子步骤、工作流那次运行的节点）收成完成，之后照常走 complete → report → list，不再因为「计划没做完」返回 409；**父对话收尾（`finish_child`）、一轮结束的自动收口、后台命令结束**都不传 `fromUser`，仍要求计划真做完，没做完就停在 `plan` 那一步交回 `plan`——父对话侧的动作不能把真没做完的工作盖成完成。即使用户点「解决」也仍如实拒绝的：这一轮还在跑（`working`）、子任务 15 秒内没停下来（`helpers`）、工作流还在运行（`workflow`）、还有待回答的提问 / 待确认的请求（`asking` / `requests`）；流转本身还要求后台命令都停了（`background`）、独立分支已经合回（`unmerged`）。演示版后端（`web/src/lib/demo-backend.ts` 的 PATCH 分支）同步调 `settlePlan`，否则演示里会停在「已解决但计划还有 n 步没做完」。回归：`shared/plan.test.ts`（未完成步骤连同子步骤递归收口、清掉等待说明、`closed` 计划收成 `done`、没有计划或已做完不动）、`shared/child-flow.test.ts`（同一份没收口的计划 `advanceChild` 仍被 `plan` 拦住，`settlePlan` 之后才走完 complete → report → list）、界面检查 `scripts/ui/02-task.mjs` 的「子对话-点解决后计划全部完成」。
 - 子对话栏的摘要把「已收起」一起交给前端（`GET /tasks/:id/children`，`server/tasks.ts`）：每个条目在 `status` / `working` / 等待项之外多一个 `gone: taskGone(liveTask)`，判定就是 `shared/task.ts` 的 `taskGone`（归档，或独立分支被用户删掉），和运行区、执行中计数读同一处，不另写一套。演示后端 `web/src/lib/demo-backend.ts` 的 `/children` 返回同一个字段，前端 `web/src/lib/api.ts` 的 `taskChildren` 类型也有它。
+- `/children` 的未读事实：每条再多两个时间戳 `turnDoneAt` / `turnSeenAt`（直接取内存任务或 `store.list()` 的摘要字段），前端靠 `shared/task.ts` 的 `taskTurnUnread` 判「做完还没看」（子对话行读 `childDoneDot`，和侧栏橙点 `taskDoneDot` 同一份口径）。只多两个时间戳，不为它读整份 `.messages.json`：`/children` 是热点，每 4 秒刷一次。演示后端 `web/src/lib/demo-backend.ts` 的 `/children` 回同样两个字段，演示数据里「汇总测试耗时」是一条完成未读的子对话。前端展示和回归见 `docs/modules/web/README.md` 的子对话切换下拉那一条。
 - 删除独立分支（`POST /tasks/:id/worktree/discard`）成功后除了写 store，必须把新的 `worktree` 也同步回内存里那份任务（`entry.task.worktree = next` + `entry.rev++`）：`current()`、`/tasks` 列表摘要（`idle`）和 `/children` 都优先读内存副本，只写 store 的话接口会继续按旧的 `active` 算（`gone` 恒为 false，运行区和计数继续挂着），而且下一次 PATCH 还会拿旧 worktree 把 `discarded` 写回 `active`。回归：`scripts/e2e/05-workflow-edge.mjs` 的「删除独立分支后列表接口读到的也是已删除」。
 - 任务「提问」开关与子对话的联动（`server/tasks.ts` 的 `PATCH /tasks/:id`，规则在 `shared/child-ask.ts`）：`askUser` 是这条对话允不允许提问（引擎按它决定让不让问），父对话把它关掉时，名下已创建的子对话一起关（`applyChildAskUser` 逐条改 `askUser` 并发消息 / 落盘，不只改界面）；`childAskUser` 是「之后新建的子对话默认开不开提问」，右键菜单在 PATCH 里带上一次性的 `applyChildAsk` 决定已创建的子对话要不要一起打开。新建子对话的初始 `askUser` 只在一处算：`createTask`（带 `parentTaskId` 时）和引擎内建的 `createConversation` 都取父对话的 `childAskUser`。界面一侧的设置项、右键菜单和三层优先级见 [web 模块 README](../web/README.md)。
-- 子对话合回后的父对话测试（`server/tasks.ts` 的 `finishChildStep` → `startParentTests`，队列在 `server/parent-tests.ts`）：子对话勾了「禁止子对话执行」的步骤不在它自己的分支里跑（只对子对话生效；父对话自己验证时走 `verifyBlock` 的全量启用步骤，见 [ADR 0018](../../adr/0018-test-steps-run-in-parent.md)），合并成功（`integrate`）后先写 `wrapRequest.state = 'testing'`、把计划里的收尾步骤标等待，把这一批排进队列——由面板在父对话目录里一次只跑一步，后台命令按 `exclusive` 和 UE 编译共用独占队，名字是「父对话测试：<子对话标题> · <步骤名>」，所以父对话运行区看得到谁在跑。全部通过才 `childMerged`（标完成、清 `wrapRequest`、按 `childFlowOf` 收口删分支）；失败把「来自子对话「标题」（id）」+ 失败步骤 + 用时 + 输出推回该子对话，状态记 `test-failed`（与「没合进去」的 `failed` 分开），子对话重新合并时全部重跑（不跳过）。耗时记进任务的 `Task.testRuns`；重启后 `recoverParentTests` 把 `testing` 的重新排队（从第一步重跑），`advanceChildTo` 的 `parentTest` hold 保证没跑完不标完成、不删分支。UE 的 `request_build` 不受影响，仍按 ADR 0004 走。
+- 子对话合回后的父对话测试（`server/tasks.ts` 的 `finishChildStep` → `startParentTests`，队列在 `server/parent-tests.ts`）：`scope === 'parent'` 的步骤（全量单测、全量界面检查、e2e，原 `runInParent`）不在子对话自己的分支里跑（只对子对话生效；父对话自己验证时走 `verifyBlock` 的全量启用步骤，见 [ADR 0018](../../adr/0018-test-steps-run-in-parent.md)），合并成功（`integrate`）后先写 `wrapRequest.state = 'testing'`、把计划里的收尾步骤标等待，再用子对话的 `changes` 跑 `pickSteps` 筛出这轮命中的步骤（一条都没命中就跑全部启用的，不静默少跑），把这一批排进队列——由面板在父对话目录里一次只跑一步，后台命令按 `exclusive` 和 UE 编译共用独占队，名字是「父对话测试：<子对话标题> · <步骤名>」，所以父对话运行区看得到谁在跑。全部通过才 `childMerged`（标完成、清 `wrapRequest`、按 `childFlowOf` 收口删分支）；失败把「来自子对话「标题」（id）」+ 失败步骤 + 用时 + 输出推回该子对话，状态记 `test-failed`（与「没合进去」的 `failed` 分开），子对话重新合并时全部重跑（不跳过）。耗时记进任务的 `Task.testRuns`；重启后 `recoverParentTests` 把 `testing` 的重新排队（从第一步重跑），`advanceChildTo` 的 `parentTest` hold 保证没跑完不标完成、不删分支。UE 的 `request_build` 不受影响，仍按 ADR 0004 走。
   **判断用的步骤以项目当前设置为准**：`parentRunRole`（提示词里谁跑）、`testStepsOf`（`parentStepsOf` 决定合回后要不要转父对话，`recordSelfTestRun` 按它匹配耗时）、engine host 的 `verify.steps`（这一轮提示词里的步骤清单）
   都过 `shared/test-steps.ts` 的 `currentTestSteps(task.testSteps, project)`：项目存在就用 `project.testSteps`，项目被删 / 读不到才用任务快照。
   所以改了项目设置，已开始的对话下一次判断（下一轮提示词、下一次子对话合并）就按新设置跑，不需要新建对话；
   命令在 `background.start` 派发时由当时的步骤算定，一条命令不会中途换成新命令。取项目的点各自只取一次（`deps.projects.get`），不在同一次判断里重读。
+- 计划的推进与滞后检测（[ADR 0021](../../adr/0021-plan-model-lifecycle.md)）：后台命令结束仍走 `settleWait`（成功 `done`、失败 `failed`），子对话 / 子任务 / 合回 / 工作流结束照旧自动推进；`notePlanInput`（`server/tasks.ts`）在用户消息、父对话交代任务进入对话时写 `activePlan.lastInputAt`（面板推送的后台命令结果、子对话状态上报不算——对应步骤已经自动推进过），`deliver` 和 `followUp` 两个入口都打点。`server/exec/runner.ts` 的 `runRealTurn` 在调引擎前用 `planNotice` 算一次提醒并 `log.warn('plan', …)`（确认「到底提醒过没有」），这一轮结束后把 `inputNotedAt` 记成 `lastInputAt`——同一句提醒只出现一次，对话选择「不改计划、说明一句」时不会被每轮追问。未带 `step` 的后台命令由引擎挂到当前进行中的步骤（`runningStepId`），以前这种长命令在计划里完全看不见。回归：`server/orchestrator.test.ts`（未带 step 自动挂进行中的那一步并变等待中；每轮提示含「现在：第 N 步」「⚠ 计划还停在」「新输入先判计划」「增量还是重开」）。
+
 - 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
 - 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
@@ -30,9 +33,12 @@
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
 - 面板能力给 Agent 用：进程内 MCP 工具，编排（`server/orch-mcp.ts`）、向用户提问（`server/ask-mcp.ts`）、UI 设计（`server/design-mcp.ts`）。`spawn_agents` 顶层的 `agent` / `tier` / `resume` 是整批默认值，顶层写错字段直接报错（以前只读 `tasks[i]`、顶层 `resume` 被静默丢掉，复看会退回默认「子任务」角色，见 [bugs/helper-resume-lost-role.md](bugs/helper-resume-lost-role.md)）；resume 命中时角色怎么定、`tier` 跟谁，规则在 [shared 模块 README 里「对话的执行计划」那一条](../shared/README.md)。
 - 其他：附件和上传、文件系统接口、AI 创建 / 优化的提示词组装（`server/assist.ts`）、项目教训、导出、版本更新。
+- 对话回收站（`server/tasks.ts` 的 `DELETE /:id` → `enterTrash`、`GET /trash`、`POST /:id/restore`、`DELETE /:id/permanent`）：删除只做标记（`Task.deletedAt`，见 `shared/schema.ts`），任务记录、`*.messages.json`、独立分支、附件、聊天目录都先留着；保留期是 `shared/task.ts` 的 `TRASH_RETENTION_DAYS`（7 天），过期由 `cleanupTrash(now)` 物理删除（`purgeTasks`：store 记录、worktree、附件、聊天 / 交接目录），挂在 `server/index.ts` 的 `runCleanup` 上——和 `sweepStaleWorktrees` 同一节奏（启动后 10 秒一次、之后每小时一次），不另起定时器；`now` 可注入，测试用它造「7 天前删的」。进回收站前先 `stopTask` + `endBackground`，这一轮和后台上命令都停下来；删父对话时子对话一起标记（`parent` 原因），恢复时一起回来，`GET /trash` 只列顶层对话并带 `children` 计数。恢复时如果独立分支目录已经被清掉（`sweepStaleWorktrees` 或手工删了），把 `worktree` 置空（按共用目录继续）并回 `{ worktreeCleared: true }`，界面据此提示「恢复后需要重新执行」，不留一个指向不存在目录的 `active` 分支；不标成 `discarded`，那会被 `taskGone` 认成已收起、恢复后的对话直接显示「已完成」。已删除的对话从 `GET /tasks`、`GET /tasks/:id/children`、`GET /tasks/search`、启动迁移（`ready` 的 `restartInterrupted` 那段）和 `interruptedTasks` 里全部排掉，判定只用 `shared/task.ts` 的 `taskGone` / `taskDeleted`（`taskGone` 已把 `deletedAt` 算作「已收起」）；`sweepStaleWorktrees` 把有 `deletedAt` 的对话也算「在用」，保留期内不动它的分支目录。回归：`server/task-trash.test.ts`（删除/恢复/级联/过期清理/永久删除/分支目录已清理）、`shared/task-trash.test.ts`（`taskGone` 纳入删除、保留期剩余天数）、界面检查 `scripts/ui/05-settings.mjs` 的「回收站-列出已删除的对话」「回收站-恢复后」。
+- 对话内容搜索（`GET /tasks/search?q=&limit=`，`server/tasks.ts`）：按 `updatedAt` 倒序扫任务的 `*.messages.json`，只回命中片段 + `taskId` + `messageId` + 命中条数，不回整条消息；三个预算任一用完就停（扫多少个对话、回多少条、读进多少字符，常量在 `shared/task-search.ts`），同一个对话最多 3 条命中，进了回收站的不参与。片段截取（正文压成一行、命中词两侧各留 36 字、高亮位置）也在 `shared/task-search.ts`，前后端共用同一份口径。对话文件按 `updatedAt` 缓存（`cachedMessages`，最多 40 个对话 / 800 万字符），边输边搜时不会每次把几十个几 MB 的对话重新读一遍；读消息走 `task-store.ts` 的 `readMessages()`，不经过 `get()` 的 full 缓存（搜索会扫几十个对话，不能把用户正在看的那份挤出去）。实测（4.8 万条消息、60 个对话的数据目录）：冷启动首屏 49ms，同一实例缓存热 3ms，无命中扫满 60 个对话 109–145ms。回归：`server/task-search-route.test.ts`、`shared/task-search.test.ts`。
 - 工作总结（`server/summary.ts`）：把选中项目今天的任务记录整理成提示词（`shared/summary.ts`），在项目目录里只读跑本机 CLI 生成 Markdown 报告；接口 `/summary`，报告存在 `tasks/summaries.json`（跟任务记录一起清理），保留最近 `SUMMARY_KEEP` 份，用户编辑后的正文走 `PUT /summary/:id`。请求是「项目 → 对话 id 列表」两层，每个项目只分析用户选中的对话（`taskIds` 为空才是这个项目今天的全部），数据仍只取今天（`todayWindow` 出日期，`activeOnDay` 先筛今天有执行的任务再读完整对话）。生成后用 `checkSummaryFormat` 自检结构，不合格带上 `summaryRetryHint` 的具体问题重试一次；仍不合格也照常保存，但在 `SummaryJob.format` 写 `ok: false`、问题码和 `retried`，页面据此明确提示「格式不完整」，不静默通过（重试失败或写不出内容时保留第一次的结果）。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见下面的「技能库的多文件管理」。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见下面的「GitHub 出网与代理回退」。
+- 候选教训草稿区（`server/lesson-drafts.ts`，接口 `/lesson-drafts`）：`GET /` 列表、`POST /` 从一份报告提炼（`{ reportId }`，只补草稿区还没有的条目：`missingDrafts` 按提炼依据判重，不整份重新生成——在的草稿用户可能已经改过，覆盖掉就是静默丢他的东西；丢掉一条后再点提炼能找回来，返回 `{ drafts, created, info }`）、`PUT /:id` 编辑、`DELETE /:id` 丢弃。提炼规则在 `shared/lesson-draft.ts`（纯函数，单测在 `shared/lesson-draft.test.ts`），草稿存在 `lesson-drafts.json`，**不会写进 docs/lessons/**：落到哪个分片由用户看过后手动写。
 - 项目更新时的字段保留与校验（`server/index.ts` 的 `parseProject`、`PUT /projects/:id`）：请求没带 `initResult` 时保留旧值（和 `lessons`、`initializedAt` 同一套做法），带上的用 `ProjectProposalSchema` 严格校验，不合法直接拒绝；初始化推荐因此随项目持久化，重开设置还能应用。初始化对话跑完交回结果走单独的 `PUT /projects/:id/init-result`（同文件）：服务端自己读最新项目，再用 `shared/project-init.ts` 的 `withInitResult` 只合并 `initResult` / `initializedAt`（时间取本次完成），不碰别的字段；结果要等对话跑几分钟才回来，整份 PUT 会把客户端手里过期的快照（用户这期间应用的推荐、改过的设置）写回旧值，见 [web 的 Bug 记录](../web/bugs/init-apply-overwritten-by-snapshot.md)。
 
 ## 入口
@@ -45,39 +51,60 @@
 
 `shared/` 的数据结构和 CLI 定义、`hono`、`zod`、`cross-spawn`（Windows 上调用 npm 安装的 `.cmd`）、`undici`（`ProxyAgent` 和走代理的 `fetch`，只在 `server/net.ts` 用）。定时计划的规则全在 `shared/schedule.ts`：服务端只按它判断到没到点、执行后怎么往后推，不自己再算一套。
 
-## 打开一个对话页时服务端重复付的代价（2026-10-26 实测，2026-10-27 更新）
+## 打开一个对话页时服务端重复付的代价（2026-10-26 实测，2026-10-27 两轮更新）
 
-单次打开对话页会打到下面几组接口，它们合起来就是「打开慢」的服务端那一半（热数据、本机 loopback，均已复测）。**2026-10-26 的数字是优化前的基线，保留作背景；`/seen`、`/presence`、静态资源三项已在 2026-10-27 改掉，每条后面写的是现在的行为和本次实测；SSE 的 `full` 和 `/children` 的 git 没有动，仍是 P1。**
+单次打开对话页会打到下面几组接口，它们合起来就是「打开慢」的服务端那一半（热数据、本机 loopback，均已复测）。**2026-10-26 的数字是优化前的基线，保留作背景；下面这些到 2026-10-27 都已改掉——第一轮是 `/seen`、`/presence`、静态资源 gzip + 长缓存，第二轮是打开对话分页、SSE 增量首包、`/children` 两档轮询、`GET /tasks` 的 ETag、子对话计数的共享缓存。每条后面写的是现在的行为和实测，这一节已经没有遗留的 P1 待办。**
 
 - **`/seen` 不再读整份对话、也不再回完整任务（2026-10-27 已完成）**：`current()`（`server/tasks.ts:493`）→ `store.getFull`（`server/task-store.ts:448`）每次都 `readJson` + `TaskMessage.array().safeParse` 整份 `.messages.json`，2.0MB / 611 条的那份实测 91–133ms；`POST /seen`（`server/tasks.ts:4323`）以前走的就是这条路径，还把完整任务 2467KB 原样回给前端（前端只拿它做 apply）。现在它取 `live` 里那份、没有才 `getMeta`，只回 `{ turnSeenAt }`（`shared/schema.ts` 的 `TaskSeenResult`）；要落盘时走 `server/task-store.ts` 的 `updateMeta()`——只改任务记录文件，**不读也不写 `.messages.json`**，并且带 `keepUpdatedAt: true`，所以「只是看过了」不算任务更新，列表顺序和更新时间都不动。
 - **`/presence` 只做存在性检查（2026-10-27 已完成）**：`POST /presence`（`server/tasks.ts:4312`）以前同样走 `current()`，为一次心跳把整份对话读一遍再校验。现在只用 `getMeta(id)`（`server/tasks.ts:504`，底层 `store.getMeta` 只查有没有这条任务），之后照旧只动内存里的 viewer。
-- `GET /:id/events`（`server/tasks.ts:3915`）建连后先发一次 `full` 事件：实测 2726KB，与上面那次 `GET /:id` 是同一份数据；前端 `useTaskStream` 不信 `running`，只要打开对话页就连。**仍是 P1，本次未动。**
-- `GET /:id/children`（`server/tasks.ts:3663`）：每个子对话一次 `childWorktree` → `worktreeStatus`（4 条 git），首跑实测 1131ms，之后靠 `worktreeSeen` 的 10s / 60s TTL 降到 2–10ms；前端每 4 秒刷一次，所以子对话多时等于持续跑 git。**仍是 P1，本次未动。**
+- **`GET /:id/events` 首包能只发增量（2026-10-27 第二轮已完成）**：以前建连后先发一次 `full`（实测 2726KB，和那次 `GET /:id` 是同一份数据）。现在建连时读浏览器重连自动带的 `Last-Event-ID`、或首次建连由页面带的 `?rev=`，交给 `shared/task.ts` 的 `taskRevOffset(messages, rev)` 判「页面上那份是不是当前对话的前缀」：版本由 `taskMessageRev` 拼成 `<条数>:<最后一条消息 id>`，对得上就返回补发起点（**含最后一条**，正在流式增长的那条不会漏），对不上返回 -1。对得上发 `patch`（`{ meta, messages: messages.slice(offset), total }`），对不上才发 `full`；两种事件都带 `id: <版本>`，浏览器自己记住它，重连时当 `Last-Event-ID` 带回来。消息被删（返工时重跑节点）或换了对话一律回 `full`，不猜着拼。实测同一份 4200 条 / 6.11MB 的对话：首包 `full` 6,401,764 字节 / 130.2ms → 带 `rev` 的 `patch` 78,851 字节 / 5.9ms。
+- **`GET /:id/children` 的 git 结果留更久、前端按状态分档（2026-10-27 第二轮已完成）**：每个子对话一次 `childWorktree` → `worktreeStatus`（4 条 git），首跑实测 1131ms，之后靠 `worktreeSeen` 的 TTL 降到 2–10ms。`UNMERGED_TTL` 从 10s 提到 **15s**（和前端静止档对齐，没合并的分支状态 15 秒内不重复跑 git），`STOPPED_TTL` 仍 60s。前端不再固定每 4 秒刷一次：`web/src/components/tasks/TaskView.tsx` 的 `CHILD_POLL_ACTIVE_MS`（4000）/ `CHILD_POLL_IDLE_MS`（15000）按「有没有在跑」分档，判定读 `shared/task.ts` 的 `childSpinning`（和子对话行的图标、执行中计数同一处，不另写一套），**列表为空时一次都不轮询**——子对话产生由 SSE 推来的 `childrenWorking` / `childrenCli` 和上报信号 `childSignal` 触发重拉（`childrenReload` ref）。实测：有子对话但都静止时请求间隔 15.2 / 15.0 / 15.0 / 15.0 秒；没有子对话时 12 秒内只有首拉 1 次、之后 0 次。
+- **`GET /:id` 可以只回最近一段（2026-10-27 第二轮已完成）**：`?limit=N` 只回最近 N 条、`?before=<messageId>` 取这条之前的 N 条（往前翻页的锚点），纯函数是 `shared/task.ts` 的 `messagePage`；响应体在任务之外多带 `messageTotal`（完整条数）和 `messageHasMore`（还有更早的），**整份都在这一份里时**再带 `messageRev`（`taskMessageRev` 的版本，前端建 SSE 时带上它，首包就只补发增量；截断的那段不是整份的前缀，不能当版本用）。**不传参数行为完全不变**（导出、AI 处理、老版本页面照旧拿整份）。锚点找不到时（那条消息被返工删掉了）取最早的一段而不是尾部那页，否则前端一条都接不上、卡在同一页。实测同一份对话：全量 6,401,729 字节 / 63.3ms → `?limit=50` 77,310 字节 / 3.9ms，`?before=` 同样 77,310 字节 / 2.1–14.6ms。演示后端 `web/src/lib/demo-backend.ts` 的 GET 单任务同步支持这两个参数。
+- **`GET /tasks` 带 ETag（2026-10-27 第二轮已完成）**：列表被前端每 2.5 秒拉一次（有任务在跑时），以前每次都要 `store.list()` + 序列化 79KB。现在对最终响应体算 sha1（`createHash`）当 `ETag`，`If-None-Match` 命中就回 304、不带响应体。前端 `web/src/lib/api.ts` 的 `allTasks` 带上次的 `If-None-Match`，304 时返回 `null`，`web/src/lib/data.tsx` 的 `reloadTasks` 收到 `null` 不动 state（侧栏不重渲染）。实测：第一次 200 带 ETag，带 `If-None-Match` 再请求 304、0 字节。
+- **SSE 每秒的全量扫描改成共享缓存（2026-10-27 第二轮已完成）**：以前每秒对每个打开的对话各调一次 `activeChildren` / `cliChildren`，每次内部都 `store.list()` 全量遍历。现在统一走 `server/tasks.ts` 的 `childCountsOf(parentId)`（`CHILD_COUNT_TTL = 1000`）：一次 `store.list()` 把所有父对话的 `childrenWorking` / `childrenCli` 都算出来，`activeChildren` / `cliChildren` / `withLive` 都读它，多个打开的对话共享同一份。实测：两个对话各开一条 SSE 连接跑 10 秒，`store.list` 调用 40 次 → 11 次。
 - **静态资源改成 gzip + 长缓存（2026-10-27 已完成）**：托管从 `serveStatic`（原 `server/index.ts:1053`）换成 `server/static.ts` 的 `serveDist` / `serveIndex`（挂在 `server/index.ts:1056`）。文本类型（js / css / html / json / svg / map / webmanifest 等）用 Node 内置 `zlib` 的 gzip（level 6），压缩结果按文件缓存、同一文件的并发请求只压一次、构建产物换了（mtime / 大小变）就重压；字体和图片本身已是压缩格式，不压。`/assets/*` 的文件名带内容哈希，回 `public, max-age=31536000, immutable`；`index.html` 和其余不带哈希的文件回 `no-cache`（每次校验，命中就是 304），发版后一定拿得到新入口。两者都带 `W/"…"` 的 ETag 并处理 `If-None-Match`，gzip 与未压缩两份的 ETag 分开（否则会拿压缩版去回不要 gzip 的请求），可压缩类型一律带 `vary: accept-encoding`。**只作用于打包产物**：`npm run dev` 下前端仍由 Vite 自己服务，完全不经过这套缓存头。SPA 兜底照旧——`serveDist` 找不到文件就交给 `serveIndex`，所以任何找不到的路径（含 `/assets/*`）都回 `index.html`（200 + HTML），排查「资源 404」时用 content-type 判。
 
 本次实测（同一份 2.12MB / 1000 条消息的对话，本机 loopback、预热 OS 缓存，`curl -s -o /dev/null -w '%{size_download} %{time_total}'`）：
 
-| 请求                                             | 改前                                                                                                  | 改后                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `POST /api/tasks/:id/seen`                       | 以前走 `current()`、回整份任务：本份是下一行的 2,125,105 字节，2.0MB / 611 条那份实测 2,467KB / 133ms | 41 字节 / 1.0–1.1ms                                             |
-| 旧路径 `GET /api/tasks/:id`（旧 `/seen` 也走它） | 2,125,105 字节 / 11–21ms                                                                              | 未改（首屏那次仍要整份对话）                                    |
-| `POST /api/tasks/:id/presence`                   | 与上面同一条路径（`current()`）                                                                       | 204 / 1.3–2.3ms                                                 |
-| `index-tnFgKEWT.js`                              | 705,555 字节（未压缩）                                                                                | 200,850 字节（gzip）                                            |
-| `fonts-DFrIiuit.css`                             | 459,218 字节（未压缩）                                                                                | 200,798 字节（gzip）                                            |
-| woff2 字体                                       | 不压缩                                                                                                | 不压缩（已是压缩格式）                                          |
-| `index.html`                                     | 3604 字节、无缓存头                                                                                   | 3604 字节、`cache-control: no-cache`，带 `If-None-Match` 回 304 |
+| 请求                                      | 改前                                                                                                  | 改后                                                            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `POST /api/tasks/:id/seen`                | 以前走 `current()`、回整份任务：本份是下一行的 2,125,105 字节，2.0MB / 611 条那份实测 2,467KB / 133ms | 41 字节 / 1.0–1.1ms                                             |
+| `GET /api/tasks/:id`（旧 `/seen` 也走它） | 2,125,105 字节 / 11–21ms                                                                              | 带 `?limit=50` 只回最近 50 条（数字见下面第二轮那张表）         |
+| `POST /api/tasks/:id/presence`            | 与上面同一条路径（`current()`）                                                                       | 204 / 1.3–2.3ms                                                 |
+| `index-tnFgKEWT.js`                       | 705,555 字节（未压缩）                                                                                | 200,850 字节（gzip）                                            |
+| `fonts-DFrIiuit.css`                      | 459,218 字节（未压缩）                                                                                | 200,798 字节（gzip）                                            |
+| woff2 字体                                | 不压缩                                                                                                | 不压缩（已是压缩格式）                                          |
+| `index.html`                              | 3604 字节、无缓存头                                                                                   | 3604 字节、`cache-control: no-cache`，带 `If-None-Match` 回 304 |
 
-整页对比（headless chromium、禁缓存、同一份对话）：改后 ready **575ms**、**75 个请求**、resource timing 传输合计 **3.86MB**（js 822KB / css 219KB / 字体 630KB / API 2.28MB）；改前基线是 ready 1.6–2.4s、114–119 个资源、9.4–10.2MB（见 [web 模块](../web/README.md) 同一段实测）。resource timing 之外还有一次性的 SSE `full` 事件 2,125,149 字节，属于留到下一批的 P1。
+整页对比（headless chromium、禁缓存、同一份对话）：改后 ready **575ms**、**75 个请求**、resource timing 传输合计 **3.86MB**（js 822KB / css 219KB / 字体 630KB / API 2.28MB）；改前基线是 ready 1.6–2.4s、114–119 个资源、9.4–10.2MB（见 [web 模块](../web/README.md) 同一段实测）。resource timing 之外还有一次性的 SSE 首包（当时是 `full` 2,125,149 字节），第二轮已改成带 `rev` 的 `patch`，见上面 `/events` 那条。
 
 前端配套：`web/src/components/tasks/TaskView.tsx` 的 `applySeen` 用 `web/src/lib/tasks.ts` 的 `withTurnSeenAt` 把返回值合进本地，未读判定仍只在 `shared/task.ts` 的 `taskTurnUnread` / `taskDoneDot`（细节见 [web 模块](../web/README.md)）。回归：`server/task-seen.test.ts`（`/seen` 只回 `{ turnSeenAt }`、不改非对话字段时对话文件一个字节都没被重写、已看过时什么都不改、`/presence` 不改对话文件且任务不存在时 404、`updateMeta` 同步内存里那份完整对话）、`server/static.test.ts`（文本资源 gzip 变小、`/assets/*` 长缓存、不要 gzip 的客户端拿原文、字体不压、入口页 no-cache、内容没变回 304 且两份 ETag 分开、越界路径交给 SPA 兜底、`q=0` 不算接受 gzip）、`web/src/lib/tasks.test.ts` 的 `withTurnSeenAt`。
+
+第二轮之后的页面配套（细节见 [web 模块](../web/README.md) 的「打开对话页的加载链路」）：`TaskView.tsx` 打开时一律带 `limit=OPEN_MESSAGE_LIMIT`（50），`loadEarlier` 用 `?before=<最早那条>` 往前翻，分页信息跟当前那份任务走（`truncated`），SSE 推来整份后收起「显示更早的消息」；建连的 `boot` 带 `?rev=` 只在手上有整份时才有值，没有基线就先不建连（否则服务端发的增量合并不了）；`web/src/lib/api.ts` 的 `task(id, { limit, before })` 只拼真正给了的参数，不拼出结尾的 `?`。
 
 优化优先级（按收益/风险）与进度：
 
 1. seen 只回 delta（或直接 204）——**2026-10-27 已完成**，现在只回 `{ turnSeenAt }`；
 2. presence 用 `getMeta` 而不是 `current`——**2026-10-27 已完成**；
-3. SSE 支持「我已经有到 X 版本」直接发 patch——P1，未做（`full` 事件仍是整份对话，实测 2,125,149 字节）；
-4. children 把 git 结果缓存拉长或改成按需——P1，未做；
-5. 给静态资源加压缩——**2026-10-27 已完成**（gzip + 长缓存 + ETag）。
+3. SSE 支持「我已经有到 X 版本」直接发 patch——**2026-10-27 第二轮已完成**（`?rev=` / `Last-Event-ID`，对上前缀发 `patch`，对不上发 `full`）；
+4. children 把 git 结果缓存拉长或改成按需——**2026-10-27 第二轮已完成**（`UNMERGED_TTL` 15s，前端空列表不轮询、静止 15s、在跑 4s）；
+5. 给静态资源加压缩——**2026-10-27 已完成**（gzip + 长缓存 + ETag）；
+6. 打开对话只回最近一段——**2026-10-27 第二轮已完成**（`?limit=` / `?before=`，首屏 6.11MB → 77KB）；
+7. 列表接口带 ETag、子对话计数共享一份——**2026-10-27 第二轮已完成**（304 不带响应体；SSE 空闲扫描 40 次 `store.list` → 11 次）。
+
+第二轮实测（本机服务 + 真实前端，数据是一份 **4200 条消息 / 6.11MB** 的对话；没换机器、没清 OS 缓存，和上面第一轮那张 2.12MB 的表不是同一份数据，不要跨表对比绝对耗时）：
+
+| 请求                                  | 改前                     | 改后                                      |
+| ------------------------------------- | ------------------------ | ----------------------------------------- |
+| `GET /api/tasks/:id`（全量）          | 6,401,729 字节 / 63.3ms  | ——（不传参数仍是这个行为）                |
+| `GET /api/tasks/:id?limit=50`         | ——                       | 77,310 字节 / 3.9ms                       |
+| `GET /api/tasks/:id?limit=50&before=` | ——                       | 77,310 字节 / 2.1–14.6ms                  |
+| SSE 首包（`full` → `patch`）          | 6,401,764 字节 / 130.2ms | 78,851 字节 / 5.9ms（带 `rev`）           |
+| 打开一个对话的总传输                  | 12.21MB（同一份传两遍）  | 6.18MB（GET 最近 50 条 + SSE 首包 patch） |
+| `GET /api/tasks`                      | 每次 200 + 79KB 序列化   | 带 `If-None-Match` 时 304 / 0 字节        |
+| SSE 空闲时 `store.list` 次数          | 两个对话开 10 秒 = 40 次 | 11 次（`CHILD_COUNT_TTL` 共享缓存）       |
+
+第二轮的回归测试（本轮新增四个单测文件，按用例说明）：分页与版本的纯函数单测（`messagePage` 切片、锚点找不到时取最早一段、`taskMessageRev` / `taskRevOffset` 对号与对不上）、路由层单测 `task-open-page`（`limit` / `before`、响应带的 `messageTotal` / `messageHasMore` / `messageRev`、SSE 首包按 `rev` 发 `patch` 或 `full`）、`task-list-etag`（ETag / 304 / 数据变化换 ETag）、`task-children-count`（子对话计数正确、缓存命中结果一致）。
 
 ## 数据落盘与损坏恢复
 
@@ -110,6 +137,15 @@
 - **已有任务记录的 id 不会被重建覆盖**（用户自己改过的标题不能被盖掉）。重建写盘失败只打日志，本次启动仍然让它可见，下次启动再试。
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
+
+## 附件落盘：只有图片拷一份进对话目录，其它文件只引用原路径
+
+- 只有图片（`shared/composer.ts` 的 `attachChip` 判出的 image：mime 是 `image/` 或扩展名是 png/jpeg/gif/webp/bmp）由 `server/attachments.ts` 的 `placeAttachments()` 拷进任务执行目录的 `attachments/`，提示里给相对路径；多张图片重名时加序号（`note (2).png`），超过 `MAX_ATTACHMENT_BYTES` 的图片不拷、保留原绝对路径。**其它文件（文本、代码、PDF、压缩包、音视频）一律不拷**，直接把原来的本机绝对路径交给 Agent；上传的文件只有 `~/.agent-panel/uploads/<uuid>/<名字>` 一份，任务目录里不出现第二份。`ref`（粘贴回来的路径）和 `quote`（引用原文落成的文件）本来就不拷。没有图片要拷时连 `attachments/` 目录都不建。
+- 两种形态在提示里的说明由 `shared/task.ts` 的 `withAttachments` 按实际内容写：只有相对路径时说「图片已放进对话目录」，有绝对路径时说「本机绝对路径、直接读取」，免得模型把绝对路径当相对路径去找。
+- 用绝对路径的附件在执行目录之外，要放行的目录由 `attachmentAddDirs()` 按附件实际位置算：上传的合并成 uploads 根，粘贴路径引用的文件（`ref`）各自放行它所在的目录，执行目录里的和相对路径不放行。`server/exec/runner.ts` 建 `addDirs` 时取整个对话里的附件，设计会话（`server/designs.ts`）也调它，不再固定只放行 `UPLOADS_DIR`（以前 `ref` 引用的、在 worktree 执行时项目原目录里的文件会被挡掉）。实际用到的参数只有 Claude Code 的 `--add-dir` 和 Gemini 的 `--include-directories`（`shared/clis.ts` 的 `addDirs`）；Codex 的 `--sandbox` 限制的是写和命令、读文件不受目录白名单限制，Command Code / Pi 的 CLI 定义里没有目录参数（permission 是工具批准模式），所以它们读绝对路径不需要额外参数。
+- 源文件被删掉或移走时读不到，附件只保留原路径：CLI 自己报找不到，不静默换成别的路径、也不把附件从消息里去掉——不拷贝的代价就是「源文件没了就读不到」，报错就是如实告知用户。设计会话（`designs.ts` 每轮建临时工作目录、结束后删）仍把附件复制进那个临时目录，因为设计工具按工作目录内的路径找图，和任务附件不是一回事。
+- 附件图片的缩略图（`server/thumbnail.ts`，挂在 `/api/uploads/raw` 的 `?w=` 上，`server/uploads.ts`）：消息里的卡片只有 1.25em 见方，却一直取原图（单张 100–300KB）。这里用 `server/image.ts` 已有的 PNG 解码 / 缩放 / 编码，**不引入图片库**：服务端要打成单文件（`scripts/package.mjs` 的 esbuild `bundle`），原生模块带不进去，纯 JS 的 JPEG 解码又要多一份依赖。缩略图缓存在 `<DATA_DIR>/cache/thumbs/<sha1(路径+大小+mtime+宽)>`（按文件大小和 mtime 而不是文件内容算 key，不用为了判断缓存是否新鲜先读一遍原图），同一张图的并发请求只算一次、解码缩放串行做（它是同步计算，一起来会把服务端卡住），响应带 `cache-control: private, max-age=86400`。解不开的格式（JPEG / WebP / 隔行扫描 PNG）和比目标还小的图返回 null，接口退回原图；看大图、复制图片、任务目录里的图（`/uploads/raw/file`）都不带 `w`。回归：`server/thumbnail.test.ts`。
+- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷贝、超上限的图片不拷、重名图片加序号、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录并给 `--add-dir`；文本文件不拷、给了原绝对路径）。
 
 ## 状态回收：面板重启后与页面宽限到期后
 

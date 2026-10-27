@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { convStateText, newTask } from '../shared/task.ts'
+import { activePlan, applyPlan } from '../shared/plan.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
 
 /**
@@ -441,3 +442,95 @@ const activePlanOf = (task: Task) => {
   const last = task.plans.at(-1)
   return last && !last.doneAt ? last : undefined
 }
+
+/**
+ * ADR 0020：后台命令没点名步骤时自动挂到当前进行中的那一步。
+ * 以前不带 step 的长命令在计划里完全看不见，计划就停在上一步（用户报的「做到第 4 步显示第 1 步」）。
+ */
+test('后台命令没点名步骤：自动挂到当前进行中的那一步，计划跟着变成等待中', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '修角标' } as never, undefined, '', 't-plan-bg'),
+    id: 't-plan-bg',
+  } as Task
+  applyPlan(task, {
+    steps: [{ title: '定位', status: 'done' }, { title: '跑端到端测试', status: 'running' }, { title: '收尾' }],
+  })
+  const seen: { step?: string }[] = []
+  const log: AgentCall[] = []
+  let turn = 0
+  const h: EngineHost = {
+    ...host(task, log, async (call) => {
+      if (turn++ === 0) {
+        const r = await call.orch!.runBackground({
+          command: 'npm run test:e2e',
+          name: '端到端测试',
+          cwd: '.',
+          exclusive: false,
+        })
+        assert.equal(r.ok, true)
+        return { ok: true, text: '已放到后台' }
+      }
+      return { ok: true, text: '等结果' }
+    }),
+    runBackground: async (input) => {
+      seen.push({ step: input.step })
+      return { ok: true, id: 'job-1', info: '已放到后台（编号 job-1）。' }
+    },
+  }
+  h.agents = [agent('m', '协调')]
+
+  await runEngineTurn(h)
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].step, '2', '挂到进行中的那一步，而不是不带归属')
+  const plan = activePlan(task)!
+  assert.equal(plan.steps[1].status, 'waiting', '跑长命令的那一步是等待中，不是进行中')
+  assert.equal(plan.steps[1].waits[0]?.ref, 'job-1')
+  assert.equal(plan.steps[1].waits[0]?.label, '端到端测试')
+})
+
+/** ADR 0020：每轮提示里要正面写出当前进度、滞后提醒，以及「新输入先判计划」「增量还是重开」两条硬约束 */
+test('每轮提示：写出当前第几步、计划滞后提醒和新输入先判计划，规则里钉住增量/重开', async () => {
+  const sixAgo = new Date(Date.now() - 6 * 60_000).toISOString()
+  const task = {
+    ...newTask(
+      { projectId: 'p', mode: 'chat', agentId: 'm', prompt: '修角标' } as never,
+      undefined,
+      '',
+      't-plan-prompt',
+    ),
+    id: 't-plan-prompt',
+  } as Task
+  applyPlan(
+    task,
+    { steps: [{ title: '定位', status: 'done' }, { title: '接线', status: 'running' }, { title: '跑测试' }] },
+    sixAgo,
+  )
+  const plan = activePlan(task)!
+  // 上一次改计划在 7 分钟前，6 分钟前进来过新要求：之后计划没动过
+  plan.updatedAt = new Date(Date.now() - 7 * 60_000).toISOString()
+  plan.lastInputAt = sixAgo
+
+  const log: AgentCall[] = []
+  let turn = 0
+  const h = host(task, log, async (call) => {
+    if (turn++ === 0) {
+      // 每轮都要看到自己现在在第几步
+      assert.match(call.prompt, /现在：第 2 步「接线」进行中（已 6 分钟）/)
+      assert.match(call.prompt, /下一步是「跑测试」/)
+      // running 步骤 6 分钟没变化：提醒先收口
+      assert.match(call.prompt, /⚠ 计划还停在「接线」/)
+      // 上一次输入之后计划没动过：要求先判计划
+      assert.match(call.prompt, /进来了新要求/)
+      // 两条硬约束的原句（改措辞要连着这里一起改）
+      assert.match(call.prompt, /新输入先判计划/)
+      assert.match(call.prompt, /增量还是重开/)
+      assert.match(call.prompt, /一份计划里同时只能有一个进行中/)
+      assert.match(call.prompt, /什么算完成一步/)
+    }
+    return { ok: true, text: '好的' }
+  })
+  h.agents = [agent('m', '协调')]
+
+  await runEngineTurn(h)
+  assert.equal(log.length, 1)
+})

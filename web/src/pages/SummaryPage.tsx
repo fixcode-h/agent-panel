@@ -1,19 +1,29 @@
 /**
- * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），
- * 把「今天」（本机时区的自然日）执行过的对话交给本机 CLI，生成一份固定三节格式的 Markdown 报告。
+ * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是这段时间全部），
+ * 把选中的时间范围（今天 / 昨天 / 近 7 天 / 自选日期，默认今天）里执行过的对话交给本机 CLI，
+ * 生成一份固定三节格式的 Markdown 报告。
  * 报告能编辑（自动保存）、预览、一键复制；最近几份存在数据目录里（见 server/summary.ts），点开能回看。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { AlertTriangle, Copy, FileText, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
+import { copyText } from '@/lib/copy-text'
+import { AlertTriangle, Copy, FileText, GitCompareArrows, Loader2, Plus, Sparkles, Square, X } from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import {
-  activeOnDay,
+  activeInRange,
+  compareHasChanges,
+  compareSummaryReports,
+  DEFAULT_SUMMARY_RANGE,
+  rangeLabel,
+  rangeWindow,
   reportTitle,
-  todayWindow,
+  reportWindowLabel,
+  type SummaryChange,
   type SummaryFormatIssue,
   type SummaryJob,
+  type SummaryRange,
+  type SummaryRangeId,
   type SummaryRecord,
 } from '@shared/summary'
 import { t } from '@shared/i18n'
@@ -22,22 +32,28 @@ import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Select, Textarea } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
 import { Markdown } from '@/components/tasks/Markdown'
 import { PageFrame } from '@/components/library/parts'
+import { LessonDrafts } from '@/components/summary/LessonDrafts'
+import {
+  forRange,
+  loadSummaryPage,
+  prunePicks,
+  saveSummaryPage,
+  type Pick,
+  type ReportMode,
+  type SummaryPageState,
+} from '@/lib/summary-page'
 
 const NO_TEAM = new Set<string>()
 /** 生成中的轮询间隔：CLI 一轮要跑十几秒，再密也没用 */
 const POLL_MS = 700
 /** 轮询连续失败几次才判失败：面板重启一下、网络断一下不该把还在跑的报告算失败 */
 const POLL_FAIL_MAX = 3
-
-/** 报告要分析的一项：项目 + 该项目里选中的对话（空数组表示今天全部对话） */
-interface Pick {
-  projectId: string
-  taskIds: string[]
-}
+/** 编辑框里的草稿写回存档的间隔：和自动保存一样等停止输入，不必每敲一个字就写一次 localStorage */
+const DRAFT_SAVE_MS = 400
 
 /**
  * 格式自检的问题码 → 页面文案。写成逐条字面量而不是直接拿 shared 里的提示词文案，
@@ -58,9 +74,10 @@ function issueText(issue: SummaryFormatIssue) {
   }
 }
 
-/** 已加入的一个项目：项目名 + 该项目今天有执行的对话 + 对话选择（下拉增加、可删） */
+/** 已加入的一个项目：项目名 + 该项目范围内有执行的对话 + 对话选择（下拉增加、可删） */
 function ProjectPickRow({
   name,
+  scope,
   tasks,
   picked,
   disabled,
@@ -69,7 +86,9 @@ function ProjectPickRow({
   onRemove,
 }: {
   name: string
-  /** 该项目今天有执行的对话；列表里只留标题，拿到的是任务摘要 */
+  /** 范围在界面上的名字（今天 / 近 7 天 / 日期区间）：提示文案里用它 */
+  scope: string
+  /** 该项目范围内有执行的对话；列表里只留标题，拿到的是任务摘要 */
   tasks: { id: string; title: string }[]
   /** 已加入要分析的对话 id */
   picked: string[]
@@ -89,7 +108,9 @@ function ProjectPickRow({
     <li className="px-4 py-3">
       <div className="flex items-center gap-2">
         <span className="text-[0.8125rem] font-medium">{name}</span>
-        {!!tasks.length && <span className="text-xs text-subtle">{t('今天 {n} 个对话', { n: tasks.length })}</span>}
+        {!!tasks.length && (
+          <span className="text-xs text-subtle">{t('{scope} {n} 个对话', { scope, n: tasks.length })}</span>
+        )}
         <button
           type="button"
           aria-label={t('删除项目 {name}', { name })}
@@ -101,7 +122,7 @@ function ProjectPickRow({
         </button>
       </div>
       {!tasks.length ? (
-        <p className="mt-1 text-xs text-subtle">{t('今天没有可总结的对话')}</p>
+        <p className="mt-1 text-xs text-subtle">{t('{scope}没有可总结的对话', { scope })}</p>
       ) : (
         <>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -120,7 +141,7 @@ function ProjectPickRow({
             <span className="text-xs text-subtle">
               {picked.length
                 ? t('只分析已选的 {n} 个对话', { n: picked.length })
-                : t('未选对话时分析该项目今天全部对话')}
+                : t('未选对话时分析该项目{scope}全部对话', { scope })}
             </span>
           </div>
           {!!picked.length && (
@@ -154,17 +175,27 @@ function ProjectPickRow({
 function ReportEditor({
   id,
   md: initial,
+  title,
+  mode,
+  onMode,
   onCopy,
   onSaved,
+  onDraft,
 }: {
   id: string
   md: string
+  /** 报告标题：「今天的报告 / 昨天的报告 / 近 7 天的报告 / 日期区间的报告」 */
+  title: string
+  /** 预览 / 编辑由页面记着：切页面回来后还是走之前的那个 tab */
+  mode: ReportMode
+  onMode: (mode: ReportMode) => void
   onCopy: (md: string) => void
   /** 保存成功后把新正文交回去：列表里的快照跟着变，不然再点回这份报告会拿旧内容覆盖 */
   onSaved: (md: string) => void
+  /** 还没保存的编辑也要记着：切页面回来不能变回保存前的正文 */
+  onDraft: (md: string) => void
 }) {
   const [md, setMd] = useState(initial)
-  const [mode, setMode] = useState<'preview' | 'edit'>('preview')
   // 自动保存按报告 id 隔离：组件用 key 按 id 重挂，切走时补存的也是这份报告
   const { status } = useAutosave(
     md,
@@ -187,11 +218,11 @@ function ReportEditor({
     <section className="rounded-xl border bg-panel">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
         <FileText className="h-4 w-4 text-accent" />
-        <span className="text-[0.8125rem] font-medium">{t('今天的报告')}</span>
+        <span className="text-[0.8125rem] font-medium">{title}</span>
         <Segmented
           label={t('报告视图')}
           value={mode}
-          onChange={setMode}
+          onChange={onMode}
           options={[
             { id: 'preview', label: t('预览') },
             { id: 'edit', label: t('编辑') },
@@ -209,7 +240,10 @@ function ReportEditor({
         <Textarea
           aria-label={t('报告内容')}
           value={md}
-          onChange={(e) => setMd(e.target.value)}
+          onChange={(e) => {
+            setMd(e.target.value)
+            onDraft(e.target.value)
+          }}
           className="min-h-[420px] rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-relaxed focus:ring-0"
         />
       ) : (
@@ -221,9 +255,162 @@ function ReportEditor({
   )
 }
 
+/** 退回逐行对比时最多画多少行：长报告全铺出来会卡，截断后写明还剩多少行 */
+const DIFF_LINES_MAX = 800
+
+/** 三类变化的展示（标题、颜色）：对比区遍历它，以后加一类变化只改这里 */
+const CHANGE_KINDS = [
+  { kind: 'added', tone: 'add', title: () => t('新增') },
+  { kind: 'removed', tone: 'del', title: () => t('消失') },
+  { kind: 'changed', tone: 'change', title: () => t('状态变化') },
+] as const
+const TONE_TEXT: Record<string, string> = {
+  add: 'text-success',
+  del: 'text-danger',
+  change: 'text-warning',
+}
+
+/** 对比里的一类变化（新增 / 消失 / 状态变化）：没有条目时不占位；title 可以覆盖默认标题（Bug 节的「消失」叫已修复） */
+function ChangeList({
+  kind,
+  items,
+  title,
+}: {
+  kind: (typeof CHANGE_KINDS)[number]
+  items: SummaryChange[]
+  title?: string
+}) {
+  if (!items.length) return null
+  const tone = TONE_TEXT[kind.tone]
+  return (
+    <div className="mt-3">
+      <p className={cn('text-xs font-medium', tone)}>
+        {title ?? kind.title()}（{items.length}）
+      </p>
+      <ul className="mt-1 space-y-1">
+        {items.map((x, i) => (
+          <li key={`${x.project}-${x.title}-${i}`} className="text-[0.8125rem]">
+            <span className="text-subtle">{x.project} · </span>
+            <span className={kind.kind === 'removed' ? 'line-through decoration-danger/50' : ''}>{x.title}</span>
+            {kind.kind === 'changed' && (
+              <span className="ml-2 text-xs text-subtle">
+                {x.from} → <span className={tone}>{x.to}</span>
+              </span>
+            )}
+            {kind.kind === 'added' && !!x.to && <span className={cn('ml-2 text-xs', tone)}>{x.to}</span>}
+            {!!x.detail && <p className="text-xs whitespace-pre-wrap text-subtle">{x.detail}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * 两份报告的对比：需求进度 / 用户报告的 Bug 给出新增、消失、状态变化，今日小结并排。
+ * 格式对不上模板（用户手改过）时退回逐行文本对比，不报错也不编内容
+ */
+function ReportCompare({ before, after }: { before: SummaryRecord; after: SummaryRecord }) {
+  const c = useMemo(() => compareSummaryReports(before.md, after.md), [before.md, after.md])
+  const changes = compareHasChanges(c)
+  const label = (r: SummaryRecord) => reportWindowLabel(r.from || r.day, r.to || r.day)
+  return (
+    <section className="rounded-xl border bg-panel">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+        <GitCompareArrows className="h-4 w-4 text-accent" />
+        <span className="text-[0.8125rem] font-medium">{t('两份报告的对比')}</span>
+        <span className="text-xs text-subtle">
+          {label(before)} → {label(after)}
+        </span>
+      </div>
+      <div className="px-4 py-3">
+        {c.same ? (
+          <p className="text-xs text-subtle">{t('两份报告内容相同，没有差异')}</p>
+        ) : c.parsed && !changes ? (
+          <p className="text-xs text-subtle">{t('两份报告没有条目级差异')}</p>
+        ) : (
+          <>
+            {!c.parsed && (
+              <p className="mb-3 flex gap-1.5 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {t('两份报告的格式对不上模板，下面按文本逐行对比')}
+              </p>
+            )}
+            {c.parsed ? (
+              <>
+                <h3 className="text-[0.8125rem] font-medium">{t('需求进度')}</h3>
+                {!c.needs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {CHANGE_KINDS.map((kind) => (
+                  <ChangeList key={kind.kind} kind={kind} items={c.needs.filter((x) => x.kind === kind.kind)} />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('用户报告的 Bug')}</h3>
+                {!c.bugs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {/* Bug 节没有状态：新增是这次报的，消失就是修掉了 */}
+                {CHANGE_KINDS.filter((k) => k.kind !== 'changed').map((kind) => (
+                  <ChangeList
+                    key={kind.kind}
+                    kind={kind}
+                    title={kind.kind === 'removed' ? t('已修复（消失）') : undefined}
+                    items={c.bugs.filter((x) => x.kind === kind.kind)}
+                  />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('今日小结')}</h3>
+                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg bg-sel px-3 py-2">
+                    <p className="text-xs text-subtle">{t('旧报告')}</p>
+                    <p className="text-[0.8125rem] whitespace-pre-wrap">{c.wrapUp.before || t('（没有小结）')}</p>
+                  </div>
+                  <div className="rounded-lg bg-accent-soft px-3 py-2">
+                    <p className="text-xs text-subtle">{t('新报告')}</p>
+                    <p className="text-[0.8125rem] whitespace-pre-wrap">{c.wrapUp.after || t('（没有小结）')}</p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="font-mono text-xs leading-relaxed">
+                {c.lines.slice(0, DIFF_LINES_MAX).map((l, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'whitespace-pre-wrap',
+                      l.kind === 'add'
+                        ? 'bg-success/10 text-success'
+                        : l.kind === 'del'
+                          ? 'bg-danger/10 text-danger'
+                          : 'text-subtle',
+                    )}
+                  >
+                    {(l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : '  ') + l.text}
+                  </div>
+                ))}
+                {c.lines.length > DIFF_LINES_MAX && (
+                  <p className="mt-1 text-subtle">
+                    {t('…还有 {n} 行没有列出', { n: c.lines.length - DIFF_LINES_MAX })}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function SummaryPage() {
-  const { projects, clis, settings, tasks, loading } = useData()
-  const { day } = todayWindow()
+  const { projects, clis, settings, tasks, loading, tasksLoaded } = useData()
+  // 每次渲染重算窗口：页面一直开着跨过午夜时，判断也跟着变（和改造前每帧算 todayWindow 一致）
+  const now = new Date()
+  // 切走再回来（甚至刷新）接着用上次的页面状态：先按存档里的范围校正口径，项目和任务加载完再剪掉已删的
+  const [restored] = useState(() => {
+    const s = loadSummaryPage()
+    return s ? forRange(s, rangeWindow(s.range, new Date())) : null
+  })
+  /** 总结的时间范围：默认今天（不存过存档时和改造前一样） */
+  const [range, setRange] = useState<SummaryRange>(restored?.range ?? DEFAULT_SUMMARY_RANGE)
+  const win = rangeWindow(range, now)
+  /** 范围在界面上的名字（今天 / 昨天 / 近 7 天 / 日期区间） */
+  const scope = rangeLabel(win)
   const usable = useMemo(
     () =>
       orderClis(CLIS, settings?.cliOrder ?? []).filter((c) =>
@@ -231,23 +418,53 @@ export function SummaryPage() {
       ),
     [clis, settings],
   )
-  const [cli, setCli] = useState('')
+  const [cli, setCli] = useState(restored?.cli ?? '')
   /** 已加入的项目：顺序就是报告里分节的顺序 */
-  const [picks, setPicks] = useState<Pick[]>([])
+  const [picks, setPicks] = useState<Pick[]>(restored?.picks ?? [])
   /** 项目下拉当前选到哪个（点「增加」才真的加进去） */
   const [projectDraft, setProjectDraft] = useState('')
   const [job, setJob] = useState<SummaryJob | null>(null)
-  /** 当前打开的这份报告：id 用来保存，md 是它的内容 */
-  const [current, setCurrent] = useState<{ id: string; md: string } | null>(null)
+  /** 生成中 / 刚生成完的 job id：存到本机，刷新后还能接着看进度或结果 */
+  const [jobId, setJobId] = useState(restored?.jobId ?? '')
+  /** 当前打开的这份报告：id 用来保存，md 是它的内容，from / to 是它覆盖的日期（标题用） */
+  const [current, setCurrent] = useState<{ id: string; md: string; from: string; to: string } | null>(
+    restored?.report ?? null,
+  )
+  const [mode, setMode] = useState<ReportMode>(restored?.mode ?? 'preview')
   const [reports, setReports] = useState<SummaryRecord[]>([])
+  /** 对比模式：在「最近的报告」里勾两份看差异；存档里还留着上次的选择时直接进对比模式 */
+  const [compareMode, setCompareMode] = useState((restored?.compare ?? []).length > 0)
+  /** 已勾选对比的报告 id（最多两份，按选择顺序） */
+  const [compared, setCompared] = useState<string[]>(restored?.compare ?? [])
   const [error, setError] = useState('')
   /** 轮询失败次数：连续几次才判失败，见 POLL_FAIL_MAX */
   const pollFails = useRef(0)
   const [pollTick, setPollTick] = useState(0)
+  /** 存档里那份：几个 effect 各自只改自己负责的字段，报告正文可能是还没保存的草稿 */
+  const saved = useRef<SummaryPageState>({
+    day: win.toDay,
+    from: win.fromDay,
+    range,
+    picks: restored?.picks ?? [],
+    report: restored?.report ?? null,
+    mode: restored?.mode ?? 'preview',
+    compare: restored?.compare ?? [],
+    jobId: restored?.jobId ?? '',
+    cli: restored?.cli ?? '',
+  })
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 已经剪过一次已删的项目 / 对话：只在加载完的第一时间做，之后用户自己的删除不再提示 */
+  const pruned = useRef(false)
+  /** 存档里恢复出来的报告与 job：挂载时各只能校验一次，用稳定的引用免得 effect 重跑 */
+  const restoredReport = restored?.report ?? null
+  const restoredJob = restored?.jobId ?? ''
+  /** 「新报告已生成」只提示一次：StrictMode 下 effect 会双调，别弹两遍 */
+  const jobDoneNotified = useRef(false)
 
-  // 默认用设置里的「AI 处理」CLI（Assist 用的那个），没设置就用列表里第一个能用的
+  // 默认用设置里的「AI 处理」CLI（Assist 用的那个），没设置就用列表里第一个能用的；
+  // 存档里的 CLI 已经不可用（卸载 / 禁用了）时也回到默认的那个
   useEffect(() => {
-    if (cli || !usable.length) return
+    if (!usable.length || usable.some((c) => c.id === cli)) return
     const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     setCli(usable.find((c) => c.id === pref)?.id ?? usable[0].id)
   }, [cli, usable, settings])
@@ -264,19 +481,136 @@ export function SummaryPage() {
     setProjectDraft(projectOptions[0]?.value ?? '')
   }, [projectOptions, projectDraft])
 
-  /** 该项目今天有执行的对话（和生成时服务端筛的是同一个判定） */
-  const todayTasks = (projectId: string) =>
+  /** 该项目范围内有执行的对话（和生成时服务端筛的是同一个判定） */
+  const rangeTasks = (projectId: string) =>
     tasks
-      .filter((x) => x.projectId === projectId && activeOnDay(x, day))
+      .filter((x) => x.projectId === projectId && activeInRange(x, win))
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
       .map((x) => ({ id: x.id, title: x.title || t('未命名对话') }))
 
+  // 恢复出来的报告可能已经不在本机（被挤出最近 SUMMARY_KEEP 份、数据目录重置、演示版刷新）：
+  // 留着它只会在自动保存时一直失败，也存不回来，所以收起并说明
   useEffect(() => {
     void api
       .summary()
-      .then((r) => setReports(r.reports))
+      .then((r) => {
+        setReports(r.reports)
+        if (!restoredReport || r.reports.some((x) => x.id === restoredReport.id)) return
+        setCurrent(null)
+        toast.info(t('上次打开的报告已经不在本机，无法继续编辑'))
+      })
       .catch((e) => setError((e as Error).message))
+  }, [restoredReport])
+
+  // 存档里勾选对比的报告可能已经被挤出最近 SUMMARY_KEEP 份：清掉，页面上不留点不开的对比
+  useEffect(() => {
+    if (!compared.length || !reports.length) return
+    const alive = compared.filter((id) => reports.some((r) => r.id === id))
+    if (alive.length !== compared.length) setCompared(alive)
+  }, [compared, reports])
+
+  /** 编辑框里的草稿：先更新存档里的正文，停止输入后再写回本机 */
+  const draft = (md: string) => {
+    const report = saved.current.report
+    if (!report) return
+    saved.current = { ...saved.current, report: { ...report, md } }
+    if (draftTimer.current) clearTimeout(draftTimer.current)
+    draftTimer.current = setTimeout(() => {
+      draftTimer.current = null
+      saveSummaryPage(saved.current)
+    }, DRAFT_SAVE_MS)
+  }
+
+  // 选择、tab、CLI、生成中的 job 变了就写回：切页面 / 刷新后按这份恢复。
+  // 当前报告不在这里写：草稿已经比 current 新，写成 current 会把刚输入的内容退回去。
+  // 窗口的 from / day 只在恢复和换范围时写：页面开着跨过午夜时不自动认到新的一天，免得旧报告被当成今天的
+  useEffect(() => {
+    saved.current = { ...saved.current, picks, mode, jobId, cli, range, compare: compared }
+    saveSummaryPage(saved.current)
+  }, [picks, mode, jobId, cli, range, compared])
+
+  // 换成另一份报告（刚生成完、点开最近的一份）才写 report。
+  // 同一份不再写：存档里的正文是编辑框的草稿，可能比 current.md 新（自动保存还没回写），
+  // 在自动保存窗口内点开同一份不能把刚输入的内容退回去
+  useEffect(() => {
+    const stored = saved.current.report
+    if (current && stored?.id === current.id) return
+    saved.current = { ...saved.current, report: current }
+    saveSummaryPage(saved.current)
+  }, [current])
+
+  // 切走、刷新（F5）、关标签页时把防抖还没写回的草稿补上：下一次进来靠它恢复。
+  // React 的卸载清理在浏览器卸载页面时不会跑，所以还要听 pagehide
+  useEffect(() => {
+    const flush = () => {
+      if (!draftTimer.current) return
+      clearTimeout(draftTimer.current)
+      draftTimer.current = null
+      saveSummaryPage(saved.current)
+    }
+    window.addEventListener('pagehide', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      flush()
+    }
   }, [])
+
+  // 接回上次切走时还在跑的生成：在跑就接着轮询，已结束就按结果收尾，不让用户以为什么都没发生
+  useEffect(() => {
+    if (!restoredJob) return
+    void api
+      .summaryJob(restoredJob)
+      .then((j) => {
+        if (j.status !== 'done') {
+          setJob(j)
+          if (j.status === 'failed') setError(j.error ?? t('生成失败'))
+          return
+        }
+        setJobId('')
+        if (!j.reportId) return
+        // 用户回来后可能已经自己点开了一份报告（包括恢复之后才点开的）：那份不能被顶掉。
+        // 判据读最新的存档，不能只看挂载时恢复的那份
+        const watching = saved.current.report
+        if (watching && watching.id !== j.reportId) {
+          if (!jobDoneNotified.current) {
+            jobDoneNotified.current = true
+            toast.info(t('新报告已经生成，可在「最近的报告」里找到'))
+          }
+          // 列表也刷新一下，否则提示指向的还是旧列表
+          void api
+            .summary()
+            .then((r) => setReports(r.reports))
+            .catch(() => {})
+          return
+        }
+        // 生成完但切走时还没来得及打开：按服务端的最新正文打开这份报告
+        void api
+          .summary()
+          .then((r) => {
+            setReports(r.reports)
+            const rec = r.reports.find((x) => x.id === j.reportId)
+            if (rec) setCurrent({ id: rec.id, md: rec.md, from: rec.from || rec.day, to: rec.to || rec.day })
+          })
+          .catch(() => {})
+      })
+      .catch(() => {
+        // 找不到这次生成（服务端重启、演示版刷新）：不能把「生成中」留在页面上
+        setJobId('')
+      })
+  }, [restoredJob])
+
+  // 项目和任务都加载完后剪掉已经不在的选择：加载中先按存档渲染，免得刚回来就闪一下。
+  // 只在这一时间点做：之后用户自己删的那个不需要再提示
+  useEffect(() => {
+    if (loading || !tasksLoaded || pruned.current) return
+    pruned.current = true
+    const r = prunePicks(picks, projects, tasks)
+    if (!r.removedProjects && !r.removedTasks) return
+    setPicks(r.picks)
+    // 不静默改用户的选择：说清楚哪几项已经没了
+    if (r.removedProjects) toast.info(t('{n} 个项目已不存在，已从选择里移除', { n: r.removedProjects }))
+    if (r.removedTasks) toast.info(t('{n} 个对话已不存在，已从选择里移除', { n: r.removedTasks }))
+  }, [loading, tasksLoaded, picks, projects, tasks])
 
   // 生成中轮询：完成时切到新报告，失败时把 CLI 的报错显示出来
   useEffect(() => {
@@ -287,7 +621,8 @@ export function SummaryPage() {
         pollFails.current = 0
         setJob(next)
         if (next.status === 'done' && next.reportId) {
-          setCurrent({ id: next.reportId, md: next.md })
+          // job 上带着开始时的范围：生成期间页面换了范围，报告标题也按它自己那一段显示
+          setCurrent({ id: next.reportId, md: next.md, from: next.from ?? '', to: next.to ?? '' })
           setError('')
           void api
             .summary()
@@ -327,20 +662,84 @@ export function SummaryPage() {
       prev.map((x) => (x.projectId === projectId ? { ...x, taskIds: x.taskIds.filter((id) => id !== taskId) } : x)),
     )
 
+  /**
+   * 对比最多选两份：选第三份时替换最早选的那份（用户通常是在换掉一份，而不是想同时选三份），
+   * 点已选中的那份则取消
+   */
+  const toggleCompare = (id: string) => {
+    setCompareMode(true)
+    setCompared((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)))
+  }
+
+  /** 要对比的两份：按生成时间从早到晚（先旧后新），和列表的倒序正好相反 */
+  const comparedReports = useMemo(
+    () =>
+      reports
+        .filter((r) => compared.includes(r.id))
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0)),
+    [reports, compared],
+  )
+
+  /**
+   * 换范围：用同一个 forRange 校正存档——窗口变了就只留项目，清空当前报告和生成中的 job，
+   * 免得上一段的报告被当成这一段的（「最近的报告」里还能点开旧报告）。
+   */
+  const applyRange = (next: SummaryRange) => {
+    const nextWin = rangeWindow(next, new Date())
+    const s = forRange({ ...saved.current, range: next }, nextWin)
+    setRange(next)
+    setPicks(s.picks)
+    setCurrent(s.report)
+    setJobId(s.jobId)
+    // 换范围时 forRange 已经把对比清空：界面 state 也跟着清，否则对比区还挂着上一段的报告，
+    // 下一个写存档的 effect 又会用旧的 compared 把选择写回去
+    setCompared(s.compare)
+    if (!s.compare.length) setCompareMode(false)
+    if (!s.jobId) setJob(null)
+    setError('')
+    saved.current = s
+    saveSummaryPage(s)
+  }
+
+  const pickRange = (id: SummaryRangeId) => {
+    // 自选范围第一次打开时预填最近 7 天，用户直接改日期就行
+    const last7 = rangeWindow({ id: 'last7', from: '', to: '' }, new Date())
+    applyRange(
+      id === 'custom'
+        ? { id, from: range.from || last7.fromDay, to: range.to || last7.toDay }
+        : { id, from: '', to: '' },
+    )
+  }
+
+  const setCustomDay = (key: 'from' | 'to', value: string) => {
+    const next = { ...range, [key]: value }
+    // 起止没填全时保持旧窗口（不把范围改成今天），填全了再应用
+    if (!next.from || !next.to) {
+      setRange(next)
+      return
+    }
+    // 起止写反时先换回来：输入框、旁边显示的区间和实际统计的范围保持一致
+    const [from, to] = next.from <= next.to ? [next.from, next.to] : [next.to, next.from]
+    applyRange({ ...next, from, to })
+  }
+
   const start = async () => {
     if (!picks.length || !cli) return
     setError('')
     // 新的一次从清零开始：上一次连续失败的次数不能带到这一次的第一次轮询
     pollFails.current = 0
+    // 上一次的 job 先从存档里清掉：这次请求失败时，刷新后不该再去接着看旧的那次
+    setJobId('')
     try {
-      setJob(
-        await api.generateSummary({
-          projects: picks.map((x) => ({ projectId: x.projectId, taskIds: x.taskIds })),
-          cli,
-          model: '',
-          effort: '',
-        }),
-      )
+      const next = await api.generateSummary({
+        projects: picks.map((x) => ({ projectId: x.projectId, taskIds: x.taskIds })),
+        cli,
+        model: '',
+        effort: '',
+        range,
+      })
+      setJob(next)
+      setJobId(next.id)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -355,24 +754,58 @@ export function SummaryPage() {
     }
   }
 
-  const copy = (md: string) => {
-    void navigator.clipboard.writeText(md).then(
-      () => toast.success(t('已复制报告')),
-      () => toast.error(t('复制失败')),
-    )
-  }
+  const copy = (md: string) => void copyText(md, { done: t('已复制报告'), fail: t('复制失败') })
 
   const lastThought = job?.thinking?.trim().split('\n').filter(Boolean).at(-1)
+  /** 窗口的具体日期：单日就写一天，多天写起止 */
+  const scopeDays = win.fromDay === win.toDay ? win.fromDay : t('{from} 至 {to}', { from: win.fromDay, to: win.toDay })
 
   return (
     <PageFrame
       title={t('工作总结')}
       intro={t(
-        '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是今天全部），把今天（{day}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
-        { day },
+        '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是{scope}全部），把{scope}（{days}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
+        { scope, days: scopeDays },
       )}
     >
       <section className="rounded-xl border bg-panel">
+        {/* 时间范围：默认今天，和改造前一样；换范围会按新窗口重新挑对话（旧报告和生成不会串过来） */}
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+          <span className="text-[0.8125rem] font-medium">{t('范围')}</span>
+          <Segmented
+            label={t('总结范围')}
+            value={range.id}
+            onChange={pickRange}
+            options={[
+              { id: 'today', label: t('今天') },
+              { id: 'yesterday', label: t('昨天') },
+              { id: 'last7', label: t('近 7 天') },
+              { id: 'custom', label: t('自定义') },
+            ]}
+          />
+          {range.id === 'custom' && (
+            <>
+              <Input
+                type="date"
+                aria-label={t('开始日期')}
+                value={range.from}
+                max={range.to || undefined}
+                onChange={(e) => setCustomDay('from', e.target.value)}
+                className="h-8 w-[150px]"
+              />
+              <span className="text-xs text-subtle">{t('至')}</span>
+              <Input
+                type="date"
+                aria-label={t('结束日期')}
+                value={range.to}
+                min={range.from || undefined}
+                onChange={(e) => setCustomDay('to', e.target.value)}
+                className="h-8 w-[150px]"
+              />
+            </>
+          )}
+          <span className="text-xs text-subtle">{scopeDays}</span>
+        </div>
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
           <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
           <Select
@@ -429,7 +862,8 @@ export function SummaryPage() {
                 <ProjectPickRow
                   key={pick.projectId}
                   name={project.name}
-                  tasks={todayTasks(pick.projectId)}
+                  scope={scope}
+                  tasks={rangeTasks(pick.projectId)}
                   picked={pick.taskIds}
                   disabled={running}
                   onAddTask={(id) => addTask(pick.projectId, id)}
@@ -450,7 +884,7 @@ export function SummaryPage() {
               ? t('正在思考：{text}', { text: lastThought })
               : job.tools.length
                 ? t('正在查看：{files}', { files: job.tools.join('、') })
-                : t('正在分析今天执行过的对话…')}
+                : t('正在分析{scope}执行过的对话…', { scope })}
           </span>
           {job.outChars > 0 && <span className="shrink-0">{t('已写 {n} 字', { n: job.outChars })}</span>}
         </div>
@@ -465,7 +899,7 @@ export function SummaryPage() {
 
       {stopped && <p className="rounded-xl border bg-panel px-4 py-3 text-xs text-subtle">{t('已停止生成')}</p>}
 
-      {/* 用户选了、但今天没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
+      {/* 用户选了、但这段范围里没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
       {job?.status === 'done' && !!job.skipped?.length && (
         <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -505,38 +939,82 @@ export function SummaryPage() {
           key={current.id}
           id={current.id}
           md={current.md}
+          title={reportWindowLabel(current.from, current.to, now)}
+          mode={mode}
+          onMode={setMode}
           onCopy={copy}
           onSaved={(md) => setReports((prev) => prev.map((r) => (r.id === current.id ? { ...r, md } : r)))}
+          onDraft={draft}
         />
       )}
 
+      {current && <LessonDrafts reportId={current.id} day={current.to || current.from} />}
+
       {reports.length > 0 && (
         <section className="rounded-xl border bg-panel">
-          <div className="border-b px-4 py-2 text-[0.8125rem] font-medium">{t('最近的报告')}</div>
+          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+            <span className="text-[0.8125rem] font-medium">{t('最近的报告')}</span>
+            {compareMode && <span className="text-xs text-subtle">{t('勾选两份，看它们之间的变化')}</span>}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setCompared([])
+                setCompareMode((on) => !on)
+              }}
+            >
+              <GitCompareArrows className="h-3.5 w-3.5" />
+              {compareMode ? t('取消对比') : t('对比两份')}
+            </Button>
+          </div>
           <ul className="divide-y divide-line">
-            {reports.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError('')
-                    setCurrent({ id: r.id, md: r.md })
-                  }}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left hover:bg-sel',
-                    current?.id === r.id && 'bg-accent-soft',
+            {reports.map((r) => {
+              const picked = compared.includes(r.id)
+              return (
+                <li key={r.id} className="flex items-center">
+                  {compareMode && (
+                    <input
+                      type="checkbox"
+                      aria-label={t('对比这份报告')}
+                      checked={picked}
+                      onChange={() => toggleCompare(r.id)}
+                      className="ml-4 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                    />
                   )}
-                >
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                    {r.projectNames.join('、') || reportTitle(r.md, r.day)}
-                  </span>
-                  <span className="shrink-0 text-xs text-subtle">{r.day}</span>
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 对比模式下点整行也是勾选，不会把当前报告切走
+                      if (compareMode) return toggleCompare(r.id)
+                      setError('')
+                      setCurrent({ id: r.id, md: r.md, from: r.from || r.day, to: r.to || r.day })
+                    }}
+                    className={cn(
+                      'flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left hover:bg-sel',
+                      (current?.id === r.id || picked) && 'bg-accent-soft',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
+                      {r.projectNames.join('、') || reportTitle(r.md, r.day)}
+                    </span>
+                    <span className="shrink-0 text-xs text-subtle">
+                      {r.from && r.to && r.from !== r.to ? t('{from} 至 {to}', { from: r.from, to: r.to }) : r.day}
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
+          {compareMode && comparedReports.length < 2 && (
+            <p className="border-t px-4 py-2 text-xs text-subtle">
+              {t('再选 {n} 份报告开始对比', { n: 2 - comparedReports.length })}
+            </p>
+          )}
         </section>
       )}
+
+      {comparedReports.length === 2 && <ReportCompare before={comparedReports[0]} after={comparedReports[1]} />}
     </PageFrame>
   )
 }

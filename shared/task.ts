@@ -20,7 +20,7 @@ import {
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
 import { activePlan, openPlan, openWork, planProgress } from './plan.ts'
-import { attachChip, chipMarker, quoteBlock } from './composer.ts'
+import { attachChip, chipMarker, isAbsolutePath, quoteBlock } from './composer.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
@@ -41,6 +41,17 @@ export function attachmentRef(a: Pick<Attachment, 'name' | 'mime' | 'quote'>) {
 }
 
 /**
+ * 附件列表里每一行的读法：图片拷进了对话目录、给的是相对路径；其它是本机绝对路径。
+ * 两种形态都有，按附件本身判（attachChip），不能只看路径是不是绝对：
+ * 项目对话里粘贴进来的项目内文件会被 placeAttachments 换成相对路径，但它不是图片。
+ */
+function attachReadNote(a: Pick<Attachment, 'name' | 'mime' | 'quote' | 'path'>) {
+  const image = attachChip(a) === 'image'
+  if (!isAbsolutePath(a.path)) return image ? '对话目录里的图片，相对路径' : '对话目录里的文件，相对路径'
+  return image ? '图片，本机绝对路径' : '本机绝对路径'
+}
+
+/**
  * 交给 Agent 的要求：文字里引用到的附件在原来的位置换成路径，引用卡片换成引用块；
  * 没引用到的引用放在最前面，文件仍然列在后面。
  * CLI 用自己的读文件工具去读（Claude Code、Codex 都能直接看图片）
@@ -53,6 +64,7 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
   for (const a of [...attachments].sort((x, y) => y.name.length - x.name.length)) {
     const ref = attachmentRef(a)
     if (!text.includes(ref)) continue
+    // 原位只换路径、不拼读法标注：用户句子里的路径保持原样，没被引用的附件在末尾列表里带标注（见 attachReadNote）
     text = text.split(ref).join(a.quote !== undefined ? `\n${quoteBlock(a.quote)}` : a.path)
     used.add(a)
   }
@@ -61,8 +73,8 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
   text = text.replace(/^\n+/, '')
   const rest = attachments.filter((a) => !used.has(a) && a.quote === undefined)
   if (!rest.length) return text
-  const list = rest.map((a) => `- ${a.name}：${a.path}`).join('\n')
-  return `${text}\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n${list}`
+  const list = rest.map((a) => `- ${a.name}：${a.path}（${attachReadNote(a)}）`).join('\n')
+  return `${text}\n\n## 附件\n用户附上了这些文件，按标注的方式读取：\n${list}`
 }
 
 /** 新建任务的初始数据 */
@@ -138,6 +150,9 @@ export function newTask(
     testSteps: [],
     testRuns: [],
     platform: '',
+    // 计划带的执行上限：之后改计划不影响这个已经启动的对话
+    budgetTokens: input.budgetTokens ?? 0,
+    budgetMinutes: input.budgetMinutes ?? 0,
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
@@ -496,17 +511,34 @@ export interface ConvFacts {
   gone?: boolean
 }
 
+/** 回收站保留期：删除只做标记，这么多天后才由启动后的清理任务物理删除（见 server/tasks.ts 的 cleanupTrash） */
+export const TRASH_RETENTION_DAYS = 7
+const DAY_MS = 24 * 60 * 60 * 1000
+/** 剩几天被物理删除：向上取整，0 表示下次清理就删；删除时间读不懂时按已到期算 */
+export function trashLeftDays(deletedAt: string, now = Date.now()): number {
+  const at = Date.parse(deletedAt)
+  if (!Number.isFinite(at)) return 0
+  const left = at + TRASH_RETENTION_DAYS * DAY_MS - now
+  return left > 0 ? Math.ceil(left / DAY_MS) : 0
+}
+
+/** 已经进回收站（删除只是标记，内容还在，见 Task.deletedAt）；过期前仍能恢复 */
+export const taskDeleted = (t: { deletedAt?: string | null }) => !!t.deletedAt
+
 /**
- * 这条对话是不是已经从用户眼前收起了：归档，或者独立分支被用户删掉（子对话列表里归「已删除」的那类，
- * 见 web/src/lib/worktrees.ts 的分组）。
+ * 这条对话是不是已经从用户眼前收起了：归档、独立分支被用户删掉（子对话列表里归「已删除」的那类，
+ * 见 web/src/lib/worktrees.ts 的分组），或者进了回收站（见 Task.deletedAt）。
  * 收起的对话任务记录还在 store 里，status / working 也可能还写着 running（进程是异步收尾的），
  * 所以「算不算在跑」的第一处就把它排掉：运行区、子对话栏、侧栏「N 个执行中」、标题计数都读这一处，
  * 不要在 RunningNow 或各处再叠一层 if，那会让运行区的判空和分隔线对不上（见 Messages.tsx 的 RunningFooter）。
  * 合回分支（merged）不算收起：改动已经进主线，任务本身照常可见。
  * 它只是「已经收起」这个事实，能不能归成已完成还要看它是不是没在动（见 convState）
  */
-export const taskGone = (t: { archived?: boolean; worktree?: Pick<NonNullable<Task['worktree']>, 'state'> | null }) =>
-  t.archived === true || t.worktree?.state === 'discarded'
+export const taskGone = (t: {
+  archived?: boolean
+  deletedAt?: string | null
+  worktree?: Pick<NonNullable<Task['worktree']>, 'state'> | null
+}) => t.archived === true || t.worktree?.state === 'discarded' || taskDeleted(t)
 
 /**
  * 对话的状态，优先级从上到下：
@@ -571,6 +603,7 @@ export function childFacts(
     runs?: Task['runs']
     wrapRequest?: Task['wrapRequest']
     archived?: Task['archived']
+    deletedAt?: Task['deletedAt']
     worktree?: Task['worktree']
   },
   x: { background?: number; unmerged?: boolean } = {},
@@ -1006,6 +1039,9 @@ export interface ChildEntry {
   cliAlive: boolean
   /** 本次开启的时间，见 childStartedAt */
   startedAt: string
+  /** 这一轮做完的时间、用户看过的最近一轮完成时间：两者不同就是「做完还没看」（见 taskTurnUnread） */
+  turnDoneAt?: string
+  turnSeenAt?: string
   /** 正在等用户确认的请求数、没回答的提问数：都算「需要你处理」 */
   requests?: number
   asking?: number
@@ -1297,6 +1333,8 @@ export function stopReasonText(reason: StopReason | undefined): string {
       return t('换 Agent / 模型时中断')
     case 'archive':
       return t('归档时结束')
+    case 'delete':
+      return t('删除时结束')
     case 'restart':
       return t('面板重启时中断')
     case 'presence':
@@ -1427,16 +1465,22 @@ export function restartInterrupted(
  * 不靠这条恢复名单。
  */
 export function restartUnfinished(
-  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason'> & { runs?: Task['runs'] },
+  task: Pick<Task, 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'resolved' | 'awaitingUser'> & {
+    runs?: Task['runs']
+  },
 ): boolean {
+  // 已经收口（resolved）的绝不回名单：它做完了、分支也合了，重启后再拉起就是白跑一轮（也会留下没人要的进程）
+  if (task.resolved === true) return false
   // 用户按的暂停不回名单：弹窗默认全勾选，列出来等于推翻用户上一步的决定
   if (task.stopReason === 'user') return false
   // 已经请求父对话收尾、在等面板 / 父对话动作：剩下的事是合并或跑测试，重启后进程没了也不影响。
   // failed（没合进去）和 test-failed（合回了、父对话测试没过）都要它自己动手修，照常进恢复名单
   const wrap = task.wrapRequest?.state
   if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
-  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来
-  if (task.status === 'running') return true
+  // 这一轮被打断（还等派的子任务、工作流运行的也算在这里）：CLI 没了，结果不会自己回来。
+  // 「停在等下一句」（awaitingUser）不算被打断：它这一轮已经说完，只剩用户下一句，
+  // 还有没有活要自己干看计划（见下面一行）
+  if (task.status === 'running' && !task.awaitingUser) return true
   // 这一轮说完了，但计划还没做完：重启后没人接着做，它不会自己往前走
   return !!openPlan(task)
 }
@@ -1450,7 +1494,19 @@ export function restartUnfinished(
  * 父对话却停在「已中断」等用户手动点（用户报的现象）。
  */
 export function interruptedTaskIds(
-  tasks: (Pick<Task, 'id' | 'status' | 'steps' | 'plans' | 'wrapRequest' | 'stopReason' | 'imported' | 'archived'> & {
+  tasks: (Pick<
+    Task,
+    | 'id'
+    | 'status'
+    | 'steps'
+    | 'plans'
+    | 'wrapRequest'
+    | 'stopReason'
+    | 'resolved'
+    | 'awaitingUser'
+    | 'imported'
+    | 'archived'
+  > & {
     runs?: Task['runs']
   })[],
   working: { id: string; parentTaskId: string }[] = [],
@@ -1462,6 +1518,42 @@ export function interruptedTaskIds(
   }
   for (const tk of tasks) if (!tk.imported && !tk.archived && restartUnfinished(tk)) ids.add(tk.id)
   return [...ids]
+}
+
+/**
+ * 这条任务已经收口、名下不该再有 CLI 进程：
+ * - 完成（resolved）：子对话收尾、用户点「解决」之后就是它；
+ * - 已经停下（stopped）：用户暂停、归档、重启迁移之后；
+ * - 待收尾（已请父对话收尾 / 正在合并 / 父对话在跑测试）：这一轮已经结束，剩下的是父对话的动作；
+ * - 这一轮做完且没有挂起事项（convState 是 done）：和界面「已完成」是同一个判定。
+ *
+ * 「停在等下一句」（status 仍是 running、awaitingUser）不算：进程留着就是为了接用户下一句，那是正常保活。
+ * 兜底回收遗留进程（server/exec/orphans.ts 的 reapSettledTaskClis）只认这一处，不要在别处再拼一遍 status 组合。
+ */
+export function taskSettled(
+  tk: Pick<
+    Task,
+    | 'status'
+    | 'working'
+    | 'requests'
+    | 'parentAsks'
+    | 'plans'
+    | 'steps'
+    | 'resolved'
+    | 'stopReason'
+    | 'wrapRequest'
+    | 'archived'
+    | 'deletedAt'
+    | 'worktree'
+  > & { runs?: Task['runs'] },
+): boolean {
+  if (tk.resolved === true) return true
+  if (tk.status === 'running') return false
+  if (tk.status === 'stopped') return true
+  // failed / test-failed 不算：那两种要它自己动手修，重启后还会拉起 CLI（见 restartUnfinished）
+  const wrap = tk.wrapRequest?.state
+  if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return true
+  return convState(childFacts(tk, { unmerged: tk.worktree?.state === 'active' })) === 'done'
 }
 
 /** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
@@ -1700,8 +1792,13 @@ export const taskState = (x: TaskFactsInput) => convState(taskFacts(x))
  * 交出去的后台命令还没跑完时不算：这一轮说完了但对话还在等结果。
  * 只是「未读」这个历史事实，能不能画橙点还要看下面的 taskDoneDot。
  */
-export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jobs?: Task['jobs'] }) =>
-  !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length
+export const taskTurnUnread = (x: {
+  turnDoneAt?: string
+  turnSeenAt?: string
+  jobs?: Task['jobs']
+  /** 后台命令数：/children 的摘要里只有数量（不读整份任务），有它一样算「还在等结果」 */
+  background?: number
+}) => !!x.turnDoneAt && x.turnDoneAt !== x.turnSeenAt && !x.jobs?.length && !x.background
 
 /**
  * 行首要不要画橙点（「这一轮做完、你还没看」）：只有对话确实停在完成态才画。
@@ -1711,6 +1808,30 @@ export const taskTurnUnread = (x: Pick<Task, 'turnDoneAt' | 'turnSeenAt'> & { jo
 export function taskDoneDot(x: TaskFactsInput, unread: boolean, viewing = false) {
   if (!unread || viewing) return false
   return taskState(x) === 'done'
+}
+
+/**
+ * 子对话行要不要画未读点（「这一轮做完、你还没看」）：和侧栏橙点同一份口径（taskTurnUnread），
+ * 再加两条——只有真的做完才画，当前打开的那一个不画。
+ * 还在跑 / 等你处理 / 停下 / 失败都不画：它们各有自己的图标和标签，再叠一个未读点会读成「做完了没看」，
+ * 而且「没做完」不是「没读过」，是「还没有结果」。
+ */
+export function childDoneDot(x: ChildEntry, viewing = false) {
+  if (viewing) return false
+  if (!taskTurnUnread(x)) return false
+  return childIcon(x) === 'done'
+}
+
+/**
+ * 本地记下了「点开过的那一轮」，这条要不要按已读算：服务端还没记成看过（仍是 taskTurnUnread），
+ * 而且记下的就是当前这一轮（它又跑了一轮时不能算看过）。
+ * 给父对话页用：点开子对话时先本地清掉未读点，4 秒一次的 /children 轮询抢在子对话自己的 /seen 前面时，
+ * 不把点又画回来（见 web/src/components/tasks/TaskView.tsx 的 withLocalSeen）。
+ * 判定和 taskDoneDot / childDoneDot 同一处：组件里不自己比两个时间戳。
+ */
+export function childSeenLocally(x: ChildEntry, seenAt: string | undefined) {
+  if (!seenAt || seenAt !== x.turnDoneAt) return false
+  return taskTurnUnread(x)
 }
 
 /** 任务还在运行（不能被回收、失活）：见 convActive */
@@ -1787,6 +1908,25 @@ export function keepAliveVictims(
     .map((t) => t.id)
 }
 
+/**
+ * 回收站里的一行：设置页「回收站」只显示这几项（标题、删除时间、还剩几天，见 server/tasks.ts 的 GET /tasks/trash）。
+ * 保留期的说法只由 leftDays 算，前端不再自己拿删除时间推一遍
+ */
+export interface TrashRow {
+  id: string
+  title: string
+  projectId: string
+  parentTaskId: string
+  /** 进回收站的时间 */
+  deletedAt: string
+  /** 还剩几天被物理删除，0 表示下次清理就删 */
+  leftDays: number
+  /** 跟着一起进回收站的子对话数 */
+  children: number
+  /** 独立分支状态：active 的恢复后能接着用，其他没有可用的分支 */
+  worktree: string
+}
+
 export function taskSummary(t: Task): Task {
   const first = t.messages.find((m) => m.role === 'user')
   return {
@@ -1853,6 +1993,43 @@ export function messageStamp(m: TaskMessage, withOutput = true) {
         `${t.output?.length ?? 0}.${withOutput && t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.running ? 'r' : ''}${t.ms !== undefined ? 'm' : ''}${t.input?.length ?? 0}`,
     )
     .join(',')}`
+}
+
+/**
+ * 前端手上那份对话的版本：条数 + 最后一条消息 id。
+ * 不用内容指纹：拿它对上的时候，服务端从「最后一条」开始补发，最后一条本身也重发一遍，
+ * 正在流式增长的那条不会漏。SSE 重连时前端报这个版本，服务端能对上就只发增量（见 server/tasks.ts 的 /:id/events）
+ */
+export function taskMessageRev(messages: Pick<TaskMessage, 'id'>[]): string {
+  return `${messages.length}:${messages.at(-1)?.id ?? ''}`
+}
+
+/**
+ * 手上的版本是不是当前对话的前缀：是就返回要补发的起点（含最后一条，它可能还在变），不是返回 -1。
+ * 对不上（消息被删、换了对话）时调用方发整份，不猜着拼
+ */
+export function taskRevOffset(messages: Pick<TaskMessage, 'id'>[], rev: string): number {
+  const sep = rev.indexOf(':')
+  if (sep < 0) return -1
+  const count = Number(rev.slice(0, sep))
+  if (!Number.isInteger(count) || count <= 0 || count > messages.length) return -1
+  return messages[count - 1]?.id === rev.slice(sep + 1) ? count - 1 : -1
+}
+
+/**
+ * 打开对话时先取最近 limit 条消息（不传 limit 就全量，老调用方照旧）；
+ * before 是往前翻页的锚点：取这条之前的 limit 条
+ */
+export function messagePage(messages: TaskMessage[], limit = 0, before = '') {
+  const total = messages.length
+  // limit 不是正整数时按全量（老调用方不传参数，行为不变）
+  const count = Number.isInteger(limit) && limit > 0 ? Math.min(limit, total) : total
+  const end = before ? messages.findIndex((m) => m.id === before) : total
+  // 锚点找不到（那条消息被返工删掉了）：不猜着给一页——给尾部会让「往前翻」一条都接不上，
+  // 给最早那段会让前端把中间缺失的部分拼成不连续的对话。回一个标志，由调用方重新取最后一页
+  if (end < 0) return { messages: [] as TaskMessage[], total, hasMore: true, anchorMissing: true }
+  const start = Math.max(0, end - count)
+  return { messages: messages.slice(start, end), total, hasMore: start > 0, anchorMissing: false }
 }
 
 /** 把一次调用的改动累加到列表里（同一个文件合并行数） */

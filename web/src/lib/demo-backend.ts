@@ -59,8 +59,15 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
-import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
-import { afterRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import {
+  BUILD_OUTPUTS,
+  CleanupReport,
+  DATA_KINDS,
+  WorktreeCleanup,
+  type DataKind,
+  type MemoryUsage,
+} from '@shared/data'
+import { afterRun, alignScheduleAt, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -116,14 +123,19 @@ import {
   dropEndNotes,
   endRun,
   helpersWorking,
+  messagePage,
+  taskMessageRev,
   newTask,
   questionAnswers,
   runRunning,
   taskGone,
   taskSummary,
   trackWait,
+  trashLeftDays,
   withAttachments,
+  type TrashRow,
 } from '@shared/task'
+import { SEARCH_HIT_LIMIT, SEARCH_HITS_PER_TASK, messageHit, type SearchHit } from '@shared/task-search'
 import { openPlan, settlePlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -135,7 +147,7 @@ import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
-import { demoSummary } from './demo-summary'
+import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
 import { demoProjectMcp } from './demo-project-mcp'
 import {
@@ -602,8 +614,8 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
-              // 演示里不勾：这条是合并时编译，仍由父对话申请编译
-              runInParent: false,
+              // 演示里标「总是跑」：类型检查几十秒，每次都跑
+              scope: 'always',
               quick: true,
             },
             {
@@ -618,8 +630,8 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
-              // 演示里勾上「禁止子对话执行」：合并后由父对话在它的目录里跑，结果回传给子对话
-              runInParent: true,
+              // 演示里标「全量，合并后由父对话跑」：子对话不跑 e2e，合并后由父对话在它的目录里跑
+              scope: 'parent',
               quick: false,
             },
           ],
@@ -761,6 +773,9 @@ function load(): Db {
   // 用 == null：旧演示数据里可能写成 schedules: null，也要当成没有、补完就落盘
   const seededSchedules = db.schedules == null
   db.schedules ??= demoSchedulesSeed()
+  // 旧演示数据、界面检查里直接写进 localStorage 的计划缺新加的字段（依赖、执行上限、最近一次投递）：
+  // 和正式后端读盘时一样按现在的结构补齐，否则卡片读 s.budget.tokens 时会报 undefined
+  db.schedules = db.schedules.map((s) => Schedule.parse(s))
   db.projectCategories = (db.projectCategories ?? []).map((c) => ProjectCategory.parse(c))
   // 任务也要补齐新加的字段：旧 localStorage 里的 step 少了刚加的字段（例如 brief）就会在读它的地方报 undefined，
   // 真实后端走 Task.safeParse，演示版得自己补。注意不能写成 `(db.tasks ?? [])`：还没 seed 过的库里不能凭空造一个
@@ -813,7 +828,7 @@ function persist() {
 }
 
 // ---- 设置里的「数据」：演示没有用户目录，按浏览器里存的演示数据估算占用，导入导出用同样的备份格式 ----
-const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) => Record<string, unknown>> = {
+const DEMO_DATA_FILES: Record<'config' | 'projects' | 'tasks', (d: Db) => Record<string, unknown>> = {
   config: (d) => ({
     'settings.json': d.settings ?? Settings.parse({}),
     'config/agents.json': d.agents,
@@ -877,6 +892,54 @@ function demoDataMemory(d: Db, now = Date.now()): MemoryUsage {
   }
 }
 
+/**
+ * 清理面板的演示数据：对话工作目录 + 构建产物。
+ * 字段和正式的 CleanupReport 一致，演示里看不见的那几个大小是编的
+ */
+function demoCleanup(): CleanupReport {
+  const MB = 1024 * 1024
+  return CleanupReport.parse({
+    chats: {
+      bytes: 316 * MB,
+      files: 1648,
+      top: [
+        {
+          id: 'demo-flight',
+          title: '抓网页快照',
+          bytes: 302 * MB,
+          files: 1560,
+          trashed: false,
+          running: false,
+          orphan: false,
+        },
+        {
+          id: 'demo-old',
+          title: '调研过的一个旧对话',
+          bytes: 12 * MB,
+          files: 88,
+          trashed: true,
+          running: false,
+          orphan: false,
+        },
+        // 记录已经删了、目录还在（删对话时文件被占用）：界面上要能列出来清掉
+        { id: 'demo-orphan', title: '', bytes: 2 * MB, files: 40, trashed: false, running: false, orphan: true },
+      ],
+      more: 0,
+    },
+    builds: BUILD_OUTPUTS.map((b, i) => ({ id: b.id, bytes: (i + 1) * 24 * MB, present: true })),
+  })
+}
+
+/** 独立分支这块单独一个接口（真机要跑 git 判定、递归四 GB），演示数据同样分开给 */
+function demoWorktrees(): WorktreeCleanup {
+  const MB = 1024 * 1024
+  return WorktreeCleanup.parse({
+    bytes: 3.6 * 1024 * MB,
+    stale: [{ dir: 'worktrees/agent-panel/demo-1', bytes: 210 * MB, reason: '任务已收口、改动都已合回原分支' }],
+    staleBytes: 210 * MB,
+  })
+}
+
 function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
   if (!action && method === 'GET') {
     const kinds = DATA_KINDS.map((k) => {
@@ -885,6 +948,11 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
         return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
       }
       if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      // 工作目录和下面的清理清单用同一份演示数据，两个数字对得上
+      if (k.id === 'workspace') {
+        const c = demoCleanup()
+        return { id: k.id, files: c.chats.files, bytes: c.chats.bytes }
+      }
       const files = Object.values(DEMO_DATA_FILES[k.id](d))
       return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
     })
@@ -892,6 +960,14 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
   }
   // 内存曲线按采样间隔刷新：演示版也返回同样的结构，曲线和「AI 分析」都能试
   if (action === 'memory' && method === 'GET') return demoDataMemory(d)
+  // 清理：演示数据只给一份固定的清单，点了清理不真的改（下次刷新还是这样）
+  if (action === 'cleanup' && method === 'GET') return demoCleanup()
+  if (action === 'cleanup/worktrees' && method === 'GET') return demoWorktrees()
+  if (action === 'cleanup/chat' && method === 'POST') return { ok: true, bytes: 302 * 1024 * 1024 }
+  if (action === 'cleanup/worktrees' && method === 'POST')
+    return { ok: true, removed: 1, failed: 0, bytes: 210 * 1024 * 1024 }
+  if (action === 'cleanup/builds' && method === 'POST')
+    return { ok: true, bytes: BUILD_OUTPUTS.length * 24 * 1024 * 1024 }
   if (action === 'reveal') fail('在线演示不能打开本机目录')
   if (action === 'clear') {
     const k = (body as { kind: DataKind }).kind
@@ -1849,11 +1925,16 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
       const now = new Date().toISOString()
       const item = Schedule.parse({
         ...input,
+        // 和正式后端一样：每周 / 工作日的首次执行落在选中的星期上
+        at: alignScheduleAt(input),
         status: 'pending',
         lastRunAt: '',
         lastTaskId: '',
         missedAt: '',
         lastError: '',
+        blockedAt: '',
+        blockedReason: '',
+        lastDelivery: null,
         id: `demo-plan-${crypto.randomUUID()}`,
         createdAt: now,
         updatedAt: now,
@@ -1871,13 +1952,16 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
     return undefined
   }
   if (method === 'PUT') {
-    const input = ScheduleInput.parse(body)
+    const parsed = ScheduleInput.parse(body)
+    const input = { ...parsed, at: alignScheduleAt(parsed) }
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
       ...input,
       // 和正式后端同一个口径：只改名字、时间还在同一分钟时不算换了排期
-      ...(!sameMinute(input.at, cur.at) ? { status: 'pending' as const, missedAt: '', lastError: '' } : {}),
+      ...(!sameMinute(input.at, cur.at)
+        ? { status: 'pending' as const, missedAt: '', lastError: '', blockedAt: '', blockedReason: '' }
+        : {}),
       updatedAt: new Date().toISOString(),
     }
     d.schedules = list.map((s) => (s.id === id ? next : s))
@@ -2098,7 +2182,7 @@ function route(method: string, url: string, body: unknown): unknown {
     demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
     return a
   }
-  if (res === 'data') return demoData(d, id, method, body, query)
+  if (res === 'data') return demoData(d, [id, sub].filter(Boolean).join('/'), method, body, query)
   if (res === 'project-docs') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     if (sub === 'optimize') return startDemoDocJob(body)
@@ -2106,6 +2190,7 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
   if (res === 'summary') return demoSummary(method, id, sub, seg[3], body, d.projects)
+  if (res === 'lesson-drafts') return demoLessonDrafts(method, id, body)
   if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
@@ -2395,12 +2480,30 @@ function route(method: string, url: string, body: unknown): unknown {
 /** 演示里的用量统计：按浏览器里存的演示任务算，和正式版用同一个聚合函数 */
 function demoUsage(d: Db, query: URLSearchParams) {
   const grain = UsageQuery.grain(query.get('grain'))
-  return usageReport(d.tasks ?? [], { grain, count: UsageQuery.count(query.get('count'), grain) })
+  return usageReport(d.tasks ?? [], {
+    grain,
+    count: UsageQuery.count(query.get('count'), grain),
+    groupBy: UsageQuery.group(query.get('groupBy')),
+  })
 }
 
+/** 演示里每个请求统一等这么一会儿，模拟真实请求，让「保存中」等状态能被看到 */
+const DEMO_BASE_DELAY_MS = 120
+
+/**
+ * 打开对话的两步在正式后端里明显比别的慢（整份对话几 MB、子对话列表首跑要跑 git），
+ * 演示版把这段差别也模拟出来：加载日志才会一行一行出现，而不是一瞬间全绿。
+ * 匹配不上的请求只等上面那个统一延迟。
+ */
+const DEMO_ROUTE_DELAYS: [RegExp, number][] = [
+  [/^\/tasks\/[^/]+$/, 500],
+  [/^\/tasks\/[^/]+\/children$/, 900],
+]
+
 export async function handle(method: string, url: string, body: unknown) {
-  // 稍微延迟一下，模拟真实请求，让「保存中」等状态能被看到
-  await new Promise((r) => setTimeout(r, demoMs(120)))
+  await new Promise((r) => setTimeout(r, demoMs(DEMO_BASE_DELAY_MS)))
+  const extra = method === 'GET' ? DEMO_ROUTE_DELAYS.find(([re]) => re.test(url))?.[1] : undefined
+  if (extra) await new Promise((r) => setTimeout(r, demoMs(extra)))
   // 界面检查用：让发消息的请求慢一点回来，模拟「上一条还在发送」时又按了一次回车。
   // 只有演示版里有这段代码，正式包里没有演示后端
   let slow = 0
@@ -2846,6 +2949,59 @@ function demoMemoryAnalysis(task: Task, tasks: Task[], projects: Project[]): Tas
   }
 }
 
+/**
+ * 演示里的正文搜索：和正式版同一份片段口径（shared/task-search.ts），数据都在内存里，直接扫就行。
+ * 已删除（回收站里）的对话同样不参与
+ */
+function demoTasksSearch(tasks: Task[], query: URLSearchParams): { hits: SearchHit[]; scanned: number; more: boolean } {
+  const q = (query.get('q') ?? '').trim()
+  if (!q) return { hits: [], scanned: 0, more: false }
+  const list = tasks.filter((t) => !t.deletedAt).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
+  const hits: SearchHit[] = []
+  for (const tk of list) {
+    let taken = 0
+    for (const m of tk.messages) {
+      if (taken >= SEARCH_HITS_PER_TASK || hits.length >= SEARCH_HIT_LIMIT) break
+      const hit = messageHit(m.text, q)
+      if (!hit) continue
+      hits.push({
+        taskId: tk.id,
+        title: tk.title,
+        messageId: m.id,
+        role: m.role,
+        at: m.at,
+        count: hit.count,
+        snippet: hit.snippet,
+        index: hit.index,
+        length: q.length,
+      })
+      taken++
+    }
+    if (hits.length >= SEARCH_HIT_LIMIT) break
+  }
+  return { hits, scanned: list.length, more: false }
+}
+
+/** 回收站列表：字段和正式后端一致（见 server/tasks.ts 的 GET /tasks/trash） */
+function demoTrash(tasks: Task[]): TrashRow[] {
+  const now = Date.now()
+  const deleted = tasks.filter((t) => t.deletedAt)
+  const parents = new Set(deleted.filter((t) => !t.parentTaskId).map((t) => t.id))
+  return deleted
+    .filter((t) => !t.parentTaskId || !parents.has(t.parentTaskId))
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      projectId: t.projectId,
+      parentTaskId: t.parentTaskId ?? '',
+      deletedAt: t.deletedAt!,
+      leftDays: trashLeftDays(t.deletedAt!, now),
+      children: deleted.filter((k) => k.parentTaskId === t.id).length,
+      worktree: t.worktree?.state ?? '',
+    }))
+    .sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2866,16 +3022,19 @@ function tasksRoute(
         if (!k.parentTaskId || !demoChildActive(k)) continue
         kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
       }
-      // 和正式版一样：子对话不进项目列表，在父对话里看
+      // 和正式版一样：子对话不进项目列表，在父对话里看；进了回收站的对话哪都不出现
       return (
         (pid ? tasks.filter((t) => t.projectId === pid) : tasks)
-          .filter((t) => !t.parentTaskId)
+          .filter((t) => !t.parentTaskId && !t.deletedAt)
           // 和正式版一样带上 CLI 存活：演示里没有真的进程，用 live 登记代替
           .map((t) => taskSummary({ ...t, cliAlive: demoCliAlive(t), childrenWorking: kids.get(t.id) ?? 0 }))
       )
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
+  // 正文搜索 / 回收站列表：路径里带的 id 是 'search'、'trash'，要在按 id 找任务之前接住
+  if (id === 'search' && method === 'GET') return demoTasksSearch(tasks, query)
+  if (id === 'trash' && method === 'GET') return demoTrash(tasks)
   // 导入别人导出的任务：和正式版一样连同包里的子对话一起建成只读的，返回父任务在前的整棵树
   if (id === 'import' && method === 'POST') {
     const b = (body ?? {}) as { projectId?: string; bundle?: unknown }
@@ -2890,6 +3049,8 @@ function tasksRoute(
     return made
   }
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
+  // 和正式后端一致：进了回收站的对话读不到（列表里也没有它），恢复后又能读
+  if (method === 'GET' && task.deletedAt && !sub) fail('任务不存在')
   if (
     task.imported &&
     (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow'].includes(
@@ -2898,10 +3059,29 @@ function tasksRoute(
       (method === 'PATCH' && Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived')))
   )
     fail('这是导入的任务，只能查看，不能继续执行')
-  if (method === 'DELETE') {
-    if (live.has(id)) live.get(id)!.stop = true
-    remove('tasks', id, '任务不存在')
+  // 删除 = 进回收站；permanent 有自己的一段（在下面），不能被这里先接走
+  if (method === 'DELETE' && !sub) {
+    // 和正式版一样：删除只进回收站（任务记录和对话都留着），保留期内能恢复
+    const at = new Date().toISOString()
+    for (const tk of [task, ...tasks.filter((x) => x.parentTaskId === id)]) {
+      if (live.has(tk.id)) live.get(tk.id)!.stop = true
+      tk.deletedAt ??= at
+    }
+    persist()
     return undefined
+  }
+  if (sub === 'permanent' && method === 'DELETE') {
+    // 永久删除：连子对话一起清掉，不进回收站
+    const ids = new Set([id, ...tasks.filter((x) => x.parentTaskId === id).map((x) => x.id)])
+    for (const tk of tasks.filter((t) => ids.has(t.id))) tasks.splice(tasks.indexOf(tk), 1)
+    persist()
+    return undefined
+  }
+  if (sub === 'restore' && method === 'POST') {
+    for (const tk of [task, ...tasks.filter((x) => x.parentTaskId === id && x.deletedAt)]) delete tk.deletedAt
+    persist()
+    // 演示里没有真的独立分支目录，不会出现目录被清理的情况
+    return { worktreeCleared: false }
   }
   if (sub === 'stop') {
     if (live.has(id)) live.get(id)!.stop = true
@@ -3048,6 +3228,9 @@ function tasksRoute(
           lastActivityAt: childLastActivity(x),
           // 和正式后端对齐：面板自动问过状态、还没回复时行上显示「已自动询问」
           autoAsk: x.autoAsk,
+          // 和正式后端对齐：做完没看过 → 子对话行上画未读点（见 shared/task.ts 的 childDoneDot）
+          turnDoneAt: x.turnDoneAt ?? '',
+          turnSeenAt: x.turnSeenAt ?? '',
           // 和正式后端对齐：运行区、悬浮层都靠这几项判断「还在跑 / 在等什么」
           background,
           workflow: runRunning(x),
@@ -3313,9 +3496,22 @@ function tasksRoute(
   // 和正式后端的 withLive 一样：完整任务也带上 CLI 存活（不存盘，按 live 登记算）。
   // 界面靠它分辨「真的停在等下一句」和「进程已经回收了」，不带就永远算不出这个状态
   const withLive = { ...task, cliAlive: demoCliAlive(task) }
-  // 父对话再带上名下在跑的子对话数（和正式版一样不带给子对话，见 server/tasks.ts 的 withLive）
-  if (task.parentTaskId) return withLive
-  return { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  const full = task.parentTaskId
+    ? withLive
+    : { ...withLive, childrenWorking: tasks.filter((x) => x.parentTaskId === task.id && demoChildActive(x)).length }
+  // 和正式后端一致：带 limit 时只回最近一段，往前翻页用 before（见 shared/task.ts 的 messagePage）
+  const limit = Number(query.get('limit') ?? '')
+  if (!Number.isInteger(limit) || limit <= 0) return full
+  const page = messagePage(full.messages, limit, query.get('before') ?? '')
+  return {
+    ...full,
+    messages: page.messages,
+    messageTotal: page.total,
+    messageHasMore: page.hasMore,
+    ...(page.anchorMissing ? { messageAnchorMissing: true } : {}),
+    // 和正式后端一致：整份都在这一份里时带上版本（前端拿它建 SSE，首包只补发增量）
+    ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
+  }
 }
 
 /** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
@@ -3565,6 +3761,8 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
       subJob?: boolean
       /** 独立分支：at 是创建时间（分钟前），列表按它排序，故意和创建顺序不一致 */
       worktree?: { branch: string; state?: 'active' | 'merged' | 'discarded'; at?: number }
+      /** 这一轮做完了、用户还没点开看过：父对话里它的行上有未读点（和侧栏橙点同一份口径） */
+      unread?: boolean
     } = {},
   ) => {
     const { task, done } = createTask(
@@ -3594,6 +3792,11 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     it.title = title
     it.working = !!how.working
     it.resolved = !!how.resolved
+    // 做完没看过：两个时间不同，和正式后端一样由 /seen 把 turnSeenAt 追平成 turnDoneAt
+    if (how.unread) {
+      it.turnDoneAt = new Date(Date.now() - 12 * 60_000).toISOString()
+      it.turnSeenAt = ''
+    }
     if (how.worktree) {
       it.createdAt = new Date(Date.now() - (how.worktree.at ?? 0) * 60_000).toISOString()
       it.worktree = {
@@ -3724,7 +3927,9 @@ async function demoChildren(d: Db, parent: Task, agent: { id: string; name?: str
     worktree: { branch: 'agent-panel/sidebar-time', state: 'merged', at: 50 },
   })
   await make('核对通知时序', { resolved: true })
-  await make('拆分规则检查脚本', { resolved: true })
+  // 做完了、用户还没点开看过：这条不标记「已解决」（已解决是用户点过的，那时早就看过了），
+  // 就是一条普通完成、还没打开的对话，行上带未读点，点开就消失（界面检查靠它断言）
+  await make('拆分规则检查脚本', { unread: true })
   // 请用户决定的子对话：一次问了两个问题，子对话页的输入框换成选择弹窗，父对话里是两张提问卡片
   {
     const asker = await make('购物车缓存方案')
@@ -3824,6 +4029,8 @@ function demoPlans(task: Task) {
     waits: [],
     startedAt: start ? at(start) : '',
     endedAt: end ? at(end) : '',
+    // 这项最后一次变化：演示里「进行中」的那一步 12 分钟没动了，界面上的滞后标记和「N 分钟前更新」才验得到
+    updatedAt: end ? at(end) : start ? at(start) : '',
   })
   task.plans = [
     {
@@ -3843,6 +4050,8 @@ function demoPlans(task: Task) {
       id: 'p2',
       title: '修复购物车角标',
       createdAt: at(28),
+      // 计划最后变化在第 3 步开始的时候，之后 12 分钟没动过：折叠头的「N 分钟前更新」应该是警示色
+      updatedAt: at(12),
       doneAt: '',
       summary: '',
       autoSummary: false,
@@ -3861,7 +4070,8 @@ function demoPlans(task: Task) {
             item('3.3', '覆盖未登录的本地购物车', 'pending'),
           ],
         },
-        { ...item('4', '整理改动和总结', 'pending'), children: [] },
+        // 失败态：需要对话处理（重做或明确跳过），不是正在跑；没有结束时间，所以不显示用时
+        { ...item('4', '整理改动和总结', 'failed'), note: '等的结果没成功：npm run build', children: [] },
       ],
     },
   ]
@@ -4003,6 +4213,29 @@ async function seedTasks(d: Db) {
     task.changes = [
       { path: 'src/components/CartBadge.tsx', add: 5, del: 3 },
       { path: 'src/components/RestockButton.tsx', add: 9, del: 0 },
+    ]
+    // 测试记录：父对话跑的全量 e2e 通过、自己跑的类型检查失败重跑过一次。
+    // 界面上要看得到两行各自的执行方、结果、耗时和尝试次数（见 TestRuns.tsx）
+    const testedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    task.testRuns = [
+      {
+        stepId: 'node-e2e',
+        stepName: '端到端测试',
+        by: 'parent',
+        ok: true,
+        durationMs: 94_000,
+        tries: 1,
+        at: testedAt,
+      },
+      {
+        stepId: 'node-typecheck',
+        stepName: '类型检查',
+        by: 'self',
+        ok: false,
+        durationMs: 1_200,
+        tries: 2,
+        at: testedAt,
+      },
     ]
     persist()
   }

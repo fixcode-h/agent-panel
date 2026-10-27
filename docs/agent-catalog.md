@@ -34,7 +34,7 @@
 计划面板上能看到这一步和它的状态；按意见修改、复看也各自单列成步。
 `submit_merge` 前面板会校验：计划里有标 `review` 的步骤、那一步已完成、评审第一行写了验收结论
 （`shared/review-gate.ts`；先读首行，首行没有结论才退回全文最后一条——子任务输出太长时只保留开头，结论写在末尾会被截掉）；
-评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。
+评审列了高级（🔴）或中级（🟠）时，执行角色要逐条写处置（`review_triage`）才合得回去；评审只看代码、不跑测试（[ADR 0010](adr/0010-review-code-only.md)）。用户明确要求带着已知问题合并时，执行角色在 `submit_merge` 传 `review_override` 放行，记录（谁 / 何时 / 为什么 / 原本拦住什么）进任务详情、收尾消息和交接摘要（[ADR 0022](adr/0022-review-gate-override.md)）。
 「分析」是面板上所有「AI 分析」「AI 排查」开出的对话默认用的角色，开在哪里由 `shared/analysis-home.ts` 统一决定（见 [ADR 0014](adr/0014-ai-analysis-home.md)）。
 「子任务」（`helper`）保留定义、但**不作为可选角色展示**：它是 `spawn_agents` 不点名时的默认执行角色（`shared/engine.ts` 按 `isHelperAgent` 找它），删了所有子任务就没有默认角色和提示词了；
 角色页、内置角色弹窗和角色选择器都按 `shared/builtin/core.ts` 的 `listableAgents` 把它去掉，计数、分组、搜索也不算它，停用和删除由必备角色保护拦下。

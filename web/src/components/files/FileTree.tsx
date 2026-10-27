@@ -22,6 +22,7 @@ import { toast } from '@/lib/toast'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/copy-text'
 import { fileIcon } from '@/lib/file-icon'
 import { startFileDrag } from '@/lib/fileDrag'
 import { Field, Input } from '@/components/ui/input'
@@ -81,28 +82,8 @@ function nameProblem(name: string) {
   return ''
 }
 
-/**
- * 复制文字：优先用剪贴板接口；它要求安全上下文（http 的局域网地址、被嵌在 iframe 里时会不可用），
- * 失败时退回选中一个临时 textarea 再 execCommand，最后才提示复制失败。
- */
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(t('已复制'))
-    return
-  } catch {}
-  const area = document.createElement('textarea')
-  area.value = text
-  area.setAttribute('readonly', '')
-  area.style.position = 'fixed'
-  area.style.opacity = '0'
-  document.body.appendChild(area)
-  area.select()
-  const ok = document.execCommand('copy')
-  document.body.removeChild(area)
-  if (ok) toast.success(t('已复制'))
-  else toast.error(t('复制失败'))
-}
+/** 菜单里的复制：成功提示「已复制」，失败提示「复制失败」 */
+const copyPath = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
 /** 目录一层现在处于什么状态 */
 export interface LevelState {
@@ -707,7 +688,7 @@ export function FileExplorer({
               {t('全部收起')}
             </ContextMenuItem>
             <ContextMenuSeparator />
-            <ContextMenuItem onSelect={() => void copyText(browser.absolute(''))}>
+            <ContextMenuItem onSelect={() => void copyPath(browser.absolute(''))}>
               <Copy className="h-4 w-4" />
               {t('复制项目路径')}
             </ContextMenuItem>
@@ -995,15 +976,15 @@ function LevelRows({
                   </ContextMenuItem>
                 )}
                 <ContextMenuSeparator />
-                <ContextMenuItem onSelect={() => void copyText(e.name)}>
+                <ContextMenuItem onSelect={() => void copyPath(e.name)}>
                   <Copy className="h-4 w-4" />
                   {t('复制文件名')}
                 </ContextMenuItem>
-                <ContextMenuItem onSelect={() => void copyText(e.path)}>
+                <ContextMenuItem onSelect={() => void copyPath(e.path)}>
                   <Copy className="h-4 w-4" />
                   {t('复制相对路径')}
                 </ContextMenuItem>
-                <ContextMenuItem onSelect={() => void copyText(browser.absolute(e.path))}>
+                <ContextMenuItem onSelect={() => void copyPath(browser.absolute(e.path))}>
                   <Copy className="h-4 w-4" />
                   {t('复制绝对路径')}
                 </ContextMenuItem>
@@ -1150,15 +1131,15 @@ function FileRow({
           {t('打开')}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => void copyText(baseOf(path))}>
+        <ContextMenuItem onSelect={() => void copyPath(baseOf(path))}>
           <Copy className="h-4 w-4" />
           {t('复制文件名')}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void copyText(path)}>
+        <ContextMenuItem onSelect={() => void copyPath(path)}>
           <Copy className="h-4 w-4" />
           {t('复制相对路径')}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void copyText(browser.absolute(path))}>
+        <ContextMenuItem onSelect={() => void copyPath(browser.absolute(path))}>
           <Copy className="h-4 w-4" />
           {t('复制绝对路径')}
         </ContextMenuItem>

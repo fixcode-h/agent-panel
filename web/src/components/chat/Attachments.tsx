@@ -19,7 +19,7 @@ import {
   Plus,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
+import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import type { DesignKind, SavedStyle } from '@shared/design'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -45,8 +45,10 @@ interface Item {
   name: string
   mime: string
   size: number
-  /** 本地预览（图片），不用等上传完 */
+  /** 卡片上的预览图（缩略图），不用等上传完 */
   preview?: string
+  /** 看大图用的原图地址：从草稿恢复时 preview 是缩略图，浮层不能用它 */
+  full?: string
   /** 引用卡片的原文：上传完之前也能点开看 */
   quote?: string
   done?: Attachment
@@ -87,9 +89,11 @@ function uniqueName(name: string, taken: Set<string>) {
 }
 
 /** 附件在页面上的地址：正式版从服务端的附件目录读，在线演示用内存里的内容 */
-export async function attachmentUrl(a: Attachment) {
+export async function attachmentUrl(a: Attachment, opts: { thumb?: boolean } = {}) {
   if (import.meta.env.VITE_DEMO) return (await import('@/lib/demo-backend')).demoUploads.get(a.path)
-  return `/api/uploads/raw?path=${encodeURIComponent(a.path)}`
+  // thumb：消息卡片只有一行字那么高，请服务端缩好再给（看大图、复制图片仍要原图）
+  const w = opts.thumb ? `&w=${ATTACHMENT_THUMB_WIDTH}` : ''
+  return `/api/uploads/raw?path=${encodeURIComponent(a.path)}${w}`
 }
 
 const readBase64 = (f: Blob) =>
@@ -154,16 +158,26 @@ export function useAttachments(draftKey?: string) {
     } catch {}
   }, [items, draftKey])
 
-  // 恢复的图片没有本地预览，从服务端把缩略图取回来
+  // 恢复的图片没有本地预览：缩略图放卡片，原图留给看大图的浮层
   useEffect(() => {
     const need = items.filter((x) => !x.preview && x.done && isImage(x.done.mime, x.done.name))
     if (!need.length) return
     let alive = true
-    void Promise.all(need.map(async (x) => [x.key, (await attachmentUrl(x.done!)) ?? ''] as const)).then((pairs) => {
+    void Promise.all(
+      need.map(async (x) => {
+        const [thumb, full] = await Promise.all([attachmentUrl(x.done!, { thumb: true }), attachmentUrl(x.done!)])
+        return [x.key, thumb ?? '', full ?? ''] as const
+      }),
+    ).then((pairs) => {
       if (!alive) return
-      const urls = Object.fromEntries(pairs.filter(([, u]) => u))
-      if (Object.keys(urls).length)
-        setItems((xs) => xs.map((x) => (urls[x.key] && !x.preview ? { ...x, preview: urls[x.key] } : x)))
+      const found = new Map(pairs.filter(([, thumb]) => thumb).map(([key, thumb, full]) => [key, { thumb, full }]))
+      if (!found.size) return
+      setItems((xs) =>
+        xs.map((x) => {
+          const hit = found.get(x.key)
+          return hit && !x.preview ? { ...x, preview: hit.thumb, full: hit.full } : x
+        }),
+      )
     })
     return () => {
       alive = false
