@@ -51,56 +51,6 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
   )
 }
 
-/**
- * 标签名 + 条数的小块：教训的筛选条和角色页的分组标题共用一套，两处看着是一种东西。
- * 给 color 时用标签自己的颜色（角色的标签有颜色），不给就是中性色（教训的标签是纯文本）。
- * 只有传了 onClick 才是按钮，分组标题那种纯展示用 span。
- */
-export function TagCountChip({
-  name,
-  count,
-  active,
-  onClick,
-  color,
-}: {
-  name: string
-  count: number
-  active?: boolean
-  onClick?: () => void
-  color?: Tag['color']
-}) {
-  const style = color
-    ? {
-        color: TAG_HEX[color],
-        borderColor: `color-mix(in srgb, ${TAG_HEX[color]} 30%, transparent)`,
-        background: active ? `color-mix(in srgb, ${TAG_HEX[color]} 14%, transparent)` : undefined,
-      }
-    : undefined
-  const body = (
-    <>
-      <span className="truncate">{name}</span>
-      <span className={cn('ml-1', color ? 'opacity-60' : 'text-subtle')}>{count}</span>
-    </>
-  )
-  const className = cn(
-    'inline-flex max-w-full items-center rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
-    active ? 'border-accent bg-accent-soft text-accent' : !color && 'text-muted',
-    onClick && 'cursor-pointer',
-    // 选中态悬停时不要把底色换成灰色：教训页原来的选中 chip 悬停不变色
-    onClick && !active && 'hover:bg-sel/70',
-    onClick && !color && 'hover:text-fg',
-  )
-  return onClick ? (
-    <button type="button" aria-pressed={active} onClick={onClick} style={style} className={className}>
-      {body}
-    </button>
-  ) : (
-    <span style={style} className={className}>
-      {body}
-    </span>
-  )
-}
-
 /** 列表里一行显示的几个标签：放不下的只显示数量 */
 export function TagList({ ids, max = 3 }: { ids: string[]; max?: number }) {
   const { tags } = useData()
