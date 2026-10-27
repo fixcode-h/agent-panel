@@ -4,8 +4,19 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
-import type { TaskMessage } from '../../shared/schema.ts'
-import { claimsUnsentHandoff, describeCompaction, failureHints, looksUnfinished, settleNetNotes } from './runner.ts'
+import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
+import { classifyError, makeAlert } from '../../shared/alerts.ts'
+import {
+  claimsUnsentHandoff,
+  clippedTranscript,
+  contextFallbackKind,
+  describeCompaction,
+  estTokens,
+  failureHints,
+  looksUnfinished,
+  settleContextNotes,
+  settleNetNotes,
+} from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -120,4 +131,147 @@ test('说已转给子对话却没调用发送工具：算没发出去', () => {
   assert.equal(claimsUnsentHandoff({ texts: ['已改好，单测通过。'], tools: [] }), false)
   assert.equal(claimsUnsentHandoff({ texts: ['要不要转给子对话处理？'], tools: [] }), false)
   assert.equal(claimsUnsentHandoff({ texts: [], tools: [] }), false)
+})
+
+/** 用户实际撞上的那条报错（模型窗口 1M，实际请求 1.09M） */
+const CONTEXT_DETAIL =
+  '400: {"message":"litellm.ContextWindowExceededError: litellm.BadRequestError: litellm._pre_call_checks: Context Window exceeded for given call. No models have context window large enough for this call.\nModel=deepseek-flash, Max Input Tokens=1000000, Got=1148341\nmodel=deepseek/deepseek-v4-flash. context_window_fallbacks=None. fallbacks=None.","type":"invalid_request_error","code":"400"}'
+
+test('这次的真实报错归到「上下文超长」，才会走裁剪降级', () => {
+  assert.equal(classifyError(CONTEXT_DETAIL), 'context')
+})
+
+test('上下文超长降级：只在真的撞上限那一轮自救一次，别的情况一个字都不变', () => {
+  const base = {
+    detail: CONTEXT_DETAIL,
+    retried: false,
+    prewarm: false,
+    aborted: false,
+    compact: false,
+    chatResume: true,
+  }
+  assert.equal(contextFallbackKind(base), 'restart', '普通一轮撞上限：丢掉旧会话换新会话接着做')
+  assert.equal(
+    contextFallbackKind({ ...base, compact: true }),
+    'compact',
+    '压缩请求撞上限：改用裁剪的记录当摘要，按成功处理',
+  )
+  assert.equal(contextFallbackKind({ ...base, retried: true }), null, '已经降过一次，再撞就如实报错，不能无限重开')
+  assert.equal(contextFallbackKind({ ...base, prewarm: true }), null, '预热请求不碰对话记录')
+  assert.equal(contextFallbackKind({ ...base, aborted: true }), null, '用户已经停了，不能偷偷再开一轮')
+  assert.equal(contextFallbackKind({ ...base, chatResume: false }), null, '没有历史可裁剪的轮次行为不变')
+  assert.equal(
+    contextFallbackKind({ ...base, detail: '400: {"message":"invalid model name"}' }),
+    null,
+    '别的 400 有各自的处理，不能被当成超长降级',
+  )
+  assert.equal(
+    contextFallbackKind({ ...base, compact: true, chatResume: false }),
+    'compact',
+    '压缩不看有没有历史：它本来就在压缩历史',
+  )
+})
+
+const chatMsg = (id: string, role: 'user' | 'agent', text: string): TaskMessage => ({
+  id,
+  role,
+  agentId: '',
+  step: '',
+  text,
+  tools: [],
+  at: '',
+})
+const asTask = (messages: TaskMessage[]) => ({ messages }) as unknown as Task
+
+test('上下文超长：按预算裁剪对话，保留最近的消息、更早的长正文省略', () => {
+  const task = asTask([
+    chatMsg('m1', 'user', '很早的要求' + '甲'.repeat(4000)),
+    chatMsg('m2', 'agent', '中间结论'),
+    chatMsg('m3', 'user', '最近的追问'),
+  ])
+  const out = clippedTranscript(task, 3, 100)
+  assert.match(out, /中间结论/)
+  assert.match(out, /最近的追问/)
+  // 最早那条的正文撑爆上下文，不能再带过去；位置还在（新会话知道当时有这一轮）
+  assert.doesNotMatch(out, /甲{50}/, '最早那段撑爆上下文的内容不能再带过去')
+  assert.match(out, /正文太长，这里省略/)
+  assert.ok(estTokens(out) < 200, `裁剪后的文字自己要在预算内，实际 ${estTokens(out)} token`)
+  // 预算够时一条都不丢
+  assert.match(clippedTranscript(task, 3, 100_000), /很早的要求/)
+})
+
+test('上下文超长：工具调用不能被省掉，正文放不下就让它让位', () => {
+  const tools: ToolUse[] = [
+    { kind: 'edit', label: 'server/exec/runner.ts', detail: '' },
+    { kind: 'run', label: 'npm run typecheck', detail: '' },
+    { kind: 'agent', label: 'spawn_agents 调研', detail: '' },
+  ]
+  const task = asTask([{ ...chatMsg('m1', 'agent', '总结：' + '乙'.repeat(3000)), tools }])
+  const line = '（工具：修改 server/exec/runner.ts；运行 npm run typecheck；子对话 spawn_agents 调研）'
+  // 预算紧：正文让位，工具限一行不能少（新会话要知道已经改过什么、跑过什么）
+  const tight = clippedTranscript(task, 1, 210)
+  assert.ok(tight.includes(line), `工具行必须保留，实际：${tight}`)
+  assert.match(tight, /正文太长，这里省略/)
+  // 余量够：工具和截断后的正文都在
+  const roomy = clippedTranscript(task, 1, 1200)
+  assert.ok(roomy.includes(line))
+  assert.match(roomy, /中间省略/)
+  // 连工具行都放不下：整条省略并写清省略了几条，不会只留正文丢工具
+  const tiny = clippedTranscript(task, 1, 10)
+  assert.match(tiny, /更早的 1 条消息因为太长省略了/)
+  assert.doesNotMatch(tiny, /乙{10}/)
+})
+
+test('上下文超长：工具记录按时间分层，久远的压成计数、最近的保留细节', () => {
+  const old: ToolUse[] = [
+    { kind: 'edit', label: 'web/src/a.tsx', detail: '' },
+    { kind: 'edit', label: 'web/src/b.tsx', detail: '' },
+    { kind: 'run', label: 'npm run lint', detail: '' },
+    { kind: 'agent', label: 'spawn_agents 调研', detail: '' },
+  ]
+  const task = asTask([
+    { ...chatMsg('m1', 'agent', '很早的总结'), tools: old },
+    chatMsg('n0', 'user', '接着做'),
+    chatMsg('n1', 'agent', '最近的回复 1'),
+    chatMsg('n2', 'user', '最近的追问'),
+    chatMsg('n3', 'agent', '最近的回复 2'),
+    { ...chatMsg('last', 'agent', '最近这一轮'), tools: [{ kind: 'run', label: 'npm run typecheck', detail: '' }] },
+  ])
+  const out = clippedTranscript(task, task.messages.length, 100_000)
+  // 很久以前那条：只留类别计数，不再列文件名和命令
+  assert.match(out, /（早先的工具：修改×2；运行×1；子对话×1）/)
+  assert.doesNotMatch(out, /web\/src\/a\.tsx/)
+  // 最近这一轮：命令原文完整保留，不靠计数
+  assert.match(out, /（工具：运行 npm run typecheck）/)
+})
+
+test('上下文超长：单条就超预算时截断着保留，不整段丢掉', () => {
+  const task = asTask([chatMsg('m1', 'agent', '结论：' + '丙'.repeat(4000))])
+  const out = clippedTranscript(task, 1, 600)
+  assert.match(out, /结论：/)
+  assert.match(out, /中间省略/)
+  assert.ok(estTokens(out) < 700, `截断后 ${estTokens(out)} token`)
+})
+
+test('上下文超长降级接上了：失败卡片收回成普通说明', () => {
+  const base = 'Pi 执行失败（退出码 3221226505）：\n400: ContextWindowExceededError got=1148341'
+  const msg: TaskMessage = {
+    id: 'c1',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: [base, '', '正在丢掉旧会话，把对话裁剪后开新会话接着做…'].join('\n'),
+    tools: [],
+    at: '',
+    error: true,
+    alert: makeAlert('warn', base, 'context'),
+  }
+  settleContextNotes([{ msg, base }])
+  assert.equal(msg.error, undefined, '这一轮最终继续做下去了，不能一直挂着红色错误')
+  assert.equal(msg.transient, true, '继续执行时要能去掉')
+  assert.match(msg.text, /ContextWindowExceededError/, '超长的原因留着，方便查')
+  assert.match(msg.text, /已丢掉旧会话，把对话裁剪后开新会话接着做了。/)
+  assert.doesNotMatch(msg.text, /正在丢掉旧会话/)
+  assert.equal(msg.alert?.level, 'warn')
+  assert.match(msg.alert?.resolved ?? '', /已裁剪对话/)
 })

@@ -31,8 +31,8 @@ export const EN_ALERTS: Record<string, string> = {
   上下文超长: 'Context too long',
   '这次请求的内容超过了模型的上下文上限，模型拒绝处理。':
     "This request exceeded the model's context limit, so the model refused it.",
-  '点「压缩上下文」后继续，或者新开一个对话只带必要的内容。':
-    'Click Compact context and continue, or start a new conversation with only what is needed.',
+  '面板会丢掉旧会话、把对话裁剪后开新会话接着做（压缩请求本身也超长时走同一条路）；也可以新开一个对话只带必要的内容。':
+    'The panel drops the old session and continues in a new one with the conversation trimmed down (a compact request that is itself too long takes the same path). You can also start a new conversation with only what is needed.',
   模型请求被拒绝: 'Model request rejected',
   '模型服务拒绝了这次请求：模型名不对、不支持这个参数，或者请求内容不合格式（400、404）。':
     'The model service rejected the request: wrong model name, an unsupported parameter, or a malformed request (400, 404).',

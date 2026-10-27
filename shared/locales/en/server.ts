@@ -428,6 +428,16 @@ export const EN_SERVER: Record<string, string> = {
   '当前占用：{pct}%': 'Context used: {pct}%',
   '已压缩上下文：下一轮会开新的会话，带上这份摘要':
     'Context compacted: the next turn starts a new session with this summary',
+  '（更早的 {n} 条消息因为太长省略了）': '({n} earlier messages omitted because they were too long)',
+  '已丢掉旧会话，把对话裁剪后开新会话接着做了。':
+    'Dropped the old session and continued in a new one with the conversation trimmed down.',
+  '已裁剪对话，新会话接上了': 'Conversation trimmed, the new session took over',
+  '（原始对话已经超过模型上限，连压缩请求也被拒绝，以下是面板裁剪后保留的记录）':
+    '(The original conversation exceeded the context limit and even the compact request was rejected; below is the record the panel kept after trimming.)',
+  '已压缩上下文：对话本身太长，模型连压缩请求都拒绝了，已改为裁剪后开新会话带上（保留最近的内容）':
+    'Context compacted: the conversation itself was too long and the model rejected even the compact request, so the panel trimmed it and the next session carries the trimmed record (most recent content kept)',
+  '这次请求的上下文已经超过 {cli} 的上限。正在丢掉旧会话，把对话裁剪后开新会话接着做…':
+    "This request exceeded {cli}'s context limit. Dropping the old session and continuing in a new one with the conversation trimmed down…",
   '上下文占用达到 {n}%，自动压缩': 'Context usage reached {n}%, compacting automatically',
   '自动压缩失败：{error}': 'Auto-compact failed: {error}',
   只有对话任务可以这样做: 'Only chat tasks can do this',
