@@ -239,6 +239,11 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
 必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
+**输出、重跑和预算**（[ADR 0024](adr/0024-test-output-retry-budget.md)）：单测入口默认只打每批结论、失败详情（每条最多 20 行）、
+抖动、慢用例和最慢的文件，完整 TAP 写进 `logs/tests/`；失败只重跑失败的文件（串行，总共最多 3 次），重跑通过记成「抖动」照样报出来；
+还失败的记进 `logs/tests/unit-last.json`，`npm run test:failed` 只跑它们。端到端、界面检查同样只重跑失败分片（再跑一次），`--failed` 只跑上次失败的分片。
+用例数量有预算（`scripts/test-budget.json`，`npm run lint` 检查），超了要合并或删掉等量旧用例，确需增加时手改上限并在提交说明写「测试预算：」。
+
 ### 怎么交给 Agent
 
 工作流任务新建时把整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的
