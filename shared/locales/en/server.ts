@@ -170,6 +170,8 @@ export const EN_SERVER: Record<string, string> = {
   '构建命令：{cmd}': 'Build command: {cmd}',
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
+  保存版本格式不对: 'Invalid save version.',
+  '项目在别处被修改过，请刷新后重试': 'This project was changed elsewhere. Refresh, then try again.',
   项目顺序格式不对: 'Invalid project order',
   '项目顺序里有不存在的项目：{id}': 'Project order contains an unknown project: {id}',
   '项目顺序里有重复的项目：{id}': 'Project order contains a duplicate project: {id}',
@@ -500,8 +502,8 @@ export const EN_SERVER: Record<string, string> = {
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '第 {n} 次重试成功了，接着做。': 'Retry {n} succeeded, carrying on.',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
-  '面板的工具没接上（{error}）：这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问），只能直接改文件、用普通命令跑；要这些工具就重开一轮':
-    "Panel tools didn't connect ({error}). No panel tool is available this turn (plans, background commands, messaging, submit, asking you questions); edit files and run plain commands only, or start a new turn to get them back",
+  '面板的工具没接上（{error}）：缺的那些这一轮用不了，只能直接改文件、用普通命令跑；要这些工具就重开一轮':
+    "Panel tools didn't connect ({error}). The missing ones aren't available this turn; edit files and run plain commands only, or start a new turn to get them back",
   原因未知: 'unknown reason',
   提示: 'Notice',
   '这个 Agent 不支持扩展包': "This agent doesn't support packages",

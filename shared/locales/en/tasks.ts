@@ -1149,6 +1149,8 @@ export const EN_TASKS: Record<string, string> = {
   '这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。':
     "This result is malformed and the recommended settings can't be read: {error}. Ask it to output again in the conversation.",
   '已应用 {n} 项设置': 'Applied {n} settings',
+  '项目在别处被修改过，已刷新，请再点一次「全部应用」':
+    'This project was changed elsewhere. It has been refreshed — click "Apply all" again.',
   '{n} 项和项目现在的设置不同，应用后直接保存进项目':
     '{n} differ from the current project settings; applying saves them to the project',
   全部推荐都已和项目设置一致: 'All recommendations already match the project settings',

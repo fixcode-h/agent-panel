@@ -44,10 +44,11 @@
   列工具 `tools/list` 共用（`call()` 每一步按 `STEP_TIMEOUT_MS = 4000` 截断、`STEP_ATTEMPTS = 2` 次，超时再试一次，但总耗时不超预算）；
   `rpc()` 多一个 `what` 参数，超时错误里写清是「握手」还是「列工具」。
 - 注册前核对核心工具：`CORE_TOOLS = ['get_status', 'send_message', 'read_messages']` 是各身份（主对话、子对话、子任务、工作流节点）都有的三个，
-  缺任何一个就走 `fail('面板的工具清单不完整，缺 …')`，不是只挡住空清单。只对服务名是 `panel` 或以 `agent-panel` 开头的扩展核对
-  （扩展里 `const service = '{name}'`）；UI 设计的服务是 `design`，工具本来就不含这三个，不能对它也报错。
-- `server/exec/parsers.ts` 的 `tools_failed` 提示改成说清后果：「这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问），
-  只能直接改文件、用普通命令跑；要这些工具就重开一轮」，英文 `shared/locales/en/server.ts` 同步。
+  缺任何一个就走 `fail('面板的工具清单不完整，缺 …')`，不是只挡住空清单。当时按服务名判断（扩展里 `const service = '{name}'`），
+  只对服务名是 `panel` 或以 `agent-panel` 开头的扩展核对；后来发现服务名判断会把「这一轮本来就没有编排工具」也当成不完整，
+  改成按握手声明核对（见 `pi-bridge-compact-tools-misfire.md`）。
+- `server/exec/parsers.ts` 的 `tools_failed` 提示改成说清后果（当时写的是「这一轮所有面板工具都不可用…」，
+  这个无条件断言后来在 `pi-bridge-compact-tools-misfire.md` 里改成「缺的那些这一轮用不了」），英文 `shared/locales/en/server.ts` 同步。
 - `server/exec/runner.ts` 收到 `failed` 的 `notice` 时写一条 `log.warn('agent', ev.text, { task, step, cli })`：事后能从日志查到是哪一轮、哪个 CLI 没挂上工具。
 - `get_state` 不写死超时，走 `server/exec/rpc/session.ts` 的默认 `REQUEST_TIMEOUT_MS = 15000`（本次只把这个常量导出了，供测试引用）：
   改的是压小扩展自己的预算，不是加长面板的超时。`session.ts` 的优先级是「请求级 `action.timeoutMs` > 会话级 `requestTimeoutMs` > 默认 15 秒」，
@@ -88,7 +89,7 @@
 
 ## 修好之前怎么判断验证可信度
 
-- 先看那一轮回复里的失败提示：工具没挂上时扩展会上报，界面是一行失败提示（内部的 kind 是 `tools_failed`）：「面板的工具没接上（…）：这一轮所有面板工具都不可用（执行计划、后台命令、传话、收尾合并、向你提问）…」。
+- 先看那一轮回复里的失败提示：工具没挂上时扩展会上报，界面是一行失败提示（内部的 kind 是 `tools_failed`）：「面板的工具没接上（…）：缺的那些这一轮用不了…」。
 - 再去 `logs/` 搜同一句：`server/exec/runner.ts` 对 `failed` 的 `notice` 写 `log.warn('agent', …)`，带 `task`、`step`、`cli` 三个字段，能确认是哪一轮、哪个 CLI。
 - 只有替代证据（Agent 自己用普通命令跑出可复现的红→绿）的轮次不能算「已完成」：验收点名要面板工具做的（派评审复看、`submit_merge` 收尾、更新计划步骤）要么重开一轮补上，要么由父对话自己核实，不能默认它做过。
 - 拿到工具的正常轮次是整批：`tools/list` 一次给全，不会只少一个两个。只少某个工具时先查身份裁剪（见 `../README.md` 的整批清单），不是扩展加载的问题。

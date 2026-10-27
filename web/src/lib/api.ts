@@ -482,7 +482,11 @@ export const api = {
   /** 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单 */
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
-  updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  updateProject: (id: string, input: ProjectInput, expectedUpdatedAt?: string) =>
+    request<Project>(
+      `/projects/${id}`,
+      json('PUT', { ...input, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) }),
+    ),
   /**
    * 只更新「AI 初始化」的结果：服务端自己读最新项目再合并，不会把用户这期间应用的推荐覆盖回旧值。
    * 初始化对话跑完才交回结果，传整份项目过去时它已经过期了。

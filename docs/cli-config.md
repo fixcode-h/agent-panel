@@ -317,6 +317,9 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 | `limitEnv`       | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
 | `limitFile`      | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
 
+设置里「自动压缩上下文」这一项的默认值是 70%（`shared/schema.ts` 的 `AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；
+老设置里存着的 0 在读取时迁成 70（按 `Settings.defaultsVersion` 只做一次，见 `server/settings.ts`）。
+
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
 Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上补搜索）加 `--exclude-tools` 去掉命令或写文件的工具；
 不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，

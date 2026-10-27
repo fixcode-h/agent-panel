@@ -84,24 +84,40 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
     if (!todo.length || busy) return
     setBusy(true)
     try {
-      // 面板上的项目可能是打开时读的：应用前现读一次，别把别处刚改的字段写回旧值
-      const latest = await api
-        .projects()
-        .then((list) => list.find((x) => x.id === project.id))
-        .catch(() => undefined)
-      const base = latest ? toInput(latest) : draft
-      const next = todo.reduce((acc, r) => r.apply(acc), base)
-      const saved = await api.updateProject(project.id, {
-        ...next,
-        // 已有初始化时间时保留：这里只是应用推荐，不是重新初始化
-        initializedAt: latest?.initializedAt || project.initializedAt || new Date().toISOString(),
-        initResult: p,
-      })
+      // 面板上的项目是打开时读的：带上它的 updatedAt 保存，期间别处改过就由服务端拒绝（409），
+      // 不再「先 GET 一次再整份 PUT」——GET 失败回落到旧草稿时，旧快照照样会覆盖刚保存的改动
+      const next = todo.reduce((acc, r) => r.apply(acc), draft)
+      const saved = await api.updateProject(
+        project.id,
+        {
+          ...next,
+          // 已有初始化时间时保留：这里只是应用推荐，不是重新初始化
+          initializedAt: project.initializedAt || new Date().toISOString(),
+          initResult: p,
+        },
+        project.updatedAt,
+      )
       setProjects((ps) => ps.map((x) => (x.id === saved.id ? saved : x)))
       setApplied((s) => new Set([...s, ...todo.map((r) => r.id)]))
       toast.success(t('已应用 {n} 项设置', { n: todo.length }))
     } catch (e) {
-      toast.error((e as Error).message)
+      const err = e as Error & { status?: number }
+      // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，推荐和草稿都保留，再点一次就能存
+      if (err.status === 409) {
+        // 刷新失败时不能提示「已刷新」：重试仍会 409，让用户手动刷新页面
+        let refreshed = true
+        await api
+          .projects()
+          .then(setProjects)
+          .catch(() => {
+            refreshed = false
+          })
+        toast.error(
+          refreshed
+            ? t('项目在别处被修改过，已刷新，请再点一次「全部应用」')
+            : t('项目在别处被修改过，请刷新页面后再保存'),
+        )
+      } else toast.error(err.message)
     } finally {
       setBusy(false)
     }

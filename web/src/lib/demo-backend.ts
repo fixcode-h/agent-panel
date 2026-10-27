@@ -106,7 +106,7 @@ import {
   type ComfyTemplateMeta,
   type TemplateAsset,
 } from '@shared/comfy-templates'
-import { defaultCli, orderClis } from '@shared/settings'
+import { defaultCli, migrateSettingsDefaults, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { stopHelper } from '@shared/engine'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
@@ -1988,8 +1988,10 @@ function route(method: string, url: string, body: unknown): unknown {
 
   if (res === 'settings') {
     if (method === 'PUT') d.settings = parse(Settings, body)
+    // 和正式后端同一套迁移（见 shared/settings.ts）：浏览器里存着旧版设置时升到新默认值，例如自动压缩的旧默认值 0
+    else migrateSettingsDefaults((d.settings ??= Settings.parse({})))
     persist()
-    return Settings.parse((d.settings ??= Settings.parse({})))
+    return Settings.parse(d.settings ?? {})
   }
   if (res === 'model-catalog') {
     if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
@@ -2432,6 +2434,14 @@ function route(method: string, url: string, body: unknown): unknown {
       const cur = (d.projects ?? []).find((x) => x.id === id)
       if (!cur) return fail('项目不存在')
       return update('projects', id, withInitResult(cur, saved.data), '项目不存在')
+    }
+    // 和真正的服务端一样：带版本保存时，期间被别处改过就拒绝，不拿旧快照覆盖（见 project-lock.ts）
+    const expected = (body as { expectedUpdatedAt?: unknown } | null)?.expectedUpdatedAt
+    if (method === 'PUT' && expected !== undefined) {
+      if (typeof expected !== 'string') fail('保存版本格式不对')
+      const cur = (d.projects ?? []).find((x) => x.id === id)
+      // 服务端也没有版本（旧数据）时无从比对，和 staleProjectWrite 保持一致，不拦
+      if (cur?.updatedAt && cur.updatedAt !== expected) fail('项目在别处被修改过，请刷新后重试', 409)
     }
     const input = parse(ProjectInput, body)
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
