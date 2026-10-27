@@ -8,14 +8,28 @@
 import { z } from 'zod'
 import { getLang, t } from './i18n.ts'
 import { hhmm, ymd } from './datetime.ts'
+import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
 export const ScheduleRepeat = z.enum(['once', 'daily', 'weekly', 'workdays'])
 export type ScheduleRepeat = z.infer<typeof ScheduleRepeat>
 
+/** 一条计划最多依赖几个上游：界面上多选，再多说明该拆成工作流；上限也挡住拼错的超长数组 */
+export const MAX_DEPENDENCIES = 10
+
 /** 待执行 / 已执行 / 已跳过（错过没跑，或者启动失败） */
 export const ScheduleStatus = z.enum(['pending', 'done', 'skipped'])
 export type ScheduleStatus = z.infer<typeof ScheduleStatus>
+
+/**
+ * 计划的执行上限：0 表示不限。
+ * token 按输入 + 输出算，和用量统计一个口径；时长从这一轮开始算起，超过就停，已经产出的内容都留着
+ */
+export const ScheduleBudget = z.object({
+  tokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).default(0),
+  minutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
+})
+export type ScheduleBudget = z.infer<typeof ScheduleBudget>
 
 export const ScheduleInput = z.object({
   name: z.string().trim().min(1, t('请填写计划名称')).max(60),
@@ -31,8 +45,40 @@ export const ScheduleInput = z.object({
   /** 下次执行时间；不是单次时它是「每个周期的这个时刻」的基准，每次执行后按规则往后推 */
   at: z.string().refine((v) => Number.isFinite(Date.parse(v)), t('请选择执行时间')),
   enabled: z.boolean().default(true),
+  /** 上游计划：这些计划这一轮成功启动之后，本计划到点才会启动（见 dependencyBlocker） */
+  dependsOn: z.array(z.string()).max(MAX_DEPENDENCIES).default([]),
+  /** 这一轮最多用多少 token / 多少分钟；0 表示不限。启动对话时落到任务上 */
+  budget: ScheduleBudget.prefault({}),
 })
 export type ScheduleInput = z.infer<typeof ScheduleInput>
+
+/**
+ * Webhook 投递失败最多试几次（含第一次）：有上限，不会无限重试。
+ * 重试逻辑在 server/webhook.ts，界面上说明「最多试几次」也用这个值，不各写一个数字
+ */
+export const WEBHOOK_MAX_ATTEMPTS = 3
+
+/**
+ * 计划跑到终态时的 Webhook 事件：成功启动 / 启动失败 / 错过 / 上游没成功。
+ * 投递规则和载荷见 server/webhook.ts，界面按这个值说明最近一次投递的是什么
+ */
+export const ScheduleEvent = z.enum(['run', 'fail', 'miss', 'blocked'])
+export type ScheduleEvent = z.infer<typeof ScheduleEvent>
+
+/** 最近一次投递的结果：界面上告诉用户「投出去了没有」 */
+export const ScheduleDelivery = z.object({
+  /** 投递（最后一次尝试）的时间 */
+  at: z.string(),
+  event: ScheduleEvent,
+  ok: z.boolean(),
+  /** HTTP 状态码；没发出去（超时、地址不对）时为 0 */
+  status: z.number().default(0),
+  /** 失败原因，直接显示给用户；成功时为空 */
+  error: z.string().default(''),
+  /** 实际尝试了几次 */
+  attempts: z.number().default(0),
+})
+export type ScheduleDelivery = z.infer<typeof ScheduleDelivery>
 
 export const Schedule = ScheduleInput.extend({
   id: z.string(),
@@ -45,6 +91,12 @@ export const Schedule = ScheduleInput.extend({
   missedAt: z.string().default(''),
   /** 上次启动失败的原因（项目或角色被删掉这类），直接显示给用户 */
   lastError: z.string().default(''),
+  /** 最近一次因为上游没有成功而没启动的到点时间；和 missedAt 一样只记最近一次 */
+  blockedAt: z.string().default(''),
+  /** 没启动的原因，直接显示给用户：因为「X」启动失败，没有启动 */
+  blockedReason: z.string().default(''),
+  /** 最近一次 Webhook 投递的结果；没开 Webhook 或没配地址时为空 */
+  lastDelivery: ScheduleDelivery.nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -188,6 +240,22 @@ export function afterRun(s: Schedule, now: number, taskId: string): Partial<Sche
     lastRunAt: new Date(now).toISOString(),
     lastTaskId: taskId,
     lastError: '',
+    // 这次启动成功了，之前「因为上游没启动」的记录不再算数
+    blockedAt: '',
+    blockedReason: '',
+  }
+}
+
+/**
+ * 上游没成功所以没启动：和错过一样把时间往后推（否则每轮询一次就重试一次），
+ * 但单独记下到点时间和原因——「因为 X 失败没启动」和「面板没开着错过了」是两回事，
+ * 用户要能看出该去修哪个上游。
+ */
+export function afterBlocked(s: Schedule, now: number, reason: string): Partial<Schedule> {
+  return {
+    ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
+    blockedAt: s.at,
+    blockedReason: reason,
   }
 }
 
@@ -211,6 +279,123 @@ export function afterFail(s: Schedule, now: number, error: string): Partial<Sche
     ...(s.repeat === 'once' ? { status: 'skipped' as const } : { at: nextRunAt(s, now), status: 'pending' as const }),
     lastError: error,
   }
+}
+
+/**
+ * 时长上限怎么取：设置里的单步时限和计划带的时长上限都算上限，取小的那个；0 表示不限。
+ * 返回的 by 说明停的时候该按哪个上限解释（提示文案不同），用户才知道该去哪里改。
+ */
+export function effectiveTimeoutMinutes(
+  stepMinutes: number,
+  budgetMinutes: number,
+): { minutes: number; by: 'step' | 'budget' | '' } {
+  if (!stepMinutes && !budgetMinutes) return { minutes: 0, by: '' }
+  if (!budgetMinutes) return { minutes: stepMinutes, by: 'step' }
+  if (!stepMinutes) return { minutes: budgetMinutes, by: 'budget' }
+  return stepMinutes <= budgetMinutes ? { minutes: stepMinutes, by: 'step' } : { minutes: budgetMinutes, by: 'budget' }
+}
+
+/**
+ * 上游「这一轮成功」的有效窗口（小时）。
+ * 计划目前只保证「到点成功启动一个对话」，不等那次对话跑完（进度在对话里看），
+ * 所以依赖只能按上游最近一次成功启动算；超过这个窗口认为上游已经停摆，不再拿旧的成功给下游放行。
+ * 默认 24 小时：跨天的计划（上游每天跑一次）也放得进去，再久就说明上游真的没在跑。
+ */
+export const SCHEDULE_DEPENDENCY_FRESH_HOURS = 24
+
+/**
+ * 下游到点时上游算不算成功。返回空字符串表示可以启动，否则是写进计划的、给用户看的原因。
+ * started 是「本轮同一批刚刚成功启动的」上游：上游和下游同时到点时，不能因为上游刚启动、
+ * 记录还没写回就说「上游还没执行过」（那样下游要等下一次轮询，甚至会被当成错过）。
+ */
+export function dependencyBlocker(
+  s: Pick<Schedule, 'dependsOn'>,
+  list: Schedule[],
+  now: number,
+  started: ReadonlySet<string> = new Set(),
+): string {
+  const byId = new Map(list.map((x) => [x.id, x]))
+  for (const id of s.dependsOn ?? []) {
+    const up = byId.get(id)
+    if (!up) return t('因为上游计划已不存在，没有启动')
+    if (started.has(up.id)) continue
+    if (!up.enabled) return t('因为「{name}」已停用，没有启动', { name: up.name })
+    switch (outcomeOf(up)) {
+      case 'error':
+        return t('因为「{name}」启动失败，没有启动', { name: up.name })
+      case 'missed':
+        return t('因为「{name}」错过，没有启动', { name: up.name })
+      case 'blocked':
+        return t('因为「{name}」的上游没有成功，没有启动', { name: up.name })
+      case 'none':
+        return t('因为「{name}」还没有执行过，没有启动', { name: up.name })
+      default: {
+        const ok = Date.parse(up.lastRunAt)
+        if (!Number.isFinite(ok) || now - ok > SCHEDULE_DEPENDENCY_FRESH_HOURS * 3_600_000)
+          return t('因为「{name}」最近一次成功已经超过 {n} 小时，没有启动', {
+            name: up.name,
+            n: SCHEDULE_DEPENDENCY_FRESH_HOURS,
+          })
+      }
+    }
+  }
+  return ''
+}
+
+/**
+ * 依赖成环的检查：返回环上的计划 id（首尾是同一个，例如 [a, b, a]），没有环返回空数组。
+ * 保存前调用：list 是已有的计划，selfId 是正在保存的那条（新建时为空），dependsOn 是这次要存的上游。
+ * 新建时还没有 id，别的计划不可能依赖它，所以新建不会成环，直接返回空。
+ */
+export function scheduleCycle(list: Schedule[], selfId: string, dependsOn: string[]): string[] {
+  if (!selfId) return []
+  const deps = new Map<string, string[]>(list.map((s) => [s.id, s.dependsOn ?? []]))
+  deps.set(selfId, dependsOn)
+  const path: string[] = [selfId]
+  const walk = (id: string, seen: Set<string>): string[] | null => {
+    for (const up of deps.get(id) ?? []) {
+      // 回到自己：整条路径就是环；多带一次起点，展示时能写成「A → B → A」
+      if (up === selfId) return [...path, selfId]
+      if (seen.has(up)) continue
+      seen.add(up)
+      path.push(up)
+      const found = walk(up, seen)
+      if (found) return found
+      path.pop()
+    }
+    return null
+  }
+  return walk(selfId, new Set([selfId])) ?? []
+}
+
+/** 环转成用户看得懂的写法：「A」→「B」→「A」；计划被删掉的按 id 显示，不吞成空 */
+export function scheduleCycleLabel(path: string[], list: Schedule[]): string {
+  const nameOf = new Map(list.map((s) => [s.id, s.name]))
+  return path.map((id) => `「${nameOf.get(id) ?? id}」`).join(' → ')
+}
+
+/**
+ * 按依赖顺序排一下这一批要启动的计划：上游排在下游前面，启动时才能把「本轮已成功」传给下游。
+ * 成环的（不该存在，保存时已经拦了）按原顺序追加，不死循环。
+ */
+export function orderByDependency(list: Schedule[]): Schedule[] {
+  const byId = new Map(list.map((s) => [s.id, s]))
+  const out: Schedule[] = []
+  const placed = new Set<string>()
+  const visit = (s: Schedule, stack: Set<string>) => {
+    if (placed.has(s.id) || stack.has(s.id)) return
+    stack.add(s.id)
+    for (const id of s.dependsOn ?? []) {
+      const up = byId.get(id)
+      // 上游不在这一批里（没到点、已经跑完）也要占位：它会在启动时单独判定
+      if (up) visit(up, stack)
+    }
+    stack.delete(s.id)
+    placed.add(s.id)
+    out.push(s)
+  }
+  for (const s of list) visit(s, new Set())
+  return out
 }
 
 /** 重复规则的短标签（卡片徽标、编辑弹窗共用）：具体星期由下次执行时间体现 */
@@ -264,24 +449,29 @@ export function fromLocalInput(value: string): string {
 export const SCHEDULE_GROUPS = ['upcoming', 'problem', 'disabled', 'finished'] as const
 export type ScheduleGroup = (typeof SCHEDULE_GROUPS)[number]
 
-/** 最近一次结果：启动失败 / 错过 / 成功启动 / 还没跑过。徽标、分组、计数都读它，不各自再判一次 */
-export type ScheduleOutcome = 'error' | 'missed' | 'success' | 'none'
+/** 最近一次结果：启动失败 / 错过 / 上游没成功 / 成功启动 / 还没跑过。徽标、分组、计数都读它，不各自再判一次 */
+export type ScheduleOutcome = 'error' | 'missed' | 'blocked' | 'success' | 'none'
 
 /**
  * 最近一次结果。
- * 错过记录只有不早于上次启动时才算数：每天的计划成功启动后 missedAt 还留着前一次错过的记录，
- * 不能一直显示成「错过」。错过和 failed 同时存在时（先启动失败、之后又错过）错过发生得更晚，
- * 所以先判错过；错误原文由卡片单独的段落继续显示，不会被吞。
- * lastError 在启动成功时清空，非空且没有更新的错过时，最近一次已知的结果就是启动失败。
+ * 错过和「上游没成功」都是「到点了没跑」，取更晚的那次；它们都不早于上次启动时才算数：
+ * 每天的计划成功启动后 missedAt / blockedAt 还留着前一次的记录，不能一直显示成错过。
+ * 没有更新的「没跑」记录时，lastError 非空就说明最近一次已知结果是启动失败。
+ * lastError 在启动成功时清空，所以不用单独比时间。
  */
 export function outcomeOf(s: Schedule): ScheduleOutcome {
-  if (s.missedAt) {
-    const missed = Date.parse(s.missedAt)
-    const run = Date.parse(s.lastRunAt)
-    if (!s.lastRunAt || !Number.isFinite(run) || missed >= run) return 'missed'
+  const run = Date.parse(s.lastRunAt)
+  const hasRun = !!s.lastRunAt && Number.isFinite(run)
+  const missed = Date.parse(s.missedAt)
+  const blocked = Date.parse(s.blockedAt)
+  const hasMissed = !!s.missedAt && Number.isFinite(missed)
+  const hasBlocked = !!s.blockedAt && Number.isFinite(blocked)
+  if (hasMissed || hasBlocked) {
+    const latest = Math.max(hasMissed ? missed : -Infinity, hasBlocked ? blocked : -Infinity)
+    if (!hasRun || latest >= run) return hasBlocked && (!hasMissed || blocked >= missed) ? 'blocked' : 'missed'
   }
   if (s.lastError) return 'error'
-  return s.lastRunAt ? 'success' : 'none'
+  return hasRun ? 'success' : 'none'
 }
 
 /** 到点还会不会自动执行：停用、单次已执行完 / 已跳过、单次启动失败都没有下一次 */
@@ -295,7 +485,7 @@ export function willRunAgain(s: Schedule): boolean {
 export function groupOf(s: Schedule): ScheduleGroup {
   if (!s.enabled) return 'disabled'
   const outcome = outcomeOf(s)
-  if (outcome === 'error' || outcome === 'missed') return 'problem'
+  if (outcome === 'error' || outcome === 'missed' || outcome === 'blocked') return 'problem'
   return willRunAgain(s) ? 'upcoming' : 'finished'
 }
 
@@ -366,7 +556,7 @@ export function nextRunLabel(s: Schedule, now = Date.now()): string {
  * 它可能是未来（例如停用前排到明年），算进来会把一条早就不动的计划顶到组最上面。 */
 function activityAt(s: Schedule): number {
   let at = 0
-  for (const iso of [s.lastRunAt, s.missedAt, s.updatedAt]) {
+  for (const iso of [s.lastRunAt, s.missedAt, s.blockedAt, s.updatedAt]) {
     const v = Date.parse(iso)
     if (Number.isFinite(v)) at = Math.max(at, v)
   }
@@ -411,6 +601,7 @@ export function outcomeTitle(s: Schedule): string {
   return {
     error: t('启动失败'),
     missed: t('错过'),
+    blocked: t('未启动'),
     success: t('已启动'),
     none: t('还没执行'),
   }[outcomeOf(s)]
@@ -423,6 +614,9 @@ export function outcomeLabel(s: Schedule, now = Date.now()): string {
       return t('启动失败')
     case 'missed':
       return t('错过 {time}（面板当时没在跑，不补跑）', { time: whenLabel(s.missedAt, now) })
+    // 原因里已经写清了是哪个上游、什么结果，不在这里再拼一遍
+    case 'blocked':
+      return s.blockedReason || t('上游没有成功，没有启动')
     case 'success':
       return t('成功启动于 {time}', { time: whenLabel(s.lastRunAt, now) })
     case 'none':

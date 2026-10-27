@@ -947,6 +947,13 @@ export const MAX_ATTACHMENTS = 10
  */
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 /**
+ * 一个对话最多能设多少 token 的执行上限：一亿 token 已经远超一次对话，
+ * 再大一定是填错了；太小会挡住正常的长时间任务，所以不收更小的人工上限
+ */
+export const MAX_TASK_BUDGET_TOKENS = 100_000_000
+/** 一个对话的时长上限最多几天（分钟）：和设置里的单步时限同一个上限，超过一天的任务该拆成多个 */
+export const MAX_TASK_BUDGET_MINUTES = 1440
+/**
  * 消息里图片卡片取的图有多宽（像素）。卡片本身是 1.25em 见方（约 20px），2 倍屏上按 40px 显示，
  * 取 160 已留 4 倍余量；同一批 48 张截图实测：原图 3501KB，640 要 2376KB，160 只要 266KB。
  * 看大图、复制图片仍取原图，不受它影响。
@@ -988,6 +995,12 @@ export const NewTaskInput = z.object({
   childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
+  /**
+   * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
+   * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
+   */
+  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).optional(),
+  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).optional(),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -1080,6 +1093,7 @@ export const AlertKind = z.enum([
   'retry', // CLI 自己在重试
   'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
   'worktree', // 独立分支建不起来、删不掉
+  'budget', // 用户给这个计划 / 任务设的 token 或时长上限到了
   'panel', // 面板自己出错
 ])
 export type AlertKind = z.infer<typeof AlertKind>
@@ -1889,7 +1903,17 @@ export const TaskData = z.object({
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
-  budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  budgetFrom: z
+    .object({
+      usd: z.number(),
+      tokens: z.number(),
+      /** 这一轮开始的时刻（epoch ms）：时长上限从它算起；旧记录没有，时长上限按不限处理 */
+      at: z.number().optional(),
+    })
+    .optional(),
+  /** 执行上限（定时计划带的）：token 上限和时长上限（分钟），0 表示不限 */
+  budgetTokens: z.number().int().min(0).max(MAX_TASK_BUDGET_TOKENS).default(0),
+  budgetMinutes: z.number().int().min(0).max(MAX_TASK_BUDGET_MINUTES).default(0),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
   working: z.boolean().default(false),
   /**
@@ -2191,6 +2215,17 @@ export const Settings = z.object({
   requireToken: z.boolean().default(false),
   /** 外网访问：默认关闭 */
   remoteAccess: RemoteAccess.prefault({}),
+  /**
+   * 计划的 Webhook 出站：计划跑到终态（成功启动 / 启动失败 / 错过 / 上游没成功）时 POST 一份 JSON。
+   * 地址属于外部配置，只存在数据目录的设置里，不写进代码和测试数据；为空时即使打开也不投递
+   */
+  webhook: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** 接收地址（http / https）：投递规则见 server/webhook.ts */
+      url: z.string().trim().default(''),
+    })
+    .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
   /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
   contentWidth: z

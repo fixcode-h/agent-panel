@@ -38,6 +38,7 @@ import {
   withTaskModel,
 } from '../../shared/task.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
+import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
 import { attachmentAddDirs } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
@@ -1922,6 +1923,9 @@ async function runAgent(
     : undefined
 
   if (!prewarmMode) arm()
+  // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
+  // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
+  const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
   const r = await invokeCli({
     cliId,
     command: cs.command,
@@ -1933,7 +1937,7 @@ async function runAgent(
     owner: { taskId: task.id, rootTaskId: task.rootTaskId || task.id, title: task.title },
     signal: ctx.signal,
     // 0 表示不限制
-    timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
+    timeoutMs: cap.minutes ? cap.minutes * 60_000 : 0,
     idle: idleMs
       ? {
           ms: idleMs,
@@ -2070,7 +2074,16 @@ async function runAgent(
   if (r.killed === 'stopped' || (ctx.signal.aborted && !r.killed))
     return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
-    return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
+    return cap.by === 'budget'
+      ? {
+          ok: false,
+          stopped: true,
+          budget: true,
+          error: t('这次执行超过计划设定的 {n} 分钟上限，已停止。已经产出的内容都保留着，点「继续执行」会重新计时。', {
+            n: cap.minutes,
+          }),
+        }
+      : { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: cap.minutes }) }
   if (r.killed === 'idle') {
     const detail = [...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
     return {

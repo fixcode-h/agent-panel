@@ -29,6 +29,7 @@ import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
+import { WEBHOOK_MAX_ATTEMPTS } from '@shared/schedule'
 import { defaultCli, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -136,6 +137,8 @@ function SettingsBody({
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
   const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
   const [notify, setNotifyOn] = useState(notifyEnabled)
+  const [webhookOn, setWebhookOn] = useState(initial.webhook.enabled)
+  const [webhookUrl, setWebhookUrl] = useState(initial.webhook.url)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
@@ -283,6 +286,9 @@ function SettingsBody({
   const largeValid = largeMB !== '' && Number.isInteger(largeN) && largeN >= 1 && largeN <= 50
   const pasteN = Number(longPaste)
   const pasteValid = longPaste !== '' && Number.isInteger(pasteN) && pasteN >= 0 && pasteN <= 1_000_000
+  const webhookUrlTrimmed = webhookUrl.trim()
+  // 只接受 http / https：填错时提示并沿用原来的地址，不把半截地址存进去（和超时那一项同一个口径）
+  const webhookValid = !webhookUrlTrimmed || /^https?:\/\//.test(webhookUrlTrimmed)
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     openBrowser,
@@ -303,6 +309,8 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     childIdleAskMinutes: childAskValid ? childAskMin : initial.childIdleAskMinutes,
+    // 只存设置，地址属外部配置：没填就存空字符串，不发请求；投递规则见 server/webhook.ts
+    webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -629,6 +637,30 @@ function SettingsBody({
                       <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不问')}</span>
                     )}
                   </div>
+                </Row>
+              </Group>
+              <Group title={t('Webhook 通知')}>
+                <Row
+                  title={t('计划执行时发送 Webhook')}
+                  desc={t(
+                    '计划成功启动、启动失败、错过或上游没成功时，向这个地址 POST 一份 JSON，里面有计划、项目、这一轮的时间和结果。投递失败只记在计划上、不影响计划执行，最多重试 {n} 次。',
+                    { n: WEBHOOK_MAX_ATTEMPTS },
+                  )}
+                >
+                  <div className="flex flex-col gap-1">
+                    <Input
+                      value={webhookUrl}
+                      placeholder="https://example.com/hook"
+                      onChange={(e) => setWebhookUrl(e.target.value)}
+                      aria-invalid={!webhookValid}
+                      aria-label={t('Webhook 地址')}
+                      className={cn('h-9', !webhookValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    />
+                    {!webhookValid && <span className="text-xs text-danger">{t('填 http 或 https 开头的地址')}</span>}
+                  </div>
+                </Row>
+                <Row title={t('启用 Webhook')} desc={t('关掉时计划照常执行，只是不往外发。')}>
+                  <Switch aria-label={t('启用 Webhook')} checked={webhookOn} onCheckedChange={setWebhookOn} />
                 </Row>
               </Group>
               <Group title={t('会话保活')}>
