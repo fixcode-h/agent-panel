@@ -3668,7 +3668,8 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
     output: result,
     verdict: '',
     rounds: 0,
-    reruns: 0,
+    // 同一个节点重跑了一次：返工胶囊里的「同一节点重跑」要有数
+    reruns: 1,
     reviews: 0,
     interrupted: false,
     session: '',
@@ -3711,7 +3712,32 @@ function demoHelper(task: Task, agent: { id: string; name: string }) {
       agentId: agent.id,
       step: id,
       text: result,
-      tools: [],
+      // 工具与返工胶囊要有真的数据可看：一次成功、一次路径不存在、一次命令不存在，
+      // 后两次算探路失败（见 shared/tool-failures.ts），界面和导出里都是同一套分类
+      tools: [
+        {
+          kind: 'read' as const,
+          label: 'src/components/CartBadge.tsx',
+          detail: '',
+          output: 'const badge = cart.items.length\n…',
+        },
+        {
+          kind: 'run' as const,
+          label: 'rg "cart:changed" src/components',
+          detail: '',
+          output: 'rg: src/components: No such file or directory (os error 2)',
+          failed: true,
+          exitCode: 2,
+        },
+        {
+          kind: 'run' as const,
+          label: 'npmx run lint',
+          detail: '',
+          output: 'bash: line 1: npmx: command not found',
+          failed: true,
+          exitCode: 127,
+        },
+      ],
       at: end,
     },
   ]
