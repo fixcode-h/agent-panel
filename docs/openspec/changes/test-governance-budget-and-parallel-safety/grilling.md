@@ -8,7 +8,7 @@ change：`test-governance-budget-and-parallel-safety`
 - 环境：Windows 开发机 + WSL Ubuntu-24.04；OpenSpec 1.14.1；文档根（DOC_ROOT）为 `docs/`。
 - 初始化命令：`cd docs && openspec init --tools pi --no-animation`（exit 0）。
 - 产物：`docs/openspec/config.yaml`（`schema: spec-driven`，未填自定义 context/rules）、`docs/openspec/changes/archive/.gitkeep`、`docs/openspec/specs/.gitkeep`。
-- 副作用：init 顺带生成 `docs/.pi/prompts/`（6 个指令）和 `docs/.pi/skills/`，命中仓库 `.gitignore` 第 18 行的 `.pi/`，**不会入库**；仓库根 `AGENTS.md` 未被改动（`git diff --stat` 为空），也没有生成 `AGENTS.md`。
+- 副作用：init 顺带在 `docs/` 下生成过 `.pi` 指令目录（6 个指令）与 skills 目录，命中仓库 `.gitignore` 里排除 `.pi/` 的那一行，**不会入库**，本次也没有把它们纳入仓库；仓库根 `AGENTS.md` 未被改动（`git diff --stat` 为空），也没有生成 `AGENTS.md`。
 - 现状规模（父对话实测，本 change 直接采用，未重复统计）：单测 238 文件 / 2119 用例（server 136、shared 54、web/src 48）；e2e 13 个分片（编号 01–08、10–14，无 09；父对话给的是 14，按 `scripts/e2e/` 实际收集为 13）；界面检查 12 个分片；本地六步整体 6m5s，单测 2m53s–6m44s，e2e 1m13s–6m，界面检查 1m10s–5m35s。
 - 现状并发：`scripts/unit-tests.mjs` 只在 `TIMING_FILES`（5 个文件）串行，其余交给 `node --test` 默认并发（CPU 核数）；`scripts/e2e.mjs` 固定默认 4 片；`scripts/ui-check.mjs` 默认 `min(分片数, availableParallelism())`，受 `AGENT_PANEL_UI_CONCURRENCY` 覆盖。
 - 现状隔离：e2e 每个分片 `mkdtempSync` 自己的 `AGENT_PANEL_DATA`，服务 `listen(0)` 后从 stdout 回报 `AGENT_PANEL_PORT`；界面检查每个分片自己的静态服务、浏览器和演示数据。
@@ -96,7 +96,7 @@ change：`test-governance-budget-and-parallel-safety`
 
 ## 非目标
 
-- 不处理 `openspec init` 生成的 `docs/.pi/` 指令被 `.gitignore` 排除的可复现性问题：新环境需先在 `docs/` 下跑 `openspec init`（或 `openspec update`）。用户选择纳入版本控制或改由项目 `skills/` 承载时，另开 change。
+- 不处理 `openspec init` 生成的临时指令目录（`docs/` 下、被 `.gitignore` 排除、未入库、现已被清理）的可复现性问题：新环境需先在 `docs/` 下跑 `openspec init`（或 `openspec update`）。用户选择纳入版本控制或改由项目 `skills/` 承载时，另开 change。
 - 不改产品功能、界面行为和执行引擎的语义；本次只治理测试基础设施与验证方式。
 - 不引入外部测试服务（远程缓存、云测试平台）或新的测试框架。
 - 不为了达标删除测试：减少耗时只能来自分层、并发、选择精度和淘汰规则。
