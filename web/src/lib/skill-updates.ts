@@ -29,13 +29,17 @@ export async function refreshSkillUpdates() {
  * 「Agent」「部署」两项都读这几个函数，不各自再算一遍（一个状态只允许一处判定）
  */
 
-/** 两份更新合起来的技能数（同一名字两边都有时只算一次） */
-export function skillUpdateCount(updates: SkillUpdates): number {
-  return new Set([...updates.shared, ...updates.deployed]).size
+/**
+ * 「Skills 与命令 → 自带 Skill」那份（~/.agents/skills/<名字>）要更新的技能数。
+ * 不含 deployed：那一份只有「设置 → 部署」能更新，而「自带 Skill」页的「更新全部」
+ * 只写 shared，算进来会亮一个在这一页里永远消不掉的点
+ */
+export function sharedUpdateCount(updates: SkillUpdates): number {
+  return new Set(updates.shared).size
 }
 
-export function skillUpdateHint(updates: SkillUpdates): string | undefined {
-  const n = skillUpdateCount(updates)
+export function sharedUpdateHint(updates: SkillUpdates): string | undefined {
+  const n = sharedUpdateCount(updates)
   return n ? t('{n} 个自带技能可以更新', { n }) : undefined
 }
 
