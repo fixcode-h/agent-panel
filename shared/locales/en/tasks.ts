@@ -525,6 +525,10 @@ export const EN_TASKS: Record<string, string> = {
   '让 Agent 把之前的对话压缩成摘要，腾出上下文':
     'Have the agent compress the conversation so far into a summary to free up context',
   压缩上下文: 'Compact context',
+  '{time}压缩过': 'Compacted {time}',
+  '压缩前 {before} · 压缩后 {after}': 'Before {before} · after {after}',
+  '压缩前 {before}': 'Before {before}',
+  '压缩后 {after}': 'After {after}',
   '让 Agent 审查还没提交的改动，只列问题，不改文件':
     'Have the agent review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',

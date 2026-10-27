@@ -2907,6 +2907,8 @@ const fmtTok = (n: number) =>
 
 /** 压缩上下文的工具调用：一行写压缩了多少，右边写现在占上下文窗口多少，点开看明细 */
 export function describeCompaction(tool: ToolUse, before?: number, after?: number, window?: number) {
+  // 前后大小单独存一份结构化字段：界面要显示「压缩前 / 压缩后」，不解析下面的中文 label
+  if (before !== undefined || after !== undefined) tool.compact = { before, after }
   const pct = after !== undefined && window ? Math.round((after / window) * 100) : undefined
   tool.label =
     before !== undefined && after !== undefined
