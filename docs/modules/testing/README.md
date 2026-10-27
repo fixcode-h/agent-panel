@@ -1,8 +1,8 @@
 # testing：测试基础设施（单测 / 端到端 / 界面检查的编排）
 
 - status: analyzed
-- source_paths: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-budget.mjs`、`scripts/test-budget.json`、`scripts/lib/`、`scripts/fake-cli/`
-- entry: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/changed-tests.mjs`
+- source_paths: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/e2e/`、`scripts/ui-check.mjs`、`scripts/ui/`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`、`scripts/lib/changed-tests.test.mjs`、`scripts/lib/test-layers.test.mjs`、`scripts/lib/test-budget.test.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/`、`scripts/fake-cli/`
+- entry: `scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/changed-tests.mjs`、`scripts/test-layers.mjs`、`scripts/test-budget.mjs`
 - analyzed_at: 2026-10-28
 
 ## 职责
@@ -13,17 +13,44 @@
 - 端到端编排：并行跑 `scripts/e2e/` 分片，每片独立数据目录、端口、假 CLI 日志。
 - 界面检查编排：并行跑 `scripts/ui/` 分片，打开演示版检查报错、横向滚动并截图。
 - 改动 → 测试选择：`scripts/changed-tests.mjs` 用 import 依赖图算反向闭包，输出要跑的单测文件、界面分片、是否必须全量。
+- 分层与用例预算：`scripts/test-layers.mjs` 按运行时特征给每个测试文件归层并产出基线，`scripts/test-budget.mjs` 按上限检查用例数（静态秒级 / CI 用 tap 复核）。
 - 测试环境的默认值：语言环境、并发上限、临时目录、需要清理的继承变量。
 
-## 三层边界（本模块的核心口径）
+## 分层边界与预算（本模块的核心口径）
 
-| 层     | 判定                                                                                                  | 入口                                     | 预算                       |
-| ------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------- |
-| 纯函数 | 不启动服务、不建临时目录、不跑 git、不开子进程                                                        | `npm run test:unit` 的非集成文件         | 按用例数设上限             |
-| 集成   | 起 Hono 服务、`mkdtemp`、执行 git、`spawn` 子进程、连真实 CLI（`server/` 下 72 个测试文件含这类特征） | 同上，文件名后缀 `*.integration.test.ts` | 按用例数设上限             |
-| e2e    | `scripts/e2e/` 下由总入口调度的分片，用假 CLI 跑完整面板流程                                          | `npm run test:e2e`                       | 按分片数与每片步骤数设上限 |
+| 层     | 判定                                                                                                         | 入口                             | 预算                     |
+| ------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------- | ------------------------ |
+| 纯函数 | 不启动服务、不建临时目录、不跑 git、不开子进程（批 0 基线：172 个文件 / 1500 例）                                   | `npm run test:unit` 的非集成文件 | 用例数上限               |
+| 集成   | 起 Hono 服务、`mkdtemp` / 读写真实文件、执行 git、`spawn` / `execFile` 子进程、连真实 CLI（批 0 基线：80 个文件 / 722 例） | 同上                             | 用例数上限               |
+| e2e    | `scripts/e2e/` 下由总入口调度的分片，用假 CLI 跑完整面板流程（批 0 基线：13 个分片 / 122 步）                       | `npm run test:e2e`               | 分片数与每片步骤数上限   |
 
-分层、预算、并发、重试的**规划**见 change `docs/openspec/changes/test-governance-budget-and-parallel-safety/`（`design.md` 的 D1–D11）。现状：没有 `*.integration.test.ts` 后缀、没有自适应并发；按区的用例预算、只重跑失败、精简输出已经落地（见下面「输出、失败重跑和预算」）。
+判据只有一处：`scripts/lib/test-layers.mjs` 的 `INTEGRATION_MARKERS` 与 `layerOf(file, sourceText)`。命中任一条集成特征即归集成层；
+同名 API 的同步与异步两种形态都算（`node:fs/promises` 的 `readFile` / `rm` 也算读写真实文件），但 `open(` / `link(` / `stat(` 这类短名不收——
+测试里常是业务函数（如 `server/design-mcp.test.ts` 的 `open()`）。
+e2e 分片只按目录归属（`scripts/e2e/` 下被总入口收集的 `NN-*.mjs`），不重复计入单测的两层。判据按源码文本匹配，
+样例里写出 `spawn(` 一类调用的原文也会命中，所以分层判据自己的样例单独放在 `scripts/lib/test-layers.samples.mjs`。
+
+分层基线用 `node scripts/test-layers.mjs --report` 产出（每个文件的层、命中特征、用例数与行数），加 `--out` 可写成 JSON；
+当前基线（2026-10-27）见 change 目录的 `docs/openspec/changes/test-governance-budget-and-parallel-safety/evidence/test-layers.json`，
+人工抽查 10 个文件的记录在同目录的 `evidence/test-layers.spot-check.md`。
+
+各层上限只在 `scripts/lib/test-budget.mjs` 的 `TEST_BUDGET` 写一次（数字是基线向上取整到 10 的倍数）；现值不写进文档——
+`node scripts/test-budget.mjs --check` 输出的 `[budget]` 行就是各层计数与上限，调上限时只改那一个文件，文档不会漂。
+`BUDGET_BASELINE` 是首次写入的快照，上限只能等或更低（只降不升），往上抬会被检查拦下。
+
+检查分两处，同一次全量只统计一次：
+
+- `npm run lint` 跑静态计数（`node scripts/test-budget.mjs --check`，扫测试源码里的 `test(` / `it(` 与分片里的 `step(`，不执行测试，秒级）；
+  超限时提交说明必须有 `测试预算:` 段（写清覆盖了哪个能力、删掉 / 合并了哪些旧用例、靠什么替代），否则非零退出。
+- CI 的 `test` job 在单测跑完后用 `--tap <报告>` 复核真实用例数（累加每份 tap 的 `# tests N`，按两层合计上限判定），不重复跑测试；
+  同时仍按静态计数判各层，两种超限都会列出来（tap 只有总数、分不到层）。
+
+本地预检时（工作区还没提交）不能用 HEAD 的提交说明：那是上一次提交的，脚本会提示改用 `--message <文件>`
+传入将要写入的说明——否则上一次提交的「测试预算:」段会被当成本次的说明、静默放行超预算的新用例。
+
+并发、重试、迁移批次、验收命令的**规划**仍以 change `docs/openspec/changes/test-governance-budget-and-parallel-safety/` 为准（`design.md` 的 D4–D11）；
+分层与预算的代码已经落地（本文上面两段），迁移批次（改 `*.integration.test.ts` 后缀、拆文件、淘汰用例）还没做。
+输出、失败重跑已经落地（见下面「输出、失败重跑和预算」），自适应并发还没做。
 
 ## 分片结构
 
@@ -47,7 +74,7 @@
 | 全量界面检查                     | `npx vite build --mode demo && node scripts/ui-check.mjs`（不先构建会被拦下）          |
 | 只跑部分界面分片                 | `node scripts/ui-check.mjs 08-misc`                                                    |
 | 只复测上次失败的分片             | `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed`                   |
-| 各区用例数和预算                 | `node scripts/test-budget.mjs --report`（检查随 `npm run lint` 跑）                    |
+| 各层用例数和预算                 | `node scripts/test-layers.mjs --report`（检查随 `npm run lint` 跑）                     |
 | 改动 → 要跑什么                  | `node scripts/changed-tests.mjs --since <基线>`                                        |
 
 ## 怎么加用例
@@ -65,7 +92,7 @@
 - **失败只重跑失败的**：单测失败的文件串行重跑，总共最多 3 次（`scripts/lib/test-results.mjs` 的 `MAX_ATTEMPTS`）；端到端、界面检查失败的分片串行再跑一次（`scripts/lib/shard-retry.mjs`）。重跑通过的记成「抖动」，醒目打出来、写进 `logs/tests/*-last.json`，退出码按最后一次算。抖动要去修（注入时钟、事件驱动、放宽到实测 p99 两倍），不能靠重跑兜着。
 - **改完只复测失败的**：还失败的记在 `logs/tests/unit-last.json` / `e2e-last.json` / `ui-last.json`，`npm run test:failed`、`--failed` 只跑它们。
 - **继承环境**：单测和端到端起进程前去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 这类会改变 CLI 行为的变量（`scripts/lib/test-env.mjs`）。
-- **用例预算**：`scripts/test-budget.json` 记各区（server / shared / web / scripts 单测、e2e 步骤、界面检查）的用例上限，`scripts/test-budget.mjs` 静态数（秒级），`npm run lint` 超了就失败。超了先合并或删掉等量旧用例（同一行为只断言一处）；确实要加就手改上限，并在提交说明写「测试预算：为什么」。低了 10 条以上会提示 `--update` 把上限降下来（只降不升）。
+- **用例预算**：分层判据和各层上限见上面「分层边界与预算」；`npm run lint` 跑 `node scripts/test-budget.mjs --check`（静态、秒级），超了先合并或删掉等量旧用例（同一行为只断言一处），确实要加就在提交说明写「测试预算：为什么」。上限只降不升。
 - **串行清单**：`TIMING_FILES` 仍是最后手段，进清单要有证据；串行不等于稳定（`server/background.test.ts` 在串行批里也超过窗口）。
 
 ## 依赖

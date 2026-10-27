@@ -31,7 +31,7 @@
 | [0021](./0021-plan-model-lifecycle.md)                    | 执行计划靠面板机制推进：状态机、自动推进、滞后与新输入检测  | 已接受 | 2026-10-28 | `running` 唯一、`failed`/`skipped` 语义；事件自动推进；`planNotice` 一条注入通道；增量 vs 重开规则表                           |
 | [0022](./0022-review-gate-override.md)                    | 评审门禁留显式放行出口，记录谁、什么时候、为什么            | 已接受 | 2026-10-28 | `reviewGate` 的 `override`；时间由面板记；`Task.reviewOverride` 进任务详情、收尾消息和交接摘要                                 |
 | [0023](./0023-role-layers-and-triage.md)                  | 角色分基本 / 高级两层，父对话先分诊再派单，可就地微改动     | 已接受 | 2026-10-28 | `kind` / `mounts` / `use_capability`；主理流水线 + 分诊卡（`Task.routes`）；`begin_inline_edit` 护栏                           |
-| [0024](./0024-test-output-retry-budget.md)                | 测试默认只输出失败和汇总，失败只重跑失败的部分，用例有预算  | 已接受 | 2026-10-28 | 自定义 reporter + `logs/tests/`；失败文件 / 分片重跑、`--failed`；`scripts/test-budget.json` 棘轮                              |
+| [0024](./0024-test-output-retry-budget.md)                | 测试默认只输出失败和汇总，失败只重跑失败的部分，用例有预算  | 已接受 | 2026-10-28 | 自定义 reporter + `logs/tests/`；失败文件 / 分片重跑、`--failed`；按分层棘轮预算（`scripts/lib/test-budget.mjs`）                |
 
 状态只有四个词，别自己造近义词：
 

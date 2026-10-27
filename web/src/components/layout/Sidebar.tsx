@@ -41,7 +41,7 @@ import type { Project, Task } from '@shared/schema'
 import { useData, useNav, type PageId, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
-import { deployedUpdateHint, skillUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
+import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { rowTip } from '@/lib/sidebar-hint'
 import { useTaskSearch } from '@/lib/use-task-search'
 import {
@@ -335,9 +335,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
-  // 自带技能有新内容时在「Skills 与命令」上亮点：部署的那份在设置里更新，进去后「自带 Skill」分页会指过去
+  // 「自带 Skill」那份有新内容时在「Skills 与命令」上亮点；部署的那份归「设置 → 部署」，不在这里算
   const skillUpd = useSkillUpdates()
-  const skillDot = skillUpdateHint(skillUpd)
+  const skillDot = sharedUpdateHint(skillUpd)
   // 「设置 → 部署」那份和这一版不同时，「设置」入口本身也要带点：用户在任务页看不到设置内部
   const deployDot = deployedUpdateHint(skillUpd)
   const [collapsed, toggleCollapsed] = useCollapsed()

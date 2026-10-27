@@ -7,7 +7,7 @@ import { ALL_AGENTS } from '@shared/commands'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useNav } from '@/lib/data'
-import { skillUpdateCount, skillUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
+import { sharedUpdateCount, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
 import { useBundledSkills } from '@/lib/use-bundled-skills'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -76,8 +76,8 @@ export function LibraryPage() {
   const [rev, setRev] = useState(0)
   // 自带技能有新内容：「自带 Skill」分页亮点，进去能看到在哪里更新
   const upd = useSkillUpdates()
-  const updN = skillUpdateCount(upd)
-  const updHint = skillUpdateHint(upd)
+  const updN = sharedUpdateCount(upd)
+  const updHint = sharedUpdateHint(upd)
   // 自带技能：列表和安装动作两边都用（左栏列表、右详情、底部的批量按钮）
   const bundled = useBundledSkills()
   // 地址里只有名字（自带技能不分 Agent）。这里用未过滤的全量找：搜索只过滤左栏，

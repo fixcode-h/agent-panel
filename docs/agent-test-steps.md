@@ -239,10 +239,25 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
 必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
-**输出、重跑和预算**（[ADR 0024](adr/0024-test-output-retry-budget.md)）：单测入口默认只打每批结论、失败详情（每条最多 20 行）、
+**输出和重跑**（[ADR 0024](adr/0024-test-output-retry-budget.md)）：单测入口默认只打每批结论、失败详情（每条最多 20 行）、
 抖动、慢用例和最慢的文件，完整 TAP 写进 `logs/tests/`；失败只重跑失败的文件（串行，总共最多 3 次），重跑通过记成「抖动」照样报出来；
 还失败的记进 `logs/tests/unit-last.json`，`npm run test:failed` 只跑它们。端到端、界面检查同样只重跑失败分片（再跑一次），`--failed` 只跑上次失败的分片。
-用例数量有预算（`scripts/test-budget.json`，`npm run lint` 检查），超了要合并或删掉等量旧用例，确需增加时手改上限并在提交说明写「测试预算：」。
+
+### 用例预算检查（`scripts/test-budget.mjs`）
+
+分层判据和各层用例上限在 `scripts/lib/test-layers.mjs` / `scripts/lib/test-budget.mjs` 一处定义（纯函数 / 集成 / e2e 分片 / e2e 步骤）；
+超限时同一次提交要合并或淘汰等量旧用例，并写清覆盖关系。
+
+```bash
+node scripts/test-budget.mjs --check                  # 静态计数，不跑测试（npm run lint 已经在跑这条）
+node scripts/test-budget.mjs --check --message <文件>  # 本地预检：用将要写入的提交说明（工作区未提交时不能读 HEAD 的说明）
+node scripts/test-budget.mjs --tap <报告>              # CI 复核：累加 tap 的 # tests N，按两层合计上限判定，同时按静态计数判各层
+node scripts/test-layers.mjs --report                 # 分层基线：每个文件归哪层、命中什么特征、多少用例 / 行
+```
+
+`--check` 与 `--tap` 不能同时用（前者静态按层、后者用已跑出的 tap 复核，是两步）。
+`npm run lint` 里跑的是静态计数（秒级）；CI 的 `test` job 在同一轮单测跑完后把 tap 输出传给 `--tap` 复核，不重复跑测试。
+超预算且提交说明没有 `测试预算:` 段时非零退出；把上限抬到冻结基线之上一定非零退出（只降不升）。
 
 ### 怎么交给 Agent
 

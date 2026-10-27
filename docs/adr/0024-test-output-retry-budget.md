@@ -25,7 +25,7 @@
 1. **默认只输出失败和汇总**：单测用自定义 reporter（`scripts/lib/test-reporter.mjs`）出结构化事件，终端只打每批结论、失败详情（每条 20 行）、抖动、慢用例（> 2s）、最慢的 5 个文件；完整 TAP 写进 `logs/tests/`，`--verbose` 才打到终端。
 2. **失败只重跑失败的部分**：单测失败的文件串行重跑，总共最多 3 次；端到端、界面检查失败的分片串行再跑 1 次（分片贵）。重跑通过的记成「抖动」，醒目报出、写进 `logs/tests/*-last.json`，退出码按最后一次算；`--no-retry` 关掉。
 3. **改完只复测失败的**：还失败的记进 `logs/tests/{unit,e2e,ui}-last.json`，`npm run test:failed`、`--failed` 只跑它们。
-4. **用例预算棘轮**：`scripts/test-budget.json` 记各区上限，`scripts/test-budget.mjs` 静态数（行首的 `test(` / `it(` / `step(` / `check(`），`npm run lint` 超了失败；低了 10 条以上提示 `--update`（只降不升）。抬高要手改文件并在提交说明写「测试预算：」。
+4. **用例预算棘轮**：分层判据和各层上限在 `scripts/lib/test-layers.mjs` / `scripts/lib/test-budget.mjs` 一处定义，`scripts/test-budget.mjs --check` 静态数（行首的 `test(` / `it(` / `step(`），`npm run lint` 超了失败；CI 单测跑完再用 `--tap` 复核。上限只降不升，往上抬会被检查拦下；抬高要在提交说明写「测试预算：」。
 5. **测试进程不继承接口变量**：`scripts/lib/test-env.mjs` 去掉 `ANTHROPIC_*`、`OPENAI_*`、`CLAUDE_CODE_*` 等。
 6. 顺带修掉两处拖慢 / 弄红测试的产品问题：`orphans.ts` 改成轮询等进程退出（上限仍 3.5 秒，`orphans.test.ts` 23.6s → 10.2s）；`worktree.ts` 认出 `stash failed` + 锁文件在场也是锁冲突（git 2.43 下合并不再误报冲突）。
 
@@ -44,11 +44,11 @@
 | `npm run test:failed`                                                | 只跑上次还失败的单测文件                       |
 | `npm run test:unit -- --verbose / --no-retry`                        | 完整输出 / 不重跑                              |
 | `npm run test:e2e -- --failed`、`node scripts/ui-check.mjs --failed` | 只跑上次失败的分片                             |
-| `node scripts/test-budget.mjs [--report \| --update]`                | 检查预算 / 看各区和最大的文件 / 把上限降到现在 |
+| `node scripts/test-budget.mjs --check`、`--tap <报告>`               | 静态检查各层预算 / 用已跑出的 tap 复核         |
 
 ## 与现有实现的关系
 
-- 新增：`scripts/lib/test-reporter.mjs`、`scripts/lib/test-results.mjs`、`scripts/lib/shard-retry.mjs`、`scripts/lib/test-env.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/test-budget.mjs`、`scripts/test-budget.mjs`、`scripts/test-budget.json`；单测 `scripts/lib/test-results.test.mjs`、`scripts/lib/test-env.test.mjs`。
+- 新增：`scripts/lib/test-reporter.mjs`、`scripts/lib/test-results.mjs`、`scripts/lib/shard-retry.mjs`、`scripts/lib/test-env.mjs`、`scripts/lib/test-files.mjs`、`scripts/lib/test-budget.mjs`、`scripts/lib/test-layers.mjs`、`scripts/test-budget.mjs`；单测 `scripts/lib/test-results.test.mjs`、`scripts/lib/test-env.test.mjs`。
 - 改动：`scripts/unit-tests.mjs`、`scripts/e2e.mjs`、`scripts/ui-check.mjs`、`scripts/e2e/harness.mjs`、`scripts/e2e/spawn-server.mjs`、`package.json`（`lint` 加预算检查，新增 `test:failed`）。
 - `TIMING_FILES`、`--files`、`changed-tests` 的口径不变（ADR 0020）；`test:affected` 照常把命中的文件交给 `--files`，同样享受精简输出和失败重跑。
 - 给 Agent 的规则：`skills/project/project-testing/SKILL.md` 补「失败只复测失败的」「只看失败详情和汇总」。

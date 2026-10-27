@@ -849,7 +849,10 @@ test('Pi 桥接扩展：声明了这一轮有编排工具却只给一部分时�
       const result =
         msg.method === 'initialize'
           ? // 这一轮确实挂了编排工具（有 orch），清单却缺核心工具：这才该报
-            { protocolVersion: '2025-03-26', capabilities: { tools: {}, experimental: { orchestration: true } } }
+            {
+              protocolVersion: '2025-03-26',
+              capabilities: { tools: {}, experimental: { orchestration: { enabled: true } } },
+            }
           : msg.method === 'tools/list'
             ? { tools: [{ name: 'set_plan', inputSchema: { type: 'object', properties: {} } }] }
             : {}

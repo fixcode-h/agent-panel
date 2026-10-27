@@ -25,7 +25,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { cleanTestEnv } from './lib/test-env.mjs'
 import { listUnitTests } from './lib/test-files.mjs'
 import {
@@ -139,7 +139,8 @@ mkdirSync(path.join(root, RESULTS_DIR), { recursive: true })
 function run(files, extra, logName) {
   const log = path.join(RESULTS_DIR, `${logName}.tap`)
   const reporters = [
-    `--test-reporter=${REPORTER}`,
+    // Windows 上绝对路径会被 ESM loader 当成 `f:` 协议：必须传 file:// URL
+    `--test-reporter=${pathToFileURL(REPORTER).href}`,
     '--test-reporter-destination=stdout',
     '--test-reporter=tap',
     `--test-reporter-destination=${log}`,

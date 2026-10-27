@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { EVENT_PREFIX } from './test-reporter.mjs'
 import { FAILURE_LINES, classifyAttempts, failedFiles, failureText, parseEvents, summarize } from './test-results.mjs'
-import { countCases } from './test-budget.mjs'
 import { retryShards } from './shard-retry.mjs'
 
 const ev = (o) => `${EVENT_PREFIX}${JSON.stringify({ nesting: 0, ms: 1, skip: false, suite: false, ...o })}`
@@ -46,14 +45,6 @@ test('失败详情截到固定行数，完整内容在日志里', () => {
   assert.match(out, /^✗ server\/b\.test\.ts › b1/)
   assert.match(out, /还有 5 行，见完整日志/)
   assert.equal(out.split('\n').length, FAILURE_LINES + 2)
-})
-
-test('用例预算：只数行首的 test / it / step / check 调用', () => {
-  const unit =
-    "test('a', () => {})\n  it.skip('b', () => {})\n// test('注释里的不算')\ndescribe('组', () => {})\nconst x = 'test(' "
-  assert.equal(countCases(unit, 'unit'), 2)
-  assert.equal(countCases("  step('一')\n  await step('二')\n  stepper()", 'e2e'), 2)
-  assert.equal(countCases("  await check(p, '一')\n  check(p, '二')\n  recheck()", 'ui'), 2)
 })
 
 test('分片重跑：只重跑失败的，重跑通过记成抖动，还失败的保留失败结果', async () => {

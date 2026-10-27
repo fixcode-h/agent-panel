@@ -50,6 +50,10 @@ export function AskToggle({
     <button
       type="button"
       onClick={() => onChange(!value)}
+      // 没有「子对话也提问」菜单的地方（子对话、新建任务）也挡掉浏览器右键菜单：
+      // 应用内的按钮上弹出「另存为 / 打印」没有意义，和父对话有菜单时也不一致。
+      // 有菜单时交给下面的 ContextMenuTrigger，它自己会挡
+      onContextMenu={onChildAskUserChange ? undefined : (e) => e.preventDefault()}
       aria-pressed={value}
       aria-label={t('AI 有问题时问我')}
       title={
