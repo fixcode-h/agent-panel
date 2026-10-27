@@ -3,11 +3,11 @@
 - status: inferred
 - source_paths: `shared/`
 - entry: `shared/schema.ts`、`shared/clis.ts`
-- analyzed_at: 2026-10-27（本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
+- analyzed_at: 2026-10-27（同日给 `ToolUse` 补了压缩前后大小的 `compact` 字段；本轮给角色加「禁止子对话执行」的 `runIn` 与转交父对话的 `spawn` 分支；共享层原有的「禁止子对话执行」步骤筛选和测试耗时记录沿用 2026-10-26 的核对，界面文案 2026-10-27 由「在父对话中执行」改成这个名字、语义未变）
 
 ## 职责
 
-- 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。
+- 数据结构：Agent、工作流、流程、项目、任务、设置等的 zod schema 和类型（`shared/schema.ts`）。其中 `ToolUse` 有可选的 `compact: { before?, after? }`，存一次压缩前后的上下文 token 数：界面直接读数值显示「压缩前 / 压缩后」，不解析 `label` 里的中文。旧数据没有这个字段、CLI 没报数值时字段缺省，界面按缺失降级（只显示有的一项，都没有时那一行不显示）；写入方在 [server-exec 模块](../server-exec/README.md) 的 `describeCompaction`。
 - 设置 schema 和默认值：后台命令并发 `backgroundLimit` 默认 64（范围 1–64，`shared/schema.ts`）；各 CLI 的自动压缩比例 `autoCompact` 默认 70%（`AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；子对话并发上限已去掉，`Settings` 没有 `childConcurrency`、`Task` 没有 `childLimit`，旧 settings.json / task JSON 里的这两个字段由 zod 读时剥离、不报错。旧设置里各项默认值的迁移在 `shared/settings.ts` 的 `migrateSettingsDefaults`（正式后端与演示后端共用同一份，按 `Settings.defaultsVersion` 只迁一次）。
 - 本机代理的默认值（`shared/proxy.ts`）：`DEFAULT_PROXY_PORT` / `DEFAULT_PROXY_URL` 是设置页「网络代理」的占位符和说明、CLI 环境变量示例（`PROXY_ENV_EXAMPLE`）、自动探测端口顺序（`LOCAL_PROXY_PORTS`）的唯一出处；`shared/schema.ts` 的 `proxy` 字段注释也指向它。要换默认代理端口只改这一处，别处一律 import（`npm run lint` 的 `rules-check` 会拦住 ts / tsx / mjs / json 里再写的字面量）。默认端口在 v2rayN 里默认跑 socks，mixed 在 10814，纯 socks 时 `ProxyAgent` 用不了、探测会失败。`LOCAL_PROXY_PORTS` 里除了默认端口还有 Clash 的混合端口、老版 v2rayN 的 http 入站、Clash 的 socks 口、Clash Verge Rev 的混合端口和通用的 1080；`MAX_LOCAL_PROXIES`（3）决定真正尝试几个，所以默认端口必须排在前几位。具体顺序和取值只看 `shared/proxy.ts`。
 - 联网搜索（`shared/web-search.ts`）：CLI 的 `web_search` / `web_fetch` 用的搜索源注册表 `SEARCH_PROVIDERS`（degoog 默认、免密钥；searxng 自建；brave / tavily 要密钥），新增一个源只加一条（`endpoint` / `build` / `parse` 三个字段），路由不按源名分支。参数和限制对齐 Command Code 的 Web 工具：`normalizeSearch`（`query` 至少 2 个字、`numResults` 默认 5 最多 10、`allowed_domains` / `blocked_domains` 互斥）、`normalizeFetch`（http 升级 https、`format` 默认 markdown、`timeout` 默认 60 秒最多 120）；`guardUrl` 与 `isPrivateAddress` 挡掉带凭据的地址、内网 / 回环 / 链路本地 / 保留地址和单标签主机名（域名解析后的地址由服务端再查一次）；`domainAllowed` 做域名二次过滤（含子域名）；`htmlToText` / `htmlTitle` 把网页转成 markdown / 纯文本，`pageWindow` 按 `FETCH_WINDOW_CHARS = 100000` 切片、用 `startIndex` 续读；`formatSearchResults` / `formatPage` 是给模型看的文本（直接给文本，不塞 JSON）。搜索源和密钥的设置在 `shared/schema.ts` 的 `Settings.webSearch`（密钥只在本机数据目录）。
