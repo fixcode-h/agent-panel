@@ -3248,6 +3248,8 @@ function tasksRoute(
           unmerged: x.worktree?.state === 'active',
           // 和正式后端对齐：独立分支目录里还有几个文件没提交（没真的 git，按工作区状态给一个固定的数）
           dirty: x.worktree?.state === 'active' ? 1 : 0,
+          // 和正式后端对齐：这两项是不是已经用 git 核对过（演示版没有真的 git，给了值就算核对过）
+          worktreeChecked: true,
           dir: x.worktree?.path ?? '',
           wrapup: !!x.wrapRequest && x.wrapRequest.state !== 'failed',
           branch: x.worktree?.branch ?? '',
