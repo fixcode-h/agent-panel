@@ -133,16 +133,16 @@ export function SectionToc() {
   // 刚打开、还没滚动也没算过时没有当前项：先点亮第一个，别出现整条都暗的情况
   const cur = active || items[0].id
   return (
-    <nav aria-label={t('本页小节')} className="flex shrink-0 gap-1 overflow-x-auto border-b px-5 md:px-8">
+    <nav aria-label={t('本页小节')} className="flex shrink-0 gap-1 overflow-x-auto border-b px-5 md:px-9">
       {items.map((s) => (
         <button
           key={s.id}
           onClick={() => go(s.id)}
           aria-current={cur === s.id ? 'location' : undefined}
           className={cn(
-            'relative flex h-9 shrink-0 cursor-pointer items-center px-2 text-[0.75rem] whitespace-nowrap transition-colors',
+            'relative flex h-10 shrink-0 cursor-pointer items-center px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors duration-150',
             cur === s.id
-              ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
+              ? 'text-fg after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
               : 'text-subtle hover:text-fg',
           )}
         >

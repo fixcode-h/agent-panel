@@ -18,6 +18,7 @@ export function ListPane({
   tabs,
   hideNew,
   compactNew,
+  compact,
 }: {
   title: string
   count: number
@@ -30,6 +31,11 @@ export function ListPane({
    * 调用方要把自己的 extra 也换成图标按钮，整体才放得下。
    */
   compactNew?: boolean
+  /**
+   * 行更紧凑的列表（角色页）：头部、搜索框和行一起收紧，一屏能放下更多条目。
+   * 只改变间距和字号，不传时保持各页原来的观感。
+   */
+  compact?: boolean
   query: string
   onQuery: (q: string) => void
   placeholder: string
@@ -45,7 +51,7 @@ export function ListPane({
       aria-label={t('{title}列表', { title })}
       className="flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]"
     >
-      <div className="flex flex-col gap-3 px-4 pt-5 pb-3">
+      <div className={cn('flex flex-col px-4', compact ? 'gap-2.5 pt-4 pb-2.5' : 'gap-3 pt-5 pb-3')}>
         <div className="flex items-center gap-2">
           {/* 标题可以被压缩：不放 min-w-0 + truncate 时它按内容宽度撑着，后面的按钮会被顶出左栏 */}
           <h1 title={title} className="min-w-0 truncate text-lg font-semibold">
@@ -74,15 +80,23 @@ export function ListPane({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[0.8125rem] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
+            className={cn(
+              'w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[0.8125rem] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft',
+              compact ? 'h-[34px]' : 'h-[38px]',
+            )}
           />
         </label>
         {tabs}
       </div>
-      <div className="flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 md:max-h-none">
+      <div
+        className={cn(
+          'flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 md:max-h-none',
+          compact ? 'pb-2' : 'pb-3',
+        )}
+      >
         {children}
       </div>
-      {footer && <div className="border-t px-4 pt-3 pb-4">{footer}</div>}
+      {footer && <div className={cn('border-t px-4', compact ? 'pt-2.5 pb-3' : 'pt-3 pb-4')}>{footer}</div>}
     </section>
   )
 }
@@ -112,13 +126,21 @@ export function GroupHeader({
   label,
   count,
   actions,
+  compact,
 }: {
   label: React.ReactNode
   count?: number
   actions?: React.ReactNode
+  compact?: boolean
 }) {
   return (
-    <div className="flex h-9 items-center gap-1.5 px-2 pt-2 text-xs text-subtle">
+    <div
+      className={cn(
+        'flex items-center gap-1.5 px-2 text-subtle',
+        // 紧凑档要装得下 h-7 的图标按钮（分类视图的「新建」「分类操作」）：28 + pt-1 正好是 h-8
+        compact ? 'h-8 pt-1 text-[0.6875rem]' : 'h-9 pt-2 text-xs',
+      )}
+    >
       <span className="truncate">{label}</span>
       {count !== undefined && <span className="shrink-0">· {count}</span>}
       {actions && (
@@ -140,9 +162,12 @@ export function ListItem({
   monoSubtitle = true,
   menu,
   tags,
+  compact,
 }: {
   /** 副标题下面的一行标签 */
   tags?: React.ReactNode
+  /** 更紧凑的一行（角色页）：更小的内边距、头像、字号和间距，选中态改成整行浅底 */
+  compact?: boolean
   monoSubtitle?: boolean
   /** 右键菜单的菜单项 */
   menu?: React.ReactNode
@@ -158,15 +183,24 @@ export function ListItem({
       onClick={onClick}
       aria-current={selected || undefined}
       className={cn(
-        'flex w-full cursor-pointer items-center gap-3 rounded-[10px] border border-transparent p-2.5 text-left transition-colors',
-        selected ? 'border-sel-line bg-sel shadow-card' : 'hover:bg-sel/60',
+        'flex w-full cursor-pointer items-center border border-transparent text-left transition-colors',
+        compact ? 'gap-2 rounded-lg px-2.5 py-[5px]' : 'gap-3 rounded-[10px] p-2.5',
+        selected ? (compact ? 'bg-sel' : 'border-sel-line bg-sel shadow-card') : 'hover:bg-sel/60',
       )}
     >
       {leading}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-medium">{title}</span>
-        <span className={cn('truncate text-xs text-muted', monoSubtitle && 'font-mono')}>{subtitle}</span>
-        {tags && <span className="mt-1 flex min-w-0">{tags}</span>}
+        <span className={cn('truncate font-medium', compact && 'text-[0.8125rem] leading-tight')}>{title}</span>
+        <span
+          className={cn(
+            'truncate text-muted',
+            compact ? 'text-[0.71875rem] leading-tight' : 'text-xs',
+            monoSubtitle && 'font-mono',
+          )}
+        >
+          {subtitle}
+        </span>
+        {tags && <span className={cn('flex min-w-0', compact ? 'mt-0.5' : 'mt-1')}>{tags}</span>}
       </span>
       {trailing}
     </button>

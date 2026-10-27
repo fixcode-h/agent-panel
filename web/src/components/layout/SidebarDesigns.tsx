@@ -33,6 +33,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { SIDEBAR_GROUP_LABEL, SIDEBAR_ROW_OFF, SIDEBAR_ROW_ON } from './SidebarTasks'
 import { t } from '@shared/i18n'
 
 /**
@@ -155,8 +156,8 @@ export function DesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[0.8125rem]',
-              on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+              'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2 text-[0.8125rem] transition-colors',
+              on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
             )}
           >
             {d.asking ? (
@@ -233,22 +234,28 @@ export function DesignList() {
   }
 
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+    <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
       <div className="flex h-7 shrink-0 items-center pr-1 pl-2.5">
-        <p className="flex-1 text-xs text-subtle">{t('UI 项目')}</p>
+        <p className={cn('flex-1', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
         <button
           onClick={() => setEditing(null)}
           aria-label={t('新建 UI 项目')}
           title={t('新建 UI 项目')}
-          className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+          className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
       {!projects.length && (
-        <div className="px-2.5 pt-1 text-xs leading-relaxed text-subtle">
-          <p>{t('还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。')}</p>
-          <button onClick={() => setEditing(null)} className="mt-1.5 cursor-pointer text-accent hover:underline">
+        <div className="mx-0.5 mt-1 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
+          <Palette className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <p className="text-xs leading-relaxed text-subtle">
+            {t('还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。')}
+          </p>
+          <button
+            onClick={() => setEditing(null)}
+            className="cursor-pointer rounded-md px-2 py-0.5 text-xs font-medium text-accent transition-colors hover:bg-accent-soft"
+          >
             {t('新建 UI 项目')}
           </button>
         </div>
@@ -264,8 +271,8 @@ export function DesignList() {
                 <div
                   // 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮
                   className={cn(
-                    'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] transition-colors',
-                    on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+                    'group/proj flex h-8 items-center gap-1 rounded-md border pr-1 pl-1 text-[0.78125rem] transition-colors',
+                    on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
                   )}
                 >
                   <button
@@ -277,7 +284,7 @@ export function DesignList() {
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
                     className={cn(
-                      'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg',
+                      'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel/70 hover:text-fg',
                       !ds.length && 'invisible',
                     )}
                   >
@@ -335,7 +342,7 @@ export function DesignList() {
               </ContextMenuContent>
             </ContextMenu>
             {open && ds.length > 0 && (
-              <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
+              <div className="mt-0.5 ml-4 flex flex-col gap-px border-l border-line/80 pl-2">
                 {/* 同一个项目里游戏 UI 和网页 UI 分开列，各自可以收起 */}
                 {KINDS.filter((k) => ds.some((d) => designKind(d) === k.id)).map((k) => {
                   const list = ds.filter((d) => designKind(d) === k.id)
@@ -347,7 +354,7 @@ export function DesignList() {
                         data-kind={k.id}
                         onClick={() => toggleFold(key)}
                         aria-expanded={kOpen}
-                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[0.75rem] text-subtle hover:bg-sel/60 hover:text-fg"
+                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-1.5 text-[0.75rem] text-subtle transition-colors hover:bg-sel/60 hover:text-fg"
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />

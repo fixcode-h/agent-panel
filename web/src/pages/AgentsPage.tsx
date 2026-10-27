@@ -161,11 +161,11 @@ export function AgentsPage() {
   const status = (a: Agent) => {
     const installed = clis.find((c) => c.id === cliOf(a))?.installed
     return !a.enabled ? (
-      <StatusDot tone="muted" label={t('已停用')} />
+      <StatusDot compact tone="muted" label={t('已停用')} />
     ) : installed ? (
-      <StatusDot tone="success" label={t('就绪')} />
+      <StatusDot compact tone="success" label={t('就绪')} />
     ) : (
-      <StatusDot tone="warning" label={t('Agent 未安装')} />
+      <StatusDot compact tone="warning" label={t('Agent 未安装')} />
     )
   }
 
@@ -173,10 +173,12 @@ export function AgentsPage() {
   const row = (a: Agent) => (
     <ListItem
       key={a.id}
+      compact
       selected={a.id === selected?.id}
       onClick={() => go({ page: 'agents', id: a.id })}
-      leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
+      leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />}
       title={a.name}
+      monoSubtitle={false}
       // 角色层写在最前：高级角色能当父对话、子对话的负责人，基本角色是挂载、派出的能力
       subtitle={`${roleKind(a) === 'advanced' ? t('高级角色') : t('基本角色')} · ${cliName(a)} · ${modelOf(a)}`}
       tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
@@ -216,6 +218,8 @@ export function AgentsPage() {
         onNew={() => create()}
         // 头部有四个按钮（内置、导入、AI 创建、新建）：窄栏里都收成图标，「角色」标题才不被挤成半个字
         compactNew
+        // 角色数量多、要一眼扫完：列表行比工作流 / 技能页更紧凑
+        compact
         extra={
           <>
             <Button
@@ -312,7 +316,10 @@ export function AgentsPage() {
                   groupId={g.id}
                   label={name}
                   header={
-                    <GroupHeader label={<TagCountChip name={name} count={g.agents.length} color={g.tag?.color} />} />
+                    <GroupHeader
+                      compact
+                      label={<TagCountChip name={name} count={g.agents.length} color={g.tag?.color} />}
+                    />
                   }
                 >
                   {g.agents.map((a) => row(a))}
@@ -325,12 +332,13 @@ export function AgentsPage() {
                 header={
                   g.category ? (
                     <CategoryHeader
+                      compact
                       category={g.category}
                       count={g.items.length}
                       onAdd={() => create({ categoryId: g.id })}
                     />
                   ) : (
-                    <GroupHeader label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
+                    <GroupHeader compact label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
                   )
                 }
               >

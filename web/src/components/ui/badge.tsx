@@ -27,14 +27,25 @@ export function Badge({
 }
 
 /** 状态小圆点 + 文字 */
-export function StatusDot({ tone, label }: { tone: 'success' | 'warning' | 'muted'; label?: string }) {
+export function StatusDot({
+  tone,
+  label,
+  compact,
+}: {
+  tone: 'success' | 'warning' | 'muted'
+  label?: string
+  /** 和紧凑列表行搭配时用小一号字，行尾不抢标题 */
+  compact?: boolean
+}) {
   const color = {
     success: 'bg-success text-success',
     warning: 'bg-warning text-warning',
     muted: 'bg-subtle text-subtle',
   }[tone]
   return (
-    <span className={cn('inline-flex items-center gap-1.5 text-xs', color.split(' ')[1])}>
+    <span
+      className={cn('inline-flex items-center gap-1.5', compact ? 'text-[0.6875rem]' : 'text-xs', color.split(' ')[1])}
+    >
       <span className={cn('h-1.5 w-1.5 rounded-full', color.split(' ')[0])} />
       {label}
     </span>
