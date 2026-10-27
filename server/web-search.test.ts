@@ -11,9 +11,10 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { setLang } from '../shared/i18n.ts'
+import { t } from '../shared/i18n.ts'
 import { mcpExtras } from '../shared/cli-spec.ts'
 import { getCli } from '../shared/clis.ts'
+import { SEARCH_MIN_QUERY_CHARS } from '../shared/web-search.ts'
 
 // 设置模块读数据目录，用临时的别碰本机
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-web-search-'))
@@ -21,8 +22,9 @@ process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'agent-panel-web-
 const { openAskBridge } = await import('./ask-mcp.ts')
 const { getSettings, saveSettings } = await import('./settings.ts')
 const { assertPublicHost, webSearchApi } = await import('./web-search.ts')
-// 断言的是中文原文，CI 的系统语言是英文，导入之后再固定
-setLang('zh')
+// 搜索源的 label 是 i18n 默认语言下算好的模块常量，改语言也改不到它；
+// 请求时的句子则按运行时语言算（设置读出来会按系统语言重置，CI 是英文）。
+// 所以断言取 t() 现算或中英双匹配，不依赖界面语言。
 
 /** 这一轮 CLI 的随机地址：路由和扩展用的是同一个 */
 function session() {
@@ -67,7 +69,10 @@ test('搜索参数不对：400，错误原文交给模型', async () => {
   const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
   const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'a' }) })
   assert.equal(res.status, 400)
-  assert.match(((await res.json()) as { error: string }).error, /至少要有 2 个字/)
+  assert.match(
+    ((await res.json()) as { error: string }).error,
+    new RegExp(t('query 至少要有 {n} 个字', { n: SEARCH_MIN_QUERY_CHARS })),
+  )
   assert.equal(stub.calls.length, 0)
   s.close()
 })
@@ -110,7 +115,8 @@ test('需要密钥的源没填密钥：400 明确提示，不发请求', async (
   const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
   const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
   assert.equal(res.status, 400)
-  assert.match(((await res.json()) as { error: string }).error, /需要密钥/)
+  // label 是模块加载时按当时语言算的，句子是请求时按运行时语言算的，两半可能不同语言，只断句子
+  assert.match(((await res.json()) as { error: string }).error, /needs a key|需要密钥/)
   assert.equal(stub.calls.length, 0)
   s.close()
 })
@@ -122,7 +128,7 @@ test('搜到自己搭的 searxng：没填地址时明确报错，填了就用那
   const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
   const missing = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
   assert.equal(missing.status, 400)
-  assert.match(((await missing.json()) as { error: string }).error, /需要填写地址/)
+  assert.match(((await missing.json()) as { error: string }).error, /needs an address|需要填写地址/)
 
   await withProvider({ provider: 'searxng', key: '', endpoint: 'https://searx.example.com/' })
   const ok = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
@@ -174,7 +180,7 @@ test('抓取：域名解析到内网地址时拒绝，连请求都不发', async
     body: JSON.stringify({ url: 'https://innocent.example.com/' }),
   })
   assert.equal(res.status, 403)
-  assert.match(((await res.json()) as { error: string }).error, /内网地址/)
+  assert.match(((await res.json()) as { error: string }).error, /private address|内网地址/)
   assert.equal(stub.calls.length, 0)
   s.close()
 })
@@ -187,7 +193,7 @@ test('地址守卫的第二道：IP 字面量不经过 normalizeFetch 也拦得�
         fetch: stubFetch(() => html('')).fetch,
         lookup: publicDns,
       }),
-    /内网或本机地址/,
+    /private or local address|内网或本机地址/,
   )
   await assert.rejects(
     () =>
@@ -195,7 +201,7 @@ test('地址守卫的第二道：IP 字面量不经过 normalizeFetch 也拦得�
         fetch: stubFetch(() => html('')).fetch,
         lookup: publicDns,
       }),
-    /内网或本机地址/,
+    /private or local address|内网或本机地址/,
   )
   // 公网字面量和域名照常放行
   await assertPublicHost(new URL('https://93.184.216.34/'), {
@@ -230,7 +236,7 @@ test('抓取：重定向跟着走并报告，跳到内网时停下', async () =>
     body: JSON.stringify({ url: 'https://c.com/x' }),
   })
   assert.equal(res2.status, 400)
-  assert.match(((await res2.json()) as { error: string }).error, /内网或本机地址/)
+  assert.match(((await res2.json()) as { error: string }).error, /private or local address|内网或本机地址/)
   s.close()
 })
 
@@ -299,7 +305,10 @@ test('Pi 扩展：注册 web_search / web_fetch，参数交给面板校验，错
     const found = await tools.get('web_search')!.execute('1', { query: 'unreal engine' })
     assert.match(found.content[0]!.text, /https:\/\/a\.com\/1/)
     // 参数错误由面板判：错误原文（带字段名）要交给模型，不换成「搜索失败」
-    await assert.rejects(() => tools.get('web_search')!.execute('2', { query: 'a' }), /至少要有 2 个字/)
+    await assert.rejects(
+      () => tools.get('web_search')!.execute('2', { query: 'a' }),
+      new RegExp(t('query 至少要有 {n} 个字', { n: SEARCH_MIN_QUERY_CHARS })),
+    )
   } finally {
     server.closeAllConnections?.()
     server.close()
