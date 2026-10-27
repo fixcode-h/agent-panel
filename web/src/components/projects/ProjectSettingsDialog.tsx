@@ -577,7 +577,8 @@ function Body({
     try {
       // 初始化结果不在表单里编辑：本次刚初始化出来的用新的，否则用打开时读到的那份。
       // 期间别处重新初始化或应用过推荐，由下面保存时的乐观锁拦下（409），不拿旧值静默覆盖
-      // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
+      // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下：
+      // 这类写入会推进 updatedAt，第一次保存被 409 拦下并刷新列表；再点一次时 project 已是最新，fresh 就能把它们算出来
       const inDraft = new Set(draft.lessons.map((x) => x.id))
       const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
       const input = {
@@ -606,7 +607,15 @@ function Body({
       }
       onClose()
     } catch (e) {
-      toast.error((e as Error).message)
+      const err = e as Error & { status?: number }
+      // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，草稿里的编辑保留，再点一次「确认」就能存
+      if (err.status === 409) {
+        await api
+          .projects()
+          .then(setProjects)
+          .catch(() => {})
+        toast.error(t('项目在别处被修改过，已刷新，请再点一次「确认」'))
+      } else toast.error(err.message)
     } finally {
       setSaving(false)
     }

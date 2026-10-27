@@ -101,7 +101,15 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
       setApplied((s) => new Set([...s, ...todo.map((r) => r.id)]))
       toast.success(t('已应用 {n} 项设置', { n: todo.length }))
     } catch (e) {
-      toast.error((e as Error).message)
+      const err = e as Error & { status?: number }
+      // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，推荐和草稿都保留，再点一次就能存
+      if (err.status === 409) {
+        await api
+          .projects()
+          .then(setProjects)
+          .catch(() => {})
+        toast.error(t('项目在别处被修改过，已刷新，请再点一次「全部应用」'))
+      } else toast.error(err.message)
     } finally {
       setBusy(false)
     }

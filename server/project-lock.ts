@@ -6,9 +6,9 @@
  * （见 docs/modules/web/bugs/init-apply-overwritten-by-snapshot.md 的「GET → 整份 PUT 的竞态」）。
  * 没带 `expectedUpdatedAt` 的请求（脚本、旧界面）保持原来的整份覆盖行为。
  */
-export function staleProjectWrite(currentUpdatedAt: string | undefined, expected: unknown): boolean {
+export function staleProjectWrite(currentUpdatedAt: string | undefined, expected: string | undefined): boolean {
   // 没带版本（脚本、旧界面）或项目已经不在了（交给 update 返回 404）都不算冲突
-  if (!currentUpdatedAt) return false
-  if (typeof expected !== 'string' || !expected) return false
+  if (expected === undefined || !currentUpdatedAt) return false
+  // 空串也是「我读到的版本」：服务端已经有值就说明读到的数据是旧的，不能退化成无锁
   return currentUpdatedAt !== expected
 }

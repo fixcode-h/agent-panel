@@ -730,7 +730,8 @@ app.put('/projects/:id', async (c) => {
   // （见 docs/modules/web/bugs/init-apply-overwritten-by-snapshot.md 的「GET → 整份 PUT 的竞态」）
   const expected =
     body && typeof body === 'object' ? (body as { expectedUpdatedAt?: unknown }).expectedUpdatedAt : undefined
-  if (typeof expected === 'string' && expected) {
+  if (expected !== undefined) {
+    if (typeof expected !== 'string') return bad(c, t('保存版本格式不对'))
     const cur = await projects.get(id)
     if (staleProjectWrite(cur?.updatedAt, expected))
       return bad(c, t('项目在别处被修改过，请关闭设置重新打开后再保存'), 409)
