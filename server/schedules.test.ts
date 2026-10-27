@@ -493,6 +493,108 @@ test('依赖：同批里上游被拦住时下游读的是这一轮的结果，�
   assert.equal(savedC.blockedReason, t('因为「{name}」的上游没有成功，没有启动', { name: bName }))
 })
 
+test('运行记录：到点启动成功 / 失败 / 错过 / 上游没成功各记一条，新的在前', async () => {
+  const now = Date.now()
+  const okName = unique()
+  const upName = unique()
+  const downName = unique()
+  const missName = unique()
+  const { api, create, find } = setup((input) => (input.prompt === upName ? '项目不存在' : undefined))
+  const ok = await create(plan(okName, { at: at(now - 1000) }))
+  const up = await create(plan(upName, { at: at(now - 1000) }))
+  const down = await create(plan(downName, { at: at(now - 1000), dependsOn: [up.id] }))
+  const missed = await create(plan(missName, { at: at(now - 10 * MINUTE) }))
+  await api.tick(now)
+
+  // 成功启动：记下这次排期的时间、启动出来的对话；手动标记为空
+  const okRuns = (await find(ok.id)).runs
+  assert.equal(okRuns.length, 1)
+  assert.deepEqual(
+    [okRuns[0].event, okRuns[0].at, okRuns[0].manual, okRuns[0].taskId, okRuns[0].error],
+    ['run', at(now - 1000), false, `task:${okName}`, ''],
+  )
+  // 启动失败：原因原文进历史，和卡片上的 lastError 是同一句
+  const upRuns = (await find(up.id)).runs
+  assert.deepEqual(
+    [upRuns[0].event, upRuns[0].manual, upRuns[0].taskId, upRuns[0].error],
+    ['fail', false, '', '项目不存在'],
+  )
+  // 上游没成功：记下被拦住的那一次排期和原因
+  const downRuns = (await find(down.id)).runs
+  assert.deepEqual(
+    [downRuns[0].event, downRuns[0].at, downRuns[0].error],
+    ['blocked', at(now - 1000), t('因为「{name}」启动失败，没有启动', { name: upName })],
+  )
+  // 错过：记下原本该跑的那一次
+  const missedRuns = (await find(missed.id)).runs
+  assert.deepEqual([missedRuns[0].event, missedRuns[0].at], ['miss', at(now - 10 * MINUTE)])
+
+  // 再跑一轮（每天的计划推到下一次后不会再触发），历史不会被空记录冲掉
+  await api.tick(now + MINUTE)
+  assert.equal((await find(ok.id)).runs.length, 1)
+})
+
+test('运行记录：立即执行记为手动，排期不变', async () => {
+  const { api, create, find } = setup()
+  const now = Date.now()
+  const later = now + HOUR
+  const name = unique()
+  const s = await create(plan(name, { at: at(later) }))
+  await api.runNow(s.id, now)
+
+  const after = await find(s.id)
+  assert.equal(after.at, at(later), '立即执行不改排期')
+  assert.equal(after.runs.length, 1)
+  assert.deepEqual(
+    [after.runs[0].event, after.runs[0].manual, after.runs[0].at, after.runs[0].taskId],
+    ['run', true, '', `task:${name}`],
+  )
+})
+
+test('运行记录：立即执行失败也记一条手动失败', async () => {
+  const { api, create, find } = setup('项目不存在')
+  const now = Date.now()
+  const name = unique()
+  const s = await create(plan(name, { at: at(now + HOUR) }))
+  const res = await api.runNow(s.id, now)
+  assert.equal(res?.taskId, '')
+
+  const after = await find(s.id)
+  assert.equal(after.at, s.at, '立即执行失败也不改排期')
+  assert.deepEqual([after.runs[0].event, after.runs[0].manual, after.runs[0].error], ['fail', true, '项目不存在'])
+})
+
+test('运行记录：到点启动期间用户改了排期，这次运行仍然记进历史', async () => {
+  const now = Date.now()
+  const name = unique()
+  let target: Schedule | undefined
+  let api!: ReturnType<typeof schedulesApi>
+  api = schedulesApi({
+    startChat: async (input) => {
+      if (target)
+        await api.routes.request(`/${target.id}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(plan(target.prompt, { repeat: 'daily', at: at(now + 2 * HOUR) })),
+        })
+      return { id: `task:${input.prompt}` } as Task
+    },
+  })
+  const res = await api.routes.request('/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(plan(name, { repeat: 'daily', at: at(now - 1000) })),
+  })
+  target = (await res.json()) as Schedule
+
+  await api.tick(now)
+  const saved = ((await (await api.routes.request('/')).json()) as Schedule[]).find((x) => x.id === target!.id)!
+  assert.equal(saved.at, at(now + 2 * HOUR), '用户改的时间没有被快照覆盖')
+  assert.equal(saved.runs.length, 1)
+  assert.equal(saved.runs[0].event, 'run')
+  assert.equal(saved.runs[0].at, at(now - 1000), '记的是这次实际到点的排期')
+})
+
 test('被上游拦住时用户改了排期：不把旧到点时间和跳过状态写回', async () => {
   const { api, create, find } = setup()
   const now = Date.now()
