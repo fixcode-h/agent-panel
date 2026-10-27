@@ -12,6 +12,15 @@ export const LOAD_STEPS = ['task', 'stream', 'children', 'seen', 'render'] as co
 export type TraceStepId = (typeof LOAD_STEPS)[number]
 
 /**
+ * 真的挡着用户看对话的步骤：对话内容没到（task）、内容没画到屏幕上（render）。
+ * 其余三步是内容之外的增强（实时推送、子对话列表、已读标记）：慢或失败都不该让加载面板一直盖住对话。
+ * 「能不能收起面板」的判定都读这一张表，以后加步骤只改这里。
+ */
+export const BLOCKING_STEPS: readonly TraceStepId[] = ['task', 'render']
+const BLOCKING = new Set<TraceStepId>(BLOCKING_STEPS)
+export const isBlockingStep = (id: TraceStepId) => BLOCKING.has(id)
+
+/**
  * waiting：还没发起（界面写「等待中」）
  * running：已发起、还没回来（界面写「进行中」并显示已等待时长）
  * done：正常结束；failed：出错，error 里是错误原文
@@ -89,6 +98,20 @@ export function stepElapsed(step: TraceStep, now = Date.now()) {
   return Math.max(0, (step.endedAt ?? now) - start)
 }
 
+const stepSettled = (s: TraceStep) => s.status === 'done' || s.status === 'failed' || s.status === 'skipped'
+
 /** 全部走完（没有还在等、还在跑的步骤） */
-export const traceSettled = (steps: TraceStep[]) =>
-  steps.every((s) => s.status === 'done' || s.status === 'failed' || s.status === 'skipped')
+export const traceSettled = (steps: TraceStep[]) => steps.every(stepSettled)
+
+/** 挡内容的步骤都结束了：可以换成对话画面（后台步骤慢不慢都不算数） */
+export const blockingSettled = (steps: TraceStep[]) => steps.every((s) => !isBlockingStep(s.id) || stepSettled(s))
+
+/** 挡内容的步骤失败了：错误原文要留在屏幕上，面板不能自动收起（后台步骤失败不挡内容） */
+export const blockingFailed = (steps: TraceStep[]) => steps.some((s) => isBlockingStep(s.id) && s.status === 'failed')
+
+/** 面板收起后还在跑或失败的后台步骤：加载日志胶囊按它决定显不显示、显示什么 */
+export const backgroundSteps = (steps: TraceStep[]) =>
+  steps.filter((s) => !isBlockingStep(s.id) && (s.status === 'running' || s.status === 'failed'))
+
+/** 还有步骤在跑：界面每秒重算它的等待时长（没开始、已结束的耗时不会变） */
+export const traceRunning = (steps: TraceStep[]) => steps.some((s) => s.status === 'running')

@@ -56,8 +56,14 @@ export type SummaryRange = z.infer<typeof SummaryRange>
 /** 页面默认选的范围，也是接口不带 range 时的默认值：行为和改造前一样，只看今天 */
 export const DEFAULT_SUMMARY_RANGE: SummaryRange = { id: 'today', from: '', to: '' }
 
-/** 报告里固定的三个二级标题：顺序也是这个，缺一节不许省 */
-export const SUMMARY_SECTIONS = ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结'] as const
+/** 报告里固定的四个二级标题：顺序也是这个，缺一节不许省 */
+export const SUMMARY_SECTIONS = ['## 一、概览', '## 二、需求进度', '## 三、问题与修复', '## 四、下一步'] as const
+
+/**
+ * 升级前的老报告只有三节。解析时按别名映射到新结构：「用户报告的 Bug」→ 问题与修复，
+ * 「今日小结」→ 概览，这样老报告的对比、逐行文本兜底和候选教训提炼都不用改数据
+ */
+export const LEGACY_SUMMARY_SECTIONS = ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结'] as const
 
 /** 日期格式（YYYY-MM-DD）：报告一级标题里的日期，单日或多日区间 */
 const DAY_KEY_PATTERN = '\\d{4}-\\d{2}-\\d{2}'
@@ -68,9 +74,9 @@ const DAY_KEY_PATTERN = '\\d{4}-\\d{2}-\\d{2}'
  */
 export const SUMMARY_FORMAT_ISSUES = {
   title: '一级标题不是「# <日期> 工作总结」',
-  sections: '二级标题不是固定的三节（或顺序、数量不对）',
-  project: '项目标题格式不对（应为「### 1.1 项目名」）',
-  item: '条目格式不对（应为「1. **标题** ｜ 状态」加缩进一行的「实现：/原因：/修复：」）',
+  sections: '二级标题不是固定的四节（或顺序、数量不对）',
+  project: '项目标题格式不对（应为「### 2.1 项目名」）',
+  item: '条目格式不对（应为「1. **标题** ｜ 状态」加缩进一行的「实现：/原因：/修复：/说明：」）',
   empty: '某一节没有内容时没有写「暂无」',
 } as const
 export type SummaryFormatIssue = keyof typeof SUMMARY_FORMAT_ISSUES
@@ -110,6 +116,8 @@ export const SummaryReport = z.object({
   effort: z.string().default(''),
   /** 生成时用到了几条今天的对话（0 表示今天没有执行记录） */
   taskCount: z.number().int().default(0),
+  /** 生成这次报告用了多久（毫秒）：老报告没有这个字段，按 0 处理（页面不显示耗时） */
+  durationMs: z.number().int().min(0).default(0),
 })
 export type SummaryReport = z.infer<typeof SummaryReport>
 
@@ -501,7 +509,7 @@ export function summaryContext(projects: DayProject[]) {
 }
 
 /**
- * 交给 CLI 的提示词：严格按固定模板写三节报告（需求进度 / 用户报告的 Bug / 今日小结）。
+ * 交给 CLI 的提示词：严格按固定模板写四节报告（概览 / 需求进度 / 问题与修复 / 下一步）。
  * 格式写死在这里，生成后还会用 checkSummaryFormat 再校一遍（见 server/summary.ts）。
  * 正文是中文，回复语言跟随面板设置（见 prompt-lang.ts）
  */
@@ -528,32 +536,40 @@ export function summaryPrompt(input: { day: string; projects: DayProject[]; rang
     '',
     `# ${title} 工作总结`,
     '',
-    '## 一、需求进度',
+    '## 一、概览',
+    '<一段话：这段时间整体做完了什么、还剩什么，2～3 句>',
     '',
-    '### 1.1 <项目名>',
+    '## 二、需求进度',
+    '',
+    '### 2.1 <项目名>',
     '1. **<需求标题>** ｜ 已完成（5/5）',
     '   实现：<一两句原理，说清怎么做到的，不贴代码>',
+    '   验证：<一句话说明怎么确认的，例如跑了哪些测试；没有就不写这行>',
     '2. **<需求标题>** ｜ 进行中（3/5）',
     '   实现：<一两句原理>',
     '',
-    '## 二、用户报告的 Bug',
+    '## 三、问题与修复',
     '',
-    '### 2.1 <项目名>',
-    '1. **<Bug 标题>**',
+    '### 3.1 <项目名>',
+    '1. **<问题标题>** ｜ 已修复',
     '   原因：<根因，一句话说清是什么导致的>',
     '   修复：<怎么修的，一句话>',
     '',
-    '## 三、今日小结',
-    '<一句话：这段时间整体做完了什么、还剩什么>',
+    '## 四、下一步',
+    '',
+    '### 4.1 <项目名>',
+    '1. **<下一步事项>**',
+    '   说明：<具体要做什么、验收标准，一句话>',
     '',
     '硬性规则：',
     `- 一级标题固定写成 \`# ${title} 工作总结\`。`,
-    '- 二级标题只允许这三个，一个不能少、顺序不能变：`## 一、需求进度`、`## 二、用户报告的 Bug`、`## 三、今日小结`。',
-    '- 三级标题是项目，写 `### 1.1 <项目名>` / `### 2.1 <项目名>`（节号.项目序号，项目序号从 1 递增）；每个节里的项目都要写三级标题。',
-    '- 条目写成 `1. **<标题>** ｜ <状态>`，下一行缩进两个空格写 `实现：` / `原因：` / `修复：`。',
+    '- 二级标题只允许这四个，一个不能少、顺序不能变：`## 一、概览`、`## 二、需求进度`、`## 三、问题与修复`、`## 四、下一步`。',
+    '- 三级标题是项目，写 `### 2.1 <项目名>` / `### 3.1 <项目名>` / `### 4.1 <项目名>`（节号.项目序号：节号是所在二级节的序号，项目序号从 1 递增）；「概览」是一段话，不写项目小节。',
+    '- 条目写成 `1. **<标题>** ｜ <状态>`，下一行缩进两个空格写 `实现：` / `原因：` / `修复：` / `说明：`；「需求进度」可以再缩进写一行 `验证：`。',
     '- 「需求进度」的状态只能是 `已完成`、`进行中（n/m）`、`暂停`、`未开始` 这四种。',
-    '- 「用户报告的 Bug」只写用户在「用户的要求」里自己提出来的问题；`关键词命中问题词：否` 只说明没命中关键词，不是没报问题——用户原文描述了异常现象（没反应、不对、坏了、不生效、卡住、闪退等）也要写。用户只是在讨论要不要处理某个问题、没有报告故障的不算报 Bug。Agent 自己写代码、自测、评审时发现并修掉的问题一律不写，这是硬约束。',
-    '- 每条最多两行（标题行 + 一行 `实现` / `原因` / `修复`），单句不超过 60 字；不贴代码、不复述执行过程、不列工具调用。',
+    '- 「问题与修复」只写用户在「用户的要求」里自己提出来的问题；`关键词命中问题词：否` 只说明没命中关键词，不是没报问题——用户原文描述了异常现象（没反应、不对、坏了、不生效、卡住、闪退等）也要写。用户只是在讨论要不要处理某个问题、没有报告故障的不算报 Bug。Agent 自己写代码、自测、评审时发现并修掉的问题一律不写，这是硬约束。',
+    '- 「下一步」写这段范围之后还要做、但还没做完的事，按项目分组；没有就写「暂无」，不要拿已经做完的事凑数。',
+    '- 每条最多三行（标题行 + 一两行说明），单句不超过 60 字；不贴代码、不复述执行过程、不列工具调用。',
     '- 全文不用第一人称（不写「我今天」「我修改了」），用「已完成 …」「修复 …」这种陈述。',
     '- 某一节没有内容时，在那一节下面写一行「暂无」，不要省略整节。',
     '- 只写下面记录里有的项目，按记录里的顺序；不要编造记录里没有的事。',
@@ -565,7 +581,8 @@ export function summaryPrompt(input: { day: string; projects: DayProject[]; rang
 }
 
 /**
- * 生成后的格式自检：只查结构（标题、三节、编号、条目形状），不评价内容。
+ * 生成后的格式自检：只查结构（标题、四节、编号、条目形状），不评价内容。
+ * 只认新四节：老报告不经过这里（生成时已经存好了），解析老报告见 parseSummaryReport
  * 返回的问题码可以直接交给页面本地化（见 SUMMARY_FORMAT_ISSUES）
  */
 export function checkSummaryFormat(md: string): { ok: boolean; issues: SummaryFormatIssue[] } {
@@ -586,15 +603,15 @@ export function checkSummaryFormat(md: string): { ok: boolean; issues: SummaryFo
     if (!/^\d+\. /.test(line)) continue
     if (!/^\d+\. \*\*.+\*\*( ｜ \S.*)?$/.test(line)) issues.add('item')
   }
-  // 节内没有内容时必须是「暂无」：前两节靠条目填内容，第三节是一句话小结
+  // 节内没有内容时必须是「暂无」：概览是一段话，其余三节靠条目填内容
   for (let i = 0; i < wanted.length; i++) {
     const start = body.findIndex((l) => l.trim() === wanted[i])
     if (start < 0) continue
     const rest = body.slice(start + 1)
     const nextH2 = rest.findIndex((l) => l.startsWith('## '))
     const section = nextH2 < 0 ? rest : rest.slice(0, nextH2)
-    const last = i === wanted.length - 1
-    const filled = section.some((l) => l.trim() === '暂无' || (last ? !l.startsWith('#') : /^\d+\. /.test(l)))
+    // 概览没有条目，任何非标题的行都算填了内容
+    const filled = section.some((l) => (l.trim() === '暂无' ? true : i === 0 ? !l.startsWith('#') : /^\d+\. /.test(l)))
     if (!filled) issues.add('empty')
   }
   return { ok: issues.size === 0, issues: [...issues] }
@@ -635,6 +652,11 @@ export function reportTitle(md: string, day: string) {
   return title || day
 }
 
+/** 报告的字数（去掉空白）：报告头和最近报告列表显示规模用，Markdown 标记也算进去，不另算一套口径 */
+export function reportChars(md: string) {
+  return md.replace(/\s/g, '').length
+}
+
 // ---- 两份报告的对比 ----
 
 /** 报告里的一个条目：标题 +（需求进度才有的）状态 + 缩进那行说明 */
@@ -659,37 +681,31 @@ export interface SummarySection {
 export interface ParsedSummaryReport {
   /** 一级标题（去掉 `# `） */
   title: string
-  /** 需求进度 / 用户报告的 Bug，按 `SUMMARY_SECTIONS` 的顺序 */
+  /** 需求进度 / 问题与修复 / 下一步，按 `SUMMARY_SECTIONS` 的顺序 */
   needs: SummarySection[]
   bugs: SummarySection[]
-  /** 今日小结的正文 */
+  next: SummarySection[]
+  /** 概览的正文（老报告的「今日小结」也放在这里） */
   wrapUp: string
-  /** 固定的三节都找到了才算解析成功；否则页面退回纯文本 diff，不报错 */
+  /** 固定节全部找到、条目都解析出来才算成功；否则页面退回纯文本 diff，不报错 */
   ok: boolean
 }
 
-/** 三级标题：`### 1.1 项目名`（节号.项目序号，项目名允许有空格） */
+/** 三级标题：`### 2.1 项目名`（节号.项目序号，项目名允许有空格） */
 const SUMMARY_PROJECT_RE = /^###\s+(\d+\.\d+)\s+(\S.*?)\s*$/
 /** 条目：`1. **标题** ｜ 状态`（竖线也认半角，状态可空 —— 用户手改报告时常见） */
 const SUMMARY_ITEM_RE = /^(\d+)\.\s+\*\*(.+?)\*\*(?:\s*[｜|]\s*(.*?))?\s*$/
-/** 条目下面缩进的那一行：`   实现：…` / `   原因：…` / `   修复：…` */
-const SUMMARY_DETAIL_RE = /^\s+(实现|原因|修复)[：:]\s*(.*)$/
+/** 条目下面缩进的那一行：`   实现：…` / `   验证：…` / `   原因：…` / `   修复：…` / `   说明：…` */
+const SUMMARY_DETAIL_RE = /^\s+(实现|验证|原因|修复|说明)[：:]\s*(.*)$/
 
-/**
- * 把一份报告解析成结构（按 `SUMMARY_SECTIONS` 定序）。
- * 作者手改过、格式不合模板时不抛错也不编内容：`ok` 为 false，调用方退回纯文本 diff
- */
-export function parseSummaryReport(md: string): ParsedSummaryReport {
-  const lines = md.split('\n')
-  const titleLine = lines.find((l) => l.trim().startsWith('# '))?.trim() ?? ''
-  const title = titleLine.replace(/^#\s*/, '').trim()
-  // 只收固定三节：用户自己加的其它小节（例如「备注」）不参与对比
+/** 收一组固定二级节的正文：节名不在 titles 里或重复出现的当作用户自己加的小节，不参与解析 */
+function collectSections(lines: string[], titles: readonly string[]) {
   const bodies = new Map<string, string[]>()
   let cur: string | null = null
   for (const line of lines) {
     const t = line.trim()
     if (t.startsWith('## ')) {
-      cur = (SUMMARY_SECTIONS as readonly string[]).includes(t) && !bodies.has(t) ? t : null
+      cur = (titles as readonly string[]).includes(t) && !bodies.has(t) ? t : null
       if (cur) bodies.set(cur, [])
       continue
     }
@@ -700,6 +716,30 @@ export function parseSummaryReport(md: string): ParsedSummaryReport {
     }
     if (cur) bodies.get(cur)!.push(line)
   }
+  return bodies
+}
+
+/** 报告里「看起来是条目」的行数：和解析出来的条目数对照，判断有没有偏离模板的条目没解析出来 */
+const itemLineCount = (body: string[]) => body.filter((l) => /^\s*\d+\.\s/.test(l)).length
+const itemCount = (sections: SummarySection[]) => sections.reduce((n, s) => n + s.items.length, 0)
+
+/** 概览：去掉标题和空行后原样保留（可能被用户改成长一点的段落） */
+const wrapText = (body: string[]) =>
+  body
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join('\n')
+
+/**
+ * 把一份报告解析成结构。先按新四节解析，解析不了再看是不是升级前的老三节
+ * （「用户报告的 Bug」→ 问题与修复，「今日小结」→ 概览）。
+ * 作者手改过、两边都不合模板时不抛错也不编内容：`ok` 为 false，调用方退回纯文本 diff
+ */
+export function parseSummaryReport(md: string): ParsedSummaryReport {
+  const lines = md.split('\n')
+  const titleLine = lines.find((l) => l.trim().startsWith('# '))?.trim() ?? ''
+  const title = titleLine.replace(/^#\s*/, '').trim()
+
   const parseSection = (body: string[], withStatus: boolean): SummarySection[] => {
     const out: SummarySection[] = []
     for (const line of body) {
@@ -729,31 +769,41 @@ export function parseSummaryReport(md: string): ParsedSummaryReport {
     }
     return out
   }
-  const needsBody = bodies.get(SUMMARY_SECTIONS[0]) ?? []
-  const bugsBody = bodies.get(SUMMARY_SECTIONS[1]) ?? []
-  const wrapBody = bodies.get(SUMMARY_SECTIONS[2]) ?? []
-  const needs = parseSection(needsBody, true)
-  const bugs = parseSection(bugsBody, false)
+
   /**
-   * 报告里有「看起来是条目」的行（`n. …`）却没全部解析出来，说明写法偏离模板（标题里嵌了 `**`、
-   * 编号不在行首这类）。这时不能把没解析出来的条目当成「消失」，整份按解析失败处理，页面退回逐行对比
+   * 按一组节名解析。at 指明概览 / 需求进度 / 问题与修复 / 下一步各是第几节：
+   * 新四节和旧三节的位置不同，不能按同一个索引取。
+   * 报告里有「看起来是条目」的行却没全部解析出来，说明写法偏离模板（标题里嵌了 `**`、编号不在行首这类）；
+   * 这时不能把没解析出来的条目当成「消失」，整份按解析失败处理，页面退回逐行对比
    */
-  const itemLines = (body: string[]) => body.filter((l) => /^\s*\d+\.\s/.test(l)).length
-  const parsedItems = (sections: SummarySection[]) => sections.reduce((n, s) => n + s.items.length, 0)
-  return {
-    title,
-    needs,
-    bugs,
-    // 今日小结是一句话（可能被用户改成长一点的段落）：去掉标题和空行后原样保留
-    wrapUp: wrapBody
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .join('\n'),
-    ok:
-      bodies.size === SUMMARY_SECTIONS.length &&
-      parsedItems(needs) === itemLines(needsBody) &&
-      parsedItems(bugs) === itemLines(bugsBody),
+  const read = (
+    titles: readonly string[],
+    at: { wrap: number; needs: number; bugs: number; next?: number },
+  ): ParsedSummaryReport => {
+    const bodies = collectSections(lines, titles)
+    const bodyOf = (i: number | undefined) => (i === undefined ? [] : (bodies.get(titles[i]) ?? []))
+    const needsBody = bodyOf(at.needs)
+    const bugsBody = bodyOf(at.bugs)
+    const nextBody = bodyOf(at.next)
+    const needs = parseSection(needsBody, true)
+    const bugs = parseSection(bugsBody, false)
+    const next = parseSection(nextBody, false)
+    return {
+      title,
+      needs,
+      bugs,
+      next,
+      wrapUp: wrapText(bodyOf(at.wrap)),
+      ok:
+        bodies.size === titles.length &&
+        itemCount(needs) === itemLineCount(needsBody) &&
+        itemCount(bugs) === itemLineCount(bugsBody) &&
+        itemCount(next) === itemLineCount(nextBody),
+    }
   }
+
+  const fresh = read(SUMMARY_SECTIONS, { wrap: 0, needs: 1, bugs: 2, next: 3 })
+  return fresh.ok ? fresh : read(LEGACY_SUMMARY_SECTIONS, { wrap: 2, needs: 0, bugs: 1 })
 }
 
 /** 一份变化：新增 / 消失 / 状态变化 */
@@ -771,11 +821,12 @@ export interface SummaryChange {
 export interface SummaryCompare {
   /** 两份正文完全一样 */
   same: boolean
-  /** 两份都解析成功：needs / bugs 才有内容，解析不了时用 lines */
+  /** 两份都解析成功：needs / bugs / next 才有内容，解析不了时用 lines */
   parsed: boolean
   needs: SummaryChange[]
   bugs: SummaryChange[]
-  /** 今日小结并排显示 */
+  next: SummaryChange[]
+  /** 概览并排显示 */
   wrapUp: { before: string; after: string; changed: boolean }
   /** 结构化对比不了（或格式对但没有条目级变化）时的行级差异 */
   lines: { kind: 'same' | 'add' | 'del'; text: string }[]
@@ -792,10 +843,15 @@ const entryKey = (project: string, title: string) => `${project}\u0000${title}`
 
 /**
  * 条目级变化：按（项目名，标题）配对。
- * withStatus 为真时比较状态（需求进度），Bug 节没有状态，配上就是没变化
+ * withStatus 为真时比较状态（需求进度），问题与修复 / 下一步没有状态，配上就是没变化
  */
-function entryChanges(before: ParsedSummaryReport, after: ParsedSummaryReport, withStatus: boolean) {
-  const pick = (r: ParsedSummaryReport) => flattenSections(withStatus ? r.needs : r.bugs)
+function entryChanges(
+  before: ParsedSummaryReport,
+  after: ParsedSummaryReport,
+  pickSection: (r: ParsedSummaryReport) => SummarySection[],
+  withStatus: boolean,
+) {
+  const pick = (r: ParsedSummaryReport) => flattenSections(pickSection(r))
   const oldMap = new Map(pick(before).map((x) => [entryKey(x.project, x.item.title), x]))
   const newMap = new Map(pick(after).map((x) => [entryKey(x.project, x.item.title), x]))
   const out: SummaryChange[] = []
@@ -837,8 +893,9 @@ function entryChanges(before: ParsedSummaryReport, after: ParsedSummaryReport, w
 }
 
 /**
- * 对比两份报告（先旧的、后新的）：需求进度给出新增 / 消失 / 状态变化，Bug 给出新增 / 已修复（消失），
- * 今日小结并排；两份都解析不了格式时退回纯文本 diff，不报错也不编内容
+ * 对比两份报告（先旧的、后新的）：需求进度给出新增 / 消失 / 状态变化，问题与修复和下一步给出新增 / 消失，
+ * 概览并排；两份都解析不了格式时退回纯文本 diff，不报错也不编内容。
+ * 新四节和老三节的报告可以一起对比：老报告解析时就映射成了同一套节
  */
 export function compareSummaryReports(before: string, after: string): SummaryCompare {
   const a = parseSummaryReport(before)
@@ -848,14 +905,29 @@ export function compareSummaryReports(before: string, after: string): SummaryCom
   return {
     same,
     parsed,
-    needs: parsed ? entryChanges(a, b, true) : [],
-    bugs: parsed ? entryChanges(a, b, false) : [],
+    needs: parsed ? entryChanges(a, b, (r) => r.needs, true) : [],
+    bugs: parsed ? entryChanges(a, b, (r) => r.bugs, false) : [],
+    next: parsed ? entryChanges(a, b, (r) => r.next, false) : [],
     wrapUp: { before: a.wrapUp, after: b.wrapUp, changed: a.wrapUp !== b.wrapUp },
     lines: parsed || same ? [] : lineDiff(before, after),
   }
 }
 
-/** 对比里有没有条目或小结级别的变化：页面据此说「没有差异」，和正文是否逐字相同分开 */
+/** 对比里有没有条目或概览级别的变化：页面据此说「没有差异」，和正文是否逐字相同分开 */
 export function compareHasChanges(c: SummaryCompare) {
-  return c.needs.length > 0 || c.bugs.length > 0 || c.wrapUp.changed
+  return c.needs.length > 0 || c.bugs.length > 0 || c.next.length > 0 || c.wrapUp.changed
+}
+
+/**
+ * 生成耗时的显示：不到 1 秒 / N 秒 / N 分 M 秒。
+ * 0 或非法值返回空串——老报告没有耗时字段，页面就不显示这一段
+ */
+export function formatDuration(ms: number) {
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const sec = Math.round(ms / 1000)
+  if (sec < 1) return t('不到 1 秒')
+  if (sec < 60) return t('{n} 秒', { n: sec })
+  const min = Math.floor(sec / 60)
+  const rest = sec % 60
+  return rest ? t('{n} 分 {m} 秒', { n: min, m: rest }) : t('{n} 分钟', { n: min })
 }

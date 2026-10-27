@@ -1,8 +1,10 @@
 /**
  * 工作总结：先选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是这段时间全部），
  * 把选中的时间范围（今天 / 昨天 / 近 7 天 / 自选日期，默认今天）里执行过的对话交给本机 CLI，
- * 生成一份固定三节格式的 Markdown 报告。
+ * 生成一份固定四节格式的 Markdown 报告（概览 / 需求进度 / 问题与修复 / 下一步）。
  * 报告能编辑（自动保存）、预览、一键复制；最近几份存在数据目录里（见 server/summary.ts），点开能回看。
+ * 页面按「新建 → 当前报告 → 候选教训 → 最近报告 → 对比」从上到下排，整页内容靠左，
+ * 报告头显示范围、项目、对话数、字数和生成耗时，最近报告也带这些信息。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
@@ -15,8 +17,10 @@ import {
   compareHasChanges,
   compareSummaryReports,
   DEFAULT_SUMMARY_RANGE,
+  formatDuration,
   rangeLabel,
   rangeWindow,
+  reportChars,
   reportTitle,
   reportWindowLabel,
   type SummaryChange,
@@ -64,11 +68,11 @@ function issueText(issue: SummaryFormatIssue) {
     case 'title':
       return t('一级标题不是「# <日期> 工作总结」')
     case 'sections':
-      return t('缺少固定的三个二级节，或顺序不对')
+      return t('缺少固定的四个二级节，或顺序不对')
     case 'project':
-      return t('项目标题的编号格式不对（应为「### 1.1 项目名」）')
+      return t('项目标题的编号格式不对（应为「### 2.1 项目名」）')
     case 'item':
-      return t('条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复」')
+      return t('条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复 / 说明」')
     case 'empty':
       return t('某一节没有内容时没写「暂无」')
   }
@@ -176,6 +180,7 @@ function ReportEditor({
   id,
   md: initial,
   title,
+  meta,
   mode,
   onMode,
   onCopy,
@@ -186,6 +191,11 @@ function ReportEditor({
   md: string
   /** 报告标题：「今天的报告 / 昨天的报告 / 近 7 天的报告 / 日期区间的报告」 */
   title: string
+  /**
+   * 报告头的元数据：项目、对话数、字数、耗时、生成时间；老报告缺字段时页面少显示几项。
+   * 传函数是因为字数要跟着编辑框里的正文走：直接传当前 body 会在保存后才更新，同一份报告出现两个字数
+   */
+  meta?: (md: string) => React.ReactNode
   /** 预览 / 编辑由页面记着：切页面回来后还是走之前的那个 tab */
   mode: ReportMode
   onMode: (mode: ReportMode) => void
@@ -236,6 +246,7 @@ function ReportEditor({
           {t('复制')}
         </Button>
       </div>
+      {!!meta && <div className="border-b px-4 py-1.5 text-xs text-subtle">{meta(md)}</div>}
       {mode === 'edit' ? (
         <Textarea
           aria-label={t('报告内容')}
@@ -247,7 +258,8 @@ function ReportEditor({
           className="min-h-[420px] rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-relaxed focus:ring-0"
         />
       ) : (
-        <div className="px-4 py-3">
+        <div className="max-w-[76ch] px-4 py-3">
+          {/* 正文限宽：一行太长不好读；左缘和卡片内边距对齐，不居中 */}
           <Markdown text={md} teamNames={NO_TEAM} />
         </div>
       )}
@@ -307,7 +319,8 @@ function ChangeList({
 }
 
 /**
- * 两份报告的对比：需求进度 / 用户报告的 Bug 给出新增、消失、状态变化，今日小结并排。
+ * 两份报告的对比：概览并排，需求进度给出新增、消失、状态变化，问题与修复 / 下一步给出新增和消失。
+ * 新四节和老三节的报告都能比（老报告解析时映射到同一套节）；
  * 格式对不上模板（用户手改过）时退回逐行文本对比，不报错也不编内容
  */
 function ReportCompare({ before, after }: { before: SummaryRecord; after: SummaryRecord }) {
@@ -338,23 +351,7 @@ function ReportCompare({ before, after }: { before: SummaryRecord; after: Summar
             )}
             {c.parsed ? (
               <>
-                <h3 className="text-[0.8125rem] font-medium">{t('需求进度')}</h3>
-                {!c.needs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
-                {CHANGE_KINDS.map((kind) => (
-                  <ChangeList key={kind.kind} kind={kind} items={c.needs.filter((x) => x.kind === kind.kind)} />
-                ))}
-                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('用户报告的 Bug')}</h3>
-                {!c.bugs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
-                {/* Bug 节没有状态：新增是这次报的，消失就是修掉了 */}
-                {CHANGE_KINDS.filter((k) => k.kind !== 'changed').map((kind) => (
-                  <ChangeList
-                    key={kind.kind}
-                    kind={kind}
-                    title={kind.kind === 'removed' ? t('已修复（消失）') : undefined}
-                    items={c.bugs.filter((x) => x.kind === kind.kind)}
-                  />
-                ))}
-                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('今日小结')}</h3>
+                <h3 className="text-[0.8125rem] font-medium">{t('概览')}</h3>
                 <div className="mt-1 grid gap-2 sm:grid-cols-2">
                   <div className="rounded-lg bg-sel px-3 py-2">
                     <p className="text-xs text-subtle">{t('旧报告')}</p>
@@ -365,6 +362,28 @@ function ReportCompare({ before, after }: { before: SummaryRecord; after: Summar
                     <p className="text-[0.8125rem] whitespace-pre-wrap">{c.wrapUp.after || t('（没有小结）')}</p>
                   </div>
                 </div>
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('需求进度')}</h3>
+                {!c.needs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {CHANGE_KINDS.map((kind) => (
+                  <ChangeList key={kind.kind} kind={kind} items={c.needs.filter((x) => x.kind === kind.kind)} />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('问题与修复')}</h3>
+                {!c.bugs.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {/* 问题节没有状态：新增是这次报的，消失就是修掉了 */}
+                {CHANGE_KINDS.filter((k) => k.kind !== 'changed').map((kind) => (
+                  <ChangeList
+                    key={kind.kind}
+                    kind={kind}
+                    title={kind.kind === 'removed' ? t('已修复（消失）') : undefined}
+                    items={c.bugs.filter((x) => x.kind === kind.kind)}
+                  />
+                ))}
+                <h3 className="mt-4 text-[0.8125rem] font-medium">{t('下一步')}</h3>
+                {!c.next.length && <p className="text-xs text-subtle">{t('没有条目级变化')}</p>}
+                {/* 下一步没有状态：新增是这段范围之后多出来的事，消失的事不再出现在报告里 */}
+                {CHANGE_KINDS.filter((k) => k.kind !== 'changed').map((kind) => (
+                  <ChangeList key={kind.kind} kind={kind} items={c.next.filter((x) => x.kind === kind.kind)} />
+                ))}
               </>
             ) : (
               <div className="font-mono text-xs leading-relaxed">
@@ -759,10 +778,27 @@ export function SummaryPage() {
   const lastThought = job?.thinking?.trim().split('\n').filter(Boolean).at(-1)
   /** 窗口的具体日期：单日就写一天，多天写起止 */
   const scopeDays = win.fromDay === win.toDay ? win.fromDay : t('{from} 至 {to}', { from: win.fromDay, to: win.toDay })
+  /** 当前报告的记录：元数据（项目、对话数、耗时、生成时间）在列表里，正文在 current 里（可能还没保存） */
+  const currentRecord = current ? reports.find((r) => r.id === current.id) : undefined
+  const currentDuration = currentRecord ? formatDuration(currentRecord.durationMs) : ''
+  /** 当前报告的元数据行：老报告缺字段时少显示几项，不显示 0；字数按编辑框里的正文算 */
+  const currentMeta =
+    current && currentRecord
+      ? (md: string) => (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {!!currentRecord.projectNames.length && <span>{currentRecord.projectNames.join('、')}</span>}
+            <span>{t('{n} 个对话', { n: currentRecord.taskCount })}</span>
+            <span>{t('{n} 字', { n: reportChars(md) })}</span>
+            {!!currentDuration && <span>{t('耗时 {time}', { time: currentDuration })}</span>}
+            <span>{new Date(currentRecord.createdAt).toLocaleString()}</span>
+          </span>
+        )
+      : undefined
 
   return (
     <PageFrame
       title={t('工作总结')}
+      align="left"
       intro={t(
         '选一个项目点「增加」，再在该项目下挑要分析的对话（不挑就是{scope}全部），把{scope}（{days}）的工作整理成一份 Markdown 报告。生成后可以编辑、预览、一键复制；最近的报告留在本机，点开还能接着改。',
         { scope, days: scopeDays },
@@ -822,30 +858,6 @@ export function SummaryPage() {
             {t('增加')}
           </Button>
           <span className="text-xs text-subtle">{t('已选 {n} 个', { n: picks.length })}</span>
-          <div className="ml-auto flex items-center gap-2">
-            {usable.length ? (
-              <Select
-                aria-label={t('用哪个 Agent 生成')}
-                value={cli}
-                onChange={(e) => setCli(e.target.value)}
-                className="h-8 w-[150px]"
-                options={usable.map((c) => ({ value: c.id, label: c.name }))}
-              />
-            ) : (
-              <span className="text-xs text-warning">{t('没有可用的 Agent，请先在设置里安装并启用')}</span>
-            )}
-            {running ? (
-              <Button size="sm" variant="secondary" onClick={stop}>
-                <Square className="h-3.5 w-3.5" />
-                {t('停止')}
-              </Button>
-            ) : (
-              <Button size="sm" disabled={!picks.length || !cli} onClick={start}>
-                <Sparkles className="h-3.5 w-3.5" />
-                {job?.status === 'failed' ? t('重试') : t('生成报告')}
-              </Button>
-            )}
-          </div>
         </div>
         {loading ? (
           <p className="px-4 py-3 text-xs text-subtle">{t('正在加载…')}</p>
@@ -874,6 +886,35 @@ export function SummaryPage() {
             })}
           </ul>
         )}
+        {/* 生成操作单独一行：项目选好后在这里选 Agent、开始生成，和上面的选择区分开 */}
+        <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2">
+          <span className="text-[0.8125rem] font-medium">{t('生成')}</span>
+          {usable.length ? (
+            <Select
+              aria-label={t('用哪个 Agent 生成')}
+              value={cli}
+              onChange={(e) => setCli(e.target.value)}
+              className="h-8 w-[150px]"
+              options={usable.map((c) => ({ value: c.id, label: c.name }))}
+            />
+          ) : (
+            <span className="text-xs text-warning">{t('没有可用的 Agent，请先在设置里安装并启用')}</span>
+          )}
+          <span className="text-xs text-subtle">{t('生成后自动保存，可以继续编辑')}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {running ? (
+              <Button size="sm" variant="secondary" onClick={stop}>
+                <Square className="h-3.5 w-3.5" />
+                {t('停止')}
+              </Button>
+            ) : (
+              <Button size="sm" disabled={!picks.length || !cli} onClick={start}>
+                <Sparkles className="h-3.5 w-3.5" />
+                {job?.status === 'failed' ? t('重试') : t('生成报告')}
+              </Button>
+            )}
+          </div>
+        </div>
       </section>
 
       {running && job && (
@@ -940,6 +981,7 @@ export function SummaryPage() {
           id={current.id}
           md={current.md}
           title={reportWindowLabel(current.from, current.to, now)}
+          meta={currentMeta}
           mode={mode}
           onMode={setMode}
           onCopy={copy}
@@ -995,9 +1037,20 @@ export function SummaryPage() {
                       (current?.id === r.id || picked) && 'bg-accent-soft',
                     )}
                   >
-                    <span className="min-w-0 flex-1 truncate text-[0.8125rem]">
-                      {r.projectNames.join('、') || reportTitle(r.md, r.day)}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[0.8125rem]">
+                        {r.projectNames.join('、') || reportTitle(r.md, r.day)}
+                      </span>
+                      {/* 列表里直接给出一份报告的规模：几个对话、多少字、生成花了多久 */}
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-subtle">
+                        <span>{t('{n} 个对话', { n: r.taskCount })}</span>
+                        <span>{t('{n} 字', { n: reportChars(r.md) })}</span>
+                        {!!formatDuration(r.durationMs) && (
+                          <span>{t('耗时 {time}', { time: formatDuration(r.durationMs) })}</span>
+                        )}
+                      </span>
                     </span>
+                    {/* 右侧只写日期：不写「今天的报告」这类相对说法，避免和当前报告标题混淆 */}
                     <span className="shrink-0 text-xs text-subtle">
                       {r.from && r.to && r.from !== r.to ? t('{from} 至 {to}', { from: r.from, to: r.to }) : r.day}
                     </span>
