@@ -6,7 +6,7 @@ import { createAnalysisTask, openAiWindow } from './ai-window'
 
 /**
  * 「AI 处理」：报错的地方只管调用 openAiFix。服务端按报错整理好第一句话、挑能用的 CLI，
- * 对话按归属规则建好（对话里的报错开在它的父对话下，项目设置里的开项目对话，其余开 Chat），
+ * 对话按归属规则建好（项目里对话的报错在项目里另开顶层对话、子对话里的报错开在它所属顶层对话下、项目设置里的开项目对话、其余开 Chat），
  * 显示在统一的 AI 分析窗口（AiWindow）里。
  */
 export type FixIssue = Partial<FixInput> & {

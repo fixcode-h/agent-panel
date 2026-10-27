@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, getCli, type CliDefinition, type ModelTier } from '@shared/clis'
 import {
+  AUTO_COMPACT_DEFAULT,
   CliSettings,
   type CliInstallJob,
   type CliModels,
@@ -917,8 +918,11 @@ export function CliSection({
             value={String(draft.autoCompact)}
             onChange={(e) => set('autoCompact', Number(e.target.value))}
             options={[
-              { value: '0', label: t('{name}（默认）', { name: t('按 Agent 自己的规则') }) },
-              ...[50, 60, 70, 80, 90].map((n) => ({ value: String(n), label: `${n}%` })),
+              { value: '0', label: t('按 Agent 自己的规则') },
+              ...[50, 60, 70, 80, 90].map((n) => ({
+                value: String(n),
+                label: `${n}%${n === AUTO_COMPACT_DEFAULT ? t('（默认）') : ''}`,
+              })),
             ]}
           />
         </Row>

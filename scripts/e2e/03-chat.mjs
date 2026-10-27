@@ -821,7 +821,13 @@ ${prompt}
         .args.some((x) => /^model_auto_compact_token_limit=\d+$/.test(x)),
     )
     await call('PUT', '/settings', settings)
-    step('自动压缩阈值：Claude Code 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE，Codex 用 model_auto_compact_token_limit')
+    // 没改过这一项时按默认值 70%：设置里不写 autoCompact 也要带上阈值
+    const z3 = await chatWith({ cli: 'claude' }, '自动压缩默认值')
+    await waitDone(z3.id)
+    assert.equal(calls().at(-1).compactPct, '70')
+    step(
+      '自动压缩阈值：Claude Code 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE，Codex 用 model_auto_compact_token_limit，默认 70%',
+    )
   }
 
   // ---- 执行中发消息：立刻进对话，能交给 CLI 就实时送达；交不出去时这一轮结束后马上接着处理 ----

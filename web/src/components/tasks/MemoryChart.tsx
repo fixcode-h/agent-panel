@@ -196,7 +196,7 @@ export function MemoryChart({ taskId }: { taskId: string }) {
         context: d.report,
         // 相关目录给项目路径：AI 要能按路径去看源码给方案
         cwd: d.cwd,
-        // 会话的内存分析属于这个对话：开在它的父对话下
+        // 会话的内存分析属于这个对话：按归属规则开在项目里或它所属的顶层对话下
         home: { kind: 'task', task },
       })
     } catch (e) {

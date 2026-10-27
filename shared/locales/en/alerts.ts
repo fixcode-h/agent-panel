@@ -19,6 +19,11 @@ export const EN_ALERTS: Record<string, string> = {
     "Couldn't reach the model service, or the connection dropped midway (timeout, or closed by a proxy or the server).",
   '检查网络和代理（Agent 设置里的环境变量，例如 HTTPS_PROXY）；面板会自动续接重试，仍然失败就点「继续执行」，或者换一个接口。':
     'Check your network and proxy (environment variables in the Agent settings, such as HTTPS_PROXY). The panel resumes and retries automatically; if it still fails, click Continue or switch to another API.',
+  上游连接断开: 'Upstream connection dropped',
+  '上游网关或中转服务把连接断开了：返回 502/503/504，或者「Connection closed」「Response payload is not completed」。可能是中转服务到模型源不稳定、这次请求太久，也可能是请求接近上游上限被直接断开（同一个中转对超限也可能只回这个，不回「上下文超长」）；本地代理或网络中断也会有同样的报错。':
+    'The upstream gateway or relay service dropped the connection: it returned 502/503/504, or "Connection closed" / "Response payload is not completed". This can be an unstable relay path to the model, a request that took too long, or a request near the upstream limit being dropped (the same relay may answer this instead of "context too long"); a local proxy or network drop produces the same error.',
+  '反复出现先看这条前一步的上下文占用（接近模型窗口上限时把「自动压缩上下文」调到 70%，或者新开对话只带必要的内容）；再确认代理和中转服务的状态，最后才是换接口或模型、减少同时执行的任务。':
+    'If it keeps happening, first check the context usage of the previous step (when close to the model window, set "Auto-compact context" to 70% or start a new conversation with only what is needed), then check the proxy and relay status; only then switch API or model, or run fewer tasks at once.',
   被限流: 'Rate limited',
   '模型服务返回「请求太多」或「服务过载」（429、529、overloaded），这一轮的请求被拒绝或在排队重试。':
     'The model service answered "too many requests" or "overloaded" (429, 529). Requests in this turn were rejected or are being retried.',
@@ -79,6 +84,18 @@ export const EN_ALERTS: Record<string, string> = {
     "The agent's request to the model failed and it is retrying automatically.",
   '一般会自己恢复，不用处理；反复重试失败时看原始信息里的原因。':
     'This usually recovers by itself. If retries keep failing, check the raw details for the cause.',
+  '上游网关或中转服务把连接断开了（502/503/504、Connection closed）：可能是中转服务到模型源不稳定、这次请求太久，也可能是请求接近上游上限被直接断开；本地代理或网络中断也会有同样的报错。':
+    'The upstream gateway or relay dropped the connection (502/503/504, Connection closed): it may be an unstable relay path to the model, a request that took too long, or a request near the upstream limit being dropped; a local proxy or network drop produces the same error.',
+  '先等它自己重试完；一直失败就看前一步的上下文占用（接近窗口上限时把「自动压缩上下文」调到 70%）、确认代理和中转状态；仍然失败再换接口或模型、减少同时执行的任务。':
+    'Let it finish retrying first. If it keeps failing, check the context usage of the previous step (when close to the window, set "Auto-compact context" to 70%) and check the proxy and relay status; if it still fails, switch API or model, or run fewer tasks at once.',
+  '模型服务在限流或过载（429、529、overloaded），这一轮的请求被拒绝或在排队重试。':
+    'The model service is rate limiting or overloaded (429, 529, overloaded); requests in this turn were rejected or are queued for retry.',
+  '它会按间隔自动重试；频繁出现就换一个模型或接口，或者减少同时执行的子对话。':
+    'It retries automatically with a delay; if this keeps happening, switch model or API, or run fewer subconversations at once.',
+  '这次请求的内容接近模型的上下文上限，模型或中转服务断开了它。':
+    "This request is close to the model's context limit, so the model or relay dropped it.",
+  '把设置里的「自动压缩上下文」调到 70%，或者新开一个对话只带必要的内容；一直重试多半恢复不了。':
+    'Set "Auto-compact context" in the settings to 70%, or start a new conversation with only what is needed. Retrying alone is unlikely to fix this.',
   消息没有送到: 'Message not delivered',
   '面板没能把一条消息（后台命令的结果、子对话的上报、提问的回答）交给这个对话的 Agent。':
     "The panel couldn't hand a message (a background command result, a subconversation report, an answer) to this conversation's agent.",

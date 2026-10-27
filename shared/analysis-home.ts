@@ -3,8 +3,9 @@ import type { Agent, Task } from './schema.ts'
 /**
  * AI 分析开在哪里（归属）：面板上所有「AI 分析」「AI 排查」都先按这一份规则定好放哪，再新建对话。
  *
- * - 对话、子对话、子任务里的分析：在它所属的那棵对话树的父对话（顶层对话）下开一个子对话。
- *   子对话的父对话、子任务所在对话的父对话都一样往上找到顶层对话——子对话不能再开子对话，这条底线不破。
+ * - 对话本身（含它名下子任务）里的分析：在项目里开一个顶层对话，不再开成它自己的子对话
+ *   （用户 2026-11 要求：分析不该把项目对话拖成运行中）。子任务的分析传进来的就是它所在的那条对话。
+ * - 子对话里的分析：在它所属的那棵对话树的顶层对话下开一个子对话（子对话不能再开子对话，这条底线不破）。
  * - 项目相关（项目设置、项目的 Skill / MCP、导入的只读记录、跨对话的执行分析）：在这个项目里开一个顶层对话。
  * - 归不到项目的（面板设置、CLI、本机环境、面板内存）：开 Chat 模式的对话。
  *
@@ -48,7 +49,10 @@ export function analysisHome(
       : { projectId: '', parentTaskId: '', place: 'chat' }
   const tk = scope.task
   if (!tk.projectId) return { projectId: '', parentTaskId: '', place: 'chat' }
-  const top = root && root.id === rootIdOf(tk) ? root : !tk.parentTaskId ? tk : undefined
+  // 分析对象本身就是项目里的顶层对话（含它名下的子任务，子任务分析的 scope.task 就是那条对话）：
+  // 在项目里另开一个顶层对话。先于 canHostChild 判定，不受父对话能不能挂子对话影响
+  if (!tk.parentTaskId) return { projectId: tk.projectId, parentTaskId: '', place: 'project' }
+  const top = root && root.id === rootIdOf(tk) ? root : undefined
   if (top && canHostChild(top)) return { projectId: tk.projectId, parentTaskId: top.id, place: 'child' }
   return { projectId: tk.projectId, parentTaskId: '', place: 'project' }
 }

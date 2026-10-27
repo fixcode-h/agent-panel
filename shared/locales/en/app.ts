@@ -154,6 +154,9 @@ export const EN_APP: Record<string, string> = {
   // 项目设置
   新项目: 'New project',
   项目设置已保存: 'Project settings saved',
+  '项目在别处被修改过，已刷新，请再点一次「确认」':
+    'This project was changed elsewhere. It has been refreshed — click "Confirm" again to save.',
+  '项目在别处被修改过，请刷新页面后再保存': 'This project was changed elsewhere. Refresh the page, then save again.',
   '项目设置 · {name}': 'Project settings · {name}',
   基本信息: 'Basics',
   '例如：官网前端': 'e.g. Website frontend',

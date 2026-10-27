@@ -178,6 +178,7 @@ import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDi
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
+import { createWorktreeCache, type WorktreeRead } from './worktree-cache.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { subjectLine } from '../shared/peer-message.ts'
@@ -324,8 +325,14 @@ export function tasksApi(deps: {
   projectCategories: Lister<ProjectCategory>
   /** 记项目教训（和界面上的「记成教训」共用一个队列） */
   recordLesson?: (projectId: string, draft: LessonDraft) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 子对话独立分支的 git 查询：测试里换成假的，用来验证「git 很慢时 /children 也不阻塞」；
+   * 不传就用真的 worktreeStatus
+   */
+  worktreeStatus?: typeof worktreeStatus
 }) {
   const store = createTaskStore()
+  const worktreeStatusOf = deps.worktreeStatus ?? worktreeStatus
   /** rev：执行中每次有变化加一，实时推送靠它判断要不要比较内容 */
   type Live = {
     task: Task
@@ -866,7 +873,11 @@ export function tasksApi(deps: {
     wake = false,
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
-    if (!parent) return
+    if (!parent) {
+      // 交回失败：父对话没了，这份上报（计划和状态）没地方记。和「子对话这一轮失败」区分开，日志上单独一条
+      log.warn('task', '子对话的上报没能交给父对话：找不到父对话', { from: from.id, parent: parentId })
+      return
+    }
     const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
     // 子对话的上报顺带把计划和名下子对话对齐：只在备注里写了「等 xxx」、没挂上等待的步骤也跟着收口
     if (child && syncKids(parent, await planKids(parent.id))) {
@@ -2493,7 +2504,35 @@ export function tasksApi(deps: {
     kind: AskKind = 'question',
   ) {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
-    if (!parent) return { ok: false, info: '找不到父对话' }
+    if (!parent) {
+      // 交回失败：父对话已经没了（被删、数据丢了），子对话的结果交不出去。
+      // 只写日志不够：界面要和「子对话自己跑挂了」分得开，所以在子对话里留一张「消息没有送到」的卡
+      log.warn('task', '子对话的汇报没能交给父对话：找不到父对话', {
+        task: child.id,
+        parent: child.parentTaskId,
+      })
+      const note: TaskMessage = {
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: t(
+          '这条汇报没能交给父对话：它已经不在了（可能被删了）。结果还在这个对话里，需要的话交给别的对话或自己处理。',
+        ),
+        tools: [],
+        alert: makeAlert('error', t('找不到父对话（id {id}）', { id: child.parentTaskId }), 'delivery'),
+        at: new Date().toISOString(),
+      }
+      const entry = live.get(child.id)
+      const target = entry?.task ?? child
+      target.messages.push(note)
+      if (entry) entry.rev++
+      else
+        await store
+          .update(child.id, target)
+          .catch((e) => log.warn('task', '记下「汇报没交出去」失败', { task: child.id, error: (e as Error).message }))
+      return { ok: false, info: '找不到父对话（它可能已经被删了），这条消息没能交回去；子对话自己的结果还在本对话里' }
+    }
     const suggestion = question && kind === 'suggestion'
     // 「提问」开关关着（默认就是关的）：子对话的提问和收尾建议不交给用户，直接交给父对话的 AI 决定。
     // 这时不产生 ask 卡片：卡片和「交给父对话决定」的折叠行都是给用户准备的，用户已经不回答问题了，
@@ -4340,11 +4379,8 @@ export function tasksApi(deps: {
     return messages
   }
 
-  /** 子对话独立分支状态的缓存：子对话 id → 当时的子对话版本、问的时间和结果 */
-  const worktreeSeen = new Map<
-    string,
-    { key: string; at: number; value: { merged: boolean; ahead: number; dirty: number } | null }
-  >()
+  /** 这次没有 git 要问（没有独立分支、或还轮不到判完成） */
+  const NO_WORKTREE: WorktreeRead<{ merged: boolean; ahead: number; dirty: number }> = { value: null, checked: true }
   /**
    * 还在动的子对话：子对话列表在有子对话在跑时 4 秒刷一次、都静止时 15 秒（见 TaskView 的
    * CHILD_POLL_ACTIVE_MS / CHILD_POLL_IDLE_MS），这里按较慢的那档留，免得每次刷新都为
@@ -4353,8 +4389,23 @@ export function tasksApi(deps: {
   const UNMERGED_TTL = 15_000
   /** 停下的子对话不会马上下一次：同一份状态留久一点，父对话页刷几遍时不必一直跑 git */
   const STOPPED_TTL = 60_000
+  /** `/children` 慢过这么久就记一笔日志：它已经不等 git 了，再慢就是别的地方（子对话数、序列化） */
+  const SLOW_CHILDREN_MS = 500
   /** 子对话栏查 git 的并发上限：几十个子对话时别一下子起上百个 git 进程 */
   const gitGate = createGate(4)
+  /**
+   * 后台补子对话分支状态的并发上限：和 `gitGate` 分开，它再慢也只排在自己这条队里。
+   * 共用一道门的话，几十个子对话的后台刷新（上百条 git）会把判定路径和 `/worktrees` 的同步 git 排到后面
+   */
+  const backgroundGitGate = createGate(2)
+  /**
+   * 子对话独立分支状态：子对话 id → 当时的子对话版本、问的时间和结果。
+   * 交给界面时不排队等 git（见 worktree-cache.ts），判定「算不算做完」时才等这次的结果
+   */
+  const worktreeCache = createWorktreeCache<{ merged: boolean; ahead: number; dirty: number }>({
+    gate: gitGate,
+    background: backgroundGitGate,
+  })
 
   /**
    * 子对话独立分支的实际情况（只问本地 git）：合没合回去、还有几个未提交的文件。
@@ -4362,39 +4413,43 @@ export function tasksApi(deps: {
    * 每 4 秒为它们多跑几次 git 不值得。
    * 已经停下 / 失败的例外：用户点了停止，最想知道的就是「改的东西还在不在」，
    * 这时候不管计划做没做完都要报出未提交的文件（界面靠它显示「N 个文件未提交 + 继续」）
+   *
+   * wait 为 false 时只给手上这份、不等 git（界面用）：几十个子对话一起查会把消息和 SSE 首包拖住，
+   * 后台补完下一次轮询就到位（见 worktree-cache.ts）。判定完成必须等最新结果的调用方不要传它
    */
-  async function childWorktree(tk: Task, project: Project | null) {
-    if (!project || tk.worktree?.state !== 'active') return null
+  async function childWorktree(
+    tk: Task,
+    project: Project | null,
+    opts?: { wait?: boolean },
+  ): Promise<WorktreeRead<{ merged: boolean; ahead: number; dirty: number }>> {
+    if (!project || tk.worktree?.state !== 'active') return NO_WORKTREE
     const stopped = tk.status === 'stopped' || tk.status === 'failed'
-    if (!stopped && childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return null
+    if (!stopped && childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return NO_WORKTREE
     // 子对话没变过就沿用刚问过的结果：父对话页每 4 秒刷一次子对话栏，每个做完的子对话要跑 4 条 git，
     // 子对话一多、再开着两个页面，就是每秒十几个 git 进程抢 CPU 和仓库的锁
     const key = `${tk.updatedAt}|${tk.status}|${tk.worktree.branch}|${tk.worktree.path}`
     const ttl = stopped ? STOPPED_TTL : UNMERGED_TTL
-    const hit = worktreeSeen.get(tk.id)
-    if (hit && hit.key === key && Date.now() - hit.at < ttl) return hit.value
-    // git 读不出来时不当成没合并：这里只为了让没合回去的子对话不显示成已完成，不该反过来把它卡住
-    const st = await gitGate(() => worktreeStatus(project.path, tk.worktree!)).catch(() => null)
-    const value = st ? { merged: st.merged, ahead: st.ahead, dirty: st.dirty } : null
-    worktreeSeen.set(tk.id, { key, at: Date.now(), value })
-    // 顺手丢掉早就过期的记录，删掉的子对话不会一直留在这里
-    if (worktreeSeen.size > 200)
-      for (const [id, v] of worktreeSeen) if (Date.now() - v.at > STOPPED_TTL * 6) worktreeSeen.delete(id)
-    return value
+    const load = () => worktreeStatusOf(project.path, tk.worktree!)
+    if (opts?.wait === false) return worktreeCache.peek(tk.id, key, ttl, load)
+    return worktreeCache.read(tk.id, key, ttl, load)
   }
 
   /** 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged） */
   async function childUnmerged(tk: Task, project: Project | null) {
     const st = await childWorktree(tk, project)
-    return !!st && !st.merged
+    return !!st.value && !st.value.merged
   }
 
   // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
+  // 不等独立分支的 git 查询（wait: false）：几十个子对话时同步等 git 会把消息和 SSE 首包一起拖住，
+  // 这里先给手上这份，git 结果在后台补，下一次轮询就到位（见 worktree-cache.ts）
   routes.get('/:id/children', async (c) => {
+    const began = Date.now()
     const parent = await current(c.req.param('id'))
     if (!parent) return bad(c, t('任务不存在'), 404)
     const project = parent.projectId ? await deps.projects.get(parent.projectId) : null
     const kids = (await store.list()).filter((t) => t.parentTaskId === parent.id && !taskDeleted(t))
+    let checking = 0
     const items = await Promise.all(
       kids.map(async (t) => {
         const liveTask = live.get(t.id)?.task ?? t
@@ -4403,8 +4458,10 @@ export function tasksApi(deps: {
         const doing = live.has(liveTask.id) ? childActivity(liveTask) : undefined
         const pending = pendingJobs(liveTask.id)
         const open = openPlan(liveTask)
-        // 独立分支的实际情况只问一次 git：既要说「没合回去」，也要说「还有几个文件没提交」
-        const wt = await childWorktree(liveTask, project)
+        // 独立分支的实际情况只问一次 git：既要说「没合回去」，也要说「还有几个文件没提交」。
+        // 这里不等它（不让首屏跟着 git 一起慢），没核对过的先按「还不知道」回，界面不当成已合回
+        const wt = await childWorktree(liveTask, project, { wait: false })
+        if (!wt.checked) checking++
         return {
           id: liveTask.id,
           title: liveTask.title,
@@ -4428,9 +4485,11 @@ export function tasksApi(deps: {
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」；带上正在做的那一步
           plan: open ? { ...open, step: doing?.plan?.title, child: doing?.plan?.child } : undefined,
           // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childWorktree）
-          unmerged: !!wt && !wt.merged,
+          unmerged: !!wt.value && !wt.value.merged,
           // 分支目录里还有几个文件没提交：停下时行上直接写出来，并且给「继续」接着做
-          dirty: wt?.dirty ?? 0,
+          dirty: wt.value?.dirty ?? 0,
+          // 上面两项是不是已经用 git 核对过：false 表示这次先回占位值、后台正在查
+          worktreeChecked: wt.checked,
           // 已经请父对话收尾、还没出结果：行上是「待收尾」
           wrapup: !!liveTask.wrapRequest && liveTask.wrapRequest.state !== 'failed',
           // 这一轮做完的时间、用户看过的最近一轮完成时间：两处不同就是「做完了还没看」，
@@ -4461,6 +4520,10 @@ export function tasksApi(deps: {
         }
       }),
     )
+    // 子对话栏是热点（打开父对话时每 4~15 秒刷一次）：慢过一截就记一笔，下次排查不必再从头量
+    const spent = Date.now() - began
+    if (spent >= SLOW_CHILDREN_MS)
+      log.warn('children', '子对话栏返回慢（已不包含 git 查询）', { count: kids.length, checking, ms: spent })
     return c.json(items)
   })
 

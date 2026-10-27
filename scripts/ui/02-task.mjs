@@ -1189,10 +1189,11 @@ await runShard(import.meta.filename, async (api) => {
           .waitFor({ timeout: 20000 })
           .catch(() => errors.push('子任务-窗口：开始分析后没有新建分析对话'))
         await check(p, '子任务-窗口-分析结果', ['耗时', '是否符合角色', '优化空间'])
-        // 分析对话按归属开在父对话下，显示在统一的 AI 分析窗口里，页面不跳走
+        // 分析对话按归属开在项目层级（顶层项目对话的分析不再挂成它自己的子对话），
+        // 显示在统一的 AI 分析窗口里，页面不跳走
         if (p.url() !== before) errors.push(`子任务-窗口：分析不该跳走页面（URL 变成了 ${p.url()}）`)
-        if (!(await p.getByRole('button', { name: '在父对话里打开' }).count()))
-          errors.push('子任务-窗口：分析窗口没有「在父对话里打开」（分析对话没开在父对话下）')
+        if (!(await p.getByRole('button', { name: '在项目对话里打开' }).count()))
+          errors.push('子任务-窗口：分析窗口没有「在项目对话里打开」（分析对话没开在项目层级）')
         // 回到购物车那个任务页接着核对后面的项：分析对话同样有「Token 用量」，backToTask() 会以为已经在任务页。
         // 先把刚建的分析对话从演示数据里去掉，免得后面按文字找元素时命中它的内容。
         // 要等它真的跑完再改：演示版模块级的 db 还是旧对象，它每 800ms 的 changed 和 finally 里的 persist()

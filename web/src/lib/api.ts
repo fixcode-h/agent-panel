@@ -482,7 +482,11 @@ export const api = {
   /** 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单 */
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
-  updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  updateProject: (id: string, input: ProjectInput, expectedUpdatedAt?: string) =>
+    request<Project>(
+      `/projects/${id}`,
+      json('PUT', { ...input, ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }) }),
+    ),
   /**
    * 只更新「AI 初始化」的结果：服务端自己读最新项目再合并，不会把用户这期间应用的推荐覆盖回旧值。
    * 初始化对话跑完才交回结果，传整份项目过去时它已经过期了。
@@ -568,6 +572,8 @@ export const api = {
         unmerged?: boolean
         /** 独立分支目录里还有几个文件没提交：停下时行上直接写出来 */
         dirty?: number
+        /** 上面两项是不是已经用 git 核对过：false 是首帧的占位值，git 结果在后台补 */
+        worktreeChecked?: boolean
         /** 独立分支目录：和上面的脏改动一起说明改动在哪 */
         dir?: string
         /** 在独立 worktree 里改时的分支 */
