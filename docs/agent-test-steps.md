@@ -239,6 +239,22 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 脚本说单测必须全量时跑 `npm run test:unit`，否则把命中的文件交给 `--files`；界面分片只打印命令（要构建）。
 必须全量时报告里的命令也是全量命令，不会同时给一条增量命令。
 
+### 用例预算检查（`scripts/test-budget.mjs`）
+
+分层判据和各层用例上限在 `scripts/lib/test-layers.mjs` / `scripts/lib/test-budget.mjs` 一处定义（纯函数 / 集成 / e2e 分片 / e2e 步骤）；
+超限时同一次提交要合并或淘汰等量旧用例，并写清覆盖关系。
+
+```bash
+node scripts/test-budget.mjs --check                  # 静态计数，不跑测试（npm run lint 已经在跑这条）
+node scripts/test-budget.mjs --check --message <文件>  # 本地预检：用将要写入的提交说明（工作区未提交时不能读 HEAD 的说明）
+node scripts/test-budget.mjs --tap <报告>              # CI 复核：累加 tap 的 # tests N，按两层合计上限判定，同时按静态计数判各层
+node scripts/test-layers.mjs --report                 # 分层基线：每个文件归哪层、命中什么特征、多少用例 / 行
+```
+
+`--check` 与 `--tap` 不能同时用（前者静态按层、后者用已跑出的 tap 复核，是两步）。
+`npm run lint` 里跑的是静态计数（秒级）；CI 的 `test` job 在同一轮单测跑完后把 tap 输出传给 `--tap` 复核，不重复跑测试。
+超预算且提交说明没有 `测试预算:` 段时非零退出；把上限抬到冻结基线之上一定非零退出（只降不升）。
+
 ### 怎么交给 Agent
 
 工作流任务新建时把整份步骤**快照**进任务（`TaskData.testSteps`、`TaskData.platform`），同时写成工作流说明里的

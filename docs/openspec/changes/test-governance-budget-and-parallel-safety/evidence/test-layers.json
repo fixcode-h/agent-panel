@@ -1,0 +1,2096 @@
+{
+  "generatedAt": "2026-10-27",
+  "command": "node scripts/test-layers.mjs --report --out docs/openspec/changes/test-governance-budget-and-parallel-safety/evidence/test-layers.json",
+  "totals": {
+    "pure": {
+      "files": 172,
+      "cases": 1500,
+      "lines": 26700
+    },
+    "integration": {
+      "files": 80,
+      "cases": 722,
+      "lines": 17841
+    },
+    "e2e": {
+      "shards": 13,
+      "steps": 122,
+      "lines": 8004
+    }
+  },
+  "markerCounts": {
+    "http-server": 15,
+    "temp-dir": 66,
+    "real-files": 55,
+    "git": 7,
+    "child-process": 12
+  },
+  "files": [
+    {
+      "file": "scripts/doc-bugs.test.mjs",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 15,
+      "lines": 226
+    },
+    {
+      "file": "scripts/doc-modules.test.mjs",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 10,
+      "lines": 111
+    },
+    {
+      "file": "scripts/e2e/read-log.test.mjs",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 5,
+      "lines": 54
+    },
+    {
+      "file": "scripts/e2e/spawn-server.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 24
+    },
+    {
+      "file": "scripts/fake-cli/outputs.test.mjs",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 4,
+      "lines": 49
+    },
+    {
+      "file": "scripts/fake-cli/wrap-request.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 29
+    },
+    {
+      "file": "scripts/lib/changed-tests.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 27,
+      "lines": 430
+    },
+    {
+      "file": "scripts/lib/demo-build-info.test.mjs",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 7,
+      "lines": 100
+    },
+    {
+      "file": "scripts/lib/shard-limit.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 21
+    },
+    {
+      "file": "scripts/lib/source-loc.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 48
+    },
+    {
+      "file": "scripts/lib/test-budget.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 118
+    },
+    {
+      "file": "scripts/lib/test-layers.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 95
+    },
+    {
+      "file": "scripts/release-publish.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 17,
+      "lines": 325
+    },
+    {
+      "file": "scripts/secret-check.test.mjs",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 86
+    },
+    {
+      "file": "server/accounts.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 13,
+      "lines": 131
+    },
+    {
+      "file": "server/agent-params.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 23,
+      "lines": 506
+    },
+    {
+      "file": "server/agent-role.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 194
+    },
+    {
+      "file": "server/anim.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 120
+    },
+    {
+      "file": "server/api-config.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server"
+      ],
+      "cases": 32,
+      "lines": 661
+    },
+    {
+      "file": "server/api-detect.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 87
+    },
+    {
+      "file": "server/api-protocol.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 103
+    },
+    {
+      "file": "server/api-slots.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 170
+    },
+    {
+      "file": "server/api-thinking.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 72
+    },
+    {
+      "file": "server/app-actions/app-actions.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server"
+      ],
+      "cases": 14,
+      "lines": 205
+    },
+    {
+      "file": "server/ask-mcp.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 171
+    },
+    {
+      "file": "server/asks.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 39
+    },
+    {
+      "file": "server/attachments.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 14,
+      "lines": 177
+    },
+    {
+      "file": "server/auth.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 27
+    },
+    {
+      "file": "server/background.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 13,
+      "lines": 506
+    },
+    {
+      "file": "server/builtin.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 29,
+      "lines": 1256
+    },
+    {
+      "file": "server/child-ask-link.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 5,
+      "lines": 100
+    },
+    {
+      "file": "server/child-ask.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 5,
+      "lines": 156
+    },
+    {
+      "file": "server/claims.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 143
+    },
+    {
+      "file": "server/cleanup.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 12,
+      "lines": 356
+    },
+    {
+      "file": "server/cli-order.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 37
+    },
+    {
+      "file": "server/cli-packages.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 33
+    },
+    {
+      "file": "server/comfy-templates.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 88
+    },
+    {
+      "file": "server/composer.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 12,
+      "lines": 181
+    },
+    {
+      "file": "server/core-agents.test.ts",
+      "layer": "integration",
+      "markers": [
+        "real-files"
+      ],
+      "cases": 18,
+      "lines": 418
+    },
+    {
+      "file": "server/default-workflow.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 77
+    },
+    {
+      "file": "server/deploy.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 2,
+      "lines": 62
+    },
+    {
+      "file": "server/design-capture.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 78
+    },
+    {
+      "file": "server/design-mcp.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 345
+    },
+    {
+      "file": "server/detect.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 24
+    },
+    {
+      "file": "server/download.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 9,
+      "lines": 271
+    },
+    {
+      "file": "server/engine-steps.test.ts",
+      "layer": "integration",
+      "markers": [
+        "child-process"
+      ],
+      "cases": 23,
+      "lines": 794
+    },
+    {
+      "file": "server/exec/api-wait.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 104
+    },
+    {
+      "file": "server/exec/commandcode-rpc.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 99
+    },
+    {
+      "file": "server/exec/delivery.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 95
+    },
+    {
+      "file": "server/exec/hints.test.ts",
+      "layer": "integration",
+      "markers": [
+        "real-files"
+      ],
+      "cases": 25,
+      "lines": 431
+    },
+    {
+      "file": "server/exec/orphans.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files",
+        "child-process"
+      ],
+      "cases": 11,
+      "lines": 443
+    },
+    {
+      "file": "server/exec/parsers.test.ts",
+      "layer": "integration",
+      "markers": [
+        "real-files"
+      ],
+      "cases": 19,
+      "lines": 539
+    },
+    {
+      "file": "server/exec/pi-rpc.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 28,
+      "lines": 885
+    },
+    {
+      "file": "server/exec/proc-stats.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 20,
+      "lines": 296
+    },
+    {
+      "file": "server/exec/process.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 3,
+      "lines": 85
+    },
+    {
+      "file": "server/exec/redirect.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 100
+    },
+    {
+      "file": "server/exec/review-diff.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 3,
+      "lines": 70
+    },
+    {
+      "file": "server/exec/rpc-keepalive-process.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 1,
+      "lines": 78
+    },
+    {
+      "file": "server/exec/rpc-keepalive.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 86
+    },
+    {
+      "file": "server/exec/steer-note.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 34
+    },
+    {
+      "file": "server/exec/system-prompt.test.ts",
+      "layer": "integration",
+      "markers": [
+        "real-files"
+      ],
+      "cases": 5,
+      "lines": 71
+    },
+    {
+      "file": "server/exec/worktree-merge.test.ts",
+      "layer": "integration",
+      "markers": [
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 29,
+      "lines": 754
+    },
+    {
+      "file": "server/exec/worktree.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 13,
+      "lines": 288
+    },
+    {
+      "file": "server/expose.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 11,
+      "lines": 150
+    },
+    {
+      "file": "server/file-format.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 47
+    },
+    {
+      "file": "server/files.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 21,
+      "lines": 400
+    },
+    {
+      "file": "server/fix.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 73
+    },
+    {
+      "file": "server/fs.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 22
+    },
+    {
+      "file": "server/image.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 14,
+      "lines": 156
+    },
+    {
+      "file": "server/integrations.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 83
+    },
+    {
+      "file": "server/interrupted.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 6,
+      "lines": 128
+    },
+    {
+      "file": "server/lessons.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 16,
+      "lines": 274
+    },
+    {
+      "file": "server/library-interop.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 6,
+      "lines": 163
+    },
+    {
+      "file": "server/library.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 25,
+      "lines": 491
+    },
+    {
+      "file": "server/local-image.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 16,
+      "lines": 256
+    },
+    {
+      "file": "server/locate-file.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 25
+    },
+    {
+      "file": "server/mcp-store.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 3,
+      "lines": 71
+    },
+    {
+      "file": "server/memory.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 8,
+      "lines": 156
+    },
+    {
+      "file": "server/merge-build.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files",
+        "git",
+        "child-process"
+      ],
+      "cases": 6,
+      "lines": 153
+    },
+    {
+      "file": "server/model-limits.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 111
+    },
+    {
+      "file": "server/models.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 94
+    },
+    {
+      "file": "server/net.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 25,
+      "lines": 501
+    },
+    {
+      "file": "server/no-push.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "git",
+        "child-process"
+      ],
+      "cases": 1,
+      "lines": 36
+    },
+    {
+      "file": "server/open.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 21
+    },
+    {
+      "file": "server/orch-mcp.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 18,
+      "lines": 731
+    },
+    {
+      "file": "server/orchestrator.test.ts",
+      "layer": "integration",
+      "markers": [
+        "child-process"
+      ],
+      "cases": 13,
+      "lines": 537
+    },
+    {
+      "file": "server/p4-split.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 92
+    },
+    {
+      "file": "server/panel-mcp-files.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 5,
+      "lines": 128
+    },
+    {
+      "file": "server/panel-source.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 24
+    },
+    {
+      "file": "server/parent-tests.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 309
+    },
+    {
+      "file": "server/presence.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 15,
+      "lines": 425
+    },
+    {
+      "file": "server/project-categories.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 4,
+      "lines": 123
+    },
+    {
+      "file": "server/project-lock.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 33
+    },
+    {
+      "file": "server/project-mcp.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 114
+    },
+    {
+      "file": "server/project-order.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 77
+    },
+    {
+      "file": "server/project-skills.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 5,
+      "lines": 133
+    },
+    {
+      "file": "server/prompt-lang.test.ts",
+      "layer": "integration",
+      "markers": [
+        "child-process"
+      ],
+      "cases": 11,
+      "lines": 249
+    },
+    {
+      "file": "server/reclaim.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 5,
+      "lines": 151
+    },
+    {
+      "file": "server/related.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 1,
+      "lines": 27
+    },
+    {
+      "file": "server/remote.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 42
+    },
+    {
+      "file": "server/review-gate.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 26,
+      "lines": 278
+    },
+    {
+      "file": "server/role-merge.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 213
+    },
+    {
+      "file": "server/run-usage.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server"
+      ],
+      "cases": 5,
+      "lines": 118
+    },
+    {
+      "file": "server/schedules.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 18,
+      "lines": 519
+    },
+    {
+      "file": "server/settings-auth.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 1,
+      "lines": 40
+    },
+    {
+      "file": "server/settings-defaults.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 3,
+      "lines": 42
+    },
+    {
+      "file": "server/settings-fallback.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 28
+    },
+    {
+      "file": "server/settings-migrate-keep.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 1,
+      "lines": 30
+    },
+    {
+      "file": "server/settings-migrate.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 2,
+      "lines": 35
+    },
+    {
+      "file": "server/sheet.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 1,
+      "lines": 12
+    },
+    {
+      "file": "server/slash.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 6,
+      "lines": 88
+    },
+    {
+      "file": "server/slots.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 96
+    },
+    {
+      "file": "server/spawn-forward.test.ts",
+      "layer": "integration",
+      "markers": [
+        "child-process"
+      ],
+      "cases": 13,
+      "lines": 275
+    },
+    {
+      "file": "server/static.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 7,
+      "lines": 97
+    },
+    {
+      "file": "server/store-concurrency.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 3,
+      "lines": 58
+    },
+    {
+      "file": "server/store.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 6,
+      "lines": 98
+    },
+    {
+      "file": "server/styles.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 38
+    },
+    {
+      "file": "server/summary.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir"
+      ],
+      "cases": 5,
+      "lines": 92
+    },
+    {
+      "file": "server/task-changes.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 27
+    },
+    {
+      "file": "server/task-children-count.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 2,
+      "lines": 62
+    },
+    {
+      "file": "server/task-children-load.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 3,
+      "lines": 204
+    },
+    {
+      "file": "server/task-children.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 23,
+      "lines": 453
+    },
+    {
+      "file": "server/task-day-group.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 38
+    },
+    {
+      "file": "server/task-export-helper.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 15,
+      "lines": 340
+    },
+    {
+      "file": "server/task-export-tree.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 1,
+      "lines": 112
+    },
+    {
+      "file": "server/task-export.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 41,
+      "lines": 1344
+    },
+    {
+      "file": "server/task-job-view.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 2,
+      "lines": 49
+    },
+    {
+      "file": "server/task-list-etag.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 2,
+      "lines": 69
+    },
+    {
+      "file": "server/task-memory.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server"
+      ],
+      "cases": 3,
+      "lines": 176
+    },
+    {
+      "file": "server/task-open-page.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 7,
+      "lines": 157
+    },
+    {
+      "file": "server/task-order.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 46
+    },
+    {
+      "file": "server/task-queue-migrate.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 85
+    },
+    {
+      "file": "server/task-restart.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 11,
+      "lines": 299
+    },
+    {
+      "file": "server/task-run-pick.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 60
+    },
+    {
+      "file": "server/task-search-route.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir"
+      ],
+      "cases": 6,
+      "lines": 118
+    },
+    {
+      "file": "server/task-seen.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 5,
+      "lines": 122
+    },
+    {
+      "file": "server/task-session.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 49
+    },
+    {
+      "file": "server/task-store.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 17,
+      "lines": 523
+    },
+    {
+      "file": "server/task-text.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 109
+    },
+    {
+      "file": "server/task-time.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 132
+    },
+    {
+      "file": "server/task-title.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 20
+    },
+    {
+      "file": "server/task-trash.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 8,
+      "lines": 173
+    },
+    {
+      "file": "server/thumbnail.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 7,
+      "lines": 71
+    },
+    {
+      "file": "server/ue-build.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 7,
+      "lines": 215
+    },
+    {
+      "file": "server/update.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 8,
+      "lines": 217
+    },
+    {
+      "file": "server/uploads-raw.test.ts",
+      "layer": "integration",
+      "markers": [
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 6,
+      "lines": 78
+    },
+    {
+      "file": "server/usage.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server"
+      ],
+      "cases": 3,
+      "lines": 65
+    },
+    {
+      "file": "server/web-search.test.ts",
+      "layer": "integration",
+      "markers": [
+        "http-server",
+        "temp-dir",
+        "real-files"
+      ],
+      "cases": 17,
+      "lines": 419
+    },
+    {
+      "file": "server/webhook.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 193
+    },
+    {
+      "file": "server/worktree-cache.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 13,
+      "lines": 217
+    },
+    {
+      "file": "shared/agent-share.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 20,
+      "lines": 253
+    },
+    {
+      "file": "shared/alerts.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 91
+    },
+    {
+      "file": "shared/analysis-home.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 81
+    },
+    {
+      "file": "shared/ansi.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 62
+    },
+    {
+      "file": "shared/api-balance.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 46
+    },
+    {
+      "file": "shared/api-vendors.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 67
+    },
+    {
+      "file": "shared/child-ask.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 57
+    },
+    {
+      "file": "shared/child-flow.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 13,
+      "lines": 301
+    },
+    {
+      "file": "shared/cli-spec.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 69
+    },
+    {
+      "file": "shared/comfy-chain.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 11,
+      "lines": 182
+    },
+    {
+      "file": "shared/comfy-layout.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 139
+    },
+    {
+      "file": "shared/comfy-templates.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 238
+    },
+    {
+      "file": "shared/datetime.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 29
+    },
+    {
+      "file": "shared/design-analysis.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 186
+    },
+    {
+      "file": "shared/design-data.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 13,
+      "lines": 286
+    },
+    {
+      "file": "shared/design.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 152
+    },
+    {
+      "file": "shared/duration.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 92
+    },
+    {
+      "file": "shared/element-picker.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 37
+    },
+    {
+      "file": "shared/engine-budget.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 167
+    },
+    {
+      "file": "shared/file-format.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 27
+    },
+    {
+      "file": "shared/handoff.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 52
+    },
+    {
+      "file": "shared/lesson-draft.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 172
+    },
+    {
+      "file": "shared/lesson-review.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 123
+    },
+    {
+      "file": "shared/local-image.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 18,
+      "lines": 273
+    },
+    {
+      "file": "shared/memory-analysis.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 181
+    },
+    {
+      "file": "shared/memory.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 161
+    },
+    {
+      "file": "shared/moss.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 184
+    },
+    {
+      "file": "shared/peer-message.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 58
+    },
+    {
+      "file": "shared/plan.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 69,
+      "lines": 1847
+    },
+    {
+      "file": "shared/pricing.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 12,
+      "lines": 192
+    },
+    {
+      "file": "shared/project-init.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 177
+    },
+    {
+      "file": "shared/proxy.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 27
+    },
+    {
+      "file": "shared/run-usage.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 13,
+      "lines": 281
+    },
+    {
+      "file": "shared/schedule.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 32,
+      "lines": 570
+    },
+    {
+      "file": "shared/search-exclude.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 79
+    },
+    {
+      "file": "shared/shells.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 70
+    },
+    {
+      "file": "shared/summary-compare.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 210
+    },
+    {
+      "file": "shared/summary.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 32,
+      "lines": 563
+    },
+    {
+      "file": "shared/task-helper-order.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 78
+    },
+    {
+      "file": "shared/task-html.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 134
+    },
+    {
+      "file": "shared/task-idle-ask.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 98
+    },
+    {
+      "file": "shared/task-page.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 80
+    },
+    {
+      "file": "shared/task-search.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 70
+    },
+    {
+      "file": "shared/task-session-dir.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 41
+    },
+    {
+      "file": "shared/task-share.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 35
+    },
+    {
+      "file": "shared/task-stage.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 35,
+      "lines": 744
+    },
+    {
+      "file": "shared/task-stamp.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 57
+    },
+    {
+      "file": "shared/task-trash.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 44
+    },
+    {
+      "file": "shared/test-steps.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 22,
+      "lines": 608
+    },
+    {
+      "file": "shared/text.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 37
+    },
+    {
+      "file": "shared/tool-failures.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 102
+    },
+    {
+      "file": "shared/umg.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 19,
+      "lines": 325
+    },
+    {
+      "file": "shared/usage.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 25,
+      "lines": 508
+    },
+    {
+      "file": "shared/web-search.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 19,
+      "lines": 291
+    },
+    {
+      "file": "web/src/components/projects/project-init-diff.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 71
+    },
+    {
+      "file": "web/src/components/tasks/changes-tree.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 62
+    },
+    {
+      "file": "web/src/components/tasks/child-line.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 11,
+      "lines": 138
+    },
+    {
+      "file": "web/src/components/tasks/diff-rows.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 14,
+      "lines": 183
+    },
+    {
+      "file": "web/src/lib/agent-groups.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 110
+    },
+    {
+      "file": "web/src/lib/ai-window-close.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 136
+    },
+    {
+      "file": "web/src/lib/analysis-report.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 85
+    },
+    {
+      "file": "web/src/lib/api-probe.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 21
+    },
+    {
+      "file": "web/src/lib/appearance.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 28
+    },
+    {
+      "file": "web/src/lib/attachment-image.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 45
+    },
+    {
+      "file": "web/src/lib/chat-dock.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 13,
+      "lines": 129
+    },
+    {
+      "file": "web/src/lib/cli-style.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 59
+    },
+    {
+      "file": "web/src/lib/clipboard-text.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 61
+    },
+    {
+      "file": "web/src/lib/copy-text.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 21
+    },
+    {
+      "file": "web/src/lib/design-projects.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 120
+    },
+    {
+      "file": "web/src/lib/editor-url.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 34
+    },
+    {
+      "file": "web/src/lib/element-pick.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 114
+    },
+    {
+      "file": "web/src/lib/element-ref.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 21,
+      "lines": 257
+    },
+    {
+      "file": "web/src/lib/file-path.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 100
+    },
+    {
+      "file": "web/src/lib/fileDrag.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 64
+    },
+    {
+      "file": "web/src/lib/fold.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 10,
+      "lines": 220
+    },
+    {
+      "file": "web/src/lib/helper-brief.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 19,
+      "lines": 202
+    },
+    {
+      "file": "web/src/lib/hint-place.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 77
+    },
+    {
+      "file": "web/src/lib/hotkey.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 11,
+      "lines": 147
+    },
+    {
+      "file": "web/src/lib/job-poll.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 52
+    },
+    {
+      "file": "web/src/lib/latest-turn.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 46
+    },
+    {
+      "file": "web/src/lib/library-tree.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 11,
+      "lines": 127
+    },
+    {
+      "file": "web/src/lib/live-fields.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 37
+    },
+    {
+      "file": "web/src/lib/load-trace.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 12,
+      "lines": 125
+    },
+    {
+      "file": "web/src/lib/mini-task.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 20,
+      "lines": 125
+    },
+    {
+      "file": "web/src/lib/minimized-chat.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 51
+    },
+    {
+      "file": "web/src/lib/pane-width.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 26
+    },
+    {
+      "file": "web/src/lib/peer-dedupe.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 125
+    },
+    {
+      "file": "web/src/lib/quote.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 46
+    },
+    {
+      "file": "web/src/lib/readiness.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 3,
+      "lines": 30
+    },
+    {
+      "file": "web/src/lib/run-row.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 12,
+      "lines": 180
+    },
+    {
+      "file": "web/src/lib/section-nav.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 83
+    },
+    {
+      "file": "web/src/lib/sidebar-hint.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 1,
+      "lines": 18
+    },
+    {
+      "file": "web/src/lib/skill-updates.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 2,
+      "lines": 32
+    },
+    {
+      "file": "web/src/lib/summary-page.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 9,
+      "lines": 234
+    },
+    {
+      "file": "web/src/lib/task-stream.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 5,
+      "lines": 54
+    },
+    {
+      "file": "web/src/lib/tasks.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 18,
+      "lines": 333
+    },
+    {
+      "file": "web/src/lib/title-count.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 154
+    },
+    {
+      "file": "web/src/lib/toast-queue.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 8,
+      "lines": 116
+    },
+    {
+      "file": "web/src/lib/toast.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 71
+    },
+    {
+      "file": "web/src/lib/useStickToBottom.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 7,
+      "lines": 39
+    },
+    {
+      "file": "web/src/lib/workflow-doc.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 4,
+      "lines": 43
+    },
+    {
+      "file": "web/src/lib/worktrees.test.ts",
+      "layer": "pure",
+      "markers": [],
+      "cases": 6,
+      "lines": 109
+    }
+  ],
+  "e2eShards": [
+    {
+      "file": "scripts/e2e/01-settings.mjs",
+      "steps": 3,
+      "lines": 57
+    },
+    {
+      "file": "scripts/e2e/02-workflow.mjs",
+      "steps": 6,
+      "lines": 302
+    },
+    {
+      "file": "scripts/e2e/03-chat.mjs",
+      "steps": 18,
+      "lines": 968
+    },
+    {
+      "file": "scripts/e2e/04-subagents.mjs",
+      "steps": 27,
+      "lines": 1467
+    },
+    {
+      "file": "scripts/e2e/05-workflow-edge.mjs",
+      "steps": 18,
+      "lines": 1315
+    },
+    {
+      "file": "scripts/e2e/06-assist.mjs",
+      "steps": 10,
+      "lines": 1178
+    },
+    {
+      "file": "scripts/e2e/07-local.mjs",
+      "steps": 25,
+      "lines": 1474
+    },
+    {
+      "file": "scripts/e2e/08-test-steps.mjs",
+      "steps": 1,
+      "lines": 166
+    },
+    {
+      "file": "scripts/e2e/10-spawn-server.mjs",
+      "steps": 0,
+      "lines": 74
+    },
+    {
+      "file": "scripts/e2e/11-app-actions.mjs",
+      "steps": 4,
+      "lines": 82
+    },
+    {
+      "file": "scripts/e2e/12-parent-tests.mjs",
+      "steps": 6,
+      "lines": 287
+    },
+    {
+      "file": "scripts/e2e/13-forward-doc.mjs",
+      "steps": 3,
+      "lines": 111
+    },
+    {
+      "file": "scripts/e2e/14-accounts.mjs",
+      "steps": 1,
+      "lines": 523
+    }
+  ]
+}

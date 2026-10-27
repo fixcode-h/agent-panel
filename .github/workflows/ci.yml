@@ -22,8 +22,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # lint 里已经跑过静态的预算检查（不执行测试）；这里只跑单测本身
       - run: npm run lint
-      - run: npm run test:unit
+      # 单测输出存成 tap，跑完用真实用例数复核一次分层预算（同一次全量只统计一次，不重复跑测试）。
+      # 报告写到 $RUNNER_TEMP：留在检出的工作区里会多出一个未跟踪文件，预算检查会把工作区当成有未提交改动。
+      - run: |
+          set -o pipefail
+          npm run test:unit -- --test-reporter=tap 2>&1 | tee "$RUNNER_TEMP/unit-tap.txt"
+      - run: node scripts/test-budget.mjs --tap "$RUNNER_TEMP/unit-tap.txt"
       - run: npm run build
 
   # 端到端单独一个 job：scripts/e2e.mjs 内部并行跑各个分片（各自临时目录、端口和服务），
