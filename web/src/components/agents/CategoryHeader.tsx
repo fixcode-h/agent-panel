@@ -5,13 +5,25 @@ import type { Category } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { GroupHeader } from '@/components/layout/ListPane'
 
 /** 列表里的分类标题：新建、重命名、删除（Agent 和工作流的分类共用） */
-export function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
+export function CategoryHeader({
+  category,
+  count,
+  onAdd,
+  compact,
+}: {
+  category: Category
+  count: number
+  onAdd: () => void
+  /** 紧凑列表里标题也跟着收窄（和 GroupHeader 的紧凑档一致） */
+  compact?: boolean
+}) {
   const { setCategories, setAgents, setWorkflows } = useData()
   const isWf = category.scope === 'workflow'
   const [editing, setEditing] = useState(false)
@@ -46,7 +58,7 @@ export function CategoryHeader({ category, count, onAdd }: { category: Category;
 
   if (editing)
     return (
-      <div className="flex h-9 items-center px-2 pt-2">
+      <div className={cn('flex items-center px-2', compact ? 'h-8 pt-1' : 'h-9 pt-2')}>
         <input
           autoFocus
           aria-label={t('分类名称')}
@@ -70,6 +82,7 @@ export function CategoryHeader({ category, count, onAdd }: { category: Category;
       <GroupHeader
         label={category.name}
         count={count}
+        compact={compact}
         actions={
           <>
             <Button
