@@ -9,6 +9,11 @@ import { TaskData, TaskMessage } from '../shared/schema.ts'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-task-store-'))
 process.env.AGENT_PANEL_DATA = dir
 
+/** 消息文件按 400ms 窗口合并写：等到目标内容真落地为止，最多等这么久（CI 负载高时窗口会晚于预计） */
+const PERSIST_WAIT_TIMEOUT_MS = 5000
+/** 轮询间隔：够密才能尽快返回，又不至于空转抢 CPU */
+const PERSIST_WAIT_INTERVAL_MS = 20
+
 const { createStampTracker, createTaskStore, messageChars } = await import('./task-store.ts')
 
 const write = (file: string, data: unknown) => {
@@ -150,8 +155,17 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
   assert.equal(readFileSync(file, 'utf8'), marker, '消息没变不重写')
 
   const ids = (raw: string) => JSON.parse(raw) as { id: string; text: string }[]
-  // 消息文件按 400ms 窗口合并写：等窗口过去再读，否则读到的是上一次落地的那份
-  const settle = () => new Promise((r) => setTimeout(r, 500))
+  // 消息文件按 400ms 窗口合并写：等到目标内容真的出现在文件里再断言，返回实际等了多久。
+  // 固定 sleep 500ms 在高负载（CI）上会读到窗口前的旧内容，那次晚落地不是代码错；
+  // 到上限仍未出现就交给下面的断言带等待时长报失败，不静默通过。
+  const settle = async (expectedLastText: string) => {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < PERSIST_WAIT_TIMEOUT_MS) {
+      if (ids(readFileSync(file, 'utf8')).at(-1)?.text === expectedLastText) break
+      await new Promise((r) => setTimeout(r, PERSIST_WAIT_INTERVAL_MS))
+    }
+    return Date.now() - startedAt
+  }
 
   // 新增一条：关键节点（changed(true) 就这么调）立即落盘，当场可读
   const added = [...created.messages, msg('c', '第三条')]
@@ -163,8 +177,8 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
 
   // 替换最后一条：普通更新（流式中间态）落在窗口里，窗口过去后必须是最新那份
   await store.update(created.id, { ...created, messages: [...added.slice(0, 2), msg('c', '第三条，接着写')] })
-  await settle()
-  assert.equal(ids(readFileSync(file, 'utf8')).at(-1)?.text, '第三条，接着写')
+  const waited = await settle('第三条，接着写')
+  assert.equal(ids(readFileSync(file, 'utf8')).at(-1)?.text, '第三条，接着写', `等了 ${waited}ms 仍未落地`)
 
   // 返工删消息：回到两条
   await store.update(created.id, { ...created, messages: created.messages }, { now: true })

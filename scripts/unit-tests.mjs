@@ -150,14 +150,20 @@ if (given.length) {
 }
 
 let exitCode = 0
+/** 每批的结论，最后单独打成一行：前面批次的结果会被长输出滚上去，只有最后一批的「通过」留在屏幕上 */
+const verdicts = []
 for (const [label, files, opts] of batches) {
   if (!files.length) {
     console.log(`[unit] ${label}：没有文件，跳过`)
     continue
   }
   const { ms, code } = run(files, opts)
-  console.log(`\n[unit] ${label}：${files.length} 个文件，${(ms / 1000).toFixed(1)}s，${code ? '失败' : '通过'}`)
+  const verdict = code ? '失败' : '通过'
+  console.log(`\n[unit] ${label}：${files.length} 个文件，${(ms / 1000).toFixed(1)}s，${verdict}`)
+  verdicts.push(`${label}${verdict}`)
   if (code) exitCode = code
 }
+// 汇总行和判定逻辑无关，只是防止「前一批失败、最后一批通过」被读成「全过却退出码非零」
+console.log(`[unit] 汇总：${verdicts.length ? verdicts.join('；') : '没有批次'} → 退出码 ${exitCode}`)
 // 用 exitCode 而不是 exit()：stdout 不是终端（CI 管道）时 exit() 会丢掉最后一行汇总
 process.exitCode = exitCode
