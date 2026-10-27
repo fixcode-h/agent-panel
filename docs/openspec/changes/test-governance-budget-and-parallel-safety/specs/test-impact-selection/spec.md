@@ -4,6 +4,8 @@
 
 让增量测试选择更细、更可信：命中要给出理由，能定位到用例级就不跑整文件，必须全量要有可复核的依据，同一改动得到同一结果。
 
+现状（已有机制，本 change 只细化不新增）：`scripts/changed-tests.mjs` 与 `scripts/lib/import-graph.mjs` 已在做 import 反向依赖闭包、高风险区强制全量（现为目录级）、`FULL_COVERAGE_RATIO = 60%`、删除 / 改名与依赖图不完整判必须全量；`scripts/unit-tests.mjs` 已支持 `--files` 只跑指定文件。下面几条需求都是在这套机制上细化（收窄到文件级契约清单、提高阈值、补命中理由、加用例级粒度），**不是**新建一套选择器。
+
 ## ADDED Requirements
 
 ### Requirement: Selection reports hit basis
@@ -41,7 +43,7 @@
 
 ### Requirement: Justified full-run triggers
 
-只有以下情况可以判「必须全量」：高风险契约文件（CLI 定义、执行引擎、落盘 schema、内置工作流）、影响面比例达到阈值、依赖图存在无法解析的 import、改动包含删除或改名。每次必须全量 MUST 输出触发类别、阈值和命中的文件集合；任何其他理由 MUST NOT 触发全量。
+在现有触发条件（高风险区、比例阈值、依赖图不完整、删除/改名）基础上细化：只有以下情况可以判「必须全量」——高风险契约文件（CLI 定义、执行引擎、落盘 schema、内置工作流；范围从目录级收窄到文件级清单）、影响面比例达到阈值（`FULL_COVERAGE_RATIO` 从 60% 提到 75%）、依赖图存在无法解析的 import、改动包含删除或改名。每次必须全量 MUST 输出触发类别、阈值和命中的文件集合；任何其他理由 MUST NOT 触发全量。
 
 #### Scenario: 改文档不触发全量
 

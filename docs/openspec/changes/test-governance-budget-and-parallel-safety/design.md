@@ -29,7 +29,7 @@
 
 - 不引入新的测试框架、远程缓存或云测试平台。
 - 不改产品代码行为；只动测试、测试基础设施、CI 与文档。
-- 不在本 change 处理 `docs/.pi/` 的可复现性（见 proposal 非目标）。
+- 不在本 change 处理 `openspec init` 生成的临时指令目录（`docs/` 下、被 `.gitignore` 排除、未入库、已被清理）的可复现性（见 proposal 非目标）。
 - 不追求「单测零 flaky」：目标是可归因、可复现、有预算，flaky 用例必须被记录并进入修复队列。
 
 ## Decisions
@@ -51,12 +51,12 @@
 
 ### D3 迁移三批，每批一个提交、独立验证
 
-| 批次 | 内容 | 验证 | 回滚 |
-| --- | --- | --- | --- |
-| 批 0（只读） | `node scripts/test-layers.mjs --report` 产出 `test-layers.json`：每个文件的层、命中的集成特征、行数 | 人工抽查 10 个文件，确认判据 | 无改动 |
-| 批 1（改名） | 按批 0 清单把集成特征文件改成 `*.integration.test.ts`，目录不变；同一提交更新枚举函数（目录 + 判定函数）、`TIMING_FILES` 的显式路径、`scripts/lib/changed-tests.mjs` 的测试文件识别正则。`covers.mjs` 登记的是界面分片 → 源码前缀，与单测改名无关，不动；依赖目录的高风险区也不受改名影响 | `npm run test:unit` 全量 + 用例名集合与基线 diff（期望为空）+ `node scripts/test-budget.mjs` | 单提交 revert |
-| 批 2（拆分） | 只对「一个文件覆盖多个互不相关源模块」的测试拆分，拆完每个文件顶部加 `// @covers <源文件>` | 每拆一个文件跑该文件 + `node scripts/changed-tests.mjs --files <源文件>`，确认命中集合不变 | 单文件提交 revert |
-| 批 3（淘汰） | 按三类淘汰理由删除/合并，逐条登记（理由用固定枚举） | `node scripts/test-inventory.mjs --check-retire`（理由枚举、removed 与登记对应、用户 Bug 回归未删）+ `node scripts/test-budget.mjs`（数量下降） | 单条提交 revert |
+| 批次         | 内容                                                                                                                                                                                                                                                                                                                                               | 验证                                                                                                                                            | 回滚              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 批 0（只读） | `node scripts/test-layers.mjs --report` 产出 `test-layers.json`：每个文件的层、命中的集成特征、行数。按文件现状登记，不按合并后的假设：`server/exec/worktree.test.ts`（现 13 例，时钟 / 并发窗口敏感，在 `TIMING_FILES` 里）与 `server/exec/worktree-merge.test.ts`（现 29 例，git 状态 / 合并 / 回收 / 依赖共用）早已拆开，分别登记为两个独立文件 | 人工抽查 10 个文件，确认判据                                                                                                                    | 无改动            |
+| 批 1（改名） | 按批 0 清单把集成特征文件改成 `*.integration.test.ts`，目录不变；同一提交更新枚举函数（目录 + 判定函数）、`TIMING_FILES` 的显式路径、`scripts/lib/changed-tests.mjs` 的测试文件识别正则。`covers.mjs` 登记的是界面分片 → 源码前缀，与单测改名无关，不动；依赖目录的高风险区也不受改名影响                                                          | `npm run test:unit` 全量 + 用例名集合与基线 diff（期望为空）+ `node scripts/test-budget.mjs`                                                    | 单提交 revert     |
+| 批 2（拆分） | 只对批 0 判为「一个文件覆盖多个互不相关源模块」的测试拆分，拆完每个文件顶部加 `// @covers <源文件>`。worktree 的拆分已经完成（`server/exec/worktree.test.ts` 13 例 + `server/exec/worktree-merge.test.ts` 29 例），**不再列入批 2 待拆清单**，只保持两个文件的职责边界不再合并                                                                     | 每拆一个文件跑该文件 + `node scripts/changed-tests.mjs --files <源文件>`，确认命中集合不变                                                      | 单文件提交 revert |
+| 批 3（淘汰） | 按三类淘汰理由删除/合并，逐条登记（理由用固定枚举）                                                                                                                                                                                                                                                                                                | `node scripts/test-inventory.mjs --check-retire`（理由枚举、removed 与登记对应、用户 Bug 回归未删）+ `node scripts/test-budget.mjs`（数量下降） | 单条提交 revert   |
 
 - **不破坏覆盖的检查**：scripts/lib/test-inventory.mjs 解析 tap 的用例名（`ok N - <name>`），迁移前把基线写到 docs/openspec/changes/test-governance-budget-and-parallel-safety/evidence/test-inventory.baseline.json；每批跑完输出 `added / removed / unchanged`，`removed` 必须与 `migration.md` 的登记逐条对应。
 - **淘汰的机器校验**（`test-inventory --check-retire`）：读 `migration.md` 的表格，理由不在固定枚举（`能力已删除` / `已完全覆盖` / `长期 flaky`）内即失败；`removed` 与登记不能一一对应即失败。用户 Bug 回归用**关键词交叉匹配**判定（Bug 记录只有元数据头，不含测试文件路径），规则是**精确匹配**：源文件 basename 精确出现在 Bug 记录的「入口 / 症状 / 关键词」里，或关键词长度 ≥3 且作为整词命中待删用例名；长度 <3 的关键词不参与匹配。命中即要求登记里写清等价回归用例并打印「命中 bug-id + 依据的关键词」；未命中打印「已比对 N 条、命中 0 条」。只靠人工评审不算通过。
@@ -77,9 +77,10 @@
 ### D5 `TIMING_FILES` 收缩依据与替代机制
 
 - **保留标准**：文件里存在真实时钟断言（`Date.now` / `setTimeout` / 落盘窗口 / 超时）或依赖并发窗口；每个条目在清单里带一行注释：断言位置 + 最近一次失败记录（链接到 `docs/lessons/testing.md` 对应小节或 issue）。
-- **收缩流程**：先落地 D6（并发上限），再逐条移出；每条移出前在**目标并发配置下连续 3 次全量运行**通过（D6 的上限已生效，不是只跑该文件；记录并发值、机器配置和日期）；移出后任一全量失败即加回并附输出。
+- **实测反例（串行兜底失效的判据）**：`server/background.test.ts` 的 `assert.ok(Date.now() - t0 < 4000)`（`server/background.test.ts` 里停止对话那条用例）在 `TIMING_FILES` 串行批里实跑 5599ms 失败。`scripts/unit-tests.mjs` 里该条目的注释把原因写成「靠 1 秒内的 setTimeout 轮询等排队/启动，和别的文件抢事件循环时会晚于窗口」，与这次串行批内的失败矛盾：串行只能保证同一时刻没有别的测试文件抢 CPU，`bg.stop()` 等子进程真实退出的耗时本身就会漂移。**结论：计时类失败只要出现在串行批里，就证明瓶颈不是与其他文件争用，串行兜底对这条失效**，归因改成「靠真实时钟轮询」，治法按 spec 的 `Timing assertions are decoupled from real clock` 三条出路。
+- **收缩流程**：先落地 D6（并发上限），再逐条移出；每条移出前必须已按上面三条出路改造过（注入时钟 / 事件驱动 / 窗口 ≥ 实测 p99 的 2 倍）且在**目标并发配置下连续 3 次全量运行**通过（D6 的上限已生效，不是只跑该文件；记录并发值、机器配置和日期）；移出后任一全量失败即加回并附输出。
 - **目标**：迁移完成后清单 ≤ 2 条（预计保留 `server/task-store.test.ts`、`server/exec/process.test.ts`，等可控时钟改造）。
-- **替代机制**：文件级隔离重跑（D4）+ 内存/CPU 自适并发（D6）+ 用例内可控时钟（长期，不在本 change）；清单只兜底真正无法改造的时钟断言。
+- **替代机制**：断言侧改造（注入时钟 / 事件驱动 / ≥ 2× p99 窗口，本 change 内就要落）+ 文件级隔离重跑（D4）+ 内存 / CPU 自适应并发（D6）；串行清单只兜底真正无法改造的时钟断言，不能当作时钟漂移的修复手段。
 - **复核**：每次全量 flaky 或每季度复核一次，复核结论写进 `docs/modules/testing/README.md` 的「串行清单」小节。
 
 ### D6 并行度自适应：一个纯函数，三处接入
@@ -123,10 +124,11 @@
 - **8.5 可复现**：选择输出不含时间戳；缓存格式版本升级（`CACHE_VERSION` +1）；`scripts/lib/changed-tests.test.mjs` 增加「清缓存前后一致」用例。
 - **8.6 空选择**：保持现有行为并补断言——空清单提示带基线重跑；无对应测试时明确交给父对话。
 
-### D9 默认英文环境：与另一条父对话的分工
+### D9 默认英文环境：归属父对话，本 change 只做断言侧
 
-- **依赖关系**：另一条父对话负责「让 `npm run test:unit` 默认英文环境并修受影响断言」。本 change **不重复实现**同一件事。
-- **实现顺序（谁先合都安全）**：阶段 3 动手前先读 `scripts/unit-tests.mjs` 与 `package.json`；已有 locale 设置则直接复用，没有才添加 scripts/lib/test-locale.mjs 的 `testLocaleEnv()`。两边都改到同一处时，以先合入的实现为准，后合入的只补检查与验收，不再改 runner。
+- **归属（已明确）**：`npm run test:unit` 的默认英文环境由**父对话统一实施**（改 `scripts/unit-tests.mjs` 的 locale 并修受影响断言，同时接入 `AGENT_PANEL_LANG`）；另一条父对话**不动** `scripts/unit-tests.mjs`。本 change **不重实现** runner 侧，只做断言侧（语言无关 + `test-locale-check`）与 CI 显式 locale；阶段 3 执行前先告知父对话确认落地情况。
+- **实现顺序**：阶段 3 动手前先读 `scripts/unit-tests.mjs` 与 `package.json`；已有 locale 设置就直接复用；没有就不改 runner，在 `acceptance.md` 把环境默认化项标「依赖中」，等父对话合入后再回填证据。两边都改到同一处时，以先合入的实现为准，后合入的只补检查与验收。
+- **只能用两种写法**：`AGENT_PANEL_LANG`（默认与 CI 一致的英文，需要中文时局部设 `AGENT_PANEL_LANG=zh`，当前仓库还没有这个变量，由父对话接入），或断言侧用 `t()` 现算。**不能用 `setLang('zh')`**：`server/lang.ts` 的 `applyServerLang()` 在模块加载时按 `settings.json` 的 language 与 `LANG` 重设语言，全局 `setLang` 会被覆盖（`ba91a8a8` 已把这种写法从测试里删掉）。
 - **本 change 独有部分**：
   - scripts/test-locale-check.mjs：扫描测试文件里的中文硬编码断言（`assert.*(/中文/)`、`assert.equal(…, '中文')`），允许行尾 `// i18n-ok: <原因>` 例外；接入 `npm run lint`。
   - CI 的 `test` job 显式设 `LANG` / `LC_ALL` 为 `C.UTF-8`，不依赖 runner 默认。
@@ -140,6 +142,12 @@
 - `scripts/ci-timings.mjs --runs 20 --branch dev --job test`：用 `gh run list --json databaseId,headSha,conclusion,createdAt` + `gh api repos/{owner}/{repo}/actions/runs/{id}/jobs` 取 `test` job 时长，算 P50 / P95，超 10 分钟非零退出；输出每次的完整 sha 与时长。
 - **文档落点**：命令与预算写在 `docs/modules/testing/README.md`（新建）与 `docs/agent-test-steps.md` 的「怎么跑」；`docs/lessons/testing.md` 补「重试与 flaky 判定」「预算硬上限」两条规则。
 
+### D11 分片登记的两层校验：硬门禁在 `rules-check`，`covers` 只提示
+
+- **硬门禁**：`scripts/rules-check.mjs` 第 14 条（第 359–370 行）校验两件事——`scripts/ui/` 下的分片文件必须能被 `scripts/ui-check.mjs` 的 `SHARD_FILE` 正则收录，且能被 `scripts/ui/harness.mjs` 的截图前缀正则认得出（认不出时 `02b` / `02c` 都落到 `00-`，截图互相覆盖）。两个正则从源码里读，不在检查里再抄一份；任一条对不上就进 errors，`npm run lint` 失败。这才是「加分片必须同时改」的门禁：认不到等于分片静默不跑、检查少跑一半。
+- **只是提示**：`scripts/ui/covers.mjs` 的登记对不上时，只在 `scripts/ui-check.mjs:81` 打一句「提示：…（不影响本次结果）」；`scripts/ui-check.mjs:163` 的注释说明 `ui-timings.json` 是每次运行自己的快照，不是分片清单也不是基线。**这是有意为之**：加分片与补映射允许分两次提交，不让检查因为缺一行映射就变红——缺映射的影响是「改到对应源码时增量选择映射不出来」，全量跑仍然覆盖，风险比「分片根本不跑」低一级。
+- **阶段 3 的边界**：新增规则只加在 `rules-check.mjs` 侧（分片收录、截图前缀、300 行、`@covers` 指向），**不得把 `covers.mjs` 的提示当缺陷去修**，也不要把它改成失败；要补映射就在加分片的那次提交里顺手补，不单独立一条规则去逼。
+
 ## Risks / Trade-offs
 
 - [改名迁移打断 `TIMING_FILES` / `covers` / `changed-tests` 的路径引用] → 批 1 一次性更新所有引用，脚本对不存在的路径直接失败（现有行为），不留半状态；单提交可回滚。
@@ -150,6 +158,23 @@
 - [CI P95 受 runner 波动影响] → 同时输出 P50 与逐次数据；只有 P95 超限才失败，便于人工判断是趋势还是抖动。
 - [本地六步串行跑比 CI 三 job 并行慢] → `verify-local` 是验收入口，不替代 CI；CI 仍三个 job 并行。
 - [flaky 重试通过仍退出 0] → 验收脚本 `flaky-check` 把它判为不通过；日常开发不卡，发布门禁严格。
+- [阶段 3 与另一条父对话动同一批脚本] → 按下面「阶段 3 的协调前提」由父对话先协调让路；同一文件同一时间只一条任务改，每批一个提交，冲突先问父对话而不是自己覆盖。
+
+## 阶段 3 的协调前提
+
+阶段 3 动下面这些文件之前，MUST 先由父对话协调另一条父对话让路（两边同时在改会互相覆盖或重复实现）：
+
+| 文件                                                                                             | 为什么必须先确认                                                                                               | 本 change 的边界                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/unit-tests.mjs`                                                                         | 默认英文环境由父对话统一实施（D9），另一条父对话不动它；本 change 的并发接入（D6）与计时批改造（D5）也要改这里 | 父对话确认它的改动已合入或明确让路后再动                                                                                                                                                                     |
+| `scripts/ui-check.mjs`                                                                           | 界面检查的并发与分片调度集中在这一段，是否另有并行改动由父对话确认                                             | 并发接入（D6）、分片隔离（D7）等它的分片改动合入后再改                                                                                                                                                       |
+| `scripts/ui/` 下的分片（含公共 harness `scripts/ui/harness.mjs` 与映射 `scripts/ui/covers.mjs`） | 分片文件、截图前缀、分片映射都在这里，是否另有并行改动由父对话确认                                             | 并发接入（D6）、分片隔离（D7）改调度与分片时先确认让路；`covers.mjs` 缺登记仍只提示（见 D11）                                                                                                                |
+| `scripts/rules-check.mjs`                                                                        | 批 2 要在这里加「单测试文件 ≤ 300 行、@covers 指向同一模块」规则                                               | 加规则前先确认没有并行改动，避免两条规则重复或互相覆盖；规则只加在这一侧                                                                                                                                     |
+| `shared/clis/pi.json`                                                                            | CLI 定义与别的任务有交集，是否并行改动由父对话确认                                                             | `vars` 里 `stepTimeout` 4000 / `attempts` 2 / `loadBudget` 10000 是**生产值**（`shared/cli-spec.ts` 注释写明「生产值写在这里」，测试只在调用时注入小值）；本 change 不得写成「生产可配」的说法，也不改生产值 |
+| `server/exec/worktree.test.ts`、`server/exec/worktree-merge.test.ts`                             | 另一条父对话的范围内                                                                                           | 只登记现状（13 + 29 例，已拆好），不在本 change 改它们                                                                                                                                                       |
+
+- **串行落地**：D9 的默认英文环境与 D6 的并发接入都改 `scripts/unit-tests.mjs`，必须逐个落地（先合入的一方定形，后合入的只补检查）。
+- **确认方式**：父对话确认「已让路」后再开始该批；未确认时先做不碰这些文件的步骤（spec / design / 文档 / 新增纯函数模块）。
 
 ## Migration Plan
 
