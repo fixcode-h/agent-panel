@@ -20,7 +20,7 @@ await runShard('账号和 API', async (api) => {
       ...base0,
       ...extra,
       clis: Object.fromEntries(
-        ['claude', 'codex', 'commandcode', 'gemini', 'pi'].map((id) => [
+        ['claude', 'codex', 'commandcode', 'pi'].map((id) => [
           id,
           { ...base0.clis[id], env: [{ key: 'FAKE_AUTH', value: id }], ...(extra.clis?.[id] ?? {}) },
         ]),
@@ -42,7 +42,6 @@ await runShard('账号和 API', async (api) => {
         ['claude', false, 0],
         ['codex', false, 0],
         ['commandcode', false, 0],
-        ['gemini', false, 0],
         ['pi', false, 0],
       ],
       '一开始都没登录',
@@ -104,14 +103,6 @@ await runShard('账号和 API', async (api) => {
     assert.deepEqual(
       [left.oauthAccount, left.theme, existsSync(path.join(homeDir, '.claude', '.credentials.json'))],
       [undefined, 'dark', false],
-    )
-    // Gemini CLI：登录后 CLI 不退出，凭据一变面板就算登录成功并停掉它；登录前先写好登录方式
-    await call('POST', '/accounts/gemini/login')
-    assert.equal((await waitLogin('gemini')).status, 'done')
-    assert.equal((await list('gemini')).live.email, 'fake4@example.com')
-    assert.equal(
-      JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8')).security.auth.selectedType,
-      'oauth-personal',
     )
     // Command Code：凭据里认不出邮箱，用起的名字；同一份凭据不重复保存
     await call('POST', '/accounts/commandcode/login')
@@ -246,7 +237,7 @@ await runShard('账号和 API', async (api) => {
       ['api', '中转 A', ['relay-1', 'relay-2'], true],
       'API 模式只列这个 API 的模型',
     )
-    const accountModels = await call('GET', '/clis/gemini/models?refresh=1')
+    const accountModels = await call('GET', '/clis/commandcode/models?refresh=1')
     assert.notEqual(accountModels.auth, 'api', '账号模式不受影响')
     const before = calls().length
     const t1 = await call('POST', '/tasks', {
@@ -361,21 +352,12 @@ await runShard('账号和 API', async (api) => {
       !readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8').includes('model_providers.relay-a'),
       '协议对不上时清掉上一次写进去的 provider',
     )
-    // 改用 API 需要改配置文件的 CLI：Gemini CLI 选了 gemini-api-key，改回账号时还原；Command Code 写进自定义接口
+    // 改用 API 需要改配置文件的 CLI：Command Code 写进自定义接口
     await call(
       'PUT',
       '/settings',
       withAuth({
         apis: [
-          {
-            id: 'g1',
-            name: 'Gemini Key',
-            protocol: 'gemini',
-            baseUrl: '',
-            apiKey: 'gk',
-            authHeader: 'x-api-key',
-            models: ['gem-1'],
-          },
           {
             id: 'c1',
             name: 'CC 接口',
@@ -388,32 +370,10 @@ await runShard('账号和 API', async (api) => {
           },
         ],
         clis: {
-          gemini: { authMode: 'api', apiId: 'g1' },
           commandcode: { authMode: 'api', apiId: 'c1' },
           pi: { authMode: 'api', apiId: 'c1' },
         },
       }),
-    )
-    const g = await call('POST', '/tasks', {
-      projectId: project.id,
-      mode: 'chat',
-      agentId: '',
-      cli: 'gemini',
-      model: 'gem-1',
-      prompt: '用 gemini API',
-    })
-    await waitDone(g.id)
-    const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
-    const geminiEnvFile = path.join(homeDir, '.gemini', '.env')
-    const geminiEnv = () => readFileSync(geminiEnvFile, 'utf8')
-    assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
-    assert.match(geminiEnv(), /GEMINI_API_KEY=gk/, '密钥写进 .gemini/.env')
-    assert.match(geminiEnv(), /GOOGLE_GEMINI_BASE_URL=/)
-    assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], null, '不再走环境变量')
-    assert.equal(
-      calls().findLast((x) => x.kind === 'gemini').apiEnv.trust,
-      'true',
-      'Gemini CLI 无界面运行要信任工作目录，否则报「not running in a trusted directory」',
     )
     const cc = await call('POST', '/tasks', {
       projectId: project.id,
@@ -474,19 +434,9 @@ await runShard('账号和 API', async (api) => {
       '/settings',
       withAuth({
         apis: [],
-        clis: { gemini: { authMode: 'account' }, commandcode: { authMode: 'account' }, pi: { authMode: 'account' } },
+        clis: { commandcode: { authMode: 'account' }, pi: { authMode: 'account' } },
       }),
     )
-    const g2 = await call('POST', '/tasks', {
-      projectId: project.id,
-      mode: 'chat',
-      agentId: '',
-      cli: 'gemini',
-      prompt: '改回账号',
-    })
-    await waitDone(g2.id)
-    assert.equal(geminiSettings().security.auth.selectedType, 'oauth-personal', '改回账号还原登录方式')
-    assert.ok(!geminiEnv().includes('GEMINI_API_KEY'), '改回账号删掉 .env 里的 API 配置')
     assert.equal(
       JSON.parse(readFileSync(path.join(homeDir, '.claude', 'settings.json'), 'utf8')).env?.ANTHROPIC_AUTH_TOKEN,
       undefined,

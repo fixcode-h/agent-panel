@@ -10,8 +10,8 @@
 
 前提：CLI 要有**结构化输出**。一次性执行的 CLI 用非交互模式（任务描述从 stdin 读，跑完就退出）；有常驻双向协议的 CLI 把 `protocol` 写成 `rpc`，
 按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。Claude Code、Codex 的协议差别较大，走内置的 `codex` / `claude` 适配器（同样经过统一的 RPC 会话引擎），
-其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Gemini CLI、Pi 的配置可以直接参考
-[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
+其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Pi 的配置可以直接参考
+[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
 
 ## 接入检查清单
 
@@ -95,11 +95,11 @@
 
 1. 有 `systemPromptFlag` 的（Claude Code、Codex、Pi）：规则和角色说明一起进系统提示词。
 2. 有 `systemPromptMod` 的（Command Code）：面板在数据目录生成 `mods/agent-panel-prompt-lang.mjs`，用 `--mod` 加载，`appendSystemPrompt` 把规则追加到系统提示词末尾；语言由环境变量 `AGENT_PANEL_REPLY_LANG` 传，不重写文件。本机验证 Command Code 1.88 可用；更旧的版本不认识这个参数时先升级。
-3. Gemini 等其余 CLI（没有系统提示词参数，也没有 mod 通道）：规则写在任务描述里，并在末尾再提醒一次。
+3. 其余 CLI（没有系统提示词参数，也没有 mod 通道）：规则写在任务描述里，并在末尾再提醒一次。
 
 **能力边界**：
 
-- 模型的原生 reasoning 由它自己的系统提示词和训练决定，提示词只能影响、不能强制。实测 Command Code + DeepSeek 会把任务描述里的中文规则忽略掉（思考输出英文），追加到系统提示词后才稳定；Gemini 这类只有任务描述通道的 CLI 仍可能不遵守。
+- 模型的原生 reasoning 由它自己的系统提示词和训练决定，提示词只能影响、不能强制。实测 Command Code + DeepSeek 会把任务描述里的中文规则忽略掉（思考输出英文），追加到系统提示词后才稳定；只有任务描述通道的 CLI 仍可能不遵守。
 - 设置是 `auto` 时，界面语言按浏览器的 `navigator.language` 解析，服务端（`server/lang.ts`）按 `process.env.LANG` / 系统 locale 解析，两边可能不一致（浏览器中文、系统英文）：这时界面是中文，提示词却会按服务端解析出的英文写。要让两边一致，把设置改成固定语言，不要用 `auto`。
 - 不要为了让思考语言变过来去改用户的全局配置。
 
@@ -272,19 +272,20 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 不传 `options` 的调用（例如 UI 设计那一轮）按关着处理。Pi 的联网搜索就是这样接的（见下面「联网搜索」）。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
-HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
+HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答。
+下面以用户自己加的一个文件型 CLI 为例（路径和超时键的写法按那个 CLI 自己的配置格式给）：
 
 ```json
 "env": { "MCP_TOOL_TIMEOUT": "86400000" },
 "mcp": {
   "files": {
-    ".gemini/settings.json": { "mcpServers": { "{name}": { "httpUrl": "{url}", "timeout": 86400000 } } }
+    ".custom/settings.json": { "mcpServers": { "{name}": { "url": "{url}", "timeout": 86400000 } } }
   }
 }
 ```
 
-Command Code 读环境变量 `MCP_TOOL_TIMEOUT`（毫秒），Gemini CLI 读 `mcpServers.<名字>.timeout`；Pi 的桥接脚本用 Node 自己的
-http 客户端，没有这一步。
+Command Code 读环境变量 `MCP_TOOL_TIMEOUT`（毫秒），配置文件里的写法按 CLI 自己的格式给（上例是 `mcpServers.<名字>.timeout`）；
+Pi 的桥接脚本用 Node 自己的 http 客户端，没有这一步。
 
 也可以写一个扩展做桥接：`shared/clis/pi.json` 把面板的工具交给 Pi 用的是一个扩展脚本 `{dir}/agent-panel-{name}.ts`，
 启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具（直接声明给模型），调用时转发过去，用 `-e` 按绝对路径加载。
@@ -344,7 +345,7 @@ Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 
 设置里「自动压缩上下文」这一项的默认值是 70%（`shared/schema.ts` 的 `AUTO_COMPACT_DEFAULT`），0 表示按 CLI 自己的规则；
 老设置里存着的 0 在读取时迁成 70（按 `Settings.defaultsVersion` 只做一次，见 `server/settings.ts`）。
 
-审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
+审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（例如用 `--approval-mode` 这类启动参数）。
 Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上补搜索）加 `--exclude-tools` 去掉命令或写文件的工具；
 不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，
 确认框通过 `rpc.asks` 交给页面。
@@ -365,7 +366,7 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 ## 账号登录 `auth`
 
 面板跑 `auth.login` 打开浏览器登录，成功后把 `auth.home` 下的 `auth.files`、`auth.fields` 和 `auth.keychain` 存成一个账号。
-判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；Gemini CLI 这类登录后不自己退出的也能判对），
+判断登录成功默认看**凭据有没有变**（登录前后各读一次，变了就算成功；登录后不自己退出的 CLI 也能判对），
 进程结束时再比一次，没变就报「没有完成登录」；标了 `loginAlreadyLoggedIn` 的 CLI 已登录时不改凭据文件，另按下面那行判。
 
 | 字段                   | 说明                                                                                                                                                                                                     |
@@ -373,7 +374,7 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 | `login`                | 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录                                                                                                                                      |
 | `loginAlreadyLoggedIn` | 已经登录着时再跑登录命令会直接说「已登录」、以退出码 0 退出、**不改凭据文件**的 CLI（Command Code 的 `cmdc login` 输出 `Already logged in`）写 `true`：这时退出码 0 且读得到凭据就算成功，不看凭据变没变 |
 | `loginStdin`           | 登录时从 stdin 写进去的内容（要确认的 `y` 之类）                                                                                                                                                         |
-| `loginEdits`           | 登录前先改的配置（例如 Gemini CLI 先选登录方式），登录完不还原                                                                                                                                           |
+| `loginEdits`           | 登录前先改的配置（例如先选登录方式），登录完不还原                                                                                                                                                       |
 | `home` / `files`       | 凭据目录（`~` 是用户目录，`${ENV:-默认值}` 先取环境变量）和里面的凭据文件                                                                                                                                |
 | `fields`               | 其他 JSON 文件里属于账号的键（例如 Claude Code 在 `.claude.json` 里记着账号）                                                                                                                            |
 | `keychain`             | macOS 钥匙串里的条目名                                                                                                                                                                                   |
@@ -391,7 +392,7 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 ## 把 API 交给 CLI `auth.api`
 
 设置里给 CLI 选了一个 API 后，面板在**保存设置时**就会按 `auth.api` 的规则写进 CLI 自己的配置（执行前还会再写一次，保证配置没被别的工具改掉）。
-模型下拉只列这个 API 里配的模型，并按当前协议过滤后缀：`-anthropic`、`-responses`、`-chat`/`-completions`、`-gemini` 只显示对应协议的，不带后缀的通用模型所有协议都显示；换协议时同一个模型会自动换到对应后缀。
+模型下拉只列这个 API 里配的模型，并按当前协议过滤后缀：`-anthropic`、`-responses`、`-chat`/`-completions` 只显示对应协议的，不带后缀的通用模型所有协议都显示；换协议时同一个模型会自动换到对应后缀。
 
 | 字段                       | 说明                                                                                                                                                                                                                                             |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -403,19 +404,19 @@ CLI 的输出在存进 `job.output` 之前会清掉 ANSI 转义（`shared/ansi.t
 | `edits`                    | 切到 API 时改的配置文件，保存设置时写；`format` 可以是 `json`（默认）、`toml`、`env`；`merge: true` 时对象递归合并，保留已有配置                                                                                                                 |
 | `accountEdits`             | 切回账号时还原的配置文件                                                                                                                                                                                                                         |
 | `wire`                     | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                                                                                                                                        |
-| `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`），Pi 的 Gemini 要带版本（`{root}/v1beta`），Gemini CLI 自己加版本（`{root}`）；没写的协议原样用 |
+| `baseUrl`                  | 协议 → 这个 CLI 要的接口地址写法，`{root}` 是去掉末尾 `/v1`、`/v1beta` 的地址：Anthropic SDK 自己拼 `/v1/messages`（Claude Code、Pi 写 `{root}`）；没写的协议原样用 |
 | `thinkArgs`                | API 方式下这一轮带了思考强度（不是 off）时加的参数；Codex 对不认识的第三方模型默认不发 reasoning，靠 `model_supports_reasoning_summaries=true` 打开                                                                                              |
 | `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                                                                                                    |
 | `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                                                                                      |
 | `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                                                                                               |
 | `modelReasoning`           | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档                                                                                                                        |
 | `modelReasoning.levelsKey` | 每档强度的取值表写进哪个键（Pi 的 `thinkingLevelMap`）：CLI 的每一档（关闭除外）模型支持写同名值、不支持写 `null`；Pi 不写这张表时不认 xhigh / max                                                                                               |
-| `modelReasoning.known`     | 模型目录里没有的模型再查 CLI 自带的模型数据（`pi-ai`：Pi 依赖的 pi-ai 的 `dist/providers/data/*.json`），按模型名取 `reasoning` 和取值表；不写时目录外的模型不动，Pi 当成不能思考，Responses / Anthropic / Gemini 协议下就不请求思考             |
+| `modelReasoning.known`     | 模型目录里没有的模型再查 CLI 自带的模型数据（`pi-ai`：Pi 依赖的 pi-ai 的 `dist/providers/data/*.json`），按模型名取 `reasoning` 和取值表；不写时目录外的模型不动，Pi 当成不能思考，Responses / Anthropic 协议下就不请求思考             |
 | `modelDefaultEffort`       | CLI 启动时按模型取默认强度的表（Pi `settings.json` 的 `modelThinkingLevels`）：`file`、`at`、`key`（如 `{provider}/{model}`）；写 API 设置里配的默认强度，没配用目录默认值                                                                       |
 | `modelLimits`              | CLI 只认模型条目自己声明的上下文窗口时，按模型目录写回这个键；`maxOutputKey` 是最大输出写进哪个键，不写表示不接受                                                                                                                                |
 | `modelInput`               | CLI 靠模型条目自己声明的「能接收哪些输入」决定要不要把图片发给模型时（Pi 的 `input`），按模型目录的 `images` 写回这个键；`withImage` / `withoutImage` 是支持和不支持图片时写的值，目录里没登记 `images` 的模型不动                               |
 
-已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code、Gemini CLI）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
+已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。
 `{models}` / `{modelList}` 写进 provider 配置时会去掉模型 ID 上已有的 `{provider}/`，避免变成 `tokenapi/tokenapi/...`。
 

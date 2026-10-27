@@ -44,7 +44,7 @@ test('面板挂在同一个服务上的提问、补充工具也显示中文名',
   const notes = toolView(tool('mcp__panel__read_user_notes', ''))
   assert.equal(notes?.tool.name, '查看用户补充')
   assert.equal(notes?.tool.kind, 'read')
-  // 带服务名的写法（Command Code、Gemini CLI 走配置文件接 MCP）
+  // 带服务名的写法（Command Code 走配置文件接 MCP）
   assert.equal(toolView(tool('mcp__panel-142a58__read_user_notes', ''))?.tool.name, '查看用户补充')
   const ask = toolView(tool('mcp__panel-142a58__ask_user', '', { input: '{"questions":[{"question":"先做哪个？"}]}' }))
   assert.equal(ask?.tool.name, '向用户提问')

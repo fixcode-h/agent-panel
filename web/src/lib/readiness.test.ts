@@ -19,7 +19,7 @@ test('isReady：可选项没满足也算就绪，必选项没满足就不算', (
 test('cliFor：角色指定了 CLI 就用它，指定的是停用的也照原样返回', () => {
   const clis = [cli('claude', true), cli('codex')]
   assert.equal(cliFor({ cli: 'codex' }, clis)?.id, 'codex')
-  assert.equal(cliFor({ cli: 'gemini' }, clis), undefined)
+  assert.equal(cliFor({ cli: 'nope' }, clis), undefined)
 })
 
 test('cliFor：没指定时用设置里的默认，没有默认就用第一个', () => {

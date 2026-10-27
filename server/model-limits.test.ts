@@ -16,7 +16,6 @@ test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   assert.deepEqual(opus.efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
   assert.equal(opus.defaultEffort, 'high')
   assert.equal(knownLimits('anthropic/claude-haiku-5-5').tier, 'low')
-  assert.equal(knownLimits('gemini-3-pro').context, 1_048_576)
   // deepseek-flash 和带协议后缀的 BYOK 写法都用同一份目录：low / high / max
   assert.deepEqual(knownLimits('deepseek/deepseek-v4-flash').efforts, ['low', 'high', 'max'])
   assert.equal(knownLimits('deepseek/deepseek-v4-flash').defaultEffort, 'high')
@@ -95,7 +94,7 @@ test('输入「1M」「200k」「128000」都认', () => {
   assert.equal(fmtTokens(12_345), '12345')
 })
 
-test('Claude Code 用环境变量，Codex 只接受上下文窗口（参数），Gemini 都不接受', () => {
+test('Claude Code 用环境变量，Codex 只接受上下文窗口（参数）', () => {
   const claude = getCli('claude')!
   assert.deepEqual(limitSupport(claude), { context: true, maxOutput: true })
   assert.deepEqual(limitEnvVars(claude, { context: 500_000, maxOutput: 0 }), [
@@ -106,5 +105,4 @@ test('Claude Code 用环境变量，Codex 只接受上下文窗口（参数）�
   const args = codex.buildArgs({ model: 'gpt-6-sol', permission: '', extraArgs: [], contextWindow: 300_000 })
   assert.ok(args.includes('model_context_window=300000'))
   assert.ok(!codex.buildArgs({ model: 'x', permission: '', extraArgs: [] }).some((a) => a.includes('context_window')))
-  assert.deepEqual(limitSupport(getCli('gemini')), { context: false, maxOutput: false })
 })

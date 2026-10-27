@@ -19,7 +19,7 @@ await runShard('设置与 CLI 检测', async (api) => {
   assert.ok((await call('GET', '/clis')).every((c) => !c.enabled))
   step('新装时 CLI 默认都不启用')
 
-  // 保存设置：五个 CLI 都指向假 CLI，检测都通过
+  // 保存设置：四个 CLI 都指向假 CLI，检测都通过
   await putSettings()
   const clis = await call('GET', '/clis?refresh=1')
   assert.deepEqual(
@@ -28,7 +28,6 @@ await runShard('设置与 CLI 检测', async (api) => {
       ['claude', true],
       ['codex', true],
       ['commandcode', true],
-      ['gemini', true],
       ['pi', true],
     ],
   )

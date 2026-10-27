@@ -933,13 +933,6 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
       ),
     )
   }
-  // Google 已经不让个人账号用 Gemini CLI（服务端限制）：个人账号登录会直接报这个错
-  if (/IneligibleTierError|no longer supported for Gemini Code Assist/i.test(detail))
-    hints.push(
-      t(
-        '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。',
-      ),
-    )
   if (isNetError(detail))
     hints.push(
       t(

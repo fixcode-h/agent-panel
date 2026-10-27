@@ -169,7 +169,7 @@ export async function invokeCli(o: {
   }
   if (o.signal?.aborted) hard.abort()
   else o.signal?.addEventListener('abort', onStop, { once: true })
-  // 没有提问通道的 CLI（无界面运行的 Command Code、Gemini CLI）：这一轮临时接一个提问工具，
+  // 没有提问通道的 CLI（无界面运行的 Command Code）：这一轮临时接一个提问工具，
   // 模型调用时一直等到用户回答。Claude Code、Codex 走自己的协议，不需要
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
@@ -197,7 +197,7 @@ export async function invokeCli(o: {
       ...(o.orch ? { orch: o.orch } : {}),
       ...(o.orch && o.app ? { app: o.app } : {}),
     })
-    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：同一个目录里平时只有一项 agent-panel，
+    // 写配置文件接 MCP 的 CLI（Command Code、Pi）：同一个目录里平时只有一项 agent-panel，
     // 同时在跑的另几轮才带后缀，不然后写的会把先写的那一项冲掉（见 panel-mcp-files.ts）。用参数传的保持固定的名字
     const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
     if (fileBased) slot = claimPanelName(o.cwd, bridge.url.slice(-6))
@@ -226,7 +226,7 @@ export async function invokeCli(o: {
     // 按设置里的开关才注入的扩展（Pi 的联网搜索）用面板自己的那一项填地址：
     // 用户自己配的 MCP 服务器没有这个端点
     const extras = mcpExtras(def.mcp!, servers[0]!.name, servers[0]!.url, dir, build.options)
-    // 几个工具写进同一个配置文件（Gemini CLI 的 settings.json）时先合在一起，一次写进去
+    // 几个工具写进同一个配置文件时先合在一起，一次写进去
     const files = new Map<string, unknown>()
     for (const f of [...tools.flatMap((x) => x.files), ...extras.files])
       files.set(

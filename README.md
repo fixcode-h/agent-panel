@@ -1,6 +1,6 @@
 # Agent 面板
 
-一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code、Gemini CLI、Pi），
+一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code、Pi），
 由主 Agent 和子 Agent 按工作流的流程图执行：连线决定先后，没有先后关系的节点同时执行，节点里的每一步可以挂载验收流程，不通过就退回修改。
 界面参考 Claude Code。
 
@@ -32,8 +32,8 @@
 - **项目教训**：角色在项目里返工过的地方记成规则（项目设置 · 项目教训），以后这个项目里的角色都照着做。
   对话里用户消息下面点「记成项目教训」可以手动记或交给角色整理；角色被纠正后也会自己记一条（标「角色记录」）。
   每条可以写管哪些文件：新会话只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再按需取全文，条目多了也不占满上下文
-- **项目设置 · MCP**：识别项目目录里各个工具认的 MCP 配置（`.mcp.json`、`.cursor/mcp.json`、`.vscode/mcp.json`、`.gemini/settings.json`、`.codex/config.toml`），
-  一键导入成面板管理的 MCP 工具；面板管理的工具写进 Claude Code、Codex、Gemini CLI、Pi 各自的配置文件（Command Code 的 MCP 配置暂时不管），可以按 CLI 启停、增删改、测试连接。
+- **项目设置 · MCP**：识别项目目录里各个工具认的 MCP 配置（`.mcp.json`、`.cursor/mcp.json`、`.vscode/mcp.json`、`.codex/config.toml`），
+  一键导入成面板管理的 MCP 工具；面板管理的工具写进 Claude Code、Codex、Pi 各自的配置文件（Command Code 的 MCP 配置暂时不管），可以按 CLI 启停、增删改、测试连接。
   配置读不懂、连不上时把原文和问题交给本机 CLI 排查，改完列表自动刷新
 - **项目设置 · Skill**：列出项目里各 CLI 会读的技能目录（`.agents/skills`、`.claude/skills` 等，跟着项目一起提交），
   可以新建、改 `SKILL.md`、删除，并检查格式问题；「AI 优化」按你的要求改写说明和正文，看过结果再决定写入，「AI 修复」把内容和问题一起交给本机 CLI 处理
@@ -65,7 +65,6 @@
 | Claude Code  | `npm install -g @anthropic-ai/claude-code`       | `claude`         |
 | Codex        | `npm install -g @openai/codex`                   | `codex`          |
 | Command Code | `npm install -g command-code`                    | `cmdc`           |
-| Gemini CLI   | `npm install -g @google/gemini-cli`              | `gemini`         |
 | Pi           | `npm install -g @earendil-works/pi-coding-agent` | `pi`             |
 
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。
@@ -92,7 +91,7 @@ npm start          # http://127.0.0.1:8787
   - Codex：`codex app-server`（JSON-RPC，任务描述通过 `turn/start` 传入；`exec --json` 没有流式输出）
   - Command Code：`cmdc --experimental --rpc …`（`turn/start`、`turn/steer`、`turn/interrupt`）
   - Pi：`pi --mode rpc …`（`get_state`、`prompt`、`steer`、`abort`，以 `agent_settled` 结束）
-  - Gemini CLI 等没有常驻协议的：任务描述通过 stdin 传入，stdout 一行一个 JSON 事件
+  - 其余没有常驻协议的 CLI（配置文件写的 stdin 模式）：任务描述通过 stdin 传入，stdout 一行一个 JSON 事件
 - 工作流从主流程的「开始」出发，一个节点的上游都完成后启动它的 CLI 进程，没有依赖的节点同时运行；
   某个节点失败后不再启动新节点，正在跑的节点跑完后任务停下。
   每个节点的提示包含：原始需求、补充要求、工作流说明、本节点要做的事、开始流程的结果、上游节点的结果、同时进行的节点（避免改同一个文件）。

@@ -137,7 +137,7 @@ export function builtinPrompt(name: string, args: string) {
 }
 
 /**
- * 命令文件（md）的正文按参数展开：Gemini CLI 的命令用 {{args}}；Claude Code 的用 $ARGUMENTS 和 $1、$2…（按空格分开的参数）。
+ * 命令文件（md）的正文按参数展开：{{args}} 是整套参数；$ARGUMENTS 和 $1、$2… 是 Claude Code 的写法（按空格分开的参数）。
  * 正文里没有占位符时，参数接在末尾
  */
 export function fillCommand(body: string, args: string) {

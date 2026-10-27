@@ -28,7 +28,7 @@ await writeFile(
 )
 
 test('「所有 Agent」的命令出现在每个 CLI 的菜单里', async () => {
-  for (const cli of ['claude', 'gemini']) {
+  for (const cli of ['claude', 'pi']) {
     const list = await listCommands(cli, '')
     const c = list.find((x) => x.name === 'changelog')
     assert.equal(c?.kind, 'command', cli)
@@ -41,18 +41,18 @@ test('「所有 Agent」的命令出现在每个 CLI 的菜单里', async () => 
 test('「所有 Agent」的命令由面板展开，Claude Code 也一样', async () => {
   const want = '从 v1.2 开始整理更新说明。'
   assert.equal(await expandSlash('/changelog v1.2', 'claude', '', true), want)
-  assert.equal(await expandSlash('/changelog v1.2', 'gemini', '', false), want)
+  assert.equal(await expandSlash('/changelog v1.2', 'pi', '', false), want)
 })
 
 test('内置命令：CLI 自己有的原样发，没有的由面板展开', async () => {
   assert.equal(await expandSlash('/init', 'claude', '', true), '/init')
-  assert.match(await expandSlash('/init', 'gemini', '', false), /AGENTS\.md/)
-  assert.match(await expandSlash('/security-review', 'gemini', '', false), /安全审查/)
+  assert.match(await expandSlash('/init', 'pi', '', false), /AGENTS\.md/)
+  assert.match(await expandSlash('/security-review', 'pi', '', false), /安全审查/)
   const fix = await expandSlash('/fix 登录后白屏', 'claude', '', true)
   assert.match(fix, /## 问题\n登录后白屏$/)
   // 没写参数：去掉空的「问题」小节，范围换成默认说法
-  assert.doesNotMatch(await expandSlash('/fix', 'gemini', '', false), /## 问题/)
-  assert.match(await expandSlash('/test', 'gemini', '', false), /给最近的改动/)
+  assert.doesNotMatch(await expandSlash('/fix', 'pi', '', false), /## 问题/)
+  assert.match(await expandSlash('/test', 'pi', '', false), /给最近的改动/)
 })
 
 test('CLI 自己的同名命令优先于内置命令', async () => {
@@ -63,7 +63,7 @@ test('CLI 自己的同名命令优先于内置命令', async () => {
 })
 
 test('不认识的命令原样发出', async () => {
-  assert.equal(await expandSlash('/nope 1', 'gemini', '', false), '/nope 1')
+  assert.equal(await expandSlash('/nope 1', 'pi', '', false), '/nope 1')
 })
 
 test('AI 创建命令：校验 front matter、命令名不和内置的重名', () => {

@@ -113,7 +113,7 @@ export function LibraryDetail({
   const path = here.find((i) => i.cli === cli)?.path ?? item.path
   const label = (id: string) => clis.find((c) => c.id === id)?.name ?? id
   const dirty = content !== null && content !== saved
-  // AI 优化要改的是 md 文件：toml 格式的命令（Gemini CLI）不用 AI 改，免得格式被换掉
+  // AI 优化要改的是 md 文件：toml 格式的命令不用 AI 改，免得格式被换掉
   const canAi = kind === 'skill' || clis.find((c) => c.id === cli)?.commandFormat === 'md'
   const targets = clis.filter((c) => c.id !== cli && (kind === 'skill' ? c.skillDir : c.commandDir))
 

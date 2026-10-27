@@ -496,8 +496,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '共 {n} 个': '{n} total',
   '还没有装 Skill': 'No skills installed yet',
   '自定义 API': 'Custom API',
-  '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
-    'Set up APIs here, then switch an agent\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the agents using it; model lists still come from the agent first. Only agents that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
+  '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Command Code 三种都能用。':
+    'Set up APIs here, then switch an agent\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the agents using it; model lists still come from the agent first. Only agents that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex; Command Code takes all three.',
   '提供方 ID': 'Provider ID',
   '留空时用 API 名称生成': 'Leave empty to derive it from the API name',
   '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。':

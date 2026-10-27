@@ -36,7 +36,7 @@ const splitFrontMatter = (text: string) => {
   return { fm: m?.[1] ?? '', body: m ? text.slice(m[0].length) : text }
 }
 
-/** TOML 里的一个字符串字段（Gemini CLI 的命令文件只用到 description、prompt 两个） */
+/** TOML 里的一个字符串字段（命令文件只用到 description、prompt 两个） */
 function tomlString(text: string, key: string) {
   const unescape = (v: string) => v.replace(/\\(["\\nt])/g, (_, c: string) => ({ n: '\n', t: '\t' })[c] ?? c)
   const multi = new RegExp(`^${key}\\s*=\\s*("""|''')\\r?\\n?([\\s\\S]*?)\\1`, 'm').exec(text)
@@ -57,7 +57,7 @@ export async function readCommand(file: string, format: 'md' | 'toml') {
   return { description: field(fm, 'description'), hint: field(fm, 'argument-hint'), body }
 }
 
-/** 一个目录下的命令文件；子目录里的叫「子目录:名字」（和 Claude Code、Gemini CLI 一样） */
+/** 一个目录下的命令文件；子目录里的叫「子目录:名字」（和 Claude Code 一样） */
 export async function scanCommands(
   dir: string,
   source: string,

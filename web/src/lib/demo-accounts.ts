@@ -91,9 +91,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
       models:
         body.protocol === 'anthropic'
           ? ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']
-          : body.protocol === 'gemini'
-            ? ['gemini-3-pro', 'gemini-3-flash']
-            : [`${base.includes('deepseek') ? 'deepseek' : 'gpt'}-chat`, 'gpt-6-sol', 'gpt-6-luna'],
+          : [`${base.includes('deepseek') ? 'deepseek' : 'gpt'}-chat`, 'gpt-6-sol', 'gpt-6-luna'],
     }
   }
   // 演示：模型探针不真发请求，直接报能通（前端在模型为空时不会调到这里）

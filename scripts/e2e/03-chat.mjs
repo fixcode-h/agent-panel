@@ -1,5 +1,5 @@
 /**
- * 端到端测试分片：对话任务、Gemini / Pi、空回合、命令与导入、停止、插话、额度、压缩、审查、执行中发消息
+ * 端到端测试分片：对话任务、自定义 CLI / Pi、空回合、命令与导入、停止、插话、额度、压缩、审查、执行中发消息
  *
  * 和其他分片并行跑：每个分片自己有临时数据目录、假 CLI 日志、端口和服务（见 harness.mjs），
  * 互不影响。总入口 scripts/e2e.mjs 并行跑全部分片并汇总。
@@ -28,6 +28,13 @@ await runShard('对话与续接', async (api) => {
     setupBase,
   } = api
   const { project, B, C, settings } = await setupBase()
+  // 自定义 CLI：数据目录 config/clis/ 下放一份配置（scripts/e2e/fixtures/custom-cli.json），
+  // 覆盖「配置文件写的 stdin CLI」这条执行路径：按配置拼参数、解析 stream-json
+  const customSpec = JSON.parse(readFileSync(path.join(root, 'scripts/e2e/fixtures/custom-cli.json'), 'utf8'))
+  const cliDir = path.join(dataDir, 'config/clis')
+  mkdirSync(cliDir, { recursive: true })
+  writeFileSync(path.join(cliDir, 'custom.json'), JSON.stringify({ ...customSpec, command: fake }))
+  await call('POST', '/clis/specs/reload', {})
   // ---- 对话任务 ----
   let chat = await call('POST', '/tasks', {
     projectId: project.id,
@@ -86,22 +93,22 @@ await runShard('对话与续接', async (api) => {
   await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
   await waitDone(dc.id)
   assert.equal(calls().at(-1).kind, 'codex', '继续对话也用选的 CLI')
-  // Gemini CLI：按配置文件（shared/clis/gemini.json）拼参数、解析 stream-json
+  // 自定义 CLI：按配置文件（scripts/e2e/fixtures/custom-cli.json）拼参数、解析 stream-json
   let gm = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
     agentId: def.id,
-    cli: 'gemini',
-    prompt: '用 Gemini',
+    cli: 'custom',
+    prompt: '用自定义 CLI',
   })
   gm = await waitDone(gm.id)
   assert.equal(gm.status, 'done', gm.messages.at(-1)?.text)
   c = calls().at(-1)
-  assert.equal(c.kind, 'gemini')
+  assert.equal(c.kind, 'custom')
   assert.ok(c.args.includes('--approval-mode') && c.args.includes('auto_edit'), c.args.join(' '))
-  assert.match(c.input, /^## 用户这次的消息\n用 Gemini\n\n/, '任务描述从 stdin 传入')
+  assert.match(c.input, /^## 用户这次的消息\n用自定义 CLI\n\n/, '任务描述从 stdin 传入')
   const gReply = gm.messages.filter((m) => m.role === 'agent').at(-1)
-  assert.match(gReply.text, /这是 gemini 的回复/)
+  assert.match(gReply.text, /这是 custom 的回复/)
   assert.deepEqual(
     gReply.tools.map((x) => x.kind),
     ['read', 'edit'],
@@ -112,10 +119,10 @@ await runShard('对话与续接', async (api) => {
   await waitDone(gm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
-  // Gemini 没有系统提示词参数，角色只在会话第一轮带：续接时角色没变不重发，变了（内置角色随版本更新、用户改了）补发新版
+  // 自定义 CLI 没有系统提示词参数，角色只在会话第一轮带：续接时角色没变不重发，变了（内置角色随版本更新、用户改了）补发新版
   const gRole = await call('POST', '/agents', {
     name: '戊',
-    cli: 'gemini',
+    cli: 'custom',
     description: '',
     model: '',
     icon: 'bot',
@@ -356,18 +363,13 @@ ${prompt}
   assert.equal(pf.status, 'failed')
   assert.match(JSON.stringify(pf.messages), /模拟的失败/)
   // 用户自己加的 CLI：数据目录 config/clis/ 下放一份配置，重新读取后就能用，不用改代码
-  const gemSpec = JSON.parse(readFileSync(path.join(root, 'shared/clis/gemini.json'), 'utf8'))
-  mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
   writeFileSync(
-    path.join(dataDir, 'config/clis/my-cli.json'),
-    JSON.stringify({ ...gemSpec, id: 'my-cli', name: 'My CLI', command: fake, color: '#123456' }),
+    path.join(cliDir, 'my-cli.json'),
+    JSON.stringify({ ...customSpec, id: 'my-cli', name: 'My CLI', command: fake, color: '#123456' }),
   )
   writeFileSync(path.join(dataDir, 'config/clis/broken.json'), JSON.stringify({ id: 'broken', name: 'x' }))
   const us = await call('POST', '/clis/specs/reload', {})
-  assert.deepEqual(
-    us.specs.map((x) => x.id),
-    ['my-cli'],
-  )
+  assert.deepEqual(us.specs.map((x) => x.id).sort(), ['custom', 'my-cli'])
   assert.ok(
     us.errors.some((e) => /^broken\.json 已跳过：缺少字段 command/.test(e)),
     '写错的配置报出文件名和缺的字段：' + us.errors.join('\n'),
@@ -383,9 +385,14 @@ ${prompt}
   mine = await waitDone(mine.id)
   assert.equal(mine.status, 'done', mine.messages.at(-1)?.text)
   assert.match(calls().at(-1).input, /^## 用户这次的消息\n自己加的\n\n/)
-  rmSync(path.join(dataDir, 'config/clis'), { recursive: true })
-  assert.ok(!(await call('POST', '/clis/specs/reload', {})).specs.length, '删掉配置后不再有')
-  step('Gemini CLI 按配置执行；数据目录里加一份配置就能接入新的 CLI')
+  // 只删掉这两个配置：自定义 CLI 注册表里只剩自己加的 custom（broken 留着每次 reload 都会报错）
+  rmSync(path.join(cliDir, 'my-cli.json'), { force: true })
+  rmSync(path.join(cliDir, 'broken.json'), { force: true })
+  assert.deepEqual(
+    (await call('POST', '/clis/specs/reload', {})).specs.map((x) => x.id),
+    ['custom'],
+  )
+  step('自定义 CLI 按配置执行；数据目录里加一份配置就能接入新的 CLI')
 
   // 「/」命令：列出 CLI 自己的命令和 Skill；Claude Code 原样发，其他 CLI 展开成普通要求
   mkdirSync(path.join(project.path, '.claude/commands'), { recursive: true })
@@ -879,17 +886,17 @@ ${prompt}
       readLog(`${log}.steer`).some((x) => x.steered.some((s) => s.includes('执行中补一句'))),
       'Claude Code 收到了执行中发的消息',
     )
-    // 既不能插话、也不用面板工具取补充的 CLI（Gemini CLI）：消息照样立刻进对话，
+    // 既不能插话、也不用面板工具取补充的 CLI（自定义 CLI）：消息照样立刻进对话，
     // 这一轮完全结束后马上开始新一轮接着处理，不用用户再发一次
     let g = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
       agentId: '',
-      cli: 'gemini',
+      cli: 'custom',
       prompt: 'SLOW 交不出去的消息',
     })
-    const g0 = calls().filter((c) => c.kind === 'gemini').length
-    await waitFor(() => calls().filter((c) => c.kind === 'gemini').length > g0, { label: 'Gemini 开始执行' })
+    const g0 = calls().filter((c) => c.kind === 'custom').length
+    await waitFor(() => calls().filter((c) => c.kind === 'custom').length > g0, { label: '自定义 CLI 开始执行' })
     // CLI 正在跑长命令时连发两条：两条各自记下「这一轮结束后自动处理」，都会交给 CLI 处理
     const h1 = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理这条' })
     const h2 = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理另一条' })
@@ -904,7 +911,7 @@ ${prompt}
       g = await call('GET', `/tasks/${g.id}`)
       const users = g.messages.filter((m) => m.role === 'user').length
       const finished =
-        g.status !== 'running' && users >= 3 && calls().filter((c) => c.kind === 'gemini').length >= g0 + 3
+        g.status !== 'running' && users >= 3 && calls().filter((c) => c.kind === 'custom').length >= g0 + 3
       if (finished) break
       if (Date.now() - t1 > 40000) throw new Error('执行中收到的消息没有在下一轮接着处理')
       await sleep(100)
@@ -918,7 +925,7 @@ ${prompt}
     )
     // 两条都被真的交给了 CLI：不是只记在对话里
     const seen = calls()
-      .filter((c) => c.kind === 'gemini')
+      .filter((c) => c.kind === 'custom')
       .map((c) => c.input)
       .join('\n')
     assert.ok(seen.includes('这一轮结束后处理这条'), '第一条排队的消息交给了 CLI')
@@ -933,11 +940,11 @@ ${prompt}
       projectId: project.id,
       mode: 'chat',
       agentId: '',
-      cli: 'gemini',
+      cli: 'custom',
       prompt: 'SLOW 停下前排队的消息',
     })
-    const x0 = calls().filter((c) => c.kind === 'gemini').length
-    await waitFor(() => calls().filter((c) => c.kind === 'gemini').length > x0, { label: 'Gemini 开始执行' })
+    const x0 = calls().filter((c) => c.kind === 'custom').length
+    await waitFor(() => calls().filter((c) => c.kind === 'custom').length > x0, { label: '自定义 CLI 开始执行' })
     x = await call('POST', `/tasks/${x.id}/messages`, { text: '停止后要重发的这条' })
     assert.equal(x.messages.at(-1).delivery?.how, 'held', '先记成「结束后自动处理」')
     await call('POST', `/tasks/${x.id}/stop`)

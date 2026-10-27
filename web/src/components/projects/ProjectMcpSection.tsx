@@ -213,7 +213,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
               {!data.detected.length ? (
                 <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
                   {t(
-                    '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.gemini/settings.json、.codex/config.toml。',
+                    '没找到项目里的 MCP 配置。支持 .mcp.json、.claude/settings*.json、.cursor/mcp.json、.vscode/mcp.json、.codex/config.toml。',
                   )}
                 </p>
               ) : (

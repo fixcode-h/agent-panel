@@ -212,10 +212,6 @@ export function identityOf(def: CliDefinition, snap: Snapshot): { email: string;
       const email = String(acc?.emailAddress ?? '')
       return { email, label: [email, acc?.organizationName].filter(Boolean).join(' · ') }
     }
-    case 'gemini': {
-      const email = String(file('google_accounts.json').active ?? '')
-      return { email, label: email }
-    }
     default:
       return { email: '', label: '' }
   }
@@ -759,7 +755,7 @@ async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: stri
 
 /**
  * 调用 CLI 之前：按这个 CLI 现在用账号还是 API，把配置文件改成对应的样子
- * （例如 Gemini CLI 的登录方式、Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
+ * （例如 Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
  */
 export async function prepareAuth(cliId: string, lastProvider?: string) {
   const def = getCli(cliId)
@@ -980,7 +976,7 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
     }
     job.abort.abort()
   }
-  // 凭据一变就算登录成功：有的 CLI（Gemini CLI）登录后接着往下跑，不会自己退出
+  // 凭据一变就算登录成功：有的 CLI 登录后接着往下跑，不会自己退出
   const poll = setInterval(async () => {
     const now = await readLive(def, env).catch(() => undefined)
     if (now && fingerprint(now) !== before) void finish(true)
@@ -1025,8 +1021,6 @@ const PROBE_PROMPT = 'ping'
 const PROBE_MAX_TOKENS = 1
 /** 探针比列模型慢（要等模型真的回一个 token），给宽一点但仍有限，不无限等 */
 const PROBE_TIMEOUT_MS = 60_000
-/** Gemini 协议没填地址时的官方地址（列模型、发请求都用它） */
-const GEMINI_DEFAULT_BASE = 'https://generativelanguage.googleapis.com'
 
 /**
  * 从 API 读可用的模型：按协议用对应的接口和请求头。
@@ -1036,22 +1030,16 @@ export async function fetchApiModels(
   api: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { name?: string },
 ) {
   const base = apiBaseUrl(api).replace(/\/+$/, '')
-  if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
+  if (!base) throw new Error(t('先填接口地址'))
   const url =
-    api.protocol === 'gemini'
-      ? `${base || GEMINI_DEFAULT_BASE}/v1beta/models?pageSize=200`
-      : api.protocol === 'anthropic'
-        ? `${base}${/\/v1$/.test(base) ? '' : '/v1'}/models?limit=1000`
-        : `${base}/models`
+    api.protocol === 'anthropic' ? `${base}${/\/v1$/.test(base) ? '' : '/v1'}/models?limit=1000` : `${base}/models`
   const headers: Record<string, string> =
-    api.protocol === 'gemini'
-      ? { 'x-goog-api-key': api.apiKey }
-      : api.protocol === 'anthropic'
-        ? {
-            'anthropic-version': ANTHROPIC_VERSION,
-            ...(api.authHeader === 'bearer' ? { authorization: `Bearer ${api.apiKey}` } : { 'x-api-key': api.apiKey }),
-          }
-        : { authorization: `Bearer ${api.apiKey}` }
+    api.protocol === 'anthropic'
+      ? {
+          'anthropic-version': ANTHROPIC_VERSION,
+          ...(api.authHeader === 'bearer' ? { authorization: `Bearer ${api.apiKey}` } : { 'x-api-key': api.apiKey }),
+        }
+      : { authorization: `Bearer ${api.apiKey}` }
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) }).catch((e: Error) => {
     throw new Error(t('连不上接口：{error}', { error: e.message }))
   })
@@ -1108,13 +1096,13 @@ export type ApiProbeInput = Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 
  */
 export async function probeApiModel(api: ApiProbeInput): Promise<{ model: string }> {
   const base = apiBaseUrl(api).replace(/\/+$/, '')
-  if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
+  if (!base) throw new Error(t('先填接口地址'))
   const apiKey = api.apiKey.trim()
   if (!apiKey) throw new Error(t('先填密钥'))
   const model = api.model.trim()
   if (!model) throw new Error(t('先选一个模型'))
 
-  const [url, body, headers] = probeRequest(api.protocol, base || GEMINI_DEFAULT_BASE, model, apiKey, api.authHeader)
+  const [url, body, headers] = probeRequest(api.protocol, base, model, apiKey, api.authHeader)
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
@@ -1175,15 +1163,13 @@ function jsonBody(text: string): any {
 function looksLikeAnswer(protocol: ApiProtocol, text: string) {
   const body = jsonBody(text)
   if (protocol === 'anthropic') return Array.isArray(body?.content)
-  if (protocol === 'gemini') return Array.isArray(body?.candidates)
   if (protocol === 'openai-responses') return !!body?.output
   return Array.isArray(body?.choices)
 }
 
 /**
  * 按协议构造最小的一次推理请求：地址、请求体、认证头。
- * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions，
- * Gemini 是 /v1beta/models/<模型>:generateContent。
+ * Anthropic 要 /v1/messages（地址自带 /v1 时不重复），OpenAI 的两种协议分别是 /responses 和 /chat/completions。
  */
 function probeRequest(
   protocol: ApiProtocol,
@@ -1201,13 +1187,6 @@ function probeRequest(
         'anthropic-version': ANTHROPIC_VERSION,
         ...(authHeader === 'bearer' ? { authorization: `Bearer ${apiKey}` } : { 'x-api-key': apiKey }),
       },
-    ]
-  if (protocol === 'gemini')
-    return [
-      // 官方列模型回的是 models/<名字> 全名，手填进去也要能测：剥掉前缀再拼（和 fetchApiModels 一致）
-      `${base}/v1beta/models/${encodeURIComponent(model.replace(/^models\//, ''))}:generateContent`,
-      { contents: [{ parts: [{ text: PROBE_PROMPT }] }], generationConfig: { maxOutputTokens: PROBE_MAX_TOKENS } },
-      { 'x-goog-api-key': apiKey },
     ]
   if (protocol === 'openai-responses')
     return [

@@ -13,11 +13,10 @@
 import { t } from './i18n.ts'
 import { CliSpec, specToDefinition, type CliSpecInput, type RpcSpecInput } from './cli-spec.ts'
 import commandcode from './clis/commandcode.json'
-import gemini from './clis/gemini.json'
 import pi from './clis/pi.json'
 
 /** 写成配置文件的内置 CLI，按这个顺序排在 Claude Code、Codex 后面 */
-const BUILTIN_SPECS = [commandcode, gemini, pi]
+const BUILTIN_SPECS = [commandcode, pi]
 export interface PermissionOption {
   id: string
   label: string

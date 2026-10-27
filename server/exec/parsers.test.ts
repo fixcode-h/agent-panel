@@ -230,55 +230,7 @@ test('Command Code：模型请求的耗时（有开始和结束才报，用来�
   assert.ok(ms[0] >= 0)
 })
 
-test('Gemini CLI：按配置文件里的事件映射解析 stream-json', () => {
-  const parse = parserFor('gemini', CWD)
-  const s = summarize(fixture('gemini-stream.jsonl').flatMap((o) => parse(o)))
-  assert.equal(s.session, 'c25acda3-b4f1-4a8e-9f2d-1d7f4e7a9c01')
-  // 用户消息不算回复
-  assert.equal(s.text, '改好了：角标现在订阅购物车数量。')
-  assert.deepEqual(
-    s.tools.map((x) => [x.kind, x.label, x.detail]),
-    [
-      ['read', 'src/CartBadge.tsx', ''],
-      ['edit', 'src/CartBadge.tsx', '+2 -1'],
-      ['run', 'npm test', ''],
-    ],
-  )
-  assert.equal(s.tools[2].failed, true)
-  assert.match(s.tools[2].output ?? '', /denied by policy/, '失败时显示错误原因')
-  assert.deepEqual(
-    { input: s.usage.input, output: s.usage.output, read: s.usage.read, model: s.usage.model },
-    { input: 12400, output: 450, read: 8000, model: 'gemini-2.5-pro' },
-  )
-  assert.deepEqual(s.results, [{ ok: true, error: undefined }])
-  const failed = summarize(
-    parse({ type: 'result', status: 'error', error: { type: 'FatalError', message: '配额用完了' }, stats: {} }),
-  )
-  assert.deepEqual(failed.results, [{ ok: false, error: '配额用完了' }])
-})
-
-test('Gemini CLI：按配置文件拼参数', () => {
-  const def = getCli('gemini')!
-  const args = def.buildArgs({
-    model: 'gemini-2.5-pro',
-    permission: 'yolo',
-    extraArgs: ['--debug'],
-    resume: 'sess-1',
-    addDirs: ['/a', '/b'],
-  })
-  assert.deepEqual(args, [
-    '--output-format',
-    'stream-json',
-    '-m',
-    'gemini-2.5-pro',
-    '--approval-mode',
-    'yolo',
-    '--resume',
-    'sess-1',
-    '--include-directories',
-    '/a,/b',
-    '--debug',
-  ])
+test('配置文件写的 CLI：按配置拼参数', () => {
   // Command Code 也是配置文件写的：走常驻 RPC（带 --experimental --rpc），跳过确认换成专门的参数，没写 maxTurns 时用默认值
   assert.deepEqual(
     getCli('commandcode')!.buildArgs({ model: '', permission: 'yolo', extraArgs: [], resume: 's', fork: {} }),

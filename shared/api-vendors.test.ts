@@ -13,7 +13,7 @@ test('接口地址：用户填了用用户的，留空时用厂家按协议给�
   assert.equal(apiBaseUrl({ ...deepseek, baseUrl: '  https://mine.example.com/v1 ' }), 'https://mine.example.com/v1')
   assert.equal(apiBaseUrl({ ...deepseek, protocol: 'anthropic' }), 'https://api.deepseek.com/anthropic')
   // 厂家没有这个协议的地址、或者名字不是内置厂家时没有默认值
-  assert.equal(apiBaseUrl({ ...deepseek, protocol: 'gemini' }), '')
+  assert.equal(apiBaseUrl({ ...deepseek, protocol: 'openai-responses' }), '')
   assert.equal(apiBaseUrl({ ...deepseek, name: '自定义 API' }), '')
 })
 
@@ -40,8 +40,8 @@ test('OpenDesign 的默认协议是 openai-chat，不支持当前协议时回退
     protocol: 'anthropic',
     baseUrl: 'https://amr-link.open-design.ai',
   })
-  // Gemini 这类它没有的协议回退到厂家默认的 openai-chat
-  assert.deepEqual(vendorEndpoint(vendor, 'gemini'), {
+  // OpenAI Responses 这类它没有的协议回退到厂家默认的 openai-chat
+  assert.deepEqual(vendorEndpoint(vendor, 'openai-responses'), {
     protocol: 'openai-chat',
     baseUrl: 'https://amr-link.open-design.ai/v1',
   })

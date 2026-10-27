@@ -12,12 +12,12 @@ test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能
   // Windows 上 os.homedir() 读 USERPROFILE，两个都设才能真的隔离到临时目录
   process.env.HOME = home
   process.env.USERPROFILE = home
-  for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'GEMINI_CLI_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
+  for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
   try {
-    const gemini = path.join(home, '.gemini/GEMINI.md')
-    mkdirSync(path.dirname(gemini), { recursive: true })
-    writeFileSync(gemini, '用户自己的')
-    const run = DeployRun.parse({ agentsMd: '# 规则\n', skills: ['grilling'], clis: ['claude', 'gemini'] })
+    const piDoc = path.join(home, '.pi/agent/AGENTS.md')
+    mkdirSync(path.dirname(piDoc), { recursive: true })
+    writeFileSync(piDoc, '用户自己的')
+    const run = DeployRun.parse({ agentsMd: '# 规则\n', skills: ['grilling'], clis: ['claude', 'pi'] })
     const r = await deploy(run)
     assert.deepEqual(r.skills, ['grilling'])
     const skill = path.join(home, '.agents/skills/workflow/grilling/SKILL.md')
@@ -26,8 +26,8 @@ test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能
     const claude = readFileSync(path.join(home, '.claude/CLAUDE.md'), 'utf8')
     assert.ok(claude.startsWith('# 规则\n\n## 技能'))
     assert.ok(claude.includes('~/.agents/skills/workflow/grilling/SKILL.md'))
-    assert.equal(readFileSync(gemini, 'utf8'), claude)
-    assert.equal(readFileSync(`${gemini}.bak`, 'utf8'), '用户自己的')
+    assert.equal(readFileSync(piDoc, 'utf8'), claude)
+    assert.equal(readFileSync(`${piDoc}.bak`, 'utf8'), '用户自己的')
     assert.ok(!existsSync(path.join(home, '.codex/AGENTS.md')), '没选的 CLI 不写')
 
     // 再部署一次什么都不变
@@ -48,7 +48,7 @@ test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能
     const removed = await deploy({ ...run, skills: [] })
     assert.deepEqual(removed.removed, ['grilling'])
     assert.ok(!existsSync(skill))
-    assert.ok(!readFileSync(gemini, 'utf8').includes('## 技能'))
+    assert.ok(!readFileSync(piDoc, 'utf8').includes('## 技能'))
   } finally {
     process.env = old
     rmSync(home, { recursive: true, force: true })
