@@ -6,12 +6,12 @@
 
 ## 1. 分层判定与用例预算（spec: test-layering-and-budget）
 
-- [ ] 1.1 新增 scripts/lib/test-layers.mjs：`INTEGRATION_MARKERS` 与 `layerOf(file, sourceText)`，按运行时特征判纯函数 / 集成 / e2e；含单测覆盖服务、临时目录、git、子进程、纯逻辑五类样例。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-layers.test.mjs`。
-- [ ] 1.2 新增 `scripts/test-layers.mjs --report`，对现有测试文件产出 `test-layers.json`（层、命中特征、行数），人工抽查 10 个文件与判据一致。验证：`node scripts/test-layers.mjs --report`，抽查记录写进 evidence。
-- [ ] 1.3 新增 scripts/lib/test-budget.mjs：按批 0 基线写入各层用例上限（向上取整到 10 的倍数，注释基线日期与生成命令），只降不升；含单测。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-budget.test.mjs`。
-- [ ] 1.4 新增 scripts/test-budget.mjs：`--check` 用静态扫描统计各层用例数（按 test-layers 分层，扫测试文件源码里的 `test(` / `it(`，不执行测试，秒级），`--tap <报告>` 用于 CI 复核；超限且提交说明缺 `测试预算:` 段时非零退出。验证：构造超限 fixture 跑一次期望失败，正常仓库跑一次期望通过，并用 `time` 确认静态检查是秒级。
-- [ ] 1.5 接入：`npm run lint` 调静态 `test-budget --check`（不跑测试）；CI 的 `test` job 跑完单测后用 `--tap` 复核一次（同一次全量只统计一次，不重复跑测试）。验证：`npm run lint` 秒级通过；临时把上限改小后 `npm run lint` 非零退出，改回后通过。
-- [ ] 1.6 文档：`docs/modules/testing/README.md` 写「分层边界与预算」小节，`docs/agent-test-steps.md` 的默认步骤补预算检查命令。验证：`npm run lint`（文档路径与格式检查）。
+- [x] 1.1 新增 scripts/lib/test-layers.mjs：`INTEGRATION_MARKERS` 与 `layerOf(file, sourceText)`，按运行时特征判纯函数 / 集成 / e2e；含单测覆盖服务、临时目录、git、子进程、纯逻辑五类样例。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-layers.test.mjs`。
+- [x] 1.2 新增 `scripts/test-layers.mjs --report`，对现有测试文件产出 `test-layers.json`（层、命中特征、行数），人工抽查 10 个文件与判据一致。验证：`node scripts/test-layers.mjs --report`，抽查记录写进 evidence。
+- [x] 1.3 新增 scripts/lib/test-budget.mjs：按批 0 基线写入各层用例上限（向上取整到 10 的倍数，注释基线日期与生成命令），只降不升；含单测。验证：`node scripts/unit-tests.mjs --files scripts/lib/test-budget.test.mjs`。
+- [x] 1.4 新增 scripts/test-budget.mjs：`--check` 用静态扫描统计各层用例数（按 test-layers 分层，扫测试文件源码里的 `test(` / `it(`，不执行测试，秒级），`--tap <报告>` 用于 CI 复核；超限且提交说明缺 `测试预算:` 段时非零退出。验证：构造超限 fixture 跑一次期望失败，正常仓库跑一次期望通过，并用 `time` 确认静态检查是秒级。
+- [x] 1.5 接入：`npm run lint` 调静态 `test-budget --check`（不跑测试）；CI 的 `test` job 跑完单测后用 `--tap` 复核一次（同一次全量只统计一次，不重复跑测试）。验证：`npm run lint` 秒级通过；临时把上限改小后 `npm run lint` 非零退出，改回后通过。
+- [x] 1.6 文档：`docs/modules/testing/README.md` 写「分层边界与预算」小节，`docs/agent-test-steps.md` 的默认步骤补预算检查命令。验证：`npm run lint`（文档路径与格式检查）。
 
 ## 2. 归层迁移与覆盖不减少（spec: test-layering-and-budget / Migration preserves coverage）
 
