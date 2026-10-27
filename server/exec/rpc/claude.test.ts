@@ -63,7 +63,7 @@ test('Claude Code：AskUserQuestion 换成提问卡片', () => {
   ])
 })
 
-test('Claude Code：control_request 里的提问转成卡片，回答写回 updatedInput.answers', () => {
+test('Claude Code：control_request 里的提问转成卡片，回答写回 updatedInput.answers（拒绝时回 deny）', () => {
   const { ctx, events, sent } = fakeCtx()
   const adapter = claudeAdapter({ cwd: '/tmp', input: '', parse: () => [] })
   adapter.request!(
@@ -88,15 +88,16 @@ test('Claude Code：control_request 里的提问转成卡片，回答写回 upda
   assert.equal(res.response.behavior, 'allow')
   // 答案按问题原文对上，Claude Code 靠它接着往下跑
   assert.deepEqual(res.response.updatedInput.answers, { '用哪种？': 'A', '什么时候发？': '现在' })
-})
 
-test('Claude Code：用户拒绝提问时回 deny，带上用户的话', () => {
-  const { ctx, events, sent } = fakeCtx()
-  const adapter = claudeAdapter({ cwd: '/tmp', input: '', parse: () => [] })
-  adapter.request!(ctx, askRequest('req-2', [{ header: '', question: '要发吗？', options: [{ label: '发' }] }]))
-  const ask = events[0]
-  assert.equal(ask.type, 'ask')
-  if (ask.type !== 'ask') return
-  ask.reply({ allow: false, answer: '先别发' })
-  assert.deepEqual(sent[0].response.response, { behavior: 'deny', message: '用户拒绝了：先别发' })
+  // 拒绝：回 deny，带上用户的话，CLI 把这句交给模型
+  const deny = fakeCtx()
+  claudeAdapter({ cwd: '/tmp', input: '', parse: () => [] }).request!(
+    deny.ctx,
+    askRequest('req-2', [{ header: '', question: '要发吗？', options: [{ label: '发' }] }]),
+  )
+  const refused = deny.events[0]
+  assert.equal(refused.type, 'ask')
+  if (refused.type !== 'ask') return
+  refused.reply({ allow: false, answer: '先别发' })
+  assert.deepEqual(deny.sent[0].response.response, { behavior: 'deny', message: '用户拒绝了：先别发' })
 })

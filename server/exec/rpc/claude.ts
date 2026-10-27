@@ -52,6 +52,12 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
           ),
       })
     },
+    next(ctx, text) {
+      // 这一轮结束后的下一轮：和插话一样是 user 消息，但不带 priority（那是执行中插到当前轮），
+      // CLI 在这条消息到达时开新一轮
+      steered = false
+      ctx.send({ type: 'user', message: { role: 'user', content: text } })
+    },
     async steer(ctx, text) {
       steered = true
       ctx.send({ type: 'user', message: { role: 'user', content: text }, priority: 'next', parent_tool_use_id: null })

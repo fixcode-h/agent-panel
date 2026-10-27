@@ -38,6 +38,31 @@ export function codexAdapter(
     developerInstructions: o.systemPrompt || undefined,
   }
 
+  /** 在已经开好的 thread 里开始一轮；下一轮（保活）也走这里，只换文字 */
+  const startTurn = async (ctx: RpcContext, text: string, images: string[] = []) => {
+    const turn = await ctx.request({
+      method: 'turn/start',
+      params: {
+        threadId: thread,
+        input: [
+          { type: 'text', text, text_elements: [] },
+          // 附上的图片（参考图、截图）直接给模型看
+          ...images.map((p) => ({ type: 'localImage', path: p })),
+        ],
+        effort: o.effort || undefined,
+      },
+    })
+    if (turn?.error) {
+      ctx.finish(false, String(turn.error.message))
+      return false
+    }
+    if (turn?.result?.turn?.id) {
+      turnId = turn.result.turn.id
+      ctx.emit({ type: 'turn', id: turnId })
+    }
+    return true
+  }
+
   const startThread = async (ctx: RpcContext) => {
     const [method, params] =
       o.resume && o.fork
@@ -68,26 +93,7 @@ export function codexAdapter(
       })
       if (rv?.error) ctx.finish(false, String(rv.error.message))
     } else {
-      const turn = await ctx.request({
-        method: 'turn/start',
-        params: {
-          threadId: thread,
-          input: [
-            { type: 'text', text: o.input, text_elements: [] },
-            // 附上的图片（参考图、截图）直接给模型看
-            ...(o.images ?? []).map((p) => ({ type: 'localImage', path: p })),
-          ],
-          effort: o.effort || undefined,
-        },
-      })
-      if (turn?.error) {
-        ctx.finish(false, String(turn.error.message))
-        return
-      }
-      if (turn?.result?.turn?.id) {
-        turnId = turn.result.turn.id
-        ctx.emit({ type: 'turn', id: turnId })
-      }
+      await startTurn(ctx, o.input, o.images ?? [])
     }
   }
 
@@ -444,6 +450,18 @@ export function codexAdapter(
     },
     message: onNotification,
     request: onRequest,
+    async next(ctx, text) {
+      // 同一 thread 开下一轮：上一轮的 turn id、工具记录和用量累计（按累计值做差）都不能带过去
+      if (!thread) return void ctx.finish(false, t('启动会话失败'))
+      turnId = ''
+      startedCmds.clear()
+      itemStart.clear()
+      streamed.clear()
+      textSeen = false
+      thinkingSeen = false
+      prevTotal = undefined
+      await startTurn(ctx, text)
+    },
     async steer(ctx, text) {
       if (ctx.finished || !thread || !turnId || review || o.op) return false
       const r = await ctx.request({
