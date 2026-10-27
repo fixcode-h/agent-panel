@@ -1130,8 +1130,8 @@ export const EN_TASKS: Record<string, string> = {
   '它已经从对话列表里删掉，窗口不会跟着关。点右上角关闭才会收起这个窗口。':
     'It was removed from the conversation list; this window stays open. Click close in the top-right corner to dismiss it.',
   '正在新建分析对话…': 'Creating the analysis conversation…',
-  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下':
-    'Starts a conversation with the Analysis role that only analyzes and never edits files; analyses of a conversation open under its parent conversation',
+  '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下':
+    'Starts a conversation with the Analysis role that only analyzes and never edits files; an analysis of a conversation opens separately in the project, while an analysis inside a sub-conversation opens under its top-level conversation',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full execution record (messages, each node's result, time, tokens and cache hits), judges the result quality, what could be optimized and whether the panel framework has issues, and proposes changes you can apply directly. Nothing is applied until you review the diff.",
   '{name} 最近 {n} 次执行': 'last {n} runs of {name}',
@@ -1180,6 +1180,27 @@ export const EN_TASKS: Record<string, string> = {
   父对话测试: 'Parent test',
   未记录: 'Not recorded',
   测试记录: 'Test runs',
+  // 工具与返工（web/src/components/tasks/ToolFailuresChip.tsx）
+  工具与返工: 'Tools & rework',
+  '失败 {n}': '{n} failed',
+  '工具调用 {calls} 次，失败 {failed} 次': '{calls} tool calls, {failed} failed',
+  '其中探路失败 {n} 次': '{n} of them were probing failures',
+  工具不存在: 'Tool not found',
+  路径不存在: 'Path not found',
+  命令不存在: 'Command not found',
+  '返工 {n} 次': '{n} reworks',
+  验收不通过: 'Review failed',
+  同一节点重跑: 'Node rerun',
+  子对话收尾被驳回: 'Sub-conversation wrap-up rejected',
+  子任务验收不通过: 'Subtask verdict failed',
+  '追加要求/对话 {n} 轮': '{n} follow-up turns',
+  按节点: 'By node',
+  节点外: 'Outside nodes',
+  '{n} 轮': '{n} turns',
+  其中缓存命中: 'Of which cache hits',
+  其中缓存写入: 'Of which cache writes',
+  '{calls} 次，失败 {failed}': '{calls} calls, {failed} failed',
+  '探路 {n}': 'probing {n}',
   '合计耗时 {time}': 'Total {time}',
   '由{by}执行': 'Run by {by}',
   '第 {n} 次': 'Attempt {n}',

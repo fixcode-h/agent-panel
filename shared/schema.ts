@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_PRICING_MODEL } from './pricing.ts'
+import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDER_IDS } from './web-search.ts'
 import type { ProjectProposal } from './project-init.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
@@ -2254,6 +2255,21 @@ export const Settings = z.object({
       enabled: z.boolean().default(false),
       /** 接收地址（http / https）：投递规则见 server/webhook.ts */
       url: z.string().trim().default(''),
+    })
+    .prefault({}),
+  /**
+   * 联网搜索：CLI 的 web_search / web_fetch 由面板代发请求（见 server/web-search.ts），
+   * 所以密钥只存在这里的设置文件（本机数据目录）里，扩展脚本和模型都拿不到。
+   * 搜索源有哪些、要不要密钥、默认地址在 shared/web-search.ts 的 SEARCH_PROVIDERS 里
+   */
+  webSearch: z
+    .object({
+      /** 搜索源 id；设置文件里写成不认识的值时回退到默认源 */
+      provider: z.enum(SEARCH_PROVIDER_IDS).catch(DEFAULT_SEARCH_PROVIDER).default(DEFAULT_SEARCH_PROVIDER),
+      /** 搜索源的密钥（需要密钥的源才用） */
+      key: z.string().trim().max(500).default(''),
+      /** 自定义地址（自建 searxng、公司网关）；留空用搜索源自己的默认地址 */
+      endpoint: z.string().trim().max(500).default(''),
     })
     .prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

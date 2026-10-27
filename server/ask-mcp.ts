@@ -241,6 +241,12 @@ export function openAskBridge(o: {
   }
 }
 
+/**
+ * 这个随机地址还有效吗：联网搜索的扩展复用同一份地址（见 server/web-search.ts），
+ * 拿已经结束的地址来调时不能继续花用户的密钥额度
+ */
+export const hasAskSession = (token: string) => sessions.has(token)
+
 export function askMcpApi() {
   return new Hono()
     .post('/ask/:token', async (c) => {

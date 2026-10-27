@@ -199,6 +199,34 @@ test('spawn_agents 的 step 只在有执行计划的对话里出现', () => {
   assert.equal(props({ ...base, plans: false, helper: false }).step, undefined)
 })
 
+test('spawn_agents / create_conversation 的字段描述带上派单纪律', () => {
+  // 描述就是模型看到的用法说明：只写「不写跟你一样」「不写取 instructions 第一行」会导向低档派单和同标题
+  const o = { self: 'a', hasMain: false, common: [], coordinator: true, plans: false } as unknown as Parameters<
+    typeof orchTools
+  >[0]
+  const tools = orchTools(o)
+  const schemaOf = (name: string) =>
+    tools.find((x) => x.name === name)!.inputSchema as unknown as {
+      properties: {
+        message?: { description: string }
+        tasks?: { items: { properties: Record<string, { description: string }> } }
+      }
+    }
+  const taskProps = schemaOf('spawn_agents').properties.tasks!.items.properties
+  assert.match(taskProps.tier.description, /纯执行动作写 low/, '删文件、提交这类动作不该按父对话的档位跑')
+  assert.match(taskProps.title.description, /10–20 字/)
+  assert.match(taskProps.title.description, /同一批不能有两个相同的标题/)
+  assert.match(taskProps.instructions.description, /不要把同一段话发给多个任务/)
+  assert.match(
+    taskProps.instructions.description,
+    /派「文档」时给出要记什么和依据在哪/,
+    '文档角色也常由 spawn_agents 派',
+  )
+  const message = schemaOf('create_conversation').properties.message!
+  assert.match(message.description, /派「文档」时给出要记什么和依据在哪/)
+  assert.match(message.description, /涉及的模块或目录/)
+})
+
 test('编排工具：派子 Agent 并行、读写共享状态、传话，节点不再经过主 Agent', async () => {
   const w = workflow()
   const task = {

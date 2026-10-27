@@ -19,6 +19,16 @@ import { promptLangRules, promptLangWord } from './prompt-lang.ts'
 import { fmtDuration } from './duration.ts'
 import { leadVerdict } from './verdict.ts'
 import { clip as clipText } from './text.ts'
+import {
+  NO_PROBES,
+  addProbes,
+  probeDetail,
+  probeText,
+  probeTotal,
+  toolFailures,
+  toolsOutsideNodes,
+  type ProbeFailures,
+} from './tool-failures.ts'
 import { hhmm, pad2, ymd } from './datetime.ts'
 
 const PEER_REL: Record<string, string> = { parent: '父对话', child: '子对话', peer: '同项目的对话' }
@@ -43,13 +53,20 @@ export interface NodeStat {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  /** 写进缓存的 token：和命中、输入一起看才说得出这次调用贵在哪 */
+  cacheWriteTokens: number
   cacheHitRate: number
   costUsd: number
+  /** 这个节点里的工具调用总数，和失败数、探路失败数放在一处 */
+  toolCalls: number
+  failedTools: number
+  /** 失败的工具调用里属于探路的那部分（工具 / 路径 / 命令不存在） */
+  probeBy: ProbeFailures
   /** 改动的文件数 */
   files: number
   /** 输出的字数，太短或太长都值得看一下 */
   outputChars: number
-  /** 这个节点里的报错条数 */
+  /** 这个节点里的报错条数（消息上的 error）；失败的工具调用单独记在 failedTools，不重复算 */
   errors: number
 }
 
@@ -117,14 +134,19 @@ export interface StatsTotal {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
+  cacheWriteTokens: number
   cacheHitRate: number
   costUsd: number
   steps: StepCounts
   reworks: number
   /** 返工的明细，和 reworks 加起来一致 */
   reworkBy: ReworkCounts
+  /** 报错条数（消息上的 error）；和失败的工具调用是两回事，不混成一个数 */
   errors: number
+  /** 工具调用总数：失败数和探路分类都从它派生，不另存一份 */
+  toolCalls: number
   failedTools: number
+  probeBy: ProbeFailures
   /** 追加要求、对话的轮数（一次 CLI 调用一轮） */
   turns: number
   turnsUnfinished: number
@@ -140,13 +162,16 @@ export const NO_TOTALS: StatsTotal = {
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,
+  cacheWriteTokens: 0,
   cacheHitRate: 0,
   costUsd: 0,
   steps: { total: 0, done: 0, failed: 0, skipped: 0, pending: 0 },
   reworks: 0,
   reworkBy: NO_REWORKS,
   errors: 0,
+  toolCalls: 0,
   failedTools: 0,
+  probeBy: NO_PROBES,
   turns: 0,
   turnsUnfinished: 0,
   turnEnds: NO_TURN_ENDS,
@@ -182,13 +207,16 @@ export function ownTotals(s: Omit<StatsTotal, 'tasks'>): StatsTotal {
     inputTokens: s.inputTokens,
     outputTokens: s.outputTokens,
     cacheReadTokens: s.cacheReadTokens,
+    cacheWriteTokens: s.cacheWriteTokens,
     cacheHitRate: s.cacheHitRate,
     costUsd: s.costUsd,
     steps: s.steps,
     reworks: s.reworks,
     reworkBy: s.reworkBy,
     errors: s.errors,
+    toolCalls: s.toolCalls,
     failedTools: s.failedTools,
+    probeBy: s.probeBy,
     turns: s.turns,
     turnsUnfinished: s.turnsUnfinished,
     turnEnds: s.turnEnds,
@@ -207,6 +235,7 @@ export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
     inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
     cacheHitRate: cacheHitRate({ inputTokens, cacheReadTokens }),
     costUsd: a.costUsd + b.costUsd,
     steps: {
@@ -224,7 +253,9 @@ export function addTotals(a: StatsTotal, b: StatsTotal): StatsTotal {
       sub: (a.reworkBy.sub ?? 0) + (b.reworkBy.sub ?? 0),
     },
     errors: a.errors + b.errors,
+    toolCalls: a.toolCalls + b.toolCalls,
     failedTools: a.failedTools + b.failedTools,
+    probeBy: addProbes(a.probeBy ?? NO_PROBES, b.probeBy ?? NO_PROBES),
     turns: a.turns + b.turns,
     turnsUnfinished: a.turnsUnfinished + b.turnsUnfinished,
     turnEnds: {
@@ -268,11 +299,9 @@ export function cacheMismatch(u: { inputTokens: number; cacheReadTokens: number 
   return total > 0 && (u.cacheReadTokens || 0) > total * 1.05
 }
 
-/** 失败的工具调用：命令非零退出、读取失败、编辑冲突都会标上 failed */
-const failedToolsOf = (task: Task, step?: string) =>
-  task.messages
-    .filter((m) => (step === undefined ? true : m.step === step))
-    .reduce((n, m) => n + m.tools.filter((x) => x.failed).length, 0)
+/** 一个任务（或其中某个节点）的工具调用：一次遍历同时给总数、失败数和探路分类 */
+const toolsOf = (task: Task, step?: string) =>
+  toolFailures(task.messages.filter((m) => (step === undefined ? true : m.step === step)).flatMap((m) => m.tools))
 
 /** 算时间跨度用得到的字段：创建时间、消息、轮次、节点的时间戳和状态 */
 type SpanRecord = {
@@ -436,6 +465,7 @@ export function taskStats(
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
   const nodes = task.steps.map((s): NodeStat => {
     const u = stepUsage(s)
+    const tools = toolsOf(task, s.id)
     return {
       id: s.id,
       parentId: s.parentId,
@@ -452,11 +482,15 @@ export function taskStats(
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,
       cacheReadTokens: u.cacheReadTokens,
+      cacheWriteTokens: u.cacheWriteTokens,
       cacheHitRate: cacheHitRate(u),
       costUsd: u.costUsd,
+      toolCalls: tools.calls,
+      failedTools: tools.failed,
+      probeBy: tools.probeBy,
       files: s.changes.length,
       outputChars: s.output.length,
-      errors: errorsOf(s.id) + failedToolsOf(task, s.id),
+      errors: errorsOf(s.id),
     }
   })
   const count = (st: TaskStep['status']) => task.steps.filter((s) => s.status === st).length
@@ -475,6 +509,7 @@ export function taskStats(
   const spanMs = Math.max(recordSpan(task, now), durationMs)
   const reworkBy = reworkCounts(task)
   const turnEnds = turnEndCounts(task.turns ?? [], task.stopReason)
+  const tools = toolsOf(task)
   const own = ownTotals({
     durationMs,
     waitMs: confirmWaitMs,
@@ -482,6 +517,7 @@ export function taskStats(
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
+    cacheWriteTokens: u.cacheWriteTokens,
     cacheHitRate: cacheHitRate(u),
     costUsd: u.costUsd,
     steps: {
@@ -493,8 +529,10 @@ export function taskStats(
     },
     reworks: reworkBy.review + reworkBy.rerun + reworkBy.merge + reworkBy.sub,
     reworkBy,
-    errors: task.messages.filter((m) => m.error).length + failedToolsOf(task),
-    failedTools: failedToolsOf(task),
+    errors: task.messages.filter((m) => m.error).length,
+    toolCalls: tools.calls,
+    failedTools: tools.failed,
+    probeBy: tools.probeBy,
     turns: task.turns?.length ?? 0,
     // 没正常结束的轮次 = 各种结局相加，和 turnEnds 对得上（旧记录落在 unknown 里）
     turnsUnfinished: turnEnds.supersede + turnEnds.user + turnEnds.failed + turnEnds.panel + turnEnds.unknown,
@@ -897,6 +935,38 @@ export const EVOLUTION_LANG = 'workflow-evolution'
 
 const fmtK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const pct = (r: number) => `${Math.round(r * 100)}%`
+/** 节点表里的工具调用列：总数和失败数；探路失败是失败里的子集，写在括号里 */
+const toolCell = (n: Pick<NodeStat, 'toolCalls' | 'failedTools' | 'probeBy'>) => {
+  // 没有工具调用的节点写「-」：每行都写「0 次，失败 0」只会把表搅成噪音
+  if (!n.toolCalls) return '-'
+  const probes = probeTotal(n.probeBy ?? NO_PROBES)
+  return `${n.toolCalls} 次，失败 ${n.failedTools ?? 0}${probes ? `（探路 ${probes}）` : ''}`
+}
+/** 费用列：没有花费的节点和旧数据写「-」，不写 $0.000 */
+const moneyCell = (n: number | undefined) => (n && n > 0 ? `$${n.toFixed(3)}` : '-')
+/** 任务级 Token 行的缓存写入：多数 CLI 不报这个数，0 时不写（免得每条记录都多一句 0） */
+const cacheWriteNote = (n: number | undefined) => (n ? `；缓存写入 ${fmtK(n)}` : '')
+/**
+ * 节点外的工具调用（系统消息、已删节点的历史消息）：任务级算全部消息，节点表只按 step 分组，
+ * 不写明差额读者会拿总数去对节点相加（评审 R3）
+ */
+function outsideDetail(st: TaskStats) {
+  const out = toolsOutsideNodes(
+    { calls: st.toolCalls ?? 0, failed: st.failedTools ?? 0, probeBy: st.probeBy ?? NO_PROBES },
+    (st.nodes ?? []).map((n) => ({
+      calls: n.toolCalls ?? 0,
+      failed: n.failedTools ?? 0,
+      probeBy: n.probeBy ?? NO_PROBES,
+    })),
+  )
+  if (!out.calls) return ''
+  return `${out.calls} 次不属于任何节点${out.failed ? `，失败 ${out.failed} 次` : ''}`
+}
+/** 工具调用行末尾的括号：探路失败和节点外合成一处，不连排两个「其中」 */
+function toolsNote(st: TaskStats) {
+  const parts = [probeDetail(st.probeBy ?? NO_PROBES), outsideDetail(st)].filter(Boolean)
+  return parts.length ? `（其中${parts.join('；')}）` : ''
+}
 /**
  * 记录里的时间统一用本地时间：表头原来直接切 ISO 串（UTC），正文却用 getHours()，
  * 同一份记录里能差出几个小时，读的人会以为任务跑了很久。
@@ -945,20 +1015,68 @@ function skillText(a: Agent, all: Agent[], slots: Record<string, string>) {
 }
 
 /**
+ * 一组合计（子对话、含子对话合计）的兜底：旧导出没有工具调用、探路分类和缓存写入，
+ * 直接沿用会在报告里写出「工具调用 undefined 次」、addTotals 时算出 NaN。
+ * errors 不重算：旧包里的子对话记录不在这份导出里，只能保留原值。
+ */
+function fixTotals(t: Partial<StatsTotal> | undefined, fallback: StatsTotal): StatsTotal {
+  if (!t) return fallback
+  return {
+    ...fallback,
+    ...t,
+    cacheWriteTokens: t.cacheWriteTokens ?? fallback.cacheWriteTokens,
+    toolCalls: t.toolCalls ?? fallback.toolCalls,
+    failedTools: t.failedTools ?? fallback.failedTools,
+    probeBy: t.probeBy ?? fallback.probeBy,
+  }
+}
+
+/**
+ * 旧包的子对话没有工具调用统计（这次改动之前的导出）：报告里一律不写工具数字，只注明「未记录」。
+ * 口径：宁可缺一项，也不把兜底的 0 写成真的 0——复盘时 0 和「没记录」是两个意思。
+ */
+const kidsToolsKnown = (b: TaskExport) => ((b.stats ?? {}) as Partial<TaskStats>).children?.toolCalls !== undefined
+
+/**
  * 报告里的统计：旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告。
  * Markdown 报告和 HTML 报告共用这一处，两边的数字不会打架
  */
 function resolvedStats(b: TaskExport): TaskStats {
   const computed = taskStats({ ...b.task, id: '', projectId: '' } as unknown as Task)
   const raw = (b.stats ?? {}) as Partial<TaskStats>
+  // 这次修复前导出的包没有工具调用统计，当时的 errors 把失败的工具调用也算进去了：
+  // 旧包按记录现算成新口径，否则同一份报告里「报错」和「失败的工具调用」还在重复计数
+  const legacyNoTools = raw.toolCalls === undefined
+  // 旧导出的节点统计没有工具调用、探路分类和缓存写入：按记录现算补上，两边的数不会打架
+  const nodes = (raw.nodes ?? computed.nodes).map((n) => {
+    const c = computed.nodes.find((x) => x.id === n.id)
+    return {
+      ...n,
+      cacheWriteTokens: n.cacheWriteTokens ?? c?.cacheWriteTokens ?? 0,
+      toolCalls: n.toolCalls ?? c?.toolCalls ?? 0,
+      failedTools: n.failedTools ?? c?.failedTools ?? 0,
+      probeBy: n.probeBy ?? c?.probeBy ?? NO_PROBES,
+      errors: legacyNoTools ? (c?.errors ?? 0) : n.errors,
+    }
+  })
+  // 子对话与含子对话合计也要兜底：旧包的 StatsTotal 没有新字段，沿用会写出 undefined / NaN
+  const kids = fixTotals(raw.children, computed.children)
+  // 旧包的 combined 是旧口径又缺字段：用自身 + 子对话重算，比沿用更准
+  const combined = raw.combined?.toolCalls === undefined ? addTotals(ownTotals(computed), kids) : raw.combined
   return {
     ...computed,
     ...raw,
     spanMs: raw.spanMs ?? computed.spanMs,
     idleMs: raw.idleMs ?? computed.idleMs,
     asks: raw.asks ?? computed.asks,
-    children: raw.children ?? computed.children,
-    combined: raw.combined ?? computed.combined,
+    nodes,
+    cacheWriteTokens: raw.cacheWriteTokens ?? computed.cacheWriteTokens,
+    toolCalls: raw.toolCalls ?? computed.toolCalls,
+    failedTools: raw.failedTools ?? computed.failedTools,
+    probeBy: raw.probeBy ?? computed.probeBy,
+    errors: legacyNoTools ? computed.errors : (raw.errors ?? computed.errors),
+    children: kids,
+    combined,
   }
 }
 
@@ -970,6 +1088,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
   const own = ownTotals(st)
   const kids = st.children?.tasks ? st.children : NO_TOTALS
   const all = st.combined?.tasks ? st.combined : addTotals(own, kids)
+  const toolsKnown = kidsToolsKnown(b)
   // 没正常结束的轮次按结局分开写：只有和总数对得上时才拆，旧导出缺结局字段时只写总数
   const ends = st.turnEnds ?? NO_TURN_ENDS
   const ended = ['supersede', 'user', 'failed', 'panel', 'unknown'] as const
@@ -1022,11 +1141,11 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
     '## 统计',
     `- 跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}（等你确认/提问 ${fmtDuration(st.waitMs)} 已含在其中），${st.childBusyMs ? `子对话占用 ${fmtDuration(st.childBusyMs)}，` : ''}空闲 ${fmtDuration(st.idleMs)}${st.idleWaitMs ? `（其中等你回下一句 ${fmtDuration(Math.min(st.idleWaitMs, st.idleMs))}）` : ''}。${idleNote}`,
     `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${unfinished}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
-    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
+    `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}${cacheWriteNote(st.cacheWriteTokens)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}${kids.tasks ? '（自身，不含子对话）' : ''}`,
     ...(kids.tasks
       ? [
-          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtDuration(kids.durationMs)}，其中等用户 ${fmtDuration(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
-          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtDuration(all.durationMs)}，其中等用户 ${fmtDuration(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次${allReworkText}，报错 ${all.errors} 条（其中失败的工具调用 ${all.failedTools} 次），追加要求/对话 ${all.turns} 轮`,
+          `- 子对话 ${kids.tasks} 个（它们各自是独立任务，上面和下面的节点表都只算自身）：执行 ${fmtDuration(kids.durationMs)}，其中等用户 ${fmtDuration(kids.waitMs)}；Token：输入 ${fmtK(kids.inputTokens)}（缓存命中 ${fmtK(kids.cacheReadTokens)}，${pct(kids.cacheHitRate)}${cacheWriteNote(kids.cacheWriteTokens)}），输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条${toolsKnown ? (kids.toolCalls ? `，工具调用 ${kids.toolCalls} 次（失败 ${kids.failedTools} 次）` : '') : '（旧口径：含失败的工具调用，工具调用未记录）'}`,
+          `- 含子对话合计（${all.tasks} 个任务）：执行 ${fmtDuration(all.durationMs)}，其中等用户 ${fmtDuration(all.waitMs)}；Token：输入 ${fmtK(all.inputTokens)}（缓存命中 ${fmtK(all.cacheReadTokens)}，${pct(all.cacheHitRate)}${cacheWriteNote(all.cacheWriteTokens)}），输出 ${fmtK(all.outputTokens)}，费用 $${all.costUsd.toFixed(3)}；节点 ${all.steps.total} 个，返工 ${all.reworks} 次${allReworkText}，报错 ${all.errors} 条；${toolsKnown ? `工具调用 ${all.toolCalls} 次，失败 ${all.failedTools} 次${probeText(all.probeBy ?? NO_PROBES)}` : '工具调用旧记录没有记（这一项只含自身）'}，追加要求/对话 ${all.turns} 轮`,
         ]
       : []),
     ...(cacheMismatch(st)
@@ -1034,7 +1153,9 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
           `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 Agent 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
         ]
       : []),
-    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次${reworkText}；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
+    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次${reworkText}；报错 ${st.errors} 条`,
+    // 失败的工具调用从「报错」里拆出来单独一行：同一堆数字只在一处，探路失败又是它的子集
+    `- 工具调用 ${st.toolCalls} 次，失败 ${st.failedTools} 次${toolsNote(st)}`,
   ]
   // 用户每条要求的发出时间：判断「后面越来越慢」时看相邻两条之间隔了多久
   const asks = tk.messages.filter((m) => m.role === 'user' && !m.peer)
@@ -1052,12 +1173,12 @@ export function taskReport(b: TaskExport, maxOutput = 4000, scope?: HelperScope)
       '',
       '改文件列只统计 CLI 亲自报告的文件改动（Write、Edit 类工具）；只读节点和用命令写文件的不计入。任务整体的改动见下面的「改动的文件」。',
       '',
-      '| 节点 id | 标题 | 类型 | Agent | 状态 | 耗时 | 等待 | 验收轮数/结论 | 输入/缓存命中 | 输出 | 改文件 | 报错 |',
-      '|---|---|---|---|---|---|---|---|---|---|---|---|',
+      '| 节点 id | 标题 | 类型 | Agent | 状态 | 耗时 | 等待 | 验收轮数/结论 | 输入/缓存写/命中 | 输出 | 费用 | 工具调用 | 改文件 | 报错 |',
+      '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
     )
     for (const n of st.nodes)
       lines.push(
-        `| ${n.id} | ${n.title} | ${[n.kind, n.slot].filter(Boolean).join('/')} | ${agentName(n.agentId)} | ${n.status}${n.interrupted ? '（被打断）' : ''} | ${fmtDuration(n.ms)} | ${fmtDuration(n.waitMs)} | ${n.rounds}/${n.verdict || '-'} | ${fmtK(n.inputTokens)}/${pct(n.cacheHitRate)} | ${fmtK(n.outputTokens)} | ${n.files} | ${n.errors} |`,
+        `| ${n.id} | ${n.title} | ${[n.kind, n.slot].filter(Boolean).join('/')} | ${agentName(n.agentId)} | ${n.status}${n.interrupted ? '（被打断）' : ''} | ${fmtDuration(n.ms)} | ${fmtDuration(n.waitMs)} | ${n.rounds}/${n.verdict || '-'} | ${fmtK(n.inputTokens)}/${fmtK(n.cacheWriteTokens ?? 0)}/${pct(n.cacheHitRate)} | ${fmtK(n.outputTokens)} | ${moneyCell(n.costUsd)} | ${toolCell(n)} | ${n.files} | ${n.errors} |`,
       )
   }
   for (const w of tk.workflows) {
@@ -1835,9 +1956,32 @@ function htmlTests(tk: ExportedTask) {
   return `<section id="tests"><h2>测试记录</h2><table><thead><tr><th>步骤</th><th>谁跑的</th><th>结果</th><th>耗时</th><th>第几次</th><th>时间</th></tr></thead><tbody>${body}</tbody></table></section>`
 }
 
+/** HTML 里的节点统计表：和 Markdown 报告的节点表同一组列，复用同一批格式化函数，两份报告不会给出两套数 */
+function htmlNodeStats(st: TaskStats) {
+  if (!st.nodes.length) return ''
+  const head = ['节点 id', '标题', '状态', '耗时', '输入/缓存写/命中', '输出', '费用', '工具调用', '报错']
+  const rows = st.nodes.map((n) => [
+    n.id,
+    n.title,
+    `${n.status}${n.interrupted ? '（被打断）' : ''}`,
+    fmtDuration(n.ms),
+    `${fmtK(n.inputTokens)}/${fmtK(n.cacheWriteTokens ?? 0)}/${pct(n.cacheHitRate)}`,
+    fmtK(n.outputTokens),
+    moneyCell(n.costUsd),
+    toolCell(n),
+    String(n.errors),
+  ])
+  return `<section id="nodes">
+<h2>节点统计</h2>
+<table><thead><tr>${head.map((h) => `<th>${escHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows
+    .map((cells) => `<tr>${cells.map((c) => `<td>${escHtml(c)}</td>`).join('')}</tr>`)
+    .join('')}</tbody></table>
+</section>`
+}
+
 /**
  * 一次执行整理成自包含的单文件 HTML：内联样式、不加载任何外部资源、不执行脚本，
- * 没装面板的人双击就能在浏览器里看。内容和 Markdown 报告同一套口径（统计、按节点的消息、改动文件、测试记录）
+ * 没装面板的人双击就能在浏览器里看。内容和 Markdown 报告同一套口径（统计、按节点统计、按节点的消息、改动文件、测试记录）
  */
 export function taskHtml(b: TaskExport): string {
   const tk = b.task
@@ -1852,12 +1996,13 @@ export function taskHtml(b: TaskExport): string {
     // 和 Markdown 报告同一个口径：执行 + 子对话占用 + 空闲 = 跨度，括号里的是子集
     `跨度 ${fmtDuration(st.spanMs)}：执行 ${fmtDuration(st.durationMs)}（等你确认/提问 ${fmtDuration(st.waitMs)} 已含在其中），${st.childBusyMs ? `子对话占用 ${fmtDuration(st.childBusyMs)}，` : ''}空闲 ${fmtDuration(st.idleMs)}${st.idleWaitMs ? `（其中等你回下一句 ${fmtDuration(Math.min(st.idleWaitMs, st.idleMs))}）` : ''}`,
     `轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行`,
-    `Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
+    `Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}${cacheWriteNote(st.cacheWriteTokens)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
     `节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条`,
+    `工具调用 ${st.toolCalls} 次，失败 ${st.failedTools} 次${toolsNote(st)}`,
   ]
   if (kids.tasks)
     stats.push(
-      `子对话 ${kids.tasks} 个（上面的节点和 Token 只算自身）：执行 ${fmtDuration(kids.durationMs)}，Token 输入 ${fmtK(kids.inputTokens)}，输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条`,
+      `子对话 ${kids.tasks} 个（上面的节点和 Token 只算自身）：执行 ${fmtDuration(kids.durationMs)}，Token 输入 ${fmtK(kids.inputTokens)}，输出 ${fmtK(kids.outputTokens)}，费用 $${kids.costUsd.toFixed(3)}；报错 ${kids.errors} 条${kidsToolsKnown(b) ? (kids.toolCalls ? `，工具调用 ${kids.toolCalls} 次（失败 ${kids.failedTools} 次）` : '') : '（旧口径：含失败的工具调用，工具调用未记录）'}`,
     )
   if (cacheMismatch(st))
     stats.push(
@@ -1881,6 +2026,7 @@ ${meta.map((x) => `<p class="meta">${escHtml(x)}</p>`).join('\n')}
 <h2>统计</h2>
 <ul class="stats">${stats.map((x) => `<li>${escHtml(x)}</li>`).join('')}</ul>
 </section>
+${htmlNodeStats(st)}
 <section id="messages">
 <h2>执行过程</h2>
 ${htmlMessages(tk, agentName)}
