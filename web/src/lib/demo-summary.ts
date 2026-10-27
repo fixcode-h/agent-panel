@@ -1,7 +1,8 @@
 /**
  * 在线演示版的工作总结：不跑 CLI，过一秒按选中的项目给一份示例报告。
  * 接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），页面两边共用一套代码；
- * 报告结构也和正式版一样：三个二级节、项目三级标题、条目带序号（格式自检能直接通过）。
+ * 报告结构也和正式版一样：四个二级节（概览 / 需求进度 / 问题与修复 / 下一步）、
+ * 项目三级标题、条目带序号（格式自检能直接通过）。
  */
 import {
   DEFAULT_SUMMARY_RANGE,
@@ -52,6 +53,15 @@ const BUGS_NEXT = [
     fix: '换范围时一起清空当前报告和对比',
   },
   BUGS[1],
+]
+/** 演示里的下一步：第二轮换成新的一批，对比时能看到新增和消失 */
+const NEXT = [
+  { title: '接购物车结算的并发校验', note: '两个页面同时改数量时以最后一次为准' },
+  { title: '补设置页的键盘操作', note: '弹窗打开后焦点落在第一个输入框' },
+]
+const NEXT_ROUND = [
+  { title: '补退款流程的验收', note: '退款后金额和库存都要对' },
+  { title: '把价格格式化收进一个入口', note: '页面里不再各自格式化' },
 ]
 
 const reports = new Map<string, SummaryRecord>()
@@ -116,32 +126,51 @@ export function demoLessonDrafts(method: string, id: string | undefined, body: u
 function sampleMd(day: string, names: string[], round: number) {
   const needPool = round ? NEEDS_NEXT : NEEDS
   const bugPool = round ? BUGS_NEXT : BUGS
+  const nextPool = round ? NEXT_ROUND : NEXT
   const needs = names.map((name, i) => {
     const picked = Array.from(
       { length: NEEDS_PER_PROJECT },
       (_, k) => needPool[(i * NEEDS_PER_PROJECT + k) % needPool.length],
     )
     return [
-      `### 1.${i + 1} ${name}`,
-      ...picked.flatMap((n, k) => [`${k + 1}. **${n.title}** ｜ ${n.status}`, `   实现：${n.how}`]),
+      `### 2.${i + 1} ${name}`,
+      ...picked.flatMap((n, k) => [
+        `${k + 1}. **${n.title}** ｜ ${n.status}`,
+        `   实现：${n.how}`,
+        `   验证：单测和界面检查都通过`,
+      ]),
       '',
     ]
   })
   const bugs = names.map((name, i) => {
     const bug = bugPool[i % bugPool.length]
-    return [`### 2.${i + 1} ${name}`, `1. **${bug.title}**`, `   原因：${bug.cause}`, `   修复：${bug.fix}`, '']
+    return [
+      `### 3.${i + 1} ${name}`,
+      `1. **${bug.title}** ｜ 已修复`,
+      `   原因：${bug.cause}`,
+      `   修复：${bug.fix}`,
+      '',
+    ]
+  })
+  const next = names.map((name, i) => {
+    const todo = nextPool[i % nextPool.length]
+    return [`### 4.${i + 1} ${name}`, `1. **${todo.title}**`, `   说明：${todo.note}`, '']
   })
   return [
     `# ${day} 工作总结`,
     '',
-    '## 一、需求进度',
+    '## 一、概览',
+    `这段时间完成了 ${names.length} 个项目的主要需求，用户报的问题已修复，剩下的按计划继续推进。`,
+    '',
+    '## 二、需求进度',
     '',
     ...needs.flat(),
-    '## 二、用户报告的 Bug',
+    '## 三、问题与修复',
     '',
     ...bugs.flat(),
-    '## 三、今日小结',
-    `今天完成了 ${names.length} 个项目的主要需求，剩下的按计划继续推进。`,
+    '## 四、下一步',
+    '',
+    ...next.flat(),
     '',
   ].join('\n')
 }
@@ -194,7 +223,7 @@ export function demoSummary(
       startedAt: Date.now(),
     }
     jobs.set(job.id, job)
-    setTimeout(() => (job.thinking = '先看今天每个项目里跑过的对话，按项目整理成三节。'), demoMs(500))
+    setTimeout(() => (job.thinking = '先看今天每个项目里跑过的对话，按项目整理成四节。'), demoMs(500))
     setTimeout(() => (job.tools = ['任务记录', '消息', '计划']), demoMs(900))
     setTimeout(() => {
       if (job.status !== 'running') return
@@ -218,6 +247,8 @@ export function demoSummary(
         effort: '',
         // 没挑对话时按项目今天两条估算，和正式版「不选就是全部」的口径一致
         taskCount: chosen.reduce((n, p) => n + Math.max(p.taskIds.length, 2), 0),
+        // 演示里的生成耗时就是上面那段延迟（正式版按点「生成」到存下报告算）
+        durationMs: demoMs(1800),
       }
       reports.set(record.id, record)
       Object.assign(job, {

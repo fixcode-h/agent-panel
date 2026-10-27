@@ -304,12 +304,20 @@ export const EN_APP: Record<string, string> = {
   '这些项目没有可写进报告的对话，已跳过：{names}':
     'These projects had no conversations to include; they were skipped: {names}',
   '一级标题不是「# <日期> 工作总结」': 'The H1 is not “# <date> 工作总结”',
-  '缺少固定的三个二级节，或顺序不对': 'The three fixed H2 sections are missing or out of order',
-  '项目标题的编号格式不对（应为「### 1.1 项目名」）': 'Project headings are not numbered like “### 1.1 Project”',
-  '条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复」':
-    'Entries are not “1. **Title** ｜ status” followed by an indented “实现 / 原因 / 修复” line',
+  '缺少固定的四个二级节，或顺序不对': 'The four fixed H2 sections are missing or out of order',
+  '项目标题的编号格式不对（应为「### 2.1 项目名」）': 'Project headings are not numbered like “### 2.1 Project”',
+  '条目没有写成「1. **标题** ｜ 状态」加缩进一行的「实现 / 原因 / 修复 / 说明」':
+    'Entries are not “1. **Title** ｜ status” followed by an indented “实现 / 原因 / 修复 / 说明” line',
   '某一节没有内容时没写「暂无」': 'An empty section does not say “暂无”',
   '用哪个 Agent 生成': 'Agent to generate with',
+  '生成后自动保存，可以继续编辑': 'Saved automatically after generating; you can keep editing',
+  '耗时 {time}': 'Took {time}',
+  '{n} 个对话': '{n} conversations',
+  '{n} 字': '{n} chars',
+  '不到 1 秒': 'under 1s',
+  '{n} 秒': '{n}s',
+  '{n} 分 {m} 秒': '{n}m {m}s',
+  '{n} 分钟': '{n} min',
   生成报告: 'Generate report',
   '还没有项目，先在侧栏添加一个项目。': 'No projects yet: add one from the sidebar first.',
   '正在分析{scope}执行过的对话…': 'Analyzing conversations in {scope}…',
@@ -326,8 +334,8 @@ export const EN_APP: Record<string, string> = {
   '两份报告的格式对不上模板，下面按文本逐行对比':
     'The reports do not follow the template; comparing them line by line instead',
   需求进度: 'Requirement progress',
-  '用户报告的 Bug': 'Bugs reported by the user',
-  今日小结: 'Daily summary',
+  问题与修复: 'Problems and fixes',
+  下一步: 'Next steps',
   新增: 'Added',
   消失: 'Gone',
   状态变化: 'Status changed',
@@ -345,6 +353,8 @@ export const EN_APP: Record<string, string> = {
   '提炼了 {n} 条候选教训，改好再手动写进 docs/lessons/':
     'Drafted {n} candidate lesson(s); refine them and add them to docs/lessons/ yourself',
   候选教训草稿: 'Candidate lesson drafts',
+  '已提炼 {n} 条': '{n} drafted',
+  从报告里提炼返工过的做法: 'Draft lessons from reworked spots in this report',
   '只生成草稿，确认后自己写进 docs/lessons/': 'Drafts only — you add them to docs/lessons/ after reviewing',
   '从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）':
     'Find reworked spots in this report and draft candidates (each report is drafted once)',

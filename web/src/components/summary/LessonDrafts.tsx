@@ -1,21 +1,25 @@
 import { useEffect, useState } from 'react'
 import { toast } from '@/lib/toast'
-import { Lightbulb, Sparkles, Trash2 } from 'lucide-react'
+import { ChevronDown, Lightbulb, Sparkles, Trash2 } from 'lucide-react'
 import type { LessonDraftInput, LessonDraftRecord } from '@shared/lesson-draft'
 import { lessonDraftProblems } from '@shared/lesson-draft'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
 
 /**
  * 候选教训草稿区：从工作总结报告里提炼的半成品，看、改、丢都在这里。
+ * 默认收起：多数报告没有返工，展开一大块空区域会把「最近报告」挤到下面；
+ * 头部一直显示已提炼几条，需要时点开。
  * 不会自动写进 docs/lessons/：落到哪个分片、怎么改成通用规则由用户决定，指引在底部。
  */
 export function LessonDrafts({ reportId, day }: { reportId: string; day: string }) {
   const [drafts, setDrafts] = useState<LessonDraftRecord[]>([])
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
   useEffect(() => {
     void api
       .lessonDrafts()
@@ -40,43 +44,58 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
 
   return (
     <section className="rounded-xl border bg-panel" aria-label={t('候选教训草稿')}>
-      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full cursor-pointer flex-wrap items-center gap-2 px-4 py-2 text-left hover:bg-sel"
+      >
         <Lightbulb className="h-4 w-4 text-warning" />
         <span className="text-[0.8125rem] font-medium">{t('候选教训草稿')}</span>
-        <span className="text-xs text-subtle">{t('只生成草稿，确认后自己写进 docs/lessons/')}</span>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="ml-auto"
-          disabled={busy || !reportId}
-          onClick={extract}
-          title={t('从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）')}
-        >
-          <Sparkles className="h-3.5 w-3.5 text-accent" />
-          {t('从这份报告提炼')}
-        </Button>
-      </div>
-      {drafts.length === 0 ? (
-        <p className="px-4 py-3 text-[0.8125rem] text-subtle">
-          {t('还没有草稿。报告里有用户报的 Bug 或返工过的条目时，点「从这份报告提炼」；没有就不生成，不硬造条目。')}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-3 px-4 py-3">
-          {drafts.map((d) => (
-            <DraftCard
-              key={d.id}
-              draft={d}
-              onSaved={(next) => setDrafts((list) => list.map((x) => (x.id === next.id ? next : x)))}
-              onDeleted={(id) => setDrafts((list) => list.filter((x) => x.id !== id))}
-            />
-          ))}
-        </ul>
+        <span className="text-xs text-subtle">
+          {drafts.length ? t('已提炼 {n} 条', { n: drafts.length }) : t('从报告里提炼返工过的做法')}
+        </span>
+        <ChevronDown className={cn('ml-auto h-4 w-4 text-subtle transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2">
+            <span className="text-xs text-subtle">{t('只生成草稿，确认后自己写进 docs/lessons/')}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="ml-auto"
+              disabled={busy || !reportId}
+              onClick={extract}
+              title={t('从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）')}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-accent" />
+              {t('从这份报告提炼')}
+            </Button>
+          </div>
+          {drafts.length === 0 ? (
+            <p className="px-4 py-3 text-[0.8125rem] text-subtle">
+              {t('还没有草稿。报告里有用户报的 Bug 或返工过的条目时，点「从这份报告提炼」；没有就不生成，不硬造条目。')}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3 px-4 py-3">
+              {drafts.map((d) => (
+                <DraftCard
+                  key={d.id}
+                  draft={d}
+                  onSaved={(next) => setDrafts((list) => list.map((x) => (x.id === next.id ? next : x)))}
+                  onDeleted={(id) => setDrafts((list) => list.filter((x) => x.id !== id))}
+                />
+              ))}
+            </ul>
+          )}
+          <p className="border-t px-4 py-2.5 text-xs leading-relaxed text-subtle">
+            {t(
+              '草稿不会自动写进 docs/lessons/：先看 docs/lessons/README.md 的分片表挑一个分片，把这条改成「下次能直接照做的通用规则」再手动写进去。标题一句话写「该怎么做」、规则写做什么不做什么（具体到文件或字段）、起因写哪次返工；每条不超过 6 行，单个分片不超过 6KB（scripts/rules-check.mjs 会检查）。能写成检查的，加进测试或 scripts/rules-check.mjs，分片里只留一行指针。',
+            )}
+          </p>
+        </>
       )}
-      <p className="border-t px-4 py-2.5 text-xs leading-relaxed text-subtle">
-        {t(
-          '草稿不会自动写进 docs/lessons/：先看 docs/lessons/README.md 的分片表挑一个分片，把这条改成「下次能直接照做的通用规则」再手动写进去。标题一句话写「该怎么做」、规则写做什么不做什么（具体到文件或字段）、起因写哪次返工；每条不超过 6 行，单个分片不超过 6KB（scripts/rules-check.mjs 会检查）。能写成检查的，加进测试或 scripts/rules-check.mjs，分片里只留一行指针。',
-        )}
-      </p>
       {day && <span className="sr-only">{t('来自 {day} 的报告', { day })}</span>}
     </section>
   )
