@@ -42,6 +42,18 @@ export const OutputSpec = z.object({
 })
 export type OutputSpec = z.infer<typeof OutputSpec>
 
+/**
+ * 按开关注入的额外扩展（例如 Pi 的联网搜索）：只有设置里的开关 opt.<option> 打开时才写文件、加参数。
+ * 关着时文件根本不写，CLI 也就不会注册这些工具；能力写在 CLI 定义里，代码不按 CLI 名字分支
+ */
+export const McpExtra = z.object({
+  /** build options 里的开关 id：opt.<id> 为 true 时才注入 */
+  option: z.string(),
+  args: z.array(z.string()).default([]),
+  files: z.record(z.string(), z.unknown()).default({}),
+})
+export type McpExtra = z.infer<typeof McpExtra>
+
 export const McpSpec = z.object({
   args: z.array(z.string()).default([]),
   files: z.record(z.string(), z.unknown()).default({}),
@@ -50,6 +62,8 @@ export const McpSpec = z.object({
    * 测试调用 mcpConfig 时传覆盖值换成小值，不用真等到生产的秒数
    */
   vars: z.record(z.string(), z.union([z.string(), z.number()])).default({}),
+  /** 按设置开关才注入的扩展（见 mcpExtras）；不写表示这个 CLI 没有这类扩展 */
+  extras: z.array(McpExtra).default([]),
 })
 export type McpSpec = z.infer<typeof McpSpec>
 
@@ -224,21 +238,12 @@ export type RpcSpec = z.infer<typeof RpcSpec>
 export type RpcSpecInput = z.input<typeof RpcSpec>
 
 /**
- * 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件。
- * dir 是面板这一轮自己的临时目录（绝对路径），配置里写 {dir} 的文件放这里，不进用户的项目
+ * 占位符填充：{name} / {url} / {dir} 是每次调用都不同的地址，先换掉，不让 vars 覆盖。
+ * 所有占位符（包括内建三个）都跳过 `${...}` 这类 TS 插值：模板里有 `${what}等了…`、
+ * `${name}` 这类写法，不能被当成占位符改掉。vars 只认自己有的键（不用 in，免得命中原型链上的 constructor / toString）
  */
-export function mcpConfig(
-  spec: McpSpec,
-  name: string,
-  url: string,
-  dir = '',
-  override: Record<string, string | number> = {},
-) {
+function fillers(spec: McpSpec, name: string, url: string, dir: string, override: Record<string, string | number>) {
   const vars = { ...spec.vars, ...override }
-  // {name} / {url} / {dir} 是每次调用都不同的地址，先换掉，不让 vars 覆盖。
-  // 所有占位符（包括内建三个）都跳过 `${...}` 这类 TS 插值：模板里有 `${what}等了…`、
-  // `${name}` 这类写法，不能被当成占位符改掉。
-  // vars 只认自己有的键（不用 in，免得命中原型链上的 constructor / toString）
   const fillStr = (s: string) =>
     s
       .replace(/(?<!\$)\{name\}/g, () => name)
@@ -255,9 +260,48 @@ export function mcpConfig(
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fillStr(k), fillAny(x)]))
           : v
+  return { fillStr, fillAny }
+}
+
+/**
+ * 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件。
+ * dir 是面板这一轮自己的临时目录（绝对路径），配置里写 {dir} 的文件放这里，不进用户的项目
+ */
+export function mcpConfig(
+  spec: McpSpec,
+  name: string,
+  url: string,
+  dir = '',
+  override: Record<string, string | number> = {},
+) {
+  const { fillStr, fillAny } = fillers(spec, name, url, dir, override)
   return {
     args: spec.args.map(fillStr),
     files: Object.entries(spec.files).map(([p, content]) => ({ path: fillStr(p), content: fillAny(content) })),
+  }
+}
+
+/**
+ * 只在设置开关打开时才注入的扩展（McpSpec.extras）：Pi 的联网搜索就是这样接的，
+ * 关着时文件不写、参数不加，CLI 里根本不会注册这两个工具。
+ * options 是 build options（含默认值），按「opt.<id>」判断；不传时一个都不注入
+ */
+export function mcpExtras(
+  spec: McpSpec,
+  name: string,
+  url: string,
+  dir = '',
+  options: Record<string, boolean> = {},
+  override: Record<string, string | number> = {},
+) {
+  const on = spec.extras.filter((e) => options[e.option])
+  if (!on.length) return { args: [] as string[], files: [] as { path: string; content: unknown }[] }
+  const { fillStr, fillAny } = fillers(spec, name, url, dir, override)
+  return {
+    args: on.flatMap((e) => e.args).map(fillStr),
+    files: on.flatMap((e) =>
+      Object.entries(e.files).map(([p, content]) => ({ path: fillStr(p), content: fillAny(content) })),
+    ),
   }
 }
 

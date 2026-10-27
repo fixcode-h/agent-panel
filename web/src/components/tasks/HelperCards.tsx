@@ -348,7 +348,7 @@ export function HelperWindow({
           </footer>
         </D.Content>
       </D.Portal>
-      {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在父对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
+      {/* 弹窗开在子任务窗口之上：分析对话按归属规则开在项目里或所属顶层对话下，在统一的 AI 分析窗口里看，子任务窗口先关掉 */}
       <AnalyzeDialog
         open={analyzing}
         onOpenChange={setAnalyzing}

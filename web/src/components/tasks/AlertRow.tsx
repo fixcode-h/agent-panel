@@ -26,12 +26,12 @@ export function AlertRow({
   /** 报错前后的对话：交给 AI 时一起带上 */
   conversation?: string
   cwd?: string
-  /** 报错属于哪里：对话里的报错开在它的父对话下（见 shared/analysis-home.ts） */
+  /** 报错属于哪里：项目里对话的报错在项目里另开顶层对话、子对话里的开在它所属顶层对话下（见 shared/analysis-home.ts） */
   home?: AnalysisScope
   className?: string
 }) {
   const [open, setOpen] = useState(false)
-  const info = alertInfo(alert.kind)
+  const info = alertInfo(alert.kind, alert.detail)
   const done = !!alert.resolved
   const error = !done && alert.level === 'error'
   const Icon = done ? CircleCheck : error ? CircleAlert : TriangleAlert

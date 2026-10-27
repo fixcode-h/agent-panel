@@ -35,6 +35,8 @@ export const UI_SHARD_COVERS = {
     'web/src/components/tasks/TaskMeta.tsx',
     // 输入框下的「测试记录」（dev 的「任务-测试记录」断言它）
     'web/src/components/tasks/TestRuns.tsx',
+    // 输入框下的「工具与返工」（dev 的「任务-工具与返工」断言它）
+    'web/src/components/tasks/ToolFailuresChip.tsx',
     'web/src/components/files/FileTree.tsx',
     'web/src/lib/tasks.ts',
     'web/src/pages/ChatPage.tsx',

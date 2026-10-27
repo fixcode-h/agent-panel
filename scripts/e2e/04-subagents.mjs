@@ -122,6 +122,64 @@ await runShard('子对话与计划', async (api) => {
     await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: true })
     step('父对话切走：宽限到期不连带停掉还在跑的子对话')
 
+    // 父对话在等子对话（计划里还挂着没做完的步骤），自己这一轮已经结束、进程也退了（不保活的 CLI）：
+    // 宽限到了不能把它收口成「已中断」——旧实现按「没有执行位就是空闲」收了，子对话的结果回来时没有父对话接
+    let waiting = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'PLAN_LEFT 等子对话时切到后台',
+    })
+    waiting = await waitDone(waiting.id, 20000)
+    assert.ok((await call('GET', `/tasks/${waiting.id}`)).plans?.length, '计划留在没做完的状态')
+    const busyKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: waiting.id,
+      prompt: 'SLOW 子对话在跑，父对话在等',
+    })
+    await waitFor(() => calls().some((c) => c.input.includes('SLOW 子对话在跑，父对话在等')), {
+      label: '子对话开始执行',
+    })
+    // 创建子对话不会叫醒父对话（createTask 只 start 子对话，不发 noteParent），这里防的只是“上一轮还没落完”的收尾窗口
+    await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${waiting.id}`)
+        return t.working ? null : t
+      },
+      { timeout: 15000, label: '父对话这一轮跑完' },
+    )
+    assert.equal(
+      (await call('GET', `/tasks/${waiting.id}`)).working,
+      false,
+      '切走前父对话必须没有执行位：它不保活，这一轮结束进程就退了',
+    )
+    await call('POST', `/tasks/${waiting.id}/presence`, { viewerId: 'e2e-waiting', active: true })
+    await call('POST', `/tasks/${waiting.id}/presence`, { viewerId: 'e2e-waiting', active: false })
+    // 宽限 1200ms，等两倍：机器忙时计时器可能晚触发，等太短会让旧实现也通过（用例失去区分度）
+    await sleep(2400)
+    const held = await call('GET', `/tasks/${waiting.id}`)
+    // 先确认断言时刻父对话仍然没有执行位：要是这段时间里它被叫醒在跑，旧实现也会因 live 里有条目而判忙，
+    // 后面两条就成了假绿；这条先把“构造变了”打红
+    assert.equal(held.working, false, `宽限窗口里父对话一直被叫醒在跑（${held.status}），这段用例失去区分度`)
+    assert.notEqual(
+      held.stopReason,
+      'presence',
+      `父对话在等子对话：宽限到了也不能被回收成「已中断」（现在 ${held.status} / ${held.stopReason}）`,
+    )
+    assert.notEqual(held.status, 'stopped', '父对话还有子对话的结果要接，不能落成已停止')
+    await call('POST', `/tasks/${busyKid.id}/stop?force=1`).catch(() => {})
+    await call('POST', `/tasks/${waiting.id}/stop?force=1`).catch(() => {})
+    await waitFor(
+      async () => {
+        const t = await call('GET', `/tasks/${waiting.id}`)
+        return t.status !== 'running' ? t : null
+      },
+      { timeout: 15000, label: '收掉等子对话的父对话' },
+    )
+    step('父对话在等子对话：宽限到期不回收父对话（子对话的结果还要交给它）')
+
     // 父对话的 CLI 结束时一起结束子对话的进程
     let slow = await mkChild('子对话二', 'SLOW 父对话关闭时一起结束')
     await waitFor(() => calls().some((c) => c.input.includes('SLOW 父对话关闭时一起结束')), {
@@ -599,8 +657,23 @@ await runShard('子对话与计划', async (api) => {
       await waitFor(async () => (await call('GET', `/tasks/${stopKid.id}`)).status === 'stopped', {
         label: '子对话停下',
       })
-      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪
-      const row = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      // 子对话卡片自己也带上「N 个文件未提交 + 目录」：父对话不点开也知道改动在哪。
+      // /children 不等独立分支的 git（几十个子对话时不把消息和 SSE 首包拖住，见
+      // docs/modules/server/bugs/children-git-blocks-open.md）：第一次可能是 worktreeChecked=false 的占位值，
+      // git 结果在下一次轮询到位，所以这里等到真的核对过再看 dirty
+      // 占位时不能给「0 个文件」：那会被界面显示成「干净」，比晚一轮更糟
+      const pending = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+      if (pending && !pending.worktreeChecked) {
+        assert.equal(pending.dirty, undefined, '没核对过时不能把 dirty 说成 0')
+        assert.equal(pending.unmerged, undefined, '没核对过时不能把 unmerged 说成 false（已合回）')
+      }
+      const row = await waitFor(
+        async () => {
+          const hit = (await call('GET', `/tasks/${stopParent.id}/children`)).find((x) => x.id === stopKid.id)
+          return hit?.worktreeChecked ? hit : undefined
+        },
+        { timeout: 20000, label: '子对话卡片核对完独立分支状态' },
+      )
       // 停止时计划还没做完（用户最常遇到的停止情形，见上面的 PLAN_NEXT），
       // 这时也要照样报出没提交的文件，不能因为「还有 holds」就当成不需要判完成而什么都不给
       const kidDone = await call('GET', `/tasks/${stopKid.id}`)

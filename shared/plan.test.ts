@@ -1,7 +1,8 @@
 import { childReport } from './task.ts'
+import { makeAlert } from './alerts.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { PlanStep, Task, TaskPlan } from './schema.ts'
+import type { PlanStep, Task, TaskMessage, TaskPlan } from './schema.ts'
 import {
   activePlan,
   applyPlan,
@@ -1779,4 +1780,67 @@ test('只改步骤名也刷新这一项的最后变化时间（改标题不能�
   applyPlan(task, { partial: true, steps: [{ id: '1', title: '跑端到端测试（WSL）', status: 'running' }] }, at(4))
   assert.equal(itemUpdatedAt(step), Date.parse(at(4)), '只改标题也要刷新')
   assert.equal(staleStep(task, Date.parse(at(4))), undefined, '刚改过名字，不该马上被判滞后')
+})
+
+test('子对话执行失败：上报带上这次失败的原因，父对话不用去翻', () => {
+  const child = (messages: TaskMessage[]) =>
+    ({ status: 'failed', working: false, requests: [], plans: [], steps: [], messages }) as unknown as Task
+  // 重试耗尽：上游报错原文跟着上报，而不是只有一句「执行失败了」
+  const retry: TaskMessage = {
+    id: 'm1',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: '',
+    at: '',
+    tools: [
+      {
+        kind: 'other',
+        name: '提示',
+        label: '自动重试 3 次后仍然失败：502 Bad Gateway',
+        detail: '',
+        failed: true,
+        alert: makeAlert('error', '自动重试 3 次后仍然失败：502 Bad Gateway'),
+      },
+    ],
+  }
+  const r = childReport(child([retry]))
+  assert.equal(r.state, 'failed')
+  assert.match(r.why, /执行失败了/)
+  assert.match(r.why, /自动重试 3 次后仍然失败/)
+  assert.match(r.why, /502 Bad Gateway/)
+
+  // 面板写的失败消息（进程被回收、面板出错）也要能说清
+  const killed: TaskMessage = {
+    id: 'm2',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: '',
+    at: '',
+    tools: [],
+    error: true,
+    alert: makeAlert('error', '面板回收了这个对话的进程：空闲超过 30 分钟'),
+  }
+  assert.match(childReport(child([killed])).why, /面板回收了这个对话的进程/)
+
+  // 实际撞上的主因：面板工具没接上（握手 / 列工具超时），子对话这一轮跑挂
+  const tools: TaskMessage = {
+    id: 'm4',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: '',
+    at: '',
+    tools: [],
+    alert: makeAlert('error', '面板的工具没接上（握手等了 4 秒还没回应）：这一轮所有面板工具都不可用'),
+  }
+  assert.match(childReport(child([tools])).why, /面板的工具没接上.*握手等了 4 秒/)
+
+  // 已经恢复的报错不是这次失败的原因
+  const resolved: TaskMessage = { ...killed, id: 'm3', alert: { ...killed.alert!, resolved: '已恢复' } }
+  assert.equal(childReport(child([resolved])).why, '失败：执行失败了')
+
+  // 没有任何报错时只说失败，不编原因
+  assert.equal(childReport(child([])).why, '失败：执行失败了')
 })

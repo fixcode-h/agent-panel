@@ -3,6 +3,8 @@ import test from 'node:test'
 
 // 宽限期默认 60 分钟，测试里用环境变量缩短（环境变量优先于设置）
 process.env.AGENT_PANEL_PRESENCE_GRACE_MS = '30'
+// 还在跑的对话宽限到点后的复查间隔（见 presence.ts 的 scheduleRecheck），同样缩短
+process.env.AGENT_PANEL_PRESENCE_RECHECK_MS = '200'
 const {
   forgetPresence,
   hasViewer,
@@ -23,6 +25,8 @@ const {
 setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+// 真实保活判定：名下有子对话在跑时，这一轮结束、进程退了也在等结果（见 shared/task.ts 的 keepAliveHolding）
+const { keepAliveHolding } = await import('../shared/task.ts')
 
 test('对话页在场：切走后宽限到了才结束，切回来取消计时', async () => {
   const id = 'presence-test'
@@ -264,6 +268,117 @@ test('宽限期设成 0：正在跑的对话不会靠 0ms 定时器反复重排�
   setPresenceBusy(() => false)
   setPresenceUnreadKeeper(() => false)
   setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  forgetPresence(id)
+})
+
+test('父对话在等子对话：宽限到了也不回收，子对话结束、自己空下来之后照旧回收', async () => {
+  const id = 'presence-child-running'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  // 父对话这一轮已经结束、进程也退了（不保活的 CLI）：只有名下的子对话还在跑
+  let children = 1
+  setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
+
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  await wait(200)
+  assert.equal(idle, 0, '名下有子对话在跑：宽限到了也不回收，回收会把父对话落成「已中断」')
+  assert.equal(isWatched(id), true, '还在等子对话的结果，不能当成没人看的空闲会话')
+
+  // 子对话跑完、父对话也空下来：从这一刻重新算满一整段，到点照旧回收（不是永远不回收）
+  children = 0
+  resetIdleCountdown(id)
+  await wait(20)
+  assert.equal(idle, 0, '刚空下来不立刻回收')
+  await wait(200)
+  assert.equal(idle, 1, '子对话全结束、也空闲了，照旧按现有规则回收')
+
+  setPresenceBusy(() => false)
+  forgetPresence(id)
+})
+
+test('宽限到点还在跑的对话留一个复查：子对话被停掉、自己空下来后照旧回收', async () => {
+  const id = 'presence-busy-recheck'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  // 父对话没有执行位（这一轮结束、进程已退），名下的子对话还在跑
+  let children = 1
+  setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
+
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  // 宽限到点：还在等子对话，不回收
+  await wait(100)
+  assert.equal(idle, 0, '还在等子对话：不回收')
+
+  // 子对话被用户强制停掉，结果不会再交回：不会再走 onKeepAlive 重置计时，只能靠复查把它拉回收
+  children = 0
+  await wait(300)
+  assert.equal(idle, 1, '空下来后复查到点照旧回收（不能永远挂成「等结果」）')
+
+  setPresenceBusy(() => false)
+  forgetPresence(id)
+})
+
+test('关掉自动回收：宽限或复查到点都不收（开关只有一处读）', async () => {
+  const id = 'presence-recheck-off'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  let children = 1
+  setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
+
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  // 宽限到点、还在跑：先真的排上复查计时器
+  await wait(60)
+  assert.equal(idle, 0, '还在等子对话：不回收')
+  // 这时才关掉「按时间回收」：已排的复查到点也不能收（不是只测宽限计时器）
+  setPresenceReclaimPolicy({ enabled: false })
+  children = 0
+  await wait(300)
+  assert.equal(idle, 0, '关掉自动回收后，复查也不能把会话收掉')
+
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  setPresenceBusy(() => false)
+  forgetPresence(id)
+})
+
+test('复查不占宽限计时：空下来以后按宽限收，不等到复查点', async () => {
+  const id = 'presence-recheck-grace'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
+  let children = 1
+  setPresenceBusy((taskId) => taskId === id && keepAliveHolding({ live: false, children }))
+
+  setViewer(id, 'tab-a', true)
+  setViewer(id, 'tab-a', false)
+  // 宽限到点、还在跑：排上复查（200ms）
+  await wait(60)
+  assert.equal(idle, 0, '还在等子对话：不回收')
+
+  // 子对话结束、这一轮也看过了（对应 /seen 后的 rescheduleIfUnwatched）：宽限 30ms 就该收，不能等复查点
+  children = 0
+  rescheduleIfUnwatched(id)
+  await wait(120)
+  assert.equal(idle, 1, '空下来后按宽限回收，不被复查计时占住')
+
+  setPresenceBusy(() => false)
   forgetPresence(id)
 })
 

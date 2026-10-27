@@ -668,7 +668,9 @@ export function AnalyzeDialog({
       footer={
         <>
           <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('用「分析」角色新建对话来分析，只分析不改文件；对话里的分析开在它的父对话下')}
+            {t(
+              '用「分析」角色新建对话来分析，只分析不改文件；对话里的分析在项目里另开，子对话里的开在它所属的顶层对话下',
+            )}
           </span>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('取消')}

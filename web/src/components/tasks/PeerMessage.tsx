@@ -308,7 +308,14 @@ export function ReceivedRow({ m }: { m: TaskMessage }) {
       subject={peer.subject}
       body={peerBody(m.text)}
       failed={peer.failed}
-      state={peer.kind === 'report' && !peer.subject ? state : ''}
+      // 失败汇报要说清是「子对话自己这一轮跑挂了」，不是「汇报这个动作失败」——用户报的「汇报失败」其实是前者
+      state={
+        peer.kind === 'report' && peer.failed
+          ? t('子对话自己这一轮失败')
+          : peer.kind === 'report' && !peer.subject
+            ? state
+            : ''
+      }
       childId={peer.rel === 'child' ? peer.id : undefined}
     />
   )

@@ -24,6 +24,7 @@ import {
   stripEvolution,
   TASK_EXPORT_MAX_BYTES,
   taskReport,
+  taskHtml,
   taskStats,
 } from '../shared/task-export.ts'
 import { endRun, pauseRun, resumeRun } from '../shared/task.ts'
@@ -136,7 +137,7 @@ test('统计：子对话（含多层）的成本汇总进 children 和 combined�
   assert.equal(kids.outputTokens, 500)
   assert.equal(kids.durationMs, 35_000)
   assert.equal(kids.cacheHitRate, 0.48, '命中率按合计重算')
-  assert.equal(kids.errors, 2, '报错消息 + 失败的工具调用')
+  assert.equal(kids.errors, 1, '报错只数消息上的 error，失败的工具调用单独计')
   assert.equal(kids.failedTools, 1)
 
   const b = exportTask(task, [coder], '', new Date(at), kids)
@@ -158,6 +159,138 @@ test('统计：子对话（含多层）的成本汇总进 children 和 combined�
   const old = analysisReport([legacy])
   assert.ok(!old.includes('含子对话合计'), '没有子对话数据时不写合计行')
   assert.ok(!old.includes('（自身，不含子对话）'))
+})
+
+test('统计：节点级工具调用、探路失败和缓存写入进导出与报告', () => {
+  const rec = Task.parse({
+    ...task,
+    usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 600, cacheWriteTokens: 300, costUsd: 0.01 },
+    steps: [
+      {
+        id: 'handle',
+        title: '处理并推荐',
+        agentId: coder.id,
+        status: 'done',
+        startedAt: at,
+        endedAt: '2026-10-19T00:01:00.000Z',
+        rounds: 1,
+        verdict: 'pass',
+        output: '做完了',
+        usage: {
+          inputTokens: 1000,
+          cacheReadTokens: 600,
+          cacheWriteTokens: 300,
+          outputTokens: 200,
+          costUsd: 0.01,
+        },
+      },
+    ],
+    messages: [
+      {
+        id: 'm1',
+        role: 'agent',
+        step: 'handle',
+        text: '读文件',
+        at,
+        tools: [
+          { kind: 'read', label: 'a.txt' },
+          {
+            kind: 'run',
+            label: 'cat missing.txt',
+            failed: true,
+            output: 'cat: missing.txt: No such file or directory',
+          },
+          { kind: 'run', label: 'npm test', failed: true, exitCode: 1, output: 'failed: 断言没过' },
+        ],
+      },
+      {
+        id: 'm2',
+        role: 'agent',
+        step: '',
+        text: '节点外的调用',
+        at,
+        tools: [{ kind: 'other', label: 'spawn', failed: true, output: 'Tool not found: spawn' }],
+      },
+    ],
+  })
+  const s = taskStats(rec, new Date(at).getTime())
+  const n = s.nodes[0]
+  assert.equal(n.cacheWriteTokens, 300, '节点要带上缓存写入 token')
+  assert.equal(n.costUsd, 0.01, '节点费用读 StepUsage，不另算一份')
+  assert.equal(n.toolCalls, 3, '节点里的工具调用总数')
+  assert.equal(n.failedTools, 2)
+  assert.deepEqual(n.probeBy, { tool: 0, path: 1, command: 0 }, '只有路径不存在是探路失败')
+  // 合计和节点对得上：探路失败是失败工具调用的一部分，不是另一个指标
+  assert.equal(s.toolCalls, 4, '节点外那次调用也算任务合计')
+  assert.equal(s.failedTools, 3)
+  assert.deepEqual(s.probeBy, { tool: 1, path: 1, command: 0 })
+
+  const md = taskReport(exportTask(rec, [coder], '', new Date(at)))
+  assert.match(md, /\| 费用 \|/, '节点表要能直接看到费用')
+  assert.match(md, /输入\/缓存写\/命中/, '缓存写入和命中在同一处')
+  // 失败的工具调用从「报错」那一行挪出来单独一行，避免同一个数在报告里出现两次
+  assert.match(md, /；报错 0 条$/m)
+  // 失败的工具调用从「报错」里拆出来单独一行，探路失败和节点外合成一个括号（评审 R2 / R3）
+  assert.match(
+    md,
+    /- 工具调用 4 次，失败 3 次（其中探路失败 2 次：工具不存在 1、路径不存在 1；1 次不属于任何节点，失败 1 次）$/m,
+  )
+  // 任务级 Token 行也写缓存写入，不用复盘时自己加（评审低级）
+  assert.match(md, /缓存写入 300/)
+  assert.match(md, /\| 3 次，失败 2（探路 1） \|/, '节点表里写这个节点自己的工具调用')
+
+  const html = taskHtml(exportTask(rec, [coder], '', new Date(at)))
+  assert.ok(
+    html.includes(
+      '工具调用 4 次，失败 3 次（其中探路失败 2 次：工具不存在 1、路径不存在 1；1 次不属于任何节点，失败 1 次）',
+    ),
+  )
+
+  // 旧导出里没有探路和工具调用字段：按 0 兜底，报告里不能出现 undefined
+  const legacy = { ...exportTask(rec, [coder], '', new Date(at)) }
+  const raw = legacy.stats as Record<string, unknown>
+  // 旧包的 errors 是旧口径（把失败工具也算进去），这里放一个旧值 3，看报告会不会沿用
+  legacy.stats = { ...raw, toolCalls: undefined, probeBy: undefined, errors: 3 }
+  const old = taskReport(legacy)
+  assert.ok(!old.includes('undefined'))
+  assert.match(old, /- 工具调用 4 次，失败 3 次/, '旧数据没有这些字段时按记录现算，不写成 0')
+  assert.match(old, /；报错 0 条$/m, '旧包的 errors 含失败工具，按记录现算成新口径，不沿用旧数')
+})
+
+test('报告：旧导出带了子对话时，子对话与合计行不会写出 undefined / NaN', () => {
+  // 旧包里的 children / combined 是没有 toolCalls 等字段的 StatsTotal：只兜底顶层不够（评审 R1）
+  const kid = Task.parse({ ...task, id: 'kid', parentTaskId: 't1', title: '子对话', steps: [], messages: [] })
+  const b = exportTask(task, [coder], '', new Date(at), descendantTotals([kid]))
+  const raw = b.stats as Record<string, Record<string, unknown>>
+  const strip = (t: Record<string, unknown>) => ({
+    ...t,
+    toolCalls: undefined,
+    failedTools: undefined,
+    probeBy: undefined,
+    cacheWriteTokens: undefined,
+  })
+  b.stats = { ...strip(raw), errors: 3, children: strip(raw.children), combined: strip(raw.combined) }
+  const md = taskReport(b)
+  const html = taskHtml(b)
+  for (const text of [md, html]) {
+    assert.ok(!text.includes('undefined'), '不能把 undefined 写进报告')
+    assert.ok(!text.includes('NaN'), '合计重算后不能出 NaN')
+  }
+  // 旧包的子对话没有工具数据：宁可不写，也不写一个假的「0 次」
+  assert.ok(!/子对话 1 个[^\n]*工具调用 0 次/.test(md))
+  // 合计行也不能把子对话缺失的调用当成 0 写出来，要注明旧记录没记（口径：0 和「没记录」不是一个意思）
+  assert.ok(!/含子对话合计[^\n]*工具调用 0 次/.test(md), '合计行不写假的 0 次')
+  assert.match(md, /工具调用旧记录没有记（这一项只含自身）/, '合计行写明旧记录没记工具调用')
+  assert.match(md, /旧口径：含失败的工具调用，工具调用未记录/, '子对话行的报错写明是旧口径')
+})
+
+test('HTML 导出：和 Markdown 一样有节点统计表（费用 / 缓存写 / 工具调用）', () => {
+  const html = taskHtml(exportTask(task, [coder], '', new Date(at)))
+  assert.ok(html.includes('<section id="nodes">'), '节点统计单独一小节')
+  assert.ok(html.includes('节点统计'))
+  assert.ok(html.includes('输入/缓存写/命中'), '节点表带缓存写入')
+  assert.ok(html.includes('工具调用'), '节点表带工具调用列')
+  assert.ok(html.includes('费用'), '节点表带费用列')
 })
 
 test('导入：只读任务，Agent 存在任务里；格式不对、版本太新时给出原因', () => {
@@ -288,7 +421,7 @@ test('报告：用户要求不截断、失败工具单独统计、改动按节�
   const report = analysisReport([exportTask(withTools, [coder])])
   assert.match(report, /不要动 server\/tasks\.ts 里的并发逻辑/, '用户的要求不截断')
   assert.ok(!report.includes('后面省略'), '要求里没有省略标记')
-  assert.match(report, /失败的工具调用 1 次/, '失败的工具调用进统计')
+  assert.match(report, /工具调用 2 次，失败 1 次/, '工具调用总数和失败数进统计')
   assert.match(report, /失败详情：[\s\S]*FAIL 3 tests/, '失败工具带输出，能看原因')
   assert.match(report, /\*\*用户\*\*：\d{2}:\d{2}:\d{2} ## 约束/, '用户消息带时间')
   assert.match(report, /\*\*AI（开发）\*\*：\d{2}:\d{2}:\d{2} 跑了一下/, 'AI 回复带时间')

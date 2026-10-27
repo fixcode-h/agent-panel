@@ -185,7 +185,10 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'initialize':
       return reply({
         protocolVersion: msg.params?.protocolVersion ?? '2025-03-26',
-        capabilities: { tools: {} },
+        // 额外告诉桥接扩展这一轮挂没挂编排工具：它据此决定要不要核对核心工具。
+        // 压缩轮、原生审查轮只挂提问工具（见 runner 里 def.mcp && !op），清单里本来就没有核心编排工具，
+        // 不声明这一项的话扩展只能按服务名猜，会把这种正常情况报成「工具清单不完整」（见 shared/clis/pi.json 的扩展）
+        capabilities: { tools: {}, experimental: { orchestration: !!s.orch } },
         serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':
@@ -237,6 +240,12 @@ export function openAskBridge(o: {
     },
   }
 }
+
+/**
+ * 这个随机地址还有效吗：联网搜索的扩展复用同一份地址（见 server/web-search.ts），
+ * 拿已经结束的地址来调时不能继续花用户的密钥额度
+ */
+export const hasAskSession = (token: string) => sessions.has(token)
 
 export function askMcpApi() {
   return new Hono()

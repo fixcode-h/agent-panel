@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试）
+- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试）
 
 ## 职责
 
@@ -27,7 +27,7 @@
 
 - 子对话把「禁止子对话执行」的角色转交父对话（`server/tasks.ts` 的 `forwardSpawn` / `attachOrchestra`，[ADR 0019](../../adr/0019-agent-run-in-parent.md)）：引擎的 `spawn` 判定是子对话、角色 `runIn` 是 `parent` 时调 host 的 `forwardSpawn`，它同步判定父对话能不能接（先看 `live`，否则用 `task-store.ts` 新增的 `known()` 同步读内存里已加载的任务，不读盘）。能接：父对话的 AI 正在处理这一轮（`live` 里的 `orch` 只在 `runAgent` 期间挂着）就直接 `orch.spawn(..., { local: true })` 并在父对话里写一条「子对话 X 请求创建子任务 Y」的正式记录（子任务卡片挂在它上面）；其它阶段就排进内存里的 `forwards` 队列，`wakeConv` 只发一句短提示（正文只写一处，避免两条一样的请求），父对话下一轮开始调 AI 时由 `onOrchestra` 派出去。接不了（这个任务没有父对话、找不到父对话、父对话已归档、父对话自己也是被派出来的子对话）返回明确原因，子对话的步骤不标完成。排队只在内存里，重启后父对话只剩那条来源说明（转交本来就不阻塞子对话）。
 
-- 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。
+- 设置的读取与默认值迁移（`server/settings.ts` 的 `getSettings`）：迁移逻辑在 `shared/settings.ts` 的 `migrateSettingsDefaults`，正式后端和演示后端（`web/src/lib/demo-backend.ts` 的 `/settings`）共用同一份，避免两边默认值不一致。读到 `backgroundLimit` 正好是旧默认值 16 时改成 64 并写回 `settings.json`，用户显式设过其他值的不动；旧设置里的 `childConcurrency` 读到时忽略。后台命令的全局兜底上限在 `server/background.ts` 的 `MAX_RUNNING`（64）。各 CLI 的 `autoCompact` 默认值从 0（按 Agent 自己的规则）改成 70%（常量 `AUTO_COMPACT_DEFAULT`），迁移时把存量 0 改成 70；因为 0 本身也是界面上的选项，这次迁移按 `Settings.defaultsVersion`（`SETTINGS_DEFAULTS_VERSION`）只做一次，`saveSettings` 保存时也写下当前版本，用户之后选回 0 不会被改回 70。
 - 读一条后台命令的当前样子（`GET /tasks/:id/jobs/:jobId` → `server/background.ts` 的 `view(taskId, id)`，响应体是 `shared/schema.ts` 的 `TaskJobView`）：界面上点后台命令行标题打开的终端窗口按它轮询，命令的输出只在服务端内存的 `BgJob.lines`（`KEEP_LINES` 保留结尾 300 行），不进对话记录，所以必须单独有个读接口。返回 `state` / `code` / `output` / `createdAt` / `startedAt` / `endedAt` / `lastOutputAt`；`output` 是 `lines.join('\n')` 原文，不掺「跑完了」「退出码」这些面板的话（那是推回对话的 `jobOutput` / `resultText` 的事）。排队中、结束后都读得到（用户可能过一阵才点开，结束后要给最终输出和退出码）；归属按 `BgJob.taskId` 校验，跨对话读别人的编号一律当不存在返回 404，和 `/tasks/:id/processes` 只作用于自己子树是同一个口径。回归：`server/background.test.ts`（跑着能读到已输出内容、跑完读得到最终输出和退出码、跨 `taskId` 和不存在的编号读不到）、`server/task-job-view.test.ts`（路由层 404）。
 - 进程与内存路由只作用于当前对话的子树：`/tasks/:id/processes`（列表和合计）、`/tasks/:id/processes/:pid/kill`、`/tasks/:id/processes/clean`、`/tasks/:id/processes/suggest`（AI 清理建议）、`/tasks/:id/memory`（内存曲线）都按 `subtreeIdsOf` 算出的「这个对话 + 它的全部后代」过滤（`shared/run-usage.ts` 的 `subtreeTaskIds`）。关闭进程和 AI 建议用同一集合校验 pid，清理只清子树里的登记残留，不会碰到列表外、属于祖先或兄弟对话的进程。合计只算子树的 CLI 进程：`totalMemory` / `MemoryPoint.total` = `cliMemory` / `cli`，面板自身内存走 `serverMemory` / `server`，不计入对话合计。
 - CLI 相关：检测本机 CLI、读取模型列表、一键安装 / 更新 / 卸载（`server/detect.ts`、`server/models.ts`、`server/cli-packages.ts`、`server/install.ts`）。
@@ -37,6 +37,7 @@
 - 对话内容搜索（`GET /tasks/search?q=&limit=`，`server/tasks.ts`）：按 `updatedAt` 倒序扫任务的 `*.messages.json`，只回命中片段 + `taskId` + `messageId` + 命中条数，不回整条消息；三个预算任一用完就停（扫多少个对话、回多少条、读进多少字符，常量在 `shared/task-search.ts`），同一个对话最多 3 条命中，进了回收站的不参与。片段截取（正文压成一行、命中词两侧各留 36 字、高亮位置）也在 `shared/task-search.ts`，前后端共用同一份口径。对话文件按 `updatedAt` 缓存（`cachedMessages`，最多 40 个对话 / 800 万字符），边输边搜时不会每次把几十个几 MB 的对话重新读一遍；读消息走 `task-store.ts` 的 `readMessages()`，不经过 `get()` 的 full 缓存（搜索会扫几十个对话，不能把用户正在看的那份挤出去）。实测（4.8 万条消息、60 个对话的数据目录）：冷启动首屏 49ms，同一实例缓存热 3ms，无命中扫满 60 个对话 109–145ms。回归：`server/task-search-route.test.ts`、`shared/task-search.test.ts`。
 - 工作总结（`server/summary.ts`）：把选中项目今天的任务记录整理成提示词（`shared/summary.ts`），在项目目录里只读跑本机 CLI 生成 Markdown 报告；接口 `/summary`，报告存在 `tasks/summaries.json`（跟任务记录一起清理），保留最近 `SUMMARY_KEEP` 份，用户编辑后的正文走 `PUT /summary/:id`。请求是「项目 → 对话 id 列表」两层，每个项目只分析用户选中的对话（`taskIds` 为空才是这个项目今天的全部），数据仍只取今天（`todayWindow` 出日期，`activeOnDay` 先筛今天有执行的任务再读完整对话）。生成后用 `checkSummaryFormat` 自检结构，不合格带上 `summaryRetryHint` 的具体问题重试一次；仍不合格也照常保存，但在 `SummaryJob.format` 写 `ok: false`、问题码和 `retried`，页面据此明确提示「格式不完整」，不静默通过（重试失败或写不出内容时保留第一次的结果）。
 - Skills / 命令库（`server/library.ts`）：各 CLI 用户目录下的 Skill 和自定义命令的列表、读写、复制、删除；一个 Skill 目录里的多个文件（`SKILL.md` 以外的脚本、参考文档）走 `/library/entry` 的读 / 写 / 删 / 改名，见下面的「技能库的多文件管理」。
+- 联网搜索代理（`server/web-search.ts`，挂在 `/api/web-search`）：CLI 的 `web_search` / `web_fetch` 打到面板，由面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发请求，密钥不下发给扩展。地址里带这一轮 CLI 的随机地址（和提问桥接共用，路由用 `server/ask-mcp.ts` 的 `hasAskSession` 核对），访问令牌打开时也能用；`server/auth.ts` 对这个前缀放行、由路由自己核对。参数 / 地址守卫生效顺序是「同步能查的（协议、凭据、主机名形态、IP 字面量）→ 域名解析结果 → 每一跳重定向」，跳转手动跟着走（最多 `FETCH_MAX_REDIRECTS = 5`），抓取结果按 100000 字符窗口返回、同一地址 15 分钟内用缓存（`CACHE_BUDGET_CHARS` 限总量）。参数错误回 400、上游和网络错误回 502，`{ error }` 里是带原文的那句话，交给模型和用户看。单测 `server/web-search.test.ts`（网络和 DNS 都是桩）。
 - 出网请求（`server/net.ts`）：面板访问 GitHub 的统一入口 `netFetch`，按「设置里的代理 → 环境变量 → 直连」出网，直连或配置的代理失败后自动改用本机正在运行的代理重试；版本更新和安装包下载都用它，见下面的「GitHub 出网与代理回退」。
 - 候选教训草稿区（`server/lesson-drafts.ts`，接口 `/lesson-drafts`）：`GET /` 列表、`POST /` 从一份报告提炼（`{ reportId }`，只补草稿区还没有的条目：`missingDrafts` 按提炼依据判重，不整份重新生成——在的草稿用户可能已经改过，覆盖掉就是静默丢他的东西；丢掉一条后再点提炼能找回来，返回 `{ drafts, created, info }`）、`PUT /:id` 编辑、`DELETE /:id` 丢弃。提炼规则在 `shared/lesson-draft.ts`（纯函数，单测在 `shared/lesson-draft.test.ts`），草稿存在 `lesson-drafts.json`，**不会写进 docs/lessons/**：落到哪个分片由用户看过后手动写。
 - 项目更新时的字段保留与校验（`server/index.ts` 的 `parseProject`、`PUT /projects/:id`）：请求没带 `initResult` 时保留旧值（和 `lessons`、`initializedAt` 同一套做法），带上的用 `ProjectProposalSchema` 严格校验，不合法直接拒绝；初始化推荐因此随项目持久化，重开设置还能应用。初始化对话跑完交回结果走单独的 `PUT /projects/:id/init-result`（同文件）：服务端自己读最新项目，再用 `shared/project-init.ts` 的 `withInitResult` 只合并 `initResult` / `initializedAt`（时间取本次完成），不碰别的字段；结果要等对话跑几分钟才回来，整份 PUT 会把客户端手里过期的快照（用户这期间应用的推荐、改过的设置）写回旧值，见 [web 的 Bug 记录](../web/bugs/init-apply-overwritten-by-snapshot.md)。
@@ -165,6 +166,13 @@
 
 `settleReclaimed` 只改「`running` 且 `working === false`」的任务：**正在产出的（`working === true`）不碰**（不能把真在产出的任务写成已停止），**已经停下的不碰**（用户暂停、父对话结束这类原因不能被覆盖，和 `stopTask` 的原因语义一致）。界面侧 `web/src/components/tasks/child-line.ts` 的 `convGone` 对 `idle` 的行也返回 `'hint'`，所以停下来的行上依然写「Agent 进程已回收，继续会重新拉起」（计划没做完的行还会由 `childLabels` 追加一条同样的标签，不只在悬停里）；用户按的暂停（`stopReason: 'user'`）不显示这句。回归：`server/reclaim.test.ts` 5 条、`child-line.test.ts` 的「页面宽限回收后的静止行」。这条路径的完整排查也在同一份 Bug 记录里。
 
+**两段回收时长和保活上限只收真空闲的会话**：`server/presence.ts` 的 `evict` 和 `server/tasks.ts` 的 `enforceKeepAlive` 都先问同一个判定（`server/tasks.ts` 的 `keepAliveBusy` → `shared/task.ts` 的 `keepAliveHolding`）：
+
+- 有执行位时按任务事实判（`convActive`：在跑、等子对话 / 子任务 / 后台命令 / 工作流、有没回复的提问和请求），再加上正在启动和还有排队的消息；
+- **没有执行位时**（这一轮已经结束、进程也退了，例如没开 `features.keepAlive` 的 CLI）看名下还在跑的子对话（`childrenRunning`，和 `childActive` 同一套判定）和还没回来的后台命令：它们的结果还要交回这条对话，按「没人看就回收」收掉会把它落成「已中断」（用户报的「父对话被回收」）。
+
+子对话全部结束、自己也空下来之后照旧回收，不是永不回收。宽限到点还在跑的会话在 `server/presence.ts` 里进 `pending` 之后会排一个复查（`scheduleRecheck`，间隔 `BUSY_RECHECK_MS`，用独立的 `rechecks` Map，不占宽限计时）：子对话被用户停掉、后台命令被停时不会再交回结果，也不会走 `onKeepAlive` 的 `resetIdleCountdown`，只记标记就成了永不回收，所以到点要再判一次（间隔不取宽限期，宽限期可以设成 0，按 0ms 重排会自旋）。`evict` 开头读回收开关：用户关掉「按时间回收」后，已排出去的计时器和它排出的复查也不再收。重启迁移的条目构造也走 `shared/task.ts` 的 `childEntryOf`（从 `childFacts` 派生），以后 `childFacts` 加判定字段不会在迁移这一侧漏掉。回归：`shared/task-stage.test.ts` 的 `keepAliveHolding` 用例、`server/presence.test.ts` 的「父对话在等子对话」「宽限到点还在跑的对话留一个复查」「关掉自动回收」「复查不占宽限计时」、`server/task-restart.test.ts` 的「重启时名下有子对话在跑的父对话」、`scripts/e2e/04-subagents.mjs` 的同名段；排查和旧实现对照见 [bugs/parent-reclaimed-while-children-running.md](bugs/parent-reclaimed-while-children-running.md)。
+
 ## 强制更新后：把被打断的任务列进恢复名单
 
 「强制更新」会停掉所有 CLI（`server/update.ts` 的 `stopForUpdate`）。停之前先把这一批任务记下来，新版本启动后问用户要不要接着跑：
@@ -280,7 +288,7 @@ Node 自带的 `fetch` 不走代理，国内常常连不上 GitHub。`server/net
 - `npm run typecheck`
 - `npm run test:unit`（`server/**/*.test.ts`，每个模块基本都有同名测试）
 - 动了定时计划：`server/schedules.test.ts`（到点启动一次、单次执行后不再触发、错过不补跑、立即执行不改排期、启动失败只记原因不重试、删除后不再触发、启动期间用户改排期不会被写回覆盖、同一分钟改名字不重置状态，时钟由测试注入）
-- `server/settings-migrate.test.ts`：旧默认值 16 迁移成 64 并写回、已删掉的 `childConcurrency` 被忽略
+- `server/settings-migrate.test.ts`：旧默认值 16 迁移成 64 并写回、已删掉的 `childConcurrency` 被忽略；`server/settings-migrate-keep.test.ts`：显式设过的 32 和已经迁移过的设置里显式选的 `autoCompact: 0` 都保持不动、不写盘；`server/settings-defaults.test.ts`：新装/没存过这一项时自动压缩是 70%、旧默认值 0 迁成 70（50 保持）、迁移后选回 0 不再被改
 - 动了存储和落盘：`server/store.test.ts`（`writeJsonAtomic` 写成功后 `readJson` 能读回、覆盖写读到新内容、tmp 不残留；`readJson` 对不存在的文件报 `missing`；坏 JSON 被留档且调用方拿到「存在但坏了」和原路径、字节数，旁边有 `.broken.json` 说明；全 0 的空洞文件判成损坏并记下真实字节数）、`server/task-store.test.ts`（只有 `.messages.json` 时重建任务、记录全 0 时空洞文件留档后重建、对话文件全 0 时不重建不伪造且第二次启动不重复归档、对话内容不是消息数组时不重建只留档、已有记录不被重建覆盖）、`server/store-concurrency.test.ts`（集合的「读快照 → 改 → 写盘」整体串行）
 - 动了任务重启迁移：`server/task-restart.test.ts`（这一轮还在跑的任务落成已停止并标出被打断的节点；计划没做完、独立分支没合回的子对话重启后不再画成在跑；彻底做完的不动；待收尾的保留收尾请求）
 - 动了页面宽限回收 / presence：`server/reclaim.test.ts`（进程已回收、状态还写着 `running` 的等下一句任务被收口成 `stopped` + `stopReason: 'presence'`，`childSpinning` 转假、图标 `idle`；`working` 的真在跑任务不碰；已停下的不覆盖 `stopReason: 'user'`）

@@ -12,7 +12,7 @@ import type { Orchestra } from '../../shared/engine.ts'
 import { t } from '../../shared/i18n.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
 import { orchTools } from '../orch-mcp.ts'
-import { applyConfigFiles } from '../ask-mcp.ts'
+import { applyConfigFiles, askMcpApi, openAskBridge } from '../ask-mcp.ts'
 import { createRpcSession, REQUEST_TIMEOUT_MS, type RpcDiagnose } from './rpc/session.ts'
 import { createSpecAdapter } from './rpc/spec.ts'
 
@@ -27,6 +27,36 @@ function bridge(dir: string, url: string, vars: Record<string, string | number> 
   const file = files.find((f) => f.path.endsWith('/agent-panel-panel.ts'))
   assert.ok(file, '定义里有 Pi 的桥接扩展')
   return { path: file.path, content: String(file.content) }
+}
+
+/**
+ * 起一个真实的面板工具服务（和 server/index.ts 的 /api/mcp 同一套路由），返回它的端口：
+ * 扩展要的是真 HTTP 地址，只测扩展那半边时两边对不上（例如标志名写错）也发现不了
+ */
+async function servePanelMcp() {
+  const app = askMcpApi()
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const out = await app.fetch(
+      // server/index.ts 把这一组路由挂在 /api/mcp 下，这里直接传给 askMcpApi 时要先去掉这个前缀
+      new Request(`http://127.0.0.1${req.url?.replace(/^\/api\/mcp/, '')}`, {
+        method: req.method,
+        headers: req.headers as Record<string, string>,
+        body: chunks.length ? Buffer.concat(chunks) : undefined,
+      }),
+    )
+    res.writeHead(out.status, { 'content-type': out.headers.get('content-type') ?? 'application/json' })
+    res.end(Buffer.from(await out.arrayBuffer()))
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+  return {
+    port: (server.address() as AddressInfo).port,
+    close: () => {
+      server.closeAllConnections?.()
+      server.close()
+    },
+  }
 }
 
 /** 按 shared/clis/pi.json 里的 rpc 配置建一条会话：命令、事件和结束条件都在配置里 */
@@ -637,6 +667,51 @@ test('扩展文件被清掉后，下一轮启动会重新写回', async () => {
   }
 })
 
+test('Pi 桥接扩展：这一轮没有编排工具（压缩、原生审查轮）时不报「工具清单不完整」', async () => {
+  // 压缩轮、原生审查轮 runner 不给 orch（runner 里 def.mcp && !op），只挂提问工具：扩展以前按 CORE_TOOLS 核对，
+  // 把这一轮本来就没有编排工具的正常行为报成清单不完整，用户看到的是「面板工具都不可用」的失败卡片
+  const panel = await servePanelMcp()
+  const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
+  // openAskBridge 按 PORT 拼面板地址（生产里就是面板的监听端口）：测试里临时指到上面那个服务，
+  // 用完（包括抛错）立刻恢复，不然同文件后面的桥接用例会拼错地址
+  const withPort = <T>(port: number, fn: () => T): T => {
+    const saved = process.env.PORT
+    process.env.PORT = String(port)
+    try {
+      return fn()
+    } finally {
+      if (saved === undefined) delete process.env.PORT
+      else process.env.PORT = saved
+    }
+  }
+  const askBridge = withPort(panel.port, () => openAskBridge({ ask: () => {} }))
+  const { path: file, content } = bridge(dir, askBridge.url)
+  writeFileSync(file, content)
+  const statuses: string[] = []
+  const registered: string[] = []
+  const errors: string[] = []
+  const savedError = console.error
+  console.error = (...a: unknown[]) => errors.push(a.map(String).join(' '))
+  let onSessionStart: ((event: unknown, ctx: any) => void) | undefined
+  const pi = {
+    on: (_name: string, cb: (event: unknown, ctx: any) => void) => (onSessionStart = cb),
+    registerTool: (tool: { name: string }) => registered.push(tool.name),
+  }
+  try {
+    const mod = await import(pathToFileURL(file).href)
+    await mod.default(pi)
+  } finally {
+    console.error = savedError
+    panel.close()
+    askBridge.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+  onSessionStart?.({}, { ui: { setStatus: (key: string, text: string) => statuses.push(`${key}=${text}`) } })
+  assert.deepEqual(registered, ['ask_user'], '这一轮有的工具照常注册')
+  assert.deepEqual(statuses, [], `面板没挂编排工具不是异常，不该报：${statuses[0]}`)
+  assert.deepEqual(errors, [], `也不该写错误日志：${errors[0]}`)
+})
+
 test('Pi 桥接扩展：面板一个工具都不给时要报给面板，不能静默注册 0 个', async () => {
   // 列到了但 tools 是空数组：以前这里什么都不报，模型只能自己发现「工具不可见」，用户看不到原因
   const server = createServer((req, res) => {
@@ -674,8 +749,8 @@ test('Pi 桥接扩展：面板一个工具都不给时要报给面板，不能�
   assert.ok(statuses[0]?.includes('没有返回任何面板工具'), `要报出来：${statuses[0]}`)
 })
 
-test('Pi 桥接扩展：清单只给了一部分工具时也要报出来，不能只挡住空清单', async () => {
-  // 身份误判（子对话被当成子任务）时面板会回一份非空但缺核心工具的清单：模型仍然只会说「工具不可见」，
+test('Pi 桥接扩展：声明了这一轮有编排工具却只给一部分时要报出来', async () => {
+  // 身份误判（子对话被当成子任务）时面板会声明有编排工具、却回一份非空但缺核心工具的清单：模型仍然只会说「工具不可见」，
   // 用户看不到原因，所以缺身份无关的 get_status / send_message / read_messages 任何一个都要上报
   const server = createServer((req, res) => {
     let body = ''
@@ -683,9 +758,12 @@ test('Pi 桥接扩展：清单只给了一部分工具时也要报出来，不�
     req.on('end', () => {
       const msg = JSON.parse(body)
       const result =
-        msg.method === 'tools/list'
-          ? { tools: [{ name: 'set_plan', inputSchema: { type: 'object', properties: {} } }] }
-          : {}
+        msg.method === 'initialize'
+          ? // 这一轮确实挂了编排工具（有 orch），清单却缺核心工具：这才该报
+            { protocolVersion: '2025-03-26', capabilities: { tools: {}, experimental: { orchestration: true } } }
+          : msg.method === 'tools/list'
+            ? { tools: [{ name: 'set_plan', inputSchema: { type: 'object', properties: {} } }] }
+            : {}
       res.writeHead(200, { 'content-type': 'application/json' })
       res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }))
     })

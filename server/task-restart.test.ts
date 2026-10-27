@@ -211,6 +211,28 @@ test('强制更新的恢复名单：停在等下一句、计划没做完的父�
   )
 })
 
+test('重启时名下有子对话在跑的父对话：落成已停止，父子都进恢复名单', async () => {
+  // 父对话停在等子对话（awaitingUser），子对话还在跑：重启后两个 CLI 都已经回收
+  const parent = task('wait-children', { status: 'running', awaitingUser: true, plans: [halfPlan()] })
+  const kid = task('kid-running', { status: 'running', working: true, parentTaskId: 'wait-children' })
+  const store = createTaskStore()
+  await store.create(parent)
+  await store.create(kid)
+  const api = tasksApi({ agents: empty, workflows: empty, projects: empty, projectCategories: empty })
+  await api.ready()
+
+  const back = await api.get('wait-children')
+  const kidBack = await api.get('kid-running')
+  assert.ok(back && kidBack, '父子都还在')
+  assert.equal(back.status, 'stopped', '重启后 CLI 都回收了，不能继续画成在跑')
+  assert.equal(back.stopReason, 'restart')
+  assert.equal(back.awaitingUser, false)
+  // 两个都要进恢复名单：父对话是子对话的结果回来时要接它的那个
+  const ids = interruptedTaskIds([back, kidBack], [{ id: 'kid-running', parentTaskId: 'wait-children' }])
+  assert.ok(ids.includes('wait-children'), '父对话要进恢复名单')
+  assert.ok(ids.includes('kid-running'), '子对话也要进恢复名单')
+})
+
 test('恢复名单里的父对话说明它被打断时在做什么：写没做完的计划进度', async () => {
   const t = task('parent', { status: 'done', plans: [halfPlan()] })
   await createTaskStore().create(t)

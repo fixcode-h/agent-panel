@@ -29,6 +29,7 @@ import {
   childWaitText,
   childWaiting,
   keepAliveBusy,
+  keepAliveHolding,
   keepAliveVictims,
   runRunning,
   stopReasonText,
@@ -391,6 +392,28 @@ test('keepAliveVictims：超过上限时结束最久没用的，正在看的和�
   // 不传 exceptId（刚进入保活的那个自己还在忙、不占名额）：不能把那个 +1 算进去，否则会多收一个
   assert.deepEqual(keepAliveVictims(list, 2, ''), ['a'], '上限 2、3 个空闲：只收最久没用的一个')
   assert.deepEqual(keepAliveVictims(list, 3, ''), [], '上限 3、3 个空闲：正好到顶，一个都不收')
+})
+
+test('keepAliveHolding：名下有子对话在跑时，这一轮结束、进程也退了也不回收', () => {
+  // 停在等下一句、名下没有东西：空闲会话，按两段时间回收
+  const idle = {
+    status: 'running' as const,
+    working: false,
+    awaitingUser: true,
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    steps: [],
+  }
+  assert.equal(keepAliveHolding({ live: true, task: idle }), false, '哪都没挂着：空闲会话')
+  assert.equal(keepAliveHolding({ live: true, task: idle, children: 1 }), true, '执行位里、名下有子对话在跑')
+  // 关键：不保活的 CLI（RPC 直连的 Pi）这一轮结束、进程已退出，父对话没有执行位但仍在等子对话的结果
+  assert.equal(keepAliveHolding({ live: false, children: 1 }), true, '回收会把它落成「已中断」，子对话的结果回来没人接')
+  assert.equal(keepAliveHolding({ live: false, background: 1 }), true, '等后台命令结果的同理')
+  assert.equal(keepAliveHolding({ live: false, more: true }), true, '还在启动 / 有排队的消息')
+  // 子对话全结束、也空闲了：照旧按现有规则回收，不能变成「永远不回收」
+  assert.equal(keepAliveHolding({ live: false, children: 0, background: 0 }), false)
+  assert.equal(keepAliveHolding({ live: true, task: { ...idle, status: 'done' } }), false, '做完的照旧回收')
 })
 
 test('keepAliveBusy：只有停在等下一句、名下没东西在跑的才算空闲', () => {

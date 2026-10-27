@@ -1,6 +1,6 @@
 import { t } from './i18n.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
-import { CliSettings, Settings } from './schema.ts'
+import { AUTO_COMPACT_DEFAULT, CliSettings, SETTINGS_DEFAULTS_VERSION, Settings } from './schema.ts'
 import {
   apiFits,
   apiInjection,
@@ -12,6 +12,27 @@ import {
 } from './accounts.ts'
 
 export const defaultSettings = (): Settings => Settings.parse({})
+
+/**
+ * 老设置里各项默认值的迁移：正式后端（`server/settings.ts` 的 `getSettings`）和演示后端（`web/src/lib/demo-backend.ts`）
+ * 共用这一份，返回是否有改动（调用方据此决定要不要写回）。只在读设置时做，幂等
+ */
+export function migrateSettingsDefaults(s: Settings): boolean {
+  let dirty = false
+  // 后台命令的并发默认值从 16 提到 64：存着的正好是旧默认值就升级，显式设过其他值的保持不动
+  if (s.backgroundLimit === 16) {
+    s.backgroundLimit = 64
+    dirty = true
+  }
+  // 自动压缩的默认值从「按 Agent 自己的规则」（0）改成 70%：0 是界面上也有的选项，不能按值判断，
+  // 只对没升过版本的设置迁一次；升过版本之后用户显式选回 0 不会被反复改掉
+  if (s.defaultsVersion < SETTINGS_DEFAULTS_VERSION) {
+    for (const c of Object.values(s.clis)) if (c.autoCompact === 0) c.autoCompact = AUTO_COMPACT_DEFAULT
+    s.defaultsVersion = SETTINGS_DEFAULTS_VERSION
+    dirty = true
+  }
+  return dirty
+}
 
 /**
  * 档位留空时用的模型：设置了具体的默认模型就跟随它（改了默认模型，空着的档位跟着变），
