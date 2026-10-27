@@ -34,7 +34,7 @@
 - 新增 `PUT /projects/:id/init-result`（`server/index.ts`）：服务端自己 `projects.get(id)` 读最新项目，再用 `shared/project-init.ts` 的 `withInitResult(cur, saved.data)` 只合并 `initResult` / `initializedAt`（时间取本次完成时间），其它字段一律用刚读到的那份。请求体只带 `{ initResult }`，用 `ProjectProposalSchema` 校验，不合法返回 400（`z.prettifyError`），项目不存在 404。
 - `ProjectSettingsDialog.tsx` 的 `deliver` 改调 `api.saveProjectInitResult`（`web/src/lib/api.ts`），不再把整份项目发回去；演示版后端 `web/src/lib/demo-backend.ts` 同步实现了同一个路由（`withInitResult`，返回字段和正式后端一致）。
 - `ProjectInitReport.tsx` 的 `apply` 与 `ProjectSettingsDialog.tsx` 的「确认」改为带版本的保存：请求体带 `expectedUpdatedAt`（打开时读到的 `updatedAt`），服务端 `PUT /projects/:id` 用 `staleProjectWrite`（`server/project-lock.ts`）比对刚读到的最新值，不一致返回 409 并提示；不再「先 GET 一次再整份 PUT」，也不再在 GET 失败时回落到面板上的旧草稿。演示后端 `web/src/lib/demo-backend.ts` 同步这条校验（409 文案一致）。
-- 409 之后有可用的恢复路径：两处先 `api.projects()` 刷新项目列表（`updatedAt` 拿到最新），草稿 / 面板上的推荐都保留，用户再点一次「确认」或「全部应用」就能保存；提示文案按所在位置分开（设置页「请再点一次『确认』」，报告面板「请再点一次『全部应用』」）。`updatedAt` 为空串的旧数据也当「读到的版本」参与比对，不会静默退化成无锁；非字符串的版本值直接 400。
+- 409 之后有可用的恢复路径：两处先 `api.projects()` 刷新项目列表（`updatedAt` 拿到最新），草稿 / 面板上的推荐都保留，用户再点一次「确认」或「全部应用」就能保存；提示文案按所在位置分开（设置页「请再点一次『确认』」，报告面板「请再点一次『全部应用』」），刷新本身失败时改提示「请刷新页面后再保存」。设置页重试时 `initResult` / `initializedAt` 从刷新后的项目取（本次刚初始化过的才用草稿里的新值），不把期间别处写入的新推荐回滚；`lessons` 靠 `fresh` 合并带回期间新记的教训。`updatedAt` 为空串的旧数据也当「读到的版本」参与比对，不会静默退化成无锁；非字符串的版本值直接 400。
 - 界面检查补了「应用后状态」断言（见下），把「应用了又变回去」变成能拦住的回归。
 
 ## 验证

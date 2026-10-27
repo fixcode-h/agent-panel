@@ -104,11 +104,19 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
       const err = e as Error & { status?: number }
       // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，推荐和草稿都保留，再点一次就能存
       if (err.status === 409) {
+        // 刷新失败时不能提示「已刷新」：重试仍会 409，让用户手动刷新页面
+        let refreshed = true
         await api
           .projects()
           .then(setProjects)
-          .catch(() => {})
-        toast.error(t('项目在别处被修改过，已刷新，请再点一次「全部应用」'))
+          .catch(() => {
+            refreshed = false
+          })
+        toast.error(
+          refreshed
+            ? t('项目在别处被修改过，已刷新，请再点一次「全部应用」')
+            : t('项目在别处被修改过，请刷新页面后再保存'),
+        )
       } else toast.error(err.message)
     } finally {
       setBusy(false)

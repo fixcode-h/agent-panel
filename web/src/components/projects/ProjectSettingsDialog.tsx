@@ -587,7 +587,10 @@ function Body({
         workflowId: draft.workflowId || (inherited ? '' : (general?.id ?? '')),
         lessons: [...draft.lessons, ...fresh],
         // 服务端会在保存时严格校验推荐，坏值原样发回去会让整个设置保存被 400 拒掉（数据文件是用户可改的）
-        initResult: init ?? readProjectProposal(draft.initResult),
+        // 初始化结果和初始化时间不在表单里编辑：本次刚初始化出来的用新值；否则取刷新后的项目——
+        // 409 重试时 draft 还是打开时的快照，用它会把这期间别处写入的新推荐回滚
+        initResult: init ?? readProjectProposal(project?.initResult ?? draft.initResult),
+        initializedAt: init ? draft.initializedAt : (project?.initializedAt ?? draft.initializedAt),
       }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
@@ -610,11 +613,17 @@ function Body({
       const err = e as Error & { status?: number }
       // 409：项目在别处被改过。刷新列表拿到最新 updatedAt，草稿里的编辑保留，再点一次「确认」就能存
       if (err.status === 409) {
+        // 刷新失败时不能提示「已刷新」：重试仍会 409，让用户手动刷新页面
+        let refreshed = true
         await api
           .projects()
           .then(setProjects)
-          .catch(() => {})
-        toast.error(t('项目在别处被修改过，已刷新，请再点一次「确认」'))
+          .catch(() => {
+            refreshed = false
+          })
+        toast.error(
+          refreshed ? t('项目在别处被修改过，已刷新，请再点一次「确认」') : t('项目在别处被修改过，请刷新页面后再保存'),
+        )
       } else toast.error(err.message)
     } finally {
       setSaving(false)

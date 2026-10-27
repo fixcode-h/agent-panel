@@ -733,8 +733,7 @@ app.put('/projects/:id', async (c) => {
   if (expected !== undefined) {
     if (typeof expected !== 'string') return bad(c, t('保存版本格式不对'))
     const cur = await projects.get(id)
-    if (staleProjectWrite(cur?.updatedAt, expected))
-      return bad(c, t('项目在别处被修改过，请关闭设置重新打开后再保存'), 409)
+    if (staleProjectWrite(cur?.updatedAt, expected)) return bad(c, t('项目在别处被修改过，请刷新后重试'), 409)
     delete (body as Record<string, unknown>).expectedUpdatedAt
   }
   const r = await parseProject(body)

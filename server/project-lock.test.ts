@@ -24,6 +24,7 @@ test('读到的版本是空串、服务端已经有值，判冲突（旧数据�
 
 test('服务端也没有版本（旧数据文件）时无从比对，不拦', () => {
   assert.equal(staleProjectWrite(undefined, ''), false)
+  assert.equal(staleProjectWrite('', ''), false)
 })
 
 test('项目已经被删掉时不算冲突，交给 update 返回 404', () => {

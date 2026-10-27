@@ -2438,7 +2438,8 @@ function route(method: string, url: string, body: unknown): unknown {
     if (method === 'PUT' && expected !== undefined) {
       if (typeof expected !== 'string') fail('保存版本格式不对')
       const cur = (d.projects ?? []).find((x) => x.id === id)
-      if (cur && cur.updatedAt !== expected) fail('项目在别处被修改过，请关闭设置重新打开后再保存', 409)
+      // 服务端也没有版本（旧数据）时无从比对，和 staleProjectWrite 保持一致，不拦
+      if (cur?.updatedAt && cur.updatedAt !== expected) fail('项目在别处被修改过，请刷新后重试', 409)
     }
     const input = parse(ProjectInput, body)
     if (input.categoryId && !d.projectCategories.some((c) => c.id === input.categoryId)) fail('项目分类不存在')
