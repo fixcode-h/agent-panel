@@ -235,6 +235,40 @@ export function nextRunAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>, 
   return d.toISOString()
 }
 
+/** 某天所在那周的周一 0 点（本地时间）：计划页的周视图按它翻周 */
+export function weekStartOf(ms: number): number {
+  const d = new Date(ms)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - (isoWeekday(d) - 1))
+  return d.getTime()
+}
+
+/**
+ * 计划页周视图：这条计划在 weekStart（那周周一 0 点）开始的 7 天里会在哪些时刻执行。
+ * 停用的不画；单次只看 at；重复的按 repeatDays 逐天排，同一个时分，at 之前的日子不算（还没开始）。
+ * 重复计划跑完一次 at 会往后挪（见 afterRun），所以这里只画「还会跑的」，已经跑过的看运行记录
+ */
+export function weekOccurrences(
+  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'enabled'>,
+  weekStart: number,
+): number[] {
+  const at = new Date(s.at)
+  if (!s.enabled || !Number.isFinite(at.getTime())) return []
+  const end = new Date(weekStart)
+  end.setDate(end.getDate() + 7)
+  if (s.repeat === 'once') return at.getTime() >= weekStart && at < end ? [at.getTime()] : []
+  const days = repeatDays(s)
+  const out: number[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    d.setHours(at.getHours(), at.getMinutes(), 0, 0)
+    if (d.getTime() < at.getTime()) continue
+    if (!days || days.has(isoWeekday(d))) out.push(d.getTime())
+  }
+  return out
+}
+
 /** 每天同一时刻的下一次（保留的旧接口，内部走 nextRunAt） */
 export function nextDailyAt(at: string, now: number): string {
   return nextRunAt({ repeat: 'daily', at, weekdays: [] }, now)

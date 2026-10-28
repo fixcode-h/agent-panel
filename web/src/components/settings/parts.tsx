@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { copyText } from '@/lib/copy-text'
+import { SelectLook } from '@/components/ui/input'
 import { useSectionAnchor } from './section-nav'
 
 /** 设置页各栏共用的排版：一行一项、分组、只读值、可复制的文字 */
@@ -30,7 +31,10 @@ export function Row({
         <span className="text-[0.875rem] font-medium">{title}</span>
         {desc && <span className="text-[0.8125rem] leading-relaxed text-subtle">{desc}</span>}
       </div>
-      <div className={cn('min-w-0', !stack && 'sm:w-[280px] sm:shrink-0')}>{children}</div>
+      {/* 右边的下拉照 Claude 设置页：不带框、右对齐（SelectLook）；上下排时还是带框的输入框样式 */}
+      <SelectLook.Provider value={stack ? 'field' : 'ghost'}>
+        <div className={cn('min-w-0', !stack && 'sm:w-[280px] sm:shrink-0')}>{children}</div>
+      </SelectLook.Provider>
     </div>
   )
 }

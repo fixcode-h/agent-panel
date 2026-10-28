@@ -344,7 +344,7 @@ export function ChatList() {
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = groupByDay(chats, askedAt)
   return (
-    <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
       <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
         {filtering

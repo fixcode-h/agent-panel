@@ -43,8 +43,9 @@ function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () 
       aria-checked={on}
       onClick={onPick}
       className={cn(
-        'flex cursor-pointer flex-col gap-2 rounded-xl bg-card shadow-card p-2 text-left transition-colors',
-        on ? 'border-primary ring-1 ring-primary' : 'hover:border-line-strong',
+        'flex cursor-pointer flex-col gap-2 rounded-xl p-2 text-left transition-colors',
+        // 没选中的只有浅灰底，选中的白底加一圈主色：边界靠底色，不描边
+        on ? 'bg-card ring-2 ring-primary' : 'bg-sel/40 hover:bg-sel/70',
       )}
     >
       <span className="flex gap-1.5">

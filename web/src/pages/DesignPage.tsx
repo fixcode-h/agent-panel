@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
   ChevronDown,
@@ -1547,26 +1548,22 @@ function Designer({ id }: { id: string }) {
 
         <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
           <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
-          <div role="tablist" className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
+          {/* 和对话页、右栏同一套页签条（照 Proma）：选中只画底部指示条 */}
+          <TabBar
+            label={t('检查器')}
+            className="bg-card"
+            trailing={
+              tab === 'tree' && (
+                <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
+              )
+            }
+          >
             {(['tree', 'images', 'widgets'] as const).map((k) => (
-              <button
-                key={k}
-                role="tab"
-                aria-selected={tab === k}
-                onClick={() => setTab(k)}
-                className={cn(
-                  'h-7 cursor-pointer rounded-md px-2.5 text-[0.78125rem]',
-                  tab === k ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
-                )}
-              >
+              <TabItem key={k} fill active={tab === k} onSelect={() => setTab(k)}>
                 {k === 'tree' ? t('控件树') : k === 'images' ? t('图片 {n}', { n: doc.images.length }) : t('控件')}
-              </button>
+              </TabItem>
             ))}
-            <span className="flex-1" />
-            {tab === 'tree' && (
-              <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
-            )}
-          </div>
+          </TabBar>
           {tab === 'tree' && (doc.components.length > 0 || target) && (
             <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
               <Puzzle className="h-3.5 w-3.5 shrink-0 text-subtle" />
