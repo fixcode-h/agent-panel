@@ -160,7 +160,7 @@ export function buildGroups(
           detail: (
             <ol className="flex flex-col gap-1.5">
               {p.steps.map((s) => (
-                <li key={s.id} className="rounded-lg border bg-field/40 px-2.5 py-2">
+                <li key={s.id} className="rounded-lg bg-sel/40 px-2.5 py-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[0.78125rem] font-medium">{s.name}</span>
                     <Badge>{ENV_LABEL[s.env]}</Badge>
@@ -251,7 +251,7 @@ export function RecGroups({
       {shown.map((g) => {
         const left = g.recs.filter((r) => !r.same).length
         return (
-          <section key={g.id} className="overflow-hidden rounded-xl border bg-card">
+          <section key={g.id} className="overflow-hidden rounded-xl bg-card shadow-card">
             <header className="flex items-center gap-2 border-b bg-panel/60 px-3.5 py-2">
               <span className="text-[0.8125rem] font-medium">{g.title}</span>
               <span className="text-xs text-subtle">{left ? t('{n} 项待应用', { n: left }) : t('已一致')}</span>
@@ -506,7 +506,7 @@ export function ProjectInitPanel({
                 [t('评估工作流'), t('逐个判断已添加的工作流：哪个当默认、哪些放进可选、哪些用不上')],
                 [t('推荐设置'), t('测试步骤、子对话隔离、推送、编码换行、搜索排除等，每项附依据')],
               ].map(([title, desc], i) => (
-                <li key={title} className="flex gap-2.5 rounded-lg border bg-card px-3 py-2.5">
+                <li key={title} className="flex gap-2.5 rounded-lg bg-card shadow-card px-3 py-2.5">
                   <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-[0.6875rem] text-muted">
                     {i + 1}
                   </span>
@@ -544,7 +544,7 @@ export function ProjectInitPanel({
 
       {result && (
         <>
-          <section className="flex flex-col gap-2.5 rounded-xl border bg-card p-4">
+          <section className="flex flex-col gap-2.5 rounded-xl bg-card shadow-card p-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="grid h-6 w-6 place-items-center rounded-md bg-success/12 text-success">
                 <Check className="h-3.5 w-3.5" />

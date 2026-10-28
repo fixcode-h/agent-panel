@@ -5,7 +5,7 @@ import { t } from '@shared/i18n'
 
 export function ReadinessCard({ checks }: { checks: CheckItem[] }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <section className="flex flex-col gap-3 rounded-xl bg-card shadow-card p-4">
       <h3 className="text-[0.8125rem] font-semibold">{t('就绪检查')}</h3>
       {checks.map((c) => {
         const Icon = c.ok ? Check : c.optional ? Info : TriangleAlert

@@ -14,6 +14,9 @@
         // 字体设置：先用上次记下的，设置取回来后再按设置更新
         var a = JSON.parse(localStorage.getItem('appearance') || '{}')
         for (var k in a) document.documentElement.style.setProperty(k, a[k])
+        // 配色：同样先用上次记下的（web/src/lib/appearance.ts 的 applyPalette）
+        var p = localStorage.getItem('appearance-palette')
+        if (p && p !== 'claude') document.documentElement.dataset.palette = p
       } catch {}
     </script>
   </head>

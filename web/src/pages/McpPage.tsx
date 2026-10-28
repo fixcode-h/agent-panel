@@ -75,7 +75,7 @@ export function McpPage() {
           {t('还没有装 MCP 工具，点右上角「添加」。')}
         </p>
       ) : (
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+        <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
           {data.servers.map((s) => (
             <li key={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
               {s.transport === 'http' ? (

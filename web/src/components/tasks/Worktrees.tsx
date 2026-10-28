@@ -282,8 +282,8 @@ export function WorktreeRow({
             <button
               type="button"
               onClick={onOpen}
-              title={t('在右侧打开子对话「{title}」', { title: item.title })}
-              aria-label={t('在右侧打开子对话「{title}」', { title: item.title })}
+              title={t('在中间打开子对话「{title}」', { title: item.title })}
+              aria-label={t('在中间打开子对话「{title}」', { title: item.title })}
               className="min-w-0 flex-1 cursor-pointer rounded-md text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               {body}
@@ -322,7 +322,7 @@ export function WorktreeRow({
       {/* 右键菜单是行内按钮的补充，合并 / 删除走同一套回调，不另写逻辑 */}
       <ContextMenuContent>
         {onOpen ? (
-          <ContextMenuItem title={t('在右侧打开子对话「{title}」', { title: item.title })} onSelect={() => onOpen()}>
+          <ContextMenuItem title={t('在中间打开子对话「{title}」', { title: item.title })} onSelect={() => onOpen()}>
             <MessageSquare className="h-3.5 w-3.5 text-subtle" />
             {t('打开对话')}
           </ContextMenuItem>

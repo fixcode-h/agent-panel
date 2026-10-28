@@ -220,7 +220,7 @@ function TemplateCard({ item, onOpen }: { item: ComfyTemplateMeta; onOpen: () =>
   return (
     <button
       onClick={onOpen}
-      className="group flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors hover:border-accent/60 hover:bg-sel/20"
+      className="group flex cursor-pointer flex-col gap-2 rounded-xl bg-card shadow-card p-3 text-left transition-colors hover:border-accent/60 hover:bg-sel/20"
     >
       <div className="flex items-start gap-2">
         <span className="line-clamp-2 min-w-0 flex-1 text-[0.84375rem] leading-snug font-medium">{item.title}</span>

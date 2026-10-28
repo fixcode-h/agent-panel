@@ -53,6 +53,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     // 工作流链：能建链、选段、看到预览区（演示版没有 ComfyUI，试跑会给出说明）
     // check() 断言的是界面上真看得见的文字；段的下拉框只有 aria-label，用 getByLabel 查
     await p.goto(base + '#/comfy/game')
+    // 运行队列和工作流链在右栏的「队列」页签里
+    await p.getByRole('tab', { name: '队列', exact: true }).click()
     await check(p, '工作流链', ['工作流链', '新建链'])
     await p.getByRole('button', { name: '新建链', exact: true }).click()
     await check(p, '工作流链-新建', ['加一段', '试跑', '选原图'])

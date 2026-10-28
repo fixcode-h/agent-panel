@@ -402,7 +402,7 @@ export function TierTable({
                 {mapTo && <span className="text-accent">{t('映射 {model}', { model: mapTo })}</span>}
               </button>
               {open && (
-                <div className="flex flex-col gap-2 rounded-lg border bg-field/30 p-2.5">
+                <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-2.5">
                   {mapTo && (
                     <p className="text-[0.6875rem] leading-relaxed text-subtle">
                       {t('这个模型在 API 配置里映射到了 {model}：上下文和最大输出按它的配置估算。', { model: mapTo })}
@@ -656,7 +656,7 @@ export function CliSection({
   const [removing, setRemoving] = useState(false)
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-field/40 p-3.5">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-sel/40 p-3.5">
         <span
           className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-white"
           style={{ background: cliColor(def.id) }}

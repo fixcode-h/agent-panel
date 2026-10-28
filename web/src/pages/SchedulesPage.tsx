@@ -12,6 +12,7 @@ import { ScheduleCard } from '@/components/schedule/ScheduleCard'
 import { ScheduleDialog } from '@/components/schedule/ScheduleDialog'
 import { ScheduleEmpty } from '@/components/schedule/ScheduleEmpty'
 import { ScheduleOverview } from '@/components/schedule/ScheduleOverview'
+import { ScheduleWeek } from '@/components/schedule/ScheduleWeek'
 
 const DEMO = !!import.meta.env.VITE_DEMO
 
@@ -143,6 +144,8 @@ export function SchedulesPage() {
         <ScheduleEmpty onCreateTemplate={() => setEdit('new')} onCreateBlank={() => setEdit('blank')} />
       ) : (
         <>
+          {/* 周视图在上：一眼看这周什么时候跑什么；下面是按状态分组的完整列表 */}
+          <ScheduleWeek list={list} now={now} onEdit={setEdit} />
           <ScheduleOverview
             buckets={buckets}
             now={now}

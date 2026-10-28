@@ -472,10 +472,7 @@ function LessonChangesPreview({
           return (
             <li key={i}>
               <label
-                className={cn(
-                  'flex cursor-pointer gap-2.5 rounded-lg border bg-field/40 p-2.5',
-                  !picked.has(i) && 'opacity-60',
-                )}
+                className={cn('flex cursor-pointer gap-2.5 rounded-lg bg-sel/40 p-2.5', !picked.has(i) && 'opacity-60')}
               >
                 <input
                   type="checkbox"
@@ -512,7 +509,7 @@ function TestStepsPreview({ steps }: { steps: TestStep[] }) {
       <span className="text-xs text-muted">{t('这些步骤只会填进表单，保存项目设置后才生效')}</span>
       <ol className="flex flex-col gap-2">
         {steps.map((s) => (
-          <li key={s.id} className="rounded-lg border bg-field/40 p-2.5">
+          <li key={s.id} className="rounded-lg bg-sel/40 p-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[0.8125rem] font-medium">{s.name}</span>
               <Badge>{ENV_LABEL[s.env]}</Badge>
@@ -561,7 +558,7 @@ function ProjectPreview({ p }: { p: ProjectProposal }) {
           <span className="text-xs text-subtle">{t('没有报告写入的文件')}</span>
         )}
       </div>
-      <p className="rounded-lg border bg-field/40 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+      <p className="rounded-lg bg-sel/40 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
         {t(
           '推荐了 {n} 项设置（工作流、测试步骤、子对话、文件格式等）。点「查看推荐并应用」回到项目设置，逐项或整体应用。',
           {
@@ -1042,7 +1039,7 @@ export function AssistDialog({
                           <button
                             key={e}
                             onClick={() => send(e)}
-                            className="cursor-pointer rounded-lg border bg-card px-3 py-2 text-left text-[0.8125rem] text-muted hover:border-accent hover:text-fg"
+                            className="cursor-pointer rounded-lg bg-card shadow-card px-3 py-2 text-left text-[0.8125rem] text-muted hover:border-accent hover:text-fg"
                           >
                             {e}
                           </button>

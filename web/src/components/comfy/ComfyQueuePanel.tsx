@@ -99,7 +99,7 @@ export function ComfyQueuePanel({ compact = false, className }: { compact?: bool
   return (
     <section
       aria-label={t('ComfyUI 正在运行的工作流')}
-      className={cn('flex flex-col gap-2', compact ? 'py-2' : 'rounded-xl border bg-card/60 p-3', className)}
+      className={cn('flex flex-col gap-2', compact ? 'py-2' : 'rounded-xl bg-card shadow-card/60 p-3', className)}
     >
       <div className="flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-muted">
         {running.length ? (

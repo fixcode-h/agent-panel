@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { toast } from '@/lib/toast'
 import {
   Copy,
@@ -72,6 +73,8 @@ export function ComfyPage() {
   const [importing, setImporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [web, setWeb] = useState(false)
+  /** 右栏页签：说明（这个工作流的字段）或队列（运行队列、工作流链） */
+  const [side, setSide] = useState<'info' | 'queue'>('info')
   /** 刚导入到 ComfyUI 的工作流：网页弹窗顶部告诉用户去侧栏哪里打开 */
   const [webImported, setWebImported] = useState<{ name: string; filename: string } | null>(null)
   const [pushing, setPushing] = useState(false)
@@ -341,9 +344,8 @@ export function ComfyPage() {
           )}
         </aside>
 
+        {/* 中间：这个工作流的操作和节点图，图占主体（照设计稿） */}
         <section className="min-h-0 flex-1 overflow-y-auto">
-          <ComfyQueuePanel className="mx-4 mt-4 md:mx-6 md:mt-6" />
-          <ComfyChainPanel kind={kind} className="mx-4 mt-4 md:mx-6 md:mt-6" />
           {!draft ? (
             <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : (
@@ -398,49 +400,6 @@ export function ComfyPage() {
                   {note}
                 </p>
               )}
-              <div className="flex max-w-[1000px] flex-col gap-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t('名称')}>
-                    <Input value={draft.name} disabled={readOnly} onChange={(e) => edit({ name: e.target.value })} />
-                  </Field>
-                  <Field label={t('用途')}>
-                    <Select
-                      aria-label={t('用途')}
-                      value={draft.use}
-                      disabled={readOnly}
-                      onChange={(e) => edit({ use: e.target.value as ComfyWorkflow['use'] })}
-                      options={WORKFLOW_USES.map((u) => ({ value: u, label: WORKFLOW_USE_LABEL[u] }))}
-                    />
-                  </Field>
-                  <Field label={t('用到的模型')}>
-                    <Select
-                      aria-label={t('用到的模型')}
-                      value={draft.model || 'none'}
-                      disabled={readOnly}
-                      onChange={(e) => edit({ model: e.target.value === 'none' ? '' : e.target.value })}
-                      options={[
-                        ...LOCAL_MODELS.map((m) => ({ value: m.id, label: m.name })),
-                        { value: 'none', label: t('自己的模型（不检查下载）') },
-                      ]}
-                    />
-                  </Field>
-                  <Field label={t('说明')}>
-                    <Input
-                      value={draft.description}
-                      disabled={readOnly}
-                      onChange={(e) => edit({ description: e.target.value })}
-                    />
-                  </Field>
-                </div>
-                <Field label={t('附加要求（英文，加在每张图的描述后面）')}>
-                  <Textarea
-                    rows={2}
-                    value={draft.extra}
-                    disabled={readOnly}
-                    onChange={(e) => edit({ extra: e.target.value })}
-                  />
-                </Field>
-              </div>
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center gap-3">
                   <span className="flex-1 text-[0.78125rem] font-medium text-muted">
@@ -473,22 +432,90 @@ export function ComfyPage() {
                     className="font-mono text-[0.75rem] leading-[1.5]"
                   />
                 )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* 右栏：说明（名称、用途、模型、附加要求）和队列（运行队列、工作流链），用统一的页签条分开 */}
+        <aside className="flex shrink-0 flex-col border-t lg:w-[320px] lg:border-t-0 lg:border-l 2xl:w-[360px]">
+          <TabBar label={t('工作流详情')} className="bg-card">
+            <TabItem fill active={side === 'info'} onSelect={() => setSide('info')}>
+              {t('说明')}
+            </TabItem>
+            <TabItem fill active={side === 'queue'} onSelect={() => setSide('queue')}>
+              {t('队列')}
+            </TabItem>
+          </TabBar>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {side === 'queue' ? (
+              <div className="flex flex-col gap-4">
+                <ComfyQueuePanel />
+                <ComfyChainPanel kind={kind} />
+              </div>
+            ) : !draft ? (
+              <p className="py-6 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3">
+                  <div className="grid gap-3">
+                    <Field label={t('名称')}>
+                      <Input value={draft.name} disabled={readOnly} onChange={(e) => edit({ name: e.target.value })} />
+                    </Field>
+                    <Field label={t('用途')}>
+                      <Select
+                        aria-label={t('用途')}
+                        value={draft.use}
+                        disabled={readOnly}
+                        onChange={(e) => edit({ use: e.target.value as ComfyWorkflow['use'] })}
+                        options={WORKFLOW_USES.map((u) => ({ value: u, label: WORKFLOW_USE_LABEL[u] }))}
+                      />
+                    </Field>
+                    <Field label={t('用到的模型')}>
+                      <Select
+                        aria-label={t('用到的模型')}
+                        value={draft.model || 'none'}
+                        disabled={readOnly}
+                        onChange={(e) => edit({ model: e.target.value === 'none' ? '' : e.target.value })}
+                        options={[
+                          ...LOCAL_MODELS.map((m) => ({ value: m.id, label: m.name })),
+                          { value: 'none', label: t('自己的模型（不检查下载）') },
+                        ]}
+                      />
+                    </Field>
+                    <Field label={t('说明')}>
+                      <Input
+                        value={draft.description}
+                        disabled={readOnly}
+                        onChange={(e) => edit({ description: e.target.value })}
+                      />
+                    </Field>
+                  </div>
+                  <Field label={t('附加要求（英文，加在每张图的描述后面）')}>
+                    <Textarea
+                      rows={2}
+                      value={draft.extra}
+                      disabled={readOnly}
+                      onChange={(e) => edit({ extra: e.target.value })}
+                    />
+                  </Field>
+                </div>
                 <span className="text-[0.75rem] leading-relaxed text-subtle">
                   {t(
                     '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子',
                   )}
                 </span>
+                {problems.length > 0 && (
+                  <ul className="flex flex-col gap-1 text-[0.78125rem] text-danger">
+                    {problems.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {problems.length > 0 && (
-                <ul className="flex flex-col gap-1 text-[0.78125rem] text-danger">
-                  {problems.map((p) => (
-                    <li key={p}>{p}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </section>
+            )}
+          </div>
+        </aside>
       </div>
 
       {ask && (

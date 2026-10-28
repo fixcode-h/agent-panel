@@ -203,7 +203,7 @@ function AccountList({ def }: { def: CliDefinition }) {
   const label = data.live.loggedIn ? data.live.label || t('已登录') : t('没有登录')
   return (
     <div className="flex flex-col gap-3 py-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-field/40 p-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-sel/40 p-3">
         <User className="h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[0.84375rem] font-medium">{label}</p>

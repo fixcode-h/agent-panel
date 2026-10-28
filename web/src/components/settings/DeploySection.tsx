@@ -123,7 +123,7 @@ export function DeploySection() {
       </p>
 
       <Group title={t('全局说明（AGENTS.md）')}>
-        <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl border bg-field/40">
+        <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl bg-sel/40">
           <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
             <span className="font-mono text-[0.78125rem]">AGENTS.md</span>
             {draft.agentsMd !== st.config.agentsMd && (
@@ -208,7 +208,7 @@ export function DeploySection() {
       </Group>
 
       <Group title={t('写到哪些 Agent')}>
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+        <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
           {st.targets.map((d) => (
             <li
               key={d.cli}
@@ -279,7 +279,7 @@ export function DeploySection() {
               <h4 className="px-1 text-[0.75rem] text-subtle">
                 {g.label} · {g.items.length}
               </h4>
-              <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+              <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                 {g.items.map((s) => {
                   const on = draft.skills.includes(s.name)
                   return (

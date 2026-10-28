@@ -93,8 +93,8 @@ function ProjectHome({ project }: { project: Project }) {
   }
 
   return (
-    <div ref={row} className="flex min-w-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col md:h-full">
+    <div ref={row} className="flex min-w-0 flex-1 md:gap-2">
+      <main className="panel flex min-w-0 flex-1 flex-col md:h-full">
         <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">
           <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
             <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
@@ -167,7 +167,7 @@ function ProjectHome({ project }: { project: Project }) {
                       <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
                     )}
                   </h2>
-                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                     {g.items.map((tk) => (
                       <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
                     ))}
@@ -200,7 +200,7 @@ function ProjectHome({ project }: { project: Project }) {
           aria-label={t('文件')}
           style={{ '--panel-w': `${filesPane.width}px` } as CSSProperties}
           className={cn(
-            'fixed inset-y-0 right-0 z-40 flex w-[min(420px,100%)] flex-col border-l bg-rail shadow-pop',
+            'panel fixed inset-y-0 right-0 z-40 flex w-[min(420px,100%)] flex-col shadow-pop',
             'lg:relative lg:inset-auto lg:z-auto lg:h-full lg:w-(--panel-w) lg:shrink-0 lg:shadow-none',
           )}
         >

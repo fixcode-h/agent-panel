@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { showParentTab } from '@/lib/ai-window'
 import {
   Check,
   ChevronDown,
@@ -39,7 +40,7 @@ import { useTaskSearch } from '@/lib/use-task-search'
  * 侧栏一行的选中 / 悬停外观：和中间列表的选中项一致（细边框 + 微阴影）。
  * 导航、项目分组、任务行和设计行都引用这里，选中态只定义一次；用的时候基础类里要带 `border`。
  */
-export const SIDEBAR_ROW_ON = 'border-sel-line bg-sel text-fg shadow-card'
+export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
 export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号、字距略宽，和可点的行拉开层级 */
@@ -105,7 +106,11 @@ export function TaskRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
-            onClick={onOpen}
+            onClick={() => {
+              // 已经打开着这个对话：子对话页签可能在前台，切回父对话
+              if (active) showParentTab(task.id)
+              onOpen()
+            }}
             aria-current={active || undefined}
             title={task.title}
             data-cli-alive={alive || undefined}
@@ -339,7 +344,7 @@ export function ChatList() {
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = groupByDay(chats, askedAt)
   return (
-    <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
       <p className={cn('flex h-7 shrink-0 items-center px-2.5', SIDEBAR_GROUP_LABEL)}>
         {filtering

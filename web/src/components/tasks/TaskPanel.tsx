@@ -44,7 +44,7 @@ export function TaskPanel({
         : undefined
 
   return (
-    <section className={cn('rounded-xl border bg-card', className)}>
+    <section className={cn('rounded-xl bg-card shadow-card', className)}>
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}

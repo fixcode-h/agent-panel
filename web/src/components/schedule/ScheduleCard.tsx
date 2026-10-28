@@ -23,7 +23,7 @@ import { Switch } from '@/components/ui/switch'
 /** 启动失败的原文超过这个长度才给「展开全文」：窄屏一行大约只放得下这么多字，再长会被截掉 */
 const ERROR_PREVIEW_CHARS = 30
 
-/** 左侧色条按分组取色：一眼看出这张卡片现在是什么状态 */
+/** 标题前的圆点按分组取色：一眼看出这张卡片现在是什么状态（不用左侧色条，卡片不描边） */
 const GROUP_TONE: Record<ScheduleGroup, string> = {
   upcoming: 'bg-accent',
   problem: 'bg-warning',
@@ -96,12 +96,12 @@ export function ScheduleCard({
   const longError = errorText.length > ERROR_PREVIEW_CHARS || s.lastError.includes('\n')
 
   return (
-    <li className="relative overflow-hidden rounded-xl border bg-card">
-      <span aria-hidden className={cn('absolute inset-y-0 left-0 w-[3px]', GROUP_TONE[groupOf(s)])} />
-      <div className="flex flex-col gap-3 py-3.5 pr-4 pl-5">
+    <li className="relative overflow-hidden rounded-xl bg-card shadow-card">
+      <div className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
+              <span aria-hidden className={cn('h-2 w-2 shrink-0 rounded-full', GROUP_TONE[groupOf(s)])} />
               <h3 className={cn('min-w-0 truncate text-[0.9375rem] font-semibold', !s.enabled && 'text-muted')}>
                 {s.name}
               </h3>

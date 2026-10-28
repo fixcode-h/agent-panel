@@ -513,7 +513,7 @@ export function UsageSection({
       {fellBack && <p className="text-[0.75rem] text-muted">{fallbackText}</p>}
 
       {/* 汇总：费用放最显眼的位置，其他指标一格一个，一屏内看全 */}
-      <div className="rounded-xl border bg-field/40 px-3.5 py-3">
+      <div className="rounded-xl bg-sel/40 px-3.5 py-3">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-[160px]">
             <div className="flex items-center gap-1 text-[0.6875rem] text-subtle">

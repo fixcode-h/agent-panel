@@ -179,7 +179,7 @@ export function ProjectSkillsSection({ projectId }: { projectId: string }) {
                     <span className="shrink-0">{items.length}</span>
                     <span className="truncate">{t('{clis} 会读这里', { clis: cliNames(items[0].clis) })}</span>
                   </p>
-                  <ul className="flex flex-col divide-y rounded-lg border bg-card">
+                  <ul className="flex flex-col divide-y rounded-lg bg-card shadow-card">
                     {items.map((s) => (
                       <li key={s.dir} className="flex items-start gap-2.5 px-3 py-2.5" title={s.path}>
                         <Sparkles

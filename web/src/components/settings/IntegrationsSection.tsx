@@ -180,7 +180,7 @@ export function IntegrationsSection() {
         const setup = installs[v.id]
         const settingUp = setup?.status === 'running'
         return (
-          <section key={v.id} className="rounded-xl border bg-card p-4">
+          <section key={v.id} className="rounded-xl bg-card shadow-card p-4">
             <div className="flex flex-wrap items-start gap-3">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border bg-field text-muted">
                 <SquareTerminal className="h-4 w-4" strokeWidth={1.8} />
@@ -299,7 +299,7 @@ export function IntegrationsSection() {
                   </Button>
                 </div>
                 {tokenFor === v.id && (
-                  <div className="flex flex-col gap-2 rounded-lg border bg-field/40 p-3">
+                  <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
                     <p className="text-[0.75rem] leading-relaxed text-muted">
                       {t('粘贴 Token，只传给本机的 {command}，面板不保存。', { command: v.command })}
                     </p>
@@ -356,7 +356,7 @@ export function IntegrationsSection() {
 /** 一键安装的进度：正在用的安装方式和输出，失败时给出原因 */
 function InstallBox({ job }: { job: IntegrationInstallJob }) {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-field/40 p-3">
+    <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       {job.status === 'running' ? (
         <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -386,7 +386,7 @@ function InstallBox({ job }: { job: IntegrationInstallJob }) {
 function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () => void }) {
   if (job.status !== 'running') {
     return (
-      <div className="mt-3 rounded-lg border bg-field/40 p-3">
+      <div className="mt-3 rounded-lg bg-sel/40 p-3">
         <p className={cn('text-[0.8125rem]', job.status === 'done' ? 'text-success' : 'text-danger')}>
           {job.status === 'done' ? t('授权完成') : job.error || t('授权没有完成')}
         </p>
@@ -399,7 +399,7 @@ function LoginBox({ job, onCancel }: { job: IntegrationLoginJob; onCancel: () =>
     )
   }
   return (
-    <div className="mt-3 flex flex-col gap-2 rounded-lg border bg-field/40 p-3">
+    <div className="mt-3 flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
         {t('等待浏览器完成授权…')}

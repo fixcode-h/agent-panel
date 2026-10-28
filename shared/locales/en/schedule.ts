@@ -148,4 +148,10 @@ export const EN_SCHEDULE: Record<string, string> = {
   '时长上限（分钟）': 'Time limit (minutes)',
   '超过上限时面板会停下来，已经产出的内容都保留着；填 0 或不填表示不限。':
     'The panel stops the run when a limit is reached and keeps everything produced so far. 0 or empty means no limit.',
+  '{y} 年 {m} 月 {d} 日 – {m2} 月 {d2} 日': '{m}/{d}/{y} – {m2}/{d2}',
+  周视图: 'Week view',
+  上一周: 'Previous week',
+  本周: 'This week',
+  下一周: 'Next week',
+  '第 {n} 周': 'Week {n}',
 }

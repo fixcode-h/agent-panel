@@ -249,8 +249,8 @@ let lastAgentRoute: Route = { page: 'home' }
 let lastDesignRoute: Route = { page: 'design' }
 
 /**
- * 顶部的模式切换，参考 Claude 应用：Chat 是不属于项目的聊天，Agent 是按项目执行任务，UI 设计是按项目做界面。
- * 只显示图标，名字在悬停提示里；收起侧栏时竖着排。
+ * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
+ * 展开时三段写短名、平分宽度，完整说明在悬停提示里；收起侧栏时竖着排图标。
  */
 function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
@@ -259,21 +259,24 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
   const design = route.page === 'design' || route.page === 'comfy'
   const modes = [
     {
-      id: 'chat',
-      label: t('Chat 模式：直接聊天，不用选项目'),
-      icon: MessagesSquare,
-      on: chat,
-      to: lastChatRoute,
-    },
-    {
       id: 'agent',
+      name: 'Agent',
       label: t('Agent 模式：在项目里执行任务和工作流'),
       icon: Code2,
       on: !chat && !design,
       to: lastAgentRoute,
     },
     {
+      id: 'chat',
+      name: 'Chat',
+      label: t('Chat 模式：直接聊天，不用选项目'),
+      icon: MessagesSquare,
+      on: chat,
+      to: lastChatRoute,
+    },
+    {
       id: 'design',
+      name: t('设计'),
       label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
       icon: Palette,
       on: design,
@@ -306,8 +309,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     <div
       role="radiogroup"
       aria-label={t('模式')}
-      // 只显示图标（名字在悬停提示里），以后模式再多也排得下：按数量平分宽度
-      className="mx-3 mb-2 flex shrink-0 gap-0.5 rounded-lg border bg-field/50 p-[3px]"
+      className="mx-3 mb-3 flex shrink-0 gap-0.5 rounded-lg bg-sel/70 p-[3px]"
     >
       {modes.map((m) => (
         <button
@@ -318,11 +320,11 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
           title={m.label}
           onClick={() => !m.on && go(m.to)}
           className={cn(
-            'grid h-8 min-w-0 flex-1 cursor-pointer place-items-center rounded-md transition-colors',
-            m.on ? 'bg-card text-fg shadow-card' : 'text-subtle hover:bg-sel/50 hover:text-fg',
+            'h-7 min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-[0.78125rem] transition-colors',
+            m.on ? 'bg-card font-medium text-fg' : 'text-subtle hover:text-fg',
           )}
         >
-          <m.icon className="h-[17px] w-[17px] shrink-0" strokeWidth={1.8} />
+          {m.name}
         </button>
       ))}
     </div>
@@ -573,7 +575,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <ChatList />
         )
       ) : !narrow && filtering ? (
-        <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -617,7 +619,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           />
         </div>
       ) : !narrow ? (
-        <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -854,7 +856,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     </ContextMenuContent>
                   </ContextMenu>
                   {open && ts.length > 0 && (
-                    <div className="mt-0.5 ml-4 flex flex-col gap-px border-l border-line/80 pl-2">
+                    <div className="mt-1 ml-3 flex flex-col gap-0.5">
                       {shown.map((t) => (
                         <TaskRow
                           key={t.id}
@@ -892,7 +894,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         <div className="flex-1" />
       )}
 
-      <div className={cn('flex shrink-0 items-center gap-1 border-t px-2 py-2', narrow && 'flex-col')}>
+      <div className={cn('flex shrink-0 items-center gap-1 px-2 py-2', narrow && 'flex-col')}>
         <Row
           icon={Settings}
           label={t('设置')}
@@ -924,7 +926,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   return (
     <>
       {/* 手机：顶部条 + 抽屉 */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-rail px-3 md:hidden">
+      <div className="flex h-12 shrink-0 items-center gap-2 bg-rail px-3 md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
           aria-label={t('打开菜单')}
@@ -961,7 +963,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         data-sidebar
         style={{ width: collapsed ? 56 : pane.width }}
         className={cn(
-          'relative hidden shrink-0 flex-col border-r bg-rail md:flex',
+          'relative hidden shrink-0 flex-col bg-rail md:flex',
           !pane.dragging && 'transition-[width] duration-200',
         )}
       >

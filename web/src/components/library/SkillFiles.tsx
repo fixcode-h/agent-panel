@@ -242,7 +242,7 @@ export function SkillFiles({
 
       <div className="flex flex-col gap-3 lg:flex-row">
         {/* 文件树 */}
-        <div className="flex min-w-0 flex-col gap-0.5 rounded-xl border bg-card p-1.5 lg:w-[260px] lg:shrink-0">
+        <div className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-card shadow-card p-1.5 lg:w-[260px] lg:shrink-0">
           {/* 主文件在上方详情页编辑：这里只提示它在哪，点一下滚上去 */}
           <button
             type="button"

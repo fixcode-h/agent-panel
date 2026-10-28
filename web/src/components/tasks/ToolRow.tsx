@@ -23,6 +23,7 @@ import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
+import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
 import { CommandDialog, OutputDialog } from './ToolDialog'
 import { RunDialog } from './RunCard'
 import { PeerLine } from './PeerMessage'
@@ -109,33 +110,31 @@ export function DiffView({ diff }: { diff: string }) {
     <div className="max-h-[420px] overflow-auto font-mono text-[0.75rem] leading-[1.6]">
       <table className="w-full border-collapse">
         <tbody>
-          {rows.map((r, i) =>
-            r.kind === 'hunk' ? (
-              <tr key={i} className="bg-field/60 text-subtle">
-                <td colSpan={numbered ? 4 : 2} className="px-3 py-0.5 text-[0.6875rem]">
-                  {r.text || '⋯'}
-                </td>
-              </tr>
-            ) : (
-              <tr key={i} className={cn(r.kind === 'add' && 'bg-success/12', r.kind === 'del' && 'bg-danger/12')}>
+          {rows.map((r, i) => {
+            if (r.kind === 'hunk')
+              return (
+                <tr key={i}>
+                  <td colSpan={numbered ? 4 : 2} className={DIFF_HUNK}>
+                    {r.text || '⋯'}
+                  </td>
+                </tr>
+              )
+            const tone = DIFF_TONE[r.kind]
+            return (
+              <tr key={i} className={tone.row}>
                 {numbered && (
                   <>
-                    <td className="w-10 px-2 text-right align-top text-subtle/70 select-none">{r.old ?? ''}</td>
-                    <td className="w-10 px-2 text-right align-top text-subtle/70 select-none">{r.new ?? ''}</td>
+                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.old ?? ''}</td>
+                    <td className={cn(DIFF_GUTTER, 'align-top', tone.gutter)}>{r.new ?? ''}</td>
                   </>
                 )}
-                <td
-                  className={cn(
-                    'w-5 pl-2 align-top select-none',
-                    r.kind === 'add' ? 'text-success' : r.kind === 'del' ? 'text-danger' : 'text-subtle/60',
-                  )}
-                >
+                <td className={cn('w-5 pl-2 align-top select-none', tone.sign)}>
                   {r.kind === 'add' ? '+' : r.kind === 'del' ? '-' : ' '}
                 </td>
                 <td className="pr-3 whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">{r.text || ' '}</td>
               </tr>
-            ),
-          )}
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -526,7 +525,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     : file
       ? { open: () => openFile?.(file), tip: t('查看文件') }
       : view.child && openChild
-        ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
+        ? { open: () => openChild(view.child!), tip: t('在中间打开子对话') }
         : view.startsRun && task?.id
           ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
             // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口

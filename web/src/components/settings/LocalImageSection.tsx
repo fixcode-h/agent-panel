@@ -192,7 +192,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
           </div>
         </Row>
         <Row title={t('电脑环境')} desc={t('显卡决定装哪个版本的 PyTorch；没有检测到显卡时用 CPU，能出图但很慢')} stack>
-          <div className="rounded-xl border bg-field/40 px-3 py-1">
+          <div className="rounded-xl bg-sel/40 px-3 py-1">
             <div className="flex items-start gap-1">
               <div className="min-w-0 flex-1 divide-y divide-line/60">
                 <EnvLine
@@ -255,7 +255,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
           </div>
         </Row>
         {job && (
-          <div className="my-2 rounded-xl border bg-card p-3">
+          <div className="my-2 rounded-xl bg-card shadow-card p-3">
             <div className="flex items-center gap-2 text-[0.8125rem]">
               {job.status === 'running' ? (
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />

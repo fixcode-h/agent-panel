@@ -13,7 +13,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   const { go } = useNav()
   if (!workflow)
     return (
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl bg-card shadow-card p-4">
         <h3 className="mb-1 text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         <p className="text-xs text-subtle">{t('还没有指定工作流。')}</p>
       </section>
@@ -24,7 +24,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
     .map((id) => byId.get(id))
     .filter(Boolean)
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-xl bg-card shadow-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <h3 className="text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         {source && <span className="text-xs text-subtle">{source}</span>}

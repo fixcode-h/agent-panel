@@ -344,7 +344,7 @@ function ApiCard({
     }
   }
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-field/30 p-4">
+    <div className="flex flex-col gap-3 rounded-xl bg-sel/40 p-4">
       <div className="flex items-center gap-2">
         <Button
           variant="ghost"
@@ -598,7 +598,7 @@ function ApiCard({
             {modelsForProtocol(a.models, a.protocol).map((m, i) => (
               <div
                 key={m}
-                className="flex items-center gap-3 rounded-lg border bg-card px-2.5 py-1.5"
+                className="flex items-center gap-3 rounded-lg bg-card shadow-card px-2.5 py-1.5"
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
                 {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
@@ -659,7 +659,7 @@ function ApiCard({
               </span>
             </form>
             {found && (
-              <div className="flex flex-col gap-2 rounded-lg border bg-card p-2.5">
+              <div className="flex flex-col gap-2 rounded-lg bg-card shadow-card p-2.5">
                 <div className="flex items-center gap-2">
                   <Input
                     value={filter}
@@ -769,7 +769,7 @@ function ApiBalanceRow({ a }: { a: ApiConfig }) {
   // 自定义 API 没有厂家，也就没有余额接口可查：不显示这一行
   if (!findVendor(a.name)) return null
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[0.75rem]">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-card shadow-card px-2.5 py-1.5 text-[0.75rem]">
       <span className="flex shrink-0 items-center gap-1.5 text-subtle">
         <Wallet className="h-3.5 w-3.5" />
         {t('账户余额')}

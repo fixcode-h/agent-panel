@@ -14,6 +14,8 @@ import {
   groupOf,
   groupSchedules,
   isoWeekday,
+  weekOccurrences,
+  weekStartOf,
   nextDailyAt,
   nextRunAt,
   nextRunLabel,
@@ -626,4 +628,27 @@ test('计划的执行上限：默认不限，超范围的值被拒，旧数据�
     }),
   )
   assert.equal(new Set(labels).size, 4)
+})
+
+test('weekOccurrences：周视图按周一起的 7 天排出执行时刻，停用和还没开始的日子不算', () => {
+  // 2026-10-26 是周一
+  const mon = new Date(2026, 9, 26).getTime()
+  assert.equal(weekStartOf(new Date(2026, 9, 29, 15, 30).getTime()), mon)
+  const at = new Date(2026, 9, 27, 9, 0).toISOString()
+  const day = (ms: number) => new Date(ms).getDate()
+  assert.deepEqual(
+    weekOccurrences({ repeat: 'daily', at, weekdays: [], enabled: true }, mon).map(day),
+    [27, 28, 29, 30, 31, 1],
+  )
+  assert.deepEqual(
+    weekOccurrences({ repeat: 'workdays', at, weekdays: [], enabled: true }, mon).map(day),
+    [27, 28, 29, 30],
+  )
+  assert.deepEqual(weekOccurrences({ repeat: 'weekly', at, weekdays: [3, 5], enabled: true }, mon).map(day), [28, 30])
+  assert.deepEqual(weekOccurrences({ repeat: 'once', at, weekdays: [], enabled: true }, mon).map(day), [27])
+  assert.deepEqual(weekOccurrences({ repeat: 'daily', at, weekdays: [], enabled: false }, mon), [])
+  // 下一周：单次不再出现，每天的照常 7 次
+  const next = new Date(2026, 10, 2).getTime()
+  assert.equal(weekOccurrences({ repeat: 'once', at, weekdays: [], enabled: true }, next).length, 0)
+  assert.equal(weekOccurrences({ repeat: 'daily', at, weekdays: [], enabled: true }, next).length, 7)
 })

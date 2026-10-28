@@ -141,7 +141,7 @@ function DraftCard({
   }
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border bg-field/40 p-3">
+    <li className="flex flex-col gap-2 rounded-lg bg-sel/40 p-3">
       <label className="flex flex-col gap-1">
         <span className="text-xs text-subtle">{t('标题（一句话写该怎么做）')}</span>
         <Input value={form.title} onChange={(e) => set({ title: e.target.value })} aria-label={t('草稿标题')} />

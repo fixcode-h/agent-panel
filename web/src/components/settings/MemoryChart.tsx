@@ -90,7 +90,7 @@ export function MemoryChart({ samples }: { samples: MemorySample[] }) {
   }
 
   if (samples.length < 2)
-    return <p className="rounded-xl border bg-field/40 px-3.5 py-6 text-center text-xs text-subtle">{t('正在采样…')}</p>
+    return <p className="rounded-xl bg-sel/40 px-3.5 py-6 text-center text-xs text-subtle">{t('正在采样…')}</p>
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -119,7 +119,7 @@ export function MemoryChart({ samples }: { samples: MemorySample[] }) {
           </button>
         )}
       </div>
-      <div className="overflow-hidden rounded-xl border bg-field/40">
+      <div className="overflow-hidden rounded-xl bg-sel/40">
         <svg
           ref={svg}
           role="img"

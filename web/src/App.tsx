@@ -22,6 +22,7 @@ import { useAiWindow } from '@/lib/ai-window'
 import { settingsReloaded, str, useUiActions } from '@/lib/ui-actions'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -49,6 +50,9 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   mcp: () => <McpPage />,
   summary: () => <SummaryPage />,
 }
+
+/** 自己分成几块面板的页面：项目工作区（项目首页 / 任务）和打开的聊天 */
+const splitPage = (r: Route) => r.page === 'projects' || (r.page === 'chat' && !!r.id)
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
@@ -198,7 +202,7 @@ export function App() {
           openProject: (id, section, item) => setProject({ open: true, id, section, item }),
         }}
       >
-        <div className="flex min-h-full flex-col md:h-full">
+        <div className="flex min-h-full flex-col bg-rail md:h-full">
           {/* 全界面的悬停提示：接住所有原生 title，换成统一样式的浮层（全页只挂这一份） */}
           <GlobalHintHost />
           <TaskWatcher />
@@ -214,11 +218,19 @@ export function App() {
           <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
-            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
-              {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
-              <ErrorBoundary resetKey={toHash(route)}>
-                <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
-              </ErrorBoundary>
+            {/* 页面放在面板里浮在侧栏底色上；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块 */}
+            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden md:py-2 md:pr-2">
+              <div
+                className={cn(
+                  'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden',
+                  !splitPage(route) && 'panel',
+                )}
+              >
+                {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
+                <ErrorBoundary resetKey={toHash(route)}>
+                  <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
+                </ErrorBoundary>
+              </div>
             </div>
           </div>
         </div>
