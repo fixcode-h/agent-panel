@@ -39,7 +39,7 @@ import { useTaskSearch } from '@/lib/use-task-search'
  * 侧栏一行的选中 / 悬停外观：和中间列表的选中项一致（细边框 + 微阴影）。
  * 导航、项目分组、任务行和设计行都引用这里，选中态只定义一次；用的时候基础类里要带 `border`。
  */
-export const SIDEBAR_ROW_ON = 'border-sel-line bg-sel text-fg shadow-card'
+export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
 export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号、字距略宽，和可点的行拉开层级 */
