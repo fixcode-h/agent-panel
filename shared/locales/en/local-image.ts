@@ -399,4 +399,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '链的内容不对：{error}': "The chain content isn't valid: {error}",
   '上一段的工作流已经不在了，请先重新选一下': 'The workflow in the previous step no longer exists; pick it again first',
   '第 {n} 段的工作流已经不在了，请重新选一下': 'The workflow in step {n} no longer exists; pick it again',
+  工作流详情: 'Workflow details',
+  队列: 'Queue',
 }
