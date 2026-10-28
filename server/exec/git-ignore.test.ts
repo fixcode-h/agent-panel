@@ -19,13 +19,16 @@ function repo() {
   return { dir, base: git(dir, 'rev-parse', 'HEAD').trim() }
 }
 
-test('面板拷进对话目录的图片不算任务的改动：更改列表和评审差异都排除', async () => {
+test('面板拷进对话目录的图片不算任务的改动：更改列表和评审差异都排除，旧任务按消息里的名字同样排除', async () => {
   const { dir, base } = repo()
   writeFileSync(path.join(dir, '截图.png'), 'png')
   writeFileSync(path.join(dir, 'b.ts'), 'export const b = 2\n')
+  mkdirSync(path.join(dir, 'attachments'))
+  writeFileSync(path.join(dir, 'attachments', '旧.png'), 'png')
 
   const all = (await gitNumstat(dir, base))!
   assert.ok('截图.png' in all, '不传名单时它就是未跟踪文件')
+  assert.ok('attachments/旧.png' in all, '旧消息里记的那份不传名单时也在改动里')
 
   const skip = (await gitNumstat(dir, base, ['截图.png']))!
   assert.ok(!('截图.png' in skip), '按任务记的名单排除')
@@ -39,13 +42,8 @@ test('面板拷进对话目录的图片不算任务的改动：更改列表和�
 
   // 排除名单只认对话目录里的相对路径：绝对路径、带 .. 的都不算
   assert.ok('b.ts' in (await gitNumstat(dir, base, [path.join(dir, 'b.ts'), '../b.ts']))!)
-})
 
-test('旧任务没有 placedAttachments：从消息里的 attachments/名字 推出的名单同样被排除', async () => {
-  const { dir, base } = repo()
-  mkdirSync(path.join(dir, 'attachments'))
-  writeFileSync(path.join(dir, 'attachments', '旧.png'), 'png')
-
+  // 旧任务没有 placedAttachments：从消息里的 attachments/名字 推出的名单同样被排除
   const task = {
     placedAttachments: {},
     messages: [
@@ -57,7 +55,6 @@ test('旧任务没有 placedAttachments：从消息里的 attachments/名字 推
     ],
   }
 
-  assert.ok('attachments/旧.png' in (await gitNumstat(dir, base))!, '不传名单时它就在改动里')
-  const skip = (await gitNumstat(dir, base, placedFiles(task as never)))!
-  assert.ok(!('attachments/旧.png' in skip), '旧消息里记的那份也被排除')
+  const legacy = (await gitNumstat(dir, base, placedFiles(task as never)))!
+  assert.ok(!('attachments/旧.png' in legacy), '旧消息里记的那份也被排除（不传名单时它在改动里，见上面的 all）')
 })

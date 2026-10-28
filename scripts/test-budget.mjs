@@ -23,6 +23,7 @@ import {
   UNIT_CASE_LIMIT,
   budgetVerdict,
   commitMessageFor,
+  mergedChainMessages,
   newCasesFromDiff,
   newCasesInSource,
   overBudgets,
@@ -80,6 +81,51 @@ function git(args) {
   } catch {
     return ''
   }
+}
+
+/** 跑 git，只关心成功与否（例如 merge-base --is-ancestor：是祖先返回 0） */
+function gitOk(args) {
+  try {
+    execFileSync('git', args, { cwd: root, stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** commit 对象里的父提交数：浅克隆时 rev-list 不给父，只能从对象本身数出来 */
+function commitParentCount(rev) {
+  return git(['cat-file', '-p', rev])
+    .split('\n')
+    .filter((line) => line.startsWith('parent ')).length
+}
+
+/**
+ * HEAD 是合并提交时，被合进来那条分支上的说明。
+ * 面板和 GitHub 生成的合并提交说明往往只有一行标题，子对话写在提交里的「测试预算:」段要沿合并链往下读：
+ * PR merge ref 的 parents[1] 是 dev tip，dev tip 往往又是面板的合并提交，再下一层才是子对话提交（复看 R3）。
+ *
+ * 只沿第二个父往下、不横向读 `HEAD^1..HEAD^2` 整段：分支上更早 / 兄弟提交里的预算段不属于本次改动，
+ * 读了会让本次超预算的新用例静默通过（复看 R2）。多父合并（octopus）同样只取第二个父；
+ * 面板和 GitHub 都只产生两父合并。
+ */
+function mergedCommitMessages() {
+  const [, ...parents] = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/)
+  if (parents.length < 2) {
+    // 普通提交本来就没有两个父，不能提示；浅克隆的合并提交才是「父提交不在本地」（复看 R1）
+    if (commitParentCount('HEAD') >= 2 && git(['rev-parse', '--is-shallow-repository']).trim() === 'true')
+      console.log(
+        '[budget] 浅克隆看不到合并提交的父提交：子提交里的「测试预算:」段读不到，checkout 需要 fetch-depth: 0',
+      )
+    return []
+  }
+  return mergedChainMessages({
+    tip: parents[1],
+    getParents: (sha) => git(['rev-list', '--parents', '-n', '1', sha]).trim().split(/\s+/).slice(1),
+    // 子分支自己 merge 过 base 时，那一层的第二父是 base 方向：再往下就是上一次改动（复看 R4）
+    isBaseSide: (sha) => gitOk(['merge-base', '--is-ancestor', sha, parents[0]]),
+    getMessage: (sha) => git(['log', '-1', '--format=%B', sha]),
+  })
 }
 
 /** 静态计数：按分层扫测试文件源码里的 test( / it(，e2e 扫分片里的 step(，都不执行测试 */
@@ -147,10 +193,19 @@ function hasPendingTestChanges() {
 }
 
 const dirty = hasPendingTestChanges()
-// HEAD 的说明只属于已经提交的那一次：工作区有测试改动时它是上一次提交，拿它当本次说明会静默放行超预算新增
-const commitMessage = messageFile
-  ? read(messageFile)
-  : commitMessageFor({ headMessage: git(['log', '-1', '--format=%B']), hasUncommittedChanges: dirty })
+/**
+ * 本次该看的提交说明：`--message` 显式给的优先；工作区有测试改动时 HEAD 的说明属于上一次提交，
+ * 拿它当本次说明会静默放行超预算新增。合并提交还要带上被合进来的子提交说明。
+ */
+function currentCommitMessage() {
+  if (messageFile) return read(messageFile)
+  if (dirty) return ''
+  return commitMessageFor({
+    headMessage: git(['log', '-1', '--format=%B']),
+    mergedMessages: mergedCommitMessages(),
+  })
+}
+const commitMessage = currentCommitMessage()
 const counts = staticCounts()
 const raised = raisedBudgets({})
 /** 静态按层超限：两种模式都要报（tap 只有总数、分不到层，没法代替按层判定） */
