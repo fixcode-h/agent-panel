@@ -80,7 +80,7 @@ export function LessonReviewReport({ text, project }: { text: string; project?: 
         {review.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{review.summary}</p>}
       </div>
       {rows.length > 0 && (
-        <ul className="mx-3 mt-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
+        <ul className="mx-3 mt-3 flex flex-col divide-y overflow-hidden rounded-lg bg-card shadow-card">
           {rows.map(({ it, state }, i) => (
             <ReviewRow
               key={`${it.id}-${i}`}
@@ -134,7 +134,7 @@ function ReviewRow({
           </span>
         )}
         {rewrites && (
-          <span className="flex flex-col gap-0.5 rounded-lg border bg-field/40 px-2.5 py-1.5 text-[0.75rem]">
+          <span className="flex flex-col gap-0.5 rounded-lg bg-sel/40 px-2.5 py-1.5 text-[0.75rem]">
             <span className="font-medium text-fg">{t('改成：{text}', { text: it.title })}</span>
             {it.rule && <span className="leading-relaxed text-muted">{it.rule}</span>}
             {it.paths && (

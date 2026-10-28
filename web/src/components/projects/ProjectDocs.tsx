@@ -87,7 +87,7 @@ export function DocPage({
         </div>
       )}
 
-      <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl border bg-field/40">
+      <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl bg-sel/40">
         <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
           <span className="font-mono text-[0.78125rem]">{active}</span>
           <span className="text-xs text-subtle">

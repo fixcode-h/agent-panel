@@ -181,7 +181,7 @@ export function DataSection() {
         <p className="text-[0.8125rem] leading-relaxed text-subtle">
           {t('面板的配置、项目、任务记录都保存在用户目录下，和 ~/.codex、~/.claude 一样，升级或换安装位置都不受影响。')}
         </p>
-        <div className="flex items-center gap-2 rounded-xl border bg-field/50 px-3.5 py-2.5">
+        <div className="flex items-center gap-2 rounded-xl bg-sel/40 px-3.5 py-2.5">
           <span className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]" title={usage?.dir}>
             {usage?.dir ?? '…'}
           </span>
@@ -217,7 +217,7 @@ export function DataSection() {
               '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。',
             )}
           </p>
-          <div className="flex items-center gap-2 rounded-xl border bg-field/50 px-3.5 py-2.5">
+          <div className="flex items-center gap-2 rounded-xl bg-sel/40 px-3.5 py-2.5">
             <span
               className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]"
               title={usage.logs.current || usage.logs.dir}

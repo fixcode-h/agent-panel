@@ -380,7 +380,11 @@ export function ProjectFileDialog({
                     <div
                       key={i}
                       data-line={i + 1}
-                      className={cn('flex whitespace-pre', target?.line === i + 1 && 'bg-accent/12')}
+                      // 奇偶行隔一层浅底（照设计稿），长文件横着看不串行；跳到的那一行高亮盖过它
+                      className={cn(
+                        'flex whitespace-pre',
+                        target?.line === i + 1 ? 'bg-accent/12' : i % 2 === 1 && 'bg-sel/35',
+                      )}
                     >
                       <span className="w-14 shrink-0 pr-3 text-right text-subtle/70 select-none">{i + 1}</span>
                       {highlighted?.[i] !== undefined ? (

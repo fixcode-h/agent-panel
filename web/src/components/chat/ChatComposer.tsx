@@ -366,7 +366,7 @@ export function SendButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        'grid shrink-0 cursor-pointer place-items-center bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40',
+        'grid shrink-0 cursor-pointer place-items-center bg-primary text-on-primary transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40',
         size === 'sm' ? 'h-7 w-7 rounded-full' : 'h-8 w-8 rounded-lg',
       )}
     >

@@ -70,6 +70,7 @@ export const EN_DESIGN: Record<string, string> = {
   面板: 'Panels',
   常用: 'Common',
   添加控件: 'Add widget',
+  检查器: 'Inspector',
   控件树: 'Hierarchy',
   控件名: 'Widget name',
   显示: 'Show',

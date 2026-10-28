@@ -40,6 +40,13 @@ export async function openCartTask({ base, page, errors }, { viewport = TASK_VIE
   return p
 }
 
+/** 中间打开的子对话（页签）：父对话页签在前台时它是隐藏的，读屏树里没有 */
+export const childView = (p) => p.getByRole('region', { name: '子对话' })
+
+/** 页签条上关闭子对话的按钮（子对话视图里不再有自己的 ✕） */
+export const closeChildTab = (p) =>
+  p.getByRole('tablist', { name: '对话页签' }).getByRole('button', { name: '关闭子对话', exact: true })
+
 /**
  * 任务页上的常用操作，绑定到一个 page 上。
  * 三片各自用自己那个 page 调一次，不共享状态。

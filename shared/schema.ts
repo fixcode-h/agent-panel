@@ -2225,7 +2225,12 @@ export const CONTENT_MAX = 1280
 /** 各英文字体默认的空格调整：只有等宽的 Maple Mono 需要收窄 */
 export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple: -0.2, plex: 0, system: 0 }
 /** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
+/** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
+export const PALETTES = ['claude', 'neutral', 'ocean', 'forest'] as const
+export type Palette = (typeof PALETTES)[number]
 export const Appearance = z.object({
+  /** 配色：默认 Claude（暖灰底、陶土橙），换配色只换颜色，部件的形状和间距不变 */
+  palette: z.enum(PALETTES).catch('claude').default('claude'),
   /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
   uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
   /**

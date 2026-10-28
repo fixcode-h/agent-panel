@@ -62,8 +62,9 @@ export function AskToggle({
           : t('AI 有问题时自己选最合适的做法（点一下改成问你）')
       }
       className={cn(
+        // 只有图标、不带底色：开着换成强调色，关着是灰色
         'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        value ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+        value ? 'text-accent hover:opacity-80' : 'text-subtle hover:text-fg',
         className,
       )}
     >

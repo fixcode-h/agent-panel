@@ -38,6 +38,7 @@ import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
 import { stripInitJson } from '@/lib/analysis-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { ReplyHeader } from '@/components/ui/reply-header'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
 import { useAgentView } from '@/lib/agent-view'
@@ -314,17 +315,22 @@ function CliLabel({ cli, name }: { cli: string; name: string }) {
 
 /** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {
+  const { cliName } = useAgentView()
+  const cli = cliName({ cli: author.cli })
   return (
-    <div className="sticky top-0 z-10 -mx-2 flex items-center gap-3 bg-bg px-2 py-2">
-      <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem]">
-        <span className="shrink-0 font-medium">{author.name}</span>
-        <CliLabel cli={author.cli} name={author.name} />
-        {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
-        {author.model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{author.model}</span>}
-      </div>
-      {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
-      {author.command?.length ? <StepCommand argv={author.command} className="ml-auto -my-1" /> : null}
+    <div className="sticky top-0 z-10 -mx-2 bg-bg px-2 py-2">
+      {/* 和每条回复开头同一个部件：角色图标 + 名字 + Agent + 模型；窄的时候先压缩模型这一段 */}
+      <ReplyHeader
+        avatar={<AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />}
+        name={author.name}
+        // 角色名本来就是 CLI 名时不再重复
+        agent={author.name.startsWith(cli) ? undefined : cli}
+        model={author.model}
+        trailing={
+          // 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令
+          author.command?.length ? <StepCommand argv={author.command} className="-my-1" /> : undefined
+        }
+      />
     </div>
   )
 }

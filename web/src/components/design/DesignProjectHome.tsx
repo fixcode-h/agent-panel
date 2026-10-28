@@ -116,7 +116,7 @@ export function DesignProjectHome({ projectId }: { projectId: string }) {
                     <span>{kindLabel(g.kind)}</span>
                     <span className="font-normal">· {g.items.length}</span>
                   </h2>
-                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                     {g.items.map((d) => (
                       <DesignRow key={d.id} design={d} now={now} onOpen={() => go({ page: 'design', id: d.id })} />
                     ))}

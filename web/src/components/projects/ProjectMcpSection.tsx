@@ -217,7 +217,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                   )}
                 </p>
               ) : (
-                <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                   {data.detected.map((d) => (
                     <li key={key(d)} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                       {d.server.transport === 'http' ? (
@@ -297,7 +297,7 @@ export function ProjectMcpSection({ project }: { project?: Project }) {
                 {t('还没有面板管理的 MCP 工具：点右上角「添加」，或导入上面识别到的配置。')}
               </EmptyPanel>
             ) : (
-              <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+              <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                 {data.servers.map((s) => (
                   <li key={s.name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                     {s.transport === 'http' ? (

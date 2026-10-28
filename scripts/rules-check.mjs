@@ -201,6 +201,17 @@ for (const f of files) {
     })
 }
 
+// 6b. 界面不用细字重：主次靠颜色和字号分（见 docs/lessons/ui.md「视觉：边界靠底色分，字不能细」）
+for (const f of files) {
+  if (!/^web\/src\/.+\.(tsx|css)$/.test(f)) continue
+  read(f)
+    .split('\n')
+    .forEach((l, i) => {
+      if (/\bfont-(?:thin|extralight|light)\b|font-weight:\s*[1-3]00\s*;/.test(l))
+        errors.push(`${f}:${i + 1} 用了细字重，界面常规字最细 450，主次用颜色或字号分：${l.trim()}`)
+    })
+}
+
 // 7. 模块文档和模块地图双向对得上（见 skills/docs/project-documentation「模块文档」）；root 必须是仓库根，传错会因为找不到 docs/MODULE-MAP.md 而静默通过
 errors.push(...checkModuleDocsInRoot(root))
 

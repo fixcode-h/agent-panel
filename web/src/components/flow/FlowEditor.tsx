@@ -328,7 +328,7 @@ function Editor({
           )}
           {flow.nodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
-              <div className="pointer-events-auto flex max-w-[360px] flex-col items-center gap-3 rounded-2xl border bg-card p-5 text-center shadow-pop">
+              <div className="pointer-events-auto flex max-w-[360px] flex-col items-center gap-3 rounded-2xl bg-card p-5 text-center shadow-pop">
                 <p className="font-serif text-[1rem] font-semibold">
                   {isEntry ? t('从这里设计工作流') : t('这个子流程还是空的')}
                 </p>

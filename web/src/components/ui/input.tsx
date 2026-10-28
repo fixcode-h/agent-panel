@@ -1,4 +1,11 @@
-import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import {
+  createContext,
+  forwardRef,
+  useContext,
+  useState,
+  type InputHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from 'react'
 import * as S from '@radix-ui/react-select'
 import * as P from '@radix-ui/react-popover'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
@@ -21,6 +28,16 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ),
 )
 Textarea.displayName = 'Textarea'
+
+/**
+ * 下拉框的样子：field 是带框的输入框样式；ghost 是照 Claude 设置页的「右对齐文字 + 箭头」，不带框，
+ * 悬停才出底色。设置行（settings/parts 的 Row）用 Provider 整片切成 ghost，不用每个调用处传
+ */
+export const SelectLook = createContext<'field' | 'ghost'>('field')
+
+const ghostTrigger =
+  'ml-auto flex h-8 w-fit max-w-full items-center justify-end gap-1.5 rounded-lg px-2 text-sm text-muted outline-none ' +
+  'transition-colors hover:bg-sel hover:text-fg focus-visible:ring-[3px] focus-visible:ring-focus-soft data-[state=open]:bg-sel data-[state=open]:text-fg'
 
 const EMPTY = '__empty__'
 const enc = (v: string) => (v === '' ? EMPTY : v)
@@ -60,6 +77,7 @@ export function Select({
 }) {
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
   const current = options.find((o) => o.value === value)
+  const ghost = useContext(SelectLook) === 'ghost'
   return (
     <S.Root value={enc(value)} onValueChange={(v) => onChange({ target: { value: dec(v) } })} disabled={disabled}>
       <S.Trigger
@@ -67,8 +85,13 @@ export function Select({
         title={title}
         aria-label={ariaLabel}
         className={cn(
-          fieldClass,
-          'flex h-9 cursor-pointer items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
+          ghost
+            ? ghostTrigger
+            : [
+                fieldClass,
+                'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
+              ],
+          'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
           className,
         )}
       >

@@ -3,7 +3,7 @@ import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 
 const tones = {
-  neutral: 'bg-card text-muted border border-line',
+  neutral: 'bg-sel/70 text-muted',
   accent: 'bg-accent-soft text-accent',
   success: 'bg-success/12 text-success',
   warning: 'bg-warning/12 text-warning',

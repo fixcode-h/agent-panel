@@ -234,7 +234,7 @@ export function DesignList() {
   }
 
   return (
-    <div className="mt-2 flex min-h-0 flex-1 flex-col overflow-y-auto border-t px-2 pt-2 pb-2">
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <div className="flex h-7 shrink-0 items-center pr-1 pl-2.5">
         <p className={cn('flex-1', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
         <button
@@ -342,7 +342,7 @@ export function DesignList() {
               </ContextMenuContent>
             </ContextMenu>
             {open && ds.length > 0 && (
-              <div className="mt-0.5 ml-4 flex flex-col gap-px border-l border-line/80 pl-2">
+              <div className="mt-1 ml-3 flex flex-col gap-0.5">
                 {/* 同一个项目里游戏 UI 和网页 UI 分开列，各自可以收起 */}
                 {KINDS.filter((k) => ds.some((d) => designKind(d) === k.id)).map((k) => {
                   const list = ds.filter((d) => designKind(d) === k.id)

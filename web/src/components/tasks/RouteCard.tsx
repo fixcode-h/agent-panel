@@ -61,7 +61,7 @@ export function RouteCard({
       <span className="grid w-[26px] shrink-0 place-items-start justify-center pt-2">
         <Route className="h-3.5 w-3.5 text-subtle" />
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-lg border bg-card px-3 py-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-lg bg-card shadow-card px-3 py-2">
         {routes.map((r) => {
           const tg = TARGET[r.target]
           const Icon = tg.icon

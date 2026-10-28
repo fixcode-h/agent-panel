@@ -25,6 +25,7 @@ import {
   Gauge,
   Keyboard,
   Search,
+  Component,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -62,6 +63,7 @@ import { WebSearchSection } from '@/components/settings/WebSearchSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
+import { ComponentsSection } from '@/components/settings/ComponentsSection'
 import { ShortcutsSection } from '@/components/settings/ShortcutsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
@@ -97,7 +99,8 @@ const pickLabel = pickButtonLabel
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
-  { id: 'fonts', label: t('字体'), icon: Type, group: t('通用') },
+  { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
+  { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
   { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('项目') },
@@ -585,6 +588,7 @@ function SettingsBody({
         >
           {cur.id === 'styles' && <StylesSettings />}
           {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
+          {cur.id === 'components' && <ComponentsSection />}
           {cur.id === 'shortcuts' && <ShortcutsSection value={elementPicker} onChange={setElementPicker} />}
           {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
           {cur.id === 'network' && (

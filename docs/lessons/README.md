@@ -65,6 +65,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [ui-check.md](./ui-check.md)           | 界面检查用例的写法和等待条件                   |
 | [list-pane.md](./list-pane.md)         | 中间列表栏的头部按钮和标题                     |
 | [status-bar.md](./status-bar.md)       | 任务页输入框上方的状态栏（三行、+N）           |
+| [visual.md](./visual.md)               | 部件、底色、字重（重设计后的视觉规则）         |
 | [builtin.md](./builtin.md)             | 内置 Agent、工作流、Skill、提示词              |
 | [data.md](./data.md)                   | 数据结构、存储、升级兼容、出包                 |
 | [testing.md](./testing.md)             | 单测、端到端、假 CLI、界面检查                 |
@@ -76,4 +77,4 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [design.md](./design.md)               | UI 设计 Agent 的截图、出图、引用和验收         |
 | [project-files.md](./project-files.md) | 面板往用户项目里临时写的配置（面板 MCP 条目）  |
 | [retry.md](./retry.md)                 | 报错后重试：在原来的子对话、子任务里接着做     |
-| [tooling.md](./tooling.md)             | AI 自己跑命令、等结果的方式                     |
+| [tooling.md](./tooling.md)             | AI 自己跑命令、等结果的方式                    |

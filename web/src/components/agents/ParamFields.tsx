@@ -319,7 +319,7 @@ export function ParamsEditor({
         const open = openKey === i
         const badKey = !KEY_RE.test(p.key) || dupKeys.has(p.key)
         return (
-          <div key={i} className="rounded-xl border bg-card">
+          <div key={i} className="rounded-xl bg-card shadow-card">
             <div className="flex items-center gap-2 px-3 py-2">
               <button
                 type="button"
@@ -492,7 +492,7 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
               tabIndex={0}
               title={t('拖动调整顺序（也可以按 Alt + 方向键）')}
               className={cn(
-                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[0.8125rem] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-[0.8125rem] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                 drag === i && 'opacity-40',
                 over === i && drag !== null && drag !== i && 'border-accent bg-accent/10',
               )}

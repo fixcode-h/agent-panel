@@ -86,7 +86,7 @@ export function TagsSection() {
           {t('新建')}
         </Button>
       </div>
-      <div className="flex flex-col divide-y rounded-xl border bg-card">
+      <div className="flex flex-col divide-y rounded-xl bg-card shadow-card">
         {tags.map((tag) => {
           const u = usage(tag.id)
           return (

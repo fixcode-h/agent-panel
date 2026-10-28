@@ -82,7 +82,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
   return (
     <div
       className={cn(
-        'group/node w-[264px] overflow-hidden rounded-2xl border bg-card text-left shadow-card transition-[box-shadow,border-color,transform] duration-150',
+        'group/node w-[264px] overflow-hidden rounded-2xl bg-card text-left shadow-card transition-[box-shadow,border-color,transform] duration-150',
         'hover:border-line-strong hover:shadow-pop',
         v.status && ring[v.status],
         v.loose && 'border-dashed opacity-80',
