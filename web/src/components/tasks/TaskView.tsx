@@ -1987,7 +1987,8 @@ export function TaskView({
                     onOther={() => setOnParent(false)}
                     onCloseChild={() => openChildIn('')}
                     onCloseRun={() => openRunIn(0)}
-                    leading={<ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />}
+                    // AI 窗口里嵌的对话不放项目名入口：在窗口里跳去别的对话没有意义，窄窗口里也放不下
+                    leading={embed ? undefined : <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />}
                     mark={isAnalysisTask(task, localAgents) ? <AnalysisMark kind={task.analysis} /> : undefined}
                     trailing={
                       <>
