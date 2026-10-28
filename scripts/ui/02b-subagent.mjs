@@ -707,9 +707,15 @@ await runShard(import.meta.filename, async (api) => {
                 () => true,
                 () => false,
               )
-            if (!titled) errors.push(`子对话未读点：右栏打开的不是「${DONE_CHILD}」`)
+            if (!titled) errors.push(`子对话未读点：中间打开的不是「${DONE_CHILD}」`)
             if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：当前打开的这一条上还画着未读点')
-            // 换开另一个子对话，再等一轮 4 秒的轮询：刚看过的那条不能又被接口数据画回未读
+            // 换开另一个子对话，再等一轮 4 秒的轮询：刚看过的那条不能又被接口数据画回未读。
+            // 子对话在中间开着时父对话藏在后面：先切回父对话页签，重新展开子对话浮层「全部」
+            await p.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
+            await settle(p)
+            if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click()
+            await allTab.click()
+            await settle(p)
             await row('核对通知时序').click()
             await p.waitForTimeout(5000)
             if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：点开看过以后，轮询又把未读点画回来了')
