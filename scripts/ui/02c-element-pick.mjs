@@ -157,7 +157,8 @@ await runShard(import.meta.filename, async (api) => {
       return (await btn.getAttribute('aria-pressed')) === 'true'
     }
     const reopenChild = async () => {
-      if (await pane().count()) await closeChild()
+      // 父对话在前台时子对话区域藏着（读屏树里没有），按 DOM 判断它还挂没挂着
+      if (await d.locator('[data-child-view]').count()) await closeChild()
       await openChild()
     }
 

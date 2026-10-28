@@ -11,19 +11,26 @@ import { Spinner } from './status-pill'
  */
 export function TabBar({
   label,
+  as: Root = 'div',
   className,
   children,
+  leading,
   trailing,
 }: {
   /** 读屏名，如「对话页签」 */
   label: string
+  /** 页面的标题栏用 header（对话页），面板里的页签条用 div */
+  as?: 'div' | 'header'
   className?: string
   children: ReactNode
+  /** 页签前面的入口（对话页的项目名） */
+  leading?: ReactNode
   /** 页签条右端的操作（状态、开关右栏） */
   trailing?: ReactNode
 }) {
   return (
-    <div className={cn('flex h-9 shrink-0 items-stretch border-b bg-rail', className)}>
+    <Root className={cn('flex h-9 shrink-0 items-stretch border-b bg-rail', className)}>
+      {leading && <div className="flex shrink-0 items-center border-r px-1.5">{leading}</div>}
       <div
         role="tablist"
         aria-label={label}
@@ -32,7 +39,7 @@ export function TabBar({
         {children}
       </div>
       {trailing && <div className="flex shrink-0 items-center gap-1.5 px-2">{trailing}</div>}
-    </div>
+    </Root>
   )
 }
 

@@ -609,10 +609,12 @@ await runShard(import.meta.filename, async (api) => {
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
     await check(p, '子对话-运行区1024')
+    // 文件面板默认最宽 440，挤不出窄行：先把它「拖」到 640（写本地记的宽度），测完删掉
+    await p.evaluate(() => localStorage.setItem('pane:task-panel', '640'))
     await p.setViewportSize({ width: 1440, height: 900 })
     await p.reload()
     await backToTask()
-    // 1280 这一格：宽窗口开着右栏再缩下来，运行区一行只剩 300 多像素；
+    // 1280 这一格：宽窗口开着加宽的右栏再缩下来，运行区一行只剩 300 多像素；
     // 这一行窄到放不下活动文字时，状态标签也不能被裁
     await p.setViewportSize({ width: 1280, height: 900 })
     await settle(p)
@@ -627,6 +629,7 @@ await runShard(import.meta.filename, async (api) => {
     // 两边都成立才说明真的复现了「放不下活动文字」的窄行；行宽写进报错方便排查
     if (mid.rows && mid.items.some((n) => n.noteShown))
       errors.push(`运行区（1280px）：行宽 ${mid.rowWidth}px，活动文字还占着宽度，没复现出右栏占宽后的窄行`)
+    await p.evaluate(() => localStorage.removeItem('pane:task-panel'))
     // 运行区可能在视口外：截之前先滚到它，图里才看得到行宽 300 多像素时的真实排布
     await p
       .locator('[aria-label="运行中"]')
@@ -1692,7 +1695,7 @@ await runShard(import.meta.filename, async (api) => {
     else {
       // 页面上可能还留着别的弹层：按浮层独有的「打开项目」认这一个
       const pop = p.getByRole('dialog').filter({ hasText: '打开项目' })
-      const title = () => p.locator('header nav h2').first().innerText()
+      const title = () => p.locator('[data-conv-title]').first().innerText()
       await projBtn.first().click()
       // 上一步的 reload / 导航会让标题栏重渲染，紧接着那一下点击可能落在正在换掉的节点上而不展开。
       // 没展开就补点一次（和本文件最后截图那段同一个做法），避免反而关掉已打开的浮层。
@@ -1848,7 +1851,9 @@ await runShard(import.meta.filename, async (api) => {
     const dockOf = (title) => p.getByRole('group', { name: `对话：${title}`, exact: true })
     await p.goto(base)
     await p.getByText('购物车右上角', { exact: false }).first().click()
-    await p.getByRole('heading', { name: CART, exact: true }).waitFor({ timeout: 8000 })
+    /** 对话页签条上父对话的标题 */
+    const convTitle = (s) => p.locator('[data-conv-title]').getByText(s, { exact: true })
+    await convTitle(CART).waitFor({ timeout: 8000 })
     const toDock = p.getByRole('button', { name: '转成弹窗', exact: true })
     if (!(await toDock.count())) errors.push('转成弹窗：对话页标题栏没有这个按钮')
     else {
@@ -1903,8 +1908,7 @@ await runShard(import.meta.filename, async (api) => {
       // 再收起另一个对话：只留一个，前一条被换掉
       await p.getByText('商品详情页增加', { exact: false }).first().click()
       // 点完要等页面真的换过去：标题没出来就读标题栏，读到的是上一个对话（或项目页）
-      await p
-        .getByRole('heading', { name: RESTOCK, exact: true })
+      await convTitle(RESTOCK)
         .waitFor({ timeout: 8000 })
         .catch(() => errors.push('转成弹窗：没打开第二个对话'))
       const second = p.getByRole('button', { name: '转成弹窗', exact: true })
@@ -1918,8 +1922,7 @@ await runShard(import.meta.filename, async (api) => {
         // 点浮条展开：回到那个对话页，浮条自己收起来
         const dock = dockOf(RESTOCK)
         await dock.getByRole('button', { name: '展开', exact: true }).click()
-        await p
-          .getByRole('heading', { name: RESTOCK, exact: true })
+        await convTitle(RESTOCK)
           .waitFor({ timeout: 8000 })
           .catch(() => errors.push('转成弹窗：点浮条没回到那个对话'))
         await dock.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('转成弹窗：展开后浮条还在'))
@@ -1933,8 +1936,7 @@ await runShard(import.meta.filename, async (api) => {
         if (!/^#\/projects\/[^/]+$/.test(wasHash)) errors.push(`转成弹窗：再次收起后应回到项目页，实际停在 ${wasHash}`)
         // 从项目页列表里点回同一个对话（RESTOCK），浮条应该自动让位
         await p.getByText('商品详情页增加', { exact: false }).first().click()
-        await p
-          .getByRole('heading', { name: RESTOCK, exact: true })
+        await convTitle(RESTOCK)
           .waitFor({ timeout: 8000 })
           .catch(() => errors.push('转成弹窗：没从列表打开被收起的那个对话'))
         await dockOf(RESTOCK)

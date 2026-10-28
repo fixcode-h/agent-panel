@@ -528,8 +528,9 @@ export function TaskView({
     )
   }, [])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
-  // 中间显示父对话还是另一个页签（子对话 / 运行）：页签开着时点父对话页签切回来，页签本身不关
-  const [onParent, setOnParent] = useState(false)
+  // 中间显示父对话还是另一个页签（子对话 / 运行）：页签开着时点父对话页签切回来，页签本身不关。
+  // 打开对话时先显示父对话（地址指的就是它），上次开着的子对话 / 运行页签留在页签条上，点了才切过去
+  const [onParent, setOnParent] = useState(true)
   /** 右栏当前打开的子对话的最新一份：openChildIn 同样被固定的闭包读，不能直接读 state */
   const openChildRef = useRef('')
   openChildRef.current = openChild
@@ -1972,6 +1973,7 @@ export function TaskView({
                     onOther={() => setOnParent(false)}
                     onCloseChild={() => openChildIn('')}
                     onCloseRun={() => openRunIn(0)}
+                    leading={<ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />}
                     trailing={
                       <>
                         {headerBadges}

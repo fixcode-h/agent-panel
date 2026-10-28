@@ -28,6 +28,7 @@ export function ConversationTabs({
   onOther,
   onCloseChild,
   onCloseRun,
+  leading,
   trailing,
 }: {
   task: Task
@@ -46,11 +47,13 @@ export function ConversationTabs({
   onOther: () => void
   onCloseChild: () => void
   onCloseRun: () => void
+  /** 页签前面的项目名入口（点开是项目下的对话） */
+  leading?: ReactNode
   trailing: ReactNode
 }) {
   const busy = taskBusy(task)
   return (
-    <TabBar label={t('对话页签')} trailing={trailing}>
+    <TabBar as="header" label={t('对话页签')} leading={leading} trailing={trailing}>
       {renaming !== null ? (
         // 改名就地在页签位置上改：输入框不能套在页签按钮里
         <input
@@ -86,7 +89,9 @@ export function ConversationTabs({
           }
         >
           {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光 */}
-          <span className={cn(cliTreeAlive(task) && 'cli-alive-title')}>{task.title}</span>
+          <span data-conv-title className={cn(cliTreeAlive(task) && 'cli-alive-title')}>
+            {task.title}
+          </span>
         </TabItem>
       )}
       {openChild && (
@@ -96,6 +101,7 @@ export function ConversationTabs({
           onClose={onCloseChild}
           closeLabel={t('关闭子对话')}
           tag={t('子对话')}
+          className="basis-[12rem]"
           title={child?.title}
           icon={
             child ? (

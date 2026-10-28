@@ -169,8 +169,10 @@ export async function runShard(file, fn) {
 
   async function check(p, name, expect = []) {
     for (const text of expect)
+      // 只认看得见的那一个：父对话和中间的子对话页签都挂着，藏起来的那边可能有同样的文字
       await p
         .getByText(text, { exact: false })
+        .filter({ visible: true })
         .first()
         .waitFor({ timeout: 5000 })
         .catch(() => errors.push(`${name}：没有显示「${text}」`))
