@@ -1382,7 +1382,7 @@ function Collapsible({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <section className="rounded-xl border bg-card">
+    <section className="rounded-xl bg-card shadow-card">
       <div className="flex items-center gap-3 px-3.5 py-2.5">
         <button
           type="button"
@@ -1524,10 +1524,7 @@ function TestStepsEditor({
       )}
       <ul className="flex flex-col gap-2">
         {steps.map((s, i) => (
-          <li
-            key={s.id}
-            className={cn('flex flex-col gap-2 rounded-xl border bg-field/40 p-3', !s.enabled && 'opacity-60')}
-          >
+          <li key={s.id} className={cn('flex flex-col gap-2 rounded-xl bg-sel/40 p-3', !s.enabled && 'opacity-60')}>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-subtle">{i + 1}</span>
               <Input
@@ -1744,7 +1741,7 @@ function AgentParamsEditor({
   )
   if (!mine.length) return null
   return (
-    <div className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
+    <div className="flex flex-col gap-2 rounded-xl bg-sel/40 p-3">
       <div className="flex items-center gap-2">
         <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
         <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>

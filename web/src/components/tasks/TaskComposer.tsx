@@ -222,11 +222,7 @@ export function TaskComposer({
       title={t(
         '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里',
       )}
-      className={cn(
-        chip,
-        'w-8 justify-center px-0',
-        isolate ? 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent' : 'text-subtle',
-      )}
+      className={cn(chip, 'w-8 justify-center px-0', isolate ? 'text-accent hover:opacity-80' : 'text-subtle')}
     >
       <GitBranch className="h-4 w-4 shrink-0" />
     </button>
@@ -353,7 +349,7 @@ export function TaskComposer({
                     className={cn(
                       chip,
                       'w-8 justify-center px-0',
-                      useAgent ? 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent' : 'text-subtle',
+                      useAgent ? 'text-accent hover:opacity-80' : 'text-subtle',
                     )}
                   >
                     <Bot className="h-4 w-4 shrink-0" />

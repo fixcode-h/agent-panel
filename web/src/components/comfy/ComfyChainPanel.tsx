@@ -158,7 +158,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
   return (
     <section
       aria-label={t('工作流链')}
-      className={cn('flex flex-col gap-3 rounded-xl border bg-card/60 p-3', className)}
+      className={cn('flex flex-col gap-3 rounded-xl bg-card shadow-card/60 p-3', className)}
     >
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-[0.8125rem] font-medium">{t('工作流链')}</h2>

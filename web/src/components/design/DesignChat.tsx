@@ -292,7 +292,7 @@ function BrowserHelp({
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-[fade-in_120ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card p-6 shadow-pop">
+        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card p-6 shadow-pop">
           <D.Title className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
             <Globe className="h-5 w-5 text-accent" />
             {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
@@ -1262,7 +1262,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
   const got = items.reduce((n, i) => n + Math.min(i.got, i.want), 0)
   const active = items.filter((i) => i.status === 'generating')
   return (
-    <div className="mb-2 flex flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-[0.78125rem] shadow-card">
+    <div className="mb-2 flex flex-col gap-2 rounded-xl bg-card shadow-card px-3 py-2.5 text-[0.78125rem] shadow-card">
       <button
         onClick={() => setOpen(!open)}
         disabled={!items.length}

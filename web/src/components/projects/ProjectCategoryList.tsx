@@ -82,7 +82,7 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+    <section className="flex flex-col gap-3 rounded-xl bg-card shadow-card p-4">
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
         <span className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium">{draft.name || t('未命名分类')}</span>

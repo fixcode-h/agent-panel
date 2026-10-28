@@ -43,7 +43,7 @@ function PaletteCard({ id, on, onPick }: { id: Palette; on: boolean; onPick: () 
       aria-checked={on}
       onClick={onPick}
       className={cn(
-        'flex cursor-pointer flex-col gap-2 rounded-xl border bg-card p-2 text-left transition-colors',
+        'flex cursor-pointer flex-col gap-2 rounded-xl bg-card shadow-card p-2 text-left transition-colors',
         on ? 'border-primary ring-1 ring-primary' : 'hover:border-line-strong',
       )}
     >
@@ -224,7 +224,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('lineHeight', round(v, 2))}
           />
         </Row>
-        <div className="mt-4 rounded-xl border bg-card p-4">
+        <div className="mt-4 rounded-xl bg-card shadow-card p-4">
           <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
           <p className="mt-2 text-[0.875rem]">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.

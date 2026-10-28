@@ -147,7 +147,7 @@ function StyleCard({
   const [open, setOpen] = useState(false)
   const Icon = s.kind === 'web' ? Globe : Gamepad2
   return (
-    <div className="rounded-xl border bg-card shadow-card">
+    <div className="rounded-xl bg-card shadow-card">
       <div className="flex items-start gap-3 px-4 pt-3.5">
         <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
           <Palette className="h-4 w-4" />

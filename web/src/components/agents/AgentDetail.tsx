@@ -693,7 +693,7 @@ export function AgentDetail({
                             tabIndex={0}
                             title={t('拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它')}
                             className={cn(
-                              'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[0.8125rem] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                              'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg bg-card shadow-card pr-1 pl-1 text-[0.8125rem] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                               sortIncludes.drag === i && 'opacity-40',
                               sortIncludes.over === i &&
                                 sortIncludes.drag !== null &&
@@ -917,7 +917,7 @@ export function AgentDetail({
               <details
                 key={tab === 'role' ? 'open' : 'closed'}
                 open={tab === 'role'}
-                className="group rounded-xl border bg-card p-4"
+                className="group rounded-xl bg-card shadow-card p-4"
               >
                 <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
                 <div className="mt-2 flex items-center gap-2">
@@ -934,7 +934,7 @@ export function AgentDetail({
               </details>
             )}
             {includedBy.length > 0 && (
-              <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+              <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
                 <h3 className="text-[0.8125rem] font-semibold">{t('被这些角色引入')}</h3>
                 {includedBy.map((a) => (
                   <button
@@ -948,7 +948,7 @@ export function AgentDetail({
                 ))}
               </section>
             )}
-            <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+            <section className="flex flex-col gap-2 rounded-xl bg-card shadow-card p-4">
               <h3 className="text-[0.8125rem] font-semibold">{t('所在工作流')}</h3>
               {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
               {usedIn.map(({ w, role }) => (

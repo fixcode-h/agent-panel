@@ -105,7 +105,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
 
 const ComfyNode = memo(function ComfyNode({ data }: NodeProps<Node<NodeData>>) {
   return (
-    <div className="w-[260px] rounded-xl border bg-card text-[0.75rem] shadow-card">
+    <div className="w-[260px] rounded-xl bg-card shadow-card text-[0.75rem] shadow-card">
       <div className="flex items-baseline gap-2 border-b px-3 py-2">
         <span className="min-w-0 flex-1 truncate font-medium" title={data.type}>
           {data.title || data.type}
@@ -250,7 +250,7 @@ export function ComfyGraphView({
     [graph],
   )
   return (
-    <div ref={box} className="overflow-hidden rounded-xl border bg-field/40" style={{ height }}>
+    <div ref={box} className="overflow-hidden rounded-xl bg-sel/40" style={{ height }}>
       <ReactFlowProvider>
         <GraphCanvas
           nodes={nodes}

@@ -149,7 +149,7 @@ export function BundledDetail({
             )}
           </div>
           <div className="flex flex-col gap-3 lg:flex-row">
-            <div className="flex min-w-0 flex-col gap-0.5 rounded-xl border bg-card p-1.5 lg:w-[260px] lg:shrink-0">
+            <div className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-card shadow-card p-1.5 lg:w-[260px] lg:shrink-0">
               {/* 主文件也列在树里：自带技能的内容只读，不存在「主文件在别处编辑」 */}
               <button
                 type="button"
@@ -206,7 +206,7 @@ export function BundledDetail({
               ) : (
                 <>
                   <span className="truncate font-mono text-[0.75rem] text-subtle">{file.path || 'SKILL.md'}</span>
-                  <pre className="max-h-[min(60vh,560px)] overflow-auto rounded-xl border bg-card p-4 font-mono text-[0.78125rem] leading-relaxed whitespace-pre-wrap">
+                  <pre className="max-h-[min(60vh,560px)] overflow-auto rounded-xl bg-card shadow-card p-4 font-mono text-[0.78125rem] leading-relaxed whitespace-pre-wrap">
                     {file.content}
                   </pre>
                 </>

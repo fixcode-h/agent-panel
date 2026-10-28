@@ -31,7 +31,7 @@ export function ScheduleEmpty({
 
       <ol className="grid w-full max-w-[620px] gap-2 text-left sm:grid-cols-3">
         {steps.map((step, i) => (
-          <li key={step.title} className="flex gap-2 rounded-xl border bg-card px-3 py-2.5">
+          <li key={step.title} className="flex gap-2 rounded-xl bg-card shadow-card px-3 py-2.5">
             <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field text-[0.6875rem] font-semibold text-muted tabular-nums">
               {i + 1}
             </span>
@@ -43,7 +43,7 @@ export function ScheduleEmpty({
         ))}
       </ol>
 
-      <div className="flex w-full max-w-[420px] flex-col gap-3 rounded-xl border bg-card p-4 text-left">
+      <div className="flex w-full max-w-[420px] flex-col gap-3 rounded-xl bg-card shadow-card p-4 text-left">
         <div>
           <p className="flex items-center gap-1.5 text-[0.8125rem] font-semibold">
             <Sparkles className="h-3.5 w-3.5 text-accent" />

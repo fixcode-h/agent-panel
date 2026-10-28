@@ -217,7 +217,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
             </Button>
           </div>
         ) : (
-          <div className="mt-8 flex flex-col gap-5 rounded-2xl border bg-card p-6 shadow-card">
+          <div className="mt-8 flex flex-col gap-5 rounded-2xl bg-card p-6 shadow-card">
             <label className="flex flex-col gap-1.5">
               <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
               <Input

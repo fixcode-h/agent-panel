@@ -70,7 +70,7 @@ function RunCardBase({
       onClick={onOpen}
       title={t('打开这次运行的对话')}
       data-run={run}
-      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-left shadow-card transition-colors hover:border-line-strong hover:bg-sel/40"
+      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-card px-4 py-3 text-left shadow-card transition-colors hover:border-line-strong hover:bg-sel/40"
     >
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-field">
         {state === 'running' ? (

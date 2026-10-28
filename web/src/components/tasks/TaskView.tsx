@@ -2643,7 +2643,7 @@ function ChildrenBar({
                       onClick={() => onOpen(c.id)}
                       title={`${c.title}${line ? ` · ${line}` : ''}${stale ? ` · ${stale.text}` : ''}${gone ? ` · ${gone}` : ''}`}
                       className={cn(
-                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                        'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg bg-card shadow-card px-2.5 text-xs transition-colors hover:bg-sel',
                         c.id === openChild ? 'border-line-strong' : 'border-line',
                       )}
                     >

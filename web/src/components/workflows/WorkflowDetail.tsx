@@ -310,7 +310,7 @@ export function WorkflowDetail({
         }
         aside={
           <>
-            <section className="rounded-xl border bg-card p-4">
+            <section className="rounded-xl bg-card shadow-card p-4">
               <h3 className="mb-3 text-[0.8125rem] font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
@@ -391,7 +391,7 @@ function ExposeEditor({
   return (
     <div className="flex flex-col gap-3">
       {value.map((e, i) => (
-        <div key={i} className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
+        <div key={i} className="flex flex-col gap-2 rounded-xl bg-sel/40 p-3">
           <div className="flex flex-wrap gap-2">
             <Input
               className="h-9 flex-[1_1_120px]"

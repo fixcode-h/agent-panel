@@ -44,7 +44,7 @@ export function DesignAnalysisCard({
         : analysis.findings.filter((f) => f.area === a.area),
   }))
   return (
-    <div className="mt-1.5 rounded-xl border bg-card/70 p-2.5 shadow-card">
+    <div className="mt-1.5 rounded-xl bg-card shadow-card/70 p-2.5 shadow-card">
       <div className="flex items-center gap-1.5 px-0.5 text-[0.78125rem] font-medium">
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
         <span className="min-w-0 flex-1">{t('AI 分析结果')}</span>

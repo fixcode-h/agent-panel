@@ -167,7 +167,7 @@ function ProjectHome({ project }: { project: Project }) {
                       <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
                     )}
                   </h2>
-                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
                     {g.items.map((tk) => (
                       <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
                     ))}

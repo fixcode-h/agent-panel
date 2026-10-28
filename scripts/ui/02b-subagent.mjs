@@ -718,6 +718,15 @@ await runShard(import.meta.filename, async (api) => {
             await settle(p)
             await row('核对通知时序').click()
             await p.waitForTimeout(5000)
+            // 中间又换成了子对话：切回父对话、展开浮层再看那一行，否则行不在、断言等于空测
+            await p.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
+            await settle(p)
+            if ((await bar.getAttribute('aria-expanded')) !== 'true') await bar.click()
+            await allTab.click()
+            await settle(p)
+            await row(DONE_CHILD)
+              .waitFor({ timeout: 5000 })
+              .catch(() => {})
             if (await dot(DONE_CHILD).count()) errors.push('子对话未读点：点开看过以后，轮询又把未读点画回来了')
             await check(p, '子对话-未读点消失', [DONE_CHILD])
           }

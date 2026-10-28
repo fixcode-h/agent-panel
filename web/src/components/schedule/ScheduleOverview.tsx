@@ -25,7 +25,7 @@ export function ScheduleOverview({
   return (
     <section
       aria-label={t('计划概览')}
-      className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border bg-card px-4 py-3"
+      className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl bg-card shadow-card px-4 py-3"
     >
       <div className="min-w-0 flex-1">
         <p className="text-xs text-subtle">{t('下一次执行')}</p>

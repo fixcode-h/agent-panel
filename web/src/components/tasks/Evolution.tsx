@@ -456,7 +456,7 @@ export function EvolutionReport({
       />
     ) : undefined
   const changeList = (list: ResolvedChange[]) => (
-    <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
+    <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg bg-card shadow-card">
       {list.map((r, i) => (
         <ChangeRow key={i} r={r} busy={busy} onApply={() => apply([r])} source={sourceButton(r)} />
       ))}
@@ -512,7 +512,7 @@ export function EvolutionReport({
                   {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
                   <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
                 </div>
-                <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg border bg-card">
+                <ul className="mx-3 flex flex-col divide-y overflow-hidden rounded-lg bg-card shadow-card">
                   {g.items.map((f, i) => (
                     <IssueRow
                       key={i}
@@ -571,7 +571,7 @@ export function EvolutionReport({
         </div>
       )}
       {pending.length > 1 && (
-        <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg border bg-field/50 px-3 py-2.5">
+        <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg bg-sel/40 px-3 py-2.5">
           <span className="min-w-0 flex-1 text-xs text-subtle">
             {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
           </span>

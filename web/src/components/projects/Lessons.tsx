@@ -217,7 +217,7 @@ export function LessonsEditor({
         {shown.map((l) => {
           const expanded = open === l.id || !l.title.trim()
           return (
-            <li key={l.id} className={cn('rounded-xl border bg-card', !l.enabled && 'opacity-60')}>
+            <li key={l.id} className={cn('rounded-xl bg-card shadow-card', !l.enabled && 'opacity-60')}>
               <div className="flex items-center gap-2 px-3 py-2">
                 <button
                   type="button"
@@ -657,7 +657,7 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
           {t('还没有教训。角色被纠正、或发现自己走了弯路换了做法时，会自己记一条，下次就不再犯。')}
         </EmptyPanel>
       ) : (
-        <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+        <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-card shadow-card">
           {recent.map((l) => (
             <li key={l.id}>
               <button
@@ -787,7 +787,7 @@ export function GlobalLessonsSection() {
         {draft.map((l) => {
           const expanded = open === l.id || !l.title.trim()
           return (
-            <li key={l.id} className={cn('rounded-xl border bg-card', !l.enabled && 'opacity-60')}>
+            <li key={l.id} className={cn('rounded-xl bg-card shadow-card', !l.enabled && 'opacity-60')}>
               <div className="flex items-center gap-2 px-3 py-2">
                 <button
                   type="button"
@@ -835,7 +835,7 @@ export function GlobalLessonsSection() {
         })}
       </ul>
       {dirty && (
-        <div className="sticky bottom-0 flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 shadow-pop">
+        <div className="sticky bottom-0 flex items-center gap-2 rounded-xl bg-card px-4 py-2.5 shadow-pop">
           <span className="flex-1 text-xs text-muted">{t('有未保存的修改，确认后才会生效')}</span>
           <Button size="sm" variant="ghost" onClick={() => setDraft(saved)}>
             {t('撤销')}

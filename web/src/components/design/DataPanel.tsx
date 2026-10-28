@@ -269,7 +269,7 @@ function SetCard({
 }) {
   const cols = `2rem repeat(${Math.max(1, set.fields.length)}, minmax(112px, 1fr)) 2rem`
   return (
-    <section className="overflow-hidden rounded-xl border bg-card shadow-card">
+    <section className="overflow-hidden rounded-xl bg-card shadow-card">
       {/* 整行都能折叠/展开；改名输入框和删除按钮阻止冒泡，避免误触 */}
       <header
         className={cn('flex cursor-pointer items-center gap-2 px-3 py-2', !collapsed && 'border-b')}

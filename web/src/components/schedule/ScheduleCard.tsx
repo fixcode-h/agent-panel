@@ -96,7 +96,7 @@ export function ScheduleCard({
   const longError = errorText.length > ERROR_PREVIEW_CHARS || s.lastError.includes('\n')
 
   return (
-    <li className="relative overflow-hidden rounded-xl border bg-card">
+    <li className="relative overflow-hidden rounded-xl bg-card shadow-card">
       <span aria-hidden className={cn('absolute inset-y-0 left-0 w-[3px]', GROUP_TONE[groupOf(s)])} />
       <div className="flex flex-col gap-3 py-3.5 pr-4 pl-5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
