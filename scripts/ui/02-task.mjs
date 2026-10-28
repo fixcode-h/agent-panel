@@ -9,7 +9,7 @@
  */
 
 import { runShard } from './harness.mjs'
-import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
+import { closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 /** 判定「窗口停在顶部」的 scrollTop 容差：滚动条贴顶时就是 0，留一点给像素取整 */
 const SCROLL_TOP_EPS = 2
