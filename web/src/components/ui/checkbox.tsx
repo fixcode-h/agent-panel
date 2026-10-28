@@ -36,7 +36,9 @@ export function Checkbox({
       <span
         className={cn(
           'mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[5px] border transition-colors',
-          checked ? 'border-accent bg-accent text-white' : 'border-line-strong bg-field group-hover:border-subtle',
+          checked
+            ? 'border-primary bg-primary text-on-primary'
+            : 'border-line-strong bg-field group-hover:border-subtle',
         )}
       >
         {checked && <Check className="h-3 w-3" strokeWidth={3} />}

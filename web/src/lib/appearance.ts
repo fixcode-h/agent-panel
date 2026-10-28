@@ -1,4 +1,4 @@
-import { Appearance } from '@shared/schema'
+import { Appearance, type Palette } from '@shared/schema'
 
 const CJK = {
   noto: ["'Noto Sans SC'", "'PingFang SC'", "'Microsoft YaHei'"],
@@ -55,6 +55,16 @@ export function ensureCjkFont(cjkFont: Appearance['cjkFont']) {
   cjkLoad = import('../fonts-cjk.css').catch(() => null)
 }
 
+/** 记下的配色：index.html 加载时先套上，免得设置取回来前闪一下默认配色 */
+const PALETTE_KEY = 'appearance-palette'
+
+/** 配色挂在 html 的 data-palette 上，index.css 按它选覆盖块；默认配色不挂属性 */
+export function applyPalette(p: Palette) {
+  const el = document.documentElement
+  if (p === 'claude') delete el.dataset.palette
+  else el.dataset.palette = p
+}
+
 /** 记下的中文字体选择：index.html 存的那份是 CSS 变量，取不出这个字段，单独记一个 */
 const CJK_KEY = 'appearance-cjk'
 
@@ -76,8 +86,10 @@ export function applyAppearance(a: Appearance | undefined) {
   ensureCjkFont(parsed.cjkFont)
   const root = document.documentElement.style
   for (const [k, v] of Object.entries(vars)) root.setProperty(k, v)
+  applyPalette(parsed.palette)
   try {
     localStorage.setItem('appearance', JSON.stringify(vars))
+    localStorage.setItem(PALETTE_KEY, parsed.palette)
     localStorage.setItem(CJK_KEY, parsed.cjkFont)
   } catch {
     // 浏览器不让存就算了，只是加载时会闪一下

@@ -69,8 +69,23 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
-  await p.getByRole('button', { name: '字体', exact: true }).click()
-  await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
+  await p.getByRole('button', { name: '外观', exact: true }).click()
+  await check(p, '设置-外观', ['配色', 'Claude（默认）', '中性', 'Maple Mono NL', '字间距', '空格宽度'])
+  // 换配色：html 上挂 data-palette，主按钮颜色跟着变；换回默认配色时属性去掉
+  await p.getByRole('radio', { name: '中性' }).click()
+  if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== 'neutral')
+    errors.push('设置-外观：选「中性」后 html 上应该挂 data-palette="neutral"')
+  await check(p, '设置-外观-中性配色')
+  await p.getByRole('radio', { name: 'Claude（默认）' }).click()
+  if ((await p.evaluate(() => document.documentElement.dataset.palette)) !== undefined)
+    errors.push('设置-外观：换回默认配色后 html 上不应该再有 data-palette')
+  // 组件页：通用部件都画出来；页签可以关掉、关掉后回到第一个
+  await p.getByRole('button', { name: '组件', exact: true }).click()
+  await check(p, '设置-组件', ['StatusPill', 'TabBar · TabItem', 'RowShell', 'InlineChip', 'ReplyHeader'])
+  const sample = p.getByRole('tablist', { name: '示例页签' })
+  await sample.getByRole('tab', { name: /代码审查/ }).click()
+  await sample.getByRole('button', { name: '关闭页签' }).first().click()
+  if ((await sample.getByRole('tab').count()) !== 2) errors.push('设置-组件：关掉示例页签后应该剩 2 个页签')
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新
