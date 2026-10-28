@@ -9,30 +9,45 @@ import { lines } from './parsers.ts'
 const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
 
 /**
- * 面板自己往任务目录里放的东西不算 Agent 的改动：附件拷进 attachments/ 后
- * git 会把它当未跟踪文件列出来，看起来像是 Agent 新加的文件。
+ * 面板自己往任务目录里放的东西不算 Agent 的改动：拷进对话目录的图片会让 git
+ * 把它当未跟踪文件列出来，看起来像是 Agent 新加的文件。
+ * 排除名单由调用方从任务上记的 placedAttachments 传进来（见 server/attachments.ts），不按文件名猜。
  */
-const PANEL_DIR = /^attachments\//
+export type PlacedFiles = Iterable<string>
+
+/** 相对路径按 git 的样子写（`/` 分隔、去掉开头的 `./`），和 ls-files 的输出对得上 */
+const relPath = (p: string) => (p.startsWith('./') ? p.slice(2) : p).split(path.sep).join('/')
+
+/** 只收任务目录里的相对路径：绝对路径和带 `..` 的一律不算，免得排除到别处去 */
+function placedSet(ignore?: PlacedFiles) {
+  const out = new Set<string>()
+  for (const p of ignore ?? []) {
+    const rel = relPath(p)
+    if (rel && !rel.startsWith('/') && !/^[A-Za-z]:/.test(rel) && !rel.split('/').includes('..')) out.add(rel)
+  }
+  return out
+}
 
 /**
  * 当前未提交的改动：path → "增加/删除" 行数。不是 git 仓库时返回 null。
  * 包含未跟踪的新文件（按行数算新增）。
  */
-export async function gitNumstat(cwd: string, ref = ''): Promise<Record<string, string> | null> {
+export async function gitNumstat(cwd: string, ref = '', ignore?: PlacedFiles): Promise<Record<string, string> | null> {
   const inside = await git(cwd, 'rev-parse', '--is-inside-work-tree')
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
   // 和任务开始时的提交比：Agent 自己提交了的改动也算在内，不会因为提交就从「更改」里消失
   const base = ref && (await git(cwd, 'cat-file', '-e', `${ref}^{commit}`)).code === 0 ? ref : 'HEAD'
   const hasBase = (await git(cwd, 'rev-parse', '--verify', base)).code === 0
   const diff = await git(cwd, 'diff', '--numstat', ...(hasBase ? [base] : ['--cached']))
+  const skip = placedSet(ignore)
   const out: Record<string, string> = {}
   for (const line of diff.stdout.split('\n')) {
     const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/)
-    if (m) out[m[3]] = `${m[1] === '-' ? 0 : m[1]}/${m[2] === '-' ? 0 : m[2]}`
+    if (m && !skip.has(relPath(m[3]))) out[m[3]] = `${m[1] === '-' ? 0 : m[1]}/${m[2] === '-' ? 0 : m[2]}`
   }
   const untracked = await git(cwd, 'ls-files', '--others', '--exclude-standard')
   for (const p of untracked.stdout.split('\n').filter(Boolean).slice(0, 300)) {
-    if (PANEL_DIR.test(p)) continue
+    if (skip.has(relPath(p))) continue
     try {
       const full = path.join(cwd, p)
       const s = await stat(full)
@@ -54,8 +69,9 @@ export async function gitChanges(
   cwd: string,
   baseline: Record<string, string>,
   ref = '',
+  ignore?: PlacedFiles,
 ): Promise<FileChange[] | null> {
-  const now = await gitNumstat(cwd, ref)
+  const now = await gitNumstat(cwd, ref, ignore)
   if (!now) return null
   return Object.entries(now)
     .filter(([p, v]) => baseline[p] !== v)
@@ -150,15 +166,16 @@ export async function branchCommits(cwd: string, ref: string, max = 20): Promise
  * 工作区现在的样子写成一棵树（含没跟踪的新文件），用一个临时暂存区，不碰真正的暂存区和提交。
  * 评审要「上一轮评审之后改了什么」：记下这棵树，下一轮和它比就是增量。读不出来返回空
  */
-export async function gitSnapshot(cwd: string): Promise<string> {
+export async function gitSnapshot(cwd: string, ignore?: PlacedFiles): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), 'ap-snap-'))
   const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') }
   const run = (...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd, env, 30_000)
   try {
     const head = (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0
     if (head && (await run('read-tree', 'HEAD')).code !== 0) return ''
-    // 面板放进来的附件不是改动（见 PANEL_DIR）
-    if ((await run('add', '-A', '--', '.', ':(exclude)attachments')).code !== 0) return ''
+    // 面板放进来的附件不是改动（见 placedSet）；literal 让文件名里的 * ? [ 按字面比较
+    const paths = ['.', ...[...placedSet(ignore)].map((p) => `:(exclude,literal)${p}`)]
+    if ((await run('add', '-A', '--', ...paths)).code !== 0) return ''
     const tree = await run('write-tree')
     return tree.code === 0 ? tree.stdout.trim() : ''
   } finally {
@@ -199,8 +216,8 @@ const skipSpecs = REVIEW_SKIP.map((p) => `:(exclude,glob)**/${p}`)
  * 每处改动只带前后几行（不用 -W 带整个函数）：评审只评改动的行，几千行的组件整个函数塞进去既撑大提示词，
  * 又引着它去评没改的代码。太长时退回更少的上下文，仍太长由调用方存文件
  */
-export async function reviewDiff(cwd: string, ref: string, since = '', files?: string[]) {
-  const snapshot = await gitSnapshot(cwd)
+export async function reviewDiff(cwd: string, ref: string, since = '', files?: string[], ignore?: PlacedFiles) {
+  const snapshot = await gitSnapshot(cwd, ignore)
   if (!snapshot) return null
   const from = since || (await baseOf(cwd, ref))
   if (!from) return null

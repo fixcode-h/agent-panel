@@ -120,7 +120,7 @@ import {
   setViewer,
 } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
-import { placeAttachments, relativeAttachName } from './attachments.ts'
+import { placedFiles, placeAttachments, relativeAttachName } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore, messageChars } from './task-store.ts'
 import {
@@ -548,15 +548,21 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 附件拷进任务自己的执行目录，路径换成相对 Agent 的那一份。
+   * 图片附件拷进任务自己的执行目录，路径换成相对 Agent 的那一份。
    * Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
+   * 拷进来的文件名记在任务上（placedAttachments）：统计 git 改动时排除它们，再次执行时复用同一份。
    */
-  async function placeInTask(tk: Pick<Task, 'worktree' | 'projectId' | 'id'>, attachments: Attachment[]) {
+  async function placeInTask(
+    tk: Pick<Task, 'worktree' | 'projectId' | 'id' | 'placedAttachments'>,
+    attachments: Attachment[],
+  ) {
     if (!attachments.length) return attachments
     const dir = await taskDir(tk)
     if (!dir) return attachments
     if (!tk.projectId && !isolated(tk)) await mkdir(dir, { recursive: true })
-    return placeAttachments(dir, attachments)
+    const r = await placeAttachments(dir, attachments, tk.placedAttachments)
+    Object.assign(tk.placedAttachments, r.placed)
+    return r.attachments
   }
 
   /**
@@ -743,7 +749,7 @@ export function tasksApi(deps: {
       tk.worktree = r.worktree
       // 改动从重建这一刻重新算：之前的改动已经合回原分支了
       tk.baseRef = await gitHead(r.worktree.path).catch(() => tk.baseRef)
-      tk.baseline = (await gitNumstat(r.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+      tk.baseline = (await gitNumstat(r.worktree.path, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? {}
       tk.updatedAt = new Date().toISOString()
       await store.update(tk.id, tk)
       log.info('task', '重建了独立分支的工作区', {
@@ -808,7 +814,7 @@ export function tasksApi(deps: {
     }
     tk.wantsWorktree = false
     tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
-    tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+    tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? {}
     return ''
   }
 
@@ -1525,7 +1531,7 @@ export function tasksApi(deps: {
     // 面板补的事实（提交、改动文件）现在就读：合回去以后分支和目录会被删掉
     const [commits, changed] = await Promise.all([
       branchCommits(wt.path, tk.baseRef).catch(() => []),
-      gitNumstat(wt.path, tk.baseRef).catch(() => null),
+      gitNumstat(wt.path, tk.baseRef, placedFiles(tk)).catch(() => null),
     ])
     const request = tk.messages.find((m) => m.role === 'user' && !m.step && !m.panel)?.text ?? ''
     tk.handoff = {
@@ -1783,7 +1789,7 @@ export function tasksApi(deps: {
     const why = inlineEditBlocker({ files, reason, merging, held, active: !!parent.inlineEdit })
     if (why) return { ok: false, info: why }
     const head = await gitHead(dir)
-    const baseline = await gitNumstat(dir, head)
+    const baseline = await gitNumstat(dir, head, placedFiles(parent))
     if (!baseline) return { ok: false, info: '这个目录不是 git 仓库，没法核对就地改动：交给子对话做' }
     parent.inlineEdit = { files, reason, startedAt: new Date().toISOString(), head, baseline }
     return {
@@ -1796,11 +1802,11 @@ export function tasksApi(deps: {
   async function endInlineEdit(parent: Task, dir: string) {
     const st = parent.inlineEdit
     if (!st) return { ok: true, info: '没有进行中的就地改动' }
-    const changes = (await gitChanges(dir, st.baseline, st.head)) ?? []
+    const changes = (await gitChanges(dir, st.baseline, st.head, placedFiles(parent))) ?? []
     // 清字段写 undefined（见 docs/lessons/data.md）
     parent.inlineEdit = undefined
     const r = inlineEditOverrun(st.files, changes)
-    const now = (await gitNumstat(dir)) ?? {}
+    const now = (await gitNumstat(dir, '', placedFiles(parent))) ?? {}
     const uncommitted = changes.map((c) => c.path).filter((p) => p in now && st.baseline[p] !== now[p])
     if (r.over) await panelAlert(parent.id, 'panel', inlineEditOverrunText(r), r.undeclared.join('、') || '')
     return {
@@ -3322,7 +3328,7 @@ export function tasksApi(deps: {
       // 工作区建不回来就别再跑下去了：runRealTurn 里只会报「项目目录不存在」，用户不知道该怎么办
       if (restoreErr) throw new Error(restoreErr)
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
-      const snapshot = await gitNumstat(project.path, entry.task.baseRef).catch(() => null)
+      const snapshot = await gitNumstat(project.path, entry.task.baseRef, placedFiles(entry.task)).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
       await runRealTurn({
         task: entry.task,
@@ -5630,7 +5636,7 @@ export function tasksApi(deps: {
     } catch (e) {
       return bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
     }
-    const changes = (await gitChanges(dir, tk.baseline, tk.baseRef).catch(() => null)) ?? tk.changes
+    const changes = (await gitChanges(dir, tk.baseline, tk.baseRef, placedFiles(tk)).catch(() => null)) ?? tk.changes
     return c.json(await store.update(id, { ...tk, changes }))
   })
 
