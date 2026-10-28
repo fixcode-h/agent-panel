@@ -174,7 +174,7 @@ test('对话目录里的路径和相对路径不用放行', () => {
   assert.deepEqual(attachmentAddDirs([], { cwd, uploadsRoot }), [])
 })
 
-test('旧消息里的 attachments/名字：按名字找回上传目录那一份，别的一概不认', () => {
+test('旧消息里的 attachments/名字：只认上传目录那一份，并进 git 排除名单', () => {
   assert.equal(relativeAttachName('attachments/截图-071747.png'), '截图-071747.png')
   assert.equal(relativeAttachName('attachments\\截图-071747.png'), '截图-071747.png')
   for (const bad of [
@@ -186,9 +186,7 @@ test('旧消息里的 attachments/名字：按名字找回上传目录那一份�
     '截图.png',
   ])
     assert.equal(relativeAttachName(bad), '', bad)
-})
 
-test('git 排除名单：新映射用文件名，旧消息里的 attachments/名字 也补上', () => {
   // 旧任务没有 placedAttachments，只存了 `attachments/名字`：升级后仍要排除当年拷进子目录的图片
   const old = { ...image(dir('old'), '旧.png'), path: `${ATTACH_DIR}/旧.png` }
   const abs = image(dir('abs'), '绝对.png')
