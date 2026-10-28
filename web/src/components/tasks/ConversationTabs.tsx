@@ -28,6 +28,7 @@ export function ConversationTabs({
   onOther,
   onCloseChild,
   onCloseRun,
+  mark,
   leading,
   trailing,
 }: {
@@ -47,6 +48,8 @@ export function ConversationTabs({
   onOther: () => void
   onCloseChild: () => void
   onCloseRun: () => void
+  /** 标题前的小标签（AI 分析开出的对话写「分析」），和普通对话一眼分开 */
+  mark?: ReactNode
   /** 页签前面的项目名入口（点开是项目下的对话） */
   leading?: ReactNode
   trailing: ReactNode
@@ -88,6 +91,7 @@ export function ConversationTabs({
             />
           }
         >
+          {mark && <span className="mr-1.5 inline-flex align-middle">{mark}</span>}
           {/* 对话（或名下子对话）有活着的 CLI：标题上流过一道高光 */}
           <span data-conv-title className={cn(cliTreeAlive(task) && 'cli-alive-title')}>
             {task.title}

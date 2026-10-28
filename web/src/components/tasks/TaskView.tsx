@@ -1988,6 +1988,7 @@ export function TaskView({
                     onCloseChild={() => openChildIn('')}
                     onCloseRun={() => openRunIn(0)}
                     leading={<ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />}
+                    mark={isAnalysisTask(task, localAgents) ? <AnalysisMark kind={task.analysis} /> : undefined}
                     trailing={
                       <>
                         {headerBadges}
