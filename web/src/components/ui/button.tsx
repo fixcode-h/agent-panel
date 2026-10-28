@@ -2,15 +2,15 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * 按钮：扁平，不加阴影和渐变。主操作用黑（深色模式反白），颜色留给状态；
- * 次要按钮白底细边框，ghost 只有文字和悬停底色
+ * 按钮：扁平，不加阴影、渐变和描边（照 Claude 的界面，边界靠底色分）。
+ * 主操作用配色的 primary；次要按钮浅灰底；ghost 只有文字和悬停底色
  */
 const variants = {
   primary: 'bg-primary text-on-primary hover:opacity-90 active:opacity-80',
-  secondary: 'bg-card text-fg border border-line-strong hover:bg-sel/60',
+  secondary: 'bg-sel/70 text-fg hover:bg-sel',
   ghost: 'text-muted hover:text-fg hover:bg-sel',
   danger: 'bg-danger text-white hover:opacity-90 active:opacity-80',
-  'danger-outline': 'bg-card text-danger border border-line-strong hover:bg-danger/10',
+  'danger-outline': 'bg-danger/10 text-danger hover:bg-danger/15',
 }
 const sizes = {
   sm: 'h-8 px-2.5 text-[0.8125rem] gap-1.5',

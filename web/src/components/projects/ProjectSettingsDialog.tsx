@@ -138,7 +138,7 @@ export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
     <D.Close
       aria-label={label}
       title={`${label}（Esc）`}
-      className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg border border-line-strong bg-field text-muted transition-colors hover:border-fg/30 hover:bg-sel hover:text-fg"
+      className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sel hover:text-fg"
     >
       <X className="h-[18px] w-[18px]" strokeWidth={2} />
     </D.Close>

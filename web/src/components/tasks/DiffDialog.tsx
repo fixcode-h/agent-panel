@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { DIFF_GUTTER, DIFF_HUNK, DIFF_TONE } from '@/components/ui/diff-tone'
 import { diffStats, inlineDiff, numbered, sideBySide, type InlinePart, type NumberedLine, type Row } from './diff-rows'
 
 type Diff = Awaited<ReturnType<typeof api.taskDiff>>
@@ -275,7 +276,7 @@ function Inline({ parts, side }: { parts: InlinePart[]; side: 'left' | 'right' }
     <>
       {parts.map((p, i) =>
         p.changed ? (
-          <span key={i} className={cn('rounded-[2px]', side === 'left' ? 'bg-danger/25' : 'bg-success/25')}>
+          <span key={i} className={side === 'left' ? DIFF_TONE.del.mark : DIFF_TONE.add.mark}>
             {p.text}
           </span>
         ) : (
@@ -308,13 +309,7 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
         {rows.slice(0, shown).map((r, i) => {
           if (r.kind === 'hunk')
             return (
-              <div
-                key={i}
-                className={cn(
-                  'col-span-2 border-y border-line/60 bg-field px-3 py-0.5 text-subtle',
-                  wrap ? WRAP : 'whitespace-pre',
-                )}
-              >
+              <div key={i} className={cn('col-span-2', DIFF_HUNK, wrap ? WRAP : 'whitespace-pre')}>
                 {r.l}
               </div>
             )
@@ -334,27 +329,17 @@ function SplitView({ rows, wrap, shown }: { rows: Row[]; wrap: boolean; shown: n
           const inline = changed ? inlineDiff(r.left!.l, r.right!.l) : null
           const cell = (side: 'left' | 'right', c?: { n: number; l: string }, other?: { n: number; l: string }) => {
             const tone = !c
-              ? 'bg-field/40'
+              ? DIFF_TONE.none
               : !other || c.l !== other.l
                 ? side === 'left'
-                  ? 'bg-danger/10'
-                  : 'bg-success/10'
-                : ''
+                  ? DIFF_TONE.del
+                  : DIFF_TONE.add
+                : DIFF_TONE.ctx
             return (
-              <div
-                key={`${i}-${side}`}
-                className={cn(
-                  'flex min-w-0',
-                  wrap ? WRAP : 'whitespace-pre',
-                  tone,
-                  side === 'left' && 'border-r border-line/70',
-                )}
-              >
-                {/* 行号列固定宽度：折行时只有内容往下走，行号不跟着挪位 */}
-                <span className="w-10 shrink-0 select-none pr-2 text-right text-subtle/60 tabular-nums">
-                  {c?.n ?? ''}
-                </span>
-                <span className={cn('min-w-0 flex-1 pr-4', wrap && WRAP)}>
+              <div key={`${i}-${side}`} className={cn('flex min-w-0', wrap ? WRAP : 'whitespace-pre', tone.row)}>
+                {/* 行号列固定宽度：折行时只有内容往下走，行号不跟着挪位；它的底色也是左右两栏的分界 */}
+                <span className={cn(DIFF_GUTTER, tone.gutter)}>{c?.n ?? ''}</span>
+                <span className={cn('min-w-0 flex-1 pr-4 pl-3', wrap && WRAP)}>
                   {c ? (
                     inline ? (
                       <Inline parts={side === 'left' ? inline.left : inline.right} side={side} />
@@ -382,10 +367,7 @@ function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolea
       {rows.slice(0, shown).map((r, i) => {
         if (r.l.startsWith('@@'))
           return (
-            <div
-              key={i}
-              className={cn('border-y border-line/60 bg-field px-3 py-0.5 text-subtle', wrap ? WRAP : 'whitespace-pre')}
-            >
+            <div key={i} className={cn(DIFF_HUNK, wrap ? WRAP : 'whitespace-pre')}>
               {r.l}
             </div>
           )
@@ -398,22 +380,13 @@ function UnifiedView({ rows, wrap, shown }: { rows: NumberedLine[]; wrap: boolea
               {r.l}
             </div>
           )
-        const add = r.l.startsWith('+')
-        const del = r.l.startsWith('-')
+        const tone = r.l.startsWith('+') ? DIFF_TONE.add : r.l.startsWith('-') ? DIFF_TONE.del : DIFF_TONE.ctx
         return (
-          <div
-            key={i}
-            className={cn('flex', wrap ? WRAP : 'whitespace-pre', add && 'bg-success/10', del && 'bg-danger/10')}
-          >
-            <span className="w-10 shrink-0 select-none pr-2 text-right text-subtle/60 tabular-nums">{r.a ?? ''}</span>
-            <span className="w-10 shrink-0 select-none pr-2 text-right text-subtle/60 tabular-nums">{r.b ?? ''}</span>
-            <span
-              className={cn(
-                'w-5 shrink-0 select-none text-center',
-                add ? 'text-success' : del ? 'text-danger' : 'text-subtle/40',
-              )}
-            >
-              {add ? '+' : del ? '-' : ' '}
+          <div key={i} className={cn('flex', wrap ? WRAP : 'whitespace-pre', tone.row)}>
+            <span className={cn(DIFF_GUTTER, tone.gutter)}>{r.a ?? ''}</span>
+            <span className={cn(DIFF_GUTTER, tone.gutter)}>{r.b ?? ''}</span>
+            <span className={cn('w-5 shrink-0 select-none text-center', tone.sign)}>
+              {tone === DIFF_TONE.add ? '+' : tone === DIFF_TONE.del ? '-' : ' '}
             </span>
             <span className={cn('min-w-0 flex-1 pr-4', wrap && WRAP)}>{r.l.slice(1) || ' '}</span>
           </div>

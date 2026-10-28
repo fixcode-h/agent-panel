@@ -24,7 +24,7 @@ export function InlineChip({
   className?: string
 }) {
   const cls = cn(
-    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-md border bg-field px-1.5 align-top text-[0.78125rem] leading-none whitespace-nowrap',
+    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-md bg-sel/70 px-1.5 align-top text-[0.78125rem] leading-none whitespace-nowrap',
     onClick && 'cursor-pointer transition-colors hover:bg-sel',
     className,
   )
@@ -32,7 +32,7 @@ export function InlineChip({
     <>
       {icon && <span className="flex shrink-0 items-center text-subtle">{icon}</span>}
       <span className={cn('min-w-0 truncate', mono && 'font-mono text-[0.75rem]')}>{label}</span>
-      {status && <span className="shrink-0 border-l pl-1.5 text-[0.6875rem] text-subtle">{status}</span>}
+      {status && <span className="shrink-0 text-[0.6875rem] text-subtle">{status}</span>}
     </>
   )
   return onClick ? (
