@@ -915,7 +915,12 @@ await runShard('工作流条件与失败', async (api) => {
   )
   assert.equal(tAtt.messages[0].text, '看看这张图', '附件不写进消息正文')
   const kAtt = calls().at(-1)
-  assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
+  assert.match(
+    kAtt.input,
+    /## 附件[\s\S]*截图\.png：截图\.png（对话目录里的图片，相对路径）/,
+    '图片给的是对话目录里的相对文件名',
+  )
+  assert.ok(existsSync(path.join(projectDir, '截图.png')), '图片直接拷在对话目录根下')
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
   // 非图片的文件不再拷进对话目录：只在 uploads 里有一份，交给 Agent 的是原来的绝对路径
@@ -936,7 +941,7 @@ await runShard('工作流条件与失败', async (api) => {
   const docSection = kDoc.input.slice(kDoc.input.indexOf('## 附件'))
   assert.ok(docSection.includes(`- 需求.txt：${doc.path}`), `交给 Agent 的是原来的绝对路径：${docSection}`)
   assert.ok(!docSection.includes('attachments/需求.txt'), '不给相对路径')
-  assert.ok(!existsSync(path.join(projectDir, 'attachments', '需求.txt')), '文本文件不拷进对话目录')
+  assert.ok(!existsSync(path.join(projectDir, '需求.txt')), '文本文件不拷进对话目录')
   // 文件浏览：根信息不带全量文件，列一层才读一层，名称搜索能搜到还没展开的深层文件
   {
     mkdirSync(path.join(projectDir, 'src/api'), { recursive: true })

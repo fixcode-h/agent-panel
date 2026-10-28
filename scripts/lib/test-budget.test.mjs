@@ -6,6 +6,7 @@ import {
   TEST_BUDGET,
   checkBudget,
   commitMessageFor,
+  mergedChainMessages,
   newCasesFromDiff,
   overBudgets,
   parseBudgetNote,
@@ -91,6 +92,79 @@ test('预算：工作区有未提交改动时不用 HEAD 的说明，干净时�
   assert.equal(pendingTestChanges({ tracked: ' M scripts/lib/test-budget.mjs\n', untracked: [] }), true)
   assert.equal(pendingTestChanges({ tracked: '', untracked: ['server/exec/new.test.ts'] }), true)
   assert.equal(pendingTestChanges({ tracked: '', untracked: ['unit-tap.txt', 'node_modules/.cache/x.json'] }), false)
+})
+
+test('预算：合并提交的说明只有标题时，子提交里的「测试预算:」段也算本次的', () => {
+  const note = '测试预算:\n- 新增 2 条集成层用例，合并了 attachments.test.ts 里同输入的 2 条'
+  // 面板 / GitHub 生成的合并提交：HEAD 只有一行标题，预算段写在被合进来的子提交里
+  const merged = commitMessageFor({
+    headMessage: 'Agent 面板：合并「附图直接放对话目录，文件按绝对路径读」',
+    mergedMessages: ['内部：改了一处日志', `改进：合并用例\n\n${note}`],
+  })
+  assert.equal(parseBudgetNote(merged), note)
+  const counts = { ...atLimit(), integration: TEST_BUDGET.integration + 2 }
+  assert.equal(checkBudget({ counts, commitMessage: merged }).ok, true, '子提交的预算段能放行')
+
+  // 普通提交没有 mergedMessages：行为不变
+  assert.equal(commitMessageFor({ headMessage: '修复：设置弹窗位置' }), '修复：设置弹窗位置')
+  // HEAD 自己有预算段时用 HEAD 的，别拿子提交上一轮的说明顶替
+  assert.equal(
+    parseBudgetNote(
+      commitMessageFor({ headMessage: `改进：合并\n\n${note}`, mergedMessages: ['测试预算:\n- 旧的替代关系'] }),
+    ),
+    note,
+  )
+  // 子提交的标题不是分类前缀时，别把它的标题和正文并进 HEAD 的预算段
+  assert.equal(
+    parseBudgetNote(
+      commitMessageFor({
+        headMessage: `改进：合并\n\n${note}`,
+        mergedMessages: ['Agent 面板：合并「x」\n\n正文里也提一句测试预算的事'],
+      }),
+    ),
+    note,
+  )
+  // 工作区有未提交改动时，合并进来的说明也不能当本次的
+  assert.equal(commitMessageFor({ headMessage: 'x', mergedMessages: [note], hasUncommittedChanges: true }), '')
+})
+
+test('预算：合并链沿第二个父往下取说明，不横向读 base 上的段', () => {
+  const note = '测试预算:\n- 合并了 3 条同输入用例'
+  // GitHub PR merge → dev tip（面板的合并提交，只有标题）→ 子对话提交（段在这里）
+  const commits = {
+    'dev-tip': { parents: ['dev-base', 'sub'], message: 'Agent 面板：合并「附图直接放对话目录」' },
+    sub: { parents: ['sub-base'], message: `改进：合并用例\n\n${note}` },
+    // base 上的段不属于本次 PR：不能横向读过来放行
+    'dev-base': { parents: ['older'], message: '改进：主干前进\n\n测试预算:\n- 旧的替代关系' },
+  }
+  const getParents = (sha) => commits[sha]?.parents ?? []
+  const getMessage = (sha) => commits[sha]?.message ?? ''
+  const messages = mergedChainMessages({ tip: 'dev-tip', getParents, getMessage })
+  assert.deepEqual(messages, ['Agent 面板：合并「附图直接放对话目录」', `改进：合并用例\n\n${note}`])
+  assert.equal(parseBudgetNote(commitMessageFor({ headMessage: 'PR 标题', mergedMessages: messages })), note)
+
+  // tip 本身就是普通提交时只取它自己的说明
+  assert.deepEqual(mergedChainMessages({ tip: 'sub', getParents, getMessage }), [`改进：合并用例\n\n${note}`])
+})
+
+test('预算：合并链不沿第二父走进 base 侧，子分支 merge 过 base 时停在子分支提交', () => {
+  const oldNote = '测试预算:\n- 上一次的替代关系'
+  // 子分支自己 merge 过 dev：这种合并提交的第一父是子分支、第二父是 base 方向
+  const commits = {
+    subMerge: { parents: ['sub-prev', 'dev-old'], message: '改进：把 dev 合进子分支' },
+    'sub-prev': { parents: [], message: '改进：子分支上一个提交' },
+    'dev-old': { parents: ['dev-base', 'old-sub'], message: 'Agent 面板：合并「上一次」' },
+    'old-sub': { parents: ['dev-base'], message: `改进：上一次\n\n${oldNote}` },
+  }
+  const messages = mergedChainMessages({
+    tip: 'subMerge',
+    getParents: (sha) => commits[sha]?.parents ?? [],
+    getMessage: (sha) => commits[sha]?.message ?? '',
+    // dev-old 在 base 侧：再往下就是上一次改动，不是本次的
+    isBaseSide: (sha) => sha === 'dev-old',
+  })
+  assert.deepEqual(messages, ['改进：把 dev 合进子分支'])
+  assert.equal(parseBudgetNote(commitMessageFor({ headMessage: '合并标题', mergedMessages: messages })), '')
 })
 
 test('预算：从 diff 里取新增用例的位置，按 hunk 行号递增且只算新增行', () => {

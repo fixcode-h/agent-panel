@@ -47,6 +47,13 @@ export const BUDGET_NOTE_PREFIX = '测试预算:'
 const COMMIT_SECTIONS = /^(?:新功能|改进|修复|依赖|内部|测试预算)[:：]/
 
 /**
+ * 拼接多份提交说明时的分隔行。用分类前缀开头有两个作用：读起来知道下面换了一份说明，
+ * 同时让上一份的「测试预算:」段在这里结束——子提交标题通常不是分类前缀（例如「Agent 面板：…」），
+ * 不隔开的话它的标题和正文会被并进 HEAD 的预算段。
+ */
+const MERGED_MESSAGE_SEPARATOR = '内部：被合并进来的提交说明'
+
+/**
  * 取提交说明里的「测试预算:」段。没有就返回空字符串。
  * 段从 `测试预算:` 那行开始，到空行后的下一个分类前缀或说明结尾为止。
  */
@@ -95,9 +102,55 @@ export function overBudgets({ counts, budget = TEST_BUDGET }) {
  * 本次检查该看哪份提交说明：显式传入的优先（调用方已处理）；没有时只有工作区干净才用 HEAD 的说明。
  * 有未提交改动时 HEAD 是上一次提交——它的「测试预算:」段不属于本次改动，
  * 拿它当本次说明会静默放行超预算的新用例。
+ *
+ * HEAD 是合并提交时（面板合并子对话、GitHub 的 PR merge ref），它自己的说明通常只有一行标题，
+ * 被合进来的子提交里写的「测试预算:」段也要算本次的：mergedMessages 按顺序接在后面，
+ * parseBudgetNote 取第一个非空段。普通提交没有 mergedMessages，行为不变。
  */
-export function commitMessageFor({ headMessage = '', hasUncommittedChanges = false } = {}) {
-  return hasUncommittedChanges ? '' : headMessage
+export function commitMessageFor({ headMessage = '', mergedMessages = [], hasUncommittedChanges = false } = {}) {
+  if (hasUncommittedChanges) return ''
+  return [headMessage, ...mergedMessages]
+    .filter((m) => String(m ?? '').trim())
+    .join(`\n\n${MERGED_MESSAGE_SEPARATOR}\n\n`)
+}
+
+/**
+ * 合并链最多往下走几层。正常最多两层（GitHub 的 PR merge → dev 上的面板合并提交 → 子对话提交），
+ * 留余量并在超限时停下，避免异常数据（环、超长链）把检查拖住。
+ */
+export const MERGE_CHAIN_MAX_DEPTH = 10
+
+/**
+ * 合并提交时该读的说明：从被合进来的 tip 开始，是合并提交就继续取它的第二个父，直到普通提交。
+ *
+ * 只走第二个父这一侧，不横向读 base / 更早的兄弟提交——那些提交里的预算段不属于本次改动，
+ * 读了会把本次超预算的新用例误放行（复看 R2）。向下走是必要的：GitHub 的 PR merge ref 里
+ * parents[1] 是 dev tip，而 dev tip 往往又是面板生成的合并提交（说明只有标题），
+ * 真正的预算段在它自己的 parents[1] 里（复看 R3）。
+ *
+ * 往下走的前提是「第二父是被合进来的分支方向」，这个前提对面板 / GitHub 生成的合并不一定成立：
+ * 子分支自己 merge 过 dev 时，那一层合并提交的第二父是 base 方向，再往下就是上一次改动的历史。
+ * isBaseSide 用来在每一步判断第二父是否落在 base 侧，落在那里就停在当前提交（复看 R4）。
+ *
+ * getParents / getMessage / isBaseSide 由调用方接 git，单测里换成假数据。
+ */
+export function mergedChainMessages({
+  tip,
+  getParents,
+  getMessage,
+  isBaseSide = () => false,
+  maxDepth = MERGE_CHAIN_MAX_DEPTH,
+}) {
+  const messages = []
+  let sha = tip
+  for (let depth = 0; sha && depth < maxDepth; depth++) {
+    messages.push(getMessage(sha))
+    const parents = getParents(sha)
+    if (parents.length < 2) break
+    if (isBaseSide(parents[1])) break
+    sha = parents[1]
+  }
+  return messages
 }
 
 /**

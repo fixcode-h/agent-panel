@@ -39,7 +39,7 @@ import {
 } from '../../shared/task.ts'
 import { activePlan, inputUnhandled, planNotice } from '../../shared/plan.ts'
 import { effectiveTimeoutMinutes } from '../../shared/schedule.ts'
-import { attachmentAddDirs } from '../attachments.ts'
+import { attachmentAddDirs, placedFiles } from '../attachments.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { CACHE_DIR, HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
@@ -1412,7 +1412,7 @@ async function runAgent(
     gitTimer = setTimeout(async () => {
       gitTimer = undefined
       gitBusy = true
-      const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
+      const changes = await gitChanges(cwd, task.baseline, task.baseRef, placedFiles(task)).catch(() => null)
       gitBusy = false
       if (changes && !finished) {
         task.changes = changes
@@ -2158,7 +2158,7 @@ async function runAgent(
   if (asker && task.sessions[sessionKey])
     asker.turn = { session: task.sessions[sessionKey], id: turn.id, end: turn.end }
   if (ctx.isGit) {
-    const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
+    const changes = await gitChanges(cwd, task.baseline, task.baseRef, placedFiles(task)).catch(() => null)
     if (changes) {
       // 只在跑的节点的改动也会出现在差值里：只算 CLI 亲自报告的文件改动（Write、Edit 报的 file 事件）。
       // 没报告过文件的节点（只读调研、用命令写的）不加归因：差值里可能是并行子对话的改动，算给它就变成了它的改动
@@ -2883,10 +2883,12 @@ export async function runRealTurn(ctx: RealContext) {
             files ??
             (since
               ? undefined
-              : (await gitChanges(ctx.project.path, ctx.task.baseline, ctx.task.baseRef).catch(() => null))?.map(
-                  (c) => c.path,
-                ))
-          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own)
+              : (
+                  await gitChanges(ctx.project.path, ctx.task.baseline, ctx.task.baseRef, placedFiles(ctx.task)).catch(
+                    () => null,
+                  )
+                )?.map((c) => c.path))
+          const d = await reviewDiff(ctx.project.path, ctx.task.baseRef, since, own, placedFiles(ctx.task))
           if (!d) return null
           if (d.diff || !d.full) return { snapshot: d.snapshot, stat: d.stat, diff: d.diff }
           // 太长：完整差异存进交接目录，提示词里只给文件列表和路径

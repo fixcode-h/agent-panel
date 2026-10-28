@@ -144,6 +144,7 @@ export function newTask(
     plans: [],
     baseline: {},
     baseRef: '',
+    placedAttachments: {},
     workflows: wf ? snapshot : [],
     runs: [],
     skillSlots: wf ? skillSlots : {},

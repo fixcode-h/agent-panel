@@ -3,7 +3,7 @@
 - status: analyzed
 - source_paths: `server/`
 - entry: `server/index.ts`
-- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）
+- analyzed_at: 2026-10-27（本轮把「自动压缩上下文」的默认值从「按 Agent 自己的规则」（0）改成 70%，并给设置加了 `defaultsVersion` 迁移版本；同日新增「子对话把禁止子对话执行的角色转交父对话」一条，并合入同日「运行区展示正在跑的工作流」；测试步骤那条追加了「以项目当前设置为准」；同日第三轮把「打开一个对话页时服务端重复付的代价」里剩下的 P1 全部改成现在的行为，并补上 4200 条对话的实测与四个回归测试；同日补「版本更新」一节：GitHub 403 限流时回退缓存、ETag/304、冷却与 `GITHUB_TOKEN`）；2026-10-28 图片附件改为直接放对话目录根（不再有 attachments/ 子目录），git 的更改列表和评审差异按任务上记的 placedAttachments 排除面板图片
 
 ## 职责
 
@@ -139,15 +139,16 @@
 
 **给以后改这块的人**：新增数据文件时用 `writeJsonAtomic`，别直接 `writeFile`；判断「数据不存在」之前先想清楚「文件坏了」和「文件没有」是不是一回事，需要区分就用 `readJsonDetailed`，不要拿 `readJson` 的 `undefined` 同时表示两种含义。
 
-## 附件落盘：只有图片拷一份进对话目录，其它文件只引用原路径
+## 附件落盘：只有图片拷一份进对话目录根，其它文件只引用原路径
 
-- 只有图片（`shared/composer.ts` 的 `attachChip` 判出的 image：mime 是 `image/` 或扩展名是 png/jpeg/gif/webp/bmp）由 `server/attachments.ts` 的 `placeAttachments()` 拷进任务执行目录的 `attachments/`，提示里给相对路径；多张图片重名时加序号（`note (2).png`），超过 `MAX_ATTACHMENT_BYTES` 的图片不拷、保留原绝对路径。**其它文件（文本、代码、PDF、压缩包、音视频）一律不拷**，直接把原来的本机绝对路径交给 Agent；上传的文件只有 `~/.agent-panel/uploads/<uuid>/<名字>` 一份，任务目录里不出现第二份。`ref`（粘贴回来的路径）和 `quote`（引用原文落成的文件）本来就不拷。没有图片要拷时连 `attachments/` 目录都不建。
+- 只有图片（`shared/composer.ts` 的 `attachChip` 判出的 image：mime 是 `image/` 或扩展名是 png/jpeg/gif/webp/bmp）由 `server/attachments.ts` 的 `placeAttachments()` 拷进任务执行目录（对话目录）根下，提示里给的就是这个相对文件名（`截图-132004.png`）：Agent 的 cwd 就是这个目录，直接能读。重名时加序号（`note (2).png`），**对话目录里本来就有同名文件时也不覆盖**，同样加序号另起一个名字；同一个源文件再次放置时沿用任务上记的那份，不会越攒越多副本。超过 `MAX_ATTACHMENT_BYTES` 的图片不拷、保留原绝对路径。**其它文件（文本、代码、PDF、压缩包、音视频）一律不拷**，直接把原来的本机绝对路径交给 Agent；上传的文件只有 `~/.agent-panel/uploads/<uuid>/<名字>` 一份，任务目录里不出现第二份。`ref`（粘贴回来的路径）和 `quote`（引用原文落成的文件）本来就不拷。
+- 拷进来的文件名记在任务上（`Task.placedAttachments`：源文件绝对路径 → 对话目录里的文件名，由 `server/tasks.ts` 的 `placeInTask` 合并进去）。面板自己的文件不算 Agent 的改动：`server/exec/git.ts` 的 `gitNumstat` / `gitChanges` / `gitSnapshot` / `reviewDiff` 都收这份名单，统计「更改」、评审差异时排除它们。不按文件名或 `attachments/` 前缀猜（图片搬到根目录后 `PANEL_DIR` 正则已经失效，已删掉）；名单只认对话目录里的相对路径，绝对路径和带 `..` 的不算。旧任务没有 `placedAttachments`：`placedFiles()` 按消息里记的 `attachments/名字` 原样补进名单（仍是按记录推，不是靠前缀猜），升级后当年拷进子目录的图片也不会重新冒进「更改」列表。回归：`server/exec/git-ignore.test.ts`、`server/attachments.test.ts` 的排除名单用例。
 - 小文件的后台拷贝（`server/uploads.ts` 的 `POST /uploads/copy`、`POST /uploads/discard`）：浏览器选 / 拖 / 粘的文件只有文件名和大小，页面先走 `/uploads/locate` 找回原路径，再让服务端拷一份到 `~/.agent-panel/uploads/<uuid>/<名字>`（和上传同一套命名）。**只接受面板确认过的路径**：`pick` / `resolve` / `locate` 返回时把路径登记进内存里的 `confirmed`（24 小时、最多 5000 条），`/copy` 和 `/discard` 都只认这些路径——不能凭前端传来的一段任意字符串让服务端拷或删本机的文件。拷贝失败（被占用、权限、源文件在查找之后没了）或超过 `MAX_ATTACHMENT_BYTES` 的不在结果里返回，页面降级成引用原路径、不拦发送；`/discard` 只删附件目录里那一个副本目录（`uploadDirOf` 判过在 `UPLOADS_DIR` 下），没确认过的路径不删。回归：`server/uploads-copy.test.ts`。
 - 两种形态在提示里的说明由 `shared/task.ts` 的 `withAttachments` 按实际内容写：只有相对路径时说「图片已放进对话目录」，有绝对路径时说「本机绝对路径、直接读取」，免得模型把绝对路径当相对路径去找。
 - 用绝对路径的附件在执行目录之外，要放行的目录由 `attachmentAddDirs()` 按附件实际位置算：上传的合并成 uploads 根，粘贴路径引用的文件（`ref`）各自放行它所在的目录，执行目录里的和相对路径不放行。`server/exec/runner.ts` 建 `addDirs` 时取整个对话里的附件，设计会话（`server/designs.ts`）也调它，不再固定只放行 `UPLOADS_DIR`（以前 `ref` 引用的、在 worktree 执行时项目原目录里的文件会被挡掉）。实际用到的参数只有 Claude Code 的 `--add-dir`（`shared/clis.ts` 的 `addDirs`）；Codex 的 `--sandbox` 限制的是写和命令、读文件不受目录白名单限制，Command Code / Pi 的 CLI 定义里没有目录参数（permission 是工具批准模式），所以它们读绝对路径不需要额外参数。
 - 源文件被删掉或移走时读不到，附件只保留原路径：CLI 自己报找不到，不静默换成别的路径、也不把附件从消息里去掉——不拷贝的代价就是「源文件没了就读不到」，报错就是如实告知用户。设计会话（`designs.ts` 每轮建临时工作目录、结束后删）仍把附件复制进那个临时目录，因为设计工具按工作目录内的路径找图，和任务附件不是一回事。
 - 附件图片的缩略图（`server/thumbnail.ts`，挂在 `/api/uploads/raw` 的 `?w=` 上，`server/uploads.ts`）：消息里的卡片只有 1.25em 见方，却一直取原图（单张 100–300KB）。这里用 `server/image.ts` 已有的 PNG 解码 / 缩放 / 编码，**不引入图片库**：服务端要打成单文件（`scripts/package.mjs` 的 esbuild `bundle`），原生模块带不进去，纯 JS 的 JPEG 解码又要多一份依赖。缩略图缓存在 `<DATA_DIR>/cache/thumbs/<sha1(路径+大小+mtime+宽)>`（按文件大小和 mtime 而不是文件内容算 key，不用为了判断缓存是否新鲜先读一遍原图），同一张图的并发请求只算一次、解码缩放串行做（它是同步计算，一起来会把服务端卡住），响应带 `cache-control: private, max-age=86400`。解不开的格式（JPEG / WebP / 隔行扫描 PNG）和比目标还小的图返回 null，接口退回原图；看大图、复制图片、任务目录里的图（`/uploads/raw/file`）都不带 `w`。回归：`server/thumbnail.test.ts`。
-- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷贝、超上限的图片不拷、重名图片加序号、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录并给 `--add-dir`；文本文件不拷、给了原绝对路径）。
+- 回归：`server/attachments.test.ts`（文本/PDF 不拷、图片拷到对话目录根、超上限的图片不拷、重名图片加序号、目录里已有同名文件不覆盖、同一源文件复用、`ref` / `quote` 不拷、放行目录的计算）、`server/task-text.test.ts`（两种形态的说明）、`server/exec/git-ignore.test.ts`（面板图片不进更改列表和评审差异）、`scripts/e2e/05-workflow-edge.mjs` 的附件段（图片拷进对话目录根、提示里给相对文件名；文本文件不拷、给了原绝对路径）。
 
 ## 状态回收：面板重启后与页面宽限到期后
 

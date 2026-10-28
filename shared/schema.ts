@@ -1999,6 +1999,11 @@ export const TaskData = z.object({
   workflowName: z.string().default(''),
   /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
   baseRef: z.string().default(''),
+  /**
+   * 面板拷进对话目录的图片：消息里记的源文件绝对路径 → 对话目录里的文件名。
+   * 统计 git 改动时按它排除面板自己放进来的文件（不靠文件名猜），再次执行时也按它复用同一份拷贝。
+   */
+  placedAttachments: z.record(z.string(), z.string()).default({}),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
