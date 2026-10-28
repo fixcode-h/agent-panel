@@ -2554,6 +2554,19 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
       ? demoGenerate(id, seg[3], body ?? {})
       : demoDesigns(method, id, sub, body ?? {})
   if (res === 'schedules') return demoSchedules(method, seg, body)
+  if (res === 'tasks' && id === 'disk')
+    return (d.tasks ?? []).map((tk) => ({
+      id: tk.id,
+      title: tk.title,
+      projectId: tk.projectId,
+      parentTaskId: tk.parentTaskId,
+      updatedAt: tk.updatedAt,
+      archived: !!tk.archived,
+      working: !!tk.working,
+      bytes: JSON.stringify(tk).length,
+    }))
+  // 演示没有真的 CLI 进程：保活列表一直是空的
+  if (res === 'tasks' && id === 'keepalive') return sub === 'release' ? { released: [] } : []
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
   // 演示里的 AI 不会请求确认，也不会提问
   if (res === 'asks') return method === 'GET' ? [] : { ok: true }

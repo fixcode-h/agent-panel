@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
+import { TurnMenu } from './TurnMenu'
 import { chatHelperIds, HelperBar } from './HelperCards'
 import { keepLiveFields } from '@/lib/live-fields'
 import { latestTurnIndex } from '@/lib/latest-turn'
@@ -167,6 +168,14 @@ type Block =
   | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
   /** 工作流的一次运行：节点输出去右边的面板里看 */
   | { kind: 'run'; key: string; run: number }
+
+/** 这一段里有哪些消息：轮次目录跳到某条消息时找它在第几段（被折叠在更早的段里时先显示出来） */
+function blockMsgIds(b: Block): string[] {
+  if (b.kind === 'msg') return [b.m.id]
+  if (b.kind === 'turn') return b.msgs.map((m) => m.id)
+  if (b.kind === 'steps') return [...b.byRoot.values()].flat().map((m) => m.id)
+  return []
+}
 
 /** 以前新建子对话时记的系统提示（中文、英文界面各一种写法） */
 const OLD_CREATED =
@@ -1145,6 +1154,17 @@ export function TaskView({
   // 刚发出的用户消息自己就是最后一段，那样运行区会在 AI 说出第一句话之前整块消失
   const latestTurn = useMemo(() => latestTurnIndex(blocks), [blocks])
   const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
+  // 轮次目录点一条：那一轮在更早没画出来的段里时先显示出来，画好后再按消息标记滚过去（见 message-anchor）
+  const jumpToTurn = (msgId: string) => {
+    const index = blocks.findIndex((b) => blockMsgIds(b).includes(msgId))
+    if (index >= 0) setLimit((l) => Math.max(l, blocks.length - index))
+    let tries = 0
+    const attempt = () => {
+      if (jumpToMessage(msgId) || ++tries >= ANCHOR_TRIES) return
+      setTimeout(attempt, ANCHOR_RETRY_MS)
+    }
+    requestAnimationFrame(attempt)
+  }
 
   // 消息真的画到屏幕上才算「渲染完成」：两帧之后记，第一帧 React 把消息写进 DOM，第二帧浏览器画出来。
   // 认任务 id：两条对话切得很快、或者消息还在增量推送时，旧的那次 rAF 不能把后一条记成已渲染
@@ -1714,6 +1734,7 @@ export function TaskView({
                       </>
                     )}
                     <ProcessMenu taskId={task.id} />
+                    {!isFlow && <TurnMenu msgs={task.messages} onJump={jumpToTurn} />}
                     {task.simulated && (
                       <span
                         title={t('没有真正调用 Agent，输出是示例')}

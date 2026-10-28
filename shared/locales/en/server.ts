@@ -533,4 +533,5 @@ export const EN_SERVER: Record<string, string> = {
   恢复的对话: 'Recovered conversation',
   '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
   '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
+  找不到这次工具调用: 'This tool call was not found',
 }

@@ -162,7 +162,7 @@ export function useWorktreeActions(rootId: string) {
   const remove = async (item: WorktreeItem) => {
     setBusy(item.taskId)
     try {
-      upsertTask(await api.discardWorktree(item.taskId))
+      upsertTask(await api.discardWorktreeSummary(item.taskId))
       toast.success(t('已删除独立分支 {name}', { name: item.branch }))
     } catch (e) {
       toast.error((e as Error).message)

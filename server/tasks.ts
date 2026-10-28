@@ -78,6 +78,8 @@ import {
   taskSettled,
   trashLeftDays,
   taskSummary,
+  liteMessages,
+  autoArchivePicks,
   withAttachments,
   withTaskModel,
   type ChildFlowStop,
@@ -504,6 +506,33 @@ export function tasksApi(deps: {
       })
     }
   })
+
+  /**
+   * 自动归档（设置里的 autoArchiveDays，默认关）：启动一分钟后看一次，之后每小时一次。
+   * 只改 archived，不动列表时间；归档的对话随时可以取消归档
+   */
+  async function autoArchive() {
+    const { autoArchiveDays } = await getSettings()
+    if (!autoArchiveDays) return
+    // 回收站里的不算：它们已经不在列表里了，到期会被物理删除
+    const all = (await store.list()).filter((x) => !taskDeleted(x))
+    const ids = autoArchivePicks(all, autoArchiveDays, Date.now(), (id) => live.has(id) || startQueue.has(id))
+    for (const id of ids) {
+      if (live.has(id)) continue
+      // 和手动归档一样：归档的对话不再接收结果，后台命令一起停掉。只改任务本身，不读写对话文件
+      await endBackground(id)
+      await store.updateMeta(id, { archived: true }, { keepUpdatedAt: true })
+    }
+    if (ids.length) log.info('task', '自动归档很久没动的对话', { 天数: autoArchiveDays, 对话: ids.length })
+  }
+  const archiveTimer = setTimeout(() => {
+    void autoArchive().catch((e) => log.warn('task', '自动归档失败', { error: (e as Error).message }))
+    setInterval(
+      () => void autoArchive().catch((e) => log.warn('task', '自动归档失败', { error: (e as Error).message })),
+      3_600_000,
+    ).unref()
+  }, 60_000)
+  archiveTimer.unref()
 
   /** Chat 模式的聊天在数据目录里各有一个空的工作目录，不碰任何项目 */
   const chatProject = (dir: string): Project => ({
@@ -4289,6 +4318,85 @@ export function tasksApi(deps: {
 
   const routes = new Hono()
 
+  /**
+   * 带 ?summary=1 时回的任务换成摘要（和列表一样）：侧栏改名、归档、暂停这些地方只用标题和状态，
+   * 原样回完整任务的话改个名也要把整段对话（长对话几 MB 到十几 MB）序列化、传给浏览器。
+   * 任务页自己要完整任务，不带这个参数，行为不变
+   */
+  routes.use('*', async (c, next) => {
+    if (c.req.query('summary')) {
+      const json = c.json.bind(c)
+      const isTask = (x: unknown): x is Task =>
+        !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
+      c.json = ((body: unknown, ...rest: unknown[]) =>
+        (json as (...a: unknown[]) => Response)(isTask(body) ? taskSummary(body) : body, ...rest)) as typeof c.json
+    }
+    await next()
+  })
+
+  /**
+   * 保活中的会话：回复完停在等下一句、CLI 进程还留着的对话，连同进程（含子进程）占的内存。
+   * 设置「数据」里列出来，用户可以一键释放；正开着的页面单独标出，释放全部时不动它们
+   */
+  async function keepAliveList() {
+    const map = await processSnapshot()
+    const tracked = trackedClis()
+    return [...live.values()]
+      .filter((e) => e.task.awaitingUser && !e.task.working)
+      .map((e) => {
+        const pids = new Set<number>()
+        for (const x of tracked.filter((x) => x.owner?.taskId === e.task.id))
+          for (const pid of map ? subtree(x.pid, map) : [x.pid]) pids.add(pid)
+        return {
+          id: e.task.id,
+          title: e.task.title,
+          projectId: e.task.projectId,
+          parentTaskId: e.task.parentTaskId,
+          cli: e.task.sessionCli || e.task.cli,
+          viewing: isViewing(e.task.id),
+          since: e.task.turnDoneAt || e.task.updatedAt,
+          rss: map && pids.size ? sumRss(pids, map) : null,
+        }
+      })
+      .sort((a, b) => a.since.localeCompare(b.since))
+  }
+  /** 每个对话的磁盘占用（任务文件 + 对话文件），设置「数据」里按项目、父子对话列出来 */
+  routes.get('/disk', async (c) => {
+    const bytes = new Map((await store.diskSizes()).map((x) => [x.id, x.bytes]))
+    // 回收站里的另在「回收站」那一节列，这里不重复算
+    return c.json(
+      (await store.list())
+        .filter((x) => !taskDeleted(x))
+        .map((x) => ({
+          id: x.id,
+          title: x.title,
+          projectId: x.projectId,
+          parentTaskId: x.parentTaskId,
+          updatedAt: x.updatedAt,
+          archived: !!x.archived,
+          working: !!(live.get(x.id)?.task.working ?? x.working),
+          bytes: bytes.get(x.id) ?? 0,
+        })),
+    )
+  })
+
+  routes.get('/keepalive', async (c) => c.json(await keepAliveList()))
+  /** 释放保活的会话：给了 ids 就只放这几个，否则放掉所有没开着页面的；下次发消息时冷启动续接原会话 */
+  routes.post('/keepalive/release', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
+    const only = Array.isArray(body.ids) ? new Set(body.ids.map(String)) : null
+    const released: string[] = []
+    for (const x of await keepAliveList()) {
+      if (only ? !only.has(x.id) : x.viewing) continue
+      // 名下有子对话在跑的父对话不动：结束它会把子对话一起停掉
+      if ([...live.values()].some((e) => e.task.parentTaskId === x.id && e.task.working)) continue
+      stopTask(x.id, 'idle')
+      released.push(x.id)
+    }
+    if (released.length) log.info('task', '手动释放保活的会话', { tasks: released })
+    return c.json({ released })
+  })
+
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢。
@@ -4869,7 +4977,8 @@ export function tasksApi(deps: {
           meta = m
           beat = Date.now()
         } else if (!meta || removed) {
-          await send('full', t, taskMessageRev(messages))
+          // 整份推送时更早的长工具输出只给开头，页面要看全文时再按 outputCut 去取（见 liteMessages）
+          await send('full', { ...t, messages: liteMessages(messages) }, taskMessageRev(messages))
           stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
           meta = m
           beat = Date.now()
@@ -4901,7 +5010,9 @@ export function tasksApi(deps: {
     // 打开很长的对话时先只取最近一段（整份几 MB，首屏只要最后几条），往前翻页用 before。
     // 不传 limit 就回整份：其它调用方（导出、AI 处理、老版本页面）行为不变
     const limit = Number(c.req.query('limit') ?? '')
-    if (!Number.isInteger(limit) || limit <= 0) return c.json(full)
+    // ?lite=1：和实时推送的整份一样，更早的长工具输出只给开头
+    if (!Number.isInteger(limit) || limit <= 0)
+      return c.json(c.req.query('lite') ? { ...full, messages: liteMessages(full.messages) } : full)
     const page = messagePage(full.messages, limit, c.req.query('before') ?? '')
     return c.json({
       ...full,
@@ -4914,6 +5025,16 @@ export function tasksApi(deps: {
       // 服务端首包就只补发最后一条，不用把同一份再传一遍。截断的那段不是整份的前缀，不能当版本用
       ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
     })
+  })
+
+  /** 推送时省掉的工具输出全文（页面打开窗口看全部时取），见 liteMessages 的 outputCut */
+  routes.get('/:id/tool-output', async (c) => {
+    const task = await current(c.req.param('id'))
+    if (!task || taskDeleted(task)) return bad(c, t('任务不存在'), 404)
+    const m = task.messages.find((x) => x.id === c.req.query('msg'))
+    const tool = m?.tools[Number(c.req.query('i'))]
+    if (!tool) return bad(c, t('找不到这次工具调用'), 404)
+    return c.json({ output: tool.output ?? '' })
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上

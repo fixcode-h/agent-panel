@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowUpRight,
   Bot,
@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
+import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -456,6 +457,30 @@ function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'st
   )
 }
 
+/**
+ * 推送时省掉了后半段的输出（outputCut）：打开窗口看全部时才去取全文，取到之前先显示已有的开头。
+ * 没省的直接用原来的输出
+ */
+function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean) {
+  const cut = tool.outputCut
+  const [full, setFull] = useState<{ key: string; text: string } | null>(null)
+  const key = cut && taskId ? `${taskId}/${cut.msg}/${cut.i}` : ''
+  useEffect(() => {
+    if (!want || !key || !cut || !taskId || full?.key === key) return
+    let live = true
+    api
+      .toolOutput(taskId, cut.msg, cut.i)
+      .then((r) => live && setFull({ key, text: r.output }))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+    // 只在要看、换了调用时取一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [want, key])
+  return full?.key === key ? full.text : (tool.output ?? '')
+}
+
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
@@ -483,6 +508,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const output = tool.output?.replace(/\s+$/, '') ?? ''
   // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
   const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
+  // 窗口里的完整输出：推送时省掉的后半段在打开窗口时取回来
+  const fullOutput = useFullOutput(tool, task?.id, win === 'run' || win === 'out').replace(/\s+$/, '')
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
@@ -616,7 +643,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                     tone={tool.failed ? 'danger' : undefined}
                     aside={
                       <span className="font-mono text-[0.625rem] text-subtle/70 tabular-nums">
-                        {t('{n} 行', { n: output.split('\n').length })}
+                        {t('{n} 行', { n: tool.outputCut?.lines ?? output.split('\n').length })}
                       </span>
                     }
                   />
@@ -642,7 +669,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
       {win === 'run' && (
         <CommandDialog
           command={input || tool.label}
-          output={output}
+          output={fullOutput}
           failed={tool.failed}
           running={tool.running}
           ms={tool.ms}
@@ -668,7 +695,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
           title={tool.kind === 'search' ? t('搜索结果') : tool.kind === 'web' ? t('网页') : tool.name || tool.label}
           detail={tool.label}
           input={tool.kind === 'search' || tool.kind === 'web' ? '' : input}
-          output={output}
+          output={fullOutput}
           failed={tool.failed}
           running={tool.running}
           open

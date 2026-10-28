@@ -135,6 +135,7 @@ function SettingsBody({
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [unread, setUnread] = useState(String(initial.unreadGraceMinutes))
   const [keepAlive, setKeepAlive] = useState(String(initial.keepAliveLimit))
+  const [archiveDays, setArchiveDays] = useState(String(initial.autoArchiveDays))
   const [reclaim, setReclaim] = useState(initial.reclaimIdleCli)
   const [bgLimit, setBgLimit] = useState(String(initial.backgroundLimit))
   const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
@@ -284,6 +285,8 @@ function SettingsBody({
   const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
   const keepN = Number(keepAlive)
   const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
+  const archiveN = Number(archiveDays)
+  const archiveValid = archiveDays !== '' && Number.isInteger(archiveN) && archiveN >= 0 && archiveN <= 3650
   const bgN = Number(bgLimit)
   const bgValid = bgLimit !== '' && Number.isInteger(bgN) && bgN >= 1 && bgN <= 64
   const largeN = Number(largeMB)
@@ -321,6 +324,7 @@ function SettingsBody({
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
+    autoArchiveDays: archiveValid ? archiveN : initial.autoArchiveDays,
     reclaimIdleCli: reclaim,
     backgroundLimit: bgValid ? bgN : initial.backgroundLimit,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
@@ -753,6 +757,28 @@ function SettingsBody({
                       aria-label={t('同时保活的会话上限')}
                     />
                     {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
+                  </div>
+                </Row>
+              </Group>
+              <Group title={t('对话归档')}>
+                <Row
+                  title={t('自动归档不动的对话')}
+                  desc={t(
+                    '对话（连同子对话）这么多天没有动静、没在执行、回复也都看过了，就自动归档：列表里不再显示，在筛选里选「已归档」还能找到，随时可以取消归档。填 0 表示不自动归档。',
+                  )}
+                >
+                  <div className="flex flex-col gap-1">
+                    <Input
+                      inputMode="numeric"
+                      value={archiveDays}
+                      onChange={(e) => setArchiveDays(e.target.value.replace(/[^\d]/g, ''))}
+                      aria-invalid={!archiveValid}
+                      className={cn('h-9', !archiveValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                      aria-label={t('自动归档不动的对话')}
+                    />
+                    {!archiveValid && (
+                      <span className="text-xs text-danger">{t('填 0 到 3650 之间的整数，单位是天')}</span>
+                    )}
                   </div>
                 </Row>
               </Group>

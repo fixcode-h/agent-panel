@@ -26,14 +26,14 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
     title = title.trim()
     if (!title || title === task.title) return
     try {
-      upsertTask(await api.renameTask(task.id, title))
+      upsertTask(await api.renameTaskSummary(task.id, title))
     } catch (e) {
       toast.error((e as Error).message)
     }
   }
   const archive = async (archived: boolean) => {
     try {
-      upsertTask(await api.archiveTask(task.id, archived))
+      upsertTask(await api.archiveTaskSummary(task.id, archived))
       toast.success(archived ? t('已归档，可以在筛选里选「已归档」找到') : t('已取消归档'))
     } catch (e) {
       toast.error((e as Error).message)

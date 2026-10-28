@@ -1275,4 +1275,5 @@ export const EN_TASKS: Record<string, string> = {
   理解: 'Understood as',
   理由: 'Why',
   假设: 'Assumed',
+  跳到某一轮: 'Jump to a turn',
 }

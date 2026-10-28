@@ -1220,6 +1220,11 @@ export const ToolUse = z.object({
     .optional(),
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
   alert: Alert.optional(),
+  /**
+   * 推给页面时省掉了输出的后半段（只出现在推送里，不存盘，见 shared/task.ts 的 liteMessages）：
+   * 原来的长度、行数，和取全文用的消息 id、第几个工具。页面打开窗口看全部时再按这个去取
+   */
+  outputCut: z.object({ len: z.number(), lines: z.number(), msg: z.string(), i: z.number() }).optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
@@ -2316,6 +2321,11 @@ export const Settings = z.object({
    * 0 表示不限制
    */
   keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
+  /**
+   * 自动归档：顶层对话（连同子对话）这么多天没动、没在执行、回复也都看过了，就归档（侧栏和列表默认不显示，
+   * 筛选「已归档」还能找到，随时取消归档）。0 表示不自动归档
+   */
+  autoArchiveDays: z.number().int().min(0).max(3650).catch(0).default(0),
   /**
    * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
    * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑。

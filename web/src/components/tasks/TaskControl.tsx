@@ -24,7 +24,7 @@ export function useTaskControl(task: Task) {
     if (!action || busy) return
     setBusy(true)
     try {
-      upsertTask(action === 'pause' ? await api.stopTask(task.id) : await api.resumeTask(task.id))
+      upsertTask(action === 'pause' ? await api.stopTaskSummary(task.id) : await api.resumeTaskSummary(task.id))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {

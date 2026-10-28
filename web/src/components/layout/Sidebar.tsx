@@ -454,7 +454,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           }
           await api.deleteTask(tk.id)
           removeTask(tk.id)
-        } else upsertTask(await api.archiveTask(tk.id, true))
+        } else upsertTask(await api.archiveTaskSummary(tk.id, true))
         ok++
       } catch {
         failed++
