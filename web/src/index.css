@@ -43,6 +43,7 @@
   --warning: #a4660f;
   --danger: #bf3b2c;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
+  --panel-shadow: 0 1px 3px rgb(60 50 30 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
   --code-bg: #f7f6f1;
   --code-chip: #f1efe8;
@@ -84,6 +85,7 @@
   --warning: #e3a752;
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  --panel-shadow: none;
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
@@ -254,6 +256,9 @@
   --font-sans: var(--app-sans);
   --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
   --font-mono: var(--app-mono);
+  /* 正文字重：Maple Mono 的 400 笔画偏细，整站常规字提到 450（可变字重能画出来；系统中文字体没有 450 时按 400 画）。
+     主次靠颜色和字号分，不靠更细的字；500 / 600 留给名字、标题 */
+  --font-weight-normal: 450;
   /* 间距固定用像素：设置里调字号改的是根字号，界面字号都写 rem，这样只有字变大、布局不跟着撑开 */
   --spacing: 4px;
 }
@@ -263,10 +268,24 @@ body,
 #root {
   height: 100%;
 }
+/*
+ * 面板：主区、右栏各是一块，浮在侧栏的底色上（照 Proma / Claude 桌面版）。
+ * 边界只靠底色和圆角分开，不描边；浅色下加一层很淡的投影，免得暖白和米色贴在一起分不清。
+ * 手机上整页就是一块，不留圆角
+ */
+@utility panel {
+  background-color: var(--bg);
+  overflow: hidden;
+  @media (width >= 48rem) {
+    border-radius: 0.75rem;
+    box-shadow: var(--panel-shadow);
+  }
+}
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
 @layer base {
   body {
     @apply bg-bg text-fg font-sans text-sm antialiased;
+    font-weight: var(--font-weight-normal);
     letter-spacing: var(--app-tracking, -0.02em);
     word-spacing: var(--app-word-spacing, -0.2em);
   }

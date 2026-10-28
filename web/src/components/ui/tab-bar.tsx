@@ -39,7 +39,9 @@ export function TabBar({
 export function TabItem({
   active,
   onSelect,
+  onDoubleClick,
   onClose,
+  closeLabel,
   icon,
   busy,
   tag,
@@ -51,8 +53,11 @@ export function TabItem({
 }: {
   active: boolean
   onSelect: () => void
+  onDoubleClick?: () => void
   /** 不给就不能关（父对话、固定页签） */
   onClose?: () => void
+  /** 关闭按钮的读屏名，默认「关闭页签」 */
+  closeLabel?: string
   icon?: ReactNode
   /** 在跑：图标位置换成转圈 */
   busy?: boolean
@@ -83,6 +88,7 @@ export function TabItem({
         role="tab"
         aria-selected={active}
         onClick={onSelect}
+        onDoubleClick={onDoubleClick}
         title={title}
         className={cn(
           'flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 pr-1 pl-3 text-left',
@@ -100,7 +106,8 @@ export function TabItem({
       {onClose ? (
         <button
           type="button"
-          aria-label={t('关闭页签')}
+          aria-label={closeLabel ?? t('关闭页签')}
+          title={closeLabel ?? t('关闭页签')}
           onClick={onClose}
           className={cn(
             'mr-2 flex h-[1.125rem] w-[1.125rem] shrink-0 cursor-pointer items-center justify-center rounded transition-opacity hover:bg-sel',

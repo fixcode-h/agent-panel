@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Files, GitBranch, GitCompareArrows, List, ListTree, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
+import { GitBranch, List, ListTree, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
@@ -8,6 +8,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { menuItem } from '@/components/ui/menu'
+import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { FileExplorer } from '@/components/files/FileTree'
 import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
 import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
@@ -84,50 +85,43 @@ export function TaskFiles({
   const del = changes.reduce((n, c) => n + c.del, 0)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-1 border-b px-1.5" role="tablist" aria-label={t('文件视图')}>
-        {(
-          [
-            ['files', t('文件'), Files],
-            ['changes', t('改动'), GitCompareArrows],
-          ] as const
-        ).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-            className={cn(
-              'flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[0.75rem] transition-colors',
-              tab === id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
-            )}
-          >
-            <Icon className="h-3.5 w-3.5 shrink-0" />
-            {label}
-            {id === 'changes' && changes.length > 0 && (
-              <span className="font-mono text-[0.6875rem]">
-                <span className="text-success">+{add}</span>
-                {del > 0 && <span className="text-danger"> -{del}</span>}
-              </span>
-            )}
-          </button>
-        ))}
-        <span className="ml-auto flex min-w-0 items-center gap-1 px-1 text-[0.75rem] text-subtle">
-          <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate font-mono" title={files.info?.dir ?? dir}>
-            {files.info?.branch ?? t('没有分支')}
-          </span>
-        </span>
-        <button
-          type="button"
-          aria-label={t('刷新文件')}
-          title={t('刷新文件')}
-          onClick={files.refresh}
-          className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
+      {/* 右栏固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动；分支和刷新放在右端 */}
+      <TabBar
+        label={t('文件视图')}
+        trailing={
+          <>
+            <span
+              className="flex max-w-28 min-w-0 items-center gap-1 text-[0.75rem] text-subtle"
+              title={files.info?.dir ?? dir}
+            >
+              <GitBranch className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate font-mono">{files.info?.branch ?? t('没有分支')}</span>
+            </span>
+            <button
+              type="button"
+              aria-label={t('刷新文件')}
+              title={t('刷新文件')}
+              onClick={files.refresh}
+              className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
+            </button>
+          </>
+        }
+      >
+        <TabItem fill active={tab === 'files'} onSelect={() => setTab('files')}>
+          {t('项目文件')}
+        </TabItem>
+        <TabItem
+          fill
+          active={tab === 'changes'}
+          onSelect={() => setTab('changes')}
+          tag={changes.length > 0 ? changes.length : undefined}
+          title={changes.length > 0 ? `+${add} -${del}` : undefined}
         >
-          <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
-        </button>
-      </div>
+          {t('本对话改动')}
+        </TabItem>
+      </TabBar>
       {tab === 'files' ? (
         <FileExplorer browser={files} onOpen={(path, line) => setTarget({ path, line })} compact />
       ) : (

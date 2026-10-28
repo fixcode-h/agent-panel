@@ -121,7 +121,6 @@ export const EN_TASKS: Record<string, string> = {
   文件视图: 'File view',
   没有分支: 'No branch',
   刷新文件: 'Refresh files',
-  改动: 'Changes',
   '改动 {n} 个文件': '{n} files changed',
   '按工作流「{name}」的流程图执行': 'Runs along the flow of workflow "{name}"',
 
@@ -407,8 +406,8 @@ export const EN_TASKS: Record<string, string> = {
   视图: 'View',
   流程图: 'Flowchart',
   显示文件: 'Show files',
-  覆盖显示文件: 'Show files over the sub-conversation',
-  回到子对话: 'Back to sub-conversation',
+  对话页签: 'Conversation tabs',
+  关闭运行: 'Close run',
   收起文件面板: 'Collapse file panel',
   更多操作: 'More actions',
   重命名: 'Rename',
