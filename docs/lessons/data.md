@@ -33,12 +33,12 @@ paths: shared/schema.ts, shared/task.ts, shared/data.ts, server/store.ts, server
 - 规则：模拟执行只在 `--mode demo` 里存在；正式代码不 import `demo-*`。
 - 防线：`scripts/package.mjs` 会检查。
 
-## 附件落盘：只有图片拷进对话目录，其它文件只引用原路径
+## 附件落盘：图片进对话目录根，其它只引用原路径
 
-- 规则：`server/attachments.ts` 的 `placeAttachments()` 只把图片（用 `shared/composer.ts` 的 `attachChip` 判，不另写一套）拷进任务执行目录的 `attachments/`、返回相对路径；文本、代码、PDF、压缩包、音视频不拷，原样返回本机绝对路径。uploads 里的文件只有一份，不再往任务目录拷第二份；`ref` 和 `quote` 本来就不拷；超过 `MAX_ATTACHMENT_BYTES` 的图片也不拷。要放行的目录统一用 `attachmentAddDirs()` 算（uploads 合并成根、项目文件放行所在目录），runner 和设计会话都调它。
-- 写进 `task.messages[].attachments` 的必须是用户上传时那份绝对路径（气泡、看大图、导出按它读）；`deliver()` / `deliverWait()` 的 `placed` 只用在交给 CLI 的提示词里。`/uploads/raw` 认 `attachments/名字` 是兜旧数据，不是新数据存相对路径的理由。
-- 起因：6f60814 把附件都拷进任务目录后，`deliver()` 的 stale 分支曾把 `placed` 记进对话，破图。现在只有图片要这份拷贝，其余按原路径读，省空间也不会读到旧内容。
-- 防线：`server/attachments.test.ts`、`server/task-text.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 的附件段；`scripts/rules-check.mjs` 拦 `attachments: placed`。
+- 规则：`server/attachments.ts` 的 `placeAttachments()` 只把图片（用 `shared/composer.ts` 的 `attachChip` 判）拷进任务执行目录（对话目录）根；重名加序号且不覆盖已有文件，同一源文件再次放置沿用任务上记的那份。其它类型不拷、原样返回绝对路径；`ref` / `quote` 不拷；超过 `MAX_ATTACHMENT_BYTES` 的图片也不拷。放行目录统一用 `attachmentAddDirs()` 算。
+- 面板拷进去的图片不算 Agent 的改动：文件名记在 `Task.placedAttachments`（源文件绝对路径 → 对话目录文件名），`server/exec/git.ts` 的四个 git 函数按名单排除；不按文件名猜。旧任务没有映射时 `placedFiles()` 按消息里的 `attachments/名字` 补上。`task.messages[].attachments` 存用户上传时的绝对路径（气泡、看大图、导出按它读），`placed` 只用在提示词里；`/uploads/raw` 认 `attachments/名字` 只兜旧数据。
+- 起因：6f60814 把附件拷进任务目录后，`deliver()` 的 stale 分支把 `placed` 记进对话导致破图；现在只有图片拷。2026-10 用户嫌 P4 项目里堆 `attachments/`：改成直接放对话目录根，排除按任务上记的名单。
+- 防线：`server/attachments.test.ts`、`server/exec/git-ignore.test.ts`、`server/task-text.test.ts`、`scripts/e2e/05-workflow-edge.mjs` 的附件段；`scripts/rules-check.mjs` 拦 `attachments: placed`。
 
 ## 清掉任务上的字段写 undefined，不用 delete
 

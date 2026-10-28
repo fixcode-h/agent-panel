@@ -626,8 +626,8 @@ await runShard('本机请求与设置', async (api) => {
     const saidAtt = w.messages[at].attachments?.[0]
     assert.ok(saidAtt, '附件跟着这条消息记进对话')
     assert.ok(saidAtt.path.startsWith(path.join(dataDir, 'uploads')), '记进对话的是上传目录里的绝对路径')
-    // 交给 Agent 的那份照旧拷进任务的执行目录（这个对话在项目目录里跑），提示里的相对路径指向它
-    assert.ok(existsSync(path.join(projectDir, 'attachments', saidAtt.name)), '拷进对话目录的那份还在，Agent 读得到')
+    // 交给 Agent 的那份照旧拷进任务的执行目录根（这个对话在项目目录里跑），提示里给的就是这个相对文件名
+    assert.ok(existsSync(path.join(projectDir, saidAtt.name)), '拷进对话目录的那份还在，Agent 读得到')
     // 旧消息里存的是相对路径：接口按文件名回上传目录取到图，页面上的旧消息因此能恢复显示
     const relRaw = await fetch(`${base}/uploads/raw?path=${encodeURIComponent(`attachments/${saidAtt.name}`)}`)
     assert.equal(relRaw.status, 200, '相对路径也能取到图')
