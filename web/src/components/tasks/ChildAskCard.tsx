@@ -99,7 +99,7 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
       }
       title={ask.title}
       onOpen={openChild ? () => openChild(ask.from) : undefined}
-      openTip={t('在右侧打开子对话')}
+      openTip={t('在中间打开子对话')}
       detail={status}
       open={open}
       onToggle={() => setOpen(!open)}

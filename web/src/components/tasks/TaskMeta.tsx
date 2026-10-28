@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Coins,
   FolderOpen,
-  Gauge,
   GitBranch,
   Loader2,
   MessageSquare,
@@ -36,6 +35,7 @@ import { LimitBars, hasLimits, useCliLimits } from '@/components/settings/CliLim
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ContextRing } from '@/components/ui/context-ring'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
 import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
@@ -183,17 +183,9 @@ function ContextChip({ lines }: { lines: ContextLine[] }) {
   const p = Math.min(100, (top.u.context / top.u.window) * 100)
   return (
     <Popover>
+      {/* 只画空心圆环和百分比（照 Claude Code），具体 Token 数和每个角色的占用在点开的浮层里 */}
       <PopoverTrigger className={META_CHIP} title={t('上下文占用')} aria-label={t('上下文')}>
-        <Gauge className="h-3.5 w-3.5" />
-        <span className="font-mono">
-          {fmtTokens(top.u.context)} / {fmtTokens(top.u.window)}
-        </span>
-        <span className="h-1 w-8 overflow-hidden rounded-full bg-field">
-          <span
-            className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-            style={{ width: `${Math.max(p, 2)}%` }}
-          />
-        </span>
+        <ContextRing percent={p} label={t('上下文已用 {n}%', { n: Math.round(p) })} />
       </PopoverTrigger>
       <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
         <ul className="flex flex-col gap-3 p-2.5">

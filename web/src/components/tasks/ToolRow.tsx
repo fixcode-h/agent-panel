@@ -525,7 +525,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
     : file
       ? { open: () => openFile?.(file), tip: t('查看文件') }
       : view.child && openChild
-        ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
+        ? { open: () => openChild(view.child!), tip: t('在中间打开子对话') }
         : view.startsRun && task?.id
           ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
             // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口

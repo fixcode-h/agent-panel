@@ -9,7 +9,7 @@
  */
 
 import { runShard } from './harness.mjs'
-import { openCartTask, taskPageHelpers } from './task-page.mjs'
+import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 /** 判定「窗口停在顶部」的 scrollTop 容差：滚动条贴顶时就是 0，留一点给像素取整 */
 const SCROLL_TOP_EPS = 2
@@ -106,10 +106,20 @@ await runShard(import.meta.filename, async (api) => {
   })
   const { openFiles, backToTask, closed } = taskPageHelpers(p, api)
 
-  // 宽屏右栏默认收起，不占掉一半宽度（用户提的「分析弹窗一打开就占一半」）；按钮在标题栏，点一下展开
-  await check(p, '任务-文件面板默认收起')
+  // 宽屏右栏默认开着（重设计：固定「项目文件 / 本对话改动」两个页签），最宽 440，不和对话平分；
+  // 页签条右端的按钮能收起，再点展开
+  await check(p, '任务-文件面板默认展开')
   const filesPanel = p.locator('[data-task-panel]').first()
-  if (await filesPanel.isVisible()) errors.push('任务：文件面板默认就展开了，挡住了对话')
+  if (!(await filesPanel.isVisible())) errors.push('任务：文件面板默认没有展开')
+  else {
+    const w = (await filesPanel.boundingBox())?.width ?? 0
+    if (w > 441) errors.push(`任务：文件面板默认宽 ${Math.round(w)}，超过 440`)
+  }
+  for (const name of ['项目文件', '本对话改动'])
+    if (!(await filesPanel.getByRole('tab', { name: new RegExp(`^${name}`) }).count()))
+      errors.push(`任务：右栏没有「${name}」页签`)
+  await p.getByRole('button', { name: '收起文件面板', exact: true }).click()
+  if (await filesPanel.isVisible()) errors.push('任务：点「收起文件面板」后文件面板还在')
   if ((await p.getByRole('button', { name: '显示文件', exact: true }).getAttribute('aria-expanded')) !== 'false')
     errors.push('任务：文件面板收起时按钮没标成未展开')
   await openFiles()
@@ -172,7 +182,7 @@ await runShard(import.meta.filename, async (api) => {
           .flatMap((box) => [...box.children])
           .filter((r) => norm(r.innerText).startsWith('子对话'))
           .map((row) => {
-            // openTip「在右侧打开子对话」就是标题按钮：可点的只有这一段
+            // openTip「在中间打开子对话」就是标题按钮：可点的只有这一段
             const title = [...row.querySelectorAll('button')].find((b) =>
               (b.getAttribute('title') || '').includes('打开子对话'),
             )
@@ -289,7 +299,7 @@ await runShard(import.meta.filename, async (api) => {
         else {
           const opened = await p
             .waitForFunction(
-              (title) => !!document.querySelector('aside[aria-label="子对话"]')?.innerText.includes(title),
+              (title) => !!document.querySelector('[data-child-view]')?.innerText.includes(title),
               clicked,
               { timeout: 3000 },
             )
@@ -317,7 +327,7 @@ await runShard(import.meta.filename, async (api) => {
       {
         /** 右栏标题（h2）现在的文字：切换是否生效看它 */
         const paneTitle = () =>
-          p.evaluate(() => (document.querySelector('aside[aria-label="子对话"] h2')?.textContent || '').trim())
+          p.evaluate(() => (document.querySelector('[data-child-view] h2')?.textContent || '').trim())
         /** 菜单里的条目：标题、选中标记、键盘高亮 */
         const menuItems = () =>
           p.evaluate(() =>
@@ -331,7 +341,7 @@ await runShard(import.meta.filename, async (api) => {
         const switchedTo = (title) =>
           p
             .waitForFunction(
-              (name) => (document.querySelector('aside[aria-label="子对话"] h2')?.textContent || '').trim() === name,
+              (name) => (document.querySelector('[data-child-view] h2')?.textContent || '').trim() === name,
               title,
               { timeout: 3000 },
             )
@@ -339,7 +349,7 @@ await runShard(import.meta.filename, async (api) => {
               () => true,
               () => false,
             )
-        const trigger = p.locator('aside[aria-label="子对话"] button[aria-label="切换子对话"]').first()
+        const trigger = p.locator('[data-child-view] button[aria-label="切换子对话"]').first()
         const openMenu = async () => {
           await trigger.click()
           await p
@@ -423,16 +433,14 @@ await runShard(import.meta.filename, async (api) => {
       {
         /** 右栏开着就先关掉，等它卸载 */
         const closePane = async () => {
-          if (!(await p.locator('aside[aria-label="子对话"]').count())) return
-          await p
-            .getByRole('button', { name: '关闭子对话', exact: true })
-            .first()
+          if (!(await p.locator('[data-child-view]').count())) return
+          await closeChildTab(p)
             .click()
             .catch(() => errors.push('子对话：没有找到关闭按钮，后面的整段可点核对不成立'))
           // 关不掉时右栏本来就开着，后面的「打开了吗」会假通过，必须报出来
           if (
             !(await p
-              .waitForFunction(() => !document.querySelector('aside[aria-label="子对话"]'), { timeout: 3000 })
+              .waitForFunction(() => !document.querySelector('[data-child-view]'), { timeout: 3000 })
               .then(
                 () => true,
                 () => false,
@@ -451,11 +459,9 @@ await runShard(import.meta.filename, async (api) => {
           })
         const openedFor = (title) =>
           p
-            .waitForFunction(
-              (name) => !!document.querySelector('aside[aria-label="子对话"]')?.innerText.includes(name),
-              title,
-              { timeout: 3000 },
-            )
+            .waitForFunction((name) => !!document.querySelector('[data-child-view]')?.innerText.includes(name), title, {
+              timeout: 3000,
+            })
             .then(
               () => true,
               () => false,
@@ -505,14 +511,12 @@ await runShard(import.meta.filename, async (api) => {
         }
       }
       // 收掉右栏：后面窄窗口那几段用 reload 测行宽，右栏开着会盖住整个窄屏
-      if (await p.locator('aside[aria-label="子对话"]').count()) {
-        await p
-          .getByRole('button', { name: '关闭子对话', exact: true })
-          .first()
+      if (await p.locator('[data-child-view]').count()) {
+        await closeChildTab(p)
           .click()
           .catch(() => errors.push('子对话：没有找到关闭按钮'))
         await p
-          .waitForFunction(() => !document.querySelector('aside[aria-label="子对话"]'), { timeout: 3000 })
+          .waitForFunction(() => !document.querySelector('[data-child-view]'), { timeout: 3000 })
           .catch(() => errors.push('子对话：点了关闭后右栏还开着'))
       }
     }
@@ -2025,11 +2029,9 @@ await runShard(import.meta.filename, async (api) => {
       .waitFor({ timeout: 10000 })
       .catch(() => {})
     // 前面的用例可能把右栏子对话留着（那样页面上有两个 #follow-up）：先关掉，输入框只留父对话那个
-    const pane = p.locator('aside[aria-label="子对话"]')
+    const pane = p.locator('[data-child-view]')
     if (await pane.count()) {
-      await p
-        .getByRole('button', { name: '关闭子对话', exact: true })
-        .first()
+      await closeChildTab(p)
         .click()
         .catch(() => {})
       await pane.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})

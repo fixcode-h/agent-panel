@@ -64,11 +64,12 @@ await runShard(import.meta.filename, async (api) => {
         if (!/\d+m \d+(?:\.\d+)?s/.test(text))
           errors.push(`运行区-工作流在跑：这一行没有显示已跑了多久（实际「${text}」）`)
         await check(p, '运行区-工作流在跑', ['工作流'])
-        // 整行点了打开这次运行的视图：右栏标题写「运行 n」，不是另外弹一个窗口
+        // 整行点了打开这次运行的视图：中间开一个页签，标签写「运行 n」，不是另外弹一个窗口
         const runner = box.locator('div').filter({ hasText: '个节点' }).last()
         await runner.click()
         const opened = await p
-          .locator(`aside[aria-label="运行 ${info.run}"]`)
+          .getByRole('tablist', { name: '对话页签' })
+          .getByRole('tab', { name: new RegExp(`运行 ${info.run}`) })
           .first()
           .waitFor({ timeout: 10000 })
           .then(

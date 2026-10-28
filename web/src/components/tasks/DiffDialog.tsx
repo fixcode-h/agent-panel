@@ -276,7 +276,7 @@ function Inline({ parts, side }: { parts: InlinePart[]; side: 'left' | 'right' }
     <>
       {parts.map((p, i) =>
         p.changed ? (
-          <span key={i} className={side === 'left' ? DIFF_TONE.del.mark : DIFF_TONE.add.mark}>
+          <span key={i} data-diff-mark className={side === 'left' ? DIFF_TONE.del.mark : DIFF_TONE.add.mark}>
             {p.text}
           </span>
         ) : (

@@ -10,7 +10,7 @@
  */
 
 import { runShard } from './harness.mjs'
-import { openCartTask, taskPageHelpers } from './task-page.mjs'
+import { childView, closeChildTab, openCartTask, taskPageHelpers } from './task-page.mjs'
 
 await runShard(import.meta.filename, async (api) => {
   const { base, page, check, errors } = api
@@ -38,32 +38,32 @@ await runShard(import.meta.filename, async (api) => {
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
-    // 右栏打开一个子对话：页面上同时有父对话和子对话两个输入框
+    // 中间打开一个子对话：页面上有父对话（藏在父对话页签后面）和子对话两个输入框
     const env = d.locator('button[aria-label="环境"]').first()
     await env.click()
     await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
     await d
       .locator('[data-worktree-row]')
       .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
-      .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+      .getByRole('button', { name: '在中间打开子对话「Git+worktree 不再提示文件撞车」' })
       .click()
-    const childPane = d.getByRole('complementary', { name: '子对话' })
+    const childPane = childView(d)
     await childPane
       .locator('#follow-up')
       .waitFor({ timeout: 10000 })
-      .catch(() => errors.push('抓取投递：右栏子对话的输入框没出来'))
-    // 两个输入框的 id 都是 #follow-up（同一个组件），按所在栏区分：子对话在右栏 aside 里
+      .catch(() => errors.push('抓取投递：中间子对话的输入框没出来'))
+    // 两个输入框的 id 都是 #follow-up（同一个组件），按所在区域区分：子对话在 [data-child-view] 里
     const childBox = childPane.locator('#follow-up')
     const parentBox = d.locator('#follow-up').first()
     if ((await d.locator('#follow-up').count()) !== 2)
       errors.push(`抓取投递：页面上应该有父对话和子对话两个输入框（实际 ${await d.locator('#follow-up').count()} 个）`)
     // 抓取按钮和输入框不在同一个元素里（按钮在 composer 根上、输入框是它的子节点），所以不能靠容器定位；
-    // 按 DOM 顺序取两个按钮，并显式校验归属：第一个在右栏外面（父对话），第二个在右栏 aside 里（子对话）
+    // 按 DOM 顺序取两个按钮，并显式校验归属：第一个在子对话区域外面（父对话），第二个在子对话区域里
     const pickBtns = d.getByLabel('抓取界面元素', { exact: true })
-    const inPane = (i) => pickBtns.nth(i).evaluate((el) => !!el.closest('aside'))
+    const inPane = (i) => pickBtns.nth(i).evaluate((el) => !!el.closest('[data-child-view]'))
     if ((await pickBtns.count()) !== 2) errors.push('抓取投递：两个输入框旁边应该各有一个抓取按钮')
-    if (await inPane(0)) errors.push('抓取投递：第一个抓取按钮居然在右栏里，用例的定位假设不成立')
-    if (!(await inPane(1))) errors.push('抓取投递：第二个抓取按钮不在右栏子对话里，用例的定位假设不成立')
+    if (await inPane(0)) errors.push('抓取投递：第一个抓取按钮居然在子对话里，用例的定位假设不成立')
+    if (!(await inPane(1))) errors.push('抓取投递：第二个抓取按钮不在子对话里，用例的定位假设不成立')
     /** 在指定输入框里抓一个元素：点它的按钮 → 中键点页面上的元素 → 等抓取退出 */
     const pickInto = async (which, where) => {
       const overlay = d.locator('[data-element-picker]')
@@ -90,11 +90,11 @@ await runShard(import.meta.filename, async (api) => {
     const beforeChild = await chipCount(childBox)
     const beforeParent = await chipCount(parentBox)
     await pickInto(1, '子对话输入框')
-    // 等待条件必须和断言同作用域（都是子对话输入框内部）：[data-task-panel] 是整个右栏 aside，
+    // 等待条件必须和断言同作用域（都是子对话输入框内部）：[data-child-view] 是整个子对话区域，
     // 消息流里的引用卡片也用 data-chip 标记，拿整栏计数当同步点会被旧卡片提前满足
     const childGot = await d
       .waitForFunction(
-        (n) => document.querySelectorAll('[data-task-panel] #follow-up [data-chip="quote"]').length > n,
+        (n) => document.querySelectorAll('[data-child-view] #follow-up [data-chip="quote"]').length > n,
         beforeChild,
         { timeout: 5000 },
       )
@@ -107,7 +107,8 @@ await runShard(import.meta.filename, async (api) => {
       errors.push('抓取投递：从子对话的按钮进入抓取，引用却填进了父对话输入框')
     if ((await chipCount(childBox)) <= beforeChild) errors.push('抓取投递：子对话输入框里没有多出引用卡片')
     await check(d, '元素抓取-投给点按钮的那个输入框')
-    // 反过来：从父对话的按钮进入，要填回父对话
+    // 反过来：切回父对话页签（子对话页签留着），从父对话的按钮进入，要填回父对话
+    await d.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
     await pickInto(0, '父对话输入框')
     if ((await chipCount(parentBox)) <= beforeParent)
       errors.push('抓取投递：从父对话的按钮进入抓取，引用没有填回父对话输入框')
@@ -129,22 +130,24 @@ await runShard(import.meta.filename, async (api) => {
       .catch(() => errors.push('提问联动：新页面的演示数据没生成出来'))
     await d.getByText('购物车右上角', { exact: false }).first().click()
     await d.locator('#follow-up').waitFor({ timeout: 10000 })
-    const pane = () => d.getByRole('complementary', { name: '子对话' })
+    const pane = () => childView(d)
     const parentAsk = d.getByRole('button', { name: 'AI 有问题时问我' }).first()
-    if (await parentAsk.evaluate((el) => !!el.closest('aside'))) errors.push('提问联动：第一个提问按钮不在父对话里')
+    if (await parentAsk.evaluate((el) => !!el.closest('[data-child-view]')))
+      errors.push('提问联动：第一个提问按钮不在父对话里')
     const openChild = async () => {
       await d.locator('button[aria-label="环境"]').first().click()
       await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
       await d
         .locator('[data-worktree-row]')
         .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
-        .getByRole('button', { name: '在右侧打开子对话「Git+worktree 不再提示文件撞车」' })
+        .getByRole('button', { name: '在中间打开子对话「Git+worktree 不再提示文件撞车」' })
         .click()
       await pane().locator('#follow-up').waitFor({ timeout: 10000 })
     }
     const closeChild = async () => {
-      await pane().getByRole('button', { name: '关闭子对话', exact: true }).click()
-      await pane()
+      await closeChildTab(d).click()
+      await d
+        .locator('[data-child-view]')
         .waitFor({ state: 'detached', timeout: 5000 })
         .catch(() => {})
     }
@@ -158,8 +161,11 @@ await runShard(import.meta.filename, async (api) => {
       await openChild()
     }
 
+    /** 子对话页签开着时父对话藏在后面：点父对话页签切回来再点它的按钮（子对话页签留着） */
+    const toParent = () => d.getByRole('tablist', { name: '对话页签' }).getByRole('tab').first().click()
     await openChild()
     if (!(await childAskOn())) errors.push('提问联动：新建的子对话默认就该开着提问')
+    await toParent()
     // 右键父对话的提问按钮：菜单里出现「子对话也提问」，默认勾着（父对话自己开着提问）
     await parentAsk.click({ button: 'right' })
     const item = d.getByRole('menuitemcheckbox', { name: '子对话也提问' })
@@ -217,8 +223,7 @@ await runShard(import.meta.filename, async (api) => {
     await p.getByTitle('查看「src/components/CartBadge.tsx」的改动', { exact: true }).click()
     await check(p, '差异-左右对照', ['CartBadge.tsx', '处改动', '+5', '-3', '1 / 2', 'items.reduce'])
     // 修改行要标出行内改动（整行底色之外还有更深的一小段）
-    if (!(await p.locator('[role="dialog"] [class*="rounded-[2px]"]').count()))
-      errors.push('差异窗口：修改行没有行内高亮')
+    if (!(await p.locator('[role="dialog"] [data-diff-mark]').count())) errors.push('差异窗口：修改行没有行内高亮')
     await p.getByRole('radio', { name: '上下对照' }).click()
     await check(p, '差异-上下对照', ['CartBadge.tsx', 'useEffect', 'document.title'])
     await p.getByRole('button', { name: '下一个文件', exact: true }).click()

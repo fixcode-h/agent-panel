@@ -628,7 +628,7 @@ export const EN_TASKS: Record<string, string> = {
   修复: 'Fix',
   '面板框架的问题要在 agent-panel 源代码项目里修':
     'Panel framework issues can only be fixed in an agent-panel source project',
-  '在右侧打开子对话「{title}」': 'Open child conversation "{title}" on the right',
+  '在中间打开子对话「{title}」': 'Open child conversation "{title}" in a tab',
   '打开子任务「{title}」': 'Open subtask "{title}"',
   '后台命令 {name}': 'Background command {name}',
   处理中: 'Working',
@@ -884,7 +884,7 @@ export const EN_TASKS: Record<string, string> = {
   '等待子任务：{list}': 'Waiting for subtasks: {list}',
   '等待 {n} 个子任务完成': 'Waiting for {n} subtask(s) to finish',
   新建子对话: 'New sub-chat',
-  在右侧打开子对话: 'Open the sub-chat on the right',
+  在中间打开子对话: 'Open the sub-chat in a tab',
   查看子对话: 'List sub-chats',
   派出子任务: 'Start subtasks',
   等待子任务: 'Wait for subtasks',

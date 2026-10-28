@@ -2186,7 +2186,11 @@ export function TaskView({
                 </div>
                 {/* 中间的子对话页签：同一时间只开一个；切回父对话时不卸载，回来还是原样 */}
                 {!pane && openChild && (
-                  <div className={cn('flex min-h-0 flex-1 flex-col', !showOther && 'hidden')}>
+                  <section
+                    aria-label={t('子对话')}
+                    data-child-view
+                    className={cn('flex min-h-0 flex-1 flex-col', !showOther && 'hidden')}
+                  >
                     <TaskView
                       key={openChild}
                       taskId={openChild}
@@ -2194,7 +2198,7 @@ export function TaskView({
                       pane
                       onClose={() => openChildIn('')}
                     />
-                  </div>
+                  </section>
                 )}
                 {/* 中间的运行页签：这一次工作流运行的节点和实时输出，底下带着输入框 */}
                 {!pane && showOther && openRun > 0 && (
