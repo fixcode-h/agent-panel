@@ -154,7 +154,14 @@ import { dropChip, forSend, pathText } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 import { ProjectSwitch } from './ProjectSwitch'
-import { OPEN_CHILD_EVENT, paneChildKey, paneFilesKey, paneReportKey, paneRunKey } from '@/lib/ai-window'
+import {
+  OPEN_CHILD_EVENT,
+  SHOW_PARENT_EVENT,
+  paneChildKey,
+  paneFilesKey,
+  paneReportKey,
+  paneRunKey,
+} from '@/lib/ai-window'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -836,8 +843,15 @@ export function TaskView({
           setOpenRun(0)
         })
     }
+    const onShowParent = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === taskId) setOnParent(true)
+    }
     window.addEventListener(OPEN_CHILD_EVENT, onOpen)
-    return () => window.removeEventListener(OPEN_CHILD_EVENT, onOpen)
+    window.addEventListener(SHOW_PARENT_EVENT, onShowParent)
+    return () => {
+      window.removeEventListener(OPEN_CHILD_EVENT, onOpen)
+      window.removeEventListener(SHOW_PARENT_EVENT, onShowParent)
+    }
     // 只在换了对话时重新挂：loadChildren 每次渲染都是同一份逻辑
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, pane])

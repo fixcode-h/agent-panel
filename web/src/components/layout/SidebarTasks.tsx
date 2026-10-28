@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { showParentTab } from '@/lib/ai-window'
 import {
   Check,
   ChevronDown,
@@ -105,7 +106,11 @@ export function TaskRow({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button
-            onClick={onOpen}
+            onClick={() => {
+              // 已经打开着这个对话：子对话页签可能在前台，切回父对话
+              if (active) showParentTab(task.id)
+              onOpen()
+            }}
             aria-current={active || undefined}
             title={task.title}
             data-cli-alive={alive || undefined}

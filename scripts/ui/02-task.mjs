@@ -609,8 +609,8 @@ await runShard(import.meta.filename, async (api) => {
     if (!midWide.rows) errors.push('运行区（1024px）：没有列出子对话')
     else if (!midWide.items.some((n) => n.noteShown)) errors.push('运行区（1024px）：行够宽，活动文字却不见了')
     await check(p, '子对话-运行区1024')
-    // 文件面板默认最宽 440，挤不出窄行：先把它「拖」到 640（写本地记的宽度），测完删掉
-    await p.evaluate(() => localStorage.setItem('pane:task-panel', '640'))
+    // 文件面板默认最宽 440，挤不出窄行：先把它「拖」到 560（写本地记的宽度），测完删掉
+    await p.evaluate(() => localStorage.setItem('pane:task-panel', '560'))
     await p.setViewportSize({ width: 1440, height: 900 })
     await p.reload()
     await backToTask()

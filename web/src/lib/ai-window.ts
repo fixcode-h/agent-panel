@@ -281,6 +281,15 @@ export const paneFilesKey = (taskId: string) => `task-files:${taskId}`
 /** 分析对话的功能面板收没收起（默认开着） */
 export const paneReportKey = (taskId: string) => `task-report:${taskId}`
 export const OPEN_CHILD_EVENT = 'agent-panel:open-child'
+export const SHOW_PARENT_EVENT = 'agent-panel:show-parent'
+
+/**
+ * 侧栏里点的正好是当前打开的对话：地址不变、页面不会重挂，
+ * 发个事件让对话页把父对话切到前台（子对话 / 运行页签留着）
+ */
+export function showParentTab(taskId: string) {
+  window.dispatchEvent(new CustomEvent(SHOW_PARENT_EVENT, { detail: taskId }))
+}
 
 export function showChildInPane(parentId: string, childId: string) {
   try {

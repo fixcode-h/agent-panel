@@ -53,7 +53,8 @@ await runShard(import.meta.filename, async (api) => {
       .waitFor({ timeout: 10000 })
       .catch(() => errors.push('抓取投递：中间子对话的输入框没出来'))
     // 两个输入框的 id 都是 #follow-up（同一个组件），按所在区域区分：子对话在 [data-child-view] 里
-    const childBox = childPane.locator('#follow-up')
+    // 切回父对话页签后子对话区域藏起来、读屏树里没有：输入框按 DOM 找，计数不受显隐影响
+    const childBox = d.locator('[data-child-view] #follow-up')
     const parentBox = d.locator('#follow-up').first()
     if ((await d.locator('#follow-up').count()) !== 2)
       errors.push(`抓取投递：页面上应该有父对话和子对话两个输入框（实际 ${await d.locator('#follow-up').count()} 个）`)
