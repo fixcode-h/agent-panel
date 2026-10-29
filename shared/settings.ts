@@ -230,7 +230,9 @@ export function agentRun(a: { cli: string; model: string; effort?: string }, set
     const prefix = apiModelPrefix(auth, cs.api)
     const native = prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
     const allowed = modelsForProtocol(cs.api.models, cs.api.protocol)
-    model = apiModelIdFor(modelForProtocol(native, cs.api.protocol, allowed), auth, cs.api)
+    // 没选模型时用 API 的第一个（模型列表里标「默认」的也是它）：空着不传 --model，
+    // CLI 会退回它内置的默认模型（Claude Code 是 claude-opus-5-5），第三方网关不认就直接报错
+    model = apiModelIdFor(modelForProtocol(native || allowed[0] || '', cs.api.protocol, allowed), auth, cs.api)
   }
   // Agent 自己选的思考强度换了 CLI 后可能不支持（例如跟随默认 CLI 换成了 Command Code），这时用档位的
   const own = a.effort && supportsEffort(cli, a.effort) ? a.effort : ''

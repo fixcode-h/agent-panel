@@ -322,8 +322,6 @@ export const EN_DESIGN: Record<string, string> = {
   'Blender 建模 · 按项目对话': 'Blender modeling · per-project chats',
   切换设计类型: 'Switch design type',
   设计类型: 'Design type',
-  '还没有模型设计对话。模型设计在 Agent 项目里用 Blender 建模，对话会按项目列在这里。':
-    'No model design chats yet. Model design uses Blender inside Agent projects; its chats are listed here by project.',
   阶段: 'Stage',
   '这个 UI 项目已经不在了。': 'This UI project no longer exists.',
   '{n} 个界面': '{n} screens',
@@ -847,10 +845,15 @@ export const EN_DESIGN: Record<string, string> = {
   还没设置路径: 'no path set',
   去设置: 'Open settings',
   开始建模: 'Start modeling',
-  '模型设计在 Agent 项目里开一个对话，后台启动 Blender，Agent 用它建模并在对话里汇报进度。':
-    'Model design opens a conversation in an Agent project and starts Blender in the background; the agent models with it and reports progress in the conversation.',
   模型放在哪个项目里: 'Project for the model',
   要建什么模型: 'What to model',
   '例如：低多边形风格的宝箱，带开合的盖子，导出 GLB':
     'e.g. a low-poly treasure chest with an opening lid, exported as GLB',
+  '模型设计在选定的项目目录里开一个对话（不列进 Agent 模式），后台启动 Blender，Agent 用它建模并在对话里汇报进度。':
+    'Model design opens a conversation in the chosen project folder (kept out of Agent mode), starts Blender in the background, and the agent models with it and reports progress in the conversation.',
+  '还没有模型设计对话。模型设计用 Blender 建模，对话会按项目列在这里。':
+    'No model design conversations yet. Model design uses Blender; conversations are listed here by project.',
+  找不到这个模型设计对话: 'This model design conversation was not found',
+  '模型设计在后台启动 Blender，Agent 用它建模，右栏实时预览。左侧按项目列出已有的模型对话。':
+    'Model design starts Blender in the background; the agent models with it and the right panel previews it live. Existing model conversations are listed on the left by project.',
 }

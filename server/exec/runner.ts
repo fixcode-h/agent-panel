@@ -739,9 +739,6 @@ export function envStallFailure(n: number) {
   return t('已自动重试 {n} 次，仍然没有响应。', { n })
 }
 
-/** 一轮没做完时自动催它接着做的次数上限 */
-const MAX_EMPTY_RETRIES = 1
-
 /**
  * 这一轮结束后要不要留着进程等用户下一句（面板保活）：对话模式、不是压缩/审查这类操作、CLI 定义开了 keepAlive。
  * 和 rpc.nativeAsk 无关：那只决定提问和审批走 CLI 自己的协议还是面板的 MCP 工具（见 invoke.ts 的 canTake），
@@ -759,19 +756,14 @@ export function canKeepAlive(o: { chat: boolean; op: boolean; cliKeepAlive: bool
 }
 
 /**
- * 只有「先说说要做什么」的准备语：模型在这一轮里什么都没动就收尾了。
- * 命中时说明它是在计划而不是在交付，需要接着推一轮。
- */
-/**
- * 这一轮算不算「没做事就收尾」：模型只回了一句话，或者干脆一个字都没回，
- * 没调工具、没改文件、也没给出结论。
- *
- * 误报会在对话里挂一张红色卡片、还会白跑一轮模型请求，所以「只说了一句准备语」这种
- * 仍按第一人称的「我先做点什么」加准备动词来认；但一个字都没输出不能放过：
- * CLI 报了一轮成功、面板却什么都没收到时，那一轮会被当成已完成并保活等下一句，
+ * 这一轮是不是「什么都没收到」：CLI 报了一轮结束，却没有正文、没调工具、没改文件。
+ * 这是 CLI 或网关出了问题（网关吞了请求、带图请求被拒），按错误显示给用户，不自动重试。
+ * 不再按回复文字猜「只说了一句准备语」：用户 2026-10-29 要求去掉，寒暄、反问这类正常回复会被误判
+ * 成没做完，还白白多跑一轮。只说了一句就收尾的回复照常收尾，由用户决定要不要接着说。
+ * 「什么都没收到」仍然要拦：否则这一轮会被当成已完成并保活等下一句，
  * 用户发来的消息全落在死回合里，既没有回复也没有报错（见 docs/lessons/execution.md）。
  */
-export function looksUnfinished(o: {
+export function silentTurn(o: {
   /** 这一轮产生的所有回复 */
   texts: string[]
   /** 这一轮调用过的工具数 */
@@ -779,43 +771,7 @@ export function looksUnfinished(o: {
   /** 这一轮改过的文件数 */
   changed: number
 }) {
-  if (o.tools > 0 || o.changed > 0) return false
-  const last = [...o.texts]
-    .reverse()
-    .find((x) => x.trim())
-    ?.trim()
-  // 没有任何输出：这一轮确实什么都没做，交给空回合兜底重跑，不能让「成功」的空结果收尾
-  if (!last) return true
-  // 长篇回复通常已经给了方案或结论，不算「只说了一句准备」
-  if (last.length > 200) return false
-  // 已经交东西的：有结论、有结果、给了命令，就不再推
-  if (/(已完成|已修复|已更新|已改好|全部通过|结论|总结|结果如下|以下是|建议|npm run|git (status|log|diff))/i.test(last))
-    return false
-  // 最典型的丢掉回合：「我先去/我先将…看一下/读…/更新…」——只有准备语，没有动作
-  return (
-    /(我|让我)\s*(先|这就先|来先)/.test(last) &&
-    /(看|读|查|检查|确认|了解|分析|梳理|更新|拉取|同步|找|准备|开始|处理)/.test(last)
-  )
-}
-
-/** 把话交给子对话的面板工具：调用过其中一个，「已转给子对话」才是真的 */
-// 前面可能贴着服务名前缀（mcp__panel__send_to_conversation），下划线也算单词字符，不能用 \b
-const HANDOFF_TOOL = /(send_to_conversation|create_conversation)(?![a-z_])/
-
-/**
- * 这一轮嘴上说「已转给 / 已交给子对话」，却没调用过 send_to_conversation、create_conversation：
- * 消息根本没发出去，子对话不会动，用户在对话里也找不到那一行「发送消息」。
- * 常见于工具没挂上（Pi 桥接扩展加载失败）或弱一点的模型只在回复里描述了动作。
- * 只看最后一句回复，并且要求说的是「子对话」：泛泛的「已交给你」「已转给测试」不算
- */
-export function claimsUnsentHandoff(o: { texts: string[]; tools: { name?: string; label: string }[] }) {
-  if (o.tools.some((x) => HANDOFF_TOOL.test(`${x.name ?? ''} ${x.label}`))) return false
-  const last = [...o.texts]
-    .reverse()
-    .find((x) => x.trim())
-    ?.trim()
-  if (!last) return false
-  return /已经?(转给|转交|转发给|交给|发给|发送给|告诉|通知|同步给)[^。\n]{0,40}子对话/.test(last)
+  return !o.tools && !o.changed && !o.texts.some((x) => x.trim())
 }
 
 /** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
@@ -844,12 +800,6 @@ export function settleEnvStallNotes(notes: EnvStallNote[]) {
   }
 }
 
-/** 空回合续一轮前写进对话的提示：续上了也要收回成普通说明 */
-export interface EmptyNote {
-  msg: TaskMessage
-  base: string
-}
-
 /**
  * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
  * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
@@ -860,19 +810,6 @@ export function settleNetNotes(notes: NetNote[]) {
     msg.transient = true
     msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
     if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动续接，从中断的地方继续了') }
-  }
-}
-
-/**
- * 空回合续上的报错卡也一样的道理：续上了就说明这一轮其实做成了，
- * 不能把「只回了一句话就结束了」一直留成红色失败卡片。
- */
-export function settleEmptyNotes(notes: EmptyNote[]) {
-  for (const { msg, base } of notes) {
-    msg.error = undefined
-    msg.transient = true
-    msg.text = [base, '', t('已自动接一轮，这一轮继续做完了。')].join('\n')
-    if (msg.alert) msg.alert = { ...msg.alert, level: 'warn', resolved: t('已自动接一轮，继续做完了') }
   }
 }
 
@@ -1091,10 +1028,6 @@ async function runAgent(
   retryCarry = '',
   /** 这一串自动续接里已经写进对话的报错：续接成功后要收回成普通说明 */
   netNotes: NetNote[] = [],
-  /** 这一轮「只说了要做」已经被自动续接几次：防止反复推同一个死循环 */
-  emptyRetries = 0,
-  /** 空回合续一轮时写进对话的提示：续上了要收回成普通说明 */
-  emptyNotes: EmptyNote[] = [],
   /** 上下文超长降级时写进对话的提示：新会话接上了要收回成普通说明 */
   contextNotes: ContextNote[] = [],
   /** 这一轮因为环境性失败（进程活着却没有输出）自动重试过几次：只重试一次，不能循环 */
@@ -1471,9 +1404,9 @@ async function runAgent(
   }
 
   /**
-   * 这一轮是不是「只回了一句准备语就收尾」：零工具、零改动，最后一句是「我先…」。
-   * keepAlive 会在这里先挂起等用户下一句，runAgent 就一直不返回，收尾处的兜底没机会跑；
-   * 所以判定要能在 result 到达时（保活之前）问一次，命中就不保活，让兜底接管。
+   * 这一轮是不是什么都没收到（见 silentTurn）。
+   * keepAlive 会在这里先挂起等用户下一句，runAgent 就一直不返回，收尾处的报错没机会写；
+   * 所以判定要能在 result 到达时（保活之前）问一次，命中就不保活，让收尾处把错误报出来。
    */
   const emptyTurn = () => {
     if (prewarmMode || op || ctx.signal.aborted) return false
@@ -1481,11 +1414,7 @@ async function runAgent(
     const texts = turnMsgs()
       .filter((m) => m.role === 'agent')
       .map((m) => m.text)
-    return (
-      looksUnfinished({ texts, tools: turnTools(), changed: touched.size - turnMark.touched }) ||
-      // 说了转给子对话却没发：同样不能保活收尾，要让下面的兜底接一轮把消息真的发出去
-      (emptyRetries < MAX_EMPTY_RETRIES && claimsUnsentHandoff({ texts, tools: turnMsgs().flatMap((m) => m.tools) }))
-    )
+    return silentTurn({ texts, tools: turnTools(), changed: touched.size - turnMark.touched })
   }
   /**
    * 这一轮结束的回调只发一次：CLI 的 result 和「回复完停在等下一句」都会走到 markTurnDone，
@@ -1830,7 +1759,7 @@ async function runAgent(
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
         if (chat && !op) {
           task.working = false
-          // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
+          // 什么都没收到的不算完成：这一轮要交给收尾处报错，不能先记成已完成
           if (ev.ok && !prewarmMode && !emptyTurn()) {
             endTurn()
           }
@@ -2113,7 +2042,7 @@ async function runAgent(
   const keepAlive = canWait
     ? async () => {
         if (!hasViewer(task.id)) return null
-        // 这一轮只回了一句、什么都没做：不保活，直接让它返回，交给收尾处的空回合兜底催一轮
+        // 这一轮什么都没收到：不保活，直接让它返回，交给收尾处报错
         if (emptyTurn()) return null
         fromUser = false
         const text = await waitNext(false)
@@ -2343,8 +2272,6 @@ async function runAgent(
         undefined,
         undefined,
         undefined,
-        undefined,
-        undefined,
         envStalls,
         envStallNotes,
       )
@@ -2363,8 +2290,6 @@ async function runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -2388,8 +2313,6 @@ async function runAgent(
         ctx,
         { ...call, prompt: call.fresh ?? call.prompt },
         true,
-        undefined,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -2423,8 +2346,6 @@ async function runAgent(
         true,
         netRetries,
         carry,
-        undefined,
-        undefined,
         undefined,
         undefined,
         envStalls,
@@ -2470,19 +2391,10 @@ async function runAgent(
         timeoutMs,
       })
       ctx.changed(true)
-      return runAgent(
-        ctx,
-        call,
-        retried,
-        netRetries,
-        retryCarry,
-        netNotes,
-        emptyRetries,
-        emptyNotes,
-        contextNotes,
-        envStalls + 1,
-        [...envStallNotes, { msg: note, base: message }],
-      )
+      return runAgent(ctx, call, retried, netRetries, retryCarry, netNotes, contextNotes, envStalls + 1, [
+        ...envStallNotes,
+        { msg: note, base: message },
+      ])
     }
     // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
     // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
@@ -2519,8 +2431,6 @@ async function runAgent(
         netRetries + 1,
         '',
         netNotes,
-        emptyRetries,
-        emptyNotes,
         contextNotes,
         envStalls,
         envStallNotes,
@@ -2599,8 +2509,6 @@ async function runAgent(
           netRetries,
           carry,
           netNotes,
-          emptyRetries,
-          emptyNotes,
           [...contextNotes, { msg: note, base: message }],
           envStalls,
           envStallNotes,
@@ -2615,140 +2523,39 @@ async function runAgent(
     ].filter(Boolean)
     return { ok: false, error: tried.length ? [message, '', ...tried].join('\n') : message }
   }
-  // 这一轮模型只回了一句「我先…」就收尾了，或者干脆一个字都没回：没调工具、没改文件，等于什么都没做。
-  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来。
-  // 不限定对话：子 Agent（工作流节点、并行子任务）同样会只报一句进度就结束，那一路没人催就只能干等。
+  // 这一轮 CLI 报了结束，却什么都没收到（没有正文、没调工具、没改文件）：CLI 或网关出了问题。
+  // 按「错误一律显示」写进对话，这一轮按失败结束；不自动重试，由用户决定重发、继续还是换模型。
+  // 不限定对话：子 Agent（工作流节点、并行子任务）同样可能空着收尾，那一路要让失败报回派它的一方。
   if (
     !op &&
     !prewarm &&
     !ctx.signal.aborted &&
-    looksUnfinished({ texts: turnTexts, tools: turnTools(), changed: touched.size - turnMark.touched })
+    silentTurn({ texts: turnTexts, tools: turnTools(), changed: touched.size - turnMark.touched })
   ) {
-    // 一个字都没收到：模型根本没答这条要求（网关吞了、带图请求被拒），不能按「只说了要做」去催
-    const silent = !turnTexts.some((x) => x.trim())
-    const what = silent
-      ? t('这一轮 {cli} 没有返回任何内容，用户的要求还没处理', { cli: def.name })
-      : t('这一轮只回了一句话就结束了，没有动手也没给出结论')
-    if (emptyRetries < MAX_EMPTY_RETRIES) {
-      const note = t('{what}。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…', {
-        what,
-        n: emptyRetries + 1,
-        max: MAX_EMPTY_RETRIES,
-      })
-      task.messages.push({
-        id: ctx.newId(),
-        role: 'system',
-        agentId,
-        step,
-        text: note,
-        tools: [],
-        error: true,
-        alert: makeAlert('warn', what, 'empty_turn'),
-        at: new Date().toISOString(),
-      })
-      const pushed = task.messages.at(-1)!
-      log.warn('agent', `${def.name} ${silent ? '没有返回任何内容' : '只回了一句就结束'}，自动接一轮`, {
-        task: task.id,
-        step,
-        n: emptyRetries + 1,
-      })
-      ctx.changed(true)
-      return runAgent(
-        ctx,
-        {
-          ...call,
-          // 没有任何输出时上一轮没答这条要求，按原样再要一次；只说了一句准备语时才把要求换成「现在动手」
-          prompt: silent
-            ? '（上一次请求没有返回任何内容，这是重试。）\n\n' + turnMark.input
-            : '你上一条回复只说了要做什么就结束了这一轮，既没有调用工具也没有给出结论。' +
-              '现在马上动手：直接发起工具调用去完成任务，做完在这一轮里给出结论；不要再说「我先看看」这类准备语。',
-        },
-        retried,
-        netRetries,
-        retryCarry,
-        netNotes,
-        emptyRetries + 1,
-        [...emptyNotes, { msg: pushed, base: note }],
-        // 降级那一轮的失败卡片还在：续接成功后要能一并收掉
-        contextNotes,
-        envStalls,
-        envStallNotes,
-      )
-    }
-    const note = t(
-      '{what}。自动接了一轮仍然没有产出，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。',
-      { what },
-    )
+    const what = t('这一轮 {cli} 没有返回任何内容，这条要求没有被处理', { cli: def.name })
     task.messages.push({
       id: ctx.newId(),
       role: 'system',
       agentId,
       step,
-      text: note,
+      text: what,
       tools: [],
       error: true,
       alert: makeAlert('error', what, 'empty_turn'),
       at: new Date().toISOString(),
     })
     ctx.changed(true)
-    log.error('agent', `${def.name} 连续只回一句就结束，停止`, { task: task.id, step })
-    return { ok: false, error: note }
-  }
-  // 回复里说「已转给子对话」，这一轮却没调用过发消息的工具：消息没发出去。
-  // 按「错误一律显示」先写进对话，再接一轮让它真的发（或者更正说法）；只接一次，和空回合共用次数
-  if (
-    !op &&
-    !prewarm &&
-    !ctx.signal.aborted &&
-    emptyRetries < MAX_EMPTY_RETRIES &&
-    claimsUnsentHandoff({ texts: turnTexts, tools: turnMsgs().flatMap((m) => m.tools) })
-  ) {
-    const what = t('回复里说已经转给子对话，但这一轮没有调用 send_to_conversation，消息没有发出去')
-    const note = t('{what}。正在自动接一轮，让它真的发出去…', { what })
-    task.messages.push({
-      id: ctx.newId(),
-      role: 'system',
-      agentId,
-      step,
-      text: note,
-      tools: [],
-      error: true,
-      alert: makeAlert('warn', what, 'empty_turn'),
-      at: new Date().toISOString(),
-    })
-    const pushed = task.messages.at(-1)!
-    log.warn('agent', `${def.name} 说已转给子对话但没调用发送工具，自动接一轮`, { task: task.id, step })
-    ctx.changed(true)
-    return runAgent(
-      ctx,
-      {
-        ...call,
-        prompt:
-          '你上一条回复说已经把内容转给了子对话，但这一轮你没有调用 send_to_conversation，消息并没有发出去，子对话什么都没收到。' +
-          '现在调用 send_to_conversation 把要交代的内容真正发给那个子对话（不知道 id 先用 list_conversations 查；没有合适的就用 create_conversation 新建）。' +
-          '如果其实是更早的轮次里已经发过，就不要重发，直接向用户更正说明。发完再简短告诉用户。',
-      },
-      retried,
-      netRetries,
-      retryCarry,
-      netNotes,
-      emptyRetries + 1,
-      [...emptyNotes, { msg: pushed, base: note }],
-      contextNotes,
-      envStalls,
-      envStallNotes,
-    )
+    log.error('agent', `${def.name} 没有返回任何内容`, { task: task.id, step })
+    return { ok: false, error: what }
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
   // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
   settleNetNotes(netNotes)
-  // 空回合的提示同理：已经接一轮做完了，那张红卡不能挂着让人以为这一轮失败了
-  settleEmptyNotes(emptyNotes)
   // 上下文超长降级：裁剪后的新会话接上了，那张失败卡片同样要收掉
   settleContextNotes(contextNotes)
   // 环境性失败重试成功：那一轮其实做成了，同样收成普通说明
   settleEnvStallNotes(envStallNotes)
-  if (netNotes.length || emptyNotes.length || contextNotes.length || envStallNotes.length) ctx.changed(true)
+  if (netNotes.length || contextNotes.length || envStallNotes.length) ctx.changed(true)
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined
@@ -2804,8 +2611,6 @@ async function runAgent(
     const c = await runAgent(
       ctx,
       { ...call, op: { kind: 'compact' } },
-      undefined,
-      undefined,
       undefined,
       undefined,
       undefined,

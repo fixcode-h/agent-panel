@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
 
-await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base + '#/design/demo-design-menu')
   await check(p, 'UI设计', ['控件树', 'AI 对话', 'StartGroup'])
@@ -350,6 +350,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
     .waitFor({ timeout: 8000 })
     .catch(() => errors.push('模型设计：建好对话后右栏没有显示模型的物体列表'))
   await check(p, 'UI设计-模型预览', ['第 1 版 · 5 个物体', 'Chest_Lid'])
+  // 模型对话属于设计模式：开在 #/model 下，Agent 模式的项目对话里不列它
+  if (!p.url().includes('#/model/')) errors.push(`模型设计：建好后应停在 #/model/<对话>，实际是 ${p.url()}`)
+  await p.goto(base + '#/')
+  await settle(p)
+  if (await p.locator('[data-sidebar]').getByText('低多边形宝箱', { exact: false }).count())
+    errors.push('模型设计对话不该出现在 Agent 模式的侧栏里')
   await p.goto(base + '#/design')
   await side().getByRole('button', { name: '切换设计类型' }).click()
   await p.getByRole('menuitemradio', { name: /UI 设计/ }).click()

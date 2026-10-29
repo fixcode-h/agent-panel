@@ -27,3 +27,9 @@ paths: server/design-mcp.ts, shared/design.ts, shared/design-analysis.ts, shared
 - 规则：每次 `update_widgets` 之后立刻回读被改控件的 x/y/宽/高/字号（`screenshot` 返回的控件位置表，或 `get_tree` 读该属性）；回读值等于汇报值才写进总结，不一致就当场重改并说明「上一轮没生效」。完成条件固定为「改完后的全屏截图 + 目标控件放大图 + 回读数值一致」，`check` 通过不是完成条件。
 - 起因：2026-10-24 汇报的位置和画布上实际不一致，Agent 按 `check` 通过写了完成总结。
 - 防线：人工（回读靠 Agent 自己执行，没有自动检查）。
+
+## 模型设计对话属于设计模式，不进 Agent 模式
+
+- 规则：模型设计（`Task.modelDesign`）的对话在 `#/model/<对话>` 打开，Agent 模式的侧栏和项目首页不列它；按项目对话地址打开的（命令面板、通知、旧链接）由 `ProjectsPage` 转到 `#/model`。新增按任务列表筛项目对话的地方要排除 `modelDesign`。
+- 起因：用户 2026-10-30 指出建模对话跳进了 Agent 模式、混在 Agent 项目对话里。
+- 防线：`scripts/ui/04-design.mjs`（建好停在 `#/model/`、Agent 侧栏里没有它）。
