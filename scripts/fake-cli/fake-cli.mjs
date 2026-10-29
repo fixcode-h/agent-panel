@@ -708,7 +708,13 @@ if (input.includes('SPAWN_MANY_CHILDREN') && input.includes('create_conversation
   // 评审子是任务角色（isReviewRole）：它没有面板工具，也不应换收尾流程
   // 交回结果的那一轮 input 里只有「你派出的子任务都结束了…」，不再带用户原话，所以按 [fake-review] 标记驱动后续
   const back = [...input.matchAll(/\[fake-review\] (pass|fail)/g)].at(-1)?.[1]
-  const asked = input.includes('SUBMIT_MERGE') && input.includes('submit_merge')
+  // 续接的会话只重发变了的规则、面板工具也按需给（ADR 0027 / 0028）：submit_merge 的说明头一轮给过，
+  // 之后这一轮的输入里不一定还有。真 CLI 靠续接的会话记得有这个工具，假 CLI 按会话记一笔，
+  // 否则「修好了再合一次」这种续接轮次时有时没有工具说明，用例时好时坏
+  const mergeSeen = session ? path.join(tmpdir(), `fake-cli-merge-tool-${session}`) : ''
+  if (mergeSeen && input.includes('submit_merge')) writeFileSync(mergeSeen, '1')
+  const asked =
+    input.includes('SUBMIT_MERGE') && (input.includes('submit_merge') || (!!mergeSeen && existsSync(mergeSeen)))
   if (!beganEdit && !isReviewRole() && (asked || back)) {
     const review = (instructions) =>
       // 第一次派评审要带交接单（ADR 0013，缺 goal / checks 面板会拒绝）；这里复看也是新派，同样带上
