@@ -37,6 +37,7 @@
 | [0027](./0027-resumed-session-prompt-delta.md)            | 续接会话只发变了的提示词段落                                 | 已接受 | 2026-10-29 | `shared/prompt-delta.ts` 按段落指纹省掉会话里已有的规则；`fresh` 兜底、压缩后作废、10 轮补一次完整的                           |
 | [0028](./0028-panel-tools-on-demand-and-input-sources.md) | 省 token 第二批：工具按需、子任务瘦身、输入构成              | 已接受 | 2026-10-29 | 不常用面板工具收进 `more_tools`；角色写过的规则不重复；子任务开头和结果瘦身；保活进程同步状态；`TaskTurn.sources`              |
 | [0029](./0029-local-speech-input.md)                      | 本机语音输入用 sherpa-onnx，识别库和模型都按需下载到数据目录 | 已接受 | 2026-10-29 | 默认不下载；用户挑模型；原生库从 npm 解到数据目录再加载；录音转 16k PCM 走 JSON                                                |
+| [0030](./0030-delivery-contracts-between-roles.md)        | 角色之间按固定交付契约交接，Bug 流程加钉住现象和回归测试     | 已接受 | 2026-10-29 | 方案摘要 / 实现计划 / 排查报告 / 自测清单四段共用正文；`BUG_METHOD` 第 0 步与修复硬要求；`tester.task` 设计用例 / 补测试       |
 
 状态只有四个词，别自己造近义词：
 
