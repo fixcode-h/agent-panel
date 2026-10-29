@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
 import { toast } from '@/lib/toast'
 import {
+  Activity,
   Bot,
   ChevronRight,
   Crown,
+  FileText,
+  FolderOpen,
   Hand,
   LayoutGrid,
   ListChecks,
@@ -15,6 +18,7 @@ import {
   Play,
   Plus,
   Redo2,
+  RotateCcw,
   Sparkles,
   Spline,
   Trash2,
@@ -37,7 +41,7 @@ import {
   newFlow,
   newNode,
 } from '@shared/flow'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { isReady, type Check } from '@/lib/readiness'
 import type { SaveStatus } from '@/lib/useAutosave'
@@ -48,12 +52,16 @@ import { Select } from '@/components/ui/input'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { Menu, MenuContent, MenuItem, MenuTrigger, menuItem } from '@/components/ui/menu'
 import { SaveIndicator } from '@/components/layout/Detail'
-import { RunInProjectDialog } from '@/components/workflows/RunInProjectDialog'
+import { RunInProjectDialog, lastProject, useRerun } from '@/components/workflows/RunInProjectDialog'
+import { DocEditor } from '@/components/workflows/DocEditor'
+import { docTemplate } from '@/lib/workflow-doc'
+import { Spinner } from '@/components/ui/status-pill'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas, smartFit } from './FlowCanvas'
 import { nodeViews, parseRef, refOptions } from './views'
 import { FlowInspector, Label, NodeInspector, type Team, type W } from './Inspector'
 import { useFlowHistory } from './history'
+import { RunProgress, useFlowRuns } from './RunProgress'
 
 type EditorProps = {
   w: W
@@ -71,9 +79,14 @@ type EditorProps = {
 const barBtn = 'h-[30px] w-[30px] rounded-[7px]'
 /** 底部画布工具条的图标按钮：36px、圆角 9px，图标 17px（照设计稿） */
 const toolBtn = 'h-9 w-9 rounded-[9px] [&_svg]:h-[17px] [&_svg]:w-[17px]'
+/** 属性栏顶部页签：选中的页签是和下面内容连成一体的白卡（照设计稿），其余只是灰字 */
+const tabOn =
+  'rounded-t-lg bg-card font-medium text-fg shadow-[0_0_0_1px_var(--line)] [clip-path:inset(-1px_-1px_0_-1px)]'
+const tabOff = 'rounded-t-lg text-subtle hover:text-fg'
 
 function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps) {
-  const { agents, workflows } = useData()
+  const { agents, workflows, projects } = useData()
+  const { go } = useNav()
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
   const [selected, setSelected] = useState('')
@@ -81,9 +94,20 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
   const [inspector, setInspector] = useState(true)
   // 属性栏可以拖宽：节点的字段和说明比较长，默认比原来的 320 宽一些；拖动时至少给画布留 480
   const pane = usePaneWidth('flow-inspector', 380, 280, () => Math.min(720, Math.max(280, window.innerWidth - 480)))
+  // 属性栏顶部的页签（照设计稿）：当前编辑的对象、工作流说明、运行进度。选中画布上的东西时回到第一页
+  const [tab, setTab] = useState<'object' | 'doc' | 'progress'>('object')
   useEffect(() => {
+    if (selected) setTab('object')
     if (selected && selected !== START && selected !== END) setInspector(true)
   }, [selected])
+  // 底部工具条选的项目：「运行中」「重新运行」和运行进度都看这个项目；默认上次新建任务用的项目，没有就第一个。
+  // 项目列表变了（删掉了选中的）时退回默认
+  const [pickedProject, setProject] = useState(lastProject)
+  const projectId = projects.some((p) => p.id === pickedProject) ? pickedProject : (projects[0]?.id ?? '')
+  const project = projects.find((p) => p.id === projectId)
+  const runs = useFlowRuns(w.id, projectId)
+  const { rerun, busy: rerunning } = useRerun(w.id, prepare)
+  const openTask = (tk: { projectId: string; id: string }) => go({ page: 'projects', id: tk.projectId, sub: tk.id })
   // 全屏编辑：画布占满窗口
   const [full, setFull] = useState(false)
   useEffect(() => {
@@ -150,6 +174,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
   // 就绪检查在属性栏「流程」那一页的最下面：回到那一页、展开属性栏，再滚过去
   const showChecks = () => {
     setSelected('')
+    setTab('object')
     setInspector(true)
     setTimeout(
       () => document.querySelector('[data-flow-readiness]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
@@ -418,6 +443,45 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
             >
               <Play className="h-3.5 w-3.5" fill="currentColor" />
             </Button>
+            {/* 重新运行：照所选项目里上次那次执行的任务描述和开关再跑一次；没跑过就不显示 */}
+            {runs.last && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(toolBtn, 'border border-line')}
+                disabled={rerunning}
+                onClick={() => runs.last && void rerun(runs.last)}
+                aria-label={t('重新运行')}
+                title={t('用上次的任务描述再运行一次：{title}', { title: runs.last.title })}
+              >
+                {rerunning ? <Spinner className="h-3.5 w-3.5" /> : <RotateCcw className="h-4 w-4" />}
+              </Button>
+            )}
+            {/* 在哪个项目里运行：画布窄时收起，运行弹窗里仍能选 */}
+            {projects.length > 0 && (
+              <div className="ml-1 hidden min-w-0 items-center @xl:flex">
+                <Select
+                  size="sm"
+                  aria-label={t('在哪个项目里运行')}
+                  title={t('在哪个项目里运行')}
+                  value={projectId}
+                  onChange={(e) => setProject(e.target.value)}
+                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                  className="h-9 w-[130px] rounded-[9px]"
+                />
+              </div>
+            )}
+            {runs.running.length > 0 && (
+              <button
+                type="button"
+                onClick={() => openTask(runs.running[0])}
+                title={t('打开正在运行的执行：{title}', { title: runs.running[0].title })}
+                className="ml-1 inline-flex h-[26px] shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-run/30 bg-run-soft px-2.5 text-[0.75rem] font-medium whitespace-nowrap text-run hover:border-run/60"
+              >
+                <Spinner className="h-2 w-2 border-[1.5px]" />
+                {runs.running.length > 1 ? t('运行中 {n}', { n: runs.running.length }) : t('运行中')}
+              </button>
+            )}
           </div>
           {drop && (
             <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
@@ -528,8 +592,22 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
         <ResizeHandle pane={pane} label={t('拖动调整属性栏的宽度')} className="hidden lg:block" />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-card">
           {/* 顶部页签条（照设计稿）：当前编辑的对象写在页签上，叉号收起属性栏 */}
-          <div className="flex h-10 shrink-0 items-end border-b border-line bg-bg px-1.5">
-            <div className="flex h-[34px] max-w-full min-w-0 items-center gap-1.5 rounded-t-lg bg-card pr-1 pl-2.5 text-[0.78125rem] font-medium shadow-[0_0_0_1px_var(--line)] [clip-path:inset(-1px_-1px_0_-1px)]">
+          <div
+            role="tablist"
+            aria-label={t('属性栏页签')}
+            className="flex h-10 shrink-0 items-end gap-0.5 border-b border-line bg-bg px-1.5"
+          >
+            <div
+              role="tab"
+              aria-selected={tab === 'object'}
+              tabIndex={0}
+              onClick={() => setTab('object')}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTab('object')}
+              className={cn(
+                'flex h-[34px] max-w-full min-w-0 cursor-pointer items-center gap-1.5 pr-1 pl-2.5 text-[0.78125rem]',
+                tab === 'object' ? tabOn : tabOff,
+              )}
+            >
               {node ? (
                 <Bot className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
               ) : selEdge ? (
@@ -551,15 +629,72 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                 size="2xs"
                 label={t('收起属性栏')}
                 className="hidden lg:grid"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation()
                   setInspector(false)
                   fit()
                 }}
               />
             </div>
+            <button
+              role="tab"
+              aria-selected={tab === 'doc'}
+              onClick={() => setTab('doc')}
+              title={t('工作流说明：每个节点执行时都会带上')}
+              className={cn(
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                tab === 'doc' ? tabOn : tabOff,
+              )}
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t('流程说明')}
+            </button>
+            <button
+              role="tab"
+              aria-selected={tab === 'progress'}
+              onClick={() => setTab('progress')}
+              title={project ? t('「{name}」里最近一次执行的进度', { name: project.name }) : undefined}
+              className={cn(
+                'flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 px-2.5 text-[0.78125rem]',
+                tab === 'progress' ? tabOn : tabOff,
+              )}
+            >
+              {runs.running.length ? <Spinner className="text-run" /> : <Activity className="h-3.5 w-3.5 shrink-0" />}
+              {t('运行进度')}
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {node ? (
+            {tab === 'doc' ? (
+              <div className="flex flex-col gap-2 p-4">
+                <p className="text-[0.6875rem] leading-relaxed text-subtle">
+                  {t('写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色。')}
+                </p>
+                <DocEditor
+                  value={w.document}
+                  onChange={(v) => onChange({ document: v })}
+                  team={[...(main ? [main] : []), ...team.map((m) => m.agent)]}
+                  onTemplate={() => docTemplate(main, team)}
+                  minHeight={320}
+                />
+              </div>
+            ) : tab === 'progress' ? (
+              <>
+                {projects.length > 1 && (
+                  <div className="flex items-center gap-2 px-4 pt-4">
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" aria-hidden />
+                    <Select
+                      size="sm"
+                      aria-label={t('看哪个项目的运行进度')}
+                      value={projectId}
+                      onChange={(e) => setProject(e.target.value)}
+                      options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
+                <RunProgress task={runs.last} projectName={project?.name ?? ''} />
+              </>
+            ) : node ? (
               <NodeInspector
                 key={`${node.id}:${rev}`}
                 w={w}
@@ -635,6 +770,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
         open={running}
         onOpenChange={setRunning}
         workflow={{ id: w.id, name: w.name }}
+        projectId={projectId}
         notReady={ready ? undefined : t('就绪检查还有没通过的项，运行时可能出错')}
         prepare={prepare}
       />
