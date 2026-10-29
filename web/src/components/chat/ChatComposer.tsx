@@ -10,6 +10,7 @@ import { AttachMenu, DropHint, FileRefHint, type useAttachments } from './Attach
 import { RichInput, type RichInputHandle } from './RichInput'
 import { useComposerChips } from './composer-chips'
 import { ElementPickButton } from './ElementPicker'
+import { SpeechButton } from './SpeechButton'
 
 const DRAFT = 'chat-draft:'
 
@@ -272,6 +273,7 @@ export function ChatComposer({
           />
         )}
         <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} />
+        <SpeechButton onText={(v) => editor.current?.insert(v)} />
         {tools}
         <span className="flex-1" />
         {hint && (

@@ -39,6 +39,7 @@ import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { childAskUserDefault } from '@/lib/askUserDefault'
 import { ElementPickButton } from '@/components/chat/ElementPicker'
+import { SpeechButton } from '@/components/chat/SpeechButton'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 
@@ -317,6 +318,7 @@ export function TaskComposer({
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             <ElementPickButton onPick={chips.addQuote} rootRef={chips.dropRef} className="h-8 w-8 rounded-lg" />
+            <SpeechButton onText={(v) => editor.current?.insert(v)} className="h-8 w-8 rounded-lg" />
             {workflow ? (
               <>
                 {isolateSwitch}

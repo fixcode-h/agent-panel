@@ -1706,6 +1706,22 @@ const demoCatalog = () => ({
 let demoWorkflows: ComfyWorkflow[] = []
 /** 演示里存下来的工作流链 */
 let demoChains: ComfyChain[] = []
+/** 语音输入：演示里没有麦克风识别，下载一点就好，识别回一句示例 */
+const demoSpeechModels = new Set<string>()
+function demoSpeech(method: string, seg: string[]): unknown {
+  const [, a, id, b] = seg
+  if (a === 'transcribe') return { text: '（在线演示）把登录页的报错提示改得更清楚一些' }
+  if (a === 'models' && id && method === 'POST' && b === 'download') demoSpeechModels.add(id)
+  if (a === 'models' && id && method === 'DELETE') demoSpeechModels.delete(id)
+  return {
+    supported: true,
+    platform: 'demo',
+    runtime: demoSpeechModels.size > 0,
+    models: [...demoSpeechModels],
+    dir: '~/.agent-panel/speech',
+  }
+}
+
 function demoLocal(method: string, seg: string[], body: unknown): unknown {
   const [, action, id, sub] = seg
   // 演示里没有真的 ComfyUI：队列一直是空的，导入只返回一个像真的文件名
@@ -2122,6 +2138,7 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     }
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
+  if (res === 'speech') return demoSpeech(method, seg)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
