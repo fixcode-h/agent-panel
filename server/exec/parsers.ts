@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { CliLimits, ToolUse } from '../../shared/schema.ts'
+import type { ContextSnapshot } from '../../shared/context-breakdown.ts'
 import { t } from '../../shared/i18n.ts'
 import { getCli } from '../../shared/clis.ts'
 import type { OutputSpec } from '../../shared/cli-spec.ts'
@@ -57,6 +58,8 @@ export type CliEvent =
       addCacheWrite?: number
       addCost?: number
     }
+  /** CLI 自己报的上下文细分（Claude Code 的 get_context_usage）：会话栏按它分块 */
+  | { type: 'context'; snapshot: ContextSnapshot }
   /** 一次模型请求结束：ms 是这次请求从开始到结束的耗时（CLI 报得出起止时才有） */
   | { type: 'model'; ms: number }
   /** CLI 的待办清单 / 计划，每次给出完整列表 */

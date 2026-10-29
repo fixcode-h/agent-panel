@@ -41,7 +41,7 @@ export function TabBar({
   const fit = variant === 'fit'
   return (
     <TabVariantContext.Provider value={variant}>
-      <Root className={cn('flex shrink-0 items-stretch border-b', underline ? 'h-10' : 'h-9 bg-rail', className)}>
+      <Root className={cn('flex shrink-0 items-stretch border-b', underline ? 'h-10' : 'h-9 bg-bg', className)}>
         {leading && <div className={cn('flex shrink-0 items-center px-1.5', !underline && 'border-r')}>{leading}</div>}
         <div
           role="tablist"

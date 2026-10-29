@@ -119,6 +119,18 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             <PaletteCard key={p} id={p} on={value.palette === p} onPick={() => set('palette', p)} />
           ))}
         </div>
+        <Row title={t('面板圆角')} desc={t('主区、右栏这些面板的圆角大小，0 是直角。')}>
+          <Slider
+            label={t('面板圆角')}
+            value={value.panelRadius}
+            min={0}
+            max={24}
+            step={1}
+            def={DEFAULTS.panelRadius}
+            format={(v) => `${Math.round(v)}px`}
+            onChange={(v) => set('panelRadius', Math.round(v))}
+          />
+        </Row>
       </Group>
       <Group title={t('字体')}>
         <Row title={t('英文字体')} desc={t('默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。')}>

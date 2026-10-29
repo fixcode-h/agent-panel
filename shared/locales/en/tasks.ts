@@ -1347,16 +1347,8 @@ export const EN_TASKS: Record<string, string> = {
   '模型和思考强度跟着角色设置：{model}': 'Model and thinking effort follow the role settings: {model}',
 
   // 会话栏（照 Claude Code）
-  '对话内容、工具调用和结果：Agent 报的总占用减去其余各块':
-    "Conversation, tool calls and results: the agent's reported total minus the other parts",
   系统工具: 'System tools',
-  'Agent 自带的读写文件、执行命令等工具的定义（估计值）':
-    "Definitions of the agent's built-in tools such as file edits and commands (estimate)",
-  '面板交给 Agent 的工具（派子任务、提问、计划……），按工具说明的字数换算':
-    'Tools the panel gives the agent (subtasks, questions, plans…), converted from the length of their descriptions',
   系统提示词: 'System prompt',
-  'Agent 自己的系统提示词（估计值）加上面板追加的角色设定':
-    "The agent's own system prompt (estimate) plus the role setup the panel appends",
   '可用 Skill 的名字和描述：正文用到时才读':
     'Names and descriptions of available skills; the body is read only when used',
   记忆文件: 'Memory files',
@@ -1367,8 +1359,6 @@ export const EN_TASKS: Record<string, string> = {
     'Context is compacted before usage reaches this part; kept for the compaction itself and model output',
   还能用的上下文: 'Context still available',
   'MCP 工具（按需）': 'MCP tools (deferred)',
-  '收进 more_tools 的面板工具：不占上下文，用到时才取用法':
-    'Panel tools kept behind more_tools: they take no context until their usage is fetched',
   '已使用 {n}%': '{n}% used',
   '估计值：Agent 没有报这一块，按版本的量级估的':
     'Estimate: the agent does not report this part, so it is sized from typical versions',
@@ -1382,5 +1372,25 @@ export const EN_TASKS: Record<string, string> = {
   显示会话栏: 'Show session bar',
   隐藏会话栏: 'Hide session bar',
   空闲空间: 'Free space',
+  '对话内容、工具调用和结果': 'Conversation text, tool calls and results',
+  'Agent 自带的读写文件、执行命令等工具的定义':
+    "Definitions of the agent's built-in tools (read/write files, run commands…)",
+  'MCP 服务提供的工具（含面板交给 Agent 的派子任务、提问、计划……）的定义':
+    'Definitions of tools from MCP servers (including the panel tools for sub-tasks, questions, plans…)',
+  'MCP 服务说明': 'MCP server instructions',
+  'MCP 服务连上时给的使用说明，Agent 放进系统提示词':
+    'Usage instructions MCP servers send when they connect; the agent puts them in its system prompt',
+  'Agent 自己的系统提示词加上面板追加的角色设定': "The agent's own system prompt plus the role setup the panel appends",
+  '自定义 Agent': 'Custom agents',
+  '能派出去的子 Agent 的名字和用途说明': 'Names and descriptions of the sub-agents it can dispatch',
+  上次细分以来: 'Since last update',
+  'Agent 上次报细分之后新增的内容（多是这一轮的消息）：这一轮结束时再细分':
+    'Added since the agent last reported its breakdown (mostly this turn’s messages); refreshed when the turn ends',
+  '用到时才加载用法的 MCP 工具：不占上下文': 'MCP tools loaded only when used; they take no context',
+  '系统工具（按需）': 'System tools (deferred)',
+  'Agent 自带、用到时才加载用法的工具：不占上下文': 'Built-in tools loaded only when used; they take no context',
+  '{cli} 报的细分，{ago}更新': 'Breakdown reported by {cli}, updated {ago}',
+  '各块是按字数和版本量级估的，总数是 Agent 报的':
+    'Categories are estimated from text length and version defaults; the total is reported by the agent',
   会话栏: 'Session bar',
 }

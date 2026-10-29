@@ -22,18 +22,19 @@ const flush = async () => {
 /** 一条带保活的会话：记录发出去的消息，进程有没有被关掉 */
 function session(adapter: RpcAdapter) {
   const sent: any[] = []
+  const events: any[] = []
   let ended = false
   let deliver: (v: string | null) => void = () => {}
   const rpc = createRpcSession({
     adapter,
     cwd: process.cwd(),
     input: '第一句',
-    onEvent: () => {},
+    onEvent: (e) => events.push(e),
     hold: () => true,
     next: () => new Promise<string | null>((r) => (deliver = r)),
   })
   rpc.start({ write: (s) => sent.push(JSON.parse(s)), end: () => (ended = true) })
-  return { rpc, sent, ended: () => ended, deliver: (v: string) => deliver(v) }
+  return { rpc, sent, events, ended: () => ended, deliver: (v: string) => deliver(v) }
 }
 
 /** 用户发来下一句：等会话把它交给同一个进程 */
@@ -65,6 +66,50 @@ test('保活的下一轮：Claude Code、Codex 在同一个进程里按各自的
   assert.deepEqual(claude.sent[0], { type: 'user', message: { role: 'user', content: '第一句' } })
   claude.rpc.handle({ type: 'result', subtype: 'success', session_id: 's1' })
   await flush()
+  // 一轮结束、进程留着时要一次上下文细分（get_context_usage，summary 不额外调接口），回复按类别 id 归到共用的分类
+  const ask = claude.sent.at(-1)
+  assert.equal(ask.request.subtype, 'get_context_usage')
+  assert.equal(ask.request.detail, 'summary')
+  assert.equal(claude.rpc.waiting, true, '不等细分回来，这一轮照常结束')
+  claude.rpc.handle({
+    type: 'control_response',
+    response: {
+      subtype: 'success',
+      request_id: ask.request_id,
+      response: {
+        categories: [
+          { id: 'system_prompt', tokens: 2034 },
+          { id: 'system_tools', tokens: 28725 },
+          { id: 'system_tools_deferred', tokens: 34202, isDeferred: true },
+          { id: 'mcp_instructions', tokens: 900 },
+          { id: 'messages', tokens: 5000 },
+          { id: 'autocompact_buffer', tokens: 33000 },
+          { id: 'free_space', tokens: 930341 },
+          { id: 'something_new', tokens: 1 },
+        ],
+        maxTokens: 1_000_000,
+        mcpTools: [{ name: 'mcp__panel__ask', tokens: 300, isLoaded: true }],
+        deferredBuiltinTools: [{ name: 'WebFetch', tokens: 800, isLoaded: false }],
+        skills: { skillFrontmatter: [{ name: 'docs', tokens: 101 }] },
+      },
+    },
+  })
+  await flush()
+  const snap = claude.events.find((e) => e.type === 'context')?.snapshot
+  assert.ok(snap, '细分交给了面板')
+  // 认不出的类别丢掉；占窗口的是提示词、工具、MCP 说明和消息，按需的工具、余量、空闲不算
+  assert.deepEqual(
+    snap.rows.map((r: any) => r.key),
+    ['systemPrompt', 'systemTools', 'systemDeferred', 'mcpInstructions', 'messages', 'buffer', 'free'],
+  )
+  assert.equal(snap.used, 2034 + 28725 + 900 + 5000)
+  assert.deepEqual(
+    snap.tools.map((x: any) => [x.name, x.deferred]),
+    [
+      ['mcp__panel__ask', false],
+      ['WebFetch', true],
+    ],
+  )
   assert.equal(claude.ended(), false, '一轮结束后进程留着')
   assert.equal(claude.rpc.waiting, true, '在等用户下一句')
 

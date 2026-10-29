@@ -488,6 +488,31 @@ if (streamIn) {
     // 第一条是任务描述；之后的 user 消息是插话，control_request 的 interrupt 是中断
     if (started && m.type === 'user') return void takeSteer(String(m.message?.content ?? '')).catch(() => {})
     if (m.type === 'control_request' && m.request?.subtype === 'interrupt') return void (interrupted = true)
+    // 面板每轮结束要一次上下文细分：照真实 Claude Code（2.1.3xx）回一份同样形状的
+    if (m.type === 'control_request' && m.request?.subtype === 'get_context_usage')
+      return void process.stdout.write(
+        JSON.stringify({
+          type: 'control_response',
+          response: {
+            subtype: 'success',
+            request_id: m.request_id,
+            response: {
+              categories: [
+                { id: 'system_prompt', name: 'System prompt', tokens: 2000, kind: 'used' },
+                { id: 'system_tools', name: 'System tools', tokens: 9000, kind: 'used' },
+                { id: 'messages', name: 'Messages', tokens: 4000, kind: 'used' },
+                { id: 'autocompact_buffer', name: 'Autocompact buffer', tokens: 33000, kind: 'buffer' },
+                { id: 'free_space', name: 'Free space', tokens: 152000, kind: 'free' },
+              ],
+              totalTokens: 15000,
+              maxTokens: 200000,
+              memoryFiles: [],
+              mcpTools: [],
+              agents: [],
+            },
+          },
+        }) + '\n',
+      )
     started = true
     lines.push(m)
     wake?.()

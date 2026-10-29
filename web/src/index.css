@@ -64,6 +64,7 @@
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
   /* 中间对话、右栏两块面板的投影：浅色下很淡的一层，免得面板和侧栏底色贴在一起 */
   --panel-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  --panel-edge: var(--line);
   /* 等你回答的提问卡（设计稿）：浅琥珀底 + 淡琥珀边，选项悬停 / 选中是一层更深的琥珀 */
   --ask-bg: #fffbf3;
   --ask-line: #f0d9a8;
@@ -175,6 +176,7 @@
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
   --panel-shadow: none;
+  --panel-edge: var(--line-strong);
   --ask-bg: rgb(232 182 90 / 0.08);
   --ask-line: rgb(232 182 90 / 0.22);
   --ask-sel: rgb(232 182 90 / 0.1);
@@ -413,15 +415,17 @@ body,
 }
 /*
  * 面板：主区、右栏各是一块圆角面板，浮在侧栏的底色上，中间露出一道底色（照设计稿 Workspace，用户确认要面板）。
- * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清。手机上整页就是一块，不留圆角
+ * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清；深色下 line 和底色只差几个色阶，
+ * 低对比的显示器上看不出面板边，所以深色用 line-strong（--panel-edge）。手机上整页就是一块，不留圆角
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
   @media (width >= 48rem) {
-    border-radius: 0.75rem;
+    /* 圆角在外观设置里调（appearance.panelRadius → --panel-radius） */
+    border-radius: var(--panel-radius, 12px);
     box-shadow:
-      0 0 0 1px var(--line),
+      0 0 0 1px var(--panel-edge),
       var(--panel-shadow);
   }
 }

@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs'
 import { t } from '../../../shared/i18n.ts'
 import { clipDetail, oneLine, type CliEvent, type Parser } from '../parsers.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
+import { CLAUDE_CONTEXT_IDS, type ContextSnapshot } from '../../../shared/context-breakdown.ts'
+
+/** 要上下文细分最多等多久：summary 是本地算的，正常几十毫秒；老版本不认这个请求会马上回错误 */
+const CONTEXT_TIMEOUT_MS = 3000
 
 /**
  * Claude Code 的控制协议：任务描述是 stdin 上的一条 user 消息，审批请求是 control_request（can_use_tool），
@@ -23,9 +27,13 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       // 插过话：这一轮结束后 CLI 可能接着处理插进来的要求，有新输出就先不关
       ctx.hold()
       for (const ev of o.parse(m)) {
-        // 结果由 finish 统一发，避免和解析出来的一条重复
-        if (ev.type === 'result') ctx.finish(ev.ok, ev.error, steered ? 2500 : 0)
-        else ctx.emit(ev)
+        // 结果由 finish 统一发，避免和解析出来的一条重复。
+        // 进程留着（保活）时再要一次上下文细分，会话栏按它分块；一次性的执行这时 stdin 已经关了，请求直接落空。
+        // 不能等细分回来再结束这一轮：CLI 发完结果就退出时会被当成「没完成这一轮」
+        if (ev.type === 'result') {
+          void ctx.finish(ev.ok, ev.error, steered ? 2500 : 0)
+          void contextSnapshot(ctx).then((snapshot) => snapshot && ctx.emit({ type: 'context', snapshot }))
+        } else ctx.emit(ev)
       }
     },
     request(ctx, m) {
@@ -68,6 +76,54 @@ export function claudeAdapter(o: { cwd: string; input: string; images?: string[]
       return true
     },
     isRequest: (m) => m?.type === 'control_request',
+    // 面板发出去的控制请求（get_context_usage）的回复：request_id 在 response 里
+    correlate: (m) => (m?.type === 'control_response' ? m.response?.request_id : undefined),
+  }
+}
+
+/**
+ * 向 Claude Code 要这个会话的上下文细分（控制协议 get_context_usage，detail=summary：
+ * 按上一次回复的用量和本地估算，不额外调接口）。版本太老不支持、出错、超时都返回 undefined
+ */
+async function contextSnapshot(ctx: RpcContext): Promise<ContextSnapshot | undefined> {
+  const reply = await ctx
+    .request(
+      { type: 'control_request', request: { subtype: 'get_context_usage', detail: 'summary' } },
+      { idField: 'request_id', id: randomUUID(), timeoutMs: CONTEXT_TIMEOUT_MS },
+    )
+    .catch(() => undefined)
+  return reply?.response?.subtype === 'success' ? claudeContextSnapshot(reply.response.response) : undefined
+}
+
+/** get_context_usage 的回复换成面板的快照：类别按 id 归到共用的分类，认不出的类别丢掉 */
+export function claudeContextSnapshot(r: any, at = new Date().toISOString()): ContextSnapshot | undefined {
+  if (!r || !Array.isArray(r.categories) || !(r.maxTokens > 0)) return undefined
+  const rows = r.categories.flatMap((c: any) => {
+    const key = CLAUDE_CONTEXT_IDS[c?.id]
+    return key && typeof c.tokens === 'number' ? [{ key, tokens: Math.max(0, c.tokens) }] : []
+  })
+  const used = rows
+    .filter((x: { key: string }) => !['buffer', 'free', 'mcpDeferred', 'systemDeferred'].includes(x.key))
+    .reduce((n: number, x: { tokens: number }) => n + x.tokens, 0)
+  const list = (xs: unknown) => (Array.isArray(xs) ? xs : [])
+  return {
+    at,
+    used,
+    window: r.maxTokens,
+    rows,
+    tools: [
+      ...list(r.mcpTools).map((x: any) => ({
+        name: String(x.name),
+        tokens: x.tokens ?? 0,
+        deferred: x.isLoaded === false,
+      })),
+      ...list(r.deferredBuiltinTools)
+        .filter((x: any) => !x.isLoaded)
+        .map((x: any) => ({ name: String(x.name), tokens: x.tokens ?? 0, deferred: true })),
+    ],
+    memory: list(r.memoryFiles).map((x: any) => ({ path: String(x.path), tokens: x.tokens ?? 0 })),
+    skills: list(r.skills?.skillFrontmatter).map((x: any) => ({ name: String(x.name), tokens: x.tokens ?? 0 })),
+    agents: list(r.agents).map((x: any) => ({ name: String(x.agentType), tokens: x.tokens ?? 0 })),
   }
 }
 

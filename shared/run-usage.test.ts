@@ -115,6 +115,37 @@ function checkContextBreakdown() {
   assert.deepEqual(d.deferred, [{ key: 'mcpDeferred', tokens: tokensOfChars(900) }])
   assert.equal(d.tools.length + d.deferredTools.length, 3)
 
+  // CLI 报了细分（快照）：各块按它的，快照之后涨的记「上次细分以来」，空闲跟着少；压缩后总数跌破快照就作废
+  const snapshot = {
+    at: '2026-10-29T08:00:00.000Z',
+    used: 50_000,
+    window: 200_000,
+    rows: [
+      { key: 'systemPrompt' as const, tokens: 10_000 },
+      { key: 'messages' as const, tokens: 40_000 },
+      { key: 'systemDeferred' as const, tokens: 7_000 },
+      { key: 'buffer' as const, tokens: 33_000 },
+    ],
+    tools: [],
+    memory: [],
+    skills: [],
+    agents: [],
+  }
+  const live = contextBreakdown({ used: 60_000, window: 200_000, base, parts, files, snapshot })
+  assert.equal(live.source, 'reported')
+  assert.deepEqual(
+    live.rows.map((r) => [r.key, r.tokens]),
+    [
+      ['messages', 40_000],
+      ['systemPrompt', 10_000],
+      ['since', 10_000],
+      ['buffer', 33_000],
+      ['free', 107_000],
+    ],
+  )
+  assert.deepEqual(live.deferred, [{ key: 'systemDeferred', tokens: 7_000 }])
+  assert.equal(contextBreakdown({ used: 20_000, window: 200_000, base, snapshot }).source, 'estimated')
+
   // 刚开会话、估的比报的还多：按比例缩到总占用以内，消息记 0，不会出现负数
   const tiny = contextBreakdown({ used: 1000, window: 200_000, base, parts, files })
   assert.ok(tiny.rows.every((r) => r.tokens >= 0))
