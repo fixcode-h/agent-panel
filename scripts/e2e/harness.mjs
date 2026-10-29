@@ -335,7 +335,18 @@ export async function runShard(shardName, fn) {
     for (;;) {
       const t = await call('GET', `/tasks/${id}`)
       if (t.status !== 'running' && ok(t)) return t
-      if (Date.now() - t0 > timeout) throw new Error(`任务 ${id} 超时：${t.status}`)
+      if (Date.now() - t0 > timeout) {
+        // 超时时带上最后几条消息和分支状态：不然只看得到「超时：done」，查不出卡在哪一步
+        const tail = (t.messages ?? [])
+          .slice(-6)
+          .map(
+            (m) => `  [${m.role}${m.panel ? `/${m.panel}` : ''}] ${(m.text ?? '').replace(/\s+/g, ' ').slice(0, 300)}`,
+          )
+          .join('\n')
+        throw new Error(
+          `任务 ${id} 超时：${t.status}（resolved=${!!t.resolved}，worktree=${t.worktree?.state ?? '无'}）\n${tail}`,
+        )
+      }
       await sleep(60)
     }
   }

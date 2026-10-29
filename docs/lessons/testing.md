@@ -42,10 +42,11 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 
 ## 假 CLI 与 e2e 分片：场景写进分片，资源和合并走 harness
 
-- 规则：`scripts/e2e.mjs` 只是并行 runner（默认 4 片，可用环境变量调），场景放 `scripts/e2e/NN-*.mjs`、每片调一次 `runShard()`，临时目录、端口、服务、看门狗都在 `harness.mjs` 的 `setupBase()` 里，服务用 `onExit()` 登记，分片间不能有依赖。
-- 规则：合并分支用 `mergeTask()`（每次尝试前清、被挡住会重试），别手工 `rmSync` 假 CLI 写的 `<kind>-output.txt`；负向用例（期望 409）拿原始错误。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 查被包含的旧词（`SLOW`、`FAIL`、`FAKE_*` 匹配整段输入，`IMGFAIL` 会混进来），要干净输入的自建项目。
-- 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；`04-subagents` 被残留 `codex-output.txt` 挡住（409，CI 偶发）；漏关临时服务挂过 95 分钟。
-- 防线：`test:e2e`（每片 10 分钟看门狗）、`outputs.test.mjs`。
+- 规则：场景放 `scripts/e2e/NN-*.mjs`、每片调一次 `runShard()`；临时目录、端口、服务、看门狗在 `harness.mjs` 的 `setupBase()`，服务用 `onExit()` 登记，分片间不能有依赖。
+- 规则：合并分支用 `mergeTask()`（每次尝试前清、被挡住会重试），别手工 `rmSync` 假 CLI 写的 `<kind>-output.txt`；负向用例（期望 409）拿原始错误。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 查会包含它的旧词（`SLOW`、`FAIL` 匹配整段输入）。
+- 规则：改了交给 CLI 的方式（参数、文件、只发增量）同一提交改假 CLI 的读法和 e2e 断言；触发词不能依赖会被增量省掉的规则段落。
+- 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；角色改走 `--append-system-prompt-file` 后假 CLI 认不出评审，3 片红（fc1c744）。
+- 防线：`test:e2e`（看门狗）、`outputs.test.mjs`。
 
 ## 跑 e2e / 单测前清掉继承的环境变量
 

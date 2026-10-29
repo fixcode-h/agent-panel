@@ -49,6 +49,8 @@ export const PANEL_TOOL_NAMES = [
   // 操控软件的两个工具（见 docs/adr/0011）
   'app_actions',
   'app_do',
+  // 不常用工具的入口（见下面的 DEFERRED_TOOLS）
+  'more_tools',
 ] as const
 
 /**
@@ -91,4 +93,102 @@ export function opensWindow(command: string): boolean {
       String.raw`(?:start(?:\.exe)?\b(?!-)|cmd(?:\.exe)?\s+(?:\/\w+\s+)*\/k\b|start-process\b|saps\b|wt(?:\.exe)?\b|conhost(?:\.exe)?\b|open\s+-a\s+\S*terminal|osascript\b[^\n]*terminal|x-terminal-emulator\b|gnome-terminal\b|konsole\b|xterm\b)`,
     'i',
   ).test(command.trim())
+}
+
+/** 不常用工具的入口：不直接列出的工具都经它查用法、调用 */
+export const MORE_TOOLS = 'more_tools'
+
+/**
+ * 不直接列出的面板工具：每个会话都要整份带着全部工具说明（父对话二十多个、上万字），这些一轮里很少用到。
+ * 提示词里点名让模型用的（begin_inline_edit、list_peers……）照样能用：more_tools 的说明里列着名字，
+ * 直接按名字调也照样执行（server/ask-mcp.ts）。get_status / send_message / read_messages 不能收：
+ * Pi 的桥接扩展靠它们核对工具清单是否完整（shared/clis/pi.json 的 CORE_TOOLS）
+ */
+export const DEFERRED_TOOLS: readonly string[] = [
+  'record_lesson',
+  'begin_inline_edit',
+  'end_inline_edit',
+  'list_peers',
+  'message_peer',
+  'stop_subtask',
+  'check_background',
+  'stop_background',
+  'close_run',
+  'p4_split_changelists',
+  'app_actions',
+  'app_do',
+]
+
+interface McpTool {
+  name: string
+  title?: string
+  description?: string
+  inputSchema?: unknown
+}
+
+const firstSentence = (s = '') => s.split(/(?<=[。.！？])/)[0].slice(0, 80)
+
+/** 把这一轮的工具分成直接列出的和收起来的；收起来的不止一个时才加 more_tools，只有一个就照常列出 */
+export function splitDeferred<T extends McpTool>(all: T[]): { listed: (T | McpTool)[]; deferred: T[] } {
+  const deferred = all.filter((t) => DEFERRED_TOOLS.includes(t.name))
+  if (deferred.length < 2) return { listed: all, deferred: [] }
+  const listed: (T | McpTool)[] = all.filter((t) => !DEFERRED_TOOLS.includes(t.name))
+  listed.push({
+    name: MORE_TOOLS,
+    title: '更多面板工具',
+    description:
+      `下面这些面板工具不常用，没有直接列出：${deferred.map((t) => `${t.name}（${t.title ?? firstSentence(t.description)}）`).join('、')}。` +
+      '提示里让你用其中某个、或者确实需要时通过这里调用：先只写 name 看它的用法和参数，再带上 name 和 arguments 调用（没有参数的写 arguments: {}）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '工具名' },
+        arguments: { type: 'object', description: '这个工具的参数；不写就是查看用法' },
+      },
+      required: ['name'],
+    },
+  })
+  return { listed, deferred }
+}
+
+/** more_tools 的一次调用：没写 arguments 返回用法，写了就交给调用方按名字执行 */
+export function moreTools(
+  deferred: McpTool[],
+  a: { name?: unknown; arguments?: unknown },
+): { call: string; args: unknown } | { content: { type: 'text'; text: string }[]; isError?: boolean } {
+  const name = typeof a?.name === 'string' ? a.name.trim() : ''
+  const tool = deferred.find((t) => t.name === name)
+  if (!tool)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `没有这个工具：${name || '（没写 name）'}。可用的：${deferred.map((t) => t.name).join('、')}`,
+        },
+      ],
+      isError: true,
+    }
+  if (a.arguments === undefined || a.arguments === null)
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `${tool.name}：${tool.description ?? ''}\n参数（JSON Schema）：${JSON.stringify(tool.inputSchema ?? {})}\n调用：more_tools，name 写 ${tool.name}，arguments 按上面的参数写。`,
+        },
+      ],
+    }
+  return { call: tool.name, args: typeof a.arguments === 'object' ? a.arguments : {} }
+}
+
+/** 经 more_tools 调用的那一次：拆出真正的工具名和参数，界面按真正的工具显示；不是就返回 undefined */
+export function unwrapMoreTools(input: string): { name: string; args: Record<string, unknown> } | undefined {
+  try {
+    const v = JSON.parse(input)
+    if (!v || typeof v.name !== 'string' || !DEFERRED_TOOLS.includes(v.name)) return undefined
+    // 没带 arguments 是只查用法（见 moreTools），不是调用：不能显示成「记下教训」这类真做了的事
+    if (v.arguments === undefined || v.arguments === null) return undefined
+    return { name: v.name, args: typeof v.arguments === 'object' ? v.arguments : {} }
+  } catch {
+    return undefined
+  }
 }

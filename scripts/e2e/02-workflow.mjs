@@ -169,8 +169,9 @@ await runShard('工作流任务', async (api) => {
   const [c1, cp1, cp2, c4] = c
   assert.equal(c1.kind, 'claude')
   assert.equal(c1.cwd, projectDir)
-  assert.ok(c1.args.includes('--append-system-prompt'))
-  const system = c1.args[c1.args.indexOf('--append-system-prompt') + 1] ?? ''
+  // 系统提示词可能直接传、也可能写成文件传（fake-cli 记下的 system 是读出来的内容）
+  assert.ok(c1.system !== undefined, '角色说明进了系统提示词')
+  const system = c1.system ?? ''
   assert.match(system, /你是甲，负责规划。/)
   // 回复语言规则跟角色说明一起进系统提示词（放在任务描述里时模型不一定遵守）
   assert.match(system, /## 回复语言/)
@@ -206,12 +207,7 @@ await runShard('工作流任务', async (api) => {
   assert.ok(w2.start < w3.end && w3.start < w2.end, `同一阶段的两个节点应该同时运行（${windows}）`)
   assert.ok(Math.min(w2.start, w3.start) >= w1.end, `下游节点要等上游结束（${windows}）`)
   assert.ok(w4.start >= Math.max(w2.end, w3.end), `有两个上游的节点要等两个都结束（${windows}）`)
-  assert.ok(c2.args.includes('--append-system-prompt'))
-  assert.match(
-    c2.args[c2.args.indexOf('--append-system-prompt') + 1] ?? '',
-    /你是乙，负责实现。/,
-    '角色设定照样交给默认 CLI',
-  )
+  assert.match(c2.system ?? '', /你是乙，负责实现。/, '角色设定照样交给默认 CLI')
   assert.match(c2.input, /上游节点的结果[\s\S]*### 分析/)
   assert.match(c2.input, /同时进行的节点[\s\S]*文档（丙）/)
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)

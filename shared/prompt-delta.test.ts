@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { FULL_EVERY, MAX_SENT, nextSent, promptDelta, promptSections, rememberSent } from './prompt-delta.ts'
+import {
+  FULL_EVERY,
+  MAX_SENT,
+  compactedSilently,
+  nextSent,
+  promptDelta,
+  promptSections,
+  rememberSent,
+} from './prompt-delta.ts'
 import { nodeRequests, runConversationTurn, type AgentCall, type EngineHost } from './engine.ts'
 import { Agent, Task } from './schema.ts'
 
@@ -53,6 +61,11 @@ function checkParagraphDelta() {
       ['## 用户这次的消息'],
     )
   }
+  // CLI 自己压缩了没报事件：上下文一下少了一大半才算，正常波动和小会话不算
+  assert.equal(compactedSilently(120_000, 30_000), true)
+  assert.equal(compactedSilently(120_000, 90_000), false)
+  assert.equal(compactedSilently(8_000, 1_000), false)
+  assert.equal(compactedSilently(120_000, 0), false)
   // 记录的会话数有上限，最久没用的先丢
   {
     let all: ReturnType<typeof rememberSent> | undefined
@@ -127,6 +140,10 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   assert.doesNotMatch(calls[1].prompt, /## 计划怎么维护|## 长命令放到后台/)
   assert.ok(calls[1].prompt.length * 10 < calls[0].prompt.length)
   assert.match(calls[1].fresh ?? '', /## 计划怎么维护/)
+  // 输入构成按来源记字数：第二轮的规则只算真正发了的那一点
+  const [s0, s1] = h.task.turns.map((x) => x.sources!)
+  assert.ok(s0.user > 0 && s0.rules > 1000)
+  assert.ok(s1.rules * 10 < s0.rules && s1.user > 0)
   // 会话在别处换了（例如保活的进程里开了新会话）：下一轮整份重发
   h.task.sessions.exec = 'sess-other'
   await say(h, '第三轮')
@@ -141,6 +158,16 @@ test('续接只发增量：段落按变化发、子对话第二轮起只发增�
   await say(h, '第六轮')
   assert.equal(sentOf(h)?.exec.session, 'sess-2')
   assert.doesNotMatch(calls[5].prompt, /## 计划怎么维护/)
+  // 角色引入的「通用约束」里已经写了提问和收尾建议：面板不再重复，只补完成标准
+  assert.match(calls[0].prompt, /## 停下之前先提问/)
+  h.agents = [
+    agent('exec', { canPlan: true, includes: ['rules'] }),
+    agent('rules', { instructions: '### 子对话停下来等用户时必须先提问\n…\n### 子对话的收尾建议也交给用户选\n…' }),
+  ]
+  await say(h, '第七轮')
+  const full = calls[6].fresh ?? calls[6].prompt
+  assert.doesNotMatch(full, /## 停下之前先提问|## 收尾建议要交给用户选/)
+  assert.match(full, /## 子对话的完成标准/)
 
   // 对话里派子任务、跑工作流：用户需求取最新的一条，更早的只留开头
   const long = '很长'.repeat(1000)

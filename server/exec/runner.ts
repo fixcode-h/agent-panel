@@ -73,6 +73,7 @@ import { redirectWait } from './redirect.ts'
 import { t, getLang } from '../../shared/i18n.ts'
 import { fmtDuration } from '../../shared/duration.ts'
 import { promptLangReminder, promptLangRules } from '../../shared/prompt-lang.ts'
+import { compactedSilently } from '../../shared/prompt-delta.ts'
 import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -1278,9 +1279,17 @@ async function runAgent(
     const at = step ? input.indexOf(`\n\n${NODE_PART}\n`) : -1
     input = at < 0 ? role + input : `${input.slice(0, at + 2)}${role}${input.slice(at + 2)}`
   }
+  const setup = input.length - base.length
   // 末尾再提醒一次：长提示词里夹在中间的规则容易被忽略。原生 /命令（Claude Code 新会话开头要原样认出）
   // 和压缩、审查（参数另有含义）不追加
   if (!op && !(chat && ctx.prompt.trim().startsWith('/'))) input = `${input}\n\n${promptLangReminder()}`
+  // 输入构成：除了调用方给的提示，新会话开头补的角色设定（含系统提示词）、编排说明、项目教训也进了上下文；
+  // 末尾的语言提醒每轮都有，算进面板规则
+  call.onInput?.({
+    setup: Math.max(0, setup) + (!resume && def.systemPromptFlag ? instructions.length : 0),
+    rules: Math.max(0, input.length - base.length - setup),
+    fresh: base !== prompt,
+  })
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
   const build: BuildOptions = {
@@ -1645,7 +1654,11 @@ async function runAgent(
         usageSeen = true
         const u = au()
         if (ev.model) u.model = ev.model
-        if (ev.context !== undefined) u.context = ev.context
+        if (ev.context !== undefined) {
+          // 对话的会话里上下文骤降：CLI 自己压缩了却没报 compacted，同样作废已发的规则段落
+          if (chat && compactedSilently(u.context, ev.context)) forgetPromptSent(task, sessionKey)
+          u.context = ev.context
+        }
         if (ev.window) {
           u.window = ev.window
           reported = true
@@ -1923,6 +1936,8 @@ async function runAgent(
    * 停下等下一句 / 等子任务：这段不用模型，让出 API 名额；拿到要处理的内容后先拿回名额再交给 CLI，
    * 满了就排队（对话上显示在等哪个 API），排队时停止就结束这一轮
    */
+  /** 最近一次等到的是送进来的消息（用户 / 面板消息），不是子任务交回的结果 */
+  let fromUser = false
   const waitNext = async (fromTool: boolean): Promise<string | null> => {
     const slot = apiSlots.get(slotKey(task.id, step))
     // 让出前手里有没有名额，决定拿回时是哪种排队：
@@ -2008,6 +2023,7 @@ async function runAgent(
         const onAbort = () => done(null)
         waiter = {
           deliver: (msg, placed) => {
+            fromUser = true
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             task.messages.push(msg)
@@ -2050,9 +2066,14 @@ async function runAgent(
         if (!hasViewer(task.id)) return null
         // 这一轮只回了一句、什么都没做：不保活，直接让它返回，交给收尾处的空回合兜底催一轮
         if (emptyTurn()) return null
+        fromUser = false
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
         if (text !== null) toolWaited = false
+        // 保活进程里的下一条消息：以前原样交给 CLI，计划状态、子对话发来的消息、授权变化都带不进去。
+        // 交给调用方按当前状态补上变了的段落（见 shared/prompt-delta.ts）；子任务结果、/命令照旧原样
+        if (text !== null && fromUser && call.nextPrompt && !text.trim().startsWith('/'))
+          return await call.nextPrompt(text).catch(() => text)
         return text
       }
     : undefined

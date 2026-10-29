@@ -5,7 +5,7 @@ import { stepMs, timeAgo } from '@shared/task'
 import { fmtDuration } from '@shared/duration'
 import { cacheHitRate } from '@shared/task-export'
 import { tokenCount, type RunUsage } from '@shared/run-usage'
-import { PANEL_TOOL_NAMES, bgJobIds, bgPendingIds } from '@shared/panel-tools'
+import { PANEL_TOOL_NAMES, bgJobIds, bgPendingIds, unwrapMoreTools } from '@shared/panel-tools'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -340,6 +340,11 @@ export function startedRun(task: Task, tool: ToolUse): number | undefined {
 export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   const name = panelName(tool)
   if (!name) return undefined
+  // 经 more_tools 调用的不常用工具：按真正的工具显示（做了什么），不显示成「更多工具」
+  if (name === 'more_tools') {
+    const u = unwrapMoreTools(tool.input ?? '')
+    if (u) return panelTool({ ...tool, name: '', label: `panel · ${u.name}`, input: JSON.stringify(u.args) })
+  }
   const a = toolArgs(tool)
   const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''
   const as = (name: string, label: string, kind: ToolUse['kind'] = 'other', input?: string): ToolUse => ({
@@ -357,6 +362,8 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('发送消息'), quoted || firstLine(a.id), 'agent', text(a.message))
     case 'list_conversations':
       return as(t('查看子对话'), '')
+    case 'more_tools':
+      return as(t('查看工具用法'), firstLine(a.name))
     // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
     case 'spawn_agents':
       return tool.failed ? as(t('派出子任务'), '', 'agent') : null

@@ -91,7 +91,17 @@ if (args.includes('--version')) {
 let input = ''
 // 评审这类只读子任务（角色设定里有「你负责独立评审」）：它的 input 里还带着子对话的用户原话（COMMIT、BEGIN_EDIT 这些场景标记），
 // 不能让它跟着做场景动作，也不往子对话的工作目录里写文件。input 每轮都会换，所以写成函数、用时再算
-const isReviewRole = () => [input, ...args].join('\n').includes('你负责独立评审')
+// Claude Code 的角色说明写成文件传（--append-system-prompt-file）：按角色认人时要连文件内容一起看
+const sysFile = args[args.indexOf('--append-system-prompt-file') + 1]
+const sysFileText = (() => {
+  if (!args.includes('--append-system-prompt-file')) return ''
+  try {
+    return readFileSync(sysFile, 'utf8')
+  } catch {
+    return ''
+  }
+})()
+const isReviewRole = () => [input, ...args, sysFileText].join('\n').includes('你负责独立评审')
 let appThread = ''
 let appResume = ''
 let developer = ''
@@ -509,10 +519,24 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
     anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
     agentpanel: process.env.AGENT_PANEL_API_KEY,
   }
+  // 系统提示词：Claude Code 改成写文件传路径（--append-system-prompt-file，见 shared/clis.ts），文件跑完就删，
+  // 记下读出来的内容，测试按 system 断言，不用关心是哪种传法
+  const sysAt = args.findIndex((a) => a === '--append-system-prompt' || a === '--append-system-prompt-file')
+  const system =
+    sysAt < 0 ? undefined : args[sysAt] === '--append-system-prompt' ? (args[sysAt + 1] ?? '') : sysFileText
   appendFileSync(
     log,
-    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, apiEnv, pid: process.pid, start: Date.now() }) +
-      '\n',
+    JSON.stringify({
+      kind,
+      args,
+      cwd: process.cwd(),
+      input,
+      system,
+      ...extra,
+      apiEnv,
+      pid: process.pid,
+      start: Date.now(),
+    }) + '\n',
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
@@ -630,9 +654,9 @@ if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes
     ],
   })
 }
-// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结（提示里已经写明「现在没有进行中的计划」）
-if (input.includes('PLAN_NEXT') && input.includes('set_plan') && input.includes('现在没有进行中的计划'))
-  await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
+// 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
+// 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
+if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
 // 子对话自己跑项目测试步骤（ADR 0018 / 0020）：命令和项目里一条 scope 不是 parent 的步骤完全一致，
 // 面板按命令认出是哪条步骤、记下 by='self' 的真实耗时。命令跑完后歇一会儿再往下走，
 // 否则同一条指令后面的 SUBMIT_MERGE 会撞上「后台还有命令没跑完」被拒绝
@@ -923,7 +947,7 @@ const turnReply = () => {
   // 不能光看「input 里有没有 REVIEW_BLOCK」：评审的 input 里也带着子对话的原始需求。
   // 结尾的 [fake-review] pass/fail 是给下一轮识别用的：它会把这段输出作为子任务结果交回给派它的子对话。
   // 角色设定走 CLI 的 system prompt（在 args 里，不在 input），所以两份拼起来看才认得出来它是评审
-  const roleText = [input, ...args].join('\n')
+  const roleText = [input, ...args, sysFileText].join('\n')
   const mark = [...roleText.matchAll(/REVIEW_MARK:(pass|fail)/g)].at(-1)?.[1] ?? 'pass'
   const review = roleText.includes('你负责独立评审')
     ? mark === 'fail'

@@ -1535,6 +1535,15 @@ export const TurnEnd = z.enum([
 export type TurnEnd = z.infer<typeof TurnEnd>
 
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
+export const TurnSources = z.object({
+  rules: z.number().default(0),
+  user: z.number().default(0),
+  results: z.number().default(0),
+  tools: z.number().default(0),
+  setup: z.number().default(0),
+})
+export type TurnSources = z.infer<typeof TurnSources>
+
 export const TaskTurn = z.object({
   id: z.string(),
   /** 这一轮要求的第一行（截短） */
@@ -1557,6 +1566,11 @@ export const TaskTurn = z.object({
   outputTokens: z.number().default(0),
   cacheReadTokens: z.number().default(0),
   waitMs: z.number().default(0),
+  /**
+   * 这一轮交给 Agent 的内容按来源的字数（估算，不是 token）：面板规则、消息、子任务和计划交回的结果、
+   * 工具输出、新会话开头的角色设定和项目教训。用来看 token 花在了哪；旧记录没有
+   */
+  sources: TurnSources.optional(),
 })
 export type TaskTurn = z.infer<typeof TaskTurn>
 
