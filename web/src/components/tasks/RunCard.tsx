@@ -1,6 +1,6 @@
 import { memo, useEffect, useState, type ReactNode } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ChevronRight, CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { stepMs } from '@shared/task'
 import { topSteps } from '@shared/flow'
@@ -69,33 +69,35 @@ function RunCardBase({
       s.status === 'done' ? 'done' : s.status === 'running' ? 'running' : s.status === 'failed' ? 'failed' : 'idle',
   }))
   return (
+    // 设计稿：浅底卡片、不描边；头一行图标块 +「工作流」+ 名字，右边「查看运行 · 3/6 ›」是链接样式。
+    // 整张卡片仍是一个按钮（点哪里都打开这次运行），链接只是视觉提示
     <button
       type="button"
       onClick={onOpen}
-      title={t('打开这次运行的对话')}
+      title={`${t('打开这次运行的对话')} · ${t('运行 {n}', { n: run })}`}
       data-run={run}
-      className="group flex w-full cursor-pointer flex-col gap-2.5 rounded-xl bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
+      className="group flex w-full cursor-pointer flex-col gap-2 rounded-[10px] bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
     >
       <span className="flex w-full min-w-0 items-center gap-2 text-[0.8125rem]">
-        {state === 'running' ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
-        ) : state === 'done' ? (
-          <CircleCheck className="h-3.5 w-3.5 shrink-0 text-success" />
-        ) : state === 'failed' ? (
-          <CircleX className="h-3.5 w-3.5 shrink-0 text-danger" />
-        ) : (
-          <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-        )}
-        <span className="shrink-0 font-semibold">{t('运行 {n}', { n: run })}</span>
+        <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-lg bg-card shadow-[0_0_0_1px_var(--line)]">
+          {state === 'running' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
+          ) : state === 'done' ? (
+            <CircleCheck className="h-3.5 w-3.5 text-success" />
+          ) : state === 'failed' ? (
+            <CircleX className="h-3.5 w-3.5 text-danger" />
+          ) : (
+            <WorkflowIcon className="h-3.5 w-3.5 text-muted" />
+          )}
+        </span>
+        <span className="shrink-0 font-semibold">{t('工作流')}</span>
         {name && <span className="min-w-0 truncate text-muted">{name}</span>}
         <span className="flex-1" />
         {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-        {steps.length > 0 && (
-          <span className="flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-card px-2 text-xs font-medium text-fg tabular-nums">
-            {t('{done}/{total} 个节点', { done, total: steps.length })}
-            <ChevronRight className="h-3.5 w-3.5 text-subtle transition-transform group-hover:translate-x-0.5" />
-          </span>
-        )}
+        <span className="shrink-0 text-xs whitespace-nowrap text-subtle underline decoration-transparent underline-offset-[3px] transition-colors group-hover:text-fg group-hover:decoration-current">
+          {t('查看运行')}
+          {steps.length > 0 && ` · ${done}/${steps.length}`} ›
+        </span>
       </span>
       {nodes.length > 0 && <FlowStrip nodes={nodes} />}
     </button>

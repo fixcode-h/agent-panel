@@ -16,6 +16,9 @@ const tones = {
   default: 'text-subtle hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
   danger:
     'text-subtle hover:bg-danger/10 hover:text-danger data-[state=open]:bg-danger/10 data-[state=open]:text-danger',
+  // 页签条右端、输入框工具条这类一排图标（设计稿 `.ib`）：悬停也不出底，只把图标提到前景色；
+  // 打开着（展开、按下、菜单开着）同样是前景色，靠颜色而不是底色表示「开着」
+  bare: 'text-muted hover:text-fg aria-expanded:text-fg aria-pressed:text-fg data-[state=open]:text-fg',
 }
 
 export type IconButtonSize = keyof typeof sizes
@@ -83,7 +86,7 @@ export const ICON_BUTTON_SIZES = Object.keys(sizes) as IconButtonSize[]
  */
 export const ToggleIconButton = forwardRef<
   HTMLButtonElement,
-  Omit<IconButtonProps, 'tone' | 'onClick'> & {
+  Omit<IconButtonProps, 'onClick'> & {
     pressed: boolean
     onPressedChange: (pressed: boolean) => void
   }

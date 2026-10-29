@@ -77,6 +77,7 @@ export function TaskMeta({
   node,
   onTask,
   onOpenChild,
+  hideContext,
 }: {
   task: Task
   projectName?: string
@@ -89,6 +90,8 @@ export function TaskMeta({
   onTask: (task: Task) => void
   /** 在右栏打开子对话；子对话自己的面板（pane）不传，不再套一层 */
   onOpenChild?: (id: string) => void
+  /** 上下文圆环已经放进输入框工具条（TaskContextRing），这一条里不再重复 */
+  hideContext?: boolean
 }) {
   const { agents } = useData()
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -97,7 +100,7 @@ export function TaskMeta({
   // 没有上下文的 Agent（例如对话还没开始）就不显示这一块
   return (
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
-      {lines.length > 0 && <ContextChip lines={lines} />}
+      {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
       <TokenChip task={task} scope={scope} />
       <EnvChip
         task={task}
@@ -112,6 +115,19 @@ export function TaskMeta({
       <ReviewOverrideChip task={task} />
     </div>
   )
+}
+
+/**
+ * 输入框工具条里的上下文圆环（设计稿：无底，只有圆环和百分比，悬停变前景色），点开同样是明细浮层。
+ * 和 TaskMeta 同一份取数：流程图里选了节点只看它
+ */
+export function TaskContextRing({ task, node }: { task: Task; node?: TaskStep }) {
+  const { agents } = useData()
+  const byId = new Map(agents.map((a) => [a.id, a]))
+  const scope = node ? [node, ...task.steps.filter((s) => s.id.startsWith(node.id + '/'))] : undefined
+  const lines = contextLines(task, scope, node, byId)
+  if (!lines.length) return null
+  return <ContextChip lines={lines} bare />
 }
 
 /** 上下文按节点一行：流程图里选了节点只看它，工作流按主流程节点，对话按 Agent */
@@ -184,13 +200,21 @@ function contextLines(
 }
 
 /** 上下文占用：圆环显示占用最高的那个，点开是它（对话里就是当前 Agent）的明细；工作流按节点一行一行列 */
-function ContextChip({ lines }: { lines: ContextLine[] }) {
+function ContextChip({ lines, bare }: { lines: ContextLine[]; bare?: boolean }) {
   const top = [...lines].sort((a, b) => b.u.context / b.u.window - a.u.context / a.u.window)[0]
   const p = Math.min(100, (top.u.context / top.u.window) * 100)
   return (
     <Popover>
       {/* 只画空心圆环和百分比（照 Claude Code），具体 Token 数在点开的浮层里 */}
-      <PopoverTrigger className={META_CHIP} title={t('上下文占用')} aria-label={t('上下文')}>
+      <PopoverTrigger
+        className={
+          bare
+            ? 'flex h-8 shrink-0 cursor-pointer items-center px-1 text-muted transition-colors hover:text-fg data-[state=open]:text-fg'
+            : META_CHIP
+        }
+        title={t('上下文占用')}
+        aria-label={t('上下文')}
+      >
         <ContextRing percent={p} label={t('上下文已用 {n}%', { n: Math.round(p) })} />
       </PopoverTrigger>
       <PopoverContent className="w-[min(340px,calc(100vw-24px))]">

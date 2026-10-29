@@ -122,7 +122,8 @@ export const EN_TASKS: Record<string, string> = {
   文件视图: 'File view',
   没有分支: 'No branch',
   刷新文件: 'Refresh files',
-  '改动 {n} 个文件': '{n} files changed',
+  '{n} 个改动': '{n} changes',
+  点文件在中间查看: 'Click a file to view it in the center',
   '按工作流「{name}」的流程图执行': 'Runs along the flow of workflow "{name}"',
 
   // 附件
@@ -1327,6 +1328,11 @@ export const EN_TASKS: Record<string, string> = {
   只有项目里的分析能记成项目教训: 'Only analyses inside a project can be recorded as project lessons',
   记成教训: 'Record as lesson',
   不针对具体文件: 'Not tied to a file',
+  // 输入框工具条的模型按钮
+  模型和思考强度: 'Model and thinking effort',
+  查看运行: 'View run',
+  '模型 {model}，思考强度 {effort}，点开切换': 'Model {model}, thinking effort {effort}; click to change',
+  '模型和思考强度跟着角色设置：{model}': 'Model and thinking effort follow the role settings: {model}',
 
   // 会话栏（照 Claude Code）
   '对话内容、工具调用和结果：Agent 报的总占用减去其余各块':

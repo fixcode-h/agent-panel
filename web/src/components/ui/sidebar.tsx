@@ -1,69 +1,86 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
-import { ChevronRight, Folder, FolderOpen, Workflow } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, Workflow } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { StatusPill } from './status-pill'
+import { Spinner, StatusPill } from './status-pill'
+import { UnreadDot } from './badge'
+import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from './menu'
 
 // 侧栏的部件（对应组件库「侧栏」卡片：ModeSwitch · NavRow · ProjectRow · TaskRow）。
-// 侧栏贴着底色，行与行之间只靠底色分：选中是 bg-sel，不描边、不加阴影，没有竖引导线
+// 侧栏贴着底色，行与行之间只靠底色分：导航选中是 bg-sel，项目选中是很淡的蓝底，项目下选中的对话是一张白卡片，都不描边
 
 /**
  * 侧栏一行的选中 / 悬停外观：导航、项目行、任务行和设计行都引用这里，选中态只定义一次。
  * 用的时候基础类里要带 `border`（透明边只占位，拖拽插入提示等场景切换时行高不跳）
  */
 export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
-export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
+export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel hover:text-fg'
 
-/** 项目下的对话卡片：平时灰底，选中换卡片底 + 细边 + 投影浮起来（照设计稿 Workspace 侧栏） */
-export const SIDEBAR_BLOCK_ROW_ON = 'border-line-strong bg-card font-semibold text-fg shadow-card'
-export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent bg-sel/70 text-fg hover:bg-sel'
+/**
+ * 项目下的对话行（照设计稿 Workspace 侧栏）：平时无底、次要色，悬停浅底；
+ * 选中是一张白卡片（深色比 card 再亮一档，见 --conv-sel）+ 极淡投影，不描边
+ */
+export const SIDEBAR_BLOCK_ROW_ON = 'border-transparent bg-conv font-semibold text-fg shadow-conv'
+export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-sel hover:text-fg'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号的次要色，和可点的行靠字号和颜色拉开，不加粗 */
 export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
 
-/** 导航行：32 高、13.5px，选中 bg-sel + 500 字重 */
+/** 导航行：32 高、14px、500 字重，图标 16px 线宽 1.8；选中 bg-sel */
 export const NAV_ROW =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-[7px] border px-[9px] text-[0.8125rem] transition-colors'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2 text-[0.875rem] font-medium transition-colors'
 
 /**
- * 模式切换（Agent / Chat / 设计）：槽里平分三段，选中段是浮起的小块。
- * 槽和选中块用 seg-track / seg-thumb（index.css）：深色下 bg-sel 和 bg-card 色阶太近，选中项看不出来
+ * 侧栏左上角的模式下拉（照设计稿 Workspace）：产品图标 + 当前模式名 + 小箭头，整块是一个按钮，
+ * 点开列出三种模式，每项带一行说明、选中项打勾。跳转由调用方在 onPick 里做
  */
-export function ModeTabs({
+export function SidebarModeMenu({
   modes,
   onPick,
-  label,
-  className,
+  logo,
 }: {
-  modes: { id: string; name: string; label?: string; on: boolean }[]
+  /** label 是完整说明，当作菜单项的可访问名称（界面检查按「Agent 模式」这样的前缀定位） */
+  modes: { id: string; name: string; desc: string; label?: string; on: boolean }[]
   onPick: (id: string) => void
-  label: string
-  className?: string
+  logo: ReactNode
 }) {
+  const cur = modes.find((m) => m.on) ?? modes[0]
   return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className={cn('seg-track flex shrink-0 gap-0.5 rounded-[9px] p-[3px]', className)}
-    >
-      {modes.map((m) => (
+    <Menu>
+      <MenuTrigger asChild>
         <button
-          key={m.id}
-          role="radio"
-          aria-checked={m.on}
-          aria-label={m.label}
-          title={m.label}
-          onClick={() => !m.on && onPick(m.id)}
-          className={cn(
-            'h-[1.625rem] min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-[0.75rem] transition-colors',
-            // 未选中用 muted 不用 subtle：深色下 subtle 太暗，像禁用
-            m.on ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
-          )}
+          type="button"
+          aria-label={t('切换模式')}
+          title={cur?.label}
+          className="group/mode flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg pr-2 pl-2 text-left transition-colors outline-none hover:bg-sel focus-visible:ring-2 focus-visible:ring-focus-soft"
         >
-          {m.name}
+          {logo}
+          <span className="min-w-0 truncate text-[1.25rem] font-semibold tracking-tight">{cur?.name}</span>
+          <ChevronDown
+            aria-hidden
+            className="h-3.5 w-3.5 shrink-0 text-subtle transition-transform group-data-[state=open]/mode:rotate-180"
+            strokeWidth={2}
+          />
         </button>
-      ))}
-    </div>
+      </MenuTrigger>
+      <MenuContent align="start" className="w-[200px] min-w-0 rounded-[10px]">
+        <MenuRadioGroup value={cur?.id} aria-label={t('模式')}>
+          {modes.map((m) => (
+            <MenuRadioItem
+              key={m.id}
+              value={m.id}
+              aria-label={m.label}
+              title={m.label}
+              onSelect={() => !m.on && onPick(m.id)}
+              className="h-[34px] rounded-[7px] py-0 text-[0.84375rem]"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
+              <span className="shrink-0 text-[0.71875rem] text-subtle">{m.desc}</span>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuContent>
+    </Menu>
   )
 }
 
@@ -95,23 +112,19 @@ export function NavRow({
 }
 
 /**
- * 项目卡片（照设计稿 Workspace 侧栏）：每个项目一张 36 高的圆角卡片，折叠箭头在卡片外。
- * 选中的项目是浅蓝底 + 细蓝边（proj token，不随配色变），其余是灰底细边
+ * 项目行（照设计稿 Workspace 侧栏）：33 高、8px 圆角、不描边，折叠箭头在行外。
+ * 未选中无底、悬停浅底；选中是很淡的蓝底（--proj-bg）+ 前景色加粗，文件夹图标换成项目蓝（SidebarProjectName）
  */
 export const PROJECT_CARD =
-  'flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[10px] border pr-1.5 pl-2.5 text-[0.8125rem] transition-[background-color,filter]'
-export const PROJECT_CARD_ON = 'border-proj-line bg-proj text-proj-fg'
-export const PROJECT_CARD_OFF = 'border-line bg-sel/70 text-fg hover:bg-sel'
+  'flex h-[33px] min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 pl-2.5 text-[0.84375rem] transition-colors'
+export const PROJECT_CARD_ON = 'bg-proj font-semibold text-fg'
+export const PROJECT_CARD_OFF = 'font-medium text-fg hover:bg-sel'
 
-/** 项目卡片右边的对话数：选中卡片上是带细边的白色圆片，其余卡片上只是一个次要色数字 */
+/** 项目行右边的对话数：次要色的纯数字，选中时跟着行加一点字重 */
 export function SidebarCount({ n, on, className }: { n: number; on?: boolean; className?: string }) {
   return (
     <span
-      className={cn(
-        'grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[0.6875rem] tabular-nums',
-        on ? 'bg-card font-semibold text-fg ring-1 ring-proj-line' : 'text-subtle',
-        className,
-      )}
+      className={cn('shrink-0 text-[0.75rem] text-subtle tabular-nums', on ? 'font-medium' : 'font-normal', className)}
     >
       {n}
     </span>
@@ -119,21 +132,31 @@ export function SidebarCount({ n, on, className }: { n: number; on?: boolean; cl
 }
 
 /**
- * 项目下的对话列表：缩进，左边一道竖线把它们挂在项目下面；每个对话是一张灰底卡片，
- * 选中的那张换成卡片底 + 细边浮起来（照设计稿 Workspace 侧栏）
+ * 项目下的对话列表：左边一道 1px 细竖线把它们挂在项目下面，竖线落在文件夹图标正下方，
+ * 行里的文字和项目名的文字左对齐（33px = 折叠箭头 12 + 间距 4 + 行内边距 10 + 图标中线 7）
  */
 export function SidebarTaskBlock({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={cn('mt-1.5 ml-5 flex flex-col gap-[5px] border-l-[1.5px] border-line-strong pl-2.5', className)}>
-      {children}
-    </div>
-  )
+  return <div className={cn('mt-0.5 ml-[33px] flex flex-col gap-px border-l border-line', className)}>{children}</div>
 }
 
-/** 侧栏行尾用的小号状态胶囊：20 高、600 字重；底色比 StatusPill 实（设计稿：等你回复、未读是实心底） */
-const SMALL_PILL = 'h-5 gap-1.5 px-2 text-[0.6875rem] font-semibold'
-/** 子对话 / 执行中：卡片底 + 细边的白片，转圈用运行色 */
-const PILL_RUN = 'bg-card text-fg ring-1 ring-line'
+/** 侧栏行尾的浅色小胶囊（等你回复、失败）：18 高、浅底同色字，不用实心底，免得一列里太抢眼 */
+const SMALL_PILL = 'h-[18px] gap-1 px-[7px] text-[0.6875rem] font-medium'
+
+/** 行尾的「运行中」类状态：次要色小字 + 运行色小转圈（设计稿：行尾状态做轻） */
+function RunTag({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <span
+      className={cn(
+        // 不跟着选中行加粗：行尾状态只是次要信息
+        'inline-flex shrink-0 items-center gap-[5px] text-[0.71875rem] font-normal whitespace-nowrap text-subtle',
+        className,
+      )}
+    >
+      <Spinner className="h-[7px] w-[7px] border-[1.5px] text-run" />
+      {children}
+    </span>
+  )
+}
 
 /**
  * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 未读。
@@ -157,44 +180,26 @@ export function TaskRowStatus({
 }) {
   if (needs)
     return (
-      <StatusPill tone="wait" className={cn(SMALL_PILL, 'bg-warning text-bg')}>
+      <StatusPill tone="wait" className={SMALL_PILL}>
         {t('等你回复')}
       </StatusPill>
     )
-  if (kids > 0)
-    return (
-      <StatusPill tone="run" spin className={cn(SMALL_PILL, PILL_RUN)}>
-        {t('{n} 子对话', { n: kids })}
-      </StatusPill>
-    )
-  if (running)
-    return (
-      <StatusPill tone="run" spin className={cn(SMALL_PILL, PILL_RUN)}>
-        {t('执行中')}
-      </StatusPill>
-    )
+  if (kids > 0) return <RunTag>{t('{n} 子对话', { n: kids })}</RunTag>
+  if (running) return <RunTag>{t('执行中')}</RunTag>
   if (failed)
     return (
       <StatusPill tone="err" className={SMALL_PILL}>
         {t('失败')}
       </StatusPill>
     )
-  if (unread)
-    return (
-      <StatusPill tone="idle" className={cn(SMALL_PILL, 'bg-accent text-on-accent')}>
-        {t('未读')}
-      </StatusPill>
-    )
+  // 未读只是一个 6px 强调色圆点（带读屏说明），不写字
+  if (unread) return <UnreadDot className="mr-1 h-1.5 w-1.5" />
   return null
 }
 
-/** 项目行右边「N 个执行中」的胶囊 */
+/** 项目行右边「N 个执行中」：和对话行的运行状态同一个样子（次要色小字 + 小转圈） */
 export function ProjectRunning({ n, className }: { n: number; className?: string }) {
-  return (
-    <StatusPill tone="run" className={cn(SMALL_PILL, className)}>
-      {t('{n} 个执行中', { n })}
-    </StatusPill>
-  )
+  return <RunTag className={className}>{t('{n} 个执行中', { n })}</RunTag>
 }
 
 /**
@@ -234,11 +239,11 @@ export const SidebarProjectRow = forwardRef<
         aria-label={open ? t('收起') : t('展开')}
         disabled={!canToggle}
         className={cn(
-          'grid h-6 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
+          'grid h-6 w-3 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
           !canToggle && 'invisible',
         )}
       >
-        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2.2} />
+        <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2} />
       </button>
       <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
         {name}
@@ -255,14 +260,15 @@ export const SidebarProjectRow = forwardRef<
   )
 })
 
-/** 项目行里的文件夹图标 + 名字：展开时是打开的文件夹 */
-export function SidebarProjectName({ open, name }: { open: boolean; name: ReactNode }) {
-  const Icon = open ? FolderOpen : Folder
+/**
+ * 项目行里的文件夹图标 + 名字。图标统一用合着的文件夹（展开与否看左边的箭头）：
+ * 选中的项目是项目蓝，其余是次要色；字重跟着行走（PROJECT_CARD_*）
+ */
+export function SidebarProjectName({ on, name }: { open?: boolean; on?: boolean; name: ReactNode }) {
   return (
     <>
-      {/* 图标跟卡片文字同色：选中卡片上是项目蓝，其余卡片上是 muted（由 PROJECT_CARD_* 定） */}
-      <Icon className="h-[15px] w-[15px] shrink-0 opacity-80" strokeWidth={1.9} />
-      <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>
+      <Folder className={cn('h-[15px] w-[15px] shrink-0', on ? 'text-proj-ico' : 'text-subtle')} strokeWidth={1.8} />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
     </>
   )
 }
@@ -271,8 +277,8 @@ export function SidebarProjectName({ open, name }: { open: boolean; name: ReactN
 export function sidebarTaskRowClass(active: boolean, inBlock: boolean) {
   return cn(
     'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-[0.8125rem] transition-colors',
-    // 项目下的对话是一张张卡片（36 高、10px 圆角），搜索结果等其他地方还是紧凑行
-    inBlock ? 'h-9 rounded-[10px]' : 'h-8 rounded-[7px]',
+    // 项目下的对话 31 高、离竖线 4px（ml-1，宽度扣掉这 4px）；搜索结果等其他地方还是 32 高的紧凑行
+    inBlock ? 'ml-1 h-[31px] w-[calc(100%-4px)] rounded-lg' : 'h-8 rounded-[7px]',
     active
       ? inBlock
         ? SIDEBAR_BLOCK_ROW_ON
@@ -324,7 +330,7 @@ export function SidebarTaskRowBody({
       {time && (
         <span
           className={cn(
-            'shrink-0 pl-1.5 text-[0.6875rem] tabular-nums transition-colors',
+            'shrink-0 pl-1.5 text-[0.6875rem] font-normal tabular-nums transition-colors',
             active ? 'text-muted' : 'text-subtle group-hover/row:text-muted',
           )}
         >

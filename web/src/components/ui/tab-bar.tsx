@@ -9,8 +9,10 @@ import { Spinner } from './status-pill'
  * 没选中的是灰字，悬停有浅底；关闭按钮悬停才出现，选中的页签半透明常驻。
  * 页签要平分整条宽度时给 TabItem 传 fill；对话右栏「项目文件 / 本对话改动」用户要求固定宽度，不传。
  * variant="underline"：详情页、设置小节那种页内切换——没有条底色、页签按文字宽度排，选中是 2px 圆头强调色下划线
+ * variant="fit"：对话右栏「项目文件 / 本对话改动」——条和 bar 一样，页签按内容宽度左对齐、间距 20px、两头留 16px，
+ * 指示条和内容同宽（设计稿 `.ptab.sm`）
  */
-type TabVariant = 'bar' | 'underline'
+type TabVariant = 'bar' | 'underline' | 'fit'
 /** TabItem 跟着所在 TabBar 的样式画，不用每个页签再传一遍 */
 const TabVariantContext = createContext<TabVariant>('bar')
 
@@ -36,6 +38,7 @@ export function TabBar({
   variant?: TabVariant
 }) {
   const underline = variant === 'underline'
+  const fit = variant === 'fit'
   return (
     <TabVariantContext.Provider value={variant}>
       <Root className={cn('flex shrink-0 items-stretch border-b', underline ? 'h-10' : 'h-9 bg-rail', className)}>
@@ -46,6 +49,7 @@ export function TabBar({
           className={cn(
             'flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]',
             underline && 'gap-1',
+            fit && 'gap-5 px-4',
           )}
         >
           {children}
@@ -91,28 +95,38 @@ export function TabItem({
   className?: string
   children: ReactNode
 }) {
-  const underline = useContext(TabVariantContext) === 'underline'
+  const variant = useContext(TabVariantContext)
+  const underline = variant === 'underline'
+  const fit = variant === 'fit'
   return (
     <div
       className={cn(
         'group/tab relative flex min-w-0 items-center transition-colors',
-        underline
-          ? // 页内切换：字号和正文一样、按文字宽度排；选中只有一条细下划线，没选中灰字、悬停变深，不出底色
+        fit
+          ? // 按内容宽度：不留左右内边距，指示条和内容同宽；没选中灰字、悬停变深，不出底色
             cn(
-              'shrink-0 text-[0.8125rem] font-medium',
-              fill && 'flex-1 basis-0',
+              'shrink-0 text-[0.8125rem]',
               active
-                ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
-                : 'text-muted hover:text-fg',
+                ? 'font-medium text-fg after:absolute after:inset-x-0 after:-bottom-px after:h-[3px] after:bg-fg'
+                : 'text-subtle hover:text-fg',
             )
-          : cn(
-              'text-[0.75rem]',
-              fill ? 'flex-1 basis-0' : 'max-w-60 shrink-0 basis-[8.25rem]',
-              // 选中只画底部指示条：左右各缩进 6px，盖住页签条的底线
-              active
-                ? 'font-medium text-fg after:absolute after:inset-x-1.5 after:-bottom-px after:h-[3px] after:bg-primary'
-                : 'text-subtle hover:bg-sel/60 hover:text-fg',
-            ),
+          : underline
+            ? // 页内切换：字号和正文一样、按文字宽度排；选中只有一条细下划线，没选中灰字、悬停变深，不出底色
+              cn(
+                'shrink-0 text-[0.8125rem] font-medium',
+                fill && 'flex-1 basis-0',
+                active
+                  ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
+                  : 'text-muted hover:text-fg',
+              )
+            : cn(
+                'text-[0.75rem]',
+                fill ? 'flex-1 basis-0' : 'max-w-60 shrink-0 basis-[8.25rem]',
+                // 选中只画底部指示条：左右各缩进 6px，盖住页签条的底线
+                active
+                  ? 'font-medium text-fg after:absolute after:inset-x-1.5 after:-bottom-px after:h-[3px] after:bg-primary'
+                  : 'text-subtle hover:bg-sel/60 hover:text-fg',
+              ),
         className,
       )}
     >
@@ -125,14 +139,22 @@ export function TabItem({
         title={title}
         className={cn(
           'flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left',
-          underline ? 'px-2.5' : 'pr-1 pl-3',
+          fit ? 'px-0' : underline ? 'px-2.5' : 'pr-1 pl-3',
           fill && 'justify-center px-3',
         )}
       >
         {busy ? <Spinner className="text-run" /> : icon && <span className="flex shrink-0 items-center">{icon}</span>}
-        <span className={cn('min-w-0 truncate', !fill && !underline && 'flex-1', preview && 'italic')}>{children}</span>
+        <span className={cn('min-w-0 truncate', !fill && !underline && !fit && 'flex-1', preview && 'italic')}>
+          {children}
+        </span>
         {tag && (
-          <span className="shrink-0 rounded-full bg-sel px-1.5 text-[0.6875rem] leading-4 font-normal text-muted">
+          <span
+            className={cn(
+              'shrink-0 rounded-full bg-sel px-1.5 text-[0.6875rem] leading-4 font-normal text-muted',
+              // 右栏的计数是 18px 的圆角小块（设计稿），一位数时是正圆
+              fit && 'grid h-[1.125rem] min-w-[1.125rem] place-items-center px-[0.3125rem] leading-none',
+            )}
+          >
             {tag}
           </span>
         )}
@@ -151,7 +173,7 @@ export function TabItem({
           <X className="h-2.5 w-2.5" strokeWidth={2.6} />
         </button>
       ) : (
-        !fill && !underline && <span className="w-2 shrink-0" />
+        !fill && !underline && !fit && <span className="w-2 shrink-0" />
       )}
     </div>
   )

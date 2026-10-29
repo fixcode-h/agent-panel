@@ -624,7 +624,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.waitForTimeout(500)
   await checkGraph('切回图形')
   // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
-  await p.getByRole('radio', { name: /^Agent 模式/ }).click()
+  // 模式切换在左上角的下拉里：先点开，再选菜单项
+  await p.getByRole('button', { name: '切换模式' }).click()
+  await p.getByRole('menuitemradio', { name: /^Agent 模式/ }).click()
   await p
     .waitForURL((u) => !u.hash.startsWith('#/comfy'), { timeout: 5000 })
     .catch(() => errors.push('在 ComfyUI 页点 Agent 模式没有切过去'))

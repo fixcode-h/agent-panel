@@ -218,8 +218,8 @@ export function App() {
           <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
-            {/* 页面区直接铺到浏览器边缘，和侧栏靠底色分开；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块 */}
-            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+            {/* 页面放在圆角面板里浮在侧栏底色上（照设计稿）；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块 */}
+            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden md:py-2 md:pr-2">
               <div
                 className={cn(
                   'flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden',

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GitBranch, List, ListTree, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
+import { Diff, FileText, GitBranch, List, ListTree, Loader2, RefreshCw, ScanSearch, Search } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import { menuItem } from '@/components/ui/menu'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { IconButton } from '@/components/ui/icon-button'
-import { FileExplorer } from '@/components/files/FileTree'
+import { type FileBrowser, FileExplorer } from '@/components/files/FileTree'
 import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
 import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
 import { ChangesTree } from './ChangesTree'
@@ -22,6 +22,26 @@ import { FileDialog } from './FileDialog'
  * 每个都触发一次文件树重读既没意义又费请求；合并成一波可以接受几百毫秒的延迟。
  */
 const REFRESH_DELAY = 350
+
+/** 改动标记最多读这么多个目录的 git 状态；改动散在更多目录时剩下的按「改动」标 */
+const MARK_DIRS = 30
+
+const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
+
+type Mark = 'A' | 'M' | 'D'
+const MARK_TONE: Record<Mark, string> = { A: 'text-success', M: 'text-warning', D: 'text-danger' }
+
+/**
+ * 改动文件的 A/M/D：任务只记了增删行数，新增、删除要看 git。
+ * 所在目录读到了：不在列表里就是删了，状态是新增 / 未跟踪就是新增；没读到先按「改动」标
+ */
+function changeMark(files: FileBrowser, path: string): Mark {
+  const level = files.levels[parentOf(path)]
+  if (!level) return 'M'
+  const entry = level.entries.find((e) => e.path === path)
+  if (!entry) return 'D'
+  return entry.status === 'A' || entry.status === '?' ? 'A' : entry.status === 'D' ? 'D' : 'M'
+}
 
 /**
  * 刷新键去抖：执行中隔一小段时间合并一次，任务状态一变（跑完、出错）立即生效。
@@ -71,6 +91,12 @@ export function TaskFiles({
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
+  /** 右栏只放文件树：查找收进信息行的图标按钮，点开才出搜索栏 */
+  const [searchOpen, setSearchOpen] = useState(false)
+  /** 改动的显示方式：默认按设计稿平铺（标记 + 路径 + 增删行数），也能切回按目录分组 */
+  const [mode, setMode] = useState<'tree' | 'list'>('list')
+  /** 最近点开看差异的文件：差异窗口关掉后列表里还标着，知道刚看到哪 */
+  const [picked, setPicked] = useState<string | null>(null)
 
   // 改动过一次（新增、改了行数）才重新读：执行中每秒都在更新任务，不能跟着刷
   const changes = node
@@ -90,44 +116,92 @@ export function TaskFiles({
   const files = useProjectFiles(task.projectId, refreshKey, task.id)
   const add = changes.reduce((n, c) => n + c.add, 0)
   const del = changes.reduce((n, c) => n + c.del, 0)
+  // 改动标记（A/M/D）要看 git 状态：切到「本对话改动」时把改动文件所在的那几层读出来（读过的不重复请求）
+  const dirs = [...new Set(changes.map((c) => parentOf(c.path)))].slice(0, MARK_DIRS).join('\n')
+  useEffect(() => {
+    if (tab !== 'changes' || !dirs) return
+    for (const d of dirs.split('\n')) void files.load(d)
+    // 只在切页签、改动目录或刷新时读；files 每次渲染都是新对象
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, dirs, files.version])
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 右栏固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动，按固定宽度靠左排、不平分整条；分支和刷新放在右端 */}
-      <TabBar
-        label={t('文件视图')}
-        trailing={
-          <>
-            <span
-              className="flex max-w-28 min-w-0 items-center gap-1 text-[0.75rem] text-subtle"
-              title={files.info?.dir ?? dir}
-            >
-              <GitBranch className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate font-mono">{files.info?.branch ?? t('没有分支')}</span>
-            </span>
-            <IconButton label={t('刷新文件')} onClick={files.refresh}>
-              <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
-            </IconButton>
-          </>
-        }
-      >
-        <TabItem active={tab === 'files'} onSelect={() => setTab('files')}>
+      {/* 右栏固定两个页签：项目文件 / 本对话改动，按内容宽度左对齐（设计稿 .ptab.sm） */}
+      <TabBar label={t('文件视图')} variant="fit">
+        <TabItem
+          active={tab === 'files'}
+          onSelect={() => setTab('files')}
+          icon={<FileText className="h-[0.8125rem] w-[0.8125rem]" />}
+        >
           {t('项目文件')}
         </TabItem>
         <TabItem
           active={tab === 'changes'}
           onSelect={() => setTab('changes')}
+          icon={<Diff className="h-[0.8125rem] w-[0.8125rem]" />}
           tag={changes.length > 0 ? changes.length : undefined}
           title={changes.length > 0 ? `+${add} -${del}` : undefined}
         >
           {t('本对话改动')}
         </TabItem>
       </TabBar>
+      {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
+      <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
+        <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={1.8} />
+        <span className="min-w-0 truncate font-mono text-[0.71875rem] text-muted" title={files.info?.dir ?? dir}>
+          {files.info?.branch ?? t('没有分支')}
+        </span>
+        <span aria-hidden>·</span>
+        <span className="shrink-0">{t('{n} 个改动', { n: changes.length })}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {tab === 'files' ? (
+            <IconButton
+              icon={Search}
+              label={t('查找文件')}
+              size="2xs"
+              aria-pressed={searchOpen}
+              onClick={() => setSearchOpen((v) => !v)}
+              className={cn(searchOpen && 'bg-sel text-fg')}
+            />
+          ) : (
+            changes.length > 0 && (
+              <IconButton
+                icon={mode === 'tree' ? List : ListTree}
+                label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
+                size="2xs"
+                onClick={() => setMode(mode === 'tree' ? 'list' : 'tree')}
+              />
+            )
+          )}
+          <IconButton label={t('刷新文件')} size="2xs" onClick={files.refresh}>
+            <RefreshCw className={cn('h-3 w-3', files.loading && 'animate-spin')} />
+          </IconButton>
+        </div>
+      </div>
       {tab === 'files' ? (
-        <FileExplorer browser={files} onOpen={(path, line) => setTarget({ path, line })} compact />
+        <>
+          <FileExplorer
+            browser={files}
+            onOpen={(path, line) => setTarget({ path, line })}
+            compact
+            searchOpen={searchOpen}
+            onSearchOpenChange={setSearchOpen}
+          />
+          {/* 文件在中间的查看窗口里打开，右栏只放树；提示一行，免得以为点了没反应 */}
+          <p className="shrink-0 px-4 pt-2.5 pb-3 text-center text-[0.71875rem] text-subtle/80">
+            {t('点文件在中间查看')}
+          </p>
+        </>
       ) : (
         <ChangesList
           changes={changes}
-          onDiff={setDiffPath}
+          mode={mode}
+          mark={(path) => changeMark(files, path)}
+          picked={picked}
+          onDiff={(path) => {
+            setPicked(path)
+            setDiffPath(path)
+          }}
           scoped={!!node}
           canReview={!node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0}
           reviewing={reviewing}
@@ -170,11 +244,14 @@ export function TaskFiles({
 }
 
 /**
- * 「改动」Tab 的内容：改过的文件一列，点开看差异；底部可以让 CLI 审查还没提交的改动。
- * 上半部分是列表，列表只有改动文件时才需要滚动
+ * 「改动」Tab 的内容：只列改过的文件（标记 + 路径 + 增删行数），点开在中间的差异窗口里看；
+ * 底部可以让 CLI 审查还没提交的改动
  */
 function ChangesList({
   changes,
+  mode,
+  mark,
+  picked,
   onDiff,
   scoped,
   canReview,
@@ -182,6 +259,10 @@ function ChangesList({
   onReview,
 }: {
   changes: Task['changes']
+  mode: 'tree' | 'list'
+  mark: (path: string) => Mark
+  /** 最近点开的文件，行上标底色 */
+  picked: string | null
   onDiff: (path: string) => void
   /** 看的是流程图里选中的节点，不是整个任务 */
   scoped: boolean
@@ -189,7 +270,6 @@ function ChangesList({
   reviewing: boolean
   onReview: () => void
 }) {
-  const [mode, setMode] = useState<'tree' | 'list'>('tree')
   // 默认全展开，所以这里存的是收起的目录
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggleDir = (path: string) =>
@@ -198,66 +278,43 @@ function ChangesList({
       if (!next.delete(path)) next.add(path)
       return next
     })
-  const add = changes.reduce((n, c) => n + c.add, 0)
-  const del = changes.reduce((n, c) => n + c.del, 0)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-2.5 py-2">
-        <span className="min-w-0 truncate text-[0.75rem] font-medium">
-          {t('改动 {n} 个文件', { n: changes.length })}
-        </span>
-        {changes.length > 0 && (
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div role="radiogroup" aria-label={t('改动显示方式')} className="flex rounded-md bg-field p-0.5">
-              {(
-                [
-                  ['tree', t('树形'), ListTree],
-                  ['list', t('列表'), List],
-                ] as const
-              ).map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === id}
-                  title={id === 'tree' ? t('按目录分组显示') : t('平铺显示每个文件')}
-                  onClick={() => setMode(id)}
-                  className={cn(
-                    'flex h-5 cursor-pointer items-center gap-1 rounded px-1.5 text-[0.6875rem] transition-colors',
-                    mode === id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
-                  )}
-                >
-                  <Icon className="h-3 w-3 shrink-0" />
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="font-mono text-[0.6875rem]">
-              <span className="text-success">+{add}</span>
-              {del > 0 && <span className="text-danger"> -{del}</span>}
-            </span>
-          </div>
-        )}
-      </div>
-      <div className={cn('min-h-0 flex-1 overflow-y-auto', mode === 'tree' ? 'py-1' : 'p-1')}>
+      <div className="thin-scroll min-h-0 flex-1 overflow-y-auto p-2">
         {mode === 'tree' ? (
           <ChangesTree changes={changes} onDiff={onDiff} scoped={scoped} collapsed={collapsed} onToggle={toggleDir} />
         ) : changes.length ? (
-          changes.map((c) => (
-            <button
-              key={c.path}
-              type="button"
-              onClick={() => onDiff(c.path)}
-              title={t('查看「{path}」的改动', { path: c.path })}
-              className={cn(menuItem, 'gap-2 py-1 font-mono text-xs')}
-            >
-              <span className="min-w-0 flex-1 truncate text-muted">{c.path}</span>
-              <span className="shrink-0 text-success">+{c.add}</span>
-              <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
-            </button>
-          ))
+          <div className="flex flex-col gap-0.5">
+            {changes.map((c) => {
+              const m = mark(c.path)
+              return (
+                <button
+                  key={c.path}
+                  type="button"
+                  onClick={() => onDiff(c.path)}
+                  title={t('查看「{path}」的改动', { path: c.path })}
+                  className={cn(
+                    'flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-sel/60',
+                    picked === c.path && 'bg-sel hover:bg-sel',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'grid h-[1.125rem] w-[1.125rem] shrink-0 place-items-center rounded-[5px] bg-field font-mono text-[0.6875rem] font-bold',
+                      MARK_TONE[m],
+                    )}
+                  >
+                    {m}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{c.path}</span>
+                  {c.add > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-success">+{c.add}</span>}
+                  {c.del > 0 && <span className="shrink-0 font-mono text-[0.6875rem] text-danger">−{c.del}</span>}
+                </button>
+              )
+            })}
+          </div>
         ) : (
-          <p className="p-4 text-[0.8125rem] text-subtle">
+          <p className="mx-2 my-3 rounded-xl border border-dashed border-line-strong p-6 text-center text-[0.8125rem] text-subtle">
             {scoped ? t('这个节点没有改动文件。') : t('还没有改动文件。')}
           </p>
         )}

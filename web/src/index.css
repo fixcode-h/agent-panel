@@ -25,7 +25,7 @@
   --sel-line: #d5d1c4;
   --content-w: 1000px;
   /* 默认字体：内置的 Inter 配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
-  --app-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --app-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
   --app-mono:
     'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
@@ -33,9 +33,16 @@
   /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
   --accent-text: #a94f2e;
   /* 侧栏选中项目的卡片：一层浅蓝底 + 细蓝边，和对话行的灰底分开（照设计稿 Workspace 侧栏），不随配色变 */
-  --proj-bg: #e7f0fc;
+  --proj-bg: #eef4fd;
   --proj-line: #b9cff0;
   --proj-fg: #1e3a66;
+  /* 选中项目的文件夹图标 */
+  --proj-ico: #3b82f6;
+  /* 侧栏项目下选中的对话：一张卡片底 + 极淡投影，不描边（深色在 .dark 里比 card 再亮一档） */
+  --conv-sel: var(--card);
+  --conv-shadow: 0 1px 2px rgb(24 24 27 / 0.06), 0 0 0 0.5px rgb(24 24 27 / 0.04);
+  /* 左上角的产品图标：陶土橙渐变，是品牌色，不跟配色变 */
+  --logo-bg: linear-gradient(135deg, #e59a78 0%, #d97757 45%, #b9532f 100%);
   --primary: var(--accent);
   --on-primary: #ffffff;
   /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
@@ -55,6 +62,12 @@
   --warning: #935b0c;
   --danger: #b4372b;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
+  /* 中间对话、右栏两块面板的投影：浅色下很淡的一层，免得面板和侧栏底色贴在一起 */
+  --panel-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  /* 等你回答的提问卡（设计稿）：浅琥珀底 + 淡琥珀边，选项悬停 / 选中是一层更深的琥珀 */
+  --ask-bg: #fffbf3;
+  --ask-line: #f0d9a8;
+  --ask-sel: rgb(133 86 0 / 0.07);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
   --code-bg: #f7f6f1;
   --code-chip: #f1efe8;
@@ -137,9 +150,13 @@
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
   --accent-text: #e08463;
-  --proj-bg: rgb(96 165 250 / 0.13);
+  --proj-bg: rgb(96 165 250 / 0.1);
   --proj-line: rgb(96 165 250 / 0.35);
   --proj-fg: #bfd7fb;
+  --proj-ico: #7db3f7;
+  /* 深色下侧栏底和 card 只差几档，选中对话再往上提亮一点才浮得起来；各配色按同一比例算 */
+  --conv-sel: color-mix(in oklab, var(--card) 95%, white);
+  --conv-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
   /* 白字在 #d97757 上只有 3.1:1，和其他配色的深色主题一样用深色字 */
   --on-primary: #1f1e1c;
   --on-danger: #1f1e1c;
@@ -157,6 +174,10 @@
   --warning: #e3a752;
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  --panel-shadow: none;
+  --ask-bg: rgb(232 182 90 / 0.08);
+  --ask-line: rgb(232 182 90 / 0.22);
+  --ask-sel: rgb(232 182 90 / 0.1);
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
   --code-bg: #1f1f1d;
   --code-chip: #353532;
@@ -320,6 +341,9 @@
   --color-proj: var(--proj-bg);
   --color-proj-line: var(--proj-line);
   --color-proj-fg: var(--proj-fg);
+  --color-proj-ico: var(--proj-ico);
+  --color-conv: var(--conv-sel);
+  --shadow-conv: var(--conv-shadow);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
   --color-on-danger: var(--on-danger);
@@ -327,6 +351,9 @@
   --color-on-accent: var(--on-primary);
   --color-run: var(--run);
   --color-run-soft: var(--run-soft);
+  --color-ask: var(--ask-bg);
+  --color-ask-line: var(--ask-line);
+  --color-ask-sel: var(--ask-sel);
   --color-peer: var(--peer);
   --color-peer-soft: var(--peer-soft);
   --color-ctx-messages: var(--ctx-messages);
@@ -385,12 +412,18 @@ body,
   height: 100%;
 }
 /*
- * 面板：主区、右栏的底。中间区域直接铺到浏览器边缘，不留外边距、不加圆角和投影（用户要求）；
- * 和侧栏靠底色分开；对话和右栏同一个底色、中间没有缝了，用页面里的 divide-x 画一条细线
+ * 面板：主区、右栏各是一块圆角面板，浮在侧栏的底色上，中间露出一道底色（照设计稿 Workspace，用户确认要面板）。
+ * 一圈淡线 + 浅色下很淡的投影，免得面板和侧栏底色贴在一起分不清。手机上整页就是一块，不留圆角
  */
 @utility panel {
   background-color: var(--bg);
   overflow: hidden;
+  @media (width >= 48rem) {
+    border-radius: 0.75rem;
+    box-shadow:
+      0 0 0 1px var(--line),
+      var(--panel-shadow);
+  }
 }
 /*
  * 分段切换（模式切换、Segmented）的轨道和选中块：浅色下轨道是一层灰、选中块是白卡片；
@@ -474,6 +507,58 @@ body,
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
+}
+/*
+ * 细滚动条（设计稿 `.sb`，对话消息区等长列表用）：平时透明不占眼，鼠标进到这块区域才显出圆头滑块，
+ * 按住滑块再加深。写成普通类而不是 @utility：上面全局的 ::-webkit-scrollbar 不在层里，
+ * 放进 utilities 层会被它压住
+ */
+.thin-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 999px;
+  border: 4px solid transparent;
+  background-clip: padding-box;
+  min-height: 40px;
+}
+.thin-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--subtle);
+}
+/* 没有 webkit 滚动条伪元素的浏览器（Firefox）：用标准属性画细条，同样悬停才显色 */
+@supports not selector(::-webkit-scrollbar) {
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .thin-scroll:hover {
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+/* 滚动区顶部 16px 渐隐：第一行滚上去时淡出，不被上面的页签栏生硬截断（设计稿 `.fade-top`） */
+.fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16px);
+}
+/*
+ * 过程行一组（设计稿）：同一轮连续的过程行（工具调用、派发子对话、收到汇报、转交提问）不画框，
+ * 组内行间一条细分隔线。proc-list 里的行直接相邻；跨消息的相邻过程块（标了 data-proc）
+ * 本来隔着回复列的 gap-2，往回收掉这段间距，接成同一组
+ */
+.proc-list > * + *,
+[data-proc] + [data-proc] {
+  border-top: 1px solid var(--line);
+}
+[data-proc] + [data-proc] {
+  margin-top: -0.5rem;
 }
 
 /* 预览工作流文档 */

@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import {
-  ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -41,7 +40,7 @@ import {
 
 /** git 状态的颜色和文字 */
 const STATUS: Record<string, { label: string; className: string }> = {
-  M: { label: 'M', className: 'text-warn' },
+  M: { label: 'M', className: 'text-warning' },
   A: { label: 'A', className: 'text-success' },
   '?': { label: 'U', className: 'text-success' },
   D: { label: 'D', className: 'text-danger' },
@@ -53,7 +52,8 @@ const STATUS: Record<string, { label: string; className: string }> = {
 const PAGE = 400
 
 /** 缩进跟着层级走；几个地方都要算，统一放这里 */
-const indent = (depth: number, compact?: boolean) => depth * (compact ? 12 : 14) + 8
+// 右栏（compact）照设计稿：每层 16px、首层 4px，箭头本身占一格
+const indent = (depth: number, compact?: boolean) => (compact ? depth * 16 + 4 : depth * 14 + 8)
 
 /** 全部展开的上限：再深、再多就停下，避免一次发上千个请求把服务端和页面拖死 */
 const EXPAND_DEPTH = 6
@@ -210,6 +210,8 @@ export function FileExplorer({
   onOpen,
   className,
   compact,
+  searchOpen,
+  onSearchOpenChange,
 }: {
   browser: FileBrowser
   /** hitLines 是这个文件里全部命中的行号，弹窗拿它做「上一处 / 下一处」 */
@@ -217,6 +219,12 @@ export function FileExplorer({
   className?: string
   /** 右栏里的窄版：字号紧一点，搜索结果少列几行，不显示路径栏 */
   compact?: boolean
+  /**
+   * 搜索栏是否展开。不传就一直显示（项目页）；任务右栏只放文件树，
+   * 搜索收进信息行的图标按钮，由外面控制开关
+   */
+  searchOpen?: boolean
+  onSearchOpenChange?: (open: boolean) => void
 }) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('name')
@@ -238,6 +246,14 @@ export function FileExplorer({
   const root = useRef<HTMLDivElement>(null)
 
   const needle = query.trim()
+  const searchShown = searchOpen !== false
+  // 外面收起搜索栏时把关键词也清掉：搜索栏看不见了，树还停在搜索结果上会让人找不到原因
+  useEffect(() => {
+    if (searchOpen === false) {
+      setQuery('')
+      setMode('name')
+    } else if (searchOpen) input.current?.focus()
+  }, [searchOpen])
   // 关键词或搜索方式变了通知外面：名称和内容都由服务端搜，内容再停顿一下
   useEffect(() => {
     browser.search(query, mode)
@@ -441,6 +457,11 @@ export function FileExplorer({
     if (el.closest('input, textarea, select, [contenteditable="true"]')) return
     if (ev.key === '/' || ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'f')) {
       ev.preventDefault()
+      // 搜索栏收着：先展开，展开后由上面的 effect 聚焦
+      if (!searchShown) {
+        onSearchOpenChange?.(true)
+        return
+      }
       input.current?.focus()
       input.current?.select()
     }
@@ -525,7 +546,8 @@ export function FileExplorer({
       <div
         className={cn(
           'flex shrink-0 flex-col gap-2',
-          compact ? 'gap-1.5 px-2 pt-2 pb-2' : 'gap-2.5 border-b px-3 pt-3 pb-3 md:px-5',
+          compact ? 'gap-1.5 border-b px-3 pt-2 pb-2' : 'gap-2.5 border-b px-3 pt-3 pb-3 md:px-5',
+          !searchShown && 'hidden',
         )}
       >
         <div className="relative">
@@ -537,6 +559,11 @@ export function FileExplorer({
             onKeyDown={(e) => {
               // 打完关键词按 ↓ 直接进结果列表，不用先 Tab 过去
               if (e.key === 'ArrowDown') root.current?.querySelector<HTMLElement>('[data-results]')?.focus()
+              // 可收起的搜索栏：Esc 收起，回到文件树
+              if (e.key === 'Escape' && onSearchOpenChange) {
+                e.preventDefault()
+                onSearchOpenChange(false)
+              }
             }}
             placeholder={mode === 'name' ? t('查找文件') : t('搜索文件内容')}
             className={cn('pl-8.5', compact ? 'h-7 text-[0.75rem]' : 'h-9')}
@@ -589,7 +616,7 @@ export function FileExplorer({
         )}
       </div>
 
-      <div className={cn('min-h-0 flex-1 overflow-auto py-2', compact ? 'px-1' : 'px-2 md:px-3')}>
+      <div className={cn('min-h-0 flex-1 overflow-auto', compact ? 'thin-scroll p-1.5' : 'px-2 py-2 md:px-3')}>
         {/* 空白处右键：作用于整棵树，不碰具体文件 */}
         <ContextMenu>
           <ContextMenuTrigger asChild>
@@ -925,29 +952,55 @@ function LevelRows({
                   onPointerDown={(ev) => startFileDrag({ path: e.path, kind: e.kind }, ev)}
                   style={{ paddingLeft: `${indent(depth, compact)}px` }}
                   className={cn(
-                    'flex w-full cursor-pointer items-center gap-1.5 rounded pr-2 text-left text-[0.8125rem] outline-none hover:bg-sel focus:bg-sel aria-selected:bg-sel/70',
-                    compact ? 'h-6' : 'h-7',
-                    e.kind === 'dir' ? 'text-fg' : 'text-muted hover:text-fg',
+                    'flex w-full cursor-pointer items-center gap-1.5 pr-2 text-left outline-none',
+                    compact
+                      ? // 任务右栏（设计稿）：28px 行、8px 圆角、正文字体；选中只用底色加粗，不描边
+                        cn(
+                          'h-7 rounded-lg text-[0.8125rem] transition-colors hover:bg-sel/60 focus-visible:bg-sel/60',
+                          // 只有文件标选中（就是刚在中间打开的那个），目录点了只是展开收起
+                          e.kind === 'dir'
+                            ? 'font-medium text-muted'
+                            : 'text-fg aria-selected:bg-sel aria-selected:font-semibold',
+                        )
+                      : cn(
+                          'h-7 rounded text-[0.8125rem] hover:bg-sel focus:bg-sel aria-selected:bg-sel/70',
+                          e.kind === 'dir' ? 'text-fg' : 'text-muted hover:text-fg',
+                        ),
                   )}
                   title={e.path}
                 >
-                  {e.kind === 'dir' ? (
-                    isOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    )
-                  ) : (
-                    <span className="w-3.5 shrink-0" />
-                  )}
-                  <Icon
-                    className={cn('h-3.5 w-3.5 shrink-0', e.kind === 'dir' ? 'text-accent-text/80' : 'text-subtle')}
+                  {/* 细线箭头，展开时转 90°（不换成另一个图标，切换时有过渡） */}
+                  <ChevronRight
+                    aria-hidden
+                    className={cn(
+                      'h-3 w-3 shrink-0 text-subtle transition-transform',
+                      e.kind !== 'dir' && 'invisible',
+                      isOpen && 'rotate-90',
+                    )}
                   />
-                  <span className={cn('min-w-0 truncate font-mono', compact ? 'text-[0.75rem]' : 'text-[0.75rem]')}>
+                  <Icon
+                    className={cn(
+                      'h-3.5 w-3.5 shrink-0',
+                      compact
+                        ? e.kind === 'dir'
+                          ? 'text-subtle'
+                          : 'text-muted'
+                        : e.kind === 'dir'
+                          ? 'text-accent-text/80'
+                          : 'text-subtle',
+                    )}
+                  />
+                  <span className={cn('min-w-0 truncate', compact ? 'flex-1' : 'font-mono text-[0.75rem]')}>
                     {e.name}
                   </span>
                   {status && (
-                    <span className={cn('ml-auto shrink-0 font-mono text-[0.6875rem]', status.className)}>
+                    <span
+                      className={cn(
+                        'ml-auto shrink-0 font-mono text-[0.6875rem]',
+                        compact && 'font-semibold',
+                        status.className,
+                      )}
+                    >
                       {status.label}
                     </span>
                   )}

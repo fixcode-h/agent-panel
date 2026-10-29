@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button'
 import { IconButton } from '@/components/ui/icon-button'
 import { Markdown } from '@/components/tasks/Markdown'
 
+/** 选项名结尾的「（推荐）」「(Recommended)」：AI 用它标出建议的那一项 */
+const RECOMMENDED = /\s*[（(](?:推荐|建议|Recommended)[)）]\s*$/i
+
 /** 问题里的 @名字 只是普通文字时不当成提及高亮 */
 const NO_NAMES = new Set<string>()
 
@@ -136,10 +139,10 @@ export function QuestionPanel({
         else return
         e.preventDefault()
       }}
-      // 组件库「提问 · AskCard」：停靠在输入框上方，琥珀色浅底（等你回复的状态色）、不描边；
-      // 选项是一行行白底，选中的描一圈前景色
+      // 组件库「提问 · AskCard」（设计稿）：停靠在输入框上方，浅琥珀底 + 一圈淡琥珀边、下面一点投影；
+      // 选项不描边，悬停和选中是一层更深的琥珀底，选中的圆点是实心
       className={cn(
-        'relative mx-auto flex max-w-(--content-w) flex-col gap-2 rounded-xl bg-warning/8 p-3 outline-none animate-[pop-in_160ms_ease-out]',
+        'relative mx-auto flex max-w-(--content-w) flex-col gap-2 rounded-xl bg-ask px-3 py-2.5 shadow-[0_0_0_1px_var(--ask-line),0_6px_18px_-12px_rgb(0_0_0/0.25)] outline-none animate-[pop-in_160ms_ease-out]',
         className,
       )}
     >
@@ -202,7 +205,7 @@ export function QuestionPanel({
         )}
       </div>
       {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}
-      <div className="text-[0.8125rem]">
+      <div className="px-0.5 text-[0.875rem] font-medium">
         <Markdown
           text={q.question}
           teamNames={teamNames ?? NO_NAMES}
@@ -210,9 +213,12 @@ export function QuestionPanel({
           className="max-h-[min(50vh,460px)] overflow-y-auto"
         />
       </div>
-      <div className="flex max-h-[min(46vh,420px)] flex-col gap-1.5 overflow-y-auto p-px">
+      <div className="-mx-1 flex max-h-[min(46vh,420px)] flex-col gap-0.5 overflow-y-auto">
         {q.options.map((o, i) => {
           const on = a.picked.includes(i)
+          // AI 在选项名后面标的「（推荐）」：从名字里拿掉，画成一个小胶囊
+          const rec = RECOMMENDED.exec(o.label)
+          const name = rec ? o.label.slice(0, rec.index).trim() : o.label
           return (
             <button
               key={i}
@@ -220,13 +226,20 @@ export function QuestionPanel({
               onClick={() => pick(i)}
               aria-pressed={on}
               className={cn(
-                'flex min-h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg bg-card px-2.5 py-1.5 text-left transition-shadow',
-                on ? 'ring-[1.5px] ring-fg ring-inset' : 'hover:ring-1 hover:ring-line-strong hover:ring-inset',
+                'group/opt flex min-h-[1.875rem] w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 py-1 text-left transition-colors hover:bg-ask-sel',
+                on && 'bg-ask-sel',
               )}
             >
               <Mark on={on} multi={q.multiSelect} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[0.8125rem] font-medium">{o.label}</span>
+                <span className={cn('flex items-center gap-1.5 text-[0.84375rem]', on && 'font-medium')}>
+                  <span className="min-w-0">{name}</span>
+                  {rec && (
+                    <span className="shrink-0 rounded-full bg-success/12 px-1.5 text-[0.65625rem] leading-4 font-medium text-success">
+                      {t('推荐')}
+                    </span>
+                  )}
+                </span>
                 {o.description && (
                   <span className="block text-[0.75rem] leading-snug text-subtle">{o.description}</span>
                 )}
@@ -238,8 +251,8 @@ export function QuestionPanel({
         {/* 最后一项：自己输入 */}
         <label
           className={cn(
-            'flex min-h-8 w-full cursor-text items-center gap-2.5 rounded-lg px-2.5 py-0.5 transition-shadow',
-            a.own ? 'bg-card ring-[1.5px] ring-fg ring-inset' : 'bg-card/60 hover:bg-card',
+            'group/opt flex min-h-[1.875rem] w-full cursor-text items-center gap-2.5 rounded-[7px] px-2.5 py-0.5 transition-colors hover:bg-ask-sel',
+            a.own && 'bg-ask-sel',
           )}
         >
           <PencilLine className="h-3 w-3 shrink-0 text-subtle" />
@@ -307,28 +320,32 @@ function Mark({ on, multi }: { on: boolean; multi?: boolean }) {
       <span
         className={cn(
           'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] transition-colors',
-          on ? 'bg-fg text-bg' : 'shadow-[inset_0_0_0_1px_var(--line-strong)]',
+          on ? 'bg-warning text-card' : 'shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
         )}
       >
         {on && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
       </span>
     )
+  // 单选（设计稿）：14px 圆圈，选中是琥珀色细圈 + 中间实心圆点
   return (
     <span
       className={cn(
-        'h-3 w-3 shrink-0 rounded-full transition-shadow',
-        on ? 'shadow-[inset_0_0_0_4px_var(--fg)]' : 'shadow-[inset_0_0_0_1px_var(--line-strong)]',
+        'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full transition-shadow',
+        on ? 'shadow-[inset_0_0_0_1.5px_var(--warning)]' : 'shadow-[inset_0_0_0_1.5px_var(--line-strong)]',
       )}
-    />
+    >
+      {on && <span className="h-[7px] w-[7px] rounded-full bg-warning" />}
+    </span>
   )
 }
 
 /** 选项行尾的数字键：按这个数字直接选它 */
 function Num({ n }: { n: number }) {
+  // 平时不占眼（设计稿的选项行只有圆点和名字），悬停这一行才显出可以按的数字键
   return (
     <span
       aria-hidden
-      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-[0.625rem] text-subtle tabular-nums"
+      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-[4px] bg-sel/70 px-1 font-mono text-[0.625rem] text-subtle tabular-nums opacity-0 transition-opacity group-hover/opt:opacity-100"
     >
       {n}
     </span>

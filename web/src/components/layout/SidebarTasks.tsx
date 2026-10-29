@@ -95,7 +95,7 @@ export function TaskRow({
    * 未读点挪到行尾；选中是浅卡片底，和左栏底色拉开。转圈、需要处理、失败的图标照常画
    */
   plain?: boolean
-  /** 放在项目下的对话列表里（SidebarTaskBlock）：每行是一张灰底卡片，选中换成卡片底 + 细边浮起来 */
+  /** 放在项目下的对话列表里（SidebarTaskBlock）：平时无底，选中是一张白卡片 + 极淡投影 */
   inBlock?: boolean
   className?: string
 }) {
@@ -421,7 +421,7 @@ export function ChatList() {
   const chatHits = content.hits.filter((h) => !tasks.find((x) => x.id === h.taskId)?.projectId)
   const days = chatBuckets(chats)
   return (
-    <div data-chat-list className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+    <div data-chat-list className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
       {/* 不筛选时分段标题本身就说明了时间，不再多一行「最近」 */}
       {filtering && (

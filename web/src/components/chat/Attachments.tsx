@@ -16,7 +16,6 @@ import {
   MessagesSquare,
   Palette,
   Paperclip,
-  Plus,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { ATTACHMENT_THUMB_WIDTH, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
@@ -736,11 +735,12 @@ export function AttachMenu({
           aria-label={t('添加文件、图片或引用')}
           title={t('添加文件、图片或引用')}
           className={cn(
-            'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
+            // 设计稿：只留图标、不出底色，悬停和菜单开着时图标变成前景色
+            'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:text-fg data-[state=open]:text-fg',
             className,
           )}
         >
-          <Plus className="h-4 w-4" />
+          <Paperclip className="h-4 w-4" strokeWidth={1.8} />
         </PopoverTrigger>
         <PopoverContent
           align="start"

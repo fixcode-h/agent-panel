@@ -4,6 +4,9 @@ import type { Task } from '@shared/schema'
 import { childIcon, taskBusy, taskState, taskWaitText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { useNow } from '@/lib/useNow'
+import { pad2 } from '@shared/datetime'
+import { StatusPill } from '@/components/ui/status-pill'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { InlineRename } from '@/components/ui/inline-rename'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
@@ -58,7 +61,17 @@ export function ConversationTabs({
 }) {
   const busy = taskBusy(task)
   return (
-    <TabBar as="header" label={t('对话页签')} leading={leading} trailing={trailing}>
+    <TabBar
+      as="header"
+      label={t('对话页签')}
+      leading={leading}
+      trailing={
+        <>
+          <HeadStatus task={task} />
+          {trailing}
+        </>
+      }
+    >
       {renaming !== null ? (
         // 改名就地在页签位置上改：输入框不能套在页签按钮里
         <InlineRename
@@ -100,9 +113,9 @@ export function ConversationTabs({
           onSelect={onOther}
           onClose={onCloseChild}
           closeLabel={t('关闭子对话')}
-          tag={t('子对话')}
           className="basis-[12rem]"
-          title={child?.title}
+          // 页签类型不再挂灰胶囊（设计稿），只靠前面的图标分；悬停提示写明是子对话
+          title={[t('子对话'), child?.title].filter(Boolean).join(' · ')}
           icon={
             child ? (
               <TaskStatusIcon status={child.status} icon={childIcon(child)} className="h-3.5 w-3.5" />
@@ -120,12 +133,59 @@ export function ConversationTabs({
           onSelect={onOther}
           onClose={onCloseRun}
           closeLabel={t('关闭运行')}
-          tag={t('运行 {n}', { n: openRun })}
+          title={[t('工作流'), runName, t('运行 {n}', { n: openRun })].filter(Boolean).join(' · ')}
           icon={<WorkflowIcon className="h-3.5 w-3.5" />}
         >
           {runName || t('工作流')}
+          {/* 「运行 n」不再挂成灰胶囊，但读屏和按名字找页签时仍要认得出是哪一次运行 */}
+          <span className="sr-only"> · {t('运行 {n}', { n: openRun })}</span>
         </TabItem>
       )}
     </TabBar>
   )
+}
+
+/** 秒数写成时钟样式（3:12、1:02:05）：页签条右端的胶囊位置窄，比「3m 12s」更紧凑 */
+function clock(ms: number) {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  return h ? `${h}:${pad2(m)}:${pad2(sec % 60)}` : `${m}:${pad2(sec % 60)}`
+}
+
+/**
+ * 页签条右端的状态胶囊（设计稿「运行中 · 3:12」）：这一轮在跑时写用时（从最后一条用户消息算起），
+ * 在等子对话 / 后台命令时写在等什么，有提问等你时琥珀色。状态只从 taskState 派生，不另判
+ */
+function HeadStatus({ task }: { task: Task }) {
+  const state = taskState(task)
+  const run = state === 'running'
+  const now = useNow(run)
+  if (run) {
+    let from = task.updatedAt
+    // 从后往前找最后一条用户消息（目标库没有 findLast）：每秒刷新一次，不整段 filter 拷贝
+    for (let i = task.messages.length - 1; i >= 0; i--)
+      if (task.messages[i].role === 'user') {
+        from = task.messages[i].at
+        break
+      }
+    return (
+      <StatusPill tone="run" spin className="hidden tabular-nums md:inline-flex">
+        {t('运行中')} · {clock(now - Date.parse(from))}
+      </StatusPill>
+    )
+  }
+  if (state === 'waiting')
+    return (
+      <StatusPill tone="run" spin className="hidden md:inline-flex">
+        {taskWaitText(task) || t('运行中')}
+      </StatusPill>
+    )
+  if (state === 'needs')
+    return (
+      <StatusPill tone="wait" className="hidden md:inline-flex">
+        {t('等你回复')}
+      </StatusPill>
+    )
+  return null
 }
