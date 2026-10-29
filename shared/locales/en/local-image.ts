@@ -433,4 +433,7 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   还没下载: 'Not downloaded',
   '约 {n} GB': 'About {n} GB',
   '下载 · 约 {n} GB': 'Download \u00b7 about {n} GB',
+  试生成的尺寸: 'Test run size',
+  试生成的张数: 'Test run image count',
+  导入的: 'Imported',
 }

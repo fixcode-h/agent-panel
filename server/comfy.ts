@@ -27,6 +27,7 @@ import {
   localFile,
   localModel,
   localSize,
+  chainSize,
   markSavePrefix,
   mirrorUrl,
   parsePythonProbe,
@@ -1175,6 +1176,9 @@ export function comfyApi() {
       chain?: unknown
       image?: string
       prompt?: string
+      width?: number
+      height?: number
+      count?: number
     }
     const p = ComfyChain.safeParse(body.chain)
     if (!p.success)
@@ -1189,9 +1193,10 @@ export function comfyApi() {
           // 没填描述时留空：各段用自己工作流的说明（见 localGenerateChain），链名不进图
           prompt: body.prompt?.trim() ?? '',
           negative: '',
-          width: 1024,
-          height: 1024,
-          count: 1,
+          // 尺寸只用来定比例（localSize 按模型的基准边长换算），张数由 localGenerateChain 夹在 1~4；
+          // 不传时和原来一样 1024² 一张（工作流链面板的试跑不传）
+          ...chainSize(body.width, body.height),
+          count: Number.isFinite(body.count) ? Number(body.count) : 1,
           onImage: (b) => images.push(b),
         },
         c.req.raw.signal,

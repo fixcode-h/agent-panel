@@ -1807,6 +1807,7 @@ function demoLocal(method: string, seg: string[], body: unknown): unknown {
         assets: assets.map((a) => `${a.dir}/${a.file}`),
         extra: '',
         graph: builtin?.graph ?? DEMO_GRAPH,
+        origin: 'template',
         updatedAt: '',
       }
       demoWorkflows.push(wf)

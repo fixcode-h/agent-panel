@@ -213,6 +213,7 @@ export async function addTemplate(name: string, kind: 'game' | 'web', deps: Temp
       assets: builtin.assets.map((a) => `${a.dir}/${a.file}`),
       extra: '',
       graph: builtin.graph,
+      origin: 'template',
       updatedAt: new Date().toISOString(),
     }
     await deps.saveWorkflow(wf)
@@ -229,6 +230,7 @@ export async function addTemplate(name: string, kind: 'game' | 'web', deps: Temp
     nodeInfo: await deps.nodeInfo(),
   })
   wf.model = matchModel(wf.assets)
+  wf.origin = 'template'
   await deps.saveWorkflow(wf)
   return wf
 }
