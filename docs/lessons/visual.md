@@ -19,7 +19,7 @@ paths: web/src/index.css, web/src/components/ui/**, web/src/components/layout/**
 
 ## 深色下分段切换要认得出选中项
 
-- 规则：分段切换（模式切换、`Segmented`）用 `seg-track` / `seg-thumb`，不手写 `bg-sel` + `bg-card`：深色下两者只差几个色阶，选中项认不出来；未选中文字用 `text-muted`。防线：`scripts/ui/harness.mjs` 的 `segmentedContrastProblems`（起因：用户反馈侧栏「Agent / Chat / 设计」深色下看不清）。
+- 规则：分段切换（模式切换、`Segmented`）用 `seg-track` / `seg-thumb`，不手写 `bg-sel` + `bg-card`：深色下两者只差几个色阶，选中项认不出来；未选中文字用 `text-muted`。选中块要更显眼的地方（侧栏顶部的模式 tab）用加强的 `seg-thumb-strong`：描边 + 投影 + 加重字重，深色下再提亮一档并加白环（用户要求「选中的时候样式要明显一点」）。防线：`scripts/ui/harness.mjs` 的 `segmentedContrastProblems`（起因：用户反馈侧栏「Agent / Chat / 设计」深色下看不清）。
 
 ## 思考过程保持原样，不并进过程行
 

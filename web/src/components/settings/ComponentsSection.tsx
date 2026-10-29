@@ -47,11 +47,10 @@ import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/statu
 import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
-import { Logo } from '@/components/layout/Sidebar'
 import {
   NavRow,
   SIDEBAR_GROUP_LABEL,
-  SidebarModeMenu,
+  SidebarModeTabs,
   SidebarProjectName,
   SidebarProjectRow,
   SidebarTaskBlock,
@@ -396,16 +395,15 @@ export function ComponentsSection() {
         </Specimen>
       </Group>
       <Group title={t('侧栏')}>
-        <Specimen name="ModeMenu · NavRow · ProjectRow · TaskRow">
+        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow">
           {/* 侧栏贴着底色画：项目 → 对话两层，选中项目是淡蓝底，选中对话是白卡片，行尾状态做轻 */}
           <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2.5 py-2.5">
             <div className="mb-2 flex">
-              <SidebarModeMenu
-                logo={<Logo />}
+              <SidebarModeTabs
                 modes={[
-                  { id: 'agent', name: 'Agent', desc: t('按项目调度 CLI'), on: true },
-                  { id: 'chat', name: 'Chat', desc: t('直接对话'), on: false },
-                  { id: 'design', name: t('设计'), desc: t('画板'), on: false },
+                  { id: 'agent', name: 'Agent', on: true },
+                  { id: 'chat', name: 'Chat', on: false },
+                  { id: 'design', name: t('设计'), on: false },
                 ]}
                 onPick={() => {}}
               />

@@ -450,6 +450,23 @@ body,
   }
 }
 /*
+ * 更显眼的分段选中块（侧栏顶部的模式切换用）：比 seg-thumb 多一圈描边和略强的投影，
+ * 深色下把选中块再从轨道上提亮一档、加一道白环，用户要求「选中时要一眼看得出来」
+ */
+@utility seg-thumb-strong {
+  background-color: var(--card);
+  color: var(--fg);
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    0 1px 3px rgb(0 0 0 / 0.1);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--card) 85%, white);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.16),
+      0 1px 3px rgb(0 0 0 / 0.45);
+  }
+}
+/*
  * 凹下去的一块（弹层里的搜索框、进度条的轨道）：浅色下一层灰；深色下 card 和 sel 几乎一样，
  * 和 seg-track 同一个方向往下压一层黑（压得比它轻，不然搜索框像个黑洞），才看得出这里能输入 / 这是轨道
  */
