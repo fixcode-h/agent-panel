@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 单测分两批跑：含真实时钟断言的几个文件串行，其余文件按默认并发。
+ * 单测分两批跑：含真实时钟断言的几个文件串行，其余文件并发跑。
  *
  * 为什么拆：node --test 默认按 CPU 核数并发跑文件，计时类用例（等落盘窗口、等请求超时）
  * 和别的文件抢 CPU 时等待会被拉长，断言随机失败；全量串行又慢到几分钟。
@@ -9,7 +9,7 @@
  * 用法：
  *   node scripts/unit-tests.mjs          # 两批都跑（npm run test:unit）
  *   node scripts/unit-tests.mjs timing   # 只跑计时文件，串行
- *   node scripts/unit-tests.mjs rest     # 只跑其余文件，默认并发
+ *   node scripts/unit-tests.mjs rest     # 只跑其余文件，并发（核数 × 1.5，AGENT_PANEL_UNIT_CONCURRENCY 可改）
  *   node scripts/unit-tests.mjs --files a.test.ts,b.test.ts   # 只跑指定文件（test:affected 用）
  *   node scripts/unit-tests.mjs --failed  # 只跑上一次还失败的文件（改完复测用，npm run test:failed）
  *   node scripts/unit-tests.mjs --verbose # 完整 TAP 也打到终端（默认只写进 logs/tests/）
@@ -24,6 +24,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { availableParallelism } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { cleanTestEnv } from './lib/test-env.mjs'
@@ -53,6 +54,17 @@ const TIMING_FILES = [
 ]
 
 const TSX_CLI = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+
+/**
+ * 并发批同时跑的文件数：核数的 1.5 倍（AGENT_PANEL_UNIT_CONCURRENCY 可覆盖）。
+ * node --test 默认只开「核数 - 1」个，但并发批的文件大半时间在等真实的定时器、子进程和磁盘，
+ * CPU 闲着；4 核机器上实测 3 个 69s、6 个 49s、8 个 48s（再多就是 CPU 打满了）。
+ * 怕抢 CPU 的计时类用例在 TIMING_FILES 里单独串行，不受这里影响。
+ */
+const REST_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.AGENT_PANEL_UNIT_CONCURRENCY) || Math.ceil(availableParallelism() * 1.5),
+)
 
 /**
  * 取出 --files（`--files a.test.ts,b.test.ts` 或 `--files=a,b`）：受影响的单测文件由
@@ -110,6 +122,10 @@ if (!which && argv[0] && !argv[0].startsWith('-')) {
   process.exit(1)
 }
 const extra = which ? argv.slice(1) : argv
+// 命令行自己传了 --test-concurrency 就听它的，不再叠加一份
+const restOpts = extra.some((a) => a.startsWith('--test-concurrency'))
+  ? extra
+  : [...extra, `--test-concurrency=${REST_CONCURRENCY}`]
 if (given.length && which) {
   console.error('--files 和 timing / rest 不能同时用：指定了文件就只跑这些文件')
   process.exit(1)
@@ -172,11 +188,11 @@ if (given.length) {
   const timing = all.filter((file) => given.includes(file) && TIMING_FILES.includes(file))
   const others = all.filter((file) => given.includes(file) && !TIMING_FILES.includes(file))
   batches.push(['指定的计时文件（串行）', timing, [...extra, '--test-concurrency=1']])
-  batches.push(['指定的其余文件（默认并发）', others, extra])
+  batches.push(['指定的其余文件（并发）', others, restOpts])
 } else {
   // 计时文件先跑：整轮有失败时也能先看到最容易抖的那批结果
   if (which !== 'rest') batches.push(['计时文件（串行）', TIMING_FILES, [...extra, '--test-concurrency=1']])
-  if (which !== 'timing') batches.push(['其余文件（默认并发）', rest, extra])
+  if (which !== 'timing') batches.push(['其余文件（并发）', rest, restOpts])
 }
 
 let exitCode = 0

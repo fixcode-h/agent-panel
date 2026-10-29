@@ -19,7 +19,7 @@
 
 ## 入口
 
-- `npm run test:unit`：单测，按 `scripts/unit-tests.mjs` 分两批顺序跑：计时文件（真实时钟断言，清单在脚本顶部）串行（`--test-concurrency=1`），其余文件默认并发；`npm run test:unit:timing` / `npm run test:unit:rest` 单独跑某一批；`scripts/unit-tests.mjs --files a.test.ts,b.test.ts` 只跑指定文件（同一套 timing / rest 分批，不认识的路径直接失败）。计时文件新增或改名时同步脚本里的清单，路径对不上会直接失败。
+- `npm run test:unit`：单测，按 `scripts/unit-tests.mjs` 分两批顺序跑：计时文件（真实时钟断言，清单在脚本顶部）串行（`--test-concurrency=1`），其余文件并发（核数 × 1.5，文件多半在等定时器和子进程，比 node 默认的「核数 - 1」快约三成；`AGENT_PANEL_UNIT_CONCURRENCY` 可改）；`npm run test:unit:timing` / `npm run test:unit:rest` 单独跑某一批；`scripts/unit-tests.mjs --files a.test.ts,b.test.ts` 只跑指定文件（同一套 timing / rest 分批，不认识的路径直接失败）。计时文件新增或改名时同步脚本里的清单，路径对不上会直接失败。
 - `npm run test:e2e`：端到端；只跑某几个分片 `npm run test:e2e -- 03 07`。
 - `npx vite build --mode demo && node scripts/ui-check.mjs`：界面检查（必须先构建，产物旧了会失败）；只跑部分分片加筛选参数，例如 `node scripts/ui-check.mjs 08-misc`。
 - `node scripts/changed-tests.mjs --since <任务基线>`：改动 → **影响面** → 要跑的单测文件和界面检查分片（按 import 依赖图求反向闭包，含间接依赖；高风险区、影响面过宽、依赖图算不出来时直接建议全量并说明理由）。子对话只跑增量，全量交给父对话；定位规则在 `scripts/lib/import-graph.mjs` + `scripts/lib/changed-tests.mjs` 并有单测，见 [ADR 0020](../../adr/0020-test-scope-and-incremental-tests.md)。`npm run test:affected` = 同一个脚本加 `--run`，按结论直接跑单测。

@@ -9,6 +9,7 @@
  * 用法：npx vite build --mode demo && node scripts/ui-check.mjs
  * 只跑某几个分片：node scripts/ui-check.mjs 02 06（按文件名前缀匹配；02 会跑 02、02b、02c 三片）
  * 限制并发：AGENT_PANEL_UI_CONCURRENCY=2 node scripts/ui-check.mjs
+ * 只跑 CI 的某一组：node scripts/ui-check.mjs --group a（分组见下面的 CI_GROUPS）
  * 打印每个分片的全部步骤：node scripts/ui-check.mjs --verbose
  * 每步都截图（默认只拍失败步骤和分片首尾）：SHOTS=all node scripts/ui-check.mjs
  */
@@ -28,9 +29,23 @@ const shardDir = path.join(root, 'scripts/ui')
 // 产物不存在，或者源码改过之后没重新构建：打印变了的文件并失败，不拿旧产物跑出假结果
 assertDemoBuildFresh(root)
 
+/**
+ * CI 把界面检查拆到两台 runner（.github/workflows/ci.yml 的 ui 矩阵）：一台 4 核机器上所有分片挤在一起
+ * 是 CPU 打满的，拆开后各跑一半。a 组按完整文件名列出，其余分片（包括以后新加、还没登记的）都归 b 组，
+ * 所以不会有分片两组都不跑。按 ui-timings.json 的分片耗时配平：分片耗时变化大时调整 a 组。
+ */
+const CI_GROUP_A = ['02-task', '02b-subagent', '05-settings', '06-settings-agent', '07-projects', '10-toast']
+const inCiGroup = (group, file) => CI_GROUP_A.includes(file.replace(/\.mjs$/, '')) === (group === 'a')
+
 const argv = process.argv.slice(2)
 const verbose = argv.includes('--verbose')
-const filters = argv.filter((a) => !a.startsWith('-'))
+const groupAt = argv.indexOf('--group')
+const group = groupAt >= 0 ? argv[groupAt + 1] : null
+if (groupAt >= 0 && !['a', 'b'].includes(group)) {
+  console.error(`--group 只能是 a 或 b（实际 ${group ?? '空'}）`)
+  process.exit(1)
+}
+const filters = argv.filter((a, i) => !a.startsWith('-') && !(groupAt >= 0 && i === groupAt + 1))
 // 分片文件名：01、02 这类两/三位编号，也可以是 02b、02c（同一个主题拆成几片）
 const SHARD_FILE = /^\d+[a-z]?-.*\.mjs$/
 const allShards = readdirSync(shardDir)
@@ -46,6 +61,7 @@ if (onlyFailed && !last?.length) {
 }
 const shards = allShards
   .filter((f) => !filters.length || filters.some((p) => f.startsWith(p)))
+  .filter((f) => !group || inCiGroup(group, f))
   .filter((f) => !last || last.includes(f))
 if (!shards.length) {
   console.error('没有匹配的界面检查分片：', filters.join(' '))
