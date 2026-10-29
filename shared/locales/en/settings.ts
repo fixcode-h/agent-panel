@@ -1587,4 +1587,11 @@ export const EN_SETTINGS: Record<string, string> = {
   编辑或预览: 'Edit or preview',
   进度: 'Progress',
   更新进度: 'Update progress',
+  // 设置搜索
+  搜索设置: 'Search settings',
+  清空搜索: 'Clear search',
+  '没有找到「{q}」相关的设置': 'No settings match “{q}”',
+  '换个说法试试，或者用空格分开几个关键词': 'Try different words, or separate several keywords with spaces',
+  整页: 'Page',
+  小节: 'Section',
 }

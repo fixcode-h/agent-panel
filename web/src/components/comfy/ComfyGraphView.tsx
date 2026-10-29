@@ -35,7 +35,23 @@ interface NodeData extends Record<string, unknown> {
   inputs: [string, unknown][]
   outputs: number[]
   readOnly: boolean
+  /** 节点类型的色调：照 ComfyUI 按数据类型区分（模型紫、条件橙、潜空间粉、图片蓝） */
+  tone: string
+  selected: boolean
   onInput: (node: string, key: string, value: unknown) => void
+}
+
+/**
+ * 按 class_type 归到 ComfyUI 的几类数据：加载模型、文本条件、采样（潜空间）、图片。
+ * 只用来给节点头和连线上色，认不出的用中性色，不影响图本身
+ */
+export function nodeTone(classType: string) {
+  const c = classType.toLowerCase()
+  if (/loader|checkpoint|unet|lora/.test(c)) return '#8B5CF6'
+  if (/clip|conditioning|prompt|text/.test(c)) return '#E07A3F'
+  if (/sampler|latent|denoise|scheduler/.test(c)) return '#E0559A'
+  if (/vae|image|save|preview|upscale|mask/.test(c)) return '#3B82F6'
+  return 'var(--color-subtle)'
 }
 
 const HEAD = 44
@@ -60,7 +76,20 @@ function useViewportHeight() {
   return height
 }
 
-function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolean; onChange: (v: unknown) => void }) {
+/** 节点上一个输入的值：节点图上和右栏「节点」页签里共用，改动都走同一个回调 */
+export function ComfyValueField({
+  value,
+  readOnly,
+  onChange,
+  className,
+  label,
+}: {
+  value: unknown
+  readOnly: boolean
+  onChange: (v: unknown) => void
+  className?: string
+  label?: string
+}) {
   const shown = typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value)
   // 数字输到一半（如「0.」）还不是数，先留在本地，能解析成数时再写回
   const [text, setText] = useState(shown)
@@ -73,6 +102,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
     return (
       <input
         type="checkbox"
+        aria-label={label}
         className="nodrag h-3.5 w-3.5 accent-[var(--color-accent)]"
         checked={value}
         disabled={readOnly}
@@ -84,6 +114,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
   return (
     <input
       value={text}
+      aria-label={label}
       // 数组、对象这类值在图上不好改，到配置里改
       readOnly={readOnly || (typeof value !== 'string' && typeof value !== 'number')}
       title={text}
@@ -98,6 +129,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
       className={cn(
         'nodrag h-[22px] min-w-0 flex-1 rounded border-0 bg-field px-1.5 font-mono text-[0.6875rem] outline-none focus:ring-1 focus:ring-focus',
         slot && 'text-accent-text',
+        className,
       )}
     />
   )
@@ -105,8 +137,13 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
 
 const ComfyNode = memo(function ComfyNode({ data }: NodeProps<Node<NodeData>>) {
   return (
-    <div className="w-[260px] rounded-xl bg-card text-[0.75rem] shadow-card">
-      <div className="flex items-baseline gap-2 border-b px-3 py-2">
+    <div
+      className="w-[260px] rounded-xl bg-card text-[0.75rem] shadow-card transition-shadow"
+      // 选中的节点描一圈它自己的色调（照设计稿），和右栏「节点」页签对上
+      style={data.selected ? { boxShadow: `0 0 0 2px ${data.tone}` } : undefined}
+    >
+      <div className="flex items-center gap-2 rounded-t-xl border-b bg-sel/45 px-3 py-2">
+        <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: data.tone }} />
         <span className="min-w-0 flex-1 truncate font-medium" title={data.type}>
           {data.title || data.type}
         </span>
@@ -135,7 +172,7 @@ const ComfyNode = memo(function ComfyNode({ data }: NodeProps<Node<NodeData>>) {
                   {link[1] ? ` · ${link[1]}` : ''}
                 </span>
               ) : (
-                <Field value={v} readOnly={data.readOnly} onChange={(nv) => data.onInput(data.id, key, nv)} />
+                <ComfyValueField value={v} readOnly={data.readOnly} onChange={(nv) => data.onInput(data.id, key, nv)} />
               )}
             </div>
           )
@@ -166,10 +203,23 @@ export function ComfyGraphView({
   graph,
   readOnly,
   onChange,
+  fill = false,
+  inset,
+  selected,
+  onSelect,
+  layoutToken = 0,
 }: {
   graph: Graph
   readOnly: boolean
   onChange: (g: Graph) => void
+  /** 撑满父容器（工作流页的整块画布）；不传时按内容定高度（模板商店、队列里的预览） */
+  fill?: boolean
+  /** 画布上下浮着标题、工具条和试生成条：适应时让开这些高度，节点不压在它们底下 */
+  inset?: { top: number; bottom: number }
+  selected?: string
+  onSelect?: (id: string) => void
+  /** 每变一次就把节点摆回自动排布的位置并重新适应（工具条的「整理」） */
+  layoutToken?: number
 }) {
   const ids = Object.keys(graph).join('|')
   // 节点位置只在节点增删时重新排，改值、拖动时保持
@@ -223,11 +273,19 @@ export function ComfyGraphView({
           inputs: Object.entries(n.inputs),
           outputs: [...(used.get(id) ?? [])].sort(),
           readOnly,
+          tone: nodeTone(n.class_type),
+          selected: id === selected,
           onInput,
         },
       })),
     )
-  }, [graph, pos, readOnly, onChange])
+  }, [graph, pos, readOnly, onChange, selected])
+  // 「整理」：手动拖乱的位置摆回自动排布；第一次渲染不动
+  const firstLayout = useRef(layoutToken)
+  useEffect(() => {
+    if (layoutToken === firstLayout.current) return
+    setNodes((ns) => ns.map((n) => ({ ...n, position: pos.get(n.id) ?? n.position })))
+  }, [layoutToken, pos])
   const edges = useMemo<Edge[]>(
     () =>
       Object.entries(graph).flatMap(([id, n]) =>
@@ -241,7 +299,8 @@ export function ComfyGraphView({
                   sourceHandle: String(l[1]),
                   target: id,
                   targetHandle: key,
-                  style: { stroke: 'var(--color-subtle)', strokeWidth: 1.4 },
+                  // 连线跟上游节点的色调，一眼看出哪条线传的是模型、条件还是图片
+                  style: { stroke: nodeTone(graph[l[0]].class_type), strokeWidth: 1.6, opacity: 0.85 },
                 },
               ]
             : []
@@ -250,12 +309,18 @@ export function ComfyGraphView({
     [graph],
   )
   return (
-    <div ref={box} className="overflow-hidden rounded-xl bg-sel/40" style={{ height }}>
+    <div
+      ref={box}
+      className={cn('overflow-hidden', fill ? 'h-full w-full' : 'rounded-xl bg-sel/40')}
+      style={fill ? undefined : { height }}
+    >
       <ReactFlowProvider>
         <GraphCanvas
           nodes={nodes}
           edges={edges}
-          contentKey={`${ids}:${height}`}
+          inset={inset}
+          onNodeClick={onSelect}
+          contentKey={`${ids}:${fill ? 'fill' : height}:${layoutToken}`}
           onBounds={setBounds}
           onNodesChange={(c: NodeChange<Node<NodeData>>[]) => setNodes((ns) => applyNodeChanges(c, ns))}
         />
@@ -274,10 +339,14 @@ const GraphCanvas = memo(function GraphCanvas({
   contentKey,
   onBounds,
   onNodesChange,
+  inset,
+  onNodeClick,
 }: {
   nodes: Node<NodeData>[]
   edges: Edge[]
   contentKey: string
+  inset?: { top: number; bottom: number }
+  onNodeClick?: (id: string) => void
   onBounds: (b: { width: number; height: number }) => void
   onNodesChange: (c: NodeChange<Node<NodeData>>[]) => void
 }) {
@@ -306,9 +375,11 @@ const GraphCanvas = memo(function GraphCanvas({
       last.current = { width: bounds.width, height: bounds.height }
       onBounds(last.current)
     }
+    const top = inset?.top ?? 0
+    const areaH = size.height - top - (inset?.bottom ?? 0)
     const fit = Math.min(
       (size.width - PAD - CONTROL_GUTTER) / bounds.width,
-      (size.height - PAD * 2) / bounds.height,
+      (areaH - PAD * 2) / bounds.height,
       MAX_ZOOM,
     )
     const zoom = Math.max(Math.min(MAX_ZOOM, fit), MIN_READABLE_ZOOM)
@@ -317,12 +388,14 @@ const GraphCanvas = memo(function GraphCanvas({
     flow.setViewport(
       {
         x: CONTROL_GUTTER + (areaW - bounds.width * zoom) / 2 - bounds.x * zoom,
-        y: (size.height - bounds.height * zoom) / 2 - bounds.y * zoom,
+        y: top + (areaH - bounds.height * zoom) / 2 - bounds.y * zoom,
         zoom,
       },
       { duration: 0 },
     )
-  }, [ready, size.width, size.height, contentKey, flow, onBounds])
+    // inset 是外层每次渲染新给的对象，按数值比
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, size.width, size.height, contentKey, flow, onBounds, inset?.top, inset?.bottom])
   return (
     <div ref={box} className="h-full w-full">
       <ReactFlow
@@ -330,6 +403,7 @@ const GraphCanvas = memo(function GraphCanvas({
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
+        onNodeClick={onNodeClick ? (_, n) => onNodeClick(n.id) : undefined}
         nodesConnectable={false}
         fitView
         fitViewOptions={{ padding: 0.06 }}
