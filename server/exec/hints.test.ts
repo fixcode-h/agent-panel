@@ -10,7 +10,6 @@ import { fmtDuration } from '../../shared/duration.ts'
 import type { Task, TaskMessage, ToolUse } from '../../shared/schema.ts'
 import { classifyError, makeAlert } from '../../shared/alerts.ts'
 import {
-  claimsUnsentHandoff,
   clippedTranscript,
   contextFallbackKind,
   describeCompaction,
@@ -20,8 +19,8 @@ import {
   envStallTimeout,
   estTokens,
   failureHints,
-  looksUnfinished,
   settleContextNotes,
+  silentTurn,
   settleEnvStallNotes,
   settleNetNotes,
   settleRetryNotes,
@@ -104,48 +103,21 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   assert.equal(late.compact?.after, 14_000)
 })
 
-test('空回合：只说了一句「我先…」就收尾、或者一个字都没回的，都算没做完', () => {
-  const empty = (text: string, tools = 0, changed = 0) => looksUnfinished({ texts: [text], tools, changed })
-  // 真实发生过的两次：说完就结束，一个工具都没调
-  assert.equal(empty('我先将本地仓库更新到最新，同时查看当前状态和仓库结构。'), true)
-  assert.equal(empty('我先把工作区更新到最新，顺便确认分支和本地改动的基线。'), true)
-  assert.equal(empty('我先看一下你发的截图。'), true)
-  // 调过工具、改过文件的就是真在做事
-  assert.equal(empty('我先看一下你发的截图。', 2), false)
-  assert.equal(empty('我先看一下你发的截图。', 0, 1), false)
-  // 本来就该这么答的：结论、结果、命令，都不能当成没做完
-  assert.equal(empty('更新到最新了，接下来按你说的修。'), false)
-  assert.equal(empty('已完成：更新到 eb195c1，并跑通 typecheck 和 lint。'), false)
-  assert.equal(empty('这个项目的测试命令是 npm run test:unit。'), false)
-  // 长篇回复已经有内容，不推
-  assert.equal(empty(`我先${'看'.repeat(240)}`), false)
-  // 一个字都没收到也是没做完：CLI 报了一轮成功、面板却什么都没拿到时，那一轮不能算完成。
-  // 否则它会保活等下一句，用户之后发来的消息全落进死回合（既没回复也没报错）
-  assert.equal(looksUnfinished({ texts: [], tools: 0, changed: 0 }), true)
-  assert.equal(looksUnfinished({ texts: ['', '  '], tools: 0, changed: 0 }), true)
-  // 工具调过或文件改过就不算：那是真在做事，只是没说话
-  assert.equal(looksUnfinished({ texts: [], tools: 1, changed: 0 }), false)
-  assert.equal(looksUnfinished({ texts: [], tools: 0, changed: 1 }), false)
-})
-
-test('说已转给子对话却没调用发送工具：算没发出去', () => {
-  const claim = '已转给正在加 OpenDesign 的子对话：厂家地址补上 Anthropic 协议的地址，并补对应单测。'
-  assert.equal(claimsUnsentHandoff({ texts: [claim], tools: [] }), true)
-  // 调用过发送（各家 CLI 的名字写法不同）就是真的发了
+test('空回合：只有什么都没收到才算，回复里说了什么都照常收尾（不按文字猜）', () => {
+  const silent = (texts: string[], tools = 0, changed = 0) => silentTurn({ texts, tools, changed })
+  // CLI 报了一轮成功，正文、工具、改动全都没有：这条要求没被处理，要报错，不能保活收尾
+  assert.equal(silent([]), true)
+  assert.equal(silent(['', '  ']), true)
+  // 调过工具、改过文件就是真在做事，只是没说话
+  assert.equal(silent([], 1), false)
+  assert.equal(silent([], 0, 1), false)
+  // 用户 2026-10-29 报的误判：对话模式回一句「你好」，回复末尾「告诉我项目在哪，我先去了解结构」
+  // 被当成「只说了要做」挂上「这一轮没有产出」并自动接一轮。按文字猜的判定已去掉，这类回复照常收尾
   assert.equal(
-    claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'mcp__panel__send_to_conversation', label: '' }] }),
+    silent(['你好！有什么需要我帮忙的吗？\n\n你可以直接说要做什么任务，或者告诉我项目在哪，我先去了解结构。']),
     false,
   )
-  assert.equal(
-    claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'MCP', label: 'panel-1a2b · create_conversation' }] }),
-    false,
-  )
-  // 别的工具不算
-  assert.equal(claimsUnsentHandoff({ texts: [claim], tools: [{ name: 'Read', label: 'a.ts' }] }), true)
-  // 没说子对话、没说已转交的都不管
-  assert.equal(claimsUnsentHandoff({ texts: ['已改好，单测通过。'], tools: [] }), false)
-  assert.equal(claimsUnsentHandoff({ texts: ['要不要转给子对话处理？'], tools: [] }), false)
-  assert.equal(claimsUnsentHandoff({ texts: [], tools: [] }), false)
+  assert.equal(silent(['我先看一下你发的截图。']), false)
 })
 
 /** 用户实际撞上的那条报错（模型窗口 1M，实际请求 1.09M） */
