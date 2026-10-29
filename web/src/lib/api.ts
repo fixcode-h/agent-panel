@@ -308,10 +308,16 @@ export const api = {
   deleteComfyChain: (id: string) =>
     request<{ list: ComfyChain[] }>(`/local-image/chains/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** 试跑：传链和一张原图（data URL），返回输出图（data URL） */
-  runComfyChain: (chain: ComfyChain, image?: string, prompt?: string) =>
+  runComfyChain: (
+    chain: ComfyChain,
+    image?: string,
+    prompt?: string,
+    /** 出图尺寸和张数（ComfyUI 页的试生成用）；不传是 1024² 一张 */
+    out?: { width: number; height: number; count: number },
+  ) =>
     request<{ images: string[] }>(
       `/local-image/chains/${encodeURIComponent(chain.id)}/run`,
-      json('POST', { chain, image, prompt }),
+      json('POST', { chain, image, prompt, ...out }),
     ),
   comfyTemplates: () =>
     request<{ templates: ComfyTemplateMeta[]; updatedAt: string; cached: boolean }>('/local-image/templates'),

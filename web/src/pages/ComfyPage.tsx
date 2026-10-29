@@ -33,6 +33,7 @@ import {
   checkWorkflow,
   localFile,
   localModel,
+  importedWorkflow,
   needsInputImage,
   type ComfyWorkflow,
   type WorkflowUse,
@@ -47,7 +48,7 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Progress } from '@/components/ui/progress'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { Menu, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuTrigger } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { useLocalImage } from '@/components/settings/LocalImageSection'
@@ -59,7 +60,7 @@ import { TemplateStore } from '@/components/comfy/TemplateStore'
 type Kind = 'game' | 'web'
 type View = 'graph' | 'json'
 type Side = 'about' | 'node' | 'models' | 'queue'
-type Source = 'all' | 'builtin' | 'mine'
+type Source = 'all' | 'builtin' | 'mine' | 'imported'
 const VIEW_KEY = 'agent-panel:comfy-view'
 const loadView = (): View => {
   try {
@@ -129,6 +130,8 @@ export function ComfyPage() {
   /** 「整理」：每点一次加一，节点图把节点摆回自动排布 */
   const [layoutToken, setLayoutToken] = useState(0)
   const [tryText, setTryText] = useState('')
+  const [trySize, setTrySize] = useState(TRY_SIZES[0].id)
+  const [tryCount, setTryCount] = useState(1)
   const [tries, setTries] = useState<TryRun[]>([])
   /** 刚导入到 ComfyUI 的工作流：网页弹窗顶部告诉用户去侧栏哪里打开 */
   const [webImported, setWebImported] = useState<{ name: string; filename: string } | null>(null)
@@ -324,6 +327,7 @@ export function ComfyPage() {
         { id: `try_${draft.id}`, name: draft.name, steps: [{ workflowId: draft.id, prompt: '' }], updatedAt: '' },
         undefined,
         run.prompt,
+        { ...(TRY_SIZES.find((x) => x.id === trySize) ?? TRY_SIZES[0]), count: tryCount },
       )
       patch({ status: 'done', images: r.images, ms: Date.now() - run.startedAt })
     } catch (e) {
@@ -334,7 +338,15 @@ export function ComfyPage() {
     }
   }
 
-  const shown = list.filter((w) => source === 'all' || (source === 'builtin' ? w.builtin : !w.builtin))
+  const shown = list.filter((w) =>
+    source === 'all'
+      ? true
+      : source === 'builtin'
+        ? w.builtin
+        : source === 'imported'
+          ? !w.builtin && importedWorkflow(w)
+          : !w.builtin && !importedWorkflow(w),
+  )
   const model = draft?.model ? localModel(draft.model) : undefined
   const picked = node && graph?.[node] ? { id: node, ...graph[node] } : undefined
   const runningTries = tries.filter((x) => x.status === 'running').length
@@ -379,6 +391,7 @@ export function ComfyPage() {
             { id: 'all', label: t('全部') },
             { id: 'builtin', label: t('内置') },
             { id: 'mine', label: t('我的') },
+            { id: 'imported', label: t('导入的') },
           ]}
         />
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
@@ -639,6 +652,18 @@ export function ComfyPage() {
                 onChange={(e) => setTryText(e.target.value)}
                 placeholder={tryBlock || t('写一句描述，用这个工作流出一张图看看')}
                 className="min-w-0 flex-1 border-0 bg-transparent text-[0.84375rem] outline-none placeholder:text-subtle"
+              />
+              <TryPick
+                label={t('试生成的尺寸')}
+                value={trySize}
+                onChange={setTrySize}
+                options={TRY_SIZES.map((x) => ({ id: x.id, label: x.label }))}
+              />
+              <TryPick
+                label={t('试生成的张数')}
+                value={String(tryCount)}
+                onChange={(v) => setTryCount(Number(v))}
+                options={[1, 2, 3, 4].map((n) => ({ id: String(n), label: `× ${n}` }))}
               />
               <Button
                 type="submit"
@@ -912,6 +937,54 @@ export function ComfyPage() {
   )
 }
 
+/**
+ * 试生成的尺寸：只决定比例，服务端按模型的基准边长换算（localSize）；
+ * 和 UI 设计里常用的几种画面对上（方图标、横幅、竖卡、整屏）
+ */
+const TRY_SIZES = [
+  { id: 'square', label: '1024²', width: 1024, height: 1024 },
+  { id: 'wide', label: '3:2', width: 1536, height: 1024 },
+  { id: 'tall', label: '2:3', width: 1024, height: 1536 },
+  { id: 'screen', label: '16:9', width: 1920, height: 1080 },
+]
+
+/** 试生成条上的小下拉（尺寸、张数）：按钮上写当前值，点开单选 */
+function TryPick({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: { id: string; label: string }[]
+}) {
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          title={label}
+          className="h-[30px] shrink-0 cursor-pointer rounded-lg bg-card px-2.5 text-[0.75rem] shadow-[0_0_0_1px_var(--line-strong)] transition-colors hover:bg-sel/50"
+        >
+          {options.find((o) => o.id === value)?.label ?? value}
+        </button>
+      </MenuTrigger>
+      <MenuContent className="min-w-[120px]">
+        <MenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map((o) => (
+            <MenuRadioItem key={o.id} value={o.id}>
+              <span className="flex-1">{o.label}</span>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuContent>
+    </Menu>
+  )
+}
+
 /** 「AI 优化」常用的几种要求：右栏和 AI 优化弹窗里共用 */
 const OPTIMIZE_TIPS = () => [
   t('出图更清晰、边缘更干净'),
@@ -1031,7 +1104,7 @@ function WorkflowRow({ w, on, ready, onPick }: { w: ComfyWorkflow; on: boolean; 
         </span>
       </span>
       <span className={cn('shrink-0 text-[0.65625rem]', w.builtin ? 'text-subtle' : 'text-peer')}>
-        {w.builtin ? t('内置') : t('我的')}
+        {w.builtin ? t('内置') : importedWorkflow(w) ? t('导入的') : t('我的')}
       </span>
     </button>
   )
@@ -1200,7 +1273,8 @@ function AssistModal({
     setBusy(true)
     try {
       const r = await api.assistComfyWorkflow({ kind, instruction: text, base })
-      onResult(r.workflow, r.note)
+      // AI 新生成的记一下来源；优化沿用原来的（导入的工作流优化后还算导入的）
+      onResult(mode === 'create' ? { ...r.workflow, origin: 'ai' } : r.workflow, r.note)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -1277,6 +1351,7 @@ function ImportModal({
         assets: [],
         extra: '',
         graph,
+        origin: 'import',
         updatedAt: '',
       })
     } catch (e) {

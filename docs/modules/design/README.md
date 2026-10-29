@@ -111,6 +111,7 @@
   - 左栏：工作流按 `kind` 分「游戏 UI / 网页 UI / 图片处理（`both`）」三组，来源筛选「全部 / 内置 / 我的」，缩略块按用途上色（`USE_LOOK`），角上的点是模型下载了没有；底下常驻 ComfyUI 运行状态和「本机设置」。旧链接 `#/comfy/web` 没带工作流 id 时选第一个网页工作流。AI 生成、导入弹窗里自己选游戏 / 网页（`KindPick`），默认跟当前工作流。
   - 画布：`ComfyGraphView` 的 `fill` 撑满整块，`inset` 让开上面浮着的标题 + 工具条（量出实际高度，放不下一行时折成两行）和下面的试生成条；工具条的次要按钮在画布窄于 1000px 时只留图标。节点头和连线按 `nodeTone`（class_type 归到模型 / 条件 / 潜空间 / 图片）上色；点节点 → 右栏「节点」页签显示参数（`ComfyValueField` 和画布上同一个输入组件）；「整理」用 `layoutToken` 把手动拖乱的节点摆回 `layoutComfyGraph` 的位置。
   - 试生成：把当前工作流当成一段的工作流链走 `POST /local-image/chains/:id/run`（1024²、1 张），结果只记在这一页的「队列」页签里；没保存、或工作流要 `{{image}}` 原图时按钮禁用并写明原因（服务端按 id 取存下来的那份）。出错原样 toast，演示版返回「演示版没有真的 ComfyUI」。
+  - 来源：`ComfyWorkflow.origin`（`import` 从 ComfyUI 导入、`template` 模板商店加的、`ai` AI 生成的；手动建、复制、旧数据为空），`importedWorkflow` 判「导入的」；列表筛选「全部 / 内置 / 我的 / 导入的」按它分，服务端 `addTemplate` 写 `template`。试生成可选比例（1024² / 3:2 / 2:3 / 16:9，只定比例，服务端 `localSize` 按模型基准边长换算）和张数 1~4，经 `POST /local-image/chains/:id/run` 的 `width` / `height` / `count`（`chainSize` 把坏值退回 1024，不传仍是 1024² 一张）。
   - 右栏页签：说明（字段、用途块、占位符、问题、三条「AI 优化」快捷要求）/ 节点 / 模型（当前工作流用到的内置模型的文件、下载状态和进度，缺的一键下载；外接 ComfyUI 或自己的模型不检查）/ 队列（试生成、`ComfyQueuePanel`、`ComfyChainPanel`）。
   - 回归：`scripts/ui/04-design.mjs` 的 ComfyUI 段（图标栏入口只在设计模式出现、节点图适应、点节点出参数、从图标栏切回 Agent 模式）、`scripts/ui/08-misc.mjs`（模板商店、工作流链）。
 - 回归：`shared/comfy-chain.test.ts`（两段 / 三段链的接线、中间图不落盘、纯文生图段改写成图生图、四种组合合并后无断线）、`shared/local-image.test.ts`（三个处理类工作流的节点和连线、`imageToImage` 两种采样器、auto 不选需要输入图的工作流、`{{image}}` 填空与保留）、`server/local-image.test.ts`（内置工作流通过 `checkWorkflow`）。
@@ -120,3 +121,11 @@
 
 - `pendingTurns` 只存在进程内，服务重启后不会自动接续这些消息；是否需要落盘（待确认）。
 - 插话时附件用的是上传目录的绝对路径，如果这一轮的 CLI 被限制在工作目录里，可能读不到（待确认）。
+
+## 页面布局与设计类型下拉（2026-10-29）
+
+- 照设计稿 `Design.dc.html`：打开的设计是三块圆角面板并排（`App.tsx` 的 `splitPage` 把 `page: 'design'` 且 `id` 不是 `new` / `home` 的路由算进去）——左边 AI 对话（默认 320，拖动条在右缘）、中间画板、右边检查器（默认 280）。
+- 设计名和保存状态在对话栏标题行，收起对话栏后回到画板标题行；收起按钮在对话栏标题行，打开按钮在画板标题行。
+- 画板标题行夹在两栏中间，只放阶段条（`StageSteps`：原画 → 界面，就是原来的「原画 / 界面」切换，确认模板后原画打勾）、尺寸、风格、版本、撤销重做、「更多」（动画面板开关 + 本机 ComfyUI）和导出；用 `@container` 在窄的时候收起风格文字和阶段圆点，放不下时横向滚动兜底。
+- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是 Agent 项目里 `Task.modelDesign` 的顶层对话（ADR 0025），按项目分组，点进对话页；「项目」标题行的 + 和空状态里的按钮打开 `web/src/components/design/NewModelDesignDialog.tsx`：选 Agent 项目、写要建的模型，走 `POST /tasks`（`mode: 'chat'`、`modelDesign: true`）后跳进对话；打开时查一次 `api.blenderStatus()`，找不到 Blender 照样能建，但在弹窗底部写明原因并给「去设置」（设置的 `blender` 小节）。
+- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」、打开新建模型设计弹窗（演示版提示没有 Blender），再切回。

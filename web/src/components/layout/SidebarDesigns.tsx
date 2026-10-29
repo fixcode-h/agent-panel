@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import {
+  Box,
+  ChevronDown,
   ChevronRight,
-  CircleAlert,
   CopyPlus,
   Folder,
   FolderInput,
   Gamepad2,
   Globe,
-  Loader2,
+  LayoutTemplate,
   PencilLine,
   Plus,
   Settings2,
@@ -16,7 +17,9 @@ import {
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { DesignMeta, DesignProject } from '@shared/design'
+import type { Task } from '@shared/schema'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
+import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -30,6 +33,11 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { IconButton } from '@/components/ui/icon-button'
@@ -42,22 +50,192 @@ import {
   SIDEBAR_GROUP_LABEL,
   SidebarCount,
   SidebarProjectName,
+  SidebarProjectRow,
   PROJECT_CARD,
   PROJECT_CARD_OFF,
   PROJECT_CARD_ON,
   SidebarTaskBlock,
+  TaskRowStatus,
 } from '@/components/ui/sidebar'
+import { TaskRow } from './SidebarTasks'
+import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
+import { byAskedAt } from '@shared/task'
 import { t } from '@shared/i18n'
 
 /**
- * UI 设计模式的侧栏：UI 设计自己的项目（和 Agent 的项目分开），展开后是这个项目的各个界面。
+ * 设计模式的侧栏（照设计稿 Design.dc.html）：最上面一个下拉在「UI 设计 / 模型设计」之间切换，下面按项目列。
+ * - UI 设计：UI 设计自己的项目（和 Agent 的项目分开），展开后是这个项目的各个界面。
+ * - 模型设计：模型设计是 Agent 项目里带 modelDesign 标记的对话（ADR 0025），按 Agent 项目分组列出来。
  */
 const KINDS = [
   { id: 'game', icon: Gamepad2 },
   { id: 'web', icon: Globe },
 ] as const
 
+type DesignMode = 'ui' | 'model'
+/** 选了哪种设计只是这台浏览器上的习惯（下次打开还停在这一种），读写失败时退回 UI 设计 */
+const MODE_KEY = 'agent-panel:design-mode'
+const readMode = (): DesignMode => {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'model' ? 'model' : 'ui'
+  } catch {
+    return 'ui'
+  }
+}
+
 export function DesignList() {
+  const [mode, setMode] = useState<DesignMode>(readMode)
+  const pick = (m: DesignMode) => {
+    setMode(m)
+    try {
+      localStorage.setItem(MODE_KEY, m)
+    } catch {}
+  }
+  return (
+    <div className="mt-2 flex min-h-0 flex-1 flex-col">
+      <DesignModeSwitch value={mode} onChange={pick} />
+      {mode === 'model' ? <ModelDesignList /> : <UiDesignList />}
+    </div>
+  )
+}
+
+/**
+ * 设计类型下拉：40 高的整块按钮，左边带底色的小图标、名字和一行说明，右边小箭头；
+ * 点开列出两种，选中项打勾。颜色借现成的状态色（run / peer），不另起一套色板
+ */
+function DesignModeSwitch({ value, onChange }: { value: DesignMode; onChange: (m: DesignMode) => void }) {
+  const modes = [
+    { id: 'ui' as const, name: t('UI 设计'), desc: t('界面 · 原画 · 切图'), icon: LayoutTemplate, tone: 'bg-run' },
+    { id: 'model' as const, name: t('模型设计'), desc: t('Blender 建模 · 按项目对话'), icon: Box, tone: 'bg-peer' },
+  ]
+  const cur = modes.find((m) => m.id === value) ?? modes[0]
+  const tile = (m: (typeof modes)[number], size: string) => (
+    <span className={cn('grid shrink-0 place-items-center rounded-lg text-on-primary', size, m.tone)}>
+      <m.icon className="h-3.5 w-3.5" strokeWidth={2} />
+    </span>
+  )
+  return (
+    <div className="mb-1.5 shrink-0 px-3">
+      <Menu>
+        <MenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={t('切换设计类型')}
+            data-design-mode={value}
+            // 下拉按钮要看得出是一个可点的框：白底 + 一圈细线（输入框同一类），按下时底色加深一档
+            className="group/kind flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-[10px] bg-card px-2.5 text-left shadow-[0_0_0_1px_var(--line-strong)] transition-colors outline-none hover:bg-panel focus-visible:ring-2 focus-visible:ring-focus-soft data-[state=open]:bg-sel"
+          >
+            {tile(cur, 'h-[26px] w-[26px]')}
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[0.8125rem] font-semibold">{cur.name}</span>
+              <span className="truncate text-[0.6875rem] text-subtle">{cur.desc}</span>
+            </span>
+            <ChevronDown
+              aria-hidden
+              className="h-3.5 w-3.5 shrink-0 text-subtle transition-transform group-data-[state=open]/kind:rotate-180"
+              strokeWidth={2.2}
+            />
+          </button>
+        </MenuTrigger>
+        <MenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width) rounded-xl p-1">
+          <MenuRadioGroup value={value} aria-label={t('设计类型')}>
+            {modes.map((m) => (
+              <MenuRadioItem
+                key={m.id}
+                value={m.id}
+                onSelect={() => m.id !== value && onChange(m.id)}
+                className="h-auto gap-2.5 rounded-[9px] p-2"
+              >
+                {tile(m, 'h-7 w-7')}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[0.8125rem] font-semibold">{m.name}</span>
+                  <span className="truncate text-[0.6875rem] text-subtle">{m.desc}</span>
+                </span>
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuContent>
+      </Menu>
+    </div>
+  )
+}
+
+/**
+ * 模型设计：Agent 项目里带 modelDesign 标记的顶层对话，按项目分组（只列有模型对话的项目）。
+ * 点项目名打开那个 Agent 项目，点对话进对话页；对话自己的右键菜单（重命名、删除…）沿用 TaskRow
+ */
+function ModelDesignList() {
+  const { projects, tasks } = useData()
+  const { route, go } = useNav()
+  const [folded, setFolded] = useState<Set<string>>(new Set())
+  const unread = useUnreadTasks()
+  const [creating, setCreating] = useState(false)
+  const models = tasks.filter((x: Task) => x.modelDesign && x.projectId && !x.parentTaskId && !x.archived)
+  const groups = projects
+    .map((p) => ({ p, ts: models.filter((x) => x.projectId === p.id).sort(byAskedAt) }))
+    .filter((g) => g.ts.length)
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+      <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
+        <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
+        <IconButton icon={Plus} label={t('新建模型设计')} size="sm" onClick={() => setCreating(true)} />
+      </div>
+      {!groups.length && (
+        <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
+          <Box className="h-5 w-5 text-subtle" strokeWidth={1.6} />
+          <p className="text-xs leading-relaxed text-subtle">
+            {t('还没有模型设计对话。模型设计在 Agent 项目里用 Blender 建模，对话会按项目列在这里。')}
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('新建模型设计')}
+          </Button>
+        </EmptyPanel>
+      )}
+      <NewModelDesignDialog open={creating} onOpenChange={setCreating} />
+      {groups.map(({ p, ts }) => {
+        const open = !folded.has(p.id)
+        return (
+          <section key={p.id} className="mb-1 flex flex-col">
+            <SidebarProjectRow
+              open={open}
+              onToggle={() => setFolded((f) => toggleFoldKey(f, p.id))}
+              count={ts.length}
+              name={
+                <button
+                  onClick={() => go({ page: 'projects', id: p.id })}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                >
+                  <SidebarProjectName open={open} name={p.name} />
+                </button>
+              }
+            />
+            {open && (
+              <SidebarTaskBlock>
+                {ts.map((x) => (
+                  <TaskRow
+                    key={x.id}
+                    task={x}
+                    active={route.page === 'projects' && route.sub === x.id}
+                    unread={isTaskUnread(x) || unread.includes(x.id)}
+                    onOpen={() => go({ page: 'projects', id: x.projectId, sub: x.id })}
+                    onDeleted={() =>
+                      route.page === 'projects' && route.sub === x.id && go({ page: 'projects', id: p.id })
+                    }
+                    inBlock
+                    className="pr-2 pl-2"
+                  />
+                ))}
+              </SidebarTaskBlock>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+function UiDesignList() {
   const { designProjects: projects, setDesignProjects, designs, setDesigns } = useData()
   const { route, go } = useNav()
   const [folded, setFolded] = useState<Set<string>>(new Set())
@@ -174,16 +352,7 @@ export function DesignList() {
               on ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_BLOCK_ROW_OFF,
             )}
           >
-            {d.asking ? (
-              // AI 在等你确认或回答
-              <CircleAlert
-                aria-label={t('需要你处理')}
-                className="h-3.5 w-3.5 shrink-0 text-warning"
-                strokeWidth={2.4}
-              />
-            ) : d.running ? (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-run" />
-            ) : d.kind === 'web' ? (
+            {d.kind === 'web' ? (
               <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />
             ) : (
               <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -201,6 +370,8 @@ export function DesignList() {
               // 点击冒泡到整行去跳转；保留按钮是为了能用键盘选中
               <button className="min-w-0 flex-1 cursor-pointer truncate text-left">{d.title}</button>
             )}
+            {/* 行尾状态和 Agent 侧栏的对话行同一个部件（设计稿：行尾放「等你 / 进行中」小标签） */}
+            {renaming !== d.id && <TaskRowStatus needs={d.asking} running={d.running} />}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -241,9 +412,10 @@ export function DesignList() {
   }
 
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
-        <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
+        {/* 上面的下拉已经写了是 UI 设计，分组标题只写「项目」（照设计稿） */}
+        <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
         <IconButton icon={Plus} label={t('新建 UI 项目')} onClick={() => setEditing(null)} />
       </div>
       {!projects.length && (
