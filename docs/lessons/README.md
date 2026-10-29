@@ -63,6 +63,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [cli.md](./cli.md)                     | CLI 定义、参数、模型和思考强度、写回 CLI 配置  |
 | [ui.md](./ui.md)                       | 界面、文案、样式                               |
 | [ui-check.md](./ui-check.md)           | 界面检查用例的写法和等待条件                   |
+| [composer.md](./composer.md)           | 输入框重画时机、Agent 选择位置                 |
 | [list-pane.md](./list-pane.md)         | 中间列表栏的头部按钮和标题                     |
 | [status-bar.md](./status-bar.md)       | 任务页输入框上方的状态栏（三行、+N）           |
 | [visual.md](./visual.md)               | 部件、底色、字重（重设计后的视觉规则）         |
