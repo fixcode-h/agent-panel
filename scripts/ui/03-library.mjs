@@ -1,5 +1,5 @@
 /**
- * 界面检查分片：工作流、内置工作流、新建任务的 Agent 开关、AI 分析执行结果、角色、Skill 与命令、MCP
+ * 界面检查分片：工作流、内置工作流、新建任务的 Agent 开关、AI 分析执行结果、角色、Skills、MCP
  *
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
@@ -344,7 +344,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   for (const [hash, pane] of [
     ['#/agents', '角色列表'],
     ['#/workflows', '工作流列表'],
-    ['#/library', 'Skills 与命令列表'],
+    ['#/library', 'Skills列表'],
   ]) {
     if (hash !== '#/agents') await p.goto(base + hash)
     const h1 = p.locator(`section[aria-label="${pane}"] h1`).first()
@@ -522,26 +522,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await search.fill('')
   // 技能页：左列表 + 右详情。左边按 Agent 分组，点一项右边换成它的详情（不再是弹窗）
   await p.goto(base + '#/library')
-  await check(p, 'Skills与命令', ['commit-message', 'code-review', '文件结构'])
+  await check(p, 'Skills', ['commit-message', 'code-review', '文件结构'])
   // 左栏头部的按钮不能顶出左栏（用户报过：「超出范围了」）：按钮右边界要落在左栏里
   {
-    const pane = p.locator('section[aria-label="Skills 与命令列表"]')
+    const pane = p.locator('section[aria-label="Skills列表"]')
     const box = await pane.boundingBox()
-    if (!box) errors.push('Skills与命令-不溢出：找不到左栏')
+    if (!box) errors.push('Skills-不溢出：找不到左栏')
     else {
       for (const name of ['新建', 'AI 创建 Skill']) {
         const b = await p.getByRole('button', { name, exact: true }).first().boundingBox()
-        if (!b) errors.push(`Skills与命令-不溢出：找不到「${name}」按钮`)
+        if (!b) errors.push(`Skills-不溢出：找不到「${name}」按钮`)
         else if (b.x + b.width > box.x + box.width + 1)
           errors.push(
-            `Skills与命令-不溢出：「${name}」右边界 ${Math.round(b.x + b.width)} 超出左栏 ${Math.round(box.x + box.width)}`,
+            `Skills-不溢出：「${name}」右边界 ${Math.round(b.x + b.width)} 超出左栏 ${Math.round(box.x + box.width)}`,
           )
       }
       // 标题也要完整放下（被按钮挤出去时它会溢出左栏）
       const h = await pane.locator('h1').first().boundingBox()
-      if (h && h.x + h.width > box.x + box.width + 1) errors.push('Skills与命令-不溢出：标题超出左栏')
-      if (!(await p.getByRole('combobox', { name: '种类' }).count())) errors.push('Skills与命令-不溢出：分页不是下拉')
-      await check(p, 'Skills与命令-不溢出')
+      if (h && h.x + h.width > box.x + box.width + 1) errors.push('Skills-不溢出：标题超出左栏')
+      if (!(await p.getByRole('combobox', { name: '种类' }).count())) errors.push('Skills-不溢出：分页不是下拉')
+      await check(p, 'Skills-不溢出')
     }
   }
   // 地址跟着选中项走：刷新、复制链接能回到同一项
@@ -551,18 +551,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .click()
   await p.waitForFunction(() => location.hash.includes('#/library/commit-message'), { timeout: 5000 }).catch(() => {})
   if (!(await p.evaluate(() => location.hash)).includes('#/library/commit-message'))
-    errors.push('Skills与命令：点技能后地址里没有记下选中项')
+    errors.push('Skills：点技能后地址里没有记下选中项')
   // 搜索只过滤列表，不改选中项：搜完清空还要回到原来那一项（以前会把地址改成第一项）
   const hashBefore = await p.evaluate(() => location.hash)
   await p.getByPlaceholder('搜索名字和说明').fill('code-review')
   await p.waitForTimeout(200)
-  if ((await p.evaluate(() => location.hash)) !== hashBefore)
-    errors.push('Skills与命令-搜索：搜索时地址里的选中项被改了')
+  if ((await p.evaluate(() => location.hash)) !== hashBefore) errors.push('Skills-搜索：搜索时地址里的选中项被改了')
   await p.getByPlaceholder('搜索名字和说明').fill('')
   await p.waitForTimeout(200)
   if (!(await p.getByLabel('内容', { exact: true }).count()))
-    errors.push('Skills与命令-搜索：清空搜索后详情页没有回到原来那一项')
-  await check(p, 'Skills与命令-搜索')
+    errors.push('Skills-搜索：清空搜索后详情页没有回到原来那一项')
+  await check(p, 'Skills-搜索')
   await check(p, 'Skill详情', ['复制给别的 Agent', '保存', 'SKILL.md'])
   // 详情页里直接编辑主文件并保存：保存按钮只在有改动时可点
   const editor = p.getByLabel('内容', { exact: true }).first()
@@ -631,8 +630,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .inputValue()
     .catch(() => '')
   if (!switched.includes('code-review'))
-    errors.push(`Skills与命令：切到另一个技能后编辑器里不是它的内容（「${switched.slice(0, 40)}」）`)
-  await check(p, 'Skills与命令-切技能读新内容')
+    errors.push(`Skills：切到另一个技能后编辑器里不是它的内容（「${switched.slice(0, 40)}」）`)
+  await check(p, 'Skills-切技能读新内容')
 
   // AI 优化还在，而且是对这一项做（入口在详情页头部）
   await p.getByRole('button', { name: 'AI 优化' }).click()
@@ -646,7 +645,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
   // 分页是下拉（用户要求「改成下拉」）：用现成的 Select，选项文字里带「可更新」的条数
   await p.getByRole('combobox', { name: '种类' }).click()
-  await check(p, 'Skills与命令-分页下拉', ['Skill', '命令', '自带 Skill'])
+  await check(p, 'Skills-分页下拉', ['Skill', '自带 Skill'])
+  // 命令分页按用户要求去掉了：下拉里只有 Skill 和自带 Skill
+  if (await p.getByRole('option', { name: '命令', exact: true }).count()) errors.push('Skills：分页里不该再有「命令」')
   await p.getByRole('option', { name: /自带 Skill/ }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
   // 自带 Skill 分页没有可新建的东西：「新建」按钮不该出现（以前点了没反应）
@@ -745,26 +746,6 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .catch(() => {})
   if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
   await check(p, '自带Skill-一键更新', ['已安装'])
-  // 命令：详情页没有文件结构（命令只有一个文件），「所有 Agent」的命令和 AI 创建都在
-  await p.getByRole('combobox', { name: '种类' }).click()
-  await p.getByRole('option', { name: '命令', exact: true }).click()
-  await check(p, '命令-所有Agent', ['/changelog', '所有 Agent'])
-  await p
-    .getByRole('button', { name: /changelog/ })
-    .first()
-    .click()
-  await p
-    .getByLabel('内容', { exact: true })
-    .waitFor({ timeout: 5000 })
-    .catch(() => errors.push('命令详情：没有打开正文编辑框'))
-  if (await p.getByText('文件结构').count()) errors.push('命令详情：命令不该显示文件结构')
-  await check(p, '命令详情', ['复制给别的 Agent'])
-  await p.getByRole('button', { name: 'AI 创建' }).click()
-  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('/i18n：找出没翻译的文案，补上英文')
-  await p.keyboard.press('Enter')
-  await check(p, '命令-AI创建', ['格式校验通过', '命令文件（所有 Agent 共用）'])
-  await p.getByRole('button', { name: '创建命令' }).click()
-  await check(p, '命令-AI创建后', ['/i18n'])
   await p.goto(base + '#/mcp')
   await check(p, 'MCP工具', ['github', 'filesystem'])
   await p.getByLabel('编辑').first().click()

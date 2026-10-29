@@ -1,5 +1,5 @@
 /**
- * 提示点的数量和文案只在 skill-updates.ts 判定：侧栏「Skills 与命令」「设置」和设置页的
+ * 提示点的数量和文案只在 skill-updates.ts 判定：侧栏「Skills」「设置」和设置页的
  * 「Agent」「部署」两项都读这里。重点钉住「没有差异时返回 undefined」——提示点不能一直亮着。
  */
 import assert from 'node:assert/strict'
@@ -16,7 +16,7 @@ test('只数「自带 Skill」那份，部署那份留给定置的点', () => {
   assert.equal(sharedUpdateCount({ shared: [], deployed: [] }), 0)
   assert.equal(sharedUpdateCount({ shared: ['a', 'b'], deployed: ['b', 'c'] }), 2)
   assert.equal(sharedUpdateHint({ shared: [], deployed: [] }), undefined)
-  // 只有部署那份要更新时，「Skills 与命令」不能亮：这一页的「更新全部」写不到部署目录
+  // 只有部署那份要更新时，「Skills」不能亮：这一页的「更新全部」写不到部署目录
   assert.equal(sharedUpdateHint({ shared: [], deployed: ['a', 'a'] }), undefined)
   assert.equal(sharedUpdateHint({ shared: ['a'], deployed: ['a'] }), bothHint(1))
 })

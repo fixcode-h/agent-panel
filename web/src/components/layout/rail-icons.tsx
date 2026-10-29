@@ -80,7 +80,7 @@ export const WorkflowIcon = icon(
 )
 
 const STAR = 'M11 5.5c.6 4.7 2.3 6.5 7.5 7.5-5.2 1-6.9 2.8-7.5 7.5-.6-4.7-2.3-6.5-7.5-7.5 5.2-1 6.9-2.8 7.5-7.5z'
-/** Skills 与命令：一大一小两颗星 */
+/** Skills：一大一小两颗星 */
 export const SkillIcon = icon(
   <path d={STAR} />,
   <>
