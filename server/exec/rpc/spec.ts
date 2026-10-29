@@ -180,6 +180,13 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
   /** 正在为插话停下这一轮（见 redirect）：这时收到的结束记录不算这一轮结束，留着以防没停成 */
   let redirecting = false
   let swallowed = false
+  /**
+   * 这一轮已经结束、CLI 停在那里等下一句：这时交出去的插话 Pi 照样回「已排队」，却要等下一次 prompt 才处理，
+   * 面板当成交出去了，子对话就一直挂在「等待模型」。结束后插话一律交不进去，让面板按下一句消息交
+   */
+  let idle = false
+  /** 这一轮交出过插话（请求发出去就算，回复可能排在结束记录后面）：结束时要看看有没有没被取走的 */
+  let steeredInTurn = false
   // 会话、轮次 id 一拿到就发，后面的输出不用等所有启动步骤走完
   function emitIds(ctx: RpcContext) {
     const session = idOf(spec.sessionId) ?? getPath(last, spec.sessionId)
@@ -192,6 +199,25 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       turnSent = String(turn)
       ctx.emit({ type: 'turn', id: turnSent })
     }
+  }
+
+  /**
+   * 结束时还排着的插话：CLI 最后一次检查队列之后才收到（插话和结束擦肩而过），它不会再处理。
+   * 收回来作为新的一句交给它，同一轮接着做，不算结束；返回是不是这样接着做了
+   */
+  async function reclaim(ctx: RpcContext) {
+    const r = spec.redirect
+    steeredInTurn = false
+    if (!r) return false
+    const queued = await ctx.request(record(r.take, {}), { timeoutMs: r.take.timeoutMs }).catch(() => undefined)
+    if (!queued || replyError(queued) || ctx.finished) return false
+    const got = getPath(queued, r.texts)
+    const texts = Array.isArray(got) ? got.map(String).filter((x) => x.trim()) : []
+    if (!texts.length) return false
+    idle = false
+    // 出错时 run 自己交了失败的结果，这里不能再按原来的结果结束一次
+    await run(ctx, r.then, { text: texts.join('\n\n') }).catch((e: Error) => void ctx.finish(false, e.message))
+    return true
   }
 
   /** 这一轮结束：交结果 */
@@ -239,6 +265,13 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
         swallowed = true
         return
       }
+      idle = true
+      // 正常结束才收回：失败、被停下的这一轮，交出过的插话由 runner 交给下一轮重放
+      if (steeredInTurn && ok && !limited) {
+        void reclaim(ctx).then((more) => more || settle(ctx, ok, error))
+        return
+      }
+      steeredInTurn = false
       settle(ctx, ok, error)
     },
     request(ctx, msg) {
@@ -262,6 +295,8 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
     async next(ctx, text) {
       // 同一进程里开下一轮：会话已经开着，直接按 start 里的步骤把新的那句交过去
       input = text
+      idle = false
+      steeredInTurn = false
       turnSent = ''
       turns = 0
       limited = false
@@ -275,7 +310,8 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       else void ctx.request(exit, { timeoutMs: 3000 })
     },
     async steer(ctx, text) {
-      if (!spec.steer) return false
+      if (!spec.steer || idle || ctx.finished) return false
+      steeredInTurn = true
       const msg = record(spec.steer, { text })
       if (spec.steer.notify) {
         ctx.send(msg)
@@ -293,6 +329,8 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       const got = getPath(queued, r.texts)
       const texts = Array.isArray(got) ? got.map(String).filter((x) => x.trim()) : []
       if (!texts.length) return false
+      // 收回来了：没停成会重新插回去（再记一次），停成了作为新的一句交出去，结束时都不用再收
+      steeredInTurn = false
       redirecting = true
       swallowed = false
       await ctx.request(record(r.stop, {}), { timeoutMs: r.stop.timeoutMs })

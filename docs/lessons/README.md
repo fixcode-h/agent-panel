@@ -78,3 +78,4 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 | [project-files.md](./project-files.md) | 面板往用户项目里临时写的配置（面板 MCP 条目）  |
 | [retry.md](./retry.md)                 | 报错后重试：在原来的子对话、子任务里接着做     |
 | [tooling.md](./tooling.md)             | AI 自己跑命令、等结果的方式                    |
+| [rpc-steer.md](./rpc-steer.md)         | 常驻协议的插话和这一轮结束的先后               |
