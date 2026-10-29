@@ -23,7 +23,7 @@ import { copyImage, imageCopyBlocked } from '@/lib/clipboard-image'
 import { isElementRefText, pasteElementRefs, wrapElementRef } from '@/lib/element-ref'
 import { MenuItem, PointMenu, MenuSeparator } from '@/components/ui/menu'
 import { useData } from '@/lib/data'
-import { insertFileRef, useFileRefDrop } from '@/lib/fileDrag'
+import { insertFileRef, useFileRefDrop, useFileRefDropOn, type FileRef } from '@/lib/fileDrag'
 import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
@@ -249,10 +249,14 @@ export function useComposerChips({
   const drop = useDropPaste(addFiles, dropScope, addPasted)
   // 文件树里右键拖过来的文件 / 文件夹：松手时在光标处插入 @路径，不当附件上传
   const dropRef = useRef<HTMLDivElement>(null)
-  const refOver = useFileRefDrop(dropRef, (item) => {
+  const insertRef = (item: FileRef) => {
     const ed = editor.current
     if (ed) insertFileRef(ed, item)
-  })
+  }
+  const boxOver = useFileRefDrop(dropRef, insertRef)
+  // 对话页中间整块（dropScope）也接：拖到对话区任何位置松手都行，输入框跟着亮，看得出会插到哪
+  const scopeOver = useFileRefDropOn(dropScope, insertRef)
+  const refOver = boxOver || scopeOver
 
   /**
    * 粘贴：有文件（截图、从文件管理器复制的文件）照旧上传一份（大文件只引用原路径，见 useAttachments 的 add）；

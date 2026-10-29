@@ -43,9 +43,9 @@ export async function openCartTask({ base, page, errors }, { viewport = TASK_VIE
 /** 中间打开的子对话（页签）：父对话页签在前台时它是隐藏的，读屏树里没有 */
 export const childView = (p) => p.getByRole('region', { name: '子对话' })
 
-/** 页签条上关闭子对话的按钮（子对话视图里不再有自己的 ✕） */
+/** 右栏页签条上关闭子对话的按钮（子对话在右栏开页签，和项目文件、本对话改动并排） */
 export const closeChildTab = (p) =>
-  p.getByRole('tablist', { name: '对话页签' }).getByRole('button', { name: '关闭子对话', exact: true })
+  p.getByRole('tablist', { name: '文件视图' }).getByRole('button', { name: '关闭子对话', exact: true })
 
 /**
  * 任务页上的常用操作，绑定到一个 page 上。
@@ -80,7 +80,7 @@ export function taskPageHelpers(p, { settle, errors }) {
 
   /** 刷新后回到购物车那个任务页：当前路由就是任务页，等它画出来；没回到任务页时从列表点进去 */
   const backToTask = async () => {
-    const token = p.getByTitle('Token 用量').first()
+    const token = p.locator('[title="Token 用量"], [data-token-usage]').first()
     if (
       await token.waitFor({ timeout: 5000 }).then(
         () => true,

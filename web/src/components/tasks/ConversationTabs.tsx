@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { MessageSquareText, Workflow as WorkflowIcon } from 'lucide-react'
+import { Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task } from '@shared/schema'
-import { childIcon, taskBusy, taskState, taskWaitText } from '@shared/task'
+import { taskBusy, taskState, taskWaitText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { useNow } from '@/lib/useNow'
@@ -10,19 +10,16 @@ import { StatusPill } from '@/components/ui/status-pill'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { InlineRename } from '@/components/ui/inline-rename'
 import { cliAliveHint, cliTreeAlive } from './CliAlive'
-import type { ChildSummary } from './child-line'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
 /**
- * 对话页顶上的页签条（照 Proma）：父对话一个页签，不能关；旁边是中间打开的子对话或这次工作流运行，
- * 同一时间只开一个、能关。标题栏原来的按钮放在页签条右端（trailing）。
+ * 对话页顶上的页签条（照 Proma）：父对话一个页签，不能关；旁边是中间打开的工作流运行，能关
+ * （子对话在右栏开页签，不进这一条）。标题栏原来的按钮放在页签条右端（trailing）。
  * 页签的状态图标和侧栏同一处判定：父对话走 taskState，子对话走 childIcon
  */
 export function ConversationTabs({
   task,
-  child,
   runName,
-  openChild,
   openRun,
   front,
   renaming,
@@ -30,17 +27,13 @@ export function ConversationTabs({
   onRename,
   onParent,
   onOther,
-  onCloseChild,
   onCloseRun,
   mark,
   leading,
   trailing,
 }: {
   task: Task
-  /** 中间打开的子对话在父对话列表里的那一份（标题、状态）；列表还没取回来时为空 */
-  child?: ChildSummary
   runName?: string
-  openChild: string
   openRun: number
   /** 中间正显示父对话还是另一个页签 */
   front: 'parent' | 'other'
@@ -51,7 +44,6 @@ export function ConversationTabs({
   onRename: (title: string) => void
   onParent: () => void
   onOther: () => void
-  onCloseChild: () => void
   onCloseRun: () => void
   /** 标题前的小标签（AI 分析开出的对话写「分析」），和普通对话一眼分开 */
   mark?: ReactNode
@@ -105,26 +97,6 @@ export function ConversationTabs({
           <span data-conv-title className={cn(cliTreeAlive(task) && 'cli-alive-title')}>
             {task.title}
           </span>
-        </TabItem>
-      )}
-      {openChild && (
-        <TabItem
-          active={front === 'other'}
-          onSelect={onOther}
-          onClose={onCloseChild}
-          closeLabel={t('关闭子对话')}
-          className="basis-[12rem]"
-          // 页签类型不再挂灰胶囊（设计稿），只靠前面的图标分；悬停提示写明是子对话
-          title={[t('子对话'), child?.title].filter(Boolean).join(' · ')}
-          icon={
-            child ? (
-              <TaskStatusIcon status={child.status} icon={childIcon(child)} className="h-3.5 w-3.5" />
-            ) : (
-              <MessageSquareText className="h-3.5 w-3.5" />
-            )
-          }
-        >
-          {child?.title ?? t('子对话')}
         </TabItem>
       )}
       {openRun > 0 && (

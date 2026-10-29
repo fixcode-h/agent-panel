@@ -66,7 +66,8 @@ function sumUsage(steps: TaskStep[]): Usage {
 }
 
 /**
- * 输入框下面的信息条：上下文占用、Token 用量、环境（目录、分支、工作流或 Agent）。
+ * 输入框下面的信息条：上下文占用、Token 用量、环境、测试、工具调用、验收放行。
+ * 会话栏显示着时 Token 用量、环境、工具调用都在会话栏里，这里只留其余几块。
  * 一行放不下时换行，细节收在点开的浮层里，不占地方。
  */
 export function TaskMeta({
@@ -78,6 +79,7 @@ export function TaskMeta({
   onTask,
   onOpenChild,
   hideContext,
+  inRail,
 }: {
   task: Task
   projectName?: string
@@ -92,6 +94,8 @@ export function TaskMeta({
   onOpenChild?: (id: string) => void
   /** 上下文圆环已经放进输入框工具条（TaskContextRing），这一条里不再重复 */
   hideContext?: boolean
+  /** 会话栏正显示着：Token 用量、工具调用和环境都在会话栏里，这一条里不再重复 */
+  inRail?: boolean
 }) {
   const { agents } = useData()
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -101,17 +105,19 @@ export function TaskMeta({
   return (
     <div className="mx-auto mt-2 flex max-w-(--content-w) flex-wrap items-center gap-x-1 gap-y-1 px-1">
       {!hideContext && lines.length > 0 && <ContextChip lines={lines} />}
-      <TokenChip task={task} scope={scope} />
-      <EnvChip
-        task={task}
-        projectName={projectName}
-        projectPath={projectPath}
-        workflowName={workflowName}
-        onTask={onTask}
-        onOpenChild={onOpenChild}
-      />
+      {!inRail && <TokenChip task={task} scope={scope} />}
+      {!inRail && (
+        <EnvChip
+          task={task}
+          projectName={projectName}
+          projectPath={projectPath}
+          workflowName={workflowName}
+          onTask={onTask}
+          onOpenChild={onOpenChild}
+        />
+      )}
       <TestRunsChip task={task} />
-      <ToolFailuresChip task={task} />
+      {!inRail && <ToolFailuresChip task={task} />}
       <ReviewOverrideChip task={task} />
     </div>
   )
@@ -322,16 +328,20 @@ function ContextRow({ line }: { line: ContextLine }) {
   )
 }
 
-/** Token 用量：总数、速度、命中率；点开看输入、输出、缓存命中和费用 */
-function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
-  // 没选节点时是整个运行（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能问服务端
+/** Token 用量的取数：没选节点时是整个运行（父对话 + 所有子对话 + 派出的子任务），子对话不在任务列表里，只能问服务端 */
+function useTokenUsage(task: Task, scope?: TaskStep[]) {
   const run = useRunUsage(task, !scope)
   const u = scope ? sumUsage(scope) : run.total
   const tps = scope ? tpsNow(task, [...new Set(scope.map((s) => s.agentId))]) : run.runTps
-  // 有子对话或子任务时才分组：没有时浮层和以前一样，不出现「子任务 0」这种噪音行
+  // 有子对话或子任务时才分组：没有时和以前一样，不出现「子任务 0」这种噪音行
   const groups = scope ? [] : tokenGroups(run)
-  const total = u.inputTokens + u.outputTokens
-  if (!total) return null
+  return { u, tps, groups, total: u.inputTokens + u.outputTokens }
+}
+
+/** Token 用量明细：总数、输入、输出、缓存命中和费用，有子对话时再按本对话 / 子任务分组。会话栏和输入框下的浮层共用 */
+export function TokenUsage({ task, scope }: { task: Task; scope?: TaskStep[] }) {
+  const { u, tps, groups, total } = useTokenUsage(task, scope)
+  if (!total) return <p className="text-xs text-subtle">{t('Agent 回复后显示 Token 用量')}</p>
   const rate = cacheHitRate(u)
   const rows: [string, string][] = [
     [t('输入'), fmtTokens(u.inputTokens)],
@@ -343,6 +353,62 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
   ]
   const label = scope ? t('累计 token') : t('整个运行')
   const groupLabel = { own: t('本对话'), sub: t('子任务与子对话') }
+  return (
+    <div className="flex flex-col gap-2" data-token-usage>
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
+        <span className="text-xs text-subtle">{label}</span>
+        <span className="ml-auto flex items-baseline gap-2 font-mono text-xs">
+          {tps > 0 && <span className="text-accent-text">{tps.toFixed(1)} token/s</span>}
+          {u.inputTokens > 0 && (
+            <span className={cn(rate >= 0.5 ? 'text-success' : 'text-subtle')}>
+              {t('命中 {n}%', { n: (rate * 100).toFixed(0) })}
+            </span>
+          )}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-baseline justify-between gap-2">
+            <dt className="text-subtle">{k}</dt>
+            <dd className="font-mono text-muted tabular-nums">{v}</dd>
+          </div>
+        ))}
+        {u.costUsd > 0 && (
+          <div className="flex items-baseline justify-between gap-2">
+            {/* 这是 CLI 自己上报的美元金额，不是按计价模型折算的费用，标签里写清楚免得和用量统计的「费用」混起来 */}
+            <dt className="text-subtle">{t('Agent 上报费用')}</dt>
+            <dd className="font-mono text-muted tabular-nums">${u.costUsd.toFixed(3)}</dd>
+          </div>
+        )}
+      </dl>
+      {groups.length > 0 && (
+        <dl className="flex flex-col gap-1.5 border-t pt-2 text-xs">
+          {groups.map((g) => (
+            <div key={g.key} className="flex items-baseline gap-2">
+              <dt className="text-subtle">{groupLabel[g.key]}</dt>
+              <dd className="ml-auto font-mono text-muted tabular-nums">{fmtTokens(g.tokens)}</dd>
+              {g.tps > 0 ? (
+                <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent-text tabular-nums">
+                  {g.tps.toFixed(1)} token/s
+                </dd>
+              ) : (
+                // 停下的部分写「空闲」：不拿这一轮最后一次的速度冒充实时
+                <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-subtle">{t('空闲')}</dd>
+              )}
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+/** Token 用量小块：会话栏不在时（窄屏、子对话面板、工作流）才放在输入框下面，点开是同一份明细 */
+function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
+  const { u, tps, total } = useTokenUsage(task, scope)
+  if (!total) return null
+  const rate = cacheHitRate(u)
   return (
     <Popover>
       <PopoverTrigger className={META_CHIP} title={t('Token 用量')}>
@@ -356,58 +422,26 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
         )}
       </PopoverTrigger>
       <PopoverContent className="w-[min(360px,calc(100vw-24px))]">
-        <div className="flex flex-col gap-2 p-2.5">
-          <div className="flex items-baseline justify-between">
-            <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
-            <span className="text-xs text-subtle">{label}</span>
-          </div>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-            {rows.map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between gap-2">
-                <dt className="text-subtle">{k}</dt>
-                <dd className="font-mono text-muted tabular-nums">{v}</dd>
-              </div>
-            ))}
-            {u.costUsd > 0 && (
-              <div className="flex items-baseline justify-between gap-2">
-                {/* 这是 CLI 自己上报的美元金额，不是按计价模型折算的费用，标签里写清楚免得和用量统计的「费用」混起来 */}
-                <dt className="text-subtle">{t('Agent 上报费用')}</dt>
-                <dd className="font-mono text-muted tabular-nums">${u.costUsd.toFixed(3)}</dd>
-              </div>
-            )}
-          </dl>
-          {groups.length > 0 && (
-            <dl className="flex flex-col gap-1.5 border-t pt-2 text-xs">
-              {groups.map((g) => (
-                <div key={g.key} className="flex items-baseline gap-2">
-                  <dt className="text-subtle">{groupLabel[g.key]}</dt>
-                  <dd className="ml-auto font-mono text-muted tabular-nums">{fmtTokens(g.tokens)}</dd>
-                  {g.tps > 0 ? (
-                    <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent-text tabular-nums">
-                      {g.tps.toFixed(1)} token/s
-                    </dd>
-                  ) : (
-                    // 停下的部分写「空闲」：不拿这一轮最后一次的速度冒充实时
-                    <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-subtle">{t('空闲')}</dd>
-                  )}
-                </div>
-              ))}
-            </dl>
-          )}
+        <div className="p-2.5">
+          <TokenUsage task={task} scope={scope} />
         </div>
       </PopoverContent>
     </Popover>
   )
 }
 
-/** 环境：目录、分支（可以切）、工作流或对话用的 Agent，还有打开了「显示额度」的 CLI */
-function EnvChip({
+/**
+ * 环境：目录、分支（可以切）、工作流或对话用的 Agent，独立分支，还有打开了「显示额度」的 CLI。
+ * 会话栏显示着时入口在会话栏的「环境」块里（compact），不在时放在输入框下面
+ */
+export function EnvChip({
   task,
   projectName,
   projectPath,
   workflowName,
   onTask,
   onOpenChild,
+  compact,
 }: {
   task: Task
   projectName?: string
@@ -415,6 +449,8 @@ function EnvChip({
   workflowName?: string
   onTask: (task: Task) => void
   onOpenChild?: (id: string) => void
+  /** 放在会话栏「环境」块的标题行：目录和分支那块已经列着了，入口只留一个小图标 */
+  compact?: boolean
 }) {
   const { agents, settings } = useData()
   // 点独立分支那一行打开子对话后要主动收起环境弹层
@@ -446,17 +482,23 @@ function EnvChip({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className={cn(META_CHIP, 'min-w-0 max-w-[min(480px,70vw)]')}
-        title={projectPath || t('环境')}
+        className={cn(
+          compact
+            ? 'flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg'
+            : cn(META_CHIP, 'min-w-0 max-w-[min(480px,70vw)]'),
+        )}
+        title={compact ? t('分支、独立分支和额度') : projectPath || t('环境')}
         aria-label={t('环境')}
       >
-        {projectPath ? (
+        {compact ? (
+          <GitBranch className="h-3.5 w-3.5" />
+        ) : projectPath ? (
           <FolderOpen className="h-3.5 w-3.5 shrink-0" />
         ) : (
           <MessageSquare className="h-3.5 w-3.5 shrink-0" />
         )}
-        <span className="min-w-0 truncate">{projectName || projectPath || t('聊天')}</span>
-        {wt ? (
+        {!compact && <span className="min-w-0 truncate">{projectName || projectPath || t('聊天')}</span>}
+        {compact ? null : wt ? (
           <span className="flex min-w-0 items-center gap-1 font-mono">
             <GitBranch className="h-3 w-3 shrink-0" />
             <span className="shrink-0">{wt.baseBranch || dir?.gitBranch || 'HEAD'}</span>

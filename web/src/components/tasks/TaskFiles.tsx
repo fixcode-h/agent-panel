@@ -1,5 +1,16 @@
-import { useEffect, useState } from 'react'
-import { Diff, FileText, GitBranch, List, ListTree, Loader2, RefreshCw, ScanSearch, Search } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import {
+  Diff,
+  FileText,
+  GitBranch,
+  List,
+  ListTree,
+  Loader2,
+  MessageSquareText,
+  RefreshCw,
+  ScanSearch,
+  Search,
+} from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
@@ -13,7 +24,10 @@ import { IconButton } from '@/components/ui/icon-button'
 import { type FileBrowser, FileExplorer } from '@/components/files/FileTree'
 import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
 import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
+import { childIcon } from '@shared/task'
+import type { ChildSummary } from './child-line'
 import { ChangesTree } from './ChangesTree'
+import { TaskStatusIcon } from './TaskStatusIcon'
 import { DiffDialog } from './DiffDialog'
 import { FileDialog } from './FileDialog'
 
@@ -65,13 +79,14 @@ function useRefreshKey(raw: string, immediate: boolean) {
 /**
  * 任务页右栏：当前项目的文件树，带 git 状态；没有项目的聊天用任务工作目录。
  * 上方一排 Tab 分「文件」和「改动」：改动页列出改过哪些文件、看差异、撤销或让 CLI 审查。
+ * 打开子对话时多一个子对话页签，子对话就在这一栏里看和回复，不占中间的对话。
  */
 export function TaskFiles({
   task,
   dir,
   node,
   onTask,
-  showChanges,
+  child,
 }: {
   task: Task
   /** 项目目录：分支还没读出来时先用它做说明 */
@@ -80,14 +95,17 @@ export function TaskFiles({
   node?: TaskStep
   /** 压缩、审查之后把新的任务状态交回页面 */
   onTask?: (task: Task) => void
-  /** 每变一次就切到「本对话改动」页签：会话栏的「在改动页查看」用 */
-  showChanges?: number
+  /** 右栏开着的子对话：多一个可关的页签，内容是子对话自己的面板 */
+  child?: { id: string; task?: ChildSummary; view: ReactNode; onClose: () => void }
 }) {
   const { upsertTask } = useData()
-  const [tab, setTab] = useState<'files' | 'changes'>('files')
+  const [tab, setTab] = useState<'files' | 'changes' | 'child'>(child ? 'child' : 'files')
+  // 新开（或换了）子对话就切到它的页签；关掉后回项目文件
+  const childId = child?.id ?? ''
   useEffect(() => {
-    if (showChanges) setTab('changes')
-  }, [showChanges])
+    setTab((cur) => (childId ? 'child' : cur === 'child' ? 'files' : cur))
+  }, [childId])
+  const onChild = tab === 'child' && !!child
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
@@ -144,78 +162,113 @@ export function TaskFiles({
         >
           {t('本对话改动')}
         </TabItem>
-      </TabBar>
-      {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
-      <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
-        <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={1.8} />
-        <span className="min-w-0 truncate font-mono text-[0.71875rem] text-muted" title={files.info?.dir ?? dir}>
-          {files.info?.branch ?? t('没有分支')}
-        </span>
-        <span aria-hidden>·</span>
-        <span className="shrink-0">{t('{n} 个改动', { n: changes.length })}</span>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {tab === 'files' ? (
-            <IconButton
-              icon={Search}
-              label={t('查找文件')}
-              size="2xs"
-              aria-pressed={searchOpen}
-              onClick={() => setSearchOpen((v) => !v)}
-              className={cn(searchOpen && 'bg-sel text-fg')}
-            />
-          ) : (
-            changes.length > 0 && (
-              <IconButton
-                icon={mode === 'tree' ? List : ListTree}
-                label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
-                size="2xs"
-                onClick={() => setMode(mode === 'tree' ? 'list' : 'tree')}
-              />
-            )
-          )}
-          <IconButton label={t('刷新文件')} size="2xs" onClick={files.refresh}>
-            <RefreshCw className={cn('h-3 w-3', files.loading && 'animate-spin')} />
-          </IconButton>
-        </div>
-      </div>
-      {tab === 'files' ? (
-        <>
-          <FileExplorer
-            browser={files}
-            onOpen={(path, line) => setTarget({ path, line })}
-            compact
-            searchOpen={searchOpen}
-            onSearchOpenChange={setSearchOpen}
-          />
-          {/* 文件在中间的查看窗口里打开，右栏只放树；提示一行，免得以为点了没反应 */}
-          <p className="shrink-0 px-4 pt-2.5 pb-3 text-center text-[0.71875rem] text-subtle/80">
-            {t('点文件在中间查看')}
-          </p>
-        </>
-      ) : (
-        <ChangesList
-          changes={changes}
-          mode={mode}
-          mark={(path) => changeMark(files, path)}
-          picked={picked}
-          onDiff={(path) => {
-            setPicked(path)
-            setDiffPath(path)
-          }}
-          scoped={!!node}
-          canReview={!node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0}
-          reviewing={reviewing}
-          onReview={async () => {
-            setReviewing(true)
-            try {
-              onTask?.(await api.reviewTask(task.id))
-            } catch (e) {
-              toast.error((e as Error).message)
-            } finally {
-              setReviewing(false)
+        {child && (
+          <TabItem
+            active={onChild}
+            onSelect={() => setTab('child')}
+            onClose={child.onClose}
+            closeLabel={t('关闭子对话')}
+            title={[t('子对话'), child.task?.title].filter(Boolean).join(' · ')}
+            icon={
+              child.task ? (
+                <TaskStatusIcon status={child.task.status} icon={childIcon(child.task)} className="h-3.5 w-3.5" />
+              ) : (
+                <MessageSquareText className="h-[0.8125rem] w-[0.8125rem]" />
+              )
             }
-          }}
-        />
+            className="max-w-[12rem] min-w-0"
+          >
+            {child.task?.title ?? t('子对话')}
+          </TabItem>
+        )}
+      </TabBar>
+      {/* 子对话页签：切到文件、改动时只是藏起来，不卸载 */}
+      {child && (
+        <section
+          aria-label={t('子对话')}
+          data-child-view
+          className={cn('flex min-h-0 flex-1 flex-col', !onChild && 'hidden')}
+        >
+          {child.view}
+        </section>
+      )}
+      {!onChild && (
+        <>
+          {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
+          <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">
+            <GitBranch className="h-[0.8125rem] w-[0.8125rem] shrink-0" strokeWidth={1.8} />
+            <span className="min-w-0 truncate font-mono text-[0.71875rem] text-muted" title={files.info?.dir ?? dir}>
+              {files.info?.branch ?? t('没有分支')}
+            </span>
+            <span aria-hidden>·</span>
+            <span className="shrink-0">{t('{n} 个改动', { n: changes.length })}</span>
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              {tab === 'files' ? (
+                <IconButton
+                  icon={Search}
+                  label={t('查找文件')}
+                  size="2xs"
+                  aria-pressed={searchOpen}
+                  onClick={() => setSearchOpen((v) => !v)}
+                  className={cn(searchOpen && 'bg-sel text-fg')}
+                />
+              ) : (
+                changes.length > 0 && (
+                  <IconButton
+                    icon={mode === 'tree' ? List : ListTree}
+                    label={mode === 'tree' ? t('平铺显示每个文件') : t('按目录分组显示')}
+                    size="2xs"
+                    onClick={() => setMode(mode === 'tree' ? 'list' : 'tree')}
+                  />
+                )
+              )}
+              <IconButton label={t('刷新文件')} size="2xs" onClick={files.refresh}>
+                <RefreshCw className={cn('h-3 w-3', files.loading && 'animate-spin')} />
+              </IconButton>
+            </div>
+          </div>
+          {tab === 'files' ? (
+            <>
+              <FileExplorer
+                browser={files}
+                onOpen={(path, line) => setTarget({ path, line })}
+                compact
+                searchOpen={searchOpen}
+                onSearchOpenChange={setSearchOpen}
+              />
+              {/* 文件在中间的查看窗口里打开，右栏只放树；提示一行，免得以为点了没反应 */}
+              <p className="shrink-0 px-4 pt-2.5 pb-3 text-center text-[0.71875rem] text-subtle/80">
+                {t('点文件在中间查看')}
+              </p>
+            </>
+          ) : (
+            <ChangesList
+              changes={changes}
+              mode={mode}
+              mark={(path) => changeMark(files, path)}
+              picked={picked}
+              onDiff={(path) => {
+                setPicked(path)
+                setDiffPath(path)
+              }}
+              scoped={!!node}
+              canReview={
+                !node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0
+              }
+              reviewing={reviewing}
+              onReview={async () => {
+                setReviewing(true)
+                try {
+                  onTask?.(await api.reviewTask(task.id))
+                } catch (e) {
+                  toast.error((e as Error).message)
+                } finally {
+                  setReviewing(false)
+                }
+              }}
+            />
+          )}
+        </>
       )}
       {task.projectId ? (
         <ProjectFileDialog

@@ -334,7 +334,7 @@ export function RunningNow({
             rowOpen={openChild ? () => openChild(k.id) : undefined}
             onOpen={openChild ? () => openChild(k.id) : undefined}
             // 标题被前宽截断时，悬停能看全文（活动文字本来就有 title）
-            openTip={t('在中间打开子对话「{title}」', { title: k.title || t('未命名') })}
+            openTip={t('在右栏打开子对话「{title}」', { title: k.title || t('未命名') })}
             detailStart
             detail={
               <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">

@@ -38,14 +38,14 @@ await runShard(import.meta.filename, async (api) => {
       .first()
       .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
-    // 中间打开一个子对话：页面上有父对话（藏在父对话页签后面）和子对话两个输入框
+    // 右栏打开一个子对话：页面上有父对话和子对话两个输入框
     const env = d.locator('button[aria-label="环境"]').first()
     await env.click()
     await d.getByText('独立分支', { exact: true }).first().waitFor({ timeout: 5000 })
     await d
       .locator('[data-worktree-row]')
       .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
-      .getByRole('button', { name: '在中间打开子对话「Git+worktree 不再提示文件撞车」' })
+      .getByRole('button', { name: '在右栏打开子对话「Git+worktree 不再提示文件撞车」' })
       .click()
     const childPane = childView(d)
     await childPane
@@ -141,7 +141,7 @@ await runShard(import.meta.filename, async (api) => {
       await d
         .locator('[data-worktree-row]')
         .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
-        .getByRole('button', { name: '在中间打开子对话「Git+worktree 不再提示文件撞车」' })
+        .getByRole('button', { name: '在右栏打开子对话「Git+worktree 不再提示文件撞车」' })
         .click()
       await pane().locator('#follow-up').waitFor({ timeout: 10000 })
     }

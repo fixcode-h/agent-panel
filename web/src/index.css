@@ -1285,3 +1285,19 @@ html [data-sonner-toast][data-styled='true'] {
 [data-settings-dialog] ::-webkit-scrollbar-thumb {
   border-width: 2px;
 }
+
+/*
+ * AI 回复的正文比回复头缩进 32px：彩色图标留在最左，名字、正文、过程行、下面的复制按钮在同一条竖线上（用户要求）。
+ * 回复头（ReplyHeader 带 data-reply-head）退回最左；吸顶的署名栏本身就是 -mx-2，再多退一个缩进。
+ * 不写在 @layer 里：要压过回复头上的 -mx-2 这类工具类
+ */
+.reply-body {
+  --reply-indent: 32px;
+  padding-left: var(--reply-indent);
+}
+.reply-body [data-reply-head='sticky'] {
+  margin-left: calc(-1 * var(--reply-indent) - 0.5rem);
+}
+.reply-body [data-reply-head='row']:not([data-reply-head='sticky'] *) {
+  margin-left: calc(-1 * var(--reply-indent));
+}

@@ -20,7 +20,7 @@ await runShard(import.meta.filename, async (api) => {
   // 点中间那行在右栏打开对应子对话，合并/删除按钮各管各的，父对话自己那行点不了
   {
     const env = p.locator('button[aria-label="环境"]').first()
-    /** 中间是不是开着子对话 */
+    /** 右栏是不是开着子对话 */
     const paneOpen = () => childView(p).count()
     const openEnv = async () => {
       const shown = p.getByText('独立分支', { exact: true }).first()
@@ -41,7 +41,7 @@ await runShard(import.meta.filename, async (api) => {
       p.evaluate(
         (g) =>
           [...document.querySelectorAll(`[data-worktree-group="${g}"] [data-worktree-row]`)].map((el) => {
-            const open = el.querySelector('button[aria-label^="在中间打开子对话"]')
+            const open = el.querySelector('button[aria-label^="在右栏打开子对话"]')
             return {
               text: (el.innerText || '').replace(/\s+/g, ' ').trim(),
               clickable: !!open,
@@ -205,10 +205,10 @@ await runShard(import.meta.filename, async (api) => {
     const target = p
       .locator('[data-worktree-row]')
       .filter({ hasText: 'Git+worktree 不再提示文件撞车' })
-      .getByRole('button', { name: '在中间打开子对话「Git+worktree 不再提示文件撞车」' })
+      .getByRole('button', { name: '在右栏打开子对话「Git+worktree 不再提示文件撞车」' })
     await target.focus()
     await p.keyboard.press('Enter')
-    // 子对话在中间开页签，关闭按钮在页签条上（子对话栏的卡片里也有同名按钮，限定在页签条里）
+    // 子对话在右栏开页签，关闭按钮在右栏页签条上（子对话栏的卡片里也有同名按钮，限定在页签条里）
     const closePane = closeChildTab(p)
     const pane = await closePane.waitFor({ timeout: 5000 }).then(
       () => true,
@@ -286,7 +286,7 @@ await runShard(import.meta.filename, async (api) => {
     }, hidden)
     if (!hit) errors.push(`已归档：演示数据里没有「${hidden}」，造不出这个场景`)
     await d.reload()
-    const token = d.getByTitle('Token 用量').first()
+    const token = d.locator('[title="Token 用量"], [data-token-usage]').first()
     if (
       !(await token.waitFor({ timeout: 5000 }).then(
         () => true,
@@ -356,12 +356,12 @@ await runShard(import.meta.filename, async (api) => {
         localStorage.removeItem(`task-run:${parent.id}`)
       }, key)
       await gotoTask()
-      // 重新加载后父对话页签在前台，子对话页签留着：点它切过去
+      // 重新加载后子对话还开在右栏的页签里（右栏页签条上有它，并且在前台）
       await p
-        .getByRole('tablist', { name: '对话页签' })
+        .getByRole('tablist', { name: '文件视图' })
         .getByRole('tab', { name: /到货提醒/ })
-        .click({ timeout: 10000 })
-        .catch(() => errors.push('子对话：重新加载后页签条上没有「到货提醒」页签'))
+        .waitFor({ timeout: 10000 })
+        .catch(() => errors.push('子对话：重新加载后右栏页签条上没有「到货提醒」页签'))
       await p
         .locator('button[title="打开这次运行的对话"]')
         .first()
@@ -377,7 +377,7 @@ await runShard(import.meta.filename, async (api) => {
         localStorage.setItem('task-session-bar', 'closed')
       })
       await p.reload()
-      const token = p.getByTitle('Token 用量').first()
+      const token = p.locator('[title="Token 用量"], [data-token-usage]').first()
       if (
         !(await token.waitFor({ timeout: 5000 }).then(
           () => true,
@@ -405,20 +405,26 @@ await runShard(import.meta.filename, async (api) => {
     }
     await openChild()
     await check(p, '子对话-面板', ['子对话：到货提醒'])
-    // 子对话在中间开页签：右栏还是文件面板，不被子对话占掉；
-    // 点父对话页签切回父对话，子对话页签留着；再点子对话页签回来
+    // 子对话在右栏开页签（和项目文件、本对话改动并排），中间还是父对话；
+    // 切到项目文件页签时子对话藏起来但页签留着，再点子对话页签回来
     {
       const aside = p.locator('[data-task-panel]')
-      if (!(await aside.isVisible().catch(() => false))) errors.push('子对话页签：打开子对话后右栏的文件面板不见了')
-      const tabs = p.getByRole('tablist', { name: '对话页签' })
+      if (!(await aside.isVisible().catch(() => false))) errors.push('子对话页签：打开子对话后右栏没有显示')
+      const tabs = p.getByRole('tablist', { name: '文件视图' })
       const childTab = tabs.getByRole('tab', { name: /到货提醒/ })
-      if (!(await childView(p).count())) errors.push('子对话页签：中间没有显示子对话')
-      if (!(await childTab.count())) errors.push('子对话页签：页签条上没有子对话的页签')
+      if (
+        !(await aside
+          .locator('[data-child-view]')
+          .isVisible()
+          .catch(() => false))
+      )
+        errors.push('子对话页签：子对话没有在右栏显示')
+      if (!(await childTab.count())) errors.push('子对话页签：右栏页签条上没有子对话的页签')
       else {
         await tabs.getByRole('tab').first().click()
         await settle(p)
-        if (await childView(p).count()) errors.push('子对话页签：点父对话页签后中间还是子对话')
-        if (!(await childTab.count())) errors.push('子对话页签：切回父对话后子对话页签被关掉了')
+        if (await childView(p).count()) errors.push('子对话页签：点项目文件页签后还显示子对话')
+        if (!(await childTab.count())) errors.push('子对话页签：切到项目文件后子对话页签被关掉了')
         await childTab.click()
         await settle(p)
         if (!(await childView(p).count())) errors.push('子对话页签：点子对话页签没切回子对话')

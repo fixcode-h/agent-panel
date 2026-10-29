@@ -256,8 +256,8 @@ export function ReplyFrame({
   return (
     <div className="group/msg flex flex-col gap-1">
       {children}
-      {/* 图标和回复文字对齐：头像 26px 加间距 12px，减去按钮自己的内边距 */}
-      <div className="pl-8">
+      {/* 复制图标和缩进的回复正文（32px）对齐：减去按钮自己的内边距 6px */}
+      <div className="pl-[26px]">
         <MessageMeta text={text} at={at} actions={actions} />
       </div>
     </div>

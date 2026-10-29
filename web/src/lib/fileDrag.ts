@@ -1,4 +1,4 @@
-// 文件树里的文件和文件夹可以左键长按后拖到输入框：松手时在输入框光标处插入它的引用。
+// 文件树里的文件和文件夹可以左键长按后拖到输入框（或对话页中间整块）：松手时在输入框光标处插入它的引用。
 // 不用 HTML5 的 draggable：dragstart 由浏览器接管，拖到哪个输入框、预览长什么样都得跟着它，
 // 也拿不到「拖到了哪个输入框上」做高亮。右键留给右键菜单，所以用长按作为拖动的手势。
 import { useEffect, useRef, useState, type RefObject } from 'react'
@@ -112,7 +112,7 @@ function ghost(item: FileRef) {
     'color:var(--color-fg)',
   ].join(';')
   const hint = document.createElement('span')
-  hint.textContent = t('拖到输入框上，松开插入引用')
+  hint.textContent = t('拖到对话区，松开插入引用')
   hint.style.cssText = 'font-size:11px;color:var(--color-subtle)'
   box.append(title, hint)
   return { box, hint }
@@ -155,7 +155,7 @@ export function startFileDrag(item: FileRef, press: { clientX: number; clientY: 
     if (next === hovered) return
     hovered = next
     notify()
-    if (view) view.hint.textContent = next ? t('松开鼠标，插入引用') : t('拖到输入框上，松开插入引用')
+    if (view) view.hint.textContent = next ? t('松开鼠标，插入引用') : t('拖到对话区，松开插入引用')
     if (view) view.hint.style.color = next ? 'var(--color-accent)' : 'var(--color-subtle)'
   }
 
@@ -219,12 +219,23 @@ export function startFileDrag(item: FileRef, press: { clientX: number; clientY: 
 
 /** 把一个元素变成能接住文件引用的输入框；返回现在有没有拖到它上面 */
 export function useFileRefDrop(el: RefObject<HTMLElement | null>, onDrop: (item: FileRef) => void) {
+  return useFileRefDropOn(el, onDrop)
+}
+
+/**
+ * 同上，接的区域直接给元素（对话页中间整块：拖到对话区任何位置松手都插进输入框，不用对准输入框）。
+ * 命中取最内层，所以输入框自己和外面的整块都注册时，落在输入框上还是输入框接
+ */
+export function useFileRefDropOn(
+  el: RefObject<HTMLElement | null> | HTMLElement | null | undefined,
+  onDrop: (item: FileRef) => void,
+) {
   const [over, setOver] = useState(false)
   // onDrop 每次渲染都是新的，放进依赖会让注册反复重建；只保留最新的引用
   const cb = useRef(onDrop)
   cb.current = onDrop
   useEffect(() => {
-    const node = el.current
+    const node = el && 'current' in el ? el.current : el
     if (!node) return
     const off = registerFileDrop(node, (item) => cb.current(item))
     const watch = () => setOver(hovered === node)
