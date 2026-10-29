@@ -142,6 +142,11 @@ export const AgentInput = z.object({
   /** 高级角色挂载的基本角色（见 AgentMount），按顺序列进能力索引 */
   mounts: z.array(AgentMount).max(16).default([]),
   /**
+   * 内置高级角色的挂载由用户接管：挂哪些、说明、预加载都按用户的，启动同步不再按内置定义改写（用户 2026-10-29 定的）。
+   * 没接管（undefined / false）时挂载跟内置定义走，只保留用户改过的用法和参数取值；「恢复默认挂载」就是清掉它
+   */
+  mountsCustom: z.boolean().optional(),
+  /**
    * 父对话就地微改动：off 不改文件（只分诊、派单）；tiny 允许过了 begin_inline_edit 护栏的微小改动。
    * 只对项目里的顶层对话生效（见 shared/inline-edit.ts）
    */

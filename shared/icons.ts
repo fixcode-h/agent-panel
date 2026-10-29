@@ -18,4 +18,6 @@ export const AGENT_ICON_IDS = [
   ['rocket', t('发布')],
   ['wand', t('优化')],
   ['sparkles', t('创意')],
+  ['eye', t('走查')],
+  ['languages', t('翻译')],
 ] as const

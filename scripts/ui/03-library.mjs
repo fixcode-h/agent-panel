@@ -296,7 +296,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
   await p.goto(base + '#/agents')
-  await check(p, 'Agent', ['命令预览', '评审'])
+  await check(p, 'Agent', ['命令预览', '主理'])
   // 列表栏标题不能被头部按钮挤得截断（用户报过：「角色」被压成半个字）：工作流页同一个列表栏，一起查
   for (const [hash, pane] of [
     ['#/agents', '角色列表'],
@@ -314,12 +314,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 原来的「按标签 / 按分类」切换已经去掉，列表上方不再有分组方式可选
   const rolePane = p.locator('section[aria-label="角色列表"]')
   if (await rolePane.getByRole('radio', { name: '按分类' }).count()) errors.push('角色页：还留着「按分类」的分组切换')
-  // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
+  // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是主理、执行、分析
+  const layers = rolePane.getByRole('radiogroup', { name: '角色层' })
   const core = p.locator('[data-group-id="#core"]')
+  if (!(await layers.count())) errors.push('角色页：没有「高级角色 / 基本角色」分页')
+  else {
+    const adv =
+      (await core
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
+    if (!/必备\s*·\s*3/.test(adv)) errors.push(`角色页：高级角色页的必备分组计数不是 3（读到「${adv.slice(0, 20)}」）`)
+    if (!(await core.getByRole('button', { name: /^主理/ }).count())) errors.push('角色页：高级角色页没有「主理」')
+    await check(p, 'Agent-高级角色', ['主理', '执行'])
+    await layers.getByRole('radio', { name: /^基本角色/ }).click()
+  }
+  // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
   if (!(await core.count())) errors.push('角色页：没有「必备」分组')
   else {
     const text = (await core.first().textContent()) ?? ''
-    if (!/必备\s*·\s*7/.test(text)) errors.push(`Agent：必备分组的计数不是 7（读到「${text.slice(0, 20)}」）`)
+    if (!/必备\s*·\s*4/.test(text)) errors.push(`Agent：基本角色页必备分组的计数不是 4（读到「${text.slice(0, 20)}」）`)
     // 默认全部展开：必备组里的角色直接可见（评审也是必备角色，子对话收尾前派它看 diff）
     if (!(await core.getByRole('button', { name: /^评审/ }).count())) errors.push('角色页：必备分组默认没有展开')
   }
@@ -327,7 +341,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const quality = rolePane.getByRole('group', { name: '质量', exact: true })
   if (!(await quality.count())) errors.push('角色页：没有「质量」分类分组')
   else {
-    if (!/质量\s*·\s*2/.test((await quality.first().textContent()) ?? ''))
+    if (!/质量\s*·\s*3/.test((await quality.first().textContent()) ?? ''))
       errors.push('角色页：「质量」分组的标题没有显示条数')
     if (!(await quality.getByRole('button', { name: /^测试工程师/ }).count()))
       errors.push('角色页：「质量」分类默认没有展开')

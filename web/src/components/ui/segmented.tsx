@@ -8,6 +8,7 @@ export function Segmented<T extends string>({
   label,
   className,
   size = 'md',
+  fill,
 }: {
   value: T
   onChange: (v: T) => void
@@ -18,12 +19,14 @@ export function Segmented<T extends string>({
   className?: string
   /** sm：页头工具条里用（比如计划页的「周 / 月 / 列表」），和 sm 按钮同高 */
   size?: 'sm' | 'md'
+  /** 撑满整行、选项平分宽度（列表栏顶上的分页，例如角色页的「高级角色 / 基本角色」） */
+  fill?: boolean
 }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn('seg-track inline-flex max-w-full flex-wrap rounded-lg p-0.5', className)}
+      className={cn('seg-track inline-flex max-w-full flex-wrap rounded-lg p-0.5', fill && 'flex w-full', className)}
     >
       {options.map((o) => (
         <button
@@ -35,6 +38,7 @@ export function Segmented<T extends string>({
           title={o.dot}
           className={cn(
             'inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            fill && 'min-w-0 flex-1 justify-center',
             size === 'sm' ? 'h-7 text-[0.75rem]' : 'h-8 text-[0.8125rem]',
             value === o.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
           )}

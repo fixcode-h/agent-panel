@@ -1,38 +1,33 @@
-import { Plus, X } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { type Agent, type AgentInput, type AgentMount } from '@shared/schema'
-import { canInline, canSubtask, mountMode, roleKind } from '@shared/agent-role'
+import { roleKind } from '@shared/agent-role'
 import { listableAgents } from '@shared/builtin/core'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Field, FormSection, Input } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
-import { AgentAvatar } from './AgentAvatar'
-
-/** 挂载用法在界面上的说法 */
-const MODE_LABEL: Record<AgentMount['mode'], string> = {
-  auto: t('自动判断'),
-  inline: t('就地用'),
-  subtask: t('派成子任务'),
-  parent: t('转交父对话'),
-}
+import { MountCard, MountPicker } from './MountCard'
 
 /**
  * 「能力」页：角色分层（见 docs/openspec/changes/role-composition-and-dispatch）。
  * 基本角色写「什么时候用」和允许的用法；高级角色挂载基本角色、定每个能力怎么用，以及父对话能不能就地微改动。
- * locked（内置角色）时挂哪些能力由面板维护，只能改每个挂载的用法
+ * locked（内置角色）时角色层和基本角色的用法由面板维护；挂载照样能加、删、改说明，改了就由用户接管（mountsCustom），
+ * defaults 是内置定义在本机该挂的那份，用来「恢复默认挂载」
  */
 export function CapabilityFields({
   draft,
   self,
   agents,
   locked,
+  defaults,
   set,
 }: {
   draft: AgentInput
   self: Agent
   agents: Agent[]
   locked: boolean
+  defaults?: AgentMount[]
   set: <K extends keyof AgentInput>(key: K, value: AgentInput[K]) => void
 }) {
   const kind = roleKind(draft)
@@ -40,13 +35,11 @@ export function CapabilityFields({
   const mountable = listableAgents(agents).filter(
     (a) => a.id !== self.id && roleKind(a) === 'basic' && !draft.mounts.some((m) => m.agentId === a.id),
   )
-  const setMount = (i: number, patch: Partial<AgentMount>) =>
-    set(
-      'mounts',
-      draft.mounts.map((m, j) => (j === i ? { ...m, ...patch } : m)),
-    )
-  const addMount = (agentId: string) =>
-    agentId && set('mounts', [...draft.mounts, { agentId, mode: 'auto', preload: false, rule: '', params: {} }])
+  // 内置高级角色改了挂载就算接管：之后启动同步不再按内置定义改写它的挂载（AgentInput.mountsCustom）
+  const setMounts = (mounts: AgentMount[]) => {
+    set('mounts', mounts)
+    if (locked) set('mountsCustom', true)
+  }
 
   return (
     <>
@@ -126,82 +119,40 @@ export function CapabilityFields({
               '提示词里只放每个能力的一行索引，用到时再加载全文。「就地用」在当前对话里按它的做法做；「派成子任务」冷启动一个子任务；「自动判断」量小就地、量大或要独立视角就派出；「转交父对话」在子对话里点名时交给父对话创建。',
             )}
           </p>
-          {draft.mounts.map((m, i) => {
-            const cap = agents.find((a) => a.id === m.agentId)
-            // 能力自己不允许的用法置灰：选了也会被收紧（mountMode）
-            const allowed = (mode: AgentMount['mode']) =>
-              !cap || mountMode(mode, cap) === mode || (mode === 'auto' && canInline(cap) && canSubtask(cap))
-            return (
-              <div key={m.agentId} className="flex flex-col gap-2 rounded-lg bg-card shadow-card p-3">
-                <div className="flex items-center gap-2">
-                  {cap ? <AgentAvatar icon={cap.icon} cli={cap.cli} size="xs" /> : null}
-                  <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">
-                    {cap?.name ?? t('（角色已删除）')}
-                  </span>
-                  <Select
-                    aria-label={t('用法')}
-                    value={m.mode}
-                    onChange={(e) => setMount(i, { mode: e.target.value as AgentMount['mode'] })}
-                    options={(Object.keys(MODE_LABEL) as AgentMount['mode'][]).map((id) => ({
-                      value: id,
-                      label: allowed(id) ? MODE_LABEL[id] : t('{label}（这个能力不支持）', { label: MODE_LABEL[id] }),
-                    }))}
-                    className="w-[180px]"
-                  />
-                  {!locked && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t('移除')}
-                      title={t('移除')}
-                      onClick={() =>
-                        set(
-                          'mounts',
-                          draft.mounts.filter((_, j) => j !== i),
-                        )
-                      }
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-                {cap && (cap.when || cap.description) && (
-                  <p className="text-[0.71875rem] leading-relaxed text-subtle">{cap.when || cap.description}</p>
-                )}
-                {locked ? (
-                  m.rule && <p className="text-xs leading-relaxed text-muted">{m.rule}</p>
-                ) : (
-                  <>
-                    <Input
-                      value={m.rule}
-                      onChange={(e) => setMount(i, { rule: e.target.value })}
-                      placeholder={t('规则（可选）：什么时候就地、什么时候派出')}
-                    />
-                    <Checkbox
-                      checked={m.preload}
-                      onChange={(v) => setMount(i, { preload: v })}
-                      label={t('常驻加载')}
-                      hint={t('就地用时把它的做法直接放进提示词（主能力用），不用每次再加载')}
-                    />
-                  </>
-                )}
-              </div>
-            )
-          })}
-          {!locked && (
-            <div className="flex items-center gap-2">
-              <Select
-                aria-label={t('挂载能力')}
-                value=""
-                onChange={(e) => addMount(e.target.value)}
-                placeholder={t('挂载一个基本角色…')}
-                options={mountable.map((a) => ({ value: a.id, label: a.name }))}
-                className="max-w-[320px]"
-              />
-              <Plus className="h-3.5 w-3.5 text-subtle" />
+          {locked && draft.mountsCustom && (
+            <div className="flex items-center gap-2 rounded-lg bg-panel/60 px-3 py-1.5 text-xs text-muted">
+              <span className="min-w-0 flex-1">{t('挂载已按你的调整保存，不再跟着内置定义更新')}</span>
+              {defaults && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    set('mounts', defaults)
+                    set('mountsCustom', false)
+                  }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t('恢复默认挂载')}
+                </Button>
+              )}
             </div>
           )}
-          {!locked && !draft.mounts.length && (
+          {draft.mounts.map((m, i) => (
+            <MountCard
+              key={m.agentId}
+              mount={m}
+              cap={agents.find((a) => a.id === m.agentId)}
+              onChange={(patch) => setMounts(draft.mounts.map((x, j) => (j === i ? { ...x, ...patch } : x)))}
+              onRemove={() => setMounts(draft.mounts.filter((_, j) => j !== i))}
+            />
+          ))}
+          <MountPicker
+            options={mountable}
+            onPick={(agentId) =>
+              setMounts([...draft.mounts, { agentId, mode: 'auto', preload: false, rule: '', params: {} }])
+            }
+          />
+          {!draft.mounts.length && (
             <p className="text-xs text-subtle">{t('还没有挂载能力：这个高级角色只按自己的角色设定做事')}</p>
           )}
         </FormSection>
