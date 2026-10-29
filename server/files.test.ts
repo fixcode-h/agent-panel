@@ -138,10 +138,13 @@ test('项目里的合法路径照常能用（中文、空格、点开头的约�
   mkdirSync(path.join(dir, '我的 目录'), { recursive: true })
   writeFileSync(path.join(dir, '.github/workflow.yml'), 'x\n')
   writeFileSync(path.join(dir, '我的 目录/a.ts'), 'a\n')
+  mkdirSync(path.join(dir, '.git'), { recursive: true })
+  writeFileSync(path.join(dir, '.gitignore'), 'x\n')
   const root = await listLevel(dir, '')
+  // 点开头的文件照常列出，只有 .git 不列
   assert.deepEqual(
     root.entries.map((e) => e.name),
-    ['.github', '我的 目录'],
+    ['.github', '我的 目录', '.gitignore'],
   )
   // 正斜杠、反斜杠、结尾带分隔符都指向同一个目录
   for (const p of ['我的 目录', '我的 目录/', '我的 目录\\']) {
@@ -152,7 +155,7 @@ test('项目里的合法路径照常能用（中文、空格、点开头的约�
       p,
     )
   }
-  // 以点开头的文件在列目录时按原有规则隐藏，这里只确认它们的路径不被当成越权
+  // 点开头的目录也能展开，路径不被当成越权
   const inside = await listLevel(dir, '.github')
   assert.deepEqual(
     inside.entries.map((e) => e.path),
