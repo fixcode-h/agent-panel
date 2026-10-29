@@ -140,14 +140,14 @@ export function addFoldCut(key: string, len: number) {
  */
 const segOpen = new Map<string, boolean>()
 
-/** 这一段现在是展开的（没点过就是收起的，和收尾后的默认状态一致） */
-export function segOpenOf(id: string) {
-  return segOpen.get(id) ?? false
+/** 这一段现在是展开的（没点过就按 fallback：普通对话收起，和收尾后的默认状态一致；AI 分析窗口里默认展开） */
+export function segOpenOf(id: string, fallback = false) {
+  return segOpen.get(id) ?? fallback
 }
 
 /** 点了这一段的开关：记下新的状态并返回，界面直接用这个值 */
-export function toggleSegOpen(id: string) {
-  const next = !segOpenOf(id)
+export function toggleSegOpen(id: string, fallback = false) {
+  const next = !segOpenOf(id, fallback)
   segOpen.set(id, next)
   return next
 }

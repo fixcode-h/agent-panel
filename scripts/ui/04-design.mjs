@@ -331,6 +331,29 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   // 分类行仍能单独收起展开
   await side().locator('[data-kind="game"]').click()
   await side().locator('[data-kind="game"]').click()
+  // 侧栏顶部的设计类型下拉：切到「模型设计」列的是 Agent 项目里的模型对话（演示数据里没有，显示说明和新建入口），
+  // 切回「UI 设计」项目列表还在
+  await side().getByRole('button', { name: '切换设计类型' }).click()
+  await p.getByRole('menuitemradio', { name: /模型设计/ }).click()
+  await side()
+    .getByText(/还没有模型设计对话/)
+    .waitFor()
+  assert.equal(await projFold().count(), 0, '模型设计下不列 UI 项目')
+  // 新建模型设计：选项目、写要建的模型；演示版没有 Blender，弹窗里要说清楚并给去设置的入口
+  await side().getByRole('button', { name: '新建模型设计' }).first().click()
+  await check(p, 'UI设计-新建模型设计', ['要建什么模型', '在线演示不能运行 Blender', '开始建模'])
+  // 建好跳进对话：右栏默认是「模型」页签，演示版给一只示例宝箱，列出场景里的物体（预览本身要 WebGL，这里只断言物体列表）
+  await p.getByLabel('要建什么模型').fill('低多边形宝箱')
+  await p.getByRole('button', { name: '开始建模' }).click()
+  await p
+    .getByText('Chest_Body', { exact: true })
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('模型设计：建好对话后右栏没有显示模型的物体列表'))
+  await check(p, 'UI设计-模型预览', ['第 1 版 · 5 个物体', 'Chest_Lid'])
+  await p.goto(base + '#/design')
+  await side().getByRole('button', { name: '切换设计类型' }).click()
+  await p.getByRole('menuitemradio', { name: /UI 设计/ }).click()
+  await gameKind().waitFor()
   // 画板按运行时假数据渲染：背包格子有物品、数量、选中和锁定；数据面板能改，改完切回画板立刻生效
   await p.goto(base + '#/design/demo-design-inventory')
   await check(p, 'UI设计-画板数据', ['星辉宝石'])

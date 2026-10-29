@@ -120,6 +120,10 @@ export const EN_ALERTS: Record<string, string> = {
     '{cli} received the message {s}s ago and has produced no output. Send another message and the panel will stop it and restart in the same session.',
   '{cli} 在 {s} 秒里没有任何输出（没有思考、正文或工具调用）。':
     '{cli} produced no output for {s}s (no thinking, text, or tool calls).',
+  '{cli} 输出到一半停了，{s} 秒没有新的内容。直接再发一条消息，面板会停掉它、接回这个会话重新开始。':
+    '{cli} stopped partway through its output and has produced nothing new for {s}s. Send another message and the panel will stop it and restart in the same session.',
+  '{cli} 输出到一半后 {s} 秒没有新的输出（没有思考、正文或工具调用），模型的流可能断了。':
+    '{cli} produced no new output for {s}s after stopping partway (no thinking, text, or tool calls); the model stream may have dropped.',
   '收到新消息时停掉了卡住的 Agent，接回会话重新开始':
     'On the new message, the panel stopped the stuck agent and restarted in the same session',
   '交给它的最后一条内容：': 'Last thing handed to it:',

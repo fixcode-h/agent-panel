@@ -1,8 +1,10 @@
 ---
-paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, scripts/ui/**, server/**/*.test.ts, server/exec/fixtures/**
+paths: server/**/*.test.ts, shared/**/*.test.ts, web/src/**/*.test.ts, scripts/unit-tests.mjs, scripts/lib/**
 ---
 
-# 测试
+# 测试：增删、降级和断言
+
+e2e 和假 CLI 在 [e2e.md](./e2e.md)，界面检查在 [ui-check.md](./ui-check.md)。
 
 ## 加测试前先查重，同一行为只断言一处
 
@@ -40,28 +42,8 @@ paths: scripts/e2e/**, scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mj
 - 起因：3aa0b22 被 415 拦；3ab9a8d、ded5239c 英文环境挂；`summary.test.ts` 先例又在 `cleanup.test.ts` 4 处、`schedules.test.ts` 8 处写死中文。
 - 防线：改断言后 `LANG=en_US.UTF-8` 跑该文件；全量同前缀。
 
-## 假 CLI 与 e2e 分片：场景写进分片，资源和合并走 harness
-
-- 规则：场景放 `scripts/e2e/NN-*.mjs`、每片调一次 `runShard()`；临时目录、端口、服务、看门狗在 `harness.mjs` 的 `setupBase()`，服务用 `onExit()` 登记，分片间不能有依赖。
-- 规则：合并分支用 `mergeTask()`（每次尝试前清、被挡住会重试），别手工 `rmSync` 假 CLI 写的 `<kind>-output.txt`；负向用例（期望 409）拿原始错误。加触发词前先 `grep "includes('" scripts/fake-cli/fake-cli.mjs` 查会包含它的旧词（`SLOW`、`FAIL` 匹配整段输入）。
-- 规则：改了交给 CLI 的方式（参数、文件、只发增量）同一提交改假 CLI 的读法和 e2e 断言；触发词不能依赖会被增量省掉的规则段落。
-- 起因：`BG_SLOW` 命中 `SLOW`（7a875fe）；角色改走 `--append-system-prompt-file` 后假 CLI 认不出评审，3 片红（fc1c744）。
-- 防线：`test:e2e`（看门狗）、`outputs.test.mjs`。
-
-## 跑 e2e / 单测前清掉继承的环境变量
-
-- 规则：别嵌套跑 `claude`；`ANTHROPIC_BASE_URL` 用 `env -u` 去掉；`AGENT_PANEL_TRAY`、`AGENT_PANEL_SUPERVISED` 会传下去，起服务验证时置空；`rules-check.mjs` 指定仓库用 `env GIT_DIR=… node …` 前置形式，测试自建仓库的 git 子进程要清掉 `GIT_*` 一类变量；WSL 里 `node_modules` 平台不匹配时重装。
-- 起因：`ANTHROPIC_BASE_URL` 混进断言；WSL 里 export 后 `git init` 写坏主仓库 `core.worktree`（`fatal: Invalid path '/mnt'`）。
-- 防线：`rules-check.mjs` 第 9 条；人工。
-
 ## 临时改坏代码验证失败后，还原别用 git checkout
 
 - 规则：验证测试会失败时可以临时去掉修复，还原别用 `git checkout -- <文件>` / `git restore <文件>`（会丢掉未提交改动）；先 `cp` 或 `git stash push <文件>`，验证完恢复，再用 `git diff --stat` 确认改动还在。
 - 起因：修 Pi 面板工具时临时去掉 `process.ts` 兜底，`git checkout --` 还原抹掉了整份修复。
 - 防线：人工（还原后看 `git diff --stat`）。
-
-## 等状态用 waitFor，不用固定 sleep 或进程存活窗口
-
-- 规则：用 `runShard` 的 `waitFor` 等状态和假 CLI 写的记录文件（状态位早于记录写入，读早了是空），一次性断言带 `label`；跨轮次等待的超时收敛成文件顶部常量（`WAIT_CLI_ROUND_MS = 60000`）。等对话空闲不能只看一阵没跑（子对话 `submit_merge` 会叫起父对话）；判节点并发用 `step.startedAt/endedAt`。否定式断言要临时去掉修复接线跑一遍。
-- 起因：原脚本 54 处固定 `sleep(800)`；「切到后台不回收」第一版用 `SLOW`，旧实现没有 waiter 也通过。
-- 防线：`test:e2e`；对照开关在 `docs/modules/scripts/README.md`。

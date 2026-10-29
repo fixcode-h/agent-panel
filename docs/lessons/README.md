@@ -39,6 +39,7 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
   写「CLI 才有的行为做成 CliSpec 字段，所有 CLI 按字段走」——下一个新 CLI 才用得上。
 - 每条不超过 6 行；每个分片不超过 6 KB（`scripts/rules-check.mjs` 会检查）。
 - 分片开头的 `paths` 写它管哪些文件（逗号分隔的 glob，`**` 跨目录）。新增分片时选「改这些文件的人一定要知道」的范围，别写 `**`。
+- 新的一条先找 `paths` 最窄、又能覆盖它的那个分片放；没有合适的就按功能模块新开一个，不往宽范围的分片里堆。
 
 ## 怎么让它不越积越多
 
@@ -53,30 +54,54 @@ node scripts/lessons.mjs --list             # 只列每条的标题，几百个�
 
 - **能写成检查就写成检查**，然后把分片里那条缩成一行指针（「防线」写检查名），或者直接删掉。
 - 只有所有改动都适用、又没法检查的才进 `AGENTS.md`。
-- 分片快到 6 KB 时合并同类项：几条讲的是同一个原则就合成一条，起因各留一个提交号。
+- **分片按功能模块拆**：一条规则只和某个模块有关（输入框、附件、后台命令、提问窗口……），就放进 `paths` 只覆盖那个模块的分片；`paths` 是整片目录（`web/src/**`、`server/exec/**`）的宽分片只放这片代码都适用的通用规则。
+- 分片过了 4 KB 就开始拆，别等到 6 KB 的上限：把只和某个模块有关的几条挪进新分片，新分片的 `paths` 要比原来的窄。只换文件名、`paths` 照抄不算拆——改同一个文件照样两份都读，一个字没省（`scripts/rules-check.mjs` 会拦两个分片的 `paths` 完全一样）。
+- 拆不动（剩下的几条都指向同一个文件）时再合并同类项：几条讲的是同一个原则就合成一条，起因各留一个提交号。
 - 规则对应的代码删了或重写了，这条一起删。
 
 ## 分片
 
-| 分片                                   | 管什么                                         |
-| -------------------------------------- | ---------------------------------------------- |
-| [cli.md](./cli.md)                     | CLI 定义、参数、模型和思考强度、写回 CLI 配置  |
-| [ui.md](./ui.md)                       | 界面、文案、样式                               |
-| [ui-check.md](./ui-check.md)           | 界面检查用例的写法和等待条件                   |
-| [composer.md](./composer.md)           | 输入框重画时机、Agent 选择位置                 |
-| [list-pane.md](./list-pane.md)         | 中间列表栏的头部按钮和标题                     |
-| [status-bar.md](./status-bar.md)       | 任务页输入框上方的状态栏（三行、+N）           |
-| [visual.md](./visual.md)               | 部件、底色、字重（重设计后的视觉规则）         |
-| [builtin.md](./builtin.md)             | 内置 Agent、工作流、Skill、提示词              |
-| [data.md](./data.md)                   | 数据结构、存储、升级兼容、出包                 |
-| [testing.md](./testing.md)             | 单测、端到端、假 CLI、界面检查                 |
-| [task-export.md](./task-export.md)     | 导出报告的时间口径、轮次结局和返工统计         |
-| [server.md](./server.md)               | 服务端接口、访问令牌                           |
-| [local-image.md](./local-image.md)     | 本机生图（ComfyUI 安装、启动）                 |
-| [worktree.md](./worktree.md)           | 独立工作目录、依赖隔离                         |
-| [state.md](./state.md)                 | 对话状态、父子对话同步和收尾、停止、跟随到底部 |
-| [design.md](./design.md)               | UI 设计 Agent 的截图、出图、引用和验收         |
-| [project-files.md](./project-files.md) | 面板往用户项目里临时写的配置（面板 MCP 条目）  |
-| [retry.md](./retry.md)                 | 报错后重试：在原来的子对话、子任务里接着做     |
-| [tooling.md](./tooling.md)             | AI 自己跑命令、等结果的方式                    |
-| [rpc-steer.md](./rpc-steer.md)         | 常驻协议的插话和这一轮结束的先后               |
+按名字排。拆分片、加分片时同步这张表。
+
+| 分片                                             | 管什么                           |
+| ------------------------------------------------ | -------------------------------- |
+| [alerts.md](./alerts.md)                         | 执行出错和没有响应               |
+| [asks.md](./asks.md)                             | 提问窗口                         |
+| [attachments.md](./attachments.md)               | 附件                             |
+| [background.md](./background.md)                 | 后台命令                         |
+| [builtin.md](./builtin.md)                       | 内置角色、工作流和 Skill         |
+| [child-idle-ask.md](./child-idle-ask.md)         | 子对话没有输出时自动询问         |
+| [child-wrapup.md](./child-wrapup.md)             | 子对话收尾和独立分支             |
+| [cli-process.md](./cli-process.md)               | 启动 CLI 进程和解析输出          |
+| [cli.md](./cli.md)                               | CLI 定义、模型和思考强度         |
+| [composer.md](./composer.md)                     | 对话输入框                       |
+| [data.md](./data.md)                             | 数据结构、存储、升级兼容和出包   |
+| [design.md](./design.md)                         | UI 设计 Agent 的验收             |
+| [e2e.md](./e2e.md)                               | 端到端测试和假 CLI               |
+| [execution.md](./execution.md)                   | 一轮执行怎么收尾                 |
+| [list-pane.md](./list-pane.md)                   | 中间列表栏                       |
+| [local-image.md](./local-image.md)               | 本机生图（ComfyUI 安装、启动）   |
+| [memory.md](./memory.md)                         | 对话数据的内存和落盘             |
+| [messages.md](./messages.md)                     | 对话里的消息和条目               |
+| [plan.md](./plan.md)                             | 执行计划                         |
+| [process.md](./process.md)                       | CLI 进程：停止、保活和回收       |
+| [project-files.md](./project-files.md)           | 面板往用户项目里临时写的文件     |
+| [prompts.md](./prompts.md)                       | 给 Agent 的提示词                |
+| [retry.md](./retry.md)                           | 报错后的重试                     |
+| [review.md](./review.md)                         | 收尾评审                         |
+| [rpc-steer.md](./rpc-steer.md)                   | 常驻协议的插话                   |
+| [server.md](./server.md)                         | 服务端接口和访问控制             |
+| [settings.md](./settings.md)                     | 项目设置                         |
+| [state.md](./state.md)                           | 对话状态和父子对话之间的交付     |
+| [status-bar.md](./status-bar.md)                 | 输入框上方的状态栏               |
+| [steering.md](./steering.md)                     | 插话和运行中发来的消息           |
+| [task-export.md](./task-export.md)               | 导出报告的口径                   |
+| [testing.md](./testing.md)                       | 测试：增删、降级和断言           |
+| [tooling.md](./tooling.md)                       | 面板工具通道（MCP）和 AI 的用法  |
+| [triage.md](./triage.md)                         | 父对话分诊和就地微改动           |
+| [ui-check-transient.md](./ui-check-transient.md) | 界面检查：会自己消失的元素       |
+| [ui-check.md](./ui-check.md)                     | 界面检查（scripts/ui-check.mjs） |
+| [ui.md](./ui.md)                                 | 界面通用：文案、命名和状态判定   |
+| [usage.md](./usage.md)                           | 用量和速度的统计口径             |
+| [visual.md](./visual.md)                         | 视觉：部件、底色和字重           |
+| [worktree.md](./worktree.md)                     | 独立工作目录（worktree）         |

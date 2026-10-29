@@ -76,6 +76,8 @@ test('添加内置模板：复制一份成自己的游戏工作流，依赖跟�
   assert.equal(wf.model, 'z-image-turbo')
   assert.ok(wf.assets.length > 0)
   assert.equal(wf.builtin, undefined)
+  // ComfyUI 页按来源分「我的 / 导入的」：模板商店加的算导入的
+  assert.equal(wf.origin, 'template')
   assert.equal(saved[0].id, wf.id)
 })
 

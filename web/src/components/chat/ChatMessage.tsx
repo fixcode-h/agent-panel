@@ -7,6 +7,7 @@ import { copyText as clipboardCopy } from '@/lib/copy-text'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
+import { useAiLook } from '@/lib/ai-look'
 import { getLang, t } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
@@ -173,6 +174,7 @@ export function UserMessage({
    */
   subject?: { label: string; hint?: string }
 }) {
+  const ai = useAiLook()
   if (subject)
     return (
       <div data-msg={anchorId} data-user="" className="group/msg overflow-hidden rounded-[0.625rem] border">
@@ -192,14 +194,21 @@ export function UserMessage({
     )
   return (
     // data-user：界面检查要区分用户的消息和 Agent 的回复（两者都有 data-msg）
-    <div data-msg={anchorId} data-user="" className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+    <div
+      data-msg={anchorId}
+      data-user=""
+      className={cn('group/msg ml-auto flex flex-col items-end gap-1.5', ai ? 'max-w-[80%]' : 'max-w-[85%]')}
+    >
       {(text || extra || !!attachments?.length) && (
         <div
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
               ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-              : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
+              : ai
+                ? // AI 分析窗口的追问气泡（设计稿 AiWindow）：浅一档的底、圆角 12、14px 字
+                  'rounded-xl bg-sel/70 px-3.5 py-2.5 text-[0.875rem] leading-relaxed'
+                : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
           <FoldBody>
