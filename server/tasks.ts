@@ -120,6 +120,7 @@ import {
   setPresenceIdleHandler,
   setPresenceUnreadKeeper,
   setViewer,
+  touchPresence,
 } from './presence.ts'
 import { settleReclaimed } from './exec/reclaim.ts'
 import { placedFiles, placeAttachments, relativeAttachName } from './attachments.ts'
@@ -5436,6 +5437,49 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
     return c.json(await prewarmChat(task))
+  })
+
+  /**
+   * 对话菜单「激活 Agent」：不发消息，先把这个对话的 CLI 用 --resume 拉起来停在等下一句上（和打开对话页的预热同一条路）。
+   * 从侧栏点的时候页面可能没开着、早过了宽限：先当成刚有人看过，不然 CLI 一停到等待就退出了。
+   * 不能提前启动的（没有会话、CLI 不支持停在等待上）原样返回，界面按返回的状态告诉用户
+   */
+  routes.post('/:id/agent/activate', async (c) => {
+    const id = c.req.param('id')
+    const reused = await reusedPrewarmEntry(id)
+    if (reused) return c.json(withJobs(reused))
+    const task = await store.get(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.archived) return bad(c, t('归档的对话不能激活，先取消归档'), 409)
+    touchPresence(id)
+    return c.json(withJobs(await prewarmChat(task)))
+  })
+
+  /**
+   * 对话菜单「关闭 Agent」：结束这个对话的 CLI 进程、释放资源，对话和会话都留着，下一条消息按 --resume 续接。
+   * 正在执行这一轮的不关（和归档一样）：那是「暂停」的事，关进程会把这一轮掐断。
+   * 名下子对话不跟着关：它们有自己的进程，只是父对话这边不再占着 CLI
+   */
+  routes.post('/:id/agent/close', async (c) => {
+    const id = c.req.param('id')
+    const e = live.get(id)
+    if (!e && !(await getMeta(id))) return bad(c, t('任务不存在'), 404)
+    if (e?.task.working) return bad(c, t('对话正在执行，先暂停这一轮再关闭 Agent'), 409)
+    if (e) {
+      if (!cancelWait(id)) stopTask(id, 'close')
+      await e.done?.catch(() => {})
+      // 计划没做完、落盘还写着执行中的，和页面宽限回收一样收口成已停止，界面不会一直转圈
+      if (!live.has(id)) await settleReclaimed(store, id, 'close')
+    }
+    // 执行位已经没了、进程登记还在（某条路径漏停、重启前留下的）：按登记结束，界面说关了就真的关了
+    if (!live.has(id))
+      await killTaskClis(id, killTree).catch((err) =>
+        log.warn('task', '关闭 Agent 时结束残留进程失败', { task: id, error: (err as Error).message }),
+      )
+    log.info('task', '用户关闭了对话的 Agent', { task: id })
+    const now = await current(id)
+    if (!now) return bad(c, t('任务不存在'), 404)
+    return c.json(withJobs(now))
   })
 
   // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发
