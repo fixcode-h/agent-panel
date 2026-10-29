@@ -7,7 +7,7 @@ import { Spinner } from './status-pill'
 /**
  * 页签条（照 Proma 的 TabBar）：直角、等宽，选中的页签不加底色，只在底部画一条 3px 指示条；
  * 没选中的是灰字，悬停有浅底；关闭按钮悬停才出现，选中的页签半透明常驻。
- * 页签平分整条宽度（右栏「项目文件 / 本对话改动」这种固定的两三个）时给 TabItem 传 fill。
+ * 页签要平分整条宽度时给 TabItem 传 fill；对话右栏「项目文件 / 本对话改动」用户要求固定宽度，不传。
  * variant="underline"：详情页、设置小节那种页内切换——没有条底色、页签按文字宽度排，选中是 2px 圆头强调色下划线
  */
 type TabVariant = 'bar' | 'underline'
