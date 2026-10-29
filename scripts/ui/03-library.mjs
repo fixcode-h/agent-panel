@@ -55,12 +55,39 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       await dlg.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
     }
   }
+  // 属性栏顶部除了当前对象，还有「流程说明」（编辑工作流说明）和「运行进度」两个页签；
+  // 底部工具条上选在哪个项目运行，「重新运行」只在这个项目里跑过时出现（运行进度同一份数据，两边要一致）
+  const inspector = p.locator('aside[aria-label="属性"]')
+  {
+    const tools = p.getByRole('toolbar', { name: '画布工具' })
+    if (!(await tools.getByRole('combobox', { name: '在哪个项目里运行' }).count()))
+      errors.push('工作流-工具条：没有选项目的下拉')
+    await inspector.getByRole('tab', { name: '流程说明' }).click()
+    if (
+      !(await inspector
+        .locator('textarea')
+        .first()
+        .inputValue()
+        .catch(() => ''))
+    )
+      errors.push('工作流-流程说明页签：没有显示工作流说明')
+    await inspector.getByRole('tab', { name: '运行进度' }).click()
+    const never = await inspector.getByText('还没有在', { exact: false }).count()
+    const rerun = await tools.getByRole('button', { name: '重新运行' }).count()
+    if (!never === !rerun) errors.push('工作流-运行进度：「重新运行」和运行进度对「跑没跑过」的判断不一致')
+    await check(p, '工作流-运行进度页签', ['运行进度'])
+  }
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
-  const inspector = p.locator('aside[aria-label="属性"]')
   // 属性栏顶部的页签写当前编辑的对象（照 Workflow 设计稿）
   if (!(await inspector.getByText('节点 · 处理并推荐').count()))
     errors.push('工作流-属性栏：页签上没有写「节点 · 名称」')
+  // 照设计稿：角色和 Agent 并排一行，验收、确认、重试排成一张开关列表
+  if (!(await inspector.getByLabel('执行的 Agent').count())) errors.push('工作流-属性栏：角色旁边没有 Agent')
+  if (
+    !(await inspector.getByRole('group', { name: '步骤选项' }).getByRole('switch', { name: '完成后等我确认' }).count())
+  )
+    errors.push('工作流-属性栏：步骤选项列表里没有「完成后等我确认」开关')
   const grip = p.locator('[role="separator"][aria-label="拖动调整属性栏的宽度"]')
   const width = async () => (await inspector.boundingBox())?.width ?? 0
   const before = await width().catch(() => 0)
@@ -755,4 +782,35 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('button', { name: '测试连接' }).click()
   await check(p, 'MCP编辑', ['连接成功', 'read_file'])
   await p.keyboard.press('Escape')
+  // 工作流「重新运行」放在最后：它会在演示项目里新建一个对话，放前面会挡住上面按标题找的那条工作流任务。
+  // 「Web 功能开发」在演示项目「商城前台」里跑过：运行进度列出节点，重新运行建一个新对话并打开，
+  // 回到工作流时工具条上有「运行中」，点它打开的就是这次执行
+  await p.goto(base + '#/workflows')
+  await p.getByText('Web 功能开发').first().click()
+  {
+    const tools = p.getByRole('toolbar', { name: '画布工具' })
+    const rerun = tools.getByRole('button', { name: '重新运行' })
+    await rerun.waitFor({ timeout: 10000 }).catch(() => errors.push('工作流-重新运行：跑过的工作流没有「重新运行」'))
+    await p.locator('aside[aria-label="属性"]').getByRole('tab', { name: '运行进度' }).click()
+    if (!(await p.getByRole('list', { name: '节点进度' }).getByText('分析需求、拆分任务').count()))
+      errors.push('工作流-运行进度：没有列出最近一次执行的节点')
+    if (await rerun.count()) {
+      await rerun.click()
+      await p
+        .locator('#follow-up')
+        .waitFor({ timeout: 20000 })
+        .catch(() => errors.push('工作流-重新运行：点了没有打开新建的对话'))
+      const opened = await p.evaluate(() => location.hash)
+      await p.goBack()
+      const pill = tools.getByRole('button', { name: /^运行中/ })
+      await pill.waitFor({ timeout: 10000 }).catch(() => errors.push('工作流-运行中：重新运行后工具条上没有「运行中」'))
+      await check(p, '工作流-运行中', ['运行中'])
+      if (await pill.count()) {
+        await pill.click()
+        await p.waitForFunction((h) => location.hash === h, opened, { timeout: 5000 }).catch(() => {})
+        if ((await p.evaluate(() => location.hash)) !== opened)
+          errors.push('工作流-运行中：点「运行中」打开的不是正在跑的那次执行')
+      }
+    }
+  }
 })

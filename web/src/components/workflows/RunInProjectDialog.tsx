@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play } from 'lucide-react'
 import { t } from '@shared/i18n'
+import type { Task } from '@shared/schema'
 import { taskSummary } from '@shared/task'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -12,7 +13,7 @@ import { Field, Select, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 
 /** 上次新建任务用的项目（和输入框的项目选择共用一个记录），默认选它 */
-function lastProject() {
+export function lastProject() {
   try {
     return localStorage.getItem('last-project') ?? ''
   } catch {
@@ -31,6 +32,7 @@ export function RunInProjectDialog({
   workflow,
   notReady,
   prepare,
+  projectId: preferred,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -38,6 +40,8 @@ export function RunInProjectDialog({
   /** 就绪检查没通过时的提示（照样可以运行，出错会显示在任务里） */
   notReady?: string
   prepare?: () => Promise<void>
+  /** 打开时先选的项目（编辑页底部工具条上选好的）；不传时按上次用的项目 */
+  projectId?: string
 }) {
   const { projects, upsertTask } = useData()
   const { go } = useNav()
@@ -48,9 +52,8 @@ export function RunInProjectDialog({
   useEffect(() => {
     if (!open) return
     const last = lastProject()
-    setProjectId((cur) =>
-      projects.some((p) => p.id === cur) ? cur : projects.some((p) => p.id === last) ? last : (projects[0]?.id ?? ''),
-    )
+    const has = (id?: string) => !!id && projects.some((p) => p.id === id)
+    setProjectId((cur) => (has(preferred) ? preferred! : has(cur) ? cur : has(last) ? last : (projects[0]?.id ?? '')))
     // 每次打开按当前的项目列表选一次默认项目
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -139,4 +142,48 @@ export function RunInProjectDialog({
       </Field>
     </Modal>
   )
+}
+
+/**
+ * 「重新运行」：照上次那次执行的参数（任务描述、附件、提问开关、独立分支、执行上限）在同一个项目里再新建一次，
+ * 建好直接跳到任务页。和「在项目里运行」走同一个接口；任务列表里只有摘要（描述截到 500 字），先取一次完整任务
+ */
+export function useRerun(workflowId: string, prepare?: () => Promise<void>) {
+  const { upsertTask } = useData()
+  const { go } = useNav()
+  const [busy, setBusy] = useState(false)
+  const rerun = async (last: Task) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await prepare?.()
+      const full = await api.taskLite(last.id)
+      const first = full.messages.find((m) => m.role === 'user')
+      if (!first?.text.trim()) throw new Error(t('上次运行没有任务描述，无法重新运行'))
+      const created = await api.createTask({
+        projectId: full.projectId,
+        mode: 'workflow',
+        workflowId,
+        agentId: '',
+        cli: '',
+        model: '',
+        effort: '',
+        params: {},
+        prompt: first.text,
+        attachments: first.attachments ?? [],
+        askUser: full.askUser,
+        childAskUser: full.childAskUser,
+        ...(full.worktree ? { isolate: true } : {}),
+        ...(full.budgetTokens ? { budgetTokens: full.budgetTokens } : {}),
+        ...(full.budgetMinutes ? { budgetMinutes: full.budgetMinutes } : {}),
+      })
+      upsertTask(taskSummary(created))
+      go({ page: 'projects', id: created.projectId, sub: created.id })
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { rerun, busy }
 }
