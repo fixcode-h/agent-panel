@@ -112,6 +112,7 @@ export function newTask(
     // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
     childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
+    ...(input.modelDesign && { modelDesign: true }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,

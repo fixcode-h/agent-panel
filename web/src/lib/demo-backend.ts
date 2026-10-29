@@ -2048,6 +2048,8 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     }
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
+  // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
+  if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))

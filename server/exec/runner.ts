@@ -77,6 +77,8 @@ import { PROMPT_LANG_ENV, ensurePromptLangMod } from './prompt-lang-mod.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
+import { openBlenderSession } from '../blender-mcp.ts'
+import { MODEL_HINT } from '../../shared/blender.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
 import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
@@ -2047,7 +2049,11 @@ async function runAgent(
   // 时长上限有两个来源：设置里的单步时限、计划带的时长上限。取小的那个，谁先到都停；
   // 停的时候要说清是哪个上限到的（见 effectiveTimeoutMinutes）
   const cap = effectiveTimeoutMinutes(settings.stepTimeoutMinutes, task.budgetMinutes ?? 0)
+  // 模型对话（ADR 0025）：挂上 Blender 工具，新会话的提示词里说明怎么用；令牌只在这一轮有效
+  const blender = task.modelDesign && def.mcp && !op ? openBlenderSession(task.id) : undefined
+  if (blender && !resume) input = `${input}\n\n${MODEL_HINT}`
   const r = await invokeCli({
+    mcp: blender ? [{ name: 'blender', url: blender.url }] : undefined,
     cliId,
     command: cs.command,
     build,
@@ -2110,6 +2116,7 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    blender?.close()
     clearInterval(stallTimer)
     stalled.delete(task.id)
     clearTimeout(redirectTimer)

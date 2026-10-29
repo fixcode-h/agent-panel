@@ -131,6 +131,8 @@ await build({
           ]),
       ),
     ),
+    // 模型设计的 Blender 桥接脚本（server/blender/bridge.py）：运行时写进数据目录再交给 Blender
+    __BLENDER_BRIDGE__: JSON.stringify(readFileSync(path.join(root, 'server/blender/bridge.py'), 'utf8')),
     __EXTENSION_FILES__: JSON.stringify(
       Object.fromEntries(
         readdirSync(path.join(root, 'extension')).map((f) => [

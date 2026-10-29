@@ -268,6 +268,8 @@ export const api = {
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
+  /** 模型设计用的 Blender 找到没有（ADR 0025） */
+  blenderStatus: () => request<{ path: string; version: string; error: string }>('/blender/status'),
   localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),

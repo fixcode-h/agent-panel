@@ -4,7 +4,7 @@
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
-import { runShard } from './harness.mjs'
+import { runShard, stickyLeakProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -14,6 +14,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
   await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）', '子对话没有输出时自动询问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
+  // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
+  await p.setViewportSize({ width: 1440, height: 560 })
+  errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 「子对话默认也提问」：和「新会话默认开启提问」同一组，默认开着；改了之后新建的父对话右键菜单跟着变
   {
     const childAsk = p.getByRole('switch', { name: '子对话默认也提问' })

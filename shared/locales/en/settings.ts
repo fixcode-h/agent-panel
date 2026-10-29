@@ -1546,4 +1546,10 @@ export const EN_SETTINGS: Record<string, string> = {
   等你回复: 'Waiting for you',
   计划中: 'Planned',
   关闭页签: 'Close tab',
+  '模型对话里 Agent 用 Blender 建模，网页右侧实时预览。面板在后台起一个 Blender，不弹窗口。':
+    'In model conversations the Agent builds in Blender and the page previews it live on the right. The panel runs Blender in the background without a window.',
+  'Blender 路径': 'Blender path',
+  '留空时自动在 PATH 和常见安装位置里找': 'Leave empty to search PATH and the usual install locations',
+  检测结果: 'Detection',
+  建模: 'Modeling',
 }

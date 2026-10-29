@@ -14,7 +14,7 @@ process.on('exit', () => rmSync(dataDir, { recursive: true, force: true }))
 // 这里断言的是接口返回的 t() 文案：显式固定语言，不跟着 LANG 走
 setLang('zh')
 
-const { UPLOADS_DIR, uploadsRawApi } = await import('./uploads.ts')
+const { UPLOADS_DIR, uploadFileOf, uploadsRawApi } = await import('./uploads.ts')
 
 const app = uploadsRawApi()
 const raw = (p: string) => app.request(`/?path=${encodeURIComponent(p)}`)
@@ -65,6 +65,12 @@ test('附件目录以外的文件不能借这个接口读', async () => {
   const text = path.join(dataDir, 'notes.txt')
   writeFileSync(text, 'secret')
   assert.equal((await raw(text)).status, 400, '不是图片的不能从 raw 读')
+  // 对话的文件接口按 uploadFileOf 放行附件：上传目录里的绝对路径认（正斜杠写法也认），别处和越界的不认
+  assert.equal(uploadFileOf(png), png)
+  assert.equal(uploadFileOf(png.split(path.sep).join('/')), png)
+  assert.equal(uploadFileOf(outside), '')
+  assert.equal(uploadFileOf(path.join(dir, '..', '..', 'secret.png')), '')
+  assert.equal(uploadFileOf('attachments/截图-071747.png'), '')
 })
 
 test('点文件卡片看内容：相对路径也能找到，找不到时说附件已经不在了', async () => {

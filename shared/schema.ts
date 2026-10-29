@@ -1046,6 +1046,8 @@ export const NewTaskInput = z.object({
   childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
+  /** 模型设计对话：挂上 Blender 工具，右栏多一个 3D 预览（见 docs/adr/0025-model-design-blender.md） */
+  modelDesign: z.boolean().optional(),
   /**
    * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
    * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
@@ -1891,6 +1893,8 @@ export const TaskData = z.object({
   childAskUser: z.boolean().default(true),
   /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
   analysis: AnalysisKind.optional(),
+  /** 模型设计对话：后台有一个 Blender，Agent 用 blender_python 工具建模，网页右栏实时预览（ADR 0025） */
+  modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
@@ -2462,6 +2466,8 @@ export const Settings = z.object({
       concurrency: 3,
       local: { mirror: false, port: 8188, url: '' },
     }),
+  /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
+  blender: z.object({ path: z.string().trim().default('') }).prefault({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
   modelCatalog: z
     .object({

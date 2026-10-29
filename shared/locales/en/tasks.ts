@@ -338,7 +338,10 @@ export const EN_TASKS: Record<string, string> = {
   '直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。':
     'Chats have no fixed steps. When the Agent writes a to-do list or plan, it shows up here.',
   上下文: 'Context',
-  '已使用 {n}%': '{n}% used',
+  已用: 'Used',
+  剩余: 'Left',
+  窗口: 'Window',
+  上下文已用: 'of context used',
   默认模型: 'Default model',
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',

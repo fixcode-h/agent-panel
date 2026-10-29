@@ -26,6 +26,7 @@ import {
   Keyboard,
   Search,
   Component,
+  Box,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -55,6 +56,7 @@ import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
 import { UsageSection } from '@/components/usage/UsageSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
+import { BlenderSection } from '@/components/settings/BlenderSection'
 import { TagsSection } from '@/components/settings/TagsSection'
 import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { RemoteSection } from '@/components/settings/RemoteSection'
@@ -117,6 +119,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'web-search', label: t('联网搜索'), icon: Search, group: t('连接') },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
+  { id: 'blender', label: 'Blender', icon: Box, group: t('建模') },
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
   { id: 'usage', label: t('用量统计'), icon: Gauge, group: t('系统') },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
@@ -212,6 +215,7 @@ function SettingsBody({
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
+  const [blender, setBlender] = useState(initial.blender)
   // 用量统计的计价模型（存在设置里，跟着自动保存）
   const [pricingModel, setPricingModel] = useState(initial.usagePricingModel)
   const catalogInfo = useModelCatalog()
@@ -360,6 +364,7 @@ function SettingsBody({
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
     modelCatalog,
+    blender: { path: blender.path.trim() },
     usagePricingModel: pricingModel,
   }
   const save = useAutosave(
@@ -413,8 +418,10 @@ function SettingsBody({
         aria-label={t('设置分类')}
         className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0 md:px-2.5 md:py-3"
       >
-        {/* 左栏比弹窗高时要滚动，标题常驻在顶部：滚到下面的分类（例如 Agent）时还认得出这是设置 */}
-        <span className="sticky top-0 z-10 hidden bg-rail px-2.5 pt-1 pb-4 font-serif text-[1.25rem] font-semibold tracking-tight md:block">
+        {/* 左栏比弹窗高时要滚动，标题常驻在顶部：滚到下面的分类（例如 Agent）时还认得出这是设置。
+            左栏有 py-3，吸顶按内边距算会在标题上方留 12px 的缝，滚过去的分类从缝里露出来：
+            用 -top-3 贴到滚动区顶边，-mt-3 / pt-4 抵掉内边距，没滚动时位置不变 */}
+        <span className="sticky top-0 z-10 hidden bg-rail px-2.5 pt-1 pb-4 md:-top-3 md:-mt-3 md:pt-4 font-serif text-[1.25rem] font-semibold tracking-tight md:block">
           {t('设置')}
         </span>
         {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
@@ -1202,6 +1209,9 @@ function SettingsBody({
 
           {cur.id === 'local-image' && (
             <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
+          )}
+          {cur.id === 'blender' && (
+            <BlenderSection path={blender.path} onPath={(path) => setBlender({ ...blender, path })} />
           )}
           {cur.id === 'data' && <DataSection />}
           {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}

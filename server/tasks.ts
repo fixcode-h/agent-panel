@@ -176,7 +176,7 @@ import {
 } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf, uploadFileOf } from './uploads.ts'
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
@@ -5710,17 +5710,31 @@ export function tasksApi(deps: {
     return inTaskDir(c, async (dir) => c.json(name ? await searchNameInDir(dir, q) : await searchInDir(dir, q)))
   })
 
-  // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
+  // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件和上传的附件
   routes.get('/:id/file', async (c) => {
     const want = (c.req.query('path') ?? '').trim()
     if (!want) return bad(c, t('缺少文件路径'))
+    const up = uploadFileOf(want)
+    if (up) {
+      const dir = path.dirname(up)
+      return c.json({ ...(await readInDir(dir, path.basename(up))), dir })
+    }
     return inTaskDir(c, async (dir) => c.json({ ...(await readInDir(dir, want)), dir }))
   })
 
-  // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件
+  // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件和上传的附件
   routes.get('/:id/file/raw', async (c) => {
     const want = (c.req.query('path') ?? '').trim()
     if (!want) return bad(c, t('缺少文件路径'))
+    const up = uploadFileOf(want)
+    if (up) {
+      try {
+        const { type, buf } = await rawInDir(path.dirname(up), path.basename(up))
+        return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+      } catch (e) {
+        return bad(c, (e as Error).message, 404)
+      }
+    }
     return inTaskDir(c, async (dir) => {
       const { type, buf } = await rawInDir(dir, want)
       return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })

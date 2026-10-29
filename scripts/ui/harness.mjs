@@ -284,3 +284,40 @@ export async function dialogBottomSpaceProblems(p, label) {
   if (info.gap < expected - 0.5) problems.push(`${label}：最后一块距底部操作栏 ${info.gap}px，应至少 ${expected}px`)
   return problems
 }
+
+/**
+ * 吸顶元素上方漏出背后内容：sticky 的 top 是相对滚动区的内边距算的，滚动区有 padding-top 时，
+ * 吸住的标题和滚动区顶边之间会留一条缝，滚过去的列表从缝里露出来（设置左栏标题上方露出「快捷键」）。
+ * 把页面上每个能滚的区域滚到底，凡是吸住的元素离滚动区顶边还有空隙就报出来；查完滚回原位
+ */
+export async function stickyLeakProblems(p, label) {
+  const leaks = await p.evaluate(() => {
+    const out = []
+    const scrollers = [...document.querySelectorAll('*')].filter((el) => {
+      const s = getComputedStyle(el)
+      return ['auto', 'scroll'].includes(s.overflowY) && el.scrollHeight > el.clientHeight + 1
+    })
+    for (const sc of scrollers) {
+      const before = sc.scrollTop
+      sc.scrollTop = sc.scrollHeight
+      const top = sc.getBoundingClientRect().top + sc.clientTop
+      for (const el of sc.querySelectorAll('*')) {
+        const s = getComputedStyle(el)
+        if (s.position !== 'sticky' || s.top === 'auto' || !el.getClientRects().length) continue
+        // 只看以这个滚动区为准的吸顶元素（中间还隔着别的滚动区的不算）
+        let up = el.parentElement
+        while (up && up !== sc && !['auto', 'scroll', 'hidden'].includes(getComputedStyle(up).overflowY))
+          up = up.parentElement
+        if (up !== sc) continue
+        const gap = el.getBoundingClientRect().top - top
+        const stuckAt = parseFloat(getComputedStyle(sc).paddingTop) + parseFloat(s.top)
+        // 正吸着（位置就在吸附线上）而吸附线不在顶边：缝里会露出滚过去的内容
+        if (sc.scrollTop > 0 && Math.abs(gap - stuckAt) < 1 && gap > 0.5)
+          out.push(`「${(el.textContent ?? '').trim().slice(0, 20)}」上方漏出 ${Math.round(gap)}px`)
+      }
+      sc.scrollTop = before
+    }
+    return out
+  })
+  return leaks.map((l) => `${label}：吸顶元素${l}，背后的内容会从缝里露出来`)
+}

@@ -162,81 +162,141 @@ function contextLines(
     }
     return rows
   }
-  return Object.entries(task.usage.agents).map(([id, u]) => {
-    const a = byId.get(id)
-    return {
+  // 对话只看当前在答话的那个 Agent：换过 Agent 的旧记录不再列出来，免得一眼看不出现在用了多少
+  const entries = Object.entries(task.usage.agents)
+  const lastId = [...task.messages].reverse().find((m) => m.agentId && task.usage.agents[m.agentId])?.agentId
+  const current = entries.find(([id]) => id === lastId) ?? entries.at(-1)
+  if (!current) return []
+  const [id, u] = current
+  const a = byId.get(id)
+  return [
+    {
       key: id,
       name: a?.name ?? t('已删除的角色'),
       icon: a?.icon,
       cli: a?.cli,
       u,
       live: u,
-      // 对话按消息的 Agent 归属：一个对话里换过 Agent 时，各自只看自己的压缩
       compact: lastCompaction(task.messages, (m) => m.agentId === id),
-    }
-  })
+    },
+  ]
 }
 
-/** 上下文占用：上面显示占用最高的那个，点开列出全部 */
+/** 上下文占用：圆环显示占用最高的那个，点开是它（对话里就是当前 Agent）的明细；工作流按节点一行一行列 */
 function ContextChip({ lines }: { lines: ContextLine[] }) {
   const top = [...lines].sort((a, b) => b.u.context / b.u.window - a.u.context / a.u.window)[0]
   const p = Math.min(100, (top.u.context / top.u.window) * 100)
   return (
     <Popover>
-      {/* 只画空心圆环和百分比（照 Claude Code），具体 Token 数和每个角色的占用在点开的浮层里 */}
+      {/* 只画空心圆环和百分比（照 Claude Code），具体 Token 数在点开的浮层里 */}
       <PopoverTrigger className={META_CHIP} title={t('上下文占用')} aria-label={t('上下文')}>
         <ContextRing percent={p} label={t('上下文已用 {n}%', { n: Math.round(p) })} />
       </PopoverTrigger>
-      <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
-        <ul className="flex flex-col gap-3 p-2.5">
-          {lines.map((l) => (
-            <ContextRow key={l.key} line={l} />
-          ))}
-        </ul>
+      <PopoverContent className="w-[min(340px,calc(100vw-24px))]">
+        {lines.length === 1 ? (
+          <ContextCard line={lines[0]} />
+        ) : (
+          <ul className="flex flex-col gap-1 p-1.5">
+            {lines.map((l) => (
+              <ContextRow key={l.key} line={l} />
+            ))}
+          </ul>
+        )}
       </PopoverContent>
     </Popover>
   )
 }
 
-/** 一个 Agent（或节点）的上下文占用；live 是它自己的用量记录，速度只显示正在输出的 */
+const pctOf = (u: { context: number; window: number }) => Math.min(100, (u.context / u.window) * 100)
+
+/** 占用条：细条、不描边，超过八成换警示色 */
+function ContextBar({ p }: { p: number }) {
+  return (
+    <div className="h-1 overflow-hidden rounded-full bg-field">
+      <span
+        className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
+        style={{ width: `${Math.max(p, 1)}%` }}
+      />
+    </div>
+  )
+}
+
+/** 当前对话的上下文：大号百分比做主信息，用量、剩余、模型、速度、压缩按主次往下排 */
+function ContextCard({ line }: { line: ContextLine }) {
+  const { name, icon, cli, u, live } = line
+  const p = pctOf(u)
+  const tps = live?.tps ?? 0
+  const compact = line.compact ? compactionText(line.compact) : ''
+  const stats: [string, string][] = [
+    [t('已用'), fmtTokens(u.context)],
+    [t('剩余'), fmtTokens(Math.max(0, u.window - u.context))],
+    [t('窗口'), fmtTokens(u.window)],
+  ]
+  return (
+    <div className="flex flex-col gap-3 p-3">
+      <div className="flex items-center gap-2">
+        {icon && <AgentAvatar icon={icon} cli={cli ?? ''} size="xs" />}
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium text-fg" title={name}>
+          {name}
+        </span>
+        {live && (
+          <span className={cn('shrink-0 text-xs', tps > 0 ? 'text-accent' : 'text-subtle')} title={t('实时输出速度')}>
+            {tps > 0 ? `${tps.toFixed(1)} token/s` : t('空闲')}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className={cn('text-2xl font-semibold tabular-nums', p > 80 ? 'text-warning' : 'text-fg')}>
+            {p < 10 ? p.toFixed(1) : Math.round(p)}%
+          </span>
+          <span className="text-xs text-subtle">{t('上下文已用')}</span>
+        </div>
+        <ContextBar p={p} />
+      </div>
+      <dl className="grid grid-cols-3 gap-2">
+        {stats.map(([k, v]) => (
+          <div key={k} className="flex flex-col gap-0.5 rounded-md bg-field/60 px-2 py-1.5">
+            <dt className="text-[0.6875rem] text-subtle">{k}</dt>
+            <dd className="text-[0.8125rem] font-medium text-fg tabular-nums">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="flex flex-col gap-1 text-xs">
+        <span className="truncate text-muted" title={u.model}>
+          {u.model || t('默认模型')}
+        </span>
+        {compact && (
+          <span className="truncate text-subtle" title={compact}>
+            {compact}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** 工作流里一个节点的上下文：一行名字和用量，下面一根细条 */
 function ContextRow({ line }: { line: ContextLine }) {
   const { name, icon, cli, u, live } = line
-  const p = Math.min(100, (u.context / u.window) * 100)
+  const p = pctOf(u)
   const tps = live?.tps ?? 0
   const compact = line.compact ? compactionText(line.compact) : ''
   return (
-    <li className="flex flex-col gap-1.5">
+    <li className="flex flex-col gap-1.5 rounded-md px-1.5 py-1.5">
       <div className="flex items-center gap-2 text-xs">
         {icon && <AgentAvatar icon={icon} cli={cli ?? ''} size="xs" />}
-        <span className="min-w-0 flex-1 truncate text-fg" title={name}>
+        <span className="min-w-0 flex-1 truncate font-medium text-fg" title={name}>
           {name ?? t('已删除的角色')}
         </span>
-        <span className="font-mono text-subtle">
-          {fmtTokens(u.context)} / {fmtTokens(u.window)}
-        </span>
+        {tps > 0 && <span className="text-accent">{tps.toFixed(1)} token/s</span>}
+        <span className="text-muted tabular-nums">{p < 10 ? p.toFixed(1) : Math.round(p)}%</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-field">
-        <span
-          className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-          style={{ width: `${Math.max(p, 1)}%` }}
-        />
-      </div>
-      <span className="flex flex-wrap gap-x-1.5 font-mono text-[0.6875rem] text-subtle">
-        <span>
-          {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
-        </span>
-        {live && (
-          <span className={cn(tps > 0 && 'text-accent')} title={t('实时输出速度')}>
-            · {tps > 0 ? `${tps.toFixed(1)} token/s` : t('空闲')}
-          </span>
-        )}
+      <ContextBar p={p} />
+      <span className="truncate text-[0.6875rem] text-subtle" title={compact || undefined}>
+        {fmtTokens(u.context)} / {fmtTokens(u.window)} · {u.model || t('默认模型')}
+        {compact && ` · ${compact}`}
       </span>
-      {/* 没有压缩过就不显示这一行；窄卡片里放不下时截断，悬停看全文 */}
-      {compact && (
-        <span className="truncate font-mono text-[0.6875rem] text-subtle" title={compact}>
-          {compact}
-        </span>
-      )}
     </li>
   )
 }

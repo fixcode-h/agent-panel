@@ -43,6 +43,8 @@ import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
+import { blenderMcpApi } from './blender-mcp.ts'
+import { blenderApi } from './blender.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { webSearchApi } from './web-search.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
@@ -925,6 +927,8 @@ app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
+app.route('/mcp', blenderMcpApi())
+app.route('/blender', blenderApi())
 app.route('/mcp', askMcpApi())
 // 联网搜索代理：CLI 里的 web_search / web_fetch 打到面板，地址里带本轮 CLI 的随机地址
 app.route('/web-search', webSearchApi())
