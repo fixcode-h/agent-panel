@@ -97,7 +97,7 @@ test('这一轮收不下、已经撤掉的询问不算在等回复', () => {
 })
 
 test('这一轮说完了、计划没做完也没在等别的：停在等下一句也要问，问够了不再问', () => {
-  const plan = (steps: { status: string; waits?: { state: string }[] }[]) =>
+  const plan = (steps: { status: string; waits?: { state: string }[]; wrapUp?: string }[]) =>
     ({
       working: false,
       steps: [],
@@ -119,6 +119,8 @@ test('这一轮说完了、计划没做完也没在等别的：停在等下一�
     false,
   )
   assert.equal(planStalled(plan([{ status: 'done' }])), false)
+  // 只剩面板加的「合回」那一步：归「催它 submit_merge」管
+  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'pending', wrapUp: 'merge' }])), false)
   assert.equal(planStalled({ ...stalled, working: true }), false)
 
   const lastActivityAt = at(now - 3000)
