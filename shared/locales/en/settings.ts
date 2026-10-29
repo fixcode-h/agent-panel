@@ -1578,6 +1578,8 @@ export const EN_SETTINGS: Record<string, string> = {
   已上传: 'uploaded',
   '改，规则参考': ' and apply the rules in ',
   '，用': ', using ',
+  '这里再改改，和': ' needs another pass, matching ',
+  '一样，参考': ', see ',
   空状态: 'Empty state',
   等你回复: 'Waiting for you',
   计划中: 'Planned',

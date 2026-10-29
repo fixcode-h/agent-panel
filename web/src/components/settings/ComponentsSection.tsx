@@ -37,6 +37,7 @@ import { ContextRing } from '@/components/ui/context-ring'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { FlowStrip } from '@/components/ui/flow-strip'
 import { InlineChip } from '@/components/ui/inline-chip'
+import { MessageChip } from '@/components/chat/AttachmentView'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { ReplyHeader } from '@/components/ui/reply-header'
@@ -311,17 +312,34 @@ export function ComponentsSection() {
         <Specimen name="InlineChip">
           <p className="text-[0.875rem] leading-7">
             {t('按这张')}
-            <InlineChip icon={<ImageIcon className="h-3.5 w-3.5" />} label="草图.png" status={t('已上传')} />
+            <InlineChip
+              tone="image"
+              icon={<ImageIcon className="h-3.5 w-3.5" />}
+              label="草图.png"
+              status={t('已上传')}
+            />
             {t('改，规则参考')}
             <InlineChip
+              tone="file"
               icon={<FileText className="h-3.5 w-3.5" />}
               label="docs/lessons/ui.md"
               status={t('引用路径')}
               mono
             />
             {t('，用')}
-            <InlineChip icon={<Sparkles className="h-3.5 w-3.5 text-peer" />} label="code-review" status="Skill" />
+            <InlineChip tone="skill" icon={<Sparkles className="h-3.5 w-3.5" />} label="code-review" status="Skill" />
           </p>
+        </Specimen>
+        <Specimen name="MessageChip">
+          {/* 用户气泡里的卡片：气泡本身是 bg-sel，卡片要靠自己的颜色从气泡里跳出来 */}
+          <div className="rounded-2xl bg-sel px-4 py-2.5 text-[0.9375rem] leading-relaxed">
+            <MessageChip kind="quote" name="关于「截图」这一段" />
+            {t('这里再改改，和')}
+            <MessageChip kind="image" name="截图-081218.png" />
+            {t('一样，参考')}
+            <MessageChip kind="file" name="设计稿.pdf" />
+            <MessageChip kind="image" name="旧图.png" missing />
+          </div>
         </Specimen>
         <Specimen name="FlowStrip">
           {/* 工作流节点条：完成绿、运行中强调、没开始灰，节点之间一小段横线 */}
