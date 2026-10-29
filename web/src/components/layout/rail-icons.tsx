@@ -116,3 +116,14 @@ export const HomeIcon = icon(
     <path d="M10 20.5v-4.25a2 2 0 0 1 4 0v4.25" />
   </>,
 )
+
+/** ComfyUI 工作流：上面两个节点汇到下面一个（照设计稿 ComfyUI 画板） */
+export const ComfyIcon = icon(
+  <rect x="8.5" y="14" width="7" height="6.5" rx="2.25" />,
+  <>
+    <rect x="2.5" y="3.5" width="7" height="6.5" rx="2.25" />
+    <rect x="14.5" y="3.5" width="7" height="6.5" rx="2.25" />
+    <rect x="8.5" y="14" width="7" height="6.5" rx="2.25" />
+    <path d="M6 10v1.5a2.5 2.5 0 0 0 2.5 2.5M18 10v1.5a2.5 2.5 0 0 1-2.5 2.5" />
+  </>,
+)
