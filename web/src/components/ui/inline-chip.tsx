@@ -1,12 +1,16 @@
 import type { ReactNode } from 'react'
+import type { ChipKind } from '@shared/composer'
 import { cn } from '@/lib/utils'
+import { CHIP_TONE } from './chip-tone'
 
 /**
  * 插在一行文字里的引用：前面缩略图或图标，中间名字，后面一小段状态（引用路径 / 已上传 / Skill / 命令）。
- * 高度固定 1.5rem、上下各留 0.125rem，所在的行把行高设成 1.75rem（`leading-7`）时和文字居中齐平
+ * 高度固定 1.5rem、上下各留 0.125rem，所在的行把行高设成 1.75rem（`leading-7`）时和文字居中齐平。
+ * 按 tone 着色（和输入框、消息里的卡片同一套 CHIP_TONE），在文字里一眼能看出是引用
  */
 export function InlineChip({
   icon,
+  tone = 'file',
   label,
   status,
   mono,
@@ -15,6 +19,8 @@ export function InlineChip({
   className,
 }: {
   icon?: ReactNode
+  /** 按哪类卡片着色：图片、文件 / 路径、Skill / 命令、引用 */
+  tone?: ChipKind
   label: ReactNode
   status?: ReactNode
   /** 路径、命令用等宽字 */
@@ -23,16 +29,18 @@ export function InlineChip({
   title?: string
   className?: string
 }) {
+  const c = CHIP_TONE[tone]
   const cls = cn(
-    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-md bg-sel/70 px-1.5 align-top text-[0.75rem] leading-none whitespace-nowrap',
-    onClick && 'cursor-pointer transition-colors hover:bg-sel',
+    'mx-0.5 my-0.5 inline-flex h-6 max-w-full items-center gap-1.5 rounded-md px-1.5 align-top text-[0.75rem] leading-none whitespace-nowrap ring-1 ring-inset',
+    c.box,
+    onClick && cn('cursor-pointer transition-colors', c.hover),
     className,
   )
   const body = (
     <>
-      {icon && <span className="flex shrink-0 items-center text-subtle">{icon}</span>}
+      {icon && <span className={cn('flex shrink-0 items-center', c.icon)}>{icon}</span>}
       <span className={cn('min-w-0 truncate', mono && 'font-mono text-[0.75rem]')}>{label}</span>
-      {status && <span className="shrink-0 text-[0.6875rem] text-subtle">{status}</span>}
+      {status && <span className={cn('shrink-0 text-[0.6875rem]', c.status)}>{status}</span>}
     </>
   )
   return onClick ? (

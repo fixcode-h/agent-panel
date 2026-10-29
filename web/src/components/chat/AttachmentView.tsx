@@ -8,6 +8,7 @@ import { attachOf, segments, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { CHIP_SHAPE, CHIP_TONE } from '@/components/ui/chip-tone'
 import { quoteLabel, quoteText } from '@/lib/quote'
 import { shownImages } from '@/lib/attachment-image'
 import { IconButton } from '@/components/ui/icon-button'
@@ -16,13 +17,6 @@ import { Lightbox, type LightboxImage } from '@/components/ui/lightbox'
 import { FileDialog } from '@/components/tasks/FileDialog'
 import { Markdown } from '@/components/tasks/Markdown'
 import { attachmentUrl, isImage } from './Attachments'
-
-/**
- * 行内卡片的样子：输入框（RichInput 用 DOM 画）和消息里（这里用 React 画）用同一套，发出去前后看起来一样。
- * 和 InlineChip 一样靠浅底和文字分开，不描边
- */
-export const CHIP_CLASS =
-  'mx-0.5 inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md bg-sel/70 px-1.5 align-middle text-[0.8125rem] leading-[1.7] text-fg'
 
 /** 点开一张卡片要看的东西 */
 export type ViewTarget =
@@ -167,6 +161,8 @@ export function MessageChip({
         ? attachment.path
         : name
   const Icon = missing ? ImageOff : kind === 'quote' ? TextQuote : kind === 'image' ? ImageIcon : FileIcon
+  // 样子和输入框里的卡片一样（RichInput 的 chipNode 也用 CHIP_TONE），发出去前后看起来是同一张
+  const tone = CHIP_TONE[missing ? 'missing' : kind]
   return (
     <button
       type="button"
@@ -177,7 +173,12 @@ export function MessageChip({
       data-missing={missing ? 'true' : undefined}
       onClick={onOpen}
       disabled={!onOpen}
-      className={cn(CHIP_CLASS, 'cursor-pointer text-left transition-colors hover:bg-sel disabled:cursor-default')}
+      className={cn(
+        CHIP_SHAPE,
+        tone.box,
+        tone.hover,
+        'cursor-pointer text-left transition-colors disabled:cursor-default',
+      )}
     >
       {src ? (
         // 一屏之外的消息图片推到滚到时再取（首屏不再一次拉十几张）
@@ -189,7 +190,7 @@ export function MessageChip({
           className="h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover"
         />
       ) : (
-        <Icon className="h-[1.05em] w-[1.05em] shrink-0 opacity-70" strokeWidth={2} />
+        <Icon className={cn('h-[1.05em] w-[1.05em] shrink-0', tone.icon)} strokeWidth={2} />
       )}
       <span className="truncate">{label}</span>
     </button>
