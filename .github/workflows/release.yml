@@ -31,6 +31,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # 用例数不设上限（ADR 0031）：出包时和上一个正式版对比，涨了多少写进这次运行的摘要
+      - name: 用例数对比
+        run: node scripts/test-budget.mjs --report --since auto | tee -a "$GITHUB_STEP_SUMMARY"
       - name: 计算版本号
         id: ver
         run: |

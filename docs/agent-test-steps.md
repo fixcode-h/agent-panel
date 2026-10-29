@@ -243,21 +243,21 @@ node scripts/changed-tests.mjs --json               # 给脚本用
 抖动、慢用例和最慢的文件，完整 TAP 写进 `logs/tests/`；失败只重跑失败的文件（串行，总共最多 3 次），重跑通过记成「抖动」照样报出来；
 还失败的记进 `logs/tests/unit-last.json`，`npm run test:failed` 只跑它们。端到端、界面检查同样只重跑失败分片（再跑一次），`--failed` 只跑上次失败的分片。
 
-### 用例预算检查（`scripts/test-budget.mjs`）
+### 用例报数与本次新增检查（`scripts/test-budget.mjs`）
 
-分层判据和各层用例上限在 `scripts/lib/test-layers.mjs` / `scripts/lib/test-budget.mjs` 一处定义（纯函数 / 集成 / e2e 分片 / e2e 步骤）；
-超限时同一次提交要合并或淘汰等量旧用例，并写清覆盖关系。
+各层用例总数不设上限、只报数（[ADR 0031](adr/0031-test-count-report-not-cap.md)）；拦的只有**本次净新增**：新增的用例减去删掉的大于 0 时，
+提交说明要有「测试预算:」段写一句为什么加。改名、合并、删除都放行。
 
 ```bash
-node scripts/test-budget.mjs --check                  # 静态计数，不跑测试（npm run lint 已经在跑这条）
-node scripts/test-budget.mjs --check --message <文件>  # 本地预检：用将要写入的提交说明（工作区未提交时不能读 HEAD 的说明）
-node scripts/test-budget.mjs --tap <报告>              # CI 复核：累加 tap 的 # tests N，按两层合计上限判定，同时按静态计数判各层
+node scripts/test-budget.mjs --check                  # 报各层计数，判本次净新增（npm run lint 已经在跑这条）
+node scripts/test-budget.mjs --check --message <文件>  # 本地预检：工作区还没提交时用将要写入的提交说明
+node scripts/test-budget.mjs --tap <报告>              # CI：报 tap 实测用例数，和静态计数对照，不拦
+node scripts/test-budget.mjs --report --since auto    # 出包：各层用例数和上一个正式版对比，不拦
 node scripts/test-layers.mjs --report                 # 分层基线：每个文件归哪层、命中什么特征、多少用例 / 行
 ```
 
-`--check` 与 `--tap` 不能同时用（前者静态按层、后者用已跑出的 tap 复核，是两步）。
-`npm run lint` 里跑的是静态计数（秒级）；CI 的 `test` job 在同一轮单测跑完后把 tap 输出传给 `--tap` 复核，不重复跑测试。
-超预算且提交说明没有 `测试预算:` 段时非零退出；把上限抬到冻结基线之上一定非零退出（只降不升）。
+`--check`、`--tap`、`--report` 三选一。合并提交不判净新增（新增用例在被合进来的提交上判过）。
+重复、过时的用例不用每次一换一：定期派「测试验收」用「清理用例」一次列出一批候选，确认后再删。
 
 ### 怎么交给 Agent
 

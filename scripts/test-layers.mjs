@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * 测试分层报告：按 scripts/lib/test-layers.mjs 的判据给每个测试文件归层，汇总用例数、行数，
- * 产出可提交的分层基线（`test-layers.json`）。各层用例预算就是按这份基线取整定的
- * （见 scripts/lib/test-budget.mjs），迁移前后对比也看它。
+ * 产出可提交的分层基线（`test-layers.json`），迁移前后对比也看它。
+ * 各层用例数不设上限，只报数（见 scripts/test-budget.mjs 和 ADR 0031）。
  *
  * 用法：
  *   node scripts/test-layers.mjs --report                     # 只在终端打印摘要
