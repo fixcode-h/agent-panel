@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { ModelObject } from '@shared/blender'
 import { demoAccounts } from './demo-accounts'
 import { demoIntegrations } from './demo-integrations'
 import { demoLibrary, demoPanelCommands } from './demo-library'
@@ -2125,6 +2126,19 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
   if (res === 'local-image') return demoLocal(method, seg, body)
   // 在线演示没有 Blender 进程：设置页照常显示，检测结果说明演示里不能建模
   if (res === 'blender' && id === 'status') return { path: '', version: '', error: '在线演示不能运行 Blender' }
+  // 演示里没有 Blender 建出来的模型：预览一直是「还没有模型」
+  if (res === 'blender' && id === 'models') {
+    // 模型设计对话给一只示例宝箱（demo-model.ts 现场拼的），其余对话还没有模型
+    const task = (d.tasks ?? []).find((x) => x.id === sub)
+    if (!task?.modelDesign) return { version: 0, updatedAt: '', objects: [], exportError: '' }
+    const { DEMO_MODEL_OBJECTS } = await import('./demo-model')
+    return {
+      version: 1,
+      updatedAt: task.createdAt,
+      objects: DEMO_MODEL_OBJECTS.map((o) => ModelObject.parse(o)),
+      exportError: '',
+    }
+  }
   if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'project-mcp') {
     const project = d.projects.find((p) => p.id === (query.get('projectId') ?? ''))

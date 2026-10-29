@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
 import {
+  Box,
   Diff,
   FileText,
   GitBranch,
@@ -28,6 +29,9 @@ import { childIcon } from '@shared/task'
 import type { ChildSummary } from './child-line'
 import { ChangesTree } from './ChangesTree'
 import { TaskStatusIcon } from './TaskStatusIcon'
+
+/** 3D 预览要 three.js（几百 KB），只有模型设计对话用到：单独分块，按需加载 */
+const ModelPreview = lazy(() => import('./ModelPreview').then((m) => ({ default: m.ModelPreview })))
 import { DiffDialog } from './DiffDialog'
 import { FileDialog } from './FileDialog'
 
@@ -99,13 +103,18 @@ export function TaskFiles({
   child?: { id: string; task?: ChildSummary; view: ReactNode; onClose: () => void }
 }) {
   const { upsertTask } = useData()
-  const [tab, setTab] = useState<'files' | 'changes' | 'child'>(child ? 'child' : 'files')
-  // 新开（或换了）子对话就切到它的页签；关掉后回项目文件
+  // 模型设计对话（ADR 0025）默认看「模型」页签：建模时要盯的是模型，不是文件
+  const home = task.modelDesign ? 'model' : 'files'
+  const [tab, setTab] = useState<'files' | 'changes' | 'child' | 'model'>(child ? 'child' : home)
+  // 新开（或换了）子对话就切到它的页签；关掉后回默认页签
   const childId = child?.id ?? ''
   useEffect(() => {
-    setTab((cur) => (childId ? 'child' : cur === 'child' ? 'files' : cur))
+    setTab((cur) => (childId ? 'child' : cur === 'child' ? home : cur))
+    // home 只跟着对话变，不用单独跟
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [childId])
   const onChild = tab === 'child' && !!child
+  const onModel = tab === 'model' && !!task.modelDesign
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
@@ -146,6 +155,15 @@ export function TaskFiles({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* 右栏固定两个页签：项目文件 / 本对话改动，按内容宽度左对齐（设计稿 .ptab.sm） */}
       <TabBar label={t('文件视图')} variant="fit">
+        {task.modelDesign && (
+          <TabItem
+            active={onModel}
+            onSelect={() => setTab('model')}
+            icon={<Box className="h-[0.8125rem] w-[0.8125rem]" />}
+          >
+            {t('模型')}
+          </TabItem>
+        )}
         <TabItem
           active={tab === 'files'}
           onSelect={() => setTab('files')}
@@ -192,7 +210,12 @@ export function TaskFiles({
           {child.view}
         </section>
       )}
-      {!onChild && (
+      {onModel && (
+        <Suspense fallback={<p className="p-4 text-[0.8125rem] text-subtle">{t('读取中…')}</p>}>
+          <ModelPreview taskId={task.id} running={task.working} />
+        </Suspense>
+      )}
+      {!onChild && !onModel && (
         <>
           {/* 项目信息行：分支 · 改动数；行尾是这一页的工具（查找、显示方式）和刷新 */}
           <div className="flex h-[1.875rem] shrink-0 items-center gap-1.5 border-b pr-2.5 pl-4 text-[0.75rem] text-subtle">

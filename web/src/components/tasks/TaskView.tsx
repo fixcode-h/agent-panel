@@ -1274,7 +1274,11 @@ export function TaskView({
   const sessionFits = rowW >= SESSION_BAR_W + CONVERSATION_MIN
   const bothFit = rowW >= SESSION_BAR_W + CONVERSATION_MIN + sideW
   const sessionShown =
-    sessionAllowed && sessionOpen && sessionFits && (bothFit || !sideWanted || (lastRail === 'session' && !reportOn))
+    sessionAllowed &&
+    sessionOpen &&
+    sessionFits &&
+    // 模型设计对话：右栏是 3D 预览（「模型」页签），放不下时会话栏让开，不让预览被挤掉
+    (bothFit || !sideWanted || (lastRail === 'session' && !reportOn && !task.modelDesign))
   const filesYield = !reportOn && !childOn && !filesFolded && sessionShown && !bothFit
   const filesHidden = (filesFolded && !childOn) || filesYield
   const closeReport = () => {

@@ -1408,4 +1408,15 @@ export const EN_TASKS: Record<string, string> = {
   会话栏: 'Session bar',
   分析对象: 'Analyzing',
   面板自动附上: 'attached by the panel',
+  '加载模型失败：{error}': 'Could not load the model: {error}',
+  '第 {n} 版 · {count} 个物体': 'Version {n} \u00b7 {count} objects',
+  对准模型: 'Fit model',
+  '下载 glb': 'Download glb',
+  模型预览: 'Model preview',
+  '还没有模型。Agent 用 Blender 建模后，这里会实时显示，可以拖动旋转、滚轮缩放。':
+    'No model yet. Once the agent models in Blender it shows here live; drag to rotate, scroll to zoom.',
+  '浏览器不支持 WebGL，没法预览模型；可以下载 glb 用别的软件看。':
+    "This browser doesn't support WebGL, so the model can't be previewed; download the glb to view it elsewhere.",
+  场景里的物体: 'Objects in the scene',
+  '{n} 面': '{n} faces',
 }
