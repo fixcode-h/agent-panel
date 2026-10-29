@@ -59,8 +59,14 @@ export function AnalysisPanel({
   const [tab, setTab] = useState<DiagnosisTab>('sum')
   return (
     <div className={cn('flex min-h-0 w-full flex-1 flex-col bg-rail', className)} data-analysis-panel={kind}>
-      {/* 顶上是和文件栏同一套页签条（组件库 TabBar）：报告只有一种，页签就一个，收起按钮在右端 */}
-      <TabBar label={t('功能面板')} trailing={<IconButton icon={X} label={t('收起功能面板')} onClick={onClose} />}>
+      {/* 顶上是页签条（组件库 TabBar 的 fit：按文字宽度排、计数是小圆块，和对话右栏同一套）：
+          照设计稿 AiWindow 高 44、透出面板底色、选中的加粗；报告只有一种时页签就一个，收起按钮在右端 */}
+      <TabBar
+        label={t('功能面板')}
+        variant="fit"
+        className="h-11 bg-transparent"
+        trailing={<IconButton icon={X} label={t('收起功能面板')} onClick={onClose} />}
+      >
         {diag?.ok ? (
           diagnosisTabs(diag.value).map((x) => (
             <TabItem
@@ -68,19 +74,19 @@ export function AnalysisPanel({
               active={tab === x.id}
               onSelect={() => setTab(x.id)}
               tag={x.count || undefined}
-              className="basis-auto"
+              className={cn(tab === x.id && 'font-semibold')}
             >
               {x.label}
             </TabItem>
           ))
         ) : (
-          <TabItem active onSelect={() => {}} icon={<Icon className="h-3.5 w-3.5" />}>
+          <TabItem active onSelect={() => {}} icon={<Icon className="h-3.5 w-3.5" />} className="font-semibold">
             {k.title()}
           </TabItem>
         )}
       </TabBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {kind !== 'diagnosis' && <p className="px-4 pt-3 text-[0.75rem] text-subtle">{k.desc()}</p>}
+        {kind !== 'diagnosis' && <p className="px-[1.125rem] pt-3 text-[0.75rem] text-subtle">{k.desc()}</p>}
         {kind === 'diagnosis' ? (
           diag?.ok ? (
             <DiagnosisReport task={task} project={project} diagnosis={diag.value} tab={tab} onTask={onTask} />
