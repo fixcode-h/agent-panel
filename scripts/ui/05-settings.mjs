@@ -71,6 +71,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     await check(d, '设置-新父对话的子对话默认')
     await d.close()
   }
+  // 设置搜索：Ctrl+F 聚焦，跨页搜到别的页的项；回车跳过去并定位到那一行；Esc 先清空搜索、不关弹窗
+  {
+    await p.keyboard.press('Control+f')
+    const box = p.getByRole('textbox', { name: '搜索设置' })
+    if (!(await box.evaluate((el) => el === document.activeElement))) errors.push('设置搜索：Ctrl+F 没有聚焦搜索框')
+    await box.fill('保活 分钟')
+    await check(p, '设置-搜索', ['搜索设置', '离开对话后保留多久', '没看过的回复保留多久'])
+    await box.fill('额外参数')
+    await p.getByRole('option', { name: /额外参数/ }).waitFor({ timeout: 5000 })
+    await box.press('Enter')
+    await p
+      .locator('[data-setting="额外参数"][data-setting-flash]')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('设置搜索：回车后没有跳到「额外参数」那一行'))
+    await box.fill('zzzz')
+    await check(p, '设置-搜索-没有结果', ['没有找到「zzzz」相关的设置'])
+    await box.press('Escape')
+    if ((await box.inputValue()) !== '') errors.push('设置搜索：Esc 没有清空搜索框')
+    if (!(await p.getByRole('dialog').count())) errors.push('设置搜索：搜索框里按 Esc 不该关掉设置弹窗')
+  }
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '外观', exact: true }).click()
