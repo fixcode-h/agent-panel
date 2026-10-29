@@ -82,7 +82,13 @@ import type {
   McpServer,
   McpTestResult,
 } from '@shared/library'
-import type { SummaryJob, SummaryRecord, SummaryRequest } from '@shared/summary'
+import type {
+  SummaryConfig,
+  SummaryCreateRequest,
+  SummaryExtractRequest,
+  SummaryJob,
+  SummaryRecord,
+} from '@shared/summary'
 import type { ProjectSkillsView } from '@shared/project-skills'
 import type { ProjectProposal } from '@shared/project-init'
 import type {
@@ -996,10 +1002,14 @@ export const api = {
     request<{ ok: boolean; dir: string }>('/fs/reveal', json('POST', { projectId })),
   // ---- 工作总结：选项目生成今天的报告，存最近几份 ----
   summary: () => request<{ reports: SummaryRecord[] }>('/summary'),
-  generateSummary: (input: SummaryRequest) => request<SummaryJob>('/summary', json('POST', input)),
+  summaryConfig: () => request<SummaryConfig>('/summary/config'),
+  saveSummaryConfig: (c: SummaryConfig) => request<SummaryConfig>('/summary/config', json('PUT', c)),
+  extractSummary: (input: SummaryExtractRequest) => request<SummaryJob>('/summary/extract', json('POST', input)),
   summaryJob: (id: string) => request<SummaryJob>(`/summary/jobs/${id}`),
   stopSummary: (id: string) => request<SummaryJob>(`/summary/jobs/${id}/stop`, json('POST', {})),
+  createSummary: (input: SummaryCreateRequest) => request<SummaryRecord>('/summary', json('POST', input)),
   saveSummary: (id: string, md: string) => request<SummaryRecord>(`/summary/${id}`, json('PUT', { md })),
+  deleteSummary: (id: string) => request<{ ok: true }>(`/summary/${id}`, { method: 'DELETE' }),
 
   /** 候选教训草稿：从工作总结提炼的半成品，看过后手动写进 docs/lessons/（不会自动落盘） */
   lessonDrafts: () => request<{ drafts: LessonDraftRecord[] }>('/lesson-drafts'),

@@ -1,122 +1,152 @@
 /**
- * 工作总结：选几个项目，把一段时间（本机时区）里执行过的对话整理成一份 Markdown 报告。
+ * 工作总结：按天或按周，把一段时间里的工作整理成一份报告。分两步：
  *
- * 范围口径（`SummaryRange` + `rangeWindow`）：默认「今天」，也可以看昨天、最近 7 天、自选起止日期。
- * 窗口都是左闭右开：today / last7 的结束时间是「现在」（不包含未来），yesterday / custom 的结束时间是
- * 结束日期的次日 0 点（包含结束那一天）。所有判定（服务端筛任务、页面列出对话）都只用 `rangeWindow`，
- * 不再各自按自然日算；老数据只有单日 `day` 时按「那一天」处理（`dayTask` / `collectDayProjects`）。
+ * 1. 提炼：选来源（「报告」= 这段时间已经生成过的报告，「对话」= 面板里加过的项目在这段时间执行过的对话），
+ *    交给「每日工作总结」角色（shared/builtin/agents.ts 的 worklog）用本机 CLI 提炼成一条条分项（需求 / Bug）；
+ * 2. 确认：用户在页面上逐项点「采纳」，点确认后只用采纳的分项拼出报告（`renderReport`，固定格式，不再跑 CLI）。
  *
- * 这里只有纯逻辑：时间窗口、从任务里提炼范围内的活动、交给 CLI 的提示词、从回答里取出报告。
+ * 时间口径只有一处（`summaryPeriod`）：按天是那一天，按周是周一到周日（和 Token 用量的「按周」同一个周）。
+ * 范围外的内容一律不交给 CLI：对话只取窗口内的消息和节点，报告只取覆盖范围落在窗口内的。
+ *
+ * 这里只有纯逻辑：时间窗口、材料整理、提示词、解析 CLI 的分项、拼报告。
  * 跑 CLI 和存报告在 server/summary.ts；页面在 web/src/pages/SummaryPage.tsx
  */
 import { z } from 'zod'
-import { promptLangRules } from './prompt-lang.ts'
 import { t } from './i18n.ts'
-import type { Task } from './schema.ts'
-import { dayKey } from './usage.ts'
+import type { Agent, Task } from './schema.ts'
+import { BUILTIN_AGENTS } from './builtin/agents.ts'
+import { dayKey, isoWeek, periodLabel, usagePeriod } from './usage.ts'
 import { clip as clipText } from './text.ts'
-// 两份报告解析不了（用户手改过格式）时退回纯文本 diff，和「修改建议」用的是同一份按行比较
-import { lineDiff } from './task-export.ts'
 
-/** 数据目录里保留最近几份报告：生成新的时把更早的删掉 */
-export const SUMMARY_KEEP = 20
-/** 每个项目最多交给 CLI 几条今天的对话 */
-export const SUMMARY_TASKS_PER_PROJECT = 12
-/** 每条摘录最多多少字：报告要简短，提示词里也不放整段对话 */
+/**
+ * 数据目录里最多留多少份报告：左侧树要列出全部报告，这里只是防止数据文件无限长大的保险，
+ * 每天几份也够存好几年。超出时删最早的
+ */
+export const SUMMARY_KEEP = 2000
+/** 每个项目最多交给 CLI 几条对话：按最近执行排序后截断 */
+export const SUMMARY_TASKS_PER_PROJECT = 16
+/** 来源是「报告」时最多带几份、每份正文最多多少字：一周七天、每天几份也放得下 */
+export const SUMMARY_REPORTS_MAX = 30
+export const SUMMARY_REPORT_CHARS = 4000
+/** 每条摘录最多多少字：提示词里不放整段对话 */
 export const SUMMARY_LINE_MAX = 160
-/** 每个任务最多取几条用户要求 / 几条结论 */
+/** 每个任务最多取几条用户要求 / 几条结论 / 几个节点 / 几个改动文件 */
 export const SUMMARY_ASKS_MAX = 4
 export const SUMMARY_OUTCOMES_MAX = 3
-/** 每个任务最多取几个节点、几个改动文件 */
 export const SUMMARY_STEPS_MAX = 8
 export const SUMMARY_FILES_MAX = 8
+/** 一次最多提炼多少条分项：再多用户也挑不过来 */
+export const SUMMARY_ITEMS_MAX = 60
+/** 面板里最多加几个项目 */
+export const SUMMARY_PROJECTS_MAX = 50
+
+/** 生成报告用的内置角色：页面、服务端、演示版都按它找角色 */
+export const SUMMARY_ROLE_KEY = 'worklog'
+
+/**
+ * 生成报告用的角色：用户数据里的「每日工作总结」（启动时按内置定义同步，用户也能改它的 CLI / 模型）；
+ * 被删掉了（或演示版里没装）就用内置定义，照常能生成。`own` 标出是不是本机那份：页面据此决定能不能点开角色
+ */
+export function summaryRole(agents: Agent[]): Agent & { own: boolean } {
+  const mine = agents.find((a) => a.origin === `builtin:${SUMMARY_ROLE_KEY}`)
+  if (mine) return { ...mine, own: true }
+  const def = BUILTIN_AGENTS.find((b) => b.key === SUMMARY_ROLE_KEY)!
+  // 只用到角色设定、参数和 CLI / 模型这几项：内置定义里都有，其余字段不会被读到
+  return { ...def.agent, id: SUMMARY_ROLE_KEY, own: false } as Agent & { own: boolean }
+}
 
 /**
  * 命中这些词就认为这条对话可能在修 Bug：提示词里给 CLI 一个线索。
- * 只收明确指向故障的词——「错误」「异常」「失败」在日常需求里太常见（例如「接口失败要不要加重试」），
- * 会把普通对话也标成 Bug 修复。只是线索，不是硬条件：用户原文里描述了异常现象也照写，由 CLI 按内容判断
+ * 只收明确指向故障的词，「错误」「失败」在日常需求里太常见；只是线索，最终由 CLI 按内容判断
  */
 export const SUMMARY_BUG_HINTS = ['bug', '修复', '报错', '崩溃', 'fix', '没反应', '不生效', '卡住', '闪退']
 
-/** 报告的时间范围：今天 / 昨天 / 最近 7 天 / 自选起止日期 */
-export const SUMMARY_RANGES = ['today', 'yesterday', 'last7', 'custom'] as const
-export type SummaryRangeId = (typeof SUMMARY_RANGES)[number]
+/** 粒度：按天 / 按周 */
+export const SUMMARY_GRAINS = ['day', 'week'] as const
+export type SummaryGrain = (typeof SUMMARY_GRAINS)[number]
 
-/** 近 7 天包含今天：从今天往前数 6 天到今天 */
-export const SUMMARY_LAST7_DAYS = 7
+/** 来源：从已经生成的报告提炼 / 从项目对话提炼 */
+export const SUMMARY_SOURCES = ['reports', 'tasks'] as const
+export type SummarySource = (typeof SUMMARY_SOURCES)[number]
 
-/** 选中的范围；custom 的两个日期是 YYYY-MM-DD（本机时区），其它范围忽略它们 */
-export const SummaryRange = z.object({
-  id: z.enum(SUMMARY_RANGES).default('today'),
-  from: z.string().default(''),
-  to: z.string().default(''),
+/** 分项的种类：需求只写做了什么，Bug 写原因和修复 */
+export const SUMMARY_KINDS = ['need', 'bug'] as const
+export type SummaryKind = (typeof SUMMARY_KINDS)[number]
+
+const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+
+/** 一条分项；字数上限比提示词里的宽一些：CLI 稍微写长了也收下，不因为几个字整份作废 */
+export const SummaryEntry = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.enum(SUMMARY_KINDS),
+  /** 项目名（报告里按它分组）；记录里分不出项目时为空，归到「其他」 */
+  project: z.string().trim().max(80).default(''),
+  title: z.string().trim().min(1).max(120),
+  /** 需求：做了什么、实现了什么 */
+  content: z.string().trim().max(600).default(''),
+  /** Bug：原因 / 修复方案 */
+  cause: z.string().trim().max(600).default(''),
+  fix: z.string().trim().max(600).default(''),
 })
-export type SummaryRange = z.infer<typeof SummaryRange>
+export type SummaryEntry = z.infer<typeof SummaryEntry>
 
-/** 页面默认选的范围，也是接口不带 range 时的默认值：行为和改造前一样，只看今天 */
-export const DEFAULT_SUMMARY_RANGE: SummaryRange = { id: 'today', from: '', to: '' }
-
-/** 报告里固定的四个二级标题：顺序也是这个，缺一节不许省 */
-export const SUMMARY_SECTIONS = ['## 一、概览', '## 二、需求进度', '## 三、问题与修复', '## 四、下一步'] as const
-
-/**
- * 升级前的老报告只有三节。解析时按别名映射到新结构：「用户报告的 Bug」→ 问题与修复，
- * 「今日小结」→ 概览，这样老报告的对比、逐行文本兜底和候选教训提炼都不用改数据
- */
-export const LEGACY_SUMMARY_SECTIONS = ['## 一、需求进度', '## 二、用户报告的 Bug', '## 三、今日小结'] as const
-
-/** 日期格式（YYYY-MM-DD）：报告一级标题里的日期，单日或多日区间 */
-const DAY_KEY_PATTERN = '\\d{4}-\\d{2}-\\d{2}'
-
-/**
- * 格式自检的问题码：报告不合格时只留问题码，页面按当前语言显示文案。
- * 定义在这里是因为提示词、服务端自检和页面提示用的是同一个口径
- */
-export const SUMMARY_FORMAT_ISSUES = {
-  title: '一级标题不是「# <日期> 工作总结」',
-  sections: '二级标题不是固定的四节（或顺序、数量不对）',
-  project: '项目标题格式不对（应为「### 2.1 项目名」）',
-  item: '条目格式不对（应为「1. **标题** ｜ 状态」加缩进一行的「实现：/原因：/修复：/说明：」）',
-  empty: '某一节没有内容时没有写「暂无」',
-} as const
-export type SummaryFormatIssue = keyof typeof SUMMARY_FORMAT_ISSUES
-
-/** 报告里每个项目的选择：只分析这些对话，空列表表示该项目今天全部对话 */
-export const SummaryProjectPick = z.object({
-  projectId: z.string().min(1),
-  taskIds: z.array(z.string().min(1)).default([]),
+/** 开始提炼：来源、粒度、范围里的任意一天（按天就是那天，按周取它所在的那一周）、对话来源要的项目 */
+export const SummaryExtractRequest = z.object({
+  source: z.enum(SUMMARY_SOURCES),
+  grain: z.enum(SUMMARY_GRAINS),
+  day: DAY,
+  projectIds: z.array(z.string().min(1)).max(SUMMARY_PROJECTS_MAX).default([]),
 })
-export type SummaryProjectPick = z.infer<typeof SummaryProjectPick>
+export type SummaryExtractRequest = z.infer<typeof SummaryExtractRequest>
 
-/** 生成报告：选中的项目（含每个项目下要分析的对话）、用哪个 CLI / 模型 / 思考强度跑 */
-export const SummaryRequest = z.object({
-  projects: z.array(SummaryProjectPick).min(1).max(50),
-  cli: z.string().min(1),
-  model: z.string().trim().default(''),
-  effort: z.string().trim().default(''),
-  /** 总结哪段时间；不传就是今天（老页面 / 老调用方照常工作） */
-  range: SummaryRange.default(DEFAULT_SUMMARY_RANGE),
+/** 确认生成：只带用户采纳的分项，服务端按固定格式拼成报告 */
+export const SummaryCreateRequest = z.object({
+  source: z.enum(SUMMARY_SOURCES),
+  grain: z.enum(SUMMARY_GRAINS),
+  from: DAY,
+  to: DAY,
+  projectNames: z.array(z.string()).max(SUMMARY_PROJECTS_MAX).default([]),
+  projectIds: z.array(z.string()).max(SUMMARY_PROJECTS_MAX).default([]),
+  items: z.array(SummaryEntry).min(1).max(SUMMARY_ITEMS_MAX),
+  cli: z.string().default(''),
+  model: z.string().default(''),
+  effort: z.string().default(''),
+  taskCount: z.number().int().min(0).default(0),
+  reportCount: z.number().int().min(0).default(0),
+  durationMs: z.number().int().min(0).default(0),
 })
-export type SummaryRequest = z.infer<typeof SummaryRequest>
+export type SummaryCreateRequest = z.infer<typeof SummaryCreateRequest>
+
+/** 面板里加过的项目：下次打开还在，不用每次重选（存在数据目录 config/summary.json） */
+export const SummaryConfig = z.object({
+  projectIds: z.array(z.string().min(1)).max(SUMMARY_PROJECTS_MAX).default([]),
+})
+export type SummaryConfig = z.infer<typeof SummaryConfig>
 
 /** 存下来的一份报告：正文可以再编辑（PUT /summary/:id） */
 export const SummaryReport = z.object({
-  /** 覆盖范围内最后一天的本地日期，格式 2026-10-23；老报告只有这一个日期 */
+  /** 覆盖范围内最后一天的本地日期（2026-10-23）；老报告只有这一个日期 */
   day: z.string(),
-  /** 覆盖范围的第一天（含）/ 最后一天（含）；老报告没有这两个字段，按 day 单日处理 */
+  /** 覆盖范围的第一天 / 最后一天（含）；老报告没有这两个字段，按 day 单日处理 */
   from: z.string().default(''),
   to: z.string().default(''),
-  /** 生成时选中的项目（顺序就是报告里的顺序） */
+  /** 按天 / 按周；改版前的报告没有这个字段，按覆盖的天数推断（见 reportGrain） */
+  grain: z.enum(SUMMARY_GRAINS).optional(),
+  /** 从哪儿提炼的；改版前的报告都是从对话生成的 */
+  source: z.enum(SUMMARY_SOURCES).default('tasks'),
   projectIds: z.array(z.string()).default([]),
   projectNames: z.array(z.string()).default([]),
   /** Markdown 正文；用户编辑后的内容也存这里 */
   md: z.string().default(''),
+  /** 生成时采纳的分项：左侧树显示「需求 n · Bug m」，改版前的报告没有 */
+  items: z.array(SummaryEntry).default([]),
   cli: z.string().default(''),
   model: z.string().default(''),
   effort: z.string().default(''),
-  /** 生成时用到了几条今天的对话（0 表示今天没有执行记录） */
+  /** 提炼时用到了几条对话 / 几份报告 */
   taskCount: z.number().int().default(0),
-  /** 生成这次报告用了多久（毫秒）：老报告没有这个字段，按 0 处理（页面不显示耗时） */
+  reportCount: z.number().int().default(0),
+  /** 提炼用了多久（毫秒）：老报告没有这个字段，按 0 处理（页面不显示耗时） */
   durationMs: z.number().int().min(0).default(0),
 })
 export type SummaryReport = z.infer<typeof SummaryReport>
@@ -129,27 +159,35 @@ export const SummaryRecord = SummaryReport.extend({
 })
 export type SummaryRecord = z.infer<typeof SummaryRecord>
 
+/** 一次提炼：跑完给出分项，等用户挑完再确认生成 */
 export interface SummaryJob {
   id: string
   /** stopped：用户主动停了（不是错误），页面上按普通提示显示 */
   status: 'running' | 'done' | 'failed' | 'stopped'
+  source: SummarySource
+  grain: SummaryGrain
+  /** 这次提炼的范围（YYYY-MM-DD，含首尾）：开始时就定下来，生成过程中页面换了范围也不串 */
+  from: string
+  to: string
   projectIds: string[]
-  /** 生成好的 Markdown */
-  md: string
-  /** 存下来的报告 id：生成成功才有，页面据此继续编辑 */
-  reportId?: string
-  /** 这次生成覆盖的日期（YYYY-MM-DD）：页面切回来 / 生成完成时按它显示报告标题 */
-  from?: string
-  to?: string
-  /** 生成后的格式自检：ok 为 false 表示重试一次后仍然不完整，页面要明确提示，不静默通过 */
-  format?: { ok: boolean; issues: SummaryFormatIssue[]; retried: boolean }
-  /** 用户选了、但今天没有可总结内容的项目（页面提示用，不静默从报告里删掉） */
+  /** 提炼出的分项；空数组 + done 表示这段时间没有可写的内容 */
+  items: SummaryEntry[]
+  /** 用了几条对话 / 几份报告：0 时 CLI 根本没跑（没有材料） */
+  taskCount: number
+  reportCount: number
+  /** 加了、但这段时间没有可总结对话的项目名（页面提示用，不静默略过） */
   skipped?: string[]
+  /** 实际用的 CLI / 模型 / 思考强度：确认生成时写进报告 */
+  cli: string
+  model: string
+  effort: string
   error?: string
   thinking?: string
   tools: string[]
   outChars: number
   startedAt: number
+  /** 提炼花了多久（跑完才有） */
+  durationMs?: number
 }
 
 /** 项目的名字（报告分节、列表显示用） */
@@ -158,38 +196,24 @@ export interface SummaryProjectRef {
   name: string
 }
 
-/** 一个任务今天的活动：只保留提示词里要用的字段 */
-export interface DayTask {
-  id: string
-  title: string
-  status: Task['status']
-  /** 今天用户提的要求（已截短） */
-  asks: string[]
-  /** 今天 Agent 给出的结论（已截短） */
-  outcomes: string[]
-  /** 今天跑过的节点（名称和状态） */
-  steps: { title: string; status: string }[]
-  /** 改动的文件（相对路径） */
-  files: string[]
-  /** 最近一次执行的时间（ISO） */
-  at: string
-  /** 用户自己提出过问题（只按用户的要求判断，Agent 自查修掉的不算） */
-  userBug: boolean
-}
+// ---- 时间窗口 ----
 
-/** 一个项目今天的执行记录 */
-export interface DayProject {
-  projectId: string
-  projectName: string
-  tasks: DayTask[]
+/** 一段范围算好的时间窗口：判定只用 start / end，标题和存档用 fromDay / toDay */
+export interface SummaryWindow {
+  grain: SummaryGrain
+  /** 范围内最早的时间（含，毫秒） */
+  start: number
+  /** 范围的结束时间（不含，毫秒）：最后一天的次日 0 点 */
+  end: number
+  /** 范围第一天 / 最后一天的本地日期（YYYY-MM-DD，含这一天） */
+  fromDay: string
+  toDay: string
 }
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
-const midnightOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
-const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 
 /** YYYY-MM-DD → 本机时区当天 0 点；格式不对或日期不存在（2026-02-30）时返回 null */
-function dayStart(day: string): Date | null {
+export function parseDay(day: string): Date | null {
   if (!DAY_RE.test(day)) return null
   const [y, m, d] = day.split('-').map(Number)
   const date = new Date(y, m - 1, d)
@@ -197,162 +221,129 @@ function dayStart(day: string): Date | null {
   return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d ? date : null
 }
 
-/** 从 start 到 end（含 end 那一天，都是本地零点）的每一天 */
-function daysBetween(start: Date, end: Date): string[] {
-  const days: string[] = []
-  for (let d = midnightOf(start); d <= end; d = addDays(d, 1)) days.push(dayKey(d))
-  return days
+/** 某一天落在哪个窗口里：按天就是那天，按周是那天所在的周一到周日。日期不合法时按今天 */
+export function summaryPeriod(grain: SummaryGrain, day: string | Date, now = new Date()): SummaryWindow {
+  const d = typeof day === 'string' ? (parseDay(day) ?? now) : day
+  const p = usagePeriod(grain, d)
+  const end = new Date(p.end.getFullYear(), p.end.getMonth(), p.end.getDate() + 1)
+  return { grain, start: p.start.getTime(), end: end.getTime(), fromDay: dayKey(p.start), toDay: dayKey(p.end) }
 }
 
-/** 一段范围算好的时间窗口：判定只用 start / end，标题和存档用 fromDay / toDay */
-export interface SummaryWindow {
-  id: SummaryRangeId
-  /** 范围内最早的时间（含，毫秒） */
-  start: number
-  /** 范围的结束时间（不含，毫秒）：today / last7 是现在，其余是结束日期的次日 0 点 */
-  end: number
-  /** 范围第一天 / 最后一天的本地日期（YYYY-MM-DD，含这一天） */
-  fromDay: string
-  toDay: string
-  /** 范围里的每一天（从早到晚）：只有 last7 用它数天数，custom 可能跨很多年所以不逐天生成 */
-  days: string[]
-}
-
-/**
- * 把选中的范围换算成时间窗口。
- * custom 的起止写反、格式不对时按「用户想要的那几天」处理：只交换起止，不报错也不返回空范围。
- */
-export function rangeWindow(range: SummaryRange = DEFAULT_SUMMARY_RANGE, now = new Date()): SummaryWindow {
-  const today = midnightOf(now)
-  const todayKey = dayKey(today)
-  switch (range.id) {
-    case 'yesterday': {
-      const start = addDays(today, -1)
-      return {
-        id: range.id,
-        start: start.getTime(),
-        end: today.getTime(),
-        fromDay: dayKey(start),
-        toDay: dayKey(start),
-        days: [dayKey(start)],
-      }
-    }
-    case 'last7': {
-      const start = addDays(today, -(SUMMARY_LAST7_DAYS - 1))
-      return {
-        id: range.id,
-        start: start.getTime(),
-        end: now.getTime(),
-        fromDay: dayKey(start),
-        toDay: todayKey,
-        days: daysBetween(start, today),
-      }
-    }
-    case 'custom': {
-      const a = dayStart(range.from) ?? today
-      const b = dayStart(range.to) ?? a
-      const [start, endDay] = a.getTime() <= b.getTime() ? [a, b] : [b, a]
-      return {
-        id: range.id,
-        start: start.getTime(),
-        end: addDays(endDay, 1).getTime(),
-        fromDay: dayKey(start),
-        toDay: dayKey(endDay),
-        // 自选范围可能跨很多年，不逐天生成（只有 last7 / today 需要 days）
-        days: [],
-      }
-    }
-    default:
-      return {
-        id: 'today',
-        start: today.getTime(),
-        // 正好在 0 点加载时 start 和 now 相等，加 1ms 以免窗口是空的（下一毫秒就恢复正常）
-        end: Math.max(now.getTime(), today.getTime() + 1),
-        fromDay: todayKey,
-        toDay: todayKey,
-        days: [todayKey],
-      }
-  }
-}
-
-/** 本机时区的今天 00:00 到现在的窗口（和改造前一样，内部走 rangeWindow） */
-export function todayWindow(now = new Date()) {
-  const w = rangeWindow(DEFAULT_SUMMARY_RANGE, now)
-  return { day: w.toDay, start: w.start, end: w.end }
-}
-
-/** 时间戳是不是落在今天（本机时区） */
-export function isToday(iso: string, day: string) {
-  if (!iso) return false
-  const d = new Date(iso)
-  return !Number.isNaN(d.getTime()) && dayKey(d) === day
-}
-
-/** 时间戳是不是落在范围内（左闭右开，和 rangeWindow 同一口径） */
-export function inRange(iso: string, win: SummaryWindow) {
+/** 时间戳是不是落在窗口内（左闭右开） */
+export function inRange(iso: string, win: Pick<SummaryWindow, 'start' | 'end'>) {
   if (!iso) return false
   const at = Date.parse(iso)
   return Number.isFinite(at) && at >= win.start && at < win.end
 }
 
 /**
- * 这个任务在范围内有没有执行过：只看时间字段（任务摘要里没有消息），用来先筛候选任务、页面列出范围内的对话。
- * 页面和服务端共用这一处判定，避免「页面列得出来、服务端却当作没执行」
+ * 这个任务在窗口内有没有执行过：只看时间字段（任务摘要里没有完整消息），用来先筛候选任务。
+ * 页面和服务端共用这一处判定，避免「页面数得出来、服务端却当作没执行」
  */
-export function activeInRange(task: Task, win: SummaryWindow) {
+export function activeInRange(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>) {
   if (inRange(task.updatedAt, win) || inRange(task.turnDoneAt, win) || inRange(task.runStartedAt, win)) return true
   return task.messages.some((m) => inRange(m.at, win))
 }
 
-/** 单个自然日的窗口：给老接口 `activeOnDay` / `dayTask` 用，判定口径和改造前一样 */
-function dayWindow(day: string): SummaryWindow {
-  const start = dayStart(day) ?? midnightOf(new Date())
-  const key = dayKey(start)
-  return {
-    id: 'today',
-    start: start.getTime(),
-    end: addDays(start, 1).getTime(),
-    fromDay: key,
-    toDay: key,
-    days: [key],
-  }
+/** 窗口在界面上的名字：10月29日 / 第 44 周 · 10月26日 - 11月1日（和 Token 用量的标签同一套） */
+export function windowLabel(grain: SummaryGrain, fromDay: string) {
+  return periodLabel(usagePeriod(grain, parseDay(fromDay) ?? new Date()))
 }
 
-/** 这个任务今天有没有执行过（保留的老接口，内部按单日窗口判定） */
-export function activeOnDay(task: Task, day: string) {
-  return activeInRange(task, dayWindow(day))
+/** 报告的粒度：存了就用存的；改版前的报告按覆盖天数推断，单日是按天，其余按周（树里归到它开始的那一周） */
+export function reportGrain(r: Pick<SummaryReport, 'grain' | 'from' | 'to' | 'day'>): SummaryGrain {
+  if (r.grain) return r.grain
+  const from = r.from || r.day
+  const to = r.to || r.day
+  return from === to ? 'day' : 'week'
 }
 
-/** 范围在界面上的名字：今天 / 昨天 / 近 7 天 / 2026-10-01 至 2026-10-05 */
-export function rangeLabel(win: SummaryWindow): string {
-  if (win.id === 'today') return t('今天')
-  if (win.id === 'yesterday') return t('昨天')
-  if (win.id === 'last7') return t('近 {n} 天', { n: win.days.length })
-  return win.fromDay === win.toDay ? win.fromDay : t('{from} 至 {to}', { from: win.fromDay, to: win.toDay })
+/** 报告覆盖的首尾日期：老报告只有 day */
+export const reportSpan = (r: Pick<SummaryReport, 'from' | 'to' | 'day'>) => ({
+  from: r.from || r.day,
+  to: r.to || r.day,
+})
+
+// ---- 左侧报告树 ----
+
+/** 树里的一个日期节点：按天的报告挂在那一天，按周的报告挂在那一周 */
+export interface ReportGroup {
+  /** 节点的稳定标识：day:2026-10-29 / week:2026-10-26 */
+  key: string
+  grain: SummaryGrain
+  /** 窗口第一天（按天就是那天） */
+  from: string
+  reports: SummaryRecord[]
 }
 
 /**
- * 报告标题：按覆盖的日期推断「今天的报告 / 昨天的报告 / 近 7 天的报告」。
- * 老报告只有 day 时按单日处理；日期对不上时直接写日期区间，不编一个相对说法。
+ * 把报告按日期分组：同一天（同一周）的多份报告在一个节点下，节点按日期从新到旧，
+ * 同一日期里周报告排在当天的前面，节点内按生成时间从新到旧
  */
-export function reportWindowLabel(fromDay: string, toDay: string, now = new Date()): string {
-  const today = midnightOf(now)
-  const todayKey = dayKey(today)
-  const from = fromDay || toDay
-  if (!from) return t('报告')
-  if (from === toDay) {
-    if (toDay === todayKey) return t('今天的报告')
-    if (toDay === dayKey(addDays(today, -1))) return t('昨天的报告')
-    return t('{day} 的报告', { day: toDay })
+export function groupReports(reports: SummaryRecord[]): ReportGroup[] {
+  const groups = new Map<string, ReportGroup>()
+  for (const r of reports) {
+    const grain = reportGrain(r)
+    const span = reportSpan(r)
+    // 周报告按它所在那一周的周一归组：老报告的「近 7 天」不一定从周一开始，按开始那天所在的周
+    const from = grain === 'week' ? summaryPeriod('week', span.from).fromDay : span.from
+    const key = `${grain}:${from}`
+    const g = groups.get(key) ?? { key, grain, from, reports: [] }
+    g.reports.push(r)
+    groups.set(key, g)
   }
-  if (toDay === todayKey && from === dayKey(addDays(today, -(SUMMARY_LAST7_DAYS - 1))))
-    return t('近 {n} 天的报告', { n: SUMMARY_LAST7_DAYS })
-  return t('{from} 至 {to} 的报告', { from, to: toDay })
+  const list = [...groups.values()]
+  for (const g of list) g.reports.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+  // 按「这个节点最后一天」倒序：周节点的最后一天是周日，和当周的日节点放在一起时排在前面
+  const lastDay = (g: ReportGroup) => (g.grain === 'week' ? summaryPeriod('week', g.from).toDay : g.from)
+  return list.sort((a, b) => {
+    const x = lastDay(a)
+    const y = lastDay(b)
+    if (x !== y) return x < y ? 1 : -1
+    return a.grain === b.grain ? 0 : a.grain === 'week' ? -1 : 1
+  })
 }
+
+/** 一份报告里需求 / Bug 各几条：生成时存了分项就数分项，老报告没有分项时返回 null */
+export function reportCounts(r: Pick<SummaryReport, 'items'>) {
+  if (!r.items.length) return null
+  return {
+    need: r.items.filter((x) => x.kind === 'need').length,
+    bug: r.items.filter((x) => x.kind === 'bug').length,
+  }
+}
+
+// ---- 材料：对话 ----
 
 /** 压成一行、按字数截断：提示词里不放长段落 */
 export function clip(text: string, max = SUMMARY_LINE_MAX) {
   return clipText(text, max, { oneLine: true, total: true })
+}
+
+/** 一个任务在窗口里的活动：只保留提示词里要用的字段 */
+export interface DayTask {
+  id: string
+  title: string
+  status: Task['status']
+  /** 窗口里用户提的要求（已截短） */
+  asks: string[]
+  /** 窗口里 Agent 给出的结论（已截短） */
+  outcomes: string[]
+  /** 窗口里跑过的节点（名称和状态） */
+  steps: { title: string; status: string }[]
+  /** 改动的文件（相对路径） */
+  files: string[]
+  /** 窗口内最近一次执行的时间（ISO） */
+  at: string
+  /** 用户自己提出过问题（只按用户的要求判断，Agent 自查修掉的不算） */
+  userBug: boolean
+}
+
+/** 一个项目在窗口里的执行记录 */
+export interface DayProject {
+  projectId: string
+  projectName: string
+  tasks: DayTask[]
 }
 
 /** 从 Agent 的回复里取一段能代表结论的文字：跳过空行和只有符号的行 */
@@ -367,8 +358,8 @@ function firstLine(text: string) {
 /** 这条消息要不要丢：面板自己推的消息（后台结果、子对话回报、提问卡片）不是 Agent 写的工作内容 */
 const isPanelNote = (m: Task['messages'][number]) => !!m.panel || !!m.ask || !!m.peer
 
-/** 一个任务在范围内的活动；范围里没执行过（没有消息和节点）时返回 null */
-export function rangeTask(task: Task, win: SummaryWindow): DayTask | null {
+/** 一个任务在窗口里的活动；窗口里没执行过（没有消息和节点）时返回 null */
+export function rangeTask(task: Task, win: Pick<SummaryWindow, 'start' | 'end'>): DayTask | null {
   /** 窗口里的全部用户要求：Bug 判定要扫全量，不能只看截给提示词的那几条 */
   const userTexts: string[] = []
   const outcomes: string[] = []
@@ -377,34 +368,29 @@ export function rangeTask(task: Task, win: SummaryWindow): DayTask | null {
     if (inRange(iso, win) && iso > at) at = iso
   }
   for (const m of task.messages) {
+    // 范围外的消息一律不收：跨天的对话只写这一段做过的事
     if (!inRange(m.at, win)) continue
     touch(m.at)
     if (isPanelNote(m)) continue
-    if (m.role === 'user' && m.text.trim()) {
-      userTexts.push(clip(m.text))
-    } else if (m.role === 'agent') {
+    if (m.role === 'user' && m.text.trim()) userTexts.push(clip(m.text))
+    else if (m.role === 'agent') {
       const one = firstLine(m.text)
-      // 只留最后几条：结论在后面的回复里
       if (one) outcomes.push(one)
     }
   }
-  // 提示词里只放开头一条和最近几条：开头常是用户报的问题，最近几条是这次总结的重点。
-  // 全部只取末尾会把开头报的 Bug 挤掉，所以 userBug（下面）用完整的 userTexts 判定
+  // 提示词里只放开头一条和最近几条：开头常是用户报的问题，最近几条是结论所在
   const asks =
     userTexts.length <= SUMMARY_ASKS_MAX ? userTexts : [userTexts[0], ...userTexts.slice(-(SUMMARY_ASKS_MAX - 1))]
   const steps = task.steps
     .filter((s) => inRange(s.startedAt, win) || inRange(s.endedAt, win))
-    // 和 outcomes 一样只留最后几个：报告要说的是最近做完的节点
     .slice(-SUMMARY_STEPS_MAX)
     .map((s) => ({ title: clip(s.title, 40), status: s.status }))
   for (const s of task.steps) touch(s.endedAt || s.startedAt)
   for (const turn of task.turns) touch(turn.endedAt || turn.startedAt)
-  // 范围里执行过的对话至少留下一条消息或一个节点；只是打开了对话、没执行的不算
+  // 窗口里执行过的对话至少留下一条消息或一个节点；只是打开了对话、没执行的不算
   if (!userTexts.length && !outcomes.length && !steps.length) return null
   const files = [...new Set(task.changes.map((c) => c.path))].slice(0, SUMMARY_FILES_MAX)
-  // 只看用户提的要求和对话标题：报告里的「用户报告的 Bug」只收用户自己报的问题，
-  // Agent 在结论里说的「我顺手修了一个问题」不能算。扫窗口里的全部用户消息（不只是 asks），
-  // 否则用户报的问题写在开头、被条数上限截掉后就漏了
+  // 只看用户提的要求和对话标题：Bug 只收用户自己报的问题，Agent 说「我顺手修了一个问题」不能算
   const hint = [task.title, ...userTexts].join(' ').toLowerCase()
   return {
     id: task.id,
@@ -419,28 +405,15 @@ export function rangeTask(task: Task, win: SummaryWindow): DayTask | null {
   }
 }
 
-/** 一个任务今天的活动（保留的老接口，按单日窗口判定） */
-export function dayTask(task: Task, day: string): DayTask | null {
-  return rangeTask(task, dayWindow(day))
-}
-
-/** 报告要分析哪个项目的哪些对话：taskIds 为空表示这个项目范围内全部对话 */
-export interface SummaryDayPick extends SummaryProjectRef {
-  taskIds?: string[]
-}
-
 /**
- * 按项目整理范围内执行过的对话：只保留有活动的项目，项目顺序按传入的顺序（也就是用户加进来的顺序）。
- * 传了 taskIds 时只留这些对话，为空表示该项目全部。
+ * 按项目整理窗口内执行过的对话：只保留有活动的项目，顺序按传入的顺序（也就是面板里加进来的顺序）。
  * 子对话也算它自己项目里的执行记录（它们本来就在同一个项目下）
  */
 export function collectRangeProjects(
   tasks: Task[],
-  projects: SummaryDayPick[],
-  range: SummaryRange = DEFAULT_SUMMARY_RANGE,
-  now = new Date(),
+  projects: SummaryProjectRef[],
+  win: Pick<SummaryWindow, 'start' | 'end'>,
 ): DayProject[] {
-  const win = rangeWindow(range, now)
   const byProject = new Map<string, DayTask[]>()
   for (const task of tasks) {
     if (!task.projectId) continue
@@ -450,47 +423,31 @@ export function collectRangeProjects(
     list.push(d)
     byProject.set(task.projectId, list)
   }
-  return (
-    projects
-      .filter((p) => byProject.has(p.id))
-      .map((p) => {
-        const only = p.taskIds?.length ? new Set(p.taskIds) : null
-        return {
-          projectId: p.id,
-          projectName: p.name,
-          // 先按最近执行排序再截断：超过上限时留下的是范围内最新的对话，不是最早创建的
-          tasks: byProject
-            .get(p.id)!
-            .filter((t) => !only || only.has(t.id))
-            .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-            .slice(0, SUMMARY_TASKS_PER_PROJECT),
-        }
-      })
-      // 选中了对话、但这些对话在范围里都没执行时，这个项目也就没有可写的内容
-      .filter((p) => p.tasks.length > 0)
-  )
+  return projects
+    .filter((p) => byProject.has(p.id))
+    .map((p) => ({
+      projectId: p.id,
+      projectName: p.name,
+      // 先按最近执行排序再截断：超过上限时留下的是窗口内最新的对话
+      tasks: byProject
+        .get(p.id)!
+        .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+        .slice(0, SUMMARY_TASKS_PER_PROJECT),
+    }))
 }
 
-/** 按项目整理今天执行过的对话（保留的老接口，内部走「今天」范围） */
-export function collectDayProjects(tasks: Task[], projects: SummaryDayPick[], now = new Date()): DayProject[] {
-  return collectRangeProjects(tasks, projects, DEFAULT_SUMMARY_RANGE, now)
-}
-
-/**
- * 用户选了、但这段范围里没有可总结内容的项目名：页面据此提示，不静默把它们从报告里删掉。
- * 服务端算完 collectRangeProjects 后调用，判断口径就是「有没有进报告」
- */
+/** 加了、但这段时间没有可总结内容的项目名：页面据此提示，不静默略过 */
 export function skippedProjects(picks: SummaryProjectRef[], projects: DayProject[]) {
   const analyzed = new Set(projects.map((p) => p.projectId))
   return picks.filter((p) => !analyzed.has(p.id)).map((p) => p.name)
 }
 
-/** 报告里交给 CLI 的「这段时间的执行记录」正文 */
-export function summaryContext(projects: DayProject[]) {
+/** 交给 CLI 的对话材料 */
+export function tasksContext(projects: DayProject[]) {
   return projects
     .map((p) =>
       [
-        `## ${p.projectName}`,
+        `## 项目：${p.projectName}`,
         ...p.tasks.map((task) => {
           const lines = [
             `- 对话「${task.title || '未命名'}」（${task.status}）`,
@@ -508,418 +465,227 @@ export function summaryContext(projects: DayProject[]) {
     .join('\n\n')
 }
 
+// ---- 材料：已生成的报告 ----
+
 /**
- * 交给 CLI 的提示词：严格按固定模板写四节报告（概览 / 需求进度 / 问题与修复 / 下一步）。
- * 格式写死在这里，生成后还会用 checkSummaryFormat 再校一遍（见 server/summary.ts）。
- * 正文是中文，回复语言跟随面板设置（见 prompt-lang.ts）
+ * 窗口里可以拿来提炼的报告：覆盖范围整个落在窗口内的才算（只沾到一天的周报告不算，免得把范围外的事带进来）。
+ * 按周提炼时不收覆盖整周的周报告：它本身就是这一周的成品，再拿来提炼只会和日报告重复
  */
-export function summaryPrompt(input: { day: string; projects: DayProject[]; range?: SummaryWindow }) {
-  const win = input.range ?? dayWindow(input.day)
-  // 一级标题：单日就是「# 2026-10-23 工作总结」，多天用「# 2026-10-17 - 2026-10-23 工作总结」
-  const title = win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} - ${win.toDay}`
-  // 第一行说清范围：今天是哪一天、这次总结覆盖哪几天
-  const scope =
-    win.id === 'today'
-      ? `今天（${win.fromDay}）`
-      : win.id === 'yesterday'
-        ? `昨天（${win.fromDay}）`
-        : win.id === 'last7'
-          ? `近 ${win.days.length} 天（${win.fromDay} 至 ${win.toDay}）`
-          : win.fromDay === win.toDay
-            ? `${win.fromDay}`
-            : `${win.fromDay} 至 ${win.toDay}`
-  return [
-    `你在帮用户整理${scope}的工作总结报告。`,
-    promptLangRules(),
-    '',
-    '输出格式：必须严格照下面这个结构写，字段、顺序、编号一律不能变，不要自创小节：',
-    '',
-    `# ${title} 工作总结`,
-    '',
-    '## 一、概览',
-    '<一段话：这段时间整体做完了什么、还剩什么，2～3 句>',
-    '',
-    '## 二、需求进度',
-    '',
-    '### 2.1 <项目名>',
-    '1. **<需求标题>** ｜ 已完成（5/5）',
-    '   实现：<一两句原理，说清怎么做到的，不贴代码>',
-    '   验证：<一句话说明怎么确认的，例如跑了哪些测试；没有就不写这行>',
-    '2. **<需求标题>** ｜ 进行中（3/5）',
-    '   实现：<一两句原理>',
-    '',
-    '## 三、问题与修复',
-    '',
-    '### 3.1 <项目名>',
-    '1. **<问题标题>** ｜ 已修复',
-    '   原因：<根因，一句话说清是什么导致的>',
-    '   修复：<怎么修的，一句话>',
-    '',
-    '## 四、下一步',
-    '',
-    '### 4.1 <项目名>',
-    '1. **<下一步事项>**',
-    '   说明：<具体要做什么、验收标准，一句话>',
-    '',
-    '硬性规则：',
-    `- 一级标题固定写成 \`# ${title} 工作总结\`。`,
-    '- 二级标题只允许这四个，一个不能少、顺序不能变：`## 一、概览`、`## 二、需求进度`、`## 三、问题与修复`、`## 四、下一步`。',
-    '- 三级标题是项目，写 `### 2.1 <项目名>` / `### 3.1 <项目名>` / `### 4.1 <项目名>`（节号.项目序号：节号是所在二级节的序号，项目序号从 1 递增）；「概览」是一段话，不写项目小节。',
-    '- 条目写成 `1. **<标题>** ｜ <状态>`，下一行缩进两个空格写 `实现：` / `原因：` / `修复：` / `说明：`；「需求进度」可以再缩进写一行 `验证：`。',
-    '- 「需求进度」的状态只能是 `已完成`、`进行中（n/m）`、`暂停`、`未开始` 这四种。',
-    '- 「问题与修复」只写用户在「用户的要求」里自己提出来的问题；`关键词命中问题词：否` 只说明没命中关键词，不是没报问题——用户原文描述了异常现象（没反应、不对、坏了、不生效、卡住、闪退等）也要写。用户只是在讨论要不要处理某个问题、没有报告故障的不算报 Bug。Agent 自己写代码、自测、评审时发现并修掉的问题一律不写，这是硬约束。',
-    '- 「下一步」写这段范围之后还要做、但还没做完的事，按项目分组；没有就写「暂无」，不要拿已经做完的事凑数。',
-    '- 每条最多三行（标题行 + 一两行说明），单句不超过 60 字；不贴代码、不复述执行过程、不列工具调用。',
-    '- 全文不用第一人称（不写「我今天」「我修改了」），用「已完成 …」「修复 …」这种陈述。',
-    '- 某一节没有内容时，在那一节下面写一行「暂无」，不要省略整节。',
-    '- 只写下面记录里有的项目，按记录里的顺序；不要编造记录里没有的事。',
-    '- 直接输出报告正文：第一行就是一级标题，不要开场白、不要总结段落、不要用代码块包起来。',
-    '',
-    '这段时间的执行记录：',
-    summaryContext(input.projects) || '（这段时间没有执行记录）',
-  ].join('\n')
+export function reportsInWindow(reports: SummaryRecord[], win: SummaryWindow): SummaryRecord[] {
+  return reports
+    .filter((r) => {
+      const { from, to } = reportSpan(r)
+      if (!from || from < win.fromDay || to > win.toDay) return false
+      return !(win.grain === 'week' && from === win.fromDay && to === win.toDay)
+    })
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
+    .slice(-SUMMARY_REPORTS_MAX)
+}
+
+/** 交给 CLI 的报告材料：每份带上覆盖日期和项目，正文太长时截断（写明截断了） */
+export function reportsContext(reports: SummaryRecord[]) {
+  return reports
+    .map((r) => {
+      const { from, to } = reportSpan(r)
+      const span = from === to ? from : `${from} 至 ${to}`
+      const names = r.projectNames.length ? `（项目：${r.projectNames.join('、')}）` : ''
+      const body = r.md.trim()
+      const cut =
+        body.length > SUMMARY_REPORT_CHARS
+          ? `${body.slice(0, SUMMARY_REPORT_CHARS)}\n…（后面还有 ${body.length - SUMMARY_REPORT_CHARS} 字没有放进来）`
+          : body
+      return `## 报告：${span}${names}\n${cut}`
+    })
+    .join('\n\n')
+}
+
+// ---- 提示词 ----
+
+/** 提示词第一行的范围描述：按天写日期，按周写起止 */
+function scopeText(win: SummaryWindow) {
+  return win.grain === 'day'
+    ? `${win.fromDay}`
+    : `${win.fromDay} 至 ${win.toDay}（第 ${isoWeek(parseDay(win.fromDay) ?? new Date()).week} 周）`
 }
 
 /**
- * 生成后的格式自检：只查结构（标题、四节、编号、条目形状），不评价内容。
- * 只认新四节：老报告不经过这里（生成时已经存好了），解析老报告见 parseSummaryReport
- * 返回的问题码可以直接交给页面本地化（见 SUMMARY_FORMAT_ISSUES）
+ * 交给 CLI 的提炼提示词：角色设定（写法规则都在「每日工作总结」角色里，用户能自己调）+ 本次范围 + 输出约定 + 材料。
+ * 输出约定写在这里而不是角色里：JSON 字段和解析代码绑在一起，改了一边另一边要跟着改
  */
-export function checkSummaryFormat(md: string): { ok: boolean; issues: SummaryFormatIssue[] } {
-  const issues = new Set<SummaryFormatIssue>()
-  const lines = md.split('\n').map((l) => l.trimEnd())
-  const body = lines.filter((l) => l.trim())
-  // 一级标题：报告第一行就是它，日期可以是单日或多日区间
-  if (!new RegExp(`^# ${DAY_KEY_PATTERN}(?: - ${DAY_KEY_PATTERN})? 工作总结$`).test((body[0] ?? '').trim()))
-    issues.add('title')
-  const h2 = body.filter((l) => l.startsWith('## ')).map((l) => l.trim())
-  const wanted = SUMMARY_SECTIONS.map((s) => s as string)
-  if (h2.length !== wanted.length || h2.some((l, i) => l !== wanted[i])) issues.add('sections')
-  // 三级标题：节号.项目序号，序号从 1 递增
-  const h3 = body.filter((l) => l.startsWith('### '))
-  if (h3.some((l) => !/^### \d+\.\d+ \S/.test(l))) issues.add('project')
-  // 条目：`n. **标题**` 后面可以跟 `｜ 状态`
-  for (const line of body) {
-    if (!/^\d+\. /.test(line)) continue
-    if (!/^\d+\. \*\*.+\*\*( ｜ \S.*)?$/.test(line)) issues.add('item')
+export function extractPrompt(input: {
+  role: string
+  win: SummaryWindow
+  source: SummarySource
+  projects: string[]
+  context: string
+}) {
+  const { win } = input
+  const from = input.source === 'reports' ? '这段时间已经生成过的工作总结报告' : '这段时间各项目执行过的对话记录'
+  const lines: (string | false)[] = [
+    input.role.trim(),
+    '',
+    '## 这一次',
+    `- 范围：${scopeText(win)}。只写这段时间里的事，材料里出现的范围外的内容一律不写。`,
+    `- 材料：下面给出的是${from}，已经按范围筛好；不要再去读文件或数据目录。`,
+    input.projects.length > 0 && `- 项目：${input.projects.join('、')}；分项的 project 写这里面的名字。`,
+    '- 输出：只输出一个 ```json 代码块，不要别的文字。格式：',
+    '```json',
+    '{"items":[',
+    '  {"kind":"need","project":"<项目名>","title":"<需求标题>","content":"<做了什么、实现了什么>"},',
+    '  {"kind":"bug","project":"<项目名>","title":"<问题标题：用户看到的现象>","cause":"<原因>","fix":"<修复方案>"}',
+    ']}',
+    '```',
+    `- 最多 ${SUMMARY_ITEMS_MAX} 条；没有可写的内容就输出 {"items":[]}，不要凑数。`,
+    '',
+    '## 材料',
+    input.context.trim() || '（这段时间没有记录）',
+  ]
+  return lines.filter((l): l is string => l !== false).join('\n')
+}
+
+/** 第一次的回答解析不了时追加的提示：带上原因，要求只输出 JSON */
+export function extractRetryHint(error: string) {
+  return `\n\n上一次的回答没法解析（${error}）。请只输出一个 \`\`\`json 代码块，格式按上面的约定，不要别的文字。`
+}
+
+/** 从回答里取 JSON：优先最后一个 ```json 代码块，没有就取第一个 { 到最后一个 } */
+function pickJson(text: string): { json?: unknown; error?: string } {
+  const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/g)]
+  let raw = blocks.at(-1)?.[1]
+  if (raw === undefined) {
+    const a = text.indexOf('{')
+    const b = text.lastIndexOf('}')
+    if (a < 0 || b <= a) return { error: '回答里没有 JSON' }
+    raw = text.slice(a, b + 1)
   }
-  // 节内没有内容时必须是「暂无」：概览是一段话，其余三节靠条目填内容
-  for (let i = 0; i < wanted.length; i++) {
-    const start = body.findIndex((l) => l.trim() === wanted[i])
-    if (start < 0) continue
-    const rest = body.slice(start + 1)
-    const nextH2 = rest.findIndex((l) => l.startsWith('## '))
-    const section = nextH2 < 0 ? rest : rest.slice(0, nextH2)
-    // 概览没有条目，任何非标题的行都算填了内容
-    const filled = section.some((l) => (l.trim() === '暂无' ? true : i === 0 ? !l.startsWith('#') : /^\d+\. /.test(l)))
-    if (!filled) issues.add('empty')
+  try {
+    return { json: JSON.parse(raw) }
+  } catch (e) {
+    return { error: `JSON 格式不对：${(e as Error).message}` }
   }
-  return { ok: issues.size === 0, issues: [...issues] }
+}
+
+const RawEntry = z.object({
+  kind: z.string(),
+  project: z.unknown().optional(),
+  title: z.unknown(),
+  content: z.unknown().optional(),
+  cause: z.unknown().optional(),
+  fix: z.unknown().optional(),
+})
+
+const text = (v: unknown, max: number) => (typeof v === 'string' ? clip(v, max) : '')
+
+/**
+ * 把 CLI 的回答解析成分项：认不出种类、没有标题的条目丢掉，项目名对不上时按大小写和空白宽松匹配，
+ * 还对不上就原样保留（老报告里的项目可能已经改名）。返回 error 时调用方重试或报错，不悄悄当成「没有内容」
+ */
+export function parseExtract(
+  answer: string,
+  projects: string[],
+  newId: () => string,
+): { items: SummaryEntry[]; error?: string } {
+  const { json, error } = pickJson(answer)
+  if (error) return { items: [], error }
+  const list = Array.isArray(json) ? json : (json as { items?: unknown } | null)?.items
+  if (!Array.isArray(list)) return { items: [], error: '没有 items 数组' }
+  const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+  const known = new Map(projects.map((p) => [norm(p), p]))
+  const items: SummaryEntry[] = []
+  for (const x of list) {
+    const r = RawEntry.safeParse(x)
+    if (!r.success) continue
+    const kind = r.data.kind.toLowerCase()
+    if (kind !== 'need' && kind !== 'bug') continue
+    const title = text(r.data.title, 120)
+    if (!title) continue
+    const project = text(r.data.project, 80)
+    items.push({
+      id: newId(),
+      kind,
+      project: known.get(norm(project)) ?? project,
+      title,
+      content: kind === 'need' ? text(r.data.content, 600) : '',
+      cause: kind === 'bug' ? text(r.data.cause, 600) : '',
+      fix: kind === 'bug' ? text(r.data.fix, 600) : '',
+    })
+    if (items.length >= SUMMARY_ITEMS_MAX) break
+  }
+  return { items }
+}
+
+// ---- 拼报告 ----
+
+/** 报告的一级标题：按天「2026-10-29 工作总结」，按周「第 44 周工作总结（2026-10-26 至 2026-11-01）」 */
+export function reportHeading(grain: SummaryGrain, from: string, to: string) {
+  if (grain === 'day' || from === to) return `${from} 工作总结`
+  return `第 ${isoWeek(parseDay(from) ?? new Date()).week} 周工作总结（${from} 至 ${to}）`
+}
+
+/** 报告固定的两节：需求在前、Bug 在后 */
+export const REPORT_SECTIONS = ['## 一、需求', '## 二、Bug'] as const
+
+/** 分项按项目分组，项目顺序按第一次出现的顺序（也就是 CLI 给出 / 用户采纳的顺序） */
+function byProject(items: SummaryEntry[]) {
+  const map = new Map<string, SummaryEntry[]>()
+  for (const x of items) {
+    const key = x.project || '其他'
+    map.set(key, [...(map.get(key) ?? []), x])
+  }
+  return [...map.entries()]
 }
 
 /**
- * 格式自检不合格时再跑一次 CLI 的追加提示：带上具体问题，要求整份重写。
- * 与 summaryPrompt 共用同一份问题文案，不在服务端另写一套
+ * 用采纳的分项拼报告：需求和 Bug 分两节，节内按项目分小节、条目编号。
+ * 需求只写「内容」（做了什么、实现了什么），Bug 写「原因」和「修复」；某一节没有条目时写「暂无」
  */
-export function summaryRetryHint(issues: SummaryFormatIssue[]) {
+export function renderReport(input: { grain: SummaryGrain; from: string; to: string; items: SummaryEntry[] }) {
+  const section = (no: number, kind: SummaryKind) => {
+    const groups = byProject(input.items.filter((x) => x.kind === kind))
+    if (!groups.length) return ['暂无', '']
+    return groups.flatMap(([name, list], gi) => [
+      `### ${no}.${gi + 1} ${name}`,
+      ...list.flatMap((x, i) => [
+        `${i + 1}. **${x.title}**`,
+        ...(kind === 'need'
+          ? x.content
+            ? [`   内容：${x.content}`]
+            : []
+          : [...(x.cause ? [`   原因：${x.cause}`] : []), ...(x.fix ? [`   修复：${x.fix}`] : [])]),
+      ]),
+      '',
+    ])
+  }
   return [
+    `# ${reportHeading(input.grain, input.from, input.to)}`,
     '',
-    '上一次输出没有按规定的格式写，问题：',
-    ...issues.map((i) => `- ${SUMMARY_FORMAT_ISSUES[i]}`),
-    '请严格按上面的结构把整份报告重写一遍，只输出报告正文。',
-  ].join('\n')
+    REPORT_SECTIONS[0],
+    '',
+    ...section(1, 'need'),
+    REPORT_SECTIONS[1],
+    '',
+    ...section(2, 'bug'),
+  ]
+    .join('\n')
+    .trimEnd()
+    .concat('\n')
 }
 
-/**
- * 从 CLI 的回答里取出报告正文：去开头的说明文字和包着它的代码块（有些 CLI 习惯整段放进 ```markdown）。
- * 报告本身可以有一级标题，不做改动
- */
-export function extractSummary(text: string): string {
-  const raw = text.trim()
-  if (!raw) return ''
-  // 提示词要求直接给正文；真被 ``` 包起来时（有些 CLI 的习惯）就取这一块，不管里面有没有标题。
-  // 但代码块前面已经有 Markdown 标题时，说明报告正文就在前面，块里是附带的命令或报错，用原文
-  const fenced = /```(?:markdown|md)?\s*\n([\s\S]*?)\n?```/i.exec(raw)
-  const before = fenced ? raw.slice(0, fenced.index) : ''
-  if (fenced && fenced[1].trim() && !/^#{1,6} /m.test(before)) return fenced[1].trim() + '\n'
-  return raw + '\n'
-}
-
-/** 报告在列表里显示的名字：第一行标题，没有就用日期 */
-export function reportTitle(md: string, day: string) {
-  const line = md.split('\n').find((l) => l.trim())
-  const title = clip((line ?? '').replace(/^#+\s*/, ''), 60)
-  return title || day
-}
-
-/** 报告的字数（去掉空白）：报告头和最近报告列表显示规模用，Markdown 标记也算进去，不另算一套口径 */
+/** 报告的字数（去掉空白）：报告头显示规模用，Markdown 标记也算进去，不另算一套口径 */
 export function reportChars(md: string) {
   return md.replace(/\s/g, '').length
 }
 
-// ---- 两份报告的对比 ----
-
-/** 报告里的一个条目：标题 +（需求进度才有的）状态 + 缩进那行说明 */
-export interface SummaryItem {
-  /** 报告里写的序号（1、2…），只用于展示 */
-  no: number
-  title: string
-  /** 状态原文（「已完成（5/5）」）；「用户报告的 Bug」节没有这一项，读成空串 */
-  status: string
-  /** 缩进一行写的「实现：/原因：/修复：」，可能为空 */
-  detail: string
-}
-
-/** 一个项目小节（三级标题 `### 1.1 项目名`）下的全部条目 */
-export interface SummarySection {
-  /** 三级标题里的编号（1.1 / 2.1） */
-  no: string
-  name: string
-  items: SummaryItem[]
-}
-
-export interface ParsedSummaryReport {
-  /** 一级标题（去掉 `# `） */
-  title: string
-  /** 需求进度 / 问题与修复 / 下一步，按 `SUMMARY_SECTIONS` 的顺序 */
-  needs: SummarySection[]
-  bugs: SummarySection[]
-  next: SummarySection[]
-  /** 概览的正文（老报告的「今日小结」也放在这里） */
-  wrapUp: string
-  /** 固定节全部找到、条目都解析出来才算成功；否则页面退回纯文本 diff，不报错 */
-  ok: boolean
-}
-
-/** 三级标题：`### 2.1 项目名`（节号.项目序号，项目名允许有空格） */
-const SUMMARY_PROJECT_RE = /^###\s+(\d+\.\d+)\s+(\S.*?)\s*$/
-/** 条目：`1. **标题** ｜ 状态`（竖线也认半角，状态可空 —— 用户手改报告时常见） */
-const SUMMARY_ITEM_RE = /^(\d+)\.\s+\*\*(.+?)\*\*(?:\s*[｜|]\s*(.*?))?\s*$/
-/** 条目下面缩进的那一行：`   实现：…` / `   验证：…` / `   原因：…` / `   修复：…` / `   说明：…` */
-const SUMMARY_DETAIL_RE = /^\s+(实现|验证|原因|修复|说明)[：:]\s*(.*)$/
-
-/** 收一组固定二级节的正文：节名不在 titles 里或重复出现的当作用户自己加的小节，不参与解析 */
-function collectSections(lines: string[], titles: readonly string[]) {
-  const bodies = new Map<string, string[]>()
-  let cur: string | null = null
-  for (const line of lines) {
-    const t = line.trim()
-    if (t.startsWith('## ')) {
-      cur = (titles as readonly string[]).includes(t) && !bodies.has(t) ? t : null
-      if (cur) bodies.set(cur, [])
-      continue
-    }
-    // 一级标题之后的内容（报告说明之类）不属于任何一节
-    if (t.startsWith('# ')) {
-      cur = null
-      continue
-    }
-    if (cur) bodies.get(cur)!.push(line)
-  }
-  return bodies
-}
-
-/** 报告里「看起来是条目」的行数：和解析出来的条目数对照，判断有没有偏离模板的条目没解析出来 */
-const itemLineCount = (body: string[]) => body.filter((l) => /^\s*\d+\.\s/.test(l)).length
-const itemCount = (sections: SummarySection[]) => sections.reduce((n, s) => n + s.items.length, 0)
-
-/** 概览：去掉标题和空行后原样保留（可能被用户改成长一点的段落） */
-const wrapText = (body: string[]) =>
-  body
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .join('\n')
-
-/**
- * 把一份报告解析成结构。先按新四节解析，解析不了再看是不是升级前的老三节
- * （「用户报告的 Bug」→ 问题与修复，「今日小结」→ 概览）。
- * 作者手改过、两边都不合模板时不抛错也不编内容：`ok` 为 false，调用方退回纯文本 diff
- */
-export function parseSummaryReport(md: string): ParsedSummaryReport {
-  const lines = md.split('\n')
-  const titleLine = lines.find((l) => l.trim().startsWith('# '))?.trim() ?? ''
-  const title = titleLine.replace(/^#\s*/, '').trim()
-
-  const parseSection = (body: string[], withStatus: boolean): SummarySection[] => {
-    const out: SummarySection[] = []
-    for (const line of body) {
-      const t = line.trim()
-      const project = SUMMARY_PROJECT_RE.exec(t)
-      if (project) {
-        out.push({ no: project[1], name: project[2], items: [] })
-        continue
-      }
-      const item = SUMMARY_ITEM_RE.exec(t)
-      if (item) {
-        const target = out.at(-1)
-        // 条目写在项目标题之前：模板里不会出现，解析不了就不收，不凭空归到一个项目下
-        if (!target) continue
-        target.items.push({
-          no: Number(item[1]),
-          title: item[2].trim(),
-          status: withStatus ? (item[3] ?? '').trim() : '',
-          detail: '',
-        })
-        continue
-      }
-      const detail = SUMMARY_DETAIL_RE.exec(line)
-      if (!detail) continue
-      const last = out.at(-1)?.items.at(-1)
-      if (last) last.detail = last.detail ? `${last.detail}\n${t}` : t
-    }
-    return out
-  }
-
-  /**
-   * 按一组节名解析。at 指明概览 / 需求进度 / 问题与修复 / 下一步各是第几节：
-   * 新四节和旧三节的位置不同，不能按同一个索引取。
-   * 报告里有「看起来是条目」的行却没全部解析出来，说明写法偏离模板（标题里嵌了 `**`、编号不在行首这类）；
-   * 这时不能把没解析出来的条目当成「消失」，整份按解析失败处理，页面退回逐行对比
-   */
-  const read = (
-    titles: readonly string[],
-    at: { wrap: number; needs: number; bugs: number; next?: number },
-  ): ParsedSummaryReport => {
-    const bodies = collectSections(lines, titles)
-    const bodyOf = (i: number | undefined) => (i === undefined ? [] : (bodies.get(titles[i]) ?? []))
-    const needsBody = bodyOf(at.needs)
-    const bugsBody = bodyOf(at.bugs)
-    const nextBody = bodyOf(at.next)
-    const needs = parseSection(needsBody, true)
-    const bugs = parseSection(bugsBody, false)
-    const next = parseSection(nextBody, false)
-    return {
-      title,
-      needs,
-      bugs,
-      next,
-      wrapUp: wrapText(bodyOf(at.wrap)),
-      ok:
-        bodies.size === titles.length &&
-        itemCount(needs) === itemLineCount(needsBody) &&
-        itemCount(bugs) === itemLineCount(bugsBody) &&
-        itemCount(next) === itemLineCount(nextBody),
-    }
-  }
-
-  const fresh = read(SUMMARY_SECTIONS, { wrap: 0, needs: 1, bugs: 2, next: 3 })
-  return fresh.ok ? fresh : read(LEGACY_SUMMARY_SECTIONS, { wrap: 2, needs: 0, bugs: 1 })
-}
-
-/** 一份变化：新增 / 消失 / 状态变化 */
-export interface SummaryChange {
-  kind: 'added' | 'removed' | 'changed'
-  project: string
-  title: string
-  /** 旧状态 / 新状态：added 只有 to，removed 只有 from，changed 两个都有 */
-  from: string
-  to: string
-  /** 报告里那行说明（展示用）：新增和变化取新报告的，消失取旧报告的 */
-  detail: string
-}
-
-export interface SummaryCompare {
-  /** 两份正文完全一样 */
-  same: boolean
-  /** 两份都解析成功：needs / bugs / next 才有内容，解析不了时用 lines */
-  parsed: boolean
-  needs: SummaryChange[]
-  bugs: SummaryChange[]
-  next: SummaryChange[]
-  /** 概览并排显示 */
-  wrapUp: { before: string; after: string; changed: boolean }
-  /** 结构化对比不了（或格式对但没有条目级变化）时的行级差异 */
-  lines: { kind: 'same' | 'add' | 'del'; text: string }[]
-}
-
-/** 把各项目小节展开成「项目 + 条目」，对比按（项目名，条目标题）配对 */
-function flattenSections(sections: SummarySection[]) {
-  const out: { project: string; item: SummaryItem }[] = []
-  for (const s of sections) for (const item of s.items) out.push({ project: s.name, item })
-  return out
-}
-
-const entryKey = (project: string, title: string) => `${project}\u0000${title}`
-
-/**
- * 条目级变化：按（项目名，标题）配对。
- * withStatus 为真时比较状态（需求进度），问题与修复 / 下一步没有状态，配上就是没变化
- */
-function entryChanges(
-  before: ParsedSummaryReport,
-  after: ParsedSummaryReport,
-  pickSection: (r: ParsedSummaryReport) => SummarySection[],
-  withStatus: boolean,
-) {
-  const pick = (r: ParsedSummaryReport) => flattenSections(pickSection(r))
-  const oldMap = new Map(pick(before).map((x) => [entryKey(x.project, x.item.title), x]))
-  const newMap = new Map(pick(after).map((x) => [entryKey(x.project, x.item.title), x]))
-  const out: SummaryChange[] = []
-  for (const [key, x] of newMap) {
-    const old = oldMap.get(key)
-    if (!old) {
-      out.push({
-        kind: 'added',
-        project: x.project,
-        title: x.item.title,
-        from: '',
-        to: x.item.status,
-        detail: x.item.detail,
-      })
-      continue
-    }
-    if (withStatus && old.item.status !== x.item.status)
-      out.push({
-        kind: 'changed',
-        project: x.project,
-        title: x.item.title,
-        from: old.item.status,
-        to: x.item.status,
-        detail: x.item.detail,
-      })
-  }
-  for (const [key, x] of oldMap) {
-    if (newMap.has(key)) continue
-    out.push({
-      kind: 'removed',
-      project: x.project,
-      title: x.item.title,
-      from: x.item.status,
-      to: '',
-      detail: x.item.detail,
-    })
-  }
-  return out
+/** 报告在树里的名字：项目名，从报告提炼的写「汇总」；老报告没有项目名时用正文第一行 */
+export function reportName(r: Pick<SummaryRecord, 'projectNames' | 'source' | 'md' | 'day'>) {
+  if (r.source === 'reports') return t('汇总报告')
+  if (r.projectNames.length) return r.projectNames.join('、')
+  const line = r.md.split('\n').find((l) => l.trim())
+  return clip((line ?? '').replace(/^#+\s*/, ''), 60) || r.day
 }
 
 /**
- * 对比两份报告（先旧的、后新的）：需求进度给出新增 / 消失 / 状态变化，问题与修复和下一步给出新增 / 消失，
- * 概览并排；两份都解析不了格式时退回纯文本 diff，不报错也不编内容。
- * 新四节和老三节的报告可以一起对比：老报告解析时就映射成了同一套节
- */
-export function compareSummaryReports(before: string, after: string): SummaryCompare {
-  const a = parseSummaryReport(before)
-  const b = parseSummaryReport(after)
-  const parsed = a.ok && b.ok
-  const same = before === after
-  return {
-    same,
-    parsed,
-    needs: parsed ? entryChanges(a, b, (r) => r.needs, true) : [],
-    bugs: parsed ? entryChanges(a, b, (r) => r.bugs, false) : [],
-    next: parsed ? entryChanges(a, b, (r) => r.next, false) : [],
-    wrapUp: { before: a.wrapUp, after: b.wrapUp, changed: a.wrapUp !== b.wrapUp },
-    lines: parsed || same ? [] : lineDiff(before, after),
-  }
-}
-
-/** 对比里有没有条目或概览级别的变化：页面据此说「没有差异」，和正文是否逐字相同分开 */
-export function compareHasChanges(c: SummaryCompare) {
-  return c.needs.length > 0 || c.bugs.length > 0 || c.next.length > 0 || c.wrapUp.changed
-}
-
-/**
- * 生成耗时的显示：不到 1 秒 / N 秒 / N 分 M 秒。
+ * 耗时的显示：不到 1 秒 / N 秒 / N 分 M 秒。
  * 0 或非法值返回空串——老报告没有耗时字段，页面就不显示这一段
  */
 export function formatDuration(ms: number) {
