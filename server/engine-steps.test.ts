@@ -230,19 +230,41 @@ test('多步骤节点：停止后续跑不重跑已完成的步骤，只续接�
   assert.match(resumed[1].prompt, /被中断/)
 })
 
-test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下', async () => {
+test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下，一次派多个全部同时开跑、不排队', async () => {
   const w = workflow([{ id: 's1', title: '一步', instructions: '一。' }])
-  const { task, host } = makeHost(w, (call) => {
+  // 以前整个任务同时最多跑 6 个、多的排队（用户 2026-10-29 要求去掉）：派 8 个，每个都等到 8 个全开跑才结束，
+  // 还有排队的话凑不齐，3 秒后放行并判失败
+  const N = 8
+  let started = 0
+  let timedOut = false
+  let release!: () => void
+  const all = new Promise<void>((r) => (release = r))
+  const timer = setTimeout(() => {
+    timedOut = true
+    release()
+  }, 3000)
+  const { task, host } = makeHost(w, async (call) => {
     if (call.step?.id === 'a/step/s1') {
-      const ids = call.orch!.spawn([{ title: '子任务', instructions: '帮我查一下' }]).ids
-      return call.orch!.wait(ids, 1000).then(() => '一步结果')
+      const ids = call.orch!.spawn(
+        Array.from({ length: N }, (_, i) => ({ title: `子任务 ${i + 1}`, instructions: '帮我查一下' })),
+      ).ids
+      assert.equal(ids.length, N)
+      await call.orch!.wait(ids, 5000)
+      return '一步结果'
     }
+    if (++started === N) release()
+    await all
     return '子任务结果'
   })
   await runEngineTurn(host)
-  const helper = task.steps.find((s) => s.slot === 'sub')!
-  assert.equal(helper.parentId, 'a/step/s1')
-  assert.equal(helper.status, 'done')
+  clearTimeout(timer)
+  assert.ok(!timedOut, `${N} 个子任务应同时开跑，不该排队等前面的做完`)
+  const helpers = task.steps.filter((s) => s.slot === 'sub')
+  assert.equal(helpers.length, N)
+  for (const helper of helpers) {
+    assert.equal(helper.parentId, 'a/step/s1')
+    assert.equal(helper.status, 'done')
+  }
   // wait 已经取回的结果不再重复并进节点输出
   assert.equal(task.steps.find((s) => s.id === 'a/step/s1')!.output, '一步结果')
 })

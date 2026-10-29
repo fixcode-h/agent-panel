@@ -880,7 +880,9 @@ export const EN_TASKS: Record<string, string> = {
   子任务执行中: 'Subtasks running',
   '子任务执行中，做完后结果会自动交回给派它的对话':
     'Subtask running; its result goes back to the chat that started it when done',
-  '子任务在排队，前面的做完就开始': 'Subtask queued; it starts when an earlier one finishes',
+  还没开始: 'Not started',
+  已打断: 'Interrupted',
+  '子任务被打断了，还没做完': 'Subtask was interrupted before it finished',
   '子任务失败了，派它的对话会收到失败原因。这里只能查看':
     'Subtask failed; the chat that started it gets the reason. View only',
   '子任务已结束，结果已交回给派它的对话。这里只能查看':
