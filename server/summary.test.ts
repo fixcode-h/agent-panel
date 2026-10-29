@@ -88,7 +88,7 @@ test('提炼：这段时间没有材料时不跑 CLI，直接给空分项', asyn
   assert.equal(cur.reportCount, 0)
 })
 
-test('确认生成：只用传进来的分项拼报告，存下分项和元数据', async () => {
+test('确认生成、编辑与删除：只用传进来的分项拼报告，存下分项和元数据；改过的正文能存，删掉后再删 404', async () => {
   const res = await app.request(
     '/summary',
     json('POST', {
@@ -125,10 +125,8 @@ test('确认生成：只用传进来的分项拼报告，存下分项和元数�
   assert.deepEqual(old.items, [])
   assert.equal(old.durationMs, 0)
   assert.equal(old.grain, undefined)
-})
 
-test('编辑与删除：保存改过的 Markdown，删除后列表里没有，再删 404', async () => {
-  const [rec] = (await reports.list()).slice(-1)
+  // 编辑与删除：保存改过的 Markdown，删除后列表里没有，再删 404
   const put = await app.request(`/summary/${rec.id}`, json('PUT', { md: '# 改过\n' }))
   assert.equal(put.status, 200)
   assert.equal(((await put.json()) as ReportRecord).md, '# 改过\n')
