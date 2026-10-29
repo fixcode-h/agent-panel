@@ -26,9 +26,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      # lint 里已经跑过静态的预算检查（不执行测试）；这里只跑单测本身
+      # lint 里已经跑过静态的用例检查（报数，本次净新增用例要写理由；不执行测试）；这里只跑单测本身
       - run: npm run lint
-      # 单测各批已经把 tap 写进 logs/tests/，合并起来用真实用例数复核一次分层预算（同一次全量只统计一次，不重复跑测试）。
+      # 单测各批已经把 tap 写进 logs/tests/，合并起来报一次真实用例数、和静态计数对照（只报数不拦，见 ADR 0031；不重复跑测试）。
       # 不能再传 --test-reporter=tap：单测入口自己就有 reporter，叠加会报「reporter 和 destination 数量对不上」。
       - run: npm run test:unit
       - run: cat logs/tests/unit-timing.tap logs/tests/unit-rest.tap > "$RUNNER_TEMP/unit-tap.txt" && node scripts/test-budget.mjs --tap "$RUNNER_TEMP/unit-tap.txt"
