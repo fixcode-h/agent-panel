@@ -1339,9 +1339,7 @@ export const EN_TASKS: Record<string, string> = {
   记成教训: 'Record as lesson',
   不针对具体文件: 'Not tied to a file',
   // 输入框工具条的模型按钮
-  模型和思考强度: 'Model and thinking effort',
   查看运行: 'View run',
-  '模型 {model}，思考强度 {effort}，点开切换': 'Model {model}, thinking effort {effort}; click to change',
   '模型和思考强度跟着角色设置：{model}': 'Model and thinking effort follow the role settings: {model}',
 
   // 会话栏（照 Claude Code）

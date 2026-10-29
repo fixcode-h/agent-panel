@@ -68,14 +68,7 @@ import {
   type ToolUse,
   type TaskSeenResult,
 } from '@shared/schema'
-import {
-  ChatModelPicker,
-  ComposerModelPicker,
-  RoleModelBadge,
-  useChatRun,
-  useRunAuthor,
-  type ChatRun,
-} from './ChatModelPicker'
+import { ChatModelPicker, RoleModelBadge, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childCounts,
@@ -1609,6 +1602,13 @@ export function TaskView({
                   }
             }
           />
+          {/* Agent、模型、思考强度和新建对话的输入框一样放在左下角（不挪到标题栏）。不用角色的对话能换；
+              用角色的对话跟着角色设置，只读显示 */}
+          {byCli ? (
+            <ChatModelPicker value={chatRun} onChange={changeRun} />
+          ) : (
+            chatAgent && <RoleModelBadge agent={chatAgent} />
+          )}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">
               {working
@@ -1634,13 +1634,6 @@ export function TaskView({
       onStop={stop}
       leading={
         <>
-          {/* 右侧（设计稿）：模型和思考强度紧挨着上下文圆环。不用角色的对话能换（Chat 页的 Agent 和模型在标题栏，
-              这里只留思考强度）；用角色的对话跟着角色设置，只读显示 */}
-          {byCli ? (
-            <ComposerModelPicker value={chatRun} onChange={changeRun} parts={chatPage ? 'effort' : 'all'} />
-          ) : (
-            chatAgent && <RoleModelBadge agent={chatAgent} />
-          )}
           <TaskContextRing task={task} node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined} />
           {/* 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
               只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点 */}
@@ -2027,7 +2020,7 @@ export function TaskView({
     </>
   )
 
-  // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边「Agent · 模型」、导出、开关右栏
+  // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边导出、开关右栏
   const chatRailShown = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
   const chatHeader = (
     <header
@@ -2048,12 +2041,8 @@ export function TaskView({
         {titleNode}
         {headerBadges}
       </div>
-      {/* 不用角色的聊天在这里换 CLI 和模型（思考强度留在输入框里）；用了角色的只写是谁在回答 */}
-      {byCli ? (
-        <ChatModelPicker value={chatRun} onChange={changeRun} parts="run" />
-      ) : (
-        <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>
-      )}
+      {/* 用了角色的写一下是谁在回答；Agent 和模型的选择都在输入框里，不放标题栏 */}
+      {!byCli && <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>}
       <Menu>
         <MenuTrigger asChild>
           <IconButton size="sm" tone="bare" label={t('导出')}>
