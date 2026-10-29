@@ -33,6 +33,7 @@ const SchedulesPage = lazy(() => import('@/pages/SchedulesPage').then((m) => ({ 
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const SummaryPage = lazy(() => import('@/pages/SummaryPage').then((m) => ({ default: m.SummaryPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
+const ModelPage = lazy(() => import('@/pages/ModelPage').then((m) => ({ default: m.ModelPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiWindow = lazy(() => import('@/components/ai-window/AiWindow').then((m) => ({ default: m.AiWindow })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
@@ -47,6 +48,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   chat: () => <ChatPage />,
   design: () => <DesignPage />,
   comfy: () => <ComfyPage />,
+  model: () => <ModelPageRoute />,
   library: () => <LibraryPage />,
   mcp: () => <McpPage />,
   summary: () => <SummaryPage />,
@@ -61,8 +63,15 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
 const splitPage = (r: Route) =>
   r.page === 'projects' ||
   (r.page === 'chat' && !!r.id) ||
+  (r.page === 'model' && !!r.id) ||
   r.page === 'schedules' ||
   (r.page === 'design' && !!r.id && r.id !== 'new' && r.id !== 'home')
+
+/** 模型设计页按地址里的对话 id 打开（换对话时 TaskView 由 key 重建） */
+function ModelPageRoute() {
+  const { route } = useNav()
+  return <ModelPage id={route.id} />
+}
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))

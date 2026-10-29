@@ -64,7 +64,8 @@ function ProjectHome({ project }: { project: Project }) {
     return Math.max(320, width - 480)
   })
   // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）；子对话只在父对话页里看
-  const all = tasks.filter((t) => t.projectId === project.id && !t.parentTaskId)
+  // 模型设计对话属于设计模式（#/model），项目首页不列
+  const all = tasks.filter((t) => t.projectId === project.id && !t.parentTaskId && !t.modelDesign)
   const archived = all.filter((t) => t.archived).length
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走
