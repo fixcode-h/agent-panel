@@ -265,7 +265,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .first()
     .click()
   await p.getByRole('button', { name: '角色', exact: true }).first().click()
-  // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色
+  // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色。
+  // 角色页分「高级角色 / 基本角色」两页，代码审查在基本角色里，先切过去
+  await p
+    .getByRole('radiogroup', { name: '角色层' })
+    .getByRole('radio', { name: /^基本角色/ })
+    .click()
   await p.getByText('代码审查', { exact: true }).first().click()
   await p.getByRole('button', { name: 'AI 优化' }).first().click()
   await p.getByRole('button', { name: '最小化', exact: true }).last().click()

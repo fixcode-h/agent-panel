@@ -316,7 +316,7 @@ test('内置定义：主理、执行、分析是高级角色，挂载装好后�
   assert.equal(again.synced.length, 0)
 })
 
-test('内置角色保存：挂哪些能力跟已装的定义，用户改的用法和参数取值保留，自己加的挂载去掉', () => {
+test('内置角色保存：没接管挂载时跟定义（只留用户的用法和参数取值），接管了（mountsCustom）就整份按用户的', () => {
   const def = BUILTIN_AGENTS.find((a) => a.key === 'worker')!
   const before = [
     { agentId: 'x-explorer', mode: 'auto' as const, preload: false, rule: '定义里的规则', params: {} },
@@ -336,5 +336,21 @@ test('内置角色保存：挂哪些能力跟已装的定义，用户改的用�
       ['x-explorer', 'subtask', '定义里的规则', { depth: '深' }],
       ['x-reviewer', 'subtask', '', {}],
     ],
+  )
+  // 接管后：自己加的挂载、改的说明、删掉的默认挂载都按用户的，再同步也不会被定义改回去
+  const mine = AgentInput.parse({ ...input, mountsCustom: true })
+  const custom = syncCore(mine, def, { categoryId: '', includes: [], mounts: before })
+  assert.deepEqual(
+    custom.mounts.map((m) => [m.agentId, m.rule]),
+    [
+      ['x-explorer', '用户改的规则'],
+      ['x-extra', ''],
+    ],
+  )
+  assert.equal(custom.mountsCustom, true)
+  // 恢复默认：清掉接管标记就回到定义
+  assert.equal(
+    syncCore({ ...custom, mountsCustom: false }, def, { categoryId: '', includes: [], mounts: before }).mounts.length,
+    2,
   )
 })

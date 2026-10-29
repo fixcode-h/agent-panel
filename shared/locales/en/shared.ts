@@ -63,6 +63,8 @@ export const EN_SHARED: Record<string, string> = {
   发布: 'Release',
   优化: 'Optimization',
   创意: 'Creative',
+  走查: 'Walkthrough',
+  翻译: 'Translation',
 
   // settings.ts
   'Agent 默认': 'Agent default',

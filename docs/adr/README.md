@@ -32,7 +32,8 @@
 | [0022](./0022-review-gate-override.md)                    | 评审门禁留显式放行出口，记录谁、什么时候、为什么            | 已接受 | 2026-10-28 | `reviewGate` 的 `override`；时间由面板记；`Task.reviewOverride` 进任务详情、收尾消息和交接摘要                                 |
 | [0023](./0023-role-layers-and-triage.md)                  | 角色分基本 / 高级两层，父对话先分诊再派单，可就地微改动     | 已接受 | 2026-10-28 | `kind` / `mounts` / `use_capability`；主理流水线 + 分诊卡（`Task.routes`）；`begin_inline_edit` 护栏                           |
 | [0024](./0024-test-output-retry-budget.md)                | 测试默认只输出失败和汇总，失败只重跑失败的部分，用例有预算  | 已接受 | 2026-10-28 | 自定义 reporter + `logs/tests/`；失败文件 / 分片重跑、`--failed`；按分层棘轮预算（`scripts/lib/test-budget.mjs`）              |
-| [0025](./0025-model-design-blender.md)                    | 模型设计接入 Blender，对话驱动建模、网页实时预览            | 提议   | 2026-10-29 | 模型对话（`Task.modelDesign`）+ 后台 Blender 桥接 + `blender_python` MCP 工具；每次改动导出 glb，右栏 three.js 实时看                |
+| [0025](./0025-model-design-blender.md)                    | 模型设计接入 Blender，对话驱动建模、网页实时预览            | 提议   | 2026-10-29 | 模型对话（`Task.modelDesign`）+ 后台 Blender 桥接 + `blender_python` MCP 工具；每次改动导出 glb，右栏 three.js 实时看          |
+| [0026](./0026-advanced-role-mounts-user-owned.md)         | 内置高级角色的挂载交给用户，角色页按高级 / 基本分页         | 已接受 | 2026-10-29 | `AgentInput.mountsCustom` 接管后整份按用户的、可恢复默认；列表栏「高级角色 / 基本角色」分段；新增界面走查、本地化              |
 
 状态只有四个词，别自己造近义词：
 

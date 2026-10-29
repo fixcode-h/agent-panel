@@ -69,7 +69,7 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
 import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
-import { builtinDefinition, builtinKey, coreKey, coreUse, listableAgents } from '@shared/builtin/core'
+import { builtinDefinition, builtinKey, coreKey, coreUse, defaultMounts, listableAgents } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 import { CapabilityFields } from './CapabilityFields'
 
@@ -579,7 +579,14 @@ export function AgentDetail({
             )}
 
             {tab === 'caps' && (
-              <CapabilityFields draft={draft} self={agent} agents={agents} locked={locked} set={set} />
+              <CapabilityFields
+                draft={draft}
+                self={agent}
+                agents={agents}
+                locked={locked}
+                defaults={coreDef ? defaultMounts(coreDef, agents) : undefined}
+                set={set}
+              />
             )}
             {tab === 'params' && locked && coreDef && (
               <FormSection title={t('参数')}>

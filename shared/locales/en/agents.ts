@@ -358,6 +358,12 @@ export const EN_AGENTS: Record<string, string> = {
   '还没有挂载能力：这个高级角色只按自己的角色设定做事':
     'No capabilities mounted yet: this advanced role works only from its own instructions',
   调度: 'Dispatch',
+  '挂载已按你的调整保存，不再跟着内置定义更新':
+    'Mounts follow your changes now and no longer track the built-in definition',
+  恢复默认挂载: 'Restore default mounts',
+  挂载说明: 'Mount note',
+  还没有高级角色: 'No advanced roles yet',
+  还没有基本角色: 'No basic roles yet',
   父对话可以就地微改动: 'Parent may make tiny in-place edits',
   '当这个角色是项目的父对话时：改什么已经清楚、不用排查，最多 2 个文件、20 行以内（文案、配置值、一两行文档）可以自己改完提交，不开子对话。面板会拦下子对话正在合回、文件被子对话占用的情况，改完核对是否越界。':
     'When this role runs a project parent conversation: if the change is already clear and needs no investigation, up to 2 files and 20 lines (copy, a config value, a line or two of docs), it can make and commit the change itself without opening a child conversation. The panel blocks it while a child is merging back or holds those files, and checks afterwards whether it went over the limit.',

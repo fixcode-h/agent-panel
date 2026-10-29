@@ -89,7 +89,14 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
-import { builtinDefinition, builtinKey, isBuiltinAgent, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
+import {
+  builtinDefinition,
+  builtinKey,
+  defaultMounts,
+  isBuiltinAgent,
+  isCoreAgent,
+  syncCore,
+} from '../shared/builtin/core.ts'
 import {
   builtinProjectCategories,
   isBuiltinProjectCategory,
@@ -576,8 +583,8 @@ app.put('/agents/:id', async (c) => {
       ...syncCore(r.data!, def, {
         categoryId: isCoreAgent(before) ? before.categoryId : r.data!.categoryId,
         includes: before.includes,
-        // 挂哪些能力跟着已装的定义（启动同步维护），用户只能改每个挂载的用法和参数取值
-        mounts: before.mounts,
+        // 没接管挂载时挂哪些能力按内置定义（「恢复默认挂载」也走这里）；接管了的按用户提交的（mountsCustom）
+        mounts: defaultMounts(def, await agents.list()),
       }),
       name: before.name,
       origin: before.origin,

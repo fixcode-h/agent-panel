@@ -163,6 +163,7 @@ import {
   builtinDefinition,
   builtinKey,
   builtinMounts,
+  defaultMounts,
   CORE_AGENTS,
   isBuiltinAgent,
   isCoreAgent,
@@ -2458,7 +2459,11 @@ async function route(method: string, url: string, body: unknown): Promise<unknow
     if (builtinBefore) {
       const def = builtinDefinition(builtinKey(builtinBefore)!)!
       const categoryId = isCoreAgent(builtinBefore) ? builtinBefore.categoryId : input.categoryId
-      const next = syncCore(input, def, { categoryId, includes: builtinBefore.includes, mounts: builtinBefore.mounts })
+      const next = syncCore(input, def, {
+        categoryId,
+        includes: builtinBefore.includes,
+        mounts: defaultMounts(def, d.agents),
+      })
       return update('agents', id, { ...next, name: builtinBefore.name, origin: builtinBefore.origin }, 'Agent 不存在')
     }
     // 和服务端一样：去掉引入自己的，会形成循环就拒绝
