@@ -104,6 +104,8 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
       open={open}
       onToggle={() => setOpen(!open)}
       // 等你选择时和「转交提问」一样只描一圈琥珀色，不填底（组件库「对话之间」）
+      // 等你选择时是要处理的一块：保留卡片外框（琥珀色），处理完和别的过程行一样不画框
+      boxed={pending}
       className={cn(pending && 'border-warning/45')}
     >
       <div className={cn('flex flex-col gap-2.5 border-t px-3 py-2.5', pending ? 'border-warning/25' : 'bg-card/60')}>

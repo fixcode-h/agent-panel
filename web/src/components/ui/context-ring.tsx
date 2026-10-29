@@ -16,23 +16,25 @@ export function ContextRing({
   className?: string
 }) {
   const p = Math.max(0, Math.min(100, percent))
-  const r = 7
+  // 设计稿：20px 的粗圆环，已用的一段是前景色（超过八成换警告色），没用的是浅线色
+  const r = 7.75
   const c = 2 * Math.PI * r
   return (
-    <span role="img" aria-label={label} title={label} className={cn('inline-flex items-center gap-1.5', className)}>
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="shrink-0 -rotate-90">
-        <circle cx="9" cy="9" r={r} fill="none" strokeWidth="3" className="stroke-line-strong" />
+    <span role="img" aria-label={label} title={label} className={cn('inline-flex items-center gap-[7px]', className)}>
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden className="shrink-0 -rotate-90">
+        <circle cx="10" cy="10" r={r} fill="none" strokeWidth="4.5" className="stroke-line-strong" />
         <circle
-          cx="9"
-          cy="9"
+          cx="10"
+          cy="10"
           r={r}
           fill="none"
-          strokeWidth="3"
+          strokeWidth="4.5"
           strokeDasharray={`${(c * p) / 100} ${c}`}
-          className={cn('transition-[stroke-dasharray] duration-300', p >= 80 ? 'stroke-warning' : 'stroke-muted')}
+          className={cn('transition-[stroke-dasharray] duration-300', p >= 80 ? 'stroke-warning' : 'stroke-fg')}
         />
       </svg>
-      <span className="font-mono text-[0.6875rem] text-muted tabular-nums">{Math.round(p)}%</span>
+      {/* 百分比跟着外面的字色：放在无底按钮里时悬停一起变成前景色 */}
+      <span className="font-mono text-[0.71875rem] tabular-nums">{Math.round(p)}%</span>
     </span>
   )
 }

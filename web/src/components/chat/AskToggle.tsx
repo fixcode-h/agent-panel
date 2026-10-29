@@ -12,6 +12,7 @@ import { ToggleIconButton } from '@/components/ui/icon-button'
 import { Modal } from '@/components/ui/modal'
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
+import { cn } from '@/lib/utils'
 import { childAskChecked, childAskInitial } from '@shared/child-ask'
 
 /**
@@ -63,7 +64,9 @@ export function AskToggle({
           ? t('AI 有问题时会问你，等你回答再继续（点一下改成让 AI 自己选）')
           : t('AI 有问题时自己选最合适的做法（点一下改成问你）')
       }
-      className={className}
+      // 设计稿：输入框工具条里只有图标、不出底色；开着是运行色，关着是次要色
+      tone="bare"
+      className={cn(value ? 'text-run hover:text-run aria-pressed:text-run' : 'text-subtle', className)}
     />
   )
   // 子对话、其他会话没有「子对话也提问」这回事：保持原来的单按钮

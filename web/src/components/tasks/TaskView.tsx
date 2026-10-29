@@ -28,7 +28,6 @@ import {
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
-  PanelRightClose,
   Undo2,
   Pencil,
   RotateCw,
@@ -64,7 +63,14 @@ import {
   type ToolUse,
   type TaskSeenResult,
 } from '@shared/schema'
-import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
+import {
+  ChatModelPicker,
+  ComposerModelPicker,
+  RoleModelBadge,
+  useChatRun,
+  useRunAuthor,
+  type ChatRun,
+} from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
   childSeenLocally,
@@ -126,7 +132,7 @@ import { RunCard, RunPanel } from './RunCard'
 import { RunView } from './RunView'
 import { TaskPanel } from './TaskPanel'
 import { PlanButton } from './PlanPanel'
-import { TaskMeta } from './TaskMeta'
+import { TaskContextRing, TaskMeta } from './TaskMeta'
 import {
   DeleteTaskDialog,
   WorktreeMark,
@@ -1546,8 +1552,6 @@ export function TaskView({
                   }
             }
           />
-          {/* Chat 页的 CLI 和模型挪到标题栏，输入框里只留思考强度 */}
-          {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} parts={chatPage ? 'effort' : 'all'} />}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">
               {working
@@ -1563,11 +1567,6 @@ export function TaskView({
                       : t('会从没完成的节点继续执行')}
             </span>
           )}
-          {task.mode === 'chat' && !byCli && (
-            <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-              {working ? t('执行中，可以随时暂停') : t('发给 {name}', { name: chatLabel })}
-            </span>
-          )}
         </>
       }
       // 对话还在运行（自己在跑，或者子对话、子任务、后台命令、工作流还没完）就是停止按钮：
@@ -1577,27 +1576,35 @@ export function TaskView({
       sending={sending}
       onStop={stop}
       leading={
-        // 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
-        // 只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点
-        !working &&
-        !(task.status === 'stopped' && waitText) &&
-        canResume && (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="rounded-lg"
-            disabled={resuming}
-            onClick={() => resume()}
-            title={
-              task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
-                ? t('从没完成的节点继续执行')
-                : t('重新执行最后一条要求')
-            }
-          >
-            {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
-            {task.status === 'failed' ? t('重试') : t('继续执行')}
-          </Button>
-        )
+        <>
+          {/* 右侧（设计稿）：模型和思考强度紧挨着上下文圆环。不用角色的对话能换（Chat 页的 Agent 和模型在标题栏，
+              这里只留思考强度）；用角色的对话跟着角色设置，只读显示 */}
+          {byCli ? (
+            <ComposerModelPicker value={chatRun} onChange={changeRun} parts={chatPage ? 'effort' : 'all'} />
+          ) : (
+            chatAgent && <RoleModelBadge agent={chatAgent} />
+          )}
+          <TaskContextRing task={task} node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined} />
+          {/* 还在等名下的东西跑完时不放「继续执行」：那一轮不是「被中断」，再拉起一遍会和还在跑的子对话重复。
+              只挡「已停止」这一种：失败时「重试」是用户主动重跑，哪怕子对话还在跑也要能点 */}
+          {!working && !(task.status === 'stopped' && waitText) && canResume && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="rounded-lg"
+              disabled={resuming}
+              onClick={() => resume()}
+              title={
+                task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
+                  ? t('从没完成的节点继续执行')
+                  : t('重新执行最后一条要求')
+              }
+            >
+              {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+              {task.status === 'failed' ? t('重试') : t('继续执行')}
+            </Button>
+          )}
+        </>
       }
       label={t('继续输入要求')}
       placeholder={
@@ -1614,11 +1621,14 @@ export function TaskView({
 
   // 对话页的停靠区：计划贴在输入框上方、在消息流外面，不跟着滚，也不插在用户消息和回复之间。
   // 子任务、子对话不在这里列：消息流的运行区和对话页签里已经有，这里再放一行会把输入框往下挤
+  // 输入框位置换成了提问卡（CLI 的提问、子对话请你决定）：计划条收成一行小字
+  const asking = !task.imported && (asksQuestion(task.requests) || askOpen)
   const conversationDock = (
     <>
       {/* 面板收起后还在跑的后台步骤（实时更新、子对话列表）：留一个小胶囊，失败时写错误原文 */}
       {traceHidden && <LoadTracePill steps={trace.steps} />}
-      {task.plans?.length > 0 && (
+      {/* 有提问卡（AI 在问你）时计划让位：整条收成提问卡下面的一行小字（设计稿），这里不再占一整条 */}
+      {task.plans?.length > 0 && !asking && (
         <div className="shrink-0 px-3 md:px-6">
           {/* 计划条撑满输入框宽度（组件库「计划 · PlanBar」）：浅底一整条，和输入框左右对齐 */}
           <div className="mx-auto max-w-(--content-w)">
@@ -1631,6 +1641,11 @@ export function TaskView({
       <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
         <TaskRequestCard task={task} onAnswered={apply} />
         {askOpen && <ParentAskPanel task={task} onClosed={apply} />}
+        {task.plans?.length > 0 && asking && (
+          <div data-status-row="plan" className="mx-auto -mt-1 mb-1 flex max-w-(--content-w) min-w-0 px-1">
+            <PlanButton task={task} children={children} compact />
+          </div>
+        )}
         <WorktreeBar task={task} />
         {flowLeft && !task.imported && (
           <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
@@ -1645,6 +1660,8 @@ export function TaskView({
           projectPath={project?.path}
           workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
           node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+          // 有输入框时上下文圆环在输入框工具条里（设计稿），这里不重复
+          hideContext={!!composer}
           onTask={apply}
           // 子对话自己的面板里不再套一层右栏
           onOpenChild={pane ? undefined : openChildIn}
@@ -1756,6 +1773,7 @@ export function TaskView({
       {task.mode === 'workflow' && tops.length > 0 && (
         <IconButton
           size="sm"
+          tone="bare"
           icon={ListPlus}
           label={t('任务进度')}
           aria-expanded={progressOpen}
@@ -1766,6 +1784,7 @@ export function TaskView({
       {!pane && !noFiles && (
         <IconButton
           size="sm"
+          tone="bare"
           icon={PanelRight}
           label={t('显示文件')}
           title={t('文件')}
@@ -1784,6 +1803,7 @@ export function TaskView({
         ) : (
           <IconButton
             size="sm"
+            tone="bare"
             label={t('解决')}
             disabled={resolving}
             onClick={() => void resolveChild()}
@@ -1796,7 +1816,7 @@ export function TaskView({
         ))}
       <Menu>
         <MenuTrigger asChild>
-          <IconButton size="sm" label={t('更多操作')}>
+          <IconButton size="sm" tone="bare" label={t('更多操作')}>
             <MoreHorizontal className="h-4 w-4" />
           </IconButton>
         </MenuTrigger>
@@ -1856,6 +1876,7 @@ export function TaskView({
       {!pane && !embed && !task.imported && !task.parentTaskId && (
         <IconButton
           size="sm"
+          tone="bare"
           label={t('转成弹窗')}
           title={t('转成弹窗（对话继续在后台运行）')}
           onClick={() => {
@@ -1897,6 +1918,7 @@ export function TaskView({
       {!pane && !noFiles && (
         <IconButton
           size="sm"
+          tone="bare"
           className="hidden xl:grid"
           // 收起时和窄屏那个按钮一样：读屏名是「显示文件」、悬停提示「文件」（两者都指同一栏）
           label={filesFolded || reportOn ? t('显示文件') : t('收起文件面板')}
@@ -1913,7 +1935,8 @@ export function TaskView({
             toggleFiles()
           }}
         >
-          {filesFolded || reportOn ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+          {/* 开着、收起同一个图标（设计稿）：开着时图标是前景色（tone="bare" 按 aria-expanded 提亮） */}
+          <PanelRight className="h-4 w-4" />
         </IconButton>
       )}
       {embed?.actions}
@@ -1949,7 +1972,7 @@ export function TaskView({
       )}
       <Menu>
         <MenuTrigger asChild>
-          <IconButton size="sm" label={t('导出')}>
+          <IconButton size="sm" tone="bare" label={t('导出')}>
             <Upload className="h-4 w-4" />
           </IconButton>
         </MenuTrigger>
@@ -1967,6 +1990,8 @@ export function TaskView({
       {headerActions}
       <ToggleIconButton
         size="sm"
+        // 设计稿：标题栏右端的图标都无底，开着时是前景色
+        tone="bare"
         icon={PanelRight}
         label={t('开关右栏')}
         // 三样都没有时禁用，悬停说明为什么点不了
@@ -1996,8 +2021,8 @@ export function TaskView({
               className={cn(
                 'relative flex min-w-0 flex-1',
                 pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0',
-                // 对话和右栏各是一块面板（见 index.css 的 panel），中间一条细线
-                !pane && !embed && 'md:divide-x',
+                // 对话和右栏各是一块面板（见 index.css 的 panel），中间露出一道底色
+                !pane && !embed && 'md:gap-2',
               )}
             >
               <main
@@ -2081,6 +2106,8 @@ export function TaskView({
                       ) : undefined
                     }
                     onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
+                    // 段落（用户消息、一轮回复）之间 20px（设计稿 16–20px），比默认的 28px 紧凑
+                    contentClassName="gap-5"
                     dock={conversationDock}
                   >
                     {(hidden > 0 || task.messageHasMore) && (
@@ -2136,11 +2163,8 @@ export function TaskView({
                           ))}
                         </div>
                       ) : b.m.peer ? (
-                        <div key={b.m.id} className="flex gap-3">
-                          <span className="w-[26px] shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <ReceivedRow m={b.m} />
-                          </div>
+                        <div key={b.m.id} className="min-w-0">
+                          <ReceivedRow m={b.m} />
                         </div>
                       ) : b.m.role === 'user' ? (
                         <Fragment key={b.m.id}>

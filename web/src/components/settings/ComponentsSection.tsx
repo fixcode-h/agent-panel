@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  Diff,
   FileText,
   ImageIcon,
   Lock,
@@ -46,10 +47,11 @@ import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/statu
 import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
 import { SourceLink } from '@/components/ui/source-link'
+import { Logo } from '@/components/layout/Sidebar'
 import {
-  ModeTabs,
   NavRow,
   SIDEBAR_GROUP_LABEL,
+  SidebarModeMenu,
   SidebarProjectName,
   SidebarProjectRow,
   SidebarTaskBlock,
@@ -260,24 +262,47 @@ export function ComponentsSection() {
             <div className="h-10 bg-bg" />
           </div>
         </Specimen>
+        <Specimen name="TabBar · fit">
+          <div className="w-full max-w-sm overflow-hidden rounded-lg border">
+            <TabBar label={t('示例右栏页签')} variant="fit">
+              <TabItem
+                active={side === 'files'}
+                onSelect={() => setSide('files')}
+                icon={<FileText className="h-[0.8125rem] w-[0.8125rem]" />}
+              >
+                {t('项目文件')}
+              </TabItem>
+              <TabItem
+                active={side === 'changes'}
+                onSelect={() => setSide('changes')}
+                icon={<Diff className="h-[0.8125rem] w-[0.8125rem]" />}
+                tag="3"
+              >
+                {t('本对话改动')}
+              </TabItem>
+            </TabBar>
+            <div className="h-10 bg-bg" />
+          </div>
+        </Specimen>
         <UnderlineTabSpecimen />
       </Group>
       <Group title={t('对话部件')}>
         <Specimen name="ReplyHeader">
           <ReplyHeader
+            // 回复头的角色图标不带底色块，只是一个按 CLI 着色的图标
             avatar={
-              <span className="grid h-[26px] w-[26px] place-items-center rounded-[7px] bg-[#be185d] text-white">
-                <Workflow className="h-3.5 w-3.5" />
+              <span className="flex h-[26px] w-[18px] items-center justify-center text-[#be185d]">
+                <Workflow className="h-[15px] w-[15px]" />
               </span>
             }
             name={t('主理')}
-            agent={t('Command（默认）')}
-            effort={t('高档')}
             model="OpenDesign/deepseek-v4.1-flash"
+            effort={t('高')}
           />
         </Specimen>
         <Specimen name="RowShell">
-          <div className="flex w-full flex-col gap-1">
+          {/* 过程行一组：不画框，行间一条细线（proc-list） */}
+          <div className="proc-list flex w-full flex-col">
             <RowShell
               glyph={<Search className="h-3.5 w-3.5" />}
               verb={t('搜索')}
@@ -367,19 +392,20 @@ export function ComponentsSection() {
         </Specimen>
       </Group>
       <Group title={t('侧栏')}>
-        <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow">
-          {/* 侧栏贴着底色画：项目 → 对话两层，选中只有浅底，任务块里选中是更亮的卡片底，行尾一个状态胶囊 */}
-          <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2 py-2.5">
-            <ModeTabs
-              label={t('模式')}
-              modes={[
-                { id: 'agent', name: 'Agent', on: true },
-                { id: 'chat', name: 'Chat', on: false },
-                { id: 'design', name: t('设计'), on: false },
-              ]}
-              onPick={() => {}}
-              className="mx-0.5 mb-2"
-            />
+        <Specimen name="ModeMenu · NavRow · ProjectRow · TaskRow">
+          {/* 侧栏贴着底色画：项目 → 对话两层，选中项目是淡蓝底，选中对话是白卡片，行尾状态做轻 */}
+          <div className="flex w-64 flex-col gap-0.5 rounded-lg bg-rail px-2.5 py-2.5">
+            <div className="mb-2 flex">
+              <SidebarModeMenu
+                logo={<Logo />}
+                modes={[
+                  { id: 'agent', name: 'Agent', desc: t('按项目调度 CLI'), on: true },
+                  { id: 'chat', name: 'Chat', desc: t('直接对话'), on: false },
+                  { id: 'design', name: t('设计'), desc: t('画板'), on: false },
+                ]}
+                onPick={() => {}}
+              />
+            </div>
             {/* 快捷键和侧栏一样：悬停到这一行才出现 */}
             <NavRow
               icon={<Plus className="h-4 w-4" strokeWidth={1.8} />}
@@ -388,35 +414,36 @@ export function ComponentsSection() {
               trailing={<Kbd className="ml-auto opacity-0 transition-opacity group-hover/nav:opacity-100">⌘⇧O</Kbd>}
             />
             <NavRow icon={<Workflow className="h-4 w-4" strokeWidth={1.8} />} label={t('工作流')} on />
-            <p className={cn('px-[9px] pt-2.5 pb-1', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
-            {/* 项目行和对话行用侧栏同一套部件：打开着里面的对话时，项目行本身不高亮 */}
+            <p className={cn('px-2 pt-2.5 pb-1.5 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
+            {/* 项目行和对话行用侧栏同一套部件：正在看的项目是淡蓝底，里面选中的对话是白卡片 */}
             <SidebarProjectRow
               open
-              running={1}
+              on
               count={3}
               name={
                 <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <SidebarProjectName open name="agent-panel" />
+                  <SidebarProjectName open on name="agent-panel" />
                 </span>
               }
             />
             <SidebarTaskBlock>
-              <div className={cn(sidebarTaskRowClass(true, true), 'px-2')}>
+              <div className={cn(sidebarTaskRowClass(true, true), 'pr-2 pl-2')}>
                 <SidebarTaskRowBody
                   active
                   title={t('右栏改成页签工作台')}
                   status={<TaskRowStatus kids={8} running />}
                 />
               </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'px-2')}>
+              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
                 <SidebarTaskRowBody workflow title={t('修复设置弹窗闪动')} status={<TaskRowStatus unread />} />
               </div>
-              <div className={cn(sidebarTaskRowClass(false, true), 'px-2')}>
+              <div className={cn(sidebarTaskRowClass(false, true), 'pr-2 pl-2')}>
                 <SidebarTaskRowBody title={t('接入 Pi CLI 输出')} status={<TaskRowStatus needs />} />
               </div>
             </SidebarTaskBlock>
             <SidebarProjectRow
               open={false}
+              running={1}
               count={2}
               name={
                 <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -467,6 +494,8 @@ function MoreButtonSpecimens() {
           <IconButton key={s} size={s} icon={MoreHorizontal} label={t('更多操作')} />
         ))}
         <IconButton size="sm" tone="danger" icon={Trash2} label={t('删除')} />
+        {/* tone="bare"：页签条右端、输入框工具条这类一排图标，悬停也不出底，只变前景色 */}
+        <IconButton size="sm" tone="bare" icon={MoreHorizontal} label={t('更多操作')} />
         {/* reveal="hover"：行尾操作平时不出现，悬停这一行才出来 */}
         <div className="group flex h-8 items-center gap-2 rounded-lg bg-sel/50 pr-1 pl-2.5 text-[0.8125rem]">
           {t('悬停这一行')}

@@ -260,10 +260,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await settle(p)
   // 互斥后两个浮条不会同时在屏：形态一致性先量这一个、后面再量另一个来比
   const lookA = await dockLook(aiDock)
-  await p
-    .getByRole('radio', { name: /^Agent 模式/ })
-    .first()
-    .click()
+  // 模式切换在左上角的下拉里：先点开，再选菜单项（菜单项的可访问名称是完整说明）
+  await p.getByRole('button', { name: '切换模式' }).first().click()
+  await p.getByRole('menuitemradio', { name: /^Agent 模式/ }).click()
   await p.getByRole('button', { name: '角色', exact: true }).first().click()
   // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色。
   // 角色页分「高级角色 / 基本角色」两页，代码审查在基本角色里，先切过去
@@ -325,10 +324,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   await aiDock.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：关掉 AI 优化后，被顶掉的 AI 处理浮条没有回来'))
   await check(p, 'AI处理-浮条让位后回来')
   // 窗口和对话解耦：对话从聊天列表里删掉后，浮条不消失，标成「对话已关闭」，只有用户点关闭才关
-  await p
-    .getByRole('radio', { name: /^Chat 模式/ })
-    .first()
-    .click()
+  await p.getByRole('button', { name: '切换模式' }).first().click()
+  await p.getByRole('menuitemradio', { name: /^Chat 模式/ }).click()
   const fixRow = p.locator('[data-sidebar] button[title="AI 排查：Pi：卸载没有成功"]').first()
   await fixRow.waitFor({ timeout: 5000 }).catch(() => errors.push('浮条：侧栏里找不到排查对话'))
   await fixRow.click({ button: 'right' })

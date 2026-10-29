@@ -1,10 +1,11 @@
 import { Appearance, type Palette } from '@shared/schema'
 
 const CJK = {
-  noto: ["'Noto Sans SC'", "'PingFang SC'", "'Microsoft YaHei'"],
+  noto: ["'Noto Sans SC'", "'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'"],
   // 系统字体不列思源黑体：它的 @font-face 只在选了 noto 时才加载（见 ensureCjkFont），
   // 列在这里只会让浏览器去匹配一个没加载的字体；本机真没有中文字体时交给 system-ui 兜底
-  system: ["'PingFang SC'", "'Microsoft YaHei'", "'Hiragino Sans GB'"],
+  // 雅黑 UI 放在雅黑前：同一套字形，但行距更紧、小字号在低分辨率屏上的 hinting 更清楚
+  system: ["'PingFang SC'", "'Microsoft YaHei UI'", "'Microsoft YaHei'", "'Hiragino Sans GB'"],
 }
 const UI = {
   inter: ["'Inter Variable'", "'Inter'"],

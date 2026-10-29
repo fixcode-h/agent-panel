@@ -57,7 +57,13 @@ import { InlineRename } from '@/components/ui/inline-rename'
 import { Sheet } from '@/components/ui/sheet'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Kbd } from '@/components/ui/kbd'
-import { ModeTabs, NAV_ROW, SidebarProjectName, SidebarProjectRow, SidebarTaskBlock } from '@/components/ui/sidebar'
+import {
+  NAV_ROW,
+  SidebarModeMenu,
+  SidebarProjectName,
+  SidebarProjectRow,
+  SidebarTaskBlock,
+} from '@/components/ui/sidebar'
 import { isMac } from '@/lib/hotkey'
 import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { TOGGLE_SIDEBAR } from './CommandPalette'
@@ -83,23 +89,32 @@ import { TRASH_RETENTION_DAYS, byAskedAt, taskBusy, taskBusyCount } from '@share
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
+/** 产品图标：陶土橙渐变圆角方块（--logo-bg，品牌色不跟配色变）+ 白色节点图，顶上一道高光、底下一点投影浮起来 */
 export function Logo({ className }: { className?: string }) {
   return (
-    <span className={cn('grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-white', className)}>
+    <span
+      aria-hidden
+      style={{ background: 'var(--logo-bg)' }}
+      className={cn(
+        'grid h-7 w-7 shrink-0 place-items-center rounded-lg text-white',
+        'shadow-[inset_0_1px_0_rgb(255_255_255/0.28),0_1px_2px_rgb(0_0_0/0.18)]',
+        className,
+      )}
+    >
       <svg
         viewBox="0 0 24 24"
-        className="h-4 w-4"
+        className="h-[18px] w-[18px]"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        aria-hidden
       >
-        <circle cx="12" cy="5.5" r="2.4" />
-        <circle cx="5.5" cy="18" r="2.4" />
-        <circle cx="18.5" cy="18" r="2.4" />
-        <path d="M12 8v3.5M12 11.5 6.8 15.8M12 11.5l5.2 4.3" />
+        <circle cx="12" cy="5" r="2.2" />
+        <circle cx="5.5" cy="18" r="2.2" />
+        <circle cx="18.5" cy="18" r="2.2" />
+        <path d="M10.9 7l-4.3 9M13.1 7l4.3 9M7.8 18h8.4" />
+        <circle cx="12" cy="13.3" r="1.3" fill="currentColor" stroke="none" />
       </svg>
     </span>
   )
@@ -262,7 +277,7 @@ let lastDesignRoute: Route = { page: 'design' }
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Agent 是按项目执行任务，Chat 是不属于项目的聊天，设计是按项目做界面。
- * 展开时三段写短名、平分宽度，完整说明在悬停提示里；收起侧栏时竖着排图标。
+ * 展开时是左上角的下拉（产品图标 + 当前模式名，照设计稿 Workspace）；收起侧栏时竖着排图标。
  */
 function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
@@ -273,6 +288,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'agent',
       name: 'Agent',
+      desc: t('按项目调度 CLI'),
       label: t('Agent 模式：在项目里执行任务和工作流'),
       icon: Code2,
       on: !chat && !design,
@@ -281,6 +297,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'chat',
       name: 'Chat',
+      desc: t('直接对话'),
       label: t('Chat 模式：直接聊天，不用选项目'),
       icon: MessagesSquare,
       on: chat,
@@ -289,6 +306,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'design',
       name: t('设计'),
+      desc: t('画板'),
       label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
       icon: Palette,
       on: design,
@@ -319,14 +337,13 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     )
   }
   return (
-    <ModeTabs
-      label={t('模式')}
+    <SidebarModeMenu
       modes={modes}
+      logo={<Logo />}
       onPick={(id) => {
         const m = modes.find((x) => x.id === id)
         if (m) go(m.to)
       }}
-      className="mx-2.5 mb-2.5"
     />
   )
 }
@@ -482,16 +499,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
 
   const body = (narrow: boolean) => (
     <>
-      <div className={cn('flex h-14 shrink-0 items-center gap-1.5 px-3', narrow && 'justify-center px-0')}>
-        {!narrow && (
-          <button
-            onClick={() => go({ page: 'home' })}
-            className="-ml-1 flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md px-1 py-1 transition-colors hover:bg-sel/50"
-          >
-            <Logo />
-            <span className="truncate font-serif text-[1rem] font-semibold tracking-tight">{t('Agent 面板')}</span>
-          </button>
-        )}
+      {/* 左上角：模式下拉（产品图标 + 模式名）在左、收起侧栏在右；产品图标的左边和下面导航的图标左边对齐 */}
+      <div
+        className={cn('flex h-14 shrink-0 items-center gap-2 pt-1 pr-3 pb-1.5 pl-2.5', narrow && 'justify-center px-0')}
+      >
+        {!narrow && <ModeSwitch narrow={false} />}
         <IconButton
           onClick={toggleCollapsed}
           icon={narrow ? PanelLeftOpen : PanelLeftClose}
@@ -501,9 +513,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           className={cn('hidden md:grid', !narrow && 'ml-auto')}
         />
       </div>
-      {!narrow && <ModeSwitch narrow={false} />}
 
-      <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
+      <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2.5', narrow && 'items-center px-2')}>
         {narrow && <ModeSwitch narrow />}
         {designMode ? (
           <>
@@ -539,6 +550,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               on={route.page === 'home'}
               onClick={() => go({ page: 'home' })}
               kbd={NEW_TASK_KEY}
+              // 设计稿：「新建任务」是主入口，前景色 + 600，其余导航是次要色 + 500
+              className="font-semibold text-fg"
             />
             {NAV.map((n) => (
               <Row
@@ -568,7 +581,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <ChatList />
         )
       ) : !narrow && filtering ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -612,7 +625,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           />
         </div>
       ) : !narrow ? (
-        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
           <TaskSearch
             query={query}
             onQuery={setQuery}
@@ -620,13 +633,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             onFilter={setFilter}
             placeholder={t('搜索任务')}
           />
-          <div className="group/head mt-1 flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-[9px]">
+          <div className="group/head mt-1 mb-1.5 flex h-6 shrink-0 items-center gap-0.5 pr-1 pl-2">
             <button
               onClick={() => toggleFolded(ALL)}
               aria-expanded={allOpen}
               className={cn(
                 'flex cursor-pointer items-center gap-1 transition-colors hover:text-fg',
                 SIDEBAR_GROUP_LABEL,
+                'font-semibold tracking-[0.08em]',
               )}
             >
               {t('项目')}
@@ -673,7 +687,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               const shown = more.has(pid)
                 ? ts
                 : ts.filter((t, i) => i < PER_PROJECT || (route.page === 'projects' && route.sub === t.id))
-              const onProject = route.page === 'projects' && route.id === pid && !route.sub
+              // 正在看这个项目（首页或里面的某个对话）时项目行是淡蓝底，照设计稿：选中对话的白卡片挂在蓝底项目下面
+              const onProject = route.page === 'projects' && route.id === pid
               const p = projects.find((x) => x.id === pid)!
               const dragging = sort.drag === gi
               // 拖拽只从手柄开始，分组本身只当放置目标：点展开、打开、右键都不会误触拖拽
@@ -719,7 +734,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               title={t('打开项目「{name}」，右键查看更多操作', { name: projectName(pid) })}
                               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                             >
-                              <SidebarProjectName open={open} name={projectName(pid)} />
+                              <SidebarProjectName open={open} on={onProject} name={projectName(pid)} />
                             </button>
                           )
                         }
@@ -823,7 +838,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                             route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })
                           }
                           inBlock
-                          className="pr-1.5 pl-2.5"
+                          className="pr-2 pl-2"
                         />
                       ))}
                       {ts.length > PER_PROJECT && (
@@ -835,7 +850,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               return next
                             })
                           }
-                          className="h-7 cursor-pointer rounded-[7px] px-[11px] text-left text-xs text-subtle transition-colors hover:bg-sel/80 hover:text-fg"
+                          className="ml-1 h-7 cursor-pointer rounded-lg px-[11px] text-left text-xs text-subtle transition-colors hover:bg-sel hover:text-fg"
                         >
                           {more.has(pid) ? t('收起') : t('显示全部 {n} 个', { n: ts.length })}
                         </button>
@@ -850,7 +865,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         <div className="flex-1" />
       )}
 
-      <div className={cn('flex shrink-0 items-center gap-1 px-2 py-2', narrow && 'flex-col')}>
+      <div className={cn('flex shrink-0 items-center gap-1 px-2.5 py-2', narrow && 'flex-col px-2')}>
         <Row
           icon={Settings}
           label={t('设置')}

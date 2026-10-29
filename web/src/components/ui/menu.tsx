@@ -51,10 +51,18 @@ export function PointMenu({
   )
 }
 
-export function MenuContent({ children, align = 'end' }: { children: React.ReactNode; align?: 'start' | 'end' }) {
+export function MenuContent({
+  children,
+  align = 'end',
+  className,
+}: {
+  children: React.ReactNode
+  align?: 'start' | 'end'
+  className?: string
+}) {
   return (
     <M.Portal>
-      <M.Content align={align} sideOffset={6} className={cn(popoverPanel, 'min-w-[160px]')}>
+      <M.Content align={align} sideOffset={6} className={cn(popoverPanel, 'min-w-[160px]', className)}>
         {children}
       </M.Content>
     </M.Portal>
@@ -63,6 +71,24 @@ export function MenuContent({ children, align = 'end' }: { children: React.React
 
 export function MenuItem({ danger, className, ...props }: M.DropdownMenuItemProps & { danger?: boolean }) {
   return <M.Item className={cn(menuItem, danger && 'text-danger', className)} {...props} />
+}
+
+/**
+ * 单选菜单项（侧栏的模式切换）：Radix 给上 role="menuitemradio" 和 aria-checked。
+ * 勾在行尾，没选中时也占着位置，各行的说明文字才对得齐
+ */
+export const MenuRadioGroup = M.RadioGroup
+export function MenuRadioItem({ className, children, ...props }: M.DropdownMenuRadioItemProps) {
+  return (
+    <M.RadioItem className={cn(menuItem, className)} {...props}>
+      {children}
+      <span className="grid h-3.5 w-3.5 shrink-0 place-items-center">
+        <M.ItemIndicator>
+          <Check className="h-3.5 w-3.5" strokeWidth={2.2} />
+        </M.ItemIndicator>
+      </span>
+    </M.RadioItem>
+  )
 }
 
 export function MenuSeparator() {

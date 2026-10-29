@@ -25,7 +25,7 @@ export function TurnMenu({ msgs, onJump }: { msgs: TaskMessage[]; onJump: (msgId
   return (
     <Menu>
       <MenuTrigger asChild>
-        <IconButton size="sm" label={t('跳到某一轮')}>
+        <IconButton size="sm" tone="bare" label={t('跳到某一轮')}>
           <ListOrdered className="h-4 w-4" />
         </IconButton>
       </MenuTrigger>

@@ -286,7 +286,8 @@ export function RunningNow({
   // 这边不再判会画出只有分割线、没有内容的一块
   if (!tools.length && !ownJobs.length && !stepJobs.length && !rows.length && !helpers.length) return null
   const box = (
-    <div className="flex flex-col gap-1" aria-label={t('运行中')}>
+    // 过程行连成一组（见 index.css 的 proc-list）：不留间距，行间一条细线
+    <div className="proc-list flex flex-col" aria-label={t('运行中')}>
       <ToolRows tools={tools} task={task} />
       {task &&
         helpers.map((s) => (

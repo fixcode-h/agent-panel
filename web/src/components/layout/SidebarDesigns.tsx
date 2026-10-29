@@ -5,7 +5,6 @@ import {
   CopyPlus,
   Folder,
   FolderInput,
-  FolderOpen,
   Gamepad2,
   Globe,
   Loader2,
@@ -42,6 +41,7 @@ import {
   SIDEBAR_BLOCK_ROW_ON,
   SIDEBAR_GROUP_LABEL,
   SidebarCount,
+  SidebarProjectName,
   PROJECT_CARD,
   PROJECT_CARD_OFF,
   PROJECT_CARD_ON,
@@ -169,8 +169,8 @@ export function DesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'flex h-9 cursor-pointer items-center gap-2 rounded-[10px] border pr-1.5 pl-2.5 text-[0.8125rem] transition-colors',
-              // 设计行和 Agent 的对话卡片一样：灰底卡片，选中换卡片底 + 细边浮起来
+              'ml-1 flex h-[31px] cursor-pointer items-center gap-2 rounded-lg border pr-2 pl-[11px] text-[0.8125rem] transition-colors',
+              // 设计行和 Agent 项目下的对话行一样：平时无底、悬停浅底，选中是一张白卡片 + 极淡投影
               on ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_BLOCK_ROW_OFF,
             )}
           >
@@ -241,9 +241,9 @@ export function DesignList() {
   }
 
   return (
-    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-      <div className="flex h-7 shrink-0 items-center pr-1 pl-[9px]">
-        <p className={cn('flex-1', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
+      <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
+        <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('UI 项目')}</p>
         <IconButton icon={Plus} label={t('新建 UI 项目')} onClick={() => setEditing(null)} />
       </div>
       {!projects.length && (
@@ -262,7 +262,7 @@ export function DesignList() {
         const open = !folded.has(p.id)
         const on = route.page === 'design' && route.id === DESIGN_HOME && route.sub === p.id
         return (
-          <section key={p.id} className="mb-1">
+          <section key={p.id} className="mb-1 flex flex-col">
             <ContextMenu>
               <ContextMenuTrigger asChild>
                 {/* 整行只是排成一行的容器：点空白处不展开也不打开，展开 / 打开各有自己的按钮；
@@ -277,14 +277,11 @@ export function DesignList() {
                     aria-label={open ? t('收起') : t('展开')}
                     disabled={!ds.length}
                     className={cn(
-                      'grid h-6 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
+                      'grid h-6 w-3 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
                       !ds.length && 'invisible',
                     )}
                   >
-                    <ChevronRight
-                      className={cn('h-3 w-3 transition-transform', open && 'rotate-90')}
-                      strokeWidth={2.2}
-                    />
+                    <ChevronRight className={cn('h-3 w-3 transition-transform', open && 'rotate-90')} strokeWidth={2} />
                   </button>
                   <div className={cn(PROJECT_CARD, on ? PROJECT_CARD_ON : PROJECT_CARD_OFF)}>
                     <button
@@ -293,17 +290,9 @@ export function DesignList() {
                       title={t('打开项目「{name}」，右键查看更多操作', { name: p.name })}
                       className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                     >
-                      {open ? (
-                        <FolderOpen
-                          className={cn('h-[15px] w-[15px] shrink-0', !on && 'text-muted')}
-                          strokeWidth={1.9}
-                        />
-                      ) : (
-                        <Folder className={cn('h-[15px] w-[15px] shrink-0', !on && 'text-muted')} strokeWidth={1.9} />
-                      )}
-                      <span className="min-w-0 flex-1 truncate font-semibold">{p.name}</span>
+                      <SidebarProjectName open={open} on={on} name={p.name} />
                     </button>
-                    {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="mr-0.5 group-hover/proj:hidden" />}
+                    {ds.length > 0 && <SidebarCount n={ds.length} on={on} className="group-hover/proj:hidden" />}
                     <IconButton
                       icon={Plus}
                       onClick={() => go({ page: 'design', id: 'new', sub: p.id })}
@@ -350,12 +339,12 @@ export function DesignList() {
                         data-kind={k.id}
                         onClick={() => toggleFold(key)}
                         aria-expanded={kOpen}
-                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-[7px] px-1.5 text-[0.75rem] text-subtle transition-colors hover:bg-sel/80 hover:text-fg"
+                        className="ml-1 flex h-7 cursor-pointer items-center gap-1.5 rounded-lg pr-2 pl-[9px] text-[0.75rem] text-subtle transition-colors hover:bg-sel hover:text-fg"
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-left">{kindLabel(k.id)}</span>
-                        <span className="shrink-0 pr-1 text-[0.6875rem] tabular-nums">{list.length}</span>
+                        <span className="shrink-0 text-[0.6875rem] tabular-nums">{list.length}</span>
                       </button>
                       {kOpen && <div className="ml-2 flex flex-col gap-px">{list.map(designRow)}</div>}
                     </div>

@@ -250,6 +250,7 @@ export function RowShell({
    * 不能只看视口（右栏开着时 1280 的行只有 300 左右，1024 收着右栏时还有 700 多）
    */
   container,
+  boxed,
 }: {
   glyph: React.ReactNode
   verb?: React.ReactNode
@@ -271,6 +272,11 @@ export function RowShell({
   rowOpen?: () => void
   leading?: React.ReactNode
   container?: boolean
+  /**
+   * 保留卡片外框：要人处理的条目（等你选择的子对话提问）还是一块带框的卡片；
+   * 其余过程行不画框，相邻几行连成一组、行间一条细线（见 index.css 的 proc-list）
+   */
+  boxed?: boolean
   /** 标题被截断时悬停看全文：后台命令行用完整命令，优先于 openTip */
   titleTip?: string
   failed?: boolean
@@ -283,19 +289,28 @@ export function RowShell({
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
-    // 组件库「过程行」：单行、细线圆角、不填底，和用户消息（有底色的气泡）一眼分开
-    <div className={cn('min-w-0 overflow-hidden rounded-lg border', failed && 'border-danger/30', className)}>
+    // 组件库「过程行」（设计稿）：不画框、不填底，悬停才出浅底；相邻的过程行连成一组，行间一条细线。
+    // 失败靠图标和结果的红字表达，不再描红边
+    <div
+      className={cn(
+        'min-w-0',
+        boxed && 'overflow-hidden rounded-lg border',
+        boxed && failed && 'border-danger/30',
+        className,
+      )}
+    >
       {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
           子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
         onClick={activate}
         className={cn(
-          'group flex min-h-[2.125rem] w-full min-w-0 items-center px-2.5 py-1 text-[0.75rem] text-muted',
+          'group flex min-h-8 w-full min-w-0 items-center py-1 pr-1 pl-2 text-[0.75rem] text-muted',
+          !boxed && 'rounded-md',
+          boxed && 'px-2.5',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
           rowOpen ? 'gap-1.5' : 'gap-2',
-          activate && 'cursor-pointer hover:text-fg',
-          rowOpen && 'transition-colors hover:bg-sel/60',
+          activate && 'cursor-pointer transition-colors hover:bg-fg/[0.04] hover:text-fg',
         )}
       >
         {leading}
@@ -314,7 +329,7 @@ export function RowShell({
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
-          {verb && <span className="font-semibold text-fg">{verb}</span>}
+          {verb && <span className="text-[0.8125rem] font-semibold whitespace-nowrap text-fg">{verb}</span>}
           {badge && (
             <span
               className={cn(
@@ -386,7 +401,15 @@ export function RowShell({
           />
         )}
       </div>
-      {open && children}
+      {open &&
+        (boxed ? (
+          children
+        ) : (
+          // 展开的内容缩进到动作名下面，自己一块细线圆角框；内容自带的顶线和外框重了，去掉
+          <div className="mt-0.5 mb-2 ml-[1.8125rem] min-w-0 overflow-hidden rounded-lg border [&>*:first-child]:border-t-0">
+            {children}
+          </div>
+        ))}
     </div>
   )
 }

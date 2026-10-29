@@ -52,7 +52,7 @@ export function ProcessMenu({ taskId }: { taskId: string }) {
   return (
     <P.Root open={open} onOpenChange={setOpen}>
       <P.Trigger asChild>
-        <IconButton size="sm" label={t('对话进程')} aria-expanded={open} className="relative shrink-0">
+        <IconButton size="sm" tone="bare" label={t('对话进程')} aria-expanded={open} className="relative shrink-0">
           <Activity className="h-4 w-4" />
           {dot !== 'none' && (
             <span aria-hidden className={cn('absolute top-1 right-1 h-1.5 w-1.5 rounded-full', dotClass[dot])} />

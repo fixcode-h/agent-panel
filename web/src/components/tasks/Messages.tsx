@@ -38,8 +38,10 @@ import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
 import { stripDiagnosis } from '@shared/diagnosis'
 import { stripInitJson } from '@/lib/analysis-report'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { agentIcon } from '@/lib/agent-icons'
+import { cliColor } from '@/lib/cli-style'
 import { ReplyHeader } from '@/components/ui/reply-header'
+import { useEffortOf } from './ChatModelPicker'
 import { StepCommand } from './StepCommand'
 import { RunningNow, runningRows, runningTools } from './RunningNow'
 import { useAgentView } from '@/lib/agent-view'
@@ -206,8 +208,24 @@ export type Author = {
   cli: string
   icon?: string
   model?: string
+  /** 思考强度（显示名，如「高」）：回复头里跟在模型后面 */
+  effort?: string
   /** 启动这条回复的 CLI 命令：署名行最右边给个小按钮，点开看完整命令 */
   command?: string[]
+}
+
+/**
+ * 回复头前的角色图标：不要彩色方块底，只是一个按 CLI 着色的图标（设计稿回复头），
+ * 和正文、过程行左边缘对齐，不再占一列头像宽度
+ */
+function RoleGlyph({ icon, cli }: { icon?: string; cli: string }) {
+  const { cliOf } = useAgentView()
+  const Icon = agentIcon(icon ?? 'sparkles')
+  return (
+    <span className="flex h-[26px] w-[18px] items-center justify-center" style={{ color: cliColor(cliOf({ cli })) }}>
+      <Icon className="h-[15px] w-[15px]" strokeWidth={2} />
+    </span>
+  )
 }
 
 export function AgentMessage({
@@ -305,29 +323,21 @@ const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.thinkingMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
 /**
- * 角色名后面的 Agent（CLI）名：同一个角色换了 CLI 时跟着变，一眼看出这条回复是哪个 CLI 跑的。
- * 按 Agent 显示的对话里名字本来就是 CLI 名，再显示一次只是重复
+ * 对话一轮的回复头：滚到顶部后吸住，下一次回复头前被顶走（设计稿：吸顶、底边渐隐到透明，
+ * 下面的内容从它下沿淡进来，不是一刀切）
  */
-function CliLabel({ cli, name }: { cli: string; name: string }) {
-  const { cliName } = useAgentView()
-  const label = cliName({ cli })
-  if (name.startsWith(label)) return null
-  return <span className="shrink-0 text-xs text-subtle">{`· ${label}`}</span>
-}
-
-/** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {
   const { cliName } = useAgentView()
   const cli = cliName({ cli: author.cli })
   return (
-    <div className="sticky top-0 z-10 -mx-2 bg-bg px-2 py-2">
-      {/* 和每条回复开头同一个部件：角色图标 + 名字 + Agent + 模型；窄的时候先压缩模型这一段 */}
+    <div className="sticky top-0 z-10 -mx-2 -mb-2.5 bg-linear-to-b from-bg from-[calc(100%-10px)] to-transparent px-2 pt-3 pb-2.5">
+      {/* 和每条回复开头同一个部件：彩色角色图标 + 名字 +「· 模型 · 强度」；CLI 名放进悬停提示 */}
       <ReplyHeader
-        avatar={<AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />}
+        avatar={<RoleGlyph icon={author.icon} cli={author.cli} />}
         name={author.name}
-        // 角色名本来就是 CLI 名时不再重复
-        agent={author.name.startsWith(cli) ? undefined : cli}
+        title={author.name.startsWith(cli) ? undefined : cli}
         model={author.model}
+        effort={author.effort}
         trailing={
           // 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令
           author.command?.length ? <StepCommand argv={author.command} className="-my-1" /> : undefined
@@ -342,10 +352,7 @@ export function PendingAuthor({ author, children }: { author: Author; children: 
   return (
     <div className="flex flex-col gap-2">
       <StickyAuthor author={author} />
-      <div className="flex gap-3">
-        <span className="w-[26px] shrink-0" />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">{children}</div>
-      </div>
+      <div className="flex min-w-0 flex-col gap-2">{children}</div>
     </div>
   )
 }
@@ -371,51 +378,53 @@ const MessageBody = memo(
     command,
   }: BodyProps) {
     const noHeader = !!compact || !!hideAuthor
+    const { cliName } = useAgentView()
+    const cliLabel = cliName({ cli })
+    // 只有过程行（没有回复文字、思考，名字由外面的回复头显示）：标成过程行，和前后相邻的过程行连成一组
+    const procOnly = noHeader && !slot && !m.text && !m.thinking?.trim() && !m.modelMs && m.tools.length > 0
     return (
-      <div data-msg={m.id} className="flex gap-3">
-        {noHeader ? (
-          <span className="w-[26px] shrink-0" />
-        ) : icon ? (
-          <AgentAvatar icon={icon} cli={cli} size="sm" />
-        ) : (
-          <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
+      // 不再留一列头像宽度：回复头、过程行、正文都从同一条左边缘开始（设计稿）
+      <div
+        data-msg={m.id}
+        data-proc={procOnly && !hideProcess ? '' : undefined}
+        className="flex min-w-0 flex-col gap-2"
+      >
+        {!noHeader && (
+          <ReplyHeader
+            avatar={icon ? <RoleGlyph icon={icon} cli={cli} /> : <span className="h-[26px] w-[18px]" />}
+            name={name}
+            // 角色名本来就是 CLI 名（按 CLI 显示的对话）时不再重复
+            agent={name.startsWith(cliLabel) ? undefined : cliLabel}
+            model={model}
+            // 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令
+            trailing={command?.length ? <StepCommand argv={command} className="-my-1" /> : undefined}
+          />
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {!noHeader && (
-            <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
-              <span className="shrink-0 font-medium">{name}</span>
-              <CliLabel cli={cli} name={name} />
-              {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
-              {model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{model}</span>}
-              {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
-              {command?.length ? <StepCommand argv={command} className="ml-auto -my-1" /> : null}
-            </div>
-          )}
-          {slot}
-          {!hideProcess && m.thinking?.trim() && (
-            <Thinking
-              text={m.thinking}
-              live={!!live && !m.text.trim() && !m.tools.length}
-              ms={m.modelMs}
-              thinkingMs={m.thinkingMs}
-            />
-          )}
-          {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
-          {!hideProcess && m.tools.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <ToolRows tools={m.tools} task={task} />
-            </div>
-          )}
-          {m.text && (
-            <Markdown
-              text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
-                stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
-              )}
-              teamNames={teamNames}
-              live={live}
-            />
-          )}
-        </div>
+        {slot}
+        {!hideProcess && m.thinking?.trim() && (
+          <Thinking
+            text={m.thinking}
+            live={!!live && !m.text.trim() && !m.tools.length}
+            ms={m.modelMs}
+            thinkingMs={m.thinkingMs}
+          />
+        )}
+        {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
+        {!hideProcess && m.tools.length > 0 && (
+          // 同一轮连续的过程行合成一组：组内不留间距、行间一条细分隔线（见 index.css 的 proc-list）
+          <div className="proc-list flex flex-col">
+            <ToolRows tools={m.tools} task={task} />
+          </div>
+        )}
+        {m.text && (
+          <Markdown
+            text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
+              stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
+            )}
+            teamNames={teamNames}
+            live={live}
+          />
+        )}
       </div>
     )
   },
@@ -567,10 +576,10 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
       <PanelRow m={m} teamNames={teamNames} />
     ) : null
   if (!body) return null
+  // 提问卡片要人回答，单独一块；其余（接收消息、面板结果）是过程行，和相邻的过程行连成一组
   return (
-    <div key={m.id} className="flex gap-3">
-      <span className="w-[26px] shrink-0" />
-      <div className="min-w-0 flex-1">{body}</div>
+    <div key={m.id} data-proc={m.panel === 'ask' && m.ask ? undefined : ''} className="min-w-0">
+      {body}
     </div>
   )
 }
@@ -620,6 +629,7 @@ export function Msgs({
   const firstAgent = msgs.findIndex((m) => m.role === 'agent')
   const { agents } = useData()
   const { modelOf } = useAgentView()
+  const effortOf = useEffortOf()
   // 署名行必须放在整段输出外面：放在单条消息里时，sticky 的包含块只有那一条消息的高度，
   // 滚过去就跟着滚出视口了（按 CLI 显示的对话 StickyAuthor 在整轮外面，所以不受影响）
   const firstMsg = firstAgent >= 0 ? msgs[firstAgent] : undefined
@@ -628,15 +638,17 @@ export function Msgs({
     <>
       {sticky && (
         <StickyAuthor
-          author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
+          author={{
+            name: sticky.name,
+            cli: sticky.cli,
+            icon: sticky.icon,
+            model: modelOf(sticky),
+            effort: effortOf(sticky),
+            command,
+          }}
         />
       )}
-      {lead && (
-        <div className="flex gap-3">
-          <span className="w-[26px] shrink-0" />
-          <div className="min-w-0 flex-1">{lead}</div>
-        </div>
-      )}
+      {lead && <div className="min-w-0">{lead}</div>}
       {msgs.map((m, k) => {
         const inline = inlineEntry(m, task, teamNames)
         if (inline) return inline
@@ -780,20 +792,13 @@ export function RunningFooter({
   const box = (
     // 和总结之间用一条细线分开（低对比度，和面板里其他分割线一致）：
     // 之前运行区插在总结上面，看不出哪段是总结、哪段是还在跑的东西
-    <div className="flex flex-col gap-1.5 border-t border-line/60 pt-1.5" role="group" aria-label={t('运行区')}>
+    <div className="proc-list flex flex-col border-t border-line/60 pt-1.5" role="group" aria-label={t('运行区')}>
       <RunningNow task={task} tools={shownTools} jobs={jobs} kids={kids} />
       {run && <RunRow info={run} />}
     </div>
   )
-  return (
-    // 总是缩进在头像后（和工具调用、总结文字同一个左边缘）：运行区挂在 Msgs 的 tail，
-    // 外面已经没有任何缩进层了，这里不缩就会比总结文字往左突出 26+12px，
-    // 分割线也从容器最左端开始，和总结对不上
-    <div className="flex gap-3">
-      <span className="w-[26px] shrink-0" />
-      <div className="min-w-0 flex-1">{box}</div>
-    </div>
-  )
+  // 回复头、过程行、正文都从同一条左边缘开始，运行区不用再缩进
+  return box
 }
 
 /**
@@ -834,6 +839,7 @@ export function FoldedRun({
   const foldIds = useRef({ key: '', value: '' })
   const { agents } = useData()
   const { modelOf } = useAgentView()
+  const effortOf = useEffortOf()
   const all = (
     <Msgs
       msgs={msgs}
@@ -906,7 +912,14 @@ export function FoldedRun({
     <>
       {sticky && (
         <StickyAuthor
-          author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
+          author={{
+            name: sticky.name,
+            cli: sticky.cli,
+            icon: sticky.icon,
+            model: modelOf(sticky),
+            effort: effortOf(sticky),
+            command,
+          }}
         />
       )}
       {before

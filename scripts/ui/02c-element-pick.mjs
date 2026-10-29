@@ -221,7 +221,8 @@ await runShard(import.meta.filename, async (api) => {
   {
     await backToTask()
     await p.getByRole('tab', { name: /改动/ }).click()
-    await check(p, '改动-文件列表', ['改动 2 个文件', 'CartBadge.tsx', 'RestockButton.tsx'])
+    // 右栏信息行写「分支 · N 个改动」（照设计稿 Workspace 右栏），不再有「改动 N 个文件」标题
+    await check(p, '改动-文件列表', ['2 个改动', 'CartBadge.tsx', 'RestockButton.tsx'])
     await p.getByTitle('查看「src/components/CartBadge.tsx」的改动', { exact: true }).click()
     await check(p, '差异-左右对照', ['CartBadge.tsx', '处改动', '+5', '-3', '1 / 2', 'items.reduce'])
     // 修改行要标出行内改动（整行底色之外还有更深的一小段）

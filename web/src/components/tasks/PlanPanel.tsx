@@ -218,7 +218,19 @@ function itemLine(x: PlanItem, kids?: WaitChild[]) {
  * 输入框上方的计划按钮：「计划 2/5 · 正在做的那一步」，点开是实时更新的计划窗口。
  * 只有对话列过计划才显示
  */
-export function PlanButton({ task, children }: { task: Task; children?: WaitChild[] }) {
+export function PlanButton({
+  task,
+  children,
+  compact,
+}: {
+  task: Task
+  children?: WaitChild[]
+  /**
+   * 收成一行小字（设计稿：上面有提问卡时计划让位）：「计划 3/6 · 正在：…」+ 展开箭头，不画浅底条；
+   * 点开还是同一个计划窗口
+   */
+  compact?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEscape(open, () => setOpen(false))
@@ -252,6 +264,33 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
   const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   // 标题里已经带着同样的用时就不重复写一遍
   const withTime = currentTime !== '' && !current?.includes(currentTime)
+  if (compact)
+    return (
+      <div ref={ref} className="relative flex min-w-0 flex-1 items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={t('执行计划')}
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-1 text-left text-[0.75rem] text-subtle transition-colors hover:text-fg"
+        >
+          <ListChecks className="h-3 w-3 shrink-0" />
+          <span className="shrink-0 font-medium text-muted tabular-nums">
+            {head === 'done' ? t('计划已完成') : head === 'closed' ? t('计划已结束') : t('计划')}
+            {!finished && ` ${p.done}/${p.total}`}
+          </span>
+          {!finished && current && (
+            <>
+              <span className="shrink-0">·</span>
+              <span className="min-w-0 flex-1 truncate">{t('正在：{what}', { what: current })}</span>
+            </>
+          )}
+          {(finished || !current) && <span className="flex-1" />}
+          <ChevronUp aria-hidden className={cn('h-3 w-3 shrink-0 transition-transform', open && 'rotate-180')} />
+        </button>
+        {open && <PlanWindow task={task} plan={plan} children={children} />}
+      </div>
+    )
   // 组件库「计划 · PlanBar」：贴在输入框上方的一整条浅底，「计划 3/6 正在：…」，点开是计划窗口
   return (
     <div ref={ref} className="relative flex min-w-0 flex-1 items-center">
