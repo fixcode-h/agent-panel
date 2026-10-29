@@ -86,7 +86,7 @@ export function TaskFiles({
   const del = changes.reduce((n, c) => n + c.del, 0)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* 右栏固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动；分支和刷新放在右端 */}
+      {/* 右栏固定两个页签（照 Proma 的页签条）：项目文件 / 本对话改动，按固定宽度靠左排、不平分整条；分支和刷新放在右端 */}
       <TabBar
         label={t('文件视图')}
         trailing={
@@ -104,11 +104,10 @@ export function TaskFiles({
           </>
         }
       >
-        <TabItem fill active={tab === 'files'} onSelect={() => setTab('files')}>
+        <TabItem active={tab === 'files'} onSelect={() => setTab('files')}>
           {t('项目文件')}
         </TabItem>
         <TabItem
-          fill
           active={tab === 'changes'}
           onSelect={() => setTab('changes')}
           tag={changes.length > 0 ? changes.length : undefined}
