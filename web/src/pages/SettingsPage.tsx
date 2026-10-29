@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Gauge,
   Keyboard,
+  Mic,
   Search,
   Component,
   Box,
@@ -65,6 +66,7 @@ import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { RemoteSection } from '@/components/settings/RemoteSection'
 import { NetworkSection } from '@/components/settings/NetworkSection'
 import { WebSearchSection } from '@/components/settings/WebSearchSection'
+import { SpeechSection } from '@/components/settings/SpeechSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
@@ -107,6 +109,7 @@ const pickLabel = pickButtonLabel
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
   { id: 'shortcuts', label: t('快捷键'), icon: Keyboard, group: t('通用') },
+  { id: 'speech', label: t('语音输入'), icon: Mic, group: t('通用') },
   { id: 'fonts', label: t('外观'), icon: Type, group: t('通用') },
   { id: 'components', label: t('组件'), icon: Component, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
@@ -167,6 +170,7 @@ function SettingsBody({
   const [proxy, setProxy] = useState(initial.proxy)
   const [proxyOn, setProxyOn] = useState(initial.networkProxyEnabled)
   const [webSearch, setWebSearch] = useState(initial.webSearch)
+  const [speech, setSpeech] = useState(initial.speech)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
@@ -336,6 +340,7 @@ function SettingsBody({
     webhook: { enabled: webhookOn, url: webhookValid ? webhookUrlTrimmed : initial.webhook.url },
     // 联网搜索：搜索源和密钥（开关在 CLI 自己的设置里，不在这份全局设置里）
     webSearch,
+    speech,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
     keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
@@ -750,6 +755,7 @@ function SettingsBody({
             )}
             {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
             {cur.id === 'web-search' && <WebSearchSection value={webSearch} onChange={setWebSearch} />}
+            {cur.id === 'speech' && <SpeechSection value={speech} onChange={setSpeech} />}
             {cur.id === 'integrations' && <IntegrationsSection />}
             {cur.id === 'general' && (
               <>

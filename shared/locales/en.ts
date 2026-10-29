@@ -15,6 +15,7 @@ import { EN_SHARED } from './en/shared.ts'
 import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
 import { EN_WEB_SEARCH } from './en/web-search.ts'
+import { EN_SPEECH } from './en/speech.ts'
 
 /** 英文词典：键是中文原文（含 {变量} 占位），值是英文。按界面区域分文件，scripts/i18n-check.mjs 检查有没有漏翻 */
 export const EN: Record<string, string> = {
@@ -35,4 +36,5 @@ export const EN: Record<string, string> = {
   ...EN_SCHEDULE,
   ...EN_ALERTS,
   ...EN_WEB_SEARCH,
+  ...EN_SPEECH,
 }

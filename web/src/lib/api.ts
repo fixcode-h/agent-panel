@@ -3,6 +3,7 @@ import type { TaskExport } from '@shared/task-export'
 import type { ComfyQueueState, ComfyWorkflow, LocalJob, LocalStatus } from '@shared/local-image'
 import type { ComfyChain } from '@shared/comfy-chain'
 import type { ModelMeta } from '@shared/blender'
+import type { SpeechStatus } from '@shared/speech'
 import type { ComfyTemplateDetail, ComfyTemplateMeta, TemplateAsset } from '@shared/comfy-templates'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -297,6 +298,16 @@ export const api = {
     request<LocalStatus>(`/local-image/models/${id}${action === 'download' ? '/download' : ''}`, {
       method: action === 'download' ? 'POST' : 'DELETE',
     }),
+
+  /** 本机语音输入：识别库和模型的下载状态（shared/speech.ts） */
+  speech: () => request<SpeechStatus>('/speech/status'),
+  speechCancel: () => request<SpeechStatus>('/speech/cancel', { method: 'POST' }),
+  speechModel: (id: string, action: 'download' | 'remove') =>
+    request<SpeechStatus>(`/speech/models/${id}${action === 'download' ? '/download' : ''}`, {
+      method: action === 'download' ? 'POST' : 'DELETE',
+    }),
+  /** 一段 16kHz 单声道 16 位 PCM（base64）转成文字 */
+  transcribe: (audio: string) => request<{ text: string }>('/speech/transcribe', json('POST', { audio })),
 
   comfyWorkflows: () => request<{ list: ComfyWorkflow[]; ready: string[] }>('/local-image/workflows'),
   /** 工作流链：存下来的链 + 可用的工作流（面板里选段要用） */
