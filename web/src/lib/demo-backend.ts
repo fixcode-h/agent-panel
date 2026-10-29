@@ -1213,6 +1213,12 @@ function demoUploadText(p: string): string | null {
 function demoResolve(paths: string[]): (Attachment & { from: string })[] {
   return paths.flatMap((from) => {
     const url = demoUploads.get(from)
+    // 输入 @ 选中的项目文件：演示项目都在 /home/demo/code/<项目>/ 下，按相对路径认
+    const rel = /^\/home\/demo\/code\/[^/]+\/(.+)$/.exec(from)?.[1]
+    if (!url && rel && DEMO_FILES.includes(rel)) {
+      const size = (DEMO_CONTENTS[rel] ?? '').length
+      return [{ from, name: rel.split('/').pop() ?? rel, path: from, size, mime: '', ref: true }]
+    }
     if (!url) return []
     const base = from.split('/').pop() ?? from
     const mime = /^data:([^;,]+)/.exec(url)?.[1] ?? ''

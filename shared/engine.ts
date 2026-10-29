@@ -3804,6 +3804,17 @@ async function runHelper(
     }
     step.endedAt = now()
     host.changed(true)
+  } catch (e) {
+    // 启动 CLI 前后抛了异常（读配置、写文件、进程起不来）：不能让它往外冒。
+    // 冒出去的话子任务一直停在执行中、没有任何输出，终止按钮又说它已经结束了；
+    // 等它的对话也跟着抛错。按失败收口，原因照常显示并交回给派它的对话
+    if (ac.signal.aborted) return stopped()
+    const error = t('子任务没能执行：{error}', { error: (e as Error)?.message || String(e) })
+    step.status = 'failed'
+    st.errors.set(step.id, error)
+    system(host, error, step.id, true)
+    step.endedAt = now()
+    host.changed(true)
   } finally {
     helperStops.delete(key)
   }

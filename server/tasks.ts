@@ -3685,6 +3685,13 @@ export function tasksApi(deps: {
           return
         }
         entry.task.status = 'failed'
+        // 还画成在跑的节点、子任务一起收口：不然它们一直转圈、没有输出，终止按钮又说已经结束了
+        const at = new Date().toISOString()
+        for (const s of entry.task.steps)
+          if (s.status === 'running') {
+            s.status = 'failed'
+            s.endedAt = at
+          }
         entry.task.messages.push({
           id: randomUUID(),
           role: 'system',
@@ -4794,10 +4801,34 @@ export function tasksApi(deps: {
     }
     const step = tk.steps.find((s) => s.id === stepId && s.slot === 'sub')
     if (!step) return bad(c, t('找不到这个子任务'), 404)
-    if (!stopHelper(id, step.id, '用户在界面上终止了这个子任务')) return bad(c, t('这个子任务已经结束了'), 409)
+    if (!stopHelper(id, step.id, '用户在界面上终止了这个子任务')) {
+      // 界面上还画成在跑 / 没开始，面板里却已经没有在跑的它（异常退出、面板重启、派它的那一轮已经收尾）：
+      // 直接收口成已终止，不再回「已经结束了」让它一直转圈
+      if (!(await settleOrphanHelper(id, step.id))) return bad(c, t('这个子任务已经结束了'), 409)
+      log.warn('task', '终止的子任务已经没有在跑，直接收口成已终止', { task: id, step: step.id })
+      return c.json(await current(id))
+    }
     log.info('task', '用户终止了子任务', { task: id, step: step.id })
     return c.json(await current(id))
   })
+
+  /**
+   * 没有在跑却还标着执行中 / 没开始的子任务：落成已终止并保存。已经有结论（完成、失败、终止）的不动，返回 false
+   */
+  async function settleOrphanHelper(id: string, stepId: string) {
+    const e = live.get(id)
+    const tk = e?.task ?? (await store.get(id))
+    const s = tk?.steps.find((x) => x.id === stepId && x.slot === 'sub')
+    if (!tk || !s || (s.status !== 'running' && s.status !== 'pending')) return false
+    s.status = 'skipped'
+    s.interrupted = false
+    delete s.apiWait
+    s.endedAt = new Date().toISOString()
+    tk.updatedAt = s.endedAt
+    if (e) e.rev++
+    await store.update(tk.id, tk)
+    return true
+  }
 
   /** 停止这个对话和它名下子对话的全部后台命令（对话本身不停）；返回停了几条 */
   routes.post('/:id/background/stop', async (c) => {

@@ -1,14 +1,18 @@
 import { useId } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { House, Moon, PanelLeft, Settings, Sun } from 'lucide-react'
+import { Moon, Settings, Sun } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { deployedUpdateHint, sharedUpdateHint, useSkillUpdates } from '@/lib/skill-updates'
+import { HomeIcon, PanelIcon, type NavIcon } from './rail-icons'
 import { ModeSwitch, NAV, homeRoute, isToolPage, toggleSidebar, useSidebarCollapsed } from './Sidebar'
 
-/** 图标栏里的一格：只有图标，名字在悬停提示和读屏名里；选中的那格浅底 + 前景色 */
+/**
+ * 图标栏里的一格：只有图标，名字在悬停提示和读屏名里。
+ * 选中的那格浅底 + 前景色，图标主体填实（.rail-fill）；按下时轻微缩一下，点了有反馈
+ */
 function Item({
   icon: Icon,
   label,
@@ -16,7 +20,7 @@ function Item({
   dot,
   onClick,
 }: {
-  icon: LucideIcon
+  icon: LucideIcon | NavIcon
   label: string
   on?: boolean
   /** 右上角的小点：有更新、有新内容；给文字时也写进悬停提示 */
@@ -35,12 +39,15 @@ function Item({
       title={typeof dot === 'string' ? `${label}\n${dot}` : label}
       onClick={onClick}
       className={cn(
-        'relative grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg transition-colors',
-        on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+        'rail-item relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[10px] transition-[background-color,color,transform] duration-150 active:scale-[0.94]',
+        on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
-      <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
-      {dot && <span aria-hidden className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-accent" />}
+      <Icon className="h-5 w-5" strokeWidth={1.6} />
+      {/* 圆点描一圈图标栏的底色，压在图标角上也分得开 */}
+      {dot && (
+        <span aria-hidden className="activity-dot absolute top-[7px] right-[7px] h-2 w-2 rounded-full bg-accent" />
+      )}
       {hint && (
         <span id={hintId} hidden>
           {hint}
@@ -67,12 +74,12 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
     <nav
       aria-label={t('功能栏')}
       data-activity-bar
-      className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1 py-2 md:flex"
+      className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1.5 py-2.5 md:flex"
     >
       {tool ? (
-        <Item icon={House} label={t('回到主页')} onClick={() => go(homeRoute())} />
+        <Item icon={HomeIcon} label={t('回到主页')} onClick={() => go(homeRoute())} />
       ) : (
-        <Item icon={PanelLeft} label={collapsed ? t('展开侧栏') : t('收起侧栏')} onClick={toggleSidebar} />
+        <Item icon={PanelIcon} label={collapsed ? t('展开侧栏') : t('收起侧栏')} onClick={toggleSidebar} />
       )}
       {/* 会话侧栏让开时（功能页、收起）模式切换跟着到图标栏来：不然从功能页切不了 Agent / Chat / 设计 */}
       {(tool || collapsed) && (
@@ -80,7 +87,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
           <ModeSwitch narrow />
         </div>
       )}
-      <span aria-hidden className="my-1 h-px w-6 bg-line" />
+      <span aria-hidden className="activity-sep my-1 h-px w-5 shrink-0" />
       {NAV.map((n) => (
         <Item
           key={n.id}

@@ -1314,3 +1314,23 @@ html [data-sonner-toast][data-styled='true'] {
   background-color: color-mix(in oklab, var(--rail) 95%, var(--fg));
   box-shadow: inset -1px 0 0 var(--line);
 }
+/* 图标栏分隔线：bg-line 在浅色图标栏上几乎看不见，按前景色调一点出来，深浅两套都看得到 */
+.activity-sep {
+  background-color: color-mix(in oklab, var(--fg) 14%, transparent);
+}
+/* 角标圆点描一圈图标栏底色：选中格是 bg-sel，描边跟着换，不会露出一圈错色 */
+.activity-dot {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--rail) 95%, var(--fg));
+}
+.rail-item:hover .activity-dot,
+.rail-item[aria-current='page'] .activity-dot {
+  box-shadow: 0 0 0 2px var(--sel);
+}
+/* 自绘导航图标（rail-icons.tsx）的主体层：平时透明，选中时填一层浅色 */
+.rail-fill {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+[aria-current='page'] .rail-fill {
+  opacity: 0.26;
+}
