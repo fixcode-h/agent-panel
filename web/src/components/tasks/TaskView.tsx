@@ -51,7 +51,7 @@ import {
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
 import { TurnMenu } from './TurnMenu'
-import { keepLiveFields } from '@/lib/live-fields'
+import { keepLiveFields, windowedForSummary } from '@/lib/live-fields'
 import { latestTurnIndex } from '@/lib/latest-turn'
 import { WaitDots, cliAliveHint, cliTreeAlive } from './CliAlive'
 import {
@@ -680,7 +680,12 @@ export function TaskView({
   // 侧栏马上要反映的变化不能等整份到齐
   const summaryOf = (next: TaskPage): Task =>
     next.messageHasMore
-      ? taskSummary({ ...next, messages: tasks.find((x) => x.id === next.id)?.messages ?? [] })
+      ? taskSummary(
+          windowedForSummary(
+            next,
+            tasks.find((x) => x.id === next.id),
+          ),
+        )
       : taskSummary(next)
   const pushSummary = (next: TaskPage, force = false) => {
     const prev = lastTask.current
