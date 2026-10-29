@@ -1193,7 +1193,7 @@ export const AlertKind = z.enum([
   'no_response', // 交给 CLI 后迟迟没有任何输出
   'idle', // 执行中很久没有输出
   'timeout', // 超过单步时限被停掉
-  'empty_turn', // 这一轮没有产出
+  'empty_turn', // CLI 报这一轮结束，却什么都没返回
   'retry', // CLI 自己在重试
   'delivery', // 面板没能把消息交给对话（后台结果、子对话上报）
   'worktree', // 独立分支建不起来、删不掉

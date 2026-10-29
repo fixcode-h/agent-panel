@@ -365,6 +365,7 @@ export type PageId =
   | 'chat'
   | 'design'
   | 'comfy'
+  | 'model'
   | 'library'
   | 'mcp'
   | 'summary'

@@ -611,6 +611,9 @@ test('API 方式：执行时只认 API 里配的模型，其它模型换成第�
   assert.equal(agentRun({ cli: 'commandcode', model: 'cc-2' }, s).model, 'p/cc-2')
   assert.equal(agentRun({ cli: 'commandcode', model: 'old-model' }, s).model, 'p/cc-1')
   assert.equal(agentRun({ cli: 'commandcode', model: 'p/cc-2' }, s).model, 'p/cc-2')
+  // 没选模型（对话 model 为空、也没设默认模型）：用 API 的第一个模型，和界面上标「默认」的那个一致。
+  // 以前原样传空，CLI 启动时不带 --model，退回它内置的默认（Claude Code 是 claude-opus-5-5），第三方网关不认就报错
+  assert.equal(agentRun({ cli: 'commandcode', model: '' }, s).model, 'p/cc-1')
 })
 
 test('API 方式：模型后缀按协议自动切换', () => {

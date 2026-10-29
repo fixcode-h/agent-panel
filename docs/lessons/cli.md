@@ -30,3 +30,9 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 起因：Command Code 账号模式保留 `tokenapi/...-responses` 会先报未登录、登录后又报 `unknown model`。
 - 补充：模型列表按「CLI + 登录方式 + 选的 API」分开缓存（`server/models.ts`、`web/src/lib/cli-models.ts`），切换后不等保存就换列表；账号方式去掉 CLI 自己接的接口（BYOK 组、带 API 前缀的模型）。
 - 防线：`server/settings-auth.test.ts`；`scripts/e2e.mjs`「账号和 API」里查两种方式的列表。
+
+## 「没选模型」也要显式传模型，不能把空值交给 CLI
+
+- 规则：解析出的模型为空时不能原样传给 CLI（不带 `--model` 会退回 CLI 内置默认，第三方网关不认）；API 模式下空模型取 API 的第一个，和界面标「默认」的同一个。界面显示的默认和执行时的默认必须是同一处算出来的。
+- 起因：模型设计对话 `model: ''`，启动不带 `--model`，Claude Code 用 claude-opus-5-5 打到 deepseek 网关报错（见 `docs/modules/shared/bugs/api-empty-model-no-model-flag.md`）。
+- 防线：`server/api-config.test.ts`。

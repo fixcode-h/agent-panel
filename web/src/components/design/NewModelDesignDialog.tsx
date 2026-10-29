@@ -74,7 +74,7 @@ export function NewModelDesignDialog({ open, onOpenChange }: { open: boolean; on
       upsertTask(taskSummary(created))
       setPrompt('')
       onOpenChange(false)
-      go({ page: 'projects', id: created.projectId, sub: created.id })
+      go({ page: 'model', id: created.id })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -118,7 +118,9 @@ export function NewModelDesignDialog({ open, onOpenChange }: { open: boolean; on
       }
     >
       <p className="text-xs leading-relaxed text-subtle">
-        {t('模型设计在 Agent 项目里开一个对话，后台启动 Blender，Agent 用它建模并在对话里汇报进度。')}
+        {t(
+          '模型设计在选定的项目目录里开一个对话（不列进 Agent 模式），后台启动 Blender，Agent 用它建模并在对话里汇报进度。',
+        )}
       </p>
       <Field label={t('项目')}>
         <Select
