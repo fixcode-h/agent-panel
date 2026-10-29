@@ -81,6 +81,8 @@ export const EN_TASKS: Record<string, string> = {
   引用的内容: 'Quoted content',
   '没找到「{name}」在本机的位置，可以手动选择这个文件来引用它':
     'Could not find "{name}" on this computer. Pick the file manually to reference it.',
+  '「{name}」被别的程序占用，读不了，也没找到它在本机的位置，可以手动选择这个文件来引用它':
+    '"{name}" is in use by another program and cannot be read, and it could not be found on this computer. Pick the file manually to reference it.',
   选择文件: 'Choose file',
   粘贴的文字: 'Pasted text',
   // 输入框卡片的右键菜单（复制图片、路径、引用）

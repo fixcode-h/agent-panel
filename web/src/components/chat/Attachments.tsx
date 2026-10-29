@@ -266,13 +266,18 @@ export function useAttachments(draftKey?: string) {
     [],
   )
 
-  /** 没有原路径的附件（剪贴板截图）仍走浏览器上传：只有这一种要等它传完才能发送 */
+  /**
+   * 没有原路径的附件（剪贴板截图）仍走浏览器上传：只有这一种要等它传完才能发送。
+   * 浏览器读不了文件内容（Windows 上被别的程序占用、正在写）时返回 false，不提示也不删卡片，交给调用方改引用原路径
+   */
   const uploadOne = useCallback(
     async (x: { key: string; name: string; mime: string; file: File }, hooks?: AttachHooks) => {
-      if (cancelled.current.has(x.key)) return
+      if (cancelled.current.has(x.key)) return true
       setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, state: 'uploading' } : i)))
+      const data = await readBase64(x.file).catch(() => null)
+      if (data === null) return false
       try {
-        const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
+        const done = await api.upload({ name: x.name, mime: x.mime, data })
         if (cancelled.current.delete(x.key)) return
         setItems((xs) =>
           xs.map((i) => (i.key === x.key ? { ...i, done, mime: done.mime || i.mime, state: 'ready' } : i)),
@@ -283,6 +288,7 @@ export function useAttachments(draftKey?: string) {
         setItems((xs) => xs.filter((i) => i.key !== x.key))
         hooks?.failed?.(x.name)
       }
+      return true
     },
     [],
   )
@@ -328,6 +334,61 @@ export function useAttachments(draftKey?: string) {
       }
     },
     [copyInto],
+  )
+
+  /**
+   * 浏览器读不了的文件（被占用）：不比大小、只按名字再在本机找一次原路径，找到就改成引用路径；
+   * 正在写的文件大小一直在变，按名字 + 大小的那次查找对不上。还找不到才提示，让用户手动选文件来引用
+   */
+  const refUnreadable = useCallback(
+    async (x: { key: string; name: string; file: File }, hooks?: AttachHooks) => {
+      const hit = await api
+        .locateFiles([{ name: x.file.name, size: x.file.size, mtime: x.file.lastModified || undefined }], {
+          loose: true,
+        })
+        .then((r) => r.files[0])
+        .catch(() => undefined)
+      if (cancelled.current.delete(x.key)) return
+      // 找到的文件已经附上了：不重复加
+      const dup = hit && (claimed.current.has(hit.path) || itemsRef.current.some((i) => i.source === hit.path))
+      if (!hit || dup) {
+        setItems((xs) => xs.filter((i) => i.key !== x.key))
+        hooks?.failed?.(x.name)
+        if (!hit)
+          toast.error(
+            t('「{name}」被别的程序占用，读不了，也没找到它在本机的位置，可以手动选择这个文件来引用它', {
+              name: x.name,
+            }),
+            {
+              action: { label: t('选择文件'), onClick: () => void pickLarge(hooks) },
+            },
+          )
+        return
+      }
+      claimed.current.add(hit.path)
+      setItems((xs) =>
+        xs.map((i) =>
+          i.key === x.key
+            ? {
+                ...i,
+                source: hit.path,
+                size: hit.size,
+                state: 'ref',
+                done: { name: i.name, path: hit.path, size: hit.size, mime: hit.mime, ref: true },
+              }
+            : i,
+        ),
+      )
+    },
+    [pickLarge],
+  )
+  /** 上传一项，读不了内容（被占用）时改引用原路径 */
+  const uploadOrRef = useCallback(
+    (x: { key: string; name: string; mime: string; file: File }, hooks?: AttachHooks) =>
+      void uploadOne(x, hooks).then((ok) => {
+        if (ok === false) void refUnreadable(x, hooks)
+      }),
+    [refUnreadable, uploadOne],
   )
 
   /**
@@ -416,7 +477,7 @@ export function useAttachments(draftKey?: string) {
       // 粘贴进来的图片是剪贴板截图，没有原路径：直接上传，省掉一次本机查找。
       // 拖入、选择文件、粘贴的文件仍先找原路径——真实文件也可能叫 image.png，不能只看文件名
       const direct = opts.clipboard ? fresh.filter((x) => isImage(x.mime, x.name)) : []
-      for (const x of direct) void uploadOne(x, hooks)
+      for (const x of direct) uploadOrRef(x, hooks)
       const want = fresh.filter((x) => !direct.includes(x))
       if (!want.length) return
 
@@ -432,7 +493,7 @@ export function useAttachments(draftKey?: string) {
         const hit = found.get(index)
         if (!hit) {
           // 找不回原路径：不太大的照旧上传一份；太大的让用户自己选文件来引用
-          if (x.file.size <= MAX_ATTACHMENT_BYTES) void uploadOne(x, hooks)
+          if (x.file.size <= MAX_ATTACHMENT_BYTES) uploadOrRef(x, hooks)
           else {
             cancelled.current.add(x.key)
             setItems((xs) => xs.filter((i) => i.key !== x.key))
@@ -467,7 +528,7 @@ export function useAttachments(draftKey?: string) {
         if (!ref) void copyInto(x.key, hit.path, { name: x.name, mime: hit.mime, size: hit.size })
       }
     },
-    [copyInto, pickLarge, uploadOne],
+    [copyInto, pickLarge, uploadOrRef],
   )
   /** 已经在服务端生成好的附件（引入的会话记录） */
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {

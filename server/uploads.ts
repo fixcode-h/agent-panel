@@ -143,15 +143,21 @@ export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
           )
           .min(1)
           .max(MAX_ATTACHMENTS),
+        /** 不比大小只按名字找：浏览器读不了的文件（被占用）改引用原路径时用，见 locateFiles */
+        loose: z.boolean().optional(),
       })
       .safeParse(await c.req.json().catch(() => null))
     if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
     const dirs = (await opts.dirs?.().catch(() => [])) ?? []
-    const found = await locateFiles(p.data.files, dirs)
-    const files = p.data.files.flatMap((w, index) => {
+    const found = await locateFiles(p.data.files, dirs, true, p.data.loose)
+    const files: (Attachment & { index: number })[] = []
+    for (const [index, w] of p.data.files.entries()) {
       const file = found.get(w)
-      return file ? [{ index, name: w.name, path: file, size: w.size, mime: mimeOf(file), ref: true }] : []
-    })
+      if (!file) continue
+      // 宽松查找时大小可能和浏览器给的不一样：按本机文件现在的大小
+      const size = p.data.loose ? ((await stat(file).catch(() => null))?.size ?? w.size) : w.size
+      files.push({ index, name: w.name, path: file, size, mime: mimeOf(file), ref: true })
+    }
     confirm(files.map((f) => f.path))
     return c.json({ files })
   })

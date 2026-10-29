@@ -21,4 +21,10 @@ test('大文件按名字和大小在目录里找回原路径，同名同大小�
   const found = await searchFiles([want, wrongSize], [root])
   assert.equal(found.get(want)?.path, path.join(deep, '录屏.mp4'))
   assert.equal(found.has(wrongSize), false, '大小对不上的不算')
+
+  // 被占用、正在写的文件：浏览器拿到的大小已经过时，宽松查找只比名字，挑修改时间最接近的
+  const writing = { name: '录屏.mp4', size: 7, mtime: 9_000_000 }
+  assert.equal((await searchFiles([writing], [root])).has(writing), false, '默认还是要求大小一致')
+  const loose = await searchFiles([writing], [root], 4, 4000, true)
+  assert.equal(loose.get(writing)?.path, path.join(other, '录屏.mp4'))
 })

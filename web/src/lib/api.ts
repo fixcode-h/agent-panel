@@ -693,8 +693,8 @@ export const api = {
   openLocalFile: (path: string, reveal = false) =>
     request<{ ok: boolean; revealed: boolean }>('/uploads/open', json('POST', { path, reveal })),
   /** 粘贴、拖进来的大文件：按名字、大小、修改时间在本机找回原路径（index 对应传入的第几个，找不到的不在里面） */
-  locateFiles: (files: { name: string; size: number; mtime?: number }[]) =>
-    request<{ files: (Attachment & { index: number })[] }>('/uploads/locate', json('POST', { files })),
+  locateFiles: (files: { name: string; size: number; mtime?: number }[], opts: { loose?: boolean } = {}) =>
+    request<{ files: (Attachment & { index: number })[] }>('/uploads/locate', json('POST', { files, ...opts })),
   /** 小文件后台拷贝一份到数据目录：只接受 pick / resolve / locate 返回过的路径，拷不了的不在结果里 */
   copyPaths: (paths: string[]) =>
     request<{ files: (Attachment & { from: string })[] }>('/uploads/copy', json('POST', { paths })),
