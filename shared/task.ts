@@ -1296,6 +1296,22 @@ export function childStale(
  */
 export const CHILD_IDLE_ASK_MAX = 3
 
+/**
+ * 这一轮已经说完、计划却没做完，也没有在等任何东西：子对话停在等下一句，没人推就不会往下走。
+ * 常见于模型只回了一句「先跑类型检查」就收尾、没真的调工具（用户报过：父对话一直等它，它一直等下一句）。
+ * 计划里还有在等结果的步骤（等孙对话、等合并）、已经请父对话收尾的，都不算：那是在等别人
+ */
+export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'resolved' | 'wrapRequest'>) {
+  if (tk.working || tk.resolved) return false
+  const wrap = tk.wrapRequest?.state
+  if (wrap === 'requested' || wrap === 'merging' || wrap === 'testing') return false
+  const plan = activePlan(tk)
+  if (!plan) return false
+  const p = planProgress(tk, plan)
+  if (p.done >= p.total || p.waiting) return false
+  return !plan.steps.some((s) => s.waits?.some((w) => w.state === 'waiting'))
+}
+
 export interface ChildIdleAskDecision {
   ask: boolean
   /** 不问的原因：off 关闭、not-running 没在执行、waiting 在等能解释的东西、too-soon 没到阈值、limit 问够了 */
@@ -1311,6 +1327,8 @@ export function childIdleAsk(
     /** 设置里的分钟数，0 关闭 */
     minutes: number
     working?: boolean
+    /** 没在执行，但这一轮说完时计划还没做完、也没在等别的（见 planStalled）：同样要问 */
+    stalledPlan?: boolean
     lastActivityAt?: string
     /** 能解释的等待（见 childWait）：等用户、等后台命令、等工作流、等子任务时不问 */
     wait?: ChildWait
@@ -1322,7 +1340,8 @@ export function childIdleAsk(
   now = Date.now(),
 ): ChildIdleAskDecision {
   if (x.minutes <= 0) return { ask: false, reason: 'off', idleMs: 0, count: x.autoAsk?.count ?? 0 }
-  if (!x.working) return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
+  if (!x.working && !x.stalledPlan)
+    return { ask: false, reason: 'not-running', idleMs: 0, count: x.autoAsk?.count ?? 0 }
   if (x.wait && x.wait.kind !== 'next')
     return { ask: false, reason: 'waiting', idleMs: 0, count: x.autoAsk?.count ?? 0 }
   const last = x.lastActivityAt ? Date.parse(x.lastActivityAt) : NaN
@@ -1331,8 +1350,9 @@ export function childIdleAsk(
   // 询问自己的那条消息也在 messages 里：从它之后继续算静默，否则每次问完都会重新等满一轮
   const since = Number.isFinite(asked) ? Math.max(last, asked) : last
   const idleMs = Math.max(0, now - since)
-  // 问过之后子对话有了新的输出：重新从 0 次算
-  const count = Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
+  // 问过之后子对话有了新的输出：重新从 0 次算。
+  // 停在等下一句的那种不清零：它每次回一句又收尾，清零的话会每隔几分钟问一次、永远问下去
+  const count = x.working && Number.isFinite(asked) && last > asked ? 0 : (x.autoAsk?.count ?? 0)
   if (idleMs < x.minutes * (x.unitMs ?? 60_000)) return { ask: false, reason: 'too-soon', idleMs, count }
   if (count >= CHILD_IDLE_ASK_MAX) return { ask: false, reason: 'limit', idleMs, count }
   return { ask: true, idleMs, count: count + 1 }

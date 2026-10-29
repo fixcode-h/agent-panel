@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX } from './task.ts'
+import { childAutoAskWaiting, childIdleAsk, CHILD_IDLE_ASK_MAX, planStalled } from './task.ts'
 
 /** 一分钟按 1 秒算：阈值、上限这些判定不用真的等几分钟 */
 const unitMs = 1000
@@ -94,4 +94,37 @@ test('询问之后还没有新输出才算「等回复」', () => {
 test('这一轮收不下、已经撤掉的询问不算在等回复', () => {
   const autoAsk = { at: at(now), count: 1, held: true }
   assert.equal(childAutoAskWaiting({ autoAsk, lastActivityAt: at(now) }), false)
+})
+
+test('这一轮说完了、计划没做完也没在等别的：停在等下一句也要问，问够了不再问', () => {
+  const plan = (steps: { status: string; waits?: { state: string }[] }[]) =>
+    ({
+      working: false,
+      steps: [],
+      plans: [
+        {
+          id: 'p',
+          title: '',
+          steps: steps.map((s, i) => ({ id: String(i), title: `第 ${i} 步`, waits: [], children: [], ...s })),
+        },
+      ],
+    }) as unknown as Parameters<typeof planStalled>[0]
+  // 用户报过：子对话只回了一句「先跑类型检查」就收尾，计划 1/8，父对话等它、它等下一句
+  const stalled = plan([{ status: 'done' }, { status: 'running' }, { status: 'pending' }])
+  assert.equal(planStalled(stalled), true)
+  // 在等孙对话、已经请父对话收尾、计划做完了：是在等别人，不算停住
+  assert.equal(planStalled(plan([{ status: 'done' }, { status: 'waiting', waits: [{ state: 'waiting' }] }])), false)
+  assert.equal(
+    planStalled({ ...stalled, wrapRequest: { state: 'requested', at: '', note: '' } } as typeof stalled),
+    false,
+  )
+  assert.equal(planStalled(plan([{ status: 'done' }])), false)
+  assert.equal(planStalled({ ...stalled, working: true }), false)
+
+  const lastActivityAt = at(now - 3000)
+  assert.equal(ask({ minutes: 3, working: false, stalledPlan: true, lastActivityAt }).ask, true)
+  // 每次问完它回一句又收尾：次数不清零，问满上限就停，不会每隔几分钟问下去
+  const asked = { at: at(now - 4000), count: CHILD_IDLE_ASK_MAX }
+  const r = ask({ minutes: 3, working: false, stalledPlan: true, lastActivityAt: at(now - 3500), autoAsk: asked })
+  assert.equal(r.reason, 'limit')
 })
