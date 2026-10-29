@@ -2,6 +2,7 @@ import { SquareTerminal } from 'lucide-react'
 import { useData, useNav } from '@/lib/data'
 import { orderClis } from '@shared/settings'
 import { t } from '@shared/i18n'
+import { Button } from '@/components/ui/button'
 import type { CliStatus, Settings } from '@shared/schema'
 
 /** 没有启用的 CLI 时引导用户去启用哪一个：优先已经装好的，没有就是排在最前面的 */
@@ -19,7 +20,7 @@ export function NoCliBanner() {
   const target = cliToEnable(clis, settings)
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b bg-accent-soft px-4 py-2 text-[0.8125rem] text-fg">
-      <SquareTerminal className="h-4 w-4 shrink-0 text-accent" strokeWidth={1.8} />
+      <SquareTerminal className="h-4 w-4 shrink-0 text-accent-text" strokeWidth={1.8} />
       <span className="min-w-0 flex-1">
         <b className="font-medium">{t('还没有启用 Agent')}</b>
         <span className="text-subtle">
@@ -28,12 +29,9 @@ export function NoCliBanner() {
             : t('：先安装并启用一个 Agent，才能运行角色和工作流。')}
         </span>
       </span>
-      <button
-        onClick={() => openSettings(`cli:${target.id}`)}
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-accent hover:bg-accent-soft"
-      >
+      <Button variant="link" onClick={() => openSettings(`cli:${target.id}`)}>
         {t('去启用 {name}', { name: target.name })}
-      </button>
+      </Button>
     </div>
   )
 }

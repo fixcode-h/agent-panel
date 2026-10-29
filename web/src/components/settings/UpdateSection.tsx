@@ -26,8 +26,11 @@ import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Progress } from '@/components/ui/progress'
 import { t } from '@shared/i18n'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
 /** 检查失败或限流时的手动下载入口 */
@@ -52,14 +55,9 @@ const dateTime = (iso: string) => {
 
 function Channel({ pre }: { pre: boolean }) {
   return (
-    <span
-      className={cn(
-        'shrink-0 rounded-full px-1.5 py-px text-[0.6875rem]',
-        pre ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
-      )}
-    >
+    <Badge tone={pre ? 'warning' : 'success'} className="shrink-0 px-1.5 text-[0.6875rem]">
       {pre ? t('预览版') : t('正式版')}
-    </span>
+    </Badge>
   )
 }
 
@@ -101,11 +99,13 @@ function ReleaseRow({
           title={t('查看更新说明')}
         >
           <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
-          <span className="truncate font-mono text-[0.84375rem] font-medium">{r.tag}</span>
+          <span className="truncate font-mono text-[0.8125rem] font-medium">{r.tag}</span>
         </button>
         <Channel pre={r.prerelease} />
         {isCur && (
-          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">{t('当前')}</span>
+          <Badge tone="accent" className="px-1.5 text-[0.6875rem]">
+            {t('当前')}
+          </Badge>
         )}
         <span className="font-mono text-xs text-subtle">{dateTime(r.publishedAt)}</span>
         <span className="ml-auto flex items-center gap-1.5">
@@ -133,7 +133,7 @@ function ReleaseRow({
         </span>
       </div>
       {open && (
-        <div className="mt-2 ml-5 flex flex-col gap-2 rounded-lg border bg-rail px-4 py-3">
+        <div className="mt-2 ml-5 flex flex-col gap-2 rounded-lg bg-sel/50 px-4 py-3">
           <div
             className="chat-md release-notes text-[0.8125rem] [overflow-wrap:anywhere]"
             dangerouslySetInnerHTML={{ __html: html }}
@@ -143,7 +143,7 @@ function ReleaseRow({
               href={r.url}
               target="_blank"
               rel="noreferrer"
-              className="flex w-fit items-center gap-1 text-xs text-accent hover:underline"
+              className="flex w-fit items-center gap-1 text-xs text-accent-text hover:underline"
             >
               {t('在 GitHub 上查看')}
               <ExternalLink className="h-3 w-3" />
@@ -191,16 +191,14 @@ export function UpdateSection() {
 
   return (
     <div className="flex flex-col gap-5">
-      <section className="flex flex-col gap-3 rounded-xl border p-4">
+      <Card as="section" padding="md" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="text-[0.8125rem] text-subtle">{t('当前版本')}</span>
           <span className="font-mono text-[0.9375rem] font-semibold">
             {current ? `v${current.replace(/^v/, '')}` : '—'}
           </span>
           {cur ? <Channel pre={cur.prerelease} /> : current.includes('-dev') && <Channel pre />}
-          {data && !data.packaged && !demo && (
-            <span className="rounded-full bg-field px-1.5 py-px text-[0.6875rem] text-subtle">{t('从源码运行')}</span>
-          )}
+          {data && !data.packaged && !demo && <Badge className="px-1.5 text-[0.6875rem]">{t('从源码运行')}</Badge>}
           {data?.checkedAt && (
             <span className="ml-auto text-xs text-subtle">
               {t('上次检查 {time}', { time: checkedTime(data.checkedAt) })}
@@ -222,7 +220,7 @@ export function UpdateSection() {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-fg">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
                 {restarting
                   ? t('已安装 v{version}，正在重启，完成后页面会自动刷新…', { version: restarting })
                   : `${job?.tag} · ${job?.phase}`}
@@ -233,14 +231,10 @@ export function UpdateSection() {
                 </span>
               )}
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-field">
-              <span
-                className="block h-full rounded-full bg-accent transition-[width]"
-                style={{
-                  width: `${restarting ? 100 : job?.total ? Math.min(100, (job.received / job.total) * 90) : 5}%`,
-                }}
-              />
-            </div>
+            <Progress
+              value={restarting ? 100 : job?.total ? Math.min(100, (job.received / job.total) * 90) : 5}
+              label={t('更新进度')}
+            />
             {!restarting && job?.waiting && (
               // 下载完了却还有任务在执行：不用一个个去停，直接中断所有 CLI 立刻更新
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -294,7 +288,7 @@ export function UpdateSection() {
             )}
             {data.update ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
-                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
+                <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent-text" />
                 <span className="min-w-0 flex-1 text-[0.8125rem]">
                   {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
                   <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
@@ -331,7 +325,7 @@ export function UpdateSection() {
             {t('回到上一个版本 v{version}', { version: data.previous })}
           </Button>
         )}
-      </section>
+      </Card>
 
       <section className="flex flex-col">
         <h3 className="pb-1 text-xs font-medium text-subtle">{t('最近的版本')}</h3>

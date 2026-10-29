@@ -12,6 +12,8 @@ import { ensureHljs } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
 import { Lightbox } from '@/components/ui/lightbox'
 import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 
@@ -256,159 +258,142 @@ export function ProjectFileDialog({
         index={raw ? 0 : undefined}
         onClose={() => onOpenChange(false)}
       />
-      <D.Root open={textOpen} onOpenChange={change}>
-        <D.Portal>
-          <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-          <D.Content
-            aria-describedby={undefined}
-            onKeyDown={(e) => {
-              // 编辑时随时能按 Ctrl/Cmd+S 保存，不用点按钮
-              if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-                e.preventDefault()
-                void save()
-              }
-            }}
-            className={cn(
-              'fixed top-1/2 left-1/2 z-50 flex w-[min(1000px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none',
-              // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
-              editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-2rem))]' : 'max-w-[560px]',
+      <Modal
+        open={textOpen}
+        onOpenChange={change}
+        // 标题带路径、行号、未保存标记，D.Title 放在下面自己画的标题栏里
+        title={null}
+        bare
+        closeOnOutside
+        className={cn(
+          // 只有一句说明（找不到、二进制、出错）时弹窗按内容高度，不撑满
+          editing || !file || lines.length ? 'h-[min(760px,calc(100dvh-2rem))] max-w-[1000px]' : 'max-w-[560px]',
+        )}
+      >
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={(e) => {
+            // 编辑时随时能按 Ctrl/Cmd+S 保存，不用点按钮
+            if (editing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+              e.preventDefault()
+              void save()
+            }
+          }}
+        >
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={target?.path}>
+              {file?.path || target?.path}
+              {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
+              {dirty && <span className="ml-2 text-[0.75rem] font-normal text-warning">{t('未保存')}</span>}
+            </D.Title>
+            {(size || mtime) && (
+              <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] text-subtle sm:flex">
+                {size && <span title={t('文件大小')}>{size}</span>}
+                {size && mtime && <span aria-hidden>·</span>}
+                {mtime && <span title={t('最后修改')}>{mtime}</span>}
+              </span>
             )}
-          >
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-              <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={target?.path}>
-                {file?.path || target?.path}
-                {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
-                {dirty && <span className="ml-2 text-[0.75rem] font-normal text-warning">{t('未保存')}</span>}
-              </D.Title>
-              {(size || mtime) && (
-                <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[0.6875rem] text-subtle sm:flex">
-                  {size && <span title={t('文件大小')}>{size}</span>}
-                  {size && mtime && <span aria-hidden>·</span>}
-                  {mtime && <span title={t('最后修改')}>{mtime}</span>}
-                </span>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('复制路径')}
-                title={t('复制路径')}
-                onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-              {canDiff && !editing && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('查看改动')}
-                  title={t('查看改动')}
-                  onClick={openDiff}
-                >
-                  <GitCompareArrows className="h-4 w-4" />
-                </Button>
-              )}
-              {canEdit && !editing && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('编辑')}
-                  title={t('编辑')}
-                  onClick={() => {
-                    setDraft(file!.content)
-                    setSaveError('')
-                  }}
-                >
-                  <PencilLine className="h-4 w-4" />
-                </Button>
-              )}
-              {editing ? (
-                <>
-                  <Button variant="ghost" size="sm" onClick={() => setDraft(null)}>
-                    {t('取消')}
-                  </Button>
-                  <Button size="sm" disabled={saving || !dirty} onClick={() => void save()}>
-                    {saving ? t('保存中') : t('保存')}
-                  </Button>
-                </>
-              ) : (
-                file?.exists &&
-                dir && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open(editorUrl(dir, file.path, target?.line))}
-                  >
-                    <Code2 className="h-4 w-4" />
-                    {t('在编辑器中打开')}
-                  </Button>
-                )
-              )}
-              <D.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} title={t('关闭')}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </D.Close>
-            </header>
-            {saveError && (
-              <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-[0.8125rem] text-danger">{saveError}</p>
+            <IconButton
+              icon={Copy}
+              size="sm"
+              label={t('复制路径')}
+              onClick={() => void copyText(file?.path || target?.path || '', { done: t('已复制'), fail: false })}
+            />
+            {canDiff && !editing && (
+              <IconButton icon={GitCompareArrows} size="sm" label={t('查看改动')} onClick={openDiff} />
             )}
-            <DialogScroll box={box}>
-              {error ? (
-                <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
-              ) : !file ? (
-                <div className="flex h-full items-center justify-center text-subtle">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                </div>
-              ) : !file.exists ? (
-                <p className="p-6 text-[0.8125rem] text-subtle">
-                  {t('项目目录里找不到这个文件，可能已经被移动或删除。')}
-                </p>
-              ) : file.binary ? (
-                <p className="p-6 text-[0.8125rem] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
-              ) : editing ? (
-                // 编辑时不带行号：行号会随输入变，写起来反而碍眼
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  aria-label={t('文件内容')}
-                  spellCheck={false}
-                  className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.78125rem] leading-[1.6] text-fg/90 outline-none"
-                />
-              ) : (
-                <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
-                  {lines.map((l, i) => (
-                    <div
-                      key={i}
-                      data-line={i + 1}
-                      // 奇偶行隔一层浅底（照设计稿），长文件横着看不串行；跳到的那一行高亮盖过它
-                      className={cn(
-                        'flex whitespace-pre',
-                        target?.line === i + 1 ? 'bg-accent/12' : i % 2 === 1 && 'bg-sel/35',
-                      )}
-                    >
-                      <span className="w-14 shrink-0 pr-3 text-right text-subtle/70 select-none">{i + 1}</span>
-                      {highlighted?.[i] !== undefined ? (
-                        <span
-                          className="pr-4"
-                          // 高亮结果是 highlight.js 生成的，内容已经过它转义
-                          dangerouslySetInnerHTML={{ __html: highlighted[i] || ' ' }}
-                        />
-                      ) : (
-                        <span className="pr-4 text-fg/90">{l || ' '}</span>
-                      )}
-                    </div>
-                  ))}
-                </pre>
-              )}
-            </DialogScroll>
-            {file?.truncated && (
-              <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
-                {t('文件太大，只显示了前面一部分。完整内容请在编辑器里查看。')}
+            {canEdit && !editing && (
+              <IconButton
+                icon={PencilLine}
+                size="sm"
+                label={t('编辑')}
+                onClick={() => {
+                  setDraft(file!.content)
+                  setSaveError('')
+                }}
+              />
+            )}
+            {editing ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setDraft(null)}>
+                  {t('取消')}
+                </Button>
+                <Button size="sm" disabled={saving || !dirty} onClick={() => void save()}>
+                  {saving ? t('保存中') : t('保存')}
+                </Button>
+              </>
+            ) : (
+              file?.exists &&
+              dir && (
+                <Button variant="ghost" size="sm" onClick={() => window.open(editorUrl(dir, file.path, target?.line))}>
+                  <Code2 className="h-4 w-4" />
+                  {t('在编辑器中打开')}
+                </Button>
+              )
+            )}
+            <D.Close asChild>
+              <IconButton icon={X} label={t('关闭')} size="sm" />
+            </D.Close>
+          </header>
+          {saveError && (
+            <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-[0.8125rem] text-danger">{saveError}</p>
+          )}
+          <DialogScroll box={box}>
+            {error ? (
+              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            ) : !file ? (
+              <div className="flex h-full items-center justify-center text-subtle">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : !file.exists ? (
+              <p className="p-6 text-[0.8125rem] text-subtle">
+                {t('项目目录里找不到这个文件，可能已经被移动或删除。')}
               </p>
+            ) : file.binary ? (
+              <p className="p-6 text-[0.8125rem] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
+            ) : editing ? (
+              // 编辑时不带行号：行号会随输入变，写起来反而碍眼
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                aria-label={t('文件内容')}
+                spellCheck={false}
+                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.75rem] leading-[1.6] text-fg/90 outline-none"
+              />
+            ) : (
+              <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
+                {lines.map((l, i) => (
+                  <div
+                    key={i}
+                    data-line={i + 1}
+                    // 奇偶行隔一层浅底（照设计稿），长文件横着看不串行；跳到的那一行高亮盖过它
+                    className={cn(
+                      'flex whitespace-pre',
+                      target?.line === i + 1 ? 'bg-accent/12' : i % 2 === 1 && 'bg-sel/35',
+                    )}
+                  >
+                    <span className="w-14 shrink-0 pr-3 text-right text-subtle/70 select-none">{i + 1}</span>
+                    {highlighted?.[i] !== undefined ? (
+                      <span
+                        className="pr-4"
+                        // 高亮结果是 highlight.js 生成的，内容已经过它转义
+                        dangerouslySetInnerHTML={{ __html: highlighted[i] || ' ' }}
+                      />
+                    ) : (
+                      <span className="pr-4 text-fg/90">{l || ' '}</span>
+                    )}
+                  </div>
+                ))}
+              </pre>
             )}
-          </D.Content>
-        </D.Portal>
-      </D.Root>
+          </DialogScroll>
+          {file?.truncated && (
+            <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
+              {t('文件太大，只显示了前面一部分。完整内容请在编辑器里查看。')}
+            </p>
+          )}
+        </div>
+      </Modal>
       <ProjectDiffDialog
         path={diffOpen ? (target?.path ?? null) : null}
         data={diffData}

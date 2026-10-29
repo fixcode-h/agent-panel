@@ -182,6 +182,33 @@ const allTasks = async (): Promise<Task[] | null> => {
   return (await res.json()) as Task[]
 }
 
+/** 一个对话在磁盘上占多少（任务文件 + 对话文件） */
+export interface TaskDiskItem {
+  id: string
+  title: string
+  projectId: string
+  parentTaskId: string
+  updatedAt: string
+  archived: boolean
+  working: boolean
+  bytes: number
+}
+
+/** 设置「数据」里的保活会话列表（server/tasks.ts 的 keepAliveList） */
+export interface KeepAliveItem {
+  id: string
+  title: string
+  projectId: string
+  parentTaskId: string
+  cli: string
+  /** 正开着这个对话的页面：释放全部时不动它 */
+  viewing: boolean
+  /** 这一轮回复完的时间 */
+  since: string
+  /** 进程（含子进程）的内存，读不到时为空 */
+  rss: number | null
+}
+
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
 /** 一个独立分支（git worktree）和它在 git 里的实际情况 */
@@ -241,6 +268,8 @@ export const api = {
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
+  /** 模型设计用的 Blender 找到没有（ADR 0025） */
+  blenderStatus: () => request<{ path: string; version: string; error: string }>('/blender/status'),
   localImageQueue: () => request<ComfyQueueState>('/local-image/queue'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
@@ -525,6 +554,18 @@ export const api = {
    */
   taskJob: (taskId: string, jobId: string) =>
     request<TaskJobView>(`/tasks/${taskId}/jobs/${encodeURIComponent(jobId)}`),
+  /** 和实时推送的整份一样：更早的长工具输出只给开头（见 shared/task.ts 的 liteMessages） */
+  taskLite: (id: string) => request<Task>(`/tasks/${id}?lite=1`),
+  /** 每个对话的磁盘占用 */
+  taskDisk: () => request<TaskDiskItem[]>('/tasks/disk'),
+  /** 保活中的会话（回复完 CLI 还留着等下一句）和各自进程的内存 */
+  keepAlive: () => request<KeepAliveItem[]>('/tasks/keepalive'),
+  /** 释放保活的会话：不给 ids 时放掉所有没开着页面的 */
+  releaseKeepAlive: (ids?: string[]) =>
+    request<{ released: string[] }>('/tasks/keepalive/release', json('POST', ids ? { ids } : {})),
+  /** 推送里省掉的工具输出全文 */
+  toolOutput: (id: string, msg: string, i: number) =>
+    request<{ output: string }>(`/tasks/${id}/tool-output?msg=${encodeURIComponent(msg)}&i=${i}`),
   /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
   taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   /** 子对话（含多层）的统计合计：导出和 AI 分析时把它们的成本也算进去 */
@@ -699,6 +740,15 @@ export const api = {
   /** 在目录里新建文件；同名时后端拒绝，不会覆盖 */
   createProjectFile: (projectId: string, dir: string, name: string, content = '') =>
     request<{ path: string; size: number }>(`/project-files/${projectId}/new`, json('POST', { dir, name, content })),
+  /**
+   * 把一段内容存进项目（Chat 右栏的「存到项目」）：dir 是项目里的相对目录，缺的中间目录一并建好；
+   * 同名文件只有 overwrite 才改写，否则后端拒绝
+   */
+  saveProjectFile: (projectId: string, dir: string, name: string, content: string, overwrite: boolean) =>
+    request<{ path: string; size: number }>(
+      `/project-files/${projectId}/new`,
+      json('POST', { dir, name, content, parents: true, overwrite }),
+    ),
   /** 新建目录；同名时后端拒绝 */
   createProjectDir: (projectId: string, dir: string, name: string) =>
     request<{ path: string }>(`/project-files/${projectId}/mkdir`, json('POST', { dir, name })),
@@ -779,6 +829,18 @@ export const api = {
     request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
+  /**
+   * 侧栏、列表用的版本：只回摘要（不带对话），改个名、归档、暂停不用把整段对话传过来。
+   * 任务页要完整任务，用上面那些
+   */
+  renameTaskSummary: (id: string, title: string) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { title })),
+  archiveTaskSummary: (id: string, archived: boolean) =>
+    request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { archived })),
+  /** 聊天置顶 / 取消置顶：只是标记，侧栏聊天列表最上面单独一组 */
+  pinTaskSummary: (id: string, pinned: boolean) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { pinned })),
+  stopTaskSummary: (id: string) => request<Task>(`/tasks/${id}/stop?summary=1`, { method: 'POST' }),
+  resumeTaskSummary: (id: string) => request<Task>(`/tasks/${id}/resume?summary=1`, json('POST', { latest: false })),
+  discardWorktreeSummary: (id: string) => request<Task>(`/tasks/${id}/worktree/discard?summary=1`, json('POST', {})),
   /** 子对话的「解决」标记：只改标记，不停 CLI、不影响父对话 */
   resolveTask: (id: string, resolved: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { resolved })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>

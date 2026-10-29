@@ -142,6 +142,11 @@ export const AgentInput = z.object({
   /** 高级角色挂载的基本角色（见 AgentMount），按顺序列进能力索引 */
   mounts: z.array(AgentMount).max(16).default([]),
   /**
+   * 内置高级角色的挂载由用户接管：挂哪些、说明、预加载都按用户的，启动同步不再按内置定义改写（用户 2026-10-29 定的）。
+   * 没接管（undefined / false）时挂载跟内置定义走，只保留用户改过的用法和参数取值；「恢复默认挂载」就是清掉它
+   */
+  mountsCustom: z.boolean().optional(),
+  /**
    * 父对话就地微改动：off 不改文件（只分诊、派单）；tiny 允许过了 begin_inline_edit 护栏的微小改动。
    * 只对项目里的顶层对话生效（见 shared/inline-edit.ts）
    */
@@ -1046,6 +1051,10 @@ export const NewTaskInput = z.object({
   childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
+  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
+  analysisOf: z.string().max(100).optional(),
+  /** 模型设计对话：挂上 Blender 工具，右栏多一个 3D 预览（见 docs/adr/0025-model-design-blender.md） */
+  modelDesign: z.boolean().optional(),
   /**
    * 执行上限（定时计划带的）：token 上限和时长上限（分钟）。
    * 0 表示不限；计划里的值在创建对话时落进任务，之后改计划不影响已经启动的对话
@@ -1123,6 +1132,8 @@ export const TaskPatch = z
   .object({
     title: z.string().trim().min(1, t('标题不能为空')).max(80),
     archived: z.boolean(),
+    // 聊天置顶：侧栏聊天列表最上面单独一组，只是标记
+    pinned: z.boolean(),
     // 子对话「解决」：只是标记，不动 status、不停进程，随时能再打开
     resolved: z.boolean(),
     // 对话用的 CLI、模型和思考强度，执行中也能改，下一轮生效
@@ -1220,6 +1231,11 @@ export const ToolUse = z.object({
     .optional(),
   /** 这一行是报错或警告（CLI 的重试提示、面板的提醒）：画成带底色的警告行 */
   alert: Alert.optional(),
+  /**
+   * 推给页面时省掉了输出的后半段（只出现在推送里，不存盘，见 shared/task.ts 的 liteMessages）：
+   * 原来的长度、行数，和取全文用的消息 id、第几个工具。页面打开窗口看全部时再按这个去取
+   */
+  outputCut: z.object({ len: z.number(), lines: z.number(), msg: z.string(), i: z.number() }).optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
@@ -1519,6 +1535,15 @@ export const TurnEnd = z.enum([
 export type TurnEnd = z.infer<typeof TurnEnd>
 
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
+export const TurnSources = z.object({
+  rules: z.number().default(0),
+  user: z.number().default(0),
+  results: z.number().default(0),
+  tools: z.number().default(0),
+  setup: z.number().default(0),
+})
+export type TurnSources = z.infer<typeof TurnSources>
+
 export const TaskTurn = z.object({
   id: z.string(),
   /** 这一轮要求的第一行（截短） */
@@ -1541,6 +1566,11 @@ export const TaskTurn = z.object({
   outputTokens: z.number().default(0),
   cacheReadTokens: z.number().default(0),
   waitMs: z.number().default(0),
+  /**
+   * 这一轮交给 Agent 的内容按来源的字数（估算，不是 token）：面板规则、消息、子任务和计划交回的结果、
+   * 工具输出、新会话开头的角色设定和项目教训。用来看 token 花在了哪；旧记录没有
+   */
+  sources: TurnSources.optional(),
 })
 export type TaskTurn = z.infer<typeof TaskTurn>
 
@@ -1886,6 +1916,10 @@ export const TaskData = z.object({
   childAskUser: z.boolean().default(true),
   /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
   analysis: AnalysisKind.optional(),
+  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
+  analysisOf: z.string().optional(),
+  /** 模型设计对话：后台有一个 Blender，Agent 用 blender_python 工具建模，网页右栏实时预览（ADR 0025） */
+  modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
@@ -1920,6 +1954,16 @@ export const TaskData = z.object({
    * 续接时角色变了就补发新版（见 server/exec/runner.ts）
    */
   roleHashes: z.record(z.string(), z.string()).optional(),
+  /**
+   * 每个会话已经收到过的提示词段落指纹（键同 sessions，见 shared/prompt-delta.ts）：续接时只发新的和变了的段落。
+   * 会话换了、压缩过就作废（runner 在压缩时删掉）
+   */
+  promptSent: z
+    .record(
+      z.string(),
+      z.object({ session: z.string(), hashes: z.record(z.string(), z.string()), turns: z.number().default(0) }),
+    )
+    .optional(),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
   /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
@@ -2085,6 +2129,8 @@ export const TaskData = z.object({
   childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /** 置顶（Chat 页的聊天）：侧栏聊天列表最上面单独一组「置顶」，不影响排序时间；旧数据没有这一项，按没置顶算 */
+  pinned: z.boolean().optional(),
   /**
    * 进回收站的时刻：删除只做标记，任务记录、对话内容、独立分支、附件、对话目录都先留着，
    * 超过保留期（见 shared/task.ts 的 TRASH_RETENTION_DAYS）才由清理任务物理删除。
@@ -2218,7 +2264,12 @@ export const CONTENT_WIDTH = 1000
 export const CONTENT_MAX = 1280
 
 /** 各英文字体默认的空格调整：只有等宽的 Maple Mono 需要收窄 */
-export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple: -0.2, plex: 0, system: 0 }
+export const WORD_SPACING: Record<'inter' | 'maple' | 'plex' | 'system', number> = {
+  inter: 0,
+  maple: -0.2,
+  plex: 0,
+  system: 0,
+}
 /** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
 /** 可选的配色：每套在 web/src/index.css 里有浅色、深色两块覆盖（html 上的 data-palette） */
 export const PALETTES = ['claude', 'neutral', 'ocean', 'forest'] as const
@@ -2226,8 +2277,8 @@ export type Palette = (typeof PALETTES)[number]
 export const Appearance = z.object({
   /** 配色：默认 Claude（暖灰底、陶土橙），换配色只换颜色，部件的形状和间距不变 */
   palette: z.enum(PALETTES).catch('claude').default('claude'),
-  /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
-  uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
+  /** 界面的英文字体：默认内置的 Inter（比例字体，比等宽字体读起来松快）；Maple Mono NL 等宽，喜欢等宽的可以换 */
+  uiFont: z.enum(['inter', 'maple', 'plex', 'system']).catch('inter').default('inter'),
   /**
    * 中文字体：默认走系统字体（苹方 / 微软雅黑），不下载任何中文字体文件；
    * 选内置的思源黑体时才加载它的分片（web/src/lib/appearance.ts 的 ensureCjkFont）
@@ -2239,10 +2290,10 @@ export const Appearance = z.object({
   customFont: z.string().trim().max(200).default(''),
   /** 界面正文字号（像素），其他文字按比例跟着缩放 */
   fontSize: z.number().min(12).max(18).catch(14).default(14),
-  /** 字间距（em）：Maple Mono 是等宽字体，英文字母本来就疏，默认收紧一点 */
-  letterSpacing: z.number().min(-0.08).max(0.15).catch(-0.02).default(-0.02),
-  /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，默认收窄。代码里不调 */
-  wordSpacing: z.number().min(-0.4).max(0.3).catch(-0.2).default(-0.2),
+  /** 字间距（em）：默认的 Inter 不用调；换成等宽的 Maple Mono 时英文字母偏疏，可以收紧一点 */
+  letterSpacing: z.number().min(-0.08).max(0.15).catch(0).default(0),
+  /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，可以收窄（见 WORD_SPACING）。代码里不调 */
+  wordSpacing: z.number().min(-0.4).max(0.3).catch(0).default(0),
   /** 对话和文档正文的行高 */
   lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
 })
@@ -2321,6 +2372,11 @@ export const Settings = z.object({
    * 0 表示不限制
    */
   keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
+  /**
+   * 自动归档：顶层对话（连同子对话）这么多天没动、没在执行、回复也都看过了，就归档（侧栏和列表默认不显示，
+   * 筛选「已归档」还能找到，随时取消归档）。0 表示不自动归档
+   */
+  autoArchiveDays: z.number().int().min(0).max(3650).catch(0).default(0),
   /**
    * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
    * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑。
@@ -2452,6 +2508,8 @@ export const Settings = z.object({
       concurrency: 3,
       local: { mirror: false, port: 8188, url: '' },
     }),
+  /** 模型设计用的 Blender（见 docs/adr/0025-model-design-blender.md）：可执行文件；空时按 PATH 和常见安装位置找 */
+  blender: z.object({ path: z.string().trim().default('') }).prefault({}),
   /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
   modelCatalog: z
     .object({

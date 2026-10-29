@@ -23,6 +23,7 @@ import { useShareImport } from '@/lib/useShareImport'
 import { ImportConflictDialog } from '@/components/share/ImportConflictDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
+import { RoleLayerTabs, type RoleLayer } from '@/components/agents/RoleLayerTabs'
 import { defaultCli } from '@shared/settings'
 import { cliToEnable } from '@/components/layout/NoCliBanner'
 import { t } from '@shared/i18n'
@@ -73,7 +74,18 @@ export function AgentsPage() {
   const listed = listableAgents(agents)
   const helperId = agents.find(isHelperAgent)?.id
 
-  const selected = listed.find((a) => a.id === route.id) ?? listed[0]
+  // 高级角色、基本角色分两页：打开某个角色时停在它那一页，没指定时先看高级角色
+  const routed = listed.find((a) => a.id === route.id)
+  const [layer, setLayer] = useState<RoleLayer>(() => (routed ? roleKind(routed) : 'advanced'))
+  const inLayer = (a: Agent, l: RoleLayer = layer) => roleKind(a) === l
+  const selected = routed ?? listed.find((a) => inLayer(a)) ?? listed[0]
+  const selectedLayer = selected ? roleKind(selected) : undefined
+  // 选中的角色换了层（跳转过来的、新建的、在详情里改了角色层的）：分页跟过去，不然列表里看不到它
+  useEffect(() => {
+    if (selectedLayer) setLayer(selectedLayer)
+    // 选中换了角色也要跟（停在空的另一页时跳到同层的另一个角色，层没变但要切回去），所以依赖带上 id
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id, selectedLayer])
   // 旧链接、浏览器历史或者 API 存的地址可能指向「子任务」：跳到第一个可编辑的角色，并说明为什么打不开
   useEffect(() => {
     if (loading || !helperId || route.id !== helperId) return
@@ -93,11 +105,23 @@ export function AgentsPage() {
   const match = (a: Agent) =>
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
+  // 两页的条数按筛选后的算：搜索时一眼看出另一页有没有命中
+  const counts: Record<RoleLayer, number> = {
+    advanced: listed.filter((a) => inLayer(a, 'advanced') && match(a)).length,
+    basic: listed.filter((a) => inLayer(a, 'basic') && match(a)).length,
+  }
+  const shown = listed.filter((a) => inLayer(a) && match(a))
+  // 搜索、按标签筛选时这一页一个都没命中、另一页有：直接翻过去，别让人以为没搜到
+  const other: RoleLayer = layer === 'advanced' ? 'basic' : 'advanced'
+  const flip = (!!q || !!tag) && !counts[layer] && counts[other] > 0
+  useEffect(() => {
+    if (flip) setLayer(other)
+  }, [flip, other])
   const coreCats = new Set(listed.filter(isCoreAgent).map((a) => a.categoryId))
-  // 分类分组：必备角色单独一组，然后是用户的分类和未分类
+  // 分类分组（当前这一页里）：必备角色单独一组，然后是用户的分类和未分类
   const categoryGroups = [
     // 必备角色也单独成组：它们的分类由面板维护，放在用户的分类里反而像是能挪走
-    { category: null as Category | null, id: CORE_GROUP, items: listed.filter((a) => isCoreAgent(a) && match(a)) },
+    { category: null as Category | null, id: CORE_GROUP, items: shown.filter(isCoreAgent) },
     ...[
       ...categories
         .filter((c) => !coreCats.has(c.id) || listed.some((a) => a.categoryId === c.id && !isCoreAgent(a)))
@@ -105,7 +129,7 @@ export function AgentsPage() {
       { category: null, id: '' },
     ].map((g) => ({
       ...g,
-      items: listed.filter((a) => !isCoreAgent(a) && a.categoryId === g.id && match(a)),
+      items: shown.filter((a) => !isCoreAgent(a) && a.categoryId === g.id),
     })),
   ]
     // 没有角色的分类不显示，空着只占位置
@@ -130,6 +154,8 @@ export function AgentsPage() {
     try {
       const a = await api.createAgent({
         name: t('新角色'),
+        // 在哪一页点的新建就建哪一层：高级角色页新建的直接能挂能力
+        kind: layer,
         description: '',
         cli: '',
         model: '@medium',
@@ -198,8 +224,8 @@ export function AgentsPage() {
       leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />}
       title={a.name}
       monoSubtitle={false}
-      // 角色层写在最前：高级角色能当父对话、子对话的负责人，基本角色是挂载、派出的能力
-      subtitle={`${roleKind(a) === 'advanced' ? t('高级角色') : t('基本角色')} · ${cliName(a)} · ${modelOf(a)}`}
+      // 角色层已经由分页区分，副标题只写运行配置
+      subtitle={`${cliName(a)} · ${modelOf(a)}`}
       tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
       trailing={<span className="shrink-0">{status(a)}</span>}
       menu={
@@ -267,13 +293,25 @@ export function AgentsPage() {
               aria-label={t('AI 创建角色')}
               title={t('描述需求，让本机 Agent 生成角色')}
             >
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
             </Button>
           </>
         }
         query={query}
         onQuery={setQuery}
         placeholder={t('搜索名称、简介、模型或标签')}
+        tabs={
+          <RoleLayerTabs
+            value={layer}
+            counts={counts}
+            onChange={(l) => {
+              setLayer(l)
+              // 切页时选中这一页的第一个，详情和列表对得上
+              const first = listed.find((a) => inLayer(a, l) && match(a)) ?? listed.find((a) => inLayer(a, l))
+              if (first) go({ page: 'agents', id: first.id })
+            }}
+          />
+        }
         footer={
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
@@ -281,7 +319,7 @@ export function AgentsPage() {
               <button
                 onClick={recheck}
                 disabled={checking}
-                className="ml-auto flex cursor-pointer items-center gap-1 text-accent"
+                className="ml-auto flex cursor-pointer items-center gap-1 text-accent-text"
               >
                 <RefreshCw className={cn('h-3 w-3', checking && 'animate-spin')} />
                 {t('重新检测')}
@@ -300,12 +338,13 @@ export function AgentsPage() {
               </div>
             ) : (
               clis.length > 0 && (
-                <button
+                <Button
+                  variant="link"
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
-                  className="cursor-pointer text-left text-[0.8125rem] text-accent hover:underline"
+                  className="text-[0.8125rem]"
                 >
                   {t('还没有启用 Agent，去设置里启用')}
-                </button>
+                </Button>
               )
             )}
           </div>
@@ -352,7 +391,11 @@ export function AgentsPage() {
             </ListGroup>
           )
         })}
-        {!loading && listed.length > 0 && categoryGroups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
+        {!loading && listed.length > 0 && categoryGroups.length === 0 && (
+          <ListEmpty>
+            {filtering ? t('没有匹配的角色') : layer === 'advanced' ? t('还没有高级角色') : t('还没有基本角色')}
+          </ListEmpty>
+        )}
         {/* 只有必备角色时（自带工作流和它们的角色都被删掉了）提示可以添加内置的 */}
         {!loading && !query && !tag && listed.every(isCoreAgent) && (
           <ListEmpty>

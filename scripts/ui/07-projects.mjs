@@ -5,7 +5,7 @@
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
 import assert from 'node:assert/strict'
-import { runShard, dialogBottomSpaceProblems } from './harness.mjs'
+import { runShard, dialogBottomSpaceProblems, segmentedContrastProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -81,10 +81,14 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
     await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
   }
+  // 深色下侧栏的模式切换（Agent / Chat / 设计）选中项要认得出来（用户反馈过「黑暗模式看不清」）
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  errors.push(...(await segmentedContrastProblems(p, '侧栏-深色')))
   // 浅色主题
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务', '设置'])
+  errors.push(...(await segmentedContrastProblems(p, '侧栏-浅色')))
   // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
   {
     await p.goto(base)
@@ -364,12 +368,13 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .getByRole('button', { name: /^项目教训/ })
       .first()
       .click()
-    // 默认选中「默认」页签：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的页签里
+    // 默认选中「默认」：只放一个标签都没有的教训；再点一次也不取消，带标签的在各自的标签里
+    // （标签选择是组件库的 ChipGroup，单选小块是 radio）
     await check(p, '项目设置-项目教训', ['购物车相关改动同时改 legacy-cart', '默认', '加一条'])
-    const defaultTab = dlg.getByRole('tab', { name: /^默认/ })
+    const defaultTab = dlg.getByRole('radio', { name: /^默认/ })
     await defaultTab.click()
-    assert.equal(await defaultTab.getAttribute('aria-selected'), 'true', '再点一次选中的页签不能取消选中')
-    await dlg.getByRole('tab', { name: /^支付/ }).click()
+    assert.equal(await defaultTab.getAttribute('aria-checked'), 'true', '再点一次选中的标签不能取消选中')
+    await dlg.getByRole('radio', { name: /^支付/ }).click()
     await check(p, '项目设置-项目教训-标签页签', ['新增支付方式写进', '角色记录', 'src/payment/**'])
     assert.equal(
       await dlg.getByText('购物车相关改动同时改 legacy-cart').count(),

@@ -1,5 +1,8 @@
 import * as D from '@radix-ui/react-dialog'
 import { Copy, Loader2, Terminal, TerminalSquare, X } from 'lucide-react'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { copyText } from '@/lib/copy-text'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
@@ -7,18 +10,12 @@ import { fmtDuration } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { jobLive } from '@/lib/job-poll'
-import { Button } from '@/components/ui/button'
-
-/** 窗口最外面那层：和差异窗口、文件窗口一样的大小和动画，内容区铺满屏幕 */
-const shell =
-  'fixed top-1/2 left-1/2 z-50 flex h-[min(900px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none'
 
 /**
  * 命令行窗口的高度跟着输出走：命令短、输出只有几行时不用撑满一屏白片，
- * 输出多了才长到上限、在窗口里滚动。宽度和别的窗口一致
+ * 输出多了才长到上限、在窗口里滚动。外壳用 Modal 的 full 档，只把固定高度换成按内容长
  */
-const termShell =
-  'fixed top-1/2 left-1/2 z-50 flex max-h-[min(900px,calc(100dvh-2rem))] min-h-[min(360px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none'
+const termHeight = 'h-auto min-h-[min(360px,calc(100dvh-2rem))]'
 
 /** 复制成功都说一句复制了什么：命令和输出共用一个按钮时，光说「已复制」分不清 */
 const copy = (text: string, done: string) => void copyText(text, { done })
@@ -59,68 +56,53 @@ export function OutputDialog({
 }) {
   const text = output ?? ''
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content aria-describedby={undefined} className={shell}>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={title}>
-              {title}
-            </D.Title>
-            {detail && (
-              <span className="max-w-[40%] shrink-0 truncate font-mono text-xs text-muted" title={detail}>
-                {detail}
-              </span>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('复制')}
-              title={t('复制')}
-              disabled={!text}
-              onClick={() => copy(text, t('已复制'))}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
-            {input && input.trim() && input.trim() !== detail?.trim() && (
-              <div className="border-b px-4 py-3">
-                <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">IN</div>
-                <pre className="font-mono text-[0.78125rem] leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
-                  {input}
-                </pre>
-              </div>
-            )}
-            <div className="px-4 py-3">
-              <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">OUT</div>
-              {text.trim() ? (
-                <pre
-                  className={cn(
-                    'font-mono text-[0.78125rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
-                    failed ? 'text-danger' : 'text-fg/90',
-                  )}
-                >
-                  {text}
-                </pre>
-              ) : running ? (
-                <p className="flex items-center gap-2 text-[0.8125rem] text-subtle">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t('还在执行…')}
-                </p>
-              ) : (
-                <p className="text-[0.8125rem] text-subtle">{t('没有输出')}</p>
-              )}
-            </div>
+    // 只看不填：点到外面就关（和原来手写外壳的默认行为一致）
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside>
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={title}>
+          {title}
+        </D.Title>
+        {detail && (
+          <span className="max-w-[40%] shrink-0 truncate font-mono text-xs text-muted" title={detail}>
+            {detail}
+          </span>
+        )}
+        <IconButton size="sm" icon={Copy} label={t('复制')} disabled={!text} onClick={() => copy(text, t('已复制'))} />
+        <D.Close asChild>
+          <IconButton size="sm" icon={X} label={t('关闭')} />
+        </D.Close>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+        {input && input.trim() && input.trim() !== detail?.trim() && (
+          <div className="border-b px-4 py-3">
+            <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">IN</div>
+            <pre className="font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+              {input}
+            </pre>
           </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        )}
+        <div className="px-4 py-3">
+          <div className="mb-1 font-sans text-[0.6875rem] font-medium tracking-wider text-subtle">OUT</div>
+          {text.trim() ? (
+            <pre
+              className={cn(
+                'font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                failed ? 'text-danger' : 'text-fg/90',
+              )}
+            >
+              {text}
+            </pre>
+          ) : running ? (
+            <p className="flex items-center gap-2 text-[0.8125rem] text-subtle">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('还在执行…')}
+            </p>
+          ) : (
+            <p className="text-[0.8125rem] text-subtle">{t('没有输出')}</p>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -135,16 +117,12 @@ export type CommandPhase = 'queued' | 'running' | 'done' | 'failed' | 'stopped'
  * text 写成取值函数：t() 读的是可变当前语言，模块级常量在 import 时就把文字算死了
  * （和 AnalysisPanel 的 title、Messages 的 verb 同一个写法）
  */
-const PHASE: Record<CommandPhase, { text: () => string; badge: string; dot: string }> = {
-  queued: { text: () => t('排队中'), badge: 'border-line bg-field text-subtle', dot: 'bg-subtle' },
-  running: {
-    text: () => t('执行中'),
-    badge: 'border-accent/35 bg-accent-soft text-accent',
-    dot: 'animate-pulse bg-accent',
-  },
-  done: { text: () => t('完成'), badge: 'border-line bg-field text-subtle', dot: 'bg-success' },
-  failed: { text: () => t('失败'), badge: 'border-danger/30 bg-danger/10 text-danger', dot: 'bg-danger' },
-  stopped: { text: () => t('已停止'), badge: 'border-line bg-field text-subtle', dot: 'bg-subtle' },
+const PHASE: Record<CommandPhase, { text: () => string; tone: StatusTone; dot: string }> = {
+  queued: { text: () => t('排队中'), tone: 'idle', dot: 'bg-subtle' },
+  running: { text: () => t('执行中'), tone: 'run', dot: 'animate-pulse bg-run' },
+  done: { text: () => t('完成'), tone: 'ok', dot: 'bg-success' },
+  failed: { text: () => t('失败'), tone: 'err', dot: 'bg-danger' },
+  stopped: { text: () => t('已停止'), tone: 'idle', dot: 'bg-subtle' },
 }
 
 /**
@@ -193,164 +171,136 @@ export function CommandDialog({
   const stick = useStickToBottom(command)
 
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content aria-describedby={undefined} className={termShell}>
-          {/* 标题就是命令本身（悬停看全文），右边是状态和用时，不再是空的「命令」两个字 */}
-          <header className="flex h-14 shrink-0 items-center gap-2.5 border-b bg-card px-4">
-            <Terminal className="h-4 w-4 shrink-0 text-subtle" />
-            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={command}>
-              <span aria-hidden className="mr-1.5 select-none text-subtle">
-                $
-              </span>
-              {command}
-            </D.Title>
-            <span
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-sans text-[0.6875rem]',
-                PHASE[phase].badge,
-              )}
-            >
-              <span className={cn('h-1.5 w-1.5 rounded-full', PHASE[phase].dot)} />
-              {PHASE[phase].text()}
-              {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
-              {/* 退出码：只在结束时说，跑着时没有 */}
-              {!jobLive(phase) && code !== undefined && code !== null && (
-                <span className="tabular-nums opacity-80">{t('退出码 {code}', { code })}</span>
-              )}
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside className={termHeight}>
+      {/* 标题就是命令本身（悬停看全文），右边是状态和用时，不再是空的「命令」两个字 */}
+      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b bg-card px-4">
+        <Terminal className="h-4 w-4 shrink-0 text-subtle" />
+        <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={command}>
+          <span aria-hidden className="mr-1.5 select-none text-subtle">
+            $
+          </span>
+          {command}
+        </D.Title>
+        <StatusPill tone={PHASE[phase].tone} className="font-sans">
+          <span className={cn('h-1.5 w-1.5 rounded-full', PHASE[phase].dot)} />
+          {PHASE[phase].text()}
+          {elapsed !== undefined && <span className="tabular-nums opacity-80">{fmtDuration(elapsed)}</span>}
+          {/* 退出码：只在结束时说，跑着时没有 */}
+          {!jobLive(phase) && code !== undefined && code !== null && (
+            <span className="tabular-nums opacity-80">{t('退出码 {code}', { code })}</span>
+          )}
+        </StatusPill>
+        <IconButton size="sm" icon={Copy} label={t('复制命令')} onClick={() => copy(command, t('已复制命令'))} />
+        <IconButton
+          size="sm"
+          icon={Copy}
+          label={t('复制全部输出')}
+          disabled={!hasOutput}
+          onClick={() => copy(text, t('已复制输出'))}
+        />
+        <D.Close asChild>
+          <IconButton size="sm" icon={X} label={t('关闭')} />
+        </D.Close>
+      </header>
+      <div
+        ref={stick.ref}
+        onScroll={stick.onScroll}
+        className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--code-bg)"
+      >
+        <div className="px-5 py-4 font-mono text-[0.75rem] leading-[1.7]">
+          <div className="flex items-start gap-2.5">
+            <span aria-hidden className="shrink-0 select-none text-accent-text">
+              $
             </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('复制命令')}
-              title={t('复制命令')}
-              onClick={() => copy(command, t('已复制命令'))}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('复制全部输出')}
-              title={t('复制全部输出')}
-              disabled={!hasOutput}
-              onClick={() => copy(text, t('已复制输出'))}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          <div
-            ref={stick.ref}
-            onScroll={stick.onScroll}
-            className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--code-bg)"
-          >
-            <div className="px-5 py-4 font-mono text-[0.78125rem] leading-[1.7]">
-              <div className="flex items-start gap-2.5">
-                <span aria-hidden className="shrink-0 select-none text-accent">
-                  $
-                </span>
-                <span className="min-w-0 flex-1 whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{command}</span>
-              </div>
-              {hasOutput && (
-                <div className="mt-2.5 flex gap-2.5">
-                  {/* 占住 $ 那一列的宽度，左侧竖线把命令和输出分成两层 */}
-                  <span aria-hidden className="w-2.5 shrink-0" />
-                  <pre
-                    className={cn(
-                      'min-w-0 flex-1 border-l pl-3 whitespace-pre-wrap [overflow-wrap:anywhere]',
-                      phase === 'failed' ? 'border-danger/40 text-danger/90' : 'border-line text-muted',
-                    )}
-                  >
-                    {text}
-                    {phase === 'running' && <Caret />}
-                  </pre>
-                </div>
-              )}
-              {/* 拉取失败：写在输出上方而不是只占空状态位——已经有输出时也要看得到（否则窗口停在旧输出上，
-                  徒标还写着「执行中」，用户以为命令还在跑）。拉失败会按 JOB_RETRY_MS 重试，这里说清楚 */}
-              {error && (
-                <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 font-sans">
-                  <TerminalSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
-                  <div className="min-w-0">
-                    <p className="text-[0.8125rem] font-medium text-danger">{t('读不到这条命令的输出')}</p>
-                    <p className="mt-0.5 text-xs leading-relaxed break-words text-subtle [overflow-wrap:anywhere]">
-                      {error}
-                    </p>
-                    <p className="mt-0.5 text-xs text-subtle">{t('会自动重试，显示的是上一次读到的输出。')}</p>
-                  </div>
-                </div>
-              )}
-              {!hasOutput &&
-                (!error && phase === 'running' ? (
-                  <div className="mt-2.5 flex gap-2.5">
-                    <span aria-hidden className="w-2.5 shrink-0" />
-                    <p className="flex min-w-0 flex-1 items-center gap-2 border-l border-line pl-3 text-subtle">
-                      <Caret />
-                      {t('正在执行，等待输出…')}
-                    </p>
-                  </div>
-                ) : phase === 'queued' ? (
-                  /* 排队中还没有输出：说清它在等什么，不然窗口里一片空白像是坏了 */
-                  <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
-                    <TerminalSquare className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
-                    <div className="min-w-0">
-                      <p className="text-[0.8125rem] font-medium text-muted">{t('排队中，还没有输出')}</p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-subtle">
-                        {t('前面还有命令在跑，排到它时这里会跟着输出。')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  /* 空状态也说清楚为什么空、下一步看什么，不留一行灰字 */
-                  <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
-                    <TerminalSquare
-                      className={cn('mt-0.5 h-4 w-4 shrink-0', phase === 'failed' ? 'text-danger' : 'text-subtle')}
-                    />
-                    <div className="min-w-0">
-                      <p
-                        className={cn(
-                          'text-[0.8125rem] font-medium',
-                          phase === 'failed' ? 'text-danger' : 'text-muted',
-                        )}
-                      >
-                        {phase === 'failed'
-                          ? t('执行失败，没有输出')
-                          : phase === 'stopped'
-                            ? t('已停止，没有输出')
-                            : t('这条命令没有输出')}
-                      </p>
-                      <p className="mt-0.5 text-xs leading-relaxed text-subtle">
-                        {phase === 'failed'
-                          ? t('这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。')
-                          : phase === 'stopped'
-                            ? t('这条命令被停止之前没有输出。')
-                            : t('命令正常结束，没有标准输出或错误输出。')}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-            </div>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{command}</span>
           </div>
-          {/* 底部常驻一条状态：长输出滚到哪都看得出还在跑 */}
-          {phase === 'running' && (
-            <div className="flex h-9 shrink-0 items-center gap-2 border-t bg-card/70 px-4 font-sans text-xs text-muted">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-              {t('正在执行…')}
-              {lines > 0 && (
-                <span className="ml-auto font-mono text-[0.6875rem] text-subtle tabular-nums">
-                  {t('输出 {n} 行', { n: lines })}
-                </span>
-              )}
+          {hasOutput && (
+            <div className="mt-2.5 flex gap-2.5">
+              {/* 占住 $ 那一列的宽度，左侧竖线把命令和输出分成两层 */}
+              <span aria-hidden className="w-2.5 shrink-0" />
+              <pre
+                className={cn(
+                  'min-w-0 flex-1 border-l pl-3 whitespace-pre-wrap [overflow-wrap:anywhere]',
+                  phase === 'failed' ? 'border-danger/40 text-danger/90' : 'border-line text-muted',
+                )}
+              >
+                {text}
+                {phase === 'running' && <Caret />}
+              </pre>
             </div>
           )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+          {/* 拉取失败：写在输出上方而不是只占空状态位——已经有输出时也要看得到（否则窗口停在旧输出上，
+                  徒标还写着「执行中」，用户以为命令还在跑）。拉失败会按 JOB_RETRY_MS 重试，这里说清楚 */}
+          {error && (
+            <div className="mt-2.5 flex items-start gap-2.5 rounded-lg bg-danger/8 px-3 py-2 font-sans">
+              <TerminalSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+              <div className="min-w-0">
+                <p className="text-[0.8125rem] font-medium text-danger">{t('读不到这条命令的输出')}</p>
+                <p className="mt-0.5 text-xs leading-relaxed break-words text-subtle [overflow-wrap:anywhere]">
+                  {error}
+                </p>
+                <p className="mt-0.5 text-xs text-subtle">{t('会自动重试，显示的是上一次读到的输出。')}</p>
+              </div>
+            </div>
+          )}
+          {!hasOutput &&
+            (!error && phase === 'running' ? (
+              <div className="mt-2.5 flex gap-2.5">
+                <span aria-hidden className="w-2.5 shrink-0" />
+                <p className="flex min-w-0 flex-1 items-center gap-2 border-l border-line pl-3 text-subtle">
+                  <Caret />
+                  {t('正在执行，等待输出…')}
+                </p>
+              </div>
+            ) : phase === 'queued' ? (
+              /* 排队中还没有输出：说清它在等什么，不然窗口里一片空白像是坏了 */
+              <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
+                <TerminalSquare className="mt-0.5 h-4 w-4 shrink-0 text-subtle" />
+                <div className="min-w-0">
+                  <p className="text-[0.8125rem] font-medium text-muted">{t('排队中，还没有输出')}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-subtle">
+                    {t('前面还有命令在跑，排到它时这里会跟着输出。')}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* 空状态也说清楚为什么空、下一步看什么，不留一行灰字 */
+              <div className="mt-5 flex items-start gap-3 rounded-xl border border-dashed border-line-strong/70 bg-card/40 px-4 py-4 font-sans">
+                <TerminalSquare
+                  className={cn('mt-0.5 h-4 w-4 shrink-0', phase === 'failed' ? 'text-danger' : 'text-subtle')}
+                />
+                <div className="min-w-0">
+                  <p className={cn('text-[0.8125rem] font-medium', phase === 'failed' ? 'text-danger' : 'text-muted')}>
+                    {phase === 'failed'
+                      ? t('执行失败，没有输出')
+                      : phase === 'stopped'
+                        ? t('已停止，没有输出')
+                        : t('这条命令没有输出')}
+                  </p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-subtle">
+                    {phase === 'failed'
+                      ? t('这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。')
+                      : phase === 'stopped'
+                        ? t('这条命令被停止之前没有输出。')
+                        : t('命令正常结束，没有标准输出或错误输出。')}
+                  </p>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+      {/* 底部常驻一条状态：长输出滚到哪都看得出还在跑 */}
+      {phase === 'running' && (
+        <div className="flex h-9 shrink-0 items-center gap-2 border-t bg-card/70 px-4 font-sans text-xs text-muted">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
+          {t('正在执行…')}
+          {lines > 0 && (
+            <span className="ml-auto font-mono text-[0.6875rem] text-subtle tabular-nums">
+              {t('输出 {n} 行', { n: lines })}
+            </span>
+          )}
+        </div>
+      )}
+    </Modal>
   )
 }

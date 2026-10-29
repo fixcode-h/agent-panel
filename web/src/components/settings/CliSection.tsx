@@ -42,6 +42,9 @@ import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Badge } from '@/components/ui/badge'
+import { IconButton } from '@/components/ui/icon-button'
+import { Card } from '@/components/ui/card'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
 import { CliAuthPanel } from './CliAuthPanel'
@@ -126,7 +129,7 @@ function InstallLog({
     >
       <div className="flex items-center gap-2 px-3.5 py-2.5 text-[0.8125rem]">
         {job.status === 'running' ? (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
         ) : job.status === 'done' ? (
           <CircleCheck className="h-4 w-4 shrink-0 text-success" />
         ) : (
@@ -153,15 +156,7 @@ function InstallLog({
         >
           {open ? t('收起输出') : t('查看输出')}
         </button>
-        {job.status !== 'running' && (
-          <button
-            onClick={onClose}
-            aria-label={t('关闭')}
-            className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
+        {job.status !== 'running' && <IconButton icon={X} label={t('关闭')} onClick={onClose} />}
       </div>
       {job.error && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-danger">{job.error}</p>}
       {job.note && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-muted">{job.note}</p>}
@@ -173,7 +168,7 @@ function InstallLog({
       {open && (
         <pre
           ref={pre}
-          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted"
+          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted"
         >
           <span className="text-subtle">$ {job.command}</span>
           {'\n'}
@@ -234,15 +229,12 @@ function TokenField({
             onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
           />
           {!!value && !disabled && (
-            <button
-              type="button"
+            <IconButton
+              icon={RotateCcw}
+              label={t('恢复自动')}
               onClick={() => onChange(0)}
-              aria-label={t('恢复自动')}
-              title={t('恢复自动')}
-              className="absolute top-1/2 right-1.5 grid h-6 w-6 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
+              className="absolute top-1/2 right-1.5 -translate-y-1/2"
+            />
           )}
         </span>
       )}
@@ -306,7 +298,7 @@ export function TierTable({
     }
   }
   return (
-    <div className="overflow-hidden rounded-xl border">
+    <Card className="overflow-hidden">
       <div className="hidden grid-cols-[120px_1fr_170px] gap-3 border-b bg-field/50 px-3.5 py-2 text-xs text-subtle sm:grid">
         <span>{t('档位')}</span>
         <span>{t('模型')}</span>
@@ -352,7 +344,7 @@ export function TierTable({
             className="grid grid-cols-1 gap-2 border-b px-3.5 py-3 last:border-b-0 sm:grid-cols-[120px_1fr_170px] sm:items-center sm:gap-x-3"
           >
             <span className="flex items-center gap-2">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent-text">
                 {tr.label}
               </span>
               <span className="flex min-w-0 flex-col">
@@ -399,7 +391,7 @@ export function TierTable({
                 <span>
                   {t('最大输出')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(maxOutput)}</span>
                 </span>
-                {mapTo && <span className="text-accent">{t('映射 {model}', { model: mapTo })}</span>}
+                {mapTo && <span className="text-accent-text">{t('映射 {model}', { model: mapTo })}</span>}
               </button>
               {open && (
                 <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-2.5">
@@ -457,7 +449,7 @@ export function TierTable({
         )
       })}
       {(!can.context || !can.maxOutput) && (
-        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.71875rem] leading-relaxed text-subtle">
+        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.6875rem] leading-relaxed text-subtle">
           {!can.context && !can.maxOutput
             ? t('{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。', { cli: def.name })
             : !can.maxOutput
@@ -465,7 +457,7 @@ export function TierTable({
               : t('{cli} 没有设置上下文窗口的参数，上下文只用于面板估算占用。', { cli: def.name })}
         </p>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -667,9 +659,9 @@ export function CliSection({
           <p className="flex items-center gap-2 font-medium">
             {def.name}
             {isDefault && (
-              <span className="rounded-full bg-accent-soft px-2 py-px text-[0.6875rem] font-normal text-accent">
+              <Badge tone="accent" className="text-[0.6875rem] font-normal">
                 {t('系统默认')}
-              </span>
+              </Badge>
             )}
           </p>
           <p

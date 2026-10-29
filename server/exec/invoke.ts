@@ -150,7 +150,7 @@ export async function invokeCli(o: {
     try {
       const written = await writeSystemPrompt(build.systemPrompt)
       promptDir = written.dir
-      build = { ...build, systemPrompt: written.file }
+      build = { ...build, systemPrompt: written.file, systemPromptFile: true }
     } catch (e) {
       // 写不成就照旧把文本放进参数：提示词会变成一行，但这一轮照常跑（见 process.ts）
       log.warn('agent', `${def.name} 的角色说明写入失败，改为直接放参数里`, { error: (e as Error).message })

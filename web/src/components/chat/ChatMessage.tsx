@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
 import { copyText } from '@shared/composer'
 import { MessageBody } from './AttachmentView'
+import { IconButton } from '@/components/ui/icon-button'
 
 /** 时间格式化器按语言、选项复用：每次渲染都新建 Intl 实例很贵（消息多时一次推送要格式化几十条） */
 const formats = new Map<string, Intl.DateTimeFormat>()
@@ -52,6 +53,10 @@ export function formatAt(at: string) {
   }
 }
 
+/**
+ * 消息操作按钮的样子（和 IconButton size="sm" 一致）：本文件已改用 IconButton，
+ * 留着给还在手写按钮的调用方（设计页的对话）
+ */
 export const msgAction =
   'grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-40'
 
@@ -70,11 +75,11 @@ export function CopyButton({
 }) {
   const [done, setDone] = useState(false)
   return (
-    <button
-      type="button"
-      className={cn(msgAction, className)}
+    <IconButton
+      size="sm"
+      className={className}
+      label={label ?? t('复制')}
       title={done ? t('已复制') : (label ?? t('复制'))}
-      aria-label={label ?? t('复制')}
       onClick={() => {
         void clipboardCopy(attachments ? copyText(text, attachments) : text, { fail: false }).then((ok) => {
           if (!ok) return
@@ -83,25 +88,23 @@ export function CopyButton({
         })
       }}
     >
-      {done ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
+      {done ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+    </IconButton>
   )
 }
 
 /** 引用：把这段内容作为引用块放进当前对话的输入框 */
 export function QuoteButton({ text }: { text: string }) {
   return (
-    <button
-      type="button"
-      className={msgAction}
+    <IconButton
+      size="sm"
+      icon={Quote}
+      label={t('引用')}
       title={t('引用到输入框')}
-      aria-label={t('引用')}
       onClick={(e) => {
         if (!quoteFrom(e.currentTarget, text)) toast(t('这里没有可以引用到的输入框'))
       }}
-    >
-      <Quote className="h-3.5 w-3.5" />
-    </button>
+    />
   )
 }
 
@@ -125,7 +128,7 @@ export function MessageMeta({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 text-[0.71875rem] text-subtle transition-opacity',
+        'flex items-center gap-0.5 text-[0.6875rem] text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
       )}
     >
@@ -165,13 +168,14 @@ export function UserMessage({
   size?: 'sm' | 'md'
 }) {
   return (
-    <div data-msg={anchorId} className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+    // data-user：界面检查要区分用户的消息和 Agent 的回复（两者都有 data-msg）
+    <div data-msg={anchorId} data-user="" className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
       {(text || extra || !!attachments?.length) && (
         <div
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
               : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
@@ -225,7 +229,7 @@ function FoldBody({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.78125rem] text-muted transition-colors hover:text-fg"
+          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.75rem] text-muted transition-colors hover:text-fg"
         >
           <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
           {open ? t('收起') : t('展开')}
@@ -279,13 +283,13 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
             : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
         )}
       >
         {answers.map((a, i) => (
           <div key={i} className="flex min-w-0 flex-col">
-            <span className={cn('text-muted', size === 'sm' ? 'text-[0.71875rem]' : 'text-[0.78125rem]')}>
+            <span className={cn('text-muted', size === 'sm' ? 'text-[0.6875rem]' : 'text-[0.75rem]')}>
               {a.question}
             </span>
             <span className="whitespace-pre-wrap">{a.answer}</span>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronRight, ChevronUp, CircleCheck, CircleSlash, ListChecks, TriangleAlert, X } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, PlanWait, Task, TaskPlan } from '@shared/schema'
 import {
@@ -18,6 +18,9 @@ import { fmtDuration } from '@/lib/tasks'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
+import { StatusPill } from '@/components/ui/status-pill'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { Progress } from '@/components/ui/progress'
 
 const STATUS_LABEL: Record<PlanStatus, string> = {
   pending: t('待做'),
@@ -42,25 +45,18 @@ function WaitRing({ className }: { className?: string }) {
 
 /**
  * 进度条（done/total，done 含明确跳过的步骤）：折叠头和窗口头共用。
- * 宽度用 CSS 过渡，状态推进时能看出「又走了一步」；role=progressbar 让读屏也能拿到 3/8 这件事
+ * 读屏报原始的 3/8（raw），界面检查也按 data-plan-bar 上的这两个值断言
  */
 function PlanBar({ done, total, className }: { done: number; total: number; className?: string }) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0
   return (
-    <span
-      role="progressbar"
+    <Progress
       data-plan-bar=""
-      aria-valuemin={0}
-      aria-valuemax={total}
-      aria-valuenow={done}
-      aria-label={t('计划进度 {done}/{total}', { done, total })}
-      className={cn('block h-1 overflow-hidden rounded-full bg-sel', className)}
-    >
-      <span
-        className="block h-full rounded-full bg-accent transition-[width] duration-300"
-        style={{ width: `${pct}%` }}
-      />
-    </span>
+      value={done}
+      max={total}
+      raw
+      label={t('计划进度 {done}/{total}', { done, total })}
+      className={className}
+    />
   )
 }
 
@@ -256,16 +252,17 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
   const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   // 标题里已经带着同样的用时就不重复写一遍
   const withTime = currentTime !== '' && !current?.includes(currentTime)
+  // 组件库「计划 · PlanBar」：贴在输入框上方的一整条浅底，「计划 3/6 正在：…」，点开是计划窗口
   return (
-    <div ref={ref} className="relative flex min-w-0 shrink items-center">
+    <div ref={ref} className="relative flex min-w-0 flex-1 items-center">
       <button
         type="button"
         aria-expanded={open}
         aria-label={t('执行计划')}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg',
-          open && 'bg-sel text-fg',
+          'flex h-[2.125rem] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[9px] px-2.5 text-[0.75rem] text-fg transition-colors hover:bg-sel/70',
+          open ? 'bg-sel/70' : 'bg-sel/45',
         )}
       >
         {head === 'done' ? (
@@ -273,37 +270,42 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
         ) : head === 'closed' ? (
           <CircleSlash className="h-3.5 w-3.5 shrink-0 text-subtle" />
         ) : (
-          <ListChecks className="h-3.5 w-3.5 shrink-0 text-subtle" />
+          <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted" />
         )}
-        {/* 提前结束但还有遗留：标题和徽标都要说「已结束、还剩几步」，不能只写「计划已完成」 */}
-        <span className="shrink-0 font-medium">
-          {head === 'done'
-            ? t('计划已完成')
-            : head === 'closed'
-              ? t('计划已结束')
-              : t('计划 {done}/{total}', { done: p.done, total: p.total })}
+        {/* 提前结束但还有遗留：标题和徽标都要说「已结束、还剩几步」，不能只写「计划已完成」。
+            进度胶囊前留一个空格：读屏和界面检查读到的仍是「计划 2/6」 */}
+        <span className="shrink-0 font-semibold">
+          {head === 'done' ? t('计划已完成') : head === 'closed' ? t('计划已结束') : t('计划')}
         </span>
+        {!finished && (
+          <>
+            {' '}
+            <StatusPill tone="ok" className="h-[1.125rem] px-1.5 text-[0.6875rem] tabular-nums">
+              {p.done}/{p.total}
+            </StatusPill>
+          </>
+        )}
         {left > 0 && (
           <span data-plan-left="" className="shrink-0 text-xs text-subtle">
             {t('{n} 步没做完（已保留）', { n: left })}
           </span>
         )}
-        {!finished && <PlanBar done={p.done} total={p.total} className="w-10 shrink-0 sm:w-14" />}
-        {!finished && current && (
-          <span className="flex min-w-0 items-center gap-1 text-xs text-subtle">
-            <span>·</span>
-            <span className="min-w-0 truncate">{current}</span>
+        {!finished && current ? (
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 text-muted">
+            <span className="min-w-0 truncate">{t('正在：{what}', { what: current })}</span>
             {withTime && (
               <span
                 data-plan-current-time=""
                 title={t('用时 {time}', { time: currentTime })}
                 aria-label={t('用时 {time}', { time: currentTime })}
-                className="shrink-0 font-mono tabular-nums"
+                className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
               >
                 {currentTime}
               </span>
             )}
           </span>
+        ) : (
+          <span className="flex-1" />
         )}
         {!finished && p.waiting > 0 && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-warning">
@@ -313,6 +315,10 @@ export function PlanButton({ task, children }: { task: Task; children?: WaitChil
         )}
         {/* 空间够时再显示「多久前更新」：窄窗口里前面的进度已经说明了状态 */}
         {!finished && <UpdatedAt at={updatedAt} stale={stale} className="hidden text-xs sm:inline" />}
+        <ChevronUp
+          aria-hidden
+          className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-180')}
+        />
       </button>
       {open && <PlanWindow task={task} plan={plan} children={children} />}
     </div>
@@ -338,10 +344,11 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
   const updatedMs = planUpdatedAt(plan)
   const updatedAt = updatedMs === undefined ? undefined : new Date(updatedMs).toISOString()
   return (
-    <div
+    <ComposerPopover
       role="dialog"
       aria-label={t('执行计划')}
-      className="absolute bottom-full left-0 z-30 mb-1 flex max-h-[min(64vh,560px)] w-[min(460px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop"
+      width="min(460px, calc(100vw - 2rem))"
+      className="max-h-[min(64vh,560px)]"
     >
       <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-1">
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-subtle" title={plan.title}>
@@ -401,7 +408,7 @@ function PlanWindow({ task, plan, children }: { task: Task; plan: TaskPlan; chil
           </div>
         )}
       </div>
-    </div>
+    </ComposerPopover>
   )
 }
 

@@ -22,7 +22,9 @@ import {
 } from '@shared/anim'
 import { allNames, type Widget } from '@shared/umg'
 import { cn } from '@/lib/utils'
-import { Select } from '@/components/ui/input'
+import { Input, Select } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { Switch } from '@/components/ui/switch'
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu'
 import { NumInput } from './fields'
@@ -349,8 +351,6 @@ export function AnimationPanel({
   const ticks = Array.from({ length: Math.round(span * 10) + 1 }, (_, i) => i / 10)
   const presetGroups = ['enter', 'exit', 'emphasis', 'loop', 'hover'] as const
   const triggers = ANIM_TRIGGERS.filter((x) => web || x !== 'scroll' || anim?.trigger === 'scroll')
-  const icon =
-    'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg'
 
   return (
     <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-[0.75rem]">
@@ -366,20 +366,19 @@ export function AnimationPanel({
               seek(0)
             }}
             options={mine.map((a) => ({ value: a.name, label: a.name }))}
-            className="h-7 w-[150px] shrink-0 rounded-md px-2 text-[0.75rem]"
+            size="xs"
+            className="w-[150px] shrink-0"
           />
         ) : (
           <span className="shrink-0 text-subtle">{t('还没有动画')}</span>
         )}
-        <button aria-label={t('新建动画')} title={t('新建动画')} className={icon} onClick={() => create()}>
-          <Plus className="h-4 w-4" />
-        </button>
+        <IconButton icon={Plus} size="sm" label={t('新建动画')} onClick={() => create()} />
         <Menu>
           <MenuTrigger asChild>
-            <button className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-subtle hover:bg-sel hover:text-fg">
+            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[0.75rem] font-normal">
               <Sparkles className="h-3.5 w-3.5" />
               {t('预设')}
-            </button>
+            </Button>
           </MenuTrigger>
           <MenuContent align="start">
             <div className="max-h-[360px] overflow-y-auto">
@@ -402,7 +401,8 @@ export function AnimationPanel({
         {anim && (
           <>
             <span className="mx-1 h-4 w-px shrink-0 bg-line" />
-            <input
+            <Input
+              size="xs"
               aria-label={t('动画名')}
               defaultValue={anim.name}
               key={anim.name}
@@ -417,14 +417,15 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[0.71875rem] outline-none focus:border-focus"
+              className="w-[120px] shrink-0 font-mono text-[0.6875rem]"
             />
             <Select
               aria-label={t('触发方式')}
               value={anim.trigger}
               onChange={(e) => update((a) => ({ ...a, trigger: e.target.value as AnimTrigger }))}
               options={triggers.map((x) => ({ value: x, label: triggerLabel(x) }))}
-              className="h-7 w-[118px] shrink-0 rounded-md px-2 text-[0.75rem]"
+              size="xs"
+              className="w-[118px] shrink-0"
             />
             {(anim.trigger === 'hover' || anim.trigger === 'click') && (
               <Select
@@ -436,7 +437,8 @@ export function AnimationPanel({
                   { value: '', label: t('第一条轨道的控件') },
                   ...[...names].map((n) => ({ value: n, label: n })),
                 ]}
-                className="h-7 w-[130px] shrink-0 rounded-md px-2 text-[0.75rem]"
+                size="xs"
+                className="w-[130px] shrink-0"
               />
             )}
             <span className="shrink-0 text-subtle" title={t('播放几遍，0 是一直循环')}>
@@ -466,10 +468,11 @@ export function AnimationPanel({
               {t('来回')}
               <Switch checked={anim.pingPong} onCheckedChange={(v) => update((a) => ({ ...a, pingPong: v }))} />
             </label>
-            <button
-              aria-label={t('删除动画')}
-              title={t('删除动画')}
-              className={icon}
+            <IconButton
+              icon={Trash2}
+              size="sm"
+              tone="danger"
+              label={t('删除动画')}
               onClick={() => {
                 onChange(
                   animations.filter((a) => a !== anim),
@@ -477,17 +480,16 @@ export function AnimationPanel({
                 )
                 setSel(null)
               }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            />
           </>
         )}
         <span className="flex-1" />
         {anim && (
           <>
-            <button
-              aria-label={playing ? t('停止') : t('播放')}
-              title={playing ? t('停止') : t('播放')}
+            <IconButton
+              icon={playing ? Pause : Play}
+              size="sm"
+              label={playing ? t('停止') : t('播放')}
               disabled={!anim.tracks.length}
               onClick={() => {
                 if (playing) return seek(time)
@@ -495,22 +497,18 @@ export function AnimationPanel({
                 setPlaying(true)
                 onCommand({ name: anim.name, tree, ms: 0, play: true, nonce: ++nonce.current })
               }}
-              className={cn(icon, 'text-fg disabled:cursor-default disabled:opacity-40')}
-            >
-              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </button>
-            <span className="w-14 shrink-0 text-right font-mono text-[0.71875rem] text-subtle tabular-nums">
+              className="text-fg"
+            />
+            <span className="w-14 shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums">
               {time.toFixed(2)}s
             </span>
           </>
         )}
-        <button aria-label={t('关闭动画面板')} title={t('关闭动画面板')} className={icon} onClick={onClose}>
-          <X className="h-4 w-4" />
-        </button>
+        <IconButton icon={X} size="sm" label={t('关闭动画面板')} onClick={onClose} />
       </div>
 
       {!anim ? (
-        <div className="grid flex-1 place-items-center px-6 text-center text-[0.78125rem] leading-relaxed text-subtle">
+        <div className="grid flex-1 place-items-center px-6 text-center text-[0.75rem] leading-relaxed text-subtle">
           <div className="max-w-[460px]">
             <p className="mb-1 text-[0.8125rem] font-medium text-fg">
               {web ? t('给网页加上动效') : t('给界面加动画（UE 的 Widget Animation）')}
@@ -539,31 +537,30 @@ export function AnimationPanel({
                     title={t('在画布上选中 {name}', { name: tr.widget })}
                     className={cn(
                       'min-w-0 flex-1 cursor-pointer truncate text-left',
-                      !names.has(tr.widget) && 'text-red-400 line-through',
+                      !names.has(tr.widget) && 'text-danger line-through',
                     )}
                   >
                     {tr.widget}
                     <span className="text-subtle"> · {propLabel(tr.prop)}</span>
                   </button>
-                  <button
-                    aria-label={t('在播放头加关键帧')}
-                    title={t('在播放头加关键帧')}
+                  <IconButton
+                    icon={Diamond}
+                    size="2xs"
+                    reveal="hover"
+                    label={t('在播放头加关键帧')}
                     onClick={() => addKey(i)}
-                    className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:text-fg"
-                  >
-                    <Diamond className="h-3 w-3" />
-                  </button>
-                  <button
-                    aria-label={t('删除轨道')}
-                    title={t('删除轨道')}
+                  />
+                  <IconButton
+                    icon={X}
+                    size="2xs"
+                    tone="danger"
+                    reveal="hover"
+                    label={t('删除轨道')}
                     onClick={() => {
                       setTrack(i, null)
                       setSel(null)
                     }}
-                    className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:text-red-400"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+                  />
                 </div>
               ))}
               <Menu>
@@ -640,7 +637,7 @@ export function AnimationPanel({
                           onClick={(e) => e.stopPropagation()}
                           className={cn(
                             'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab rounded-[2px] border',
-                            on ? 'border-white bg-accent' : 'border-accent bg-card hover:bg-accent/60',
+                            on ? 'border-card bg-accent' : 'border-accent bg-card hover:bg-accent/60',
                           )}
                           style={{ left: `${(k.t / span) * 100}%` }}
                         />
@@ -650,10 +647,10 @@ export function AnimationPanel({
                 ))}
                 {/* 播放头 */}
                 <div
-                  className="pointer-events-none absolute top-0 bottom-0 w-px bg-[#ff4fd8]"
+                  className="pointer-events-none absolute top-0 bottom-0 w-px bg-canvas-guide"
                   style={{ left: `${(time / span) * 100}%` }}
                 >
-                  <div className="absolute -top-0.5 -left-[4px] h-2 w-[9px] rounded-sm bg-[#ff4fd8]" />
+                  <div className="absolute -top-0.5 -left-[4px] h-2 w-[9px] rounded-sm bg-canvas-guide" />
                 </div>
               </div>
               {!anim.tracks.length && (
@@ -716,20 +713,20 @@ export function AnimationPanel({
                     value={selKey.ease}
                     onChange={(e) => setKey(sel!.track, sel!.key, { ease: e.target.value as Ease })}
                     options={EASES.map((x) => ({ value: x, label: easeLabel(x) }))}
-                    className="h-7 w-[140px] shrink-0 rounded-md px-2 text-[0.75rem]"
+                    size="xs"
+                    className="w-[140px] shrink-0"
                   />
-                  <button
-                    aria-label={t('删除关键帧')}
-                    title={t('删除关键帧')}
-                    className={icon}
+                  <IconButton
+                    icon={Trash2}
+                    size="sm"
+                    tone="danger"
+                    label={t('删除关键帧')}
                     onClick={() => {
                       const keys = selTrack.keys.filter((_, j) => j !== sel!.key)
                       setTrack(sel!.track, keys.length ? { ...selTrack, keys } : null)
                       setSel(null)
                     }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  />
                 </>
               ) : (
                 <span className="text-subtle">

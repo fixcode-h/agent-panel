@@ -39,10 +39,8 @@ export const EN_SCHEDULE: Record<string, string> = {
 
   // 下次执行时间的文案（shared/schedule.ts）
   今晚: 'tonight',
-  今天: 'today',
   明天: 'tomorrow',
   后天: 'the day after tomorrow',
-  昨天: 'yesterday',
   '{day} {time}': '{day} at {time}',
   已到点: 'due now',
   '不到 1 分钟后': 'in under a minute',
@@ -154,4 +152,41 @@ export const EN_SCHEDULE: Record<string, string> = {
   本周: 'This week',
   下一周: 'Next week',
   '第 {n} 周': 'Week {n}',
+  // 周 / 月 / 列表视图和右侧详情
+  周: 'Week',
+  月: 'Month',
+  月视图: 'Month view',
+  本月: 'This month',
+  '{y} 年 {m} 月': '{m}/{y}',
+  '还有 {n} 条': '+{n} more',
+  示例视图切换: 'Sample view switch',
+  计划详情: 'Plan details',
+  拖动调整右栏宽度: 'Drag to resize the right panel',
+  要做什么: 'What to do',
+  接下来: 'Coming up',
+  现在运行一次: 'Run once now',
+
+  // 结束日期、详情面板直接编辑、运行耗时
+  不重复: 'No repeat',
+  永不: 'Never',
+  到某天: 'On a date',
+  '到 {date} 结束': 'Ends {date}',
+  '已结束（{date}）': 'Ended ({date})',
+  结束日期格式不对: 'The end date is not a valid date',
+  '结束日期早于第一次执行，计划一次也不会执行': 'The end date is before the first run, so this plan would never run',
+  '这条计划刚执行过或已被改过，已载入最新的设置，请重新修改':
+    'This plan has just run or been changed — the latest settings are loaded, please make your changes again.',
+  '放弃没有保存的改动？': 'Discard unsaved changes?',
+  '详情面板里改过的设置还没有保存，离开后这些改动会丢掉。':
+    'The changes in the details panel have not been saved and will be lost if you leave.',
+  放弃改动: 'Discard changes',
+  耗时: 'Duration',
+  '失败 · AI 分析': 'Failed · AI analysis',
+  '计划「{name}」没有跑成': 'Plan "{name}" did not run successfully',
+  对话执行失败: 'The conversation failed',
+  '计划：{name}': 'Plan: {name}',
+  '到点时间：{time}': 'Scheduled for: {time}',
+  '项目：{name}': 'Project: {name}',
+  '启动的对话 id：{id}': 'Conversation id: {id}',
+  '到点后执行的对话内容：': 'Prompt run on schedule:',
 }

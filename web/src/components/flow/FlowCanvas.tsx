@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -7,7 +7,6 @@ import {
   Controls,
   MiniMap,
   Handle,
-  MarkerType,
   Position,
   ReactFlow,
   SelectionMode,
@@ -31,9 +30,9 @@ import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { END, START, wouldCycle } from '@shared/flow'
 import { cn } from '@/lib/utils'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { cliColor } from '@/lib/cli-style'
 import { StepIcon } from '@/components/tasks/TaskStatusIcon'
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill'
 
 export type HookSlot = 'start' | 'review' | 'end'
 export const HOOK_LABEL: Record<HookSlot, string> = { start: t('开始'), review: t('验收'), end: t('结束') }
@@ -59,116 +58,198 @@ export interface NodeView {
   confirm?: boolean
   /** 节点里有几步执行者 */
   count?: number
+  /** 多步节点的各步：卡片里逐行列出，运行视图里带上每一步的状态 */
+  units?: { id: string; title: string; status?: StepStatus }[]
+  /** 运行视图：节点底部的耗时和 token 用量（编辑器里没有） */
+  stats?: { time: string; tokens: string }
 }
 
 type CardData = { view: NodeView }
 type TermData = { kind: 'start' | 'end'; label: string; sub?: string; status?: StepStatus }
 
+// 起止节点的状态：只描一圈，不染底
 const ring: Record<StepStatus, string> = {
   pending: '',
-  running: 'node-running border-accent',
-  done: 'border-success/50',
-  failed: 'ring-2 ring-danger/30 border-danger/70',
+  running: 'node-running',
+  done: 'ring-1 ring-success/40',
+  failed: 'ring-1 ring-danger/50',
   skipped: 'opacity-55',
 }
 
 /**
- * 流程图里的一个节点：标题和执行者在上，模型、说明在中间，开始 / 验收 / 结束流程在底部。
+ * 节点卡片按状态染浅底（照设计稿：完成浅绿、运行中青色描框、失败浅红），
+ * 胶囊文字和颜色与 StatusPill 的五种口径一致；没有状态（编辑器里）就是白卡片
+ */
+const STATE: Record<StepStatus, { tone: StatusTone; label: string; card: string }> = {
+  pending: { tone: 'idle', label: t('计划中'), card: '' },
+  running: { tone: 'run', label: t('运行中'), card: 'node-running bg-[color-mix(in_oklab,var(--run)_7%,var(--card))]' },
+  done: {
+    tone: 'ok',
+    label: t('完成'),
+    card: 'bg-[color-mix(in_oklab,var(--success)_8%,var(--card))] ring-1 ring-success/30',
+  },
+  failed: {
+    tone: 'err',
+    label: t('失败'),
+    card: 'bg-[color-mix(in_oklab,var(--danger)_6%,var(--card))] ring-1 ring-danger/40',
+  },
+  skipped: { tone: 'idle', label: t('跳过'), card: 'opacity-55' },
+}
+
+/** 卡片里最多列几步：再多就写「还有 n 步」，卡片不会高过自动排列的行距（shared/flow 的 ROW） */
+const UNIT_MAX = 3
+
+/** 卡片里的小胶囊比列表里的再矮一号，节点高度不变，已经排好的流程图不会重叠 */
+const pillSm = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
+
+/**
+ * 流程图里的一个节点：标题和状态胶囊在上，执行者标签、说明块在中间，开始 / 验收 / 结束流程在底部。
  * 选中只高亮节点自己（主题色描边和柔光），执行中有缓慢呼吸的光晕。
  */
 const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardData>>) {
   const v = data.view
   const agent = v.kind === 'agent' ? v.agent : undefined
+  const units = v.units && v.units.length > 1 ? v.units : undefined
+  // 多步节点没有列出步骤时，标签里写各步的串联和「+n」；列出了步骤，标签就和单步节点一样写第一步的执行者
+  const chain = !!(v.count && v.count > 1) && !units
+  const stats = v.stats && (v.stats.time || v.stats.tokens) ? v.stats : undefined
+  const st = v.status ? STATE[v.status] : undefined
+  // 染了底的卡片里，标签和说明块用白底托出来；白卡片里用浅灰底
+  const block = st && st.card && v.status !== 'skipped' ? 'bg-card/85' : 'bg-sel/55'
   return (
     <div
       className={cn(
-        'group/node w-[264px] overflow-hidden rounded-2xl bg-card text-left shadow-card transition-[box-shadow,border-color,transform] duration-150',
-        'hover:border-line-strong hover:shadow-pop',
-        v.status && ring[v.status],
-        v.loose && 'border-dashed opacity-80',
-        selected && 'node-selected border-accent',
+        'group/node flex w-[264px] flex-col gap-1.5 overflow-hidden rounded-xl bg-card p-2.5 text-left shadow-card transition-[box-shadow,transform] duration-150',
+        'hover:shadow-pop',
+        st?.card,
+        v.loose && 'opacity-80 outline-1 -outline-offset-1 outline-line-strong outline-dashed',
+        selected && 'node-selected',
       )}
     >
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2.5">
-        {agent ? (
-          <AgentAvatar icon={agent.icon} cli={agent.cli} size="md" dim={!agent.enabled} />
-        ) : (
-          <span
-            className={cn(
-              'grid h-9 w-9 shrink-0 place-items-center rounded-[9px]',
-              v.kind === 'flow' ? 'bg-accent-soft text-accent' : 'bg-field text-subtle',
-            )}
-          >
-            <WorkflowIcon className="h-[18px] w-[18px]" />
-          </span>
-        )}
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[0.84375rem] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[0.71875rem] leading-4 text-subtle">
-            {v.kind === 'flow' ? (
-              <span className="truncate">
-                {t('调用流程')} · {v.flowText || t('未选择')}
-              </span>
-            ) : agent ? (
-              <>
-                <span className="truncate">{v.count && v.count > 1 ? v.sub : agent.name}</span>
-                {v.count && v.count > 1 ? (
-                  <span className="shrink-0 rounded bg-field px-1 text-[0.65625rem] leading-4 font-medium text-muted ring-1 ring-line ring-inset">
-                    +{v.count - 1}
-                  </span>
-                ) : (
-                  v.main && (
-                    <span className="shrink-0 rounded px-1 text-[0.65625rem] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
-                      {t('主')}
-                    </span>
-                  )
-                )}
-                {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
-                {v.model && (
-                  <span className="ml-auto flex min-w-0 shrink items-center gap-1 rounded bg-field px-1 font-mono text-[0.65625rem] leading-4 text-muted ring-1 ring-line ring-inset">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
-                    <span className="truncate">{v.model}</span>
-                  </span>
-                )}
-              </>
-            ) : (
-              <span className="truncate text-warning">{v.sub}</span>
-            )}
-          </span>
+      <div className="flex min-w-0 items-center gap-1.5">
+        {v.kind === 'flow' && <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-accent-text" />}
+        <span className="min-w-0 flex-1 truncate text-[0.8125rem] leading-5 font-semibold tracking-[-0.005em]">
+          {v.title}
         </span>
-        {v.status && v.status !== 'pending' && <StepIcon status={v.status} className="mt-0.5" />}
+        {st ? (
+          <StatusPill tone={st.tone} spin={v.status === 'running'} className={pillSm}>
+            {st.label}
+          </StatusPill>
+        ) : (
+          v.loose && (
+            <StatusPill tone="wait" className={pillSm}>
+              {t('未连接')}
+            </StatusPill>
+          )
+        )}
       </div>
-      {/* 行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */}
-      {v.note && (
-        <div className="px-3.5 pb-3">
-          <p className="line-clamp-2 text-[0.71875rem] leading-[1.6] text-subtle">{v.note}</p>
-        </div>
-      )}
-      {(v.hooks.length > 0 || v.loose || v.confirm) && (
-        <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
-          {v.loose && (
-            <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">{t('未连接')}</span>
+      {/* 执行者标签：角色 · 模型；多步节点列出各步，流程节点写调用的流程 */}
+      <div className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] leading-4">
+        <span className={cn('flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-1.5', block)}>
+          {v.kind === 'flow' ? (
+            <span className="truncate text-muted">
+              {t('调用流程')} · {v.flowText || t('未选择')}
+            </span>
+          ) : agent ? (
+            <>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
+              {/* 名字优先显示，模型挤在后面截断 */}
+              <span className={cn('truncate', !chain && 'max-w-[60%] shrink-0', !agent.enabled && 'text-subtle')}>
+                {chain ? v.sub : agent.name}
+              </span>
+              {!chain && v.model && (
+                <span className="min-w-0 shrink truncate font-mono text-[0.6875rem] text-subtle">· {v.model}</span>
+              )}
+            </>
+          ) : (
+            <span className="truncate text-warning">{v.sub}</span>
           )}
+        </span>
+        {chain ? (
+          <span className="shrink-0 rounded-md bg-sel px-1 text-[0.6875rem] leading-4 font-medium text-muted">
+            +{(v.count ?? 1) - 1}
+          </span>
+        ) : (
+          v.main &&
+          agent && (
+            <span className="shrink-0 rounded-md bg-accent-soft px-1 text-[0.6875rem] leading-4 font-medium text-accent-text">
+              {t('主')}
+            </span>
+          )
+        )}
+      </div>
+      {/* 多步节点逐行列出各步（照设计稿），说明块让给步骤列表，卡片高度不超过自动排列的行距 */}
+      {units ? (
+        <ol aria-label={t('节点里的步骤')} className="flex flex-col gap-1">
+          {units.slice(0, UNIT_MAX).map((u, i) => (
+            <li
+              key={u.id}
+              className={cn(
+                'flex h-[1.375rem] min-w-0 items-center gap-1.5 rounded-md px-2 text-[0.6875rem] leading-4',
+                block,
+              )}
+            >
+              <span className={cn('min-w-0 flex-1 truncate', u.status === 'running' ? 'font-medium' : 'text-muted')}>
+                {u.title}
+              </span>
+              {u.status && u.status !== 'pending' ? (
+                <StepIcon status={u.status} className="h-3 w-3 shrink-0" />
+              ) : (
+                <span className="shrink-0 font-mono text-[0.625rem] text-subtle">{i + 1}</span>
+              )}
+            </li>
+          ))}
+          {units.length > UNIT_MAX && (
+            <li className="px-2 text-[0.6875rem] leading-4 text-subtle">
+              {t('还有 {n} 步', { n: units.length - UNIT_MAX })}
+            </li>
+          )}
+        </ol>
+      ) : (
+        /* 说明块：行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */
+        v.note && (
+          <div className={cn('rounded-md px-2 py-1', block)}>
+            <p className="line-clamp-2 text-[0.6875rem] leading-normal text-muted">{v.note}</p>
+          </div>
+        )
+      )}
+      {/* 底部一行：挂载的流程、等我确认，运行视图里再在右边写耗时和 token（颜色跟着状态：完成绿、运行中青）。
+          耗时和挂载流程放同一行，旧的流程图按原来的行距排好的，加了这一行也不会上下叠在一起 */}
+      {(v.hooks.length > 0 || v.confirm || stats) && (
+        <div className="mt-auto flex flex-wrap items-center gap-1">
           {v.hooks.map((h) => (
             <span
               key={h.slot}
               title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
-                'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem]',
-                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted ring-1 ring-line ring-inset',
+                'inline-flex h-[1.125rem] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
+                h.slot === 'review' ? 'bg-accent-soft text-accent-text' : 'text-subtle',
+                h.slot !== 'review' && block,
               )}
             >
               {h.status && h.status !== 'pending' && <StepIcon status={h.status} className="h-3 w-3" />}
               <span className="shrink-0 font-medium">{HOOK_LABEL[h.slot]}</span>
-              <span className="truncate">{h.label}</span>
+              {h.label && <span className="truncate">{h.label}</span>}
               {h.extra && <span className="shrink-0 opacity-75">{h.extra}</span>}
             </span>
           ))}
           {v.confirm && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">
+            <span className="inline-flex h-[1.125rem] items-center gap-1 rounded-md bg-warning/12 px-1.5 text-[0.6875rem] text-warning">
               <UserCheck className="h-3 w-3" />
               {t('等我确认')}
+            </span>
+          )}
+          {stats && (
+            <span
+              aria-label={t('耗时和用量')}
+              className={cn(
+                'ml-auto inline-flex h-[1.125rem] items-center gap-2 text-[0.6875rem] tabular-nums',
+                v.status === 'done' ? 'text-success' : v.status === 'running' ? 'text-run' : 'text-subtle',
+              )}
+            >
+              {stats.time && <span>{stats.time}</span>}
+              {stats.tokens && <span className="font-mono">{stats.tokens}</span>}
             </span>
           )}
         </div>
@@ -183,14 +264,17 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-full border bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-[box-shadow,border-color] hover:border-line-strong hover:shadow-pop',
-        selected && 'node-selected border-accent',
+        'flex items-center gap-2 rounded-full bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-shadow hover:shadow-pop',
+        selected && 'node-selected',
         data.status && data.status !== 'pending' && ring[data.status],
       )}
     >
       {!start && <Handle type="target" position={Position.Left} />}
       <span
-        className={cn('grid h-7 w-7 place-items-center rounded-full', start ? 'bg-accent text-white' : 'bg-fg text-bg')}
+        className={cn(
+          'grid h-7 w-7 place-items-center rounded-full',
+          start ? 'bg-accent text-on-accent' : 'bg-fg text-bg',
+        )}
       >
         {start ? (
           <Play className="h-3.5 w-3.5 translate-x-px" fill="currentColor" />
@@ -267,8 +351,11 @@ const FlowEdge = memo(function FlowEdge({
         <EdgeLabelRenderer>
           <span
             className={cn(
-              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[0.6875rem] leading-4 shadow-card',
-              when === 'pass' ? 'border-success/40 text-success' : 'border-danger/40 text-danger',
+              'nodrag nopan pointer-events-none absolute rounded-full px-1.5 py-px text-[0.6875rem] leading-4 font-medium',
+              // 底色要不透明，盖住穿过的连线
+              when === 'pass'
+                ? 'bg-[color-mix(in_oklab,var(--success)_12%,var(--card))] text-success'
+                : 'bg-[color-mix(in_oklab,var(--danger)_10%,var(--card))] text-danger',
             )}
             style={{
               transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
@@ -285,6 +372,54 @@ const edgeTypes = { flow: FlowEdge }
 
 export type EdgeTone = 'idle' | 'active' | 'done'
 
+/** 连线颜色用主题 token：完成 = 绿（success），运行中 = 青（run），其余跟随画布的默认线色 */
+const EDGE_COLOR: Record<EdgeTone, string> = {
+  idle: 'var(--xy-edge-stroke)',
+  active: 'var(--run)',
+  done: 'var(--success)',
+}
+
+/** 三种状态的箭头，和 xyflow 自带的 ArrowClosed 同形 */
+function ArrowMarkers({ id }: { id: (tone: EdgeTone) => string }) {
+  return (
+    <svg aria-hidden className="pointer-events-none absolute h-0 w-0">
+      <defs>
+        {(Object.keys(EDGE_COLOR) as EdgeTone[]).map((tone) => (
+          <marker
+            key={tone}
+            id={id(tone)}
+            viewBox="-10 -10 20 20"
+            markerWidth="16"
+            markerHeight="16"
+            markerUnits="strokeWidth"
+            orient="auto-start-reverse"
+            refX="0"
+            refY="0"
+          >
+            <polyline
+              points="-5,-4 0,0 -5,4 -5,-4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1"
+              style={{ stroke: EDGE_COLOR[tone], fill: EDGE_COLOR[tone] }}
+            />
+          </marker>
+        ))}
+      </defs>
+    </svg>
+  )
+}
+
+/** 小地图里的节点和画布同色：完成绿、运行中青，其余灰 */
+const miniColor = (n: Node) => {
+  const d = n.data as Partial<CardData> & Partial<TermData>
+  const st = d.view?.status ?? d.status
+  if (st === 'done') return 'color-mix(in oklab, var(--success) 45%, var(--card))'
+  if (st === 'running') return 'color-mix(in oklab, var(--run) 50%, var(--card))'
+  if (st === 'failed') return 'color-mix(in oklab, var(--danger) 45%, var(--card))'
+  return 'var(--line-strong)'
+}
+
 export function FlowCanvas({
   flow,
   views,
@@ -294,6 +429,7 @@ export function FlowCanvas({
   selected,
   onSelect,
   onChange,
+  panMode,
   onReject,
   onDropOnPane,
   edgeTone,
@@ -307,7 +443,10 @@ export function FlowCanvas({
   /** 选中的节点 id、start、end，或 edge:连线 id */
   selected: string
   onSelect: (id: string) => void
-  onChange?: (f: Flow) => void
+  /** 流程图改了；拖动节点时带上 key（一次拖动从按下到松手同一个），撤销历史按它把一次拖动合成一步 */
+  onChange?: (f: Flow, key?: string) => void
+  /** 平移模式：左键在空白处拖动画布，不拉选框 */
+  panMode?: boolean
   /** 连线不合法时的提示 */
   onReject?: (msg: string) => void
   /** 从节点拖出的线松手在空白处：reverse 表示是从节点左侧（输入端）拖出的 */
@@ -376,13 +515,15 @@ export function FlowCanvas({
     reported.current = selected
     setNodes((ns) => ns.map((n) => (n.selected === (n.id === selected) ? n : { ...n, selected: n.id === selected })))
   }, [selected])
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   // 正在框选时不处理连线的选中，否则框住的连线会抢走选中
   const boxing = useRef(false)
 
+  // 箭头用自己画的 <marker>，id 按状态名生成（xyflow 自带的箭头按颜色字符串生成 id，用不了 CSS 变量）；
+  // 页面上可能同时有几张流程图，id 带上这张图的前缀，不会互相引用到别人的（藏起来的那张会让箭头消失）
+  const markerId = (tone: EdgeTone) => `flow-arrow-${uid}-${tone}`
   const edges: Edge[] = flow.edges.map((e) => {
     const tone = edgeTone?.(e.from, e.to) ?? 'idle'
-    // 箭头的 id 由颜色生成，这里用固定色值
-    const color = tone === 'done' ? '#4f9a6b' : tone === 'active' ? '#d97757' : undefined
     return {
       id: e.id,
       type: 'flow',
@@ -391,8 +532,8 @@ export function FlowCanvas({
       selected: selected === `edge:${e.id}`,
       data: { when: e.when ?? '' },
       className: tone === 'active' ? 'edge-active' : undefined,
-      style: color ? { stroke: color, strokeWidth: 2 } : undefined,
-      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, ...(color && { color }) },
+      style: tone === 'idle' ? undefined : { stroke: EDGE_COLOR[tone], strokeWidth: 2 },
+      markerEnd: markerId(tone),
     }
   })
 
@@ -403,15 +544,22 @@ export function FlowCanvas({
         ? { ...f, endPos: p }
         : { ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, x: Math.round(p.x), y: Math.round(p.y) } : n)) }
 
+  // 这一次拖动的 key：按下后第一次移动时生成，松手（dragging 变成 false）时清掉
+  const dragKey = useRef('')
   const onNodesChange = (changes: NodeChange[]) => {
     const next = applyNodeChanges(changes, nodes)
     setNodes(next)
     let f = flow
     let changed = false
+    let key: string | undefined
+    let removed = false
     for (const c of changes) {
       if (c.type === 'position' && c.position && editable) {
         f = move(c.id, c.position, f)
         changed = true
+        if (!dragKey.current) dragKey.current = `move:${Date.now()}`
+        key = dragKey.current
+        if (!c.dragging) dragKey.current = ''
       } else if (c.type === 'remove' && editable && c.id !== START && c.id !== END) {
         f = {
           ...f,
@@ -419,6 +567,7 @@ export function FlowCanvas({
           edges: f.edges.filter((e) => e.from !== c.id && e.to !== c.id),
         }
         changed = true
+        removed = true
         if (selected === c.id) report('')
       }
     }
@@ -428,7 +577,7 @@ export function FlowCanvas({
       if (picked.length === 1) report(picked[0])
       else if (picked.length > 1) report('')
     }
-    if (changed) onChange?.(f)
+    if (changed) onChange?.(f, removed ? undefined : key)
   }
 
   const onEdgesChange = (changes: EdgeChange[]) => {
@@ -465,7 +614,8 @@ export function FlowCanvas({
 
   return (
     // 右键用来拖动画布，不弹浏览器菜单
-    <div className={cn('relative min-h-0', className)} onContextMenu={(e) => e.preventDefault()}>
+    // 按画布自己的宽度（容器查询）决定放不放小地图：属性栏拉宽后画布很窄，小地图会压住底部工具条
+    <div className={cn('@container relative min-h-0', className)} onContextMenu={(e) => e.preventDefault()}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -493,8 +643,8 @@ export function FlowCanvas({
         onPaneClick={() => report('')}
         // 鼠标：左键点选、按住拖动节点；左键在空白处拖出选框，框住的节点可以一起拖；右键（或中键）按住拖动画布。
         // 只读时没有编辑，左键也可以拖动画布
-        panOnDrag={editable ? [1, 2] : true}
-        selectionOnDrag={!!editable}
+        panOnDrag={editable && !panMode ? [1, 2] : true}
+        selectionOnDrag={!!editable && !panMode}
         selectionMode={SelectionMode.Partial}
         onSelectionStart={() => (boxing.current = true)}
         onSelectionEnd={() => (boxing.current = false)}
@@ -514,7 +664,8 @@ export function FlowCanvas({
         className={cn(!editable && 'read-only')}
       >
         <AutoFit />
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
+        <ArrowMarkers id={markerId} />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1.6} />
         <Controls showInteractive={false} position="bottom-left" />
         {flow.nodes.length > 4 && (
           <MiniMap
@@ -522,10 +673,11 @@ export function FlowCanvas({
             zoomable
             position="bottom-right"
             ariaLabel={t('小地图')}
-            className="!m-3 hidden overflow-hidden rounded-lg border !bg-card sm:block"
-            style={{ width: 150, height: 96 }}
+            className="!m-4 hidden overflow-hidden rounded-[10px] !bg-card shadow-pop @2xl:block"
+            style={{ width: 180, height: 110 }}
             maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
-            nodeColor="var(--line-strong)"
+            nodeColor={miniColor}
+            nodeBorderRadius={3}
             nodeStrokeWidth={0}
           />
         )}

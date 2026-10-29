@@ -5,10 +5,11 @@ import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { helperBriefView, type BriefBlock } from '@/lib/helper-brief'
 import { Markdown } from './Markdown'
+import { Badge } from '@/components/ui/badge'
 
 /** 重点小节的标题颜色：验收标准这类必须满足的要求要一眼看到 */
 const TONE_CLASS: Record<BriefBlock['tone'], string> = {
-  key: 'text-accent',
+  key: 'text-accent-text',
   note: 'text-muted',
   plain: 'text-subtle',
 }
@@ -96,13 +97,13 @@ export function HelperBriefCard({
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="shrink-0 text-xs font-medium text-muted">{t('派给它的要求')}</span>
             {again > 0 && (
-              <span
-                className="flex shrink-0 items-center gap-1 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle"
+              <Badge
+                className="shrink-0 px-1.5 text-[0.6875rem]"
                 title={t('派发之后又补充过 {n} 次要求', { n: again })}
               >
                 <RefreshCw className="h-2.5 w-2.5" />
                 {t('补充过 {n} 次', { n: again })}
-              </span>
+              </Badge>
             )}
           </span>
           {/* 摘要只在收起时显示：展开后正文里就有这段（「要做的事」第一节），两处一起写会重复一遍 */}

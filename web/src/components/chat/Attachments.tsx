@@ -35,6 +35,9 @@ import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { IconButton } from '@/components/ui/icon-button'
+import { MenuSearch } from '@/components/ui/menu-search'
 import type { RichInputHandle } from './RichInput'
 import { useMenuBox } from './useMenuBox'
 import { attachChip, type ChipKind } from '@shared/composer'
@@ -667,7 +670,7 @@ export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | nul
 export function DropOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-bg/80 backdrop-blur-[1px]">
-      <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent shadow-pop">
+      <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent-text shadow-pop">
         {t('松开鼠标，把文件附到要求里')}
       </span>
     </div>
@@ -834,21 +837,14 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
         <span className="px-1 text-[0.8125rem]">{t('按工作流执行')}</span>
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
         <button type="button" className={menuItem} onClick={() => onPick('')}>
           <MessageSquare className="h-4 w-4 shrink-0 text-subtle" />
           <span className="flex-1">{t('不用工作流，直接对话')}</span>
-          {!value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+          {!value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
         </button>
         {workflows.map((w) => {
           const ready = isReady(workflowChecks(w, agents, clis, workflows))
@@ -864,7 +860,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
                   {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
                 </span>
               </span>
-              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
             </button>
           )
         })}
@@ -916,22 +912,8 @@ function StylePicker({
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索风格')}
-          aria-label={t('搜索风格')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
-        />
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
+        <MenuSearch value={q} onChange={setQ} placeholder={t('搜索风格')} className="mb-0 h-7 flex-1" />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
         {!list ? (
@@ -951,7 +933,7 @@ function StylePicker({
                   onClick={() => onPick(s)}
                   className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
                 >
-                  <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                  <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5 text-[0.8125rem]">
                       <span className="truncate">{s.name}</span>
@@ -960,7 +942,7 @@ function StylePicker({
                       )}
                     </span>
                     {s.summary && (
-                      <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">{s.summary}</span>
+                      <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">{s.summary}</span>
                     )}
                   </span>
                 </button>
@@ -1029,22 +1011,8 @@ function SessionPicker({
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t('返回')}
-          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索会话')}
-          aria-label={t('搜索会话')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
-        />
+        <IconButton size="sm" icon={ChevronLeft} label={t('返回')} onClick={onBack} />
+        <MenuSearch value={q} onChange={setQ} placeholder={t('搜索会话')} className="mb-0 h-7 flex-1" />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
         {items.map((x) => (
@@ -1161,11 +1129,13 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
   }
 
   const menu = open ? (
-    <div
+    <ComposerPopover
       ref={box}
       role="listbox"
       aria-label={t('项目文件')}
-      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-[min(18rem,60vh)] overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-card p-1 shadow-pop"
+      stretch
+      scroll
+      className="max-h-[min(18rem,60vh)]"
     >
       <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
       {files.map((f, i) => {
@@ -1188,11 +1158,11 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
           >
             <FileCode2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <span className="shrink-0 font-mono">{f.slice(cut + 1)}</span>
-            {cut > 0 && <span className="truncate font-mono text-[0.71875rem] text-subtle">{f.slice(0, cut)}</span>}
+            {cut > 0 && <span className="truncate font-mono text-[0.6875rem] text-subtle">{f.slice(0, cut)}</span>}
           </button>
         )
       })}
-    </div>
+    </ComposerPopover>
   ) : null
 
   return { sync, onKeyDown, start, menu }
@@ -1201,7 +1171,7 @@ export function useFileMention(projectId: string | undefined, editor: React.RefO
 /** 拖文件进来时盖在输入框上的提示 */
 export function DropHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent-text">
       {t('松开鼠标，把文件附到要求里')}
     </div>
   )
@@ -1210,7 +1180,7 @@ export function DropHint() {
 /** 从文件树右键拖文件 / 文件夹过来时盖在输入框上的提示 */
 export function FileRefHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent-text">
       {t('松开鼠标，插入引用')}
     </div>
   )

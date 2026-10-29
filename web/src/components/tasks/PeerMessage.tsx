@@ -27,6 +27,8 @@ import { convStateText } from '@shared/task'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
 import { RowShell } from './ToolRow'
 import { Markdown } from './Markdown'
 import { useChildOpen } from './child-open'
@@ -48,7 +50,7 @@ export const PEER_ICON: Record<PeerKind, typeof Activity> = {
 /** 类型小标签的颜色：报错一律红色；提问、请求收尾这种等对方处理的用强调色，其余淡色 */
 function badgeTone(kind: PeerKind, failed?: boolean) {
   if (failed) return 'bg-danger/12 text-danger'
-  if (kind === 'question' || kind === 'wrapup') return 'bg-accent/12 text-accent'
+  if (kind === 'question' || kind === 'wrapup') return 'bg-accent/12 text-accent-text'
   return 'bg-sel text-subtle'
 }
 
@@ -112,14 +114,20 @@ export function PeerLine(p: PeerLineProps) {
         ? t('发给 {n} 个子对话的同一条消息', { n: many.length })
         : t('发给{name}的消息', { name: p.name })
   const child = !many && p.childId && openChild ? () => openChild(p.childId!) : undefined
+  // 转交过来的提问在等人回答：整行描一圈琥珀色，和组件库「对话之间 · 转交提问」一致
+  const ask = p.kind === 'question' && !p.failed
   return (
     <>
       <RowShell
+        // 对话之间的消息和工具行一个样子，图标统一用「对话之间」的紫色，和工具行、用户消息分开
+        className={ask ? 'border-warning/45' : undefined}
         glyph={
           p.running ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           ) : (
-            <Icon className={cn('h-3.5 w-3.5 shrink-0', p.failed ? 'text-danger' : 'text-subtle')} />
+            <Icon
+              className={cn('h-3.5 w-3.5 shrink-0', p.failed ? 'text-danger' : ask ? 'text-warning' : 'text-peer')}
+            />
           )
         }
         verb={
@@ -131,10 +139,11 @@ export function PeerLine(p: PeerLineProps) {
         badge={peerKindText(p.kind)}
         badgeClass={badgeTone(p.kind, p.failed)}
         title={subject}
+        titleClass="font-sans text-[0.75rem]"
         onOpen={() => setWin(true)}
         openTip={t('在窗口里查看这条消息')}
         detail={
-          <span className="max-w-[40%] shrink-0 truncate font-sans text-subtle">
+          <span className={cn('max-w-[40%] shrink-0 truncate text-[0.6875rem]', ask ? 'text-warning' : 'text-subtle')}>
             {[
               p.state,
               p.dir === 'in' ? sideOf(p) : many ? t('发给 {n} 个：{names}', { n: many.length, names }) : sideOf(p),
@@ -155,14 +164,10 @@ export function PeerLine(p: PeerLineProps) {
               {p.title && p.title !== p.name ? ` · ${p.title}` : ''}
             </span>
             {child && (
-              <button
-                type="button"
-                onClick={child}
-                className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 hover:text-fg"
-              >
+              <Button variant="link" tone="muted" onClick={child} className="ml-auto shrink-0">
                 <ExternalLink className="h-3 w-3" />
                 {t('打开子对话')}
-              </button>
+              </Button>
             )}
           </div>
           {many && <TargetList targets={many} openChild={openChild ?? undefined} />}
@@ -197,14 +202,10 @@ function TargetList({ targets, openChild }: { targets: SendTarget[]; openChild?:
             </span>
           )}
           {x.child && openChild && (
-            <button
-              type="button"
-              onClick={() => openChild(x.child!)}
-              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 text-subtle hover:text-fg"
-            >
+            <Button variant="link" tone="muted" onClick={() => openChild(x.child!)} className="ml-auto shrink-0">
               <ExternalLink className="h-3 w-3" />
               {t('打开')}
-            </button>
+            </Button>
           )}
         </li>
       ))}
@@ -228,69 +229,63 @@ function PeerDialog({
   const Icon = PEER_ICON[kind]
   const text = body || subject
   return (
-    <D.Root open onOpenChange={(o) => !o && onClose()}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[min(760px,calc(100dvh-2rem))] w-[min(860px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          <header className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
-            <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
-            <div className="min-w-0 flex-1">
-              <D.Title className="truncate text-[0.875rem] font-medium" title={subject}>
-                {subject}
-              </D.Title>
-              <div className="mt-0.5 flex items-center gap-2 text-[0.75rem] text-subtle">
-                <span className={cn('rounded px-1.5 py-px leading-4', badgeTone(kind, failed))}>
-                  {peerKindText(kind)}
-                </span>
-                <span className="min-w-0 truncate">
-                  {who}
-                  {title && title !== name ? ` · ${title}` : ''}
-                </span>
-              </div>
-            </div>
-            {openChild && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  onClose()
-                  openChild()
-                }}
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {t('打开子对话')}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('复制')}
-              title={t('复制')}
-              onClick={() => void copyText(text, { done: t('已复制消息'), fail: false })}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
-            {targets && targets.length > 1 && (
-              <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>
-            )}
-            <Markdown text={text} teamNames={new Set()} />
+    // 只看不填：点到外面就关；正文是长消息，比表单弹窗宽一档
+    <Modal
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={null}
+      size="xl"
+      bare
+      closeOnOutside
+      className="max-h-[min(760px,calc(100dvh-2rem))] max-w-[860px]"
+    >
+      <header className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
+        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
+        <div className="min-w-0 flex-1">
+          <D.Title className="truncate text-[0.875rem] font-medium" title={subject}>
+            {subject}
+          </D.Title>
+          <div className="mt-0.5 flex items-center gap-2 text-[0.75rem] text-subtle">
+            <span className={cn('rounded px-1.5 py-px leading-4', badgeTone(kind, failed))}>{peerKindText(kind)}</span>
+            <span className="min-w-0 truncate">
+              {who}
+              {title && title !== name ? ` · ${title}` : ''}
+            </span>
           </div>
-          {receipt && !(targets && targets.length > 1) && (
-            <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>
-          )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        </div>
+        {openChild && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onClose()
+              openChild()
+            }}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('打开子对话')}
+          </Button>
+        )}
+        <IconButton
+          size="sm"
+          icon={Copy}
+          label={t('复制')}
+          onClick={() => void copyText(text, { done: t('已复制消息'), fail: false })}
+        />
+        <D.Close asChild>
+          <IconButton size="sm" icon={X} label={t('关闭')} />
+        </D.Close>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[0.875rem]">
+        {targets && targets.length > 1 && (
+          <p className="mb-3 text-[0.75rem] text-subtle">{targets.map((x) => x.name).join('、')}</p>
+        )}
+        <Markdown text={text} teamNames={new Set()} />
+      </div>
+      {receipt && !(targets && targets.length > 1) && (
+        <footer className="shrink-0 border-t px-5 py-2 text-[0.75rem] text-subtle">{receipt}</footer>
+      )}
+    </Modal>
   )
 }
 

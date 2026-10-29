@@ -15,6 +15,8 @@ import {
   type TraceStepId,
 } from '@/lib/load-trace'
 import { cn } from '@/lib/utils'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { IconButton } from '@/components/ui/icon-button'
 
 /**
  * 打开对话时的加载日志：像终端那样一行一步，卡在哪一眼能看到。
@@ -43,7 +45,7 @@ const RUNNING_TEXT: Record<TraceStepId, string> = {
 /** 状态图标：完成、进行中、等待中、失败、未执行 —— 关掉动效时靠形状也分得开 */
 const ICON: Record<TraceStatus, { text: string; cls: string; spin?: boolean }> = {
   waiting: { text: '·', cls: 'text-subtle' },
-  running: { text: '⟳', cls: 'text-accent', spin: true },
+  running: { text: '⟳', cls: 'text-accent-text', spin: true },
   done: { text: '✓', cls: 'text-success' },
   failed: { text: '✗', cls: 'text-danger' },
   skipped: { text: '–', cls: 'text-subtle' },
@@ -191,22 +193,12 @@ export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
           <span className="min-w-0 truncate">{failed ? failed.error : running ? RUNNING_TEXT[running.id] : ''}</span>
         </button>
         {open && (
-          <div
-            role="dialog"
-            aria-label={t('加载日志')}
-            className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop"
-          >
+          // 宽度按视口算：挂靠的是状态栏里的一小块，按父元素百分比会太窄
+          <ComposerPopover role="dialog" aria-label={t('加载日志')} width="min(420px, calc(100vw - 2rem))">
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <span className="text-[0.8125rem] font-medium">{t('加载日志')}</span>
               <span className="text-xs text-subtle">{t('后台步骤')}</span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label={t('关闭')}
-                className="ml-auto shrink-0 rounded p-0.5 text-subtle transition-colors hover:bg-sel hover:text-fg"
-              >
-                <X className="h-3 w-3" />
-              </button>
+              <IconButton size="2xs" icon={X} label={t('关闭')} onClick={() => setOpen(false)} className="ml-auto" />
             </div>
             {/* 五步都列出来：哪几步结束了、哪几步还在后台，一眼看全 */}
             <ul className="flex flex-col gap-0.5 px-3 py-2 font-mono text-[0.75rem] leading-5">
@@ -214,7 +206,7 @@ export function LoadTracePill({ steps }: { steps: TraceStep[] }) {
                 <TraceLine key={step.id} step={step} now={now} delayMs={i * ROW_FADE_STEP_MS} />
               ))}
             </ul>
-          </div>
+          </ComposerPopover>
         )}
       </div>
     </div>
@@ -255,7 +247,7 @@ function TraceLine({ step, now, delayMs }: { step: TraceStep; now: number; delay
           <span
             className={cn(
               'min-w-0 flex-1 truncate',
-              step.status === 'running' ? 'text-accent' : step.status === 'failed' ? 'text-danger' : 'text-fg',
+              step.status === 'running' ? 'text-accent-text' : step.status === 'failed' ? 'text-danger' : 'text-fg',
             )}
           >
             {LABEL[step.id]}
@@ -264,7 +256,7 @@ function TraceLine({ step, now, delayMs }: { step: TraceStep; now: number; delay
           <span
             className={cn(
               'shrink-0 tabular-nums',
-              step.status === 'running' ? 'text-accent' : step.status === 'failed' ? 'text-danger' : 'text-subtle',
+              step.status === 'running' ? 'text-accent-text' : step.status === 'failed' ? 'text-danger' : 'text-subtle',
             )}
           >
             {time ? `${state} · ${time}` : state}

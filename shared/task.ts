@@ -112,6 +112,8 @@ export function newTask(
     // 父对话的「子对话也提问」：之后新建的子对话默认问不问（设置里的全局默认由创建时填进来）
     childAskUser: input.childAskUser ?? true,
     ...(input.analysis && { analysis: input.analysis }),
+    ...(input.analysisOf && { analysisOf: input.analysisOf }),
+    ...(input.modelDesign && { modelDesign: true }),
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
@@ -257,6 +259,16 @@ export function endRun(
 type TurnHost = Timed & {
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number }
   turns: TaskTurn[]
+  messages?: { role: string; at?: string; tools?: { output?: string }[] }[]
+}
+
+/** 这一轮里工具输出的总字数：读文件、跑命令的输出都会进上下文，常常是一轮里最大的一块 */
+function toolChars(task: TurnHost, turn: TaskTurn) {
+  const from = Date.parse(turn.startedAt)
+  let n = 0
+  for (const m of task.messages ?? [])
+    if (m.role !== 'user' && Date.parse(m.at ?? '') >= from) for (const x of m.tools ?? []) n += x.output?.length ?? 0
+  return n
 }
 
 /** 开始一轮追加要求 / 对话：记下开始时间和这时的累计用量 */
@@ -305,6 +317,7 @@ export function endTurn(
   if (turn.status !== 'running') return
   const end = turnEndOf(status, reason)
   Object.assign(turn, turnStats(task, turn, now), { status, endedAt: new Date(now).toISOString() }, end ? { end } : {})
+  if (turn.sources) turn.sources.tools = toolChars(task, turn)
 }
 
 /**
@@ -1983,6 +1996,73 @@ export interface TrashRow {
   children: number
   /** 独立分支状态：active 的恢复后能接着用，其他没有可用的分支 */
   worktree: string
+}
+
+/** 推给页面时，最近这么多条消息原样给（执行中的、刚看的都在这里面） */
+export const LITE_KEEP = 30
+/** 更早的消息里，工具输出超过这么长才省 */
+export const LITE_OVER = 2000
+/** 省的时候留开头这么多：行内展开只显示前 400 字，面板工具的编号、分支名也都在开头 */
+export const LITE_HEAD = 1000
+
+/**
+ * 打开对话时推给页面的消息：更早的消息里，长的工具输出只留开头（outputCut 记着原长和取全文的位置）。
+ * 工具输出是对话体积的大头（每条最多 8000 字），页面只在打开窗口看全部时才用得到全文；
+ * 长对话整段推过去，服务端序列化、浏览器解析和常驻内存都是几 MB 到十几 MB。消息条数、id、正文都不变
+ */
+export function liteMessages(msgs: TaskMessage[], keep = LITE_KEEP): TaskMessage[] {
+  const from = msgs.length - keep
+  return msgs.map((m, idx) => {
+    if (idx >= from || !m.tools.some((x) => (x.output?.length ?? 0) > LITE_OVER)) return m
+    return {
+      ...m,
+      tools: m.tools.map((x, i) => {
+        const out = x.output ?? ''
+        if (out.length <= LITE_OVER) return x
+        let lines = 1
+        for (let k = out.indexOf('\n'); k >= 0; k = out.indexOf('\n', k + 1)) lines++
+        return { ...x, output: out.slice(0, LITE_HEAD), outputCut: { len: out.length, lines, msg: m.id, i } }
+      }),
+    }
+  })
+}
+
+/**
+ * 该自动归档的顶层对话：它和名下子对话都超过 days 天没动、都不在执行（alive 为真的也算在用）、
+ * 没有待处理的请求、最近一轮的回复看过了（橙点还亮着的不收，不然用户还没看就找不到了）
+ */
+export function autoArchivePicks(
+  list: Pick<
+    Task,
+    | 'id'
+    | 'parentTaskId'
+    | 'archived'
+    | 'imported'
+    | 'status'
+    | 'working'
+    | 'updatedAt'
+    | 'turnDoneAt'
+    | 'turnSeenAt'
+    | 'requests'
+  >[],
+  days: number,
+  now: number,
+  alive: (id: string) => boolean,
+): string[] {
+  if (!days) return []
+  const cutoff = now - days * 86_400_000
+  const kids = new Map<string, typeof list>()
+  for (const x of list) if (x.parentTaskId) kids.set(x.parentTaskId, [...(kids.get(x.parentTaskId) ?? []), x])
+  const idle = (x: (typeof list)[number]) =>
+    !alive(x.id) &&
+    !x.working &&
+    x.status !== 'running' &&
+    !x.requests?.length &&
+    (!x.turnDoneAt || x.turnSeenAt === x.turnDoneAt) &&
+    new Date(x.updatedAt).getTime() < cutoff
+  return list
+    .filter((x) => !x.parentTaskId && !x.archived && idle(x) && (kids.get(x.id) ?? []).every(idle))
+    .map((x) => x.id)
 }
 
 export function taskSummary(t: Task): Task {

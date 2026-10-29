@@ -490,7 +490,23 @@ export function createTaskStore() {
     return msgs ? Promise.all([next, msgs]).then(() => {}) : next
   }
 
+  /** 每个对话的两个文件在磁盘上占多少（数据页按项目、父子对话列占用用） */
+  async function diskSizes() {
+    const out: { id: string; bytes: number }[] = []
+    for (const meta of (await all()).values()) {
+      let bytes = 0
+      for (const f of [fileOf(meta), msgFileOf(meta)])
+        bytes += await stat(f).then(
+          (x) => x.size,
+          () => 0,
+        )
+      out.push({ id: meta.id, bytes })
+    }
+    return out
+  }
+
   return {
+    diskSizes,
     /** 所有任务，只带用户发的消息（列表、摘要、附件清理用）；要完整对话用 get */
     async list(): Promise<Task[]> {
       return [...(await all()).values()]

@@ -7,6 +7,8 @@ import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { Button } from '@/components/ui/button'
+import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Card } from '@/components/ui/card'
 import { shortTime } from '@/components/layout/SidebarTasks'
 
 /**
@@ -85,11 +87,9 @@ export function TrashSection() {
         )}
       </p>
       {rows.length === 0 ? (
-        <p className="rounded-xl border border-dashed px-3.5 py-4 text-center text-[0.8125rem] text-subtle">
-          {t('回收站是空的')}
-        </p>
+        <EmptyPanel size="sm">{t('回收站是空的')}</EmptyPanel>
       ) : (
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {rows.map((row) => (
             <div
               key={row.id}
@@ -97,7 +97,7 @@ export function TrashSection() {
               onMouseLeave={() => confirmId === row.id && setConfirmId('')}
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[0.84375rem]">{row.title}</span>
+                <span className="truncate text-[0.8125rem]">{row.title}</span>
                 <span className="text-xs leading-relaxed text-subtle">
                   {t('{time}删除', { time: shortTime(row.deletedAt) })}
                   {row.children > 0 && t(' · 含 {n} 个子对话', { n: row.children })}
@@ -128,7 +128,7 @@ export function TrashSection() {
               </Button>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </section>
   )

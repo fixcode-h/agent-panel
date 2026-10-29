@@ -48,6 +48,7 @@ import { isAnalysisTask } from '@/lib/analysis-report'
 import { TaskView } from './TaskView'
 import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { IconButton } from '@/components/ui/icon-button'
 import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
@@ -126,7 +127,7 @@ function ProjectHome({ project }: { project: Project }) {
           <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
             <div className="flex flex-col gap-2">
               <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
-                <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
+                <FolderGit2 className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={1.6} />
                 <span className="min-w-0 truncate">{project.name}</span>
               </h1>
               <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
@@ -208,15 +209,7 @@ function ProjectHome({ project }: { project: Project }) {
           {/* 面板自己的标题栏和页面标题栏同高，浮层盖住页面标题栏时也能在这里关掉 */}
           <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3">
             <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('关闭文件')}
-              title={t('关闭文件')}
-              onClick={() => setFilesOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <IconButton size="sm" icon={X} label={t('关闭文件')} onClick={() => setFilesOpen(false)} />
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <ProjectFileExplorer projectId={project.id} dir={project.path} />
@@ -318,7 +311,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                     : state === 'needs'
                       ? 'text-warning'
                       : busy
-                        ? 'text-accent'
+                        ? 'text-accent-text'
                         : 'text-subtle',
                 )}
               >
@@ -358,7 +351,7 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
   const rate = cacheRate(task)
   const item = 'flex items-center gap-1 whitespace-nowrap'
   return (
-    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.71875rem] text-subtle tabular-nums">
+    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.6875rem] text-subtle tabular-nums">
       {ms > 0 && (
         <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />

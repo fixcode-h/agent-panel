@@ -65,7 +65,7 @@ export function CopyText({ text, title = t('复制安装命令') }: { text: stri
           setTimeout(() => setDone(false), 1500)
         })
       }
-      className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border bg-field px-2 py-1 font-mono text-xs text-muted hover:text-fg"
+      className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md bg-sel/60 px-2 py-1 font-mono text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
       title={title}
     >
       <span className="truncate">{text}</span>

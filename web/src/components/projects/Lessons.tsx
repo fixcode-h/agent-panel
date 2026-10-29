@@ -1,5 +1,9 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
+import { Modal } from '@/components/ui/modal'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { Badge } from '@/components/ui/badge'
 import { toast } from '@/lib/toast'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
@@ -19,6 +23,7 @@ import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Field, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -177,32 +182,21 @@ export function LessonsEditor({
         </Button>
       </div>
       {lessons.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label={t('按标签分页')}>
-          {tabs.map(([x, n]) => (
-            <button
-              key={x}
-              type="button"
-              role="tab"
-              aria-selected={current === x}
-              // 再点一次选中的页签不取消：总要有一个页签选中
-              onClick={() => setTab(x)}
-              className={cn(
-                'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
-                current === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
-              )}
-            >
-              {x === DEFAULT_TAB ? t('默认') : x}
-              <span className="ml-1 text-subtle">{n}</span>
-            </button>
-          ))}
-        </div>
+        // 单选：再点一次选中的那块不取消，总要有一个标签页选中
+        <ChipGroup
+          label={t('按标签分页')}
+          size="sm"
+          value={current}
+          onChange={setTab}
+          options={tabs.map(([x, n]) => ({ id: x, label: x === DEFAULT_TAB ? t('默认') : x, trailing: n }))}
+        />
       )}
       {lessons.length === 0 && (
-        <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs leading-relaxed text-subtle">
+        <EmptyPanel size="sm" className="text-xs leading-relaxed">
           {t(
             '还没有教训。对话里纠正了角色的做法时，它会自己记一条；也可以在对话里用户消息下面的「记成项目教训」，或者在这里手动加。',
           )}
-        </p>
+        </EmptyPanel>
       )}
       {lessons.length > 0 && filtered.length === 0 && (
         <p className="px-1 text-xs text-subtle">
@@ -239,40 +233,35 @@ export function LessonsEditor({
                     </span>
                   </span>
                   {l.history.length > 0 && (
-                    <span
-                      className="shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted"
+                    <Badge
+                      className="shrink-0 text-[0.6875rem]"
                       title={t('你的新要求和它冲突时，角色找了两全的做法改写过它；展开看改写记录')}
                     >
                       {t('已改写')}
-                    </span>
+                    </Badge>
                   )}
                   {l.source === 'agent' && (
-                    <span
-                      className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent"
+                    <Badge
+                      tone="accent"
+                      className="shrink-0 text-[0.6875rem]"
                       title={t('角色被纠正后自己记的，看一下写得对不对')}
                     >
                       {t('角色记录')}
-                    </span>
+                    </Badge>
                   )}
                 </button>
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    className="accent-accent"
-                    checked={l.enabled}
-                    onChange={(e) => patch(l.id, { enabled: e.target.checked })}
-                  />
-                  {t('启用')}
-                </label>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={t('删除这条教训')}
-                  title={t('删除这条教训')}
+                <Checkbox
+                  checked={l.enabled}
+                  onChange={(v) => patch(l.id, { enabled: v })}
+                  label={t('启用')}
+                  className="shrink-0 items-center"
+                />
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  label={t('删除这条教训')}
                   onClick={() => onChange(lessons.filter((x) => x.id !== l.id))}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                />
               </div>
               {expanded && (
                 <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">
@@ -324,7 +313,7 @@ function LessonHistory({
       <span className="text-xs font-medium text-muted">{t('改写记录')}</span>
       <ol className="flex flex-col gap-2">
         {lesson.history.map((h, i) => (
-          <li key={i} className="flex flex-col gap-1 rounded-lg border border-dashed px-3 py-2 text-xs">
+          <li key={i} className="flex flex-col gap-1 rounded-lg bg-field px-3 py-2 text-xs">
             <span className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-muted">{t('原来：{text}', { text: h.title })}</span>
               {h.at && <span className="shrink-0 text-subtle">{timeAgo(h.at)}</span>}
@@ -489,7 +478,8 @@ function LessonFields({
                   key={x}
                   type="button"
                   onClick={() => setTags([...(lesson.tags ?? []), x])}
-                  className="cursor-pointer rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted hover:bg-sel/70 hover:text-fg"
+                  // 建议的标签点一下就加上：和 ChipGroup 没选中的块同一个底色，不描边
+                  className="chip-idle cursor-pointer rounded-full px-2 py-0.5 text-[0.6875rem] text-muted hover:text-fg"
                 >
                   + {x}
                 </button>
@@ -561,61 +551,53 @@ export function RecordLessonDialog({
     }
   }
   return (
-    <D.Root open onOpenChange={(o) => !o && onClose()}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
-            <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent" strokeWidth={1.8} />
-            <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
-              {t('记成项目教训')}
-            </D.Title>
-          </header>
-          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
-            <p className="text-[0.78125rem] leading-relaxed text-subtle">
-              {t(
-                '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
-              )}
-            </p>
-            <LessonFields
-              autoFocus
-              lesson={lesson}
-              knownTags={tagCounts(project.lessons)}
-              onChange={(p) => setLesson((l) => ({ ...l, ...p }))}
-            />
-          </div>
-          <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-5 py-3.5">
-            {onAskAgent && (
-              <Button
-                variant="ghost"
-                disabled={!!saving}
-                onClick={() => void askAgent()}
-                title={t('把这条消息交给对话里的角色，由它结合刚才的上下文整理成规则再记')}
-              >
-                {saving === 'agent' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
-                {t('让角色整理')}
-              </Button>
+    // 标题栏带图标、用衬线字，自己画；D.Title 放在标题栏里，外壳不再重复给读屏名
+    <Modal open onOpenChange={(o) => !o && onClose()} title={null} bare className="max-w-[560px]">
+      <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
+        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={1.8} />
+        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
+          {t('记成项目教训')}
+        </D.Title>
+      </header>
+      <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
+        <p className="text-[0.75rem] leading-relaxed text-subtle">
+          {t(
+            '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
+          )}
+        </p>
+        <LessonFields
+          autoFocus
+          lesson={lesson}
+          knownTags={tagCounts(project.lessons)}
+          onChange={(p) => setLesson((l) => ({ ...l, ...p }))}
+        />
+      </div>
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-5 py-3.5">
+        {onAskAgent && (
+          <Button
+            variant="ghost"
+            disabled={!!saving}
+            onClick={() => void askAgent()}
+            title={t('把这条消息交给对话里的角色，由它结合刚才的上下文整理成规则再记')}
+          >
+            {saving === 'agent' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
             )}
-            <span className="flex-1" />
-            <Button variant="secondary" onClick={onClose}>
-              {t('取消')}
-            </Button>
-            <Button disabled={!lesson.title.trim() || !!saving} onClick={() => void save()}>
-              {saving === 'save' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {t('记下')}
-            </Button>
-          </footer>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+            {t('让角色整理')}
+          </Button>
+        )}
+        <span className="flex-1" />
+        <Button variant="secondary" onClick={onClose}>
+          {t('取消')}
+        </Button>
+        <Button disabled={!lesson.title.trim() || !!saving} onClick={() => void save()}>
+          {saving === 'save' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('记下')}
+        </Button>
+      </footer>
+    </Modal>
   )
 }
 
@@ -638,13 +620,9 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
         <span className="flex-1">{t('项目教训 · {n}', { n: all.length })}</span>
         {fromAgent > 0 && <span className="font-normal">{t('其中 {n} 条是角色自己记的', { n: fromAgent })}</span>}
         {all.length > 0 && (
-          <button
-            type="button"
-            className="cursor-pointer rounded px-1 font-normal text-accent hover:underline"
-            onClick={() => openProject(project.id, 'lessons')}
-          >
+          <Button variant="link" className="px-1 font-normal" onClick={() => openProject(project.id, 'lessons')}>
             {t('全部')}
-          </button>
+          </Button>
         )}
       </h2>
       {all.length === 0 ? (
@@ -674,15 +652,11 @@ export function ProjectLessonsCard({ project }: { project: Project }) {
                     {l.paths.length ? l.paths.join('  ') : t('所有改动')}
                   </span>
                 </span>
-                {l.history.length > 0 && (
-                  <span className="shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted">
-                    {t('已改写')}
-                  </span>
-                )}
+                {l.history.length > 0 && <Badge className="shrink-0 text-[0.6875rem]">{t('已改写')}</Badge>}
                 {l.source === 'agent' && (
-                  <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+                  <Badge tone="accent" className="shrink-0 text-[0.6875rem]">
                     {t('角色记录')}
-                  </span>
+                  </Badge>
                 )}
                 {!l.enabled && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('停用')}</span>}
                 {lessonTime(l) && (
@@ -779,9 +753,9 @@ export function GlobalLessonsSection() {
         </Button>
       </div>
       {draft.length === 0 && (
-        <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs leading-relaxed text-subtle">
+        <EmptyPanel size="sm" className="text-xs leading-relaxed">
           {t('还没有全局教训。项目教训攒了一些以后，到项目设置的「教训」里点「提取全局教训」。')}
-        </p>
+        </EmptyPanel>
       )}
       <ul className="flex flex-col gap-2">
         {draft.map((l) => {
@@ -806,24 +780,18 @@ export function GlobalLessonsSection() {
                     </span>
                   </span>
                 </button>
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    className="accent-accent"
-                    checked={l.enabled}
-                    onChange={(e) => patch(l.id, { enabled: e.target.checked })}
-                  />
-                  {t('启用')}
-                </label>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={t('删除这条教训')}
-                  title={t('删除这条教训')}
+                <Checkbox
+                  checked={l.enabled}
+                  onChange={(v) => patch(l.id, { enabled: v })}
+                  label={t('启用')}
+                  className="shrink-0 items-center"
+                />
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  label={t('删除这条教训')}
                   onClick={() => setDraft((ls) => ls.filter((x) => x.id !== l.id))}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                />
               </div>
               {expanded && (
                 <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">

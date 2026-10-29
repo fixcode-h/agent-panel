@@ -14,6 +14,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/input'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
@@ -158,7 +159,7 @@ export function RequestCard({
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span
             className={cn(
-              'min-w-0 text-[0.84375rem] leading-relaxed [overflow-wrap:anywhere]',
+              'min-w-0 text-[0.8125rem] leading-relaxed [overflow-wrap:anywhere]',
               req.kind === 'command' && 'font-mono text-[0.8125rem]',
             )}
           >
@@ -184,13 +185,13 @@ export function RequestCard({
               void send('allow', true)
             }}
           >
-            <textarea
+            <Textarea
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               rows={2}
               placeholder={t('要退回修改时，写上要改的地方')}
               aria-label={t('退回意见')}
-              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[0.8125rem] outline-none focus:border-focus"
+              className="min-w-0 resize-none py-2 text-[0.8125rem]"
             />
             <div className="flex justify-end gap-2">
               <Button

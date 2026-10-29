@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
 import { TAG_HEX, TagChip } from '@/components/tags/Tags'
 
 /** 设置里的标签管理：Agent 和工作流共用一套标签，在这里新建、改名、换颜色、删除 */
@@ -86,7 +87,7 @@ export function TagsSection() {
           {t('新建')}
         </Button>
       </div>
-      <div className="flex flex-col divide-y rounded-xl bg-card shadow-card">
+      <Card className="flex flex-col divide-y">
         {tags.map((tag) => {
           const u = usage(tag.id)
           return (
@@ -126,7 +127,7 @@ export function TagsSection() {
           )
         })}
         {!tags.length && <p className="px-4 py-6 text-center text-[0.8125rem] text-subtle">{t('还没有标签')}</p>}
-      </div>
+      </Card>
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
 
 /**
  * 候选教训草稿区：从工作总结报告里提炼的半成品，看、改、丢都在这里。
@@ -43,7 +44,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
   }
 
   return (
-    <section className="rounded-xl border bg-panel" aria-label={t('候选教训草稿')}>
+    <Card as="section" aria-label={t('候选教训草稿')}>
       <button
         type="button"
         aria-expanded={open}
@@ -69,7 +70,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
               onClick={extract}
               title={t('从这份报告里找返工过的地方，生成候选草稿（同一份报告只提炼一次）')}
             >
-              <Sparkles className="h-3.5 w-3.5 text-accent" />
+              <Sparkles className="h-3.5 w-3.5 text-accent-text" />
               {t('从这份报告提炼')}
             </Button>
           </div>
@@ -97,7 +98,7 @@ export function LessonDrafts({ reportId, day }: { reportId: string; day: string 
         </>
       )}
       {day && <span className="sr-only">{t('来自 {day} 的报告', { day })}</span>}
-    </section>
+    </Card>
   )
 }
 

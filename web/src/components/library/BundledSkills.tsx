@@ -51,12 +51,12 @@ export function BundledSkills({
               key={i.name}
               selected={picked === i.name}
               onClick={() => onPick(i.name)}
-              leading={<Package className="h-4 w-4 shrink-0 text-accent" />}
+              leading={<Package className="h-4 w-4 shrink-0 text-accent-text" />}
               title={
                 <>
                   {i.name}
                   {i.files > 0 && (
-                    <span className="ml-2 font-sans text-[0.71875rem] font-normal text-subtle">
+                    <span className="ml-2 font-sans text-[0.6875rem] font-normal text-subtle">
                       {t('另有 {n} 个文件', { n: i.files })}
                     </span>
                   )}
@@ -65,7 +65,7 @@ export function BundledSkills({
               subtitle={i.description || t('没有说明')}
               monoSubtitle={false}
               trailing={
-                <span className="shrink-0 text-[0.71875rem] text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
+                <span className="shrink-0 text-[0.6875rem] text-subtle">{BUNDLED_STATUS_LABEL[i.status.shared]}</span>
               }
             />
           ))}
@@ -96,7 +96,7 @@ export function BundledBulkBar({
   const waitTitle = (key: string) => (busy && busy !== key ? t('等当前操作完成') : undefined)
   return (
     <div className="flex flex-col gap-2">
-      <p className="flex flex-wrap items-center gap-x-1.5 text-[0.71875rem] text-subtle">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-[0.6875rem] text-subtle">
         {t('装到')}
         <span className="font-mono">~/.agents/skills</span>
         {t('，所有 Agent 共用')}

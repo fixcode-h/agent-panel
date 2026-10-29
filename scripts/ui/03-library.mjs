@@ -15,6 +15,46 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('从内置工作流添加').first().click()
   await check(p, '工作流-内置列表', ['通用项目', '依赖升级与安全', '发布与回滚', '代码评审'])
   await p.keyboard.press('Escape')
+  // 流程图的撤销 / 重做（左上面包屑旁边）：刚打开时不能撤销；改一下（自动排列）能撤销，Ctrl+Z 撤销后能重做，
+  // Ctrl+Shift+Z 重做回来，最后按钮撤销回原样（工作流是自动保存的，别把演示数据改乱）
+  {
+    const undo = p.getByRole('button', { name: '撤销', exact: true })
+    const redo = p.getByRole('button', { name: '重做', exact: true })
+    const tools = p.getByRole('toolbar', { name: '画布工具' })
+    if (!(await tools.count())) errors.push('工作流-画布工具：底部没有画布工具条')
+    if (!(await undo.isDisabled().catch(() => false))) errors.push('工作流-撤销：刚打开就能撤销')
+    else {
+      await tools.getByRole('button', { name: '自动排列' }).click()
+      await settle(p)
+      if (await undo.isDisabled()) errors.push('工作流-撤销：自动排列后还不能撤销')
+      await p.evaluate(() => document.activeElement?.blur())
+      await p.keyboard.press('Control+z')
+      await settle(p)
+      if (await redo.isDisabled()) errors.push('工作流-撤销：Ctrl+Z 撤销后不能重做')
+      if (!(await undo.isDisabled())) errors.push('工作流-撤销：撤销回去以后还能再撤销')
+      await p.keyboard.press('Control+Shift+z')
+      await settle(p)
+      if (await undo.isDisabled()) errors.push('工作流-撤销：Ctrl+Shift+Z 没有重做')
+      await check(p, '工作流-撤销重做', ['工作流'])
+      await undo.click()
+      await settle(p)
+    }
+    // 「在项目里运行」：弹窗里选项目、写任务描述，没写描述时不能开始
+    await p.getByRole('button', { name: '在项目里运行' }).first().click()
+    const dlg = p.getByRole('dialog')
+    await dlg.waitFor({ timeout: 5000 }).catch(() => errors.push('工作流-在项目里运行：没有弹出选项目的窗口'))
+    if (await dlg.count()) {
+      if (!(await dlg.getByLabel('在哪个项目里执行').count())) errors.push('工作流-在项目里运行：弹窗里没有项目选择')
+      if (!(await dlg.getByRole('button', { name: '开始运行' }).isDisabled()))
+        errors.push('工作流-在项目里运行：没写任务描述也能开始')
+      await dlg.getByLabel('任务描述').fill('按这个工作流做一遍')
+      if (await dlg.getByRole('button', { name: '开始运行' }).isDisabled())
+        errors.push('工作流-在项目里运行：写了描述还不能开始')
+      await check(p, '工作流-在项目里运行', ['在项目里运行', '任务描述'])
+      await p.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+    }
+  }
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
   const inspector = p.locator('aside[aria-label="属性"]')
@@ -116,9 +156,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await report.count())) errors.push('AI 分析：报告没有画在右侧的功能面板里')
   if (await p.locator('main').getByText('工作流优化', { exact: true }).count())
     errors.push('AI 分析：对话区里还铺着分析报告')
-  // 分析对话的标题前有「分析」标签，和普通对话区分开；「提问」默认不勾选
-  if (!(await p.getByRole('dialog').locator('[data-analysis-mark]').count()))
-    errors.push('AI 分析：标题前没有「分析」标签')
+  // AI 分析窗口里嵌的对话不再画自己的页签行（标题和窗口标题栏重复）：对话的操作按钮挂到窗口标题栏上，
+  // 「分析」标签由窗口标题栏的「AI 分析」代替；「提问」默认不勾选
+  if (await p.getByRole('dialog').getByRole('tablist', { name: '对话页签' }).count())
+    errors.push('AI 分析：窗口里还画着对话自己的页签行，和窗口标题栏重复')
+  if (!(await p.getByRole('dialog').locator('header').getByRole('button', { name: '分析报告' }).count()))
+    errors.push('AI 分析：对话的功能面板开关没有挂到窗口标题栏上')
   if (
     (await p.getByRole('dialog').getByRole('button', { name: 'AI 有问题时问我' }).getAttribute('aria-pressed')) !==
     'false'
@@ -296,7 +339,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => {})
   await p.goto(base + '#/agents')
-  await check(p, 'Agent', ['命令预览', '评审'])
+  await check(p, 'Agent', ['命令预览', '主理'])
   // 列表栏标题不能被头部按钮挤得截断（用户报过：「角色」被压成半个字）：工作流页同一个列表栏，一起查
   for (const [hash, pane] of [
     ['#/agents', '角色列表'],
@@ -314,12 +357,26 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // 原来的「按标签 / 按分类」切换已经去掉，列表上方不再有分组方式可选
   const rolePane = p.locator('section[aria-label="角色列表"]')
   if (await rolePane.getByRole('radio', { name: '按分类' }).count()) errors.push('角色页：还留着「按分类」的分组切换')
-  // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
+  // 高级角色、基本角色分两页（列表栏顶上的分段）：默认先看高级角色，必备组里是主理、执行、分析
+  const layers = rolePane.getByRole('radiogroup', { name: '角色层' })
   const core = p.locator('[data-group-id="#core"]')
+  if (!(await layers.count())) errors.push('角色页：没有「高级角色 / 基本角色」分页')
+  else {
+    const adv =
+      (await core
+        .first()
+        .textContent()
+        .catch(() => '')) ?? ''
+    if (!/必备\s*·\s*3/.test(adv)) errors.push(`角色页：高级角色页的必备分组计数不是 3（读到「${adv.slice(0, 20)}」）`)
+    if (!(await core.getByRole('button', { name: /^主理/ }).count())) errors.push('角色页：高级角色页没有「主理」')
+    await check(p, 'Agent-高级角色', ['主理', '执行'])
+    await layers.getByRole('radio', { name: /^基本角色/ }).click()
+  }
+  // 用 data-group-id / role=group 定位：分类名和标签、角色名可能同名，按文字找会指错组
   if (!(await core.count())) errors.push('角色页：没有「必备」分组')
   else {
     const text = (await core.first().textContent()) ?? ''
-    if (!/必备\s*·\s*7/.test(text)) errors.push(`Agent：必备分组的计数不是 7（读到「${text.slice(0, 20)}」）`)
+    if (!/必备\s*·\s*4/.test(text)) errors.push(`Agent：基本角色页必备分组的计数不是 4（读到「${text.slice(0, 20)}」）`)
     // 默认全部展开：必备组里的角色直接可见（评审也是必备角色，子对话收尾前派它看 diff）
     if (!(await core.getByRole('button', { name: /^评审/ }).count())) errors.push('角色页：必备分组默认没有展开')
   }
@@ -327,7 +384,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   const quality = rolePane.getByRole('group', { name: '质量', exact: true })
   if (!(await quality.count())) errors.push('角色页：没有「质量」分类分组')
   else {
-    if (!/质量\s*·\s*2/.test((await quality.first().textContent()) ?? ''))
+    if (!/质量\s*·\s*3/.test((await quality.first().textContent()) ?? ''))
       errors.push('角色页：「质量」分组的标题没有显示条数')
     if (!(await quality.getByRole('button', { name: /^测试工程师/ }).count()))
       errors.push('角色页：「质量」分类默认没有展开')

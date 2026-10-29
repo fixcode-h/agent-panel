@@ -6,7 +6,16 @@ import { test } from 'node:test'
 import type { Task, TaskMessage } from '@shared/schema'
 import { EVOLUTION_LANG } from '@shared/task-export'
 import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
-import { findReport, fixHead, fixState, isAnalysisTask, stripInitJson } from './analysis-report'
+import { DIAGNOSIS_LANG, parseDiagnosis, stripDiagnosis } from '@shared/diagnosis'
+import {
+  analysisTiming,
+  findReport,
+  fixHead,
+  fixState,
+  isAnalysisTask,
+  stripInitJson,
+  timingMs,
+} from './analysis-report'
 
 const msg = (id: string, role: TaskMessage['role'], text: string) =>
   ({ id, role, text, agentId: '', step: '', tools: [], at: '' }) as unknown as TaskMessage
@@ -26,6 +35,46 @@ test('认出执行分析和教训评审的报告，取最新的一份', () => {
     msg('b', 'agent', review),
   ])
   assert.equal(findReport(both)?.kind, 'lessons')
+  // 排查的结构化结论：认成 diagnosis；证据、修复里的文件补进相关文件，写坏的单条跳过
+  const diag =
+    '原因\n\n```' +
+    DIAGNOSIS_LANG +
+    '\n' +
+    JSON.stringify({
+      rootCause: { title: '没判空' },
+      confidence: 'high',
+      impacts: [{ text: '白屏', severity: 'high' }, { severity: 'low' }],
+      evidence: [{ file: 'a.ts', line: '7', note: '这里' }],
+      fixes: [{ file: 'b.ts', change: '判空' }],
+      files: ['a.ts'],
+    }) +
+    '\n```'
+  assert.equal(findReport(task([msg('u', 'user', '排查'), msg('a', 'agent', diag)]))?.kind, 'diagnosis')
+  const ok = parseDiagnosis(diag)
+  assert.ok(ok?.ok)
+  assert.deepEqual(ok.value.files, ['a.ts', 'b.ts'])
+  assert.equal(ok.value.impacts.length, 1)
+  assert.equal(ok.value.evidence[0].line, 7)
+  assert.equal(stripDiagnosis(diag), '原因')
+  // 写坏了（JSON 不合法、缺根因）不吞掉：给出原文，对话区也照原文留着
+  const bad = '```' + DIAGNOSIS_LANG + '\n{"rootCause": {}}\n```'
+  const failed = parseDiagnosis(bad)
+  assert.ok(failed && !failed.ok && failed.raw === '{"rootCause": {}}')
+  assert.equal(stripDiagnosis(bad), bad)
+  assert.equal(parseDiagnosis('```' + DIAGNOSIS_LANG + '\n{oops\n```')?.ok, false)
+  // 分析用时：有轮次用最近一轮的起止，在跑时从开始算到现在；没有轮次用累计执行时间
+  const turn = (startedAt: string, endedAt: string, status: Task['status']) =>
+    ({ startedAt, endedAt, status }) as Task['turns'][number]
+  const ended = analysisTiming({
+    runMs: 999_000,
+    runStartedAt: '',
+    turns: [turn('2026-01-01T00:00:00Z', '2026-01-01T00:00:46Z', 'done')],
+  })
+  assert.equal(ended && timingMs(ended), 46_000)
+  const live = analysisTiming({ runMs: 0, runStartedAt: '', turns: [turn('2026-01-01T00:00:00Z', '', 'running')] })
+  assert.equal(live && timingMs(live, Date.parse('2026-01-01T00:01:05.400Z')), 65_000)
+  assert.equal(analysisTiming({ runMs: 0, runStartedAt: '', turns: [] }), undefined)
+  assert.equal(timingMs(analysisTiming({ runMs: 12_300, runStartedAt: '', turns: [] })!), 12_000)
 })
 
 test('初始化的 JSON 只在初始化对话里算报告', () => {

@@ -138,9 +138,9 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   const shown = info?.(chip)
   // 样子和消息里的卡片一样（AttachmentView.tsx 的 CHIP_CLASS），发出去前后看起来是同一张
   el.className = cn(
-    'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
-    style.accent ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
-    attach && 'cursor-pointer transition-colors hover:border-subtle/60 hover:bg-field',
+    'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
+    style.accent ? 'bg-accent-soft text-accent-text' : 'bg-sel/70 text-fg',
+    attach && 'cursor-pointer transition-colors hover:bg-sel',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   // 引用卡片只显示开头一小段，鼠标停上去看完整原文

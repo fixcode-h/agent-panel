@@ -5,6 +5,7 @@ import { t } from '@shared/i18n'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { StatusDot } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 
 /** 侧栏里的工作流摘要：名称、团队、是否就绪，点击跳到工作流 */
@@ -13,10 +14,10 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   const { go } = useNav()
   if (!workflow)
     return (
-      <section className="rounded-xl bg-card shadow-card p-4">
+      <Card as="section" padding="md">
         <h3 className="mb-1 text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         <p className="text-xs text-subtle">{t('还没有指定工作流。')}</p>
-      </section>
+      </Card>
     )
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(workflow.mainAgentId)
@@ -24,14 +25,14 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
     .map((id) => byId.get(id))
     .filter(Boolean)
   return (
-    <section className="rounded-xl bg-card shadow-card p-4">
+    <Card as="section" padding="md">
       <div className="mb-3 flex items-center gap-2">
         <h3 className="text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         {source && <span className="text-xs text-subtle">{source}</span>}
       </div>
       <button
         onClick={() => go({ page: 'workflows', id: workflow.id })}
-        className="mb-3 flex w-full cursor-pointer items-center gap-2 rounded-lg border bg-field px-3 py-2 text-left hover:border-line-strong"
+        className="mb-3 flex w-full cursor-pointer items-center gap-2 rounded-lg bg-sel/50 px-3 py-2 text-left transition-colors hover:bg-sel"
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[0.8125rem] font-medium">{workflow.name}</span>
@@ -47,7 +48,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
         <div className="flex items-center gap-2.5 rounded-lg bg-accent-soft p-2">
           <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
           <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
-          <Crown className="h-3.5 w-3.5 text-accent" />
+          <Crown className="h-3.5 w-3.5 text-accent-text" />
         </div>
       )}
       {subs.length > 0 && (
@@ -60,6 +61,6 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
           ))}
         </div>
       )}
-    </section>
+    </Card>
   )
 }

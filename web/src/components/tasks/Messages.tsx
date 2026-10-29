@@ -2,8 +2,8 @@ import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import type { AnalysisScope } from '@shared/analysis-home'
 import {
   Bot,
-  Brain,
   ChevronRight,
+  Brain,
   CircleAlert,
   GitMerge,
   Info,
@@ -36,6 +36,7 @@ import { convStateText, deliveryText } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
+import { stripDiagnosis } from '@shared/diagnosis'
 import { stripInitJson } from '@/lib/analysis-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ReplyHeader } from '@/components/ui/reply-header'
@@ -171,6 +172,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
   useEffect(() => {
     if (live && shown && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [text, live, shown])
+  // 思考过程保持原来的样子（用户要求）：一行小字按钮，展开后左边一道竖线的正文，不做成过程行
   return (
     <div className="flex flex-col gap-1.5">
       <button
@@ -178,7 +180,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
         aria-expanded={shown}
         className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
       >
-        <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
+        <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent-text')} />
         <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
         {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtDuration(thinkingMs)}</span>}
         {!live && !!ms && <ModelTime ms={ms} />}
@@ -407,7 +409,7 @@ const MessageBody = memo(
           {m.text && (
             <Markdown
               text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
-                stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text)))),
+                stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
               )}
               teamNames={teamNames}
               live={live}
@@ -539,7 +541,7 @@ function ResumeChild({ id }: { id: string }) {
           .finally(() => setBusy(false))
       }}
       title={t('让它接着做：重新占执行位，从停下的地方继续')}
-      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent hover:bg-sel disabled:opacity-50"
+      className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-[0.6875rem] text-accent-text hover:bg-sel disabled:opacity-50"
     >
       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
       {t('继续')}
@@ -664,7 +666,7 @@ export function Msgs({
 }
 
 /** 还在跑的行前面的转圈图标：和后台命令、子对话用同一套外观 */
-const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+const spinning = <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
 
 /**
  * 运行区里的工作流运行（计划触发的那次、工作流任务自己跑的那次都一样）：和后台命令一样放在总结下面，

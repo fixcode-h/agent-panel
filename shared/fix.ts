@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { diagnosisPromptRules } from './diagnosis.ts'
 import { promptLangRules } from './prompt-lang.ts'
 
 /**
@@ -136,5 +137,7 @@ export function fixPrompt(input: FixInput, env: { os: string; cwd: string; extra
           '3. 需要用户自己做的（例如要管理员权限、要登录、要付费）说清楚具体怎么做，可以给出能直接复制运行的命令。',
           '4. 最后用几句话说明：原因是什么、你做了什么、现在好了没有、还需要用户做什么。用户之后可能在这个对话里接着问。',
         ]),
+    // 要直接动手做的不写结论块：那种对话的结果是「做完了什么」，不是待用户决定的根因和修复建议
+    ...(ask && input.act ? [] : ['', diagnosisPromptRules()]),
   ].join('\n')
 }

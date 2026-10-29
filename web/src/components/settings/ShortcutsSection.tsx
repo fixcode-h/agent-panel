@@ -11,6 +11,7 @@ import { hotkeyFromEvent, hotkeyLabel, parseHotkey } from '@/lib/hotkey'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
+import { Kbd } from '@/components/ui/kbd'
 import { Group, Row } from '@/components/settings/parts'
 
 /** 录键框：点一下进入录音，按下想用的键就写进去；Esc 取消、Backspace 恢复默认 */
@@ -52,7 +53,7 @@ function HotkeyField({ label, value, onChange }: { label: string; value: string;
       onPointerDown={(e) => e.stopPropagation()}
       className={cn(
         'flex h-9 w-[240px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-[0.8125rem] transition-colors',
-        recording ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-field hover:border-focus',
+        recording ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-field hover:border-focus',
       )}
     >
       <Keyboard className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -107,11 +108,9 @@ export function ShortcutsSection({ value, onChange }: { value: ElementPicker; on
         >
           <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
             <MousePointerClick className="h-4 w-4 text-subtle" />
-            <kbd className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.75rem]">Esc</kbd>
+            <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">Esc</Kbd>
             <span>{t('或')}</span>
-            <kbd className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.75rem]">
-              {hotkeyLabel(value.hotkey)}
-            </kbd>
+            <Kbd className="h-auto px-1.5 py-0.5 text-[0.75rem]">{hotkeyLabel(value.hotkey)}</Kbd>
           </div>
         </Row>
         {!isDefault && (

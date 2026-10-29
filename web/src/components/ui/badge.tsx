@@ -4,9 +4,11 @@ import { cn } from '@/lib/utils'
 
 const tones = {
   neutral: 'bg-sel/70 text-muted',
-  accent: 'bg-accent-soft text-accent',
+  accent: 'bg-accent-soft text-accent-text',
   success: 'bg-success/12 text-success',
   warning: 'bg-warning/12 text-warning',
+  // 失败计数这类：和 StatusPill 的 err 同一个底色，但字号、高度跟 Badge 走，放在行里不撑高
+  danger: 'bg-danger/10 text-danger',
 }
 
 export function Badge({

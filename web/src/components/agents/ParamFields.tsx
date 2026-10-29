@@ -20,6 +20,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { HelpTip } from '@/components/ui/help-tip'
 import { Segmented } from '@/components/ui/segmented'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { IconButton } from '@/components/ui/icon-button'
 
 /** 一个参数的输入控件：按类型是下拉、多选、开关、文本或数字 */
 export function ParamControl({
@@ -47,27 +49,14 @@ export function ParamControl({
       )
     case 'multi':
       return (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label={paramLabel(p)}>
-          {p.options.map((o) => {
-            const on = Array.isArray(v) && v.includes(o)
-            return (
-              <button
-                key={o}
-                type="button"
-                aria-pressed={on}
-                onClick={() => {
-                  const cur = Array.isArray(v) ? v : []
-                  onChange(on ? cur.filter((x) => x !== o) : [...cur, o])
-                }}
-                className={cn(
-                  'h-7 cursor-pointer rounded-md border px-2 text-[0.78125rem] transition-colors',
-                  on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:text-fg',
-                )}
-              >
-                {o}
-              </button>
-            )
-          })}
+        <div className="flex flex-wrap gap-1.5">
+          <ChipGroup
+            multiple
+            label={paramLabel(p)}
+            value={Array.isArray(v) ? v : []}
+            onChange={(next) => onChange(next)}
+            options={p.options.map((o) => ({ id: o, label: o }))}
+          />
           {!p.options.length && <span className="text-xs text-subtle">{t('还没有选项')}</span>}
         </div>
       )
@@ -189,13 +178,9 @@ export function ParamsForm({
                 <span className={cn('truncate font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
                 {p.ask && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('必填')}</span>}
                 {changed && !p.ask && (
-                  <button
-                    type="button"
-                    onClick={() => set(p.key, undefined)}
-                    className="shrink-0 cursor-pointer text-[0.6875rem] text-accent"
-                  >
+                  <Button variant="link" onClick={() => set(p.key, undefined)} className="shrink-0 text-[0.6875rem]">
                     {t('恢复默认')}
-                  </button>
+                  </Button>
                 )}
               </>
             }
@@ -327,7 +312,7 @@ export function ParamsEditor({
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 aria-expanded={open}
               >
-                <code className={cn('shrink-0 font-mono text-[0.78125rem]', badKey ? 'text-danger' : 'text-accent')}>
+                <code className={cn('shrink-0 font-mono text-[0.75rem]', badKey ? 'text-danger' : 'text-accent-text')}>
                   {`{{${p.key}}}`}
                 </code>
                 <span className="truncate text-[0.8125rem]">{p.label}</span>
@@ -335,7 +320,7 @@ export function ParamsEditor({
                   <span
                     className={cn(
                       'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
-                      brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent',
+                      brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent-text',
                     )}
                     title={linkSummary(value, i)}
                   >
@@ -349,25 +334,19 @@ export function ParamsEditor({
                   {p.ask ? t('每次询问') : t('默认：{v}', { v: valueText(p.default) || '—' })}
                 </span>
               </button>
-              <Button variant="ghost" size="icon-sm" aria-label={t('上移')} onClick={() => move(i, -1)}>
-                <ArrowUp className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon-sm" aria-label={t('下移')} onClick={() => move(i, 1)}>
-                <ArrowDown className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t('删除参数')}
+              <IconButton icon={ArrowUp} size="sm" label={t('上移')} onClick={() => move(i, -1)} />
+              <IconButton icon={ArrowDown} size="sm" label={t('下移')} onClick={() => move(i, 1)} />
+              <IconButton
+                icon={Trash2}
+                size="sm"
+                label={t('删除参数')}
                 onClick={() => {
                   const rest = value.filter((_, j) => j !== i)
                   // 还有同名参数时规则照旧指向它；否则引用这个参数的联动规则一起去掉
                   onChange(rest.some((x) => x.key === p.key) ? rest : relink(rest, p.key, ''))
                   setOpenKey(null)
                 }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
+              />
             </div>
             {open && (
               <div className="flex flex-col gap-3 border-t px-3 py-3">
@@ -381,7 +360,7 @@ export function ParamsEditor({
                       className={cn('h-9 font-mono text-[0.8125rem]', badKey && 'border-danger')}
                     />
                     {badKey && (
-                      <span className="text-[0.71875rem] text-danger">
+                      <span className="text-[0.6875rem] text-danger">
                         {dupKeys.has(p.key) ? t('参数名重复') : t('参数名只能用字母、数字、下划线、横线和中文')}
                       </span>
                     )}
@@ -502,16 +481,13 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
                 {i + 1}
               </span>
               <span className="truncate px-0.5">{o}</span>
-              <button
-                type="button"
+              <IconButton
+                icon={X}
                 draggable={false}
-                aria-label={t('删除选项「{name}」', { name: o })}
+                label={t('删除选项「{name}」', { name: o })}
                 title={t('删除')}
                 onClick={() => onChange(value.filter((_, j) => j !== i))}
-                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              />
             </li>
           ))}
         </ul>
@@ -546,7 +522,7 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
         className={cn('h-9 text-[0.8125rem]', error && 'border-danger')}
         aria-label={t('新选项')}
       />
-      {error && <span className="text-[0.71875rem] text-danger">{error}</span>}
+      {error && <span className="text-[0.6875rem] text-danger">{error}</span>}
     </div>
   )
 }
@@ -610,26 +586,19 @@ function Chips({
   onToggle: (v: string) => void
   label: string
 }) {
+  const cur = items.filter((o) => picked(o.value)).map((o) => o.value)
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
-      {items.map((o) => {
-        const on = picked(o.value)
-        return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onToggle(o.value)}
-            className={cn(
-              'h-7 cursor-pointer rounded-md border px-2 text-[0.75rem] transition-colors',
-              on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:text-fg',
-            )}
-          >
-            {o.label}
-          </button>
-        )
-      })}
-    </div>
+    <ChipGroup
+      multiple
+      label={label}
+      value={cur}
+      // ChipGroup 给的是点完之后的整组；这里的调用方按「点了哪一块」处理，找出变了的那一个
+      onChange={(next) => {
+        const hit = next.find((x) => !cur.includes(x)) ?? cur.find((x) => !next.includes(x))
+        if (hit !== undefined) onToggle(hit)
+      }}
+      options={items.map((o) => ({ id: o.value, label: o.label }))}
+    />
   )
 }
 
@@ -662,14 +631,14 @@ function ParamLinks({
     return (
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted">{t('联动')}</span>
-        <p className="text-[0.71875rem] text-subtle">
+        <p className="text-[0.6875rem] text-subtle">
           {t('前面还没有单选、多选或开关参数。把它排在这类参数后面，就能按前面的选择决定显示它、或者换一组选项。')}
         </p>
       </div>
     )
   const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-dashed px-3 py-2.5">
+    <div className="flex flex-col gap-3 rounded-lg bg-field px-3 py-2.5">
       <div className="flex items-center gap-1.5">
         <Link2 className="h-3.5 w-3.5 text-subtle" />
         <span className="text-xs font-medium text-muted">{t('联动')}</span>
@@ -680,7 +649,7 @@ function ParamLinks({
         </HelpTip>
       </div>
       {broken && (
-        <p className="-mt-1 text-[0.71875rem] text-danger">
+        <p className="-mt-1 text-[0.6875rem] text-danger">
           {t('依赖的参数不在它前面了（删掉、改名或者排到了后面），规则暂不生效。重新选一下，或者把它挪回去。')}
         </p>
       )}
@@ -738,7 +707,7 @@ function ParamLinks({
                   onToggle={(v) => onChange({ when: { ...p.when!, values: toggle(p.when!.values, v) } })}
                 />
                 {!p.when.values.length && (
-                  <span className="text-[0.71875rem] text-subtle">
+                  <span className="text-[0.6875rem] text-subtle">
                     {p.when.not
                       ? t('没选取值：「{name}」为空时显示', { name: paramLabel(whenDep) })
                       : t('没选取值：「{name}」有值就显示', { name: paramLabel(whenDep) })}
@@ -771,7 +740,7 @@ function ParamLinks({
           </div>
           {p.optionsBy && byDep && (
             <div className="flex flex-col gap-2 pl-0.5">
-              <p className="text-[0.71875rem] text-subtle">
+              <p className="text-[0.6875rem] text-subtle">
                 {t('「{name}」选不同值时这里能选哪些；默认全部可选，一个都不选表示这时不显示这个参数。', {
                   name: paramLabel(byDep),
                 })}
@@ -788,12 +757,12 @@ function ParamLinks({
                 }
                 return (
                   <div key={c.value} className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2 text-[0.71875rem]">
+                    <div className="flex items-center gap-2 text-[0.6875rem]">
                       <span className="font-medium text-muted">{t('选「{v}」时', { v: c.label })}</span>
                       {limited ? (
-                        <button type="button" className="cursor-pointer text-accent" onClick={() => setRow(undefined)}>
+                        <Button variant="link" onClick={() => setRow(undefined)}>
                           {t('恢复全部可选')}
-                        </button>
+                        </Button>
                       ) : (
                         <span className="text-subtle">{t('全部可选')}</span>
                       )}

@@ -15,20 +15,19 @@ export const SEARCH_DEFAULT_RESULTS = 5
 export const SEARCH_MAX_RESULTS = 10
 /** 搜索词至少几个字：一个字的查询基本搜不到有用的东西，还容易被搜索源限流 */
 export const SEARCH_MIN_QUERY_CHARS = 2
-/** 搜索词最多几个字：degoog 这类服务对超长查询会直接报错 */
+/** 搜索词最多几个字：聚合类搜索服务对超长查询会直接报错 */
 export const SEARCH_MAX_QUERY_CHARS = 400
 /** 域名过滤最多几个：再多就等于没过滤 */
 export const SEARCH_MAX_DOMAINS = 10
 /** 一条结果摘要最多留多长，长摘要留给 web_fetch 去取 */
 export const SEARCH_SNIPPET_CHARS = 500
-/** 搜索请求最多等多久：degoog 这类聚合服务要把查询转给几个引擎，给得比普通接口宽一些 */
+/** 搜索请求最多等多久：SearXNG 这类聚合服务要把查询转给几个引擎，给得比普通接口宽一些 */
 export const SEARCH_TIMEOUT_MS = 20_000
 
 /** DeepSeek 官方搜索的端点路径：官方文档给的固定路径；设置里的地址可以带自己的前缀路径（例如自建代理），这里只往后追加 */
 const DEEPSEEK_SEARCH_PATH = '/v1/tools/search'
-/** DeepSeek 一次只接受 1–50 条，超出范围上游直接报错 */
-const DEEPSEEK_SEARCH_MIN_COUNT = 1
-const DEEPSEEK_SEARCH_MAX_COUNT = 50
+/** DeepSeek 的 query 最多 128 个字（按 Unicode 字符数，含拼进去的 site: 过滤），超了上游直接报错 */
+export const DEEPSEEK_MAX_QUERY_CHARS = 128
 
 /** 抓取正文的默认超时（秒）；Command Code 是 60 秒 */
 export const FETCH_DEFAULT_TIMEOUT_SECONDS = 60
@@ -51,7 +50,9 @@ export interface SearchProvider {
   needsKey: boolean
   /** 默认地址；为空表示必须由用户填（例如自建的 searxng） */
   endpoint: string
-  /** 发出去的请求：各服务的参数和鉴权方式不同 */
+  /** 设置页里这个源的补充说明（计费、隐私）；不写就不显示 */
+  note?: string
+  /** 发出去的请求：各服务的参数和鉴权方式不同；超出这个源自己的限制（如 DeepSeek 的 128 字）时直接抛错，原文交给模型 */
   build: (q: SearchRequest & { count: number }) => { url: string; init: RequestInit }
   /** 从响应 JSON 里取结果，字段名不同的在这里对齐成 title / url / snippet */
   parse: (body: unknown) => SearchHit[]
@@ -87,31 +88,23 @@ export interface PageWindow {
 }
 
 /** 从响应里按一组字段名取结果；字段缺失、类型不对的都跳过，不因为一条脏数据整次失败 */
-function pick(body: unknown, at: (b: any) => unknown, fields: { title: string; url: string; snippet: string }) {
+// snippet 可以给一串字段名：按顺序取第一个非空的（有的源摘要字段时有时无，例如 DeepSeek 的 snippet / summary）
+function pick(
+  body: unknown,
+  at: (b: any) => unknown,
+  fields: { title: string; url: string; snippet: string | string[] },
+) {
   const list = at(body)
   if (!Array.isArray(list)) return []
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+  const snippetFields = Array.isArray(fields.snippet) ? fields.snippet : [fields.snippet]
   return list
     .map((raw: any) => ({
       title: str(raw?.[fields.title]),
       url: str(raw?.[fields.url]),
-      snippet: str(raw?.[fields.snippet]).slice(0, SEARCH_SNIPPET_CHARS),
+      snippet: (snippetFields.map((f) => str(raw?.[f])).find(Boolean) ?? '').slice(0, SEARCH_SNIPPET_CHARS),
     }))
     .filter((h) => h.url && /^https?:\/\//i.test(h.url))
-}
-
-/** degoog：免费的 metasearch 聚合（把查询转给 Brave 等），不需要密钥，默认源；
- * 返回固定 100 条，条数由面板自己截断；用户也可以换成自建实例 */
-const Degoog: SearchProvider = {
-  id: 'degoog',
-  label: t('Degoog（免密钥）'),
-  needsKey: false,
-  endpoint: 'https://degoog.org/api/search',
-  build: ({ query, endpoint }) => ({
-    url: `${endpoint}${endpoint.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`,
-    init: { method: 'GET', headers: { accept: 'application/json' } },
-  }),
-  parse: (body) => pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: 'snippet' }),
 }
 
 /** searxng：自己搭的实例，地址必须填（公共实例基本都关了 JSON 接口） */
@@ -158,38 +151,68 @@ const Tavily: SearchProvider = {
 }
 
 /**
- * DeepSeek 官方搜索：面板显式调它的搜索端点（不是模型侧联网，/chat/completions 也没有联网参数），
- * 用的是 DeepSeek 自己的 API 密钥，不是 litellm 中转的密钥；按量计费，所以不设成默认。
+ * 把域名过滤写进搜索词（site: / -site:）：DeepSeek 这类接口没有单独的域名参数，只认搜索语法。
+ * 面板拿到结果后仍按 domainAllowed 再筛一遍，上游没按语法过滤时也不会混进别的站点
+ */
+export function querySiteFilters(q: { query: string; allowedDomains: string[]; blockedDomains: string[] }) {
+  let query = q.query
+  if (q.allowedDomains.length) query += ` site:${q.allowedDomains.join(' OR site:')}`
+  if (q.blockedDomains.length) query += ` ${q.blockedDomains.map((d) => `-site:${d}`).join(' ')}`
+  return query
+}
+
+/**
+ * DeepSeek 官方搜索（Search API）：面板显式调它的搜索端点，用的是 DeepSeek 自己的 API 密钥。
+ * 默认源：用户多半已经有 DeepSeek 的 key；没填密钥时直接报错让用户去填，不悄悄换成别的源。
+ * 只有自己不会联网搜索的 Agent（Pi）才走面板这一套，Claude Code、Codex、Command Code 用它们自带的搜索
+ * 请求体只有 query（条数用接口默认的 10 条，面板再按 numResults 截断）；
+ * 结果里摘要字段有 snippet / summary / content 几种，按顺序取第一个非空的
  */
 const Deepseek: SearchProvider = {
   id: 'deepseek',
-  label: t('DeepSeek 官方搜索（需要密钥）'),
+  label: t('DeepSeek（官方，需要密钥）'),
   needsKey: true,
+  note: t(
+    'DeepSeek 官方的搜索接口，用 DeepSeek 平台的 API key（不是中转站的 key）。按次计费：约 $0.75 / 千次成功请求，失败和没有结果的请求不计费。',
+  ),
   // 地址可覆盖（可带自建代理的前缀路径），末尾统一追加官方端点；注意设置里那个地址是所有源共用的一个字段
   endpoint: 'https://api.deepseek.com',
-  build: ({ query, count, key, endpoint }) => ({
-    url: `${endpoint.replace(/\/+$/, '')}${DEEPSEEK_SEARCH_PATH}`,
-    init: {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        query,
-        count: Math.min(DEEPSEEK_SEARCH_MAX_COUNT, Math.max(DEEPSEEK_SEARCH_MIN_COUNT, count)),
-      }),
-    },
-  }),
-  parse: (body) => pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: 'snippet' }),
+  build: (q) => {
+    const query = querySiteFilters(q)
+    // 按 Unicode 字符数算：中文、emoji 在上游都按一个字符计
+    if ([...query].length > DEEPSEEK_MAX_QUERY_CHARS)
+      throw new Error(
+        t('DeepSeek 搜索的 query（含 site: 域名过滤）最多 {n} 个字，现在是 {len} 个字：缩短搜索词或少给几个域名', {
+          n: DEEPSEEK_MAX_QUERY_CHARS,
+          len: [...query].length,
+        }),
+      )
+    return {
+      url: `${q.endpoint.replace(/\/+$/, '')}${DEEPSEEK_SEARCH_PATH}`,
+      init: {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          authorization: `Bearer ${q.key}`,
+        },
+        body: JSON.stringify({ query }),
+      },
+    }
+  },
+  parse: (body) =>
+    pick(body, (b) => b?.results, { title: 'title', url: 'url', snippet: ['snippet', 'summary', 'content'] }),
 }
 
 /** 可选的搜索源：设置界面按这个列表显示，第一个是默认 */
-export const SEARCH_PROVIDERS: SearchProvider[] = [Degoog, Searxng, Brave, Tavily, Deepseek]
-export const DEFAULT_SEARCH_PROVIDER = Degoog.id
+export const SEARCH_PROVIDERS: SearchProvider[] = [Deepseek, Searxng, Brave, Tavily]
+export const DEFAULT_SEARCH_PROVIDER = Deepseek.id
 
 /** 可选的搜索源 id：设置文件里写成别的值时由 schema 回退到默认源 */
 export const SEARCH_PROVIDER_IDS = SEARCH_PROVIDERS.map((p) => p.id) as [string, ...string[]]
 
 export function searchProvider(id: string): SearchProvider {
-  return SEARCH_PROVIDERS.find((p) => p.id === id) ?? Degoog
+  return SEARCH_PROVIDERS.find((p) => p.id === id) ?? Deepseek
 }
 
 /**

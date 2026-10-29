@@ -1,14 +1,18 @@
 import type { Agent, Task, TaskMessage } from '@shared/schema'
 import { EVOLUTION_LANG } from '@shared/task-export'
 import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
+import { DIAGNOSIS_LANG } from '@shared/diagnosis'
 
 /**
  * AI 分析对话的「分析报告」：分析结果不再固定在输入框上方，而是画在对话右侧的功能面板里（ADR 0016）。
  * 这里是纯逻辑：认出哪条回复是报告、报告是哪种、报告里的某一项有没有在这个对话里修过。
  */
 
-/** 右侧功能面板能画的报告：执行分析（代码问题 + 角色、工作流优化）、教训评审、项目初始化的推荐设置 */
-export type ReportKind = 'run' | 'lessons' | 'init'
+/**
+ * 右侧功能面板能画的报告：执行分析（代码问题 + 角色、工作流优化）、教训评审、项目初始化的推荐设置、
+ * 排查的结构化结论（根因、证据、修复，见 shared/diagnosis.ts）
+ */
+export type ReportKind = 'run' | 'lessons' | 'init' | 'diagnosis'
 
 /** 是不是 AI 分析开出的对话：新对话看 analysis，旧对话看是不是用的必备角色「分析」 */
 export function isAnalysisTask(
@@ -56,11 +60,13 @@ export function findReport(
   const run = reportMessage(task, fence(EVOLUTION_LANG))
   const lessons = reportMessage(task, fence(LESSON_REVIEW_LANG))
   const init = task.analysis === 'init' ? reportMessage(task, hasJson) : undefined
+  const diagnosis = reportMessage(task, fence(DIAGNOSIS_LANG))
   // 同一个对话里先后出过两种（少见）：取最新的那份
   const all = [
     run && { kind: 'run' as const, message: run },
     lessons && { kind: 'lessons' as const, message: lessons },
     init && { kind: 'init' as const, message: init },
+    diagnosis && { kind: 'diagnosis' as const, message: diagnosis },
   ].filter((x): x is { kind: ReportKind; message: TaskMessage } => !!x)
   if (!all.length) return null
   return all.reduce((a, b) => (task.messages.indexOf(b.message) > task.messages.indexOf(a.message) ? b : a))
@@ -85,3 +91,34 @@ export function fixState(
   if (at < 0) return 'todo'
   return at === users.length - 1 && task.status === 'running' && task.working ? 'working' : 'done'
 }
+
+/** 分析用时：ms 是已经结算的部分，since 有值表示还在跑，要加上从它到现在的时间 */
+export interface AnalysisTiming {
+  ms: number
+  since?: number
+}
+
+/**
+ * AI 分析窗口状态胶囊上的用时：这一轮分析实际的起止。
+ * 有轮次记录（正式版）用最近一轮的开始和结束；没有轮次（在线演示、旧数据）用累计执行时间 runMs
+ * 加上正在跑的这一段（runStartedAt）。都拿不到就不显示，不拿对话的创建时间凑
+ */
+export function analysisTiming(
+  task: Pick<Task, 'runMs' | 'runStartedAt'> & { turns?: Task['turns'] },
+): AnalysisTiming | undefined {
+  const turn = task.turns?.at(-1)
+  if (turn) {
+    const start = Date.parse(turn.startedAt)
+    if (!Number.isFinite(start)) return undefined
+    if (!turn.endedAt) return turn.status === 'running' ? { ms: 0, since: start } : undefined
+    const end = Date.parse(turn.endedAt)
+    return Number.isFinite(end) ? { ms: Math.max(0, end - start) } : undefined
+  }
+  const since = task.runStartedAt ? Date.parse(task.runStartedAt) : NaN
+  if (Number.isFinite(since)) return { ms: task.runMs ?? 0, since }
+  return task.runMs > 0 ? { ms: task.runMs } : undefined
+}
+
+/** 现在显示多少：只取整秒，实时计时每秒跳一下，不带小数 */
+export const timingMs = (x: AnalysisTiming, now = Date.now()) =>
+  Math.floor((x.ms + (x.since ? Math.max(0, now - x.since) : 0)) / 1000) * 1000

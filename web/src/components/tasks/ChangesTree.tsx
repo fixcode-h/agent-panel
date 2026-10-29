@@ -62,7 +62,7 @@ export function ChangesTree({
             ) : (
               <span className="w-3.5 shrink-0" />
             )}
-            <Icon className={cn('h-3.5 w-3.5 shrink-0', node.dir ? 'text-accent/80' : 'text-subtle')} />
+            <Icon className={cn('h-3.5 w-3.5 shrink-0', node.dir ? 'text-accent-text/80' : 'text-subtle')} />
             <span className={cn('min-w-0 flex-1 truncate', node.dir ? 'text-fg' : 'text-muted')}>{node.name}</span>
             <span className="shrink-0 text-success">+{node.add}</span>
             <span className="w-8 shrink-0 text-right text-danger">{node.del ? `-${node.del}` : ''}</span>
@@ -73,7 +73,7 @@ export function ChangesTree({
         <button
           type="button"
           onClick={() => setShown((n) => n + PAGE)}
-          className="flex h-7 cursor-pointer items-center rounded px-2 text-left text-[0.75rem] text-accent hover:bg-sel"
+          className="flex h-7 cursor-pointer items-center rounded px-2 text-left text-[0.75rem] text-accent-text hover:bg-sel"
         >
           {t('显示更多（还有 {n} 项）', { n: rows.length - shown })}
         </button>

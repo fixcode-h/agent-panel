@@ -676,7 +676,8 @@ await runShard(import.meta.filename, async (api) => {
       if (!text.includes('@package.json')) errors.push(`长按拖入：输入框里没有引用（${JSON.stringify(text)}）`)
       if (await input.locator('[data-chip]').count()) errors.push('长按拖入：引用被做成了附件卡片')
       if (await p.getByRole('dialog').count()) errors.push('长按拖入：拖动把文件也打开了')
-      // 行首的 @ 用等宽字体造形，不能是「图标和文字叠在一起」那个坏字形
+      // 行首的 @ 不能是「图标和文字叠在一起」那个坏字形（Maple Mono 的 @ 宽不到 6 或叠字）。
+      // 默认界面字体换成 Inter 后 @ 是比例字形，14px 下约 13–14px 宽，上限放到 16
       const atW = await p.evaluate(() => {
         const el = document.querySelector('#follow-up')
         const node = el?.firstChild
@@ -686,7 +687,7 @@ await runShard(import.meta.filename, async (api) => {
         r.setEnd(node, 1)
         return r.getBoundingClientRect().width
       })
-      if (atW < 6 || atW > 11) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常等宽字形`)
+      if (atW < 6 || atW > 16) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常字形`)
       await check(p, '任务-长按拖入引用', ['@package.json'])
       // 短按还是打开文件
       await row.click()
@@ -795,7 +796,7 @@ await runShard(import.meta.filename, async (api) => {
   // 子对话的进程只算它自己：组头分别标出本对话 / 子对话，内存读不到的写未采集
   await check(p, '任务-对话进程-归属', ['本对话', '子对话'])
   // 内存曲线：原有左右拖动和悬停读数保留；右键也能拖，拖过之后出现「回到最新」
-  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('radio', { name: '内存曲线', exact: true }).click()
   await check(p, '任务-内存曲线', ['AI 分析', '每 30 秒采样一次'])
   const chatChart = p.getByRole('img', { name: '会话内存随时间的变化' })
   const chatBox = await chatChart.boundingBox()
@@ -829,7 +830,7 @@ await runShard(import.meta.filename, async (api) => {
   if ((await p.getByText('内存合计').count()) > 0) errors.push('对话进程：收起后面板内容还挂在 DOM 里')
   // AI 分析：把采样和进程占用交给演示里的 AI 排查对话，在统一的弹窗里出结论（先重新打开下拉）
   await procBtn.click()
-  await p.getByRole('button', { name: '内存曲线', exact: true }).click()
+  await p.getByRole('radio', { name: '内存曲线', exact: true }).click()
   await p.getByRole('button', { name: 'AI 分析', exact: true }).click()
   await p
     .getByRole('heading', { name: 'AI 排查：会话内存分析' })
@@ -837,6 +838,39 @@ await runShard(import.meta.filename, async (api) => {
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('任务-内存曲线：点 AI 分析没有新建排查对话'))
   await check(p, '任务-内存曲线-AI分析', ['这次要做的：看一下这个会话的内存'])
+  // 排查的结构化结论画在右栏：页签「结论 / 证据 n / 修复 n / 相关文件 n」，结论页有根因、把握和三个按钮
+  {
+    const diag = p.locator('[data-analysis-panel="diagnosis"]')
+    await diag
+      .getByRole('tab', { name: /^结论/ })
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI 排查：右栏没有出现「结论」页签'))
+    for (const name of [/^证据\s*\d+/, /^修复\s*\d+/, /^相关文件\s*\d+/])
+      if (!(await diag.getByRole('tab', { name }).count())) errors.push(`AI 排查：右栏缺少页签 ${name}`)
+    for (const name of ['在当前对话里修', '开新任务修', '记成教训'])
+      if (!(await diag.getByRole('button', { name, exact: true }).count()))
+        errors.push(`AI 排查：结论页没有「${name}」`)
+    if (!(await diag.getByRole('meter', { name: '把握' }).count())) errors.push('AI 排查：根因卡片没有把握条')
+    // 对话区的 Agent 回复里不再铺结论块的 JSON（只看回复：用户那条排查提示词里本来就带着格式样例）
+    if (
+      await p
+        .getByRole('dialog')
+        .locator('[data-msg]:not([data-user])')
+        .getByText('"rootCause"', { exact: false })
+        .count()
+    )
+      errors.push('AI 排查：对话区里还铺着结论块的原文')
+    // 状态胶囊带上这一轮的用时
+    await p
+      .getByRole('dialog')
+      .getByText(/分析完成\s*·\s*\d/)
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI 排查：状态胶囊上没有分析用时'))
+    await check(p, 'AI排查-结论', ['根因', '影响', '在当前对话里修'])
+    await diag.getByRole('tab', { name: /^证据/ }).click()
+    await check(p, 'AI排查-证据', ['claude'])
+    await diag.getByRole('tab', { name: /^结论/ }).click()
+  }
   // 关闭时先确认停止（和别处的 AI 排查一样）
   await p.getByRole('button', { name: '关闭', exact: true }).last().click()
   if (await p.getByText('停止 AI 排查？').isVisible()) {

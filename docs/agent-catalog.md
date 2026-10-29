@@ -29,7 +29,7 @@
 `orchestrator`（主理，原名统筹）、`worker`（执行）、`docsync`（文档）、`reviewer`（评审）、`tester`（测试验收）、`vcs`（版本控制）、`helper`（子任务）、`analyzer`（分析）是项目对话离不开的八个能力块，
 定义在 `shared/builtin/core.ts`：启动时自动装好、不能删除，名称、角色设定、Skill、能力开关和参数定义每次启动按内置定义同步，
 用户只能改参数取值和运行配置（CLI、模型、思考强度、权限），项目里还能在 `Project.agentParams` 按项目覆盖参数。
-其中主理、执行、分析是高级角色，挂载其余基本角色（挂哪些、规则、预加载由定义维护，用户只改每个挂载的用法和参数取值）；评审是 `independent`，只能派出。
+其中主理、执行、分析是高级角色，挂载其余基本角色：默认挂哪些、规则、预加载由定义维护；用户在「能力」页加、删挂载或改说明后由用户接管（`mountsCustom`，可一键恢复默认，见 [ADR 0026](adr/0026-advanced-role-mounts-user-owned.md)）。评审是 `independent`，只能派出。
 它们之间靠名字协作（主理和执行把要落盘的文档派给「文档」、把验证派给「测试验收」、收尾时在完整测试前派「评审」、把改完文件后的版本管理交给「版本控制」），所以不能被改成别的角色。
 「评审」的时机是子对话收尾：改完并跑过快速检查之后、跑完整测试和编译之前，派它看限定范围的 diff。
 评审必须在子对话的计划里占一条独立的主步骤（标 `review: true`）：派的时候标等待中、拿回结论后标完成，
@@ -65,10 +65,12 @@
 | `docsync`      | 文档（必备）     | 文档落盘                   | ✓    | 改代码的工作流最后一个节点都是它；architecture、release              | `docRoot` `lang` `index` `adr` `bug`                                            |
 | `tester`       | 测试验收（必备） | 构建/测试/验收             | ✓    | openspec（延期验证项）、migration（旧数据验证）、release（产物验证） | `scope` `env` `regress` `onFail` `write` `serial`                               |
 | `explorer`     | 调研             | 只读调研（可回写模块文档） | ✓    | ue、review                                                           | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |
-| `reviewer`     | 评审（必备）     | 独立评审与复核             | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 方案或结论）`vcs`                                          |
+| `reviewer`     | 评审（必备）     | 独立评审与复核             | ✓    | review；子对话收尾前由执行角色直接派                                 | `target`（代码改动 / 安全 / 方案或结论）`vcs`                                   |
 | `analyst`      | 方案设计         | 需求、方案与架构契约       |      | general、ue、openspec、architecture、migration                       | `scene` `scale`（spike / bounded / architectural）`grill` `stack`               |
 | `spec`         | 规范撰写         | OpenSpec 产物与门禁        |      | openspec                                                             | `scene` `stage`                                                                 |
-| `developer`    | 开发             | 写代码                     |      | general、ue、openspec、bugfix、migration                             | `task`（实现 / 修 Bug / 性能问题）`scene` `lang` `vcs` `tdd` `records`          |
+| `developer`    | 开发             | 写代码                     |      | general、ue、openspec、bugfix、migration                             | `task`（实现 / 修 Bug / 性能问题 / 重构）`scene` `lang` `vcs` `tdd` `records`   |
+| `uiqa`         | 界面走查         | 打开真实页面看界面         | ✓    | —（执行默认挂成派出：改了界面时评审之后派）                          | `pages` `theme` `width` `states`                                                |
+| `i18n`         | 本地化           | 界面文案翻译与漏翻         |      | —（执行默认挂成自动判断）                                            | `mode`（补翻译 / 查漏翻 / 整体校对）`langs`                                     |
 | `deps`         | 依赖与安全       | 依赖体检与升级             |      | deps                                                                 | `vcs` `mode` `audit` `license`                                                  |
 | `vcs`          | 版本控制（必备） | 版本控制与交付收尾         | ✓    | release（发布范围）；子对话没有 submit_merge 时由执行角色派          | `vcs` `branch` `merge` `mergeReview` `commit`                                   |
 | `blender`      | Blender 建模     | 建模、动画与质检           |      | blender                                                              | `stage`（含「质检」）                                                           |
@@ -78,6 +80,10 @@
 没有谁会按天把各项目执行过的对话压成一份报告，所以单独新增；它不动代码（`canPlan` / `canDelegate` 都关、不引 Skill）。
 它挂进「通用项目」的 `members`：`ensureProjectAgents` 启动时按 `builtinAgentKeys(GENERAL)` 补建角色，
 挂在这里才能保证它跟着最基础的安装集合一起建出来。
+
+`uiqa`（界面走查）2026-10-29 新增：评审只读代码、不跑（ADR 0010），测试验收只跑项目配的命令，没有谁会真的打开页面按亮暗主题、宽窄屏看布局和状态；它只看不改，交回带截图的分级清单。
+`i18n`（本地化）同批新增：开发管代码、文档管文档，界面文案的译文要拿已有译文当术语表逐条对齐、查漏翻和写死的文案，是单独一类交付。
+同批的「重构」「安全评审」是已有能力块的变体，加成 `developer.task` 和 `reviewer.target` 的选项，没有新建角色。
 
 不用角色就是直接用 CLI：以前自带的「默认 Agent」已经去掉，Chat 页、默认工作流、AI 修复都不带角色，
 旧数据里的 `default-agent` 读出来就是空字符串（`shared/schema.ts` 的 `dropLegacyAgent`）。

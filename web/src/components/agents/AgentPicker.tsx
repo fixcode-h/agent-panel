@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { type Agent } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { MenuSearch } from '@/components/ui/menu-search'
 import { AgentAvatar } from './AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
@@ -41,13 +42,7 @@ export function AgentPicker({
     <Popover onOpenChange={(o) => o && setQ('')}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent align={align} className="w-[300px]">
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索角色')}
-          className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
-        />
+        <MenuSearch value={q} onChange={setQ} placeholder={t('搜索角色')} />
         <div className="max-h-72 overflow-y-auto">
           {onNone && (
             <PopoverClose className={menuItem} onClick={onNone}>

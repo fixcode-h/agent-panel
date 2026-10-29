@@ -166,19 +166,28 @@ async function rpc(url: string, msg: unknown) {
   return res.json()
 }
 
-test('MCP：对话的调用多两个工具，app_do 以调用者身份执行；没给 app 时没有这两个工具', async () => {
+test('MCP：对话的调用多两个工具（收在 more_tools 里，按名字也能直接调），app_do 以调用者身份执行；没给 app 时没有这两个工具', async () => {
   const { calls } = fakeHost()
   const s = openAskBridge({ app: child })
   const list = await rpc(s.url, { jsonrpc: '2.0', id: 1, method: 'tools/list' })
+  // 两个都不常用：收进 more_tools，说明里点名；只写 name 是看用法，带 arguments 才执行
   assert.deepEqual(
     list.result.tools.map((t: { name: string }) => t.name),
-    ['app_actions', 'app_do'],
+    ['more_tools'],
   )
+  assert.match(list.result.tools[0].description, /app_actions.*app_do/)
+  const usage = await rpc(s.url, {
+    jsonrpc: '2.0',
+    id: 5,
+    method: 'tools/call',
+    params: { name: 'more_tools', arguments: { name: 'app_do' } },
+  })
+  assert.match(usage.result.content[0].text, /参数（JSON Schema）/)
   const cat = await rpc(s.url, {
     jsonrpc: '2.0',
     id: 2,
     method: 'tools/call',
-    params: { name: 'app_actions', arguments: { group: 'task' } },
+    params: { name: 'more_tools', arguments: { name: 'app_actions', arguments: { group: 'task' } } },
   })
   assert.match(cat.result.content[0].text, /task\.stop_background/)
   const done = await rpc(s.url, {

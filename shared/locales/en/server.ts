@@ -533,4 +533,15 @@ export const EN_SERVER: Record<string, string> = {
   恢复的对话: 'Recovered conversation',
   '父对话测试：{child} · {step}': 'Parent test: {child} · {step}',
   '第 {n} 步「{name}」失败，用时 {time}': 'step {n} "{name}" failed after {time}',
+  找不到这次工具调用: 'This tool call was not found',
+  // 模型设计（Blender）
+  '没有找到 Blender。请先安装 Blender 4.2 或更新的版本，或在设置里填它的位置。':
+    "Blender wasn't found. Install Blender 4.2 or later, or set its location in Settings.",
+  '这个程序不像是 Blender': "This program doesn't look like Blender",
+  '启动 Blender 失败：{error}': "Couldn't start Blender: {error}",
+  'Blender 启动超时：{tail}': 'Blender took too long to start: {tail}',
+  'Blender 没能启动（退出码 {code}）：{tail}': "Blender didn't start (exit code {code}): {tail}",
+  'Blender 执行这段代码时卡住或退出了，已重启，场景回到上一次保存的样子：{error}':
+    'Blender hung or quit while running this code. It was restarted and the scene is back to the last save: {error}',
+  还没有模型: 'No model yet',
 }

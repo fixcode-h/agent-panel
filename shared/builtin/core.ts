@@ -167,9 +167,13 @@ export function builtinMounts(def: Pick<BuiltinAgent, 'mounts'>, idOf: (key: str
   })
 }
 
+/** 内置角色在本机按定义该挂的能力（按来源 builtin:<key> 找本机的 id） */
+export const defaultMounts = (def: Pick<BuiltinAgent, 'mounts'>, agents: Pick<Agent, 'id' | 'origin'>[]) =>
+  builtinMounts(def, (k) => agents.find((a) => a.origin === `builtin:${k}`)?.id)
+
 /**
- * 同步挂载：挂哪些能力、规则、预加载跟内置定义；用户在挂载上改过的用法（mode）和参数取值保留
- * （ADR 0015 的口径：设定归面板，取值归用户）
+ * 同步挂载（用户没接管挂载时）：挂哪些能力、规则、预加载跟内置定义；用户在挂载上改过的用法（mode）和参数取值保留
+ * （ADR 0015 的口径：设定归面板，取值归用户）。接管了的见 AgentInput.mountsCustom
  */
 function syncMounts(defs: AgentMount[], mine: AgentMount[]): AgentMount[] {
   return defs.map((d) => {
@@ -196,7 +200,9 @@ export function syncCore(
     when: a.when,
     modes: a.modes,
     independent: a.independent,
-    mounts: syncMounts(ids.mounts ?? [], cur.mounts ?? []),
+    // 用户接管了挂载（加了自定义角色、删了默认挂的、改了说明）就整份按用户的，不再跟内置定义
+    mounts: cur.mountsCustom ? (cur.mounts ?? []) : syncMounts(ids.mounts ?? [], cur.mounts ?? []),
+    mountsCustom: cur.mountsCustom || undefined,
     // 就地微改动和启动位置一样是用户的选择（升级见 upgradeRunIn）
     inlineEdit: cur.inlineEdit ?? a.inlineEdit,
     name: a.name,
@@ -237,6 +243,7 @@ export function sameCore(a: AgentInput, b: AgentInput) {
       x.modes,
       x.independent,
       x.mounts,
+      !!x.mountsCustom,
       x.inlineEdit,
       x.capsSet,
       x.upgrades,

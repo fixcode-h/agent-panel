@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { conversationAround, fixPrompt, FixInput, type ConversationLine } from '../shared/fix.ts'
+import { DIAGNOSIS_LANG } from '../shared/diagnosis.ts'
 
 const parse = (o: Record<string, unknown>) => FixInput.parse({ title: '出错了', ...o })
 
@@ -19,6 +20,8 @@ test('交给 AI 排查的提示词带上项目路径和报错前后的对话', (
   // 要求和环境分开写：对话在前，要求在后
   assert.ok(prompt.indexOf('报错前后的对话：') < prompt.indexOf('要求：'))
   assert.ok(prompt.includes('上面是出错前后的对话节选'))
+  // 排查要在末尾写结构化结论块：AI 分析窗口右栏按它画结论、证据、修复
+  assert.ok(prompt.includes('```' + DIAGNOSIS_LANG), '排查要求写结论块')
 })
 
 test('没有对话节选时不写这一块，也不加对应的说明', () => {
@@ -69,4 +72,5 @@ test('「让 AI 直接动手」的提示词要求做到底并验证，不只要�
   assert.ok(!prompt.includes('在操作时出错了'))
   assert.ok(prompt.includes('直接动手做'))
   assert.ok(!prompt.includes('先给结论和方案'), 'act 时不再要求只给方案')
+  assert.ok(!prompt.includes('```' + DIAGNOSIS_LANG), '直接动手做的不要结论块')
 })

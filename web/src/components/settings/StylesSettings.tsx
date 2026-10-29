@@ -6,6 +6,10 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
+import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Badge } from '@/components/ui/badge'
+import { IconButton } from '@/components/ui/icon-button'
 import { t } from '@shared/i18n'
 
 /** 风格分类的名字：静态写出来，文案检查才认得 */
@@ -87,7 +91,7 @@ export function StylesSettings() {
         return (
           <section key={kind} className="flex flex-col gap-3" aria-label={title}>
             <h3 className="flex items-center gap-2 border-b pb-2 text-[0.875rem] font-medium">
-              <Icon className="h-4 w-4 text-accent" />
+              <Icon className="h-4 w-4 text-accent-text" />
               {title}
               <span className="text-[0.75rem] font-normal text-subtle">
                 {t('{n} 个', { n: mine.length + builtin.length })}
@@ -99,9 +103,9 @@ export function StylesSettings() {
                 <StyleCard key={s.id} s={s} onPatch={(p) => void patch(s, p)} onRemove={() => setRemoving(s)} />
               ))
             ) : (
-              <p className="rounded-xl border border-dashed px-4 py-4 text-[0.78125rem] leading-relaxed text-subtle">
+              <EmptyPanel size="sm" className="text-[0.75rem] leading-relaxed">
                 {t('还没有自己的风格：在 UI 设计的风格设置里点「存到风格库」，或复制一个内置的来改。')}
-              </p>
+              </EmptyPanel>
             )}
             <h4 className="pt-2 text-[0.75rem] font-medium text-subtle">{t('内置风格')}</h4>
             {builtin.map((s) => (
@@ -147,9 +151,9 @@ function StyleCard({
   const [open, setOpen] = useState(false)
   const Icon = s.kind === 'web' ? Globe : Gamepad2
   return (
-    <div className="rounded-xl bg-card shadow-card">
+    <Card>
       <div className="flex items-start gap-3 px-4 pt-3.5">
-        <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+        <span className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-text">
           <Palette className="h-4 w-4" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -169,10 +173,10 @@ function StyleCard({
                 !readOnly && 'hover:border-line focus:border-focus focus:bg-field',
               )}
             />
-            <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-2 py-0.5 text-[0.6875rem] text-muted">
+            <Badge className="shrink-0 py-0.5 text-[0.6875rem]">
               <Icon className="h-3 w-3" />
               {s.kind === 'web' ? t('网页 UI') : t('游戏 UI')}
-            </span>
+            </Badge>
             {readOnly ? (
               <button
                 onClick={onCopy}
@@ -184,14 +188,7 @@ function StyleCard({
                 {t('复制')}
               </button>
             ) : (
-              <button
-                onClick={onRemove}
-                aria-label={t('删除')}
-                title={t('删除')}
-                className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-danger/10 hover:text-danger"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <IconButton size="sm" tone="danger" icon={Trash2} label={t('删除')} onClick={onRemove} />
             )}
           </div>
           <Textarea
@@ -201,12 +198,12 @@ function StyleCard({
             rows={2}
             onBlur={(e) => e.target.value.trim() !== s.summary && onPatch?.({ summary: e.target.value.trim() })}
             placeholder={t('一两句话说明这个风格')}
-            className="min-h-0 resize-none border-transparent bg-transparent px-1.5 py-1 text-[0.78125rem] leading-relaxed text-muted hover:border-line focus:bg-field"
+            className="min-h-0 resize-none border-transparent bg-transparent px-1.5 py-1 text-[0.75rem] leading-relaxed text-muted hover:border-line focus:bg-field"
           />
           {s.prompts.length > 0 && (
             <div className="flex flex-wrap gap-1 px-1.5 pb-1">
               {s.prompts.map((p, i) => (
-                <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted">
+                <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.6875rem] text-muted">
                   <span className="text-subtle">{catLabel(p.category)} · </span>
                   {p.zh}
                 </span>
@@ -235,6 +232,6 @@ function StyleCard({
           />
         </div>
       )}
-    </div>
+    </Card>
   )
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowUpRight,
   Bot,
@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { fmtDuration, groupTools, toolVerb, toolView, type SendTarget, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { useChildOpen, useJobOpen, useRunToolOpen } from './child-open'
+import { api } from '@/lib/api'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -57,6 +58,22 @@ export const toolIcon = {
   agent: Bot,
   compact: FoldVertical,
   other: Wrench,
+}
+
+/**
+ * 工具图标按种类上色（组件库「过程行」）：一眼分得出读、搜、改、派人；
+ * 读文件、命令这类最常见的保持灰色，不然一屏全是彩色。搜索、网页借代码高亮里的函数蓝，不另造颜色
+ */
+export const toolTone: Record<keyof typeof toolIcon, string> = {
+  read: 'text-subtle',
+  edit: 'text-success',
+  run: 'text-subtle',
+  search: 'text-(--hl-func)',
+  web: 'text-(--hl-func)',
+  skill: 'text-peer',
+  agent: 'text-peer',
+  compact: 'text-subtle',
+  other: 'text-subtle',
 }
 
 interface DiffLine {
@@ -266,13 +283,14 @@ export function RowShell({
   // 整行打开优先（子对话行、子任务行没有展开收起）；其余行仍是整行点了展开
   const activate = rowOpen ?? toggle
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30', className)}>
+    // 组件库「过程行」：单行、细线圆角、不填底，和用户消息（有底色的气泡）一眼分开
+    <div className={cn('min-w-0 overflow-hidden rounded-lg border', failed && 'border-danger/30', className)}>
       {/* 整行点了是展开收起；标题是单独的按钮，点它只开窗口，不会同时展开。
           子对话行、子任务行把整行都变成打开入口（rowOpen）：动作名、详情和耗时也一起打开 */}
       <div
         onClick={activate}
         className={cn(
-          'group flex w-full min-w-0 items-center px-2.5 py-1.5 font-mono text-xs text-muted',
+          'group flex min-h-[2.125rem] w-full min-w-0 items-center px-2.5 py-1 text-[0.75rem] text-muted',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
           rowOpen ? 'gap-1.5' : 'gap-2',
@@ -296,7 +314,7 @@ export function RowShell({
           className="flex shrink-0 items-center gap-2 text-left enabled:cursor-pointer"
         >
           {glyph}
-          {verb && <span className="font-sans font-medium text-fg/85">{verb}</span>}
+          {verb && <span className="font-semibold text-fg">{verb}</span>}
           {badge && (
             <span
               className={cn(
@@ -325,14 +343,14 @@ export function RowShell({
                 // 盖掉会让「已完成：合回原分支、标记完成」这类按名字找的入口定位不到
                 aria-label={rowOpen ? openTip : undefined}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate text-left text-fg/75 decoration-subtle underline-offset-2 hover:text-fg hover:underline',
+                  'min-w-0 cursor-pointer truncate text-left font-mono text-[0.75rem] text-muted decoration-subtle underline-offset-2 hover:text-fg hover:underline',
                   titleClass,
                 )}
               >
                 {title}
               </button>
             ) : (
-              <span className={cn('min-w-0 truncate', titleClass)} title={titleTip}>
+              <span className={cn('min-w-0 truncate font-mono text-[0.75rem]', titleClass)} title={titleTip}>
                 {title}
               </span>
             )
@@ -351,7 +369,9 @@ export function RowShell({
         ) : (
           detail
         )}
-        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtDuration(ms)}</span>}
+        {ms !== undefined && (
+          <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{fmtDuration(ms)}</span>
+        )}
         {action && (
           <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
             {action}
@@ -455,6 +475,30 @@ function SendGroupRow({ tools, task }: { tools: ToolUse[]; task?: Pick<Task, 'st
   )
 }
 
+/**
+ * 推送时省掉了后半段的输出（outputCut）：打开窗口看全部时才去取全文，取到之前先显示已有的开头。
+ * 没省的直接用原来的输出
+ */
+function useFullOutput(tool: ToolUse, taskId: string | undefined, want: boolean) {
+  const cut = tool.outputCut
+  const [full, setFull] = useState<{ key: string; text: string } | null>(null)
+  const key = cut && taskId ? `${taskId}/${cut.msg}/${cut.i}` : ''
+  useEffect(() => {
+    if (!want || !key || !cut || !taskId || full?.key === key) return
+    let live = true
+    api
+      .toolOutput(taskId, cut.msg, cut.i)
+      .then((r) => live && setFull({ key, text: r.output }))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+    // 只在要看、换了调用时取一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [want, key])
+  return full?.key === key ? full.text : (tool.output ?? '')
+}
+
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
@@ -482,18 +526,25 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const output = tool.output?.replace(/\s+$/, '') ?? ''
   // 后台命令行的标题是命令：被截断时悬停看完整命令，而不是「打开窗口」这类提示
   const titleTip = tool.name === t('后台命令') ? input || tool.label : undefined
+  // 窗口里的完整输出：推送时省掉的后半段在打开窗口时取回来
+  const fullOutput = useFullOutput(tool, task?.id, win === 'run' || win === 'out').replace(/\s+$/, '')
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点文件名打开文件
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
 
   const glyph =
     tool.running || bg ? (
-      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
     ) : (
-      <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
+      <Icon
+        className={cn(
+          'h-3.5 w-3.5 shrink-0',
+          tool.failed ? 'text-danger' : view.server ? 'text-subtle' : toolTone[tool.kind],
+        )}
+      />
     )
   const detail = diff ? (
-    <span className="shrink-0">
+    <span className="shrink-0 font-mono text-[0.75rem]">
       {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
       {diff[2] && <span className="text-danger">{diff[2]}</span>}
     </span>
@@ -590,7 +641,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                       <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">
                         OUT
                       </span>
-                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent">
+                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent-text">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                         {t('正在输出')}
                       </span>
@@ -615,7 +666,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                     tone={tool.failed ? 'danger' : undefined}
                     aside={
                       <span className="font-mono text-[0.625rem] text-subtle/70 tabular-nums">
-                        {t('{n} 行', { n: output.split('\n').length })}
+                        {t('{n} 行', { n: tool.outputCut?.lines ?? output.split('\n').length })}
                       </span>
                     }
                   />
@@ -641,7 +692,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
       {win === 'run' && (
         <CommandDialog
           command={input || tool.label}
-          output={output}
+          output={fullOutput}
           failed={tool.failed}
           running={tool.running}
           ms={tool.ms}
@@ -667,7 +718,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
           title={tool.kind === 'search' ? t('搜索结果') : tool.kind === 'web' ? t('网页') : tool.name || tool.label}
           detail={tool.label}
           input={tool.kind === 'search' || tool.kind === 'web' ? '' : input}
-          output={output}
+          output={fullOutput}
           failed={tool.failed}
           running={tool.running}
           open

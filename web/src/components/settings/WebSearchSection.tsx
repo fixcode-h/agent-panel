@@ -25,9 +25,15 @@ export function WebSearchSection({
       <Group>
         <Row
           title={t('搜索源')}
-          desc={t(
-            '模型联网搜索时用哪个服务。Degoog 不需要密钥，但查询会发给 degoog.org 这个第三方聚合服务（会把查询再转给别的搜索引擎）；需要密钥的源按用量计费，只有自己选了并填了密钥才会用到。',
-          )}
+          desc={
+            <>
+              {t(
+                '自己不会联网搜索的 Agent（目前是 Pi）用哪个服务搜索；Claude Code、Codex、Command Code 用它们自带的搜索。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。',
+              )}
+              {/* 选中源自己的说明（计费、用哪种 key）：跟着下拉切换，用户换源前就看得到要花钱 */}
+              {provider.note && <span className="mt-1 block">{provider.note}</span>}
+            </>
+          }
         >
           <Select
             aria-label={t('搜索源')}

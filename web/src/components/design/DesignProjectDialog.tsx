@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
 import { BookMarked, Check, Loader2, Palette, Pencil, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import {
@@ -15,6 +14,9 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog, dialogScrollClass } from '@/components/ui/dialog'
+import { Modal } from '@/components/ui/modal'
+import { Checkbox } from '@/components/ui/checkbox'
+import { IconButton } from '@/components/ui/icon-button'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { DialogCloseButton, NavItem } from '@/components/projects/ProjectSettingsDialog'
 import { ScopeRequests } from '@/components/chat/AskToggle'
@@ -101,27 +103,25 @@ export function DesignProjectDialog({
   section?: DesignProjectSection
 }) {
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          // 改到一半点到外面不关闭，免得白填
-          onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex h-[min(760px,calc(100dvh-2rem))] w-[min(980px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
-        >
-          {open && (
-            <Body
-              key={project?.id ?? 'new'}
-              project={project}
-              initial={section}
-              onSaved={onSaved}
-              onClose={() => onOpenChange(false)}
-            />
-          )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+    // 标题栏、侧栏页签、底栏都在 Body 里自己画；Modal 默认点到外面不关，改到一半不会白填
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
+      bare
+      size="xl"
+      className="h-[min(760px,calc(100dvh-2rem))] max-w-[980px]"
+    >
+      {open && (
+        <Body
+          key={project?.id ?? 'new'}
+          project={project}
+          initial={section}
+          onSaved={onSaved}
+          onClose={() => onOpenChange(false)}
+        />
+      )}
+    </Modal>
   )
 }
 
@@ -214,9 +214,9 @@ function Body({
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
+        <h2 aria-hidden className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
           {project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
-        </D.Title>
+        </h2>
         <DialogCloseButton />
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -247,7 +247,7 @@ function Body({
               }}
             >
               <FormSection title={t('基本信息')}>
-                <p className="-mt-2 text-[0.78125rem] leading-relaxed text-muted">
+                <p className="-mt-2 text-[0.75rem] leading-relaxed text-muted">
                   {t('UI 设计的项目和 Agent 的项目分开管理。一个项目对应一个游戏，里面放它的各个界面。')}
                 </p>
                 <Field label={t('项目名称')} error={name.trim() ? undefined : t('名称不能为空')}>
@@ -356,13 +356,13 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
                         }}
                         className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
                       >
-                        <span className="flex items-center gap-1.5 text-[0.78125rem]">
+                        <span className="flex items-center gap-1.5 text-[0.75rem]">
                           {s.name}
                           {s.builtin && (
                             <span className="rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
                           )}
                         </span>
-                        <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">
+                        <span className="line-clamp-2 text-[0.6875rem] leading-snug text-subtle">
                           {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
                         </span>
                       </button>
@@ -428,7 +428,7 @@ function PromptsPage({
       <section className="flex flex-col gap-3">
         <div>
           <h3 className="text-[0.8125rem] font-semibold">{t('美术提示词')}</h3>
-          <p className="mt-1 text-[0.78125rem] leading-relaxed text-muted">
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-muted">
             {t(
               '这个项目里每一张图生成时都会自动带上打开的提示词，设计界面的 AI 也会照着它来，让整个游戏的界面风格统一。这里显示中文，发给生图 AI 的是对应的英文。',
             )}
@@ -442,9 +442,9 @@ function PromptsPage({
             toast.success(t('已导入 {n} 条提示词', { n: fresh.length }))
           }}
         />
-        <div className="rounded-xl border bg-panel/50 p-3">
-          <p className="mb-2 flex items-center gap-1.5 text-[0.78125rem] font-medium">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
+        <div className="rounded-xl bg-panel p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-[0.75rem] font-medium">
+            <Sparkles className="h-3.5 w-3.5 text-accent-text" />
             {t('让 AI 生成')}
           </p>
           <Textarea
@@ -476,11 +476,11 @@ function PromptsPage({
                     aria-pressed={f.pick}
                     onClick={() => setFound((l) => l.map((x, k) => (k === i ? { ...x, pick: !x.pick } : x)))}
                     className={cn(
-                      'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[0.78125rem]',
-                      f.pick ? 'border-accent/60 bg-accent-soft text-fg' : 'text-subtle hover:text-fg',
+                      'flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-[0.75rem] transition-colors',
+                      f.pick ? 'bg-accent-soft text-fg' : 'chip-idle text-subtle hover:text-fg',
                     )}
                   >
-                    {f.pick ? <Check className="h-3 w-3 text-accent" /> : <Plus className="h-3 w-3" />}
+                    {f.pick ? <Check className="h-3 w-3 text-accent-text" /> : <Plus className="h-3 w-3" />}
                     <span className="text-[0.6875rem] text-subtle">{catLabel(f.category)}</span>
                     {f.zh}
                   </button>
@@ -506,17 +506,14 @@ function PromptsPage({
           <section key={c} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <h4 className="text-[0.8125rem] font-medium">{catLabel(c)}</h4>
-              <span className="text-[0.71875rem] text-subtle">{list.length || ''}</span>
-              <button
-                onClick={() => setAdding(c)}
-                className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.75rem] text-subtle hover:bg-sel hover:text-fg"
-              >
+              <span className="text-[0.6875rem] text-subtle">{list.length || ''}</span>
+              <Button variant="ghost" size="sm" onClick={() => setAdding(c)} className="ml-auto h-7 gap-1 px-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 {t('添加')}
-              </button>
+              </Button>
             </div>
             {(list.length > 0 || adding === c) && (
-              <ul className="flex flex-col divide-y rounded-xl border">
+              <ul className="flex flex-col divide-y overflow-hidden rounded-xl bg-panel">
                 {list.map((p) => (
                   <PromptRow
                     key={p.id}
@@ -535,7 +532,7 @@ function PromptsPage({
                     <Input
                       autoFocus
                       placeholder={t('写中文就行，会自动翻译成英文')}
-                      className="h-8 text-[0.8125rem]"
+                      size="sm"
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                           e.stopPropagation()
@@ -557,13 +554,13 @@ function PromptsPage({
             )}
             {presets.length > 0 && (
               <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1 text-[0.71875rem] text-subtle">{t('常用：')}</span>
+                <span className="mr-1 text-[0.6875rem] text-subtle">{t('常用：')}</span>
                 {presets.map((p) => (
                   <button
                     key={p.zh}
                     title={p.en}
                     onClick={() => onChange((l) => [...l, { id: newId(), category: c, ...p, enabled: true }])}
-                    className="flex cursor-pointer items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 text-[0.75rem] text-subtle hover:border-solid hover:text-fg"
+                    className="chip-idle flex cursor-pointer items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[0.75rem] text-subtle transition-colors hover:text-fg"
                   >
                     <Plus className="h-3 w-3" />
                     {p.zh}
@@ -605,16 +602,12 @@ function PromptRow({
   if (editing)
     return (
       <li className="flex flex-col gap-1.5 px-3 py-2">
-        <Input
-          value={zh}
-          onChange={(e) => setZh(e.target.value)}
-          className="h-8 text-[0.8125rem]"
-          aria-label={t('中文')}
-        />
+        <Input value={zh} onChange={(e) => setZh(e.target.value)} size="sm" aria-label={t('中文')} />
         <Input
           value={en}
           onChange={(e) => setEn(e.target.value)}
-          className="h-8 font-mono text-[0.75rem]"
+          size="sm"
+          className="font-mono text-[0.75rem]"
           aria-label={t('发给生图 AI 的英文')}
           placeholder={t('发给生图 AI 的英文')}
         />
@@ -630,18 +623,12 @@ function PromptRow({
     )
   return (
     <li className="group flex min-h-9 items-center gap-2.5 px-3 py-1.5">
-      <button
-        role="checkbox"
-        aria-checked={p.enabled}
-        aria-label={p.enabled ? t('停用这条') : t('启用这条')}
-        onClick={() => onChange({ ...p, enabled: !p.enabled })}
-        className={cn(
-          'grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded border',
-          p.enabled ? 'border-accent bg-accent text-white' : 'border-line-strong',
-        )}
-      >
-        {p.enabled && <Check className="h-3 w-3" strokeWidth={3} />}
-      </button>
+      <Checkbox
+        checked={p.enabled}
+        ariaLabel={p.enabled ? t('停用这条') : t('启用这条')}
+        onChange={(enabled) => onChange({ ...p, enabled })}
+        className="shrink-0"
+      />
       <span
         title={p.en || t('还没有英文，会直接用中文')}
         className={cn('min-w-0 flex-1 truncate text-[0.8125rem]', !p.enabled && 'text-subtle line-through')}
@@ -649,29 +636,15 @@ function PromptRow({
         {p.zh}
       </span>
       {translating ? (
-        <span className="flex shrink-0 items-center gap-1 text-[0.71875rem] text-subtle">
+        <span className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-subtle">
           <Loader2 className="h-3 w-3 animate-spin" />
           {t('翻译中')}
         </span>
       ) : (
-        !p.en && <span className="shrink-0 text-[0.71875rem] text-warning">{t('没有英文')}</span>
+        !p.en && <span className="shrink-0 text-[0.6875rem] text-warning">{t('没有英文')}</span>
       )}
-      <button
-        onClick={() => setEditing(true)}
-        aria-label={t('编辑')}
-        title={t('编辑')}
-        className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-fg focus-visible:opacity-100"
-      >
-        <Pencil className="h-3.5 w-3.5" />
-      </button>
-      <button
-        onClick={onRemove}
-        aria-label={t('删除')}
-        title={t('删除')}
-        className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-danger focus-visible:opacity-100"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      <IconButton icon={Pencil} label={t('编辑')} reveal="hover" onClick={() => setEditing(true)} />
+      <IconButton icon={X} tone="danger" label={t('删除')} reveal="hover" onClick={onRemove} />
     </li>
   )
 }

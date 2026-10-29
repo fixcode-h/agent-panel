@@ -27,6 +27,8 @@ import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
+import { EmptyPanel } from '@/components/ui/empty-panel'
 import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -126,7 +128,7 @@ export function WorkflowDetail({
         header={
           <DetailHeader
             leading={
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-white">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-accent text-on-accent">
                 <WorkflowIcon className="h-6 w-6" strokeWidth={1.8} />
               </span>
             }
@@ -156,7 +158,7 @@ export function WorkflowDetail({
                   {t('分析执行')}
                 </Button>
                 <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
-                  <Sparkles className="h-4 w-4 text-accent" />
+                  <Sparkles className="h-4 w-4 text-accent-text" />
                   {t('AI 优化')}
                 </Button>
                 <Button
@@ -216,6 +218,13 @@ export function WorkflowDetail({
                 main={main}
                 team={team}
                 checks={checks}
+                save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
+                prepare={async () => {
+                  // 自动保存有 400ms 的延迟：刚改完就运行时先存一次，任务用的是最新的流程图
+                  if (!valid) throw new Error(t('名称为空，未保存'))
+                  const saved = await api.updateWorkflow(workflow.id, draft)
+                  setWorkflows((ws) => ws.map((w) => (w.id === saved.id ? saved : w)))
+                }}
               />
             </div>
           ) : undefined
@@ -310,7 +319,7 @@ export function WorkflowDetail({
         }
         aside={
           <>
-            <section className="rounded-xl bg-card shadow-card p-4">
+            <Card as="section" padding="md">
               <h3 className="mb-3 text-[0.8125rem] font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
@@ -319,10 +328,10 @@ export function WorkflowDetail({
                 >
                   <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
                   <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
-                  <Crown className="h-3.5 w-3.5 text-accent" />
+                  <Crown className="h-3.5 w-3.5 text-accent-text" />
                 </button>
               ) : (
-                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">{t('还没有主角色')}</p>
+                <EmptyPanel className="rounded-lg p-2 text-xs">{t('还没有主角色')}</EmptyPanel>
               )}
               <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-line-strong pt-1 pl-3">
                 {team.map(({ agent: a, responsibility }) => (
@@ -338,7 +347,7 @@ export function WorkflowDetail({
                 ))}
                 {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">{t('还没有子角色')}</p>}
               </div>
-            </section>
+            </Card>
 
             <ReadinessCard checks={checks} />
           </>

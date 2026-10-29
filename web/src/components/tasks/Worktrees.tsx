@@ -18,6 +18,8 @@ import { api, type WorktreeItem } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -162,7 +164,7 @@ export function useWorktreeActions(rootId: string) {
   const remove = async (item: WorktreeItem) => {
     setBusy(item.taskId)
     try {
-      upsertTask(await api.discardWorktree(item.taskId))
+      upsertTask(await api.discardWorktreeSummary(item.taskId))
       toast.success(t('已删除独立分支 {name}', { name: item.branch }))
     } catch (e) {
       toast.error((e as Error).message)
@@ -275,7 +277,7 @@ export function WorktreeRow({
           className="group -mx-1 flex min-w-0 items-start gap-2 rounded-md px-1 py-1 hover:bg-sel/60"
         >
           <span className="mt-px">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> : <WorktreeMark item={item} />}
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" /> : <WorktreeMark item={item} />}
           </span>
           {onOpen ? (
             // 原生按钮：Enter / Space 和鼠标点都一样；合并、删除是旁边的独立按钮，不会连带触发
@@ -305,16 +307,7 @@ export function WorktreeRow({
                   {t('合并')}
                 </button>
               )}
-              <button
-                type="button"
-                disabled={busy}
-                onClick={onRemove}
-                title={t('删除独立分支')}
-                aria-label={t('删除独立分支')}
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-subtle transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <IconButton tone="danger" icon={Trash2} label={t('删除独立分支')} disabled={busy} onClick={onRemove} />
             </span>
           )}
         </div>
@@ -496,70 +489,62 @@ export function DeleteTaskDialog({
     }
   }
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line-strong bg-card p-6 shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none">
-          <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
-          <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
-            {description}
-            {kept > 0 && !left.length && ` ${t('它的独立分支已经合并，恢复后照常可用。')}`}
-          </D.Description>
-          {!items && (
-            <p className="mt-3 flex items-center gap-2 text-[0.8125rem] text-subtle">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {t('正在检查独立分支…')}
-            </p>
-          )}
-          {left.length > 0 && (
-            <div className="mt-3 rounded-lg border border-warning/30 bg-warning/8 px-3 py-2.5">
-              <p className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-warning">
-                <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-                {t('有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉', { n: left.length })}
-              </p>
-              <div className="mt-2 flex flex-col gap-1.5">
-                {left.map((x) => (
-                  <div key={x.taskId} className="min-w-0 text-xs">
-                    <div className="flex min-w-0 items-center gap-1 font-mono">
-                      <span className="shrink-0 text-subtle">{x.baseBranch || 'HEAD'}</span>
-                      <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
-                      <span className="min-w-0 truncate text-fg">{x.branch}</span>
-                    </div>
-                    <p className="truncate text-subtle">
-                      {x.child && `${x.title} · `}
-                      {worktreeSummary(x)}
-                    </p>
-                  </div>
-                ))}
+    // 确认类小弹窗：和 ConfirmDialog 一样点到外面就关，标题和说明由这里自己排
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="sm" bare closeOnOutside className="p-6">
+      <D.Title className="text-[0.9375rem] font-semibold">{title}</D.Title>
+      <D.Description className="mt-1.5 text-[0.8125rem] leading-relaxed text-muted">
+        {description}
+        {kept > 0 && !left.length && ` ${t('它的独立分支已经合并，恢复后照常可用。')}`}
+      </D.Description>
+      {!items && (
+        <p className="mt-3 flex items-center gap-2 text-[0.8125rem] text-subtle">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('正在检查独立分支…')}
+        </p>
+      )}
+      {left.length > 0 && (
+        <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-warning">
+            <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+            {t('有 {n} 个独立分支还没合并：删除后跟着对话进回收站，永久删除时才一起清掉', { n: left.length })}
+          </p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {left.map((x) => (
+              <div key={x.taskId} className="min-w-0 text-xs">
+                <div className="flex min-w-0 items-center gap-1 font-mono">
+                  <span className="shrink-0 text-subtle">{x.baseBranch || 'HEAD'}</span>
+                  <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
+                  <span className="min-w-0 truncate text-fg">{x.branch}</span>
+                </div>
+                <p className="truncate text-subtle">
+                  {x.child && `${x.title} · `}
+                  {worktreeSummary(x)}
+                </p>
               </div>
-            </div>
-          )}
-          <div className="mt-6 flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              {t('取消')}
-            </Button>
-            {left.length > 0 && (
-              <Button
-                variant="secondary"
-                disabled={!!pending}
-                title={t('把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除')}
-                onClick={() => void run('ai')}
-              >
-                {pending === 'ai' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
-                )}
-                {t('用 AI 合并')}
-              </Button>
-            )}
-            <Button variant="danger" disabled={!items || !!pending} onClick={() => void run('delete')}>
-              {pending === 'delete' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {t('删除')}
-            </Button>
+            ))}
           </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        </div>
+      )}
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          {t('取消')}
+        </Button>
+        {left.length > 0 && (
+          <Button
+            variant="secondary"
+            disabled={!!pending}
+            title={t('把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除')}
+            onClick={() => void run('ai')}
+          >
+            {pending === 'ai' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {t('用 AI 合并')}
+          </Button>
+        )}
+        <Button variant="danger" disabled={!items || !!pending} onClick={() => void run('delete')}>
+          {pending === 'delete' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('删除')}
+        </Button>
+      </div>
+    </Modal>
   )
 }

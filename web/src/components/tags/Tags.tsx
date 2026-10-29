@@ -7,18 +7,20 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { MenuSearch } from '@/components/ui/menu-search'
+import { ChipGroup } from '@/components/ui/chip-group'
 
-/** 标签的颜色：浅色底 + 同色字，深浅主题都看得清 */
+/** 标签的颜色：浅色底 + 同色字，深浅主题都看得清。色值在 index.css 的 --tag-*，这里只取变量 */
 export const TAG_HEX: Record<Tag['color'], string> = {
-  gray: '#8a8f98',
-  red: '#e5484d',
-  orange: '#f76b15',
-  amber: '#d6a100',
-  green: '#30a46c',
-  teal: '#12a594',
-  blue: '#3e7bfa',
-  violet: '#8e4ec6',
-  pink: '#d6409f',
+  gray: 'var(--tag-gray)',
+  red: 'var(--tag-red)',
+  orange: 'var(--tag-orange)',
+  amber: 'var(--tag-amber)',
+  green: 'var(--tag-green)',
+  teal: 'var(--tag-teal)',
+  blue: 'var(--tag-blue)',
+  violet: 'var(--tag-violet)',
+  pink: 'var(--tag-pink)',
 }
 
 export const tagStyle = (c: Tag['color']) => ({
@@ -31,10 +33,7 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
     <span
       title={tag.description || undefined}
       style={tagStyle(tag.color)}
-      className={cn(
-        'inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.71875rem]',
-        className,
-      )}
+      className={cn('inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.6875rem]', className)}
     >
       <span className="truncate">{tag.name}</span>
       {onRemove && (
@@ -59,9 +58,9 @@ export function TagList({ ids, max = 3 }: { ids: string[]; max?: number }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {list.slice(0, max).map((x) => (
-        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.65625rem]" />
+        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.6875rem]" />
       ))}
-      {list.length > max && <span className="text-[0.65625rem] text-subtle">+{list.length - max}</span>}
+      {list.length > max && <span className="text-[0.6875rem] text-subtle">+{list.length - max}</span>}
     </span>
   )
 }
@@ -93,15 +92,14 @@ export function TagPicker({ value, onChange }: { value: string[]; onChange: (ids
         <TagChip key={x.id} tag={x} onRemove={() => toggle(x.id)} />
       ))}
       <Popover onOpenChange={(o) => o && setQ('')}>
-        <PopoverTrigger className="inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-md border border-dashed border-line-strong px-2 text-xs text-muted hover:border-subtle hover:text-fg data-[state=open]:bg-sel">
+        <PopoverTrigger className="chip-idle inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-muted hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg">
           <Plus className="h-3 w-3" />
           {t('添加标签')}
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[240px]">
-          <input
-            autoFocus
+          <MenuSearch
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={setQ}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && name && !exact) {
                 e.preventDefault()
@@ -109,19 +107,18 @@ export function TagPicker({ value, onChange }: { value: string[]; onChange: (ids
               }
             }}
             placeholder={t('搜索或输入新标签名')}
-            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
           />
           <div className="max-h-64 overflow-y-auto">
             {list.map((x) => (
               <button key={x.id} type="button" className={menuItem} onClick={() => toggle(x.id)}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: TAG_HEX[x.color] }} />
                 <span className="flex-1 truncate">{x.name}</span>
-                {value.includes(x.id) && <Check className="h-4 w-4 text-accent" />}
+                {value.includes(x.id) && <Check className="h-4 w-4 text-accent-text" />}
               </button>
             ))}
             {name && !exact && (
               <button type="button" className={menuItem} onClick={() => void create()}>
-                <Plus className="h-4 w-4 text-accent" />
+                <Plus className="h-4 w-4 text-accent-text" />
                 <span className="flex-1 truncate">{t('新建标签「{name}」', { name })}</span>
               </button>
             )}
@@ -150,24 +147,21 @@ export function TagFilter({
   const list = tags.filter((x) => used.includes(x.id))
   if (!list.length) return null
   return (
-    <div className="flex flex-wrap items-center gap-1 px-1 pb-2" role="radiogroup" aria-label={t('按标签筛选')}>
-      <TagIcon className="mr-0.5 h-3.5 w-3.5 text-subtle" />
-      {list.map((x) => (
-        <button
-          key={x.id}
-          type="button"
-          role="radio"
-          aria-checked={value === x.id}
-          onClick={() => onChange(value === x.id ? '' : x.id)}
-          style={value === x.id ? tagStyle(x.color) : undefined}
-          className={cn(
-            'h-[22px] cursor-pointer rounded-md px-1.5 text-[0.71875rem] transition-colors',
-            value === x.id ? 'font-medium ring-1 ring-current' : 'text-muted hover:bg-sel hover:text-fg',
-          )}
-        >
-          {x.name}
-        </button>
-      ))}
+    <div className="flex items-center gap-1.5 px-1 pb-2">
+      <TagIcon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+      {/* 单选，再点选中的那个取消筛选；每块前面一个标签色的圆点，认得出是哪个标签 */}
+      <ChipGroup
+        label={t('按标签筛选')}
+        size="sm"
+        value={value}
+        onChange={(id) => onChange(value === id ? '' : id)}
+        options={list.map((x) => ({
+          id: x.id,
+          label: x.name,
+          title: x.description || undefined,
+          icon: <span className="h-2 w-2 rounded-full" style={{ background: TAG_HEX[x.color] }} />,
+        }))}
+      />
     </div>
   )
 }

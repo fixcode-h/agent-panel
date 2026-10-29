@@ -11,6 +11,8 @@ import { fileIcon } from '@/lib/file-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { categoryLabel } from '@/components/library/BundledSkills'
 
@@ -76,29 +78,23 @@ export function BundledDetail({
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
-        <Package className="mt-1 h-5 w-5 shrink-0 text-accent" />
+        <Package className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         <div className="min-w-0 flex-[1_1_260px]">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate font-mono text-lg font-semibold">{item.name}</h2>
-            <span className="rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted">
-              {t('自带 Skill')}
-            </span>
-            <span
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted',
-                changed && 'border-dashed',
-              )}
-            >
+            <Badge className="text-[0.6875rem]">{t('自带 Skill')}</Badge>
+            {/* 和自带版本不一样（被改过）换成警告色，不靠虚线边框区分 */}
+            <Badge tone={changed ? 'warning' : 'neutral'} className="gap-1.5 text-[0.6875rem]">
               {BUNDLED_STATUS_LABEL[item.status.shared]}
               {item.status.shared === 'same' ? (
                 <Check className="h-3 w-3 text-success" />
               ) : item.status.shared === 'changed' ? (
                 <RefreshCw className="h-3 w-3 text-warning" />
               ) : null}
-            </span>
+            </Badge>
           </div>
           <p className="mt-1 text-[0.8125rem] leading-relaxed text-muted">{item.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-[0.71875rem] text-subtle">
+          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">
             {SHARED_DIR}/{item.name}/SKILL.md
           </p>
         </div>
@@ -126,11 +122,11 @@ export function BundledDetail({
         </div>
 
         {/* 自带技能的内容由面板随版本提供：说明清楚为什么这里不能编辑，不留一个空详情页 */}
-        <p className="rounded-xl border border-dashed px-4 py-3 text-[0.8125rem] leading-relaxed text-muted">
+        <p className="rounded-xl bg-sel/50 px-4 py-3 text-[0.8125rem] leading-relaxed text-muted">
           {t('自带技能的内容由面板随版本提供，不能在这里编辑；修改请复制一份放到自己的技能目录里。')}
         </p>
         {deployed && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-accent-soft px-4 py-3">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
             <span className="min-w-0 flex-1 text-[0.8125rem] leading-relaxed">
               {t('这个技能还有一份部署在「设置 → 部署」，那份要覆盖部署一次才会更新。')}
@@ -149,7 +145,7 @@ export function BundledDetail({
             )}
           </div>
           <div className="flex flex-col gap-3 lg:flex-row">
-            <div className="flex min-w-0 flex-col gap-0.5 rounded-xl bg-card shadow-card p-1.5 lg:w-[260px] lg:shrink-0">
+            <Card padding="xs" className="flex min-w-0 flex-col gap-0.5 lg:w-[260px] lg:shrink-0">
               {/* 主文件也列在树里：自带技能的内容只读，不存在「主文件在别处编辑」 */}
               <button
                 type="button"
@@ -161,7 +157,7 @@ export function BundledDetail({
                   picked === '' && file ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
                 )}
               >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <FileText className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 <span className="truncate font-mono">SKILL.md</span>
               </button>
               {visibleRows(rows, folded).map((r) => {
@@ -182,7 +178,7 @@ export function BundledDetail({
                       picked === r.path ? 'bg-sel text-fg' : 'hover:bg-sel/60',
                     )}
                   >
-                    <Icon className={cn('h-3.5 w-3.5 shrink-0', isDir ? 'text-subtle' : 'text-accent')} />
+                    <Icon className={cn('h-3.5 w-3.5 shrink-0', isDir ? 'text-subtle' : 'text-accent-text')} />
                     <span className={cn('truncate', isDir ? 'text-muted' : 'font-mono')}>{entryName(r.path)}</span>
                   </button>
                 )
@@ -190,7 +186,7 @@ export function BundledDetail({
               {item.tree?.truncated && (
                 <p className="px-2 py-2 text-[0.75rem] text-subtle">{t('文件太多，只显示了前面一部分。')}</p>
               )}
-            </div>
+            </Card>
 
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               {error ? (
@@ -206,9 +202,13 @@ export function BundledDetail({
               ) : (
                 <>
                   <span className="truncate font-mono text-[0.75rem] text-subtle">{file.path || 'SKILL.md'}</span>
-                  <pre className="max-h-[min(60vh,560px)] overflow-auto rounded-xl bg-card shadow-card p-4 font-mono text-[0.78125rem] leading-relaxed whitespace-pre-wrap">
+                  <Card
+                    as="pre"
+                    padding="md"
+                    className="max-h-[min(60vh,560px)] overflow-auto font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap"
+                  >
                     {file.content}
-                  </pre>
+                  </Card>
                 </>
               )}
             </div>

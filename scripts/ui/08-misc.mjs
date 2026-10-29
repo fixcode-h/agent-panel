@@ -357,6 +357,75 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   {
     const p = await page({ width: 1440, height: 900 })
     await p.goto(base + '#/schedules')
+    // 默认是周视图（照设计稿）：先看日历和右侧详情，再切到「列表」检查按状态分组的卡片
+    await check(p, '计划周视图', ['计划', '本周', '第', '新建计划', '接下来', '运行记录', '现在运行一次'])
+    if (!(await p.getByRole('region', { name: '周视图' }).count())) errors.push('计划周视图：没有「周视图」区域')
+    if (!(await p.getByRole('complementary', { name: '计划详情' }).count()))
+      errors.push('计划周视图：宽屏右侧没有「计划详情」面板')
+
+    // 详情面板直接改（照设计稿）：没改时「保存」不可点；改了要做什么、选「到某天」结束后保存，
+    // 走和编辑弹窗同一套校验——结束日期早于第一次执行时拦下并提示
+    {
+      const detail = p.getByRole('complementary', { name: '计划详情' })
+      const saveBtn = detail.getByRole('button', { name: '保存', exact: true })
+      // 演示预置的运行记录：跑完的写耗时（72 秒 → 1:12），启动失败的给「AI 分析」
+      await check(p, '计划详情-运行记录', ['1:12', '0:58', '失败 · AI 分析'])
+      if (!(await saveBtn.isDisabled())) errors.push('计划详情：没改动时「保存」也能点')
+      await detail.getByLabel('要做什么').fill('总结今天做的工作，列出明天要接着做的事')
+      if (await saveBtn.isDisabled()) errors.push('计划详情：改了要做什么之后「保存」还是不能点')
+      const ymdOf = (ms) => {
+        const d = new Date(ms)
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      }
+      const endGroup = detail.getByRole('radiogroup', { name: '结束' })
+      await endGroup.getByRole('radio', { name: '到某天' }).click()
+      const endInput = detail.getByLabel('结束日期')
+      await endInput.waitFor({ timeout: 3000 }).catch(() => errors.push('计划详情：选「到某天」后没有出现结束日期'))
+      // 结束日期早于第一次执行：保存被拦下，原因直接显示
+      await endInput.fill(ymdOf(Date.now() - 2 * 86_400_000))
+      await saveBtn.click()
+      await p
+        .getByText('结束日期早于第一次执行，计划一次也不会执行')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('计划详情：结束日期早于第一次执行时没有拦下保存'))
+      const endDate = ymdOf(Date.now() + 10 * 86_400_000)
+      await endInput.fill(endDate)
+      await saveBtn.click()
+      await p
+        .getByText('计划已保存')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('计划详情：保存后没有提示「计划已保存」'))
+      await p
+        .waitForFunction((btn) => btn?.disabled, await saveBtn.elementHandle(), { timeout: 5000 })
+        .catch(() => errors.push('计划详情：保存后「保存」还能点（改动没有落下）'))
+      const stored = await p.evaluate((key) => {
+        const db = JSON.parse(localStorage.getItem(key) || '{}')
+        const s = (db.schedules || []).find((x) => x.name === '今日工作')
+        return s ? { endDate: s.endDate, prompt: s.prompt } : null
+      }, KEY)
+      if (stored?.endDate !== endDate) errors.push(`计划详情：结束日期没有存下来（${JSON.stringify(stored)}）`)
+      if (stored?.prompt !== '总结今天做的工作，列出明天要接着做的事')
+        errors.push(`计划详情：要做什么没有存下来（${JSON.stringify(stored)}）`)
+      await check(p, '计划详情-保存后', ['到某天', '接下来'])
+
+      // 有没保存的改动时切到列表：先确认，确认放弃才切过去
+      await detail.getByLabel('要做什么').fill('改到一半')
+      await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '列表' }).click()
+      const discard = p.getByRole('dialog').filter({ hasText: '放弃没有保存的改动？' })
+      await discard.waitFor({ timeout: 3000 }).catch(() => errors.push('计划详情：有未保存的改动时切走没有确认'))
+      if (await discard.count()) await discard.getByRole('button', { name: '放弃改动' }).click()
+      await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '周' }).click()
+    }
+    /** 切到列表视图：视图记在本机，重载后还在列表；每次都点一下更稳 */
+    const listView = async () => {
+      await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '列表' }).click()
+      await p.getByRole('region', { name: '计划概览' }).or(p.getByText('还没有计划')).first().waitFor({ timeout: 5000 })
+    }
+    await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '月' }).click()
+    await check(p, '计划月视图', ['本月', '今日工作'])
+    await listView()
     // 页头一条概览（下一次是谁、什么时候，待执行 / 出过问题计数），下面按四组列卡片
     await check(p, '计划列表', [
       '计划',
@@ -427,7 +496,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .catch(() => errors.push('新建计划：执行时间改到过去后，预览没有提示会记为错过'))
     // 改乱之后一键填回模板（同时把上面改过去的执行时间填回 19:00）
     await dlg.getByLabel('名称').fill('随便写')
-    await repeatGroup.getByRole('radio', { name: '单次' }).click()
+    await repeatGroup.getByRole('radio', { name: '不重复' }).click()
     await dlg.getByRole('button', { name: '填入「今日工作」模板' }).click()
     if ((await dlg.getByLabel('名称').inputValue()) !== '今日工作') errors.push('填入模板：名称没有填回「今日工作」')
     if ((await checkedRepeat()) !== '每天') errors.push('填入模板：重复没有填回「每天」')
@@ -474,7 +543,8 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     const fresh = p.locator('li', { hasText: '下午茶时间' })
     await fresh.getByRole('button', { name: '立即执行' }).click()
     await check(p, '立即执行提示', ['在线演示里不会真的启动对话'])
-    await p
+    // 限定在这张卡片里：预置的今日工作带着运行记录，本身就显示「已启动」
+    await fresh
       .getByText('已启动', { exact: true })
       .waitFor({ timeout: 5000 })
       .catch(() => errors.push('立即执行后：最近一次结果没有显示「已启动」'))
@@ -576,6 +646,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     }, KEY)
     // 演示后端把数据缓存在内存里，只改 localStorage 不重载会被它覆盖回去
     await p.reload()
+    await listView()
 
     await check(p, '出过问题', ['出过问题', '错过', '面板当时没在跑', '启动失败', '项目「老项目」已经不存在'])
     // 概览的「待执行」是会再自动执行的计划数：出过问题但没停用的也算，允许和「出过问题」重叠
@@ -638,6 +709,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
     for (const width of [375, 1024]) {
       await p.setViewportSize({ width, height: 820 })
       await p.reload()
+      await listView()
       await check(p, `计划-${width} 宽度`, ['出过问题', '错过', '新建计划'])
     }
 

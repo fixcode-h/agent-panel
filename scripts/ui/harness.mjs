@@ -284,3 +284,89 @@ export async function dialogBottomSpaceProblems(p, label) {
   if (info.gap < expected - 0.5) problems.push(`${label}：最后一块距底部操作栏 ${info.gap}px，应至少 ${expected}px`)
   return problems
 }
+
+/**
+ * 吸顶元素上方漏出背后内容：sticky 的 top 是相对滚动区的内边距算的，滚动区有 padding-top 时，
+ * 吸住的标题和滚动区顶边之间会留一条缝，滚过去的列表从缝里露出来（设置左栏标题上方露出「快捷键」）。
+ * 把页面上每个能滚的区域滚到底，凡是吸住的元素离滚动区顶边还有空隙就报出来；查完滚回原位
+ */
+export async function stickyLeakProblems(p, label) {
+  const leaks = await p.evaluate(() => {
+    const out = []
+    const scrollers = [...document.querySelectorAll('*')].filter((el) => {
+      const s = getComputedStyle(el)
+      return ['auto', 'scroll'].includes(s.overflowY) && el.scrollHeight > el.clientHeight + 1
+    })
+    for (const sc of scrollers) {
+      const before = sc.scrollTop
+      sc.scrollTop = sc.scrollHeight
+      const top = sc.getBoundingClientRect().top + sc.clientTop
+      for (const el of sc.querySelectorAll('*')) {
+        const s = getComputedStyle(el)
+        if (s.position !== 'sticky' || s.top === 'auto' || !el.getClientRects().length) continue
+        // 只看以这个滚动区为准的吸顶元素（中间还隔着别的滚动区的不算）
+        let up = el.parentElement
+        while (up && up !== sc && !['auto', 'scroll', 'hidden'].includes(getComputedStyle(up).overflowY))
+          up = up.parentElement
+        if (up !== sc) continue
+        const gap = el.getBoundingClientRect().top - top
+        const stuckAt = parseFloat(getComputedStyle(sc).paddingTop) + parseFloat(s.top)
+        // 正吸着（位置就在吸附线上）而吸附线不在顶边：缝里会露出滚过去的内容
+        if (sc.scrollTop > 0 && Math.abs(gap - stuckAt) < 1 && gap > 0.5)
+          out.push(`「${(el.textContent ?? '').trim().slice(0, 20)}」上方漏出 ${Math.round(gap)}px`)
+      }
+      sc.scrollTop = before
+    }
+    return out
+  })
+  return leaks.map((l) => `${label}：吸顶元素${l}，背后的内容会从缝里露出来`)
+}
+
+/**
+ * 分段切换在深色下认不出选中项：选中块和轨道的底色亮度差太小（深色下 card 和 sel 只差几个色阶）。
+ * 把页面上每个分段单选（radiogroup 里直接放 radio 按钮的）拿出来，比选中块和轨道的相对亮度，比值低于 1.15 就报。
+ * 门槛按「浅色下白卡片压在浅灰轨道上（约 1.2，另有投影）认得出、出问题的深色（约 1.0）认不出」定
+ */
+export async function segmentedContrastProblems(p, label) {
+  const bad = await p.evaluate(() => {
+    // 计算样式里的颜色可能是 oklab() / color(srgb …)（color-mix 的结果），交给 canvas 统一换成 rgba 再算
+    const ctx = document.createElement('canvas').getContext('2d')
+    const rgb = (c) => {
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = '#000'
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data
+      return [r, g, b, a / 255]
+    }
+    const lum = ([r, g, b]) => {
+      const f = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    }
+    // 半透明底色要和下面的颜色叠起来算：一路往上找，直到不透明为止
+    const solid = (el) => {
+      const layers = []
+      for (let e = el; e; e = e.parentElement) {
+        const c = rgb(getComputedStyle(e).backgroundColor)
+        const a = c[3]
+        if (a > 0) layers.push([c[0], c[1], c[2], a])
+        if (a >= 1) break
+      }
+      let out = [255, 255, 255]
+      for (const [r, g, b, a] of layers.reverse())
+        out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)]
+      return out
+    }
+    const out = []
+    for (const g of document.querySelectorAll('[role="radiogroup"]')) {
+      const on = g.querySelector(':scope > [role="radio"][aria-checked="true"]')
+      if (!on || !on.getClientRects().length) continue
+      const a = lum(solid(on))
+      const b = lum(solid(g))
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+      if (ratio < 1.15) out.push(`「${g.getAttribute('aria-label') ?? ''}」选中块和轨道亮度比 ${ratio.toFixed(2)}`)
+    }
+    return out
+  })
+  return bad.map((b) => `${label}：分段切换${b}，选中项看不清`)
+}

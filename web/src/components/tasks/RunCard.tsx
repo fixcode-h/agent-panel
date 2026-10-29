@@ -12,7 +12,9 @@ import { useStickToBottom } from '@/lib/useStickToBottom'
 import { useTaskStream } from '@/lib/task-stream'
 import { fmtDuration, startedRun } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Modal } from '@/components/ui/modal'
+import { FlowStrip, type FlowNode } from '@/components/ui/flow-strip'
 import { StepIcon } from './TaskStatusIcon'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
@@ -59,44 +61,43 @@ function RunCardBase({
   const state = runState(task, run)
   const done = steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
   const time = runDuration(task, run, now)
-  const preview = steps
-    .map((s) => s.title)
-    .filter(Boolean)
-    .slice(0, 4)
-    .join(' · ')
+  // 组件库「计划 · 工作流」：浅底卡片，头一行写工作流和进度，下面一排节点胶囊（完成绿、运行中强调、没开始灰）
+  const nodes: FlowNode[] = steps.map((s) => ({
+    id: s.id,
+    label: s.title || t('未命名'),
+    state:
+      s.status === 'done' ? 'done' : s.status === 'running' ? 'running' : s.status === 'failed' ? 'failed' : 'idle',
+  }))
   return (
     <button
       type="button"
       onClick={onOpen}
       title={t('打开这次运行的对话')}
       data-run={run}
-      className="group flex w-full cursor-pointer items-center gap-3 rounded-2xl bg-card px-4 py-3 text-left shadow-card transition-colors hover:border-line-strong hover:bg-sel/40"
+      className="group flex w-full cursor-pointer flex-col gap-2.5 rounded-xl bg-sel/45 px-3 py-2.5 text-left transition-colors hover:bg-sel/70"
     >
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-field">
+      <span className="flex w-full min-w-0 items-center gap-2 text-[0.8125rem]">
         {state === 'running' ? (
-          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : state === 'done' ? (
-          <CircleCheck className="h-4 w-4 text-success" />
+          <CircleCheck className="h-3.5 w-3.5 shrink-0 text-success" />
         ) : state === 'failed' ? (
-          <CircleX className="h-4 w-4 text-danger" />
+          <CircleX className="h-3.5 w-3.5 shrink-0 text-danger" />
         ) : (
-          <WorkflowIcon className="h-4 w-4 text-muted" />
+          <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+        )}
+        <span className="shrink-0 font-semibold">{t('运行 {n}', { n: run })}</span>
+        {name && <span className="min-w-0 truncate text-muted">{name}</span>}
+        <span className="flex-1" />
+        {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
+        {steps.length > 0 && (
+          <span className="flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-card px-2 text-xs font-medium text-fg tabular-nums">
+            {t('{done}/{total} 个节点', { done, total: steps.length })}
+            <ChevronRight className="h-3.5 w-3.5 text-subtle transition-transform group-hover:translate-x-0.5" />
+          </span>
         )}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2 text-[0.8125rem] font-medium">
-          <span className="truncate">{t('运行 {n}', { n: run })}</span>
-          {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
-        </span>
-        <span className="flex min-w-0 items-center gap-2 text-xs text-subtle">
-          {steps.length > 0 && (
-            <span className="shrink-0 tabular-nums">{t('{done}/{total} 个节点', { done, total: steps.length })}</span>
-          )}
-          {preview && <span className="min-w-0 truncate">{preview}</span>}
-        </span>
-      </span>
-      {time && <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">{time}</span>}
-      <ChevronRight className="h-4 w-4 shrink-0 text-subtle transition-transform group-hover:translate-x-0.5" />
+      {nodes.length > 0 && <FlowStrip nodes={nodes} />}
     </button>
   )
 }
@@ -166,25 +167,19 @@ export function RunPanel({
           <span className="truncate text-[0.875rem] font-medium">{t('运行 {n}', { n: run })}</span>
           {name && <span className="truncate text-xs text-subtle">{name}</span>}
           {state === 'running' && (
-            <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
+            <span className="flex shrink-0 items-center gap-1 text-xs text-accent-text">
               <Loader2 className="h-3 w-3 animate-spin" />
               {t('执行中')}
             </span>
           )}
         </span>
-        <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <IconButton size="sm" icon={X} label={t('关闭')} onClick={onClose} />
       </header>
       <RunFlow task={task} run={run} />
       {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
     </div>
   )
 }
-
-/** 和命令行、差异窗口一样的大小和动画：内容区铺满屏幕 */
-const shell =
-  'fixed top-1/2 left-1/2 z-50 flex h-[min(900px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none'
 
 /**
  * 对话里的「启动工作流」一行点开的窗口：内容和右边这次运行的面板一样（按节点铺开 Agent 的消息、
@@ -223,56 +218,51 @@ export function RunDialog({
   const name = run ? task?.runs?.find((r) => r.id === run)?.workflowName || task?.workflowName : ''
   const state = task && run ? runState(task, run) : 'waiting'
   const text = (tool.output ?? '').replace(/\s+$/, '')
+  const heading = run ? t('运行 {n}', { n: run }) : t('启动工作流')
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
-        <D.Content aria-describedby={undefined} className={cn(shell, 'bg-bg')}>
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
-            <D.Title className="flex min-w-0 flex-1 items-center gap-2 text-[0.875rem] font-medium">
-              <span className="truncate">{run ? t('运行 {n}', { n: run }) : t('启动工作流')}</span>
-              {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
-              {state === 'running' && (
-                <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {t('执行中')}
-                </span>
-              )}
-            </D.Title>
-            <D.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')}>
-                <X className="h-4 w-4" />
-              </Button>
-            </D.Close>
-          </header>
-          {task === null ? (
-            <p className="mx-auto flex w-full max-w-(--content-w) items-center gap-2 px-4 py-5 text-[0.8125rem] text-subtle md:px-6">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {t('正在读取这次运行…')}
-            </p>
-          ) : run ? (
-            <RunFlow task={task} run={run} />
-          ) : (
-            // 没有运行可看（调用失败、还没开始执行）：把原因和这次的输出照原样留着，不换成一句「没有内容」
-            <div className="min-h-0 flex-1 overflow-auto">
-              <div className="mx-auto w-full max-w-(--content-w) px-4 py-5 md:px-6">
-                <p className="mb-2 text-[0.8125rem] text-subtle">{t('这次调用没有启动运行。')}</p>
-                {text && (
-                  <pre
-                    className={cn(
-                      'font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
-                      tool.failed ? 'text-danger' : 'text-fg/90',
-                    )}
-                  >
-                    {text}
-                  </pre>
-                )}
-              </div>
-            </div>
+    // 和命令行、差异窗口一样用铺满的查看窗口：只看不填，点到外面就关
+    <Modal open={open} onOpenChange={onOpenChange} title={null} size="full" bare closeOnOutside className="bg-bg">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
+        <D.Title className="flex min-w-0 flex-1 items-center gap-2 text-[0.875rem] font-medium">
+          <span className="truncate">{heading}</span>
+          {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
+          {state === 'running' && (
+            <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent-text">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t('执行中')}
+            </span>
           )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        </D.Title>
+        <D.Close asChild>
+          <IconButton size="sm" icon={X} label={t('关闭')} />
+        </D.Close>
+      </header>
+      {task === null ? (
+        <p className="mx-auto flex w-full max-w-(--content-w) items-center gap-2 px-4 py-5 text-[0.8125rem] text-subtle md:px-6">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t('正在读取这次运行…')}
+        </p>
+      ) : run ? (
+        <RunFlow task={task} run={run} />
+      ) : (
+        // 没有运行可看（调用失败、还没开始执行）：把原因和这次的输出照原样留着，不换成一句「没有内容」
+        <div className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-(--content-w) px-4 py-5 md:px-6">
+            <p className="mb-2 text-[0.8125rem] text-subtle">{t('这次调用没有启动运行。')}</p>
+            {text && (
+              <pre
+                className={cn(
+                  'font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                  tool.failed ? 'text-danger' : 'text-fg/90',
+                )}
+              >
+                {text}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }

@@ -43,6 +43,8 @@ import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
+import { blenderMcpApi } from './blender-mcp.ts'
+import { blenderApi } from './blender.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { webSearchApi } from './web-search.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
@@ -87,7 +89,14 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
-import { builtinDefinition, builtinKey, isBuiltinAgent, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
+import {
+  builtinDefinition,
+  builtinKey,
+  defaultMounts,
+  isBuiltinAgent,
+  isCoreAgent,
+  syncCore,
+} from '../shared/builtin/core.ts'
 import {
   builtinProjectCategories,
   isBuiltinProjectCategory,
@@ -574,8 +583,8 @@ app.put('/agents/:id', async (c) => {
       ...syncCore(r.data!, def, {
         categoryId: isCoreAgent(before) ? before.categoryId : r.data!.categoryId,
         includes: before.includes,
-        // 挂哪些能力跟着已装的定义（启动同步维护），用户只能改每个挂载的用法和参数取值
-        mounts: before.mounts,
+        // 没接管挂载时挂哪些能力按内置定义（「恢复默认挂载」也走这里）；接管了的按用户提交的（mountsCustom）
+        mounts: defaultMounts(def, await agents.list()),
       }),
       name: before.name,
       origin: before.origin,
@@ -865,6 +874,8 @@ const schedules = schedulesApi({
   startChat: (input) => tasks.startChat(input),
   // Webhook 载荷里带项目名：接的一方不用再去查项目 id
   projectName: async (id) => (await projects.get(id))?.name ?? '',
+  // 启动出来的对话跑完没有：只读任务元数据，运行记录据此补耗时
+  peekTask: (id) => tasks.peek(id),
 })
 app.route('/schedules', schedules.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
@@ -925,6 +936,8 @@ app.route('/bridge', bridgeApi())
 app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
+app.route('/mcp', blenderMcpApi())
+app.route('/blender', blenderApi())
 app.route('/mcp', askMcpApi())
 // 联网搜索代理：CLI 里的 web_search / web_fetch 打到面板，地址里带本轮 CLI 的随机地址
 app.route('/web-search', webSearchApi())

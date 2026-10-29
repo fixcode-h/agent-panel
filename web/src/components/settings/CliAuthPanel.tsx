@@ -27,6 +27,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { IconButton } from '@/components/ui/icon-button'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from './parts'
 import { t } from '@shared/i18n'
 
@@ -101,13 +103,13 @@ export function CliAuthPanel({
               </Button>
             </div>
             {cur ? (
-              <p className="text-[0.78125rem] leading-relaxed text-subtle">
+              <p className="text-[0.75rem] leading-relaxed text-subtle">
                 <span className="font-mono">{apiBaseUrl(cur) || t('默认地址')}</span>
                 {' · '}
                 {cur.models.length ? t('{n} 个模型', { n: cur.models.length }) : t('还没有填模型，去 API 配置里添加')}
               </p>
             ) : (
-              <p className="text-[0.78125rem] leading-relaxed text-warning">
+              <p className="text-[0.75rem] leading-relaxed text-warning">
                 {fitting.length
                   ? t('还没选 API，现在会按 Agent 自己的登录运行')
                   : t('还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的', {
@@ -206,7 +208,7 @@ function AccountList({ def }: { def: CliDefinition }) {
       <div className="flex flex-wrap items-center gap-2 rounded-xl bg-sel/40 p-3">
         <User className="h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[0.84375rem] font-medium">{label}</p>
+          <p className="truncate text-[0.8125rem] font-medium">{label}</p>
           <p className="text-[0.75rem] text-subtle">
             {data.live.loggedIn
               ? data.unsaved
@@ -253,9 +255,7 @@ function AccountList({ def }: { def: CliDefinition }) {
         <ProviderChecks def={def} stamp={`${data.live.label}|${data.accounts.find((a) => a.active)?.id ?? ''}`} />
       )}
       {def.auth?.accountNote && (
-        <p className="rounded-xl border border-warning/40 bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">
-          {def.auth.accountNote}
-        </p>
+        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-[0.75rem] leading-relaxed">{def.auth.accountNote}</p>
       )}
       {login && <LoginProgress cli={def.id} job={login} onClose={() => setLogin(null)} />}
       {data.accounts.length > 0 && (
@@ -264,14 +264,14 @@ function AccountList({ def }: { def: CliDefinition }) {
             <li
               key={a.id}
               className={cn(
-                'group flex items-center gap-2 rounded-lg border px-3 py-2',
-                a.active ? 'border-accent/50 bg-accent-soft/40' : 'border-transparent hover:bg-sel/60',
+                'group flex items-center gap-2 rounded-lg px-3 py-2',
+                a.active ? 'bg-accent-soft' : 'hover:bg-sel/60',
               )}
             >
               <span
                 className={cn(
                   'grid h-4 w-4 shrink-0 place-items-center rounded-full border',
-                  a.active ? 'border-accent bg-accent text-white' : 'border-line-strong',
+                  a.active ? 'border-accent bg-accent text-on-accent' : 'border-line-strong',
                 )}
               >
                 {a.active && <Check className="h-3 w-3" strokeWidth={3} />}
@@ -310,7 +310,7 @@ function AccountList({ def }: { def: CliDefinition }) {
               ) : (
                 <>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[0.84375rem] font-medium">{a.name}</span>
+                    <span className="block truncate text-[0.8125rem] font-medium">{a.name}</span>
                     {a.email && a.email !== a.name && (
                       <span className="block truncate text-[0.75rem] text-subtle">{a.email}</span>
                     )}
@@ -332,24 +332,23 @@ function AccountList({ def }: { def: CliDefinition }) {
                       {t('切换')}
                     </Button>
                   )}
-                  <button
-                    type="button"
-                    aria-label={t('重命名 {name}', { name: a.name })}
+                  <IconButton
+                    size="sm"
+                    reveal="hover"
+                    icon={Pencil}
+                    label={t('重命名 {name}', { name: a.name })}
                     title={t('重命名')}
                     onClick={() => setRenaming({ id: a.id, name: a.name })}
-                    className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-fg focus-visible:opacity-100"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t('删除 {name}', { name: a.name })}
+                  />
+                  <IconButton
+                    size="sm"
+                    reveal="hover"
+                    tone="danger"
+                    icon={Trash2}
+                    label={t('删除 {name}', { name: a.name })}
                     title={t('删除（只删除保存的，不影响 Agent 现在的登录）')}
                     onClick={() => run(`d:${a.id}`, () => api.deleteAccount(def.id, a.id))}
-                    className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-danger focus-visible:opacity-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  />
                 </>
               )}
             </li>
@@ -393,9 +392,9 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
   useEffect(() => load(), [load, stamp])
   if (list && !list.length) return null
   return (
-    <div className="rounded-xl border px-3 py-2.5">
+    <Card className="px-3 py-2.5">
       <div className="mb-1.5 flex items-center gap-2">
-        <p className="flex-1 text-[0.78125rem] font-medium">{t('设置里用到的提供方')}</p>
+        <p className="flex-1 text-[0.75rem] font-medium">{t('设置里用到的提供方')}</p>
         <Button size="sm" variant="ghost" disabled={loading} onClick={load} aria-label={t('重新检查凭据')}>
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
         </Button>
@@ -405,7 +404,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
       ) : (
         <ul className="flex flex-col gap-1" aria-label={t('提供方凭据')}>
           {list.map((p) => (
-            <li key={p.provider} className="flex items-center gap-2 text-[0.78125rem]">
+            <li key={p.provider} className="flex items-center gap-2 text-[0.75rem]">
               {p.ready ? (
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
               ) : (
@@ -423,7 +422,7 @@ function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -438,14 +437,14 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-xl border p-3 text-[0.8125rem]',
-        job.status === 'failed' && 'border-danger/40 bg-danger/5',
-        job.status === 'done' && 'border-success/40 bg-success/5',
+        'flex flex-col gap-2 rounded-xl bg-sel/50 p-3 text-[0.8125rem]',
+        job.status === 'failed' && 'bg-danger/8',
+        job.status === 'done' && 'bg-success/8',
       )}
     >
       <div className="flex items-center gap-2">
         {running ? (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
         ) : job.status === 'done' ? (
           <Check className="h-4 w-4 shrink-0 text-success" />
         ) : (
@@ -485,7 +484,7 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
           href={job.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex w-fit max-w-full items-center gap-1.5 text-accent hover:underline"
+          className="inline-flex w-fit max-w-full items-center gap-1.5 text-accent-text hover:underline"
         >
           <ExternalLink className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{t('浏览器没有自动打开？点这里登录')}</span>
@@ -506,18 +505,18 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
             onChange={(e) => setCode(e.target.value)}
             placeholder={t('粘贴浏览器里显示的授权码')}
             aria-label={t('授权码')}
-            className="h-8 min-w-0 flex-1 font-mono text-[0.78125rem]"
+            className="h-8 min-w-0 flex-1 font-mono text-[0.75rem]"
           />
           <Button size="sm" type="submit" disabled={!code.trim()}>
             {t('提交')}
           </Button>
         </form>
       )}
-      {job.error && <p className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
+      {job.error && <p className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
       {job.output.trim() && (
         <pre
           ref={box}
-          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
+          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
         >
           {job.output.trim()}
         </pre>

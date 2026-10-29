@@ -19,6 +19,9 @@ import {
 import { ANNOTATION_KINDS, annotationBox, type Annotation, type AnnotationKind, type MaskStroke } from '@shared/design'
 import { walk, type Widget } from '@shared/umg'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/ui/icon-button'
+import { Textarea } from '@/components/ui/input'
 import { t } from '@shared/i18n'
 
 /**
@@ -27,14 +30,15 @@ import { t } from '@shared/i18n'
  */
 export type Tool = 'select' | 'hand' | 'play' | 'rect' | 'arrow' | 'pen' | 'pin' | 'mask'
 
+// 颜色定义在 index.css 的 --mark-*：SVG 的 fill / stroke 和行内 background 都认 var()
 export const KIND_COLOR: Record<AnnotationKind, string> = {
-  change: '#f43f5e',
-  add: '#3b82f6',
-  remove: '#f59e0b',
-  keep: '#22c55e',
+  change: 'var(--mark-change)',
+  add: 'var(--mark-add)',
+  remove: 'var(--mark-remove)',
+  keep: 'var(--mark-keep)',
 }
 /** 蒙版不是标注的意思，用单独的颜色，和四种标注区分开 */
-export const MASK_COLOR = '#22d3ee'
+export const MASK_COLOR = 'var(--mark-mask)'
 export const kindLabel = (k: AnnotationKind) =>
   ({ change: t('修改'), add: t('新增'), remove: t('删除'), keep: t('保持不变') })[k]
 /** 标注显示的颜色和名字：蒙版是块状涂抹，不是修改 / 新增这类意思 */
@@ -124,7 +128,7 @@ export function AnnotationToolbar({
       <div
         role="toolbar"
         aria-label={t('标注工具')}
-        className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop backdrop-blur"
+        className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-0.5 rounded-xl bg-canvas-bar p-1 text-canvas-fg shadow-pop"
       >
         {TOOLS.filter((x) => !tools || tools.includes(x.id)).map((x, i, list) => (
           <span key={x.id} className="flex items-center">
@@ -153,9 +157,9 @@ export function AnnotationToolbar({
                 onChange={(e) => mask.onSize(Number(e.target.value))}
                 aria-label={t('蒙版笔刷大小')}
                 title={t('笔刷大小：{n} 像素', { n: mask.size })}
-                className="h-1 w-16 cursor-pointer accent-[#22d3ee]"
+                className="h-1 w-16 cursor-pointer accent-mark-mask"
               />
-              <span className="w-7 text-center font-mono text-[0.6875rem] text-white/60">{mask.size}</span>
+              <span className="w-7 text-center font-mono text-[0.6875rem] text-canvas-subtle">{mask.size}</span>
               <ToolButton label={t('橡皮擦')} on={mask.erase} onClick={() => mask.onErase(!mask.erase)}>
                 <Eraser className="h-4 w-4" strokeWidth={1.8} />
               </ToolButton>
@@ -178,8 +182,8 @@ export function AnnotationToolbar({
                   onClick={() => onKind(k)}
                   title={`${kindLabel(k)}：${KIND_HINT[k]}`}
                   className={cn(
-                    'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
-                    kind === k && 'bg-white/10 text-white',
+                    'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-canvas-strong',
+                    kind === k && 'bg-canvas-sel font-medium text-canvas-strong',
                   )}
                 >
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: KIND_COLOR[k] }} />
@@ -204,7 +208,7 @@ export function AnnotationToolbar({
       </div>
       {/* 常显的用法说明：只给图标时用户不知道这是标注工具，也不知道该点哪里拖 */}
       {labels && hint && (
-        <p className="max-w-[460px] rounded-md bg-black/55 px-2 py-0.5 text-center text-[0.6875rem] leading-relaxed text-white/75 backdrop-blur">
+        <p className="max-w-[460px] rounded-md bg-canvas-bar/90 px-2 py-0.5 text-center text-[0.6875rem] leading-relaxed text-canvas-fg">
           {hint}
         </p>
       )}
@@ -212,7 +216,7 @@ export function AnnotationToolbar({
   )
 }
 
-const Sep = () => <span className="mx-1 h-5 w-px bg-white/10" />
+const Sep = () => <span aria-hidden className="mx-1 h-5 w-px bg-canvas-line" />
 
 function ToolButton({
   label,
@@ -234,23 +238,25 @@ function ToolButton({
   children: React.ReactNode
 }) {
   return (
-    <button
+    <Button
+      variant="on-canvas"
+      size="icon-sm"
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
       aria-pressed={on}
       title={label}
       className={cn(
-        'flex cursor-pointer flex-col items-center justify-center rounded-lg transition-colors hover:bg-white/8 hover:text-white',
+        'flex-col font-normal',
         // 同一行里的按钮一样高（有文字的和只有图标的对齐）；原画阶段要放下文字，画布上用原来的紧凑高度
-        text ? 'h-10 w-11 gap-0.5' : tall ? 'h-10 w-7' : 'h-7 w-7',
-        on && 'bg-[#4c9bff]/20 text-[#7cb6ff]',
-        disabled && 'cursor-default opacity-30 hover:bg-transparent hover:text-white/70',
+        text ? 'h-10 w-11 gap-0.5' : tall && 'h-10',
+        // 选中的工具和「标注的意思」分段一样用画布上的选中底，整条工具栏只有一种选中样子
+        on && 'bg-canvas-sel text-canvas-strong',
       )}
     >
       {children}
       {text && <span className="text-[0.625rem] leading-none">{text}</span>}
-    </button>
+    </Button>
   )
 }
 
@@ -463,7 +469,7 @@ export function AnnotationLayer({
             aria-label={t('标注 {n}', { n: i + 1 })}
             style={{ left: x * scale, top: y * scale, background: markColor(a) }}
             className={cn(
-              'pointer-events-auto absolute z-10 grid h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white shadow-[0_1px_4px_rgba(0,0,0,0.5)] ring-2 ring-white/90',
+              'pointer-events-auto absolute z-10 grid h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white shadow-pop ring-2 ring-white/90',
               a.id === active && 'ring-[3px]',
             )}
           >
@@ -634,7 +640,7 @@ function AnnotationEditor({
     <div
       onPointerDown={(e) => e.stopPropagation()}
       style={{ left, top, width: W }}
-      className="pointer-events-auto absolute z-20 rounded-xl border border-line-strong bg-card p-3 text-fg shadow-pop"
+      className="pointer-events-auto absolute z-20 rounded-xl bg-card p-3 text-fg shadow-pop"
     >
       <div className="mb-2 flex items-center gap-2">
         <span
@@ -650,13 +656,7 @@ function AnnotationEditor({
               ? a.widgets.join('、')
               : t('没有对上具体的控件')}
         </span>
-        <button
-          onClick={onClose}
-          aria-label={t('关闭')}
-          className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <IconButton icon={X} label={t('关闭')} onClick={onClose} />
       </div>
       <div className={cn('mb-2 grid grid-cols-4 gap-1', a.shape === 'mask' && 'hidden')}>
         {ANNOTATION_KINDS.map((k) => (
@@ -665,8 +665,8 @@ function AnnotationEditor({
             onClick={() => onChange({ ...a, note, kind: k })}
             title={KIND_HINT[k]}
             className={cn(
-              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.71875rem]',
-              a.kind === k ? 'border-transparent text-white' : 'text-muted hover:bg-sel',
+              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md text-[0.6875rem] transition-colors',
+              a.kind === k ? 'font-medium text-white' : 'bg-sel/70 text-muted hover:bg-sel hover:text-fg',
             )}
             style={a.kind === k ? { background: KIND_COLOR[k] } : undefined}
           >
@@ -674,7 +674,7 @@ function AnnotationEditor({
           </button>
         ))}
       </div>
-      <textarea
+      <Textarea
         autoFocus
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -698,16 +698,18 @@ function AnnotationEditor({
             : t('说明要怎么改，例如：按钮换成金色描边')
         }
         aria-label={t('标注说明')}
-        className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[0.78125rem] leading-relaxed outline-none placeholder:text-subtle focus:border-focus"
+        className="block resize-none px-2.5 py-2 text-[0.75rem]"
       />
       <div className="mt-2 flex items-center">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onRemove}
-          className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[0.75rem] text-subtle hover:bg-sel hover:text-danger"
+          className="h-7 gap-1 px-1.5 text-[0.75rem] font-normal text-subtle hover:bg-danger/10 hover:text-danger"
         >
           <Trash2 className="h-3.5 w-3.5" />
           {t('删除标注')}
-        </button>
+        </Button>
         <span className="ml-auto text-[0.6875rem] text-subtle">{t('回车保存')}</span>
       </div>
     </div>
@@ -722,7 +724,7 @@ export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemo
         <span
           key={a.id}
           title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
-          className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[0.71875rem] text-muted"
+          className="group flex max-w-full items-center gap-1.5 rounded-md bg-sel/70 py-0.5 pr-1 pl-1 text-[0.6875rem] text-muted"
         >
           <span
             className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"
@@ -735,13 +737,7 @@ export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemo
             <span className="max-w-[140px] truncate text-subtle">{a.note || a.widgets[0]}</span>
           )}
           {onRemove && (
-            <button
-              onClick={() => onRemove(a.id)}
-              aria-label={t('删除标注')}
-              className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            <IconButton icon={X} size="2xs" label={t('删除标注')} onClick={() => onRemove(a.id)} className="h-4 w-4" />
           )}
         </span>
       ))}

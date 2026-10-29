@@ -5,6 +5,7 @@ import { dayKey, usagePeriod, type UsageGrain } from '@shared/usage'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
+import { IconButton } from '@/components/ui/icon-button'
 
 /** 显示月份里的 42 个格子：1 号所在周的周一开始，前后月补齐，固定 6 行高度不跳 */
 function cellsOf(month: Date) {
@@ -99,29 +100,23 @@ export function PeriodPicker({
         </PopoverTrigger>
         <PopoverContent className="w-[286px] p-2.5" align="start">
           <div className="mb-1.5 flex items-center gap-1">
-            <button
-              type="button"
-              aria-label={t('上个月')}
-              title={t('上个月')}
+            <IconButton
+              size="sm"
+              icon={ChevronLeft}
+              label={t('上个月')}
               disabled={!canStep(-1)}
               onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-              className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-muted hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
+            />
             <span className="flex-1 text-center text-[0.8125rem] font-medium">
               {t('{y}年{m}月', { y: month.getFullYear(), m: month.getMonth() + 1 })}
             </span>
-            <button
-              type="button"
-              aria-label={t('下个月')}
-              title={t('下个月')}
+            <IconButton
+              size="sm"
+              icon={ChevronRight}
+              label={t('下个月')}
               disabled={!canStep(1)}
               onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-              className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-muted hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            />
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-center text-[0.6875rem] text-subtle">
             {WEEKDAYS.map((w) => (
@@ -149,11 +144,11 @@ export function PeriodPicker({
                   aria-pressed={picked}
                   onClick={() => pick(day)}
                   className={cn(
-                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-[0.78125rem] tabular-nums transition-colors',
+                    'relative grid h-8 cursor-pointer place-items-center rounded-lg text-[0.75rem] tabular-nums transition-colors',
                     !inMonth && 'opacity-40',
                     picked ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                     isToday && !picked && 'ring-1 ring-accent/60',
-                    grain === 'day' && picked && 'bg-accent text-white hover:bg-accent',
+                    grain === 'day' && picked && 'bg-accent text-on-accent hover:bg-accent',
                     off && 'cursor-not-allowed opacity-25',
                   )}
                 >

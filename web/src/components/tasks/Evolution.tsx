@@ -36,6 +36,8 @@ import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
+import { Textarea } from '@/components/ui/input'
 
 /** 一条建议改前改后的对比：按行标出删掉和加上的 */
 function DiffView({ before, after }: { before: string; after: string }) {
@@ -125,8 +127,6 @@ function sourcePrompt(r: ResolvedChange, agents: Agent[]) {
 /** 结果卡片上的复制：成功提示「已复制」，失败提示「复制失败」 */
 const copyResult = (text: string) => copyText(text, { done: t('已复制'), fail: t('复制失败') })
 
-const itemAction =
-  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg'
 /** 每条结果右边的文字按钮（修复、应用、写进源代码）：比卡片底部的主按钮小一号 */
 const rowButton = 'h-7 px-2 text-xs'
 
@@ -134,31 +134,24 @@ const rowButton = 'h-7 px-2 text-xs'
 function ItemActions({ text, stop }: { text: () => string; stop?: boolean }) {
   return (
     <span className="flex shrink-0 items-center">
-      <button
-        type="button"
-        className={itemAction}
+      <IconButton
+        icon={Quote}
+        label={t('引用')}
         title={t('引用到输入框')}
-        aria-label={t('引用')}
         onClick={(e) => {
           // 放在能点开收起的标题行里时不要顺带切换
           if (stop) e.stopPropagation()
           if (!quoteFrom(e.currentTarget, text())) toast(t('这里没有可以引用到的输入框'))
         }}
-      >
-        <Quote className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        className={itemAction}
-        title={t('复制')}
-        aria-label={t('复制')}
+      />
+      <IconButton
+        icon={Copy}
+        label={t('复制')}
         onClick={(e) => {
           if (stop) e.stopPropagation()
           copyResult(text())
         }}
-      >
-        <Copy className="h-3.5 w-3.5" />
-      </button>
+      />
     </span>
   )
 }
@@ -201,7 +194,7 @@ function FixButton({
   }
   if (state === 'working' || busy)
     return (
-      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-accent">
+      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-accent-text">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {t('处理中')}
       </span>
@@ -246,13 +239,13 @@ function ChangeRow({
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[0.84375rem] font-medium">{r.field}</span>
+            <span className="text-[0.8125rem] font-medium">{r.field}</span>
             <span className="inline-flex min-w-0 items-center gap-1 text-xs text-subtle">
               <Icon className="h-3 w-3 shrink-0" aria-label={targetName(r.change.target)} />
               <span className="truncate">{r.scope}</span>
             </span>
           </span>
-          {r.change.reason && <span className="text-[0.78125rem] leading-relaxed text-muted">{r.change.reason}</span>}
+          {r.change.reason && <span className="text-[0.75rem] leading-relaxed text-muted">{r.change.reason}</span>}
           {!same && !r.error && (
             <button
               type="button"
@@ -508,7 +501,7 @@ export function EvolutionReport({
             issueGroups(evo.issues).map((g) => (
               <div key={`${g.scope}:${g.name}`} className="pb-1">
                 <div className="flex items-center gap-2 px-4 pt-2 pb-1">
-                  <span className="text-[0.78125rem] font-medium">{g.name}</span>
+                  <span className="text-[0.75rem] font-medium">{g.name}</span>
                   {g.scope === 'panel' && <Badge>{t('面板框架')}</Badge>}
                   <span className="text-xs text-subtle tabular-nums">{g.items.length}</span>
                 </div>
@@ -592,16 +585,16 @@ function IssueRow({ f, action }: { f: CodeIssue; action?: React.ReactNode }) {
       <div className="flex items-start gap-2.5">
         <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
+          {f.title && <span className="text-[0.8125rem] font-medium">{f.title}</span>}
           {f.detail && (
-            <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
+            <span className="text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
           )}
           {f.files.length > 0 && (
             <span className="mt-0.5 flex flex-wrap gap-1.5">
               {f.files.map((x) => (
                 <code
                   key={x}
-                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] break-all text-subtle"
+                  className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.6875rem] break-all text-subtle"
                 >
                   {x}
                 </code>
@@ -690,13 +683,13 @@ export function AnalyzeDialog({
       </p>
       <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>
-        <textarea
+        <Textarea
           value={focus}
           onChange={(e) => setFocus(e.target.value)}
           maxLength={1000}
           rows={3}
           placeholder={placeholder ?? t('例如：为什么验收总是不通过、哪些节点最费 token')}
-          className="resize-none rounded-lg border bg-field px-3 py-2 outline-none focus:border-accent"
+          className="resize-none py-2 text-[0.8125rem]"
         />
       </label>
     </Modal>

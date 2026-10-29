@@ -29,6 +29,7 @@ import {
 import { hotkeyLabel, matchesHotkey, shouldTrigger } from '@/lib/hotkey'
 import { DEFAULT_PICK_BUTTON, DEFAULT_PICK_HOTKEY, type PickButton } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { ToggleIconButton } from '@/components/ui/icon-button'
 
 /** 写进引用的属性：能帮 AI 搜到这个元素的那些 */
 const ATTRS = ['id', 'role', 'aria-label', 'title', 'placeholder', 'type', 'name', 'href', 'alt', 'data-state']
@@ -306,7 +307,7 @@ async function copyPick(text: string) {
   toast.error(t('写不进剪贴板，请手动复制下面的引用'), {
     // 整段完整引用（带标记），点一下全选就能拷走；只给首行摘要的话粘回去认不出是引用卡片
     description: (
-      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.71875rem] whitespace-pre-wrap select-all">
+      <pre className="mt-1 max-h-48 cursor-text overflow-auto rounded bg-field p-2 font-mono text-[0.6875rem] whitespace-pre-wrap select-all">
         {full}
       </pre>
     ),
@@ -430,7 +431,7 @@ function PickOverlay({
             data-pick-label=""
             // 浮标也挡视线：指针压到它就淡出，不然要点的元素正好被这块牌子盖住
             className={cn(
-              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.71875rem] text-bg shadow-pop transition-opacity',
+              'fixed flex max-w-[min(28rem,calc(100vw-1rem))] items-center gap-1.5 truncate rounded-md bg-fg px-2 py-0.5 font-mono text-[0.6875rem] text-bg shadow-pop transition-opacity',
               labelHidden && 'opacity-0',
             )}
             style={{
@@ -458,7 +459,7 @@ function PickOverlay({
           tipHidden && 'opacity-0',
         )}
       >
-        <SquareDashedMousePointer className="h-4 w-4 text-accent" />
+        <SquareDashedMousePointer className="h-4 w-4 text-accent-text" />
         {t('{button}抓取元素，左键、右键照常可用', { button: pickButtonLabel(button) })}
         <kbd className="rounded border border-line px-1 font-mono text-[0.6875rem] text-muted">Esc</kbd>
         <span className="text-muted">{t('或')}</span>
@@ -554,24 +555,19 @@ export function ElementPickButton({ onPick, className, rootRef }: ElementPickBut
   if (!on) return null
 
   return (
-    <button
-      type="button"
+    <ToggleIconButton
+      size="sm"
+      icon={SquareDashedMousePointer}
       // 从哪个输入框的按钮进来，抓到的引用就填回哪个输入框（见 takePick）
-      onClick={() => (active ? setPick(false) : setPick(true, selfRef.current))}
-      aria-pressed={active}
-      aria-label={t('抓取界面元素')}
+      pressed={active}
+      onPressedChange={(on) => (on ? setPick(true, selfRef.current) : setPick(false))}
+      label={t('抓取界面元素')}
       title={t('抓取界面元素：{key} 开始或退出，{button}抓取页面上的元素，Esc 退出', {
         key: hotkeyLabel(hotkey),
         button: pickButtonLabel(button),
       })}
-      className={cn(
-        'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        active ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
-        className,
-      )}
-    >
-      <SquareDashedMousePointer className="h-4 w-4" />
-    </button>
+      className={className}
+    />
   )
 }
 

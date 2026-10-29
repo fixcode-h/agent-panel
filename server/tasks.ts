@@ -78,6 +78,8 @@ import {
   taskSettled,
   trashLeftDays,
   taskSummary,
+  liteMessages,
+  autoArchivePicks,
   withAttachments,
   withTaskModel,
   type ChildFlowStop,
@@ -174,7 +176,7 @@ import {
 } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf, uploadFileOf } from './uploads.ts'
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
@@ -504,6 +506,33 @@ export function tasksApi(deps: {
       })
     }
   })
+
+  /**
+   * 自动归档（设置里的 autoArchiveDays，默认关）：启动一分钟后看一次，之后每小时一次。
+   * 只改 archived，不动列表时间；归档的对话随时可以取消归档
+   */
+  async function autoArchive() {
+    const { autoArchiveDays } = await getSettings()
+    if (!autoArchiveDays) return
+    // 回收站里的不算：它们已经不在列表里了，到期会被物理删除
+    const all = (await store.list()).filter((x) => !taskDeleted(x))
+    const ids = autoArchivePicks(all, autoArchiveDays, Date.now(), (id) => live.has(id) || startQueue.has(id))
+    for (const id of ids) {
+      if (live.has(id)) continue
+      // 和手动归档一样：归档的对话不再接收结果，后台命令一起停掉。只改任务本身，不读写对话文件
+      await endBackground(id)
+      await store.updateMeta(id, { archived: true }, { keepUpdatedAt: true })
+    }
+    if (ids.length) log.info('task', '自动归档很久没动的对话', { 天数: autoArchiveDays, 对话: ids.length })
+  }
+  const archiveTimer = setTimeout(() => {
+    void autoArchive().catch((e) => log.warn('task', '自动归档失败', { error: (e as Error).message }))
+    setInterval(
+      () => void autoArchive().catch((e) => log.warn('task', '自动归档失败', { error: (e as Error).message })),
+      3_600_000,
+    ).unref()
+  }, 60_000)
+  archiveTimer.unref()
 
   /** Chat 模式的聊天在数据目录里各有一个空的工作目录，不碰任何项目 */
   const chatProject = (dir: string): Project => ({
@@ -4289,6 +4318,85 @@ export function tasksApi(deps: {
 
   const routes = new Hono()
 
+  /**
+   * 带 ?summary=1 时回的任务换成摘要（和列表一样）：侧栏改名、归档、暂停这些地方只用标题和状态，
+   * 原样回完整任务的话改个名也要把整段对话（长对话几 MB 到十几 MB）序列化、传给浏览器。
+   * 任务页自己要完整任务，不带这个参数，行为不变
+   */
+  routes.use('*', async (c, next) => {
+    if (c.req.query('summary')) {
+      const json = c.json.bind(c)
+      const isTask = (x: unknown): x is Task =>
+        !!x && typeof x === 'object' && Array.isArray((x as Task).messages) && Array.isArray((x as Task).steps)
+      c.json = ((body: unknown, ...rest: unknown[]) =>
+        (json as (...a: unknown[]) => Response)(isTask(body) ? taskSummary(body) : body, ...rest)) as typeof c.json
+    }
+    await next()
+  })
+
+  /**
+   * 保活中的会话：回复完停在等下一句、CLI 进程还留着的对话，连同进程（含子进程）占的内存。
+   * 设置「数据」里列出来，用户可以一键释放；正开着的页面单独标出，释放全部时不动它们
+   */
+  async function keepAliveList() {
+    const map = await processSnapshot()
+    const tracked = trackedClis()
+    return [...live.values()]
+      .filter((e) => e.task.awaitingUser && !e.task.working)
+      .map((e) => {
+        const pids = new Set<number>()
+        for (const x of tracked.filter((x) => x.owner?.taskId === e.task.id))
+          for (const pid of map ? subtree(x.pid, map) : [x.pid]) pids.add(pid)
+        return {
+          id: e.task.id,
+          title: e.task.title,
+          projectId: e.task.projectId,
+          parentTaskId: e.task.parentTaskId,
+          cli: e.task.sessionCli || e.task.cli,
+          viewing: isViewing(e.task.id),
+          since: e.task.turnDoneAt || e.task.updatedAt,
+          rss: map && pids.size ? sumRss(pids, map) : null,
+        }
+      })
+      .sort((a, b) => a.since.localeCompare(b.since))
+  }
+  /** 每个对话的磁盘占用（任务文件 + 对话文件），设置「数据」里按项目、父子对话列出来 */
+  routes.get('/disk', async (c) => {
+    const bytes = new Map((await store.diskSizes()).map((x) => [x.id, x.bytes]))
+    // 回收站里的另在「回收站」那一节列，这里不重复算
+    return c.json(
+      (await store.list())
+        .filter((x) => !taskDeleted(x))
+        .map((x) => ({
+          id: x.id,
+          title: x.title,
+          projectId: x.projectId,
+          parentTaskId: x.parentTaskId,
+          updatedAt: x.updatedAt,
+          archived: !!x.archived,
+          working: !!(live.get(x.id)?.task.working ?? x.working),
+          bytes: bytes.get(x.id) ?? 0,
+        })),
+    )
+  })
+
+  routes.get('/keepalive', async (c) => c.json(await keepAliveList()))
+  /** 释放保活的会话：给了 ids 就只放这几个，否则放掉所有没开着页面的；下次发消息时冷启动续接原会话 */
+  routes.post('/keepalive/release', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
+    const only = Array.isArray(body.ids) ? new Set(body.ids.map(String)) : null
+    const released: string[] = []
+    for (const x of await keepAliveList()) {
+      if (only ? !only.has(x.id) : x.viewing) continue
+      // 名下有子对话在跑的父对话不动：结束它会把子对话一起停掉
+      if ([...live.values()].some((e) => e.task.parentTaskId === x.id && e.task.working)) continue
+      stopTask(x.id, 'idle')
+      released.push(x.id)
+    }
+    if (released.length) log.info('task', '手动释放保活的会话', { tasks: released })
+    return c.json({ released })
+  })
+
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢。
@@ -4869,7 +4977,8 @@ export function tasksApi(deps: {
           meta = m
           beat = Date.now()
         } else if (!meta || removed) {
-          await send('full', t, taskMessageRev(messages))
+          // 整份推送时更早的长工具输出只给开头，页面要看全文时再按 outputCut 去取（见 liteMessages）
+          await send('full', { ...t, messages: liteMessages(messages) }, taskMessageRev(messages))
           stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
           meta = m
           beat = Date.now()
@@ -4901,7 +5010,9 @@ export function tasksApi(deps: {
     // 打开很长的对话时先只取最近一段（整份几 MB，首屏只要最后几条），往前翻页用 before。
     // 不传 limit 就回整份：其它调用方（导出、AI 处理、老版本页面）行为不变
     const limit = Number(c.req.query('limit') ?? '')
-    if (!Number.isInteger(limit) || limit <= 0) return c.json(full)
+    // ?lite=1：和实时推送的整份一样，更早的长工具输出只给开头
+    if (!Number.isInteger(limit) || limit <= 0)
+      return c.json(c.req.query('lite') ? { ...full, messages: liteMessages(full.messages) } : full)
     const page = messagePage(full.messages, limit, c.req.query('before') ?? '')
     return c.json({
       ...full,
@@ -4914,6 +5025,16 @@ export function tasksApi(deps: {
       // 服务端首包就只补发最后一条，不用把同一份再传一遍。截断的那段不是整份的前缀，不能当版本用
       ...(page.messages.length === page.total ? { messageRev: taskMessageRev(full.messages) } : {}),
     })
+  })
+
+  /** 推送时省掉的工具输出全文（页面打开窗口看全部时取），见 liteMessages 的 outputCut */
+  routes.get('/:id/tool-output', async (c) => {
+    const task = await current(c.req.param('id'))
+    if (!task || taskDeleted(task)) return bad(c, t('任务不存在'), 404)
+    const m = task.messages.find((x) => x.id === c.req.query('msg'))
+    const tool = m?.tools[Number(c.req.query('i'))]
+    if (!tool) return bad(c, t('找不到这次工具调用'), 404)
+    return c.json({ output: tool.output ?? '' })
   })
 
   // 引入会话：把这个任务的对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
@@ -5589,17 +5710,31 @@ export function tasksApi(deps: {
     return inTaskDir(c, async (dir) => c.json(name ? await searchNameInDir(dir, q) : await searchInDir(dir, q)))
   })
 
-  // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
+  // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件和上传的附件
   routes.get('/:id/file', async (c) => {
     const want = (c.req.query('path') ?? '').trim()
     if (!want) return bad(c, t('缺少文件路径'))
+    const up = uploadFileOf(want)
+    if (up) {
+      const dir = path.dirname(up)
+      return c.json({ ...(await readInDir(dir, path.basename(up))), dir })
+    }
     return inTaskDir(c, async (dir) => c.json({ ...(await readInDir(dir, want)), dir }))
   })
 
-  // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件
+  // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件和上传的附件
   routes.get('/:id/file/raw', async (c) => {
     const want = (c.req.query('path') ?? '').trim()
     if (!want) return bad(c, t('缺少文件路径'))
+    const up = uploadFileOf(want)
+    if (up) {
+      try {
+        const { type, buf } = await rawInDir(path.dirname(up), path.basename(up))
+        return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+      } catch (e) {
+        return bad(c, (e as Error).message, 404)
+      }
+    }
     return inTaskDir(c, async (dir) => {
       const { type, buf } = await rawInDir(dir, want)
       return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
@@ -5667,6 +5802,8 @@ export function tasksApi(deps: {
     return c.json(e.task)
   })
 
+  /** 导入的任务上也能改的字段：只是标记，不碰执行 */
+  const MARK_KEYS = new Set(['title', 'archived', 'pinned'])
   routes.patch('/:id', async (c) => {
     const id = c.req.param('id')
     const p = TaskPatch.safeParse(await c.req.json())
@@ -5674,7 +5811,8 @@ export function tasksApi(deps: {
     const e = live.get(id)
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
-    if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
+    // 导入的任务只能看：标题、归档、置顶这类只是标记，照样能改
+    if (cur.imported && Object.keys(p.data).some((k) => !MARK_KEYS.has(k))) return bad(c, READONLY, 409)
     // 子对话标记完成：它的独立分支跟着删掉。改动还没合回原分支时不标，免得把没合的改动一起删了
     if (p.data.resolved === true && cur.parentTaskId) {
       // 用户点「解决」只是发起这一趟流转：判定和置完成在子对话那一侧，还有没收口的东西就拒绝并说清卡在哪一项，
@@ -5750,8 +5888,10 @@ export function tasksApi(deps: {
     if (askEffect.askUser !== undefined) await applyAskUser(task, askEffect.askUser, !!e?.task.working)
     // 已有的子对话跟着父对话一起开 / 关（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
     if (askEffect.existingChildren !== undefined) await applyChildAskUser(task, askEffect.existingChildren)
-    // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
-    await store.update(id, task)
+    // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢。
+    // 只改置顶时不动列表时间：置顶只是标记，不该让这条聊天在别处（最近活动、未读）显得「刚更新过」
+    const onlyPin = Object.keys(p.data).every((k) => k === 'pinned')
+    await store.update(id, task, onlyPin ? { keepUpdatedAt: true } : undefined)
     if (!touchesRun) return c.json(task)
     const afterRun = runOf(task)
     const runChanged =

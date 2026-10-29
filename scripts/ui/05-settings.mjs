@@ -4,7 +4,7 @@
  * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
  * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
  */
-import { runShard } from './harness.mjs'
+import { runShard, stickyLeakProblems } from './harness.mjs'
 
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
   const p = await page({ width: 1440, height: 900 })
@@ -14,6 +14,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
   await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）', '子对话没有输出时自动询问'])
   if (!(await p.getByLabel('子对话没有输出时自动询问（分钟）').count())) errors.push('设置：没有子对话自动询问的输入框')
+  // 窗口矮到左栏要滚动时：吸顶的「设置」标题上方不能露出滚过去的分类（以前漏出半行「快捷键」）
+  await p.setViewportSize({ width: 1440, height: 560 })
+  errors.push(...(await stickyLeakProblems(p, '设置-矮窗口')))
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 「子对话默认也提问」：和「新会话默认开启提问」同一组，默认开着；改了之后新建的父对话右键菜单跟着变
   {
     const childAsk = p.getByRole('switch', { name: '子对话默认也提问' })
@@ -86,6 +90,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await sample.getByRole('tab', { name: /代码审查/ }).click()
   await sample.getByRole('button', { name: '关闭页签' }).first().click()
   if ((await sample.getByRole('tab').count()) !== 2) errors.push('设置-组件：关掉示例页签后应该剩 2 个页签')
+  // 第二批通用部件：样例都在；图标开关用 aria-pressed 报状态，多选小块点一下要翻转
+  await check(p, '设置-组件-新部件', ['IconButton', 'ChipGroup', 'Progress', 'Sheet', 'Canvas · on-canvas'])
+  {
+    const wrap = p.getByRole('button', { name: '自动换行' })
+    await wrap.click()
+    if ((await wrap.getAttribute('aria-pressed')) !== 'true')
+      errors.push('设置-组件：点「自动换行」图标开关后应该是按下状态')
+    const tue = p.getByRole('group', { name: '示例多选小块' }).getByRole('button', { name: '周二' })
+    await tue.click()
+    if ((await tue.getAttribute('aria-pressed')) !== 'true') errors.push('设置-组件：多选小块点「周二」后应该选中')
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

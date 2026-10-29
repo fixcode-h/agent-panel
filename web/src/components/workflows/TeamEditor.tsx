@@ -3,6 +3,7 @@ import type { Agent, NodeTier } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { useAgentView } from '@/lib/agent-view'
@@ -48,7 +49,7 @@ export function TeamEditor({
     <>
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs text-muted">
-          <Crown className="h-3.5 w-3.5 text-accent" />
+          <Crown className="h-3.5 w-3.5 text-accent-text" />
           {t('默认执行角色')}
           <span className="text-subtle">· {t('节点没有单独指定角色时用它；节点按连线并发执行，不再由它调度')}</span>
         </span>
@@ -64,7 +65,7 @@ export function TeamEditor({
           </div>
         ) : (
           <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
-            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent hover:bg-accent-soft">
+            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent-text hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
               {t('选择默认执行角色')}
             </button>
@@ -80,10 +81,10 @@ export function TeamEditor({
         {subs.length ? (
           <ul className="flex flex-wrap gap-2">
             {subs.map((m) => (
-              <li key={m.agent.id} className="flex items-center gap-2 rounded-lg bg-card shadow-card px-2.5 py-1.5">
+              <Card key={m.agent.id} as="li" className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
                 <AgentAvatar icon={m.agent.icon} cli={m.agent.cli} size="xs" dim={!m.agent.enabled} />
                 <span className="text-[0.8125rem]">{m.agent.name}</span>
-              </li>
+              </Card>
             ))}
           </ul>
         ) : (

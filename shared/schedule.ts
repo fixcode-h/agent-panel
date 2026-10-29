@@ -49,6 +49,14 @@ export const ScheduleInput = z.object({
   dependsOn: z.array(z.string()).max(MAX_DEPENDENCIES).default([]),
   /** 这一轮最多用多少 token / 多少分钟；0 表示不限。启动对话时落到任务上 */
   budget: ScheduleBudget.prefault({}),
+  /**
+   * 结束日期（本机日历的 YYYY-MM-DD，含这一天）：过了这天不再自动执行。
+   * 空表示永不结束；旧数据没有这个字段，读盘时补空。只对重复的计划有意义，单次的界面上不给设
+   */
+  endDate: z
+    .string()
+    .regex(/^(\d{4}-\d{2}-\d{2})?$/, t('结束日期格式不对'))
+    .default(''),
 })
 export type ScheduleInput = z.infer<typeof ScheduleInput>
 
@@ -101,8 +109,56 @@ export const ScheduleRun = z.object({
   taskId: z.string().default(''),
   /** 失败原因，或错过 / 上游没成功的原因；直接显示给用户 */
   error: z.string().default(''),
+  /**
+   * 启动出来的对话这一轮跑完的时间和耗时（见 settleRun）：计划块的高度、运行记录的「1:12」读它。
+   * 还没跑完、启动失败、旧记录都没有这几个字段：界面不显示，也不编造
+   */
+  endedAt: z.string().optional(),
+  durationMs: z.number().int().min(0).optional(),
+  /** 启动成功了，但对话这一轮以失败结束：运行记录里标成失败，给「AI 分析」入口 */
+  failed: z.boolean().optional(),
 })
 export type ScheduleRun = z.infer<typeof ScheduleRun>
+
+/** 判定一次运行跑没跑完时需要的任务字段（server 用 tasks.peek 取，不读整段对话） */
+export interface RunTaskState {
+  status: string
+  working: boolean
+  turnDoneAt: string
+  updatedAt: string
+}
+
+/**
+ * 启动出来的对话跑完了没有：跑完返回补上结束时间、耗时和成败的那条记录，没跑完（或不用补）返回 null。
+ * 「跑完」= CLI 这一轮不在处理了，并且这次启动之后完成过一轮（turnDoneAt），或者对话已经失败 / 被停下。
+ * 对话之后用户再接着聊不算这次计划的耗时：只补一次，补过的（endedAt 非空）不再改
+ */
+export function settleRun(run: ScheduleRun, task: RunTaskState | null): ScheduleRun | null {
+  if (run.event !== 'run' || !run.taskId || run.endedAt || !task || task.working) return null
+  const start = Date.parse(run.happenedAt)
+  if (!Number.isFinite(start)) return null
+  const turn = Date.parse(task.turnDoneAt)
+  const stopped = task.status === 'failed' || task.status === 'stopped'
+  const done = Number.isFinite(turn) && turn >= start
+  if (!done && !stopped) return null
+  const end = done && !stopped ? turn : Date.parse(task.updatedAt)
+  if (!Number.isFinite(end)) return null
+  return {
+    ...run,
+    endedAt: new Date(end).toISOString(),
+    durationMs: Math.max(0, end - start),
+    failed: task.status === 'failed',
+  }
+}
+
+/** 耗时的短写法：「0:58」「1:12」，超过一小时写「1:02:03」（运行记录里和设计稿一致） */
+export function durationLabel(ms: number): string {
+  const sec = Math.max(0, Math.round(ms / 1000))
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  return h ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`
+}
 
 /** 往运行记录里加一条：新的在前，只留最近 SCHEDULE_RUN_HISTORY 条 */
 export function appendRun(runs: ScheduleRun[] | undefined, run: ScheduleRun): ScheduleRun[] {
@@ -206,12 +262,42 @@ export function alignScheduleAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekda
 }
 
 /**
+ * 结束日期那天过完的时刻（次日 0 点，本机时区）：执行时间不早于它的都不会再跑。
+ * 没设结束日期（永不）或格式不对时返回 Infinity，按永不结束处理
+ */
+export function scheduleEndMs(s: { endDate?: string }): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.endDate ?? '')
+  if (!m) return Infinity
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1).getTime()
+}
+
+/** 下一次执行时间已经过了结束日期：不再自动执行，界面上显示「已结束」 */
+export function scheduleEnded(s: Pick<ScheduleInput, 'at'> & { endDate?: string }): boolean {
+  const at = Date.parse(s.at)
+  return Number.isFinite(at) && at >= scheduleEndMs(s)
+}
+
+/**
+ * 保存前的排期校验（界面和服务端同一份）：返回给用户看的原因，通过返回空字符串。
+ * 结束日期早于（对齐后的）首次执行时，这条计划一次也不会跑，多半是填错了，直接拦下
+ */
+export function scheduleTimingError(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'endDate'>): string {
+  if (!s.endDate) return ''
+  if (!Number.isFinite(scheduleEndMs(s))) return t('结束日期格式不对')
+  if (scheduleEnded({ at: alignScheduleAt(s), endDate: s.endDate }))
+    return t('结束日期早于第一次执行，计划一次也不会执行')
+  return ''
+}
+
+/**
  * 下一次执行时间（严格晚于 now）。
  * 按本地日历逐天推进：跨周、跨月、跨年、夏令时都还是同一个时分，不会偏一小时。
  * 单次直接返回 at（由调用方决定不再执行）；weekly / workdays 即使首次执行时间还没到，
  * 也只返回符合星期的日子（保存时已用 `alignScheduleAt` 对齐，这里再兵一道）。
  */
 export function nextRunAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>, now: number): string {
+  // 过了结束日期也照样往后推：存下来的 at 越过结束日期就是「已结束」（scheduleEnded），
+  // 到点判定、周视图、「接下来」都按它不再排；用户把结束日期往后改时从这里接着跑
   const at = new Date(s.at)
   if (!Number.isFinite(at.getTime())) return s.at
   if (s.repeat === 'once') return at.toISOString()
@@ -249,13 +335,15 @@ export function weekStartOf(ms: number): number {
  * 重复计划跑完一次 at 会往后挪（见 afterRun），所以这里只画「还会跑的」，已经跑过的看运行记录
  */
 export function weekOccurrences(
-  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'enabled'>,
+  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays' | 'enabled'> & { endDate?: string },
   weekStart: number,
 ): number[] {
   const at = new Date(s.at)
   if (!s.enabled || !Number.isFinite(at.getTime())) return []
-  const end = new Date(weekStart)
-  end.setDate(end.getDate() + 7)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 7)
+  // 一周的末尾和结束日期取早的：过了结束日期的日子不画
+  const end = new Date(Math.min(weekEnd.getTime(), scheduleEndMs(s)))
   if (s.repeat === 'once') return at.getTime() >= weekStart && at < end ? [at.getTime()] : []
   const days = repeatDays(s)
   const out: number[] = []
@@ -263,7 +351,7 @@ export function weekOccurrences(
     const d = new Date(weekStart)
     d.setDate(d.getDate() + i)
     d.setHours(at.getHours(), at.getMinutes(), 0, 0)
-    if (d.getTime() < at.getTime()) continue
+    if (d.getTime() < at.getTime() || d >= end) continue
     if (!days || days.has(isoWeekday(d))) out.push(d.getTime())
   }
   return out
@@ -289,7 +377,8 @@ export function pickDue(list: Schedule[], now: number): ScheduleDue {
   const run: Schedule[] = []
   const missed: Schedule[] = []
   for (const s of list) {
-    if (!s.enabled || s.status !== 'pending') continue
+    // 过了结束日期的不再触发，也不记错过：是用户定好的到此为止
+    if (!s.enabled || s.status !== 'pending' || scheduleEnded(s)) continue
     const at = Date.parse(s.at)
     if (!Number.isFinite(at) || at > now) continue
     if (now - at > SCHEDULE_MISS_MS) missed.push(s)
@@ -544,9 +633,9 @@ export function outcomeOf(s: Schedule): ScheduleOutcome {
   return hasRun ? 'success' : 'none'
 }
 
-/** 到点还会不会自动执行：停用、单次已执行完 / 已跳过、单次启动失败都没有下一次 */
+/** 到点还会不会自动执行：停用、单次已执行完 / 已跳过、单次启动失败、过了结束日期都没有下一次 */
 export function willRunAgain(s: Schedule): boolean {
-  return s.enabled && s.status === 'pending'
+  return s.enabled && s.status === 'pending' && !scheduleEnded(s)
 }
 
 /**

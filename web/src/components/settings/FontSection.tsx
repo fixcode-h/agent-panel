@@ -3,6 +3,7 @@ import { t } from '@shared/i18n'
 import { applyAppearance } from '@/lib/appearance'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from '@/components/settings/parts'
 import { cn } from '@/lib/utils'
 
@@ -120,7 +121,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
         </div>
       </Group>
       <Group title={t('字体')}>
-        <Row title={t('英文字体')} desc={t('默认是内置的 Maple Mono NL：不带符号连字，=> 、!= 这些不会合成一个符号。')}>
+        <Row title={t('英文字体')} desc={t('默认是内置的 Inter；喜欢等宽可以换内置的 Maple Mono NL（不带符号连字）。')}>
           <Select
             aria-label={t('英文字体')}
             value={value.uiFont}
@@ -131,6 +132,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
               update({ ...value, uiFont: f, wordSpacing: ws })
             }}
             options={[
+              { value: 'inter', label: t('Inter（内置，默认）') },
               { value: 'maple', label: t('Maple Mono NL（内置）') },
               { value: 'plex', label: t('IBM Plex Sans（内置）') },
               { value: 'system', label: t('系统字体') },
@@ -225,15 +227,15 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
             onChange={(v) => set('lineHeight', round(v, 2))}
           />
         </Row>
-        <div className="mt-4 rounded-xl bg-card shadow-card p-4">
+        <Card padding="md" className="mt-4">
           <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
           <p className="mt-2 text-[0.875rem]">
             {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
           </p>
-          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.78125rem]">
+          <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.75rem]">
             {'const ok = a => b !== c && x >= 0 // 0O 1lI 中文注释'}
           </pre>
-        </div>
+        </Card>
       </Group>
     </>
   )

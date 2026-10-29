@@ -36,8 +36,11 @@ import { useData } from '@/lib/data'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/segmented'
+import { IconButton } from '@/components/ui/icon-button'
+import { Card } from '@/components/ui/card'
 import { Markdown } from '@/components/tasks/Markdown'
 import { PageFrame } from '@/components/library/parts'
 import { LessonDrafts } from '@/components/summary/LessonDrafts'
@@ -115,15 +118,13 @@ function ProjectPickRow({
         {!!tasks.length && (
           <span className="text-xs text-subtle">{t('{scope} {n} 个对话', { scope, n: tasks.length })}</span>
         )}
-        <button
-          type="button"
-          aria-label={t('删除项目 {name}', { name })}
+        <IconButton
+          icon={X}
+          label={t('删除项目 {name}', { name })}
           onClick={onRemove}
           disabled={disabled}
-          className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-subtle"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+          className="ml-auto"
+        />
       </div>
       {!tasks.length ? (
         <p className="mt-1 text-xs text-subtle">{t('{scope}没有可总结的对话', { scope })}</p>
@@ -156,15 +157,15 @@ function ProjectPickRow({
                   className="flex items-center gap-1 rounded-lg bg-sel px-2 py-1 text-[0.75rem] text-muted"
                 >
                   <span className="max-w-[240px] truncate">{titleOf(id)}</span>
-                  <button
-                    type="button"
-                    aria-label={t('删除对话 {title}', { title: titleOf(id) })}
+                  {/* 小块里的叉：比 2xs 再小一圈，不把小块撑高 */}
+                  <IconButton
+                    size="2xs"
+                    icon={X}
+                    label={t('删除对话 {title}', { title: titleOf(id) })}
                     onClick={() => onRemoveTask(id)}
                     disabled={disabled}
-                    className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-subtle"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+                    className="h-4 w-4"
+                  />
                 </span>
               ))}
             </div>
@@ -225,9 +226,9 @@ function ReportEditor({
           ? t('保存失败')
           : ''
   return (
-    <section className="rounded-xl border bg-panel">
+    <Card as="section">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-        <FileText className="h-4 w-4 text-accent" />
+        <FileText className="h-4 w-4 text-accent-text" />
         <span className="text-[0.8125rem] font-medium">{title}</span>
         <Segmented
           label={t('报告视图')}
@@ -263,7 +264,7 @@ function ReportEditor({
           <Markdown text={md} teamNames={NO_TEAM} />
         </div>
       )}
-    </section>
+    </Card>
   )
 }
 
@@ -328,9 +329,9 @@ function ReportCompare({ before, after }: { before: SummaryRecord; after: Summar
   const changes = compareHasChanges(c)
   const label = (r: SummaryRecord) => reportWindowLabel(r.from || r.day, r.to || r.day)
   return (
-    <section className="rounded-xl border bg-panel">
+    <Card as="section">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-        <GitCompareArrows className="h-4 w-4 text-accent" />
+        <GitCompareArrows className="h-4 w-4 text-accent-text" />
         <span className="text-[0.8125rem] font-medium">{t('两份报告的对比')}</span>
         <span className="text-xs text-subtle">
           {label(before)} → {label(after)}
@@ -412,7 +413,7 @@ function ReportCompare({ before, after }: { before: SummaryRecord; after: Summar
           </>
         )}
       </div>
-    </section>
+    </Card>
   )
 }
 
@@ -804,7 +805,7 @@ export function SummaryPage() {
         { scope, days: scopeDays },
       )}
     >
-      <section className="rounded-xl border bg-panel">
+      <Card as="section">
         {/* 时间范围：默认今天，和改造前一样；换范围会按新窗口重新挑对话（旧报告和生成不会串过来） */}
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
           <span className="text-[0.8125rem] font-medium">{t('范围')}</span>
@@ -915,11 +916,11 @@ export function SummaryPage() {
             )}
           </div>
         </div>
-      </section>
+      </Card>
 
       {running && job && (
-        <div className="flex items-center gap-2 rounded-xl border bg-accent-soft/40 px-4 py-3 text-xs text-muted">
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        <div className="flex items-center gap-2 rounded-xl bg-accent-soft px-4 py-3 text-xs text-muted">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           <span className="min-w-0 flex-1 truncate">
             {lastThought
               ? t('正在思考：{text}', { text: lastThought })
@@ -932,17 +933,17 @@ export function SummaryPage() {
       )}
 
       {!!message && (
-        <p className="flex gap-1.5 rounded-xl border border-danger/40 bg-danger/5 px-4 py-3 text-xs whitespace-pre-wrap text-danger">
+        <p className="flex gap-1.5 rounded-xl bg-danger/8 px-4 py-3 text-xs whitespace-pre-wrap text-danger">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {message}
         </p>
       )}
 
-      {stopped && <p className="rounded-xl border bg-panel px-4 py-3 text-xs text-subtle">{t('已停止生成')}</p>}
+      {stopped && <p className="rounded-xl bg-sel/50 px-4 py-3 text-xs text-subtle">{t('已停止生成')}</p>}
 
       {/* 用户选了、但这段范围里没有可写进报告的对话：报告里没它，得说清楚是哪几个。只看完成状态，中途失败/停止时整份报告都没生成 */}
       {job?.status === 'done' && !!job.skipped?.length && (
-        <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
+        <p className="flex gap-1.5 rounded-xl bg-warning/8 px-4 py-3 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {t('这些项目没有可写进报告的对话，已跳过：{names}', { names: job.skipped.join('、') })}
         </p>
@@ -950,7 +951,7 @@ export function SummaryPage() {
 
       {/* 格式自检不通过：重试过一次仍然不完整，页面要明确告知，不能静默当作正常报告 */}
       {job?.format && !job.format.ok && (
-        <p className="flex gap-1.5 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 text-xs text-warning">
+        <p className="flex gap-1.5 rounded-xl bg-warning/8 px-4 py-3 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {t('报告格式不完整（已自动重试一次）：{issues}', {
             issues: job.format.issues.map(issueText).join('；'),
@@ -960,9 +961,9 @@ export function SummaryPage() {
 
       {/* 失败 / 停止时已经写出来的正文：没有存进去，但至少能看、能复制，不用重新跑一遍 */}
       {job && job.status !== 'done' && !!job.md.trim() && (
-        <section className="rounded-xl border bg-panel">
+        <Card as="section">
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-            <FileText className="h-4 w-4 text-accent" />
+            <FileText className="h-4 w-4 text-accent-text" />
             <span className="text-[0.8125rem] font-medium">{t('生成中断，这是已经写出的部分')}</span>
             <Button variant="secondary" size="sm" className="ml-auto" onClick={() => copy(job.md)}>
               <Copy className="h-3.5 w-3.5" />
@@ -972,7 +973,7 @@ export function SummaryPage() {
           <div className="px-4 py-3">
             <Markdown text={job.md} teamNames={NO_TEAM} />
           </div>
-        </section>
+        </Card>
       )}
 
       {current && (
@@ -993,7 +994,7 @@ export function SummaryPage() {
       {current && <LessonDrafts reportId={current.id} day={current.to || current.from} />}
 
       {reports.length > 0 && (
-        <section className="rounded-xl border bg-panel">
+        <Card as="section">
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
             <span className="text-[0.8125rem] font-medium">{t('最近的报告')}</span>
             {compareMode && <span className="text-xs text-subtle">{t('勾选两份，看它们之间的变化')}</span>}
@@ -1016,12 +1017,11 @@ export function SummaryPage() {
               return (
                 <li key={r.id} className="flex items-center">
                   {compareMode && (
-                    <input
-                      type="checkbox"
-                      aria-label={t('对比这份报告')}
+                    <Checkbox
+                      ariaLabel={t('对比这份报告')}
                       checked={picked}
                       onChange={() => toggleCompare(r.id)}
-                      className="ml-4 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+                      className="ml-4 shrink-0"
                     />
                   )}
                   <button
@@ -1064,7 +1064,7 @@ export function SummaryPage() {
               {t('再选 {n} 份报告开始对比', { n: 2 - comparedReports.length })}
             </p>
           )}
-        </section>
+        </Card>
       )}
 
       {comparedReports.length === 2 && <ReportCompare before={comparedReports[0]} after={comparedReports[1]} />}

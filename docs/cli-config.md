@@ -323,10 +323,11 @@ Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 
 扩展本身不含密钥：请求打到面板的 `/api/web-search/<这一轮的随机地址>/search` 和 `/fetch`（和提问桥接共用同一个随机地址），
 面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发。地址里的随机地址在路由里核对（`server/ask-mcp.ts` 的 `hasAskSession`），
 访问令牌打开时也能用，别的程序猜不到。地址守卫、参数规范化、各搜索源的请求和解析在 `shared/web-search.ts`
-（注册表 `SEARCH_PROVIDERS`：degoog 默认、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
+（注册表 `SEARCH_PROVIDERS`：deepseek 默认（DeepSeek 官方 Search API，要 DeepSeek 的 API key，按次计费，没填密钥时直接报错不回退）、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
+`web_fetch` 不分搜索源，始终由面板自己抓网页（不调 DeepSeek 的 fetch 接口）。
 
 参数和限制对齐 Command Code 的 Web 工具：`query`（至少 2 个字）/ `numResults`（默认 5、最多 10）/ `allowed_domains` / `blocked_domains`
-（两者互斥，过滤在面板这一侧做，不受各搜索源支持与否影响），`url` / `format`（markdown 默认、text、html）/ `startIndex` /
+（两者互斥，过滤在面板这一侧做，不受各搜索源支持与否影响；deepseek 另外把它们拼成 `site:` / `-site:` 写进 query，拼完最多 128 字），`url` / `format`（markdown 默认、text、html）/ `startIndex` /
 `timeout`（默认 60 秒、最多 120）。抓取前挡掉带用户名密码的地址、内网 / 回环 / 链路本地地址和单标签主机名，
 域名解析出来的地址再查一次；重定向手动跟着走（最多 5 跳），每一跳都重新过一遍守卫，跳转过程里写在结果里。
 正文一次返回 100000 字符，用返回里的 `startIndex` 续读；同一地址 15 分钟内的抓取直接用缓存。

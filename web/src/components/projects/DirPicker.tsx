@@ -6,6 +6,9 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
+import { ChipGroup } from '@/components/ui/chip-group'
 import { t } from '@shared/i18n'
 
 /** 找出包含 p 的最长的入口路径；Windows 盘符不区分大小写 */
@@ -85,156 +88,147 @@ function DirBrowser({
   }, [open])
 
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          // 正在输入新文件夹名时，Esc 只取消新建，不关掉整个弹窗
-          onEscapeKeyDown={(e) => {
-            if (creating === null) return
-            e.preventDefault()
-            setCreating(null)
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={null}
+      bare
+      closeOnOutside
+      // 正在输入新文件夹名时，Esc 只取消新建，不关掉整个弹窗
+      onEscapeKeyDown={(e) => {
+        if (creating === null) return
+        e.preventDefault()
+        setCreating(null)
+        setCreateError('')
+      }}
+      className="max-h-[80vh] max-w-[560px]"
+    >
+      <div className="flex items-center gap-3 border-b px-5 py-4">
+        <D.Title className="text-[0.9375rem] font-semibold">{t('选择项目目录')}</D.Title>
+        <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
+        <D.Close asChild>
+          <IconButton icon={X} label={t('关闭')} size="sm" className="ml-auto" />
+        </D.Close>
+      </div>
+      <form
+        className="flex gap-2 border-b px-5 py-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          go(jump)
+        }}
+      >
+        <Button
+          variant="secondary"
+          size="icon"
+          aria-label={t('上一级')}
+          title={t('上一级')}
+          disabled={!listing?.parent}
+          onClick={() => listing?.parent && go(listing.parent)}
+        >
+          <ArrowUp className="h-4 w-4" />
+        </Button>
+        <Input
+          value={jump}
+          onChange={(e) => setJump(e.target.value)}
+          className="h-9 font-mono text-[0.75rem]"
+          aria-label={t('路径')}
+        />
+      </form>
+      {listing?.roots && listing.roots.length > 0 && (
+        <nav className="border-b px-5 py-2.5">
+          {/* 当前路径落在哪个盘 / 位置下就高亮哪个；主目录优先于它所在的盘。点选中的那块也会跳回它的根 */}
+          <ChipGroup
+            label={t('磁盘和常用位置')}
+            size="sm"
+            value={bestRoot(listing.roots, listing.path) ?? ''}
+            onChange={go}
+            options={listing.roots.map((r, i) => {
+              const Icon = i === 0 ? House : HardDrive
+              return { id: r.path, label: r.name, title: r.path, icon: <Icon className="h-3.5 w-3.5" /> }
+            })}
+          />
+        </nav>
+      )}
+      <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
+        {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
+        {error && <p className="px-3 py-2 text-[0.8125rem] text-danger">{error}</p>}
+        {creating !== null && (
+          <div className="mb-1">
+            <div className="flex items-center gap-2.5 rounded-lg bg-sel/60 px-3 py-1.5">
+              {busy ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
+              ) : (
+                <FolderPlus className="h-4 w-4 shrink-0 text-accent-text" />
+              )}
+              <Input
+                size="sm"
+                autoFocus
+                value={creating}
+                disabled={busy}
+                onChange={(e) => {
+                  setCreating(e.target.value)
+                  setCreateError('')
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void create()
+                  }
+                }}
+                onBlur={() => !creating.trim() && !busy && setCreating(null)}
+                placeholder={t('新文件夹名，回车创建')}
+                aria-label={t('新文件夹名')}
+                className="h-7 min-w-0 flex-1 px-2"
+              />
+            </div>
+            {createError && <p className="px-3 pt-1 text-[0.75rem] text-danger">{createError}</p>}
+          </div>
+        )}
+        {listing?.dirs.map((d) => (
+          <button
+            key={d.path}
+            ref={(el) => {
+              if (el && d.path === fresh) el.scrollIntoView({ block: 'nearest' })
+            }}
+            onClick={() => go(d.path)}
+            onDoubleClick={() => onPick(d.path)}
+            className={cn(
+              'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.8125rem] hover:bg-sel',
+              d.path === fresh && 'bg-accent/12 text-fg',
+            )}
+          >
+            <Folder className={cn('h-4 w-4', d.path === fresh ? 'text-accent-text' : 'text-subtle')} />
+            {d.name}
+          </button>
+        ))}
+        {listing && listing.dirs.length === 0 && !error && creating === null && (
+          <p className="px-3 py-8 text-center text-[0.8125rem] text-subtle">{t('这个目录下没有子目录')}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 border-t bg-panel px-5 py-3">
+        <Button
+          variant="ghost"
+          disabled={!listing || creating !== null}
+          onClick={() => {
+            setCreating('')
             setCreateError('')
           }}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none"
+          title={t('在当前目录下新建文件夹')}
         >
-          <div className="flex items-center gap-3 border-b px-5 py-4">
-            <D.Title className="text-[0.9375rem] font-semibold">{t('选择项目目录')}</D.Title>
-            <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
-            <D.Close className="ml-auto rounded-md p-1 text-muted hover:bg-sel hover:text-fg" aria-label={t('关闭')}>
-              <X className="h-4 w-4" />
-            </D.Close>
-          </div>
-          <form
-            className="flex gap-2 border-b px-5 py-3"
-            onSubmit={(e) => {
-              e.preventDefault()
-              go(jump)
-            }}
-          >
-            <Button
-              variant="secondary"
-              size="icon"
-              aria-label={t('上一级')}
-              title={t('上一级')}
-              disabled={!listing?.parent}
-              onClick={() => listing?.parent && go(listing.parent)}
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-            <Input
-              value={jump}
-              onChange={(e) => setJump(e.target.value)}
-              className="h-9 font-mono text-[0.78125rem]"
-              aria-label={t('路径')}
-            />
-          </form>
-          {listing?.roots && listing.roots.length > 0 && (
-            <nav aria-label={t('磁盘和常用位置')} className="flex flex-wrap gap-1.5 border-b px-5 py-2.5">
-              {listing.roots.map((r, i) => {
-                // 当前路径落在哪个盘 / 位置下就高亮哪个；主目录优先于它所在的盘
-                const cur = bestRoot(listing.roots!, listing.path) === r.path
-                const Icon = i === 0 ? House : HardDrive
-                return (
-                  <button
-                    key={r.path}
-                    type="button"
-                    onClick={() => go(r.path)}
-                    aria-current={cur ? 'location' : undefined}
-                    title={r.path}
-                    className={cn(
-                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[0.78125rem] transition-colors',
-                      cur ? 'border-accent/50 bg-accent/12 text-fg' : 'text-muted hover:bg-sel hover:text-fg',
-                    )}
-                  >
-                    <Icon className={cn('h-3.5 w-3.5', cur ? 'text-accent' : 'text-subtle')} />
-                    {r.name}
-                  </button>
-                )
-              })}
-            </nav>
-          )}
-          <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
-            {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
-            {error && <p className="px-3 py-2 text-[0.8125rem] text-danger">{error}</p>}
-            {creating !== null && (
-              <div className="mb-1">
-                <div className="flex items-center gap-2.5 rounded-lg bg-sel/60 px-3 py-1.5">
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-                  ) : (
-                    <FolderPlus className="h-4 w-4 shrink-0 text-accent" />
-                  )}
-                  <input
-                    autoFocus
-                    value={creating}
-                    disabled={busy}
-                    onChange={(e) => {
-                      setCreating(e.target.value)
-                      setCreateError('')
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        void create()
-                      }
-                    }}
-                    onBlur={() => !creating.trim() && !busy && setCreating(null)}
-                    placeholder={t('新文件夹名，回车创建')}
-                    aria-label={t('新文件夹名')}
-                    className="h-7 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 text-[0.8125rem] outline-none"
-                  />
-                </div>
-                {createError && <p className="px-3 pt-1 text-[0.75rem] text-danger">{createError}</p>}
-              </div>
-            )}
-            {listing?.dirs.map((d) => (
-              <button
-                key={d.path}
-                ref={(el) => {
-                  if (el && d.path === fresh) el.scrollIntoView({ block: 'nearest' })
-                }}
-                onClick={() => go(d.path)}
-                onDoubleClick={() => onPick(d.path)}
-                className={cn(
-                  'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.8125rem] hover:bg-sel',
-                  d.path === fresh && 'bg-accent/12 text-fg',
-                )}
-              >
-                <Folder className={cn('h-4 w-4', d.path === fresh ? 'text-accent' : 'text-subtle')} />
-                {d.name}
-              </button>
-            ))}
-            {listing && listing.dirs.length === 0 && !error && creating === null && (
-              <p className="px-3 py-8 text-center text-[0.8125rem] text-subtle">{t('这个目录下没有子目录')}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 border-t bg-panel px-5 py-3">
-            <Button
-              variant="ghost"
-              disabled={!listing || creating !== null}
-              onClick={() => {
-                setCreating('')
-                setCreateError('')
-              }}
-              title={t('在当前目录下新建文件夹')}
-            >
-              <FolderPlus className="h-4 w-4" />
-              {t('新建文件夹')}
-            </Button>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={listing?.path}>
-              {listing?.path}
-            </span>
-            <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              {t('取消')}
-            </Button>
-            <Button disabled={!listing} onClick={() => listing && onPick(listing.path)}>
-              {t('选择此目录')}
-            </Button>
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+          <FolderPlus className="h-4 w-4" />
+          {t('新建文件夹')}
+        </Button>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={listing?.path}>
+          {listing?.path}
+        </span>
+        <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          {t('取消')}
+        </Button>
+        <Button disabled={!listing} onClick={() => listing && onPick(listing.path)}>
+          {t('选择此目录')}
+        </Button>
+      </div>
+    </Modal>
   )
 }
 

@@ -19,9 +19,11 @@ import { cn } from '@/lib/utils'
 import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Card } from '@/components/ui/card'
 import { Group, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
@@ -83,7 +85,7 @@ function JobLog({ job }: { job: NonNullable<LocalStatus['job']> }) {
     <div className="relative mt-2">
       <div ref={ref} onScroll={onScroll} className="max-h-48 overflow-x-hidden overflow-y-auto rounded-lg bg-field p-2">
         {/* 等宽、自动折行：URL 和路径这类长行不把容器撑出横向滚动条 */}
-        <pre className="font-mono text-[0.71875rem] leading-relaxed break-all whitespace-pre-wrap text-muted">
+        <pre className="font-mono text-[0.6875rem] leading-relaxed break-all whitespace-pre-wrap text-muted">
           {job.log.slice(-6000)}
         </pre>
       </div>
@@ -255,10 +257,10 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
           </div>
         </Row>
         {job && (
-          <div className="my-2 rounded-xl bg-card shadow-card p-3">
+          <Card padding="sm" className="my-2">
             <div className="flex items-center gap-2 text-[0.8125rem]">
               {job.status === 'running' ? (
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
               ) : job.status === 'done' ? (
                 <Check className="h-3.5 w-3.5 shrink-0 text-success" />
               ) : (
@@ -304,12 +306,10 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               )}
             </div>
             {pct !== undefined && job.status === 'running' && (
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sel">
-                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${pct}%` }} />
-              </div>
+              <Progress value={pct} label={t('进度')} className="mt-2" />
             )}
             {job.error && (
-              <p className="mt-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
+              <p className="mt-2 text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
             )}
             {job.log && <JobLog job={job} />}
             {job.status === 'failed' && (
@@ -317,12 +317,12 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                 {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
               </p>
             )}
-          </div>
+          </Card>
         )}
       </Group>
 
       <Group title={t('模型')}>
-        <p className="pb-2 text-[0.78125rem] leading-relaxed text-subtle">
+        <p className="pb-2 text-[0.75rem] leading-relaxed text-subtle">
           {t(
             '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。',
           )}
@@ -344,20 +344,21 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                     const size = modelGb(m, (f) => st.files.includes(f))
                     const tight = !!st.vram && st.vram < m.vram
                     return (
-                      <div
+                      <Card
                         key={m.id}
-                        className={cn('flex flex-col gap-2 rounded-xl border p-3 sm:flex-row sm:items-center sm:gap-4')}
+                        padding="sm"
+                        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5 text-[0.84375rem] font-medium">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[0.8125rem] font-medium">
                             {m.name}
                             {m.recommended && (
-                              <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent">
+                              <span className="rounded bg-accent-soft px-1.5 py-px text-[0.6875rem] font-normal text-accent-text">
                                 {t('推荐')}
                               </span>
                             )}
                           </div>
-                          <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{m.use}</p>
+                          <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{m.use}</p>
                           <p className={cn('mt-0.5 text-[0.75rem] text-subtle', tight && 'text-warning')}>
                             {t('建议显存 {n}GB', { n: m.vram })} ·{' '}
                             {ok ? t('已下载') : t('下载约 {size}', { size: gb(size) })} · {m.license}
@@ -392,7 +393,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                               </Button>
                             ))}
                         </div>
-                      </div>
+                      </Card>
                     )
                   })}
                 </div>

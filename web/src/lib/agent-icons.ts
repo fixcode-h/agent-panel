@@ -4,7 +4,9 @@ import {
   Bug,
   Code2,
   Database,
+  Eye,
   FileText,
+  Languages,
   Layout,
   Palette,
   Rocket,
@@ -37,6 +39,8 @@ const ICONS: Record<string, LucideIcon> = {
   rocket: Rocket,
   wand: Wand2,
   sparkles: Sparkles,
+  eye: Eye,
+  languages: Languages,
 }
 
 /** Agent 可选图标；想加新图标先在 shared/icons.ts 登记 id，再在上面配图标组件 */

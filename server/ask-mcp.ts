@@ -9,6 +9,7 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
 import type { Orchestra } from '../shared/engine.ts'
 import { callOrchTool, orchTools } from './orch-mcp.ts'
 import { APP_TOOLS, callAppTool } from './app-actions/mcp.ts'
+import { MORE_TOOLS, moreTools, splitDeferred } from '../shared/panel-tools.ts'
 import type { ActionCaller } from './app-actions/registry.ts'
 
 /**
@@ -174,13 +175,27 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   const orch = s.orch ? orchTools(s.orch) : []
-  const tools = [
+  const all = [
     ...(s.ask ? [TOOL] : []),
     ...(s.notes ? [NOTES_TOOL] : []),
     ...(s.wait ? [WAIT_TOOL] : []),
     ...orch,
     ...(s.app ? APP_TOOLS : []),
   ]
+  // 不常用的工具不直接列出，收进 more_tools（见 shared/panel-tools.ts 的 DEFERRED_TOOLS）：
+  // 工具说明每个会话都要整份带着，父对话一次二十多个、上万字，大多数一轮都用不到
+  const { listed: tools, deferred } = splitDeferred(all)
+  const call = async (name: string, args: any): Promise<unknown> => {
+    if (name === TOOL.name && s.ask) return callAsk(s, args)
+    if (name === NOTES_TOOL.name && s.notes) return callNotes(s)
+    if (s.orch && orch.some((x) => x.name === name)) return callOrchTool(s.orch, name, args)
+    if (s.app && APP_TOOLS.some((x) => x.name === name)) return callAppTool(s.app, name, args)
+    if (name === WAIT_TOOL.name && s.wait) {
+      const text = await s.wait()
+      return { content: [{ type: 'text', text: text ?? '用户已经离开了这个对话，本轮到此结束。' }] }
+    }
+    return { content: [{ type: 'text', text: `没有这个工具：${name}` }], isError: true }
+  }
   switch (msg.method) {
     case 'initialize':
       return reply({
@@ -198,20 +213,14 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'tools/list':
       return reply({ tools })
     case 'tools/call': {
-      const name = msg.params?.name
-      if (name === TOOL.name && s.ask) return reply(await callAsk(s, msg.params?.arguments ?? {}))
-      if (name === NOTES_TOOL.name && s.notes) return reply(await callNotes(s))
-      if (s.orch && orch.some((x) => x.name === name))
-        return reply(await callOrchTool(s.orch, String(name), msg.params?.arguments ?? {}))
-      if (s.app && APP_TOOLS.some((x) => x.name === name))
-        return reply(await callAppTool(s.app, String(name), msg.params?.arguments ?? {}))
-      if (name === WAIT_TOOL.name && s.wait) {
-        const text = await s.wait()
-        return reply({
-          content: [{ type: 'text', text: text ?? '用户已经离开了这个对话，本轮到此结束。' }],
-        })
+      const name = String(msg.params?.name ?? '')
+      const args = msg.params?.arguments ?? {}
+      if (name === MORE_TOOLS && deferred.length) {
+        const r = moreTools(deferred, args)
+        return reply('call' in r ? await call(r.call, r.args) : r)
       }
-      return reply({ content: [{ type: 'text', text: `没有这个工具：${name}` }], isError: true })
+      // 收起来的工具直接按名字调也照样执行：保活的旧进程、记住了工具名的模型都会这么调
+      return reply(await call(name, args))
     }
     default:
       return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `不支持 ${msg.method}` } }

@@ -63,9 +63,9 @@ function CopyButton({ text }: { text: string }) {
       }
       title={t('复制命令')}
       aria-label={t('复制命令')}
-      className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[#8c909a] transition-colors hover:bg-[#1e2026] hover:text-[#d9dbe0]"
+      className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-term-subtle transition-colors hover:bg-term-hover hover:text-term-fg"
     >
-      {done ? <Check className="h-3.5 w-3.5 text-[#5fd39a]" /> : <Copy className="h-3.5 w-3.5" />}
+      {done ? <Check className="h-3.5 w-3.5 text-term-prompt" /> : <Copy className="h-3.5 w-3.5" />}
       {done ? t('已复制') : t('复制')}
     </button>
   )
@@ -85,21 +85,21 @@ export function Terminal({
   className?: string
 }) {
   const [cmd, ...args] = argv
-  const color = (a: string) => (a.startsWith('-') ? 'text-[#7cc4fa]' : 'text-[#d9dbe0]')
+  const color = (a: string) => (a.startsWith('-') ? 'text-term-flag' : 'text-term-fg')
   return (
-    <section className={cn('overflow-hidden rounded-xl border border-[#23252c] bg-[#0b0c0f]', className)}>
-      <div className="flex items-center gap-1.5 border-b border-[#1e2026] px-3.5 py-2 text-xs text-[#8c909a]">
+    <section className={cn('overflow-hidden rounded-xl bg-term-bg', className)}>
+      <div className="flex items-center gap-1.5 bg-term-bar px-3.5 py-2 text-xs text-term-subtle">
         <SquareTerminal className="h-3.5 w-3.5" />
         {title}
         <CopyButton text={commandText(argv)} />
       </div>
       {/* 只在参数之间换行：参数里的「-」也是浏览器默认的断行点，不禁掉的话「--verbose」会被拆成两行；
           特别长的单个参数（路径、JSON）才在中间断开 */}
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[0.78125rem] leading-[1.7] select-text">
-        <span className="text-[#5fd39a]">$ </span>
-        <span className="whitespace-nowrap text-[#f2c46d]">echo "{t('<任务描述>')}"</span>{' '}
-        <span className="text-[#8c909a]">| </span>
-        <span className={cn('text-[#b9aeff]', wrapClass(cmd ?? ''))}>{quoteArg(cmd ?? '')}</span>{' '}
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[0.75rem] leading-[1.7] select-text">
+        <span className="text-term-prompt">$ </span>
+        <span className="whitespace-nowrap text-term-string">echo "{t('<任务描述>')}"</span>{' '}
+        <span className="text-term-subtle">| </span>
+        <span className={cn('text-term-cmd', wrapClass(cmd ?? ''))}>{quoteArg(cmd ?? '')}</span>{' '}
         {args.map((a, i) => (
           <Fragment key={i}>
             <span className={cn(color(a), wrapClass(a))}>{quoteArg(a)}</span>{' '}

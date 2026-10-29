@@ -33,6 +33,8 @@ export interface BuildOptions {
   resume?: string
   /** 追加的系统提示词（只有支持的 CLI 会用到，其余拼进任务描述） */
   systemPrompt?: string
+  /** systemPrompt 已经写成文件、这里放的是路径（CLI 定义里有 systemPromptFileFlag 时由 invoke 写） */
+  systemPromptFile?: boolean
   /**
    * 系统提示词通过 mod / 插件文件追加时的文件路径（Command Code 的 `--mod`）：
    * 由面板生成，内容是「回复正文和思考过程用哪种语言」的规则
@@ -266,6 +268,8 @@ export const CLIS: CliDefinition[] = [
     },
     defaultPermission: 'acceptEdits',
     systemPromptFlag: true,
+    // 角色说明动辄上万字，直接放参数里会超过 Windows 命令行 8191 字的上限（cmd.exe 报 The command line is too long）
+    systemPromptFileFlag: '--append-system-prompt-file',
     buildArgs: (o) => [
       '-p',
       '--output-format',
@@ -288,7 +292,11 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.resume, '--resume', o.resume!),
       ...opt(o.resume && o.fork, '--fork-session'),
       ...opt(o.resume && o.fork?.end, '--resume-session-at', o.fork?.end ?? ''),
-      ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
+      ...opt(
+        o.systemPrompt,
+        o.systemPromptFile ? '--append-system-prompt-file' : '--append-system-prompt',
+        o.systemPrompt!,
+      ),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
       ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
       // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见。

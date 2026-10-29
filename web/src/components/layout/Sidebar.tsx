@@ -1,5 +1,4 @@
 import { useEffect, useId, useState } from 'react'
-import { useEscape } from '@/lib/useEscape'
 import {
   Archive,
   CalendarClock,
@@ -56,6 +55,13 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { IconButton } from '@/components/ui/icon-button'
+import { InlineRename } from '@/components/ui/inline-rename'
+import { Sheet } from '@/components/ui/sheet'
+import { EmptyPanel } from '@/components/ui/empty-panel'
+import { Kbd } from '@/components/ui/kbd'
+import { ModeTabs, NAV_ROW, ProjectRunning, SidebarCount, SidebarTaskBlock } from '@/components/ui/sidebar'
+import { isMac } from '@/lib/hotkey'
 import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { TOGGLE_SIDEBAR } from './CommandPalette'
 import { unmergedOf } from '@/components/tasks/Worktrees'
@@ -114,8 +120,8 @@ const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
 const PER_PROJECT = 5
 
-/** 「新建…」行前面的 + 号：强调色圆底，和普通导航图标区分开（Row 的图标包在一层 span 里） */
-const NEW_ICON = '[&>span>svg]:rounded-full [&>span>svg]:bg-accent [&>span>svg]:p-[3px] [&>span>svg]:text-white'
+/** 新建任务的快捷键（见 CommandPalette：浏览器不让网页占 Ctrl+N），行尾悬停时提示 */
+const NEW_TASK_KEY = isMac ? '⌘⇧O' : 'Ctrl+Shift+O'
 
 /** 收起的项目分组记在本机浏览器里 */
 function useFolded() {
@@ -179,6 +185,7 @@ function Row({
   className,
   badge,
   dot,
+  kbd,
 }: {
   icon: LucideIcon
   label: string
@@ -190,6 +197,8 @@ function Row({
   badge?: string
   /** 圆点的提示（例如部署内容有差异），文字放在悬停提示和无障碍标签里 */
   dot?: string
+  /** 行尾的快捷键提示：悬停才露出，不算进按钮的可访问名称 */
+  kbd?: string
 }) {
   // 收起时文字都不显示，悬停提示要把名字和两条提示都带上；展开时 chip 自己带文字，只把圆点的说明放进去
   const tip = rowTip(label, dot, badge)
@@ -203,7 +212,8 @@ function Row({
         aria-describedby={dot ? hintId : undefined}
         title={collapsed ? tip || undefined : dot}
         className={cn(
-          'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md border px-2 text-[0.84375rem] transition-colors',
+          'group/nav',
+          NAV_ROW,
           on ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
           on && 'font-medium',
           collapsed && 'justify-center px-0',
@@ -211,7 +221,7 @@ function Row({
         )}
       >
         <span className="relative shrink-0">
-          <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+          <Icon className="h-4 w-4" strokeWidth={1.8} />
           {(badge || dot) && collapsed && (
             <span
               aria-hidden="true"
@@ -229,9 +239,14 @@ function Row({
           />
         )}
         {badge && !collapsed && (
-          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
+          <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent-text">
             {badge}
           </span>
+        )}
+        {kbd && !collapsed && (
+          <Kbd className="ml-auto opacity-0 transition-opacity group-hover/nav:opacity-100">
+            <span aria-hidden>{kbd}</span>
+          </Kbd>
         )}
       </button>
       {dot && (
@@ -294,9 +309,10 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
             onClick={() => !m.on && go(m.to)}
             aria-label={m.label}
             title={m.label}
+            // 选中用 seg-thumb：深色下 bg-sel 贴着侧栏底色几乎看不出来；未选中用 muted，subtle 在深色下像禁用
             className={cn(
-              'grid h-8 w-8 cursor-pointer place-items-center rounded-md transition-colors hover:bg-sel hover:text-fg',
-              m.on ? 'bg-sel text-fg' : 'text-subtle',
+              'grid h-8 w-8 cursor-pointer place-items-center rounded-md transition-colors',
+              m.on ? 'seg-thumb' : 'text-muted hover:bg-sel hover:text-fg',
             )}
           >
             <m.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
@@ -306,28 +322,15 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     )
   }
   return (
-    <div
-      role="radiogroup"
-      aria-label={t('模式')}
-      className="mx-3 mb-3 flex shrink-0 gap-0.5 rounded-lg bg-sel/70 p-[3px]"
-    >
-      {modes.map((m) => (
-        <button
-          key={m.id}
-          role="radio"
-          aria-checked={m.on}
-          aria-label={m.label}
-          title={m.label}
-          onClick={() => !m.on && go(m.to)}
-          className={cn(
-            'h-7 min-w-0 flex-1 cursor-pointer truncate rounded-md px-1 text-[0.78125rem] transition-colors',
-            m.on ? 'bg-card font-medium text-fg' : 'text-subtle hover:text-fg',
-          )}
-        >
-          {m.name}
-        </button>
-      ))}
-    </div>
+    <ModeTabs
+      label={t('模式')}
+      modes={modes}
+      onPick={(id) => {
+        const m = modes.find((x) => x.id === id)
+        if (m) go(m.to)
+      }}
+      className="mx-2.5 mb-2.5"
+    />
   )
 }
 
@@ -364,7 +367,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   if (designMode) lastDesignRoute = route
   else if (chatMode) lastChatRoute = route
   else lastAgentRoute = route
-  useEscape(mobileOpen, () => setMobileOpen(false))
 
   // 按项目分组：项目分组只按添加时间（或拖拽后的顺序）排，不受任务时间、执行状态影响；组内任务仍按最近发言排
   const [folded, toggleFolded, setFolded] = useFolded()
@@ -456,7 +458,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           }
           await api.deleteTask(tk.id)
           removeTask(tk.id)
-        } else upsertTask(await api.archiveTask(tk.id, true))
+        } else upsertTask(await api.archiveTaskSummary(tk.id, true))
         ok++
       } catch {
         failed++
@@ -493,18 +495,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             <span className="truncate font-serif text-[1rem] font-semibold tracking-tight">{t('Agent 面板')}</span>
           </button>
         )}
-        <button
+        <IconButton
           onClick={toggleCollapsed}
-          aria-label={narrow ? t('展开侧栏') : t('收起侧栏')}
-          title={narrow ? t('展开侧栏') : t('收起侧栏')}
-          // 收起时和下面的图标一样居中，不能靠右
-          className={cn(
-            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg md:grid',
-            !narrow && 'ml-auto',
-          )}
-        >
-          {narrow ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
-        </button>
+          icon={narrow ? PanelLeftOpen : PanelLeftClose}
+          label={narrow ? t('展开侧栏') : t('收起侧栏')}
+          size="sm"
+          // 收起时和下面的图标一样居中，不能靠右；手机上侧栏在抽屉里，不用收起
+          className={cn('hidden md:grid', !narrow && 'ml-auto')}
+        />
       </div>
       {!narrow && <ModeSwitch narrow={false} />}
 
@@ -518,7 +516,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               collapsed={narrow}
               on={route.page === 'design' && (!route.id || route.id === 'new')}
               onClick={() => go({ page: 'design' })}
-              className={cn(!narrow && NEW_ICON)}
             />
             <Row
               icon={Workflow}
@@ -535,7 +532,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             collapsed={narrow}
             on={!route.id}
             onClick={() => go({ page: 'chat' })}
-            className={cn(!narrow && NEW_ICON)}
           />
         ) : (
           <>
@@ -545,7 +541,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               collapsed={narrow}
               on={route.page === 'home'}
               onClick={() => go({ page: 'home' })}
-              className={cn(!narrow && NEW_ICON)}
+              kbd={NEW_TASK_KEY}
             />
             {NAV.map((n) => (
               <Row
@@ -627,7 +623,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             onFilter={setFilter}
             placeholder={t('搜索任务')}
           />
-          <div className="group/head flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-2.5">
+          <div className="group/head mt-1 flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-[9px]">
             <button
               onClick={() => toggleFolded(ALL)}
               aria-expanded={allOpen}
@@ -641,13 +637,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             </button>
             <Menu>
               <MenuTrigger asChild>
-                <button
-                  aria-label={t('项目菜单')}
-                  title={t('更多')}
-                  className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-                >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </button>
+                <IconButton icon={MoreHorizontal} label={t('项目菜单')} title={t('更多')} className="ml-auto" />
               </MenuTrigger>
               <MenuContent align="end">
                 <MenuItem onSelect={() => openProject()}>
@@ -668,22 +658,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <button
-              onClick={() => openProject()}
-              aria-label={t('新建项目')}
-              title={t('新建项目')}
-              className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            <IconButton icon={Plus} label={t('新建项目')} onClick={() => openProject()} />
           </div>
           {allOpen && projects.length === 0 && (
-            <div className="mx-0.5 mt-1 flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
+            <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
               <FolderPlus className="h-5 w-5 text-subtle" strokeWidth={1.6} />
               <p className="text-xs leading-relaxed text-subtle">
                 {t('还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。')}
               </p>
-            </div>
+            </EmptyPanel>
           )}
           {allOpen &&
             groups.map(([pid, ts], gi) => {
@@ -703,7 +686,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   key={pid}
                   onDragOver={handle.onDragOver}
                   onDrop={handle.onDrop}
-                  className={cn('relative mb-2 rounded-lg', dragging && 'opacity-40')}
+                  className={cn('relative mb-1 rounded-lg', dragging && 'opacity-40')}
                 >
                   {sort.drag !== null && sort.over === gi && sort.drag !== gi && (
                     <div
@@ -718,8 +701,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     <ContextMenuTrigger asChild>
                       <div
                         className={cn(
-                          'group/proj flex h-8 items-center gap-1 rounded-md border pr-1 pl-1 text-[0.78125rem] transition-colors',
-                          onProject ? SIDEBAR_ROW_ON : SIDEBAR_ROW_OFF,
+                          'group/proj flex h-8 items-center gap-1 rounded-[7px] border pr-1 pl-0.5 text-[0.8125rem] text-fg transition-colors',
+                          onProject ? SIDEBAR_ROW_ON : 'border-transparent hover:bg-sel/60',
                         )}
                       >
                         <button
@@ -728,38 +711,34 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           aria-label={open ? t('收起') : t('展开')}
                           disabled={!ts.length}
                           className={cn(
-                            'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel/70 hover:text-fg',
+                            'grid h-6 w-5 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:text-fg',
                             !ts.length && 'invisible',
                           )}
                         >
-                          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+                          <ChevronRight
+                            className={cn('h-[13px] w-[13px] transition-transform', open && 'rotate-90')}
+                            strokeWidth={2}
+                          />
                         </button>
                         {renaming === pid ? (
-                          <input
-                            autoFocus
-                            defaultValue={p.name}
-                            aria-label={t('项目名称')}
-                            onFocus={(e) => e.target.select()}
-                            onBlur={(e) => rename(p, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.currentTarget.blur()
-                              if (e.key === 'Escape') {
-                                e.stopPropagation()
-                                setRenaming('')
-                              }
-                            }}
-                            className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.78125rem] font-medium text-fg outline-none"
+                          <InlineRename
+                            value={p.name}
+                            label={t('项目名称')}
+                            size="sm"
+                            onCommit={(v) => rename(p, v)}
+                            onCancel={() => setRenaming('')}
+                            className="flex-1"
                           />
                         ) : (
                           <button
                             onClick={() => go({ page: 'projects', id: pid })}
                             title={t('打开项目「{name}」，右键查看更多操作', { name: projectName(pid) })}
-                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                           >
                             {open ? (
-                              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                              <FolderOpen className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
                             ) : (
-                              <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                              <Folder className="h-[15px] w-[15px] shrink-0 text-muted" strokeWidth={1.8} />
                             )}
                             <span className="min-w-0 flex-1 truncate font-medium">{projectName(pid)}</span>
                           </button>
@@ -771,15 +750,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                             strokeWidth={2.4}
                           />
                         )}
+                        {/* 行尾：有对话在跑写「N 个执行中」（和 StatusPill 同一套运行色），否则是对话数 */}
                         {running > 0 ? (
-                          <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[0.65625rem] leading-[18px] font-medium text-accent group-hover/proj:hidden">
-                            {t('{n} 个执行中', { n: running })}
-                          </span>
+                          <ProjectRunning n={running} className="group-hover/proj:hidden" />
                         ) : (
                           ts.length > 0 && (
-                            <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
-                              {ts.length}
-                            </span>
+                            <SidebarCount n={ts.length} on={onProject} className="mr-0.5 group-hover/proj:hidden" />
                           )
                         )}
                         <span
@@ -799,18 +775,17 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         >
                           <GripVertical className="h-3.5 w-3.5" />
                         </span>
-                        <button
+                        <IconButton
+                          icon={Plus}
                           onClick={() => go({ page: 'projects', id: pid })}
-                          aria-label={t('在「{name}」新建对话', { name: projectName(pid) })}
+                          label={t('在「{name}」新建对话', { name: projectName(pid) })}
                           title={t('新建对话')}
                           // 还没有对话的项目一直显示 +，有对话的鼠标移上去才显示
                           className={cn(
-                            ts.length ? 'hidden' : 'grid opacity-60',
-                            'h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle group-hover/proj:grid group-hover/proj:opacity-100 hover:bg-sel hover:text-fg',
+                            ts.length ? 'hidden' : 'opacity-60',
+                            'group-hover/proj:grid group-hover/proj:opacity-100',
                           )}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
+                        />
                       </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
@@ -856,7 +831,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     </ContextMenuContent>
                   </ContextMenu>
                   {open && ts.length > 0 && (
-                    <div className="mt-1 ml-3 flex flex-col gap-0.5">
+                    <SidebarTaskBlock>
                       {shown.map((t) => (
                         <TaskRow
                           key={t.id}
@@ -867,6 +842,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           onDeleted={() =>
                             route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })
                           }
+                          inBlock
                           className="px-2"
                         />
                       ))}
@@ -879,12 +855,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               return next
                             })
                           }
-                          className="h-7 cursor-pointer rounded-md px-2 text-left text-xs text-subtle transition-colors hover:bg-sel/60 hover:text-fg"
+                          className="h-7 cursor-pointer rounded-[7px] px-[11px] text-left text-xs text-subtle transition-colors hover:bg-sel/80 hover:text-fg"
                         >
                           {more.has(pid) ? t('收起') : t('显示全部 {n} 个', { n: ts.length })}
                         </button>
                       )}
-                    </div>
+                    </SidebarTaskBlock>
                   )}
                 </section>
               )
@@ -907,18 +883,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           }}
           className={cn(!narrow && 'flex-1')}
         />
-        <button
+        <IconButton
           onClick={onToggleTheme}
-          aria-label={dark ? t('切换到浅色') : t('切换到深色')}
-          title={dark ? t('切换到浅色') : t('切换到深色')}
-          className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
-        >
-          {dark ? (
-            <Sun className="h-[18px] w-[18px]" strokeWidth={1.7} />
-          ) : (
-            <Moon className="h-[18px] w-[18px]" strokeWidth={1.7} />
-          )}
-        </button>
+          icon={dark ? Sun : Moon}
+          label={dark ? t('切换到浅色') : t('切换到深色')}
+          size="sm"
+          strokeWidth={1.7}
+        />
       </div>
     </>
   )
@@ -927,37 +898,30 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     <>
       {/* 手机：顶部条 + 抽屉 */}
       <div className="flex h-12 shrink-0 items-center gap-2 bg-rail px-3 md:hidden">
-        <button
-          onClick={() => setMobileOpen(true)}
-          aria-label={t('打开菜单')}
-          className="grid h-9 w-9 cursor-pointer place-items-center rounded-lg text-muted hover:bg-sel"
-        >
-          <MenuIcon className="h-5 w-5" />
-        </button>
+        <IconButton icon={MenuIcon} label={t('打开菜单')} size="sm" onClick={() => setMobileOpen(true)} />
         <Logo />
         <span className="font-serif text-[0.9375rem] font-semibold">{t('Agent 面板')}</span>
       </div>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label={t('菜单')}
-            className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-rail shadow-pop"
-          >
-            <button
-              autoFocus
-              onClick={() => setMobileOpen(false)}
-              aria-label={t('关闭菜单')}
-              className="absolute top-3 right-3 z-10 grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {body(false)}
-          </aside>
-        </div>
-      )}
+      {/* 抽屉只在手机宽度用：窗口拉宽时侧栏本身就出来了，抽屉跟着藏起来 */}
+      <Sheet
+        open={mobileOpen}
+        onOpenChange={setMobileOpen}
+        title={t('菜单')}
+        side="left"
+        width="min(280px, 85vw)"
+        bare
+        className="bg-rail md:hidden"
+      >
+        <IconButton
+          autoFocus
+          icon={X}
+          label={t('关闭菜单')}
+          size="sm"
+          onClick={() => setMobileOpen(false)}
+          className="absolute top-3 right-3 z-10"
+        />
+        {body(false)}
+      </Sheet>
       <aside
         aria-label={t('侧栏')}
         data-sidebar

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import { t } from '@shared/i18n'
 
@@ -123,15 +124,11 @@ export function ConversationSettingsDialog({
                 <li key={r.id} className="flex items-start gap-2 rounded-lg border bg-field px-3 py-2 text-[0.8125rem]">
                   <span className="mt-px shrink-0 font-mono text-xs text-subtle tabular-nums">{i + 1}.</span>
                   <span className="min-w-0 flex-1 leading-relaxed break-words whitespace-pre-wrap">{r.text}</span>
-                  <button
-                    type="button"
-                    aria-label={t('删除规则')}
-                    title={t('删除规则')}
+                  <IconButton
+                    icon={X}
+                    label={t('删除规则')}
                     onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))}
-                    className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  />
                 </li>
               ))}
             </ol>

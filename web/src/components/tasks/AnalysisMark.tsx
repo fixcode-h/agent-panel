@@ -16,7 +16,7 @@ export function AnalysisMark({ kind, className }: { kind?: AnalysisKind; classNa
       data-analysis-mark
       title={t('AI 分析开出的对话')}
       className={cn(
-        'inline-flex shrink-0 items-center gap-0.5 rounded-md bg-accent-soft px-1.5 py-px text-[0.6875rem] leading-4 font-medium text-accent',
+        'inline-flex shrink-0 items-center gap-0.5 rounded-md bg-accent-soft px-1.5 py-px text-[0.6875rem] leading-4 font-medium text-accent-text',
         className,
       )}
     >

@@ -343,6 +343,17 @@ async function resolveAttachment(want: string): Promise<string> {
   return found.find(Boolean) ?? ''
 }
 
+/**
+ * 绝对路径指向上传目录里的附件时返回它的完整路径，否则空串。
+ * 对话的文件接口（tasks.ts 的 /:id/file、/:id/file/raw）按它放行附件：Agent「读取」用户发来的截图时给的是这个绝对路径，
+ * 附件不在对话工作目录里，以前点开那一行看图是一张坏图
+ */
+export function uploadFileOf(want: string) {
+  if (!path.isAbsolute(want)) return ''
+  const full = path.resolve(want)
+  return uploadDirOf(full) ? full : ''
+}
+
 /** 附件所在的目录（每个附件单独一个目录）；不是附件时返回空 */
 export function uploadDirOf(file: string) {
   const full = path.resolve(file)

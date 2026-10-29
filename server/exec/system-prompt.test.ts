@@ -60,6 +60,16 @@ test('Command Code 用 --mod 追加语言规则，没有路径时不传这个参
 test('系统提示词通道按 CLI 声明走：有 --append-system-prompt 的不用 mod', () => {
   for (const id of ['claude', 'codex', 'pi']) assert.equal(getCli(id)?.systemPromptFlag, true, id)
   assert.ok(!getCli('commandcode')?.systemPromptFlag)
+  // Claude Code 的角色说明也走文件：上万字放进参数会超过 Windows 命令行上限（The command line is too long）
+  const claude = getCli('claude')!
+  assert.equal(claude.systemPromptFileFlag, '--append-system-prompt-file')
+  const base = { model: 'claude-sonnet-5-5', permission: 'acceptEdits', extraArgs: [] }
+  const file = claude.buildArgs({ ...base, systemPrompt: '/tmp/x/system-prompt.md', systemPromptFile: true })
+  assert.equal(file[file.indexOf('--append-system-prompt-file') + 1], '/tmp/x/system-prompt.md')
+  assert.ok(!file.includes('--append-system-prompt'))
+  // 写文件失败时 invoke 照旧把文本放参数里，这时用不带 -file 的参数
+  const inline = claude.buildArgs({ ...base, systemPrompt: ROLE })
+  assert.equal(inline[inline.indexOf('--append-system-prompt') + 1], ROLE)
 })
 
 test('语言 mod 源码：两种语言的规则都在，按环境变量取', () => {

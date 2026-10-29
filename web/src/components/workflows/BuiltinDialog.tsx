@@ -11,6 +11,7 @@ import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
 
 /**
  * 内置工作流：按分类列出。自带工作流启动时已经全部加入（见 shared/builtin/install.ts 的 seedProjectWorkflows），
@@ -67,7 +68,7 @@ export function BuiltinDialog({
         {groups.map((g) => (
           <section key={g.name} className="flex flex-col gap-2">
             <h3 className="text-[0.75rem] font-medium text-subtle">{g.name}</h3>
-            <ul className="flex flex-col divide-y overflow-hidden rounded-xl border">
+            <Card as="ul" className="flex flex-col divide-y overflow-hidden">
               {g.items.map((w) => {
                 const added = addedBuiltinWorkflow(workflows, w)
                 const lack = missingAgents(w, agents).length
@@ -75,17 +76,17 @@ export function BuiltinDialog({
                 return (
                   <li key={w.key} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <p className="flex items-center gap-2 text-[0.84375rem] font-medium">
+                      <p className="flex items-center gap-2 text-[0.8125rem] font-medium">
                         {w.name}
                         {added && (
-                          <span className="inline-flex items-center gap-0.5 text-[0.71875rem] font-normal text-success">
+                          <span className="inline-flex items-center gap-0.5 text-[0.6875rem] font-normal text-success">
                             <Check className="h-3 w-3" />
                             {t('已添加')}
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{w.description}</p>
-                      <p className="mt-1 text-[0.71875rem] text-subtle">
+                      <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted">{w.description}</p>
+                      <p className="mt-1 text-[0.6875rem] text-subtle">
                         {t('{n} 步', { n: steps })} · {builtinAgentKeys(w).map(agentName).join(t('、'))}
                         {lack > 0 && ` · ${t('将新建 {n} 个角色', { n: lack })}`}
                       </p>
@@ -108,7 +109,7 @@ export function BuiltinDialog({
                   </li>
                 )
               })}
-            </ul>
+            </Card>
           </section>
         ))}
       </div>

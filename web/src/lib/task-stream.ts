@@ -107,7 +107,7 @@ export function useTaskStream(
       // 对不上（漏了一段）时重新取完整的
       if (t.messages.length !== p.total) {
         api
-          .task(taskId)
+          .taskLite(taskId)
           .then(emit)
           .catch(() => {})
         return

@@ -13,9 +13,12 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
+import { Card } from '@/components/ui/card'
 import { MemoryChart } from '@/components/settings/MemoryChart'
 import { TrashSection } from '@/components/settings/TrashSection'
 import { CleanupSection } from '@/components/settings/CleanupSection'
+import { KeepAliveList } from '@/components/settings/KeepAliveList'
+import { TaskDiskUsage } from '@/components/settings/TaskDiskUsage'
 import { t } from '@shared/i18n'
 
 /** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
@@ -29,6 +32,8 @@ export function DataSection() {
   const [loading, setLoading] = useState(false)
   const [clearing, setClearing] = useState<DataKind | null>(null)
   const [picked, setPicked] = useState<DataKind[]>(['config', 'projects', 'tasks'])
+  // 对话占用里删掉的进了回收站，换个 key 让回收站重新读
+  const [trashKey, setTrashKey] = useState(0)
   const [importing, setImporting] = useState<{ name: string; data: any } | null>(null)
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
@@ -252,16 +257,16 @@ export function DataSection() {
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
           </Button>
         </div>
-        <div className="overflow-hidden rounded-xl border">
+        <Card className="overflow-hidden">
           {DATA_KINDS.map((k) => {
             const u = of(k.id)
             return (
               <div key={k.id} className="flex items-center gap-3 border-b px-3.5 py-3 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[0.84375rem]">{k.label}</span>
+                  <span className="text-[0.8125rem]">{k.label}</span>
                   <span className="text-xs leading-relaxed text-subtle">{k.hint}</span>
                 </span>
-                <span className="shrink-0 text-right font-mono text-[0.78125rem] text-muted">
+                <span className="shrink-0 text-right font-mono text-[0.75rem] text-muted">
                   {u ? size(u.bytes) : '…'}
                   <span className="block text-[0.6875rem] text-subtle">{u ? t('{n} 个文件', { n: u.files }) : ''}</span>
                 </span>
@@ -282,11 +287,21 @@ export function DataSection() {
               </div>
             )
           })}
-        </div>
+        </Card>
       </section>
 
+      {/* 对话记录按项目、父子对话的磁盘占用，很久没动的可以批量删（进回收站） */}
+      {!demo && (
+        <TaskDiskUsage
+          onChanged={() => {
+            void load()
+            setTrashKey((k) => k + 1)
+          }}
+        />
+      )}
+
       {/* 回收站：删掉的对话先放 7 天，这里能恢复或永久删除 */}
-      <TrashSection />
+      <TrashSection key={trashKey} />
 
       {/* 内存：面板自己的进程 + 它拉起的 CLI 子进程，按采样间隔画曲线；AI 分析把这份采样交给本机 CLI 体检 */}
       <section className="flex flex-col gap-2">
@@ -351,6 +366,7 @@ export function DataSection() {
             '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 Agent（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。',
           )}
         </p>
+        <KeepAliveList />
       </section>
 
       <section className="flex flex-col gap-3">

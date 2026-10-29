@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown, Clock, Coins, Crown, Hourglass } from 'lucide-react'
-import type { StepUsage, Task, TaskStep, TaskTodo } from '@shared/schema'
+import type { StepUsage, Task, TaskStep, TaskTodo, TurnSources } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { useNow } from '@/lib/useNow'
 import { fmtClock, fmtDuration, fmtTokens, stepDepth, stepDuration, stepLabel, verdictText } from '@/lib/tasks'
@@ -122,7 +122,7 @@ export function TaskPanel({
                                 <StepIcon status={k.status} className="h-3.5 w-3.5" />
                                 {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
                                 {isMainStep(k) ? (
-                                  <Crown className="h-3 w-3 shrink-0 text-accent" />
+                                  <Crown className="h-3 w-3 shrink-0 text-accent-text" />
                                 ) : (
                                   k.slot === 'sub' &&
                                   byId.get(k.agentId) && (
@@ -216,7 +216,7 @@ function MainRow({
         className="-mx-1.5 -my-0.5 flex min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
       >
         <span className={cn('flex items-center gap-1.5 text-[0.8125rem]', step.status === 'running' && 'font-medium')}>
-          <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <Crown className="h-3.5 w-3.5 shrink-0 text-accent-text" />
           {t('主角色')}
         </span>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
@@ -251,7 +251,7 @@ function TimeSummary({ task, now }: { task: Task; now: number }) {
   if (total < 1000) return null
   const running = task.status === 'running'
   const cells: [string, string, string?, string?][] = [
-    [t('总耗时'), fmtDuration(total), running ? 'text-accent' : '', t('累计执行时间，不含两轮之间的空闲')],
+    [t('总耗时'), fmtDuration(total), running ? 'text-accent-text' : '', t('累计执行时间，不含两轮之间的空闲')],
     [t('等你处理'), wait >= 1000 ? fmtDuration(wait) : '—', '', t('等你确认操作、回答问题、查看节点结果的时间')],
     running
       ? [t('开始于'), fmtClock(task.createdAt)]
@@ -325,12 +325,43 @@ function TurnRows({
                     span={spanTitle(step)}
                   />
                 </span>
+                {x.sources && <SourceBar sources={x.sources} />}
               </span>
             </li>
           )
         })}
       </ol>
     </div>
+  )
+}
+
+/** 输入构成的几块：颜色固定，顺序按「先有的」排（设定 → 规则 → 消息 → 结果 → 工具输出） */
+const SOURCE_PARTS: { key: keyof TurnSources; label: () => string; color: string }[] = [
+  { key: 'setup', label: () => t('角色设定和教训'), color: 'bg-line-strong' },
+  { key: 'rules', label: () => t('面板规则'), color: 'bg-accent' },
+  { key: 'user', label: () => t('消息'), color: 'bg-success' },
+  { key: 'results', label: () => t('子任务和计划结果'), color: 'bg-peer' },
+  { key: 'tools', label: () => t('工具输出'), color: 'bg-run' },
+]
+
+/**
+ * 这一轮交给 Agent 的内容按来源的比例：一眼看出 token 花在了规则、消息还是工具输出上。
+ * 记的是字数（估算），悬停看各块的数字
+ */
+function SourceBar({ sources }: { sources: TurnSources }) {
+  const parts = SOURCE_PARTS.map((p) => ({ ...p, n: sources[p.key] ?? 0 })).filter((p) => p.n > 0)
+  const total = parts.reduce((n, p) => n + p.n, 0)
+  if (!total) return null
+  const title = [
+    t('这一轮交给 Agent 的内容（按字数估算）'),
+    ...parts.map((p) => `${p.label()}  ${fmtTokens(p.n)} (${Math.round((p.n / total) * 100)}%)`),
+  ].join('\n')
+  return (
+    <span className="mt-0.5 flex h-1 w-full overflow-hidden rounded-full bg-line" title={title}>
+      {parts.map((p) => (
+        <span key={p.key} className={cn('h-full', p.color)} style={{ width: `${(p.n / total) * 100}%` }} />
+      ))}
+    </span>
   )
 }
 
@@ -369,7 +400,7 @@ function Stats({
   return (
     <>
       {ms >= 1000 && (
-        <span className={cn(item, running && 'text-accent')} title={span}>
+        <span className={cn(item, running && 'text-accent-text')} title={span}>
           <Clock className="h-3 w-3" />
           {fmtDuration(ms)}
         </span>

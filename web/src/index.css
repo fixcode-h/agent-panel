@@ -20,18 +20,22 @@
   --line-strong: #d5d1c4;
   --fg: #1f1e1c;
   --muted: #55534d;
-  --subtle: #6f6d65;
+  --subtle: #66645c;
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
-  /* 默认字体：内置的 Maple Mono NL（无连字）配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
-  --app-sans: 'Maple Mono NL', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 默认字体：内置的 Inter 配系统中文（苹方 / 微软雅黑）；思源黑体按需加载，见 fonts-cjk.css */
+  --app-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --app-mono:
     'Maple Mono NL', 'JetBrains Mono Variable', 'PingFang SC', 'Microsoft YaHei', ui-monospace, Consolas, monospace;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
+  /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
+  --accent-text: #a94f2e;
   --primary: var(--accent);
   --on-primary: #ffffff;
+  /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
+  --on-danger: #ffffff;
   --run: #0e6e79;
   --run-soft: rgb(14 110 121 / 0.1);
   --peer: #5b4fc4;
@@ -39,9 +43,9 @@
   /* 输入框、按钮获得焦点时的颜色 */
   --focus: var(--accent);
   --focus-soft: var(--accent-soft);
-  --success: #3d8a5a;
-  --warning: #a4660f;
-  --danger: #bf3b2c;
+  --success: #2f7349;
+  --warning: #935b0c;
+  --danger: #b4372b;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
   --panel-shadow: 0 1px 3px rgb(60 50 30 / 0.06);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
@@ -56,6 +60,58 @@
   --hl-type: #a06a00;
   --hl-attr: #b0412f;
   --hl-tag: #c2412d;
+  /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
+  --scrim: rgb(0 0 0 / 0.45);
+  /*
+   * 深色画布（设计页的画板、概念图、预览台）：不管浅色还是深色主题，画布都是深底，上面的工具条和按钮用这组色。
+   * 底色按配色的 --rail 带一点色相，换配色时画布跟着偏暖 / 偏蓝 / 偏绿，不用每套配色各写一份
+   */
+  --canvas: color-mix(in oklab, var(--rail) 6%, #19191b);
+  --canvas-bar: color-mix(in oklab, var(--canvas) 90%, white);
+  --canvas-fg: rgb(255 255 255 / 0.72);
+  --canvas-strong: #ffffff;
+  --canvas-subtle: rgb(255 255 255 / 0.48);
+  --canvas-hover: rgb(255 255 255 / 0.08);
+  --canvas-sel: rgb(255 255 255 / 0.12);
+  --canvas-line: rgb(255 255 255 / 0.1);
+  /* 画板本身（画布中间那块设计稿大小的底）和它的透明棋盘格：比画布再深一档，看得出画板边界 */
+  --canvas-board: #0e0e10;
+  --canvas-checker: #1a1a1d;
+  /* 画布上的图片、画板浮起来的投影：深底上要压得重一点才看得出 */
+  --canvas-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.8);
+  /* 画布上的编辑反馈：选中框和缩放手柄、对齐参考线、拖进容器时的落点。深色画布上要够亮，不跟配色走 */
+  --canvas-pick: #4c9bff;
+  --canvas-guide: #ff4fd8;
+  --canvas-drop: #35c46a;
+  /*
+   * 仿终端（角色页的命令预览）：不管浅色还是深色主题都是黑底，配色照常见终端主题；
+   * 命令名、参数、字符串各一种颜色，用户一眼分得出哪段是哪段
+   */
+  --term-bg: #0b0c0f;
+  --term-bar: #14151a;
+  --term-hover: #1e2026;
+  --term-fg: #d9dbe0;
+  --term-subtle: #8c909a;
+  --term-prompt: #5fd39a;
+  --term-string: #f2c46d;
+  --term-cmd: #b9aeff;
+  --term-flag: #7cc4fa;
+  /* 标签的九种颜色（用户给标签挑的，存的是名字）：浅底 + 同色字，深浅主题都看得清，所以不跟主题变 */
+  --tag-gray: #8a8f98;
+  --tag-red: #e5484d;
+  --tag-orange: #f76b15;
+  --tag-amber: #d6a100;
+  --tag-green: #30a46c;
+  --tag-teal: #12a594;
+  --tag-blue: #3e7bfa;
+  --tag-violet: #8e4ec6;
+  --tag-pink: #d6409f;
+  /* 标注的四种意思和蒙版：画在效果图上、也出现在对话里的标注小块，颜色要固定，用户才记得住哪种是哪种 */
+  --mark-change: #f43f5e;
+  --mark-add: #3b82f6;
+  --mark-remove: #f59e0b;
+  --mark-keep: #22c55e;
+  --mark-mask: #22d3ee;
 }
 .dark {
   color-scheme: dark;
@@ -68,12 +124,15 @@
   --line-strong: #4a4945;
   --fg: #f5f4ef;
   --muted: #c3c1b8;
-  --subtle: #96948b;
+  --subtle: #a09e95;
   --sel: #353532;
   --sel-line: #4a4945;
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
-  --on-primary: #ffffff;
+  --accent-text: #e08463;
+  /* 白字在 #d97757 上只有 3.1:1，和其他配色的深色主题一样用深色字 */
+  --on-primary: #1f1e1c;
+  --on-danger: #1f1e1c;
   --run: #6ccfd9;
   --run-soft: rgb(108 207 217 / 0.12);
   --peer: #b3a9f5;
@@ -98,6 +157,8 @@
   --hl-type: #e5c07b;
   --hl-attr: #f07f6c;
   --hl-tag: #f07f6c;
+  /* 深色主题下页面本身就暗，画布再压一层，和面板分得开 */
+  --canvas: color-mix(in oklab, var(--rail) 25%, #0f0f11);
 }
 
 /* 配色「中性」：内容在白、框架在灰，主操作用黑（深色反白），陶土橙只留在未读点 */
@@ -109,13 +170,13 @@
   --line-strong: #d6d5d1;
   --fg: #18181b;
   --muted: #4b4b52;
-  --subtle: #6a6a72;
+  --subtle: #65656d;
   --sel: #eaeae7;
   --sel-line: #d6d5d1;
   --primary: #18181b;
   --focus: #3b82f6;
   --focus-soft: rgb(59 130 246 / 0.18);
-  --success: #2f7d47;
+  --success: #2f7349;
   --warning: #855600;
   --danger: #b4372b;
   --shadow: 0 1px 2px rgb(24 24 27 / 0.06), 0 0 0 0.5px rgb(24 24 27 / 0.04);
@@ -160,6 +221,7 @@
   --sel-line: #c7d2de;
   --accent: #2f6fb3;
   --accent-soft: rgb(47 111 179 / 0.1);
+  --accent-text: var(--accent);
   --code-bg: #f3f7fa;
   --code-chip: #e8eff6;
   --code-chip-fg: #1f5a96;
@@ -179,6 +241,7 @@
   --sel-line: #2f3e50;
   --accent: #5b9be0;
   --accent-soft: rgb(91 155 224 / 0.16);
+  --accent-text: var(--accent);
   --on-primary: #0e151d;
   --code-bg: #0e151d;
   --code-chip: #1e2a38;
@@ -194,11 +257,12 @@
   --line-strong: #cad3c1;
   --fg: #18201a;
   --muted: #46514a;
-  --subtle: #64705f;
+  --subtle: #5e6a59;
   --sel: #e6ece0;
   --sel-line: #cad3c1;
   --accent: #3f7d58;
   --accent-soft: rgb(63 125 88 / 0.1);
+  --accent-text: #35704d;
   --code-bg: #f3f6f0;
   --code-chip: #e9eee4;
   --code-chip-fg: #2f6a47;
@@ -218,6 +282,7 @@
   --sel-line: #364038;
   --accent: #6fb58a;
   --accent-soft: rgb(111 181 138 / 0.16);
+  --accent-text: var(--accent);
   --on-primary: #111512;
   --code-bg: #111512;
   --code-chip: #232a24;
@@ -239,8 +304,12 @@
   --color-sel-line: var(--sel-line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
+  --color-on-danger: var(--on-danger);
+  /* 强调色底上的字：各配色里主操作和强调色同色时取值一样，所以直接借 --on-primary（中性配色也成立：浅色白字、深色深字） */
+  --color-on-accent: var(--on-primary);
   --color-run: var(--run);
   --color-run-soft: var(--run-soft);
   --color-peer: var(--peer);
@@ -250,8 +319,37 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-scrim: var(--scrim);
+  --color-canvas: var(--canvas);
+  --color-canvas-bar: var(--canvas-bar);
+  --color-canvas-fg: var(--canvas-fg);
+  --color-canvas-strong: var(--canvas-strong);
+  --color-canvas-subtle: var(--canvas-subtle);
+  --color-canvas-hover: var(--canvas-hover);
+  --color-canvas-sel: var(--canvas-sel);
+  --color-canvas-line: var(--canvas-line);
+  --color-canvas-board: var(--canvas-board);
+  --color-canvas-checker: var(--canvas-checker);
+  --color-canvas-pick: var(--canvas-pick);
+  --color-canvas-guide: var(--canvas-guide);
+  --color-canvas-drop: var(--canvas-drop);
+  --color-term-bg: var(--term-bg);
+  --color-term-bar: var(--term-bar);
+  --color-term-hover: var(--term-hover);
+  --color-term-fg: var(--term-fg);
+  --color-term-subtle: var(--term-subtle);
+  --color-term-prompt: var(--term-prompt);
+  --color-term-string: var(--term-string);
+  --color-term-cmd: var(--term-cmd);
+  --color-term-flag: var(--term-flag);
+  --color-mark-change: var(--mark-change);
+  --color-mark-add: var(--mark-add);
+  --color-mark-remove: var(--mark-remove);
+  --color-mark-keep: var(--mark-keep);
+  --color-mark-mask: var(--mark-mask);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-pop);
+  --shadow-canvas: var(--canvas-shadow);
   /* 字体跟着设置走（web/src/lib/appearance.ts 在 html 上改 --app-sans / --app-mono），默认值在 :root */
   --font-sans: var(--app-sans);
   --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
@@ -279,6 +377,46 @@ body,
   @media (width >= 48rem) {
     border-radius: 0.75rem;
     box-shadow: var(--panel-shadow);
+  }
+}
+/*
+ * 分段切换（模式切换、Segmented）的轨道和选中块：浅色下轨道是一层灰、选中块是白卡片；
+ * 深色下 card 和 sel 只差几个色阶，选中块几乎认不出来，所以轨道往下压一层黑、选中块往上提亮，
+ * 所有配色都按同一个比例算，不用每套配色各写一份
+ */
+@utility seg-track {
+  background-color: color-mix(in oklab, var(--sel) 70%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--rail) 55%, black);
+  }
+}
+@utility seg-thumb {
+  background-color: var(--card);
+  color: var(--fg);
+  box-shadow: var(--shadow-card, 0 1px 2px rgb(0 0 0 / 0.06));
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--card) 82%, white);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+/*
+ * 凹下去的一块（弹层里的搜索框、进度条的轨道）：浅色下一层灰；深色下 card 和 sel 几乎一样，
+ * 和 seg-track 同一个方向往下压一层黑（压得比它轻，不然搜索框像个黑洞），才看得出这里能输入 / 这是轨道
+ */
+@utility sunken {
+  background-color: color-mix(in oklab, var(--sel) 75%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--rail) 80%, black);
+  }
+}
+/*
+ * 没选中的选择小块（ChipGroup）：浅色下和 secondary 按钮一样的浅灰；
+ * 深色下往上提亮（和 seg-thumb 一个方向），放在 bg 或 card 上都认得出是一块
+ */
+@utility chip-idle {
+  background-color: color-mix(in oklab, var(--sel) 75%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--card) 90%, white);
   }
 }
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
@@ -349,7 +487,7 @@ body,
   @apply my-2 list-decimal pl-5 text-muted;
 }
 .doc-preview code {
-  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.78125rem];
+  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.75rem];
 }
 .doc-preview pre {
   @apply my-3 overflow-x-auto rounded-lg border bg-field p-3;
@@ -361,7 +499,7 @@ body,
   @apply my-3 border-l-2 border-line-strong pl-3 text-subtle;
 }
 .doc-preview .mention {
-  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent-text;
 }
 .doc-preview .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -385,7 +523,7 @@ body,
   @apply mt-5 mb-2 text-[1rem] leading-snug font-semibold;
 }
 .chat-md h3 {
-  @apply mt-4 mb-1.5 text-[0.90625rem] font-semibold;
+  @apply mt-4 mb-1.5 text-[0.875rem] font-semibold;
 }
 .chat-md h4,
 .chat-md h5,
@@ -409,7 +547,7 @@ body,
   @apply font-semibold;
 }
 .chat-md a {
-  @apply text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent;
+  @apply text-accent-text underline decoration-accent/40 underline-offset-2 hover:decoration-accent;
 }
 .chat-md hr {
   @apply my-4 border-line;
@@ -422,7 +560,7 @@ body,
 }
 /* 行内代码：和 Claude Code 一样是带细边框的小标签 */
 .chat-md :not(pre) > code {
-  @apply rounded-[5px] border px-[5px] py-px font-mono text-[0.78125rem];
+  @apply rounded border px-[5px] py-px font-mono text-[0.75rem];
   background: var(--code-chip);
   color: var(--code-chip-fg);
 }
@@ -431,7 +569,7 @@ body,
   @apply cursor-pointer transition-colors;
 }
 .chat-md code.md-path:hover {
-  @apply border-accent/50 text-accent underline decoration-accent/40 underline-offset-2;
+  @apply border-accent/50 text-accent-text underline decoration-accent/40 underline-offset-2;
 }
 /* 代码块：一张卡片，顶部语言名和复制按钮 */
 .chat-md .md-code {
@@ -439,13 +577,13 @@ body,
   background: var(--code-bg);
 }
 .chat-md .md-code-bar {
-  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.71875rem] text-subtle;
+  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.6875rem] text-subtle;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.71875rem] text-subtle hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg;
 }
 .chat-md pre {
-  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.78125rem] leading-[1.65];
+  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.75rem] leading-[1.65];
 }
 .chat-md pre code {
   @apply whitespace-pre [overflow-wrap:normal];
@@ -498,7 +636,7 @@ body,
   @apply mr-1.5 align-[-2px] accent-accent;
 }
 .chat-md .mention {
-  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent-text;
 }
 .chat-md .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -506,7 +644,7 @@ body,
 
 /* 提问面板里的 Markdown：面板窄，字号和间距比对话正文收一档，免得把下面的选项挤走 */
 .chat-md-compact {
-  @apply text-[0.84375rem];
+  @apply text-[0.8125rem];
   line-height: 1.6;
 }
 .chat-md-compact > * {
@@ -517,10 +655,10 @@ body,
 }
 /* 标题只比正文重一档，不按文档里的大字级撑高面板 */
 .chat-md-compact h1 {
-  @apply mt-2.5 mb-1 text-[0.96875rem] leading-snug font-semibold;
+  @apply mt-2.5 mb-1 text-[1rem] leading-snug font-semibold;
 }
 .chat-md-compact h2 {
-  @apply mt-2.5 mb-1 text-[0.90625rem] leading-snug font-semibold;
+  @apply mt-2.5 mb-1 text-[0.875rem] leading-snug font-semibold;
 }
 .chat-md-compact h3 {
   @apply mt-2 mb-1 text-[0.875rem] leading-snug font-semibold;
@@ -528,7 +666,7 @@ body,
 .chat-md-compact h4,
 .chat-md-compact h5,
 .chat-md-compact h6 {
-  @apply mt-1.5 mb-0.5 text-[0.84375rem] font-semibold text-muted;
+  @apply mt-1.5 mb-0.5 text-[0.8125rem] font-semibold text-muted;
 }
 .chat-md-compact ul,
 .chat-md-compact ol {
@@ -555,7 +693,7 @@ body,
   @apply px-3 py-2 text-[0.75rem] leading-[1.6];
 }
 .chat-md-compact table {
-  @apply my-2 text-[0.78125rem];
+  @apply my-2 text-[0.75rem];
 }
 .chat-md-compact th,
 .chat-md-compact td {
@@ -627,6 +765,27 @@ body,
   }
   to {
     opacity: 1;
+  }
+}
+/* 抽屉（Sheet）从所在一侧滑进来 */
+@keyframes sheet-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 @keyframes pop-in {
@@ -737,7 +896,7 @@ body,
 .react-flow__edge:focus .react-flow__edge-path {
   stroke-width: 2.25;
 }
-/* 流程图节点：选中时主题色柔光；执行中光晕缓慢呼吸 */
+/* 流程图节点：选中时主题色柔光；执行中照设计稿用运行色（青）描框，外圈浅青光晕缓慢呼吸 */
 .node-selected {
   box-shadow:
     0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent),
@@ -750,19 +909,22 @@ body,
   0%,
   100% {
     box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent),
-      0 0 0 0 transparent;
+      0 0 0 1.5px var(--run),
+      0 0 0 4px var(--run-soft);
   }
   50% {
     box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--accent) 45%, transparent),
-      0 0 22px 2px color-mix(in oklab, var(--accent) 22%, transparent);
+      0 0 0 1.5px var(--run),
+      0 0 0 6px var(--run-soft),
+      0 0 22px 2px color-mix(in oklab, var(--run) 18%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .node-running {
     animation: none;
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+    box-shadow:
+      0 0 0 1.5px var(--run),
+      0 0 0 4px var(--run-soft);
   }
 }
 /* 选中多个节点后不画外框，只高亮节点本身；外框仍在（透明），按住拖动可以整体移动 */
@@ -787,9 +949,19 @@ body,
   cursor: grabbing;
 }
 .react-flow__controls {
+  /* 左下浮动的缩放控件：和画布上其他浮动面板一样，白底圆角 + 浮起阴影（阴影自带一圈细线） */
+  margin: 16px;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--line);
+}
+.react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.react-flow__controls-button svg {
+  max-width: 13px;
+  max-height: 13px;
 }
 
 /* 「正在思考」文字上的流光 */

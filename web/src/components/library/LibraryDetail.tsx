@@ -4,11 +4,12 @@ import { Copy, Loader2, Save, Sparkles, Terminal, Trash2, Undo2 } from 'lucide-r
 import type { LibraryCli, LibraryEntry, LibraryEntryContent, LibraryFile, LibraryItem } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { ChipGroup } from '@/components/ui/chip-group'
 import { SkillFiles, type FilesApi } from '@/components/library/SkillFiles'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
@@ -168,9 +169,9 @@ export function LibraryDetail({
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex flex-wrap items-start gap-3 border-b bg-bg px-4 py-5 md:px-8">
         {kind === 'skill' ? (
-          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent" />
+          <Sparkles className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         ) : (
-          <Terminal className="mt-1 h-5 w-5 shrink-0 text-accent" />
+          <Terminal className="mt-1 h-5 w-5 shrink-0 text-accent-text" />
         )}
         <div className="min-w-0 flex-[1_1_260px]">
           <div className="flex flex-wrap items-center gap-2">
@@ -178,17 +179,15 @@ export function LibraryDetail({
               {kind === 'command' ? '/' : ''}
               {name}
             </h2>
-            <span className="rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted">
-              {kind === 'skill' ? 'Skill' : t('命令')}
-            </span>
+            <Badge className="text-[0.6875rem]">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-muted">{here[0]?.description || t('没有说明')}</p>
-          <p className="mt-0.5 truncate font-mono text-[0.71875rem] text-subtle">{path}</p>
+          <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">{path}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canAi && (
             <Button variant="secondary" onClick={() => setAi(true)} disabled={busy || content === null}>
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
               {t('AI 优化')}
             </Button>
           )}
@@ -203,22 +202,16 @@ export function LibraryDetail({
         {here.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[0.75rem] text-subtle">{t('装在')}</span>
-            {here.map((i) => (
-              <button
-                key={i.cli}
-                type="button"
-                onClick={() => {
-                  setCli(i.cli)
-                  onPickCli(i.cli)
-                }}
-                className={cn(
-                  'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.75rem]',
-                  i.cli === cli ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel',
-                )}
-              >
-                {label(i.cli)}
-              </button>
-            ))}
+            <ChipGroup
+              size="sm"
+              label={t('装在')}
+              options={here.map((i) => ({ id: i.cli, label: label(i.cli) }))}
+              value={cli}
+              onChange={(v) => {
+                setCli(v)
+                onPickCli(v)
+              }}
+            />
           </div>
         )}
 
@@ -249,7 +242,7 @@ export function LibraryDetail({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               spellCheck={false}
-              className="h-[min(46vh,420px)] resize-none font-mono text-[0.78125rem] leading-relaxed"
+              className="h-[min(46vh,420px)] resize-none font-mono text-[0.75rem] leading-relaxed"
               aria-label={t('内容')}
             />
           </section>

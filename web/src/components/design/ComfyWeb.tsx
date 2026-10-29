@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
+import { Modal } from '@/components/ui/modal'
+import { IconButton } from '@/components/ui/icon-button'
 import { toast } from '@/lib/toast'
 import { ExternalLink, FileDown, Loader2, Play, X } from 'lucide-react'
 import { t } from '@shared/i18n'
@@ -55,79 +56,73 @@ export function ComfyWebDialog({
     }
   }, [open, url])
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/55 animate-[fade-in_150ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          className="fixed inset-3 z-50 flex flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
-        >
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="text-[0.875rem] font-semibold">{t('ComfyUI 网页')}</D.Title>
-            {url && <span className="font-mono text-[0.75rem] text-subtle">{url}</span>}
-            <span className="flex-1" />
-            {url && (
-              <a
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {t('在浏览器中打开')}
-              </a>
+    // 内嵌整个 ComfyUI 网页，要比 full 档再大：四边只留一点边距
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('ComfyUI 网页')}
+      bare
+      size="full"
+      closeOnOutside
+      className="h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-none md:h-[calc(100dvh-3rem)] md:w-[calc(100%-3rem)]"
+    >
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+        <span className="text-[0.875rem] font-semibold">{t('ComfyUI 网页')}</span>
+        {url && <span className="font-mono text-[0.75rem] text-subtle">{url}</span>}
+        <span className="flex-1" />
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('在浏览器中打开')}
+          </a>
+        )}
+        <IconButton icon={X} size="sm" label={t('关闭')} onClick={() => onOpenChange(false)} />
+      </div>
+      {imported && (
+        <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-[0.75rem] leading-relaxed">
+          <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent-text" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">{t('已导入到 ComfyUI 的工作流列表：{name}', { name: imported.name })}</span>
+            <span className="text-subtle">
+              {' '}
+              {t('在 ComfyUI 右侧的「工作流」侧栏里点开它（ComfyUI 不支持用网址直接打开某个工作流）。')}
+            </span>
+          </span>
+        </div>
+      )}
+      <ComfyQueuePanel compact className="shrink-0 border-b px-4" />
+      {url ? (
+        <iframe
+          key={`${url}:${imported?.filename ?? ''}`}
+          title="ComfyUI"
+          src={url}
+          className="min-h-0 flex-1 border-0 bg-canvas"
+        />
+      ) : (
+        <div className="grid flex-1 place-items-center p-6 text-center">
+          <div className="flex max-w-[360px] flex-col items-center gap-3 text-[0.8125rem] text-muted">
+            {importing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <p>{t('正在启动 ComfyUI 并导入工作流…')}</p>
+              </>
+            ) : (
+              <>
+                <p>{t('ComfyUI 还没有启动。启动后可以在这里直接看节点图、调参数和手动出图。')}</p>
+                <Button onClick={() => void start()} disabled={starting}>
+                  {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                  {t('启动 ComfyUI')}
+                </Button>
+              </>
             )}
-            <D.Close
-              aria-label={t('关闭')}
-              className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
-            >
-              <X className="h-4 w-4" />
-            </D.Close>
           </div>
-          {imported && (
-            <div className="flex shrink-0 items-start gap-2 border-b bg-accent-soft/40 px-4 py-2 text-[0.75rem] leading-relaxed">
-              <FileDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-              <span className="min-w-0 flex-1">
-                <span className="font-medium">
-                  {t('已导入到 ComfyUI 的工作流列表：{name}', { name: imported.name })}
-                </span>
-                <span className="text-subtle">
-                  {' '}
-                  {t('在 ComfyUI 右侧的「工作流」侧栏里点开它（ComfyUI 不支持用网址直接打开某个工作流）。')}
-                </span>
-              </span>
-            </div>
-          )}
-          <ComfyQueuePanel compact className="shrink-0 border-b px-4" />
-          {url ? (
-            <iframe
-              key={`${url}:${imported?.filename ?? ''}`}
-              title="ComfyUI"
-              src={url}
-              className="min-h-0 flex-1 border-0 bg-[#202020]"
-            />
-          ) : (
-            <div className="grid flex-1 place-items-center p-6 text-center">
-              <div className="flex max-w-[360px] flex-col items-center gap-3 text-[0.8125rem] text-muted">
-                {importing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <p>{t('正在启动 ComfyUI 并导入工作流…')}</p>
-                  </>
-                ) : (
-                  <>
-                    <p>{t('ComfyUI 还没有启动。启动后可以在这里直接看节点图、调参数和手动出图。')}</p>
-                    <Button onClick={() => void start()} disabled={starting}>
-                      {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                      {t('启动 ComfyUI')}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        </div>
+      )}
+    </Modal>
   )
 }

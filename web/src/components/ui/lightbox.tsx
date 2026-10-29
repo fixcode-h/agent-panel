@@ -54,7 +54,7 @@ export function Lightbox({
               className="max-h-[calc(100vh-120px)] max-w-[calc(100vw-48px)] rounded-lg object-contain shadow-2xl md:max-w-[calc(100vw-160px)]"
             />
           )}
-          <div className="flex max-w-full items-center gap-3 text-[0.78125rem] text-white/75">
+          <div className="flex max-w-full items-center gap-3 text-[0.75rem] text-white/75">
             <span className="min-w-0 truncate">{cur?.name}</span>
             {n > 1 && (
               <span className="shrink-0 font-mono text-white/50 tabular-nums">

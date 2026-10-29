@@ -300,9 +300,9 @@ export function MemoryChart({ taskId }: { taskId: string }) {
         <span className="flex flex-wrap items-center gap-x-2">
           <span>{t('每 {s} 秒采样一次', { s: 30 })}</span>
           {offset > 0 ? (
-            <button type="button" className="cursor-pointer text-accent hover:underline" onClick={() => setOffset(0)}>
+            <Button variant="link" onClick={() => setOffset(0)}>
               {t('回到最新')}
-            </button>
+            </Button>
           ) : (
             points.length > visible && <span>{t('左右拖动查看更早')}</span>
           )}

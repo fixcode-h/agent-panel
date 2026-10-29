@@ -103,9 +103,10 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
       detail={status}
       open={open}
       onToggle={() => setOpen(!open)}
-      className={cn(pending && 'border-warning/45 bg-warning/5')}
+      // 等你选择时和「转交提问」一样只描一圈琥珀色，不填底（组件库「对话之间」）
+      className={cn(pending && 'border-warning/45')}
     >
-      <div className="flex flex-col gap-2.5 border-t bg-card/60 px-3 py-2.5">
+      <div className={cn('flex flex-col gap-2.5 border-t px-3 py-2.5', pending ? 'border-warning/25' : 'bg-card/60')}>
         <div
           className={cn(
             'text-[0.8125rem]',

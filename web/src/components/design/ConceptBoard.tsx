@@ -12,6 +12,7 @@ import {
   type ConceptState,
 } from '@shared/design'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { t } from '@shared/i18n'
 import { AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
 import { readFile } from './ImagesPanel'
@@ -110,11 +111,12 @@ export function ConceptBoard({
   const maskOnly = sendsMaskOnly({ inpaint: !!inpaint, inpaintSupported: !!inpaintSupported, marks: mine })
 
   return (
-    <div data-concept-board className="absolute inset-0 z-20 flex flex-col bg-[#18181a] text-white/80">
-      <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-[0.75rem]">
-        <span className="font-medium text-white">{t('原画')}</span>
+    <div data-concept-board className="absolute inset-0 z-20 flex flex-col bg-canvas text-canvas-fg">
+      {/* 左边让出浮在上面的「画板 / 数据」切换（--board-switch-w 由 DesignPage 量好） */}
+      <div className="flex h-11 shrink-0 items-center gap-2 pr-3 pl-[max(0.75rem,var(--board-switch-w,0px))] text-[0.75rem]">
+        <span className="shrink-0 font-medium whitespace-nowrap text-canvas-strong">{t('原画')}</span>
         {cur && (
-          <span className="font-mono text-white/50">
+          <span className="min-w-0 truncate font-mono text-canvas-subtle">
             {cur.id} · {cur.width}×{cur.height}
           </span>
         )}
@@ -136,47 +138,40 @@ export function ConceptBoard({
             if (f) onUpload(await readFile(f))
           }}
         />
-        <button
-          onClick={() => file.current?.click()}
-          title={t('上传自己画的效果图')}
-          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-white/70 hover:bg-white/10 hover:text-white"
-        >
+        <Button variant="on-canvas" size="sm" onClick={() => file.current?.click()} title={t('上传自己画的效果图')}>
           <ImagePlus className="h-3.5 w-3.5" />
           {t('上传')}
-        </button>
+        </Button>
         {cur && (
-          <button
+          <Button
+            variant="on-canvas"
+            size="icon-sm"
             onClick={() => onRemove(cur.id)}
             aria-label={t('删除这张原画')}
             title={t('删除这张原画')}
-            className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         )}
         {cur &&
           (approved ? (
-            <button
-              onClick={() => onApprove('')}
-              disabled={busy}
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2.5 text-white/80 hover:bg-white/10 disabled:cursor-default disabled:opacity-50"
-            >
+            <Button variant="on-canvas" size="sm" onClick={() => onApprove('')} disabled={busy}>
               <Undo2 className="h-3.5 w-3.5" />
               {t('取消模板')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 if (mine.length) toast(t('这张图上还有没发出去的标注，确认模板后标注会被清掉'))
                 onApprove(cur.id)
               }}
               disabled={busy}
               title={t('确认用这张作为最终效果，AI 会照着它搭界面、出切图')}
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" />
               {t('用这张做模板')}
-            </button>
+            </Button>
           ))}
       </div>
       {cur && (
@@ -221,7 +216,7 @@ export function ConceptBoard({
               src={url(cur)}
               alt={cur.id}
               draggable={false}
-              className="block max-h-[calc(100dvh-260px)] max-w-full object-contain shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]"
+              className="block max-h-[calc(100dvh-260px)] max-w-full object-contain shadow-canvas"
             />
             {scale > 0 && (
               <AnnotationLayer
@@ -283,7 +278,7 @@ export function ConceptBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-[0.78125rem] text-white/50">
+          <div className="flex flex-col items-center gap-2 text-[0.75rem] text-canvas-subtle">
             <Loader2 className="h-5 w-5 animate-spin" />
             {progress?.text ?? t('正在出原画…')}
           </div>
@@ -291,7 +286,7 @@ export function ConceptBoard({
       </div>
       {/* 标注完直接在这里发（在底部提示行右侧）：用户不一定知道要去右边对话框点发送 */}
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1">
-        <p className="text-center text-[0.71875rem] text-white/40">
+        <p className="text-center text-[0.6875rem] text-canvas-subtle">
           {tool === 'mask'
             ? canUndoMask
               ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
@@ -299,7 +294,8 @@ export function ConceptBoard({
             : t('标注 → 发送给 AI → 出一张改过的原画，可以接着标；满意了点「用这张做模板」')}
         </p>
         {mine.length > 0 && onSendMarks && (
-          <button
+          <Button
+            size="sm"
             onClick={onSendMarks}
             disabled={busy}
             title={
@@ -307,17 +303,16 @@ export function ConceptBoard({
                 ? t('对话侧勾了「只重绘蒙版区域」：只把蒙版这一块发给 AI，其余标注会留在图上')
                 : t('把这张图上的 {n} 处标注发给 AI，让它按标注改这张原画', { n: mine.length })
             }
-            className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-accent px-2.5 text-[0.75rem] font-medium text-white hover:brightness-110 disabled:cursor-default disabled:opacity-50"
           >
             <Send className="h-3.5 w-3.5" />
             {maskOnly ? t('按蒙版重绘（1）') : t('发送标注给 AI（{n}）', { n: mine.length })}
-          </button>
+          </Button>
         )}
       </div>
-      <div className="flex shrink-0 gap-3 overflow-x-auto border-t border-white/10 px-3 py-2.5">
+      <div className="flex shrink-0 gap-3 overflow-x-auto bg-canvas-bar/60 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-white/40">{t('第 {n} 轮', { n: r })}</span>
+            <span className="text-[0.6875rem] text-canvas-subtle">{t('第 {n} 轮', { n: r })}</span>
             <div className="flex gap-1.5">
               {concept.images
                 .filter((i) => i.round === r)
@@ -329,14 +324,14 @@ export function ConceptBoard({
                     aria-label={i.id}
                     aria-pressed={i.id === cur?.id}
                     className={cn(
-                      'relative h-16 shrink-0 cursor-pointer overflow-hidden rounded-md ring-1 ring-white/10 hover:ring-white/40',
+                      'relative h-16 shrink-0 cursor-pointer overflow-hidden rounded-md ring-canvas-subtle hover:ring-1',
                       i.id === cur?.id && 'ring-2 ring-accent hover:ring-accent',
                     )}
                     style={{ aspectRatio: `${i.width || 16} / ${i.height || 9}` }}
                   >
                     <img src={url(i)} alt="" className="h-full w-full object-cover" draggable={false} />
                     {concept.approved === i.id && (
-                      <BadgeCheck className="absolute top-1 right-1 h-4 w-4 rounded-full bg-black/50 text-success" />
+                      <BadgeCheck className="absolute top-1 right-1 h-4 w-4 rounded-full bg-canvas/70 text-success" />
                     )}
                     {marks.some((m) => m.target === `concept:${i.id}`) && (
                       <span className="absolute bottom-1 left-1 h-2 w-2 rounded-full bg-warning" />
@@ -348,15 +343,15 @@ export function ConceptBoard({
         ))}
         {pending > 0 && (
           <div className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-white/40">{t('正在出')}</span>
+            <span className="text-[0.6875rem] text-canvas-subtle">{t('正在出')}</span>
             <div className="flex gap-1.5">
               {Array.from({ length: pending }, (_, k) => (
                 <span
                   key={k}
-                  className="grid h-16 w-28 place-items-center rounded-md bg-white/5 ring-1 ring-white/10"
+                  className="grid h-16 w-28 place-items-center rounded-md bg-canvas-hover"
                   title={progress?.text}
                 >
-                  <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+                  <Loader2 className="h-4 w-4 animate-spin text-canvas-subtle" />
                 </span>
               ))}
             </div>

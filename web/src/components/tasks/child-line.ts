@@ -48,7 +48,7 @@ export function staleLine(c: ChildSummary) {
   // 不能让「等回复」把红色提示顶掉（见 shared/task.ts 的 childIdleAsk）
   if (childAutoAskWaiting(c)) {
     if (level === 'stale') return { text: t('已自动询问，仍没有新输出'), cls: 'text-danger' }
-    return { text: t('已自动询问，等回复'), cls: 'text-accent' }
+    return { text: t('已自动询问，等回复'), cls: 'text-accent-text' }
   }
   if (!level || !c.lastActivityAt) return undefined
   const mins = Math.max(1, Math.round((Date.now() - Date.parse(c.lastActivityAt)) / 60000))
@@ -152,7 +152,7 @@ export function childClosedHint(c: ChildSummary) {
 export const childLabelClass: Record<ChildLabelTone, string> = {
   success: 'flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success',
   warning: 'shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning',
-  accent: 'shrink-0 text-[0.6875rem] text-accent',
+  accent: 'shrink-0 text-[0.6875rem] text-accent-text',
   subtle: 'shrink-0 text-[0.6875rem] text-subtle',
   plain: 'shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle',
 }

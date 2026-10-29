@@ -9,6 +9,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { menuItem } from '@/components/ui/menu'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import { IconButton } from '@/components/ui/icon-button'
 import { FileExplorer } from '@/components/files/FileTree'
 import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
 import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
@@ -97,15 +98,9 @@ export function TaskFiles({
               <GitBranch className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate font-mono">{files.info?.branch ?? t('没有分支')}</span>
             </span>
-            <button
-              type="button"
-              aria-label={t('刷新文件')}
-              title={t('刷新文件')}
-              onClick={files.refresh}
-              className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
-            >
+            <IconButton label={t('刷新文件')} onClick={files.refresh}>
               <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
-            </button>
+            </IconButton>
           </>
         }
       >

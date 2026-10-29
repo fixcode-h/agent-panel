@@ -13,8 +13,8 @@
 | --- | --- |
 | `npm run typecheck` | |
 | `npm run lint` | |
-| `npm run test:unit` | |
-| `npm run test:e2e`（Windows 上在 WSL 里跑） | |
+| `npm run test:affected`（全量单测、e2e、界面检查由 CI 跑） | |
+| 它列出的界面分片 / e2e（没有就写「无」） | |
 
 - 手动验证的步骤和结果（界面、执行流程等）：
 - 新增或修改的测试：

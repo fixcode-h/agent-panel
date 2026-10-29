@@ -1,8 +1,12 @@
 /** 英文词典：联网搜索（web_search / web_fetch 的开关、设置页和错误提示） */
 export const EN_WEB_SEARCH: Record<string, string> = {
   搜索源: 'Search provider',
-  '模型联网搜索时用哪个服务。Degoog 不需要密钥，但查询会发给 degoog.org 这个第三方聚合服务（会把查询再转给别的搜索引擎）；需要密钥的源按用量计费，只有自己选了并填了密钥才会用到。':
-    'Which service the model searches with. Degoog needs no key, but the query goes to degoog.org, a third-party meta-search service that forwards it to other engines. Providers that need a key bill per use and are only used after you pick one and enter its key.',
+  '自己不会联网搜索的 Agent（目前是 Pi）用哪个服务搜索；Claude Code、Codex、Command Code 用它们自带的搜索。默认是 DeepSeek 官方搜索，要填 DeepSeek 的 API key 才能用，没填时搜索会直接报错，不会换成别的源。也可以换成自建的 SearXNG，或 Brave、Tavily。':
+    'The search service for Agents that cannot search the web on their own (currently Pi); Claude Code, Codex and Command Code use their built-in search. The default is DeepSeek’s official search, which needs a DeepSeek API key; without one, searches fail with an error instead of switching to another provider. You can also pick a self-hosted SearXNG, Brave or Tavily.',
+  'DeepSeek 官方的搜索接口，用 DeepSeek 平台的 API key（不是中转站的 key）。按次计费：约 $0.75 / 千次成功请求，失败和没有结果的请求不计费。':
+    'DeepSeek’s official search API, using a DeepSeek platform API key (not a reseller’s key). Billed per request: about $0.75 per 1,000 successful requests; failed and empty requests are free.',
+  'DeepSeek 搜索的 query（含 site: 域名过滤）最多 {n} 个字，现在是 {len} 个字：缩短搜索词或少给几个域名':
+    'DeepSeek search queries (including site: domain filters) are limited to {n} characters, this one has {len}: shorten the query or pass fewer domains',
   '只存在本机数据目录的设置文件里。搜索请求由面板代发，扩展脚本和模型都拿不到密钥。':
     'Stored only in the settings file in the local data folder. Requests are sent by the panel, so extension scripts and the model never see the key.',
   搜索源的密钥: 'Search provider key',
@@ -14,11 +18,10 @@ export const EN_WEB_SEARCH: Record<string, string> = {
   '这一页只管搜索源和密钥。模型要真正能用 web_search / web_fetch，还要在对应 CLI 的设置里打开「联网搜索」开关（默认关闭，打开前先确认搜索源）。':
     'This page only sets the provider and key. To let the model actually use web_search / web_fetch, also turn on “Web search” in that CLI’s settings (off by default; check the provider first).',
   联网搜索: 'Web search',
-  'Degoog（免密钥）': 'Degoog (no key)',
   'SearXNG（自建实例）': 'SearXNG (self-hosted)',
   'Brave Search API（需要密钥）': 'Brave Search API (key required)',
   'Tavily（需要密钥）': 'Tavily (key required)',
-  'DeepSeek 官方搜索（需要密钥）': 'DeepSeek official search (key required)',
+  'DeepSeek（官方，需要密钥）': 'DeepSeek (official, key required)',
   '{field} 里只能写域名，例如 example.com，不要带协议、端口或路径：{value}':
     '{field} only accepts domains such as example.com, without a scheme, port or path: {value}',
   'query 至少要有 {n} 个字': 'query must be at least {n} characters',

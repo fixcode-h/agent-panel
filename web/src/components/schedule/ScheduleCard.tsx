@@ -8,6 +8,7 @@ import {
   outcomeTitle,
   repeatLabel,
   runLabel,
+  scheduleEnded,
   whenLabel,
   type Schedule,
   type ScheduleGroup,
@@ -19,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { Switch } from '@/components/ui/switch'
+import { Card } from '@/components/ui/card'
 
 /** 启动失败的原文超过这个长度才给「展开全文」：窄屏一行大约只放得下这么多字，再长会被截掉 */
 const ERROR_PREVIEW_CHARS = 30
@@ -96,7 +98,7 @@ export function ScheduleCard({
   const longError = errorText.length > ERROR_PREVIEW_CHARS || s.lastError.includes('\n')
 
   return (
-    <li className="relative overflow-hidden rounded-xl bg-card shadow-card">
+    <Card as="li" className="relative overflow-hidden">
       <div className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <div className="min-w-0 flex-1">
@@ -106,6 +108,7 @@ export function ScheduleCard({
                 {s.name}
               </h3>
               <Badge>{repeatLabel(s.repeat)}</Badge>
+              {!!s.endDate && s.repeat !== 'once' && <Badge>{t('到 {date} 结束', { date: s.endDate })}</Badge>}
             </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>{projectName || t('聊天')}</span>
@@ -167,7 +170,10 @@ export function ScheduleCard({
               </span>
             </>
           ) : (
-            <span className="text-[0.9375rem] font-medium text-subtle">{t('不会再次执行')}</span>
+            <span className="text-[0.9375rem] font-medium text-subtle">
+              {/* 过了结束日期是用户定好的到此为止，和单次跑完、停用分开说 */}
+              {s.enabled && scheduleEnded(s) ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
+            </span>
           )}
         </p>
 
@@ -181,14 +187,10 @@ export function ScheduleCard({
             )}
             {outcome === 'success' && <span className="text-subtle">{timeAgo(s.lastRunAt, now)}</span>}
             {!!s.lastTaskId && (
-              <button
-                type="button"
-                onClick={() => onOpenTask(s.lastTaskId)}
-                className="inline-flex cursor-pointer items-center gap-1 text-accent hover:underline"
-              >
+              <Button variant="link" onClick={() => onOpenTask(s.lastTaskId)}>
                 {t('打开这次执行')}
                 <ExternalLink className="h-3 w-3" />
-              </button>
+              </Button>
             )}
           </div>
           {!!s.lastError && (
@@ -245,14 +247,10 @@ export function ScheduleCard({
                       {run.manual && <span className="text-subtle">{t('手动执行')}</span>}
                       <span className="text-subtle tabular-nums">{whenLabel(run.at || run.happenedAt, now)}</span>
                       {!!run.taskId && (
-                        <button
-                          type="button"
-                          onClick={() => onOpenTask(run.taskId)}
-                          className="inline-flex min-w-0 max-w-[220px] cursor-pointer items-center gap-1 text-accent hover:underline"
-                        >
+                        <Button variant="link" onClick={() => onOpenTask(run.taskId)} className="min-w-0 max-w-[220px]">
                           <span className="truncate">{taskTitle(run.taskId) || t('打开对话')}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />
-                        </button>
+                        </Button>
                       )}
                       {/* 错过没有可存的原因（面板当时没在跑），在界面补一句：
                           否则最近一次结果变成「已启动」之后，这条错过就只剩时间、看不出为什么没跑 */}
@@ -269,6 +267,6 @@ export function ScheduleCard({
           )}
         </div>
       </div>
-    </li>
+    </Card>
   )
 }

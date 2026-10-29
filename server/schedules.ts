@@ -16,14 +16,20 @@ import {
   alignScheduleAt,
   appendRun,
   dependencyBlocker,
+  nextRunAt,
   orderByDependency,
   pickDue,
   sameMinute,
   scheduleCycle,
   scheduleCycleLabel,
+  scheduleEnded,
+  scheduleTimingError,
+  settleRun,
+  SCHEDULE_MISS_MS,
   SCHEDULE_TICK_MS,
   Schedule,
   ScheduleInput,
+  type RunTaskState,
   type ScheduleRun,
 } from '../shared/schedule.ts'
 import { NewTaskInput, type Task } from '../shared/schema.ts'
@@ -35,6 +41,12 @@ import { deliverWebhook, webhookPayload } from './webhook.ts'
 import { log } from './log.ts'
 
 const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
+
+/**
+ * 运行记录的耗时只补这么久以内启动的：对话被删掉了就永远等不到它跑完，
+ * 不能每轮询一次都去查一遍；两天还没跑完的长对话也不再算它的耗时
+ */
+const SETTLE_WINDOW_MS = 2 * 86_400_000
 
 /** 默认的 Webhook 投递：现读设置里的地址，真的 POST 出去（单测注入假的，不走网络） */
 async function deliverDefault(
@@ -68,6 +80,11 @@ export function schedulesApi(deps: {
   deliver?: (event: ScheduleEvent, s: Schedule, at: string, projectName: string) => Promise<ScheduleDelivery | null>
   /** 项目名：Webhook 载荷里带上，接的一方不用再去查项目 id */
   projectName?: (id: string) => Promise<string>
+  /**
+   * 查启动出来的对话现在的状态（不读整段对话）：跑完时在运行记录上补结束时间和耗时（见 settleRun）。
+   * 不传就不补，运行记录里不显示耗时
+   */
+  peekTask?: (id: string) => Promise<RunTaskState | null>
 }) {
   const store = createCollection('schedules.json', Schedule)
   const routes = new Hono()
@@ -126,6 +143,33 @@ export function schedulesApi(deps: {
     return ''
   }
 
+  /**
+   * 计划启动出来的对话跑完了：在那条运行记录上补结束时间、耗时和成败。
+   * 每次轮询顺带查一遍还没补的（只看 SETTLE_WINDOW_MS 以内启动的），写回前重新读一次计划，
+   * 只替换补上的那几条，不覆盖这期间新追加的记录。返回补过的计划（替换进轮询的快照）
+   */
+  async function settleRuns(list: Schedule[], now: number): Promise<Schedule[]> {
+    const peek = deps.peekTask
+    if (!peek) return []
+    const key = (r: ScheduleRun) => `${r.taskId}@${r.happenedAt}`
+    const out: Schedule[] = []
+    for (const s of list) {
+      const done = new Map<string, ScheduleRun>()
+      for (const r of s.runs) {
+        if (r.event !== 'run' || !r.taskId || r.endedAt) continue
+        if (now - Date.parse(r.happenedAt) > SETTLE_WINDOW_MS) continue
+        const settled = settleRun(r, await peek(r.taskId).catch(() => null))
+        if (settled) done.set(key(r), settled)
+      }
+      if (!done.size) continue
+      const latest = await store.get(s.id)
+      if (!latest) continue
+      const saved = await store.update(s.id, { runs: latest.runs.map((r) => done.get(key(r)) ?? r) })
+      if (saved) out.push(saved)
+    }
+    return out
+  }
+
   /** 把计划转成新建对话的输入：执行上限也跟着走，之后改计划不影响已经启动的对话 */
   function startInput(s: Schedule) {
     return NewTaskInput.parse({
@@ -182,6 +226,15 @@ export function schedulesApi(deps: {
     ticking = true
     try {
       const all = await store.list()
+      // 先补上一轮启动的对话跑完没有：补不上（写盘失败）不影响后面的到点判定
+      const settled = await settleRuns(all, now).catch((e) => {
+        log.warn('schedule', '补运行耗时出错', { error: (e as Error).message })
+        return []
+      })
+      for (const x of settled) {
+        const i = all.findIndex((y) => y.id === x.id)
+        if (i >= 0) all[i] = x
+      }
       const { run, missed } = pickDue(all, now)
       // 写回后的记录替换进这一轮的快照：同一批里排在下游的计划要读到上游最新的结果
       const replaceSnapshot = (saved: Schedule) => {
@@ -284,6 +337,8 @@ export function schedulesApi(deps: {
     // 新建的计划还没有 id，别的计划依赖不了它，不会成环，只校验上游是否存在
     const depError = await checkDependencies('', dependsOn)
     if (depError) return bad(c, depError)
+    const timing = scheduleTimingError(p.data)
+    if (timing) return bad(c, timing)
     const now = new Date().toISOString()
     // 每周 / 工作日的首次执行也要落在选中的星期：保存前对齐，到点判定（pickDue）和徽标才一致
     const item = await store.create({
@@ -307,7 +362,14 @@ export function schedulesApi(deps: {
     const dependsOn = [...new Set(p.data.dependsOn)]
     const depError = await checkDependencies(id, dependsOn)
     if (depError) return bad(c, depError)
+    const timing = scheduleTimingError(p.data)
+    if (timing) return bad(c, timing)
     const input = { ...p.data, dependsOn, at: alignScheduleAt(p.data) }
+    // 已经结束的计划把结束日期往后改（或改成永不）：存着的 at 是结束后那一次、早就过了，
+    // 不推到现在之后的话下一轮会先记一次「错过」。推过去之后按重新排期处理
+    const now = Date.now()
+    if (scheduleEnded(old) && !scheduleEnded(input) && Date.parse(input.at) < now - SCHEDULE_MISS_MS)
+      input.at = nextRunAt(input, now)
     // 时间改了就是重新排期：已执行 / 已跳过的计划回到待执行，之前错过和没启动的记录也不再算数。
     // 按分钟比较：界面上的时间只到分钟，带秒的老数据在弹窗里编辑时不该被当成改了时间
     const rescheduled = !sameMinute(input.at, old.at)

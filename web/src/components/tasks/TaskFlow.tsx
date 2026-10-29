@@ -1,13 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText } from 'lucide-react'
 import type { StepStatus, Task } from '@shared/schema'
-import { END, START, childSteps, entryFlow, getFlow, taskWorkflows, topSteps } from '@shared/flow'
+import { END, START, childSteps, entryFlow, getFlow, stepTree, taskWorkflows, topSteps } from '@shared/flow'
+import { stepsTokens, tokenCount } from '@shared/run-usage'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
+import { useNow } from '@/lib/useNow'
+import { fmtTokens, stepDuration } from '@/lib/tasks'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
 import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
 import { t } from '@shared/i18n'
+import { Button } from '@/components/ui/button'
 
 /** 一组子节点合起来的状态 */
 function combined(list: StepStatus[]): StepStatus | undefined {
@@ -41,6 +45,8 @@ export function TaskFlow({
   const tops = topSteps(task)
   const flow = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined
   const runningId = tops.find((s) => s.status === 'running')?.id
+  // 执行中的节点底部的耗时每秒走一次
+  const now = useNow(!!runningId)
   const [sel, setSel] = useState(() => runningId ?? tops.find((s) => s.status === 'failed')?.id ?? tops[0]?.id ?? '')
   const [follow, setFollow] = useState(true)
   useEffect(() => {
@@ -76,10 +82,18 @@ export function TaskFlow({
     for (const [id, v] of Object.entries(base)) {
       const step = tops.find((s) => s.id === id)
       const kids = step ? childSteps(task, step.id) : []
+      // 节点底部：耗时（含之前被打断时做的部分）和 token（输入 + 输出，含节点里各步、挂载流程等所有子节点）
+      const tokens = step ? tokenCount(stepsTokens([step, ...stepTree(task, step.id)])) : 0
       out[id] = {
         ...v,
         loose: false,
         status: step?.status ?? 'skipped',
+        // 多步节点的每一步按引擎的记录（`<节点>/step/<步骤 id>`）对上状态；还没跑到的没有记录，算计划中
+        units: v.units?.map((u) => ({
+          ...u,
+          status: kids.find((k) => k.slot === 'step' && k.nodeId === u.id)?.status ?? 'pending',
+        })),
+        stats: step ? { time: stepDuration(step, now), tokens: tokens ? `${fmtTokens(tokens)} tok` : '' } : undefined,
         hooks: v.hooks.map((h) => {
           const mine = kids.filter((k) => k.slot === h.slot)
           const last = Math.max(0, ...mine.map((k) => k.round))
@@ -102,7 +116,7 @@ export function TaskFlow({
     return out
     // tops 由 task 算出来，modelOf 由设置决定：依赖写 task 和 settings，设置里换了模型节点上也跟着变
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow, workflow, workflows, agents, task, data.settings])
+  }, [flow, workflow, workflows, agents, task, data.settings, now])
 
   if (!flow || !workflow)
     return (
@@ -164,13 +178,10 @@ export function TaskFlow({
                       : t('没有输出。')}
                 </p>
               )}
-              <button
-                onClick={onOpenChat}
-                className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
-              >
+              <Button variant="link" onClick={onOpenChat} className="self-start text-xs">
                 <MessageSquareText className="h-3.5 w-3.5" />
                 {t('在对话中查看完整过程')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

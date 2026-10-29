@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import * as D from '@radix-ui/react-dialog'
+
 import {
   Bot,
   FolderGit2,
@@ -18,6 +18,8 @@ import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 import { byAskedAt } from '@shared/task'
+import { Modal } from '@/components/ui/modal'
+import { Kbd } from '@/components/ui/kbd'
 import { useTaskSearch } from '@/lib/use-task-search'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -169,89 +171,84 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   }
 
   return (
-    <D.Root open={open} onOpenChange={onOpenChange}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/40 animate-[fade-in_120ms_ease-out]" />
-        <D.Content
-          aria-describedby={undefined}
-          className="fixed top-[12vh] left-1/2 z-50 flex max-h-[70vh] w-[calc(100%-2rem)] max-w-[600px] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-2xl animate-[pop-in_140ms_ease-out] focus:outline-none"
-        >
-          <D.Title className="sr-only">{t('命令面板')}</D.Title>
-          <label className="flex items-center gap-2.5 border-b px-4">
-            <Search className="h-4 w-4 shrink-0 text-subtle" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setIndex(0)
-              }}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault()
-                  setIndex((i) => Math.min(i + 1, shown.length - 1))
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setIndex((i) => Math.max(i - 1, 0))
-                } else if (e.key === 'Enter') {
-                  e.preventDefault()
-                  pick(shown[cur])
-                }
-              }}
-              placeholder={t('搜索项目、任务、角色、工作流，或者输入操作')}
-              aria-label={t('搜索')}
-              role="combobox"
-              aria-expanded
-              aria-controls="palette-list"
-              aria-activedescendant={shown[cur] ? `palette-${cur}` : undefined}
-              className="h-12 min-w-0 flex-1 bg-transparent text-[0.9375rem] outline-none placeholder:text-subtle"
-            />
-          </label>
-          <div ref={list} id="palette-list" role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
-            {shown.length === 0 && (
-              <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">
-                {content.loading ? t('搜索中…') : t('没有找到')}
-              </p>
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('命令面板')}
+      bare
+      closeOnOutside
+      // 不垂直居中：固定在上方，输入框的位置不随结果条数上下跳
+      className="top-[12vh] max-h-[70vh] max-w-[600px] translate-y-0"
+    >
+      <label className="flex items-center gap-2.5 border-b px-4">
+        <Search className="h-4 w-4 shrink-0 text-subtle" />
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setIndex(0)
+          }}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setIndex((i) => Math.min(i + 1, shown.length - 1))
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setIndex((i) => Math.max(i - 1, 0))
+            } else if (e.key === 'Enter') {
+              e.preventDefault()
+              pick(shown[cur])
+            }
+          }}
+          placeholder={t('搜索项目、任务、角色、工作流，或者输入操作')}
+          aria-label={t('搜索')}
+          role="combobox"
+          aria-expanded
+          aria-controls="palette-list"
+          aria-activedescendant={shown[cur] ? `palette-${cur}` : undefined}
+          className="h-12 min-w-0 flex-1 bg-transparent text-[0.9375rem] outline-none placeholder:text-subtle"
+        />
+      </label>
+      <div ref={list} id="palette-list" role="listbox" className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        {shown.length === 0 && (
+          <p className="px-3 py-6 text-center text-[0.8125rem] text-subtle">
+            {content.loading ? t('搜索中…') : t('没有找到')}
+          </p>
+        )}
+        {shown.map((x, i) => (
+          <div key={x.id}>
+            {(i === 0 || shown[i - 1].group !== x.group) && (
+              <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">{x.group}</p>
             )}
-            {shown.map((x, i) => (
-              <div key={x.id}>
-                {(i === 0 || shown[i - 1].group !== x.group) && (
-                  <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">{x.group}</p>
-                )}
-                <div
-                  id={`palette-${i}`}
-                  data-index={i}
-                  role="option"
-                  aria-selected={i === cur}
-                  onMouseMove={() => i !== cur && setIndex(i)}
-                  onClick={() => pick(x)}
-                  className={cn(
-                    'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem]',
-                    i === cur ? 'bg-sel text-fg' : 'text-muted',
-                  )}
-                >
-                  {x.status ?? (x.icon && <x.icon className="h-4 w-4 shrink-0 text-subtle" />)}
-                  <span className="min-w-0 shrink truncate">{x.label}</span>
-                  {x.sub && <span className="min-w-0 flex-1 truncate text-xs text-subtle">{x.sub}</span>}
-                  {x.keys && (
-                    <kbd className="ml-auto shrink-0 rounded border bg-field px-1.5 font-mono text-[0.6875rem] text-subtle">
-                      {x.keys}
-                    </kbd>
-                  )}
-                </div>
-              </div>
-            ))}
+            <div
+              id={`palette-${i}`}
+              data-index={i}
+              role="option"
+              aria-selected={i === cur}
+              onMouseMove={() => i !== cur && setIndex(i)}
+              onClick={() => pick(x)}
+              className={cn(
+                'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem]',
+                i === cur ? 'bg-sel text-fg' : 'text-muted',
+              )}
+            >
+              {x.status ?? (x.icon && <x.icon className="h-4 w-4 shrink-0 text-subtle" />)}
+              <span className="min-w-0 shrink truncate">{x.label}</span>
+              {x.sub && <span className="min-w-0 flex-1 truncate text-xs text-subtle">{x.sub}</span>}
+              {x.keys && <Kbd className="ml-auto shrink-0">{x.keys}</Kbd>}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t bg-panel/60 px-4 py-2 text-[0.71875rem] text-subtle">
-            <span>{t('↑↓ 选择 · Enter 打开')}</span>
-            <span>{t('{mod}K 命令面板', { mod: MOD })}</span>
-            <span>{t('{mod}Enter 打断并发送', { mod: MOD })}</span>
-            <span>{t('Esc 停止正在执行的任务')}</span>
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 bg-panel/60 px-4 py-2 text-[0.6875rem] text-subtle">
+        <span>{t('↑↓ 选择 · Enter 打开')}</span>
+        <span>{t('{mod}K 命令面板', { mod: MOD })}</span>
+        <span>{t('{mod}Enter 打断并发送', { mod: MOD })}</span>
+        <span>{t('Esc 停止正在执行的任务')}</span>
+      </div>
+    </Modal>
   )
 }
 

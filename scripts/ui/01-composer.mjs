@@ -976,6 +976,64 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     await d.close()
   }
 
+  // Chat 页：置顶组、标题栏（Agent · 模型、导出、右栏开关）、右栏「代码 / 来源 / 附件」（Chat.dc.html）。
+  // 演示数据里「React 19 的 use() 怎么用」三样都有，「周报写作助手」是置顶的
+  {
+    const c = await page({ width: 1440, height: 900 })
+    await c.goto(base + '#/chat')
+    const list = c.locator('[data-chat-list]')
+    await list.waitFor({ timeout: 10000 })
+    const pinnedGroup = list.locator('[data-chat-group="pinned"]')
+    await pinnedGroup
+      .getByTitle('周报写作助手', { exact: true })
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('Chat 置顶：演示里置顶的「周报写作助手」不在最上面的「已置顶」组里'))
+    // 右键置顶另一条，它挪进置顶组；再取消，回到日期组
+    const row = list.getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true })
+    await row.click({ button: 'right' })
+    await c.getByRole('menuitem', { name: '置顶聊天' }).click()
+    await pinnedGroup
+      .getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true })
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('Chat 置顶：右键「置顶聊天」后这条没进「已置顶」组'))
+    await check(c, 'Chat-置顶')
+    await pinnedGroup.getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true }).click({ button: 'right' })
+    await c.getByRole('menuitem', { name: '取消置顶' }).click()
+    await pinnedGroup
+      .getByTitle('排查：侧栏任务的时间显示偶尔不对', { exact: true })
+      .waitFor({ state: 'detached', timeout: 5000 })
+      .catch(() => errors.push('Chat 置顶：取消置顶后这条还留在「已置顶」组里'))
+
+    await list.getByTitle('React 19 的 use() 怎么用', { exact: true }).click()
+    const rail = c.locator('[data-chat-rail]')
+    await rail.waitFor({ timeout: 10000 }).catch(() => errors.push('Chat 右栏：有代码、来源和附件的聊天没有打开右栏'))
+    const tabs = rail.getByRole('tablist', { name: '聊天右栏页签' })
+    for (const name of ['代码', '来源', '附件'])
+      if (!(await tabs.getByRole('tab', { name: new RegExp(`^${name}`) }).count()))
+        errors.push(`Chat 右栏：缺「${name}」页签`)
+    if (!(await rail.getByRole('button', { name: '存到项目…' }).count()))
+      errors.push('Chat 右栏：代码页签没有「存到项目…」')
+    if (!(await c.getByRole('button', { name: '导出' }).count())) errors.push('Chat 标题栏：没有「导出」按钮')
+    await check(c, 'Chat-右栏-代码', ['ProfileOld'])
+    await tabs.getByRole('tab', { name: /^来源/ }).click()
+    if (!(await rail.locator('a[href="https://react.dev/reference/react/use"]').count()))
+      errors.push('Chat 右栏：来源页签里没有联网搜索查到的 react.dev 链接')
+    await check(c, 'Chat-右栏-来源', ['react.dev', 'github.com'])
+    // 右栏开关：收起后右栏不见，再点回来
+    await c.getByRole('button', { name: '开关右栏' }).click()
+    await rail.waitFor({ state: 'detached', timeout: 5000 }).catch(() => errors.push('Chat 右栏：点开关后右栏没收起'))
+    await c.getByRole('button', { name: '开关右栏' }).click()
+    await rail.waitFor({ timeout: 5000 }).catch(() => errors.push('Chat 右栏：再点开关右栏没回来'))
+    // 没有代码、来源、附件的聊天：右栏开关禁用
+    await list.getByTitle('周报写作助手', { exact: true }).click()
+    await c
+      .getByRole('button', { name: '开关右栏' })
+      .and(c.locator('[disabled]'))
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('Chat 右栏：什么都没有的聊天右栏开关没有禁用'))
+    await c.close()
+  }
+
   const m = await page({ width: 390, height: 844 })
   await m.goto(base)
   await check(m, '手机-首页', ['今天要做什么'])

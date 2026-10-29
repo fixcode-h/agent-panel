@@ -186,9 +186,9 @@ await runShard(import.meta.filename, async (api) => {
             const title = [...row.querySelectorAll('button')].find((b) =>
               (b.getAttribute('title') || '').includes('打开子对话'),
             )
-            // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
+            // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名没有这个类；右边的耗时同字号，靠 tabular-nums 排除）
             const tags = [...row.querySelectorAll('span')]
-              .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+              .filter((s) => (s.className || '').includes('text-[0.6875rem]') && !s.className.includes('tabular-nums'))
               .filter((s) => s.getBoundingClientRect().width > 0)
               .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
             if (!title || !tags.length) return null
@@ -284,10 +284,13 @@ await runShard(import.meta.filename, async (api) => {
             [...b.children].some((r) => norm(r.innerText).startsWith('子对话')),
           )
           const row = box ? [...box.children].find((r) => norm(r.innerText).startsWith('子对话')) : null
-          // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名和右边的耗时没有这个类）
+          // 状态标签是带 text-[0.6875rem] 的 span（「子对话」动作名没有这个类；右边的耗时同字号，靠 tabular-nums 排除）
           const tag = row
             ? [...row.querySelectorAll('span')].find(
-                (s) => (s.className || '').includes('text-[0.6875rem]') && s.getBoundingClientRect().width > 0,
+                (s) =>
+                  (s.className || '').includes('text-[0.6875rem]') &&
+                  !s.className.includes('tabular-nums') &&
+                  s.getBoundingClientRect().width > 0,
               )
             : null
           if (!tag) return ''
@@ -555,7 +558,9 @@ await runShard(import.meta.filename, async (api) => {
             .map((row) => {
               // 一行可能有几个状态标签（「计划 1/2」+「执行中」），每个都要完整
               const tags = [...row.querySelectorAll('span')]
-                .filter((s) => (s.className || '').includes('text-[0.6875rem]'))
+                .filter(
+                  (s) => (s.className || '').includes('text-[0.6875rem]') && !s.className.includes('tabular-nums'),
+                )
                 .filter((s) => s.getBoundingClientRect().width > 0)
               if (!tags.length) return null
               // 真正裁剪的那一层（overflow-hidden）：标签超出它就会被裁掉
