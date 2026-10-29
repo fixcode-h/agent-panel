@@ -12,6 +12,7 @@ import { EN_SCHEDULE } from './en/schedule.ts'
 import { EN_SERVER } from './en/server.ts'
 import { EN_SETTINGS } from './en/settings.ts'
 import { EN_SHARED } from './en/shared.ts'
+import { EN_SUMMARY } from './en/summary.ts'
 import { EN_TASKS } from './en/tasks.ts'
 import { EN_WEB_SEARCH } from './en/web-search.ts'
 
@@ -20,6 +21,7 @@ export const EN: Record<string, string> = {
   ...EN_SHARED,
   ...EN_SERVER,
   ...EN_APP,
+  ...EN_SUMMARY,
   ...EN_CHANGES,
   ...EN_AGENTS,
   ...EN_FLOW,

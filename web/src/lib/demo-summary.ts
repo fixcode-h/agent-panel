@@ -1,75 +1,116 @@
 /**
- * 在线演示版的工作总结：不跑 CLI，过一秒按选中的项目给一份示例报告。
- * 接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），页面两边共用一套代码；
- * 报告结构也和正式版一样：四个二级节（概览 / 需求进度 / 问题与修复 / 下一步）、
- * 项目三级标题、条目带序号（格式自检能直接通过）。
+ * 在线演示版的工作总结：不跑 CLI，过一会儿按选中的项目给出示例分项（需求 / Bug），
+ * 采纳后用正式那份 renderReport 拼报告。接口字段和正式后端一致（SummaryJob / SummaryRecord，见 shared/summary.ts），
+ * 页面两边共用一套代码。第一次打开时预置几份报告，左侧树里能看到按天、按周的分组。
  */
 import {
-  DEFAULT_SUMMARY_RANGE,
-  rangeWindow,
+  renderReport,
+  reportsInWindow,
+  summaryPeriod,
+  SummaryCreateRequest,
+  SummaryExtractRequest,
+  type SummaryEntry,
   type SummaryJob,
-  type SummaryRange,
   type SummaryRecord,
 } from '@shared/summary'
+import { dayKey } from '@shared/usage'
 import { LessonDraftInput, LessonDraftRecord, lessonDraftsFromReport, missingDrafts } from '@shared/lesson-draft'
 import { demoMs } from './demo-speed'
 
-/** 演示用的需求条目：标题、状态、实现原理 */
+/** 演示用的需求：标题 + 做了什么 */
 const NEEDS = [
-  { title: '购物车数量不同步', status: '已完成（4/4）', how: '数量以服务端返回为准，前端只做乐观更新' },
-  { title: '商品列表缺加载骨架', status: '已完成（3/3）', how: '首次加载时先渲染和行高等高的占位块' },
-  { title: '价格显示格式不统一', status: '进行中（2/5）', how: '把格式化收成一个函数，所有页面都调它' },
-  { title: '接口超时只转圈不提示', status: '已完成（2/2）', how: '请求失败统一走错误提示，不再静默重试' },
+  {
+    title: '购物车数量与结算页保持一致',
+    content: '加购、改数量和结算都以服务端返回的数量为准，切页面后不再出现两个数字',
+  },
+  { title: '商品列表首屏加载骨架', content: '首次加载时先显示和真实行等高的占位块，数据到了再替换，页面不再跳动' },
+  { title: '价格显示统一保留两位小数', content: '所有页面改用同一个价格格式化入口，列表、详情和订单里的金额写法一致' },
+  { title: '搜索框支持拼音首字母', content: '输入拼音首字母也能匹配商品名，例如输入 sj 能搜到「手机」' },
 ]
 /** 演示里的 Bug：只有用户在对话里报过的问题才写进来 */
 const BUGS = [
   {
-    title: '点「全部应用」后按钮没有变化',
-    cause: '保存只更新了内存里的值，没有回写接口',
-    fix: '保存后重新拉一遍配置并刷新按钮状态',
+    title: '点「全部应用」后按钮状态不变',
+    cause: '保存只改了内存里的值，没有写回接口，刷新后又变回旧状态',
+    fix: '保存成功后重新拉取配置并刷新按钮；已用界面检查确认',
   },
   {
     title: '设置弹窗打开时先闪在左上角',
-    cause: '弹窗挂载时还没拿到定位用的锚点',
+    cause: '弹窗挂载时还没拿到定位用的锚点，第一帧按默认位置画',
     fix: '等挂载完成后再定位，打开即居中',
   },
-]
-/** 每个项目最多给几条需求 / 几条 Bug，够看出格式即可 */
-const NEEDS_PER_PROJECT = 2
-
-/**
- * 演示里第二份报告和第一份不一样：点「对比两份」时能看到新增、消失和状态变化。
- * 第一条状态推进（状态变化）、第二条换成新需求（旧的消失、新的新增），Bug 同理
- */
-const NEEDS_NEXT = [
-  { ...NEEDS[0], status: '已完成（6/6）', how: '数量以服务端为准，加购和结算都读同一个值' },
-  { title: '搜索框支持拼音输入', status: '进行中（1/3）', how: '输入先转成拼音再匹配商品名' },
-  NEEDS[3],
-]
-const BUGS_NEXT = [
   {
-    title: '总结页换范围后还显示上一段的报告',
-    cause: '换范围时没把当前报告清掉',
-    fix: '换范围时一起清空当前报告和对比',
+    title: '接口超时后页面一直转圈',
+    cause: '超时的请求没有走统一的错误处理，加载状态没被清掉',
+    fix: '所有请求失败都清掉加载状态并提示原因',
   },
-  BUGS[1],
-]
-/** 演示里的下一步：第二轮换成新的一批，对比时能看到新增和消失 */
-const NEXT = [
-  { title: '接购物车结算的并发校验', note: '两个页面同时改数量时以最后一次为准' },
-  { title: '补设置页的键盘操作', note: '弹窗打开后焦点落在第一个输入框' },
-]
-const NEXT_ROUND = [
-  { title: '补退款流程的验收', note: '退款后金额和库存都要对' },
-  { title: '把价格格式化收进一个入口', note: '页面里不再各自格式化' },
 ]
 
 const reports = new Map<string, SummaryRecord>()
 const jobs = new Map<string, SummaryJob>()
+/** 面板里加过的项目：演示里只存在内存 */
+let config: { projectIds: string[] } = { projectIds: [] }
 /** 候选教训草稿：和正式后端同一套提炼（shared/lesson-draft.ts），字段也一致 */
 const drafts = new Map<string, LessonDraftRecord>()
 
 const draftList = () => [...drafts.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+const reportList = () => [...reports.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+/** 按项目名给一组示例分项：每个项目两条需求、一条 Bug，round 换一批，几次提炼看到的不一样 */
+function sampleItems(names: string[], round: number): SummaryEntry[] {
+  return names.flatMap((project, i) => {
+    const k = i + round
+    const needs = [NEEDS[k % NEEDS.length], NEEDS[(k + 1) % NEEDS.length]]
+    const bug = BUGS[k % BUGS.length]
+    return [
+      ...needs.map((n) => ({ id: crypto.randomUUID(), kind: 'need' as const, project, ...n, cause: '', fix: '' })),
+      { id: crypto.randomUUID(), kind: 'bug' as const, project, content: '', ...bug },
+    ]
+  })
+}
+
+/** 预置一份报告：createdAt 往前推，树里按天、按周分组时有内容可看 */
+function seedReport(grain: 'day' | 'week', day: Date, names: string[], round: number, hour: number) {
+  const win = summaryPeriod(grain, day)
+  const items = sampleItems(names, round)
+  const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour).toISOString()
+  const rec: SummaryRecord = {
+    id: crypto.randomUUID(),
+    createdAt: at,
+    updatedAt: at,
+    day: win.toDay,
+    from: win.fromDay,
+    to: win.toDay,
+    grain,
+    source: grain === 'week' ? 'reports' : 'tasks',
+    projectIds: [],
+    projectNames: grain === 'week' ? [] : names,
+    md: renderReport({ grain, from: win.fromDay, to: win.toDay, items }),
+    items,
+    cli: 'demo',
+    model: '',
+    effort: '',
+    taskCount: grain === 'week' ? 0 : names.length * 3,
+    reportCount: grain === 'week' ? 3 : 0,
+    durationMs: demoMs(1600),
+  }
+  reports.set(rec.id, rec)
+}
+
+let seeded = false
+/** 第一次读报告时预置：昨天两份、前天一份、上周一份周报 */
+function seed(projects: { id: string; name: string }[]) {
+  if (seeded) return
+  seeded = true
+  const names = projects.slice(0, 2).map((p) => p.name)
+  if (!names.length) return
+  const now = new Date()
+  const ago = (n: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - n)
+  seedReport('day', ago(1), names.slice(0, 1), 0, 18)
+  seedReport('day', ago(1), names, 1, 20)
+  seedReport('day', ago(2), names, 2, 19)
+  seedReport('week', ago(7), names, 3, 21)
+}
 
 /**
  * 演示版的候选教训草稿区：接口字段和正式后端一致。
@@ -122,59 +163,6 @@ export function demoLessonDrafts(method: string, id: string | undefined, body: u
   throw new Error('演示版不支持这个操作')
 }
 
-/** round > 0（第二份及以后）时换成推进过的条目：演示里两份报告对比能看到差异 */
-function sampleMd(day: string, names: string[], round: number) {
-  const needPool = round ? NEEDS_NEXT : NEEDS
-  const bugPool = round ? BUGS_NEXT : BUGS
-  const nextPool = round ? NEXT_ROUND : NEXT
-  const needs = names.map((name, i) => {
-    const picked = Array.from(
-      { length: NEEDS_PER_PROJECT },
-      (_, k) => needPool[(i * NEEDS_PER_PROJECT + k) % needPool.length],
-    )
-    return [
-      `### 2.${i + 1} ${name}`,
-      ...picked.flatMap((n, k) => [
-        `${k + 1}. **${n.title}** ｜ ${n.status}`,
-        `   实现：${n.how}`,
-        `   验证：单测和界面检查都通过`,
-      ]),
-      '',
-    ]
-  })
-  const bugs = names.map((name, i) => {
-    const bug = bugPool[i % bugPool.length]
-    return [
-      `### 3.${i + 1} ${name}`,
-      `1. **${bug.title}** ｜ 已修复`,
-      `   原因：${bug.cause}`,
-      `   修复：${bug.fix}`,
-      '',
-    ]
-  })
-  const next = names.map((name, i) => {
-    const todo = nextPool[i % nextPool.length]
-    return [`### 4.${i + 1} ${name}`, `1. **${todo.title}**`, `   说明：${todo.note}`, '']
-  })
-  return [
-    `# ${day} 工作总结`,
-    '',
-    '## 一、概览',
-    `这段时间完成了 ${names.length} 个项目的主要需求，用户报的问题已修复，剩下的按计划继续推进。`,
-    '',
-    '## 二、需求进度',
-    '',
-    ...needs.flat(),
-    '## 三、问题与修复',
-    '',
-    ...bugs.flat(),
-    '## 四、下一步',
-    '',
-    ...next.flat(),
-    '',
-  ].join('\n')
-}
-
 export function demoSummary(
   method: string,
   id: string | undefined,
@@ -183,14 +171,69 @@ export function demoSummary(
   body: unknown,
   projects: { id: string; name: string }[],
 ): unknown {
+  seed(projects)
   // /summary/jobs/:id、/summary/jobs/:id/stop
   if (id === 'jobs' && sub) {
     const job = jobs.get(sub)
-    if (!job) throw new Error('找不到这次生成，可能已过期')
+    if (!job) throw new Error('找不到这次提炼，可能已过期')
     if (tail === 'stop' && job.status === 'running') Object.assign(job, { status: 'stopped' })
     return job
   }
-  // /summary/:id：保存编辑后的正文
+  if (id === 'config') {
+    if (method === 'PUT') config = { projectIds: [...new Set((body as { projectIds?: string[] }).projectIds ?? [])] }
+    return config
+  }
+  // POST /summary/extract：开始提炼
+  if (id === 'extract' && method === 'POST') {
+    const input = SummaryExtractRequest.parse(body)
+    if (input.source === 'tasks' && !input.projectIds.length) throw new Error('先添加要总结的项目')
+    const win = summaryPeriod(input.grain, input.day)
+    const chosen = input.projectIds
+      .map((pid) => projects.find((x) => x.id === pid))
+      .filter((p): p is { id: string; name: string } => !!p)
+    // 来源是报告时和正式版同一个口径取窗口内的报告，分项从这些报告里来
+    const sources = input.source === 'reports' ? reportsInWindow(reportList(), win) : []
+    const job: SummaryJob = {
+      id: crypto.randomUUID(),
+      status: 'running',
+      source: input.source,
+      grain: input.grain,
+      from: win.fromDay,
+      to: win.toDay,
+      projectIds: input.projectIds,
+      items: [],
+      taskCount: input.source === 'tasks' ? chosen.length * 3 : 0,
+      reportCount: sources.length,
+      cli: 'demo',
+      model: '',
+      effort: '',
+      tools: [],
+      outChars: 0,
+      startedAt: Date.now(),
+    }
+    jobs.set(job.id, job)
+    // 选的那天不在演示数据里（太早、未来）时，和正式版一样直接给空结果
+    const empty = input.source === 'reports' ? !sources.length : !chosen.length || win.fromDay > dayKey(new Date())
+    setTimeout(() => (job.thinking = '先按项目把这段时间做过的事分成需求和 Bug，再合并重复的条目。'), demoMs(400))
+    setTimeout(() => (job.outChars = 860), demoMs(900))
+    setTimeout(() => {
+      if (job.status !== 'running') return
+      const items = empty
+        ? []
+        : input.source === 'reports'
+          ? // 汇总报告：把几份报告的分项按标题去重，模拟「同一件事合成一条」
+            [...new Map(sources.flatMap((r) => r.items).map((x) => [`${x.project}|${x.title}`, x])).values()].map(
+              (x) => ({ ...x, id: crypto.randomUUID() }),
+            )
+          : sampleItems(
+              chosen.map((p) => p.name),
+              reports.size,
+            )
+      Object.assign(job, { status: 'done', items, durationMs: demoMs(1500) })
+    }, demoMs(1500))
+    return job
+  }
+  // PUT /summary/:id：保存编辑后的正文
   if (method === 'PUT' && id) {
     const rec = reports.get(id)
     if (!rec) throw new Error('找不到这份报告')
@@ -198,68 +241,27 @@ export function demoSummary(
     rec.updatedAt = new Date().toISOString()
     return rec
   }
-  // POST /summary：开始生成
-  if (method === 'POST') {
-    const input = body as { projects?: { projectId?: string; taskIds?: string[] }[]; range?: SummaryRange }
-    const chosen = (input.projects ?? [])
-      .map((p) => {
-        const project = projects.find((x) => x.id === p.projectId)
-        return project ? { id: project.id, name: project.name, taskIds: p.taskIds ?? [] } : null
-      })
-      .filter((p): p is { id: string; name: string; taskIds: string[] } => !!p)
-    if (!chosen.length) throw new Error('项目不存在')
-    // 和正式后端同一个窗口函数：标题、记录里的 from / to 都按选中的范围走
-    const win = rangeWindow(input.range ?? DEFAULT_SUMMARY_RANGE)
-    const day = win.toDay
-    const job: SummaryJob = {
-      id: crypto.randomUUID(),
-      status: 'running',
-      projectIds: chosen.map((p) => p.id),
-      from: win.fromDay,
-      to: win.toDay,
-      md: '',
-      tools: [],
-      outChars: 0,
-      startedAt: Date.now(),
-    }
-    jobs.set(job.id, job)
-    setTimeout(() => (job.thinking = '先看今天每个项目里跑过的对话，按项目整理成四节。'), demoMs(500))
-    setTimeout(() => (job.tools = ['任务记录', '消息', '计划']), demoMs(900))
-    setTimeout(() => {
-      if (job.status !== 'running') return
-      const now = new Date().toISOString()
-      const record: SummaryRecord = {
-        id: crypto.randomUUID(),
-        createdAt: now,
-        updatedAt: now,
-        day,
-        from: win.fromDay,
-        to: win.toDay,
-        projectIds: chosen.map((p) => p.id),
-        projectNames: chosen.map((p) => p.name),
-        md: sampleMd(
-          win.fromDay === win.toDay ? win.fromDay : `${win.fromDay} - ${win.toDay}`,
-          chosen.map((p) => p.name),
-          reports.size,
-        ),
-        cli: 'demo',
-        model: '',
-        effort: '',
-        // 没挑对话时按项目今天两条估算，和正式版「不选就是全部」的口径一致
-        taskCount: chosen.reduce((n, p) => n + Math.max(p.taskIds.length, 2), 0),
-        // 演示里的生成耗时就是上面那段延迟（正式版按点「生成」到存下报告算）
-        durationMs: demoMs(1800),
-      }
-      reports.set(record.id, record)
-      Object.assign(job, {
-        status: 'done',
-        md: record.md,
-        reportId: record.id,
-        format: { ok: true, issues: [], retried: false },
-      })
-    }, demoMs(1800))
-    return job
+  if (method === 'DELETE' && id) {
+    if (!reports.delete(id)) throw new Error('找不到这份报告')
+    return { ok: true }
   }
-  // GET /summary：最近的报告
-  return { reports: [...reports.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) }
+  // POST /summary：用采纳的分项拼报告
+  if (method === 'POST') {
+    const input = SummaryCreateRequest.parse(body)
+    const now = new Date().toISOString()
+    const { items, ...meta } = input
+    const rec: SummaryRecord = {
+      ...meta,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      day: meta.to,
+      md: renderReport({ grain: meta.grain, from: meta.from, to: meta.to, items }),
+      items,
+    }
+    reports.set(rec.id, rec)
+    return rec
+  }
+  // GET /summary：全部报告
+  return { reports: reportList() }
 }

@@ -1,32 +1,43 @@
 /**
- * 工作总结：把选中的项目里「今天」执行过的对话交给本机 CLI，生成一份简短的 Markdown 报告。
+ * 工作总结：按天 / 按周提炼分项，用户采纳后拼成报告。
  *
- * 只取任务记录里今天的数据（见 shared/summary.ts），CLI 在项目目录里只读运行、不改文件；
- * 生成结果是 job，页面轮询 /summary/jobs/:id；成功时存一份报告（可再编辑），保留最近 SUMMARY_KEEP 份。
+ * - POST /summary/extract：开始一次提炼（job），页面轮询 /summary/jobs/:id 拿分项；
+ *   来源是「对话」时取面板里加过的项目在窗口内执行过的对话，来源是「报告」时取窗口内已经生成的报告；
+ *   用「每日工作总结」角色的设定和它的 CLI / 模型跑，CLI 只读运行、不改文件。
+ * - POST /summary：用采纳的分项按固定格式拼出报告并保存（不再跑 CLI）。
+ * - PUT / DELETE /summary/:id：编辑正文、删除报告；GET / PUT /summary/config：面板里加过的项目。
+ * 口径（时间窗口、材料、提示词、解析、拼报告）都在 shared/summary.ts。
  */
 import { askSession } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { getCli } from '../shared/clis.ts'
-import type { Project, Task } from '../shared/schema.ts'
+import type { Agent, Project, Task } from '../shared/schema.ts'
 import { taskDeleted } from '../shared/task.ts'
+import { renderTemplate, resolveParams } from '../shared/agent-role.ts'
 import {
   activeInRange,
-  checkSummaryFormat,
   collectRangeProjects,
-  extractSummary,
-  rangeWindow,
-  SUMMARY_KEEP,
-  SummaryRecord,
-  SummaryRequest,
-  SummaryReport,
+  extractPrompt,
+  extractRetryHint,
+  parseExtract,
+  renderReport,
+  reportsContext,
+  reportsInWindow,
   skippedProjects,
-  summaryPrompt,
-  summaryRetryHint,
+  SUMMARY_KEEP,
+  summaryRole,
+  SummaryConfig,
+  SummaryCreateRequest,
+  SummaryExtractRequest,
+  SummaryRecord,
+  SummaryReport,
+  summaryPeriod,
+  tasksContext,
   type SummaryJob,
 } from '../shared/summary.ts'
-import { agentRun, cliSettings } from '../shared/settings.ts'
+import { agentPermission, agentRun, cliSettings } from '../shared/settings.ts'
 import { safeArgs } from './assist.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
@@ -44,116 +55,120 @@ type Reports = {
   remove(id: string): Promise<boolean>
 }
 
-/** 任务里今天有活动的时间字段：用它先筛出要读完整对话的任务，不用把每个任务都读一遍 */
+type Job = SummaryJob & { abort: AbortController; at: number }
+
+/**
+ * 角色设定里只取它自己的那段（套上「材料：面板提供」）：引入的「通用约束」讲的是改代码、派子任务、等后台，
+ * 和提炼分项无关，放进去只会多花 token
+ */
+export function summaryRoleText(role: Pick<Agent, 'instructions' | 'params'>) {
+  const { values } = resolveParams(role.params, { material: '面板提供' })
+  return renderTemplate(role.instructions, values).trim()
+}
 
 export function summaryApi(deps: {
   /** 列表只带用户消息（摘要用）：要 Agent 的回复得按 id 再取完整任务，见下面的 run() */
   tasks: { list(): Promise<Task[]>; get(id: string): Promise<Task | null> }
   projects: { list(): Promise<Project[]> }
+  agents: { list(): Promise<Agent[]> }
   reports: Reports
+  config: { get(): Promise<SummaryConfig>; set(c: SummaryConfig): Promise<void> }
 }) {
-  const jobs = new Map<string, SummaryJob & { abort: AbortController; at: number }>()
-  const view = ({ abort, at, ...j }: SummaryJob & { abort: AbortController; at: number }): SummaryJob => j
+  const jobs = new Map<string, Job>()
+  const view = ({ abort, at, ...j }: Job): SummaryJob => j
   const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
-  // 跑完的 job 留一小时：页面刷新后还能拿回结果，不用一直占内存
+  // 跑完的 job 留一小时：页面刷新后还能拿回分项，不用一直占内存
   setInterval(() => {
     for (const [id, j] of jobs) if (j.status !== 'running' && Date.now() - j.at > 3600_000) jobs.delete(id)
   }, 600_000).unref()
 
-  /** 生成成功后存一份；裁剪旧报告失败只记日志，不影响「已保存」的结论 */
-  async function save(job: SummaryJob, body: Omit<z.infer<typeof SummaryReport>, 'md'> & { md: string }) {
-    const record = await deps.reports.create(body)
-    job.reportId = record.id
-    try {
-      const all = (await deps.reports.list()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      for (const old of all.slice(SUMMARY_KEEP)) await deps.reports.remove(old.id)
-    } catch (e) {
-      // 报告已经写进去了，清理超量的旧报告失败不能让页面以为没保存上
-      log.warn('summary', '清理旧的工作总结报告失败', (e as Error).message)
+  const sorted = async () => (await deps.reports.list()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+  /** 这次提炼的材料：对话按项目整理，报告取窗口内的；顺带记下用了多少、哪些项目没有内容 */
+  async function material(job: Job, input: SummaryExtractRequest, projects: Project[]) {
+    const win = summaryPeriod(input.grain, input.day)
+    if (input.source === 'reports') {
+      const list = reportsInWindow(await deps.reports.list(), win)
+      job.reportCount = list.length
+      const names = [...new Set(list.flatMap((r) => r.projectNames))]
+      return { win, names, context: list.length ? reportsContext(list) : '' }
     }
-    log.info('summary', `存了一份工作总结报告`, { id: record.id, day: body.day, projects: body.projectIds.length })
-    return record
+    // 按面板里加的顺序找项目：这个顺序就是报告里分节的顺序，找不到的（已删）直接丢掉
+    const chosen = input.projectIds
+      .map((id) => projects.find((x) => x.id === id))
+      .filter((p): p is Project => !!p)
+      .map((p) => ({ id: p.id, name: p.name }))
+    const ids = new Set(chosen.map((p) => p.id))
+    // 列表里的任务只带用户消息，Agent 的结论不在里面：先按时间字段筛出窗口内有活动的，再按 id 读完整对话。
+    // 删进回收站的对话不算：用户已经把它删了，报告里不该再出现
+    const candidates = (await deps.tasks.list()).filter(
+      (x) => ids.has(x.projectId) && activeInRange(x, win) && !taskDeleted(x),
+    )
+    const full = (await Promise.all(candidates.map((x) => deps.tasks.get(x.id)))).filter((x): x is Task => !!x)
+    const dayProjects = collectRangeProjects(full, chosen, win)
+    const skipped = skippedProjects(chosen, dayProjects)
+    if (skipped.length) job.skipped = skipped
+    job.taskCount = dayProjects.reduce((n, p) => n + p.tasks.length, 0)
+    return {
+      win,
+      names: dayProjects.map((p) => p.projectName),
+      context: job.taskCount ? tasksContext(dayProjects) : '',
+    }
   }
 
-  async function run(job: SummaryJob & { abort: AbortController }, input: z.infer<typeof SummaryRequest>) {
+  async function run(job: Job, input: SummaryExtractRequest) {
     const failed = (error: string) => {
       job.status = 'failed'
       job.error = error
-      log.warn('summary', '生成工作总结失败', error)
+      log.warn('summary', '提炼工作总结失败', error)
     }
     const settings = await getSettings()
-    const def = getCli(input.cli)!
-    const cs = cliSettings(settings, input.cli)
-    const r0 = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
-    const all = await deps.projects.list()
-    // 按用户加进来的顺序找项目：这个顺序就是报告里分节的顺序，找不到的直接丢掉
-    const chosen = input.projects.map((p) => all.find((x) => x.id === p.projectId)).filter((p): p is Project => !!p)
-    if (!chosen.length) return failed(t('项目不存在'))
-    const now = new Date()
-    // 时间窗口和页面、存档用同一个函数（shared/summary.ts 的 rangeWindow）：范围口径只有一处
-    const win = rangeWindow(input.range, now)
-    const day = win.toDay
-    // 列表里的任务只带用户消息（server/task-store.ts 的 head），Agent 的结论不在里面。
-    // 先按时间字段筛出范围内有活动的，再按 id 读完整对话；不这样报告里永远没有「做了什么、怎么修的」
-    const ids = new Set(chosen.map((p) => p.id))
-    // 时间范围只由 activeInRange 判（口径在 shared/summary.ts 的 rangeWindow）；
-    // 删进回收站的对话不算这次总结的工作：用户已经把它删了，报告里不该再出现
-    const candidates = (await deps.tasks.list()).filter(
-      (t) => ids.has(t.projectId) && activeInRange(t, win) && !taskDeleted(t),
-    )
-    const full = await Promise.all(candidates.map((t) => deps.tasks.get(t.id)))
-    // 每个项目只分析用户选的对话；taskIds 为空表示该项目范围内全部对话
-    const picks = input.projects
-      .filter((p) => ids.has(p.projectId))
-      .map((p) => ({ id: p.projectId, name: chosen.find((x) => x.id === p.projectId)!.name, taskIds: p.taskIds }))
-    const projects = collectRangeProjects(
-      full.filter((t): t is Task => !!t),
-      picks,
-      input.range,
-      now,
-    )
-    // 用户选了但今天没有可总结内容的项目（只改了状态/归档、没有今天的对话）：记下来给页面提示，不悄悄从报告里删掉
-    const skipped = skippedProjects(picks, projects)
-    if (skipped.length) job.skipped = skipped
-    // 提示词里已经带着今天的记录，CLI 不需要再读代码：放在第一个有目录的项目里跑（只读权限），
-    // 这样各 CLI 拿到的都是一个正常的项目工作目录，启动时读项目说明也不会出错
-    const dir = chosen.find((p) => p.path)?.path || process.cwd()
-    const taskCount = projects.reduce((n, p) => n + p.tasks.length, 0)
-    log.info('summary', `用 ${def.name} 生成工作总结`, {
-      day,
+    const role = summaryRole(await deps.agents.list())
+    const r0 = agentRun(role, settings)
+    const def = getCli(r0.cli)
+    if (!def) return failed(t('未知的 Agent：{cli}', { cli: r0.cli }))
+    const cs = cliSettings(settings, r0.cli)
+    Object.assign(job, { cli: r0.cli, model: r0.model, effort: r0.effort })
+    const projects = await deps.projects.list()
+    const { win, names, context } = await material(job, input, projects)
+    // 没有材料就不跑 CLI：空着交给页面说明「这段时间没有可提炼的内容」，不让 CLI 对着空材料编
+    if (!context) {
+      job.items = []
+      job.status = 'done'
+      return
+    }
+    // 材料已经在提示词里，CLI 不需要读代码：放在第一个有目录的项目里跑（只读权限），各 CLI 启动时读项目说明也不会出错
+    const dir = projects.find((p) => input.projectIds.includes(p.id) && p.path)?.path || process.cwd()
+    log.info('summary', `用 ${def.name} 提炼工作总结`, {
+      source: input.source,
+      grain: input.grain,
       from: win.fromDay,
-      projects: chosen.length,
-      tasks: taskCount,
-      picks: picks.map((p) => p.taskIds.length),
+      to: win.toDay,
+      tasks: job.taskCount,
+      reports: job.reportCount,
     })
 
     let text = ''
     let errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
-    /** 已经写出来的部分交给页面：失败 / 停止时至少能看、能复制，不用重新跑一遍 */
-    const keepPartial = () => {
-      const partial = extractSummary(text)
-      if (partial.trim()) job.md = partial
-    }
     const asks = askSession(`summary:${job.id}`, () => job.abort.abort())
-    /** 跑一次 CLI：格式不合格重试时再跑一遍，提问卡片和资源都沿用同一个 job */
     const generate = (prompt: string) => {
       text = ''
       errors = []
       result = undefined
-      // 重试是另一次生成：上一次的思考、工具标签和字数不能混进来（页面上看着像同一次在继续跑）
+      // 重试是另一次生成：上一次的思考、工具标签和字数不能混进来
       job.thinking = undefined
       job.tools = []
       job.outChars = 0
       return invokeCli({
         askUser: asks.askUser,
         onAsk: asks.onAsk,
-        cliId: input.cli,
+        cliId: r0.cli,
         command: cs.command,
         build: {
           model: r0.model,
           effort: r0.effort,
-          permission: def.readOnly || cs.permission,
+          permission: def.readOnly || agentPermission(role, settings),
           extraArgs: safeArgs(cs.extraArgs),
         },
         cwd: dir,
@@ -193,82 +208,53 @@ export function summaryApi(deps: {
       return ''
     }
 
-    let md = ''
     try {
-      const first = await generate(summaryPrompt({ day, projects, range: win }))
-      const why = failure(first)
-      if (why === 'stopped') {
-        job.status = 'stopped'
-        keepPartial()
-        return
+      const prompt = extractPrompt({ role: summaryRoleText(role), win, source: input.source, projects: names, context })
+      let why = failure(await generate(prompt))
+      if (why === 'stopped') return void (job.status = 'stopped')
+      if (why) return failed(why)
+      let parsed = parseExtract(text, names, randomUUID)
+      // 回答解析不了时带上原因再跑一次（只重试一次，日志里记下）；仍然不行就把原因交给页面，不当成「没有内容」
+      if (parsed.error) {
+        log.warn('summary', '工作总结的分项解析不了，重试一次', parsed.error)
+        why = failure(await generate(prompt + extractRetryHint(parsed.error)))
+        if (why === 'stopped') return void (job.status = 'stopped')
+        if (why) return failed(why)
+        parsed = parseExtract(text, names, randomUUID)
+        if (parsed.error)
+          return failed(t('{cli} 的回答解析不了（已重试一次）：{error}', { cli: def.name, error: parsed.error }))
       }
-      if (why) {
-        keepPartial()
-        return failed(why)
-      }
-      md = extractSummary(text)
-      if (!md.trim()) return failed(t('{cli} 没有给出报告内容，可以再试一次', { cli: def.name }))
-      // 生成后自己校一遍结构：不合格就带上具体问题再跑一次（只重试一次），
-      // 仍然不合格也保存，但在 job 上标出来，页面上明确提示「格式不完整」，不静默通过
-      let retried = false
-      let check = checkSummaryFormat(md)
-      if (!check.ok) {
-        retried = true
-        log.warn('summary', '工作总结格式不完整，重试一次', { issues: check.issues })
-        const again = await generate(summaryPrompt({ day, projects, range: win }) + summaryRetryHint(check.issues))
-        if (again.killed === 'stopped') {
-          job.status = 'stopped'
-          job.md = md
-          return
-        }
-        // 重试失败或没写出东西时保留第一次的结果：总比空着强
-        const next = failure(again) ? '' : extractSummary(text)
-        if (next.trim()) md = next
-        check = checkSummaryFormat(md)
-        if (!check.ok) log.warn('summary', '工作总结重试后格式仍然不完整', { issues: check.issues })
-      }
-      job.format = { ok: check.ok, issues: check.issues, retried }
+      job.items = parsed.items
+      job.durationMs = Date.now() - job.startedAt
+      job.status = 'done'
     } finally {
       asks.done()
     }
-    // 先把正文交给页面：保存失败时用户至少能看到、能复制这份报告，不用重新跑一遍
-    job.md = md
-    try {
-      await save(job, {
-        day,
-        from: win.fromDay,
-        to: win.toDay,
-        // 存实际写进报告的项目（被跳过的项目不进元数据，和正文保持一致）
-        projectIds: projects.map((p) => p.projectId),
-        projectNames: projects.map((p) => p.projectName),
-        md,
-        cli: input.cli,
-        model: r0.model,
-        effort: r0.effort,
-        taskCount,
-        // 从点「生成」到存下报告的总耗时（含格式不合格重试的那一次）：页面上给用户一个时间成本参考
-        durationMs: Date.now() - job.startedAt,
-      })
-    } catch (e) {
-      return failed(t('报告没能保存：{error}', { error: (e as Error).message }))
-    }
-    job.status = 'done'
   }
 
-  /** 开始一次生成：检查 CLI 能用，跑起来后用 /jobs/:id 查 */
-  async function start(c: Context, input: z.infer<typeof SummaryRequest>) {
-    if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
-    if (!cliSettings(await getSettings(), input.cli).enabled)
-      return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
-    const started = rangeWindow(input.range)
-    const job: SummaryJob & { abort: AbortController; at: number } = {
+  /** 开始一次提炼：先检查角色用的 CLI 能用，跑起来后用 /jobs/:id 查 */
+  async function start(c: Context, input: SummaryExtractRequest) {
+    if (input.source === 'tasks' && !input.projectIds.length) return bad(c, t('先添加要总结的项目'))
+    const settings = await getSettings()
+    const r0 = agentRun(summaryRole(await deps.agents.list()), settings)
+    if (!getCli(r0.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: r0.cli }))
+    if (!cliSettings(settings, r0.cli).enabled)
+      return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(r0.cli)!.name }))
+    const win = summaryPeriod(input.grain, input.day)
+    const job: Job = {
       id: randomUUID(),
       status: 'running',
-      projectIds: input.projects.map((p) => p.projectId),
-      // 范围在开始时就定下来：生成过程中页面换了范围，这份结果仍然属于开始时那一段
-      from: started.fromDay,
-      to: started.toDay,
-      md: '',
+      source: input.source,
+      grain: input.grain,
+      from: win.fromDay,
+      to: win.toDay,
+      projectIds: input.projectIds,
+      items: [],
+      taskCount: 0,
+      reportCount: 0,
+      cli: r0.cli,
+      model: r0.model,
+      effort: r0.effort,
       tools: [],
       outChars: 0,
       startedAt: Date.now(),
@@ -285,33 +271,71 @@ export function summaryApi(deps: {
     return c.json(view(job), 201)
   }
 
-  const routes = new Hono()
-    .get('/', async (c) => {
-      const reports = (await deps.reports.list()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-      return c.json({ reports })
+  /** 存一份报告；超过 SUMMARY_KEEP 时删最早的，删失败只记日志，不影响「已保存」的结论 */
+  async function save(body: z.infer<typeof SummaryReport>) {
+    const record = await deps.reports.create(body)
+    try {
+      for (const old of (await sorted()).slice(SUMMARY_KEEP)) await deps.reports.remove(old.id)
+    } catch (e) {
+      log.warn('summary', '清理旧的工作总结报告失败', (e as Error).message)
+    }
+    log.info('summary', '存了一份工作总结报告', {
+      id: record.id,
+      from: body.from,
+      to: body.to,
+      items: body.items.length,
     })
-    .post('/', async (c) => {
-      const p = SummaryRequest.safeParse(await c.req.json())
+    return record
+  }
+
+  const routes = new Hono()
+    .get('/', async (c) => c.json({ reports: await sorted() }))
+    .get('/config', async (c) => c.json(await deps.config.get()))
+    .put('/config', async (c) => {
+      const p = SummaryConfig.safeParse(await c.req.json())
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const ids = [...new Set(p.data.projectIds)]
+      await deps.config.set({ projectIds: ids })
+      return c.json({ projectIds: ids })
+    })
+    .post('/extract', async (c) => {
+      const p = SummaryExtractRequest.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       return start(c, p.data)
     })
     .get('/jobs/:id', (c) => {
       const j = jobs.get(c.req.param('id'))
-      return j ? c.json(view(j)) : bad(c, t('找不到这次生成，可能已过期'), 404)
+      return j ? c.json(view(j)) : bad(c, t('找不到这次提炼，可能已过期'), 404)
     })
     .post('/jobs/:id/stop', (c) => {
       const j = jobs.get(c.req.param('id'))
-      if (!j) return bad(c, t('找不到这次生成'), 404)
+      if (!j) return bad(c, t('找不到这次提炼'), 404)
       j.abort.abort()
       return c.json(view(j))
+    })
+    .post('/', async (c) => {
+      const p = SummaryCreateRequest.safeParse(await c.req.json())
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const { items, ...meta } = p.data
+      const record = await save({
+        ...meta,
+        day: meta.to,
+        md: renderReport({ grain: meta.grain, from: meta.from, to: meta.to, items }),
+        items,
+      })
+      return c.json(record, 201)
     })
     .put('/:id', async (c) => {
       const p = z.object({ md: z.string().max(200_000) }).safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
-      const old = await deps.reports.list().then((all) => all.find((r) => r.id === c.req.param('id')))
+      const old = (await deps.reports.list()).find((r) => r.id === c.req.param('id'))
       if (!old) return bad(c, t('找不到这份报告'), 404)
-      const next = await deps.reports.update(c.req.param('id'), { ...old, md: p.data.md })
+      const next = await deps.reports.update(old.id, { ...old, md: p.data.md })
       return next ? c.json(next) : bad(c, t('找不到这份报告'), 404)
+    })
+    .delete('/:id', async (c) => {
+      const ok = await deps.reports.remove(c.req.param('id'))
+      return ok ? c.json({ ok: true }) : bad(c, t('找不到这份报告'), 404)
     })
   return { routes }
 }

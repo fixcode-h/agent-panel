@@ -519,8 +519,6 @@ export const EN_SERVER: Record<string, string> = {
   '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
   '为了马上处理新消息，停下了正在执行的命令': 'Stopped the running command to handle the new message right away',
   // 工作总结
-  '{cli} 没有给出报告内容，可以再试一次': '{cli} returned no report. Try again.',
-  '报告没能保存：{error}': 'Could not save the report: {error}',
   找不到这份报告: 'Report not found',
   直连: 'Direct connection',
   '代理 {proxy}': 'Proxy {proxy}',

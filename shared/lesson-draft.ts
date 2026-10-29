@@ -124,7 +124,7 @@ function sectionItems(lines: string[]): ReportItem[] {
 }
 
 /** 正文里「实现：/验证：/修复：/原因：」这类行拼成规则草稿，去掉前缀后保留后面的话 */
-const BODY_PREFIX = /^(实现|验证|修复|原因|处理|做法|结论|改动)[：:]\s*/
+const BODY_PREFIX = /^(内容|实现|验证|修复|原因|处理|做法|结论|改动)[：:]\s*/
 
 function ruleFromBody(body: string) {
   const rows = body
@@ -136,9 +136,9 @@ function ruleFromBody(body: string) {
 
 /**
  * 从一份报告提炼候选草稿：
- * - 「## 三、问题与修复」里的每条都算（这一节本身就是用户报的、已经修过的返工）；
- * - 「## 二、需求进度」里正文写了返工 / 被纠正 / 改回的条目也算；
- * - 老报告的三节名（「用户报告的 Bug」「需求进度」）也认，已经提炼过的老报告不用重做；
+ * - 「## 二、Bug」里的每条都算（这一节本身就是用户报的、已经修过的返工）；
+ * - 「## 一、需求」里正文写了返工 / 被纠正 / 改回的条目也算；
+ * - 改版前的节名（「问题与修复」「用户报告的 Bug」「需求进度」）也认，已经提炼过的老报告不用重做；
  * - 没有「怎么修的」正文的不算（没有痕迹就不是教训），同一标题只留一条，最多 MAX_DRAFTS_PER_REPORT 条。
  */
 export function lessonDraftsFromReport(report: {
@@ -147,8 +147,8 @@ export function lessonDraftsFromReport(report: {
   md: string
   projectNames?: string[]
 }): LessonDraftInput[] {
-  const bugs = sectionItems(sectionLines(report.md, ['## 三、问题与修复', '## 二、用户报告的 Bug']))
-  const progress = sectionItems(sectionLines(report.md, ['## 二、需求进度', '## 一、需求进度']))
+  const bugs = sectionItems(sectionLines(report.md, ['## 二、Bug', '## 三、问题与修复', '## 二、用户报告的 Bug']))
+  const progress = sectionItems(sectionLines(report.md, ['## 一、需求', '## 二、需求进度']))
   const picked: { item: ReportItem; why: string }[] = [
     ...bugs.map((x) => ({ item: x, why: t('问题与修复') })),
     ...progress
