@@ -114,7 +114,7 @@ test('Claude Code：stream-json 的文字、思考、工具、待办和用量', 
   )
 })
 
-test('Claude Code：出错的结果；每次模型回应开头报 request_start，写工具入参算在输出', () => {
+test('Claude Code：出错的结果、Bash 的退出码；每次模型回应开头报 request_start，写工具入参算在输出', () => {
   const parse = claudeParser(CWD)
   // 插话收下后说完的那段话以 request_start 为界，之后的回应排在用户消息后面
   assert.deepEqual(parse({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } }), [
@@ -140,10 +140,8 @@ test('Claude Code：出错的结果；每次模型回应开头报 request_start�
     }),
   ])
   assert.deepEqual(s.results, [{ ok: false, error: 'error_max_turns' }])
-})
 
-test('Claude Code：Bash 的 tool_use_result 带着退出码', () => {
-  const parse = claudeParser(CWD)
+  // Bash 的 tool_use_result 带着退出码
   const [ok] = parse({
     type: 'user',
     message: {
