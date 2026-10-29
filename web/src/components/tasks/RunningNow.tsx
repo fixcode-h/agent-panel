@@ -343,7 +343,11 @@ export function RunningNow({
                 {labels.map((l, i) => (
                   // 超窄屏（<359px）只留第一个状态标签：两个并排会被 overflow-hidden 裁掉，
                   // 读起来像「等结 0.1s」；这时活动文字也已隐藏，只保留最要紧的那个状态
-                  <span key={l.text} className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden')}>
+                  // 按这一行自己的宽度也收：右栏占宽时视口再宽，行也可能只剩两三百像素
+                  <span
+                    key={l.text}
+                    className={cn(childLabelClass[l.tone], i > 0 && 'max-[359px]:hidden @max-[300px]:hidden')}
+                  >
                     {l.text}
                   </span>
                 ))}

@@ -13,6 +13,7 @@ import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { ElementPickHost } from '@/components/chat/ElementPicker'
+import { ActivityBar } from '@/components/layout/ActivityBar'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
@@ -217,6 +218,8 @@ export function App() {
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+            {/* 最左边的图标栏（功能页、主题、设置），右边是会话侧栏；功能页上会话侧栏让开 */}
+            <ActivityBar dark={dark} onToggleTheme={toggleTheme} />
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
             {/* 页面放在圆角面板里浮在侧栏底色上（照设计稿）；任务页、项目页自己分成「对话 + 右栏」两块面板（split），外面不再套一块 */}
             <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden md:py-2 md:pr-2">

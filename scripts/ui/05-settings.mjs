@@ -320,9 +320,9 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   }
   await closeSettings()
   // 部署提醒点：演示后端用 localStorage 的 demo-deploy-outdated 造「部署那份和自带的不同」（见 demo-deploy.ts）。
-  // 有差异时侧栏「设置」和设置里的「Agent」「部署」都要亮点，重新部署后三处一起消失。
+  // 有差异时图标栏「设置」和设置里的「Agent」「部署」都要亮点，重新部署后三处一起消失。
   // 提示数据（skill-updates）只在本窗口获得焦点时重读；不重载页面——设置弹窗的状态会被重载保留，重载后侧栏被盖住
-  const settingsRow = () => p.locator('aside[aria-label="侧栏"]').getByRole('button', { name: '设置', exact: true })
+  const settingsRow = () => p.locator('nav[aria-label="功能栏"]').getByRole('button', { name: '设置', exact: true })
   // 提示挂在按钮的 aria-describedby 上：放进按钮里会被算进可访问名称，按名字找「设置」就找不到了
   const hintOf = (loc) =>
     loc.evaluateAll((els) => {

@@ -9,7 +9,10 @@ import { runShard, TINY_PNG } from './harness.mjs'
 await runShard(import.meta.filename, async ({ base, page, check, errors, settle, shotOf }) => {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
-  await check(p, '首页', ['新建任务', '工作流'])
+  await check(p, '首页', ['新建任务'])
+  // 工作流、计划这些功能页在最左边的图标栏里（只有图标，名字在读屏名和悬停提示）
+  if (!(await p.locator('nav[aria-label="功能栏"]').getByRole('button', { name: '工作流', exact: true }).count()))
+    errors.push('首页：图标栏里没有「工作流」')
   // 左侧栏不再有独立的「文件」入口：文件的入口只在项目页右侧的文件面板里
   if (
     await p
