@@ -28,4 +28,4 @@
 ## 防线
 
 - `server/exec/steer-note.test.ts`：「插话收下时正说到一半……」。
-- `server/exec/parsers.test.ts`：「Claude Code：每次模型回应开头报 request_start，写工具入参算在输出」。
+- `server/exec/parsers.test.ts`：「Claude Code：出错的结果；每次模型回应开头报 request_start，写工具入参算在输出」。
