@@ -1,10 +1,9 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Folder, Workflow } from 'lucide-react'
+import { ChevronRight, Folder, Workflow } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Spinner, StatusPill } from './status-pill'
 import { UnreadDot } from './badge'
-import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from './menu'
 
 // 侧栏的部件（对应组件库「侧栏」卡片：ModeSwitch · NavRow · ProjectRow · TaskRow）。
 // 侧栏贴着底色，行与行之间只靠底色分：导航选中是 bg-sel，项目选中是很淡的蓝底，项目下选中的对话是一张白卡片，都不描边
@@ -31,56 +30,39 @@ export const NAV_ROW =
   'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg border px-2 text-[0.875rem] font-medium transition-colors'
 
 /**
- * 侧栏左上角的模式下拉（照设计稿 Workspace）：产品图标 + 当前模式名 + 小箭头，整块是一个按钮，
- * 点开列出三种模式，每项带一行说明、选中项打勾。跳转由调用方在 onPick 里做
+ * 侧栏顶部的模式切换（照设计稿）：三段并排 tab 占满一行，点哪段切到哪个模式。
+ * 选中项用 seg-thumb-strong（比通用分段控件的选中块更显眼：描边 + 投影 + 加重字重），
+ * 深色下也一眼看得出选的是哪个。跳转由调用方在 onPick 里做；功能页不属于任何模式，三段都不亮
  */
-export function SidebarModeMenu({
+export function SidebarModeTabs({
   modes,
   onPick,
-  logo,
 }: {
-  /** label 是完整说明，当作菜单项的可访问名称（界面检查按「Agent 模式」这样的前缀定位） */
-  modes: { id: string; name: string; desc: string; label?: string; on: boolean }[]
+  /** label 是完整说明，当作 tab 的可访问名称（界面检查按「Agent 模式」这样的前缀定位） */
+  modes: { id: string; name: string; label?: string; on: boolean }[]
   onPick: (id: string) => void
-  logo: ReactNode
 }) {
-  const cur = modes.find((m) => m.on) ?? modes[0]
   return (
-    <Menu>
-      <MenuTrigger asChild>
+    <div role="radiogroup" aria-label={t('模式')} className="seg-track flex w-full min-w-0 rounded-[10px] p-0.5">
+      {modes.map((m) => (
         <button
+          key={m.id}
           type="button"
-          aria-label={t('切换模式')}
-          title={cur?.label}
-          className="group/mode flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg pr-2 pl-2 text-left transition-colors outline-none hover:bg-sel focus-visible:ring-2 focus-visible:ring-focus-soft"
+          role="radio"
+          aria-checked={m.on}
+          aria-label={m.label}
+          title={m.label}
+          onClick={() => !m.on && onPick(m.id)}
+          className={cn(
+            'h-8 min-w-0 flex-1 cursor-pointer truncate rounded-lg px-1.5 transition-colors',
+            'text-[0.8125rem]',
+            m.on ? 'seg-thumb-strong font-semibold' : 'text-muted hover:text-fg',
+          )}
         >
-          {logo}
-          <span className="min-w-0 truncate text-[1.25rem] font-semibold tracking-tight">{cur?.name}</span>
-          <ChevronDown
-            aria-hidden
-            className="h-3.5 w-3.5 shrink-0 text-subtle transition-transform group-data-[state=open]/mode:rotate-180"
-            strokeWidth={2}
-          />
+          {m.name}
         </button>
-      </MenuTrigger>
-      <MenuContent align="start" className="w-[200px] min-w-0 rounded-[10px]">
-        <MenuRadioGroup value={cur?.id} aria-label={t('模式')}>
-          {modes.map((m) => (
-            <MenuRadioItem
-              key={m.id}
-              value={m.id}
-              aria-label={m.label}
-              title={m.label}
-              onSelect={() => !m.on && onPick(m.id)}
-              className="h-[34px] rounded-[7px] py-0 text-[0.84375rem]"
-            >
-              <span className="min-w-0 flex-1 truncate font-medium">{m.name}</span>
-              <span className="shrink-0 text-[0.71875rem] text-subtle">{m.desc}</span>
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-      </MenuContent>
-    </Menu>
+      ))}
+    </div>
   )
 }
 
