@@ -167,11 +167,24 @@ test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，�
   assert.match(BUG_METHOD, /不要再往更底层找「更根本」的问题/)
   assert.match(BUG_METHOD, /不改代码去猜，先加临时日志或写针对性的测试复现/)
   assert.match(BUG_METHOD, /下到第三层还没找到/)
+  // 用户要求：先模块文档 → 模块代码 → 调用栈，最后才看日志；日志要先在代码里找到出处；
+  // 结论要三环证据链，推不通就复现或加日志等用户，不猜；摸清的模块回写文档
+  assert.match(BUG_METHOD, /模块文档 → 模块代码 → 调用栈 → 日志（不能跳）/)
+  assert.match(BUG_METHOD, /先拿它的原文在代码里搜到打印它的位置/)
+  assert.match(BUG_METHOD, /现象 ← 日志原文.*← 代码 path:line/)
+  assert.match(BUG_METHOD, /然后停下等用户（计划里这一步标等待中）/)
+  assert.match(BUG_METHOD, /交给「文档」写进 `modules\/<模块>\/README\.md`/)
+  const analyzer = role('analyzer')
+  assert.match(analyzer, /## 排查报错和日志：先代码后日志/)
+  assert.match(analyzer, /先拿原文在代码里搜到打印它的位置/)
+  assert.match(analyzer, /单列一条「补模块文档」/)
 
   const orch = role('orchestrator')
   assert.match(orch, /## Bug 怎么交/)
   assert.match(orch, /不去读实现找具体是哪一行/)
   assert.match(orch, /不要为同一个 Bug 开几个子对话同时找/)
+  assert.match(orch, /原文整段附进 message/)
+  assert.match(orch, /调用栈、证据链（日志原文或测试输出 \+ path:line）、验证结果。缺了就交回让它补/)
 
   const worker = role('worker')
   assert.ok(renderTemplate(worker, { mode: '自动' }).includes(BUG_METHOD))
