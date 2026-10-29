@@ -1,7 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { UnreadDot } from './badge'
 import { StatusPill } from './status-pill'
 
 // 侧栏的部件（对应组件库「侧栏」卡片：ModeSwitch · NavRow · ProjectRow · TaskRow）。
@@ -14,13 +13,9 @@ import { StatusPill } from './status-pill'
 export const SIDEBAR_ROW_ON = 'border-transparent bg-sel text-fg'
 export const SIDEBAR_ROW_OFF = 'border-transparent text-muted hover:bg-sel/60 hover:text-fg'
 
-/**
- * 任务块里的选中行：块本身已经垫了一层浅底，选中要比块更亮，用卡片底。
- * 深色下 card 反而比 sel 暗、和块底几乎一样，改用 sel 掺一点前景色提亮（只由 token 混出来）
- */
-export const SIDEBAR_BLOCK_ROW_ON =
-  'border-transparent bg-card text-fg dark:bg-[color-mix(in_oklab,var(--sel)_88%,var(--fg))]'
-export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent text-muted hover:bg-sel/80 hover:text-fg'
+/** 项目下的对话卡片：平时灰底，选中换卡片底 + 细边 + 投影浮起来（照设计稿 Workspace 侧栏） */
+export const SIDEBAR_BLOCK_ROW_ON = 'border-line-strong bg-card font-semibold text-fg shadow-card'
+export const SIDEBAR_BLOCK_ROW_OFF = 'border-transparent bg-sel/70 text-fg hover:bg-sel'
 
 /** 分组标题（项目 / 对话内容 / 按天）：小一号的次要色，和可点的行靠字号和颜色拉开，不加粗 */
 export const SIDEBAR_GROUP_LABEL = 'text-[0.6875rem] text-subtle'
@@ -98,13 +93,22 @@ export function NavRow({
   )
 }
 
-/** 项目行右边的对话数：小圆角底，选中行（bg-sel）上换成卡片底，不然和行底糊在一起 */
+/**
+ * 项目卡片（照设计稿 Workspace 侧栏）：每个项目一张 36 高的圆角卡片，折叠箭头在卡片外。
+ * 选中的项目是浅蓝底 + 细蓝边（proj token，不随配色变），其余是灰底细边
+ */
+export const PROJECT_CARD =
+  'flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[10px] border pr-1.5 pl-2.5 text-[0.8125rem] transition-[background-color,filter]'
+export const PROJECT_CARD_ON = 'border-proj-line bg-proj text-proj-fg'
+export const PROJECT_CARD_OFF = 'border-line bg-sel/70 text-fg hover:bg-sel'
+
+/** 项目卡片右边的对话数：选中卡片上是带细边的白色圆片，其余卡片上只是一个次要色数字 */
 export function SidebarCount({ n, on, className }: { n: number; on?: boolean; className?: string }) {
   return (
     <span
       className={cn(
-        'grid h-[1.125rem] min-w-[1.125rem] shrink-0 place-items-center rounded-full px-1 text-[0.6875rem] text-subtle tabular-nums',
-        on ? 'bg-card' : 'bg-sel/80',
+        'grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[0.6875rem] tabular-nums',
+        on ? 'bg-card font-semibold text-fg ring-1 ring-proj-line' : 'text-subtle',
         className,
       )}
     >
@@ -113,13 +117,22 @@ export function SidebarCount({ n, on, className }: { n: number; on?: boolean; cl
   )
 }
 
-/** 项目下的任务列表：缩进成一块浅底，块里的行选中时用卡片底（SIDEBAR_BLOCK_ROW_ON） */
+/**
+ * 项目下的对话列表：缩进，左边一道竖线把它们挂在项目下面；每个对话是一张灰底卡片，
+ * 选中的那张换成卡片底 + 细边浮起来（照设计稿 Workspace 侧栏）
+ */
 export function SidebarTaskBlock({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('mt-0.5 ml-3 flex flex-col gap-0.5 rounded-lg bg-sel/40 p-0.5', className)}>{children}</div>
+  return (
+    <div className={cn('mt-1.5 ml-5 flex flex-col gap-[5px] border-l-[1.5px] border-line-strong pl-2.5', className)}>
+      {children}
+    </div>
+  )
 }
 
-/** 侧栏行尾用的小号状态胶囊：和 StatusPill 同一套状态色，只是矮一号 */
-const SMALL_PILL = 'h-[1.125rem] gap-1 px-1.5 text-[0.6875rem]'
+/** 侧栏行尾用的小号状态胶囊：20 高、600 字重；底色比 StatusPill 实（设计稿：等你回复、未读是实心底） */
+const SMALL_PILL = 'h-5 gap-1.5 px-2 text-[0.6875rem] font-semibold'
+/** 子对话 / 执行中：卡片底 + 细边的白片，转圈用运行色 */
+const PILL_RUN = 'bg-card text-fg ring-1 ring-line'
 
 /**
  * 任务行右边的状态：同一时刻只出一个，优先级 等你回复 > 子对话在跑 > 自己在跑 > 失败 > 未读。
@@ -143,19 +156,19 @@ export function TaskRowStatus({
 }) {
   if (needs)
     return (
-      <StatusPill tone="wait" className={SMALL_PILL}>
+      <StatusPill tone="wait" className={cn(SMALL_PILL, 'bg-warning text-bg')}>
         {t('等你回复')}
       </StatusPill>
     )
   if (kids > 0)
     return (
-      <StatusPill tone="run" spin className={SMALL_PILL}>
+      <StatusPill tone="run" spin className={cn(SMALL_PILL, PILL_RUN)}>
         {t('{n} 子对话', { n: kids })}
       </StatusPill>
     )
   if (running)
     return (
-      <StatusPill tone="run" spin className={SMALL_PILL}>
+      <StatusPill tone="run" spin className={cn(SMALL_PILL, PILL_RUN)}>
         {t('执行中')}
       </StatusPill>
     )
@@ -165,7 +178,12 @@ export function TaskRowStatus({
         {t('失败')}
       </StatusPill>
     )
-  if (unread) return <UnreadDot className="mr-1 h-[7px] w-[7px]" />
+  if (unread)
+    return (
+      <StatusPill tone="idle" className={cn(SMALL_PILL, 'bg-accent text-on-accent')}>
+        {t('未读')}
+      </StatusPill>
+    )
   return null
 }
 

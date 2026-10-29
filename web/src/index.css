@@ -32,6 +32,10 @@
   --accent-soft: rgb(198 97 63 / 0.11);
   /* 文字用的强调色：比 --accent 深一号，小字在米色底上也够 4.5:1；色块、图标、描边仍用 --accent */
   --accent-text: #a94f2e;
+  /* 侧栏选中项目的卡片：一层浅蓝底 + 细蓝边，和对话行的灰底分开（照设计稿 Workspace 侧栏），不随配色变 */
+  --proj-bg: #e7f0fc;
+  --proj-line: #b9cff0;
+  --proj-fg: #1e3a66;
   --primary: var(--accent);
   --on-primary: #ffffff;
   /* 危险按钮上的字：深色主题里危险红偏亮，白字看不清，改用深色字 */
@@ -130,6 +134,9 @@
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
   --accent-text: #e08463;
+  --proj-bg: rgb(96 165 250 / 0.13);
+  --proj-line: rgb(96 165 250 / 0.35);
+  --proj-fg: #bfd7fb;
   /* 白字在 #d97757 上只有 3.1:1，和其他配色的深色主题一样用深色字 */
   --on-primary: #1f1e1c;
   --on-danger: #1f1e1c;
@@ -305,6 +312,9 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
+  --color-proj: var(--proj-bg);
+  --color-proj-line: var(--proj-line);
+  --color-proj-fg: var(--proj-fg);
   --color-primary: var(--primary);
   --color-on-primary: var(--on-primary);
   --color-on-danger: var(--on-danger);

@@ -95,7 +95,7 @@ export function TaskRow({
    * 未读点挪到行尾；选中是浅卡片底，和左栏底色拉开。转圈、需要处理、失败的图标照常画
    */
   plain?: boolean
-  /** 放在项目下的任务块里（SidebarTaskBlock）：块已经垫了浅底，选中行换成更亮的卡片底 */
+  /** 放在项目下的对话列表里（SidebarTaskBlock）：每行是一张灰底卡片，选中换成卡片底 + 细边浮起来 */
   inBlock?: boolean
   className?: string
 }) {
@@ -137,9 +137,13 @@ export function TaskRow({
                     className,
                   )
                 : cn(
-                    'group/row flex h-8 w-full cursor-pointer items-center gap-2 rounded-[7px] border text-left text-[0.8125rem] transition-colors',
+                    'group/row flex w-full cursor-pointer items-center gap-2 border text-left text-[0.8125rem] transition-colors',
+                    // 项目下的对话是一张张卡片（36 高、10px 圆角），搜索结果等其他地方还是紧凑行
+                    inBlock ? 'h-9 rounded-[10px]' : 'h-8 rounded-[7px]',
                     active
-                      ? cn(inBlock ? SIDEBAR_BLOCK_ROW_ON : SIDEBAR_ROW_ON, 'font-medium')
+                      ? inBlock
+                        ? SIDEBAR_BLOCK_ROW_ON
+                        : cn(SIDEBAR_ROW_ON, 'font-medium')
                       : inBlock
                         ? SIDEBAR_BLOCK_ROW_OFF
                         : SIDEBAR_ROW_OFF,
