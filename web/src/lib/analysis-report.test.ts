@@ -6,7 +6,8 @@ import { test } from 'node:test'
 import type { Task, TaskMessage } from '@shared/schema'
 import { EVOLUTION_LANG } from '@shared/task-export'
 import { LESSON_REVIEW_LANG } from '@shared/lesson-review'
-import { DIAGNOSIS_LANG, parseDiagnosis, stripDiagnosis } from '@shared/diagnosis'
+import { DIAGNOSIS_LANG, fixApplicable, parseDiagnosis, replaceFix, stripDiagnosis } from '@shared/diagnosis'
+import { setLang } from '@shared/i18n'
 import {
   analysisTiming,
   findReport,
@@ -44,7 +45,10 @@ test('认出执行分析和教训评审的报告，取最新的一份', () => {
       rootCause: { title: '没判空' },
       confidence: 'high',
       impacts: [{ text: '白屏', severity: 'high' }, { severity: 'low' }],
-      evidence: [{ file: 'a.ts', line: '7', note: '这里' }],
+      evidence: [
+        { kind: 'problem', file: 'a.ts', line: '7', note: '这里' },
+        { kind: 'oops', file: 'c.ts' },
+      ],
       fixes: [{ file: 'b.ts', change: '判空' }],
       files: ['a.ts'],
     }) +
@@ -52,9 +56,12 @@ test('认出执行分析和教训评审的报告，取最新的一份', () => {
   assert.equal(findReport(task([msg('u', 'user', '排查'), msg('a', 'agent', diag)]))?.kind, 'diagnosis')
   const ok = parseDiagnosis(diag)
   assert.ok(ok?.ok)
-  assert.deepEqual(ok.value.files, ['a.ts', 'b.ts'])
+  assert.deepEqual(ok.value.files, ['a.ts', 'c.ts', 'b.ts'])
   assert.equal(ok.value.impacts.length, 1)
   assert.equal(ok.value.evidence[0].line, 7)
+  // 证据的角色：认得的画标签，写错的当没写，不让整条证据丢掉
+  assert.equal(ok.value.evidence[0].kind, 'problem')
+  assert.equal(ok.value.evidence[1].kind, undefined)
   assert.equal(stripDiagnosis(diag), '原因')
   // 写坏了（JSON 不合法、缺根因）不吞掉：给出原文，对话区也照原文留着
   const bad = '```' + DIAGNOSIS_LANG + '\n{"rootCause": {}}\n```'
@@ -75,6 +82,33 @@ test('认出执行分析和教训评审的报告，取最新的一份', () => {
   assert.equal(live && timingMs(live, Date.parse('2026-01-01T00:01:05.400Z')), 65_000)
   assert.equal(analysisTiming({ runMs: 0, runStartedAt: '', turns: [] }), undefined)
   assert.equal(timingMs(analysisTiming({ runMs: 12_300, runStartedAt: '', turns: [] })!), 12_000)
+})
+
+test('一键应用修复：改前原文恰好出现一次才替换，其余写明原因', () => {
+  setLang('zh')
+  const fix = (before: string, after: string, file = 'a.ts') => ({ file, before, after })
+  const src = 'const a = price.toFixed(2)\nconst b = 1\n'
+  // 成功：只换那一处，after 里的 $& 不当替换模式
+  assert.deepEqual(replaceFix(src, fix('price.toFixed(2)', "fmt('$&')")), {
+    ok: true,
+    text: "const a = fmt('$&')\nconst b = 1\n",
+  })
+  // 匹配不到；改后的内容已经在文件里时说明可能已经改过
+  const none = replaceFix(src, fix('price.toFixed(3)', 'qqq'))
+  assert.ok(!none.ok && /找不到改前的原文/.test(none.error) && !/已经改过/.test(none.error))
+  const done = replaceFix(src, fix('price.toFixed(9)', 'const b = 1'))
+  assert.ok(!done.ok && /已经改过/.test(done.error))
+  // 多处匹配不猜
+  const many = replaceFix('x\nx\n', fix('x', 'y'))
+  assert.ok(!many.ok && /不止一处/.test(many.error))
+  // 缺原文、缺改后内容、缺文件：逐条报原因，按钮也不把它们算进「N 处」
+  for (const f of [fix('', 'y'), fix('x', ''), fix('x', 'y', '')]) {
+    assert.equal(replaceFix('x', f).ok, false)
+    assert.equal(fixApplicable(f), false)
+  }
+  assert.equal(fixApplicable(fix('x', 'y')), true)
+  // CRLF 的文件：AI 抄的是 LF，按 CRLF 找到并用 CRLF 写回，不留混合换行
+  assert.deepEqual(replaceFix('a\r\nb\r\nc\r\n', fix('a\nb', 'a\nB\nb')), { ok: true, text: 'a\r\nB\r\nb\r\nc\r\n' })
 })
 
 test('初始化的 JSON 只在初始化对话里算报告', () => {

@@ -178,7 +178,17 @@ import {
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf, uploadFileOf } from './uploads.ts'
-import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
+import {
+  applyFixesInDir,
+  listDir,
+  listLevel,
+  rawInDir,
+  readInDir,
+  revealInDir,
+  searchInDir,
+  searchNameInDir,
+} from './files.ts'
+import { FixApplyInput } from '../shared/diagnosis.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { sessionInfo } from './session-bar.ts'
@@ -5891,6 +5901,29 @@ export function tasksApi(deps: {
       await revealInDir(dir, want)
       return c.json({ ok: true, dir })
     })
+  })
+
+  /**
+   * 排查结论的「应用这 N 处修改」：在被分析的那个对话的工作目录里按原文替换（分析的就是它的代码，
+   * 它有独立分支时 taskDir 给的是 worktree）；和对话无关的排查（没有 analysisOf）改分析对话自己的目录。
+   * 被分析的对话找不到了不退回别的目录：改错地方比不改更糟，报出来让用户自己处理
+   */
+  routes.post('/:id/apply-fixes', async (c) => {
+    const body = FixApplyInput.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return bad(c, z.prettifyError(body.error))
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const owner = tk.analysisOf && tk.analysisOf !== tk.id ? await current(tk.analysisOf) : tk
+    if (!owner) return bad(c, t('被分析的对话已经不在了，不知道该改哪个目录'), 404)
+    // 正在动手的对话可能也在改这几个文件，两边一起写会互相覆盖
+    if (owner.working) return bad(c, t('「{title}」正在执行，等这一轮结束后再应用', { title: owner.title }), 409)
+    let dir: string
+    try {
+      dir = await readableDir(owner.id)
+    } catch (e) {
+      return bad(c, (e as Error).message, (e as { status?: 400 | 404 }).status ?? 400)
+    }
+    return c.json({ dir, results: await applyFixesInDir(dir, body.data.fixes) })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

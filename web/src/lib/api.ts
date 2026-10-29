@@ -73,6 +73,7 @@ import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
+import type { FixApplyItem, FixApplyResult } from '@shared/diagnosis'
 import type { ProjectMcpImportResult, ProjectMcpOverview } from '@shared/project-mcp'
 import type {
   BundledSkill,
@@ -818,6 +819,9 @@ export const api = {
       content: string
       truncated: boolean
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 排查结论的「应用这 N 处修改」：在被分析对话的目录里逐条按原文替换，每条给出结果 */
+  applyFixes: (id: string, fixes: FixApplyItem[]) =>
+    request<{ dir: string; results: FixApplyResult[] }>(`/tasks/${id}/apply-fixes`, json('POST', { fixes })),
   /** 任务目录里的图片：读到的文件是图片时按原图查看（同样给 <img> 用，路径自己带 /api） */
   taskFileRaw: (id: string, path: string) => `/api/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
   /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */
