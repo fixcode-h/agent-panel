@@ -175,6 +175,8 @@ import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from
 import { AssistInput, resolveProposal, type AssistContext } from '@shared/assist'
 import { demoAssistJob, demoDraft, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
+import { FixApplyInput, fixApplicable, replaceFix, type FixApplyResult } from '@shared/diagnosis'
+import { t } from '@shared/i18n'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoLessonDrafts, demoSummary } from './demo-summary'
 import { demoDeploy } from './demo-deploy'
@@ -3566,6 +3568,26 @@ function tasksRoute(
     }
     persist()
     return task
+  }
+  // 排查结论的「应用这 N 处修改」：演示里改的是示例工程的演示内容（DEMO_CONTENTS），判定和正式版共用 replaceFix；
+  // 没有内容的文件当作不存在，越界路径同样拒绝
+  if (sub === 'apply-fixes' && method === 'POST') {
+    const b = FixApplyInput.safeParse(body)
+    if (!b.success) fail(z.prettifyError(b.error))
+    const results = b.data!.fixes.map((fix, index): FixApplyResult => {
+      const file = fix.file.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+      const no = (error: string) => ({ index, file, ok: false, error })
+      const missing = !fixApplicable({ ...fix, file }) && replaceFix('', { ...fix, file })
+      if (missing && !missing.ok) return no(missing.error)
+      if (/^([a-zA-Z]:)?\//.test(file) || file.split('/').includes('..')) return no(t('路径不在项目目录里，不能改'))
+      const content = DEMO_CONTENTS[file]
+      if (content === undefined) return no(t('文件不存在'))
+      const r = replaceFix(content, { ...fix, file })
+      if (!r.ok) return no(r.error)
+      DEMO_CONTENTS[file] = r.text
+      return { index, file, ok: true }
+    })
+    return { dir: '~/demo/shop', results }
   }
   // 演示里没有真的项目目录：示例工程里的文件按演示内容返回，别的文件说明看不到
   if (sub === 'file') {

@@ -870,6 +870,16 @@ await runShard(import.meta.filename, async (api) => {
     await check(p, 'AI排查-结论', ['根因', '影响', '在当前对话里修'])
     await diag.getByRole('tab', { name: /^证据/ }).click()
     await check(p, 'AI排查-证据', ['claude'])
+    // 证据卡右上的角色标签（evidence.kind）：演示结论里标了「复现」「正确口径」
+    for (const label of ['复现', '正确口径'])
+      if (!(await diag.locator('[data-evidence-kind]').getByText(label, { exact: true }).count()))
+        errors.push(`AI 排查：证据卡上没有「${label}」标签`)
+    // 修复里没有一处带改前改后的原文：不出「应用这 N 处修改」，只留「在当前对话里修」
+    await diag.getByRole('tab', { name: /^修复/ }).click()
+    if (await diag.getByRole('button', { name: /^应用这/ }).count())
+      errors.push('AI 排查：没有改前改后原文的修复也出了「应用这 N 处修改」')
+    if (!(await diag.getByRole('button', { name: '在当前对话里修', exact: true }).count()))
+      errors.push('AI 排查：修复页没有「在当前对话里修」')
     await diag.getByRole('tab', { name: /^结论/ }).click()
   }
   // 关闭时先确认停止（和别处的 AI 排查一样）

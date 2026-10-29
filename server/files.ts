@@ -4,7 +4,19 @@
  *
  * 大项目不能一次扫描整棵树：列表只读当前这一层，git 状态也只看这一层有变化的文件。
  */
-import { lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rmdir,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
@@ -31,6 +43,7 @@ import { resolvePath } from './fs.ts'
 import { revealItem } from './open.ts'
 import { IMAGE_TYPES } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
+import { fixApplicable, replaceFix, type FixApplyItem, type FixApplyResult } from '../shared/diagnosis.ts'
 
 /** 内容搜索最多扫这么多文件、这么多命中 */
 const MAX_SCAN = 5_000
@@ -605,6 +618,58 @@ export async function diffInDir(dir: string, want: string): Promise<FileDiff> {
   const tracked = (await git(dir, 'ls-files', '--error-unmatch', '--', rel)).code === 0
   if (!tracked) return { path: rel, dir, diff, git: false, before, note: t('这个文件还没提交过，下面是它的完整内容') }
   return { path: rel, dir, diff, git: true, before }
+}
+
+/**
+ * 排查结论的「应用这 N 处修改」：逐条把 before 原样换成 after（判定在 shared/diagnosis.ts 的 replaceFix）。
+ * 路径必须落在目录里（字面和真实路径都看，见 into）；一条失败不影响其余的，每条都给出结果。
+ * 按顺序一条条读写：同一个文件的几处修改后一处要基于前一处改完的内容
+ */
+export async function applyFixesInDir(dir: string, fixes: FixApplyItem[]): Promise<FixApplyResult[]> {
+  const out: FixApplyResult[] = []
+  for (const [index, fix] of fixes.entries()) {
+    const file = norm(fix.file.trim())
+    const done = (error?: string) => out.push({ index, file, ok: !error, ...(error && { error }) })
+    // 缺文件、缺原文、缺改后内容的先报出来，不去碰文件
+    const missing = !fixApplicable({ ...fix, file }) && replaceFix('', { ...fix, file })
+    if (missing && !missing.ok) {
+      done(missing.error)
+      continue
+    }
+    let full: string
+    try {
+      full = await into(dir, file)
+    } catch {
+      done(t('路径不在项目目录里，不能改'))
+      continue
+    }
+    if (!(await stat(full).catch(() => null))?.isFile()) {
+      done(t('文件不存在'))
+      continue
+    }
+    const buf = await readFile(full).catch(() => null)
+    if (!buf) {
+      done(t('文件读不出来'))
+      continue
+    }
+    if (buf.includes(0)) {
+      done(t('不是文本文件，不能按原文替换'))
+      continue
+    }
+    // 原样按 UTF-8 读写：BOM 和换行都保留在字符串里，写回去不变
+    const r = replaceFix(buf.toString('utf8'), { ...fix, file })
+    if (!r.ok) {
+      done(r.error)
+      continue
+    }
+    try {
+      await writeFile(full, r.text, 'utf8')
+      done()
+    } catch (e) {
+      done(t('写入失败：{error}', { error: (e as Error).message }))
+    }
+  }
+  return out
 }
 
 /** 图片的原始内容；不是图片或文件不在了给错误 */

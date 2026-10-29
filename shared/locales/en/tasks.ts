@@ -1399,4 +1399,36 @@ export const EN_TASKS: Record<string, string> = {
   会话栏: 'Session bar',
   分析对象: 'Analyzing',
   面板自动附上: 'attached by the panel',
+  // 排查结论：一键应用修复、证据标签
+  '应用这 {n} 处修改': 'Apply {n} changes',
+  '把每处改前的原文在项目里原样换成改后的内容；原文找不到或不止一处的不改，并写明原因':
+    'Replace each original snippet with its fix in the project; snippets that are missing or appear more than once are left alone with the reason shown',
+  '已应用 {n} 处修改': 'Applied {n} changes',
+  '应用了 {ok} 处，{bad} 处没能应用，原因写在各条修复上':
+    'Applied {ok}; {bad} could not be applied, see the reason on each fix',
+  '一处都没能应用，原因写在各条修复上': 'None could be applied, see the reason on each fix',
+  '没能应用：{error}': 'Not applied: {error}',
+  问题所在: 'Problem',
+  正确口径: 'Reference',
+  复现: 'Repro',
+  旁证: 'Context',
+  没有写要改哪个文件: 'No file given for this fix',
+  '没有给出改前的原文，没法定位要改的地方': 'No original snippet given, so the place to change cannot be located',
+  没有给出改后的内容: 'No replacement given',
+  '文件里找不到改前的原文，改后的内容已经在文件里了，可能已经改过':
+    'The original snippet is not in the file, but the replacement already is; it may have been applied already',
+  '文件里找不到改前的原文，文件可能已经变了，或者原文没有照抄':
+    'The original snippet is not in the file; the file may have changed or the snippet was not copied exactly',
+  '改前的原文在文件里出现了不止一处，不知道该改哪一处':
+    'The original snippet appears more than once in the file, so it is unclear which one to change',
+  '路径不在项目目录里，不能改': 'The path is outside the project folder and cannot be changed',
+  文件不存在: 'File not found',
+  文件读不出来: 'Could not read the file',
+  '不是文本文件，不能按原文替换': 'Not a text file, so the snippet cannot be replaced',
+  '写入失败：{error}': 'Write failed: {error}',
+  '被分析的对话已经不在了，不知道该改哪个目录':
+    'The analyzed conversation no longer exists, so it is unclear which folder to change',
+  '「{title}」正在执行，等这一轮结束后再应用': '"{title}" is running; apply after this turn finishes',
+  '追问，或让它换个方向查…': 'Ask a follow-up, or point it in another direction…',
+  思考: 'Thinking',
 }

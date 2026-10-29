@@ -7,6 +7,7 @@ import test from 'node:test'
 import { setLang } from '../shared/i18n.ts'
 import { DEFAULT_FILE_FORMAT } from '../shared/schema.ts'
 import {
+  applyFixesInDir,
   createInDir,
   deleteInDir,
   diffInDir,
@@ -377,7 +378,7 @@ test('删除：文件直接删，目录必须空，项目目录不能删', async
   await assert.rejects(() => deleteInDir(dir, 'nope.txt'), /文件已经不在了/)
 })
 
-test('保存时保留原文件的 CRLF，LF 的文件不会被改成 CRLF', async () => {
+test('保存时保留原文件的 CRLF，LF 的文件不会被改成 CRLF；按修复建议替换只改恰好一处、不出项目目录', async () => {
   const dir = project()
   writeFileSync(path.join(dir, 'crlf.md'), 'a\r\nb\r\n')
   writeFileSync(path.join(dir, 'lf.md'), 'a\nb\n')
@@ -393,6 +394,39 @@ test('保存时保留原文件的 CRLF，LF 的文件不会被改成 CRLF', asyn
   const info = await readInDir(dir, 'lf.md')
   assert.equal(info.size, 4)
   assert.ok(info.mtime && !Number.isNaN(Date.parse(info.mtime)))
+
+  // 排查结论的「应用这 N 处修改」：逐条给结果，失败的写原因、不碰文件；同一文件的后一处基于前一处改完的内容
+  writeFileSync(path.join(dir, 'fix.ts'), 'a\r\nb\r\nb\r\nb\r\n')
+  writeFileSync(path.join(tmp, 'outside.ts'), 'secret\n')
+  const rel = path.relative(dir, path.join(tmp, 'outside.ts'))
+  const results = await applyFixesInDir(dir, [
+    { file: 'fix.ts', before: 'a', after: 'A' },
+    { file: 'fix.ts', before: 'A\nb', after: 'A\nC' },
+    { file: 'fix.ts', before: 'b', after: 'B' },
+    { file: 'fix.ts', before: 'zzz', after: 'Z' },
+    { file: rel, before: 'secret', after: 'pwned' },
+    { file: 'missing.ts', before: 'a', after: 'b' },
+    { file: 'fix.ts', before: '', after: 'x' },
+  ])
+  assert.deepEqual(
+    results.map((r) => [r.index, r.ok]),
+    [
+      [0, true],
+      [1, true],
+      [2, false],
+      [3, false],
+      [4, false],
+      [5, false],
+      [6, false],
+    ],
+  )
+  assert.match(results[2].error!, /不止一处/)
+  assert.match(results[3].error!, /找不到改前的原文/)
+  assert.match(results[4].error!, /不在项目目录里/)
+  assert.match(results[5].error!, /文件不存在/)
+  assert.match(results[6].error!, /改前的原文/)
+  assert.equal(readFileSync(path.join(dir, 'fix.ts'), 'utf8'), 'A\r\nC\r\nb\r\nb\r\n')
+  assert.equal(readFileSync(path.join(tmp, 'outside.ts'), 'utf8'), 'secret\n')
 })
 
 test('差异：git 仓库给和 HEAD 的对比，不是仓库时给说明', async () => {
