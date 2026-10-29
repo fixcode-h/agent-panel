@@ -1073,13 +1073,17 @@ body,
   overflow: hidden;
 }
 .react-flow__controls-button {
-  width: 32px;
-  height: 32px;
+  /* 照设计稿：34px 一格，格与格之间一条细线（xyflow 自带的按钮下边框，颜色是上面的 line） */
+  width: 34px;
+  height: 34px;
   padding: 0;
 }
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
 .react-flow__controls-button svg {
-  max-width: 13px;
-  max-height: 13px;
+  max-width: 12px;
+  max-height: 12px;
 }
 
 /* 「正在思考」文字上的流光 */

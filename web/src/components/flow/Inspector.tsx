@@ -118,16 +118,16 @@ export function NodeInspector({
     (u.kind === 'flow' ? refLabel(u.flow, w, workflows) || t('调用流程') : runnerOf(u)?.name || t('主角色'))
 
   return (
-    <div className="flex flex-col gap-5 p-5">
-      <h3 className="font-serif text-[1.0625rem] font-semibold">{t('节点')}</h3>
+    // 节点名写在属性栏顶部的页签上（FlowEditor），这里不再重复一个「节点」大标题
+    <div className="flex flex-col gap-4 p-4">
       <label className="flex flex-col gap-1.5">
-        <Label>{t('标题')}</Label>
+        <Label>{t('节点名称')}</Label>
         <Input
           value={node.title}
           maxLength={60}
           onChange={(e) => setNode({ title: e.target.value })}
           placeholder={t('这个节点做什么')}
-          className="h-9"
+          className="h-8"
         />
       </label>
       <div className="flex flex-col gap-3">
@@ -457,9 +457,9 @@ export function FlowInspector({
     onSwitchFlow(w.entryFlowId)
   }
   return (
-    <div className="flex flex-col gap-5 p-5">
+    // 「流程 · 名称」写在属性栏顶部的页签上，这里只留主流程 / 子流程的标记
+    <div className="flex flex-col gap-4 p-4">
       <div className="flex items-center gap-2">
-        <h3 className="flex-1 font-serif text-[1.0625rem] font-semibold">{atEnd ? t('结束') : t('流程')}</h3>
         {isEntry ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
             <Crown className="h-3 w-3" />
@@ -481,7 +481,7 @@ export function FlowInspector({
           maxLength={40}
           onChange={(e) => setFlow({ ...flow, name: e.target.value })}
           placeholder={isEntry ? t('主流程') : t('例如：代码审查')}
-          className="h-9"
+          className="h-8"
         />
       </label>
       <label className="flex flex-col gap-1.5">
