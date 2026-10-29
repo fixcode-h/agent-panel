@@ -83,15 +83,15 @@ test('搜索参数不对：400，错误原文交给模型', async () => {
   s.close()
 })
 
-test('默认源搜索：解析结果、按 numResults 截断、过滤域名、摘要带上来源', async () => {
+test('免密钥的源搜索：解析结果、按 numResults 截断、过滤域名、摘要带上来源', async () => {
   const s = session()
-  await withProvider({ provider: 'degoog', key: '', endpoint: '' })
+  await withProvider({ provider: 'searxng', key: '', endpoint: 'https://searx.example.com' })
   const stub = stubFetch(() =>
     json({
       results: [
-        { title: 'A', url: 'https://a.com/1', snippet: 'sa' },
-        { title: 'B', url: 'https://b.com/2', snippet: 'sb' },
-        { title: 'C', url: 'https://docs.a.com/3', snippet: 'sc' },
+        { title: 'A', url: 'https://a.com/1', content: 'sa' },
+        { title: 'B', url: 'https://b.com/2', content: 'sb' },
+        { title: 'C', url: 'https://docs.a.com/3', content: 'sc' },
       ],
     }),
   )
@@ -102,13 +102,13 @@ test('默认源搜索：解析结果、按 numResults 截断、过滤域名、�
   })
   assert.equal(res.status, 200)
   const body = (await res.json()) as { text: string; results: { url: string }[]; provider: string }
-  assert.equal(body.provider, 'degoog')
+  assert.equal(body.provider, 'searxng')
   assert.deepEqual(
     body.results.map((r) => r.url),
     ['https://a.com/1', 'https://docs.a.com/3'],
   )
-  assert.match(body.text, /Degoog/)
-  // degoog 的地址里带 query，不带密钥
+  assert.match(body.text, /SearXNG/)
+  // searxng 的地址里带 query，不带密钥
   assert.match(stub.calls[0]!.url, /q=unreal%20engine/)
   assert.equal(stub.calls[0]!.init.method, 'GET')
   s.close()
@@ -145,7 +145,7 @@ test('搜到自己搭的 searxng：没填地址时明确报错，填了就用那
 
 test('上游报错：状态码和响应原文都交给模型，不吞成一句「搜索失败」', async () => {
   const s = session()
-  await withProvider({ provider: 'degoog', key: '', endpoint: '' })
+  await withProvider({ provider: 'searxng', key: '', endpoint: 'https://searx.example.com' })
   const stub = stubFetch(() => new Response('rate limited by upstream', { status: 429 }))
   const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
   const res = await api.request(`/${s.token}/search`, { method: 'POST', body: JSON.stringify({ query: 'abc' }) })
@@ -274,8 +274,8 @@ test('抓取：长正文按窗口返回，startIndex 续读后面的部分', asy
 
 test('Pi 扩展：注册 web_search / web_fetch，参数交给面板校验，错误原文回到模型', async () => {
   const s = session()
-  await withProvider({ provider: 'degoog', key: '', endpoint: '' })
-  const stub = stubFetch(() => json({ results: [{ title: 'A', url: 'https://a.com/1', snippet: 'sa' }] }))
+  await withProvider({ provider: 'searxng', key: '', endpoint: 'https://searx.example.com' })
+  const stub = stubFetch(() => json({ results: [{ title: 'A', url: 'https://a.com/1', content: 'sa' }] }))
   const api = webSearchApi({ fetch: stub.fetch, lookup: publicDns })
   // 和 server/index.ts 一样：扩展请求 /api/web-search/...，路由本身挂在 /api/web-search 下
   const server = createServer(async (req, res) => {
@@ -387,7 +387,7 @@ test('deepseek：结果按 title / url / snippet 映射，摘要文本带上来�
   s.close()
 })
 
-test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到 Degoog', async () => {
+test('deepseek：没填密钥时 400 明确报错，不发请求也不回退到别的源', async () => {
   const s = session()
   await withProvider({ provider: 'deepseek', key: '   ', endpoint: '' })
   const stub = stubFetch(() => json({ results: [] }))

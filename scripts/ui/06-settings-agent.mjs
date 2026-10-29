@@ -36,7 +36,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
   // 输入到 state 是异步的：等值真的回显出来再切源，否则切源用的是旧 state
   for (let i = 0; i < 30 && (await addressInput.inputValue()) !== SEARX_ADDRESS; i++) await p.waitForTimeout(100)
   await providerSelect.click()
-  await p.getByRole('option', { name: /^Degoog/ }).click()
+  await p.getByRole('option', { name: /^Brave/ }).click()
   // 值从 state 重新渲染：先 waitFor 等它变空再断言，不在点完立刻读地址栏
   const waitAddressEmpty = () =>
     p

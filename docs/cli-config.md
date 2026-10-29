@@ -323,7 +323,7 @@ Pi 的「联网搜索」开关（`shared/clis/pi.json` 的 `options` 里 id 为 
 扩展本身不含密钥：请求打到面板的 `/api/web-search/<这一轮的随机地址>/search` 和 `/fetch`（和提问桥接共用同一个随机地址），
 面板按「设置 · 联网搜索」里的搜索源、密钥和地址代发。地址里的随机地址在路由里核对（`server/ask-mcp.ts` 的 `hasAskSession`），
 访问令牌打开时也能用，别的程序猜不到。地址守卫、参数规范化、各搜索源的请求和解析在 `shared/web-search.ts`
-（注册表 `SEARCH_PROVIDERS`：deepseek 默认（DeepSeek 官方 Search API，要 DeepSeek 的 API key，按次计费，没填密钥时直接报错不回退）、degoog、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
+（注册表 `SEARCH_PROVIDERS`：deepseek 默认（DeepSeek 官方 Search API，要 DeepSeek 的 API key，按次计费，没填密钥时直接报错不回退）、searxng、brave、tavily，新增一个源只加一条），路由在 `server/web-search.ts`。
 `web_fetch` 不分搜索源，始终由面板自己抓网页（不调 DeepSeek 的 fetch 接口）。
 
 参数和限制对齐 Command Code 的 Web 工具：`query`（至少 2 个字）/ `numResults`（默认 5、最多 10）/ `allowed_domains` / `blocked_domains`
