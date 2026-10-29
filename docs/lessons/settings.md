@@ -1,8 +1,8 @@
 ---
-paths: server/tasks.ts, shared/test-steps.ts, shared/test-steps.test.ts, web/src/components/projects/**, docs/agent-test-steps.md, scripts/e2e/12-parent-tests.mjs
+paths: server/tasks.ts, shared/test-steps.ts, shared/test-steps.test.ts, web/src/components/projects/**, docs/agent-test-steps.md, scripts/e2e/12-parent-tests.mjs, scripts/ui/07-projects.mjs
 ---
 
-# 项目设置怎么作用到执行
+# 项目设置
 
 ## 项目设置类配置在执行点现读，不靠保存时同步、不在任务上长缓存
 
@@ -10,3 +10,14 @@ paths: server/tasks.ts, shared/test-steps.ts, shared/test-steps.test.ts, web/src
 - 规则：不要做成「保存项目设置时遍历改写跑着的对话」（那是同步机制），也不要把项目对象挂在任务上跨轮缓存。改这类语义时同提交同步 `docs/agent-test-steps.md` 的「项目设置对进行中的对话生效」、设置页那句说明和 `shared/locales/en/` 的英文，否则界面还在说「改了不影响进行中的对话」。
 - 起因：用户报「项目设置里勾了禁止子对话执行，已经开始的子对话还是自己跑 e2e」（任务里存的是创建时的快照）；先按「策略位实时、内容仍快照」设计，用户纠正为「调用前先读配置判断怎么调用」。
 - 防线：`shared/test-steps.test.ts` 的「项目设置以项目当前为准，任务快照只在读不到项目时兜底」；`scripts/e2e/12-parent-tests.mjs` 的「改项目设置立即生效」。
+
+## 会被角色或后台改动的数据，弹窗打开时重新取
+
+- 规则：会被角色或后台改动的数据（如项目教训）别只用页面缓存，弹窗打开时重新请求合进草稿，否则 `record_lesson` 记的教训在项目设置里看不到。
+- 防线：人工。
+
+## 弹窗外的 AI 会话记住结果该存到哪个对象
+
+- 规则：关掉弹窗还在跑的 AI 会话（项目设置的 `AiSession`）要记下途中建好的对象（`projectId`），应用时打开那个对象；没保存的新建草稿暂存在弹窗外壳。不能靠重开空白的新建弹窗来应用，保存时会多建一个同名项目。
+- 起因：新建项目时 AI 初始化 → 关掉设置 → 点「查看推荐并应用」，多出同名项目、目录也丢了（0e1df58 修复）。
+- 防线：`scripts/ui/07-projects.mjs` 的「先创建再应用」「关掉设置再应用」。

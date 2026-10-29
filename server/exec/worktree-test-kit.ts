@@ -5,7 +5,7 @@
  * 准备为什么这么写：
  * - 测试进程和被测代码都不认外面的 git dir：createWorktree / mergeWorktree 这些函数内部
  *   用 process.env 跑 git，只清子进程的话，`git worktree add`、`git merge` 仍会落到共享仓库上
- *   （在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时会污染主仓库，见 docs/lessons/testing.md）。
+ *   （在 WSL 里带 GIT_DIR / GIT_WORK_TREE 跑测试时会污染主仓库，见 docs/lessons/e2e.md）。
  * - GIT_CONFIG_COUNT 是面板给后台命令注入的防推送配置（pushInsteadOf 指向不存在的协议），
  *   留着会让这里自己的 push / clone 失败；测试自己建仓库，不认外面的 git 配置。
  * - 独立目录和共用的依赖目录都建在 DATA_DIR 下：指到临时目录，别写进真实的数据目录。

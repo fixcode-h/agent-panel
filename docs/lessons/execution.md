@@ -1,5 +1,5 @@
 ---
-paths: server/exec/runner.ts, server/tasks.ts, server/exec/orphans.ts, server/exec/process.ts, shared/task.ts, shared/plan.ts, shared/plan.test.ts, web/src/components/tasks/ChildAskCard.tsx, server/assist.ts, server/designs.ts, server/exec/delivery.ts, server/exec/invoke.ts, server/exec/rpc/**, server/exec/hints.test.ts, web/src/lib/peer-dedupe.ts, scripts/e2e.mjs, scripts/fake-cli/fake-cli.mjs
+paths: server/exec/runner.ts, server/exec/delivery.ts, server/exec/hints.test.ts, server/exec/rpc/**, server/assist.ts, server/designs.ts, web/src/lib/peer-dedupe.ts, scripts/fake-cli/fake-cli.mjs
 ---
 
 # 一轮执行怎么收尾
@@ -18,21 +18,6 @@ paths: server/exec/runner.ts, server/tasks.ts, server/exec/orphans.ts, server/ex
 - 规则：任务页之外自己拼消息处（`server/assist.ts` 的 AI 创建 / 分析、`server/designs.ts` 的 UI 设计）和 runner 一样处理工具事件：`tool_result` 删掉 `running`、`tool_delta` 的 `snapshot` 直接替换输出，结束时（停止、超时、退出）收掉在跑的行；给 CLI 加字段时一起过。
 - 起因：Pi 的 `tool_execution_start` 带 `running: true`，c5e408d 只改了 runner，AI 分析一直转圈；任务页被打断时 `endTool` 没清 `running`。
 - 防线：`scripts/e2e.mjs` 的「工具结束后不再显示运行中」。
-
-## 停下要有原因，保活有上限，收口后不留进程
-
-- 规则：`stopTask(id, reason)` 的 `reason` 必填，只有用户点 `/stop` 传 `'user'`，其余按原因传（收尾、换 CLI、归档、删除、重启、页面切走、打断）；异常退出走失败，不归成停止。
-- 规则：会话「彻底完成」时不分独立分支都 `cancelWait/stopTask` + `await entry.done` + `background.stop`，worktree 回收只在 `isolated` 做；`awaitingUser` 超过 `keepAliveLimit` 时 `keepAliveVictims()` 停最久没用的，「正在看」只认前台开着的页面（`isViewing`，不是 `hasViewer`）。
-- 规则：任务收口后不能拿「进程还活着」当理由留着它：收尾落 `resolved` 后按 owner 再核对一次，另有启动 + 每小时的兜底回收（判定只用 `taskSettled`）；发出停止后确认退出才丢登记（杀不掉就写回）。
-- 规则：面板起的 CLI 记在 `run/cli-pids/<面板 pid>.json`，每个实例只写、只删自己那份（共用一份再读盘合并会被别的实例退出清空、并发登记覆盖）；清理只写已退出实例的文件，「面板还活着」要 pid 在**且**命令行像 `server.mjs` / `server/index.ts`（认 `./` 和引号路径，宁多认）。
-- 起因：12 个对话各留一个进程没被保活上限收住；共用目录的子对话 `resolved` 后 CLI 一直留着，用户报「4 小时前启动的进程没退」。
-- 防线：`server/presence.test.ts`、`shared/task-stage.test.ts` 的保活用例；`server/exec/orphans.test.ts` 的登记分账、启动清理、兜底回收、写回登记；`server/task-restart.test.ts` 的「已收口的不再拉起」。
-
-## 后台命令交出去不等于做完：没结果就一直转圈
-
-- 规则：后台命令那一行按输出里「还没拿到结果的编号」（`bgPendingIds`，不锚定开头）判断转圈，结果段带编号接在后面（`settleJobRow`）；跑得久、没输出要提醒对话；推送失败重试并留在对话里。命令一律静默跑，不新开窗口。见 ADR 0006。
-- 起因：带前缀的工具名被当成「运行命令」0.09 秒完成；Command Code 在结果前插 `<repair_note>`，锚定开头的匹配认不出编号，又显示完成；模型 `start cmd` 弹窗跑测试。
-- 防线：`server/background.test.ts`「那一行收口」「监管」；`web/src/lib/tasks.test.ts`。
 
 ## 一轮结束只发一次回调，result 和保活等待同出口
 
