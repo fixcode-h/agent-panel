@@ -121,9 +121,24 @@ export function useRunAuthor(run: ChatRun | undefined) {
 }
 
 /** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
-export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
+export function ChatModelPicker({
+  value,
+  onChange,
+  parts = 'all',
+}: {
+  value: ChatRun
+  onChange: (v: ChatRun) => void
+  /**
+   * 只画其中一段：Chat 页标题栏放「Agent · 模型」（run），输入框里只留思考强度（effort）（Chat.dc.html）；
+   * 不给时三个都画
+   */
+  parts?: 'all' | 'run' | 'effort'
+}) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
+  if (!usable.length)
+    return parts === 'effort' ? null : <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
+  const showRun = parts !== 'effort'
+  const showEffort = parts !== 'run'
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
@@ -133,16 +148,18 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
   const efforts = def ? defaultEffortOptions(def, defEffort, modelEfforts(def, run.model)) : []
   return (
     <div className="flex min-w-0 items-center">
-      <ChipSelect
-        title={t('对话用的 Agent')}
-        value={cli}
-        options={clisOpts}
-        // 换了 CLI，模型和思考强度回到那个 CLI 的默认
-        onChange={(c) => onChange({ cli: c, model: '', effort: '' })}
-        dot={cliColor}
-        className="max-w-[160px]"
-      />
-      {models.length > 0 && (
+      {showRun && (
+        <ChipSelect
+          title={t('对话用的 Agent')}
+          value={cli}
+          options={clisOpts}
+          // 换了 CLI，模型和思考强度回到那个 CLI 的默认
+          onChange={(c) => onChange({ cli: c, model: '', effort: '' })}
+          dot={cliColor}
+          className="max-w-[160px]"
+        />
+      )}
+      {showRun && models.length > 0 && (
         <ChipSelect
           title={t('模型')}
           value={run.model === defModel ? '' : run.model}
@@ -152,7 +169,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
           className="max-w-[200px]"
         />
       )}
-      {efforts.length > 1 && (
+      {showEffort && efforts.length > 1 && (
         <ChipSelect
           title={t('思考强度')}
           value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}

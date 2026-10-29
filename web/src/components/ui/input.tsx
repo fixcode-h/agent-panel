@@ -17,9 +17,20 @@ export const fieldClass =
   'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
   'outline-none transition-[border-color,box-shadow] focus:border-focus focus:ring-[3px] focus:ring-focus-soft'
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => <input ref={ref} className={cn(fieldClass, 'h-10', className)} {...props} />,
-)
+/** 输入框高度档：md 表单里的常规高度；sm 工具条、筛选行、表格单元格里的紧凑框（和 sm 按钮同高） */
+const fieldSizes = {
+  sm: 'h-8 px-2.5 text-[0.8125rem]',
+  md: 'h-10',
+}
+export type FieldSize = keyof typeof fieldSizes
+
+export const Input = forwardRef<
+  HTMLInputElement,
+  // 原生的 size（按字符数定宽）没人用，名字让给高度档
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & { size?: FieldSize }
+>(({ className, size = 'md', ...props }, ref) => (
+  <input ref={ref} className={cn(fieldClass, fieldSizes[size], className)} {...props} />
+))
 Input.displayName = 'Input'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
@@ -61,7 +72,10 @@ export function Select({
   title,
   placeholder,
   'aria-label': ariaLabel,
+  size = 'md',
 }: {
+  /** sm：紧凑的下拉框，和 Input size="sm"、sm 按钮同高；不传时和原来一样 */
+  size?: FieldSize
   /** 没选时显示的提示 */
   placeholder?: string
   /** 带 group 的选项按组显示 */
@@ -86,10 +100,11 @@ export function Select({
         aria-label={ariaLabel}
         className={cn(
           ghost
-            ? ghostTrigger
+            ? [ghostTrigger, size === 'sm' && 'h-7 text-[0.8125rem]']
             : [
                 fieldClass,
                 'flex h-9 items-center justify-between gap-2 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
+                size === 'sm' && fieldSizes.sm,
               ],
           'cursor-pointer text-left disabled:cursor-not-allowed disabled:opacity-60',
           className,

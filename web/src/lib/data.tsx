@@ -95,6 +95,7 @@ function sameTask(a: Task, b: Task) {
     helpersWorking(a) === helpersWorking(b) &&
     (a.parentAsks?.length ?? 0) === (b.parentAsks?.length ?? 0) &&
     a.archived === b.archived &&
+    a.pinned === b.pinned &&
     a.projectId === b.projectId &&
     a.parentTaskId === b.parentTaskId &&
     a.askedAt === b.askedAt &&

@@ -1051,6 +1051,8 @@ export const NewTaskInput = z.object({
   childAskUser: z.boolean().optional(),
   /** AI 分析开出的对话：记下是哪种分析（见 AnalysisKind） */
   analysis: AnalysisKind.optional(),
+  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」把修复建议发回它）；和对话无关的分析不填 */
+  analysisOf: z.string().max(100).optional(),
   /** 模型设计对话：挂上 Blender 工具，右栏多一个 3D 预览（见 docs/adr/0025-model-design-blender.md） */
   modelDesign: z.boolean().optional(),
   /**
@@ -1130,6 +1132,8 @@ export const TaskPatch = z
   .object({
     title: z.string().trim().min(1, t('标题不能为空')).max(80),
     archived: z.boolean(),
+    // 聊天置顶：侧栏聊天列表最上面单独一组，只是标记
+    pinned: z.boolean(),
     // 子对话「解决」：只是标记，不动 status、不停进程，随时能再打开
     resolved: z.boolean(),
     // 对话用的 CLI、模型和思考强度，执行中也能改，下一轮生效
@@ -1898,6 +1902,8 @@ export const TaskData = z.object({
   childAskUser: z.boolean().default(true),
   /** AI 分析开出的对话：哪种分析（见 AnalysisKind）；普通对话没有 */
   analysis: AnalysisKind.optional(),
+  /** AI 分析开出的对话：分析的是哪个对话（「在当前对话里修」发回它）；旧数据、和对话无关的分析没有 */
+  analysisOf: z.string().optional(),
   /** 模型设计对话：后台有一个 Blender，Agent 用 blender_python 工具建模，网页右栏实时预览（ADR 0025） */
   modelDesign: z.boolean().optional(),
   /** 对话时 Agent 参数的值 */
@@ -2099,6 +2105,8 @@ export const TaskData = z.object({
   childrenCli: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /** 置顶（Chat 页的聊天）：侧栏聊天列表最上面单独一组「置顶」，不影响排序时间；旧数据没有这一项，按没置顶算 */
+  pinned: z.boolean().optional(),
   /**
    * 进回收站的时刻：删除只做标记，任务记录、对话内容、独立分支、附件、对话目录都先留着，
    * 超过保留期（见 shared/task.ts 的 TRASH_RETENTION_DAYS）才由清理任务物理删除。

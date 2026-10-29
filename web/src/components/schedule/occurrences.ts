@@ -1,4 +1,12 @@
-import { isoWeekday, nextRunAt, SCHEDULE_WEEKDAYS, weekOccurrences, weekStartOf, willRunAgain } from '@shared/schedule'
+import {
+  isoWeekday,
+  nextRunAt,
+  scheduleEndMs,
+  SCHEDULE_WEEKDAYS,
+  weekOccurrences,
+  weekStartOf,
+  willRunAgain,
+} from '@shared/schedule'
 import type { Schedule } from '@shared/schedule'
 import { hhmm, pad2 } from '@shared/datetime'
 
@@ -45,19 +53,31 @@ export function occurrencesIn(list: Schedule[], from: number, days: number): Occ
   return out.sort((a, b) => a.at - b.at || a.s.name.localeCompare(b.s.name))
 }
 
-/** 接下来几次执行（详情面板的「接下来」）：第一次就是 at，之后按 nextRunAt 一次次往后推；不会再跑时为空 */
+/**
+ * 接下来几次执行（详情面板的「接下来」）：第一次就是 at，之后按 nextRunAt 一次次往后推；
+ * 不会再跑时为空，过了结束日期的不列
+ */
 export function upcomingRuns(s: Schedule, count = 4): number[] {
   if (!willRunAgain(s)) return []
   const first = Date.parse(s.at)
   if (!Number.isFinite(first)) return []
   const out = [first]
   if (s.repeat === 'once') return out
+  const end = scheduleEndMs(s)
   while (out.length < count) {
     const next = Date.parse(nextRunAt(s, out[out.length - 1]))
-    if (!Number.isFinite(next) || next <= out[out.length - 1]) break
+    if (!Number.isFinite(next) || next <= out[out.length - 1] || next >= end) break
     out.push(next)
   }
   return out
+}
+
+/**
+ * 计划块画多高用的时长：计划本身没有时长，取最近一次跑完的那次运行的耗时（运行记录新的在前）；
+ * 还没有跑完过的返回 0，日历按默认高度画
+ */
+export function lastDurationMs(s: Schedule): number {
+  return s.runs.find((r) => (r.durationMs ?? 0) > 0)?.durationMs ?? 0
 }
 
 /** 「10-29 周四 09:00」：详情面板里一次执行的时间，日期和星期都在，不用再换算 */

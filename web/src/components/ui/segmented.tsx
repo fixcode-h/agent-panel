@@ -8,7 +8,8 @@ export function Segmented<T extends string>({
   label,
   className,
   size = 'md',
-  fill,
+  fill = false,
+  tone = 'default',
 }: {
   value: T
   onChange: (v: T) => void
@@ -19,14 +20,22 @@ export function Segmented<T extends string>({
   className?: string
   /** sm：页头工具条里用（比如计划页的「周 / 月 / 列表」），和 sm 按钮同高 */
   size?: 'sm' | 'md'
-  /** 撑满整行、选项平分宽度（列表栏顶上的分页，例如角色页的「高级角色 / 基本角色」） */
+  /** 撑满一行、每段等宽（计划详情里的「重复」照设计稿就是这样）；不传时按文字宽度排 */
   fill?: boolean
+  /** canvas：放在深色画布（设计页画板、预览台）上，轨道和选中块用 --canvas-* 这组色，不跟主题变 */
+  tone?: 'default' | 'canvas'
 }) {
+  const canvas = tone === 'canvas'
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn('seg-track inline-flex max-w-full flex-wrap rounded-lg p-0.5', fill && 'flex w-full', className)}
+      className={cn(
+        'inline-flex max-w-full flex-wrap rounded-lg p-0.5',
+        canvas ? 'bg-canvas-bar text-canvas-fg' : 'seg-track',
+        fill && 'flex w-full',
+        className,
+      )}
     >
       {options.map((o) => (
         <button
@@ -38,9 +47,15 @@ export function Segmented<T extends string>({
           title={o.dot}
           className={cn(
             'inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-            fill && 'min-w-0 flex-1 justify-center',
+            fill && 'flex-1 justify-center px-2 whitespace-nowrap',
             size === 'sm' ? 'h-7 text-[0.75rem]' : 'h-8 text-[0.8125rem]',
-            value === o.id ? 'seg-thumb font-medium' : 'text-muted hover:text-fg',
+            value === o.id
+              ? canvas
+                ? 'bg-canvas-sel font-medium text-canvas-strong'
+                : 'seg-thumb font-medium'
+              : canvas
+                ? 'text-canvas-fg hover:text-canvas-strong'
+                : 'text-muted hover:text-fg',
           )}
         >
           {o.label}

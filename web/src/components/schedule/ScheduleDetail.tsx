@@ -1,120 +1,149 @@
-import { Check, ChevronRight, MoreHorizontal, Pencil, Play, Trash2, X } from 'lucide-react'
+import { useEffect } from 'react'
+import { Check, ChevronRight, MoreHorizontal, Play, Settings2, Trash2, X } from 'lucide-react'
 import {
-  isoWeekday,
+  durationLabel,
   outcomeLabel,
   outcomeOf,
   relativeFuture,
-  repeatLabel,
   runLabel,
+  scheduleEnded,
   SCHEDULE_WEEKDAYS,
   type Schedule,
+  type ScheduleRun,
 } from '@shared/schedule'
-import { hhmm, ymd } from '@shared/datetime'
 import { t } from '@shared/i18n'
+import { listableAgents } from '@shared/builtin/core'
+import { openAiFix } from '@/lib/ai-fix'
+import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
+import { EndChoice } from './EndChoice'
 import { dayTimeLabel, scheduleDot, upcomingRuns } from './occurrences'
+import { REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
 
 /** 字段名：小号、加粗、淡色，和设计稿的分组标签一致 */
-function Label({ children }: { children: React.ReactNode }) {
-  return <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{children}</span>
+function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
+  return (
+    <label htmlFor={htmlFor} className="text-[0.6875rem] font-semibold tracking-wide text-subtle">
+      {children}
+    </label>
+  )
 }
 
-/**
- * 一个字段：值放在浅底的格子里（不描边，靠底色分）。整格可点，点了打开编辑弹窗——
- * 改计划仍走编辑弹窗那一条保存路径（排期冲突检查、成环检查都在那里），这里只负责看
- */
-function Field({
-  label,
-  onEdit,
-  className,
-  children,
-}: {
-  label: string
-  onEdit: () => void
-  className?: string
-  children: React.ReactNode
-}) {
+/** 一个字段：标签在上、控件在下（照设计稿的 .fld） */
+function Field({ label, id, children }: { label: string; id?: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <Label>{label}</Label>
-      <button
-        type="button"
-        onClick={onEdit}
-        title={t('编辑')}
-        className={cn(
-          'flex min-h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg bg-field px-2.5 py-1.5 text-left text-[0.8125rem] transition-colors hover:bg-sel',
-          className,
-        )}
-      >
-        {children}
-      </button>
+      <Label htmlFor={id}>{label}</Label>
+      {children}
     </div>
   )
 }
 
-/** 每周的计划写清是哪几天；没勾星期时按 at 那天（和 shared/schedule 的 repeatDays 同一口径） */
-function repeatText(s: Schedule): string {
-  if (s.repeat !== 'weekly') return repeatLabel(s.repeat)
-  const at = new Date(s.at)
-  const days = s.weekdays.length ? s.weekdays : Number.isFinite(at.getTime()) ? [isoWeekday(at)] : []
-  const names = days.map((d) => SCHEDULE_WEEKDAYS[d - 1]?.label).filter(Boolean)
-  return names.length ? `${repeatLabel(s.repeat)} · ${names.join(t('、'))}` : repeatLabel(s.repeat)
-}
+/** 一次运行算不算「没跑成」：启动失败，或启动了但对话这一轮以失败结束——这两种给「AI 分析」 */
+const runFailed = (run: ScheduleRun) => run.event === 'fail' || (run.event === 'run' && !!run.failed)
 
 /**
- * 计划页右侧的详情面板（照设计稿）：开关、要做什么、项目、日期时间、重复、接下来几次、运行记录，
- * 底部「现在运行一次」和「编辑」。数据和操作都是页面传进来的，和列表卡片同一套。
+ * 计划页右侧的详情面板（照设计稿）：字段直接改——要做什么、项目、开始日期、时间、重复、结束、启停，
+ * 底部「现在运行一次」和「保存」（有改动才可点）。保存和编辑弹窗走同一个 useScheduleForm，
+ * 排期冲突、结束日期、依赖成环的校验都是那一套。上游和执行上限字段多、改得少，留在「更多设置」弹窗里。
  */
 export function ScheduleDetail({
   schedule: s,
+  schedules,
   now,
-  projectName,
-  agentName,
   upstreams,
   busy,
   taskTitle,
   onEdit,
   onRun,
-  onToggle,
   onDelete,
   onOpenTask,
   onClose,
+  onSaved,
+  onDirtyChange,
 }: {
   schedule: Schedule
+  /** 全部计划：保存前查依赖成环 */
+  schedules: Schedule[]
   now: number
-  projectName: string
-  agentName: string
   upstreams: string[]
   busy: boolean
   taskTitle: (taskId: string) => string
+  /** 打开编辑弹窗（上游、执行上限在那里改） */
   onEdit: () => void
   onRun: () => void
-  onToggle: (on: boolean) => void
   onDelete: () => void
   onOpenTask: (taskId: string) => void
   /** 窄屏时面板是滑出来的浮层，要能关掉；宽屏常驻，不给关闭按钮 */
   onClose: () => void
+  onSaved: (s: Schedule) => void
+  /** 有没有没保存的改动：页面切换到别的计划前据此确认 */
+  onDirtyChange: (dirty: boolean) => void
 }) {
-  const at = new Date(s.at)
-  const valid = Number.isFinite(at.getTime())
+  const { projects, agents } = useData()
+  const { form, set, setRepeat, setAtLocal, toggleWeekday, dirty, saving, save } = useScheduleForm({
+    schedule: s,
+    schedules,
+    onSaved,
+    inline: true,
+  })
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
+  // 面板没了（计划被删、切到列表）就不再有没保存的改动，别让页面一直以为还有
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
+
   const next = upcomingRuns(s)
+  const ended = scheduleEnded(s)
   const outcome = outcomeOf(s)
+  const date = form.atLocal.slice(0, 10)
+  const time = form.atLocal.slice(11, 16)
+  // 「子任务」不再作为可选角色展示，但老计划可能已经选过它：补一项显示名字（和编辑弹窗同一口径）
+  const pickable = listableAgents(agents)
+  const unpickable =
+    form.agentId && !pickable.some((a) => a.id === form.agentId) ? agents.find((a) => a.id === form.agentId) : undefined
+  const projectName = projects.find((p) => p.id === s.projectId)?.name ?? ''
+
+  /** 没跑成的那次交给 AI 分析：报错原文 + 计划的设置，归属跟着计划走（项目里的开项目对话，其余开 Chat） */
+  const analyze = (run: ScheduleRun) =>
+    openAiFix({
+      title: t('计划「{name}」没有跑成', { name: s.name }),
+      error: run.error || t('对话执行失败'),
+      context: [
+        t('计划：{name}', { name: s.name }),
+        t('到点时间：{time}', { time: run.at || run.happenedAt }),
+        t('项目：{name}', { name: projectName || t('聊天') }),
+        ...(run.taskId ? [t('启动的对话 id：{id}', { id: run.taskId })] : []),
+        '',
+        t('到点后执行的对话内容：'),
+        s.prompt,
+      ].join('\n'),
+      topic: 'schedule',
+      ...(s.projectId ? { home: { kind: 'project' as const, projectId: s.projectId } } : {}),
+    })
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <span aria-hidden className={cn('h-2.5 w-2.5 shrink-0 rounded-full', scheduleDot(s.id))} />
-        <h2 className={cn('min-w-0 flex-1 truncate text-[0.9375rem] font-semibold', !s.enabled && 'text-muted')}>
-          {s.name}
-        </h2>
+        {/* 名字也能直接改：平时看着是标题，悬停 / 聚焦才出底色 */}
+        <input
+          aria-label={t('名称')}
+          value={form.name}
+          onChange={(e) => set('name', e.target.value)}
+          className={cn(
+            'h-8 min-w-0 flex-1 truncate rounded-md bg-transparent px-1 -ml-1 text-[0.9375rem] font-semibold outline-none hover:bg-field focus:bg-field',
+            !form.enabled && 'text-muted',
+          )}
+        />
         <Switch
-          checked={s.enabled}
-          onCheckedChange={onToggle}
-          aria-label={s.enabled ? t('停用') : t('启用')}
-          title={s.enabled ? t('停用') : t('启用')}
+          checked={form.enabled}
+          onCheckedChange={(on) => set('enabled', on)}
+          aria-label={form.enabled ? t('停用') : t('启用')}
+          title={form.enabled ? t('停用') : t('启用')}
         />
         <Menu>
           <MenuTrigger asChild>
@@ -124,8 +153,8 @@ export function ScheduleDetail({
           </MenuTrigger>
           <MenuContent>
             <MenuItem onSelect={onEdit}>
-              <Pencil className="h-3.5 w-3.5" />
-              {t('编辑')}
+              <Settings2 className="h-3.5 w-3.5" />
+              {t('更多设置')}
             </MenuItem>
             <MenuItem danger onSelect={onDelete}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -146,35 +175,114 @@ export function ScheduleDetail({
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <Field label={t('要做什么')} onEdit={onEdit}>
-          <span className="shrink-0 rounded bg-sel px-1 text-[0.6875rem] text-subtle">
-            {agentName || t('跟随默认 CLI')}
-          </span>
-          <span className="min-w-0 truncate">{s.prompt}</span>
+        <Field label={t('要做什么')} id="schedule-detail-prompt">
+          <Textarea
+            id="schedule-detail-prompt"
+            rows={3}
+            className="text-[0.8125rem]"
+            value={form.prompt}
+            placeholder={t('交给 Agent 的一句话目标，例如：总结今天做的工作')}
+            onChange={(e) => set('prompt', e.target.value)}
+          />
+          <Select
+            className="h-8 text-[0.8125rem]"
+            value={form.agentId}
+            aria-label={t('用哪个角色')}
+            options={[
+              { value: '', label: t('不用角色（跟随默认 CLI）') },
+              ...pickable.map((a) => ({
+                value: a.id,
+                label: a.enabled ? a.name : t('{name}（已停用）', { name: a.name }),
+              })),
+              ...(unpickable
+                ? [{ value: unpickable.id, label: t('{name}（不可选）', { name: unpickable.name }) }]
+                : []),
+            ]}
+            onChange={(e) => set('agentId', e.target.value)}
+          />
         </Field>
-        <Field label={t('项目')} onEdit={onEdit}>
-          <span className="truncate">{projectName || t('聊天')}</span>
+        <Field label={t('项目')}>
+          <Select
+            className="h-8 text-[0.8125rem]"
+            value={form.projectId}
+            aria-label={t('项目')}
+            options={[
+              { value: '', label: t('聊天（不属于项目）') },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+            onChange={(e) => set('projectId', e.target.value)}
+          />
         </Field>
         <div className="grid grid-cols-2 gap-2.5">
-          <Field label={t('日期')} onEdit={onEdit} className="tabular-nums">
-            {valid ? ymd(at) : '—'}
+          <Field label={t('开始日期')} id="schedule-detail-date">
+            <Input
+              id="schedule-detail-date"
+              type="date"
+              className="h-8 text-[0.8125rem] tabular-nums dark:[color-scheme:dark]"
+              value={date}
+              onChange={(e) => e.target.value && setAtLocal(`${e.target.value}T${time || '09:00'}`)}
+            />
           </Field>
-          <Field label={t('时间')} onEdit={onEdit} className="font-mono tabular-nums">
-            {valid ? hhmm(at) : '—'}
+          <Field label={t('时间')} id="schedule-detail-time">
+            <Input
+              id="schedule-detail-time"
+              type="time"
+              className="h-8 font-mono text-[0.8125rem] tabular-nums dark:[color-scheme:dark]"
+              value={time}
+              onChange={(e) => e.target.value && date && setAtLocal(`${date}T${e.target.value}`)}
+            />
           </Field>
         </div>
-        <Field label={t('重复')} onEdit={onEdit}>
-          {repeatText(s)}
+        <Field label={t('重复')}>
+          <Segmented fill label={t('重复')} value={form.repeat} onChange={setRepeat} options={REPEAT_OPTIONS} />
         </Field>
+        {form.repeat === 'weekly' && (
+          <Field label={t('每周哪几天')}>
+            <div role="group" aria-label={t('每周哪几天')} className="flex flex-wrap gap-1.5">
+              {SCHEDULE_WEEKDAYS.map((d) => {
+                const on = form.weekdays.includes(d.id)
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={d.label}
+                    title={d.label}
+                    onClick={() => toggleWeekday(d.id)}
+                    className={cn(
+                      'grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[0.75rem] transition-colors',
+                      on ? 'bg-fg font-semibold text-bg' : 'bg-sel text-muted hover:text-fg',
+                    )}
+                  >
+                    {/* 圆里只放一个字（一、二…），完整的星期名在 aria-label 里 */}
+                    {d.label.slice(-1)}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
+        )}
+        {form.repeat !== 'once' && (
+          <Field label={t('结束')}>
+            <EndChoice compact value={form.endDate} onChange={(v) => set('endDate', v)} />
+          </Field>
+        )}
         {!!upstreams.length && (
-          <Field label={t('上游')} onEdit={onEdit}>
-            <span className="truncate">{upstreams.join(t('、'))}</span>
+          <Field label={t('上游')}>
+            <button
+              type="button"
+              onClick={onEdit}
+              title={t('更多设置')}
+              className="flex min-h-8 cursor-pointer items-center rounded-lg bg-field px-2.5 text-left text-[0.8125rem] transition-colors hover:bg-sel"
+            >
+              <span className="truncate">{upstreams.join(t('、'))}</span>
+            </button>
           </Field>
         )}
 
-        {/* 接下来几次：和服务端排期同一套规则推出来；停用或单次跑完时写清不会再跑 */}
+        {/* 接下来几次：按已保存的排期推出来（和服务端同一套规则）；过了结束日期写「已结束」 */}
         <section className="flex flex-col gap-1.5 rounded-xl bg-panel p-3">
-          <Label>{t('接下来')}</Label>
+          <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{t('接下来')}</span>
           {next.length ? (
             next.map((ms) => (
               <div key={ms} className="flex items-center gap-2 text-[0.78125rem]">
@@ -184,7 +292,9 @@ export function ScheduleDetail({
               </div>
             ))
           ) : (
-            <span className="text-[0.78125rem] text-subtle">{t('不会再次执行')}</span>
+            <span className="text-[0.78125rem] text-subtle">
+              {ended && s.enabled ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
+            </span>
           )}
         </section>
 
@@ -196,11 +306,12 @@ export function ScheduleDetail({
         )}
 
         <section className="flex flex-col gap-0.5">
-          <Label>{t('运行记录')}</Label>
+          <span className="text-[0.6875rem] font-semibold tracking-wide text-subtle">{t('运行记录')}</span>
           {s.runs.length ? (
             <ul className="flex flex-col">
               {s.runs.map((run, i) => {
-                const ok = run.event === 'run'
+                const failed = runFailed(run)
+                const ok = run.event === 'run' && !failed
                 return (
                   <li key={`${run.happenedAt}-${i}`} className="flex flex-col gap-0.5 py-1.5">
                     <div className="flex items-center gap-2 text-[0.78125rem]">
@@ -221,7 +332,25 @@ export function ScheduleDetail({
                         {dayTimeLabel(Date.parse(run.at || run.happenedAt))}
                         {run.manual && <span className="text-subtle"> · {t('手动执行')}</span>}
                       </span>
-                      {run.taskId ? (
+                      {/* 跑完的写耗时（旧记录、还没跑完的没有就不写）；没跑成的给「AI 分析」 */}
+                      {!!run.durationMs && !failed && (
+                        <span
+                          className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+                          title={t('耗时')}
+                        >
+                          {durationLabel(run.durationMs)}
+                        </span>
+                      )}
+                      {failed ? (
+                        <button
+                          type="button"
+                          onClick={() => analyze(run)}
+                          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[0.6875rem] text-danger hover:underline"
+                        >
+                          {t('失败 · AI 分析')}
+                          <ChevronRight className="h-3 w-3" />
+                        </button>
+                      ) : run.taskId ? (
                         <button
                           type="button"
                           onClick={() => onOpenTask(run.taskId)}
@@ -252,13 +381,14 @@ export function ScheduleDetail({
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t px-4 py-3">
+        {/* 按已保存的设置跑：改到一半没保存的不算 */}
         <Button size="sm" variant="secondary" disabled={busy} onClick={onRun}>
           <Play className="h-3.5 w-3.5" />
           {t('现在运行一次')}
         </Button>
-        <Button size="sm" className="ml-auto" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" />
-          {t('编辑')}
+        {dirty && <span className="ml-auto text-[0.6875rem] text-subtle">{t('有未保存的改动')}</span>}
+        <Button size="sm" className={cn(!dirty && 'ml-auto')} disabled={!dirty || saving} onClick={() => void save()}>
+          {t('保存')}
         </Button>
       </footer>
     </div>

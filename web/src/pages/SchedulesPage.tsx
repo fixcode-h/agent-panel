@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { toast } from '@/lib/toast'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { groupLabel, groupSchedules, nextToRun, SCHEDULE_TICK_MS, weekStartOf, type Schedule } from '@shared/schedule'
@@ -17,6 +17,7 @@ import { ScheduleEmpty } from '@/components/schedule/ScheduleEmpty'
 import { ScheduleMonth } from '@/components/schedule/ScheduleMonth'
 import { ScheduleOverview } from '@/components/schedule/ScheduleOverview'
 import { isoWeek, ScheduleWeek } from '@/components/schedule/ScheduleWeek'
+import { scheduleInputOf } from '@/components/schedule/use-schedule-form'
 
 const DEMO = !!import.meta.env.VITE_DEMO
 
@@ -31,19 +32,6 @@ function GroupHeading({ group, count }: { group: string; count: number }) {
     </h2>
   )
 }
-
-const toInput = (s: Schedule) => ({
-  name: s.name,
-  prompt: s.prompt,
-  projectId: s.projectId,
-  agentId: s.agentId,
-  repeat: s.repeat,
-  weekdays: s.weekdays,
-  at: s.at,
-  enabled: s.enabled,
-  dependsOn: s.dependsOn,
-  budget: s.budget,
-})
 
 type View = 'week' | 'month' | 'list'
 const VIEW_KEY = 'schedules:view'
@@ -95,6 +83,12 @@ export function SchedulesPage() {
   /** 窄屏上详情是滑出来的浮层：只有用户点了一条才打开 */
   const [detailOpen, setDetailOpen] = useState(false)
   const detailPane = usePaneWidth('schedule-detail', 380, 320, 560)
+  /** 详情面板里有没有没保存的改动：换到别的计划、切到列表前要先确认，不悄悄丢掉 */
+  const [detailDirty, setDetailDirty] = useState(false)
+  /** 等用户确认「放弃改动」之后要做的事 */
+  const [discard, setDiscard] = useState<(() => void) | null>(null)
+  const guard = (action: () => void) => (detailDirty ? setDiscard(() => action) : action())
+  const onDetailDirty = useCallback((d: boolean) => setDetailDirty(d), [])
 
   const load = async () => {
     const seq = ++loadSeq.current
@@ -128,7 +122,7 @@ export function SchedulesPage() {
 
   const toggle = async (s: Schedule, on: boolean) => {
     try {
-      saved(await api.updateSchedule(s.id, { ...toInput(s), enabled: on }))
+      saved(await api.updateSchedule(s.id, { ...scheduleInputOf(s), enabled: on }))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -164,10 +158,17 @@ export function SchedulesPage() {
   const buckets = list ? groupSchedules(list) : []
   const selected = list?.find((x) => x.id === selId) ?? (list ? (nextToRun(list) ?? list[0]) : undefined)
   const calendar = view !== 'list'
-  const select = (s: Schedule) => {
-    setSelId(s.id)
-    setDetailOpen(true)
-  }
+  const select = (s: Schedule) =>
+    guard(() => {
+      setSelId(s.id)
+      setDetailOpen(true)
+    })
+  // 开始改了就把当前这条钉住：没点选过时详情默认跟着「下一条要跑的」走，轮询后可能换成别的，改到一半的会被换掉
+  useEffect(() => {
+    if (detailDirty && selected && !selId) setSelId(selected.id)
+    // 只在开始改的那一刻钉一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailDirty])
 
   // 页头的翻页：周视图一次一周、月视图一次一月；标签和「第几周」跟着当前视图走
   const weekEnd = new Date(week)
@@ -246,7 +247,7 @@ export function SchedulesPage() {
             size="sm"
             label={t('视图')}
             value={view}
-            onChange={setView}
+            onChange={(v) => (v === 'list' ? guard(() => setView(v)) : setView(v))}
             options={[
               { id: 'week', label: t('周') },
               { id: 'month', label: t('月') },
@@ -317,7 +318,22 @@ export function SchedulesPage() {
           )}
         >
           <ResizeHandle pane={detailPane} label={t('拖动调整右栏宽度')} className="hidden lg:block" />
-          <ScheduleDetail {...cardProps(selected)} onClose={() => setDetailOpen(false)} />
+          <ScheduleDetail
+            key={selected.id}
+            schedule={selected}
+            schedules={list ?? []}
+            now={now}
+            upstreams={upstreamNames(selected)}
+            busy={busy === selected.id}
+            taskTitle={taskTitle}
+            onEdit={() => guard(() => setEdit(selected))}
+            onRun={() => void runNow(selected)}
+            onDelete={() => setDel(selected)}
+            onOpenTask={(taskId) => openTask(taskId, selected.projectId)}
+            onClose={() => guard(() => setDetailOpen(false))}
+            onSaved={saved}
+            onDirtyChange={onDetailDirty}
+          />
         </aside>
       )}
 
@@ -331,6 +347,19 @@ export function SchedulesPage() {
           onSaved={saved}
         />
       )}
+      <ConfirmDialog
+        open={!!discard}
+        title={t('放弃没有保存的改动？')}
+        description={t('详情面板里改过的设置还没有保存，离开后这些改动会丢掉。')}
+        confirmText={t('放弃改动')}
+        onOpenChange={(open) => !open && setDiscard(null)}
+        onConfirm={() => {
+          const action = discard
+          setDiscard(null)
+          setDetailDirty(false)
+          action?.()
+        }}
+      />
       <ConfirmDialog
         open={!!del}
         title={t('删除计划「{name}」？', { name: del?.name ?? '' })}

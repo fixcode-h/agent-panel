@@ -8,6 +8,7 @@ import {
   outcomeTitle,
   repeatLabel,
   runLabel,
+  scheduleEnded,
   whenLabel,
   type Schedule,
   type ScheduleGroup,
@@ -106,6 +107,7 @@ export function ScheduleCard({
                 {s.name}
               </h3>
               <Badge>{repeatLabel(s.repeat)}</Badge>
+              {!!s.endDate && s.repeat !== 'once' && <Badge>{t('到 {date} 结束', { date: s.endDate })}</Badge>}
             </div>
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>{projectName || t('聊天')}</span>
@@ -167,7 +169,10 @@ export function ScheduleCard({
               </span>
             </>
           ) : (
-            <span className="text-[0.9375rem] font-medium text-subtle">{t('不会再次执行')}</span>
+            <span className="text-[0.9375rem] font-medium text-subtle">
+              {/* 过了结束日期是用户定好的到此为止，和单次跑完、停用分开说 */}
+              {s.enabled && scheduleEnded(s) ? t('已结束（{date}）', { date: s.endDate }) : t('不会再次执行')}
+            </span>
           )}
         </p>
 

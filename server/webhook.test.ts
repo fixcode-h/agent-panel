@@ -17,6 +17,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   enabled: true,
   dependsOn: [],
   budget: { tokens: 0, minutes: 0 },
+  endDate: '',
   status: 'pending',
   lastRunAt: '',
   lastTaskId: '',

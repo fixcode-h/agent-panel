@@ -5802,6 +5802,8 @@ export function tasksApi(deps: {
     return c.json(e.task)
   })
 
+  /** 导入的任务上也能改的字段：只是标记，不碰执行 */
+  const MARK_KEYS = new Set(['title', 'archived', 'pinned'])
   routes.patch('/:id', async (c) => {
     const id = c.req.param('id')
     const p = TaskPatch.safeParse(await c.req.json())
@@ -5809,7 +5811,8 @@ export function tasksApi(deps: {
     const e = live.get(id)
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
-    if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
+    // 导入的任务只能看：标题、归档、置顶这类只是标记，照样能改
+    if (cur.imported && Object.keys(p.data).some((k) => !MARK_KEYS.has(k))) return bad(c, READONLY, 409)
     // 子对话标记完成：它的独立分支跟着删掉。改动还没合回原分支时不标，免得把没合的改动一起删了
     if (p.data.resolved === true && cur.parentTaskId) {
       // 用户点「解决」只是发起这一趟流转：判定和置完成在子对话那一侧，还有没收口的东西就拒绝并说清卡在哪一项，
@@ -5885,8 +5888,10 @@ export function tasksApi(deps: {
     if (askEffect.askUser !== undefined) await applyAskUser(task, askEffect.askUser, !!e?.task.working)
     // 已有的子对话跟着父对话一起开 / 关（引擎按各自的 askUser 判断，界面靠推送和定时刷新跟着变）
     if (askEffect.existingChildren !== undefined) await applyChildAskUser(task, askEffect.existingChildren)
-    // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
-    await store.update(id, task)
+    // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢。
+    // 只改置顶时不动列表时间：置顶只是标记，不该让这条聊天在别处（最近活动、未读）显得「刚更新过」
+    const onlyPin = Object.keys(p.data).every((k) => k === 'pinned')
+    await store.update(id, task, onlyPin ? { keepUpdatedAt: true } : undefined)
     if (!touchesRun) return c.json(task)
     const afterRun = runOf(task)
     const runChanged =

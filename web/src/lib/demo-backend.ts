@@ -67,7 +67,19 @@ import {
   type DataKind,
   type MemoryUsage,
 } from '@shared/data'
-import { alignScheduleAt, appendRun, sameMinute, Schedule, ScheduleInput, workdayTemplate } from '@shared/schedule'
+import {
+  alignScheduleAt,
+  appendRun,
+  nextRunAt,
+  sameMinute,
+  Schedule,
+  scheduleEnded,
+  ScheduleInput,
+  scheduleTimingError,
+  SCHEDULE_MISS_MS,
+  WORKDAY_PLAN,
+  workdayTemplate,
+} from '@shared/schedule'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage, subtreeTaskIds } from '@shared/run-usage'
 import {
@@ -1166,6 +1178,15 @@ function cliAction(id: string, action: CliInstallJob['action']) {
 
 /** 演示上传的附件内容（data URL），刷新页面后就没了 */
 export const demoUploads = new Map<string, string>()
+/** 演示数据里 Chat 页那条聊天附带的截图：路径固定、内容在这里登记，刷新后缩略图和右栏「附件」都还看得到 */
+const DEMO_CHAT_SHOT = '/demo/uploads/seed/报错截图.png'
+demoUploads.set(
+  DEMO_CHAT_SHOT,
+  'data:image/svg+xml,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270"><rect width="480" height="270" fill="#fbeae4"/><text x="240" y="140" fill="#b4452f" font-size="18" text-anchor="middle" font-family="monospace">Uncaught (in promise) …</text></svg>',
+    ),
+)
 
 /** 演示里「找回」的本机路径：非图片文件按名字给一个假路径，copy 用它演示拷贝状态 */
 const demoLocated = new Map<string, { name: string; size: number; mime: string }>()
@@ -1374,6 +1395,11 @@ function demoProjectFiles(
   }
   if (method === 'POST' && kind === 'new') {
     const full = base ? `${base}/${demoOneName(body.name)}` : demoOneName(body.name)
+    // 和正式后端一致：overwrite 时同名文件直接改写内容（Chat 右栏的「存到项目」用）
+    if (body.overwrite === true && DEMO_FILES.includes(full)) {
+      DEMO_CONTENTS[full] = text(body.content)
+      return { path: full, size: demoSize(DEMO_CONTENTS[full]) }
+    }
     if (demoExists(full)) fail('已经有一个同名的文件或目录了')
     DEMO_FILES.push(full)
     DEMO_CONTENTS[full] = text(body.content)
@@ -1918,10 +1944,31 @@ function demoProjectSkillsApi(method: string, seg: string[], query: URLSearchPar
   return view()
 }
 
-/** 演示里预置一条「今日工作」计划，打开计划页就不是空的 */
+/**
+ * 演示里预置一条「今日工作」计划，打开计划页就不是空的。
+ * 带前三天的运行记录（两次跑完、带耗时，一次启动失败）：详情面板的耗时、「AI 分析」入口和周视图里的块高度都有东西可看
+ */
 function demoSchedulesSeed(): Schedule[] {
   const tpl = workdayTemplate(Date.now())
   const now = new Date().toISOString()
+  /** 往前数 n 天的模板时刻（今天起算；模板的下一次可能已经是明天，不能从它往前数） */
+  const daysAgo = (n: number, plusMs = 0) => {
+    const d = new Date()
+    d.setHours(WORKDAY_PLAN.hour, WORKDAY_PLAN.minute, 0, 0)
+    d.setDate(d.getDate() - n)
+    return new Date(d.getTime() + plusMs).toISOString()
+  }
+  const done = (n: number, ms: number) => ({
+    at: daysAgo(n),
+    happenedAt: daysAgo(n, 1000),
+    event: 'run' as const,
+    manual: false,
+    taskId: '',
+    error: '',
+    endedAt: daysAgo(n, 1000 + ms),
+    durationMs: ms,
+    failed: false,
+  })
   return [
     Schedule.parse({
       ...tpl,
@@ -1929,14 +1976,26 @@ function demoSchedulesSeed(): Schedule[] {
       agentId: '',
       enabled: true,
       status: 'pending',
-      lastRunAt: '',
+      runs: [
+        done(1, 72_000),
+        done(2, 58_000),
+        {
+          at: daysAgo(3),
+          happenedAt: daysAgo(3, 1000),
+          event: 'fail',
+          manual: false,
+          taskId: '',
+          error: 'Claude Code 没有登录，启动对话失败（退出码 1）',
+        },
+      ],
+      // 和运行记录对得上：最近一次成功启动就是昨天那次
+      lastRunAt: daysAgo(1, 1000),
       lastTaskId: '',
       missedAt: '',
       lastError: '',
       blockedAt: '',
       blockedReason: '',
       lastDelivery: null,
-      runs: [],
       id: `demo-plan-${crypto.randomUUID()}`,
       createdAt: now,
       updatedAt: now,
@@ -1955,6 +2014,9 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   if (!id) {
     if (method === 'POST') {
       const input = ScheduleInput.parse(body)
+      // 和正式后端同一个校验：结束日期早于第一次执行时拦下
+      const timing = scheduleTimingError(input)
+      if (timing) return fail(timing)
       const now = new Date().toISOString()
       const item = Schedule.parse({
         ...input,
@@ -1987,7 +2049,12 @@ function demoSchedules(method: string, seg: string[], body: unknown): unknown {
   }
   if (method === 'PUT') {
     const parsed = ScheduleInput.parse(body)
+    const timing = scheduleTimingError(parsed)
+    if (timing) return fail(timing)
     const input = { ...parsed, at: alignScheduleAt(parsed) }
+    // 和正式后端一样：已结束的计划把结束日期往后改时，过期的 at 推到现在之后，不先记一次错过
+    if (scheduleEnded(cur) && !scheduleEnded(input) && Date.parse(input.at) < Date.now() - SCHEDULE_MISS_MS)
+      input.at = nextRunAt(input, Date.now())
     // 和正式后端一样：改了时间就重新回到待执行，还没跑的计划按钮变回「待执行」
     const next = {
       ...cur,
@@ -3161,7 +3228,8 @@ function tasksRoute(
     (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow'].includes(
       sub ?? '',
     ) ||
-      (method === 'PATCH' && Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived')))
+      (method === 'PATCH' &&
+        Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived' && k !== 'pinned')))
   )
     fail('这是导入的任务，只能查看，不能继续执行')
   // 删除 = 进回收站；permanent 有自己的一段（在下面），不能被这里先接走
@@ -4480,7 +4548,87 @@ async function seedTasks(d: Db) {
         task.awaitingUser = true
       }
     }
+    await seedChatRail(d, fe.id, back)
   }
+}
+
+/**
+ * Chat 页右栏的演示（Chat.dc.html）：一条带截图的提问，回复里有联网搜索、打开网页和两段代码，
+ * 右栏的「代码 / 来源 / 附件」三个页签都有内容；另一条置顶的聊天演示侧栏最上面的「置顶」组
+ */
+async function seedChatRail(d: Db, agentId: string, back: (t: Task, minutes: number) => void) {
+  const make = async (prompt: string) => {
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: '',
+        mode: 'chat',
+        workflowId: '',
+        agentId,
+        prompt,
+        attachments: [],
+        cli: '',
+        model: '',
+        effort: '',
+        isolate: false,
+        askUser: false,
+        params: {},
+      },
+      true,
+    )
+    await done
+    return task
+  }
+  const pinned = await make('周报写作助手')
+  pinned.pinned = true
+  back(pinned, 60 * 24 * 3)
+  const task = await make('这个报错是因为 use() 用错了吗？顺便讲讲它和 useEffect 取数有什么区别。')
+  task.title = 'React 19 的 use() 怎么用'
+  const user = task.messages.find((m) => m.role === 'user')
+  if (user) user.attachments = [{ name: '报错截图.png', path: DEMO_CHAT_SHOT, size: 48_213, mime: 'image/png' }]
+  const reply = task.messages.find((m) => m.role === 'agent')
+  if (reply) {
+    reply.tools = [
+      {
+        kind: 'web',
+        name: '网页搜索',
+        label: 'react.dev use() 文档',
+        detail: '',
+        output:
+          '1. use – React\nhttps://react.dev/reference/react/use\n2. Suspense – React\nhttps://react.dev/reference/react/Suspense\n3. facebook/react issue: use() re-suspends\nhttps://github.com/facebook/react/issues/27877',
+        ms: 1800,
+      },
+      { kind: 'web', name: '打开网页', label: 'https://react.dev/reference/react/use', detail: '', ms: 900 },
+    ]
+    reply.text = [
+      '是的。截图里的 Promise 写在组件里，**每次渲染都会新建一个**，use() 每次都拿到新的 Promise，于是一直挂起、反复重渲染。',
+      '',
+      '把 Promise 提到组件外面（或者交给父组件 / 缓存）就好：',
+      '',
+      '```tsx',
+      "import { use, Suspense } from 'react'",
+      '',
+      '// 在组件外创建，渲染之间是同一个 Promise',
+      "const userPromise = fetchUser('42')",
+      '',
+      'export function Profile() {',
+      '  const user = use(userPromise)',
+      '  return <h1>{user.name}</h1>',
+      '}',
+      '```',
+      '',
+      '用 useEffect 取数的老写法对照一下：',
+      '',
+      '```tsx',
+      'function ProfileOld() {',
+      '  const [user, setUser] = useState<User | null>(null)',
+      "  useEffect(() => void fetchUser('42').then(setUser), [])",
+      '  return user ? <h1>{user.name}</h1> : <Spinner />',
+      '}',
+      '```',
+    ].join('\n')
+  }
+  back(task, 20)
 }
 
 /** 对话里的报错和警告长什么样：一条已恢复的网络断开、一条 CLI 没有响应、一条额度用完（见 shared/alerts.ts） */

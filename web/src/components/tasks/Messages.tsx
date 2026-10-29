@@ -36,6 +36,7 @@ import { convStateText, deliveryText } from '@shared/task'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { stripLessonReview } from '@shared/lesson-review'
+import { stripDiagnosis } from '@shared/diagnosis'
 import { stripInitJson } from '@/lib/analysis-report'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ReplyHeader } from '@/components/ui/reply-header'
@@ -405,7 +406,7 @@ const MessageBody = memo(
           {m.text && (
             <Markdown
               text={(task?.analysis === 'init' ? stripInitJson : (x: string) => x)(
-                stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text)))),
+                stripDiagnosis(stripLessonReview(stripEvolution(stripDispatch(stripNext(m.text))))),
               )}
               teamNames={teamNames}
               live={live}

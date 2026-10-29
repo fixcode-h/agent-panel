@@ -740,6 +740,15 @@ export const api = {
   /** 在目录里新建文件；同名时后端拒绝，不会覆盖 */
   createProjectFile: (projectId: string, dir: string, name: string, content = '') =>
     request<{ path: string; size: number }>(`/project-files/${projectId}/new`, json('POST', { dir, name, content })),
+  /**
+   * 把一段内容存进项目（Chat 右栏的「存到项目」）：dir 是项目里的相对目录，缺的中间目录一并建好；
+   * 同名文件只有 overwrite 才改写，否则后端拒绝
+   */
+  saveProjectFile: (projectId: string, dir: string, name: string, content: string, overwrite: boolean) =>
+    request<{ path: string; size: number }>(
+      `/project-files/${projectId}/new`,
+      json('POST', { dir, name, content, parents: true, overwrite }),
+    ),
   /** 新建目录；同名时后端拒绝 */
   createProjectDir: (projectId: string, dir: string, name: string) =>
     request<{ path: string }>(`/project-files/${projectId}/mkdir`, json('POST', { dir, name })),
@@ -827,6 +836,8 @@ export const api = {
   renameTaskSummary: (id: string, title: string) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { title })),
   archiveTaskSummary: (id: string, archived: boolean) =>
     request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { archived })),
+  /** 聊天置顶 / 取消置顶：只是标记，侧栏聊天列表最上面单独一组 */
+  pinTaskSummary: (id: string, pinned: boolean) => request<Task>(`/tasks/${id}?summary=1`, json('PATCH', { pinned })),
   stopTaskSummary: (id: string) => request<Task>(`/tasks/${id}/stop?summary=1`, { method: 'POST' }),
   resumeTaskSummary: (id: string) => request<Task>(`/tasks/${id}/resume?summary=1`, json('POST', { latest: false })),
   discardWorktreeSummary: (id: string) => request<Task>(`/tasks/${id}/worktree/discard?summary=1`, json('POST', {})),

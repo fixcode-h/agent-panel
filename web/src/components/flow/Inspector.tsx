@@ -555,7 +555,10 @@ export function FlowInspector({
           '从节点右侧的圆点拖到另一个节点就能连线。右键按住拖动画布；左键在空白处拖出选框能选中多个节点，再拖其中一个就一起移动；选中后按 Delete 删除。',
         )}
       </p>
-      <ReadinessCard checks={checks} />
+      {/* 画布工具条的「就绪检查」按钮滚到这里 */}
+      <div data-flow-readiness className="scroll-mb-5">
+        <ReadinessCard checks={checks} />
+      </div>
     </div>
   )
 }

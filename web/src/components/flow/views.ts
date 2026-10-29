@@ -56,6 +56,7 @@ export function nodeViews(
         loose: !live.has(n.id),
         confirm: n.steps.length ? n.steps.some((s) => s.confirm) : !!n.hooks.confirm,
         count: units.length,
+        units: multi ? units.map((u) => ({ id: u.id, title: stepName(u) })) : undefined,
       }
       return [n.id, view]
     }),

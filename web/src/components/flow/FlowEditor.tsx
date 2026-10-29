@@ -3,15 +3,22 @@ import { ReactFlowProvider, useReactFlow } from '@xyflow/react'
 import { toast } from '@/lib/toast'
 import {
   Bot,
+  ChevronRight,
   Crown,
+  Hand,
   LayoutGrid,
+  ListChecks,
   Maximize2,
   Minimize2,
   PanelRightClose,
   PanelRightOpen,
+  Play,
   Plus,
+  Redo2,
   Sparkles,
   Trash2,
+  TriangleAlert,
+  Undo2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Agent, Flow, FlowNode, WorkflowInput } from '@shared/schema'
@@ -30,30 +37,37 @@ import {
 } from '@shared/flow'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
-import type { Check } from '@/lib/readiness'
+import { isReady, type Check } from '@/lib/readiness'
+import type { SaveStatus } from '@/lib/useAutosave'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
-import { menuItem } from '@/components/ui/menu'
+import { Menu, MenuContent, MenuItem, MenuTrigger, menuItem } from '@/components/ui/menu'
+import { SaveIndicator } from '@/components/layout/Detail'
+import { RunInProjectDialog } from '@/components/workflows/RunInProjectDialog'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas, smartFit } from './FlowCanvas'
 import { nodeViews, parseRef, refOptions } from './views'
 import { FlowInspector, Label, NodeInspector, type Team, type W } from './Inspector'
+import { useFlowHistory } from './history'
 
-function Editor({
-  w,
-  onChange,
-  main,
-  team,
-  checks,
-}: {
+type EditorProps = {
   w: W
   onChange: (p: Partial<WorkflowInput>) => void
   main?: Agent
   team: Team
   checks: Check[]
-}) {
+  /** 自动保存的状态：画布右上角显示，工作流没有手动保存 */
+  save: { status: SaveStatus; error: string; invalid?: string }
+  /** 「在项目里运行」新建任务之前，先把还没自动保存的改动存下去 */
+  prepare?: () => Promise<void>
+}
+
+/** 浮动工具条里的图标按钮：和画布上其他浮动面板同一套尺寸 */
+const toolBtn = 'h-8 w-8'
+
+function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps) {
   const { agents, workflows } = useData()
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
@@ -86,7 +100,57 @@ function Editor({
   const flow = getFlow(w, flowId) ?? entryFlow(w)
   const isEntry = flow.id === entryFlow(w).id
 
-  const setFlow = (f: Flow) => onChange({ flows: w.flows.map((x) => (x.id === f.id ? f : x)) })
+  // 撤销 / 重做：改 flows 的都经过 change，先把改动前的 flows 记进历史（每个工作流一份，只在内存里）
+  const hist = useFlowHistory(w.id)
+  // 撤销后属性栏重新挂载，输入框里不留撤销前的内容
+  const [rev, setRev] = useState(0)
+  const change = (p: Partial<WorkflowInput>, key?: string) => {
+    if (p.flows) hist.record(w.flows, key)
+    onChange(p)
+  }
+  const setFlow = (f: Flow, key?: string) => change({ flows: w.flows.map((x) => (x.id === f.id ? f : x)) }, key)
+  // 属性栏里打字时（焦点在输入框里）连续的改动合成一步；点按钮、开关这类改动各算一步
+  const typing = (id: string) => {
+    const el = document.activeElement
+    return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? `edit:${id}` : undefined
+  }
+  const step = (dir: 'undo' | 'redo') => {
+    const flows = dir === 'undo' ? hist.undo(w.flows) : hist.redo(w.flows)
+    if (!flows) return
+    // 撤销到别的流程里的改动（例如新建子流程）：当前流程没了就回到主流程，getFlow 找不到时自己会退回
+    onChange({ flows })
+    setRev((r) => r + 1)
+  }
+  // 快捷键 Ctrl/⌘+Z 撤销、Ctrl/⌘+Shift+Z（或 Ctrl+Y）重做；输入框里留给浏览器自己的撤销，弹窗开着时不处理
+  const keys = useRef(step)
+  keys.current = step
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented) return
+      const k = e.key.toLowerCase()
+      if (k !== 'z' && k !== 'y') return
+      const el = e.target as HTMLElement | null
+      if (el?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return
+      if (document.querySelector('[role=dialog], [role=alertdialog], [role=menu]')) return
+      e.preventDefault()
+      keys.current(k === 'y' || e.shiftKey ? 'redo' : 'undo')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  // 平移模式：左键在空白处拖动画布（默认左键拉选框、右键拖画布）
+  const [pan, setPan] = useState(false)
+  const [running, setRunning] = useState(false)
+  const ready = isReady(checks)
+  // 就绪检查在属性栏「流程」那一页的最下面：回到那一页、展开属性栏，再滚过去
+  const showChecks = () => {
+    setSelected('')
+    setInspector(true)
+    setTimeout(
+      () => document.querySelector('[data-flow-readiness]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+      60,
+    )
+  }
   const switchFlow = (id: string) => {
     setFlowId(id)
     setSelected('')
@@ -138,7 +202,7 @@ function Editor({
     let i = 1
     while (names.has(t('子流程 {n}', { n: i }))) i++
     const f = newFlow(t('子流程 {n}', { n: i }))
-    onChange({ flows: [...w.flows, f] })
+    change({ flows: [...w.flows, f] })
     setFlowId(f.id)
     setSelected(START)
   }
@@ -152,13 +216,14 @@ function Editor({
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={box} className="relative flex h-[520px] min-h-0 bg-panel lg:h-auto lg:flex-1">
+        <div ref={box} className="@container relative flex h-[520px] min-h-0 bg-panel lg:h-auto lg:flex-1">
           <FlowCanvas
             key={flow.id}
             flow={flow}
             views={views}
             startSub={isEntry ? t('主流程') : t('子流程')}
             editable
+            panMode={pan}
             selected={selected}
             onSelect={setSelected}
             onChange={setFlow}
@@ -177,95 +242,190 @@ function Editor({
             }}
             className="flex-1"
           />
-          {/* 画布上的浮动面板（照设计稿）：左上切换流程，右上加节点和画布操作；容器本身不吃点击，空白处照常拖画布 */}
+          {/* 画布上的浮动面板（照设计稿）：左上是位置和撤销重做、流程切换，右上是保存状态和「在项目里运行」，
+              底部中间是画布工具条；容器本身不吃点击，空白处照常拖画布 */}
           <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2 md:inset-x-4 md:top-4">
-            <div
-              role="tablist"
-              aria-label={t('流程')}
-              className="pointer-events-auto flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop"
+            <div className="flex min-w-0 flex-wrap items-start gap-2">
+              <div className="pointer-events-auto flex h-10 max-w-full min-w-0 items-center gap-1 rounded-[10px] bg-card py-1 pr-1 pl-3 shadow-pop">
+                <WorkflowIcon className="h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
+                {/* 画布窄时（属性栏拉宽、小屏）省掉「工作流 ›」，几块浮动面板尽量排在一行 */}
+                <span className="ml-1 hidden shrink-0 text-[0.8125rem] text-subtle @4xl:inline">{t('工作流')}</span>
+                <ChevronRight className="hidden h-3 w-3 shrink-0 text-subtle @4xl:block" aria-hidden />
+                <span className="mr-1.5 min-w-0 truncate text-[0.8125rem] font-semibold">
+                  {w.name || t('未命名工作流')}
+                </span>
+                <span aria-hidden className="h-5 w-px shrink-0 bg-line" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={toolBtn}
+                  disabled={!hist.canUndo}
+                  onClick={() => step('undo')}
+                  aria-label={t('撤销')}
+                  title={t('撤销（Ctrl+Z）')}
+                >
+                  <Undo2 className="h-[15px] w-[15px]" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={toolBtn}
+                  disabled={!hist.canRedo}
+                  onClick={() => step('redo')}
+                  aria-label={t('重做')}
+                  title={t('重做（Ctrl+Shift+Z）')}
+                >
+                  <Redo2 className="h-[15px] w-[15px]" />
+                </Button>
+              </div>
+              <div
+                role="tablist"
+                aria-label={t('流程')}
+                className="pointer-events-auto flex min-h-10 max-w-full min-w-0 flex-wrap items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop"
+              >
+                <WorkflowIcon className="mx-1.5 h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
+                {w.flows.map((f) => {
+                  const on = f.id === flow.id
+                  const entry = f.id === entryFlow(w).id
+                  return (
+                    <button
+                      key={f.id}
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => switchFlow(f.id)}
+                      className={cn(
+                        'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 text-[0.8125rem] transition-colors',
+                        on ? 'bg-sel font-semibold text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                      )}
+                    >
+                      {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />}
+                      <span className="truncate">{flowLabel(f, w)}</span>
+                      <span className="font-mono text-[0.6875rem] font-normal text-subtle">{f.nodes.length}</span>
+                    </button>
+                  )
+                })}
+                <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+                <button
+                  onClick={addFlow}
+                  disabled={w.flows.length >= 20}
+                  className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[0.8125rem] text-muted hover:bg-sel/70 hover:text-fg disabled:opacity-40"
+                  title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('子流程')}
+                </button>
+              </div>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              {/* 工作流是自动保存的，这里只显示状态，不放假的「保存」按钮 */}
+              <div className="pointer-events-auto hidden h-8 items-center rounded-[8px] bg-card px-2.5 shadow-pop @3xl:flex">
+                <SaveIndicator {...save} />
+              </div>
+              <Button size="sm" className="pointer-events-auto shadow-pop" onClick={() => setRunning(true)}>
+                <Play className="h-3 w-3" fill="currentColor" />
+                {t('在项目里运行')}
+              </Button>
+            </div>
+          </div>
+          {/* 底部工具条：只放有真实功能的按钮（平移、加节点、自动排列、就绪检查、全屏、属性栏、运行） */}
+          <div
+            role="toolbar"
+            aria-label={t('画布工具')}
+            className="absolute bottom-3 left-16 z-10 flex h-11 items-center @3xl:left-1/2 @3xl:-translate-x-1/2 gap-0.5 rounded-[12px] bg-card px-1.5 shadow-pop md:bottom-4"
+          >
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(toolBtn, pan && 'bg-sel text-fg')}
+              aria-pressed={pan}
+              onClick={() => setPan(!pan)}
+              aria-label={t('平移')}
+              title={pan ? t('平移模式：左键拖动画布（再点一下回到框选）') : t('平移模式：左键拖动画布')}
             >
-              <WorkflowIcon className="mx-1.5 h-[15px] w-[15px] shrink-0 text-subtle" aria-hidden />
-              {w.flows.map((f) => {
-                const on = f.id === flow.id
-                const entry = f.id === entryFlow(w).id
-                return (
-                  <button
-                    key={f.id}
-                    role="tab"
-                    aria-selected={on}
-                    onClick={() => switchFlow(f.id)}
-                    className={cn(
-                      'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-[7px] px-2.5 text-[0.8125rem] transition-colors',
-                      on ? 'bg-sel font-semibold text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-                    )}
-                  >
-                    {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />}
-                    <span className="truncate">{flowLabel(f, w)}</span>
-                    <span className="font-mono text-[0.6875rem] font-normal text-subtle">{f.nodes.length}</span>
-                  </button>
-                )
-              })}
-              <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-              <button
-                onClick={addFlow}
-                disabled={w.flows.length >= 20}
-                className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[7px] px-2 text-[0.8125rem] text-muted hover:bg-sel/70 hover:text-fg disabled:opacity-40"
-                title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {t('子流程')}
-              </button>
-            </div>
-            <div className="pointer-events-auto flex h-10 items-center gap-0.5 rounded-[10px] bg-card p-1 shadow-pop">
-              <Button variant="ghost" size="sm" onClick={() => add('agent')}>
-                <Bot className="h-3.5 w-3.5" />
-                {t('角色节点')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => add('flow')} title={t('执行另一个流程的节点')}>
-                <WorkflowIcon className="h-3.5 w-3.5" />
-                {t('流程节点')}
-              </Button>
-              <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8"
-                onClick={() => {
-                  setFlow(autoLayout(flow))
-                  fit()
-                }}
-                aria-label={t('自动排列')}
-                title={t('自动排列')}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8"
-                onClick={() => {
-                  setFull(!full)
-                  fit()
-                }}
-                aria-label={full ? t('退出全屏') : t('全屏编辑')}
-                title={full ? t('退出全屏（Esc）') : t('全屏编辑')}
-              >
-                {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="hidden h-8 w-8 lg:inline-flex"
-                onClick={() => {
-                  setInspector(!inspector)
-                  fit()
-                }}
-                aria-label={inspector ? t('收起属性栏') : t('显示属性栏')}
-                title={inspector ? t('收起属性栏') : t('显示属性栏')}
-              >
-                {inspector ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-              </Button>
-            </div>
+              <Hand className="h-4 w-4" />
+            </Button>
+            <Menu>
+              <MenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={toolBtn}
+                  aria-label={t('添加节点')}
+                  title={t('添加节点')}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </MenuTrigger>
+              <MenuContent align="start">
+                <MenuItem onSelect={() => add('agent')}>
+                  <Bot className="h-4 w-4" />
+                  {t('角色节点')}
+                </MenuItem>
+                <MenuItem onSelect={() => add('flow')} title={t('执行另一个流程的节点')}>
+                  <WorkflowIcon className="h-4 w-4" />
+                  {t('流程节点')}
+                </MenuItem>
+              </MenuContent>
+            </Menu>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={toolBtn}
+              onClick={() => {
+                setFlow(autoLayout(flow))
+                fit()
+              }}
+              aria-label={t('自动排列')}
+              title={t('自动排列')}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(toolBtn, !ready && 'text-warning hover:text-warning')}
+              onClick={showChecks}
+              aria-label={t('就绪检查')}
+              title={ready ? t('就绪检查：全部通过') : t('就绪检查：有没通过的项')}
+            >
+              {ready ? <ListChecks className="h-4 w-4" /> : <TriangleAlert className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={toolBtn}
+              onClick={() => {
+                setFull(!full)
+                fit()
+              }}
+              aria-label={full ? t('退出全屏') : t('全屏编辑')}
+              title={full ? t('退出全屏（Esc）') : t('全屏编辑')}
+            >
+              {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(toolBtn, 'hidden lg:inline-flex')}
+              onClick={() => {
+                setInspector(!inspector)
+                fit()
+              }}
+              aria-label={inspector ? t('收起属性栏') : t('显示属性栏')}
+              title={inspector ? t('收起属性栏') : t('显示属性栏')}
+            >
+              {inspector ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </Button>
+            <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+            <Button
+              size="icon-sm"
+              className="h-8 w-9"
+              onClick={() => setRunning(true)}
+              aria-label={t('运行')}
+              title={t('在项目里运行')}
+            >
+              <Play className="h-3.5 w-3.5" fill="currentColor" />
+            </Button>
           </div>
           {drop && (
             <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
@@ -379,13 +539,13 @@ function Editor({
         <div className="min-h-0 lg:flex-1 lg:overflow-y-auto">
           {node ? (
             <NodeInspector
-              key={node.id}
+              key={`${node.id}:${rev}`}
               w={w}
               flow={flow}
               node={node}
               main={main}
               team={team}
-              setFlow={setFlow}
+              setFlow={(f) => setFlow(f, typing(node.id))}
               onSelect={setSelected}
             />
           ) : selEdge ? (
@@ -437,17 +597,25 @@ function Editor({
             </div>
           ) : (
             <FlowInspector
+              key={rev}
               w={w}
               flow={flow}
               atEnd={selected === END}
               checks={checks}
-              setFlow={setFlow}
-              patch={onChange}
+              setFlow={(f) => setFlow(f, typing(`flow:${f.id}`))}
+              patch={change}
               onSwitchFlow={switchFlow}
             />
           )}
         </div>
       </aside>
+      <RunInProjectDialog
+        open={running}
+        onOpenChange={setRunning}
+        workflow={{ id: w.id, name: w.name }}
+        notReady={ready ? undefined : t('就绪检查还有没通过的项，运行时可能出错')}
+        prepare={prepare}
+      />
     </div>
   )
 }
@@ -477,13 +645,7 @@ function freeSpot(flow: Flow, x0: number, y0: number) {
   return { x: Math.round(x0), y: Math.round(y0) }
 }
 
-export function FlowEditor(props: {
-  w: W
-  onChange: (p: Partial<WorkflowInput>) => void
-  main?: Agent
-  team: Team
-  checks: Check[]
-}) {
+export function FlowEditor(props: EditorProps) {
   return (
     <ReactFlowProvider>
       <Editor {...props} />

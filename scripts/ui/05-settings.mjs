@@ -90,6 +90,17 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await sample.getByRole('tab', { name: /代码审查/ }).click()
   await sample.getByRole('button', { name: '关闭页签' }).first().click()
   if ((await sample.getByRole('tab').count()) !== 2) errors.push('设置-组件：关掉示例页签后应该剩 2 个页签')
+  // 第二批通用部件：样例都在；图标开关用 aria-pressed 报状态，多选小块点一下要翻转
+  await check(p, '设置-组件-新部件', ['IconButton', 'ChipGroup', 'Progress', 'Sheet', 'Canvas · on-canvas'])
+  {
+    const wrap = p.getByRole('button', { name: '自动换行' })
+    await wrap.click()
+    if ((await wrap.getAttribute('aria-pressed')) !== 'true')
+      errors.push('设置-组件：点「自动换行」图标开关后应该是按下状态')
+    const tue = p.getByRole('group', { name: '示例多选小块' }).getByRole('button', { name: '周二' })
+    await tue.click()
+    if ((await tue.getAttribute('aria-pressed')) !== 'true') errors.push('设置-组件：多选小块点「周二」后应该选中')
+  }
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   // 内存曲线：两路数据、采样间隔、AI 分析入口都在；右键往右拖能看更早的采样，再点回最新

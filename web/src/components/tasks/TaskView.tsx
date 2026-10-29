@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { t } from '@shared/i18n'
 import { ANCHOR_RETRY_MS, ANCHOR_TRIES, jumpToMessage } from '@/lib/message-anchor'
 import { expandQuotes, useQuoteTarget } from '@/lib/quote'
@@ -47,6 +48,7 @@ import {
   Copy,
   ClipboardList,
   PictureInPicture2,
+  Upload,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { ProcessMenu } from './ProcessPanel'
@@ -138,6 +140,7 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { ConversationTabs } from './ConversationTabs'
+import { ChatRail, useChatRail } from './ChatRail'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { JobDialog, type JobTarget } from './JobDialog'
 import { ChildListCtx, PaneNavCtx } from './child-open'
@@ -405,6 +408,10 @@ function writeStored(key: string, value: string) {
   }
 }
 
+/** Chat 页右栏（代码 / 来源 / 附件）收起过就记一笔：所有聊天共用一个开关，默认开着 */
+const CHAT_RAIL_KEY = 'chat-rail'
+const NO_MESSAGES: TaskMessage[] = []
+
 const readPaneChild = (taskId: string) => readStored(paneChildKey(taskId))
 const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) || 0
 /** 文件面板收没收起按对话记在本地：右栏「项目文件 / 本对话改动」默认开着，用户收起过才记一笔 */
@@ -434,7 +441,15 @@ export function TaskView({
   taskId: string
   project?: Project
   /** 放在弹窗里（例如「AI 处理」）：标题栏右边加上弹窗自己的按钮；要跳到别的页面时先收起弹窗 */
-  embed?: { actions: React.ReactNode; onLeave: () => void }
+  embed?: {
+    actions: React.ReactNode
+    onLeave: () => void
+    /**
+     * 弹窗标题栏里留给对话操作的位置（AI 分析窗口）：给了就不画对话自己的页签行（标题和弹窗标题栏重复），
+     * 状态和操作按钮挂到这里；中间开着子对话、运行页签时仍画页签行，要靠它切回来
+     */
+    slot?: HTMLElement | null
+  }
   /** 放在对话页右侧的子对话栏里：不画自己的右栏，标题栏加上关闭按钮 */
   pane?: boolean
   onClose?: () => void
@@ -611,8 +626,16 @@ export function TaskView({
   // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候
   const [forceAsk, setForceAsk] = useState(false)
   // Agent 输出里点了文件路径：在弹窗里看文件内容
-  const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
+  const [fileTarget, setFileTarget] = useState<{ path: string; line?: number; local?: boolean } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
+  // Chat 页（没有项目的聊天）的右栏：从对话里抽出的代码、来源、附件，都没有时右栏开关禁用
+  const chatRail = useChatRail(task?.messages ?? NO_MESSAGES)
+  const [chatRailOn, setChatRailOn] = useState(() => readStored(CHAT_RAIL_KEY) !== 'closed')
+  const toggleChatRail = () =>
+    setChatRailOn((v) => {
+      writeStored(CHAT_RAIL_KEY, v ? 'closed' : '')
+      return !v
+    })
   // 后台命令行的标题点了：在顶层打开这条命令的窗口。挂在页面顶层而不是运行区那一行里，
   // 命令跑完那一行会消失，窗口跟着行卸载的话用户正好看不到最终输出
   const [jobTarget, setJobTarget] = useState<JobTarget | null>(null)
@@ -1200,6 +1223,9 @@ export function TaskView({
 
   // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
   const noFiles = !task.projectId
+  // Chat 页的聊天换成自己的标题栏和右栏（Chat.dc.html）；项目里的对话照旧用页签条。
+  // 聊天派出了子对话或开着运行页签时也退回页签条，那些页签要有地方放
+  const chatPage = noFiles && !pane && !embed && task.mode === 'chat' && !children.length && !openRun
   // 这一轮没在跑时到底在等什么：等后台命令、等子任务、等工作流，还是真停在等下一句。
   // 统一用 shared/task 的 childWait（子对话栏、交给父对话的上报用的是同一个），不在这里另写一套
   // 「有没有东西在跑」——以前只看 awaitingUser，子任务还在跑也写「等待你的下一条消息」
@@ -1533,7 +1559,8 @@ export function TaskView({
                   }
             }
           />
-          {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} />}
+          {/* Chat 页的 CLI 和模型挪到标题栏，输入框里只留思考强度 */}
+          {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} parts={chatPage ? 'effort' : 'all'} />}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">
               {working
@@ -1683,31 +1710,9 @@ export function TaskView({
       )}
     </>
   )
-  const headerNav = (
-    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
-      {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
-      {!pane && (
-        <>
-          {/* 项目名点开是项目下的对话；「打开项目」在浮层底部 */}
-          <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />
-          <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
-        </>
-      )}
-      {/* 右栏打开子对话：标题左边给一个下拉，和消息流里的入口一样列出父对话的全部子对话，
-          点一项就地切换；列表中用外层（父对话）的那份数据，当前这一项带勾选 */}
-      {pane && task.parentTaskId && outerNav?.child && (
-        <ChildSwitcher list={outerChildren} current={task.id} onOpen={(id) => outerNav?.child?.(id)} className="ml-1" />
-      )}
-      {/* 标题前的状态和侧栏、项目首页同一个判定（taskState）：自己在跑、在等子对话 / 子任务 /
-          后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
-      <TaskStatusIcon
-        status={task.status}
-        working={taskBusy(task)}
-        spin={taskBusy(task)}
-        waiting={taskState(task) === 'needs'}
-        label={taskWaitText(task) || undefined}
-        className="ml-1"
-      />
+  // 标题（双击改名）：对话页签条里、子对话面板的标题栏、Chat 页的标题栏共用
+  const titleNode = (
+    <>
       {renaming !== null ? (
         <input
           autoFocus
@@ -1736,6 +1741,34 @@ export function TaskView({
           </h2>
         </>
       )}
+    </>
+  )
+  const headerNav = (
+    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
+      {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
+      {!pane && (
+        <>
+          {/* 项目名点开是项目下的对话；「打开项目」在浮层底部 */}
+          <ProjectSwitch project={project} currentTaskId={task.id} onGo={go} />
+          <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
+        </>
+      )}
+      {/* 右栏打开子对话：标题左边给一个下拉，和消息流里的入口一样列出父对话的全部子对话，
+          点一项就地切换；列表中用外层（父对话）的那份数据，当前这一项带勾选 */}
+      {pane && task.parentTaskId && outerNav?.child && (
+        <ChildSwitcher list={outerChildren} current={task.id} onOpen={(id) => outerNav?.child?.(id)} className="ml-1" />
+      )}
+      {/* 标题前的状态和侧栏、项目首页同一个判定（taskState）：自己在跑、在等子对话 / 子任务 /
+          后台命令 / 工作流都转圈，有没回复的提问、请求换成提问图标 */}
+      <TaskStatusIcon
+        status={task.status}
+        working={taskBusy(task)}
+        spin={taskBusy(task)}
+        waiting={taskState(task) === 'needs'}
+        label={taskWaitText(task) || undefined}
+        className="ml-1"
+      />
+      {titleNode}
       {headerBadges}
     </nav>
   )
@@ -1954,6 +1987,68 @@ export function TaskView({
     </>
   )
 
+  // Chat 页（没有项目的聊天）的标题栏（Chat.dc.html）：标题，右边「Agent · 模型」、导出、开关右栏
+  const chatRailShown = chatPage && chatRailOn && !chatRail.empty && !reportOn && !reportCover
+  const chatHeader = (
+    <header
+      className={cn(
+        'flex h-12 shrink-0 items-center gap-1.5 border-b px-3 transition-colors md:pl-4',
+        scrolled ? 'border-line' : 'border-transparent',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-1 text-[0.875rem] [&_h2]:font-semibold">
+        <TaskStatusIcon
+          status={task.status}
+          working={taskBusy(task)}
+          spin={taskBusy(task)}
+          waiting={taskState(task) === 'needs'}
+          label={taskWaitText(task) || undefined}
+          className="shrink-0"
+        />
+        {titleNode}
+        {headerBadges}
+      </div>
+      {/* 不用角色的聊天在这里换 CLI 和模型（思考强度留在输入框里）；用了角色的只写是谁在回答 */}
+      {byCli ? (
+        <ChatModelPicker value={chatRun} onChange={changeRun} parts="run" />
+      ) : (
+        <span className="min-w-0 truncate px-2 text-xs text-subtle">{chatLabel}</span>
+      )}
+      <Menu>
+        <MenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={t('导出')} title={t('导出')}>
+            <Upload className="h-4 w-4" />
+          </Button>
+        </MenuTrigger>
+        <MenuContent>
+          <MenuItem onSelect={exportHtml} title={t('导出一个自包含的 HTML 文件，没装面板的浏览器也能直接打开')}>
+            <FileCode2 className="h-4 w-4" />
+            {t('导出 HTML 报告')}
+          </MenuItem>
+          <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
+            <Download className="h-4 w-4" />
+            {t('导出任务')}
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+      {headerActions}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('开关右栏')}
+        // 三样都没有时禁用，悬停说明为什么点不了
+        title={chatRail.empty ? t('这段聊天里还没有代码、来源或附件') : chatRailShown ? t('收起右栏') : t('打开右栏')}
+        aria-pressed={chatRailShown}
+        disabled={chatRail.empty}
+        onClick={toggleChatRail}
+        // 右栏只在宽屏并排（窄屏放不下第二栏），开关跟着只在宽屏出现
+        className={cn('hidden xl:inline-flex', chatRailShown && 'bg-sel text-fg')}
+      >
+        <PanelRight className="h-4 w-4" />
+      </Button>
+    </header>
+  )
+
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
@@ -1982,7 +2077,9 @@ export function TaskView({
                 {!traceHidden && <LoadTrace overlay steps={trace.steps} onHidden={() => setTraceHidden(true)} />}
                 {/* 从外面把文件拖到对话页任何位置都算引入到要求里；右栏和流程图有自己的拖拽语义，不在范围内 */}
                 {dropOver && <DropOverlay />}
-                {pane ? (
+                {chatPage ? (
+                  chatHeader
+                ) : pane ? (
                   <header
                     className={cn(
                       // group/hdr：标题栏右侧的「解决」按钮默认隐起来，鼠标进到标题栏或 Tab 聚焦时才显示
@@ -1993,6 +2090,14 @@ export function TaskView({
                     {headerNav}
                     {headerActions}
                   </header>
+                ) : embed?.slot && !showOther ? (
+                  createPortal(
+                    <>
+                      {headerBadges}
+                      {headerActions}
+                    </>,
+                    embed.slot,
+                  )
                 ) : (
                   <ConversationTabs
                     task={task}
@@ -2268,6 +2373,16 @@ export function TaskView({
                 )}
               </main>
 
+              {/* Chat 页的右栏：代码、来源、附件（聊天没有项目文件）。宽屏并排，窄屏不占位置 */}
+              {chatRailShown && (
+                <aside
+                  aria-label={t('聊天右栏')}
+                  data-chat-rail
+                  className="panel relative hidden w-[min(420px,40%)] shrink-0 flex-col overflow-hidden xl:flex"
+                >
+                  <ChatRail rail={chatRail} onOpenFile={(path) => setFileTarget({ path, local: true })} />
+                </aside>
+              )}
               {/* 右栏：项目文件和本对话改动（或 AI 分析的功能面板）。子对话、运行在中间开页签，不占这一栏。
               外面不滚动，拖动条才不会被 overflow 裁掉 */}
               {!pane && (

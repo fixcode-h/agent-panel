@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Archive, ArchiveRestore, Pause, PencilLine, Play, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Pause, PencilLine, Pin, PinOff, Play, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import type { Task } from '@shared/schema'
 import { TRASH_RETENTION_DAYS } from '@shared/task'
@@ -12,7 +12,7 @@ import { useTaskControl } from './TaskControl'
 import { t } from '@shared/i18n'
 
 /**
- * 任务行右键菜单的动作（工作区任务列表、侧栏共用）：暂停 / 继续、重命名、归档、删除。
+ * 任务行右键菜单的动作（工作区任务列表、侧栏共用）：暂停 / 继续、重命名、置顶（只有聊天）、归档、删除。
  * items 放进 ContextMenuContent，confirm 放在行外面；重命名时把行换成 TaskRenameInput。
  */
 export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
@@ -35,6 +35,13 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
     try {
       upsertTask(await api.archiveTaskSummary(task.id, archived))
       toast.success(archived ? t('已归档，可以在筛选里选「已归档」找到') : t('已取消归档'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const pin = async (pinned: boolean) => {
+    try {
+      upsertTask(await api.pinTaskSummary(task.id, pinned))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -65,6 +72,13 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
         <PencilLine className="h-4 w-4" />
         {t('重命名')}
       </ContextMenuItem>
+      {/* 置顶只给 Chat 页的聊天：项目里的对话按项目分组、按状态排，没有「置顶」这一组 */}
+      {chat && (
+        <ContextMenuItem onSelect={() => pin(!task.pinned)}>
+          {task.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          {task.pinned ? t('取消置顶') : t('置顶聊天')}
+        </ContextMenuItem>
+      )}
       {task.archived ? (
         <ContextMenuItem onSelect={() => archive(false)}>
           <ArchiveRestore className="h-4 w-4" />
