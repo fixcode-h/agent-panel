@@ -6,18 +6,34 @@ import {
   Folder,
   FolderOpen,
   ImageIcon,
+  Lock,
   MessageSquare,
+  MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Sparkles,
   Terminal,
+  Trash2,
   Workflow,
+  WrapText,
+  X,
+  ZoomIn,
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { Badge, StatusDot, UnreadDot } from '@/components/ui/badge'
-import { BUTTON_SIZES, BUTTON_VARIANTS, Button } from '@/components/ui/button'
+import { BUTTON_SIZES, BUTTON_VARIANTS, Button, LINK_TONES } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { ComposerPopover } from '@/components/ui/composer-popover'
+import { ICON_BUTTON_SIZES, IconButton, ToggleIconButton } from '@/components/ui/icon-button'
+import { InlineRename } from '@/components/ui/inline-rename'
+import { menuItem } from '@/components/ui/menu'
+import { MenuSearch } from '@/components/ui/menu-search'
+import { MODAL_SIZES, Modal, type ModalSize } from '@/components/ui/modal'
+import { PROGRESS_TONES, Progress } from '@/components/ui/progress'
+import { Sheet } from '@/components/ui/sheet'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ContextRing } from '@/components/ui/context-ring'
 import { EmptyPanel } from '@/components/ui/empty-panel'
@@ -30,6 +46,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { STATUS_TONES, StatusPill, type StatusTone } from '@/components/ui/status-pill'
 import { Switch } from '@/components/ui/switch'
 import { TabBar, TabItem } from '@/components/ui/tab-bar'
+import { SourceLink } from '@/components/ui/source-link'
 import {
   ModeTabs,
   NAV_ROW,
@@ -108,6 +125,7 @@ export function ComponentsSection() {
           )}
           <Button disabled>{t('不可用')}</Button>
         </Specimen>
+        <MoreButtonSpecimens />
       </Group>
       <Group title={t('状态')}>
         <Specimen name="StatusPill">
@@ -134,6 +152,13 @@ export function ComponentsSection() {
         <Specimen name="ContextRing">
           <ContextRing percent={23} label={t('上下文已用 {n}%', { n: 23 })} />
           <ContextRing percent={86} label={t('上下文已用 {n}%', { n: 86 })} />
+        </Specimen>
+        <Specimen name="Progress">
+          <div className="flex w-full max-w-sm flex-col gap-2.5">
+            {PROGRESS_TONES.map((tone, i) => (
+              <Progress key={tone} tone={tone} value={22 + i * 18} size={i % 2 ? 'xs' : 'sm'} label={t('示例进度')} />
+            ))}
+          </div>
         </Specimen>
       </Group>
       <Group title={t('输入')}>
@@ -185,6 +210,7 @@ export function ComponentsSection() {
             ]}
           />
         </Specimen>
+        <MoreInputSpecimens />
       </Group>
       <Group title={t('页签')}>
         <Specimen name="TabBar · TabItem">
@@ -237,6 +263,7 @@ export function ComponentsSection() {
             <div className="h-10 bg-bg" />
           </div>
         </Specimen>
+        <UnderlineTabSpecimen />
       </Group>
       <Group title={t('对话部件')}>
         <Specimen name="ReplyHeader">
@@ -312,6 +339,18 @@ export function ComponentsSection() {
             ]}
           />
         </Specimen>
+        <Specimen name="SourceLink">
+          {/* Chat 右栏「来源」页签的一行：域名首字母方块 + 域名，路径和搜索词是小字 */}
+          <div className="flex w-80 flex-col gap-px">
+            <SourceLink
+              url="https://react.dev/reference/react/use"
+              host="react.dev"
+              path="/reference/react/use"
+              note="react.dev use() 文档"
+            />
+            <SourceLink url="https://github.com/facebook/react" host="github.com" path="/facebook/react" />
+          </div>
+        </Specimen>
       </Group>
       <Group title={t('侧栏')}>
         <Specimen name="ModeTabs · NavRow · ProjectRow · TaskRow">
@@ -368,6 +407,272 @@ export function ComponentsSection() {
           <EmptyPanel size="md" className="w-full max-w-md">
             {t('还没有计划')}
           </EmptyPanel>
+        </Specimen>
+      </Group>
+      <OverlaySpecimens />
+      <CardCanvasSpecimens />
+    </>
+  )
+}
+
+/*
+ * 下面是第二批通用部件的样例，各自带自己的状态，不把上面主组件的 state 越拉越长
+ */
+
+function MoreButtonSpecimens() {
+  const [readOnly, setReadOnly] = useState(true)
+  const [wrap, setWrap] = useState(false)
+  const linkLabel = { accent: t('打开这次执行'), muted: t('清除'), warning: t('仍要继续') }
+  return (
+    <>
+      <Specimen name="Button · link">
+        {LINK_TONES.map((tone) => (
+          <Button key={tone} variant="link" tone={tone}>
+            {linkLabel[tone]}
+          </Button>
+        ))}
+      </Specimen>
+      <Specimen name="IconButton">
+        {ICON_BUTTON_SIZES.map((s) => (
+          <IconButton key={s} size={s} icon={MoreHorizontal} label={t('更多操作')} />
+        ))}
+        <IconButton size="sm" tone="danger" icon={Trash2} label={t('删除')} />
+        {/* reveal="hover"：行尾操作平时不出现，悬停这一行才出来 */}
+        <div className="group flex h-8 items-center gap-2 rounded-lg bg-sel/50 pr-1 pl-2.5 text-[0.8125rem]">
+          {t('悬停这一行')}
+          <IconButton reveal="hover" icon={X} label={t('移除')} />
+        </div>
+      </Specimen>
+      <Specimen name="ToggleIconButton">
+        <ToggleIconButton size="sm" icon={Lock} label={t('只读')} pressed={readOnly} onPressedChange={setReadOnly} />
+        <ToggleIconButton size="sm" icon={WrapText} label={t('自动换行')} pressed={wrap} onPressedChange={setWrap} />
+      </Specimen>
+    </>
+  )
+}
+
+function MoreInputSpecimens() {
+  const [range, setRange] = useState('7d')
+  const [status, setStatus] = useState<'all' | 'run' | 'done'>('all')
+  const [days, setDays] = useState(['1', '3', '5'])
+  const [name, setName] = useState(t('右栏改成页签工作台'))
+  const [renaming, setRenaming] = useState(false)
+  const [q, setQ] = useState('')
+  const week = [t('周一'), t('周二'), t('周三'), t('周四'), t('周五'), t('周六'), t('周日')]
+  return (
+    <>
+      <Specimen name="Input · Select · sm">
+        <Input size="sm" aria-label={t('示例紧凑输入框')} placeholder={t('筛选')} className="w-44" />
+        <Select
+          size="sm"
+          aria-label={t('示例紧凑下拉框')}
+          className="w-36"
+          value={range}
+          onChange={(e) => setRange(e.target.value)}
+          options={[
+            { value: '7d', label: t('近 7 天') },
+            { value: 'all', label: t('全部') },
+          ]}
+        />
+      </Specimen>
+      <Specimen name="ChipGroup">
+        <ChipGroup
+          label={t('示例单选小块')}
+          value={status}
+          onChange={setStatus}
+          options={[
+            { id: 'all', label: t('全部') },
+            { id: 'run', label: t('运行中') },
+            { id: 'done', label: t('已完成') },
+          ]}
+        />
+        <ChipGroup
+          multiple
+          size="sm"
+          label={t('示例多选小块')}
+          value={days}
+          onChange={setDays}
+          options={week.map((d, i) => ({ id: String(i + 1), label: d }))}
+        />
+      </Specimen>
+      <Specimen name="InlineRename">
+        {renaming ? (
+          <InlineRename
+            label={t('任务标题')}
+            value={name}
+            onCommit={(v) => {
+              setRenaming(false)
+              if (v.trim()) setName(v.trim())
+            }}
+            onCancel={() => setRenaming(false)}
+            className="w-64"
+          />
+        ) : (
+          <span className="flex h-8 items-center gap-1.5 text-[0.8125rem] font-medium">
+            {name}
+            <IconButton icon={Pencil} label={t('重命名')} onClick={() => setRenaming(true)} />
+          </span>
+        )}
+      </Specimen>
+      <Specimen name="MenuSearch">
+        <div className="flex w-64 flex-col rounded-xl bg-card p-1 shadow-pop">
+          <MenuSearch autoFocus={false} value={q} onChange={setQ} placeholder={t('筛选')} />
+          {['Claude Code', 'Codex', 'Pi']
+            .filter((n) => n.toLowerCase().includes(q.trim().toLowerCase()))
+            .map((n) => (
+              <div key={n} className={menuItem}>
+                {n}
+              </div>
+            ))}
+        </div>
+      </Specimen>
+    </>
+  )
+}
+
+function UnderlineTabSpecimen() {
+  const [tab, setTab] = useState('overview')
+  const tabs = [
+    { id: 'overview', label: t('概览') },
+    { id: 'runs', label: t('运行记录') },
+    { id: 'settings', label: t('设置') },
+  ]
+  return (
+    <Specimen name="TabBar · underline">
+      <div className="w-full max-w-md">
+        <TabBar variant="underline" label={t('示例页内页签')}>
+          {tabs.map((x) => (
+            <TabItem key={x.id} active={tab === x.id} onSelect={() => setTab(x.id)}>
+              {x.label}
+            </TabItem>
+          ))}
+        </TabBar>
+      </div>
+    </Specimen>
+  )
+}
+
+function OverlaySpecimens() {
+  const [modal, setModal] = useState<ModalSize | 'bare' | null>(null)
+  const [sheet, setSheet] = useState<'left' | 'right' | null>(null)
+  const [side, setSide] = useState<'left' | 'right'>('right')
+  const bare = modal === 'bare'
+  return (
+    <Group title={t('弹层')}>
+      <Specimen name="Modal · size · bare">
+        {MODAL_SIZES.map((s) => (
+          <Button key={s} variant="secondary" size="sm" onClick={() => setModal(s)}>
+            {s}
+          </Button>
+        ))}
+        <Button variant="secondary" size="sm" onClick={() => setModal('bare')}>
+          bare
+        </Button>
+        <Modal
+          open={modal !== null}
+          onOpenChange={(o) => !o && setModal(null)}
+          size={modal && !bare ? modal : undefined}
+          bare={bare}
+          closeOnOutside={bare}
+          title={t('示例弹窗')}
+          footer={
+            <Button variant="secondary" className="ml-auto" onClick={() => setModal(null)}>
+              {t('关闭')}
+            </Button>
+          }
+        >
+          {bare ? (
+            <p className="p-6 text-[0.8125rem] text-muted">{t('只有外壳：标题栏和留白由调用方自己画，点外面就关。')}</p>
+          ) : (
+            <p className="text-[0.8125rem] text-muted">{t('宽度按档位取；不传 size 时和原来一样。')}</p>
+          )}
+        </Modal>
+      </Specimen>
+      <Specimen name="Sheet">
+        {(['right', 'left'] as const).map((s) => (
+          <Button
+            key={s}
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setSide(s)
+              setSheet(s)
+            }}
+          >
+            {s === 'right' ? t('从右边打开') : t('从左边打开')}
+          </Button>
+        ))}
+        <Sheet open={sheet !== null} onOpenChange={(o) => !o && setSheet(null)} side={side} title={t('示例抽屉')}>
+          <p className="text-[0.8125rem] leading-relaxed text-muted">
+            {t('抽屉是浮起的一整列，靠底色和投影和页面分开，不描边。')}
+          </p>
+        </Sheet>
+      </Specimen>
+      <Specimen name="ComposerPopover">
+        {/* 输入框外壳要是 relative，弹层贴在它顶上往上长 */}
+        <div className="relative mt-24 w-full max-w-md rounded-xl bg-field px-3 py-2.5 text-[0.8125rem] text-subtle shadow-card">
+          <ComposerPopover stretch scroll>
+            {['/commit', '/review'].map((c) => (
+              <div key={c} className={cn(menuItem, 'font-mono text-[0.78125rem]')}>
+                {c}
+              </div>
+            ))}
+          </ComposerPopover>
+          {t('继续输入要求')}
+        </div>
+      </Specimen>
+    </Group>
+  )
+}
+
+function CardCanvasSpecimens() {
+  const [clicks, setClicks] = useState(0)
+  const [device, setDevice] = useState<'desktop' | 'phone'>('desktop')
+  return (
+    <>
+      <Group title={t('卡片')}>
+        <Specimen name="Card · padding · interactive">
+          <Card padding="md" className="flex w-56 flex-col gap-1 text-[0.8125rem]">
+            <span className="font-medium">{t('代码审查')}</span>
+            <span className="text-subtle">padding="md"</span>
+          </Card>
+          <Card
+            as="button"
+            interactive
+            padding="md"
+            onClick={() => setClicks((n) => n + 1)}
+            className="flex w-56 flex-col gap-1 text-[0.8125rem]"
+          >
+            <span className="font-medium">{t('整张可点')}</span>
+            <span className="text-subtle">{t('点了 {n} 次', { n: clicks })}</span>
+          </Card>
+        </Specimen>
+      </Group>
+      <Group title={t('深色画布')}>
+        <Specimen name="Canvas · on-canvas">
+          {/* 画布不跟主题变：工具条、按钮、分段都用 --canvas-* 这组色 */}
+          <div className="flex h-32 w-full items-end justify-center rounded-xl bg-canvas p-3">
+            <div className="flex items-center gap-1 rounded-xl bg-canvas-bar p-1 shadow-pop">
+              <Segmented
+                tone="canvas"
+                size="sm"
+                label={t('示例画布切换')}
+                value={device}
+                onChange={setDevice}
+                options={[
+                  { id: 'desktop', label: t('桌面') },
+                  { id: 'phone', label: t('手机') },
+                ]}
+              />
+              <span aria-hidden className="mx-1 h-5 w-px bg-canvas-line" />
+              <Button variant="on-canvas" size="sm">
+                {t('适应画布')}
+              </Button>
+              <Button variant="on-canvas" size="icon-sm" aria-label={t('放大')} title={t('放大')}>
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </Specimen>
       </Group>
     </>

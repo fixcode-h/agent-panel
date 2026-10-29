@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { CircleAlert, ExternalLink, MessageSquareOff, Minimize2, Sparkles, X } from 'lucide-react'
 import { t } from '@shared/i18n'
+import { fmtDuration } from '@shared/duration'
 import {
   aiWindowRunning,
   analysisRoute,
@@ -10,6 +11,7 @@ import {
   minimizeAiWindow,
   useAiWindow,
 } from '@/lib/ai-window'
+import { timingMs } from '@/lib/analysis-report'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -28,7 +30,9 @@ import { TaskView } from '@/components/tasks/TaskView'
  */
 export function AiWindow() {
   const s = useAiWindow()
-  const { open, minimized, gone, job, taskId, status, starting, error } = s
+  const { open, minimized, gone, job, taskId, status, starting, error, timing } = s
+  // 标题栏留给嵌入对话的状态和操作按钮的位置：对话自己的页签行不再画，免得和窗口标题重复
+  const [slot, setSlot] = useState<HTMLSpanElement | null>(null)
   const { go } = useNav()
   const { projects, tasks } = useData()
   // 项目里的分析对话要带上项目：分析结果里「开子对话去修」这类操作要知道项目
@@ -47,6 +51,14 @@ export function AiWindow() {
   useEffect(() => {
     if (!open) setUnseen(false)
   }, [open])
+  // 分析中每秒跳一次用时；结束后用记下的起止，不再跳
+  const [now, setNow] = useState(() => Date.now())
+  const live = !!timing?.since && running && open && !minimized
+  useEffect(() => {
+    if (!live) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [live])
   if (!job) return null
   const heading = t('{label}：{title}', { label: job.label, title: job.title })
   // 到对话里看：窗口收起，分析照常进行，结束时会提醒
@@ -68,7 +80,7 @@ export function AiWindow() {
           ? 'ended'
           : 'idle'
   // 标题栏右侧的状态胶囊：和浮条同一个口径（dockState），没有可显示的状态就不画。
-  // 设计稿上还有分析用时，但窗口里拿不到这一轮的起止时间，不拿对话的创建时间凑
+  // 后面跟这一轮分析的实际用时（轮次的起止，见 analysisTiming）；拿不到准确起止时不显示，不拿创建时间凑
   const pill: { tone: StatusTone; text: string } | undefined = starting
     ? { tone: 'run', text: t('正在新建分析对话…') }
     : error && !taskId
@@ -84,6 +96,10 @@ export function AiWindow() {
                 ? { tone: 'err', text: t('分析失败') }
                 : { tone: 'idle', text: t('已结束') }
               : undefined
+  const took =
+    timing && taskId && !gone && (dockState === 'running' || dockState === 'done' || dockState === 'ended')
+      ? fmtDuration(timingMs(timing, now))
+      : ''
   // 来源标签：排查（报错交给 AI）用红色，和设计稿「测试失败」那种一致；别的分析用中性底色
   const fromIssue = entry?.analysis === 'fix'
   const from = [project?.name, parent?.title].filter(Boolean).join(' · ')
@@ -177,17 +193,23 @@ export function AiWindow() {
               {pill && (
                 <StatusPill tone={pill.tone} spin={pill.tone === 'run'} className="h-6 px-2.5">
                   {pill.text}
+                  {took && <span className="tabular-nums">· {took}</span>}
                 </StatusPill>
               )}
+              {/* 嵌入对话的状态和操作（进程、轮次、功能面板开关…）挂在这里，见 TaskView 的 embed.slot */}
+              <span ref={setSlot} className="flex shrink-0 items-center gap-0.5 empty:hidden" />
               <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
             </header>
             {taskId && !gone ? (
-              <TaskView
-                key={taskId}
-                taskId={taskId}
-                project={project}
-                embed={{ actions: null, onLeave: hideAiWindow }}
-              />
+              // 等标题栏的位置挂好再画对话：不然第一帧会先画出对话自己的页签行再收掉
+              slot && (
+                <TaskView
+                  key={taskId}
+                  taskId={taskId}
+                  project={project}
+                  embed={{ actions: null, onLeave: hideAiWindow, slot }}
+                />
+              )
             ) : (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="grid flex-1 place-items-center p-6">

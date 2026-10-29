@@ -515,6 +515,27 @@ export async function createInDir(
   return { path: relOf(dir, full), size: after.size }
 }
 
+/**
+ * 把一段内容存成项目里的文件（Chat 右栏的「存到项目」）：中间缺的目录一并建好，路径照样走 into() 限在项目目录里；
+ * 已有同名文件时只有 overwrite 才改写，否则和新建一样拒绝（409），不悄悄覆盖用户的文件
+ */
+export async function saveInDir(
+  dir: string,
+  relDir: string,
+  name: string,
+  content: string,
+  format: FileFormat,
+  overwrite: boolean,
+): Promise<FileWrite> {
+  const base = await into(dir, norm(relDir))
+  const n = oneName(name)
+  const full = path.join(base, n)
+  const info = await stat(full).catch(() => null)
+  if (info?.isFile() && overwrite) return writeInDir(dir, relOf(dir, full), content, format)
+  await mkdir(base, { recursive: true })
+  return createInDir(dir, relOf(dir, base), n, content, format)
+}
+
 /** 新建目录（只建一层）；已有同名文件或目录时拒绝 */
 export async function mkdirInDir(dir: string, relDir: string, name: string): Promise<{ path: string }> {
   const base = await into(dir, norm(relDir))
@@ -608,7 +629,15 @@ export async function revealInDir(dir: string, want: string): Promise<void> {
 
 /** 写接口的入参：字段都在这里校验，名字的单段规则在 oneName 里 */
 const WriteInput = z.object({ path: z.string(), content: z.string() })
-const NewInput = z.object({ dir: z.string().optional(), name: z.string(), content: z.string().optional() })
+const NewInput = z.object({
+  dir: z.string().optional(),
+  name: z.string(),
+  content: z.string().optional(),
+  /** 中间缺的目录一并建好（「存到项目」给的是相对路径，目录可能还没有） */
+  parents: z.boolean().optional(),
+  /** 已有同名文件时改写它；不给时同名拒绝 */
+  overwrite: z.boolean().optional(),
+})
 const MkdirInput = z.object({ dir: z.string().optional(), name: z.string() })
 const RenameInput = z.object({ path: z.string(), name: z.string() })
 const DeleteInput = z.object({ path: z.string() })
@@ -733,6 +762,8 @@ function filesApi(deps: { projects: { get(id: string): Promise<Project | null> }
       try {
         const dir = await dirOf(c.req.param('id'))
         const format = await formatOf(c.req.param('id'))
+        if (p.parents || p.overwrite)
+          return c.json(await saveInDir(dir, p.dir ?? '', p.name, p.content ?? '', format, !!p.overwrite))
         return c.json(await createInDir(dir, p.dir ?? '', p.name, p.content ?? '', format))
       } catch (e) {
         return fail(c, e)

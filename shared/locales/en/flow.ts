@@ -278,4 +278,21 @@ export const EN_FLOW: Record<string, string> = {
   节点的角色都还在: 'Node roles all exist',
   '这些节点的角色已经删除：{names}': 'The roles of these nodes were deleted: {names}',
   角色分工: 'Roles',
+  // 流程图编辑器：撤销重做、画布工具条、在项目里运行
+  节点里的步骤: 'Steps in this node',
+  耗时和用量: 'Time and usage',
+  '还有 {n} 步': '{n} more steps',
+  在项目里运行: 'Run in project',
+  画布工具: 'Canvas tools',
+  平移: 'Pan',
+  '平移模式：左键拖动画布（再点一下回到框选）':
+    'Pan mode: drag the canvas with the left button (click again to box-select)',
+  '平移模式：左键拖动画布': 'Pan mode: drag the canvas with the left button',
+  '就绪检查：全部通过': 'Readiness check: all passed',
+  '就绪检查：有没通过的项': 'Readiness check: some items are not passing',
+  '就绪检查还有没通过的项，运行时可能出错': 'Some readiness checks are not passing; the run may fail',
+  '在项目里运行「{name}」': 'Run "{name}" in a project',
+  开始运行: 'Start run',
+  '要在这个项目里做什么，例如：商品详情页增加「看了又看」推荐':
+    'What to do in this project, e.g. add "customers also viewed" recommendations to the product page',
 }

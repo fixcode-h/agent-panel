@@ -11,6 +11,7 @@ import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
 import { EVOLUTION_LANG, HELPER_SCOPE_MARK, demoEvolution } from './task-export.ts'
 import { LESSON_REVIEW_LANG } from './lesson-review.ts'
+import { DIAGNOSIS_LANG, demoDiagnosis } from './diagnosis.ts'
 
 export interface RunContext {
   task: Task
@@ -421,6 +422,19 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       changes: [],
       text: `这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，**缓存命中率偏低**。\n\n### 1. 结果质量\n\n- 交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n\n### 2. 工作流\n\n- 节点要求写得笼统，**分析需求** 一步反复确认范围，建议写得更具体。\n- 不需要深度推理的节点可以降到中档。\n\n### 3. Agent\n\n- 角色设定和节点要求有部分重复，可以精简。\n\n### 4. 面板框架\n\n- 见下面的发现。\n\n### 5. 交付的代码\n\n- **商品卡片** 在价格为空时会报错，见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
     }
+  // AI 排查（报错交给 AI、内存体检）：回复末尾带上结构化结论块，演示里右栏的结论、证据、修复页签也能看
+  if (!call.step && ctx.first && ctx.prompt.includes('```' + DIAGNOSIS_LANG)) {
+    const memory = ctx.prompt.includes('内存')
+    const d = demoDiagnosis(memory)
+    out = {
+      tools: [
+        { kind: 'read', label: d.files[0] ?? '', detail: '' },
+        { kind: 'search', label: memory ? 'memory' : 'toFixed', detail: '' },
+      ],
+      changes: [],
+      text: `${memory ? '看完了' : '原因找到了'}：**${d.rootCause.title}**。${d.rootCause.detail}\n\n修复方案和证据在右边，可以直接发回原来的对话去修。\n\n\`\`\`${DIAGNOSIS_LANG}\n${JSON.stringify(d, null, 2)}\n\`\`\``,
+    }
+  }
   // AI 评审项目教训：回复后面带上评审块，演示里也能逐条应用（条目 id 对的是演示项目「网上商城」的教训）
   if (!call.step && ctx.first && ctx.prompt.includes('```' + LESSON_REVIEW_LANG))
     out = {

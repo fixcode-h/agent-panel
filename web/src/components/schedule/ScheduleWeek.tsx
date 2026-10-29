@@ -4,12 +4,11 @@ import { SCHEDULE_WEEKDAYS, type Schedule } from '@shared/schedule'
 import { hhmm } from '@shared/datetime'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
-import { occurrencesIn, scheduleDot, type OccTone } from './occurrences'
+import { lastDurationMs, occurrencesIn, scheduleDot, type OccTone } from './occurrences'
 
 /** 一小时一行的高度（rem）：字号跟着设置走，行高也跟着 */
 const ROW = 3
-/** 一格计划块的高度（rem）：计划没有时长，统一画成放得下名字 + 时间的一格 */
-const BLOCK = 2.75
+const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
 /** ISO 周数（周一开头、包含 1 月 4 日的那周是第 1 周） */
@@ -83,11 +82,22 @@ export function ScheduleWeek({
       }),
     [start],
   )
-  const events = useMemo(() => occurrencesIn(list, start, 7), [list, start])
-  // 时段至少画 7–21 点（一天里常用的那段），这周有更早 / 更晚的计划时往外扩，前后各留一小时
-  const hours = events.map((e) => new Date(e.at).getHours())
-  const from = Math.max(0, Math.min(7, ...hours.map((h) => h - 1)))
-  const to = Math.min(24, Math.max(21, ...hours.map((h) => h + 2)))
+  /**
+   * 每一格计划块：开始在第几小时（带分钟的小数）、画多少小时。
+   * 计划本身没有时长，用这条计划最近一次跑完的耗时当高度；没有耗时的、或者跑得很快的都至少画一个时间格，
+   * 放得下名字和时间。同一天里时段有重叠的横着平分，不叠在一起
+   */
+  const events = useMemo(
+    () =>
+      occurrencesIn(list, start, 7).map((e) => {
+        const at = new Date(e.at)
+        return { ...e, h: at.getHours() + at.getMinutes() / 60, span: Math.max(1, lastDurationMs(e.s) / HOUR_MS) }
+      }),
+    [list, start],
+  )
+  // 时段至少画 7–21 点（一天里常用的那段），这周有更早 / 更晚的计划时往外扩，前面留一小时、块的下面留一小时
+  const from = Math.max(0, Math.min(7, ...events.map((e) => Math.floor(e.h) - 1)))
+  const to = Math.min(24, Math.max(21, ...events.map((e) => Math.ceil(e.h + e.span) + 1)))
   const todayStart = new Date(now).setHours(0, 0, 0, 0)
   const today = days.findIndex((d) => d.getTime() === todayStart)
   const nowH = new Date(now).getHours() + new Date(now).getMinutes() / 60
@@ -139,10 +149,12 @@ export function ScheduleWeek({
               )}
               {dayEvents.map((e, i) => {
                 const at = new Date(e.at)
-                const h = at.getHours() + at.getMinutes() / 60
-                // 同一小时里有几条就在这一格里横着平分，不叠在一起
-                const peers = dayEvents.filter((x) => new Date(x.at).getHours() === at.getHours())
+                const h = e.h
+                // 时段有重叠的几条横着平分，不叠在一起
+                const peers = dayEvents.filter((x) => x.h < h + e.span && h < x.h + x.span)
                 const k = peers.indexOf(e)
+                // 画到当天的底为止：跨过午夜的长任务不往下一天的格子里伸
+                const span = Math.min(e.span, to - h)
                 const on = e.s.id === selected
                 return (
                   <button
@@ -153,12 +165,12 @@ export function ScheduleWeek({
                     title={`${e.s.name} · ${hhmm(at)}`}
                     style={{
                       top: `calc(${(h - from) * ROW}rem + 1px)`,
-                      height: `${BLOCK}rem`,
+                      height: `calc(${span * ROW}rem - 3px)`,
                       left: `calc(${(k / peers.length) * 100}% + 3px)`,
                       width: `calc(${100 / peers.length}% - 6px)`,
                     }}
                     className={cn(
-                      'absolute flex cursor-pointer flex-col items-start justify-center gap-px overflow-hidden rounded-md px-1.5 text-left transition-colors',
+                      'absolute flex cursor-pointer flex-col items-start justify-start gap-px overflow-hidden rounded-md px-1.5 py-1 text-left transition-colors',
                       OCC_TONE[e.tone],
                       on && 'z-[2] ring-2 ring-fg',
                     )}

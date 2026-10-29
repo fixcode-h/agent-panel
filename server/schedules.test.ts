@@ -25,6 +25,8 @@ const HOUR = 60 * MINUTE
 /** 几个用例共用同一个数据文件，按计划名区分自己触发的那几次 */
 let seq = 0
 const unique = () => `计划-${++seq}`
+/** 假任务的状态：按 id 放进来，计划轮询时用它判断启动出来的对话跑完没有 */
+const taskStates = new Map<string, { status: string; working: boolean; turnDoneAt: string; updatedAt: string }>()
 
 /** 建一个可控的 api：startChat 只记下调用，返回一个假任务；fail 可以是固定文案，也可以按输入决定哪一条启动失败 */
 function setup(
@@ -42,6 +44,7 @@ function setup(
     },
     // 项目名固定：载荷里要能看出是哪个项目
     projectName: async (id) => (id ? '构建项目' : ''),
+    peekTask: async (id) => taskStates.get(id) ?? null,
     ...(deliver ? { deliver } : {}),
   })
   const create = async (body: Record<string, unknown>) => {
@@ -385,6 +388,13 @@ test('依赖：保存时拒绝不存在的上游、依赖自己和成环', async
       path: scheduleCycleLabel([a.id, b.id, a.id], [a, b]),
     }),
   )
+
+  // 结束日期早于第一次执行：一次也不会跑，和依赖一样在保存时拦下（界面走同一个 scheduleTimingError）
+  const before = new Date(now - 86_400_000)
+  const endDate = `${before.getFullYear()}-${String(before.getMonth() + 1).padStart(2, '0')}-${String(before.getDate()).padStart(2, '0')}`
+  const ended = await put(a.id, plan(a.name, { at: a.at, repeat: 'daily', endDate }))
+  assert.equal(ended.status, 400)
+  assert.equal(((await ended.json()) as { error: string }).error, t('结束日期早于第一次执行，计划一次也不会执行'))
 })
 
 test('Webhook：成功启动 / 启动失败 / 错过 / 上游没成功各投递一次，结果记进计划', async () => {
@@ -529,9 +539,17 @@ test('运行记录：到点启动成功 / 失败 / 错过 / 上游没成功各�
   const missedRuns = (await find(missed.id)).runs
   assert.deepEqual([missedRuns[0].event, missedRuns[0].at], ['miss', at(now - 10 * MINUTE)])
 
+  // 启动的对话还在跑：不补耗时
+  taskStates.set(`task:${okName}`, { status: 'running', working: true, turnDoneAt: '', updatedAt: at(now) })
   // 再跑一轮（每天的计划推到下一次后不会再触发），历史不会被空记录冲掉
   await api.tick(now + MINUTE)
   assert.equal((await find(ok.id)).runs.length, 1)
+  assert.equal((await find(ok.id)).runs[0].durationMs, undefined)
+  // 对话这一轮跑完：下一次轮询在这条记录上补结束时间和耗时，只补一次
+  taskStates.set(`task:${okName}`, { status: 'done', working: false, turnDoneAt: at(now + 72_000), updatedAt: '' })
+  await api.tick(now + 2 * MINUTE)
+  const settled = (await find(ok.id)).runs[0]
+  assert.deepEqual([settled.durationMs, settled.endedAt, settled.failed], [72_000, at(now + 72_000), false])
 })
 
 test('运行记录：立即执行记为手动，排期不变', async () => {

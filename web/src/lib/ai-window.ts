@@ -5,6 +5,7 @@ import { analysisHome, analyzerId, rootIdOf, type AnalysisHome, type AnalysisSco
 import { t } from '@shared/i18n'
 import { type ClosePlan, closeWindowPlan } from './ai-window-close'
 import { api } from './api'
+import { analysisTiming, type AnalysisTiming } from './analysis-report'
 
 /**
  * 统一的 AI 分析窗口：面板上所有「AI 分析」「AI 排查」只管调用 openAiWindow，
@@ -35,6 +36,8 @@ interface State {
   parentTaskId?: string
   /** 对话现在的状态（最小化时右下角的浮条用） */
   status?: Task['status']
+  /** 这一轮分析实际的用时（标题栏状态胶囊上显示）；拿不到准确的起止时为空 */
+  timing?: AnalysisTiming
   /** 对话被关掉了（从列表里删掉）：窗口不跟着关，显示「对话已关闭」，等用户自己点关闭 */
   gone: boolean
   starting: boolean
@@ -84,7 +87,7 @@ function watch(id: string) {
     try {
       const task = await api.task(id)
       if (state.taskId !== id) return
-      set({ status: task.status })
+      set({ status: task.status, timing: analysisTiming(task) })
       // 结束后又被接着问了：这一轮结束时还要再提醒、再交回结果
       if (running(task.status)) {
         finished = false
@@ -127,6 +130,7 @@ async function start(job: AiJob) {
     projectId: undefined,
     parentTaskId: undefined,
     status: undefined,
+    timing: undefined,
     gone: false,
     error: undefined,
     starting: true,
@@ -138,6 +142,7 @@ async function start(job: AiJob) {
       projectId: task.projectId,
       parentTaskId: task.parentTaskId,
       status: task.status,
+      timing: analysisTiming(task),
       starting: false,
     })
     watch(task.id)
@@ -254,6 +259,8 @@ export async function createAnalysisTask(opts: {
     isolate: false,
     askUser: opts.askUser ?? false,
     analysis: opts.kind,
+    // 分析的是某个对话：记下它，结论里的「在当前对话里修」把修复建议发回那个对话
+    ...(opts.scope.kind === 'task' && { analysisOf: opts.scope.task.id }),
   })
   // 列表里用分析对象当标题，一眼能认出是哪次分析
   return api.renameTask(created.id, opts.title.slice(0, 80)).catch(() => created)

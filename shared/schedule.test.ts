@@ -8,6 +8,7 @@ import {
   afterRun,
   appendRun,
   dependencyBlocker,
+  durationLabel,
   effectiveTimeoutMinutes,
   fromLocalInput,
   groupLabel,
@@ -32,6 +33,10 @@ import {
   scheduleCycle,
   ScheduleInput,
   scheduleCycleLabel,
+  scheduleEnded,
+  scheduleEndMs,
+  scheduleTimingError,
+  settleRun,
   SCHEDULE_DEPENDENCY_FRESH_HOURS,
   SCHEDULE_MISS_MS,
   SCHEDULE_RUN_HISTORY,
@@ -42,6 +47,7 @@ import {
   workdayTemplate,
   Schedule,
 } from './schedule.ts'
+import { t } from './i18n.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
 /** 本机时区的某个时刻，测试里不直接写 ISO，避免跟着机器时区变 */
@@ -59,6 +65,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   enabled: true,
   dependsOn: [],
   budget: { tokens: 0, minutes: 0 },
+  endDate: '',
   status: 'pending',
   lastRunAt: '',
   lastTaskId: '',
@@ -651,4 +658,70 @@ test('weekOccurrences：周视图按周一起的 7 天排出执行时刻，停�
   const next = new Date(2026, 10, 2).getTime()
   assert.equal(weekOccurrences({ repeat: 'once', at, weekdays: [], enabled: true }, next).length, 0)
   assert.equal(weekOccurrences({ repeat: 'daily', at, weekdays: [], enabled: true }, next).length, 7)
+})
+
+test('结束日期：过了那天不再触发、不画进周视图，状态算「不会再执行」；运行跑完补上耗时', () => {
+  // 旧数据没有 endDate：读进来是永不结束
+  const old: Record<string, unknown> = { ...schedule() }
+  delete old.endDate
+  assert.equal(Schedule.parse(old).endDate, '')
+  assert.equal(scheduleEndMs({ endDate: '' }), Infinity)
+  // 结束日期含这一天：到次日 0 点为止（本机时区）
+  assert.equal(scheduleEndMs({ endDate: '2026-10-30' }), new Date(2026, 9, 31).getTime())
+  assert.equal(ScheduleInput.safeParse({ ...old, endDate: '10/30' }).success, false)
+
+  const daily = schedule({ repeat: 'daily', at: at(2026, 10, 30, 9), endDate: '2026-10-30' })
+  assert.equal(scheduleEnded(daily), false)
+  assert.equal(willRunAgain(daily), true)
+  // 结束那天跑完：时间照样推到次日，但已过结束日期 → 不再触发、不算「还会跑」、归到「不会再执行」
+  const after = { ...daily, ...afterRun(daily, Date.parse(daily.at), 't1') }
+  assert.equal(after.at, at(2026, 10, 31, 9))
+  assert.equal(scheduleEnded(after), true)
+  assert.equal(willRunAgain(after), false)
+  assert.equal(groupOf(after), 'finished')
+  assert.equal(nextRunLabel(after, Date.parse(daily.at)), '')
+  assert.deepEqual(pickDue([after], Date.parse(after.at) + 1000), { run: [], missed: [] })
+  // 周视图：2026-10-26 那周只画到周五（30 日）
+  const day = (ms: number) => new Date(ms).getDate()
+  assert.deepEqual(
+    weekOccurrences({ ...daily, at: at(2026, 10, 26, 9) }, new Date(2026, 9, 26).getTime()).map(day),
+    [26, 27, 28, 29, 30],
+  )
+  // 保存前校验：结束日期早于（对齐后的）第一次执行时拦下；永不、或晚于首次执行的放行
+  assert.equal(
+    scheduleTimingError({ ...daily, endDate: '2026-10-29' }),
+    t('结束日期早于第一次执行，计划一次也不会执行'),
+  )
+  assert.equal(scheduleTimingError({ ...daily, endDate: '' }), '')
+  assert.equal(scheduleTimingError(daily), '')
+  // 每周五，首次执行时间填周三：对齐到周五后才和结束日期比
+  assert.equal(
+    scheduleTimingError({ repeat: 'weekly', weekdays: [5], at: at(2026, 10, 28, 9), endDate: '2026-10-29' }),
+    t('结束日期早于第一次执行，计划一次也不会执行'),
+  )
+
+  // 运行跑完：CLI 这一轮不在处理、启动之后完成过一轮 → 记下结束时间和耗时；还在跑 / 没启动成的不补
+  const run: ScheduleRun = {
+    at: at(2026, 10, 30, 9),
+    happenedAt: at(2026, 10, 30, 9),
+    event: 'run',
+    manual: false,
+    taskId: 't1',
+    error: '',
+  }
+  const start = Date.parse(run.happenedAt)
+  const task = { status: 'done', working: false, turnDoneAt: new Date(start + 72_000).toISOString(), updatedAt: '' }
+  const settled = settleRun(run, task)
+  assert.deepEqual([settled?.durationMs, settled?.endedAt, settled?.failed], [72_000, task.turnDoneAt, false])
+  assert.equal(durationLabel(settled?.durationMs ?? 0), '1:12')
+  assert.equal(durationLabel(58_000), '0:58')
+  assert.equal(durationLabel(3_723_000), '1:02:03')
+  assert.equal(settleRun(settled!, task), null, '补过的不再改')
+  assert.equal(settleRun(run, { ...task, working: true }), null)
+  assert.equal(settleRun(run, { ...task, turnDoneAt: new Date(start - 1000).toISOString() }), null, '上一轮的完成不算')
+  assert.equal(settleRun({ ...run, event: 'fail', taskId: '' }, task), null)
+  assert.equal(settleRun(run, null), null)
+  // 对话失败：按任务最后更新的时间算结束，标成失败
+  const failed = settleRun(run, { ...task, status: 'failed', updatedAt: new Date(start + 5000).toISOString() })
+  assert.deepEqual([failed?.durationMs, failed?.failed], [5000, true])
 })

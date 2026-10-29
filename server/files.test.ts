@@ -16,6 +16,7 @@ import {
   readInDir,
   renameInDir,
   revealInDir,
+  saveInDir,
   searchInDir,
   searchNameInDir,
   writeInDir,
@@ -268,6 +269,15 @@ test('项目里指向外面的链接：读文件、列目录、往里写都被�
   await assert.rejects(() => listLevel(dir, 'link'), /只能查看项目目录里的文件/)
   await assert.rejects(() => createInDir(dir, 'link', 'evil.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
   await assert.rejects(() => writeInDir(dir, 'link/secret.txt', 'x', DEFAULT_FILE_FORMAT), /只能查看项目目录里的文件/)
+  // 「存到项目」会补建中间目录：经过链接或用 .. 跳出去的都拒绝，外面不会多出目录
+  await assert.rejects(
+    () => saveInDir(dir, 'link/new', 'evil.txt', 'x', DEFAULT_FILE_FORMAT, true),
+    /只能查看项目目录里的文件/,
+  )
+  await assert.rejects(
+    () => saveInDir(dir, '../x', 'evil.txt', 'x', DEFAULT_FILE_FORMAT, true),
+    /只能查看项目目录里的文件/,
+  )
   // 项目里自己的文件照常读
   assert.equal((await readInDir(dir, 'README.md')).content, '# demo\n')
 })
@@ -325,6 +335,15 @@ test('新建文件、新建目录、改名都不覆盖已有的东西', async ()
   assert.equal(renamed.path, 'src/main.ts')
   assert.equal(readFileSync(path.join(dir, 'src/main.ts'), 'utf8').replace(/\r\n/g, '\n'), 'export const a = 1\n')
   await assert.rejects(() => renameInDir(dir, 'src/main.ts', 'nope/missing.ts'), /名字只能是/)
+  // 「存到项目」：缺的目录一并建好；同名只有 overwrite 才改写
+  const saved = await saveInDir(dir, 'snippets/react', 'Profile.tsx', 'a\n', DEFAULT_FILE_FORMAT, false)
+  assert.equal(saved.path, 'snippets/react/Profile.tsx')
+  await assert.rejects(
+    () => saveInDir(dir, 'snippets/react', 'Profile.tsx', 'b\n', DEFAULT_FILE_FORMAT, false),
+    /已经有一个同名的文件或目录了/,
+  )
+  await saveInDir(dir, 'snippets/react', 'Profile.tsx', 'b\n', DEFAULT_FILE_FORMAT, true)
+  assert.equal(readFileSync(path.join(dir, 'snippets/react/Profile.tsx'), 'utf8').replace(/\r\n/g, '\n'), 'b\n')
 })
 
 test('名字带路径分隔符、.. 或盘符都拒绝', async () => {

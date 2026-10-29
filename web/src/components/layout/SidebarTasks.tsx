@@ -410,13 +410,16 @@ export function ContentHits({
 }
 
 /**
- * 聊天列表按「今天 / 昨天 / 7 天内 / 30 天内 / 更早」分段（Chat.dc.html）：聊天多是一次性的，
- * 按具体日期一天一组会切得太碎，扫一眼找不到；list 已经按最近发言排好，分段后组内顺序不变
+ * 聊天列表按「置顶 / 今天 / 昨天 / 7 天内 / 30 天内 / 更早」分段（Chat.dc.html）：聊天多是一次性的，
+ * 按具体日期一天一组会切得太碎，扫一眼找不到；list 已经按最近发言排好，分段后组内顺序不变。
+ * 置顶的聊天只出现在最上面那一组，不在日期组里重复
  */
 function chatBuckets(list: Task[], now = new Date()) {
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const today = day(now)
+  const pinned = { key: 'pinned', label: t('已置顶'), items: [] as Task[] }
   const buckets = [
+    pinned,
     { key: 'today', label: t('今天'), items: [] as Task[] },
     { key: 'yesterday', label: t('昨天'), items: [] as Task[] },
     { key: 'week', label: t('7 天内'), items: [] as Task[] },
@@ -424,9 +427,13 @@ function chatBuckets(list: Task[], now = new Date()) {
     { key: 'older', label: t('更早'), items: [] as Task[] },
   ]
   for (const x of list) {
+    if (x.pinned) {
+      pinned.items.push(x)
+      continue
+    }
     // 跨夏令时的那天相差 23 / 25 小时，取整
     const diff = Math.round((today - day(new Date(askedAt(x)))) / 86400000)
-    buckets[diff <= 0 ? 0 : diff === 1 ? 1 : diff < 7 ? 2 : diff < 30 ? 3 : 4].items.push(x)
+    buckets[diff <= 0 ? 1 : diff === 1 ? 2 : diff < 7 ? 3 : diff < 30 ? 4 : 5].items.push(x)
   }
   return buckets.filter((b) => b.items.length)
 }
@@ -463,7 +470,7 @@ export function ChatList() {
       {days.map((d) => {
         const open = !folded.has(d.key)
         return (
-          <div key={d.key} className="flex flex-col gap-px">
+          <div key={d.key} data-chat-group={d.key} className="flex flex-col gap-px">
             {/* 分段标题照设计稿只是一行小字；点它仍能收起这一段，箭头悬停或收起时才露出来 */}
             <button
               onClick={() => toggleDay(d.key)}

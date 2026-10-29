@@ -15,6 +15,46 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByText('从内置工作流添加').first().click()
   await check(p, '工作流-内置列表', ['通用项目', '依赖升级与安全', '发布与回滚', '代码评审'])
   await p.keyboard.press('Escape')
+  // 流程图的撤销 / 重做（左上面包屑旁边）：刚打开时不能撤销；改一下（自动排列）能撤销，Ctrl+Z 撤销后能重做，
+  // Ctrl+Shift+Z 重做回来，最后按钮撤销回原样（工作流是自动保存的，别把演示数据改乱）
+  {
+    const undo = p.getByRole('button', { name: '撤销', exact: true })
+    const redo = p.getByRole('button', { name: '重做', exact: true })
+    const tools = p.getByRole('toolbar', { name: '画布工具' })
+    if (!(await tools.count())) errors.push('工作流-画布工具：底部没有画布工具条')
+    if (!(await undo.isDisabled().catch(() => false))) errors.push('工作流-撤销：刚打开就能撤销')
+    else {
+      await tools.getByRole('button', { name: '自动排列' }).click()
+      await settle(p)
+      if (await undo.isDisabled()) errors.push('工作流-撤销：自动排列后还不能撤销')
+      await p.evaluate(() => document.activeElement?.blur())
+      await p.keyboard.press('Control+z')
+      await settle(p)
+      if (await redo.isDisabled()) errors.push('工作流-撤销：Ctrl+Z 撤销后不能重做')
+      if (!(await undo.isDisabled())) errors.push('工作流-撤销：撤销回去以后还能再撤销')
+      await p.keyboard.press('Control+Shift+z')
+      await settle(p)
+      if (await undo.isDisabled()) errors.push('工作流-撤销：Ctrl+Shift+Z 没有重做')
+      await check(p, '工作流-撤销重做', ['工作流'])
+      await undo.click()
+      await settle(p)
+    }
+    // 「在项目里运行」：弹窗里选项目、写任务描述，没写描述时不能开始
+    await p.getByRole('button', { name: '在项目里运行' }).first().click()
+    const dlg = p.getByRole('dialog')
+    await dlg.waitFor({ timeout: 5000 }).catch(() => errors.push('工作流-在项目里运行：没有弹出选项目的窗口'))
+    if (await dlg.count()) {
+      if (!(await dlg.getByLabel('在哪个项目里执行').count())) errors.push('工作流-在项目里运行：弹窗里没有项目选择')
+      if (!(await dlg.getByRole('button', { name: '开始运行' }).isDisabled()))
+        errors.push('工作流-在项目里运行：没写任务描述也能开始')
+      await dlg.getByLabel('任务描述').fill('按这个工作流做一遍')
+      if (await dlg.getByRole('button', { name: '开始运行' }).isDisabled())
+        errors.push('工作流-在项目里运行：写了描述还不能开始')
+      await check(p, '工作流-在项目里运行', ['在项目里运行', '任务描述'])
+      await p.keyboard.press('Escape')
+      await dlg.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {})
+    }
+  }
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
   const inspector = p.locator('aside[aria-label="属性"]')
@@ -116,9 +156,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   if (!(await report.count())) errors.push('AI 分析：报告没有画在右侧的功能面板里')
   if (await p.locator('main').getByText('工作流优化', { exact: true }).count())
     errors.push('AI 分析：对话区里还铺着分析报告')
-  // 分析对话的标题前有「分析」标签，和普通对话区分开；「提问」默认不勾选
-  if (!(await p.getByRole('dialog').locator('[data-analysis-mark]').count()))
-    errors.push('AI 分析：标题前没有「分析」标签')
+  // AI 分析窗口里嵌的对话不再画自己的页签行（标题和窗口标题栏重复）：对话的操作按钮挂到窗口标题栏上，
+  // 「分析」标签由窗口标题栏的「AI 分析」代替；「提问」默认不勾选
+  if (await p.getByRole('dialog').getByRole('tablist', { name: '对话页签' }).count())
+    errors.push('AI 分析：窗口里还画着对话自己的页签行，和窗口标题栏重复')
+  if (!(await p.getByRole('dialog').locator('header').getByRole('button', { name: '分析报告' }).count()))
+    errors.push('AI 分析：对话的功能面板开关没有挂到窗口标题栏上')
   if (
     (await p.getByRole('dialog').getByRole('button', { name: 'AI 有问题时问我' }).getAttribute('aria-pressed')) !==
     'false'

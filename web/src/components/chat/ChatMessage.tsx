@@ -165,7 +165,8 @@ export function UserMessage({
   size?: 'sm' | 'md'
 }) {
   return (
-    <div data-msg={anchorId} className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+    // data-user：界面检查要区分用户的消息和 Agent 的回复（两者都有 data-msg）
+    <div data-msg={anchorId} data-user="" className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
       {(text || extra || !!attachments?.length) && (
         <div
           className={cn(

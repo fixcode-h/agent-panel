@@ -23,7 +23,8 @@ export const flowId = (prefix: 'nd' | 'e' | 'fl' | 'st') => `${prefix}_${rand()}
 export { START, END }
 
 export const COL = 300
-export const ROW = 150
+// 行距要容得下最高的节点卡片：多步节点在卡片里逐行列出步骤（最多 3 行 + 「还有 n 步」），约 200px 高
+export const ROW = 200
 
 export function newFlow(name: string, id = flowId('fl')): Flow {
   return { id, name, description: '', nodes: [], edges: [], startPos: { x: 0, y: 0 }, endPos: { x: 600, y: 0 } }

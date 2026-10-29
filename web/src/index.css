@@ -56,6 +56,20 @@
   --hl-type: #a06a00;
   --hl-attr: #b0412f;
   --hl-tag: #c2412d;
+  /* 弹窗遮罩：Modal、Sheet 共用一个透明度，深浅色一样 */
+  --scrim: rgb(0 0 0 / 0.45);
+  /*
+   * 深色画布（设计页的画板、概念图、预览台）：不管浅色还是深色主题，画布都是深底，上面的工具条和按钮用这组色。
+   * 底色按配色的 --rail 带一点色相，换配色时画布跟着偏暖 / 偏蓝 / 偏绿，不用每套配色各写一份
+   */
+  --canvas: color-mix(in oklab, var(--rail) 6%, #19191b);
+  --canvas-bar: color-mix(in oklab, var(--canvas) 90%, white);
+  --canvas-fg: rgb(255 255 255 / 0.72);
+  --canvas-strong: #ffffff;
+  --canvas-subtle: rgb(255 255 255 / 0.48);
+  --canvas-hover: rgb(255 255 255 / 0.08);
+  --canvas-sel: rgb(255 255 255 / 0.12);
+  --canvas-line: rgb(255 255 255 / 0.1);
 }
 .dark {
   color-scheme: dark;
@@ -98,6 +112,8 @@
   --hl-type: #e5c07b;
   --hl-attr: #f07f6c;
   --hl-tag: #f07f6c;
+  /* 深色主题下页面本身就暗，画布再压一层，和面板分得开 */
+  --canvas: color-mix(in oklab, var(--rail) 25%, #0f0f11);
 }
 
 /* 配色「中性」：内容在白、框架在灰，主操作用黑（深色反白），陶土橙只留在未读点 */
@@ -250,6 +266,15 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-scrim: var(--scrim);
+  --color-canvas: var(--canvas);
+  --color-canvas-bar: var(--canvas-bar);
+  --color-canvas-fg: var(--canvas-fg);
+  --color-canvas-strong: var(--canvas-strong);
+  --color-canvas-subtle: var(--canvas-subtle);
+  --color-canvas-hover: var(--canvas-hover);
+  --color-canvas-sel: var(--canvas-sel);
+  --color-canvas-line: var(--canvas-line);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-pop);
   /* 字体跟着设置走（web/src/lib/appearance.ts 在 html 上改 --app-sans / --app-mono），默认值在 :root */
@@ -299,6 +324,26 @@ body,
   :where(.dark) & {
     background-color: color-mix(in oklab, var(--card) 82%, white);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+/*
+ * 凹下去的一块（弹层里的搜索框、进度条的轨道）：浅色下一层灰；深色下 card 和 sel 几乎一样，
+ * 和 seg-track 同一个方向往下压一层黑（压得比它轻，不然搜索框像个黑洞），才看得出这里能输入 / 这是轨道
+ */
+@utility sunken {
+  background-color: color-mix(in oklab, var(--sel) 75%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--rail) 80%, black);
+  }
+}
+/*
+ * 没选中的选择小块（ChipGroup）：浅色下和 secondary 按钮一样的浅灰；
+ * 深色下往上提亮（和 seg-thumb 一个方向），放在 bg 或 card 上都认得出是一块
+ */
+@utility chip-idle {
+  background-color: color-mix(in oklab, var(--sel) 75%, transparent);
+  :where(.dark) & {
+    background-color: color-mix(in oklab, var(--card) 90%, white);
   }
 }
 /* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
@@ -647,6 +692,27 @@ body,
   }
   to {
     opacity: 1;
+  }
+}
+/* 抽屉（Sheet）从所在一侧滑进来 */
+@keyframes sheet-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheet-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 @keyframes pop-in {

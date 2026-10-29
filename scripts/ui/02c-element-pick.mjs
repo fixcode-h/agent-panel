@@ -838,6 +838,39 @@ await runShard(import.meta.filename, async (api) => {
     .waitFor({ timeout: 10000 })
     .catch(() => errors.push('任务-内存曲线：点 AI 分析没有新建排查对话'))
   await check(p, '任务-内存曲线-AI分析', ['这次要做的：看一下这个会话的内存'])
+  // 排查的结构化结论画在右栏：页签「结论 / 证据 n / 修复 n / 相关文件 n」，结论页有根因、把握和三个按钮
+  {
+    const diag = p.locator('[data-analysis-panel="diagnosis"]')
+    await diag
+      .getByRole('tab', { name: /^结论/ })
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI 排查：右栏没有出现「结论」页签'))
+    for (const name of [/^证据\s*\d+/, /^修复\s*\d+/, /^相关文件\s*\d+/])
+      if (!(await diag.getByRole('tab', { name }).count())) errors.push(`AI 排查：右栏缺少页签 ${name}`)
+    for (const name of ['在当前对话里修', '开新任务修', '记成教训'])
+      if (!(await diag.getByRole('button', { name, exact: true }).count()))
+        errors.push(`AI 排查：结论页没有「${name}」`)
+    if (!(await diag.getByRole('meter', { name: '把握' }).count())) errors.push('AI 排查：根因卡片没有把握条')
+    // 对话区的 Agent 回复里不再铺结论块的 JSON（只看回复：用户那条排查提示词里本来就带着格式样例）
+    if (
+      await p
+        .getByRole('dialog')
+        .locator('[data-msg]:not([data-user])')
+        .getByText('"rootCause"', { exact: false })
+        .count()
+    )
+      errors.push('AI 排查：对话区里还铺着结论块的原文')
+    // 状态胶囊带上这一轮的用时
+    await p
+      .getByRole('dialog')
+      .getByText(/分析完成\s*·\s*\d/)
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('AI 排查：状态胶囊上没有分析用时'))
+    await check(p, 'AI排查-结论', ['根因', '影响', '在当前对话里修'])
+    await diag.getByRole('tab', { name: /^证据/ }).click()
+    await check(p, 'AI排查-证据', ['claude'])
+    await diag.getByRole('tab', { name: /^结论/ }).click()
+  }
   // 关闭时先确认停止（和别处的 AI 排查一样）
   await p.getByRole('button', { name: '关闭', exact: true }).last().click()
   if (await p.getByText('停止 AI 排查？').isVisible()) {

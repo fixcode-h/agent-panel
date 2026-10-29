@@ -216,6 +216,13 @@ export function WorkflowDetail({
                 main={main}
                 team={team}
                 checks={checks}
+                save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
+                prepare={async () => {
+                  // 自动保存有 400ms 的延迟：刚改完就运行时先存一次，任务用的是最新的流程图
+                  if (!valid) throw new Error(t('名称为空，未保存'))
+                  const saved = await api.updateWorkflow(workflow.id, draft)
+                  setWorkflows((ws) => ws.map((w) => (w.id === saved.id ? saved : w)))
+                }}
               />
             </div>
           ) : undefined
