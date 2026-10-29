@@ -131,7 +131,7 @@ export const NAV: { id: PageId; label: string; icon: NavIcon }[] = [
   { id: 'schedules', label: t('计划'), icon: ScheduleIcon },
   { id: 'agents', label: t('角色'), icon: RoleIcon },
   { id: 'workflows', label: t('工作流'), icon: WorkflowIcon },
-  { id: 'library', label: t('Skills 与命令'), icon: SkillIcon },
+  { id: 'library', label: t('Skills'), icon: SkillIcon },
   { id: 'mcp', label: t('MCP 工具'), icon: McpIcon },
 ]
 
@@ -403,7 +403,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
-  // 「自带 Skill」那份有新内容时在「Skills 与命令」上亮点；部署的那份归「设置 → 部署」，不在这里算
+  // 「自带 Skill」那份有新内容时在「Skills」上亮点；部署的那份归「设置 → 部署」，不在这里算
   const skillUpd = useSkillUpdates()
   const skillDot = sharedUpdateHint(skillUpd)
   // 「设置 → 部署」那份和这一版不同时，「设置」入口本身也要带点：用户在任务页看不到设置内部

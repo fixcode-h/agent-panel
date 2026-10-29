@@ -634,19 +634,11 @@ export const EN_SETTINGS: Record<string, string> = {
   现在没有登录: 'Not signed in right now',
   没有这个账号: 'No such account',
   名字不能为空: "The name can't be empty",
-  'Skills 与命令': 'Skills & commands',
+  Skills: 'Skills',
+  '所有 Agent': 'All agents',
   'MCP 工具': 'MCP tools',
   一句话说明什么时候该用它: 'One sentence on when to use it',
   '在这里写步骤和注意事项。': 'Write the steps and notes here.',
-  一句话说明它做什么: 'One sentence on what it does',
-  '在这里写要做的事，{{args}} 是输入的参数。':
-    'Write what to do here; {{args}} is the arguments typed after the command.',
-  '在这里写要做的事，$ARGUMENTS 是输入的参数。':
-    'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '所有 Agent': 'All agents',
-  '描述需求，让本机 Agent 写命令，所有 Agent 都能用':
-    'Describe what you need and a local agent writes a command that works with every agent',
-  '已创建「/{name}」，所有 Agent 都能用': 'Created "/{name}", available to every agent',
   '用 AI 创建命令': 'Create command with AI',
   '用 AI 创建 Skill': 'Create Skill with AI',
   '本机 Agent 写出命令文件，在右侧预览，确认后所有 Agent 都能用':
@@ -664,8 +656,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '/changelog：按最近的提交整理一段给用户看的更新说明':
     '/changelog: turn recent commits into user-facing release notes',
   '/i18n：找出界面里没翻译的文案，补上英文': '/i18n: find untranslated UI strings and add the English',
-  '放在各个 Agent 的用户目录里；放进「所有 Agent」的由面板展开，选哪个 Agent 都能用。':
-    'These live in each agent\'s own user directory; entries under "All agents" are expanded by the panel and work with every agent.',
+  '放在各个 Agent 的用户目录里。': "These live in each agent's own user directory.",
   '在左边选一项，或新建一个：装好之后所有 Agent 都能用。':
     'Pick one on the left, or create a new one — once installed, every agent can use it.',
   没有说明: 'No description',
@@ -697,7 +688,6 @@ export const EN_SETTINGS: Record<string, string> = {
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
   '新建 Skill': 'New Skill',
-  新建命令: 'New command',
   '{cli} 里已经有同名的了': '{cli} already has one with this name',
   '只能用字母、数字、. _ -，以字母或数字开头': 'Letters, digits, . _ - only, starting with a letter or digit',
   '用来调用它的名字，创建后不能改': "The name used to call it; can't be changed after creating",
@@ -745,7 +735,6 @@ export const EN_SETTINGS: Record<string, string> = {
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
   'AI 创建 Skill': 'Create Skill with AI',
-  'AI 创建命令': 'Create command with AI',
   '自带 Skill（{n} 个可更新）': 'Bundled skills ({n} to update)',
   '还没有，点右上角的 ＋ 新建。': 'Nothing yet — click ＋ at the top right.',
   '还没有自带 Skill。': 'No bundled skills yet.',

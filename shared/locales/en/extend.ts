@@ -18,8 +18,8 @@ export const EN_EXTEND: Record<string, string> = {
   '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个角色换个参数就能走不同的做法。':
     'Expose the parts that vary as parameters: chats use the defaults (and ask you for ones without a default), and workflow nodes can change them. The same role can then work differently depending on the parameters.',
   'Skill 与开场白': 'Skills and starters',
-  '执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills 与命令」页面管理。':
-    'Reminds the agent to prefer these skills. Skills live in the agent and are managed on the “Skills & commands” page.',
+  '执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills」页面管理。':
+    'Reminds the agent to prefer these skills. Skills live in the agent and are managed on the “Skills” page.',
   开场白: 'Starters',
   '常用的要求，和它对话时显示在输入框上方，点一下就填进去。':
     'Common requests shown above the input when chatting with it; click one to fill it in.',
