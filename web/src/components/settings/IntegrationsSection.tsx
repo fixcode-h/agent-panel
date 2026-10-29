@@ -196,9 +196,7 @@ export function IntegrationsSection() {
                   >
                     {v.authed ? t('已授权') : v.installed ? t('未授权') : t('未安装')}
                   </Badge>
-                  {v.version && (
-                    <span className="font-mono text-[0.71875rem] font-normal text-subtle">{v.version}</span>
-                  )}
+                  {v.version && <span className="font-mono text-[0.6875rem] font-normal text-subtle">{v.version}</span>}
                   {v.docsUrl && (
                     <a
                       href={v.docsUrl}

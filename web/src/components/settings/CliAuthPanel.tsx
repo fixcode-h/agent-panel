@@ -255,7 +255,7 @@ function AccountList({ def }: { def: CliDefinition }) {
         <ProviderChecks def={def} stamp={`${data.live.label}|${data.accounts.find((a) => a.active)?.id ?? ''}`} />
       )}
       {def.auth?.accountNote && (
-        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">{def.auth.accountNote}</p>
+        <p className="rounded-xl bg-warning/8 px-3 py-2.5 text-[0.75rem] leading-relaxed">{def.auth.accountNote}</p>
       )}
       {login && <LoginProgress cli={def.id} job={login} onClose={() => setLogin(null)} />}
       {data.accounts.length > 0 && (

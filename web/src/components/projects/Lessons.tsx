@@ -554,13 +554,13 @@ export function RecordLessonDialog({
     // 标题栏带图标、用衬线字，自己画；D.Title 放在标题栏里，外壳不再重复给读屏名
     <Modal open onOpenChange={(o) => !o && onClose()} title={null} bare className="max-w-[560px]">
       <header className="flex shrink-0 items-center gap-2.5 border-b px-5 py-4">
-        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent" strokeWidth={1.8} />
+        <GraduationCap className="h-[18px] w-[18px] shrink-0 text-accent-text" strokeWidth={1.8} />
         <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.0625rem] font-semibold">
           {t('记成项目教训')}
         </D.Title>
       </header>
       <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-5 py-5">
-        <p className="text-[0.78125rem] leading-relaxed text-subtle">
+        <p className="text-[0.75rem] leading-relaxed text-subtle">
           {t(
             '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
           )}

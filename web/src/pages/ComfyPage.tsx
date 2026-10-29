@@ -663,7 +663,7 @@ function AssistModal({
           <button
             key={x}
             onClick={() => setText(x)}
-            className="chip-idle cursor-pointer rounded-full px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:text-accent"
+            className="chip-idle cursor-pointer rounded-full px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:text-accent-text"
           >
             {x}
           </button>

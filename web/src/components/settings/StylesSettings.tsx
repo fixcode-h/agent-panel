@@ -103,7 +103,7 @@ export function StylesSettings() {
                 <StyleCard key={s.id} s={s} onPatch={(p) => void patch(s, p)} onRemove={() => setRemoving(s)} />
               ))
             ) : (
-              <EmptyPanel size="sm" className="text-[0.78125rem] leading-relaxed">
+              <EmptyPanel size="sm" className="text-[0.75rem] leading-relaxed">
                 {t('还没有自己的风格：在 UI 设计的风格设置里点「存到风格库」，或复制一个内置的来改。')}
               </EmptyPanel>
             )}

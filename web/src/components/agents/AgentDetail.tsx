@@ -380,7 +380,7 @@ export function AgentDetail({
           <>
             {tab === 'basic' && core && (
               <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
-                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                 <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                   <span className="font-medium">{t('必备角色 · {use}', { use: coreUse(core) })}</span>
                   <span className="text-muted">
@@ -394,7 +394,7 @@ export function AgentDetail({
             {tab === 'basic' && locked && !core && (
               <>
                 <section className="flex items-start gap-3 rounded-xl bg-accent-soft px-4 py-3">
-                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                   <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
                     <span className="font-medium">{t('内置角色 · 随版本更新')}</span>
                     <span className="text-muted">
@@ -475,7 +475,7 @@ export function AgentDetail({
                         className={cn(
                           // 和 ChipGroup 同一套：没选是浅灰块，选中换强调色浅底，不描边
                           'grid h-9 w-9 cursor-pointer place-items-center rounded-lg transition-colors',
-                          draft.icon === id ? 'bg-accent-soft text-accent' : 'chip-idle text-muted hover:text-fg',
+                          draft.icon === id ? 'bg-accent-soft text-accent-text' : 'chip-idle text-muted hover:text-fg',
                         )}
                       >
                         <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />

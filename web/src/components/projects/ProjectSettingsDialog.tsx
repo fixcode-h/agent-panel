@@ -1149,7 +1149,7 @@ function Body({
                   <DirPicker value={draft.path} onChange={pickDir} info={dir} />
                   {!draft.initializedAt && (
                     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-accent-soft px-3.5 py-2.5">
-                      <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+                      <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
                       <span className="min-w-0 flex-1 text-[0.8125rem]">
                         {draft.path.trim()
                           ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
@@ -1889,7 +1889,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           {list.map((d) => (
             <span
               key={d}
-              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-[0.78125rem] text-muted"
+              className="flex h-7 items-center gap-1 rounded-md bg-sel/70 pr-1 pl-2 text-[0.75rem] text-muted"
             >
               <span className="font-mono">{d}</span>
               <IconButton

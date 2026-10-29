@@ -665,7 +665,7 @@ function AnnotationEditor({
             onClick={() => onChange({ ...a, note, kind: k })}
             title={KIND_HINT[k]}
             className={cn(
-              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md text-[0.71875rem] transition-colors',
+              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md text-[0.6875rem] transition-colors',
               a.kind === k ? 'font-medium text-white' : 'bg-sel/70 text-muted hover:bg-sel hover:text-fg',
             )}
             style={a.kind === k ? { background: KIND_COLOR[k] } : undefined}
@@ -698,7 +698,7 @@ function AnnotationEditor({
             : t('说明要怎么改，例如：按钮换成金色描边')
         }
         aria-label={t('标注说明')}
-        className="block resize-none px-2.5 py-2 text-[0.78125rem]"
+        className="block resize-none px-2.5 py-2 text-[0.75rem]"
       />
       <div className="mt-2 flex items-center">
         <Button
@@ -724,7 +724,7 @@ export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemo
         <span
           key={a.id}
           title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
-          className="group flex max-w-full items-center gap-1.5 rounded-md bg-sel/70 py-0.5 pr-1 pl-1 text-[0.71875rem] text-muted"
+          className="group flex max-w-full items-center gap-1.5 rounded-md bg-sel/70 py-0.5 pr-1 pl-1 text-[0.6875rem] text-muted"
         >
           <span
             className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"

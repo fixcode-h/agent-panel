@@ -920,7 +920,7 @@ export function SummaryPage() {
 
       {running && job && (
         <div className="flex items-center gap-2 rounded-xl bg-accent-soft px-4 py-3 text-xs text-muted">
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
           <span className="min-w-0 flex-1 truncate">
             {lastThought
               ? t('正在思考：{text}', { text: lastThought })

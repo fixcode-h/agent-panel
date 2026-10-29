@@ -141,7 +141,7 @@ export function SaveStyleButton({
           </>
         }
       >
-        <p className="-mt-1 text-[0.78125rem] leading-relaxed text-muted">
+        <p className="-mt-1 text-[0.75rem] leading-relaxed text-muted">
           {t('AI 从这个设计里总结出了下面的风格，可以改一改再存。')}
         </p>
         {draft && (
@@ -170,7 +170,7 @@ export function SaveStyleButton({
             {!!draft.prompts?.length && (
               <div className="flex flex-wrap gap-1">
                 {draft.prompts.map((p, i) => (
-                  <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted">
+                  <span key={i} title={p.en} className="rounded-md bg-field px-1.5 py-0.5 text-[0.6875rem] text-muted">
                     {p.zh}
                   </span>
                 ))}

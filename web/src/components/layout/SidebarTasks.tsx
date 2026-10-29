@@ -324,7 +324,7 @@ export function TaskSearch({
             // 和左边 32px 高的搜索框齐平；筛着的时候用强调色浅底标出来（不描边）
             className={cn(
               'h-8 w-8',
-              filter !== 'all' && 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent',
+              filter !== 'all' && 'bg-accent-soft text-accent-text hover:bg-accent-soft hover:text-accent-text',
             )}
           />
         </MenuTrigger>

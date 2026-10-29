@@ -306,7 +306,7 @@ export function HelperWindow({
         <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
           <StepIcon status={step.status} />
           <span className="shrink-0 text-[0.8125rem] text-muted">{t('子任务')}</span>
-          <D.Title className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium" title={step.title}>
+          <D.Title className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium" title={step.title}>
             {step.title}
           </D.Title>
           {agent && (

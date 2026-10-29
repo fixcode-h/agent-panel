@@ -358,10 +358,10 @@ export function ProjectFileDialog({
                 onChange={(e) => setDraft(e.target.value)}
                 aria-label={t('文件内容')}
                 spellCheck={false}
-                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.78125rem] leading-[1.6] text-fg/90 outline-none"
+                className="h-full w-full resize-none bg-transparent px-4 py-2 font-mono text-[0.75rem] leading-[1.6] text-fg/90 outline-none"
               />
             ) : (
-              <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
+              <pre className="min-w-max py-2 font-mono text-[0.75rem] leading-[1.6]">
                 {lines.map((l, i) => (
                   <div
                     key={i}

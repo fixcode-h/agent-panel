@@ -50,7 +50,7 @@ export function Checkbox({
       </span>
       {(label || hint) && (
         <span className="flex min-w-0 flex-col gap-0.5">
-          {label && <span className="text-[0.84375rem] text-fg">{label}</span>}
+          {label && <span className="text-[0.8125rem] text-fg">{label}</span>}
           {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
         </span>
       )}

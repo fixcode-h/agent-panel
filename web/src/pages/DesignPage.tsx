@@ -1383,7 +1383,7 @@ function Designer({ id }: { id: string }) {
                   onClick={() => setOverlay(!overlay)}
                   aria-pressed={overlay}
                   title={t('把确认的原画模板半透明盖在界面上，对照着调')}
-                  className={cn('bg-canvas-bar shadow-pop', overlay && 'text-accent hover:text-accent')}
+                  className={cn('bg-canvas-bar shadow-pop', overlay && 'text-accent-text hover:text-accent-text')}
                 >
                   <Layers className="h-3.5 w-3.5" />
                   {t('对照模板')}

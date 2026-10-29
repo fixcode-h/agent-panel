@@ -403,18 +403,18 @@ function AnchorPick({
             </button>
           ))}
         </div>
-        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[0.71875rem] text-muted">
+        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[0.6875rem] text-muted">
           {/* 弹层里的字比表单小一号：label 里再包一层把 Checkbox 默认的字号压下来 */}
           <Checkbox
             checked={move}
             onChange={setMove}
-            label={<span className="text-[0.71875rem] text-muted">{t('同时移到锚点（Ctrl）')}</span>}
+            label={<span className="text-[0.6875rem] text-muted">{t('同时移到锚点（Ctrl）')}</span>}
             className="items-center gap-1.5"
           />
           <Checkbox
             checked={pivot}
             onChange={setPivot}
-            label={<span className="text-[0.71875rem] text-muted">{t('同时设对齐点（Shift）')}</span>}
+            label={<span className="text-[0.6875rem] text-muted">{t('同时设对齐点（Shift）')}</span>}
             className="items-center gap-1.5"
           />
         </div>
@@ -794,7 +794,7 @@ export function Details({
                   variant="secondary"
                   size="sm"
                   onClick={() => applyRect({ x: 0, y: 0, w: parentSize().w, h: parentSize().h })}
-                  className="h-7 px-2 text-[0.71875rem] font-normal whitespace-nowrap"
+                  className="h-7 px-2 text-[0.6875rem] font-normal whitespace-nowrap"
                 >
                   {t('填满父控件')}
                 </Button>

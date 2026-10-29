@@ -179,7 +179,7 @@ export function LibraryDetail({
               {kind === 'command' ? '/' : ''}
               {name}
             </h2>
-            <Badge className="text-[0.71875rem]">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
+            <Badge className="text-[0.6875rem]">{kind === 'skill' ? 'Skill' : t('命令')}</Badge>
           </div>
           <p className="mt-1 truncate text-[0.8125rem] text-muted">{here[0]?.description || t('没有说明')}</p>
           <p className="mt-0.5 truncate font-mono text-[0.6875rem] text-subtle">{path}</p>

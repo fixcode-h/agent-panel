@@ -355,7 +355,7 @@ export function ComfyChainPanel({ kind, className }: { kind: 'game' | 'web'; cla
               {image && (
                 <figure className="flex flex-col gap-1">
                   <img src={image} alt={t('原图')} className="h-24 w-24 rounded-lg bg-sel object-contain" />
-                  <figcaption className="text-[0.71875rem] text-subtle">{t('原图')}</figcaption>
+                  <figcaption className="text-[0.6875rem] text-subtle">{t('原图')}</figcaption>
                 </figure>
               )}
               {output.map((src, i) => (

@@ -968,7 +968,7 @@ export function AssistDialog({
         className="max-h-[min(960px,calc(100dvh-2rem))] bg-bg"
       >
         <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent-text">
             {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
           </span>
           <div className="min-w-0 flex-1">

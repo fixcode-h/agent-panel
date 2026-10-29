@@ -452,9 +452,9 @@ function SettingsBody({
                 className="w-auto shrink-0 whitespace-nowrap md:w-full"
                 icon={
                   s.id === 'models' ? (
-                    <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                    <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
                   ) : (
-                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
                   )
                 }
                 label={s.id === 'models' ? 'Agent' : s.label}
@@ -544,7 +544,9 @@ function SettingsBody({
                     s.cli ? (
                       <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
                     ) : (
-                      s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                      s.icon && (
+                        <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
+                      )
                     )
                   }
                   label={s.label}

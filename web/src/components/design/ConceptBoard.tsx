@@ -278,7 +278,7 @@ export function ConceptBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-[0.78125rem] text-canvas-subtle">
+          <div className="flex flex-col items-center gap-2 text-[0.75rem] text-canvas-subtle">
             <Loader2 className="h-5 w-5 animate-spin" />
             {progress?.text ?? t('正在出原画…')}
           </div>
@@ -286,7 +286,7 @@ export function ConceptBoard({
       </div>
       {/* 标注完直接在这里发（在底部提示行右侧）：用户不一定知道要去右边对话框点发送 */}
       <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 pb-1">
-        <p className="text-center text-[0.71875rem] text-canvas-subtle">
+        <p className="text-center text-[0.6875rem] text-canvas-subtle">
           {tool === 'mask'
             ? canUndoMask
               ? t('涂出要重绘的区域；在右边勾选「只重绘蒙版区域」再发送，就是局部重绘')
@@ -312,7 +312,7 @@ export function ConceptBoard({
       <div className="flex shrink-0 gap-3 overflow-x-auto bg-canvas-bar/60 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-canvas-subtle">{t('第 {n} 轮', { n: r })}</span>
+            <span className="text-[0.6875rem] text-canvas-subtle">{t('第 {n} 轮', { n: r })}</span>
             <div className="flex gap-1.5">
               {concept.images
                 .filter((i) => i.round === r)
@@ -343,7 +343,7 @@ export function ConceptBoard({
         ))}
         {pending > 0 && (
           <div className="flex shrink-0 flex-col gap-1">
-            <span className="text-[0.65625rem] text-canvas-subtle">{t('正在出')}</span>
+            <span className="text-[0.6875rem] text-canvas-subtle">{t('正在出')}</span>
             <div className="flex gap-1.5">
               {Array.from({ length: pending }, (_, k) => (
                 <span

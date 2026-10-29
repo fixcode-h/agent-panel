@@ -82,9 +82,9 @@ export function BundledDetail({
         <div className="min-w-0 flex-[1_1_260px]">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate font-mono text-lg font-semibold">{item.name}</h2>
-            <Badge className="text-[0.71875rem]">{t('自带 Skill')}</Badge>
+            <Badge className="text-[0.6875rem]">{t('自带 Skill')}</Badge>
             {/* 和自带版本不一样（被改过）换成警告色，不靠虚线边框区分 */}
-            <Badge tone={changed ? 'warning' : 'neutral'} className="gap-1.5 text-[0.71875rem]">
+            <Badge tone={changed ? 'warning' : 'neutral'} className="gap-1.5 text-[0.6875rem]">
               {BUNDLED_STATUS_LABEL[item.status.shared]}
               {item.status.shared === 'same' ? (
                 <Check className="h-3 w-3 text-success" />
@@ -205,7 +205,7 @@ export function BundledDetail({
                   <Card
                     as="pre"
                     padding="md"
-                    className="max-h-[min(60vh,560px)] overflow-auto font-mono text-[0.78125rem] leading-relaxed whitespace-pre-wrap"
+                    className="max-h-[min(60vh,560px)] overflow-auto font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap"
                   >
                     {file.content}
                   </Card>

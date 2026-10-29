@@ -362,7 +362,7 @@ function EditDialog({
         />
       )}
       {test && test !== 'running' && (
-        <div className={`rounded-lg px-3 py-2.5 text-[0.78125rem] ${test.ok ? 'bg-success/8' : 'bg-warning/8'}`}>
+        <div className={`rounded-lg px-3 py-2.5 text-[0.75rem] ${test.ok ? 'bg-success/8' : 'bg-warning/8'}`}>
           <p className="flex items-center gap-1.5 font-medium">
             {test.ok ? (
               <CircleCheck className="h-4 w-4 text-success" />

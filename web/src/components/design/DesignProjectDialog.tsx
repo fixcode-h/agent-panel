@@ -443,8 +443,8 @@ function PromptsPage({
           }}
         />
         <div className="rounded-xl bg-panel p-3">
-          <p className="mb-2 flex items-center gap-1.5 text-[0.78125rem] font-medium">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
+          <p className="mb-2 flex items-center gap-1.5 text-[0.75rem] font-medium">
+            <Sparkles className="h-3.5 w-3.5 text-accent-text" />
             {t('让 AI 生成')}
           </p>
           <Textarea
@@ -476,7 +476,7 @@ function PromptsPage({
                     aria-pressed={f.pick}
                     onClick={() => setFound((l) => l.map((x, k) => (k === i ? { ...x, pick: !x.pick } : x)))}
                     className={cn(
-                      'flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-[0.78125rem] transition-colors',
+                      'flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-[0.75rem] transition-colors',
                       f.pick ? 'bg-accent-soft text-fg' : 'chip-idle text-subtle hover:text-fg',
                     )}
                   >
@@ -506,7 +506,7 @@ function PromptsPage({
           <section key={c} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <h4 className="text-[0.8125rem] font-medium">{catLabel(c)}</h4>
-              <span className="text-[0.71875rem] text-subtle">{list.length || ''}</span>
+              <span className="text-[0.6875rem] text-subtle">{list.length || ''}</span>
               <Button variant="ghost" size="sm" onClick={() => setAdding(c)} className="ml-auto h-7 gap-1 px-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 {t('添加')}

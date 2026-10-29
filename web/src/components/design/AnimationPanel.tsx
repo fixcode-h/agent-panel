@@ -417,7 +417,7 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="w-[120px] shrink-0 font-mono text-[0.71875rem]"
+              className="w-[120px] shrink-0 font-mono text-[0.6875rem]"
             />
             <Select
               aria-label={t('触发方式')}
@@ -499,7 +499,7 @@ export function AnimationPanel({
               }}
               className="text-fg"
             />
-            <span className="w-14 shrink-0 text-right font-mono text-[0.71875rem] text-subtle tabular-nums">
+            <span className="w-14 shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums">
               {time.toFixed(2)}s
             </span>
           </>

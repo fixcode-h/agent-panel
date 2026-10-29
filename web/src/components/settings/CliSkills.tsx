@@ -88,7 +88,7 @@ export function CliSkills({ cli, projectId = '', own = false }: { cli: string; p
                         <span className={cn('truncate font-mono', !s.enabled && 'text-subtle line-through')}>
                           {s.name}
                         </span>
-                        {s.scope && <Badge className="shrink-0 px-1.5 text-[0.65625rem]">{scopeName(s.scope)}</Badge>}
+                        {s.scope && <Badge className="shrink-0 px-1.5 text-[0.6875rem]">{scopeName(s.scope)}</Badge>}
                       </p>
                       {s.description && <p className="line-clamp-2 text-[0.75rem] text-muted">{s.description}</p>}
                     </div>

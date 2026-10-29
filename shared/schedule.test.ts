@@ -637,7 +637,9 @@ test('计划的执行上限：默认不限，超范围的值被拒，旧数据�
   assert.equal(new Set(labels).size, 4)
 })
 
-test('weekOccurrences：周视图按周一起的 7 天排出执行时刻，停用和还没开始的日子不算', () => {
+// 测试预算满了：结束日期决定周视图画到哪天，和周视图排期合成一个用例
+test('weekOccurrences：周视图按周一起的 7 天排出执行时刻，停用、还没开始和结束之后的日子不算', () => {
+  checkEndDate()
   // 2026-10-26 是周一
   const mon = new Date(2026, 9, 26).getTime()
   assert.equal(weekStartOf(new Date(2026, 9, 29, 15, 30).getTime()), mon)
@@ -660,7 +662,8 @@ test('weekOccurrences：周视图按周一起的 7 天排出执行时刻，停�
   assert.equal(weekOccurrences({ repeat: 'daily', at, weekdays: [], enabled: true }, next).length, 7)
 })
 
-test('结束日期：过了那天不再触发、不画进周视图，状态算「不会再执行」；运行跑完补上耗时', () => {
+/** 结束日期：过了那天不再触发、不画进周视图，状态算「不会再执行」；运行跑完补上耗时 */
+function checkEndDate() {
   // 旧数据没有 endDate：读进来是永不结束
   const old: Record<string, unknown> = { ...schedule() }
   delete old.endDate
@@ -724,4 +727,4 @@ test('结束日期：过了那天不再触发、不画进周视图，状态算�
   // 对话失败：按任务最后更新的时间算结束，标成失败
   const failed = settleRun(run, { ...task, status: 'failed', updatedAt: new Date(start + 5000).toISOString() })
   assert.deepEqual([failed?.durationMs, failed?.failed], [5000, true])
-})
+}

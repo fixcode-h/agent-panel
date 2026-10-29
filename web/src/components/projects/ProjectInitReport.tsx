@@ -60,7 +60,7 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
     )
   if (!res.proposal)
     return (
-      <p className="m-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2.5 text-[0.78125rem] leading-relaxed text-muted">
+      <p className="m-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2.5 text-[0.75rem] leading-relaxed text-muted">
         <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         {t('这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。', { error: res.error ?? '' })}
       </p>

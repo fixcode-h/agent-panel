@@ -233,7 +233,7 @@ function Pane({
   }, [X, Y])
   return (
     <div className="flex min-h-0 flex-col gap-1.5">
-      <p className="truncate text-[0.71875rem] text-canvas-subtle">{label}</p>
+      <p className="truncate text-[0.6875rem] text-canvas-subtle">{label}</p>
       <div ref={box} className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-canvas-board/60">
         {scale > 0 && (
           <div

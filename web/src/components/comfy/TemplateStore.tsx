@@ -369,12 +369,12 @@ function TemplateDetail({
           </div>
 
           {!isImage && (
-            <p className="rounded-xl bg-warning/8 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
+            <p className="rounded-xl bg-warning/8 px-3 py-2 text-[0.75rem] leading-relaxed text-warning">
               {t('这是视频或音频模板，UI 设计只处理图片，添加后也不能用于这里的出图。')}
             </p>
           )}
           {detail.template.needsInput && (
-            <p className="rounded-xl bg-panel px-3 py-2 text-[0.78125rem] leading-relaxed text-muted">
+            <p className="rounded-xl bg-panel px-3 py-2 text-[0.75rem] leading-relaxed text-muted">
               {t('这个模板需要先喂一张图（图生图 / 编辑）。UI 设计目前只按文字出图，可以在 ComfyUI 网页里打开使用。')}
             </p>
           )}
@@ -388,7 +388,7 @@ function TemplateDetail({
             </div>
           )}
           {jobForThis && job?.status === 'failed' && job.error && (
-            <p className="rounded-xl bg-danger/8 px-3 py-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">
+            <p className="rounded-xl bg-danger/8 px-3 py-2 text-[0.75rem] leading-relaxed whitespace-pre-wrap text-danger">
               {job.error}
             </p>
           )}

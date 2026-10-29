@@ -106,7 +106,7 @@ export function ComponentsPanel({
                           void onImport(g.designId, c.Name).finally(() => setImporting(''))
                         }}
                         title={has ? t('这个设计里已经有同名的子控件') : t('连同它用到的图片一起加进这个设计')}
-                        className="mx-1.5 mb-1.5 h-6 justify-center gap-1 rounded-md text-[0.71875rem] font-normal"
+                        className="mx-1.5 mb-1.5 h-6 justify-center gap-1 rounded-md text-[0.6875rem] font-normal"
                       >
                         {importing === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                         {has ? t('已在这个设计里') : t('加入这个设计')}

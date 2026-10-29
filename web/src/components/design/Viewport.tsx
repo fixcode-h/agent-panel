@@ -812,8 +812,8 @@ export function Viewport({
                 ))}
                 {!root.Children?.length && (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
-                    <div className="max-w-[320px] text-[0.78125rem] leading-relaxed text-canvas-subtle">
-                      <p className="mb-1 text-[0.84375rem] font-medium text-canvas-fg">{t('还是空白界面')}</p>
+                    <div className="max-w-[320px] text-[0.75rem] leading-relaxed text-canvas-subtle">
+                      <p className="mb-1 text-[0.8125rem] font-medium text-canvas-fg">{t('还是空白界面')}</p>
                       {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
                     </div>
                   </div>
@@ -916,7 +916,7 @@ export function Viewport({
             aria-label={t('对齐')}
             className="pointer-events-auto flex items-center gap-0.5 rounded-xl bg-canvas-bar p-1 text-canvas-fg shadow-pop"
           >
-            <span className="px-2 text-[0.71875rem] text-canvas-subtle">{t('已选 {n} 个', { n: multi.length })}</span>
+            <span className="px-2 text-[0.6875rem] text-canvas-subtle">{t('已选 {n} 个', { n: multi.length })}</span>
             {(
               [
                 ['left', AlignStartVertical, t('左对齐')],
@@ -946,7 +946,7 @@ export function Viewport({
       )}
       {play && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="flex items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-[0.71875rem] text-canvas-strong shadow-pop">
+          <span className="flex items-center gap-1.5 rounded-full bg-canvas-bar px-3 py-1 text-[0.6875rem] text-canvas-strong shadow-pop">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-canvas-drop" />
             {t('运行模式 · 按 Esc 退出')}
           </span>
@@ -965,7 +965,7 @@ export function Viewport({
             size="icon-sm"
             onClick={() => setZoom(1)}
             title={t('原始大小')}
-            className="w-12 font-mono text-[0.71875rem] font-normal tabular-nums"
+            className="w-12 font-mono text-[0.6875rem] font-normal tabular-nums"
           >
             {Math.round(scale * 100)}%
           </Button>

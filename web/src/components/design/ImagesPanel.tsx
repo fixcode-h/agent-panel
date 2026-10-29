@@ -109,7 +109,7 @@ export function ImagesPanel({
               onClick={() => onGenerateAll(todo.map((i) => i.id))}
               disabled={!canGenerate}
               title={t('生成还没生成和失败的图片')}
-              className="ml-auto px-1 text-[0.71875rem]"
+              className="ml-auto px-1 text-[0.6875rem]"
             >
               <RefreshCw className="h-3 w-3" />
               {t('生成 {n} 张', { n: todo.length })}
@@ -216,8 +216,8 @@ export function ImageDetails({
   return (
     <div className="text-[0.75rem]">
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <ImagePlus className="h-4 w-4 shrink-0 text-accent" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.78125rem] font-medium">{image.name}</span>
+        <ImagePlus className="h-4 w-4 shrink-0 text-accent-text" />
+        <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] font-medium">{image.name}</span>
         <IconButton icon={Trash2} tone="danger" label={t('删除图片')} onClick={onDelete} />
       </div>
       {image.variants.length > 0 && (
@@ -498,7 +498,7 @@ export function ImagePreview({
         </div>
       </div>
       {!marks.length && (
-        <p className="pointer-events-none shrink-0 pb-3 text-center text-[0.71875rem] text-canvas-subtle">
+        <p className="pointer-events-none shrink-0 pb-3 text-center text-[0.6875rem] text-canvas-subtle">
           {t('选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再在右边的对话框里写修改意见发送')}
         </p>
       )}

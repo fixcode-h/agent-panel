@@ -301,7 +301,7 @@ function BrowserHelp({
       className="max-w-[540px] overflow-y-auto p-6"
     >
       <h2 aria-hidden className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
-        <Globe className="h-5 w-5 text-accent" />
+        <Globe className="h-5 w-5 text-accent-text" />
         {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
       </h2>
       <p className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
@@ -372,13 +372,13 @@ function BrowserHelp({
       <div
         role="status"
         className={cn(
-          'mt-5 flex items-start gap-2 rounded-lg bg-panel px-3 py-2.5 text-[0.78125rem] leading-relaxed',
+          'mt-5 flex items-start gap-2 rounded-lg bg-panel px-3 py-2.5 text-[0.75rem] leading-relaxed',
           state.tone === 'ok' && 'bg-success/8',
           state.tone === 'warn' && 'bg-warning/8',
         )}
       >
         {state.tone === 'wait' ? (
-          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
           <span
             className={cn(
@@ -430,7 +430,7 @@ function BrowserHelp({
 }
 
 const LINK =
-  'inline-flex items-center gap-1 rounded-md bg-sel/70 px-2.5 py-1 text-[0.78125rem] text-muted transition-colors hover:bg-sel hover:text-fg'
+  'inline-flex items-center gap-1 rounded-md bg-sel/70 px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:bg-sel hover:text-fg'
 
 function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: React.ReactNode }) {
   return (
@@ -1085,7 +1085,7 @@ function CitationChips({
           ]
             .filter(Boolean)
             .join('\n')}
-          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md bg-sel/70 px-1.5 py-0.5 text-[0.71875rem] text-muted"
+          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md bg-sel/70 px-1.5 py-0.5 text-[0.6875rem] text-muted"
         >
           <Quote className="h-3 w-3 shrink-0 text-accent-text" />
           <span className="truncate font-medium text-fg">{c.name}</span>
@@ -1338,7 +1338,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                     setRetrying(i.id)
                     void onRetry(i.id).finally(() => setRetrying(''))
                   }}
-                  className="shrink-0 px-1.5 text-[0.71875rem]"
+                  className="shrink-0 px-1.5 text-[0.6875rem]"
                 >
                   {retrying === i.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                   {t('重试')}

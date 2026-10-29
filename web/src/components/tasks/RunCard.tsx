@@ -228,7 +228,7 @@ export function RunDialog({
           <span className="truncate">{heading}</span>
           {name && <span className="truncate text-xs font-normal text-subtle">{name}</span>}
           {state === 'running' && (
-            <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent">
+            <span className="flex shrink-0 items-center gap-1 text-xs font-normal text-accent-text">
               <Loader2 className="h-3 w-3 animate-spin" />
               {t('执行中')}
             </span>

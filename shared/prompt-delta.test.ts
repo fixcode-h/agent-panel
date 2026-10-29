@@ -7,7 +7,8 @@ import { Agent, Task } from './schema.ts'
 const rules = ['## 授权情况\n推送：先问一次', '## 计划怎么维护\n- 先列计划再动手', '## 执行方式\n直接做']
 const msg = (text: string) => `## 用户这次的消息\n${text}`
 
-test('续接会话只发变了的段落：消息照发、没变的省掉、没有了的声明作废，会话换了或轮数够了发完整的', () => {
+/** 续接会话只发变了的段落：消息照发、没变的省掉、没有了的声明作废，会话换了或轮数够了发完整的 */
+function checkParagraphDelta() {
   // 续接同一个会话：没变的规则段落不再发，这一轮的消息一定发
   {
     const first = [msg('改登录页'), ...rules]
@@ -64,7 +65,7 @@ test('续接会话只发变了的段落：消息照发、没变的省掉、没�
     all = rememberSent(all, 'new', v)
     assert.ok(all.k5 && !all.k6)
   }
-})
+}
 
 const iso = new Date().toISOString()
 const agent = (id: string, extra: object) =>
@@ -112,7 +113,9 @@ async function say(h: EngineHost, text: string) {
   await runConversationTurn(h, 'exec')
 }
 
-test('子对话第二轮起只发增量（完整的放 fresh 备用）；对话里派子任务的用户需求只带最新一条', async () => {
+// 测试预算满了：段落增量和子对话增量是同一个能力（续接只发变了的），合成一个用例
+test('续接只发增量：段落按变化发、子对话第二轮起只发增量（完整的放 fresh 备用），派子任务只带最新一条需求', async () => {
+  checkParagraphDelta()
   const calls: AgentCall[] = []
   const h = childHost(calls)
   await say(h, '改登录页')

@@ -180,7 +180,7 @@ function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean;
         aria-expanded={shown}
         className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
       >
-        <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
+        <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent-text')} />
         <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
         {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtDuration(thinkingMs)}</span>}
         {!live && !!ms && <ModelTime ms={ms} />}

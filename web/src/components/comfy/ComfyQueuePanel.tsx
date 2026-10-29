@@ -64,7 +64,7 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           title={t('查看节点图')}
-          className="h-6 gap-0.5 px-1.5 text-[0.71875rem] font-normal text-subtle"
+          className="h-6 gap-0.5 px-1.5 text-[0.6875rem] font-normal text-subtle"
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t('节点图')}
