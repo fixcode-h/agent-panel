@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import { continuesOutput, steerNote } from './runner.ts'
-import type { TaskMessage } from '../../shared/task.ts'
+import type { TaskMessage } from '../../shared/schema.ts'
 
 setLang('zh')
 
