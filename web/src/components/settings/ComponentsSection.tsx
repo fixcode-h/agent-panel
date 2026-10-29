@@ -288,17 +288,21 @@ export function ComponentsSection() {
       </Group>
       <Group title={t('对话部件')}>
         <Specimen name="ReplyHeader">
-          <ReplyHeader
-            // 回复头的角色图标不带底色块，只是一个按 CLI 着色的图标
-            avatar={
-              <span className="flex h-[26px] w-[18px] items-center justify-center text-[#be185d]">
-                <Workflow className="h-[15px] w-[15px]" />
-              </span>
-            }
-            name={t('主理')}
-            model="OpenDesign/deepseek-v4.1-flash"
-            effort={t('高')}
-          />
+          {/* 和对话里一样：图标 22px 宽、名字 15px，模型只写最后一段、强度写英文；正文缩进到名字那一列（reply-body） */}
+          <div className="reply-body flex w-full flex-col gap-2">
+            <ReplyHeader
+              // 回复头的角色图标不带底色块，只是一个按 CLI 着色的图标
+              avatar={
+                <span className="flex h-7 w-[22px] items-center justify-center text-[#be185d]">
+                  <Workflow className="h-[18px] w-[18px]" strokeWidth={2} />
+                </span>
+              }
+              name={t('主理')}
+              model="deepseek-v4.1-flash"
+              effort="high"
+            />
+            <p className="text-[0.875rem] leading-relaxed text-fg">{t('先看一下现有的实现，再按设计稿改。')}</p>
+          </div>
         </Specimen>
         <Specimen name="RowShell">
           {/* 过程行一组：每行默认浅底，行间留间距、不画分隔线（proc-list） */}

@@ -67,7 +67,7 @@ export function ActivityBar({ dark, onToggleTheme }: { dark: boolean; onToggleTh
     <nav
       aria-label={t('功能栏')}
       data-activity-bar
-      className="hidden w-14 shrink-0 flex-col items-center gap-1 bg-rail py-2 md:flex"
+      className="activity-bar hidden w-14 shrink-0 flex-col items-center gap-1 py-2 md:flex"
     >
       {tool ? (
         <Item icon={House} label={t('回到主页')} onClick={() => go(homeRoute())} />

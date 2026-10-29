@@ -454,6 +454,9 @@ test('对齐执行时间：weekly / workdays 的首次执行也落在规则允�
       weekdays: [],
     })
     assert.ok('error' in movedSchedule(schedule({ repeat: 'once' }), 0, Date.parse(at(2026, 10, 27, 9)), now))
+    // 拖进现在所在的那一格（12:00 这格，现在 12:10）：从下一分钟开始，不报「已经过去」
+    const nowSlot = movedSchedule(schedule({ repeat: 'once' }), 0, Date.parse(at(2026, 10, 28, 12)), now + 600_000)
+    assert.ok(!('error' in nowSlot) && Date.parse(nowSlot.at) > now + 600_000)
     // 每周一、三：把周三那次拖到周五 10:00 → 一、五，时分跟着改
     const weekly = schedule({ repeat: 'weekly', weekdays: [1, 3], at: at(2026, 10, 26, 9) })
     const w = movedSchedule(weekly, Date.parse(at(2026, 10, 28, 9)), Date.parse(at(2026, 10, 30, 10)), now)
