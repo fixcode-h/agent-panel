@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/modal'
 import { ChipGroup } from '@/components/ui/chip-group'
 import { Card } from '@/components/ui/card'
 import { EndChoice } from './EndChoice'
-import { REPEAT_OPTIONS, useScheduleForm } from './use-schedule-form'
+import { durationOptions, REPEAT_OPTIONS, useScheduleForm, type SchedulePreset } from './use-schedule-form'
 
 /** 表单里的一段：什么时候跑 / 跑什么 / 在哪跑；分组让长表单读起来有层次 */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -25,6 +25,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function ScheduleDialog({
   schedule,
   blank = false,
+  preset,
   schedules,
   onClose,
   onSaved,
@@ -33,6 +34,8 @@ export function ScheduleDialog({
   schedule?: Schedule
   /** 新建空白计划：名称和提示词不预填模板 */
   blank?: boolean
+  /** 在日历上某一格新建：从那一格开始 */
+  preset?: SchedulePreset
   /** 全部计划：选上游时列出来，排除自己 */
   schedules: Schedule[]
   onClose: () => void
@@ -51,7 +54,7 @@ export function ScheduleDialog({
     save,
     previewAt,
     previewPast,
-  } = useScheduleForm({ schedule, blank, schedules, onSaved })
+  } = useScheduleForm({ schedule, blank, preset, schedules, onSaved })
   // 编辑已有计划时带着上游或执行上限，默认展开「更多设置」，用户不用再点一次
   const [advancedOpen, setAdvancedOpen] = useState(
     !!schedule && (!!schedule.dependsOn.length || !!(schedule.budget.tokens || schedule.budget.minutes)),
@@ -110,6 +113,17 @@ export function ScheduleDialog({
               className="h-10 dark:[color-scheme:dark]"
               value={form.atLocal}
               onChange={(e) => setAtLocal(e.target.value)}
+            />
+          </label>
+          {/* 日历上占多长：只是排日程用，执行时长的上限在「更多设置」里 */}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[0.8125rem] font-medium">{t('时长')}</span>
+            <Select
+              aria-label={t('时长')}
+              className="h-10 w-32"
+              value={String(form.durationMin)}
+              options={durationOptions(form.durationMin)}
+              onChange={(e) => set('durationMin', Number(e.target.value))}
             />
           </label>
         </div>

@@ -5,6 +5,7 @@ import {
   fromLocalInput,
   isoWeekday,
   sameMinute,
+  SLOT_MIN,
   scheduleCycle,
   scheduleCycleLabel,
   scheduleTimingError,
@@ -43,6 +44,25 @@ export interface ScheduleForm {
   budgetTokens: string
   /** 时长上限（分钟，输入框里的原文）；空或 0 表示不限 */
   budgetMinutes: string
+  /** 日历上占多长（分钟）：周视图里拖底边改，表单里不单独编辑，原样带着保存 */
+  durationMin: number
+}
+
+/** 在日历上右键 / 双击某一格新建：从那一格开始，默认占一小时 */
+export interface SchedulePreset {
+  at: string
+  durationMin: number
+}
+
+/** 时长的选项：半小时一档到 4 小时，再往上按小时到一整天（日历上拖底边也能改）；当前值不在档上时也列出来 */
+export function durationOptions(current: number) {
+  const steps = [
+    ...Array.from({ length: 8 }, (_, i) => (i + 1) * SLOT_MIN),
+    ...Array.from({ length: 20 }, (_, i) => (i + 5) * 60),
+  ]
+  return [...new Set([...steps, current])]
+    .sort((a, b) => a - b)
+    .map((m) => ({ value: String(m), label: m < 60 ? t('{n} 分钟', { n: m }) : t('{n} 小时', { n: m / 60 }) }))
 }
 
 /** 重复规则的选项：分段单选比下拉更直观，四种规则一眼看全（文案照设计稿写「不重复」） */
@@ -53,23 +73,25 @@ export const REPEAT_OPTIONS: { id: ScheduleRepeat; label: string }[] = [
   { id: 'workdays', label: t('工作日') },
 ]
 
-export const newScheduleForm = (blank: boolean): ScheduleForm => {
+export const newScheduleForm = (blank: boolean, preset?: SchedulePreset): ScheduleForm => {
   // 新建时预填「今日工作」模板：每天 19:00 总结当天的工作，用户直接改就行；
   // 空白计划只留时刻和重复规则，名称、提示词留空等用户自己写
   const tpl = workdayTemplate(Date.now())
   return {
     name: blank ? '' : tpl.name,
     prompt: blank ? '' : tpl.prompt,
-    repeat: tpl.repeat,
+    // 从日历上某一格新建的就是那一次：不重复，要重复再改
+    repeat: preset ? 'once' : tpl.repeat,
     weekdays: [],
     projectId: '',
     agentId: '',
-    atLocal: toLocalInput(tpl.at),
+    atLocal: toLocalInput(preset?.at ?? tpl.at),
     endDate: '',
     enabled: true,
     dependsOn: [],
     budgetTokens: '',
     budgetMinutes: '',
+    durationMin: preset?.durationMin ?? 60,
   }
 }
 
@@ -87,6 +109,7 @@ export const scheduleFormOf = (s: Schedule): ScheduleForm => ({
   // 0 在界面上显示成空：不限制就别占着输入框写一个 0
   budgetTokens: s.budget.tokens ? String(s.budget.tokens) : '',
   budgetMinutes: s.budget.minutes ? String(s.budget.minutes) : '',
+  durationMin: s.durationMin,
 })
 
 /** 已有计划原样转成保存用的输入：列表卡片上只切开关时用，其余字段不动 */
@@ -102,6 +125,7 @@ export const scheduleInputOf = (s: Schedule): ScheduleInput => ({
   dependsOn: s.dependsOn,
   budget: s.budget,
   endDate: s.endDate,
+  durationMin: s.durationMin,
 })
 
 /** 每周没勾星期时按执行时间那天：保存、预览、对齐都用这一口径 */
@@ -114,12 +138,15 @@ const sameForm = (a: ScheduleForm, b: ScheduleForm) => JSON.stringify(a) === JSO
 export function useScheduleForm({
   schedule,
   blank = false,
+  preset,
   schedules,
   onSaved,
   inline = false,
 }: {
   /** 不传是新建 */
   schedule?: Schedule
+  /** 新建时从日历上哪一格开始（右键 / 双击空白格） */
+  preset?: SchedulePreset
   /** 新建空白计划：名称和提示词不预填模板 */
   blank?: boolean
   /** 全部计划：成环检查用 */
@@ -131,7 +158,7 @@ export function useScheduleForm({
   /** 表单是基于哪一份计划开始改的：保存前拿它判断「排期是不是在这期间变了」 */
   const [origin, setOrigin] = useState(schedule)
   const [baseline, setBaseline] = useState<ScheduleForm>(() =>
-    schedule ? scheduleFormOf(schedule) : newScheduleForm(blank),
+    schedule ? scheduleFormOf(schedule) : newScheduleForm(blank, preset),
   )
   const [form, setForm] = useState<ScheduleForm>(baseline)
   const [saving, setSaving] = useState(false)
@@ -239,6 +266,7 @@ export function useScheduleForm({
       // 输入框只让填数字；空着按 0（不限）
       budget: { tokens: Number(form.budgetTokens) || 0, minutes: Number(form.budgetMinutes) || 0 },
       endDate: form.repeat === 'once' ? '' : form.endDate,
+      durationMin: form.durationMin,
     }
     // 下面两项服务端也会拦（同一个函数），先在本机拦一下，提示比等接口报错快
     const timing = scheduleTimingError(input)
