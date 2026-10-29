@@ -19,6 +19,7 @@ import { toast } from '@/lib/toast'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import type { Task } from '@shared/schema'
 import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
+import { NewModelDesignDialog } from '@/components/design/NewModelDesignDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -168,6 +169,7 @@ function ModelDesignList() {
   const { route, go } = useNav()
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const unread = useUnreadTasks()
+  const [creating, setCreating] = useState(false)
   const models = tasks.filter((x: Task) => x.modelDesign && x.projectId && !x.parentTaskId && !x.archived)
   const groups = projects
     .map((p) => ({ p, ts: models.filter((x) => x.projectId === p.id).sort(byAskedAt) }))
@@ -176,16 +178,21 @@ function ModelDesignList() {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2">
       <div className="mb-1.5 flex h-6 shrink-0 items-center pr-1 pl-2">
         <p className={cn('flex-1 font-semibold tracking-[0.08em]', SIDEBAR_GROUP_LABEL)}>{t('项目')}</p>
+        <IconButton icon={Plus} label={t('新建模型设计')} size="sm" onClick={() => setCreating(true)} />
       </div>
       {!groups.length && (
-        // 新建模型对话的入口还没有接到界面上，这里只说明会列什么，不放点了没反应的按钮
         <EmptyPanel as="div" size="md" className="mx-0.5 mt-1 flex flex-col items-center gap-2">
           <Box className="h-5 w-5 text-subtle" strokeWidth={1.6} />
           <p className="text-xs leading-relaxed text-subtle">
             {t('还没有模型设计对话。模型设计在 Agent 项目里用 Blender 建模，对话会按项目列在这里。')}
           </p>
+          <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('新建模型设计')}
+          </Button>
         </EmptyPanel>
       )}
+      <NewModelDesignDialog open={creating} onOpenChange={setCreating} />
       {groups.map(({ p, ts }) => {
         const open = !folded.has(p.id)
         return (

@@ -127,5 +127,5 @@
 - 照设计稿 `Design.dc.html`：打开的设计是三块圆角面板并排（`App.tsx` 的 `splitPage` 把 `page: 'design'` 且 `id` 不是 `new` / `home` 的路由算进去）——左边 AI 对话（默认 320，拖动条在右缘）、中间画板、右边检查器（默认 280）。
 - 设计名和保存状态在对话栏标题行，收起对话栏后回到画板标题行；收起按钮在对话栏标题行，打开按钮在画板标题行。
 - 画板标题行夹在两栏中间，只放阶段条（`StageSteps`：原画 → 界面，就是原来的「原画 / 界面」切换，确认模板后原画打勾）、尺寸、风格、版本、撤销重做、「更多」（动画面板开关 + 本机 ComfyUI）和导出；用 `@container` 在窄的时候收起风格文字和阶段圆点，放不下时横向滚动兜底。
-- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是 Agent 项目里 `Task.modelDesign` 的顶层对话（ADR 0025），按项目分组，点进对话页；新建模型对话的入口还没有接到界面上，空时只显示说明。
-- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」再切回。
+- 侧栏 `SidebarDesigns.tsx` 顶部是「UI 设计 / 模型设计」下拉（选择记在本机 `agent-panel:design-mode`）。模型设计列的是 Agent 项目里 `Task.modelDesign` 的顶层对话（ADR 0025），按项目分组，点进对话页；「项目」标题行的 + 和空状态里的按钮打开 `web/src/components/design/NewModelDesignDialog.tsx`：选 Agent 项目、写要建的模型，走 `POST /tasks`（`mode: 'chat'`、`modelDesign: true`）后跳进对话；打开时查一次 `api.blenderStatus()`，找不到 Blender 照样能建，但在弹窗底部写明原因并给「去设置」（设置的 `blender` 小节）。
+- 回归：`scripts/ui/04-design.mjs` 在项目行折叠检查之后切到「模型设计」、打开新建模型设计弹窗（演示版提示没有 Blender），再切回。

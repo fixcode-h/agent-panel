@@ -842,4 +842,15 @@ export const EN_DESIGN: Record<string, string> = {
   数字: 'Number',
   开关: 'Toggle',
   图片: 'Image',
+  新建模型设计: 'New model design',
+  '没找到 Blender：{why}': 'Blender not found: {why}',
+  还没设置路径: 'no path set',
+  去设置: 'Open settings',
+  开始建模: 'Start modeling',
+  '模型设计在 Agent 项目里开一个对话，后台启动 Blender，Agent 用它建模并在对话里汇报进度。':
+    'Model design opens a conversation in an Agent project and starts Blender in the background; the agent models with it and reports progress in the conversation.',
+  模型放在哪个项目里: 'Project for the model',
+  要建什么模型: 'What to model',
+  '例如：低多边形风格的宝箱，带开合的盖子，导出 GLB':
+    'e.g. a low-poly treasure chest with an opening lid, exported as GLB',
 }
