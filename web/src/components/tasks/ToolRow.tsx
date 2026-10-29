@@ -290,7 +290,7 @@ export function RowShell({
       <div
         onClick={activate}
         className={cn(
-          'group flex min-h-[2.125rem] w-full min-w-0 items-center px-2.5 py-1 text-[0.78125rem] text-muted',
+          'group flex min-h-[2.125rem] w-full min-w-0 items-center px-2.5 py-1 text-[0.75rem] text-muted',
           container && '@container',
           // 整行打开的行左边多一个下拉：间距收一点，窄行里状态标签才不会被挤出容器
           rowOpen ? 'gap-1.5' : 'gap-2',
@@ -370,7 +370,7 @@ export function RowShell({
           detail
         )}
         {ms !== undefined && (
-          <span className="shrink-0 text-[0.71875rem] text-subtle tabular-nums">{fmtDuration(ms)}</span>
+          <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{fmtDuration(ms)}</span>
         )}
         {action && (
           <span className="-my-1 flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
@@ -534,7 +534,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
 
   const glyph =
     tool.running || bg ? (
-      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
     ) : (
       <Icon
         className={cn(
@@ -641,7 +641,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                       <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">
                         OUT
                       </span>
-                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent">
+                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent-text">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                         {t('正在输出')}
                       </span>

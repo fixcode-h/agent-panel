@@ -8,7 +8,7 @@ import { Markdown } from './Markdown'
 
 /** 重点小节的标题颜色：验收标准这类必须满足的要求要一眼看到 */
 const TONE_CLASS: Record<BriefBlock['tone'], string> = {
-  key: 'text-accent',
+  key: 'text-accent-text',
   note: 'text-muted',
   plain: 'text-subtle',
 }

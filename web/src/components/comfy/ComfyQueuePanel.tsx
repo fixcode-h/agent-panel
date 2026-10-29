@@ -54,14 +54,14 @@ function Item({ item, index }: { item: ComfyQueueEntry; index?: number }) {
           </span>
         )}
         {pct !== undefined && (
-          <span className="w-9 shrink-0 text-right font-mono text-[0.71875rem] tabular-nums text-muted">{pct}%</span>
+          <span className="w-9 shrink-0 text-right font-mono text-[0.6875rem] tabular-nums text-muted">{pct}%</span>
         )}
         <button
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           title={t('查看节点图')}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.71875rem] text-subtle hover:bg-sel hover:text-fg"
+          className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded px-1.5 py-0.5 text-[0.6875rem] text-subtle hover:bg-sel hover:text-fg"
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {t('节点图')}
@@ -103,7 +103,7 @@ export function ComfyQueuePanel({ compact = false, className }: { compact?: bool
     >
       <div className="flex min-w-0 items-center gap-1.5 text-[0.75rem] font-medium text-muted">
         {running.length ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
           <Clock className="h-3.5 w-3.5 shrink-0" />
         )}

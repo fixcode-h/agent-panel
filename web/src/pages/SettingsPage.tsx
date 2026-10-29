@@ -446,14 +446,14 @@ function SettingsBody({
                 aria-current={on ? 'page' : undefined}
                 aria-describedby={s.id === 'models' && deployDot ? agentHintId : undefined}
                 className={cn(
-                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
+                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors duration-150',
                   on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                 )}
               >
                 {s.id === 'models' ? (
-                  <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                  <SquareTerminal className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
                 ) : (
-                  s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                  s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
                 )}
                 <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
                 {s.id === 'update' && update && (
@@ -531,7 +531,7 @@ function SettingsBody({
                     moveCli(s.cli.id, at + (e.key === 'ArrowUp' ? -1 : 1))
                   }}
                   className={cn(
-                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors duration-150',
+                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors duration-150',
                     on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                     s.cli && dragging === s.cli.id && 'opacity-50',
                   )}
@@ -539,7 +539,7 @@ function SettingsBody({
                   {s.cli ? (
                     <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
                   ) : (
-                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent')} strokeWidth={1.8} />
+                    s.icon && <s.icon className={cn('h-4 w-4 shrink-0', on && 'text-accent-text')} strokeWidth={1.8} />
                   )}
                   <span className="truncate">{s.label}</span>
                   {s.id === 'deploy' && deployDot && (
@@ -1074,7 +1074,7 @@ function SettingsBody({
                     <>
                       {t('跟随 {cli} 自己的档位设置，要改请到', { cli: defDef.name })}{' '}
                       <button
-                        className="cursor-pointer text-accent hover:underline"
+                        className="cursor-pointer text-accent-text hover:underline"
                         onClick={() => onSection(`cli:${defCli}`)}
                       >
                         {defDef.name}

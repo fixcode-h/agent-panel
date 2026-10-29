@@ -52,7 +52,7 @@ export function Label({ children, hint }: { children: React.ReactNode; hint?: st
   return (
     <span className="flex flex-col gap-0.5">
       <span className="text-xs font-medium text-muted">{children}</span>
-      {hint && <span className="text-[0.71875rem] leading-relaxed text-subtle">{hint}</span>}
+      {hint && <span className="text-[0.6875rem] leading-relaxed text-subtle">{hint}</span>}
     </span>
   )
 }
@@ -196,7 +196,7 @@ export function NodeInspector({
                 </Button>
               </div>
               {!open && (
-                <p className="-mt-1 truncate text-[0.71875rem] text-subtle">
+                <p className="-mt-1 truncate text-[0.6875rem] text-subtle">
                   {[
                     stepName(u),
                     u.kind === 'agent'
@@ -282,7 +282,7 @@ export function NodeInspector({
                           onChange={(v) => patchStep(u.id, { tier: v })}
                           options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
                         />
-                        <span className="font-mono text-[0.71875rem] text-subtle">
+                        <span className="font-mono text-[0.6875rem] text-subtle">
                           {cs.tiers[tier].model || t('自动')}
                           {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
                         </span>
@@ -404,7 +404,7 @@ export function NodeInspector({
           </div>
         ))}
         {opts.length === 1 && (
-          <p className="text-[0.71875rem] text-subtle">
+          <p className="text-[0.6875rem] text-subtle">
             {t('还没有可选的流程。可以在上方新建子流程，或者先创建别的工作流。')}
           </p>
         )}
@@ -484,7 +484,7 @@ export function FlowInspector({
       <div className="flex items-center gap-2">
         <h3 className="flex-1 font-serif text-[1.0625rem] font-semibold">{atEnd ? t('结束') : t('流程')}</h3>
         {isEntry ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+          <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
             <Crown className="h-3 w-3" />
             {t('主流程')}
           </span>
@@ -539,7 +539,7 @@ export function FlowInspector({
                 {t('删除子流程')}
               </Button>
             </div>
-            <p className="text-[0.71875rem] leading-relaxed text-subtle">
+            <p className="text-[0.6875rem] leading-relaxed text-subtle">
               {users.length
                 ? t('被这些节点调用：{list}', {
                     list: users.map((u) => `${flowLabel(u.f, w)} · ${u.n.title || t('未命名节点')}`).join(t('、')),
@@ -549,7 +549,7 @@ export function FlowInspector({
           </>
         )}
       </div>
-      <p className="flex gap-2 text-[0.78125rem] leading-relaxed text-subtle">
+      <p className="flex gap-2 text-[0.75rem] leading-relaxed text-subtle">
         <MousePointerClick className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         {t(
           '从节点右侧的圆点拖到另一个节点就能连线。右键按住拖动画布；左键在空白处拖出选框能选中多个节点，再拖其中一个就一起移动；选中后按 Delete 删除。',

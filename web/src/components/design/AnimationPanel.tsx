@@ -417,7 +417,7 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[0.71875rem] outline-none focus:border-focus"
+              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[0.6875rem] outline-none focus:border-focus"
             />
             <Select
               aria-label={t('触发方式')}
@@ -499,7 +499,7 @@ export function AnimationPanel({
             >
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
-            <span className="w-14 shrink-0 text-right font-mono text-[0.71875rem] text-subtle tabular-nums">
+            <span className="w-14 shrink-0 text-right font-mono text-[0.6875rem] text-subtle tabular-nums">
               {time.toFixed(2)}s
             </span>
           </>
@@ -510,7 +510,7 @@ export function AnimationPanel({
       </div>
 
       {!anim ? (
-        <div className="grid flex-1 place-items-center px-6 text-center text-[0.78125rem] leading-relaxed text-subtle">
+        <div className="grid flex-1 place-items-center px-6 text-center text-[0.75rem] leading-relaxed text-subtle">
           <div className="max-w-[460px]">
             <p className="mb-1 text-[0.8125rem] font-medium text-fg">
               {web ? t('给网页加上动效') : t('给界面加动画（UE 的 Widget Animation）')}

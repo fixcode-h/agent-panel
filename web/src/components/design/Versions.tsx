@@ -79,7 +79,7 @@ export function VersionsButton({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('版本名，例如：第一稿、给老板看的')}
-            className="h-8 text-[0.78125rem]"
+            className="h-8 text-[0.75rem]"
             onKeyDown={(e) => e.key === 'Enter' && !busy && save()}
           />
           <Button size="sm" disabled={!!busy} onClick={save}>
@@ -100,12 +100,10 @@ export function VersionsButton({
                 {v.auto ? (
                   <Bot className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 ) : (
-                  <Save className="h-3.5 w-3.5 shrink-0 text-accent" />
+                  <Save className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cn('truncate text-[0.78125rem]', v.auto ? 'text-muted' : 'font-medium')}>
-                    {v.name}
-                  </span>
+                  <span className={cn('truncate text-[0.75rem]', v.auto ? 'text-muted' : 'font-medium')}>{v.name}</span>
                   <span className="text-[0.6875rem] text-subtle">
                     {when(v.at)} · {t('{n} 个控件', { n: v.widgets })}
                   </span>
@@ -239,7 +237,7 @@ function Pane({
   }, [X, Y])
   return (
     <div className="flex min-h-0 flex-col gap-1.5">
-      <p className="truncate text-[0.71875rem] text-white/60">{label}</p>
+      <p className="truncate text-[0.6875rem] text-white/60">{label}</p>
       <div ref={box} className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-black/30">
         {scale > 0 && (
           <div

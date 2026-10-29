@@ -262,10 +262,10 @@ export function DataSection() {
             return (
               <div key={k.id} className="flex items-center gap-3 border-b px-3.5 py-3 last:border-b-0">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[0.84375rem]">{k.label}</span>
+                  <span className="text-[0.8125rem]">{k.label}</span>
                   <span className="text-xs leading-relaxed text-subtle">{k.hint}</span>
                 </span>
-                <span className="shrink-0 text-right font-mono text-[0.78125rem] text-muted">
+                <span className="shrink-0 text-right font-mono text-[0.75rem] text-muted">
                   {u ? size(u.bytes) : '…'}
                   <span className="block text-[0.6875rem] text-subtle">{u ? t('{n} 个文件', { n: u.files }) : ''}</span>
                 </span>

@@ -63,7 +63,7 @@ export function LessonReviewReport({ text, project }: { text: string; project?: 
     <section aria-label={t('教训评审结果')} className="flex flex-col pb-3">
       <div className="flex flex-col gap-2 px-4 pt-3">
         <div className="flex flex-wrap items-center gap-2">
-          <GraduationCap className="h-3.5 w-3.5 text-accent" />
+          <GraduationCap className="h-3.5 w-3.5 text-accent-text" />
           <span className="text-[0.8125rem] font-medium">{t('教训评审')}</span>
           {pending.length > 0 ? (
             <Badge tone="accent">{t('{n} 条建议待处理', { n: pending.length })}</Badge>
@@ -127,7 +127,7 @@ function ReviewRow({
             {l?.title ?? (state === 'applied' ? t('（已删除）') : t('（这条教训已经不在了）'))}
           </span>
         </span>
-        {it.why && <span className="text-[0.78125rem] leading-relaxed text-muted">{it.why}</span>}
+        {it.why && <span className="text-[0.75rem] leading-relaxed text-muted">{it.why}</span>}
         {merged.length > 0 && (
           <span className="text-[0.75rem] text-subtle">
             {t('并入：{titles}', { titles: merged.map((x) => `「${x}」`).join('') })}

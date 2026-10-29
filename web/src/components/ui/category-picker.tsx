@@ -71,17 +71,17 @@ export function CategoryPicker({
           {!name && (
             <PopoverClose className={menuItem} onClick={() => onChange('')}>
               <span className="flex-1 text-muted">{t('未分类')}</span>
-              {!value && <Check className="h-4 w-4 text-accent" />}
+              {!value && <Check className="h-4 w-4 text-accent-text" />}
             </PopoverClose>
           )}
           {list.map((c) => (
             <PopoverClose key={c.id} className={menuItem} onClick={() => onChange(c.id)}>
               <span className="flex-1 truncate">{c.name}</span>
-              {c.id === value && <Check className="h-4 w-4 text-accent" />}
+              {c.id === value && <Check className="h-4 w-4 text-accent-text" />}
             </PopoverClose>
           ))}
           {name && !exact && (
-            <button className={cn(menuItem, 'text-accent')} onClick={create}>
+            <button className={cn(menuItem, 'text-accent-text')} onClick={create}>
               <FolderPlus className="h-4 w-4" />
               {t('新建分类「{name}」', { name })}
             </button>

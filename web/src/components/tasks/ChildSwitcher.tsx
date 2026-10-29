@@ -155,7 +155,7 @@ export function ChildSwitcher({
                   )}
                 >
                   <ChildRowContent c={c} viewing={c.id === current} />
-                  {c.id === current && <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />}
+                  {c.id === current && <Check className="mt-1 h-3.5 w-3.5 shrink-0 text-accent-text" aria-hidden />}
                 </M.Item>
               ))}
             </Fragment>

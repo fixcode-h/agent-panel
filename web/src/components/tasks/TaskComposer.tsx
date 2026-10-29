@@ -222,7 +222,7 @@ export function TaskComposer({
       title={t(
         '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里',
       )}
-      className={cn(chip, 'w-8 justify-center px-0', isolate ? 'text-accent hover:opacity-80' : 'text-subtle')}
+      className={cn(chip, 'w-8 justify-center px-0', isolate ? 'text-accent-text hover:opacity-80' : 'text-subtle')}
     >
       <GitBranch className="h-4 w-4 shrink-0" />
     </button>
@@ -245,7 +245,7 @@ export function TaskComposer({
             >
               <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
               <span className="min-w-0 flex-1 truncate">{x.title}</span>
-              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent">
+              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent-text">
                 <CornerDownRight className="h-3.5 w-3.5" />
                 {t('发到这里')}
               </span>
@@ -349,7 +349,7 @@ export function TaskComposer({
                     className={cn(
                       chip,
                       'w-8 justify-center px-0',
-                      useAgent ? 'text-accent hover:opacity-80' : 'text-subtle',
+                      useAgent ? 'text-accent-text hover:opacity-80' : 'text-subtle',
                     )}
                   >
                     <Bot className="h-4 w-4 shrink-0" />
@@ -369,7 +369,7 @@ export function TaskComposer({
               disabled={!canStart}
               aria-label={t('开始执行')}
               title={t('开始执行（Enter）')}
-              className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
             </button>
@@ -397,7 +397,7 @@ export function TaskComposer({
                           {p.path || t('未选择目录')}
                         </span>
                       </span>
-                      {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
+                      {p.id === project?.id && <Check className="h-4 w-4 text-accent-text" />}
                     </PopoverClose>
                   ))}
                   {projects.length === 0 && (

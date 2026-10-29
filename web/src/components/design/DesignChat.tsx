@@ -294,7 +294,7 @@ function BrowserHelp({
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-[fade-in_120ms_ease-out]" />
         <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-card p-6 shadow-pop">
           <D.Title className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
-            <Globe className="h-5 w-5 text-accent" />
+            <Globe className="h-5 w-5 text-accent-text" />
             {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
           </D.Title>
           <D.Description className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
@@ -367,13 +367,13 @@ function BrowserHelp({
           <div
             role="status"
             className={cn(
-              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[0.78125rem] leading-relaxed',
+              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[0.75rem] leading-relaxed',
               state.tone === 'ok' && 'border-success/40 bg-success/8',
               state.tone === 'warn' && 'border-warning/40 bg-warning/8',
             )}
           >
             {state.tone === 'wait' ? (
-              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
             ) : (
               <span
                 className={cn(
@@ -433,7 +433,7 @@ function BrowserHelp({
 }
 
 const LINK =
-  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg'
+  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.75rem] text-muted hover:bg-sel hover:text-fg'
 
 function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: React.ReactNode }) {
   return (
@@ -491,7 +491,7 @@ function ConceptToggle({
           }
           className={cn(
             'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
-            value && !template ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+            value && !template ? 'bg-accent-soft text-accent-text' : 'text-subtle hover:bg-sel hover:text-fg',
           )}
         >
           <Brush className="h-4 w-4" />
@@ -543,7 +543,7 @@ function InpaintToggle({
       }
       className={cn(
         'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
-        value ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+        value ? 'bg-accent-soft text-accent-text' : 'text-subtle hover:bg-sel hover:text-fg',
       )}
     >
       <Paintbrush className="h-4 w-4" />
@@ -842,7 +842,7 @@ export function DesignChat({
       <ConversationShell scroller={scroller}>
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent-text">
               <Sparkles className="h-5 w-5" />
             </span>
             <p className="text-[0.8125rem] leading-relaxed text-muted">
@@ -946,7 +946,9 @@ export function DesignChat({
             }
             className={cn(
               'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.75rem] transition-colors',
-              analysisRunning || analyzing ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-sel hover:text-fg',
+              analysisRunning || analyzing
+                ? 'bg-accent-soft text-accent-text'
+                : 'text-muted hover:bg-sel hover:text-fg',
               (analysisState === 'disabled' || analysisState === 'busy' || analyzing) &&
                 'cursor-default opacity-45 hover:bg-transparent hover:text-muted',
             )}
@@ -975,7 +977,7 @@ export function DesignChat({
               (annotations.length > 0 || styleRef || cites.length > 0) && (
                 <div className="flex flex-col gap-1.5 border-b px-2.5 pt-2.5 pb-2">
                   {styleRef && (
-                    <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[0.75rem] text-accent">
+                    <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[0.75rem] text-accent-text">
                       <Palette className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate" title={styleRef.en}>
                         {t('风格：{name}', { name: styleRef.name })}
@@ -1086,9 +1088,9 @@ function CitationChips({
           ]
             .filter(Boolean)
             .join('\n')}
-          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-line bg-field px-1.5 py-0.5 text-[0.71875rem] text-muted"
+          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-line bg-field px-1.5 py-0.5 text-[0.6875rem] text-muted"
         >
-          <Quote className="h-3 w-3 shrink-0 text-accent" />
+          <Quote className="h-3 w-3 shrink-0 text-accent-text" />
           <span className="truncate font-medium text-fg">{c.name}</span>
           <span className="shrink-0 text-subtle">
             {c.type}
@@ -1163,7 +1165,7 @@ function ChatMessage({
             {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
             {!!msg.refs?.length && <CitationChips list={msg.refs} className="mt-1.5" />}
             {!!msg.annotations?.length && (
-              <span className="mt-1.5 flex flex-col gap-0.5 text-[0.71875rem] whitespace-normal text-muted">
+              <span className="mt-1.5 flex flex-col gap-0.5 text-[0.6875rem] whitespace-normal text-muted">
                 {msg.annotations.map((a, i) => (
                   <span key={a.id} className="flex items-center gap-1.5">
                     <span
@@ -1208,7 +1210,7 @@ function ChatMessage({
       fold
     >
       {!!msg.images?.length && (
-        <span className="pl-[38px] text-[0.71875rem] text-subtle">
+        <span className="pl-[38px] text-[0.6875rem] text-subtle">
           {t('需要的图片：{n} 张', { n: msg.images.length })}
         </span>
       )}
@@ -1233,7 +1235,7 @@ function LiveReply({ job }: { job: DesignJob }) {
     <div className="flex flex-col gap-1.5">
       {!parts.length ? (
         <PendingAuthor author={author}>
-          <span className="thinking-shimmer text-[0.78125rem] text-subtle">{t('正在思考…')}</span>
+          <span className="thinking-shimmer text-[0.75rem] text-subtle">{t('正在思考…')}</span>
         </PendingAuthor>
       ) : (
         // 不传 fold：这里 live 恒为真，FoldedRun 遇到 live 就整段平铺（流式输出本来就要边出边看）；
@@ -1262,7 +1264,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
   const got = items.reduce((n, i) => n + Math.min(i.got, i.want), 0)
   const active = items.filter((i) => i.status === 'generating')
   return (
-    <div className="mb-2 flex flex-col gap-2 rounded-xl bg-card shadow-card px-3 py-2.5 text-[0.78125rem] shadow-card">
+    <div className="mb-2 flex flex-col gap-2 rounded-xl bg-card shadow-card px-3 py-2.5 text-[0.75rem] shadow-card">
       <button
         onClick={() => setOpen(!open)}
         disabled={!items.length}
@@ -1270,7 +1272,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
         className="flex cursor-pointer items-center gap-2 font-medium text-muted disabled:cursor-default"
       >
         {running ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
           <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
         )}
@@ -1313,7 +1315,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
               ) : i.status === 'failed' ? (
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
               ) : i.status === 'generating' ? (
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
               ) : (
                 <span className="grid h-3.5 w-3.5 shrink-0 place-items-center">
                   <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
@@ -1340,7 +1342,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                     setRetrying(i.id)
                     void onRetry(i.id).finally(() => setRetrying(''))
                   }}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[0.71875rem] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[0.6875rem] text-accent-text hover:bg-sel disabled:cursor-default disabled:opacity-50"
                 >
                   {retrying === i.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                   {t('重试')}
@@ -1350,7 +1352,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
           ))}
         </ul>
       )}
-      {!open && active[0]?.text && <p className="truncate text-[0.71875rem] text-subtle">{active[0].text}</p>}
+      {!open && active[0]?.text && <p className="truncate text-[0.6875rem] text-subtle">{active[0].text}</p>}
     </div>
   )
 }
@@ -1361,7 +1363,7 @@ function StyleTag({ name, title, className }: { name: string; title?: string; cl
     <span
       title={title}
       className={cn(
-        'inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.71875rem] text-accent',
+        'inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.6875rem] text-accent-text',
         className,
       )}
     >

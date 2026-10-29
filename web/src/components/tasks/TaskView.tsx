@@ -1702,7 +1702,7 @@ export function TaskView({
       {task.imported && (
         <span
           title={t('从导出的文件导入，只能查看')}
-          className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent md:inline-flex"
+          className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text md:inline-flex"
         >
           <FileInput className="h-3 w-3" />
           {t('导入')}
@@ -1744,7 +1744,7 @@ export function TaskView({
     </>
   )
   const headerNav = (
-    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
+    <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.8125rem]">
       {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
       {!pane && (
         <>
@@ -1943,7 +1943,7 @@ export function TaskView({
             writeReportFolded(taskId, false)
           }}
         >
-          <ClipboardList className={cn('h-4 w-4', reportOn && 'text-accent')} />
+          <ClipboardList className={cn('h-4 w-4', reportOn && 'text-accent-text')} />
         </Button>
       )}
       {report && (
@@ -1956,7 +1956,7 @@ export function TaskView({
           aria-pressed={reportCover}
           onClick={() => setReportCover((v) => !v)}
         >
-          <ClipboardList className={cn('h-4 w-4', reportCover && 'text-accent')} />
+          <ClipboardList className={cn('h-4 w-4', reportCover && 'text-accent-text')} />
         </Button>
       )}
       {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
@@ -2294,7 +2294,7 @@ export function TaskView({
                       working &&
                       (blocks.at(-1)?.kind === 'turn' ? (
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                           <RunPhase
                             task={task}
                             label={t('{name} 正在回复', { name: chatLabel })}
@@ -2306,7 +2306,7 @@ export function TaskView({
                         // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
                         <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                           <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                            <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                             <RunPhase task={task} label={t('思考中…')} agentIds={[task.agentId]} />
                             <LiveStats task={task} agentIds={[task.agentId]} />
                           </div>
@@ -2320,7 +2320,7 @@ export function TaskView({
                     )}
                     {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                        <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
                         <RunPhase task={task} label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })} />
                         <LiveStats task={task} />
                       </div>
@@ -2610,7 +2610,7 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
   const info = task.imported!
   return (
     <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-3 shadow-card">
-      <FileInput className="h-4 w-4 shrink-0 text-accent" />
+      <FileInput className="h-4 w-4 shrink-0 text-accent-text" />
       <span className="min-w-0 flex-1 text-[0.8125rem] text-muted">
         {t('这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。', {
           at: (info.exportedAt || info.at).slice(0, 16).replace('T', ' '),
@@ -2618,7 +2618,7 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
         })}
       </span>
       <Button size="sm" variant="secondary" className="shrink-0 rounded-lg" onClick={onAnalyze}>
-        <Sparkles className="h-3.5 w-3.5 text-accent" />
+        <Sparkles className="h-3.5 w-3.5 text-accent-text" />
         {t('AI 分析')}
       </Button>
     </div>
@@ -2734,7 +2734,7 @@ function ChildrenBar({
               </span>
               {/* 进行中的在前、总数在后：转圈 3/5 读作「3 个还在进行，一共 5 个」，总数不重复说两遍 */}
               {working > 0 ? (
-                <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
+                <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent-text tabular-nums">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   {working}/{total}
                 </span>
@@ -2788,7 +2788,7 @@ function ChildrenBar({
                       )}
                     >
                       {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
-                      <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent')} />
+                      <Loader2 className={cn('h-3 w-3 shrink-0 animate-spin', stale?.cls ?? 'text-accent-text')} />
                       {c.analysis && <AnalysisMark kind={c.analysis} />}
                       <span
                         className={cn(
@@ -2905,7 +2905,7 @@ function ChildrenBar({
                               type="button"
                               onClick={() => onResume(c.id)}
                               title={t('让它接着做：重新占执行位，从停下的地方继续')}
-                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-accent hover:bg-sel"
+                              className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-accent-text hover:bg-sel"
                             >
                               <RotateCw className="h-3 w-3" />
                               {t('继续')}
@@ -2979,7 +2979,7 @@ function FlowBar({
           title={
             blocked ? t('从「{title}」重新检查，接着走流程', { title: blocked.title }) : t('从没完成的节点继续执行')
           }
-          className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+          className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-accent-text hover:bg-accent/10 disabled:opacity-50"
         >
           {resuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
           {t('继续流程')}
@@ -3040,13 +3040,13 @@ function WorktreeBar({ task }: { task: Task }) {
   return (
     <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line bg-card/60 px-3 py-1.5 text-[0.8125rem]">
       {busy ? (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
       ) : item ? (
         <WorktreeMark item={item} />
       ) : (
-        <GitBranch className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent' : 'text-subtle')} />
+        <GitBranch className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent-text' : 'text-subtle')} />
       )}
-      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.78125rem]">
+      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.75rem]">
         <span className="shrink-0 text-subtle">{wt.baseBranch || 'HEAD'}</span>
         <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
         <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={wt.path}>
@@ -3180,7 +3180,7 @@ function ChatWaitLine({ wait, awaiting, task }: { wait: ChildWait; awaiting: boo
       {next ? (
         <MessageSquareText className="h-4 w-4 text-subtle" />
       ) : (
-        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+        <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
       )}
       <span className="inline-flex items-baseline">
         {text}

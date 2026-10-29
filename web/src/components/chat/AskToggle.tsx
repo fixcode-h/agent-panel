@@ -64,7 +64,7 @@ export function AskToggle({
       className={cn(
         // 只有图标、不带底色：开着换成强调色，关着是灰色
         'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md transition-colors',
-        value ? 'text-accent hover:opacity-80' : 'text-subtle hover:text-fg',
+        value ? 'text-accent-text hover:opacity-80' : 'text-subtle hover:text-fg',
         className,
       )}
     >

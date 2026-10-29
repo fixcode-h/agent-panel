@@ -240,7 +240,10 @@ function ContextCard({ line }: { line: ContextLine }) {
           {name}
         </span>
         {live && (
-          <span className={cn('shrink-0 text-xs', tps > 0 ? 'text-accent' : 'text-subtle')} title={t('实时输出速度')}>
+          <span
+            className={cn('shrink-0 text-xs', tps > 0 ? 'text-accent-text' : 'text-subtle')}
+            title={t('实时输出速度')}
+          >
             {tps > 0 ? `${tps.toFixed(1)} token/s` : t('空闲')}
           </span>
         )}
@@ -289,7 +292,7 @@ function ContextRow({ line }: { line: ContextLine }) {
         <span className="min-w-0 flex-1 truncate font-medium text-fg" title={name}>
           {name ?? t('已删除的角色')}
         </span>
-        {tps > 0 && <span className="text-accent">{tps.toFixed(1)} token/s</span>}
+        {tps > 0 && <span className="text-accent-text">{tps.toFixed(1)} token/s</span>}
         <span className="text-muted tabular-nums">{p < 10 ? p.toFixed(1) : Math.round(p)}%</span>
       </div>
       <ContextBar p={p} />
@@ -327,7 +330,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
       <PopoverTrigger className={META_CHIP} title={t('Token 用量')}>
         <Coins className="h-3.5 w-3.5" />
         <span className="font-mono">{fmtTokens(total)}</span>
-        {tps > 0 && <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span>}
+        {tps > 0 && <span className="font-mono text-accent-text">{tps.toFixed(1)} token/s</span>}
         {u.inputTokens > 0 && (
           <span className={cn('font-mono', rate >= 0.5 && 'text-success')}>
             {t('命中 {n}%', { n: (rate * 100).toFixed(0) })}
@@ -362,7 +365,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
                   <dt className="text-subtle">{groupLabel[g.key]}</dt>
                   <dd className="ml-auto font-mono text-muted tabular-nums">{fmtTokens(g.tokens)}</dd>
                   {g.tps > 0 ? (
-                    <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent tabular-nums">
+                    <dd className="min-w-[5.5rem] whitespace-nowrap text-right font-mono text-accent-text tabular-nums">
                       {g.tps.toFixed(1)} token/s
                     </dd>
                   ) : (
@@ -595,7 +598,7 @@ function BranchRow({ path, branch, disabled }: { path: string; branch: string; d
         className="-mx-1.5 flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted"
       >
         {busy ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-text" />
         ) : (
           <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
         )}
@@ -610,8 +613,8 @@ function BranchRow({ path, branch, disabled }: { path: string; branch: string; d
           {list?.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">{t('没有其他分支')}</p>}
           {list?.map((b) => (
             <PopoverClose key={b} className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => void pick(b)}>
-              <span className="min-w-0 flex-1 truncate font-mono text-[0.78125rem]">{b}</span>
-              {b === current && <Check className="h-4 w-4 shrink-0 text-accent" />}
+              <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem]">{b}</span>
+              {b === current && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
             </PopoverClose>
           ))}
         </div>

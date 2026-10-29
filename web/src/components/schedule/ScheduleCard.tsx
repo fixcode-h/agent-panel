@@ -189,7 +189,7 @@ export function ScheduleCard({
               <button
                 type="button"
                 onClick={() => onOpenTask(s.lastTaskId)}
-                className="inline-flex cursor-pointer items-center gap-1 text-accent hover:underline"
+                className="inline-flex cursor-pointer items-center gap-1 text-accent-text hover:underline"
               >
                 {t('打开这次执行')}
                 <ExternalLink className="h-3 w-3" />
@@ -253,7 +253,7 @@ export function ScheduleCard({
                         <button
                           type="button"
                           onClick={() => onOpenTask(run.taskId)}
-                          className="inline-flex min-w-0 max-w-[220px] cursor-pointer items-center gap-1 text-accent hover:underline"
+                          className="inline-flex min-w-0 max-w-[220px] cursor-pointer items-center gap-1 text-accent-text hover:underline"
                         >
                           <span className="truncate">{taskTitle(run.taskId) || t('打开对话')}</span>
                           <ExternalLink className="h-3 w-3 shrink-0" />

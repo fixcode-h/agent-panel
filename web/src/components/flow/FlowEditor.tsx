@@ -298,7 +298,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                         on ? 'bg-sel font-semibold text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
                       )}
                     >
-                      {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />}
+                      {entry && <Crown className="h-3.5 w-3.5 shrink-0 text-accent-text" />}
                       <span className="truncate">{flowLabel(f, w)}</span>
                       <span className="font-mono text-[0.6875rem] font-normal text-subtle">{f.nodes.length}</span>
                     </button>
@@ -517,7 +517,7 @@ function Editor({ w, onChange, main, team, checks, save, prepare }: EditorProps)
                         fit()
                       }}
                     >
-                      <Sparkles className="h-3.5 w-3.5 text-accent" />
+                      <Sparkles className="h-3.5 w-3.5 text-accent-text" />
                       {t('按团队生成')}
                     </Button>
                   )}

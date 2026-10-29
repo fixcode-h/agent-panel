@@ -59,7 +59,7 @@ export function SkillsPicker({
             !has(n) && items.length > 0 && 'border-dashed text-muted',
           )}
         >
-          <Sparkles className="h-3 w-3 text-accent" />
+          <Sparkles className="h-3 w-3 text-accent-text" />
           {n}
           <button
             type="button"
@@ -102,15 +102,15 @@ export function SkillsPicker({
               return (
                 <button key={n} type="button" className={menuItem} onClick={() => toggle(n)}>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center gap-1.5 truncate font-mono text-[0.78125rem]">
+                    <span className="flex items-center gap-1.5 truncate font-mono text-[0.75rem]">
                       {n}
                       {isBundled(n) && (
-                        <span className="rounded bg-sel px-1 font-sans text-[0.65625rem] text-subtle">{t('自带')}</span>
+                        <span className="rounded bg-sel px-1 font-sans text-[0.6875rem] text-subtle">{t('自带')}</span>
                       )}
                     </span>
                     {it?.description && <span className="truncate text-[0.6875rem] text-subtle">{it.description}</span>}
                   </span>
-                  {value.includes(n) && <Check className="h-4 w-4 shrink-0 text-accent" />}
+                  {value.includes(n) && <Check className="h-4 w-4 shrink-0 text-accent-text" />}
                 </button>
               )
             })}

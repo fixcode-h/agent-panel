@@ -52,7 +52,7 @@ function HotkeyField({ label, value, onChange }: { label: string; value: string;
       onPointerDown={(e) => e.stopPropagation()}
       className={cn(
         'flex h-9 w-[240px] cursor-pointer items-center gap-2 rounded-lg border px-3 text-[0.8125rem] transition-colors',
-        recording ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-field hover:border-focus',
+        recording ? 'border-accent bg-accent-soft text-accent-text' : 'border-line-strong bg-field hover:border-focus',
       )}
     >
       <Keyboard className="h-3.5 w-3.5 shrink-0 text-subtle" />

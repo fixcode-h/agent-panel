@@ -126,7 +126,7 @@ function InstallLog({
     >
       <div className="flex items-center gap-2 px-3.5 py-2.5 text-[0.8125rem]">
         {job.status === 'running' ? (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent-text" />
         ) : job.status === 'done' ? (
           <CircleCheck className="h-4 w-4 shrink-0 text-success" />
         ) : (
@@ -173,7 +173,7 @@ function InstallLog({
       {open && (
         <pre
           ref={pre}
-          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted"
+          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.6875rem] leading-relaxed whitespace-pre-wrap text-muted"
         >
           <span className="text-subtle">$ {job.command}</span>
           {'\n'}
@@ -352,7 +352,7 @@ export function TierTable({
             className="grid grid-cols-1 gap-2 border-b px-3.5 py-3 last:border-b-0 sm:grid-cols-[120px_1fr_170px] sm:items-center sm:gap-x-3"
           >
             <span className="flex items-center gap-2">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent-text">
                 {tr.label}
               </span>
               <span className="flex min-w-0 flex-col">
@@ -399,7 +399,7 @@ export function TierTable({
                 <span>
                   {t('最大输出')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(maxOutput)}</span>
                 </span>
-                {mapTo && <span className="text-accent">{t('映射 {model}', { model: mapTo })}</span>}
+                {mapTo && <span className="text-accent-text">{t('映射 {model}', { model: mapTo })}</span>}
               </button>
               {open && (
                 <div className="flex flex-col gap-2 rounded-lg bg-sel/40 p-2.5">
@@ -457,7 +457,7 @@ export function TierTable({
         )
       })}
       {(!can.context || !can.maxOutput) && (
-        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.71875rem] leading-relaxed text-subtle">
+        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.6875rem] leading-relaxed text-subtle">
           {!can.context && !can.maxOutput
             ? t('{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。', { cli: def.name })
             : !can.maxOutput
@@ -667,7 +667,7 @@ export function CliSection({
           <p className="flex items-center gap-2 font-medium">
             {def.name}
             {isDefault && (
-              <span className="rounded-full bg-accent-soft px-2 py-px text-[0.6875rem] font-normal text-accent">
+              <span className="rounded-full bg-accent-soft px-2 py-px text-[0.6875rem] font-normal text-accent-text">
                 {t('系统默认')}
               </span>
             )}

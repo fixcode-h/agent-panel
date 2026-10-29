@@ -122,7 +122,7 @@ export function TaskPanel({
                                 <StepIcon status={k.status} className="h-3.5 w-3.5" />
                                 {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
                                 {isMainStep(k) ? (
-                                  <Crown className="h-3 w-3 shrink-0 text-accent" />
+                                  <Crown className="h-3 w-3 shrink-0 text-accent-text" />
                                 ) : (
                                   k.slot === 'sub' &&
                                   byId.get(k.agentId) && (
@@ -216,7 +216,7 @@ function MainRow({
         className="-mx-1.5 -my-0.5 flex min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
       >
         <span className={cn('flex items-center gap-1.5 text-[0.8125rem]', step.status === 'running' && 'font-medium')}>
-          <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <Crown className="h-3.5 w-3.5 shrink-0 text-accent-text" />
           {t('主角色')}
         </span>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
@@ -251,7 +251,7 @@ function TimeSummary({ task, now }: { task: Task; now: number }) {
   if (total < 1000) return null
   const running = task.status === 'running'
   const cells: [string, string, string?, string?][] = [
-    [t('总耗时'), fmtDuration(total), running ? 'text-accent' : '', t('累计执行时间，不含两轮之间的空闲')],
+    [t('总耗时'), fmtDuration(total), running ? 'text-accent-text' : '', t('累计执行时间，不含两轮之间的空闲')],
     [t('等你处理'), wait >= 1000 ? fmtDuration(wait) : '—', '', t('等你确认操作、回答问题、查看节点结果的时间')],
     running
       ? [t('开始于'), fmtClock(task.createdAt)]
@@ -369,7 +369,7 @@ function Stats({
   return (
     <>
       {ms >= 1000 && (
-        <span className={cn(item, running && 'text-accent')} title={span}>
+        <span className={cn(item, running && 'text-accent-text')} title={span}>
           <Clock className="h-3 w-3" />
           {fmtDuration(ms)}
         </span>

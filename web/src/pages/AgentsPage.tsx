@@ -293,7 +293,7 @@ export function AgentsPage() {
               aria-label={t('AI 创建角色')}
               title={t('描述需求，让本机 Agent 生成角色')}
             >
-              <Sparkles className="h-4 w-4 text-accent" />
+              <Sparkles className="h-4 w-4 text-accent-text" />
             </Button>
           </>
         }
@@ -319,7 +319,7 @@ export function AgentsPage() {
               <button
                 onClick={recheck}
                 disabled={checking}
-                className="ml-auto flex cursor-pointer items-center gap-1 text-accent"
+                className="ml-auto flex cursor-pointer items-center gap-1 text-accent-text"
               >
                 <RefreshCw className={cn('h-3 w-3', checking && 'animate-spin')} />
                 {t('重新检测')}
@@ -340,7 +340,7 @@ export function AgentsPage() {
               clis.length > 0 && (
                 <button
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
-                  className="cursor-pointer text-left text-[0.8125rem] text-accent hover:underline"
+                  className="cursor-pointer text-left text-[0.8125rem] text-accent-text hover:underline"
                 >
                   {t('还没有启用 Agent，去设置里启用')}
                 </button>

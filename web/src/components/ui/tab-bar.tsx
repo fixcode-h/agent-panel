@@ -106,7 +106,7 @@ export function TabItem({
                 : 'text-muted hover:text-fg',
             )
           : cn(
-              'text-[0.78125rem]',
+              'text-[0.75rem]',
               fill ? 'flex-1 basis-0' : 'max-w-60 shrink-0 basis-[8.25rem]',
               // 选中只画底部指示条：左右各缩进 6px，盖住页签条的底线
               active
@@ -132,7 +132,7 @@ export function TabItem({
         {busy ? <Spinner className="text-run" /> : icon && <span className="flex shrink-0 items-center">{icon}</span>}
         <span className={cn('min-w-0 truncate', !fill && !underline && 'flex-1', preview && 'italic')}>{children}</span>
         {tag && (
-          <span className="shrink-0 rounded-full bg-sel px-1.5 text-[0.65625rem] leading-4 font-normal text-muted">
+          <span className="shrink-0 rounded-full bg-sel px-1.5 text-[0.6875rem] leading-4 font-normal text-muted">
             {tag}
           </span>
         )}

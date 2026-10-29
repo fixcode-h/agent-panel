@@ -227,7 +227,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   onMouseMove={() => i !== cur && setIndex(i)}
                   onClick={() => pick(x)}
                   className={cn(
-                    'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem]',
+                    'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem]',
                     i === cur ? 'bg-sel text-fg' : 'text-muted',
                   )}
                 >
@@ -243,7 +243,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               </div>
             ))}
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t bg-panel/60 px-4 py-2 text-[0.71875rem] text-subtle">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t bg-panel/60 px-4 py-2 text-[0.6875rem] text-subtle">
             <span>{t('↑↓ 选择 · Enter 打开')}</span>
             <span>{t('{mod}K 命令面板', { mod: MOD })}</span>
             <span>{t('{mod}Enter 打断并发送', { mod: MOD })}</span>

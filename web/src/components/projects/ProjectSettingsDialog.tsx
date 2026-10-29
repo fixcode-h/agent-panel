@@ -1030,7 +1030,7 @@ function Body({
                             <span className="flex min-w-0 flex-1 flex-col">
                               <span className="truncate">{w.name}</span>
                               {w.description && (
-                                <span className="truncate text-[0.71875rem] text-subtle">{w.description}</span>
+                                <span className="truncate text-[0.6875rem] text-subtle">{w.description}</span>
                               )}
                             </span>
                           </PopoverClose>
@@ -1149,7 +1149,7 @@ function Body({
                   <DirPicker value={draft.path} onChange={pickDir} info={dir} />
                   {!draft.initializedAt && (
                     <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-3.5 py-2.5">
-                      <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+                      <Sparkles className="h-4 w-4 shrink-0 text-accent-text" />
                       <span className="min-w-0 flex-1 text-[0.8125rem]">
                         {draft.path.trim()
                           ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
@@ -1203,7 +1203,7 @@ function Body({
                       <>
                         <button
                           type="button"
-                          className="cursor-pointer text-accent hover:underline"
+                          className="cursor-pointer text-accent-text hover:underline"
                           onClick={() => set('fileFormat', { ...globalFormat })}
                         >
                           {t('和全局设置不同时，在这里单独指定')}
@@ -1214,7 +1214,7 @@ function Body({
                       <>
                         <button
                           type="button"
-                          className="cursor-pointer text-accent hover:underline"
+                          className="cursor-pointer text-accent-text hover:underline"
                           onClick={() => set('fileFormat', undefined)}
                         >
                           {t('跟随全局设置')}
@@ -1357,7 +1357,7 @@ function PageIntro({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="flex flex-col gap-1 pb-1">
       <h3 className="text-[0.9375rem] font-semibold">{title}</h3>
-      <p className="text-[0.78125rem] leading-relaxed text-subtle">{desc}</p>
+      <p className="text-[0.75rem] leading-relaxed text-subtle">{desc}</p>
     </div>
   )
 }
@@ -1397,10 +1397,10 @@ function Collapsible({
           {leading}
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-[0.8125rem] font-medium">{title}</span>
-            {subtitle && <span className="truncate text-[0.71875rem] text-subtle">{subtitle}</span>}
+            {subtitle && <span className="truncate text-[0.6875rem] text-subtle">{subtitle}</span>}
           </span>
           {badge && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent-text">
               {badge}
             </span>
           )}
@@ -1932,7 +1932,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           {list.map((d) => (
             <span
               key={d}
-              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.78125rem] text-muted"
+              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.75rem] text-muted"
             >
               <span className="font-mono">{d}</span>
               <button
@@ -1965,7 +1965,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <button type="button" className="cursor-pointer text-accent hover:underline" onClick={preset}>
+          <button type="button" className="cursor-pointer text-accent-text hover:underline" onClick={preset}>
             {t('填入 UE 排除清单')}
           </button>
           {list.length > 0 && (
@@ -2007,13 +2007,13 @@ export function NavItem({
       onClick={onClick}
       aria-current={on ? 'page' : undefined}
       className={cn(
-        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
+        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.8125rem] whitespace-nowrap transition-colors',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
       {children}
       {hint && (
-        <span className="ml-auto hidden truncate font-mono text-[0.65625rem] font-normal text-subtle md:inline">
+        <span className="ml-auto hidden truncate font-mono text-[0.6875rem] font-normal text-subtle md:inline">
           {hint}
         </span>
       )}

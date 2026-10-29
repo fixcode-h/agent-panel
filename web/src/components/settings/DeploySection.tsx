@@ -125,7 +125,7 @@ export function DeploySection() {
       <Group title={t('全局说明（AGENTS.md）')}>
         <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl bg-sel/40">
           <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
-            <span className="font-mono text-[0.78125rem]">AGENTS.md</span>
+            <span className="font-mono text-[0.75rem]">AGENTS.md</span>
             {draft.agentsMd !== st.config.agentsMd && (
               <span className="text-xs text-subtle">{t('已修改，保存或部署时写入')}</span>
             )}
@@ -162,7 +162,7 @@ export function DeploySection() {
                 {t('恢复默认')}
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setOptimizing(true)}>
-                <Sparkles className="h-3.5 w-3.5 text-accent" />
+                <Sparkles className="h-3.5 w-3.5 text-accent-text" />
                 {draft.agentsMd.trim() ? t('AI 优化') : t('AI 生成')}
               </Button>
             </div>
@@ -246,7 +246,7 @@ export function DeploySection() {
         {outdated.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            <span className="min-w-0 flex-1 text-[0.78125rem] leading-relaxed">
+            <span className="min-w-0 flex-1 text-[0.75rem] leading-relaxed">
               {t('{n} 个技能和这一版自带的不同：{names}。勾上下面的「覆盖本机改过的技能」再点「部署」即可更新。', {
                 n: outdated.length,
                 names: outdated.map((s) => s.name).join(t('、')),
@@ -259,7 +259,7 @@ export function DeploySection() {
             )}
           </div>
         )}
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-[0.78125rem] text-subtle">
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-[0.75rem] text-subtle">
           <span className="min-w-0 flex-1 truncate font-mono" title={st.skillRoot}>
             {st.skillRoot}
           </span>
@@ -291,7 +291,7 @@ export function DeploySection() {
                             {s.status !== 'missing' && (
                               <span
                                 className={cn(
-                                  'font-sans text-[0.71875rem]',
+                                  'font-sans text-[0.6875rem]',
                                   s.status === 'same' ? 'text-success' : 'text-warning',
                                 )}
                               >

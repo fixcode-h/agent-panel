@@ -71,7 +71,7 @@ export function DesignProjectHome({ projectId }: { projectId: string }) {
         <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-10 md:px-6 md:pt-12">
           <div className="flex flex-col gap-2">
             <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
-              <Palette className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
+              <Palette className="h-7 w-7 shrink-0 text-accent-text" strokeWidth={1.6} />
               <span className="min-w-0 truncate">{project.name}</span>
             </h1>
             <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
@@ -153,7 +153,7 @@ function DesignRow({ design, now, onOpen }: { design: DesignMeta; now: number; o
             {kind === 'web' ? t('网页 UI') : t('游戏 UI（UE5 UMG）')}
           </span>
         </span>
-        <span className={cn('hidden shrink-0 text-xs sm:block', design.running ? 'text-accent' : 'text-subtle')}>
+        <span className={cn('hidden shrink-0 text-xs sm:block', design.running ? 'text-accent-text' : 'text-subtle')}>
           {design.asking ? t('等你处理') : design.running ? t('执行中') : timeAgo(design.updatedAt, now)}
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-subtle" />

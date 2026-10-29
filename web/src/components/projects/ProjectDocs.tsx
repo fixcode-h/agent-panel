@@ -72,7 +72,7 @@ export function DocPage({
                 aria-selected={f === active}
                 onClick={() => setActive(f)}
                 className={cn(
-                  'flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[0.78125rem] transition-colors',
+                  'flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[0.75rem] transition-colors',
                   f === active ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:bg-sel hover:text-fg',
                 )}
               >
@@ -89,7 +89,7 @@ export function DocPage({
 
       <div className="flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl bg-sel/40">
         <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
-          <span className="font-mono text-[0.78125rem]">{active}</span>
+          <span className="font-mono text-[0.75rem]">{active}</span>
           <span className="text-xs text-subtle">
             {doc?.tooLarge
               ? t('文件太大（{size}），不在这里编辑', { size: size(doc.bytes) })
@@ -122,7 +122,7 @@ export function DocPage({
               ))}
             </div>
             <Button size="sm" variant="secondary" disabled={!!doc?.tooLarge} onClick={() => setOptimizing(true)}>
-              <Sparkles className="h-3.5 w-3.5 text-accent" />
+              <Sparkles className="h-3.5 w-3.5 text-accent-text" />
               {t('AI 优化')}
             </Button>
           </div>
@@ -243,7 +243,7 @@ export function Optimizer({
   return (
     <div className="flex flex-col gap-3 border-b bg-accent-soft/40 px-4 py-3">
       <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-accent" />
+        <Sparkles className="h-4 w-4 text-accent-text" />
         <span className="text-[0.8125rem] font-medium">{title}</span>
         <button
           onClick={onClose}
@@ -292,7 +292,7 @@ export function Optimizer({
         <>
           <ScopeRequests scope={`doc:${job.id}`} active className="mb-0 max-w-none" />
           <div className="flex items-center gap-2 text-xs text-muted">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
             <span className="min-w-0 flex-1 truncate">
               {lastThought
                 ? t('正在思考：{text}', { text: lastThought })
@@ -312,7 +312,7 @@ export function Optimizer({
       ) : (
         <>
           {job.text && <p className="text-[0.8125rem] leading-relaxed">{job.text}</p>}
-          <pre className="max-h-72 overflow-auto rounded-lg border bg-[var(--code-bg)] px-3 py-2.5 font-mono text-[0.78125rem] leading-[1.6] whitespace-pre-wrap">
+          <pre className="max-h-72 overflow-auto rounded-lg border bg-[var(--code-bg)] px-3 py-2.5 font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap">
             {job.result}
           </pre>
           <div className="flex items-center gap-2">

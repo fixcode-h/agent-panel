@@ -255,7 +255,7 @@ export function ChatComposer({
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',
-          sm ? 'max-h-[200px] min-h-[60px] text-[0.84375rem]' : 'max-h-48 min-h-[62px] text-[0.90625rem]',
+          sm ? 'max-h-[200px] min-h-[60px] text-[0.8125rem]' : 'max-h-48 min-h-[62px] text-[0.875rem]',
         )}
       />
       <div className={cn('flex min-w-0 items-center gap-1', sm ? 'px-2 pb-2' : 'px-2.5 pb-2.5')}>
@@ -294,7 +294,7 @@ export function ChatComposer({
                   disabled={sending}
                   title={t('等这一轮结束再发')}
                   className={cn(
-                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.78125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
+                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.75rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
                     sm ? 'h-7' : 'h-8',
                   )}
                 >

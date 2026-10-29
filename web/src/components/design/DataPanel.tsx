@@ -125,7 +125,7 @@ export function DataPanel({
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
       <div className="flex min-h-10 items-center gap-3 border-b px-4 py-1.5">
         <span className="inline-flex items-center gap-1.5 text-[0.8125rem] font-medium">
-          <Database className="h-3.5 w-3.5 text-accent" />
+          <Database className="h-3.5 w-3.5 text-accent-text" />
           {t('运行时假数据')}
         </span>
         <span className="hidden text-[0.75rem] text-subtle sm:inline">{t('只影响画板预览，导出时剔除')}</span>

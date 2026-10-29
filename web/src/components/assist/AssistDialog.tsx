@@ -101,7 +101,11 @@ function SkillPreview({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        {command ? <Terminal className="h-4 w-4 text-accent" /> : <Sparkles className="h-4 w-4 text-accent" />}
+        {command ? (
+          <Terminal className="h-4 w-4 text-accent-text" />
+        ) : (
+          <Sparkles className="h-4 w-4 text-accent-text" />
+        )}
         <span className="font-mono text-[0.9375rem] font-semibold">
           {command ? '/' : ''}
           {name}
@@ -254,8 +258,8 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
             >
               <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
               {a.name}
-              {i === 0 && <Crown className="h-3 w-3 text-accent" />}
-              {a.isNew && <span className="text-[0.6875rem] text-accent">{t('新建')}</span>}
+              {i === 0 && <Crown className="h-3 w-3 text-accent-text" />}
+              {a.isNew && <span className="text-[0.6875rem] text-accent-text">{t('新建')}</span>}
             </span>
           ))}
       </div>
@@ -342,7 +346,7 @@ function JobProgress({
       {/* 和任务页同一套消息流：思考可以折叠，工具调用点开看详情 */}
       {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
         {phase}…<span className="tabular-nums">{fmtDuration(elapsed)}</span>
       </span>
     </div>
@@ -960,7 +964,7 @@ export function AssistDialog({
           <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
           <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
             <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent-text">
                 {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">

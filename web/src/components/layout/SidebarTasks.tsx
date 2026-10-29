@@ -330,7 +330,7 @@ export function TaskSearch({
               'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border transition-colors',
               filter === 'all'
                 ? 'border-transparent text-subtle hover:bg-sel hover:text-fg'
-                : 'border-accent/30 bg-accent-soft text-accent',
+                : 'border-accent/30 bg-accent-soft text-accent-text',
             )}
           >
             <ListFilter className="h-3.5 w-3.5" />

@@ -54,13 +54,13 @@ export function ProjectInitReport({ project, text, prompt }: { project?: Project
   if (!res)
     return (
       <p className="flex items-center gap-2 px-4 py-4 text-[0.8125rem] text-muted">
-        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+        <Loader2 className="h-4 w-4 animate-spin text-accent-text" />
         {t('正在读取推荐的设置…')}
       </p>
     )
   if (!res.proposal)
     return (
-      <p className="m-3 flex items-start gap-2 rounded-lg border border-dashed px-3 py-2.5 text-[0.78125rem] leading-relaxed text-muted">
+      <p className="m-3 flex items-start gap-2 rounded-lg border border-dashed px-3 py-2.5 text-[0.75rem] leading-relaxed text-muted">
         <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
         {t('这份结果的格式不对，读不出推荐的设置：{error}。可以在对话里让它重新输出。', { error: res.error ?? '' })}
       </p>

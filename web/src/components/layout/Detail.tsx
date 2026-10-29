@@ -147,7 +147,7 @@ export function DetailEmpty({
   return (
     <main className={cn('flex min-h-[420px] flex-1 items-center justify-center p-8', desktopOnly && 'hidden md:flex')}>
       <div className="flex max-w-sm flex-col items-center text-center">
-        <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</div>
+        <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent-soft text-accent-text">{icon}</div>
         <h2 className="mt-4 text-base font-semibold">{title}</h2>
         <div className="mt-2 text-[0.8125rem] leading-relaxed text-muted">{children}</div>
       </div>
