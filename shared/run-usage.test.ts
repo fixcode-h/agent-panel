@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AgentUsage, StepUsage, Task, TaskStep } from './schema.ts'
+import { contextBreakdown, tokensOfChars } from './context-breakdown.ts'
+import { getCli } from './clis.ts'
 import { helperSteps, ownTokens, runTree, runUsage, subtreeTaskIds, tokenCount, tokensOf, tpsNow } from './run-usage.ts'
 
 /** 节点的用量：只要 token 和费用，上下文那几项给默认值 */
@@ -78,7 +80,56 @@ const kids = () => [
   task('other', { usage: { inputTokens: 999, outputTokens: 99 } }),
 ]
 
+/** 会话栏的上下文细分：同一份用量的另一种拆法（按块拆一个会话的上下文窗口），各块加起来要等于 CLI 报的总数 */
+function checkContextBreakdown() {
+  const parts = {
+    cli: 'pi',
+    system: 3000,
+    tools: [
+      { name: 'ask_user', chars: 1800 },
+      { name: 'spawn_agents', chars: 3600 },
+    ],
+    deferred: [{ name: 'record_lesson', chars: 900 }],
+  }
+  const files = { memory: [{ path: 'AGENTS.md', chars: 6000 }], skills: [{ name: 'docs', chars: 300 }] }
+  const base = getCli('pi')!.context
+  const d = contextBreakdown({ used: 60_000, window: 200_000, base, parts, files, autoCompactPct: 70 })
+  const of = (k: string) => d.rows.find((r) => r.key === k)?.tokens ?? 0
+  // 窗口里的各块（含余量、空闲）加起来正好是窗口；消息 = 总占用 − 其余
+  assert.equal(
+    d.rows.reduce((n, r) => n + r.tokens, 0),
+    200_000,
+  )
+  assert.equal(of('mcpTools'), tokensOfChars(1800) + tokensOfChars(3600))
+  assert.equal(of('systemPrompt'), base!.systemPrompt! + tokensOfChars(3000))
+  assert.equal(of('memory'), 2000)
+  assert.equal(
+    of('messages'),
+    60_000 - of('systemTools') - of('mcpTools') - of('systemPrompt') - of('skills') - of('memory'),
+  )
+  // 面板设了 70% 自动压缩：余量是窗口的 30%，空闲是剩下的
+  assert.equal(of('buffer'), 60_000)
+  assert.equal(of('free'), 80_000)
+  assert.equal(Math.round(d.percent), 30)
+  // 按需取用的工具单列，不画进窗口
+  assert.deepEqual(d.deferred, [{ key: 'mcpDeferred', tokens: tokensOfChars(900) }])
+  assert.equal(d.tools.length + d.deferredTools.length, 3)
+
+  // 刚开会话、估的比报的还多：按比例缩到总占用以内，消息记 0，不会出现负数
+  const tiny = contextBreakdown({ used: 1000, window: 200_000, base, parts, files })
+  assert.ok(tiny.rows.every((r) => r.tokens >= 0))
+  assert.ok(tiny.rows.filter((r) => !['buffer', 'free'].includes(r.key)).reduce((n, r) => n + r.tokens, 0) <= 1000)
+  // 没设自动压缩百分比：用 CLI 自己的余量（Pi 16384），标成估计值
+  const buffer = tiny.rows.find((r) => r.key === 'buffer')
+  assert.equal(buffer?.tokens, 16384)
+  assert.equal(buffer?.estimated, true)
+  // Codex 按窗口的一成留余量
+  const codex = contextBreakdown({ used: 0, window: 100_000, base: getCli('codex')!.context })
+  assert.equal(codex.rows.find((r) => r.key === 'buffer')?.tokens, 10_000)
+}
+
 test('整个运行：总数 = 父对话 + 所有子对话（含多层）+ 派出的子任务', () => {
+  checkContextBreakdown()
   const run = runUsage(parent(), kids())
   assert.equal(run.children, 2)
   assert.equal(run.helpers, 2)

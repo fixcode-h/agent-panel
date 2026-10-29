@@ -51,6 +51,10 @@
   --run-soft: rgb(14 110 121 / 0.1);
   --peer: #5b4fc4;
   --peer-soft: rgb(91 79 196 / 0.08);
+  /* 会话栏上下文细分的三种主色（照 Claude Code 的 /context：消息蓝、系统工具橙、MCP 工具青），其余各块用灰阶 */
+  --ctx-messages: #2f6fd6;
+  --ctx-tools: #d9661f;
+  --ctx-mcp: #0f8f7a;
   /* 输入框、按钮获得焦点时的颜色 */
   --focus: var(--accent);
   --focus-soft: var(--accent-soft);
@@ -160,6 +164,9 @@
   --run-soft: rgb(108 207 217 / 0.12);
   --peer: #b3a9f5;
   --peer-soft: rgb(179 169 245 / 0.1);
+  --ctx-messages: #4a8cf0;
+  --ctx-tools: #e8743a;
+  --ctx-mcp: #22b39a;
   /* 深色背景上橙色的焦点框不显眼，和 Claude Code 一样用蓝色 */
   --focus: #4a9df0;
   --focus-soft: rgb(74 157 240 / 0.28);
@@ -349,6 +356,9 @@
   --color-ask-sel: var(--ask-sel);
   --color-peer: var(--peer);
   --color-peer-soft: var(--peer-soft);
+  --color-ctx-messages: var(--ctx-messages);
+  --color-ctx-tools: var(--ctx-tools);
+  --color-ctx-mcp: var(--ctx-mcp);
   --color-focus: var(--focus);
   --color-focus-soft: var(--focus-soft);
   --color-success: var(--success);

@@ -386,6 +386,19 @@ let piSleepAbort
 let piNextPrompt
 // 分叉到某一轮之前（RPC 的 fork）：记下截在哪条用户消息，测试检查
 let piForkAt
+if (piRpc && panelExt()) {
+  // 真的 Pi 加载桥接扩展时就握手、列一次面板工具（面板据此记会话栏的 MCP 工具占用）：这里照做，结果不用
+  const url = panelMcpUrl()
+  const post = (id, method) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params: {} }),
+    })
+  await post(1, 'initialize')
+    .then(() => post(2, 'tools/list'))
+    .catch(() => {})
+}
 if (piRpc) {
   // 每个会话的用户消息 entryId 存在一个文件里（跨进程续接时还在），get_fork_messages 按它回
   const histFile = `${process.env.FAKE_CLI_LOG ?? path.join(tmpdir(), 'fake-pi')}.pi-sessions.json`

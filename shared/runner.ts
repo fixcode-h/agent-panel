@@ -208,7 +208,7 @@ function thoughtFor(out: Output) {
 
 /** 模拟用量：每次调用读一遍上下文（大部分命中缓存），输出按字数估算 */
 function fakeUsage(ctx: RunContext, agentId: string, text: string, step?: TaskStep) {
-  const input = 14000 + Math.round(Math.random() * 6000) + ctx.task.messages.length * 400
+  const input = 30000 + Math.round(Math.random() * 6000) + ctx.task.messages.length * 400
   const read = Math.round(input * (0.72 + Math.random() * 0.18))
   const out = Math.round(text.length * 0.9) + 120
   const a = agent(ctx, agentId)
@@ -237,8 +237,31 @@ const agent = (ctx: RunContext, id: string) => {
     lastTps: 0,
     outputTokens: 0,
     genMs: 0,
+    // 会话栏的上下文细分：演示里按真实对话常见的那几样面板工具摆出来
+    parts: {
+      cli: found?.cli || 'claude',
+      system: 2400,
+      tools: DEMO_PANEL_TOOLS.map(([name, chars]) => ({ name, chars })),
+      deferred: [
+        { name: 'record_lesson', chars: 900 },
+        { name: 'list_peers', chars: 420 },
+        { name: 'app_do', chars: 1300 },
+      ],
+    },
   })
 }
+
+/** 演示用的面板工具和各自的说明字数 */
+const DEMO_PANEL_TOOLS: [string, number][] = [
+  ['ask_user', 1900],
+  ['spawn_agents', 3600],
+  ['wait_agents', 900],
+  ['run_background', 1400],
+  ['set_plan', 1700],
+  ['get_status', 500],
+  ['send_message', 700],
+  ['more_tools', 800],
+]
 
 /** 一条 Agent 消息：先思考，再逐个出现工具调用，最后逐段输出文字；输出时显示模拟的速度 */
 async function speak(ctx: RunContext, agentId: string, step: string, out: Output) {

@@ -180,6 +180,7 @@
   "docs": ["AGENTS.md", ".commandcode/AGENTS.md"],
   "docsNote": "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。",
   "globalDoc": "~/.commandcode/AGENTS.md",
+  "context": { "systemPrompt": 3000, "systemTools": 6000, "docsMode": "first" },
   "skills": {
     "user": ["~/.commandcode/skills", "~/.agents/skills"],
     "repo": [".commandcode/skills", ".agents/skills"]

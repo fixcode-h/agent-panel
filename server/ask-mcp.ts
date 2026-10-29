@@ -45,6 +45,7 @@ const sessions = new Map<
     orch?: Orchestra
     /** 操控软件的动作（app_actions / app_do）：对话的调用才有，值是调用者 */
     app?: ActionCaller
+    onTools?: (listed: { name: string; chars: number }[], deferred: { name: string; chars: number }[]) => void
     pending: Set<(r: AskReply) => void>
   }
 >()
@@ -171,6 +172,14 @@ async function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
   return { content: [{ type: 'text', text: list.length ? list.join('\n\n') : '没有新的补充' }] }
 }
 
+type ToolChars = { name: string; chars: number }
+/** 一个工具定义交给 CLI 时的字数：名字、标题、说明和参数的 JSON */
+const toolChars = (x: { name: string; title?: string; description?: string; inputSchema?: unknown }): ToolChars => ({
+  name: x.name,
+  chars:
+    x.name.length + (x.title?.length ?? 0) + (x.description?.length ?? 0) + JSON.stringify(x.inputSchema ?? {}).length,
+})
+
 async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
@@ -211,6 +220,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'ping':
       return reply({})
     case 'tools/list':
+      // 会话栏的上下文细分按这份算 MCP 工具占了多少（见 shared/context-breakdown.ts）
+      s.onTools?.(tools.map(toolChars), deferred.map(toolChars))
       return reply({ tools })
     case 'tools/call': {
       const name = String(msg.params?.name ?? '')
@@ -238,6 +249,8 @@ export function openAskBridge(o: {
   wait?: () => Promise<string | null>
   orch?: Orchestra
   app?: ActionCaller
+  /** CLI 取了工具清单：直接列出的和收进 more_tools 的各自多少字 */
+  onTools?: (listed: ToolChars[], deferred: ToolChars[]) => void
 }) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }

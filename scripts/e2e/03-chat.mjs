@@ -314,6 +314,17 @@ ${prompt}
   assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
   pm = await call('GET', `/tasks/${pm.id}`)
   assert.equal(pm.usage.agents[pm.agentId].context, 4321, '上下文占用以 get_session_stats 为准')
+  // 会话栏的上下文细分：Pi 列面板工具时记下各工具的字数，接口按 Pi 的定义读说明文件
+  {
+    const parts = pm.usage.agents[pm.agentId].parts
+    assert.equal(parts?.cli, 'pi', JSON.stringify(parts))
+    assert.ok(
+      parts.tools.some((x) => x.name === 'get_status' && x.chars > 0),
+      '面板工具按字数记下',
+    )
+    const info = await call('GET', `/tasks/${pm.id}/session?cli=pi`)
+    assert.ok(info.dir && Array.isArray(info.memory) && Array.isArray(info.skills), JSON.stringify(info))
+  }
   // 压缩走 Pi 的 compact 命令，原地压缩会话；下一轮仍然续接同一个会话，不用写摘要开新会话
   const piSession = pm.sessions[pm.agentId]
   await call('POST', `/tasks/${pm.id}/compact`)
