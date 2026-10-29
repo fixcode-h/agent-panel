@@ -685,6 +685,22 @@ if (input.includes('PLAN_LEFT') && input.includes('set_plan') && !input.includes
     ],
   })
 }
+// 计划做了一半就收尾（只回一句打算、不调工具）：面板要马上推它接着做；被推之后仍然原地不动，用来验证同一进度只推一次
+if (
+  input.includes('PLAN_STALL') &&
+  input.includes('set_plan') &&
+  !input.includes('之前的对话') &&
+  !input.includes('你的计划才做了')
+) {
+  await panelCall('set_plan', {
+    title: '做一半就停',
+    steps: [
+      { title: '改代码', status: 'done' },
+      { title: '跑检查', status: 'running' },
+      { title: '写文档', status: 'pending' },
+    ],
+  })
+}
 // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结。
 // 续接的会话只重发变了的段落（ADR 0027）：计划规则和没变的计划状态这一轮都不一定在，只按场景标记开新计划
 if (input.includes('PLAN_NEXT')) await panelCall('set_plan', { title: '下一份计划', steps: [{ title: '继续改代码' }] })
@@ -996,7 +1012,9 @@ const turnReply = () => {
 这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
   // 面板自动询问子对话状态（长时间没有输出）：回复带上标记，端到端测试据此确认它真的收到了
   const statusGot = input.includes('【状态询问】') ? '\nSTATUS_ASK_GOT' : ''
-  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}`
+  // 面板推它「计划没做完，接着做」：回复带上标记，端到端测试据此确认推送真的交到了 CLI
+  const planNudgeGot = input.includes('你的计划才做了') ? '\nPLAN_NUDGE_GOT' : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}${statusGot}${planNudgeGot}`
 }
 // 写配置文件接的 CLI 同一目录里第一轮叫 agent-panel、同时在跑的另几轮带后缀，按参数和文件名找这一轮的那一项（最后写进去的）
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项

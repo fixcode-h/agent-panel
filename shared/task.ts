@@ -1308,7 +1308,8 @@ export function planStalled(tk: Pick<Task, 'plans' | 'steps' | 'working' | 'reso
   const plan = activePlan(tk)
   if (!plan) return false
   const p = planProgress(tk, plan)
-  if (p.done >= p.total || p.waiting) return false
+  // 只剩「合回父对话的分支」那一步：那是请父对话收尾的事，由「催它 submit_merge」那条提醒管，不算停住
+  if (p.done >= p.total || p.waiting || !openWork(tk).length) return false
   return !plan.steps.some((s) => s.waits?.some((w) => w.state === 'waiting'))
 }
 

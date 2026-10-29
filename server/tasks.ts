@@ -204,6 +204,7 @@ import {
   holdWait,
   markWrapUp,
   openPlan,
+  planProgress,
   wrapUpKind,
   openWork,
   refreshChildWait,
@@ -1511,6 +1512,13 @@ export function tasksApi(deps: {
   const merging = new Set<string>()
   /** 这一轮结束时已经催过「请父对话收尾」的子对话：再结束还没请就照常上报父对话，不反复催 */
   const mergeNudged = new Set<string>()
+  /**
+   * 计划没做完就收尾、被催过接着做的子对话：记下催的时候计划做到哪（计划 id + 已完成几步）。
+   * 同一个进度只催一次：催过还停在原地就照常上报父对话「未完成」，不在面板里来回推
+   */
+  const planNudged = new Map<string, string>()
+  /** 一轮结束后等多久再推「接着做计划」：等 CLI 停到等下一句上；测试用环境变量缩短 */
+  const PLAN_NUDGE_MS = Number(process.env.AGENT_PANEL_PLAN_NUDGE_MS) || 2000
 
   /**
    * 子对话只剩合回时请父对话收尾（ADR 0005）：子对话这边能做的都做完了——计划除了合回都做完、
@@ -2487,7 +2495,10 @@ export function tasksApi(deps: {
       )
       return
     }
-    void reportChild(child.id).catch((e) => {
+    void (async () => {
+      if (await nudgePlan(child)) return
+      await reportChild(child.id)
+    })().catch((e) => {
       log.warn('task', '子对话状态上报失败', { task: child.id, error: (e as Error).message })
       alertOn(child.id, 'delivery', t('这个对话的状态没能报给父对话'))(e)
     })
@@ -2505,7 +2516,62 @@ export function tasksApi(deps: {
       if (!holds.length) return
       if (await nudgeMerge(tk)) return
     }
+    if (await nudgePlan(tk)) return
     await reportChild(childId)
+  }
+
+  /**
+   * 子对话这一轮说完了，计划却没做完、也没在等任何结果（见 planStalled）：常见于模型只回了一句
+   * 「先跑类型检查」就收尾，没真的调工具。父对话那边只会收到一条「未完成」，它在忙别的就没人推，
+   * 子对话一直停在等下一句（用户报过）。这里由面板马上推它按计划接着做下一步。
+   * 同一个进度只推一次（见 planNudged），推了没动静就照常上报父对话。推出去了返回 true
+   */
+  async function nudgePlan(child: Task): Promise<boolean> {
+    /** settled：这一轮已经停稳（进程结束，或者停在保活上等下一句）；刚结束那一下 CLI 还没停到等待上，不看这一项 */
+    const stalled = async (settled: boolean) => {
+      const tk = live.get(child.id)?.task ?? (await store.get(child.id))
+      if (!tk?.parentTaskId || tk.imported || !planStalled(tk)) return undefined
+      // 正常说完的一轮：进程结束了（done），或者还停在保活上等下一句（这时 status 仍是 running）。
+      // 失败、被停下的不推：那是出错了，要让用户看到错误再决定
+      if (settled && !(tk.status === 'done' || (tk.status === 'running' && tk.awaitingUser))) return undefined
+      // 等用户回答、等确认、还有排队要处理的消息、后台命令还在跑：不是停住了
+      if (tk.requests.length || tk.parentAsks?.length || hasHeld(tk.id) || startQueue.has(tk.id)) return undefined
+      if (background.list(tk.id).some((j) => j.state === 'queued' || j.state === 'running')) return undefined
+      const plan = activePlan(tk)!
+      return { tk, plan, p: planProgress(tk, plan) }
+    }
+    const now = await stalled(false)
+    if (!now) return false
+    const key = `${now.plan.id}:${now.p.done}`
+    if (planNudged.get(child.id) === key) return false
+    planNudged.set(child.id, key)
+    // 稍等一下再推：这一轮刚结束时 CLI 还没停到「等下一句」上，这时交过去会排进下一轮，
+    // 而保活的进程不会结束这一轮，消息就一直排着。等它停稳了再看一次，还停着才推
+    setTimeout(() => {
+      void (async () => {
+        const again = await stalled(true)
+        if (!again || `${again.plan.id}:${again.p.done}` !== key) return reportChild(child.id)
+        const left = openWork(again.tk)
+        const next = left.find((s) => s.status === 'running') ?? left[0]
+        const r = await sendToChild(
+          again.tk.parentTaskId,
+          again.tk.id,
+          `【面板】你的计划才做了 ${again.p.done}/${again.p.total}，也没有在等任何结果，这一轮却结束了。` +
+            (next ? `接着做「${next.title}」：` : '接着做下一步：') +
+            '直接调用工具去做，不要只回一句打算就结束；做完一步就用 set_plan 标完成，再做下一步，直到计划做完。' +
+            '确实卡住了就说明卡在哪一步、需要什么才能继续。',
+          'build',
+        )
+        if (r.ok)
+          log.info('task', '子对话计划没做完就收尾，已推它接着做', {
+            task: child.id,
+            done: again.p.done,
+            total: again.p.total,
+          })
+        else await reportChild(child.id)
+      })().catch((e) => log.warn('task', '推子对话接着做计划失败', { task: child.id, error: (e as Error).message }))
+    }, PLAN_NUDGE_MS).unref?.()
+    return true
   }
 
   /**

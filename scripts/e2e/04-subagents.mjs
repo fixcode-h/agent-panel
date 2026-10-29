@@ -1345,6 +1345,49 @@ await runShard('子对话与计划', async (api) => {
       await call('DELETE', `/tasks/${askParent.id}`)
       step('子对话长时间没有输出：自动询问送达并被回复，用户消息不被挡')
     }
+    // ---- 子对话计划做了一半就收尾（只回一句打算、不调工具）：面板马上推它接着做，同一进度只推一次 ----
+    {
+      const stallParent = await waitDone(
+        (
+          await call('POST', '/tasks', {
+            projectId: project.id,
+            mode: 'chat',
+            agentId: B.id,
+            prompt: '计划停住的父对话',
+          })
+        ).id,
+        20000,
+      )
+      const stallKid = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: B.id,
+        parentTaskId: stallParent.id,
+        prompt: 'PLAN_STALL 计划做一半就停',
+      })
+      const pushes = (x) => x.messages.filter((m) => m.panel === 'build' && m.text.includes('你的计划才做了'))
+      // 推送交到了 CLI：它回复里带上标记
+      const pushed = await waitFor(
+        async () => {
+          const t = await call('GET', `/tasks/${stallKid.id}`)
+          return t.messages.some((m) => m.role === 'agent' && m.text.includes('PLAN_NUDGE_GOT')) ? t : undefined
+        },
+        { label: '面板推子对话接着做计划，并交到了 CLI', timeout: 20000 },
+      )
+      assert.equal(pushes(pushed).length, 1, '计划停住时推了一次')
+      assert.match(pushes(pushed)[0].text, /1\/3[\s\S]*「跑检查」/, '推的时候写明进度和接下来做哪一步')
+      // 被推之后仍然原地不动：不再推第二次，改成照常上报父对话「未完成」
+      await waitFor(
+        async () => {
+          const p = await call('GET', `/tasks/${stallParent.id}`)
+          return p.messages.some((m) => m.child?.id === stallKid.id && m.text.includes('计划还没做完'))
+        },
+        { label: '推过一次仍没动：上报父对话未完成', timeout: 20000 },
+      )
+      assert.equal(pushes(await call('GET', `/tasks/${stallKid.id}`)).length, 1, '同一进度只推一次，不来回推')
+      await call('DELETE', `/tasks/${stallParent.id}`)
+      step('子对话计划做一半就收尾：面板马上推它接着做，推过仍不动就上报父对话，不来回推')
+    }
   }
   // 用户点「解决」时计划一并收口：走正式后端这条路径（PATCH resolved → settleChildForUser → settlePlan → 流转）。
   // 界面检查只覆盖演示后端，这条改的是 server/tasks.ts，得在这里兜住
