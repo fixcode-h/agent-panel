@@ -65,7 +65,12 @@ async function session(
   input: string,
   op?: BuildOptions['op'],
   more: { resume?: string; forkBefore?: string; maxTurns?: number } = {},
-  rpcOptions: { requestTimeoutMs?: number; diagnose?: RpcDiagnose } = {},
+  rpcOptions: {
+    requestTimeoutMs?: number
+    diagnose?: RpcDiagnose
+    hold?: () => boolean
+    next?: () => Promise<string | null>
+  } = {},
 ) {
   const def = getCli('pi')!
   const spec = RpcSpec.parse(def.rpc)
@@ -428,13 +433,60 @@ test('Pi RPC：插话被长命令挡着时，收回插话、abort，停下的结
   )
 })
 
-test('Pi RPC：插话已经被取走（命令刚好跑完）就不打断', async () => {
-  const { rpc, sent } = await running('等 CI')
+test('Pi RPC：插话和结束擦肩而过时收回接着做；已被取走就不打断、照常结束；保活等下一句时不再插话', async () => {
+  // Pi 在 agent_settled 之后收到的 steer 照样回 queued 却不处理：不收回的话子对话一直挂在「等待模型」
+  const s = await session('改代码', undefined, {}, { hold: () => true, next: () => new Promise(() => {}) })
+  const { rpc, events, sent } = s
+  rpc.handle(reply(sent, 'get_state', { sessionId: 'pi-k' }))
+  await tick()
+  rpc.handle(reply(sent, 'get_fork_messages', { messages: [] }))
+  await tick()
+  rpc.handle(reply(sent, 'prompt', { disposition: 'started' }))
+  await tick()
+  const steered = rpc.steer('合并结果：测试通过')
+  await tick()
+  rpc.handle({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } })
+  rpc.handle({ type: 'agent_settled', aborted: false })
+  await tick()
+  rpc.handle(reply(sent, 'steer', { disposition: 'queued' }))
+  assert.equal(await steered, true)
+  assert.equal(sent.at(-1).type, 'clear_queue', '结束前先看有没有没被取走的插话')
+  rpc.handle(lastReply(sent, 'clear_queue', { steering: ['合并结果：测试通过'], followUp: [] }))
+  await tick()
+  const prompt = sent.at(-1)
+  assert.deepEqual({ type: prompt.type, message: prompt.message }, { type: 'prompt', message: '合并结果：测试通过' })
+  assert.ok(!rpc.finished && !events.some((e) => e.type === 'result'), '接着做，不算结束')
+  rpc.handle(lastReply(sent, 'prompt', { disposition: 'started' }))
+  await tick()
+
+  // 这次插话在这一轮里被取走了：长命令的打断不触发，结束时收回为空照常结束
+  const again = rpc.steer('补充')
+  await tick()
+  rpc.handle(lastReply(sent, 'steer', { disposition: 'queued' }))
+  assert.equal(await again, true)
   const p = rpc.redirect('（说明）')
   await tick()
-  rpc.handle(reply(sent, 'clear_queue', { steering: [], followUp: [] }))
+  rpc.handle(lastReply(sent, 'clear_queue', { steering: [], followUp: [] }))
   assert.equal(await p, false)
   assert.ok(!sent.some((x) => x.type === 'abort'))
+  rpc.handle({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } })
+  rpc.handle({ type: 'agent_settled', aborted: false })
+  await tick()
+  rpc.handle(lastReply(sent, 'clear_queue', { steering: [], followUp: [] }))
+  await tick()
+  rpc.handle(reply(sent, 'get_session_stats', {}))
+  await tick()
+  rpc.handle(lastReply(sent, 'get_fork_messages', { messages: [] }))
+  await tick()
+  assert.deepEqual(
+    events.filter((e) => e.type === 'result'),
+    [{ type: 'result', ok: true, error: undefined }],
+  )
+
+  assert.equal(rpc.waiting, true, '保活中')
+  const before = sent.length
+  assert.equal(await rpc.steer('父对话的新消息'), false, '交不进去，面板按下一句消息送')
+  assert.equal(sent.length, before, '没有发 steer')
 })
 
 const waitMs = (ms: number) => new Promise((r) => setTimeout(r, ms))

@@ -1870,6 +1870,8 @@ async function runAgent(
         // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
         if (msg) steered.add(msg)
         task.working = true
+        // 交出的插话也要等到模型的回应：一直没有输出时照样标成卡住、告诉用户，不让「等待模型」无声地挂着
+        arm(msg?.text)
         if (c.deferSteer) {
           steerPending = true
           checkRedirect()

@@ -124,6 +124,8 @@ export const EN_ALERTS: Record<string, string> = {
     'On the new message, the panel stopped the stuck agent and restarted in the same session',
   '交给它的最后一条内容：': 'Last thing handed to it:',
   '最后一次输出在 {n} 分钟前': 'Last output was {n} min ago',
+  '这条消息没能登记到父对话的计划里，做完后父对话可能收不到状态':
+    "This message couldn't be added to the parent conversation's plan, so the parent may not get its status when it's done",
   '子对话的结果没能马上交给这个对话，已放进收件箱，下一轮会处理':
     "A subconversation's result couldn't be handed to this conversation right away. It is in the inbox for the next turn",
   执行这个子对话时出错: 'Error while running this subconversation',
