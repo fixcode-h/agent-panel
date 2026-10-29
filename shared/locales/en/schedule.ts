@@ -141,6 +141,18 @@ export const EN_SCHEDULE: Record<string, string> = {
   // 执行上限（token / 时长）
   '{n} token': '{n} tokens',
   '{n} 分钟': '{n} min',
+  '{n} 小时': '{n} h',
+  时长: 'Duration',
+  双击在这天新建计划: 'Double-click to add a schedule on this day',
+  '看 {m} 月 {d} 日这一周': 'View the week of {m}/{d}',
+  '拖动改时间，拖底边改时长': 'Drag to change the time; drag the bottom edge to change the duration',
+  '在 {day} {time} 新建计划': 'New schedule at {day} {time}',
+  '还没有计划。': 'No schedules yet. ',
+  '右键或双击空白格在那个时间新建；拖动计划改时间，拖底边改时长，半小时一格。':
+    'Right-click or double-click an empty slot to add a schedule there; drag a schedule to move it, drag its bottom edge to resize. Slots are 30 minutes.',
+  '双击一天在那天新建；点日期看那一周。': 'Double-click a day to add a schedule; click a date to see that week.',
+  不能挪到已经过去的时间: "Can't move it to a time that has already passed",
+  工作日计划不能挪到周末: "A workday schedule can't move to a weekend",
   'token 上限': 'Token limit',
   '0 或不填表示不限': '0 or empty means no limit',
   '时长上限（分钟）': 'Time limit (minutes)',

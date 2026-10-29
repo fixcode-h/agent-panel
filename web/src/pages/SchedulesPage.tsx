@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { toast } from '@/lib/toast'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import { groupLabel, groupSchedules, nextToRun, SCHEDULE_TICK_MS, weekStartOf, type Schedule } from '@shared/schedule'
+import {
+  groupLabel,
+  groupSchedules,
+  movedSchedule,
+  nextToRun,
+  SCHEDULE_TICK_MS,
+  weekStartOf,
+  type Schedule,
+} from '@shared/schedule'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -18,7 +26,7 @@ import { ScheduleEmpty } from '@/components/schedule/ScheduleEmpty'
 import { ScheduleMonth } from '@/components/schedule/ScheduleMonth'
 import { ScheduleOverview } from '@/components/schedule/ScheduleOverview'
 import { isoWeek, ScheduleWeek } from '@/components/schedule/ScheduleWeek'
-import { scheduleInputOf } from '@/components/schedule/use-schedule-form'
+import { scheduleInputOf, type SchedulePreset } from '@/components/schedule/use-schedule-form'
 
 const DEMO = !!import.meta.env.VITE_DEMO
 
@@ -59,8 +67,8 @@ export function SchedulesPage() {
   const [error, setError] = useState('')
   /** 相对时间（3 小时后）和数据一起算、一起刷：不和列表数据分开各算一次 */
   const [now, setNow] = useState(() => Date.now())
-  /** 正在新建 / 编辑的那条；'new' 是模板新建，'blank' 是空白新建 */
-  const [edit, setEdit] = useState<Schedule | 'new' | 'blank' | null>(null)
+  /** 正在新建 / 编辑的那条；'new' 是模板新建，'blank' 是空白新建，preset 是在日历某一格新建 */
+  const [edit, setEdit] = useState<Schedule | 'new' | 'blank' | { preset: SchedulePreset } | null>(null)
   const [del, setDel] = useState<Schedule | null>(null)
   /** 正在执行的那条计划 id：按钮转圈、防止重复点 */
   const [busy, setBusy] = useState('')
@@ -126,6 +134,22 @@ export function SchedulesPage() {
       toast.error((e as Error).message)
     }
   }
+
+  /** 日历上拖动、拉伸后直接保存（不经过弹窗）；放不下（拖到过去、工作日拖到周末）时说明原因，不改 */
+  const reschedule = async (s: Schedule, patch: Partial<ReturnType<typeof scheduleInputOf>>) => {
+    try {
+      saved(await api.updateSchedule(s.id, { ...scheduleInputOf(s), ...patch }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const moveTo = (s: Schedule, occAt: number, to: number) =>
+    guard(() => {
+      const r = movedSchedule(s, occAt, to, Date.now())
+      if ('error' in r) return void toast.error(r.error)
+      void reschedule(s, r)
+    })
+  const resize = (s: Schedule, minutes: number) => guard(() => void reschedule(s, { durationMin: minutes }))
 
   const runNow = async (s: Schedule) => {
     setBusy(s.id)
@@ -259,8 +283,17 @@ export function SchedulesPage() {
           </Button>
         </header>
 
+        {/* 日历的用法写一行：右键 / 双击、拖动这些操作光看界面猜不到 */}
+        {calendar && list && !error && (
+          <p className="shrink-0 border-b px-4 py-1.5 text-[0.75rem] text-subtle">
+            {!list.length && <span className="font-medium text-muted">{t('还没有计划。')}</span>}
+            {view === 'week'
+              ? t('右键或双击空白格在那个时间新建；拖动计划改时间，拖底边改时长，半小时一格。')
+              : t('双击一天在那天新建；点日期看那一周。')}
+          </p>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
-          {error || !list || !list.length || view === 'list' ? (
+          {error || !list || view === 'list' ? (
             <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5 px-4 pt-6 pb-12 md:px-8">
               {error ? (
                 <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
@@ -298,9 +331,32 @@ export function SchedulesPage() {
               )}
             </div>
           ) : view === 'week' ? (
-            <ScheduleWeek list={list} now={now} start={week} selected={selected?.id ?? ''} onSelect={select} />
+            <ScheduleWeek
+              list={list}
+              now={now}
+              start={week}
+              selected={selected?.id ?? ''}
+              onSelect={select}
+              onCreate={(at) => setEdit({ preset: { at: new Date(at).toISOString(), durationMin: 60 } })}
+              onMove={moveTo}
+              onResize={resize}
+              onEdit={(s) => guard(() => setEdit(s))}
+              onRun={(s) => void runNow(s)}
+              onDelete={setDel}
+            />
           ) : (
-            <ScheduleMonth list={list} now={now} month={month} selected={selected?.id ?? ''} onSelect={select} />
+            <ScheduleMonth
+              list={list}
+              now={now}
+              month={month}
+              selected={selected?.id ?? ''}
+              onSelect={select}
+              onCreate={(at) => setEdit({ preset: { at: new Date(at).toISOString(), durationMin: 60 } })}
+              onOpenDay={(day) => {
+                setWeek(weekStartOf(day))
+                setView('week')
+              }}
+            />
           )}
         </div>
       </main>
@@ -338,9 +394,10 @@ export function SchedulesPage() {
 
       {edit && (
         <ScheduleDialog
-          key={edit === 'new' ? 'new' : edit === 'blank' ? 'blank' : edit.id}
-          schedule={edit === 'new' || edit === 'blank' ? undefined : edit}
-          blank={edit === 'blank'}
+          key={edit === 'new' ? 'new' : edit === 'blank' ? 'blank' : 'preset' in edit ? edit.preset.at : edit.id}
+          schedule={edit === 'new' || edit === 'blank' || 'preset' in edit ? undefined : edit}
+          blank={edit === 'blank' || (typeof edit === 'object' && 'preset' in edit)}
+          preset={typeof edit === 'object' && 'preset' in edit ? edit.preset : undefined}
           schedules={list ?? []}
           onClose={() => setEdit(null)}
           onSaved={saved}

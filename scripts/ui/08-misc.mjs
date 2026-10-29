@@ -418,6 +418,64 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       if (await discard.count()) await discard.getByRole('button', { name: '放弃改动' }).click()
       await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '周' }).click()
     }
+
+    // 周视图的直接操作：拖动还没到的那一次改时间（每天的计划只换时分）、拖底边改时长，都按半小时对齐；
+    // 空白格右键是「在某时新建计划」，点了弹出新建窗口，时长默认一小时
+    {
+      const stored = (n) =>
+        p.evaluate(
+          ([key, name]) => (JSON.parse(localStorage.getItem(key) || '{}').schedules || []).find((x) => x.name === name),
+          [KEY, n],
+        )
+      const occ = p.locator('[data-occ="今日工作"]').last()
+      const before = await stored('今日工作')
+      const slot = (await p.locator('[data-slot]').nth(1).boundingBox())?.height ?? 0
+      const box = await occ.boundingBox()
+      if (!box || !slot) errors.push('计划拖动：周视图里找不到「今日工作」或时间格')
+      else {
+        await p.mouse.move(box.x + box.width / 2, box.y + 8)
+        await p.mouse.down()
+        await p.mouse.move(box.x + box.width / 2, box.y + 8 + slot * 2, { steps: 8 })
+        await p.mouse.up()
+        await p
+          .waitForFunction(
+            ([key, at]) =>
+              (JSON.parse(localStorage.getItem(key) || '{}').schedules || []).find((x) => x.name === '今日工作')?.at !==
+              at,
+            [KEY, before.at],
+            { timeout: 5000 },
+          )
+          .catch(() => {})
+        const moved = await stored('今日工作')
+        const hour = (iso) => new Date(iso).getHours() + new Date(iso).getMinutes() / 60
+        if (hour(moved.at) - hour(before.at) !== 1)
+          errors.push(`计划拖动：往下拖两格应该晚一小时（${before.at} → ${moved.at}）`)
+        if (Date.parse(moved.at) - Date.parse(before.at) > 86_400_000)
+          errors.push(`计划拖动：每天的计划拖了最后一格，下一次被推到了好几天后（${moved.at}）`)
+        const b2 = await p.locator('[data-occ="今日工作"]').last().boundingBox()
+        await p.mouse.move(b2.x + b2.width / 2, b2.y + b2.height - 2)
+        await p.mouse.down()
+        await p.mouse.move(b2.x + b2.width / 2, b2.y + b2.height - 2 + slot, { steps: 6 })
+        await p.mouse.up()
+        await p.waitForTimeout(500)
+        const resized = await stored('今日工作')
+        if (resized.durationMin !== moved.durationMin + 30)
+          errors.push(`计划拉伸：拖底边一格应该多半小时（${moved.durationMin} → ${resized.durationMin}）`)
+      }
+      const cell = await p.locator('[data-slot="10:30"]').nth(5).boundingBox()
+      await p.mouse.click(cell.x + cell.width / 2, cell.y + cell.height / 2, { button: 'right' })
+      const item = p.getByRole('menuitem', { name: /在 周六 10:30 新建计划/ })
+      await item
+        .waitFor({ timeout: 3000 })
+        .catch(() => errors.push('计划右键：空白格右键没有「在 周六 10:30 新建计划」'))
+      await check(p, '计划周视图-右键新建')
+      if (await item.count()) {
+        await item.click()
+        const dlg = p.getByRole('dialog').filter({ hasText: '新建计划' })
+        await check(p, '计划周视图-右键新建弹窗', ['时长', '1 小时', '不重复'])
+        await dlg.getByRole('button', { name: '取消' }).click()
+      }
+    }
     /** 切到列表视图：视图记在本机，重载后还在列表；每次都点一下更稳 */
     const listView = async () => {
       await p.getByRole('radiogroup', { name: '视图' }).getByRole('radio', { name: '列表' }).click()

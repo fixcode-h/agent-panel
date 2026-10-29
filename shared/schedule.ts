@@ -11,6 +11,9 @@ import { hhmm, pad2, ymd } from './datetime.ts'
 import { MAX_TASK_BUDGET_MINUTES, MAX_TASK_BUDGET_TOKENS } from './schema.ts'
 
 /** 重复规则：只执行一次 / 每天 / 每周指定星期几 / 周一到周五 */
+/** 日历的时间刻度（分钟）：周视图半小时一格，拖动、拉伸、右键新建都对齐到它 */
+export const SLOT_MIN = 30
+
 export const ScheduleRepeat = z.enum(['once', 'daily', 'weekly', 'workdays'])
 export type ScheduleRepeat = z.infer<typeof ScheduleRepeat>
 
@@ -57,6 +60,17 @@ export const ScheduleInput = z.object({
     .string()
     .regex(/^(\d{4}-\d{2}-\d{2})?$/, t('结束日期格式不对'))
     .default(''),
+  /**
+   * 在日历上占多长（分钟，半小时一档）：周视图里块的高度，拖底边改。只是排日程用的，不限制执行时长
+   * （限制看 budget.minutes）；旧数据没有，按一小时画
+   */
+  durationMin: z
+    .number()
+    .int()
+    .min(SLOT_MIN)
+    .max(24 * 60)
+    .catch(60)
+    .default(60),
 })
 export type ScheduleInput = z.infer<typeof ScheduleInput>
 
@@ -259,6 +273,39 @@ export function alignScheduleAt(s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekda
     d.setDate(d.getDate() + 1)
   }
   return s.at
+}
+
+/**
+ * 在周视图里把某一次执行（occAt）拖到 to：算出保存用的 at 和 weekdays，放不下时给出原因（直接显示给用户）。
+ * - 单次：执行时间就是 to，不能拖到过去；
+ * - 每周：把那一次所在的星期换成新的星期（其余勾着的不动），时分跟着改；
+ * - 工作日：不能拖到周末；每天 / 工作日只改时分（日期换到哪天都一样）；
+ * 重复的计划下一次从今天起按新规则算（今天这个时刻已经过了就从下一次开始），不记一次「错过」
+ */
+export function movedSchedule(
+  s: Pick<ScheduleInput, 'repeat' | 'at' | 'weekdays'>,
+  occAt: number,
+  to: number,
+  now: number,
+): { at: string; weekdays: number[] } | { error: string } {
+  const target = new Date(to)
+  if (s.repeat === 'once') {
+    if (to < now) return { error: t('不能挪到已经过去的时间') }
+    return { at: target.toISOString(), weekdays: [] }
+  }
+  let weekdays = s.weekdays
+  if (s.repeat === 'workdays' && isoWeekday(target) > 5) return { error: t('工作日计划不能挪到周末') }
+  if (s.repeat === 'weekly') {
+    const from = isoWeekday(new Date(occAt))
+    const base = s.weekdays.length ? s.weekdays : [isoWeekday(new Date(s.at))]
+    weekdays = [...new Set(base.map((d) => (d === from ? isoWeekday(target) : d)))].sort((a, b) => a - b)
+  }
+  // 重复的计划只换时分（和每周的星期）：下一次从今天起按新规则算，拖的是哪一周的那一次都一样，
+  // 不会因为拖了下周的那一格就把这几天的执行跳过去
+  const base = new Date(now)
+  base.setHours(target.getHours(), target.getMinutes(), 0, 0)
+  const rule = { repeat: s.repeat, at: base.toISOString(), weekdays }
+  return { at: base.getTime() < now ? nextRunAt(rule, now) : alignScheduleAt(rule), weekdays }
 }
 
 /**

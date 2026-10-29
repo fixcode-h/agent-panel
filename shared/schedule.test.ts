@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   afterBlocked,
+  movedSchedule,
   afterFail,
   alignScheduleAt,
   afterMiss,
@@ -66,6 +67,7 @@ const schedule = (over: Partial<Schedule> = {}): Schedule => ({
   dependsOn: [],
   budget: { tokens: 0, minutes: 0 },
   endDate: '',
+  durationMin: 60,
   status: 'pending',
   lastRunAt: '',
   lastTaskId: '',
@@ -432,7 +434,7 @@ test('每周 / 工作日：at 是很多年以前时也快进到未来最近的�
   assert.ok(Date.parse(work) > now)
 })
 
-test('对齐执行时间：weekly / workdays 的首次执行也落在规则允许的星期', () => {
+test('对齐执行时间：weekly / workdays 的首次执行也落在规则允许的星期；周视图拖动后的时间也按规则算', () => {
   // 2026-05-02 是周六：工作日的计划对齐到下周一同一时刻
   assert.equal(alignScheduleAt({ repeat: 'workdays', at: at(2026, 5, 2, 9), weekdays: [] }), at(2026, 5, 4, 9))
   // 只选周一、时间填周三：对齐到下周一
@@ -442,6 +444,30 @@ test('对齐执行时间：weekly / workdays 的首次执行也落在规则允�
   assert.equal(alignScheduleAt({ repeat: 'weekly', at: monday, weekdays: [1] }), monday)
   // 单次和每天哪天都行，不动
   assert.equal(alignScheduleAt({ repeat: 'daily', at: at(2026, 5, 2, 9), weekdays: [] }), at(2026, 5, 2, 9))
+
+  // 周视图拖动：单次不能拖到过去；每周换掉那一次的星期；工作日不能拖到周末；拖到过去的时刻从下一次开始
+  {
+    const now = Date.parse(at(2026, 10, 28, 12)) // 周三中午
+    // 单次：直接改到新时间，拖到过去被拒
+    assert.deepEqual(movedSchedule(schedule({ repeat: 'once' }), 0, Date.parse(at(2026, 10, 29, 9)), now), {
+      at: at(2026, 10, 29, 9),
+      weekdays: [],
+    })
+    assert.ok('error' in movedSchedule(schedule({ repeat: 'once' }), 0, Date.parse(at(2026, 10, 27, 9)), now))
+    // 每周一、三：把周三那次拖到周五 10:00 → 一、五，时分跟着改
+    const weekly = schedule({ repeat: 'weekly', weekdays: [1, 3], at: at(2026, 10, 26, 9) })
+    const w = movedSchedule(weekly, Date.parse(at(2026, 10, 28, 9)), Date.parse(at(2026, 10, 30, 10)), now)
+    assert.ok(!('error' in w) && w.weekdays.join() === '1,5' && w.at === at(2026, 10, 30, 10))
+    // 工作日拖到周六不行
+    const workdays = schedule({ repeat: 'workdays', at: at(2026, 10, 28, 9) })
+    assert.ok('error' in movedSchedule(workdays, 0, Date.parse(at(2026, 10, 31, 9)), now))
+    // 每天拖到今天已经过去的 8:00：从明天 8:00 开始，不记错过
+    const daily = movedSchedule(schedule({ repeat: 'daily' }), 0, Date.parse(at(2026, 10, 28, 8)), now)
+    assert.ok(!('error' in daily) && daily.at === at(2026, 10, 29, 8))
+    // 拖的是下周那一格：只换时分，下一次还是今天 / 明天，不把这几天跳过去
+    const later = movedSchedule(schedule({ repeat: 'daily' }), 0, Date.parse(at(2026, 11, 3, 20)), now)
+    assert.ok(!('error' in later) && later.at === at(2026, 10, 28, 20))
+  }
 })
 
 test('每周 / 工作日：首次执行时间没到也只返回符合星期的日子', () => {
