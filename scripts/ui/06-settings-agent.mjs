@@ -265,6 +265,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle,
     .first()
     .click()
   await p.getByRole('button', { name: '角色', exact: true }).first().click()
+  // 角色页默认先显示高级角色，「代码审查」是基本角色：先切到基本角色那一页
+  await p
+    .locator('section[aria-label="角色列表"]')
+    .getByRole('radiogroup', { name: '角色层' })
+    .getByRole('radio', { name: /^基本角色/ })
+    .click()
   // 「评审」要随内置工作流添加，这个分片里没有；用演示自带的角色
   await p.getByText('代码审查', { exact: true }).first().click()
   await p.getByRole('button', { name: 'AI 优化' }).first().click()
